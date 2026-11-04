@@ -609,6 +609,22 @@ func TestCancelTimeoutReapsDetachedTool(t *testing.T) {
 	}
 }
 
+func TestTurnTimeoutCancelsAndSettlesPrompt(t *testing.T) {
+	opts := fixtureOptions(t)
+	opts.Limits.TurnTimeout = 100 * time.Millisecond
+	s := openFixture(t, opts)
+	result, err := s.Run(context.Background(), "hold")
+	if !errors.Is(err, context.DeadlineExceeded) || !errors.Is(err, ErrCancelled) || result.StopReason != "cancelled" {
+		t.Fatalf("turn deadline did not settle via cancellation: %+v %v", result, err)
+	}
+	if _, active := s.Activity(); active {
+		t.Fatal("timed out prompt still active")
+	}
+	if _, err := s.Run(context.Background(), "after-timeout"); err != nil {
+		t.Fatal("settled timeout left component unavailable", err)
+	}
+}
+
 func TestBlockedWriteDisablesSession(t *testing.T) {
 	opts := fixtureOptions(t)
 	opts.Limits.FrameBytes = 1 << 20

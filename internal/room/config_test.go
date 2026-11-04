@@ -159,7 +159,7 @@ func TestStartupEnvironmentPrecedenceAndCleanup(t *testing.T) {
 }
 
 func TestStartupServerSettingsPrecedence(t *testing.T) {
-	config, err := loadStartupConfig(writeStartupConfig(t, t.TempDir(), "[server]\nlisten = '127.0.0.1:8089'\ndata_dir = './saved'\nteams_dir = './catalog'\nmax_turns = 9\nmerge_window = '250ms'\n"), true)
+	config, err := loadStartupConfig(writeStartupConfig(t, t.TempDir(), "[server]\nlisten = '127.0.0.1:8089'\ndata_dir = './saved'\nteams_dir = './catalog'\nmax_turns = 9\nmerge_window = '250ms'\ndsh_turn_timeout = '30m'\n"), true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,9 +168,10 @@ func TestStartupServerSettingsPrecedence(t *testing.T) {
 		listen := f.String("listen", "127.0.0.1:8088", "")
 		turns := f.Uint64("max-turns", 16, "")
 		merge := f.Duration("merge-window", 0, "")
+		timeout := f.Duration("dsh-turn-timeout", 15*time.Minute, "")
 		args := []string{}
 		if explicit {
-			args = []string{"--listen", "127.0.0.1:0", "--max-turns", "7", "--merge-window", "0s"}
+			args = []string{"--listen", "127.0.0.1:0", "--max-turns", "7", "--merge-window", "0s", "--dsh-turn-timeout", "20m"}
 		}
 		if err := f.Parse(args); err != nil {
 			t.Fatal(err)
@@ -181,11 +182,36 @@ func TestStartupServerSettingsPrecedence(t *testing.T) {
 			t.Fatal(err)
 		}
 		if explicit {
-			if *listen != "127.0.0.1:0" || *turns != 7 || *merge != 0 {
+			if *listen != "127.0.0.1:0" || *turns != 7 || *merge != 0 || *timeout != 20*time.Minute {
 				t.Fatal("explicit flags, including zero duration, did not win")
 			}
-		} else if *listen != *config.Server.Listen || *turns != 9 || *merge != 250*time.Millisecond {
+		} else if *listen != *config.Server.Listen || *turns != 9 || *merge != 250*time.Millisecond || *timeout != 30*time.Minute {
 			t.Fatal("config did not override built-in defaults")
+		}
+	}
+}
+
+func TestServeRejectsInvalidDSHTurnTimeout(t *testing.T) {
+	for _, value := range []string{"0s", "-1m", "invalid", "999999999999h"} {
+		for _, source := range []string{"config", "flag"} {
+			t.Run(source+"/"+value, func(t *testing.T) {
+				config := ""
+				if source == "config" {
+					config = "[server]\ndsh_turn_timeout = '" + value + "'\n"
+				}
+				args := []string{"--config", writeStartupConfig(t, t.TempDir(), config)}
+				if source == "flag" {
+					args = append(args, "--dsh-turn-timeout", value)
+				}
+				var stdout, stderr bytes.Buffer
+				err := serveWithFactory(args, &stdout, &stderr, func(string, string, serviceConfig) (*service, error) {
+					t.Fatal("invalid timeout reached service creation")
+					return nil, nil
+				})
+				if err == nil || !strings.Contains(err.Error(), "dsh-turn-timeout") || stdout.Len() != 0 {
+					t.Fatal("invalid turn timeout accepted", err)
+				}
+			})
 		}
 	}
 }
@@ -203,7 +229,7 @@ func TestGlobalRuntimeDefaultsOverridesAndFrozenRooms(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m.config = serviceConfig{endpoint: "http://127.0.0.1:1", cliPath: os.Args[0]}
+	m.config = serviceConfig{endpoint: "http://127.0.0.1:1", cliPath: os.Args[0], dshTurnTimeout: 15 * time.Minute}
 	room := createTeamRoom(t, m, "global-runtime")
 	saved, _ := readManagedRoom(t, m, room)
 	if saved.Runtime == nil || saved.Runtime.Model != defaults.Model || saved.Runtime.DSH.BinaryPath != defaults.DSH.BinaryPath {
@@ -218,10 +244,13 @@ func TestGlobalRuntimeDefaultsOverridesAndFrozenRooms(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer m.close()
-	m.config = serviceConfig{endpoint: "http://127.0.0.1:1", cliPath: os.Args[0]}
+	m.config = serviceConfig{endpoint: "http://127.0.0.1:1", cliPath: os.Args[0], dshTurnTimeout: 30 * time.Minute}
 	cfg, err := m.activationConfig(room.RoomIdentity)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if cfg.dshTurnTimeout != 30*time.Minute {
+		t.Fatal("existing Room did not pick up current service timeout", cfg.dshTurnTimeout)
 	}
 	for _, p := range cfg.dshProfiles {
 		if p.Model.ModelID != saved.Runtime.Model.ModelID {

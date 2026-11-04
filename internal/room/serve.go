@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"syscall"
 	"time"
+
+	"github.com/go-aie/teamx/internal/agent/dsh"
 )
 
 // Allow prompt cancellation, protocol close, and process exit to finish with
@@ -32,6 +34,7 @@ func serveWithFactory(args []string, stdout, stderr io.Writer, create func(strin
 	listen := flags.String("listen", "127.0.0.1:8088", "loopback address")
 	mergeWindow := flags.Duration("merge-window", 100*time.Millisecond, "member notification merge window")
 	maxTurns := flags.Uint64("max-turns", defaultMaxTurns, "maximum admitted turns per membership (persistent in managed rooms; per service in single-room mode)")
+	dshTurnTimeout := flags.Duration("dsh-turn-timeout", dsh.DefaultTurnTimeout, "maximum duration of a DSH turn, including model and tools (must be positive)")
 	dshConfig := flags.String("dsh-config", "", "JSON file of named DSH member profiles")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -61,6 +64,9 @@ func serveWithFactory(args []string, stdout, stderr io.Writer, create func(strin
 	}
 	if *mergeWindow < 0 || *maxTurns == 0 {
 		return ErrRequest
+	}
+	if *dshTurnTimeout <= 0 {
+		return fmt.Errorf("%w: dsh-turn-timeout must be positive", ErrRequest)
 	}
 	singleRoom := explicit["room"] || explicit["state-dir"]
 	if singleRoom && !explicit["state-dir"] {
@@ -94,7 +100,7 @@ func serveWithFactory(args []string, stdout, stderr io.Writer, create func(strin
 	}
 	defer listener.Close()
 	if !singleRoom {
-		return serveRoomManager(listener, *dataDir, *teamsDir, serviceConfig{endpoint: "http://" + listener.Addr().String(), mergeWindow: *mergeWindow, maxTurns: *maxTurns}, startup.Runtime, create, stdout, stderr)
+		return serveRoomManager(listener, *dataDir, *teamsDir, serviceConfig{endpoint: "http://" + listener.Addr().String(), mergeWindow: *mergeWindow, maxTurns: *maxTurns, dshTurnTimeout: *dshTurnTimeout}, startup.Runtime, create, stdout, stderr)
 	}
 	uiProfiles := profileNames(profiles)
 	cliPath, err := os.Executable()
@@ -103,7 +109,7 @@ func serveWithFactory(args []string, stdout, stderr io.Writer, create func(strin
 	}
 	svc, err := create(*dir, *roomID, serviceConfig{
 		endpoint: "http://" + listener.Addr().String(), cliPath: cliPath, mergeWindow: *mergeWindow, maxTurns: *maxTurns,
-		dshProfiles: profiles, uiProfiles: uiProfiles,
+		dshProfiles: profiles, uiProfiles: uiProfiles, dshTurnTimeout: *dshTurnTimeout,
 	})
 	if err != nil {
 		return err

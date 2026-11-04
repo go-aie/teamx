@@ -90,6 +90,7 @@ type service struct {
 	endpoint             string
 	cliPath              string
 	mergeWindow          time.Duration
+	dshTurnTimeout       time.Duration
 	maxTurns             uint64
 	persistentScheduling bool
 	closed               bool
@@ -170,6 +171,7 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 		rt: rt, room: addr, scheduler: scheduler, ctx: ctx, cancel: cancel,
 		targets: make(map[string]actorx.Addr), requests: make(chan struct{}, 32),
 		endpoint: config.endpoint, cliPath: config.cliPath, mergeWindow: config.mergeWindow,
+		dshTurnTimeout:       config.dshTurnTimeout,
 		maxTurns:             config.maxTurns,
 		persistentScheduling: config.persistentScheduling,
 		dshProfiles:          config.dshProfiles,

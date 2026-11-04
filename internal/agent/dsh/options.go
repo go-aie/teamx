@@ -120,6 +120,9 @@ func (m ModelConfig) tokenLimits() (contextWindow, maxTokens int) {
 	return
 }
 
+// DefaultTurnTimeout bounds the entire prompt, including model and tool time.
+const DefaultTurnTimeout = 15 * time.Minute
+
 type Limits struct {
 	HandshakeTimeout time.Duration
 	TurnTimeout      time.Duration
@@ -141,7 +144,7 @@ func (l *Limits) defaults() error {
 		value    *time.Duration
 		fallback time.Duration
 	}{
-		{&l.HandshakeTimeout, 15 * time.Second}, {&l.TurnTimeout, 5 * time.Minute},
+		{&l.HandshakeTimeout, 15 * time.Second}, {&l.TurnTimeout, DefaultTurnTimeout},
 		{&l.CancelTimeout, 5 * time.Second}, {&l.CleanupTimeout, 10 * time.Second},
 		{&l.WriteTimeout, 2 * time.Second}, {&l.PermissionTimeout, 30 * time.Second},
 	}

@@ -18,11 +18,12 @@ import (
 // Startup settings stay outside Room snapshots. Only the resolved runtime is frozen.
 type startupConfig struct {
 	Server struct {
-		Listen      *string `toml:"listen"`
-		DataDir     *string `toml:"data_dir"`
-		TeamsDir    *string `toml:"teams_dir"`
-		MaxTurns    *uint64 `toml:"max_turns"`
-		MergeWindow *string `toml:"merge_window"`
+		Listen         *string `toml:"listen"`
+		DataDir        *string `toml:"data_dir"`
+		TeamsDir       *string `toml:"teams_dir"`
+		MaxTurns       *uint64 `toml:"max_turns"`
+		MergeWindow    *string `toml:"merge_window"`
+		DSHTurnTimeout *string `toml:"dsh_turn_timeout"`
 	} `toml:"server"`
 	Runtime *teamRuntime      `toml:"runtime"`
 	Env     map[string]string `toml:"env"`
@@ -133,7 +134,7 @@ func applyStartupEnv(values map[string]string) (func(), error) {
 }
 
 func applyStartupSettings(flags *flag.FlagSet, explicit map[string]bool, startup startupConfig) error {
-	settings := map[string]*string{"listen": startup.Server.Listen, "merge-window": startup.Server.MergeWindow}
+	settings := map[string]*string{"listen": startup.Server.Listen, "merge-window": startup.Server.MergeWindow, "dsh-turn-timeout": startup.Server.DSHTurnTimeout}
 	if startup.Server.MaxTurns != nil {
 		value := strconv.FormatUint(*startup.Server.MaxTurns, 10)
 		settings["max-turns"] = &value

@@ -42,6 +42,7 @@ cp .teamx/config.example.toml .teamx/config.toml
 | --- | --- |
 | `runtime.dsh.binary_path` | 已安装的 `dsh` 可执行程序的绝对路径 |
 | `runtime.model` | 模型协议、地址、名称及密钥环境变量名 |
+| `server.dsh_turn_timeout` | DSH 单回合总时长，默认 `"15m"`；大型任务可设 `"30m"` |
 | `env.OPENAI_API_KEY` | 模型密钥；也可通过服务环境提供，已有环境变量优先 |
 
 可用 `command -v dsh` 查找 DSH 路径。模型密钥可填写在本地配置的 `[env]` 中，也可通过环境变量提供；服务不会自动加载 `.env`。

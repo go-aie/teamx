@@ -17,6 +17,7 @@ type serviceConfig struct {
 	endpoint             string
 	cliPath              string
 	mergeWindow          time.Duration
+	dshTurnTimeout       time.Duration
 	maxTurns             uint64
 	persistentScheduling bool
 	dshProfiles          map[string]dshProfile
@@ -111,7 +112,7 @@ func (s *service) loadMembers(state RoomSnapshot) error {
 
 func (s *service) newMember(id MemberIdentity, runner RunnerConfig, restored *AgentSnapshot) actorx.Actor {
 	opts := SessionOptions{MemberIdentity: id, StatePath: filepath.Join(s.store.dir, "agents", id.MembershipID, "session.json"), CLIPath: s.cliPath, CLIEnv: s.toolEnv(id)}
-	backend := dshBackend{store: s.store, profile: s.dshProfiles[runner.Profile]}
+	backend := dshBackend{store: s.store, profile: s.dshProfiles[runner.Profile], turnTimeout: s.dshTurnTimeout}
 	blocked := ""
 	var used uint64
 	for _, recovered := range s.recovered {

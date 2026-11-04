@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-aie/teamx/internal/agent/dsh"
 )
@@ -75,9 +76,10 @@ type dshComponent interface {
 }
 
 type dshBackend struct {
-	store   *Store
-	profile dshProfile
-	recover bool // Only set by startup after checking normal shutdown evidence.
+	store       *Store
+	profile     dshProfile
+	turnTimeout time.Duration // Service policy; not part of the frozen Room runtime.
+	recover     bool          // Only set by startup after checking normal shutdown evidence.
 	// A narrow seam for offline adapter tests; production always uses dsh.Open.
 	open func(context.Context, dsh.Options) (dshComponent, error)
 }
@@ -261,7 +263,7 @@ Ordinary model output is private and is never sent to the Room. Preserve the con
 	}
 
 	return dsh.Options{BinaryPath: p.BinaryPath, BinaryArgs: p.BinaryArgs, Artifact: p.Artifact, Workspace: p.Workspace,
-		StateDir: filepath.Join(filepath.Dir(opts.StatePath), ref.Directory), Instructions: instructions, Model: p.Model, ToolEnv: toolEnv, Limits: dsh.Limits{TextBytes: 64 << 10}}, nil
+		StateDir: filepath.Join(filepath.Dir(opts.StatePath), ref.Directory), Instructions: instructions, Model: p.Model, ToolEnv: toolEnv, Limits: dsh.Limits{TextBytes: 64 << 10, TurnTimeout: b.turnTimeout}}, nil
 }
 
 func dshFailure(err error) error {

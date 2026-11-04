@@ -18,6 +18,9 @@ func TestRuntimeIdentityWithoutConfiguredArtifact(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := openFixture(t, opts)
+	if s.opts.Limits.TurnTimeout != 15*time.Minute {
+		t.Fatal("unexpected default turn timeout", s.opts.Limits.TurnTimeout)
+	}
 	if err := s.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -25,6 +28,7 @@ func TestRuntimeIdentityWithoutConfiguredArtifact(t *testing.T) {
 	if err != nil || ref.Artifact != (Artifact{Source: "fixture", Version: "test"}) {
 		t.Fatal("runtime identity was not recorded", ref, err)
 	}
+	opts.Limits.TurnTimeout = 30 * time.Minute
 	if err := CheckResumeConfig(opts); err != nil {
 		t.Fatal(err)
 	}
@@ -35,6 +39,9 @@ func TestRuntimeIdentityWithoutConfiguredArtifact(t *testing.T) {
 	defer resumed.Close(context.Background())
 	if resumed.id != s.id {
 		t.Fatal("replaced original session")
+	}
+	if resumed.opts.Limits.TurnTimeout != 30*time.Minute {
+		t.Fatal("resumed Session did not use current timeout")
 	}
 }
 

@@ -47,6 +47,24 @@ func adapterOptions(store *Store, id MemberIdentity) SessionOptions {
 			"DSH_HOME=/inherited/forbidden", "OPENAI_API_KEY=never-copy-into-tool-env"}}
 }
 
+func TestServicePassesDSHTurnTimeoutToComponent(t *testing.T) {
+	dir, id := recoveryFixture(t)
+	config := recoveryConfig()
+	config.dshTurnTimeout = 30 * time.Minute
+	config.dshProfiles = map[string]dshProfile{"fixture-fail,ignore": {Instructions: "role"}}
+	svc, err := newService(dir, id.RoomID, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeService(t, svc)
+	agent := svc.newMember(id, RunnerConfig{Kind: "dsh", Profile: "fixture-fail,ignore"}, nil).(*MemberAgent)
+	backend := agent.Backend.(dshBackend)
+	opts, err := backend.componentOptions(agent.Options, dshReference{})
+	if err != nil || opts.Limits.TurnTimeout != 30*time.Minute {
+		t.Fatal("service timeout lost before component Open/Resume", opts.Limits.TurnTimeout, err)
+	}
+}
+
 func TestDSHAdapterIsolationMetadataAndPrivateOutput(t *testing.T) {
 	t.Setenv("USER", "room-owner")
 	h := newRoomHarness(t, historyRoom(3, "secret message body"), nil)
