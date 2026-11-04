@@ -1775,6 +1775,11 @@ textarea::placeholder {
 .activity-member:hover:not(:disabled),.cli-tool-row select:hover:not(:disabled) { border-color:#bbcabb; }
 .activity-member:disabled,.cli-tool-row select:disabled { background-color:#f3f5f1; color:#727c75; cursor:default; }
 .activity-member:focus-visible,.cli-tool-row select:focus-visible { outline:2px solid #a9c6b2; outline-offset:1px; }
+.cli-tool-feedback { grid-column:1 / -1; margin:0; font-size:12px; line-height:1.8; overflow-wrap:anywhere; }
+.cli-tool-feedback[data-kind="success"] { color:var(--accent); }
+.cli-tool-feedback[data-kind="pending"] { color:var(--muted); }
+.cli-tool-feedback:empty { display:none; }
 #cli-member-feedback { margin:14px 0 0; line-height:1.8; overflow-wrap:anywhere; }
+#cli-member-feedback[data-kind="error"] { padding:10px 12px; border:1px solid #e8ccc7; border-radius:6px; background:#fff3f0; color:#934c42; }
 #cli-member-feedback:empty { display:none; }
 #cli-member-refresh { margin-top:12px; padding-left:0; }

@@ -121,32 +121,36 @@ function toolsIdentity() {
   return { service_epoch: state.catalog.service_epoch, room_id: state.info.room_id,
     room_instance: state.info.room_instance, caller: { kind: "human", id: state.operator } };
 }
+function cliToolsFeedback(message, kind = "") {
+  const feedback = $("cli-member-feedback");
+  feedback.textContent = message;
+  feedback.dataset.kind = kind;
+}
 async function openMemberTools(member) {
   $("cli-member-options").replaceChildren();
-  $("cli-member-feedback").textContent = "";
+  cliToolsFeedback("");
   if (!state.managed || !state.info || !state.catalogConnected) {
-    $("cli-member-feedback").textContent = "设置暂不可读，请恢复连接后重新读取。"; return;
+    cliToolsFeedback("设置暂不可读，请恢复连接后重新读取。", "error"); return;
   }
   const v = memberToolsView = { identity: toolsIdentity(), member, cli: null, cliBusy: false };
-  $("cli-member-feedback").textContent = "正在读取…";
   await loadCLITools(v);
 }
 // CLI bindings have a separate revision and never inherit legacy grants.
 async function loadCLITools(v) {
   const read = v.cliRead = (v.cliRead || 0) + 1;
-  $("cli-member-feedback").textContent = "正在读取 CLI 工具…";
+  cliToolsFeedback("正在读取 CLI 工具…");
   try {
     const q = new URLSearchParams({ service_epoch: v.identity.service_epoch, caller_id: v.identity.caller.id,
       room_id: v.identity.room_id, room_instance: v.identity.room_instance });
     const cq = new URLSearchParams({ service_epoch: v.identity.service_epoch, caller_id: v.identity.caller.id });
     const [data, connections] = await Promise.all([request(`/v1/tools/bindings?${q}`), request(`/v1/platform/connections?${cq}`)]);
     if (!toolsCurrent(v) || read !== v.cliRead) return;
-    v.cli = data; v.cliConnections = connections.connections; v.cliBusy = false;
-    $("cli-member-feedback").textContent = ""; renderCLITools(v);
+    v.cli = data; v.cliConnections = connections.connections; v.cliBusy = false; v.cliResult = null;
+    cliToolsFeedback(""); renderCLITools(v);
   } catch {
     if (!toolsCurrent(v) || read !== v.cliRead) return;
     v.cli = null; $("cli-member-options").replaceChildren();
-    $("cli-member-feedback").textContent = "CLI 工具暂不可读，请重新读取。";
+    cliToolsFeedback("CLI 工具暂不可读，请重新读取。", "error");
   }
 }
 function renderCLITools(v) {
@@ -154,6 +158,8 @@ function renderCLITools(v) {
   $("cli-member-options").replaceChildren(...v.cli.catalog.map(d => {
     const b = v.cli.bindings.find(b => b.agent_id === v.member.agent_id && b.membership_id === v.member.membership_id && b.tool === d.name);
     const row = document.createElement("div"); row.className = "cli-tool-row";
+    const pending = v.cliPending?.tool === d.name;
+    row.setAttribute("aria-busy", String(pending));
     const title = document.createElement("strong"); title.textContent = d.name;
     const version = document.createElement("small"); version.textContent = d.version; title.append(version);
     const label = document.createElement("label"); label.textContent = d.provider ? "连接账号与实例" : "工具状态";
@@ -164,15 +170,23 @@ function renderCLITools(v) {
       select.append(...connections.map(c => new Option(`${c.name} · @${c.validation.username} · ${c.url}`, c.id)));
       if (b && !connections.some(c => c.id === b.connection_id)) select.append(new Option(`连接 ${b.connection_id} 待验证或不可用`, b.connection_id));
     } else select.append(new Option("启用", "on"));
-    select.value = b ? b.connection_id || "on" : "";
+    select.value = pending ? v.cliPending.value : b ? b.connection_id || "on" : "";
     select.disabled = v.cliBusy || !live; label.append(select);
-    const apply = document.createElement("button"); apply.type = "button"; apply.className = "primary"; apply.textContent = "应用";
+    const apply = document.createElement("button"); apply.type = "button"; apply.className = "primary"; apply.textContent = pending ? "应用中…" : "应用";
+    const feedback = document.createElement("p"); feedback.className = "cli-tool-feedback";
+    feedback.setAttribute("role", "status"); feedback.setAttribute("aria-live", "polite");
+    feedback.textContent = pending ? "正在保存工具设置…" : v.cliResult?.tool === d.name ? v.cliResult.message : "";
+    feedback.dataset.kind = pending ? "pending" : "success";
     const valid = () => !select.value || !d.provider || connections.some(c => c.id === select.value);
     apply.disabled = v.cliBusy || !live || !valid();
-    select.addEventListener("change", () => { apply.disabled = v.cliBusy || !live || !valid(); });
+    select.addEventListener("change", () => {
+      apply.disabled = v.cliBusy || !live || !valid();
+      if (v.cliResult?.tool === d.name) { v.cliResult = null; feedback.textContent = ""; }
+    });
     apply.addEventListener("click", async () => {
       if (!toolsCurrent(v) || v.cliBusy || !live || !valid()) return;
-      v.cliBusy = true; v.cliRead = (v.cliRead || 0) + 1; renderCLITools(v);
+      v.cliBusy = true; v.cliPending = { tool: d.name, value: select.value }; v.cliResult = null;
+      v.cliRead = (v.cliRead || 0) + 1; cliToolsFeedback(""); renderCLITools(v);
       const selected = connections.find(c => c.id === select.value);
       const binding = { agent_id: v.member.agent_id, membership_id: v.member.membership_id, tool: d.name };
       if (selected) binding.connection_id = selected.id;
@@ -180,15 +194,20 @@ function renderCLITools(v) {
         const data = await request("/v1/tools/bind", { ...v.identity, revision: v.cli.revision, binding,
           enabled: Boolean(select.value), connection_version: selected?.version || 0 });
         if (!toolsCurrent(v)) return;
-        v.cli = { ...v.cli, ...data }; v.cliBusy = false; renderCLITools(v);
-        $("cli-member-feedback").textContent = "CLI 工具设置已更新。沿用所选账号权限。";
-      } catch {
+        v.cli = { ...v.cli, ...data }; v.cliBusy = false; v.cliPending = null;
+        v.cliResult = { tool: d.name, message: !select.value ? `✓ ${d.name} 已停用。` : selected ?
+          `✓ 已应用：${selected.name} · @${selected.validation.username}。沿用所选账号权限。` : `✓ ${d.name} 已启用。` };
+        renderCLITools(v);
+      } catch (error) {
         if (!toolsCurrent(v)) return;
-        v.cli = null; v.cliBusy = false; $("cli-member-options").replaceChildren();
-        $("cli-member-feedback").textContent = "应用结果未确认，不会自动重发。请重新读取后核对。";
+        v.cli = null; v.cliBusy = false; v.cliPending = null; $("cli-member-options").replaceChildren();
+        const rejected = { conflict: "工具设置或连接已变化，请重新读取后再应用。", identity: "房间或成员身份已变化，请重新打开工具设置。",
+          request: "工具或连接不可用，请重新读取并选择有效连接。", capacity: "工具配置已达容量上限，请调整后再试。" };
+        cliToolsFeedback(rejected[error.code] ? `应用失败：${rejected[error.code]}` :
+          "应用结果未确认，不会自动重发。请重新读取后核对。", "error");
       }
     });
-    row.append(title, label, apply); return row;
+    row.append(title, label, apply, feedback); return row;
   }));
 }
 $("cli-member-refresh").addEventListener("click", () => {

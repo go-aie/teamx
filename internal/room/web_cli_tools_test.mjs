@@ -35,6 +35,7 @@ async function open(ui) {
 const row=(ui,n=0)=>ui.el("cli-member-options").children[n];
 const select=(ui,n=0)=>row(ui,n).children[1].children[0];
 const apply=(ui,n=0)=>row(ui,n).children[2];
+const feedback=(ui,n=0)=>row(ui,n).children[3];
 test("member tool settings use only explicit CLI bindings and retire legacy controls",async()=>{
   const api=fixture(),ui=await launch(api);await open(ui);
   assert.equal(ui.el("tools-dialog"),undefined);assert.equal(ui.el("tools-member-options"),undefined);
@@ -46,19 +47,46 @@ test("member tool settings use only explicit CLI bindings and retire legacy cont
   await apply(ui).emit("click");
   const call=api.calls.find(c=>c.path==="/v1/tools/bind");
   assert.equal(call.body.binding.connection_id,"connection");assert.equal(call.body.connection_version,3);
-  assert.match(ui.el("cli-member-feedback").textContent,/账号权限/);
+  assert.match(feedback(ui).textContent,/已应用.*Personal.*@me.*账号权限/);
+  await ui.refresh();assert.match(feedback(ui).textContent,/已应用/);
   select(ui,1).value="on";await apply(ui,1).emit("click");
   assert.equal(api.data.bindings[1].tool,"local");assert.equal(api.data.bindings[1].connection_id,undefined);
+  assert.match(feedback(ui,1).textContent,/local 已启用/);
   select(ui).value="";await apply(ui).emit("click");assert.equal(api.data.bindings.length,1);
+  assert.match(feedback(ui).textContent,/gitlab 已停用/);
+  select(ui).value="connection";await select(ui).emit("change");assert.equal(feedback(ui).textContent,"");
+});
+test("pending binding stays visible and blocks duplicate submissions until confirmed",async()=>{
+  const api=fixture(),ui=await launch(api);await open(ui);
+  let release;api.hook=path=>path==="/v1/tools/bind"?new Promise(r=>release=r):undefined;
+  select(ui).value="connection";const saving=apply(ui).emit("click");await settle();
+  assert.equal(apply(ui).textContent,"应用中…");assert.equal(select(ui).value,"connection");
+  assert.match(feedback(ui).textContent,/正在保存/);
+  assert.equal(select(ui).disabled,true);assert.equal(apply(ui,1).disabled,true);
+  await apply(ui).emit("click");await ui.el("cli-member-refresh").emit("click");
+  assert.equal(api.calls.filter(c=>c.path==="/v1/tools/bind").length,1);
+  release({...api.data,revision:1,bindings:[{agent_id:"agent-a",membership_id:"member-a",tool:"gitlab",connection_id:"connection"}]});
+  await saving;assert.match(feedback(ui).textContent,/已应用/);assert.equal(select(ui).disabled,false);
 });
 test("uncertain binding is read back explicitly without replay",async()=>{
   const api=fixture(),ui=await launch(api);await open(ui);
   api.hook=path=>path==="/v1/tools/bind"?Promise.reject(Error("lost")):undefined;
   select(ui).value="connection";await apply(ui).emit("click");
   assert.match(ui.el("cli-member-feedback").textContent,/未确认.*不会自动重发/);
+  assert.equal(ui.el("cli-member-feedback").dataset.kind,"error");
   assert.equal(api.calls.filter(c=>c.path==="/v1/tools/bind").length,1);
   assert.equal(ui.el("cli-member-options").children.length,0);
   api.hook=null;await ui.el("cli-member-refresh").emit("click");assert.equal(select(ui).value,"");
+});
+test("binding rejection explains failure while busy remains an uncertain outcome",async()=>{
+  const api=fixture(),ui=await launch(api);await open(ui);
+  for (const code of ["conflict","identity","request","capacity","busy"]) {
+    api.hook=path=>path==="/v1/tools/bind"?Promise.reject(Object.assign(Error(code),{code})):undefined;
+    select(ui).value="connection";await apply(ui).emit("click");
+    assert.match(ui.el("cli-member-feedback").textContent,code==="busy"?/结果未确认/:/应用失败/);
+    await ui.el("cli-member-refresh").emit("click");assert.equal(ui.el("cli-member-feedback").textContent,"");
+  }
+  assert.equal(api.calls.filter(c=>c.path==="/v1/tools/bind").length,5);
 });
 test("late CLI reads cannot populate a different member",async()=>{
   const api=fixture(),ui=await launch(api);await open(ui);
