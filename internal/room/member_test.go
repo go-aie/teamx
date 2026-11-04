@@ -251,6 +251,11 @@ func TestMemberAgentFailureCancelAndExplicitRetry(t *testing.T) {
 	if s := inspectMember(t, h.ctx, addr, id); !s.Active {
 		t.Fatal(s)
 	}
+	resumed := controlMember(t, h, addr, id, "run", n, false, false)
+	if !resumed.Active || resumed.Error != "cancellation requested; waiting for turn settlement" {
+		t.Fatal("resume hid an unsettled cancellation", resumed)
+	}
+	controlMember(t, h, addr, id, "pause", n, false, false)
 	close(b.settle)
 	interrupted := waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool { return !s.Active })
 	if !interrupted.Paused || interrupted.Agent.Turn.Status != "interrupted" {
@@ -264,6 +269,40 @@ func TestMemberAgentFailureCancelAndExplicitRetry(t *testing.T) {
 	waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool { return !s.Active && s.Agent.TurnNumber == 3 })
 	if b.opens.Load() != 1 {
 		t.Fatal("Session was recreated", b.opens.Load())
+	}
+}
+
+func TestMemberAgentResumeClearsHistoricalError(t *testing.T) {
+	for _, outcome := range []string{"failed", "interrupted"} {
+		t.Run(outcome, func(t *testing.T) {
+			b := newControlledBackend()
+			h, addr, id := memberHarness(t, b, nil)
+			n := UnreadChanged{MemberIdentity: id, Revision: 1, LatestSeq: 1, NewestUnreadSeq: 1, UnreadCount: 1}
+			controlMember(t, h, addr, id, "run", n, false, false)
+			awaitTurn(t, h, b)
+			// The member read all input before the turn failed or was cancelled.
+			caller := agentCaller(id.AgentID, id.MembershipID)
+			page := roomCall[ReadPage](t, h, ReadMessages{RoomIdentity: h.id, Caller: caller, Mode: ReadUnread})
+			confirmed := roomCall[ReadConfirmation](t, h, h.confirm(caller, page.ReadReceipt))
+			if outcome == "interrupted" {
+				controlMember(t, h, addr, id, "pause", n, false, true)
+			} else {
+				b.finish <- errors.Join(errDSHPaused, errors.New("backend failed"))
+			}
+			ended := waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool { return !s.Active })
+			if !ended.Paused || ended.Error == "" || ended.Agent.Turn.Status != outcome {
+				t.Fatal(ended)
+			}
+			n.Revision, n.UnreadCount, n.NewestUnreadSeq = confirmed.Revision, 0, 0
+			resumed := controlMember(t, h, addr, id, "run", n, false, false)
+			if resumed.Status != "idle" || resumed.Error != "" || resumed.Agent.Turn.Error != ended.Agent.Turn.Error {
+				t.Fatal("resume must clear the current error and preserve turn history", resumed)
+			}
+			saved, err := h.store.LoadAgent(id)
+			if err != nil || saved.Turn.Status != outcome || saved.Turn.Error != ended.Agent.Turn.Error {
+				t.Fatal("historical failure was lost", saved, err)
+			}
+		})
 	}
 }
 

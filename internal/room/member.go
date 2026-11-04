@@ -220,6 +220,10 @@ func (m *MemberAgent) Control(ctx actorx.Context, msg ControlMember) (MemberStat
 		}
 		m.paused = false
 		m.retry = msg.Retry
+		if !m.active {
+			// Resuming acknowledges the settled error; Turn retains its history.
+			m.lastError = ""
+		}
 		if err := m.Notify(ctx, msg.State); err != nil {
 			return MemberStatus{}, err
 		}
