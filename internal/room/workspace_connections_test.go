@@ -60,6 +60,94 @@ func sharedWorkspaceManager(t *testing.T) (*roomManager, *workspaceFixture) {
 	return m, f
 }
 
+func TestWorkspaceSharedVerifiedConnection(t *testing.T) {
+	for _, kind := range []string{"pat", "env"} {
+		t.Run(kind, func(t *testing.T) {
+			m, _ := sharedWorkspaceManager(t)
+			owner := managerCreate(t, m, "verified-connection")
+			activateOK(t, m, owner, "initial")
+			req := platformTestRequest(m)
+			if kind == "env" {
+				t.Setenv("WORKSPACE_TEST_TOKEN", req.PAT)
+				req.PAT, req.TokenEnv = "", "WORKSPACE_TEST_TOKEN"
+			}
+			c := platformTestSave(t, m, req)
+			m.platformVerify = func(context.Context, string, workspaceSecret) platformConnectionValidation {
+				return platformConnectionValidation{Status: "valid", UserID: 101, Username: "tester", CheckedAt: time.Now().UTC()}
+			}
+			c, err := m.verifyPlatformConnection(context.Background(), platformConnectionRequest{ID: c.ID, Version: c.Version})
+			if err != nil {
+				t.Fatal(err)
+			}
+			file, err := m.readPlatformConnections()
+			if err != nil || file.Connections[0].IdentityBinding == nil {
+				t.Fatal("verified connection lacks identity binding", err)
+			}
+			sharedWorkspace(t, m, owner, c, 1)
+		})
+	}
+}
+
+func TestWorkspaceSharedReadRechecksConnectionContents(t *testing.T) {
+	for _, change := range []string{"unchanged", "version", "generation", "identity_binding", "credential"} {
+		t.Run(change, func(t *testing.T) {
+			m, _ := sharedWorkspaceManager(t)
+			c := platformTestSave(t, m, platformTestRequest(m))
+			m.platformVerify = func(context.Context, string, workspaceSecret) platformConnectionValidation {
+				return platformConnectionValidation{Status: "valid", UserID: 101, Username: "tester", CheckedAt: time.Now().UTC()}
+			}
+			if _, err := m.verifyPlatformConnection(context.Background(), platformConnectionRequest{ID: c.ID, Version: c.Version}); err != nil {
+				t.Fatal(err)
+			}
+			file, err := m.readPlatformConnections()
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := json.Marshal(file.Connections[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			queried := false
+			p := workspacePreparer{connection: func(RoomIdentity, workspaceConfig) (projectConnectionResolution, error) {
+				var current projectConnectionResolution
+				// Each resolution reloads the record, including a fresh identity pointer.
+				if err := json.Unmarshal(data, &current.record); err != nil {
+					return current, err
+				}
+				current.secret.value = "test-platform-secret"
+				if queried {
+					switch change {
+					case "version":
+						current.record.Version++
+					case "generation":
+						current.record.Generation = "changed"
+					case "identity_binding":
+						current.record.IdentityBinding.CredentialFingerprint = "changed"
+					case "credential":
+						current.secret.value = "changed"
+					}
+				}
+				return current, nil
+			}, transport: workspaceHTTPFunc(func(*http.Request) (*http.Response, error) {
+				queried = true
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"id":7}`))}, nil
+			})}
+			read := p.gitLabRead(RoomIdentity{}, workspaceConfig{}, gitlab.Binding{URL: c.URL, ConnectionID: c.ID})
+			response, err := read(context.Background(), "/projects/7", nil, nil, 32<<10)
+			if !queried {
+				t.Fatal("project query did not run")
+			}
+			if change == "unchanged" {
+				if err != nil || response.Status != http.StatusOK {
+					t.Fatal("unchanged connection rejected", err)
+				}
+			} else if !errors.Is(err, ErrConflict) || len(response.Data) != 0 {
+				t.Fatal("changed connection result accepted", err)
+			}
+		})
+	}
+}
+
 func TestWorkspaceSharedConnectionMigrationRotationAndToolScope(t *testing.T) {
 	m, _ := sharedWorkspaceManager(t)
 	owner := managerCreate(t, m, "legacy-auth")

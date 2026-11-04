@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -378,7 +379,8 @@ func (p workspacePreparer) gitLabRead(owner RoomIdentity, w workspaceConfig, b g
 		response, err := gitlab.NewReadAPI(b.URL, secret, p.transport)(ctx, path, q, h, limit)
 		if b.ConnectionID != "" {
 			current, e := p.connection(owner, w)
-			if e != nil || current.record != admitted.record || current.secret.value != admitted.secret.value {
+			// Reloading allocates a new IdentityBinding pointer; compare its contents.
+			if e != nil || !reflect.DeepEqual(current.record, admitted.record) || current.secret.value != admitted.secret.value {
 				return gitlab.APIResponse{}, ErrConflict
 			}
 		}
