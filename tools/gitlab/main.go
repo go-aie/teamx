@@ -9,10 +9,9 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
-
-	"github.com/go-aie/teamx/internal/platform/tool"
 )
 
 const glabVersion = "1.127.0"
@@ -111,7 +110,7 @@ func (a *app) native(ctx context.Context, args []string, help bool) int {
 			help = true
 		}
 	}
-	bin := tool.ResolveExecutable("glab", a.getenv("TEAMX_GLAB_BIN"))
+	bin := resolveGlab(a.getenv("TEAMX_GLAB_BIN"))
 	config, err := os.MkdirTemp("", "teamx-glab-")
 	if err != nil {
 		fmt.Fprintln(a.errOut, "cannot prepare private glab config")
@@ -190,4 +189,21 @@ func (a *app) native(ctx context.Context, args []string, help bool) int {
 
 func (a *app) dependencyGuidance() {
 	fmt.Fprintln(a.errOut, "Operator: install the required glab beside teamx-gitlab or on its PATH, or set TEAMX_GLAB_BIN to its absolute path. When using TeamX, configure this on the TeamX service and restart it; agent shell PATH/env changes do not affect server tools. Report this error; do not search local files or bypass the launcher.")
+}
+
+// resolveGlab returns the glab executable to run, in this order: the explicit
+// TEAMX_GLAB_BIN override, a sibling named glab beside this program, then PATH.
+// It never searches agent workspaces or temp trees, and an explicit override is
+// authoritative even when broken (never substituted for another version).
+func resolveGlab(override string) string {
+	if override != "" {
+		return override
+	}
+	if self, err := os.Executable(); err == nil {
+		candidate := filepath.Join(filepath.Dir(self), "glab")
+		if path, err := exec.LookPath(candidate); err == nil {
+			return path
+		}
+	}
+	return "glab"
 }
