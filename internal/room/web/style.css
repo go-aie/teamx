@@ -1268,14 +1268,6 @@ textarea::placeholder {
   font-size:10px;
   color:var(--muted);
 }
-.room-nav-note {
-  padding:20px 12px 0;
-  font-size:10px;
-  line-height:1.9;
-  color:var(--muted);
-  border-top:1px solid var(--line);
-  margin-top:24px;
-}
 #rooms-empty {
   padding:0 8px;
   line-height:1.9;
@@ -1378,7 +1370,6 @@ textarea::placeholder {
     border-bottom:1px solid var(--line);
   }
   .room-nav-heading { margin-bottom:12px; }
-  .room-nav-note { display:none; }
   .room-choice { padding:8px 12px; }
   .managed .conversation { height:calc(100dvh - 104px); }
   .management-notice { margin-top:8px; }
