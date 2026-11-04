@@ -6,7 +6,7 @@ Room 保存共享事实，成员保存私有执行状态。生产执行链为 `R
 
 | 层 | 主要职责 | 代码入口 |
 | --- | --- | --- |
-| 管理目录 | 团队创建、房间索引、激活、切换、删除及配置操作 | [management.go](../internal/room/management.go)、[activation.go](../internal/room/activation.go) |
+| 管理目录 | 团队创建、房间索引、独立实例的打开、恢复、删除及配置操作 | [management.go](../internal/room/management.go)、[runtimes.go](../internal/room/runtimes.go) |
 | Room Actor | 消息序号、成员关系、读取页、游标及通知元数据 | [room.go](../internal/room/room.go) |
 | 成员 Actor | 合并通知、申请名额、调用 Session、记录回合与预算 | [member.go](../internal/room/member.go) |
 | 调度 Actor | 单持有者 FIFO、申请去重、撤销与结清后交接 | [turn_scheduler.go](../internal/room/turn_scheduler.go) |
@@ -37,9 +37,13 @@ Room 通过有界通知批次发送未读数量、版本等元数据，失败可
 
 ## 房间生命周期
 
-创建先持久保存选择和创建身份，再写入冻结的团队、角色、资源、runtime 与 Workspace 配置。相同创建 ID 的重试不能改变选择；`ready` 表示目录创建完成，激活是单独步骤，页面在创建确认后衔接激活。
+创建先持久保存选择和创建身份，再写入冻结的团队、角色、资源、runtime 与 Workspace 配置。相同创建 ID 的重试不能改变选择；`ready` 表示目录创建完成，打开实例是单独步骤，页面在创建确认后衔接打开。
 
-切换先阻止新执行、结清旧房间，再打开目标房间并按需恢复成员。全服务只选择一个活动房间；多标签页共享选择，草稿和未确认请求由各标签页按房间隔离。迟到响应不能覆盖当前视图。
+管理器以完整 `RoomIdentity` 管理独立实例及操作槽。打开目标房间不停止其他房间，普通请求按 `RoomID + RoomInstance + ServiceEpoch` 路由，找不到实例不会隐式打开或改写身份。不同房间的长操作不持有全局目录锁，同房间的打开、Workspace 应用、重启讨论和删除串行。共享连接变更仍结清实际引用该连接的所有调用。
+
+页面选择保存在各标签页的 `sessionStorage`，不写服务级选择；草稿、引用、未确认请求和私有活动按房间隔离。后台目录更新及迟到响应不能覆盖当前视图。`/v1/rooms/open` 以 `open_id` 去重，提供独立查询回执；旧 `/activate` 已移除。
+
+启动逐房间核查归属、操作、协作意图和 Session 证据；已启用房间无需被页面查看即可恢复，暂停且已结清的房间按需打开。中断和证据不足的回合不会自动重放，一个房间失败只阻断自身。退出先冻结所有实例的新执行，再用统一期限并行结清服务、工具、通知查询及生命周期 worker；未结清保留归属与根目录锁。
 
 重新开始讨论先暂停并结清全队，逐个轮换私有 Session，成功后清空公共历史；保留文件、成员和预算。跨成员无原子回滚，批次进度写入 `discussion-restart.json`；失败或中断后阻止自动恢复，须核查后显式重试。
 
@@ -49,7 +53,7 @@ Room 通过有界通知批次发送未读数量、版本等元数据，失败可
 
 ```text
 data/                                # 配置文件旁的数据目录
-  rooms.json                         # 目录、活动选择、管理操作
+  rooms.json                         # 目录、运行归属、打开与退出回执、管理操作
   platform-connections.json          # 全局连接及私有凭据记录，0600
   credentials/                       # Workspace 的房间归属凭据
   rooms/<room-id>/

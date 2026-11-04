@@ -49,7 +49,7 @@ func (m *roomManager) serveRoomRename(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, err)
 		return
 	}
-	if m.busy {
+	if m.roomBusyLocked(req.RoomIdentity) {
 		writeAPIError(w, ErrBusy)
 		return
 	}

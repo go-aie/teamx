@@ -178,7 +178,7 @@ func TestRoomManagerCreationIsolationPersistenceAndDeduplication(t *testing.T) {
 	}
 	response := managerHTTP(restored, "/v1/rooms", nil)
 	var list roomsResponse
-	if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &list) != nil || len(list.Rooms) != 3 || list.ActiveRoomID != "" {
+	if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &list) != nil || len(list.Rooms) != 3 || list.DefaultRoomID != "" {
 		t.Fatal(response.Code, response.Body.String())
 	}
 }

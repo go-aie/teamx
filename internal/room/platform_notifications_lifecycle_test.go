@@ -130,12 +130,22 @@ func TestGitLabEventsDeletionJoinsQueryBeforeRemovingRoom(t *testing.T) {
 func TestGitLabEventsShutdownRetainsLockUntilQuerySettlement(t *testing.T) {
 	h := newEventHarness(t, gitlab.EventsConfig{})
 	b := startBlockedEventWorker(t, h)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	eventLiveService(t, h)
+	otherRoom := managerCreate(t, h.m, "healthy-background-room")
+	eventLiveService(t, &eventHarness{m: h.m, room: otherRoom})
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 	if err := h.m.shutdown(ctx); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatal("shutdown released unsettled query", err)
 	}
 	awaitEventSignal(t, b.canceled, "shutdown did not cancel query")
+	for _, room := range []roomSummary{h.room, otherRoom} {
+		store, err := OpenStore(h.m.roomDir(room.RoomID), room.RoomID)
+		if err != nil {
+			t.Fatal("unsettled query skipped Room service cleanup", err)
+		}
+		store.Close()
+	}
 	if other, err := newRoomManager(h.m.store.dir, 7); !errors.Is(err, ErrLocked) {
 		if other != nil {
 			_ = other.close()

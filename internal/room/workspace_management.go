@@ -86,7 +86,7 @@ func (m *roomManager) workspaceStatus(id RoomIdentity, operationID string) (work
 			// Internal recovery material is not a public runtime/configuration export.
 			copy.PreparedConfig, copy.PreviousConfig, copy.RequestTarget = nil, nil, nil
 			result.Operation = &copy
-			result.CanRevise = op.revisable() && !m.busy && m.index.ActiveRoomID == id.RoomID && reflect.DeepEqual(saved, *op.PreviousConfig)
+			result.CanRevise = op.revisable() && !m.roomBusyLocked(id) && reflect.DeepEqual(saved, *op.PreviousConfig)
 			if !copy.finished() && copy.SourceEpoch != "" {
 				result.Observation = &ServiceInfo{RoomIdentity: id, ServiceEpoch: copy.SourceEpoch}
 			}
@@ -95,8 +95,8 @@ func (m *roomManager) workspaceStatus(id RoomIdentity, operationID string) (work
 	if operationID != "" && result.Operation == nil {
 		return workspaceResponse{}, errWorkspaceOperationNotFound
 	}
-	if m.active != nil && m.active.info.RoomIdentity == id && !m.active.closing.Load() && !m.busy {
-		info := m.active.info
+	if svc, _ := m.runtimeServiceLocked(id); svc != nil && !svc.closing.Load() && !m.roomBusyLocked(id) {
+		info := svc.info
 		result.Active = &info
 	}
 	return result, nil
@@ -215,7 +215,7 @@ func (m *roomManager) startWorkspaceApply(req workspaceApplyRequest) (workspaceO
 	if err := m.store.check(true); err != nil {
 		return workspaceOperation{}, err
 	}
-	if m.busy {
+	if m.roomBusyLocked(req.RoomIdentity) {
 		return workspaceOperation{}, ErrBusy
 	}
 	if len(m.index.WorkspaceOperations) >= maxWorkspaceOperations {
@@ -234,12 +234,11 @@ func (m *roomManager) startWorkspaceApply(req workspaceApplyRequest) (workspaceO
 	if req.ReplacesOperationID != "" && replacement == nil {
 		return workspaceOperation{}, ErrConflict
 	}
+	svc, _ := m.runtimeServiceLocked(req.RoomIdentity)
 	if replacement == nil {
-		if m.active == nil || m.active.closing.Load() || m.active.info.RoomIdentity != req.RoomIdentity {
+		if svc == nil || svc.closing.Load() {
 			return workspaceOperation{}, ErrIdentity
 		}
-	} else if m.index.ActiveRoomID != req.RoomID || m.active != nil && m.active.info.RoomIdentity != req.RoomIdentity {
-		return workspaceOperation{}, ErrIdentity
 	}
 	for _, pending := range m.index.WorkspaceOperations {
 		if pending.RoomIdentity == req.RoomIdentity && !pending.finished() && pending.OperationID != req.ReplacesOperationID {
@@ -334,7 +333,7 @@ func (m *roomManager) startWorkspaceApply(req workspaceApplyRequest) (workspaceO
 	if replacement != nil {
 		sourceEpoch = replacement.SourceEpoch
 	} else {
-		sourceEpoch = m.active.info.ServiceEpoch
+		sourceEpoch = svc.info.ServiceEpoch
 	}
 	op := workspaceOperation{Timings: map[string]int64{"local_checks": time.Since(checkedAt).Milliseconds()}, PreviousConfig: &previous, SourceEpoch: sourceEpoch, RoomIdentity: req.RoomIdentity, OperationID: req.OperationID, ReplacesOperationID: req.ReplacesOperationID, PreviousVersion: req.ExpectedVersion, TargetVersion: req.ExpectedVersion + 1, Target: target, RequestTarget: &canonical, RequestPAT: req.PAT != "", Status: "running", Phase: "waiting", CreatedAt: now, UpdatedAt: now}
 	for _, member := range saved.Members {
@@ -361,11 +360,8 @@ func (m *roomManager) retryWorkspace(id RoomIdentity, operationID string) (works
 		if op.Status != "failed" {
 			return cloneWorkspaceOperation(op), nil
 		}
-		if m.busy {
+		if m.roomBusyLocked(id) {
 			return workspaceOperation{}, ErrBusy
-		}
-		if m.index.ActiveRoomID != id.RoomID || (m.active != nil && m.active.info.RoomIdentity != id) {
-			return workspaceOperation{}, ErrIdentity
 		}
 		if op.RequestTarget == nil {
 			return workspaceOperation{}, ErrRequest
@@ -404,24 +400,18 @@ func (m *roomManager) retryWorkspace(id RoomIdentity, operationID string) (works
 }
 
 func (m *roomManager) launchWorkspace(op workspaceOperation) {
-	m.busy = true
+	rt := m.reserveRuntimeLocked(op.RoomIdentity)
 	m.cancelWorkspaceNotificationsLocked(op.RoomIdentity)
-	m.operationDone = make(chan struct{})
+	m.cancelToolsLocked(func(c *toolCall) bool { return c.owner == op.RoomIdentity })
 	// Establish the execution boundary before returning the receipt. close drains
 	// requests already admitted and joins all member/Session/tool ownership.
-	if m.active != nil {
-		m.active.closing.Store(true)
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		_, err := m.active.scheduler.Call[struct{}](ctx, stopTurnGrants{})
-		cancel()
-		if err == nil {
-			m.active.grantsStopped = true
-		}
+	if rt.service != nil {
+		rt.service.closing.Store(true)
 	}
-	go m.runWorkspace(op)
+	go m.runWorkspace(op, rt)
 }
 
-func (m *roomManager) runWorkspace(op workspaceOperation) {
+func (m *roomManager) runWorkspace(op workspaceOperation, rt *roomRuntime) {
 	phaseStarted := time.Now()
 	recordTiming := func() {
 		if op.Timings == nil {
@@ -431,7 +421,7 @@ func (m *roomManager) runWorkspace(op workspaceOperation) {
 		phaseStarted = time.Now()
 	}
 	code := "cleanup_failed"
-	var runErr error
+	var runErr, executionErr error
 	defer func() {
 		if runErr != nil {
 			recordTiming()
@@ -456,16 +446,21 @@ func (m *roomManager) runWorkspace(op workspaceOperation) {
 			}
 		}
 		m.mu.Lock()
-		m.busy = false
+		m.finishRuntimeLocked(rt, errors.Join(runErr, executionErr))
 		m.notifications.EnsureRoomLocked(op.RoomIdentity)
-		close(m.operationDone)
 		m.mu.Unlock()
 	}()
 	queryCtx, queryCancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
 	m.mu.Lock()
 	queries := m.cancelWorkspaceNotificationsLocked(op.RoomIdentity)
 	m.mu.Unlock()
-	runErr = notification.Wait(queryCtx, queries)
+	runErr = m.stopRoomGrants(queryCtx, op.RoomIdentity)
+	if runErr == nil {
+		runErr = notification.Wait(queryCtx, queries)
+	}
+	if runErr == nil {
+		runErr = m.waitTools(queryCtx, &op.RoomIdentity)
+	}
 	queryCancel()
 	if runErr != nil {
 		return
@@ -475,7 +470,7 @@ func (m *roomManager) runWorkspace(op workspaceOperation) {
 		op.Phase, op.UpdatedAt = phase, time.Now().UTC()
 		return m.saveWorkspaceOperation(op)
 	}
-	tracked := context.WithValue(context.Background(), preparationTrackerKey{}, preparationTracker(func(phase string, pid int) error {
+	tracked := context.WithValue(rt.operationContext, preparationTrackerKey{}, preparationTracker(func(phase string, pid int) error {
 		if phase == "settled" {
 			op.Preparation = nil
 		} else {
@@ -485,7 +480,7 @@ func (m *roomManager) runWorkspace(op workspaceOperation) {
 		return m.saveWorkspaceOperation(op)
 	}))
 	m.mu.Lock()
-	old := m.active
+	old, _ := m.runtimeServiceLocked(op.RoomIdentity)
 	m.mu.Unlock()
 	if old != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
@@ -496,7 +491,7 @@ func (m *roomManager) runWorkspace(op workspaceOperation) {
 			return
 		}
 		m.mu.Lock()
-		m.active = nil
+		m.setRuntimeServiceLocked(op.RoomIdentity, nil)
 		m.mu.Unlock()
 	}
 	if err := m.checkRoomSettled(op.RoomID); err != nil {
@@ -655,9 +650,22 @@ func (m *roomManager) runWorkspace(op workspaceOperation) {
 		runErr = err
 		return
 	}
+	svc.settleTools = func(ctx context.Context) error { return m.waitTools(ctx, &op.RoomIdentity) }
 	m.mu.Lock()
-	m.active = svc
+	m.setRuntimeServiceLocked(op.RoomIdentity, svc)
+	if m.closing {
+		svc.freeze()
+		runErr = ErrClosing
+	} else {
+		rt.resuming = true
+	}
 	m.mu.Unlock()
+	if runErr != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
+		runErr = errors.Join(runErr, svc.close(ctx))
+		cancel()
+		return
+	}
 	if svc.info.RoomIdentity != op.RoomIdentity {
 		runErr = ErrIdentity
 		ctx, cancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
@@ -674,8 +682,10 @@ func (m *roomManager) runWorkspace(op workspaceOperation) {
 		// Configuration and all references are committed. A later scheduling error
 		// is an execution diagnostic, never authorization to replay this operation.
 		if err := svc.resumeMembers(context.Background()); err != nil {
+			executionErr = err
 			ctx, cancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
-			_ = svc.close(ctx)
+			svc.closing.Store(true)
+			executionErr = errors.Join(executionErr, m.waitTools(ctx, &op.RoomIdentity), svc.close(ctx))
 			cancel()
 			m.mu.Lock()
 			next := m.copyIndex()
@@ -692,7 +702,8 @@ func (m *roomManager) runWorkspace(op workspaceOperation) {
 	// receipt permitting partial member execution. Persist before releasing owner.
 	if runErr != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
-		_ = svc.close(ctx)
+		svc.closing.Store(true)
+		runErr = errors.Join(runErr, m.waitTools(ctx, &op.RoomIdentity), svc.close(ctx))
 		cancel()
 	}
 }

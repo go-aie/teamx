@@ -177,7 +177,7 @@ func serveWithFactory(args []string, stdout, stderr io.Writer, create func(strin
 	return errors.Join(err, cleanupErr)
 }
 
-// The manager owns one active service and retains every admitted switch.
+// The manager owns all opened services and every admitted lifecycle operation.
 func serveRoomManager(listener net.Listener, dir, teamsDir string, config serviceConfig, defaults *teamRuntime, create func(string, string, serviceConfig) (*service, error), stdout, stderr io.Writer) (runErr error) {
 	manager, err := newTeamRoomManager(dir, teamsDir, config.maxTurns, defaults)
 	if err != nil {
@@ -199,19 +199,15 @@ func serveRoomManager(listener net.Listener, dir, teamsDir string, config servic
 	defer server.Close()
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(listener) }()
-	if err := manager.restoreActive(); err != nil {
+	if err := manager.restoreRuntimes(); err != nil {
 		return err
 	}
-	manager.mu.Lock()
-	selected := manager.index.ActiveRoomID
-	manager.mu.Unlock()
 	ready := struct {
 		ServiceEpoch string `json:"service_epoch"`
 		Endpoint     string `json:"endpoint"`
 		DataDir      string `json:"data_dir"`
 		TeamsDir     string `json:"teams_dir"`
-		ActiveRoomID string `json:"active_room_id"`
-	}{manager.epoch, "http://" + listener.Addr().String(), filepath.Clean(manager.store.dir), manager.teamsDir, selected}
+	}{manager.epoch, "http://" + listener.Addr().String(), filepath.Clean(manager.store.dir), manager.teamsDir}
 	if err := writeJSON(stdout, ready); err != nil {
 		return err
 	}

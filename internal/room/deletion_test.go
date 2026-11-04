@@ -31,7 +31,12 @@ func beginDeletion(t *testing.T, m *roomManager, target roomSummary) {
 func awaitDeletion(t *testing.T, m *roomManager, target roomSummary) *roomSummary {
 	t.Helper()
 	m.mu.Lock()
-	done := m.operationDone
+	rt := m.runtimes[target.RoomIdentity]
+	if rt == nil {
+		m.mu.Unlock()
+		return nil
+	}
+	done := rt.operationDone
 	m.mu.Unlock()
 	select {
 	case <-done:
@@ -63,7 +68,7 @@ func TestManagedDeletionWaitsForTurnAndPrivateSessionCleanup(t *testing.T) {
 		<-release
 	})
 	a, b := managerCreate(t, m, "delete-a"), managerCreate(t, m, "keep-b")
-	s := activateOK(t, m, a, "enter-a")
+	s := openRoomOK(t, m, a, "enter-a")
 	managedPost(t, m, s, "private-turn")
 	select {
 	case <-entered:
@@ -79,8 +84,8 @@ func TestManagedDeletionWaitsForTurnAndPrivateSessionCleanup(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(m.roomDir(a.RoomID), "agents")); err != nil {
 		t.Fatal("deleted data before Session cleanup", err)
 	}
-	if r := managerHTTP(m, "/v1/rooms/delete", deletionRequest{m.epoch, humanCaller, b.RoomIdentity}); r.Code != 409 {
-		t.Fatal("concurrent delete admitted", r.Code, r.Body.String())
+	if r := managerHTTP(m, "/v1/rooms/delete", deletionRequest{m.epoch, humanCaller, a.RoomIdentity}); r.Code != 409 {
+		t.Fatal("same-room concurrent delete admitted", r.Code, r.Body.String())
 	}
 	if r := managerHTTP(m, "/v1/send", apiRequest{ServiceInfo: s.info, Caller: humanCaller, ClientMessageID: "late", Text: "late"}); r.Code != 409 {
 		t.Fatal("human mutation admitted during deletion", r.Code, r.Body.String())
@@ -92,11 +97,11 @@ func TestManagedDeletionWaitsForTurnAndPrivateSessionCleanup(t *testing.T) {
 	if _, err := os.Stat(m.roomDir(a.RoomID)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("Room or private Session data retained", err)
 	}
-	if m.active != nil || m.index.ActiveRoomID != "" || m.index.OwnedRoomID != "" || len(m.index.Activations) != 0 {
+	if m.runtimes[a.RoomIdentity] != nil || m.index.ActiveRoomID != "" || m.index.OwnedRoomID != "" || len(m.index.Activations) != 0 {
 		t.Fatal("deleted Room retained active ownership or activation receipts", m.index)
 	}
 	readManagedRoom(t, m, b)
-	activateOK(t, m, b, "enter-survivor")
+	openRoomOK(t, m, b, "enter-survivor")
 	if r := managerHTTP(m, "/v1/send", apiRequest{ServiceInfo: s.info, Caller: humanCaller, ClientMessageID: "stale", Text: "stale"}); r.Code != 403 {
 		t.Fatal("stale deleted-Room identity accepted", r.Code, r.Body.String())
 	}
@@ -106,7 +111,7 @@ func TestManagedDeletionInactiveRoomAndHistoricalPrivateData(t *testing.T) {
 	m := activationTestManager(t)
 	m.factory = controlledActivationFactory(nil, nil)
 	a, b := managerCreate(t, m, "keep-active"), managerCreate(t, m, "delete-inactive")
-	s := activateOK(t, m, a, "enter-active")
+	s := openRoomOK(t, m, a, "enter-active")
 	// A retired membership/generation still requires settlement before removal.
 	old := filepath.Join(m.roomDir(b.RoomID), "agents", "retired", "session.json.dsh-old")
 	if err := os.MkdirAll(old, 0700); err != nil {
@@ -125,7 +130,7 @@ func TestManagedDeletionInactiveRoomAndHistoricalPrivateData(t *testing.T) {
 	if failed == nil || failed.DeletionPhase != "closing" || !strings.Contains(failed.Error, "settlement") {
 		t.Fatal("unsettled historical data was discarded", failed)
 	}
-	if m.active != s || s.closing.Load() {
+	if m.runtimes[a.RoomIdentity].service != s || s.closing.Load() {
 		t.Fatal("deleting an inactive Room stopped another Room")
 	}
 	if err := os.WriteFile(filepath.Join(old, "settled.json"), []byte(`{"version":1}`), 0600); err != nil {
@@ -138,7 +143,7 @@ func TestManagedDeletionInactiveRoomAndHistoricalPrivateData(t *testing.T) {
 	if data, err := os.ReadFile(marker); err != nil || string(data) != "keep" {
 		t.Fatal("deletion followed a workspace symlink", err)
 	}
-	if m.active != s || m.index.ActiveRoomID != a.RoomID {
+	if m.runtimes[a.RoomIdentity].service != s {
 		t.Fatal("active Room changed")
 	}
 	managedPost(t, m, s, "still-usable")
@@ -164,10 +169,11 @@ func TestManagedDeletionInterruptedRemovalRequiresExplicitRetry(t *testing.T) {
 				t.Fatal(err)
 			}
 			restored := testManager(t, m.store.dir, managerTestProfiles(t))
-			if err := restored.restoreActive(); err != nil {
+			if err := restored.restoreRuntimes(); err != nil {
 				t.Fatal(err)
 			}
-			if restored.busy || restored.active != nil || restored.operationDone != nil {
+			awaitRecovery(t, restored)
+			if restored.busy || restored.runtimes[a.RoomIdentity].service != nil || restored.operationDone != nil {
 				t.Fatal("restart replayed deletion or activation")
 			}
 			if _, err := os.Stat(restored.roomDir(a.RoomID)); err != nil {

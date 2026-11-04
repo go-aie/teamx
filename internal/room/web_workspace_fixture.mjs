@@ -3,7 +3,7 @@
 const key = "teamx.workspace-preview-server";
 let server;
 try { server = JSON.parse(sessionStorage.getItem(key)); } catch { /* Empty preview. */ }
-server ||= { service_epoch: "preview-manager", operator: "preview", busy: false, rooms: [], active_room_id: "", workspaces: {} };
+server ||= { service_epoch: "preview-manager", operator: "preview", busy: false, rooms: [], opens: {}, workspaces: {} };
 const save = () => sessionStorage.setItem(key, JSON.stringify(server));
 const copy = value => structuredClone(value);
 const identity = room => ({ room_id: room.room_id, room_instance: room.room_instance, service_epoch: `preview-${room.room_id}-${server.workspaces[room.room_id].workspace_version}` });
@@ -14,7 +14,8 @@ function settleWorkspace(ws) {
   if (op?.status !== "running") return;
   const elapsed = Date.now() - ws.started;
   if (elapsed < 1800) { op.phase = elapsed < 500 ? "waiting" : elapsed < 1000 ? "preparing" : elapsed < 1400 ? "committing" : "sessions"; return; }
-  server.busy = false;
+  const room = server.rooms.find(room => room.room_id === ws.room_id);
+  room.busy = false;
   if (op.target.repository?.url.includes("/fail/")) {
     op.status = "failed"; op.error_code = "preparation_failed";
   } else {
@@ -22,7 +23,7 @@ function settleWorkspace(ws) {
     ws.workspace = copy(op.target); ws.workspace_version++;
     ws.credential_status = ws.workspace.binding ? "configured" : "missing";
     ws.members = ws.members.map(member => ({ ...member, workspace: `${ws.workspace.root}/${member.membership_id}` }));
-    server.active = identity(server.rooms.find(room => room.room_id === ws.room_id));
+    room.service = identity(room);
     delete ws.observation;
   }
   save();
@@ -45,11 +46,13 @@ export async function fixtureRequest(path, data) {
     }
     return copy(room);
   }
-  if (path === "/v1/rooms/activate") {
+  if (path === "/v1/rooms/open") {
     const room = server.rooms.find(room => room.room_id === data.room_id);
-    server.active_room_id = room.room_id; server.active = identity(room); save();
-    return { ...data, status: "completed" };
+    room.service ||= identity(room); room.runtime_status = "ready";
+    const receipt = { ...data, status: "completed", service: room.service };
+    server.opens[data.open_id] = receipt; save(); return copy(receipt);
   }
+  if (url.pathname === "/v1/rooms/open") return copy(server.opens[url.searchParams.get("open_id")]) || error("request");
   if (url.pathname === "/v1/workspace") {
     const ws = server.workspaces[url.searchParams.get("room_id")];
     if (!ws) return error("identity");
@@ -70,7 +73,8 @@ export async function fixtureRequest(path, data) {
       if (target.binding && data.pat) target.binding.credential_id = `preview-ref-${data.operation_id}`;
       ws.operation = { operation_id: data.operation_id, status: "running", phase: "waiting", target };
     }
-    ws.observation = copy(server.active); ws.started = Date.now(); server.busy = true; delete server.active; save();
+    const room = server.rooms.find(room => room.room_id === ws.room_id);
+    ws.observation = copy(room.service); ws.started = Date.now(); room.busy = true; delete room.service; save();
     return copy(ws.operation);
   }
   const ws = server.workspaces[data?.room_id];

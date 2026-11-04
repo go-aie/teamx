@@ -25,7 +25,8 @@ func workspaceRequest(m *roomManager, room roomSummary, target workspaceConfig) 
 func awaitWorkspace(t *testing.T, m *roomManager) workspaceOperation {
 	t.Helper()
 	m.mu.Lock()
-	done := m.operationDone
+	op := m.index.WorkspaceOperations[len(m.index.WorkspaceOperations)-1]
+	done := m.runtimes[op.RoomIdentity].operationDone
 	m.mu.Unlock()
 	select {
 	case <-done:
@@ -75,7 +76,7 @@ func TestWorkspaceApplyUntouchedMembersAndIdentity(t *testing.T) {
 	m.factory = controlledActivationFactory(nil, nil)
 	room := managerCreate(t, m, "plain-apply")
 	other := managerCreate(t, m, "other")
-	s := activateOK(t, m, room, "initial")
+	s := openRoomOK(t, m, room, "initial")
 	saved, _ := readManagedRoom(t, m, room)
 	// Inline teams need no tool environment; keep this path free of template helpers.
 	for i := range saved.Members {
@@ -111,16 +112,16 @@ func TestWorkspaceApplyUntouchedMembersAndIdentity(t *testing.T) {
 			t.Fatal("untouched member rotated", err)
 		}
 	}
-	list, _ := m.active.members(context.Background())
+	list, _ := m.runtimes[room.RoomIdentity].service.members(context.Background())
 	for _, info := range list.Members {
 		if info.MembershipID == member.MembershipID && !info.Execution.Paused {
 			t.Fatal("manual pause lost")
 		}
 	}
 	// Same operation is a receipt even after completion and with a stale version.
-	before := m.active
+	before := m.runtimes[room.RoomIdentity].service
 	applyWorkspace(t, m, req)
-	if m.active != before || len(m.index.WorkspaceOperations) != 1 {
+	if m.runtimes[room.RoomIdentity].service != before || len(m.index.WorkspaceOperations) != 1 {
 		t.Fatal("replayed application")
 	}
 	changed := req
@@ -164,7 +165,7 @@ func TestWorkspaceApplyJoinsRunningSessionsBeforePreparation(t *testing.T) {
 	}, func(MemberIdentity) { once.Do(func() { close(closing) }); <-release })
 	room := managerCreate(t, m, "running-apply")
 	other := managerCreate(t, m, "other")
-	s := activateOK(t, m, room, "initial")
+	s := openRoomOK(t, m, room, "initial")
 	saved, _ := readManagedRoom(t, m, room)
 	managedPost(t, m, s, "history")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -208,8 +209,9 @@ func TestWorkspaceApplyJoinsRunningSessionsBeforePreparation(t *testing.T) {
 			t.Fatal("mutation admitted", path, r.Code)
 		}
 	}
-	if r := managerHTTP(m, "/v1/rooms/activate", activationRequest{ServiceEpoch: m.epoch, Caller: humanCaller, RoomIdentity: other.RoomIdentity, ActivateID: "competing"}); r.Code != 409 {
-		t.Fatal("activation not serialized", r.Code)
+	openOK(t, m, other.RoomIdentity, "independent-open")
+	if r := managerHTTP(m, "/v1/rooms/open", roomOpenRequest{ServiceEpoch: m.epoch, Caller: humanCaller, RoomIdentity: room.RoomIdentity, OpenID: "competing"}); r.Code != 409 {
+		t.Fatal("same-room activation not serialized", r.Code)
 	}
 	if r := managerHTTP(m, "/v1/rooms/delete", map[string]any{"service_epoch": m.epoch, "caller": humanCaller, "room_id": room.RoomID, "room_instance": room.RoomInstance}); r.Code != 409 {
 		t.Fatal("delete not serialized", r.Code)
@@ -224,20 +226,20 @@ func TestWorkspaceApplyJoinsRunningSessionsBeforePreparation(t *testing.T) {
 	}
 	for _, member := range saved.Members {
 		id := MemberIdentity{RoomIdentity: room.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
-		ref, exists, err := (dshBackend{store: m.active.store}).reference(SessionOptions{MemberIdentity: id, StatePath: filepath.Join(m.active.store.dir, "agents", id.MembershipID, "session.json")})
+		ref, exists, err := (dshBackend{store: m.runtimes[room.RoomIdentity].service.store}).reference(SessionOptions{MemberIdentity: id, StatePath: filepath.Join(m.runtimes[room.RoomIdentity].service.store.dir, "agents", id.MembershipID, "session.json")})
 		if err != nil || exists || ref.Directory != "" && (!ref.Pending || !strings.HasSuffix(ref.Directory, req.OperationID)) {
 			t.Fatal("old reference restored", ref, err)
 		}
-		status, err := m.active.target(id.MembershipID).Call[MemberStatus](ctx, InspectMember{id})
+		status, err := m.runtimes[room.RoomIdentity].service.target(id.MembershipID).Call[MemberStatus](ctx, InspectMember{id})
 		if err != nil || !status.Paused {
 			t.Fatal("interrupted member resumed", status, err)
 		}
-		profile := m.active.dshProfiles[member.Runner.Profile]
+		profile := m.runtimes[room.RoomIdentity].service.dshProfiles[member.Runner.Profile]
 		if profile.Workspace != filepath.Join(m.roomDir(room.RoomID), "settled-target", id.MembershipID) {
 			t.Fatal(profile.Workspace)
 		}
 	}
-	history, _ := m.active.store.LoadRoom()
+	history, _ := m.runtimes[room.RoomIdentity].service.store.LoadRoom()
 	if len(history.Messages) != 1 || history.Messages[0].Text != "history" {
 		t.Fatal("history changed")
 	}
@@ -250,7 +252,7 @@ func TestWorkspaceApplyGitLabPATReplacementAndReceipt(t *testing.T) {
 	m.platformHTTP = workspaceHTTPFunc(f.http)
 	m.factory = controlledActivationFactory(nil, nil)
 	room := managerCreate(t, m, "binding")
-	activateOK(t, m, room, "initial")
+	openRoomOK(t, m, room, "initial")
 	req := workspaceRequest(m, room, workspaceConfig{Repository: f.config.Workspace.Repository, Binding: &workspaceBinding{Provider: "gitlab", URL: "https://gitlab.invalid", Project: "group/project"}})
 	req.PAT = "first-secret-pat"
 	applyWorkspace(t, m, req)
@@ -321,8 +323,8 @@ func TestWorkspaceApplyGitLabPATReplacementAndReceipt(t *testing.T) {
 	// Revisit uses local checks and the committed provider configuration.
 	f.calls = nil
 	other := managerCreate(t, m, "other")
-	activateOK(t, m, other, "away")
-	activateOK(t, m, room, "return")
+	openRoomOK(t, m, other, "away")
+	openRoomOK(t, m, room, "return")
 	for _, call := range f.calls {
 		if strings.HasPrefix(call, "api ") || strings.Contains(call, "clone") {
 			t.Fatal("remote revisit", call)
@@ -346,7 +348,7 @@ func TestWorkspaceApplyPreparationFailureAndExplicitRetry(t *testing.T) {
 	m.platformHTTP = workspaceHTTPFunc(f.http)
 	m.factory = controlledActivationFactory(nil, nil)
 	room := managerCreate(t, m, "failure")
-	s := activateOK(t, m, room, "initial")
+	s := openRoomOK(t, m, room, "initial")
 	req := workspaceRequest(m, room, workspaceConfig{Repository: f.config.Workspace.Repository})
 	applyWorkspace(t, m, req)
 	op := awaitWorkspace(t, m)
@@ -393,7 +395,7 @@ func TestWorkspaceApplyRevisesSettledPreparationFailure(t *testing.T) {
 			m.platformHTTP = workspaceHTTPFunc(f.http)
 			m.factory = controlledActivationFactory(nil, nil)
 			room := managerCreate(t, m, "revise-failure")
-			activateOK(t, m, room, "initial")
+			openRoomOK(t, m, room, "initial")
 			original := workspaceRequest(m, room, testGitLabWorkspace())
 			original.Target.Repository.URL = strings.TrimSuffix(original.Target.Repository.URL, ".git")
 			applyWorkspace(t, m, original)
@@ -496,7 +498,7 @@ func TestWorkspaceApplyReconcilesCrossFileInterruption(t *testing.T) {
 			m := activationTestManager(t)
 			m.factory = controlledActivationFactory(nil, nil)
 			room := managerCreate(t, m, "partial")
-			s := activateOK(t, m, room, "initial")
+			s := openRoomOK(t, m, room, "initial")
 			managedPost(t, m, s, "completed")
 			config, _ := readManagedRoom(t, m, room)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -540,9 +542,10 @@ func TestWorkspaceApplyReconcilesCrossFileInterruption(t *testing.T) {
 			defer restored.close()
 			restored.config = m.config
 			restored.factory = controlledActivationFactory(nil, nil)
-			if err := restored.restoreActive(); err != nil || restored.active != nil {
+			if err := restored.restoreRuntimes(); err != nil || restored.runtimes[room.RoomIdentity].service != nil {
 				t.Fatal("restart resumed partial operation", err)
 			}
+			awaitRecovery(t, restored)
 			query := queryWorkspace(t, restored, room, req.OperationID)
 			if query.Operation.Status != "failed" {
 				t.Fatal(query)
@@ -558,8 +561,8 @@ func TestWorkspaceApplyReconcilesCrossFileInterruption(t *testing.T) {
 			}
 			for _, member := range final.Members {
 				id := MemberIdentity{RoomIdentity: room.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
-				opts := SessionOptions{MemberIdentity: id, StatePath: filepath.Join(restored.active.store.dir, "agents", id.MembershipID, "session.json")}
-				ref, _, err := (dshBackend{store: restored.active.store}).reference(opts)
+				opts := SessionOptions{MemberIdentity: id, StatePath: filepath.Join(restored.runtimes[room.RoomIdentity].service.store.dir, "agents", id.MembershipID, "session.json")}
+				ref, _, err := (dshBackend{store: restored.runtimes[room.RoomIdentity].service.store}).reference(opts)
 				if err != nil || !ref.Pending || !strings.HasSuffix(ref.Directory, req.OperationID) {
 					t.Fatal("old session survived", ref, err)
 				}
@@ -575,7 +578,7 @@ func TestWorkspaceApplySupplementBindingPreservesCheckout(t *testing.T) {
 	m.workspaceRun = f.run
 	m.platformHTTP = workspaceHTTPFunc(f.http)
 	room := managerCreate(t, m, "supplement")
-	activateOK(t, m, room, "initial")
+	openRoomOK(t, m, room, "initial")
 	req := workspaceRequest(m, room, workspaceConfig{Repository: f.config.Workspace.Repository})
 	applyWorkspace(t, m, req)
 	op := awaitWorkspace(t, m)
@@ -613,7 +616,7 @@ func TestWorkspaceApplyMemberFailureBlocksTeamAndRetriesSameGeneration(t *testin
 	m := activationTestManager(t)
 	m.factory = controlledActivationFactory(nil, nil)
 	room := managerCreate(t, m, "member-failure")
-	s := activateOK(t, m, room, "initial")
+	s := openRoomOK(t, m, room, "initial")
 	saved, _ := readManagedRoom(t, m, room)
 	managedPost(t, m, s, "completed")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -642,7 +645,7 @@ func TestWorkspaceApplyMemberFailureBlocksTeamAndRetriesSameGeneration(t *testin
 	if op.Status != "failed" || op.ErrorCode != "session_failed" || !op.ConfigCommitted || len(op.SessionsUpdated) != len(op.Members) {
 		t.Fatal(op)
 	}
-	if m.active != nil {
+	if m.runtimes[room.RoomIdentity].service != nil {
 		t.Fatal("failed partial team published")
 	}
 	rootBefore := op.Target.Root
@@ -664,7 +667,7 @@ func TestWorkspaceApplyConcurrentRequestsAndRedactedErrors(t *testing.T) {
 	m := activationTestManager(t)
 	m.factory = controlledActivationFactory(nil, nil)
 	room := managerCreate(t, m, "concurrent")
-	activateOK(t, m, room, "initial")
+	openRoomOK(t, m, room, "initial")
 	req := workspaceRequest(m, room, workspaceConfig{Root: "concurrent-target"})
 	var wg sync.WaitGroup
 	codes := make(chan int, 12)
@@ -701,7 +704,7 @@ func TestWorkspaceApplyHealthySessionUsesFreshGeneration(t *testing.T) {
 	m := activationTestManager(t)
 	m.factory = controlledActivationFactory(nil, nil)
 	room := managerCreate(t, m, "healthy-session")
-	s := activateOK(t, m, room, "initial")
+	s := openRoomOK(t, m, room, "initial")
 	saved, _ := readManagedRoom(t, m, room)
 	managedPost(t, m, s, "first-message")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -727,15 +730,15 @@ func TestWorkspaceApplyHealthySessionUsesFreshGeneration(t *testing.T) {
 	}
 	for _, member := range saved.Members {
 		id := MemberIdentity{RoomIdentity: room.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
-		status, err := m.active.target(id.MembershipID).Call[MemberStatus](ctx, InspectMember{id})
+		status, err := m.runtimes[room.RoomIdentity].service.target(id.MembershipID).Call[MemberStatus](ctx, InspectMember{id})
 		if err != nil || status.Paused || status.TurnBudget.Used != 1 {
 			t.Fatal("healthy enable intent or budget lost", status, err)
 		}
 	}
-	managedPost(t, m, m.active, "second-message")
+	managedPost(t, m, m.runtimes[room.RoomIdentity].service, "second-message")
 	for _, member := range saved.Members {
 		id := MemberIdentity{RoomIdentity: room.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
-		waitMember(t, ctx, m.active.target(id.MembershipID), id, func(status MemberStatus) bool { return !status.Active && status.Agent.TurnNumber == 2 })
+		waitMember(t, ctx, m.runtimes[room.RoomIdentity].service.target(id.MembershipID), id, func(status MemberStatus) bool { return !status.Active && status.Agent.TurnNumber == 2 })
 		path := filepath.Join(m.roomDir(room.RoomID), "agents", id.MembershipID, "session.json")
 		var ref dshReference
 		if err := readSnapshot(path, &ref, maxPrivateFileBytes); err != nil || ref.Pending || !strings.HasSuffix(ref.Directory, req.OperationID) {
@@ -755,7 +758,7 @@ func TestWorkspaceRetryRequiresPreparationProcessSettlement(t *testing.T) {
 			m.factory = controlledActivationFactory(nil, nil)
 			m.platformHTTP = workspaceHTTPFunc(f.http)
 			room := managerCreate(t, m, "preparer-settlement")
-			activateOK(t, m, room, "initial")
+			openRoomOK(t, m, room, "initial")
 			// Settle an initial clone first. The interrupted process below is a local
 			// verification on an existing clone; no clone-pending marker is eligible
 			// for replay merely because the process group has exited.
@@ -808,9 +811,10 @@ func TestWorkspaceRetryRequiresPreparationProcessSettlement(t *testing.T) {
 			defer restored.close()
 			restored.config, restored.factory, restored.workspaceRun = config, controlledActivationFactory(nil, nil), f.run
 			restored.platformHTTP = workspaceHTTPFunc(f.http)
-			if err := restored.restoreActive(); err != nil || restored.active != nil {
+			if err := restored.restoreRuntimes(); err != nil || restored.runtimes[room.RoomIdentity].service != nil {
 				t.Fatal("resumed an unsettled preparer", err)
 			}
+			awaitRecovery(t, restored)
 			retry := map[string]any{"service_epoch": restored.epoch, "caller": humanCaller, "room_id": room.RoomID, "room_instance": room.RoomInstance, "operation_id": req.OperationID}
 			if r := managerHTTP(restored, "/v1/workspace/retry", retry); r.Code != 409 {
 				t.Fatal("unverified process allowed retry", r.Code, r.Body.String())

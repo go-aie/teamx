@@ -1,6 +1,7 @@
 package room
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -148,6 +149,14 @@ func (s *service) runDiscussionRestart(record discussionRestart, members []Membe
 	runErr := func() error {
 		if err := pause(); err != nil {
 			return err
+		}
+		if s.settleTools != nil {
+			ctx, cancel := context.WithTimeout(s.ctx, serviceShutdownTimeout)
+			err := s.settleTools(ctx)
+			cancel()
+			if err != nil {
+				return err
+			}
 		}
 		record.Phase = "rotating"
 		if err := s.saveDiscussionRestart(record); err != nil {

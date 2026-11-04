@@ -27,7 +27,7 @@ await ui.el("open-gitlab-source").emit("click"); await settle(); await Promise.a
 assert.equal(ui.el("notification-manage-binding").disabled, true);
 assert.equal(ui.el("gitlab-events-project").value, "remote/project");
 const catalog = await call("/v1/rooms");
-const params = new URLSearchParams({ ...catalog.active, service_epoch: catalog.service_epoch, caller_id: catalog.operator });
+const params = new URLSearchParams({ ...catalog.rooms[0].service, service_epoch: catalog.service_epoch, caller_id: catalog.operator });
 const before = await call(`/v1/workspace?${params}`);
 assert.equal(before.workspace.repository, undefined); assert.equal(before.workspace.binding, undefined);
 const previous = (await call(`/v1/platform/notifications?${params}`)).subscriptions.find(s => s.channel === "events");

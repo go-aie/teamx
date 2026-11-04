@@ -49,11 +49,17 @@ teamx serve --config /绝对路径/config.toml
 
 应用使用稳定操作 ID 和配置版本，提供 `GET /v1/workspace`、`POST /v1/workspace/apply`、`POST /v1/workspace/retry`。超时先查询，失败显式重试原目标；部分提交和不确定写入阻止执行。管理身份、请求结构与页面凭据处理见 [Workspace 接口](../../docs/workspace.zh.md#管理接口)。旧运行时与 Workspace 迁移命令已移除，受管房间必须具备完整 runtime 和 Workspace 快照。
 
-切换显示检查、结清旧回合、打开与恢复进度，期间禁用变更。选择是服务级状态，多标签页共享；草稿、引用、提醒进度及未确认发送分别保存在当前标签页各房间中。未确认发送保留完整原身份和消息 ID，身份过期后须先核对历史，再放弃重试。迟到响应不会修改新房间页面。创建和激活使用持久化去重 ID，响应丢失后可核对列表并显式重试，刷新不会自动续跑；创建成功但激活失败的房间仍留在列表。
+每个标签页独立保存查看对象，切换或关闭页面不停止后台 Agent、工具和通知投递。不同房间可以并行，每个房间仍只有一个执行名额；重复查看健康实例不重建 Session、不改变成员状态或预算。列表按房间显示目录状态、运行状态、操作进度和错误，同房间冲突操作串行，其他房间仍可查看及执行。草稿、引用、提醒进度及未确认发送分别保存在当前标签页各房间中。未确认发送保留完整原身份和消息 ID，身份过期后须先核对历史，再放弃重试。迟到响应不会修改新房间页面。创建和打开使用持久化去重 ID，响应丢失后可核对列表并显式重试，刷新不会自动续跑；创建成功但打开失败的房间仍留在列表。
 
-房间列表的「删除」经确认后停止目标房间，验证当前及历史私有会话已结清，再永久移除整个房间目录：公共消息、成员状态、所有 Agent 私有会话、诊断、资源副本和工作区文件一并删除。团队模板和其他房间保留；删除当前房间不会自动选择另一个房间。操作者接口 `POST /v1/rooms/delete` 要求目录 `service_epoch`、human `caller` 以及精确的 `room_id` / `room_instance`。后台操作由服务持有，不随 HTTP 断开取消；通过 `GET /v1/rooms` 的 `busy`、房间 `status=deleting`、`deletion_phase`（`closing` / `removing`）和 `error` 核对进度，房间从列表消失才表示完成。失败或服务中断后不会自动继续删除或恢复该房间，须核查并明确重试。进入 `removing` 前先持久记录执行已结清，因此即使数据只删掉一部分也能重新打开目录并明确重试。
+房间列表的「删除」经确认后停止目标房间，验证当前及历史私有会话已结清，再永久移除整个房间目录：公共消息、成员状态、所有 Agent 私有会话、诊断、资源副本和工作区文件一并删除。团队模板和其他房间保留；删除当前房间不会自动选择另一个房间。操作者接口 `POST /v1/rooms/delete` 要求目录 `service_epoch`、human `caller` 以及精确的 `room_id` / `room_instance`。后台操作由服务持有，不随 HTTP 断开取消；通过 `GET /v1/rooms` 的房间 `busy`、`status=deleting`、`deletion_phase`（`closing` / `removing`）和 `error` 核对进度，房间从列表消失才表示完成。失败或服务中断后不会自动继续删除或恢复该房间，须核查并明确重试。进入 `removing` 前先持久记录执行已结清，因此即使数据只删掉一部分也能重新打开目录并明确重试。
 
 点击顶部房间名或旁边的编辑图标可就地修改名称，Enter 保存、Esc 取消，也可点击旁边的保存/取消按钮；保存后同步更新标题和左侧列表。`POST /v1/rooms/rename` 携带目录 `service_epoch`、human `caller`、精确 `room_id` / `room_instance`、`name` 和原名称 `expected_name`；名称去除首尾空白后须非空且不超过 256 字节。原名称不匹配时返回冲突，避免覆盖其他页面的修改。当前显示名仅原子更新 `rooms.json`，创建收据和冻结配置保留原名称；消息、草稿、成员、工作区和 Session 身份不变，不重启执行。响应丢失后核对目录，不自动重发。
+
+管理接口：`GET /v1/rooms` 返回每项的 `status`（目录）、`runtime_status`（`closed / opening / ready / failed`）、`busy`、`runtime_error`、可用 `service` 和安全成员名称。顶层 `busy` 仅表示共享资源操作；`default_room_id` 只兼容旧索引的初始查看建议，不表示当前选择。
+
+`POST /v1/rooms/open` 要求管理器 `service_epoch`、human `caller`、`room_id`、`room_instance` 和稳定 `open_id`，返回 `running / completed / failed`，完成时附 `service`。`GET /v1/rooms/open?service_epoch=…&caller_id=…&open_id=…` 只查询原回执。相同 ID 不重放，失败后检查并用新 ID 显式打开。旧 `/v1/rooms/activate` 已移除。普通 Room API 携带实例的完整身份；`GET /v1/info` 也须带 `room_id`、`room_instance`、实例 `service_epoch` 和 `caller_id`。
+
+`rooms.json` 版本 2 以完整身份的 `owned_rooms` 记录运行归属，并保存 `opens` 和逐房间 `shutdowns`。旧归属迁移后移除，历史激活回执及中断证据保留用于恢复检查。正常启动逐房间恢复既有启用意图；异常回合不自动重放，暂停且已结清的房间按需打开。退出冻结全部房间后并行结清，任何资源未结清均保留归属和根目录锁。
 
 未查看的操作者 @ 提及会将整条消息背景标黄。页面处于前台且获得焦点时，消息至少一半进入可视区并连续停留 1 秒后，自动标记该条已查看；超过视口高度的长消息以半个视口为可见门槛。快速划过或后台页面不计入查看。顶部提醒跳转到最早的未查看提及，仍按可见停留规则消除提醒。已查看消息背景恢复常规颜色，未查看的消息继续标黄，计数逐条减少，不会连带清除更早未查看的消息。@ 用户名本身始终保留黄色标记，表示这里存在提及，与是否已查看无关。查看进度在切换房间和标签页刷新后保留，不推进 Agent 未读游标。
 
@@ -138,7 +144,7 @@ export TEAMX_ENDPOINT=http://127.0.0.1:8088
 
 ## CLI 工具与读取语义
 
-适配器向真实 Session 绑定六项环境：`TEAMX_ENDPOINT`、`TEAMX_ROOM_ID`、`TEAMX_ROOM_INSTANCE`、`TEAMX_SERVICE_EPOCH`、`TEAMX_AGENT_ID`、`TEAMX_MEMBERSHIP_ID`；另提供绝对路径 `TEAMX_CLI`。工具不得自行切换身份，也无成员管理权限。操作者只需端点；这是可信本机协议，不是多用户认证系统。
+适配器向真实 Session 绑定六项环境：`TEAMX_ENDPOINT`、`TEAMX_ROOM_ID`、`TEAMX_ROOM_INSTANCE`、`TEAMX_SERVICE_EPOCH`、`TEAMX_AGENT_ID`、`TEAMX_MEMBERSHIP_ID`；另提供绝对路径 `TEAMX_CLI`。工具不得自行切换身份，也无成员管理权限。受管模式下操作者须指定端点及已打开的 `--room ROOM_ID`（或命令的 ROOM 位置参数），CLI 从目录取得完整实例身份，查询不会隐式打开；这是可信本机协议，不是多用户认证系统。
 
 Agent 用 `read --unread --limit 20 --json` 按序消费，成功交付一页后 CLI 确认游标，再继续下一页。每页最多 100 条消息及 1 MiB 正文。一个成员同时只有一张有效未确认页，30 秒过期；并发消费返回 busy，历史预览不受影响。stdout 失败、确认失败或结果不确定不会越过未交付页；已提交游标不回退。重启使旧收据失效。
 
@@ -193,7 +199,7 @@ go test ./internal/room -run '^TestFixtureDemoAndReport$' -count=1 -v
 
 ## 当前待验项
 
-- Room / Web：完整 TCP/race 回归，以及真实浏览器中的成员工具设置、生命周期组合和房间页面视觉检查。
+- Room / Web：多房间组件、HTTP、前端、定向竞态及真实 DSH 验证见[多房间验收记录](../../docs/MULTI-ROOM-RUNTIME-ACCEPTANCE.zh.md)；真实浏览器切房／双标签页仍受工具来源权限门禁阻断，成员工具设置、生命周期组合和视觉检查尚未通过。
 - 团队协作：串行调度在真实书店任务中的效果。
 
 平台工具和 Git 工作区的具体缺口分别见 [GitLab 工具验收](../../tools/gitlab/README.zh.md#真实验收)与 [Workspace 验收](../../docs/workspace.zh.md#真实验收)。这些是现有链路的验证缺口；旧工具或旧协议的通过结果不能沿用到当前实现。

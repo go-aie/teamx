@@ -123,7 +123,7 @@ func (s *service) newMember(id MemberIdentity, runner RunnerConfig, restored *Ag
 		}
 	}
 	return &MemberAgent{Options: opts, Store: s.store, Room: s.room, Restored: restored,
-		Backend: backend, MergeWindow: s.mergeWindow, MaxTurns: s.maxTurns, BackendBlocked: blocked, PersistentScheduling: s.persistentScheduling, RestoredTurnsUsed: used}
+		Backend: backend, MergeWindow: s.mergeWindow, MaxTurns: s.maxTurns, BackendBlocked: blocked, PersistentScheduling: s.persistentScheduling, RestoredTurnsUsed: used, ExecutionFrozen: s.grantsFrozen}
 }
 
 func (s *service) spawnMember(id MemberIdentity, runner RunnerConfig, restored *AgentSnapshot) (actorx.Addr, error) {

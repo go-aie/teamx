@@ -189,6 +189,9 @@ func (d *cliDriver) stop() error {
 func (d *cliDriver) command(out any, args ...string) error {
 	cmd := exec.CommandContext(d.ctx, d.binary, append(args, "--json")...)
 	cmd.Env, cmd.WaitDelay = operatorEnv(d.endpoint), time.Second
+	if d.info.RoomID != "" {
+		cmd.Env = append(cmd.Env, "TEAMX_ROOM_ID="+d.info.RoomID)
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &boundedWriter{w: &stdout, remaining: 4 << 20}
 	cmd.Stderr = &boundedWriter{w: &stderr, remaining: 32 << 10}

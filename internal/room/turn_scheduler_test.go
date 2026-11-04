@@ -520,7 +520,7 @@ func TestServiceShutdownDoesNotGrantWaitingTurns(t *testing.T) {
 	closeErr := svc.close(limited)
 	cancel()
 	svc.management.Unlock()
-	if closeErr == nil || !strings.Contains(closeErr.Error(), "management cleanup incomplete") || !svc.grantsStopped {
+	if closeErr == nil || !strings.Contains(closeErr.Error(), "management cleanup incomplete") || !svc.grantsStopped.Load() {
 		t.Fatal("shutdown waited for management before stopping grants", closeErr)
 	}
 	done := make(chan error, 1)

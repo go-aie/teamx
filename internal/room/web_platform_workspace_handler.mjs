@@ -36,7 +36,7 @@ async function ready() {
     await ui.refresh();
     let catalog;
     try { catalog = await call("/v1/rooms"); } catch (error) { if (error.code !== "busy") throw error; }
-    if (catalog && !catalog.busy && catalog.active) return catalog;
+    if (catalog && !catalog.busy && catalog.rooms[0]?.service && !catalog.rooms[0].busy) return catalog;
     await new Promise(resolve => setTimeout(resolve, 20));
   }
   throw Error("manager did not settle");
@@ -59,7 +59,7 @@ assert.ok(connection, "shared connection list did not become readable");
 ui.el("workspace-connection").value = connection.value; await ui.el("workspace-connection").emit("change");
 await ui.el("workspace-form").emit("submit");
 const before = await ready();
-const params = new URLSearchParams({ ...before.active, service_epoch: before.service_epoch, caller_id: before.operator });
+const params = new URLSearchParams({ ...before.rooms[0].service, service_epoch: before.service_epoch, caller_id: before.operator });
 const workspace = await call(`/v1/workspace?${params}`);
 assert.equal(workspace.operation.status, "completed");
 assert.equal(workspace.workspace.binding.connection_id, connection.value);
@@ -72,7 +72,7 @@ ui.el("connection-pat").value = "handler-rotated-token";
 await ui.el("connection-form").emit("submit");
 assert.equal(ui.el("connections-feedback").textContent, "连接已保存。");
 const after = await call("/v1/rooms");
-assert.deepEqual(before.active, after.active);
+assert.deepEqual(before.rooms[0].service, after.rooms[0].service);
 const unchanged = await call(`/v1/workspace?${params}`);
 assert.equal(unchanged.workspace_version, workspace.workspace_version);
 assert.equal(unchanged.operation.operation_id, workspace.operation.operation_id);

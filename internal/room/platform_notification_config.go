@@ -65,7 +65,7 @@ func (m *roomManager) configureEventsSubscription(ctx context.Context, key notif
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.closing || m.busy {
+	if m.closing || m.roomBusyLocked(key.Owner) {
 		return gitlab.EventsState{}, ErrBusy
 	}
 	entry, err := m.workspaceRoom(key.Owner)
@@ -119,7 +119,7 @@ func (m *roomManager) configureEventsSubscription(ctx context.Context, key notif
 				}
 				selected, _, selectErr := m.resolvePlatformAccountLocked(key.Owner, cfg.ConnectionID, "gitlab")
 				latest, readErr := m.currentEventsLocked(key.Owner)
-				if m.busy || selectErr != nil || selected != account || readErr != nil || (current == nil) != (latest == nil) || current != nil && (latest.SubscriptionID != current.SubscriptionID || latest.SubscriptionVersion != current.SubscriptionVersion) {
+				if m.roomBusyLocked(key.Owner) || selectErr != nil || selected != account || readErr != nil || (current == nil) != (latest == nil) || current != nil && (latest.SubscriptionID != current.SubscriptionID || latest.SubscriptionVersion != current.SubscriptionVersion) {
 					return gitlab.EventsState{}, ErrConflict
 				}
 				binding.ProjectID = projectID
@@ -159,7 +159,7 @@ func (m *roomManager) configureEventsSubscription(ctx context.Context, key notif
 		latest, ok := m.eventsSubscriptionLocked(retired.Metadata().Key)
 		active, readErr := m.currentEventsLocked(key.Owner)
 		selected, _, selectErr := m.resolvePlatformAccountLocked(key.Owner, cfg.ConnectionID, "gitlab")
-		if m.busy || !ok || latest.SubscriptionVersion != retired.SubscriptionVersion || readErr != nil || active != nil || selectErr != nil || selected != account {
+		if m.roomBusyLocked(key.Owner) || !ok || latest.SubscriptionVersion != retired.SubscriptionVersion || readErr != nil || active != nil || selectErr != nil || selected != account {
 			return retired, ErrConflict
 		}
 		current = nil
@@ -193,7 +193,7 @@ func (m *roomManager) syncEventsSubscription(key notification.Key, version uint6
 	if m.closing {
 		return ErrClosing
 	}
-	if m.busy {
+	if m.roomBusyLocked(key.Owner) {
 		return ErrBusy
 	}
 	s, ok := m.eventsSubscriptionLocked(key)

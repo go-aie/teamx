@@ -13,6 +13,22 @@ let storage;
 try { storage = sessionStorage; } catch { /* The UI also works without storage. */ }
 const drafts = createRoomDrafts(storage);
 const managementKey = "teamx.room-management";
+const selectionKey = "teamx.selected-room";
+let selectedRoom = null, selectionVersion = 0, selectionLoaded = false;
+try { selectedRoom = JSON.parse(storage?.getItem(selectionKey)); } catch { /* Tab storage is optional. */ }
+function selectedEntry(catalog = state.catalog) {
+  return catalog?.rooms.find(room => room.room_id === selectedRoom?.room_id && room.room_instance === selectedRoom?.room_instance);
+}
+function selectRoom(room) {
+  selectedRoom = room ? { room_id: room.room_id, room_instance: room.room_instance } : null;
+  selectionVersion++;
+  try {
+    if (selectedRoom) storage?.setItem(selectionKey, JSON.stringify(selectedRoom));
+    else storage?.removeItem(selectionKey);
+  } catch { /* Keep this tab's selection in memory. */ }
+  selectView(room?.service || null, state.catalog?.operator || state.operator);
+  selectWorkspace(room, state.catalog?.operator || state.operator);
+}
 const panelsKey = "teamx.room-panels";
 const panels = { rooms: true, members: true, memberWidth: null };
 let memberResize = null;
@@ -66,7 +82,7 @@ function selectWorkspace(room, operator) {
   } catch { /* Never replay requests from storage. */ }
 }
 async function syncWorkspace(catalog) {
-  const room = catalog.rooms.find(room => room.room_id === catalog.active_room_id && room.status === "ready");
+  const room = selectedEntry(catalog);
   selectWorkspace(room, catalog.operator);
   const ws = workspaceView;
   if (!ws) { renderWorkspace(); return; }
@@ -443,7 +459,7 @@ function renderGitLabTodos() {
   $("gitlab-todos-sync").textContent = ws.todosSending === "sync" ? "请求中…" : data.error_code || data.delivery_error_code ? "重试同步" : "立即同步";
   $("gitlab-todos-state").textContent = gitlabEventStatuses[data.status] || data.status;
   $("gitlab-todos-feedback").textContent = ws.todosSending ? ws.todosSending === "configure" ? "正在保存设置…" : "正在请求同步…"
-    : invalid ? "请检查当前与非当前房间的检查周期" : dirty ? "有未保存的更改" : ws.todosFeedback || (data.subscription_id ? "设置已保存" : "尚未开启");
+    : invalid ? "请检查房间可接收与暂存时的检查周期" : dirty ? "有未保存的更改" : ws.todosFeedback || (data.subscription_id ? "设置已保存" : "尚未开启");
   $("gitlab-todos-feedback").setAttribute("data-pending", String(dirty));
   $("gitlab-todos-action-hint").textContent = switching && config.enabled ? "保存将停用旧账号订阅，并为新账号建立新进度；旧消息和回执保留。"
     : dirty ? "保存后生效；立即同步只使用已保存配置。" : "关闭保留进度和积压；凭据重新验证后，需显式同步恢复。";
@@ -533,7 +549,7 @@ function renderNotificationSource() {
     ? `${connection?.name || "共享连接"} · ${binding.url}` : `旧认证（尚未迁移） · ${binding.url}`;
   $("notification-project").textContent = binding ? `${binding.project}${binding.project_id ? ` · #${binding.project_id}` : ""}` : "尚未绑定项目";
   $("notification-manage-binding").disabled = !ws?.connected || !ws.data?.workspace?.binding?.connection_id || !!ws.eventsSending;
-  notice("notification-notice", !ws ? "请先激活房间，再管理通知源。" : !(channel === "todos" ? ws.todosConnected : ws.eventsConnected) ? "通知状态暂不可读，请重新读取。" : "");
+  notice("notification-notice", !ws ? "请先打开房间，再管理通知源。" : !(channel === "todos" ? ws.todosConnected : ws.eventsConnected) ? "通知状态暂不可读，请重新读取。" : "");
   $("notification-reload").hidden = !ws || !!(channel === "todos" ? ws.todosConnected : ws.eventsConnected);
   renderContextViews();
 }
@@ -1147,7 +1163,7 @@ const statusNames = { paused: "已暂停", idle: "等待消息", waiting: "等�
   rotating: "轮换中", closing: "清理中", merging: "合并通知" };
 
 function memberRole(member) {
-  return state.catalog?.members?.find(role => role.id === member.agent_id);
+  return selectedEntry()?.members?.find(role => role.id === member.agent_id);
 }
 
 function openMemberActivity(member, opener) {
@@ -1344,7 +1360,9 @@ function selectedTeam() {
 }
 
 function managementBusy() {
-  return !!(state.managed && (state.catalog?.busy || state.managementSending || state.management));
+  const op = state.management;
+  return !!(state.managed && (state.catalog?.busy || selectedEntry()?.busy ||
+    op && op.kind !== "open" && op.payload.room_instance === selectedRoom?.room_instance));
 }
 
 function roomName() {
@@ -1369,7 +1387,7 @@ function renderCreateSelection() {
   $("team-members").replaceChildren(...(team?.members || []).map(member => {
     const item = document.createElement("li"); item.textContent = `${member.name} · ${member.id}`; return item;
   }));
-  const disabled = !state.catalogConnected || discussionBusy();
+  const disabled = !state.catalogConnected || discussionBusy() || !!state.management || state.managementSending;
   $("team").disabled = disabled || !state.teams.length;
   $("new-room-name").disabled = disabled;
   $("create-room").disabled = disabled || !team;
@@ -1427,7 +1445,7 @@ function seedCreated(operation, room) {
   if (state.info?.room_instance === room.room_instance) showDraft();
 }
 
-function reconcileManagement(catalog) {
+async function reconcileManagement(catalog) {
   // Other tabs may delete a Room too. Clear this tab's saved drafts only after
   // the catalog confirms removal, and invalidate any old private-output read.
   for (const room of state.knownRooms || []) {
@@ -1441,19 +1459,34 @@ function reconcileManagement(catalog) {
     if (!room) {
       forgetRoom(op.payload);
       state.management = null; state.managementError = "房间及其 Agent 私有会话数据已删除。"; saveManagement();
-    } else if (!catalog.busy && room.status === "deleting") {
+    } else if (!room.busy && room.status === "deleting") {
       state.managementError = `删除尚未完成，请核查后明确重试。${room.error || ""}`;
     }
   } else if (op.kind === "create") {
     const room = catalog.rooms.find(room => room.create_id === op.payload.create_id);
     if (room?.status === "ready") seedCreated(op, room);
-  } else if (catalog.activation?.activate_id === op.payload.activate_id && catalog.activation.status !== "running") {
-    state.managementError = catalog.activation.status === "failed" ? `切换失败，历史已保留。${catalog.activation.error}` : "";
-    state.management = null; saveManagement();
+  } else if (op.kind === "open") {
+    const query = new URLSearchParams({ service_epoch: catalog.service_epoch, caller_id: op.operator, open_id: op.payload.open_id });
+    try {
+      const receipt = await request(`/v1/rooms/open?${query}`);
+      finishOpen(op, receipt);
+    } catch (error) {
+      if (state.management === op) state.managementError = `打开结果尚未确认，可查询或用原请求重试。${error.message}`;
+    }
   }
 }
 
+function finishOpen(op, receipt) {
+  if (state.management !== op || receipt.status === "running") return;
+  state.managementError = receipt.status === "failed" ? `打开失败，历史已保留。${receipt.error}` : "";
+  if (receipt.status === "completed" && receipt.service && op.selectOnComplete !== false && op.selectionVersion === selectionVersion) {
+    selectRoom({ ...receipt, service: receipt.service });
+  }
+  state.management = null; saveManagement();
+}
+
 function forgetRoom(room) {
+  if (selectedRoom?.room_instance === room.room_instance) selectRoom(null);
   if (state.info?.room_instance === room.room_instance) selectView(null, state.operator);
   drafts.remove(room, state.operator);
   try { storage?.removeItem(workspaceKey(room, state.operator)); } catch { /* Storage is optional. */ }
@@ -1473,40 +1506,41 @@ function renderRooms() {
   if (!state.managed || !state.catalog) return;
   const catalog = state.catalog;
   $("rooms-empty").hidden = catalog.rooms.length > 0;
-  $("new-room").disabled = !state.catalogConnected || discussionBusy() || !!catalog.write_error;
-  const signature = JSON.stringify({ rooms: catalog.rooms, active: catalog.active, selected: catalog.active_room_id,
-    busy: discussionBusy(), connected: state.catalogConnected });
+  $("new-room").disabled = !state.catalogConnected || discussionBusy() || !!state.management || state.managementSending || !!catalog.write_error;
+  const signature = JSON.stringify({ rooms: catalog.rooms, selected: selectedRoom,
+    busy: discussionBusy(), management: !!state.management, sending: state.managementSending, connected: state.catalogConnected });
   if ($("room-list").dataset.signature !== signature) {
     $("room-list").dataset.signature = signature;
     $("room-list").replaceChildren(...[...catalog.rooms].sort((a,b) => new Date(roomListTime(b)) - new Date(roomListTime(a))).map(room => {
       const row = document.createElement("div"); row.className = "room-entry";
       const button = document.createElement("button"); button.type = "button"; button.className = "room-choice";
-      button.setAttribute("aria-current", String(room.room_id === catalog.active_room_id));
+      button.setAttribute("aria-current", String(room.room_instance === selectedRoom?.room_instance));
       const name = document.createElement("strong"), updated = document.createElement("span");
       name.textContent = room.name;
-      updated.textContent = room.status === "deleting" ? (catalog.busy ? "正在删除…" : `删除待重试${room.error ? ` · ${room.error}` : ""}`)
-        : room.status === "creating" ? `创建待完成${room.error ? ` · ${room.error}` : " · 可重试原创建请求"}` : new Date(roomListTime(room)).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+      updated.textContent = room.status === "deleting" ? (room.busy ? "正在删除…" : `删除待重试${room.error ? ` · ${room.error}` : ""}`)
+        : room.status === "creating" ? `创建待完成${room.error ? ` · ${room.error}` : " · 可重试原创建请求"}` : room.runtime_status === "opening" ? "正在打开…"
+        : room.runtime_error ? `运行受阻 · ${room.runtime_error}`
+        : room.busy ? "房间操作进行中…"
+        : `${room.runtime_status === "ready" ? "运行中 · " : "未打开 · "}${new Date(roomListTime(room)).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`;
       button.append(name, updated);
-      button.disabled = room.status !== "ready" || !state.catalogConnected || discussionBusy();
+      button.disabled = room.status !== "ready" || !state.catalogConnected || !!catalog.busy;
       button.addEventListener("click", () => startSelection(room));
       const remove = document.createElement("button"); remove.type = "button"; remove.className = "room-delete";
       remove.textContent = room.status === "deleting" ? "重试删除" : "删除";
       remove.setAttribute("aria-label", `删除房间「${room.name}」`);
-      remove.disabled = !state.catalogConnected || discussionBusy() || !!catalog.write_error;
+      remove.disabled = !state.catalogConnected || !!catalog.busy || !!room.busy || !!state.management || !!catalog.write_error;
       remove.addEventListener("click", () => startDeletion(room));
       row.append(button, remove);
       return row;
     }));
   }
-  const stages = { checking: "正在检查目标房间…", closing: "正在结清旧回合并关闭会话…", opening: "正在打开房间…", resuming: "正在恢复协作…" };
   let text = state.managementError || catalog.write_error || "";
-  if (catalog.busy) text = workspaceView?.data?.operation?.status === "running" ? `Workspace · ${workspaceStages[workspaceView.data.operation.phase] || "正在应用"}`
-    : catalog.rooms.some(room => room.status === "deleting" && !room.error) ? "正在停止房间、结清会话并删除数据…"
-    : catalog.activation?.status === "running" ? stages[catalog.activation.phase] || "正在切换房间…" : "正在重新开始讨论…";
+  if (workspaceView?.data?.operation?.status === "running") text = `Workspace · ${workspaceStages[workspaceView.data.operation.phase] || "正在应用"}`;
+  else if (state.management?.kind === "delete" && selectedEntry()?.busy) text = "正在停止房间、结清会话并删除数据…";
+  else if (catalog.busy) text = "共享资源操作进行中…";
   else if (state.managementSending) text = "正在提交房间操作…";
   else if (state.management) text = [text, state.management.room && state.management.kind === "create"
     ? "房间已创建，点击进入。开场草稿已保留。" : "操作结果尚未确认。可核对列表后用原请求重试；不会自动续跑。"].filter(Boolean).join(" ");
-  else if (catalog.activation?.status === "failed") text ||= `切换失败，历史已保留。${catalog.activation.error}`;
   notice("management-notice", text);
   $("retry-management").hidden = !state.management || catalog.busy || state.managementSending;
   $("retry-management").disabled = !state.catalogConnected;
@@ -1516,9 +1550,8 @@ function renderRooms() {
 
 async function runManagement() {
   const op = state.management;
-  if (!op || state.managementSending || !state.catalogConnected || state.catalog.busy ||
-    state.draft.restartStarting || state.restart?.status === "running" || state.draft.restartRequest) return;
-  state.managementSending = true; state.managementError = ""; state.connected = false; viewVersion++;
+  if (!op || state.managementSending || !state.catalogConnected || state.catalog.busy) return;
+  state.managementSending = true; state.managementError = "";
   renderRooms(); composerState(); renderMembers(); renderCreateSelection();
   try {
     const manage = (path, payload) => request(path, { service_epoch: state.catalog.service_epoch,
@@ -1527,14 +1560,11 @@ async function runManagement() {
       const room = op.room || await manage("/v1/rooms/create", op.payload);
       if (room.status !== "ready") throw new Error("房间创建尚未完成，请核查后重试。");
       seedCreated(op, room);
-      op.kind = "activate"; op.payload = { activate_id: crypto.randomUUID(), room_id: room.room_id, room_instance: room.room_instance };
+      op.kind = "open"; op.selectionVersion ??= selectionVersion; op.payload = { open_id: crypto.randomUUID(), room_id: room.room_id, room_instance: room.room_instance };
       saveManagement();
     }
-    const result = await manage(op.kind === "delete" ? "/v1/rooms/delete" : "/v1/rooms/activate", op.payload);
-    if (op.kind !== "delete" && result.status !== "running" && state.management === op) {
-      state.managementError = result.status === "failed" ? `切换失败，历史已保留。${result.error}` : "";
-      state.management = null; saveManagement();
-    }
+    const result = await manage(op.kind === "delete" ? "/v1/rooms/delete" : "/v1/rooms/open", op.payload);
+    if (op.kind === "open") finishOpen(op, result);
     $("create-dialog").close();
   } catch (error) {
     if (state.management === op) {
@@ -1553,14 +1583,22 @@ async function runManagement() {
 }
 
 function startSelection(room) {
-  if (discussionBusy() || !state.catalogConnected) return;
-  state.management = { kind: "activate", operator: state.operator, payload: {
-    activate_id: crypto.randomUUID(), room_id: room.room_id, room_instance: room.room_instance } };
+  if (!state.catalogConnected || state.catalog.busy) return;
+  if (room.service && room.runtime_status === "ready") {
+    if (state.management && state.management.kind !== "delete") {
+      state.management.selectOnComplete = false; saveManagement();
+    }
+    selectRoom(room); void refresh(); return;
+  }
+  if (state.management || state.managementSending || room.busy) return;
+  selectionVersion++;
+  state.management = { kind: "open", selectOnComplete: true, selectionVersion, operator: state.operator, payload: {
+    open_id: crypto.randomUUID(), room_id: room.room_id, room_instance: room.room_instance } };
   saveManagement(); void runManagement();
 }
 
 function startDeletion(room) {
-  if (discussionBusy() || !state.catalogConnected || state.catalog.write_error) return;
+  if (state.management || room.busy || !state.catalogConnected || state.catalog.busy || state.catalog.write_error) return;
   if (!window.confirm(`永久删除房间「${room.name}」？\n将停止该房间并删除公共消息、所有 Agent 私有会话（含历史会话）、诊断和房间工作区文件。此操作无法撤销。`)) return;
   state.management = { kind: "delete", operator: state.operator, payload: {
     room_id: room.room_id, room_instance: room.room_instance } };
@@ -1597,9 +1635,19 @@ async function sync() {
       const catalog = await request("/v1/rooms");
       if (!currentView(version)) return;
       state.catalog = catalog; state.catalogConnected = true;
-      reconcileManagement(catalog);
+      if (!selectionLoaded) {
+        selectionLoaded = true;
+        if (!selectedRoom) {
+          const initial = catalog.rooms.find(room => room.room_id === catalog.default_room_id) || catalog.rooms.find(room => room.service);
+          if (initial) selectRoom(initial);
+        }
+      }
+      await reconcileManagement(catalog);
       version = viewVersion;
-      config = { ...catalog, ...catalog.active };
+      const room = selectedEntry(catalog);
+      config = { ...room?.service, operator: catalog.operator };
+      if (room?.service) selectView(room.service, catalog.operator);
+      version = viewVersion;
       renderTeams(catalog.teams || []); renderRooms();
       if (!state.info) state.operator = catalog.operator;
       await syncWorkspace(catalog);
@@ -1623,19 +1671,19 @@ async function sync() {
         $("connection").textContent = "Workspace 设置待完成 · 可查看历史";
         activity.close(); $("activity-dialog").close(); renderMembers(); return;
       }
-      if (catalog.busy) {
+      if (catalog.busy || room?.busy) {
         // Keep the old discussion visible but invalidate every in-flight view.
         state.connected = false; viewVersion++;
         activity.close(); $("activity-dialog").close();
         $("connection").textContent = "房间操作进行中";
         renderMembers(); return;
       }
-      if (!catalog.active) {
+      if (!room?.service) {
         selectView(null, catalog.operator);
-        $("room-name").textContent = "选择或新建房间";
+        $("room-name").textContent = room?.name || "选择或新建房间";
         $("empty").querySelector("h2").textContent = "开始一个新任务";
         $("empty").querySelector("p").textContent = state.teams.length ? "从左侧新建房间，选择团队开始协作。" : "暂无可用团队。请在团队目录添加 team.json，并重启服务。";
-        $("connection").textContent = "已连接 · 尚未选择房间";
+        $("connection").textContent = room ? (room.runtime_error ? `运行受阻 · ${room.runtime_error}` : "点击房间打开") : "已连接 · 尚未选择房间";
         notice("sync-error", ""); return;
       }
     }
@@ -2041,7 +2089,7 @@ $("create-form").addEventListener("submit", (event) => {
   if (!team || $("create-room").disabled) return;
   const name = $("new-room-name").value.trim();
   if (new TextEncoder().encode(name).length > 256) { notice("create-error", "房间名称请控制在 256 字节内。"); return; }
-  state.management = { kind: "create", operator: state.operator, opening: team.opening_message,
+  state.management = { kind: "create", selectOnComplete: true, selectionVersion, operator: state.operator, opening: team.opening_message,
     payload: { create_id: crypto.randomUUID(), name, team_id: team.id } };
   saveManagement(); void runManagement();
 });
@@ -2205,8 +2253,12 @@ $("connection-delete").addEventListener("click", () => connectionAction("delete"
 try {
   const saved = JSON.parse(storage?.getItem(managementKey));
   if (saved?.payload && saved.operator &&
-    ((saved.kind === "create" && saved.payload.create_id) || (saved.kind === "activate" && saved.payload.activate_id) ||
-      (saved.kind === "delete" && saved.payload.room_id && saved.payload.room_instance))) state.management = saved;
+    ((saved.kind === "create" && saved.payload.create_id) || (saved.kind === "open" && saved.payload.open_id) ||
+      (saved.kind === "delete" && saved.payload.room_id && saved.payload.room_instance))) {
+    state.management = saved;
+    // Reconcile the original receipt after reload; never repeat the POST.
+    if (saved.selectOnComplete !== false) saved.selectionVersion = selectionVersion;
+  }
 } catch { /* Server polling remains authoritative; never replay on reload. */ }
 await refresh();
 setInterval(() => { void refresh(); }, 1500);

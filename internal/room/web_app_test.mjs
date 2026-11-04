@@ -12,20 +12,28 @@ const makeRoom = (name, id = name) => ({ room_id: id, room_instance: `instance-$
   status: "ready", team_id: "sample", create_id: `create-${id}`, created_at: "2026-11-01T01:00:00Z", updated_at: "2026-11-01T01:00:00Z" });
 const message = (seq, text) => ({ seq, text, author: { kind: "agent", id: "reviewer" }, created_at: "2026-11-01T01:00:00Z" });
 function server(rooms = []) {
+  for (const room of rooms) { room.runtime_status = "ready"; room.service = identity(room); }
   const catalog = { service_epoch: "manager", operator: "tester", busy: false, rooms,
-    active_room_id: rooms[0]?.room_id || "", active: rooms[0] ? identity(rooms[0]) : undefined,
+    default_room_id: rooms[0]?.room_id || "",
     teams: [{ id: "sample", name: "Sample", description: "Example", opening_message: "Opening", members: [] }] };
   const history = new Map(rooms.map(room => [room.room_id, [message(1, `history-${room.name}`)]]));
   const calls = [];
   let next = 0;
   const api = {
-    catalog, calls, history, hook: null,
+    catalog, calls, history, opens: new Map(), hook: null,
     async request(path, data) {
       calls.push({ path, data: structuredClone(data) });
       if (api.hook) { const intercepted = api.hook(path, data); if (intercepted !== undefined) return intercepted; }
       if (path.startsWith("/v1/platform/connections?")) return { connections: [{ id: "a".repeat(32), name: "GitLab", provider: "gitlab", url: "https://gitlab.invalid", validation: { status: "valid", user_id: 101, username: "alice" } }] };
       if (path === "/v1/ui") return { managed: true };
-      if (path === "/v1/rooms") return structuredClone(catalog);
+      if (path === "/v1/rooms") {
+        return structuredClone(catalog);
+      }
+      if (path.startsWith("/v1/rooms/open?")) {
+        const receipt = api.opens.get(new URLSearchParams(path.split("?")[1]).get("open_id"));
+        if (!receipt) throw Object.assign(new Error("open not found"), { code: "request" });
+        return structuredClone(receipt);
+      }
       if (path.startsWith("/v1/workspace?")) {
         const q = new URL(path, "http://fixture").searchParams;
         return { room_id: q.get("room_id"), room_instance: q.get("room_instance"), workspace: { root: "workspaces" }, workspace_version: 1, members: [], credential_status: "missing" };
@@ -49,11 +57,12 @@ function server(rooms = []) {
         room.name = data.name;
         return structuredClone(room);
       }
-      if (path === "/v1/rooms/activate") {
+      if (path === "/v1/rooms/open") {
         const room = catalog.rooms.find(room => room.room_id === data.room_id);
-        catalog.active = identity(room, `activation-${++next}`); catalog.active_room_id = room.room_id;
-        catalog.activation = { ...data, status: "completed", phase: "ready" };
-        return structuredClone(catalog.activation);
+        room.service ||= identity(room); room.runtime_status = "ready";
+        const receipt = { ...data, status: "completed", service: room.service };
+        api.opens.set(data.open_id, receipt);
+        return structuredClone(receipt);
       }
       if (path === "/v1/rooms/delete") {
         assert.equal(data.service_epoch, catalog.service_epoch);
@@ -62,10 +71,10 @@ function server(rooms = []) {
         assert.ok(room);
         catalog.rooms = catalog.rooms.filter(r => r !== room);
         history.delete(room.room_id);
-        if (catalog.active_room_id === room.room_id) { catalog.active_room_id = ""; delete catalog.active; }
+        if (catalog.default_room_id === room.room_id) catalog.default_room_id = "";
         return { ...room, status: "deleting", deletion_phase: "closing" };
       }
-      if (!client.sameService(data, catalog.active) && !(path === "/v1/read" && client.sameService(data, api.workspaces?.get(data.room_id)?.observation))) throw Object.assign(new Error("stale identity"), { code: "identity" });
+      if (!catalog.rooms.some(room => client.sameService(data, room.service)) && !(path === "/v1/read" && client.sameService(data, api.workspaces?.get(data.room_id)?.observation))) throw Object.assign(new Error("stale identity"), { code: "identity" });
       if (path === "/v1/member/list") return { members: [], latest_seq: history.get(data.room_id).length };
       if (path === "/v1/read") {
         const all = history.get(data.room_id);
@@ -82,7 +91,7 @@ function server(rooms = []) {
 
 test("rename updates title, navigation and reload while preserving identity, history and draft", async () => {
   const api = server([makeRoom("A")]), ui = await launch(api);
-  const info = structuredClone(api.catalog.active);
+  const info = structuredClone(api.catalog.rooms[0]?.service);
   await ui.draft("Keep this draft");
   await ui.el("rename-room").emit("click");
   assert.equal(ui.el("rename-form").hidden, false);
@@ -95,7 +104,7 @@ test("rename updates title, navigation and reload while preserving identity, his
   assert.equal(ui.el("rename-room").attributes["aria-label"], "新名称，修改房间名称");
   assert.equal(ui.el("room-list").children[0].children[0].children[0].textContent, "新名称");
   assert.equal(ui.document.title, "新名称 · TeamX");
-  assert.deepEqual(api.catalog.active, info);
+  assert.deepEqual(api.catalog.rooms[0]?.service, info);
   assert.equal(ui.el("message-input").value, "Keep this draft");
   assert.equal(ui.el("message-count").textContent, "1 条消息");
   const reload = await launch(api, ui.saved);
@@ -163,7 +172,7 @@ test("lost rename response is read back without replay and late completion canno
   ui.el("rename-room-name").value = "Late A";
   const pending = ui.el("rename-form").emit("submit");
   await settle();
-  api.catalog.active = identity(api.catalog.rooms[1]); api.catalog.active_room_id = "B";
+  await ui.select("B");
   await ui.refresh();
   assert.equal(ui.el("rename-form").hidden, true);
   rejectRename(new Error("late failure")); await pending;
@@ -198,7 +207,7 @@ test("room list displays and sorts by last message time, with creation time for 
   api.history.set("A", [{ ...message(1, "MR closed"), created_at: a.last_message_at }]);
   api.history.set("Empty", []);
   const ui = await launch(api);
-  const format = value => new Date(value).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const format = value => "运行中 · " + new Date(value).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   const list = () => ui.el("room-list").children.map(row => row.children[0]);
   assert.deepEqual(list().map(button => button.children[0].textContent), ["B", "A", "Empty"]);
   assert.equal(list()[1].children[1].textContent, format(a.last_message_at));
@@ -225,7 +234,7 @@ test("empty catalog -> create -> A/B/A retains history, draft and quote; opening
   assert.equal(api.calls.filter(c => c.path === "/v1/send").length, 0);
   await ui.draft("draft-A");
   // Quoting uses the actual rendered message handler in a later read.
-  api.history.get(api.catalog.active.room_id).push(message(1, "quote-A"));
+  api.history.get(api.catalog.rooms[0]?.service.room_id).push(message(1, "quote-A"));
   await ui.refresh();
   const article = ui.el("messages").children.find(el => el.id === "message-1");
   await article.querySelector(".reply-button").emit("click");
@@ -270,9 +279,9 @@ test("lost send is isolated and explicit retry retains the original epoch after 
   assert.equal(ui.el("message-input").readOnly, true);
   api.hook = null; await ui.el("compose").emit("submit");
   assert.deepEqual(api.calls.filter(c => c.path === "/v1/send").at(-1).data, original);
-  assert.match(ui.el("send-error").textContent, /身份已失效/);
-  await ui.el("discard-send").emit("click");
-  assert.equal(ui.el("message-input").value, "uncertain-A");
+  assert.equal(ui.el("send-error").textContent, "");
+  assert.equal(ui.el("message-input").value, "");
+  assert.equal(api.history.get("A").at(-1).text, "uncertain-A");
 });
 
 test("lost create response is found by create_id, survives reload and needs explicit activation", async () => {
@@ -285,10 +294,10 @@ test("lost create response is found by create_id, survives reload and needs expl
   };
   const ui = await launch(api);
   await ui.create("A");
-  assert.equal(api.catalog.rooms.length, 1); assert.equal(api.catalog.active, undefined);
+  assert.equal(api.catalog.rooms.length, 1); assert.equal(api.catalog.rooms[0]?.service, undefined);
   assert.equal(ui.el("retry-management").textContent, "进入已创建房间");
   const reload = await launch(api, ui.saved);
-  assert.equal(api.calls.filter(c => c.path === "/v1/rooms/activate").length, 0);
+  assert.equal(api.calls.filter(c => c.path === "/v1/rooms/open").length, 0);
   await reload.el("retry-management").emit("click"); await settle();
   assert.equal(reload.el("room-name").textContent, "A");
   assert.equal(reload.el("message-input").value, "Opening");
@@ -296,29 +305,31 @@ test("lost create response is found by create_id, survives reload and needs expl
   assert.equal(api.calls.filter(c => c.path === "/v1/rooms/create").length, 1);
 });
 
-test("duplicate clicks, asynchronous switch progress and failed activation preserve rooms", async () => {
-  const api = server([makeRoom("A"), makeRoom("B")]), ui = await launch(api);
+test("duplicate clicks and failed opening preserve the current running room", async () => {
+  const api = server([makeRoom("A"), makeRoom("B")]);
+  delete api.catalog.rooms[1].service; api.catalog.rooms[1].runtime_status = "closed";
+  const ui = await launch(api);
   let activate;
   api.hook = (path, data) => {
-    if (path !== "/v1/rooms/activate") return;
+    if (path !== "/v1/rooms/open") return;
     activate = data;
-    api.catalog.busy = true;
-    api.catalog.activation = { ...data, status: "running", phase: "closing" };
-    return api.catalog.activation;
+    const receipt = { ...data, status: "running" };
+    api.opens.set(data.open_id, receipt);
+    return receipt;
   };
   await ui.select("B"); await ui.select("B");
-  assert.equal(api.calls.filter(c => c.path === "/v1/rooms/activate").length, 1);
-  assert.equal(ui.el("send").disabled, true);
-  assert.match(ui.el("management-notice").textContent, /结清旧回合/);
+  assert.equal(api.calls.filter(c => c.path === "/v1/rooms/open").length, 1);
+  assert.equal(ui.el("message-input").readOnly, false);
+  assert.match(ui.el("management-notice").textContent, /尚未确认/);
   api.catalog.busy = false;
-  api.catalog.activation = { ...activate, status: "failed", error: "cleanup failed" };
+  api.opens.set(activate.open_id, { ...activate, status: "failed", error: "assembly failed" });
   await ui.refresh();
   assert.equal(ui.el("room-name").textContent, "A");
-  assert.match(ui.el("management-notice").textContent, /cleanup failed/);
+  assert.match(ui.el("management-notice").textContent, /assembly failed/);
   assert.equal(api.catalog.rooms.length, 2);
 });
 
-test("other tab changes the active epoch; a delayed history page cannot overwrite the new view", async () => {
+test("a delayed history page cannot overwrite a locally selected room", async () => {
   const api = server([makeRoom("A"), makeRoom("B")]);
   api.history.set("A", [message(60, "last A")]);
   const ui = await launch(api);
@@ -328,7 +339,7 @@ test("other tab changes the active epoch; a delayed history page cannot overwrit
     ? new Promise(resolve => { resolveHistory = resolve; }) : undefined;
   const history = ui.el("load-history").emit("click"); await settle();
   // A different tab performs the management action; this tab only polls it.
-  api.catalog.active = identity(api.catalog.rooms[1], "other-tab"); api.catalog.active_room_id = "B";
+  await ui.select("B");
   await ui.refresh(); await ui.draft("B draft");
   resolveHistory({ messages: [message(2, "late A")], snapshot_seq: 59, has_more: false }); await history;
   assert.equal(ui.el("room-name").textContent, "B");
@@ -358,22 +369,23 @@ test("a partial create retries the same request and never allocates a second ID"
   assert.equal(ui.el("room-name").textContent, "A");
 });
 
-test("activation response loss and reload keep the original activate_id without replay", async () => {
+test("opening response loss and reload keep the original open_id without replay", async () => {
   const api = server([makeRoom("A"), makeRoom("B")]);
+  delete api.catalog.rooms[1].service; api.catalog.rooms[1].runtime_status = "closed";
   let first = true;
   api.hook = (path, data) => {
-    if (path !== "/v1/rooms/activate") return;
+    if (path !== "/v1/rooms/open") return;
     if (first) { first = false; return Promise.reject(new Error("connection lost before receipt")); }
     return { ...data, status: "failed", error: "interrupted operation" };
   };
   const ui = await launch(api); await ui.select("B");
-  const original = api.calls.find(c => c.path === "/v1/rooms/activate").data;
+  const original = api.calls.find(c => c.path === "/v1/rooms/open").data;
   api.catalog.service_epoch = "restarted-manager";
   const reload = await launch(api, ui.saved);
-  assert.equal(api.calls.filter(c => c.path === "/v1/rooms/activate").length, 1);
+  assert.equal(api.calls.filter(c => c.path === "/v1/rooms/open").length, 1);
   await reload.el("retry-management").emit("click"); await settle();
-  const retried = api.calls.filter(c => c.path === "/v1/rooms/activate").at(-1).data;
-  assert.equal(retried.activate_id, original.activate_id);
+  const retried = api.calls.filter(c => c.path === "/v1/rooms/open").at(-1).data;
+  assert.equal(retried.open_id, original.open_id);
   assert.equal(retried.service_epoch, "restarted-manager");
   assert.equal(reload.el("room-name").textContent, "A");
   assert.match(reload.el("management-notice").textContent, /interrupted operation/);
@@ -554,7 +566,7 @@ test("viewport clipping and modal dialogs pause mention viewing; polling does no
 
 test("explicit single-room bootstrap retains composer and member addition without management navigation", async () => {
   const room = makeRoom("single"), api = server([room]);
-  api.hook = path => path === "/v1/ui" ? { ...api.catalog.active, operator: "tester", profiles: ["runtime"] } : undefined;
+  api.hook = path => path === "/v1/ui" ? { ...api.catalog.rooms[0]?.service, operator: "tester", profiles: ["runtime"] } : undefined;
   const ui = await launch(api);
   assert.equal(ui.el("room-nav").hidden, true);
   assert.equal(ui.el("toggle-add").hidden, false);
@@ -856,7 +868,7 @@ test("running or failed deletion remains visible and reload waits for an explici
   api.hook = (path, payload) => {
     if (path !== "/v1/rooms/delete") return;
     const room = api.catalog.rooms.find(room => room.room_id === payload.room_id);
-    room.status = "deleting"; room.deletion_phase = "closing"; api.catalog.busy = true;
+    room.status = "deleting"; room.deletion_phase = "closing"; room.busy = true;
     return structuredClone(room);
   };
   const ui = await launch(api);
@@ -866,9 +878,9 @@ test("running or failed deletion remains visible and reload waits for an explici
   assert.match(ui.el("management-notice").textContent, /结清会话并删除/);
   await ui.delete("B");
   assert.equal(api.calls.filter(call => call.path === "/v1/rooms/delete").length, 1);
-  api.catalog.busy = false;
+  api.catalog.rooms[0].busy = false;
   api.catalog.rooms[0].error = "Session cleanup incomplete";
-  delete api.catalog.active;
+  delete api.catalog.rooms[0]?.service;
   const reload = await launch(api, ui.saved);
   assert.match(reload.el("management-notice").textContent, /Session cleanup incomplete/);
   assert.equal(reload.el("retry-management").hidden, false);
@@ -885,7 +897,7 @@ test("another tab's deletion clears the view and late sends cannot restore a del
   api.hook = path => path === "/v1/send" ? new Promise(resolve => { complete = resolve; }) : undefined;
   await ui.draft("late send A");
   const sending = ui.el("compose").emit("submit"); await settle();
-  api.catalog.rooms.shift(); delete api.catalog.active; api.catalog.active_room_id = "";
+  api.catalog.rooms.shift(); api.catalog.default_room_id = "";
   await ui.refresh();
   const key = JSON.stringify(["teamx.draft", "instance-A", "tester"]);
   assert.equal(ui.saved.has(key), false);
@@ -937,7 +949,8 @@ function workspaceServer(rooms = [makeRoom("A"), makeRoom("B")]) {
       ws.members[0].workspace = `${target.root}/${ws.members[0].membership_id}`;
       ws.operation = { operation_id: data.operation_id, status: "completed", phase: "completed", target };
     }
-    api.catalog.active = identity(api.catalog.rooms.find(r => r.room_id === data.room_id), `workspace-${ws.workspace_version}`);
+    const room = api.catalog.rooms.find(r => r.room_id === data.room_id);
+    room.service = identity(room, `workspace-${ws.workspace_version}`);
     return structuredClone(ws.operation);
   };
   return api;
@@ -997,7 +1010,7 @@ test("Workspace waits for asynchronous completion before closing and can be reop
   api.workspaceHook = (path, data) => {
     if (path !== "/v1/workspace/apply") return;
     ws.operation = { operation_id: data.operation_id, status: "running", phase: "preparing", target: data.target };
-    ws.observation = identity(api.catalog.rooms[0]); api.catalog.busy = true; delete api.catalog.active;
+    ws.observation = identity(api.catalog.rooms[0]); api.catalog.rooms[0].busy = true; delete api.catalog.rooms[0]?.service;
     return structuredClone(ws.operation);
   };
   await editWorkspace(ui);
@@ -1006,7 +1019,7 @@ test("Workspace waits for asynchronous completion before closing and can be reop
   await ui.refresh(); assert.equal(ui.el("workspace-dialog").open, true);
   ws.operation.status = "completed"; ws.operation.phase = "completed";
   ws.workspace = ws.operation.target; ws.workspace_version++;
-  api.catalog.busy = false; api.catalog.active = identity(api.catalog.rooms[0], "workspace-completed");
+  api.catalog.rooms[0].busy = false; api.catalog.rooms[0].service = identity(api.catalog.rooms[0], "workspace-completed");
   await ui.refresh();
   assert.equal(ui.el("workspace-dialog").open, false);
   assert.equal(ui.el("workspace-summary").textContent, "设置已生效");
@@ -1110,7 +1123,7 @@ test("Workspace lost response observes original ID across reload, blocks duplica
   assert.equal(api.calls.filter(c => c.path === "/v1/workspace/apply").length, 1);
   const ws = api.workspaces.get("A");
   ws.operation = { operation_id: submitted.operation_id, target: submitted.target, status: "running", phase: "preparing" };
-  ws.observation = identity(api.catalog.rooms[0]); api.catalog.busy = true; delete api.catalog.active;
+  ws.observation = identity(api.catalog.rooms[0]); api.catalog.rooms[0].busy = true; delete api.catalog.rooms[0]?.service;
   reject(new Error("response lost")); await task;
   assert.equal(ui.el("workspace-dialog").open, true);
   assert.equal(ui.el("message-input").readOnly, true); assert.match(ui.el("workspace-summary").textContent, /正在初始化/);
@@ -1119,7 +1132,7 @@ test("Workspace lost response observes original ID across reload, blocks duplica
   const reload = await launch(api, ui.saved); await reload.el("open-workspace").emit("click");
 
   assert.equal(api.calls.filter(c => c.path === "/v1/workspace/apply").length, 1);
-  ws.operation.status = "failed"; ws.operation.error_code = "preparation_failed"; api.catalog.busy = false;
+  ws.operation.status = "failed"; ws.operation.error_code = "preparation_failed"; api.catalog.rooms[0].busy = false;
   await reload.refresh(); assert.equal(reload.el("workspace-retry").hidden, false);
   assert.equal(reload.el("workspace-dialog").open, true);
   assert.equal(reload.el("workspace-apply").disabled, true);
@@ -1135,7 +1148,7 @@ test("failed initialization restores an editable target, keeps message nodes sta
   ws.operation = { operation_id: failedID, status: "failed", phase: "preparing", error_code: "preparation_failed",
     target: { root: `workspaces/repos/${failedID}`, repository: { url: "https://gitlab.invalid/group/old", branch: "main" },
       binding: { provider: "gitlab", url: "https://gitlab.invalid", project: "group/old", token_env: "GITLAB_PAT" } } };
-  ws.can_revise = true; ws.observation = identity(room); delete api.catalog.active;
+  ws.can_revise = true; ws.observation = identity(room); delete api.catalog.rooms[0]?.service;
   const ui = await launch(api);
   await ui.el("open-workspace").emit("click");
   assert.equal(ui.el("workspace-fields").disabled, false);
@@ -1451,7 +1464,7 @@ test("platform settings save, verify, rotate and delete without storing credenti
   assert.match(ui.el("connection-validation").textContent, /尚未验证/);
   assert.equal(JSON.stringify([...ui.saved]).includes("private-token"), false);
   assert.equal(ui.el("message-input").value, "keep my draft");
-  assert.equal(api.catalog.active_room_id, "A");
+  assert.equal(api.catalog.default_room_id, "A");
   await ui.el("connection-delete").emit("click");
   assert.equal(ui.el("connections-empty").hidden, false);
   assert.equal(ui.el("connections-feedback").textContent, "连接已删除。");
@@ -2139,4 +2152,105 @@ test("Ctrl/Command Enter inserts a newline at the selection, retains drafts and 
   await input.emit("keydown", {key:"Enter"});await settle();
   assert.equal(api.calls.filter(call => call.path === "/v1/send").length, 1);
   finishSend({seq:2});await settle();
+});
+
+test("two tabs keep separate selections, drafts, pending sends and member activity across polling and reload", async () => {
+  const api = server([makeRoom("A"), makeRoom("B")]);
+  const a = await launch(api), b = await launch(api);
+  await a.draft("draft-A");
+  await b.select("B"); await b.draft("draft-B");
+  await Promise.all([a.refresh(), b.refresh()]);
+  assert.equal(a.el("room-name").textContent, "A");
+  assert.equal(b.el("room-name").textContent, "B");
+  api.hook = (path, data) => path === "/v1/send" && data.room_id === "A" ? Promise.reject(new Error("lost A receipt")) : undefined;
+  await a.el("compose").emit("submit");
+  assert.equal(a.el("message-input").readOnly, true);
+  assert.equal(b.el("message-input").readOnly, false);
+  await b.refresh(); assert.equal(b.el("message-input").value, "draft-B");
+  const reloadA = await launch(api, a.saved), reloadB = await launch(api, b.saved);
+  assert.equal(reloadA.el("room-name").textContent, "A");
+  assert.equal(reloadA.el("message-input").value, "draft-A");
+  assert.equal(reloadB.el("room-name").textContent, "B");
+  assert.equal(reloadB.el("message-input").value, "draft-B");
+  assert.equal(api.calls.filter(call => call.path === "/v1/rooms/open").length, 0);
+  assert.ok(api.calls.filter(call => call.path === "/v1/member/list").some(call => call.data.room_id === "A"));
+  assert.ok(api.calls.filter(call => call.path === "/v1/member/list").some(call => call.data.room_id === "B"));
+});
+
+test("a slow open receipt cannot replace a newer tab selection; reload reconciles without another POST", async () => {
+  const api = server([makeRoom("A"), makeRoom("B"), makeRoom("C")]);
+  const roomB = api.catalog.rooms[1]; delete roomB.service; roomB.runtime_status = "closed";
+  api.hook = (path, data) => {
+    if (path !== "/v1/rooms/open") return;
+    const receipt = { ...data, status: "running" };
+    api.opens.set(data.open_id, receipt); roomB.busy = true; roomB.runtime_status = "opening";
+    return structuredClone(receipt);
+  };
+  const ui = await launch(api); await ui.select("B");
+  await ui.select("C"); await ui.draft("C retained");
+  const [receipt] = api.opens.values(); receipt.status = "completed"; receipt.service = identity(roomB);
+  roomB.service = receipt.service; roomB.busy = false; roomB.runtime_status = "ready";
+  await ui.refresh();
+  assert.equal(ui.el("room-name").textContent, "C");
+  assert.equal(ui.el("message-input").value, "C retained");
+  const reload = await launch(api, ui.saved);
+  assert.equal(reload.el("room-name").textContent, "C");
+  assert.equal(api.calls.filter(call => call.path === "/v1/rooms/open").length, 1);
+});
+
+test("another room's lifecycle operation and runtime failure leave this tab usable", async () => {
+  const api = server([makeRoom("A"), makeRoom("B")]);
+  const a = await launch(api), b = await launch(api); await b.select("B");
+  api.catalog.rooms[0].busy = true; api.catalog.rooms[0].runtime_status = "opening";
+  await Promise.all([a.refresh(), b.refresh()]); await b.draft("B can send");
+  assert.equal(a.el("send").disabled, true);
+  assert.equal(b.el("send").disabled, false);
+  await a.select("B"); assert.equal(a.el("room-name").textContent, "B");
+  api.catalog.rooms[0].busy = false; api.catalog.rooms[0].runtime_status = "failed";
+  api.catalog.rooms[0].runtime_error = "A cleanup incomplete"; delete api.catalog.rooms[0].service;
+  await b.refresh();
+  assert.equal(b.el("send").disabled, false);
+  assert.match(b.el("room-list").children.find(row => row.children[0].children[0].textContent === "A").children[0].children[1].textContent, /A cleanup incomplete/);
+});
+
+test("duplicate open clicks still enter the completed room, and a reload preserves a newer selection", async () => {
+  const api = server([makeRoom("A"), makeRoom("B")]);
+  const room = api.catalog.rooms[1]; delete room.service; room.runtime_status = "closed";
+  api.hook = (path,data) => {
+    if (path !== "/v1/rooms/open") return;
+    const receipt = { ...data, status: "running" }; api.opens.set(data.open_id, receipt);
+    return structuredClone(receipt);
+  };
+  const ui = await launch(api); await ui.select("B"); await ui.select("B");
+  const [receipt] = api.opens.values(); receipt.status = "completed"; receipt.service = identity(room);
+  room.service = receipt.service; room.runtime_status = "ready";
+  await ui.refresh(); assert.equal(ui.el("room-name").textContent,"B");
+  assert.equal(api.calls.filter(call => call.path === "/v1/rooms/open").length,1);
+
+  const pendingApi = server([makeRoom("A"),makeRoom("B"),makeRoom("C")]);
+  const pendingRoom = pendingApi.catalog.rooms[1]; delete pendingRoom.service; pendingRoom.runtime_status = "closed";
+  pendingApi.hook = (path,data) => {
+    if (path !== "/v1/rooms/open") return;
+    const receipt = { ...data, status:"running" }; pendingApi.opens.set(data.open_id,receipt); return receipt;
+  };
+  const pendingUI = await launch(pendingApi); await pendingUI.select("B"); await pendingUI.select("C");
+  const reload = await launch(pendingApi,pendingUI.saved);
+  const [pending] = pendingApi.opens.values(); pending.status="completed"; pending.service=identity(pendingRoom);
+  pendingRoom.service=pending.service; pendingRoom.runtime_status="ready";
+  await reload.refresh(); assert.equal(reload.el("room-name").textContent,"C");
+});
+
+test("duplicate create submissions retain one ID while an unrelated ready room stays selectable", async () => {
+  const api=server([makeRoom("A"),makeRoom("C")]), ui=await launch(api);
+  let finish;
+  api.hook=(path,data)=>path==="/v1/rooms/create" ? new Promise(resolve=>{ finish=()=>{
+    const room={...makeRoom("B"),create_id:data.create_id};api.catalog.rooms.push(room);api.history.set("B",[]);resolve(room);
+  }; }) : undefined;
+  await ui.create("B"); await ui.el("create-form").emit("submit");
+  assert.equal(api.calls.filter(call=>call.path==="/v1/rooms/create").length,1);
+  await ui.select("C"); await ui.draft("C retained through create");
+  finish(); await settle();
+  assert.equal(ui.el("room-name").textContent,"C");
+  assert.equal(ui.el("message-input").value,"C retained through create");
+  assert.equal(api.catalog.rooms.filter(room=>room.name==="B").length,1);
 });

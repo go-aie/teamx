@@ -135,7 +135,7 @@
             </section>
             <section id="gitlab-events" class="workspace-form gitlab-events" aria-labelledby="gitlab-events-title" hidden>
               <div class="gitlab-events-heading"><h3 id="gitlab-events-title">接收设置</h3><span id="gitlab-events-state" class="quiet"></span></div>
-              <p class="quiet">开启后从此刻接收项目活动；关闭保留进度与积压。非当前房间暂存，激活后入房。</p>
+              <p class="quiet">开启后从此刻接收项目活动；关闭保留进度与积压。已打开房间持续入房；未打开时采集暂存，打开后投递。</p>
               <fieldset id="gitlab-events-fields">
                 <label for="gitlab-events-connection">平台连接</label><select id="gitlab-events-connection"></select>
                 <button id="gitlab-events-manage-connections" class="text-button" type="button">管理平台连接 ↗</button>
@@ -152,7 +152,7 @@
                 </div>
                 <p id="gitlab-events-type-hint" class="quiet">勾选接收，再次点击取消。普通评论包含 Issue 评论。</p>
                 <details><summary>过滤与检查周期</summary>
-                <label for="gitlab-events-interval">当前房间检查周期（3～30 秒）</label><input id="gitlab-events-interval" type="number" min="3" max="30" step="1" value="5">
+                <label for="gitlab-events-interval">房间可接收时检查周期（3～30 秒）</label><input id="gitlab-events-interval" type="number" min="3" max="30" step="1" value="5">
                 <label for="gitlab-events-branches">分支（每行一个，留空表示全部）</label><textarea id="gitlab-events-branches" rows="2" spellcheck="false"></textarea>
                 <label for="gitlab-events-ignore">忽略这些操作者（每行一个账号）</label><textarea id="gitlab-events-ignore" rows="2" spellcheck="false"></textarea>
                 <p class="quiet">不接收这些账号发起的活动。</p>
@@ -174,9 +174,9 @@
           <div id="notification-panel-todos" role="tabpanel" aria-labelledby="notification-tab-todos" hidden>
             <section id="gitlab-todos" class="workspace-form gitlab-events" aria-labelledby="gitlab-todos-title">
               <div class="gitlab-events-heading"><h3 id="gitlab-todos-title">接收设置</h3><span id="gitlab-todos-state" class="quiet"></span></div>
-              <p class="quiet">“我的”指所选连接账号。匹配的待办将发送到当前房间，所有成员均可阅读和处理。</p>
+              <p class="quiet">“我的”指所选连接账号。匹配的待办将发送到本房间，所有成员均可阅读和处理。</p>
               <fieldset id="gitlab-todos-fields">
-                <label class="workspace-check"><input id="gitlab-todos-enabled" type="checkbox">将我的 GitLab 待办发送到当前房间</label>
+                <label class="workspace-check"><input id="gitlab-todos-enabled" type="checkbox">将我的 GitLab 待办发送到本房间</label>
                 <label for="gitlab-todos-connection">个人连接</label><select id="gitlab-todos-connection"></select>
                 <p id="gitlab-todos-recipient" class="quiet" aria-live="polite"></p>
                 <label for="gitlab-todos-scope">项目范围</label><select id="gitlab-todos-scope"></select>
@@ -194,8 +194,8 @@
                   <label class="workspace-check"><input id="gitlab-todos-type-work_item" type="checkbox" value="work_item">工作项</label>
                 </div>
                 <details><summary>检查周期</summary>
-                  <label for="gitlab-todos-interval">当前房间（3～3600 秒）</label><input id="gitlab-todos-interval" type="number" min="3" max="3600" step="1" value="30">
-                  <label for="gitlab-todos-inactive-interval">非当前房间（不小于当前周期，最多 86400 秒）</label><input id="gitlab-todos-inactive-interval" type="number" min="3" max="86400" step="1" value="120">
+                  <label for="gitlab-todos-interval">房间可接收时（3～3600 秒）</label><input id="gitlab-todos-interval" type="number" min="3" max="3600" step="1" value="30">
+                  <label for="gitlab-todos-inactive-interval">未打开或操作中（不小于可接收周期，最多 86400 秒）</label><input id="gitlab-todos-inactive-interval" type="number" min="3" max="86400" step="1" value="120">
                 </details>
               </fieldset>
               <button id="gitlab-todos-manage-connections" class="text-button" type="button">管理平台连接 ↗</button>

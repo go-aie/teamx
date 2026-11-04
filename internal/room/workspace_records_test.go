@@ -67,7 +67,7 @@ func TestWorkspaceOperationPersistenceNeverAppliesOrReplays(t *testing.T) {
 	if _, err := m.activationConfig(room.RoomIdentity); !errors.Is(err, ErrBusy) {
 		t.Fatal("unfinished workspace operation allowed activation", err)
 	}
-	if _, err := m.startActivation("must-not-open", room.RoomIdentity); !errors.Is(err, ErrBusy) {
+	if _, err := m.startOpen("must-not-open", room.RoomIdentity); !errors.Is(err, ErrBusy) {
 		t.Fatal("unfinished workspace operation allowed activation receipt", err)
 	}
 	for _, path := range []string{"future-workspace", "agents"} {

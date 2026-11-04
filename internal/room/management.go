@@ -28,16 +28,13 @@ const maxRoomsFileBytes int64 = 64 << 20
 // Management identity has no implicit Room. Room tools must continue to carry
 // their full identity; they cannot target this catalog.
 type roomsResponse struct {
-	Busy         bool                `json:"busy"`
-	ServiceEpoch string              `json:"service_epoch"`
-	ActiveRoomID string              `json:"active_room_id"`
-	WriteError   string              `json:"write_error,omitempty"`
-	Rooms        []roomSummary       `json:"rooms"`
-	Operator     string              `json:"operator"`
-	Teams        []teamSummary       `json:"teams"`
-	Members      []teamMemberSummary `json:"members,omitempty"`
-	Active       *ServiceInfo        `json:"active,omitempty"`
-	Activation   *roomActivation     `json:"activation,omitempty"`
+	Busy          bool                 `json:"busy"`
+	ServiceEpoch  string               `json:"service_epoch"`
+	DefaultRoomID string               `json:"default_room_id,omitempty"`
+	WriteError    string               `json:"write_error,omitempty"`
+	Rooms         []roomRuntimeSummary `json:"rooms"`
+	Operator      string               `json:"operator"`
+	Teams         []teamSummary        `json:"teams"`
 }
 
 type roomSummary struct {
@@ -45,12 +42,22 @@ type roomSummary struct {
 	RoomIdentity
 	Name          string     `json:"name"`
 	CreateID      string     `json:"create_id"`
-	Status        string     `json:"status"` // creating, ready or deleting; none means active
+	Status        string     `json:"status"` // creating, ready or deleting
 	DeletionPhase string     `json:"deletion_phase,omitempty"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 	LastMessageAt *time.Time `json:"last_message_at,omitempty"`
 	Error         string     `json:"error,omitempty"`
+}
+
+// Runtime observations belong only to the HTTP catalog, never rooms.json.
+type roomRuntimeSummary struct {
+	roomSummary
+	Busy          bool                `json:"busy"`
+	Members       []teamMemberSummary `json:"members,omitempty"`
+	RuntimeStatus string              `json:"runtime_status"`
+	Service       *ServiceInfo        `json:"service,omitempty"`
+	RuntimeError  string              `json:"runtime_error,omitempty"`
 }
 
 type roomSelection struct {
@@ -106,15 +113,19 @@ type roomIndexEntry struct {
 }
 
 type roomsIndex struct {
+	OwnedRooms []RoomIdentity `json:"owned_rooms,omitempty"`
+	Opens      []roomOpen     `json:"opens,omitempty"`
+	Shutdowns  []roomShutdown `json:"shutdowns,omitempty"`
+	// Read old indexes only; all new ownership uses complete Room identities.
 	OwnedRoomID         string               `json:"owned_room_id,omitempty"`
 	Version             int                  `json:"version"`
-	ActiveRoomID        string               `json:"active_room_id"`
+	ActiveRoomID        string               `json:"active_room_id,omitempty"`
 	Rooms               []roomIndexEntry     `json:"rooms"`
 	Activations         []roomActivation     `json:"activations,omitempty"`
 	WorkspaceOperations []workspaceOperation `json:"workspace_operations,omitempty"`
 }
 
-// The root lock owns the catalog and at most one live service. Durable
+// The root lock owns the catalog and its live services. Durable
 // operations retain an owner independently of an HTTP caller.
 type roomManager struct {
 	toolCatalog          []tool.Definition
@@ -130,16 +141,18 @@ type roomManager struct {
 	teams                map[string]teamDefinition
 	teamsDir             string
 	mu                   sync.Mutex
+	shutdownGate         sync.Mutex
 	store                *Store // reuse atomic snapshot replacement and commit-unknown latch
 	epoch                string
 	index                roomsIndex
 	maxTurns             uint64
 	config               serviceConfig
 	factory              func(string, string, serviceConfig) (*service, error)
-	active               *service
+	runtimes             map[RoomIdentity]*roomRuntime
 	busy                 bool
 	closing              bool
 	operationDone        chan struct{}
+	recoveryStarted      bool
 }
 
 func newRoomManager(dir string, maxTurns uint64) (_ *roomManager, err error) {
@@ -167,11 +180,11 @@ func newRoomManager(dir string, maxTurns uint64) (_ *roomManager, err error) {
 	if maxTurns == 0 {
 		maxTurns = defaultMaxTurns
 	}
-	m := &roomManager{store: store, epoch: epoch, maxTurns: maxTurns, factory: newService}
+	m := &roomManager{store: store, epoch: epoch, maxTurns: maxTurns, factory: newService, runtimes: make(map[RoomIdentity]*roomRuntime)}
 	m.initPlatform()
 	err = readSnapshot(m.indexPath(), &m.index, maxRoomsFileBytes)
 	if errors.Is(err, os.ErrNotExist) {
-		m.index = roomsIndex{Version: formatVersion, Rooms: []roomIndexEntry{}}
+		m.index = roomsIndex{Version: roomsIndexVersion, Rooms: []roomIndexEntry{}}
 		err = m.saveIndex(m.index)
 	}
 	if err != nil {
@@ -179,6 +192,18 @@ func newRoomManager(dir string, maxTurns uint64) (_ *roomManager, err error) {
 	}
 	if err := m.validateIndex(); err != nil {
 		return nil, fmt.Errorf("%w: rooms.json: %w", ErrInvalid, err)
+	}
+	if err := m.migrateIndex(); err != nil {
+		return nil, err
+	}
+	for i, op := range m.index.Opens {
+		if op.Status == "running" {
+			next := m.copyIndex()
+			next.Opens[i].Status, next.Opens[i].Error = "failed", "service stopped during open; inspect and explicitly retry"
+			if err := m.saveIndex(next); err != nil {
+				return nil, err
+			}
+		}
 	}
 	// Interrupted management operations are diagnostic records, never replay jobs.
 	for i := range m.index.Activations {
@@ -227,6 +252,16 @@ func (m *roomManager) close() error {
 }
 
 func (m *roomManager) saveIndex(next roomsIndex) error {
+	// Normalize legacy ownership on every write, including version-2 indexes
+	// produced during the transition. Selection never establishes ownership.
+	if next.OwnedRoomID != "" {
+		for _, e := range next.Rooms {
+			if e.RoomID == next.OwnedRoomID {
+				next.OwnedRooms = appendOwner(next.OwnedRooms, e.RoomIdentity)
+			}
+		}
+		next.OwnedRoomID = ""
+	}
 	if err := m.store.check(true); err != nil {
 		return err
 	}
@@ -238,7 +273,7 @@ func (m *roomManager) saveIndex(next roomsIndex) error {
 }
 
 func (m *roomManager) validateIndex() error {
-	if m.index.Version != formatVersion {
+	if m.index.Version != formatVersion && m.index.Version != roomsIndexVersion {
 		return ErrVersion
 	}
 	if m.index.Rooms == nil || len(m.index.Rooms) > maxRooms {
@@ -308,6 +343,9 @@ func (m *roomManager) validateIndex() error {
 		if !found {
 			return ErrIdentity
 		}
+	}
+	if err := m.validateRuntimesIndex(); err != nil {
+		return err
 	}
 	return m.validateWorkspaceOperations()
 }
@@ -572,64 +610,20 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/v1/ui" && new(service).serveWeb(w, r) {
 		return
 	}
+	if r.URL.Path == "/v1/rooms/open" {
+		m.serveRoomOpen(w, r)
+		return
+	}
 	if r.URL.Path == "/v1/rooms/rename" {
 		m.serveRoomRename(w, r)
 		return
 	}
-	if r.URL.Path != "/v1/rooms" && r.URL.Path != "/v1/rooms/create" && r.URL.Path != "/v1/rooms/activate" && r.URL.Path != "/v1/rooms/delete" {
-		// Only a service with the exact RoomInstance and per-activation epoch can
-		// accept a request. No request identities are rewritten by the manager.
-		m.mu.Lock()
-		active, busy, closing := m.active, m.busy, m.closing
-		tools := r.URL.Path == "/v1/send" || r.URL.Path == "/v1/read" || r.URL.Path == "/v1/read/confirm"
-		m.mu.Unlock()
-		if closing {
-			writeAPIError(w, ErrClosing)
-			return
-		}
-		if active == nil {
-			writeAPIError(w, ErrIdentity)
-			return
-		}
-		if busy {
-			// Permit only the current Agent's tool calls while its turn settles (or
-			// while target resume is being committed). Human changes stay blocked.
-			data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 128<<10))
-			r.Body = io.NopCloser(bytes.NewReader(data))
-			var req apiRequest
-			if err != nil || !tools || json.Unmarshal(data, &req) != nil || req.Caller.Kind != "agent" || req.ServiceInfo != active.info {
-				writeAPIError(w, ErrBusy)
-				return
-			}
-		}
-		if r.URL.Path == "/v1/member/add" || r.URL.Path == "/v1/member/remove" {
-			writeAPIError(w, fmt.Errorf("%w: managed rooms retain their saved roster", ErrRequest))
-			return
-		}
-		if r.URL.Path == "/v1/discussion/restart" {
-			m.mu.Lock()
-			if m.busy || m.closing || m.active != active {
-				m.mu.Unlock()
-				writeAPIError(w, ErrBusy)
-				return
-			}
-			active.ServeHTTP(w, r)
-			if active.restarting.Load() {
-				m.busy = true
-				m.operationDone = make(chan struct{})
-				go func() {
-					active.management.Lock()
-					active.management.Unlock()
-					m.mu.Lock()
-					m.busy = false
-					close(m.operationDone)
-					m.mu.Unlock()
-				}()
-			}
-			m.mu.Unlock()
-		} else {
-			active.ServeHTTP(w, r)
-		}
+	if strings.HasPrefix(r.URL.Path, "/v1/rooms/") && r.URL.Path != "/v1/rooms/create" && r.URL.Path != "/v1/rooms/delete" {
+		http.NotFound(w, r)
+		return
+	}
+	if r.URL.Path != "/v1/rooms" && r.URL.Path != "/v1/rooms/create" && r.URL.Path != "/v1/rooms/delete" {
+		m.serveRuntime(w, r)
 		return
 	}
 	if (r.URL.Path == "/v1/rooms" && r.Method != http.MethodGet) || (r.URL.Path != "/v1/rooms" && r.Method != http.MethodPost) {
@@ -646,9 +640,16 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodGet {
-		rooms := make([]roomSummary, 0, len(m.index.Rooms))
+		rooms := make([]roomRuntimeSummary, 0, len(m.index.Rooms))
 		for _, e := range m.index.Rooms {
-			summary := e.roomSummary
+			summary := roomRuntimeSummary{roomSummary: e.roomSummary, RuntimeStatus: "closed", Busy: m.roomBusyLocked(e.RoomIdentity)}
+			if svc, rt := m.runtimeServiceLocked(e.RoomIdentity); rt != nil {
+				summary.RuntimeStatus, summary.RuntimeError = rt.status, rt.err
+				if rt.status == "ready" && svc != nil && !svc.closing.Load() {
+					info := svc.info
+					summary.Service = &info
+				}
+			}
 			// Preserve snapshot activity time separately from public message time,
 			// without writing the catalog on every message or scheduler update.
 			if info, err := os.Stat(filepath.Join(m.roomDir(e.RoomID), "room.json")); err == nil && info.ModTime().After(summary.UpdatedAt) {
@@ -662,26 +663,16 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				last := snapshot.Messages[len(snapshot.Messages)-1].CreatedAt
 				summary.LastMessageAt = &last
 			}
+			var saved managedRoomConfig
+			if err := readSnapshot(filepath.Join(m.roomDir(e.RoomID), "room-config.json"), &saved, maxPrivateFileBytes); err == nil && saved.RoomIdentity == e.RoomIdentity {
+				for _, member := range saved.Members {
+					summary.Members = append(summary.Members, teamMemberSummary{ID: member.AgentID, Name: member.Name})
+				}
+			}
 			rooms = append(rooms, summary)
 		}
-		response := roomsResponse{ServiceEpoch: m.epoch, ActiveRoomID: m.index.ActiveRoomID, Rooms: rooms,
+		response := roomsResponse{ServiceEpoch: m.epoch, DefaultRoomID: m.index.ActiveRoomID, Rooms: rooms,
 			Operator: humanOperator(), Busy: m.busy, Teams: m.teamSummaries()}
-		if m.active != nil && !m.active.closing.Load() && !m.busy {
-			info := m.active.info
-			response.Active = &info
-			var saved managedRoomConfig
-			if err := readSnapshot(filepath.Join(m.roomDir(info.RoomID), "room-config.json"), &saved, maxPrivateFileBytes); err != nil {
-				writeAPIError(w, err)
-				return
-			}
-			for _, member := range saved.Members {
-				response.Members = append(response.Members, teamMemberSummary{ID: member.AgentID, Name: member.Name})
-			}
-		}
-		if len(m.index.Activations) > 0 {
-			op := m.index.Activations[len(m.index.Activations)-1]
-			response.Activation = &op
-		}
 		if m.store.uncertain {
 			response.WriteError = ErrCommitUnknown.Error()
 		}
@@ -697,7 +688,6 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Caller       Caller `json:"caller"`
 		roomSelection
 		RoomIdentity
-		ActivateID string `json:"activate_id,omitempty"`
 	}
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 128<<10))
 	dec.DisallowUnknownFields()
@@ -709,9 +699,8 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, ErrRequest)
 		return
 	}
-	if (r.URL.Path == "/v1/rooms/create" && (req.RoomIdentity != (RoomIdentity{}) || req.ActivateID != "")) ||
-		(r.URL.Path == "/v1/rooms/activate" && req.roomSelection != (roomSelection{})) ||
-		(r.URL.Path == "/v1/rooms/delete" && (req.roomSelection != (roomSelection{}) || req.ActivateID != "")) {
+	if (r.URL.Path == "/v1/rooms/create" && req.RoomIdentity != (RoomIdentity{})) ||
+		(r.URL.Path == "/v1/rooms/delete" && req.roomSelection != (roomSelection{})) {
 		writeAPIError(w, ErrRequest)
 		return
 	}
@@ -723,14 +712,8 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var err error
 	if r.URL.Path == "/v1/rooms/delete" {
 		result, err = m.startDeletion(req.RoomIdentity)
-	} else if r.URL.Path == "/v1/rooms/activate" {
-		if req.roomSelection != (roomSelection{}) {
-			writeAPIError(w, ErrRequest)
-			return
-		}
-		result, err = m.startActivation(req.ActivateID, req.RoomIdentity)
 	} else {
-		if req.RoomIdentity != (RoomIdentity{}) || req.ActivateID != "" {
+		if req.RoomIdentity != (RoomIdentity{}) {
 			writeAPIError(w, ErrRequest)
 			return
 		}

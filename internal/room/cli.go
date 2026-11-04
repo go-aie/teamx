@@ -81,7 +81,25 @@ func (c cliClient) identity(ctx context.Context, roomID string, env func(string)
 	}
 	var info ServiceInfo
 	if err := c.request(ctx, "/v1/info", nil, &info); err != nil {
-		return apiRequest{}, err
+		// Managed services have no implicit Room. Resolve an explicitly named
+		// live instance from the catalog; ordinary requests still carry its full
+		// identity and never start a replacement service.
+		var catalog roomsResponse
+		if catalogErr := c.request(ctx, "/v1/rooms", nil, &catalog); catalogErr != nil {
+			return apiRequest{}, err
+		}
+		if roomID == "" {
+			return apiRequest{}, fmt.Errorf("%w: managed service requires --room", ErrRequest)
+		}
+		for _, room := range catalog.Rooms {
+			if room.RoomID == roomID && room.Service != nil {
+				info = *room.Service
+				break
+			}
+		}
+		if info == (ServiceInfo{}) {
+			return apiRequest{}, ErrIdentity
+		}
 	}
 	if roomID != "" && roomID != info.RoomID {
 		return apiRequest{}, ErrIdentity
@@ -141,6 +159,7 @@ func runCLI(ctx context.Context, args []string, stdout, stderr io.Writer, env fu
 		endpoint = "http://127.0.0.1:8088"
 	}
 	flags.StringVar(&endpoint, "endpoint", endpoint, "local Room HTTP endpoint")
+	flags.StringVar(&roomID, "room", roomID, "explicit Room to address (required in management mode)")
 	asJSON := flags.Bool("json", false, "write JSON (one object per read page)")
 	var agent, runner, profile, text, messageID string
 	var retry, cancelTurn, resume bool

@@ -25,4 +25,4 @@
 
 ## 平台扩展
 
-[GitHub 活动方案](GITHUB-EVENTS-PLAN.zh.md)仍是提案。连接、通知和独立工具按需分别接入，复用当前公共生命周期，不要求先增加 Workspace 绑定。多项目通知、多仓库 Workspace、后台多房间 Agent 并行、Webhook 和自动事务处理不属于当前交付。
+[GitHub 活动方案](GITHUB-EVENTS-PLAN.zh.md)仍是提案。连接、通知和独立工具按需分别接入，复用当前公共生命周期，不要求先增加 Workspace 绑定。多项目通知、多仓库 Workspace、全局执行配额、空闲实例卸载、跨房间协作、Webhook 和自动事务处理不属于当前交付。

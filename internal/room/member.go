@@ -28,6 +28,7 @@ type MemberAgent struct {
 	BackendBlocked       string // Restored backend cannot safely open a new session.
 	PersistentScheduling bool
 	RestoredTurnsUsed    uint64
+	ExecutionFrozen      *atomic.Bool // shared service shutdown boundary
 
 	owner          actorx.Context
 	latest         *UnreadChanged
@@ -277,7 +278,7 @@ func (m *MemberAgent) BindScheduler(_ actorx.Context, msg bindTurnScheduler) (st
 }
 
 func (m *MemberAgent) ready() bool {
-	return !m.active && !m.paused && !m.fault && m.BackendBlocked == "" &&
+	return (m.ExecutionFrozen == nil || !m.ExecutionFrozen.Load()) && !m.active && !m.paused && !m.fault && m.BackendBlocked == "" &&
 		m.rotationWork == nil && (m.rotation == nil || (m.rotation.Status != "waiting" && m.rotation.Status != "closing")) &&
 		m.turnsUsed < m.MaxTurns && m.latest != nil && m.latest.UnreadCount > 0 &&
 		(m.retry || m.latest.NewestUnreadSeq > m.state.LastOfferedUnreadSeq) && !m.now().Before(m.due)

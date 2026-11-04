@@ -18,7 +18,7 @@ func TestRoomRenamePreservesRuntimeCreationReceiptAndReload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	active := activateOK(t, m, room, "activate")
+	active := openRoomOK(t, m, room, "activate")
 	info := active.info
 	files := map[string][]byte{}
 	for _, name := range []string{"room-config.json", "room.json"} {
@@ -32,7 +32,7 @@ func TestRoomRenamePreservesRuntimeCreationReceiptAndReload(t *testing.T) {
 	if r.Code != 200 || json.Unmarshal(r.Body.Bytes(), &renamed) != nil || renamed.Name != "新名称" || renamed.RoomIdentity != room.RoomIdentity {
 		t.Fatal(r.Code, r.Body.String())
 	}
-	if m.active != active || active.info != info || m.busy {
+	if m.runtimes[room.RoomIdentity].service != active || active.info != info || m.busy {
 		t.Fatal("rename changed execution identity")
 	}
 	for name, before := range files {

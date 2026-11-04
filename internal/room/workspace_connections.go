@@ -39,17 +39,18 @@ func (m *roomManager) prepareWorkspaceConnection(ctx context.Context, req *works
 			return nil
 		} // startWorkspaceApply checks the exact intent
 	}
-	if m.closing || m.busy {
+	if m.closing || m.roomBusyLocked(req.RoomIdentity) {
 		m.mu.Unlock()
 		return ErrBusy
 	}
 	replacement := false
 	for _, op := range m.index.WorkspaceOperations {
-		if op.OperationID == req.ReplacesOperationID && op.RoomIdentity == req.RoomIdentity && op.revisable() && m.index.ActiveRoomID == req.RoomID {
+		if op.OperationID == req.ReplacesOperationID && op.RoomIdentity == req.RoomIdentity && op.revisable() {
 			replacement = true
 		}
 	}
-	if !replacement && (m.active == nil || m.active.info.RoomIdentity != req.RoomIdentity) {
+	svc, _ := m.runtimeServiceLocked(req.RoomIdentity)
+	if !replacement && (svc == nil || svc.closing.Load()) {
 		m.mu.Unlock()
 		return ErrIdentity
 	}
@@ -119,7 +120,7 @@ func (m *roomManager) connectionExecute(owner RoomIdentity, w workspaceConfig, r
 
 // This private tool exchange is intentionally separate from ordinary management
 // APIs. Browser requests and humans cannot use it. No caller supplies a URL,
-// connection ID or credential ID: all are derived from the active Room snapshot.
+// connection ID or credential ID: all are derived from the owning Room snapshot.
 func (m *roomManager) serveWorkspaceToolCredential(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost || r.Header.Get("Origin") != "" || r.Header.Get("Sec-Fetch-Mode") != "" || r.Header.Get("X-TeamX-Tool") != "credential" {
 		writeAPIError(w, ErrIdentity)
@@ -137,8 +138,8 @@ func (m *roomManager) serveWorkspaceToolCredential(w http.ResponseWriter, r *htt
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	s := m.active
-	if m.closing || m.busy || s == nil || s.closing.Load() || s.info != req.ServiceInfo || req.Caller.Kind != "agent" {
+	s, rt := m.runtimeServiceLocked(req.RoomIdentity)
+	if m.closing || m.busy || rt != nil && rt.busy && !rt.resuming || s == nil || s.closing.Load() || s.restarting.Load() || s.info != req.ServiceInfo || req.Caller.Kind != "agent" {
 		writeAPIError(w, ErrIdentity)
 		return
 	}

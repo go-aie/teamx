@@ -199,7 +199,7 @@ func (m *roomManager) configureTodosLocked(key notification.Key, version uint64,
 	if m.closing {
 		return gitlab.TodosState{}, nil, notification.ErrClosing
 	}
-	if m.busy {
+	if m.roomBusyLocked(key.Owner) {
 		return gitlab.TodosState{}, nil, notification.ErrBusy
 	}
 	entry, err := m.workspaceRoom(key.Owner)
@@ -262,7 +262,7 @@ func (m *roomManager) configureTodosLocked(key notification.Key, version uint64,
 }
 func (m *roomManager) syncTodosSubscription(ctx context.Context, key notification.Key, version uint64) error {
 	m.mu.Lock()
-	if m.closing || m.busy {
+	if m.closing || m.roomBusyLocked(key.Owner) {
 		m.mu.Unlock()
 		return ErrBusy
 	}

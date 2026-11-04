@@ -317,7 +317,7 @@ func TestGitLabEventsCurrentFiveSecondsAndInactiveThirtySeconds(t *testing.T) {
 		t.Fatal("activation did not immediately check both paths")
 	}
 	h.m.mu.Lock()
-	h.m.active = nil
+	delete(h.m.runtimes, h.room.RoomIdentity)
 	h.m.mu.Unlock()
 	h.clock.add(time.Second)
 	h.step()

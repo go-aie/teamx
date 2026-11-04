@@ -16,8 +16,8 @@ type toolCall struct {
 }
 
 func (m *roomManager) toolRosterLocked(ctx context.Context, owner RoomIdentity) ([]MemberState, error) {
-	if m.active != nil && m.active.info.RoomIdentity == owner && !m.active.closing.Load() {
-		list, err := m.active.room.Call[MemberList](ctx, ListMembers{owner})
+	if svc, _ := m.runtimeServiceLocked(owner); svc != nil && !svc.closing.Load() {
+		list, err := svc.room.Call[MemberList](ctx, ListMembers{owner})
 		if err != nil {
 			return nil, err
 		}

@@ -102,8 +102,7 @@ func eventLiveService(t *testing.T, h *eventHarness) *service {
 		t.Fatal(err)
 	}
 	h.m.mu.Lock()
-	h.m.active = svc
-	h.m.index.ActiveRoomID = h.room.RoomID
+	h.m.runtimes[h.room.RoomIdentity] = &roomRuntime{service: svc, status: "ready"}
 	h.m.mu.Unlock()
 	return svc
 }

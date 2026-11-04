@@ -177,9 +177,9 @@ func (h *eventHarness) prepare() {
 func makeEventHarnessActive(t *testing.T, h *eventHarness) {
 	t.Helper()
 	h.m.mu.Lock()
-	h.m.active = &service{info: ServiceInfo{RoomIdentity: h.room.RoomIdentity}}
+	h.m.runtimes[h.room.RoomIdentity] = &roomRuntime{service: &service{info: ServiceInfo{RoomIdentity: h.room.RoomIdentity}}, status: "ready"}
 	h.m.mu.Unlock()
-	t.Cleanup(func() { h.m.mu.Lock(); h.m.active = nil; h.m.mu.Unlock() })
+	t.Cleanup(func() { h.m.mu.Lock(); delete(h.m.runtimes, h.room.RoomIdentity); h.m.mu.Unlock() })
 }
 
 // Existing persistence/poller fixtures exercise snapshots created before the

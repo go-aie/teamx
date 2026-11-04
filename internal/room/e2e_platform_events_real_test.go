@@ -161,7 +161,7 @@ func TestRealGitLabEventsDSH(t *testing.T) {
 			return trace.wrap(f, run), projectID, nil
 		}
 		fail(m.notifications.Start())
-		fail(m.restoreActive())
+		fail(m.restoreRuntimes())
 		fail(ge04Ready(d, m))
 	}
 	stop := func() {
@@ -622,18 +622,13 @@ func ge04CheckEvent(t *testing.T, d *realRoomDriver, room RoomIdentity, marker s
 		"event_to_observed_ms": first.Ended.Sub(e.CreatedAt).Milliseconds(), "observed_to_room_ms": post.CreatedAt.Sub(first.Ended).Milliseconds(), "event_to_room_ms": post.CreatedAt.Sub(e.CreatedAt).Milliseconds()}
 }
 
-// restoreActive starts an asynchronous activation. A restored identity is usable
-// only after the catalog publishes a stable active service, as production
-// startManaged already requires before issuing CLI requests.
+// Runtime recovery is asynchronous; wait for this driver's exact Room.
 func ge04Ready(d *realRoomDriver, m *roomManager) error {
-	m.mu.Lock()
-	selected := m.index.ActiveRoomID
-	m.mu.Unlock()
-	if selected == "" {
+	if d.info.RoomIdentity == (RoomIdentity{}) {
 		return nil
 	}
 	return d.until(func() (bool, error) {
 		catalog, err := d.managedCatalog()
-		return err == nil && !catalog.Busy && catalog.Active != nil && catalog.Active.RoomID == selected, err
+		return err == nil && !catalog.Busy && catalogService(catalog, d.info.RoomIdentity) != nil, err
 	})
 }

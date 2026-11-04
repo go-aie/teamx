@@ -10,7 +10,7 @@ function fixture() {
     api.calls.push({path,body:structuredClone(body)});
     const overridden=api.hook?.(path,body);if(overridden!==undefined)return overridden;
     if(path==="/v1/ui")return {managed:true};
-    if(path==="/v1/rooms")return {service_epoch:"manager",operator:"tester",active_room_id:"A",active:{room_id:"A",room_instance:"instance-A",service_epoch:"active-A"},rooms:[{room_id:"A",room_instance:"instance-A",name:"A",status:"ready"}],teams:[]};
+    if(path==="/v1/rooms")return {service_epoch:"manager",operator:"tester",rooms:[{room_id:"A",room_instance:"instance-A",name:"A",status:"ready",runtime_status:"ready",service:{room_id:"A",room_instance:"instance-A",service_epoch:"active-A"}}],teams:[]};
     if(path.startsWith("/v1/workspace?"))return {workspace:{root:"workspaces"},workspace_version:1,members:[],credential_status:"missing"};
     if(path.startsWith("/v1/platform/notifications?"))return {subscriptions:[]};
     if(path.startsWith("/v1/platform/connections?"))return {connections:[connection]};

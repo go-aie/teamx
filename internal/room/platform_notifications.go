@@ -92,7 +92,8 @@ func (m *roomManager) admitPlatformNotificationLocked(ctx context.Context, state
 		return scope, err
 	}
 	scope.Directory = filepath.Join(m.roomDir(meta.Key.Owner.RoomID), "notification-queries", meta.Key.Source.Provider+"."+meta.Key.Source.Channel+"."+meta.Key.SubscriptionID)
-	scope.Current = m.active != nil && m.active.info.RoomIdentity == meta.Key.Owner && !m.active.closing.Load()
+	svc, _ := m.runtimeServiceLocked(meta.Key.Owner)
+	scope.Current = !m.roomBusyLocked(meta.Key.Owner) && svc != nil && !svc.closing.Load() && !svc.restarting.Load()
 	return scope, nil
 }
 
@@ -100,10 +101,10 @@ func (m *roomManager) admitPlatformNotificationLocked(ctx context.Context, state
 // through the reply prevents activation/deletion from crossing this commit.
 func (m *roomManager) commitPlatformNotificationLocked(ctx context.Context, meta notification.Metadata, item notification.Item) error {
 	owner := meta.Key.Owner
-	if m.busy || m.active == nil || m.active.info.RoomIdentity != owner {
+	svc, _ := m.runtimeServiceLocked(owner)
+	if m.closing || m.roomBusyLocked(owner) || svc == nil {
 		return notification.ErrBusy
 	}
-	svc := m.active
 	if !svc.changes.TryRLock() {
 		return notification.ErrBusy
 	}

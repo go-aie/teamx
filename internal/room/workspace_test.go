@@ -407,7 +407,7 @@ func TestWorkspaceOrdinaryDirectoryAndActivationRecovery(t *testing.T) {
 	before := saved
 	dir := filepath.Join(m.roomDir(target.RoomID), filepath.FromSlash(saved.Members[0].Workspace))
 	os.RemoveAll(dir)
-	activateOK(t, m, target, "restore-directory")
+	openRoomOK(t, m, target, "restore-directory")
 	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
 		t.Fatal("did not create missing ordinary directory", err)
 	}

@@ -177,7 +177,7 @@ func TestRealGitLabTodosDSH(t *testing.T) {
 			return events.wrap(f, run), projectID, nil
 		}
 		fail(m.notifications.Start())
-		fail(m.restoreActive())
+		fail(m.restoreRuntimes())
 		fail(ge04Ready(d, m))
 		phase(run)
 	}

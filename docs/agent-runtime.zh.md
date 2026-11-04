@@ -65,7 +65,7 @@ flowchart LR
 
 取消调用返回或进程退出请求发出，都不足以释放责任。组件需确认协议读取、worker、已观察工具及归属进程树结清；不能按裸 PID 杀进程或让新 Session 与不明旧执行重叠。
 
-协议 EOF、部分写入、未知响应、超限或不可信终态会停用会话并报告结果可能不确定，不重放 prompt。关闭超时后后台仍持有清理责任与目录锁，后续可再次等待。服务 Ctrl-C / SIGTERM 先停止新接纳，再结清管理操作、成员、工具、Room 和存储；不能把超时当作正常退出。
+协议 EOF、部分写入、未知响应、超限或不可信终态会停用会话并报告结果可能不确定，不重放 prompt。关闭超时后后台仍持有清理责任与目录锁，后续可再次等待。服务 Ctrl-C / SIGTERM 先停止新接纳并冻结所有 Room 的调度，再在统一期限内并行结清各房间管理操作、成员、工具、通知查询和存储；一个失败不跳过其他房间。失败按完整房间身份记录，未结清继续保留运行归属和根目录锁，不能把超时当作正常退出。
 
 ## 正常恢复与显式轮换
 
@@ -75,7 +75,7 @@ flowchart LR
 | 显式轮换 | 确认旧执行全部停止后切换持久代际；新 Session 懒创建，旧目录保留；私有上下文不迁移 |
 | 重新开始讨论 | 全队结清和轮换后清空公共历史；工作文件及预算保留 |
 
-恢复时更新当前 CLI 身份；恢复失败不静默新建。遗留 running 回合记为 interrupted 并暂停，正常恢复资格不意味着自动重放旧回合。失败会话可在执行结清后显式重置，但结清证明不等于原会话正常恢复许可。
+受管服务按各房间的持久协作意图恢复，界面是否查看不参与判断；已全部暂停且已结清的房间按需打开。重复打开健康实例不更换 Session 或续额。恢复时更新当前 CLI 身份；恢复失败不静默新建。遗留 running 回合记为 interrupted 并暂停，正常恢复资格不意味着自动重放旧回合。失败会话可在执行结清后显式重置，但结清证明不等于原会话正常恢复许可。
 
 状态目录含锁、启动记录、`backend.json`、独立 DSH home/agents 及私有历史；Room 在 `session.json` 引用具体代际。`settled.json` 仅供显式重置核对，并在再次启动前消费，不授予原会话恢复权。
 
@@ -109,4 +109,4 @@ TEAMX_DSH_REAL=1 TEAMX_DSH_OUTPUT=/absolute/new-session-evidence \
 | `TEAMX_DSH_ROTATION_REAL` | `internal/room: TestRealDSHRotation` | 显式轮换及新旧 Session 隔离 |
 | `TEAMX_DSH_SHUTDOWN_REAL` | `internal/room: TestRealDSHShutdownRecovery` | 工具运行时 Ctrl-C、进程结清及原 Session 恢复 |
 
-受管房间使用 [TestRealDSHManagedRooms](../internal/room/activation_real_test.go)，传入 `-teamx-management-real-output ABS_NEW_DIR`、`-teamx-management-env-file ABS_ENV_FILE`、`-teamx-management-base-url MODEL_URL`。这些测试会调用真实模型，不在普通检查中启用。
+受管房间使用 [TestRealDSHManagedRooms](../internal/room/activation_real_test.go)，传入 `-teamx-management-real-output ABS_NEW_DIR`、`-teamx-management-env-file ABS_ENV_FILE`、`-teamx-management-base-url MODEL_URL`。该入口覆盖双房间真实工具并行、后台公共消息、原 Session／预算保留、后续调度及全部房间退出结清。这些测试会调用真实模型，不在普通检查中启用。

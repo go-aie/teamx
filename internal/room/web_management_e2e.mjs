@@ -16,8 +16,8 @@ async function ready(name) {
     try { list = await catalog(); }
     catch (error) { if (error.code !== "busy") throw error; }
     if (!list) { await new Promise(resolve => setTimeout(resolve, 10)); continue; }
-    if (!list.busy && list.active && list.rooms.find(r => r.room_id === list.active_room_id)?.name === name &&
-      ui.el("room-name").textContent === name && !ui.el("new-room").disabled) return list;
+    if (!list.busy && list.rooms.find(r => r.name === name)?.service &&
+      ui.el("room-name").textContent === name && !ui.el("new-room").disabled) return { ...list, selected: list.rooms.find(r => r.name === name).service };
     await new Promise(resolve => setTimeout(resolve, 10));
   }
   throw new Error(`Room ${name} never ready: ${ui.el("management-notice").textContent} ${ui.el("sync-error").textContent}`);
@@ -28,18 +28,18 @@ assert.ok(ui.el("message-input").value);
 const opening = ui.el("message-input").value;
 assert.equal(ui.el("message-count").textContent, "0 条消息");
 // Keep the scenario deterministic and do not consume model turns.
-const members = await api.request("/v1/member/list", { ...a.active, caller: { kind: "human", id: a.operator } });
-for (const member of members.members) await api.request("/v1/member/pause", { ...a.active,
+const members = await api.request("/v1/member/list", { ...a.selected, caller: { kind: "human", id: a.operator } });
+for (const member of members.members) await api.request("/v1/member/pause", { ...a.selected,
   caller: { kind: "human", id: a.operator }, agent_id: member.agent_id, membership_id: member.membership_id });
 await ui.draft("HTTP A preserved message"); await ui.el("compose").emit("submit"); await settle();
 assert.equal(ui.el("message-count").textContent, "1 条消息");
 await ui.draft("HTTP draft A");
-const beforeRename = structuredClone(a.active);
+const beforeRename = structuredClone(a.selected);
 await ui.el("rename-room").emit("click");
 ui.el("rename-room-name").value = "HTTP-A-renamed";
 await ui.el("rename-form").emit("submit");
 assert.equal(ui.el("room-name").textContent, "HTTP-A-renamed");
-assert.deepEqual((await catalog()).active, beforeRename);
+assert.deepEqual((await catalog()).rooms.find(r => r.name === "HTTP-A-renamed").service, beforeRename);
 assert.equal(ui.el("message-count").textContent, "1 条消息");
 assert.equal(ui.el("message-input").value, "HTTP draft A");
 await ui.el("rename-room").emit("click");
@@ -48,7 +48,7 @@ await ui.el("rename-form").emit("submit");
 await ui.create("HTTP-B"); const b = await ready("HTTP-B");
 assert.equal(ui.el("message-count").textContent, "0 条消息");
 assert.equal(ui.el("message-input").value, opening);
-assert.notEqual(a.active.room_instance, b.active.room_instance);
+assert.notEqual(a.selected.room_instance, b.selected.room_instance);
 await ui.draft("HTTP draft B"); await ui.select("HTTP-A"); await ready("HTTP-A");
 assert.equal(ui.el("message-count").textContent, "1 条消息");
 assert.equal(ui.el("message-input").value, "HTTP draft A");
@@ -69,7 +69,7 @@ async function removed(name, view) {
   throw new Error(`Room ${name} deletion incomplete`);
 }
 await reloaded.delete("HTTP-A");
-assert.equal((await removed("HTTP-A", reloaded)).active_room_id, b.active_room_id);
+await removed("HTTP-A", reloaded);
 assert.equal(reloaded.el("room-name").textContent, "HTTP-B");
 await reloaded.delete("HTTP-B");
 assert.equal((await removed("HTTP-B", reloaded)).rooms.length, 0);

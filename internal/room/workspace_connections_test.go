@@ -65,7 +65,7 @@ func TestWorkspaceSharedVerifiedConnection(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			m, _ := sharedWorkspaceManager(t)
 			owner := managerCreate(t, m, "verified-connection")
-			activateOK(t, m, owner, "initial")
+			openRoomOK(t, m, owner, "initial")
 			req := platformTestRequest(m)
 			if kind == "env" {
 				t.Setenv("WORKSPACE_TEST_TOKEN", req.PAT)
@@ -151,7 +151,7 @@ func TestWorkspaceSharedReadRechecksConnectionContents(t *testing.T) {
 func TestWorkspaceSharedConnectionMigrationRotationAndToolScope(t *testing.T) {
 	m, _ := sharedWorkspaceManager(t)
 	owner := managerCreate(t, m, "legacy-auth")
-	s := activateOK(t, m, owner, "initial")
+	s := openRoomOK(t, m, owner, "initial")
 	legacy := workspaceRequest(m, owner, workspaceConfig{Repository: &workspaceRepository{URL: "https://gitlab.invalid/group/project.git"}, Binding: &workspaceBinding{Provider: "gitlab", URL: "https://gitlab.invalid", Project: "group/project"}})
 	legacy.PAT = "old-room-pat"
 	applyWorkspace(t, m, legacy)
@@ -181,7 +181,7 @@ func TestWorkspaceSharedConnectionMigrationRotationAndToolScope(t *testing.T) {
 	}
 	tool := filepath.Join(saved.Members[0].ToolEnv["TEAMX_GITLAB_TOOLS"], "binding.json")
 	toolBytes, _ := os.ReadFile(tool)
-	active := m.active
+	active := m.runtimes[owner.RoomIdentity].service
 	refs := platformTestList(t, m)[0].References
 	if len(refs) != 1 || refs[0].RoomIdentity != owner.RoomIdentity {
 		t.Fatal(refs)
@@ -195,7 +195,7 @@ func TestWorkspaceSharedConnectionMigrationRotationAndToolScope(t *testing.T) {
 	}
 	req.ReferencedRooms = []RoomIdentity{owner.RoomIdentity}
 	c = platformTestSave(t, m, req)
-	if m.active != active || c.CredentialVersion != 2 {
+	if m.runtimes[owner.RoomIdentity].service != active || c.CredentialVersion != 2 {
 		t.Fatal("rotation rebuilt service")
 	}
 	_, currentConfig := readManagedRoom(t, m, owner)
@@ -223,6 +223,9 @@ func TestWorkspaceSharedConnectionMigrationRotationAndToolScope(t *testing.T) {
 		m.ServeHTTP(w, r)
 		return w
 	}
+	// The credential exchange follows A even after the old UI selects B.
+	other := managerCreate(t, m, "view-other-room")
+	openRoomOK(t, m, other, "select-other")
 	result := call(payload, false)
 	var private struct {
 		Token     string `json:"token"`
@@ -256,9 +259,9 @@ func TestWorkspaceSharedConnectionReuseFailureAndLateProjectCheck(t *testing.T) 
 	a, b := managerCreate(t, m, "A"), managerCreate(t, m, "B")
 	req := platformTestRequest(m)
 	c := platformTestSave(t, m, req)
-	activateOK(t, m, a, "A")
+	openRoomOK(t, m, a, "A")
 	sharedWorkspace(t, m, a, c, 1)
-	activateOK(t, m, b, "B")
+	openRoomOK(t, m, b, "B")
 	before, raw := readManagedRoom(t, m, b)
 	target := workspaceConfig{Repository: &workspaceRepository{URL: c.URL + "/group/project.git"}, Binding: &workspaceBinding{Provider: "gitlab", URL: c.URL, Project: "group/project", ConnectionID: c.ID}}
 	bad := workspaceRequest(m, b, target)
@@ -395,7 +398,7 @@ func TestGitLabEventsSharedEnvironmentChangeRejectsLatePage(t *testing.T) {
 func TestWorkspaceSharedPendingReferenceAndFailedPreparationPreserveLegacy(t *testing.T) {
 	m, _ := sharedWorkspaceManager(t)
 	owner := managerCreate(t, m, "pending")
-	activateOK(t, m, owner, "initial")
+	openRoomOK(t, m, owner, "initial")
 	req := platformTestRequest(m)
 	c := platformTestSave(t, m, req)
 	original, _ := readManagedRoom(t, m, owner)

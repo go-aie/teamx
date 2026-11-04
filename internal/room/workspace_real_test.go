@@ -138,14 +138,14 @@ func TestRealWorkspaceGitLabDSH(t *testing.T) {
 		if err != nil {
 			return false, err
 		}
-		if list.Busy || list.Active == nil {
+		if list.Busy {
 			return false, nil
 		}
 		for _, room := range list.Rooms {
-			if room.Name == "Workspace-A" {
-				a = room
-				d.info = *list.Active
-				return list.Active.RoomIdentity == room.RoomIdentity, nil
+			if room.Name == "Workspace-A" && room.Service != nil {
+				a = room.roomSummary
+				d.info = *room.Service
+				return true, nil
 			}
 		}
 		return false, nil
@@ -195,10 +195,11 @@ func TestRealWorkspaceGitLabDSH(t *testing.T) {
 		if err != nil {
 			return false, err
 		}
-		if list.Busy || list.Active == nil {
+		info := catalogService(list, a.RoomIdentity)
+		if list.Busy || info == nil {
 			return false, nil
 		}
-		d.info = *list.Active
+		d.info = *info
 		ws, err := d.realWorkspaceStatus(epoch, a)
 		if err != nil {
 			return false, err
@@ -275,10 +276,11 @@ func TestRealWorkspaceGitLabDSH(t *testing.T) {
 	d.report["restartMS"] = time.Since(start).Milliseconds()
 	list, err := d.managedCatalog()
 	fail(err)
-	if list.Active == nil {
+	info := catalogService(list, a.RoomIdentity)
+	if info == nil {
 		fail(errors.New("restart did not restore A"))
 	}
-	d.info = *list.Active
+	d.info = *info
 	for _, member := range bound.Members {
 		cwd := filepath.Join(d.dir, "rooms", a.RoomID, member.Workspace)
 		branch, err := runPreparation(ctx, cwd, nil, "git", "branch", "--show-current")

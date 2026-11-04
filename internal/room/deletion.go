@@ -20,7 +20,7 @@ func (m *roomManager) startDeletion(target RoomIdentity) (roomSummary, error) {
 	if err := m.store.check(true); err != nil {
 		return roomSummary{}, err
 	}
-	if m.busy {
+	if m.roomBusyLocked(target) {
 		return roomSummary{}, ErrBusy
 	}
 	next := m.copyIndex()
@@ -49,15 +49,17 @@ func (m *roomManager) startDeletion(target RoomIdentity) (roomSummary, error) {
 	if err := m.saveIndex(next); err != nil {
 		return roomSummary{}, err
 	}
-	m.busy = true
+	rt := m.reserveRuntimeLocked(target)
+	if rt.service != nil {
+		rt.service.closing.Store(true)
+	}
 	m.notifications.CancelRoomLocked(target)
 	m.cancelToolsLocked(func(c *toolCall) bool { return c.owner == target })
-	m.operationDone = make(chan struct{})
-	go m.runDeletion(e.roomSummary)
+	go m.runDeletion(e.roomSummary, rt)
 	return e.roomSummary, nil
 }
 
-func (m *roomManager) runDeletion(target roomSummary) {
+func (m *roomManager) runDeletion(target roomSummary, rt *roomRuntime) {
 	var runErr error
 	defer func() {
 		m.mu.Lock()
@@ -74,11 +76,16 @@ func (m *roomManager) runDeletion(target roomSummary) {
 				}
 			}
 		}
-		m.busy = false
-		close(m.operationDone)
+		m.finishRuntimeLocked(rt, runErr)
+		if runErr == nil {
+			delete(m.runtimes, target.RoomIdentity)
+		}
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
-	runErr = m.waitTools(ctx, &target.RoomIdentity)
+	runErr = m.stopRoomGrants(ctx, target.RoomIdentity)
+	if runErr == nil {
+		runErr = m.waitTools(ctx, &target.RoomIdentity)
+	}
 	if runErr == nil {
 		runErr = m.notifications.WaitRoom(ctx, target.RoomIdentity)
 	}
@@ -88,7 +95,7 @@ func (m *roomManager) runDeletion(target roomSummary) {
 		return
 	}
 	m.mu.Lock()
-	active := m.active
+	active, _ := m.runtimeServiceLocked(target.RoomIdentity)
 	m.mu.Unlock()
 	if active != nil && active.info.RoomIdentity == target.RoomIdentity {
 		ctx, cancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
@@ -97,9 +104,9 @@ func (m *roomManager) runDeletion(target roomSummary) {
 		active.store.mu.Lock()
 		released := active.store.lock == nil
 		active.store.mu.Unlock()
-		if released {
+		if released && err == nil {
 			m.mu.Lock()
-			m.active = nil
+			m.setRuntimeServiceLocked(target.RoomIdentity, nil)
 			m.mu.Unlock()
 		}
 		if err != nil {
@@ -169,6 +176,19 @@ func (m *roomManager) runDeletion(target roomSummary) {
 	}
 	if next.OwnedRoomID == target.RoomID {
 		next.OwnedRoomID = ""
+	}
+	next.OwnedRooms = nil
+	for _, owner := range m.index.OwnedRooms {
+		if owner != target.RoomIdentity {
+			next.OwnedRooms = append(next.OwnedRooms, owner)
+		}
+	}
+	next.Opens = nil
+	next.forgetShutdown(target.RoomIdentity)
+	for _, op := range m.index.Opens {
+		if op.RoomIdentity != target.RoomIdentity {
+			next.Opens = append(next.Opens, op)
+		}
 	}
 	runErr = m.saveIndex(next)
 	if runErr == nil {

@@ -322,7 +322,7 @@ func (m *roomManager) saveWorkspaceOperationLocked(op workspaceOperation) error 
 	if (op.ReplacesOperationID != "") != replacing {
 		return ErrConflict
 	}
-	if m.busy {
+	if m.roomBusyLocked(op.RoomIdentity) {
 		return ErrBusy
 	}
 	// New records reserve an operation against the effective config, without

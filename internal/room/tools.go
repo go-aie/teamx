@@ -93,10 +93,11 @@ func (m *roomManager) checkToolMemberLocked(ctx context.Context, req toolsReques
 	if m.closing {
 		return ErrClosing
 	}
-	if m.busy {
+	svc, rt := m.runtimeServiceLocked(req.RoomIdentity)
+	if m.busy || rt != nil && rt.busy && !rt.resuming {
 		return ErrBusy
 	}
-	if m.active == nil || m.active.closing.Load() || m.active.restarting.Load() || req.ServiceInfo != m.active.info || req.Caller.Kind != "agent" {
+	if svc == nil || svc.closing.Load() || svc.restarting.Load() || req.ServiceInfo != svc.info || req.Caller.Kind != "agent" {
 		return ErrIdentity
 	}
 	if err := m.store.check(true); err != nil {
@@ -145,7 +146,7 @@ func (m *roomManager) changeToolBindingLocked(ctx context.Context, req toolBindi
 	if req.ServiceEpoch != m.epoch || req.Caller.Kind != "human" || !validText(req.Caller.ID) || req.Caller.MembershipID != "" {
 		return empty, nil, ErrIdentity
 	}
-	if m.closing || m.busy {
+	if m.closing || m.roomBusyLocked(req.RoomIdentity) {
 		return empty, nil, ErrBusy
 	}
 	if err := m.store.check(true); err != nil {

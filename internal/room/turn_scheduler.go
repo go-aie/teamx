@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-aie/actorx"
@@ -45,6 +46,7 @@ type turnScheduler struct {
 	queue   []*turnApplicant
 	holder  *turnApplicant
 	closing bool
+	frozen  *atomic.Bool // service admission boundary; nil in isolated actor tests
 }
 
 func (s *turnScheduler) Started(ctx actorx.Context, _ actorx.Started) error {
@@ -54,7 +56,7 @@ func (s *turnScheduler) Started(ctx actorx.Context, _ actorx.Started) error {
 }
 
 func (s *turnScheduler) Request(_ actorx.Context, msg requestTurn) error {
-	if s.closing {
+	if s.closing || s.frozen != nil && s.frozen.Load() {
 		return nil
 	}
 	if msg.RoomIdentity != s.RoomIdentity || msg.ID == 0 || msg.Target.IsZero() {
@@ -114,7 +116,7 @@ func (s *turnScheduler) removeQueued(a *turnApplicant) {
 }
 
 func (s *turnScheduler) grant() {
-	if s.closing {
+	if s.closing || s.frozen != nil && s.frozen.Load() {
 		return
 	}
 	if s.holder == nil && len(s.queue) > 0 {

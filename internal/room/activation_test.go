@@ -17,13 +17,6 @@ import (
 	"github.com/go-aie/teamx/internal/agent/dsh"
 )
 
-type activationRequest struct {
-	ServiceEpoch string `json:"service_epoch"`
-	Caller       Caller `json:"caller"`
-	RoomIdentity
-	ActivateID string `json:"activate_id"`
-}
-
 func activationTestManager(t *testing.T) *roomManager {
 	t.Helper()
 	profiles := managerTestProfiles(t)
@@ -35,20 +28,21 @@ func activationTestManager(t *testing.T) *roomManager {
 	return m
 }
 
-func beginActivation(t *testing.T, m *roomManager, target roomSummary, id string) roomActivation {
+func beginManagedOpen(t *testing.T, m *roomManager, target roomSummary, id string) roomOpen {
 	t.Helper()
-	r := managerHTTP(m, "/v1/rooms/activate", activationRequest{ServiceEpoch: m.epoch, Caller: humanCaller, RoomIdentity: target.RoomIdentity, ActivateID: id})
-	var op roomActivation
+	r := managerHTTP(m, "/v1/rooms/open", roomOpenRequest{ServiceEpoch: m.epoch, Caller: humanCaller, RoomIdentity: target.RoomIdentity, OpenID: id})
+	var op roomOpen
 	if r.Code != 200 || json.Unmarshal(r.Body.Bytes(), &op) != nil {
 		t.Fatal(r.Code, r.Body.String())
 	}
 	return op
 }
 
-func awaitActivation(t *testing.T, m *roomManager) roomActivation {
+func awaitLatestOpen(t *testing.T, m *roomManager) roomOpen {
 	t.Helper()
 	m.mu.Lock()
-	done := m.operationDone
+	op := m.index.Opens[len(m.index.Opens)-1]
+	done := m.runtimes[op.RoomIdentity].operationDone
 	m.mu.Unlock()
 	select {
 	case <-done:
@@ -57,18 +51,18 @@ func awaitActivation(t *testing.T, m *roomManager) roomActivation {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.index.Activations[len(m.index.Activations)-1]
+	return m.index.Opens[len(m.index.Opens)-1]
 }
 
-func activateOK(t *testing.T, m *roomManager, target roomSummary, id string) *service {
+func openRoomOK(t *testing.T, m *roomManager, target roomSummary, id string) *service {
 	t.Helper()
-	beginActivation(t, m, target, id)
-	if op := awaitActivation(t, m); op.Status != "completed" {
+	beginManagedOpen(t, m, target, id)
+	if op := awaitLatestOpen(t, m); op.Status != "completed" {
 		t.Fatal(op)
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.active
+	return m.runtimes[target.RoomIdentity].service
 }
 
 // Use the production adapter, persisted references, recovery and scheduler.
@@ -130,7 +124,7 @@ func TestManagedActivationHistoryIntentBudgetAndRestart(t *testing.T) {
 	m := activationTestManager(t)
 	m.factory = controlledActivationFactory(nil, nil)
 	a, b := managerCreate(t, m, "a"), managerCreate(t, m, "b")
-	sa := activateOK(t, m, a, "enter-a")
+	sa := openRoomOK(t, m, a, "enter-a")
 	list, err := sa.members(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -146,16 +140,16 @@ func TestManagedActivationHistoryIntentBudgetAndRestart(t *testing.T) {
 		id := MemberIdentity{RoomIdentity: a.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
 		waitMember(t, ctx, sa.target(member.MembershipID), id, func(s MemberStatus) bool { return !s.Active && s.Agent.TurnNumber == 1 })
 	}
-	sb := activateOK(t, m, b, "enter-b")
+	sb := openRoomOK(t, m, b, "enter-b")
 	bs, _ := sb.store.LoadRoom()
 	if bs.LatestSeq != 0 {
 		t.Fatal("new Room copied messages")
 	}
-	stale := apiRequest{ServiceInfo: sa.info, Caller: humanCaller, ClientMessageID: "late", Text: "must not cross rooms"}
-	if r := managerHTTP(m, "/v1/send", stale); r.Code != 403 {
+	background := apiRequest{ServiceInfo: sa.info, Caller: humanCaller, Mode: ReadAll}
+	if r := managerHTTP(m, "/v1/read", background); r.Code != 200 || !strings.Contains(r.Body.String(), "a-history") {
 		t.Fatal(r.Code, r.Body.String())
 	}
-	sa2 := activateOK(t, m, a, "return-a")
+	sa2 := openRoomOK(t, m, a, "return-a")
 	as, _ := sa2.store.LoadRoom()
 	if as.LatestSeq != 1 || as.Messages[0].Text != "a-history" {
 		t.Fatal(as)
@@ -171,14 +165,14 @@ func TestManagedActivationHistoryIntentBudgetAndRestart(t *testing.T) {
 			t.Fatal("healthy enable intent or budget lost", status)
 		}
 	}
-	if sa2.info.ServiceEpoch == sa.info.ServiceEpoch {
-		t.Fatal("reactivation reused tool epoch")
+	if sa2 != sa || sa2.info.ServiceEpoch != sa.info.ServiceEpoch {
+		t.Fatal("reselection replaced a healthy instance")
 	}
 	// Old successful receipts cannot switch away from the current Room.
-	if op := beginActivation(t, m, b, "enter-b"); op.Status != "completed" {
+	if op := beginManagedOpen(t, m, b, "enter-b"); op.Status != "completed" {
 		t.Fatal(op)
 	}
-	if m.active != sa2 {
+	if m.runtimes[a.RoomIdentity].service != sa2 {
 		t.Fatal("replayed old activation")
 	}
 	before := as
@@ -191,109 +185,83 @@ func TestManagedActivationHistoryIntentBudgetAndRestart(t *testing.T) {
 	}
 	defer restored.close()
 	restored.config, restored.factory = m.config, m.factory
-	if err := restored.restoreActive(); err != nil {
+	if err := restored.restoreRuntimes(); err != nil {
 		t.Fatal(err)
 	}
-	if op := awaitActivation(t, restored); op.Status != "completed" {
-		t.Fatal(op)
+	awaitRecovery(t, restored)
+	if restored.runtimes[a.RoomIdentity].service == nil {
+		t.Fatal("selected enabled Room was not restored")
 	}
-	after, _ := restored.active.store.LoadRoom()
-	if !reflect.DeepEqual(before, after) || restored.active.maxTurns != 7 {
+	after, _ := restored.runtimes[a.RoomIdentity].service.store.LoadRoom()
+	if !reflect.DeepEqual(before, after) || restored.runtimes[a.RoomIdentity].service.maxTurns != 7 {
 		t.Fatal("restart reinitialized Room or budget")
 	}
-	status, _ := restored.active.members(ctx)
+	status, _ := restored.runtimes[a.RoomIdentity].service.members(ctx)
 	if !status.Members[0].Execution.Paused || status.Members[1].Execution.TurnBudget.Used != 1 {
 		t.Fatal(status)
 	}
 }
 
-func TestManagedSwitchWaitsForRunningTurnAndCleanup(t *testing.T) {
+func TestManagedRoomsRunConcurrentlyAndKeepSessions(t *testing.T) {
 	m := activationTestManager(t)
-	entered, cancelled, cleanup, release := make(chan MemberIdentity, 4), make(chan struct{}), make(chan struct{}), make(chan struct{})
-	var once, cleanupOnce sync.Once
-	var a roomSummary
+	entered := make(chan MemberIdentity, 16)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	defer releaseOnce.Do(func() { close(release) })
+	var closed atomic.Int32
 	m.factory = controlledActivationFactory(func(id MemberIdentity, ctx context.Context) error {
 		entered <- id
-		if id.RoomID == a.RoomID {
-			<-ctx.Done()
-			once.Do(func() { close(cancelled) })
+		select {
+		case <-release:
+			return nil
+		case <-ctx.Done():
 			return ctx.Err()
 		}
-		return nil
-	}, func(id MemberIdentity) {
-		if id.RoomID == a.RoomID {
-			// A return visit can open another pending member Session. This
-			// channel signals room cleanup once; every Session still waits.
-			cleanupOnce.Do(func() { close(cleanup) })
-			<-release
-		}
-	})
-	a = managerCreate(t, m, "running-a")
-	b := managerCreate(t, m, "running-b")
-	targetConfig, _ := readManagedRoom(t, m, b)
-	missing := filepath.Join(m.roomDir(b.RoomID), filepath.FromSlash(targetConfig.Members[0].Workspace))
-	if err := os.RemoveAll(missing); err != nil {
-		t.Fatal(err)
-	}
-	sa := activateOK(t, m, a, "first")
-	managedPost(t, m, sa, "running")
-	var running MemberIdentity
+	}, func(MemberIdentity) { closed.Add(1) })
+	a, b := managerCreate(t, m, "running-a"), managerCreate(t, m, "running-b")
+	sa := openRoomOK(t, m, a, "first")
+	managedPost(t, m, sa, "running-a")
+	var runningA MemberIdentity
 	select {
-	case running = <-entered:
+	case runningA = <-entered:
 	case <-time.After(5 * time.Second):
-		t.Fatal("no turn")
+		t.Fatal("A did not start")
 	}
-	beginActivation(t, m, b, "switch")
-	select {
-	case <-cancelled:
-	case <-time.After(5 * time.Second):
-		t.Fatal("no cancellation")
-	}
-	select {
-	case <-cleanup:
-	case <-time.After(5 * time.Second):
-		t.Fatal("no cleanup")
-	}
-	if op := beginActivation(t, m, b, "switch"); op.Status != "running" {
-		t.Fatal(op)
-	}
-	if r := managerHTTP(m, "/v1/rooms/create", roomCreateRequest{ServiceEpoch: m.epoch, Caller: humanCaller, roomSelection: roomSelection{CreateID: "busy", TeamID: "takeout-dinner"}}); r.Code != 409 {
-		t.Fatal(r.Code)
-	}
-	// A caller-side shutdown timeout must keep root and old execution owned.
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	if err := m.shutdown(ctx); err == nil {
-		t.Fatal("released unsettled management")
-	}
-	if _, err := newRoomManager(m.store.dir, 1); !errors.Is(err, ErrLocked) {
-		t.Fatal(err)
-	}
+	sbInfo := openOK(t, m, b.RoomIdentity, "open-b")
 	m.mu.Lock()
-	if m.active != sa {
-		t.Error("target started before old cleanup")
-	}
-	if _, err := os.Stat(missing); !errors.Is(err, os.ErrNotExist) {
-		t.Error("prepared target before old cleanup settled", err)
-	}
-	m.closing = false
+	sb := m.runtimes[b.RoomIdentity].service
 	m.mu.Unlock()
-	close(release)
-	if op := awaitActivation(t, m); op.Status != "completed" {
-		t.Fatal(op)
-	}
-	if info, err := os.Stat(missing); err != nil || !info.IsDir() {
-		t.Fatal("target workspace was not prepared", err)
-	}
+	managedPost(t, m, sb, "running-b")
 	select {
 	case id := <-entered:
-		t.Fatal("unexpected target execution", id)
-	default:
+		if id.RoomIdentity != b.RoomIdentity {
+			t.Fatal("same Room started a second concurrent turn", id)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("B did not execute concurrently with A")
 	}
-	sa2 := activateOK(t, m, a, "return")
-	status := inspectMember(t, context.Background(), sa2.target(running.MembershipID), running)
-	if !status.Paused || status.Agent.Turn.Status != "interrupted" || status.TurnBudget.Used != 1 {
-		t.Fatal(status)
+	if got := openOK(t, m, a.RoomIdentity, "a-again"); got != sa.info || closed.Load() != 0 || sa.closing.Load() {
+		t.Fatal("opening B stopped A or replaced its Session", got, closed.Load())
+	}
+	if got := openRoomOK(t, m, b, "select-b"); got.info != sbInfo {
+		t.Fatal("legacy selection replaced open B")
+	}
+	// An in-flight Agent can still publish to its original Room while viewing B.
+	r := managerHTTP(m, "/v1/send", apiRequest{ServiceInfo: sa.info, Caller: agentCaller(runningA.AgentID, runningA.MembershipID), ClientMessageID: "a-tool-result", Text: "a-tool-result"})
+	if r.Code != 200 {
+		t.Fatal("background Agent tool rejected", r.Code, r.Body.String())
+	}
+	if r := managerHTTP(m, "/v1/read", apiRequest{ServiceInfo: sb.info, Caller: humanCaller, Mode: ReadAll}); strings.Contains(r.Body.String(), "a-tool-result") {
+		t.Fatal("A tool result crossed into B")
+	}
+	releaseOnce.Do(func() { close(release) })
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	waitMember(t, ctx, sa.target(runningA.MembershipID), runningA, func(status MemberStatus) bool {
+		return !status.Active && status.Agent.Turn != nil && status.Agent.Turn.Status == "completed"
+	})
+	if got := openRoomOK(t, m, a, "return-a"); got != sa || closed.Load() != 0 {
+		t.Fatal("return visit replaced A's instance or Session")
 	}
 }
 
@@ -301,35 +269,35 @@ func TestManagedActivationFailureReceiptsAndInterruptedRecovery(t *testing.T) {
 	m := activationTestManager(t)
 	m.factory = controlledActivationFactory(nil, nil)
 	a, b := managerCreate(t, m, "a"), managerCreate(t, m, "b")
-	sa := activateOK(t, m, a, "first")
+	sa := openRoomOK(t, m, a, "first")
 	managedPost(t, m, sa, "retained")
 	t.Setenv(m.teams["takeout-dinner"].Runtime.Model.APIKeyEnv, "")
-	beginActivation(t, m, b, "missing-key")
-	if op := awaitActivation(t, m); op.Status != "failed" || !strings.Contains(op.Error, "credential") {
+	beginManagedOpen(t, m, b, "missing-key")
+	if op := awaitLatestOpen(t, m); op.Status != "failed" || !strings.Contains(op.Error, "credential") {
 		t.Fatal(op)
 	}
-	if m.active != sa || sa.closing.Load() {
+	if m.runtimes[a.RoomIdentity].service != sa || sa.closing.Load() {
 		t.Fatal("preflight stopped old room")
 	}
-	if op := beginActivation(t, m, b, "missing-key"); op.Status != "failed" {
+	if op := beginManagedOpen(t, m, b, "missing-key"); op.Status != "failed" {
 		t.Fatal(op)
 	}
-	if r := managerHTTP(m, "/v1/rooms/activate", activationRequest{ServiceEpoch: m.epoch, Caller: humanCaller, RoomIdentity: a.RoomIdentity, ActivateID: "missing-key"}); r.Code != 409 {
+	if r := managerHTTP(m, "/v1/rooms/open", roomOpenRequest{ServiceEpoch: m.epoch, Caller: humanCaller, RoomIdentity: a.RoomIdentity, OpenID: "missing-key"}); r.Code != 409 {
 		t.Fatal(r.Code)
 	}
 	t.Setenv(m.teams["takeout-dinner"].Runtime.Model.APIKeyEnv, "offline-test-only")
 	m.factory = func(string, string, serviceConfig) (*service, error) { return nil, errors.New("assembly failed") }
-	beginActivation(t, m, b, "assembly")
-	if op := awaitActivation(t, m); op.Status != "failed" || op.Phase != "opening" {
+	beginManagedOpen(t, m, b, "assembly")
+	if op := awaitLatestOpen(t, m); op.Status != "failed" {
 		t.Fatal(op)
 	}
-	if m.index.ActiveRoomID != a.RoomID {
+	if m.index.ActiveRoomID != "" {
 		t.Fatal("failed switch changed last selection")
 	}
-	// Simulate an exit with a retained running marker. Startup records failure,
-	// does not continue it or assemble the last selected Room automatically.
+	// Simulate an exit with a retained running marker. Startup records B's
+	// failure while restoring A's independent collaboration intent.
 	next := m.copyIndex()
-	next.Activations[len(next.Activations)-1].Status = "running"
+	next.Opens[len(next.Opens)-1].Status = "running"
 	if err := m.saveIndex(next); err != nil {
 		t.Fatal(err)
 	}
@@ -347,13 +315,14 @@ func TestManagedActivationFailureReceiptsAndInterruptedRecovery(t *testing.T) {
 		assemblies.Add(1)
 		return newService(dir, id, c)
 	}
-	if err := restored.restoreActive(); err != nil {
+	if err := restored.restoreRuntimes(); err != nil {
 		t.Fatal(err)
 	}
-	if assemblies.Load() != 0 || restored.index.Activations[len(restored.index.Activations)-1].Status != "failed" {
+	awaitRecovery(t, restored)
+	if assemblies.Load() != 1 || restored.runtimes[a.RoomIdentity].status != "ready" || restored.runtimes[b.RoomIdentity].status != "failed" || restored.index.Opens[len(restored.index.Opens)-1].Status != "failed" {
 		t.Fatal("auto-replayed interrupted activation")
 	}
-	svc := activateOK(t, restored, a, "explicit")
+	svc := openRoomOK(t, restored, a, "explicit")
 	state, _ := svc.store.LoadRoom()
 	if state.LatestSeq != 1 {
 		t.Fatal(state)
@@ -409,7 +378,7 @@ func TestManagedRecoveryKeepsUnsafeAndExhaustedMembersPaused(t *testing.T) {
 				}
 			}
 			store.Close()
-			svc := activateOK(t, m, room, "activate")
+			svc := openRoomOK(t, m, room, "activate")
 			list, err := svc.members(context.Background())
 			if err != nil {
 				t.Fatal(err)
@@ -447,8 +416,8 @@ func TestManagedActivationCommitUnknownRequiresReopen(t *testing.T) {
 				}
 				return errors.New("lost activation reservation result")
 			}
-			r := managerHTTP(m, "/v1/rooms/activate", activationRequest{ServiceEpoch: m.epoch, Caller: humanCaller, RoomIdentity: room.RoomIdentity, ActivateID: "uncertain"})
-			if r.Code != 500 || m.active != nil || m.busy {
+			r := managerHTTP(m, "/v1/rooms/open", roomOpenRequest{ServiceEpoch: m.epoch, Caller: humanCaller, RoomIdentity: room.RoomIdentity, OpenID: "uncertain"})
+			if r.Code != 500 || len(m.runtimes) != 0 || m.busy {
 				t.Fatal(r.Code, r.Body.String())
 			}
 			if r := managerHTTP(m, "/v1/rooms", nil); !strings.Contains(r.Body.String(), "write_error") {
@@ -463,27 +432,28 @@ func TestManagedActivationCommitUnknownRequiresReopen(t *testing.T) {
 			}
 			defer restored.close()
 			restored.config = m.config
-			if err := restored.restoreActive(); err != nil {
+			if err := restored.restoreRuntimes(); err != nil {
 				t.Fatal(err)
 			}
-			if restored.active != nil {
+			awaitRecovery(t, restored)
+			if restored.runtimes[room.RoomIdentity].service != nil {
 				t.Fatal("auto continued uncertain selection")
 			}
 			if after {
-				if op := beginActivation(t, restored, room, "uncertain"); op.Status != "failed" {
+				if op := beginManagedOpen(t, restored, room, "uncertain"); op.Status != "failed" {
 					t.Fatal(op)
 				}
 			} else {
-				activateOK(t, restored, room, "uncertain")
+				openRoomOK(t, restored, room, "uncertain")
 			}
 		})
 	}
 }
 
-func TestManagedCrossRoomActivationCannotBypassUnsettledBackend(t *testing.T) {
+func TestManagedUnsettledBackendDoesNotBlockAnotherRoom(t *testing.T) {
 	m := activationTestManager(t)
 	a, b := managerCreate(t, m, "a"), managerCreate(t, m, "b")
-	activateOK(t, m, a, "a")
+	openRoomOK(t, m, a, "a")
 	if err := m.close(); err != nil {
 		t.Fatal(err)
 	}
@@ -522,17 +492,18 @@ func TestManagedCrossRoomActivationCannotBypassUnsettledBackend(t *testing.T) {
 	}
 	defer restored.close()
 	restored.config = m.config
-	beginActivation(t, restored, a, "cannot-bypass-b")
-	if op := awaitActivation(t, restored); op.Status != "failed" || !strings.Contains(op.Error, "settlement") {
-		t.Fatal(op)
+	// B's missing settlement remains B's recovery diagnostic. Opening healthy A
+	// does not inspect or discard B's execution evidence.
+	openRoomOK(t, restored, a, "healthy-a")
+	if restored.index.OwnedRoomID != "" || !hasRoomOwner(restored.index.OwnedRooms, b.RoomIdentity) {
+		t.Fatal("lost B's retained ownership")
 	}
-	if restored.active != nil {
-		t.Fatal("started a different Room without settlement")
+	if _, err := os.Stat(backendDir); err != nil {
+		t.Fatal("lost B's unsettled backend", err)
 	}
-	// A verified terminal cleanup can authorize an explicit new switch; it does
-	// not authorize resuming the unhealthy original Session in B.
-	if err := os.WriteFile(filepath.Join(backendDir, "settled.json"), []byte(`{"version":1}`), 0600); err != nil {
-		t.Fatal(err)
+	sb := openRoomOK(t, restored, b, "inspect-b")
+	list, err := sb.members(context.Background())
+	if err != nil || list.Members[0].Execution.Status != "backend_blocked" || !list.Members[0].Execution.Paused {
+		t.Fatal("unsettled B resumed", list, err)
 	}
-	activateOK(t, restored, a, "settled-explicit-retry")
 }

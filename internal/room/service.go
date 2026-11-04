@@ -68,6 +68,7 @@ type apiError struct {
 }
 
 type service struct {
+	settleTools          func(context.Context) error // managed Room tool ownership, nil in standalone mode
 	workspaceOperationID string
 	info                 ServiceInfo
 	store                *Store
@@ -83,7 +84,8 @@ type service struct {
 	restart              *discussionRestart // guarded by mu
 	cleanup              sync.Mutex
 	closing              atomic.Bool
-	grantsStopped        bool
+	grantsStopped        atomic.Bool
+	grantsFrozen         *atomic.Bool
 	mu                   sync.Mutex
 	targets              map[string]actorx.Addr
 	requests             chan struct{}
@@ -161,7 +163,8 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 	if err != nil {
 		return nil, err
 	}
-	scheduler, err := rt.Spawn(&turnScheduler{RoomIdentity: state.RoomIdentity})
+	grantsFrozen := &atomic.Bool{}
+	scheduler, err := rt.Spawn(&turnScheduler{RoomIdentity: state.RoomIdentity, frozen: grantsFrozen})
 	if err != nil {
 		return nil, err
 	}
@@ -174,6 +177,7 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 		dshTurnTimeout:       config.dshTurnTimeout,
 		maxTurns:             config.maxTurns,
 		persistentScheduling: config.persistentScheduling,
+		grantsFrozen:         grantsFrozen,
 		dshProfiles:          config.dshProfiles,
 		uiProfiles:           config.uiProfiles,
 	}
@@ -190,8 +194,17 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 	return s, nil
 }
 
-func (s *service) close(ctx context.Context) error {
+// Freeze is nonblocking, so a manager can freeze every Room before joining any
+// worker. The scheduler checks the same flag before handing off a queued turn.
+func (s *service) freeze() {
 	s.closing.Store(true)
+	if s.grantsFrozen != nil {
+		s.grantsFrozen.Store(true)
+	}
+}
+
+func (s *service) close(ctx context.Context) error {
+	s.freeze()
 	for !s.cleanup.TryLock() {
 		select {
 		case <-ctx.Done():
@@ -212,11 +225,11 @@ func (s *service) close(ctx context.Context) error {
 		}
 	}
 	s.changes.Unlock()
-	if !s.grantsStopped {
+	if !s.grantsStopped.Load() {
 		if _, err := s.scheduler.Call[struct{}](ctx, stopTurnGrants{}); err != nil {
 			return fmt.Errorf("scheduler shutdown incomplete (store still owned): %w", err)
 		}
-		s.grantsStopped = true
+		s.grantsStopped.Store(true)
 	}
 	// Join an admitted add/remove before taking the ownership snapshot.
 	for !s.management.TryLock() {

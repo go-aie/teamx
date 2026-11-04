@@ -364,7 +364,7 @@ func TestProcessLifecycleSettlement(t *testing.T) {
 			case "deletion":
 				m.mu.Lock()
 				_, err := m.startDeletion(room.RoomIdentity)
-				done := m.operationDone
+				done := m.runtimes[room.RoomIdentity].operationDone
 				m.mu.Unlock()
 				if err != nil {
 					t.Fatal(err)

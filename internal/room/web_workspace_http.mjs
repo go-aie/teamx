@@ -13,7 +13,7 @@ async function ready() {
     let list;
     try { list = await api.request("/v1/rooms"); } catch (error) { if (error.code !== "busy") throw error; }
     if (!list) { await new Promise(resolve => setTimeout(resolve,100)); continue; }
-    if (!list.busy && list.active && !ui.el("new-room").disabled) return list;
+    if (!list.busy && list.rooms.some(room => room.service) && !ui.el("new-room").disabled) return list;
     await new Promise(resolve => setTimeout(resolve,100));
   }
   throw Error("HTTP manager did not settle");
@@ -41,7 +41,8 @@ if (process.env.TEAMX_WORKSPACE_UI_PHASE === "create") {
   await ready();
   await ui.refresh();
   const catalog=await api.request("/v1/rooms");
-  const q=new URLSearchParams({ service_epoch:catalog.service_epoch,caller_id:catalog.operator,room_id:catalog.active.room_id,room_instance:catalog.active.room_instance });
+  const room=catalog.rooms.find(room=>room.name==="Workspace-A");
+  const q=new URLSearchParams({ service_epoch:catalog.service_epoch,caller_id:catalog.operator,room_id:room.room_id,room_instance:room.room_instance });
   const ws=await api.request(`/v1/workspace?${q}`);
   assert.equal(ws.operation?.status,"completed", JSON.stringify(ws.operation));
   assert.equal(ws.workspace.repository.url,`${process.env.TEAMX_WORKSPACE_GITLAB_URL}/${process.env.TEAMX_WORKSPACE_PROJECT}.git`);
