@@ -1,0 +1,138 @@
+# TeamX
+
+**Teamwork for AI Agents**
+
+让拥有不同职责的 AI Agent 在同一个房间里协作。你提出目标、参与讨论，Agent 通过共享消息、独立工作区和真实 CLI 工具完成任务。
+
+通过内置 Web 界面参与协作，Agent 由 [DeepSeek Harness（DSH）](https://github.com/deepseek-ai/deepseek-harness) 运行。每位成员保留自己的私有上下文，需要与团队交流时主动向房间发言。
+
+## 能做什么
+
+- **组织团队协作**：定义成员角色，创建多个任务房间，保留各自的消息、会话和工作区。
+- **设计、开发与评审代码**：让成员分工设计方案、编写代码和独立评审。
+- **处理个人事务**：助手读取 GitLab 待办、核实上下文，按用户意图回复和处理，需要决定时在房间里 @ 你。
+- **接收平台通知**：将 GitLab 项目活动和个人待办送入房间，按项目、账号和事件类型过滤。
+- **观察与控制执行**：查看成员状态、思考及工具调用，暂停或取消回合，重置私有会话并恢复协作。
+
+一个服务管理多个房间，同一时间激活一个；房间内的成员回合依次执行。
+
+## 快速开始
+
+### 1. 准备环境并构建
+
+需要 Go **1.27+**、已安装的 DSH，以及可用的模型 API Key。DSH 的 Node 和依赖需完整保留，安装说明见[Agent 运行时](docs/agent-runtime.zh.md#准备-dsh-与配置)。
+
+在 TeamX 根目录执行：
+
+```sh
+go build -o bin/teamx ./cmd/teamx
+```
+
+Web 界面已嵌入程序，无需单独启动前端。
+
+### 2. 配置运行环境
+
+项目内使用时，复制[配置示例](.teamx/config.example.toml)，按本机安装与模型服务填写：
+
+```sh
+cp .teamx/config.example.toml .teamx/config.toml
+```
+
+| 配置 | 内容 |
+| --- | --- |
+| `runtime.dsh.binary_path` | 已安装的 `dsh` 可执行程序的绝对路径 |
+| `runtime.model` | 模型协议、地址、名称及密钥环境变量名 |
+| `env.OPENAI_API_KEY` | 模型密钥；也可通过服务环境提供，已有环境变量优先 |
+
+可用 `command -v dsh` 查找 DSH 路径。模型密钥可填写在本地配置的 `[env]` 中，也可通过环境变量提供；服务不会自动加载 `.env`。
+
+### 3. 启动服务
+
+```sh
+./bin/teamx serve --config .teamx/config.toml
+```
+
+打开 **http://127.0.0.1:8088/**。此配置默认将运行数据保存在 `.teamx/data/`。
+
+### 4. 开始协作
+
+1. 点击左侧「＋」，选择「朋友聚餐」，创建并进入房间。
+2. 确认或修改输入框中的开场消息，点击「发送」。
+3. 查看成员讨论，补充需求；点击成员查看活动记录，按需暂停或启用协作。
+4. 新任务创建新房间，点击已有房间可继续之前的讨论。
+
+退出时在服务终端按 **Ctrl-C**，等待清理完成。再次使用相同配置启动可继续已有房间。
+
+配置加载规则、用户目录用法及恢复说明见[运行手册](internal/room/README.zh.md#服务配置)。
+
+## 团队模板
+
+| 团队 | 适合体验 |
+| --- | --- |
+| [朋友聚餐](.teamx/teams/takeout-dinner/README.md) | 三位成员协调选菜、预算份量和口味，无需 GitLab |
+| [书店夜场筹备](.teamx/teams/bookstore-night/README.md) | 四位成员共同策划活动，处理预算、运营和来宾体验 |
+| [软件开发](.teamx/teams/software-development/README.md) | 方案设计、代码开发与独立评审 |
+| [个人助手](.teamx/teams/personal-assistant/README.md) | 接收个人待办，核实并处理常规事务，需要决定时 @ 用户 |
+
+编辑团队的 `team.json` 或角色指令后，重启服务并新建房间生效；已有房间保留创建时的配置。
+
+## 使用 GitLab（可选）
+
+需要 GitLab 功能时，在服务机器上安装 **glab 1.127.0** 到 `bin/glab`，再构建 GitLab 工具并重启 TeamX。安装及路径配置见[工具手册](tools/gitlab/README.zh.md)。
+
+```sh
+go build -o bin/teamx-gitlab ./tools/gitlab
+./bin/teamx serve --config .teamx/config.toml
+```
+
+服务启动后：
+
+1. 在左下角「设置 → 平台连接」保存并验证 GitLab 连接。
+2. 点击成员，进入「工具设置」，为该成员选择 GitLab 连接并应用。
+3. 在房间里提出具体任务。工具沿用所选账号的有效权限，操作取决于用户意图和成员职责。
+
+**工具、Workspace 和通知分别配置**：
+
+| 需要 | 配置入口 |
+| --- | --- |
+| Agent 调用 GitLab API | 成员详情 → 工具设置 |
+| 克隆仓库、修改代码或本地评审 | 输入框下方的 Workspace，填写 HTTPS 仓库地址并应用 |
+| 接收项目活动或个人待办 | 右侧通知源 → GitLab，选择连接、范围与过滤，显式开启 |
+
+API 工具和通知无需先克隆仓库；开启通知不会自动启用成员工具。连接凭据只在设置中填写。
+
+## 常用操作
+
+- **调整端口或数据目录**：编辑 `.teamx/config.toml` 中的 `server.listen`、`server.data_dir` 后重启服务。
+- **查看或暂停成员**：点击成员进入详情，查看活动记录并使用「暂停 / 启用协作」；成员可以阅读后保持沉默。
+- **重新开始讨论**：房间头部「··· → 重新开始」，清空公共消息并重置私有会话，保留工作区和已用预算。
+- **删除房间**：左侧房间的删除操作会永久移除该房间消息、私有会话和工作区文件。
+
+每位成员默认有 16 个执行回合的预算，可在配置的 `server.max_turns` 中调整新房间的预算。成员控制、预算与恢复说明见[运行手册](internal/room/README.zh.md)。
+
+## 进一步阅读
+
+| 文档 | 内容 |
+| --- | --- |
+| [团队配置](.teamx/teams/README.md) | 自定义角色、模型、DSH 和工作区建议值 |
+| [运行手册](internal/room/README.zh.md) | 服务配置、用户目录、成员控制与恢复 |
+| [GitLab 工具](tools/gitlab/README.zh.md) | 安装、命令帮助、WorkItem 扩展与凭据配置 |
+| [核心概念](docs/concepts.zh.md) | 对象、职责、配置边界及架构阅读路径 |
+| [Room 架构](docs/room-architecture.zh.md) / [Agent 运行时](docs/agent-runtime.zh.md) | 消息、调度、身份、生命周期及 DSH |
+| [Workspace](docs/workspace.zh.md) | 目录、仓库、配置应用与恢复 |
+| [平台架构](docs/platform-architecture.zh.md) / [通知](docs/notifications.zh.md) | 连接、独立工具、项目活动与个人待办 |
+| [后续方向](docs/roadmap.zh.md) | 尚未实现的可选增强 |
+
+## 开发
+
+常规检查需要 Go 和 Node：
+
+```sh
+go test -race -count=1 -timeout 5m ./...
+go vet ./...
+node --test internal/room/web*_test.mjs
+```
+
+代码生成、CLI 夹具及真实服务验收入口见[验证说明](internal/room/README.zh.md#验证入口)。
+
+当前 GitLab 工具、Workspace Git、浏览器操作和真实团队协作仍有专项待验项，范围见[当前待验项](internal/room/README.zh.md#当前待验项)。普通测试通过不代表这些真实链路已全部验证。

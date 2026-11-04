@@ -1,0 +1,12 @@
+//go:build !darwin && !linux
+
+package room
+
+import (
+	"fmt"
+	"os"
+)
+
+func lockDirectory(string) (*os.File, error) {
+	return nil, fmt.Errorf("Room snapshot directory locking requires macOS or Linux")
+}

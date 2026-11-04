@@ -1,0 +1,11 @@
+{
+  "version": "1.127.0",
+  "commit": "2e352a17e",
+  "release": "https://gitlab.com/gitlab-org/cli/-/releases/v1.127.0",
+  "checksums": "https://gitlab.com/gitlab-org/cli/-/releases/v1.127.0/downloads/checksums.txt",
+  "observed_binary": {
+    "platform": "darwin_arm64",
+    "sha256": "72ee06bd462003eaa770479614d662871702ef53264cdd25653eb1e2d8c581e4",
+    "provenance": "Temporary release binary retained from the plan assessment; this phase rechecked its version and binary digest. Archive checksum verification was not repeated because the configured proxy is unavailable."
+  }
+}

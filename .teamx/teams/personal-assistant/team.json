@@ -1,0 +1,16 @@
+{
+  "id": "personal-assistant",
+  "name": "个人助手",
+  "description": "assistant 识别 GitLab 个人待办，在授权和工具能力范围内代为回复与处理，需要本人判断或介入时在房间里 @ 用户。",
+  "opening_message": "请作为我的个人助手，关注这个房间收到的 GitLab 个人待办。先核实上下文，有明确依据的常规问题可以用我的 GitLab 身份回复或处理，不用逐条请示；涉及我的判断、承诺、审批或缺少必要信息时，在房间里 @ 我，附上链接、你的判断和需要我决定的问题。工具不能执行时给出处理建议或回复草稿，并明确尚未执行。",
+  "members": [
+    {
+      "id": "assistant",
+      "name": "assistant",
+      "instructions_file": "prompts/assistant.md",
+      "tool_env": {
+        "TEAMX_ROLE": "assistant"
+      }
+    }
+  ]
+}

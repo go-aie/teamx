@@ -1,0 +1,40 @@
+{
+  "id": "bookstore-night",
+  "name": "社区书店 · 周末夜场筹备组",
+  "description": "你扮演书店老板，与统筹、策划、运营和来宾体验四位同事共同筹备活动，观察他们如何讨论、调整和收敛。",
+  "opening_message": "我想给社区书店办第一场周六夜场，18 位来宾，预算 1000 元，准备时间一周，现场只有两名工作人员。场地约 30 平方米，不能开火，也不能太吵。\n\n希望陌生人能自然认识，又不想变成强制社交或轮流自我介绍。大家帮我想一个愿意亲自参加的活动。先聊聊最值得做的方向，有不同意见就直接讨论；不必每个人都给我一份完整方案。涉及实际价格的地方先标明估算。",
+  "members": [
+    {
+      "id": "alan",
+      "name": "阿岚 · 统筹",
+      "instructions_file": "prompts/alan.md",
+      "tool_env": {
+        "TEAMX_ROLE": "alan"
+      }
+    },
+    {
+      "id": "xiaoye",
+      "name": "小野 · 活动策划",
+      "instructions_file": "prompts/xiaoye.md",
+      "tool_env": {
+        "TEAMX_ROLE": "xiaoye"
+      }
+    },
+    {
+      "id": "laozhou",
+      "name": "老周 · 店务运营",
+      "instructions_file": "prompts/laozhou.md",
+      "tool_env": {
+        "TEAMX_ROLE": "laozhou"
+      }
+    },
+    {
+      "id": "qixi",
+      "name": "七喜 · 来宾体验",
+      "instructions_file": "prompts/qixi.md",
+      "tool_env": {
+        "TEAMX_ROLE": "qixi"
+      }
+    }
+  ]
+}

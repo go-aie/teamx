@@ -1,0 +1,32 @@
+{
+  "id": "software-development",
+  "name": "软件开发",
+  "description": "简单需求由 Developer 直接开发；复杂需求先由 Architect 编写 design.md，再按阶段实施。Reviewer 独立评审设计及每步实现，完成前一步后再推进下一步。",
+  "opening_message": "帮我做个命令行 Todo 看板，能添加、查看和完成任务，关掉再打开数据还在。",
+  "members": [
+    {
+      "id": "architect",
+      "name": "architect",
+      "instructions_file": "prompts/architect.md",
+      "tool_env": {
+        "TEAMX_ROLE": "architect"
+      }
+    },
+    {
+      "id": "developer",
+      "name": "developer",
+      "instructions_file": "prompts/developer.md",
+      "tool_env": {
+        "TEAMX_ROLE": "developer"
+      }
+    },
+    {
+      "id": "reviewer",
+      "name": "reviewer",
+      "instructions_file": "prompts/reviewer.md",
+      "tool_env": {
+        "TEAMX_ROLE": "reviewer"
+      }
+    }
+  ]
+}

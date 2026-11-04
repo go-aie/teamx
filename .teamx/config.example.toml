@@ -1,0 +1,33 @@
+# Copy to config.toml in this directory and pass --config .teamx/config.toml.
+# For installed use, copy this example and teams/ into ~/.teamx/.
+# Relative paths below resolve from this file's directory; no shell expansion.
+[server]
+listen = "127.0.0.1:8088"
+data_dir = "./data"
+teams_dir = "./teams"
+max_turns = 16
+# merge_window = "100ms"
+
+# Default runtime for teams that omit their own complete runtime.
+[runtime.dsh]
+binary_path = "/absolute/path/to/dsh"
+# Development with Node: use its path above and set binary_args to the CLI JS.
+# binary_args = ["/absolute/path/to/dsh/lib/bin.js"]
+
+[runtime.model]
+protocol = "openai-completions"
+base_url = "https://model.example/v1"
+model_id = "your-model"
+api_key_env = "OPENAI_API_KEY"
+# Optional: match these values to the actual model and gateway.
+# reasoning_effort = "low"
+# context_window = 1048576
+# max_tokens = 32768
+
+# Existing service environment variables (even empty ones) take precedence.
+# These values stay outside Room snapshots. Do not commit actual credentials.
+[env]
+OPENAI_API_KEY = ""
+# Optional: otherwise resolve beside the TeamX executable, then on the server PATH.
+# TEAMX_GITLAB_BIN = "/absolute/path/to/teamx-gitlab"
+# TEAMX_GLAB_BIN = "/absolute/path/to/glab"

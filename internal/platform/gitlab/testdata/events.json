@@ -1,0 +1,150 @@
+{
+  "room_id": "fixture-room",
+  "room_instance": "fixture-instance",
+  "subscription_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "subscription_version": 4,
+  "binding": {
+    "provider": "gitlab",
+    "url": "https://gitlab.invalid",
+    "project": "group/project",
+    "token_env": "GITLAB_PAT"
+  },
+  "project_id": 7,
+  "config": {
+    "enabled": true,
+    "interval_seconds": 6,
+    "filter": {
+      "types": [
+        "push"
+      ],
+      "branches": [
+        "main"
+      ]
+    },
+    "etag_verified": true
+  },
+  "baseline": "2026-11-01T23:50:00Z",
+  "watermark": "2026-11-02T00:00:00Z",
+  "ignore_before": "2026-11-01T23:55:00Z",
+  "filters": [
+    {
+      "since": "2026-11-01T23:50:00Z",
+      "filter": {
+        "types": [
+          "push"
+        ]
+      }
+    },
+    {
+      "since": "2026-11-01T23:58:00Z",
+      "filter": {
+        "types": [
+          "push"
+        ],
+        "branches": [
+          "main"
+        ]
+      }
+    }
+  ],
+  "observed": {
+    "https://gitlab.invalid|7|42": {
+      "id": 42,
+      "created_at": "2026-11-02T00:00:02Z",
+      "reason": "accepted"
+    },
+    "https://gitlab.invalid|7|43": {
+      "id": 43,
+      "created_at": "2026-11-02T00:00:03Z",
+      "reason": "accepted"
+    },
+    "https://gitlab.invalid|7|44": {
+      "id": 44,
+      "created_at": "2026-11-02T00:00:04Z",
+      "reason": "branch"
+    }
+  },
+  "inbox": {
+    "https://gitlab.invalid|7|42": {
+      "delivery_id": "notification-3c234e29b8028f8cfcf16000efe0ef23f19d0c4f0b1be0668299dd2cc3028443",
+      "subscription_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "room_id": "fixture-room",
+      "room_instance": "fixture-instance",
+      "event": {
+        "id": 42,
+        "project_id": 7,
+        "kind": "push",
+        "action": "pushed to",
+        "target_type": "",
+        "target_id": 0,
+        "target_iid": 0,
+        "created_at": "2026-11-02T00:00:02Z",
+        "author": {
+          "id": 9,
+          "username": "alice",
+          "name": "Alice"
+        },
+        "title": "fixture push",
+        "url": "https://gitlab.invalid/group/project/-/commit/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "branch": "main",
+        "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "received_at": "2026-11-02T00:02:00Z"
+    },
+    "https://gitlab.invalid|7|43": {
+      "delivery_id": "notification-8ea53055c76d313cdcf29ca829e689a3b6492f2086548e9407c178c7f9e3894e",
+      "subscription_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "room_id": "fixture-room",
+      "room_instance": "fixture-instance",
+      "event": {
+        "id": 43,
+        "project_id": 7,
+        "kind": "push",
+        "action": "pushed to",
+        "target_type": "",
+        "target_id": 0,
+        "target_iid": 0,
+        "created_at": "2026-11-02T00:00:03Z",
+        "author": {
+          "id": 9,
+          "username": "alice",
+          "name": "Alice"
+        },
+        "title": "fixture push",
+        "url": "https://gitlab.invalid/group/project/-/commit/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "branch": "main",
+        "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "received_at": "2026-11-02T00:02:00Z"
+    }
+  },
+  "scan": {
+    "start": "2026-11-01T23:55:00Z",
+    "end": "2026-11-02T00:02:00Z",
+    "next_page": 2,
+    "pages": 1,
+    "bytes": 4096
+  },
+  "quick_cache": {
+    "subscription_version": 4,
+    "etag": "\"fixture-page\"",
+    "ids": [
+      44,
+      43,
+      42
+    ]
+  },
+  "last_check": "2026-11-02T00:02:00Z",
+  "last_full": "2026-11-02T00:00:01Z",
+  "retry_at": "2026-11-02T00:02:30Z",
+  "server_not_before": "2026-11-02T00:02:30Z",
+  "consecutive_failures": 1,
+  "status": "backoff",
+  "metrics": {
+    "calls": 12,
+    "failures": 1,
+    "duration_ms": 105,
+    "response_bytes": 8192,
+    "new_items": 3
+  }
+}

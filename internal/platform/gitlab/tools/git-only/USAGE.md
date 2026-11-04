@@ -1,0 +1,1 @@
+Workspace 提供本地 Git 与限定仓库路径的 askpass；GitLab API 工具需要成员显式启用。运行 `"$TEAMX_CLI" tools list` 发现当前工具，用 `"$TEAMX_CLI" tools run gitlab --help` 查询命令。复杂评审及准确版本 checkout 按需读取 `"$TEAMX_CLI" tools skill gitlab`。保留已有文件，不用 reset --hard/clean。

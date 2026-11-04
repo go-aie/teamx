@@ -1,0 +1,20 @@
+# Local configuration and secrets
+.env
+.env.*
+/config.toml
+
+# OS files and development caches
+.DS_Store
+__pycache__/
+*.py[cod]
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local runtime data and binaries
+/.teamx/config.toml
+/.teamx/data/
+.local/
+/data/
+/bin/

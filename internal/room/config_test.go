@@ -1,0 +1,336 @@
+package room
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"flag"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+func writeStartupConfig(t *testing.T, dir, text string) string {
+	t.Helper()
+	path := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(path, []byte(text), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestDefaultStartupConfigUsesUserDirectory(t *testing.T) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := t.TempDir()
+	writeStartupConfig(t, project, "invalid current-directory config")
+	if err := os.Mkdir(filepath.Join(project, ".teamx"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	writeStartupConfig(t, filepath.Join(project, ".teamx"), "invalid project config")
+	t.Chdir(project)
+	path, err := defaultStartupConfigPath()
+	if err != nil || path != filepath.Join(homeDir, ".teamx", "config.toml") {
+		t.Fatal("default config depended on working directory", path, err)
+	}
+}
+
+func TestMissingOptionalConfigKeepsDataBesideConfig(t *testing.T) {
+	base := filepath.Join(t.TempDir(), ".teamx")
+	config, err := loadStartupConfig(filepath.Join(base, "config.toml"), false)
+	if err != nil || *config.Server.DataDir != filepath.Join(base, "data") || *config.Server.TeamsDir != filepath.Join(base, "teams") {
+		t.Fatal("missing optional config fell back to working directory", err)
+	}
+	if _, err := os.Stat(base); !os.IsNotExist(err) {
+		t.Fatal("config lookup created runtime data", err)
+	}
+}
+
+func TestRetiredDataDirectoryNamesAreRejected(t *testing.T) {
+	path := writeStartupConfig(t, t.TempDir(), "[server]\nrooms_dir = './old'\n")
+	if _, err := loadStartupConfig(path, true); err == nil {
+		t.Fatal("retired TOML field accepted")
+	}
+	var stdout, stderr bytes.Buffer
+	for _, name := range []string{"rooms-dir", "data-dir", "teams-dir"} {
+		if err := serve([]string{"--" + name, "old"}, &stdout, &stderr); err == nil || !strings.Contains(err.Error(), "flag provided but not defined") || stdout.Len() != 0 {
+			t.Fatal("directory command-line flag accepted", name, err)
+		}
+	}
+}
+
+func TestSingleRoomEmptyDataDirectoryDoesNotFallBackToCWD(t *testing.T) {
+	path := writeStartupConfig(t, t.TempDir(), "[server]\ndata_dir = ''\n")
+	var stdout, stderr bytes.Buffer
+	if err := serve([]string{"--config", path, "--room", "test"}, &stdout, &stderr); !errors.Is(err, ErrRequest) || stdout.Len() != 0 {
+		t.Fatal("empty data directory was accepted", err)
+	}
+}
+
+func TestStartupConfigExampleAndPaths(t *testing.T) {
+	data, err := os.ReadFile("../../.teamx/config.example.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	// Exercise paths independently of the shell's working directory.
+	text := strings.Replace(string(data), "/absolute/path/to/dsh", "./runtime/dsh", 1)
+	text = strings.Replace(text, "# binary_args =", "binary_args =", 1)
+	text = strings.Replace(text, "/absolute/path/to/dsh/lib/bin.js", "./runtime/cli.mjs", 1)
+	text = strings.ReplaceAll(text, "# reasoning_effort", "reasoning_effort")
+	text = strings.ReplaceAll(text, "# context_window", "context_window")
+	text = strings.ReplaceAll(text, "# max_tokens", "max_tokens")
+	text += "\nTEAMX_GLAB_BIN = './bin/glab'\nTEAMX_GITLAB_BIN = './bin/teamx-gitlab'\n"
+	c, err := loadStartupConfig(writeStartupConfig(t, dir, text), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *c.Server.DataDir != filepath.Join(dir, "data") || *c.Server.TeamsDir != filepath.Join(dir, "teams") ||
+		c.Runtime.DSH.BinaryPath != filepath.Join(dir, "runtime/dsh") || c.Runtime.DSH.BinaryArgs[0] != filepath.Join(dir, "runtime/cli.mjs") ||
+		c.Env["TEAMX_GLAB_BIN"] != filepath.Join(dir, "bin/glab") || c.Env["TEAMX_GITLAB_BIN"] != filepath.Join(dir, "bin/teamx-gitlab") ||
+		c.Runtime.Model.APIKeyEnv != "OPENAI_API_KEY" || c.Runtime.Model.ContextWindow != 1048576 || c.Runtime.Model.MaxTokens != 32768 || c.Runtime.Model.ReasoningEffort != "low" {
+		t.Fatal("startup values or config-relative paths lost")
+	}
+	if _, err := loadStartupConfig(filepath.Join(dir, "absent.toml"), false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadStartupConfig(filepath.Join(dir, "absent.toml"), true); err == nil {
+		t.Fatal("explicit missing config accepted")
+	}
+	empty, err := loadStartupConfig(writeStartupConfig(t, dir, "# use default directories\n"), true)
+	if err != nil || *empty.Server.DataDir != filepath.Join(dir, "data") || *empty.Server.TeamsDir != filepath.Join(dir, "teams") {
+		t.Fatal("default directories did not follow config location", err)
+	}
+}
+
+func TestStartupConfigRejectsInvalidInputWithoutSecrets(t *testing.T) {
+	const secret = "private-config-value-never-print"
+	for _, text := range []string{
+		`[env]` + "\nKEY = " + secret,
+		`[env]` + "\nKEY = \"" + secret + "\"\n[server]\nunknown = \"" + secret + "\"",
+		"[server]\nmax_turns = \"" + secret + "\"",
+		"[env]\nKEY = 123",
+		"[env]\nKEY = \"first\"\nKEY = \"second\"",
+		"[env]\nTEAMX_AGENT_ID = \"forged\"",
+		"[env]\nTEAMX_CLI = \"forged\"",
+		"[env]\n\"invalid=key\" = \"value\"",
+		"[env]\nKEY = \"\\u0000\"",
+		"[runtime.model]\nmodel_id = \"" + secret + "\"",
+		strings.Repeat("#", (1<<20)+1),
+	} {
+		_, err := loadStartupConfig(writeStartupConfig(t, t.TempDir(), text), true)
+		if err == nil || strings.Contains(err.Error(), secret) {
+			t.Fatal("invalid config accepted or credential echoed")
+		}
+	}
+}
+
+func TestStartupEnvironmentPrecedenceAndCleanup(t *testing.T) {
+	const key = "TEAMX_TEST_CONFIG_SECRET"
+	t.Setenv(key, "external")
+	for _, value := range []string{"external", ""} {
+		if err := os.Setenv(key, value); err != nil {
+			t.Fatal(err)
+		}
+		restore, err := applyStartupEnv(map[string]string{key: "from-file"})
+		if err != nil || os.Getenv(key) != value {
+			t.Fatal("exported environment did not win")
+		}
+		restore()
+	}
+	if err := os.Unsetenv(key); err != nil {
+		t.Fatal(err)
+	}
+	restore, err := applyStartupEnv(map[string]string{key: "from-file"})
+	if err != nil || os.Getenv(key) != "from-file" {
+		t.Fatal("config environment unavailable")
+	}
+	restore()
+	if _, exists := os.LookupEnv(key); exists {
+		t.Fatal("environment leaked after service shutdown")
+	}
+}
+
+func TestStartupServerSettingsPrecedence(t *testing.T) {
+	config, err := loadStartupConfig(writeStartupConfig(t, t.TempDir(), "[server]\nlisten = '127.0.0.1:8089'\ndata_dir = './saved'\nteams_dir = './catalog'\nmax_turns = 9\nmerge_window = '250ms'\n"), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, explicit := range []bool{false, true} {
+		f := flag.NewFlagSet("serve", flag.ContinueOnError)
+		listen := f.String("listen", "127.0.0.1:8088", "")
+		turns := f.Uint64("max-turns", 16, "")
+		merge := f.Duration("merge-window", 0, "")
+		args := []string{}
+		if explicit {
+			args = []string{"--listen", "127.0.0.1:0", "--max-turns", "7", "--merge-window", "0s"}
+		}
+		if err := f.Parse(args); err != nil {
+			t.Fatal(err)
+		}
+		visited := map[string]bool{}
+		f.Visit(func(flag *flag.Flag) { visited[flag.Name] = true })
+		if err := applyStartupSettings(f, visited, config); err != nil {
+			t.Fatal(err)
+		}
+		if explicit {
+			if *listen != "127.0.0.1:0" || *turns != 7 || *merge != 0 {
+				t.Fatal("explicit flags, including zero duration, did not win")
+			}
+		} else if *listen != *config.Server.Listen || *turns != 9 || *merge != 250*time.Millisecond {
+			t.Fatal("config did not override built-in defaults")
+		}
+	}
+}
+
+func TestGlobalRuntimeDefaultsOverridesAndFrozenRooms(t *testing.T) {
+	root, teams := t.TempDir(), t.TempDir()
+	defaults := testTeamDefinition(t).Runtime
+	team := testTeamDefinition(t)
+	team.Runtime = nil
+	writeTestTeam(t, teams, team)
+	if _, err := loadTeams(teams, nil); err == nil {
+		t.Fatal("missing runtime accepted without default")
+	}
+	m, err := newTeamRoomManager(root, teams, 4, defaults)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.config = serviceConfig{endpoint: "http://127.0.0.1:1", cliPath: os.Args[0]}
+	room := createTeamRoom(t, m, "global-runtime")
+	saved, _ := readManagedRoom(t, m, room)
+	if saved.Runtime == nil || saved.Runtime.Model != defaults.Model || saved.Runtime.DSH.BinaryPath != defaults.DSH.BinaryPath {
+		t.Fatal("resolved runtime not frozen")
+	}
+	if err := m.close(); err != nil {
+		t.Fatal(err)
+	}
+	defaults.Model.ModelID = "changed-global-model"
+	m, err = newTeamRoomManager(root, teams, 4, defaults)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.close()
+	m.config = serviceConfig{endpoint: "http://127.0.0.1:1", cliPath: os.Args[0]}
+	cfg, err := m.activationConfig(room.RoomIdentity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range cfg.dshProfiles {
+		if p.Model.ModelID != saved.Runtime.Model.ModelID {
+			t.Fatal("global change rewrote existing Room runtime")
+		}
+	}
+	newRoom := createTeamRoom(t, m, "new-runtime")
+	fresh, _ := readManagedRoom(t, m, newRoom)
+	if fresh.Runtime.Model.ModelID != defaults.Model.ModelID {
+		t.Fatal("new Room missed updated default")
+	}
+	team.Runtime = testTeamDefinition(t).Runtime
+	team.Runtime.Model.ModelID = "team-specific-model"
+	writeTestTeam(t, teams, team)
+	loaded, err := loadTeams(teams, defaults)
+	if err != nil || loaded[team.ID].Runtime.Model.ModelID != "team-specific-model" {
+		t.Fatal("complete team runtime did not replace default", err)
+	}
+	// A partial override must not silently inherit omitted fields.
+	team.Runtime.DSH.BinaryPath = ""
+	writeTestTeam(t, teams, team)
+	if _, err := loadTeams(teams, defaults); err == nil {
+		t.Fatal("partial runtime override merged with default")
+	}
+}
+
+func TestServeConfigCLIOverridesAndSecretIsolation(t *testing.T) {
+	binary := filepath.Join(t.TempDir(), "teamx")
+	if data, err := exec.Command("go", "build", "-o", binary, "../../cmd/teamx").CombinedOutput(); err != nil {
+		t.Fatal(err, string(data))
+	}
+	dir := t.TempDir()
+	team := testTeamDefinition(t)
+	team.Runtime = nil
+	writeTestTeam(t, filepath.Join(dir, "teams"), team)
+	const secret = "private-startup-secret-not-in-room-files"
+	config := "[server]\nlisten = 'invalid'\ndata_dir = './data'\nteams_dir = './teams'\nmax_turns = 0\n[env]\nTEAMX_TEST_CONFIG_SECRET = '" + secret + "'\n"
+	runtime := testTeamDefinition(t).Runtime
+	config += "[runtime.dsh]\nbinary_path = '" + runtime.DSH.BinaryPath + "'\n[runtime.model]\nprotocol = '" + runtime.Model.Protocol + "'\nbase_url = '" + runtime.Model.BaseURL + "'\nmodel_id = '" + runtime.Model.ModelID + "'\napi_key_env = '" + runtime.Model.APIKeyEnv + "'\n"
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	for _, mode := range []string{"absolute", "project-relative"} {
+		args := []string{"serve", "--listen", "127.0.0.1:0", "--max-turns", "7"}
+		cwd := t.TempDir()
+		configDir := dir
+		configText := config
+		if mode == "project-relative" {
+			cwd = dir
+			configDir = filepath.Join(dir, ".teamx")
+			if err := os.Mkdir(configDir, 0700); err != nil {
+				t.Fatal(err)
+			}
+			writeTestTeam(t, filepath.Join(configDir, "teams"), team)
+		}
+		path := writeStartupConfig(t, configDir, configText)
+		if mode == "project-relative" {
+			path = filepath.Join(".teamx", "config.toml")
+		}
+		args = append(args, "--config", path)
+		p := &recoveryCLI{cmd: exec.CommandContext(ctx, binary, args...)}
+		p.cmd.Dir, p.cmd.Env, p.cmd.Stderr = cwd, cleanRoomEnv(), &p.logs
+		stdout, err := p.cmd.StdoutPipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := p.cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			if !p.waited {
+				_ = p.cmd.Process.Kill()
+				_ = p.cmd.Wait()
+			}
+		})
+		if err := json.NewDecoder(stdout).Decode(p); err != nil {
+			_ = p.cmd.Wait()
+			p.waited = true
+			t.Fatal("readiness", err, strings.ReplaceAll(p.logs.String(), secret, "[REDACTED]"))
+		}
+		client := cliClient{endpoint: p.Endpoint, http: &http.Client{Timeout: 5 * time.Second}}
+		var room roomSummary
+		req := roomCreateRequest{ServiceEpoch: p.ServiceEpoch, Caller: humanCaller, roomSelection: roomSelection{TeamID: "sample", CreateID: mode}}
+		if err := client.request(ctx, "/v1/rooms/create", req, &room); err != nil {
+			t.Fatal(err)
+		}
+		p.stop(t)
+		var saved managedRoomConfig
+		file := filepath.Join(configDir, "data/rooms", room.RoomID, "room-config.json")
+		if err := readSnapshot(file, &saved, maxRoomsFileBytes); err != nil || saved.MaxTurns != 7 || saved.Runtime == nil {
+			t.Fatal("config paths or explicit CLI precedence lost", err)
+		}
+		if strings.Contains(p.logs.String(), secret) {
+			t.Fatal("credential in service diagnostics")
+		}
+	}
+	err := filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return err
+		}
+		if filepath.Base(path) == "config.toml" {
+			return nil
+		}
+		b, err := os.ReadFile(path)
+		if bytes.Contains(b, []byte(secret)) {
+			t.Fatal("startup environment leaked into Room persistence")
+		}
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
