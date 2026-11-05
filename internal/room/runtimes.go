@@ -424,7 +424,8 @@ func (m *roomManager) serveRuntime(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, ErrIdentity)
 		return
 	}
-	tools := r.URL.Path == "/v1/send" || r.URL.Path == "/v1/read" || r.URL.Path == "/v1/read/confirm"
+	tools := r.URL.Path == "/v1/send" || r.URL.Path == "/v1/read" || r.URL.Path == "/v1/read/confirm" ||
+		r.URL.Path == "/v1/inbox/read" || r.URL.Path == "/v1/inbox/confirm" || r.URL.Path == "/v1/matters/list" || r.URL.Path == "/v1/matters/update"
 	if busy && (!tools || req.Caller.Kind != "agent") {
 		writeAPIError(w, ErrBusy)
 		return

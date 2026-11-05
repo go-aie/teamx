@@ -79,6 +79,9 @@ func (m *roomManager) configureEventsSubscription(ctx context.Context, key notif
 	if key.SubscriptionID == "" && (version != 0 || current != nil) || key.SubscriptionID != "" && (current == nil || current.SubscriptionID != key.SubscriptionID || current.SubscriptionVersion != version) {
 		return gitlab.EventsState{}, ErrConflict
 	}
+	if err := m.validateNotificationTargetLocked(ctx, key.Owner, cfg.Target, cfg.Enabled); err != nil {
+		return gitlab.EventsState{}, err
+	}
 	var binding platform.ProjectBinding
 	var account connection.Account
 	if current != nil {
@@ -163,6 +166,9 @@ func (m *roomManager) configureEventsSubscription(ctx context.Context, key notif
 			return retired, ErrConflict
 		}
 		current = nil
+	}
+	if err := m.validateNotificationTargetLocked(ctx, key.Owner, cfg.Target, cfg.Enabled); err != nil {
+		return gitlab.EventsState{}, err
 	}
 	next, err := gitlab.ConfigureEvents(key.Owner, current, &binding, cfg, m.notifications.Now())
 	if err != nil {

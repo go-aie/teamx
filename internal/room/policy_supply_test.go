@@ -1,0 +1,365 @@
+package room
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/go-aie/actorx"
+	"github.com/go-aie/teamx/internal/agent/dsh"
+)
+
+func TestPolicyEffectiveTokenIdentityContentAndExpiry(t *testing.T) {
+	h := newInboxHarness(t, InboxLimits{})
+	c := policyRule()
+	now := time.Now().UTC()
+	expires := now.Add(time.Hour)
+	c.ExpiresAt = &expires
+	v, err := h.store.changePolicy(h.id, humanCaller, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := v.PolicySnapshot
+	first := agentPolicy(p, 1, now)
+	next := agentPolicy(p, 2, now.Add(time.Minute))
+	if first.PolicyToken == "" || first.PolicyToken != next.PolicyToken || next.CurrentTurn != 2 || !reflect.DeepEqual(first.Effective, v.Effective) {
+		t.Fatal("unstable or incomplete effective view", first, next)
+	}
+	// A new suggestion changes storage metadata only, without invalidating body.
+	suggested := p.History[0]
+	suggested.ID, suggested.Status, suggested.Text = "other", "suggested", "not-effective"
+	p.History = append(p.History, suggested)
+	p.Revision++
+	if got := agentPolicy(p, 3, now); got.PolicyToken != first.PolicyToken || got.Revision != 2 {
+		t.Fatal("suggestion changed effective token", got)
+	}
+	for _, mutate := range []func(*PolicyRevision){
+		func(r *PolicyRevision) { r.Text = "new body" },
+		func(r *PolicyRevision) { r.Scope.Project = "other" },
+		func(r *PolicyRevision) { r.Conditions = "new conditions" },
+		func(r *PolicyRevision) { r.Exceptions = "new exceptions" },
+		func(r *PolicyRevision) { r.Actions = "new action" },
+		func(r *PolicyRevision) { r.Source.Text = "new source" },
+		func(r *PolicyRevision) { r.Version++ },
+		func(r *PolicyRevision) { r.Status = "revoked" },
+	} {
+		changed := p
+		changed.History = append([]PolicyRevision(nil), p.History...)
+		mutate(&changed.History[0])
+		if agentPolicy(changed, 1, now).PolicyToken == first.PolicyToken {
+			t.Fatal("effective change did not invalidate token")
+		}
+	}
+	for _, mutate := range []func(*MemberIdentity){
+		func(id *MemberIdentity) { id.RoomID += "other" },
+		func(id *MemberIdentity) { id.RoomInstance += "other" },
+		func(id *MemberIdentity) { id.AgentID += "other" },
+		func(id *MemberIdentity) { id.MembershipID += "other" },
+	} {
+		changed := p
+		mutate(&changed.MemberIdentity)
+		if agentPolicy(changed, 1, now).PolicyToken == first.PolicyToken {
+			t.Fatal("token crossed identity scope")
+		}
+	}
+	expired := agentPolicy(p, 4, expires)
+	if len(expired.Effective) != 0 || expired.PolicyToken == first.PolicyToken || expired.Revision != p.Revision {
+		t.Fatal("natural expiry failed to change token without a write", expired)
+	}
+}
+
+func suppliedPolicy(t *testing.T, text string) map[string]json.RawMessage {
+	t.Helper()
+	const prefix = "Member policy context (JSON):\n"
+	if !strings.HasPrefix(text, prefix) {
+		t.Fatal("missing policy context")
+	}
+	line, _, _ := strings.Cut(strings.TrimPrefix(text, prefix), "\n")
+	var got map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(line), &got); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"history", "current"} {
+		if _, ok := got[key]; ok {
+			t.Fatalf("Agent received management field %s", key)
+		}
+	}
+	return got
+}
+
+func TestPolicySessionSupplyFirstUnchangedChangesAndRebuild(t *testing.T) {
+	h := newInboxHarness(t, InboxLimits{})
+	inboxCall[InboxReceipt](t, h, h.receive("one"))
+	inboxRunning(t, h, 1, 1)
+	var prompts []string
+	fail := false
+	b := dshBackend{store: h.store, open: func(context.Context, dsh.Options) (dshComponent, error) {
+		return &adapterComponent{run: func(_ context.Context, prompt string) (dsh.TurnResult, error) {
+			prompts = append(prompts, prompt)
+			if fail {
+				return dsh.TurnResult{}, errors.New("rejected prompt")
+			}
+			return dsh.TurnResult{}, nil
+		}}, nil
+	}}
+	s, err := b.OpenSession(h.ctx, adapterOptions(h.store, h.id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := func(inbox bool) map[string]json.RawMessage {
+		t.Helper()
+		input := UnreadChanged{MemberIdentity: h.id}
+		if inbox {
+			input.Inbox = &InboxInput{SnapshotSeq: 1}
+		}
+		if err := s.Run(h.ctx, input); err != nil {
+			t.Fatal(err)
+		}
+		return suppliedPolicy(t, prompts[len(prompts)-1])
+	}
+	first := run(false)
+	if string(first["effective"]) != "[]" || string(first["current_turn"]) != "1" {
+		t.Fatal("new Session must explicitly supply empty policy", first)
+	}
+	c := policyRule()
+	if _, err := h.store.changePolicy(h.id, humanCaller, c); err != nil {
+		t.Fatal(err)
+	}
+	inboxRunning(t, h, 2, 1)
+	full := run(true)
+	var records []PolicyRevision
+	if err := json.Unmarshal(full["effective"], &records); err != nil || len(records) != 1 || records[0].Text != c.Text || records[0].Exceptions != c.Exceptions || records[0].Source.Text != c.SourceText {
+		t.Fatal("effective body was incomplete", records, err)
+	}
+	inboxRunning(t, h, 3, 1)
+	metadata := run(false)
+	if _, ok := metadata["effective"]; ok || string(metadata["current_turn"]) != "3" || string(metadata["policy_token"]) != string(full["policy_token"]) {
+		t.Fatal("unchanged continuous Session repeated body or stale turn", metadata)
+	}
+	fullBytes, _ := json.Marshal(full)
+	metadataBytes, _ := json.Marshal(metadata)
+	t.Logf("policy supply: complete context %d bytes; unchanged context %d bytes; runtime requires no policy CLI query", len(fullBytes), len(metadataBytes))
+	suggestion := PolicyChange{ID: "style", Revision: 1, Kind: "preference", Status: "suggested", Text: "short", Scope: PolicyScope{Description: "replies"}, SourceText: "suggest short replies"}
+	if _, err := h.store.changePolicy(h.id, humanCaller, suggestion); err != nil {
+		t.Fatal(err)
+	}
+	metadata = run(true)
+	if _, ok := metadata["effective"]; ok || string(metadata["revision"]) != "2" || string(metadata["policy_token"]) != string(full["policy_token"]) {
+		t.Fatal("suggestion caused body redelivery", metadata)
+	}
+	c.Version, c.Revision, c.Exceptions = 1, 2, "changed restriction"
+	if _, err := h.store.changePolicy(h.id, humanCaller, c); err != nil {
+		t.Fatal(err)
+	}
+	changed := run(false)
+	if !bytes.Contains(changed["effective"], []byte(c.Exceptions)) || bytes.Equal(changed["policy_token"], full["policy_token"]) {
+		t.Fatal("changed effective policy was not replaced", changed)
+	}
+	c.Version, c.Revision, c.Status = 2, 3, "revoked"
+	if _, err := h.store.changePolicy(h.id, humanCaller, c); err != nil {
+		t.Fatal(err)
+	}
+	if revoked := run(true); string(revoked["effective"]) != "[]" {
+		t.Fatal("revocation did not replace with an explicit empty set", revoked)
+	}
+	// Error is not delivery evidence, even if the policy token was unchanged.
+	fail = true
+	if err := s.Run(h.ctx, UnreadChanged{MemberIdentity: h.id}); err == nil {
+		t.Fatal("expected prompt failure")
+	}
+	fail = false
+	if got := run(false); string(got["effective"]) != "[]" {
+		t.Fatal("failed prompt did not invalidate supply marker", got)
+	}
+	if err := s.Close(h.ctx); err != nil {
+		t.Fatal(err)
+	}
+	// Recovery opens a new adapter instance even for the same backend Session.
+	b.recover = true
+	s, err = b.OpenSession(h.ctx, adapterOptions(h.store, h.id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := run(false); string(got["effective"]) != "[]" {
+		t.Fatal("recovered Session inherited an in-memory marker", got)
+	}
+	if err := s.Close(h.ctx); err != nil {
+		t.Fatal(err)
+	}
+	// A member's explicit rotation also starts with a complete policy body.
+	rotated, err := b.RotateSession(adapterOptions(h.store, h.id), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b = rotated.(dshBackend)
+	s, err = b.OpenSession(h.ctx, adapterOptions(h.store, h.id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close(h.ctx)
+	if got := run(false); string(got["effective"]) != "[]" {
+		t.Fatal("rotated Session inherited an in-memory marker", got)
+	}
+	// Invalid authoritative storage must stop the turn before invoking a model.
+	count := len(prompts)
+	path := filepath.Join(h.store.dir, "agents", h.id.MembershipID, "policy.json")
+	if err := os.WriteFile(path, []byte(`{"version":1}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Run(h.ctx, UnreadChanged{MemberIdentity: h.id}); !errors.Is(err, ErrInvalid) || len(prompts) != count {
+		t.Fatal("invalid policy reached model", err)
+	}
+}
+
+func TestPolicySessionNaturalExpiryRefreshesWithoutRevisionChange(t *testing.T) {
+	h := newInboxHarness(t, InboxLimits{})
+	c := policyRule()
+	expires := time.Now().Add(time.Second)
+	c.ExpiresAt = &expires
+	if _, err := h.store.changePolicy(h.id, humanCaller, c); err != nil {
+		t.Fatal(err)
+	}
+	var prompts []string
+	s := &dshSession{backend: dshBackend{store: h.store}, opts: adapterOptions(h.store, h.id),
+		component: &adapterComponent{run: func(_ context.Context, prompt string) (dsh.TurnResult, error) {
+			prompts = append(prompts, prompt)
+			return dsh.TurnResult{}, nil
+		}}}
+	input := UnreadChanged{MemberIdentity: h.id}
+	if err := s.Run(h.ctx, input); err != nil {
+		t.Fatal(err)
+	}
+	first := suppliedPolicy(t, prompts[0])
+	if string(first["effective"]) == "[]" {
+		t.Fatal("rule expired before initial supply")
+	}
+	time.Sleep(time.Until(expires))
+	if err := s.Run(h.ctx, input); err != nil {
+		t.Fatal(err)
+	}
+	next := suppliedPolicy(t, prompts[1])
+	if string(next["effective"]) != "[]" || !bytes.Equal(first["revision"], next["revision"]) || bytes.Equal(first["policy_token"], next["policy_token"]) {
+		t.Fatal("expiry did not refresh body with unchanged revision", next)
+	}
+}
+
+func TestPolicyAgentRecoveryReadAndManagementHistory(t *testing.T) {
+	h := newInboxHarness(t, InboxLimits{})
+	c := policyRule()
+	if _, err := h.store.changePolicy(h.id, humanCaller, c); err != nil {
+		t.Fatal(err)
+	}
+	c.Version, c.Revision, c.Text = 1, 1, strings.Repeat("完整限制", 300)
+	if _, err := h.store.changePolicy(h.id, humanCaller, c); err != nil {
+		t.Fatal(err)
+	}
+	svc := &service{info: ServiceInfo{RoomIdentity: h.id.RoomIdentity, ServiceEpoch: "test-service"}, store: h.store,
+		room: h.roomHarness.addr, requests: make(chan struct{}, 32)}
+	server := httptest.NewServer(svc)
+	defer server.Close()
+	env := map[string]string{"TEAMX_ENDPOINT": server.URL, "TEAMX_ROOM_ID": h.id.RoomID, "TEAMX_ROOM_INSTANCE": h.id.RoomInstance, "TEAMX_SERVICE_EPOCH": svc.info.ServiceEpoch, "TEAMX_AGENT_ID": h.id.AgentID, "TEAMX_MEMBERSHIP_ID": h.id.MembershipID}
+	var out, stderr bytes.Buffer
+	if err := runCLI(h.ctx, []string{"policy", "read"}, &out, &stderr, func(k string) string { return env[k] }); err != nil {
+		t.Fatal(err, stderr.String())
+	}
+	var got agentPolicyView
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil || len(got.Effective) != 1 || got.Effective[0].Text != c.Text || got.PolicyToken == "" {
+		t.Fatal("recovery view truncated or invalid", out.String(), err)
+	}
+	for _, key := range []string{`"history"`, `"current"`} {
+		if bytes.Contains(out.Bytes(), []byte(key)) {
+			t.Fatal("Agent read leaked management history", key)
+		}
+	}
+	view, err := svc.memberPolicy(h.ctx, apiRequest{Caller: humanCaller, AgentID: h.id.AgentID, MembershipID: h.id.MembershipID}, "read")
+	if err != nil || len(view.(PolicyView).History) != 2 {
+		t.Fatal("management history lost", view, err)
+	}
+	if err := runCLI(h.ctx, []string{"policy", "decisions"}, &out, &stderr, func(k string) string { return env[k] }); !errors.Is(err, ErrRequest) {
+		t.Fatal("retired Agent command accepted", err)
+	}
+	if _, err := svc.memberPolicy(h.ctx, apiRequest{Caller: agentCaller(h.id.AgentID, h.id.MembershipID)}, "decisions/read"); !errors.Is(err, ErrIdentity) {
+		t.Fatal("Agent can still query management decisions", err)
+	}
+}
+
+func TestPolicyEffectiveDecisionsOnInboxAndMatterReads(t *testing.T) {
+	h := newInboxHarness(t, InboxLimits{})
+	for _, key := range []string{"one", "two"} {
+		inboxCall[InboxReceipt](t, h, h.receive(key))
+	}
+	inboxRunning(t, h, 1, 2)
+	page := inboxCall[InboxBatchPage](t, h, ReadInboxBatch{MemberIdentity: h.id, TurnNumber: 1})
+	linkInboxPage(t, h, page)
+	changes := []PolicyChange{
+		{ID: "answer", Status: "active"},
+		{ID: "revoked", Status: "active"},
+		{ID: "revoked", Status: "revoked", Version: 1},
+		{ID: "suggested", Status: "suggested"},
+		{ID: "expired", Status: "active"},
+	}
+	for i, c := range changes {
+		c.Kind, c.Text, c.Actions = "decision", "reply to this request", "comment"
+		c.Scope.Description, c.SourceText = "this matter only", "confirmed exact reply"
+		c.Seq, c.MatterID, c.MatterVersion = 1, "main", uint64(i+1)
+		if c.ID == "expired" {
+			past := time.Now().Add(-time.Hour)
+			c.ExpiresAt = &past
+		}
+		if _, err := h.store.changeDecision(h.id, humanCaller, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	svc := &service{info: ServiceInfo{RoomIdentity: h.id.RoomIdentity}, store: h.store, room: h.roomHarness.addr,
+		inboxes: map[string]actorx.Addr{h.id.MembershipID: h.addr}}
+	req := apiRequest{Caller: agentCaller(h.id.AgentID, h.id.MembershipID)}
+	for _, operation := range []string{"read", "list"} {
+		value, err := svc.memberInbox(h.ctx, req, operation)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Contains(data, []byte(`"history"`)) {
+			t.Fatal("Agent received decisions.history", string(data))
+		}
+		var records []agentMatterRecord
+		if operation == "read" {
+			var decoded agentInboxBatchPage
+			if err := json.Unmarshal(data, &decoded); err != nil {
+				t.Fatal(err)
+			}
+			records = decoded.Matters
+		} else {
+			var decoded agentMatterPage
+			if err := json.Unmarshal(data, &decoded); err != nil {
+				t.Fatal(err)
+			}
+			records = decoded.Records
+		}
+		if len(records) != 2 || records[0].Seq != 1 || records[0].MembershipID != h.id.MembershipID || records[0].Matters[0].Version != 6 ||
+			len(records[0].Matters[0].Decisions) != 1 || records[0].Matters[0].Decisions[0].ID != "answer" || records[0].Matters[0].Decisions[0].Version != 1 ||
+			len(records[1].Matters[0].Decisions) != 0 {
+			t.Fatal("wrong decision scope/filter/version", operation, string(data))
+		}
+	}
+	value, err := svc.memberPolicy(h.ctx, apiRequest{Caller: humanCaller, AgentID: h.id.AgentID, MembershipID: h.id.MembershipID}, "decisions/read")
+	if err != nil || len(value.(MatterPage).Records[0].Matters[0].Decisions.History) != len(changes) {
+		t.Fatal("management decision history lost", value, err)
+	}
+	// Agent projection never rewrites durable decision history.
+	raw, err := h.store.listMatters(h.id, "", 0, 25)
+	if err != nil || len(raw.Records[0].Matters[0].Decisions.History) != len(changes) {
+		t.Fatal("Agent projection mutated stored record", raw, err)
+	}
+}

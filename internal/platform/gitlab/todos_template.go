@@ -40,5 +40,5 @@ func TodosMessage(s TodosState, e TodosInboxEntry) notification.Item {
 	}
 	lines = append(lines, notificationReference(t.Project, object, t.Title, link))
 	key := TodosKey(s.Binding, t.ID)
-	return notification.Item{Key: key, DeliveryID: e.DeliveryID, CreatedAt: t.CreatedAt, Order: fmt.Sprintf("%020d", t.ID), Text: strings.Join(lines, "\n\n"), Source: platform.SourceRef{Provider: "gitlab", Channel: "todos", Instance: s.Binding.URL, SubscriptionID: s.SubscriptionID, ItemKey: key, ProjectID: t.ProjectID, Project: t.Project, Object: object}}
+	return notification.Item{Key: key, Route: e.Route, DeliveryID: e.Route.DeliveryID(e.DeliveryID), CreatedAt: t.CreatedAt, Order: fmt.Sprintf("%020d", t.ID), Text: strings.Join(lines, "\n\n"), Source: platform.SourceRef{Provider: "gitlab", Channel: "todos", Instance: s.Binding.URL, SubscriptionID: s.SubscriptionID, ItemKey: key, ProjectID: t.ProjectID, Project: t.Project, Object: object, URL: link, Reference: todoReference(s, t)}}
 }

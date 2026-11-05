@@ -34,7 +34,7 @@ func (r RuntimeState) QueryPaused() bool {
 	return r.Status == "credentials_invalid" || r.Status == "capacity" || r.Status == "binding_changed"
 }
 func (r RuntimeState) Validate(enabled bool) error {
-	if r.ConsecutiveFailures < 0 || r.ConsecutiveFailures > 30 || r.Metrics.DurationMS < 0 || r.Metrics.ResponseBytes < 0 || !enabled && r.Status != "disabled" || enabled && r.Status == "disabled" || r.DeliveryErrorCode != "" && r.DeliveryErrorCode != "room_capacity" {
+	if r.ConsecutiveFailures < 0 || r.ConsecutiveFailures > 30 || r.Metrics.DurationMS < 0 || r.Metrics.ResponseBytes < 0 || !enabled && r.Status != "disabled" || enabled && r.Status == "disabled" || r.DeliveryErrorCode != "" && r.DeliveryErrorCode != "room_capacity" && r.DeliveryErrorCode != "inbox_capacity" && r.DeliveryErrorCode != "target_unavailable" && r.DeliveryErrorCode != "target_removed" {
 		return ErrInvalid
 	}
 	switch r.Status {

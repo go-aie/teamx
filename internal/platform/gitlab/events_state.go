@@ -38,11 +38,12 @@ func (f EventsFilter) Clone() EventsFilter {
 }
 
 type EventsConfig struct {
-	ConnectionID    string       `json:"connection_id,omitempty"`
-	Project         string       `json:"project,omitempty"`
-	Enabled         bool         `json:"enabled"`
-	IntervalSeconds int          `json:"interval_seconds"`
-	Filter          EventsFilter `json:"filter"`
+	Target          notification.Target `json:"target,omitzero"`
+	ConnectionID    string              `json:"connection_id,omitempty"`
+	Project         string              `json:"project,omitempty"`
+	Enabled         bool                `json:"enabled"`
+	IntervalSeconds int                 `json:"interval_seconds"`
+	Filter          EventsFilter        `json:"filter"`
 	// Opt-in only after verification on the target Events endpoint. First query
 	// after process/worker restart is always unconditional, even with disk cache.
 	ETagVerified bool `json:"etag_verified,omitempty"`
@@ -60,8 +61,9 @@ type EventsObservation struct {
 }
 
 type EventsInboxEntry struct {
-	DeliveryID     string `json:"delivery_id"`
-	SubscriptionID string `json:"subscription_id"`
+	Route          notification.Route `json:"route,omitzero"`
+	DeliveryID     string             `json:"delivery_id"`
+	SubscriptionID string             `json:"subscription_id"`
 	platform.RoomIdentity
 	Event      Event     `json:"event"`
 	ReceivedAt time.Time `json:"received_at"`
@@ -115,6 +117,9 @@ type EventsState struct {
 }
 
 func NormalizeEventsConfig(c EventsConfig) (EventsConfig, error) {
+	if !c.Target.Valid() {
+		return c, notification.ErrRequest
+	}
 	if c.ConnectionID != "" && !validRestartID(c.ConnectionID) || c.Project != "" && !validEventsProjectPath(c.Project) {
 		return c, notification.ErrRequest
 	}
@@ -238,7 +243,7 @@ func (s EventsState) Validate(owner platform.RoomIdentity) error {
 	}
 	for key, e := range s.Inbox {
 		o, ok := s.Observed[key]
-		if !ok || o.Reason != "accepted" || e.RoomIdentity != owner || e.SubscriptionID != s.SubscriptionID || e.DeliveryID != s.DeliveryID(key) ||
+		if !ok || !e.Route.Valid(s.SubscriptionVersion) || o.Reason != "accepted" || e.RoomIdentity != owner || e.SubscriptionID != s.SubscriptionID || e.DeliveryID != s.DeliveryID(key) ||
 			e.Event.ProjectID != s.ProjectID || e.Event.ID != o.ID || !e.Event.CreatedAt.Equal(o.CreatedAt) || e.ReceivedAt.IsZero() {
 			return notification.ErrInvalid
 		}
@@ -346,7 +351,7 @@ func (s *EventsState) Accept(events []Event, now time.Time) (unknown, known int,
 		s.Observed[key] = EventsObservation{e.ID, e.CreatedAt, reason}
 		s.Metrics.NewItems++
 		if reason == "accepted" {
-			s.Inbox[key] = EventsInboxEntry{DeliveryID: s.DeliveryID(key), SubscriptionID: s.SubscriptionID, RoomIdentity: s.RoomIdentity, Event: e, ReceivedAt: now}
+			s.Inbox[key] = EventsInboxEntry{Route: notification.Route{Target: s.Config.Target, Version: s.SubscriptionVersion}, DeliveryID: s.DeliveryID(key), SubscriptionID: s.SubscriptionID, RoomIdentity: s.RoomIdentity, Event: e, ReceivedAt: now}
 		}
 	}
 	return unknown, known, nil

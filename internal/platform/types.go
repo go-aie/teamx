@@ -70,12 +70,47 @@ type ProjectBinding struct {
 
 // SourceRef identifies a notification independently of its provider's object IDs.
 type SourceRef struct {
-	Provider       string `json:"provider"`
-	Channel        string `json:"channel"`
-	Instance       string `json:"instance"`
-	SubscriptionID string `json:"subscription_id"`
-	ItemKey        string `json:"item_key"`
-	ProjectID      int64  `json:"project_id,omitempty"`
-	Project        string `json:"project,omitempty"`
-	Object         string `json:"object,omitempty"`
+	Provider       string                `json:"provider"`
+	Channel        string                `json:"channel"`
+	Instance       string                `json:"instance"`
+	SubscriptionID string                `json:"subscription_id"`
+	ItemKey        string                `json:"item_key"`
+	ProjectID      int64                 `json:"project_id,omitempty"`
+	Project        string                `json:"project,omitempty"`
+	Object         string                `json:"object,omitempty"`
+	URL            string                `json:"url,omitempty"` // Original candidate link, never object identity.
+	Reference      NotificationReference `json:"reference,omitzero"`
+}
+
+// ExternalID keeps opaque IDs and their namespaces intact. An object ID, an
+// IID and a GraphQL GID are distinct even when their displayed numbers match.
+type ExternalID struct {
+	Namespace string `json:"namespace"`
+	Value     string `json:"value"`
+}
+
+type ObjectReference struct {
+	Type string     `json:"type,omitempty"` // Provider-native type; never inferred from display text.
+	ID   ExternalID `json:"id,omitzero"`
+	IID  ExternalID `json:"iid,omitzero"`
+}
+
+// NotificationReference is source evidence, not a verified alias/grouping index.
+// Target preserves the original API target; Object is the business object (the
+// noteable for a comment). Unknown IDs stay absent. Version zero means legacy
+// source data without structured evidence. Value fields keep SourceRef comparable.
+type NotificationReference struct {
+	Version      int             `json:"version"`
+	RecipientID  ExternalID      `json:"recipient_id,omitzero"`
+	Scope        string          `json:"scope,omitempty"`
+	ProjectID    ExternalID      `json:"project_id,omitzero"`
+	Target       ObjectReference `json:"target,omitzero"`
+	Object       ObjectReference `json:"object,omitzero"`
+	NoteID       ExternalID      `json:"note_id,omitzero"`
+	DiscussionID ExternalID      `json:"discussion_id,omitzero"`
+	Branch       string          `json:"branch,omitempty"`
+	Ref          string          `json:"ref,omitempty"`
+	RefType      string          `json:"ref_type,omitempty"`
+	SHA          string          `json:"sha,omitempty"`
+	BeforeSHA    string          `json:"before_sha,omitempty"`
 }

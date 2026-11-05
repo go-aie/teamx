@@ -64,6 +64,7 @@ type PostMessage struct {
 	ClientMessageID string
 	Text            string
 	ReplyTo         uint64
+	MatterNotice    bool // internal durable outbox delivery; never accepted by /v1/send
 }
 
 type PostReceipt struct {
@@ -142,14 +143,21 @@ type ReadConfirmation struct {
 // UnreadChanged is a state snapshot, never a message body or a delta.
 type UnreadChanged struct {
 	MemberIdentity
-	Revision        uint64 `json:"revision"`
-	LatestSeq       uint64 `json:"latest_seq"`
-	NewestUnreadSeq uint64 `json:"newest_unread_seq"`
-	UnreadCount     int    `json:"unread_count"`
+	Inbox           *InboxInput `json:"inbox,omitempty"`
+	Revision        uint64      `json:"revision"`
+	LatestSeq       uint64      `json:"latest_seq"`
+	NewestUnreadSeq uint64      `json:"newest_unread_seq"`
+	UnreadCount     int         `json:"unread_count"`
+}
+
+type InboxInput struct {
+	Through     uint64 `json:"through"`
+	SnapshotSeq uint64 `json:"snapshot_seq"`
 }
 
 type InspectMember struct{ MemberIdentity }
 type MemberStatus struct {
+	Inbox        *InboxStatus     `json:"inbox,omitempty"`
 	Rotation     *SessionRotation `json:"rotation,omitempty"`
 	Notification *UnreadChanged   `json:"notification"`
 	Status       string           `json:"status,omitempty"`

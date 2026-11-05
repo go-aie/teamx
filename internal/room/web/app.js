@@ -231,12 +231,20 @@ $("cli-member-refresh").addEventListener("click", () => {
 });
 const gitlabEventStatuses = { disabled: "已关闭", initializing: "初始化中", running: "运行中", backoff: "退避中", credentials_invalid: "凭据失效", capacity: "接收容量已满", binding_changed: "绑定已变化" };
 const gitlabEventErrors = { credential_unavailable: "凭据不可用，请验证所选平台连接。", credential_rejected: "GitLab 拒绝访问，请检查权限和凭据。", binding_changed: "绑定已变化，请核对后保存设置。", project_identity_changed: "项目身份已变化，需要核查绑定。", capacity: "接收容量已满，进度未推进。", query_failed: "查询失败，将按退避计划重试。", room_capacity: "房间消息或投递回执容量已满，事件保留在积压中。" };
+const notificationTargetErrors = { target_unavailable: "投递目标暂不可用，通知保留在来源积压中。", target_removed: "接收成员已移除，旧积压保留原目标；同名新成员不会继承。", inbox_capacity: "成员收件箱容量已满，新通知保留在来源积压中。" };
+function notificationTarget(config) { const t = config?.target; return t?.mode === "inbox" ? { mode: "inbox", agent_id: t.agent_id, membership_id: t.membership_id } : {}; }
+function fillNotificationTarget(channel, target) {
+  const value = JSON.stringify(target || {}), options = [new Option("房间消息（公开）", "{}"), ...state.members.map(m => new Option(`${memberRole(m)?.name || m.agent_id} · 收件箱`, JSON.stringify({mode:"inbox", agent_id:m.agent_id, membership_id:m.membership_id})))];
+  if (!options.some(o => o.value === value)) options.push(new Option("原接收成员已失效", value));
+  setNotificationOptions(`gitlab-${channel}-target`, options); $(`gitlab-${channel}-target`).value = value;
+}
+function draftNotificationTarget(channel) { try { return JSON.parse($(`gitlab-${channel}-target`).value || "{}"); } catch { return {}; } }
 const gitlabEventTypeIDs = ["opened", "merged", "closed", "note", "push"];
 const gitlabEventTypeInputs = () => gitlabEventTypeIDs.map(id => $(`gitlab-events-type-${id}`));
 function gitlabEventDraft() {
   const types = gitlabEventTypeInputs().filter(input => input.checked).map(input => input.value);
   const lines = id => $(id).value.split(/\r?\n/).map(value => value.trim()).filter(Boolean);
-  return { connection_id: $("gitlab-events-connection").value, project: $("gitlab-events-project").value.trim(),
+  return { target: draftNotificationTarget("events"), connection_id: $("gitlab-events-connection").value, project: $("gitlab-events-project").value.trim(),
     enabled: $("gitlab-events-enabled").checked, interval_seconds: Number($("gitlab-events-interval").value),
     etag_verified: workspaceView?.events?.config.etag_verified || false,
     filter: { types: types.length === gitlabEventTypeIDs.length ? [] : types, branches: lines("gitlab-events-branches"), ignore_users: lines("gitlab-events-ignore") } };
@@ -244,7 +252,7 @@ function gitlabEventDraft() {
 function gitlabEventConfigKey(config) {
   const unique = values => [...new Set(values || [])].sort();
   const types = unique(config.filter.types);
-  return JSON.stringify({ connection: config.connection_id || "", project: config.project || "", enabled: config.enabled, interval: config.interval_seconds,
+  return JSON.stringify({ target: notificationTarget(config), connection: config.connection_id || "", project: config.project || "", enabled: config.enabled, interval: config.interval_seconds,
     types: types.length === gitlabEventTypeIDs.length ? [] : types, branches: unique(config.filter.branches),
     users: unique((config.filter.ignore_users || []).map(user => user.toLowerCase())) });
 }
@@ -290,6 +298,7 @@ function renderGitLabEvents() {
   if (!data) { $("gitlab-events-fields").disabled = true; return; }
   const formVersion = JSON.stringify([data.subscription_id, data.subscription_version]);
   if (ws.eventsFormVersion !== formVersion && !ws.eventsSending) {
+    fillNotificationTarget("events", notificationTarget(data.config));
     ws.eventsConnection = data.config.connection_id || data.project?.connection_id || "";
     $("gitlab-events-project").value = data.config.project || data.project?.project || "";
     $("gitlab-events-enabled").checked = data.config.enabled;
@@ -299,6 +308,7 @@ function renderGitLabEvents() {
     $("gitlab-events-ignore").value = (data.config.filter.ignore_users || []).join("\n");
     ws.eventsFormVersion = formVersion;
   }
+  fillNotificationTarget("events", draftNotificationTarget("events"));
   const options = [new Option("请选择平台连接", ""), ...(ws.connections || []).map(item => new Option(`${item.name} · ${item.url}`, item.id))];
   if (ws.eventsConnection && !ws.connections?.some(c => c.id === ws.eventsConnection)) options.push(new Option("原连接暂不可用", ws.eventsConnection));
   setNotificationOptions("gitlab-events-connection", options); $("gitlab-events-connection").value = ws.eventsConnection || "";
@@ -333,7 +343,7 @@ function renderGitLabEvents() {
   $("gitlab-events-status").textContent = `${gitlabEventStatuses[data.status] || data.status} · 待投递 ${data.pending} · 最近检查 ${date(data.last_check)} · 完整补查 ${date(data.last_full)}` +
     (data.retry_at ? ` · 下次重试 ${date(data.retry_at)}` : "") + (data.gap ? " · 长时间离线区间无法保证补齐" : "") +
     ` · 请求 ${data.metrics.calls} 次 / ${data.metrics.response_bytes} 字节`;
-  notice("gitlab-events-error", ws.eventsError || (!ws.eventsConnected ? "事件状态暂不可读，正在重连。" : gitlabEventErrors[data.delivery_error_code] || gitlabEventErrors[data.error_code] || ""));
+  notice("gitlab-events-error", ws.eventsError || (!ws.eventsConnected ? "事件状态暂不可读，正在重连。" : notificationTargetErrors[data.delivery_error_code] || gitlabEventErrors[data.delivery_error_code] || gitlabEventErrors[data.error_code] || ""));
 }
 async function changeGitLabEvents(action) {
   const ws = workspaceView;
@@ -387,7 +397,7 @@ function setNotificationOptions(id, options) {
   if (select.dataset.options !== signature) { select.replaceChildren(...options); select.dataset.options = signature; }
 }
 function todoConfig(config) {
-  return { enabled: !!config.enabled, connection_id: config.connection_id || "", project_scope: config.project_scope || "all",
+  return { target: notificationTarget(config), enabled: !!config.enabled, connection_id: config.connection_id || "", project_scope: config.project_scope || "all",
     interval_seconds: config.interval_seconds ?? 30, inactive_interval_seconds: config.inactive_interval_seconds ?? 120,
     filter: { reasons: [...(config.filter?.reasons ?? gitlabTodoReasons)], types: [...(config.filter?.types ?? gitlabTodoTypes)] } };
 }
@@ -411,6 +421,7 @@ function todoProjectChanged(ws) {
   return data.status === "binding_changed" || !!data.project && key(data.project) !== key(current);
 }
 function fillGitLabTodos(config) {
+  fillNotificationTarget("todos", notificationTarget(config));
   $("gitlab-todos-enabled").checked = config.enabled;
   $("gitlab-todos-interval").value = config.interval_seconds;
   $("gitlab-todos-inactive-interval").value = config.inactive_interval_seconds;
@@ -433,6 +444,7 @@ function renderGitLabTodos() {
   }
   if (!ws.todosDraft) { ws.todosDraft = todoConfig(data.config); fillGitLabTodos(ws.todosDraft); }
   const config = ws.todosDraft;
+  fillNotificationTarget("todos", notificationTarget(config));
   const options = [new Option("请选择个人连接", ""), ...(ws.connections || []).map(item => new Option(`${item.name} · ${item.url}`, item.id))];
   if (config.connection_id && !todoConnection(ws, config)) options.push(new Option("原连接暂不可用", config.connection_id));
   setNotificationOptions("gitlab-todos-connection", options); $("gitlab-todos-connection").value = config.connection_id;
@@ -470,13 +482,13 @@ function renderGitLabTodos() {
   $("gitlab-todos-status").textContent = `当前订阅：${data.subscription_id || "尚未开启"} · 接收账号 ${data.username ? `@${data.username}（ID ${data.recipient_id}）` : "尚无"} · 待投递 ${data.pending || 0} · 最近检查 ${date(data.last_check)} · 完整同步 ${date(data.last_full)}` +
     (data.retry_at ? ` · 下次重试 ${date(data.retry_at)}` : "") + (data.scan ? ` · ${data.scan.state === "done" ? "已完成待办" : "待处理待办"}第 ${data.scan.next_page} 页${data.scan.limited ? "（补查未完成）" : ""}` : "") +
     ` · 请求 ${data.metrics?.calls || 0} 次 / ${data.metrics?.response_bytes || 0} 字节` + (skipped ? ` · 跳过：${skipped}` : "");
-  notice("gitlab-todos-error", ws.todosError || (!ws.todosConnected ? "待办状态暂不可读，正在重连。" : gitlabTodoErrors[data.delivery_error_code] || gitlabTodoErrors[data.error_code] || ""));
+  notice("gitlab-todos-error", ws.todosError || (!ws.todosConnected ? "待办状态暂不可读，正在重连。" : notificationTargetErrors[data.delivery_error_code] || gitlabTodoErrors[data.delivery_error_code] || gitlabTodoErrors[data.error_code] || ""));
 }
 function editGitLabTodos(event) {
   const ws = workspaceView;
   if (!ws?.todosDraft) return;
   const previous = ws.todosDraft;
-  const config = { enabled: $("gitlab-todos-enabled").checked, connection_id: $("gitlab-todos-connection").value, project_scope: $("gitlab-todos-scope").value,
+  const config = { target: draftNotificationTarget("todos"), enabled: $("gitlab-todos-enabled").checked, connection_id: $("gitlab-todos-connection").value, project_scope: $("gitlab-todos-scope").value,
     interval_seconds: Number($("gitlab-todos-interval").value), inactive_interval_seconds: Number($("gitlab-todos-inactive-interval").value),
     filter: { reasons: gitlabTodoReasons.filter(value => $(`gitlab-todos-reason-${value}`).checked), types: gitlabTodoTypes.filter(value => $(`gitlab-todos-type-${value}`).checked) } };
   if (event?.target === $("gitlab-todos-connection") && !ws.todos.subscription_id && previous.connection_id !== config.connection_id)
@@ -513,7 +525,7 @@ async function changeGitLabTodos(action) {
     if (ws === workspaceView) { ws.todosRevision++; ws.todosSending = false; renderGitLabEvents(); }
   }
 }
-for (const id of ["enabled", "connection", "scope", "interval", "inactive-interval", ...gitlabTodoReasons.map(value => `reason-${value}`), ...gitlabTodoTypes.map(value => `type-${value}`)]) {
+for (const id of ["target", "enabled", "connection", "scope", "interval", "inactive-interval", ...gitlabTodoReasons.map(value => `reason-${value}`), ...gitlabTodoTypes.map(value => `type-${value}`)]) {
   for (const event of ["input", "change"]) $(`gitlab-todos-${id}`).addEventListener(event, editGitLabTodos);
 }
 $("gitlab-todos-save").addEventListener("click", () => changeGitLabTodos("configure"));
@@ -522,6 +534,7 @@ $("gitlab-todos-manage-connections").addEventListener("click", async () => {
   showConnectionList(); $("settings-dialog").showModal(); await loadConnections();
 });
 
+$("gitlab-events-target").addEventListener("change", renderGitLabEvents);
 let notificationFocus = null;
 function renderContextViews() {
   const detail = $("activity-dialog").open || $("notification-detail").open;
@@ -1192,7 +1205,8 @@ function renderActivityControls() {
   }
   select.value = activityMember?.membership_id || "";
   select.hidden = !state.members.length; select.disabled = !state.connected || state.members.length < 2;
-  $("agent-tabs").hidden = !state.managed;
+  $("agent-tabs").hidden = false;
+  $("agent-tab-tools").hidden = !state.managed;
   const member = selectedAgent();
   if (!member || !panel.open) return;
   $("agent-status").textContent = member.execution?.active ? "运行中" : statusNames[member.status] || member.status;
@@ -1213,30 +1227,177 @@ function selectedAgent() {
 async function selectAgentTab(tab) {
   const member = selectedAgent();
   if (!$("activity-dialog").open || !member) return;
-  agentTab = state.managed && tab === "tools" ? "tools" : "activity";
-  for (const key of ["activity", "tools"]) {
+  agentTab = tab === "policy" ? "policy" : tab === "inbox" ? "inbox" : state.managed && tab === "tools" ? "tools" : "activity";
+  for (const key of ["activity", "inbox", "policy", "tools"]) {
     const button = $(`agent-tab-${key}`);
     button.setAttribute("aria-selected", String(agentTab === key));
     button.setAttribute("tabindex", agentTab === key ? "0" : "-1");
   }
   $("activity-body").hidden = $("activity-footer").hidden = agentTab !== "activity";
   $("tools-member-view").hidden = agentTab !== "tools";
+  $("inbox-member-view").hidden = agentTab !== "inbox";
+  $("policy-member-view").hidden = agentTab !== "policy";
   if (agentTab === "activity") await activity.select({ ...member, info: state.info });
+  else if (agentTab === "inbox") { activity.close(); await loadMemberInbox(true); }
+  else if (agentTab === "policy") { activity.close(); await loadMemberPolicy(); }
   else {
     activity.close();
     if (!memberToolsView || !toolsCurrent(memberToolsView)) await openMemberTools(member);
   }
 }
-for (const [index, key] of ["activity", "tools"].entries()) {
+for (const key of ["activity", "inbox", "policy", "tools"]) {
   const button = $(`agent-tab-${key}`);
   button.addEventListener("click", () => selectAgentTab(key));
   button.addEventListener("keydown", event => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
     event.preventDefault();
-    const next = event.key === "Home" ? "activity" : event.key === "End" ? "tools" : ["activity", "tools"][1 - index];
+    const keys = state.managed ? ["activity", "inbox", "policy", "tools"] : ["activity", "inbox", "policy"];
+    const current = keys.indexOf(key);
+    const next = event.key === "Home" ? keys[0] : event.key === "End" ? keys.at(-1) : keys[(current + (event.key === "ArrowLeft" ? keys.length - 1 : 1)) % keys.length];
     $(`agent-tab-${next}`).focus(); void selectAgentTab(next);
   });
 }
+let policyView = null, policyEditor = null;
+const policyKinds = {preference:"用户偏好", rule:"长期规则", decision:"事项决定"};
+const policyStates = {suggested:"建议 · 未生效", active:"有效", revoked:"已撤销"};
+function policyCurrent(view) {
+  return policyView === view && agentTab === "policy" && $("activity-dialog").open && selectedAgent()?.membership_id === view.member.membership_id && state.info?.room_id === view.info.room_id && state.info?.room_instance === view.info.room_instance && state.info?.service_epoch === view.info.service_epoch;
+}
+function policyScopeText(scope) {
+  return [scope.description, scope.provider && `平台 ${scope.provider}`, scope.instance, scope.account && `账号 ${scope.account}`, scope.project && `项目 ${scope.project}`, scope.object_type].filter(Boolean).join(" · ");
+}
+function policyFormKind() {
+  const kind = $("policy-kind").value;
+  $("policy-rule-fields").hidden = $("policy-conditions-fields").hidden = kind !== "rule";
+  $("policy-actions-field").hidden = kind === "preference";
+}
+function editPolicy(record = null, matter = null) {
+  const view = policyView;
+  if (!view || !policyCurrent(view) || view.saving) return;
+  policyEditor = {view, record, matter, id:record?.id || `p-${Date.now()}-${Math.random().toString(36).slice(2,10)}`};
+  $("policy-form").hidden = false;
+  $("policy-kind").value = record?.kind || (matter ? "decision" : "preference");
+  $("policy-kind").disabled = !!record || !!matter;
+  $("policy-editor-title").textContent = matter ? `事项 #${matter.seq} / ${matter.id} 的具体决定` : record ? `修改 ${policyKinds[record.kind]} · v${record.version}` : "新增偏好或规则";
+  for (const [key,value] of Object.entries({text:record?.text, scope:record?.scope?.description, provider:record?.scope?.provider, instance:record?.scope?.instance, account:record?.scope?.account, project:record?.scope?.project, "object-type":record?.scope?.object_type, actions:record?.actions, conditions:record?.conditions, exceptions:record?.exceptions})) $("policy-"+key).value = value || "";
+  $("policy-expires").value = record?.expires_at ? new Date(new Date(record.expires_at).getTime()-new Date(record.expires_at).getTimezoneOffset()*60000).toISOString().slice(0,16) : "";
+  policyFormKind(); $("policy-text").focus();
+}
+function policyCard(view, r, history, matter = null) {
+  const section = document.createElement("section"); section.className = "activity-section";
+  const title = document.createElement("h4");
+  const expired = r.expires_at && new Date(r.expires_at) <= new Date();
+  title.textContent = `${policyKinds[r.kind]} · ${policyStates[r.status]}${expired ? " · 已过期" : ""} · v${r.version}`;
+  const body = document.createElement("p"); body.className = "inbox-text";
+  body.textContent = `${r.text}\n范围：${r.scope.description}` + (r.kind === "rule" ? `\n${r.scope.provider} · ${r.scope.instance} · ${r.scope.account} · 项目 ${r.scope.project}${r.scope.object_type ? " · " + r.scope.object_type : ""}` : "") + (r.actions ? `\n允许动作：${r.actions}` : "") + (r.conditions ? `\n前提：${r.conditions}\n例外：${r.exceptions}` : "") + (r.expires_at ? `\n有效期至：${new Date(r.expires_at).toLocaleString()}` : "");
+  const source = document.createElement("details"), summary = document.createElement("summary"); summary.textContent = "来源与修订记录"; source.append(summary);
+  for (const v of history.filter(v => v.id === r.id)) {
+    const p = document.createElement("p"); p.className = "inbox-text";
+    p.textContent = `v${v.version} · ${policyStates[v.status]} · ${v.updated_at} · 操作者 ${v.changed_by.id}\n用户 ${v.source.user}${v.source.seq ? " · 房间消息 #"+v.source.seq : " · 成员设置"}\n${v.source.text}\n记录：${v.text}\n范围：${policyScopeText(v.scope)}${v.actions ? "\n动作："+v.actions+"\n前提："+(v.conditions || "")+"\n例外："+(v.exceptions || "") : ""}`;
+    source.append(p);
+  }
+  const actions = document.createElement("div"); actions.className = "member-actions";
+  const edit = document.createElement("button"); edit.type = "button"; edit.textContent = r.status === "suggested" ? "审核并编辑" : "编辑";
+  edit.addEventListener("click",()=> { if (policyCurrent(view)) editPolicy(r,matter); }); actions.append(edit);
+  if (r.status !== "revoked") {
+    const revoke = document.createElement("button"); revoke.type = "button"; revoke.textContent = "撤销";
+    revoke.addEventListener("click",()=> { if (policyCurrent(view)) void savePolicyChange(view,{...policyChange(r,matter),status:"revoked",source_text:`撤销 ${policyKinds[r.kind]} ${r.id} v${r.version}：${r.text}`}); }); actions.append(revoke);
+  }
+  section.append(title,body,source,actions); return section;
+}
+function policyChange(record, matter) {
+  const {source,changed_by,updated_at,...value} = record;
+  return {...value,revision:policyView.data.revision,...(matter ? {seq:matter.seq,matter_id:matter.id,matter_version:matter.version} : {})};
+}
+function renderPolicy(view) {
+  if (!policyCurrent(view)) return;
+  $("policy-entries").replaceChildren(...view.data.current.map(r=>policyCard(view,r,view.data.history)));
+  $("policy-matters").replaceChildren(...view.matters.records.map(record=> {
+    const section = document.createElement("section"); section.className="activity-section";
+    for (const m of record.matters) {
+      const matter={seq:record.seq,id:m.id,version:m.version};
+      const title=document.createElement("p"); title.textContent=`#${record.seq} / ${m.id} · ${m.summary || m.status}`;
+      const add=document.createElement("button"); add.type="button"; add.textContent="添加本事项决定"; add.addEventListener("click",()=>{if(policyCurrent(view)) editPolicy(null,matter);});
+      section.append(title,add);
+      const history=m.decisions?.history || [], latest=new Map(history.map(r=>[r.id,r]));
+      for (const r of latest.values()) section.append(policyCard(view,r,history,matter));
+    }
+    return section;
+  }));
+  $("policy-next").hidden=!view.matters.has_more;
+  $("policy-status").textContent=`配置版本 ${view.data.revision} · ${view.data.effective.length} 条有效偏好／规则` + (!view.matters.records.length ? " · 暂无已建立的事项" : "");
+}
+async function loadMemberPolicy(after = 0) {
+  const member=selectedAgent(); if (!member || agentTab!=="policy" || (policyView?.saving && policyCurrent(policyView))) return;
+  const view={member:{agent_id:member.agent_id,membership_id:member.membership_id},info:{...state.info}};
+  policyView=view; policyEditor=null; for(const id of ["policy-save","policy-suggest","policy-new","policy-reload","policy-next"]) $(id).disabled=false; $("policy-form").hidden=true; $("policy-entries").replaceChildren(); $("policy-matters").replaceChildren(); $("policy-next").hidden=true; $("policy-status").textContent="正在读取…";
+  try {
+    const [data,matters]=await Promise.all([rpc("/v1/policy/read",view.member,view.info),rpc("/v1/decisions/read",{...view.member,after,limit:5},view.info)]);
+    if (!policyCurrent(view)) return;
+    view.data=data; view.matters=matters; renderPolicy(view);
+  } catch(error) { if(policyCurrent(view)) $("policy-status").textContent=`读取失败：${error.message}`; }
+}
+async function savePolicyChange(view,change) {
+  if(!policyCurrent(view) || view.saving || view.needsRefresh || !view.data) return;
+  view.saving=true; for(const id of ["policy-save","policy-suggest","policy-new","policy-reload","policy-next"]) $(id).disabled=true;
+  $("policy-status").textContent="正在保存…";
+  try {
+    await rpc(change.kind==="decision" ? "/v1/decisions/update" : "/v1/policy/update",{...view.member,policy:change},view.info);
+    if(!policyCurrent(view)) return;
+    view.saving=false; await loadMemberPolicy();
+  } catch(error) { view.needsRefresh=true; if(policyCurrent(view)) $("policy-status").textContent=`保存失败或结果待核实：${error.message}。请刷新核对当前版本后再修改。`; }
+  finally { view.saving=false; if(policyView===view) for(const id of ["policy-save","policy-suggest","policy-new","policy-reload","policy-next"]) $(id).disabled=(policyView===view && view.needsRefresh && ["policy-save","policy-suggest"].includes(id)) || false; }
+}
+async function savePolicyForm(status) {
+  const editor=policyEditor; if(!editor || !policyCurrent(editor.view)) return;
+  const kind=$("policy-kind").value;
+  if(kind==="decision" && !editor.matter) { $("policy-status").textContent="请从上方事项选择「添加本事项决定」。"; return; }
+  const c={id:editor.id,version:editor.record?.version || 0,revision:editor.view.data.revision,kind,status,text:$("policy-text").value,scope:{description:$("policy-scope").value},...(editor.matter ? {seq:editor.matter.seq,matter_id:editor.matter.id,matter_version:editor.matter.version} : {})};
+  if(kind!=="preference") c.actions=$("policy-actions").value;
+  if(kind==="rule") {
+    for(const key of ["provider","instance","account","project"]) c.scope[key]=$("policy-"+key).value;
+    c.scope.object_type=$("policy-object-type").value; c.conditions=$("policy-conditions").value; c.exceptions=$("policy-exceptions").value;
+  }
+  if($("policy-expires").value) c.expires_at=new Date($("policy-expires").value).toISOString();
+  c.source_text=`成员设置：${status === "active" ? "保存并生效" : "保存为建议"} · ${policyKinds[kind]}\n${c.text}\n范围：${policyScopeText(c.scope)}` + (c.actions ? `\n允许动作：${c.actions}` : "") + (c.conditions ? `\n前提：${c.conditions}\n例外：${c.exceptions}` : "") + (c.expires_at ? `\n有效期至：${c.expires_at}` : "");
+  await savePolicyChange(editor.view,c);
+}
+$("policy-kind").addEventListener("change",policyFormKind);
+$("policy-new").addEventListener("click",()=>editPolicy());
+$("policy-cancel").addEventListener("click",()=>{$("policy-form").hidden=true;policyEditor=null;});
+$("policy-reload").addEventListener("click",()=>loadMemberPolicy());
+$("policy-next").addEventListener("click",()=>loadMemberPolicy(policyView?.matters?.next_after || 0));
+$("policy-form").addEventListener("submit",event=>{event.preventDefault();return savePolicyForm("active");});
+$("policy-suggest").addEventListener("click",()=>savePolicyForm("suggested"));
+let inboxView = null;
+async function loadMemberInbox(reset) {
+  const member = selectedAgent();
+  if (!member || agentTab !== "inbox") return;
+  const prior = reset ? null : inboxView;
+  const view = { member, info: state.info, snapshot: prior?.page?.snapshot_seq, after: prior?.page?.next_after || 0 };
+  inboxView = view;
+  $("inbox-status").textContent = "正在读取…";
+  $("inbox-entries").replaceChildren(); $("inbox-next").hidden = true;
+  $("inbox-reload").disabled = true;
+  const current = () => inboxView === view && state.info?.room_id === view.info.room_id && state.info?.room_instance === view.info.room_instance && state.info?.service_epoch === view.info.service_epoch && selectedAgent()?.membership_id === member.membership_id && agentTab === "inbox" && $("activity-dialog").open;
+  try {
+    const data = await rpc("/v1/member/inbox", {agent_id:member.agent_id, membership_id:member.membership_id, after:view.after, ...(view.snapshot === undefined ? {} : {snapshot_seq:view.snapshot}), limit:25}, view.info);
+    if (!current()) return;
+    view.page = data;
+    $("inbox-status").textContent = `已接收 ${data.status.latest_seq} 条 · 占用 ${data.status.bytes} / ${data.status.limits.bytes} 字节 · 当前快照 ${data.snapshot_seq}` + (data.status.write_error ? ` · ${data.status.write_error}` : "") + (!data.entries.length ? " · 暂无通知" : "");
+    $("inbox-entries").replaceChildren(...data.entries.map(entry => {
+      const section = document.createElement("section"); section.className = "activity-section";
+      const heading = document.createElement("h3"); heading.textContent = `#${entry.seq} · ${entry.item.source.provider} / ${entry.item.source.channel} · ${new Date(entry.received_at).toLocaleString("zh-CN")}`;
+      const body = document.createElement("div"); body.className = "message-text";
+      renderMessageBody(body, entry.item.text, state.operator);
+      section.append(heading,body); return section;
+    }));
+    $("inbox-next").hidden = !data.has_more;
+  } catch(error) { if (current()) $("inbox-status").textContent = `读取失败：${error.message}`; }
+  finally { if (current()) $("inbox-reload").disabled = false; }
+}
+$("inbox-reload").addEventListener("click", () => loadMemberInbox(true));
+$("inbox-next").addEventListener("click", () => loadMemberInbox(false));
 function renderMemberActions(member, actions) {
   const execution = member.execution;
   const signature = JSON.stringify([member.agent_id, member.membership_id, member.status, execution?.paused, execution?.active,

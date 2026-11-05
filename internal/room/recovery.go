@@ -123,6 +123,7 @@ func (s *service) newMember(id MemberIdentity, runner RunnerConfig, restored *Ag
 		}
 	}
 	return &MemberAgent{Options: opts, Store: s.store, Room: s.room, Restored: restored,
+		Inbox:   func(ctx context.Context) (InboxStatus, error) { return s.memberInboxStatus(ctx, id) },
 		Backend: backend, MergeWindow: s.mergeWindow, MaxTurns: s.maxTurns, BackendBlocked: blocked, PersistentScheduling: s.persistentScheduling, RestoredTurnsUsed: used, ExecutionFrozen: s.grantsFrozen}
 }
 

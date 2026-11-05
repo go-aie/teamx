@@ -588,6 +588,10 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m.serveWorkspaceToolCredential(w, r)
 		return
 	}
+	if r.URL.Path == "/v1/actions/execute" {
+		m.serveActionExecute(w, r)
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, "/v1/tools/") {
 		m.serveTools(w, r)
 		return

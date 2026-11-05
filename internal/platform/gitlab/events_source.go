@@ -134,7 +134,7 @@ func (s EventsState) CloneState() notification.State { return s.Clone() }
 func (s EventsState) PendingItems() []notification.Item {
 	items := make([]notification.Item, 0, len(s.Inbox))
 	for key, entry := range s.Inbox {
-		items = append(items, notification.Item{Key: key, DeliveryID: entry.DeliveryID, CreatedAt: entry.Event.CreatedAt, Order: fmt.Sprintf("%020d", entry.Event.ID)})
+		items = append(items, notification.Item{Route: entry.Route, Key: key, DeliveryID: entry.Route.DeliveryID(entry.DeliveryID), CreatedAt: entry.Event.CreatedAt, Order: fmt.Sprintf("%020d", entry.Event.ID)})
 	}
 	return items
 }

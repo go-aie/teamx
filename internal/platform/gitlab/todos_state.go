@@ -45,15 +45,19 @@ type TodosFilter struct {
 	Types   []string `json:"types"`
 }
 type TodosConfig struct {
-	Enabled                 bool        `json:"enabled"`
-	ConnectionID            string      `json:"connection_id"`
-	ProjectScope            string      `json:"project_scope"` // all or current
-	IntervalSeconds         int         `json:"interval_seconds"`
-	InactiveIntervalSeconds int         `json:"inactive_interval_seconds"`
-	Filter                  TodosFilter `json:"filter"`
+	Target                  notification.Target `json:"target,omitzero"`
+	Enabled                 bool                `json:"enabled"`
+	ConnectionID            string              `json:"connection_id"`
+	ProjectScope            string              `json:"project_scope"` // all or current
+	IntervalSeconds         int                 `json:"interval_seconds"`
+	InactiveIntervalSeconds int                 `json:"inactive_interval_seconds"`
+	Filter                  TodosFilter         `json:"filter"`
 }
 
 func NormalizeTodosConfig(c TodosConfig) (TodosConfig, error) {
+	if !c.Target.Valid() {
+		return c, notification.ErrRequest
+	}
 	if c.IntervalSeconds == 0 {
 		c.IntervalSeconds = 30
 	}
@@ -105,6 +109,7 @@ type TodosObservation struct {
 	Reason    string    `json:"reason"`
 }
 type TodosInboxEntry struct {
+	Route notification.Route `json:"route,omitzero"`
 	platform.RoomIdentity
 	SubscriptionID string    `json:"subscription_id"`
 	DeliveryID     string    `json:"delivery_id"`
@@ -226,7 +231,7 @@ func (s TodosState) Validate(owner platform.RoomIdentity) error {
 	}
 	for key, e := range s.Inbox {
 		o, ok := s.Observed[key]
-		if !ok || o.Reason != "accepted" || e.RoomIdentity != owner || e.SubscriptionID != s.SubscriptionID || e.DeliveryID != notification.DeliveryID(s.Metadata().Key, key) || e.Todo.ID != o.ID || !e.Todo.CreatedAt.Equal(o.CreatedAt) || e.ReceivedAt.Before(s.Baseline) || (e.Todo.State != "pending" && e.Todo.State != "done") || e.Todo.SkipReason != "" || !validTodo(e.Todo, s.Binding.URL, s.Binding.UserID, TodoQuery{State: e.Todo.State}) {
+		if !ok || !e.Route.Valid(s.SubscriptionVersion) || o.Reason != "accepted" || e.RoomIdentity != owner || e.SubscriptionID != s.SubscriptionID || e.DeliveryID != notification.DeliveryID(s.Metadata().Key, key) || e.Todo.ID != o.ID || !e.Todo.CreatedAt.Equal(o.CreatedAt) || e.ReceivedAt.Before(s.Baseline) || (e.Todo.State != "pending" && e.Todo.State != "done") || e.Todo.SkipReason != "" || !validTodo(e.Todo, s.Binding.URL, s.Binding.UserID, TodoQuery{State: e.Todo.State}) {
 			return notification.ErrInvalid
 		}
 	}
@@ -276,7 +281,7 @@ func (s *TodosState) Accept(todos []Todo, now time.Time) {
 		s.Observed[key] = TodosObservation{todo.ID, todo.CreatedAt, reason}
 		s.Metrics.NewItems++
 		if reason == "accepted" {
-			s.Inbox[key] = TodosInboxEntry{RoomIdentity: s.RoomIdentity, SubscriptionID: s.SubscriptionID, DeliveryID: notification.DeliveryID(s.Metadata().Key, key), Todo: todo, ReceivedAt: now}
+			s.Inbox[key] = TodosInboxEntry{Route: notification.Route{Target: s.Config.Target, Version: s.SubscriptionVersion}, RoomIdentity: s.RoomIdentity, SubscriptionID: s.SubscriptionID, DeliveryID: notification.DeliveryID(s.Metadata().Key, key), Todo: todo, ReceivedAt: now}
 		}
 	}
 }
@@ -287,7 +292,7 @@ func (s TodosState) CloneState() notification.State { return s.Clone() }
 func (s TodosState) PendingItems() []notification.Item {
 	items := make([]notification.Item, 0, len(s.Inbox))
 	for key, e := range s.Inbox {
-		items = append(items, notification.Item{Key: key, DeliveryID: e.DeliveryID, CreatedAt: e.Todo.CreatedAt, Order: fmt.Sprintf("%020d", e.Todo.ID)})
+		items = append(items, notification.Item{Route: e.Route, Key: key, DeliveryID: e.Route.DeliveryID(e.DeliveryID), CreatedAt: e.Todo.CreatedAt, Order: fmt.Sprintf("%020d", e.Todo.ID)})
 	}
 	return items
 }

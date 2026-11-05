@@ -24,6 +24,7 @@ type extension struct {
 
 // This is the only registry used for both dispatch and parent help.
 var extensions = []extension{
+	{"notifications resolve", "Verify notification object aliases and note/discussion mappings (GET-only batch)", resolveDiscussionsCommand},
 	{"work-items view", "Read a work item (JSON)", workItemCommand("view")},
 	{"work-items close", "Close a work item", workItemCommand("close")},
 	{"work-items assignees", "Add, remove, replace or clear assignees", workItemCommand("assignees")},
@@ -48,6 +49,14 @@ func main() {
 }
 
 func (a *app) run(ctx context.Context, args []string) int {
+	// Service adapter is intentionally absent from Agent discovery/help.
+	if len(args) >= 1 && args[0] == "__action-mr-comment" {
+		if err := actionMRComment(ctx, a, args[1:]); err != nil {
+			fmt.Fprintln(a.errOut, err)
+			return 1
+		}
+		return 0
+	}
 	if len(args) > 0 && args[0] == "help" {
 		args = append(append([]string{}, args[1:]...), "--help")
 	}

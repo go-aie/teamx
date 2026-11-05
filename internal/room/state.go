@@ -103,12 +103,13 @@ type MemberState struct {
 type RoomSnapshot struct {
 	Version int `json:"version"`
 	RoomIdentity
-	LatestSeq           uint64                        `json:"latest_seq"`
-	ClearedThrough      uint64                        `json:"cleared_through,omitempty"`
-	Revision            uint64                        `json:"revision"`
-	Messages            []RoomMessage                 `json:"messages"`
-	Members             []MemberState                 `json:"members"`
-	IntegrationReceipts map[string]IntegrationReceipt `json:"integration_receipts,omitempty"`
+	LatestSeq            uint64                         `json:"latest_seq"`
+	ClearedThrough       uint64                         `json:"cleared_through,omitempty"`
+	Revision             uint64                         `json:"revision"`
+	Messages             []RoomMessage                  `json:"messages"`
+	Members              []MemberState                  `json:"members"`
+	IntegrationReceipts  map[string]IntegrationReceipt  `json:"integration_receipts,omitempty"`
+	MatterNoticeReceipts map[string]MatterNoticeReceipt `json:"matter_notice_receipts,omitempty"`
 }
 
 // Ordinary messages store their deduplication key (Author, ClientMessageID).
@@ -163,6 +164,22 @@ func (s RoomSnapshot) validate() error {
 	if len(s.IntegrationReceipts) > maxIntegrationReceipts {
 		return ErrCapacity
 	}
+	if len(s.MatterNoticeReceipts) > maxIntegrationReceipts {
+		return ErrCapacity
+	}
+	for key, receipt := range s.MatterNoticeReceipts {
+		digest, err := hex.DecodeString(receipt.Digest)
+		if !validText(key) || receipt.Seq == 0 || receipt.Seq > s.LatestSeq || receipt.Author.Kind != "agent" ||
+			!validText(receipt.Author.ID) || !safeMembershipID(receipt.MembershipID) || !strings.HasPrefix(key, "matter-"+receipt.MembershipID+"-") || err != nil || len(digest) != 32 {
+			return fmt.Errorf("invalid matter notice receipt")
+		}
+		if receipt.Seq > s.ClearedThrough {
+			m := s.Messages[receipt.Seq-s.ClearedThrough-1]
+			if m.ClientMessageID != key || m.Author != receipt.Author || m.ReplyTo != 0 || noticeDigest(m.Text) != receipt.Digest {
+				return fmt.Errorf("matter notice receipt differs from message")
+			}
+		}
+	}
 	for id, receipt := range s.IntegrationReceipts {
 		if !validText(id) || receipt.Seq == 0 || receipt.Seq > s.LatestSeq || !validIntegrationSource(receipt.Source) {
 			return fmt.Errorf("invalid integration receipt")
@@ -185,6 +202,8 @@ func (s RoomSnapshot) validate() error {
 }
 
 type TurnRecord struct {
+	InboxStart       uint64 `json:"inbox_start,omitempty"`
+	InboxSnapshotSeq uint64 `json:"inbox_snapshot_seq,omitempty"`
 	Number           uint64 `json:"number"`
 	Status           string `json:"status"` // running, completed, failed, interrupted
 	StartReadThrough uint64 `json:"start_read_through"`
@@ -196,9 +215,11 @@ type TurnRecord struct {
 type AgentSnapshot struct {
 	Version int `json:"version"`
 	MemberIdentity
-	LastOfferedUnreadSeq uint64      `json:"last_offered_unread_seq"`
-	TurnNumber           uint64      `json:"turn_number"`
-	Turn                 *TurnRecord `json:"turn,omitempty"`
+	LastOfferedInboxSeq     uint64      `json:"last_offered_inbox_seq,omitempty"`
+	LastOfferedInboxThrough uint64      `json:"last_offered_inbox_through,omitempty"`
+	LastOfferedUnreadSeq    uint64      `json:"last_offered_unread_seq"`
+	TurnNumber              uint64      `json:"turn_number"`
+	Turn                    *TurnRecord `json:"turn,omitempty"`
 }
 
 func (s AgentSnapshot) validate() error {
@@ -206,14 +227,16 @@ func (s AgentSnapshot) validate() error {
 		return err
 	}
 	if s.Turn == nil {
-		if s.TurnNumber != 0 || s.LastOfferedUnreadSeq != 0 {
+		if s.TurnNumber != 0 || s.LastOfferedUnreadSeq != 0 || s.LastOfferedInboxSeq != 0 || s.LastOfferedInboxThrough != 0 {
 			return fmt.Errorf("missing turn record")
 		}
 		return nil
 	}
 	t := s.Turn
 	if t.Number == 0 || t.Number != s.TurnNumber || t.StartReadThrough > t.SnapshotSeq ||
-		t.OfferedUnreadSeq == 0 || t.OfferedUnreadSeq > t.SnapshotSeq || t.OfferedUnreadSeq != s.LastOfferedUnreadSeq {
+		(t.OfferedUnreadSeq == 0 && t.InboxSnapshotSeq == 0) || t.OfferedUnreadSeq > t.SnapshotSeq || t.OfferedUnreadSeq != s.LastOfferedUnreadSeq ||
+		t.InboxStart > t.InboxSnapshotSeq || (t.InboxSnapshotSeq != 0 && (t.InboxStart == t.InboxSnapshotSeq || t.InboxSnapshotSeq-t.InboxStart > inboxBatchSize || t.InboxSnapshotSeq != s.LastOfferedInboxSeq || t.InboxStart != s.LastOfferedInboxThrough)) ||
+		s.LastOfferedInboxThrough > s.LastOfferedInboxSeq || (s.LastOfferedInboxSeq != 0 && s.LastOfferedInboxThrough == s.LastOfferedInboxSeq) {
 		return fmt.Errorf("inconsistent turn boundaries")
 	}
 	switch t.Status {

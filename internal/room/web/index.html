@@ -135,8 +135,10 @@
             </section>
             <section id="gitlab-events" class="workspace-form gitlab-events" aria-labelledby="gitlab-events-title" hidden>
               <div class="gitlab-events-heading"><h3 id="gitlab-events-title">接收设置</h3><span id="gitlab-events-state" class="quiet"></span></div>
-              <p class="quiet">开启后从此刻接收项目活动；关闭保留进度与积压。已打开房间持续入房；未打开时采集暂存，打开后投递。</p>
+              <p class="quiet">开启后从此刻接收项目活动；关闭保留进度与积压。已打开房间持续投递到所选目标；未打开时采集暂存，打开后投递。</p>
               <fieldset id="gitlab-events-fields">
+                <label for="gitlab-events-target">投递到</label><select id="gitlab-events-target"></select>
+                <p class="quiet">更改仅影响之后接收的通知；旧积压保留原目标。收件箱仅接收，尚不自动处理。</p>
                 <label for="gitlab-events-connection">平台连接</label><select id="gitlab-events-connection"></select>
                 <button id="gitlab-events-manage-connections" class="text-button" type="button">管理平台连接 ↗</button>
                 <label for="gitlab-events-project">GitLab 项目地址或路径</label><input id="gitlab-events-project" type="text" placeholder="group/project 或 https://gitlab.example.com/group/project" spellcheck="false">
@@ -174,9 +176,11 @@
           <div id="notification-panel-todos" role="tabpanel" aria-labelledby="notification-tab-todos" hidden>
             <section id="gitlab-todos" class="workspace-form gitlab-events" aria-labelledby="gitlab-todos-title">
               <div class="gitlab-events-heading"><h3 id="gitlab-todos-title">接收设置</h3><span id="gitlab-todos-state" class="quiet"></span></div>
-              <p class="quiet">“我的”指所选连接账号。匹配的待办将发送到本房间，所有成员均可阅读和处理。</p>
+              <p class="quiet">“我的”指所选连接账号。可公开到房间，或定向送入成员收件箱。</p>
               <fieldset id="gitlab-todos-fields">
-                <label class="workspace-check"><input id="gitlab-todos-enabled" type="checkbox">将我的 GitLab 待办发送到本房间</label>
+                <label for="gitlab-todos-target">投递到</label><select id="gitlab-todos-target"></select>
+                <p class="quiet">更改仅影响之后接收的通知；旧积压保留原目标。收件箱仅接收，尚不自动处理。</p>
+                <label class="workspace-check"><input id="gitlab-todos-enabled" type="checkbox">接收我的 GitLab 待办</label>
                 <label for="gitlab-todos-connection">个人连接</label><select id="gitlab-todos-connection"></select>
                 <p id="gitlab-todos-recipient" class="quiet" aria-live="polite"></p>
                 <label for="gitlab-todos-scope">项目范围</label><select id="gitlab-todos-scope"></select>
@@ -222,6 +226,8 @@
         <p id="agent-error" class="agent-error form-error" role="status" hidden></p>
         <div id="agent-tabs" class="notification-tabs agent-tabs" role="tablist" aria-label="Agent 详情">
           <button id="agent-tab-activity" type="button" role="tab" aria-selected="true" aria-controls="activity-body">活动记录</button>
+          <button id="agent-tab-inbox" type="button" role="tab" aria-selected="false" aria-controls="inbox-member-view" tabindex="-1">收件箱</button>
+          <button id="agent-tab-policy" type="button" role="tab" aria-selected="false" aria-controls="policy-member-view" tabindex="-1">偏好与规则</button>
           <button id="agent-tab-tools" type="button" role="tab" aria-selected="false" aria-controls="tools-member-view" tabindex="-1">工具设置</button>
         </div>
         <div id="activity-body" class="activity-body" role="tabpanel" aria-labelledby="agent-tab-activity" aria-busy="false">
@@ -238,6 +244,42 @@
             <p id="activity-timeline-truncated" class="activity-caption" hidden>较早的活动超出保留上限，仅展示最近部分。</p>
             <p id="activity-output-error" class="form-error" hidden></p>
           </section>
+        </div>
+        <div id="inbox-member-view" class="activity-body" role="tabpanel" aria-labelledby="agent-tab-inbox" hidden>
+          <p class="quiet">通知只读预览。查看不会推进成员读取进度，也不会启动自动处理。</p>
+          <p id="inbox-status" class="quiet" role="status"></p>
+          <div class="member-actions"><button id="inbox-reload" type="button">刷新</button><button id="inbox-next" type="button" hidden>下一页</button></div>
+          <div id="inbox-entries"></div>
+        </div>
+        <div id="policy-member-view" class="activity-body" role="tabpanel" aria-labelledby="agent-tab-policy" hidden>
+          <p class="quiet">偏好只影响表达；长期规则限定代办范围；具体决定只用于选定事项。建议不生效。本阶段不启用自动对外办理。</p>
+          <div class="member-actions"><button id="policy-reload" type="button">刷新</button><button id="policy-new" type="button">新增偏好或规则</button></div>
+          <p id="policy-status" role="status" aria-live="polite"></p>
+          <div id="policy-entries"></div>
+          <h3>事项具体决定</h3>
+          <div id="policy-matters"></div>
+          <button id="policy-next" type="button" hidden>下一页事项</button>
+          <form id="policy-form" class="policy-form" hidden>
+            <h3 id="policy-editor-title">新增偏好或规则</h3>
+            <label>类型<select id="policy-kind"><option value="preference">用户偏好</option><option value="rule">长期代办规则</option><option value="decision">事项具体决定</option></select></label>
+            <label>内容<textarea id="policy-text" rows="3" maxlength="4096" required></textarea></label>
+            <label>生效范围<input id="policy-scope" maxlength="4096" required placeholder="例如：本成员的普通结果回复" /></label>
+            <fieldset id="policy-rule-fields" hidden><legend>长期规则适用对象</legend>
+              <label>平台<input id="policy-provider" maxlength="4096" placeholder="gitlab" /></label>
+              <label>实例地址<input id="policy-instance" maxlength="4096" placeholder="https://gitlab.example.com" /></label>
+              <label>执行账号<input id="policy-account" maxlength="4096" /></label>
+              <label>项目范围<input id="policy-project" maxlength="4096" placeholder="准确项目 ID；全部项目须明确填写 *" /></label>
+              <label>事项类型（可选）<input id="policy-object-type" maxlength="4096" /></label>
+            </fieldset>
+            <label id="policy-actions-field" hidden>允许动作<textarea id="policy-actions" rows="2" maxlength="4096"></textarea></label>
+            <div id="policy-conditions-fields" hidden>
+              <label>执行前提<textarea id="policy-conditions" rows="2" maxlength="4096"></textarea></label>
+              <label>必须询问的例外<textarea id="policy-exceptions" rows="2" maxlength="4096" placeholder="无例外也须明确填写"></textarea></label>
+            </div>
+            <label>有效期（可选）<input id="policy-expires" type="datetime-local" /></label>
+            <p class="quiet">「保存并生效」代表你明确确认以上范围、动作和例外。修改与撤销保留来源及旧版本，不撤销已经发出的远端动作。</p>
+            <div class="member-actions"><button id="policy-save" type="submit">保存并生效</button><button id="policy-suggest" type="button">保存为建议</button><button id="policy-cancel" type="button">取消</button></div>
+          </form>
         </div>
         <div id="tools-member-view" class="activity-body agent-tools-panel" role="tabpanel" aria-labelledby="agent-tab-tools" hidden>
           <p class="tool-member-hint quiet">为 Agent 选择工具与连接，应用后生效。启用后沿用所选账号的全部有效权限。</p>

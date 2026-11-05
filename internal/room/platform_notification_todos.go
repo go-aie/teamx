@@ -216,6 +216,9 @@ func (m *roomManager) configureTodosLocked(key notification.Key, version uint64,
 	if current != nil && cfg.ConnectionID == "" {
 		cfg.ConnectionID = current.Binding.ConnectionID
 	}
+	if err := m.validateNotificationTargetLocked(context.Background(), key.Owner, cfg.Target, cfg.Enabled); err != nil {
+		return gitlab.TodosState{}, nil, roomNotificationError(err)
+	}
 	cfg, err = gitlab.NormalizeTodosConfig(cfg)
 	if err != nil {
 		return gitlab.TodosState{}, nil, err

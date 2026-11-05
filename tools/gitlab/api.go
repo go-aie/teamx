@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,9 +15,17 @@ import (
 )
 
 type roundTripper = http.RoundTripper
+type apiFailure struct {
+	message               string
+	retryable, notApplied bool
+}
+
+func (e *apiFailure) Error() string { return e.message }
+
 type api struct {
 	origin, token string
 	client        *http.Client
+	responseLimit int64
 }
 
 func (a *app) api() (*api, error) {
@@ -35,7 +44,7 @@ func (a *app) api() (*api, error) {
 	if token == "" || strings.ContainsAny(token, "\r\n") {
 		return nil, errors.New("GITLAB_TOKEN is required")
 	}
-	return &api{strings.TrimSuffix(host, "/"), token, &http.Client{Transport: a.transport, Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
+	return &api{origin: strings.TrimSuffix(host, "/"), token: token, client: &http.Client{Transport: a.transport, Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
 
 func (c *api) request(ctx context.Context, method, path string, body, out any) (http.Header, error) {
@@ -59,16 +68,23 @@ func (c *api) request(ctx context.Context, method, path string, body, out any) (
 	resp, err := c.client.Do(req)
 	if err != nil {
 		if method != "GET" {
-			return nil, errors.New("request interrupted or transport failed; remote result unconfirmed; query before any retry")
+			var unknownCA x509.UnknownAuthorityError
+			var invalidCert x509.CertificateInvalidError
+			var hostname x509.HostnameError
+			retry := ctx.Err() == nil && !errors.As(err, &unknownCA) && !errors.As(err, &invalidCert) && !errors.As(err, &hostname)
+			return nil, &apiFailure{"request interrupted or transport failed; remote result unconfirmed; query before any retry", retry, false}
 		}
 		return nil, errors.New("API transport failed")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("GitLab API HTTP %d (no automatic retry)", resp.StatusCode)
+		return nil, &apiFailure{fmt.Sprintf("GitLab API HTTP %d (no automatic retry)", resp.StatusCode), resp.StatusCode == 408 || resp.StatusCode == 429 || resp.StatusCode >= 500, resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != 408}
 	}
-	b, err = io.ReadAll(io.LimitReader(resp.Body, (16<<20)+1))
-	if err != nil || len(b) > 16<<20 || !json.Valid(b) {
+	b, err = io.ReadAll(io.LimitReader(resp.Body, c.byteLimit()+1))
+	if err != nil {
+		return nil, &apiFailure{"API response interrupted; remote result unconfirmed if writing", ctx.Err() == nil, false}
+	}
+	if err != nil || int64(len(b)) > c.byteLimit() || !json.Valid(b) {
 		return nil, errors.New("incomplete or invalid API response; remote result unconfirmed if writing")
 	}
 	b = bytes.ReplaceAll(b, []byte(c.token), []byte("[REDACTED]"))
@@ -137,4 +153,11 @@ func nextCursor(p pageInfo, seen map[string]bool) (string, error) {
 	}
 	seen[p.EndCursor] = true
 	return p.EndCursor, nil
+}
+
+func (c *api) byteLimit() int64 {
+	if c.responseLimit > 0 {
+		return c.responseLimit
+	}
+	return 16 << 20
 }

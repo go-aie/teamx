@@ -121,14 +121,26 @@ func runCLI(ctx context.Context, args []string, stdout, stderr io.Writer, env fu
 	}
 
 	if len(args) == 0 {
-		return fmt.Errorf("usage: teamx serve | member add/list/remove/run/pause/session rotate | send | read | tools list/run")
+		return fmt.Errorf("usage: teamx serve | member add/list/remove/run/pause/session rotate | send | read | inbox read | matters list/update | policy read/suggest/suggest-decision | actions execute | tools list/run")
 	}
 	command, args := args[0], args[1:]
+	if command == "matters" && len(args) > 0 && (args[0] == "context" || args[0] == "enrich" || args[0] == "relate") {
+		return runMatterContextCLI(ctx, args, stdout, stderr, env)
+	}
+	if command == "actions" || command == "matters" && len(args) > 0 && (args[0] == "notify" || args[0] == "reply") {
+		return runHandlingCLI(ctx, command, args, stdout, stderr, env)
+	}
 	if command == "workspace-git" {
 		return runWorkspaceGitCLI(ctx, args, stdout, stderr, env)
 	}
 	if command == "tools" {
 		return runToolsCLI(ctx, args, os.Stdin, stdout, stderr, env)
+	}
+	if command == "policy" {
+		return runPolicyCLI(ctx, args, stdout, stderr, env)
+	}
+	if command == "inbox" || command == "matters" {
+		return runInboxCLI(ctx, command, args, stdout, stderr, env)
 	}
 	operation := ""
 	if command == "member" {

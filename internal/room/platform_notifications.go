@@ -97,7 +97,7 @@ func (m *roomManager) admitPlatformNotificationLocked(ctx context.Context, state
 	return scope, nil
 }
 
-// Gate -> service changes read lock -> Room actor. Holding the catalog gate
+// Gate -> service changes read lock -> target actor. Holding the catalog gate
 // through the reply prevents activation/deletion from crossing this commit.
 func (m *roomManager) commitPlatformNotificationLocked(ctx context.Context, meta notification.Metadata, item notification.Item) error {
 	owner := meta.Key.Owner
@@ -111,6 +111,9 @@ func (m *roomManager) commitPlatformNotificationLocked(ctx context.Context, meta
 	defer svc.changes.RUnlock()
 	if svc.closing.Load() || svc.restarting.Load() {
 		return notification.ErrBusy
+	}
+	if item.Route.Target.Inbox() {
+		return roomNotificationError(svc.receiveInbox(ctx, item.Route.Target, item))
 	}
 	_, err := svc.room.Call[PostReceipt](ctx, postIntegrationMessage{RoomIdentity: owner, DeliveryID: item.DeliveryID, Text: item.Text, Source: item.Source})
 	return roomNotificationError(err)

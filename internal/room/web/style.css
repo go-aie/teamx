@@ -1783,3 +1783,19 @@ textarea::placeholder {
 #cli-member-feedback[data-kind="error"] { padding:10px 12px; border:1px solid #e8ccc7; border-radius:6px; background:#fff3f0; color:#934c42; }
 #cli-member-feedback:empty { display:none; }
 #cli-member-refresh { margin-top:12px; padding-left:0; }
+
+.inbox-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.policy-form { display: grid; gap: 14px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--line); }
+.policy-form[hidden] { display: none; }
+.policy-form label { display: grid; gap: 6px; }
+.policy-form input, .policy-form textarea, .policy-form select { box-sizing: border-box; width: 100%; min-width: 0; }
+.policy-form fieldset { min-width: 0; display: grid; gap: 12px; border: 1px solid var(--line); }
+.policy-form fieldset[hidden] { display: none; }
+#policy-entries p, #policy-matters p { overflow-wrap: anywhere; }
+#policy-member-view { padding-top: 14px; font-size: 12px; line-height: 1.6; }
+#policy-member-view h3 { font-size: 13px; }
+#policy-member-view h4 { margin: 0 0 8px; font-size: 12px; }
+#policy-member-view .activity-section + .activity-section { border-top: 1px solid var(--line); margin-top: 16px; }
+#policy-member-view details { color: var(--muted); }
+#policy-member-view details p { color: #454e47; }

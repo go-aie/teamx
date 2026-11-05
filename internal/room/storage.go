@@ -31,14 +31,16 @@ const (
 // these blocking methods from controlled tasks, never from their state loop.
 // Agent and Session files have separate owners; they are not a transaction.
 type Store struct {
-	mu        sync.Mutex
-	activeDSH sync.Map // MemberIdentity -> *dshSession; observations only, never persisted.
-	dir       string
-	roomID    string
-	instance  string
-	lock      *os.File
-	uncertain bool
-	ops       snapshotOps
+	mu               sync.Mutex
+	activeDSH        sync.Map           // MemberIdentity -> *dshSession; observations only, never persisted.
+	activeInboxes    sync.Map           // MembershipID -> *AgentInbox; reserved until all owned tasks settle.
+	executingActions map[actionKey]bool // protected by mu; no replay after recovery
+	dir              string
+	roomID           string
+	instance         string
+	lock             *os.File
+	uncertain        bool
+	ops              snapshotOps
 }
 
 type snapshotFile interface {
@@ -88,10 +90,12 @@ func OpenStore(dir, roomID string) (*Store, error) {
 	} else if errors.Is(err, os.ErrNotExist) {
 		// Orphaned private state is evidence of an existing Room, not a new
 		// directory that may silently be initialized with an empty history.
-		if _, statErr := os.Stat(filepath.Join(abs, "agents")); !errors.Is(statErr, os.ErrNotExist) {
-			err = fmt.Errorf("%w: missing room.json with existing or inaccessible agents directory", ErrInvalid)
-		} else {
-			err = nil
+		err = nil
+		for _, name := range []string{"agents", "inboxes"} {
+			if _, statErr := os.Stat(filepath.Join(abs, name)); !errors.Is(statErr, os.ErrNotExist) {
+				err = fmt.Errorf("%w: missing room.json with existing or inaccessible %s directory", ErrInvalid, name)
+				break
+			}
 		}
 	}
 	if err != nil {
@@ -176,6 +180,11 @@ func (s *Store) LoadAgent(id MemberIdentity) (AgentSnapshot, error) {
 	if v.LastOfferedUnreadSeq > latest || (v.Turn != nil && v.Turn.SnapshotSeq > latest) {
 		return AgentSnapshot{}, fmt.Errorf("%w: agent progress exceeds room history", ErrInvalid)
 	}
+	if v.LastOfferedInboxSeq != 0 {
+		if _, err := s.inboxEntryLocked(id, v.LastOfferedInboxSeq); err != nil {
+			return AgentSnapshot{}, err
+		}
+	}
 	return v, nil
 }
 
@@ -191,6 +200,11 @@ func (s *Store) SaveAgent(v AgentSnapshot) error {
 	}
 	if v.LastOfferedUnreadSeq > latest || (v.Turn != nil && v.Turn.SnapshotSeq > latest) {
 		return fmt.Errorf("%w: agent progress exceeds room history", ErrInvalid)
+	}
+	if v.LastOfferedInboxSeq != 0 {
+		if _, err := s.inboxEntryLocked(v.MemberIdentity, v.LastOfferedInboxSeq); err != nil {
+			return err
+		}
 	}
 	return s.save(path, v, maxPrivateFileBytes)
 }

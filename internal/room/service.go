@@ -24,25 +24,35 @@ type ServiceInfo struct {
 // Only these explicit DTOs cross HTTP. Actor addresses remain in the service.
 type apiRequest struct {
 	ServiceInfo
-	Caller            Caller       `json:"caller"`
-	AgentID           string       `json:"agent_id,omitempty"`
-	MembershipID      string       `json:"membership_id,omitempty"`
-	Runner            RunnerConfig `json:"runner,omitempty"`
-	ClientMessageID   string       `json:"client_message_id,omitempty"`
-	Text              string       `json:"text,omitempty"`
-	ReplyTo           uint64       `json:"reply_to,omitempty"`
-	Mode              ReadMode     `json:"mode,omitempty"`
-	Latest            int          `json:"latest,omitempty"`
-	After             *uint64      `json:"after,omitempty"`
-	SnapshotSeq       *uint64      `json:"snapshot_seq,omitempty"`
-	Limit             int          `json:"limit,omitempty"`
-	Peek              bool         `json:"peek,omitempty"`
-	ReadReceipt       string       `json:"read_receipt,omitempty"`
-	Retry             bool         `json:"retry,omitempty"`
-	Cancel            bool         `json:"cancel,omitempty"`
-	Resume            bool         `json:"resume,omitempty"`
-	RestartID         string       `json:"restart_id,omitempty"`
-	PreviousRestartID string       `json:"previous_restart_id,omitempty"`
+	Caller            Caller                `json:"caller"`
+	TurnNumber        uint64                `json:"turn_number,omitempty"`
+	ObjectKey         string                `json:"object_key,omitempty"`
+	Policy            *PolicyChange         `json:"policy,omitempty"`
+	MatterContext     *MatterContextChange  `json:"matter_context,omitempty"`
+	MatterRelation    *MatterRelationChange `json:"matter_relation,omitempty"`
+	Matter            *MatterUpdate         `json:"matter,omitempty"`
+	Action            *ActionChange         `json:"action,omitempty"`
+	ActionRequest     *ActionRequest        `json:"action_request,omitempty"`
+	Notice            *NoticeChange         `json:"notice,omitempty"`
+	MatterReply       *MatterReplyChange    `json:"matter_reply,omitempty"`
+	AgentID           string                `json:"agent_id,omitempty"`
+	MembershipID      string                `json:"membership_id,omitempty"`
+	Runner            RunnerConfig          `json:"runner,omitempty"`
+	ClientMessageID   string                `json:"client_message_id,omitempty"`
+	Text              string                `json:"text,omitempty"`
+	ReplyTo           uint64                `json:"reply_to,omitempty"`
+	Mode              ReadMode              `json:"mode,omitempty"`
+	Latest            int                   `json:"latest,omitempty"`
+	After             *uint64               `json:"after,omitempty"`
+	SnapshotSeq       *uint64               `json:"snapshot_seq,omitempty"`
+	Limit             int                   `json:"limit,omitempty"`
+	Peek              bool                  `json:"peek,omitempty"`
+	ReadReceipt       string                `json:"read_receipt,omitempty"`
+	Retry             bool                  `json:"retry,omitempty"`
+	Cancel            bool                  `json:"cancel,omitempty"`
+	Resume            bool                  `json:"resume,omitempty"`
+	RestartID         string                `json:"restart_id,omitempty"`
+	PreviousRestartID string                `json:"previous_restart_id,omitempty"`
 }
 
 type serviceMember struct {
@@ -68,6 +78,8 @@ type apiError struct {
 }
 
 type service struct {
+	inboxMu              sync.Mutex
+	inboxes              map[string]actorx.Addr
 	settleTools          func(context.Context) error // managed Room tool ownership, nil in standalone mode
 	workspaceOperationID string
 	info                 ServiceInfo
@@ -144,7 +156,7 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	rt, err := actorx.NewRuntime(ctx, actorx.WithInstanceLimit(maxMembers+3))
+	rt, err := actorx.NewRuntime(ctx, actorx.WithInstanceLimit(2*maxMembers+3))
 	if err != nil {
 		cancel()
 		return nil, err
@@ -172,7 +184,7 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 		workspaceOperationID: config.workspaceOperationID,
 		info:                 ServiceInfo{RoomIdentity: state.RoomIdentity, ServiceEpoch: epoch}, store: store,
 		rt: rt, room: addr, scheduler: scheduler, ctx: ctx, cancel: cancel,
-		targets: make(map[string]actorx.Addr), requests: make(chan struct{}, 32),
+		inboxes: make(map[string]actorx.Addr), targets: make(map[string]actorx.Addr), requests: make(chan struct{}, 32),
 		endpoint: config.endpoint, cliPath: config.cliPath, mergeWindow: config.mergeWindow,
 		dshTurnTimeout:       config.dshTurnTimeout,
 		maxTurns:             config.maxTurns,
@@ -258,6 +270,17 @@ func (s *service) close(ctx context.Context) error {
 		}
 		cleanupErr = errors.Join(cleanupErr, exit.Reason)
 	}
+	s.inboxMu.Lock()
+	for membership := range s.inboxes {
+		if err := s.stopInboxLocked(ctx, membership); err != nil {
+			if _, owned := s.inboxes[membership]; owned {
+				s.inboxMu.Unlock()
+				return err
+			}
+			cleanupErr = errors.Join(cleanupErr, err)
+		}
+	}
+	s.inboxMu.Unlock()
 	_ = s.scheduler.Stop(nil)
 	schedulerExit, err := s.scheduler.Wait(ctx)
 	if err != nil {
@@ -432,11 +455,17 @@ func (s *service) removeLocked(req apiRequest) (MemberInfo, error) {
 		return MemberInfo{}, ErrClosing
 	}
 	id := MemberIdentity{RoomIdentity: s.info.RoomIdentity, AgentID: req.AgentID, MembershipID: req.MembershipID}
+	s.inboxMu.Lock()
 	removed, err := s.room.Call[MemberInfo](s.ctx, RemoveMember{id})
 	if err != nil {
+		s.inboxMu.Unlock()
 		return MemberInfo{}, err
 	}
-	return removed, s.settleMemberRemoval(req.MembershipID)
+	inboxErr := s.stopInboxLocked(s.ctx, req.MembershipID)
+	// A member-owned reconciliation task may be waiting for inboxMu. Release
+	// it before joining the member; the Room table now rejects all old calls.
+	s.inboxMu.Unlock()
+	return removed, errors.Join(inboxErr, s.settleMemberRemoval(req.MembershipID))
 }
 
 // Keep failed or unfinished cleanup owned so a batch retry cannot open a new
@@ -488,7 +517,11 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req apiRequest
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 128<<10))
+	bodyLimit := int64(128 << 10)
+	if r.URL.Path == "/v1/matters/enrich" {
+		bodyLimit = matterContextBytes
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, bodyLimit))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil {
 		writeAPIError(w, ErrRequest)
@@ -526,7 +559,11 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeAPIError(w, ErrIdentity)
 			return
 		}
-		if r.URL.Path != "/v1/send" && r.URL.Path != "/v1/read" && r.URL.Path != "/v1/read/confirm" {
+		if r.URL.Path != "/v1/send" && r.URL.Path != "/v1/read" && r.URL.Path != "/v1/read/confirm" &&
+			r.URL.Path != "/v1/matters/context" && r.URL.Path != "/v1/matters/enrich" && r.URL.Path != "/v1/matters/relate" &&
+			r.URL.Path != "/v1/matters/notify" && r.URL.Path != "/v1/matters/reply" &&
+			r.URL.Path != "/v1/policy/read" && r.URL.Path != "/v1/policy/update" && r.URL.Path != "/v1/decisions/read" && r.URL.Path != "/v1/decisions/update" &&
+			r.URL.Path != "/v1/inbox/read" && r.URL.Path != "/v1/inbox/confirm" && r.URL.Path != "/v1/matters/list" && r.URL.Path != "/v1/matters/update" {
 			writeAPIError(w, ErrIdentity)
 			return
 		}
@@ -549,6 +586,20 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	switch r.URL.Path {
+	case "/v1/matters/context", "/v1/matters/enrich", "/v1/matters/relate":
+		w.Header().Set("Cache-Control", "no-store")
+		result, err = s.memberMatterContext(req, r.URL.Path)
+	case "/v1/matters/notify", "/v1/matters/reply":
+		w.Header().Set("Cache-Control", "no-store")
+		result, err = s.memberHandling(r.Context(), req, r.URL.Path)
+	case "/v1/policy/read", "/v1/policy/update", "/v1/decisions/read", "/v1/decisions/update":
+		w.Header().Set("Cache-Control", "no-store")
+		operation := map[string]string{"/v1/policy/read": "read", "/v1/policy/update": "update", "/v1/decisions/read": "decisions/read", "/v1/decisions/update": "decisions/update"}[r.URL.Path]
+		result, err = s.memberPolicy(r.Context(), req, operation)
+	case "/v1/inbox/read", "/v1/inbox/confirm", "/v1/matters/list", "/v1/matters/update":
+		w.Header().Set("Cache-Control", "no-store")
+		operation := map[string]string{"/v1/inbox/read": "read", "/v1/inbox/confirm": "confirm", "/v1/matters/list": "list", "/v1/matters/update": "update"}[r.URL.Path]
+		result, err = s.memberInbox(r.Context(), req, operation)
 	case "/v1/discussion/restart":
 		result, err = s.startDiscussionRestart(req)
 	case "/v1/messages/clear":
@@ -564,6 +615,9 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		result, err = s.remove(req)
 	case "/v1/member/list":
 		result, err = s.members(r.Context())
+	case "/v1/member/inbox":
+		w.Header().Set("Cache-Control", "no-store")
+		result, err = s.previewInbox(r.Context(), req)
 	case "/v1/member/activity":
 		w.Header().Set("Cache-Control", "no-store")
 		result, err = s.memberActivity(r.Context(), req)

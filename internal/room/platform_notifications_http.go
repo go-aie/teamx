@@ -55,6 +55,9 @@ func (m *roomManager) eventsNotificationViewLocked(owner RoomIdentity, state *gi
 		}
 		v.SubscriptionID, v.Version, v.Config, v.Status, v.Pending = s.SubscriptionID, s.SubscriptionVersion, s.Config, s.Status, len(s.Inbox)
 		v.LastCheck, v.LastFull, v.RetryAt, v.ErrorCode, v.Metrics, v.DeliveryErrorCode = s.LastCheck, s.LastFull, s.RetryAt, s.ErrorCode, s.Metrics, s.DeliveryErrorCode
+		if code := m.notificationTargetErrorLocked(owner, s.PendingItems()); code != "" {
+			v.DeliveryErrorCode = code
+		}
 		if s.Gap != nil {
 			v.Gap = s.Gap
 		}
@@ -71,6 +74,9 @@ func (m *roomManager) todosNotificationViewLocked(owner RoomIdentity, state *git
 		s := *state
 		v.SubscriptionID, v.Version, v.Config, v.Status, v.Pending = s.SubscriptionID, s.SubscriptionVersion, s.Config, s.Status, len(s.Inbox)
 		v.LastCheck, v.LastFull, v.RetryAt, v.ErrorCode, v.Metrics, v.DeliveryErrorCode = s.LastCheck, s.LastFull, s.RetryAt, s.ErrorCode, s.Metrics, s.DeliveryErrorCode
+		if code := m.notificationTargetErrorLocked(owner, s.PendingItems()); code != "" {
+			v.DeliveryErrorCode = code
+		}
 		v.RecipientID, v.Username, v.Instance, v.Retired, v.Scan = s.Binding.UserID, s.Binding.Username, s.Binding.URL, s.Retired, s.Scan
 		v.Project = s.Project
 		v.Skipped = map[string]int{}

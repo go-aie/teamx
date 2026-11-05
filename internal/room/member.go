@@ -28,7 +28,11 @@ type MemberAgent struct {
 	BackendBlocked       string // Restored backend cannot safely open a new session.
 	PersistentScheduling bool
 	RestoredTurnsUsed    uint64
-	ExecutionFrozen      *atomic.Bool // shared service shutdown boundary
+	ExecutionFrozen      *atomic.Bool                               // shared service shutdown boundary
+	Inbox                func(context.Context) (InboxStatus, error) // Bounded, asynchronous reconciliation.
+	inbox                *InboxStatus
+	inboxPolling         bool
+	inboxNext            time.Time
 
 	owner          actorx.Context
 	latest         *UnreadChanged
@@ -133,6 +137,10 @@ func (m *MemberAgent) status() MemberStatus {
 	}
 	result := MemberStatus{Status: status, Active: m.active, Paused: m.paused, Agent: &state, Error: m.lastError,
 		TurnBudget: &TurnBudget{Limit: m.MaxTurns, Used: m.turnsUsed}}
+	if m.inbox != nil {
+		copy := *m.inbox
+		result.Inbox = &copy
+	}
 	if m.work != nil {
 		if reason := m.work.cleanupReason.Load(); reason != nil {
 			result.Error = *reason
@@ -251,6 +259,7 @@ func (m *MemberAgent) maintain() error {
 			if err := m.maintain(); err != nil {
 				m.owner.Stop(fmt.Errorf("member maintenance unavailable: %w", err))
 			} else {
+				m.pollInbox()
 				m.schedule()
 			}
 		}
@@ -280,8 +289,44 @@ func (m *MemberAgent) BindScheduler(_ actorx.Context, msg bindTurnScheduler) (st
 func (m *MemberAgent) ready() bool {
 	return (m.ExecutionFrozen == nil || !m.ExecutionFrozen.Load()) && !m.active && !m.paused && !m.fault && m.BackendBlocked == "" &&
 		m.rotationWork == nil && (m.rotation == nil || (m.rotation.Status != "waiting" && m.rotation.Status != "closing")) &&
-		m.turnsUsed < m.MaxTurns && m.latest != nil && m.latest.UnreadCount > 0 &&
-		(m.retry || m.latest.NewestUnreadSeq > m.state.LastOfferedUnreadSeq) && !m.now().Before(m.due)
+		m.turnsUsed < m.MaxTurns && (m.roomReady() || m.inboxReady()) && !m.now().Before(m.due)
+}
+
+func (m *MemberAgent) roomReady() bool {
+	return m.latest != nil && m.latest.UnreadCount > 0 && (m.retry || m.latest.NewestUnreadSeq > m.state.LastOfferedUnreadSeq)
+}
+
+func (m *MemberAgent) inboxReady() bool {
+	i := m.inbox
+	return i != nil && i.WriteError == "" && i.LatestSeq > i.ConsumedThrough &&
+		(m.retry || m.state.LastOfferedInboxSeq == 0 || i.ConsumedThrough >= m.state.LastOfferedInboxSeq || i.ConsumedThrough > m.state.LastOfferedInboxThrough)
+}
+
+func (m *MemberAgent) pollInbox() {
+	if m.Inbox == nil || m.inboxPolling || m.now().Before(m.inboxNext) {
+		return
+	}
+	m.inboxPolling = true
+	m.inboxNext = m.now().Add(250 * time.Millisecond)
+	_, err := actorx.StartTask(m.owner, m.Inbox, func(status InboxStatus, err error) bool {
+		m.inboxPolling = false
+		if err == nil {
+			changed := m.inbox == nil || m.inbox.LatestSeq != status.LatestSeq || m.inbox.ConsumedThrough != status.ConsumedThrough
+			m.inbox = &status
+			if changed && m.due.IsZero() {
+				m.due = m.now().Add(m.MergeWindow)
+			}
+		} else {
+			m.inbox = nil
+			m.lastError = "inbox reconciliation: " + err.Error()
+		}
+		m.schedule()
+		return true
+	}, nil)
+	if err != nil {
+		m.inboxPolling = false
+		m.lastError = err.Error()
+	}
 }
 
 // A failed release admission retains responsibility and blocks another request.
@@ -451,6 +496,14 @@ func (m *MemberAgent) StartGranted(_ actorx.Context, msg startGrantedTurn) error
 		m.schedule()
 		return nil
 	}
+	if m.inboxReady() {
+		i := m.inbox
+		end := min(i.LatestSeq, i.ConsumedThrough+inboxBatchSize)
+		if i.Batch != nil && i.Batch.SnapshotSeq > i.ConsumedThrough {
+			end = i.Batch.SnapshotSeq
+		}
+		input.Inbox = &InboxInput{Through: i.ConsumedThrough, SnapshotSeq: end}
+	}
 	m.startTurn(input, list.LatestSeq, member.ReadThrough)
 	return nil
 }
@@ -470,6 +523,10 @@ func (m *MemberAgent) startTurn(input UnreadChanged, snapshotSeq, readThrough ui
 		work.state.LastOfferedUnreadSeq = input.NewestUnreadSeq
 		work.state.Turn = &TurnRecord{Number: work.state.TurnNumber, Status: "running", StartReadThrough: readThrough,
 			SnapshotSeq: snapshotSeq, OfferedUnreadSeq: input.NewestUnreadSeq}
+		if input.Inbox != nil {
+			work.state.LastOfferedInboxSeq, work.state.LastOfferedInboxThrough = input.Inbox.SnapshotSeq, input.Inbox.Through
+			work.state.Turn.InboxStart, work.state.Turn.InboxSnapshotSeq = input.Inbox.Through, input.Inbox.SnapshotSeq
+		}
 		if err := store.SaveAgent(work.state); err != nil {
 			return struct{}{}, err
 		}

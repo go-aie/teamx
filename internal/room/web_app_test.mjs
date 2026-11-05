@@ -2254,3 +2254,95 @@ test("duplicate create submissions retain one ID while an unrelated ready room s
   assert.equal(ui.el("message-input").value,"C retained through create");
   assert.equal(api.catalog.rooms.filter(room=>room.name==="B").length,1);
 });
+
+test("AN-01.2 selects an exact membership in source settings without starting collaboration", async () => {
+  const api = server([makeRoom("A")]);
+  const member = {agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"},execution:{paused:true,agent:{turn_number:0}}};
+  const events = eventView({available:true,subscription_version:1,config:{enabled:true,connection_id:"a".repeat(32),project:"remote/project",interval_seconds:5,filter:{}},status:"running",pending:0,metrics:{}});
+  api.hook = (path, data) => {
+    if (path === "/v1/member/list") return {members:[member]};
+    if (path.startsWith("/v1/platform/notifications?")) return {subscriptions:[events,todoView()]};
+    if (path === "/v1/platform/notifications/configure") { events.config = structuredClone(data.config);events.subscription_version++;return structuredClone(events); }
+  };
+  const ui=await launch(api);
+  await ui.el("open-gitlab-source").emit("click");await settle();
+  const target=ui.el("gitlab-events-target"),value=JSON.stringify({mode:"inbox",agent_id:member.agent_id,membership_id:member.membership_id});
+  assert.ok(target.options.some(option=>option.value===value));
+  target.value=value;await target.emit("change");
+  assert.equal(ui.el("gitlab-events-save").disabled,false);
+  await ui.refresh();await settle();assert.equal(target.value,value);
+  await ui.el("gitlab-events-save").emit("click");await settle();
+  assert.deepEqual(api.calls.find(call=>call.path==="/v1/platform/notifications/configure").data.config.target,JSON.parse(value));
+  assert.equal(api.calls.some(call=>call.path==="/v1/member/run"),false);
+});
+
+test("AN-01.2 Inbox snapshot paging never confirms, and late reads cannot cross rooms", async () => {
+  const api=server([makeRoom("A"),makeRoom("B")]);
+  const member={agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"},execution:{paused:true,agent:{turn_number:0}}};
+  let finish;
+  const page=(after)=>({snapshot_seq:2,next_after:after+1,has_more:after===0,status:{latest_seq:2,bytes:100,limits:{bytes:1000}},entries:[{seq:after+1,received_at:"2026-11-04T01:00:00Z",item:{source:{provider:"gitlab",channel:"todos"},text:`notice-${after+1}`}}]});
+  api.hook=(path,data)=>{
+    if(path==="/v1/member/list")return {members:[member]};
+    if(path==="/v1/member/activity")return {member};
+    if(path==="/v1/member/inbox")return data.after===1 ? new Promise(resolve=>finish=()=>resolve(page(1))) : page(0);
+  };
+  const ui=await launch(api);
+  await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();
+  await ui.el("agent-tab-inbox").emit("click");await settle();
+  assert.equal(ui.el("inbox-member-view").hidden,false);
+  assert.equal(ui.el("inbox-entries").children[0].children[1].textContent,"notice-1");
+  const pending=ui.el("inbox-next").emit("click");await settle();
+  const calls=api.calls.filter(call=>call.path==="/v1/member/inbox");
+  assert.equal(calls[1].data.snapshot_seq,2);assert.equal(calls[1].data.after,1);
+  await ui.select("B");finish();await pending;await settle();
+  assert.equal(ui.el("inbox-entries").children.length,0);
+  assert.equal(api.calls.some(call=>/confirm|member\/run/.test(call.path)),false);
+});
+
+test("AN-02.2 policy settings distinguish suggestions, preserve scope and never run members", async()=> {
+ const api=server([makeRoom("A")]);
+ const member={agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"}};
+ let history=[],revision=0;
+ api.hook=(path,data)=>{
+  if(path==="/v1/member/list")return {members:[member]};
+  if(path==="/v1/member/activity")return {member};
+  if(path==="/v1/policy/read") {const current=[...new Map(history.map(r=>[r.id,r])).values()];return {revision,history:structuredClone(history),current:structuredClone(current),effective:current.filter(r=>r.status==="active")};}
+  if(path==="/v1/decisions/read")return {records:[],next_after:0,has_more:false};
+  if(path==="/v1/policy/update"){
+   assert.equal(data.caller.kind,"human");assert.equal(data.membership_id,member.membership_id);assert.equal(data.policy.revision,revision);
+   history.push({...structuredClone(data.policy),version:data.policy.version+1,source:{user:"tester",text:data.policy.source_text},changed_by:{kind:"human",id:"tester"},updated_at:"2026-11-04T01:00:00Z"});revision++;return {};
+  }
+ };
+ const ui=await launch(api);await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();
+ await ui.el("agent-tab-policy").emit("click");await settle();
+ assert.equal(ui.el("policy-member-view").hidden,false);
+ await ui.el("policy-new").emit("click");ui.el("policy-text").value="简短中文回复";ui.el("policy-scope").value="本成员回复";
+ await ui.el("policy-suggest").emit("click");await settle();
+ assert.match(ui.el("policy-entries").children[0].children[0].textContent,/建议.*未生效/);
+ await ui.el("policy-entries").children[0].children[3].children[0].emit("click");await ui.el("policy-form").emit("submit");await settle();
+ assert.match(ui.el("policy-entries").children[0].children[0].textContent,/有效/);
+ const change=api.calls.filter(c=>c.path==="/v1/policy/update").at(-1).data.policy;
+ assert.equal(change.version,1);assert.equal(change.kind,"preference");assert.equal(change.actions,undefined);
+ await ui.el("policy-entries").children[0].children[3].children[1].emit("click");await settle();
+ assert.match(ui.el("policy-entries").children[0].children[0].textContent,/已撤销/);
+ assert.equal(history.length,3);assert.equal(api.calls.some(c=>/member\/run|inbox\/confirm/.test(c.path)),false);
+});
+
+test("AN-02.2 lost saves require a fresh version and late reads cannot cross rooms",async()=>{
+ const api=server([makeRoom("A"),makeRoom("B")]);
+ const member={agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"}};
+ let finish,delay=false;
+ api.hook=(path,data)=>{
+  if(path==="/v1/member/list")return {members:[member]};
+  if(path==="/v1/member/activity")return {member};
+  if(path==="/v1/policy/read")return delay ? new Promise(resolve=>finish=()=>resolve({revision:99,history:[],current:[],effective:[]})) : {revision:0,history:[],current:[],effective:[]};
+  if(path==="/v1/decisions/read")return {records:[],next_after:0,has_more:false};
+  if(path==="/v1/policy/update")throw Error("response lost");
+ };
+ const ui=await launch(api);await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();await ui.el("agent-tab-policy").emit("click");await settle();
+ await ui.el("policy-new").emit("click");ui.el("policy-text").value="简短回复";ui.el("policy-scope").value="本成员";
+ await ui.el("policy-form").emit("submit");await settle();await ui.el("policy-form").emit("submit");await settle();
+ assert.equal(api.calls.filter(c=>c.path==="/v1/policy/update").length,1);assert.match(ui.el("policy-status").textContent,/刷新核对/);
+ delay=true;const pending=ui.el("policy-reload").emit("click");await settle();await ui.select("B");finish();await pending;await settle();
+ assert.doesNotMatch(ui.el("policy-status").textContent,/99/);
+});

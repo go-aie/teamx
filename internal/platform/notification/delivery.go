@@ -35,6 +35,11 @@ func (m *Manager) Deliver(ctx context.Context, key Key, version uint64) error {
 		return err
 	}
 	if !scope.Current {
+		if current.state.Metadata().Pending > 0 && current.state.Metadata().DeliveryError != "target_unavailable" {
+			if err := m.SaveLocked(current.state.WithDeliveryError("target_unavailable")); err != nil {
+				return err
+			}
+		}
 		return ErrBusy
 	}
 	items := current.state.PendingItems()
@@ -52,11 +57,24 @@ func (m *Manager) Deliver(ctx context.Context, key Key, version uint64) error {
 	if !ok {
 		return ErrInvalid
 	}
-	// The owner holds this same gate through its Room commit. Clear/restart keeps
+	// The owner holds this same gate through its target commit. Clear/restart keeps
 	// receipts, so an ambiguous ack repeats this stable ID rather than a new post.
 	if err := m.host.Deliver(context.WithoutCancel(ctx), current.state.Metadata(), item); err != nil {
-		if errors.Is(err, ErrCapacity) && current.state.Metadata().DeliveryError != "room_capacity" {
-			_ = m.SaveLocked(current.state.WithDeliveryError("room_capacity"))
+		code := "target_unavailable"
+		if errors.Is(err, ErrCapacity) {
+			if item.Route.Target.Inbox() {
+				code = "inbox_capacity"
+			} else {
+				code = "room_capacity"
+			}
+		}
+		if errors.Is(err, ErrIdentity) {
+			code = "target_removed"
+		}
+		if current.state.Metadata().DeliveryError != code {
+			if saveErr := m.SaveLocked(current.state.WithDeliveryError(code)); saveErr != nil {
+				return saveErr
+			}
 		}
 		return err
 	}

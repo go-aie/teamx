@@ -15,7 +15,7 @@ type IntegrationSource = platform.SourceRef
 
 func validIntegrationSource(s IntegrationSource) bool {
 	return validText(s.Instance) && validRestartID(s.SubscriptionID) &&
-		validText(s.Provider) && validText(s.Channel) && validText(s.ItemKey) && len(s.ItemKey) <= 4096
+		validText(s.Provider) && validText(s.Channel) && validText(s.ItemKey) && len(s.ItemKey) <= 4096 && s.Reference.Valid()
 }
 
 type IntegrationReceipt struct {
@@ -39,7 +39,16 @@ func (r *Room) PostIntegration(ctx actorx.Context, msg postIntegrationMessage, r
 		return ErrRequest
 	}
 	if receipt, ok := r.state.IntegrationReceipts[msg.DeliveryID]; ok {
-		if receipt.Source != msg.Source {
+		source := msg.Source
+		if receipt.Source.Reference.Version == 0 {
+			// Older receipts already handed off this source notification. Newly
+			// preserved API evidence must not make its pending redelivery fail.
+			source.Reference = platform.NotificationReference{}
+		}
+		if receipt.Source.URL == "" {
+			source.URL = ""
+		}
+		if receipt.Source != source {
 			return ErrConflict
 		}
 		reply.Complete(PostReceipt{RoomIdentity: r.state.RoomIdentity, Seq: receipt.Seq, ClientMessageID: msg.DeliveryID}, nil)

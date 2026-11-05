@@ -51,11 +51,13 @@ type Scope struct {
 	Current                   bool
 }
 type Item struct {
-	Key, DeliveryID string
-	CreatedAt       time.Time
-	Order           string // provider-defined stable tie break; never interpreted as an ID
-	Text            string
-	Source          platform.SourceRef
+	Route      Route              `json:"route,omitzero"`
+	Key        string             `json:"key"`
+	DeliveryID string             `json:"delivery_id"`
+	CreatedAt  time.Time          `json:"created_at"`
+	Order      string             `json:"order"` // Provider-defined stable tie break; never interpreted as an ID.
+	Text       string             `json:"text"`
+	Source     platform.SourceRef `json:"source"`
 }
 
 // State is a provider's versioned, concrete progress record. The source codec
