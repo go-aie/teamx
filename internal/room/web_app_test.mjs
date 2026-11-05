@@ -7,6 +7,11 @@ import assert from "node:assert/strict";
 import * as client from "./web/client.mjs";
 import { launch, settle } from "./web_app_harness.mjs";
 
+async function expandDisclosure(element) {
+  element.open=true;await element.emit("toggle");await settle();
+}
+const elementText = element => [element.textContent,...element.children.map(elementText)].join("\n");
+
 const identity = (room, epoch = `epoch-${room.room_id}`) => ({ room_id: room.room_id, room_instance: room.room_instance, service_epoch: epoch });
 const makeRoom = (name, id = name) => ({ room_id: id, room_instance: `instance-${id}`, name,
   status: "ready", team_id: "sample", create_id: `create-${id}`, created_at: "2026-11-01T01:00:00Z", updated_at: "2026-11-01T01:00:00Z" });
@@ -2384,13 +2389,25 @@ test("R5 management navigates native followups, human evidence, receipts and sou
   if(path==="/v1/matters/source")return {source:{url:"https://gitlab.test/p/-/merge_requests/42"},delivery_id:"immutable-delivery",resolution:{status:"resolved"},entry:{item:{text:"<script>原始通知正文</script>"}}};
  };
  const ui=await launch(api);await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();await ui.el("agent-tab-policy").emit("click");await settle();
- const row=ui.el("policy-matters").children[0];assert.match(row.children[0].textContent,/仍有未完成/);
- await row.children[2].emit("click");await settle();
+ assert.equal(api.calls.some(call=>call.path==="/v1/matters/list"),false);
+ assert.equal(ui.el("policy-followups").open,false);assert.equal(ui.el("policy-matters").children.length,0);
+ await expandDisclosure(ui.el("policy-followups"));
+ const row=ui.el("policy-matters").children[0];assert.match(elementText(row.children[0]),/等待后续/);
+ await expandDisclosure(row);
  const detail=row.followupPanel;
- const texts=()=>detail.children.map(child=>child.textContent).join("\n");
- assert.match(texts(),/用户 tester #6：这次选 A/);assert.match(texts(),/fulfilled/);assert.match(texts(),/reply-1.*succeeded.*1 次尝试/);
- const sources=detail.children.at(-1);await sources.children[0].emit("click");await settle();assert.match(sources.children.at(-1).textContent,/<script>原始通知正文<\/script>/);
- await sources.children[1].emit("click");await settle();assert.equal(sourceRequests,2);
+ const progress=detail.children[0];
+ assert.match(elementText(progress),/处理进展/);assert.match(elementText(progress),/用户 tester #6：这次选 A/);assert.match(elementText(progress),/已落实/);assert.match(elementText(progress),/发表评论 · 已成功 · 1 次尝试/);
+ assert.doesNotMatch(elementText(progress),/reply-1/);
+ assert.equal(sourceRequests,0);
+ const sources=detail.children[1];assert.equal(sources.children[0].textContent,"相关通知");
+ await expandDisclosure(sources);assert.equal(sourceRequests,1);
+ const sourceList=sources.children[1],source=sourceList.children[0];
+ assert.match(source.children[0].textContent,/已关联到此对象/);
+ assert.equal(api.calls.some(call=>call.path==="/v1/matters/source"),false);
+ await expandDisclosure(source);assert.match(elementText(source.children[1]),/<script>原始通知正文<\/script>/);
+ source.open=false;await source.emit("toggle");await expandDisclosure(source);
+ assert.equal(api.calls.filter(call=>call.path==="/v1/matters/source").length,1);
+ await sourceList.children[1].emit("click");await settle();assert.equal(sourceRequests,2);
  ui.el("followups-history").checked=true;await ui.el("followups-history").emit("change");await settle();
  assert.equal(api.calls.filter(call=>call.path==="/v1/matters/list").at(-1).data.followup.include_completed,true);
  assert.equal(api.calls.some(call=>/decisions\/|member\/run|inbox\/confirm|actions\/execute/.test(call.path)),false);
@@ -2408,6 +2425,71 @@ test("R5 late followup details cannot enter another Room",async()=>{
   if(path==="/v1/matters/read")return new Promise(resolve=>finish=()=>resolve({target:{target:{provider:"gitlab",instance:"https://gitlab.test",object:{type:"MergeRequest",id:{value:"private-9001"}}}},unit:{revision:1,status:"pending"}}));
  };
  const ui=await launch(api);await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();await ui.el("agent-tab-policy").emit("click");await settle();
- const row=ui.el("policy-matters").children[0];await row.children[2].emit("click");await settle();await ui.select("B");finish();await settle();
+ await expandDisclosure(ui.el("policy-followups"));
+ const row=ui.el("policy-matters").children[0];await expandDisclosure(row);await ui.select("B");finish();await settle();
  assert.equal(row.followupPanel.children.length,0);
+});
+
+test("followup inspection ignores a closed panel's response and resets on tab reentry",async()=>{
+ const api=server([makeRoom("A")]);
+ const member={agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"}};
+ let finish,listCalls=0;
+ api.hook=(path)=>{
+  if(path==="/v1/member/list")return {members:[member]};
+  if(path==="/v1/member/activity")return {member};
+  if(path==="/v1/policy/read")return {revision:1,current:[],history:[],effective:[]};
+  if(path==="/v1/matters/list"){
+   listCalls++;
+   if(listCalls===1)return new Promise(resolve=>finish=()=>resolve({items:[{ref:"old",kind:"unresolved_source",seq:1,status:"partial"}],total:1,complete:true}));
+   return {items:[],total:0,complete:true};
+  }
+ };
+ const ui=await launch(api);await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();await ui.el("agent-tab-policy").emit("click");await settle();
+ assert.match(elementText(ui.el("policy-entries")),/尚未保存偏好或规则/);assert.equal(listCalls,0);
+ await expandDisclosure(ui.el("policy-followups"));
+ ui.el("policy-followups").open=false;await ui.el("policy-followups").emit("toggle");finish();await settle();
+ assert.equal(ui.el("policy-matters").children.length,0);assert.equal(ui.el("followups-status").textContent,"");
+ await expandDisclosure(ui.el("policy-followups"));assert.equal(listCalls,2);assert.match(elementText(ui.el("policy-matters")),/暂无跟进记录/);
+ await ui.el("agent-tab-inbox").emit("click");await settle();await ui.el("agent-tab-policy").emit("click");await settle();
+ assert.equal(ui.el("policy-followups").open,false);assert.equal(listCalls,2);
+ assert.equal(api.calls.some(call=>/member\/run|inbox\/confirm|actions\/execute|matters\/resolve/.test(call.path)),false);
+});
+
+test("followup inspection errors do not hide rules and refresh only the records",async()=>{
+ const api=server([makeRoom("A")]);
+ const member={agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"}};
+ let fail=true;
+ api.hook=(path)=>{
+  if(path==="/v1/member/list")return {members:[member]};
+  if(path==="/v1/member/activity")return {member};
+  if(path==="/v1/policy/read")return {revision:1,current:[],history:[],effective:[]};
+  if(path==="/v1/matters/list"){
+   if(fail)throw Error("records unavailable");
+   return {items:[{ref:"question",kind:"discussion",status:"waiting_user",questions:[{text:"需要你的决定"}]}],total:1,complete:true};
+  }
+ };
+ const ui=await launch(api);await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();await ui.el("agent-tab-policy").emit("click");await settle();
+ const rules=ui.el("policy-entries").children[0];
+ await expandDisclosure(ui.el("policy-followups"));assert.match(ui.el("followups-status").textContent,/records unavailable/);
+ assert.equal(ui.el("policy-entries").children[0],rules);assert.doesNotMatch(ui.el("policy-status").textContent,/失败/);
+ fail=false;await ui.el("followups-reload").emit("click");await settle();
+ assert.equal(api.calls.filter(call=>call.path==="/v1/policy/read").length,1);
+ const row=ui.el("policy-matters").children[0];assert.equal(row.children[0].children[1].dataset.attention,"true");assert.match(elementText(row),/待你答复：需要你的决定/);
+});
+
+test("rules failing to load still allow explicit read-only followup inspection",async()=>{
+ const api=server([makeRoom("A")]);
+ const member={agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"}};
+ api.hook=path=>{
+  if(path==="/v1/member/list")return {members:[member]};
+  if(path==="/v1/member/activity")return {member};
+  if(path==="/v1/policy/read")throw Error("rules unavailable");
+  if(path==="/v1/matters/list")return {items:[],total:0,complete:true};
+ };
+ const ui=await launch(api);await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();await ui.el("agent-tab-policy").emit("click");await settle();
+ assert.match(ui.el("policy-status").textContent,/rules unavailable/);
+ assert.equal(api.calls.some(call=>call.path==="/v1/matters/list"),false);
+ await expandDisclosure(ui.el("policy-followups"));
+ assert.match(elementText(ui.el("policy-matters")),/暂无跟进记录/);
+ assert.match(ui.el("policy-status").textContent,/rules unavailable/);
 });

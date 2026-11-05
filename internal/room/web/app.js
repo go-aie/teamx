@@ -1239,7 +1239,7 @@ async function selectAgentTab(tab) {
   $("policy-member-view").hidden = agentTab !== "policy";
   if (agentTab === "activity") await activity.select({ ...member, info: state.info });
   else if (agentTab === "inbox") { activity.close(); await loadMemberInbox(true); }
-  else if (agentTab === "policy") { activity.close(); await loadMemberPolicy(); }
+  else if (agentTab === "policy") { activity.close(); await loadMemberPolicy(true); }
   else {
     activity.close();
     if (!memberToolsView || !toolsCurrent(memberToolsView)) await openMemberTools(member);
@@ -1270,6 +1270,9 @@ function policyFormKind() {
   const kind = $("policy-kind").value;
   $("policy-rule-fields").hidden = $("policy-conditions-fields").hidden = kind !== "rule";
   $("policy-actions-field").hidden = kind === "preference";
+  $("policy-kind-hint").textContent=kind === "rule" ? "明确 Agent 可以代办的事项、范围和条件。" : "影响回复方式，不授予操作权限。";
+  $("policy-text").placeholder=kind === "rule" ? "例如：有明确文档依据的使用问题，核实后直接回复" : "例如：使用简短中文回复，先给结论";
+  $("policy-save-hint").textContent=kind === "rule" ? "保存并生效代表你确认上述范围、动作和例外。修改或撤销会保留旧版本，不撤销已发出的动作。" : "保存后，Agent 将按此偏好组织回复；偏好不会授予操作权限。";
 }
 function editPolicy(record = null) {
   const view = policyView;
@@ -1317,46 +1320,92 @@ function beginReply(message) {
   $("reply-context").hidden=false;saveDraft();$("message-input").focus();
 }
 function followupParagraph(parent,text) { const p=document.createElement("p");p.textContent=text;parent.append(p); }
+const followupStates = {pending:"待处理",in_progress:"办理中",waiting_user:"待你答复",waiting_followup:"等待后续",completed:"已完成",archived:"已归档",unknown:"结果待核实"};
+const sourceStates = {resolved:"已关联到此对象",partial:"部分信息已核实",unavailable:"暂无法核实",unsupported:"暂不支持解析",mismatch:"身份不符",permission_denied:"无权核实"};
+function followupsCurrent(view, request = view.followupRequest) {
+  return policyCurrent(view) && $("policy-followups").open && view.followupRequest === request;
+}
+function followupDisclosure(parent, title, className = "") {
+  const detail=document.createElement("details"), summary=document.createElement("summary");
+  detail.className=className; summary.textContent=title; detail.append(summary); parent.append(detail); return detail;
+}
 async function loadFollowupDetail(view,item,section) {
+  const request=view.followupRequest;
   let panel=section.followupPanel;
   if(!panel) { panel=document.createElement("div");panel.className="followup-detail";section.followupPanel=panel;section.append(panel); }
-  panel.replaceChildren();
+  panel.replaceChildren(); section.followupLoading=true;
   try {
     if(item.kind === "unresolved_source") {
       const event=await rpc("/v1/matters/source",{...view.member,followup:{seq:item.seq,source_ref:item.ref}},view.info);
-      if(!policyCurrent(view)) return;
-      followupParagraph(panel,`来源 #${event.seq} · ${event.source?.url || ""} · ${event.resolution?.reason || "身份尚未核实"}`);
+      if(!followupsCurrent(view,request)) return;
+      renderFollowupSource(panel,event);
+      section.followupLoaded=true;
       return;
     }
     const data=await rpc("/v1/matters/read",{...view.member,followup:{object_ref:item.object_ref,unit_ref:item.ref}},view.info);
-    if(!policyCurrent(view)) return;
+    if(!followupsCurrent(view,request)) return;
     const unit=data.unit,target=data.target.target;
-    followupParagraph(panel,`${target.provider} · ${target.instance} · ${target.object.type} ${target.object.id.value}`);
-    followupParagraph(panel,`版本 ${unit.revision} · ${unit.status} · ${unit.summary || ""} · ${unit.next || ""}`);
-    if(unit.evidence) followupParagraph(panel,`进展依据：${unit.evidence}`);
+    const progress=document.createElement("section");progress.className="followup-progress";
+    const heading=document.createElement("h4");heading.textContent="处理进展";progress.append(heading);panel.append(progress);
+    followupParagraph(progress,`办理状态：${followupStates[unit.status] || unit.status}`);
+    if(unit.summary) followupParagraph(progress,unit.summary);
+    if(unit.next) followupParagraph(progress,`下一步：${unit.next}`);
+    if(!unit.summary && !unit.next) followupParagraph(progress,"暂无进展摘要或下一步记录。");
+    if(unit.evidence) followupParagraph(progress,`进展依据：${unit.evidence}`);
     for(const question of unit.questions || []) {
-      followupParagraph(panel,`问题：${question.text}`);
-      for(const answer of question.answers || []) followupParagraph(panel,`用户 ${answer.message.author.id} #${answer.message.seq}：${answer.message.text}`);
-      if(question.room_seq) { const reply=document.createElement("button");reply.type="button";reply.textContent="在 Room 回答";reply.addEventListener("click",()=>{ if(!policyCurrent(view))return; const message=state.messages.get(question.room_seq); if(message) { beginReply(message); $("activity-dialog").close(); } else { followupParagraph(panel,`请在 Room 加载消息 #${question.room_seq} 并就地回复。`); } });panel.append(reply); }
+      followupParagraph(progress,`${question.answers?.length ? "已答问题" : "待你答复"}：${question.text}`);
+      for(const answer of question.answers || []) followupParagraph(progress,`用户 ${answer.message.author.id} #${answer.message.seq}：${answer.message.text}`);
+      if(question.room_seq && !question.answers?.length) { const reply=document.createElement("button");reply.type="button";reply.textContent="在 Room 回答";reply.addEventListener("click",()=>{ if(!followupsCurrent(view,request))return; const message=state.messages.get(question.room_seq); if(message) { beginReply(message); $("activity-dialog").close(); } else { followupParagraph(progress,`请在 Room 加载消息 #${question.room_seq} 并就地回复。`); } });progress.append(reply); }
     }
-    for(const instruction of unit.instructions || []) followupParagraph(panel,`单次指令 · ${instruction.status} · ${instruction.intent.body || instruction.intent.constraints} · 用户 #${instruction.source.seq}：${instruction.source.text}`);
+    const instructionStates={active:"有效",fulfilled:"已落实",revoked:"已撤销",expired:"已过期"};
+    for(const instruction of unit.instructions || []) followupParagraph(progress,`单次指令 · ${instructionStates[instruction.status] || instruction.status} · ${instruction.intent.body || instruction.intent.constraints} · 用户 #${instruction.source.seq}：${instruction.source.text}`);
     for(const action of unit.actions || []) {
-      followupParagraph(panel,`动作 ${action.request.id} · ${action.request.operation} · ${action.status} · ${action.attempts} 次尝试${action.possible_duplicate ? " · 可能重复" : ""}`);
-      followupParagraph(panel,`账号 ${action.inspection.account_label || action.access.account.id.value} · ${action.request.input.body} · ${action.result?.message || "结果待核实"}`);
-      if(followupResultURL(action.result?.url)) { const link=document.createElement("a");link.textContent="查看远端回执";link.href=followupResultURL(action.result.url);link.target="_blank";link.rel="noopener noreferrer";panel.append(link); }
+      const actions={"object.comment":"发表评论","discussion.reply":"回复讨论"}, results={succeeded:"已成功",not_applied:"未执行",unknown:"结果待核实"};
+      followupParagraph(progress,`${actions[action.request.operation] || action.request.operation} · ${results[action.status] || action.status} · ${action.attempts} 次尝试${action.possible_duplicate ? " · 可能重复" : ""}`);
+      followupParagraph(progress,`账号 ${action.inspection.account_label || action.access.account.id.value} · ${action.request.input.body} · ${action.result?.message || "结果待核实"}`);
+      if(followupResultURL(action.result?.url)) { const link=document.createElement("a");link.textContent="查看远端回执";link.href=followupResultURL(action.result.url);link.target="_blank";link.rel="noopener noreferrer";progress.append(link); }
     }
-    const sources=document.createElement("div");panel.append(sources);
-    await loadFollowupSources(view,item.object_ref,sources,0);
-  } catch(error) { if(policyCurrent(view)) followupParagraph(panel,`读取失败：${error.message}`); }
+    const sources=followupDisclosure(panel,"相关通知","followup-sources");
+    const body=document.createElement("div");sources.append(body);
+    sources.addEventListener("toggle",async()=>{
+      if(!sources.open || sources.loaded || sources.loading || !followupsCurrent(view,request))return;
+      sources.loading=true;body.replaceChildren();
+      try { await loadFollowupSources(view,item.object_ref,body,0,request);if(followupsCurrent(view,request))sources.loaded=true; }
+      catch(error) { if(followupsCurrent(view,request))followupParagraph(body,`读取失败：${error.message}。收起后展开可重试。`); }
+      finally { sources.loading=false; }
+    });
+    const technical=followupDisclosure(panel,"技术信息","followup-technical");
+    followupParagraph(technical,`${target.provider} · ${target.instance} · ${target.object.type} 原生 ID ${target.object.id.value} · 跟进版本 ${unit.revision}`);
+    for(const action of unit.actions || []) followupParagraph(technical,`动作 ID：${action.request.id}`);
+    section.followupLoaded=true;
+  } catch(error) { if(followupsCurrent(view,request)) followupParagraph(panel,`读取失败：${error.message}。收起后展开可重试。`); }
+  finally { section.followupLoading=false; }
 }
-async function loadFollowupSources(view,objectRef,panel,after) {
+function renderFollowupSource(panel,event) {
+  const resolution=event.last_attempt?.resolution || event.resolution;
+  if(resolution.reason) followupParagraph(panel,resolution.reason);
+  const body=document.createElement("div");body.className="inbox-text";
+  renderMessageBody(body,event.entry?.item?.text || "没有通知正文。");panel.append(body);
+  if(followupResultURL(event.source?.url)) { const link=document.createElement("a");link.textContent="打开来源";link.href=followupResultURL(event.source.url);link.target="_blank";link.rel="noopener noreferrer";panel.append(link); }
+  const technical=followupDisclosure(panel,"技术信息","followup-technical");
+  followupParagraph(technical,`投递 ID：${event.delivery_id} · 解析状态：${resolution.status}`);
+}
+async function loadFollowupSources(view,objectRef,panel,after,request) {
   const page=await rpc("/v1/matters/sources",{...view.member,followup:{object_ref:objectRef},after,limit:5},view.info);
-  if(!policyCurrent(view))return;
+  if(!followupsCurrent(view,request))return;
+  if(!page.items.length && !after)followupParagraph(panel,"暂无已关联通知。");
   for(const source of page.items) {
-    const button=document.createElement("button");button.type="button";button.textContent=`来源 #${source.seq} · ${source.status}${source.reason ? " · "+source.reason : ""}`;
-    button.addEventListener("click",async()=>{ try { const event=await rpc("/v1/matters/source",{...view.member,followup:{seq:source.seq,source_ref:source.source_ref}},view.info);if(policyCurrent(view))followupParagraph(panel,`${event.source.url || ""} · ${event.delivery_id} · ${event.resolution.reason || event.resolution.status}\n${event.entry?.item?.text || ""}`); } catch(error) {if(policyCurrent(view))followupParagraph(panel,error.message);} });panel.append(button);
+    const detail=followupDisclosure(panel,`收件箱 #${source.seq} · ${sourceStates[source.status] || source.status}`,"followup-source");
+    const body=document.createElement("div");detail.append(body);
+    detail.addEventListener("toggle",async()=>{
+      if(!detail.open || detail.loaded || detail.loading || !followupsCurrent(view,request))return;
+      detail.loading=true;body.replaceChildren();
+      try { const event=await rpc("/v1/matters/source",{...view.member,followup:{seq:source.seq,source_ref:source.source_ref}},view.info);if(followupsCurrent(view,request)){renderFollowupSource(body,event);detail.loaded=true;} }
+      catch(error) { if(followupsCurrent(view,request))followupParagraph(body,`读取失败：${error.message}。收起后展开可重试。`); }
+      finally {detail.loading=false;}
+    });
   }
-  if(!page.complete) { const more=document.createElement("button");more.type="button";more.textContent="更多来源";more.addEventListener("click",async()=>{more.disabled=true;try{await loadFollowupSources(view,objectRef,panel,page.next_after);more.hidden=true;}catch(error){more.disabled=false;if(policyCurrent(view))followupParagraph(panel,error.message);}});panel.append(more); }
+  if(!page.complete) { const more=document.createElement("button");more.type="button";more.textContent="更多通知";more.addEventListener("click",async()=>{more.disabled=true;try{await loadFollowupSources(view,objectRef,panel,page.next_after,request);more.hidden=true;}catch(error){more.disabled=false;if(followupsCurrent(view,request))followupParagraph(panel,error.message);}});panel.append(more); }
 }
 function policyChange(record) {
   const {source,changed_by,updated_at,conversation,...value} = record;
@@ -1365,31 +1414,58 @@ function policyChange(record) {
 function renderPolicy(view) {
   if (!policyCurrent(view)) return;
   $("policy-entries").replaceChildren(...view.data.current.map(r=>policyCard(view,r,view.data.history)));
+  if(!view.data.current.length)followupParagraph($("policy-entries"),"尚未保存偏好或规则。你可以在 Room 中告诉 Agent 今后应如何处理。");
+  $("policy-status").textContent=`${view.data.effective.length} 条有效偏好／规则`;
+}
+function renderPolicyFollowups(view) {
+  if(!followupsCurrent(view))return;
   $("policy-matters").replaceChildren(...view.matters.items.map(item => {
-    const section=document.createElement("section"); section.className="activity-section";
-    const title=document.createElement("p");
-    title.textContent=`${item.kind === "object" ? "对象" : item.kind === "discussion" ? "讨论" : "未解析来源"} · ${item.target_label || item.summary || item.status}${item.summary && item.target_label ? " · "+item.summary : ""}${item.all_completed === false ? " · 仍有未完成跟进" : ""}`;
-    const next=document.createElement("p"); next.textContent=item.next || "";
-    const open=document.createElement("button"); open.type="button"; open.textContent="查看详情与来源";
-    open.addEventListener("click",()=>{if(policyCurrent(view)) void loadFollowupDetail(view,item,section);});
-    section.append(title,next,open);
-    if(item.object_ref) { const related=document.createElement("button");related.type="button";related.textContent="同对象跟进";related.addEventListener("click",()=>{if(policyCurrent(view))void loadMemberPolicy("",item.object_ref);});section.append(related); }
-    for(const q of item.questions || []) { const p=document.createElement("p");p.textContent=`待答：${q.text}`;section.append(p); }
-    for(const action of item.actions || []) { const p=document.createElement("p");p.textContent=`结果未知：${action.id} · ${action.attempts} 次尝试`;section.append(p); }
+    const section=document.createElement("details"); section.className="followup-record";
+    const title=document.createElement("summary"), label=document.createElement("span"), status=document.createElement("span");
+    label.textContent=`${item.kind === "object" ? "对象跟进" : item.kind === "discussion" ? "讨论跟进" : "通知待核实"}${item.target_label ? " · "+item.target_label : item.kind === "unresolved_source" ? " · 收件箱 #"+item.seq : ""}`;
+    status.className="followup-state";
+    status.textContent=item.kind === "unresolved_source" ? sourceStates[item.status] || item.status : item.all_completed === false && ["completed","archived"].includes(item.status) ? "有未完成跟进" : followupStates[item.status] || item.status;
+    status.dataset.attention=String(item.status === "waiting_user" || item.status === "unknown" || !!item.actions?.length);
+    title.append(label,status);section.append(title);
+    if(item.summary)followupParagraph(section,item.summary);
+    if(item.next)followupParagraph(section,`${item.kind === "unresolved_source" ? "核实说明" : "下一步"}：${item.next}`);
+    section.addEventListener("toggle",()=>{if(section.open && !section.followupLoaded && !section.followupLoading && followupsCurrent(view))void loadFollowupDetail(view,item,section);});
+    if(item.object_ref) { const related=document.createElement("button");related.type="button";related.className="text-button";related.textContent="查看同对象记录";related.addEventListener("click",()=>{if(followupsCurrent(view))void loadPolicyFollowups(view,"",item.object_ref);});section.append(related); }
+    for(const q of item.questions || []) { const p=document.createElement("p");p.className="followup-attention";p.textContent=`待你答复：${q.text}`;section.append(p); }
+    for(const action of item.actions || []) { const p=document.createElement("p");p.className="followup-attention";p.textContent=`执行结果待核实 · ${action.attempts} 次尝试`;section.append(p); }
     return section;
   }));
+  if(!view.matters.items.length)followupParagraph($("policy-matters"),"暂无跟进记录。");
   $("policy-next").hidden=view.matters.complete;
-  $("policy-status").textContent=`配置版本 ${view.data.revision} · ${view.data.effective.length} 条有效偏好／规则 · ${view.matters.total} 条跟进`;
-
+  $("followups-all").hidden=!view.objectRef;
+  $("followups-status").textContent=`${view.objectRef ? "当前对象 · " : ""}${view.matters.total} 条${$("followups-history").checked ? "" : "活跃"}记录`;
 }
-async function loadMemberPolicy(cursor = "", objectRef = "") {
-  const member=selectedAgent(); if (!member || agentTab!=="policy" || (policyView?.saving && policyCurrent(policyView))) return;
-  const view={member:{agent_id:member.agent_id,membership_id:member.membership_id},info:{...state.info},objectRef};
-  policyView=view; policyEditor=null; for(const id of ["policy-save","policy-suggest","policy-new","policy-reload","policy-next"]) $(id).disabled=false; $("policy-form").hidden=true; $("policy-entries").replaceChildren(); $("policy-matters").replaceChildren(); $("policy-next").hidden=true; $("policy-status").textContent="正在读取…";
+async function loadPolicyFollowups(view, cursor = "", objectRef = view.objectRef) {
+  if(!followupsCurrent(view))return;
+  const request=++view.followupRequest;
+  view.followupsLoading=true;view.followupsLoaded=false;view.objectRef=objectRef;
+  $("policy-matters").replaceChildren();$("policy-next").hidden=true;$("followups-status").textContent="正在读取跟进记录…";
+  for(const id of ["followups-reload","followups-all","policy-next","followups-history"])$(id).disabled=true;
   try {
-    const [data,matters]=await Promise.all([rpc("/v1/policy/read",view.member,view.info),rpc("/v1/matters/list",{...view.member,followup:{cursor,object_ref:objectRef,include_completed:$("followups-history").checked},limit:5},view.info)]);
+    const matters=await rpc("/v1/matters/list",{...view.member,followup:{cursor,object_ref:objectRef,include_completed:$("followups-history").checked},limit:5},view.info);
+    if(!followupsCurrent(view,request))return;
+    view.matters=matters;view.followupsLoaded=true;renderPolicyFollowups(view);
+  } catch(error) { if(followupsCurrent(view,request))$("followups-status").textContent=`读取失败：${error.message}。可刷新记录重试。`; }
+  finally { if(followupsCurrent(view,request)){view.followupsLoading=false;for(const id of ["followups-reload","followups-all","policy-next","followups-history"])$(id).disabled=false;} }
+}
+async function loadMemberPolicy(resetFollowups = false) {
+  const member=selectedAgent(); if (!member || agentTab!=="policy" || (policyView?.saving && policyCurrent(policyView))) return;
+  const keepOpen=!resetFollowups && policyView && policyCurrent(policyView) && $("policy-followups").open;
+  const view={member:{agent_id:member.agent_id,membership_id:member.membership_id},info:{...state.info},objectRef:keepOpen ? policyView.objectRef : "",followupRequest:0,followupsLoaded:false};
+  $("policy-followups").open=!!keepOpen;
+  if(!keepOpen)$("followups-history").checked=false;
+  policyView=view; policyEditor=null; for(const id of ["policy-save","policy-suggest","policy-new","policy-reload","policy-next"]) $(id).disabled=false; $("policy-form").hidden=true; $("policy-entries").replaceChildren(); $("policy-matters").replaceChildren(); $("policy-next").hidden=true; $("policy-status").textContent="正在读取…";
+  $("followups-status").textContent="";
+  try {
+    const data=await rpc("/v1/policy/read",view.member,view.info);
     if (!policyCurrent(view)) return;
-    view.data=data; view.matters=matters; renderPolicy(view);
+    view.data=data;renderPolicy(view);
+    if($("policy-followups").open && !view.followupsLoaded && !view.followupsLoading)await loadPolicyFollowups(view);
   } catch(error) { if(policyCurrent(view)) $("policy-status").textContent=`读取失败：${error.message}`; }
 }
 async function savePolicyChange(view,change) {
@@ -1425,9 +1501,15 @@ $("policy-kind").addEventListener("change",policyFormKind);
 $("policy-new").addEventListener("click",()=>editPolicy());
 $("policy-cancel").addEventListener("click",()=>{$("policy-form").hidden=true;policyEditor=null;});
 $("policy-reload").addEventListener("click",()=>loadMemberPolicy());
-$("followups-history").addEventListener("change",()=>loadMemberPolicy("",policyView?.objectRef || ""));
-$("followups-all").addEventListener("click",()=>loadMemberPolicy());
-$("policy-next").addEventListener("click",()=>loadMemberPolicy(policyView?.matters?.next || "",policyView?.objectRef || ""));
+$("policy-followups").addEventListener("toggle",()=>{
+  const view=policyView;if(!view || !policyCurrent(view))return;
+  if(!$("policy-followups").open){view.followupRequest++;view.followupsLoading=false;view.followupsLoaded=false;$("policy-matters").replaceChildren();$("followups-status").textContent="";$("policy-next").hidden=true;return;}
+  if(!view.followupsLoaded && !view.followupsLoading)void loadPolicyFollowups(view);
+});
+$("followups-reload").addEventListener("click",()=>{if(policyView)void loadPolicyFollowups(policyView);});
+$("followups-history").addEventListener("change",()=>{if(policyView)void loadPolicyFollowups(policyView);});
+$("followups-all").addEventListener("click",()=>{if(policyView)void loadPolicyFollowups(policyView,"","");});
+$("policy-next").addEventListener("click",()=>{if(policyView)void loadPolicyFollowups(policyView,policyView.matters?.next || "");});
 $("policy-form").addEventListener("submit",event=>{event.preventDefault();return savePolicyForm("active");});
 $("policy-suggest").addEventListener("click",()=>savePolicyForm("suggested"));
 let inboxView = null;

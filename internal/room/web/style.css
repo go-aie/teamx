@@ -1786,12 +1786,28 @@ textarea::placeholder {
 
 .inbox-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 
-.policy-form { display: grid; gap: 14px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--line); }
+.policy-form { display: grid; gap: 16px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
 .policy-form[hidden] { display: none; }
-.policy-form label { display: grid; gap: 6px; }
-.policy-form input, .policy-form textarea, .policy-form select { box-sizing: border-box; width: 100%; min-width: 0; }
-.policy-form fieldset { min-width: 0; display: grid; gap: 12px; border: 1px solid var(--line); }
+.policy-form label { display: grid; gap: 6px; min-width: 0; color: #454e47; font-weight: 550; }
+.policy-form input, .policy-form textarea, .policy-form select { box-sizing: border-box; width: 100%; min-width: 0; min-height: 34px; border: 1px solid #d9dfd7; border-radius: 6px; padding: 7px 10px; background: #fff; color: #303a2d; font: inherit; font-weight: 400; line-height: 1.6; transition: border-color .15s, box-shadow .15s; }
+.policy-form textarea { min-height: 84px; max-height: 240px; resize: vertical; }
+.policy-form textarea[rows="2"] { min-height: 64px; }
+.policy-form input::placeholder, .policy-form textarea::placeholder { color: #929a92; }
+.policy-form input:hover:not(:disabled), .policy-form textarea:hover:not(:disabled), .policy-form select:hover:not(:disabled) { border-color: #bbcabb; }
+.policy-form input:focus-visible, .policy-form textarea:focus-visible, .policy-form select:focus-visible { outline: 2px solid #a9c6b2 !important; outline-offset: 1px; border-color: #8daa96; }
+.policy-form input[readonly], .policy-form select:disabled { background: #f3f5f1; color: #727c75; }
+.policy-form fieldset { min-width: 0; display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,180px),1fr)); gap: 12px; margin: 0; padding: 0; border: 0; }
+.policy-form legend { margin-bottom: 10px; padding: 0; color: #454e47; font-weight: 600; }
 .policy-form fieldset[hidden] { display: none; }
+.policy-form .policy-wide-field { grid-column: 1 / -1; }
+#policy-conditions-fields { display: grid; gap: 16px; }
+#policy-form .policy-field-hint, #policy-form .policy-form-note { margin: 0; color: #727c75; font-size: 11px; font-weight: 400; line-height: 1.7; }
+#policy-form .policy-form-actions { margin: 0; gap: 8px; padding-top: 2px; }
+#policy-form .policy-form-actions button { min-height: 32px; padding: 6px 10px; font-size: 12px; }
+#policy-save { background: var(--accent); border-color: var(--accent); color: #fff; }
+#policy-save:hover:not(:disabled) { background: #274e3d; border-color: #274e3d; }
+#policy-cancel { margin-left: auto; border-color: transparent; color: var(--muted); }
+#policy-member-view #policy-editor-title { margin: 0; font-size: 13px; font-weight: 600; }
 #policy-entries p, #policy-matters p { overflow-wrap: anywhere; }
 #policy-member-view { padding-top: 14px; font-size: 12px; line-height: 1.6; }
 #policy-member-view h3 { font-size: 13px; }
@@ -1799,3 +1815,17 @@ textarea::placeholder {
 #policy-member-view .activity-section + .activity-section { border-top: 1px solid var(--line); margin-top: 16px; }
 #policy-member-view details { color: var(--muted); }
 #policy-member-view details p { color: #454e47; }
+.policy-followups { margin-top: 24px; border-top: 1px solid var(--line); padding-top: 16px; }
+.policy-followups > summary { color: #252b29; font-weight: 600; }
+.policy-followups > summary .quiet { margin-left: 12px; font-weight: 400; }
+.followup-record { border-top: 1px solid var(--line); padding: 12px 0; }
+.followup-record > summary { color: #252b29; overflow-wrap: anywhere; }
+.followup-state { display: inline-block; margin-left: 10px; font-weight: 400; color: var(--muted); }
+.followup-state[data-attention="true"], #policy-member-view .followup-attention { color: var(--accent); font-weight: 600; }
+.followup-detail { margin: 12px 0 0 16px; padding-left: 12px; border-left: 2px solid var(--line); }
+.followup-progress, .followup-sources { margin-bottom: 16px; }
+.followup-sources > summary { color: #454e47; font-weight: 600; }
+.followup-source { margin: 12px 0 0 12px; }
+.followup-source > div { padding: 8px 0 0 12px; }
+.followup-technical { margin-top: 12px; font-size: 11px; }
+#policy-member-view .followup-technical p { color: var(--muted); }

@@ -227,7 +227,7 @@
         <div id="agent-tabs" class="notification-tabs agent-tabs" role="tablist" aria-label="Agent 详情">
           <button id="agent-tab-activity" type="button" role="tab" aria-selected="true" aria-controls="activity-body">活动记录</button>
           <button id="agent-tab-inbox" type="button" role="tab" aria-selected="false" aria-controls="inbox-member-view" tabindex="-1">收件箱</button>
-          <button id="agent-tab-policy" type="button" role="tab" aria-selected="false" aria-controls="policy-member-view" tabindex="-1">规则与跟进</button>
+          <button id="agent-tab-policy" type="button" role="tab" aria-selected="false" aria-controls="policy-member-view" tabindex="-1">偏好与规则</button>
           <button id="agent-tab-tools" type="button" role="tab" aria-selected="false" aria-controls="tools-member-view" tabindex="-1">工具设置</button>
         </div>
         <div id="activity-body" class="activity-body" role="tabpanel" aria-labelledby="agent-tab-activity" aria-busy="false">
@@ -252,21 +252,18 @@
           <div id="inbox-entries"></div>
         </div>
         <div id="policy-member-view" class="activity-body" role="tabpanel" aria-labelledby="agent-tab-policy" hidden>
-          <p class="quiet">通常在 Room 中表达指令和回答问题。这里查看、纠正规则和跟进记录；偏好不授予权限，未确认的习惯建议不生效。</p>
+          <p class="quiet">在 Room 中表达要求、回答问题；这里查看和纠正偏好与规则。偏好不授予权限，未确认的建议不生效。</p>
           <div class="member-actions"><button id="policy-reload" type="button">刷新</button><button id="policy-new" type="button">新增偏好或规则</button></div>
           <p id="policy-status" role="status" aria-live="polite"></p>
           <div id="policy-entries"></div>
-          <h3>对象与讨论跟进</h3><button id="followups-all" type="button">全部跟进</button><label><input id="followups-history" type="checkbox" /> 包含完成历史</label>
-          <div id="policy-matters"></div>
-          <button id="policy-next" type="button" hidden>下一页跟进</button>
           <form id="policy-form" class="policy-form" hidden>
             <h3 id="policy-editor-title">新增偏好或规则</h3>
-            <label>类型<select id="policy-kind"><option value="preference">用户偏好</option><option value="rule">长期代办规则</option></select></label>
-            <label>内容<textarea id="policy-text" rows="3" maxlength="4096" required></textarea></label>
-            <label>生效范围<input id="policy-scope" maxlength="4096" required placeholder="例如：本成员的普通结果回复" /></label>
+            <label>类型<select id="policy-kind" aria-describedby="policy-kind-hint"><option value="preference">用户偏好</option><option value="rule">长期代办规则</option></select><span id="policy-kind-hint" class="policy-field-hint">影响回复方式，不授予操作权限。</span></label>
+            <label>内容<textarea id="policy-text" rows="3" maxlength="4096" placeholder="例如：使用简短中文回复，先给结论" required></textarea></label>
+            <label>适用范围<input id="policy-scope" maxlength="4096" required placeholder="例如：本成员在 Room 中的日常回复" /></label>
             <fieldset id="policy-rule-fields" hidden><legend>长期规则适用对象</legend>
               <label>平台<input id="policy-provider" maxlength="4096" placeholder="gitlab" /></label>
-              <label>实例地址<input id="policy-instance" maxlength="4096" placeholder="https://gitlab.example.com" /></label>
+              <label class="policy-wide-field">实例地址<input id="policy-instance" maxlength="4096" placeholder="https://gitlab.example.com" /></label>
               <label>执行账号<input id="policy-account" maxlength="4096" /></label>
               <label>项目范围<input id="policy-project" maxlength="4096" placeholder="准确项目 ID；全部项目须明确填写 *" /></label>
               <label>事项类型（可选）<input id="policy-object-type" maxlength="4096" /></label>
@@ -276,10 +273,18 @@
               <label>执行前提<textarea id="policy-conditions" rows="2" maxlength="4096"></textarea></label>
               <label>必须询问的例外<textarea id="policy-exceptions" rows="2" maxlength="4096" placeholder="无例外也须明确填写"></textarea></label>
             </div>
-            <label>有效期（可选）<input id="policy-expires" type="datetime-local" /></label>
-            <p class="quiet">「保存并生效」代表你明确确认以上范围、动作和例外。修改与撤销保留来源及旧版本，不撤销已经发出的远端动作。</p>
-            <div class="member-actions"><button id="policy-save" type="submit">保存并生效</button><button id="policy-suggest" type="button">保存为建议</button><button id="policy-cancel" type="button">取消</button></div>
+            <label>有效期（可选）<input id="policy-expires" type="datetime-local" aria-describedby="policy-expires-hint" /><span id="policy-expires-hint" class="policy-field-hint">留空则不设到期时间。</span></label>
+            <p id="policy-save-hint" class="policy-form-note">保存后，Agent 将按此偏好组织回复；偏好不会授予操作权限。</p>
+            <div class="member-actions policy-form-actions"><button id="policy-save" type="submit">保存并生效</button><button id="policy-suggest" type="button">保存为建议</button><button id="policy-cancel" type="button">取消</button></div>
           </form>
+          <details id="policy-followups" class="policy-followups">
+            <summary>跟进记录<span class="quiet">按需核查</span></summary>
+            <p class="quiet">这些记录供 Agent 持续办理。需要你决定时，Agent 会在 Room 中询问；「待处理」不表示需要你操作。</p>
+            <div class="member-actions"><button id="followups-reload" type="button">刷新记录</button><button id="followups-all" type="button" hidden>全部对象</button><label><input id="followups-history" type="checkbox" /> 包含已完成记录</label></div>
+            <p id="followups-status" class="quiet" role="status" aria-live="polite"></p>
+            <div id="policy-matters"></div>
+            <button id="policy-next" type="button" hidden>下一页记录</button>
+          </details>
         </div>
         <div id="tools-member-view" class="activity-body agent-tools-panel" role="tabpanel" aria-labelledby="agent-tab-tools" hidden>
           <p class="tool-member-hint quiet">为 Agent 选择工具与连接，应用后生效。启用后沿用所选账号的全部有效权限。</p>
