@@ -2586,3 +2586,52 @@ test("rules failing to load still allow explicit read-only followup inspection",
  assert.match(elementText(ui.el("policy-matters")),/暂无跟进记录/);
  assert.match(ui.el("policy-status").textContent,/rules unavailable/);
 });
+
+for (const [name, reset, exhausted] of [["paused", false, false], ["budget", false, true], ["session", true, false], ["session and budget", true, true]]) {
+  test(`enable collaboration handles ${name} through the existing action`, async () => {
+    const api = server([makeRoom("A")]);
+    const member = { agent_id: "reviewer", membership_id: "generation-reviewer", status: exhausted ? "budget_exhausted" : reset ? "backend_blocked" : "paused",
+      runner: { profile: "runtime" }, unread_count: 1,
+      execution: { paused: true, active: false, session_reset_required: reset, turn_budget: { used: exhausted ? 7 : 1, limit: 7, grant: 7 }, agent: { turn_number: 1, turn: { status: "failed" } } } };
+    api.hook = (path) => {
+      if (path === "/v1/member/list") return { members: [structuredClone(member)] };
+      if (path === "/v1/member/activity") return { member: structuredClone(member) };
+      if (path === "/v1/member/run") {
+        member.execution.paused = false; member.execution.session_reset_required = false; member.status = "idle";
+        if (exhausted) member.execution.turn_budget.limit += 7;
+        return structuredClone(member.execution);
+      }
+    };
+    const ui = await launch(api);
+    await ui.el("members").children[0].querySelector(".member-summary").emit("click"); await settle();
+    const hint = ui.el("agent-enable-hint");
+    assert.equal(hint.hidden, !reset && !exhausted);
+    assert.equal(hint.textContent.includes("重置会话，清除私有上下文"), reset);
+    assert.equal(hint.textContent.includes("追加 7 回合"), exhausted);
+    const button = ui.el("agent-actions").children[0];
+    assert.equal(button.textContent, "启用协作"); assert.equal(button.disabled, false);
+    await button.emit("click"); await settle();
+    assert.equal(api.calls.filter(call => call.path === "/v1/member/run").length, 1);
+    assert.equal(api.calls.some(call => call.path === "/v1/member/session/rotate"), false);
+    assert.equal(ui.el("agent-actions").children[0].textContent, "暂停");
+    assert.equal(hint.hidden, true);
+    assert.equal(member.execution.turn_budget.used, exhausted ? 7 : 1);
+  });
+}
+
+test("an unconfirmed enable is observed without automatically replaying the mutation", async () => {
+  const api = server([makeRoom("A")]);
+  const member = { agent_id: "reviewer", membership_id: "generation-reviewer", status: "budget_exhausted", runner: { profile: "runtime" },
+    execution: { paused: true, active: false, turn_budget: { used: 16, limit: 16, grant: 16 }, agent: { turn_number: 16 } } };
+  api.hook = path => {
+    if (path === "/v1/member/list") return { members: [structuredClone(member)] };
+    if (path === "/v1/member/activity") return { member: structuredClone(member) };
+    if (path === "/v1/member/run") throw new Error("response lost");
+  };
+  const ui = await launch(api);
+  await ui.el("members").children[0].querySelector(".member-summary").emit("click"); await settle();
+  await ui.el("agent-actions").children[0].emit("click"); await settle();
+  assert.match(ui.el("sync-error").textContent, /操作未确认/);
+  await ui.refresh(); await settle();
+  assert.equal(api.calls.filter(call => call.path === "/v1/member/run").length, 1);
+});

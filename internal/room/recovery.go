@@ -33,6 +33,7 @@ type recoveredMember struct {
 	backendResume bool
 	contextReset  bool
 	used          uint64
+	limit         uint64
 }
 
 // Validate all current members before spawning any of them. The Room table is
@@ -111,17 +112,18 @@ func (s *service) newMember(id MemberIdentity, runner RunnerConfig, restored *Ag
 	opts := SessionOptions{MemberIdentity: id, StatePath: filepath.Join(s.store.dir, "agents", id.MembershipID, "session.json"), CLIPath: s.cliPath, CLIEnv: s.toolEnv(id)}
 	backend := dshBackend{store: s.store, profile: s.dshProfiles[runner.Profile], turnTimeout: s.dshTurnTimeout}
 	blocked := ""
-	var used uint64
+	var used, limit uint64
 	for _, recovered := range s.recovered {
 		if recovered.id == id {
 			blocked = recovered.blocked
 			used = recovered.used
+			limit = recovered.limit
 			backend.recover = recovered.backendResume
 		}
 	}
 	return &MemberAgent{Options: opts, Store: s.store, Room: s.room, Restored: restored,
 		Inbox:   func(ctx context.Context) (InboxStatus, error) { return s.memberInboxStatus(ctx, id) },
-		Backend: backend, MergeWindow: s.mergeWindow, MaxTurns: s.maxTurns, BackendBlocked: blocked, PersistentScheduling: s.persistentScheduling, RestoredTurnsUsed: used, ExecutionFrozen: s.grantsFrozen}
+		Backend: backend, MergeWindow: s.mergeWindow, MaxTurns: s.maxTurns, BackendBlocked: blocked, PersistentScheduling: s.persistentScheduling, RestoredTurnsUsed: used, RestoredTurnLimit: limit, ExecutionFrozen: s.grantsFrozen}
 }
 
 func (s *service) spawnMember(id MemberIdentity, runner RunnerConfig, restored *AgentSnapshot) (actorx.Addr, error) {

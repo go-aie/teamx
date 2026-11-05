@@ -33,7 +33,7 @@ func serveWithFactory(args []string, stdout, stderr io.Writer, create func(strin
 	dir := flags.String("state-dir", "", "single-room directory (default: <config-dir>/data/design-review)")
 	listen := flags.String("listen", "127.0.0.1:8088", "loopback address")
 	mergeWindow := flags.Duration("merge-window", 100*time.Millisecond, "member notification merge window")
-	maxTurns := flags.Uint64("max-turns", defaultMaxTurns, "maximum admitted turns per membership (persistent in managed rooms; per service in single-room mode)")
+	maxTurns := flags.Uint64("max-turns", defaultMaxTurns, "initial turn allowance and explicit enable grant per membership (persistent in managed rooms; per service in single-room mode)")
 	dshTurnTimeout := flags.Duration("dsh-turn-timeout", dsh.DefaultTurnTimeout, "maximum duration of a DSH turn, including model and tools (must be positive)")
 	dshConfig := flags.String("dsh-config", "", "JSON file of named DSH member profiles")
 	if err := flags.Parse(args); err != nil {

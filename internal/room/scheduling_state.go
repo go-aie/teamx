@@ -13,6 +13,7 @@ type memberScheduling struct {
 	MemberIdentity
 	Enabled bool   `json:"enabled"`
 	Used    uint64 `json:"used"`
+	Limit   uint64 `json:"limit,omitempty"` // Absent in older snapshots: use the Room's original limit.
 }
 
 func (s *Store) loadScheduling(id MemberIdentity) (memberScheduling, error) {
@@ -43,15 +44,36 @@ func (s *Store) saveScheduling(state memberScheduling) error {
 }
 
 func (m *MemberAgent) persistScheduling(enabled bool, used uint64) error {
+	return m.persistSchedulingLimit(enabled, used, m.turnLimit)
+}
+
+func (m *MemberAgent) persistSchedulingLimit(enabled bool, used, limit uint64) error {
 	if !m.PersistentScheduling {
 		return nil
 	}
-	err := m.Store.saveScheduling(memberScheduling{Version: formatVersion, MemberIdentity: m.Options.MemberIdentity, Enabled: enabled, Used: used})
+	err := m.Store.saveScheduling(memberScheduling{Version: formatVersion, MemberIdentity: m.Options.MemberIdentity, Enabled: enabled, Used: used, Limit: limit})
 	if err != nil {
 		m.fault, m.paused = true, true
 		m.lastError = "collaboration checkpoint failed: " + err.Error()
 	}
 	return err
+}
+
+// Only an operator enable grants more turns. Automatic resume and rotation do
+// not replenish the allowance. Commit the limit before publishing it in memory.
+func (m *MemberAgent) resumeScheduling(replenish bool) error {
+	limit := m.turnLimit
+	if replenish && m.turnsUsed >= limit {
+		if m.turnsUsed > ^uint64(0)-m.MaxTurns {
+			return fmt.Errorf("%w: turn budget overflow", ErrInvalid)
+		}
+		limit = m.turnsUsed + m.MaxTurns
+	}
+	if err := m.persistSchedulingLimit(true, m.turnsUsed, limit); err != nil {
+		return err
+	}
+	m.turnLimit, m.paused = limit, false
+	return nil
 }
 
 func (s *service) restoreScheduling(member *recoveredMember, agent AgentSnapshot) error {
@@ -70,7 +92,8 @@ func (s *service) restoreScheduling(member *recoveredMember, agent AgentSnapshot
 		return fmt.Errorf("%w: collaboration budget behind agent checkpoint", ErrInvalid)
 	}
 	member.used = state.Used
+	member.limit = max(s.maxTurns, state.Limit)
 	safe := agent.Turn == nil || (agent.Turn.Status == "completed" && (member.backendResume || member.contextReset))
-	member.resume = state.Enabled && safe && member.blocked == "" && state.Used < s.maxTurns
+	member.resume = state.Enabled && safe && member.blocked == "" && state.Used < member.limit
 	return nil
 }

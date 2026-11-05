@@ -28,6 +28,7 @@ type MemberAgent struct {
 	BackendBlocked       string // Restored backend cannot safely open a new session.
 	PersistentScheduling bool
 	RestoredTurnsUsed    uint64
+	RestoredTurnLimit    uint64
 	ExecutionFrozen      *atomic.Bool                               // shared service shutdown boundary
 	Inbox                func(context.Context) (InboxStatus, error) // Bounded, asynchronous reconciliation.
 	inbox                *InboxStatus
@@ -48,9 +49,11 @@ type MemberAgent struct {
 	cancel         context.CancelFunc
 	now            func() time.Time
 	turnsUsed      uint64
+	turnLimit      uint64
 	rotation       *SessionRotation
 	rotationWork   *memberRotation
 	rotationResume bool
+	rotationEnable bool
 
 	scheduler     actorx.Addr
 	target        actorx.Addr
@@ -69,6 +72,7 @@ func (m *MemberAgent) Started(ctx actorx.Context, _ actorx.Started) error {
 	if m.MaxTurns == 0 {
 		m.MaxTurns = defaultMaxTurns
 	}
+	m.turnLimit = max(m.MaxTurns, m.RestoredTurnLimit)
 	m.state = AgentSnapshot{Version: formatVersion, MemberIdentity: m.Options.MemberIdentity}
 	if m.Restored != nil {
 		m.state = *m.Restored
@@ -121,7 +125,7 @@ func (m *MemberAgent) status() MemberStatus {
 		status = "running"
 	case m.request != nil:
 		status = "waiting"
-	case m.turnsUsed >= m.MaxTurns:
+	case m.turnsUsed >= m.turnLimit:
 		status = "budget_exhausted"
 	case m.BackendBlocked != "":
 		status = "backend_blocked"
@@ -136,7 +140,8 @@ func (m *MemberAgent) status() MemberStatus {
 		state.Turn = &copy
 	}
 	result := MemberStatus{Status: status, Active: m.active, Paused: m.paused, Agent: &state, Error: m.lastError,
-		TurnBudget: &TurnBudget{Limit: m.MaxTurns, Used: m.turnsUsed}}
+		SessionResetRequired: m.BackendBlocked != "",
+		TurnBudget:           &TurnBudget{Limit: m.turnLimit, Used: m.turnsUsed, Grant: m.MaxTurns}}
 	if m.inbox != nil {
 		copy := *m.inbox
 		result.Inbox = &copy
@@ -183,6 +188,7 @@ func (m *MemberAgent) Control(ctx actorx.Context, msg ControlMember) (MemberStat
 		m.paused, m.retry = true, false
 		m.withdrawTurn()
 		m.rotationResume = msg.Resume
+		m.rotationEnable = false
 		m.rotation = &SessionRotation{Status: "waiting"}
 		if msg.Cancel && m.cancel != nil {
 			m.lastError = "cancellation requested; waiting for turn settlement"
@@ -191,6 +197,7 @@ func (m *MemberAgent) Control(ctx actorx.Context, msg ControlMember) (MemberStat
 		m.rotate()
 	case "pause":
 		m.rotationResume = false
+		m.rotationEnable = false
 		if err := m.persistScheduling(false, m.turnsUsed); err != nil {
 			return MemberStatus{}, err
 		}
@@ -200,12 +207,9 @@ func (m *MemberAgent) Control(ctx actorx.Context, msg ControlMember) (MemberStat
 			m.lastError = "cancellation requested; waiting for turn settlement"
 			m.cancel()
 		}
-	case "run":
+	case "run", "enable":
 		if m.rotationWork != nil || (m.rotation != nil && m.rotation.Status == "waiting") {
 			return MemberStatus{}, ErrBusy
-		}
-		if m.BackendBlocked != "" {
-			return MemberStatus{}, fmt.Errorf("%s", m.BackendBlocked)
 		}
 		if msg.State.MemberIdentity != m.Options.MemberIdentity {
 			return MemberStatus{}, ErrIdentity
@@ -213,10 +217,24 @@ func (m *MemberAgent) Control(ctx actorx.Context, msg ControlMember) (MemberStat
 		if m.fault {
 			return MemberStatus{}, fmt.Errorf("checkpoint failure requires inspection and service recovery: %s", m.lastError)
 		}
+		if msg.Action == "enable" && m.active {
+			return MemberStatus{}, ErrBusy
+		}
 		if m.active && msg.Retry {
 			return MemberStatus{}, ErrBusy
 		}
-		if m.turnsUsed >= m.MaxTurns {
+		if m.BackendBlocked != "" {
+			if msg.Action != "enable" {
+				return MemberStatus{}, fmt.Errorf("%s", m.BackendBlocked)
+			}
+			// The same settlement checks as explicit rotation remain mandatory.
+			status, err := m.Control(ctx, ControlMember{MemberIdentity: msg.MemberIdentity, Action: "rotate", Resume: true})
+			if err == nil {
+				m.rotationEnable = true
+			}
+			return status, err
+		}
+		if m.turnsUsed >= m.turnLimit && msg.Action != "enable" {
 			return MemberStatus{}, ErrTurnBudget
 		}
 		if backend, ok := m.Backend.(interface{ CheckRun() error }); ok && m.session == nil && !m.active {
@@ -224,11 +242,13 @@ func (m *MemberAgent) Control(ctx actorx.Context, msg ControlMember) (MemberStat
 				return MemberStatus{}, err
 			}
 		}
-		if err := m.persistScheduling(true, m.turnsUsed); err != nil {
+		if err := m.resumeScheduling(msg.Action == "enable"); err != nil {
 			return MemberStatus{}, err
 		}
-		m.paused = false
 		m.retry = msg.Retry
+		if msg.Action == "enable" && !m.active && m.state.Turn != nil && (m.state.Turn.Status == "failed" || m.state.Turn.Status == "interrupted") {
+			m.retry = true
+		}
 		if !m.active {
 			// Resuming acknowledges the settled error; Turn retains its history.
 			m.lastError = ""
@@ -289,7 +309,7 @@ func (m *MemberAgent) BindScheduler(_ actorx.Context, msg bindTurnScheduler) (st
 func (m *MemberAgent) ready() bool {
 	return (m.ExecutionFrozen == nil || !m.ExecutionFrozen.Load()) && !m.active && !m.paused && !m.fault && m.BackendBlocked == "" &&
 		m.rotationWork == nil && (m.rotation == nil || (m.rotation.Status != "waiting" && m.rotation.Status != "closing")) &&
-		m.turnsUsed < m.MaxTurns && (m.roomReady() || m.inboxReady()) && !m.now().Before(m.due)
+		m.turnsUsed < m.turnLimit && (m.roomReady() || m.inboxReady()) && !m.now().Before(m.due)
 }
 
 func (m *MemberAgent) roomReady() bool {
@@ -378,7 +398,7 @@ func (m *MemberAgent) schedule() {
 		m.rotate()
 		return
 	}
-	if !m.active && m.turnsUsed >= m.MaxTurns {
+	if !m.active && m.turnsUsed >= m.turnLimit {
 		m.paused, m.retry = true, false
 	}
 	if !m.ready() {

@@ -139,7 +139,14 @@ func (m *MemberAgent) rotate() {
 			m.rotation.ContextReset = true
 			m.BackendBlocked, m.lastError = "", ""
 			m.paused = !m.rotationResume
-			if err := m.persistScheduling(!m.paused, m.turnsUsed); err != nil {
+			var err error
+			if m.rotationResume && m.rotationEnable {
+				err = m.resumeScheduling(true)
+				m.retry = err == nil // Reoffer unread input, never the previous tool call stack.
+			} else {
+				err = m.persistScheduling(!m.paused, m.turnsUsed)
+			}
+			if err != nil {
 				m.rotation.Status, m.rotation.Error = "failed", err.Error()
 			}
 			_ = m.Notify(m.owner, r.state)

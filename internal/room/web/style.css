@@ -1729,6 +1729,7 @@ textarea::placeholder {
 }
 .agent-overview .member-status { font-size:11px; }
 .agent-overview .member-actions { margin:0; }
+.agent-enable-hint { flex-shrink:0; margin:0 18px 12px; font-size:12px; line-height:1.6; }
 .agent-overview .member-actions button { min-height:28px; font-size:11px; padding:5px 10px; }
 .agent-error { flex-shrink:0; margin:0; padding:0 18px 14px; white-space:pre-wrap; }
 .agent-tabs { flex-shrink:0; gap:20px; margin:0; padding:0 18px; }

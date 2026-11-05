@@ -223,6 +223,7 @@
           <button id="close-activity" type="button" class="text-button" aria-label="返回团队成员" autofocus>返回</button>
         </header>
         <div class="agent-overview"><span id="agent-status" class="member-status"></span><div id="agent-actions" class="member-actions"></div></div>
+        <p id="agent-enable-hint" class="agent-enable-hint quiet" role="status" hidden></p>
         <p id="agent-error" class="agent-error form-error" role="status" hidden></p>
         <div id="agent-tabs" class="notification-tabs agent-tabs" role="tablist" aria-label="Agent 详情">
           <button id="agent-tab-activity" type="button" role="tab" aria-selected="true" aria-controls="activity-body">活动记录</button>
@@ -234,7 +235,7 @@
           <p id="activity-notice" class="activity-notice" role="status">正在读取…</p>
           <section id="activity-state" class="activity-section" hidden>
             <h3>当前状态</h3>
-            <dl class="activity-stats"><div><dt>运行状态</dt><dd id="activity-status"></dd></div><div><dt>读取进度</dt><dd id="activity-progress"></dd></div><div><dt>本次服务预算</dt><dd id="activity-budget"></dd></div><div><dt>累计回合</dt><dd id="activity-turn"></dd></div></dl>
+            <dl class="activity-stats"><div><dt>运行状态</dt><dd id="activity-status"></dd></div><div><dt>读取进度</dt><dd id="activity-progress"></dd></div><div><dt>成员回合额度</dt><dd id="activity-budget"></dd></div><div><dt>累计回合</dt><dd id="activity-turn"></dd></div></dl>
             <p id="activity-execution-error" class="form-error" hidden></p>
           </section>
           <section id="activity-output" class="activity-section" hidden>

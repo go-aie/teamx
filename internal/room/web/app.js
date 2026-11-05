@@ -1213,6 +1213,14 @@ function renderActivityControls() {
   $("agent-status").classList.toggle("running", !!member.execution?.active);
   $("agent-status").classList.toggle("failed", /failed|blocked|unavailable|interrupted/.test(member.status));
   renderMemberActions(member, $("agent-actions"));
+  const execution = member.execution;
+  const reset = execution?.session_reset_required || member.status === "backend_blocked";
+  const budget = execution?.turn_budget;
+  const exhausted = budget && budget.used >= budget.limit;
+  const effects = [];
+  if (reset) effects.push("重置会话，清除私有上下文");
+  if (exhausted) effects.push(`追加 ${budget.grant || 16} 回合`);
+  notice("agent-enable-hint", effects.length ? `启用协作将${effects.join("，并")}。` : "");
   notice("agent-error", member.execution?.error || "");
   if (memberToolsView?.cli) {
     const signature = JSON.stringify([state.connected, state.catalogConnected, discussionBusy()]);
@@ -1631,19 +1639,19 @@ $("inbox-next").addEventListener("click", () => loadMemberInbox(false));
 function renderMemberActions(member, actions) {
   const execution = member.execution;
   const signature = JSON.stringify([member.agent_id, member.membership_id, member.status, execution?.paused, execution?.active,
-    state.connected, discussionBusy(), memberBusy.has(member.membership_id), member.unread_count, execution?.agent?.turn?.status]);
+    execution?.session_reset_required, state.connected, discussionBusy(), memberBusy.has(member.membership_id), member.unread_count, execution?.agent?.turn?.status]);
   if (actions.dataset.signature === signature) return;
   actions.dataset.signature = signature;
   actions.replaceChildren();
   if (!execution) return;
-  const resetRequired = member.status === "backend_blocked";
+  const enable = execution.paused || execution.session_reset_required || member.status === "backend_blocked" || member.status === "budget_exhausted";
   const add = (label, action, cancel) => {
     const button = document.createElement("button"); button.type = "button"; button.textContent = label;
     button.setAttribute("aria-label", `${label} ${member.agent_id}`);
-    button.disabled = memberBusy.has(member.membership_id) || !state.connected || discussionBusy();
+    button.disabled = memberBusy.has(member.membership_id) || !state.connected || discussionBusy() || ["rotating", "checkpoint_failed"].includes(member.status);
     button.addEventListener("click", () => controlMember(member, action, cancel)); actions.append(button);
   };
-  add(resetRequired ? "重置并启用" : execution.paused ? "启用协作" : "暂停", resetRequired ? "session/rotate" : execution.paused ? "run" : "pause", resetRequired);
+  add(enable ? "启用协作" : "暂停", enable ? "run" : "pause", false);
   if (execution.active) add("取消回合", "pause", true);
 }
 
@@ -2398,9 +2406,6 @@ async function controlMember(member, action, cancel) {
     const identity = { agent_id: member.agent_id, membership_id: member.membership_id };
     const failedUnread = member.unread_count > 0 && ["failed", "interrupted"].includes(member.execution?.agent?.turn?.status);
     await rpc(`/v1/member/${action}`, { ...identity, cancel, retry: action === "run" && failedUnread }, info);
-    if (action === "session/rotate" && currentView(version)) {
-      await rpc("/v1/member/run", { ...identity, retry: true }, info);
-    }
     await refresh();
   } catch (error) { if (currentView(version)) notice("sync-error", `${member.agent_id} 操作未确认，请查看成员状态。${error.message}`); }
   finally { memberBusy.delete(member.membership_id); renderMembers(); }

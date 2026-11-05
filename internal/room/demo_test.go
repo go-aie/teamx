@@ -399,9 +399,12 @@ func (d *cliDriver) scenario() error {
 		aFinal.Turns == 2 && bFinal.Turns == 3 && a.ReadThrough == 5 && b.ReadThrough == 5); err != nil {
 		return err
 	}
-	retryErr := d.command(nil, "member", "run", "--agent", "B", "--retry")
-	if err := d.check("budget_blocks_explicit_retry", b.Status == "budget_exhausted" && b.Execution.Paused &&
-		b.Execution.TurnBudget.Used == 3 && retryErr != nil && strings.Contains(retryErr.Error(), "turn_budget")); err != nil {
+	var enabled MemberStatus
+	if err := d.command(&enabled, "member", "run", "--agent", "B", "--retry"); err != nil {
+		return err
+	}
+	if err := d.check("explicit_enable_extends_exhausted_budget", b.Status == "budget_exhausted" && b.Execution.Paused &&
+		!enabled.Paused && enabled.TurnBudget.Used == 3 && enabled.TurnBudget.Limit == 6 && enabled.Agent.TurnNumber == 3); err != nil {
 		return err
 	}
 	if err := d.command(nil, "member", "remove", "--agent", "A"); err != nil {

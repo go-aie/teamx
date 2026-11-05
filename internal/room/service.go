@@ -440,7 +440,18 @@ func (s *service) control(ctx context.Context, req apiRequest, action string) (M
 			}
 			id := MemberIdentity{RoomIdentity: s.info.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
 
-			if action == "rotate" && s.beginPlatformMemberChange != nil {
+			reset := action == "rotate"
+			if action == "enable" {
+				execution, err := s.target(member.MembershipID).Call[MemberStatus](ctx, InspectMember{id})
+				if err != nil {
+					return MemberStatus{}, err
+				}
+				if execution.Active {
+					return MemberStatus{}, ErrBusy
+				}
+				reset = execution.SessionResetRequired
+			}
+			if reset && s.beginPlatformMemberChange != nil {
 				release, err := s.beginPlatformMemberChange(ctx, id)
 				if err != nil {
 					return MemberStatus{}, err
@@ -631,7 +642,9 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		result, err = s.memberActivity(r.Context(), req)
 	case "/v1/member/run":
-		result, err = s.control(r.Context(), req, "run")
+		// Operator intent: continue, replenishing exhausted turns and safely
+		// rotating a disabled Session when necessary. Internal run stays strict.
+		result, err = s.control(r.Context(), req, "enable")
 	case "/v1/member/pause":
 		result, err = s.control(r.Context(), req, "pause")
 	case "/v1/member/session/rotate":

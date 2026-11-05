@@ -157,15 +157,16 @@ type InboxInput struct {
 
 type InspectMember struct{ MemberIdentity }
 type MemberStatus struct {
-	Inbox        *InboxStatus     `json:"inbox,omitempty"`
-	Rotation     *SessionRotation `json:"rotation,omitempty"`
-	Notification *UnreadChanged   `json:"notification"`
-	Status       string           `json:"status,omitempty"`
-	Paused       bool             `json:"paused"`
-	Active       bool             `json:"active"`
-	Agent        *AgentSnapshot   `json:"agent,omitempty"`
-	Error        string           `json:"error,omitempty"`
-	TurnBudget   *TurnBudget      `json:"turn_budget,omitempty"`
+	SessionResetRequired bool             `json:"session_reset_required,omitempty"`
+	Inbox                *InboxStatus     `json:"inbox,omitempty"`
+	Rotation             *SessionRotation `json:"rotation,omitempty"`
+	Notification         *UnreadChanged   `json:"notification"`
+	Status               string           `json:"status,omitempty"`
+	Paused               bool             `json:"paused"`
+	Active               bool             `json:"active"`
+	Agent                *AgentSnapshot   `json:"agent,omitempty"`
+	Error                string           `json:"error,omitempty"`
+	TurnBudget           *TurnBudget      `json:"turn_budget,omitempty"`
 }
 
 type SessionRotation struct {
@@ -178,6 +179,7 @@ type SessionRotation struct {
 type TurnBudget struct {
 	Limit uint64 `json:"limit"`
 	Used  uint64 `json:"used"`
+	Grant uint64 `json:"grant"` // Additional turns granted by an explicit enable after exhaustion.
 }
 
 type ControlMember struct {
