@@ -48,6 +48,7 @@ func (m *roomManager) cancelWorkspaceNotificationsLocked(owner RoomIdentity) []<
 	var done []<-chan struct{}
 	for _, state := range m.notifications.StatesLocked(owner) {
 		if s, ok := state.(gitlab.TodosState); ok && s.Config.ProjectScope == "current" {
+			done = append(done, m.cancelAttachmentCallsLocked(s.Metadata().Key)...)
 			if ch := m.notifications.CancelLocked(s.Metadata().Key); ch != nil {
 				done = append(done, ch)
 			}
@@ -129,7 +130,7 @@ func (m *roomManager) currentTodosLocked(owner RoomIdentity) (*gitlab.TodosState
 	for _, state := range m.notifications.StatesLocked(owner) {
 		if s, ok := state.(gitlab.TodosState); ok {
 			if s.Retired {
-				if m.notifications.DoneLocked(s.Metadata().Key) != nil {
+				if m.notifications.DoneLocked(s.Metadata().Key) != nil || m.attachmentCallsBusyLocked(s.Metadata().Key) {
 					return nil, notification.ErrBusy
 				}
 				continue
@@ -156,15 +157,21 @@ func (m *roomManager) configureTodosSubscription(ctx context.Context, key notifi
 			return gitlab.TodosState{}, notificationRoomError(targetErr)
 		}
 	}
+	previous, _ := m.currentTodosLocked(key.Owner)
 	next, done, err := m.configureTodosLocked(key, version, cfg)
+	var waits []<-chan struct{}
+	if err == nil && previous != nil && (next.Retired || !reflect.DeepEqual(previous.Project, next.Project)) {
+		waits = m.cancelAttachmentCallsLocked(previous.Metadata().Key)
+	}
+	if done != nil {
+		waits = append(waits, done)
+	}
 	m.mu.Unlock()
 	if err != nil {
 		return next, notificationRoomError(err)
 	}
-	if done != nil {
-		if err = notification.Wait(ctx, []<-chan struct{}{done}); err != nil {
-			return next, err
-		}
+	if err = notification.Wait(ctx, waits); err != nil {
+		return next, err
 	}
 	// An account switch returns its durably retired predecessor. Only after all
 	// old work settles may the replacement be saved. Failures preserve retirement.

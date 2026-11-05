@@ -9,7 +9,6 @@ import (
 	"slices"
 	"sync"
 	"time"
-	"unicode/utf8"
 )
 
 type turn struct {
@@ -29,6 +28,7 @@ type Session struct {
 	conn          *connection
 	id            string
 	supportsClose bool
+	supportsImage bool
 	mu            sync.Mutex
 	active        *turn
 	closing       bool
@@ -116,6 +116,9 @@ func open(ctx context.Context, opts Options, resume bool) (_ *Session, openErr e
 		AgentInfo         json.RawMessage   `json:"agentInfo"`
 		AgentCapabilities struct {
 			SessionCapabilities map[string]json.RawMessage `json:"sessionCapabilities"`
+			PromptCapabilities  struct {
+				Image bool `json:"image"`
+			} `json:"promptCapabilities"`
 		} `json:"agentCapabilities"`
 	}
 	if err := s.conn.call(handshakeCtx, "initialize", map[string]any{"protocolVersion": 1, "clientCapabilities": map[string]any{}, "clientInfo": map[string]string{"name": "teamx", "version": "da1-02"}}, &init); err != nil {
@@ -123,6 +126,10 @@ func open(ctx context.Context, opts Options, resume bool) (_ *Session, openErr e
 	}
 	if init.ProtocolVersion != 1 || len(init.AuthMethods) != 0 {
 		return nil, errors.New("unsupported ACP version or authentication requirement")
+	}
+	s.supportsImage = init.AgentCapabilities.PromptCapabilities.Image
+	if opts.Model.imageInput() && !s.supportsImage {
+		return nil, errors.New("DSH image input configured but ACP initialize did not advertise promptCapabilities.image")
 	}
 	identity, err := runtimeArtifact(init.AgentInfo)
 	if err != nil {
@@ -204,11 +211,20 @@ func open(ctx context.Context, opts Options, resume bool) (_ *Session, openErr e
 // Run rejects overlap instead of queueing. A cancelled context does not release
 // the execution slot: the original prompt must settle or cleanup must start.
 func (s *Session) Run(ctx context.Context, text string) (TurnResult, error) {
+	return s.RunPrompt(ctx, []ContentBlock{{Type: "text", Text: text}})
+}
+
+// SupportsImages requires both explicit model configuration and ACP capability.
+func (s *Session) SupportsImages() bool { return s.opts.Model.imageInput() && s.supportsImage }
+
+// RunPrompt submits ordered text/image blocks with the same execution and
+// cancellation contract as Run. Invalid input is rejected before dispatch.
+func (s *Session) RunPrompt(ctx context.Context, prompt []ContentBlock) (TurnResult, error) {
 	if err := ctx.Err(); err != nil {
 		return TurnResult{}, err
 	}
-	if len(text) > s.opts.Limits.InputBytes || !utf8.ValidString(text) {
-		return TurnResult{}, errors.New("invalid or oversized DSH input")
+	if err := s.validatePrompt(prompt); err != nil {
+		return TurnResult{}, err
 	}
 	s.mu.Lock()
 	if s.closing || s.disabled != nil {
@@ -230,7 +246,7 @@ func (s *Session) Run(ctx context.Context, text string) (TurnResult, error) {
 		close(t.done)
 		s.mu.Unlock()
 	}()
-	pending, err := s.conn.begin(turnCtx, "session/prompt", map[string]any{"sessionId": s.id, "prompt": []map[string]string{{"type": "text", "text": text}}})
+	pending, err := s.conn.begin(turnCtx, "session/prompt", map[string]any{"sessionId": s.id, "prompt": prompt})
 	if err != nil {
 		if s.conn.health() != nil {
 			return s.failTurn(t, err)

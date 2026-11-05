@@ -147,7 +147,7 @@ func TestDSHProcess(t *testing.T) {
 			if mode == "changed-agent-name" {
 				name = "other-runtime"
 			}
-			respond(f.ID, map[string]any{"protocolVersion": version, "authMethods": auth, "agentCapabilities": map[string]any{"sessionCapabilities": sessionCaps}, "agentInfo": map[string]string{"name": name, "version": runtimeVersion}})
+			respond(f.ID, map[string]any{"protocolVersion": version, "authMethods": auth, "agentCapabilities": map[string]any{"sessionCapabilities": sessionCaps, "promptCapabilities": map[string]bool{"image": os.Getenv("TEAMX_DSH_IMAGE") == "1"}}, "agentInfo": map[string]string{"name": name, "version": runtimeVersion}})
 		case "session/new":
 			_ = os.WriteFile("session-new.called", []byte(sessionID), 0600)
 			respond(f.ID, map[string]any{"sessionId": sessionID, "configOptions": config})
@@ -172,6 +172,7 @@ func TestDSHProcess(t *testing.T) {
 			}
 			respond(f.ID, map[string]any{"configOptions": config})
 		case "session/prompt":
+			_ = os.WriteFile("prompt.json", f.Params, 0600)
 			turns++
 			var params struct {
 				Prompt []struct {

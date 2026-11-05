@@ -100,7 +100,7 @@ func serveWithFactory(args []string, stdout, stderr io.Writer, create func(strin
 	}
 	defer listener.Close()
 	if !singleRoom {
-		return serveRoomManager(listener, *dataDir, *teamsDir, serviceConfig{endpoint: "http://" + listener.Addr().String(), mergeWindow: *mergeWindow, maxTurns: *maxTurns, dshTurnTimeout: *dshTurnTimeout}, startup.Runtime, create, stdout, stderr)
+		return serveRoomManager(listener, *dataDir, *teamsDir, serviceConfig{endpoint: "http://" + listener.Addr().String(), mergeWindow: *mergeWindow, maxTurns: *maxTurns, dshTurnTimeout: *dshTurnTimeout, imageMaterials: startup.Server.ImageMaterials}, startup.Runtime, create, stdout, stderr)
 	}
 	uiProfiles := profileNames(profiles)
 	cliPath, err := os.Executable()
@@ -109,7 +109,7 @@ func serveWithFactory(args []string, stdout, stderr io.Writer, create func(strin
 	}
 	svc, err := create(*dir, *roomID, serviceConfig{
 		endpoint: "http://" + listener.Addr().String(), cliPath: cliPath, mergeWindow: *mergeWindow, maxTurns: *maxTurns,
-		dshProfiles: profiles, uiProfiles: uiProfiles, dshTurnTimeout: *dshTurnTimeout,
+		dshProfiles: profiles, uiProfiles: uiProfiles, dshTurnTimeout: *dshTurnTimeout, imageMaterials: startup.Server.ImageMaterials,
 	})
 	if err != nil {
 		return err

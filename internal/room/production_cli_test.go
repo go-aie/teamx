@@ -29,7 +29,7 @@ func TestProductionCLIOnlyExposesDSHMembers(t *testing.T) {
 		}
 	}
 	config := filepath.Join(t.TempDir(), "profiles.json")
-	data := `{"reviewer":{"binary_path":"/bin/sh","artifact":{"source":"test-not-launched","version":"1"},"workspace":"/tmp","instructions":"not launched","model":{"protocol":"openai-completions","model_id":"unused","api_key_env":"TEAMX_UNUSED_TEST_KEY"}}}`
+	data := `{"reviewer":{"binary_path":"/bin/sh","artifact":{"source":"test-not-launched","version":"1"},"workspace":"/tmp","instructions":"not launched","model":{"protocol":"openai-completions","base_url":"https://model.invalid/v1","model_id":"unused","api_key_env":"TEAMX_UNUSED_TEST_KEY"}}}`
 	if err := os.WriteFile(config, []byte(data), 0600); err != nil {
 		t.Fatal(err)
 	}

@@ -17,6 +17,7 @@ type platformCall struct {
 	tool, connectionID    string
 	cancel                context.CancelFunc
 	done                  chan struct{}
+	subscription          notification.Key // Set only for saved-notification attachments.
 }
 
 func (m *roomManager) toolRosterLocked(ctx context.Context, owner RoomIdentity) ([]MemberState, error) {
@@ -59,6 +60,19 @@ func (m *roomManager) cancelPlatformCallsLocked(match func(*platformCall) bool) 
 		}
 	}
 	return done
+}
+
+func (m *roomManager) attachmentCallsBusyLocked(key notification.Key) bool {
+	for call := range m.platformCalls {
+		if call.subscription == key {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *roomManager) cancelAttachmentCallsLocked(key notification.Key) []<-chan struct{} {
+	return m.cancelPlatformCallsLocked(func(call *platformCall) bool { return call.subscription == key })
 }
 func (m *roomManager) waitPlatformCalls(ctx context.Context, owner *RoomIdentity) error {
 	m.mu.Lock()

@@ -18,12 +18,13 @@ import (
 // Startup settings stay outside Room snapshots. Only the resolved runtime is frozen.
 type startupConfig struct {
 	Server struct {
-		Listen         *string `toml:"listen"`
-		DataDir        *string `toml:"data_dir"`
-		TeamsDir       *string `toml:"teams_dir"`
-		MaxTurns       *uint64 `toml:"max_turns"`
-		MergeWindow    *string `toml:"merge_window"`
-		DSHTurnTimeout *string `toml:"dsh_turn_timeout"`
+		Listen         *string             `toml:"listen"`
+		DataDir        *string             `toml:"data_dir"`
+		TeamsDir       *string             `toml:"teams_dir"`
+		MaxTurns       *uint64             `toml:"max_turns"`
+		MergeWindow    *string             `toml:"merge_window"`
+		DSHTurnTimeout *string             `toml:"dsh_turn_timeout"`
+		ImageMaterials imageMaterialConfig `toml:"image_materials"`
 	} `toml:"server"`
 	Runtime *teamRuntime      `toml:"runtime"`
 	Env     map[string]string `toml:"env"`
@@ -64,6 +65,9 @@ func loadStartupConfig(name string, required bool) (startupConfig, error) {
 			}
 			return startupConfig{}, fmt.Errorf("invalid config %q; check TOML syntax and fields against config.example.toml", path)
 		}
+	}
+	if _, err := config.Server.ImageMaterials.limits(); err != nil {
+		return startupConfig{}, err
 	}
 	base := filepath.Dir(path)
 	if config.Server.DataDir == nil {

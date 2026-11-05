@@ -61,6 +61,13 @@ func validateDSHProfiles(profiles map[string]dshProfile) error {
 			(p.Artifact.Source == "") != (p.Artifact.Version == "") || p.Model.ModelID == "" || p.Model.APIKeyEnv == "" {
 			return fmt.Errorf("invalid DSH profile %q: absolute paths and model required; artifact source/version must be supplied together or omitted", name)
 		}
+		model := p.Model
+		if model.Protocol == "" {
+			model.Protocol = "deepseek-messages"
+		}
+		if err := dsh.CheckConfig(dsh.Options{BinaryPath: p.BinaryPath, BinaryArgs: p.BinaryArgs, Artifact: p.Artifact, Model: model}); err != nil {
+			return fmt.Errorf("invalid DSH profile %q: %w", name, err)
+		}
 		for key := range p.ToolEnv {
 			if isRoomToolEnv(key) || key == "TEAMX_CLI" {
 				return fmt.Errorf("DSH profile %q overrides Room tool identity", name)
@@ -72,11 +79,14 @@ func validateDSHProfiles(profiles map[string]dshProfile) error {
 
 type dshComponent interface {
 	Run(context.Context, string) (dsh.TurnResult, error)
+	RunPrompt(context.Context, []dsh.ContentBlock) (dsh.TurnResult, error)
+	SupportsImages() bool
 	Close(context.Context) error
 }
 
 type dshBackend struct {
 	store       *Store
+	prepare     func(context.Context, UnreadChanged, uint64, bool) (*dshMaterials, error)
 	profile     dshProfile
 	turnTimeout time.Duration // Service policy; not part of the frozen Room runtime.
 	recover     bool          // Only set by startup after checking normal shutdown evidence.
@@ -266,7 +276,7 @@ Ordinary model output is private and is never sent to the Room. Preserve the con
 	}
 
 	return dsh.Options{BinaryPath: p.BinaryPath, BinaryArgs: p.BinaryArgs, Artifact: p.Artifact, Workspace: p.Workspace,
-		StateDir: filepath.Join(filepath.Dir(opts.StatePath), ref.Directory), Instructions: instructions, Model: p.Model, ToolEnv: toolEnv, Limits: dsh.Limits{TextBytes: 64 << 10, TurnTimeout: b.turnTimeout}}, nil
+		StateDir: filepath.Join(filepath.Dir(opts.StatePath), ref.Directory), Instructions: instructions, Model: p.Model.Clone(), ToolEnv: toolEnv, Limits: dsh.Limits{TextBytes: 64 << 10, TurnTimeout: b.turnTimeout}}, nil
 }
 
 func dshFailure(err error) error {
@@ -337,7 +347,24 @@ func (s *dshSession) Run(ctx context.Context, input UnreadChanged) error {
 	}
 	s.backend.store.activeDSH.Store(s.opts.MemberIdentity, s)
 	defer s.backend.store.activeDSH.CompareAndDelete(s.opts.MemberIdentity, s)
-	result, runErr := s.component.Run(ctx, "Member policy context (JSON):\n"+string(body)+"\n\n"+dshNotification(input))
+	prompt := []dsh.ContentBlock{{Type: "text", Text: "Member policy context (JSON):\n" + string(body) + "\n\n" + dshNotification(input)}}
+	if s.backend.prepare != nil {
+		materials, err := s.backend.prepare(ctx, input, policy.CurrentTurn, s.component.SupportsImages())
+		if err != nil {
+			return dshFailure(err)
+		}
+		prompt = materials.blocks(prompt[0].Text)
+		if !materialPromptFits(prompt) {
+			return dshFailure(errors.New("DSH material prompt exceeds text/frame budget"))
+		}
+		if err := materials.check(ctx); err != nil {
+			return dshFailure(err)
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return dshFailure(err)
+	}
+	result, runErr := s.component.RunPrompt(ctx, prompt)
 	if runErr == nil {
 		s.policyToken = policy.PolicyToken
 	} else {

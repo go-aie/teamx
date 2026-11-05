@@ -60,7 +60,7 @@ func EventsMessage(s EventsState, entry EventsInboxEntry) notification.Item {
 		actor = "未提供"
 	}
 	lines := []string{notification.Fact(actor, 256) + " · " + label}
-	if excerpt := notification.Quote(body, 2048); excerpt != "" {
+	if excerpt := notification.QuoteExcerpt(body, 2048, false); excerpt != "" {
 		lines = append(lines, excerpt)
 	}
 	// Only display links on the bound instance; never credentials or arbitrary

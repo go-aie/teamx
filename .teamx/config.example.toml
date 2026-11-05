@@ -10,6 +10,16 @@ max_turns = 16
 dsh_turn_timeout = "15m"
 # merge_window = "100ms"
 
+# Optional service limits for read-only GitLab image material preparation.
+# Zero/omitted numbers use defaults. Total raw image bytes cannot exceed 4 MiB.
+# [server.image_materials]
+# scan_entries = 25 # Combined Room/Inbox entries, Room first; at most 100.
+# max_images = 4 # At most 16; duplicates in this turn share one block.
+# image_bytes = 2097152
+# total_bytes = 4194304
+# max_pixels = 16777216
+# timeout = "30s" # At most 2m; individual failures retain missing-image status.
+
 # Default runtime for teams that omit their own complete runtime.
 [runtime.dsh]
 binary_path = "/absolute/path/to/dsh"
@@ -25,6 +35,9 @@ api_key_env = "OPENAI_API_KEY"
 # reasoning_effort = "low"
 # context_window = 1048576
 # max_tokens = 32768
+# Optional, only when this exact Completions model and gateway support images.
+# ACP initialize must also advertise image input; otherwise the session fails.
+# input_modalities = ["text", "image"]
 
 # Existing service environment variables (even empty ones) take precedence.
 # These values stay outside Room snapshots. Do not commit actual credentials.

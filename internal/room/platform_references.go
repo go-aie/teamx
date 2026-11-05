@@ -43,6 +43,7 @@ func (m *roomManager) referenceCapabilities(provider string) (platform.Reference
 // Shared by runtime assembly and isolated provider acceptance. Registration
 // changes only the adapter maps; ownership and capability dispatch stay here.
 func (m *roomManager) bindPlatformReferences(svc *service) {
+	svc.materialAttachments = &materialAttachments{download: m.downloadAttachment, check: m.checkMaterialAttachments}
 	svc.beginPlatformMemberChange = func(ctx context.Context, id MemberIdentity) (func(), error) {
 		return m.beginPlatformMemberChange(ctx, svc, id)
 	}

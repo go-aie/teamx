@@ -267,6 +267,9 @@ func profile(opts Options) []map[string]any {
 	}
 	contextWindow, maxTokens := opts.Model.tokenLimits()
 	model := map[string]any{"id": opts.Model.ModelID, "contextWindow": contextWindow, "maxTokens": maxTokens}
+	if len(opts.Model.InputModalities) > 0 {
+		model["input"] = slices.Clone(opts.Model.InputModalities)
+	}
 	route := map[string]any{
 		"apiKeyEnv": opts.Model.APIKeyEnv, "api": "openai-completions", "baseURL": opts.Model.BaseURL,
 		"models": []map[string]any{model}, "retryPolicy": map[string]any{"mode": "normal", "maxRetries": 0},

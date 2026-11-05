@@ -27,7 +27,7 @@ func (m *roomManager) currentEventsLocked(owner RoomIdentity) (*gitlab.EventsSta
 	for _, state := range m.notifications.StatesLocked(owner) {
 		if s, ok := state.(gitlab.EventsState); ok {
 			if s.Retired {
-				if m.notifications.DoneLocked(s.Metadata().Key) != nil {
+				if m.notifications.DoneLocked(s.Metadata().Key) != nil || m.attachmentCallsBusyLocked(s.Metadata().Key) {
 					return nil, ErrBusy
 				}
 				continue
@@ -151,10 +151,12 @@ func (m *roomManager) configureEventsSubscription(ctx context.Context, key notif
 			return retired, err
 		}
 		done := m.notifications.ChangedLocked(retired.Metadata().Key)
-		m.mu.Unlock()
+		waits := m.cancelAttachmentCallsLocked(retired.Metadata().Key)
 		if done != nil {
-			err = notification.Wait(ctx, []<-chan struct{}{done})
+			waits = append(waits, done)
 		}
+		m.mu.Unlock()
+		err = notification.Wait(ctx, waits)
 		m.mu.Lock()
 		if err != nil {
 			return retired, err

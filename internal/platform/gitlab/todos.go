@@ -32,24 +32,25 @@ type TodoActor struct {
 }
 
 type Todo struct {
-	ID           int64      `json:"id"`
-	RecipientID  int64      `json:"recipient_id"`
-	ProjectID    int64      `json:"project_id"`
-	Project      string     `json:"project"`
-	Action       string     `json:"action"`
-	Reason       string     `json:"reason"`
-	Kind         string     `json:"kind"`
-	TargetType   string     `json:"target_type"`
-	TargetID     int64      `json:"target_id"`
-	TargetIID    int64      `json:"target_iid"`
-	Actor        *TodoActor `json:"actor"`
-	TargetAuthor *TodoActor `json:"target_author"`
-	Title        string     `json:"title"`
-	Body         string     `json:"body,omitempty"`
-	URL          string     `json:"url"`
-	CreatedAt    time.Time  `json:"created_at"`
-	State        string     `json:"state"`
-	SkipReason   string     `json:"skip_reason"`
+	ID            int64      `json:"id"`
+	RecipientID   int64      `json:"recipient_id"`
+	ProjectID     int64      `json:"project_id"`
+	Project       string     `json:"project"`
+	Action        string     `json:"action"`
+	Reason        string     `json:"reason"`
+	Kind          string     `json:"kind"`
+	TargetType    string     `json:"target_type"`
+	TargetID      int64      `json:"target_id"`
+	TargetIID     int64      `json:"target_iid"`
+	Actor         *TodoActor `json:"actor"`
+	TargetAuthor  *TodoActor `json:"target_author"`
+	Title         string     `json:"title"`
+	Body          string     `json:"body,omitempty"`
+	BodyTruncated bool       `json:"body_truncated,omitempty"`
+	URL           string     `json:"url"`
+	CreatedAt     time.Time  `json:"created_at"`
+	State         string     `json:"state"`
+	SkipReason    string     `json:"skip_reason"`
 }
 
 type TodoBatch struct {
@@ -214,6 +215,7 @@ func normalizeTodo(r rawTodo, origin string, userID int64, q TodoQuery) (Todo, e
 			return Todo{}, errors.New("GitLab todo target project differs")
 		}
 		t.TargetID, t.TargetIID, t.Title, t.Body, t.TargetAuthor = target.ID, target.IID, truncateText(target.Title, 4096), truncateText(body, 4096), normalizeActor(target.Author)
+		t.BodyTruncated = len([]rune(body)) > 4096
 		if trustedTodoURL(link, origin, t.Project, t.TargetType, t.TargetIID) {
 			t.URL = link
 		} else {

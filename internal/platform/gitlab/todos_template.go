@@ -29,8 +29,8 @@ func TodosMessage(s TodosState, e TodosInboxEntry) notification.Item {
 	lines := []string{notification.Fact(actor, 256) + " · " + action}
 	// Some to-dos repeat the object title in body. Keep that title in the
 	// reference, while note-linked content remains visible even if identical.
-	if strings.TrimSpace(t.Body) != strings.TrimSpace(t.Title) || strings.Contains(t.URL, "#note_") {
-		if body := notification.Quote(t.Body, 2048); body != "" {
+	if t.BodyTruncated || strings.TrimSpace(t.Body) != strings.TrimSpace(t.Title) || strings.Contains(t.URL, "#note_") {
+		if body := notification.QuoteExcerpt(t.Body, 2048, t.BodyTruncated); body != "" {
 			lines = append(lines, body)
 		}
 	}

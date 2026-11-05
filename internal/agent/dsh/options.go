@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -79,9 +80,32 @@ type ModelConfig struct {
 	// Empty preserves the adapter/endpoint default. DeepSeek supports off, low,
 	// high and max; other Completions models may also use minimal, medium or xhigh.
 	ReasoningEffort string `json:"reasoning_effort,omitempty" toml:"reasoning_effort"`
+	// Empty preserves the existing text-only configuration and recovery digest.
+	// Image input is supported only by the OpenAI Completions adapter.
+	InputModalities []string `json:"input_modalities,omitempty" toml:"input_modalities"`
 }
 
+func (m ModelConfig) Clone() ModelConfig {
+	m.InputModalities = slices.Clone(m.InputModalities)
+	return m
+}
+
+func (m ModelConfig) imageInput() bool { return slices.Contains(m.InputModalities, "image") }
+
 func (m ModelConfig) checkConfig() error {
+	seen := map[string]bool{}
+	for _, modality := range m.InputModalities {
+		if (modality != "text" && modality != "image") || seen[modality] {
+			return errors.New("model input_modalities accepts unique text and image values only")
+		}
+		seen[modality] = true
+	}
+	if len(m.InputModalities) > 0 && !seen["text"] {
+		return errors.New("model input_modalities must include text")
+	}
+	if seen["image"] && m.Protocol != "openai-completions" {
+		return errors.New("model image input requires openai-completions")
+	}
 	switch m.ReasoningEffort {
 	case "", "off", "low", "high", "max":
 	case "minimal", "medium", "xhigh":
@@ -136,6 +160,7 @@ type Limits struct {
 	PermissionTimeout time.Duration
 	FrameBytes        int
 	InputBytes        int
+	ImageBytes        int // Total raw image bytes per prompt, separate from text.
 	TextBytes         int
 }
 
@@ -160,7 +185,7 @@ func (l *Limits) defaults() error {
 		value         *int
 		fallback, max int
 	}{
-		{&l.FrameBytes, 8 << 20, 8 << 20}, {&l.InputBytes, 1 << 20, 1 << 20}, {&l.TextBytes, 1 << 20, 1 << 20},
+		{&l.FrameBytes, 8 << 20, 8 << 20}, {&l.InputBytes, 1 << 20, 1 << 20}, {&l.ImageBytes, 4 << 20, 4 << 20}, {&l.TextBytes, 1 << 20, 1 << 20},
 	} {
 		if *size.value < 0 || *size.value > size.max {
 			return errors.New("invalid DSH size limit")
@@ -359,6 +384,7 @@ func validate(opts Options) (Options, error) {
 	}
 	// Retain our own copies; callers may reuse their configuration after Open.
 	opts.BinaryArgs = append([]string(nil), opts.BinaryArgs...)
+	opts.Model = opts.Model.Clone()
 	toolEnv := make(map[string]string, len(opts.ToolEnv))
 	for k, v := range opts.ToolEnv {
 		toolEnv[k] = v

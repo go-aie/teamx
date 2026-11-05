@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -44,6 +45,7 @@ func TestTeamConfigSnapshotsAndResourceIsolation(t *testing.T) {
 	team.Runtime.Model.Protocol = "openai-completions"
 	team.Runtime.Model.ContextWindow, team.Runtime.Model.MaxTokens = 1048576, 32768
 	team.Runtime.Model.ReasoningEffort = "low"
+	team.Runtime.Model.InputModalities = []string{"text", "image"}
 	team.Members[0].Instructions = ""
 	team.Members[0].InstructionsFile = "prompts/role.md"
 	team.Members[0].ToolEnv["ROLE_TOOL"] = "./tools/helper.sh"
@@ -67,7 +69,7 @@ func TestTeamConfigSnapshotsAndResourceIsolation(t *testing.T) {
 	}
 	ca, sa := readManagedRoom(t, m, a)
 	cb, sb := readManagedRoom(t, m, b)
-	if ca.Runtime == nil || ca.Runtime.Model != team.Runtime.Model || ca.Members[0].Instructions != "original instructions" || ca.Members[0].MembershipID == cb.Members[0].MembershipID || sa.Members[0].MembershipID == sb.Members[0].MembershipID {
+	if ca.Runtime == nil || !reflect.DeepEqual(ca.Runtime.Model, team.Runtime.Model) || ca.Members[0].Instructions != "original instructions" || ca.Members[0].MembershipID == cb.Members[0].MembershipID || sa.Members[0].MembershipID == sb.Members[0].MembershipID {
 		t.Fatal(ca, cb)
 	}
 	t.Setenv(team.Runtime.Model.APIKeyEnv, "a-secret-never-saved")
@@ -77,7 +79,7 @@ func TestTeamConfigSnapshotsAndResourceIsolation(t *testing.T) {
 			t.Fatal(err)
 		}
 		p := cfg.dshProfiles[ca.Members[0].Runner.Profile]
-		if !strings.HasPrefix(p.Workspace, m.roomDir(room.RoomID)) || !strings.HasPrefix(p.ToolEnv["ROLE_TOOL"], m.roomDir(room.RoomID)) || cfg.maxTurns != 4 || p.Model != team.Runtime.Model {
+		if !strings.HasPrefix(p.Workspace, m.roomDir(room.RoomID)) || !strings.HasPrefix(p.ToolEnv["ROLE_TOOL"], m.roomDir(room.RoomID)) || cfg.maxTurns != 4 || !reflect.DeepEqual(p.Model, team.Runtime.Model) {
 			t.Fatal(p, cfg)
 		}
 	}
@@ -115,14 +117,14 @@ func TestTeamConfigSnapshotsAndResourceIsolation(t *testing.T) {
 	if err != nil || cfg.maxTurns != 4 || len(m.teams) != 0 {
 		t.Fatal(cfg, err)
 	}
-	if cfg.dshProfiles[ca.Members[0].Runner.Profile].Model != team.Runtime.Model {
+	if !reflect.DeepEqual(cfg.dshProfiles[ca.Members[0].Runner.Profile].Model, team.Runtime.Model) {
 		t.Fatal("restored room lost frozen model configuration")
 	}
 
 }
 
 func TestTeamCatalogValidation(t *testing.T) {
-	for _, kind := range []string{"duplicate-member", "duplicate-team", "both-instructions", "neither-instructions", "traversal", "missing-prompt", "symlink", "identity", "credential", "protocol", "reasoning", "relative-binary", "relative-script", "missing-tool", "unknown-field", "incomplete-artifact"} {
+	for _, kind := range []string{"duplicate-member", "duplicate-team", "both-instructions", "neither-instructions", "traversal", "missing-prompt", "symlink", "identity", "credential", "protocol", "reasoning", "modalities", "image-protocol", "relative-binary", "relative-script", "missing-tool", "unknown-field", "incomplete-artifact"} {
 		t.Run(kind, func(t *testing.T) {
 			root := t.TempDir()
 			team := testTeamDefinition(t)
@@ -147,6 +149,11 @@ func TestTeamCatalogValidation(t *testing.T) {
 				team.Runtime.Model.Protocol = "invalid"
 			case "reasoning":
 				team.Runtime.Model.ReasoningEffort = "invalid"
+			case "modalities":
+				team.Runtime.Model.InputModalities = []string{"image"}
+			case "image-protocol":
+				team.Runtime.Model.Protocol = "deepseek-messages"
+				team.Runtime.Model.InputModalities = []string{"text", "image"}
 			case "relative-binary":
 				team.Runtime.DSH.BinaryPath = "node"
 			case "relative-script":
@@ -190,6 +197,38 @@ func TestTeamCatalogValidation(t *testing.T) {
 	}
 }
 
+func TestModelModalitiesCopies(t *testing.T) {
+	defaults := testTeamDefinition(t).Runtime
+	defaults.Model.InputModalities = []string{"text", "image"}
+	teams := t.TempDir()
+	team := testTeamDefinition(t)
+	team.Runtime = nil
+	writeTestTeam(t, teams, team)
+	m, err := newTeamRoomManager(t.TempDir(), teams, 4, defaults)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.close()
+	defaults.Model.InputModalities[1] = "text"
+	loaded := m.teams[team.ID]
+	if loaded.Runtime.Model.InputModalities[1] != "image" {
+		t.Fatal("team aliases global model slice")
+	}
+	profile := loaded.Runtime.profile()
+	profile.Model.InputModalities[1] = "text"
+	if loaded.Runtime.Model.InputModalities[1] != "image" {
+		t.Fatal("profile aliases team model slice")
+	}
+	entry, err := m.prepare(roomSelection{TeamID: team.ID, CreateID: "copy"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded.Runtime.Model.InputModalities[1] = "text"
+	if entry.Initialization.Config.Runtime.Model.InputModalities[1] != "image" {
+		t.Fatal("Room initialization aliases team model slice")
+	}
+}
+
 func TestManagedTeamRuntimeFrozenAtCreation(t *testing.T) {
 	m := activationTestManager(t)
 	room := managerCreate(t, m, "frozen-runtime")
@@ -211,7 +250,7 @@ func TestManagedTeamRuntimeFrozenAtCreation(t *testing.T) {
 	}
 	for _, member := range saved.Members {
 		got := config.dshProfiles[member.Runner.Profile]
-		if got.Model != original.Model || got.BinaryPath != original.BinaryPath || got.ToolEnv["BASE_SETTING"] != "preserved" {
+		if !reflect.DeepEqual(got.Model, original.Model) || got.BinaryPath != original.BinaryPath || got.ToolEnv["BASE_SETTING"] != "preserved" {
 			t.Fatal("source team replaced frozen runtime", got.Model)
 		}
 	}

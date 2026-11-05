@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -87,6 +88,7 @@ func TestStartupConfigExampleAndPaths(t *testing.T) {
 	text = strings.ReplaceAll(text, "# reasoning_effort", "reasoning_effort")
 	text = strings.ReplaceAll(text, "# context_window", "context_window")
 	text = strings.ReplaceAll(text, "# max_tokens", "max_tokens")
+	text = strings.ReplaceAll(text, "# input_modalities", "input_modalities")
 	text += "\nTEAMX_GLAB_BIN = './bin/glab'\nTEAMX_GITLAB_BIN = './bin/teamx-gitlab'\n"
 	c, err := loadStartupConfig(writeStartupConfig(t, dir, text), true)
 	if err != nil {
@@ -95,7 +97,8 @@ func TestStartupConfigExampleAndPaths(t *testing.T) {
 	if *c.Server.DataDir != filepath.Join(dir, "data") || *c.Server.TeamsDir != filepath.Join(dir, "teams") ||
 		c.Runtime.DSH.BinaryPath != filepath.Join(dir, "runtime/dsh") || c.Runtime.DSH.BinaryArgs[0] != filepath.Join(dir, "runtime/cli.mjs") ||
 		c.Env["TEAMX_GLAB_BIN"] != filepath.Join(dir, "bin/glab") || c.Env["TEAMX_GITLAB_BIN"] != filepath.Join(dir, "bin/teamx-gitlab") ||
-		c.Runtime.Model.APIKeyEnv != "OPENAI_API_KEY" || c.Runtime.Model.ContextWindow != 1048576 || c.Runtime.Model.MaxTokens != 32768 || c.Runtime.Model.ReasoningEffort != "low" {
+		c.Runtime.Model.APIKeyEnv != "OPENAI_API_KEY" || c.Runtime.Model.ContextWindow != 1048576 || c.Runtime.Model.MaxTokens != 32768 || c.Runtime.Model.ReasoningEffort != "low" ||
+		!reflect.DeepEqual(c.Runtime.Model.InputModalities, []string{"text", "image"}) {
 		t.Fatal("startup values or config-relative paths lost")
 	}
 	if _, err := loadStartupConfig(filepath.Join(dir, "absent.toml"), false); err != nil {
@@ -219,6 +222,7 @@ func TestServeRejectsInvalidDSHTurnTimeout(t *testing.T) {
 func TestGlobalRuntimeDefaultsOverridesAndFrozenRooms(t *testing.T) {
 	root, teams := t.TempDir(), t.TempDir()
 	defaults := testTeamDefinition(t).Runtime
+	defaults.Model.InputModalities = []string{"text", "image"}
 	team := testTeamDefinition(t)
 	team.Runtime = nil
 	writeTestTeam(t, teams, team)
@@ -232,7 +236,7 @@ func TestGlobalRuntimeDefaultsOverridesAndFrozenRooms(t *testing.T) {
 	m.config = serviceConfig{endpoint: "http://127.0.0.1:1", cliPath: os.Args[0], dshTurnTimeout: 15 * time.Minute}
 	room := createTeamRoom(t, m, "global-runtime")
 	saved, _ := readManagedRoom(t, m, room)
-	if saved.Runtime == nil || saved.Runtime.Model != defaults.Model || saved.Runtime.DSH.BinaryPath != defaults.DSH.BinaryPath {
+	if saved.Runtime == nil || !reflect.DeepEqual(saved.Runtime.Model, defaults.Model) || saved.Runtime.DSH.BinaryPath != defaults.DSH.BinaryPath {
 		t.Fatal("resolved runtime not frozen")
 	}
 	if err := m.close(); err != nil {

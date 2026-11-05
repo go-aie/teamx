@@ -3,7 +3,9 @@ package gitlab
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
+	"hash/crc32"
 	"image"
 	"image/png"
 	"io"
@@ -17,6 +19,58 @@ import (
 
 func uploadFixture() (platform.SourceRef, string) {
 	return platform.SourceRef{Provider: "gitlab", Instance: "https://gitlab.example.com", ProjectID: 312, Project: "group/project"}, "/uploads/524bb5cf042cd0bb3ef9a7a117a744b7/image.png"
+}
+
+type countedUploadBody struct {
+	io.Reader
+	read int
+}
+
+func (b *countedUploadBody) Read(p []byte) (int, error) {
+	n, err := b.Reader.Read(p)
+	b.read += n
+	return n, err
+}
+func (*countedUploadBody) Close() error { return nil }
+
+func TestDownloadUploadCallerLimitsStreamAndDecodedDimensions(t *testing.T) {
+	source, path := uploadFixture()
+	upload, _ := ParseUpload(path, source)
+	var pngBytes bytes.Buffer
+	if err := png.Encode(&pngBytes, image.NewRGBA(image.Rect(0, 0, 2, 3))); err != nil {
+		t.Fatal(err)
+	}
+	largePixels := bytes.Clone(pngBytes.Bytes())
+	// A tiny valid header can describe a huge image. DecodeConfig must reject
+	// its dimensions before any allocation of the decoded pixel buffer.
+	binary.BigEndian.PutUint32(largePixels[16:20], 100000)
+	binary.BigEndian.PutUint32(largePixels[20:24], 100000)
+	binary.BigEndian.PutUint32(largePixels[29:33], crc32.ChecksumIEEE(largePixels[12:29]))
+	for _, tc := range []struct {
+		name    string
+		data    []byte
+		length  int64
+		limits  UploadLimits
+		want    error
+		maxRead int
+	}{
+		{"valid", pngBytes.Bytes(), -1, UploadLimits{MaxBytes: 1024, MaxPixels: 6}, nil, 1024},
+		{"declared-bytes", pngBytes.Bytes(), 1025, UploadLimits{MaxBytes: 1024, MaxPixels: 6}, ErrUploadLimit, 0},
+		{"stream-bytes", bytes.Repeat([]byte("x"), 2048), -1, UploadLimits{MaxBytes: 1024, MaxPixels: 6}, ErrUploadLimit, 1025},
+		{"pixels", largePixels, -1, UploadLimits{MaxBytes: 1024, MaxPixels: 16 << 20}, ErrUploadLimit, 1024},
+		{"malformed", []byte("GIF89a"), -1, UploadLimits{MaxBytes: 1024, MaxPixels: 6}, ErrUploadFormat, 1024},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := &countedUploadBody{Reader: bytes.NewReader(tc.data)}
+			transport := roundTripFunc(func(*http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: 200, ContentLength: tc.length, Body: body, Header: make(http.Header)}, nil
+			})
+			data, _, err := DownloadUploadWithLimits(context.Background(), source.Instance, platform.NewSecret("test-token"), upload, transport, tc.limits)
+			if !errors.Is(err, tc.want) || body.read > tc.maxRead || tc.want != nil && len(data) != 0 {
+				t.Fatal(err, body.read, len(data))
+			}
+		})
+	}
 }
 
 func TestUploadSourceAndNotificationEvidence(t *testing.T) {

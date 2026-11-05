@@ -41,11 +41,17 @@ pnpm --filter @deepseek-ai/dsh deploy --legacy --prod \
 
 `deepseek-messages` 使用 DSH 的 DeepSeek Messages 适配；`openai-completions` 需要模型基础地址。模型选择核对 ACP 实际提供的配置及回执，不静默换模型。API 和字段定义见 [options.go](../internal/agent/dsh/options.go)，用户配置统一参照[团队模板](../.teamx/teams/README.md)。
 
+`runtime.model.input_modalities` 可选，缺省保持文本流程。显式值只接受不重复的 `text`、`image`，且须包含 `text`；图片仅支持 `openai-completions`。例如已确认部署支持图片的模型可设 `input_modalities = ["text", "image"]`。该字段沿全局默认、团队完整覆盖和 Room 冻结快照传递，生成配置仅在精确模型条目声明 `input`，不扩大整个网关的能力。TeamX 在 ACP `initialize` 前写入模型配置；显式启用图片而握手未返回 `promptCapabilities.image = true` 时，建会话失败，不降级为文本。未设置该字段的原有配置与恢复指纹不变；改变模型或模态仍须使用受控 Session 生命周期，不修改旧恢复证据强行续接。
+
+图片能力已完成 I1–I3：Room／Inbox 的 GitLab 通知会在固定当前回合范围内只读准备已保存文字和图片，按来源成组提交。默认合计扫描 25 条记录、传 4 张图片，单图 2 MiB、累计 4 MiB、单图 16777216 像素、准备时间 30 秒；可通过服务级 `[server.image_materials]` 调整，见[配置示例](../.teamx/config.example.toml)。只识别已保存文字中的完整图片引用，不补读全文；纯文本 Session 不下载图片，预算、格式、权限或超时导致的未覆盖材料会明确告知模型。准备材料不推进 Room 已读、Inbox 消费或 matters 状态，也不授予操作权限。TeamX 只在有界内存中准备图片，DSH 会通过其既有附件机制持久保存到私有 Session 存储；不能将此理解为图片全程不落盘。真实 GitLab 的 Room／Inbox 读图已在 I4 得到验证；独立短码、恢复、浏览器等结果分别记录，不能据此声称一期全部验收通过，见[图片验收手册](gitlab-image-acceptance.zh.md)和[当前实施记录](GITLAB-IMAGE-UNDERSTANDING-PLAN.zh.md#84-i4-实施与验证记录2026-11-05)。
+
 真实验收使用实际安装的 DSH，并在私有报告中记录启动路径、参数、CLI 版本及启动程序摘要。Session 的 `backend.json` 另行记录 ACP 运行时身份和恢复所需配置。更换安装产物后需重新验证能力。
 
 ## Session 契约
 
-`Open` 只接受新状态目录，完成 ACP 握手、建会话、模型配置和后端引用提交。`Resume` 只恢复满足条件的原 Session。`Run` 每次执行一个文本回合，并发调用返回 busy。`Close` 停止接纳、取消并结清资源，可重复等待。
+`Open` 只接受新状态目录，完成 ACP 握手、建会话、模型配置和后端引用提交。`Resume` 只恢复满足条件的原 Session。`Run` 保留文本包装入口；`RunPrompt` 接受有序的 `[]dsh.ContentBlock` 文本／图片块，图片 `Data` 是原始字节，由组件转为 ACP base64。`SupportsImages` 同时检查显式模型声明与握手能力。每次执行一个回合，并发调用返回 busy。`Close` 停止接纳、取消并结清资源，可重复等待。
+
+组件累计文本输入默认最多 1 MiB、原始图片累计最多 4 MiB，二者独立计量且可收紧。图片接受 PNG、JPEG、GIF、WebP，校验非空数据、MIME 和实际文件签名；不接受 URL。完整 JSON-RPC 帧在 base64 扩展及文本转义后检查，最多 8 MiB，包含 Session 和请求标识。输入校验或帧超限发生于发送前，不禁用健康会话；组件拒绝整次无效输入，不自动裁图或重放。Room 负责下载、像素检查、每图和每轮预算及确定性裁减。
 
 单回合默认上限为 15 分钟，按模型与工具执行的总耗时计算。服务通过 `server.dsh_turn_timeout = "30m"` 或 `--dsh-turn-timeout 30m` 调整，重启后同时适用于已有房间和新房间；它不进入角色与模型的恢复指纹。手动取消立即发出取消请求，后续协议和进程结清仍使用独立期限。
 
@@ -104,9 +110,15 @@ TEAMX_DSH_REAL=1 TEAMX_DSH_OUTPUT=/absolute/new-session-evidence \
 | 开关 | 测试入口 | 范围 |
 | --- | --- | --- |
 | `TEAMX_DSH_REAL` | `internal/agent/dsh: TestRealDSHSession` | Session 角色、记忆、工具、取消与关闭 |
+| `TEAMX_DSH_IMAGE_REAL` | `internal/agent/dsh: TestRealDSHImage` | I1 独立图片的随机数字短码与布局识别、正常关闭；另设 `TEAMX_DSH_IMAGE_RESUME=1` 可附加恢复后读图检查 |
+| `TEAMX_GITLAB_IMAGE_REAL` | `internal/room: TestRealGitLabImageMaterials`（`-tags e2e`） | 真实私有 GitLab 图片的 Room／Inbox 材料与纯文本降级；另设 `TEAMX_GITLAB_IMAGE_MODEL=1` 验证真实模型，详见[手册](gitlab-image-acceptance.zh.md) |
+| `TEAMX_GITLAB_IMAGE_COVERAGE` | `internal/room: TestRealGitLabImageCoverage`（`-tags e2e`） | 两图、缺图、截断及预算的真实下载；不涉及模型 |
+| `TEAMX_GITLAB_IMAGE_BROWSER` | `internal/room: TestRealGitLabImagePreview`（`-tags e2e`） | 隔离页面和 Room／Inbox 图片地址；浏览器须另行核对并保存截图 |
 | `TEAMX_DSH_ROOM_REAL` | `internal/room: TestRealDSHRoom` | 生产 CLI 单成员协作 |
 | `TEAMX_DSH_COLLAB_REAL` | `internal/room: TestRealDSHCollaboration` | 多成员、失败隔离及原会话恢复 |
 | `TEAMX_DSH_ROTATION_REAL` | `internal/room: TestRealDSHRotation` | 显式轮换及新旧 Session 隔离 |
 | `TEAMX_DSH_SHUTDOWN_REAL` | `internal/room: TestRealDSHShutdownRecovery` | 工具运行时 Ctrl-C、进程结清及原 Session 恢复 |
 
 受管房间使用 [TestRealDSHManagedRooms](../internal/room/activation_real_test.go)，传入 `-teamx-management-real-output ABS_NEW_DIR`、`-teamx-management-env-file ABS_ENV_FILE`、`-teamx-management-base-url MODEL_URL`。该入口覆盖双房间真实工具并行、后台公共消息、原 Session／预算保留、后续调度及全部房间退出结清。这些测试会调用真实模型，不在普通检查中启用。
+
+图片入口使用同样的安装、网关、密钥和新输出目录变量，`MODEL_ID` 选择实际模型（I1 使用 `qwen3.8-flash`）。测试从随机数字生成纯像素 PNG，答案不进入 prompt，且要求模型不使用工具并准确返回短码和两处图形布局。报告记录安装摘要、精确路由、ACP 能力、图片数量／字节数和实际回答；不保存 base64 或凭据。该独立入口不访问 GitLab；Room／Inbox 图片链路使用上表的 GitLab 入口分别验收。I4 将此验收入口的模型输出预算调整为 8192，覆盖真实路由的思考与回答；短码识别仍严格核对，误读不会进入恢复检查。

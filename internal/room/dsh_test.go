@@ -16,9 +16,11 @@ import (
 )
 
 type adapterComponent struct {
-	run      func(context.Context, string) (dsh.TurnResult, error)
-	close    func(context.Context) error
-	activity func() (dsh.TurnResult, bool)
+	runPrompt func(context.Context, []dsh.ContentBlock) (dsh.TurnResult, error)
+	images    bool
+	run       func(context.Context, string) (dsh.TurnResult, error)
+	close     func(context.Context) error
+	activity  func() (dsh.TurnResult, bool)
 }
 
 func (c *adapterComponent) Activity() (dsh.TurnResult, bool) {
@@ -31,6 +33,16 @@ func (c *adapterComponent) Activity() (dsh.TurnResult, bool) {
 func (c *adapterComponent) Run(ctx context.Context, text string) (dsh.TurnResult, error) {
 	return c.run(ctx, text)
 }
+func (c *adapterComponent) RunPrompt(ctx context.Context, prompt []dsh.ContentBlock) (dsh.TurnResult, error) {
+	if c.runPrompt != nil {
+		return c.runPrompt(ctx, prompt)
+	}
+	if len(prompt) != 1 || prompt[0].Type != "text" {
+		return dsh.TurnResult{}, errors.New("text-only test adapter")
+	}
+	return c.Run(ctx, prompt[0].Text)
+}
+func (c *adapterComponent) SupportsImages() bool { return c.images }
 func (c *adapterComponent) Close(ctx context.Context) error {
 	if c.close != nil {
 		return c.close(ctx)

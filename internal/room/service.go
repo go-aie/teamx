@@ -77,6 +77,8 @@ type apiError struct {
 }
 
 type service struct {
+	imageMaterials            imageMaterialConfig
+	materialAttachments       *materialAttachments
 	referenceResolver         followupResolver
 	referenceCommit           func(context.Context, MemberIdentity, platform.AccessContext, func() (followupEvent, error)) (followupEvent, error)
 	referenceSpecs            func(string) []platform.ActionSpec
@@ -130,6 +132,9 @@ func newService(dir, roomID string, config serviceConfig) (*service, error) {
 // startService establishes resource ownership before assembling members. The
 // assembly callback also lets in-package tests inject deterministic Backends.
 func startService(dir, roomID string, config serviceConfig, assemble func(*service, RoomSnapshot) error) (_ *service, err error) {
+	if _, err := config.imageMaterials.limits(); err != nil {
+		return nil, err
+	}
 	if config.maxTurns == 0 {
 		config.maxTurns = defaultMaxTurns
 	}
@@ -193,6 +198,7 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 		inboxes: make(map[string]actorx.Addr), targets: make(map[string]actorx.Addr), requests: make(chan struct{}, 32),
 		endpoint: config.endpoint, cliPath: config.cliPath, mergeWindow: config.mergeWindow,
 		dshTurnTimeout:       config.dshTurnTimeout,
+		imageMaterials:       config.imageMaterials,
 		maxTurns:             config.maxTurns,
 		persistentScheduling: config.persistentScheduling,
 		grantsFrozen:         grantsFrozen,

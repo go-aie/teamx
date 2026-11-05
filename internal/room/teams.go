@@ -59,7 +59,7 @@ type teamMemberSummary struct {
 }
 
 func (r teamRuntime) profile() dshProfile {
-	return dshProfile{BinaryPath: r.DSH.BinaryPath, BinaryArgs: r.DSH.BinaryArgs, Artifact: r.DSH.Artifact, Model: r.Model}
+	return dshProfile{BinaryPath: r.DSH.BinaryPath, BinaryArgs: slices.Clone(r.DSH.BinaryArgs), Artifact: r.DSH.Artifact, Model: r.Model.Clone()}
 }
 
 func validateTeamRuntime(r teamRuntime) error {
@@ -93,6 +93,7 @@ func loadTeams(dir string, defaults *teamRuntime) (map[string]teamDefinition, er
 		if team.Runtime == nil && defaults != nil {
 			resolved := *defaults
 			resolved.DSH.BinaryArgs = slices.Clone(defaults.DSH.BinaryArgs)
+			resolved.Model = defaults.Model.Clone()
 			team.Runtime = &resolved
 		}
 		resources, err := collectResources(source, ".", map[string]bool{"team.json": true})
@@ -250,6 +251,7 @@ func (m *roomManager) prepare(selection roomSelection) (roomIndexEntry, error) {
 	}
 	runtime := *team.Runtime
 	runtime.DSH.BinaryArgs = slices.Clone(team.Runtime.DSH.BinaryArgs)
+	runtime.Model = team.Runtime.Model.Clone()
 	init := &roomInitialization{Config: managedRoomConfig{PlatformToolsVersion: 1, Version: formatVersion, RoomIdentity: e.RoomIdentity, Name: name, TeamID: team.ID,
 		Runtime: &runtime, OpeningMessage: team.OpeningMessage, MaxTurns: m.maxTurns, Workspace: &w, WorkspaceVersion: 1}, Resources: team.resources}
 	for _, member := range team.Members {
