@@ -89,6 +89,8 @@ func TestStartupConfigExampleAndPaths(t *testing.T) {
 	text = strings.ReplaceAll(text, "# context_window", "context_window")
 	text = strings.ReplaceAll(text, "# max_tokens", "max_tokens")
 	text = strings.ReplaceAll(text, "# input_modalities", "input_modalities")
+	text = strings.ReplaceAll(text, "# [runtime.model.compat]", "[runtime.model.compat]")
+	text = strings.ReplaceAll(text, "# supports_developer_role", "supports_developer_role")
 	text += "\nTEAMX_GLAB_BIN = './bin/glab'\nTEAMX_GITLAB_BIN = './bin/teamx-gitlab'\n"
 	c, err := loadStartupConfig(writeStartupConfig(t, dir, text), true)
 	if err != nil {
@@ -98,7 +100,8 @@ func TestStartupConfigExampleAndPaths(t *testing.T) {
 		c.Runtime.DSH.BinaryPath != filepath.Join(dir, "runtime/dsh") || c.Runtime.DSH.BinaryArgs[0] != filepath.Join(dir, "runtime/cli.mjs") ||
 		c.Env["TEAMX_GLAB_BIN"] != filepath.Join(dir, "bin/glab") || c.Env["TEAMX_GITLAB_BIN"] != filepath.Join(dir, "bin/teamx-gitlab") ||
 		c.Runtime.Model.APIKeyEnv != "OPENAI_API_KEY" || c.Runtime.Model.ContextWindow != 1048576 || c.Runtime.Model.MaxTokens != 32768 || c.Runtime.Model.ReasoningEffort != "low" ||
-		!reflect.DeepEqual(c.Runtime.Model.InputModalities, []string{"text", "image"}) {
+		!reflect.DeepEqual(c.Runtime.Model.InputModalities, []string{"text", "image"}) ||
+		c.Runtime.Model.Compat.SupportsDeveloperRole == nil || *c.Runtime.Model.Compat.SupportsDeveloperRole {
 		t.Fatal("startup values or config-relative paths lost")
 	}
 	if _, err := loadStartupConfig(filepath.Join(dir, "absent.toml"), false); err != nil {
@@ -223,6 +226,8 @@ func TestGlobalRuntimeDefaultsOverridesAndFrozenRooms(t *testing.T) {
 	root, teams := t.TempDir(), t.TempDir()
 	defaults := testTeamDefinition(t).Runtime
 	defaults.Model.InputModalities = []string{"text", "image"}
+	developerRole := false
+	defaults.Model.Compat.SupportsDeveloperRole = &developerRole
 	team := testTeamDefinition(t)
 	team.Runtime = nil
 	writeTestTeam(t, teams, team)
@@ -243,6 +248,7 @@ func TestGlobalRuntimeDefaultsOverridesAndFrozenRooms(t *testing.T) {
 		t.Fatal(err)
 	}
 	defaults.Model.ModelID = "changed-global-model"
+	developerRole = true
 	m, err = newTeamRoomManager(root, teams, 4, defaults)
 	if err != nil {
 		t.Fatal(err)
@@ -257,13 +263,13 @@ func TestGlobalRuntimeDefaultsOverridesAndFrozenRooms(t *testing.T) {
 		t.Fatal("existing Room did not pick up current service timeout", cfg.dshTurnTimeout)
 	}
 	for _, p := range cfg.dshProfiles {
-		if p.Model.ModelID != saved.Runtime.Model.ModelID {
+		if p.Model.ModelID != saved.Runtime.Model.ModelID || p.Model.Compat.SupportsDeveloperRole == nil || *p.Model.Compat.SupportsDeveloperRole {
 			t.Fatal("global change rewrote existing Room runtime")
 		}
 	}
 	newRoom := createTeamRoom(t, m, "new-runtime")
 	fresh, _ := readManagedRoom(t, m, newRoom)
-	if fresh.Runtime.Model.ModelID != defaults.Model.ModelID {
+	if fresh.Runtime.Model.ModelID != defaults.Model.ModelID || fresh.Runtime.Model.Compat.SupportsDeveloperRole == nil || !*fresh.Runtime.Model.Compat.SupportsDeveloperRole {
 		t.Fatal("new Room missed updated default")
 	}
 	team.Runtime = testTeamDefinition(t).Runtime

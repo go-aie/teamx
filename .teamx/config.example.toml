@@ -39,6 +39,11 @@ api_key_env = "OPENAI_API_KEY"
 # ACP initialize must also advertise image input; otherwise the session fails.
 # input_modalities = ["text", "image"]
 
+# Optional Completions wire dialect for this exact model. Omit to keep defaults.
+# Set false if the gateway accepts system but rejects developer message roles.
+# [runtime.model.compat]
+# supports_developer_role = false
+
 # Existing service environment variables (even empty ones) take precedence.
 # These values stay outside Room snapshots. Do not commit actual credentials.
 [env]

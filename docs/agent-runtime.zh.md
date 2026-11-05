@@ -41,6 +41,15 @@ pnpm --filter @deepseek-ai/dsh deploy --legacy --prod \
 
 `deepseek-messages` 使用 DSH 的 DeepSeek Messages 适配；`openai-completions` 需要模型基础地址。模型选择核对 ACP 实际提供的配置及回执，不静默换模型。API 和字段定义见 [options.go](../internal/agent/dsh/options.go)，用户配置统一参照[团队模板](../.teamx/teams/README.md)。
 
+兼容网关拒绝 `developer` 消息角色时，可显式设置当前模型的兼容开关：
+
+```toml
+[runtime.model.compat]
+supports_developer_role = false
+```
+
+该开关仅支持 `openai-completions`，写入 DSH 精确模型的 `compat.supportsDeveloperRole`，让系统提示保持 `system` 角色，独立于 `reasoning_effort`；不关闭推理，也不按 Qwen 名称写死。省略保留原有适配器行为；显式 `true`／`false` 优先于现有 DeepSeek 默认兼容值，同时保留其 `thinkingFormat`。JSON 团队／profile 配置使用 `model.compat.supports_developer_role`。配置随全局默认、团队及 Room 快照独立复制，未设置时不改变旧恢复指纹；新增或更改该值要求新配置下的 Session，不修改旧恢复证据。全局配置仍需重启服务并新建 Room，已有房间的冻结 runtime 不随全局设置改变。
+
 `runtime.model.input_modalities` 可选，缺省保持文本流程。显式值只接受不重复的 `text`、`image`，且须包含 `text`；图片仅支持 `openai-completions`。例如已确认部署支持图片的模型可设 `input_modalities = ["text", "image"]`。该字段沿全局默认、团队完整覆盖和 Room 冻结快照传递，生成配置仅在精确模型条目声明 `input`，不扩大整个网关的能力。TeamX 在 ACP `initialize` 前写入模型配置；显式启用图片而握手未返回 `promptCapabilities.image = true` 时，建会话失败，不降级为文本。未设置该字段的原有配置与恢复指纹不变；改变模型或模态仍须使用受控 Session 生命周期，不修改旧恢复证据强行续接。
 
 图片能力已完成 I1–I3：Room／Inbox 的 GitLab 通知会在固定当前回合范围内只读准备已保存文字和图片，按来源成组提交。默认合计扫描 25 条记录、传 4 张图片，单图 2 MiB、累计 4 MiB、单图 16777216 像素、准备时间 30 秒；可通过服务级 `[server.image_materials]` 调整，见[配置示例](../.teamx/config.example.toml)。只识别已保存文字中的完整图片引用，不补读全文；纯文本 Session 不下载图片，预算、格式、权限或超时导致的未覆盖材料会明确告知模型。准备材料不推进 Room 已读、Inbox 消费或 matters 状态，也不授予操作权限。TeamX 只在有界内存中准备图片，DSH 会通过其既有附件机制持久保存到私有 Session 存储；不能将此理解为图片全程不落盘。真实 GitLab 的 Room／Inbox 读图已在 I4 得到验证；独立短码、恢复、浏览器等结果分别记录，不能据此声称一期全部验收通过，见[图片验收手册](gitlab-image-acceptance.zh.md)和[当前实施记录](GITLAB-IMAGE-UNDERSTANDING-PLAN.zh.md#84-i4-实施与验证记录2026-11-05)。
@@ -122,3 +131,17 @@ TEAMX_DSH_REAL=1 TEAMX_DSH_OUTPUT=/absolute/new-session-evidence \
 受管房间使用 [TestRealDSHManagedRooms](../internal/room/activation_real_test.go)，传入 `-teamx-management-real-output ABS_NEW_DIR`、`-teamx-management-env-file ABS_ENV_FILE`、`-teamx-management-base-url MODEL_URL`。该入口覆盖双房间真实工具并行、后台公共消息、原 Session／预算保留、后续调度及全部房间退出结清。这些测试会调用真实模型，不在普通检查中启用。
 
 图片入口使用同样的安装、网关、密钥和新输出目录变量，`MODEL_ID` 选择实际模型（I1 使用 `qwen3.8-flash`）。测试从随机数字生成纯像素 PNG，答案不进入 prompt，且要求模型不使用工具并准确返回短码和两处图形布局。报告记录安装摘要、精确路由、ACP 能力、图片数量／字节数和实际回答；不保存 base64 或凭据。该独立入口不访问 GitLab；Room／Inbox 图片链路使用上表的 GitLab 入口分别验收。I4 将此验收入口的模型输出预算调整为 8192，覆盖真实路由的思考与回答；短码识别仍严格核对，误读不会进入恢复检查。
+
+模型角色兼容验收入口使用当前 TOML 的完整模型参数和 DSH 安装，在新隔离 Session 中发送一条无工具请求；loopback 观察器只记录实际消息角色、模型、推理参数和状态，并转发至原 HTTPS 网关，不记录认证头或 prompt。它不重置现有 Room，也不测试业务动作或图片识别：
+
+```sh
+TEAMX_DSH_COMPAT_REAL=1 \
+TEAMX_DSH_COMPAT_CONFIG=/absolute/config.toml \
+TEAMX_DSH_ENV_FILE=/absolute/private/.env \
+TEAMX_DSH_OUTPUT=/absolute/new-compat-evidence \
+go test -tags e2e ./internal/room -run '^TestRealDSHModelCompatibility$' -count=1 -v -timeout 5m
+```
+
+要求配置包含显式 `supports_developer_role = false` 及推理档位。检查实际请求有 `system`、没有 `developer`，原模型与 `reasoning_effort` 保留，真实 HTTP 200、正确回答、无工具调用及正常关闭；429 或其他故障保留失败报告，不自动重试。
+
+2026-11-05 已用当前 `.teamx/config.toml` 的 `qwen3.8-flash`、`reasoning_effort = "low"`、`max_tokens = 32768`、图片模态及 `compat.supports_developer_role = false` 完成该入口。使用配置中的本地 Node／DSH JS 安装，单次真实请求的角色为 `system,user,user,user`，无 `developer`，推理参数保持 `low`，网关返回 HTTP 200，模型精确回答 `TEAMX_COMPAT_OK`，无工具调用、正常终态与关闭。报告保留在本机私有 `.local/developer-role-compat-real-01/report.json`。这验证角色兼容，不替代图片像素识别或旧失败 Room 的恢复验收。

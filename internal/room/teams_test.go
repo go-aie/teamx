@@ -200,6 +200,8 @@ func TestTeamCatalogValidation(t *testing.T) {
 func TestModelModalitiesCopies(t *testing.T) {
 	defaults := testTeamDefinition(t).Runtime
 	defaults.Model.InputModalities = []string{"text", "image"}
+	flag := false
+	defaults.Model.Compat.SupportsDeveloperRole = &flag
 	teams := t.TempDir()
 	team := testTeamDefinition(t)
 	team.Runtime = nil
@@ -210,13 +212,15 @@ func TestModelModalitiesCopies(t *testing.T) {
 	}
 	defer m.close()
 	defaults.Model.InputModalities[1] = "text"
+	flag = true
 	loaded := m.teams[team.ID]
-	if loaded.Runtime.Model.InputModalities[1] != "image" {
+	if loaded.Runtime.Model.InputModalities[1] != "image" || *loaded.Runtime.Model.Compat.SupportsDeveloperRole {
 		t.Fatal("team aliases global model slice")
 	}
 	profile := loaded.Runtime.profile()
 	profile.Model.InputModalities[1] = "text"
-	if loaded.Runtime.Model.InputModalities[1] != "image" {
+	*profile.Model.Compat.SupportsDeveloperRole = true
+	if loaded.Runtime.Model.InputModalities[1] != "image" || *loaded.Runtime.Model.Compat.SupportsDeveloperRole {
 		t.Fatal("profile aliases team model slice")
 	}
 	entry, err := m.prepare(roomSelection{TeamID: team.ID, CreateID: "copy"})
@@ -224,7 +228,8 @@ func TestModelModalitiesCopies(t *testing.T) {
 		t.Fatal(err)
 	}
 	loaded.Runtime.Model.InputModalities[1] = "text"
-	if entry.Initialization.Config.Runtime.Model.InputModalities[1] != "image" {
+	*loaded.Runtime.Model.Compat.SupportsDeveloperRole = true
+	if entry.Initialization.Config.Runtime.Model.InputModalities[1] != "image" || *entry.Initialization.Config.Runtime.Model.Compat.SupportsDeveloperRole {
 		t.Fatal("Room initialization aliases team model slice")
 	}
 }

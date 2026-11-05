@@ -288,6 +288,14 @@ func profile(opts Options) []map[string]any {
 			model["compat"] = map[string]any{"thinkingFormat": "deepseek", "supportsDeveloperRole": false}
 		}
 	}
+	if flag := opts.Model.Compat.SupportsDeveloperRole; flag != nil {
+		compat, _ := model["compat"].(map[string]any)
+		if compat == nil {
+			compat = map[string]any{}
+		}
+		compat["supportsDeveloperRole"] = *flag
+		model["compat"] = compat
+	}
 	return append(patches,
 		map[string]any{"id": "llm-deepseek", "disabled": true},
 		map[string]any{"id": "llm-pi-ai", "config": map[string]any{"providers": map[string]any{

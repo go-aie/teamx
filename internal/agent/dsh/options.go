@@ -82,17 +82,31 @@ type ModelConfig struct {
 	ReasoningEffort string `json:"reasoning_effort,omitempty" toml:"reasoning_effort"`
 	// Empty preserves the existing text-only configuration and recovery digest.
 	// Image input is supported only by the OpenAI Completions adapter.
-	InputModalities []string `json:"input_modalities,omitempty" toml:"input_modalities"`
+	InputModalities []string    `json:"input_modalities,omitempty" toml:"input_modalities"`
+	Compat          ModelCompat `json:"compat,omitzero" toml:"compat"`
+}
+
+// ModelCompat contains explicit wire dialect choices for this exact model.
+// Nil preserves existing adapter defaults; false must survive serialization.
+type ModelCompat struct {
+	SupportsDeveloperRole *bool `json:"supports_developer_role,omitempty" toml:"supports_developer_role"`
 }
 
 func (m ModelConfig) Clone() ModelConfig {
 	m.InputModalities = slices.Clone(m.InputModalities)
+	if flag := m.Compat.SupportsDeveloperRole; flag != nil {
+		value := *flag
+		m.Compat.SupportsDeveloperRole = &value
+	}
 	return m
 }
 
 func (m ModelConfig) imageInput() bool { return slices.Contains(m.InputModalities, "image") }
 
 func (m ModelConfig) checkConfig() error {
+	if m.Compat.SupportsDeveloperRole != nil && m.Protocol != "openai-completions" {
+		return errors.New("model compat.supports_developer_role requires openai-completions")
+	}
 	seen := map[string]bool{}
 	for _, modality := range m.InputModalities {
 		if (modality != "text" && modality != "image") || seen[modality] {
