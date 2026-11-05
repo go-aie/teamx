@@ -46,7 +46,7 @@ func TestReferenceConversationPolicyExplicitAmendRevokeAndTokens(t *testing.T) {
 	change := postConversationReply(t, h, "amend", "改为仅回复文档安装咨询；交付时间仍先问我", 0)
 	q.Change.Version, q.Change.Revision, q.Change.SourceSeq = 1, 1, change.Seq
 	q.Change.Text = "只回复有文档依据的安装咨询"
-	q.Change.Conditions = "核实当前安装文档及账号"
+	q.Change.Text += "；核实当前安装文档及账号，交付时间仍先询问"
 	q.Basis = "用户明确收窄原规则"
 	v, err = svc.referencePolicyChange(h.ctx, h.id, agentCallerIdentity(h.id), q)
 	if err != nil || len(v.Effective) != 1 || v.Effective[0].Version != 2 || v.PolicyToken == firstToken {
@@ -83,7 +83,7 @@ func TestReferenceConversationPolicyExplicitAmendRevokeAndTokens(t *testing.T) {
 func TestReferenceConversationPolicyInferredSuggestionConfirmation(t *testing.T) {
 	h, svc, units, sources := conversationHarness(t, 1)
 	habit := postConversationReply(t, h, "habit", "这次请用简短中文回复", 0)
-	q := conversationPolicyChange{Change: PolicyChange{ID: "language", Kind: "preference", Status: "suggested", Text: "简短中文回复", Scope: PolicyScope{Description: "当前成员回复方式"}, SourceSeq: habit.Seq, TurnNumber: 1}, Mode: "inferred_habit", Basis: "多次本次偏好只支持提出建议"}
+	q := conversationPolicyChange{Change: PolicyChange{ID: "language", Kind: "preference", Status: "suggested", Text: "简短中文回复", SourceSeq: habit.Seq, TurnNumber: 1}, Mode: "inferred_habit", Basis: "多次本次偏好只支持提出建议"}
 	view, err := svc.referencePolicyChange(h.ctx, h.id, agentCallerIdentity(h.id), q)
 	if err != nil || len(view.Effective) != 0 {
 		t.Fatal(view, err)
@@ -130,7 +130,7 @@ func TestReferenceConversationPolicyInferredSuggestionConfirmation(t *testing.T)
 		t.Fatal(view, err)
 	}
 	r := view.Effective[0]
-	if r.Conversation.Proposal.Version != 1 || r.Conversation.Proposal.Seq != receipt.Seq || r.Source.Text != "以后就这样" || r.Actions != "" {
+	if r.Conversation.Proposal.Version != 1 || r.Conversation.Proposal.Seq != receipt.Seq || r.Source.Text != "以后就这样" {
 		t.Fatal(r)
 	}
 	roomCall[ClearReceipt](t, h.roomHarness, ClearMessages{RoomIdentity: h.id.RoomIdentity, Caller: humanCaller, ThroughSeq: answer.Seq})

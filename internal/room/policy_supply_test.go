@@ -135,7 +135,7 @@ func TestPolicySessionSupplyFirstUnchangedChangesAndRebuild(t *testing.T) {
 	inboxRunning(t, h, 2, 1)
 	full := run(true)
 	var records []PolicyRevision
-	if err := json.Unmarshal(full["effective"], &records); err != nil || len(records) != 1 || records[0].Text != c.Text || records[0].Exceptions != c.Exceptions || records[0].Source.Text != c.SourceText {
+	if err := json.Unmarshal(full["effective"], &records); err != nil || len(records) != 1 || records[0].Text != c.Text || records[0].Source.Text != c.SourceText {
 		t.Fatal("effective body was incomplete", records, err)
 	}
 	inboxRunning(t, h, 3, 1)
@@ -146,7 +146,7 @@ func TestPolicySessionSupplyFirstUnchangedChangesAndRebuild(t *testing.T) {
 	fullBytes, _ := json.Marshal(full)
 	metadataBytes, _ := json.Marshal(metadata)
 	t.Logf("policy supply: complete context %d bytes; unchanged context %d bytes; runtime requires no policy CLI query", len(fullBytes), len(metadataBytes))
-	suggestion := PolicyChange{ID: "style", Revision: 1, Kind: "preference", Status: "suggested", Text: "short", Scope: PolicyScope{Description: "replies"}, SourceText: "suggest short replies"}
+	suggestion := PolicyChange{ID: "style", Revision: 1, Kind: "preference", Status: "suggested", Text: "short", SourceText: "suggest short replies"}
 	if _, err := h.store.changePolicy(h.id, humanCaller, suggestion); err != nil {
 		t.Fatal(err)
 	}
@@ -154,12 +154,12 @@ func TestPolicySessionSupplyFirstUnchangedChangesAndRebuild(t *testing.T) {
 	if _, ok := metadata["effective"]; ok || string(metadata["revision"]) != "2" || string(metadata["policy_token"]) != string(full["policy_token"]) {
 		t.Fatal("suggestion caused body redelivery", metadata)
 	}
-	c.Version, c.Revision, c.Exceptions = 1, 2, "changed restriction"
+	c.Version, c.Revision, c.Text = 1, 2, "changed restriction"
 	if _, err := h.store.changePolicy(h.id, humanCaller, c); err != nil {
 		t.Fatal(err)
 	}
 	changed := run(false)
-	if !bytes.Contains(changed["effective"], []byte(c.Exceptions)) || bytes.Equal(changed["policy_token"], full["policy_token"]) {
+	if !bytes.Contains(changed["effective"], []byte(c.Text)) || bytes.Equal(changed["policy_token"], full["policy_token"]) {
 		t.Fatal("changed effective policy was not replaced", changed)
 	}
 	c.Version, c.Revision, c.Status = 2, 3, "revoked"

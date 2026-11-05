@@ -91,6 +91,44 @@ func (f *referenceExecuteFixture) outcome(status, retry string) platform.TargetA
 	a.RoomIdentity, a.AgentID, a.MembershipID = f.h.id.RoomIdentity, f.h.id.AgentID, f.h.id.MembershipID
 	return platform.TargetActionResult{Target: t.Target, Account: a.Account, Status: status, Message: "test outcome", RetryClass: retry, ResultID: platform.ExternalID{Namespace: "gitlab:rest:id", Value: "99"}}
 }
+
+func TestReferenceActionNaturalRuleStillEnforcesTargetScope(t *testing.T) {
+	for _, field := range []string{"matching", "provider", "instance", "account", "project", "object-type"} {
+		t.Run(field, func(t *testing.T) {
+			f := referenceExecuteTest(t, "object")
+			c := policyRule()
+			switch field {
+			case "provider":
+				c.Scope.Provider = "another-platform"
+			case "instance":
+				c.Scope.Instance = "https://another.example.com"
+			case "account":
+				c.Scope.Account = "another-account"
+			case "project":
+				c.Scope.Project = "another-project"
+			case "object-type":
+				c.Scope.ObjectType = "another-type"
+			}
+			if _, err := f.h.store.changePolicy(f.h.id, humanCaller, c); err != nil {
+				t.Fatal(err)
+			}
+			view, err := f.h.store.readAgentPolicy(f.h.id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.q.PolicyToken = view.PolicyToken
+			f.q.Authority = referenceActionAuthority{RuleID: c.ID, RuleVersion: 1, Reason: "已核实正文中的业务条件"}
+			receipt, err := f.run()
+			if field == "matching" {
+				if err != nil || receipt.Status != "succeeded" || f.calls.Load() != 1 {
+					t.Fatal(receipt, err)
+				}
+			} else if err == nil || f.calls.Load() != 0 {
+				t.Fatal("scope mismatch dispatched", receipt, err)
+			}
+		})
+	}
+}
 func TestReferenceActionThreeAuthorities(t *testing.T) {
 	for _, kind := range []string{"object", "discussion"} {
 		for _, authority := range []string{"human", "answer", "instruction", "rule"} {

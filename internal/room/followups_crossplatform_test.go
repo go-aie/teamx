@@ -322,7 +322,7 @@ func TestReferenceCrossPlatformNativeRuleScopes(t *testing.T) {
 				t.Fatal(err)
 			}
 			human := postConversationReply(t, h, "standing", "以后当前租户、当前账号的无父容器 Conversation 验收收件任务直接回复“R6 已收到”，其他任务不适用", 0)
-			scope := PolicyScope{Description: "当前租户账号的无父容器 Conversation 收件任务", Provider: source.Provider, Instance: source.Instance, AccountID: access.Account.ID, Tenant: access.Account.Tenant, NoContainers: true, ObjectType: "Conversation"}
+			scope := PolicyScope{Provider: source.Provider, Instance: source.Instance, AccountID: access.Account.ID, Tenant: access.Account.Tenant, NoContainers: true, ObjectType: "Conversation"}
 			switch mode {
 			case "tenant":
 				scope.Tenant.Value = "other-tenant"
@@ -338,7 +338,7 @@ func TestReferenceCrossPlatformNativeRuleScopes(t *testing.T) {
 			case "unspecified-containers":
 				scope.NoContainers = false
 			}
-			change := conversationPolicyChange{Change: PolicyChange{ID: "native-rule", Kind: "rule", Status: "active", Text: "准确回复验收正文", Scope: scope, Actions: "object.comment，正文 R6 已收到", Conditions: "仅验收收件任务，核对账号和目标", Exceptions: "所有其他任务都不适用", SourceSeq: human.Seq, TurnNumber: 1}, Mode: "explicit_long_term", Basis: "用户明确的准确租户账号范围长期指令"}
+			change := conversationPolicyChange{Change: PolicyChange{ID: "native-rule", Kind: "rule", Status: "active", Text: "仅验收收件任务，核对账号和目标后评论准确正文 R6 已收到；所有其他任务不适用", Scope: scope, SourceSeq: human.Seq, TurnNumber: 1}, Mode: "explicit_long_term", Basis: "用户明确的准确租户账号范围长期指令"}
 			view, err := svc.referencePolicyChange(h.ctx, h.id, agentCallerIdentity(h.id), change)
 			if mode == "unspecified-containers" {
 				if err == nil {

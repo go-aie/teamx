@@ -364,7 +364,7 @@ func referenceBrowserHold(t *testing.T, output, endpoint string, id MemberIdenti
 	if err != nil {
 		t.Fatal(err)
 	}
-	rule := PolicyChange{ID: "browser-preference", Kind: "preference", Status: "active", Text: "R6 浏览器测试偏好", Scope: PolicyScope{Description: "仅此隔离验收 Room 的显示偏好"}, SourceText: "用户授权 R6 浏览器验收，仅作本地纠正撤销验证"}
+	rule := PolicyChange{ID: "browser-preference", Kind: "preference", Status: "active", Text: "R6 浏览器测试偏好", SourceText: "用户授权 R6 浏览器验收，仅作本地纠正撤销验证"}
 	if _, err := svc.store.changePolicy(id, humanCaller, rule); err != nil {
 		t.Fatal(err)
 	}

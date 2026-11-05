@@ -259,20 +259,12 @@
           <form id="policy-form" class="policy-form" hidden>
             <h3 id="policy-editor-title">新增偏好或规则</h3>
             <label>类型<select id="policy-kind" aria-describedby="policy-kind-hint"><option value="preference">用户偏好</option><option value="rule">长期代办规则</option></select><span id="policy-kind-hint" class="policy-field-hint">影响回复方式，不授予操作权限。</span></label>
-            <label>内容<textarea id="policy-text" rows="3" maxlength="4096" placeholder="例如：使用简短中文回复，先给结论" required></textarea></label>
-            <label>适用范围<input id="policy-scope" maxlength="4096" required placeholder="例如：本成员在 Room 中的日常回复" /></label>
+            <label>内容<textarea id="policy-text" rows="4" maxlength="32768" placeholder="例如：使用简短中文回复，先给结论" required></textarea></label>
             <fieldset id="policy-rule-fields" hidden><legend>长期规则适用对象</legend>
-              <label>平台<input id="policy-provider" maxlength="4096" placeholder="gitlab" /></label>
-              <label class="policy-wide-field">实例地址<input id="policy-instance" maxlength="4096" placeholder="https://gitlab.example.com" /></label>
-              <label>执行账号<input id="policy-account" maxlength="4096" /></label>
-              <label>项目范围<input id="policy-project" maxlength="4096" placeholder="准确项目 ID；全部项目须明确填写 *" /></label>
-              <label>事项类型（可选）<input id="policy-object-type" maxlength="4096" /></label>
+              <label class="policy-wide-field">平台连接<select id="policy-connection"></select><span id="policy-connection-hint" class="policy-field-hint"></span></label>
+              <label>项目<input id="policy-project" list="policy-project-options" maxlength="4096" placeholder="选择已有项目或填写准确项目路径 / ID" /><datalist id="policy-project-options"></datalist></label>
+              <label>对象类型（可选）<input id="policy-object-type" maxlength="4096" placeholder="留空不限制对象类型" /></label>
             </fieldset>
-            <label id="policy-actions-field" hidden>允许动作<textarea id="policy-actions" rows="2" maxlength="4096"></textarea></label>
-            <div id="policy-conditions-fields" hidden>
-              <label>执行前提<textarea id="policy-conditions" rows="2" maxlength="4096"></textarea></label>
-              <label>必须询问的例外<textarea id="policy-exceptions" rows="2" maxlength="4096" placeholder="无例外也须明确填写"></textarea></label>
-            </div>
             <label>有效期（可选）<input id="policy-expires" type="datetime-local" aria-describedby="policy-expires-hint" /><span id="policy-expires-hint" class="policy-field-hint">留空则不设到期时间。</span></label>
             <p id="policy-save-hint" class="policy-form-note">保存后，Agent 将按此偏好组织回复；偏好不会授予操作权限。</p>
             <div class="member-actions policy-form-actions"><button id="policy-save" type="submit">保存并生效</button><button id="policy-suggest" type="button">保存为建议</button><button id="policy-cancel" type="button">取消</button></div>

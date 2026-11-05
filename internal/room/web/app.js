@@ -1264,15 +1264,64 @@ function policyCurrent(view) {
   return policyView === view && agentTab === "policy" && $("activity-dialog").open && selectedAgent()?.membership_id === view.member.membership_id && state.info?.room_id === view.info.room_id && state.info?.room_instance === view.info.room_instance && state.info?.service_epoch === view.info.service_epoch;
 }
 function policyScopeText(scope) {
-  return [scope.description, scope.provider && `平台 ${scope.provider}`, scope.instance, scope.account && `账号 ${scope.account}`, scope.account_id && `原生账号 ${scope.account_id.namespace}:${scope.account_id.value}`, scope.tenant && `租户 ${scope.tenant.namespace}:${scope.tenant.value}`, scope.no_containers && "无父容器", scope.project && `项目 ${scope.project}`, scope.object_type].filter(Boolean).join(" · ");
+  return [scope.provider && `平台 ${scope.provider}`, scope.instance, scope.account && `账号 ${scope.account}`, scope.account_id && `原生账号 ${scope.account_id.namespace}:${scope.account_id.value}`, scope.tenant && `租户 ${scope.tenant.namespace}:${scope.tenant.value}`, scope.no_containers && "无父容器", scope.project && `项目 ${scope.project}`, scope.object_type].filter(Boolean).join(" · ");
+}
+function policySelectedScope() {
+  const editor=policyEditor;
+  if(!editor)return null;
+  const value=$("policy-connection").value;
+  if(value==="saved")return editor.record?.scope;
+  const connection=editor.connections?.find(c=>c.id===value);
+  return connection ? {provider:connection.provider,instance:connection.url,account:connection.validation.username} : null;
+}
+function renderPolicyProjectChoices(editor, prefill=false) {
+  const scope=policySelectedScope();
+  const project=$("policy-project");
+  project.readOnly=!!scope?.no_containers;
+  project.required=$("policy-kind").value==="rule" && !scope?.no_containers;
+  if(scope?.no_containers)project.value="无父容器";
+  const projects=new Set((editor.view.data.current || []).filter(r=>r.scope.provider===scope?.provider && r.scope.instance===scope?.instance).map(r=>r.scope.project).filter(Boolean));
+  const binding=workspaceView?.data?.workspace?.binding;
+  if(binding && binding.provider===scope?.provider && binding.url===scope?.instance) {
+    projects.add(binding.project);
+    if(prefill && !project.value && binding.connection_id===$("policy-connection").value)project.value=binding.project;
+  }
+  $("policy-project-options").replaceChildren(...[...projects].map(p=>new Option(p,p)));
+  $("policy-connection-hint").textContent=scope ? policyScopeText({...scope,project:"",object_type:""}) : editor.connectionError || "选择已验证的连接，自动使用其平台、实例和账号。";
+}
+function renderPolicyConnections(editor) {
+  const select=$("policy-connection"), previous=select.value;
+  const options=[new Option("请选择平台连接","")];
+  if(editor.record?.kind==="rule")options.push(new Option("保留已保存的目标账号","saved"));
+  options.push(...(editor.connections || []).map(c=>new Option(`${c.name} · @${c.validation.username} · ${c.url}`,c.id)));
+  select.replaceChildren(...options);
+  select.value=editor.selection ?? (editor.record?.kind==="rule" ? "saved" : "");
+  if(editor.selection!==undefined && options.some(o=>o.value===previous))select.value=previous;
+  if(!select.value && editor.connections?.length===1)select.value=editor.connections[0].id;
+  editor.selection=select.value;
+  renderPolicyProjectChoices(editor,!editor.record);
+}
+async function loadPolicyConnections(editor) {
+  if(!state.managed || !state.catalog)return;
+  try {
+    const query=new URLSearchParams({service_epoch:state.catalog.service_epoch,caller_id:state.operator});
+    const data=await request(`/v1/platform/connections?${query}`);
+    if(policyEditor!==editor || !policyCurrent(editor.view))return;
+    editor.connections=data.connections.filter(c=>c.validation?.status==="valid" && c.validation.username);
+  } catch {
+    if(policyEditor!==editor || !policyCurrent(editor.view))return;
+    editor.connectionError="连接加载失败，请重新打开编辑器重试。";
+  }
+  if(policyEditor===editor && policyCurrent(editor.view))renderPolicyConnections(editor);
 }
 function policyFormKind() {
   const kind = $("policy-kind").value;
-  $("policy-rule-fields").hidden = $("policy-conditions-fields").hidden = kind !== "rule";
-  $("policy-actions-field").hidden = kind === "preference";
+  $("policy-rule-fields").hidden = kind !== "rule";
+  $("policy-connection").required = kind === "rule";
+  $("policy-project").required = kind === "rule" && !policySelectedScope()?.no_containers;
   $("policy-kind-hint").textContent=kind === "rule" ? "明确 Agent 可以代办的事项、范围和条件。" : "影响回复方式，不授予操作权限。";
-  $("policy-text").placeholder=kind === "rule" ? "例如：有明确文档依据的使用问题，核实后直接回复" : "例如：使用简短中文回复，先给结论";
-  $("policy-save-hint").textContent=kind === "rule" ? "保存并生效代表你确认上述范围、动作和例外。修改或撤销会保留旧版本，不撤销已发出的动作。" : "保存后，Agent 将按此偏好组织回复；偏好不会授予操作权限。";
+  $("policy-text").placeholder=kind === "rule" ? "例如：有现行文档依据的使用问题直接回复；涉及交付时间先问我" : "例如：使用简短中文回复，先给结论";
+  $("policy-save-hint").textContent=kind === "rule" ? "把代办要求、前提和例外直接写在内容中。目标范围由程序核对，业务条件由 Agent 理解。" : "保存后，Agent 将按此偏好组织回复；偏好不会授予操作权限。";
 }
 function editPolicy(record = null) {
   const view = policyView;
@@ -1282,13 +1331,13 @@ function editPolicy(record = null) {
   $("policy-kind").value = record?.kind || "preference";
   $("policy-kind").disabled = !!record;
   $("policy-editor-title").textContent = record ? `修改 ${policyKinds[record.kind]} · v${record.version}` : "新增偏好或规则";
-  for (const [key,value] of Object.entries({text:record?.text, scope:record?.scope?.description, provider:record?.scope?.provider, instance:record?.scope?.instance, account:record?.scope?.account, project:record?.scope?.project, "object-type":record?.scope?.object_type, actions:record?.actions, conditions:record?.conditions, exceptions:record?.exceptions})) $("policy-"+key).value = value || "";
-  $("policy-account").readOnly = !!record?.scope?.account_id;
-  $("policy-project").readOnly = !!record?.scope?.no_containers;
-  if(record?.scope?.account_id) $("policy-account").value = `${record.scope.account_id.namespace}:${record.scope.account_id.value}`;
-  if(record?.scope?.no_containers) $("policy-project").value = "无父容器";
+  $("policy-text").value = record?.text || "";
+  $("policy-project").value = record?.scope?.project || "";
+  $("policy-object-type").value = record?.scope?.object_type || "";
+  renderPolicyConnections(policyEditor);
   $("policy-expires").value = record?.expires_at ? new Date(new Date(record.expires_at).getTime()-new Date(record.expires_at).getTimezoneOffset()*60000).toISOString().slice(0,16) : "";
   policyFormKind(); $("policy-text").focus();
+  void loadPolicyConnections(policyEditor);
 }
 function policyCard(view, r, history) {
   const section = document.createElement("section"); section.className = "activity-section";
@@ -1296,11 +1345,11 @@ function policyCard(view, r, history) {
   const expired = r.expires_at && new Date(r.expires_at) <= new Date();
   title.textContent = `${policyKinds[r.kind]} · ${policyStates[r.status]}${expired ? " · 已过期" : ""} · v${r.version}`;
   const body = document.createElement("p"); body.className = "inbox-text";
-  body.textContent = `${r.text}\n范围：${policyScopeText(r.scope)}` + (r.actions ? `\n允许动作：${r.actions}` : "") + (r.conditions ? `\n前提：${r.conditions}\n例外：${r.exceptions}` : "") + (r.expires_at ? `\n有效期至：${new Date(r.expires_at).toLocaleString()}` : "");
+  body.textContent = r.text + (r.kind === "rule" ? `\n目标：${policyScopeText(r.scope)}` : "") + (r.expires_at ? `\n有效期至：${new Date(r.expires_at).toLocaleString()}` : "");
   const source = document.createElement("details"), summary = document.createElement("summary"); summary.textContent = "来源与修订记录"; source.append(summary);
   for (const v of history.filter(v => v.id === r.id)) {
     const p = document.createElement("p"); p.className = "inbox-text";
-    p.textContent = `v${v.version} · ${policyStates[v.status]} · ${v.updated_at} · 操作者 ${v.changed_by.id}\n用户 ${v.source.user}${v.source.seq ? " · 房间消息 #"+v.source.seq : " · 成员设置"}\n${v.source.text}\n记录：${v.text}\n范围：${policyScopeText(v.scope)}${v.actions ? "\n动作："+v.actions+"\n前提："+(v.conditions || "")+"\n例外："+(v.exceptions || "") : ""}`;
+    p.textContent = `v${v.version} · ${policyStates[v.status]} · ${v.updated_at} · 操作者 ${v.changed_by.id}\n用户 ${v.source.user}${v.source.seq ? " · 房间消息 #"+v.source.seq : " · 成员设置"}\n${v.source.text}\n记录：${v.text}\n范围：${policyScopeText(v.scope)}${v.scope.description ? "\n原适用说明："+v.scope.description : ""}${v.actions ? "\n原动作："+v.actions : ""}${v.conditions ? "\n原前提："+v.conditions : ""}${v.exceptions ? "\n原例外："+v.exceptions : ""}`;
     source.append(p);
   }
   const actions = document.createElement("div"); actions.className = "member-actions";
@@ -1408,7 +1457,7 @@ async function loadFollowupSources(view,objectRef,panel,after,request) {
   if(!page.complete) { const more=document.createElement("button");more.type="button";more.textContent="更多通知";more.addEventListener("click",async()=>{more.disabled=true;try{await loadFollowupSources(view,objectRef,panel,page.next_after,request);more.hidden=true;}catch(error){more.disabled=false;if(followupsCurrent(view,request))followupParagraph(panel,error.message);}});panel.append(more); }
 }
 function policyChange(record) {
-  const {source,changed_by,updated_at,conversation,...value} = record;
+  const {source,changed_by,updated_at,conversation,actions,conditions,exceptions,...value} = record;
   return {...value,revision:policyView.data.revision};
 }
 function renderPolicy(view) {
@@ -1482,22 +1531,30 @@ async function savePolicyChange(view,change) {
 async function savePolicyForm(status) {
   const editor=policyEditor; if(!editor || !policyCurrent(editor.view)) return;
   const kind=$("policy-kind").value;
-  const c={id:editor.id,version:editor.record?.version || 0,revision:editor.view.data.revision,kind,status,text:$("policy-text").value,scope:{description:$("policy-scope").value}};
-  if(kind!=="preference") c.actions=$("policy-actions").value;
+  const c={id:editor.id,version:editor.record?.version || 0,revision:editor.view.data.revision,kind,status,text:$("policy-text").value,scope:{}};
   if(kind==="rule") {
-    for(const key of ["provider","instance","account","project"]) c.scope[key]=$("policy-"+key).value;
-    if(editor.record?.scope?.account_id) {
-      delete c.scope.account; c.scope.account_id={...editor.record.scope.account_id};
-      if(editor.record.scope.tenant) c.scope.tenant={...editor.record.scope.tenant};
+    const scope=policySelectedScope();
+    if(!scope) {$("policy-status").textContent="请选择已验证的平台连接。";return;}
+    c.scope={...scope};
+    delete c.scope.description;
+    if(!scope.no_containers) {
+      c.scope.project=$("policy-project").value.trim();
+      if(!c.scope.project || c.scope.project === "*") {$("policy-status").textContent="请选择或填写准确项目；不支持通配符。";return;}
     }
-    if(editor.record?.scope?.no_containers) {delete c.scope.project; c.scope.no_containers=true;}
-    c.scope.object_type=$("policy-object-type").value; c.conditions=$("policy-conditions").value; c.exceptions=$("policy-exceptions").value;
+    c.scope.object_type=$("policy-object-type").value.trim();
+    if(!c.scope.object_type)delete c.scope.object_type;
   }
   if($("policy-expires").value) c.expires_at=new Date($("policy-expires").value).toISOString();
-  c.source_text=`成员设置：${status === "active" ? "保存并生效" : "保存为建议"} · ${policyKinds[kind]}\n${c.text}\n范围：${policyScopeText(c.scope)}` + (c.actions ? `\n允许动作：${c.actions}` : "") + (c.conditions ? `\n前提：${c.conditions}\n例外：${c.exceptions}` : "") + (c.expires_at ? `\n有效期至：${c.expires_at}` : "");
+  c.source_text=`成员设置：${status === "active" ? "保存并生效" : "保存为建议"} · ${policyKinds[kind]}\n${c.text}` + (kind === "rule" ? `\n目标：${policyScopeText(c.scope)}` : "") + (c.expires_at ? `\n有效期至：${c.expires_at}` : "");
   await savePolicyChange(editor.view,c);
 }
 $("policy-kind").addEventListener("change",policyFormKind);
+$("policy-connection").addEventListener("change",()=>{
+  if(!policyEditor || !policyCurrent(policyEditor.view))return;
+  $("policy-project").value="";
+  renderPolicyProjectChoices(policyEditor,true);
+  policyFormKind();
+});
 $("policy-new").addEventListener("click",()=>editPolicy());
 $("policy-cancel").addEventListener("click",()=>{$("policy-form").hidden=true;policyEditor=null;});
 $("policy-reload").addEventListener("click",()=>loadMemberPolicy());

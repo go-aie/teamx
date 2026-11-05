@@ -37,11 +37,16 @@ func policyConversationDigest(q conversationPolicyChange) string {
 }
 
 func samePolicyBody(a, b PolicyRevision) bool {
+	a, b = naturalPolicy(a), naturalPolicy(b)
 	return a.Kind == b.Kind && a.Text == b.Text && a.Scope == b.Scope && a.Actions == b.Actions && a.Conditions == b.Conditions && a.Exceptions == b.Exceptions && reflect.DeepEqual(a.ExpiresAt, b.ExpiresAt)
 }
 
 func policySuggestionText(r PolicyRevision) string {
-	text := fmt.Sprintf("建议今后采用以下%s：\n%s\n适用范围：%s", map[string]string{"rule": "规则", "preference": "偏好"}[r.Kind], r.Text, r.Scope.Description)
+	text := fmt.Sprintf("建议今后采用以下%s：\n%s", map[string]string{"rule": "规则", "preference": "偏好"}[r.Kind], r.Text)
+	// Preserve exact historical proposal receipts; new records have no description.
+	if r.Scope.Description != "" {
+		text += "\n适用范围：" + r.Scope.Description
+	}
 	for _, field := range [][2]string{{"平台", r.Scope.Provider}, {"实例", r.Scope.Instance}, {"账号", r.Scope.Account}, {"项目", r.Scope.Project}, {"对象类型", r.Scope.ObjectType}, {"允许动作", r.Actions}, {"条件", r.Conditions}, {"例外", r.Exceptions}} {
 		if field[1] != "" {
 			text += "\n" + field[0] + "：" + field[1]
@@ -112,7 +117,7 @@ func (s *Store) changeConversationPolicy(id MemberIdentity, caller Caller, q con
 	if _, err := s.runningTurnLocked(id, c.TurnNumber); err != nil {
 		return PolicyView{}, err
 	}
-	if c.Kind == "decision" || c.SourceSeq == 0 || c.SourceText != "" || !handlingText(q.Basis) {
+	if !validPolicyChange(c) || c.Kind == "decision" || c.SourceSeq == 0 || c.SourceText != "" || !handlingText(q.Basis) {
 		return PolicyView{}, ErrRequest
 	}
 	p, path, err := s.loadPolicyLocked(id, true)
@@ -157,7 +162,7 @@ func (s *Store) changeConversationPolicy(id MemberIdentity, caller Caller, q con
 	if old.Version != 0 && old.Source.Seq != 0 && message.Seq <= old.Source.Seq {
 		return PolicyView{}, ErrConflict
 	}
-	r := PolicyRevision{ID: c.ID, Version: c.Version + 1, Kind: c.Kind, Status: c.Status, Text: c.Text, Scope: c.Scope, Actions: c.Actions, Conditions: c.Conditions, Exceptions: c.Exceptions, ExpiresAt: c.ExpiresAt,
+	r := PolicyRevision{ID: c.ID, Version: c.Version + 1, Kind: c.Kind, Status: c.Status, Text: c.Text, Scope: c.Scope, ExpiresAt: c.ExpiresAt,
 		Source: PolicySource{User: message.Author.ID, Seq: message.Seq, Text: message.Text}, ChangedBy: caller.Author, UpdatedAt: time.Now().UTC(),
 		Conversation: &policyConversationEvidence{Mode: q.Mode, Basis: q.Basis, RequestDigest: digest, Message: message}}
 	if q.Mode == "confirm_suggestion" {
@@ -176,7 +181,7 @@ func (s *Store) changeConversationPolicy(id MemberIdentity, caller Caller, q con
 	// guard, not a claim to detect semantic overlap or resolve conflicting rules.
 	if old.Version == 0 && r.Kind == "rule" {
 		for _, v := range policyCurrent(p.History) {
-			if v.Kind == r.Kind && v.Status != "revoked" && v.Scope == r.Scope {
+			if v.Kind == r.Kind && v.Status != "revoked" && naturalPolicy(v).Scope == r.Scope {
 				return PolicyView{}, ErrConflict
 			}
 		}
