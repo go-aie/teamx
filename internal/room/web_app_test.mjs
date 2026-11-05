@@ -2282,7 +2282,7 @@ test("AN-01.2 Inbox snapshot paging never confirms, and late reads cannot cross 
   const api=server([makeRoom("A"),makeRoom("B")]);
   const member={agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"},execution:{paused:true,agent:{turn_number:0}}};
   let finish;
-  const page=(after)=>({snapshot_seq:2,next_after:after+1,has_more:after===0,status:{latest_seq:2,bytes:100,limits:{bytes:1000}},entries:[{seq:after+1,received_at:"2026-11-04T01:00:00Z",item:{source:{provider:"gitlab",channel:"todos"},text:`notice-${after+1}`}}]});
+  const page=(after)=>({snapshot_seq:2,next_after:after+1,has_more:after===0,status:{latest_seq:2,bytes:100,limits:{bytes:1000}},entries:[{seq:after+1,received_at:"2026-11-04T01:00:00Z",item:{source:{provider:"gitlab",channel:"todos",instance:"https://gitlab.invalid",project_id:312},text:`notice-${after+1}`}}]});
   api.hook=(path,data)=>{
     if(path==="/v1/member/list")return {members:[member]};
     if(path==="/v1/member/activity")return {member};
@@ -2293,12 +2293,38 @@ test("AN-01.2 Inbox snapshot paging never confirms, and late reads cannot cross 
   await ui.el("agent-tab-inbox").emit("click");await settle();
   assert.equal(ui.el("inbox-member-view").hidden,false);
   assert.equal(ui.el("inbox-entries").children[0].children[1].textContent,"notice-1");
+  const imagePath = "/uploads/524bb5cf042cd0bb3ef9a7a117a744b7/image.png";
+  const imageURL = ui.el("inbox-entries").children[0].children[1].markdownOptions.attachmentURL(imagePath);
+  const imageQuery = new URL(imageURL, "http://fixture").searchParams;
+  assert.equal(imageQuery.get("agent_id"), member.agent_id);
+  assert.equal(imageQuery.get("membership_id"), member.membership_id);
+  assert.equal(imageQuery.get("seq"), "1");
+  assert.equal(imageQuery.get("room_id"), "A");
+  assert.equal(imageQuery.get("service_epoch"), "epoch-A");
   const pending=ui.el("inbox-next").emit("click");await settle();
   const calls=api.calls.filter(call=>call.path==="/v1/member/inbox");
   assert.equal(calls[1].data.snapshot_seq,2);assert.equal(calls[1].data.after,1);
   await ui.select("B");finish();await pending;await settle();
   assert.equal(ui.el("inbox-entries").children.length,0);
   assert.equal(api.calls.some(call=>/confirm|member\/run/.test(call.path)),false);
+});
+
+test("Room attachment rendering binds the saved integration message and excludes ordinary messages", async () => {
+  const api = server([makeRoom("A")]);
+  const source = { provider:"gitlab", channel:"events", instance:"https://gitlab.invalid", project_id:312 };
+  api.history.set("A", [
+    {...message(1, "图片评论"), author:{kind:"integration",id:"gitlab"}, source},
+    {...message(2, "普通消息"), source},
+  ]);
+  const ui = await launch(api);
+  const options = ui.el("messages").children.find(el => el.id === "message-1").querySelector(".message-text").markdownOptions;
+  const query = new URL(options.attachmentURL("/uploads/524bb5cf042cd0bb3ef9a7a117a744b7/image.png"), "http://fixture").searchParams;
+  assert.equal(query.get("seq"), "1");
+  assert.equal(query.get("room_id"), "A");
+  assert.equal(query.get("room_instance"), "instance-A");
+  assert.equal(query.get("service_epoch"), "epoch-A");
+  assert.equal(query.has("membership_id"), false);
+  assert.equal(ui.el("messages").children.find(el => el.id === "message-2").querySelector(".message-text").markdownOptions, undefined);
 });
 
 test("AN-02.2 policy settings distinguish suggestions, preserve scope and never run members", async()=> {

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import * as client from "./web/client.mjs";
+import { notificationOptions } from "./web/markdown.mjs";
 
 // Exercise the actual entry point and its events without a browser dependency.
 // This DOM implements events and content only; it is not visual acceptance.
@@ -89,10 +90,10 @@ export async function launch(api, saved = new Map()) {
     }
     now = end; await settle();
   } };
-  const names = ["document", "window", "sessionStorage", "Option", "setInterval", "requestAnimationFrame", "renderMessageBody", "performance", "setTimeout", "clearTimeout", ...Object.keys(client).map(name => name === "readPages" ? "collectPages" : name)];
+  const names = ["document", "window", "sessionStorage", "Option", "setInterval", "requestAnimationFrame", "renderMessageBody", "notificationOptions", "performance", "setTimeout", "clearTimeout", ...Object.keys(client).map(name => name === "readPages" ? "collectPages" : name)];
   const values = [document, window, storage,
     function(text, value) { const el = new Element("option"); el.textContent = text; el.value = value; return el; },
-    () => {}, fn => fn(), (el, text) => { el.textContent = text; }, { now: () => now },
+    () => {}, fn => fn(), (el, text, operator, options) => { el.textContent = text; el.markdownOptions = options; }, notificationOptions, { now: () => now },
     (fn, delay) => { const id = ++timerID; timers.set(id, { fn, at: now + delay }); return id; },
     id => timers.delete(id), ...Object.values(client)];
   values[names.indexOf("request")] = api.request;

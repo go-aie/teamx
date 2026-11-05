@@ -72,5 +72,5 @@ func EventsMessage(s EventsState, entry EventsInboxEntry) notification.Item {
 		link = target.String()
 	}
 	lines = append(lines, notificationReference(s.Binding.Project, object, title, link))
-	return notification.Item{Key: EventsKey(s.Binding, s.ProjectID, e.ID), Route: entry.Route, DeliveryID: entry.Route.DeliveryID(entry.DeliveryID), CreatedAt: e.CreatedAt, Order: fmt.Sprintf("%020d", e.ID), Text: strings.Join(lines, "\n\n"), Source: platform.SourceRef{Provider: "gitlab", Channel: "events", ItemKey: EventsKey(s.Binding, s.ProjectID, e.ID), Instance: s.Binding.URL, ProjectID: s.ProjectID, SubscriptionID: s.SubscriptionID, URL: link, Reference: eventReference(s, e)}}
+	return notification.Item{Key: EventsKey(s.Binding, s.ProjectID, e.ID), Route: entry.Route, DeliveryID: entry.Route.DeliveryID(entry.DeliveryID), CreatedAt: e.CreatedAt, Order: fmt.Sprintf("%020d", e.ID), Text: strings.Join(lines, "\n\n"), Source: platform.SourceRef{Provider: "gitlab", Channel: "events", ItemKey: EventsKey(s.Binding, s.ProjectID, e.ID), Instance: s.Binding.URL, Project: s.Binding.Project, ProjectID: s.ProjectID, SubscriptionID: s.SubscriptionID, URL: link, Reference: eventReference(s, e)}}
 }

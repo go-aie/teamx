@@ -380,6 +380,17 @@ h1 {
 .message-text a:hover {
   color:#1b4431;
 }
+.message-text .message-image {
+  display:block;
+  max-width:100%;
+  height:auto;
+  margin:8px 0;
+  border-radius:4px;
+}
+.message-text .attachment-error {
+  display:inline-block;
+  margin:8px 0;
+}
 .message-text blockquote {
   padding:2px 14px;
   border-left:3px solid #d8e1d6;

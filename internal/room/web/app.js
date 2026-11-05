@@ -1,5 +1,5 @@
 import { request, readPages as collectPages, createActivityReader, createRoomDrafts, sameService, mentionRanges, unseenMentions } from "/ui/client.mjs";
-import { renderMessageBody } from "/ui/markdown.mjs";
+import { renderMessageBody, notificationOptions } from "/ui/markdown.mjs";
 
 const $ = (id) => document.getElementById(id);
 const state = { info: null, operator: "operator", messages: new Map(), lastSeq: 0, oldest: 0,
@@ -1107,7 +1107,7 @@ function messageElement(message) {
   el.querySelector(".author-kind").textContent = integration ? "通知" : agent ? "AGENT" : message.author.id === state.operator ? "你 · HUMAN" : "HUMAN";
   const text = el.querySelector(".message-text");
   const ranges = mentionRanges(message.text, state.operator);
-  renderMessageBody(text, message.text, state.operator);
+  renderMessageBody(text, message.text, state.operator, integration ? notificationOptions(state.info, state.operator, message.source, { seq: message.seq }) : undefined);
   el.classList.toggle("mentioned", message.seq > mentionSeenThrough && !mentionSeen.has(message.seq) && ranges.length > 0 && !(message.author.kind === "human" && message.author.id === state.operator));
   const time = el.querySelector("time");
   time.textContent = timeFormat.format(new Date(message.created_at));
@@ -1532,7 +1532,7 @@ async function loadMemberInbox(reset) {
       const section = document.createElement("section"); section.className = "activity-section";
       const heading = document.createElement("h3"); heading.textContent = `#${entry.seq} · ${entry.item.source.provider} / ${entry.item.source.channel} · ${new Date(entry.received_at).toLocaleString("zh-CN")}`;
       const body = document.createElement("div"); body.className = "message-text";
-      renderMessageBody(body, entry.item.text, state.operator);
+      renderMessageBody(body, entry.item.text, state.operator, notificationOptions(view.info, state.operator, entry.item.source, { seq: entry.seq, agent_id: member.agent_id, membership_id: member.membership_id }));
       section.append(heading,body); return section;
     }));
     $("inbox-next").hidden = !data.has_more;

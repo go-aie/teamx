@@ -548,6 +548,10 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m.servePlatformConnections(w, r)
 		return
 	}
+	if r.URL.Path == "/v1/platform/attachments" {
+		m.servePlatformAttachment(w, r)
+		return
+	}
 	if r.URL.Path == "/v1/platform/notifications" || r.URL.Path == "/v1/platform/notifications/configure" || r.URL.Path == "/v1/platform/notifications/sync" {
 		m.servePlatformNotifications(w, r)
 		return

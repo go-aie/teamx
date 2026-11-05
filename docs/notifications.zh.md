@@ -20,6 +20,8 @@
 
 每次写请求带来源、房间实例、订阅 ID 和预期版本；立即同步只使用已保存配置。有草稿时先保存；响应丢失先读状态，不自动重发。切房、换账号、旧轮询和迟到写响应均不得覆盖新视图。
 
+GitLab 通知中的评论在房间消息和收件箱预览中按 Markdown 展示，已有通知也适用；原始存储及 Agent 输入继续保留转义和提及隔离。项目图片附件支持 `/uploads/<secret>/<filename>`、同实例的项目附件地址，以及 `{width=900 height=536}` 尺寸语法。图片接近可视区域时，浏览器请求 TeamX 的 `/v1/platform/attachments`；后端核对房间、已保存的消息／收件箱条目、订阅和当前连接账号，再携带 PAT 调用 GitLab 附件 API。PAT 不发送到浏览器，图片仅暂存在内存，不落盘、不持久缓存；每张最多 20 MiB，支持 PNG、JPEG、GIF、WebP。HTML、SVG 和外部站点图片不内嵌。附件 API 需要 GitLab 17.4 或以上；权限不足、附件删除或连接失效时显示加载失败入口。
+
 ## 公共运行与可靠投递
 
 [notification.Manager](../internal/platform/notification/manager.go) 管理任务、加载、原子保存与投递，[Source / State / Runner](../internal/platform/notification/source.go)提供来源 codec、具体进度与单步查询。来源状态保存在：

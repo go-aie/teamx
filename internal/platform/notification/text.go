@@ -26,14 +26,17 @@ func Fact(value string, limit int) string {
 // Quote preserves the lines of external content while keeping it literal and
 // preventing it from creating mentions, links, headings or nested Markdown.
 func Quote(value string, limit int) string {
-	value = strings.TrimSpace(strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(value))
-	if value == "" {
+	value = strings.Trim(strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(value), "\n")
+	if strings.TrimSpace(value) == "" {
 		return ""
 	}
 	lines := strings.Split(value, "\n")
 	escape := strings.NewReplacer("#", "\\#", "-", "\\-", "+", "\\+", "!", "\\!", "|", "\\|", ".", "\\.", ":", "\\:", "(", "\\(", ")", "\\)", "~", "\\~")
 	for i, line := range lines {
-		lines[i] = "> " + escape.Replace(Fact(line, max(3, len(line)*4+3)))
+		// Keep Markdown/code indentation for display while the durable text
+		// remains escaped. Tabs expand to spaces rather than becoming controls.
+		indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+		lines[i] = "> " + strings.ReplaceAll(indent, "\t", "    ") + escape.Replace(Fact(line, max(3, len(line)*4+3)))
 	}
 	return boundedText(strings.Join(lines, "\n"), limit)
 }
