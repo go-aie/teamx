@@ -1339,27 +1339,57 @@ function editPolicy(record = null) {
   policyFormKind(); $("policy-text").focus();
   void loadPolicyConnections(policyEditor);
 }
+function policyDateText(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString("zh-CN", {year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false});
+}
+function policyMetadata(record) {
+  const meta = document.createElement("div"); meta.className = "policy-entry-meta";
+  if (record.kind === "rule") {
+    const label = document.createElement("span"); label.className = "policy-meta-label"; label.textContent = "适用范围";
+    const scope = document.createElement("p"); scope.className = "policy-scope";
+    const {project, object_type, ...identity} = record.scope;
+    scope.textContent = [project && `项目 ${project}`, object_type, policyScopeText(identity)].filter(Boolean).join("\n");
+    meta.append(label, scope);
+  }
+  if (record.expires_at) {
+    const expires = document.createElement("p"); expires.textContent = `有效期至：${policyDateText(record.expires_at)}`; meta.append(expires);
+  }
+  return meta;
+}
 function policyCard(view, r, history) {
-  const section = document.createElement("section"); section.className = "activity-section";
-  const title = document.createElement("h4");
+  const section = document.createElement("section"); section.className = "activity-section policy-entry";
+  const header = document.createElement("div"); header.className = "policy-entry-header";
+  const title = document.createElement("h4"), kind = document.createElement("span"), status = document.createElement("span");
   const expired = r.expires_at && new Date(r.expires_at) <= new Date();
-  title.textContent = `${policyKinds[r.kind]} · ${policyStates[r.status]}${expired ? " · 已过期" : ""} · v${r.version}`;
-  const body = document.createElement("p"); body.className = "inbox-text";
-  body.textContent = r.text + (r.kind === "rule" ? `\n目标：${policyScopeText(r.scope)}` : "") + (r.expires_at ? `\n有效期至：${new Date(r.expires_at).toLocaleString()}` : "");
-  const source = document.createElement("details"), summary = document.createElement("summary"); summary.textContent = "来源与修订记录"; source.append(summary);
+  kind.textContent = policyKinds[r.kind];
+  status.className = "policy-entry-state"; status.dataset.status = expired ? "expired" : r.status;
+  status.textContent = expired ? `${policyStates[r.status]} · 已过期` : policyStates[r.status]; title.append(kind, status);
+  const body = document.createElement("p"); body.className = "inbox-text policy-entry-body"; body.textContent = r.text;
+  const source = document.createElement("details"), summary = document.createElement("summary"); source.className = "policy-history";
+  summary.textContent = `来源与修订记录 · v${r.version}`; source.append(summary);
   for (const v of history.filter(v => v.id === r.id)) {
-    const p = document.createElement("p"); p.className = "inbox-text";
-    p.textContent = `v${v.version} · ${policyStates[v.status]} · ${v.updated_at} · 操作者 ${v.changed_by.id}\n用户 ${v.source.user}${v.source.seq ? " · 房间消息 #"+v.source.seq : " · 成员设置"}\n${v.source.text}\n记录：${v.text}\n范围：${policyScopeText(v.scope)}${v.scope.description ? "\n原适用说明："+v.scope.description : ""}${v.actions ? "\n原动作："+v.actions : ""}${v.conditions ? "\n原前提："+v.conditions : ""}${v.exceptions ? "\n原例外："+v.exceptions : ""}`;
-    source.append(p);
+    const revision = document.createElement("article"); revision.className = "policy-revision";
+    const heading = document.createElement("h5"); heading.textContent = `v${v.version} · ${policyStates[v.status]}`;
+    const metadata = document.createElement("p"); metadata.className = "policy-revision-meta";
+    const time = document.createElement("time"); time.dateTime = v.updated_at; time.title = v.updated_at; time.textContent = policyDateText(v.updated_at);
+    const origin = document.createElement("span");
+    origin.textContent = ` · 操作者 ${v.changed_by.id}\n${v.source.seq ? "Room 消息 #"+v.source.seq : "成员设置"} · 来源用户 ${v.source.user}`;
+    metadata.append(time, origin);
+    const content = document.createElement("p"); content.className = "inbox-text policy-revision-body"; content.textContent = v.text;
+    const raw = document.createElement("details"), rawTitle = document.createElement("summary"); raw.className = "policy-source"; rawTitle.textContent = "原始来源";
+    const original = document.createElement("p"); original.className = "inbox-text";
+    original.textContent = v.source.text + (v.scope.description ? "\n原适用说明："+v.scope.description : "") + (v.actions ? "\n原动作："+v.actions : "") + (v.conditions ? "\n原前提："+v.conditions : "") + (v.exceptions ? "\n原例外："+v.exceptions : "");
+    raw.append(rawTitle, original); revision.append(heading, metadata, content, policyMetadata(v), raw); source.append(revision);
   }
   const actions = document.createElement("div"); actions.className = "member-actions";
   const edit = document.createElement("button"); edit.type = "button"; edit.textContent = r.status === "suggested" ? "审核并编辑" : "编辑";
   edit.addEventListener("click",()=> { if (policyCurrent(view)) editPolicy(r); }); actions.append(edit);
   if (r.status !== "revoked") {
-    const revoke = document.createElement("button"); revoke.type = "button"; revoke.textContent = "撤销";
+    const revoke = document.createElement("button"); revoke.type = "button"; revoke.className = "policy-revoke"; revoke.textContent = "撤销";
     revoke.addEventListener("click",()=> { if (policyCurrent(view)) void savePolicyChange(view,{...policyChange(r),status:"revoked",source_text:`撤销 ${policyKinds[r.kind]} ${r.id} v${r.version}：${r.text}`}); }); actions.append(revoke);
   }
-  section.append(title,body,source,actions); return section;
+  header.append(title, actions); section.append(header, body, policyMetadata(r), source); return section;
 }
 function followupResultURL(raw) { try { const url=new URL(raw);return ["https:","http:"].includes(url.protocol) && !url.username && !url.password ? url.href : ""; } catch { return ""; } }
 function beginReply(message) {
@@ -1464,7 +1494,7 @@ function renderPolicy(view) {
   if (!policyCurrent(view)) return;
   $("policy-entries").replaceChildren(...view.data.current.map(r=>policyCard(view,r,view.data.history)));
   if(!view.data.current.length)followupParagraph($("policy-entries"),"尚未保存偏好或规则。你可以在 Room 中告诉 Agent 今后应如何处理。");
-  $("policy-status").textContent=`${view.data.effective.length} 条有效偏好／规则`;
+  $("policy-status").textContent=`${view.data.effective.length} 条有效`;
 }
 function renderPolicyFollowups(view) {
   if(!followupsCurrent(view))return;

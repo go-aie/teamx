@@ -252,9 +252,11 @@
           <div id="inbox-entries"></div>
         </div>
         <div id="policy-member-view" class="activity-body" role="tabpanel" aria-labelledby="agent-tab-policy" hidden>
-          <p class="quiet">在 Room 中表达要求、回答问题；这里查看和纠正偏好与规则。偏好不授予权限，未确认的建议不生效。</p>
-          <div class="member-actions"><button id="policy-reload" type="button">刷新</button><button id="policy-new" type="button">新增偏好或规则</button></div>
-          <p id="policy-status" role="status" aria-live="polite"></p>
+          <div class="policy-toolbar">
+            <div class="policy-heading"><h3>偏好与规则</h3><p id="policy-status" role="status" aria-live="polite"></p></div>
+            <div class="member-actions"><button id="policy-reload" type="button">刷新</button><button id="policy-new" type="button">新增偏好或规则</button></div>
+          </div>
+          <p class="quiet policy-intro">在 Room 中表达要求、回答问题；这里查看和纠正偏好与规则。偏好不授予权限，未确认的建议不生效。</p>
           <div id="policy-entries"></div>
           <form id="policy-form" class="policy-form" hidden>
             <h3 id="policy-editor-title">新增偏好或规则</h3>
@@ -272,8 +274,10 @@
           <details id="policy-followups" class="policy-followups">
             <summary>跟进记录<span class="quiet">按需核查</span></summary>
             <p class="quiet">这些记录供 Agent 持续办理。需要你决定时，Agent 会在 Room 中询问；「待处理」不表示需要你操作。</p>
-            <div class="member-actions"><button id="followups-reload" type="button">刷新记录</button><button id="followups-all" type="button" hidden>全部对象</button><label><input id="followups-history" type="checkbox" /> 包含已完成记录</label></div>
-            <p id="followups-status" class="quiet" role="status" aria-live="polite"></p>
+            <div class="policy-followups-toolbar">
+              <p id="followups-status" class="quiet" role="status" aria-live="polite"></p>
+              <div class="member-actions"><label><input id="followups-history" type="checkbox" /> 包含已完成记录</label><button id="followups-all" type="button" hidden>全部对象</button><button id="followups-reload" type="button">刷新记录</button></div>
+            </div>
             <div id="policy-matters"></div>
             <button id="policy-next" type="button" hidden>下一页记录</button>
           </details>

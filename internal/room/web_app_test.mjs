@@ -2346,13 +2346,13 @@ test("AN-02.2 policy settings distinguish suggestions, preserve scope and never 
  assert.equal(ui.el("policy-member-view").hidden,false);
  await ui.el("policy-new").emit("click");ui.el("policy-text").value="简短中文回复";
  await ui.el("policy-suggest").emit("click");await settle();
- assert.match(ui.el("policy-entries").children[0].children[0].textContent,/建议.*未生效/);
- await ui.el("policy-entries").children[0].children[3].children[0].emit("click");await ui.el("policy-form").emit("submit");await settle();
- assert.match(ui.el("policy-entries").children[0].children[0].textContent,/有效/);
+ assert.match(elementText(ui.el("policy-entries").children[0].children[0]),/建议.*未生效/);
+ await ui.el("policy-entries").children[0].children[0].children[1].children[0].emit("click");await ui.el("policy-form").emit("submit");await settle();
+ assert.match(elementText(ui.el("policy-entries").children[0].children[0]),/有效/);
  const change=api.calls.filter(c=>c.path==="/v1/policy/update").at(-1).data.policy;
  assert.equal(change.version,1);assert.equal(change.kind,"preference");assert.equal(change.actions,undefined);
- await ui.el("policy-entries").children[0].children[3].children[1].emit("click");await settle();
- assert.match(ui.el("policy-entries").children[0].children[0].textContent,/已撤销/);
+ await ui.el("policy-entries").children[0].children[0].children[1].children[1].emit("click");await settle();
+ assert.match(elementText(ui.el("policy-entries").children[0].children[0]),/已撤销/);
  assert.equal(history.length,3);assert.equal(api.calls.some(c=>/member\/run|inbox\/confirm/.test(c.path)),false);
 });
 
@@ -2369,8 +2369,8 @@ test("R6 native rule editing preserves exact tenant/account and no-container sco
   if(path==="/v1/policy/update")return {};
  };
  const ui=await launch(api);await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();await ui.el("agent-tab-policy").emit("click");await settle();
- assert.match(ui.el("policy-entries").children[0].children[1].textContent,/contract:account:alice.*contract:tenant:blue.*无父容器/);
- await ui.el("policy-entries").children[0].children[3].children[0].emit("click");
+ assert.match(elementText(ui.el("policy-entries").children[0].children[2]),/contract:account:alice[\s\S]*contract:tenant:blue[\s\S]*无父容器/);
+ await ui.el("policy-entries").children[0].children[0].children[1].children[0].emit("click");
  assert.equal(ui.el("policy-connection").value,"saved");assert.equal(ui.el("policy-project").readOnly,true);
  ui.el("policy-text").value="纠正后的准确回复";await ui.el("policy-form").emit("submit");await settle();
  const change=api.calls.filter(c=>c.path==="/v1/policy/update").at(-1).data.policy;
