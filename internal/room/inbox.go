@@ -96,13 +96,7 @@ func (a *AgentInbox) Receive(ctx actorx.Context, msg ReceiveInbox, reply actorx.
 	digest := inboxDigest(msg.Item)
 	if previous, ok := a.receipts[msg.Item.DeliveryID]; ok {
 		if previous.digest != digest {
-			// Newly preserved candidate URLs must not poison redelivery of an older
-			// receipt. Keep its original evidence and compare all other exact fields.
-			legacy := msg.Item
-			legacy.Source.URL = ""
-			if previous.hasSourceURL || inboxDigest(legacy) != previous.digest {
-				return ErrConflict
-			}
+			return ErrConflict
 		}
 		reply.Complete(InboxReceipt{MemberIdentity: a.id, Seq: previous.seq, DeliveryID: msg.Item.DeliveryID}, nil)
 		return nil
@@ -132,7 +126,7 @@ func (a *AgentInbox) Receive(ctx actorx.Context, msg ReceiveInbox, reply actorx.
 			return true
 		}
 		a.latest, a.bytes = entry.Seq, a.bytes+size
-		a.receipts[entry.Item.DeliveryID] = inboxIndex{entry.Seq, digest, entry.Item.Source.URL != ""}
+		a.receipts[entry.Item.DeliveryID] = inboxIndex{entry.Seq, digest}
 		reply.Complete(InboxReceipt{MemberIdentity: a.id, Seq: entry.Seq, DeliveryID: entry.Item.DeliveryID}, nil)
 		return true
 	}, nil)

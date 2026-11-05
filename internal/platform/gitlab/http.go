@@ -51,10 +51,7 @@ func validToken(token string) bool {
 // NewReadAPI never redirects or retries. Raw transport errors and remote error
 // bodies never leave this boundary. Byte accounting is on the original body.
 func NewReadAPI(origin string, secret platform.Secret, transport http.RoundTripper) ReadAPI {
-	if transport == nil {
-		transport = http.DefaultTransport
-	}
-	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	client := boundedHTTPClient(transport)
 	return func(ctx context.Context, path string, query url.Values, headers http.Header, limit int64) (APIResponse, error) {
 		var result APIResponse
 		if err := ctx.Err(); err != nil {
@@ -104,22 +101,16 @@ func NewReadAPI(origin string, secret platform.Secret, transport http.RoundTripp
 		if ctx.Err() != nil {
 			return APIResponse{}, ctx.Err()
 		}
-		if err != nil || int64(len(raw)) > limit {
+		if int64(len(raw)) > limit {
+			return APIResponse{}, &queryError{Code: "invalid_response"}
+		}
+		if err != nil {
 			return APIResponse{}, &queryError{Code: "query_failed"}
 		}
 		result.Bytes = int64(len(raw))
-		// Redact JSON string values after parsing: this also catches escaped tokens
-		// without damaging JSON syntax when a credential contains quotes/backslashes.
-		var value any
-		dec := json.NewDecoder(bytes.NewReader(raw))
-		dec.UseNumber()
-		if dec.Decode(&value) != nil || dec.Decode(new(any)) != io.EOF {
-			return APIResponse{}, &queryError{Code: "invalid_response"}
-		}
-		redactJSON(value, secret.Reveal())
-		result.Data, err = json.Marshal(value)
-		if err != nil || len(result.Data) > maxEventOutput {
-			return APIResponse{}, &queryError{Code: "invalid_response"}
+		result.Data, err = safeAPIJSON(raw, secret)
+		if err != nil {
+			return APIResponse{}, err
 		}
 		return result, nil
 	}
@@ -188,4 +179,28 @@ func decodeJSON(data []byte, out any) error {
 		return errors.New("invalid GitLab response")
 	}
 	return nil
+}
+
+func boundedHTTPClient(transport http.RoundTripper) *http.Client {
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
+	return &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+}
+
+// Parse before redacting, including escaped JSON string values. Neither raw
+// transport errors nor remote error bodies become durable diagnostics.
+func safeAPIJSON(raw []byte, secret platform.Secret) ([]byte, error) {
+	var value any
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	if dec.Decode(&value) != nil || dec.Decode(new(any)) != io.EOF {
+		return nil, &queryError{Code: "invalid_response"}
+	}
+	redactJSON(value, secret.Reveal())
+	data, err := json.Marshal(value)
+	if err != nil || len(data) > maxEventOutput {
+		return nil, &queryError{Code: "invalid_response"}
+	}
+	return data, nil
 }

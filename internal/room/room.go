@@ -182,24 +182,24 @@ func (r *Room) Post(ctx actorx.Context, msg PostMessage, reply actorx.Reply[Post
 	if !validText(msg.ClientMessageID) || !validText(msg.Text) || len(msg.Text) > maxTextBytes || msg.ReplyTo > r.state.LatestSeq {
 		return ErrRequest
 	}
-	if receipt, ok := r.state.MatterNoticeReceipts[msg.ClientMessageID]; ok {
+	if receipt, ok := r.state.FollowupNoticeReceipts[msg.ClientMessageID]; ok {
 		if receipt.Author != msg.Caller.Author || receipt.MembershipID != msg.Caller.MembershipID || receipt.Digest != noticeDigest(msg.Text) || msg.ReplyTo != 0 {
 			return ErrConflict
 		}
 		reply.Complete(PostReceipt{RoomIdentity: r.state.RoomIdentity, Seq: receipt.Seq, ClientMessageID: msg.ClientMessageID}, nil)
 		return nil
 	}
-	if msg.MatterNotice && (msg.Caller.Kind != "agent" || msg.ReplyTo != 0) {
+	if msg.FollowupNotice && (msg.Caller.Kind != "agent" || msg.ReplyTo != 0) {
 		return ErrIdentity
 	}
-	if msg.MatterNotice && len(r.state.MatterNoticeReceipts) >= maxIntegrationReceipts {
+	if msg.FollowupNotice && len(r.state.FollowupNoticeReceipts) >= maxIntegrationReceipts {
 		return ErrCapacity
 	}
 	bytes := 0
 	for _, m := range r.state.Messages {
 		bytes += len(m.Text)
 		if m.Author == msg.Caller.Author && m.ClientMessageID == msg.ClientMessageID {
-			if m.Text != msg.Text || m.ReplyTo != msg.ReplyTo || msg.MatterNotice {
+			if m.Text != msg.Text || m.ReplyTo != msg.ReplyTo || msg.FollowupNotice {
 				return ErrConflict
 			}
 			reply.Complete(PostReceipt{RoomIdentity: r.state.RoomIdentity, Seq: m.Seq, ClientMessageID: m.ClientMessageID}, nil)
@@ -218,11 +218,11 @@ func (r *Room) Post(ctx actorx.Context, msg PostMessage, reply actorx.Reply[Post
 		Seq: next.LatestSeq, ClientMessageID: msg.ClientMessageID, Author: msg.Caller.Author,
 		Text: msg.Text, ReplyTo: msg.ReplyTo, CreatedAt: r.now().UTC(),
 	})
-	if msg.MatterNotice {
-		if next.MatterNoticeReceipts == nil {
-			next.MatterNoticeReceipts = map[string]MatterNoticeReceipt{}
+	if msg.FollowupNotice {
+		if next.FollowupNoticeReceipts == nil {
+			next.FollowupNoticeReceipts = map[string]followupNoticeReceipt{}
 		}
-		next.MatterNoticeReceipts[msg.ClientMessageID] = MatterNoticeReceipt{Seq: next.LatestSeq, Author: msg.Caller.Author, MembershipID: msg.Caller.MembershipID, Digest: noticeDigest(msg.Text)}
+		next.FollowupNoticeReceipts[msg.ClientMessageID] = followupNoticeReceipt{Seq: next.LatestSeq, Author: msg.Caller.Author, MembershipID: msg.Caller.MembershipID, Digest: noticeDigest(msg.Text)}
 	}
 	result := PostReceipt{RoomIdentity: next.RoomIdentity, Seq: next.LatestSeq, ClientMessageID: msg.ClientMessageID}
 	return commitRoom(r, ctx, next, reply, result, nil)
@@ -466,7 +466,7 @@ func (r *Room) candidate() RoomSnapshot {
 	next := r.state
 	next.Messages, next.Members = slices.Clone(next.Messages), slices.Clone(next.Members)
 	next.IntegrationReceipts = maps.Clone(next.IntegrationReceipts)
-	next.MatterNoticeReceipts = maps.Clone(next.MatterNoticeReceipts)
+	next.FollowupNoticeReceipts = maps.Clone(next.FollowupNoticeReceipts)
 	return next
 }
 

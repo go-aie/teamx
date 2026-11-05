@@ -14,7 +14,6 @@ const message = (seq, text) => ({ seq, text, author: { kind: "agent", id: "revie
 function server(rooms = []) {
   for (const room of rooms) { room.runtime_status = "ready"; room.service = identity(room); }
   const catalog = { service_epoch: "manager", operator: "tester", busy: false, rooms,
-    default_room_id: rooms[0]?.room_id || "",
     teams: [{ id: "sample", name: "Sample", description: "Example", opening_message: "Opening", members: [] }] };
   const history = new Map(rooms.map(room => [room.room_id, [message(1, `history-${room.name}`)]]));
   const calls = [];
@@ -71,7 +70,6 @@ function server(rooms = []) {
         assert.ok(room);
         catalog.rooms = catalog.rooms.filter(r => r !== room);
         history.delete(room.room_id);
-        if (catalog.default_room_id === room.room_id) catalog.default_room_id = "";
         return { ...room, status: "deleting", deletion_phase: "closing" };
       }
       if (!catalog.rooms.some(room => client.sameService(data, room.service)) && !(path === "/v1/read" && client.sameService(data, api.workspaces?.get(data.room_id)?.observation))) throw Object.assign(new Error("stale identity"), { code: "identity" });
@@ -897,7 +895,7 @@ test("another tab's deletion clears the view and late sends cannot restore a del
   api.hook = path => path === "/v1/send" ? new Promise(resolve => { complete = resolve; }) : undefined;
   await ui.draft("late send A");
   const sending = ui.el("compose").emit("submit"); await settle();
-  api.catalog.rooms.shift(); api.catalog.default_room_id = "";
+  api.catalog.rooms.shift();
   await ui.refresh();
   const key = JSON.stringify(["teamx.draft", "instance-A", "tester"]);
   assert.equal(ui.saved.has(key), false);
@@ -1464,7 +1462,6 @@ test("platform settings save, verify, rotate and delete without storing credenti
   assert.match(ui.el("connection-validation").textContent, /尚未验证/);
   assert.equal(JSON.stringify([...ui.saved]).includes("private-token"), false);
   assert.equal(ui.el("message-input").value, "keep my draft");
-  assert.equal(api.catalog.default_room_id, "A");
   await ui.el("connection-delete").emit("click");
   assert.equal(ui.el("connections-empty").hidden, false);
   assert.equal(ui.el("connections-feedback").textContent, "连接已删除。");
@@ -2307,10 +2304,10 @@ test("AN-02.2 policy settings distinguish suggestions, preserve scope and never 
   if(path==="/v1/member/list")return {members:[member]};
   if(path==="/v1/member/activity")return {member};
   if(path==="/v1/policy/read") {const current=[...new Map(history.map(r=>[r.id,r])).values()];return {revision,history:structuredClone(history),current:structuredClone(current),effective:current.filter(r=>r.status==="active")};}
-  if(path==="/v1/decisions/read")return {records:[],next_after:0,has_more:false};
+  if(path==="/v1/matters/list")return {items:[],total:0,complete:true};
   if(path==="/v1/policy/update"){
-   assert.equal(data.caller.kind,"human");assert.equal(data.membership_id,member.membership_id);assert.equal(data.policy.revision,revision);
-   history.push({...structuredClone(data.policy),version:data.policy.version+1,source:{user:"tester",text:data.policy.source_text},changed_by:{kind:"human",id:"tester"},updated_at:"2026-11-04T01:00:00Z"});revision++;return {};
+   assert.equal(data.caller.kind,"human");assert.equal(data.membership_id,member.membership_id);assert.equal(data.policy.revision,revision);assert.equal(data.policy.conversation,undefined);
+   history.push({...structuredClone(data.policy),conversation:{mode:"explicit_long_term",basis:"真实对话来源"},version:data.policy.version+1,source:{user:"tester",text:data.policy.source_text},changed_by:{kind:"human",id:"tester"},updated_at:"2026-11-04T01:00:00Z"});revision++;return {};
   }
  };
  const ui=await launch(api);await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();
@@ -2328,6 +2325,28 @@ test("AN-02.2 policy settings distinguish suggestions, preserve scope and never 
  assert.equal(history.length,3);assert.equal(api.calls.some(c=>/member\/run|inbox\/confirm/.test(c.path)),false);
 });
 
+test("R6 native rule editing preserves exact tenant/account and no-container scope",async()=>{
+ const api=server([makeRoom("A")]);
+ const member={agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"}};
+ const scope={description:"验收收件",provider:"contract",instance:"contract://work",object_type:"Conversation",account_id:{namespace:"contract:account",value:"alice"},tenant:{namespace:"contract:tenant",value:"blue"},no_containers:true};
+ const record={id:"native",version:1,kind:"rule",status:"active",text:"准确回复",scope,actions:"object.comment",conditions:"核对目标",exceptions:"其他任务先询问",source:{user:"tester",text:"以后直接回复"},changed_by:{kind:"human",id:"tester"},updated_at:"2026-11-05T01:00:00Z"};
+ api.hook=(path,data)=>{
+  if(path==="/v1/member/list")return {members:[member]};
+  if(path==="/v1/member/activity")return {member};
+  if(path==="/v1/policy/read")return {revision:1,history:[record],current:[record],effective:[record]};
+  if(path==="/v1/matters/list")return {items:[],total:0,complete:true};
+  if(path==="/v1/policy/update")return {};
+ };
+ const ui=await launch(api);await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();await ui.el("agent-tab-policy").emit("click");await settle();
+ assert.match(ui.el("policy-entries").children[0].children[1].textContent,/contract:account:alice.*contract:tenant:blue.*无父容器/);
+ await ui.el("policy-entries").children[0].children[3].children[0].emit("click");
+ assert.equal(ui.el("policy-account").readOnly,true);assert.equal(ui.el("policy-project").readOnly,true);
+ ui.el("policy-text").value="纠正后的准确回复";await ui.el("policy-form").emit("submit");await settle();
+ const change=api.calls.filter(c=>c.path==="/v1/policy/update").at(-1).data.policy;
+ assert.deepEqual(change.scope,scope);assert.equal(change.text,"纠正后的准确回复");assert.equal(change.scope.account,undefined);assert.equal(change.scope.project,undefined);
+ assert.equal(api.calls.some(c=>/member\/run|actions\/execute|inbox\/confirm/.test(c.path)),false);
+});
+
 test("AN-02.2 lost saves require a fresh version and late reads cannot cross rooms",async()=>{
  const api=server([makeRoom("A"),makeRoom("B")]);
  const member={agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"}};
@@ -2336,7 +2355,7 @@ test("AN-02.2 lost saves require a fresh version and late reads cannot cross roo
   if(path==="/v1/member/list")return {members:[member]};
   if(path==="/v1/member/activity")return {member};
   if(path==="/v1/policy/read")return delay ? new Promise(resolve=>finish=()=>resolve({revision:99,history:[],current:[],effective:[]})) : {revision:0,history:[],current:[],effective:[]};
-  if(path==="/v1/decisions/read")return {records:[],next_after:0,has_more:false};
+  if(path==="/v1/matters/list")return {items:[],total:0,complete:true};
   if(path==="/v1/policy/update")throw Error("response lost");
  };
  const ui=await launch(api);await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();await ui.el("agent-tab-policy").emit("click");await settle();
@@ -2345,4 +2364,50 @@ test("AN-02.2 lost saves require a fresh version and late reads cannot cross roo
  assert.equal(api.calls.filter(c=>c.path==="/v1/policy/update").length,1);assert.match(ui.el("policy-status").textContent,/刷新核对/);
  delay=true;const pending=ui.el("policy-reload").emit("click");await settle();await ui.select("B");finish();await pending;await settle();
  assert.doesNotMatch(ui.el("policy-status").textContent,/99/);
+});
+
+test("R5 management navigates native followups, human evidence, receipts and source pages",async()=>{
+ const api=server([makeRoom("A")]);
+ const member={agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"}};
+ const summary={ref:"unit-object",kind:"object",object_ref:"ref-object",target_ref:"ref-object",revision:4,status:"waiting_followup",summary:"已回复，等待确认",next:"等待客户确认",all_completed:false};
+ let sourceRequests=0;
+ api.hook=(path,data)=>{
+  if(path==="/v1/member/list")return {members:[member]};
+  if(path==="/v1/member/activity")return {member};
+  if(path==="/v1/policy/read")return {revision:1,current:[],history:[],effective:[]};
+  if(path==="/v1/matters/list")return {items:[summary],total:1,complete:true};
+  if(path==="/v1/matters/read"){
+   assert.equal(data.followup.unit_ref,"unit-object");assert.equal(data.caller.kind,"human");
+   return {target:{target:{provider:"gitlab",instance:"https://gitlab.test",object:{type:"MergeRequest",id:{value:"9001"}}}},unit:{revision:4,status:"waiting_followup",summary:"已回复",next:"等待确认",questions:[{text:"选 A 吗？",room_seq:5,answers:[{message:{author:{id:"tester"},seq:6,text:"这次选 A"}}]}],instructions:[{status:"fulfilled",intent:{body:"准确回复正文"},source:{seq:6,text:"这次选 A"}}],actions:[{request:{id:"reply-1",operation:"object.comment",input:{body:"准确回复正文"}},status:"succeeded",attempts:1,inspection:{account_label:"bot"},access:{account:{id:{value:"101"}}},result:{message:"已回复",url:"https://gitlab.test/p/-/merge_requests/42#note_99"}}]}};
+  }
+  if(path==="/v1/matters/sources"){sourceRequests++;return {items:[{seq:data.after ? 2 : 1,source_ref:data.after ? "src-two":"src-one",status:"resolved"}],total:2,next_after:1,complete:!!data.after};}
+  if(path==="/v1/matters/source")return {source:{url:"https://gitlab.test/p/-/merge_requests/42"},delivery_id:"immutable-delivery",resolution:{status:"resolved"},entry:{item:{text:"<script>原始通知正文</script>"}}};
+ };
+ const ui=await launch(api);await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();await ui.el("agent-tab-policy").emit("click");await settle();
+ const row=ui.el("policy-matters").children[0];assert.match(row.children[0].textContent,/仍有未完成/);
+ await row.children[2].emit("click");await settle();
+ const detail=row.followupPanel;
+ const texts=()=>detail.children.map(child=>child.textContent).join("\n");
+ assert.match(texts(),/用户 tester #6：这次选 A/);assert.match(texts(),/fulfilled/);assert.match(texts(),/reply-1.*succeeded.*1 次尝试/);
+ const sources=detail.children.at(-1);await sources.children[0].emit("click");await settle();assert.match(sources.children.at(-1).textContent,/<script>原始通知正文<\/script>/);
+ await sources.children[1].emit("click");await settle();assert.equal(sourceRequests,2);
+ ui.el("followups-history").checked=true;await ui.el("followups-history").emit("change");await settle();
+ assert.equal(api.calls.filter(call=>call.path==="/v1/matters/list").at(-1).data.followup.include_completed,true);
+ assert.equal(api.calls.some(call=>/decisions\/|member\/run|inbox\/confirm|actions\/execute/.test(call.path)),false);
+});
+
+test("R5 late followup details cannot enter another Room",async()=>{
+ const api=server([makeRoom("A"),makeRoom("B")]);
+ const member={agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"}};
+ let finish;
+ api.hook=(path,data)=>{
+  if(path==="/v1/member/list")return {members:[member]};
+  if(path==="/v1/member/activity")return {member};
+  if(path==="/v1/policy/read")return {revision:0,current:[],history:[],effective:[]};
+  if(path==="/v1/matters/list")return {items:[{ref:"unit-one",object_ref:"ref-one",kind:"object",status:"pending"}],total:1,complete:true};
+  if(path==="/v1/matters/read")return new Promise(resolve=>finish=()=>resolve({target:{target:{provider:"gitlab",instance:"https://gitlab.test",object:{type:"MergeRequest",id:{value:"private-9001"}}}},unit:{revision:1,status:"pending"}}));
+ };
+ const ui=await launch(api);await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();await ui.el("agent-tab-policy").emit("click");await settle();
+ const row=ui.el("policy-matters").children[0];await row.children[2].emit("click");await settle();await ui.select("B");finish();await settle();
+ assert.equal(row.followupPanel.children.length,0);
 });

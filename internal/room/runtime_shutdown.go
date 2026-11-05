@@ -43,7 +43,7 @@ func (m *roomManager) shutdown(ctx context.Context) error {
 		}
 	}
 	// These only signal under the gate. Waiting happens outside it.
-	m.cancelToolsLocked(func(*toolCall) bool { return true })
+	m.cancelPlatformCallsLocked(func(*platformCall) bool { return true })
 	for owner := range owners {
 		m.notifications.CancelRoomLocked(owner)
 	}
@@ -148,7 +148,7 @@ func (m *roomManager) shutdownRuntime(ctx context.Context, owner RoomIdentity, s
 			operationErr = fmt.Errorf("Room lifecycle worker still owned: %w", ctx.Err())
 		}
 	}
-	toolErr := m.waitTools(ctx, &owner)
+	toolErr := m.waitPlatformCalls(ctx, &owner)
 	queryErr := m.notifications.WaitRoom(ctx, owner)
 	closeErr := <-closed
 	// An opening/rebuild worker may publish a new service after the first

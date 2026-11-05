@@ -83,7 +83,7 @@ func samePlatformReferences(refs []platformConnectionReference, acknowledged []R
 // previous connection, with already-paused subscriptions requiring explicit
 // sync. Cancellation plus subscription revisions reject all late results.
 func (m *roomManager) invalidatePlatformQueriesLocked(id string) error {
-	m.cancelToolsLocked(func(c *toolCall) bool { return c.connectionID == id })
+	m.cancelPlatformCallsLocked(func(c *platformCall) bool { return c.connectionID == id })
 	return notificationRoomError(m.notifications.InvalidateConnectionLocked(id))
 }
 
@@ -93,7 +93,7 @@ var errPlatformReferenced = fmt.Errorf("%w: connection is referenced; explicitly
 // joining old query processes, but never closes the active model service.
 func (m *roomManager) settlePlatformQueriesLocked(id string) error {
 	pending := m.notifications.ConnectionDoneLocked(id)
-	for c := range m.toolCalls {
+	for c := range m.platformCalls {
 		if c.connectionID == id {
 			pending = append(pending, c.done)
 		}

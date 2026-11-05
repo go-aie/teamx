@@ -28,13 +28,12 @@ const maxRoomsFileBytes int64 = 64 << 20
 // Management identity has no implicit Room. Room tools must continue to carry
 // their full identity; they cannot target this catalog.
 type roomsResponse struct {
-	Busy          bool                 `json:"busy"`
-	ServiceEpoch  string               `json:"service_epoch"`
-	DefaultRoomID string               `json:"default_room_id,omitempty"`
-	WriteError    string               `json:"write_error,omitempty"`
-	Rooms         []roomRuntimeSummary `json:"rooms"`
-	Operator      string               `json:"operator"`
-	Teams         []teamSummary        `json:"teams"`
+	Busy         bool                 `json:"busy"`
+	ServiceEpoch string               `json:"service_epoch"`
+	WriteError   string               `json:"write_error,omitempty"`
+	Rooms        []roomRuntimeSummary `json:"rooms"`
+	Operator     string               `json:"operator"`
+	Teams        []teamSummary        `json:"teams"`
 }
 
 type roomSummary struct {
@@ -113,46 +112,46 @@ type roomIndexEntry struct {
 }
 
 type roomsIndex struct {
-	OwnedRooms []RoomIdentity `json:"owned_rooms,omitempty"`
-	Opens      []roomOpen     `json:"opens,omitempty"`
-	Shutdowns  []roomShutdown `json:"shutdowns,omitempty"`
-	// Read old indexes only; all new ownership uses complete Room identities.
-	OwnedRoomID         string               `json:"owned_room_id,omitempty"`
+	OwnedRooms          []RoomIdentity       `json:"owned_rooms,omitempty"`
+	Opens               []roomOpen           `json:"opens,omitempty"`
+	Shutdowns           []roomShutdown       `json:"shutdowns,omitempty"`
 	Version             int                  `json:"version"`
-	ActiveRoomID        string               `json:"active_room_id,omitempty"`
 	Rooms               []roomIndexEntry     `json:"rooms"`
-	Activations         []roomActivation     `json:"activations,omitempty"`
 	WorkspaceOperations []workspaceOperation `json:"workspace_operations,omitempty"`
 }
 
 // The root lock owns the catalog and its live services. Durable
 // operations retain an owner independently of an HTTP caller.
 type roomManager struct {
-	toolCatalog          []tool.Definition
-	toolCalls            map[*toolCall]bool
-	connections          *connection.Manager
-	connectionProviders  map[string]connectionProvider
-	platformProject      func(context.Context, string, string, workspaceSecret) (int64, error)
-	platformVerify       func(context.Context, string, workspaceSecret) platformConnectionValidation
-	notifications        *notification.Manager
-	notificationAdapters map[notification.SourceID]notificationAdapter
-	platformHTTP         http.RoundTripper // offline built-in HTTP seam; never used by agent tools
-	workspaceRun         platform.Execute  // offline subprocess seam; no public configuration hook
-	teams                map[string]teamDefinition
-	teamsDir             string
-	mu                   sync.Mutex
-	shutdownGate         sync.Mutex
-	store                *Store // reuse atomic snapshot replacement and commit-unknown latch
-	epoch                string
-	index                roomsIndex
-	maxTurns             uint64
-	config               serviceConfig
-	factory              func(string, string, serviceConfig) (*service, error)
-	runtimes             map[RoomIdentity]*roomRuntime
-	busy                 bool
-	closing              bool
-	operationDone        chan struct{}
-	recoveryStarted      bool
+	toolCatalog           []tool.Definition
+	platformCalls         map[*platformCall]bool
+	platformMemberChanges map[MemberIdentity]bool
+	connections           *connection.Manager
+	connectionProviders   map[string]connectionProvider
+	referenceAdapters     map[string]referenceAdapterFactory
+	referenceResolvers    map[string]followupResolver
+	referenceExecutors    map[string]referenceActionPreparer
+	platformProject       func(context.Context, string, string, workspaceSecret) (int64, error)
+	platformVerify        func(context.Context, string, workspaceSecret) platformConnectionValidation
+	notifications         *notification.Manager
+	notificationAdapters  map[notification.SourceID]notificationAdapter
+	platformHTTP          http.RoundTripper // offline built-in HTTP seam; never used by agent tools
+	workspaceRun          platform.Execute  // offline subprocess seam; no public configuration hook
+	teams                 map[string]teamDefinition
+	teamsDir              string
+	mu                    sync.Mutex
+	shutdownGate          sync.Mutex
+	store                 *Store // reuse atomic snapshot replacement and commit-unknown latch
+	epoch                 string
+	index                 roomsIndex
+	maxTurns              uint64
+	config                serviceConfig
+	factory               func(string, string, serviceConfig) (*service, error)
+	runtimes              map[RoomIdentity]*roomRuntime
+	busy                  bool
+	closing               bool
+	operationDone         chan struct{}
+	recoveryStarted       bool
 }
 
 func newRoomManager(dir string, maxTurns uint64) (_ *roomManager, err error) {
@@ -193,24 +192,10 @@ func newRoomManager(dir string, maxTurns uint64) (_ *roomManager, err error) {
 	if err := m.validateIndex(); err != nil {
 		return nil, fmt.Errorf("%w: rooms.json: %w", ErrInvalid, err)
 	}
-	if err := m.migrateIndex(); err != nil {
-		return nil, err
-	}
 	for i, op := range m.index.Opens {
 		if op.Status == "running" {
 			next := m.copyIndex()
 			next.Opens[i].Status, next.Opens[i].Error = "failed", "service stopped during open; inspect and explicitly retry"
-			if err := m.saveIndex(next); err != nil {
-				return nil, err
-			}
-		}
-	}
-	// Interrupted management operations are diagnostic records, never replay jobs.
-	for i := range m.index.Activations {
-		if m.index.Activations[i].Status == "running" {
-			next := m.copyIndex()
-			next.Activations[i].Status = "failed"
-			next.Activations[i].Error = "service stopped during activation; inspect and explicitly retry"
 			if err := m.saveIndex(next); err != nil {
 				return nil, err
 			}
@@ -252,16 +237,6 @@ func (m *roomManager) close() error {
 }
 
 func (m *roomManager) saveIndex(next roomsIndex) error {
-	// Normalize legacy ownership on every write, including version-2 indexes
-	// produced during the transition. Selection never establishes ownership.
-	if next.OwnedRoomID != "" {
-		for _, e := range next.Rooms {
-			if e.RoomID == next.OwnedRoomID {
-				next.OwnedRooms = appendOwner(next.OwnedRooms, e.RoomIdentity)
-			}
-		}
-		next.OwnedRoomID = ""
-	}
 	if err := m.store.check(true); err != nil {
 		return err
 	}
@@ -273,7 +248,7 @@ func (m *roomManager) saveIndex(next roomsIndex) error {
 }
 
 func (m *roomManager) validateIndex() error {
-	if m.index.Version != formatVersion && m.index.Version != roomsIndexVersion {
+	if m.index.Version != roomsIndexVersion {
 		return ErrVersion
 	}
 	if m.index.Rooms == nil || len(m.index.Rooms) > maxRooms {
@@ -290,9 +265,6 @@ func (m *roomManager) validateIndex() error {
 		ids[e.RoomID], instances[e.RoomInstance], requests[e.CreateID] = true, true, true
 		switch e.Status {
 		case "creating":
-			if e.RoomID == m.index.OwnedRoomID || e.RoomID == m.index.ActiveRoomID {
-				return ErrInvalid
-			}
 			if e.Initialization == nil {
 				return ErrInvalid
 			}
@@ -318,30 +290,6 @@ func (m *roomManager) validateIndex() error {
 			}
 		default:
 			return ErrInvalid
-		}
-	}
-	if m.index.OwnedRoomID != "" && !ids[m.index.OwnedRoomID] {
-		return ErrIdentity
-	}
-	if m.index.ActiveRoomID != "" && !ids[m.index.ActiveRoomID] {
-		return ErrIdentity
-	}
-	if len(m.index.Activations) > maxActivations {
-		return ErrCapacity
-	}
-	operations := map[string]bool{}
-	for _, op := range m.index.Activations {
-		if !safeMembershipID(op.ActivateID) || operations[op.ActivateID] || !ids[op.RoomID] ||
-			(op.Status != "running" && op.Status != "completed" && op.Status != "failed") {
-			return ErrInvalid
-		}
-		operations[op.ActivateID] = true
-		found := false
-		for _, e := range m.index.Rooms {
-			found = found || (e.RoomIdentity == op.RoomIdentity && (e.Status == "ready" || e.Status == "deleting"))
-		}
-		if !found {
-			return ErrIdentity
 		}
 	}
 	if err := m.validateRuntimesIndex(); err != nil {
@@ -675,7 +623,7 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			rooms = append(rooms, summary)
 		}
-		response := roomsResponse{ServiceEpoch: m.epoch, DefaultRoomID: m.index.ActiveRoomID, Rooms: rooms,
+		response := roomsResponse{ServiceEpoch: m.epoch, Rooms: rooms,
 			Operator: humanOperator(), Busy: m.busy, Teams: m.teamSummaries()}
 		if m.store.uncertain {
 			response.WriteError = ErrCommitUnknown.Error()

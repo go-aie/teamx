@@ -88,16 +88,16 @@ func fingerprint(secret platform.Secret) string {
 
 func validValidation(v platform.Validation) bool {
 	return v.Status == "unverified" && v.CheckedAt.IsZero() && v.Username == "" && v.UserID == 0 && v.ErrorCode == "" ||
-		v.Status == "valid" && !v.CheckedAt.IsZero() && platform.ValidUsername(v.Username) && v.UserID >= 0 && v.ErrorCode == "" ||
+		v.Status == "valid" && !v.CheckedAt.IsZero() && platform.ValidUsername(v.Username) && v.UserID > 0 && v.ErrorCode == "" ||
 		v.Status == "failed" && !v.CheckedAt.IsZero() && v.Username == "" && v.UserID == 0 && validPlatformValidationError(v.ErrorCode)
 }
 
 func validIdentityBinding(c Record) bool {
 	b := c.IdentityBinding
-	if c.Validation.UserID == 0 {
-		return b == nil // Pre-GT-01 records remain readable, but cannot prove identity.
+	if c.Validation.Status != "valid" {
+		return b == nil
 	}
-	return c.Validation.Status == "valid" && b != nil && b.Generation == c.Generation && b.CredentialVersion == c.CredentialVersion &&
+	return c.Validation.UserID > 0 && b != nil && b.Generation == c.Generation && b.CredentialVersion == c.CredentialVersion &&
 		len(b.CredentialFingerprint) == 64 && strings.Trim(b.CredentialFingerprint, "0123456789abcdef") == ""
 }
 
@@ -131,11 +131,11 @@ func ResolveVerifiedIdentity(file Snapshot, c Record) (platform.Validation, plat
 	return c.Validation, secret, nil
 }
 
-// Public preserves legacy Events identity display. Bound identity evidence is
+// Public provides current connection identity display. Bound identity evidence is
 // hidden when the resolved credential has changed; reading never rewrites disk.
 func Public(file Snapshot, c Record) Connection {
 	result := c.Connection
-	if c.IdentityBinding != nil {
+	if c.Validation.Status == "valid" {
 		if _, err := VerifiedIdentity(file, c); err != nil {
 			result.Validation = platform.Validation{Status: "unverified"}
 		}

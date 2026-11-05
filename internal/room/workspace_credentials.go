@@ -208,7 +208,7 @@ func (m *roomManager) cleanupWorkspaceCredentialsLocked(owner RoomIdentity) erro
 			return err // Unknown references must never authorize deletion.
 		}
 		add(config.Workspace)
-		// Legacy subscriptions own their saved credential even after Git is unbound.
+		// Subscriptions retain their credential references after Git is unbound.
 		for _, state := range m.notifications.StatesLocked(entry.RoomIdentity) {
 			if s, ok := state.(gitlab.EventsState); ok && s.Binding.CredentialID != "" {
 				referenced[s.Binding.CredentialID] = true

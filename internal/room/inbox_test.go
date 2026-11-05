@@ -121,6 +121,9 @@ func TestAgentInboxDurableReceiptAndRecovery(t *testing.T) {
 	changed.Item.Text = "changed evidence"
 	inboxError[InboxReceipt](t, h, changed, ErrConflict)
 	changed = request
+	changed.Item.Source.URL = "https://gitlab.example.com/g/p/-/merge_requests/42"
+	inboxError[InboxReceipt](t, h, changed, ErrConflict)
+	changed = request
 	changed.Item.Source.Reference.Object.IID.Value = "9001"
 	inboxError[InboxReceipt](t, h, changed, ErrConflict)
 	status := inboxCall[InboxStatus](t, h, InspectInbox{h.id})
@@ -536,15 +539,13 @@ func TestAgentInboxMissingRoomIsNotReinitialized(t *testing.T) {
 	}
 }
 
-func TestIntegrationRedeliveryWithNewReferenceEvidence(t *testing.T) {
+func TestIntegrationRedeliveryRequiresExactSourceEvidence(t *testing.T) {
 	h := newRoomHarness(t, emptyRoom(), nil)
 	source := platform.SourceRef{Provider: "gitlab", Channel: "events", Instance: "https://gitlab.example.com", SubscriptionID: strings.Repeat("a", 32), ItemKey: "event-1"}
 	request := postIntegrationMessage{RoomIdentity: h.id, DeliveryID: "existing-delivery", Text: "original body", Source: source}
-	first := roomCall[PostReceipt](t, h, request)
+	_ = roomCall[PostReceipt](t, h, request)
 	request.Source.Reference = platform.NotificationReference{Version: 1, Object: platform.ObjectReference{Type: "MergeRequest", ID: platform.ExternalID{Namespace: "gitlab:rest:id", Value: "9001"}}}
-	if again := roomCall[PostReceipt](t, h, request); again != first {
-		t.Fatal("new API evidence duplicated an existing delivery", first, again)
-	}
+	roomError[PostReceipt](t, h, request, ErrConflict)
 	request.Source.ItemKey = "another-event"
 	roomError[PostReceipt](t, h, request, ErrConflict)
 	request.DeliveryID = "new-delivery"

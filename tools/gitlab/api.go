@@ -25,7 +25,6 @@ func (e *apiFailure) Error() string { return e.message }
 type api struct {
 	origin, token string
 	client        *http.Client
-	responseLimit int64
 }
 
 func (a *app) api() (*api, error) {
@@ -80,11 +79,11 @@ func (c *api) request(ctx context.Context, method, path string, body, out any) (
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, &apiFailure{fmt.Sprintf("GitLab API HTTP %d (no automatic retry)", resp.StatusCode), resp.StatusCode == 408 || resp.StatusCode == 429 || resp.StatusCode >= 500, resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != 408}
 	}
-	b, err = io.ReadAll(io.LimitReader(resp.Body, c.byteLimit()+1))
+	b, err = io.ReadAll(io.LimitReader(resp.Body, (16<<20)+1))
 	if err != nil {
 		return nil, &apiFailure{"API response interrupted; remote result unconfirmed if writing", ctx.Err() == nil, false}
 	}
-	if err != nil || int64(len(b)) > c.byteLimit() || !json.Valid(b) {
+	if err != nil || int64(len(b)) > 16<<20 || !json.Valid(b) {
 		return nil, errors.New("incomplete or invalid API response; remote result unconfirmed if writing")
 	}
 	b = bytes.ReplaceAll(b, []byte(c.token), []byte("[REDACTED]"))
@@ -153,11 +152,4 @@ func nextCursor(p pageInfo, seen map[string]bool) (string, error) {
 	}
 	seen[p.EndCursor] = true
 	return p.EndCursor, nil
-}
-
-func (c *api) byteLimit() int64 {
-	if c.responseLimit > 0 {
-		return c.responseLimit
-	}
-	return 16 << 20
 }

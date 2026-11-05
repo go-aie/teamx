@@ -7,6 +7,8 @@ import (
 	"errors"
 	"os"
 	"time"
+
+	"github.com/go-aie/teamx/internal/platform"
 )
 
 const maxPolicyRevisions = 256
@@ -26,22 +28,28 @@ type PolicyScope struct {
 	Account     string `json:"account,omitempty"`
 	Project     string `json:"project,omitempty"`
 	ObjectType  string `json:"object_type,omitempty"`
+	// Native account scopes don't require a username. Tenant is exact when
+	// AccountID is present, including the empty (single-tenant) namespace.
+	AccountID    platform.ExternalID `json:"account_id,omitzero"`
+	Tenant       platform.ExternalID `json:"tenant,omitzero"`
+	NoContainers bool                `json:"no_containers,omitempty"`
 }
 
 type PolicyRevision struct {
-	ID         string       `json:"id"`
-	Version    uint64       `json:"version"`
-	Kind       string       `json:"kind"`   // preference, rule, decision (only in a matter)
-	Status     string       `json:"status"` // suggested, active, revoked
-	Text       string       `json:"text"`
-	Scope      PolicyScope  `json:"scope"`
-	Actions    string       `json:"actions,omitempty"`
-	Conditions string       `json:"conditions,omitempty"`
-	Exceptions string       `json:"exceptions,omitempty"`
-	ExpiresAt  *time.Time   `json:"expires_at,omitempty"`
-	Source     PolicySource `json:"source"`
-	ChangedBy  Author       `json:"changed_by"`
-	UpdatedAt  time.Time    `json:"updated_at"`
+	ID           string                      `json:"id"`
+	Version      uint64                      `json:"version"`
+	Kind         string                      `json:"kind"`   // preference, rule
+	Status       string                      `json:"status"` // suggested, active, revoked
+	Text         string                      `json:"text"`
+	Scope        PolicyScope                 `json:"scope"`
+	Actions      string                      `json:"actions,omitempty"`
+	Conditions   string                      `json:"conditions,omitempty"`
+	Exceptions   string                      `json:"exceptions,omitempty"`
+	ExpiresAt    *time.Time                  `json:"expires_at,omitempty"`
+	Source       PolicySource                `json:"source"`
+	ChangedBy    Author                      `json:"changed_by"`
+	UpdatedAt    time.Time                   `json:"updated_at"`
+	Conversation *policyConversationEvidence `json:"conversation,omitempty"`
 }
 
 type PolicySnapshot struct {
@@ -96,30 +104,23 @@ func agentPolicy(p PolicySnapshot, turn uint64, now time.Time) agentPolicyView {
 }
 
 // Version is the expected record version; Revision is the expected file revision.
-// User/source text is supplied only by a human management action. Agent writes
-// must reference an actual human Room message and can only save suggestions.
+// Human management supplies source text; Agent changes use the conversation
+// service with real human Room evidence.
 type PolicyChange struct {
-	ID            string      `json:"id"`
-	Version       uint64      `json:"version"`
-	Revision      uint64      `json:"revision"`
-	Kind          string      `json:"kind"`
-	Status        string      `json:"status"`
-	Text          string      `json:"text"`
-	Scope         PolicyScope `json:"scope"`
-	Actions       string      `json:"actions,omitempty"`
-	Conditions    string      `json:"conditions,omitempty"`
-	Exceptions    string      `json:"exceptions,omitempty"`
-	ExpiresAt     *time.Time  `json:"expires_at,omitempty"`
-	SourceSeq     uint64      `json:"source_seq,omitempty"`
-	SourceText    string      `json:"source_text,omitempty"`
-	Seq           uint64      `json:"seq,omitempty"` // exact Inbox/matter identity for a one-off decision
-	MatterID      string      `json:"matter_id,omitempty"`
-	MatterVersion uint64      `json:"matter_version,omitempty"`
-	TurnNumber    uint64      `json:"turn_number,omitempty"`
-}
-
-type DecisionHistory struct {
-	History []PolicyRevision `json:"history"`
+	ID         string      `json:"id"`
+	Version    uint64      `json:"version"`
+	Revision   uint64      `json:"revision"`
+	Kind       string      `json:"kind"`
+	Status     string      `json:"status"`
+	Text       string      `json:"text"`
+	Scope      PolicyScope `json:"scope"`
+	Actions    string      `json:"actions,omitempty"`
+	Conditions string      `json:"conditions,omitempty"`
+	Exceptions string      `json:"exceptions,omitempty"`
+	ExpiresAt  *time.Time  `json:"expires_at,omitempty"`
+	SourceSeq  uint64      `json:"source_seq,omitempty"`
+	SourceText string      `json:"source_text,omitempty"`
+	TurnNumber uint64      `json:"turn_number,omitempty"`
 }
 
 func policyCurrent(history []PolicyRevision) []PolicyRevision {
@@ -142,7 +143,7 @@ func policyView(p PolicySnapshot) PolicyView {
 
 func validPolicyRevision(r PolicyRevision) bool {
 	if !safeMembershipID(r.ID) || r.Version == 0 || !validText(r.Text) || !validText(r.Scope.Description) ||
-		(r.Kind != "preference" && r.Kind != "rule" && r.Kind != "decision") ||
+		(r.Kind != "preference" && r.Kind != "rule") ||
 		(r.Status != "suggested" && r.Status != "active" && r.Status != "revoked") ||
 		!validText(r.Source.User) || !validText(r.Source.Text) || r.UpdatedAt.IsZero() ||
 		(r.ChangedBy.Kind != "human" && r.ChangedBy.Kind != "agent") || !validText(r.ChangedBy.ID) || (r.ChangedBy.Kind == "human" && r.ChangedBy.ID != r.Source.User) {
@@ -153,35 +154,41 @@ func validPolicyRevision(r PolicyRevision) bool {
 			return false
 		}
 	}
+	if (r.Scope.AccountID != (platform.ExternalID{}) && !r.Scope.AccountID.Valid()) || (r.Scope.Tenant != (platform.ExternalID{}) && !r.Scope.Tenant.Valid()) ||
+		(r.Scope.AccountID.Valid() && r.Scope.Account != "") || (r.Scope.NoContainers && r.Scope.Project != "") || (r.Scope.Tenant.Valid() && !r.Scope.AccountID.Valid()) {
+		return false
+	}
 	if len(r.Source.Text) > maxTextBytes {
 		return false
 	}
 	if r.Kind == "preference" && (r.Actions != "" || r.Conditions != "" || r.Exceptions != "") {
 		return false
 	}
-	if r.Kind == "rule" && (!validText(r.Scope.Provider) || !validText(r.Scope.Instance) || !validText(r.Scope.Account) || !validText(r.Scope.Project) || !validText(r.Actions) || !validText(r.Conditions) || !validText(r.Exceptions)) {
+	if r.Kind == "rule" && (!validText(r.Scope.Provider) || !validText(r.Scope.Instance) || (!validText(r.Scope.Account) && !r.Scope.AccountID.Valid()) || (!validText(r.Scope.Project) && !r.Scope.NoContainers) || !validText(r.Actions) || !validText(r.Conditions) || !validText(r.Exceptions)) {
 		return false
 	}
-	if r.Kind == "decision" && !validText(r.Actions) {
-		return false
-	}
+
 	return r.ExpiresAt == nil || !r.ExpiresAt.IsZero()
 }
 
-func validatePolicyHistory(history []PolicyRevision, decision bool) error {
+func validatePolicyHistory(history []PolicyRevision) error {
 	if len(history) > maxPolicyRevisions {
 		return ErrInvalid
 	}
 	latest := map[string]PolicyRevision{}
 	for _, r := range history {
-		if !validPolicyRevision(r) || (r.Kind == "decision") != decision {
+		if !validPolicyRevision(r) {
 			return ErrInvalid
 		}
 		old, exists := latest[r.ID]
 		if r.Version != old.Version+1 || (exists && (r.Kind != old.Kind || r.Source.User != old.Source.User)) {
 			return ErrInvalid
 		}
-		if r.ChangedBy.Kind == "agent" && (r.Status != "suggested" || r.Source.Seq == 0 || (exists && old.Status != "suggested")) {
+		if r.Conversation != nil {
+			if validatePolicyConversation(r, old) != nil {
+				return ErrInvalid
+			}
+		} else if r.ChangedBy.Kind == "agent" {
 			return ErrInvalid
 		}
 		latest[r.ID] = r
@@ -205,7 +212,7 @@ func (s *Store) loadPolicyLocked(id MemberIdentity, writing bool) (PolicySnapsho
 	if p.Version != 1 || p.MemberIdentity != id || p.Revision != uint64(len(p.History)) || p.History == nil {
 		return p, path, ErrInvalid
 	}
-	return p, path, validatePolicyHistory(p.History, false)
+	return p, path, validatePolicyHistory(p.History)
 }
 
 func (s *Store) readPolicy(id MemberIdentity) (PolicyView, error) {
@@ -250,19 +257,10 @@ func (s *Store) policyRevisionLocked(id MemberIdentity, caller Caller, c PolicyC
 	if len(history) >= maxPolicyRevisions {
 		return r, ErrCapacity
 	}
-	if caller.Kind == "agent" {
-		if caller.ID != id.AgentID || caller.MembershipID != id.MembershipID || c.Status != "suggested" || c.SourceSeq == 0 || c.SourceText != "" || (old.Version != 0 && old.Status != "suggested") {
-			return r, ErrIdentity
-		}
-		if c.TurnNumber == 0 {
-			return r, ErrConflict
-		}
-		if _, err := s.runningTurnLocked(id, c.TurnNumber); err != nil {
-			return r, err
-		}
-	} else if caller.Kind != "human" || caller.MembershipID != "" || !validText(caller.ID) {
+	if caller.Kind != "human" || caller.MembershipID != "" || !validText(caller.ID) {
 		return r, ErrIdentity
 	}
+
 	if c.SourceSeq != 0 {
 		room, err := s.loadRoom()
 		if err != nil {
@@ -296,7 +294,7 @@ func (s *Store) changePolicy(id MemberIdentity, caller Caller, c PolicyChange) (
 	if err != nil {
 		return PolicyView{}, err
 	}
-	if c.Kind == "decision" || c.Seq != 0 || c.MatterID != "" {
+	if c.Kind != "preference" && c.Kind != "rule" {
 		return PolicyView{}, ErrRequest
 	}
 	if p.Revision != c.Revision {
@@ -312,46 +310,4 @@ func (s *Store) changePolicy(id MemberIdentity, caller Caller, c PolicyChange) (
 		return PolicyView{}, err
 	}
 	return policyView(p), nil
-}
-
-func (s *Store) changeDecision(id MemberIdentity, caller Caller, c PolicyChange) (MatterRecord, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, _, err := s.memberPath(id, "policy.json", true); err != nil {
-		return MatterRecord{}, err
-	}
-	if c.Kind != "decision" || c.Seq == 0 || !safeMembershipID(c.MatterID) {
-		return MatterRecord{}, ErrRequest
-	}
-	e, err := s.inboxEntryLocked(id, c.Seq)
-	if err != nil {
-		return MatterRecord{}, err
-	}
-	record, err := s.loadMatterLocked(e)
-	if err != nil {
-		return record, err
-	}
-	for i := range record.Matters {
-		m := &record.Matters[i]
-		if m.ID != c.MatterID {
-			continue
-		}
-		if m.Version != c.MatterVersion {
-			return record, ErrConflict
-		}
-		history := []PolicyRevision{}
-		if m.Decisions != nil {
-			history = m.Decisions.History
-		}
-		r, err := s.policyRevisionLocked(id, caller, c, history)
-		if err != nil {
-			return record, err
-		}
-		m.Decisions = &DecisionHistory{History: append(history, r)}
-		m.Version++
-		m.ProgressVersion++
-		m.UpdatedAt = time.Now().UTC()
-		return record, s.save(s.matterPath(e), record, matterRecordBytes)
-	}
-	return record, ErrRequest
 }

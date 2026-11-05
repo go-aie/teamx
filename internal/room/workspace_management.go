@@ -402,7 +402,7 @@ func (m *roomManager) retryWorkspace(id RoomIdentity, operationID string) (works
 func (m *roomManager) launchWorkspace(op workspaceOperation) {
 	rt := m.reserveRuntimeLocked(op.RoomIdentity)
 	m.cancelWorkspaceNotificationsLocked(op.RoomIdentity)
-	m.cancelToolsLocked(func(c *toolCall) bool { return c.owner == op.RoomIdentity })
+	m.cancelPlatformCallsLocked(func(c *platformCall) bool { return c.owner == op.RoomIdentity })
 	// Establish the execution boundary before returning the receipt. close drains
 	// requests already admitted and joins all member/Session/tool ownership.
 	if rt.service != nil {
@@ -459,7 +459,7 @@ func (m *roomManager) runWorkspace(op workspaceOperation, rt *roomRuntime) {
 		runErr = notification.Wait(queryCtx, queries)
 	}
 	if runErr == nil {
-		runErr = m.waitTools(queryCtx, &op.RoomIdentity)
+		runErr = m.waitPlatformCalls(queryCtx, &op.RoomIdentity)
 	}
 	queryCancel()
 	if runErr != nil {
@@ -650,7 +650,7 @@ func (m *roomManager) runWorkspace(op workspaceOperation, rt *roomRuntime) {
 		runErr = err
 		return
 	}
-	svc.settleTools = func(ctx context.Context) error { return m.waitTools(ctx, &op.RoomIdentity) }
+	svc.settleTools = func(ctx context.Context) error { return m.waitPlatformCalls(ctx, &op.RoomIdentity) }
 	m.mu.Lock()
 	m.setRuntimeServiceLocked(op.RoomIdentity, svc)
 	if m.closing {
@@ -685,7 +685,7 @@ func (m *roomManager) runWorkspace(op workspaceOperation, rt *roomRuntime) {
 			executionErr = err
 			ctx, cancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
 			svc.closing.Store(true)
-			executionErr = errors.Join(executionErr, m.waitTools(ctx, &op.RoomIdentity), svc.close(ctx))
+			executionErr = errors.Join(executionErr, m.waitPlatformCalls(ctx, &op.RoomIdentity), svc.close(ctx))
 			cancel()
 			m.mu.Lock()
 			next := m.copyIndex()
@@ -703,7 +703,7 @@ func (m *roomManager) runWorkspace(op workspaceOperation, rt *roomRuntime) {
 	if runErr != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
 		svc.closing.Store(true)
-		runErr = errors.Join(runErr, m.waitTools(ctx, &op.RoomIdentity), svc.close(ctx))
+		runErr = errors.Join(runErr, m.waitPlatformCalls(ctx, &op.RoomIdentity), svc.close(ctx))
 		cancel()
 	}
 }

@@ -6,8 +6,6 @@ import (
 	"errors"
 	"net/http/httptest"
 	"net/url"
-	"os"
-	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -76,9 +74,6 @@ func TestRuntimeOpenRoutesAndReusesInstances(t *testing.T) {
 	}
 	if op := beginOpen(t, m, a.RoomIdentity, "open-a"); op.Service == nil || *op.Service != sa {
 		t.Fatal("receipt changed", op)
-	}
-	if m.index.ActiveRoomID != "" {
-		t.Fatal("open changed the legacy selection")
 	}
 	for _, info := range []ServiceInfo{sa, sb} {
 		req := apiRequest{ServiceInfo: info, Caller: humanCaller, ClientMessageID: "same-id", Text: info.RoomID}
@@ -245,40 +240,6 @@ func TestRuntimeOpenFailureIsLocalAndRequiresNewReceipt(t *testing.T) {
 	}
 }
 
-func TestRuntimeIndexMigrationAndInterruptedOpen(t *testing.T) {
-	m := activationTestManager(t)
-	a, b := managerCreate(t, m, "a"), managerCreate(t, m, "b")
-	if err := m.close(); err != nil {
-		t.Fatal(err)
-	}
-	old := m.copyIndex()
-	old.Version, old.ActiveRoomID, old.OwnedRoomID = 1, b.RoomID, a.RoomID
-	data, _ := json.Marshal(old)
-	if err := os.WriteFile(m.indexPath(), data, 0600); err != nil {
-		t.Fatal(err)
-	}
-	restored := testManager(t, m.store.dir, managerTestProfiles(t))
-	if restored.index.Version != 2 || restored.index.ActiveRoomID != b.RoomID || !reflect.DeepEqual(restored.index.OwnedRooms, []RoomIdentity{a.RoomIdentity}) || len(restored.runtimes) != 0 {
-		t.Fatal("migration inferred selection ownership or lost old ownership", restored.index)
-	}
-	var disk roomsIndex
-	if err := readSnapshot(restored.indexPath(), &disk, maxRoomsFileBytes); err != nil || disk.Version != 2 || !reflect.DeepEqual(disk.OwnedRooms, restored.index.OwnedRooms) {
-		t.Fatal("migration not durable", err)
-	}
-	next := restored.copyIndex()
-	next.Opens = append(next.Opens, roomOpen{RoomIdentity: a.RoomIdentity, OpenID: "crashed", Status: "running"})
-	if err := restored.saveIndex(next); err != nil {
-		t.Fatal(err)
-	}
-	if err := restored.close(); err != nil {
-		t.Fatal(err)
-	}
-	again := testManager(t, m.store.dir, managerTestProfiles(t))
-	if again.index.Opens[0].Status != "failed" || len(again.index.OwnedRooms) != 1 || len(again.runtimes) != 0 {
-		t.Fatal("startup replayed an interrupted open or dropped ownership", again.index)
-	}
-}
-
 func TestRuntimeCLIResolvesOnlyExplicitOpenRoom(t *testing.T) {
 	m := activationTestManager(t)
 	a, b, c := managerCreate(t, m, "a"), managerCreate(t, m, "b"), managerCreate(t, m, "c")
@@ -412,7 +373,7 @@ func TestRuntimeCatalogHasNoGlobalSelectionAndScopesBusyAndNames(t *testing.T) {
 	if err := json.Unmarshal(r.Body.Bytes(), &fields); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"active", "active_room_id", "activation", "members"} {
+	for _, key := range []string{"active", "active_room_id", "default_room_id", "activation", "members"} {
 		if _, ok := fields[key]; ok {
 			t.Fatalf("legacy global %s exposed", key)
 		}

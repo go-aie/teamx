@@ -73,6 +73,7 @@ type SourceRef struct {
 	Provider       string                `json:"provider"`
 	Channel        string                `json:"channel"`
 	Instance       string                `json:"instance"`
+	Tenant         ExternalID            `json:"tenant,omitzero"`
 	SubscriptionID string                `json:"subscription_id"`
 	ItemKey        string                `json:"item_key"`
 	ProjectID      int64                 `json:"project_id,omitempty"`
@@ -97,8 +98,8 @@ type ObjectReference struct {
 
 // NotificationReference is source evidence, not a verified alias/grouping index.
 // Target preserves the original API target; Object is the business object (the
-// noteable for a comment). Unknown IDs stay absent. Version zero means legacy
-// source data without structured evidence. Value fields keep SourceRef comparable.
+// noteable for a comment). Unknown IDs stay absent. Version zero represents
+// a source without native evidence. Value fields keep SourceRef comparable.
 type NotificationReference struct {
 	Version      int             `json:"version"`
 	RecipientID  ExternalID      `json:"recipient_id,omitzero"`

@@ -31,18 +31,22 @@ await ui.el("connection-form").emit("submit");
 assert.equal(ui.el("connections-feedback").textContent, "连接已保存。");
 await ui.el("close-settings").emit("click");
 await ui.create("Shared Workspace");
-async function ready() {
+async function ready(formOpen = false) {
   for (let i = 0; i < 500; i++) {
     await ui.refresh();
     let catalog;
     try { catalog = await call("/v1/rooms"); } catch (error) { if (error.code !== "busy") throw error; }
-    if (catalog && !catalog.busy && catalog.rooms[0]?.service && !catalog.rooms[0].busy) return catalog;
+    // A fresh catalog read can succeed after the UI's parallel Workspace read
+    // was briefly rejected. Wait for the observed UI to reconnect as well;
+    // submitting a disabled form is a no-op, not an accepted operation.
+    if (catalog && !catalog.busy && catalog.rooms[0]?.service && !catalog.rooms[0].busy && (!formOpen || !ui.el("workspace-apply").disabled)) return catalog;
     await new Promise(resolve => setTimeout(resolve, 20));
   }
   throw Error("manager did not settle");
 }
 await ready();
 await ui.el("open-workspace").emit("click");
+await ready(true);
 ui.el("workspace-repository").checked = true; await ui.el("workspace-repository").emit("change");
 ui.el("workspace-repo-url").value = "https://gitlab.invalid/group/project.git";
 ui.el("workspace-gitlab").checked = true; await ui.el("workspace-gitlab").emit("change");
@@ -57,6 +61,7 @@ for (let attempt = 0; attempt < 50; attempt++) {
 }
 assert.ok(connection, "shared connection list did not become readable");
 ui.el("workspace-connection").value = connection.value; await ui.el("workspace-connection").emit("change");
+assert.equal(ui.el("workspace-apply").disabled, false, ui.el("workspace-error").textContent);
 await ui.el("workspace-form").emit("submit");
 const before = await ready();
 const params = new URLSearchParams({ ...before.rooms[0].service, service_epoch: before.service_epoch, caller_id: before.operator });

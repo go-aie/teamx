@@ -22,9 +22,8 @@ type inboxHeader struct {
 }
 
 type inboxIndex struct {
-	seq          uint64
-	digest       [32]byte
-	hasSourceURL bool
+	seq    uint64
+	digest [32]byte
 }
 
 func inboxEntryName(seq uint64) string { return fmt.Sprintf("%020d.json", seq) }
@@ -149,7 +148,7 @@ func (s *Store) loadInbox(a *AgentInbox, requested InboxLimits) error {
 			}
 			a.bytes += size
 			a.latest = max(a.latest, entry.Seq)
-			a.receipts[entry.Item.DeliveryID] = inboxIndex{entry.Seq, inboxDigest(entry.Item), entry.Item.Source.URL != ""}
+			a.receipts[entry.Item.DeliveryID] = inboxIndex{entry.Seq, inboxDigest(entry.Item)}
 			if len(a.receipts) > a.limits.Entries || a.bytes > a.limits.Bytes {
 				return ErrCapacity
 			}

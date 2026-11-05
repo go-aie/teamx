@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-aie/actorx"
 	"github.com/go-aie/teamx/internal/agent/dsh"
 )
 
@@ -286,80 +285,7 @@ func TestPolicyAgentRecoveryReadAndManagementHistory(t *testing.T) {
 	if err := runCLI(h.ctx, []string{"policy", "decisions"}, &out, &stderr, func(k string) string { return env[k] }); !errors.Is(err, ErrRequest) {
 		t.Fatal("retired Agent command accepted", err)
 	}
-	if _, err := svc.memberPolicy(h.ctx, apiRequest{Caller: agentCaller(h.id.AgentID, h.id.MembershipID)}, "decisions/read"); !errors.Is(err, ErrIdentity) {
+	if _, err := svc.memberPolicy(h.ctx, apiRequest{Caller: agentCaller(h.id.AgentID, h.id.MembershipID)}, "decisions/read"); !errors.Is(err, ErrRequest) {
 		t.Fatal("Agent can still query management decisions", err)
-	}
-}
-
-func TestPolicyEffectiveDecisionsOnInboxAndMatterReads(t *testing.T) {
-	h := newInboxHarness(t, InboxLimits{})
-	for _, key := range []string{"one", "two"} {
-		inboxCall[InboxReceipt](t, h, h.receive(key))
-	}
-	inboxRunning(t, h, 1, 2)
-	page := inboxCall[InboxBatchPage](t, h, ReadInboxBatch{MemberIdentity: h.id, TurnNumber: 1})
-	linkInboxPage(t, h, page)
-	changes := []PolicyChange{
-		{ID: "answer", Status: "active"},
-		{ID: "revoked", Status: "active"},
-		{ID: "revoked", Status: "revoked", Version: 1},
-		{ID: "suggested", Status: "suggested"},
-		{ID: "expired", Status: "active"},
-	}
-	for i, c := range changes {
-		c.Kind, c.Text, c.Actions = "decision", "reply to this request", "comment"
-		c.Scope.Description, c.SourceText = "this matter only", "confirmed exact reply"
-		c.Seq, c.MatterID, c.MatterVersion = 1, "main", uint64(i+1)
-		if c.ID == "expired" {
-			past := time.Now().Add(-time.Hour)
-			c.ExpiresAt = &past
-		}
-		if _, err := h.store.changeDecision(h.id, humanCaller, c); err != nil {
-			t.Fatal(err)
-		}
-	}
-	svc := &service{info: ServiceInfo{RoomIdentity: h.id.RoomIdentity}, store: h.store, room: h.roomHarness.addr,
-		inboxes: map[string]actorx.Addr{h.id.MembershipID: h.addr}}
-	req := apiRequest{Caller: agentCaller(h.id.AgentID, h.id.MembershipID)}
-	for _, operation := range []string{"read", "list"} {
-		value, err := svc.memberInbox(h.ctx, req, operation)
-		if err != nil {
-			t.Fatal(err)
-		}
-		data, err := json.Marshal(value)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if bytes.Contains(data, []byte(`"history"`)) {
-			t.Fatal("Agent received decisions.history", string(data))
-		}
-		var records []agentMatterRecord
-		if operation == "read" {
-			var decoded agentInboxBatchPage
-			if err := json.Unmarshal(data, &decoded); err != nil {
-				t.Fatal(err)
-			}
-			records = decoded.Matters
-		} else {
-			var decoded agentMatterPage
-			if err := json.Unmarshal(data, &decoded); err != nil {
-				t.Fatal(err)
-			}
-			records = decoded.Records
-		}
-		if len(records) != 2 || records[0].Seq != 1 || records[0].MembershipID != h.id.MembershipID || records[0].Matters[0].Version != 6 ||
-			len(records[0].Matters[0].Decisions) != 1 || records[0].Matters[0].Decisions[0].ID != "answer" || records[0].Matters[0].Decisions[0].Version != 1 ||
-			len(records[1].Matters[0].Decisions) != 0 {
-			t.Fatal("wrong decision scope/filter/version", operation, string(data))
-		}
-	}
-	value, err := svc.memberPolicy(h.ctx, apiRequest{Caller: humanCaller, AgentID: h.id.AgentID, MembershipID: h.id.MembershipID}, "decisions/read")
-	if err != nil || len(value.(MatterPage).Records[0].Matters[0].Decisions.History) != len(changes) {
-		t.Fatal("management decision history lost", value, err)
-	}
-	// Agent projection never rewrites durable decision history.
-	raw, err := h.store.listMatters(h.id, "", 0, 25)
-	if err != nil || len(raw.Records[0].Matters[0].Decisions.History) != len(changes) {
-		t.Fatal("Agent projection mutated stored record", raw, err)
 	}
 }

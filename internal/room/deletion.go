@@ -2,10 +2,8 @@ package room
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,7 +52,7 @@ func (m *roomManager) startDeletion(target RoomIdentity) (roomSummary, error) {
 		rt.service.closing.Store(true)
 	}
 	m.notifications.CancelRoomLocked(target)
-	m.cancelToolsLocked(func(c *toolCall) bool { return c.owner == target })
+	m.cancelPlatformCallsLocked(func(c *platformCall) bool { return c.owner == target })
 	go m.runDeletion(e.roomSummary, rt)
 	return e.roomSummary, nil
 }
@@ -84,7 +82,7 @@ func (m *roomManager) runDeletion(target roomSummary, rt *roomRuntime) {
 	ctx, cancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
 	runErr = m.stopRoomGrants(ctx, target.RoomIdentity)
 	if runErr == nil {
-		runErr = m.waitTools(ctx, &target.RoomIdentity)
+		runErr = m.waitPlatformCalls(ctx, &target.RoomIdentity)
 	}
 	if runErr == nil {
 		runErr = m.notifications.WaitRoom(ctx, target.RoomIdentity)
@@ -159,23 +157,11 @@ func (m *roomManager) runDeletion(target roomSummary, rt *roomRuntime) {
 			next.Rooms = append(next.Rooms, e)
 		}
 	}
-	next.Activations = next.Activations[:0]
-	for _, op := range m.index.Activations {
-		if op.RoomIdentity != target.RoomIdentity {
-			next.Activations = append(next.Activations, op)
-		}
-	}
 	next.WorkspaceOperations = next.WorkspaceOperations[:0]
 	for _, op := range m.index.WorkspaceOperations {
 		if op.RoomIdentity != target.RoomIdentity {
 			next.WorkspaceOperations = append(next.WorkspaceOperations, op)
 		}
-	}
-	if next.ActiveRoomID == target.RoomID {
-		next.ActiveRoomID = ""
-	}
-	if next.OwnedRoomID == target.RoomID {
-		next.OwnedRoomID = ""
 	}
 	next.OwnedRooms = nil
 	for _, owner := range m.index.OwnedRooms {
@@ -246,9 +232,6 @@ func (m *roomManager) checkDeletionSettled(target RoomIdentity) error {
 		}
 		if exists {
 			backend := ref.Directory
-			if backend == "" {
-				backend = filepath.Base(dshStateDir(path))
-			}
 			if err := dsh.CheckReset(filepath.Join(filepath.Dir(path), backend)); err != nil {
 				return fmt.Errorf("private Session %s has no verified settlement: %w", member.AgentID, err)
 			}
@@ -307,28 +290,13 @@ type deletionMember struct {
 	MembershipID string `json:"membership_id"`
 }
 
-// Deletion reads only ownership and member identities. Unknown business fields
-// are skipped, not migrated or accepted by the normal strict Room loader.
+// Deletion accepts only the current validated snapshot, like normal loading.
 func deletionMembers(dir string, expected RoomIdentity) ([]deletionMember, error) {
-	f, err := os.Open(filepath.Join(dir, "room.json"))
-	if err != nil {
+	var state RoomSnapshot
+	if err := readSnapshot(filepath.Join(dir, "room.json"), &state, maxRoomFileBytes); err != nil {
 		return nil, err
 	}
-	defer f.Close()
-	info, err := f.Stat()
-	if err != nil || !info.Mode().IsRegular() || info.Size() > maxRoomFileBytes {
-		return nil, ErrInvalid
-	}
-	var state struct {
-		Version int `json:"version"`
-		RoomIdentity
-		Members []deletionMember `json:"members"`
-	}
-	dec := json.NewDecoder(io.LimitReader(f, maxRoomFileBytes+1))
-	if dec.Decode(&state) != nil || dec.Decode(new(any)) != io.EOF {
-		return nil, ErrInvalid
-	}
-	if err := validateHeader(state.Version, state.RoomIdentity); err != nil {
+	if err := state.validate(); err != nil {
 		return nil, err
 	}
 	if state.RoomIdentity != expected {
@@ -344,5 +312,9 @@ func deletionMembers(dir string, expected RoomIdentity) ([]deletionMember, error
 		}
 		agents[member.AgentID], memberships[member.MembershipID] = true, true
 	}
-	return state.Members, nil
+	members := make([]deletionMember, 0, len(state.Members))
+	for _, m := range state.Members {
+		members = append(members, deletionMember{m.AgentID, m.MembershipID})
+	}
+	return members, nil
 }

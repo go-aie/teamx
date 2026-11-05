@@ -156,7 +156,7 @@ func TestHelpSkipsCredentialAndDisableJoins(t *testing.T) {
 		t.Fatal(frame)
 	}
 	m.mu.Lock()
-	pending := len(m.toolCalls)
+	pending := len(m.platformCalls)
 	m.mu.Unlock()
 	if pending != 0 {
 		t.Fatal(pending)
@@ -195,7 +195,7 @@ func TestBindingCASAndAccountlessTool(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer m.finishTool(call)
+	defer m.finishPlatformCall(call)
 	if p.Values["token"] != "rotated-token" {
 		t.Fatal("stale credential")
 	}
@@ -346,7 +346,7 @@ func TestProcessLifecycleSettlement(t *testing.T) {
 			p.Output = ready
 			p.Error = io.Discard
 			result := make(chan int, 1)
-			go func() { code := p.Run(ctx, []string{"api"}); m.finishTool(call); result <- code }()
+			go func() { code := p.Run(ctx, []string{"api"}); m.finishPlatformCall(call); result <- code }()
 			select {
 			case <-ready.started:
 			case <-time.After(3 * time.Second):
@@ -388,7 +388,7 @@ func TestProcessLifecycleSettlement(t *testing.T) {
 				t.Fatal("lifecycle did not join process")
 			}
 			m.mu.Lock()
-			pending := len(m.toolCalls)
+			pending := len(m.platformCalls)
 			m.mu.Unlock()
 			if pending != 0 {
 				t.Fatal(pending)
@@ -421,7 +421,7 @@ func TestCLICancellationJoinsServerProcess(t *testing.T) {
 	}
 	m.mu.Lock()
 	done := []<-chan struct{}{}
-	for c := range m.toolCalls {
+	for c := range m.platformCalls {
 		done = append(done, c.done)
 	}
 	m.mu.Unlock()
@@ -448,7 +448,7 @@ func TestAdmissionFailureDoesNotWaitForStdinEOF(t *testing.T) {
 		t.Fatal("admission waited for stdin", err)
 	}
 	m.mu.Lock()
-	pending := len(m.toolCalls)
+	pending := len(m.platformCalls)
 	m.mu.Unlock()
 	if pending != 0 {
 		t.Fatal(pending)

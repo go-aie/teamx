@@ -85,7 +85,7 @@ func TestDSHAdapterIsolationMetadataAndPrivateOutput(t *testing.T) {
 					if !strings.Contains(text, `human operator is "room-owner"`) || !strings.Contains(text, `mention "@room-owner"`) {
 						t.Errorf("human mention instructions missing: %s", text)
 					}
-					if !strings.Contains(text, `"$TEAMX_CLI" tools list`) || !strings.Contains(text, "supersedes legacy tool instructions") {
+					if !strings.Contains(text, `"$TEAMX_CLI" tools list`) || !strings.Contains(text, "Current tool protocol:") {
 						t.Errorf("current tool protocol missing from Session turn: %s", text)
 					}
 					if !strings.Contains(text, "Tools run on the TeamX server") || !strings.Contains(text, "exit 127") || !strings.Contains(text, "Do not search for binaries") {
@@ -227,6 +227,15 @@ func TestDSHRestorePausesWithoutReplacingBackend(t *testing.T) {
 			}
 			_ = store.Close()
 			svc, err := newService(dir, id.RoomID, recoveryConfig()) // Missing profiles must still allow observation.
+			if mode == "directory" {
+				if svc != nil {
+					closeService(t, svc)
+				}
+				if !errors.Is(err, ErrInvalid) {
+					t.Fatal("accepted an orphan DSH directory", err)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatal(err)
 			}

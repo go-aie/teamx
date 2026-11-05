@@ -39,8 +39,7 @@ type ConfirmInboxBatch struct {
 }
 type InboxBatchPage struct {
 	InboxPage
-	Batch   InboxBatch     `json:"batch"`
-	Matters []MatterRecord `json:"matters"`
+	Batch InboxBatch `json:"batch"`
 }
 
 func (s *Store) loadInboxConsumption(a *AgentInbox) error {
@@ -49,14 +48,16 @@ func (s *Store) loadInboxConsumption(a *AgentInbox) error {
 	c := inboxConsumption{Version: 1, MemberIdentity: a.id}
 	err := readSnapshot(filepath.Join(a.dir, "consumption.json"), &c, maxPrivateFileBytes)
 	if errors.Is(err, os.ErrNotExist) {
-		// Matters can only be created after a durable batch is issued. A missing
+		// Followup events can only be linked after a durable batch is issued. A missing
 		// cursor alongside business records is corruption, never a fresh inbox.
-		entries, e := os.ReadDir(filepath.Join(s.dir, "agents", a.id.MembershipID, "matters"))
-		if e != nil && !errors.Is(e, os.ErrNotExist) {
-			return e
-		}
-		if len(entries) != 0 {
-			return ErrInvalid
+		for _, name := range []string{filepath.Join("followups", "events")} {
+			entries, e := os.ReadDir(filepath.Join(s.dir, "agents", a.id.MembershipID, name))
+			if e != nil && !errors.Is(e, os.ErrNotExist) {
+				return e
+			}
+			if len(entries) != 0 {
+				return ErrInvalid
+			}
 		}
 		err = nil
 	}
@@ -74,18 +75,15 @@ func (s *Store) loadInboxConsumption(a *AgentInbox) error {
 		}
 	}
 	// A consumed notification must still have its authoritative business
-	// record. Never recover a cursor that would hide a missing/corrupt matter.
+	// record. Never recover a cursor that would hide a missing/corrupt followup event.
 	for seq := uint64(1); seq <= c.Through; seq++ {
 		e, err := s.inboxEntryLocked(a.id, seq)
 		if err != nil {
 			return err
 		}
-		if _, err := s.loadMatterLocked(e); err != nil {
+		if err := s.checkInboxBusinessLinkLocked(e); err != nil {
 			return err
 		}
-	}
-	if _, err := s.loadMatterContextLocked(a.id); err != nil {
-		return err
 	}
 	a.consumption = c
 	return nil
@@ -110,12 +108,17 @@ func (s *Store) saveInboxConsumption(c inboxConsumption, confirm bool) error {
 			if err != nil {
 				return err
 			}
-			if _, err := s.loadMatterLocked(e); err != nil {
+			if err := s.checkInboxBusinessLinkLocked(e); err != nil {
 				return err
 			}
 		}
 	}
 	return s.save(filepath.Join(s.dir, "inboxes", c.MembershipID, "consumption.json"), c, maxPrivateFileBytes)
+}
+
+func (s *Store) checkInboxBusinessLinkLocked(e InboxEntry) error {
+	_, err := s.loadFollowupEventLocked(e)
+	return err
 }
 
 func (a *AgentInbox) ReadBatch(ctx actorx.Context, msg ReadInboxBatch, reply actorx.Reply[InboxBatchPage]) error {

@@ -257,7 +257,7 @@ func TestToolDisablePreservesNotificationsWorkspaceAndSession(t *testing.T) {
 			_, call, _, admissionErr := m.prepareToolLocked(context.Background(), toolsRequest{ServiceInfo: svc.info, Caller: agentCaller(member.AgentID, member.MembershipID), Tool: "fixture-tool"})
 			m.mu.Unlock()
 			if call != nil {
-				m.finishTool(call)
+				m.finishPlatformCall(call)
 			}
 			if admissionErr == nil || !reflect.DeepEqual(before, after) || !bytes.Equal(beforeConfig, readCapabilityFile(t, configPath)) || string(readCapabilityFile(t, marker)) != "keep" {
 				t.Fatal("tool disable admitted a new call or changed independent state")

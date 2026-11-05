@@ -46,6 +46,7 @@ func (m *roomManager) initPlatform() {
 		return adapter.Verify(ctx, origin, secret)
 	})
 	m.initPlatformNotifications()
+	m.initPlatformReferences()
 }
 
 func verifyGitLabProject(ctx context.Context, origin, project string, secret workspaceSecret) (int64, error) {

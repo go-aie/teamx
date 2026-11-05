@@ -7,7 +7,7 @@ import (
 	"unicode/utf8"
 )
 
-// Target is a single destination. The zero value preserves legacy Room routing.
+// Target is a single destination. The zero value selects Room delivery.
 // MembershipID, never an agent name alone, fixes the receiving generation.
 type Target struct {
 	Mode         string `json:"mode,omitempty"`
@@ -24,8 +24,7 @@ func (t Target) Valid() bool {
 }
 
 // Route is frozen when the source accepts an item, in the same durable snapshot.
-// Version is the subscription configuration version at that boundary. Legacy
-// pending items have the zero route and continue going to Room after a switch.
+// Version is the subscription configuration version at that boundary. The route remains immutable for pending items after a target switch.
 type Route struct {
 	Target  Target `json:"target"`
 	Version uint64 `json:"version"`

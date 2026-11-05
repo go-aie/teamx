@@ -108,7 +108,7 @@ func TestRoomManagerCreationIsolationPersistenceAndDeduplication(t *testing.T) {
 	m := testManager(t, dir, profiles)
 	first := managerCreate(t, m, "first")
 	second := managerCreate(t, m, "second")
-	if first.RoomID == second.RoomID || first.RoomInstance == second.RoomInstance || first.Name == "" || first.Status != "ready" || m.index.ActiveRoomID != "" {
+	if first.RoomID == second.RoomID || first.RoomInstance == second.RoomInstance || first.Name == "" || first.Status != "ready" {
 		t.Fatal(first, second)
 	}
 	config, state := readManagedRoom(t, m, first)
@@ -178,7 +178,7 @@ func TestRoomManagerCreationIsolationPersistenceAndDeduplication(t *testing.T) {
 	}
 	response := managerHTTP(restored, "/v1/rooms", nil)
 	var list roomsResponse
-	if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &list) != nil || len(list.Rooms) != 3 || list.DefaultRoomID != "" {
+	if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &list) != nil || len(list.Rooms) != 3 {
 		t.Fatal(response.Code, response.Body.String())
 	}
 }

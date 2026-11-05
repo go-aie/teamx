@@ -70,18 +70,8 @@ type RunnerConfig struct {
 
 func (r RunnerConfig) valid() bool { return r.Kind == "dsh" && validText(r.Profile) }
 
-// Identify retired runners before strict field decoding, so an old "script"
-// field reports the unsupported runner rather than suggesting data corruption.
+// Decode only the current runner configuration.
 func (r *RunnerConfig) UnmarshalJSON(data []byte) error {
-	var header struct {
-		Kind string `json:"kind"`
-	}
-	if err := json.Unmarshal(data, &header); err != nil {
-		return err
-	}
-	if header.Kind == "manual" || header.Kind == "scripted" {
-		return fmt.Errorf("unsupported runner %q; only DSH members are supported", header.Kind)
-	}
 	type config RunnerConfig
 	var next config
 	dec := json.NewDecoder(bytes.NewReader(data))
@@ -103,13 +93,13 @@ type MemberState struct {
 type RoomSnapshot struct {
 	Version int `json:"version"`
 	RoomIdentity
-	LatestSeq            uint64                         `json:"latest_seq"`
-	ClearedThrough       uint64                         `json:"cleared_through,omitempty"`
-	Revision             uint64                         `json:"revision"`
-	Messages             []RoomMessage                  `json:"messages"`
-	Members              []MemberState                  `json:"members"`
-	IntegrationReceipts  map[string]IntegrationReceipt  `json:"integration_receipts,omitempty"`
-	MatterNoticeReceipts map[string]MatterNoticeReceipt `json:"matter_notice_receipts,omitempty"`
+	LatestSeq              uint64                           `json:"latest_seq"`
+	ClearedThrough         uint64                           `json:"cleared_through,omitempty"`
+	Revision               uint64                           `json:"revision"`
+	Messages               []RoomMessage                    `json:"messages"`
+	Members                []MemberState                    `json:"members"`
+	IntegrationReceipts    map[string]IntegrationReceipt    `json:"integration_receipts,omitempty"`
+	FollowupNoticeReceipts map[string]followupNoticeReceipt `json:"followup_notice_receipts,omitempty"`
 }
 
 // Ordinary messages store their deduplication key (Author, ClientMessageID).
@@ -164,19 +154,19 @@ func (s RoomSnapshot) validate() error {
 	if len(s.IntegrationReceipts) > maxIntegrationReceipts {
 		return ErrCapacity
 	}
-	if len(s.MatterNoticeReceipts) > maxIntegrationReceipts {
+	if len(s.FollowupNoticeReceipts) > maxIntegrationReceipts {
 		return ErrCapacity
 	}
-	for key, receipt := range s.MatterNoticeReceipts {
+	for key, receipt := range s.FollowupNoticeReceipts {
 		digest, err := hex.DecodeString(receipt.Digest)
 		if !validText(key) || receipt.Seq == 0 || receipt.Seq > s.LatestSeq || receipt.Author.Kind != "agent" ||
-			!validText(receipt.Author.ID) || !safeMembershipID(receipt.MembershipID) || !strings.HasPrefix(key, "matter-"+receipt.MembershipID+"-") || err != nil || len(digest) != 32 {
-			return fmt.Errorf("invalid matter notice receipt")
+			!validText(receipt.Author.ID) || !safeMembershipID(receipt.MembershipID) || !strings.HasPrefix(key, "followup-"+receipt.MembershipID+"-") || err != nil || len(digest) != 32 {
+			return fmt.Errorf("invalid followup notice receipt")
 		}
 		if receipt.Seq > s.ClearedThrough {
 			m := s.Messages[receipt.Seq-s.ClearedThrough-1]
 			if m.ClientMessageID != key || m.Author != receipt.Author || m.ReplyTo != 0 || noticeDigest(m.Text) != receipt.Digest {
-				return fmt.Errorf("matter notice receipt differs from message")
+				return fmt.Errorf("followup notice receipt differs from message")
 			}
 		}
 	}
@@ -194,7 +184,7 @@ func (s RoomSnapshot) validate() error {
 			return fmt.Errorf("duplicate agent or membership")
 		}
 		if !m.Runner.valid() {
-			return fmt.Errorf("unsupported runner %q or missing DSH profile; legacy manual/scripted members are not supported", m.Runner.Kind)
+			return fmt.Errorf("unsupported runner %q or missing DSH profile", m.Runner.Kind)
 		}
 		agents[m.AgentID], memberships[m.MembershipID] = true, true
 	}

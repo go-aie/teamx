@@ -24,9 +24,6 @@ func (b dshBackend) RotateSession(opts SessionOptions, ownedSettled bool) (Backe
 	}
 	if exists && !ownedSettled {
 		dir := ref.Directory
-		if dir == "" {
-			dir = filepath.Base(dshStateDir(opts.StatePath))
-		}
 		if err := dsh.CheckReset(filepath.Join(filepath.Dir(opts.StatePath), dir)); err != nil {
 			return nil, fmt.Errorf("old execution has no verified settlement: %w", err)
 		}

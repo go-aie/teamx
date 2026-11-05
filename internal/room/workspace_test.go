@@ -304,14 +304,27 @@ func TestWorkspaceSupplementGitLabAndFrozenResources(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// Upgrade never replaces frozen room resources. No API on revisit, even
-	// with a now missing environment credential; a future write reports failure.
+	// Revisit requires current resources and never replaces unexpected bytes.
 	usage := filepath.Join(tools, "USAGE.md")
+	current, err := os.ReadFile(usage)
+	if err != nil {
+		t.Fatal(err)
+	}
 	os.WriteFile(usage, []byte("frozen instructions"), 0600)
+	if _, err := f.ensure(false); err == nil {
+		t.Fatal("accepted outdated resources")
+	}
+	if got, err := os.ReadFile(usage); err != nil || string(got) != "frozen instructions" {
+		t.Fatal("rewrote unexpected resource", err)
+	}
+	if err := os.WriteFile(usage, current, 0600); err != nil {
+		t.Fatal(err)
+	}
+	// Current resources reopen without an API query; writes still need credentials.
 	f.calls = nil
 	t.Setenv("GITLAB_PAT", "")
 	visited, err := f.ensure(false)
-	if err != nil || visited.Instructions != "frozen instructions" {
+	if err != nil || visited.Instructions != string(current) {
 		t.Fatal(visited, err)
 	}
 	for _, call := range f.calls {

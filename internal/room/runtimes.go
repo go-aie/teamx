@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 )
 
-const roomsIndexVersion = 2
+const roomsIndexVersion = 3
 const maxRoomOpens = 10000
 
 // mu protects the registry and each operation slot. A slot is reserved before
@@ -88,11 +88,10 @@ func (m *roomManager) finishRuntimeLocked(rt *roomRuntime, err error) {
 
 type roomOpen struct {
 	RoomIdentity
-	OpenID   string       `json:"open_id"`
-	Sequence uint64       `json:"sequence,omitempty"`
-	Status   string       `json:"status"`
-	Service  *ServiceInfo `json:"service,omitempty"`
-	Error    string       `json:"error,omitempty"`
+	OpenID  string       `json:"open_id"`
+	Status  string       `json:"status"`
+	Service *ServiceInfo `json:"service,omitempty"`
+	Error   string       `json:"error,omitempty"`
 }
 
 type roomOpenRequest struct {
@@ -111,26 +110,7 @@ func appendOwner(owners []RoomIdentity, owner RoomIdentity) []RoomIdentity {
 	return append(owners, owner)
 }
 
-func (m *roomManager) migrateIndex() error {
-	if m.index.Version == roomsIndexVersion && m.index.OwnedRoomID == "" {
-		return nil
-	}
-	next := m.copyIndex()
-	next.Version = roomsIndexVersion
-	// ActiveRoomID remains a legacy UI default, never an inferred owner.
-	return m.saveIndex(next)
-}
-
 func (m *roomManager) validateRuntimesIndex() error {
-	sequences := map[uint64]bool{}
-	for _, op := range m.index.Activations {
-		if op.Sequence != 0 {
-			if sequences[op.Sequence] {
-				return ErrInvalid
-			}
-			sequences[op.Sequence] = true
-		}
-	}
 	owners := map[RoomIdentity]bool{}
 	for _, owner := range m.index.OwnedRooms {
 		if owners[owner] {
@@ -157,12 +137,6 @@ func (m *roomManager) validateRuntimesIndex() error {
 	}
 	seen := map[string]bool{}
 	for _, op := range m.index.Opens {
-		if op.Sequence != 0 {
-			if sequences[op.Sequence] {
-				return ErrInvalid
-			}
-			sequences[op.Sequence] = true
-		}
 		if !safeMembershipID(op.OpenID) || seen[op.OpenID] ||
 			(op.Status != "running" && op.Status != "completed" && op.Status != "failed") {
 			return ErrInvalid
@@ -271,11 +245,7 @@ func (m *roomManager) startOpen(id string, target RoomIdentity) (roomOpen, error
 	if len(m.index.Opens) >= maxRoomOpens {
 		return roomOpen{}, ErrCapacity
 	}
-	sequence, err := m.nextRuntimeOperationSequence()
-	if err != nil {
-		return roomOpen{}, err
-	}
-	op := roomOpen{RoomIdentity: target, OpenID: id, Sequence: sequence, Status: "running"}
+	op := roomOpen{RoomIdentity: target, OpenID: id, Status: "running"}
 	if svc != nil {
 		info := svc.info
 		op.Status, op.Service = "completed", &info
@@ -314,7 +284,8 @@ func (m *roomManager) runOpen(op roomOpen, rt *roomRuntime) {
 		if runErr == nil {
 			svc, runErr = m.factory(m.roomDir(op.RoomID), op.RoomID, config)
 			if svc != nil {
-				svc.settleTools = func(ctx context.Context) error { return m.waitTools(ctx, &op.RoomIdentity) }
+				svc.settleTools = func(ctx context.Context) error { return m.waitPlatformCalls(ctx, &op.RoomIdentity) }
+				m.bindPlatformReferences(svc)
 			}
 			if runErr == nil && svc.info.RoomIdentity != op.RoomIdentity {
 				runErr = ErrIdentity
@@ -360,11 +331,11 @@ func (m *roomManager) runOpen(op roomOpen, rt *roomRuntime) {
 	if svc != nil {
 		svc.closing.Store(true)
 	}
-	m.cancelToolsLocked(func(c *toolCall) bool { return c.owner == op.RoomIdentity })
+	m.cancelPlatformCallsLocked(func(c *platformCall) bool { return c.owner == op.RoomIdentity })
 	m.mu.Unlock()
 	if svc != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
-		cleanupErr := errors.Join(m.waitTools(ctx, &op.RoomIdentity), svc.close(ctx))
+		cleanupErr := errors.Join(m.waitPlatformCalls(ctx, &op.RoomIdentity), svc.close(ctx))
 		runErr = errors.Join(runErr, cleanupErr)
 		cancel()
 		svc.store.mu.Lock()
@@ -424,8 +395,7 @@ func (m *roomManager) serveRuntime(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, ErrIdentity)
 		return
 	}
-	tools := r.URL.Path == "/v1/send" || r.URL.Path == "/v1/read" || r.URL.Path == "/v1/read/confirm" ||
-		r.URL.Path == "/v1/inbox/read" || r.URL.Path == "/v1/inbox/confirm" || r.URL.Path == "/v1/matters/list" || r.URL.Path == "/v1/matters/update"
+	tools := agentRuntimePath(r.URL.Path)
 	if busy && (!tools || req.Caller.Kind != "agent") {
 		writeAPIError(w, ErrBusy)
 		return

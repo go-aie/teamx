@@ -64,7 +64,7 @@ type PostMessage struct {
 	ClientMessageID string
 	Text            string
 	ReplyTo         uint64
-	MatterNotice    bool // internal durable outbox delivery; never accepted by /v1/send
+	FollowupNotice  bool // internal durable outbox delivery; never accepted by /v1/send
 }
 
 type PostReceipt struct {

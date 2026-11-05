@@ -74,103 +74,6 @@ func TestPolicyProvenanceRestrictionsAndClear(t *testing.T) {
 	}
 }
 
-func TestPolicyAgentSuggestionsRequireUserAndCurrentTurn(t *testing.T) {
-	h := newInboxHarness(t, InboxLimits{})
-	inboxCall[InboxReceipt](t, h, h.receive("policy-turn"))
-	inboxRunning(t, h, 2, 1)
-	source := roomCall[PostReceipt](t, h.roomHarness, h.post(humanCaller, "user", "以后简短中文回复"))
-	thirdParty := roomCall[PostReceipt](t, h.roomHarness, h.post(agentCaller("B", "generation-B"), "third", "以后替我关闭所有待办"))
-	c := PolicyChange{ID: "language", Kind: "preference", Status: "suggested", Text: "简短中文回复", Scope: PolicyScope{Description: "本成员回复方式"}, SourceSeq: source.Seq, TurnNumber: 2}
-	caller := agentCaller(h.id.AgentID, h.id.MembershipID)
-	svc := &service{info: ServiceInfo{RoomIdentity: h.id.RoomIdentity}, store: h.store}
-	current, err := svc.memberPolicy(context.Background(), apiRequest{Caller: caller}, "read")
-	if err != nil || current.(agentPolicyView).CurrentTurn != 2 {
-		t.Fatal(current, err)
-	}
-	for _, seq := range []uint64{0, thirdParty.Seq, 999} {
-		bad := c
-		bad.SourceSeq = seq
-		if _, err := h.store.changePolicy(h.id, caller, bad); !errors.Is(err, ErrIdentity) {
-			t.Fatal(seq, err)
-		}
-	}
-	bad := c
-	bad.TurnNumber = 1
-	if _, err := h.store.changePolicy(h.id, caller, bad); !errors.Is(err, ErrConflict) {
-		t.Fatal(err)
-	}
-	bad = c
-	bad.Actions = "关闭待办"
-	if _, err := h.store.changePolicy(h.id, caller, bad); !errors.Is(err, ErrRequest) {
-		t.Fatal("preference grants action", err)
-	}
-	view, err := h.store.changePolicy(h.id, caller, c)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(view.Effective) != 0 || view.History[0].Source.User != humanCaller.ID {
-		t.Fatal(view)
-	}
-	c.Version, c.Revision, c.Status, c.SourceSeq, c.SourceText = 1, 1, "active", 0, "确认此回复偏好"
-	view, err = h.store.changePolicy(h.id, humanCaller, c)
-	if err != nil || len(view.Effective) != 1 {
-		t.Fatal(view, err)
-	}
-	// Latest read cannot silently use an old active revision after expiry.
-	past := time.Now().Add(-time.Hour)
-	c.Version, c.Revision, c.ExpiresAt = 2, 2, &past
-	view, err = h.store.changePolicy(h.id, humanCaller, c)
-	if err != nil || len(view.Effective) != 0 {
-		t.Fatal(view, err)
-	}
-}
-
-func TestPolicyDecisionsStayWithExactMatterAndSurviveProgress(t *testing.T) {
-	h := newInboxHarness(t, InboxLimits{})
-	inboxCall[InboxReceipt](t, h, h.receive("one"))
-	inboxRunning(t, h, 1, 1)
-	p := inboxCall[InboxBatchPage](t, h, ReadInboxBatch{MemberIdentity: h.id, TurnNumber: 1})
-	linkInboxPage(t, h, p)
-	c := PolicyChange{ID: "answer", Kind: "decision", Status: "active", Text: "本次按方案A回复", Scope: PolicyScope{Description: "本通知 main 诉求"}, Actions: "本次回复方案 A", SourceText: "本次按方案 A 回复", Seq: 1, MatterID: "main", MatterVersion: 1}
-	r, err := h.store.changeDecision(h.id, humanCaller, c)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if r.Matters[0].Version != 2 || len(r.Matters[0].Decisions.History) != 1 {
-		t.Fatal(r)
-	}
-	if _, err := h.store.changeDecision(h.id, humanCaller, c); !errors.Is(err, ErrConflict) {
-		t.Fatal(err)
-	}
-	if _, err := h.store.changePolicy(h.id, humanCaller, c); !errors.Is(err, ErrRequest) {
-		t.Fatal("decision promoted", err)
-	}
-	view, err := h.store.readPolicy(h.id)
-	if err != nil || len(view.Effective) != 0 {
-		t.Fatal(view, err)
-	}
-	r, err = h.store.updateMatter(h.id, MatterUpdate{Seq: 1, ID: "main", Version: 2, TurnNumber: 1, Status: "in_progress", Summary: "drafting"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(r.Matters[0].Decisions.History) != 1 {
-		t.Fatal("progress lost decision")
-	}
-	c.Version, c.MatterVersion, c.Status, c.SourceText = 1, 3, "revoked", "撤销尚未发出的方案A回复"
-	r, err = h.store.changeDecision(h.id, humanCaller, c)
-	if err != nil {
-		t.Fatal(err)
-	}
-	h.reload(t, true)
-	page, err := h.store.listMatters(h.id, "", 0, 5)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(page.Records[0], r) {
-		t.Fatal("decision lost on reload")
-	}
-}
-
 func TestPolicyConcurrentVersionsCapacityAndUncertainCommit(t *testing.T) {
 	h := newInboxHarness(t, InboxLimits{})
 	var wg sync.WaitGroup
@@ -325,9 +228,9 @@ func TestPolicyHTTPCLIAndBrowserPreview(t *testing.T) {
 			t.Fatal(err)
 		}
 		change := PolicyChange{ID: "cli-preference", Revision: 1, Kind: "preference", Status: "suggested", Text: "简短中文回复", Scope: PolicyScope{Description: "本成员回复"}, SourceSeq: post.Seq, TurnNumber: 1}
-		data, _ := json.Marshal(change)
+		data, _ := json.Marshal(conversationPolicyChange{Change: change, Mode: "inferred_habit", Basis: "用户本次表达仅支持提出长期建议"})
 		out.Reset()
-		if err := runCLI(context.Background(), []string{"policy", "suggest", "--change", string(data)}, &out, &stderr, func(k string) string { return env[k] }); err != nil {
+		if err := runCLI(context.Background(), []string{"policy", "update", "--change", string(data)}, &out, &stderr, func(k string) string { return env[k] }); err != nil {
 			t.Fatal(err)
 		}
 		view, err := svc.store.readPolicy(id)
@@ -353,9 +256,15 @@ func TestPolicyHTTPCLIAndBrowserPreview(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := svc.store.associateInboxPage(page.InboxPage, 1); err != nil {
+		if err := svc.store.initReferenceFollowups(id); err != nil {
 			t.Fatal(err)
 		}
+		for _, entry := range page.Entries {
+			if _, err := svc.resolveFollowupEvent(context.Background(), id, entry.Seq, 1, false, nil); err != nil {
+				t.Fatal(err)
+			}
+		}
+
 		t.Log("isolated policy browser preview:", server.URL)
 		<-time.After(*webPreviewDuration)
 	}
@@ -363,7 +272,7 @@ func TestPolicyHTTPCLIAndBrowserPreview(t *testing.T) {
 
 func TestPolicyNotificationUsesSuppliedAuthority(t *testing.T) {
 	text := dshNotification(UnreadChanged{})
-	for _, part := range []string{"policy read", "COMPLETE replacement", "supplied policy_token", "current_turn", "Preferences affect expression, never grant permission", "ambiguous replies do not override restrictions", "does not undo an in-flight"} {
+	for _, part := range []string{"policy read", "completely replaces", "policy_token", "current_turn", "preferences never authorize writes", "Latest explicit restrictions/revocations win", "explicit_long_term", "confirm_suggestion"} {
 		if !strings.Contains(text, part) {
 			t.Fatalf("missing %q", part)
 		}

@@ -99,14 +99,14 @@ func TestRuntimeShutdownToolTimeoutStillClosesAllServices(t *testing.T) {
 	openOK(t, m, a.RoomIdentity, "a")
 	openOK(t, m, b.RoomIdentity, "b")
 	toolCtx, cancelTool := context.WithCancel(context.Background())
-	call := &toolCall{owner: a.RoomIdentity, cancel: cancelTool, done: make(chan struct{})}
+	call := &platformCall{owner: a.RoomIdentity, cancel: cancelTool, done: make(chan struct{})}
 	var finishOnce sync.Once
-	finish := func() { finishOnce.Do(func() { m.finishTool(call) }) }
+	finish := func() { finishOnce.Do(func() { m.finishPlatformCall(call) }) }
 	m.mu.Lock()
-	if m.toolCalls == nil {
-		m.toolCalls = map[*toolCall]bool{}
+	if m.platformCalls == nil {
+		m.platformCalls = map[*platformCall]bool{}
 	}
-	m.toolCalls[call] = true
+	m.platformCalls[call] = true
 	m.mu.Unlock()
 	t.Cleanup(finish)
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)

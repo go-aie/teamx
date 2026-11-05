@@ -100,6 +100,20 @@ func (m *roomManager) checkToolMemberLocked(ctx context.Context, req toolsReques
 	if svc == nil || svc.closing.Load() || svc.restarting.Load() || req.ServiceInfo != svc.info || req.Caller.Kind != "agent" {
 		return ErrIdentity
 	}
+
+	id := MemberIdentity{RoomIdentity: req.RoomIdentity, AgentID: req.Caller.ID, MembershipID: req.Caller.MembershipID}
+	if m.platformMemberChanges[id] {
+		return ErrBusy
+	}
+	if target := svc.target(id.MembershipID); !target.IsZero() {
+		status, err := target.Call[MemberStatus](ctx, InspectMember{id})
+		if err != nil {
+			return ErrIdentity
+		}
+		if status.Rotation != nil && status.Rotation.Status != "completed" {
+			return ErrBusy
+		}
+	}
 	if err := m.store.check(true); err != nil {
 		return err
 	}
@@ -216,62 +230,34 @@ func (m *roomManager) changeToolBindingLocked(ctx context.Context, req toolBindi
 	if err = m.store.save(m.toolBindingsPath(f.RoomIdentity), f, 1<<20); err != nil {
 		return f, nil, err
 	}
-	pending := m.cancelToolsLocked(func(c *toolCall) bool {
+	pending := m.cancelPlatformCallsLocked(func(c *platformCall) bool {
 		return c.owner == req.RoomIdentity && c.tool == b.Tool && c.agentID == b.AgentID && c.membershipID == b.MembershipID
 	})
 	return f, pending, nil
 }
 
-// Admission, credential resolution and registration share the catalog gate so
-// rotations, disabling, switching, deletion and shutdown can join every process.
-func (m *roomManager) prepareToolLocked(ctx context.Context, req toolsRequest) (tool.Process, *toolCall, context.Context, error) {
+// Agent tools add process-only preparation after the shared platform admission.
+func (m *roomManager) prepareToolLocked(ctx context.Context, req toolsRequest) (tool.Process, *platformCall, context.Context, error) {
 	var p tool.Process
-	if err := m.checkToolMemberLocked(ctx, req); err != nil {
-		return p, nil, nil, err
-	}
 	if len(req.Args) > 4096 {
 		return p, nil, nil, ErrRequest
 	}
-	f, err := m.readToolBindingsLocked(req.RoomIdentity)
+	admission, call, callCtx, err := m.preparePlatformCallLocked(ctx, req, tool.Help(req.Args))
 	if err != nil {
 		return p, nil, nil, err
 	}
-	var binding *tool.Binding
-	for i, b := range f.Bindings {
-		if b.Tool == req.Tool && b.AgentID == req.Caller.ID && b.MembershipID == req.Caller.MembershipID {
-			binding = &f.Bindings[i]
-			break
-		}
-	}
-	if binding == nil {
-		return p, nil, nil, ErrRequest
-	}
-	d, err := m.toolDefinition(req.Tool)
-	if err != nil {
-		return p, nil, nil, err
-	}
-	p.Definition = d
+	p.Definition = admission.definition
 	p.Values = map[string]string{}
-	if d.Provider != "" && !tool.Help(req.Args) {
-		file, err := m.connections.Load()
-		if err != nil {
-			return p, nil, nil, err
-		}
-		found := false
-		for _, c := range file.Connections {
-			if c.ID == binding.ConnectionID && c.Generation == binding.ConnectionGeneration && c.Provider == d.Provider {
-				account, secret, err := connection.ResolveAccount(file, c)
-				if err != nil {
-					return p, nil, nil, ErrConflict
-				}
-				p.Values = map[string]string{"instance": account.URL, "token": secret.Reveal()}
-				found = true
-			}
-		}
-		if !found {
-			return p, nil, nil, ErrConflict
-		}
+	if admission.account.ConnectionID != "" {
+		p.Values = map[string]string{"instance": admission.account.URL, "token": admission.secret.Reveal()}
 	}
+	prepared := false
+	defer func() {
+		if !prepared {
+			m.finishPlatformCallLocked(call)
+		}
+	}()
+
 	entry, err := m.workspaceRoom(req.RoomIdentity)
 	if err != nil {
 		return p, nil, nil, err
@@ -291,18 +277,6 @@ func (m *roomManager) prepareToolLocked(ctx context.Context, req toolsRequest) (
 			}
 		}
 	}
-	ctx, cancel := context.WithCancel(ctx)
-	call := &toolCall{owner: req.RoomIdentity, tool: req.Tool, connectionID: binding.ConnectionID, agentID: req.Caller.ID, membershipID: req.Caller.MembershipID, cancel: cancel, done: make(chan struct{})}
-	if m.toolCalls == nil {
-		m.toolCalls = map[*toolCall]bool{}
-	}
-	m.toolCalls[call] = true
-	return p, call, ctx, nil
-}
-func (m *roomManager) finishTool(call *toolCall) {
-	call.cancel()
-	m.mu.Lock()
-	delete(m.toolCalls, call)
-	close(call.done)
-	m.mu.Unlock()
+	prepared = true
+	return p, call, callCtx, nil
 }

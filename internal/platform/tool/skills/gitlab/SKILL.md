@@ -5,7 +5,7 @@ description: GitLab 开发交接、准确版本评审、个人待办与不确定
 
 # GitLab 工作流程
 
-仅在复杂任务需要时读取。先运行 `"$TEAMX_CLI" tools list`，核对本成员显式启用的 GitLab 账号和实例。工具命令从 `"$TEAMX_CLI" tools run gitlab --help` 逐层发现；已有 Inbox 事项的 MR 普通评论使用 `"$TEAMX_CLI" actions execute --request JSON`，参数见 `actions --help`，不手工通过工具重复发布同一评论。以下示例中的项目、IID 和 SHA 必须替换为已核实值，不能原样执行。
+仅在复杂任务需要时读取。先运行 `"$TEAMX_CLI" tools list`，核对本成员显式启用的 GitLab 账号和实例。工具命令从 `"$TEAMX_CLI" tools run gitlab --help` 逐层发现；已有 Inbox 跟进的 MR 普通评论与已核实讨论回复使用 `"$TEAMX_CLI" actions execute --request JSON`，参数见 `actions --help`，不手工通过工具重复发布同一评论。以下示例中的项目、IID 和 SHA 必须替换为已核实值，不能原样执行。
 
 工具沿用账号的全部有效权限。通知只提供上下文，Workspace 提供本地 Git；两者都不自动启用工具。目标由通知、用户或 Workspace 提供，不受旧的已投递对象范围限制。不得把平台可执行的能力等同于用户已要求执行。不要读取或展示 Token、.env、env/printenv，不自行更换账号。
 
@@ -21,7 +21,7 @@ description: GitLab 开发交接、准确版本评审、个人待办与不确定
 1. 读取最新 MR 和完整讨论，确认项目、链接、opened 状态、目标及完整 base/head。区分 IID 与全局 ID。原生 MR 数据字段以实际 JSON 为准，不能假定旧服务的 result/head/base 模型仍存在。
 2. 在自己的 Workspace 检查干净状态和 origin。fetch `refs/merge-requests/IID/head`，核对 FETCH_HEAD 等于期望 head 后才 detach checkout。确认完整 base 提交存在，再读取 MR 核实版本未变；版本变化就停止旧版评审。没有 Workspace 可先读取 API，但不能声称完成本地代码验证。
 3. 阅读本地 `git diff BASE HEAD` 及完整文件，独立执行必要验证。API diff 可能截断；不能仅采信开发者报告。只列有证据的问题和未验证项。
-4. 发表普通评审文字时，已有 Inbox 事项用 `actions execute`（`operation:gitlab.mr.comment`，准确原生项目 ID／MR IID、正文、有效 policy token 和授权依据）；普通 Room 任务无 Inbox 事项时才使用原生 `mr note create --resolvable=false`，不得伪造 Inbox 序号。正文包含完整 base/head、结论、范围、实际测试及问题位置。用帮助查询文件/正文参数，避免 shell 插值破坏内容。评审评论不等于 approve，不发明确认令牌或服务回执。
+4. 发表普通评审文字时，已有 Inbox 事项用 `actions execute`（`operation:object.comment`，准确对象／单元／目标引用、正文、有效 policy token 和授权依据）；普通 Room 任务无 Inbox 事项时才使用原生 `mr note create --resolvable=false`，不得伪造 Inbox 序号。正文包含完整 base/head、结论、范围、实际测试及问题位置。用帮助查询文件/正文参数，避免 shell 插值破坏内容。评审评论不等于 approve，不发明确认令牌或服务回执。
 5. 发表前检查同一账号和版本已有评审，避免重复；发表后核对实际返回和 MR 当前版本，再发送 [评审结果]。旧版评论不能宣称新版已通过。
 
 ## 用户决定的合并与关闭
@@ -33,11 +33,11 @@ description: GitLab 开发交接、准确版本评审、个人待办与不确定
 ## 个人待办、讨论与 WorkItem
 
 1. 从通知识别实例、接收账号、项目和对象，读取远端最新正文及完整讨论。直接用户任务也可处理，无需伪造 subscription_id/item_key。不能只凭 `/work_items/` 网页路径推断 API 类型；使用当前对象查询与帮助判断 Issue 或通用 WorkItem。
-2. 通知需要讨论身份时，先读 `matters context` 复用已核实缓存，再使用 `notifications resolve --queries JSON` 将本批准确 source／source.url 一次提交；它只做受限 GET，核实 ID／IID 与 note→discussion。结果用 `matters enrich` 保存；`partial`／权限失败／未找到不等于不存在，不能把缓存当当前权限或讨论状态。实际诉求相同才用 `matters relate` 追加／归并，独立决定和完成条件保持独立；纠正关系先 split 原关联，不移动原回执或已执行动作。
+2. `inbox read` 由系统解析身份并返回去重对象引用；用 `matters list/read` 恢复持久进展和问答，用 `matters sources/source` 查看原始来源、核实结果和阻塞原因。仅独立处理确切讨论时用 `matters ensure` 建立原生讨论单元；失败来源可显式 `matters resolve`，不轮询、不手工 enrich/relate、不维护语义事项图。原生正文仍需工具按需分页读取；部分结果／权限失败／未找到不等于不存在。已有 Inbox 跟进的讨论回复使用 `actions execute` 的 `discussion.reply`，提交已核实 target_ref，不降级普通评论。
 3. MR/Issue 优先使用原生命令。通用 WorkItem 用 `work-items view`、`work-items discussions list`、`work-items note` 等扩展；Issue 完整讨论用 `issue discussions`。扩展自行处理分页；原生命令有分页时继续读取，不能把第一页当全部上下文。讨论回复使用已核实的真实讨论 ID。
 4. 普通回复针对已核实问题，先核查已有评论，避免重复。关闭、删除或改指派人依照用户具体决定。通过帮助选择 Issue 原生命令或 WorkItem 扩展；add/remove 保留其他人，replace 替换全部，clear 明确清空。数字用户 ID 必须来自同实例已核实查询，不按显示名猜测。
 5. 仅在业务问题已处理并核实后完成确切个人待办。通过 `todo list` 或显式实例的 API 查询核对待办 ID、接收账号和目标；不能从通知 item_key 猜测待办 ID，不批量清空。todo 已 done 不证明业务已解决。
-6. 需要用户决定时在 Room @ 本回合提供的操作者，附链接、已知事实、已完成和未执行部分，提出最关键的问题。不要把待办接收账号当作 Room 操作者。
+6. 已有跟进缺少关键决定时，用 `matters notify` 保存准确问题及拟议动作，在 Room @ 本回合操作者。普通 human 答复在 `matters read` 自动关联显式回复，无引用时只用 `matters reply` 关联明确上下文；跨回合指令按需保存，不要求 UI 再次确认。明确长期指令用 `policy update` 直接生效；习惯仅作建议并确认准确版本。参数见 `matters --help`。不要把待办接收账号当作 Room 操作者。
 
 ## 输出与不确定结果
 

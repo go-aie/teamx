@@ -118,7 +118,7 @@ func (m *roomManager) verifyPlatformConnection(ctx context.Context, req platform
 	if m.busy {
 		return platformConnection{}, ErrBusy
 	}
-	pending := m.cancelToolsLocked(func(c *toolCall) bool { return c.connectionID == req.ID })
+	pending := m.cancelPlatformCallsLocked(func(c *platformCall) bool { return c.connectionID == req.ID })
 	if err := m.settlePlatformCallsLocked(pending); err != nil {
 		return platformConnection{}, err
 	}

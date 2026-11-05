@@ -210,45 +210,50 @@ func TestVerificationAndMissingCredential(t *testing.T) {
 	}
 }
 
-func TestLegacySnapshotAndStrictStorage(t *testing.T) {
+func TestCurrentSnapshotStrictStorage(t *testing.T) {
 	m, _, _ := testManager(t)
-	// Literal pre-PM-01 layout: no source-directory or schema migration.
-	legacy := `{"version":1,"connections":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"Fixture","provider":"fixture","url":"https://example.invalid","version":4,"credential_version":2,"credential_kind":"pat","credential_configured":true,"validation":{"status":"valid","checked_at":"2026-11-01T00:00:00Z","username":"operator"},"credential_id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","generation":"cccccccccccccccccccccccccccccccc"}],"credentials":[{"id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","connection_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","pat":"legacy-private-token"}]}`
-	if err := os.WriteFile(m.store.Path, []byte(legacy), 0600); err != nil {
-		t.Fatal(err)
-	}
-	file, err := m.Load()
+	c := commitRequest(t, m, request(), false)
+	ticket, err := m.BeginVerification(c.ID, c.Version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := VerifiedIdentity(file, file.Connections[0]); !errors.Is(err, ErrConflict) {
-		t.Fatal("legacy username established an account ID", err)
+	if _, err := m.CompleteVerification(ticket, m.Query(context.Background(), ticket, nil)); err != nil {
+		t.Fatal(err)
 	}
-	before, _ := os.ReadFile(m.store.Path)
-	req := request()
-	req.Version, req.PAT = 4, ""
-	c := commitRequest(t, m, req, false)
-	file, err = m.Load()
-	if err != nil || c.Version != 5 || c.CredentialVersion != 2 || file.Connections[0].Generation != strings.Repeat("c", 32) || file.Connections[0].CredentialID != strings.Repeat("b", 32) {
-		t.Fatal("legacy identity changed", err)
+	before, err := os.ReadFile(m.store.Path)
+	if err != nil {
+		t.Fatal(err)
 	}
-	var old, updated map[string]any
-	json.Unmarshal(before, &old)
-	after, _ := os.ReadFile(m.store.Path)
-	json.Unmarshal(after, &updated)
-	old["connections"].([]any)[0].(map[string]any)["version"] = float64(5)
-	want, _ := json.Marshal(old)
-	got, _ := json.Marshal(updated)
-	if string(want) != string(got) {
-		t.Fatal("legacy JSON contract changed")
+	if _, err := m.Load(); err != nil {
+		t.Fatal(err)
 	}
-	for _, bad := range []string{legacy + "{}", strings.Replace(legacy, `"pat":"legacy-private-token"`, `"pat":"secret with spaces"`, 1), strings.Replace(legacy, `"version":1`, `"version":1,"unknown":"private-token"`, 1)} {
-		if err := os.WriteFile(m.store.Path, []byte(bad), 0600); err != nil {
+	for _, mutate := range []func(map[string]any){
+		func(s map[string]any) { s["unknown"] = "private-token" },
+		func(s map[string]any) {
+			r := s["connections"].([]any)[0].(map[string]any)
+			r["validation"].(map[string]any)["user_id"] = float64(0)
+			delete(r, "identity_binding")
+		},
+		func(s map[string]any) { delete(s["connections"].([]any)[0].(map[string]any), "identity_binding") },
+	} {
+		var state map[string]any
+		if err := json.Unmarshal(before, &state); err != nil {
+			t.Fatal(err)
+		}
+		mutate(state)
+		data, _ := json.Marshal(state)
+		if err := os.WriteFile(m.store.Path, data, 0600); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := m.Load(); !errors.Is(err, ErrInvalid) || strings.Contains(err.Error(), "private-token") {
-			t.Fatal("unsafe storage accepted or echoed", err)
+			t.Fatal("invalid identity/storage accepted or echoed", err)
 		}
+	}
+	if err := os.WriteFile(m.store.Path, append(before, []byte(`{}`)...), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Load(); !errors.Is(err, ErrInvalid) {
+		t.Fatal(err)
 	}
 }
 

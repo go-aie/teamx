@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-aie/actorx"
 	"github.com/go-aie/teamx/internal/agent/dsh"
+	"github.com/go-aie/teamx/internal/platform"
 )
 
 type ServiceInfo struct {
@@ -24,35 +25,33 @@ type ServiceInfo struct {
 // Only these explicit DTOs cross HTTP. Actor addresses remain in the service.
 type apiRequest struct {
 	ServiceInfo
-	Caller            Caller                `json:"caller"`
-	TurnNumber        uint64                `json:"turn_number,omitempty"`
-	ObjectKey         string                `json:"object_key,omitempty"`
-	Policy            *PolicyChange         `json:"policy,omitempty"`
-	MatterContext     *MatterContextChange  `json:"matter_context,omitempty"`
-	MatterRelation    *MatterRelationChange `json:"matter_relation,omitempty"`
-	Matter            *MatterUpdate         `json:"matter,omitempty"`
-	Action            *ActionChange         `json:"action,omitempty"`
-	ActionRequest     *ActionRequest        `json:"action_request,omitempty"`
-	Notice            *NoticeChange         `json:"notice,omitempty"`
-	MatterReply       *MatterReplyChange    `json:"matter_reply,omitempty"`
-	AgentID           string                `json:"agent_id,omitempty"`
-	MembershipID      string                `json:"membership_id,omitempty"`
-	Runner            RunnerConfig          `json:"runner,omitempty"`
-	ClientMessageID   string                `json:"client_message_id,omitempty"`
-	Text              string                `json:"text,omitempty"`
-	ReplyTo           uint64                `json:"reply_to,omitempty"`
-	Mode              ReadMode              `json:"mode,omitempty"`
-	Latest            int                   `json:"latest,omitempty"`
-	After             *uint64               `json:"after,omitempty"`
-	SnapshotSeq       *uint64               `json:"snapshot_seq,omitempty"`
-	Limit             int                   `json:"limit,omitempty"`
-	Peek              bool                  `json:"peek,omitempty"`
-	ReadReceipt       string                `json:"read_receipt,omitempty"`
-	Retry             bool                  `json:"retry,omitempty"`
-	Cancel            bool                  `json:"cancel,omitempty"`
-	Resume            bool                  `json:"resume,omitempty"`
-	RestartID         string                `json:"restart_id,omitempty"`
-	PreviousRestartID string                `json:"previous_restart_id,omitempty"`
+	Caller             Caller                     `json:"caller"`
+	TurnNumber         uint64                     `json:"turn_number,omitempty"`
+	Policy             *PolicyChange              `json:"policy,omitempty"`
+	ReferenceAction    *referenceActionRequest    `json:"action_request,omitempty"`
+	Followup           *followupRequest           `json:"followup,omitempty"`
+	Question           *followupQuestionChange    `json:"question,omitempty"`
+	FollowupReply      *followupReplyChange       `json:"followup_reply,omitempty"`
+	Instruction        *followupInstructionChange `json:"instruction,omitempty"`
+	ConversationPolicy *conversationPolicyChange  `json:"conversation_policy,omitempty"`
+	AgentID            string                     `json:"agent_id,omitempty"`
+	MembershipID       string                     `json:"membership_id,omitempty"`
+	Runner             RunnerConfig               `json:"runner,omitempty"`
+	ClientMessageID    string                     `json:"client_message_id,omitempty"`
+	Text               string                     `json:"text,omitempty"`
+	ReplyTo            uint64                     `json:"reply_to,omitempty"`
+	Mode               ReadMode                   `json:"mode,omitempty"`
+	Latest             int                        `json:"latest,omitempty"`
+	After              *uint64                    `json:"after,omitempty"`
+	SnapshotSeq        *uint64                    `json:"snapshot_seq,omitempty"`
+	Limit              int                        `json:"limit,omitempty"`
+	Peek               bool                       `json:"peek,omitempty"`
+	ReadReceipt        string                     `json:"read_receipt,omitempty"`
+	Retry              bool                       `json:"retry,omitempty"`
+	Cancel             bool                       `json:"cancel,omitempty"`
+	Resume             bool                       `json:"resume,omitempty"`
+	RestartID          string                     `json:"restart_id,omitempty"`
+	PreviousRestartID  string                     `json:"previous_restart_id,omitempty"`
 }
 
 type serviceMember struct {
@@ -78,17 +77,21 @@ type apiError struct {
 }
 
 type service struct {
-	inboxMu              sync.Mutex
-	inboxes              map[string]actorx.Addr
-	settleTools          func(context.Context) error // managed Room tool ownership, nil in standalone mode
-	workspaceOperationID string
-	info                 ServiceInfo
-	store                *Store
-	rt                   *actorx.Runtime
-	room                 actorx.Addr
-	scheduler            actorx.Addr
-	ctx                  context.Context
-	cancel               context.CancelFunc
+	referenceResolver         followupResolver
+	referenceCommit           func(context.Context, MemberIdentity, platform.AccessContext, func() (followupEvent, error)) (followupEvent, error)
+	referenceSpecs            func(string) []platform.ActionSpec
+	inboxMu                   sync.Mutex
+	inboxes                   map[string]actorx.Addr
+	settleTools               func(context.Context) error // managed platform calls, nil in standalone mode
+	beginPlatformMemberChange func(context.Context, MemberIdentity) (func(), error)
+	workspaceOperationID      string
+	info                      ServiceInfo
+	store                     *Store
+	rt                        *actorx.Runtime
+	room                      actorx.Addr
+	scheduler                 actorx.Addr
+	ctx                       context.Context
+	cancel                    context.CancelFunc
 	// Management has one retained owner even if its HTTP caller leaves.
 	management           sync.Mutex
 	changes              sync.RWMutex
@@ -149,6 +152,9 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 		err = store.SaveRoom(state)
 	}
 	if err != nil {
+		return nil, err
+	}
+	if err := store.checkReferenceRoom(state); err != nil {
 		return nil, err
 	}
 	epoch, err := newOpaqueID()
@@ -433,6 +439,14 @@ func (s *service) control(ctx context.Context, req apiRequest, action string) (M
 				}
 			}
 			id := MemberIdentity{RoomIdentity: s.info.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
+
+			if action == "rotate" && s.beginPlatformMemberChange != nil {
+				release, err := s.beginPlatformMemberChange(ctx, id)
+				if err != nil {
+					return MemberStatus{}, err
+				}
+				defer release()
+			}
 			state := UnreadChanged{MemberIdentity: id, Revision: list.Revision, LatestSeq: list.LatestSeq,
 				NewestUnreadSeq: member.NewestUnreadSeq, UnreadCount: member.UnreadCount}
 			return s.target(member.MembershipID).Call[MemberStatus](ctx, ControlMember{MemberIdentity: id, Action: action,
@@ -455,6 +469,14 @@ func (s *service) removeLocked(req apiRequest) (MemberInfo, error) {
 		return MemberInfo{}, ErrClosing
 	}
 	id := MemberIdentity{RoomIdentity: s.info.RoomIdentity, AgentID: req.AgentID, MembershipID: req.MembershipID}
+
+	if s.beginPlatformMemberChange != nil {
+		release, err := s.beginPlatformMemberChange(s.ctx, id)
+		if err != nil {
+			return MemberInfo{}, err
+		}
+		defer release()
+	}
 	s.inboxMu.Lock()
 	removed, err := s.room.Call[MemberInfo](s.ctx, RemoveMember{id})
 	if err != nil {
@@ -490,6 +512,7 @@ func (s *service) settleMemberRemoval(membershipID string) error {
 
 func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	if s.closing.Load() {
 		writeAPIError(w, ErrClosing)
 		return
@@ -518,9 +541,6 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	var req apiRequest
 	bodyLimit := int64(128 << 10)
-	if r.URL.Path == "/v1/matters/enrich" {
-		bodyLimit = matterContextBytes
-	}
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, bodyLimit))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil {
@@ -559,14 +579,11 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeAPIError(w, ErrIdentity)
 			return
 		}
-		if r.URL.Path != "/v1/send" && r.URL.Path != "/v1/read" && r.URL.Path != "/v1/read/confirm" &&
-			r.URL.Path != "/v1/matters/context" && r.URL.Path != "/v1/matters/enrich" && r.URL.Path != "/v1/matters/relate" &&
-			r.URL.Path != "/v1/matters/notify" && r.URL.Path != "/v1/matters/reply" &&
-			r.URL.Path != "/v1/policy/read" && r.URL.Path != "/v1/policy/update" && r.URL.Path != "/v1/decisions/read" && r.URL.Path != "/v1/decisions/update" &&
-			r.URL.Path != "/v1/inbox/read" && r.URL.Path != "/v1/inbox/confirm" && r.URL.Path != "/v1/matters/list" && r.URL.Path != "/v1/matters/update" {
+		if !agentRuntimePath(r.URL.Path) {
 			writeAPIError(w, ErrIdentity)
 			return
 		}
+
 	}
 	var result any
 	var err error
@@ -586,20 +603,12 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	switch r.URL.Path {
-	case "/v1/matters/context", "/v1/matters/enrich", "/v1/matters/relate":
-		w.Header().Set("Cache-Control", "no-store")
-		result, err = s.memberMatterContext(req, r.URL.Path)
-	case "/v1/matters/notify", "/v1/matters/reply":
-		w.Header().Set("Cache-Control", "no-store")
-		result, err = s.memberHandling(r.Context(), req, r.URL.Path)
-	case "/v1/policy/read", "/v1/policy/update", "/v1/decisions/read", "/v1/decisions/update":
-		w.Header().Set("Cache-Control", "no-store")
-		operation := map[string]string{"/v1/policy/read": "read", "/v1/policy/update": "update", "/v1/decisions/read": "decisions/read", "/v1/decisions/update": "decisions/update"}[r.URL.Path]
-		result, err = s.memberPolicy(r.Context(), req, operation)
-	case "/v1/inbox/read", "/v1/inbox/confirm", "/v1/matters/list", "/v1/matters/update":
-		w.Header().Set("Cache-Control", "no-store")
-		operation := map[string]string{"/v1/inbox/read": "read", "/v1/inbox/confirm": "confirm", "/v1/matters/list": "list", "/v1/matters/update": "update"}[r.URL.Path]
-		result, err = s.memberInbox(r.Context(), req, operation)
+	case "/v1/matters/list", "/v1/matters/read", "/v1/matters/update", "/v1/matters/sources", "/v1/matters/source", "/v1/matters/resolve", "/v1/matters/ensure", "/v1/matters/notify", "/v1/matters/reply", "/v1/matters/instruct", "/v1/matters/instruction-status":
+		result, err = s.memberFollowups(r.Context(), req, r.URL.Path)
+	case "/v1/policy/read", "/v1/policy/update", "/v1/policy/publish":
+		result, err = s.memberPolicy(r.Context(), req, map[string]string{"/v1/policy/read": "read", "/v1/policy/update": "update", "/v1/policy/publish": "publish"}[r.URL.Path])
+	case "/v1/inbox/read", "/v1/inbox/confirm":
+		result, err = s.memberInbox(r.Context(), req, map[string]string{"/v1/inbox/read": "read", "/v1/inbox/confirm": "confirm"}[r.URL.Path])
 	case "/v1/discussion/restart":
 		result, err = s.startDiscussionRestart(req)
 	case "/v1/messages/clear":
@@ -654,6 +663,8 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func writeAPIError(w http.ResponseWriter, err error) {
 	code, status := "failed", http.StatusInternalServerError
 	switch {
+	case errors.Is(err, ErrVersion):
+		code, status = "schema_switch_required", http.StatusConflict
 	case errors.Is(err, ErrClosing):
 		code, status = "closing", http.StatusServiceUnavailable
 	case errors.Is(err, ErrTurnBudget):

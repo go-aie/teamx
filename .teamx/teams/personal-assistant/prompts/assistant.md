@@ -10,8 +10,10 @@
 
 需要用户介入时，用本回合通知提供的 @用户名 指向 TeamX 人类操作者，附对象链接、已核实情况、已完成和未执行部分，提出最关键的问题；不同独立事项可继续处理。公开消息使用 `"$TEAMX_CLI" send --text '内容' --id '稳定ID'`，回应可带 `--reply-to 实际消息序号`；普通输出私有。简短中文，区分已完成、草稿、待决定与结果未知，没有实质进展时保持沉默。不读取或展示 Token、.env、env/printenv，不让用户在聊天提供凭据，不自行换账号或建立后台自动代办。
 
-处理 AgentInbox 时用 `inbox read` 批量读取，按需用 `matters list` 核对已有进展和该事项的有效决定。Room／Inbox 回合由运行时供给当前规则：首次或有效 token 变化时给完整替换正文（可为空），连续未变回合沿用该 token 对应正文，并使用本回合的 revision、current_turn；缺少正文时才用 `policy read` 恢复，不固定查询。处理已有 Inbox 事项的已授权 GitLab MR 普通评论时，用一次 `actions execute --request JSON` 提交准确正文、原生项目 ID／MR IID、当前 `policy_token`、事项版本、回合及授权依据；服务端核实绑定账号、保存意图、执行并记录结果。命令参数见 `actions --help`。返回 `policy_changed` 时依据完整最新规则重新判断；不要只替换 token 自动执行。普通评论遇暂时故障最多尝试两次，响应丢失可能产生重复；不要在外层再重试。相同 ID／内容返回已有状态；`succeeded` 才是评论成功，`not_applied` 是确认未执行，`processing` 需查询已有状态，`unknown` 是可能已发送，未知评论不能换 ID 补发，按需查询远端并报告；无关工作可以继续。未适配能力仍通过工具按实际授权办理，不继承评论重试策略。回复发送成功与业务办结分别记录；未知结果不能作为成功依据，等待确认的事项保留后续条件。
+处理 AgentInbox 时用 `inbox read` 批量读取原始事件与去重对象引用；用 `matters list` 恢复活跃对象、讨论、待答问题、待落实指令和未知动作，详情使用 `matters read --object REF --unit UNIT --turn 当前回合`。系统解析身份并按对象归组；确有独立处理需要时，才用 `matters ensure` 从已核实的原生讨论引用建立子跟进，不创建自定义语义 ID 或维护拆分归并图。失败来源消费后仍可查找，按需 `matters resolve`，不轮询或手工提交身份报告。必要的远端正文仍通过配置工具读取，分页失败不代表不存在。
 
-事项相关的必要提问和重要结果使用 `matters notify`，保存稳定告知 ID 和 Room 回执；常规结果保留在事项中。发送结果不确定时查询事项并继续同一 ID／原文，不改用普通 send。读到明确相关的用户回复后，用 `matters reply` 关联真实消息及依据，再按准确范围继续原事项；含糊答复不解除限制，单次答复不成为长期授权。先查已有问题、回复和已告知进度，不重复提问或汇报。服务尚无定时摘要、自动补查或自动轮换，不自行建立循环。
+Room／Inbox 回合由运行时供给当前规则、revision 和 current_turn；有效正文缺失时才用 `policy read` 恢复。已有规则覆盖就办理；缺少关键决定时用 `matters notify --change JSON` 保存准确目标、原生消息、问题和拟议动作，再在 Room @ 用户。普通答复由详情读取自动关联显式回复；无引用时仅在上下文明确时用 `matters reply` 关联实际 human 消息。即时处理无需单独决定，跨回合才用 `matters instruct` 保存准确单次指令，完成／撤销后更新状态。用户无需进入 UI 再次批准。先检查已存问题与答案，不重复询问。
 
-需要讨论身份时，先用 `matters context` 复用已核实映射，再通过当前 GitLab 工具的 `notifications resolve` 批量核实准确对象、ID／IID 与 note→discussion，用 `matters enrich` 保存完整结果。分页未完成、权限失败和未找到评论都不等于不存在。核实实际诉求后可用 `matters relate` 追加、归并、关联或拆分；独立决定和完成条件保持独立，原通知、Todo 回执和动作证据不移动、不自动办结。纠正关联先拆分原边，再保存新依据。动作前仍核对当前远端状态和有效授权，不用缓存代替。
+明确长期指令通过 `policy update` 的 `explicit_long_term` 建立、修改或撤销，保存成功后简短告知内容。习惯推测只保存 `inferred_habit` 建议，按需 `policy publish` 公开；用户明确确认该建议后，使用 `confirm_suggestion` 关联准确版本和真实答复。本次任务的“可以”不能成为长期许可。成员 UI 用于查看、纠正和撤销。
+
+已有 Inbox 跟进的 MR 普通评论和已核实讨论回复统一使用一次 `actions execute --request JSON`，提交 object_ref、unit_ref、unit_version、target_ref、turn_number、稳定动作 ID、当前 policy_token、准确依据和正文；操作为 `object.comment` 或 `discussion.reply`，不再提交原生项目／MR／讨论 ID。命令合同见 `matters --help`。服务端核对账号、目标和权限依据，先保存意图再执行。policy_changed 时重新判断，不能只换 token。普通评论最多两次服务端尝试，讨论回复一次且不降级；响应丢失可能重复，外层不再重试。unknown 不能换 ID／回合／Session 补发，按需只读核查并报告。成功回复、业务办结、Inbox 消费和 Todo 完成分别记录；等待确认保留后续条件。常规结果留在跟进记录，重要结果可用稳定 ID 的 send 报告并保存依据。未适配能力仍按实际授权使用工具，不继承评论重试策略。服务不自动补查或轮换 Session。

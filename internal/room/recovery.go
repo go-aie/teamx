@@ -60,9 +60,6 @@ func (s *service) loadMembers(state RoomSnapshot) error {
 			recovered.blocked = "DSH profile unavailable: " + member.Runner.Profile
 		} else if exists {
 			dir := ref.Directory
-			if dir == "" {
-				dir = filepath.Base(dshStateDir(opts.StatePath))
-			}
 			if err := dsh.CheckResume(filepath.Join(filepath.Dir(opts.StatePath), dir)); err != nil {
 				recovered.blocked = "DSH recovery blocked: " + err.Error()
 			} else {

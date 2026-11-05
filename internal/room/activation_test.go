@@ -291,9 +291,6 @@ func TestManagedActivationFailureReceiptsAndInterruptedRecovery(t *testing.T) {
 	if op := awaitLatestOpen(t, m); op.Status != "failed" {
 		t.Fatal(op)
 	}
-	if m.index.ActiveRoomID != "" {
-		t.Fatal("failed switch changed last selection")
-	}
 	// Simulate an exit with a retained running marker. Startup records B's
 	// failure while restoring A's independent collaboration intent.
 	next := m.copyIndex()
@@ -447,63 +444,5 @@ func TestManagedActivationCommitUnknownRequiresReopen(t *testing.T) {
 				openRoomOK(t, restored, room, "uncertain")
 			}
 		})
-	}
-}
-
-func TestManagedUnsettledBackendDoesNotBlockAnotherRoom(t *testing.T) {
-	m := activationTestManager(t)
-	a, b := managerCreate(t, m, "a"), managerCreate(t, m, "b")
-	openRoomOK(t, m, a, "a")
-	if err := m.close(); err != nil {
-		t.Fatal(err)
-	}
-	// Emulate a process exit after a target acquired resources, before it could
-	// replace the last successful selection. That target must remain the owner.
-	index := m.index
-	index.OwnedRoomID = b.RoomID
-	index.Activations = append(index.Activations, roomActivation{RoomIdentity: b.RoomIdentity, ActivateID: "crashed", Status: "running", Phase: "resuming"})
-	data, _ := json.Marshal(index)
-	if err := os.WriteFile(m.indexPath(), data, 0600); err != nil {
-		t.Fatal(err)
-	}
-	store, err := OpenStore(m.roomDir(b.RoomID), b.RoomID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	state, _ := store.LoadRoom()
-	member := state.Members[0]
-	id := MemberIdentity{RoomIdentity: b.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
-	opts := adapterOptions(store, id)
-	store.mu.Lock()
-	err = store.save(opts.StatePath, dshReference{Version: formatVersion, MemberIdentity: id, Directory: "session.json.dsh"}, maxPrivateFileBytes)
-	store.mu.Unlock()
-	if err != nil {
-		t.Fatal(err)
-	}
-	backendDir := dshStateDir(opts.StatePath)
-	if err := os.MkdirAll(backendDir, 0700); err != nil {
-		t.Fatal(err)
-	}
-	// No normal-close or settlement record exists, even though the lock is free.
-	store.Close()
-	restored, err := newRoomManager(m.store.dir, 7)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer restored.close()
-	restored.config = m.config
-	// B's missing settlement remains B's recovery diagnostic. Opening healthy A
-	// does not inspect or discard B's execution evidence.
-	openRoomOK(t, restored, a, "healthy-a")
-	if restored.index.OwnedRoomID != "" || !hasRoomOwner(restored.index.OwnedRooms, b.RoomIdentity) {
-		t.Fatal("lost B's retained ownership")
-	}
-	if _, err := os.Stat(backendDir); err != nil {
-		t.Fatal("lost B's unsettled backend", err)
-	}
-	sb := openRoomOK(t, restored, b, "inspect-b")
-	list, err := sb.members(context.Background())
-	if err != nil || list.Members[0].Execution.Status != "backend_blocked" || !list.Members[0].Execution.Paused {
-		t.Fatal("unsettled B resumed", list, err)
 	}
 }

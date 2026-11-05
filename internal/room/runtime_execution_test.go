@@ -93,7 +93,7 @@ func TestRuntimeToolSettlementIsScopedToRoom(t *testing.T) {
 				p.Output, p.Error = ready, io.Discard
 				results[i], contexts[i] = make(chan int, 1), ctx
 				result := results[i]
-				go func() { code := p.Run(ctx, nil); m.finishTool(call); result <- code }()
+				go func() { code := p.Run(ctx, nil); m.finishPlatformCall(call); result <- code }()
 				select {
 				case <-ready.started:
 				case <-time.After(3 * time.Second):
@@ -164,7 +164,7 @@ func TestRuntimeToolSettlementIsScopedToRoom(t *testing.T) {
 					t.Fatal("A operation rebuilt B")
 				}
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				if err := m.waitTools(ctx, &b.RoomIdentity); err != nil {
+				if err := m.waitPlatformCalls(ctx, &b.RoomIdentity); err != nil {
 					t.Fatal(err)
 				}
 				cancel()
@@ -297,7 +297,7 @@ func TestRuntimeConcurrentOpenReceiptsKeepIndependentServices(t *testing.T) {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.runtimes[b.RoomIdentity].service != sb || m.index.ActiveRoomID != "" {
+	if m.runtimes[b.RoomIdentity].service != sb {
 		t.Fatal("late activation overwrote latest selection")
 	}
 	for _, op := range m.index.Opens {

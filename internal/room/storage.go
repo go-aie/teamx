@@ -31,16 +31,16 @@ const (
 // these blocking methods from controlled tasks, never from their state loop.
 // Agent and Session files have separate owners; they are not a transaction.
 type Store struct {
-	mu               sync.Mutex
-	activeDSH        sync.Map           // MemberIdentity -> *dshSession; observations only, never persisted.
-	activeInboxes    sync.Map           // MembershipID -> *AgentInbox; reserved until all owned tasks settle.
-	executingActions map[actionKey]bool // protected by mu; no replay after recovery
-	dir              string
-	roomID           string
-	instance         string
-	lock             *os.File
-	uncertain        bool
-	ops              snapshotOps
+	mu                  sync.Mutex
+	activeDSH           sync.Map                    // MemberIdentity -> *dshSession; observations only, never persisted.
+	activeInboxes       sync.Map                    // MembershipID -> *AgentInbox; reserved until all owned tasks settle.
+	executingReferences map[referenceActionKey]bool // protected by mu; never replayed
+	dir                 string
+	roomID              string
+	instance            string
+	lock                *os.File
+	uncertain           bool
+	ops                 snapshotOps
 }
 
 type snapshotFile interface {

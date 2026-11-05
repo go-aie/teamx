@@ -198,7 +198,7 @@ func (m *roomManager) serveToolRun(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, err)
 		return
 	}
-	defer m.finishTool(call)
+	defer m.finishPlatformCall(call)
 	ioDone := make(chan struct{})
 	ioStopped := make(chan struct{})
 	defer func() { close(ioDone); <-ioStopped }()

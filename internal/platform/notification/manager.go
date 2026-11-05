@@ -46,7 +46,7 @@ func (m *Manager) Jitter(d time.Duration) time.Duration {
 	return time.Duration(float64(d) * (0.95 + rand.Float64()*0.10))
 }
 
-// Start is reserved for the live service. Loading or offline migration never
+// Start is reserved for the live service. Offline loading never
 // executes queries. Every worker is keyed by Room instance, source and opt-in ID.
 func (m *Manager) Start() error {
 	m.host.Gate.Lock()

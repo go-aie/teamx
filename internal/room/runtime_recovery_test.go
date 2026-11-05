@@ -52,7 +52,7 @@ func TestRuntimeRecoveryRestoresEnabledRoomsWithoutSelection(t *testing.T) {
 	m := activationTestManager(t)
 	m.factory = controlledActivationFactory(nil, nil)
 	a, b, untouched := managerCreate(t, m, "a"), managerCreate(t, m, "b"), managerCreate(t, m, "untouched")
-	for i, room := range []roomSummary{a, b} {
+	for _, room := range []roomSummary{a, b} {
 		openOK(t, m, room.RoomIdentity, "open-"+room.CreateID)
 		m.mu.Lock()
 		svc := m.runtimes[room.RoomIdentity].service
@@ -71,9 +71,6 @@ func TestRuntimeRecoveryRestoresEnabledRoomsWithoutSelection(t *testing.T) {
 			waitMember(t, ctx, svc.target(member.MembershipID), id, func(s MemberStatus) bool { return !s.Active && s.Agent.TurnNumber == 1 })
 		}
 		cancel()
-		if i == 1 && m.index.ActiveRoomID != "" {
-			t.Fatal("open selected a Room")
-		}
 	}
 	if err := m.close(); err != nil {
 		t.Fatal(err)
@@ -103,10 +100,10 @@ func TestRuntimeRecoveryRestoresEnabledRoomsWithoutSelection(t *testing.T) {
 		}
 		managedPost(t, restored, rt.service, "new-"+room.CreateID)
 	}
-	if restored.runtimes[untouched.RoomIdentity].service != nil || restored.index.ActiveRoomID != "" {
+	if restored.runtimes[untouched.RoomIdentity].service != nil {
 		t.Fatal("recovery used UI selection or assembled untouched team")
 	}
-	if len(restored.index.Opens) != 4 || len(restored.index.Activations) != 0 {
+	if len(restored.index.Opens) != 4 {
 		t.Fatal("recovery created or replayed user receipts")
 	}
 }
@@ -179,7 +176,7 @@ func awaitOpenRuntime(t *testing.T, m *roomManager, owner RoomIdentity) {
 }
 
 func TestRuntimeRecoveryDoesNotReplayInterruptedOperations(t *testing.T) {
-	for _, kind := range []string{"open", "activation", "shutdown"} {
+	for _, kind := range []string{"open", "shutdown"} {
 		t.Run(kind, func(t *testing.T) {
 			m := activationTestManager(t)
 			a, b := managerCreate(t, m, "a"), managerCreate(t, m, "b")
@@ -192,11 +189,7 @@ func TestRuntimeRecoveryDoesNotReplayInterruptedOperations(t *testing.T) {
 			index := m.copyIndex()
 			switch kind {
 			case "open":
-				sequence, _ := m.nextRuntimeOperationSequence()
-				index.Opens = append(index.Opens, roomOpen{RoomIdentity: a.RoomIdentity, OpenID: "interrupted", Sequence: sequence, Status: "running"})
-			case "activation":
-				sequence, _ := m.nextRuntimeOperationSequence()
-				index.Activations = append(index.Activations, roomActivation{RoomIdentity: a.RoomIdentity, ActivateID: "interrupted", Sequence: sequence, Status: "running", Phase: "resuming"})
+				index.Opens = append(index.Opens, roomOpen{RoomIdentity: a.RoomIdentity, OpenID: "interrupted", Status: "running"})
 			case "shutdown":
 				index.forgetShutdown(a.RoomIdentity)
 				index.Shutdowns = append(index.Shutdowns, roomShutdown{RoomIdentity: a.RoomIdentity, Error: "Session cleanup unverified"})
@@ -309,14 +302,6 @@ func TestRuntimeRecoveryLeavesSettledPausedRoomsLazy(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	m.mu.Lock()
-	next := m.copyIndex()
-	next.ActiveRoomID = selected.RoomID
-	err = m.saveIndex(next)
-	m.mu.Unlock()
-	if err != nil {
-		t.Fatal(err)
-	}
 	if err := m.close(); err != nil {
 		t.Fatal(err)
 	}
@@ -335,41 +320,25 @@ func TestRuntimeRecoveryLeavesSettledPausedRoomsLazy(t *testing.T) {
 	}
 }
 
-func TestRuntimeRecoveryExplicitRetrySupersedesOtherEntrypointsFailure(t *testing.T) {
-	for _, failed := range []string{"open", "activation"} {
-		t.Run(failed, func(t *testing.T) {
-			m := activationTestManager(t)
-			a := managerCreate(t, m, "a")
-			m.factory = func(string, string, serviceConfig) (*service, error) { return nil, errors.New("old failure") }
-			if failed == "open" {
-				beginOpen(t, m, a.RoomIdentity, "failed")
-				if op := awaitOpen(t, m, a.RoomIdentity, "failed"); op.Status != "failed" {
-					t.Fatal(op)
-				}
-			} else {
-				next := m.copyIndex()
-				next.Activations = append(next.Activations, roomActivation{RoomIdentity: a.RoomIdentity, ActivateID: "legacy-failure", Sequence: 1, Status: "failed", Phase: "opening", Error: "old failure"})
-				if err := m.saveIndex(next); err != nil {
-					t.Fatal(err)
-				}
-			}
-			m.factory = controlledActivationFactory(nil, nil)
-			if failed == "open" {
-				openRoomOK(t, m, a, "explicit-success")
-			} else {
-				openOK(t, m, a.RoomIdentity, "explicit-success")
-			}
-			if err := m.close(); err != nil {
-				t.Fatal(err)
-			}
-			restored := restoredTestManager(t, m)
-			if err := restored.restoreRuntimes(); err != nil {
-				t.Fatal(err)
-			}
-			awaitRecovery(t, restored)
-			if rt := restored.runtimes[a.RoomIdentity]; rt.status != "ready" {
-				t.Fatal("old failed receipt blocked later explicit success", rt)
-			}
-		})
+func TestRuntimeRecoveryExplicitRetrySupersedesOpenFailure(t *testing.T) {
+	m := activationTestManager(t)
+	a := managerCreate(t, m, "a")
+	m.factory = func(string, string, serviceConfig) (*service, error) { return nil, errors.New("old failure") }
+	beginOpen(t, m, a.RoomIdentity, "failed")
+	if op := awaitOpen(t, m, a.RoomIdentity, "failed"); op.Status != "failed" {
+		t.Fatal(op)
+	}
+	m.factory = controlledActivationFactory(nil, nil)
+	openRoomOK(t, m, a, "explicit-success")
+	if err := m.close(); err != nil {
+		t.Fatal(err)
+	}
+	restored := restoredTestManager(t, m)
+	if err := restored.restoreRuntimes(); err != nil {
+		t.Fatal(err)
+	}
+	awaitRecovery(t, restored)
+	if rt := restored.runtimes[a.RoomIdentity]; rt.status != "ready" {
+		t.Fatal(rt)
 	}
 }

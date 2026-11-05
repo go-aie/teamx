@@ -1258,38 +1258,42 @@ for (const key of ["activity", "inbox", "policy", "tools"]) {
   });
 }
 let policyView = null, policyEditor = null;
-const policyKinds = {preference:"用户偏好", rule:"长期规则", decision:"事项决定"};
+const policyKinds = {preference:"用户偏好", rule:"长期规则"};
 const policyStates = {suggested:"建议 · 未生效", active:"有效", revoked:"已撤销"};
 function policyCurrent(view) {
   return policyView === view && agentTab === "policy" && $("activity-dialog").open && selectedAgent()?.membership_id === view.member.membership_id && state.info?.room_id === view.info.room_id && state.info?.room_instance === view.info.room_instance && state.info?.service_epoch === view.info.service_epoch;
 }
 function policyScopeText(scope) {
-  return [scope.description, scope.provider && `平台 ${scope.provider}`, scope.instance, scope.account && `账号 ${scope.account}`, scope.project && `项目 ${scope.project}`, scope.object_type].filter(Boolean).join(" · ");
+  return [scope.description, scope.provider && `平台 ${scope.provider}`, scope.instance, scope.account && `账号 ${scope.account}`, scope.account_id && `原生账号 ${scope.account_id.namespace}:${scope.account_id.value}`, scope.tenant && `租户 ${scope.tenant.namespace}:${scope.tenant.value}`, scope.no_containers && "无父容器", scope.project && `项目 ${scope.project}`, scope.object_type].filter(Boolean).join(" · ");
 }
 function policyFormKind() {
   const kind = $("policy-kind").value;
   $("policy-rule-fields").hidden = $("policy-conditions-fields").hidden = kind !== "rule";
   $("policy-actions-field").hidden = kind === "preference";
 }
-function editPolicy(record = null, matter = null) {
+function editPolicy(record = null) {
   const view = policyView;
   if (!view || !policyCurrent(view) || view.saving) return;
-  policyEditor = {view, record, matter, id:record?.id || `p-${Date.now()}-${Math.random().toString(36).slice(2,10)}`};
+  policyEditor = {view, record, id:record?.id || `p-${Date.now()}-${Math.random().toString(36).slice(2,10)}`};
   $("policy-form").hidden = false;
-  $("policy-kind").value = record?.kind || (matter ? "decision" : "preference");
-  $("policy-kind").disabled = !!record || !!matter;
-  $("policy-editor-title").textContent = matter ? `事项 #${matter.seq} / ${matter.id} 的具体决定` : record ? `修改 ${policyKinds[record.kind]} · v${record.version}` : "新增偏好或规则";
+  $("policy-kind").value = record?.kind || "preference";
+  $("policy-kind").disabled = !!record;
+  $("policy-editor-title").textContent = record ? `修改 ${policyKinds[record.kind]} · v${record.version}` : "新增偏好或规则";
   for (const [key,value] of Object.entries({text:record?.text, scope:record?.scope?.description, provider:record?.scope?.provider, instance:record?.scope?.instance, account:record?.scope?.account, project:record?.scope?.project, "object-type":record?.scope?.object_type, actions:record?.actions, conditions:record?.conditions, exceptions:record?.exceptions})) $("policy-"+key).value = value || "";
+  $("policy-account").readOnly = !!record?.scope?.account_id;
+  $("policy-project").readOnly = !!record?.scope?.no_containers;
+  if(record?.scope?.account_id) $("policy-account").value = `${record.scope.account_id.namespace}:${record.scope.account_id.value}`;
+  if(record?.scope?.no_containers) $("policy-project").value = "无父容器";
   $("policy-expires").value = record?.expires_at ? new Date(new Date(record.expires_at).getTime()-new Date(record.expires_at).getTimezoneOffset()*60000).toISOString().slice(0,16) : "";
   policyFormKind(); $("policy-text").focus();
 }
-function policyCard(view, r, history, matter = null) {
+function policyCard(view, r, history) {
   const section = document.createElement("section"); section.className = "activity-section";
   const title = document.createElement("h4");
   const expired = r.expires_at && new Date(r.expires_at) <= new Date();
   title.textContent = `${policyKinds[r.kind]} · ${policyStates[r.status]}${expired ? " · 已过期" : ""} · v${r.version}`;
   const body = document.createElement("p"); body.className = "inbox-text";
-  body.textContent = `${r.text}\n范围：${r.scope.description}` + (r.kind === "rule" ? `\n${r.scope.provider} · ${r.scope.instance} · ${r.scope.account} · 项目 ${r.scope.project}${r.scope.object_type ? " · " + r.scope.object_type : ""}` : "") + (r.actions ? `\n允许动作：${r.actions}` : "") + (r.conditions ? `\n前提：${r.conditions}\n例外：${r.exceptions}` : "") + (r.expires_at ? `\n有效期至：${new Date(r.expires_at).toLocaleString()}` : "");
+  body.textContent = `${r.text}\n范围：${policyScopeText(r.scope)}` + (r.actions ? `\n允许动作：${r.actions}` : "") + (r.conditions ? `\n前提：${r.conditions}\n例外：${r.exceptions}` : "") + (r.expires_at ? `\n有效期至：${new Date(r.expires_at).toLocaleString()}` : "");
   const source = document.createElement("details"), summary = document.createElement("summary"); summary.textContent = "来源与修订记录"; source.append(summary);
   for (const v of history.filter(v => v.id === r.id)) {
     const p = document.createElement("p"); p.className = "inbox-text";
@@ -1298,41 +1302,92 @@ function policyCard(view, r, history, matter = null) {
   }
   const actions = document.createElement("div"); actions.className = "member-actions";
   const edit = document.createElement("button"); edit.type = "button"; edit.textContent = r.status === "suggested" ? "审核并编辑" : "编辑";
-  edit.addEventListener("click",()=> { if (policyCurrent(view)) editPolicy(r,matter); }); actions.append(edit);
+  edit.addEventListener("click",()=> { if (policyCurrent(view)) editPolicy(r); }); actions.append(edit);
   if (r.status !== "revoked") {
     const revoke = document.createElement("button"); revoke.type = "button"; revoke.textContent = "撤销";
-    revoke.addEventListener("click",()=> { if (policyCurrent(view)) void savePolicyChange(view,{...policyChange(r,matter),status:"revoked",source_text:`撤销 ${policyKinds[r.kind]} ${r.id} v${r.version}：${r.text}`}); }); actions.append(revoke);
+    revoke.addEventListener("click",()=> { if (policyCurrent(view)) void savePolicyChange(view,{...policyChange(r),status:"revoked",source_text:`撤销 ${policyKinds[r.kind]} ${r.id} v${r.version}：${r.text}`}); }); actions.append(revoke);
   }
   section.append(title,body,source,actions); return section;
 }
-function policyChange(record, matter) {
-  const {source,changed_by,updated_at,...value} = record;
-  return {...value,revision:policyView.data.revision,...(matter ? {seq:matter.seq,matter_id:matter.id,matter_version:matter.version} : {})};
+function followupResultURL(raw) { try { const url=new URL(raw);return ["https:","http:"].includes(url.protocol) && !url.username && !url.password ? url.href : ""; } catch { return ""; } }
+function beginReply(message) {
+  if(state.draft.pending || !state.connected || discussionBusy()) return;
+  state.draft.replyTo=message.seq;
+  $("reply-label").textContent=`引用 #${message.seq} · ${message.author.id}：${message.text}`;
+  $("reply-context").hidden=false;saveDraft();$("message-input").focus();
+}
+function followupParagraph(parent,text) { const p=document.createElement("p");p.textContent=text;parent.append(p); }
+async function loadFollowupDetail(view,item,section) {
+  let panel=section.followupPanel;
+  if(!panel) { panel=document.createElement("div");panel.className="followup-detail";section.followupPanel=panel;section.append(panel); }
+  panel.replaceChildren();
+  try {
+    if(item.kind === "unresolved_source") {
+      const event=await rpc("/v1/matters/source",{...view.member,followup:{seq:item.seq,source_ref:item.ref}},view.info);
+      if(!policyCurrent(view)) return;
+      followupParagraph(panel,`来源 #${event.seq} · ${event.source?.url || ""} · ${event.resolution?.reason || "身份尚未核实"}`);
+      return;
+    }
+    const data=await rpc("/v1/matters/read",{...view.member,followup:{object_ref:item.object_ref,unit_ref:item.ref}},view.info);
+    if(!policyCurrent(view)) return;
+    const unit=data.unit,target=data.target.target;
+    followupParagraph(panel,`${target.provider} · ${target.instance} · ${target.object.type} ${target.object.id.value}`);
+    followupParagraph(panel,`版本 ${unit.revision} · ${unit.status} · ${unit.summary || ""} · ${unit.next || ""}`);
+    if(unit.evidence) followupParagraph(panel,`进展依据：${unit.evidence}`);
+    for(const question of unit.questions || []) {
+      followupParagraph(panel,`问题：${question.text}`);
+      for(const answer of question.answers || []) followupParagraph(panel,`用户 ${answer.message.author.id} #${answer.message.seq}：${answer.message.text}`);
+      if(question.room_seq) { const reply=document.createElement("button");reply.type="button";reply.textContent="在 Room 回答";reply.addEventListener("click",()=>{ if(!policyCurrent(view))return; const message=state.messages.get(question.room_seq); if(message) { beginReply(message); $("activity-dialog").close(); } else { followupParagraph(panel,`请在 Room 加载消息 #${question.room_seq} 并就地回复。`); } });panel.append(reply); }
+    }
+    for(const instruction of unit.instructions || []) followupParagraph(panel,`单次指令 · ${instruction.status} · ${instruction.intent.body || instruction.intent.constraints} · 用户 #${instruction.source.seq}：${instruction.source.text}`);
+    for(const action of unit.actions || []) {
+      followupParagraph(panel,`动作 ${action.request.id} · ${action.request.operation} · ${action.status} · ${action.attempts} 次尝试${action.possible_duplicate ? " · 可能重复" : ""}`);
+      followupParagraph(panel,`账号 ${action.inspection.account_label || action.access.account.id.value} · ${action.request.input.body} · ${action.result?.message || "结果待核实"}`);
+      if(followupResultURL(action.result?.url)) { const link=document.createElement("a");link.textContent="查看远端回执";link.href=followupResultURL(action.result.url);link.target="_blank";link.rel="noopener noreferrer";panel.append(link); }
+    }
+    const sources=document.createElement("div");panel.append(sources);
+    await loadFollowupSources(view,item.object_ref,sources,0);
+  } catch(error) { if(policyCurrent(view)) followupParagraph(panel,`读取失败：${error.message}`); }
+}
+async function loadFollowupSources(view,objectRef,panel,after) {
+  const page=await rpc("/v1/matters/sources",{...view.member,followup:{object_ref:objectRef},after,limit:5},view.info);
+  if(!policyCurrent(view))return;
+  for(const source of page.items) {
+    const button=document.createElement("button");button.type="button";button.textContent=`来源 #${source.seq} · ${source.status}${source.reason ? " · "+source.reason : ""}`;
+    button.addEventListener("click",async()=>{ try { const event=await rpc("/v1/matters/source",{...view.member,followup:{seq:source.seq,source_ref:source.source_ref}},view.info);if(policyCurrent(view))followupParagraph(panel,`${event.source.url || ""} · ${event.delivery_id} · ${event.resolution.reason || event.resolution.status}\n${event.entry?.item?.text || ""}`); } catch(error) {if(policyCurrent(view))followupParagraph(panel,error.message);} });panel.append(button);
+  }
+  if(!page.complete) { const more=document.createElement("button");more.type="button";more.textContent="更多来源";more.addEventListener("click",async()=>{more.disabled=true;try{await loadFollowupSources(view,objectRef,panel,page.next_after);more.hidden=true;}catch(error){more.disabled=false;if(policyCurrent(view))followupParagraph(panel,error.message);}});panel.append(more); }
+}
+function policyChange(record) {
+  const {source,changed_by,updated_at,conversation,...value} = record;
+  return {...value,revision:policyView.data.revision};
 }
 function renderPolicy(view) {
   if (!policyCurrent(view)) return;
   $("policy-entries").replaceChildren(...view.data.current.map(r=>policyCard(view,r,view.data.history)));
-  $("policy-matters").replaceChildren(...view.matters.records.map(record=> {
-    const section = document.createElement("section"); section.className="activity-section";
-    for (const m of record.matters) {
-      const matter={seq:record.seq,id:m.id,version:m.version};
-      const title=document.createElement("p"); title.textContent=`#${record.seq} / ${m.id} · ${m.summary || m.status}`;
-      const add=document.createElement("button"); add.type="button"; add.textContent="添加本事项决定"; add.addEventListener("click",()=>{if(policyCurrent(view)) editPolicy(null,matter);});
-      section.append(title,add);
-      const history=m.decisions?.history || [], latest=new Map(history.map(r=>[r.id,r]));
-      for (const r of latest.values()) section.append(policyCard(view,r,history,matter));
-    }
+  $("policy-matters").replaceChildren(...view.matters.items.map(item => {
+    const section=document.createElement("section"); section.className="activity-section";
+    const title=document.createElement("p");
+    title.textContent=`${item.kind === "object" ? "对象" : item.kind === "discussion" ? "讨论" : "未解析来源"} · ${item.target_label || item.summary || item.status}${item.summary && item.target_label ? " · "+item.summary : ""}${item.all_completed === false ? " · 仍有未完成跟进" : ""}`;
+    const next=document.createElement("p"); next.textContent=item.next || "";
+    const open=document.createElement("button"); open.type="button"; open.textContent="查看详情与来源";
+    open.addEventListener("click",()=>{if(policyCurrent(view)) void loadFollowupDetail(view,item,section);});
+    section.append(title,next,open);
+    if(item.object_ref) { const related=document.createElement("button");related.type="button";related.textContent="同对象跟进";related.addEventListener("click",()=>{if(policyCurrent(view))void loadMemberPolicy("",item.object_ref);});section.append(related); }
+    for(const q of item.questions || []) { const p=document.createElement("p");p.textContent=`待答：${q.text}`;section.append(p); }
+    for(const action of item.actions || []) { const p=document.createElement("p");p.textContent=`结果未知：${action.id} · ${action.attempts} 次尝试`;section.append(p); }
     return section;
   }));
-  $("policy-next").hidden=!view.matters.has_more;
-  $("policy-status").textContent=`配置版本 ${view.data.revision} · ${view.data.effective.length} 条有效偏好／规则` + (!view.matters.records.length ? " · 暂无已建立的事项" : "");
+  $("policy-next").hidden=view.matters.complete;
+  $("policy-status").textContent=`配置版本 ${view.data.revision} · ${view.data.effective.length} 条有效偏好／规则 · ${view.matters.total} 条跟进`;
+
 }
-async function loadMemberPolicy(after = 0) {
+async function loadMemberPolicy(cursor = "", objectRef = "") {
   const member=selectedAgent(); if (!member || agentTab!=="policy" || (policyView?.saving && policyCurrent(policyView))) return;
-  const view={member:{agent_id:member.agent_id,membership_id:member.membership_id},info:{...state.info}};
+  const view={member:{agent_id:member.agent_id,membership_id:member.membership_id},info:{...state.info},objectRef};
   policyView=view; policyEditor=null; for(const id of ["policy-save","policy-suggest","policy-new","policy-reload","policy-next"]) $(id).disabled=false; $("policy-form").hidden=true; $("policy-entries").replaceChildren(); $("policy-matters").replaceChildren(); $("policy-next").hidden=true; $("policy-status").textContent="正在读取…";
   try {
-    const [data,matters]=await Promise.all([rpc("/v1/policy/read",view.member,view.info),rpc("/v1/decisions/read",{...view.member,after,limit:5},view.info)]);
+    const [data,matters]=await Promise.all([rpc("/v1/policy/read",view.member,view.info),rpc("/v1/matters/list",{...view.member,followup:{cursor,object_ref:objectRef,include_completed:$("followups-history").checked},limit:5},view.info)]);
     if (!policyCurrent(view)) return;
     view.data=data; view.matters=matters; renderPolicy(view);
   } catch(error) { if(policyCurrent(view)) $("policy-status").textContent=`读取失败：${error.message}`; }
@@ -1342,7 +1397,7 @@ async function savePolicyChange(view,change) {
   view.saving=true; for(const id of ["policy-save","policy-suggest","policy-new","policy-reload","policy-next"]) $(id).disabled=true;
   $("policy-status").textContent="正在保存…";
   try {
-    await rpc(change.kind==="decision" ? "/v1/decisions/update" : "/v1/policy/update",{...view.member,policy:change},view.info);
+    await rpc("/v1/policy/update",{...view.member,policy:change},view.info);
     if(!policyCurrent(view)) return;
     view.saving=false; await loadMemberPolicy();
   } catch(error) { view.needsRefresh=true; if(policyCurrent(view)) $("policy-status").textContent=`保存失败或结果待核实：${error.message}。请刷新核对当前版本后再修改。`; }
@@ -1351,11 +1406,15 @@ async function savePolicyChange(view,change) {
 async function savePolicyForm(status) {
   const editor=policyEditor; if(!editor || !policyCurrent(editor.view)) return;
   const kind=$("policy-kind").value;
-  if(kind==="decision" && !editor.matter) { $("policy-status").textContent="请从上方事项选择「添加本事项决定」。"; return; }
-  const c={id:editor.id,version:editor.record?.version || 0,revision:editor.view.data.revision,kind,status,text:$("policy-text").value,scope:{description:$("policy-scope").value},...(editor.matter ? {seq:editor.matter.seq,matter_id:editor.matter.id,matter_version:editor.matter.version} : {})};
+  const c={id:editor.id,version:editor.record?.version || 0,revision:editor.view.data.revision,kind,status,text:$("policy-text").value,scope:{description:$("policy-scope").value}};
   if(kind!=="preference") c.actions=$("policy-actions").value;
   if(kind==="rule") {
     for(const key of ["provider","instance","account","project"]) c.scope[key]=$("policy-"+key).value;
+    if(editor.record?.scope?.account_id) {
+      delete c.scope.account; c.scope.account_id={...editor.record.scope.account_id};
+      if(editor.record.scope.tenant) c.scope.tenant={...editor.record.scope.tenant};
+    }
+    if(editor.record?.scope?.no_containers) {delete c.scope.project; c.scope.no_containers=true;}
     c.scope.object_type=$("policy-object-type").value; c.conditions=$("policy-conditions").value; c.exceptions=$("policy-exceptions").value;
   }
   if($("policy-expires").value) c.expires_at=new Date($("policy-expires").value).toISOString();
@@ -1366,7 +1425,9 @@ $("policy-kind").addEventListener("change",policyFormKind);
 $("policy-new").addEventListener("click",()=>editPolicy());
 $("policy-cancel").addEventListener("click",()=>{$("policy-form").hidden=true;policyEditor=null;});
 $("policy-reload").addEventListener("click",()=>loadMemberPolicy());
-$("policy-next").addEventListener("click",()=>loadMemberPolicy(policyView?.matters?.next_after || 0));
+$("followups-history").addEventListener("change",()=>loadMemberPolicy("",policyView?.objectRef || ""));
+$("followups-all").addEventListener("click",()=>loadMemberPolicy());
+$("policy-next").addEventListener("click",()=>loadMemberPolicy(policyView?.matters?.next || "",policyView?.objectRef || ""));
 $("policy-form").addEventListener("submit",event=>{event.preventDefault();return savePolicyForm("active");});
 $("policy-suggest").addEventListener("click",()=>savePolicyForm("suggested"));
 let inboxView = null;
@@ -1799,7 +1860,7 @@ async function sync() {
       if (!selectionLoaded) {
         selectionLoaded = true;
         if (!selectedRoom) {
-          const initial = catalog.rooms.find(room => room.room_id === catalog.default_room_id) || catalog.rooms.find(room => room.service);
+          const initial = catalog.rooms[0];
           if (initial) selectRoom(initial);
         }
       }

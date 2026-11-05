@@ -66,27 +66,16 @@ func prepare(ctx context.Context, tools string, b Binding, initial bool, write f
 			return Result{}, errors.New("GitLab resource missing or unsafe; preserve and inspect it")
 		}
 	}
-	if b.ConnectionID != "" {
-		// A shared-connection migration uses its own frozen resource directory.
-		// An existing different script must never be silently overwritten.
-		for _, name := range []string{"git-askpass.sh", "USAGE.md"} {
-			want, _ := workspaceResource(resourceRoot, name)
-			actual, err := os.ReadFile(filepath.Join(tools, name))
-			if err != nil || !bytes.Equal(actual, want) && !knownFrozenResource(resourceRoot+name, actual) {
-				return Result{}, errors.New("frozen GitLab connection resource differs; preserve and inspect it")
-			}
+	// Reuse only the current immutable resources; no old Python or hash aliases.
+	for _, name := range []string{"git-askpass.sh", "USAGE.md"} {
+		want, err := workspaceResource(resourceRoot, name)
+		if err != nil {
+			return Result{}, err
 		}
-	}
-	if info, err := os.Lstat(filepath.Join(tools, "gitlab.py")); err == nil {
-		if !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 || info.Size() > 1<<20 {
-			return Result{}, errors.New("unsafe frozen GitLab resource")
+		actual, err := os.ReadFile(filepath.Join(tools, name))
+		if err != nil || !bytes.Equal(actual, want) {
+			return Result{}, errors.New("GitLab resource differs from current installation")
 		}
-		data, err := os.ReadFile(filepath.Join(tools, "gitlab.py"))
-		if err != nil || b.ConnectionID != "" && !knownFrozenResource(resourceRoot+"gitlab.py", data) {
-			return Result{}, errors.New("frozen GitLab resource differs; preserve and inspect it")
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return Result{}, err
 	}
 
 	target := filepath.Join(tools, "binding.json")
@@ -119,7 +108,7 @@ func prepare(ctx context.Context, tools string, b Binding, initial bool, write f
 	}
 	// Git executes GIT_ASKPASS as one program path (not a shell command).
 	// TeamX recognizes Git's prompt argv and reads the private binding under
-	// TEAMX_GITLAB_TOOLS. This overrides frozen helpers without rewriting them.
+	// TEAMX_GITLAB_TOOLS. The launcher owns credential access.
 	env := map[string]string{"TEAMX_GITLAB_TOOLS": tools, "GIT_ASKPASS": cli, "GIT_TERMINAL_PROMPT": "0"}
 
 	if initial {

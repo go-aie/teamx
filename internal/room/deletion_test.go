@@ -97,7 +97,7 @@ func TestManagedDeletionWaitsForTurnAndPrivateSessionCleanup(t *testing.T) {
 	if _, err := os.Stat(m.roomDir(a.RoomID)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("Room or private Session data retained", err)
 	}
-	if m.runtimes[a.RoomIdentity] != nil || m.index.ActiveRoomID != "" || m.index.OwnedRoomID != "" || len(m.index.Activations) != 0 {
+	if m.runtimes[a.RoomIdentity] != nil {
 		t.Fatal("deleted Room retained active ownership or activation receipts", m.index)
 	}
 	readManagedRoom(t, m, b)
@@ -156,7 +156,6 @@ func TestManagedDeletionInterruptedRemovalRequiresExplicitRetry(t *testing.T) {
 			a := managerCreate(t, m, "interrupted-delete")
 			next := m.copyIndex()
 			next.Rooms[0].Status, next.Rooms[0].DeletionPhase = "deleting", phase
-			next.ActiveRoomID, next.OwnedRoomID = a.RoomID, a.RoomID
 			if err := m.saveIndex(next); err != nil {
 				t.Fatal(err)
 			}
@@ -307,115 +306,15 @@ func TestManagedDeletionPreservesLockedOrForeignRoomData(t *testing.T) {
 	}
 }
 
-// A notification schema change may make history unreadable by OpenStore. It
-// must neither prevent safe deletion nor bypass private execution settlement.
-func writeDeletionOldHistory(t *testing.T, m *roomManager, room roomSummary) []byte {
-	t.Helper()
-	path := filepath.Join(m.roomDir(room.RoomID), "room.json")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var snapshot map[string]any
-	if err := json.Unmarshal(data, &snapshot); err != nil {
-		t.Fatal(err)
-	}
-	source := map[string]any{"platform": "gitlab", "instance": "https://gitlab.invalid", "project_id": 7, "event_id": 42, "subscription_id": strings.Repeat("a", 32)}
-	snapshot["latest_seq"], snapshot["revision"] = 1, 1
-	snapshot["messages"] = []any{map[string]any{"seq": 1, "client_message_id": "old-delivery", "author": map[string]string{"kind": "integration", "id": "gitlab"}, "text": "old event", "created_at": "2026-11-01T00:00:00Z", "source": source}}
-	snapshot["integration_receipts"] = map[string]any{"old-delivery": map[string]any{"seq": 1, "source": source}}
-	data, err = json.Marshal(snapshot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, data, 0600); err != nil {
-		t.Fatal(err)
-	}
-	if store, err := OpenStore(m.roomDir(room.RoomID), room.RoomID); err == nil {
-		store.Close()
-		t.Fatal("normal Room loader accepted unsupported history")
-	}
-	return data
-}
-
-func TestManagedDeletionIgnoresHistorySchemaButRequiresSettlement(t *testing.T) {
-	for _, mode := range []string{"settled", "unsettled-current", "unsettled-historical", "recorded-turn-without-backend"} {
-		t.Run(mode, func(t *testing.T) {
-			m := activationTestManager(t)
-			room := managerCreate(t, m, "old-history")
-			_, state := readManagedRoom(t, m, room)
-			member := state.Members[0]
-			identity := MemberIdentity{RoomIdentity: room.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
-			private := filepath.Join(m.roomDir(room.RoomID), "agents", member.MembershipID)
-			backend := filepath.Join(private, "session.json.dsh")
-			if mode == "unsettled-historical" {
-				backend = filepath.Join(m.roomDir(room.RoomID), "agents", "retired", "session.json.dsh-old")
-			}
-			if mode == "recorded-turn-without-backend" {
-				store, err := OpenStore(m.roomDir(room.RoomID), room.RoomID)
-				if err != nil {
-					t.Fatal(err)
-				}
-				// Use an explicit checkpoint with a recorded turn. Deletion must reject
-				// it even when its old history cannot be loaded to compare sequence watermarks.
-				agent := AgentSnapshot{Version: formatVersion, MemberIdentity: identity, LastOfferedUnreadSeq: 1, TurnNumber: 1, Turn: &TurnRecord{Number: 1, Status: "interrupted", SnapshotSeq: 1, OfferedUnreadSeq: 1}}
-				if err := os.MkdirAll(private, 0700); err != nil {
-					t.Fatal(err)
-				}
-				if err := store.save(filepath.Join(private, "agent.json"), agent, maxPrivateFileBytes); err != nil {
-					t.Fatal(err)
-				}
-				if err := store.Close(); err != nil {
-					t.Fatal(err)
-				}
-			} else {
-				if err := os.MkdirAll(backend, 0700); err != nil {
-					t.Fatal(err)
-				}
-				if mode == "settled" {
-					if err := os.WriteFile(filepath.Join(backend, "settled.json"), []byte(`{"version":1}`), 0600); err != nil {
-						t.Fatal(err)
-					}
-				}
-			}
-			before := writeDeletionOldHistory(t, m, room)
-			beginDeletion(t, m, room)
-			failed := awaitDeletion(t, m, room)
-			if mode == "settled" {
-				if failed != nil {
-					t.Fatal("unsupported history blocked safe deletion", failed)
-				}
-				if _, err := os.Stat(m.roomDir(room.RoomID)); !errors.Is(err, os.ErrNotExist) {
-					t.Fatal("old Room retained", err)
-				}
-				return
-			}
-			if failed == nil || failed.DeletionPhase != "closing" || !strings.Contains(failed.Error, "settlement") {
-				t.Fatal("unsettled execution discarded", failed)
-			}
-			after, err := os.ReadFile(filepath.Join(m.roomDir(room.RoomID), "room.json"))
-			if err != nil || string(after) != string(before) {
-				t.Fatal("deletion modified old history", err)
-			}
-			if mode != "recorded-turn-without-backend" {
-				if err := os.WriteFile(filepath.Join(backend, "settled.json"), []byte(`{"version":1}`), 0600); err != nil {
-					t.Fatal(err)
-				}
-				beginDeletion(t, m, room)
-				if failed := awaitDeletion(t, m, room); failed != nil {
-					t.Fatal("explicit retry failed after settlement", failed)
-				}
-			}
-		})
-	}
-}
-
-func TestManagedDeletionProjectionRejectsInvalidOwnership(t *testing.T) {
-	for _, mode := range []string{"foreign", "missing-members", "unsafe-member", "duplicate-member", "version", "malformed", "locked"} {
+func TestManagedDeletionRejectsInvalidSnapshots(t *testing.T) {
+	for _, mode := range []string{"foreign", "missing-members", "unsafe-member", "duplicate-member", "version", "unknown-field", "malformed", "locked"} {
 		t.Run(mode, func(t *testing.T) {
 			m := activationTestManager(t)
 			room := managerCreate(t, m, "protected-old-history")
-			data := writeDeletionOldHistory(t, m, room)
+			data, err := os.ReadFile(filepath.Join(m.roomDir(room.RoomID), "room.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
 			var state map[string]any
 			if err := json.Unmarshal(data, &state); err != nil {
 				t.Fatal(err)
@@ -431,8 +330,10 @@ func TestManagedDeletionProjectionRejectsInvalidOwnership(t *testing.T) {
 				state["members"] = append(state["members"].([]any), state["members"].([]any)[0])
 			case "version":
 				state["version"] = 999
+			case "unknown-field":
+				state["unsupported_business_field"] = []any{}
 			}
-			data, err := json.Marshal(state)
+			data, err = json.Marshal(state)
 			if err != nil {
 				t.Fatal(err)
 			}

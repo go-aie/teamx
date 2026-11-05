@@ -113,7 +113,7 @@ func TestRecoveryRejectsLegacyRunnersWithoutChangingData(t *testing.T) {
 			if svc, err := newService(dir, id.RoomID, recoveryConfig()); err == nil {
 				closeService(t, svc)
 				t.Fatal("legacy runner restored")
-			} else if !strings.Contains(err.Error(), "unsupported runner") {
+			} else if !strings.Contains(err.Error(), "unsupported runner") && !strings.Contains(err.Error(), "unknown field") {
 				t.Fatal(err)
 			}
 			after, err := os.ReadFile(path)

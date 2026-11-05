@@ -26,23 +26,6 @@ func (index *roomsIndex) forgetShutdown(id RoomIdentity) {
 	index.Shutdowns = kept
 }
 
-// Preserve historical activation receipts when ordering explicit open retries.
-// A later explicit success supersedes earlier failures from the retired endpoint.
-// Zero denotes old receipts whose relative ordering cannot be inferred.
-func (m *roomManager) nextRuntimeOperationSequence() (uint64, error) {
-	var latest uint64
-	for _, op := range m.index.Opens {
-		latest = max(latest, op.Sequence)
-	}
-	for _, op := range m.index.Activations {
-		latest = max(latest, op.Sequence)
-	}
-	if latest == ^uint64(0) {
-		return 0, ErrCapacity
-	}
-	return latest + 1, nil
-}
-
 // Reserve before inspecting disk. Recovery is independent of the old UI
 // selection and one slow or broken Room cannot hold up any other Room.
 func (m *roomManager) restoreRuntimes() error {
@@ -77,7 +60,6 @@ func (m *roomManager) recoveryOperationErrorLocked(entry roomIndexEntry) error {
 		return fmt.Errorf("workspace recovery requires explicit retry: %w", err)
 	}
 	var open *roomOpen
-	var activation *roomActivation
 	for i := len(m.index.Opens) - 1; i >= 0; i-- {
 		op := m.index.Opens[i]
 		if op.RoomIdentity == entry.RoomIdentity {
@@ -85,25 +67,8 @@ func (m *roomManager) recoveryOperationErrorLocked(entry roomIndexEntry) error {
 			break
 		}
 	}
-	for i := len(m.index.Activations) - 1; i >= 0; i-- {
-		op := m.index.Activations[i]
-		if op.RoomIdentity == entry.RoomIdentity {
-			activation = &op
-			break
-		}
-	}
-	if open != nil && activation != nil {
-		if open.Sequence > activation.Sequence {
-			activation = nil
-		} else if activation.Sequence > open.Sequence {
-			open = nil
-		}
-	}
 	if open != nil && open.Status != "completed" {
 		return fmt.Errorf("open %s requires explicit retry: %s", open.OpenID, open.Error)
-	}
-	if activation != nil && activation.Status != "completed" {
-		return fmt.Errorf("activation %s requires explicit retry: %s", activation.ActivateID, activation.Error)
 	}
 	for _, record := range m.index.Shutdowns {
 		if record.RoomIdentity == entry.RoomIdentity && record.Error != "" {
@@ -179,9 +144,6 @@ func (m *roomManager) runtimeRecoveryNeeded(owner RoomIdentity) (bool, error) {
 		}
 		if exists {
 			dir := ref.Directory
-			if dir == "" {
-				dir = filepath.Base(dshStateDir(opts.StatePath))
-			}
 			needed = needed || dsh.CheckResume(filepath.Join(filepath.Dir(opts.StatePath), dir)) != nil
 		} else if agent.Turn != nil && !ref.Pending {
 			needed = true // retain a missing-backend diagnostic even while paused
