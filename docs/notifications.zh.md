@@ -1,6 +1,6 @@
 # 平台通知
 
-通知把平台事实可靠送进 Room，不创建 Agent、Membership 或私有 Session，也不自动授予工具权限。当前支持 GitLab 项目活动（`gitlab/events`）和个人待办（`gitlab/todos`）。
+通知把平台事实可靠送到 Room 或指定 Membership 的 AgentInbox，不授予工具或动作权限。当前支持 GitLab Events／Todos。R5 起，生产入口统一使用 schema 2 的稳定目标引用和对象／原生讨论跟进；Room 对话是正常办理入口，成员 UI 用于查看和纠正。
 
 ## 设置与使用
 
@@ -14,17 +14,85 @@
 | 默认周期 | 可接收实例 5 秒，未打开或操作中 30 秒 | 可接收实例 30 秒，未打开或操作中 120 秒 |
 | 过滤 | MR 开启/合并/关闭、评论、push、分支和忽略操作者 | mentioned、assigned、review_requested、other；MR 和工作项 |
 
-活动项目保存后不跟随 Workspace 改变，Git 准备失败不影响其查询。待办 current 范围保存项目快照，项目变化后暂停并要求核对保存，不能静默改成 all。用户名仅展示，“我的”指所选连接账号；接收到的内容成为房间公共消息。读取、接收和投递不修改远端待办状态。
+活动项目保存后不跟随 Workspace 改变，Git 准备失败不影响其查询。待办 current 范围保存项目快照，项目变化后暂停并要求核对保存，不能静默改成 all。用户名仅展示，“我的”指所选连接账号。读取、接收和投递不修改远端待办状态。
 
-首次开启固定基线，不导入基线前历史。普通开关、重启、过滤修改和同账号凭据轮换不重建基线。Events 空过滤列表表示不限；Todos 未提供过滤使用默认全选，显式空数组表示不接收该维度。过滤按事件/待办创建时间选择历史修订，已接收收件项不因后续修改删除。
+两路来源均可在「投递到」选择房间公共消息或指定成员收件箱。已有订阅默认保持房间消息；选择收件箱时必须是当前房间的有效 Membership。保存仅影响之后首次接收的通知，旧积压保持已冻结的目标和配置版本，切换不重置基线、不回放已观察通知。
 
-每次写请求带来源、房间实例、订阅 ID 和预期版本；立即同步只使用已保存配置。有草稿时先保存；响应丢失先读状态，不自动重发。切房、换账号、旧轮询和迟到写响应均不得覆盖新视图。
+在「成员 → Agent 详情 → 收件箱」只读预览，支持刷新和固定快照的下一页，每页最多 25 条。查看不会确认消费或启动协作；成员暂停、预算耗尽仍可收件。移除成员会结清并冻结其 Inbox，文件保留；同名重新加入使用新 Membership，不继承旧收件箱。目标暂不可用、已移除或容量已满时，来源保留待投递项，设置中展示积压和原因，不改发房间、不自动启用成员。当前没有旧积压转交或清理入口。
 
 GitLab 通知中的评论在房间消息和收件箱预览中按 Markdown 展示，已有通知也适用；原始存储及 Agent 输入继续保留转义和提及隔离。项目图片附件支持 `/uploads/<secret>/<filename>`、同实例的项目附件地址，以及 `{width=900 height=536}` 尺寸语法。图片接近可视区域时，浏览器请求 TeamX 的 `/v1/platform/attachments`；后端核对房间、已保存的消息／收件箱条目、订阅和当前连接账号，再携带 PAT 调用 GitLab 附件 API。PAT 不发送到浏览器；TeamX 页面下载仅暂存在内存，不新增落盘或持久缓存；每张最多 20 MiB，支持 PNG、JPEG、GIF、WebP。HTML、SVG 和外部站点图片不内嵌。附件 API 需要 GitLab 17.4 或以上；权限不足、附件删除或连接失效时显示加载失败入口。
 
 Agent 的图片输入在固定当前回合的 Room／AgentInbox 范围内另行准备，并不依赖浏览器加载图片。只有显式声明图片模态且 ACP 握手支持图片的 Session 才接收图片字节；纯文本模式不下载，并提示图片未读。正文沿用原有限制，实际截断时显示“正文已截断，内容可能不完整”；只识别已保存文字中的完整图片引用，不补读完整评论或截断之外的图片。每轮扫描／图片数量／字节／像素／时间均有预算，缺失与超限会明确告知模型，不保证下一轮自动补齐。
 
 材料准备不推进 Room 已读、Inbox 消费或 matters 状态，不授予工具操作权限。TeamX 只在有界内存中准备；提交后的图片由 DSH 按私有 Session 附件机制持久保存，因此不能将页面不缓存理解为整条模型链路不落盘。模型配置、可重复验收命令及当前边界见[图片验收手册](gitlab-image-acceptance.zh.md)。
+
+## Agent 读取与跟进
+
+已启用成员的 Room／Inbox 输入共用回合队列、Session 和预算，每回合固定最多 25 条通知。暂停或预算耗尽仍可接收，不启动模型。读取确认表示输入已交付，与业务完成、评论成功和 Todo 完成分别记录。
+
+```sh
+"$TEAMX_CLI" inbox read --limit 25
+"$TEAMX_CLI" matters list --limit 25
+"$TEAMX_CLI" matters list --object REF --cursor CURSOR
+"$TEAMX_CLI" matters read --object REF --unit UNIT --turn CURRENT_TURN
+"$TEAMX_CLI" matters sources --object REF --after SEQ --limit 25
+"$TEAMX_CLI" matters source --seq SEQ --source SRC
+"$TEAMX_CLI" matters --help
+```
+
+`inbox read` 返回原始事件、系统解析的来源／目标引用和去重对象摘要；可靠保存关联后才输出，完整输出后才确认。`--peek` 不确认消费。相同对象复用一个对象单元，发现讨论不批量建立待办；确需独立处理时才用 `matters ensure --seq SEQ --target REF --turn TURN` 从已核实原生讨论建立子单元。引用由系统生成，不接受语义事项 ID。旧 enrich/relate、拆分归并和手工身份报告入口已移除。
+
+系统解析已迁入内置 GitLab 适配器，通过当前成员已启用并选择的 GitLab 绑定直接读取 API，不依赖 `teamx-gitlab`、glab 或 Workspace；不自动借用订阅或其他成员账号。来源原生对象身份与讨论映射分层：对象已核实但讨论无权限、分页未完成或缺少映射时显示 `partial`，可使用对象引用，不能据此回复讨论。安全原因保留失败步骤与 HTTP 状态，并区分权限、账号不符、原生身份冲突、响应无效及分页不完整。解析和两类 MR 动作均已内部化，不需要工具二进制。按引用执行仍使用当前成员绑定，核验账号、项目、MR 和原生线程；受限写入每次只发送一次，讨论失败不降级。Room 保留授权、意图和回执，取消后仍保存原账号的已知写入结果，未知结果继续阻止另建请求补发。
+
+普通重读、刷新和重启继续复用保存结果。失败来源可在当前有效 Agent 回合显式执行 `matters resolve --seq SEQ --source SOURCE_REF --turn TURN` 重新解析（准确参数见 `matters resolve --help`）；保留原 seq、source_ref、投递和 Inbox 消费状态，不重新投递、不重复建项。再次失败通过 `LastAttempt` 保留历史已核实身份。本次内部化沿用当前 v3 索引与 followups schema，无须再次重建 Room。
+
+真实来源验收和原目录恢复分开记录：C 已用当前连接核实 10 条来源，并在隔离副本完成恢复；日常助手因模型 429 失败而无有效回合，原目录尚未重解析。不得用失败回合或手改 Agent 快照绕过准入。Issues REST 返回 Work Item 网页路径不会改变原生对象身份；独立评论也不会因此变成讨论回复目标。复现与恢复门槛见[验收手册](reference-followups-acceptance.zh.md#内部能力-c真实来源读取与恢复)。
+
+失败来源在消费后仍出现在活跃列表，使用只读 `source_ref`；按需 `matters resolve --seq SEQ --source SRC --turn TURN` 显式重新解析。普通读取、恢复和新回合不自动轮询。目标已核实而后续查询失败时保留身份和失败原因，不能把部分／权限失败当成不存在。原生正文仍通过已配置工具按需读取，尚未登记通用 ReadTarget 正文分页。
+
+`matters list` 默认返回活跃摘要，可用 `--include-completed` 读历史。每页最多 25 项／128 KiB，来源有独立分页；对象计数由对象及讨论单元派生。详情返回 `unit`（revision、状态、进展、问答、单次指令和动作）、规范 `target`，及按目标层级／原生类型过滤的 `registered_actions`（输入和重试合同）；实际绑定与权限仍在执行时核验。超限明确分页或拒绝，不裁剪未完成条件。Session 轮换后用相同入口恢复，权威记录不依赖私有上下文。
+
+更新使用 `matters update --change JSON`：
+
+```json
+{"object_ref":"ref_…","unit_ref":"unit_…","unit_version":1,"turn_number":1,"status":"waiting_followup","summary":"已回复用法问题","next":"等待对方确认","evidence":"准确动作回执及远端结果"}
+```
+
+每次变更使用返回的 revision 作为下一次 unit_version。状态为 pending、in_progress、waiting_user、waiting_followup、completed、archived、unknown；等待和未知必须有下一步，完成必须有证据。未答问题、有效待落实指令或未知动作阻止办结。
+
+## Room 问答与规则
+
+规则覆盖且事实充分时直接办理，缺少关键决定时先完成独立工作，再用 `matters notify --change JSON` 保存准确单元、原生 message_refs、问题 text 和 proposed `{operation,body 或 constraints}`。问题保存后才公开发送，正文 @ 当前 Room 操作者；重复提交核对同一问题和 Room 回执，不重复提问。
+
+用户正常回复即可。`matters read` 自动关联真实 human 的显式 reply_to；无引用但上下文明确时用 `matters reply --change JSON` 提交准确 question_ref、source_seq 和 basis，服务端复制真实原文。歧义只澄清关联，不默认使用最后一个问题。即时动作可直接引用答复，跨回合才用 `matters instruct` 保存准确单次指令，`instruction-status` 记录落实或真实用户撤销。一次答复不成为长期许可，也无需到 UI 再填写决定。
+
+`policy read` 恢复缺失的有效规则正文；运行时每回合供给 policy_token、revision 和 current_turn，完整 effective 出现时替换旧集合（包括空集合），未出现时沿用该 token 正文。
+
+`policy update --change JSON` 接受 `{change,mode,basis,proposal_seq?}`：
+
+- `explicit_long_term`：从明确长期 human 指令建立、修改、撤销规则或偏好，保存成功后简短告知。
+- `inferred_habit`：习惯推测仅保存未生效建议；按需 `policy publish --id KEY --version VERSION --turn TURN` 公开准确建议。KEY 使用保存建议的 id；`policy read --id ID` 可按需核对准确记录版本。
+- `confirm_suggestion`：关联已公开的准确建议版本、proposal_seq 和真实用户确认；本次任务的同意不能激活长期规则。
+
+change 包含 id、revision、version、kind、status、text、scope（规则的结构化目标范围）、source_seq 和 turn_number。偏好、允许动作、执行前提和例外统一写在自然语言 text 中，不再拆分字段，也不生成范围说明；偏好不填写目标范围。规则 scope 仅保留程序匹配的 provider、instance、account 或 account_id／tenant、project 或 no_containers，以及可选 object_type。管理页通过已验证连接补齐平台、实例和账号，项目可从已有项目选择或填写准确路径／ID，不支持 `*`。旧修订中的说明、动作、条件和例外在当前视图合入正文，原历史和来源保留。Agent 不提交 source_text，服务端读取真实消息与作者。完整字段见 `policy --help`。偏好不授予动作权限，最新明确限制优先；修改／撤销刷新 token，保存未知需核对，不宣称已记住。
+
+成员「偏好与规则」视图默认只展示偏好／规则，支持查看、修改和撤销。Agent 用于持续办理的「跟进记录」默认收起，展开才读取，核查时再逐条查看处理进展、相关通知和动作回执；原始通知和技术信息继续按需展开。待处理表示 Agent 尚未办结，需要用户答复的问题明确标注「待你答复」。Room 消息支持就地回复；UI 不作为正常办理的前置批准步骤，查看记录不会启动 Agent、确认消费或重新解析来源。
+
+## 按引用执行
+
+```json
+{"object_ref":"ref_…","unit_ref":"unit_…","unit_version":3,"turn_number":1,"target_ref":"ref_…","id":"stable-attempt-1","policy_token":"current-token","authority":{"room_seq":42,"question_ref":"question_…","reason":"该真实答复覆盖本次准确动作"},"operation":"discussion.reply","input":{"body":"准确回复正文"}}
+```
+
+使用一次 `actions execute --request JSON`。依据三选一：准确有效 rule_id／rule_version、instruction_ref／instruction_version、真实 human room_seq。服务端恢复目标和账号，核对问题／消息范围、当前 token、工具绑定与实际能力，先保存意图再调用适配器。不接受 Agent 提交原生项目／MR／讨论 ID。
+
+目前登记 MR `object.comment`（普通评论）和 `discussion.reply`（已核实讨论），复用 Inbox 来源建立的跟进；无来源任务不伪造通知序号。讨论回复不降级普通评论。普通评论暂时故障最多两次服务端尝试，讨论回复一次；响应丢失可能重复。回执保存实际目标／账号、结果原生 ID、attempts 和 possible_duplicate。policy_changed 返回完整有效视图，需要重新判断，不能只替换 token。
+
+同 ID／内容读取已有回执；unknown 不因换 ID、回合、Session 或重启而自动补发。只读核实远端并报告，无关工作可以继续，依赖未知结果的业务不能办结。重要结果使用稳定 ID 的 send 公开并将依据写入单元，常规结果保留私有。未适配能力继续按真实授权使用 tools run，不继承评论重试策略。
+
+## schema 切换
+
+业务只读写 `agents/<membership>/followups/`。旧 main 事项、语义关系图、独立决定和旧动作模型及其读取／消费分支已删除；不扫描、迁移或接续旧记录。目录索引仅支持 v3，不接受旧归属／激活字段。请使用新数据目录并重新创建 Room；旧目录由用户自行处置，服务不自动删除。当前 schema 缺失、未知版本、身份冲突及保存结果未知仍明确拒绝，不能通过补建空记录掩盖损坏。
 
 ## 公共运行与可靠投递
 
@@ -39,11 +107,14 @@ Agent 的图片输入在固定当前回合的 Room／AgentInbox 范围内另行�
 ```mermaid
 flowchart LR
   Q[单页平台查询] --> S[观察记录 + 收件箱 + 分页检查点原子保存]
-  S --> R[Room 消息 + 独立投递回执原子提交]
-  R --> A[确认并移出收件箱]
+  S --> D{已冻结单目标}
+  D --> R[Room 消息 + 独立投递回执原子提交]
+  D --> I[目标 Membership 的 Inbox 条目与回执持久提交]
+  R --> A[确认并移出来源待投递缓冲]
+  I --> A
 ```
 
-远端页处理成功必须先保存，再推进下一页或缓存。消息提交后、inbox ack 前崩溃时，稳定投递 ID 与 Room 独立回执阻止重复消息；清空公共历史不清除同步进度或回执。向订阅所属且可接收的运行实例投递，与页面是否查看无关；未打开或正在进行生命周期操作的房间继续采集并暂存，待目标可接收时投递。
+远端页处理成功必须先保存，再推进下一页或缓存。消息提交后、inbox ack 前崩溃时，稳定投递 ID 与对应目标的持久回执阻止重复接收；清空公共历史不清除同步进度或回执。向订阅所属且可接收的运行实例投递，与页面是否查看无关；未打开或正在进行生命周期操作的房间继续采集并暂存，待目标可接收时投递。
 
 公共来源键是 provider + channel + subscription ID；来源 item key 按不透明字符串处理。集成作者只陈述对象、操作者、变化、原因和链接，不生成建议、指派或 @ 提及；公开发送接口不能伪造 integration。点击明确来源的消息作者打开对应页签；缺少/未知 channel 不推断为活动消息。
 
@@ -61,7 +132,7 @@ ETag 仅用于已验证支持条件请求的快速页，缓存与页面同次落
 
 连接身份绑定实际解析凭据、generation、credential version 和私有指纹，用户名不能代替稳定 user ID。每轮分别从第一页扫描 pending 和 done，每页最多 100 项；两种状态全部完成才更新 `last_full`，不能将待办 ID 当游标，也不能按创建时间或已知 ID 提前结束。
 
-重启、显式同步、请求失败和长时间挂起会重新扫描，保留已有观察与收件箱。待办去重键为实例 + 接收 user ID + todo ID，同一条 pending → done → pending 仍只投递一次；同对象的 Events 与 Todos 可以分别入房。
+重启、显式同步、请求失败和长时间挂起会重新扫描，保留已有观察与收件箱。待办去重键为实例 + 接收 user ID + todo ID，同一条 pending → done → pending 仍只投递一次；同对象的 Events 与 Todos 保留独立回执，分别按自己的路由投递。
 
 片段预算耗尽保留检查点并标记 `scan_incomplete`，不假报完整成功。不可用对象、未知类型和过滤项保留跳过原因；修改过滤不回放已观察项。实现见 [todos_poll.go](../internal/platform/gitlab/todos_poll.go)、[todos_state.go](../internal/platform/gitlab/todos_state.go)。
 
@@ -75,30 +146,19 @@ ETag 仅用于已验证支持条件请求的快速页，缓存与页面同次落
 
 ## 接口与验证
 
-管理入口为 `GET /v1/platform/notifications`、`POST /v1/platform/notifications/configure` 和 `/sync`，显式携带 provider/channel、房间身份、订阅 ID 与版本；首次创建为无订阅 ID、版本 0。响应只含公开状态、诊断和配置，不返回凭据指纹或收件正文。结构见 [platform_notifications_http.go](../internal/room/platform_notifications_http.go)。
+通知管理仍使用 `GET /v1/platform/notifications`、`POST /v1/platform/notifications/configure`、`/sync`。human Inbox 预览使用 `/v1/member/inbox`，固定快照，不消费、不触发模型。
 
-来源算法测试在 `internal/platform/gitlab`；Room 测试覆盖接纳、身份、投递和恢复。
+业务接口沿用完整 ServiceInfo／Caller；Agent 仅访问自身 Membership，human 管理读取显式选择 agent_id／membership_id：
 
-## 真实验收
+| 路径（POST） | 请求及结果 |
+| --- | --- |
+| `/v1/inbox/read`、`/confirm` | 原始事件＋来源／去重摘要；确认携带 turn_number／read_receipt |
+| `/v1/matters/list`、`/read`、`/sources`、`/source` | followup 包含 object_ref、unit_ref、cursor、include_completed、seq／source_ref；limit／after 在外层。read 返回 unit／target，Agent 读带 turn_number 自动关联回复 |
+| `/v1/matters/update`、`/resolve`、`/ensure`、`/instruction-status` | followup 中的结构化变更，Agent 当前回合限定 |
+| `/v1/matters/notify`、`/reply`、`/instruct` | 分别使用 question、followup_reply、instruction；均携带准确单元合同 |
+| `/v1/policy/read`、`/update`、`/publish` | Agent update 使用 conversation_policy；human update 使用 policy 管理合同；publish 使用 followup.id／version 与外层 turn_number |
+| `/v1/actions/execute` | action_request 使用引用动作合同，账号、目标与结果由服务端核验 |
 
-使用 `e2e` 标签、[已安装的 DSH 与模型环境](agent-runtime.zh.md#真实验收)和 `GITLAB_PAT`。输出与失败处理要求见[验证说明](../internal/room/README.zh.md#验证入口)。
+旧事项图和 decisions 生产接口已移除。业务响应禁止缓存，所有修改检查成员归属、回合和预期版本。Store 继续原子保存和结果未知写入冻结。定向验证：`go test -race ./internal/room -run '^TestReferenceEntry|^TestReferenceConversation|^TestReferenceAction' -count=1 -timeout=3m`；前端使用 `node --test internal/room/web*_test.mjs`。
 
-```sh
-go test -tags=e2e ./internal/room -run '^TestRealGitLabEventsDSH$' -count=1 -v -timeout 30m -args \
-  -teamx-ge04-output /absolute/new-events-evidence \
-  -teamx-ge04-repository https://gitlab.example/group/project.git
-
-go test -tags=e2e ./internal/room -run '^TestRealGitLabTodosDSH$' -count=1 -v -timeout 135m -args \
-  -teamx-gt04-output /absolute/new-todos-evidence \
-  -teamx-gt04-repository https://gitlab.example/group/project.git
-```
-
-Events 由操作者按检查点创建两个新 MR，覆盖在线入房、停服补查、Agent 读取、去重及查询开销。Todos 按 `progress.json` 提示依次完成 `browser-unbound`、`browser-configure`、`live-review-request`、`offline-work-item-mention` 和 `browser-final`；核对真实账号、对象类型、原因、待办 ID、唯一回执和两类消息导航，不主动完成远端待办。夹具须同时匹配 marker、类型和原因，不能仅按标题；不要提前创建夹具或用 API 替代浏览器检查点。
-
-`browser-configure` 要求保存两路订阅：项目活动开启 MR opened 且不忽略操作者；我的待办选 all、全部支持原因和类型、默认 30 秒/120 秒。浏览器检查后另存 `browser.json` 再建立对应 `.ready`，例如：
-
-```json
-{"driver":"manual-browser","unbound_entry":true,"configured_both":true,"todos_navigation":true,"events_navigation":true,"observations":"实际操作、观察时间及确认记录"}
-```
-
-也可记录真实自动化 driver；未实际观察不能填写通过。当前入口不支持旧检查点续跑参数，中断后不能靠重跑夹具处理结果未知的写入。
+组件和协议证据见[实施记录](PLATFORM-REFERENCE-AND-FOLLOWUP-REFACTOR-PLAN.zh.md)。R6 已新增非 GitLab 贯通及新协议的独立真实验收夹具；MR 普通评论通过并发生一次已授权写入，真实讨论、DSH 全闭环和实际浏览器仍未通过，详见[验收手册](reference-followups-acceptance.zh.md)。此前 AN 阶段真实 GitLab／DSH 记录保留在[原计划](ASSISTANT-NOTIFICATION-INBOX-PLAN.zh.md)，它们验证旧合同，不能用旧命令补发或当作新合同通过。

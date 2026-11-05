@@ -21,6 +21,8 @@ TeamX 服务按相同顺序解析工具：显式 `TEAMX_GITLAB_BIN` → TeamX �
 
 凭据不进入 argv；原生子进程使用临时私有 glab 配置，不读取操作者的全局 glab 登录信息，过滤其他 GLAB/GITLAB 环境及替代 Token 来源。帮助不解析实例/凭据、不调用业务 API。此配置隔离不构成安全沙箱；账号的实际权限决定可用操作。Go 扩展只接受 HTTPS origin、不跟随重定向；不默认选择 gitlab.com。
 
+开发合同：TeamX 自身的来源身份解析、目标核验和两类 MR 动作已迁入内置 `internal/platform/gitlab`，通过受控 GET 和受限单次 POST 执行；本工具已移除 `__reference-resolve`、`__reference-action`、私有协议 DTO 和旧 `notifications resolve`。Agent 主动使用的 glab 代理、Work Item 扩展和 Issue 讨论查询／回复仍为独立 CLI，不导入 TeamX 内部包，也不回调内部能力接口。内部办理需要当前成员有效的 GitLab 绑定，无须安装本工具；`tools run gitlab` 仍须安装本工具及其原生命令需要的 glab。
+
 原生子进程按非交互方式运行：Unix 上使用独立会话，stdout/stderr 通过流式管道转发，即使从终端直接启动也不继承控制终端，不等待终端颜色探测响应。stdin 的文件与管道输入仍可使用。帮助被 Ctrl-C 中断时返回 130，只报告帮助中断，不再追加扩展列表或提示远端写入结果未确认。
 
 原生命令的参数、stdin、stdout、stderr 和退出码保持原样。项目由任务显式提供，无需本地 Git 仓库，例如：
@@ -86,3 +88,7 @@ go test -tags=e2e -run '^TestRealReadProbe$' -count=1 -v ./tools/gitlab
 工具集成还需补验真实 DSH 首次调用、已有成员显式接入、通知驱动的个人事务与开发写回，以及浏览器中的成员工具设置。
 
 先确认账号和获准项目，再使用单独授权的临时对象；记录类型、项目、IID/ID、SHA、退出码和独立远端查询。Issue 不能替代通用 WorkItem，帮助输出、离线测试和旧工具的通过记录不证明当前实例效果。输出与失败处理要求、其他待验项见[验证说明](../../internal/room/README.zh.md#验证入口)。
+
+历史 R4 的服务专用动作协议已由[内部能力方案 B](../../docs/PLATFORM-INTERNAL-CAPABILITIES-PLAN.zh.md#b-实施记录2026-11-05)移除。当前内部动作及回执语义见[平台架构](../../docs/platform-architecture.zh.md)；旧工具协议测试和真实验收仅说明当时版本，不能证明当前内部路径的真实实例效果。
+
+当前内部路径的真实读取和恢复证据见[内部能力 C 验收](../../docs/reference-followups-acceptance.zh.md#内部能力-c真实来源读取与恢复)：已用当前成员绑定核实来源，并在缺少本工具的隔离副本完成显式恢复。该结果不代表 Agent CLI 可免安装，也不代表执行了真实 GitLab 写入或恢复了日常失败 Session。独立工具仍单独构建和回归，不承担内部身份解析协议。

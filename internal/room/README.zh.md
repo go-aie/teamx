@@ -55,11 +55,11 @@ teamx serve --config /绝对路径/config.toml
 
 点击顶部房间名或旁边的编辑图标可就地修改名称，Enter 保存、Esc 取消，也可点击旁边的保存/取消按钮；保存后同步更新标题和左侧列表。`POST /v1/rooms/rename` 携带目录 `service_epoch`、human `caller`、精确 `room_id` / `room_instance`、`name` 和原名称 `expected_name`；名称去除首尾空白后须非空且不超过 256 字节。原名称不匹配时返回冲突，避免覆盖其他页面的修改。当前显示名仅原子更新 `rooms.json`，创建收据和冻结配置保留原名称；消息、草稿、成员、工作区和 Session 身份不变，不重启执行。响应丢失后核对目录，不自动重发。
 
-管理接口：`GET /v1/rooms` 返回每项的 `status`（目录）、`runtime_status`（`closed / opening / ready / failed`）、`busy`、`runtime_error`、可用 `service` 和安全成员名称。顶层 `busy` 仅表示共享资源操作；`default_room_id` 只兼容旧索引的初始查看建议，不表示当前选择。
+管理接口：`GET /v1/rooms` 返回每项的 `status`（目录）、`runtime_status`（`closed / opening / ready / failed`）、`busy`、`runtime_error`、可用 `service` 和安全成员名称。顶层 `busy` 仅表示共享资源操作；房间查看选择保存在浏览器本地，首次进入选择目录第一项。
 
 `POST /v1/rooms/open` 要求管理器 `service_epoch`、human `caller`、`room_id`、`room_instance` 和稳定 `open_id`，返回 `running / completed / failed`，完成时附 `service`。`GET /v1/rooms/open?service_epoch=…&caller_id=…&open_id=…` 只查询原回执。相同 ID 不重放，失败后检查并用新 ID 显式打开。旧 `/v1/rooms/activate` 已移除。普通 Room API 携带实例的完整身份；`GET /v1/info` 也须带 `room_id`、`room_instance`、实例 `service_epoch` 和 `caller_id`。
 
-`rooms.json` 版本 2 以完整身份的 `owned_rooms` 记录运行归属，并保存 `opens` 和逐房间 `shutdowns`。旧归属迁移后移除，历史激活回执及中断证据保留用于恢复检查。正常启动逐房间恢复既有启用意图；异常回合不自动重放，暂停且已结清的房间按需打开。退出冻结全部房间后并行结清，任何资源未结清均保留归属和根目录锁。
+`rooms.json` 仅支持版本 3，以完整身份的 `owned_rooms` 记录运行归属，并保存 `opens` 和逐房间 `shutdowns`；旧全局选择、单房间归属及激活回执不再读取或迁移。正常启动逐房间恢复既有启用意图；异常回合不自动重放，暂停且已结清的房间按需打开。退出冻结全部房间后并行结清，任何资源未结清均保留归属和根目录锁。
 
 未查看的操作者 @ 提及会将整条消息背景标黄。页面处于前台且获得焦点时，消息至少一半进入可视区并连续停留 1 秒后，自动标记该条已查看；超过视口高度的长消息以半个视口为可见门槛。快速划过或后台页面不计入查看。顶部提醒跳转到最早的未查看提及，仍按可见停留规则消除提醒。已查看消息背景恢复常规颜色，未查看的消息继续标黄，计数逐条减少，不会连带清除更早未查看的消息。@ 用户名本身始终保留黄色标记，表示这里存在提及，与是否已查看无关。查看进度在切换房间和标签页刷新后保留，不推进 Agent 未读游标。
 
@@ -164,11 +164,11 @@ Ctrl-C / SIGTERM 先停止新接纳，结清管理操作与成员任务/Session�
 
 服务关闭使用 30 秒的等待预算；DSH 的取消、协议关闭和进程树自然退出分别使用取消等待预算（默认各 5 秒）。正常取消并完成关闭的 interrupted 成员保留原会话恢复资格，但重启后仍暂停，需显式继续。Session 若因取消未结清、协议或进程观察失败而禁用，关闭也返回具体原因；强制回收或进程非零退出同样明确报错且不写入正常停止凭据。已有记录缺失的凭据不会自动补写。
 
-## 存储与兼容边界
+## 存储与恢复边界
 
 版本 1：`room.json` 保存身份、完整历史、成员 runner/profile 和游标；`agents/<MembershipID>/agent.json` 保存调度水位与回合；`session.json` 保存 DSH 目录引用；DSH 的 backend.json、home、会话历史位于引用目录。`settled.json` 只在旧执行全部退出后记录，供显式重置核查；它不赋予原会话恢复资格，并在再次启动前消费。旧版本已失败且缺少退出证明的目录不会自动补写该记录。轮换支持唯一目录代际与可选 pending，启动前消费新建许可。轮换观察状态是进程内数据，持久引用决定重启后的代际。
 
-旧 manual/scripted runner 或含旧 script 字段的快照明确拒绝，不转换为 DSH、不覆盖或清空。旧模拟实验请保留原目录，真实 DSH 使用新目录；原 DSH 快照继续支持。
+当前 runner 仅为 DSH，字段严格解码。用户选择重建后已移除旧事项／决定／动作、索引迁移和旧 DSH 目录推断；请用新目录创建 Room，旧数据由用户处置，服务不自动删除。当前正常关闭的 DSH Session 仍按准确引用与结清证据恢复。
 
 macOS/Linux 使用非阻塞文件锁，其他平台明确不支持。快照同目录临时写入、文件同步、原子替换及目录同步；文件 0600、目录 0700。跨文件无事务。替换或目录同步结果不确定会冻结 Store 写入，必须结清、关闭并重新加载核查。损坏、未知字段、版本与身份冲突不创建空 Room。
 
@@ -193,6 +193,12 @@ go test ./internal/room -run '^TestFixtureDemoAndReport$' -count=1 -v
 
 受限环境无法监听时，应在允许监听的环境补跑完整测试，不能记为全量通过。DOM/handler、真实 TCP、浏览器观察与真实平台/模型验证分别记录。
 
+稳定引用 R1 的定向合同检查为 `go test ./internal/platform/... ./tools/gitlab ./internal/room -run 'TestTargetIdentity|TestReadCursor|TestReference|TestCapabilityImportBoundaries|TestDiscussionResolver' -count=1`。进程间协议测试编译独立工具的测试二进制，使用假 GET transport 核对本地 DTO、版本和原始来源；非 GitLab 适配器只验证静态能力合同，不访问真实平台。阶段范围及验收记录见[稳定引用方案](../../docs/PLATFORM-REFERENCE-AND-FOLLOWUP-REFACTOR-PLAN.zh.md)。
+
+R2 定向检查为 `go test -race ./internal/room -run '^TestReferenceFollowups' -count=1`，覆盖 100 条同对象通知、20 个按需讨论、摘要字节分页、来源消费后恢复、别名／账号／成员隔离及部分提交失败。生产入口统一使用新 schema，旧模型和数据兼容分支已删除。该检查使用本地组件及假只读工具，不代表真实平台、DSH 或浏览器验收。
+
+R3 定向检查为 `go test -race ./internal/room -run '^TestReferenceConversation|^TestReferenceFollowups|^TestPolicy' -count=1 -timeout=3m`，覆盖隔离新 schema 的稳定提问与答复自动／明确上下文关联、无需 UI 决定的模拟继续办理、跨回合指令、对话规则修改／撤销及建议版本确认。公开消息 outbox 间隙、并发 CAS、保存失败／未知冻结和重开核对分别验证；保存的真实 human 原文在公共历史清空后仍可恢复。生产入口已由 R5 切换，按引用动作的后续实现见 R4 记录，组件夹具不证明模型语义提取或真实浏览器验收。完整边界见 [R3 记录](../../docs/PLATFORM-REFERENCE-AND-FOLLOWUP-REFACTOR-PLAN.zh.md#r3-实施记录2026-11-05)。
+
 真实验收必须显式启用，入口见 [DSH](../../docs/agent-runtime.zh.md#真实验收)、[Workspace](../../docs/workspace.zh.md#真实验收)、[通知](../../docs/notifications.zh.md#真实验收)和 [GitLab 工具](../../tools/gitlab/README.zh.md#真实验收)。每次使用新的私有绝对输出路径，与日常 `data/` 隔离；完整运行目录可能包含凭据和私有历史，不整体公开。失败或中断先保留现场，核对远端及持久状态，结果未知的写入不能直接重发。
 
 消息、调度、身份与持久化设计见 [Room 架构](../../docs/room-architecture.zh.md)。
@@ -203,3 +209,9 @@ go test ./internal/room -run '^TestFixtureDemoAndReport$' -count=1 -v
 - 团队协作：串行调度在真实书店任务中的效果。
 
 平台工具和 Git 工作区的具体缺口分别见 [GitLab 工具验收](../../tools/gitlab/README.zh.md#真实验收)与 [Workspace 验收](../../docs/workspace.zh.md#真实验收)。这些是现有链路的验证缺口；旧工具或旧协议的通过结果不能沿用到当前实现。
+
+R4 定向检查为 `go test -race ./tools/gitlab ./internal/room -run '^TestReferenceAction|^TestReferenceGitlabProcessProtocol' -count=1 -timeout=3m`，覆盖三种依据、准确对象／讨论目标、普通评论两次与讨论回复一次、规则／指令／回合／取消失效、重复请求、保存失败及未知重开不重放。独立工具进程使用假 HTTP transport，不向真实 GitLab 写入；实际 manager 测试核对工具绑定和任务结清。生产入口已由 R5 切换，完整合同与验证边界见 [R4 记录](../../docs/PLATFORM-REFERENCE-AND-FOLLOWUP-REFACTOR-PLAN.zh.md#r4-实施记录2026-11-05)。
+
+R5 入口／恢复定向检查为 `go test -race ./internal/room -run '^TestReferenceEntry' -count=1`，覆盖 CLI／HTTP、新 schema 检测、真实 human 回复关联、规则与回执恢复。正常入口是 Room 对话；UI 仅提供管理和追溯。目录索引为 v3，旧数据需重新建房，不提供自动迁移或清空。
+
+R6 非 GitLab 贯通检查为 `go test -race ./internal/room -run '^TestReferenceCrossPlatform' -count=1 -v`，使用生产静态装配、通知投递、CLI／HTTP、问答／动作及重开恢复；测试平台无项目／IID，使用字符串租户／账号／消息。真实 GitLab、真实 DSH 和实际浏览器采用独立 `e2e` 夹具，不能互作验收证据。当前 MR 普通评论通过，讨论回复、模型完整闭环和实际浏览器仍有门禁；运行方式及准确证据见[验收手册](../../docs/reference-followups-acceptance.zh.md)。
