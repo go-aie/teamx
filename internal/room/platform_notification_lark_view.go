@@ -19,6 +19,7 @@ type larkChatDiagnostic struct {
 type larkDiagnostics struct {
 	CLIVersion        string               `json:"cli_version"`
 	ScopeMode         string               `json:"scope_mode"`
+	Baseline          time.Time            `json:"baseline,omitzero"`
 	DirectoryLastFull time.Time            `json:"directory_last_full,omitzero"`
 	DirectoryPages    int                  `json:"directory_pages"`
 	DirectoryScanning bool                 `json:"directory_scanning"`
@@ -37,7 +38,7 @@ func (m *roomManager) larkNotificationViewLocked(owner RoomIdentity, s *lark.Sta
 	if err != nil || entry.Status != "ready" {
 		return notificationView{}, ErrIdentity
 	}
-	v := notificationView{RoomIdentity: owner, SourceID: lark.MessagesSourceID, Available: true, Status: "disabled", Config: lark.Config{IntervalSeconds: 60, Private: true, GroupMentions: true}, Lark: &larkDiagnostics{CLIVersion: lark.CLIVersion, Chats: []larkChatDiagnostic{}}}
+	v := notificationView{RoomIdentity: owner, SourceID: lark.MessagesSourceID, Available: true, Status: "disabled", Config: lark.Config{IntervalSeconds: 60, Private: true, Bots: true, GroupMentions: true}, Lark: &larkDiagnostics{CLIVersion: lark.CLIVersion, Chats: []larkChatDiagnostic{}}}
 	if s == nil {
 		return v, nil
 	}
@@ -46,6 +47,7 @@ func (m *roomManager) larkNotificationViewLocked(owner RoomIdentity, s *lark.Sta
 	v.Retired = s.Retired
 	v.Account = s.Binding.Account
 	v.Instance = s.Binding.Account.Instance
+	v.Lark.Baseline = s.Baseline
 	if code := m.notificationTargetErrorLocked(owner, s.PendingItems()); code != "" {
 		v.DeliveryErrorCode = code
 	}

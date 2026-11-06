@@ -4,8 +4,9 @@ import {launch,settle} from "./web_app_harness.mjs";
 function fixture(){
  const members=[{agent_id:"assistant",membership_id:"member-a",runner:{profile:"p"}}];
  const connection={id:"lark-connection",name:"飞书",provider:"lark",url:"https://open.feishu.cn",version:1,validation:{status:"valid",username:"测试用户",account:{id:{value:"ou_fixture"}}}};
- const api={calls:[],fail:false,data:{provider:"lark",channel:"messages",available:true,subscription_id:"",subscription_version:0,status:"disabled",pending:0,config:{enabled:false,connection_id:"",chats:[],target:{},private:true,group_mentions:true,at_all:false,bots:false,interval_seconds:60,backfill_seconds:0},lark:{cli_version:"1.0.99",chats:[]}},async request(path,body){
+ const api={calls:[],fail:false,chats:[{chat_id:"oc_fixture",name:"产品讨论群",chat_mode:"group"},{chat_id:"oc_private",name:"张同学",chat_mode:"p2p"}],data:{provider:"lark",channel:"messages",available:true,subscription_id:"",subscription_version:0,status:"disabled",pending:0,config:{enabled:false,connection_id:"",chats:[],target:{},private:true,group_mentions:true,at_all:false,bots:true,interval_seconds:60,backfill_seconds:0},lark:{cli_version:"1.0.99",chats:[]}},async request(path,body){
   api.calls.push({path,body:structuredClone(body)});
+  if(path==="/v1/platform/lark/chats")return {chats:structuredClone(api.chats),has_more:false,page_token:""};
   if(path==="/v1/ui")return {managed:true};
   if(path==="/v1/rooms")return {service_epoch:"manager",operator:"tester",rooms:[{room_id:"A",room_instance:"instance-A",name:"A",status:"ready",runtime_status:"ready",service:{room_id:"A",room_instance:"instance-A",service_epoch:"active-A"}}],teams:[]};
   if(path.startsWith("/v1/workspace?"))return {workspace:{root:"workspaces"},workspace_version:1,members:[],credential_status:"missing"};
@@ -14,7 +15,7 @@ function fixture(){
   if(path==="/v1/platform/connections/save")return {id:body.id,...body,version:1,validation:{status:"unverified"}};
   if(path==="/v1/platform/notifications/configure"){
    if(api.fail)throw Object.assign(Error("conflict"),{code:"conflict"});
-   api.data={...api.data,config:body.config,subscription_id:"subscription",subscription_version:1,status:"running"};return structuredClone(api.data);
+   api.data={...api.data,config:body.config,subscription_id:api.data.subscription_id || "subscription",subscription_version:api.data.subscription_version+1,status:"running"};return structuredClone(api.data);
   }
   if(path==="/v1/member/list")return {members,latest_seq:0};
   if(path==="/v1/read")return {messages:[],snapshot_seq:0,has_more:false};
@@ -33,13 +34,39 @@ test("Lark specified-chat settings preserve drafts and submit frozen Membership"
  await ui.refresh();assert.equal(ui.el("lark-chats").value,"oc_fixture");assert.equal(ui.el("lark-enabled").checked,true);
  await ui.el("lark-save").emit("click");const saved=api.calls.find(x=>x.path==="/v1/platform/notifications/configure").body;
  assert.equal(saved.provider,"lark");assert.equal(saved.channel,"messages");assert.equal(saved.subscription_version,0);assert.equal(saved.config.target.membership_id,"member-a");
- assert.deepEqual(saved.config.chats,["oc_fixture"]);assert.equal(saved.config.at_all,false);assert.equal(saved.config.bots,false);
+ assert.deepEqual(saved.config.chats,["oc_fixture"]);assert.equal(saved.config.at_all,false);assert.equal(saved.config.bots,true);
  assert.equal(ui.el("lark-save").disabled,true);assert.equal(ui.el("lark-sync").disabled,false);assert.equal(ui.el("lark-backfill").disabled,true);
 });
 test("Lark failed saves retain draft without automatic retry",async()=>{
  const api=fixture(),ui=await launch(api);await draft(ui);api.fail=true;await ui.el("lark-save").emit("click");await ui.refresh();
  assert.equal(api.calls.filter(x=>x.path==="/v1/platform/notifications/configure").length,1);
  assert.equal(ui.el("lark-chats").value,"oc_fixture");assert.match(ui.el("lark-error").textContent,/变化.*核对/);
+});
+test("Lark group receiving mode survives refresh and save with private messages always included",async()=>{
+ const api=fixture(),ui=await launch(api);await draft(ui);
+ assert.equal(ui.el("lark-group-mode").value,"mentions");
+ ui.el("lark-group-mode").value="all";await ui.el("lark-group-mode").emit("change");
+ assert.equal(ui.el("lark-group").disabled,true);assert.equal(ui.el("lark-all").disabled,true);
+ assert.equal(ui.el("lark-private"),undefined);assert.equal(ui.el("lark-bots"),undefined);
+ await ui.refresh();assert.equal(ui.el("lark-group-mode").value,"all");
+ await ui.el("lark-save").emit("click");
+ const saved=api.calls.find(x=>x.path==="/v1/platform/notifications/configure").body;
+ assert.equal(saved.config.group_all,true);assert.equal(saved.config.scope_mode,"specified");assert.deepEqual(saved.config.chats,["oc_fixture"]);
+ assert.equal(ui.el("lark-group-mode").value,"all");assert.equal(ui.el("lark-save").disabled,true);
+ ui.el("lark-group-mode").value="mentions";await ui.el("lark-group-mode").emit("change");
+ assert.equal(ui.el("lark-save").disabled,false);assert.equal(ui.el("lark-group").disabled,false);assert.equal(ui.el("lark-all").disabled,false);
+});
+test("Lark switching to all chats clears group-all and requires explicit re-enabling on return",async()=>{
+ const api=fixture(),ui=await launch(api);await draft(ui);
+ ui.el("lark-group-mode").value="all";await ui.el("lark-group-mode").emit("change");
+ ui.el("lark-scope").value="all";await ui.el("lark-scope").emit("change");
+ assert.equal(ui.el("lark-group-mode").value,"mentions");assert.equal(ui.el("lark-group-mode-all").disabled,true);
+ assert.equal(ui.el("lark-group").disabled,false);
+ await ui.el("lark-save").emit("click");
+ const saved=api.calls.find(x=>x.path==="/v1/platform/notifications/configure").body;
+ assert.equal(saved.config.group_all,false);assert.equal(saved.config.scope_mode,"all");
+ ui.el("lark-scope").value="specified";await ui.el("lark-scope").emit("change");
+ assert.equal(ui.el("lark-group-mode-all").disabled,false);assert.equal(ui.el("lark-group-mode").value,"mentions");
 });
 test("Lark profile connection uses CLI reference with explicit format upgrade",async()=>{
  const api=fixture(),ui=await launch(api);await ui.el("open-settings").emit("click");await ui.el("connection-new").emit("click");
@@ -114,4 +141,115 @@ test("Lark discovery and per-chat failures are visible without claiming full cov
  assert.match(ui.el("lark-diagnostics").textContent,/读取受阻 1/);
  assert.match(ui.el("lark-diagnostics").textContent,/积压超过 24 小时 2/);
  assert.match(ui.el("lark-chat-status").children[0].textContent,/读取受阻 permission_denied/);
+});
+
+async function openChatPicker(ui){
+ ui.el("lark-chat-picker").open=true;await ui.el("lark-chat-picker").emit("toggle");await settle();
+}
+function chatChoice(ui,id){return ui.el("lark-chat-options").children.find(row=>row.children[0].value===id)?.children[0];}
+test("Lark conversation dropdown selects names and types, searches and saves native IDs",async()=>{
+ const api=fixture(),ui=await launch(api);await draft(ui);ui.el("lark-chats").value="";
+ await openChatPicker(ui);
+ const browse=api.calls.find(x=>x.path==="/v1/platform/lark/chats").body;
+ assert.equal(browse.connection_id,"lark-connection");assert.equal(browse.connection_version,1);assert.equal(browse.caller.kind,"human");assert.equal(browse.room_instance,"instance-A");
+ assert.match(ui.el("lark-chat-picker-status").textContent,/已加载完成/);
+ ui.el("lark-chat-search").value="张";await ui.el("lark-chat-search").emit("input");
+ assert.equal(ui.el("lark-chat-options").children.length,1);assert.ok(chatChoice(ui,"oc_private"));
+ const privateChat=chatChoice(ui,"oc_private");privateChat.checked=true;await privateChat.emit("change");
+ assert.match(ui.el("lark-chat-selected").children[0].textContent,/张同学/);
+ ui.el("lark-chat-search").value="";await ui.el("lark-chat-search").emit("input");
+ ui.el("lark-chat-type").value="group";await ui.el("lark-chat-type").emit("change");
+ assert.equal(ui.el("lark-chat-options").children.length,1);assert.ok(chatChoice(ui,"oc_fixture"));
+ const group=chatChoice(ui,"oc_fixture");group.checked=true;await group.emit("change");
+ await ui.refresh();assert.equal(ui.el("lark-chat-selected").children.length,2);
+ await ui.el("lark-save").emit("click");
+ const saved=api.calls.find(x=>x.path==="/v1/platform/notifications/configure").body.config;
+ assert.deepEqual(saved.chats,["oc_fixture","oc_private"]);assert.equal(saved.private,true);assert.equal(saved.bots,true);
+ await ui.el("lark-chat-selected").children[0].emit("click");assert.equal(ui.el("lark-chat-selected").children.length,1);
+});
+test("Lark dropdown pagination and failures preserve selection and report incomplete search",async()=>{
+ const api=fixture(),original=api.request;let fail=false;
+ api.request=async(path,body)=>{
+  if(path!=="/v1/platform/lark/chats")return original(path,body);
+  api.calls.push({path,body});if(fail)throw Error("read failed");
+  return body.page_token ? {chats:[{chat_id:"oc_next",chat_mode:"p2p",name:"下一页同事"}],has_more:false,page_token:""} : {chats:[api.chats[0]],has_more:true,page_token:"next-page"};
+ };
+ const ui=await launch(api);await draft(ui);await openChatPicker(ui);
+ assert.match(ui.el("lark-chat-picker-status").textContent,/尚未加载完整.*搜索仅筛选已加载会话/);
+ fail=true;await ui.el("lark-chat-more").emit("click");
+ assert.match(ui.el("lark-chat-picker-status").textContent,/读取失败.*已选会话保留/);assert.equal(ui.el("lark-chats").value,"oc_fixture");
+ fail=false;await ui.el("lark-chat-more").emit("click");
+ assert.equal(api.calls.filter(x=>x.path==="/v1/platform/lark/chats").at(-1).body.page_token,"next-page");
+ assert.ok(chatChoice(ui,"oc_next"));assert.equal(ui.el("lark-chat-more").hidden,true);
+});
+test("Lark dropdown limits selection and discards a late result after connection changes",async()=>{
+ const api=fixture(),original=api.request;let finish;
+ api.request=(path,body)=>path==="/v1/platform/lark/chats" ? new Promise(resolve=>{finish=resolve;}) : original(path,body);
+ const ui=await launch(api);await draft(ui);
+ ui.el("lark-chats").value=Array.from({length:32},(_,i)=>`oc_${i}`).join("\n");await ui.el("lark-chats").emit("change");
+ ui.el("lark-chat-picker").open=true;const opening=ui.el("lark-chat-picker").emit("toggle");await settle();
+ finish({chats:api.chats,has_more:false,page_token:""});await opening;
+ assert.equal(chatChoice(ui,"oc_fixture").disabled,true);
+ await ui.el("lark-chat-selected").children[0].emit("click");assert.equal(chatChoice(ui,"oc_fixture").disabled,false);
+ const refreshing=ui.el("lark-chat-refresh").emit("click");await settle();
+ ui.el("lark-connection").value="";await ui.el("lark-connection").emit("change");
+ finish({chats:api.chats,has_more:false,page_token:""});await refreshing;
+ assert.equal(ui.el("lark-chat-options").children.length,0);assert.equal(ui.el("lark-chat-selected").children.length,0);
+ assert.match(ui.el("lark-chat-picker-status").textContent,/先选择并验证/);
+});
+test("Lark all-only group filtering is saved independently of private reception",async()=>{
+ const api=fixture(),ui=await launch(api);await draft(ui);
+ ui.el("lark-group").checked=false;await ui.el("lark-group").emit("change");
+ ui.el("lark-all").checked=true;await ui.el("lark-all").emit("change");
+ await ui.el("lark-save").emit("click");
+ const saved=api.calls.find(x=>x.path==="/v1/platform/notifications/configure").body.config;
+ assert.equal(saved.private,true);assert.equal(saved.bots,true);assert.equal(saved.group_all,false);assert.equal(saved.group_mentions,false);assert.equal(saved.at_all,true);
+});
+
+function localDateTime(date){
+ const pad=n=>String(n).padStart(2,"0");
+ return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+test("Lark custom historical start uses local time and survives refresh and saved reload",async()=>{
+ const api=fixture(),ui=await launch(api);await draft(ui);
+ assert.equal(ui.el("lark-backfill").disabled,false);assert.equal(ui.el("lark-backfill-start").disabled,false);
+ assert.equal(ui.el("lark-backfill").value,"0");assert.equal(ui.el("lark-backfill-custom").hidden,true);
+ ui.el("lark-backfill").value="custom";await ui.el("lark-backfill").emit("change");
+ assert.equal(ui.el("lark-backfill-custom").hidden,false);assert.equal(ui.el("lark-save").disabled,true);
+ assert.match(ui.el("lark-backfill-error").textContent,/请选择/);
+ const start=new Date(Math.floor((Date.now()-7*86400000)/1000)*1000),local=localDateTime(start);
+ ui.el("lark-backfill-start").value=local;await ui.el("lark-backfill-start").emit("input");
+ assert.equal(ui.el("lark-save").disabled,false);await ui.refresh();assert.equal(ui.el("lark-backfill-start").value,local);
+ await ui.el("lark-save").emit("click");
+ const saved=api.calls.find(x=>x.path==="/v1/platform/notifications/configure").body.config;
+ assert.equal(saved.backfill_seconds,0);assert.equal(saved.backfill_start,start.toISOString());
+ assert.equal(ui.el("lark-backfill").value,"custom");assert.equal(ui.el("lark-backfill-start").value,local);
+ assert.equal(ui.el("lark-backfill").disabled,true);assert.equal(ui.el("lark-backfill-start").disabled,true);assert.equal(ui.el("lark-save").disabled,true);
+ const reloaded=await launch(api);await reloaded.el("open-lark-source").emit("click");await settle();
+ assert.equal(reloaded.el("lark-backfill").value,"custom");assert.equal(reloaded.el("lark-backfill-start").value,local);
+ assert.equal(reloaded.el("lark-backfill").disabled,true);assert.equal(reloaded.el("lark-backfill-start").disabled,true);
+ assert.match(reloaded.el("lark-backfill-help").textContent,/已锁定.*新建房间/);
+});
+test("Lark rejects future backfill dates and switching back to default clears custom submission",async()=>{
+ const api=fixture(),ui=await launch(api);await draft(ui);
+ ui.el("lark-backfill").value="custom";await ui.el("lark-backfill").emit("change");
+ ui.el("lark-backfill-start").value=localDateTime(new Date(Date.now()+86400000));await ui.el("lark-backfill-start").emit("input");
+ assert.equal(ui.el("lark-save").disabled,true);assert.match(ui.el("lark-backfill-error").textContent,/不能晚于/);
+ await ui.el("lark-save").emit("click");assert.equal(api.calls.filter(x=>x.path==="/v1/platform/notifications/configure").length,0);
+ ui.el("lark-backfill").value="0";await ui.el("lark-backfill").emit("change");
+ assert.equal(ui.el("lark-backfill-custom").hidden,true);assert.equal(ui.el("lark-backfill-error").hidden,true);
+ await ui.el("lark-save").emit("click");
+ const saved=api.calls.find(x=>x.path==="/v1/platform/notifications/configure").body.config;
+ assert.equal(saved.backfill_seconds,0);assert.equal(saved.backfill_start,undefined);
+});
+test("Lark locked history start does not block other settings or rewrite the saved timestamp",async()=>{
+ const api=fixture(),start=new Date(Math.floor((Date.now()-86400000)/1000)*1000);
+ api.data={...api.data,subscription_id:"existing",subscription_version:3,status:"running",config:{...api.data.config,enabled:true,connection_id:"lark-connection",chats:["oc_fixture"],backfill_start:start.toISOString(),target:{mode:"inbox",agent_id:"assistant",membership_id:"member-a"}},lark:{...api.data.lark,baseline:start.toISOString()}};
+ const ui=await launch(api);await ui.el("open-lark-source").emit("click");await settle();
+ assert.equal(ui.el("lark-backfill").disabled,true);assert.match(ui.el("lark-backfill-help").textContent,/当前接收起点.*已锁定.*新建房间/);
+ ui.el("lark-interval").value="10";await ui.el("lark-interval").emit("change");
+ assert.equal(ui.el("lark-save").disabled,false);await ui.el("lark-save").emit("click");
+ const saved=api.calls.find(x=>x.path==="/v1/platform/notifications/configure").body;
+ assert.equal(saved.subscription_id,"existing");assert.equal(saved.config.interval_seconds,10);assert.equal(saved.config.backfill_start,start.toISOString());
+ assert.equal(ui.el("lark-backfill-start").disabled,true);
 });

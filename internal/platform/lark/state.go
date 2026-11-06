@@ -25,10 +25,12 @@ type Config struct {
 	Target          notification.Target `json:"target"`
 	Private         bool                `json:"private"`
 	GroupMentions   bool                `json:"group_mentions"`
+	GroupAll        bool                `json:"group_all,omitempty"`
 	AtAll           bool                `json:"at_all"`
 	Bots            bool                `json:"bots"`
 	IntervalSeconds int                 `json:"interval_seconds"`
 	BackfillSeconds int                 `json:"backfill_seconds"`
+	BackfillStart   time.Time           `json:"backfill_start,omitzero"`
 }
 
 func (c Config) AllChats() bool { return c.ScopeMode == "all" }
@@ -36,6 +38,15 @@ func (c Config) AllChats() bool { return c.ScopeMode == "all" }
 func NormalizeConfig(c Config) (Config, error) {
 	if c.IntervalSeconds == 0 {
 		c.IntervalSeconds = 60
+	}
+	if c.GroupAll && c.AllChats() {
+		return c, notification.ErrRequest
+	}
+	if !c.BackfillStart.IsZero() {
+		if c.BackfillSeconds != 0 || c.BackfillStart.Unix() <= 0 {
+			return c, notification.ErrRequest
+		}
+		c.BackfillStart = c.BackfillStart.UTC().Truncate(time.Second)
 	}
 	if !component(c.ConnectionID) || !c.Target.Valid() || !c.Target.Inbox() || (c.ScopeMode != "" && c.ScopeMode != "specified" && c.ScopeMode != "all") || c.AllChats() && len(c.Chats) != 0 || !c.AllChats() && (len(c.Chats) == 0 || len(c.Chats) > 32) || c.IntervalSeconds < 3 || c.IntervalSeconds > 3600 || c.BackfillSeconds < 0 || c.BackfillSeconds > 86400 {
 		return c, notification.ErrRequest
@@ -74,6 +85,7 @@ type Scan struct {
 	Token string `json:"page_token,omitempty"`
 	Pages int    `json:"pages"`
 }
+
 type ChatProgress struct {
 	NeedsVerification bool      `json:"needs_verification,omitempty"`
 	Unlisted          bool      `json:"unlisted,omitempty"`
@@ -122,6 +134,9 @@ func (s State) Metadata() notification.Metadata {
 func (s State) Validate(owner platform.RoomIdentity) error {
 	c, e := NormalizeConfig(s.Config)
 	if e != nil || !reflect.DeepEqual(c, s.Config) || s.RoomIdentity != owner || owner.RoomID == "" || owner.RoomInstance == "" || !component(s.SubscriptionID) || s.SubscriptionVersion == 0 || !s.Binding.Valid() || s.Config.ConnectionID != s.Binding.ConnectionID || s.Baseline.IsZero() || s.Chats == nil || s.Observed == nil || s.Accepted == nil || s.Inbox == nil || s.NextChat < 0 || s.NextChat >= MaxChats || len(s.Chats) > MaxChats || s.PriorityTurn < 0 || s.PriorityTurn > 2 || s.RuntimeState.Validate(c.Enabled) != nil || s.Retired && c.Enabled {
+		return notification.ErrInvalid
+	}
+	if !c.BackfillStart.IsZero() && !s.Baseline.Equal(c.BackfillStart) {
 		return notification.ErrInvalid
 	}
 	if s.Directory != nil {
@@ -228,17 +243,24 @@ func Configure(owner platform.RoomIdentity, current *State, b Binding, c Config,
 		if !c.Enabled || !b.Valid() {
 			return n, notification.ErrRequest
 		}
+		baseline := now.Add(-time.Duration(c.BackfillSeconds) * time.Second)
+		if !c.BackfillStart.IsZero() {
+			if c.BackfillStart.After(now) {
+				return n, notification.ErrRequest
+			}
+			baseline = c.BackfillStart
+		}
 		var id [16]byte
 		if _, e = rand.Read(id[:]); e != nil {
 			return n, e
 		}
-		n = State{RoomIdentity: owner, SubscriptionID: hex.EncodeToString(id[:]), Binding: b, Baseline: now.Add(-time.Duration(c.BackfillSeconds) * time.Second), Chats: map[string]ChatProgress{}, Observed: map[string]Observation{}, Accepted: map[string]notification.Route{}, Inbox: map[string]Entry{}}
+		n = State{RoomIdentity: owner, SubscriptionID: hex.EncodeToString(id[:]), Binding: b, Baseline: baseline, Chats: map[string]ChatProgress{}, Observed: map[string]Observation{}, Accepted: map[string]notification.Route{}, Inbox: map[string]Entry{}}
 	} else {
 		n = current.Clone()
 		if n.Retired {
 			return n, notification.ErrConflict
 		}
-		if b.ConnectionID != n.Binding.ConnectionID || b.Generation != n.Binding.Generation || b.Account != n.Binding.Account || c.BackfillSeconds != n.Config.BackfillSeconds {
+		if b.ConnectionID != n.Binding.ConnectionID || b.Generation != n.Binding.Generation || b.Account != n.Binding.Account || c.BackfillSeconds != n.Config.BackfillSeconds || !c.BackfillStart.Equal(n.Config.BackfillStart) {
 			return n, notification.ErrConflict
 		}
 	}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -156,11 +157,14 @@ func Matches(m Message, chat Chat, accountID string, c Config) bool {
 	if chat.Mode == "p2p" {
 		return c.Private && (m.Sender.Type == "user" && m.Sender.IDType == "open_id" || c.Bots && m.Sender.Type == "app")
 	}
-	if !c.GroupMentions {
+	if c.GroupAll && !c.AllChats() && (chat.Mode == "group" || chat.Mode == "topic") && slices.Contains(c.Chats, chat.ID) {
+		return true
+	}
+	if !c.GroupMentions && !c.AtAll {
 		return false
 	}
 	for _, at := range m.Mentions {
-		if at.IDType == "open_id" && at.ID == accountID || c.AtAll && at.ID == "all" {
+		if c.GroupMentions && at.IDType == "open_id" && at.ID == accountID || c.AtAll && at.ID == "all" {
 			return true
 		}
 	}

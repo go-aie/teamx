@@ -1611,6 +1611,18 @@ textarea::placeholder {
 .gitlab-events-records { padding-top:8px; }
 .gitlab-events-records p { font-size:12px; }
 .gitlab-events textarea { width:100%; }
+.lark-chat-picker { border:1px solid #d9dfd7; border-radius:6px; padding:10px; background:#fff; }
+.workspace-form .lark-chat-picker > summary { color:inherit; font-size:13px; }
+.lark-chat-controls { display:grid; grid-template-columns:minmax(0,1fr) 100px; gap:8px; margin-top:12px; }
+.lark-chat-options { max-height:240px; overflow-y:auto; overscroll-behavior:contain; }
+.workspace-form .lark-chat-option { display:flex; align-items:center; gap:10px; margin:0; padding:9px 6px; border-radius:4px; font-weight:400; cursor:pointer; }
+.lark-chat-option:hover { background:#f3f6f1; }
+.lark-chat-option input { width:15px; height:15px; flex:none; accent-color:var(--accent); }
+.lark-chat-option span { min-width:0; overflow-wrap:anywhere; }
+.lark-chat-option small { display:block; margin-top:3px; font-size:11px; color:var(--muted); }
+.lark-chat-selected { display:flex; gap:6px; flex-wrap:wrap; }
+.lark-chat-selected button { display:flex; align-items:center; gap:8px; max-width:100%; padding:6px 9px; border-radius:5px; background:#eef3ea; color:#354d38; font-size:12px; text-align:left; overflow-wrap:anywhere; }
+.lark-chat-actions { display:flex; justify-content:space-between; gap:8px; margin-top:8px; }
 @media(max-width:400px) { .gitlab-events-types { grid-template-columns:1fr; } .gitlab-events-feedback { flex-basis:100%; } }
 @media(prefers-reduced-motion:reduce) { .gitlab-events-actions button { transition:none; } }
 .integration-avatar { background: #f8eadf; color: #925020; }

@@ -78,22 +78,29 @@ func (m *roomManager) readLark(ctx context.Context, r larkReadRequest) (any, err
 		return nil, checkErr
 	}
 	if err != nil {
-		switch lark.ErrorCode(err) {
-		case "identity_mismatch", "credential_unavailable", "credential_rejected", "permission_denied", "cli_version_mismatch":
-			// Preserve the binding, but require explicit connection verification before
-			// admitting another read. No cursor or Inbox data exists in L1.
-			ticket, beginErr := m.connections.BeginVerification(a.account.ConnectionID, a.account.ConnectionVersion)
-			if beginErr != nil {
-				return nil, platformConnectionError(beginErr)
-			}
-			_, saveErr := m.connections.CompleteVerification(ticket, platform.Validation{Status: "failed", CheckedAt: time.Now().UTC(), ErrorCode: lark.ErrorCode(err)})
-			if saveErr != nil {
-				return nil, platformConnectionError(saveErr)
-			}
+		if saveErr := m.recordLarkReadFailureLocked(a.account, err); saveErr != nil {
+			return nil, saveErr
 		}
 		return nil, err
 	}
 	return result, nil
+}
+
+func (m *roomManager) recordLarkReadFailureLocked(account connection.Account, err error) error {
+	switch lark.ErrorCode(err) {
+	case "identity_mismatch", "credential_unavailable", "credential_rejected", "permission_denied", "cli_version_mismatch":
+		// Preserve the binding, but require explicit connection verification before
+		// admitting another read. Existing notification progress is preserved.
+		ticket, beginErr := m.connections.BeginVerification(account.ConnectionID, account.ConnectionVersion)
+		if beginErr != nil {
+			return platformConnectionError(beginErr)
+		}
+		_, saveErr := m.connections.CompleteVerification(ticket, platform.Validation{Status: "failed", CheckedAt: time.Now().UTC(), ErrorCode: lark.ErrorCode(err)})
+		if saveErr != nil {
+			return platformConnectionError(saveErr)
+		}
+	}
+	return nil
 }
 func (m *roomManager) serveLarkRead(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -109,28 +116,32 @@ func (m *roomManager) serveLarkRead(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := m.readLark(r.Context(), req)
 	if err != nil {
-		var remote *lark.Error
-		if errors.As(err, &remote) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			code := lark.ErrorCode(err)
-			if code == "invalid_request" {
-				writeAPIError(w, ErrRequest)
-				return
-			}
-			status := http.StatusBadGateway
-			if code == "timeout" {
-				status = http.StatusGatewayTimeout
-			}
-			if code == "cancelled" {
-				status = http.StatusRequestTimeout
-			}
-			w.WriteHeader(status)
-			_ = json.NewEncoder(w).Encode(struct {
-				Code string `json:"code"`
-			}{lark.ErrorCode(err)})
-			return
-		}
-		writeAPIError(w, err)
+		writeLarkReadError(w, err)
 		return
 	}
 	_ = json.NewEncoder(w).Encode(result)
+}
+
+func writeLarkReadError(w http.ResponseWriter, err error) {
+	var remote *lark.Error
+	if errors.As(err, &remote) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		code := lark.ErrorCode(err)
+		if code == "invalid_request" {
+			writeAPIError(w, ErrRequest)
+			return
+		}
+		status := http.StatusBadGateway
+		if code == "timeout" {
+			status = http.StatusGatewayTimeout
+		}
+		if code == "cancelled" {
+			status = http.StatusRequestTimeout
+		}
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(struct {
+			Code string `json:"code"`
+		}{lark.ErrorCode(err)})
+		return
+	}
+	writeAPIError(w, err)
 }
