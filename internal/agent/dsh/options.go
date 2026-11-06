@@ -27,7 +27,17 @@ var (
 	ErrCleanupPending      = errors.New("DSH cleanup remains owned")
 	ErrRateLimited         = errors.New("model service rate limited (HTTP 429); wait before retrying")
 	ErrModelNotFound       = errors.New("configured model not found (HTTP 404, model_not_found); check model ID and endpoint")
+	ErrModelUnavailable    = errors.New("configured model unavailable (HTTP 503, model_unavailable); no upstream endpoint available; check model availability or retry later")
+	ErrAuthentication      = errors.New("model service authentication failed (HTTP 401); check API key and endpoint")
 )
+
+// HTTPStatusError retains an upstream HTTP failure when no known provider
+// identifier supplies a more specific diagnostic. It excludes response bodies.
+type HTTPStatusError struct{ StatusCode int }
+
+func (e *HTTPStatusError) Error() string {
+	return fmt.Sprintf("model request failed (HTTP %d)", e.StatusCode)
+}
 
 // ClosedError retains a shutdown/recovery failure after every owned process,
 // reader and worker has stopped. It permits an explicit fresh-session reset,

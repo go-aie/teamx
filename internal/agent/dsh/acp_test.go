@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,9 +21,18 @@ func TestRPCErrorSafeProviderHints(t *testing.T) {
 		data    json.RawMessage
 		want    error
 	}{
+		{"authentication error code", "authentication_error " + secret, nil, ErrAuthentication},
+		{"invalid API key", "Internal error", json.RawMessage(`{"code":"invalid_api_key","message":"private-provider-detail"}`), ErrAuthentication},
+		{"unrelated 401", "request 401 failed " + secret, nil, nil},
+		{"unrelated status digits", "1401 status code " + secret, nil, nil},
 		{"model error in message", "404 model_not_found " + secret, nil, ErrModelNotFound},
 		{"model error in string data", "Internal error", json.RawMessage(`"turn failed: 404 model_not_found private-provider-detail"`), ErrModelNotFound},
 		{"model error in object data", "Internal error", json.RawMessage(`{"code":"model_not_found","message":"private-provider-detail"}`), ErrModelNotFound},
+		{"unavailable model in message", "503 model_unavailable " + secret, nil, ErrModelUnavailable},
+		{"unavailable model in string data", "Internal error", json.RawMessage(`"turn failed: 503: {\"code\":\"model_unavailable\",\"message\":\"private-provider-detail\",\"type\":\"server_error\"}"`), ErrModelUnavailable},
+		{"unavailable model in object data", "Internal error", json.RawMessage(`{"code":"model_unavailable","message":"private-provider-detail"}`), ErrModelUnavailable},
+		{"semantic hint before HTTP fallback", "HTTP 502 rate_limit_error " + secret, nil, ErrRateLimited},
+		{"unlabeled 503", "503 server_error " + secret, nil, nil},
 		{"rate limit", "rate_limit_error " + secret, nil, ErrRateLimited},
 		{"token rate limit", "tpm_exceeded " + secret, nil, ErrRateLimited},
 		{"unrelated 404", "404 resource not found " + secret, nil, nil},
@@ -38,6 +48,55 @@ func TestRPCErrorSafeProviderHints(t *testing.T) {
 				}
 			} else if err.Unwrap() != nil {
 				t.Fatal("unknown error classified", err)
+			}
+			if err.Error() != want || strings.Contains(err.Error(), secret) {
+				t.Fatal("unsafe or missing public diagnostic", err)
+			}
+		})
+	}
+}
+
+func TestRPCErrorHTTPStatusFallback(t *testing.T) {
+	const secret = "private-provider-detail"
+	for _, tc := range []struct {
+		name    string
+		message string
+		data    json.RawMessage
+		status  int
+	}{
+		{"SDK message", "turn failed: 401 status code (no body) " + secret, nil, 401},
+		{"SDK string data", "Internal error", json.RawMessage(`"turn failed: 401 status code (no body) private-provider-detail"`), 401},
+		{"SDK object data", "Internal error", json.RawMessage(`{"message":"401 status code (no body) private-provider-detail","code":"AUTH"}`), 401},
+		{"HTTP status", "HTTP 502 " + secret, nil, 502},
+		{"HTTP version", "HTTP/1.1 504 " + secret, nil, 504},
+		{"lowercase HTTP", "http/2 403 " + secret, nil, 403},
+		{"status label", "status: 400 " + secret, nil, 400},
+		{"status code label", "status code = 408 " + secret, nil, 408},
+		{"structured status", "Internal error", json.RawMessage(`{"status":500,"message":"private-provider-detail"}`), 500},
+		{"structured camel case status", "Internal error", json.RawMessage(`{"statusCode":418,"message":"private-provider-detail"}`), 418},
+		{"structured string status", "Internal error", json.RawMessage(`{"status_code":"599","message":"private-provider-detail"}`), 599},
+		{"provider message", "503: " + secret, nil, 503},
+		{"provider string data", "Internal error", json.RawMessage(`"turn failed: 502: private-provider-detail"`), 502},
+		{"provider object data", "Internal error", json.RawMessage(`{"message":"503: private-provider-detail"}`), 503},
+		{"escaped structured status", "Internal error", json.RawMessage(`"turn failed: {\"status\":429,\"message\":\"private-provider-detail\"}"`), 429},
+		{"bare number", "request 502 failed " + secret, nil, 0},
+		{"long number", "HTTP 5021 " + secret, nil, 0},
+		{"nonerror status", "HTTP 200 " + secret, nil, 0},
+		{"invalid status", "HTTP 600 " + secret, nil, 0},
+		{"ambiguous code field", "Internal error", json.RawMessage(`{"code":401,"message":"private-provider-detail"}`), 0},
+		{"ACP code only", secret, nil, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := &rpcError{Code: -32603, Message: tc.message, Data: tc.data}
+			want := "ACP request failed (code -32603)"
+			var status *HTTPStatusError
+			if tc.status != 0 {
+				if !errors.As(err, &status) || status.StatusCode != tc.status {
+					t.Fatal("missing HTTP status", err)
+				}
+				want += fmt.Sprintf(": model request failed (HTTP %d)", tc.status)
+			} else if err.Unwrap() != nil {
+				t.Fatal("unrelated number classified as HTTP status", err)
 			}
 			if err.Error() != want || strings.Contains(err.Error(), secret) {
 				t.Fatal("unsafe or missing public diagnostic", err)

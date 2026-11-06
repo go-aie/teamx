@@ -231,9 +231,20 @@ func TestDSHProcess(t *testing.T) {
 			case "rate-limited":
 				send(map[string]any{"jsonrpc": "2.0", "id": f.ID, "error": map[string]any{
 					"code": -32603, "message": "Internal error", "data": "turn failed: 429 tpm_exceeded " + os.Getenv("TEAMX_TEST_KEY")}})
+			case "authentication-failed":
+				send(map[string]any{"jsonrpc": "2.0", "id": f.ID, "error": map[string]any{
+					"code": -32603, "message": "Internal error", "data": "turn failed: 401 status code (no body) " + os.Getenv("TEAMX_TEST_KEY")}})
+			case "bad-gateway":
+				send(map[string]any{"jsonrpc": "2.0", "id": f.ID, "error": map[string]any{
+					"code": -32603, "message": "Internal error", "data": "turn failed: 502: " + os.Getenv("TEAMX_TEST_KEY")}})
 			case "model-not-found":
 				send(map[string]any{"jsonrpc": "2.0", "id": f.ID, "error": map[string]any{
 					"code": -32603, "message": "Internal error", "data": "turn failed: 404 model_not_found " + os.Getenv("TEAMX_TEST_KEY")}})
+			case "model-unavailable":
+				send(map[string]any{"jsonrpc": "2.0", "id": f.ID, "error": map[string]any{
+					"code": -32603, "message": "Internal error", "data": "turn failed: 503: " + string(mustJSON(map[string]string{
+						"code": "model_unavailable", "message": "no upstream endpoint " + os.Getenv("TEAMX_TEST_KEY"), "type": "server_error",
+					}))}})
 			case "bad-stop":
 				respond(f.ID, map[string]string{"stopReason": "unknown"})
 			case "max_tokens", "max_turn_requests", "refusal", "cancelled":

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,8 +22,16 @@ type rpcError struct {
 	Data    json.RawMessage `json:"data,omitempty"`
 }
 
+// Match explicit HTTP/status labels, SDK status-code messages, and provider
+// errors of the form "503: ...". Bare numbers are not HTTP diagnostics.
+var httpStatusPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`\b(?:http(?:/\d(?:\.\d)?)?|status(?:[ _]?code)?)"?\s*[:=]?\s*"?([45]\d{2})\b`),
+	regexp.MustCompile(`\b([45]\d{2})\s+status code\b`),
+	regexp.MustCompile(`(?m)(?:^|[:"]\s*)([45]\d{2}):(?:\s|$)`),
+}
+
 // Remote messages/data can contain credentials or tool content. Public errors
-// retain the numeric code and fixed provider hints only; private model output
+// retain numeric codes and fixed provider hints only; private model output
 // is returned separately.
 func (e *rpcError) Error() string {
 	message := fmt.Sprintf("ACP request failed (code %d)", e.Code)
@@ -34,12 +43,28 @@ func (e *rpcError) Error() string {
 
 func (e *rpcError) Unwrap() error {
 	// Return a fixed diagnostic, never the remote message or response data.
-	detail := strings.ToLower(e.Message + " " + string(e.Data))
+	var data string
+	if json.Unmarshal(e.Data, &data) != nil {
+		data = string(e.Data)
+	}
+	detail := strings.ToLower(e.Message + "\n" + data)
+	if strings.Contains(detail, "authentication_error") || strings.Contains(detail, "invalid_api_key") {
+		return ErrAuthentication
+	}
 	if strings.Contains(detail, "tpm_exceeded") || strings.Contains(detail, "rate_limit_error") {
 		return ErrRateLimited
 	}
 	if strings.Contains(detail, "model_not_found") {
 		return ErrModelNotFound
+	}
+	if strings.Contains(detail, "model_unavailable") {
+		return ErrModelUnavailable
+	}
+	for _, pattern := range httpStatusPatterns {
+		if match := pattern.FindStringSubmatch(detail); match != nil {
+			status, _ := strconv.Atoi(match[1]) // Pattern guarantees three digits.
+			return &HTTPStatusError{StatusCode: status}
+		}
 	}
 	return nil
 }

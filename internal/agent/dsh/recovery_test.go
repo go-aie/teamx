@@ -299,9 +299,13 @@ func TestProviderFailureAllowsExplicitResetAfterSettlement(t *testing.T) {
 		prompt string
 		want   error
 		hint   string
+		status int
 	}{
-		{"rate-limited", ErrRateLimited, "HTTP 429"},
-		{"model-not-found", ErrModelNotFound, "HTTP 404"},
+		{"rate-limited", ErrRateLimited, "HTTP 429", 0},
+		{"authentication-failed", nil, "HTTP 401", 401},
+		{"bad-gateway", nil, "HTTP 502", 502},
+		{"model-not-found", ErrModelNotFound, "HTTP 404", 0},
+		{"model-unavailable", ErrModelUnavailable, "HTTP 503", 0},
 	} {
 		t.Run(tc.prompt, func(t *testing.T) {
 			opts := fixtureOptions(t)
@@ -310,16 +314,28 @@ func TestProviderFailureAllowsExplicitResetAfterSettlement(t *testing.T) {
 				t.Fatal("live execution allowed reset", err)
 			}
 			_, err := s.Run(context.Background(), tc.prompt)
-			if !errors.Is(err, ErrUncertain) || !errors.Is(err, tc.want) ||
+			if !errors.Is(err, ErrUncertain) || (tc.want != nil && !errors.Is(err, tc.want)) ||
 				!strings.Contains(err.Error(), tc.hint) || strings.Contains(err.Error(), "secret-fixture-key") {
 				t.Fatal("missing safe provider diagnostic", err)
+			}
+			if tc.status != 0 {
+				var status *HTTPStatusError
+				if !errors.As(err, &status) || status.StatusCode != tc.status {
+					t.Fatal("turn lost HTTP status", err)
+				}
 			}
 			err = s.Close(context.Background())
 			if !errors.Is(err, ErrRecoveryUnsupported) || !CleanupSettled(err) {
 				t.Fatal("failed prompt lost its completed cleanup evidence", err)
 			}
-			if !errors.Is(err, tc.want) || !strings.Contains(err.Error(), tc.hint) || strings.Contains(err.Error(), "secret-fixture-key") {
+			if (tc.want != nil && !errors.Is(err, tc.want)) || !strings.Contains(err.Error(), tc.hint) || strings.Contains(err.Error(), "secret-fixture-key") {
 				t.Fatal("cleanup lost safe provider diagnostic", err)
+			}
+			if tc.status != 0 {
+				var status *HTTPStatusError
+				if !errors.As(err, &status) || status.StatusCode != tc.status {
+					t.Fatal("cleanup lost HTTP status", err)
+				}
 			}
 			if err := CheckResume(opts.StateDir); err == nil {
 				t.Fatal("failed original session became resumable")
