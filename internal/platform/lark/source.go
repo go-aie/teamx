@@ -140,6 +140,7 @@ func acceptPage(s State, id string, page MessagePage, limits notification.Limits
 		}
 		text = strings.ReplaceAll(text, "\x00", "�")
 		item := notification.Item{Key: key, DeliveryID: route.DeliveryID(notification.DeliveryID(n.Metadata().Key, key)), CreatedAt: time.UnixMilli(ms).UTC(), Order: m.ID + ":" + key, Text: text, Route: route, Source: sourceRef(n, m, key, p.Chat)}
+		item = notification.WithContent(item, messageContent(m, p.Chat, n.Binding.Account, wasAccepted))
 		n.Inbox[key] = Entry{Message: m, Item: item}
 		n.Metrics.NewItems++
 	}

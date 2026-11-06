@@ -163,6 +163,9 @@ func (s State) Validate(owner platform.RoomIdentity) error {
 		}
 	}
 	for key, e := range s.Inbox {
+		if !e.Item.Content.Valid() {
+			return notification.ErrInvalid
+		}
 		o, ok := s.Observed[key]
 		chat, hasChat := s.Chats[e.Message.ChatID]
 		ms, _ := strconv.ParseInt(e.Message.Created, 10, 64)

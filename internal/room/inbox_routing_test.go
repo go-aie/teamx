@@ -28,12 +28,12 @@ func inboxRoutingMember(t *testing.T, svc *service, name, membership string) Mem
 	svc.setTarget(membership, addr)
 	return id
 }
-func inboxRoutingPreview(t *testing.T, svc *service, id MemberIdentity) InboxPage {
+func inboxRoutingPreview(t *testing.T, svc *service, id MemberIdentity) inboxPreviewPage {
 	t.Helper()
 	w := httptest.NewRecorder()
 	body, _ := json.Marshal(apiRequest{ServiceInfo: svc.info, Caller: humanCaller, AgentID: id.AgentID, MembershipID: id.MembershipID, Limit: 1})
 	svc.ServeHTTP(w, httptest.NewRequest("POST", "/v1/member/inbox", strings.NewReader(string(body))))
-	var page InboxPage
+	var page inboxPreviewPage
 	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &page) != nil {
 		t.Fatal(w.Code, w.Body.String())
 	}
@@ -84,8 +84,14 @@ func TestInboxRoutingSwitchFreezesPendingAndPreviewDoesNotConsume(t *testing.T) 
 	for _, id := range []MemberIdentity{a, b} {
 		first := inboxRoutingPreview(t, svc, id)
 		second := inboxRoutingPreview(t, svc, id)
-		if len(first.Entries) != 1 || second.SnapshotSeq != first.SnapshotSeq || second.Entries[0].Seq != first.Entries[0].Seq || first.Entries[0].Item.Route.Target != inboxTarget(id) {
+		if len(first.Entries) != 1 || second.SnapshotSeq != first.SnapshotSeq || second.Entries[0].Seq != first.Entries[0].Seq {
 			t.Fatal("preview consumed or crossed memberships")
+		}
+		svc.store.mu.Lock()
+		raw, err := svc.store.inboxEntryLocked(id, first.Entries[0].Seq)
+		svc.store.mu.Unlock()
+		if err != nil || raw.Item.Route.Target != inboxTarget(id) {
+			t.Fatal("stored routing changed", err)
 		}
 	}
 	// Existing observations are not replayed when returning to public delivery.
@@ -250,7 +256,7 @@ func TestInboxRoutingTodosAdapter(t *testing.T) {
 		t.Fatal(err)
 	}
 	page := inboxRoutingPreview(t, svc, id)
-	if page.SnapshotSeq != 1 || page.Entries[0].Item.Source.Channel != "todos" || page.Entries[0].Item.Route.Version != next.SubscriptionVersion || len(h.state().Inbox) != 0 {
+	if page.SnapshotSeq != 1 || page.Entries[0].Item.Channel != "todos" || next.Config.Target != inboxTarget(id) || len(h.state().Inbox) != 0 {
 		t.Fatal("Todos lost target or receipt")
 	}
 	saved, _ := svc.store.LoadRoom()

@@ -58,6 +58,7 @@ type Item struct {
 	Order      string             `json:"order"` // Provider-defined stable tie break; never interpreted as an ID.
 	Text       string             `json:"text"`
 	Source     platform.SourceRef `json:"source"`
+	Content    *Content           `json:"content,omitempty"`
 }
 
 // State is a provider's versioned, concrete progress record. The source codec

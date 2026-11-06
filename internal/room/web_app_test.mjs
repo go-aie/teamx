@@ -2282,7 +2282,7 @@ test("AN-01.2 Inbox snapshot paging never confirms, and late reads cannot cross 
   const api=server([makeRoom("A"),makeRoom("B")]);
   const member={agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"},execution:{paused:true,agent:{turn_number:0}}};
   let finish;
-  const page=(after)=>({snapshot_seq:2,next_after:after+1,has_more:after===0,status:{latest_seq:2,bytes:100,limits:{bytes:1000}},entries:[{seq:after+1,received_at:"2026-11-04T01:00:00Z",item:{source:{provider:"gitlab",channel:"todos",instance:"https://gitlab.invalid",project_id:312},text:`notice-${after+1}`}}]});
+  const page=(after)=>({snapshot_seq:2,next_after:after+1,has_more:after===0,status:{latest_seq:2,bytes:100,limits:{bytes:1000}},entries:[{seq:after+1,received_at:"2026-11-04T01:00:00Z",item:{provider:"gitlab",channel:"todos",instance:"https://gitlab.invalid",project_id:312,text:`notice-${after+1}`}}]});
   api.hook=(path,data)=>{
     if(path==="/v1/member/list")return {members:[member]};
     if(path==="/v1/member/activity")return {member};
@@ -2309,45 +2309,60 @@ test("AN-01.2 Inbox snapshot paging never confirms, and late reads cannot cross 
   assert.equal(api.calls.some(call=>/confirm|member\/run/.test(call.path)),false);
 });
 
-test("Lark Inbox folds saved sender IDs while retaining message bodies and attachment identity", async () => {
+test("Lark Inbox separates channel, sender and conversation while retaining source evidence and attachment identity", async () => {
   const api=server([makeRoom("A")]);
   const member={agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"},execution:{paused:true,agent:{turn_number:0}}};
-  const source={provider:"lark",channel:"messages",instance:"https://open.feishu.cn",reference:{version:2,target:{type:"message"},chat_id:{namespace:"lark:chat_id:cli_fixture",value:"oc_saved"}}};
-  const texts=[
-    "飞书 · 会话 oc_saved\n发送者：姓名未获取（open_id: ou_self；当前接收账号本人；sender_type: user；tenant_key: tenant）\n好的",
-    "飞书 · 会话 oc_saved\n发送者：张三（open_id: ou_peer；sender_type: user）\n![图片](lark-image:img_fixture)\n发送者：这是正文，必须保留",
-    "飞书 · 研发群\n发送者：姓名未获取（open_id: ou_123456789；sender_type: user）\n收到",
-    "飞书 · 旧消息\n原始正文，没有发送者元信息",
-    "飞书\n发送者：本人姓名（我）\n新消息",
-    "飞书消息变更（关联原消息；不自动重做已完成动作）\n发送者：张三（open_id: ou_peer；sender_type: user）\n更正后的正文",
+  const common={provider:"lark",channel:"messages",instance:"https://open.feishu.cn",message_id:{namespace:"lark:message_id:cli_fixture",value:"om_saved"},receiver:{id:{namespace:"lark:open_id:cli_fixture",value:"ou_self"}},structured:true};
+  const actor=(name,id,is_receiver=false)=>({name,id:{namespace:"lark:open_id:cli_fixture",value:id},is_receiver});
+  const chat=name=>({name,id:{namespace:"lark:chat_id:cli_fixture",value:"oc_saved"}});
+  const items=[
+    {...common,sender:actor("","ou_self",true),conversation:chat(""),text:"好的"},
+    {...common,sender:actor("张三","ou_peer"),conversation:chat(""),text:"![图片](lark-image:img_fixture)\n发送者：这是正文，必须保留"},
+    {...common,sender:actor("","ou_123456789"),conversation:chat("研发群"),text:"收到"},
+    {...common,structured:false,text:"飞书 · 旧消息\n原始正文，没有发送者元信息"},
+    {...common,sender:actor("本人姓名","ou_self",true),text:"新消息"},
+    {...common,sender:actor("张三","ou_peer"),changed:true,text:"更正后的正文"},
+    {...common,sender:actor("雷九零","ou_peer"),conversation:chat("迭代v0.10.0"),mentions:[actor("罗彭","ou_self",true)],text:"@罗彭（open_id: ou_self；当前接收账号） 请确认"},
   ];
   api.hook=(path)=>{
     if(path==="/v1/member/list")return {members:[member]};
     if(path==="/v1/member/activity")return {member};
-    if(path==="/v1/member/inbox")return {snapshot_seq:texts.length,next_after:texts.length,has_more:false,status:{latest_seq:texts.length,bytes:100,limits:{bytes:1000}},entries:texts.map((text,i)=>({seq:i+1,received_at:"2026-11-06T08:06:57Z",item:{source,text}}))};
+    if(path==="/v1/member/inbox")return {snapshot_seq:items.length,next_after:items.length,has_more:false,status:{latest_seq:items.length,bytes:100,limits:{bytes:1000}},entries:items.map((item,i)=>({seq:i+1,source:{source_ref:`src_${i}`,status:"not_checked"},received_at:"2026-11-06T08:06:57Z",item:{...item,created_at:"2026-11-06T07:00:00Z"}}))};
   };
   const ui=await launch(api);
   await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();
   await ui.el("agent-tab-inbox").emit("click");await settle();
   const rows=ui.el("inbox-entries").children;
-  assert.match(rows[0].children[0].textContent, /^#1 · 我 · 飞书 · /);
-  assert.doesNotMatch(rows[0].children[0].textContent, /oc_saved|ou_self|tenant/);
-  assert.equal(rows[0].children[1].textContent,"好的");
-  const details=rows[0].children[2];
+  const part=(row,name)=>row.children.find(child=>child.className===name);
+  const heading=part(rows[0],"inbox-entry-header");
+  assert.equal(heading.children[0].textContent,"#1");
+  assert.equal(heading.children[1].textContent,"飞书消息");
+  assert.equal(heading.children[2].dateTime,"2026-11-06T07:00:00.000Z");
+  assert.equal(part(rows[0],"inbox-sender").textContent,"我");
+  assert.equal(part(rows[0],"inbox-chat").textContent,"会话名称未获取");
+  assert.equal(part(rows[0],"message-text").textContent,"好的");
+  const details=part(rows[0],"inbox-source-details");
   assert.equal(details.tag,"details");assert.equal(details.open,false);
   assert.equal(details.children[0].textContent,"来源详情");
-  assert.match(details.children[1].textContent,/ou_self/);assert.match(details.children[1].textContent,/oc_saved/);
-  assert.match(rows[1].children[0].textContent,/张三 · 飞书/);
-  assert.equal(rows[1].children[1].textContent,texts[1].split("\n").slice(2).join("\n"));
-  const attachment=rows[1].children[1].markdownOptions.attachmentURL("lark-image:img_fixture");
+  assert.match(elementText(details.children[1]),/ou_self/);assert.match(elementText(details.children[1]),/oc_saved/);
+  assert.equal(part(rows[1],"inbox-sender").textContent,"张三");
+  assert.equal(part(rows[1],"message-text").textContent,items[1].text);
+  const attachment=part(rows[1],"message-text").markdownOptions.attachmentURL("lark-image:img_fixture");
   const query=new URL(attachment,"http://fixture").searchParams;
   assert.equal(query.get("seq"),"2");assert.equal(query.get("membership_id"),member.membership_id);
-  assert.match(rows[2].children[0].textContent,/飞书用户 · …456789 · 研发群 · 飞书/);
-  assert.match(rows[2].children[2].children[1].textContent,/chat_id: oc_saved/);
-  assert.equal(rows[3].children[1].textContent,texts[3]);assert.equal(rows[3].children.length,2);
-  assert.match(rows[4].children[0].textContent,/本人姓名（我） · 飞书/);
-  assert.match(rows[5].children[0].textContent,/张三 · 消息变更 · 飞书/);
-  assert.equal(rows[5].children[1].textContent,"更正后的正文");
+  assert.equal(part(rows[2],"inbox-sender").textContent,"飞书用户 · …456789");
+  assert.equal(part(rows[2],"inbox-chat").textContent,"研发群");
+  assert.match(elementText(part(rows[2],"inbox-source-details")),/oc_saved/);
+  assert.equal(part(rows[3],"message-text").textContent,items[3].text);
+  assert.equal(part(rows[3],"inbox-sender"),undefined);
+  assert.equal(part(rows[4],"inbox-sender").textContent,"本人姓名（我）");
+  assert.equal(part(rows[5],"inbox-sender").textContent,"张三");
+  assert.match(part(rows[5],"inbox-change quiet").textContent,/不自动重做已完成动作/);
+  assert.equal(part(rows[5],"message-text").textContent,"更正后的正文");
+  assert.equal(part(rows[6],"inbox-chat").textContent,"迭代v0.10.0");
+  assert.equal(part(rows[6],"message-text").markdownOptions.compactLarkMentions,true);
+  assert.equal(part(rows[6],"message-text").textContent,items[6].text);
+  assert.match(elementText(part(rows[6],"inbox-source-details")),/罗彭（我）/);
   assert.equal(api.calls.some(call=>/confirm|member\/run/.test(call.path)),false);
 });
 
@@ -2376,7 +2391,7 @@ test("Lark Inbox preview binds image requests to the saved membership and sequen
   api.hook = (path) => {
     if (path === "/v1/member/list") return {members:[member]};
     if (path === "/v1/member/activity") return {member};
-    if (path === "/v1/member/inbox") return {snapshot_seq:9,next_after:9,has_more:false,status:{latest_seq:9,bytes:100,limits:{bytes:1000}},entries:[{seq:9,item:{source,text:"image_key: img_fixture\n请分析图片"}}]};
+    if (path === "/v1/member/inbox") return {snapshot_seq:9,next_after:9,has_more:false,status:{latest_seq:9,bytes:100,limits:{bytes:1000}},entries:[{seq:9,item:{provider:"lark",channel:"messages",message_id:{value:"om_fixture"},text:"image_key: img_fixture\n请分析图片"}}]};
   };
   const ui = await launch(api);
   await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();

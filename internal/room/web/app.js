@@ -1671,25 +1671,44 @@ $("policy-next").addEventListener("click",()=>{if(policyView)void loadPolicyFoll
 $("policy-form").addEventListener("submit",event=>{event.preventDefault();return savePolicyForm("active");});
 $("policy-suggest").addEventListener("click",()=>savePolicyForm("suggested"));
 let inboxView = null;
-function compactLarkInbox(item) {
-  if (item.source?.provider !== "lark") return null;
-  const lines = item.text.split("\n");
-  if (lines[0] !== "飞书" && !lines[0]?.startsWith("飞书 · ") && lines[0] !== "飞书消息变更（关联原消息；不自动重做已完成动作）") return null;
-  const sender = /^发送者：(.*?)（((?:[A-Za-z_]+|ID类型未知): [^（）\r\n]*|身份未解析[^（）\r\n]*)）$/.exec(lines[1] || "");
-  const compactSelf = /^发送者：(我|.+（我）)$/.exec(lines[1] || "");
-  if (!sender && !compactSelf) return null;
-  const fields = sender ? sender[2].split("；").map(value => value.trim()) : [];
-  const self = fields.includes("当前接收账号本人");
-  const id = fields[0]?.match(/^[^:]+: (.+)$/)?.[1];
-  let name = sender ? sender[1] : compactSelf[1];
-  if (name === "姓名未获取" || name === "飞书用户") name = self ? "我" : id ? `飞书用户 · …${id.slice(-6)}` : "未知发送者";
-  else if (self) name += "（我）";
-  const chat = lines[0] === "飞书" ? "" : lines[0].startsWith("飞书 · ") ? lines[0].slice(5).trim() : "消息变更";
-  if (chat && !/^会话 oc_[A-Za-z0-9_-]+$/.test(chat)) name += ` · ${chat}`;
-  const details = lines.slice(0, 2);
-  const chatID = item.source.reference?.chat_id?.value;
-  if (chatID && !details[0].includes(chatID)) details.push(`chat_id: ${chatID}`);
-  return { sender: name, text: lines.slice(2).join("\n"), details: details.join("\n") };
+function notificationParticipant(person) {
+  if (!person) return "未知发送者";
+  let name = person.name || (person.is_receiver ? "我" : person.type === "app" ? "机器人" : person.id?.value ? `飞书用户 · …${person.id.value.slice(-6)}` : "未知发送者");
+  if (person.is_receiver && name !== "我") name += "（我）";
+  return name;
+}
+function inboxSourceDetails(entry) {
+  const item = entry.item, source = entry.source || {};
+  const details = document.createElement("details"); details.className = "inbox-source-details";
+  const summary = document.createElement("summary"); summary.textContent = "来源详情";
+  const metadata = document.createElement("dl"); metadata.className = "inbox-source-fields";
+  const add = (label, value, namespace) => {
+    if (!value) return;
+    const key = document.createElement("dt"), text = document.createElement("dd");
+    key.textContent = label; text.textContent = value;
+    if (namespace) text.title = namespace;
+    metadata.append(key,text);
+  };
+  const id = (label, value) => add(label, value?.value, value?.namespace);
+  const date = value => value && new Date(value).getTime() > 0 ? new Date(value).toLocaleString("zh-CN") : "";
+  add("实例",item.instance); id("来源租户",item.tenant); id("接收账号租户",item.receiver?.tenant);
+  add("项目",item.project); add("项目 ID",item.project_id && String(item.project_id));
+  add("会话",item.conversation?.name); id("会话 ID",item.conversation?.id);
+  if (item.sender) add("发送者",notificationParticipant(item.sender));
+  id("发送者 ID",item.sender?.id); id("接收账号 ID",item.receiver?.id);
+  add("消息时间",date(item.created_at)); add("接收时间",date(entry.received_at));
+  id("消息 ID",item.message_id); id("回复消息",item.reply_to); id("根消息",item.root_id); id("话题 ID",item.thread_id);
+  if (item.mentions?.length) add("提及",item.mentions.map(at => `${at.all ? "@所有人" : "@" + notificationParticipant(at)}${at.id?.value ? `（${at.id.value}）` : ""}`).join("、"));
+  if (item.attachments?.length) add("附件",item.attachments.map(a => `${a.type} · ${a.reference} · ${a.status === "not_read" ? "未读取" : a.status}`).join("\n"));
+  const statuses = {not_checked:"尚未解析",resolved:"已核实",partial:"部分核实",unavailable:"暂不可读",unsupported:"暂不支持",mismatch:"来源不匹配"};
+  add("来源状态",source.status && (statuses[source.status] || source.status));
+  add("原因",source.reason || source.reason_code);
+  add("来源引用",source.source_ref); add("来源版本",source.source_version && String(source.source_version));
+  add("对象引用",source.object_ref); add("目标引用",source.target_ref);
+  if (item.structured === false) add("结构化信息","历史通知，仅保留已知信息；缺失字段未补全");
+  if (item.truncated) add("内容状态","正文已截断，内容可能不完整");
+  if (item.metadata_truncated) add("元数据状态","部分名称、提及或附件信息已截断");
+  details.append(summary,metadata); return details;
 }
 async function loadMemberInbox(reset) {
   const member = selectedAgent();
@@ -1708,18 +1727,50 @@ async function loadMemberInbox(reset) {
     $("inbox-status").textContent = `已接收 ${data.status.latest_seq} 条 · 占用 ${data.status.bytes} / ${data.status.limits.bytes} 字节 · 当前快照 ${data.snapshot_seq}` + (data.status.write_error ? ` · ${data.status.write_error}` : "") + (!data.entries.length ? " · 暂无通知" : "");
     $("inbox-entries").replaceChildren(...data.entries.map(entry => {
       const section = document.createElement("section"); section.className = "activity-section";
-      const compact = compactLarkInbox(entry.item);
-      const provider = entry.item.source.provider === "lark" ? "飞书" : `${entry.item.source.provider} / ${entry.item.source.channel}`;
-      const heading = document.createElement("h3"); heading.textContent = `#${entry.seq} · ${compact ? compact.sender + " · " : ""}${provider} · ${new Date(entry.received_at).toLocaleString("zh-CN")}`;
-      const body = document.createElement("div"); body.className = "message-text";
-      renderMessageBody(body, compact?.text ?? entry.item.text, state.operator, notificationOptions(view.info, state.operator, entry.item.source, { seq: entry.seq, agent_id: member.agent_id, membership_id: member.membership_id }));
-      section.append(heading,body);
-      if (compact) {
-        const details = document.createElement("details"); details.className = "inbox-source-details";
-        const summary = document.createElement("summary"); summary.textContent = "来源详情";
-        const metadata = document.createElement("pre"); metadata.textContent = compact.details;
-        details.append(summary,metadata); section.append(details);
+      const item = entry.item;
+      const source = item;
+      const provider = source.provider === "lark" ? "飞书消息" : source.provider === "gitlab" ? `GitLab · ${{events:"项目活动",todos:"我的待办"}[source.channel] || source.channel}` : `${source.provider} / ${source.channel}`;
+      const heading = document.createElement("header"); heading.className = "inbox-entry-header";
+      const seq = document.createElement("span"); seq.className = "inbox-entry-seq"; seq.textContent = `#${entry.seq}`;
+      const channel = document.createElement("span"); channel.className = "inbox-channel"; channel.textContent = provider;
+      const time = document.createElement("time");
+      const created = new Date(entry.item.created_at), received = new Date(entry.received_at);
+      const date = created.getTime() > 0 ? created : received;
+      if (Number.isFinite(date.getTime())) {
+        time.dateTime = date.toISOString();
+        time.textContent = date.toLocaleString("zh-CN", {month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit",hour12:false});
+        time.title = `${created.getTime() > 0 ? "消息时间" : "接收时间"}：${date.toLocaleString("zh-CN")}`;
+      } else time.textContent = "时间未获取";
+      heading.append(seq,channel,time); section.append(heading);
+      if (item.sender) {
+        const sender = document.createElement("h3"); sender.className = "inbox-sender"; sender.textContent = notificationParticipant(item.sender) + (item.action ? ` · ${item.action}` : "");
+        section.append(sender);
+        if (item.changed) {
+          const change = document.createElement("p"); change.className = "inbox-change quiet";
+          change.textContent = "消息已变更 · 关联原消息，不自动重做已完成动作"; section.append(change);
+        }
       }
+      const body = document.createElement("div"); body.className = "message-text";
+      const options = notificationOptions(view.info, state.operator, source, { seq: entry.seq, agent_id: member.agent_id, membership_id: member.membership_id });
+      renderMessageBody(body, item.text, state.operator, source.provider === "lark" ? {...options, compactLarkMentions:true} : options);
+      section.append(body);
+      const context = item.conversation || item.context;
+      if (context || source.provider === "lark") {
+        const chat = document.createElement("p"); chat.className = "inbox-chat";
+        const label = context?.name || "会话名称未获取";
+        let url;
+        try { url = new URL(context?.url); } catch { /* A source may have no original link. */ }
+        if (url && ["https:","http:"].includes(url.protocol) && !url.username && !url.password) {
+          const link = document.createElement("a"); link.textContent = label; link.href = url.href;
+          link.target = "_blank"; link.rel = "noopener noreferrer"; chat.append(link);
+        } else chat.textContent = label;
+        section.append(chat);
+      }
+      if (item.truncated || item.metadata_truncated) {
+        const notice = document.createElement("p"); notice.className = "inbox-change quiet";
+        notice.textContent = item.truncated ? "正文已截断，内容可能不完整" : "部分名称、提及或附件信息已截断"; section.append(notice);
+      }
+      section.append(inboxSourceDetails(entry));
       return section;
     }));
     $("inbox-next").hidden = !data.has_more;

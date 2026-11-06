@@ -150,3 +150,20 @@ test("Lark images and legacy keys render same-origin previews bound to the exact
   assert.ok(!markdownHTML("`![image](lark-image:img_x)`",options).includes("<img"));
   assert.equal(notificationOptions(imageInfo,"operator",{...source,channel:"other"},{seq:1}),undefined);
 });
+
+test("compact Lark mentions show names and keep identity in tooltips without rewriting code or link destinations", () => {
+  const mention = "@罗彭（open_id: ou_reader；当前接收账号）";
+  const options = {compactLarkMentions:true};
+  const html = markdownHTML(`${mention} 请确认，@张三（user_id: user_peer） 收到\n\n\`${mention}\`\n\n\`\`\`text\n${mention}\n\`\`\`\n\n[原消息](https://example.com/?user=ou_reader)`, options);
+  assert.ok(html.includes('title="open_id: ou_reader；当前接收账号">@罗彭</span>'));
+  assert.ok(html.includes('title="user_id: user_peer">@张三</span>'));
+  assert.ok(html.includes(`<code>${mention}</code>`));
+  assert.ok(html.includes(`<pre><code class="language-text">${mention}\n</code></pre>`));
+  assert.ok(html.includes('href="https://example.com/?user=ou_reader"'));
+  assert.ok(markdownHTML(mention).includes(mention), "ordinary messages and Agent text are not compacted");
+  assert.ok(markdownHTML('@未知（身份未解析）',options).includes('title="身份未解析">@未知</span>'));
+  assert.ok(markdownHTML('@同事（负责测试）',options).includes('@同事（负责测试）'));
+  const escaped = markdownHTML('@<img src=x>（open_id: ou_peer" onmouseover="x）', options);
+  assert.ok(!escaped.includes('<img'));
+  assert.ok(!/"\s+onmouseover=/.test(escaped));
+});

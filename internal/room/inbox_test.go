@@ -136,6 +136,32 @@ func TestAgentInboxDurableReceiptAndRecovery(t *testing.T) {
 	}
 }
 
+func TestInboxContentSnapshotPreservesOldReceiptAndRecovery(t *testing.T) {
+	h := newInboxHarness(t, InboxLimits{})
+	old := h.receive("old-envelope")
+	first := inboxCall[InboxReceipt](t, h, old)
+	old.Item.Content = &notification.Content{Structured: true, Text: "business body", Sender: &notification.Participant{Name: "sender"}}
+	if retry := inboxCall[InboxReceipt](t, h, old); retry != first {
+		t.Fatal("new snapshot changed old receipt")
+	}
+	page := inboxCall[InboxPage](t, h, PreviewInbox{MemberIdentity: h.id})
+	if page.Entries[0].Item.Content != nil {
+		t.Fatal("redelivery rewrote original evidence")
+	}
+	newer := h.receive("new-envelope")
+	newer.Item.Content = old.Item.Content
+	second := inboxCall[InboxReceipt](t, h, newer)
+	h.reload(t, true)
+	page = inboxCall[InboxPage](t, h, PreviewInbox{MemberIdentity: h.id})
+	if len(page.Entries) != 2 || page.Entries[1].Item.Content == nil || page.Entries[1].Item.Content.Sender.Name != "sender" {
+		t.Fatal("snapshot lost on reopen", page)
+	}
+	newer.Item.Content = nil
+	if retry := inboxCall[InboxReceipt](t, h, newer); retry != second {
+		t.Fatal("old-style retry changed receipt")
+	}
+}
+
 func TestAgentInboxIsolationAndSingleWriter(t *testing.T) {
 	h := newInboxHarness(t, InboxLimits{})
 	if _, err := SpawnAgentInbox(h.rt, h.store, h.id, InboxLimits{}); !errors.Is(err, ErrBusy) {

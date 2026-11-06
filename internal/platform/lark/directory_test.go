@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -322,7 +323,7 @@ func TestLongRunningOverlapRetentionPreservesPendingAndRoutes(t *testing.T) {
 		stepOK(t, h, r)
 		stepOK(t, h, r)
 	}
-	if h.s.Chats["oc_chat"].Completed < h.now.Unix()-2 || len(h.s.Observed) > 10 || h.s.Inbox[pending].Item != original {
+	if h.s.Chats["oc_chat"].Completed < h.now.Unix()-2 || len(h.s.Observed) > 10 || !reflect.DeepEqual(h.s.Inbox[pending].Item, original) {
 		t.Fatal("sustained scan lost progress, bounded retention or frozen pending delivery")
 	}
 }

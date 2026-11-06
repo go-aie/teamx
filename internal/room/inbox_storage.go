@@ -37,7 +37,9 @@ func inboxEntrySize(entry InboxEntry) (int64, error) {
 }
 
 func inboxDigest(item notification.Item) [32]byte {
-	// Item contains only value fields. Normalize the source time before hashing.
+	// Supplemental presentation snapshots do not change a delivery's original
+	// identity. This also preserves receipts made before snapshots were added.
+	item.Content = nil
 	item.CreatedAt = item.CreatedAt.UTC()
 	b, _ := json.Marshal(item)
 	return sha256.Sum256(b)
@@ -52,7 +54,7 @@ func validInboxItem(item notification.Item) bool {
 	}
 	return validText(item.DeliveryID) && len(item.DeliveryID) <= 4096 &&
 		validIntegrationSource(item.Source) && item.Key == item.Source.ItemKey &&
-		!item.CreatedAt.IsZero() && validText(item.Text) && len(item.Text) <= maxTextBytes
+		!item.CreatedAt.IsZero() && validText(item.Text) && len(item.Text) <= maxTextBytes && item.Content.Valid()
 }
 
 func (e InboxEntry) validate(id MemberIdentity) error {

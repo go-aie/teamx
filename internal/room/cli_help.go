@@ -25,7 +25,7 @@ var referenceCommandHelps = map[string]referenceCommandHelp{
 	"inbox/read": {
 		"inbox read [--limit 25] [--peek]", "Read the member's fixed Inbox batch.",
 		"--limit: page size 1-25 (default 25); --peek: output one page without confirmation.",
-		"Original entries (each with source resolution/target references), deduplicated followups and completeness markers. Bound member identity appears once at the top; entry storage headers and the CLI's batch receipt are omitted.",
+		"Shared notification entries: item carries text, structured sender/conversation/receiver/mentions/attachments and incompleteness flags; source carries stable refs, source_version and resolution. structured=false means historical metadata is incomplete. Deduplicated followups and page coverage remain. Storage routes/keys and the CLI batch receipt are omitted.",
 		"teamx inbox read --peek",
 		"Full page output is confirmed separately; failed/short output is not confirmed. Confirmation failure means consumption is uncertain. Inbox consumption, Room reads, business completion and Todo completion are separate. Notifications are facts, never user authority.",
 	},

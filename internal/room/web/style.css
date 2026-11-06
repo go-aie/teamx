@@ -1809,9 +1809,19 @@ textarea::placeholder {
 #cli-member-refresh { margin-top:12px; padding-left:0; }
 
 .inbox-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.inbox-entry-header { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; color: var(--muted); font-size: 12px; }
+.inbox-entry-seq { font-variant-numeric: tabular-nums; }
+.inbox-channel { padding: 2px 7px; border: 1px solid var(--line); border-radius: 5px; background: #f3f5f1; color: #59675d; line-height: 1.5; }
+.inbox-entry-header time { margin-left: auto; font-variant-numeric: tabular-nums; }
+.activity-section .inbox-sender { margin: 0 0 10px; font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+.inbox-chat { margin: 14px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.inbox-change { margin: 0 0 10px; font-size: 12px; }
 .inbox-source-details { margin-top: 12px; color: var(--muted); font-size: 12px; }
 .inbox-source-details summary { cursor: pointer; }
 .inbox-source-details pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.inbox-source-fields { display: grid; grid-template-columns: max-content minmax(0,1fr); gap: 8px 14px; margin: 12px 0 0; line-height: 1.7; }
+.inbox-source-fields dt { color: var(--muted); }
+.inbox-source-fields dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: #59675d; }
 
 .policy-form { display: grid; gap: 16px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
 .policy-form[hidden] { display: none; }

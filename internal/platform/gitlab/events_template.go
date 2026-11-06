@@ -72,5 +72,9 @@ func EventsMessage(s EventsState, entry EventsInboxEntry) notification.Item {
 		link = target.String()
 	}
 	lines = append(lines, notificationReference(s.Binding.Project, object, title, link))
-	return notification.Item{Key: EventsKey(s.Binding, s.ProjectID, e.ID), Route: entry.Route, DeliveryID: entry.Route.DeliveryID(entry.DeliveryID), CreatedAt: e.CreatedAt, Order: fmt.Sprintf("%020d", e.ID), Text: strings.Join(lines, "\n\n"), Source: platform.SourceRef{Provider: "gitlab", Channel: "events", ItemKey: EventsKey(s.Binding, s.ProjectID, e.ID), Instance: s.Binding.URL, Project: s.Binding.Project, ProjectID: s.ProjectID, SubscriptionID: s.SubscriptionID, URL: link, Reference: eventReference(s, e)}}
+	content := &notification.Content{Structured: true, Text: notification.QuoteExcerpt(body, 2048, false),
+		Sender: &notification.Participant{Name: actor, ID: restID(e.Author.ID, "id"), Type: "user", IsReceiver: e.Author.ID > 0 && e.Author.ID == s.UserID}, Action: label,
+		Context:   &notification.Context{Name: s.Binding.Project + " · " + object + " · " + title, URL: link},
+		Truncated: notification.QuoteExcerpt(body, 2048, false) != notification.Quote(body, 2048)}
+	return notification.WithContent(notification.Item{Key: EventsKey(s.Binding, s.ProjectID, e.ID), Route: entry.Route, DeliveryID: entry.Route.DeliveryID(entry.DeliveryID), CreatedAt: e.CreatedAt, Order: fmt.Sprintf("%020d", e.ID), Text: strings.Join(lines, "\n\n"), Source: platform.SourceRef{Provider: "gitlab", Channel: "events", ItemKey: EventsKey(s.Binding, s.ProjectID, e.ID), Instance: s.Binding.URL, Project: s.Binding.Project, ProjectID: s.ProjectID, SubscriptionID: s.SubscriptionID, URL: link, Reference: eventReference(s, e)}}, content)
 }

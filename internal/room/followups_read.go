@@ -295,14 +295,15 @@ func (s *Store) readFollowup(id MemberIdentity, objectRef, unitRef string) (foll
 }
 
 type followupSourceSummary struct {
-	SourceRef  string                    `json:"source_ref"`
-	Seq        uint64                    `json:"seq"`
-	DeliveryID string                    `json:"delivery_id"`
-	ObjectRef  string                    `json:"object_ref,omitempty"`
-	TargetRef  string                    `json:"target_ref,omitempty"`
-	Status     platform.ResolutionStatus `json:"status"`
-	ReasonCode string                    `json:"reason_code,omitempty"`
-	Reason     string                    `json:"reason,omitempty"`
+	SourceRef     string                    `json:"source_ref"`
+	SourceVersion uint64                    `json:"source_version,omitempty"`
+	Seq           uint64                    `json:"seq"`
+	DeliveryID    string                    `json:"-"`
+	ObjectRef     string                    `json:"object_ref,omitempty"`
+	TargetRef     string                    `json:"target_ref,omitempty"`
+	Status        platform.ResolutionStatus `json:"status"`
+	ReasonCode    string                    `json:"reason_code,omitempty"`
+	Reason        string                    `json:"reason,omitempty"`
 }
 
 func sourceSummary(e followupEvent) followupSourceSummary {
@@ -310,7 +311,7 @@ func sourceSummary(e followupEvent) followupSourceSummary {
 	if e.LastAttempt != nil {
 		r = e.LastAttempt.Resolution
 	}
-	return followupSourceSummary{e.SourceRef, e.Seq, e.DeliveryID, e.ObjectRef, e.TargetRef, r.Status, r.ReasonCode, r.Reason}
+	return followupSourceSummary{SourceRef: e.SourceRef, SourceVersion: e.Revision, Seq: e.Seq, DeliveryID: e.DeliveryID, ObjectRef: e.ObjectRef, TargetRef: e.TargetRef, Status: r.Status, ReasonCode: r.ReasonCode, Reason: r.Reason}
 }
 
 type followupSourcePage struct {

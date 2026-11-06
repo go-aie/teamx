@@ -68,12 +68,7 @@ func projectAgentFollowupRead(id MemberIdentity, result followupReadResult) (age
 	}, nil
 }
 
-type agentInboxEntry struct {
-	Seq        uint64                `json:"seq"`
-	Item       notification.Item     `json:"item"`
-	ReceivedAt time.Time             `json:"received_at"`
-	Source     followupSourceSummary `json:"source"`
-}
+type agentInboxEntry = inboxEntryView
 
 // Receipt crosses internal HTTP only. The CLI clears it on a copy for display,
 // keeping the original for confirmation and uncertain-consumption diagnostics.
@@ -123,7 +118,7 @@ func projectAgentInboxRead(id MemberIdentity, page referenceInboxPage) (agentRef
 		if source == nil {
 			return agentReferenceInboxPage{}, ErrInvalid
 		}
-		entries = append(entries, agentInboxEntry{e.Seq, e.Item, e.ReceivedAt, *source})
+		entries = append(entries, projectInboxEntry(e, *source))
 	}
 	followups := make([]agentFollowupSummary, 0, len(page.Followups))
 	for _, v := range page.Followups {
@@ -290,12 +285,12 @@ type agentSourceView struct {
 }
 type agentSourceEntry struct {
 	Seq        uint64            `json:"seq"`
-	Item       notification.Item `json:"item"`
+	Item       notification.View `json:"item"`
 	ReceivedAt time.Time         `json:"received_at"`
 }
 
 func projectSource(e followupEvent, entry InboxEntry) agentSourceView {
-	v := agentSourceView{e.SourceRef, e.Revision, e.Seq, e.DeliveryID, e.Source, e.ObjectRef, e.TargetRef, e.Resolution, nil, agentSourceEntry{entry.Seq, entry.Item, entry.ReceivedAt}}
+	v := agentSourceView{e.SourceRef, e.Revision, e.Seq, e.DeliveryID, e.Source, e.ObjectRef, e.TargetRef, e.Resolution, nil, agentSourceEntry{entry.Seq, projectInboxEntry(entry, sourceSummary(e)).Item, entry.ReceivedAt}}
 	if e.LastAttempt != nil {
 		v.LastAttempt = &e.LastAttempt.Resolution
 	}

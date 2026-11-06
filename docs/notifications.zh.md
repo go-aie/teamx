@@ -41,9 +41,13 @@ Agent 的图片输入在固定当前回合的 Room／AgentInbox 范围内另行�
 "$TEAMX_CLI" matters read --help
 ```
 
-`inbox read` 返回原始事件、系统解析的来源／目标引用和去重对象摘要；可靠保存关联后才输出，完整输出后才确认。`--peek` 不确认消费。相同对象复用一个对象单元，发现讨论不批量建立待办；确需独立处理时才用 `matters ensure --seq SEQ --target REF --turn TURN` 从已核实原生讨论建立子单元。引用由系统生成，不接受语义事项 ID。旧 enrich/relate、拆分归并和手工身份报告入口已移除。
+`inbox read` 返回通知业务视图、系统解析的来源／目标引用和去重对象摘要；可靠保存关联后才输出，完整输出后才确认。`--peek` 不确认消费。相同对象复用一个对象单元，发现讨论不批量建立待办；确需独立处理时才用 `matters ensure --seq SEQ --target REF --turn TURN` 从已核实原生讨论建立子单元。引用由系统生成，不接受语义事项 ID。旧 enrich/relate、拆分归并和手工身份报告入口已移除。
 
-Agent 的 `matters read`／`inbox read` 将绑定的 `room_id`、`room_instance`、`agent_id`、`membership_id` 在顶层保留一次，省略 `unit`／`target` 或每条 Inbox entry 的重复身份及存储 schema `version`。完整问答／指令关系与全部动作业务记录保留；重复的内部快照通过 Agent --detail 入口补读，纯访问准入数据不对 Agent 披露，原生定位仍可从 source 读取。CLI 输出省略 `batch.receipt`，Agent 的 `read --json` 省略 `read_receipt`／`expires_at` 和内部 Room 存储 revision；分页水位与完整性字段保留。内部 HTTP 仍向 CLI 提供收据，输出成功后才确认；确认失败错误保留 receipt 和 turn／through，表示消费未确认或不确定。human 管理读取保持原结构。
+人类 Inbox 预览与 Agent `inbox read` 共用相同的 `entries[]` 通知结构。`item` 提供平台、渠道、消息时间、正文、发送者、会话、接收账号、结构化 `mentions`、附件引用，以及截断／变更状态；`source` 提供稳定引用、来源版本及解析状态／原因。原生身份保留 namespace，来源会话租户与接收账号租户分别保存。`reply_to/root_id/thread_id` 是原始来源关系，工具仍以已核实的 object／target 引用为准。订阅、路由、投递／去重键与存储版本不进入默认通知视图。页面仅将同一数据渲染为标签、姓名和中文详情，不再解析文字头或输出整包来源 JSON。
+
+新通知在平台适配器生成时保存有界的结构化内容快照，原始 `notification.Item` 继续承担投递与来源证据职责；快照不改变旧投递回执的去重身份。历史通知没有完整快照时返回 `structured=false`，保留原文或已知服务端信封信息，缺失的提及等身份不从用户正文猜测。`truncated`／`metadata_truncated` 明确表示正文／元数据不完整，附件引用的 `not_read` 不是图片已理解。人类预览只读取已保存的解析结果，尚未解析时为 `not_checked`，不触发远程查询或消费；Agent 的固定批次、分页和完整输出后确认流程照旧。
+
+Agent 的 `matters read`／`inbox read` 将绑定的 `room_id`、`room_instance`、`agent_id`、`membership_id` 在顶层保留一次，省略 `unit`／`target` 或每条 Inbox entry 的重复身份及存储 schema `version`。完整问答／指令关系与全部动作业务记录保留；重复的内部快照通过 Agent --detail 入口补读，纯访问准入数据不对 Agent 披露，原生定位仍可从 source 读取。CLI 输出省略 `batch.receipt`，Agent 的 `read --json` 省略 `read_receipt`／`expires_at` 和内部 Room 存储 revision；分页水位与完整性字段保留。内部 HTTP 仍向 CLI 提供收据，输出成功后才确认；确认失败错误保留 receipt 和 turn／through，表示消费未确认或不确定。除共用通知视图的 Inbox 预览外，其他 human 管理读取保持原结构。
 
 系统解析已迁入内置 GitLab 适配器，通过当前成员已启用并选择的 GitLab 绑定直接读取 API，不依赖 `teamx-gitlab`、glab 或 Workspace；不自动借用订阅或其他成员账号。来源原生对象身份与讨论映射分层：对象已核实但讨论无权限、分页未完成或缺少映射时显示 `partial`，可使用对象引用，不能据此回复讨论。安全原因保留失败步骤与 HTTP 状态，并区分权限、账号不符、原生身份冲突、响应无效及分页不完整。解析和两类 MR 动作均已内部化，不需要工具二进制。按引用执行仍使用当前成员绑定，核验账号、项目、MR 和原生线程；受限写入每次只发送一次，讨论失败不降级。Room 保留授权、意图和回执，取消后仍保存原账号的已知写入结果，未知结果继续阻止另建请求补发。
 

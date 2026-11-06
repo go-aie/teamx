@@ -173,13 +173,16 @@ func TestAgentInboxReadProjection(t *testing.T) {
 				t.Fatal(err)
 			}
 			expected := readViewJSON(t, original)
-			for _, e := range expected["entries"].([]any) {
-				removeReadStorageHeader(e.(map[string]any))
-			}
-			sources := expected["sources"].([]any)
-			for _, entry := range expected["entries"].([]any) {
+			for i, entry := range expected["entries"].([]any) {
 				e := entry.(map[string]any)
-				for _, source := range sources {
+				removeReadStorageHeader(e)
+				raw := original.Entries[i].Item
+				item := map[string]any{"provider": raw.Source.Provider, "channel": raw.Source.Channel, "instance": raw.Source.Instance,
+					"created_at": raw.CreatedAt.Format(time.RFC3339Nano), "text": raw.Text, "structured": false,
+					"project": raw.Source.Project, "project_id": float64(raw.Source.ProjectID),
+					"receiver": map[string]any{"provider": raw.Source.Provider, "instance": raw.Source.Instance, "id": readViewJSON(t, raw.Source.Reference.RecipientID)}}
+				e["item"] = item
+				for _, source := range expected["sources"].([]any) {
 					if source.(map[string]any)["seq"] == e["seq"] {
 						e["source"] = source
 					}

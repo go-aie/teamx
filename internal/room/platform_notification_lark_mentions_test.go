@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -36,18 +37,37 @@ func TestLarkMentionIdentityInAgentInboxWithoutReadBinding(t *testing.T) {
 	}
 	server := httptest.NewServer(h.m)
 	defer server.Close()
+	previewBefore := inboxRoutingPreview(t, h.svc, id)
+	if previewBefore.Entries[0].Source.Status != "not_checked" || previewBefore.Status.ConsumedThrough != 0 {
+		t.Fatal("preview resolved or consumed a source", previewBefore)
+	}
 	cli := contractCLI(t, server.URL, h.svc, id)
 	var inbox agentReferenceInboxPage
 	if err = cli([]string{"inbox", "read"}, &inbox); err != nil || len(inbox.Entries) != 1 {
 		t.Fatal("cannot read notification without member Lark binding", inbox, err)
 	}
 	text := inbox.Entries[0].Item.Text
-	for _, want := range []string{"发送者：测试发送者（open_id: ou_sender）", "@接收者（open_id: ou_reader；当前接收账号）", "@同事（open_id: ou_other）", "确认发版"} {
+	for _, want := range []string{"@接收者（open_id: ou_reader；当前接收账号）", "@同事（open_id: ou_other）", "确认发版"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("Agent Inbox lost %q: %q", want, text)
 		}
 	}
+	item := inbox.Entries[0].Item
+	if !item.Structured || item.Sender == nil || item.Sender.Name != "测试发送者" || item.Sender.ID.Value != "ou_sender" || len(item.Mentions) != 2 || !item.Mentions[0].IsReceiver || item.Mentions[1].IsReceiver {
+		t.Fatal("structured identities missing", item)
+	}
+
 	if strings.Contains(text, "@_user_") {
 		t.Fatal("native mention placeholders reached Agent Inbox", text)
+	}
+	previewAfter := inboxRoutingPreview(t, h.svc, id)
+	if !reflect.DeepEqual(previewBefore.Entries[0].Item, item) || !reflect.DeepEqual(previewAfter.Entries[0], inbox.Entries[0]) {
+		t.Fatal("human and Agent notification views differ", previewAfter, inbox)
+	}
+	data, _ := json.Marshal(inbox.Entries[0])
+	for _, key := range []string{`"subscription_id":`, `"item_key":`, `"delivery_id":`, `"route":`, `"order":`, `"version":`, `"key":`} {
+		if strings.Contains(string(data), key) {
+			t.Fatalf("internal field leaked: %s", key)
+		}
 	}
 }

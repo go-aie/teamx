@@ -25,7 +25,7 @@ function notificationMarkdown(text) {
 }
 
 export function notificationOptions(info, operator, source, locator) {
-  if (info && source?.provider === "lark" && source.channel === "messages" && source.reference?.version === 2 && source.reference?.target?.type === "message") {
+  if (info && source?.provider === "lark" && source.channel === "messages" && (source.message_id?.value || source.reference?.version === 2 && source.reference?.target?.type === "message")) {
     return {
       larkImages: true,
       attachmentURL(href) {
@@ -91,7 +91,15 @@ function makeMarkdown(options = {}) {
         return `<div class="table-wrap">${Renderer.prototype.table.call(this, token)}</div>`;
       },
     },
-    extensions: options.quotedMarkdown ? [{
+    extensions: [...(options.compactLarkMentions ? [{
+      name: "larkMention", level: "inline",
+      start(src) { return src.indexOf("@"); },
+      tokenizer(src) {
+        const match = /^@([^@\r\n（）]{1,256})（((?:open_id|user_id|union_id|ID|ID类型未知): [^（）\r\n]+|身份未解析)）/.exec(src);
+        if (match) return {type:"larkMention",raw:match[0],name:match[1],identity:match[2]};
+      },
+      renderer(token) { return `<span class="lark-mention" title="${escapeHTML(token.identity)}">${escapeHTML("@" + token.name)}</span>`; },
+    }] : []), ...(options.quotedMarkdown ? [{
       name: "sizedImage", level: "inline",
       start(src) { return src.indexOf("!["); },
       tokenizer(src) {
@@ -109,7 +117,7 @@ function makeMarkdown(options = {}) {
         return { ...token, type: "sizedImage" };
       },
       renderer(token) { return imageHTML(token, options); },
-    }] : [],
+    }] : [])],
   });
 }
 

@@ -40,5 +40,19 @@ func TodosMessage(s TodosState, e TodosInboxEntry) notification.Item {
 	}
 	lines = append(lines, notificationReference(t.Project, object, t.Title, link))
 	key := TodosKey(s.Binding, t.ID)
-	return notification.Item{Key: key, Route: e.Route, DeliveryID: e.Route.DeliveryID(e.DeliveryID), CreatedAt: t.CreatedAt, Order: fmt.Sprintf("%020d", t.ID), Text: strings.Join(lines, "\n\n"), Source: platform.SourceRef{Provider: "gitlab", Channel: "todos", Instance: s.Binding.URL, SubscriptionID: s.SubscriptionID, ItemKey: key, ProjectID: t.ProjectID, Project: t.Project, Object: object, URL: link, Reference: todoReference(s, t)}}
+	content := &notification.Content{Structured: true, Action: action,
+		Sender:  &notification.Participant{Name: actor, Type: "user"},
+		Context: &notification.Context{Name: t.Project + " · " + object + " · " + t.Title, URL: link}}
+	if t.Reason == "mentioned" {
+		content.Mentions = []notification.Participant{{Name: s.Binding.Username, ID: restID(s.Binding.UserID, "id"), Type: "user", IsReceiver: true}}
+	}
+	if t.Actor != nil {
+		content.Sender.ID = restID(t.Actor.ID, "id")
+		content.Sender.IsReceiver = t.Actor.ID > 0 && t.Actor.ID == s.Binding.UserID
+	}
+	if len(lines) > 2 {
+		content.Text = lines[1]
+	}
+	content.Truncated = t.BodyTruncated || content.Text != "" && content.Text != notification.Quote(t.Body, 2048)
+	return notification.WithContent(notification.Item{Key: key, Route: e.Route, DeliveryID: e.Route.DeliveryID(e.DeliveryID), CreatedAt: t.CreatedAt, Order: fmt.Sprintf("%020d", t.ID), Text: strings.Join(lines, "\n\n"), Source: platform.SourceRef{Provider: "gitlab", Channel: "todos", Instance: s.Binding.URL, SubscriptionID: s.SubscriptionID, ItemKey: key, ProjectID: t.ProjectID, Project: t.Project, Object: object, URL: link, Reference: todoReference(s, t)}}, content)
 }

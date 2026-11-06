@@ -75,10 +75,7 @@ func (s *service) previewInbox(ctx context.Context, req apiRequest) (any, error)
 	if err != nil {
 		return nil, err
 	}
-	return struct {
-		InboxPage
-		Status InboxStatus `json:"status"`
-	}{page, status}, nil
+	return s.store.projectInboxPreview(page, status)
 }
 
 // Call only with inboxMu held; Stop/Wait joins all persistence/preview tasks.
