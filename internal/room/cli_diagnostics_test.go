@@ -79,7 +79,7 @@ func TestAgentJSONDiagnosticsDoNotSendMalformedRequests(t *testing.T) {
 		{"matters", "instruct", "--change", `{"intent":{"typo":true}}`, "intent.typo", "unknown JSON field"},
 		{"matters", "reply", "--change", `{"source_seq":`, "", "incomplete JSON"},
 		{"matters", "update", "--change", `{"status":!}`, "", "invalid character"},
-		{"policy", "update", "--change", `{"type":"save","body":{}} {}`, "", "exactly one JSON"},
+		{"policy", "update", "--change", `{"type":"save","id":"style","source_seq":18,"turn_number":1,"basis":"explicit","body":{"kind":"preference","text":"short"}} {}`, "", "exactly one JSON"},
 		{"matters", "instruction-status", "--change", ``, "", "missing JSON"},
 		{"matters", "instruct", "--change", `{"expires_at":"private-test-secret"}`, "expires_at", "RFC3339"},
 		{"policy", "update", "--change", `{"type":"save","body":{"expires_at":"private-test-secret"}}`, "body.expires_at", "RFC3339"},

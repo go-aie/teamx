@@ -184,7 +184,7 @@ func (s *Store) changeConversationPolicyLocked(id MemberIdentity, caller Caller,
 	}
 	message, err := roomHumanMessage(room, c.SourceSeq)
 	if err != nil {
-		return conversationPolicyResult{}, err
+		return conversationPolicyResult{}, &requestDiagnostic{cause: err, Field: "change.source_seq", Message: "does not reference a saved valid human Room message", Hint: "Use the actual saved human Room message sequence; never guess a sequence number."}
 	}
 	if old.Version != 0 && old.Source.User != message.Author.ID {
 		return conversationPolicyResult{}, ErrIdentity
@@ -208,6 +208,9 @@ func (s *Store) changeConversationPolicyLocked(id MemberIdentity, caller Caller,
 		return conversationPolicyResult{}, invalidField("change", "invalid record ID/kind/status/text/scope/expiry; see policy update --help")
 	}
 	if validatePolicyConversation(r, old) != nil {
+		if q.Mode == "inferred_habit" && old.Version != 0 && old.Status != "suggested" {
+			return conversationPolicyResult{}, invalidField("mode", "suggest can only create or amend a suggested record; use save with a real new lasting instruction to amend an active/revoked record")
+		}
 		return conversationPolicyResult{}, invalidField("mode", "mode/status or suggestion confirmation does not match the saved record and real human evidence; see policy update --help")
 	}
 	// Exact duplicate scope must amend its existing rule. This is a deterministic
