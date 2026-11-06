@@ -238,9 +238,9 @@ func TestMentionIdentitySurvivesNotificationAndTargetReads(t *testing.T) {
 		t.Fatal(err)
 	}
 	n = state.(State)
-	want := m.ContentFor(s.Binding.Account.ID.Value)
+	want := m.ContentWithSenderFor(s.Binding.Account.ID.Value)
 	items := n.PendingItems()
-	if len(items) != 1 || items[0].Text != "飞书 · \n"+want || strings.Contains(items[0].Text, "@_user_") {
+	if len(items) != 1 || items[0].Text != "飞书\n"+want || strings.Contains(items[0].Text, "@_user_") {
 		t.Fatal("delivery lost mention identities", items)
 	}
 	access := platform.AccessContext{RoomIdentity: s.RoomIdentity, AgentID: "agent", MembershipID: "member", Account: s.Binding.Account, Receiver: s.Binding.Account, ConnectionID: "connection", Generation: "generation", ConnectionVersion: 1, CredentialVersion: 1}
@@ -310,7 +310,7 @@ func TestMessageReferenceResolutionNativeGroupingAndReads(t *testing.T) {
 	}
 	limits := platform.ReadLimits{Items: 2, Bytes: 8192, BodyBytes: 4096}
 	page, e := ReadTarget(context.Background(), platform.ReadTargetRequest{Target: *r.Target, Scope: "content", Limits: limits}, access, f)
-	if e != nil || len(page.Contents) != 1 || page.Contents[0].Body != "正文" || !page.Complete {
+	if e != nil || len(page.Contents) != 1 || page.Contents[0].Body != m.ContentWithSenderFor(access.Account.ID.Value) || !page.Complete {
 		t.Fatal(page, e)
 	}
 	delete(f.messages, root.ID)
@@ -419,5 +419,50 @@ func TestMessagesSlicePageBudgetKeepsContinuation(t *testing.T) {
 	r.Step(context.Background())
 	if h.s.Chats["oc_chat"].Scan != nil || h.s.Chats["oc_chat"].Completed == 0 || len(h.s.Inbox) != 1 {
 		t.Fatal("budget continuation failed")
+	}
+}
+
+func TestPrivateSenderSurvivesDeliveryPersistenceAndContext(t *testing.T) {
+	s := sampleState(t)
+	chat := Chat{ID: "oc_chat", Mode: "p2p"} // Native private chat name can be empty.
+	s.Chats[chat.ID] = ChatProgress{Chat: chat, Scan: &Scan{Start: 1000, End: 1010}}
+	one := sampleMessage("om_one", chat.ID, "第一条")
+	one.Sender.Name = "同名用户"
+	two := sampleMessage("om_two", chat.ID, "第二条")
+	two.Sender.ID = "ou_other"
+	two.Sender.Name = "同名用户"
+	n, err := acceptPage(s, chat.ID, MessagePage{Items: []Message{one, two}}, notification.DefaultLimits())
+	if err != nil || len(n.Inbox) != 2 {
+		t.Fatal(n, err)
+	}
+	raw, _ := json.Marshal(n)
+	decoded, err := (&Source{}).Decode(raw, s.RoomIdentity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n = decoded.(State)
+	for _, m := range []Message{one, two} {
+		text := n.Inbox[RevisionKey(s.Binding, m)].Item.Text
+		if !strings.Contains(text, "发送者：同名用户（open_id: "+m.Sender.ID) || !strings.Contains(text, "飞书\n") {
+			t.Fatal("private notification lost sender", text)
+		}
+	}
+	access := platform.AccessContext{RoomIdentity: s.RoomIdentity, AgentID: "agent", MembershipID: "member", Account: s.Binding.Account, Receiver: s.Binding.Account, ConnectionID: "connection", Generation: "generation", ConnectionVersion: 1, CredentialVersion: 1}
+	f := &fakeReader{chat: chat, messages: map[string]Message{one.ID: one, two.ID: two}}
+	ref := n.Inbox[RevisionKey(s.Binding, one)].Item.Source
+	r, err := ResolveTarget(context.Background(), platform.TargetLocator{Source: &ref}, access, f)
+	if err != nil || r.Target == nil {
+		t.Fatal(r, err)
+	}
+	f.pages = func(MessagesRequest) (MessagePage, error) { return MessagePage{Items: []Message{one, two}}, nil }
+	page, err := ReadTarget(context.Background(), platform.ReadTargetRequest{Target: *r.Target, Scope: "context", Limits: platform.ReadLimits{Items: 2, Bytes: 8192, BodyBytes: 4096}}, access, f)
+	if err != nil || len(page.Contents) != 2 || !strings.Contains(page.Contents[0].Body, "open_id: ou_sender") || !strings.Contains(page.Contents[1].Body, "open_id: ou_other") {
+		t.Fatal("context lost separate speakers", page, err)
+	}
+	// Name changes are display updates, never another native message revision.
+	key := RevisionKey(s.Binding, one)
+	one.Sender.Name = "改名"
+	if RevisionKey(s.Binding, one) != key {
+		t.Fatal("display name change caused duplicate delivery")
 	}
 }

@@ -123,9 +123,13 @@ func acceptPage(s State, id string, page MessagePage, limits notification.Limits
 			continue
 		}
 		n.Accepted[MessageKey(n.Binding, m)] = route
-		text := "飞书 · " + p.Chat.Name + "\n" + m.ContentFor(n.Binding.Account.ID.Value)
+		header := "飞书"
+		if p.Chat.Name != "" {
+			header += " · " + p.Chat.Name
+		}
+		text := header + "\n" + m.ContentWithSenderFor(n.Binding.Account.ID.Value)
 		if wasAccepted {
-			text = "飞书消息变更（关联原消息；不自动重做已完成动作）\n" + m.ContentFor(n.Binding.Account.ID.Value)
+			text = "飞书消息变更（关联原消息；不自动重做已完成动作）\n" + m.ContentWithSenderFor(n.Binding.Account.ID.Value)
 		}
 		if len(text) > 15<<10 {
 			text = text[:15<<10]
@@ -241,6 +245,11 @@ func (r *runner) Step(ctx context.Context) (time.Duration, bool) {
 		}
 		if verified && p.Chat.TenantKey != "" && p.Chat.TenantKey != chat.TenantKey {
 			return r.chatFailed(s, id, failure("chat_unavailable"), now)
+		}
+		// P2P get may omit the name even when the joined-chat directory supplied
+		// the peer's display name. Preserve only that display evidence, not identity.
+		if chat.Mode == "p2p" && p.Chat.ID == chat.ID && p.Chat.Mode == "p2p" && chat.Name == "" {
+			chat.Name = p.Chat.Name
 		}
 		p.Chat = chat
 		p.NeedsVerification = false

@@ -150,7 +150,7 @@ func ReadTarget(ctx context.Context, q platform.ReadTargetRequest, a platform.Ac
 	p.Complete = !more
 	bytesLeft := q.Limits.Bytes - 2048
 	for _, m := range messages {
-		body := m.ContentFor(a.Account.ID.Value)
+		body := m.ContentWithSenderFor(a.Account.ID.Value)
 		complete := true
 		n := min(q.Limits.BodyBytes, max(0, bytesLeft-1024))
 		if len(body) > n {

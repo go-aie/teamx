@@ -2309,6 +2309,48 @@ test("AN-01.2 Inbox snapshot paging never confirms, and late reads cannot cross 
   assert.equal(api.calls.some(call=>/confirm|member\/run/.test(call.path)),false);
 });
 
+test("Lark Inbox folds saved sender IDs while retaining message bodies and attachment identity", async () => {
+  const api=server([makeRoom("A")]);
+  const member={agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"},execution:{paused:true,agent:{turn_number:0}}};
+  const source={provider:"lark",channel:"messages",instance:"https://open.feishu.cn",reference:{version:2,target:{type:"message"},chat_id:{namespace:"lark:chat_id:cli_fixture",value:"oc_saved"}}};
+  const texts=[
+    "飞书 · 会话 oc_saved\n发送者：姓名未获取（open_id: ou_self；当前接收账号本人；sender_type: user；tenant_key: tenant）\n好的",
+    "飞书 · 会话 oc_saved\n发送者：张三（open_id: ou_peer；sender_type: user）\n![图片](lark-image:img_fixture)\n发送者：这是正文，必须保留",
+    "飞书 · 研发群\n发送者：姓名未获取（open_id: ou_123456789；sender_type: user）\n收到",
+    "飞书 · 旧消息\n原始正文，没有发送者元信息",
+    "飞书\n发送者：本人姓名（我）\n新消息",
+    "飞书消息变更（关联原消息；不自动重做已完成动作）\n发送者：张三（open_id: ou_peer；sender_type: user）\n更正后的正文",
+  ];
+  api.hook=(path)=>{
+    if(path==="/v1/member/list")return {members:[member]};
+    if(path==="/v1/member/activity")return {member};
+    if(path==="/v1/member/inbox")return {snapshot_seq:texts.length,next_after:texts.length,has_more:false,status:{latest_seq:texts.length,bytes:100,limits:{bytes:1000}},entries:texts.map((text,i)=>({seq:i+1,received_at:"2026-11-06T08:06:57Z",item:{source,text}}))};
+  };
+  const ui=await launch(api);
+  await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();
+  await ui.el("agent-tab-inbox").emit("click");await settle();
+  const rows=ui.el("inbox-entries").children;
+  assert.match(rows[0].children[0].textContent, /^#1 · 我 · 飞书 · /);
+  assert.doesNotMatch(rows[0].children[0].textContent, /oc_saved|ou_self|tenant/);
+  assert.equal(rows[0].children[1].textContent,"好的");
+  const details=rows[0].children[2];
+  assert.equal(details.tag,"details");assert.equal(details.open,false);
+  assert.equal(details.children[0].textContent,"来源详情");
+  assert.match(details.children[1].textContent,/ou_self/);assert.match(details.children[1].textContent,/oc_saved/);
+  assert.match(rows[1].children[0].textContent,/张三 · 飞书/);
+  assert.equal(rows[1].children[1].textContent,texts[1].split("\n").slice(2).join("\n"));
+  const attachment=rows[1].children[1].markdownOptions.attachmentURL("lark-image:img_fixture");
+  const query=new URL(attachment,"http://fixture").searchParams;
+  assert.equal(query.get("seq"),"2");assert.equal(query.get("membership_id"),member.membership_id);
+  assert.match(rows[2].children[0].textContent,/飞书用户 · …456789 · 研发群 · 飞书/);
+  assert.match(rows[2].children[2].children[1].textContent,/chat_id: oc_saved/);
+  assert.equal(rows[3].children[1].textContent,texts[3]);assert.equal(rows[3].children.length,2);
+  assert.match(rows[4].children[0].textContent,/本人姓名（我） · 飞书/);
+  assert.match(rows[5].children[0].textContent,/张三 · 消息变更 · 飞书/);
+  assert.equal(rows[5].children[1].textContent,"更正后的正文");
+  assert.equal(api.calls.some(call=>/confirm|member\/run/.test(call.path)),false);
+});
+
 test("Room attachment rendering binds the saved integration message and excludes ordinary messages", async () => {
   const api = server([makeRoom("A")]);
   const source = { provider:"gitlab", channel:"events", instance:"https://gitlab.invalid", project_id:312 };

@@ -1809,6 +1809,9 @@ textarea::placeholder {
 #cli-member-refresh { margin-top:12px; padding-left:0; }
 
 .inbox-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.inbox-source-details { margin-top: 12px; color: var(--muted); font-size: 12px; }
+.inbox-source-details summary { cursor: pointer; }
+.inbox-source-details pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .policy-form { display: grid; gap: 16px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
 .policy-form[hidden] { display: none; }

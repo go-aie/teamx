@@ -28,6 +28,9 @@ if a[:2]==['im','+chat-list']:
  print(json.dumps({'ok':True,'identity':'user','data':data}));sys.exit()
 path=a[2]
 if path=='/open-apis/authen/v1/user_info':data={'open_id':'ou_reader','tenant_key':'account_tenant','name':'测试用户'}
+elif path=='/open-apis/contact/v3/users/basic_batch':
+ assert a[1]=='POST' and json.loads(a[4])=={'user_id_type':'open_id'}
+ data={'users':[{'user_id':id,'name':'测试发送者'} for id in json.loads(a[6])['user_ids']]}
 elif path.startswith('/open-apis/im/v1/chats/'):data={'chat_mode':'p2p','name':'脱敏会话','tenant_key':'external_tenant'}
 else:
  messages=json.load(open(base+'/messages.json'))
@@ -162,7 +165,7 @@ func TestLarkNotificationsInboxReferencesAndRoomQuestion(t *testing.T) {
 		t.Fatal(e)
 	}
 	var content larkTargetPage
-	if e = cli([]string{"lark", "read", "--object", object, "--target", object}, &content); e != nil || content.Status != platform.ResolutionResolved || len(content.Contents) != 1 || !strings.Contains(content.Contents[0].Body, "脱敏测试消息") {
+	if e = cli([]string{"lark", "read", "--object", object, "--target", object}, &content); e != nil || content.Status != platform.ResolutionResolved || len(content.Contents) != 1 || !strings.Contains(content.Contents[0].Body, "脱敏测试消息") || !strings.Contains(content.Contents[0].Body, "发送者：测试发送者（open_id: ou_sender") {
 		t.Fatal(content, e)
 	}
 	if len(h.state().Inbox) != 0 {

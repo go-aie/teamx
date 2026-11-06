@@ -42,7 +42,7 @@ func TestLarkMentionIdentityInAgentInboxWithoutReadBinding(t *testing.T) {
 		t.Fatal("cannot read notification without member Lark binding", inbox, err)
 	}
 	text := inbox.Entries[0].Item.Text
-	for _, want := range []string{"@接收者（open_id: ou_reader；当前接收账号）", "@同事（open_id: ou_other）", "确认发版"} {
+	for _, want := range []string{"发送者：测试发送者（open_id: ou_sender）", "@接收者（open_id: ou_reader；当前接收账号）", "@同事（open_id: ou_other）", "确认发版"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("Agent Inbox lost %q: %q", want, text)
 		}

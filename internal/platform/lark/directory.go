@@ -110,6 +110,9 @@ func acceptDirectory(s State, page ChatPage, now time.Time) (State, error) {
 		p, exists := n.Chats[chat.ID]
 		if !exists {
 			p = ChatProgress{Chat: chat, NeedsVerification: true}
+		} else if p.Chat.Mode == chat.Mode && chat.Name != "" {
+			// Refresh display names without changing verified tenant or progress.
+			p.Chat.Name = chat.Name
 		}
 		if p.Unlisted {
 			p.NeedsVerification = true

@@ -1671,6 +1671,26 @@ $("policy-next").addEventListener("click",()=>{if(policyView)void loadPolicyFoll
 $("policy-form").addEventListener("submit",event=>{event.preventDefault();return savePolicyForm("active");});
 $("policy-suggest").addEventListener("click",()=>savePolicyForm("suggested"));
 let inboxView = null;
+function compactLarkInbox(item) {
+  if (item.source?.provider !== "lark") return null;
+  const lines = item.text.split("\n");
+  if (lines[0] !== "飞书" && !lines[0]?.startsWith("飞书 · ") && lines[0] !== "飞书消息变更（关联原消息；不自动重做已完成动作）") return null;
+  const sender = /^发送者：(.*?)（((?:[A-Za-z_]+|ID类型未知): [^（）\r\n]*|身份未解析[^（）\r\n]*)）$/.exec(lines[1] || "");
+  const compactSelf = /^发送者：(我|.+（我）)$/.exec(lines[1] || "");
+  if (!sender && !compactSelf) return null;
+  const fields = sender ? sender[2].split("；").map(value => value.trim()) : [];
+  const self = fields.includes("当前接收账号本人");
+  const id = fields[0]?.match(/^[^:]+: (.+)$/)?.[1];
+  let name = sender ? sender[1] : compactSelf[1];
+  if (name === "姓名未获取" || name === "飞书用户") name = self ? "我" : id ? `飞书用户 · …${id.slice(-6)}` : "未知发送者";
+  else if (self) name += "（我）";
+  const chat = lines[0] === "飞书" ? "" : lines[0].startsWith("飞书 · ") ? lines[0].slice(5).trim() : "消息变更";
+  if (chat && !/^会话 oc_[A-Za-z0-9_-]+$/.test(chat)) name += ` · ${chat}`;
+  const details = lines.slice(0, 2);
+  const chatID = item.source.reference?.chat_id?.value;
+  if (chatID && !details[0].includes(chatID)) details.push(`chat_id: ${chatID}`);
+  return { sender: name, text: lines.slice(2).join("\n"), details: details.join("\n") };
+}
 async function loadMemberInbox(reset) {
   const member = selectedAgent();
   if (!member || agentTab !== "inbox") return;
@@ -1688,10 +1708,19 @@ async function loadMemberInbox(reset) {
     $("inbox-status").textContent = `已接收 ${data.status.latest_seq} 条 · 占用 ${data.status.bytes} / ${data.status.limits.bytes} 字节 · 当前快照 ${data.snapshot_seq}` + (data.status.write_error ? ` · ${data.status.write_error}` : "") + (!data.entries.length ? " · 暂无通知" : "");
     $("inbox-entries").replaceChildren(...data.entries.map(entry => {
       const section = document.createElement("section"); section.className = "activity-section";
-      const heading = document.createElement("h3"); heading.textContent = `#${entry.seq} · ${entry.item.source.provider} / ${entry.item.source.channel} · ${new Date(entry.received_at).toLocaleString("zh-CN")}`;
+      const compact = compactLarkInbox(entry.item);
+      const provider = entry.item.source.provider === "lark" ? "飞书" : `${entry.item.source.provider} / ${entry.item.source.channel}`;
+      const heading = document.createElement("h3"); heading.textContent = `#${entry.seq} · ${compact ? compact.sender + " · " : ""}${provider} · ${new Date(entry.received_at).toLocaleString("zh-CN")}`;
       const body = document.createElement("div"); body.className = "message-text";
-      renderMessageBody(body, entry.item.text, state.operator, notificationOptions(view.info, state.operator, entry.item.source, { seq: entry.seq, agent_id: member.agent_id, membership_id: member.membership_id }));
-      section.append(heading,body); return section;
+      renderMessageBody(body, compact?.text ?? entry.item.text, state.operator, notificationOptions(view.info, state.operator, entry.item.source, { seq: entry.seq, agent_id: member.agent_id, membership_id: member.membership_id }));
+      section.append(heading,body);
+      if (compact) {
+        const details = document.createElement("details"); details.className = "inbox-source-details";
+        const summary = document.createElement("summary"); summary.textContent = "来源详情";
+        const metadata = document.createElement("pre"); metadata.textContent = compact.details;
+        details.append(summary,metadata); section.append(details);
+      }
+      return section;
     }));
     $("inbox-next").hidden = !data.has_more;
   } catch(error) { if (current()) $("inbox-status").textContent = `读取失败：${error.message}`; }

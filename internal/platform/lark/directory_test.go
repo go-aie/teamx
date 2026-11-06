@@ -127,6 +127,25 @@ func TestDirectoryRestartCursorExpiryAndNewChatsKeepBaseline(t *testing.T) {
 		t.Fatal("new chat never scanned")
 	}
 }
+
+func TestP2PDirectoryNameSurvivesVerificationAndRefresh(t *testing.T) {
+	h, f, source := allHarness(t)
+	f.list = func(ChatsRequest) (ChatPage, error) {
+		return ChatPage{Chats: []Chat{{ID: "oc_chat", Mode: "p2p", Name: "同事的会话"}}}, nil
+	}
+	r := source.NewRunner(h)
+	stepOK(t, h, r) // Directory supplies the name.
+	stepOK(t, h, r) // Get supplies tenant/mode but an empty name.
+	p := h.s.Chats["oc_chat"]
+	if p.Chat.Name != "同事的会话" || p.Chat.TenantKey != "external_tenant" || p.NeedsVerification {
+		t.Fatal("verification discarded directory display evidence", p)
+	}
+	h.s.Directory.Scan = &DirectoryScan{Seen: map[string]bool{}}
+	n, err := acceptDirectory(h.s, ChatPage{Chats: []Chat{{ID: "oc_chat", Mode: "p2p", Name: "同事的新名称"}}}, h.now)
+	if err != nil || n.Chats["oc_chat"].Chat.Name != "同事的新名称" || n.Chats["oc_chat"].Chat.TenantKey != p.Chat.TenantKey || n.Chats["oc_chat"].VerifiedAt != p.VerifiedAt {
+		t.Fatal("directory refresh lost name or changed verified identity", n.Chats["oc_chat"], err)
+	}
+}
 func TestPageFairnessWithHundredsOfChatsAndHotBacklog(t *testing.T) {
 	h, f, source := allHarness(t)
 	chats := []Chat{}

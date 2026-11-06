@@ -202,3 +202,39 @@ func hasAll(v any, depth int) bool {
 	}
 	return false
 }
+
+func validSenderName(name string) bool {
+	return strings.TrimSpace(name) != "" && len(name) <= 1024 && !strings.ContainsAny(name, "\x00\r\n")
+}
+
+// ContentWithSenderFor is shared by Inbox delivery and native target/context
+// reads. ContentFor itself remains a rendering of just the message body.
+func (m Message) ContentWithSenderFor(recipientID string) string {
+	s := m.Sender
+	name := s.Name
+	if !validSenderName(name) {
+		name = "飞书用户"
+		if s.Type == "app" {
+			name = "机器人"
+		}
+	}
+	if s.Type == "user" && s.IDType == "open_id" && recipientID != "" && s.ID == recipientID {
+		if validSenderName(s.Name) {
+			name += "（我）"
+		} else {
+			name = "我"
+		}
+		return "发送者：" + name + "\n" + m.ContentFor(recipientID)
+	}
+	kind := s.IDType
+	if kind == "" {
+		kind = "ID类型未知"
+	}
+	identity := kind + ": " + s.ID
+	if s.ID == "" {
+		identity = "身份未解析"
+	}
+	// Peer ID distinguishes same-name speakers. Chat/account IDs already travel
+	// in SourceRef; sender type/tenant remain in the stored native Message.
+	return "发送者：" + name + "（" + identity + "）\n" + m.ContentFor(recipientID)
+}

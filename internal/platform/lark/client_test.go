@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,14 +26,30 @@ assert a[:2]==['--profile','fixture']
 a=a[2:]
 if a==['--version']:
  print('lark-cli version '+('0.0.0' if mode=='version' else '1.0.99'));sys.exit()
-switched=mode=='switch' and os.path.exists(base+'/read')
+switched=mode=='switch' and os.path.exists(base+'/read') or mode=='name_switch' and os.path.exists(base+'/names-read')
 user='ou_other' if switched else 'ou_reader'
 if a==['whoami','--as','user']:
  print(json.dumps({'profile':'fixture','appId':'cli_fixture','brand':'feishu','identity':'bot' if mode=='bot' else 'user','available':mode!='logout','onBehalfOf':{'openId':user}}));sys.exit()
-assert a[:2]==['api','GET'] and a[-4:]==['--as','user','--format','json']
+assert a[:2]==['api','GET'] or a[:2]==['api','POST']
+assert a[-4:]==['--as','user','--format','json']
 path=a[2]
 if path=='/open-apis/authen/v1/user_info':
  print(json.dumps({'ok':True,'identity':'user','data':{'open_id':user,'tenant_key':'account_tenant','name':'中文显示名'}}));sys.exit()
+if path=='/open-apis/contact/v3/users/basic_batch':
+ assert a[1]=='POST' and json.loads(a[4])=={'user_id_type':'open_id'}
+ ids=json.loads(a[6])['user_ids'];assert 0<len(ids)<=10 and len(ids)==len(set(ids))
+ open(base+'/names-read','w').write('yes')
+ if mode=='name_permission':
+  print(json.dumps({'error':{'type':'authorization'}}),file=sys.stderr);sys.exit(1)
+ if mode=='name_malformed':print('{');sys.exit()
+ if mode=='name_timeout':time.sleep(60)
+ users=[{'user_id':id,'name':'同名用户'} for id in reversed(ids)]
+ if mode=='name_partial':users=users[:1]
+ if mode=='name_wrong':users=[{'user_id':'ou_unrequested','name':'错误姓名'}]
+ if mode=='name_duplicate':users=[users[0],users[0]]
+ if mode=='name_invalid':users[0]['name']='bad\nname'
+ print(json.dumps({'ok':True,'identity':'user','data':{'users':users}}));sys.exit()
+assert a[1]=='GET'
 open(base+'/read','w').write('yes')
 if mode=='block':time.sleep(60)
 if mode=='large':print('s'*((2<<20)+1));sys.exit()
@@ -50,6 +67,7 @@ if mode=='same_time':
 elif mode=='duplicate':items=[m,m]
 elif params.get('page_token')=='second':items=[]
 else:items=[m]
+if os.path.exists(base+'/sender-messages.json'):items=json.load(open(base+'/sender-messages.json'))
 data={'items':items,'has_more':params.get('page_token')!='second','page_token':'second' if params.get('page_token')!='second' else ''}
 if path.endswith('/om_one'):data={'items':[m]}
 if mode=='incomplete':del data['has_more']
@@ -102,7 +120,7 @@ func TestUserIdentityAndSinglePageReads(t *testing.T) {
 		t.Fatal(page, err)
 	}
 	message, err := c.Message(context.Background(), account, "om_one")
-	if err != nil || message.ID != "om_one" {
+	if err != nil || message.ID != "om_one" || message.Sender.Name != "同名用户" {
 		t.Fatal(err)
 	}
 	calls, _ := os.ReadFile(filepath.Join(dir, "calls"))
@@ -188,5 +206,104 @@ func TestCancellationAndProfileGate(t *testing.T) {
 	setMode(t, dir, "ok")
 	if _, err := c.Verify(context.Background()); err != nil {
 		t.Fatal("profile gate not released", err)
+	}
+}
+
+func TestSenderNameLookupBoundedAndOptional(t *testing.T) {
+	for _, mode := range []string{"ok", "name_permission", "name_malformed", "name_partial", "name_wrong", "name_duplicate", "name_invalid", "name_timeout"} {
+		t.Run(mode, func(t *testing.T) {
+			c, dir, account := testClient(t)
+			setMode(t, dir, mode)
+			messages := []Message{sampleMessage("om_one", "oc_chat", "one"), sampleMessage("om_two", "oc_chat", "two"), sampleMessage("om_three", "oc_chat", "three")}
+			messages[1].Sender.ID = "ou_other"
+			raw, _ := json.Marshal(messages)
+			if err := os.WriteFile(filepath.Join(dir, "sender-messages.json"), raw, 0600); err != nil {
+				t.Fatal(err)
+			}
+			page, err := c.Messages(context.Background(), account, MessagesRequest{ChatID: "oc_chat", Start: 1000, End: 1010, PageSize: 50})
+			if err != nil || len(page.Items) != len(messages) {
+				t.Fatal("optional lookup blocked message read", page, err)
+			}
+			for i, m := range page.Items {
+				wantName := ""
+				if mode == "ok" || mode == "name_partial" && i == 1 || mode == "name_invalid" && i != 1 {
+					wantName = "同名用户"
+				}
+				if m.Sender.ID != messages[i].Sender.ID || m.Sender.Name != wantName {
+					t.Fatal("name assigned to wrong sender or native identity lost", m.Sender)
+				}
+			}
+			calls, _ := os.ReadFile(filepath.Join(dir, "calls"))
+			if strings.Count(string(calls), "/open-apis/contact/v3/users/basic_batch") != 1 {
+				t.Fatal("expected exactly one deduplicated name request")
+			}
+		})
+	}
+}
+
+func TestSenderLookupCannotEscapeAccountGuard(t *testing.T) {
+	c, dir, account := testClient(t)
+	setMode(t, dir, "name_switch")
+	m, err := c.Message(context.Background(), account, "om_one")
+	if ErrorCode(err) != "identity_mismatch" || m.ID != "" {
+		t.Fatal("account switch during name lookup released candidate", m, err)
+	}
+}
+
+func TestSelfSenderUsesVerifiedNameWithoutContactPermission(t *testing.T) {
+	for _, mixed := range []bool{false, true} {
+		t.Run(fmt.Sprint(mixed), func(t *testing.T) {
+			c, dir, account := testClient(t)
+			setMode(t, dir, "name_permission")
+			self := sampleMessage("om_self", "oc_chat", "好的")
+			self.Sender.ID = account.ID.Value
+			messages := []Message{self}
+			if mixed {
+				messages = append(messages, sampleMessage("om_other", "oc_chat", "其他人的消息"))
+			}
+			raw, _ := json.Marshal(messages)
+			if err := os.WriteFile(filepath.Join(dir, "sender-messages.json"), raw, 0600); err != nil {
+				t.Fatal(err)
+			}
+			page, err := c.Messages(context.Background(), account, MessagesRequest{ChatID: "oc_chat", Start: 1000, End: 1010, PageSize: 50})
+			if err != nil || len(page.Items) != len(messages) || page.Items[0].Sender.Name != "中文显示名" {
+				t.Fatal("verified self name lost", page, err)
+			}
+			if mixed && page.Items[1].Sender.Name != "" {
+				t.Fatal("self name attributed to another sender")
+			}
+			calls, _ := os.ReadFile(filepath.Join(dir, "calls"))
+			lookups := strings.Count(string(calls), "/open-apis/contact/v3/users/basic_batch")
+			if !mixed && lookups != 0 || mixed && lookups != 1 {
+				t.Fatal("self should not require contact lookup", lookups)
+			}
+		})
+	}
+}
+
+func TestSenderLookupSplitsAtNativeBatchLimit(t *testing.T) {
+	c, dir, account := testClient(t)
+	messages := []Message{}
+	for i := range 25 {
+		m := sampleMessage(fmt.Sprintf("om_%02d", i), "oc_chat", "正文")
+		m.Sender.ID = fmt.Sprintf("ou_%02d", i)
+		messages = append(messages, m)
+	}
+	raw, _ := json.Marshal(messages)
+	if err := os.WriteFile(filepath.Join(dir, "sender-messages.json"), raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	page, err := c.Messages(context.Background(), account, MessagesRequest{ChatID: "oc_chat", Start: 1000, End: 1010, PageSize: 50})
+	if err != nil || len(page.Items) != 25 {
+		t.Fatal(page, err)
+	}
+	for _, m := range page.Items {
+		if m.Sender.Name != "同名用户" {
+			t.Fatal("later name batch lost", m.Sender)
+		}
+	}
+	calls, _ := os.ReadFile(filepath.Join(dir, "calls"))
+	if strings.Count(string(calls), "/open-apis/contact/v3/users/basic_batch") != 3 {
+		t.Fatal("expected 10+10+5 name batches")
 	}
 }

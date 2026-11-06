@@ -71,3 +71,31 @@ func TestContentRichMentionsAndDeletedMessage(t *testing.T) {
 		t.Fatal("deleted message exposed mention evidence", got)
 	}
 }
+
+func TestSenderIdentityRendering(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		sender Sender
+		want   string
+	}{
+		{"other", Sender{ID: "ou_other", IDType: "open_id", Type: "user", Name: "同事", TenantKey: "external"}, "发送者：同事（open_id: ou_other）"},
+		{"self", Sender{ID: "ou_reader", IDType: "open_id", Type: "user", Name: "同事"}, "发送者：同事（我）"},
+		{"same_name_other_id", Sender{ID: "ou_other", IDType: "open_id", Type: "user", Name: "同事"}, "发送者：同事（open_id: ou_other）"},
+		{"no_name", Sender{ID: "ou_other", IDType: "open_id", Type: "user"}, "发送者：飞书用户（open_id: ou_other）"},
+		{"wrong_id_type", Sender{ID: "ou_reader", IDType: "union_id", Type: "user"}, "发送者：飞书用户（union_id: ou_reader）"},
+		{"app", Sender{ID: "cli_app", IDType: "app_id", Type: "app"}, "发送者：机器人（app_id: cli_app）"},
+		{"missing", Sender{}, "发送者：飞书用户（身份未解析）"},
+		{"bad_name", Sender{ID: "ou_other", IDType: "open_id", Name: "bad\nname"}, "发送者：飞书用户（open_id: ou_other）"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			m := sampleMessage("om_one", "oc_chat", "正文")
+			m.Sender = tt.sender
+			if got := m.ContentWithSenderFor("ou_reader"); got != tt.want+"\n正文" {
+				t.Fatal(got)
+			}
+			if strings.Contains(m.ContentWithSenderFor(""), "（我）") {
+				t.Fatal("unscoped rendering inferred self")
+			}
+		})
+	}
+}

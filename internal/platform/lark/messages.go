@@ -2,9 +2,11 @@ package lark
 
 import (
 	"context"
+	"encoding/json"
 	"github.com/go-aie/teamx/internal/platform"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Times retain the API's native millisecond strings. Requests use Unix seconds.
@@ -13,6 +15,8 @@ type Sender struct {
 	IDType    string `json:"id_type"`
 	Type      string `json:"sender_type"`
 	TenantKey string `json:"tenant_key"`
+	// Name is optional display evidence resolved through the same CLI account.
+	Name string `json:"name,omitempty"`
 }
 type Mention struct {
 	Key       string `json:"key"`
@@ -96,6 +100,7 @@ func (c *Client) Messages(ctx context.Context, account platform.AccountIdentity,
 			seen[m.ID] = true
 			last = n
 		}
+		c.senderNames(ctx, *wire.Items)
 		page = MessagePage{Items: *wire.Items, HasMore: *wire.HasMore, PageToken: wire.PageToken}
 		return nil
 	})
@@ -119,6 +124,7 @@ func (c *Client) Message(ctx context.Context, account platform.AccountIdentity, 
 		if len(wire.Items) != 1 || wire.Items[0].ID != id || !wire.Items[0].valid() {
 			return failure("invalid_response")
 		}
+		c.senderNames(ctx, wire.Items)
 		message = wire.Items[0]
 		return nil
 	})
@@ -131,3 +137,87 @@ func (c *Client) Message(ctx context.Context, account platform.AccountIdentity, 
 // Text retains structured evidence in Message.Body; rich text, attachment
 // understanding and notification filtering belong to L2.
 func (m Message) Text() string { return m.Content() }
+
+type senderAccountContextKey struct{}
+
+// senderNames runs inside guarded, so lookup uses the same verified app/account
+// and request budget as the messages. Names never establish Room membership or
+// authority. At most five batches per page, with one shared timeout; optional
+// lookup failures leave native sender IDs intact.
+func (c *Client) senderNames(ctx context.Context, messages []Message) {
+	account, _ := ctx.Value(senderAccountContextKey{}).(platform.Validation)
+	names := map[string]string{}
+	if account.Status == "valid" && validSenderName(account.Username) {
+		names[account.Account.ID.Value] = account.Username
+	}
+	ids := []string{}
+	requested := map[string]bool{}
+	for i := range messages {
+		s := &messages[i].Sender
+		s.Name = ""
+		if s.Type == "user" && s.IDType == "open_id" && names[s.ID] != "" {
+			s.Name = names[s.ID]
+			continue
+		}
+		if s.Type == "user" && s.IDType == "open_id" && nativeID(s.ID, "ou_") && !requested[s.ID] && len(ids) < 50 {
+			ids = append(ids, s.ID)
+			requested[s.ID] = true
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	lookup, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	// basic_batch accepts at most 10 IDs; message pages contain at most 50.
+	for start := 0; start < len(ids); start += 10 {
+		batch, err := c.senderNameBatch(lookup, ids[start:min(start+10, len(ids))])
+		if err != nil {
+			break
+		}
+		for id, name := range batch {
+			names[id] = name
+		}
+	}
+	for i := range messages {
+		s := &messages[i].Sender
+		if s.Type == "user" && s.IDType == "open_id" {
+			s.Name = names[s.ID]
+		}
+	}
+}
+
+// This endpoint returns only names, without fetching full contact profiles.
+func (c *Client) senderNameBatch(ctx context.Context, ids []string) (map[string]string, error) {
+	body, _ := json.Marshal(struct {
+		IDs []string `json:"user_ids"`
+	}{ids})
+	var wire struct {
+		Users []struct {
+			ID   string `json:"user_id"`
+			Name string `json:"name"`
+		} `json:"users"`
+	}
+	if err := c.apiJSON(ctx, []string{"api", "POST", "/open-apis/contact/v3/users/basic_batch", "--params", `{"user_id_type":"open_id"}`, "--data", string(body)}, &wire); err != nil {
+		return nil, err
+	}
+	if len(wire.Users) > len(ids) {
+		return nil, failure("invalid_response")
+	}
+	requested := map[string]bool{}
+	for _, id := range ids {
+		requested[id] = true
+	}
+	names := map[string]string{}
+	seen := map[string]bool{}
+	for _, user := range wire.Users {
+		if !requested[user.ID] || seen[user.ID] {
+			return nil, failure("invalid_response")
+		}
+		seen[user.ID] = true
+		if validSenderName(user.Name) {
+			names[user.ID] = user.Name
+		}
+	}
+	return names, nil
+}

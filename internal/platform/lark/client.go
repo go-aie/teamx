@@ -203,12 +203,18 @@ func (c *Client) api(ctx context.Context, path string, params any, v any) error 
 	if err != nil {
 		return failure("invalid_request")
 	}
+	return c.apiJSON(ctx, []string{"api", "GET", path, "--params", string(p)}, v)
+}
+
+// apiJSON is private transport for the fixed read operations in this package.
+// Some read APIs (user name lookup) use POST without modifying remote state.
+func (c *Client) apiJSON(ctx context.Context, args []string, v any) error {
 	release, err := c.requests.acquire(ctx)
 	if err != nil {
 		return err
 	}
 	defer release()
-	data, err := c.run(ctx, "api", "GET", path, "--params", string(p), "--as", "user", "--format", "json")
+	data, err := c.run(ctx, append(args, "--as", "user", "--format", "json")...)
 	if err != nil {
 		return err
 	}
@@ -329,6 +335,7 @@ func (c *Client) guarded(ctx context.Context, expected platform.AccountIdentity,
 		return failure("identity_mismatch")
 	}
 	ctx = context.WithValue(ctx, accountContextKey{}, expected.Instance+"|"+expected.ID.Namespace+"|"+expected.ID.Value)
+	ctx = context.WithValue(ctx, senderAccountContextKey{}, before)
 	err = read(ctx)
 	if ctx.Err() != nil {
 		return ctx.Err()
