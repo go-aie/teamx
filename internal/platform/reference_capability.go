@@ -25,6 +25,9 @@ type TargetLocator struct {
 }
 
 type TargetResolution struct {
+	// Notification evidence establishes captured native identity, not current
+	// remote state or member access. Empty denotes the existing remote resolver.
+	EvidenceSource     string           `json:"evidence_source,omitempty"`
 	Status             ResolutionStatus `json:"status"`
 	ReasonCode         string           `json:"reason_code,omitempty"` // e.g. permission_denied, unsupported, incomplete
 	Reason             string           `json:"reason,omitempty"`

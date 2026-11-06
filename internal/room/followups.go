@@ -325,6 +325,11 @@ func validateFollowupResolution(e InboxEntry, r platform.TargetResolution, a pla
 	if r.CheckedAt.IsZero() || r.CheckedAt.After(time.Now().Add(time.Minute)) || len(r.Reason) > 4096 || len(r.ReasonCode) > 128 || len(r.Aliases) > 32 {
 		return platform.ErrReference
 	}
+	if r.EvidenceSource != "" {
+		// Captured native identity is checked against the original saved entry,
+		// independently of live member credentials. Unknown evidence fails closed.
+		return validateNotificationResolution(e, r, a)
+	}
 	switch r.Status {
 	case platform.ResolutionResolved, platform.ResolutionPartial, platform.ResolutionUnavailable, platform.ResolutionUnsupported, platform.ResolutionMismatch:
 	default:

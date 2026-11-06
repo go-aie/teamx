@@ -150,13 +150,21 @@ func TestLarkNotificationsInboxReferencesAndRoomQuestion(t *testing.T) {
 	server := httptest.NewServer(h.m)
 	defer server.Close()
 	cli := contractCLI(t, server.URL, h.svc, id)
-	bindCLITool(t, h.m, h.room.RoomIdentity, member, h.c, "lark", 0)
+	// Collection has already captured the message. Inbox reading and followup
+	// creation need neither a member binding nor an available Lark executable.
+	bin := filepath.Join(h.dir, "lark-cli")
+	if err := os.Rename(bin, bin+".disabled"); err != nil {
+		t.Fatal(err)
+	}
 	if e := h.svc.store.SaveAgent(AgentSnapshot{Version: formatVersion, MemberIdentity: id, TurnNumber: 1, LastOfferedInboxSeq: 1, Turn: &TurnRecord{Number: 1, Status: "running", InboxSnapshotSeq: 1}}); e != nil {
 		t.Fatal(e)
 	}
 	var inbox agentReferenceInboxPage
 	if e := cli([]string{"inbox", "read"}, &inbox); e != nil || len(inbox.Followups) != 1 || len(inbox.Entries) != 1 {
 		t.Fatal("inbox source resolution", e)
+	}
+	if inbox.Entries[0].Source.EvidenceSource != lark.NotificationEvidence || !strings.Contains(inbox.Entries[0].Item.Text, "脱敏测试消息") {
+		t.Fatal("lost captured body or evidence provenance", inbox)
 	}
 	object := inbox.Followups[0].ObjectRef
 	unit := inbox.Followups[0].Ref
@@ -165,6 +173,13 @@ func TestLarkNotificationsInboxReferencesAndRoomQuestion(t *testing.T) {
 		t.Fatal(e)
 	}
 	var content larkTargetPage
+	if e = cli([]string{"lark", "read", "--object", object, "--target", object}, &content); e == nil {
+		t.Fatal("notification identity granted remote read access")
+	}
+	if err := os.Rename(bin+".disabled", bin); err != nil {
+		t.Fatal(err)
+	}
+	bindCLITool(t, h.m, h.room.RoomIdentity, member, h.c, "lark", 0)
 	if e = cli([]string{"lark", "read", "--object", object, "--target", object}, &content); e != nil || content.Status != platform.ResolutionResolved || len(content.Contents) != 1 || !strings.Contains(content.Contents[0].Body, "脱敏测试消息") || !strings.Contains(content.Contents[0].Body, "发送者：测试发送者（open_id: ou_sender") {
 		t.Fatal(content, e)
 	}

@@ -62,7 +62,7 @@ var referenceCommandHelps = map[string]referenceCommandHelp{
 		"--seq: Inbox sequence; --source: matching source_ref; --turn: current_turn.",
 		"Source resolution status/reason and verified object/target references.",
 		"teamx matters resolve --seq 1 --source src_... --turn 1",
-		"Only the specified source is retried. Failed/partial lookups retain evidence and never prove absence. Do not fabricate Inbox sequences or native identities.",
+		"Only the specified source is retried. Lark rebuilds captured native identity from the saved notification without remote reads or a member binding; use lark read for current content/context. Failed/partial lookups retain evidence and never prove absence. Do not fabricate Inbox sequences or native identities.",
 	},
 	"matters/ensure": {
 		"matters ensure --seq SEQ --target REF --turn TURN", "Open a discussion followup on demand.",

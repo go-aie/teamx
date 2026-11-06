@@ -2,6 +2,9 @@ package room
 
 import (
 	"context"
+	"reflect"
+	"time"
+
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/connection"
 	"github.com/go-aie/teamx/internal/platform/lark"
@@ -24,39 +27,24 @@ func (m *roomManager) checkLarkReferenceAccessLocked(ctx context.Context, req to
 	}
 	return m.checkLarkReadLocked(ctx, req, a)
 }
-func (m *roomManager) resolveLarkFollowup(ctx context.Context, id MemberIdentity, source platform.SourceRef) (platform.TargetResolution, platform.AccessContext, error) {
-	m.mu.Lock()
-	svc, _ := m.runtimeServiceLocked(id.RoomIdentity)
-	if svc == nil {
-		m.mu.Unlock()
-		return platform.TargetResolution{}, platform.AccessContext{}, ErrIdentity
-	}
-	req := toolsRequest{ServiceInfo: svc.info, Caller: agentCallerIdentity(id), Tool: "lark"}
-	admission, call, callCtx, err := m.preparePlatformCallLocked(ctx, req, false)
-	m.mu.Unlock()
-	if err != nil {
+func (m *roomManager) resolveLarkFollowup(ctx context.Context, _ MemberIdentity, source platform.SourceRef) (platform.TargetResolution, platform.AccessContext, error) {
+	if err := ctx.Err(); err != nil {
 		return platform.TargetResolution{}, platform.AccessContext{}, err
 	}
-	if scope, _ := ctx.Value(referenceResolutionScopeKey{}).(*referenceResolutionScope); scope != nil {
-		scope.ctx = callCtx
-		scope.finish = func() { m.finishPlatformCall(call) }
-	} else {
-		defer m.finishPlatformCall(call)
+	// The caller loads this envelope from the member's immutable Inbox entry.
+	// Member/service checks still guard admission and commit; remote reads remain
+	// exclusively behind readLark's selected connection and call lifecycle.
+	return lark.ResolveNotification(source, time.Now().UTC()), platform.AccessContext{}, nil
+}
+
+func validateNotificationResolution(e InboxEntry, r platform.TargetResolution, a platform.AccessContext) error {
+	want := lark.ResolveNotification(e.Item.Source, r.CheckedAt)
+	if a != (platform.AccessContext{}) || r.EvidenceSource != lark.NotificationEvidence ||
+		r.Status != want.Status || r.ReasonCode != want.ReasonCode || r.Account != want.Account ||
+		!reflect.DeepEqual(r.Target, want.Target) || r.ObjectVerified != want.ObjectVerified ||
+		r.DiscussionVerified != want.DiscussionVerified || r.MessageVerified != want.MessageVerified ||
+		r.Complete != want.Complete || len(r.Aliases) != 0 || r.URL != "" {
+		return platform.ErrReference
 	}
-	access := larkReferenceAccess(id, admission.account, source)
-	if admission.account.CLIProfile == nil {
-		return platform.TargetResolution{}, access, ErrConflict
-	}
-	reader, err := lark.New(*admission.account.CLIProfile)
-	if err != nil {
-		return platform.TargetResolution{}, access, err
-	}
-	result, err := lark.ResolveTarget(callCtx, platform.TargetLocator{Source: &source}, access, reader)
-	m.mu.Lock()
-	check := m.checkLarkReferenceAccessLocked(callCtx, req, access)
-	m.mu.Unlock()
-	if check != nil {
-		return platform.TargetResolution{}, access, check
-	}
-	return result, access, err
+	return nil
 }
