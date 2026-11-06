@@ -217,6 +217,58 @@ func TestMessagesPageRecoveryAtomicCheckpointAndRevision(t *testing.T) {
 		}
 	}
 }
+
+func TestMentionIdentitySurvivesNotificationAndTargetReads(t *testing.T) {
+	s := sampleState(t)
+	chat := Chat{ID: "oc_chat", Mode: "group"}
+	s.Chats[chat.ID] = ChatProgress{Chat: chat, Scan: &Scan{Start: 1000, End: 1010}}
+	m := sampleMessage("om_mention", chat.ID, "@_user_1 请和 @_user_2 确认发版")
+	m.Mentions = []Mention{
+		{Key: "@_user_1", ID: "ou_reader", IDType: "open_id", Name: "接收者"},
+		{Key: "@_user_2", ID: "ou_other", IDType: "open_id", Name: "其他人"},
+	}
+	n, err := acceptPage(s, chat.ID, MessagePage{Items: []Message{m}}, notification.DefaultLimits())
+	if err != nil || len(n.Inbox) != 1 {
+		t.Fatal("notification not accepted", err)
+	}
+	// Persist/reload through the real source codec before delivery or reread.
+	raw, _ := json.Marshal(n)
+	state, err := (&Source{}).Decode(raw, n.RoomIdentity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n = state.(State)
+	want := m.ContentFor(s.Binding.Account.ID.Value)
+	items := n.PendingItems()
+	if len(items) != 1 || items[0].Text != "飞书 · \n"+want || strings.Contains(items[0].Text, "@_user_") {
+		t.Fatal("delivery lost mention identities", items)
+	}
+	access := platform.AccessContext{RoomIdentity: s.RoomIdentity, AgentID: "agent", MembershipID: "member", Account: s.Binding.Account, Receiver: s.Binding.Account, ConnectionID: "connection", Generation: "generation", ConnectionVersion: 1, CredentialVersion: 1}
+	f := &fakeReader{chat: chat, messages: map[string]Message{m.ID: m}}
+	resolution, err := ResolveTarget(context.Background(), platform.TargetLocator{Source: &items[0].Source}, access, f)
+	if err != nil || resolution.Target == nil || resolution.Status != platform.ResolutionResolved {
+		t.Fatal(resolution, err)
+	}
+	f.pages = func(MessagesRequest) (MessagePage, error) { return MessagePage{Items: []Message{m}}, nil }
+	for _, scope := range []string{"content", "context"} {
+		page, err := ReadTarget(context.Background(), platform.ReadTargetRequest{Target: *resolution.Target, Scope: scope, Limits: platform.ReadLimits{Items: 2, Bytes: 8192, BodyBytes: 4096}}, access, f)
+		if err != nil || len(page.Contents) != 1 || page.Contents[0].Body != want {
+			t.Fatalf("%s read lost identities: %#v, %v", scope, page, err)
+		}
+	}
+	// A native edit follows the same rendering path without changing its target.
+	m.Updated = "1001001"
+	p := n.Chats[chat.ID]
+	p.Scan = &Scan{Start: 1000, End: 1010}
+	n.Chats[chat.ID] = p
+	n, err = acceptPage(n, chat.ID, MessagePage{Items: []Message{m}}, notification.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := n.Inbox[RevisionKey(s.Binding, m)].Item.Text; got != "飞书消息变更（关联原消息；不自动重做已完成动作）\n"+want {
+		t.Fatal("edit lost mention identities", got)
+	}
+}
 func TestMessagesCapacityAndAuthenticationPreserveWindow(t *testing.T) {
 	for _, code := range []string{"capacity", "identity_mismatch", "network_error", "invalid_response"} {
 		t.Run(code, func(t *testing.T) {

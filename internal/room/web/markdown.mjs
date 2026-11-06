@@ -25,6 +25,16 @@ function notificationMarkdown(text) {
 }
 
 export function notificationOptions(info, operator, source, locator) {
+  if (info && source?.provider === "lark" && source.channel === "messages" && source.reference?.version === 2 && source.reference?.target?.type === "message") {
+    return {
+      larkImages: true,
+      attachmentURL(href) {
+        if (!/^lark-image:img_[A-Za-z0-9_-]{1,252}$/.test(href)) return null;
+        const query = new URLSearchParams({ room_id: info.room_id, room_instance: info.room_instance, service_epoch: info.service_epoch, caller_id: operator, ...locator, path: href });
+        return `/v1/platform/attachments?${query}`;
+      },
+    };
+  }
   if (!info || source?.provider !== "gitlab" || !["events", "todos"].includes(source.channel)) return undefined;
   return {
     quotedMarkdown: true,
@@ -52,7 +62,8 @@ function imageHTML({ href, text, title, width, height }, options) {
   const src = options.attachmentURL?.(href);
   if (!src) return webLink(href, escapeHTML(text || "图片"), title);
   const size = (width ? ` width="${width}"` : "") + (height ? ` height="${height}"` : "");
-  return `<img class="message-image" src="${escapeHTML(src)}" alt="${escapeHTML(text || "图片")}"${title ? ` title="${escapeHTML(title)}"` : ""}${size} loading="lazy" decoding="async" referrerpolicy="no-referrer">`;
+  const img = `<img class="message-image" src="${escapeHTML(src)}" alt="${escapeHTML(text || "图片")}"${title ? ` title="${escapeHTML(title)}"` : ""}${size} loading="lazy" decoding="async" referrerpolicy="no-referrer">`;
+  return options.larkImages ? `<a class="attachment-preview" href="${escapeHTML(src)}" target="_blank" rel="noopener noreferrer" title="查看原图">${img}</a>` : img;
 }
 
 function makeMarkdown(options = {}) {
@@ -106,6 +117,7 @@ const markdown = makeMarkdown();
 
 export function markdownHTML(text, options) {
   if (!options) return markdown.parse(text);
+  if (options.larkImages && !text.includes("](lark-image:")) text = text.replace(/^image_key: (img_[A-Za-z0-9_-]{1,252})\r?$/gm, "![飞书图片](lark-image:$1)");
   return makeMarkdown(options).parse(options.quotedMarkdown ? notificationMarkdown(text) : text);
 }
 
@@ -122,7 +134,9 @@ export function renderMessageBody(container, text, operator, options) {
         fallback.href = img.src;
         fallback.target = "_blank"; fallback.rel = "noopener noreferrer";
         fallback.className = "attachment-error";
-        img.replaceWith(fallback);
+        const preview = img.closest("a.attachment-preview");
+        if (preview) preview.replaceWith(fallback);
+        else img.replaceWith(fallback);
       }, { once: true });
     }
   }

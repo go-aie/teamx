@@ -326,7 +326,7 @@ func TestDSHMaterialsFinalCheckRejectsRevocationBeforePrompt(t *testing.T) {
 }
 
 func TestDSHMaterialsPromptBudgetsCountEscapingAndBase64(t *testing.T) {
-	group := materialGroup{notice: materialNotice{request: attachmentRequest{Seq: 1}, text: strings.Repeat("<", 700<<10), images: gitlab.NotificationImages{References: 2}}, images: []materialImage{
+	group := materialGroup{notice: materialNotice{request: attachmentRequest{Seq: 1}, text: strings.Repeat("<", 700<<10), images: notificationImageReferences{References: 2}}, images: []materialImage{
 		{positions: []int{1}, status: "read: image block supplied below", block: &dsh.ContentBlock{Type: "image", MIMEType: "image/png", Data: make([]byte, 2<<20)}},
 		{positions: []int{2}, status: "read: image block supplied below", block: &dsh.ContentBlock{Type: "image", MIMEType: "image/png", Data: make([]byte, 2<<20)}},
 	}}

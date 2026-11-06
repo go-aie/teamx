@@ -2,14 +2,21 @@ package lark
 
 import (
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"strings"
 )
 
 var nativeAtAll = regexp.MustCompile(`(^|[^A-Za-z0-9_])@_all($|[^A-Za-z0-9_])`)
+var nativeMention = regexp.MustCompile(`@_(?:user_[0-9]+|all)\b`)
 
 // Content preserves resource identifiers without downloading or interpreting them.
-func (m Message) Content() string {
+func (m Message) Content() string { return m.ContentFor("") }
+
+// ContentFor renders API mention keys using the message's own identity evidence.
+// recipientID is the open_id in the same CLI app scope, never a display name or
+// a Room member identity. No additional directory permission or lookup is needed.
+func (m Message) ContentFor(recipientID string) string {
 	if m.Deleted {
 		return "消息已撤回"
 	}
@@ -19,11 +26,17 @@ func (m Message) Content() string {
 	}
 	if m.Type == "text" {
 		if t, ok := v["text"].(string); ok {
-			return t
+			return m.mentionText(t, recipientID)
+		}
+	}
+	if m.Type == "image" {
+		if keys := m.ImageKeys(); len(keys) == 1 {
+			return "![飞书图片](" + ImagePrefix + keys[0] + ")\n[图片内容需通过附件读取]"
 		}
 	}
 	var parts []string
 	resource := false
+	imageResource := false
 	var walk func(any, int)
 	walk = func(x any, depth int) {
 		if depth > 20 {
@@ -31,11 +44,24 @@ func (m Message) Content() string {
 		}
 		switch t := x.(type) {
 		case map[string]any:
+			if t["tag"] == "img" {
+				if key, ok := t["image_key"].(string); ok && imageKeyPattern.MatchString(key) {
+					parts = append(parts, "![飞书图片]("+ImagePrefix+key+")")
+					imageResource = true
+					return
+				}
+			}
+			if t["tag"] == "at" {
+				id, _ := t["user_id"].(string)
+				name, _ := t["user_name"].(string)
+				parts = append(parts, m.mention(id, name, recipientID))
+				return
+			}
 			if s, ok := t["text"].(string); ok {
-				parts = append(parts, s)
+				parts = append(parts, m.mentionText(s, recipientID))
 			}
 			if s, ok := t["title"].(string); ok {
-				parts = append(parts, s)
+				parts = append(parts, m.mentionText(s, recipientID))
 			}
 			if s, ok := t["href"].(string); ok {
 				parts = append(parts, s)
@@ -61,6 +87,9 @@ func (m Message) Content() string {
 	if m.Type == "post" && resource {
 		parts = append(parts, "[附件未读取]")
 	}
+	if imageResource {
+		parts = append(parts, "[图片内容需通过附件读取]")
+	}
 	if m.Type != "post" {
 		parts = append(parts, "["+m.Type+" 消息；附件未读取／类型不支持理解]")
 	}
@@ -68,6 +97,53 @@ func (m Message) Content() string {
 		return "[" + m.Type + " 消息；无可用文字，附件未读取]"
 	}
 	return strings.Join(parts, "\n")
+}
+
+func (m Message) mentionText(text, recipientID string) string {
+	// Replace complete native tokens in one pass: @_user_1 must not consume
+	// @_user_10, and a name containing another token must remain literal.
+	return nativeMention.ReplaceAllStringFunc(text, func(key string) string {
+		return m.mention(key, "", recipientID)
+	})
+}
+
+func (m Message) mention(key, name, recipientID string) string {
+	if key == "all" || key == "@_all" {
+		return "@所有人"
+	}
+	for _, at := range m.Mentions {
+		if key == "" || at.Key != key && at.ID != key {
+			continue
+		}
+		if at.ID == "all" {
+			return "@所有人"
+		}
+		if at.Name != "" {
+			name = at.Name
+		}
+		if name == "" {
+			name = "未知用户"
+		}
+		if at.ID == "" {
+			return "@" + name + "（身份未解析）"
+		}
+		kind := at.IDType
+		if kind == "" {
+			kind = "ID"
+		}
+		identity := kind + ": " + at.ID
+		if at.IDType == "open_id" && recipientID != "" && at.ID == recipientID {
+			identity += "；当前接收账号"
+		}
+		return fmt.Sprintf("@%s（%s）", name, identity)
+	}
+	if name != "" {
+		return fmt.Sprintf("@%s（user_id: %s；身份未解析）", name, key)
+	}
+	if key != "" {
+		return "@" + strings.TrimPrefix(key, "@") + "（身份未解析）"
+	}
+	return "@未知用户（身份未解析）"
 }
 
 func Matches(m Message, chat Chat, accountID string, c Config) bool {

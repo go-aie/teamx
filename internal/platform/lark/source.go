@@ -123,9 +123,9 @@ func acceptPage(s State, id string, page MessagePage, limits notification.Limits
 			continue
 		}
 		n.Accepted[MessageKey(n.Binding, m)] = route
-		text := "飞书 · " + p.Chat.Name + "\n" + m.Content()
+		text := "飞书 · " + p.Chat.Name + "\n" + m.ContentFor(n.Binding.Account.ID.Value)
 		if wasAccepted {
-			text = "飞书消息变更（关联原消息；不自动重做已完成动作）\n" + m.Content()
+			text = "飞书消息变更（关联原消息；不自动重做已完成动作）\n" + m.ContentFor(n.Binding.Account.ID.Value)
 		}
 		if len(text) > 15<<10 {
 			text = text[:15<<10]

@@ -130,3 +130,23 @@ test("image size syntax supports a following line and ignores invalid attributes
     assert.ok(!/<img[^>]+width=/.test(html), size);
   }
 });
+
+test("Lark images and legacy keys render same-origin previews bound to the exact Inbox entry", () => {
+  const source = {provider:"lark",channel:"messages",reference:{version:2,target:{type:"message"}}};
+  const options = notificationOptions(imageInfo,"operator",source,{seq:9,agent_id:"assistant",membership_id:"member-a"});
+  for (const text of ["![飞书图片](lark-image:img_v3_fixture)\n请分析图片", "image_key: img_v3_fixture\n请分析图片"]) {
+    const html = markdownHTML(text,options);
+    assert.ok(html.includes('<img class="message-image"'));
+    assert.ok(html.includes('class="attachment-preview"'));
+    assert.ok(html.includes('title="查看原图"'));
+    assert.ok(html.includes('target="_blank" rel="noopener noreferrer"'));
+    assert.ok(html.includes("请分析图片"));
+    const src = html.match(/<img[^>]+src="([^"]+)"/)[1].replaceAll("&amp;","&");
+    const query = new URL(src,"http://fixture").searchParams;
+    for (const [key,value] of Object.entries({path:"lark-image:img_v3_fixture",seq:"9",agent_id:"assistant",membership_id:"member-a",room_id:"room-a",service_epoch:"epoch-a"})) assert.equal(query.get(key),value);
+  }
+  for (const path of ["lark-image:img_x?token=secret","lark-image:../img_x","https://evil.invalid/a.png","data:image/png,test"]) assert.equal(options.attachmentURL(path),null);
+  assert.ok(!markdownHTML("![image](lark-image:img_x)").includes("<img"));
+  assert.ok(!markdownHTML("`![image](lark-image:img_x)`",options).includes("<img"));
+  assert.equal(notificationOptions(imageInfo,"operator",{...source,channel:"other"},{seq:1}),undefined);
+});

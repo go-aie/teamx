@@ -10,7 +10,7 @@ import (
 
 	"github.com/go-aie/teamx/internal/agent/dsh"
 	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/gitlab"
+	"github.com/go-aie/teamx/internal/platform/attachment"
 )
 
 // Service policy, independent of notification capacity and frozen model config.
@@ -65,7 +65,7 @@ type materialNotice struct {
 	author  string
 	created time.Time
 	text    string
-	images  gitlab.NotificationImages
+	images  notificationImageReferences
 }
 
 func (n materialNotice) label() string {
@@ -94,7 +94,7 @@ type dshMaterials struct {
 }
 
 type materialAttachments struct {
-	download func(context.Context, attachmentRequest, *attachmentReader, gitlab.UploadLimits) ([]byte, string, *attachmentAccess, error)
+	download func(context.Context, attachmentRequest, *attachmentReader, attachment.ImageLimits) ([]byte, string, *attachmentAccess, error)
 	check    func(context.Context, ServiceInfo, attachmentReader, TurnRecord, []materialNotice, []*attachmentAccess) error
 }
 
@@ -168,10 +168,10 @@ func (s *service) prepareDSHMaterials(ctx context.Context, input UnreadChanged, 
 			}
 			remaining--
 			after = message.Seq
-			if message.Author.Kind != "integration" || message.Source == nil || message.Source.Provider != "gitlab" {
+			if message.Author.Kind != "integration" || message.Source == nil || (message.Source.Provider != "gitlab" && message.Source.Provider != "lark") {
 				continue
 			}
-			found := gitlab.FindNotificationImages(message.Text, *message.Source, gitlab.MaxImageReferences)
+			found := findNotificationImages(message.Text, *message.Source)
 			if found.References == 0 {
 				continue
 			}
@@ -194,14 +194,14 @@ func (s *service) prepareDSHMaterials(ctx context.Context, input UnreadChanged, 
 		entry := page.Entries[0]
 		remaining--
 		after = page.NextAfter
-		if entry.Item.Source.Provider != "gitlab" {
+		if entry.Item.Source.Provider != "gitlab" && entry.Item.Source.Provider != "lark" {
 			continue
 		}
-		found := gitlab.FindNotificationImages(entry.Item.Text, entry.Item.Source, gitlab.MaxImageReferences)
+		found := findNotificationImages(entry.Item.Text, entry.Item.Source)
 		if found.References == 0 {
 			continue
 		}
-		notices = append(notices, materialNotice{request: attachmentRequest{ServiceInfo: s.info, AgentID: input.AgentID, MembershipID: input.MembershipID, Seq: entry.Seq}, source: entry.Item.Source, author: "integration/gitlab (original author in saved text)", created: entry.Item.CreatedAt, text: entry.Item.Text, images: found})
+		notices = append(notices, materialNotice{request: attachmentRequest{ServiceInfo: s.info, AgentID: input.AgentID, MembershipID: input.MembershipID, Seq: entry.Seq}, source: entry.Item.Source, author: "integration/" + entry.Item.Source.Provider + " (original author in saved text)", created: entry.Item.CreatedAt, text: entry.Item.Text, images: found})
 	}
 	if after < turn.InboxSnapshotSeq && remaining == 0 {
 		result.notes = append(result.notes, fmt.Sprintf("Inbox #%d..#%d not scanned: turn scan budget exceeded (%d entries remain).", after+1, turn.InboxSnapshotSeq, turn.InboxSnapshotSeq-after))
@@ -209,8 +209,7 @@ func (s *service) prepareDSHMaterials(ctx context.Context, input UnreadChanged, 
 	reader := attachmentReader{MemberIdentity: input.MemberIdentity, TurnNumber: number}
 	var accesses []*attachmentAccess
 	type imageKey struct {
-		instance, subscription, channel string
-		upload                          gitlab.Upload
+		provider, instance, subscription, channel, identity string
 	}
 	type imageOutcome struct{ label string }
 	seen := map[imageKey]imageOutcome{}
@@ -219,11 +218,11 @@ func (s *service) prepareDSHMaterials(ctx context.Context, input UnreadChanged, 
 		group := materialGroup{notice: notice}
 		for _, candidate := range notice.images.Images {
 			item := materialImage{positions: candidate.Positions}
-			key := imageKey{notice.source.Instance, notice.source.SubscriptionID, notice.source.Channel, candidate.Upload}
+			key := imageKey{notice.source.Provider, notice.source.Instance, notice.source.SubscriptionID, notice.source.Channel, candidate.Identity}
 			previous, duplicate := seen[key]
 			switch {
 			case !candidate.Supported:
-				item.status = "not read: unsupported or incomplete image reference (only this source's GitLab uploads are allowed)"
+				item.status = "not read: unsupported or incomplete image reference (only verified images belonging to this notification are allowed)"
 			case !images:
 				item.status = "not read: current session is text-only"
 			case duplicate:
@@ -237,7 +236,7 @@ func (s *service) prepareDSHMaterials(ctx context.Context, input UnreadChanged, 
 			case s.materialAttachments == nil:
 				item.status = "not read: attachment service unavailable"
 			default:
-				data, mime, access, downloadErr := s.materialAttachments.download(prep, notice.requestWithPath(candidate.Path), &reader, gitlab.UploadLimits{MaxBytes: min(limits.imageBytes, limits.totalBytes-used), MaxPixels: limits.pixels})
+				data, mime, access, downloadErr := s.materialAttachments.download(prep, notice.requestWithPath(candidate.Path), &reader, attachment.ImageLimits{MaxBytes: min(limits.imageBytes, limits.totalBytes-used), MaxPixels: limits.pixels})
 				switch {
 				case downloadErr == nil:
 					count++
@@ -245,9 +244,9 @@ func (s *service) prepareDSHMaterials(ctx context.Context, input UnreadChanged, 
 					item.block = &dsh.ContentBlock{Type: "image", MIMEType: mime, Data: data}
 					item.status = "read: image block supplied below"
 					accesses = append(accesses, access)
-				case errors.Is(downloadErr, gitlab.ErrUploadLimit):
+				case errors.Is(downloadErr, attachment.ErrLimit):
 					item.status = "not read: image byte/pixel or remaining turn byte budget exceeded"
-				case errors.Is(downloadErr, gitlab.ErrUploadFormat):
+				case errors.Is(downloadErr, attachment.ErrFormat):
 					item.status = "not read: invalid image format"
 				case errors.Is(downloadErr, context.DeadlineExceeded), errors.Is(downloadErr, context.Canceled):
 					item.status = "not read: download canceled or preparation timed out"
@@ -312,7 +311,7 @@ func (m *dshMaterials) blocks(base string) []dsh.ContentBlock {
 				prompt = append(prompt, dsh.ContentBlock{Type: "text", Text: fmt.Sprintf("%s: saved text and all %d image references not supplied: prompt text/frame budget exceeded.", n.label(), n.images.References)})
 				continue
 			}
-			header := fmt.Sprintf("Third-party material: %s; author=%q; time=%s; provider=gitlab; channel=%q; project=%q.\nSaved notification text (may be truncated):\n%s\nEnd saved notification text.", n.label(), n.author, n.created.UTC().Format(time.RFC3339Nano), n.source.Channel, n.source.Project, n.text)
+			header := fmt.Sprintf("Third-party material: %s; author=%q; time=%s; provider=%q; channel=%q; project=%q.\nSaved notification text (may be truncated):\n%s\nEnd saved notification text.", n.label(), n.author, n.created.UTC().Format(time.RFC3339Nano), n.source.Provider, n.source.Channel, n.source.Project, n.text)
 			prompt = append(prompt, dsh.ContentBlock{Type: "text", Text: header})
 			for _, item := range group.images {
 				status := fmt.Sprintf("%s image positions %v: %s.", n.label(), item.positions, item.status)

@@ -1,13 +1,7 @@
 package gitlab
 
 import (
-	"bytes"
 	"context"
-	"errors"
-	"image"
-	_ "image/gif"
-	_ "image/jpeg"
-	_ "image/png"
 	"io"
 	"net/http"
 	"net/url"
@@ -17,10 +11,10 @@ import (
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
-	_ "golang.org/x/image/webp"
+	"github.com/go-aie/teamx/internal/platform/attachment"
 )
 
-const MaxUploadBytes = 20 << 20
+const MaxUploadBytes = attachment.MaxBytes
 
 // Upload is a project attachment, never an arbitrary remote URL.
 type Upload struct {
@@ -103,15 +97,12 @@ func DownloadUpload(ctx context.Context, origin string, secret platform.Secret, 
 
 // UploadLimits may tighten the page's byte cap. MaxPixels enables dimension
 // validation for model inputs; zero preserves the page's existing behavior.
-type UploadLimits struct {
-	MaxBytes  int64
-	MaxPixels int64
-}
+type UploadLimits = attachment.ImageLimits
 
 var (
-	ErrUploadUnavailable = errors.New("GitLab attachment unavailable")
-	ErrUploadLimit       = errors.New("GitLab attachment exceeds image limit")
-	ErrUploadFormat      = errors.New("GitLab attachment image format invalid")
+	ErrUploadUnavailable = attachment.ErrUnavailable
+	ErrUploadLimit       = attachment.ErrLimit
+	ErrUploadFormat      = attachment.ErrFormat
 )
 
 func DownloadUploadWithLimits(ctx context.Context, origin string, secret platform.Secret, upload Upload, transport http.RoundTripper, limits UploadLimits) ([]byte, string, error) {
@@ -158,20 +149,9 @@ func DownloadUploadWithLimits(ctx context.Context, origin string, secret platfor
 	if int64(len(data)) > limits.MaxBytes {
 		return nil, "", ErrUploadLimit
 	}
-	mime := http.DetectContentType(data)
-	switch mime {
-	case "image/png", "image/jpeg", "image/gif", "image/webp":
-		if limits.MaxPixels > 0 {
-			config, format, err := image.DecodeConfig(bytes.NewReader(data))
-			if err != nil || "image/"+format != mime || config.Width <= 0 || config.Height <= 0 {
-				return nil, "", ErrUploadFormat
-			}
-			if int64(config.Width) > limits.MaxPixels/int64(config.Height) {
-				return nil, "", ErrUploadLimit
-			}
-		}
-		return data, mime, nil
-	default:
-		return nil, "", ErrUploadFormat
+	mime, err := attachment.ValidateImage(data, limits)
+	if err != nil {
+		return nil, "", err
 	}
+	return data, mime, nil
 }

@@ -391,6 +391,15 @@ h1 {
   display:inline-block;
   margin:8px 0;
 }
+.message-text .attachment-preview {
+  display:inline-block;
+  max-width:100%;
+  cursor:zoom-in;
+}
+.message-text .attachment-preview .message-image {
+  max-height:280px;
+  object-fit:contain;
+}
 .message-text blockquote {
   padding:2px 14px;
   border-left:3px solid #d8e1d6;

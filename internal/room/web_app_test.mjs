@@ -2327,6 +2327,27 @@ test("Room attachment rendering binds the saved integration message and excludes
   assert.equal(ui.el("messages").children.find(el => el.id === "message-2").querySelector(".message-text").markdownOptions, undefined);
 });
 
+test("Lark Inbox preview binds image requests to the saved membership and sequence", async () => {
+  const api = server([makeRoom("A")]);
+  const member = {agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"},execution:{paused:true,agent:{turn_number:0}}};
+  const source = {provider:"lark",channel:"messages",reference:{version:2,target:{type:"message"}}};
+  api.hook = (path) => {
+    if (path === "/v1/member/list") return {members:[member]};
+    if (path === "/v1/member/activity") return {member};
+    if (path === "/v1/member/inbox") return {snapshot_seq:9,next_after:9,has_more:false,status:{latest_seq:9,bytes:100,limits:{bytes:1000}},entries:[{seq:9,item:{source,text:"image_key: img_fixture\n请分析图片"}}]};
+  };
+  const ui = await launch(api);
+  await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();
+  await ui.el("agent-tab-inbox").emit("click");await settle();
+  const options = ui.el("inbox-entries").children[0].children[1].markdownOptions;
+  const query = new URL(options.attachmentURL("lark-image:img_fixture"),"http://fixture").searchParams;
+  assert.equal(query.get("seq"),"9");
+  assert.equal(query.get("agent_id"),member.agent_id);
+  assert.equal(query.get("membership_id"),member.membership_id);
+  assert.equal(query.get("service_epoch"),"epoch-A");
+  assert.equal(api.calls.some(call => /confirm|member\/run/.test(call.path)),false);
+});
+
 test("AN-02.2 policy settings distinguish suggestions, preserve scope and never run members", async()=> {
  const api=server([makeRoom("A")]);
  const member={agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"}};

@@ -5,11 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"reflect"
 	"strconv"
+	"strings"
 
 	"github.com/go-aie/teamx/internal/platform"
+	"github.com/go-aie/teamx/internal/platform/attachment"
 	"github.com/go-aie/teamx/internal/platform/connection"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
+	"github.com/go-aie/teamx/internal/platform/lark"
 	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
@@ -83,7 +87,7 @@ func (m *roomManager) checkAttachmentAccessLocked(ctx context.Context, access *a
 		return err
 	}
 	account, secret, err := m.attachmentAccountLocked(access.request.RoomIdentity, source)
-	if err != nil || account != access.account || secret.Reveal() != access.secret.Reveal() {
+	if err != nil || !reflect.DeepEqual(account, access.account) || secret.Reveal() != access.secret.Reveal() {
 		return ErrConflict
 	}
 	return nil
@@ -92,7 +96,7 @@ func (m *roomManager) checkAttachmentAccessLocked(ctx context.Context, access *a
 // Shared page/model operation: saved-source admission, account resolution,
 // registered cancellation, network outside the gate, and late-result rejection.
 // Models must choose explicit byte and pixel caps; pages retain their own cap.
-func (m *roomManager) downloadAttachment(ctx context.Context, req attachmentRequest, reader *attachmentReader, limits gitlab.UploadLimits) ([]byte, string, *attachmentAccess, error) {
+func (m *roomManager) downloadAttachment(ctx context.Context, req attachmentRequest, reader *attachmentReader, limits attachment.ImageLimits) ([]byte, string, *attachmentAccess, error) {
 	m.mu.Lock()
 	if err := ctx.Err(); err != nil {
 		m.mu.Unlock()
@@ -102,12 +106,17 @@ func (m *roomManager) downloadAttachment(ctx context.Context, req attachmentRequ
 		m.mu.Unlock()
 		return nil, "", nil, ErrBusy
 	}
-	if reader != nil && (limits.MaxBytes <= 0 || limits.MaxBytes > gitlab.MaxUploadBytes || limits.MaxPixels <= 0) {
+	if reader != nil && (limits.MaxBytes <= 0 || limits.MaxBytes > attachment.MaxBytes || limits.MaxPixels <= 0) {
 		m.mu.Unlock()
 		return nil, "", nil, ErrRequest
 	}
 	source, saved, err := m.attachmentSourceLocked(req)
 	upload, found := gitlab.FindUpload(saved, source, req.Path)
+	if source.Provider == "lark" {
+		for _, image := range findNotificationImages(saved, source).Images {
+			found = found || image.Supported && image.Path == req.Path
+		}
+	}
 	if err != nil || !found {
 		m.mu.Unlock()
 		return nil, "", nil, ErrIdentity
@@ -115,8 +124,10 @@ func (m *roomManager) downloadAttachment(ctx context.Context, req attachmentRequ
 	if reader != nil {
 		// The model path accepts image syntax only, unlike manual page preview.
 		found = false
-		for _, image := range gitlab.FindNotificationImages(saved, source, gitlab.MaxImageReferences).Images {
-			if image.Supported && image.Upload == upload {
+		for _, image := range findNotificationImages(saved, source).Images {
+			// GitLab can spell the same upload with different equivalent paths.
+			candidate, valid := gitlab.ParseUpload(image.Path, source)
+			if image.Supported && (image.Path == req.Path || source.Provider == "gitlab" && valid && candidate == upload) {
 				found = true
 				break
 			}
@@ -150,7 +161,19 @@ func (m *roomManager) downloadAttachment(ctx context.Context, req attachmentRequ
 	transport := m.platformHTTP
 	m.mu.Unlock()
 	defer m.finishPlatformCall(call)
-	data, mime, downloadErr := gitlab.DownloadUploadWithLimits(callCtx, account.URL, secret, upload, transport, limits)
+	var data []byte
+	var mime string
+	var downloadErr error
+	if source.Provider == "lark" {
+		client, err := lark.New(*account.CLIProfile)
+		if err != nil {
+			downloadErr = err
+		} else {
+			data, mime, downloadErr = client.Image(callCtx, account.Identity, source, strings.TrimPrefix(req.Path, lark.ImagePrefix), limits)
+		}
+	} else {
+		data, mime, downloadErr = gitlab.DownloadUploadWithLimits(callCtx, account.URL, secret, upload, transport, limits)
+	}
 	m.mu.Lock()
 	checkErr := m.checkAttachmentAccessLocked(callCtx, access)
 	m.mu.Unlock()
@@ -196,7 +219,20 @@ func (m *roomManager) attachmentSourceLocked(req attachmentRequest) (platform.So
 func (m *roomManager) attachmentAccountLocked(owner RoomIdentity, source platform.SourceRef) (connection.Account, platform.Secret, error) {
 	key := notification.Key{Owner: owner, Source: notification.SourceID{Provider: source.Provider, Channel: source.Channel}, SubscriptionID: source.SubscriptionID}
 	state, ok := m.notifications.StateLocked(key)
-	if !ok || source.Provider != "gitlab" {
+	if !ok {
+		return connection.Account{}, platform.Secret{}, ErrIdentity
+	}
+	if s, ok := state.(lark.State); ok {
+		if s.Retired || source.Provider != "lark" || source.Channel != "messages" || source.Instance != s.Binding.Account.Instance || source.Reference.RecipientID != s.Binding.Account.ID || source.Reference.AccountTenant != s.Binding.Account.Tenant {
+			return connection.Account{}, platform.Secret{}, ErrIdentity
+		}
+		account, secret, err := m.resolvePlatformAccountLocked(owner, s.Binding.ConnectionID, "lark")
+		if err != nil || account.CLIProfile == nil || larkBinding(account) != s.Binding {
+			return connection.Account{}, platform.Secret{}, ErrConflict
+		}
+		return account, secret, nil
+	}
+	if source.Provider != "gitlab" {
 		return connection.Account{}, platform.Secret{}, ErrIdentity
 	}
 	var id, generation, origin string
@@ -237,18 +273,18 @@ func (m *roomManager) servePlatformAttachment(w http.ResponseWriter, r *http.Req
 		return
 	}
 	req := attachmentRequest{ServiceInfo: ServiceInfo{RoomIdentity: RoomIdentity{RoomID: q.Get("room_id"), RoomInstance: q.Get("room_instance")}, ServiceEpoch: q.Get("service_epoch")}, AgentID: q.Get("agent_id"), MembershipID: q.Get("membership_id"), Seq: seq, Path: q.Get("path")}
-	data, mime, _, err := m.downloadAttachment(r.Context(), req, nil, gitlab.UploadLimits{})
+	data, mime, _, err := m.downloadAttachment(r.Context(), req, nil, attachment.ImageLimits{})
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			writeAPIError(w, ErrConflict)
 			return
 		}
-		if !errors.Is(err, gitlab.ErrUploadUnavailable) && !errors.Is(err, gitlab.ErrUploadLimit) && !errors.Is(err, gitlab.ErrUploadFormat) {
+		if !errors.Is(err, attachment.ErrUnavailable) && !errors.Is(err, attachment.ErrLimit) && !errors.Is(err, attachment.ErrFormat) {
 			writeAPIError(w, err)
 			return
 		}
 		w.WriteHeader(http.StatusBadGateway)
-		_ = json.NewEncoder(w).Encode(apiError{Code: "attachment_unavailable", Error: "图片加载失败，请检查 GitLab 权限或附件是否仍然存在"})
+		_ = json.NewEncoder(w).Encode(apiError{Code: "attachment_unavailable", Error: "图片加载失败，请检查来源平台权限或附件是否仍然存在"})
 		return
 	}
 	w.Header().Set("Content-Type", mime)

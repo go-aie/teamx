@@ -117,12 +117,17 @@ func (b *limitedBuffer) Write(p []byte) (int, error) {
 // run never returns process errors or stderr text, which can contain private
 // content, authorization links or tokens. Only parsed error categories escape.
 func (c *Client) run(ctx context.Context, args ...string) ([]byte, error) {
+	return c.runInDir(ctx, "", args...)
+}
+
+func (c *Client) runInDir(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	out := &limitedBuffer{limit: maxOutput, cancel: cancel}
 	stderr := &limitedBuffer{limit: 64 << 10, cancel: cancel}
 	argv := append([]string{"--profile", c.profile.Profile}, args...)
 	cmd := exec.CommandContext(ctx, c.profile.Executable, argv...)
+	cmd.Dir = dir
 	for _, k := range []string{"HOME", "USER", "LOGNAME", "PATH", "TMPDIR", "LANG", "LC_ALL", "TZ", "SSL_CERT_FILE", "SSL_CERT_DIR", "HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "all_proxy", "no_proxy"} {
 		if v, ok := os.LookupEnv(k); ok {
 			cmd.Env = append(cmd.Env, k+"="+v)
