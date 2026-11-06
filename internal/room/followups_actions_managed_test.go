@@ -139,7 +139,7 @@ func TestReferenceActionInternalHTTPWithoutCLI(t *testing.T) {
 			t.Cleanup(func() { _ = os.WriteFile(config, saved, 0600) })
 			server := httptest.NewServer(f.m)
 			defer server.Close()
-			payload, _ := json.Marshal(f.action)
+			payload, _ := json.Marshal(agentActionFixture(f.action))
 			var output, stderr bytes.Buffer
 			err = runCLI(context.Background(), []string{"actions", "execute", "--request", string(payload)}, &output, &stderr, cliToolEnv(server.URL, f.svc, f.member))
 			var got referenceActionReceipt

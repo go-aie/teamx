@@ -89,6 +89,30 @@ func TestAgentFollowupReadProjection(t *testing.T) {
 			for k, v := range readViewJSON(t, h.id) {
 				expected[k] = v
 			}
+			eu := expected["unit"].(map[string]any)
+			eu["unit_version"] = eu["revision"]
+			delete(eu, "revision")
+			et := expected["target"].(map[string]any)
+			et["target_ref"] = et["ref"]
+			delete(et, "ref")
+			// Check every retained action field against original evidence independently.
+			expectedActions := []any{}
+			for _, a := range unit.Actions {
+				m := map[string]any{"id": a.Request.ID, "authority": readViewJSON(t, projectActionAuthority(a.Request.Authority)), "retry": readViewJSON(t, a.Spec.Retry), "target_ref": a.Request.TargetRef, "target": readViewJSON(t, a.Target), "account": readViewJSON(t, a.Access.Account), "operation": string(a.Request.Operation), "input": readViewJSON(t, a.Request.Input), "status": a.Status, "attempts": float64(a.Attempts), "updated_at": a.UpdatedAt.Format(time.RFC3339Nano)}
+				if a.Status != "succeeded" && a.Basis != nil {
+					m["basis"] = readViewJSON(t, a.Basis)
+				}
+				if a.PossibleDuplicate {
+					m["possible_duplicate"] = true
+				}
+				if a.Result != nil {
+					m["result"] = readViewJSON(t, a.Result)
+				}
+				expectedActions = append(expectedActions, m)
+			}
+			eu["actions"] = expectedActions
+			expected["complete"] = true
+			expected["details"] = map[string]any{"object_ref": u.ObjectRef, "unit_ref": u.Ref, "turn_number": float64(u.TurnNumber), "omitted": []any{"action execution snapshots"}}
 			assertReadViewEqual(t, original, expected, view)
 		})
 	}
@@ -151,6 +175,23 @@ func TestAgentInboxReadProjection(t *testing.T) {
 			expected := readViewJSON(t, original)
 			for _, e := range expected["entries"].([]any) {
 				removeReadStorageHeader(e.(map[string]any))
+			}
+			sources := expected["sources"].([]any)
+			for _, entry := range expected["entries"].([]any) {
+				e := entry.(map[string]any)
+				for _, source := range sources {
+					if source.(map[string]any)["seq"] == e["seq"] {
+						e["source"] = source
+					}
+				}
+			}
+			delete(expected, "sources")
+			for _, summary := range expected["followups"].([]any) {
+				v := summary.(map[string]any)
+				v["unit_ref"] = v["ref"]
+				delete(v, "ref")
+				v["unit_version"] = v["revision"]
+				delete(v, "revision")
 			}
 			assertReadViewEqual(t, original, expected, view)
 			view.Batch.Receipt = ""
@@ -298,6 +339,7 @@ func TestAgentRoomReadHidesOnlyCLIReceipt(t *testing.T) {
 			}
 			want := readViewJSON(t, page)
 			if agent {
+				delete(want, "revision")
 				delete(want, "read_receipt")
 				delete(want, "expires_at")
 			}

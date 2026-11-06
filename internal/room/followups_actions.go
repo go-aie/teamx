@@ -57,6 +57,9 @@ type referenceActionReceipt struct {
 	Attempts          int                          `json:"attempts"`
 	PossibleDuplicate bool                         `json:"possible_duplicate,omitempty"`
 	Result            *platform.TargetActionResult `json:"result,omitempty"`
+	TargetRef         string                       `json:"target_ref,omitempty"`
+	Target            *platform.TargetIdentity     `json:"target,omitempty"`
+	Account           *platform.AccountIdentity    `json:"account,omitempty"`
 	Policy            *agentPolicyView             `json:"policy,omitempty"`
 }
 
@@ -170,7 +173,11 @@ func (s *Store) referenceReceiptLocked(id MemberIdentity, u followupUnit, a refe
 	if s.executingReferences[a.Request.key(id)] {
 		status = "processing"
 	}
-	return referenceActionReceipt{ID: a.Request.ID, Status: status, UnitVersion: u.Revision, Attempts: a.Attempts, PossibleDuplicate: a.PossibleDuplicate, Result: a.Result}
+	r := referenceActionReceipt{ID: a.Request.ID, Status: status, UnitVersion: u.Revision, Attempts: a.Attempts, PossibleDuplicate: a.PossibleDuplicate, Result: a.Result, TargetRef: a.Request.TargetRef}
+	if a.Result == nil {
+		r.Target, r.Account = &a.Target, &a.Access.Account
+	}
+	return r
 }
 func (s *Store) existingReferenceLocked(id MemberIdentity, u followupUnit, q referenceActionRequest) (*referenceActionReceipt, error) {
 	for _, a := range u.Actions {

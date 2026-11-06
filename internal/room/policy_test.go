@@ -340,7 +340,7 @@ func TestPolicyHTTPCLIAndBrowserPreview(t *testing.T) {
 			t.Fatal(err)
 		}
 		change := PolicyChange{ID: "cli-preference", Revision: 1, Kind: "preference", Status: "suggested", Text: "简短中文回复", SourceSeq: post.Seq, TurnNumber: 1}
-		data, _ := json.Marshal(conversationPolicyChange{Change: change, Mode: "inferred_habit", Basis: "用户本次表达仅支持提出长期建议"})
+		data, _ := json.Marshal(agentPolicyFixture(conversationPolicyChange{Change: change, Mode: "inferred_habit", Basis: "用户本次表达仅支持提出长期建议"}))
 		out.Reset()
 		if err := runCLI(context.Background(), []string{"policy", "update", "--change", string(data)}, &out, &stderr, func(k string) string { return env[k] }); err != nil {
 			t.Fatal(err)
@@ -384,7 +384,7 @@ func TestPolicyHTTPCLIAndBrowserPreview(t *testing.T) {
 
 func TestPolicyNotificationUsesSuppliedAuthority(t *testing.T) {
 	text := dshNotification(UnreadChanged{})
-	for _, part := range []string{"policy read", "completely replaces", "policy_token", "current_turn", "preferences never authorize writes", "Latest explicit restrictions/revocations win", "explicit_long_term", "confirm_suggestion"} {
+	for _, part := range []string{"policy read", "completely replaces", "policy_token", "current_turn", "preferences never authorize writes", "Latest explicit restrictions/revocations win", "type save", "type confirm"} {
 		if !strings.Contains(text, part) {
 			t.Fatalf("missing %q", part)
 		}

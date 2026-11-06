@@ -363,9 +363,9 @@ func readCLI(ctx context.Context, client cliClient, req apiRequest, stdout io.Wr
 		}
 		var output bytes.Buffer
 		if asJSON {
-			view := page
+			var view any = page
 			if req.Caller.Kind == "agent" {
-				view.ReadReceipt, view.ExpiresAt = "", time.Time{}
+				view = projectRoomRead(page)
 			}
 			if err := json.NewEncoder(&output).Encode(view); err != nil {
 				return err

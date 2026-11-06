@@ -453,35 +453,46 @@ func (s *Store) recordFollowupResolution(id MemberIdentity, seq, turn, expected 
 // Opening a native discussion is explicit and idempotent; discovering twenty
 // discussions does not create twenty pending business records.
 func (s *Store) ensureDiscussionFollowup(id MemberIdentity, seq, turn uint64, targetRef string) (followupUnit, error) {
+	u, _, err := s.ensureDiscussionFollowupResult(id, seq, turn, targetRef)
+	return u, err
+}
+
+func (s *Store) ensureDiscussionFollowupResult(id MemberIdentity, seq, turn uint64, targetRef string) (followupUnit, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.checkFollowupsLocked(id, true); err != nil {
-		return followupUnit{}, err
+		return followupUnit{}, false, err
 	}
 	if turn == 0 {
-		return followupUnit{}, invalidField("turn_number", "required positive current_turn")
+		return followupUnit{}, false, invalidField("turn_number", "required positive current_turn")
 	}
 	if _, err := s.runningTurnLocked(id, turn); err != nil {
-		return followupUnit{}, err
+		return followupUnit{}, false, err
 	}
 	e, err := s.inboxEntryLocked(id, seq)
 	if err != nil {
-		return followupUnit{}, err
+		return followupUnit{}, false, err
 	}
 	link, err := s.loadFollowupEventLocked(e)
 	if err != nil {
-		return followupUnit{}, err
+		return followupUnit{}, false, err
 	}
 	if link.TargetRef != targetRef || !link.Resolution.DiscussionVerified {
-		return followupUnit{}, ErrConflict
+		return followupUnit{}, false, ErrConflict
 	}
 	t := verifiedResolutionTarget(link.Resolution)
 	t.Message = platform.ExternalID{}
 	target, err := s.saveTargetLocked(id, t)
 	if err != nil {
-		return followupUnit{}, err
+		return followupUnit{}, false, err
 	}
-	return s.ensureUnitLocked(id, target, turn)
+	_, err = s.loadUnitLocked(id, target.ObjectRef, referenceDigest("unit_", target.Ref))
+	reused := err == nil
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return followupUnit{}, false, err
+	}
+	u, err := s.ensureUnitLocked(id, target, turn)
+	return u, reused, err
 }
 
 type followupUpdate struct {

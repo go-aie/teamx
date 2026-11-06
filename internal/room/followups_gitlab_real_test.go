@@ -269,8 +269,8 @@ func TestReferenceFollowupsRealGitLab(t *testing.T) {
 	if err := svc.store.SaveAgent(AgentSnapshot{Version: formatVersion, MemberIdentity: id, TurnNumber: 1, LastOfferedInboxSeq: count, Turn: &TurnRecord{Number: 1, Status: "running", InboxSnapshotSeq: count}}); err != nil {
 		t.Fatal(err)
 	}
-	var page referenceInboxPage
-	if err := cli([]string{"inbox", "read"}, &page); err != nil || len(page.Followups) != 1 || len(page.Sources) != int(count) {
+	var page agentReferenceInboxPage
+	if err := cli([]string{"inbox", "read"}, &page); err != nil || len(page.Followups) != 1 || len(page.Entries) != int(count) {
 		t.Fatal("reference read failed", err)
 	}
 	u0, err := svc.store.readFollowup(id, page.Followups[0].ObjectRef, page.Followups[0].Ref)
@@ -279,11 +279,15 @@ func TestReferenceFollowupsRealGitLab(t *testing.T) {
 	}
 	units := []followupUnit{u0}
 	if discussion.ID != "" {
-		var thread followupUnit
-		if err := cli([]string{"matters", "ensure", "--seq", "2", "--target", page.Sources[1].TargetRef, "--turn", "1"}, &thread); err != nil {
+		var thread agentFollowupReceipt
+		if err := cli([]string{"matters", "ensure", "--seq", "2", "--target", page.Entries[1].Source.TargetRef, "--turn", "1"}, &thread); err != nil {
 			t.Fatal(err)
 		}
-		units = append(units, thread)
+		stored, err := svc.store.readFollowup(id, thread.ObjectRef, thread.UnitRef)
+		if err != nil {
+			t.Fatal(err)
+		}
+		units = append(units, stored)
 	}
 	var receipts []referenceActionReceipt
 	for i, unit := range units {
@@ -295,20 +299,21 @@ func TestReferenceFollowupsRealGitLab(t *testing.T) {
 			op, exact = platform.OperationDiscussionReply, replyBody
 		}
 		question := followupQuestionChange{followupCommand: conversationCommand(unit, 1), Text: "@human 请确认本次授权的 R6 验收正文：" + exact, Proposed: &followupIntent{Operation: op, Body: exact}}
-		if err := cli(entryChange(t, "matters", "notify", question), &unit); err != nil {
+		var notified agentFollowupReceipt
+		if err := cli(entryChange(t, "matters", "notify", question), &notified); err != nil {
 			t.Fatal(err)
 		}
-		answer, e := svc.room.Call[PostReceipt](ctx, PostMessage{RoomIdentity: id.RoomIdentity, Caller: humanCaller, ClientMessageID: fmt.Sprintf("approved-%d", i), ReplyTo: unit.Questions[0].Seq, Text: "授权在上述准确目标发送这条验收正文。"})
+		answer, e := svc.room.Call[PostReceipt](ctx, PostMessage{RoomIdentity: id.RoomIdentity, Caller: humanCaller, ClientMessageID: fmt.Sprintf("approved-%d", i), ReplyTo: notified.Question.Seq, Text: "授权在上述准确目标发送这条验收正文。"})
 		if e != nil {
 			t.Fatal(e)
 		}
 		var detail struct {
-			Unit followupUnit `json:"unit"`
+			Unit agentFollowupUnit `json:"unit"`
 		}
 		if err := cli([]string{"matters", "read", "--object", unit.ObjectRef, "--unit", unit.Ref, "--turn", "1"}, &detail); err != nil {
 			t.Fatal(err)
 		}
-		unit = detail.Unit
+		unit = followupFixture(detail.Unit)
 		policy, e := svc.store.readAgentPolicy(id)
 		if e != nil {
 			t.Fatal(e)

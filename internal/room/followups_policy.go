@@ -118,6 +118,10 @@ func validatePolicyConversation(r, old PolicyRevision) error {
 func (s *Store) changeConversationPolicy(id MemberIdentity, caller Caller, q conversationPolicyChange) (conversationPolicyResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.changeConversationPolicyLocked(id, caller, q)
+}
+
+func (s *Store) changeConversationPolicyLocked(id MemberIdentity, caller Caller, q conversationPolicyChange) (conversationPolicyResult, error) {
 	if caller != agentCallerIdentity(id) {
 		return conversationPolicyResult{}, ErrIdentity
 	}
@@ -275,4 +279,12 @@ func (s *service) referencePolicyChange(_ context.Context, id MemberIdentity, ca
 		return agentPolicyUpdateResult{}, err
 	} // never report "remembered" before durable save
 	return agentPolicyUpdateResult{agentPolicyView: agentPolicy(view.PolicySnapshot, q.Change.TurnNumber, time.Now()), Record: view.Record}, nil
+}
+
+func (s *service) changeAgentPolicy(_ context.Context, id MemberIdentity, caller Caller, q agentPolicyChange) (agentPolicyUpdateResult, error) {
+	view, err := s.store.changeAgentPolicy(id, caller, q)
+	if err != nil {
+		return agentPolicyUpdateResult{}, agentPolicyDiagnostic(err)
+	}
+	return agentPolicyUpdateResult{agentPolicyView: agentPolicy(view.PolicySnapshot, q.TurnNumber, time.Now()), Record: view.Record}, nil
 }

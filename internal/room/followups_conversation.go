@@ -386,3 +386,53 @@ func (s *service) readFollowupConversation(_ context.Context, id MemberIdentity,
 	}
 	return s.store.readFollowup(id, c.ObjectRef, c.UnitRef)
 }
+
+// Expose the save/publication split even if the public send is uncertain. The
+// saved question and stable ID are recovery evidence, never a success claim.
+func (s *service) notifyAgentFollowup(ctx context.Context, id MemberIdentity, c followupQuestionChange, before followupUnit) (agentFollowupReceipt, error) {
+	u, q, err := s.store.prepareFollowupQuestion(id, c)
+	if err != nil {
+		return agentFollowupReceipt{}, err
+	}
+	result := projectFollowupChange(before, u, c.Revision)
+	questionReused := false
+	for _, old := range before.Questions {
+		if old.Ref == q.Ref {
+			questionReused = true
+			break
+		}
+	}
+	result.Reused = questionReused
+	result.Question = &q
+	result.Publication = "unconfirmed"
+	if q.Seq != 0 {
+		result.Publication = "published"
+		result.SendReceipt = &PostReceipt{RoomIdentity: id.RoomIdentity, Seq: q.Seq, ClientMessageID: q.ClientMessageID}
+		return result, nil
+	}
+	receipt, err := s.room.Call[PostReceipt](ctx, PostMessage{RoomIdentity: id.RoomIdentity, Caller: agentCallerIdentity(id), ClientMessageID: q.ClientMessageID, Text: q.Text, FollowupNotice: true})
+	if err != nil {
+		result.Failure = "Question saved; Room publication failed or is uncertain. Retry the identical request with the same question/ID."
+		result.RequiresRead = true
+		return result, nil
+	}
+	u, err = s.store.finishFollowupQuestion(id, c.followupCommand, q.Ref)
+	if err != nil {
+		result.SendReceipt = &receipt
+		result.Failure = "Room publication confirmed; local question linkage is uncertain. Read matters read or retry the identical request."
+		result.Publication = "published_link_pending"
+		result.RequiresRead = true
+		return result, nil
+	}
+	result = projectFollowupChange(before, u, c.Revision)
+	result.Reused = questionReused
+	for _, saved := range u.Questions {
+		if saved.Ref == q.Ref {
+			result.Question = &saved
+			break
+		}
+	}
+	result.Publication = "published"
+	result.SendReceipt = &receipt
+	return result, nil
+}

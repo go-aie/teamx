@@ -54,7 +54,7 @@ func TestAgentCommandHelpIsScopedAndOffline(t *testing.T) {
 		"matters/read":    {"reply_to", "revision", "unit_version", "registered_actions", "new-ID"},
 		"actions/execute": {"ONE", "answer's message.seq", "never fall back", "at most two", "discussion replies one", "Never retry unknown", "policy_changed"},
 		"inbox/read":      {"Full page output", "Confirmation failure", "business completion"},
-		"policy/update":   {"inferred_habit saves suggested only", "One-off consent", "source_text", "Omission is not a wildcard"},
+		"policy/update":   {"suggest saves suggested only", "One-off consent", "source_text", "Omission is not a wildcard"},
 	} {
 		parts := strings.Split(key, "/")
 		help := referenceHelpText(parts[0], parts[1])
@@ -73,16 +73,16 @@ func TestAgentJSONDiagnosticsDoNotSendMalformedRequests(t *testing.T) {
 	for _, tc := range []struct{ command, op, flag, payload, field, message string }{
 		{"actions", "execute", "--request", `{"input":{"body":42}}`, "input.body", "expected string"},
 		{"actions", "execute", "--request", `{"authority":{"typo":"private-test-secret"}}`, "authority.typo", "unknown JSON field"},
-		{"policy", "update", "--change", `{"change":{"scope":{"account_id":{"typo":"private-test-secret"}}}}`, "change.scope.account_id.typo", "unknown JSON field"},
+		{"policy", "update", "--change", `{"type":"save","body":{"scope":{"account_id":{"typo":"private-test-secret"}}}}`, "body.scope.account_id.typo", "unknown JSON field"},
 		{"matters", "update", "--change", `{"unit_version":"private-test-secret"}`, "unit_version", "expected uint64"},
 		{"matters", "notify", "--change", `{"proposed":{"body":42}}`, "proposed.body", "expected string"},
 		{"matters", "instruct", "--change", `{"intent":{"typo":true}}`, "intent.typo", "unknown JSON field"},
 		{"matters", "reply", "--change", `{"source_seq":`, "", "incomplete JSON"},
 		{"matters", "update", "--change", `{"status":!}`, "", "invalid character"},
-		{"policy", "update", "--change", `{} {}`, "", "exactly one JSON"},
+		{"policy", "update", "--change", `{"type":"save","body":{}} {}`, "", "exactly one JSON"},
 		{"matters", "instruction-status", "--change", ``, "", "missing JSON"},
 		{"matters", "instruct", "--change", `{"expires_at":"private-test-secret"}`, "expires_at", "RFC3339"},
-		{"policy", "update", "--change", `{"change":{"expires_at":"private-test-secret"}}`, "change.expires_at", "RFC3339"},
+		{"policy", "update", "--change", `{"type":"save","body":{"expires_at":"private-test-secret"}}`, "body.expires_at", "RFC3339"},
 	} {
 		t.Run(tc.command+"/"+tc.op+"/"+tc.message, func(t *testing.T) {
 			var stdout bytes.Buffer
@@ -121,9 +121,9 @@ func TestAgentVersionDiagnosticsRespectMemberGateAndKeepState(t *testing.T) {
 	h, svc, units, _ := conversationHarness(t, 1)
 	svc.requests = make(chan struct{}, 32)
 	u := units[0]
-	q := followupRequest{followupCommand: conversationCommand(u, 1), Status: "in_progress", Summary: "test"}
+	q := agentProgressChange{followupCommand: conversationCommand(u, 1), Status: "in_progress", Summary: "test"}
 	q.Revision = u.Revision + 1
-	req := apiRequest{ServiceInfo: svc.info, Caller: agentCallerIdentity(h.id), Followup: &q}
+	req := apiRequest{ServiceInfo: svc.info, Caller: agentCallerIdentity(h.id), Progress: &q}
 	status, failure := diagnosticHTTP(t, svc, req, "/v1/matters/update")
 	if status != 409 || failure.Code != "conflict" || failure.Field != "unit_version" || failure.ExpectedVersion == nil || *failure.ExpectedVersion != q.Revision || failure.ActualVersion == nil || *failure.ActualVersion != u.Revision || failure.Hint == "" {
 		t.Fatal(status, failure)
@@ -226,7 +226,7 @@ func TestAPIDiagnosticsDoNotEchoPrivateErrors(t *testing.T) {
 	}
 }
 
-func TestAgentHelpDoesNotTightenIgnoredFlagParsing(t *testing.T) {
+func TestAgentCLIRejectsIrrelevantFlags(t *testing.T) {
 	var calls atomic.Int32
 	var got apiRequest
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -239,8 +239,8 @@ func TestAgentHelpDoesNotTightenIgnoredFlagParsing(t *testing.T) {
 	defer server.Close()
 	env := map[string]string{"TEAMX_ENDPOINT": server.URL, "TEAMX_ROOM_ID": "room", "TEAMX_ROOM_INSTANCE": "instance", "TEAMX_SERVICE_EPOCH": "epoch", "TEAMX_AGENT_ID": "agent", "TEAMX_MEMBERSHIP_ID": "membership"}
 	err := runCLI(context.Background(), []string{"matters", "list", "--target", "ignored", "--version", "7", "--peek"}, io.Discard, io.Discard, func(k string) string { return env[k] })
-	if err != nil || calls.Load() != 1 || got.Followup == nil || got.Followup.TargetRef != "ignored" || got.Followup.Version != 7 {
-		t.Fatal("previously accepted flags changed", got, err)
+	if !errors.Is(err, ErrRequest) || calls.Load() != 0 {
+		t.Fatal("irrelevant flags reached HTTP", got, err)
 	}
 }
 

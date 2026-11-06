@@ -55,7 +55,10 @@ func decodeRequestJSON(payload string, target any) error {
 		var typeErr *json.UnmarshalTypeError
 		var syntaxErr *json.SyntaxError
 		var timestampErr *time.ParseError
+		var authored *requestDiagnostic
 		switch {
+		case errors.As(err, &authored):
+			return err
 		case errors.As(err, &typeErr):
 			return invalidField(typeErr.Field, fmt.Sprintf("expected %s at byte %d", typeErr.Type, typeErr.Offset))
 		case errors.As(err, &syntaxErr):

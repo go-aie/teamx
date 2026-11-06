@@ -23,9 +23,24 @@ func (m *roomManager) serveActionExecute(w http.ResponseWriter, r *http.Request)
 		writeAPIError(w, ErrRequest)
 		return
 	}
-	result, err := m.executeReferenceAction(r.Context(), req, *req.ReferenceAction)
+	// Admit the binding before reading any member-scoped target evidence.
+	m.mu.Lock()
+	err := m.checkToolMemberLocked(r.Context(), toolsRequest{ServiceInfo: req.ServiceInfo, Caller: req.Caller})
+	svc, _ := m.runtimeServiceLocked(req.RoomIdentity)
+	m.mu.Unlock()
 	if err != nil {
 		writeAPIError(w, err)
+		return
+	}
+	id := MemberIdentity{RoomIdentity: req.RoomIdentity, AgentID: req.Caller.ID, MembershipID: req.Caller.MembershipID}
+	action, err := svc.store.agentAction(id, *req.ReferenceAction)
+	if err != nil {
+		writeAPIError(w, err)
+		return
+	}
+	result, err := m.executeReferenceAction(r.Context(), req, action)
+	if err != nil {
+		writeAPIError(w, agentActionDiagnostic(err))
 		return
 	}
 	_ = json.NewEncoder(w).Encode(result)

@@ -17,9 +17,9 @@ func TestAgentPolicyUpdateSavedRecordAndReplay(t *testing.T) {
 	cli := entryCLI(t, svc)
 	source := postConversationReply(t, h, "suggest", "这次请用简短中文回复", 0)
 	q := conversationPolicyChange{Change: PolicyChange{ID: "language", Kind: "preference", Status: "suggested", Text: "简短中文回复\n保留必要限制", SourceSeq: source.Seq, TurnNumber: 1}, Mode: "inferred_habit", Basis: "本次偏好只支持建议"}
-	update := func(q conversationPolicyChange) agentPolicyUpdateResult {
+	update := func(q conversationPolicyChange) agentPolicyUpdateWireTest {
 		t.Helper()
-		var got agentPolicyUpdateResult
+		var got agentPolicyUpdateWireTest
 		if err := cli(entryChange(t, "policy", "update", q), &got); err != nil {
 			t.Fatal(err)
 		}
@@ -34,7 +34,7 @@ func TestAgentPolicyUpdateSavedRecordAndReplay(t *testing.T) {
 				saved = r
 			}
 		}
-		if saved.Version == 0 || !reflect.DeepEqual(got.Record, saved) {
+		if saved.Version == 0 || !reflect.DeepEqual(got.Record, projectPolicyRecord(saved)) {
 			t.Fatalf("receipt must contain the exact persisted revision: %+v / %+v", got.Record, saved)
 		}
 		// Removing the sole approved addition restores the complete old Agent view.
@@ -175,7 +175,7 @@ func TestAgentFollowupListVerifiedDisplayIsAdditive(t *testing.T) {
 		if cursor != "" {
 			args = append(args, "--cursor", cursor)
 		}
-		var got followupPage
+		var got agentFollowupPage
 		if err := cli(args, &got); err != nil {
 			t.Fatal(err)
 		}
@@ -183,10 +183,14 @@ func TestAgentFollowupListVerifiedDisplayIsAdditive(t *testing.T) {
 			t.Fatal(got)
 		}
 		item := got.Items[0]
-		if seen[item.Ref] {
+		key := item.Ref
+		if key == "" {
+			key = item.SourceRef
+		}
+		if seen[key] {
 			t.Fatal("duplicate page item")
 		}
-		seen[item.Ref] = true
+		seen[key] = true
 		if item.Kind == "unresolved_source" {
 			if item.ObjectLabel != "" || item.ObjectURL != "" || item.TargetRef != "" {
 				t.Fatal("unverified display promoted", item)
@@ -196,6 +200,10 @@ func TestAgentFollowupListVerifiedDisplayIsAdditive(t *testing.T) {
 				t.Fatal("missing verified display", item)
 			}
 			actual := readViewJSON(t, item)
+			actual["ref"] = actual["unit_ref"]
+			delete(actual, "unit_ref")
+			actual["revision"] = actual["unit_version"]
+			delete(actual, "unit_version")
 			delete(actual, "object_label")
 			delete(actual, "object_url")
 			// Existing object aggregation remains intact and is separately asserted.
@@ -226,7 +234,7 @@ func TestAgentFollowupListVerifiedDisplayIsAdditive(t *testing.T) {
 	}
 	reloadConversation(t, h)
 	cli = entryCLI(t, referenceTestService(h))
-	var restored followupPage
+	var restored agentFollowupPage
 	if err := cli([]string{"matters", "list", "--object", page.Followups[0].ObjectRef}, &restored); err != nil || restored.Total != 3 {
 		t.Fatal(restored, err)
 	}
@@ -269,4 +277,10 @@ func TestAgentFollowupListMissingDisplayDoesNotGuess(t *testing.T) {
 	if _, err := h.store.listFollowups(other, followupQuery{Limit: 25}); !errors.Is(err, ErrIdentity) {
 		t.Fatal("cross-room list accepted", err)
 	}
+}
+
+type agentPolicyUpdateWireTest struct {
+	policyContext
+	Effective []agentPolicyRecord `json:"effective"`
+	Record    agentPolicyRecord   `json:"record"`
 }

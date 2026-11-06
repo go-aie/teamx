@@ -35,12 +35,12 @@ TeamX 结构化写入可用 `actions execute --request-file PATH` 或 `matters u
 ## 个人待办、讨论与 WorkItem
 
 1. 从通知识别实例、接收账号、项目和对象，读取远端最新正文及完整讨论。直接用户任务也可处理，无需伪造 subscription_id/item_key。不能只凭 `/work_items/` 网页路径推断 API 类型；使用当前对象查询与帮助判断 Issue 或通用 WorkItem。
-2. `inbox read` 由系统解析身份并返回去重对象引用；用 `matters list/read` 恢复持久进展和问答，用 `matters sources/source` 查看原始来源、核实结果和阻塞原因。`matters list` 的可选 `object_label` 是带命名空间的已核实原生别名，`object_url` 是已核实对象 URL；均来自已保存证据，不替代稳定引用或原生讨论目标，缺失不猜测，不把 REST ID 当 IID。仅独立处理确切讨论时用 `matters ensure` 建立原生讨论单元；失败来源可显式 `matters resolve`，不轮询、不手工 enrich/relate、不维护语义事项图。原生正文仍需工具按需分页读取；部分结果／权限失败／未找到不等于不存在。已有 Inbox 跟进的讨论回复使用 `actions execute` 的 `discussion.reply`，提交已核实 target_ref，不降级普通评论。
-   `matters read`／`inbox read` 在顶层保留绑定成员身份，省略嵌套存储头；业务版本和动作访问证据保留。读取收据由 CLI 内部确认，分页覆盖范围保留；确认失败表示消费不确定，错误带恢复信息，`--peek` 不消费。
+2. `inbox read` 由系统解析身份并返回去重对象引用；用 `matters list/read` 恢复持久进展和问答，用 `matters sources/source` 查看原始来源、核实结果和阻塞原因。`matters list` 的可选 `object_label` 是带命名空间的已核实原生别名，`object_url` 是已核实对象 URL；均来自已保存证据，不替代稳定引用或原生讨论目标，缺失不猜测，不把 REST ID 当 IID。仅独立处理确切讨论时用 `matters ensure` 建立原生讨论单元；失败来源可显式 `matters resolve`，不轮询、不手工 enrich/relate、不维护语义事项图。原生正文仍需工具按需分页读取；部分结果／权限失败／未找到不等于不存在。已有 Inbox 跟进的讨论回复使用 `actions execute` 的 `discussion.reply`，使用带 type 的授权；target_ref 由不可变单元唯一恢复，不在 execute 重交，不降级普通评论。
+   `matters read`／`inbox read` 在顶层保留绑定成员身份，省略嵌套存储头；业务版本、完整问答／指令关系和全部动作的目标、账号、正文与结果保留；重复执行快照可由同参数 `matters read --detail` 补读。单元统一使用 unit_ref／unit_version，未解析摘要使用 source_ref／source_version；Inbox 解析结果位于各 entries[].source。原生定位、命名空间和映射可沿 source_page 使用 matters sources/source 补读，不从标签猜测 IID。读取收据由 CLI 内部确认，分页覆盖范围保留；确认失败表示消费不确定，错误带恢复信息，`--peek` 不消费。
 3. MR/Issue 优先使用原生命令。通用 WorkItem 用 `work-items view`、`work-items discussions list`、`work-items note` 等扩展；Issue 完整讨论用 `issue discussions`。扩展自行处理分页；原生命令有分页时继续读取，不能把第一页当全部上下文。讨论回复使用已核实的真实讨论 ID。
 4. 普通回复针对已核实问题，先核查已有评论，避免重复。关闭、删除或改指派人依照用户具体决定。通过帮助选择 Issue 原生命令或 WorkItem 扩展；add/remove 保留其他人，replace 替换全部，clear 明确清空。数字用户 ID 必须来自同实例已核实查询，不按显示名猜测。
 5. 仅在业务问题已处理并核实后完成确切个人待办。通过 `todo list` 或显式实例的 API 查询核对待办 ID、接收账号和目标；不能从通知 item_key 猜测待办 ID，不批量清空。todo 已 done 不证明业务已解决。
-6. 已有跟进缺少关键决定时，用 `matters notify` 保存准确问题及拟议动作，在 Room @ 本回合操作者。普通 human 答复在 `matters read` 自动关联显式回复，无引用时只用 `matters reply` 关联明确上下文；跨回合指令按需保存，不要求 UI 再次确认。明确长期指令用 `policy update` 直接生效；习惯仅作建议并确认准确版本。更新回执 `record` 包含实际保存的 ID/version/status/text 和来源（含 suggested/revoked），新建议可直接用 record.id/version 发布；复用旧请求返回原保存记录及当前有效规则上下文，不能据此认定旧记录仍生效。命令目录见 `matters --help`，具体参数与约束见 `matters <子命令> --help`、`actions execute --help` 和 `policy update --help`。不要把待办接收账号当作 Room 操作者。
+6. 已有跟进缺少关键决定时，用 `matters notify` 保存准确问题及拟议动作，在 Room @ 本回合操作者。普通 human 答复在 `matters read` 自动关联显式回复，无引用时只用 `matters reply` 关联明确上下文；跨回合指令按需保存，不要求 UI 再次确认。明确长期指令用 `policy update` 的 type:save（完整 body）直接生效；习惯用 type:suggest，仅作建议。type:confirm（版本、proposal_seq、真实答复）和 type:revoke（版本、真实来源）不提交正文／范围，由服务端恢复已保存记录。完整来源可用 policy read --id ID --detail 补读。更新回执 `record` 包含实际保存的 ID/version/status/text 和来源（含 suggested/revoked），新建议可直接用 record.id/version 发布；复用旧请求返回原保存记录及当前有效规则上下文，不能据此认定旧记录仍生效。命令目录见 `matters --help`，具体参数与约束见 `matters <子命令> --help`、`actions execute --help` 和 `policy update --help`。不要把待办接收账号当作 Room 操作者。
 
 ## 输出与不确定结果
 
@@ -51,3 +51,5 @@ TeamX 结构化写入可用 `actions execute --request-file PATH` 或 `matters u
 `actions execute` 最终返回 `unknown`，或未适配写入发生超时、中断、传输断开及响应不确定时，保存目标、动作、时间、分支/版本及可用返回标识，报告结果未确认，按需只读查询远端评论、对象或 MR。不能自动重发、切换后端、生成新 ID 绕过未知结果，也不能以对象查询 404 单独证明删除成功。无法确认时说明未知并等待进一步决定。
 
 公开消息通过 `"$TEAMX_CLI" send`，使用稳定消息 ID；普通模型输出私有。重复通知不授权重复外部写入。只报告实际完成或核实的结果，不把计划和草稿写成完成。
+
+跟进写回执含 unit_version、changed、reused、requires_read；requires_read=true 必须重读，不能把旧快照直接换版本。notify 区分 question 已保存与 publication/send_receipt 已确认，发送未确认沿用同问题和 ID。instruction-status 使用 instruction_ref/instruction_version。actions execute 的 authority 类型三选一：rule {id,version,reason}、instruction {id,version,reason,constraints?}、human_reply {room_seq,reason,question_ref?,message_refs?,constraints?}，均带 type。旧授权字段与各子命令无关参数会拒绝。

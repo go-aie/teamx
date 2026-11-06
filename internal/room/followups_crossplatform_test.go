@@ -144,13 +144,13 @@ func TestReferenceCrossPlatformManagedChain(t *testing.T) {
 	if err := svc.store.SaveAgent(AgentSnapshot{Version: formatVersion, MemberIdentity: id, TurnNumber: 1, LastOfferedInboxSeq: 3, Turn: &TurnRecord{Number: 1, Status: "running", InboxSnapshotSeq: 3}}); err != nil {
 		t.Fatal(err)
 	}
-	var page referenceInboxPage
-	if err := cli([]string{"inbox", "read"}, &page); err != nil || len(page.Followups) != 1 || len(page.Sources) != 3 {
+	var page agentReferenceInboxPage
+	if err := cli([]string{"inbox", "read"}, &page); err != nil || len(page.Followups) != 1 || len(page.Entries) != 3 {
 		t.Fatal(page, err)
 	}
 	var detail struct {
-		Unit    followupUnit          `json:"unit"`
-		Target  storedTarget          `json:"target"`
+		Unit    agentFollowupUnit     `json:"unit"`
+		Target  agentStoredTarget     `json:"target"`
 		Actions []platform.ActionSpec `json:"registered_actions"`
 	}
 	summary := page.Followups[0]
@@ -158,19 +158,20 @@ func TestReferenceCrossPlatformManagedChain(t *testing.T) {
 	if err := cli(read, &detail); err != nil || len(detail.Target.Target.Containers) != 0 || len(detail.Actions) != 1 || detail.Target.Target.Message.Valid() {
 		t.Fatal(detail, err)
 	}
-	u := detail.Unit
-	q := followupQuestionChange{followupCommand: conversationCommand(u, 1), Text: "@human 本次回复准确正文：已收到。可以吗？", MessageRefs: []string{page.Sources[0].TargetRef}, Proposed: &followupIntent{Operation: platform.OperationObjectComment, Body: "已收到"}}
-	if err := cli(entryChange(t, "matters", "notify", q), &u); err != nil {
+	u := followupFixture(detail.Unit)
+	q := followupQuestionChange{followupCommand: conversationCommand(u, 1), Text: "@human 本次回复准确正文：已收到。可以吗？", MessageRefs: []string{page.Entries[0].Source.TargetRef}, Proposed: &followupIntent{Operation: platform.OperationObjectComment, Body: "已收到"}}
+	var notified agentFollowupReceipt
+	if err := cli(entryChange(t, "matters", "notify", q), &notified); err != nil {
 		t.Fatal(err)
 	}
-	answer, err := svc.room.Call[PostReceipt](context.Background(), PostMessage{RoomIdentity: id.RoomIdentity, Caller: humanCaller, ClientMessageID: "contract-answer", ReplyTo: u.Questions[0].Seq, Text: "可以，就这样回复"})
+	answer, err := svc.room.Call[PostReceipt](context.Background(), PostMessage{RoomIdentity: id.RoomIdentity, Caller: humanCaller, ClientMessageID: "contract-answer", ReplyTo: notified.Question.Seq, Text: "可以，就这样回复"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := cli(read, &detail); err != nil || len(detail.Unit.Questions[0].Answers) != 1 {
 		t.Fatal(detail, err)
 	}
-	u = detail.Unit
+	u = followupFixture(detail.Unit)
 	policy, err := svc.store.readAgentPolicy(id)
 	if err != nil {
 		t.Fatal(err)
@@ -208,9 +209,10 @@ func TestReferenceCrossPlatformManagedChain(t *testing.T) {
 	if err := cli(read, &detail); err != nil {
 		t.Fatal(err)
 	}
-	before := detail.Unit
-	// Agent reads omit the verified storage header; human management keeps it.
-	before.followupHeader = followupHeader{Version: followupSchema, MemberIdentity: id}
+	before, err := svc.store.readFollowup(id, u.ObjectRef, u.Ref)
+	if err != nil {
+		t.Fatal(err)
+	}
 	// Close/reopen Store and service: identity and original human evidence survive.
 	if err := svc.close(context.Background()); err != nil {
 		t.Fatal(err)
@@ -228,7 +230,8 @@ func TestReferenceCrossPlatformManagedChain(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, _ := json.Marshal(got)
-	if json.Unmarshal(b, &detail) != nil || !reflect.DeepEqual(before, detail.Unit) {
+	var humanDetail followupReadResult
+	if json.Unmarshal(b, &humanDetail) != nil || !reflect.DeepEqual(before, humanDetail.Unit) {
 		t.Fatal("recovery changed evidence")
 	}
 	if detail.Unit.Questions[0].Answers[0].Message.Text != "可以，就这样回复" {

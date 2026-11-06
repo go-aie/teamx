@@ -25,10 +25,24 @@ func (s *service) memberPolicy(ctx context.Context, req apiRequest, operation st
 				}
 				for _, record := range view.Current {
 					if record.ID == req.Followup.ID {
+						if req.Followup.Detail {
+							history := []PolicyRevision{}
+							for _, r := range view.History {
+								if r.ID == record.ID {
+									history = append(history, r)
+								}
+							}
+							return struct {
+								Revision uint64           `json:"revision"`
+								Record   PolicyRevision   `json:"record"`
+								History  []PolicyRevision `json:"history"`
+								Complete bool             `json:"complete"`
+							}{view.Revision, record, history, true}, nil
+						}
 						return struct {
-							Revision uint64         `json:"revision"`
-							Record   PolicyRevision `json:"record"`
-						}{view.Revision, record}, nil
+							Revision uint64            `json:"revision"`
+							Record   agentPolicyRecord `json:"record"`
+						}{view.Revision, projectPolicyRecord(record)}, nil
 					}
 				}
 				return nil, ErrRequest
@@ -44,7 +58,7 @@ func (s *service) memberPolicy(ctx context.Context, req apiRequest, operation st
 			if err := s.store.initReferenceFollowups(id); err != nil {
 				return nil, err
 			}
-			return s.referencePolicyChange(ctx, id, req.Caller, *req.ConversationPolicy)
+			return s.changeAgentPolicy(ctx, id, req.Caller, *req.ConversationPolicy)
 		}
 		if req.Policy == nil {
 			return nil, ErrRequest

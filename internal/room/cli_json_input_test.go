@@ -16,13 +16,13 @@ import (
 )
 
 var jsonInputCommands = []struct{ command, op, payload string }{
-	{"actions", "execute", `{"object_ref":"ref_o","unit_ref":"unit_u","unit_version":3,"turn_number":2,"target_ref":"ref_t","id":"stable","policy_token":"token","authority":{"room_seq":18,"reason":"准确依据"},"operation":"object.comment","input":{"body":"中文\n\"quotes\" \\ $HOME $(literal) '"}}`},
-	{"policy", "update", `{"change":{"id":"style","revision":2,"version":1,"kind":"preference","status":"active","text":"中文\n\"quotes\" \\ $HOME $(literal) '","source_seq":18,"turn_number":2},"mode":"explicit_long_term","basis":"明确长期指令"}`},
+	{"actions", "execute", `{"object_ref":"ref_o","unit_ref":"unit_u","unit_version":3,"turn_number":2,"id":"stable","policy_token":"token","authority":{"type":"human_reply","room_seq":18,"reason":"准确依据"},"operation":"object.comment","input":{"body":"中文\n\"quotes\" \\ $HOME $(literal) '"}}`},
+	{"policy", "update", `{"type":"save","id":"style","revision":2,"version":1,"body":{"kind":"preference","text":"中文\n\"quotes\" \\ $HOME $(literal) '","scope":{}},"source_seq":18,"turn_number":2,"basis":"明确长期指令"}`},
 	{"matters", "update", `{"object_ref":"ref_o","unit_ref":"unit_u","unit_version":3,"turn_number":2,"status":"in_progress","summary":"中文\n\"quotes\" \\ $HOME $(literal) '"}`},
 	{"matters", "notify", `{"object_ref":"ref_o","unit_ref":"unit_u","unit_version":3,"turn_number":2,"text":"@operator 请确认\n准确问题","proposed":{"operation":"object.comment","body":"准确正文"}}`},
 	{"matters", "reply", `{"object_ref":"ref_o","unit_ref":"unit_u","unit_version":3,"turn_number":2,"question_ref":"question_q","source_seq":18,"basis":"准确答复"}`},
 	{"matters", "instruct", `{"object_ref":"ref_o","unit_ref":"unit_u","unit_version":3,"turn_number":2,"source_seq":18,"intent":{"operation":"object.comment","body":"准确正文"},"basis":"准确指令","expires_at":"2026-11-07T00:00:00Z"}`},
-	{"matters", "instruction-status", `{"object_ref":"ref_o","unit_ref":"unit_u","unit_version":3,"turn_number":2,"id":"instruction_i","version":1,"status":"revoked","source_seq":18,"evidence":"用户撤销"}`},
+	{"matters", "instruction-status", `{"object_ref":"ref_o","unit_ref":"unit_u","unit_version":3,"turn_number":2,"instruction_ref":"instruction_i","instruction_version":1,"status":"revoked","source_seq":18,"evidence":"用户撤销"}`},
 }
 
 func jsonInputArgs(t *testing.T, command, op, payload, mode string) ([]string, io.Reader) {
@@ -174,7 +174,7 @@ func TestAgentJSONInputManagedActionReplayAndLimits(t *testing.T) {
 			for _, size := range []int{4097, 65 << 10} {
 				bad := f.action
 				bad.Input.Body = strings.Repeat("x", size)
-				payload, _ := json.Marshal(bad)
+				payload, _ := json.Marshal(agentActionFixture(bad))
 				var expected string
 				for _, mode := range []string{"inline", "file", "stdin"} {
 					args, stdin := jsonInputArgs(t, "actions", "execute", string(payload), mode)
@@ -190,7 +190,7 @@ func TestAgentJSONInputManagedActionReplayAndLimits(t *testing.T) {
 					}
 				}
 			}
-			payload, _ := json.Marshal(f.action)
+			payload, _ := json.Marshal(agentActionFixture(f.action))
 			var expected bytes.Buffer
 			for _, mode := range []string{"inline", "file", "stdin"} {
 				args, stdin := jsonInputArgs(t, "actions", "execute", string(payload), mode)

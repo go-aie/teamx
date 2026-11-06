@@ -41,6 +41,7 @@ func runReferenceCLI(ctx context.Context, command string, args []string, stdin i
 	f.Uint64Var(&q.Seq, "seq", 0, "source Inbox sequence")
 	f.Uint64Var(&q.TurnNumber, "turn", 0, "current_turn")
 	f.StringVar(&q.Cursor, "cursor", "", "query-scoped continuation")
+	f.BoolVar(&q.Detail, "detail", false, "include execution or policy source details")
 	f.BoolVar(&q.IncludeCompleted, "include-completed", false, "include completed history")
 	f.StringVar(&q.ID, "id", "", "policy key")
 	f.Uint64Var(&q.Version, "version", 0, "expected policy version")
@@ -56,6 +57,17 @@ func runReferenceCLI(ctx context.Context, command string, args []string, stdin i
 	if f.NArg() != 0 {
 		return invalidField("arguments", "unexpected positional arguments; use --help")
 	}
+	provided := map[string]bool{}
+	f.Visit(func(f *flag.Flag) { provided[f.Name] = true })
+	supported := referenceCLIFlags(command, op)
+	for name := range provided {
+		if !strings.Contains(" "+supported+" ", " "+name+" ") {
+			return invalidField("--"+name, "not supported by this subcommand; use --help")
+		}
+	}
+	if q.Detail && command == "policy" && q.ID == "" {
+		return invalidField("--detail", "requires --id")
+	}
 	if *limit < 1 || *limit > 25 {
 		return invalidField("limit", "must be between 1 and 25")
 	}
@@ -65,11 +77,19 @@ func runReferenceCLI(ctx context.Context, command string, args []string, stdin i
 	}
 	var req apiRequest
 	req.Followup = &q
-	req.Limit, req.After, req.TurnNumber = *limit, after, q.TurnNumber
+	req.TurnNumber = q.TurnNumber
+	switch command + "/" + op {
+	case "inbox/read", "matters/list":
+		req.Limit = *limit
+	case "matters/sources":
+		req.Limit, req.After = *limit, after
+	}
 	var target any
+	var progress agentProgressChange
+	var instructionStatus agentInstructionStatusChange
 	switch command + "/" + op {
 	case "actions/execute":
-		req.ReferenceAction = &referenceActionRequest{}
+		req.ReferenceAction = &agentActionRequest{}
 		target = req.ReferenceAction
 	case "matters/notify":
 		req.Question = &followupQuestionChange{}
@@ -81,12 +101,19 @@ func runReferenceCLI(ctx context.Context, command string, args []string, stdin i
 		req.Instruction = &followupInstructionChange{}
 		target = req.Instruction
 	case "policy/update":
-		req.ConversationPolicy = &conversationPolicyChange{}
+		req.ConversationPolicy = &agentPolicyChange{}
 		target = req.ConversationPolicy
-	case "matters/update", "matters/instruction-status":
-		target = &q
+	case "matters/update":
+		req.Progress = &progress
+		req.Followup = nil
+		target = &progress
+	case "matters/instruction-status":
+		req.InstructionStatus = &instructionStatus
+		req.Followup = nil
+		target = &instructionStatus
 	}
 	if target != nil {
+		req.Followup = nil
 		provided := map[string]bool{}
 		f.Visit(func(f *flag.Flag) { provided[f.Name] = true })
 		if provided[payloadName] && provided[payloadName+"-file"] {
@@ -149,4 +176,16 @@ func runReferenceCLI(ctx context.Context, command string, args []string, stdin i
 		}
 		req.TurnNumber = page.Batch.TurnNumber
 	}
+}
+
+func referenceCLIFlags(command, op string) string {
+	common := "endpoint json"
+	if name := referencePayloadFlag(command, op); name != "" {
+		return common + " " + name + " " + name + "-file"
+	}
+	return common + " " + map[string]string{
+		"inbox/read": "limit peek", "matters/list": "object cursor include-completed limit", "matters/read": "object unit turn detail",
+		"matters/sources": "object after limit", "matters/source": "seq source", "matters/resolve": "seq source turn", "matters/ensure": "seq target turn",
+		"policy/read": "id detail", "policy/publish": "id version turn",
+	}[command+"/"+op]
 }

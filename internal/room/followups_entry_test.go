@@ -33,6 +33,19 @@ func entryCLI(t *testing.T, svc *service) func([]string, any) error {
 }
 func entryChange(t *testing.T, command, op string, q any) []string {
 	t.Helper()
+	switch v := q.(type) {
+	case referenceActionRequest:
+		q = agentActionFixture(v)
+	case conversationPolicyChange:
+		q = agentPolicyFixture(v)
+	case followupRequest:
+		if op == "update" {
+			q = agentProgressChange{v.followupCommand, v.Status, v.Summary, v.Next, v.Evidence}
+		}
+		if op == "instruction-status" {
+			q = agentInstructionStatusChange{v.followupCommand, v.ID, v.Version, v.Status, v.Evidence, v.SourceSeq}
+		}
+	}
 	data, err := json.Marshal(q)
 	if err != nil {
 		t.Fatal(err)
@@ -48,11 +61,11 @@ func TestReferenceEntryCLIConversationAndRecovery(t *testing.T) {
 	svc := referenceTestService(h)
 	svc.referenceResolver = referenceTestResolver
 	cli := entryCLI(t, svc)
-	var inbox referenceInboxPage
+	var inbox agentReferenceInboxPage
 	if err := cli([]string{"inbox", "read"}, &inbox); err != nil {
 		t.Fatal(err)
 	}
-	if len(inbox.Followups) != 1 || len(inbox.Sources) != 1 {
+	if len(inbox.Followups) != 1 || len(inbox.Entries) != 1 {
 		t.Fatal(inbox)
 	}
 	status := inboxCall[InboxStatus](t, h, InspectInbox{h.id})
@@ -64,26 +77,27 @@ func TestReferenceEntryCLIConversationAndRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	question := followupQuestionChange{followupCommand: conversationCommand(u, 1), Text: "这次按方案 A 回复，可以吗？"}
-	if err := cli(entryChange(t, "matters", "notify", question), &u); err != nil {
+	var notified agentFollowupReceipt
+	if err := cli(entryChange(t, "matters", "notify", question), &notified); err != nil {
 		t.Fatal(err)
 	}
-	if len(u.Questions) != 1 || u.Questions[0].Seq == 0 {
+	if notified.Question == nil || notified.Question.Seq == 0 || notified.Publication != "published" || notified.SendReceipt == nil {
 		t.Fatal(u)
 	}
 	// A lost response keeps the old request version and reconciles one public send.
-	if err := cli(entryChange(t, "matters", "notify", question), &u); err != nil {
+	if err := cli(entryChange(t, "matters", "notify", question), &notified); err != nil {
 		t.Fatal(err)
 	}
-	answer := postConversationReply(t, h, "entry-answer", "这次按方案 A 回复", u.Questions[0].Seq)
+	answer := postConversationReply(t, h, "entry-answer", "这次按方案 A 回复", notified.Question.Seq)
 	var detail struct {
-		Unit   followupUnit `json:"unit"`
-		Target storedTarget `json:"target"`
+		Unit   agentFollowupUnit `json:"unit"`
+		Target agentStoredTarget `json:"target"`
 	}
 	read := []string{"matters", "read", "--object", u.ObjectRef, "--unit", u.Ref, "--turn", "1"}
 	if err := cli(read, &detail); err != nil {
 		t.Fatalf("read %v failed: %v; unit=%+v; answer=%+v", read, err, u, answer)
 	}
-	u = detail.Unit
+	u = followupFixture(detail.Unit)
 	if len(u.Questions[0].Answers) != 1 || u.Questions[0].Answers[0].Message.Seq != answer.Seq || u.Status != "pending" {
 		t.Fatal(u)
 	}
@@ -217,7 +231,7 @@ func TestReferenceEntryRegisteredActionsRespectNativeType(t *testing.T) {
 				return specs
 			}
 			cli := entryCLI(t, svc)
-			var inbox referenceInboxPage
+			var inbox agentReferenceInboxPage
 			if err := cli([]string{"inbox", "read"}, &inbox); err != nil {
 				t.Fatal(err)
 			}
@@ -245,4 +259,28 @@ func TestReferenceEntryRegisteredActionsRespectNativeType(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Build the current Agent wire inputs from existing durable-evidence fixtures.
+func agentActionFixture(q referenceActionRequest) agentActionRequest {
+	return agentActionRequest{followupCommand: q.followupCommand, ID: q.ID, PolicyToken: q.PolicyToken, Authority: projectActionAuthority(q.Authority), Operation: q.Operation, Input: q.Input}
+}
+func agentPolicyFixture(q conversationPolicyChange) agentPolicyChange {
+	c := q.Change
+	v := agentPolicyChange{Type: "save", ID: c.ID, Version: c.Version, Revision: c.Revision, TurnNumber: c.TurnNumber, SourceSeq: c.SourceSeq, Basis: q.Basis, ProposalSeq: q.ProposalSeq}
+	switch {
+	case q.Mode == "inferred_habit":
+		v.Type = "suggest"
+	case q.Mode == "confirm_suggestion":
+		v.Type = "confirm"
+	case c.Status == "revoked":
+		v.Type = "revoke"
+	}
+	if v.Type == "save" || v.Type == "suggest" {
+		v.Body = &agentPolicyBody{c.Kind, c.Text, c.Scope, c.ExpiresAt}
+	}
+	return v
+}
+func followupFixture(u agentFollowupUnit) followupUnit {
+	return followupUnit{Ref: u.Ref, ObjectRef: u.ObjectRef, TargetRef: u.TargetRef, Revision: u.Revision, Status: u.Status, Summary: u.Summary, Next: u.Next, Evidence: u.Evidence, TurnNumber: u.TurnNumber, UpdatedAt: u.UpdatedAt, Questions: u.Questions, Instructions: u.Instructions}
 }
