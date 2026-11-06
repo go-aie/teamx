@@ -304,8 +304,8 @@ func TestReferenceCrossPlatformIdentityAndFailure(t *testing.T) {
 	}
 }
 
-func TestReferenceCrossPlatformNativeRuleScopes(t *testing.T) {
-	for _, mode := range []string{"exact", "tenant", "account-namespace", "account-id", "label-without-tenant", "containers", "unspecified-containers"} {
+func TestReferenceCrossPlatformRuleKeepsNativeExecutionChecks(t *testing.T) {
+	for _, mode := range []string{"exact", "tenant", "account-namespace", "account-id", "native-id", "containers"} {
 		t.Run(mode, func(t *testing.T) {
 			h := newInboxHarness(t, InboxLimits{})
 			initReferenceTest(t, h)
@@ -327,46 +327,33 @@ func TestReferenceCrossPlatformNativeRuleScopes(t *testing.T) {
 				t.Fatal(err)
 			}
 			human := postConversationReply(t, h, "standing", "以后当前租户、当前账号的无父容器 Conversation 验收收件任务直接回复“R6 已收到”，其他任务不适用", 0)
-			scope := PolicyScope{Provider: source.Provider, Instance: source.Instance, AccountID: access.Account.ID, Tenant: access.Account.Tenant, NoContainers: true, ObjectType: "Conversation"}
-			switch mode {
-			case "tenant":
-				scope.Tenant.Value = "other-tenant"
-			case "account-namespace":
-				scope.AccountID.Namespace = "another:account"
-			case "account-id":
-				scope.AccountID.Value = "another-account"
-			case "label-without-tenant":
-				scope.AccountID, scope.Tenant, scope.Account = platform.ExternalID{}, platform.ExternalID{}, "alice"
-			case "containers":
-				scope.NoContainers = false
-				scope.Project = "made-up-project"
-			case "unspecified-containers":
-				scope.NoContainers = false
-			}
-			change := conversationPolicyChange{Change: PolicyChange{ID: "native-rule", Kind: "rule", Status: "active", Text: "仅验收收件任务，核对账号和目标后评论准确正文 R6 已收到；所有其他任务不适用", Scope: scope, SourceSeq: human.Seq, TurnNumber: 1}, Mode: "explicit_long_term", Basis: "用户明确的准确租户账号范围长期指令"}
+			change := conversationPolicyChange{Change: PolicyChange{ID: "native-rule", Status: "active", Text: "仅验收收件任务，核对账号和目标后评论准确正文 R6 已收到；所有其他任务不适用", SourceSeq: human.Seq, TurnNumber: 1}, Mode: "explicit_long_term", Basis: "用户明确的准确租户账号范围长期指令"}
 			view, err := svc.referencePolicyChange(h.ctx, h.id, agentCallerIdentity(h.id), change)
-			if mode == "unspecified-containers" {
-				if err == nil {
-					t.Fatal("omission became wildcard")
-				}
-				return
-			}
 			if err != nil {
 				t.Fatal(err)
 			}
 			q := referenceActionRequest{followupCommand: conversationCommand(u, 1), TargetRef: u.TargetRef, ID: "native-rule-action", PolicyToken: view.PolicyToken, Authority: referenceActionAuthority{RuleID: "native-rule", RuleVersion: 1, Reason: "本次为准确范围的验收收件任务"}, Operation: platform.OperationObjectComment, Input: CommentInput{Body: "R6 已收到"}}
 			prepare := func(ctx context.Context, _ MemberIdentity, old platform.AccessContext) (referenceActionSession, error) {
 				caps := a.capabilities()
-				if mode == "label-without-tenant" {
-					cap := caps.Actions[platform.OperationObjectComment]
-					inspect := cap.Inspect
-					cap.Inspect = func(ctx context.Context, q platform.TargetActionRequest, access platform.AccessContext) (platform.TargetActionInspection, error) {
-						i, err := inspect(ctx, q, access)
-						i.AccountLabel = "alice"
-						return i, err
+				cap := caps.Actions[platform.OperationObjectComment]
+				inspect := cap.Inspect
+				cap.Inspect = func(ctx context.Context, q platform.TargetActionRequest, access platform.AccessContext) (platform.TargetActionInspection, error) {
+					i, err := inspect(ctx, q, access)
+					switch mode {
+					case "tenant":
+						i.Account.Tenant.Value = "other-tenant"
+					case "account-namespace":
+						i.Account.ID.Namespace = "another:account"
+					case "account-id":
+						i.Account.ID.Value = "another-account"
+					case "native-id":
+						i.Target.Object.ID.Value = "another-object"
+					case "containers":
+						i.Target.Containers = []platform.NativeIdentity{{Type: "Workspace", ID: platform.ExternalID{Namespace: "contract:workspace", Value: "other"}}}
 					}
-					caps.Actions[platform.OperationObjectComment] = cap
+					return i, err
 				}
+				caps.Actions[platform.OperationObjectComment] = cap
 				return referenceActionSession{Access: old, Capabilities: caps, Check: func(ctx context.Context) error { return ctx.Err() }, Close: func() {}}, nil
 			}
 			got, err := svc.executeReferenceAction(h.ctx, h.id, q, prepare)
@@ -375,7 +362,7 @@ func TestReferenceCrossPlatformNativeRuleScopes(t *testing.T) {
 					t.Fatal(got, err)
 				}
 			} else if err == nil || a.sends != 0 {
-				t.Fatal("wrong rule scope dispatched", got, err)
+				t.Fatal("mismatched native identity dispatched", got, err)
 			}
 		})
 	}

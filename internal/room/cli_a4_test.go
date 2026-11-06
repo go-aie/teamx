@@ -16,7 +16,7 @@ func TestAgentPolicyUpdateSavedRecordAndReplay(t *testing.T) {
 	h, svc, _, _ := conversationHarness(t, 1)
 	cli := entryCLI(t, svc)
 	source := postConversationReply(t, h, "suggest", "这次请用简短中文回复", 0)
-	q := conversationPolicyChange{Change: PolicyChange{ID: "language", Kind: "preference", Status: "suggested", Text: "简短中文回复\n保留必要限制", SourceSeq: source.Seq, TurnNumber: 1}, Mode: "inferred_habit", Basis: "本次偏好只支持建议"}
+	q := conversationPolicyChange{Change: PolicyChange{ID: "language", Status: "suggested", Text: "简短中文回复\n保留必要限制", SourceSeq: source.Seq, TurnNumber: 1}, Mode: "inferred_habit", Basis: "本次偏好只支持建议"}
 	update := func(q conversationPolicyChange) agentPolicyUpdateWireTest {
 		t.Helper()
 		var got agentPolicyUpdateWireTest
@@ -283,4 +283,45 @@ type agentPolicyUpdateWireTest struct {
 	policyContext
 	Effective []agentPolicyRecord `json:"effective"`
 	Record    agentPolicyRecord   `json:"record"`
+}
+
+// Exercise the normal Room maintenance path through CLI/HTTP and real human
+// messages. This checks durable receipts, not the model's semantic judgment.
+func TestAgentPolicyRoomSaveCorrectRevoke(t *testing.T) {
+	h, svc, _, _ := conversationHarness(t, 1)
+	cli := entryCLI(t, svc)
+	q := agentPolicyChange{Type: "save", ID: "error-contacts", TurnNumber: 1, Basis: "上下文明确指向 AgenticHub 报错处理约定", Body: &agentPolicyBody{Text: "AgenticHub 的这类报错，优先建议找 hongwei 和 luojun"}}
+	var priorToken string
+	for i, human := range []string{"记住，AgenticHub 这类报错优先找 hongwei 和 luojun", "改一下，这类报错先建议找 hongwei，联系前问我", "撤销这条报错处理约定"} {
+		q.SourceSeq = postConversationReply(t, h, fmt.Sprintf("rule-maintenance-%d", i), human, 0).Seq
+		q.Version, q.Revision = uint64(i), uint64(i)
+		if i == 1 {
+			q.Body = &agentPolicyBody{Text: "AgenticHub 的这类报错先建议找 hongwei，联系前问我"}
+			q.Basis = "用户明确纠正原处理约定并增加联系前询问的限制"
+		}
+		if i == 2 {
+			q.Type, q.Body, q.Basis = "revoke", nil, "用户明确撤销这条规则"
+		}
+		var got agentPolicyUpdateWireTest
+		if err := cli(entryChange(t, "policy", "update", q), &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.Record.Version != uint64(i+1) || got.Record.Source.Text != human || got.Record.Conversation.Basis != q.Basis || got.PolicyToken == priorToken {
+			t.Fatal("receipt lost exact version, human evidence, interpretation or updated token", got)
+		}
+		if i < 2 && (got.Record.Status != "active" || len(got.Effective) != 1) || i == 2 && (got.Record.Status != "revoked" || len(got.Effective) != 0) {
+			t.Fatal(got)
+		}
+		priorToken = got.PolicyToken
+	}
+	var detail struct {
+		Record  PolicyRevision   `json:"record"`
+		History []PolicyRevision `json:"history"`
+	}
+	if err := cli([]string{"policy", "read", "--id", q.ID, "--detail"}, &detail); err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.History) != 3 || detail.Record.Version != 3 || detail.Record.Status != "revoked" || !strings.Contains(detail.Record.Text, "联系前问我") {
+		t.Fatal("revoke did not preserve the corrected body", detail)
+	}
 }

@@ -3,7 +3,6 @@ package room
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"reflect"
 	"time"
 )
@@ -51,30 +50,11 @@ func policyConversationDigest(q conversationPolicyChange) string {
 }
 
 func samePolicyBody(a, b PolicyRevision) bool {
-	a, b = naturalPolicy(a), naturalPolicy(b)
-	return a.Kind == b.Kind && a.Text == b.Text && a.Scope == b.Scope && a.Actions == b.Actions && a.Conditions == b.Conditions && a.Exceptions == b.Exceptions && reflect.DeepEqual(a.ExpiresAt, b.ExpiresAt)
+	return a.Text == b.Text && reflect.DeepEqual(a.ExpiresAt, b.ExpiresAt)
 }
 
 func policySuggestionText(r PolicyRevision) string {
-	text := fmt.Sprintf("建议今后采用以下%s：\n%s", map[string]string{"rule": "规则", "preference": "偏好"}[r.Kind], r.Text)
-	// Preserve exact historical proposal receipts; new records have no description.
-	if r.Scope.Description != "" {
-		text += "\n适用范围：" + r.Scope.Description
-	}
-	for _, field := range [][2]string{{"平台", r.Scope.Provider}, {"实例", r.Scope.Instance}, {"账号", r.Scope.Account}, {"项目", r.Scope.Project}, {"对象类型", r.Scope.ObjectType}, {"允许动作", r.Actions}, {"条件", r.Conditions}, {"例外", r.Exceptions}} {
-		if field[1] != "" {
-			text += "\n" + field[0] + "：" + field[1]
-		}
-	}
-	if r.Scope.AccountID.Valid() {
-		text += "\n原生账号：" + r.Scope.AccountID.Namespace + ":" + r.Scope.AccountID.Value
-		if r.Scope.Tenant.Valid() {
-			text += "\n租户：" + r.Scope.Tenant.Namespace + ":" + r.Scope.Tenant.Value
-		}
-	}
-	if r.Scope.NoContainers {
-		text += "\n容器范围：仅无父容器的对象"
-	}
+	text := "建议今后采用以下长期规则：\n" + r.Text
 	if r.ExpiresAt != nil {
 		text += "\n有效期至：" + r.ExpiresAt.UTC().Format(time.RFC3339Nano)
 	}
@@ -136,10 +116,7 @@ func (s *Store) changeConversationPolicyLocked(id MemberIdentity, caller Caller,
 		return conversationPolicyResult{}, prefixDiagnostic(err, "change.")
 	}
 	if !validPolicyChange(c) {
-		return conversationPolicyResult{}, policyChangeDiagnostic(c)
-	}
-	if c.Kind == "decision" {
-		return conversationPolicyResult{}, invalidField("change.kind", "must be rule or preference")
+		return conversationPolicyResult{}, invalidField("change.text", "required nonempty UTF-8 text, at most 32768 bytes")
 	}
 	if c.SourceSeq == 0 {
 		return conversationPolicyResult{}, invalidField("change.source_seq", "required real human Room message sequence")
@@ -172,9 +149,6 @@ func (s *Store) changeConversationPolicyLocked(id MemberIdentity, caller Caller,
 	if old.Version != c.Version {
 		return conversationPolicyResult{}, versionConflict("change.version", c.Version, old.Version, "Read policy read --id ID and reassess the exact record.")
 	}
-	if old.Version != 0 && old.Kind != c.Kind {
-		return conversationPolicyResult{}, invalidField("change.kind", "cannot change the kind of an existing record")
-	}
 	if len(p.History) >= maxPolicyRevisions {
 		return conversationPolicyResult{}, ErrCapacity
 	}
@@ -192,7 +166,7 @@ func (s *Store) changeConversationPolicyLocked(id MemberIdentity, caller Caller,
 	if old.Version != 0 && old.Source.Seq != 0 && message.Seq <= old.Source.Seq {
 		return conversationPolicyResult{}, conflictReason("change.source_seq", "human evidence is not newer than the saved record", "Read policy read --id ID and use the actual new human instruction.")
 	}
-	r := PolicyRevision{ID: c.ID, Version: c.Version + 1, Kind: c.Kind, Status: c.Status, Text: c.Text, Scope: c.Scope, ExpiresAt: c.ExpiresAt,
+	r := PolicyRevision{ID: c.ID, Version: c.Version + 1, Status: c.Status, Text: c.Text, ExpiresAt: c.ExpiresAt,
 		Source: PolicySource{User: message.Author.ID, Seq: message.Seq, Text: message.Text}, ChangedBy: caller.Author, UpdatedAt: time.Now().UTC(),
 		Conversation: &policyConversationEvidence{Mode: q.Mode, Basis: q.Basis, RequestDigest: digest, Message: message}}
 	if q.Mode == "confirm_suggestion" {
@@ -205,22 +179,13 @@ func (s *Store) changeConversationPolicyLocked(id MemberIdentity, caller Caller,
 		return conversationPolicyResult{}, invalidField("proposal_seq", "only supported with confirm_suggestion")
 	}
 	if !validPolicyRevision(r) {
-		return conversationPolicyResult{}, invalidField("change", "invalid record ID/kind/status/text/scope/expiry; see policy update --help")
+		return conversationPolicyResult{}, invalidField("change", "invalid record ID/status/text/expiry; see policy update --help")
 	}
 	if validatePolicyConversation(r, old) != nil {
 		if q.Mode == "inferred_habit" && old.Version != 0 && old.Status != "suggested" {
 			return conversationPolicyResult{}, invalidField("mode", "suggest can only create or amend a suggested record; use save with a real new lasting instruction to amend an active/revoked record")
 		}
 		return conversationPolicyResult{}, invalidField("mode", "mode/status or suggestion confirmation does not match the saved record and real human evidence; see policy update --help")
-	}
-	// Exact duplicate scope must amend its existing rule. This is a deterministic
-	// guard, not a claim to detect semantic overlap or resolve conflicting rules.
-	if old.Version == 0 && r.Kind == "rule" {
-		for _, v := range policyCurrent(p.History) {
-			if v.Kind == r.Kind && v.Status != "revoked" && naturalPolicy(v).Scope == r.Scope {
-				return conversationPolicyResult{}, conflictReason("change.scope", "a non-revoked rule already has this exact scope", "Read policy read and amend the existing rule/version rather than creating a duplicate.")
-			}
-		}
 	}
 	p.History = append(p.History, r)
 	p.Revision++

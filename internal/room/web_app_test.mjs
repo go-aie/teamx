@@ -2405,7 +2405,7 @@ test("Lark Inbox preview binds image requests to the saved membership and sequen
   assert.equal(api.calls.some(call => /confirm|member\/run/.test(call.path)),false);
 });
 
-test("AN-02.2 policy settings distinguish suggestions, preserve scope and never run members", async()=> {
+test("natural-language policy settings distinguish suggestions and never run members", async()=> {
  const api=server([makeRoom("A")]);
  const member={agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"}};
  let history=[],revision=0;
@@ -2428,35 +2428,41 @@ test("AN-02.2 policy settings distinguish suggestions, preserve scope and never 
  await ui.el("policy-entries").children[0].children[0].children[1].children[0].emit("click");await ui.el("policy-form").emit("submit");await settle();
  assert.match(elementText(ui.el("policy-entries").children[0].children[0]),/有效/);
  const change=api.calls.filter(c=>c.path==="/v1/policy/update").at(-1).data.policy;
- assert.equal(change.version,1);assert.equal(change.kind,"preference");assert.equal(change.actions,undefined);
+ assert.equal(change.version,1);for(const key of ["kind","scope","scope_from","actions","conditions","exceptions"])assert.equal(Object.hasOwn(change,key),false);
  await ui.el("policy-entries").children[0].children[0].children[1].children[1].emit("click");await settle();
  assert.match(elementText(ui.el("policy-entries").children[0].children[0]),/已撤销/);
  assert.equal(history.length,3);assert.equal(api.calls.some(c=>/member\/run|inbox\/confirm/.test(c.path)),false);
 });
 
-test("R6 native rule editing preserves exact tenant/account and no-container scope",async()=>{
+test("long-term rule editing preserves expiry and separates source from interpretation",async()=>{
  const api=server([makeRoom("A")]);
  const member={agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"}};
- const scope={provider:"contract",instance:"contract://work",object_type:"Conversation",account_id:{namespace:"contract:account",value:"alice"},tenant:{namespace:"contract:tenant",value:"blue"},no_containers:true};
- const record={id:"native",version:1,kind:"rule",status:"active",text:"核对目标后准确回复；其他任务先询问",scope,source:{user:"tester",text:"以后直接回复"},changed_by:{kind:"human",id:"tester"},updated_at:"2026-11-05T01:00:00Z"};
+ const record={id:"contacts",version:1,status:"active",text:"AgenticHub 的这类报错，优先建议找 hongwei 和 luojun",expires_at:"2099-01-01T00:00:00Z",source:{user:"tester",seq:18,text:"记住这类报错优先找 hongwei 和 luojun"},conversation:{basis:"上下文明确指向 AgenticHub 报错处理约定"},changed_by:{kind:"agent",id:"assistant"},updated_at:"2026-11-06T01:00:00Z"};
  api.hook=(path,data)=>{
   if(path==="/v1/member/list")return {members:[member]};
   if(path==="/v1/member/activity")return {member};
   if(path==="/v1/policy/read")return {revision:1,history:[record],current:[record],effective:[record]};
-  if(path==="/v1/matters/list")return {items:[],total:0,complete:true};
   if(path==="/v1/policy/update")return {};
  };
  const ui=await launch(api);await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();await ui.el("agent-tab-policy").emit("click");await settle();
- assert.match(elementText(ui.el("policy-entries").children[0].children[2]),/contract:account:alice[\s\S]*contract:tenant:blue[\s\S]*无父容器/);
+ const card=ui.el("policy-entries").children[0];
+ assert.match(elementText(card),/有效期至/);
+ assert.match(elementText(card.children[3]),/Room 消息 #18.*来源用户 tester/s);
+ assert.match(elementText(card.children[3]),/原始来源.*记住这类报错.*Agent 理解：上下文明确/s);
+ await card.children[0].children[1].children[0].emit("click");
+ assert.equal(ui.el("policy-editor-title").textContent,"修改长期规则");
+ assert.equal(ui.el("policy-text").value,record.text);
+ ui.el("policy-text").value="AgenticHub 这类报错先建议找 hongwei；联系前询问我";await ui.el("policy-form").emit("submit");await settle();
+ let change=api.calls.filter(c=>c.path==="/v1/policy/update").at(-1).data.policy;
+ assert.equal(new Date(change.expires_at).getTime(),new Date(record.expires_at).getTime());assert.equal(change.version,1);
+ for(const key of ["kind","scope","scope_from","actions","conditions","exceptions","conversation"])assert.equal(Object.hasOwn(change,key),false);
  await ui.el("policy-entries").children[0].children[0].children[1].children[0].emit("click");
- assert.equal(ui.el("policy-connection").value,"saved");assert.equal(ui.el("policy-project").readOnly,true);
- ui.el("policy-text").value="纠正后的准确回复";await ui.el("policy-form").emit("submit");await settle();
- const change=api.calls.filter(c=>c.path==="/v1/policy/update").at(-1).data.policy;
- assert.deepEqual(change.scope,scope);assert.equal(change.text,"纠正后的准确回复");assert.equal(change.scope.account,undefined);assert.equal(change.scope.project,undefined);
- assert.equal(api.calls.some(c=>/member\/run|actions\/execute|inbox\/confirm/.test(c.path)),false);
+ ui.el("policy-expires").value="";await ui.el("policy-form").emit("submit");await settle();
+ change=api.calls.filter(c=>c.path==="/v1/policy/update").at(-1).data.policy;assert.equal(Object.hasOwn(change,"expires_at"),false);
+ assert.equal(api.calls.some(c=>/member\/run|actions\/execute|inbox\/confirm|matters\/list/.test(c.path)),false);
 });
 
-test("policy rules use one natural body and verified connection identity without split prose",async()=>{
+test("long-term rules save without type, platform connection or project fields",async()=>{
  const api=server([makeRoom("A")]);
  const member={agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"}};
  api.hook=(path,data)=>{
@@ -2466,61 +2472,17 @@ test("policy rules use one natural body and verified connection identity without
   if(path==="/v1/policy/update")return {};
  };
  const ui=await launch(api);await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();
- await ui.el("agent-tab-policy").emit("click");await ui.el("policy-new").emit("click");await settle();
- ui.el("policy-kind").value="rule";await ui.el("policy-kind").emit("change");
- assert.equal(ui.el("policy-connection").value,"a".repeat(32));
- assert.match(ui.el("policy-connection-hint").textContent,/gitlab.invalid.*alice/);
- ui.el("policy-text").value="项目的使用问题核实现行文档后直接回复；涉及交付时间先问我。";
- ui.el("policy-project").value="*";await ui.el("policy-form").emit("submit");
- assert.equal(api.calls.filter(c=>c.path==="/v1/policy/update").length,0);
- ui.el("policy-project").value="group/project";await ui.el("policy-form").emit("submit");await settle();
+ await ui.el("agent-tab-policy").emit("click");
+ const before=api.calls.filter(c=>c.path.startsWith("/v1/platform/connections")).length;
+ await ui.el("policy-new").emit("click");await settle();
+ for(const id of ["policy-kind","policy-rule-fields","policy-connection","policy-project","policy-object-type"])assert.equal(ui.el(id),undefined);
+ ui.el("policy-text").value="项目 A 的使用问题核实现行文档后直接回复；涉及交付时间先问我。";
+ await ui.el("policy-form").emit("submit");await settle();
  const change=api.calls.find(c=>c.path==="/v1/policy/update").data.policy;
- assert.equal(change.text,"项目的使用问题核实现行文档后直接回复；涉及交付时间先问我。");
- assert.deepEqual(change.scope,{provider:"gitlab",instance:"https://gitlab.invalid",account:"alice",project:"group/project"});
- for(const key of ["actions","conditions","exceptions"])assert.equal(Object.hasOwn(change,key),false);
- assert.equal(Object.hasOwn(change.scope,"description"),false);
+ assert.equal(change.text,"项目 A 的使用问题核实现行文档后直接回复；涉及交付时间先问我。");
+ for(const key of ["kind","scope","scope_from","actions","conditions","exceptions"])assert.equal(Object.hasOwn(change,key),false);
+ assert.equal(api.calls.filter(c=>c.path.startsWith("/v1/platform/connections")).length,before);
  assert.equal(api.calls.some(c=>/actions\/execute|member\/run/.test(c.path)),false);
-});
-
-test("policy connection choices do not guess between accounts and clear projects when changed",async()=>{
- const api=server([makeRoom("A")]);
- const member={agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"}};
- const connection=(id,name,status="valid")=>({id,name,provider:"gitlab",url:"https://gitlab.invalid",validation:{status,username:name}});
- api.hook=(path,data)=>{
-  if(path==="/v1/member/list")return {members:[member]};
-  if(path==="/v1/member/activity")return {member};
-  if(path==="/v1/policy/read")return {revision:0,history:[],current:[],effective:[]};
-  if(path.startsWith("/v1/platform/connections?"))return {connections:[connection("a","alice"),connection("b","bob"),connection("c","unverified","invalid")]};
-  if(path==="/v1/policy/update")return {};
- };
- const ui=await launch(api);await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();
- await ui.el("agent-tab-policy").emit("click");await ui.el("policy-new").emit("click");await settle();
- ui.el("policy-kind").value="rule";await ui.el("policy-kind").emit("change");
- assert.equal(ui.el("policy-connection").value,"");assert.equal(ui.el("policy-connection").options.length,3);
- ui.el("policy-text").value="有文档依据的使用问题直接回复。";
- ui.el("policy-project").value="group/old";await ui.el("policy-form").emit("submit");
- assert.equal(api.calls.filter(c=>c.path==="/v1/policy/update").length,0);
- ui.el("policy-connection").value="b";await ui.el("policy-connection").emit("change");
- assert.equal(ui.el("policy-project").value,"");
- ui.el("policy-project").value="group/new";await ui.el("policy-form").emit("submit");await settle();
- assert.equal(api.calls.find(c=>c.path==="/v1/policy/update").data.policy.scope.account,"bob");
-});
-
-test("late policy connection responses cannot enter a different Room editor",async()=>{
- const api=server([makeRoom("A"),makeRoom("B")]);
- const member={agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"}};
- let finish;
- api.hook=(path,data)=>{
-  if(path==="/v1/member/list")return {members:[member]};
-  if(path==="/v1/member/activity")return {member};
-  if(path==="/v1/policy/read")return {revision:0,history:[],current:[],effective:[]};
-  if(path.startsWith("/v1/platform/connections?"))return new Promise(resolve=>{finish=resolve;});
- };
- const ui=await launch(api);await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();
- await ui.el("agent-tab-policy").emit("click");await ui.el("policy-new").emit("click");await settle();
- await ui.select("B");
- finish({connections:[{id:"late",name:"late-A",provider:"gitlab",url:"https://late.invalid",validation:{status:"valid",username:"alice"}}]});await settle();
- assert.equal(ui.el("policy-connection").options.some(o=>o.value==="late"),false);
 });
 
 test("AN-02.2 lost saves require a fresh version and late reads cannot cross rooms",async()=>{
@@ -2616,7 +2578,7 @@ test("followup inspection ignores a closed panel's response and resets on tab re
   }
  };
  const ui=await launch(api);await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();await ui.el("agent-tab-policy").emit("click");await settle();
- assert.match(elementText(ui.el("policy-entries")),/尚未保存偏好或规则/);assert.equal(listCalls,0);
+ assert.match(elementText(ui.el("policy-entries")),/尚未保存长期规则/);assert.equal(listCalls,0);
  await expandDisclosure(ui.el("policy-followups"));
  ui.el("policy-followups").open=false;await ui.el("policy-followups").emit("toggle");finish();await settle();
  assert.equal(ui.el("policy-matters").children.length,0);assert.equal(ui.el("followups-status").textContent,"");

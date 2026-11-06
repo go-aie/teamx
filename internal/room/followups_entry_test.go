@@ -277,7 +277,7 @@ func agentPolicyFixture(q conversationPolicyChange) agentPolicyChange {
 		v.Type = "revoke"
 	}
 	if v.Type == "save" || v.Type == "suggest" {
-		v.Body = &agentPolicyBody{c.Kind, c.Text, c.Scope, c.ExpiresAt}
+		v.Body = &agentPolicyBody{Text: c.Text, ExpiresAt: c.ExpiresAt}
 	}
 	return v
 }

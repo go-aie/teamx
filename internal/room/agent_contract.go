@@ -10,7 +10,7 @@ import (
 )
 
 // Agent inputs are deliberately distinct from persisted action/policy evidence.
-// Old field combinations fail strict decoding; storage keeps its original schema.
+// Removed field combinations fail strict decoding.
 type agentActionAuthority struct {
 	Type        string   `json:"type"`
 	ID          string   `json:"id,omitempty"`
@@ -84,29 +84,20 @@ func (s *Store) agentAction(id MemberIdentity, q agentActionRequest) (referenceA
 }
 
 type agentPolicyBody struct {
-	Kind      string      `json:"kind"`
-	Text      string      `json:"text"`
-	Scope     PolicyScope `json:"scope,omitzero"`
-	ExpiresAt *time.Time  `json:"expires_at,omitempty"`
-}
-
-type agentPolicyScopeFrom struct {
-	ObjectRef string `json:"object_ref"`
-	UnitRef   string `json:"unit_ref"`
-	Level     string `json:"level"` // project or no_containers
+	Text      string     `json:"text"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
 type agentPolicyChange struct {
-	Type        string                `json:"type"` // save, suggest, confirm, revoke
-	ID          string                `json:"id"`
-	Version     uint64                `json:"version"`
-	Revision    uint64                `json:"revision"`
-	TurnNumber  uint64                `json:"turn_number"`
-	SourceSeq   uint64                `json:"source_seq"`
-	Basis       string                `json:"basis"`
-	Body        *agentPolicyBody      `json:"body,omitempty"`
-	ProposalSeq uint64                `json:"proposal_seq,omitempty"`
-	ScopeFrom   *agentPolicyScopeFrom `json:"scope_from,omitempty"`
+	Type        string           `json:"type"` // save, suggest, confirm, revoke
+	ID          string           `json:"id"`
+	Version     uint64           `json:"version"`
+	Revision    uint64           `json:"revision"`
+	TurnNumber  uint64           `json:"turn_number"`
+	SourceSeq   uint64           `json:"source_seq"`
+	Basis       string           `json:"basis"`
+	Body        *agentPolicyBody `json:"body,omitempty"`
+	ProposalSeq uint64           `json:"proposal_seq,omitempty"`
 }
 
 func (q agentPolicyChange) validate() error {
@@ -116,7 +107,7 @@ func (q agentPolicyChange) validate() error {
 	switch q.Type {
 	case "save", "suggest":
 		if q.Body == nil || q.ProposalSeq != 0 {
-			return invalidField("body", "save/suggest requires a full body and forbids proposal_seq")
+			return invalidField("body", "save/suggest requires body {text, expires_at?} and forbids proposal_seq; see policy update --help")
 		}
 	case "confirm", "revoke":
 		if q.Body != nil || q.Version == 0 || (q.Type == "confirm" && q.ProposalSeq == 0) || (q.Type == "revoke" && q.ProposalSeq != 0) {
@@ -134,35 +125,12 @@ func (q agentPolicyChange) validate() error {
 	if !handlingText(q.Basis) {
 		return invalidField("basis", "required nonempty interpretation, at most 4096 bytes")
 	}
-	if q.ScopeFrom != nil {
-		if q.Body == nil || q.Body.Kind != "rule" {
-			return invalidField("scope_from", "only save/suggest with body.kind rule accepts scope_from")
-		}
-		if q.Body.Scope != (PolicyScope{}) {
-			return invalidField("body.scope", "mutually exclusive with scope_from; omit body.scope")
-		}
-		if !validOpaqueRef(q.ScopeFrom.ObjectRef, "ref_") {
-			return invalidField("scope_from.object_ref", "required stable ref_ reference")
-		}
-		if !validOpaqueRef(q.ScopeFrom.UnitRef, "unit_") {
-			return invalidField("scope_from.unit_ref", "required stable unit_ reference")
-		}
-		if q.ScopeFrom.Level != "project" && q.ScopeFrom.Level != "no_containers" {
-			return invalidField("scope_from.level", "must explicitly select project or no_containers")
-		}
-	}
 	if q.Body != nil {
-		if q.Body.Kind != "rule" && q.Body.Kind != "preference" {
-			return invalidField("body.kind", "must be rule or preference")
-		}
 		if !validText(q.Body.Text) || len(q.Body.Text) > maxPolicyTextBytes {
 			return invalidField("body.text", "required nonempty UTF-8 text, at most 32768 bytes")
 		}
 		if q.Body.ExpiresAt != nil && q.Body.ExpiresAt.IsZero() {
 			return invalidField("body.expires_at", "must be a nonzero RFC3339 time")
-		}
-		if q.ScopeFrom == nil {
-			return agentPolicyScopeDiagnostic(q.Body.Kind, q.Body.Scope)
 		}
 	}
 	return nil
@@ -182,18 +150,6 @@ func (s *Store) changeAgentPolicy(id MemberIdentity, caller Caller, q agentPolic
 	}
 	c := PolicyChange{ID: q.ID, Version: q.Version, Revision: q.Revision, TurnNumber: q.TurnNumber, SourceSeq: q.SourceSeq}
 	body := q.Body
-	if q.ScopeFrom != nil {
-		if _, err := s.runningTurnLocked(id, q.TurnNumber); err != nil {
-			return conversationPolicyResult{}, err
-		}
-		scope, err := s.agentPolicyScopeFromLocked(id, *q.ScopeFrom)
-		if err != nil {
-			return conversationPolicyResult{}, err
-		}
-		copy := *body
-		copy.Scope = scope
-		body = &copy
-	}
 	if body == nil {
 		p, _, err := s.loadPolicyLocked(id, false)
 		if err != nil {
@@ -203,15 +159,14 @@ func (s *Store) changeAgentPolicy(id MemberIdentity, caller Caller, q agentPolic
 		// after later amendments/revocation or public history removal.
 		for _, r := range p.History {
 			if r.ID == q.ID && r.Version == q.Version {
-				n := naturalPolicy(r)
-				body = &agentPolicyBody{n.Kind, n.Text, n.Scope, n.ExpiresAt}
+				body = &agentPolicyBody{Text: r.Text, ExpiresAt: r.ExpiresAt}
 			}
 		}
 		if body == nil {
 			return conversationPolicyResult{}, invalidField("version", "saved policy version not found; read policy read --id ID")
 		}
 	}
-	c.Kind, c.Text, c.Scope, c.ExpiresAt = body.Kind, body.Text, body.Scope, body.ExpiresAt
+	c.Text, c.ExpiresAt = body.Text, body.ExpiresAt
 	mode := "explicit_long_term"
 	c.Status = "active"
 	switch q.Type {
@@ -237,10 +192,8 @@ type agentPolicyEvidence struct {
 type agentPolicyRecord struct {
 	ID           string               `json:"id"`
 	Version      uint64               `json:"version"`
-	Kind         string               `json:"kind"`
 	Status       string               `json:"status"`
 	Text         string               `json:"text"`
-	Scope        PolicyScope          `json:"scope"`
 	ExpiresAt    *time.Time           `json:"expires_at,omitempty"`
 	Source       PolicySource         `json:"source"`
 	ChangedBy    Author               `json:"changed_by"`
@@ -249,8 +202,7 @@ type agentPolicyRecord struct {
 }
 
 func projectPolicyRecord(r PolicyRevision) agentPolicyRecord {
-	r = naturalPolicy(r)
-	v := agentPolicyRecord{r.ID, r.Version, r.Kind, r.Status, r.Text, r.Scope, r.ExpiresAt, r.Source, r.ChangedBy, r.UpdatedAt, nil}
+	v := agentPolicyRecord{r.ID, r.Version, r.Status, r.Text, r.ExpiresAt, r.Source, r.ChangedBy, r.UpdatedAt, nil}
 	if e := r.Conversation; e != nil {
 		v.Conversation = &agentPolicyEvidence{e.Mode, e.Basis, e.Message.ReplyTo, e.Message.CreatedAt, e.Proposal}
 	}
@@ -286,13 +238,10 @@ func agentPolicyDiagnostic(err error) error {
 	}
 	copy := *d
 	switch d.Field {
-	case "change.kind", "change.text", "change.scope", "change.expires_at":
+	case "change.text", "change.expires_at":
 		copy.Field = "body." + strings.TrimPrefix(d.Field, "change.")
 	default:
 		copy.Field = strings.TrimPrefix(d.Field, "change.")
-	}
-	if strings.HasPrefix(d.Field, "change.scope.") {
-		copy.Field = "body." + strings.TrimPrefix(d.Field, "change.")
 	}
 	if copy.Field == "change" {
 		copy.Field = "record"
@@ -376,17 +325,6 @@ func (q *agentPolicyChange) UnmarshalJSON(data []byte) error {
 	}
 	if _, ok := fields["proposal_seq"]; ok && v.Type != "confirm" {
 		return invalidField("proposal_seq", "only confirm accepts proposal_seq")
-	}
-	if _, ok := fields["scope_from"]; ok {
-		if v.ScopeFrom == nil {
-			return invalidField("scope_from", "must be a reference object, not null")
-		}
-		var bodyFields map[string]json.RawMessage
-		if err := json.Unmarshal(fields["body"], &bodyFields); err == nil {
-			if _, ok := bodyFields["scope"]; ok {
-				return invalidField("body.scope", "mutually exclusive with scope_from; omit body.scope")
-			}
-		}
 	}
 	*q = agentPolicyChange(v)
 	return q.validate()

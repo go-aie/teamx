@@ -6,15 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"strings"
 	"time"
-
-	"github.com/go-aie/teamx/internal/platform"
 )
 
 const (
 	maxPolicyRevisions = 256
-	maxPolicyTextBytes = 32 << 10 // includes legacy prose folded into one body
+	maxPolicyTextBytes = 32 << 10
 )
 
 // Policy is member configuration, never Session or Inbox state. Revisions are
@@ -25,32 +22,11 @@ type PolicySource struct {
 	Text string `json:"text"`
 }
 
-type PolicyScope struct {
-	// Retained only to read historical revisions; new changes never set it.
-	Description string `json:"description,omitempty"`
-	Provider    string `json:"provider,omitempty"`
-	Instance    string `json:"instance,omitempty"`
-	Account     string `json:"account,omitempty"`
-	Project     string `json:"project,omitempty"`
-	ObjectType  string `json:"object_type,omitempty"`
-	// Native account scopes don't require a username. Tenant is exact when
-	// AccountID is present, including the empty (single-tenant) namespace.
-	AccountID    platform.ExternalID `json:"account_id,omitzero"`
-	Tenant       platform.ExternalID `json:"tenant,omitzero"`
-	NoContainers bool                `json:"no_containers,omitempty"`
-}
-
 type PolicyRevision struct {
-	ID      string      `json:"id"`
-	Version uint64      `json:"version"`
-	Kind    string      `json:"kind"`   // preference, rule
-	Status  string      `json:"status"` // suggested, active, revoked
-	Text    string      `json:"text"`
-	Scope   PolicyScope `json:"scope"`
-	// Legacy split prose is retained in history, folded into Text in current views.
-	Actions      string                      `json:"actions,omitempty"`
-	Conditions   string                      `json:"conditions,omitempty"`
-	Exceptions   string                      `json:"exceptions,omitempty"`
+	ID           string                      `json:"id"`
+	Version      uint64                      `json:"version"`
+	Status       string                      `json:"status"` // suggested, active, revoked
+	Text         string                      `json:"text"`
 	ExpiresAt    *time.Time                  `json:"expires_at,omitempty"`
 	Source       PolicySource                `json:"source"`
 	ChangedBy    Author                      `json:"changed_by"`
@@ -90,7 +66,7 @@ func effectivePolicy(history []PolicyRevision, now time.Time) []PolicyRevision {
 	effective := []PolicyRevision{}
 	for _, r := range policyCurrent(history) {
 		if r.Status == "active" && (r.ExpiresAt == nil || r.ExpiresAt.After(now)) {
-			effective = append(effective, naturalPolicy(r))
+			effective = append(effective, r)
 		}
 	}
 	return effective
@@ -113,17 +89,15 @@ func agentPolicy(p PolicySnapshot, turn uint64, now time.Time) agentPolicyView {
 // Human management supplies source text; Agent changes use the conversation
 // service with real human Room evidence.
 type PolicyChange struct {
-	ID         string      `json:"id"`
-	Version    uint64      `json:"version"`
-	Revision   uint64      `json:"revision"`
-	Kind       string      `json:"kind"`
-	Status     string      `json:"status"`
-	Text       string      `json:"text"`
-	Scope      PolicyScope `json:"scope,omitempty"`
-	ExpiresAt  *time.Time  `json:"expires_at,omitempty"`
-	SourceSeq  uint64      `json:"source_seq,omitempty"`
-	SourceText string      `json:"source_text,omitempty"`
-	TurnNumber uint64      `json:"turn_number,omitempty"`
+	ID         string     `json:"id"`
+	Version    uint64     `json:"version"`
+	Revision   uint64     `json:"revision"`
+	Status     string     `json:"status"`
+	Text       string     `json:"text"`
+	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
+	SourceSeq  uint64     `json:"source_seq,omitempty"`
+	SourceText string     `json:"source_text,omitempty"`
+	TurnNumber uint64     `json:"turn_number,omitempty"`
 }
 
 func policyCurrent(history []PolicyRevision) []PolicyRevision {
@@ -142,57 +116,23 @@ func policyCurrent(history []PolicyRevision) []PolicyRevision {
 
 func policyView(p PolicySnapshot) PolicyView {
 	current := policyCurrent(p.History)
-	for i := range current {
-		current[i] = naturalPolicy(current[i])
-	}
 	return PolicyView{PolicySnapshot: p, Current: current, Effective: effectivePolicy(p.History, time.Now())}
 }
 
-// Old prose remains recoverable without rewriting provenance or revision history.
-// New rules contain one natural-language body and only machine-checked scope.
-func naturalPolicy(r PolicyRevision) PolicyRevision {
-	parts := []string{r.Text}
-	for _, field := range [][2]string{{"适用说明", r.Scope.Description}, {"允许动作", r.Actions}, {"前提", r.Conditions}, {"例外", r.Exceptions}} {
-		if field[1] != "" {
-			parts = append(parts, field[0]+"："+field[1])
-		}
-	}
-	r.Text = strings.Join(parts, "\n")
-	r.Scope.Description, r.Actions, r.Conditions, r.Exceptions = "", "", "", ""
-	return r
-}
-
 func validPolicyChange(c PolicyChange) bool {
-	return c.Scope.Description == "" && c.Scope.Project != "*" && len(c.Text) <= maxPolicyTextBytes && (c.Kind != "preference" || c.Scope == (PolicyScope{}))
+	return validText(c.Text) && len(c.Text) <= maxPolicyTextBytes
 }
 
 func validPolicyRevision(r PolicyRevision) bool {
 	if !safeMembershipID(r.ID) || r.Version == 0 || !validText(r.Text) || len(r.Text) > maxPolicyTextBytes ||
-		(r.Kind != "preference" && r.Kind != "rule") ||
 		(r.Status != "suggested" && r.Status != "active" && r.Status != "revoked") ||
 		!validText(r.Source.User) || !validText(r.Source.Text) || r.UpdatedAt.IsZero() ||
 		(r.ChangedBy.Kind != "human" && r.ChangedBy.Kind != "agent") || !validText(r.ChangedBy.ID) || (r.ChangedBy.Kind == "human" && r.ChangedBy.ID != r.Source.User) {
 		return false
 	}
-	for _, s := range []string{r.Scope.Description, r.Scope.Provider, r.Scope.Instance, r.Scope.Account, r.Scope.Project, r.Scope.ObjectType, r.Actions, r.Conditions, r.Exceptions} {
-		if len(s) > 4096 {
-			return false
-		}
-	}
-	if (r.Scope.AccountID != (platform.ExternalID{}) && !r.Scope.AccountID.Valid()) || (r.Scope.Tenant != (platform.ExternalID{}) && !r.Scope.Tenant.Valid()) ||
-		(r.Scope.AccountID.Valid() && r.Scope.Account != "") || (r.Scope.NoContainers && r.Scope.Project != "") || (r.Scope.Tenant.Valid() && !r.Scope.AccountID.Valid()) {
-		return false
-	}
 	if len(r.Source.Text) > maxPolicyTextBytes {
 		return false
 	}
-	if r.Kind == "preference" && (r.Actions != "" || r.Conditions != "" || r.Exceptions != "") {
-		return false
-	}
-	if r.Kind == "rule" && (!validText(r.Scope.Provider) || !validText(r.Scope.Instance) || (!validText(r.Scope.Account) && !r.Scope.AccountID.Valid()) || (!validText(r.Scope.Project) && !r.Scope.NoContainers)) {
-		return false
-	}
-
 	return r.ExpiresAt == nil || !r.ExpiresAt.IsZero()
 }
 
@@ -206,7 +146,7 @@ func validatePolicyHistory(history []PolicyRevision) error {
 			return ErrInvalid
 		}
 		old, exists := latest[r.ID]
-		if r.Version != old.Version+1 || (exists && (r.Kind != old.Kind || r.Source.User != old.Source.User)) {
+		if r.Version != old.Version+1 || (exists && r.Source.User != old.Source.User) {
 			return ErrInvalid
 		}
 		if r.Conversation != nil {
@@ -266,7 +206,7 @@ func (s *Store) readAgentPolicy(id MemberIdentity) (agentPolicyView, error) {
 }
 
 func (s *Store) policyRevisionLocked(id MemberIdentity, caller Caller, c PolicyChange, history []PolicyRevision) (PolicyRevision, error) {
-	r := PolicyRevision{ID: c.ID, Version: c.Version + 1, Kind: c.Kind, Status: c.Status, Text: c.Text, Scope: c.Scope, ExpiresAt: c.ExpiresAt, ChangedBy: caller.Author, UpdatedAt: time.Now().UTC()}
+	r := PolicyRevision{ID: c.ID, Version: c.Version + 1, Status: c.Status, Text: c.Text, ExpiresAt: c.ExpiresAt, ChangedBy: caller.Author, UpdatedAt: time.Now().UTC()}
 	var old PolicyRevision
 	for _, v := range history {
 		if v.ID == c.ID {
@@ -275,9 +215,6 @@ func (s *Store) policyRevisionLocked(id MemberIdentity, caller Caller, c PolicyC
 	}
 	if old.Version != c.Version {
 		return r, ErrConflict
-	}
-	if old.Version != 0 && old.Kind != c.Kind {
-		return r, ErrRequest
 	}
 	if len(history) >= maxPolicyRevisions {
 		return r, ErrCapacity
@@ -319,7 +256,7 @@ func (s *Store) changePolicy(id MemberIdentity, caller Caller, c PolicyChange) (
 	if err != nil {
 		return PolicyView{}, err
 	}
-	if !validPolicyChange(c) || (c.Kind != "preference" && c.Kind != "rule") {
+	if !validPolicyChange(c) {
 		return PolicyView{}, ErrRequest
 	}
 	if p.Revision != c.Revision {

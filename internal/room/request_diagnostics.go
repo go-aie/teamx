@@ -186,19 +186,6 @@ func prefixDiagnostic(err error, prefix string) error {
 	return err
 }
 
-func policyChangeDiagnostic(c PolicyChange) error {
-	switch {
-	case c.Scope.Description != "":
-		return invalidField("change.scope.description", "must be omitted; keep requirements and exceptions together in text")
-	case c.Scope.Project == "*":
-		return invalidField("change.scope.project", "must be an exact verified project; wildcard is not supported")
-	case len(c.Text) > maxPolicyTextBytes:
-		return invalidField("change.text", "must be at most 32768 bytes")
-	default:
-		return invalidField("change.scope", "preferences must not carry target scope")
-	}
-}
-
 // Prefer structured details from a paired server, retaining support for older
 // responses containing only code/error. No retries are performed here.
 func (e apiError) cliError() error {

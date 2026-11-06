@@ -2,7 +2,6 @@ package room
 
 import (
 	"reflect"
-	"strings"
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
@@ -149,7 +148,7 @@ func validateReferenceActions(u followupUnit, target platform.TargetIdentity) er
 		if seen[q.ID] || !validReferenceActionRequest(q) || q.ObjectRef != u.ObjectRef || q.UnitRef != u.Ref || q.TargetRef != u.TargetRef || !sameNativeTarget(a.Target, target) || !sameNativeTarget(a.Inspection.Target, target) || !a.Access.Valid() || a.Access.RoomIdentity != u.RoomIdentity || a.Access.AgentID != u.AgentID || a.Access.MembershipID != u.MembershipID || a.Inspection.Account != a.Access.Account || !validReferenceSpec(a.Spec, q, target) || a.Access.Account != a.Access.Receiver || a.Access.Account.IdentityScope != target.IdentityScope || a.Attempts < 0 || a.Attempts > a.Spec.Retry.MaxAttempts || (a.PossibleDuplicate && a.Attempts != 2) || (a.Rule == nil) == (a.Basis == nil) || a.UpdatedAt.IsZero() || (a.Status != "unknown" && a.Status != "succeeded" && a.Status != "not_applied") {
 			return ErrInvalid
 		}
-		if a.Rule != nil && (!validPolicyRevision(*a.Rule) || a.Rule.Kind != "rule" || a.Rule.Status != "active" || a.Rule.ID != q.Authority.RuleID || a.Rule.Version != q.Authority.RuleVersion || !referenceRuleCovers(*a.Rule, a.Inspection)) {
+		if a.Rule != nil && (!validPolicyRevision(*a.Rule) || a.Rule.Status != "active" || a.Rule.ID != q.Authority.RuleID || a.Rule.Version != q.Authority.RuleVersion) {
 			return ErrInvalid
 		}
 		if a.Basis != nil && (!validHumanEvidence(a.Basis.Source) || a.Basis.TargetRef != u.TargetRef || !referenceIntentCovers(a.Basis.Intent, followupIntent{Operation: q.Operation, Body: q.Input.Body, Constraints: q.Authority.Constraints}) || !handlingText(a.Basis.Basis)) {
@@ -258,37 +257,10 @@ func (s *Store) referenceActionEvidence(id MemberIdentity, q referenceActionRequ
 	return platform.TargetActionRequest{Target: t.Target, Aliases: aliases, Operation: q.Operation, Input: mustCommentJSON(q.Input)}, access, nil
 }
 
-// Natural-language conditions/exceptions remain the Agent's explicit reason.
-// Scope, version, source and exact single-use body are checked deterministically.
-func referenceRuleCovers(r PolicyRevision, i platform.TargetActionInspection) bool {
-	t := i.Target
-	scope := r.Scope
-	if scope.Provider != "" && scope.Provider != t.Provider || scope.Instance != "" && strings.TrimSuffix(scope.Instance, "/") != t.Instance || scope.Account != "" && scope.Account != i.AccountLabel || scope.ObjectType != "" && scope.ObjectType != t.Object.Type {
-		return false
-	}
-	if scope.AccountID.Valid() && (scope.AccountID != i.Account.ID || scope.Tenant != i.Account.Tenant) {
-		return false
-	}
-	if !scope.AccountID.Valid() && t.Tenant.Valid() {
-		return false // a display label alone cannot select a tenant
-	}
-	if scope.NoContainers {
-		return len(t.Containers) == 0
-	}
-	if scope.Project != "" {
-		if scope.Project == i.ContainerLabel {
-			return true
-		}
-		for _, c := range t.Containers {
-			if c.ID.Value == scope.Project {
-				return true
-			}
-		}
-		return false
-	}
-	return true
-}
-func (s *Store) referenceAuthorityLocked(id MemberIdentity, u followupUnit, q referenceActionRequest, inspection platform.TargetActionInspection, previous *followupReplyBasis) (*PolicyRevision, *followupReplyBasis, *agentPolicyView, error) {
+// The Agent declares that the rule body permits this operation. The server
+// checks lifecycle and exact target/account separately; it does not verify
+// natural-language business scope or authorization.
+func (s *Store) referenceAuthorityLocked(id MemberIdentity, u followupUnit, q referenceActionRequest, previous *followupReplyBasis) (*PolicyRevision, *followupReplyBasis, *agentPolicyView, error) {
 	p, _, err := s.loadPolicyLocked(id, false)
 	if err != nil {
 		return nil, nil, nil, err
@@ -316,11 +288,11 @@ func (s *Store) referenceAuthorityLocked(id MemberIdentity, u followupUnit, q re
 			return nil, nil, nil, invalidField("authority", "rule authority cannot include question_ref, message_refs or constraints")
 		}
 		for _, r := range view.Effective {
-			if r.ID == a.RuleID && r.Version == a.RuleVersion && r.Kind == "rule" && referenceRuleCovers(r, inspection) {
+			if r.ID == a.RuleID && r.Version == a.RuleVersion {
 				return &r, nil, nil, nil
 			}
 		}
-		return nil, nil, nil, conflictReason("authority.rule_version", "rule version is not effective or does not cover the verified target/account", "Read policy read and reassess scope; do not substitute a newer rule automatically.")
+		return nil, nil, nil, conflictReason("authority.rule_version", "rule version is not effective", "Read policy read and reassess the rule body; do not substitute a newer rule automatically.")
 	}
 	intent := followupIntent{Operation: q.Operation, Body: q.Input.Body, Constraints: a.Constraints}
 	var b followupReplyBasis
@@ -394,7 +366,7 @@ func (s *Store) beginReferenceAction(id MemberIdentity, q referenceActionRequest
 	if len(u.Actions) >= 32 {
 		return referenceActionReceipt{}, false, ErrCapacity
 	}
-	rule, basis, view, err := s.referenceAuthorityLocked(id, u, q, i, nil)
+	rule, basis, view, err := s.referenceAuthorityLocked(id, u, q, nil)
 	if err != nil {
 		return referenceActionReceipt{}, false, err
 	}
@@ -432,7 +404,7 @@ func (s *Store) referenceActionAttempt(id MemberIdentity, q referenceActionReque
 		if a.Request.ID != q.ID {
 			continue
 		}
-		_, _, view, err := s.referenceAuthorityLocked(id, u, q, a.Inspection, a.Basis)
+		_, _, view, err := s.referenceAuthorityLocked(id, u, q, a.Basis)
 		if err != nil || view != nil {
 			return view, err
 		}

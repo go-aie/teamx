@@ -37,12 +37,6 @@ func TestReferenceConversationPolicyExplicitAmendRevokeAndTokens(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(retry, v) {
 		t.Fatal(retry, err)
 	}
-	duplicate := q
-	duplicate.Change.ID = "duplicate"
-	duplicate.Change.Revision = 1
-	if _, err := svc.referencePolicyChange(h.ctx, h.id, agentCallerIdentity(h.id), duplicate); !errors.Is(err, ErrConflict) {
-		t.Fatal("same-scope rule duplicated", err)
-	}
 	change := postConversationReply(t, h, "amend", "改为仅回复文档安装咨询；交付时间仍先问我", 0)
 	q.Change.Version, q.Change.Revision, q.Change.SourceSeq = 1, 1, change.Seq
 	q.Change.Text = "只回复有文档依据的安装咨询"
@@ -83,7 +77,7 @@ func TestReferenceConversationPolicyExplicitAmendRevokeAndTokens(t *testing.T) {
 func TestReferenceConversationPolicyInferredSuggestionConfirmation(t *testing.T) {
 	h, svc, units, sources := conversationHarness(t, 1)
 	habit := postConversationReply(t, h, "habit", "这次请用简短中文回复", 0)
-	q := conversationPolicyChange{Change: PolicyChange{ID: "language", Kind: "preference", Status: "suggested", Text: "简短中文回复", SourceSeq: habit.Seq, TurnNumber: 1}, Mode: "inferred_habit", Basis: "多次本次偏好只支持提出建议"}
+	q := conversationPolicyChange{Change: PolicyChange{ID: "language", Status: "suggested", Text: "简短中文回复", SourceSeq: habit.Seq, TurnNumber: 1}, Mode: "inferred_habit", Basis: "多次本次偏好只支持提出建议"}
 	view, err := svc.referencePolicyChange(h.ctx, h.id, agentCallerIdentity(h.id), q)
 	if err != nil || len(view.Effective) != 0 {
 		t.Fatal(view, err)
@@ -119,11 +113,17 @@ func TestReferenceConversationPolicyInferredSuggestionConfirmation(t *testing.T)
 	answer := postConversationReply(t, h, "confirm", "以后就这样", receipt.Seq)
 	confirm.Change.SourceSeq = answer.Seq
 	confirm.Basis = "用户在准确建议下确认今后处理方式"
-	// Changing the proposal while activating is forbidden, including scope/expiry.
+	// Changing the proposal while activating is forbidden, including expiry.
 	changed := confirm
 	changed.Change.Text = "自动执行全部写操作"
 	if _, err := svc.referencePolicyChange(h.ctx, h.id, agentCallerIdentity(h.id), changed); !errors.Is(err, ErrRequest) {
 		t.Fatal(err)
+	}
+	changed = confirm
+	expiry := time.Now().Add(time.Hour)
+	changed.Change.ExpiresAt = &expiry
+	if _, err := svc.referencePolicyChange(h.ctx, h.id, agentCallerIdentity(h.id), changed); !errors.Is(err, ErrRequest) {
+		t.Fatal("confirmation changed the saved expiry", err)
 	}
 	view, err = svc.referencePolicyChange(h.ctx, h.id, agentCallerIdentity(h.id), confirm)
 	if err != nil || len(view.Effective) != 1 || view.PolicyToken == before {
@@ -214,8 +214,6 @@ func TestReferenceConversationPolicyProvenanceFencesAndFailures(t *testing.T) {
 		func(q *conversationPolicyChange) { q.Change.SourceSeq = 999 },
 		func(q *conversationPolicyChange) { q.Change.TurnNumber = 0 },
 		func(q *conversationPolicyChange) { q.Change.TurnNumber = 2 },
-		func(q *conversationPolicyChange) { q.Change.Kind = "decision" },
-		func(q *conversationPolicyChange) { q.Change.Scope.Project = "" },
 		func(q *conversationPolicyChange) { q.Mode = "unknown" },
 	} {
 		q := base

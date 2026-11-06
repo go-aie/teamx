@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-func TestPolicyAppHTTP(t *testing.T) {
+func TestPolicyManagementHTTP(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("Node required")
@@ -25,9 +25,6 @@ func TestPolicyAppHTTP(t *testing.T) {
 	m := activationTestManager(t)
 	m.teams = map[string]teamDefinition{"sample": testTeamDefinition(t)}
 	m.factory = controlledActivationFactory(nil, nil)
-	m.platformVerify = func(context.Context, string, workspaceSecret) platformConnectionValidation {
-		return platformConnectionValidation{Status: "valid", UserID: 101, Username: "policy-test", CheckedAt: time.Now().UTC()}
-	}
 	server := httptest.NewUnstartedServer(m)
 	m.config.endpoint = "http://" + server.Listener.Addr().String()
 	server.Start()
@@ -37,98 +34,70 @@ func TestPolicyAppHTTP(t *testing.T) {
 	cmd := exec.CommandContext(ctx, node, "web_policy_http.mjs")
 	cmd.Env = append(os.Environ(), "TEAMX_WEB_ENDPOINT="+server.URL)
 	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("policy app/HTTP: %v\n%s", err, output)
-	}
-	if *webPreviewDuration > 0 {
-		t.Log("isolated policy browser preview:", server.URL)
-		<-time.After(*webPreviewDuration)
+		t.Fatalf("policy management HTTP: %v\n%s", err, output)
 	}
 }
 
 func policyRule() PolicyChange {
-	return PolicyChange{ID: "usage-answers", Kind: "rule", Status: "active", Text: "有现行文档依据的使用问题，核实最新文档和账号后回复使用说明；承诺交付时间必须询问", Scope: PolicyScope{Provider: "gitlab", Instance: "https://gitlab.example.com", Account: "bot", Project: "123"}, SourceText: "以后项目123的使用问题有文档就直接回复，交付时间先问我"}
+	return PolicyChange{ID: "usage-answers", Status: "active", Text: "有现行文档依据的使用问题，核实最新文档和账号后回复使用说明；承诺交付时间必须询问", SourceText: "以后项目123的使用问题有文档就直接回复，交付时间先问我"}
 }
 
-func TestPolicyNaturalBodyAndLegacyHistory(t *testing.T) {
+func TestPolicyNaturalBodyLifecycle(t *testing.T) {
 	h := newInboxHarness(t, InboxLimits{})
+	empty, err := h.store.readPolicy(h.id)
+	if err != nil || empty.Version != 1 || len(empty.Effective) != 0 {
+		t.Fatal(empty, err)
+	}
 	c := policyRule()
-	v, err := h.store.changePolicy(h.id, humanCaller, c)
-	if err != nil {
-		t.Fatal(err)
-	}
-	encoded, _ := json.Marshal(v.Current[0])
-	for _, field := range []string{`"description"`, `"actions"`, `"conditions"`, `"exceptions"`} {
-		if bytes.Contains(encoded, []byte(field)) {
-			t.Fatalf("new rule retained split prose %s: %s", field, encoded)
+	for version := uint64(1); version <= 3; version++ {
+		c.Version, c.Revision = version-1, version-1
+		if version == 2 {
+			c.Text = "核实现行安装文档；交付时间仍先问我"
 		}
-	}
-	// Simulate a policy written before simplification. Its evidence stays intact.
-	h.store.mu.Lock()
-	p, path, err := h.store.loadPolicyLocked(h.id, true)
-	if err == nil {
-		p.History[0].Text = "回复使用问题"
-		p.History[0].Scope.Description = "仅安装咨询"
-		p.History[0].Actions = "回复说明"
-		p.History[0].Conditions = "核实现行文档"
-		p.History[0].Exceptions = "涉及交付时间先问我"
-		err = h.store.save(path, p, maxPrivateFileBytes)
-	}
-	h.store.mu.Unlock()
-	if err != nil {
-		t.Fatal(err)
-	}
-	h.reload(t, true)
-	v, err = h.store.readPolicy(h.id)
-	if err != nil || !reflect.DeepEqual(v.History, p.History) {
-		t.Fatal("legacy history changed", v, err)
-	}
-	for _, part := range []string{"回复使用问题", "仅安装咨询", "回复说明", "核实现行文档", "涉及交付时间先问我"} {
-		if !strings.Contains(v.Current[0].Text, part) || !strings.Contains(v.Effective[0].Text, part) {
-			t.Fatalf("lost legacy restriction %q", part)
+		if version == 3 {
+			c.Status = "revoked"
 		}
-	}
-	c.Text, c.Scope, c.Version, c.Revision = v.Current[0].Text, v.Current[0].Scope, 1, 1
-	c.SourceText = "保留原有范围和限制"
-	v, err = h.store.changePolicy(h.id, humanCaller, c)
-	if err != nil || !reflect.DeepEqual(v.History[0], p.History[0]) || v.Current[0].Text != c.Text {
-		t.Fatal("editing lost legacy evidence or body", v, err)
-	}
-	encoded, _ = json.Marshal(v.Current[0])
-	if bytes.Contains(encoded, []byte(`"exceptions"`)) || bytes.Contains(encoded, []byte(`"description"`)) {
-		t.Fatal("new revision kept legacy fields", string(encoded))
-	}
-	c.Version, c.Revision, c.Status = 2, 2, "revoked"
-	if v, err = h.store.changePolicy(h.id, humanCaller, c); err != nil || len(v.Effective) != 0 {
-		t.Fatal(v, err)
+		saved, err := h.store.changePolicy(h.id, humanCaller, c)
+		if err != nil || saved.Version != 1 || saved.Revision != version {
+			t.Fatal(saved, err)
+		}
+		assertNaturalPolicyJSON(t, saved.History[len(saved.History)-1])
+		h.reload(t, true)
+		restored, err := h.store.readPolicy(h.id)
+		if err != nil || !reflect.DeepEqual(saved, restored) {
+			t.Fatal(restored, err)
+		}
+		if (version == 3) != (len(restored.Effective) == 0) {
+			t.Fatal(restored)
+		}
 	}
 }
 
-func TestPolicyRequiresOnlyMachineTargetScope(t *testing.T) {
-	for _, mode := range []string{"preference", "rule", "description", "missing-account", "missing-project", "wildcard"} {
-		t.Run(mode, func(t *testing.T) {
-			h := newInboxHarness(t, InboxLimits{})
-			c := policyRule()
-			switch mode {
-			case "preference":
-				c.Kind, c.Text, c.Scope = "preference", "仅日常回复使用简短中文", PolicyScope{}
-			case "description":
-				c.Scope.Description = "不再接收单独的自然语言范围说明"
-			case "missing-account":
-				c.Scope.Account = ""
-			case "missing-project":
-				c.Scope.Project = ""
-			case "wildcard":
-				c.Scope.Project = "*"
-			}
-			_, err := h.store.changePolicy(h.id, humanCaller, c)
-			if mode == "preference" || mode == "rule" {
-				if err != nil {
-					t.Fatal(err)
-				}
-			} else if !errors.Is(err, ErrRequest) {
-				t.Fatal("invalid scope accepted", err)
-			}
-		})
+func assertNaturalPolicyJSON(t *testing.T, record any) {
+	t.Helper()
+	data, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"kind", "scope", "scope_from", "actions", "conditions", "exceptions"} {
+		if _, exists := fields[field]; exists {
+			t.Fatalf("removed field %s in %s", field, data)
+		}
+	}
+}
+
+func TestPolicyBodyValidation(t *testing.T) {
+	for _, text := range []string{"", " ", strings.Repeat("x", maxPolicyTextBytes+1)} {
+		h := newInboxHarness(t, InboxLimits{})
+		c := policyRule()
+		c.Text = text
+		if _, err := h.store.changePolicy(h.id, humanCaller, c); !errors.Is(err, ErrRequest) {
+			t.Fatal(err)
+		}
 	}
 }
 
@@ -339,7 +308,7 @@ func TestPolicyHTTPCLIAndBrowserPreview(t *testing.T) {
 		if err := svc.store.SaveAgent(AgentSnapshot{Version: formatVersion, MemberIdentity: id, TurnNumber: 1, LastOfferedUnreadSeq: post.Seq, Turn: &TurnRecord{Number: 1, Status: "running", OfferedUnreadSeq: post.Seq, SnapshotSeq: post.Seq}}); err != nil {
 			t.Fatal(err)
 		}
-		change := PolicyChange{ID: "cli-preference", Revision: 1, Kind: "preference", Status: "suggested", Text: "简短中文回复", SourceSeq: post.Seq, TurnNumber: 1}
+		change := PolicyChange{ID: "cli-preference", Revision: 1, Status: "suggested", Text: "简短中文回复", SourceSeq: post.Seq, TurnNumber: 1}
 		data, _ := json.Marshal(agentPolicyFixture(conversationPolicyChange{Change: change, Mode: "inferred_habit", Basis: "用户本次表达仅支持提出长期建议"}))
 		out.Reset()
 		if err := runCLI(context.Background(), []string{"policy", "update", "--change", string(data)}, &out, &stderr, func(k string) string { return env[k] }); err != nil {
@@ -384,12 +353,12 @@ func TestPolicyHTTPCLIAndBrowserPreview(t *testing.T) {
 
 func TestPolicyNotificationUsesSuppliedAuthority(t *testing.T) {
 	text := dshNotification(UnreadChanged{})
-	for _, part := range []string{"policy read", "completely replaces", "policy_token", "current_turn", "preferences never authorize writes", "Latest explicit restrictions/revocations win", "type save", "type confirm"} {
+	for _, part := range []string{"policy read", "completely replaces", "policy_token", "current_turn", "Reply style never authorizes external writes", "body is {text,expires_at?}", "ALL current restrictions", "does not verify natural-language applicability", "AgenticHub 产品负责人是 huayi", "hongwei 和 luojun", "saving one starts no listener", "pause only the affected operation", "Latest explicit restrictions/revocations win", "type save", "type confirm"} {
 		if !strings.Contains(text, part) {
 			t.Fatalf("missing %q", part)
 		}
 	}
-	for _, part := range []string{"policy decisions", "Before processing each turn and immediately before any action", "read current policy/decisions"} {
+	for _, part := range []string{"policy decisions", "Before processing each turn and immediately before any action", "read current policy/decisions", "Rules may replace body.scope", "Preferences need no target scope", "body?,scope_from?"} {
 		if strings.Contains(text, part) {
 			t.Fatalf("obsolete reading instruction %q", part)
 		}

@@ -101,18 +101,34 @@ Agent 单元与摘要统一返回 unit_ref／unit_version（未解析摘要返�
 
 `policy update --change JSON` 接受 `{type,id,revision,version,source_seq,turn_number,basis,body?,proposal_seq?}`：
 
-- `save`：保存明确长期 human 指令，建立／修改生效规则或偏好；完整 body 为 `{kind,text,scope,expires_at?}`。
+- `save`：保存明确长期 human 指令，建立／修改生效的长期规则；完整 body 为 `{text,expires_at?}`。
 - `suggest`：同样提交完整 body，习惯推测只保存未生效建议；按需 `policy publish --id ID --version VERSION --turn TURN` 公开准确建议。
-- `confirm`：只提交准确已保存版本、proposal_seq 和真实 human 答复，不接受 body；服务端恢复原建议，不能顺带修改正文或范围。本次任务的同意不能激活长期规则。
-- `revoke`：只提交准确已保存版本和新的真实 human 来源，不接受 body／proposal_seq；服务端保留原正文与范围。
+- `confirm`：只提交准确已保存版本、proposal_seq 和真实 human 答复，不接受 body；服务端恢复原建议，不能顺带修改正文或有效期。本次任务的同意不能激活长期规则。
+- `revoke`：只提交准确已保存版本和新的真实 human 来源，不接受 body／proposal_seq；服务端保留原正文与有效期。
 
-revision 是观察到的 policy revision，version 是记录版本（新记录为 0）；turn_number 使用 current_turn。旧 `{change,mode}` 合同明确拒绝，CLI 和服务须配套升级。偏好、允许动作、执行前提和例外统一写在自然语言 text 中，不再拆分字段，也不生成范围说明；偏好不填写目标范围。规则 scope 仅保留程序匹配的 provider、instance、account 或 account_id／tenant、project 或 no_containers，以及可选 object_type。管理页通过已验证连接补齐平台、实例和账号，项目可从已有项目选择或填写准确路径／ID，不支持 `*`。旧修订中的说明、动作、条件和例外在当前视图合入正文，原历史和来源保留。Agent 不提交 source_text，服务端读取真实消息与作者。完整字段见 `policy update --help`。偏好不授予动作权限，最新明确限制优先；修改／撤销刷新 token，保存未知需核对，不宣称已记住。
+revision 是观察到的 policy revision，version 是记录版本（新记录为 0，可省略）；turn_number 使用 current_turn。所有长期要求统一保存，适用情况、表达习惯、负责人知识、处理要求、授权和例外都写在自然语言 text 中；不再提交 kind、scope、scope_from 或 actions／conditions／exceptions，包含 null 的旧字段也会拒绝。Agent 不提交 source_text，服务端读取真实消息与作者；basis 单独保留 Agent 的理解，不能把推测写成用户原话。完整字段见 `policy update --help`。
 
-Agent `policy update` 在原 effective、revision、current_turn、policy_token 外增补 `record`：实际持久保存的准确 ID、version、status、text、范围和真实来源，包括 suggested/revoked。默认投影将相同 human 原文保留一次，另存 Agent 解释、reply_to／时间和建议确认关系；完整历史证据可通过 `policy read --id ID --detail` 补读。有效视图始终完整替换，包括空集合；本版更新回执也保留完整 effective，避免依赖调用端缓存。新建议可直接用 `record.id`／`record.version` 调用 publish，无需额外读取；重复请求返回原请求保存的记录，同时返回当前策略上下文，因此 record 可能不是当前版本，也不代表仍生效。保存失败或结果未知不返回成功记录；当前非生效版本仍可用 `policy read --id ID` 恢复。管理更新／读取保留原结构；Agent 回合供给、read、update 和 policy_changed 使用同一有效规则投影，token 仍按内部权威正文计算。
+例如“AgenticHub 产品负责人是 huayi”和“AgenticHub 的这类报错，优先建议找 hongwei 和 luojun”可以同时保存：问产品负责人时回答 huayi，问此类报错找谁时建议 hongwei 和 luojun。负责人知识、回复风格或“优先找谁”本身不能确定允许外发消息。明确的持续回复授权且条件满足时直接办理；涉及交付时间等例外则先询问。Agent 对照当前任务和所有有效限制判断，不自行增加项目限制，也不把没有项目限制当成任意平台／账号／对象上的许可。冲突无法消解或歧义影响本次目标、权限、结果时，仅暂停受影响操作；独立工作和明确规则仍可先保存。
+
+“有效”只表示规则进入 Agent 上下文，具体操作取决于正文含义和可用能力。authority.type=rule 的 reason 应解释哪项正文允许本次操作、前提和例外为何满足；服务端核对规则归属、版本、生效状态、有效期和 token，保存准确快照及解释，并核验实际绑定、账号与准确目标。程序不再保证动作符合自然语言业务适用范围或授权，工具启用、可访问目标也不代表业务授权。
+
+正常维护使用 Room 对话，无需在 UI 再确认同一要求。明确“记住”“以后”的持续意图可直接保存、纠正或撤销；推测习惯仅为建议，一次性任务和同意不自动成为长期规则。保存回执成功后才报告已记住；修改／撤销刷新 token，保存未知先恢复核对。规则只属于当前 Room／Membership；保存不启动监听、轮询或调度。
+
+```sh
+"$TEAMX_CLI" policy update --change-file - <<'JSON'
+{"type":"save","id":"agentichub-error-routing","revision":0,"source_seq":8,"turn_number":1,"basis":"用户明确要求长期记住，上下文指向 AgenticHub 报错处理约定","body":{"text":"AgenticHub 的这类报错，优先建议找 hongwei 和 luojun。"}}
+JSON
+```
+
+示例序号、版本、回合和 ID 须替换为实际观察值。管理页保留正文、可选有效期、状态、来源与修订、编辑和撤销，无类型和平台范围表单。
+
+`policy.json` 文件版本保持为 1，不兼容旧数据。启用前由用户停止旧进程，清理旧 policy、嵌入旧规则快照的事项／动作数据及旧 Session 上下文，再从干净数据启动；实现不会自动删除运行数据。
+
+Agent `policy update` 在原 effective、revision、current_turn、policy_token 外增补 `record`：实际持久保存的准确 ID、version、status、text、有效期和真实来源，包括 suggested/revoked。默认投影将相同 human 原文保留一次，另存 Agent 解释、reply_to／时间和建议确认关系；完整历史证据可通过 `policy read --id ID --detail` 补读。有效视图始终完整替换，包括空集合；本版更新回执也保留完整 effective，避免依赖调用端缓存。新建议可直接用 `record.id`／`record.version` 调用 publish，无需额外读取；重复请求返回原请求保存的记录，同时返回当前策略上下文，因此 record 可能不是当前版本，也不代表仍生效。保存失败或结果未知不返回成功记录；当前非生效版本仍可用 `policy read --id ID` 恢复。管理更新／读取保留原结构；Agent 回合供给、read、update 和 policy_changed 使用同一有效规则投影，token 仍按内部权威正文计算。
 
 `matters --help`、`policy --help` 等入口提供命令目录，各子命令用 `--help` 查看用途、参数、返回重点、示例与约束。错误保留原 code／HTTP 状态，增加安全 message，可附 field、expected_version、actual_version 和 hint；版本冲突须重读并重新判断，不会自动替换版本或重试写入。
 
-成员「偏好与规则」视图默认只展示偏好／规则，支持查看、修改和撤销。Agent 用于持续办理的「跟进记录」默认收起，展开才读取，核查时再逐条查看处理进展、相关通知和动作回执；原始通知和技术信息继续按需展开。待处理表示 Agent 尚未办结，需要用户答复的问题明确标注「待你答复」。Room 消息支持就地回复；UI 不作为正常办理的前置批准步骤，查看记录不会启动 Agent、确认消费或重新解析来源。
+成员「长期规则」视图默认展示规则正文与状态，支持查看、修改和撤销。Agent 用于持续办理的「跟进记录」默认收起，展开才读取，核查时再逐条查看处理进展、相关通知和动作回执；原始通知和技术信息继续按需展开。待处理表示 Agent 尚未办结，需要用户答复的问题明确标注「待你答复」。Room 消息支持就地回复；UI 不作为正常办理的前置批准步骤，查看记录不会启动 Agent、确认消费或重新解析来源。
 
 ## 按引用执行
 

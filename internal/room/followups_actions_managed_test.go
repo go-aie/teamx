@@ -90,8 +90,6 @@ func managedActionTest(t *testing.T, discussion bool) *managedActionFixture {
 		t.Fatal(err)
 	}
 	rule := policyRule()
-	rule.Scope.Instance = "https://gitlab.invalid"
-	rule.Scope.Account = "user101"
 	if _, err := svc.store.changePolicy(id, humanCaller, rule); err != nil {
 		t.Fatal(err)
 	}

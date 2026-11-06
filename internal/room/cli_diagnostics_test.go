@@ -54,7 +54,7 @@ func TestAgentCommandHelpIsScopedAndOffline(t *testing.T) {
 		"matters/read":    {"reply_to", "revision", "unit_version", "registered_actions", "new-ID"},
 		"actions/execute": {"ONE", "answer's message.seq", "never fall back", "at most two", "discussion replies one", "Never retry unknown", "policy_changed"},
 		"inbox/read":      {"Full page output", "Confirmation failure", "business completion"},
-		"policy/update":   {"suggest saves suggested only", "One-off consent", "source_text", "Omission is not a wildcard"},
+		"policy/update":   {"suggest saves suggested only", "One-off consent", "source_text", "body {text,expires_at?}", "not blanket permission", "not natural-language applicability"},
 	} {
 		parts := strings.Split(key, "/")
 		help := referenceHelpText(parts[0], parts[1])
@@ -66,6 +66,34 @@ func TestAgentCommandHelpIsScopedAndOffline(t *testing.T) {
 	}
 }
 
+// Published examples must remain accepted by the same strict CLI contract.
+func TestAgentPolicyHelpExamplesMatchContract(t *testing.T) {
+	count := 0
+	for _, line := range strings.Split(referenceCommandHelps["policy/update"].example, "\n") {
+		const prefix = "teamx policy update --change '"
+		if !strings.HasPrefix(line, prefix) {
+			continue
+		}
+		payload := strings.TrimSuffix(strings.TrimPrefix(line, prefix), "'")
+		var q agentPolicyChange
+		if err := json.Unmarshal([]byte(payload), &q); err != nil {
+			t.Fatal(line, err)
+		}
+		if err := q.validate(); err != nil {
+			t.Fatal(line, err)
+		}
+		count++
+	}
+	if count != 4 {
+		t.Fatalf("expected save/style, save/convention, confirm and revoke examples; got %d", count)
+	}
+	for _, old := range []string{"Rules require", "Preferences confer", "kind:rule/preference", "body.scope", "scope_from?"} {
+		if strings.Contains(referenceHelpText("policy", "update"), old) {
+			t.Fatal("obsolete policy guidance", old)
+		}
+	}
+}
+
 func TestAgentJSONDiagnosticsDoNotSendMalformedRequests(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls.Add(1); w.WriteHeader(500) }))
@@ -73,13 +101,13 @@ func TestAgentJSONDiagnosticsDoNotSendMalformedRequests(t *testing.T) {
 	for _, tc := range []struct{ command, op, flag, payload, field, message string }{
 		{"actions", "execute", "--request", `{"input":{"body":42}}`, "input.body", "expected string"},
 		{"actions", "execute", "--request", `{"authority":{"typo":"private-test-secret"}}`, "authority.typo", "unknown JSON field"},
-		{"policy", "update", "--change", `{"type":"save","body":{"scope":{"account_id":{"typo":"private-test-secret"}}}}`, "body.scope.account_id.typo", "unknown JSON field"},
+		{"policy", "update", "--change", `{"type":"save","body":{"scope":{"account_id":{"typo":"private-test-secret"}}}}`, "body.scope", "unknown JSON field"},
 		{"matters", "update", "--change", `{"unit_version":"private-test-secret"}`, "unit_version", "expected uint64"},
 		{"matters", "notify", "--change", `{"proposed":{"body":42}}`, "proposed.body", "expected string"},
 		{"matters", "instruct", "--change", `{"intent":{"typo":true}}`, "intent.typo", "unknown JSON field"},
 		{"matters", "reply", "--change", `{"source_seq":`, "", "incomplete JSON"},
 		{"matters", "update", "--change", `{"status":!}`, "", "invalid character"},
-		{"policy", "update", "--change", `{"type":"save","id":"style","source_seq":18,"turn_number":1,"basis":"explicit","body":{"kind":"preference","text":"short"}} {}`, "", "exactly one JSON"},
+		{"policy", "update", "--change", `{"type":"save","id":"style","source_seq":18,"turn_number":1,"basis":"explicit","body":{"text":"short"}} {}`, "", "exactly one JSON"},
 		{"matters", "instruction-status", "--change", ``, "", "missing JSON"},
 		{"matters", "instruct", "--change", `{"expires_at":"private-test-secret"}`, "expires_at", "RFC3339"},
 		{"policy", "update", "--change", `{"type":"save","body":{"expires_at":"private-test-secret"}}`, "body.expires_at", "RFC3339"},

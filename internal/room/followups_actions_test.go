@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -92,23 +93,14 @@ func (f *referenceExecuteFixture) outcome(status, retry string) platform.TargetA
 	return platform.TargetActionResult{Target: t.Target, Account: a.Account, Status: status, Message: "test outcome", RetryClass: retry, ResultID: platform.ExternalID{Namespace: "gitlab:rest:id", Value: "99"}}
 }
 
-func TestReferenceActionNaturalRuleStillEnforcesTargetScope(t *testing.T) {
-	for _, field := range []string{"matching", "provider", "instance", "account", "project", "object-type"} {
-		t.Run(field, func(t *testing.T) {
+// This is a structural contract test, not evidence that the Agent interprets
+// business authorization correctly. Even a style rule is structurally eligible.
+func TestReferenceActionRuleBodyIsAgentJudged(t *testing.T) {
+	for _, text := range []string{"先给结论，再给理由", "项目 A 的文档咨询直接回复；交付时间先问我"} {
+		t.Run(text, func(t *testing.T) {
 			f := referenceExecuteTest(t, "object")
 			c := policyRule()
-			switch field {
-			case "provider":
-				c.Scope.Provider = "another-platform"
-			case "instance":
-				c.Scope.Instance = "https://another.example.com"
-			case "account":
-				c.Scope.Account = "another-account"
-			case "project":
-				c.Scope.Project = "another-project"
-			case "object-type":
-				c.Scope.ObjectType = "another-type"
-			}
+			c.Text = text
 			if _, err := f.h.store.changePolicy(f.h.id, humanCaller, c); err != nil {
 				t.Fatal(err)
 			}
@@ -117,18 +109,30 @@ func TestReferenceActionNaturalRuleStillEnforcesTargetScope(t *testing.T) {
 				t.Fatal(err)
 			}
 			f.q.PolicyToken = view.PolicyToken
-			f.q.Authority = referenceActionAuthority{RuleID: c.ID, RuleVersion: 1, Reason: "已核实正文中的业务条件"}
+			f.q.Authority = referenceActionAuthority{RuleID: c.ID, RuleVersion: 1, Reason: "Agent 声明正文允许本次操作；程序不验证此语义判断"}
 			receipt, err := f.run()
-			if field == "matching" {
-				if err != nil || receipt.Status != "succeeded" || f.calls.Load() != 1 {
-					t.Fatal(receipt, err)
-				}
-			} else if err == nil || f.calls.Load() != 0 {
-				t.Fatal("scope mismatch dispatched", receipt, err)
+			if err != nil || receipt.Status != "succeeded" || f.calls.Load() != 1 {
+				t.Fatal(receipt, err)
+			}
+			before := f.unit(t)
+			if before.Actions[0].Rule == nil || before.Actions[0].Rule.Text != text {
+				t.Fatal(before)
+			}
+			assertNaturalPolicyJSON(t, before.Actions[0].Rule)
+			reloadConversation(t, f.h)
+			f.svc = referenceTestService(f.h)
+			after := f.unit(t)
+			if !reflect.DeepEqual(before.Actions, after.Actions) {
+				t.Fatal("action snapshot changed on restart")
+			}
+			again, err := f.run()
+			if err != nil || again.Status != "succeeded" || f.calls.Load() != 1 {
+				t.Fatal(again, err)
 			}
 		})
 	}
 }
+
 func TestReferenceActionThreeAuthorities(t *testing.T) {
 	for _, kind := range []string{"object", "discussion"} {
 		for _, authority := range []string{"human", "answer", "instruction", "rule"} {
@@ -162,7 +166,6 @@ func TestReferenceActionThreeAuthorities(t *testing.T) {
 				if authority == "rule" {
 					msg := postConversationReply(t, f.h, "rule", "以后这个项目的文档问题直接回复", 0)
 					rule := conversationRule(msg.Seq)
-					rule.Change.Scope.Account = "bot"
 					view, err := f.svc.referencePolicyChange(f.h.ctx, f.h.id, agentCallerIdentity(f.h.id), rule)
 					if err != nil {
 						t.Fatal(err)
@@ -450,7 +453,6 @@ func TestReferenceActionRechecksAuthorityBeforeRetry(t *testing.T) {
 			if mode == "rule" {
 				msg := postConversationReply(t, f.h, "standing", "以后文档问题直接回复", 0)
 				q := conversationRule(msg.Seq)
-				q.Change.Scope.Account = "bot"
 				v, err := f.svc.referencePolicyChange(f.h.ctx, f.h.id, agentCallerIdentity(f.h.id), q)
 				if err != nil {
 					t.Fatal(err)
@@ -554,5 +556,95 @@ func TestReferenceActionKeepsOtherUnansweredQuestion(t *testing.T) {
 	u = f.unit(t)
 	if u.Status != "waiting_user" || len(u.Questions[0].Answers) != 0 {
 		t.Fatal(u)
+	}
+}
+
+func TestReferenceActionRuleLifecycleAdmission(t *testing.T) {
+	for _, mode := range []string{"suggested", "expired", "revoked", "old-version", "old-token", "foreign-member"} {
+		t.Run(mode, func(t *testing.T) {
+			f := referenceExecuteTest(t, "object")
+			c := policyRule()
+			id := f.h.id
+			if mode == "suggested" {
+				c.Status = "suggested"
+			}
+			if mode == "expired" {
+				expiry := time.Now().Add(-time.Hour)
+				c.ExpiresAt = &expiry
+			}
+			if mode == "foreign-member" {
+				id = f.h.memberID("B", "generation-B")
+			}
+			if _, err := f.h.store.changePolicy(id, humanCaller, c); err != nil {
+				t.Fatal(err)
+			}
+			old, err := f.h.store.readAgentPolicy(f.h.id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if mode == "revoked" || mode == "old-version" || mode == "old-token" {
+				c.Version, c.Revision, c.Text = 1, 1, "改为核实文档后回复；排期先问我"
+				if mode == "revoked" {
+					c.Status = "revoked"
+				}
+				if _, err := f.h.store.changePolicy(id, humanCaller, c); err != nil {
+					t.Fatal(err)
+				}
+			}
+			current, err := f.h.store.readAgentPolicy(f.h.id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.q.PolicyToken = current.PolicyToken
+			if mode == "old-token" {
+				f.q.PolicyToken = old.PolicyToken
+			}
+			f.q.Authority = referenceActionAuthority{RuleID: c.ID, RuleVersion: 1, Reason: "声明适用"}
+			got, err := f.run()
+			if mode == "old-token" {
+				if err != nil || got.Status != "policy_changed" || got.Policy == nil || !reflect.DeepEqual(got.Policy.Effective, current.Effective) {
+					t.Fatal(got, err)
+				}
+			} else if !errors.Is(err, ErrConflict) {
+				t.Fatal(mode, got, err)
+			}
+			if f.calls.Load() != 0 || len(f.unit(t).Actions) != 0 {
+				t.Fatal("ineligible authority persisted or dispatched")
+			}
+		})
+	}
+}
+
+func TestReferenceActionRuleUnknownSnapshotRecovery(t *testing.T) {
+	f := referenceExecuteTest(t, "discussion")
+	c := policyRule()
+	if _, err := f.h.store.changePolicy(f.h.id, humanCaller, c); err != nil {
+		t.Fatal(err)
+	}
+	view, err := f.h.store.readAgentPolicy(f.h.id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.q.PolicyToken = view.PolicyToken
+	f.q.Authority = referenceActionAuthority{RuleID: c.ID, RuleVersion: 1, Reason: "正文允许此次回复，条件与例外已核实"}
+	f.result = func(int) platform.TargetActionResult { return f.outcome("unknown", "transient") }
+	got, err := f.run()
+	if err != nil || got.Status != "unknown" || got.Attempts != 1 {
+		t.Fatal(got, err)
+	}
+	before := f.unit(t).Actions[0]
+	c.Version, c.Revision, c.Status = 1, 1, "revoked"
+	if _, err := f.h.store.changePolicy(f.h.id, humanCaller, c); err != nil {
+		t.Fatal(err)
+	}
+	reloadConversation(t, f.h)
+	f.svc = referenceTestService(f.h)
+	after := f.unit(t).Actions[0]
+	if !reflect.DeepEqual(before, after) || after.Rule.Status != "active" || after.Request.Authority.Reason != f.q.Authority.Reason {
+		t.Fatal("lost original rule or action explanation", after)
+	}
+	got, err = f.run()
+	if err != nil || got.Status != "unknown" || f.calls.Load() != 1 {
+		t.Fatal("unknown action resent", got, err)
 	}
 }

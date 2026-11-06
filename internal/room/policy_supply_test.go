@@ -42,10 +42,6 @@ func TestPolicyEffectiveTokenIdentityContentAndExpiry(t *testing.T) {
 	}
 	for _, mutate := range []func(*PolicyRevision){
 		func(r *PolicyRevision) { r.Text = "new body" },
-		func(r *PolicyRevision) { r.Scope.Project = "other" },
-		func(r *PolicyRevision) { r.Conditions = "new conditions" },
-		func(r *PolicyRevision) { r.Exceptions = "new exceptions" },
-		func(r *PolicyRevision) { r.Actions = "new action" },
 		func(r *PolicyRevision) { r.Source.Text = "new source" },
 		func(r *PolicyRevision) { r.Version++ },
 		func(r *PolicyRevision) { r.Status = "revoked" },
@@ -146,7 +142,7 @@ func TestPolicySessionSupplyFirstUnchangedChangesAndRebuild(t *testing.T) {
 	fullBytes, _ := json.Marshal(full)
 	metadataBytes, _ := json.Marshal(metadata)
 	t.Logf("policy supply: complete context %d bytes; unchanged context %d bytes; runtime requires no policy CLI query", len(fullBytes), len(metadataBytes))
-	suggestion := PolicyChange{ID: "style", Revision: 1, Kind: "preference", Status: "suggested", Text: "short", SourceText: "suggest short replies"}
+	suggestion := PolicyChange{ID: "style", Revision: 1, Status: "suggested", Text: "short", SourceText: "suggest short replies"}
 	if _, err := h.store.changePolicy(h.id, humanCaller, suggestion); err != nil {
 		t.Fatal(err)
 	}

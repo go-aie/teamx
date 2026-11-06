@@ -146,7 +146,7 @@ func TestAgentBPolicyBranchesAndDetailRecovery(t *testing.T) {
 	h, svc, _, _ := conversationHarness(t, 1)
 	cli := entryCLI(t, svc)
 	seq := postConversationReply(t, h, "habit", "这次简短中文回复", 0).Seq
-	q := agentPolicyChange{Type: "suggest", ID: "style", SourceSeq: seq, TurnNumber: 1, Basis: "仅建议，不推断长期许可", Body: &agentPolicyBody{Kind: "preference", Text: "简短中文；保留必要限制", Scope: PolicyScope{}}}
+	q := agentPolicyChange{Type: "suggest", ID: "style", SourceSeq: seq, TurnNumber: 1, Basis: "仅建议，不推断长期许可", Body: &agentPolicyBody{Text: "简短中文；保留必要限制"}}
 	var suggestion agentPolicyUpdateWireTest
 	if err := cli(entryChange(t, "policy", "update", q), &suggestion); err != nil || suggestion.Record.Version != 1 || len(suggestion.Effective) != 0 {
 		t.Fatal(suggestion, err)
@@ -158,7 +158,7 @@ func TestAgentBPolicyBranchesAndDetailRecovery(t *testing.T) {
 	confirmSeq := postConversationReply(t, h, "confirm-style", "以后就按这个建议处理", sent.Seq).Seq
 	confirm := agentPolicyChange{Type: "confirm", ID: "style", Version: 1, Revision: 1, SourceSeq: confirmSeq, TurnNumber: 1, Basis: "明确确认已公开的原建议", ProposalSeq: sent.Seq}
 	var active agentPolicyUpdateWireTest
-	if err := cli(entryChange(t, "policy", "update", confirm), &active); err != nil || len(active.Effective) != 1 || active.Record.Text != suggestion.Record.Text || active.Record.Scope != suggestion.Record.Scope || active.Record.Conversation.Proposal.Seq != sent.Seq {
+	if err := cli(entryChange(t, "policy", "update", confirm), &active); err != nil || len(active.Effective) != 1 || active.Record.Text != suggestion.Record.Text || active.Record.Conversation.Proposal.Seq != sent.Seq {
 		t.Fatal(active, err)
 	}
 	revoke := agentPolicyChange{Type: "revoke", ID: "style", Version: 2, Revision: 2, SourceSeq: postConversationReply(t, h, "revoke-style", "撤销这条长期偏好", 0).Seq, TurnNumber: 1, Basis: "准确撤销用户长期偏好"}
@@ -386,8 +386,6 @@ func TestAgentBDiagnosticFieldsUseCurrentContract(t *testing.T) {
 		field  string
 		mutate func(*agentPolicyBody)
 	}{
-		{"body.scope.project", func(b *agentPolicyBody) { b.Scope.Project = "*" }},
-		{"body.scope.description", func(b *agentPolicyBody) { b.Scope.Description = "unsupported" }},
 		{"body.text", func(b *agentPolicyBody) { b.Text = strings.Repeat("x", maxPolicyTextBytes+1) }},
 	} {
 		q := base

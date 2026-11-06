@@ -17,8 +17,8 @@ import (
 
 var jsonInputCommands = []struct{ command, op, payload string }{
 	{"actions", "execute", `{"object_ref":"ref_o","unit_ref":"unit_u","unit_version":3,"turn_number":2,"id":"stable","policy_token":"token","authority":{"type":"human_reply","room_seq":18,"reason":"准确依据"},"operation":"object.comment","input":{"body":"中文\n\"quotes\" \\ $HOME $(literal) '"}}`},
-	{"policy", "update", `{"type":"save","id":"style","revision":2,"version":1,"body":{"kind":"preference","text":"中文\n\"quotes\" \\ $HOME $(literal) '","scope":{}},"source_seq":18,"turn_number":2,"basis":"明确长期指令"}`},
-	{"policy", "update", `{"type":"save","id":"project-rule","source_seq":18,"turn_number":2,"basis":"explicit project rule","body":{"kind":"rule","text":"consult contacts"},"scope_from":{"object_ref":"ref_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","unit_ref":"unit_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","level":"project"}}`},
+	{"policy", "update", `{"type":"save","id":"style","revision":2,"version":1,"body":{"text":"中文\n\"quotes\" \\ $HOME $(literal) '"},"source_seq":18,"turn_number":2,"basis":"明确长期指令"}`},
+	{"policy", "update", `{"type":"save","id":"project-rule","source_seq":18,"turn_number":2,"basis":"explicit project rule","body":{"text":"consult contacts"}}`},
 	{"matters", "update", `{"object_ref":"ref_o","unit_ref":"unit_u","unit_version":3,"turn_number":2,"status":"in_progress","summary":"中文\n\"quotes\" \\ $HOME $(literal) '"}`},
 	{"matters", "notify", `{"object_ref":"ref_o","unit_ref":"unit_u","unit_version":3,"turn_number":2,"text":"@operator 请确认\n准确问题","proposed":{"operation":"object.comment","body":"准确正文"}}`},
 	{"matters", "reply", `{"object_ref":"ref_o","unit_ref":"unit_u","unit_version":3,"turn_number":2,"question_ref":"question_q","source_seq":18,"basis":"准确答复"}`},

@@ -258,7 +258,7 @@
         <div id="agent-tabs" class="notification-tabs agent-tabs" role="tablist" aria-label="Agent 详情">
           <button id="agent-tab-activity" type="button" role="tab" aria-selected="true" aria-controls="activity-body">活动记录</button>
           <button id="agent-tab-inbox" type="button" role="tab" aria-selected="false" aria-controls="inbox-member-view" tabindex="-1">收件箱</button>
-          <button id="agent-tab-policy" type="button" role="tab" aria-selected="false" aria-controls="policy-member-view" tabindex="-1">偏好与规则</button>
+          <button id="agent-tab-policy" type="button" role="tab" aria-selected="false" aria-controls="policy-member-view" tabindex="-1">长期规则</button>
           <button id="agent-tab-tools" type="button" role="tab" aria-selected="false" aria-controls="tools-member-view" tabindex="-1">工具设置</button>
         </div>
         <div id="activity-body" class="activity-body" role="tabpanel" aria-labelledby="agent-tab-activity" aria-busy="false">
@@ -284,22 +284,16 @@
         </div>
         <div id="policy-member-view" class="activity-body" role="tabpanel" aria-labelledby="agent-tab-policy" hidden>
           <div class="policy-toolbar">
-            <div class="policy-heading"><h3>偏好与规则</h3><p id="policy-status" role="status" aria-live="polite"></p></div>
-            <div class="member-actions"><button id="policy-reload" type="button">刷新</button><button id="policy-new" type="button">新增偏好或规则</button></div>
+            <div class="policy-heading"><h3>长期规则</h3><p id="policy-status" role="status" aria-live="polite"></p></div>
+            <div class="member-actions"><button id="policy-reload" type="button">刷新</button><button id="policy-new" type="button">新增长期规则</button></div>
           </div>
-          <p class="quiet policy-intro">在 Room 中表达要求、回答问题；这里查看和纠正偏好与规则。偏好不授予权限，未确认的建议不生效。</p>
+          <p class="quiet policy-intro">在 Room 中告诉 Agent 需要长期记住的要求；这里查看、纠正和撤销。规则指导 Agent 判断与处理；具体操作取决于规则内容和可用能力。未确认的建议不生效。</p>
           <div id="policy-entries"></div>
           <form id="policy-form" class="policy-form" hidden>
-            <h3 id="policy-editor-title">新增偏好或规则</h3>
-            <label>类型<select id="policy-kind" aria-describedby="policy-kind-hint"><option value="preference">用户偏好</option><option value="rule">长期代办规则</option></select><span id="policy-kind-hint" class="policy-field-hint">影响回复方式，不授予操作权限。</span></label>
-            <label>内容<textarea id="policy-text" rows="4" maxlength="32768" placeholder="例如：使用简短中文回复，先给结论" required></textarea></label>
-            <fieldset id="policy-rule-fields" hidden><legend>长期规则适用对象</legend>
-              <label class="policy-wide-field">平台连接<select id="policy-connection"></select><span id="policy-connection-hint" class="policy-field-hint"></span></label>
-              <label>项目<input id="policy-project" list="policy-project-options" maxlength="4096" placeholder="选择已有项目或填写准确项目路径 / ID" /><datalist id="policy-project-options"></datalist></label>
-              <label>对象类型（可选）<input id="policy-object-type" maxlength="4096" placeholder="留空不限制对象类型" /></label>
-            </fieldset>
+            <h3 id="policy-editor-title">新增长期规则</h3>
+            <label>内容<textarea id="policy-text" rows="4" maxlength="32768" placeholder="例如：AgenticHub 产品负责人是 huayi；涉及交付时间先问我" required></textarea></label>
             <label>有效期（可选）<input id="policy-expires" type="datetime-local" aria-describedby="policy-expires-hint" /><span id="policy-expires-hint" class="policy-field-hint">留空则不设到期时间。</span></label>
-            <p id="policy-save-hint" class="policy-form-note">保存后，Agent 将按此偏好组织回复；偏好不会授予操作权限。</p>
+            <p id="policy-save-hint" class="policy-form-note">把适用情况、处理要求、授权和例外写在正文中。有效表示规则进入 Agent 上下文，不表示允许所有操作。</p>
             <div class="member-actions policy-form-actions"><button id="policy-save" type="submit">保存并生效</button><button id="policy-suggest" type="button">保存为建议</button><button id="policy-cancel" type="button">取消</button></div>
           </form>
           <details id="policy-followups" class="policy-followups">
