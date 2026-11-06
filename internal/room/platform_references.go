@@ -5,6 +5,7 @@ import (
 	"sort"
 
 	"github.com/go-aie/teamx/internal/platform"
+	"github.com/go-aie/teamx/internal/platform/lark"
 )
 
 // One source resolution owns its admitted call through durable linkage. This
@@ -22,13 +23,14 @@ func (m *roomManager) initPlatformReferences() {
 	if m.referenceAdapters == nil {
 		m.referenceAdapters = map[string]referenceAdapterFactory{
 			"gitlab": gitlabReferenceCapabilities,
+			"lark":   func() platform.ReferenceCapabilities { return lark.Capabilities(nil) },
 		}
 	}
 	if m.referenceExecutors == nil {
 		m.referenceExecutors = map[string]referenceActionPreparer{"gitlab": m.prepareGitlabReferenceAction}
 	}
 	if m.referenceResolvers == nil {
-		m.referenceResolvers = map[string]followupResolver{"gitlab": m.resolveGitlabFollowup}
+		m.referenceResolvers = map[string]followupResolver{"gitlab": m.resolveGitlabFollowup, "lark": m.resolveLarkFollowup}
 	}
 }
 
@@ -68,6 +70,11 @@ func (m *roomManager) bindPlatformReferences(svc *service) {
 
 		if access.Valid() && access.Account.Provider == "gitlab" {
 			if err := m.checkGitlabReferenceAccessLocked(ctx, req, access); err != nil {
+				return followupEvent{}, err
+			}
+		}
+		if access.Valid() && access.Account.Provider == "lark" {
+			if err := m.checkLarkReferenceAccessLocked(ctx, req, access); err != nil {
 				return followupEvent{}, err
 			}
 		}

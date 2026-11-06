@@ -338,7 +338,7 @@ func validateFollowupResolution(e InboxEntry, r platform.TargetResolution, a pla
 	}
 	if (r.Status != platform.ResolutionResolved && r.Status != platform.ResolutionPartial) || r.Target == nil || !r.Target.Valid() || !a.Valid() ||
 		a.RoomIdentity != e.RoomIdentity || a.AgentID != e.AgentID || a.MembershipID != e.MembershipID || r.Account != a.Account ||
-		r.Target.IdentityScope != a.Account.IdentityScope || r.Target.Provider != e.Item.Source.Provider || r.Target.Instance != e.Item.Source.Instance || r.Target.Tenant != e.Item.Source.Tenant ||
+		(r.Target.Provider != a.Account.Provider || r.Target.Instance != a.Account.Instance) || r.Target.Provider != e.Item.Source.Provider || r.Target.Instance != e.Item.Source.Instance || r.Target.Tenant != e.Item.Source.Tenant ||
 		(r.DiscussionVerified && !r.Target.Discussion.Valid()) || (r.MessageVerified && !r.Target.Message.Valid()) {
 		return platform.ErrReference
 	}

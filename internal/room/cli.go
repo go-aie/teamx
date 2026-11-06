@@ -134,6 +134,9 @@ func runCLIWithInput(ctx context.Context, args []string, stdin io.Reader, stdout
 	if command == "inbox" || command == "matters" || command == "actions" || command == "policy" {
 		return runReferenceCLI(ctx, command, args, stdin, stdout, stderr, env)
 	}
+	if command == "lark" {
+		return runLarkCLI(ctx, args, stdout, stderr, env)
+	}
 	if command == "workspace-git" {
 		return runWorkspaceGitCLI(ctx, args, stdout, stderr, env)
 	}

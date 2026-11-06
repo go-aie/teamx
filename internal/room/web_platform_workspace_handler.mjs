@@ -95,7 +95,7 @@ await ui.el("gitlab-events-enabled").emit("change");
 assert.equal(ui.el("gitlab-events-save").disabled, false, ui.el("gitlab-events-account").textContent);
 await ui.el("gitlab-events-save").emit("click");
 let notifications = await call(`/v1/platform/notifications?${params}`);
-assert.equal(notifications.subscriptions.length, 2);
+assert.equal(notifications.subscriptions.length, 3);
 assert.equal(notifications.subscriptions.find(s => s.channel === "todos").subscription_version, 0);
 const subscription = notifications.subscriptions.find(s => s.provider === "gitlab" && s.channel === "events");
 assert.equal(subscription.provider, "gitlab");

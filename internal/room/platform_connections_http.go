@@ -68,7 +68,7 @@ func (m *roomManager) servePlatformConnections(w http.ResponseWriter, r *http.Re
 	case "/v1/platform/connections/save":
 		result, err = m.updatePlatformConnection(req, false)
 	default:
-		if req.Name != "" || req.Provider != "" || req.URL != "" || req.PAT != "" || req.TokenEnv != "" {
+		if req.CLIProfile != nil || req.SnapshotVersion != 0 || req.Name != "" || req.Provider != "" || req.URL != "" || req.PAT != "" || req.TokenEnv != "" {
 			writeAPIError(w, ErrRequest)
 			return
 		}

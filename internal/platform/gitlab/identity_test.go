@@ -57,3 +57,24 @@ func TestPlatformGitLabVerificationTransport(t *testing.T) {
 		})
 	}
 }
+
+func TestLegacyAccountIdentity(t *testing.T) {
+	good := platform.Validation{UserID: 42, Username: "operator"}
+	account, ok := LegacyAccountIdentity("https://gitlab.invalid", good)
+	if !ok || account.ID.Namespace != "gitlab:rest:id" || account.ID.Value != "42" || account.Provider != "gitlab" {
+		t.Fatal("lost native identity")
+	}
+	for _, v := range []platform.Validation{{UserID: 0, Username: "operator"}, {UserID: -1, Username: "operator"}, {UserID: 42, Username: "中文显示名"}, {UserID: 42, Username: "bad user"}} {
+		if _, ok := LegacyAccountIdentity("https://gitlab.invalid", v); ok {
+			t.Fatal("invalid GitLab legacy identity accepted")
+		}
+	}
+	good.Account = account
+	if _, ok := LegacyAccountIdentity(account.Instance, good); !ok {
+		t.Fatal("matching native identity rejected")
+	}
+	good.Account.ID.Value = "43"
+	if _, ok := LegacyAccountIdentity(account.Instance, good); ok {
+		t.Fatal("mismatched native and legacy identities accepted")
+	}
+}

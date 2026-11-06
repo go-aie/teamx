@@ -360,7 +360,7 @@ func TestPlatformNotificationsRequireExplicitSourceAndSubscription(t *testing.T)
 	var list struct {
 		Subscriptions []notificationView `json:"subscriptions"`
 	}
-	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &list) != nil || len(list.Subscriptions) != 2 {
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &list) != nil || len(list.Subscriptions) != 3 {
 		t.Fatal("invalid notification list", w.Code, w.Body.String())
 	}
 	view := list.Subscriptions[0]

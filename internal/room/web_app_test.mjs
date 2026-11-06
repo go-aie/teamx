@@ -1679,7 +1679,7 @@ test("notification source shares the rail, preserves edits through back, collaps
   const { api, events } = notificationServer(), ui = await launch(api);
   const source = ui.el("open-gitlab-source"), panel = ui.el("notification-detail"), list = ui.el("member-list-view");
   assert.equal(ui.el("notification-sources").hidden, false);
-  assert.equal(ui.el("notification-source-count").textContent, "1");
+  assert.equal(ui.el("notification-source-count").textContent, "2");
   assert.equal(ui.el("notification-source-state").textContent, "运行中");
   assert.equal(String(ui.el("member-count").textContent), "0");
   await source.emit("click"); await settle();
@@ -1969,7 +1969,7 @@ test("GT-03 message navigation requires explicit channels and keyboard tabs pres
     assert.equal(ui.el(`notification-panel-${channel}`).hidden, false);
   }
   await ui.el("notification-tab-todos").emit("keydown", { key: "ArrowLeft" }); assert.equal(ui.el("notification-tab-events").attributes["tabindex"], "0");
-  await ui.el("notification-tab-events").emit("keydown", { key: "End" }); assert.equal(ui.el("notification-tab-todos").attributes["aria-selected"], "true");
+  await ui.el("notification-tab-events").emit("keydown", { key: "End" }); assert.equal(ui.el("notification-tab-messages").attributes["aria-selected"], "true");
 });
 
 test("GT-03 reverified connection with the same ID but a new account requires explicit new subscription", async () => {

@@ -20,16 +20,18 @@ type platformConnectionsFile = connection.Snapshot
 
 // Requests may carry secrets and must never appear in generic diagnostics.
 type platformConnectionRequest struct {
-	ReferencedRooms []RoomIdentity `json:"referenced_rooms,omitempty"`
-	ServiceEpoch    string         `json:"service_epoch"`
-	Caller          Caller         `json:"caller"`
-	ID              string         `json:"id"`
-	Version         uint64         `json:"version"`
-	Name            string         `json:"name,omitempty"`
-	Provider        string         `json:"provider,omitempty"`
-	URL             string         `json:"url,omitempty"`
-	PAT             string         `json:"pat,omitempty"`
-	TokenEnv        string         `json:"token_env,omitempty"`
+	SnapshotVersion int                  `json:"snapshot_version,omitempty"`
+	CLIProfile      *platform.CLIProfile `json:"cli_profile,omitempty"`
+	ReferencedRooms []RoomIdentity       `json:"referenced_rooms,omitempty"`
+	ServiceEpoch    string               `json:"service_epoch"`
+	Caller          Caller               `json:"caller"`
+	ID              string               `json:"id"`
+	Version         uint64               `json:"version"`
+	Name            string               `json:"name,omitempty"`
+	Provider        string               `json:"provider,omitempty"`
+	URL             string               `json:"url,omitempty"`
+	PAT             string               `json:"pat,omitempty"`
+	TokenEnv        string               `json:"token_env,omitempty"`
 }
 
 func (platformConnectionRequest) Format(s fmt.State, _ rune) {
@@ -61,7 +63,7 @@ func (m *roomManager) updatePlatformConnection(req platformConnectionRequest, re
 	if m.busy {
 		return platformConnection{}, ErrBusy
 	}
-	change, err := m.connections.Plan(connection.Request{ID: req.ID, Version: req.Version, Name: req.Name, Provider: req.Provider, URL: req.URL, PAT: req.PAT, TokenEnv: req.TokenEnv}, remove)
+	change, err := m.connections.Plan(connection.Request{CLIProfile: req.CLIProfile, SnapshotVersion: req.SnapshotVersion, ID: req.ID, Version: req.Version, Name: req.Name, Provider: req.Provider, URL: req.URL, PAT: req.PAT, TokenEnv: req.TokenEnv}, remove)
 	if err != nil {
 		return platformConnection{}, platformConnectionError(err)
 	}

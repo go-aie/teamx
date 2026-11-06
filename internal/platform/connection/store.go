@@ -10,7 +10,7 @@ import (
 	"github.com/go-aie/teamx/internal/platform"
 )
 
-const snapshotVersion = 1
+const snapshotVersion = 2
 const maxPlatformConnectionsBytes int64 = 2 << 20
 
 // Store delegates all writes to the service's existing atomic snapshot owner.
@@ -37,7 +37,15 @@ func (m *Manager) Load() (Snapshot, error) {
 	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0600 {
 		return file, fmt.Errorf("%w: platform connections must be a private regular file", ErrInvalid)
 	}
-	if readSnapshot(name, &file) != nil || file.Version != snapshotVersion || len(file.Connections) > 100 || len(file.Credentials) > 100 {
+	var saved Snapshot
+	if readSnapshot(name, &saved) != nil {
+		return Snapshot{}, fmt.Errorf("%w: malformed platform connections", ErrInvalid)
+	}
+	file = saved
+	if file.Version != snapshotVersion && file.Version != 1 {
+		return Snapshot{}, fmt.Errorf("%w: unsupported platform connections version; supported versions are 1 (legacy credentials only) and 2", ErrInvalid)
+	}
+	if len(file.Connections) > 100 || len(file.Credentials) > 100 {
 		return Snapshot{}, fmt.Errorf("%w: malformed platform connections", ErrInvalid)
 	}
 	seen := map[string]bool{}
@@ -49,16 +57,36 @@ func (m *Manager) Load() (Snapshot, error) {
 		credentials[cred.ID] = cred
 	}
 	used := map[string]bool{}
-	for _, c := range file.Connections {
+	for index, c := range file.Connections {
 		n, u, err := m.normalize(c.Name, c.Provider, c.URL)
 		sourceOK := c.CredentialKind == "pat" && credentials[c.CredentialID].ConnectionID == c.ID && !used[c.CredentialID] && c.TokenEnv == "" ||
 			c.CredentialKind == "env" && c.CredentialID == "" && envName.MatchString(c.TokenEnv) && len(c.TokenEnv) <= 128
+		if c.CredentialKind != "cli_profile" {
+			sourceOK = sourceOK && c.CLIProfile == nil
+		}
+		if c.CredentialKind == "cli_profile" {
+			sourceOK = file.Version == snapshotVersion && c.CLIProfile != nil && c.CredentialID == "" && c.TokenEnv == "" && m.validProfile != nil && m.validProfile(c.Provider, c.URL, *c.CLIProfile)
+		}
+		if m.profileOnly != nil && m.profileOnly(c.Provider) {
+			sourceOK = sourceOK && c.CredentialKind == "cli_profile"
+		}
 		v := c.Validation
-		validationOK := validValidation(v) && validIdentityBinding(c)
+		identityOK := true
+		if v.Status == "valid" {
+			c.identity, identityOK = m.resolveIdentity(c.Provider, c.URL, v)
+		}
+		validationOK := identityOK && validValidation(v) && validIdentityBinding(c)
+		if file.Version == 1 {
+			validationOK = validationOK && c.CLIProfile == nil && v.Account == (platform.AccountIdentity{})
+		}
+		if c.CredentialKind == "cli_profile" && v.Status == "valid" {
+			validationOK = validationOK && v.Account.Valid() && v.Account.Provider == c.Provider && v.Account.Instance == c.URL && v.UserID == 0
+		}
 		if err != nil || n != c.Name || u != c.URL || !validRestartID(c.ID) || !validRestartID(c.Generation) || seen[c.ID] || c.Version == 0 ||
 			c.CredentialVersion == 0 || c.CredentialVersion > c.Version || !c.CredentialConfigured || !sourceOK || !validationOK {
 			return Snapshot{}, fmt.Errorf("%w: invalid platform connection", ErrInvalid)
 		}
+		file.Connections[index] = c
 		seen[c.ID] = true
 		if c.CredentialID != "" {
 			used[c.CredentialID] = true
@@ -71,7 +99,7 @@ func (m *Manager) Load() (Snapshot, error) {
 }
 func validPlatformValidationError(s string) bool {
 	switch s {
-	case "credential_unavailable", "credential_rejected", "query_failed", "invalid_response":
+	case "credential_unavailable", "credential_rejected", "query_failed", "invalid_response", "invalid_profile", "identity_mismatch", "cli_unavailable", "cli_version_mismatch", "permission_denied", "cursor_expired", "rate_limited", "network_error", "timeout", "cancelled", "output_limit":
 		return true
 	}
 	return false

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -55,4 +56,14 @@ func VerifyIdentityWithTransport(ctx context.Context, origin string, secret plat
 	}
 	result.Status, result.Username, result.UserID, result.ErrorCode = "valid", user.Username, user.ID, ""
 	return result
+}
+
+// LegacyAccountIdentity interprets historical integer/username snapshots at the
+// GitLab boundary. Callers retain the original disk version and fields.
+func LegacyAccountIdentity(origin string, v platform.Validation) (platform.AccountIdentity, bool) {
+	if v.UserID <= 0 || !platform.ValidUsername(v.Username) {
+		return platform.AccountIdentity{}, false
+	}
+	a := platform.AccountIdentity{IdentityScope: platform.IdentityScope{Provider: "gitlab", Instance: origin}, ID: platform.ExternalID{Namespace: "gitlab:rest:id", Value: strconv.FormatInt(v.UserID, 10)}}
+	return a, a.Valid() && (v.Account == (platform.AccountIdentity{}) || v.Account == a)
 }

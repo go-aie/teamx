@@ -9,10 +9,16 @@ func (r NotificationReference) Valid() bool {
 	if r.Version == 0 {
 		return r == (NotificationReference{})
 	}
-	if r.Version != 1 {
+	if r.Version != 1 && r.Version != 2 {
 		return false
 	}
-	for _, id := range []ExternalID{r.RecipientID, r.ProjectID, r.Target.ID, r.Target.IID, r.Object.ID, r.Object.IID, r.NoteID, r.DiscussionID} {
+	if r.Version == 1 && (r.ChatID != (ExternalID{}) || r.ParentID != (ExternalID{}) || r.RootID != (ExternalID{}) || r.AccountTenant != (ExternalID{})) {
+		return false
+	}
+	if r.Version == 2 && (!r.ChatID.Valid() || !r.Target.ID.Valid() || r.Target.Type != "message" || !r.RecipientID.Valid() || !r.AccountTenant.Valid()) {
+		return false
+	}
+	for _, id := range []ExternalID{r.ChatID, r.ParentID, r.RootID, r.AccountTenant, r.RecipientID, r.ProjectID, r.Target.ID, r.Target.IID, r.Object.ID, r.Object.IID, r.NoteID, r.DiscussionID} {
 		if id == (ExternalID{}) {
 			continue
 		}

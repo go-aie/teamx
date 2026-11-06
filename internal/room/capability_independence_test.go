@@ -87,7 +87,7 @@ printf '%s' "$1"
 		if origin != "https://fixture.invalid" || secret.Reveal() != "fixture-secret" {
 			t.Error("incorrect provider verification context")
 		}
-		return platform.Validation{Status: "valid", UserID: 202, Username: "fixture-user", CheckedAt: time.Now().UTC()}
+		return platform.Validation{Status: "valid", Account: platform.AccountIdentity{IdentityScope: platform.IdentityScope{Provider: "fixture", Instance: origin}, ID: platform.ExternalID{Namespace: "fixture:account", Value: "opaque-user"}}, Username: "fixture-user", CheckedAt: time.Now().UTC()}
 	}}
 	d := m.toolCatalog[0]
 	d.Name, d.Provider = "fixture-cli", "fixture"

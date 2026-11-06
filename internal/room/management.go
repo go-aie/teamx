@@ -548,6 +548,10 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m.servePlatformConnections(w, r)
 		return
 	}
+	if r.URL.Path == "/v1/platform/lark/target" || r.URL.Path == "/v1/platform/lark/messages" || r.URL.Path == "/v1/platform/lark/message" {
+		m.serveLarkRead(w, r)
+		return
+	}
 	if r.URL.Path == "/v1/platform/attachments" {
 		m.servePlatformAttachment(w, r)
 		return

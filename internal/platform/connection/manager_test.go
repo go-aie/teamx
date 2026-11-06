@@ -49,6 +49,13 @@ func testManager(t *testing.T) (*Manager, *int, *error) {
 		}
 		return platform.Validation{Status: "valid", CheckedAt: time.Now().UTC(), Username: "operator", UserID: 101}
 	})
+	m.SetIdentityResolver(func(provider, origin string, v platform.Validation) (platform.AccountIdentity, bool) {
+		if v.Account.Valid() {
+			return v.Account, true
+		}
+		a := platform.AccountIdentity{IdentityScope: platform.IdentityScope{Provider: provider, Instance: origin}, ID: platform.ExternalID{Namespace: "fixture:integer", Value: fmt.Sprint(v.UserID)}}
+		return a, v.UserID > 0 && platform.ValidUsername(v.Username)
+	})
 	return m, &writes, &gate
 }
 func request() Request {

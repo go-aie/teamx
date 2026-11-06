@@ -4,6 +4,7 @@
 package connection
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -28,16 +29,34 @@ var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 // NormalizeFunc validates the supported provider and canonicalizes configuration.
 type NormalizeFunc func(name, provider, origin string) (string, string, error)
 type Manager struct {
-	store     Store
-	normalize NormalizeFunc
-	verify    Verify
+	store            Store
+	normalize        NormalizeFunc
+	verify           Verify
+	identityResolver func(string, string, platform.Validation) (platform.AccountIdentity, bool)
+	verifyProfile    func(context.Context, string, string, platform.CLIProfile) platform.Validation
+	profileOnly      func(string) bool
+	validProfile     func(string, string, platform.CLIProfile) bool
 }
 
 func New(store Store, normalize NormalizeFunc, verify Verify) *Manager {
 	return &Manager{store: store, normalize: normalize, verify: verify}
 }
 
+// SetProfileSupport registers reference-only credentials without interpreting
+// provider-specific CLI profiles in the common connection layer.
+func (m *Manager) SetProfileSupport(only func(string) bool, valid func(string, string, platform.CLIProfile) bool, verify func(context.Context, string, string, platform.CLIProfile) platform.Validation) {
+	m.profileOnly, m.validProfile, m.verifyProfile = only, valid, verify
+}
+
+// SetIdentityResolver delegates provider identity validation and historical
+// field interpretation. Resolution is in-memory and never migrates disk.
+func (m *Manager) SetIdentityResolver(resolve func(string, string, platform.Validation) (platform.AccountIdentity, bool)) {
+	m.identityResolver = resolve
+}
+
 type Request struct {
+	SnapshotVersion                    int
+	CLIProfile                         *platform.CLIProfile
 	ID                                 string
 	Version                            uint64
 	Name, Provider, URL, PAT, TokenEnv string
@@ -79,11 +98,23 @@ func (m *Manager) Plan(req Request, remove bool) (Change, error) {
 	if index < 0 && (remove || req.Version != 0) || index >= 0 && file.Connections[index].Version != req.Version {
 		return Change{}, ErrConflict
 	}
-	rotating := index >= 0 && (req.PAT != "" || req.TokenEnv != "")
+	rotating := index >= 0 && (req.PAT != "" || req.TokenEnv != "" || req.CLIProfile != nil)
 	if remove {
 		file.Connections = append(file.Connections[:index], file.Connections[index+1:]...)
 		file.removeCredential(req.ID)
 		return Change{file: file}, nil
+	}
+	if req.SnapshotVersion != 0 && req.SnapshotVersion != snapshotVersion {
+		return Change{}, ErrInvalid
+	}
+	if file.Version == 1 && req.SnapshotVersion == snapshotVersion {
+		file.Version = snapshotVersion
+	}
+	if file.Version == 1 && req.CLIProfile != nil {
+		if req.SnapshotVersion != snapshotVersion {
+			return Change{}, fmt.Errorf("%w: explicitly select snapshot_version 2 to add profile credentials", ErrInvalid)
+		}
+		file.Version = snapshotVersion
 	}
 	name, origin, err := m.normalize(req.Name, req.Provider, req.URL)
 	if err != nil {
@@ -108,6 +139,9 @@ func (m *Manager) Plan(req Request, remove bool) (Change, error) {
 		return Change{}, ErrCapacity
 	}
 	c.Name, c.Provider, c.URL = name, req.Provider, origin
+	if req.CLIProfile != nil && (req.PAT != "" || req.TokenEnv != "" || m.validProfile == nil || !m.validProfile(req.Provider, origin, *req.CLIProfile)) {
+		return Change{}, ErrRequest
+	}
 	if req.PAT != "" && req.TokenEnv != "" {
 		return Change{}, ErrRequest
 	}
@@ -116,6 +150,7 @@ func (m *Manager) Plan(req Request, remove bool) (Change, error) {
 			return Change{}, fmt.Errorf("%w: invalid credential source", ErrRequest)
 		}
 		file.removeCredential(c.ID)
+		c.CLIProfile = nil
 		c.CredentialID, c.TokenEnv, c.CredentialKind = "", req.TokenEnv, "pat"
 		if req.PAT != "" {
 			id, err := newOpaqueID()
@@ -132,6 +167,18 @@ func (m *Manager) Plan(req Request, remove bool) (Change, error) {
 		c.CredentialVersion++
 		c.Validation = platform.Validation{Status: "unverified"}
 		c.IdentityBinding = nil
+	}
+	if req.CLIProfile != nil {
+		profile := *req.CLIProfile
+		file.removeCredential(c.ID)
+		c.CLIProfile, c.CredentialID, c.TokenEnv, c.CredentialKind = &profile, "", "", "cli_profile"
+		c.CredentialConfigured = true
+		c.CredentialVersion++
+		c.Validation = platform.Validation{Status: "unverified"}
+		c.IdentityBinding = nil
+	}
+	if m.profileOnly != nil && m.profileOnly(c.Provider) && c.CredentialKind != "cli_profile" {
+		return Change{}, ErrRequest
 	}
 	if !c.CredentialConfigured {
 		return Change{}, fmt.Errorf("%w: credential source required", ErrRequest)
@@ -173,6 +220,9 @@ func httpsURL(value string) (*url.URL, error) {
 func ResolveCredential(file Snapshot, c Record, version, credentialVersion uint64) (platform.Secret, error) {
 	if c.Version != version || c.CredentialVersion != credentialVersion {
 		return platform.Secret{}, ErrConflict
+	}
+	if c.CredentialKind == "cli_profile" {
+		return platform.Secret{}, platform.ErrCredential
 	}
 	value := ""
 	for _, cred := range file.Credentials {

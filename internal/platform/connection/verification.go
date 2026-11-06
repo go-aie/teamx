@@ -3,9 +3,11 @@ package connection
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/go-aie/teamx/internal/platform"
 )
@@ -26,7 +28,7 @@ func (m *Manager) BeginVerification(id string, version uint64) (Verification, er
 	}
 	for _, c := range file.Connections {
 		if c.ID == id && c.Version == version {
-			secret, err := ResolveCredential(file, c, c.Version, c.CredentialVersion)
+			secret, _, err := credentialEvidence(file, c)
 			return Verification{record: c, secret: secret, credentialErr: err}, nil
 		}
 	}
@@ -45,23 +47,32 @@ func (m *Manager) Query(ctx context.Context, v Verification, override Verify) pl
 	}
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
+	if v.record.CredentialKind == "cli_profile" {
+		if m.verifyProfile == nil || v.record.CLIProfile == nil {
+			return result
+		}
+		return m.verifyProfile(ctx, v.record.Provider, v.record.URL, *v.record.CLIProfile)
+	}
 	return verify(ctx, v.record.Provider, v.record.URL, v.secret)
 }
 func (m *Manager) CompleteVerification(v Verification, result platform.Validation) (Connection, error) {
-	if !validValidation(result) || result.Status == "unverified" || result.Status == "valid" && (v.credentialErr != nil || result.UserID <= 0) {
+	if !validValidation(result) || result.Status == "unverified" || result.Status == "valid" && (v.credentialErr != nil || !m.validAccountResult(v.record.Provider, v.record.URL, result)) {
 		return Connection{}, ErrInvalid
 	}
 	file, err := m.Load()
 	if err != nil {
 		return Connection{}, err
 	}
+	if file.Version == 1 && result.Account != (platform.AccountIdentity{}) {
+		return Connection{}, fmt.Errorf("%w: native identity requires snapshot version 2", ErrInvalid)
+	}
 	selected := v.record
 	for i, c := range file.Connections {
 		if c.ID != selected.ID {
 			continue
 		}
-		current, currentErr := ResolveCredential(file, c, selected.Version, selected.CredentialVersion)
-		if c.Generation != selected.Generation || c.Version != selected.Version || c.CredentialVersion != selected.CredentialVersion || (currentErr == nil) != (v.credentialErr == nil) || current.Reveal() != v.secret.Reveal() {
+		current, _, currentErr := credentialEvidence(file, c)
+		if c.Generation != selected.Generation || c.Version != selected.Version || c.CredentialVersion != selected.CredentialVersion || (currentErr == nil) != (v.credentialErr == nil) || current.Reveal() != v.secret.Reveal() || !sameProfile(c.CLIProfile, selected.CLIProfile) {
 			return Connection{}, ErrConflict
 		}
 		if c.Version == ^uint64(0) {
@@ -69,8 +80,16 @@ func (m *Manager) CompleteVerification(v Verification, result platform.Validatio
 		}
 		c.Validation = result
 		c.IdentityBinding = nil
-		if result.UserID > 0 {
-			c.IdentityBinding = &IdentityBinding{Generation: c.Generation, CredentialVersion: c.CredentialVersion, CredentialFingerprint: fingerprint(v.secret)}
+		if result.Status == "valid" {
+			c.identity, _ = m.resolveIdentity(c.Provider, c.URL, result)
+			if c.CredentialKind == "cli_profile" && (!result.Account.Valid() || result.Account.Provider != c.Provider || result.Account.Instance != c.URL || result.UserID != 0) {
+				return Connection{}, ErrInvalid
+			}
+			_, fp, err := credentialEvidence(file, c)
+			if err != nil {
+				return Connection{}, err
+			}
+			c.IdentityBinding = &IdentityBinding{Generation: c.Generation, CredentialVersion: c.CredentialVersion, CredentialFingerprint: fp}
 		}
 		c.Version++
 		file.Connections[i] = c
@@ -87,9 +106,9 @@ func fingerprint(secret platform.Secret) string {
 }
 
 func validValidation(v platform.Validation) bool {
-	return v.Status == "unverified" && v.CheckedAt.IsZero() && v.Username == "" && v.UserID == 0 && v.ErrorCode == "" ||
-		v.Status == "valid" && !v.CheckedAt.IsZero() && platform.ValidUsername(v.Username) && v.UserID > 0 && v.ErrorCode == "" ||
-		v.Status == "failed" && !v.CheckedAt.IsZero() && v.Username == "" && v.UserID == 0 && validPlatformValidationError(v.ErrorCode)
+	return v.Status == "unverified" && v.CheckedAt.IsZero() && v.Username == "" && v.UserID == 0 && v.ErrorCode == "" && v.Account == (platform.AccountIdentity{}) ||
+		v.Status == "valid" && !v.CheckedAt.IsZero() && (v.Account == (platform.AccountIdentity{}) || v.Account.Valid()) && len(v.Username) <= 1024 && strings.IndexFunc(v.Username, unicode.IsControl) < 0 && v.ErrorCode == "" ||
+		v.Status == "failed" && !v.CheckedAt.IsZero() && v.Username == "" && v.UserID == 0 && v.Account == (platform.AccountIdentity{}) && validPlatformValidationError(v.ErrorCode)
 }
 
 func validIdentityBinding(c Record) bool {
@@ -97,7 +116,7 @@ func validIdentityBinding(c Record) bool {
 	if c.Validation.Status != "valid" {
 		return b == nil
 	}
-	return c.Validation.UserID > 0 && b != nil && b.Generation == c.Generation && b.CredentialVersion == c.CredentialVersion &&
+	return c.accountIdentity().Valid() && b != nil && b.Generation == c.Generation && b.CredentialVersion == c.CredentialVersion &&
 		len(b.CredentialFingerprint) == 64 && strings.Trim(b.CredentialFingerprint, "0123456789abcdef") == ""
 }
 
@@ -121,11 +140,11 @@ func ResolveVerifiedIdentity(file Snapshot, c Record) (platform.Validation, plat
 	if !found {
 		return platform.Validation{}, platform.Secret{}, ErrConflict
 	}
-	if c.Validation.Status != "valid" || c.Validation.UserID <= 0 || !validIdentityBinding(c) {
+	if c.Validation.Status != "valid" || !c.accountIdentity().Valid() || !validIdentityBinding(c) {
 		return platform.Validation{}, platform.Secret{}, ErrConflict
 	}
-	secret, err := ResolveCredential(file, c, c.Version, c.CredentialVersion)
-	if err != nil || fingerprint(secret) != c.IdentityBinding.CredentialFingerprint {
+	secret, fp, err := credentialEvidence(file, c)
+	if err != nil || fp != c.IdentityBinding.CredentialFingerprint {
 		return platform.Validation{}, platform.Secret{}, platform.ErrCredential
 	}
 	return c.Validation, secret, nil
@@ -146,6 +165,8 @@ func Public(file Snapshot, c Record) Connection {
 // Account is immutable service-local execution evidence shared by notifications
 // and platform tools. It does not depend on a subscription or local repository.
 type Account struct {
+	Identity              platform.AccountIdentity
+	CLIProfile            *platform.CLIProfile
 	ConnectionID          string
 	Generation            string
 	URL                   string
@@ -162,5 +183,44 @@ func ResolveAccount(file Snapshot, c Record) (Account, platform.Secret, error) {
 	if err != nil {
 		return Account{}, platform.Secret{}, err
 	}
-	return Account{c.ID, c.Generation, c.URL, identity.UserID, identity.Username, c.Version, c.CredentialVersion, c.IdentityBinding.CredentialFingerprint}, secret, nil
+	return Account{Identity: c.accountIdentity(), CLIProfile: c.CLIProfile, ConnectionID: c.ID, Generation: c.Generation, URL: c.URL, UserID: identity.UserID, Username: identity.Username, ConnectionVersion: c.Version, CredentialVersion: c.CredentialVersion, CredentialFingerprint: c.IdentityBinding.CredentialFingerprint}, secret, nil
+}
+
+func (c Record) accountIdentity() platform.AccountIdentity {
+	if c.Validation.Account.Valid() {
+		return c.Validation.Account
+	}
+	return c.identity
+}
+func (m *Manager) validAccountResult(provider, origin string, v platform.Validation) bool {
+	_, ok := m.resolveIdentity(provider, origin, v)
+	return ok
+}
+func (m *Manager) resolveIdentity(provider, origin string, v platform.Validation) (platform.AccountIdentity, bool) {
+	a := v.Account
+	if m.identityResolver != nil {
+		var ok bool
+		a, ok = m.identityResolver(provider, origin, v)
+		if !ok {
+			return platform.AccountIdentity{}, false
+		}
+	}
+	return a, a.Valid() && a.Provider == provider && a.Instance == origin
+}
+func sameProfile(a, b *platform.CLIProfile) bool {
+	return a == nil && b == nil || a != nil && b != nil && *a == *b
+}
+func credentialEvidence(file Snapshot, c Record) (platform.Secret, string, error) {
+	if c.CredentialKind == "cli_profile" {
+		if c.CLIProfile == nil {
+			return platform.Secret{}, "", platform.ErrCredential
+		}
+		data, err := json.Marshal(c.CLIProfile)
+		if err != nil {
+			return platform.Secret{}, "", err
+		}
+		return platform.Secret{}, fmt.Sprintf("%x", sha256.Sum256(data)), nil
+	}
+	secret, err := ResolveCredential(file, c, c.Version, c.CredentialVersion)
+	return secret, fingerprint(secret), err
 }

@@ -21,11 +21,22 @@ func (Secret) MarshalJSON() ([]byte, error) { return json.Marshal("[REDACTED]") 
 func (Secret) Format(s fmt.State, _ rune)   { _, _ = io.WriteString(s, "[REDACTED]") }
 
 type Validation struct {
-	Status    string    `json:"status"`
-	CheckedAt time.Time `json:"checked_at,omitzero"`
-	Username  string    `json:"username,omitempty"`
-	UserID    int64     `json:"user_id,omitempty"`
-	ErrorCode string    `json:"error_code,omitempty"`
+	Status    string          `json:"status"`
+	CheckedAt time.Time       `json:"checked_at,omitzero"`
+	Username  string          `json:"username,omitempty"`
+	UserID    int64           `json:"user_id,omitempty"`
+	ErrorCode string          `json:"error_code,omitempty"`
+	Account   AccountIdentity `json:"account,omitzero"`
+}
+
+// CLIProfile is a versioned reference to credentials owned by a CLI. It never
+// contains OAuth tokens, app secrets or key material.
+type CLIProfile struct {
+	Version    int    `json:"version"`
+	Executable string `json:"executable"`
+	Profile    string `json:"profile"`
+	Brand      string `json:"brand"`
+	CLIVersion string `json:"cli_version"`
 }
 
 func ValidUsername(s string) bool {
@@ -101,17 +112,21 @@ type ObjectReference struct {
 // noteable for a comment). Unknown IDs stay absent. Version zero represents
 // a source without native evidence. Value fields keep SourceRef comparable.
 type NotificationReference struct {
-	Version      int             `json:"version"`
-	RecipientID  ExternalID      `json:"recipient_id,omitzero"`
-	Scope        string          `json:"scope,omitempty"`
-	ProjectID    ExternalID      `json:"project_id,omitzero"`
-	Target       ObjectReference `json:"target,omitzero"`
-	Object       ObjectReference `json:"object,omitzero"`
-	NoteID       ExternalID      `json:"note_id,omitzero"`
-	DiscussionID ExternalID      `json:"discussion_id,omitzero"`
-	Branch       string          `json:"branch,omitempty"`
-	Ref          string          `json:"ref,omitempty"`
-	RefType      string          `json:"ref_type,omitempty"`
-	SHA          string          `json:"sha,omitempty"`
-	BeforeSHA    string          `json:"before_sha,omitempty"`
+	Version       int             `json:"version"`
+	ChatID        ExternalID      `json:"chat_id,omitzero"`
+	ParentID      ExternalID      `json:"parent_id,omitzero"`
+	RootID        ExternalID      `json:"root_id,omitzero"`
+	AccountTenant ExternalID      `json:"account_tenant,omitzero"`
+	RecipientID   ExternalID      `json:"recipient_id,omitzero"`
+	Scope         string          `json:"scope,omitempty"`
+	ProjectID     ExternalID      `json:"project_id,omitzero"`
+	Target        ObjectReference `json:"target,omitzero"`
+	Object        ObjectReference `json:"object,omitzero"`
+	NoteID        ExternalID      `json:"note_id,omitzero"`
+	DiscussionID  ExternalID      `json:"discussion_id,omitzero"`
+	Branch        string          `json:"branch,omitempty"`
+	Ref           string          `json:"ref,omitempty"`
+	RefType       string          `json:"ref_type,omitempty"`
+	SHA           string          `json:"sha,omitempty"`
+	BeforeSHA     string          `json:"before_sha,omitempty"`
 }

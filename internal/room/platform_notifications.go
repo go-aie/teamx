@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 
+	"github.com/go-aie/teamx/internal/platform/lark"
 	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
@@ -19,6 +20,7 @@ type notificationAdapter struct {
 func (m *roomManager) initPlatformNotifications() {
 	if m.notificationAdapters == nil {
 		m.notificationAdapters = m.gitlabNotificationAdapters()
+		m.notificationAdapters[lark.MessagesSourceID] = m.larkNotificationAdapter()
 	}
 	sources := make([]notification.Source, 0, len(m.notificationAdapters))
 	for _, adapter := range m.notificationAdapters {

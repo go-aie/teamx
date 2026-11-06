@@ -12,19 +12,20 @@ import (
 
 // Definition describes a standalone executable, never platform subcommands.
 type Definition struct {
-	Name        string            `json:"name"`
-	Description string            `json:"description"`
-	Version     string            `json:"version"`
-	Provider    string            `json:"provider,omitempty"`
-	Skill       string            `json:"skill,omitempty"`
-	Executable  string            `json:"-"`
-	Environment map[string]string `json:"-"` // child variable -> account field
+	InternalOnly bool              `json:"internal_only,omitempty"`
+	Name         string            `json:"name"`
+	Description  string            `json:"description"`
+	Version      string            `json:"version"`
+	Provider     string            `json:"provider,omitempty"`
+	Skill        string            `json:"skill,omitempty"`
+	Executable   string            `json:"-"`
+	Environment  map[string]string `json:"-"` // child variable -> account field
 }
 
 func Catalog() []Definition {
 	bin := ResolveExecutable("teamx-gitlab", os.Getenv("TEAMX_GITLAB_BIN"))
 	return []Definition{{Name: "gitlab", Description: "GitLab CLI and WorkItem extensions; uses account permissions", Version: "glab 1.127.0", Provider: "gitlab", Executable: bin, Skill: "skills/gitlab/SKILL.md",
-		Environment: map[string]string{"GITLAB_HOST": "instance", "GITLAB_TOKEN": "token"}}}
+		Environment: map[string]string{"GITLAB_HOST": "instance", "GITLAB_TOKEN": "token"}}, {Name: "lark", Description: "飞书消息只读绑定；使用 teamx lark read --help 读取原消息或有界上下文", Provider: "lark", Version: "lark-cli 1.0.99", InternalOnly: true}}
 }
 
 // Help requests need no account or credential resolution. No business routing.

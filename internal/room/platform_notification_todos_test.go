@@ -395,7 +395,7 @@ func TestTodosPublicHTTPWorksWithoutWorkspaceAndGuardsIdentity(t *testing.T) {
 	var list struct {
 		Subscriptions []notificationView `json:"subscriptions"`
 	}
-	if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &list) != nil || len(list.Subscriptions) != 2 || list.Subscriptions[1].RecipientID != 101 || !list.Subscriptions[1].Available || !list.Subscriptions[0].Available || strings.Contains(response.Body.String(), "fingerprint") {
+	if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &list) != nil || len(list.Subscriptions) != 3 || list.Subscriptions[1].RecipientID != 101 || !list.Subscriptions[1].Available || !list.Subscriptions[0].Available || strings.Contains(response.Body.String(), "fingerprint") {
 		t.Fatal(response.Code, response.Body.String())
 	}
 	s := h.state()
@@ -534,7 +534,7 @@ func TestTodosAccountReplacementRetiresAndKeepsOldProgress(t *testing.T) {
 	views, viewErr := h.m.notificationViewsLocked(h.room.RoomIdentity)
 	history, histErr := h.m.retiredNotificationViewsLocked(h.room.RoomIdentity)
 	h.m.mu.Unlock()
-	if err != nil || viewErr != nil || histErr != nil || current.SubscriptionID != next.SubscriptionID || len(views) != 2 || views[1].SubscriptionID != next.SubscriptionID || len(history) != 1 || !history[0].Retired || history[0].Pending != 1 {
+	if err != nil || viewErr != nil || histErr != nil || current.SubscriptionID != next.SubscriptionID || len(views) != 3 || views[1].SubscriptionID != next.SubscriptionID || len(history) != 1 || !history[0].Retired || history[0].Pending != 1 {
 		t.Fatal(current, views, history, err, viewErr, histErr)
 	}
 }

@@ -239,6 +239,13 @@ func (m *roomManager) changeToolBindingLocked(ctx context.Context, req toolBindi
 // Agent tools add process-only preparation after the shared platform admission.
 func (m *roomManager) prepareToolLocked(ctx context.Context, req toolsRequest) (tool.Process, *platformCall, context.Context, error) {
 	var p tool.Process
+	definition, err := m.toolDefinition(req.Tool)
+	if err != nil {
+		return p, nil, nil, err
+	}
+	if definition.InternalOnly {
+		return p, nil, nil, ErrRequest
+	}
 	if len(req.Args) > 4096 {
 		return p, nil, nil, ErrRequest
 	}

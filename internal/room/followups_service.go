@@ -127,7 +127,7 @@ func (s *service) resolveFollowupEvent(ctx context.Context, id MemberIdentity, s
 			case errors.Is(err, ErrConflict):
 				code, reason = "access_changed", "连接、凭据或成员绑定已变化／不可用；请核对当前绑定"
 			case errors.Is(err, ErrRequest):
-				code, reason = "binding_unavailable", "成员未启用 GitLab 绑定或未选择有效连接"
+				code, reason = "binding_unavailable", "成员未启用对应平台的读取绑定或未选择有效连接"
 			case errors.Is(err, ErrIdentity), errors.Is(err, ErrClosing), errors.Is(err, ErrBusy):
 				code, reason = "access_unavailable", "成员或服务当前不可用"
 			case errors.Is(err, platform.ErrCredential):

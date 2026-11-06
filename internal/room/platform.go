@@ -8,19 +8,26 @@ import (
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/connection"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
+	"github.com/go-aie/teamx/internal/platform/lark"
 )
 
 // Static composition points are independent: a provider can offer connections,
 // notification sources or tools without implementing the other capabilities.
 type connectionProvider struct {
-	Normalize func(name, origin string) (string, string, error)
-	Verify    func(context.Context, string, platform.Secret) platform.Validation
+	LegacyIdentity func(string, platform.Validation) (platform.AccountIdentity, bool)
+	Normalize      func(name, origin string) (string, string, error)
+	Verify         func(context.Context, string, platform.Secret) platform.Validation
+	ValidProfile   func(string, platform.CLIProfile) bool
+	VerifyProfile  func(context.Context, string, platform.CLIProfile) platform.Validation
 }
 
 func (m *roomManager) initPlatform() {
 	if m.connectionProviders == nil {
 		m.connectionProviders = map[string]connectionProvider{
-			"gitlab": {Normalize: connection.Normalize, Verify: gitlab.VerifyIdentity},
+			"gitlab": {Normalize: connection.Normalize, Verify: gitlab.VerifyIdentity, LegacyIdentity: gitlab.LegacyAccountIdentity},
+			"lark": {Normalize: connection.Normalize, ValidProfile: func(origin string, p platform.CLIProfile) bool {
+				return lark.ValidProfile(p) && origin == lark.Origin(p.Brand)
+			}, VerifyProfile: lark.VerifyIdentity},
 		}
 	}
 	m.connections = connection.New(connection.Store{
@@ -34,7 +41,7 @@ func (m *roomManager) initPlatform() {
 		Save: m.store.save,
 	}, func(name, provider, origin string) (string, string, error) {
 		adapter, ok := m.connectionProviders[provider]
-		if !ok || adapter.Normalize == nil || adapter.Verify == nil {
+		if !ok || adapter.Normalize == nil || (adapter.Verify == nil && adapter.VerifyProfile == nil) {
 			return "", "", connection.ErrRequest
 		}
 		return adapter.Normalize(name, origin)
@@ -44,6 +51,26 @@ func (m *roomManager) initPlatform() {
 			return platform.Validation{Status: "failed", CheckedAt: time.Now().UTC(), ErrorCode: "invalid_response"}
 		}
 		return adapter.Verify(ctx, origin, secret)
+	})
+	m.connections.SetIdentityResolver(func(provider, origin string, v platform.Validation) (platform.AccountIdentity, bool) {
+		a := m.connectionProviders[provider]
+		if a.LegacyIdentity == nil {
+			return v.Account, v.Account.Valid()
+		}
+		return a.LegacyIdentity(origin, v)
+	})
+	m.connections.SetProfileSupport(func(provider string) bool {
+		a := m.connectionProviders[provider]
+		return a.VerifyProfile != nil && a.Verify == nil
+	}, func(provider, origin string, p platform.CLIProfile) bool {
+		a, ok := m.connectionProviders[provider]
+		return ok && a.ValidProfile != nil && a.ValidProfile(origin, p)
+	}, func(ctx context.Context, provider, origin string, p platform.CLIProfile) platform.Validation {
+		a := m.connectionProviders[provider]
+		if a.VerifyProfile == nil {
+			return platform.Validation{Status: "failed", CheckedAt: time.Now().UTC(), ErrorCode: "invalid_response"}
+		}
+		return a.VerifyProfile(ctx, origin, p)
 	})
 	m.initPlatformNotifications()
 	m.initPlatformReferences()

@@ -59,7 +59,7 @@ class Element {
 export const settle = async () => { for (let i=0; i<15; i++) await new Promise(resolve => setImmediate(resolve)); };
 export async function launch(api, saved = new Map()) {
   const elements = new Map([...html.matchAll(/id="([^"]+)"/g)].map(match => [match[1], new Element()]));
-  for (const id of ["policy-connection", "team", "profile", "activity-member", "workspace-connection", "gitlab-events-connection", "gitlab-events-target", "gitlab-todos-target", "gitlab-todos-connection", "gitlab-todos-scope"]) elements.get(id).tag = "select";
+  for (const id of ["lark-connection", "lark-target", "lark-backfill", "connection-provider", "connection-brand", "connection-auth", "policy-connection", "team", "profile", "activity-member", "workspace-connection", "gitlab-events-connection", "gitlab-events-target", "gitlab-todos-target", "gitlab-todos-connection", "gitlab-todos-scope"]) elements.get(id).tag = "select";
   for (const id of ["message-template", "member-template"]) elements.get(id).content = { firstElementChild: new Element() };
   for (const [, id, value] of html.matchAll(/<input id="(gitlab-(?:events-type|todos-reason|todos-type)-[^"]+)" type="checkbox" value="([^"]+)"/g)) {
     elements.get(id).tag = "input"; elements.get(id).value = value; elements.get(id).checked = false;

@@ -10,25 +10,27 @@ import (
 // Service-root connections are independent of Room snapshots and credentials.
 // Supported providers are selected by the injected configuration normalizer.
 type Connection struct {
-	ID                   string              `json:"id"`
-	Name                 string              `json:"name"`
-	Provider             string              `json:"provider"`
-	URL                  string              `json:"url"`
-	Version              uint64              `json:"version"`
-	CredentialVersion    uint64              `json:"credential_version"`
-	CredentialKind       string              `json:"credential_kind"`
-	TokenEnv             string              `json:"token_env,omitempty"`
-	CredentialConfigured bool                `json:"credential_configured"`
-	Validation           platform.Validation `json:"validation"`
+	ID                   string               `json:"id"`
+	Name                 string               `json:"name"`
+	Provider             string               `json:"provider"`
+	URL                  string               `json:"url"`
+	Version              uint64               `json:"version"`
+	CredentialVersion    uint64               `json:"credential_version"`
+	CredentialKind       string               `json:"credential_kind"`
+	CLIProfile           *platform.CLIProfile `json:"cli_profile,omitempty"`
+	TokenEnv             string               `json:"token_env,omitempty"`
+	CredentialConfigured bool                 `json:"credential_configured"`
+	Validation           platform.Validation  `json:"validation"`
 }
 
 // The disk record refers to an independently identified credential. Both are
 // atomically committed in one private service snapshot, never in Room data.
 type Record struct {
 	Connection
-	CredentialID    string           `json:"credential_id,omitempty"`
-	Generation      string           `json:"generation"`
-	IdentityBinding *IdentityBinding `json:"identity_binding,omitempty"`
+	identity        platform.AccountIdentity // provider-derived, never serialized
+	CredentialID    string                   `json:"credential_id,omitempty"`
+	Generation      string                   `json:"generation"`
+	IdentityBinding *IdentityBinding         `json:"identity_binding,omitempty"`
 }
 
 // IdentityBinding is private evidence for a verified account, never a public

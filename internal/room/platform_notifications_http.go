@@ -9,10 +9,13 @@ import (
 
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
+	"github.com/go-aie/teamx/internal/platform/lark"
 	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
 type notificationView struct {
+	Account platform.AccountIdentity `json:"account,omitzero"`
+	Lark    *larkDiagnostics         `json:"lark,omitempty"`
 	RoomIdentity
 	notification.SourceID
 	SubscriptionID    string                   `json:"subscription_id"`
@@ -91,8 +94,17 @@ func (m *roomManager) todosNotificationViewLocked(owner RoomIdentity, state *git
 func (m *roomManager) notificationViewsLocked(owner RoomIdentity) ([]notificationView, error) {
 	var events *gitlab.EventsState
 	var todos *gitlab.TodosState
+	var messages *lark.State
 	for _, state := range m.notifications.StatesLocked(owner) {
 		switch s := state.(type) {
+		case lark.State:
+			if s.Retired {
+				continue
+			}
+			if messages != nil {
+				return nil, ErrInvalid
+			}
+			messages = &s
 		case gitlab.EventsState:
 			if s.Retired {
 				continue
@@ -121,7 +133,11 @@ func (m *roomManager) notificationViewsLocked(owner RoomIdentity) ([]notificatio
 	if err != nil {
 		return nil, err
 	}
-	return []notificationView{ev, tv}, nil
+	lv, err := m.larkNotificationViewLocked(owner, messages)
+	if err != nil {
+		return nil, err
+	}
+	return []notificationView{ev, tv, lv}, nil
 }
 func (m *roomManager) retiredNotificationViewsLocked(owner RoomIdentity) ([]notificationView, error) {
 	views := []notificationView{}
@@ -129,6 +145,11 @@ func (m *roomManager) retiredNotificationViewsLocked(owner RoomIdentity) ([]noti
 		var view notificationView
 		var err error
 		switch s := state.(type) {
+		case lark.State:
+			if !s.Retired {
+				continue
+			}
+			view, err = m.larkNotificationViewLocked(owner, &s)
 		case gitlab.EventsState:
 			if !s.Retired {
 				continue
@@ -207,7 +228,7 @@ func (m *roomManager) servePlatformNotifications(w http.ResponseWriter, r *http.
 		return
 	}
 	// Provider-specific config mapping stays at the explicit assembly boundary.
-	if req.SourceID != gitlab.EventsSourceID && req.SourceID != gitlab.TodosSourceID {
+	if req.SourceID != gitlab.EventsSourceID && req.SourceID != gitlab.TodosSourceID && req.SourceID != lark.MessagesSourceID {
 		writeAPIError(w, ErrRequest)
 		return
 	}
@@ -218,6 +239,8 @@ func (m *roomManager) servePlatformNotifications(w http.ResponseWriter, r *http.
 		var cfg any
 		if req.SourceID == gitlab.EventsSourceID {
 			cfg = &gitlab.EventsConfig{}
+		} else if req.SourceID == lark.MessagesSourceID {
+			cfg = &lark.Config{}
 		} else {
 			cfg = &gitlab.TodosConfig{}
 		}
@@ -228,6 +251,12 @@ func (m *roomManager) servePlatformNotifications(w http.ResponseWriter, r *http.
 			return
 		}
 		switch c := cfg.(type) {
+		case *lark.Config:
+			var next lark.State
+			next, err = m.configureLarkSubscription(r.Context(), key, req.Version, *c)
+			if err == nil {
+				key = next.Metadata().Key
+			}
 		case *gitlab.EventsConfig:
 			var next gitlab.EventsState
 			next, err = m.configureEventsSubscription(r.Context(), key, req.Version, *c)
@@ -248,6 +277,8 @@ func (m *roomManager) servePlatformNotifications(w http.ResponseWriter, r *http.
 		}
 		if req.SourceID == gitlab.EventsSourceID {
 			err = m.syncEventsSubscription(key, req.Version)
+		} else if req.SourceID == lark.MessagesSourceID {
+			err = m.syncLarkSubscription(r.Context(), key, req.Version)
 		} else {
 			err = m.syncTodosSubscription(r.Context(), key, req.Version)
 		}
@@ -259,7 +290,19 @@ func (m *roomManager) servePlatformNotifications(w http.ResponseWriter, r *http.
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var view notificationView
-	if key.Source == gitlab.EventsSourceID {
+	if key.Source == lark.MessagesSourceID {
+		state, ok := m.notifications.StateLocked(key)
+		if !ok {
+			writeAPIError(w, ErrIdentity)
+			return
+		}
+		s, ok := state.(lark.State)
+		if !ok {
+			writeAPIError(w, ErrIdentity)
+			return
+		}
+		view, err = m.larkNotificationViewLocked(req.RoomIdentity, &s)
+	} else if key.Source == gitlab.EventsSourceID {
 		state, ok := m.eventsSubscriptionLocked(key)
 		if !ok || state.Retired {
 			writeAPIError(w, ErrIdentity)

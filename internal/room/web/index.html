@@ -114,19 +114,49 @@
             <button id="open-gitlab-source" class="notification-source" type="button" aria-controls="notification-detail">
               <span class="avatar integration-avatar" aria-hidden="true">GL</span><span class="notification-source-name">GitLab <small>通知</small></span><span id="notification-source-state" class="quiet"></span><span aria-hidden="true">›</span>
             </button>
+            <button id="open-lark-source" class="notification-source" type="button" aria-haspopup="dialog" aria-controls="notification-detail">
+              <span class="avatar integration-avatar" aria-hidden="true">飞</span><span class="notification-source-name">飞书 <small>消息</small></span><span id="lark-source-state" class="quiet"></span><span aria-hidden="true">›</span>
+            </button>
           </section>
         </div>
       </div>
       <dialog id="notification-detail" class="activity-dialog notification-detail" aria-labelledby="notification-title">
-        <header class="activity-header"><h2 id="notification-title">GitLab · 通知</h2><button id="close-notification" class="text-button" type="button" aria-label="返回成员与通知源列表">返回</button></header>
+        <header class="activity-header"><h2 id="notification-title">平台 · 通知</h2><button id="close-notification" class="text-button" type="button" aria-label="返回成员与通知源列表">返回</button></header>
         <div class="notification-body">
           <p id="notification-summary" class="quiet" aria-live="polite"></p>
-          <div class="notification-tabs" role="tablist" aria-label="GitLab 通知渠道">
+          <div class="notification-tabs" role="tablist" aria-label="平台通知渠道">
             <button id="notification-tab-events" type="button" role="tab" aria-selected="true" aria-controls="notification-panel-events">项目活动</button>
             <button id="notification-tab-todos" type="button" role="tab" aria-selected="false" aria-controls="notification-panel-todos" tabindex="-1">我的待办</button>
+          <button id="notification-tab-messages" type="button" role="tab" aria-selected="false" aria-controls="notification-panel-messages" tabindex="-1">飞书消息</button>
           </div>
           <p id="notification-notice" class="quiet" role="status" hidden></p>
           <button id="notification-reload" class="text-button" type="button" hidden>重新读取</button>
+          <div id="notification-panel-messages" role="tabpanel" aria-labelledby="notification-tab-messages" hidden>
+            <section class="workspace-form gitlab-events" aria-labelledby="lark-title">
+              <div class="gitlab-events-heading"><h3 id="lark-title">飞书消息</h3><span id="lark-state" class="quiet"></span></div>
+              <p class="quiet">接收私信和群里的明确提及，交给所选成员处理。需要决定时，成员会在房间中提问。</p>
+              <fieldset id="lark-fields">
+                <label class="workspace-check"><input id="lark-enabled" type="checkbox">接收飞书消息</label>
+                <label for="lark-connection">已验证的飞书连接</label><select id="lark-connection"></select>
+                <p id="lark-account" class="quiet"></p>
+                <label for="lark-target">接收成员</label><select id="lark-target"></select>
+                <label for="lark-scope">会话范围</label><select id="lark-scope"><option value="specified">指定会话</option><option value="all">全部可访问私聊与已加入群聊</option></select>
+                <label for="lark-chats">会话 ID（每行一个，最多 32 个）</label><textarea id="lark-chats" rows="3" placeholder="oc_…" spellcheck="false"></textarea>
+                <p class="quiet">保存后核验会话类型与访问权限。全部模式每 10 分钟刷新目录，新发现会话沿用原接收基线；检查周期不等于每个会话的到达延迟。成员重读需在成员能力设置中独立绑定飞书连接。</p>
+                <label class="workspace-check"><input id="lark-private" type="checkbox" checked>对方发来的私信</label>
+                <label class="workspace-check"><input id="lark-group" type="checkbox" checked>群里明确 @我</label>
+                <label class="workspace-check"><input id="lark-all" type="checkbox">同时接收 @所有人</label>
+                <label class="workspace-check"><input id="lark-bots" type="checkbox">同时接收机器人私信</label>
+                <label for="lark-interval">检查周期（3～3600 秒）</label><input id="lark-interval" type="number" min="3" max="3600" value="60">
+                <label for="lark-backfill">首次历史回填</label><select id="lark-backfill"><option value="0">从开启时刻接收</option><option value="3600">最近 1 小时</option><option value="86400">最近 24 小时</option></select>
+                <p class="quiet">开启后保留原接收基线。关闭会暂停轮询和投递，已接收的积压及原目标继续保留。</p>
+              </fieldset>
+              <button id="lark-manage-connections" class="text-button" type="button">管理平台连接 ↗</button>
+              <div class="gitlab-events-actions"><button id="lark-save" class="primary" type="button">保存设置</button><button id="lark-sync" class="text-button" type="button">立即同步</button></div>
+              <p id="lark-feedback" class="quiet" role="status"></p><p id="lark-error" class="form-error" role="alert" hidden></p>
+              <details class="gitlab-events-records"><summary>同步记录与诊断</summary><p id="lark-diagnostics" class="quiet"></p><ul id="lark-chat-status"></ul></details>
+            </section>
+          </div>
           <div id="notification-panel-events" role="tabpanel" aria-labelledby="notification-tab-events">
             <section class="notification-binding" aria-label="通知项目绑定">
               <p class="quiet">活动订阅独立保存连接和项目，无需绑定 Git 仓库。</p>
@@ -338,7 +368,7 @@
   </dialog>
   <dialog id="settings-dialog" class="workspace-dialog settings-dialog" aria-labelledby="settings-title">
     <header class="activity-header settings-header">
-      <div><p class="quiet settings-eyebrow">设置</p><h2 id="settings-title">平台连接</h2><p class="quiet settings-description">管理当前服务共享的 GitLab 连接。</p></div>
+      <div><p class="quiet settings-eyebrow">设置</p><h2 id="settings-title">平台连接</h2><p class="quiet settings-description">管理当前服务共享的 GitLab 与飞书连接。</p></div>
       <button id="close-settings" class="settings-icon-button" type="button" aria-label="关闭设置" title="关闭设置" autofocus><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button>
     </header>
     <section id="connections-list-view" class="connections-content">
@@ -361,9 +391,16 @@
       <div class="connection-form-heading"><h3 id="connection-title">新增连接</h3><button id="connection-back" class="text-button" type="button">← 返回列表</button></div>
       <fieldset id="connection-fields">
         <div class="connection-field"><label for="connection-name">连接名称</label><input id="connection-name" maxlength="128" required placeholder="公司 GitLab"></div>
-        <div class="connection-field"><label for="connection-provider">平台</label><select id="connection-provider"><option value="gitlab">GitLab</option></select></div>
+        <div class="connection-field"><label for="connection-provider">平台</label><select id="connection-provider"><option value="gitlab">GitLab</option><option value="lark">飞书 / Lark</option></select></div>
         <div class="connection-field connection-field-wide"><label for="connection-url">实例地址</label><input id="connection-url" type="url" required placeholder="https://gitlab.example.com"></div>
-        <div class="connection-field connection-field-wide"><label for="connection-auth">认证方式</label><select id="connection-auth"><option value="pat">PAT</option><option value="env">服务环境变量</option></select></div>
+        <div id="connection-auth-row" class="connection-field connection-field-wide"><label for="connection-auth">认证方式</label><select id="connection-auth"><option value="pat">PAT</option><option value="env">服务环境变量</option></select></div>
+        <div id="connection-profile-row" class="connection-field connection-field-wide" hidden>
+          <label for="connection-brand">品牌</label><select id="connection-brand"><option value="feishu">飞书</option><option value="lark">Lark</option></select>
+          <label for="connection-executable">CLI 可执行文件绝对路径（必填）</label><input id="connection-executable" placeholder="/opt/homebrew/bin/lark-cli" aria-describedby="connections-feedback" spellcheck="false">
+          <label for="connection-profile">已登录的 profile（必填）</label><input id="connection-profile" placeholder="显式 profile 名称" maxlength="128" aria-describedby="connection-profile-hint connections-feedback" spellcheck="false">
+          <p id="connection-profile-hint" class="quiet">运行 <code>lark-cli whoami --as user</code>，填写返回的 <code>profile</code> 字段，不是姓名或邮箱。</p>
+          <p class="quiet">支持 lark-cli 1.0.99。凭据由 CLI 管理；保存后请验证用户身份。</p>
+        </div>
         <div id="connection-pat-row" class="connection-field connection-field-wide"><label for="connection-pat">Token</label><input id="connection-pat" type="password" autocomplete="new-password" maxlength="8192" placeholder="输入 PAT" aria-describedby="connection-credential"><p id="connection-credential" class="quiet connection-credential-hint" hidden>Token 保存后不回显。</p></div>
         <div id="connection-env-row" class="connection-field connection-field-wide" hidden><label for="connection-env">环境变量名称</label><input id="connection-env" maxlength="128" placeholder="GITLAB_PAT" spellcheck="false"></div>
         <div id="connection-notes" class="connection-notes connection-field-wide" hidden><p id="connection-validation" class="quiet"></p><p id="connection-references" class="quiet" hidden></p></div>

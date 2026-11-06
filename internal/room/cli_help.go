@@ -10,6 +10,7 @@ const rootCLIHelp = `Usage: teamx COMMAND [--help]
   matters list/read/sources/source/resolve/ensure/update/notify/reply/instruct/instruction-status
   actions execute               Execute a supported referenced action
   policy read/update/publish     Member rules and preferences
+  lark read                     Read verified Lark message/context (no replies)
   tools list/run/skill           Enabled external tools
 Use teamx COMMAND SUBCOMMAND --help for parameters and constraints.
 `
