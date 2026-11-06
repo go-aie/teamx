@@ -12,6 +12,40 @@ import (
 	"time"
 )
 
+func TestRPCErrorSafeProviderHints(t *testing.T) {
+	const secret = "private-provider-detail"
+	for _, tc := range []struct {
+		name    string
+		message string
+		data    json.RawMessage
+		want    error
+	}{
+		{"model error in message", "404 model_not_found " + secret, nil, ErrModelNotFound},
+		{"model error in string data", "Internal error", json.RawMessage(`"turn failed: 404 model_not_found private-provider-detail"`), ErrModelNotFound},
+		{"model error in object data", "Internal error", json.RawMessage(`{"code":"model_not_found","message":"private-provider-detail"}`), ErrModelNotFound},
+		{"rate limit", "rate_limit_error " + secret, nil, ErrRateLimited},
+		{"token rate limit", "tpm_exceeded " + secret, nil, ErrRateLimited},
+		{"unrelated 404", "404 resource not found " + secret, nil, nil},
+		{"unknown error", secret, nil, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := &rpcError{Code: -32603, Message: tc.message, Data: tc.data}
+			want := "ACP request failed (code -32603)"
+			if tc.want != nil {
+				want += ": " + tc.want.Error()
+				if !errors.Is(err, tc.want) {
+					t.Fatal("provider classification missing", err)
+				}
+			} else if err.Unwrap() != nil {
+				t.Fatal("unknown error classified", err)
+			}
+			if err.Error() != want || strings.Contains(err.Error(), secret) {
+				t.Fatal("unsafe or missing public diagnostic", err)
+			}
+		})
+	}
+}
+
 func pipeConnection(t *testing.T) (*connection, *os.File, *os.File) {
 	t.Helper()
 	peerRead, in, err := os.Pipe()

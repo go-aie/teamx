@@ -26,6 +26,7 @@ var (
 	ErrCancelled           = errors.New("DSH turn cancelled")
 	ErrCleanupPending      = errors.New("DSH cleanup remains owned")
 	ErrRateLimited         = errors.New("model service rate limited (HTTP 429); wait before retrying")
+	ErrModelNotFound       = errors.New("configured model not found (HTTP 404, model_not_found); check model ID and endpoint")
 )
 
 // ClosedError retains a shutdown/recovery failure after every owned process,

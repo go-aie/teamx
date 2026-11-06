@@ -22,12 +22,12 @@ type rpcError struct {
 }
 
 // Remote messages/data can contain credentials or tool content. Public errors
-// retain the numeric code and fixed rate-limit hints only; private model output
+// retain the numeric code and fixed provider hints only; private model output
 // is returned separately.
 func (e *rpcError) Error() string {
 	message := fmt.Sprintf("ACP request failed (code %d)", e.Code)
-	if errors.Is(e, ErrRateLimited) {
-		message += ": " + ErrRateLimited.Error()
+	if hint := e.Unwrap(); hint != nil {
+		message += ": " + hint.Error()
 	}
 	return message
 }
@@ -37,6 +37,9 @@ func (e *rpcError) Unwrap() error {
 	detail := strings.ToLower(e.Message + " " + string(e.Data))
 	if strings.Contains(detail, "tpm_exceeded") || strings.Contains(detail, "rate_limit_error") {
 		return ErrRateLimited
+	}
+	if strings.Contains(detail, "model_not_found") {
+		return ErrModelNotFound
 	}
 	return nil
 }

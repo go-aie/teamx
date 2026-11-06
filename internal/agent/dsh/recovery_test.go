@@ -294,29 +294,43 @@ func TestCloseDuringUncertainTurnDoesNotAuthorizeResume(t *testing.T) {
 	}
 }
 
-func TestRateLimitAllowsExplicitResetAfterSettlement(t *testing.T) {
-	opts := fixtureOptions(t)
-	s := openFixture(t, opts)
-	if err := CheckReset(opts.StateDir); !errors.Is(err, ErrLocked) {
-		t.Fatal("live execution allowed reset", err)
-	}
-	_, err := s.Run(context.Background(), "rate-limited")
-	if !errors.Is(err, ErrUncertain) || !errors.Is(err, ErrRateLimited) ||
-		!strings.Contains(err.Error(), "HTTP 429") || strings.Contains(err.Error(), "secret-fixture-key") {
-		t.Fatal("missing safe rate-limit diagnostic", err)
-	}
-	err = s.Close(context.Background())
-	if !errors.Is(err, ErrRecoveryUnsupported) || !CleanupSettled(err) {
-		t.Fatal("failed prompt lost its completed cleanup evidence", err)
-	}
-	if err := CheckResume(opts.StateDir); err == nil {
-		t.Fatal("failed original session became resumable")
-	}
-	if err := CheckReset(opts.StateDir); err != nil {
-		t.Fatal("failed but stopped execution cannot be explicitly reset", err)
-	}
-	if CleanupSettled(errors.Join(ErrCleanupPending, &ClosedError{Err: ErrRecoveryUnsupported})) {
-		t.Fatal("unfinished cleanup was accepted as settled")
+func TestProviderFailureAllowsExplicitResetAfterSettlement(t *testing.T) {
+	for _, tc := range []struct {
+		prompt string
+		want   error
+		hint   string
+	}{
+		{"rate-limited", ErrRateLimited, "HTTP 429"},
+		{"model-not-found", ErrModelNotFound, "HTTP 404"},
+	} {
+		t.Run(tc.prompt, func(t *testing.T) {
+			opts := fixtureOptions(t)
+			s := openFixture(t, opts)
+			if err := CheckReset(opts.StateDir); !errors.Is(err, ErrLocked) {
+				t.Fatal("live execution allowed reset", err)
+			}
+			_, err := s.Run(context.Background(), tc.prompt)
+			if !errors.Is(err, ErrUncertain) || !errors.Is(err, tc.want) ||
+				!strings.Contains(err.Error(), tc.hint) || strings.Contains(err.Error(), "secret-fixture-key") {
+				t.Fatal("missing safe provider diagnostic", err)
+			}
+			err = s.Close(context.Background())
+			if !errors.Is(err, ErrRecoveryUnsupported) || !CleanupSettled(err) {
+				t.Fatal("failed prompt lost its completed cleanup evidence", err)
+			}
+			if !errors.Is(err, tc.want) || !strings.Contains(err.Error(), tc.hint) || strings.Contains(err.Error(), "secret-fixture-key") {
+				t.Fatal("cleanup lost safe provider diagnostic", err)
+			}
+			if err := CheckResume(opts.StateDir); err == nil {
+				t.Fatal("failed original session became resumable")
+			}
+			if err := CheckReset(opts.StateDir); err != nil {
+				t.Fatal("failed but stopped execution cannot be explicitly reset", err)
+			}
+			if CleanupSettled(errors.Join(ErrCleanupPending, &ClosedError{Err: ErrRecoveryUnsupported})) {
+				t.Fatal("unfinished cleanup was accepted as settled")
+			}
+		})
 	}
 }
 

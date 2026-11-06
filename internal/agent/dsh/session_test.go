@@ -231,6 +231,9 @@ func TestDSHProcess(t *testing.T) {
 			case "rate-limited":
 				send(map[string]any{"jsonrpc": "2.0", "id": f.ID, "error": map[string]any{
 					"code": -32603, "message": "Internal error", "data": "turn failed: 429 tpm_exceeded " + os.Getenv("TEAMX_TEST_KEY")}})
+			case "model-not-found":
+				send(map[string]any{"jsonrpc": "2.0", "id": f.ID, "error": map[string]any{
+					"code": -32603, "message": "Internal error", "data": "turn failed: 404 model_not_found " + os.Getenv("TEAMX_TEST_KEY")}})
 			case "bad-stop":
 				respond(f.ID, map[string]string{"stopReason": "unknown"})
 			case "max_tokens", "max_turn_requests", "refusal", "cancelled":
