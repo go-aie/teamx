@@ -33,6 +33,17 @@ func (a *app) options(path, action string, args []string) (options, bool, error)
 		f.SetOutput(a.out)
 		fmt.Fprintf(a.out, "Usage: %s %s [flags]\n", usagePrefix, path)
 		f.PrintDefaults()
+		switch path {
+		case "work-items view":
+			fmt.Fprintln(a.out, "\nReturns JSON: id, iid, title, type, description, state, assignees (id/username/name).")
+			fmt.Fprintln(a.out, "Assignees: null = unsupported; [] = supported, nobody assigned. Reads all assignee pages; failure returns no complete result.")
+			fmt.Fprintln(a.out, "Example: "+usagePrefix+" work-items view --repo group/project --iid 7")
+		case "work-items discussions list":
+			fmt.Fprintln(a.out, "\nReturns a JSON array of discussions: id, replyId, notes [{id, body, system, author {id, username, name}}].")
+			fmt.Fprintln(a.out, "Reads all discussion and note pages, preserving full bodies and null authors. Failure returns no complete result.")
+			fmt.Fprintln(a.out, "Preserves native id and replyId; work-items note --discussion-id requires a verified discussion target, never a note ID.")
+			fmt.Fprintln(a.out, "Example: "+usagePrefix+" work-items discussions list --repo group/project --iid 7")
+		}
 	}
 	err := f.Parse(args)
 	if errors.Is(err, flag.ErrHelp) {

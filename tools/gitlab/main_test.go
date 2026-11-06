@@ -65,6 +65,8 @@ printf 'native-help: %s\n' "$*"
 		{[]string{"issue", "--help"}, "native-help: issue --help", "discussions reply"},
 		{[]string{"issue", "update", "--help"}, "native-help: issue update --help", ""},
 		{[]string{"work-items", "close", "--help"}, "", "Usage: teamx tools run gitlab work-items close"},
+		{[]string{"work-items", "view", "--help"}, "", "null = unsupported; [] = supported, nobody assigned"},
+		{[]string{"work-items", "discussions", "list", "--help"}, "", "notes [{id, body, system, author {id, username, name}}]"},
 		{[]string{"issue", "discussions", "--help"}, "", "reply"},
 		{[]string{"work-items", "discussions"}, "", "list"},
 	} {
@@ -360,6 +362,22 @@ func TestAssigneeModesAndPagination(t *testing.T) {
 
 func TestNestedDiscussionsPagination(t *testing.T) {
 	calls := 0
+	want := []any{}
+	for i, did := range []string{"d1", "d2"} {
+		notes := []any{}
+		first, last := 1, 3
+		if i == 1 {
+			first, last = 4, 4
+		}
+		for j := first; j <= last; j++ {
+			var author any
+			if j != 2 {
+				author = map[string]any{"id": "gid://gitlab/User/1", "username": "alice", "name": "张三"}
+			}
+			notes = append(notes, map[string]any{"id": fmt.Sprintf("n%d", j), "body": fmt.Sprintf("完整正文 %d\n> 引用\n`code`", j), "system": j == 2, "author": author})
+		}
+		want = append(want, map[string]any{"id": did, "replyId": "reply-" + did, "notes": notes})
+	}
 	a, out, errOut := testApp(t, func(r *http.Request) (*http.Response, error) {
 		calls++
 		var b struct{ Variables map[string]any }
@@ -378,16 +396,112 @@ func TestNestedDiscussionsPagination(t *testing.T) {
 			did, nid = "d2", "n4"
 			outer, inner = pageInfoValue(false, ""), pageInfoValue(false, "")
 		}
-		d := map[string]any{"id": did, "notes": map[string]any{"nodes": []any{map[string]string{"id": nid}}, "pageInfo": inner}}
+		index := 0
+		if did == "d2" {
+			index = 1
+		}
+		discussion := want[index].(map[string]any)
+		var selected any
+		for _, n := range discussion["notes"].([]any) {
+			if n.(map[string]any)["id"] == nid {
+				selected = n
+			}
+		}
+		d := map[string]any{"id": did, "replyId": discussion["replyId"], "notes": map[string]any{"nodes": []any{selected}, "pageInfo": inner}}
 		return gqlResponse("namespace", map[string]any{"workItem": item([]any{map[string]any{"discussions": map[string]any{"nodes": []any{d}, "pageInfo": outer}}})}), nil
 	})
 	if code := a.run(context.Background(), []string{"work-items", "discussions", "list", "--repo", "g/p", "--iid", "7"}); code != 0 || calls != 4 {
 		t.Fatalf("%d calls=%d %s", code, calls, errOut)
 	}
-	var all []discussion
-	json.Unmarshal(out.Bytes(), &all)
-	if len(all) != 2 || len(all[0].Notes.Nodes) != 3 || len(all[1].Notes.Nodes) != 1 {
-		t.Fatal(out.String())
+	var all []any
+	if err := json.Unmarshal(out.Bytes(), &all); err != nil || !reflect.DeepEqual(all, want) {
+		t.Fatalf("discussion output lost content or retained connections: %s (decode: %v)", out, err)
+	}
+}
+
+func TestWorkItemViewBusinessFields(t *testing.T) {
+	for _, kind := range []string{"unsupported", "unassigned", "assigned"} {
+		t.Run(kind, func(t *testing.T) {
+			calls := 0
+			body := "完整正文\n\n> 原始引用\n```go\nfmt.Println(\"你好\")\n```\n"
+			users := []any{
+				map[string]any{"id": "gid://gitlab/User/1", "username": "alice", "name": "张三"},
+				map[string]any{"id": "gid://gitlab/User/2", "username": "bob", "name": "李四"},
+			}
+			var assignees any
+			if kind == "unassigned" {
+				assignees = []any{}
+			} else if kind == "assigned" {
+				assignees = users
+			}
+			a, out, errOut := testApp(t, func(r *http.Request) (*http.Response, error) {
+				calls++
+				var req struct {
+					Query     string
+					Variables map[string]any
+				}
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					t.Fatal(err)
+				}
+				if !strings.Contains(req.Query, "description") || req.Variables["path"] != "g/p" || req.Variables["iid"] != "7" {
+					t.Fatalf("unexpected query: %+v", req)
+				}
+				widgets := []any{map[string]any{"description": body}, map[string]any{}}
+				if kind != "unsupported" {
+					nodes, page := []any{}, pageInfoValue(false, "")
+					if kind == "assigned" {
+						if calls == 1 {
+							if req.Variables["after"] != nil {
+								t.Fatal("unexpected first cursor")
+							}
+							nodes, page = users[:1], pageInfoValue(true, "next")
+						} else {
+							if req.Variables["after"] != "next" {
+								t.Fatal("missing continuation cursor")
+							}
+							nodes = users[1:]
+						}
+					}
+					widgets = append(widgets, map[string]any{"assignees": map[string]any{"nodes": nodes, "pageInfo": page}})
+				}
+				return gqlResponse("namespace", map[string]any{"workItem": item(widgets)}), nil
+			})
+			if code := a.run(context.Background(), []string{"work-items", "view", "--repo", "g/p", "--iid", "7"}); code != 0 {
+				t.Fatalf("code %d: %s", code, errOut)
+			}
+			wantCalls := 1
+			if kind == "assigned" {
+				wantCalls = 2
+			}
+			want := map[string]any{"id": "gid://gitlab/WorkItem/9", "iid": "7", "title": "fixture", "type": "Task", "description": body, "state": "OPEN", "assignees": assignees}
+			var got map[string]any
+			if err := json.Unmarshal(out.Bytes(), &got); err != nil || !reflect.DeepEqual(got, want) || calls != wantCalls {
+				t.Fatalf("calls %d, output %s (decode: %v)", calls, out, err)
+			}
+		})
+	}
+}
+
+func TestWorkItemDiscussionsEmptyLists(t *testing.T) {
+	for _, emptyDiscussion := range []bool{false, true} {
+		t.Run(fmt.Sprint(emptyDiscussion), func(t *testing.T) {
+			rows := []any{}
+			want := []any{}
+			if emptyDiscussion {
+				rows = append(rows, map[string]any{"id": "empty", "replyId": "", "notes": map[string]any{"nodes": []any{}, "pageInfo": pageInfoValue(false, "")}})
+				want = append(want, map[string]any{"id": "empty", "replyId": "", "notes": []any{}})
+			}
+			a, out, errOut := testApp(t, func(*http.Request) (*http.Response, error) {
+				return gqlResponse("namespace", map[string]any{"workItem": item([]any{map[string]any{"discussions": map[string]any{"nodes": rows, "pageInfo": pageInfoValue(false, "")}}})}), nil
+			})
+			if code := a.run(context.Background(), []string{"work-items", "discussions", "list", "--repo", "g/p", "--iid", "7"}); code != 0 {
+				t.Fatalf("code %d: %s", code, errOut)
+			}
+			var got []any
+			if err := json.Unmarshal(out.Bytes(), &got); err != nil || !reflect.DeepEqual(got, want) {
+				t.Fatalf("output %s (decode: %v)", out, err)
+			}
+		})
 	}
 }
 

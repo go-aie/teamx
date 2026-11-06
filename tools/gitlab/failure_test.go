@@ -137,8 +137,39 @@ func TestViewWithoutAssigneeWidgetDoesNotPreventReading(t *testing.T) {
 	if a.run(context.Background(), []string{"work-items", "view", "--repo", "g/p", "--iid", "7"}) != 0 {
 		t.Fatal(errOut.String())
 	}
-	if !strings.Contains(out.String(), "WorkItem/9") {
+	var got map[string]any
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil || got["id"] != "gid://gitlab/WorkItem/9" || got["description"] != "" || got["assignees"] != nil {
 		t.Fatal(out.String())
+	}
+}
+
+func TestWorkItemViewsNeverOutputIncompletePages(t *testing.T) {
+	for _, kind := range []string{"assignees", "discussions", "notes"} {
+		t.Run(kind, func(t *testing.T) {
+			calls := 0
+			a, out, errOut := testApp(t, func(*http.Request) (*http.Response, error) {
+				calls++
+				if calls == 2 {
+					return response(map[string]any{"errors": []any{map[string]string{"message": "denied"}}}), nil
+				}
+				widget := map[string]any{}
+				if kind == "assignees" {
+					widget["assignees"] = map[string]any{"nodes": []any{map[string]string{"id": "gid://gitlab/User/1"}}, "pageInfo": pageInfoValue(true, "more")}
+				} else {
+					outer, inner := pageInfoValue(kind == "discussions", "more"), pageInfoValue(kind == "notes", "more")
+					widget["discussions"] = map[string]any{"nodes": []any{map[string]any{"id": "d1", "replyId": "reply-d1", "notes": map[string]any{"nodes": []any{map[string]string{"id": "n1", "body": "partial body"}}, "pageInfo": inner}}}, "pageInfo": outer}
+				}
+				return gqlResponse("namespace", map[string]any{"workItem": item([]any{widget})}), nil
+			})
+			args := []string{"work-items", "view"}
+			if kind != "assignees" {
+				args = []string{"work-items", "discussions", "list"}
+			}
+			args = append(args, "--repo", "g/p", "--iid", "7")
+			if code := a.run(context.Background(), args); code == 0 || calls != 2 || out.Len() != 0 || errOut.Len() == 0 {
+				t.Fatalf("code %d calls %d: out=%s err=%s", code, calls, out, errOut)
+			}
+		})
 	}
 }
 

@@ -53,6 +53,46 @@ type workItem struct {
 	} `json:"widgets"`
 }
 
+// CLI views keep business fields without exposing GraphQL connections/widgets.
+// A nil assignee list means the widget is unsupported; an empty list means
+// assignment is supported but nobody is currently assigned.
+type workItemView struct {
+	ID          string `json:"id"`
+	IID         string `json:"iid"`
+	Title       string `json:"title"`
+	Type        string `json:"type"`
+	Description string `json:"description"`
+	State       string `json:"state"`
+	Assignees   []user `json:"assignees"`
+}
+
+func viewWorkItem(w *workItem, assignees []user) workItemView {
+	v := workItemView{
+		ID: w.ID, IID: w.IID, Title: w.Title, Type: w.WorkItemType.Name,
+		State: w.State, Assignees: assignees,
+	}
+	for _, widget := range w.Widgets {
+		if widget.Description != "" {
+			v.Description = widget.Description
+		}
+	}
+	return v
+}
+
+type discussionView struct {
+	ID      string `json:"id"`
+	ReplyID string `json:"replyId"`
+	Notes   []note `json:"notes"`
+}
+
+func viewDiscussions(discussions []discussion) []discussionView {
+	views := make([]discussionView, 0, len(discussions))
+	for _, d := range discussions {
+		views = append(views, discussionView{ID: d.ID, ReplyID: d.ReplyID, Notes: d.Notes.Nodes})
+	}
+	return views
+}
+
 func (c *api) workItem(ctx context.Context, o options, fields, decl string, vars map[string]any) (*workItem, error) {
 	vars["path"], vars["iid"] = o.repo, o.iid
 	query := `query($path: ID!, $iid: String!` + decl + `) { namespace(fullPath: $path) { workItem(iid: $iid) { id iid title state workItemType { name } widgets { ` + fields + ` } } } }`
@@ -247,7 +287,7 @@ func workItemCommand(action string) func(context.Context, *app, []string) error 
 			if err != nil {
 				return err
 			}
-			return a.output(d)
+			return a.output(viewDiscussions(d))
 		}
 		if action == "view" || action == "assignees" {
 			w, users, err := c.workItemAssignees(ctx, o)
@@ -255,7 +295,7 @@ func workItemCommand(action string) func(context.Context, *app, []string) error 
 				return err
 			}
 			if action == "view" {
-				return a.output(map[string]any{"workItem": w, "assignees": users})
+				return a.output(viewWorkItem(w, users))
 			}
 			if users == nil {
 				return errors.New("work item has no assignee widget")

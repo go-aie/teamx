@@ -37,11 +37,11 @@ bin/teamx-gitlab issue update 8 --repo product/agentichub/teamx-demo --assignee 
 
 | 扩展命令 | 参数及行为 |
 | --- | --- |
-| `work-items view` | 读取类型、正文、状态及完整指派列表，输出 JSON |
+| `work-items view` | 顶层 JSON 返回 `id/iid/title/type/description/state/assignees`；完整读取指派列表，`null` 表示不支持指派、`[]` 表示当前无人 |
 | `work-items close` | GraphQL `workItemUpdate(stateEvent: CLOSE)`，核对返回的对象与关闭状态 |
 | `work-items assignees` | `--mode add/remove/replace/clear`；除 clear 外用 `--users 123,456` 指定数字用户 ID；读取完整当前集合，写入一次后核查实际集合 |
 | `work-items note` | `--message TEXT` 或 `--file PATH`；`--file -` 读取 stdin；可选 `--discussion-id` 回复实际讨论 |
-| `work-items discussions list` | 自动读取讨论及每个讨论内评论的全部分页，保留实际 `id` 和 `replyId` |
+| `work-items discussions list` | 自动读取全部讨论及嵌套消息分页，输出 `[{id, replyId, notes: [{id, body, system, author}]}]`；保留完整正文及原生标识 |
 | `issue discussions list` | Discussions REST 全部分页 |
 | `issue discussions reply` | `--discussion-id ID`，正文参数与 note 相同 |
 
@@ -50,6 +50,10 @@ bin/teamx-gitlab work-items view --repo product/agentichub/teamx-demo --iid 8
 bin/teamx-gitlab work-items assignees --repo product/agentichub/teamx-demo --iid 8 --mode replace --users 123
 bin/teamx-gitlab work-items note --repo product/agentichub/teamx-demo --iid 8 --file review.md
 ```
+
+`view` 不再返回 `workItem/widgets/workItemType` 嵌套结构，类型名放在 `type`，原始正文放在 `description`，指派人只保留顶层一份。指派人与消息作者均保留 `id/username/name`；没有作者时保留 `author: null`。讨论输出按“讨论 → notes 消息数组”分组，`notes` 不再包含 `nodes/pageInfo`；空讨论列表或空消息列表明确返回 `[]`，不省略 `replyId` 或值为 false 的 `system`。`id`、`replyId` 保留各自原生值和命名空间，不替换为消息 ID。
+
+这两个读取命令仍自动读取全部分页，读取完整后才输出结果；任一分页失败返回非零且不输出部分 JSON。显式分页和详情模式留待后续实施；原生 glab 命令及 WorkItem 写入回执沿用各自合同。
 
 Go 扩展使用原实现中的固定 GraphQL 请求及解析方式，移除了身份快照、对象投递范围、确认令牌、查重标记和持久回执。扩展不采用“原生失败后切换 API”；路由在执行前确定。GraphQL 顶层 `errors`、mutation `errors`、空 payload 或分页元数据缺失均返回非零。写入超时/中断不自动重发，应先查询远端。Unix 上收到取消时结算 glab 进程组；原生命令的异步结果沿用 glab 输出，不能将提交成功解释为已经合并。
 
