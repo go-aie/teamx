@@ -24,6 +24,8 @@ type followupCounts struct {
 
 type followupSummary struct {
 	Ref          string                       `json:"ref"`
+	ObjectLabel  string                       `json:"object_label,omitempty"`
+	ObjectURL    string                       `json:"object_url,omitempty"`
 	TargetLabel  string                       `json:"target_label,omitempty"`
 	Kind         string                       `json:"kind"` // object, discussion, unresolved_source
 	ObjectRef    string                       `json:"object_ref,omitempty"`
@@ -202,7 +204,40 @@ func (s *Store) listFollowups(id MemberIdentity, q followupQuery) (followupPage,
 		}
 		counts[u.ObjectRef] = c
 	}
+	// Reuse durable resolution evidence only. Source URLs are unverified input;
+	// no URL parsing, provider-specific ID conversion or remote lookup belongs here.
 	var items []followupSummary
+	objects := map[string]platform.TargetResolution{}
+	if err := s.visitFollowupEventsLocked(id, func(e followupEvent) error {
+		if e.ObjectRef == "" {
+			if q.ObjectRef == "" {
+				items = append(items, followupSummary{Ref: e.SourceRef, Kind: "unresolved_source", Revision: e.Revision,
+					Seq: e.Seq, Status: string(e.Resolution.Status), Next: e.Resolution.Reason, ReasonCode: e.Resolution.ReasonCode})
+			}
+			return nil
+		}
+		if q.ObjectRef != "" && e.ObjectRef != q.ObjectRef {
+			return nil
+		}
+		r := e.Resolution // a failed LastAttempt cannot erase verified evidence
+		old, ok := objects[e.ObjectRef]
+		if !ok {
+			objects[e.ObjectRef] = r
+		} else {
+			old.Aliases = append(old.Aliases, r.Aliases...)
+			if r.URL != "" && (old.URL == "" || r.CheckedAt.After(old.CheckedAt)) {
+				old.URL, old.CheckedAt = r.URL, r.CheckedAt
+			}
+			objects[e.ObjectRef] = old
+		}
+		return nil
+	}); err != nil {
+		return page, err
+	}
+	objectLabels, objectURLs := map[string]string{}, map[string]string{}
+	for ref, resolution := range objects {
+		objectLabels[ref], objectURLs[ref] = followupObjectDisplay(resolution)
+	}
 	for _, u := range units {
 		c := counts[u.ObjectRef]
 		if !q.IncludeCompleted && !activeFollowup(u.Status) && !(u.TargetRef == u.ObjectRef && c.Active > 0) {
@@ -213,6 +248,7 @@ func (s *Store) listFollowups(id MemberIdentity, q followupQuery) (followupPage,
 		if err != nil {
 			return page, err
 		}
+		v.ObjectLabel, v.ObjectURL = objectLabels[u.ObjectRef], objectURLs[u.ObjectRef]
 		v.TargetLabel = target.Target.Object.Type + " " + target.Target.Object.ID.Value
 		if target.Target.Discussion.Valid() {
 			v.TargetLabel += " / " + target.Target.Discussion.Value
@@ -224,19 +260,6 @@ func (s *Store) listFollowups(id MemberIdentity, q followupQuery) (followupPage,
 			v.AllCompleted = &complete
 		}
 		items = append(items, v)
-	}
-	if q.ObjectRef == "" {
-		err := s.visitFollowupEventsLocked(id, func(e followupEvent) error {
-			if e.ObjectRef != "" {
-				return nil
-			}
-			items = append(items, followupSummary{Ref: e.SourceRef, Kind: "unresolved_source", Revision: e.Revision,
-				Seq: e.Seq, Status: string(e.Resolution.Status), Next: e.Resolution.Reason, ReasonCode: e.Resolution.ReasonCode})
-			return nil
-		})
-		if err != nil {
-			return page, err
-		}
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].Ref < items[j].Ref })
 	page.Total = len(items)
@@ -350,4 +373,25 @@ func (s *Store) readFollowupSource(id MemberIdentity, seq uint64, sourceRef stri
 		return followupEvent{}, ErrIdentity
 	}
 	return link, err
+}
+
+// Labels name verified alternate native IDs with their namespaces. In particular,
+// a canonical REST ID is never presented as an IID. The URL denotes the object,
+// even when the summary is a discussion or message followup.
+func followupObjectDisplay(r platform.TargetResolution) (string, string) {
+	if !r.ObjectVerified || r.Target == nil {
+		return "", ""
+	}
+	labels := map[string]bool{}
+	for _, alias := range r.Aliases {
+		if alias.Object.ID != r.Target.Object.ID {
+			labels[alias.Object.Type+" "+alias.Object.ID.Namespace+":"+alias.Object.ID.Value] = true
+		}
+	}
+	values := make([]string, 0, len(labels))
+	for label := range labels {
+		values = append(values, label)
+	}
+	sort.Strings(values)
+	return strings.Join(values, "; "), r.URL
 }

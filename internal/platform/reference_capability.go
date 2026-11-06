@@ -36,7 +36,7 @@ type TargetResolution struct {
 	DiscussionVerified bool             `json:"discussion_verified"`
 	MessageVerified    bool             `json:"message_verified"`
 	Complete           bool             `json:"complete"`
-	URL                string           `json:"url,omitempty"`
+	URL                string           `json:"url,omitempty"` // verified object URL, even when Target includes a discussion/message
 }
 
 type ResolveTarget func(context.Context, TargetLocator, AccessContext) (TargetResolution, error)

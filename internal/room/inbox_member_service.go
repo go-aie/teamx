@@ -42,7 +42,11 @@ func (s *service) memberInbox(ctx context.Context, req apiRequest, operation str
 		if err != nil {
 			return nil, err
 		}
-		return s.readReferenceInbox(ctx, id, agent.TurnNumber, req.Limit, s.referenceResolver)
+		page, err := s.readReferenceInbox(ctx, id, agent.TurnNumber, req.Limit, s.referenceResolver)
+		if err != nil {
+			return nil, err
+		}
+		return projectAgentInboxRead(id, page)
 	case "confirm":
 		s.inboxMu.Lock()
 		defer s.inboxMu.Unlock()

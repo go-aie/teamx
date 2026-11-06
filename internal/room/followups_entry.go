@@ -137,11 +137,11 @@ func (s *service) memberFollowups(ctx context.Context, req apiRequest, path stri
 				}
 			}
 		}
-		return struct {
-			Unit    followupUnit          `json:"unit"`
-			Target  storedTarget          `json:"target"`
-			Actions []platform.ActionSpec `json:"registered_actions"`
-		}{unit, target, actions}, nil
+		result := followupReadResult{unit, target, actions}
+		if req.Caller.Kind == "agent" {
+			return projectAgentFollowupRead(id, result)
+		}
+		return result, nil
 	}
 	if req.Caller.Kind != "agent" {
 		return nil, ErrIdentity

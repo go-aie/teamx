@@ -209,6 +209,8 @@ func TestReferenceCrossPlatformManagedChain(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := detail.Unit
+	// Agent reads omit the verified storage header; human management keeps it.
+	before.followupHeader = followupHeader{Version: followupSchema, MemberIdentity: id}
 	// Close/reopen Store and service: identity and original human evidence survive.
 	if err := svc.close(context.Background()); err != nil {
 		t.Fatal(err)

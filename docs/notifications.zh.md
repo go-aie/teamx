@@ -38,9 +38,12 @@ Agent 的图片输入在固定当前回合的 Room／AgentInbox 范围内另行�
 "$TEAMX_CLI" matters sources --object REF --after SEQ --limit 25
 "$TEAMX_CLI" matters source --seq SEQ --source SRC
 "$TEAMX_CLI" matters --help
+"$TEAMX_CLI" matters read --help
 ```
 
 `inbox read` 返回原始事件、系统解析的来源／目标引用和去重对象摘要；可靠保存关联后才输出，完整输出后才确认。`--peek` 不确认消费。相同对象复用一个对象单元，发现讨论不批量建立待办；确需独立处理时才用 `matters ensure --seq SEQ --target REF --turn TURN` 从已核实原生讨论建立子单元。引用由系统生成，不接受语义事项 ID。旧 enrich/relate、拆分归并和手工身份报告入口已移除。
+
+Agent 的 `matters read`／`inbox read` 将绑定的 `room_id`、`room_instance`、`agent_id`、`membership_id` 在顶层保留一次，省略 `unit`／`target` 或每条 Inbox entry 的重复身份及存储 schema `version`。完整问答、指令、动作历史、业务版本、访问证据和原生定位保持原结构。CLI 输出省略 `batch.receipt`，Agent 的 `read --json` 省略 `read_receipt`／`expires_at`；分页水位与完整性字段保留。内部 HTTP 仍向 CLI 提供收据，输出成功后才确认；确认失败错误保留 receipt 和 turn／through，表示消费未确认或不确定。human 管理读取保持原结构。
 
 系统解析已迁入内置 GitLab 适配器，通过当前成员已启用并选择的 GitLab 绑定直接读取 API，不依赖 `teamx-gitlab`、glab 或 Workspace；不自动借用订阅或其他成员账号。来源原生对象身份与讨论映射分层：对象已核实但讨论无权限、分页未完成或缺少映射时显示 `partial`，可使用对象引用，不能据此回复讨论。安全原因保留失败步骤与 HTTP 状态，并区分权限、账号不符、原生身份冲突、响应无效及分页不完整。解析和两类 MR 动作均已内部化，不需要工具二进制。按引用执行仍使用当前成员绑定，核验账号、项目、MR 和原生线程；受限写入每次只发送一次，讨论失败不降级。Room 保留授权、意图和回执，取消后仍保存原账号的已知写入结果，未知结果继续阻止另建请求补发。
 
@@ -50,13 +53,25 @@ Agent 的图片输入在固定当前回合的 Room／AgentInbox 范围内另行�
 
 失败来源在消费后仍出现在活跃列表，使用只读 `source_ref`；按需 `matters resolve --seq SEQ --source SRC --turn TURN` 显式重新解析。普通读取、恢复和新回合不自动轮询。目标已核实而后续查询失败时保留身份和失败原因，不能把部分／权限失败当成不存在。原生正文仍通过已配置工具按需读取，尚未登记通用 ReadTarget 正文分页。
 
-`matters list` 默认返回活跃摘要，可用 `--include-completed` 读历史。每页最多 25 项／128 KiB，来源有独立分页；对象计数由对象及讨论单元派生。详情返回 `unit`（revision、状态、进展、问答、单次指令和动作）、规范 `target`，及按目标层级／原生类型过滤的 `registered_actions`（输入和重试合同）；实际绑定与权限仍在执行时核验。超限明确分页或拒绝，不裁剪未完成条件。Session 轮换后用相同入口恢复，权威记录不依赖私有上下文。
+`matters list` 默认返回活跃摘要，可用 `--include-completed` 读历史。每页最多 25 项／128 KiB，来源有独立分页；对象计数由对象及讨论单元派生。列表可选增补 `object_label`（带命名空间的已核实原生别名，如 `MergeRequest gitlab:rest:iid:42`）和 `object_url`（已核实对象 URL）；从保存的解析证据读取，不增加远端查询，不从来源 URL 猜测。原 `target_label`、稳定引用和所有定位字段保留；对象 URL 不表示讨论回复目标，缺少别名或 URL 时分别省略，不把 REST ID 当 IID。详情返回 `unit`（revision、状态、进展、问答、单次指令和动作）、规范 `target`，及按目标层级／原生类型过滤的 `registered_actions`（输入和重试合同）；实际绑定与权限仍在执行时核验。超限明确分页或拒绝，不裁剪未完成条件。Session 轮换后用相同入口恢复，权威记录不依赖私有上下文。
 
 更新使用 `matters update --change JSON`：
 
 ```json
 {"object_ref":"ref_…","unit_ref":"unit_…","unit_version":1,"turn_number":1,"status":"waiting_followup","summary":"已回复用法问题","next":"等待对方确认","evidence":"准确动作回执及远端结果"}
 ```
+
+`matters update/notify/reply/instruct/instruction-status` 和 `policy update` 也支持 `--change-file PATH`；`actions execute` 支持 `--request-file PATH`。文件内容就是原内联参数的 JSON，不增加 HTTP envelope。`-` 表示 stdin，与对应的内联参数互斥（即使显式传入空字符串）；文件读取或 JSON 解析失败不会发送请求。三种输入沿用相同 JSON 解码、服务端请求体及业务字段大小限制，不增加动作重试。
+
+```sh
+"$TEAMX_CLI" matters update --change-file progress.json
+"$TEAMX_CLI" actions execute --request-file action.json
+"$TEAMX_CLI" matters update --change-file - <<'JSON'
+{"object_ref":"ref_…","unit_ref":"unit_…","unit_version":1,"turn_number":1,"status":"in_progress","summary":"核实含引号的正文：\"准确内容\"\n下一行"}
+JSON
+```
+
+示例引用和版本须替换为当前已核实值。引号包围的 heredoc 分隔符保留正文中的 `$`、反引号和反斜杠；stdin 仍须提供合法 JSON（字符串换行写为 `\n`）。
 
 每次变更使用返回的 revision 作为下一次 unit_version。状态为 pending、in_progress、waiting_user、waiting_followup、completed、archived、unknown；等待和未知必须有下一步，完成必须有证据。未答问题、有效待落实指令或未知动作阻止办结。
 
@@ -74,7 +89,11 @@ Agent 的图片输入在固定当前回合的 Room／AgentInbox 范围内另行�
 - `inferred_habit`：习惯推测仅保存未生效建议；按需 `policy publish --id KEY --version VERSION --turn TURN` 公开准确建议。KEY 使用保存建议的 id；`policy read --id ID` 可按需核对准确记录版本。
 - `confirm_suggestion`：关联已公开的准确建议版本、proposal_seq 和真实用户确认；本次任务的同意不能激活长期规则。
 
-change 包含 id、revision、version、kind、status、text、scope（规则的结构化目标范围）、source_seq 和 turn_number。偏好、允许动作、执行前提和例外统一写在自然语言 text 中，不再拆分字段，也不生成范围说明；偏好不填写目标范围。规则 scope 仅保留程序匹配的 provider、instance、account 或 account_id／tenant、project 或 no_containers，以及可选 object_type。管理页通过已验证连接补齐平台、实例和账号，项目可从已有项目选择或填写准确路径／ID，不支持 `*`。旧修订中的说明、动作、条件和例外在当前视图合入正文，原历史和来源保留。Agent 不提交 source_text，服务端读取真实消息与作者。完整字段见 `policy --help`。偏好不授予动作权限，最新明确限制优先；修改／撤销刷新 token，保存未知需核对，不宣称已记住。
+change 包含 id、revision、version、kind、status、text、scope（规则的结构化目标范围）、source_seq 和 turn_number。偏好、允许动作、执行前提和例外统一写在自然语言 text 中，不再拆分字段，也不生成范围说明；偏好不填写目标范围。规则 scope 仅保留程序匹配的 provider、instance、account 或 account_id／tenant、project 或 no_containers，以及可选 object_type。管理页通过已验证连接补齐平台、实例和账号，项目可从已有项目选择或填写准确路径／ID，不支持 `*`。旧修订中的说明、动作、条件和例外在当前视图合入正文，原历史和来源保留。Agent 不提交 source_text，服务端读取真实消息与作者。完整字段见 `policy update --help`。偏好不授予动作权限，最新明确限制优先；修改／撤销刷新 token，保存未知需核对，不宣称已记住。
+
+Agent `policy update` 在原 effective、revision、current_turn、policy_token 外增补 `record`：实际持久保存的准确 ID、version、status、text、范围和完整来源证据，包括 suggested/revoked。新建议可直接用 `record.id`／`record.version` 调用 publish，无需额外读取；重复请求返回原请求保存的记录，同时返回当前策略上下文，因此 record 可能不是当前版本，也不代表仍生效。保存失败或结果未知不返回成功记录；当前非生效版本仍可用 `policy read --id ID` 恢复。管理更新／读取及回合供给合同不变。
+
+`matters --help`、`policy --help` 等入口提供命令目录，各子命令用 `--help` 查看用途、参数、返回重点、示例与约束。错误保留原 code／HTTP 状态，增加安全 message，可附 field、expected_version、actual_version 和 hint；版本冲突须重读并重新判断，不会自动替换版本或重试写入。
 
 成员「偏好与规则」视图默认只展示偏好／规则，支持查看、修改和撤销。Agent 用于持续办理的「跟进记录」默认收起，展开才读取，核查时再逐条查看处理进展、相关通知和动作回执；原始通知和技术信息继续按需展开。待处理表示 Agent 尚未办结，需要用户答复的问题明确标注「待你答复」。Room 消息支持就地回复；UI 不作为正常办理的前置批准步骤，查看记录不会启动 Agent、确认消费或重新解析来源。
 

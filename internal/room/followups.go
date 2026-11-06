@@ -215,8 +215,11 @@ func (s *Store) loadTargetLocked(id MemberIdentity, objectRef, ref string) (stor
 
 func (s *Store) loadUnitLocked(id MemberIdentity, objectRef, ref string) (followupUnit, error) {
 	var u followupUnit
-	if !validOpaqueRef(objectRef, "ref_") || !validOpaqueRef(ref, "unit_") {
-		return u, ErrRequest
+	if !validOpaqueRef(objectRef, "ref_") {
+		return u, invalidField("object_ref", "required stable ref_ reference")
+	}
+	if !validOpaqueRef(ref, "unit_") {
+		return u, invalidField("unit_ref", "required stable unit_ reference")
 	}
 	if err := readSnapshot(s.unitPath(id, objectRef, ref), &u, followupBytes); err != nil {
 		return u, err
@@ -456,7 +459,7 @@ func (s *Store) ensureDiscussionFollowup(id MemberIdentity, seq, turn uint64, ta
 		return followupUnit{}, err
 	}
 	if turn == 0 {
-		return followupUnit{}, ErrRequest
+		return followupUnit{}, invalidField("turn_number", "required positive current_turn")
 	}
 	if _, err := s.runningTurnLocked(id, turn); err != nil {
 		return followupUnit{}, err
@@ -494,7 +497,7 @@ func (s *Store) updateFollowup(id MemberIdentity, q followupUpdate) (followupUni
 		return followupUnit{}, err
 	}
 	if q.TurnNumber == 0 {
-		return followupUnit{}, ErrRequest
+		return followupUnit{}, invalidField("turn_number", "required positive current_turn")
 	}
 	if _, err := s.runningTurnLocked(id, q.TurnNumber); err != nil {
 		return followupUnit{}, err
@@ -504,15 +507,28 @@ func (s *Store) updateFollowup(id MemberIdentity, q followupUpdate) (followupUni
 		return u, err
 	}
 	if u.Revision != q.Revision {
-		return u, ErrConflict
+		return u, versionConflict("unit_version", q.Revision, u.Revision, "Read matters read and reassess before submitting a change.")
 	}
-	if !validFollowupStatus(q.Status) || !validText(q.Summary) || len(q.Summary) > 4096 || len(q.Next) > 4096 || len(q.Evidence) > 4096 ||
-		((q.Status == "waiting_user" || q.Status == "waiting_followup" || q.Status == "unknown") && !validText(q.Next)) ||
-		(q.Status == "completed" && !validText(q.Evidence)) {
-		return u, ErrRequest
+	if !validFollowupStatus(q.Status) {
+		return u, invalidField("status", "unsupported followup status; see matters update --help")
+	}
+	if !handlingText(q.Summary) {
+		return u, invalidField("summary", "required nonempty text, at most 4096 bytes")
+	}
+	if len(q.Next) > 4096 {
+		return u, invalidField("next", "must be at most 4096 bytes")
+	}
+	if len(q.Evidence) > 4096 {
+		return u, invalidField("evidence", "must be at most 4096 bytes")
+	}
+	if (q.Status == "waiting_user" || q.Status == "waiting_followup" || q.Status == "unknown") && !validText(q.Next) {
+		return u, invalidField("next", "required for waiting or unknown status")
+	}
+	if q.Status == "completed" && !validText(q.Evidence) {
+		return u, invalidField("evidence", "required for completed status")
 	}
 	if !activeFollowup(q.Status) && (followupHasPendingConversation(u) || unresolvedReferenceAction(u)) {
-		return u, ErrConflict
+		return u, conflictReason("status", "questions, instructions or unknown actions remain unresolved", "Read matters read and resolve pending work before completion/archival.")
 	}
 	u.Status, u.Summary, u.Next, u.Evidence = q.Status, q.Summary, q.Next, q.Evidence
 	u.Revision++

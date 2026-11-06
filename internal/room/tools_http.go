@@ -159,8 +159,12 @@ func (m *roomManager) serveTools(w http.ResponseWriter, r *http.Request) {
 
 func decodeToolRequest(w http.ResponseWriter, r *http.Request, out any) bool {
 	data, err := io.ReadAll(io.LimitReader(r.Body, (64<<10)+1))
-	if err != nil || len(data) > 64<<10 || strictToolJSON(data, out) != nil {
-		writeAPIError(w, ErrRequest)
+	if err != nil || len(data) > 64<<10 {
+		writeAPIError(w, invalidField("", "request body exceeds limit or could not be read"))
+		return false
+	}
+	if err := decodeRequestJSON(string(data), out); err != nil {
+		writeAPIError(w, err)
 		return false
 	}
 	return true

@@ -230,7 +230,7 @@ func TestReferenceConversationPolicyProvenanceFencesAndFailures(t *testing.T) {
 	}
 	original := h.store.ops
 	h.store.ops.createTemp = func(string, string) (snapshotFile, error) { return nil, errors.New("no disk") }
-	if v, err := svc.referencePolicyChange(h.ctx, h.id, agentCallerIdentity(h.id), base); err == nil || v.PolicyToken != "" {
+	if v, err := svc.referencePolicyChange(h.ctx, h.id, agentCallerIdentity(h.id), base); err == nil || v.PolicyToken != "" || v.Record.Version != 0 {
 		t.Fatal("failed save reported remembered", v, err)
 	}
 	h.store.ops = original
@@ -238,7 +238,7 @@ func TestReferenceConversationPolicyProvenanceFencesAndFailures(t *testing.T) {
 		t.Fatal(view, err)
 	}
 	h.store.ops.syncDir = func(string) error { return errors.New("fsync failed after rename") }
-	if v, err := svc.referencePolicyChange(h.ctx, h.id, agentCallerIdentity(h.id), base); !errors.Is(err, ErrCommitUnknown) || v.PolicyToken != "" {
+	if v, err := svc.referencePolicyChange(h.ctx, h.id, agentCallerIdentity(h.id), base); !errors.Is(err, ErrCommitUnknown) || v.PolicyToken != "" || v.Record.Version != 0 {
 		t.Fatal(v, err)
 	}
 	if _, err := svc.referencePolicyChange(h.ctx, h.id, agentCallerIdentity(h.id), base); !errors.Is(err, ErrCommitUnknown) {

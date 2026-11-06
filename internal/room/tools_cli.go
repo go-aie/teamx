@@ -104,7 +104,7 @@ func runToolsWithClient(ctx context.Context, args []string, stdin io.Reader, std
 	if response.StatusCode != http.StatusOK {
 		var failure apiError
 		if json.NewDecoder(io.LimitReader(response.Body, 32<<10)).Decode(&failure) == nil && failure.Error != "" {
-			return fmt.Errorf("%s: %s", failure.Code, failure.Error)
+			return failure.cliError()
 		}
 		return fmt.Errorf("tool launcher HTTP %s", response.Status)
 	}

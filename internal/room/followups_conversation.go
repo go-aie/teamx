@@ -2,7 +2,6 @@ package room
 
 import (
 	"context"
-	"fmt"
 	"reflect"
 	"sort"
 	"time"
@@ -81,7 +80,7 @@ func (s *Store) conversationUnitLocked(id MemberIdentity, c followupCommand) (fo
 		return followupUnit{}, err
 	}
 	if c.TurnNumber == 0 {
-		return followupUnit{}, ErrRequest
+		return followupUnit{}, invalidField("turn_number", "required positive current_turn")
 	}
 	if _, err := s.runningTurnLocked(id, c.TurnNumber); err != nil {
 		return followupUnit{}, err
@@ -170,8 +169,11 @@ func (s *Store) prepareFollowupQuestion(id MemberIdentity, c followupQuestionCha
 	q := followupQuestion{TargetRef: u.TargetRef, MessageRefs: canonicalMessageRefs(c.MessageRefs), Text: c.Text, Proposed: c.Proposed}
 	q.Ref = questionReference(u, q)
 	q.ClientMessageID = followupNoticeID(id, u.Ref, q.Ref)
-	if !handlingText(q.Text) || (q.Proposed != nil && !validFollowupIntent(*q.Proposed, u.TargetRef != u.ObjectRef)) {
-		return u, q, ErrRequest
+	if !handlingText(q.Text) {
+		return u, q, invalidField("text", "required nonempty text, at most 4096 bytes")
+	}
+	if q.Proposed != nil && !validFollowupIntent(*q.Proposed, u.TargetRef != u.ObjectRef) {
+		return u, q, invalidField("proposed", "requires the target's operation and body or constraints, each at most 4096 bytes")
 	}
 	if err := s.validateQuestionTargetLocked(id, u, q.MessageRefs); err != nil {
 		return u, q, err
@@ -182,11 +184,11 @@ func (s *Store) prepareFollowupQuestion(id MemberIdentity, c followupQuestionCha
 		} // retry after any commit gap, including another turn
 		// Rephrasing the same still-open question cannot produce repeated public asks.
 		if len(old.Answers) == 0 && reflect.DeepEqual(old.MessageRefs, q.MessageRefs) {
-			return u, old, ErrConflict
+			return u, old, conflictReason("text", "an unanswered question already exists for these messages", "Read matters read and reuse the saved question; do not ask it again.")
 		}
 	}
 	if u.Revision != c.Revision {
-		return u, q, ErrConflict
+		return u, q, versionConflict("unit_version", c.Revision, u.Revision, "Read matters read and reassess; reuse the saved question on uncertain sends.")
 	}
 	if len(u.Questions) >= 16 {
 		return u, q, ErrCapacity
@@ -316,10 +318,10 @@ func (s *Store) linkFollowupReply(id MemberIdentity, c followupReplyChange) (fol
 		}
 	}
 	if index < 0 {
-		return u, fmt.Errorf("%w: answer needs an unambiguous question association", ErrConflict)
+		return u, conflictReason("question_ref", "answer needs an unambiguous question association", "Use matters reply only with an exact human source and clear basis.")
 	}
 	if u.Revision != c.Revision {
-		return u, ErrConflict
+		return u, versionConflict("unit_version", c.Revision, u.Revision, "Read matters read and reassess before submitting a change.")
 	}
 	basis := c.Basis
 	if m.ReplyTo != 0 {

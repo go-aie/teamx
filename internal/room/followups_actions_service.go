@@ -83,8 +83,8 @@ func (s *service) executeReferenceAction(ctx context.Context, id MemberIdentity,
 		}
 		return referenceActionReceipt{}, err
 	}
-	if !validReferenceActionRequest(q) {
-		return referenceActionReceipt{}, ErrRequest
+	if err := referenceActionRequestError(q); err != nil {
+		return referenceActionReceipt{}, err
 	}
 	view, err := s.store.readAgentPolicy(id)
 	if err != nil {

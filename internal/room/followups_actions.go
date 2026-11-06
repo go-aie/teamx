@@ -72,7 +72,61 @@ func (q referenceActionRequest) sameBusiness(o referenceActionRequest) bool {
 	return q.ObjectRef == o.ObjectRef && q.UnitRef == o.UnitRef && q.TargetRef == o.TargetRef && q.Operation == o.Operation && q.Input == o.Input
 }
 func validReferenceActionRequest(q referenceActionRequest) bool {
-	return validOpaqueRef(q.ObjectRef, "ref_") && validOpaqueRef(q.UnitRef, "unit_") && validOpaqueRef(q.TargetRef, "ref_") && q.Revision > 0 && q.TurnNumber > 0 && safeMembershipID(q.ID) && len(q.PolicyToken) == 64 && handlingText(q.Input.Body) && handlingText(q.Authority.Reason) && len(q.Authority.Constraints) <= 4096 && (q.Operation == platform.OperationObjectComment || q.Operation == platform.OperationDiscussionReply)
+	return referenceActionRequestError(q) == nil
+}
+func referenceActionRequestError(q referenceActionRequest) error {
+	if !validOpaqueRef(q.ObjectRef, "ref_") {
+		return invalidField("object_ref", "required stable ref_ reference")
+	}
+	if !validOpaqueRef(q.UnitRef, "unit_") {
+		return invalidField("unit_ref", "required stable unit_ reference")
+	}
+	if !validOpaqueRef(q.TargetRef, "ref_") {
+		return invalidField("target_ref", "required verified ref_ reference")
+	}
+	if q.Revision == 0 {
+		return invalidField("unit_version", "required positive observed unit revision")
+	}
+	if q.TurnNumber == 0 {
+		return invalidField("turn_number", "required positive current_turn")
+	}
+	if !safeMembershipID(q.ID) {
+		return invalidField("id", "required stable action ID; see actions execute --help")
+	}
+	if len(q.PolicyToken) != 64 {
+		return invalidField("policy_token", "required runtime policy token (64 characters)")
+	}
+	if !handlingText(q.Input.Body) {
+		return invalidField("input.body", "required nonempty text, at most 4096 bytes")
+	}
+	if !handlingText(q.Authority.Reason) {
+		return invalidField("authority.reason", "required nonempty text, at most 4096 bytes")
+	}
+	if len(q.Authority.Constraints) > 4096 {
+		return invalidField("authority.constraints", "must be at most 4096 bytes")
+	}
+	if q.Operation != platform.OperationObjectComment && q.Operation != platform.OperationDiscussionReply {
+		return invalidField("operation", "must be object.comment or discussion.reply")
+	}
+	return nil
+}
+
+// Called only after loading the member-scoped unit. Preserve the original
+// conflict sentinel even for malformed action requests at this store gate.
+func referenceActionUnitConflict(u followupUnit, q referenceActionRequest) error {
+	if !validReferenceActionRequest(q) {
+		return conflictReason("", "action request is invalid", "See actions execute --help.")
+	}
+	if q.TargetRef != u.TargetRef {
+		return conflictReason("target_ref", "target does not match the followup unit", "Read matters read; use the verified object/discussion target without fallback.")
+	}
+	if q.Revision != u.Revision {
+		return versionConflict("unit_version", q.Revision, u.Revision, "Read matters read and reassess; reconcile unknown actions before any resend.")
+	}
+	if !activeFollowup(u.Status) {
+		return conflictReason("unit_ref", "followup is completed or archived", "Read matters read before deciding further work.")
+	}
+	return nil
 }
 func unresolvedReferenceAction(u followupUnit) bool {
 	for _, a := range u.Actions {
@@ -122,7 +176,7 @@ func (s *Store) existingReferenceLocked(id MemberIdentity, u followupUnit, q ref
 	for _, a := range u.Actions {
 		if a.Request.ID == q.ID {
 			if !q.sameBusiness(a.Request) {
-				return nil, ErrConflict
+				return nil, conflictReason("id", "action ID already exists with different business content", "Restore the original action; do not change content or create a replacement ID for an uncertain write.")
 			}
 			r := s.referenceReceiptLocked(id, u, a)
 			return &r, nil
@@ -151,8 +205,8 @@ func (s *Store) referenceActionEvidence(id MemberIdentity, q referenceActionRequ
 	if err != nil {
 		return platform.TargetActionRequest{}, platform.AccessContext{}, err
 	}
-	if !validReferenceActionRequest(q) || q.TargetRef != u.TargetRef || q.Revision != u.Revision || !activeFollowup(u.Status) {
-		return platform.TargetActionRequest{}, platform.AccessContext{}, ErrConflict
+	if err := referenceActionUnitConflict(u, q); err != nil {
+		return platform.TargetActionRequest{}, platform.AccessContext{}, err
 	}
 	t, err := s.loadTargetLocked(id, u.ObjectRef, u.TargetRef)
 	if err != nil {
@@ -248,24 +302,24 @@ func (s *Store) referenceAuthorityLocked(id MemberIdentity, u followupUnit, q re
 		count++
 	}
 	if count != 1 || (a.RuleID == "") != (a.RuleVersion == 0) || (a.InstructionRef == "") != (a.InstructionVersion == 0) || !handlingText(a.Reason) {
-		return nil, nil, nil, ErrRequest
+		return nil, nil, nil, invalidField("authority", "provide reason and exactly ONE complete rule_id+rule_version, instruction_ref+instruction_version or room_seq")
 	}
 	if a.RuleID != "" {
 		if a.QuestionRef != "" || len(a.MessageRefs) > 0 || a.Constraints != "" {
-			return nil, nil, nil, ErrRequest
+			return nil, nil, nil, invalidField("authority", "rule authority cannot include question_ref, message_refs or constraints")
 		}
 		for _, r := range view.Effective {
 			if r.ID == a.RuleID && r.Version == a.RuleVersion && r.Kind == "rule" && referenceRuleCovers(r, inspection) {
 				return &r, nil, nil, nil
 			}
 		}
-		return nil, nil, nil, ErrConflict
+		return nil, nil, nil, conflictReason("authority.rule_version", "rule version is not effective or does not cover the verified target/account", "Read policy read and reassess scope; do not substitute a newer rule automatically.")
 	}
 	intent := followupIntent{Operation: q.Operation, Body: q.Input.Body, Constraints: a.Constraints}
 	var b followupReplyBasis
 	if a.InstructionRef != "" {
 		if a.QuestionRef != "" || len(a.MessageRefs) > 0 {
-			return nil, nil, nil, ErrRequest
+			return nil, nil, nil, invalidField("authority", "instruction authority cannot include question_ref or message_refs")
 		}
 		found := false
 		for _, i := range u.Instructions {
@@ -275,7 +329,7 @@ func (s *Store) referenceAuthorityLocked(id MemberIdentity, u followupUnit, q re
 			}
 		}
 		if !found {
-			return nil, nil, nil, ErrConflict
+			return nil, nil, nil, conflictReason("authority.instruction_version", "instruction version is inactive, expired or does not cover the exact intent", "Read matters read and reassess the saved instruction; do not replay it.")
 		}
 	} else {
 		if a.QuestionRef != "" {
@@ -319,12 +373,15 @@ func (s *Store) beginReferenceAction(id MemberIdentity, q referenceActionRequest
 		}
 		return referenceActionReceipt{}, false, err
 	}
-	if !validReferenceActionRequest(q) || q.Revision != u.Revision || q.TargetRef != u.TargetRef || !activeFollowup(u.Status) || targetReference(id, request.Target) != q.TargetRef || !sameNativeTarget(request.Target, i.Target) || i.Account != access.Account || !access.Valid() {
-		return referenceActionReceipt{}, false, ErrConflict
+	if err := referenceActionUnitConflict(u, q); err != nil {
+		return referenceActionReceipt{}, false, err
+	}
+	if targetReference(id, request.Target) != q.TargetRef || !sameNativeTarget(request.Target, i.Target) || i.Account != access.Account || !access.Valid() {
+		return referenceActionReceipt{}, false, conflictReason("target_ref", "verified target or executing account does not match", "Restore the exact target and binding; do not redirect the action.")
 	}
 	for _, a := range u.Actions {
 		if a.Status == "unknown" && q.sameBusiness(a.Request) {
-			return referenceActionReceipt{}, false, ErrConflict
+			return referenceActionReceipt{}, false, conflictReason("id", "the same business action already has an unknown result", "Inspect remote state and the saved action; never retry unknown under a new ID/turn/Session.")
 		}
 	}
 	if len(u.Actions) >= 32 {

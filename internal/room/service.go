@@ -72,8 +72,13 @@ type serviceMembers struct {
 }
 
 type apiError struct {
-	Error string `json:"error"`
-	Code  string `json:"code"`
+	Error           string  `json:"error"` // retained for existing HTTP clients
+	Code            string  `json:"code"`
+	Message         string  `json:"message"`
+	Field           string  `json:"field,omitempty"`
+	ExpectedVersion *uint64 `json:"expected_version,omitempty"`
+	ActualVersion   *uint64 `json:"actual_version,omitempty"`
+	Hint            string  `json:"hint,omitempty"`
 }
 
 type service struct {
@@ -558,18 +563,17 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	var req apiRequest
 	bodyLimit := int64(128 << 10)
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, bodyLimit))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil {
-		writeAPIError(w, ErrRequest)
+	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, bodyLimit))
+	if err != nil {
+		writeAPIError(w, invalidField("", "request body exceeds limit or could not be read"))
 		return
 	}
-	if dec.Decode(new(any)) != io.EOF {
-		writeAPIError(w, ErrRequest)
+	if err := decodeRequestJSON(string(data), &req); err != nil {
+		writeAPIError(w, err)
 		return
 	}
 	if req.ServiceInfo != s.info {
-		writeAPIError(w, ErrIdentity)
+		writeAPIError(w, &requestDiagnostic{cause: ErrIdentity, Field: "binding", Message: "Room instance or service binding is unavailable", Hint: "Use the current bound Room context; do not reuse an old service identity."})
 		return
 	}
 	if !validText(req.Caller.ID) || (req.Caller.Kind != "agent" && req.Caller.Kind != "human") ||
@@ -603,7 +607,7 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	}
 	var result any
-	var err error
+	err = nil
 	// Drain already admitted mutations before a restart establishes its
 	// boundary. Observation remains available while the background owner works.
 	if r.URL.Path != "/v1/discussion/restart" && r.URL.Path != "/v1/member/list" && r.URL.Path != "/v1/member/activity" &&
@@ -701,6 +705,31 @@ func writeAPIError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrRequest):
 		code, status = "request", http.StatusBadRequest
 	}
+	// Only authored diagnostics may disclose detail. Wrapped filesystem/platform
+	// errors can contain private paths, credentials or untrusted remote text.
+	message, hint := "operation failed", "Outcome may be uncertain; query saved/remote state before any write retry."
+	for _, known := range []error{ErrVersion, ErrClosing, ErrTurnBudget, ErrBusy, ErrIdentity, ErrConflict, ErrReadExpired, ErrCapacity, ErrRequest} {
+		if errors.Is(err, known) {
+			message, hint = known.Error(), ""
+			break
+		}
+	}
+	switch code {
+	case "schema_switch_required":
+		hint = "Preserve existing evidence and inspect its schema before switching; do not clear data."
+	case "identity":
+		hint = "Check the current Room/member binding and caller permission; do not reuse another membership."
+	case "request":
+		hint = "Use the command's --help for its exact parameters and constraints."
+	case "conflict":
+		hint = "Read the affected record and reassess; reconcile uncertain writes before any resend."
+	}
+	failure := apiError{Error: message, Code: code, Message: message, Hint: hint}
+	var diagnostic *requestDiagnostic
+	if errors.As(err, &diagnostic) {
+		failure.Error, failure.Message = diagnostic.Error(), diagnostic.Message
+		failure.Field, failure.ExpectedVersion, failure.ActualVersion, failure.Hint = diagnostic.Field, diagnostic.ExpectedVersion, diagnostic.ActualVersion, diagnostic.Hint
+	}
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(apiError{Error: err.Error(), Code: code})
+	_ = json.NewEncoder(w).Encode(failure)
 }

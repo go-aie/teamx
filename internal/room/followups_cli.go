@@ -2,7 +2,6 @@ package room
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -11,54 +10,28 @@ import (
 	"time"
 )
 
-const referenceHelp = `Member object/discussion followups (schema 2, JSON output):
-  teamx inbox read [--limit 25] [--peek]
-  teamx matters list [--object REF] [--cursor CURSOR] [--include-completed] [--limit 25]
-  teamx matters read --object REF --unit UNIT --turn TURN
-  teamx matters sources [--object REF] [--after SEQ] [--limit 25]
-  teamx matters source --seq SEQ --source SRC
-  teamx matters resolve --seq SEQ --source SRC --turn TURN
-  teamx matters ensure --seq SEQ --target REF --turn TURN
-  teamx matters update --change JSON
-  teamx matters notify --change JSON
-  teamx matters reply --change JSON
-  teamx matters instruct --change JSON
-  teamx matters instruction-status --change JSON
-  teamx actions execute --request JSON
-  teamx policy read [--id ID]
-  teamx policy update --change JSON
-  teamx policy publish --id ID --version VERSION --turn TURN
-Inbox pages contain original entries, source_ref/target_ref and deduplicated followups. Full output is confirmed separately; --peek never confirms. Unresolved sources remain discoverable in matters list; resolve explicitly retries one source. No semantic split/merge/enrich/relate commands exist.
-Read returns unit, target and registered_actions (target kind, supported object types, input schema and retry policy; current binding/permissions are checked on execute); sources/source retain immutable delivery and resolution evidence. Agent read associates explicit human reply_to automatically. Reuse returned revision as unit_version after each mutation. Discussion ensure is on demand using a verified native target_ref from a source. No caller-defined unit IDs.
-All unit changes carry object_ref, unit_ref, unit_version, turn_number.
-Update: status, summary, next, evidence. States: pending/in_progress/waiting_user/waiting_followup/completed/archived/unknown. Completion requires evidence and no unresolved questions/instructions/actions.
-Notify: text (mention the human operator), message_refs (verified native message refs), proposed {operation,body or constraints}. Saves a stable question_ref BEFORE public send; identical requests reconcile the same question and Room receipt. Important results use send with a stable ID and save evidence in update. Routine results stay private.
-Reply: question_ref, source_seq, basis. Without reply_to, associate only unambiguous real human context. Read before asking again. For an answered question, authority.room_seq is unit.questions[].answers[].message.seq (the human answer), NOT the question's room_seq (the Agent's public question).
-Instruct: question_ref (optional for a direct human task), source_seq, message_refs, intent {operation,body or constraints}, basis, expires_at (optional). Only persist when work spans turns; an immediate exact human answer needs no separate decision. instruction-status: id (instruction_ref), version, status (fulfilled/revoked), evidence, source_seq (human revocation only).
-Execute: object_ref, unit_ref, unit_version, turn_number, target_ref, stable id, policy_token, authority {reason, ONE of rule_id+rule_version / instruction_ref+instruction_version / room_seq; optional question_ref,message_refs,constraints}, operation (object.comment or discussion.reply), input {body}. Native project/MR/discussion IDs are rejected. Use supported Inbox-derived targets from registered_actions; current production GitLab writes support MR targets only. Do not fabricate Inbox sequences. Discussion replies require verified discussion identity and never fall back to ordinary comments. Current account, binding, target, scope and authority are rechecked. Intent is saved before dispatch; actual account/target/result ID/attempts are retained. policy_changed returns the complete effective view: reassess scope before continuing.
-Ordinary comments allow at most two server attempts on transient failures; discussion replies allow one. Lost responses may duplicate. Same ID/content reads existing state even after rotation; changed content is rejected. Never retry unknown under a new ID/turn/Session. Inspect remote state and report findings. Success, business completion, Inbox consumption and Todo completion are separate.
-Policy update: {change:{id,revision,version,kind,status,text,scope,source_seq,turn_number,...},mode,basis,proposal_seq?}. Keep all business requirements, prerequisites and exceptions together in text; do not split them into fields or generate a scope description. Preferences use no target scope. Rule scope uses provider/instance/object_type and either account (verified label) or account_id {namespace,value} with exact tenant {namespace,value}; use project for a verified container scope, or no_containers:true only for objects with no parent containers. Omission is not a wildcard. mode explicit_long_term directly saves explicit lasting human intent; inferred_habit saves suggested only; confirm_suggestion activates the exact published suggestion/version using the real human reply and proposal_seq. Publish returns the stable Room receipt for a saved suggestion (id is the saved suggestion ID; policy read --id ID restores that exact record). Human originals are read server-side; never submit source_text. Preferences confer no authority. One-off consent never activates a standing rule. UI is optional management; users normally answer and manage rules in Room conversation.
-Use runtime policy_token/current_turn. Restore missing effective body with policy read. Authority remains scoped to the accurate target/messages. Frozen older instructions are superseded by this contract. Unadapted capabilities remain tools run under actual user authority.
-`
-
-func runReferenceCLI(ctx context.Context, command string, args []string, stdout, stderr io.Writer, env func(string) string) error {
+func runReferenceCLI(ctx context.Context, command string, args []string, stdin io.Reader, stdout, stderr io.Writer, env func(string) string) error {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
-		return writeOutput(stdout, []byte(referenceHelp))
+		return writeOutput(stdout, []byte(referenceHelpText(command, "")))
 	}
 	op := args[0]
 	allowed := map[string]string{"inbox": "read", "matters": "list read sources source resolve ensure update notify reply instruct instruction-status", "actions": "execute", "policy": "read update publish"}
 	if !strings.Contains(" "+allowed[command]+" ", " "+op+" ") {
-		return ErrRequest
+		return invalidField("command", "unknown subcommand; use teamx "+command+" --help")
 	}
 	f := flag.NewFlagSet(command+" "+op, flag.ContinueOnError)
 	f.SetOutput(stderr)
-	f.Usage = func() { _ = writeOutput(stdout, []byte(referenceHelp)) }
+	f.Usage = func() { _ = writeOutput(stdout, []byte(referenceHelpText(command, op))) }
 	endpoint := f.String("endpoint", env("TEAMX_ENDPOINT"), "bound Room endpoint")
 	payloadName := "change"
 	if command == "actions" {
 		payloadName = "request"
 	}
 	payload := f.String(payloadName, "", "structured request; see --help")
+	var payloadFile string
+	if referencePayloadFlag(command, op) != "" {
+		f.StringVar(&payloadFile, payloadName+"-file", "", "JSON file path; - reads stdin (exclusive with --"+payloadName+")")
+	}
 	_ = f.Bool("json", true, "JSON output")
 	q := followupRequest{}
 	f.StringVar(&q.ObjectRef, "object", "", "stable object_ref")
@@ -80,23 +53,19 @@ func runReferenceCLI(ctx context.Context, command string, args []string, stdout,
 		}
 		return err
 	}
-	if f.NArg() != 0 || *limit < 1 || *limit > 25 {
-		return ErrRequest
+	if f.NArg() != 0 {
+		return invalidField("arguments", "unexpected positional arguments; use --help")
+	}
+	if *limit < 1 || *limit > 25 {
+		return invalidField("limit", "must be between 1 and 25")
 	}
 	timeout := 10 * time.Second
 	if command == "actions" || command == "inbox" || op == "resolve" {
 		timeout = actionClientTimeout
 	}
-	client := cliClient{endpoint: strings.TrimRight(*endpoint, "/"), http: &http.Client{Timeout: timeout}}
-	req, err := client.identity(ctx, env("TEAMX_ROOM_ID"), env)
-	if err != nil {
-		return err
-	}
-	if req.Caller.Kind != "agent" {
-		return ErrIdentity
-	}
-	req.Limit, req.After, req.TurnNumber = *limit, after, q.TurnNumber
+	var req apiRequest
 	req.Followup = &q
+	req.Limit, req.After, req.TurnNumber = *limit, after, q.TurnNumber
 	var target any
 	switch command + "/" + op {
 	case "actions/execute":
@@ -118,14 +87,37 @@ func runReferenceCLI(ctx context.Context, command string, args []string, stdout,
 		target = &q
 	}
 	if target != nil {
-		dec := json.NewDecoder(strings.NewReader(*payload))
-		dec.DisallowUnknownFields()
-		if dec.Decode(target) != nil || dec.Decode(new(any)) != io.EOF {
-			return ErrRequest
+		provided := map[string]bool{}
+		f.Visit(func(f *flag.Flag) { provided[f.Name] = true })
+		if provided[payloadName] && provided[payloadName+"-file"] {
+			return invalidField("--"+payloadName+"-file", "mutually exclusive with --"+payloadName)
+		}
+		inputFlag := "--" + payloadName
+		input := *payload
+		if provided[payloadName+"-file"] {
+			inputFlag += "-file"
+			var err error
+			input, err = readCLIJSONFile(payloadFile, stdin)
+			if err != nil {
+				return fmt.Errorf("%s: %w", inputFlag, err)
+			}
+		}
+		if err := decodeRequestJSON(input, target); err != nil {
+			return fmt.Errorf("%s: %w", inputFlag, err)
 		}
 	} else if *payload != "" {
-		return ErrRequest
+		return invalidField("--"+payloadName, "not supported by this subcommand; use --help")
 	}
+	client := cliClient{endpoint: strings.TrimRight(*endpoint, "/"), http: &http.Client{Timeout: timeout}}
+	identity, err := client.identity(ctx, env("TEAMX_ROOM_ID"), env)
+	if err != nil {
+		return err
+	}
+	if identity.Caller.Kind != "agent" {
+		return ErrIdentity
+	}
+	req.ServiceInfo, req.Caller = identity.ServiceInfo, identity.Caller
+
 	if command != "inbox" {
 		var result any
 		if err := client.request(ctx, "/v1/"+command+"/"+op, &req, &result); err != nil {
@@ -134,11 +126,13 @@ func runReferenceCLI(ctx context.Context, command string, args []string, stdout,
 		return writeJSON(stdout, result)
 	}
 	for {
-		var page referenceInboxPage
+		var page agentReferenceInboxPage
 		if err := client.request(ctx, "/v1/inbox/read", &req, &page); err != nil {
 			return fmt.Errorf("inbox read incomplete: %w", err)
 		}
-		if err := writeJSON(stdout, page); err != nil {
+		output := page
+		output.Batch.Receipt = ""
+		if err := writeJSON(stdout, output); err != nil {
 			return fmt.Errorf("page output incomplete; page not confirmed: %w", err)
 		}
 		if *peek {

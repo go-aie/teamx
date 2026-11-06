@@ -152,7 +152,7 @@ func TestReferenceEntryRetiredContractsAndIdentity(t *testing.T) {
 	}
 	for _, command := range []string{"matters", "actions", "policy"} {
 		var out bytes.Buffer
-		if err := runCLI(h.ctx, []string{command, "--help"}, &out, io.Discard, func(string) string { return "" }); err != nil || !strings.Contains(out.String(), "unit_ref") {
+		if err := runCLI(h.ctx, []string{command, "--help"}, &out, io.Discard, func(string) string { return "" }); err != nil || !strings.Contains(out.String(), "SUBCOMMAND --help") {
 			t.Fatal(out.String(), err)
 		}
 	}

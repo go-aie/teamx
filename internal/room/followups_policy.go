@@ -30,6 +30,20 @@ type policySuggestionConfirmation struct {
 	Text    string `json:"text"`
 }
 
+// Record is the exact committed revision, including when an old request is
+// reused after later amendments. PolicyView still describes the current policy.
+type conversationPolicyResult struct {
+	PolicyView
+	Record PolicyRevision
+}
+
+// Only update adds record; reads, turn supply and policy_changed keep their
+// existing effective-policy contract.
+type agentPolicyUpdateResult struct {
+	agentPolicyView
+	Record PolicyRevision `json:"record"`
+}
+
 func policyConversationDigest(q conversationPolicyChange) string {
 	q.Change.TurnNumber = 0 // a new Session/turn does not create a new business change
 	b, _ := json.Marshal(q)
@@ -101,37 +115,49 @@ func validatePolicyConversation(r, old PolicyRevision) error {
 	return nil
 }
 
-func (s *Store) changeConversationPolicy(id MemberIdentity, caller Caller, q conversationPolicyChange) (PolicyView, error) {
+func (s *Store) changeConversationPolicy(id MemberIdentity, caller Caller, q conversationPolicyChange) (conversationPolicyResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if caller != agentCallerIdentity(id) {
-		return PolicyView{}, ErrIdentity
+		return conversationPolicyResult{}, ErrIdentity
 	}
 	if err := s.checkFollowupsLocked(id, true); err != nil {
-		return PolicyView{}, err
+		return conversationPolicyResult{}, err
 	}
 	c := q.Change
 	if c.TurnNumber == 0 {
-		return PolicyView{}, ErrRequest
+		return conversationPolicyResult{}, invalidField("change.turn_number", "required positive current_turn")
 	}
 	if _, err := s.runningTurnLocked(id, c.TurnNumber); err != nil {
-		return PolicyView{}, err
+		return conversationPolicyResult{}, prefixDiagnostic(err, "change.")
 	}
-	if !validPolicyChange(c) || c.Kind == "decision" || c.SourceSeq == 0 || c.SourceText != "" || !handlingText(q.Basis) {
-		return PolicyView{}, ErrRequest
+	if !validPolicyChange(c) {
+		return conversationPolicyResult{}, policyChangeDiagnostic(c)
+	}
+	if c.Kind == "decision" {
+		return conversationPolicyResult{}, invalidField("change.kind", "must be rule or preference")
+	}
+	if c.SourceSeq == 0 {
+		return conversationPolicyResult{}, invalidField("change.source_seq", "required real human Room message sequence")
+	}
+	if c.SourceText != "" {
+		return conversationPolicyResult{}, invalidField("change.source_text", "must be omitted; server reads the original human message")
+	}
+	if !handlingText(q.Basis) {
+		return conversationPolicyResult{}, invalidField("basis", "required nonempty text, at most 4096 bytes")
 	}
 	p, path, err := s.loadPolicyLocked(id, true)
 	if err != nil {
-		return PolicyView{}, err
+		return conversationPolicyResult{}, err
 	}
 	digest := policyConversationDigest(q)
 	for _, r := range p.History {
 		if r.Conversation != nil && r.Conversation.RequestDigest == digest {
-			return policyView(p), nil
+			return conversationPolicyResult{PolicyView: policyView(p), Record: r}, nil
 		}
 	}
 	if p.Revision != c.Revision {
-		return PolicyView{}, ErrConflict
+		return conversationPolicyResult{}, versionConflict("change.revision", c.Revision, p.Revision, "Read policy read and reassess; do not silently replace the observed revision.")
 	}
 	var old PolicyRevision
 	for _, r := range policyCurrent(p.History) {
@@ -140,27 +166,27 @@ func (s *Store) changeConversationPolicy(id MemberIdentity, caller Caller, q con
 		}
 	}
 	if old.Version != c.Version {
-		return PolicyView{}, ErrConflict
+		return conversationPolicyResult{}, versionConflict("change.version", c.Version, old.Version, "Read policy read --id ID and reassess the exact record.")
 	}
 	if old.Version != 0 && old.Kind != c.Kind {
-		return PolicyView{}, ErrRequest
+		return conversationPolicyResult{}, invalidField("change.kind", "cannot change the kind of an existing record")
 	}
 	if len(p.History) >= maxPolicyRevisions {
-		return PolicyView{}, ErrCapacity
+		return conversationPolicyResult{}, ErrCapacity
 	}
 	room, err := s.loadRoom()
 	if err != nil {
-		return PolicyView{}, err
+		return conversationPolicyResult{}, err
 	}
 	message, err := roomHumanMessage(room, c.SourceSeq)
 	if err != nil {
-		return PolicyView{}, err
+		return conversationPolicyResult{}, err
 	}
 	if old.Version != 0 && old.Source.User != message.Author.ID {
-		return PolicyView{}, ErrIdentity
+		return conversationPolicyResult{}, ErrIdentity
 	}
 	if old.Version != 0 && old.Source.Seq != 0 && message.Seq <= old.Source.Seq {
-		return PolicyView{}, ErrConflict
+		return conversationPolicyResult{}, conflictReason("change.source_seq", "human evidence is not newer than the saved record", "Read policy read --id ID and use the actual new human instruction.")
 	}
 	r := PolicyRevision{ID: c.ID, Version: c.Version + 1, Kind: c.Kind, Status: c.Status, Text: c.Text, Scope: c.Scope, ExpiresAt: c.ExpiresAt,
 		Source: PolicySource{User: message.Author.ID, Seq: message.Seq, Text: message.Text}, ChangedBy: caller.Author, UpdatedAt: time.Now().UTC(),
@@ -168,21 +194,24 @@ func (s *Store) changeConversationPolicy(id MemberIdentity, caller Caller, q con
 	if q.Mode == "confirm_suggestion" {
 		receipt, ok := room.FollowupNoticeReceipts[policySuggestionNoticeID(id, old)]
 		if !ok || receipt.Seq != q.ProposalSeq || receipt.MembershipID != id.MembershipID || receipt.Author != caller.Author || receipt.Digest != noticeDigest(policySuggestionText(old)) {
-			return PolicyView{}, ErrIdentity
+			return conversationPolicyResult{}, ErrIdentity
 		}
 		r.Conversation.Proposal = &policySuggestionConfirmation{Version: old.Version, Seq: receipt.Seq, Text: policySuggestionText(old)}
 	} else if q.ProposalSeq != 0 {
-		return PolicyView{}, ErrRequest
+		return conversationPolicyResult{}, invalidField("proposal_seq", "only supported with confirm_suggestion")
 	}
-	if !validPolicyRevision(r) || validatePolicyConversation(r, old) != nil {
-		return PolicyView{}, ErrRequest
+	if !validPolicyRevision(r) {
+		return conversationPolicyResult{}, invalidField("change", "invalid record ID/kind/status/text/scope/expiry; see policy update --help")
+	}
+	if validatePolicyConversation(r, old) != nil {
+		return conversationPolicyResult{}, invalidField("mode", "mode/status or suggestion confirmation does not match the saved record and real human evidence; see policy update --help")
 	}
 	// Exact duplicate scope must amend its existing rule. This is a deterministic
 	// guard, not a claim to detect semantic overlap or resolve conflicting rules.
 	if old.Version == 0 && r.Kind == "rule" {
 		for _, v := range policyCurrent(p.History) {
 			if v.Kind == r.Kind && v.Status != "revoked" && naturalPolicy(v).Scope == r.Scope {
-				return PolicyView{}, ErrConflict
+				return conversationPolicyResult{}, conflictReason("change.scope", "a non-revoked rule already has this exact scope", "Read policy read and amend the existing rule/version rather than creating a duplicate.")
 			}
 		}
 	}
@@ -190,15 +219,15 @@ func (s *Store) changeConversationPolicy(id MemberIdentity, caller Caller, q con
 	p.Revision++
 	encoded, err := json.Marshal(p)
 	if err != nil {
-		return PolicyView{}, err
+		return conversationPolicyResult{}, err
 	}
 	if int64(len(encoded)+1) > maxPrivateFileBytes {
-		return PolicyView{}, ErrCapacity
+		return conversationPolicyResult{}, ErrCapacity
 	}
 	if err := s.save(path, p, maxPrivateFileBytes); err != nil {
-		return PolicyView{}, err
+		return conversationPolicyResult{}, err
 	}
-	return policyView(p), nil
+	return conversationPolicyResult{PolicyView: policyView(p), Record: r}, nil
 }
 
 // Publishes the exact saved suggestion version. Room's durable receipt prevents
@@ -223,8 +252,10 @@ func (s *service) publishPolicySuggestion(ctx context.Context, id MemberIdentity
 				revision = r
 			}
 		}
-		if revision.Version != version || revision.Status != "suggested" || revision.Conversation == nil {
-			err = ErrConflict
+		if revision.Version != version {
+			err = versionConflict("version", version, revision.Version, "Read policy read --id ID before publishing the exact suggestion.")
+		} else if revision.Status != "suggested" || revision.Conversation == nil {
+			err = conflictReason("id", "record is not a conversation-backed suggestion", "Read policy read --id ID before publishing.")
 		}
 	}
 	s.store.mu.Unlock()
@@ -238,10 +269,10 @@ func (s *service) publishPolicySuggestion(ctx context.Context, id MemberIdentity
 		ClientMessageID: policySuggestionNoticeID(id, revision), Text: policySuggestionText(revision), FollowupNotice: true})
 }
 
-func (s *service) referencePolicyChange(_ context.Context, id MemberIdentity, caller Caller, q conversationPolicyChange) (agentPolicyView, error) {
+func (s *service) referencePolicyChange(_ context.Context, id MemberIdentity, caller Caller, q conversationPolicyChange) (agentPolicyUpdateResult, error) {
 	view, err := s.store.changeConversationPolicy(id, caller, q)
 	if err != nil {
-		return agentPolicyView{}, err
+		return agentPolicyUpdateResult{}, err
 	} // never report "remembered" before durable save
-	return agentPolicy(view.PolicySnapshot, q.Change.TurnNumber, time.Now()), nil
+	return agentPolicyUpdateResult{agentPolicyView: agentPolicy(view.PolicySnapshot, q.Change.TurnNumber, time.Now()), Record: view.Record}, nil
 }

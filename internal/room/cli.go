@@ -63,7 +63,7 @@ func (c cliClient) request(ctx context.Context, path string, req any, out any) e
 	if response.StatusCode != http.StatusOK {
 		var failure apiError
 		if json.Unmarshal(data, &failure) == nil && failure.Error != "" {
-			return fmt.Errorf("%s: %s", failure.Code, failure.Error)
+			return failure.cliError()
 		}
 		return fmt.Errorf("HTTP %s", response.Status)
 	}
@@ -114,6 +114,10 @@ func (c cliClient) identity(ctx context.Context, roomID string, env func(string)
 // runCLI accepts a writer so the output/confirmation boundary can be tested
 // with a real HTTP peer, including short writes and broken pipes.
 func runCLI(ctx context.Context, args []string, stdout, stderr io.Writer, env func(string) string) error {
+	return runCLIWithInput(ctx, args, os.Stdin, stdout, stderr, env)
+}
+
+func runCLIWithInput(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer, env func(string) string) error {
 	// Git invokes GIT_ASKPASS with only a prompt. Keep the executable path free
 	// of embedded flags, so spaces and quotes in paths work without a shell.
 	if len(args) == 1 && env("TEAMX_GITLAB_TOOLS") != "" && (strings.HasPrefix(args[0], "Username for '") || strings.HasPrefix(args[0], "Password for '")) {
@@ -123,15 +127,18 @@ func runCLI(ctx context.Context, args []string, stdout, stderr io.Writer, env fu
 	if len(args) == 0 {
 		return fmt.Errorf("usage: teamx serve | member add/list/remove/run/pause/session rotate | send | read | inbox read | matters list/update | policy read/update/publish | actions execute | tools list/run")
 	}
+	if args[0] == "--help" || args[0] == "-h" {
+		return writeOutput(stdout, []byte(rootCLIHelp))
+	}
 	command, args := args[0], args[1:]
 	if command == "inbox" || command == "matters" || command == "actions" || command == "policy" {
-		return runReferenceCLI(ctx, command, args, stdout, stderr, env)
+		return runReferenceCLI(ctx, command, args, stdin, stdout, stderr, env)
 	}
 	if command == "workspace-git" {
 		return runWorkspaceGitCLI(ctx, args, stdout, stderr, env)
 	}
 	if command == "tools" {
-		return runToolsCLI(ctx, args, os.Stdin, stdout, stderr, env)
+		return runToolsCLI(ctx, args, stdin, stdout, stderr, env)
 	}
 	operation := ""
 	if command == "member" {
@@ -157,6 +164,13 @@ func runCLI(ctx context.Context, args []string, stdout, stderr io.Writer, env fu
 	}
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	flags.SetOutput(stderr)
+	if command == "read" || command == "send" {
+		help := readCLIHelp
+		if command == "send" {
+			help = sendCLIHelp
+		}
+		flags.Usage = func() { _ = writeOutput(stdout, []byte(help)) }
+	}
 	endpoint := env("TEAMX_ENDPOINT")
 	if endpoint == "" {
 		endpoint = "http://127.0.0.1:8088"
@@ -203,7 +217,7 @@ func runCLI(ctx context.Context, args []string, stdout, stderr io.Writer, env fu
 		return err
 	}
 	if flags.NArg() != 0 {
-		return ErrRequest
+		return invalidField("arguments", "unexpected positional arguments; use --help")
 	}
 	if command == "member" && operation == "add" && !(RunnerConfig{Kind: runner, Profile: profile}).valid() {
 		return fmt.Errorf("%w: member add requires a DSH profile", ErrRequest)
@@ -316,8 +330,17 @@ func runCLI(ctx context.Context, args []string, stdout, stderr io.Writer, env fu
 	if latest != 0 {
 		modeCount++
 	}
-	if modeCount > 1 || latest < 0 || limit < 1 || limit > maxMessages || (peek && !unread) {
-		return ErrRequest
+	if modeCount > 1 {
+		return invalidField("read mode", "--all, --unread and --latest are mutually exclusive")
+	}
+	if latest < 0 {
+		return invalidField("latest", "must not be negative")
+	}
+	if limit < 1 || limit > maxMessages {
+		return invalidField("limit", fmt.Sprintf("must be between 1 and %d", maxMessages))
+	}
+	if peek && !unread {
+		return invalidField("peek", "requires --unread")
 	}
 	req.Mode, req.Latest = ReadLatest, latest
 	if req.Latest == 0 {
@@ -340,7 +363,11 @@ func readCLI(ctx context.Context, client cliClient, req apiRequest, stdout io.Wr
 		}
 		var output bytes.Buffer
 		if asJSON {
-			if err := json.NewEncoder(&output).Encode(page); err != nil {
+			view := page
+			if req.Caller.Kind == "agent" {
+				view.ReadReceipt, view.ExpiresAt = "", time.Time{}
+			}
+			if err := json.NewEncoder(&output).Encode(view); err != nil {
 				return err
 			}
 		} else {

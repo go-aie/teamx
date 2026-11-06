@@ -106,7 +106,7 @@ func (s *Store) followupAnswerBasis(id MemberIdentity, c followupInstructionChan
 		return followupReplyBasis{}, err
 	}
 	if u.Revision != c.Revision {
-		return followupReplyBasis{}, ErrConflict
+		return followupReplyBasis{}, versionConflict("unit_version", c.Revision, u.Revision, "Read matters read and reassess the exact human answer.")
 	}
 	b, err := s.instructionBasisLocked(id, u, c)
 	if err != nil {
@@ -177,7 +177,7 @@ func (s *Store) saveFollowupInstruction(id MemberIdentity, c followupInstruction
 		}
 	}
 	if c.Revision != u.Revision {
-		return u, ErrConflict
+		return u, versionConflict("unit_version", c.Revision, u.Revision, "Read matters read and reassess before submitting a change.")
 	}
 	if c.ExpiresAt != nil && !c.ExpiresAt.After(time.Now()) {
 		return u, ErrRequest
@@ -202,19 +202,25 @@ func (s *Store) finishFollowupInstruction(id MemberIdentity, c followupCommand, 
 	if err != nil {
 		return u, err
 	}
-	if !handlingText(evidence) || (status != "fulfilled" && status != "revoked") {
-		return u, ErrRequest
+	if !handlingText(evidence) {
+		return u, invalidField("evidence", "required nonempty text, at most 4096 bytes")
+	}
+	if status != "fulfilled" && status != "revoked" {
+		return u, invalidField("status", "must be fulfilled or revoked")
 	}
 	if u.Revision != c.Revision {
-		return u, ErrConflict
+		return u, versionConflict("unit_version", c.Revision, u.Revision, "Read matters read and reassess before submitting a change.")
 	}
 	for j := range u.Instructions {
 		i := &u.Instructions[j]
 		if i.Ref != ref {
 			continue
 		}
-		if i.Version != version || i.Status != "active" {
-			return u, ErrConflict
+		if i.Version != version {
+			return u, versionConflict("version", version, i.Version, "Read matters read to restore the instruction before changing its status.")
+		}
+		if i.Status != "active" {
+			return u, conflictReason("status", "instruction is no longer active", "Read matters read; do not reactivate or replay it.")
 		}
 		if status == "revoked" {
 			// Retain the real human correction alongside the original instruction.

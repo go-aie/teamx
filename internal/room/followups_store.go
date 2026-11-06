@@ -32,8 +32,11 @@ func (s *Store) runningTurnLocked(id MemberIdentity, turn uint64) (AgentSnapshot
 	if agent.MemberIdentity != id || agent.validate() != nil {
 		return agent, ErrInvalid
 	}
-	if agent.Turn == nil || agent.Turn.Status != "running" || (turn != 0 && agent.TurnNumber != turn) {
-		return agent, ErrConflict
+	if agent.Turn == nil || agent.Turn.Status != "running" {
+		return agent, conflictReason("turn_number", "no running turn for this membership", "Wait for a running turn; do not replay uncertain actions.")
+	}
+	if turn != 0 && agent.TurnNumber != turn {
+		return agent, versionConflict("turn_number", turn, agent.TurnNumber, "Use the runtime current_turn after restoring context; do not replay uncertain actions.")
 	}
 	return agent, nil
 }
