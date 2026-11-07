@@ -36,6 +36,19 @@ const row=(ui,n=0)=>ui.el("cli-member-options").children[n];
 const select=(ui,n=0)=>row(ui,n).children[1].children[0];
 const apply=(ui,n=0)=>row(ui,n).children[2];
 const feedback=(ui,n=0)=>row(ui,n).children[3];
+test("Lark settings use a single connection apply and expose no per-mode switches",async()=>{
+  const api=fixture();api.data.catalog.push({name:"lark",provider:"lark",version:"1.0.99"});
+  api.hook=path=>path.startsWith("/v1/platform/connections?")?{connections:[{id:"lark",name:"飞书测试账号",provider:"lark",url:"https://open.feishu.cn",version:1,validation:{status:"valid",username:"测试用户"}}]}:undefined;
+  const ui=await launch(api);await open(ui);
+  assert.equal(row(ui,2).children.length,5);
+  assert.equal(row(ui,2).children[4].tag,"p");
+  assert.match(row(ui,2).children[4].textContent,/应用后.*按你的指令/);
+  assert.equal(api.calls.some(c=>c.path==="/v1/tools/bind"),false);
+  assert.match(select(ui,2).options[1].textContent,/飞书测试账号.*测试用户/);
+  select(ui,2).value="lark";await apply(ui,2).emit("click");
+  const binding=api.calls.find(c=>c.path==="/v1/tools/bind").body.binding;
+  assert.deepEqual(binding.action_authorization.grants,[]);
+});
 test("member tool settings use only explicit CLI bindings and retire legacy controls",async()=>{
   const api=fixture(),ui=await launch(api);await open(ui);
   assert.equal(ui.el("tools-dialog"),undefined);assert.equal(ui.el("tools-member-options"),undefined);
@@ -47,7 +60,7 @@ test("member tool settings use only explicit CLI bindings and retire legacy cont
   await apply(ui).emit("click");
   const call=api.calls.find(c=>c.path==="/v1/tools/bind");
   assert.equal(call.body.binding.connection_id,"connection");assert.equal(call.body.connection_version,3);
-  assert.match(feedback(ui).textContent,/已应用.*Personal.*@me.*账号权限/);
+  assert.match(feedback(ui).textContent,/已应用.*Personal.*@me/);
   await ui.refresh();assert.match(feedback(ui).textContent,/已应用/);
   select(ui,1).value="on";await apply(ui,1).emit("click");
   assert.equal(api.data.bindings[1].tool,"local");assert.equal(api.data.bindings[1].connection_id,undefined);
@@ -98,4 +111,49 @@ test("late CLI reads cannot populate a different member",async()=>{
   assert.equal(ui.el("cli-member-options").children,rows);
   select(ui).value="connection";await apply(ui).emit("click");
   assert.equal(api.calls.find(c=>c.path==="/v1/tools/bind").body.binding.membership_id,"member-b");
+});
+
+test("Lark applies all accepted capabilities by default on the selected connection",async()=>{
+  const api=fixture();
+  api.data.catalog.push({name:"lark",provider:"lark",version:"1.0.99",actions:[
+    {operation:"message.reply",target_kind:"message",object_types:["message"]},
+    {operation:"message.send",target_kind:"object",object_types:["chat"]}
+  ]});
+  const connections=["one","two"].map(id=>({id,name:id,provider:"lark",url:"https://open.feishu.cn",version:1,validation:{status:"valid",username:id}}));
+  api.hook=path=>path.startsWith("/v1/platform/connections?")?{connections}:undefined;
+  const ui=await launch(api);await open(ui);
+  const grants=[{operation:"message.reply",target_kind:"message",object_type:"message"},{operation:"message.send",target_kind:"object",object_type:"chat"}];
+  // Merely loading an existing read-only binding must not mutate it.
+  api.data.bindings.push({agent_id:"agent-a",membership_id:"member-a",tool:"lark",connection_id:"one"});
+  await ui.el("cli-member-refresh").emit("click");
+  assert.equal(api.data.bindings[0].action_authorization,undefined);
+  assert.equal(api.calls.filter(c=>c.path==="/v1/tools/bind").length,0);
+  assert.equal(row(ui,2).children.length,5);
+  await apply(ui,2).emit("click");
+  let binding=api.calls.filter(c=>c.path==="/v1/tools/bind").at(-1).body.binding;
+  assert.equal(binding.connection_id,"one");assert.deepEqual(binding.action_authorization.grants,grants);
+  select(ui,2).value="two";await select(ui,2).emit("change");
+  assert.equal(api.calls.filter(c=>c.path==="/v1/tools/bind").length,1);
+  await apply(ui,2).emit("click");
+  binding=api.calls.filter(c=>c.path==="/v1/tools/bind").at(-1).body.binding;
+  assert.equal(binding.connection_id,"two");assert.deepEqual(binding.action_authorization.grants,grants);
+  select(ui,2).value="";await apply(ui,2).emit("click");
+  assert.equal(api.calls.filter(c=>c.path==="/v1/tools/bind").at(-1).body.enabled,false);
+  assert.equal(api.data.bindings.length,0);
+});
+
+test("Lark defaults exclude unavailable capabilities without exposing acceptance details",async()=>{
+ const api=fixture();
+ api.data.catalog.push({name:"lark",provider:"lark",version:"1.0.99",actions:[
+   {operation:"message.reply",target_kind:"message",object_types:["message"]},
+   {operation:"message.send",target_kind:"object",object_types:["user","chat"],disabled_reason:"lark_send_acceptance_pending: 真实验收说明。"}
+ ]});
+ api.hook=path=>path.startsWith("/v1/platform/connections?")?{connections:[{id:"lark",name:"测试",provider:"lark",url:"https://open.feishu.cn",version:1,validation:{status:"valid",username:"测试用户"}}]}:undefined;
+ const ui=await launch(api);await open(ui);
+ select(ui,2).value="lark";await select(ui,2).emit("change");
+ assert.equal(row(ui,2).children.length,5);
+ assert.doesNotMatch(row(ui,2).children[4].textContent,/验收|acceptance_pending/);
+ await apply(ui,2).emit("click");
+ const binding=api.calls.filter(c=>c.path==="/v1/tools/bind").at(-1).body.binding;
+ assert.deepEqual(binding.action_authorization.grants,[{operation:"message.reply",target_kind:"message",object_type:"message"}]);
 });

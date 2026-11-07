@@ -22,13 +22,20 @@ type agentActionAuthority struct {
 	Reason      string   `json:"reason"`
 }
 
+type actionBusinessContext struct {
+	ObjectRef   string `json:"object_ref"`
+	UnitRef     string `json:"unit_ref"`
+	UnitVersion uint64 `json:"unit_version"`
+}
 type agentActionRequest struct {
 	followupCommand
-	ID          string               `json:"id"`
-	PolicyToken string               `json:"policy_token"`
-	Authority   agentActionAuthority `json:"authority"`
-	Operation   platform.Operation   `json:"operation"`
-	Input       CommentInput         `json:"input"`
+	TargetRef   string                 `json:"target_ref,omitempty"`
+	Context     *actionBusinessContext `json:"context,omitempty"`
+	ID          string                 `json:"id"`
+	PolicyToken string                 `json:"policy_token"`
+	Authority   agentActionAuthority   `json:"authority"`
+	Operation   platform.Operation     `json:"operation"`
+	Input       ActionInput            `json:"input"`
 }
 
 func (q agentActionRequest) internalAuthority() (referenceActionAuthority, error) {
@@ -70,11 +77,25 @@ func (s *Store) agentAction(id MemberIdentity, q agentActionRequest) (referenceA
 	if err := s.checkFollowupsLocked(id, false); err != nil {
 		return referenceActionRequest{}, err
 	}
-	u, err := s.loadUnitLocked(id, q.ObjectRef, q.UnitRef)
-	if err != nil {
-		return referenceActionRequest{}, err
+	if q.Context != nil {
+		if q.ObjectRef != "" || q.UnitRef != "" || q.Revision != 0 {
+			return referenceActionRequest{}, ErrRequest
+		}
+		q.ObjectRef, q.UnitRef, q.Revision = q.Context.ObjectRef, q.Context.UnitRef, q.Context.UnitVersion
 	}
-	r := referenceActionRequest{followupCommand: q.followupCommand, TargetRef: u.TargetRef, ID: q.ID, PolicyToken: q.PolicyToken, Authority: a, Operation: q.Operation, Input: q.Input}
+	targetRef := q.TargetRef
+	if q.UnitRef != "" {
+		u, err := s.loadUnitLocked(id, q.ObjectRef, q.UnitRef)
+		if err != nil {
+			return referenceActionRequest{}, err
+		}
+		if targetRef == "" {
+			targetRef = u.TargetRef
+		}
+	} else if q.ObjectRef != "" || q.Revision != 0 {
+		return referenceActionRequest{}, ErrRequest
+	}
+	r := referenceActionRequest{followupCommand: q.followupCommand, TargetRef: targetRef, ID: q.ID, PolicyToken: q.PolicyToken, Authority: a, Operation: q.Operation, Input: q.Input}
 	// Existing-ID recovery retains the original observed version. New writes are
 	// checked against the current version by the existing execution gates.
 	if err := referenceActionRequestError(r); err != nil {

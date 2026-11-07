@@ -78,7 +78,9 @@ func (m *roomManager) prepareGitlabReferenceAction(ctx context.Context, id Membe
 		_ = release() // preserve the known write outcome even when authorization changed
 		return response, writeErr
 	}
-	caps := platform.ReferenceCapabilities{CredentialKinds: []string{"gitlab:oauth"}, Actions: gitlab.ReferenceActions(guardedRead, guardedWrite, admission.account.Username)}
+	caps := platform.ReferenceCapabilities{Resolve: func(ctx context.Context, l platform.TargetLocator, a platform.AccessContext) (platform.TargetResolution, error) {
+		return gitlab.ResolveStoredActionTarget(ctx, l, a, guardedRead, admission.account.Username)
+	}, CredentialKinds: []string{"gitlab:oauth"}, Actions: gitlab.ReferenceActions(guardedRead, guardedWrite, admission.account.Username)}
 	return referenceActionSession{Access: access, Capabilities: caps, Check: check, Close: func() { m.finishPlatformCall(call) }}, nil
 }
 

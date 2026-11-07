@@ -113,11 +113,12 @@ func (p Process) Run(ctx context.Context, args []string) int {
 
 // Binding is one explicitly selected tool and optional connection per member.
 type Binding struct {
-	AgentID              string `json:"agent_id"`
-	MembershipID         string `json:"membership_id"`
-	Tool                 string `json:"tool"`
-	ConnectionID         string `json:"connection_id,omitempty"`
-	ConnectionGeneration string `json:"connection_generation,omitempty"`
+	ActionAuthorization  *ActionAuthorization `json:"action_authorization,omitempty"`
+	AgentID              string               `json:"agent_id"`
+	MembershipID         string               `json:"membership_id"`
+	Tool                 string               `json:"tool"`
+	ConnectionID         string               `json:"connection_id,omitempty"`
+	ConnectionGeneration string               `json:"connection_generation,omitempty"`
 }
 
 func OpaqueID(s string) bool { return len(s) == 32 && strings.Trim(s, "0123456789abcdef") == "" }

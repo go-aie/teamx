@@ -17,7 +17,11 @@ type referenceActionSession struct {
 }
 type referenceActionPreparer func(context.Context, MemberIdentity, platform.AccessContext) (referenceActionSession, error)
 
-func mustCommentJSON(input CommentInput) json.RawMessage { b, _ := json.Marshal(input); return b }
+func actionInputJSON(input ActionInput) json.RawMessage { b, _ := json.Marshal(input); return b }
+
+func actionAuthorityMatchesSpec(q referenceActionRequest, spec platform.ActionSpec) bool {
+	return !spec.DirectRoomInstructionOnly || (q.Authority.RoomSeq != 0 && q.Authority.RuleID == "" && q.Authority.InstructionRef == "" && q.Authority.QuestionRef == "" && len(q.Authority.MessageRefs) == 0)
+}
 
 // Managed execution shares member binding admission and platform call ownership.
 func (m *roomManager) executeReferenceAction(ctx context.Context, req apiRequest, q referenceActionRequest) (referenceActionReceipt, error) {
@@ -48,7 +52,43 @@ func (m *roomManager) executeReferenceAction(ctx context.Context, req apiRequest
 		if prepare == nil {
 			return referenceActionSession{}, platform.ErrReference
 		}
-		return prepare(ctx, id, old)
+		session, err := prepare(ctx, id, old)
+		if err != nil {
+			return session, err
+		}
+		cap, ok := session.Capabilities.Actions[q.Operation]
+		if ok && cap.Spec.RequiresAuthorization {
+			request, _, err := svc.store.referenceActionEvidence(id, q)
+			if err != nil {
+				session.Close()
+				return referenceActionSession{}, err
+			}
+			m.mu.Lock()
+			bindings, bindingErr := m.readToolBindingsLocked(id.RoomIdentity)
+			if bindingErr == nil {
+				for _, b := range bindings.Bindings {
+					if b.AgentID == id.AgentID && b.MembershipID == id.MembershipID && b.ConnectionID == session.Access.ConnectionID && b.ConnectionGeneration == session.Access.Generation && b.ActionAuthorization != nil {
+						session.Access.ActionAuthorizationVersion = b.ActionAuthorization.Revision
+					}
+				}
+			}
+			m.mu.Unlock()
+			if bindingErr != nil {
+				session.Close()
+				return referenceActionSession{}, bindingErr
+			}
+			grantedAccess := session.Access
+			check := session.Check
+			session.Check = func(ctx context.Context) error {
+				if err := check(ctx); err != nil {
+					return err
+				}
+				m.mu.Lock()
+				defer m.mu.Unlock()
+				return m.checkActionAuthorizationLocked(tr, grantedAccess, cap.Spec, request.Target)
+			}
+		}
+		return session, nil
 	})
 }
 
@@ -57,13 +97,16 @@ func validReferenceSpec(spec platform.ActionSpec, q referenceActionRequest, t pl
 	if t.Discussion.Valid() {
 		kind = "discussion"
 	}
-	if (len(spec.ObjectTypes) > 0 && !slices.Contains(spec.ObjectTypes, t.Object.Type)) || spec.Operation != q.Operation || spec.TargetKind != kind || !json.Valid(spec.InputSchema) || spec.Retry.MaxAttempts < 1 || spec.Retry.MaxAttempts > 2 || t.Message.Valid() {
+	if t.Message.Valid() {
+		kind = "message"
+	}
+	if (len(spec.ObjectTypes) > 0 && !slices.Contains(spec.ObjectTypes, t.Object.Type)) || spec.Operation != q.Operation || spec.TargetKind != kind || !json.Valid(spec.InputSchema) || spec.Retry.MaxAttempts < 1 || spec.Retry.MaxAttempts > 2 {
 		return false
 	}
 	if q.Operation == platform.OperationDiscussionReply {
 		return kind == "discussion" && spec.Retry.MaxAttempts == 1 && !spec.Retry.RetryUnknown
 	}
-	return kind == "object"
+	return kind == "object" || kind == "message"
 }
 
 func (s *service) executeReferenceAction(ctx context.Context, id MemberIdentity, q referenceActionRequest, prepare referenceActionPreparer) (referenceActionReceipt, error) {
@@ -101,14 +144,23 @@ func (s *service) executeReferenceAction(ctx context.Context, id MemberIdentity,
 	if err != nil {
 		return referenceActionReceipt{}, err
 	}
+	if session.Close == nil || session.Check == nil {
+		return referenceActionReceipt{}, platform.ErrReference
+	}
 	defer session.Close()
 	access := session.Access
 	// Preserve the existing receiving/executing account equality contract. Credential
 	// rotations require fresh inspection, and never rename the stored target.
-	if !access.Valid() || access.RoomIdentity != id.RoomIdentity || access.AgentID != id.AgentID || access.MembershipID != id.MembershipID || access.Account != old.Account || access.Receiver != old.Receiver || access.Receiver != access.Account {
+	if !access.Valid() || access.RoomIdentity != id.RoomIdentity || access.AgentID != id.AgentID || access.MembershipID != id.MembershipID || access.Account != old.Account || access.ConnectionID != old.ConnectionID || access.Generation != old.Generation {
 		return referenceActionReceipt{}, ErrIdentity
 	}
 	cap, ok := session.Capabilities.Actions[q.Operation]
+	if ok && !actionAuthorityMatchesSpec(q, cap.Spec) {
+		return referenceActionReceipt{}, invalidField("authority", "this action requires a direct human Room instruction (room_seq), without rule, instruction, question or message refs")
+	}
+	if ok && cap.Spec.DisabledReason != "" {
+		return referenceActionReceipt{}, conflictReason("operation", cap.Spec.DisabledReason, "Read actions resolve for current provider readiness.")
+	}
 	if !ok || cap.Inspect == nil || cap.Execute == nil || !validReferenceSpec(cap.Spec, q, request.Target) {
 		return referenceActionReceipt{}, platform.ErrReference
 	}
@@ -128,6 +180,7 @@ func (s *service) executeReferenceAction(ctx context.Context, id MemberIdentity,
 		}
 		return i, session.Check(ctx)
 	}
+	request.IdempotencyKey = referenceDigest("", id, q.ID)[:32]
 	inspected, err := inspect()
 	if err != nil {
 		return referenceActionReceipt{}, err

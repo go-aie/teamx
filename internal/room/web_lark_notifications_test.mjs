@@ -13,7 +13,7 @@ function fixture(){
   if(path.startsWith("/v1/platform/notifications?"))return {subscriptions:[structuredClone(api.data)]};
   if(path.startsWith("/v1/platform/connections?"))return {connections:api.connections};
   if(path==="/v1/platform/connections/lark/discover")return {executable:"/fixture/lark-cli",profiles:api.profiles};
-  if(path==="/v1/platform/connections/lark/login" || path==="/v1/platform/connections/lark/logout")return {session_id:"auth-session",status:"starting",connections:[]};
+  if(path==="/v1/platform/connections/lark/login" || path==="/v1/platform/connections/lark/logout" || path==="/v1/platform/connections/lark/authorize-targets")return {session_id:"auth-session",status:"starting",connections:[]};
   if(path==="/v1/platform/connections/lark/status")return api.authView;
   if(path==="/v1/platform/connections/lark/cancel")return {session_id:"auth-session",status:"cancelled"};
   if(path==="/v1/platform/connections/save"){
@@ -316,4 +316,32 @@ test("Lark locked history start does not block other settings or rewrite the sav
  const saved=api.calls.find(x=>x.path==="/v1/platform/notifications/configure").body;
  assert.equal(saved.subscription_id,"existing");assert.equal(saved.config.interval_seconds,10);assert.equal(saved.config.backfill_start,start.toISOString());
  assert.equal(ui.el("lark-backfill-start").disabled,true);
+});
+
+test("L4-A sending checks report both permission layers and keep writes disabled",async()=>{
+ const api=fixture(),original=api.request;
+ api.request=(path,body)=>path==="/v1/platform/connections/lark/sending-status"?Promise.resolve({account_fixed:true,application_scopes:"missing",user_scopes:"missing",adapter_implemented:false}):original(path,body);
+ const ui=await connectionDraft(api);
+ assert.equal(ui.el("connection-send-check").hidden,false);
+ await ui.el("connection-send-check").emit("click");
+ assert.match(ui.el("connection-send-status").textContent,/应用发送权限：未齐备.*用户发送授权：未授权.*发送条件尚未齐备/);
+ assert.equal(api.calls.some(c=>c.path==="/v1/platform/connections/lark/login"),false);
+});
+
+test("Lark sending status reports accepted modes and keeps direct user sends distinct",async()=>{
+ const api=fixture(),original=api.request;
+ api.request=(path,body)=>path==="/v1/platform/connections/lark/sending-status"?Promise.resolve({account_fixed:true,application_scopes:"granted",user_scopes:"granted",adapter_implemented:true,reply_enabled:true,group_send_enabled:true,user_send_enabled:false}):original(path,body);
+ const ui=await connectionDraft(api);
+ await ui.el("connection-send-check").emit("click");
+ assert.match(ui.el("connection-send-status").textContent,/应用发送权限：已开通.*用户发送授权：已授权.*可用：普通回复、群消息.*应用连接后生效.*主动私信暂未开放/);
+ assert.equal(api.calls.some(c=>c.path.includes("/actions/execute")),false);
+});
+
+test("L4-C target authorization is explicit and separate from sending and directory search",async()=>{
+ const api=fixture(),ui=await connectionDraft(api);
+ assert.equal(ui.el("connection-target-authorize").hidden,false);
+ await ui.el("connection-target-authorize").emit("click");
+ const call=api.calls.find(c=>c.path==="/v1/platform/connections/lark/authorize-targets");
+ assert.ok(call);assert.equal(call.body.cli_profile.profile,"explicit");
+ assert.equal(api.calls.some(c=>c.path==="/v1/platform/connections/lark/authorize-sending"),false);
 });

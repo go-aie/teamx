@@ -346,7 +346,7 @@
           </details>
         </div>
         <div id="tools-member-view" class="activity-body agent-tools-panel" role="tabpanel" aria-labelledby="agent-tab-tools" hidden>
-          <p class="tool-member-hint quiet">为 Agent 选择工具与连接，应用后生效。启用后沿用所选账号的全部有效权限。</p>
+          <p class="tool-member-hint quiet">为 Agent 选择工具与连接，点击“应用”后生效。</p>
           <p id="cli-member-feedback" class="quiet" role="status" aria-live="polite"></p>
           <div id="cli-member-options"></div>
           <button id="cli-member-refresh" class="text-button" type="button">重新读取工具</button>
@@ -431,6 +431,10 @@
           <div class="connection-account-actions">
             <button id="connection-login" class="settings-secondary-button" type="button" hidden>登录飞书</button>
             <button id="connection-detect" class="text-button" type="button">刷新账号</button>
+            <button id="connection-send-check" class="settings-secondary-button" type="button" hidden>检查发送条件</button>
+            <button id="connection-target-authorize" class="settings-secondary-button" type="button" hidden>授权目标核验</button>
+            <button id="connection-send-authorize" class="settings-secondary-button" type="button" hidden>授权发送权限</button>
+            <span id="connection-send-status" class="settings-hint" hidden>发送未启用；请先检查账号与权限。</span>
             <button id="connection-logout" class="text-button" type="button" hidden>退出登录</button>
           </div>
           <div id="connection-login-panel" class="connection-login-panel" hidden>

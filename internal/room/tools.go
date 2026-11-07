@@ -6,7 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
+	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/connection"
 	"github.com/go-aie/teamx/internal/platform/tool"
 )
@@ -20,6 +22,8 @@ type toolBindingsFile struct {
 	Bindings []tool.Binding `json:"bindings"`
 }
 type toolSelection struct {
+	ActionAuthorization  *tool.ActionAuthorization `json:"action_authorization,omitempty"`
+	ActionDisabledReason string                    `json:"action_disabled_reason,omitempty"`
 	tool.Definition
 	ConnectionID string `json:"connection_id,omitempty"`
 	Instance     string `json:"instance,omitempty"`
@@ -81,7 +85,7 @@ func (m *roomManager) readToolBindingsLocked(owner RoomIdentity) (toolBindingsFi
 	seen := map[[3]string]bool{}
 	for _, b := range f.Bindings {
 		key := [3]string{b.AgentID, b.MembershipID, b.Tool}
-		if !validText(b.AgentID) || !safeMembershipID(b.MembershipID) || !tool.ValidName(b.Tool) || seen[key] ||
+		if !validText(b.AgentID) || !safeMembershipID(b.MembershipID) || !tool.ValidName(b.Tool) || seen[key] || !b.ActionAuthorization.Valid() ||
 			(b.ConnectionID == "") != (b.ConnectionGeneration == "") || b.ConnectionID != "" && (!tool.OpaqueID(b.ConnectionID) || !tool.OpaqueID(b.ConnectionGeneration)) {
 			return f, ErrInvalid
 		}
@@ -134,7 +138,24 @@ func (m *roomManager) selectionsLocked(f toolBindingsFile, caller Caller) ([]too
 		if err != nil {
 			continue
 		}
-		s := toolSelection{Definition: d, ConnectionID: b.ConnectionID}
+		s := toolSelection{Definition: d, ConnectionID: b.ConnectionID, ActionAuthorization: b.ActionAuthorization}
+		if d.Provider != "" {
+			caps, _ := m.referenceCapabilities(d.Provider)
+			if len(caps.Actions) == 0 {
+				s.ActionDisabledReason = "No sending adapter is implemented; newly introduced actions are disabled."
+			} else {
+				disabled := []string{}
+				for _, cap := range caps.Actions {
+					if cap.Spec.DisabledReason != "" {
+						disabled = append(disabled, cap.Spec.DisabledReason)
+					}
+				}
+				if len(disabled) == len(caps.Actions) {
+					slices.Sort(disabled)
+					s.ActionDisabledReason = strings.Join(slices.Compact(disabled), "; ")
+				}
+			}
+		}
 		if b.ConnectionID != "" {
 			if connections == nil {
 				file, err := m.connections.Load()
@@ -178,6 +199,29 @@ func (m *roomManager) changeToolBindingLocked(ctx context.Context, req toolBindi
 		return f, nil, ErrConflict
 	}
 	b := req.Binding
+	if !b.ActionAuthorization.Valid() {
+		return f, nil, ErrRequest
+	}
+	if b.ActionAuthorization != nil {
+		d, err := m.toolDefinition(b.Tool)
+		if err != nil {
+			return f, nil, err
+		}
+		caps, err := m.referenceCapabilities(d.Provider)
+		if err != nil {
+			return f, nil, err
+		}
+		for _, g := range b.ActionAuthorization.Grants {
+			cap, ok := caps.Actions[platform.Operation(g.Operation)]
+			if ok && cap.Spec.DisabledReason != "" {
+				return f, nil, invalidField("action_authorization", cap.Spec.DisabledReason)
+			}
+			if !ok || cap.Spec.TargetKind != g.TargetKind || (len(cap.Spec.ObjectTypes) > 0 && !slices.Contains(cap.Spec.ObjectTypes, g.ObjectType)) {
+				return f, nil, invalidField("action_authorization", "action adapter is not implemented for this target; sending remains disabled")
+			}
+		}
+		b.ActionAuthorization = &tool.ActionAuthorization{Version: 1, Revision: f.Revision + 1, Grants: append([]tool.ActionGrant(nil), b.ActionAuthorization.Grants...)}
+	}
 	if !validText(b.AgentID) || !safeMembershipID(b.MembershipID) || !tool.ValidName(b.Tool) || b.ConnectionGeneration != "" {
 		return f, nil, ErrRequest
 	}
@@ -289,4 +333,26 @@ func (m *roomManager) prepareToolLocked(ctx context.Context, req toolsRequest) (
 	}
 	prepared = true
 	return p, call, callCtx, nil
+}
+
+// Called at every execution guard for adapters requiring an explicit new grant.
+// Legacy capabilities retain their existing admission contract.
+func (m *roomManager) checkActionAuthorizationLocked(req toolsRequest, access platform.AccessContext, spec platform.ActionSpec, target platform.TargetIdentity) error {
+	f, err := m.readToolBindingsLocked(req.RoomIdentity)
+	if err != nil {
+		return err
+	}
+	for _, b := range f.Bindings {
+		if b.AgentID == req.Caller.ID && b.MembershipID == req.Caller.MembershipID && b.ConnectionID == access.ConnectionID && b.ConnectionGeneration == access.Generation && b.ActionAuthorization != nil {
+			if access.ActionAuthorizationVersion != b.ActionAuthorization.Revision {
+				return ErrConflict
+			}
+			for _, g := range b.ActionAuthorization.Grants {
+				if g.Operation == string(spec.Operation) && g.TargetKind == spec.TargetKind && g.ObjectType == target.Object.Type {
+					return nil
+				}
+			}
+		}
+	}
+	return conflictReason("action_authorization", "member action capability is disabled", "The operator must explicitly enable this action on the selected binding.")
 }

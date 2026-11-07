@@ -102,6 +102,23 @@ type LoginResult struct {
 // lifetime independently of an HTTP request and publishes only the ready link
 // and QR image; device codes and token output never leave this function.
 func Login(ctx context.Context, p platform.CLIProfile, ready func(string, string)) (LoginResult, error) {
+	return loginWithScopes(ctx, p, readerScopes, ready)
+}
+
+// LoginSending is an explicit incremental operator flow. It grants no member action capability.
+func LoginSending(ctx context.Context, p platform.CLIProfile, ready func(string, string)) (LoginResult, error) {
+	return loginWithScopes(ctx, p, readerScopes+" "+SendScopes, ready)
+}
+
+// Proactive target checks are an independent opt-in. Reply-only authorization
+// does not require member scopes or broad contact-directory access.
+// Ordinary group speaking policy is available from the existing chat GET.
+const SendTargetScopes = "im:chat.members:read"
+
+func LoginSendTargets(ctx context.Context, p platform.CLIProfile, ready func(string, string)) (LoginResult, error) {
+	return loginWithScopes(ctx, p, readerScopes+" "+SendTargetScopes, ready)
+}
+func loginWithScopes(ctx context.Context, p platform.CLIProfile, scopes string, ready func(string, string)) (LoginResult, error) {
 	c, err := New(p)
 	if err != nil {
 		return LoginResult{}, err
@@ -114,7 +131,7 @@ func Login(ctx context.Context, p platform.CLIProfile, ready func(string, string
 	if err := c.authConfig(ctx); err != nil {
 		return LoginResult{}, err
 	}
-	data, err := c.run(ctx, "auth", "login", "--scope", readerScopes, "--no-wait", "--json")
+	data, err := c.run(ctx, "auth", "login", "--scope", scopes, "--no-wait", "--json")
 	if err != nil {
 		return LoginResult{}, err
 	}

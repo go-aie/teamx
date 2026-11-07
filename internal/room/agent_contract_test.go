@@ -111,7 +111,7 @@ func TestAgentBTypedActionUnknownRecovery(t *testing.T) {
 
 func TestAgentBRejectsOldContractsAndBranchMixing(t *testing.T) {
 	for _, tc := range []struct{ command, op, flag, payload string }{
-		{"actions", "execute", "--request", `{"target_ref":"ref_old"}`},
+		{"actions", "execute", "--request", `{"provider":"unverified"}`},
 		{"actions", "execute", "--request", `{"authority":{"rule_id":"old","rule_version":1}}`},
 		{"actions", "execute", "--request", `{"authority":{"type":"rule","id":"x","version":1,"room_seq":0}}`},
 		{"actions", "execute", "--request", `{"authority":{"type":"instruction","id":"x","version":1,"message_refs":[]}}`},

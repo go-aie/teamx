@@ -7,12 +7,36 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sort"
 	"sync"
 	"time"
 
+	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/notification"
 	"github.com/go-aie/teamx/internal/platform/tool"
 )
+
+type toolCatalogView struct {
+	tool.Definition
+	Actions []platform.ActionSpec `json:"actions,omitempty"`
+}
+
+func (m *roomManager) toolCatalogViewLocked() []toolCatalogView {
+	views := []toolCatalogView{}
+	for _, d := range m.toolDefinitions() {
+		v := toolCatalogView{Definition: d}
+		if caps, err := m.referenceCapabilities(d.Provider); err == nil {
+			for _, cap := range caps.Actions {
+				if cap.Spec.RequiresAuthorization {
+					v.Actions = append(v.Actions, cap.Spec)
+				}
+			}
+			sort.Slice(v.Actions, func(i, j int) bool { return v.Actions[i].Operation < v.Actions[j].Operation })
+		}
+		views = append(views, v)
+	}
+	return views
+}
 
 type toolFrame struct {
 	Stream string `json:"stream"`
@@ -124,8 +148,8 @@ func (m *roomManager) serveTools(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = json.NewEncoder(w).Encode(struct {
 			toolBindingsFile
-			Catalog []tool.Definition `json:"catalog"`
-		}{f, m.toolDefinitions()})
+			Catalog []toolCatalogView `json:"catalog"`
+		}{f, m.toolCatalogViewLocked()})
 		return
 	case "/v1/tools/bind":
 		if r.Method != http.MethodPost {

@@ -161,6 +161,14 @@ func (s *Store) unitPath(id MemberIdentity, objectRef, ref string) string {
 }
 
 func (s *Store) saveFollowupUnitLocked(id MemberIdentity, u followupUnit) error {
+	u.Actions = append([]referenceAction(nil), u.Actions...)
+	kept := u.Actions[:0]
+	for _, a := range u.Actions {
+		if !a.Ledger {
+			kept = append(kept, a)
+		}
+	}
+	u.Actions = kept
 	b, err := json.Marshal(u)
 	if err != nil {
 		return err
@@ -239,6 +247,9 @@ func (s *Store) loadUnitLocked(id MemberIdentity, objectRef, ref string) (follow
 		return u, err
 	}
 	if err := validateReferenceActions(u, t.Target); err != nil {
+		return u, err
+	}
+	if err := s.projectUnitActionsLocked(id, &u); err != nil {
 		return u, err
 	}
 	return u, nil

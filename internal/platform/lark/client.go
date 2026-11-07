@@ -69,8 +69,9 @@ type Reader interface {
 	Message(context.Context, platform.AccountIdentity, string) (Message, error)
 }
 type Client struct {
-	profile  platform.CLIProfile
-	requests *requestBudget
+	configDir string // internal pinned context; never accepted from an Agent
+	profile   platform.CLIProfile
+	requests  *requestBudget
 }
 
 func New(p platform.CLIProfile) (*Client, error) {
@@ -125,6 +126,14 @@ func (c *Client) runInDir(ctx context.Context, dir string, args ...string) ([]by
 }
 
 func (c *Client) runCommand(ctx context.Context, dir string, timeout time.Duration, args ...string) ([]byte, error) {
+	return c.runProcess(ctx, dir, timeout, false, args...)
+}
+
+// Only the fixed auth check reader accepts exit 1 with its documented missing-scope JSON.
+func (c *Client) runCheck(ctx context.Context, args ...string) ([]byte, error) {
+	return c.runProcess(ctx, "", 30*time.Second, true, args...)
+}
+func (c *Client) runProcess(ctx context.Context, dir string, timeout time.Duration, allowCheck bool, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	out := &limitedBuffer{limit: maxOutput, cancel: cancel}
@@ -141,6 +150,9 @@ func (c *Client) runCommand(ctx context.Context, dir string, timeout time.Durati
 		}
 	}
 	cmd.Env = append(cmd.Env, "LARKSUITE_CLI_NO_UPDATE_NOTIFIER=1", "LARKSUITE_CLI_NO_SKILLS_NOTIFIER=1")
+	if c.configDir != "" {
+		cmd.Env = append(cmd.Env, "LARKSUITE_CLI_CONFIG_DIR="+c.configDir)
+	}
 	cmd.Stdout = out
 	cmd.Stderr = stderr
 	configureProcess(cmd)
@@ -153,6 +165,10 @@ func (c *Client) runCommand(ctx context.Context, dir string, timeout time.Durati
 		return nil, ctx.Err()
 	}
 	if err != nil {
+		var exitError *exec.ExitError
+		if allowCheck && errors.As(err, &exitError) && exitError.ExitCode() == 1 {
+			return out.Bytes(), nil
+		}
 		if errors.Is(err, os.ErrNotExist) || errors.Is(err, os.ErrPermission) {
 			return nil, failure("cli_unavailable")
 		}

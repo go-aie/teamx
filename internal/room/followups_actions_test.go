@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"reflect"
 	"sync/atomic"
 	"testing"
@@ -380,8 +381,10 @@ func TestReferenceActionPersistenceFailures(t *testing.T) {
 			if mode == "attempt" {
 				n := 0
 				f.h.store.ops.createTemp = func(dir, pattern string) (snapshotFile, error) {
-					n++
-					if n == 2 {
+					if filepath.Base(dir) == "records" {
+						n++
+					}
+					if n == 2 && filepath.Base(dir) == "records" {
 						return fail(dir, pattern)
 					}
 					return ops.createTemp(dir, pattern)

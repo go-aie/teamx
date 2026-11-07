@@ -9,7 +9,7 @@ const rootCLIHelp = `Usage: teamx COMMAND [--help]
   send | read                   Room messages
   inbox read                    Original platform notifications
   matters list/read/sources/source/resolve/ensure/update/notify/reply/instruct/instruction-status
-  actions execute               Execute a supported referenced action
+  actions resolve/execute/read/list Managed platform actions
   policy read/update/publish     Member long-term rules
   lark read                     Read verified Lark message/context (no replies)
   tools list/run/skill           Enabled external tools
@@ -107,12 +107,33 @@ var referenceCommandHelps = map[string]referenceCommandHelp{
 		`teamx matters instruction-status --change '{"object_ref":"ref_...","unit_ref":"unit_...","unit_version":3,"turn_number":1,"instruction_ref":"instruction_...","instruction_version":1,"status":"fulfilled","evidence":"Verified result"}'`,
 		"Revocation requires the real human correction. This records business evidence, not an action execution receipt. Re-read on version conflict; never silently substitute current versions.",
 	},
+	"actions/resolve": {
+		"actions resolve --request JSON", "Verify an execution target and save a member-scoped target_ref.",
+		"--request: {provider?, locator:{target_ref} or an adapter-supported locator {url,candidate,source,query}, turn_number, account_owner_seq?}. Raw IDs require provider-native type/namespace and an approved resolver.",
+		"target_ref, native identity, executing account, completeness, applicable actions/input_schema/retry and disabled_reason.",
+		`teamx actions resolve --request '{"locator":{"target_ref":"ref_..."},"turn_number":1}'`,
+		"References and accessible targets grant no business authority. Only complete verified resolutions become execution targets. Current production GitLab targets enter through existing followups; standalone GitLab URLs are unsupported. Lark ordinary replies and single-group sends are available on an applied member connection; direct user sends remain unavailable pending managed acceptance. For send targets use provider:lark with locator.query:{object_type:user|chat,text} to find candidates, then locator.candidate with the exact namespaced native user/chat identity. Search is partial evidence and never selects a target. A user candidate resolves the exact P2P peer; a chat candidate must be a joined ordinary group with verified speaking permission. Cross-tenant, restricted groups and self-send remain unavailable. For “my Lark”, first show the bound account and ask once; account_owner_seq can record an explicit real human confirmation of ownership, but grants no sending permission and cannot enable self delivery. Resolve the exact saved message reference for reply schema and disabled_reason. Never invent a source or native ID.",
+	},
 	"actions/execute": {
-		"actions execute --request JSON", "Execute one supported Inbox-derived object comment or discussion reply.",
-		"--request: JSON with " + unitChangeHelp + "stable id, policy_token, operation (object.comment/discussion.reply), input {body}, ONE authority {type,reason,...}. rule: id/version only; instruction: id/version and optional constraints; human_reply: room_seq and optional question_ref/message_refs/constraints. target_ref is restored from the immutable unit, and is rejected as input.",
-		"ID, status (processing/unknown/not_applied/succeeded/policy_changed), unit_version, actual attempts, possible_duplicate, actual account/target/result; policy_changed includes the complete effective view.",
-		`teamx actions execute --request '{"object_ref":"ref_...","unit_ref":"unit_...","unit_version":3,"turn_number":1,"id":"reply-1","policy_token":"<runtime token>","authority":{"type":"human_reply","room_seq":18,"reason":"Exact human answer"},"operation":"object.comment","input":{"body":"Received"}}'`,
-		"Use registered_actions; registration is not permission. Production GitLab supports MR targets only. Native project/MR/discussion IDs are rejected; never fabricate Inbox sequences. Discussion replies require verified discussion identity and never fall back to comments. Human authority.room_seq is the answer's message.seq, never the Agent question's room_seq. Current binding/account/target and authority lifecycle are rechecked and intent saved before dispatch. For rule authority, reason explains the permitting text and satisfied conditions/exceptions; the server saves the exact rule snapshot but does not verify natural-language permission. Active context, tool availability and accessible targets are not business authorization. Reassess policy_changed before proceeding. Ordinary comments allow at most two server attempts on transient failure, discussion replies one. Lost responses may duplicate. Same ID/content returns existing state even after rotation; changed content conflicts. Never retry unknown under a new ID/turn/Session: inspect remote state and report. Action success is separate from business/Inbox/Todo completion.",
+		"actions execute --request JSON", "Execute one supported action against a verified target.",
+		"--request: {target_ref,turn_number,id,policy_token,operation,input,authority,context?}. context={object_ref,unit_ref,unit_version} is optional business association. Input follows the target's schema. authority: rule {type,id,version,reason}; instruction {type,id,version,reason,constraints?}; human_reply {type,room_seq,reason,question_ref?,message_refs?,constraints?}.",
+		"ID, status (processing/unknown/not_applied/succeeded/policy_changed), actual attempts, account, target and result. Optional unit_version describes associated progress; policy_changed includes the replacement effective view.",
+		`teamx actions execute --request '{"target_ref":"ref_...","turn_number":1,"id":"reply-1","policy_token":"<runtime token>","authority":{"type":"human_reply","room_seq":18,"reason":"Exact human instruction"},"operation":"object.comment","input":{"body":"Received"}}'`,
+		"Use actions resolve and only its applicable actions. New records use one member-level ledger; actions read/list restore exact evidence. Followup association is not the execution target or authorization. Instructions/question answers remain scoped to their original unit; never use an empty context to bypass them. Legacy unit-form GitLab requests remain accepted for existing followups and historical recovery. Current production GitLab supports MR comments/verified discussion replies only; Lark message.reply accepts {body,reply_mode:chat}, nonempty UTF-8 plain text up to 4096 bytes. Resolve the exact saved message ref, preserving the business unit via optional context; instruction/question evidence must include this message ref. Ordinary Lark replies have passed real user-identity/Agent acceptance; thread replies remain unavailable. Lark message.send accepts {body} for one verified ordinary group, requires a direct human Room instruction (human_reply with actual room_seq, no rule/instruction/question/message_refs), and saved member capability grants. Applying a Lark connection in the UI grants all currently accepted modes; existing read-only bindings stay read-only until reapplied. Direct user sends remain unavailable; exact user IDs do not require contact search permission, optional name queries may require contact:user:search. Registration/read access/scope never grant business permission. The Agent judges natural-language rule applicability and explains it in reason; the service verifies lifecycle/account/native target and freezes authority before dispatch. Human room_seq is the actual human message.seq. Retry policy belongs to the adapter: existing GitLab comments retain two attempts, discussions one. Same ID with changed target/input/authority conflicts. Unknown may already be written: query and verify, never change ID, turn, Session, operation or platform to resend. Action success, business completion and Inbox consumption are separate.",
+	},
+	"actions/read": {
+		"actions read --id ID [--object REF --unit UNIT]", "Restore one action and its complete frozen execution evidence.",
+		"--id: stable action ID; --object/--unit: explicit context only to disambiguate historical unit-scoped IDs.",
+		"Platform/native target/account, input, typed authority, original human/rule evidence, retry policy, attempts, result, context and detail snapshot.",
+		"teamx actions read --id reply-1",
+		"Read-only; no resend or recovery queue. Multiple historical matches require explicit context. New action IDs are unique within this membership.",
+	},
+	"actions/list": {
+		"actions list [--object REF --unit UNIT] [--cursor CURSOR] [--limit 25]", "List member actions, with or without followups.",
+		"--object/--unit: optional business context filter; --cursor: returned member/query-scoped continuation; --limit: 1-25.",
+		"Bounded action records and next/complete; actions read returns full evidence for each ID.",
+		"teamx actions list --limit 25",
+		"Follow continuation pages. Historical and new records remain distinct. Listing never retries writes.",
 	},
 	"policy/read": {
 		"policy read [--id ID [--detail]]", "Restore effective long-term rules or one saved record.",
@@ -153,7 +174,7 @@ func referenceHelpText(command, op string) string {
 		var b strings.Builder
 		b.WriteString("Usage: teamx " + command + " SUBCOMMAND [--help]\n")
 		// Keep the directory in workflow order, independent of map iteration.
-		for _, name := range strings.Fields(map[string]string{"inbox": "read", "matters": "list read sources source resolve ensure update notify reply instruct instruction-status", "actions": "execute", "policy": "read update publish"}[command]) {
+		for _, name := range strings.Fields(map[string]string{"inbox": "read", "matters": "list read sources source resolve ensure update notify reply instruct instruction-status", "actions": "resolve execute read list", "policy": "read update publish"}[command]) {
 			h := referenceCommandHelps[command+"/"+name]
 			b.WriteString("  " + name + "  " + h.purpose + "\n")
 		}

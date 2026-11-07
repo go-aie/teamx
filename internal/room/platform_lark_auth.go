@@ -74,7 +74,7 @@ func (m *roomManager) larkAuthBusyLocked(p *platform.CLIProfile) bool {
 func (m *roomManager) serveLarkAuth(w http.ResponseWriter, r *http.Request) {
 	action := strings.TrimPrefix(r.URL.Path, "/v1/platform/connections/lark/")
 	switch action {
-	case "discover", "login", "logout", "status", "cancel", "qrcode":
+	case "discover", "login", "authorize-sending", "authorize-targets", "sending-status", "logout", "status", "cancel", "qrcode":
 	default:
 		http.NotFound(w, r)
 		return
@@ -156,6 +156,34 @@ func (m *roomManager) serveLarkAuth(w http.ResponseWriter, r *http.Request) {
 	if m.busy || m.larkAuthBusyLocked(req.Profile) {
 		m.mu.Unlock()
 		writeAPIError(w, ErrBusy)
+		return
+	}
+	if action == "sending-status" {
+		m.mu.Unlock()
+		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+		defer cancel()
+		client, err := lark.New(*req.Profile)
+		if err != nil {
+			writeLarkReadError(w, err)
+			return
+		}
+		validation, err := client.Verify(ctx)
+		if err != nil {
+			writeLarkReadError(w, err)
+			return
+		}
+		pinned, err := lark.Pin(ctx, *req.Profile, validation.Account)
+		if err != nil {
+			writeLarkReadError(w, err)
+			return
+		}
+		defer pinned.Close()
+		permission, err := pinned.SendPermission(ctx)
+		if err != nil {
+			writeLarkReadError(w, err)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(permission)
 		return
 	}
 	for id, s := range m.larkAuthSessions {
@@ -310,7 +338,14 @@ func (m *roomManager) runLarkAuth(ctx context.Context, s *larkAuthSession, actio
 	if action == "logout" {
 		err = lark.Logout(ctx, s.profile)
 	} else {
-		login, err = lark.Login(ctx, s.profile, func(link, qr string) {
+		loginFn := lark.Login
+		if action == "authorize-sending" {
+			loginFn = lark.LoginSending
+		}
+		if action == "authorize-targets" {
+			loginFn = lark.LoginSendTargets
+		}
+		login, err = loginFn(ctx, s.profile, func(link, qr string) {
 			m.mu.Lock()
 			defer m.mu.Unlock()
 			if ctx.Err() == nil {

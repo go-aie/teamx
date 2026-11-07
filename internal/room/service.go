@@ -28,6 +28,7 @@ type apiRequest struct {
 	Caller             Caller                        `json:"caller"`
 	TurnNumber         uint64                        `json:"turn_number,omitempty"`
 	Policy             *PolicyChange                 `json:"policy,omitempty"`
+	ActionResolve      *actionResolveRequest         `json:"action_resolve,omitempty"`
 	ReferenceAction    *agentActionRequest           `json:"action_request,omitempty"`
 	Progress           *agentProgressChange          `json:"progress,omitempty"`
 	InstructionStatus  *agentInstructionStatusChange `json:"instruction_status,omitempty"`

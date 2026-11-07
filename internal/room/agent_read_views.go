@@ -140,7 +140,7 @@ type agentActionRecord struct {
 	Target            platform.TargetIdentity      `json:"target"`
 	Account           platform.AccountIdentity     `json:"account"`
 	Operation         platform.Operation           `json:"operation"`
-	Input             CommentInput                 `json:"input"`
+	Input             ActionInput                  `json:"input"`
 	Status            string                       `json:"status"`
 	Attempts          int                          `json:"attempts"`
 	PossibleDuplicate bool                         `json:"possible_duplicate,omitempty"`

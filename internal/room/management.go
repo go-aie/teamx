@@ -135,6 +135,7 @@ type roomManager struct {
 	referenceAdapters     map[string]referenceAdapterFactory
 	referenceResolvers    map[string]followupResolver
 	referenceExecutors    map[string]referenceActionPreparer
+	actionResolvers       map[string]actionTargetResolver
 	platformProject       func(context.Context, string, string, workspaceSecret) (int64, error)
 	notifications         *notification.Manager
 	notificationAdapters  map[notification.SourceID]notificationAdapter
@@ -539,8 +540,8 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}{true})
 		return
 	}
-	if r.URL.Path == "/v1/actions/execute" {
-		m.serveActionExecute(w, r)
+	if strings.HasPrefix(r.URL.Path, "/v1/actions/") {
+		m.serveActions(w, r)
 		return
 	}
 	if strings.HasPrefix(r.URL.Path, "/v1/tools/") {

@@ -426,9 +426,10 @@ func TestReferenceActionInternalRevocationSettles(t *testing.T) {
 					}
 					assertActionCallsSettled(t, m)
 					if change != "delete-room" && change != "shutdown" {
-						var saved followupUnit
-						err := readSnapshot(svc.store.unitPath(id, f.action.ObjectRef, f.action.UnitRef), &saved, followupBytes)
-						if err != nil || len(saved.Actions) != 1 || saved.Actions[0].Status != want || saved.Actions[0].Access.Account.ID.Value != "101" {
+						var record storedAction
+						err := readSnapshot(svc.store.actionPath(id, f.action.ID), &record, followupBytes)
+						saved := record.Action
+						if err != nil || saved.Status != want || saved.Result == nil || saved.Result.Account.ID.Value != "101" {
 							t.Fatal("write fact lost", saved, err)
 						}
 					}

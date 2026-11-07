@@ -44,13 +44,21 @@ func actionText(s string) bool {
 	return strings.TrimSpace(s) != "" && len(s) <= 4096 && utf8.ValidString(s) && !strings.ContainsRune(s, 0)
 }
 func actionInput(q platform.TargetActionRequest, a platform.AccessContext) (referenceAction, error) {
-	t := q.Target
 	var input struct {
 		Body string `json:"body"`
 	}
 	dec := json.NewDecoder(bytes.NewReader(q.Input))
 	dec.DisallowUnknownFields()
-	if len(q.Input) > 32<<10 || dec.Decode(&input) != nil || dec.Decode(new(any)) != io.EOF || !actionText(input.Body) || !a.Valid() || !t.Valid() || a.Account != a.Receiver || t.IdentityScope != a.Account.IdentityScope || t.Provider != "gitlab" || !validOrigin(t.Instance) || t.Tenant != (platform.ExternalID{}) || len(t.Containers) != 1 || t.Containers[0].Type != "Project" || !positiveREST(t.Containers[0].ID, "id") || t.Object.Type != "MergeRequest" || !positiveREST(t.Object.ID, "id") || t.Message.Valid() || !positiveREST(a.Account.ID, "id") {
+	if len(q.Input) > 32<<10 || dec.Decode(&input) != nil || dec.Decode(new(any)) != io.EOF || !actionText(input.Body) {
+		return referenceAction{}, platform.ErrReference
+	}
+	native, err := actionNativeTarget(q, a)
+	native.body = input.Body
+	return native, err
+}
+func actionNativeTarget(q platform.TargetActionRequest, a platform.AccessContext) (referenceAction, error) {
+	t := q.Target
+	if !a.Valid() || !t.Valid() || a.Account != a.Receiver || t.IdentityScope != a.Account.IdentityScope || t.Provider != "gitlab" || !validOrigin(t.Instance) || t.Tenant != (platform.ExternalID{}) || len(t.Containers) != 1 || t.Containers[0].Type != "Project" || !positiveREST(t.Containers[0].ID, "id") || t.Object.Type != "MergeRequest" || !positiveREST(t.Object.ID, "id") || t.Message.Valid() || !positiveREST(a.Account.ID, "id") {
 		return referenceAction{}, platform.ErrReference
 	}
 	iid := ""
@@ -70,7 +78,7 @@ func actionInput(q platform.TargetActionRequest, a platform.AccessContext) (refe
 	if iid == "" || (q.Operation == platform.OperationDiscussionReply) != t.Discussion.Valid() || (q.Operation != platform.OperationDiscussionReply && q.Operation != platform.OperationObjectComment) || (t.Discussion.Valid() && (t.Discussion.Namespace != "gitlab:rest:discussion" || !validActionDiscussion(t.Discussion.Value))) {
 		return referenceAction{}, platform.ErrReference
 	}
-	return referenceAction{t.Containers[0].ID.Value, t.Object.ID.Value, iid, t.Discussion.Value, a.Account.ID.Value, input.Body}, nil
+	return referenceAction{t.Containers[0].ID.Value, t.Object.ID.Value, iid, t.Discussion.Value, a.Account.ID.Value, ""}, nil
 }
 func (q referenceAction) mrPath() string {
 	return "/projects/" + q.projectID + "/merge_requests/" + q.mrIID
@@ -233,4 +241,35 @@ func ReferenceActions(read ReadAPI, write NoteAPI, username string) map[platform
 		}
 	}
 	return actions
+}
+
+// ResolveStoredActionTarget is only registered on the managed session for an
+// already saved followup target. It does not enable standalone URL/native-ID
+// locators. Native aliases are service-owned and rechecked against the MR.
+func ResolveStoredActionTarget(ctx context.Context, l platform.TargetLocator, a platform.AccessContext, read ReadAPI, username string) (platform.TargetResolution, error) {
+	r := platform.TargetResolution{Status: platform.ResolutionUnsupported, Account: a.Account, CheckedAt: time.Now().UTC()}
+	if l.Candidate == nil || l.Source != nil || l.URL != "" {
+		return r, platform.ErrReference
+	}
+	op := platform.OperationObjectComment
+	if l.Candidate.Discussion.Valid() {
+		op = platform.OperationDiscussionReply
+	}
+	q := platform.TargetActionRequest{Target: *l.Candidate, Aliases: l.VerifiedAliases, Operation: op}
+	native, err := actionNativeTarget(q, a)
+	if err != nil {
+		return r, err
+	}
+	inspected, err := inspectAction(ctx, read, native, q.Target, a, username)
+	if err != nil {
+		return r, err
+	}
+	r.Status = platform.ResolutionResolved
+	r.Target = &q.Target
+	r.Aliases = q.Aliases
+	r.ObjectVerified = true
+	r.DiscussionVerified = q.Target.Discussion.Valid()
+	r.Complete = true
+	r.URL = inspected.URL
+	return r, nil
 }

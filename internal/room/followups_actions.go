@@ -1,16 +1,56 @@
 package room
 
 import (
+	"encoding/json"
 	"reflect"
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
 )
 
-// Isolated schema-2 execute contract. Native IDs are never accepted from Agent.
-type CommentInput struct {
+// Adapter-specific JSON input. Native execution IDs are never accepted from Agent.
+type ActionInput struct {
 	Body string `json:"body"`
+	raw  string
 }
+
+// Preserve arbitrary adapter input without making a body mandatory in the core.
+func (i ActionInput) MarshalJSON() ([]byte, error) {
+	if i.raw != "" {
+		return []byte(i.raw), nil
+	}
+	return json.Marshal(struct {
+		Body string `json:"body"`
+	}{i.Body})
+}
+func (i *ActionInput) UnmarshalJSON(b []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(b, &fields); err != nil {
+		return err
+	}
+	if fields == nil {
+		return ErrRequest
+	}
+	i.Body, i.raw = "", ""
+	if body, ok := fields["body"]; ok {
+		if err := json.Unmarshal(body, &i.Body); err != nil {
+			return err
+		}
+	}
+	if len(fields) == 1 && fields["body"] != nil {
+		return nil
+	}
+	canonical, err := json.Marshal(fields)
+	if err != nil {
+		return err
+	}
+	i.raw = string(canonical)
+	return nil
+}
+
+// CommentInput keeps existing in-package callers source compatible. New input
+// schemas belong to adapters and need not contain a body.
+type CommentInput = ActionInput
 
 type referenceActionAuthority struct {
 	RuleID             string   `json:"rule_id,omitempty"`
@@ -31,10 +71,12 @@ type referenceActionRequest struct {
 	PolicyToken string                   `json:"policy_token"`
 	Authority   referenceActionAuthority `json:"authority"`
 	Operation   platform.Operation       `json:"operation"`
-	Input       CommentInput             `json:"input"`
+	Input       ActionInput              `json:"input"`
 }
 
 type referenceAction struct {
+	IdempotencyKey    string                          `json:"idempotency_key,omitempty"`
+	Ledger            bool                            `json:"member_record,omitempty"`
 	Request           referenceActionRequest          `json:"request"`
 	Target            platform.TargetIdentity         `json:"target"`
 	Access            platform.AccessContext          `json:"access"`
@@ -52,7 +94,7 @@ type referenceAction struct {
 type referenceActionReceipt struct {
 	ID                string                       `json:"id"`
 	Status            string                       `json:"status"`
-	UnitVersion       uint64                       `json:"unit_version"`
+	UnitVersion       uint64                       `json:"unit_version,omitempty"`
 	Attempts          int                          `json:"attempts"`
 	PossibleDuplicate bool                         `json:"possible_duplicate,omitempty"`
 	Result            *platform.TargetActionResult `json:"result,omitempty"`
@@ -68,25 +110,25 @@ type referenceActionKey struct {
 }
 
 func (q referenceActionRequest) key(id MemberIdentity) referenceActionKey {
-	return referenceActionKey{id, q.UnitRef, q.ID}
+	return referenceActionKey{id, "", q.ID}
 }
 func (q referenceActionRequest) sameBusiness(o referenceActionRequest) bool {
-	return q.ObjectRef == o.ObjectRef && q.UnitRef == o.UnitRef && q.TargetRef == o.TargetRef && q.Operation == o.Operation && q.Input == o.Input
+	return q.ObjectRef == o.ObjectRef && q.UnitRef == o.UnitRef && q.TargetRef == o.TargetRef && q.Operation == o.Operation && q.Input == o.Input && reflect.DeepEqual(q.Authority, o.Authority)
 }
 func validReferenceActionRequest(q referenceActionRequest) bool {
 	return referenceActionRequestError(q) == nil
 }
 func referenceActionRequestError(q referenceActionRequest) error {
-	if !validOpaqueRef(q.ObjectRef, "ref_") {
+	if q.UnitRef != "" && !validOpaqueRef(q.ObjectRef, "ref_") {
 		return invalidField("object_ref", "required stable ref_ reference")
 	}
-	if !validOpaqueRef(q.UnitRef, "unit_") {
+	if q.UnitRef != "" && !validOpaqueRef(q.UnitRef, "unit_") {
 		return invalidField("unit_ref", "required stable unit_ reference")
 	}
 	if !validOpaqueRef(q.TargetRef, "ref_") {
 		return invalidField("target_ref", "required verified ref_ reference")
 	}
-	if q.Revision == 0 {
+	if q.UnitRef != "" && q.Revision == 0 {
 		return invalidField("unit_version", "required positive observed unit revision")
 	}
 	if q.TurnNumber == 0 {
@@ -98,7 +140,7 @@ func referenceActionRequestError(q referenceActionRequest) error {
 	if len(q.PolicyToken) != 64 {
 		return invalidField("policy_token", "required runtime policy token (64 characters)")
 	}
-	if !handlingText(q.Input.Body) {
+	if b, err := json.Marshal(q.Input); err != nil || len(b) > 16<<10 || (q.Input.raw == "" && !handlingText(q.Input.Body)) {
 		return invalidField("input.body", "required nonempty text, at most 4096 bytes")
 	}
 	if !handlingText(q.Authority.Reason) {
@@ -107,7 +149,7 @@ func referenceActionRequestError(q referenceActionRequest) error {
 	if len(q.Authority.Constraints) > 4096 {
 		return invalidField("authority.constraints", "must be at most 4096 bytes")
 	}
-	if q.Operation != platform.OperationObjectComment && q.Operation != platform.OperationDiscussionReply {
+	if q.Operation == "" || len(q.Operation) > 128 {
 		return invalidField("operation", "must be object.comment or discussion.reply")
 	}
 	return nil
@@ -177,84 +219,6 @@ func (s *Store) referenceReceiptLocked(id MemberIdentity, u followupUnit, a refe
 		r.Target, r.Account = &a.Target, &a.Access.Account
 	}
 	return r
-}
-func (s *Store) existingReferenceLocked(id MemberIdentity, u followupUnit, q referenceActionRequest) (*referenceActionReceipt, error) {
-	for _, a := range u.Actions {
-		if a.Request.ID == q.ID {
-			if !q.sameBusiness(a.Request) {
-				return nil, conflictReason("id", "action ID already exists with different business content", "Restore the original action; do not change content or create a replacement ID for an uncertain write.")
-			}
-			r := s.referenceReceiptLocked(id, u, a)
-			return &r, nil
-		}
-	}
-	return nil, nil
-}
-func (s *Store) existingReferenceAction(id MemberIdentity, q referenceActionRequest) (*referenceActionReceipt, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.checkFollowupsLocked(id, false); err != nil {
-		return nil, err
-	}
-	u, err := s.loadUnitLocked(id, q.ObjectRef, q.UnitRef)
-	if err != nil {
-		return nil, err
-	}
-	return s.existingReferenceLocked(id, u, q)
-}
-
-// The selected event is immutable receiving-account evidence, not permission.
-func (s *Store) referenceActionEvidence(id MemberIdentity, q referenceActionRequest) (platform.TargetActionRequest, platform.AccessContext, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	u, err := s.conversationUnitLocked(id, q.followupCommand)
-	if err != nil {
-		return platform.TargetActionRequest{}, platform.AccessContext{}, err
-	}
-	if err := referenceActionUnitConflict(u, q); err != nil {
-		return platform.TargetActionRequest{}, platform.AccessContext{}, err
-	}
-	t, err := s.loadTargetLocked(id, u.ObjectRef, u.TargetRef)
-	if err != nil {
-		return platform.TargetActionRequest{}, platform.AccessContext{}, err
-	}
-	var access platform.AccessContext
-	var aliases []platform.TargetIdentity
-	seenAliases := map[string]bool{}
-	err = s.visitFollowupEventsLocked(id, func(e followupEvent) error {
-		if e.ObjectRef != u.ObjectRef || !e.Resolution.ObjectVerified {
-			return nil
-		}
-		if t.Target.Discussion.Valid() && (!e.Resolution.DiscussionVerified || e.Resolution.Target.Discussion != t.Target.Discussion) {
-			return nil
-		}
-		if !access.Valid() {
-			access = e.Access
-		}
-		if e.Access.Account != access.Account || e.Access.Receiver != access.Receiver {
-			return nil
-		}
-		for _, alias := range e.Resolution.Aliases {
-			alias.Discussion = t.Target.Discussion
-			alias.Message = platform.ExternalID{}
-			key, _ := alias.Key()
-			if !seenAliases[key] {
-				if len(aliases) >= 32 {
-					return ErrCapacity
-				}
-				aliases = append(aliases, alias)
-				seenAliases[key] = true
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return platform.TargetActionRequest{}, access, err
-	}
-	if !access.Valid() {
-		return platform.TargetActionRequest{}, access, ErrIdentity
-	}
-	return platform.TargetActionRequest{Target: t.Target, Aliases: aliases, Operation: q.Operation, Input: mustCommentJSON(q.Input)}, access, nil
 }
 
 // The Agent declares that the rule body permits this operation. The server
@@ -339,136 +303,6 @@ func (s *Store) referenceAuthorityLocked(id MemberIdentity, u followupUnit, q re
 	}
 	return nil, &b, nil, nil
 }
-func (s *Store) beginReferenceAction(id MemberIdentity, q referenceActionRequest, request platform.TargetActionRequest, access platform.AccessContext, i platform.TargetActionInspection, spec platform.ActionSpec) (referenceActionReceipt, bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	u, err := s.conversationUnitLocked(id, q.followupCommand)
-	if err != nil {
-		return referenceActionReceipt{}, false, err
-	}
-	if prior, err := s.existingReferenceLocked(id, u, q); prior != nil || err != nil {
-		if prior != nil {
-			return *prior, false, nil
-		}
-		return referenceActionReceipt{}, false, err
-	}
-	if err := referenceActionUnitConflict(u, q); err != nil {
-		return referenceActionReceipt{}, false, err
-	}
-	if targetReference(id, request.Target) != q.TargetRef || !sameNativeTarget(request.Target, i.Target) || i.Account != access.Account || !access.Valid() {
-		return referenceActionReceipt{}, false, conflictReason("target_ref", "verified target or executing account does not match", "Restore the exact target and binding; do not redirect the action.")
-	}
-	for _, a := range u.Actions {
-		if a.Status == "unknown" && q.sameBusiness(a.Request) {
-			return referenceActionReceipt{}, false, conflictReason("id", "the same business action already has an unknown result", "Inspect remote state and the saved action; never retry unknown under a new ID/turn/Session.")
-		}
-	}
-	if len(u.Actions) >= 32 {
-		return referenceActionReceipt{}, false, ErrCapacity
-	}
-	rule, basis, view, err := s.referenceAuthorityLocked(id, u, q, nil)
-	if err != nil {
-		return referenceActionReceipt{}, false, err
-	}
-	if view != nil {
-		return referenceActionReceipt{ID: q.ID, Status: "policy_changed", UnitVersion: u.Revision, Policy: view}, false, nil
-	}
-	a := referenceAction{Request: q, Target: request.Target, Access: access, Inspection: i, Spec: spec, Rule: rule, Basis: basis, Status: "unknown", UpdatedAt: time.Now().UTC()}
-	u.Actions = append(u.Actions, a)
-	u.Status, u.Next = "in_progress", "动作执行中；回执与业务办结分别记录"
-	if unansweredFollowup(u) {
-		u.Status = "waiting_user"
-	}
-	touchFollowup(&u, q.TurnNumber)
-	if err := s.saveFollowupUnitLocked(id, u); err != nil {
-		return referenceActionReceipt{}, false, err
-	}
-	if s.executingReferences == nil {
-		s.executingReferences = map[referenceActionKey]bool{}
-	}
-	s.executingReferences[q.key(id)] = true
-	return s.referenceReceiptLocked(id, u, a), true, nil
-}
-func (s *Store) referenceActionAttempt(id MemberIdentity, q referenceActionRequest, duplicate bool) (*agentPolicyView, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	u, err := s.conversationUnitLocked(id, q.followupCommand)
-	if err != nil {
-		return nil, err
-	}
-	if !s.executingReferences[q.key(id)] || !activeFollowup(u.Status) {
-		return nil, ErrConflict
-	}
-	for j := range u.Actions {
-		a := &u.Actions[j]
-		if a.Request.ID != q.ID {
-			continue
-		}
-		_, _, view, err := s.referenceAuthorityLocked(id, u, q, a.Basis)
-		if err != nil || view != nil {
-			return view, err
-		}
-		if a.Status != "unknown" || a.Attempts >= a.Spec.Retry.MaxAttempts {
-			return nil, ErrConflict
-		}
-		a.Attempts++
-		a.PossibleDuplicate = duplicate
-		a.UpdatedAt = time.Now().UTC()
-		touchFollowup(&u, q.TurnNumber)
-		return nil, s.saveFollowupUnitLocked(id, u)
-	}
-	return nil, ErrRequest
-}
-func (s *Store) finishReferenceAction(id MemberIdentity, q referenceActionRequest, result platform.TargetActionResult) (referenceActionReceipt, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	defer delete(s.executingReferences, q.key(id))
-	if err := s.checkFollowupsLocked(id, true); err != nil {
-		return referenceActionReceipt{}, err
-	}
-	u, err := s.loadUnitLocked(id, q.ObjectRef, q.UnitRef)
-	if err != nil {
-		return referenceActionReceipt{}, err
-	}
-	for j := range u.Actions {
-		a := &u.Actions[j]
-		if a.Request.ID != q.ID {
-			continue
-		}
-		a.Status, a.Result, a.UpdatedAt = result.Status, &result, time.Now().UTC()
-		u.Status, u.Next = "in_progress", "动作回执已保存；按业务条件继续办理"
-		if unansweredFollowup(u) {
-			u.Status, u.Next = "waiting_user", "动作回执已保存，仍有其他问题等待用户答复"
-		}
-		if result.Status == "unknown" {
-			u.Status, u.Next = "unknown", "结果不确定，可能已发送；查询核实，不得自动重发"
-		}
-		// Fulfil only the exact persisted instruction; other pending work remains.
-		if result.Status == "succeeded" && q.Authority.InstructionRef != "" {
-			for k := range u.Instructions {
-				i := &u.Instructions[k]
-				if i.Ref == q.Authority.InstructionRef && i.Version == q.Authority.InstructionVersion && i.Status == "active" {
-					i.Status = "fulfilled"
-					i.Version++
-					i.Evidence = "动作 " + q.ID + " 已成功"
-					i.UpdatedAt = time.Now().UTC()
-				}
-			}
-		}
-		if unresolvedReferenceAction(u) {
-			u.Status, u.Next = "unknown", "仍有未核实的动作；查询核实，不得自动重发"
-		}
-		touchFollowup(&u, q.TurnNumber)
-		if err := s.saveFollowupUnitLocked(id, u); err != nil {
-			return referenceActionReceipt{}, err
-		}
-		r := s.referenceReceiptLocked(id, u, *a)
-		r.Status = a.Status
-		return r, nil
-	}
-	return referenceActionReceipt{}, ErrRequest
-}
-
 func referenceIntentCovers(scope, actual followupIntent) bool {
 	return scope.Operation == actual.Operation && scope.Constraints == actual.Constraints && (scope.Body == "" || scope.Body == actual.Body)
 }

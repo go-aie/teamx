@@ -90,14 +90,15 @@ func (t TargetIdentity) Key() (string, error) {
 // never changes a TargetIdentity. Credentials are injected by the tool owner.
 type AccessContext struct {
 	RoomIdentity
-	AgentID           string          `json:"agent_id"`
-	MembershipID      string          `json:"membership_id"`
-	Receiver          AccountIdentity `json:"receiver,omitzero"`
-	Account           AccountIdentity `json:"account"`
-	ConnectionID      string          `json:"connection_id"`
-	Generation        string          `json:"generation"`
-	ConnectionVersion uint64          `json:"connection_version"`
-	CredentialVersion uint64          `json:"credential_version"`
+	AgentID                    string          `json:"agent_id"`
+	MembershipID               string          `json:"membership_id"`
+	Receiver                   AccountIdentity `json:"receiver,omitzero"`
+	Account                    AccountIdentity `json:"account"`
+	ConnectionID               string          `json:"connection_id"`
+	Generation                 string          `json:"generation"`
+	ConnectionVersion          uint64          `json:"connection_version"`
+	ActionAuthorizationVersion uint64          `json:"action_authorization_version,omitempty"`
+	CredentialVersion          uint64          `json:"credential_version"`
 }
 
 func (a AccessContext) Valid() bool {

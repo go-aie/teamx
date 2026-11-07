@@ -72,7 +72,7 @@ func validFollowupIntent(i followupIntent, discussion bool) bool {
 	if discussion {
 		operation = platform.OperationDiscussionReply
 	}
-	return i.Operation == operation && (validText(i.Body) || validText(i.Constraints)) && len(i.Body) <= 4096 && len(i.Constraints) <= 4096
+	return (i.Operation == operation || i.Operation == platform.OperationMessageReply) && (validText(i.Body) || validText(i.Constraints)) && len(i.Body) <= 4096 && len(i.Constraints) <= 4096
 }
 
 func (s *Store) conversationUnitLocked(id MemberIdentity, c followupCommand) (followupUnit, error) {

@@ -7,7 +7,7 @@ import (
 
 func referencePayloadFlag(command, op string) string {
 	switch command + "/" + op {
-	case "actions/execute":
+	case "actions/execute", "actions/resolve":
 		return "request"
 	case "policy/update", "matters/update", "matters/notify", "matters/reply", "matters/instruct", "matters/instruction-status":
 		return "change"

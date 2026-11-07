@@ -15,7 +15,7 @@ func runReferenceCLI(ctx context.Context, command string, args []string, stdin i
 		return writeOutput(stdout, []byte(referenceHelpText(command, "")))
 	}
 	op := args[0]
-	allowed := map[string]string{"inbox": "read", "matters": "list read sources source resolve ensure update notify reply instruct instruction-status", "actions": "execute", "policy": "read update publish"}
+	allowed := map[string]string{"inbox": "read", "matters": "list read sources source resolve ensure update notify reply instruct instruction-status", "actions": "resolve execute read list", "policy": "read update publish"}
 	if !strings.Contains(" "+allowed[command]+" ", " "+op+" ") {
 		return invalidField("command", "unknown subcommand; use teamx "+command+" --help")
 	}
@@ -79,7 +79,7 @@ func runReferenceCLI(ctx context.Context, command string, args []string, stdin i
 	req.Followup = &q
 	req.TurnNumber = q.TurnNumber
 	switch command + "/" + op {
-	case "inbox/read", "matters/list":
+	case "inbox/read", "matters/list", "actions/list":
 		req.Limit = *limit
 	case "matters/sources":
 		req.Limit, req.After = *limit, after
@@ -88,6 +88,9 @@ func runReferenceCLI(ctx context.Context, command string, args []string, stdin i
 	var progress agentProgressChange
 	var instructionStatus agentInstructionStatusChange
 	switch command + "/" + op {
+	case "actions/resolve":
+		req.ActionResolve = &actionResolveRequest{}
+		target = req.ActionResolve
 	case "actions/execute":
 		req.ReferenceAction = &agentActionRequest{}
 		target = req.ReferenceAction
@@ -186,6 +189,7 @@ func referenceCLIFlags(command, op string) string {
 	return common + " " + map[string]string{
 		"inbox/read": "limit peek", "matters/list": "object cursor include-completed limit", "matters/read": "object unit turn detail",
 		"matters/sources": "object after limit", "matters/source": "seq source", "matters/resolve": "seq source turn", "matters/ensure": "seq target turn",
+		"actions/read": "id object unit detail", "actions/list": "object unit cursor limit",
 		"policy/read": "id detail", "policy/publish": "id version turn",
 	}[command+"/"+op]
 }

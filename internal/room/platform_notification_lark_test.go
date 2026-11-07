@@ -5,10 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/lark"
-	"github.com/go-aie/teamx/internal/platform/notification"
-	"github.com/go-aie/teamx/internal/platform/tool"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -16,6 +12,11 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/go-aie/teamx/internal/platform"
+	"github.com/go-aie/teamx/internal/platform/lark"
+	"github.com/go-aie/teamx/internal/platform/notification"
+	"github.com/go-aie/teamx/internal/platform/tool"
 )
 
 const l2Fixture = `#!/usr/bin/env python3
@@ -319,7 +320,12 @@ func TestLarkNotificationsInboxReferencesAndRoomQuestion(t *testing.T) {
 	if err := os.Rename(bin+".disabled", bin); err != nil {
 		t.Fatal(err)
 	}
-	bindCLITool(t, h.m, h.room.RoomIdentity, member, h.c, "lark", 0)
+	bindings := bindCLITool(t, h.m, h.room.RoomIdentity, member, h.c, "lark", 0)
+	for _, binding := range bindings.Bindings {
+		if binding.ActionAuthorization != nil {
+			t.Fatal("read-only binding gained write capabilities")
+		}
+	}
 	if e = cli([]string{"lark", "read", "--object", object, "--target", object}, &content); e != nil || content.Status != platform.ResolutionResolved || len(content.Contents) != 1 || !strings.Contains(content.Contents[0].Body, "脱敏测试消息") || !strings.Contains(content.Contents[0].Body, "发送者：测试发送者（open_id: ou_sender") {
 		t.Fatal(content, e)
 	}
@@ -340,8 +346,8 @@ func TestLarkNotificationsInboxReferencesAndRoomQuestion(t *testing.T) {
 	if saved.LatestSeq == 0 || !strings.Contains(saved.Messages[len(saved.Messages)-1].Text, "请确认") {
 		t.Fatal("question not in Room")
 	}
-	if caps, _ := h.m.referenceCapabilities("lark"); caps.Read == nil || len(caps.Actions) != 0 || h.m.referenceExecutors["lark"] != nil {
-		t.Fatal("lark writes enabled or read missing")
+	if caps, _ := h.m.referenceCapabilities("lark"); caps.Read == nil || len(caps.Actions) != 2 || caps.Actions[platform.OperationMessageReply].Spec.DisabledReason != "" || caps.Actions[platform.OperationMessageSend].Spec.DisabledReason != "" || h.m.referenceExecutors["lark"] == nil {
+		t.Fatal("accepted capability registration missing")
 	}
 	// Another member cannot borrow the source account to read a saved target.
 	other := larkReadRequest{ServiceInfo: h.svc.info, Caller: agentCaller(h.members[1].AgentID, h.members[1].MembershipID), Target: &larkTargetRequest{ObjectRef: object, TargetRef: object, Scope: "content"}}

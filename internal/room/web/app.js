@@ -173,6 +173,7 @@ function renderCLITools(v) {
   const live = state.connected && state.catalogConnected && !discussionBusy();
   $("cli-member-options").replaceChildren(...v.cli.catalog.map(d => {
     const b = v.cli.bindings.find(b => b.agent_id === v.member.agent_id && b.membership_id === v.member.membership_id && b.tool === d.name);
+    const actionControls = [];
     const row = document.createElement("div"); row.className = "cli-tool-row";
     const pending = v.cliPending?.tool === d.name;
     row.setAttribute("aria-busy", String(pending));
@@ -197,6 +198,10 @@ function renderCLITools(v) {
     apply.disabled = v.cliBusy || !live || !valid();
     select.addEventListener("change", () => {
       apply.disabled = v.cliBusy || !live || !valid();
+      for (const {checkbox,spec} of actionControls) {
+        checkbox.checked = false;
+        checkbox.disabled = v.cliBusy || !live || !select.value || Boolean(spec.disabled_reason);
+      }
       if (v.cliResult?.tool === d.name) { v.cliResult = null; feedback.textContent = ""; }
     });
     apply.addEventListener("click", async () => {
@@ -206,13 +211,21 @@ function renderCLITools(v) {
       const selected = connections.find(c => c.id === select.value);
       const binding = { agent_id: v.member.agent_id, membership_id: v.member.membership_id, tool: d.name };
       if (selected) binding.connection_id = selected.id;
+      if (selected && d.provider === "lark") {
+        binding.action_authorization = {version:1,revision:b?.action_authorization?.revision || 1,
+          grants:(d.actions || []).filter(spec => !spec.disabled_reason).flatMap(spec => (spec.object_types || []).map(objectType =>
+            ({operation:spec.operation,target_kind:spec.target_kind,object_type:objectType})))};
+      } else if (selected && (actionControls.some(c => c.checkbox.checked) || b?.action_authorization && select.value === b.connection_id)) {
+        binding.action_authorization = {version:1,revision:b?.action_authorization?.revision || 1,
+          grants:actionControls.filter(c => c.checkbox.checked && !c.checkbox.disabled).map(c => c.grant)};
+      }
       try {
         const data = await request("/v1/tools/bind", { ...v.identity, revision: v.cli.revision, binding,
           enabled: Boolean(select.value), connection_version: selected?.version || 0 });
         if (!toolsCurrent(v)) return;
         v.cli = { ...v.cli, ...data }; v.cliBusy = false; v.cliPending = null;
         v.cliResult = { tool: d.name, message: !select.value ? `✓ ${d.name} 已停用。` : selected ?
-          `✓ 已应用：${selected.name} · @${selected.validation.username}。沿用所选账号权限。` : `✓ ${d.name} 已启用。` };
+          `✓ 已应用：${selected.name} · @${selected.validation.username}。` : `✓ ${d.name} 已启用。` };
         renderCLITools(v);
       } catch (error) {
         if (!toolsCurrent(v)) return;
@@ -223,7 +236,53 @@ function renderCLITools(v) {
           "应用结果未确认，不会自动重发。请重新读取后核对。", "error");
       }
     });
-    row.append(title, label, apply, feedback); return row;
+    row.append(title, label, apply, feedback);
+    if (d.provider === "lark") {
+      const note = document.createElement("p"); note.className = "cli-tool-feedback quiet";
+      const available = (d.actions || []).filter(spec => !spec.disabled_reason);
+      const modes = ["读取消息"];
+      if (available.some(spec => spec.operation === "message.reply")) modes.push("回复");
+      if (available.some(spec => spec.operation === "message.send" && spec.object_types?.includes("chat"))) modes.push("发送群消息");
+      if (available.some(spec => spec.operation === "message.send" && spec.object_types?.includes("user"))) modes.push("发送私信");
+      note.textContent = `应用后，可按你的指令${modes.join("、")}。`;
+      row.append(note);
+      return row;
+    }
+    const actions = document.createElement("div"); actions.className = "cli-tool-actions";
+    const reasons = new Set();
+    for (const spec of d.actions || []) {
+      if (spec.disabled_reason) {
+        reasons.add(spec.disabled_reason.replace(/^[a-z0-9_]+:\s*/, ""));
+      }
+      for (const objectType of spec.object_types || []) {
+        const grant = {operation:spec.operation,target_kind:spec.target_kind,object_type:objectType};
+        const control = document.createElement("label"); control.className = "cli-action-row";
+        const checkbox = document.createElement("input"); checkbox.type = "checkbox";
+        const name = spec.operation === "message.send" ? (objectType === "user" ? "主动私信" : "指定单群消息") : spec.operation === "message.reply" ? "普通消息回复" : `${spec.operation} · ${objectType}`;
+        checkbox.setAttribute("aria-label",`${d.name} ${name}`);
+        checkbox.checked = Boolean(b?.action_authorization?.grants?.some(g => g.operation === grant.operation && g.target_kind === grant.target_kind && g.object_type === grant.object_type));
+        checkbox.disabled = v.cliBusy || !live || !select.value || Boolean(spec.disabled_reason);
+        const label = document.createElement("span"); label.textContent = name;
+        control.append(checkbox,label);
+        if (spec.disabled_reason) {
+          const status = document.createElement("small"); status.className = "cli-action-status"; status.textContent = "暂未开放";
+          control.append(status);
+        }
+        actionControls.push({checkbox,spec,grant}); actions.append(control);
+      }
+    }
+    if (actionControls.length) {
+      const help = document.createElement("details"); help.className = "cli-action-help";
+      const summary = document.createElement("summary"); summary.textContent = "权限与可用性说明";
+      const note = document.createElement("p");
+      note.textContent = "连接账号不会自动授权回复和发送。需单独勾选并应用，每次执行仍需具体授权。";
+      help.append(summary,note);
+      for (const reason of reasons) {
+        const detail = document.createElement("p"); detail.textContent = reason; help.append(detail);
+      }
+      actions.append(help); row.append(actions);
+    }
+    return row;
   }));
 }
 $("cli-member-refresh").addEventListener("click", () => {
@@ -1547,7 +1606,7 @@ async function loadFollowupDetail(view,item,section) {
     const instructionStates={active:"有效",fulfilled:"已落实",revoked:"已撤销",expired:"已过期"};
     for(const instruction of unit.instructions || []) followupParagraph(progress,`单次指令 · ${instructionStates[instruction.status] || instruction.status} · ${instruction.intent.body || instruction.intent.constraints} · 用户 #${instruction.source.seq}：${instruction.source.text}`);
     for(const action of unit.actions || []) {
-      const actions={"object.comment":"发表评论","discussion.reply":"回复讨论"}, results={succeeded:"已成功",not_applied:"未执行",unknown:"结果待核实"};
+      const actions={"object.comment":"发表评论","discussion.reply":"回复讨论","message.reply":"回复消息","message.send":"发送消息"}, results={succeeded:"已成功",not_applied:"未执行",unknown:"结果待核实"};
       followupParagraph(progress,`${actions[action.request.operation] || action.request.operation} · ${results[action.status] || action.status} · ${action.attempts} 次尝试${action.possible_duplicate ? " · 可能重复" : ""}`);
       followupParagraph(progress,`账号 ${action.inspection.account_label || action.access.account.id.value} · ${action.request.input.body} · ${action.result?.message || "结果待核实"}`);
       if(followupResultURL(action.result?.url)) { const link=document.createElement("a");link.textContent="查看远端回执";link.href=followupResultURL(action.result.url);link.target="_blank";link.rel="noopener noreferrer";progress.append(link); }
@@ -2906,6 +2965,13 @@ function clearLarkAuthView() {
 function renderLarkAccount() {
   const option = connections.discovery?.profiles.find(p => p.name === $("connection-profile").value);
   const active = !!connections.auth;
+  const sendProfile=JSON.stringify(larkProfileDraft());
+  if(connections.sendProfile!==sendProfile){connections.sendProfile=sendProfile;$("connection-send-status").textContent="发送未启用；请先检查账号与权限。";}
+  const sendAvailable=connectionIsLark() && !!option?.user && !active && !connections.detecting;
+  $("connection-send-check").hidden=!sendAvailable;
+  $("connection-send-authorize").hidden=!sendAvailable;
+  $("connection-target-authorize").hidden=!sendAvailable;
+  $("connection-send-status").hidden=!connectionIsLark();
   $("connection-login").hidden = !option || active || connections.detecting;
   $("connection-login").textContent = option?.user ? "重新授权" : `登录${connectionBrand() === "lark" ? "Lark" : "飞书"}`;
   $("connection-logout").hidden = !option?.user || active || connections.detecting;
@@ -2980,8 +3046,8 @@ async function startLarkAuth(action) {
   if (!profile.profile) return;
   const affected = connections.items.filter(c => c.provider === "lark" && c.cli_profile?.profile === profile.profile);
   const rooms = [...new Set(affected.flatMap(c => (c.references || []).map(ref => ref.name)))];
-  if (action === "logout" || affected.length) {
-    const text = `${action === "logout" ? "退出此应用配置下的全部用户登录？" : "重新授权此应用配置？"}共享此配置的 CLI 和其他工具也会受影响。${rooms.length ? `影响房间：${rooms.join("、")}。` : ""}相关通知将暂停；重新验证为原账号后，仍开启的通知会自动恢复。${action === "logout" ? "退出登录不等于取消应用的全部授权。" : ""}`;
+  if (action === "logout" || action === "authorize-sending" || action === "authorize-targets" || affected.length) {
+    const text = `${action === "authorize-targets" ? "为主动消息核验对端／群成员，增量申请 im:chat.members:read，保留读取权限；普通群发言范围沿用已有群信息核验；不申请通讯录搜索权限，不启用发送。" : ""}${action === "authorize-sending" ? "仅增量申请 im:message.send_as_user 和 im:message，保留读取权限。授权后，在成员工具设置中应用连接即可使用已开放的消息能力；每次执行仍需具体授权。" : ""}${action === "logout" ? "退出此应用配置下的全部用户登录？" : "重新授权此应用配置？"}共享此配置的 CLI 和其他工具也会受影响。${rooms.length ? `影响房间：${rooms.join("、")}。` : ""}相关通知将暂停；重新验证为原账号后，仍开启的通知会自动恢复。${action === "logout" ? "退出登录不等于取消应用的全部授权。" : ""}`;
     if (!window.confirm(text)) return;
   }
   const version = connections.formVersion;
@@ -3224,6 +3290,20 @@ $("connection-profile").addEventListener("change", () => { connectionFeedback();
 $("connection-detect").addEventListener("click", detectLarkConnection);
 $("connection-executable").addEventListener("change", detectLarkConnection);
 $("connection-login").addEventListener("click", () => startLarkAuth("login"));
+$("connection-target-authorize").addEventListener("click",()=>startLarkAuth("authorize-targets"));
+$("connection-send-authorize").addEventListener("click",()=>startLarkAuth("authorize-sending"));
+$("connection-send-check").addEventListener("click",async()=>{
+  const version=connections.formVersion;
+  $("connection-send-check").disabled=true;
+  $("connection-send-status").textContent="正在核验固定账号与发送权限…";
+  try {
+    const state=await request("/v1/platform/connections/lark/sending-status",connectionPayload({cli_profile:larkProfileDraft()}),undefined,65000);
+    if(version!==connections.formVersion)return;
+    const available = [state.reply_enabled && "普通回复", state.group_send_enabled && "群消息", state.user_send_enabled && "主动私信"].filter(Boolean);
+    $("connection-send-status").textContent = `账号固定：${state.account_fixed?"已核验":"不可用"}；应用发送权限：${state.application_scopes==="granted"?"已开通":"未齐备"}；用户发送授权：${state.user_scopes==="granted"?"已授权":"未授权"}。${available.length ? `可用：${available.join("、")}；在成员工具设置中应用连接后生效。` : "发送条件尚未齐备。"}${state.group_send_enabled && !state.user_send_enabled ? "主动私信暂未开放。" : ""}`;
+  }catch(error){if(version===connections.formVersion)$("connection-send-status").textContent="发送条件核验失败，发送保持关闭。请核对应用、账号与权限。";}
+  finally{$("connection-send-check").disabled=false;}
+});
 $("connection-logout").addEventListener("click", () => startLarkAuth("logout"));
 $("connection-login-cancel").addEventListener("click", async () => { await cancelLarkAuth(); await detectLarkConnection(); connectionFeedback("已请求取消本次登录。已完成的授权不会因此撤销，请核对账号状态。"); });
 function larkProfileDraft() {return {version:1, executable:$("connection-executable").value.trim(), profile:$("connection-profile").value.trim(), brand:connectionBrand(), cli_version:"1.0.99"};}

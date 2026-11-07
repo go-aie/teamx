@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/go-aie/teamx/internal/platform"
 )
@@ -45,6 +46,9 @@ func (s *Store) checkReferenceRoom(state RoomSnapshot) error {
 		var h followupHeader
 		err = readSnapshot(filepath.Join(root, "followups", "schema.json"), &h, followupBytes)
 		if errors.Is(err, os.ErrNotExist) {
+			if _, statErr := os.Stat(filepath.Join(root, "actions")); !errors.Is(statErr, os.ErrNotExist) {
+				return fmt.Errorf("%w: member actions lack followup schema", ErrVersion)
+			}
 			if err := checkEmptyFollowupRoot(filepath.Join(root, "followups")); err != nil {
 				return err
 			}
@@ -52,6 +56,19 @@ func (s *Store) checkReferenceRoom(state RoomSnapshot) error {
 		}
 		if err != nil {
 			return err
+		}
+		if _, err := s.loadActionsLocked(h.MemberIdentity); err != nil {
+			return err
+		}
+		files, err := followupFiles(filepath.Join(s.actionRoot(h.MemberIdentity), "targets"), "targets")
+		if err != nil {
+			return err
+		}
+		for _, path := range files {
+			ref := strings.TrimSuffix(filepath.Base(path), ".json")
+			if _, err := s.loadActionTargetLocked(h.MemberIdentity, ref); err != nil {
+				return err
+			}
 		}
 		if h.Version != followupSchema || h.RoomIdentity != state.RoomIdentity || h.MembershipID != dir.Name() {
 			return fmt.Errorf("%w: unsupported followup schema", ErrVersion)

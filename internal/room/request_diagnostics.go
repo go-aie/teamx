@@ -60,7 +60,11 @@ func decodeRequestJSON(payload string, target any) error {
 		case errors.As(err, &authored):
 			return err
 		case errors.As(err, &typeErr):
-			return invalidField(typeErr.Field, fmt.Sprintf("expected %s at byte %d", typeErr.Type, typeErr.Offset))
+			path := typeErr.Field
+			if path == "" {
+				path = jsonErrorPath(json.RawMessage(payload), reflect.TypeOf(target), "", "")
+			}
+			return invalidField(path, fmt.Sprintf("expected %s at byte %d", typeErr.Type, typeErr.Offset))
 		case errors.As(err, &syntaxErr):
 			return invalidField("", fmt.Sprintf("%s at byte %d", syntaxErr.Error(), syntaxErr.Offset))
 		case errors.As(err, &timestampErr):
@@ -120,6 +124,9 @@ func jsonErrorPath(data json.RawMessage, typ reflect.Type, unknown, prefix strin
 		return ""
 	}
 	if typ.Kind() != reflect.Struct {
+		if unknown == "" && json.Unmarshal(data, reflect.New(typ).Interface()) != nil {
+			return prefix
+		}
 		return ""
 	}
 	fields := map[string]reflect.Type{}

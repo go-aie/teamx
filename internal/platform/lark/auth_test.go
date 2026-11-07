@@ -185,3 +185,36 @@ func TestLarkDiscoveryReal(t *testing.T) {
 	}
 	t.Logf("detected pinned CLI and %d Feishu profile(s)", len(result.Profiles))
 }
+
+func TestLarkLoginKeepsTargetAndSendScopesOptIn(t *testing.T) {
+	for _, mode := range []string{"read", "send", "targets"} {
+		t.Run(mode, func(t *testing.T) {
+			p, dir := authTestProfile(t)
+			script := strings.Replace(authFixture, "assert 'offline_access' in scopes and 'im:message:readonly' in scopes", "assert 'offline_access' in scopes and 'im:message:readonly' in scopes\n open(base+'/requested-scopes','w').write(' '.join(scopes))", 1)
+			if err := os.WriteFile(p.Executable, []byte(script), 0700); err != nil {
+				t.Fatal(err)
+			}
+			login := Login
+			if mode == "send" {
+				login = LoginSending
+			}
+			if mode == "targets" {
+				login = LoginSendTargets
+			}
+			if _, err := login(context.Background(), p, func(string, string) {}); err != nil {
+				t.Fatal(err)
+			}
+			raw, err := os.ReadFile(dir + "/requested-scopes")
+			if err != nil {
+				t.Fatal(err)
+			}
+			scopes := string(raw)
+			if strings.Contains(scopes, "contact:user:search") || strings.Contains(scopes, "--domain") {
+				t.Fatal("unrequested directory scope", scopes)
+			}
+			if strings.Contains(scopes, "im:message.send_as_user") != (mode == "send") || strings.Contains(scopes, "im:chat.members:read") != (mode == "targets") || strings.Contains(scopes, "im:chat.moderation:read") {
+				t.Fatal(mode, scopes)
+			}
+		})
+	}
+}

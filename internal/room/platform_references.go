@@ -23,11 +23,16 @@ func (m *roomManager) initPlatformReferences() {
 	if m.referenceAdapters == nil {
 		m.referenceAdapters = map[string]referenceAdapterFactory{
 			"gitlab": gitlabReferenceCapabilities,
-			"lark":   func() platform.ReferenceCapabilities { return lark.Capabilities(nil) },
+			"lark": func() platform.ReferenceCapabilities {
+				return lark.AcceptedActionCapabilities(nil, nil, nil)
+			},
 		}
 	}
 	if m.referenceExecutors == nil {
-		m.referenceExecutors = map[string]referenceActionPreparer{"gitlab": m.prepareGitlabReferenceAction}
+		m.referenceExecutors = map[string]referenceActionPreparer{"gitlab": m.prepareGitlabReferenceAction, "lark": m.prepareLarkReferenceAction}
+	}
+	if m.actionResolvers == nil {
+		m.actionResolvers = map[string]actionTargetResolver{"lark": m.resolveLarkActionTarget}
 	}
 	if m.referenceResolvers == nil {
 		m.referenceResolvers = map[string]followupResolver{"gitlab": m.resolveGitlabFollowup, "lark": m.resolveLarkFollowup}

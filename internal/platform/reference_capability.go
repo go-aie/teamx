@@ -19,12 +19,31 @@ const (
 // A locator is untrusted input. Neither a candidate target nor URL establishes
 // native identity. Source is optional: explicit reads need no notification.
 type TargetLocator struct {
-	Source    *SourceRef      `json:"source,omitempty"`
-	Candidate *TargetIdentity `json:"candidate,omitempty"`
-	URL       string          `json:"url,omitempty"`
+	Query           *TargetQuery     `json:"query,omitempty"`
+	VerifiedAliases []TargetIdentity `json:"-"` // service-owned evidence for a previously saved reference
+	TargetRef       string           `json:"target_ref,omitempty"`
+	Source          *SourceRef       `json:"source,omitempty"`
+	Candidate       *TargetIdentity  `json:"candidate,omitempty"`
+	URL             string           `json:"url,omitempty"`
+}
+
+// Query returns unverified candidates only. Selecting a candidate requires a
+// separate resolve; display names never become execution identities.
+type TargetQuery struct {
+	ObjectType string `json:"object_type"`
+	Text       string `json:"text"`
+}
+type TargetCandidate struct {
+	Target TargetIdentity `json:"target"`
+	Label  string         `json:"label"`
 }
 
 type TargetResolution struct {
+	AccountOwnerConfirmed bool              `json:"account_owner_confirmed,omitempty"`
+	Candidates            []TargetCandidate `json:"candidates,omitempty"`
+	CandidatesIncomplete  bool              `json:"candidates_incomplete,omitempty"`
+	TargetLabel           string            `json:"target_label,omitempty"` // display only; never native identity
+	AccountLabel          string            `json:"account_label,omitempty"`
 	// Notification evidence establishes captured native identity, not current
 	// remote state or member access. Empty denotes the existing remote resolver.
 	EvidenceSource     string           `json:"evidence_source,omitempty"`
@@ -100,6 +119,8 @@ type Operation string
 const (
 	OperationObjectComment   Operation = "object.comment"
 	OperationDiscussionReply Operation = "discussion.reply"
+	OperationMessageReply    Operation = "message.reply"
+	OperationMessageSend     Operation = "message.send"
 )
 
 type RetryPolicy struct {
@@ -108,18 +129,22 @@ type RetryPolicy struct {
 }
 
 type ActionSpec struct {
-	Operation   Operation       `json:"operation"`
-	TargetKind  string          `json:"target_kind"`            // object, discussion, message
-	ObjectTypes []string        `json:"object_types,omitempty"` // optional native object-type restriction
-	InputSchema json.RawMessage `json:"input_schema"`
-	Retry       RetryPolicy     `json:"retry"`
+	DirectRoomInstructionOnly bool            `json:"direct_room_instruction_only,omitempty"`
+	DisabledReason            string          `json:"disabled_reason,omitempty"` // provider acceptance/readiness gate, independent of member authorization
+	RequiresAuthorization     bool            `json:"requires_authorization,omitempty"`
+	Operation                 Operation       `json:"operation"`
+	TargetKind                string          `json:"target_kind"`            // object, discussion, message
+	ObjectTypes               []string        `json:"object_types,omitempty"` // optional native object-type restriction
+	InputSchema               json.RawMessage `json:"input_schema"`
+	Retry                     RetryPolicy     `json:"retry"`
 }
 
 type TargetActionRequest struct {
-	Target    TargetIdentity   `json:"target"`            // resolved target, not arbitrary Agent-supplied IDs
-	Aliases   []TargetIdentity `json:"aliases,omitempty"` // server-owned verified native aliases
-	Operation Operation        `json:"operation"`
-	Input     json.RawMessage  `json:"input"`
+	IdempotencyKey string           `json:"idempotency_key,omitempty"` // service generated; stable within the persisted action
+	Target         TargetIdentity   `json:"target"`                    // resolved target, not arbitrary Agent-supplied IDs
+	Aliases        []TargetIdentity `json:"aliases,omitempty"`         // server-owned verified native aliases
+	Operation      Operation        `json:"operation"`
+	Input          json.RawMessage  `json:"input"`
 }
 
 type TargetActionResult struct {
