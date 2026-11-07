@@ -1797,8 +1797,36 @@ textarea::placeholder {
 .notification-tabs { display:flex; gap:20px; border-bottom:1px solid var(--line); margin:16px 0 20px; }
 .notification-tabs button { padding:0 0 10px; border-radius:0; border-bottom:2px solid transparent; background:transparent; color:var(--muted); font-size:12px; cursor:pointer; }
 .notification-tabs button[aria-selected="true"] { border-bottom-color:var(--accent); color:var(--accent); font-weight:600; }
-#notification-panel-todos .gitlab-events { border-top:0; margin-top:0; padding-top:0; }
-#gitlab-todos-manage-connections { margin-top:12px; font-size:12px; }
+.gitlab-shared { padding:0; }
+.gitlab-shared fieldset { margin:0 0 16px; }
+.gitlab-shared fieldset > label:first-child { margin-top:0; }
+.gitlab-shared .quiet { margin:6px 0; font-size:11px; }
+.gitlab-message-types { display:flex; flex-wrap:wrap; gap:8px 24px; }
+.gitlab-message-types .workspace-check { margin:10px 0 0; font-weight:400; }
+.gitlab-message-types input { accent-color:var(--accent); width:15px; height:15px; }
+#gitlab-manage-connections,#notification-manage-binding { font-size:12px; }
+.gitlab-channel { border-top:1px solid var(--line); }
+.gitlab-channel:last-of-type { border-bottom:1px solid var(--line); }
+.gitlab-channel > summary { display:flex; align-items:center; gap:12px; padding:16px 0; list-style:none; cursor:pointer; }
+.gitlab-channel > summary::-webkit-details-marker { display:none; }
+.gitlab-channel > summary::after { content:""; width:6px; height:6px; flex:none; border-right:1.5px solid var(--muted); border-bottom:1.5px solid var(--muted); transform:rotate(-45deg); transition:transform .14s; margin:0 3px; }
+.gitlab-channel[open] > summary::after { transform:rotate(45deg); }
+.gitlab-channel > summary:hover .gitlab-channel-label strong { color:var(--accent); }
+.gitlab-channel > summary:focus-visible { outline:2px solid #a9c6b2; outline-offset:2px; }
+.gitlab-channel-label { display:grid; flex:1; min-width:0; gap:4px; }
+.gitlab-channel-label strong { font-size:14px; font-weight:600; transition:color .14s; }
+.gitlab-channel-label small,.gitlab-channel > summary > .quiet { font-size:11px; color:var(--muted); }
+.gitlab-channel > summary > .quiet { flex-shrink:0; }
+.gitlab-channel > summary[data-error="true"] > .quiet { color:#9a493d; }
+.notification-body .gitlab-channel .gitlab-events { border:0; margin:0; padding:0 0 16px; }
+.gitlab-channel .workspace-form label { margin-top:12px; }
+.gitlab-channel .workspace-form fieldset { margin:0 0 12px; }
+.gitlab-channel .workspace-form .quiet { font-size:11px; line-height:1.6; margin:6px 0 0; }
+.gitlab-channel .gitlab-events-actions { margin-top:14px; }
+.gitlab-channel .gitlab-events-types .workspace-check { min-height:30px; }
+.gitlab-channel .gitlab-events-records { margin-bottom:0; }
+.gitlab-delivery-hint { margin:12px 0 0; font-size:11px; line-height:1.7; }
+@media(prefers-reduced-motion:reduce) { .gitlab-channel > summary::after,.gitlab-channel-label strong { transition:none; } }
 .notification-binding { font-size:12px; }
 .notification-binding > p { margin-top:0; }
 .notification-binding dl { display:grid; grid-template-columns:32px minmax(0,1fr); gap:10px 12px; margin:16px 0 12px; line-height:1.6; }

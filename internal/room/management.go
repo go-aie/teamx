@@ -139,6 +139,8 @@ type roomManager struct {
 	platformProject       func(context.Context, string, string, workspaceSecret) (int64, error)
 	notifications         *notification.Manager
 	notificationAdapters  map[notification.SourceID]notificationAdapter
+	gitlabNotifications   map[RoomIdentity]gitlabNotificationRecord
+	gitlabConfiguring     map[RoomIdentity]bool
 	platformHTTP          http.RoundTripper // offline built-in HTTP seam; never used by agent tools
 	workspaceRun          platform.Execute  // offline subprocess seam; no public configuration hook
 	teams                 map[string]teamDefinition
@@ -562,6 +564,10 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/v1/platform/attachments" {
 		m.servePlatformAttachment(w, r)
+		return
+	}
+	if r.URL.Path == "/v1/platform/gitlab/notifications" || r.URL.Path == "/v1/platform/gitlab/notifications/configure" || r.URL.Path == "/v1/platform/gitlab/notifications/sync" {
+		m.serveGitLabNotifications(w, r)
 		return
 	}
 	if r.URL.Path == "/v1/platform/notifications" || r.URL.Path == "/v1/platform/notifications/configure" || r.URL.Path == "/v1/platform/notifications/sync" {

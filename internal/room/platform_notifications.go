@@ -2,6 +2,7 @@ package room
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 
 	"github.com/go-aie/teamx/internal/platform/lark"
@@ -18,6 +19,8 @@ type notificationAdapter struct {
 }
 
 func (m *roomManager) initPlatformNotifications() {
+	m.gitlabNotifications = make(map[RoomIdentity]gitlabNotificationRecord)
+	m.gitlabConfiguring = make(map[RoomIdentity]bool)
 	if m.notificationAdapters == nil {
 		m.notificationAdapters = m.gitlabNotificationAdapters()
 		m.notificationAdapters[lark.MessagesSourceID] = m.larkNotificationAdapter()
@@ -55,6 +58,9 @@ func (m *roomManager) loadPlatformNotificationsLocked() error {
 		if err := m.notifications.LoadLocked(entry.RoomIdentity); err != nil {
 			return notificationRoomError(err)
 		}
+		if err := m.loadGitLabNotificationsLocked(entry.RoomIdentity); err != nil {
+			return err
+		}
 		for _, adapter := range m.notificationAdapters {
 			if adapter.CheckLoaded != nil {
 				if err := adapter.CheckLoaded(entry.RoomIdentity); err != nil {
@@ -81,6 +87,14 @@ func (m *roomManager) admitPlatformNotificationLocked(ctx context.Context, state
 		return scope, err
 	}
 	meta := state.Metadata()
+	if meta.Key.Source.Provider == "gitlab" {
+		if m.gitlabConfiguring[meta.Key.Owner] {
+			return scope, notification.ErrBusy
+		}
+		if saved, ok := m.gitlabNotifications[meta.Key.Owner]; ok && !gitlabConfigApplied(saved.Config, state) {
+			return scope, notification.ErrBusy
+		}
+	}
 	entry, err := m.workspaceRoom(meta.Key.Owner)
 	if err != nil || entry.Status != "ready" {
 		return scope, notification.ErrIdentity
@@ -92,6 +106,9 @@ func (m *roomManager) admitPlatformNotificationLocked(ctx context.Context, state
 	scope, err = adapter.Admit(ctx, state)
 	if err != nil {
 		return scope, err
+	}
+	if saved, ok := m.gitlabNotifications[meta.Key.Owner]; ok && meta.Key.Source.Provider == "gitlab" {
+		scope.Revision += fmt.Sprintf("|config:%d", saved.Version)
 	}
 	scope.Directory = filepath.Join(m.roomDir(meta.Key.Owner.RoomID), "notification-queries", meta.Key.Source.Provider+"."+meta.Key.Source.Channel+"."+meta.Key.SubscriptionID)
 	svc, _ := m.runtimeServiceLocked(meta.Key.Owner)

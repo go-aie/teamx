@@ -123,10 +123,9 @@
       <dialog id="notification-detail" class="activity-dialog notification-detail" aria-labelledby="notification-title">
         <header class="activity-header"><h2 id="notification-title">平台 · 通知</h2><button id="close-notification" class="text-button" type="button" aria-label="返回成员与通知源列表">返回</button></header>
         <div class="notification-body">
-          <p id="notification-summary" class="quiet" aria-live="polite"></p>
-          <div class="notification-tabs" role="tablist" aria-label="平台通知渠道">
-            <button id="notification-tab-events" type="button" role="tab" aria-selected="true" aria-controls="notification-panel-events">项目活动</button>
-            <button id="notification-tab-todos" type="button" role="tab" aria-selected="false" aria-controls="notification-panel-todos" tabindex="-1">我的待办</button>
+          <p id="notification-summary" class="sr-only" aria-live="polite"></p>
+          <div class="notification-tabs" role="tablist" aria-label="通知平台">
+            <button id="notification-tab-gitlab" type="button" role="tab" aria-selected="true" aria-controls="notification-panel-gitlab">GitLab</button>
           <button id="notification-tab-messages" type="button" role="tab" aria-selected="false" aria-controls="notification-panel-messages" tabindex="-1">飞书消息</button>
           </div>
           <p id="notification-notice" class="quiet" role="status" hidden></p>
@@ -179,23 +178,27 @@
               <details class="gitlab-events-records"><summary>同步记录与诊断</summary><p id="lark-diagnostics" class="quiet"></p><ul id="lark-chat-status"></ul></details>
             </section>
           </div>
-          <div id="notification-panel-events" role="tabpanel" aria-labelledby="notification-tab-events">
-            <section class="notification-binding" aria-label="通知项目绑定">
-              <p class="quiet">活动订阅独立保存连接和项目，无需绑定 Git 仓库。</p>
-              <dl><dt>连接</dt><dd id="notification-connection">正在读取…</dd><dt>项目</dt><dd id="notification-project">正在读取…</dd></dl>
-              <button id="notification-manage-binding" class="text-button" type="button">从 Workspace 预填</button>
+          <div id="notification-panel-gitlab" role="tabpanel" aria-labelledby="notification-tab-gitlab">
+            <section class="workspace-form gitlab-shared" aria-label="GitLab 通知设置">
+              <fieldset id="gitlab-shared-fields">
+                <label for="gitlab-connection">GitLab 连接</label><select id="gitlab-connection"></select>
+                <p id="gitlab-account" class="quiet" role="status"></p>
+                <button id="gitlab-manage-connections" class="text-button" type="button">管理平台连接 ↗</button>
+                <label for="gitlab-target">投递到</label><select id="gitlab-target"></select>
+                <div id="gitlab-message-types-label" class="gitlab-events-type-heading">接收消息</div>
+                <div class="gitlab-message-types" role="group" aria-labelledby="gitlab-message-types-label">
+                  <label class="workspace-check"><input id="gitlab-events-enabled" type="checkbox">项目活动</label>
+                  <label class="workspace-check"><input id="gitlab-todos-enabled" type="checkbox">我的待办</label>
+                </div>
+              </fieldset>
             </section>
+            <details id="gitlab-events-settings" class="gitlab-channel">
+              <summary id="gitlab-events-summary"><span class="gitlab-channel-label"><strong id="gitlab-events-title">项目活动</strong><small>MR、评论和 Push</small></span><span id="gitlab-events-state" class="quiet"></span></summary>
             <section id="gitlab-events" class="workspace-form gitlab-events" aria-labelledby="gitlab-events-title" hidden>
-              <div class="gitlab-events-heading"><h3 id="gitlab-events-title">接收设置</h3><span id="gitlab-events-state" class="quiet"></span></div>
-              <p class="quiet">开启后从此刻接收项目活动；关闭保留进度与积压。已打开房间持续投递到所选目标；未打开时采集暂存，打开后投递。</p>
               <fieldset id="gitlab-events-fields">
-                <label for="gitlab-events-target">投递到</label><select id="gitlab-events-target"></select>
-                <p class="quiet">更改仅影响之后接收的通知；旧积压保留原目标。收件箱仅接收，尚不自动处理。</p>
-                <label for="gitlab-events-connection">平台连接</label><select id="gitlab-events-connection"></select>
-                <button id="gitlab-events-manage-connections" class="text-button" type="button">管理平台连接 ↗</button>
                 <label for="gitlab-events-project">GitLab 项目地址或路径</label><input id="gitlab-events-project" type="text" placeholder="group/project 或 https://gitlab.example.com/group/project" spellcheck="false">
-                <p id="gitlab-events-account" class="quiet"></p>
-                <label class="workspace-check"><input id="gitlab-events-enabled" type="checkbox">接收 GitLab 活动</label>
+                <button id="notification-manage-binding" class="text-button" type="button">从 Workspace 预填</button>
+                <details><summary>活动筛选与检查周期</summary>
                 <div class="gitlab-events-type-heading"><span id="gitlab-events-types-label">接收哪些活动</span><label class="workspace-check"><input id="gitlab-events-all-types" type="checkbox">全选</label></div>
                 <div id="gitlab-events-types" class="gitlab-events-types" role="group" aria-labelledby="gitlab-events-types-label" aria-describedby="gitlab-events-type-hint">
                   <label class="workspace-check"><input id="gitlab-events-type-opened" type="checkbox" value="merge_request.opened">MR 开启</label>
@@ -204,8 +207,7 @@
                   <label class="workspace-check"><input id="gitlab-events-type-note" type="checkbox" value="note">普通评论</label>
                   <label class="workspace-check"><input id="gitlab-events-type-push" type="checkbox" value="push">Push</label>
                 </div>
-                <p id="gitlab-events-type-hint" class="quiet">勾选接收，再次点击取消。普通评论包含 Issue 评论。</p>
-                <details><summary>过滤与检查周期</summary>
+                <p id="gitlab-events-type-hint" class="quiet">普通评论包含 Issue 评论。</p>
                 <label for="gitlab-events-interval">房间可接收时检查周期（3～30 秒）</label><input id="gitlab-events-interval" type="number" min="3" max="30" step="1" value="5">
                 <label for="gitlab-events-branches">分支（每行一个，留空表示全部）</label><textarea id="gitlab-events-branches" rows="2" spellcheck="false"></textarea>
                 <label for="gitlab-events-ignore">忽略这些操作者（每行一个账号）</label><textarea id="gitlab-events-ignore" rows="2" spellcheck="false"></textarea>
@@ -213,30 +215,24 @@
                 </details>
               </fieldset>
               <div class="gitlab-events-actions">
-                <button id="gitlab-events-save" class="primary" type="button">开启监听</button>
-                <button id="gitlab-events-sync" class="gitlab-events-sync" type="button" title="使用已保存的设置，立即检查最新活动并补查遗漏">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 7a7 7 0 0 1 11.5-1L20 9M4 15l2.4 3A7 7 0 0 0 17.9 17"/></svg><span id="gitlab-events-sync-label">立即同步</span>
-                </button>
                 <span id="gitlab-events-feedback" class="gitlab-events-feedback" role="status" aria-live="polite"></span>
               </div>
               <p id="gitlab-events-action-hint" class="quiet"></p>
               <p id="gitlab-events-error" class="form-error" role="alert" hidden></p>
-              <details class="gitlab-events-records"><summary>同步记录与统计</summary><p id="gitlab-events-status" class="quiet"></p></details>
-              <p class="quiet">过滤只影响后续活动。5 秒是检查周期，补查和网络耗时另计；不完整覆盖行内讨论、MR 新提交或 Pipeline。</p>
+              <details class="gitlab-events-records"><summary>订阅详情与同步记录</summary><p id="gitlab-events-status" class="quiet"></p>
+
+                <div class="notification-binding"><dl><dt>连接</dt><dd id="notification-connection">正在读取…</dd><dt>项目</dt><dd id="notification-project">正在读取…</dd></dl></div>
+                <p class="quiet">活动项目独立保存，无需绑定 Git 仓库。开启后从此刻接收；未打开房间时采集暂存，打开后投递。过滤只影响后续活动；检查周期不包含补查和网络耗时。不完整覆盖行内讨论、MR 新提交或 Pipeline。</p>
+              </details>
             </section>
-          </div>
-          <div id="notification-panel-todos" role="tabpanel" aria-labelledby="notification-tab-todos" hidden>
+            </details>
+            <details id="gitlab-todos-settings" class="gitlab-channel">
+              <summary id="gitlab-todos-summary"><span class="gitlab-channel-label"><strong id="gitlab-todos-title">我的待办</strong><small>@我、指派和评审请求</small></span><span id="gitlab-todos-state" class="quiet"></span></summary>
             <section id="gitlab-todos" class="workspace-form gitlab-events" aria-labelledby="gitlab-todos-title">
-              <div class="gitlab-events-heading"><h3 id="gitlab-todos-title">接收设置</h3><span id="gitlab-todos-state" class="quiet"></span></div>
-              <p class="quiet">“我的”指所选连接账号。可公开到房间，或定向送入成员收件箱。</p>
               <fieldset id="gitlab-todos-fields">
-                <label for="gitlab-todos-target">投递到</label><select id="gitlab-todos-target"></select>
-                <p class="quiet">更改仅影响之后接收的通知；旧积压保留原目标。收件箱仅接收，尚不自动处理。</p>
-                <label class="workspace-check"><input id="gitlab-todos-enabled" type="checkbox">接收我的 GitLab 待办</label>
-                <label for="gitlab-todos-connection">个人连接</label><select id="gitlab-todos-connection"></select>
-                <p id="gitlab-todos-recipient" class="quiet" aria-live="polite"></p>
                 <label for="gitlab-todos-scope">项目范围</label><select id="gitlab-todos-scope"></select>
                 <p id="gitlab-todos-project" class="quiet"></p>
+                <details><summary>待办筛选与检查周期</summary>
                 <div id="gitlab-todos-reasons-label" class="gitlab-events-type-heading">接收原因</div>
                 <div class="gitlab-events-types" role="group" aria-labelledby="gitlab-todos-reasons-label">
                   <label class="workspace-check"><input id="gitlab-todos-reason-mentioned" type="checkbox" value="mentioned">@我</label>
@@ -249,23 +245,24 @@
                   <label class="workspace-check"><input id="gitlab-todos-type-merge_request" type="checkbox" value="merge_request">MR</label>
                   <label class="workspace-check"><input id="gitlab-todos-type-work_item" type="checkbox" value="work_item">工作项</label>
                 </div>
-                <details><summary>检查周期</summary>
                   <label for="gitlab-todos-interval">房间可接收时（3～3600 秒）</label><input id="gitlab-todos-interval" type="number" min="3" max="3600" step="1" value="30">
                   <label for="gitlab-todos-inactive-interval">未打开或操作中（不小于可接收周期，最多 86400 秒）</label><input id="gitlab-todos-inactive-interval" type="number" min="3" max="86400" step="1" value="120">
                 </details>
               </fieldset>
-              <button id="gitlab-todos-manage-connections" class="text-button" type="button">管理平台连接 ↗</button>
-              <p id="gitlab-todos-connection-notice" class="quiet" role="status"></p>
               <div class="gitlab-events-actions">
-                <button id="gitlab-todos-save" class="primary" type="button">开启监听</button>
-                <button id="gitlab-todos-sync" class="text-button" type="button">立即同步</button>
                 <span id="gitlab-todos-feedback" class="gitlab-events-feedback" role="status" aria-live="polite"></span>
               </div>
               <p id="gitlab-todos-action-hint" class="quiet"></p>
               <p id="gitlab-todos-error" class="form-error" role="alert" hidden></p>
-              <details class="gitlab-events-records"><summary>同步记录与统计</summary><p id="gitlab-todos-status" class="quiet"></p></details>
-              <p class="quiet">首次开启只接收此后创建的待办，不导入历史。“所有可访问项目”仅接收有项目归属的 MR 与工作项。读取和投递不会修改 GitLab 待办状态。</p>
+              <details class="gitlab-events-records"><summary>订阅详情与同步记录</summary><p id="gitlab-todos-status" class="quiet"></p>
+
+                <p class="quiet">首次开启只接收此后创建的待办，不导入历史。“所有可访问项目”仅接收有项目归属的 MR 与工作项。读取和投递不会修改 GitLab 待办状态。凭据重新验证后，需显式同步恢复。</p>
+              </details>
             </section>
+            </details>
+            <div class="gitlab-events-actions"><button id="gitlab-save" class="primary" type="button">保存设置</button><button id="gitlab-sync" class="text-button" type="button">立即同步</button></div>
+            <p id="gitlab-feedback" class="quiet" role="status" aria-live="polite"></p>
+            <p class="gitlab-delivery-hint quiet">更改投递位置只影响新接收的通知，旧积压保留原目标。关闭监听保留进度与积压。</p>
           </div>
         </div>
       </dialog>
@@ -423,8 +420,13 @@
       <div class="connection-form-heading"><h3 id="connection-title">新增连接</h3><button id="connection-back" class="text-button" type="button">← 返回列表</button></div>
       <fieldset id="connection-fields">
         <div class="connection-field"><label for="connection-name">连接名称</label><input id="connection-name" maxlength="128" required placeholder="公司 GitLab"></div>
-        <div class="connection-field"><label for="connection-provider">平台</label><select id="connection-provider"><option value="gitlab">GitLab</option><option value="feishu">飞书</option><option value="lark">Lark</option></select></div>
+        <div class="connection-field"><label for="connection-provider">平台</label><select id="connection-provider"><option value="gitlab">GitLab</option><option value="scion">Scion</option><option value="feishu">飞书</option><option value="lark">Lark</option></select></div>
         <div id="connection-url-row" class="connection-field connection-field-wide"><label for="connection-url">实例地址</label><input id="connection-url" type="url" required placeholder="https://gitlab.example.com"></div>
+        <div id="connection-scion-row" class="connection-field connection-field-wide" hidden>
+          <label for="connection-scion-profile">Scion profile ID</label><input id="connection-scion-profile" spellcheck="false" placeholder="32 位小写十六进制 ID">
+          <label for="connection-scion-executable">teamx-scion 路径</label><input id="connection-scion-executable" spellcheck="false" placeholder="服务端可执行文件的绝对路径">
+          <p class="quiet">先在服务端的独立 profile 中完成原生 PAT 登录，再保存并验证连接。每个成员需在工具设置中单独选择此连接；更换账号时使用新的 profile ID。</p>
+        </div>
         <div id="connection-profile-row" class="connection-field connection-field-wide" hidden>
           <div id="connection-profile-choice" hidden><label for="connection-profile">应用配置</label><select id="connection-profile" aria-describedby="connections-feedback"></select></div>
           <p id="connection-account" class="connection-account" role="status" aria-live="polite">正在检测账号…</p>

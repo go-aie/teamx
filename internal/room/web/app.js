@@ -292,61 +292,76 @@ const gitlabEventStatuses = { disabled: "已关闭", initializing: "初始化中
 const gitlabEventErrors = { credential_unavailable: "凭据不可用，请验证所选平台连接。", credential_rejected: "GitLab 拒绝访问，请检查权限和凭据。", binding_changed: "绑定已变化，请核对后保存设置。", project_identity_changed: "项目身份已变化，需要核查绑定。", capacity: "接收容量已满，进度未推进。", query_failed: "查询失败，将按退避计划重试。", room_capacity: "房间消息或投递回执容量已满，事件保留在积压中。" };
 const notificationTargetErrors = { target_unavailable: "投递目标暂不可用，通知保留在来源积压中。", target_removed: "接收成员已移除，旧积压保留原目标；同名新成员不会继承。", inbox_capacity: "成员收件箱容量已满，新通知保留在来源积压中。" };
 function notificationTarget(config) { const t = config?.target; return t?.mode === "inbox" ? { mode: "inbox", agent_id: t.agent_id, membership_id: t.membership_id } : {}; }
-function fillNotificationTarget(channel, target) {
-  const value = JSON.stringify(target || {}), options = [new Option("房间消息（公开）", "{}"), ...state.members.map(m => new Option(`${memberRole(m)?.name || m.agent_id} · 收件箱`, JSON.stringify({mode:"inbox", agent_id:m.agent_id, membership_id:m.membership_id})))];
-  if (!options.some(o => o.value === value)) options.push(new Option("原接收成员已失效", value));
-  setNotificationOptions(`gitlab-${channel}-target`, options); $(`gitlab-${channel}-target`).value = value;
+function notificationTargetOptions() {
+  return [new Option("房间消息（公开）", "{}"), ...state.members.map(member => new Option(`${memberRole(member)?.name || member.agent_id} · 收件箱`, JSON.stringify({ mode: "inbox", agent_id: member.agent_id, membership_id: member.membership_id })))];
 }
-function draftNotificationTarget(channel) { try { return JSON.parse($(`gitlab-${channel}-target`).value || "{}"); } catch { return {}; } }
+function gitlabConfig(config = {}) {
+  const e = config.events || {}, t = todoConfig(config.todos || {});
+  delete t.connection_id; delete t.target;
+  return { connection_id: config.connection_id || "", target: notificationTarget(config),
+    events: { enabled: !!e.enabled, project: e.project || "", interval_seconds: e.interval_seconds ?? 5, etag_verified: !!e.etag_verified,
+      filter: { types: [...(e.filter?.types || [])], branches: [...(e.filter?.branches || [])], ignore_users: [...(e.filter?.ignore_users || [])] } }, todos: t };
+}
+function gitlabDraft() { return workspaceView?.gitlabDraft || gitlabConfig(); }
+function gitlabSettingsBusy(ws) { return !ws?.gitlabConnected || !!ws.gitlabSending || !!ws.gitlab?.applying || managementBusy(); }
+function gitlabConfigKey(config) {
+  const c = gitlabConfig(config);
+  return JSON.stringify([c.connection_id, c.target, gitlabEventConfigKey(c.events), todoConfigKey(c.todos)]);
+}
+function acceptGitLabView(ws, view, saved = false) {
+  ws.gitlab = view; ws.gitlabConnected = true;
+  ws.events = view.events; ws.todos = view.todos; ws.eventsConnected = ws.todosConnected = true;
+  if (saved || !ws.gitlabDirty || !ws.eventsEmptyTypes && gitlabConfigKey(ws.gitlabDraft) === gitlabConfigKey(view.config)) { ws.gitlabDraft = gitlabConfig(view.config); ws.gitlabDirty = false; ws.eventsEmptyTypes = false; }
+}
+function editGitLabConfig() {
+  const ws = workspaceView;
+  ws.gitlabDirty = !!ws.eventsEmptyTypes || gitlabConfigKey(ws.gitlabDraft) !== gitlabConfigKey(ws.gitlab.config);
+  ws.gitlabError = ""; ws.gitlabFeedback = "";
+  renderGitLabEvents();
+}
+function gitlabConnectionOptions(selected, placeholder) {
+  const connections = workspaceView?.connections || [];
+  const options = [new Option(placeholder, ""), ...connections.map(item => new Option(`${item.name} · ${item.url}`, item.id))];
+  if (selected && !connections.some(item => item.id === selected)) options.push(new Option("原连接暂不可用", selected));
+  return options;
+}
 const gitlabEventTypeIDs = ["opened", "merged", "closed", "note", "push"];
 const gitlabEventTypeInputs = () => gitlabEventTypeIDs.map(id => $(`gitlab-events-type-${id}`));
-function gitlabEventDraft() {
-  const types = gitlabEventTypeInputs().filter(input => input.checked).map(input => input.value);
-  const lines = id => $(id).value.split(/\r?\n/).map(value => value.trim()).filter(Boolean);
-  return { target: draftNotificationTarget("events"), connection_id: $("gitlab-events-connection").value, project: $("gitlab-events-project").value.trim(),
-    enabled: $("gitlab-events-enabled").checked, interval_seconds: Number($("gitlab-events-interval").value),
-    etag_verified: workspaceView?.events?.config.etag_verified || false,
-    filter: { types: types.length === gitlabEventTypeIDs.length ? [] : types, branches: lines("gitlab-events-branches"), ignore_users: lines("gitlab-events-ignore") } };
-}
 function gitlabEventConfigKey(config) {
-  const unique = values => [...new Set(values || [])].sort();
-  const types = unique(config.filter.types);
-  return JSON.stringify({ target: notificationTarget(config), connection: config.connection_id || "", project: config.project || "", enabled: config.enabled, interval: config.interval_seconds,
-    types: types.length === gitlabEventTypeIDs.length ? [] : types, branches: unique(config.filter.branches),
-    users: unique((config.filter.ignore_users || []).map(user => user.toLowerCase())) });
+  const unique = values => [...new Set(values || [])].sort(), types = unique(config.filter?.types);
+  return JSON.stringify({ project: config.project || "", enabled: config.enabled, interval: config.interval_seconds, etag_verified: !!config.etag_verified,
+    types: types.length === gitlabEventTypeIDs.length ? [] : types, branches: unique(config.filter?.branches), users: unique((config.filter?.ignore_users || []).map(user => user.toLowerCase())) });
 }
 function gitlabEventDraftState(data) {
-  const config = gitlabEventDraft();
-  const saved = { ...data.config, connection_id: data.config.connection_id || data.project?.connection_id || "", project: data.config.project || data.project?.project || "" };
-  const connection = workspaceView?.connections?.find(c => c.id === config.connection_id);
-  const identityChanged = !!(config.enabled && data.subscription_id && data.recipient_id > 0 && todoVerified(connection) &&
-    (data.recipient_id !== connection.validation.user_id || data.instance !== connection.url));
-  const targetChanged = config.connection_id !== saved.connection_id || config.project !== saved.project || identityChanged;
-  const targetInvalid = config.enabled && (!data.subscription_version || targetChanged) && (!todoVerified(connection) || !config.project);
-  const count = gitlabEventTypeInputs().filter(input => input.checked).length;
-  return { config, count, dirty: count === 0 || identityChanged || gitlabEventConfigKey(config) !== gitlabEventConfigKey(saved), targetChanged, targetInvalid,
+  const root = gitlabDraft(), config = root.events, connection = workspaceView?.connections?.find(c => c.id === root.connection_id);
+  const identityChanged = !!(config.enabled && data.subscription_id && data.recipient_id > 0 && todoVerified(connection) && (data.recipient_id !== connection.validation.user_id || data.instance !== connection.url));
+  const targetChanged = root.connection_id !== workspaceView?.gitlab?.config.connection_id || config.project !== data.config.project || identityChanged;
+  const targetInvalid = config.enabled && (!todoVerified(connection) || !config.project);
+  const count = workspaceView?.eventsEmptyTypes ? 0 : config.filter.types.length || gitlabEventTypeIDs.length;
+  return { config, count, dirty: !!workspaceView?.eventsEmptyTypes || identityChanged || gitlabEventConfigKey(config) !== gitlabEventConfigKey(workspaceView?.gitlab?.config.events || config), targetChanged, targetInvalid,
     invalid: targetInvalid || config.enabled && (count === 0 || !Number.isInteger(config.interval_seconds) || config.interval_seconds < 3 || config.interval_seconds > 30) };
 }
 async function syncGitLabNotifications(catalog, ws) {
   if (ws !== workspaceView) return;
-  const revisions = { events: ws.eventsRevision, todos: ws.todosRevision, messages: ws.messagesRevision };
+  const revisions = { messages: ws.messagesRevision, gitlab: ws.gitlabRevision };
   const read = ws.notificationsRead = (ws.notificationsRead || 0) + 1;
   try {
     const params = new URLSearchParams({ service_epoch: catalog.service_epoch, caller_id: ws.operator, ...ws.room });
     const data = await request(`/v1/platform/notifications?${params}`);
     if (ws !== workspaceView || state.catalog.service_epoch !== catalog.service_epoch || read !== ws.notificationsRead) return;
-    for (const channel of ["events", "todos", "messages"]) {
+    for (const channel of ["messages"]) {
       if (ws[`${channel}Sending`] || ws[`${channel}Revision`] !== revisions[channel]) continue;
       const next = data.subscriptions.find(source => source.provider === (channel === "messages" ? "lark" : "gitlab") && source.channel === channel);
-      if (channel === "todos" && next && ws.todosDraft && ws.todos && todoConfigKey(ws.todosDraft) === todoConfigKey(ws.todos.config)) {
-        ws.todosDraft = todoConfig(next.config); fillGitLabTodos(ws.todosDraft);
-      }
       ws[channel] = next;
       ws[`${channel}Connected`] = !!ws[channel];
     }
+    if (!ws.gitlabSending && ws.gitlabRevision === revisions.gitlab) {
+      if (data.gitlab) acceptGitLabView(ws, data.gitlab); else ws.gitlabConnected = ws.eventsConnected = ws.todosConnected = false;
+    }
   } catch {
     if (ws !== workspaceView || state.catalog?.service_epoch !== catalog.service_epoch || read !== ws.notificationsRead) return;
-    for (const channel of ["events", "todos", "messages"]) if (!ws[`${channel}Sending`] && ws[`${channel}Revision`] === revisions[channel]) ws[`${channel}Connected`] = false;
+    if (!ws.gitlabSending && ws.gitlabRevision === revisions.gitlab) ws.gitlabConnected = ws.eventsConnected = ws.todosConnected = false;
+    for (const channel of ["messages"]) if (!ws[`${channel}Sending`] && ws[`${channel}Revision`] === revisions[channel]) ws[`${channel}Connected`] = false;
   }
 }
 function larkConfigKey(c = {}) {return JSON.stringify({scope_mode:c.scope_mode || "specified",enabled:!!c.enabled,connection_id:c.connection_id || "",chats:[...(c.chats || [])].sort(),target:notificationTarget(c),private:!!c.private,group_mentions:!!c.group_mentions,group_all:!!c.group_all,at_all:!!c.at_all,bots:!!c.bots,interval_seconds:c.interval_seconds || 60,backfill_seconds:c.backfill_seconds || 0,backfill_start:c.backfill_start ? new Date(c.backfill_start).toISOString() : ""});}
@@ -508,104 +523,46 @@ $("lark-save").addEventListener("click",()=>changeLarkMessages("configure"));
 $("lark-sync").addEventListener("click",()=>changeLarkMessages("sync"));
 $("lark-manage-connections").addEventListener("click",async()=>{showConnectionList();$("settings-dialog").showModal();await loadConnections();});
 function renderGitLabEvents() {
-  renderNotificationSource();
-  renderGitLabTodos();
-  renderLarkMessages();
-  const ws = workspaceView, data = ws?.events;
+  renderNotificationSource(); renderGitLabTodos(); renderLarkMessages();
+  const ws = workspaceView, data = ws?.events, config = ws?.gitlabDraft?.events;
   $("gitlab-events").hidden = !data || !data.available && !data.subscription_version;
-  if (!data) { $("gitlab-events-fields").disabled = true; return; }
-  const formVersion = JSON.stringify([data.subscription_id, data.subscription_version]);
-  if (ws.eventsFormVersion !== formVersion && !ws.eventsSending) {
-    fillNotificationTarget("events", notificationTarget(data.config));
-    ws.eventsConnection = data.config.connection_id || data.project?.connection_id || "";
-    $("gitlab-events-project").value = data.config.project || data.project?.project || "";
-    $("gitlab-events-enabled").checked = data.config.enabled;
-    $("gitlab-events-interval").value = data.config.interval_seconds;
-    for (const input of gitlabEventTypeInputs()) input.checked = !data.config.filter.types?.length || data.config.filter.types.includes(input.value);
-    $("gitlab-events-branches").value = (data.config.filter.branches || []).join("\n");
-    $("gitlab-events-ignore").value = (data.config.filter.ignore_users || []).join("\n");
-    ws.eventsFormVersion = formVersion;
-  }
-  fillNotificationTarget("events", draftNotificationTarget("events"));
-  const options = [new Option("请选择平台连接", ""), ...(ws.connections || []).map(item => new Option(`${item.name} · ${item.url}`, item.id))];
-  if (ws.eventsConnection && !ws.connections?.some(c => c.id === ws.eventsConnection)) options.push(new Option("原连接暂不可用", ws.eventsConnection));
-  setNotificationOptions("gitlab-events-connection", options); $("gitlab-events-connection").value = ws.eventsConnection || "";
-  const connection = ws.connections?.find(c => c.id === ws.eventsConnection);
-  $("gitlab-events-account").textContent = todoVerified(connection) ? `接收账号：@${connection.validation.username}（ID ${connection.validation.user_id}，已验证）` : ws.eventsConnection ? "接收账号：请先验证平台连接" : ws.connectionsError || "请选择平台连接";
-  const busy = !!(ws.eventsSending || !ws.eventsConnected || managementBusy());
+  $("gitlab-events-fields").disabled = !config || gitlabSettingsBusy(ws);
+  if (!data || !config) { renderGitLabSettings(); return; }
+  $("gitlab-events-project").value = config.project;
+  $("gitlab-events-enabled").checked = config.enabled;
+  $("gitlab-events-interval").value = config.interval_seconds;
+  for (const input of gitlabEventTypeInputs()) input.checked = !ws.eventsEmptyTypes && (!config.filter.types.length || config.filter.types.includes(input.value));
+  $("gitlab-events-branches").value = config.filter.branches.join("\n");
+  $("gitlab-events-ignore").value = config.filter.ignore_users.join("\n");
   const draft = gitlabEventDraftState(data);
   $("gitlab-events-all-types").checked = draft.count === gitlabEventTypeIDs.length;
   $("gitlab-events-all-types").indeterminate = draft.count > 0 && draft.count < gitlabEventTypeIDs.length;
-  $("gitlab-events-fields").disabled = busy;
-  $("gitlab-events-enabled").disabled = !data.available && !data.config.enabled;
-  $("gitlab-events-save").disabled = busy || !draft.dirty || draft.invalid || !data.subscription_version && !draft.config.enabled;
-  $("gitlab-events-save").textContent = ws.eventsSending === "configure" ? "保存中…"
-    : draft.config.enabled !== data.config.enabled ? draft.config.enabled ? "开启监听" : "关闭监听"
-    : draft.dirty ? "保存更改" : data.subscription_version ? "已保存" : "开启监听";
-  $("gitlab-events-sync").hidden = !data.config.enabled;
-  $("gitlab-events-sync").disabled = busy || draft.dirty || !data.config.enabled;
-  const retry = data.error_code || data.delivery_error_code || ["backoff", "credentials_invalid", "capacity", "binding_changed"].includes(data.status);
-  $("gitlab-events-sync-label").textContent = ws.eventsSending === "sync" ? "请求中…" : retry ? "重试同步" : "立即同步";
-  $("gitlab-events-state").textContent = gitlabEventStatuses[data.status] || data.status;
-  $("gitlab-events-feedback").textContent = ws.eventsSending ? ws.eventsSending === "configure" ? "正在保存设置…" : "正在请求同步…"
-    : draft.invalid ? draft.targetInvalid ? "请选择已验证连接并填写项目" : draft.count === 0 ? "请至少选择一种活动" : "检查周期须为 3～30 秒"
-    : draft.dirty ? "有未保存的更改" : ws.eventsFeedback || (data.subscription_version ? "设置已保存" : "尚未开启");
-  $("gitlab-events-feedback").setAttribute("data-pending", String(draft.dirty));
-  $("gitlab-events-action-hint").textContent = draft.config.enabled && draft.count === 0 ? "至少勾选一种活动；停止接收请取消「接收 GitLab 活动」。"
-    : draft.dirty && draft.targetChanged && data.subscription_id ? "更换连接、账号或项目将新建订阅，从保存时刻接收；旧进度与积压保留在旧订阅。"
-    : draft.dirty ? "保存后生效；立即同步使用已保存的设置。"
-    : !data.config.enabled ? "开启后接收新活动；关闭时保留进度和积压。"
-    : retry ? "修复认证或错误原因后，点击重试同步。"
-    : "已按检查周期自动接收活动；立即同步可提前检查并补查遗漏。";
+  $("gitlab-events-feedback").textContent = draft.invalid ? draft.targetInvalid ? "请选择已验证连接并填写项目" : "请检查活动筛选和检查周期" : draft.dirty ? "有未保存的更改" : data.subscription_id ? "设置已保存" : "尚未开启";
+  $("gitlab-events-action-hint").textContent = draft.targetChanged && data.subscription_id ? "更换连接、账号或项目将新建订阅；旧进度与积压保留。" : "";
   const date = value => value ? new Date(value).toLocaleString("zh-CN") : "尚无";
   $("gitlab-events-status").textContent = `${gitlabEventStatuses[data.status] || data.status} · 待投递 ${data.pending} · 最近检查 ${date(data.last_check)} · 完整补查 ${date(data.last_full)}` +
-    (data.retry_at ? ` · 下次重试 ${date(data.retry_at)}` : "") + (data.gap ? " · 长时间离线区间无法保证补齐" : "") +
-    ` · 请求 ${data.metrics.calls} 次 / ${data.metrics.response_bytes} 字节`;
-  notice("gitlab-events-error", ws.eventsError || (!ws.eventsConnected ? "事件状态暂不可读，正在重连。" : notificationTargetErrors[data.delivery_error_code] || gitlabEventErrors[data.delivery_error_code] || gitlabEventErrors[data.error_code] || ""));
-}
-async function changeGitLabEvents(action) {
-  const ws = workspaceView;
-  if (!ws?.events || ws.eventsSending || !ws.eventsConnected || managementBusy()) return;
-  const payload = { service_epoch: state.catalog.service_epoch, caller: { kind: "human", id: ws.operator }, ...ws.room, provider: "gitlab", channel: "events", subscription_id: ws.events.subscription_id, subscription_version: ws.events.subscription_version };
-  const draft = gitlabEventDraftState(ws.events);
-  if (action === "configure") {
-    if (!draft.dirty || draft.invalid) { renderGitLabEvents(); return; }
-    payload.config = draft.config;
-  } else if (draft.dirty || !ws.events.config.enabled) {
-    renderGitLabEvents(); return;
-  }
-  ws.eventsRevision = (ws.eventsRevision || 0) + 1;
-  ws.eventsSending = action; ws.eventsError = ""; ws.eventsFeedback = ""; renderGitLabEvents();
-  try {
-    const data = await request(`/v1/platform/notifications/${action}`, payload);
-    if (ws !== workspaceView || state.catalog?.service_epoch !== payload.service_epoch) return;
-    ws.events = data;
-    ws.eventsFormVersion = undefined;
-    ws.eventsFeedback = action === "sync" ? "已发起同步，结果将自动更新" : data.config.enabled ? "设置已保存，正在接收活动" : "监听已关闭";
-  } catch (error) {
-    if (ws !== workspaceView || state.catalog?.service_epoch !== payload.service_epoch) return;
-    ws.eventsError = error.code === "request" ? "活动设置无效，请检查连接验证、项目访问权限、周期及过滤内容。" : error.code === "conflict" ? "设置版本已变化，请核对最新设置后重新保存。" : "设置结果待核查，请查看最新状态后显式重试；不会自动重发。";
-    ws.eventsSending = false;
-    await syncGitLabNotifications(state.catalog, ws);
-  } finally {
-    if (ws === workspaceView) { ws.eventsRevision++; ws.eventsSending = false; renderGitLabEvents(); }
-  }
+    (data.retry_at ? ` · 下次重试 ${date(data.retry_at)}` : "") + (data.gap ? " · 长时间离线区间无法保证补齐" : "") + ` · 请求 ${data.metrics.calls} 次 / ${data.metrics.response_bytes} 字节`;
+  notice("gitlab-events-error", gitlabApplyNotice(ws, "events") || notificationTargetErrors[data.delivery_error_code] || gitlabEventErrors[data.delivery_error_code] || gitlabEventErrors[data.error_code] || "");
+  renderGitLabSettings();
 }
 function editGitLabEvents(event) {
-  if (workspaceView && event?.target === $("gitlab-events-connection")) workspaceView.eventsConnection = $("gitlab-events-connection").value;
-  if (workspaceView) { workspaceView.eventsFeedback = ""; workspaceView.eventsError = ""; }
-  renderGitLabEvents();
+  const ws = workspaceView;
+  if (!ws?.gitlabDraft || gitlabSettingsBusy(ws)) { renderGitLabEvents(); return; }
+  const types = gitlabEventTypeInputs().filter(input => input.checked).map(input => input.value);
+  const lines = id => $(id).value.split(/\r?\n/).map(value => value.trim()).filter(Boolean);
+  ws.eventsEmptyTypes = !types.length;
+  Object.assign(ws.gitlabDraft.events, { enabled: $("gitlab-events-enabled").checked, project: $("gitlab-events-project").value.trim(), interval_seconds: Number($("gitlab-events-interval").value),
+    filter: { types: types.length === gitlabEventTypeIDs.length ? [] : types, branches: lines("gitlab-events-branches"), ignore_users: lines("gitlab-events-ignore") } });
+  if (event?.target === $("gitlab-events-enabled") && event.target.checked) $("gitlab-events-settings").open = true;
+  editGitLabConfig();
 }
-for (const id of ["gitlab-events-connection", "gitlab-events-project", "gitlab-events-enabled", "gitlab-events-interval", "gitlab-events-branches", "gitlab-events-ignore", ...gitlabEventTypeIDs.map(id => `gitlab-events-type-${id}`)]) {
-  $(id).addEventListener("input", editGitLabEvents);
-  $(id).addEventListener("change", editGitLabEvents);
+for (const id of ["gitlab-events-project", "gitlab-events-enabled", "gitlab-events-interval", "gitlab-events-branches", "gitlab-events-ignore", ...gitlabEventTypeIDs.map(id => `gitlab-events-type-${id}`)]) {
+  for (const event of ["input", "change"]) $(id).addEventListener(event, editGitLabEvents);
 }
 $("gitlab-events-all-types").addEventListener("change", () => {
   for (const input of gitlabEventTypeInputs()) input.checked = $("gitlab-events-all-types").checked;
   editGitLabEvents();
 });
-$("gitlab-events-save").addEventListener("click", () => changeGitLabEvents("configure"));
-$("gitlab-events-sync").addEventListener("click", () => changeGitLabEvents("sync"));
 const gitlabTodoReasons = ["mentioned", "assigned", "review_requested", "other"];
 const gitlabTodoTypes = ["merge_request", "work_item"];
 const gitlabTodoErrors = { ...gitlabEventErrors, credential_unavailable: "个人连接凭据不可用，请在平台连接中重新验证。", binding_changed: "账号或当前项目绑定已变化，请核对后显式保存。", scan_incomplete: "补查尚未完成，将按检查周期继续；完整同步时间尚未更新。" };
@@ -624,7 +581,7 @@ function todoConfigKey(config) {
   c.filter.reasons.sort(); c.filter.types.sort();
   return JSON.stringify(c);
 }
-function todoConnection(ws, config) { return ws.connections?.find(item => item.id === config.connection_id); }
+function todoConnection(ws, config) { return ws.connections?.find(item => item.id === (config.connection_id ?? ws.gitlabDraft?.connection_id)); }
 function todoVerified(connection) { return connection?.validation?.status === "valid" && connection.validation.user_id > 0; }
 function todoCurrentProject(ws, config) {
   const binding = ws.data?.workspace?.binding, connection = todoConnection(ws, config);
@@ -638,8 +595,18 @@ function todoProjectChanged(ws) {
   const key = p => JSON.stringify([p?.url, p?.project_id, p?.project, p?.connection_id, p?.connection_generation]);
   return data.status === "binding_changed" || !!data.project && key(data.project) !== key(current);
 }
+function gitlabTodoDraftState(ws) {
+  const data = ws.todos, config = ws.gitlabDraft.todos;
+  const connection = todoConnection(ws, config), project = todoCurrentProject(ws, config);
+  const changed = todoProjectChanged(ws);
+  const switching = data.subscription_id && todoVerified(connection) && (data.recipient_id !== connection.validation.user_id || data.instance !== connection.url);
+  const dirty = todoConfigKey(config) !== todoConfigKey(ws.gitlab.config.todos) || changed || !!switching && config.enabled;
+  const invalid = !Number.isInteger(config.interval_seconds) || config.interval_seconds < 3 || config.interval_seconds > 3600 ||
+    !Number.isInteger(config.inactive_interval_seconds) || config.inactive_interval_seconds < config.interval_seconds || config.inactive_interval_seconds > 86400;
+  const unavailable = config.enabled && (!todoVerified(connection) || config.project_scope === "current" && !project);
+  return { connection, project, changed, switching, dirty, invalid, unavailable };
+}
 function fillGitLabTodos(config) {
-  fillNotificationTarget("todos", notificationTarget(config));
   $("gitlab-todos-enabled").checked = config.enabled;
   $("gitlab-todos-interval").value = config.interval_seconds;
   $("gitlab-todos-inactive-interval").value = config.inactive_interval_seconds;
@@ -647,112 +614,118 @@ function fillGitLabTodos(config) {
     for (const value of values) $(`gitlab-todos-${group}-${value}`).checked = config.filter[group === "reason" ? "reasons" : "types"].includes(value);
 }
 function renderGitLabTodos() {
-  const ws = workspaceView, data = ws?.todos;
-  $("gitlab-todos-fields").disabled = !data || !!ws.todosSending || !ws.todosConnected || managementBusy();
-  $("gitlab-todos-save").disabled = true; $("gitlab-todos-sync").disabled = true;
-  $("gitlab-todos-manage-connections").disabled = !ws;
-  if (!data) {
-    fillGitLabTodos(todoConfig({}));
-    setNotificationOptions("gitlab-todos-connection", [new Option("正在读取…", "")]);
-    setNotificationOptions("gitlab-todos-scope", [new Option("所有可访问项目", "all")]);
-    for (const id of ["recipient", "project", "status", "feedback", "action-hint", "connection-notice"]) $(`gitlab-todos-${id}`).textContent = "";
-    $("gitlab-todos-state").textContent = "状态不可读";
-    notice("gitlab-todos-error", "待办状态暂不可读，请重新读取。");
-    return;
-  }
-  if (!ws.todosDraft) { ws.todosDraft = todoConfig(data.config); fillGitLabTodos(ws.todosDraft); }
-  const config = ws.todosDraft;
-  fillNotificationTarget("todos", notificationTarget(config));
-  const options = [new Option("请选择个人连接", ""), ...(ws.connections || []).map(item => new Option(`${item.name} · ${item.url}`, item.id))];
-  if (config.connection_id && !todoConnection(ws, config)) options.push(new Option("原连接暂不可用", config.connection_id));
-  setNotificationOptions("gitlab-todos-connection", options); $("gitlab-todos-connection").value = config.connection_id;
-  const connection = todoConnection(ws, config), project = todoCurrentProject(ws, config);
-  $("gitlab-todos-recipient").textContent = todoVerified(connection) ? `接收账号：@${connection.validation.username}（ID ${connection.validation.user_id}，已验证）`
-    : config.connection_id ? "接收账号：需重新验证个人连接" : "接收账号：请先选择个人连接";
-  const current = new Option(project ? "当前绑定项目" : "当前绑定项目（同实例有效绑定不可用）", "current");
-  current.disabled = !project;
+  const ws = workspaceView, data = ws?.todos, config = ws?.gitlabDraft?.todos;
+  $("gitlab-todos-fields").disabled = !config || gitlabSettingsBusy(ws);
+  if (!data || !config) { notice("gitlab-todos-error", ""); return; }
+  fillGitLabTodos(config);
+  const { project, changed, switching, dirty, invalid, unavailable } = gitlabTodoDraftState(ws);
+  const current = new Option(project ? "当前绑定项目" : "当前绑定项目（同实例有效绑定不可用）", "current"); current.disabled = !project;
   setNotificationOptions("gitlab-todos-scope", [current, new Option("所有可访问项目", "all")]); $("gitlab-todos-scope").value = config.project_scope;
-  const changed = todoProjectChanged(ws);
   $("gitlab-todos-project").textContent = project ? `当前项目：${project.project} · #${project.project_id}` : "无同实例项目绑定时，请选择所有可访问项目。";
-  if (changed) $("gitlab-todos-project").textContent += ` 原订阅项目：${data.project?.project || "绑定已变化"}。请核对范围后保存；立即同步不能跟随新项目。`;
-  const switching = data.subscription_id && todoVerified(connection) && (data.recipient_id !== connection.validation.user_id || data.instance !== connection.url);
-  const dirty = todoConfigKey(config) !== todoConfigKey(data.config) || changed || !!switching && config.enabled;
-  const invalid = !Number.isInteger(config.interval_seconds) || config.interval_seconds < 3 || config.interval_seconds > 3600 ||
-    !Number.isInteger(config.inactive_interval_seconds) || config.inactive_interval_seconds < config.interval_seconds || config.inactive_interval_seconds > 86400;
-  const busy = !!ws.todosSending || !ws.todosConnected || managementBusy();
-  const unavailable = config.enabled && (!todoVerified(connection) || config.project_scope === "current" && !project);
-  $("gitlab-todos-save").disabled = busy || !dirty || invalid || unavailable || !data.subscription_id && !config.enabled;
-  $("gitlab-todos-save").textContent = ws.todosSending === "configure" ? "保存中…" : !config.enabled && data.config.enabled ? "关闭监听"
-    : switching && config.enabled ? "为此账号重新开启" : changed ? "核对并保存" : !data.config.enabled && config.enabled ? "开启监听" : dirty ? "保存更改" : data.subscription_id ? "已保存" : "开启监听";
-  $("gitlab-todos-sync").hidden = !data.config.enabled;
-  $("gitlab-todos-sync").disabled = busy || dirty || unavailable || !data.config.enabled;
-  $("gitlab-todos-sync").textContent = ws.todosSending === "sync" ? "请求中…" : data.error_code || data.delivery_error_code ? "重试同步" : "立即同步";
-  $("gitlab-todos-state").textContent = gitlabEventStatuses[data.status] || data.status;
-  $("gitlab-todos-feedback").textContent = ws.todosSending ? ws.todosSending === "configure" ? "正在保存设置…" : "正在请求同步…"
-    : invalid ? "请检查房间可接收与暂存时的检查周期" : dirty ? "有未保存的更改" : ws.todosFeedback || (data.subscription_id ? "设置已保存" : "尚未开启");
-  $("gitlab-todos-feedback").setAttribute("data-pending", String(dirty));
-  $("gitlab-todos-action-hint").textContent = switching && config.enabled ? "保存将停用旧账号订阅，并为新账号建立新进度；旧消息和回执保留。"
-    : dirty ? "保存后生效；立即同步只使用已保存配置。" : "关闭保留进度和积压；凭据重新验证后，需显式同步恢复。";
+  if (changed) $("gitlab-todos-project").textContent += ` 原订阅项目：${data.project?.project || "绑定已变化"}。请核对范围后保存。`;
+  $("gitlab-todos-feedback").textContent = invalid || unavailable ? "请检查连接、范围与检查周期" : dirty ? "有未保存的更改" : data.subscription_id ? "设置已保存" : "尚未开启";
+  $("gitlab-todos-action-hint").textContent = switching && config.enabled ? "保存将停用旧账号订阅，并为新账号建立新进度；旧消息和回执保留。" : "";
   if (!config.filter.reasons.length || !config.filter.types.length) $("gitlab-todos-action-hint").textContent += " 当前过滤为空，不接收匹配项。";
-  $("gitlab-todos-connection-notice").textContent = ws.connectionsError || (!todoVerified(connection) ? "在平台连接中添加或重新验证账号后，返回此处选择。" : "个人连接仅用于待办查询。");
   const date = value => value ? new Date(value).toLocaleString("zh-CN") : "尚无";
   const skipped = Object.entries(data.skipped || {}).map(([reason, count]) => `${gitlabTodoSkipReasons[reason] || "其他原因"} ${count}`).join("、");
   $("gitlab-todos-status").textContent = `当前订阅：${data.subscription_id || "尚未开启"} · 接收账号 ${data.username ? `@${data.username}（ID ${data.recipient_id}）` : "尚无"} · 待投递 ${data.pending || 0} · 最近检查 ${date(data.last_check)} · 完整同步 ${date(data.last_full)}` +
     (data.retry_at ? ` · 下次重试 ${date(data.retry_at)}` : "") + (data.scan ? ` · ${data.scan.state === "done" ? "已完成待办" : "待处理待办"}第 ${data.scan.next_page} 页${data.scan.limited ? "（补查未完成）" : ""}` : "") +
     ` · 请求 ${data.metrics?.calls || 0} 次 / ${data.metrics?.response_bytes || 0} 字节` + (skipped ? ` · 跳过：${skipped}` : "");
-  notice("gitlab-todos-error", ws.todosError || (!ws.todosConnected ? "待办状态暂不可读，正在重连。" : notificationTargetErrors[data.delivery_error_code] || gitlabTodoErrors[data.delivery_error_code] || gitlabTodoErrors[data.error_code] || ""));
+  notice("gitlab-todos-error", gitlabApplyNotice(ws, "todos") || notificationTargetErrors[data.delivery_error_code] || gitlabTodoErrors[data.delivery_error_code] || gitlabTodoErrors[data.error_code] || "");
 }
-function editGitLabTodos(event) {
+function editGitLabTodos() {
   const ws = workspaceView;
-  if (!ws?.todosDraft) return;
-  const previous = ws.todosDraft;
-  const config = { target: draftNotificationTarget("todos"), enabled: $("gitlab-todos-enabled").checked, connection_id: $("gitlab-todos-connection").value, project_scope: $("gitlab-todos-scope").value,
+  if (!ws?.gitlabDraft || gitlabSettingsBusy(ws)) { renderGitLabEvents(); return; }
+  Object.assign(ws.gitlabDraft.todos, { enabled: $("gitlab-todos-enabled").checked, project_scope: $("gitlab-todos-scope").value,
     interval_seconds: Number($("gitlab-todos-interval").value), inactive_interval_seconds: Number($("gitlab-todos-inactive-interval").value),
-    filter: { reasons: gitlabTodoReasons.filter(value => $(`gitlab-todos-reason-${value}`).checked), types: gitlabTodoTypes.filter(value => $(`gitlab-todos-type-${value}`).checked) } };
-  if (event?.target === $("gitlab-todos-connection") && !ws.todos.subscription_id && previous.connection_id !== config.connection_id)
-    config.project_scope = todoCurrentProject(ws, config) ? "current" : "all";
-  ws.todosDraft = config; ws.todosEdit = (ws.todosEdit || 0) + 1; ws.todosError = ""; ws.todosFeedback = "";
-  renderGitLabTodos();
+    filter: { reasons: gitlabTodoReasons.filter(value => $(`gitlab-todos-reason-${value}`).checked), types: gitlabTodoTypes.filter(value => $(`gitlab-todos-type-${value}`).checked) } });
+  editGitLabConfig();
 }
-async function changeGitLabTodos(action) {
-  const ws = workspaceView;
-  if (!ws?.todos || ws.todosSending || !ws.todosConnected || managementBusy()) return;
-  renderGitLabTodos();
-  if ($(action === "configure" ? "gitlab-todos-save" : "gitlab-todos-sync").disabled) return;
-  const edit = ws.todosEdit, payload = { service_epoch: state.catalog.service_epoch, caller: { kind: "human", id: ws.operator }, ...ws.room,
-    provider: "gitlab", channel: "todos", subscription_id: ws.todos.subscription_id, subscription_version: ws.todos.subscription_version };
-  if (action === "configure") payload.config = structuredClone(ws.todosDraft);
-  ws.todosRevision = (ws.todosRevision || 0) + 1;
-  ws.todosSending = action; ws.todosError = ""; ws.todosFeedback = ""; renderGitLabTodos();
-  try {
-    const data = await request(`/v1/platform/notifications/${action}`, payload);
-    if (ws !== workspaceView || state.catalog?.service_epoch !== payload.service_epoch) return;
-    ws.todos = data;
-    if (edit === ws.todosEdit) {
-      ws.todosDraft = todoConfig(data.config); fillGitLabTodos(ws.todosDraft);
-      ws.todosFeedback = action === "sync" ? "已发起同步，结果将自动更新" : data.config.enabled ? "设置已保存，正在接收待办" : "监听已关闭";
-    }
-  } catch (error) {
-    if (ws !== workspaceView || state.catalog?.service_epoch !== payload.service_epoch) return;
-    if (edit === ws.todosEdit) ws.todosError = error.code === "conflict" ? "订阅、账号或项目已变化，请核对最新状态后显式保存。"
-      : error.code === "request" ? "待办设置无效，请检查个人连接、范围与周期。" : "设置结果待核查，请读取最新状态后显式重试；不会自动重发。";
-    // A failed mutation may have committed. Reconcile by reading, never replay it.
-    ws.todosSending = false;
-    await syncGitLabNotifications(state.catalog, ws);
-  } finally {
-    if (ws === workspaceView) { ws.todosRevision++; ws.todosSending = false; renderGitLabEvents(); }
-  }
-}
-for (const id of ["target", "enabled", "connection", "scope", "interval", "inactive-interval", ...gitlabTodoReasons.map(value => `reason-${value}`), ...gitlabTodoTypes.map(value => `type-${value}`)]) {
+for (const id of ["enabled", "scope", "interval", "inactive-interval", ...gitlabTodoReasons.map(value => `reason-${value}`), ...gitlabTodoTypes.map(value => `type-${value}`)]) {
   for (const event of ["input", "change"]) $(`gitlab-todos-${id}`).addEventListener(event, editGitLabTodos);
 }
-$("gitlab-todos-save").addEventListener("click", () => changeGitLabTodos("configure"));
-$("gitlab-todos-sync").addEventListener("click", () => changeGitLabTodos("sync"));
-$("gitlab-todos-manage-connections").addEventListener("click", async () => {
-  showConnectionList(); $("settings-dialog").showModal(); await loadConnections();
-});
 
-$("gitlab-events-target").addEventListener("change", renderGitLabEvents);
+const gitlabChannels = ["events", "todos"];
+function gitlabApplyNotice(ws, channel) {
+  const code = ws?.gitlab?.errors?.[channel];
+  if (code === "sync_failed") return "同步未完成，请核对连接后重试同步。";
+  return code ? "设置已保存，但此类消息尚未成功应用。修复连接或范围后，点击重试应用。" : ws?.gitlab?.pending?.[channel] ? "设置等待应用，请点击重试应用。" : "";
+}
+function gitlabChannelDirty(channel) {
+  const ws = workspaceView;
+  if (!ws?.gitlabDraft) return false;
+  return channel === "events" ? gitlabEventDraftState(ws.events).dirty : gitlabTodoDraftState(ws).dirty;
+}
+function gitlabNeedsApply(ws) {
+  if (!ws?.gitlabDraft) return false;
+  return gitlabChannels.some(channel => ws.gitlab.pending?.[channel] || gitlabChannelDirty(channel));
+}
+function renderGitLabSettings() {
+  const ws = workspaceView, shared = gitlabDraft();
+  const busy = gitlabSettingsBusy(ws);
+  $("gitlab-shared-fields").disabled = busy;
+  const connectionID = shared.connection_id, options = gitlabConnectionOptions(connectionID, "请选择 GitLab 连接");
+  setNotificationOptions("gitlab-connection", options); $("gitlab-connection").value = connectionID;
+  const connection = ws?.connections?.find(item => item.id === connectionID);
+  $("gitlab-account").textContent = todoVerified(connection) ? `接收账号：@${connection.validation.username}（ID ${connection.validation.user_id}，已验证）；“我的待办”属于此账号。`
+    : ws?.connectionsError || (connectionID ? "接收账号：需重新验证平台连接。" : "请选择平台连接，再勾选要接收的消息。");
+  const target = JSON.stringify(shared.target), targetOptions = notificationTargetOptions();
+  if (!targetOptions.some(option => option.value === target)) targetOptions.push(new Option("原接收成员已失效", target));
+  setNotificationOptions("gitlab-target", targetOptions); $("gitlab-target").value = target;
+  for (const channel of gitlabChannels) {
+    $(`gitlab-${channel}-enabled`).disabled = busy;
+    if (gitlabApplyNotice(ws, channel)) $(`gitlab-${channel}-settings`).open = true;
+    const data = ws?.[channel], error = ws?.gitlab?.errors?.[channel] || data?.error_code || data?.delivery_error_code;
+    $(`gitlab-${channel}-state`).textContent = !ws?.gitlabConnected ? "状态不可读" : ws.gitlab.pending?.[channel] ? "等待应用" : gitlabChannelDirty(channel) ? "待保存"
+      : error && data?.status === "running" ? "需处理" : gitlabEventStatuses[data?.status] || data?.status || "已关闭";
+    $(`gitlab-${channel}-summary`).setAttribute("data-error", String(!!error));
+  }
+  const pending = gitlabNeedsApply(ws), dirty = !!ws?.gitlabDirty;
+  const invalid = !!ws?.gitlabDraft && (gitlabEventDraftState(ws.events).invalid || gitlabTodoDraftState(ws).invalid || gitlabTodoDraftState(ws).unavailable);
+  $("gitlab-save").disabled = busy || !(dirty || pending) || invalid;
+  $("gitlab-save").textContent = ws?.gitlabSending === "configure" ? "保存中…" : !dirty && pending ? "重试应用" : "保存设置";
+  const active = ws?.gitlab?.config.events.enabled || ws?.gitlab?.config.todos.enabled;
+  $("gitlab-sync").hidden = !active;
+  $("gitlab-sync").disabled = busy || dirty || pending;
+  $("gitlab-sync").textContent = ws?.gitlabSending === "sync" ? "请求中…" : "立即同步";
+  $("gitlab-feedback").textContent = ws?.gitlabError || (ws?.gitlabSending ? "正在处理 GitLab 通知设置…"
+    : ws?.gitlab?.applying ? "正在应用 GitLab 通知设置…"
+    : ws?.gitlab?.errors?.config === "settings_mismatch" ? "现有订阅设置不一致，请选择公共连接和投递位置后保存。"
+    : pending && !dirty ? "设置已保存，部分消息等待应用。请核对提示后重试应用。" : dirty ? invalid ? "请完善设置后保存。" : "有未保存的更改" : ws?.gitlabFeedback || "");
+}
+function editGitLabShared(field) {
+  const ws = workspaceView;
+  if (!ws?.gitlabDraft || $("gitlab-shared-fields").disabled) { renderGitLabEvents(); return; }
+  const draft = ws.gitlabDraft;
+  if (field === "connection") {
+    const previous = draft.connection_id; draft.connection_id = $("gitlab-connection").value;
+    if (!ws.todos.subscription_id && previous !== draft.connection_id) draft.todos.project_scope = todoCurrentProject(ws, draft.todos) ? "current" : "all";
+  } else draft.target = JSON.parse($("gitlab-target").value);
+  editGitLabConfig();
+}
+for (const field of ["connection", "target"]) $(`gitlab-${field}`).addEventListener("change", () => editGitLabShared(field));
+async function changeGitLabSettings(action) {
+  const ws = workspaceView;
+  if (!ws || $(action === "configure" ? "gitlab-save" : "gitlab-sync").disabled) return;
+  const payload = { service_epoch: state.catalog.service_epoch, caller: { kind: "human", id: ws.operator }, ...ws.room, version: ws.gitlab.version };
+  if (action === "configure") payload.config = structuredClone(ws.gitlabDraft);
+  ws.gitlabRevision = (ws.gitlabRevision || 0) + 1; ws.gitlabSending = action; ws.gitlabError = "";
+  renderGitLabEvents();
+  try {
+    const view = await request(`/v1/platform/gitlab/notifications/${action}`, payload);
+    if (ws !== workspaceView || state.catalog?.service_epoch !== payload.service_epoch) return;
+    acceptGitLabView(ws, view, true);
+    ws.gitlabFeedback = action === "sync" ? "已发起同步，结果将自动更新。" : "设置已保存。";
+  } catch (error) {
+    if (ws !== workspaceView || state.catalog?.service_epoch !== payload.service_epoch) return;
+    ws.gitlabError = error.code === "conflict" ? action === "sync" ? "配置、账号或范围已变化，请核对最新状态。" : "设置版本已变化，请核对最新状态后重新保存。" : error.code === "request" ? "设置无效，请检查连接、范围和筛选。" : "结果未确认，请核对最新状态后显式重试；不会自动重发。";
+    ws.gitlabSending = false; await syncGitLabNotifications(state.catalog, ws);
+  } finally {
+    if (ws === workspaceView) { ws.gitlabRevision++; ws.gitlabSending = false; renderGitLabEvents(); }
+  }
+}
+$("gitlab-save").addEventListener("click", () => changeGitLabSettings("configure"));
+$("gitlab-sync").addEventListener("click", () => changeGitLabSettings("sync"));
 let notificationFocus = null;
 function renderContextViews() {
   const detail = $("activity-dialog").open || $("notification-detail").open;
@@ -764,13 +737,14 @@ function renderContextViews() {
 function renderNotificationSource() {
   const ws = workspaceView, data = ws?.events, binding = data?.project;
   const available = !!ws;
-  const channel = ws?.notificationChannel || "events";
+  const channel = ws?.notificationChannel || "gitlab";
+  const tab = channel === "messages" ? "messages" : "gitlab";
   const label = (key) => ws?.[`${key}Connected`] ? gitlabEventStatuses[ws[key]?.status] || "已关闭" : "状态不可读";
   $("notification-summary").textContent = `项目活动：${label("events")} · 我的待办：${label("todos")} · 飞书：${label("messages")}`;
-  for (const key of ["events", "todos", "messages"]) {
-    $(`notification-panel-${key}`).hidden = key !== channel;
-    $(`notification-tab-${key}`).setAttribute("aria-selected", String(key === channel));
-    $(`notification-tab-${key}`).setAttribute("tabindex", key === channel ? "0" : "-1");
+  for (const key of ["gitlab", "messages"]) {
+    $(`notification-panel-${key}`).hidden = key !== tab;
+    $(`notification-tab-${key}`).setAttribute("aria-selected", String(key === tab));
+    $(`notification-tab-${key}`).setAttribute("tabindex", key === tab ? "0" : "-1");
   }
   $("notification-sources").hidden = !available;
   $("notification-source-count").textContent = available ? "2" : "0";
@@ -780,9 +754,11 @@ function renderNotificationSource() {
   $("notification-connection").textContent = !binding ? "尚未绑定" : binding.connection_id
     ? `${connection?.name || "共享连接"} · ${binding.url}` : `旧认证（尚未迁移） · ${binding.url}`;
   $("notification-project").textContent = binding ? `${binding.project}${binding.project_id ? ` · #${binding.project_id}` : ""}` : "尚未绑定项目";
-  $("notification-manage-binding").disabled = !ws?.connected || !ws.data?.workspace?.binding?.connection_id || !!ws.eventsSending;
-  notice("notification-notice", !ws ? "请先打开房间，再管理通知源。" : !ws[`${channel}Connected`] ? "通知状态暂不可读，请重新读取。" : "");
-  $("notification-reload").hidden = !ws || !!ws[`${channel}Connected`];
+  $("notification-manage-binding").disabled = !ws?.connected || !ws.gitlabDraft || !ws.data?.workspace?.binding?.connection_id || gitlabSettingsBusy(ws);
+  $("gitlab-manage-connections").disabled = !ws;
+  const connected = tab === "messages" ? ws?.messagesConnected : ws?.gitlabConnected;
+  notice("notification-notice", !ws ? "请先打开房间，再管理通知源。" : !connected ? "通知状态暂不可读，请重新读取。" : "");
+  $("notification-reload").hidden = !ws || !!connected;
   renderContextViews();
 }
 function openNotificationSource(opener, channel) {
@@ -792,10 +768,15 @@ function openNotificationSource(opener, channel) {
   panels.members = true; savePanels(); renderPanels();
   if (!$("notification-detail").open) $("notification-detail").show();
   renderGitLabEvents(); $("close-notification").focus();
+  if (channel === "events" || channel === "todos") {
+    $(`gitlab-${channel}-settings`).open = true;
+    $(`gitlab-${channel}-summary`).focus();
+    $(`gitlab-${channel}-settings`).scrollIntoView({ block: "nearest" });
+  }
   if (window.innerWidth <= 640) $("notification-detail").scrollIntoView({ block: "start" });
   if (workspaceView) void loadWorkspaceConnections();
 }
-$("open-gitlab-source").addEventListener("click", () => openNotificationSource($("open-gitlab-source"),"events"));
+$("open-gitlab-source").addEventListener("click", () => openNotificationSource($("open-gitlab-source"),"gitlab"));
 $("open-lark-source").addEventListener("click", () => openNotificationSource($("open-lark-source"),"messages"));
 $("close-notification").addEventListener("click", () => $("notification-detail").close());
 $("notification-detail").addEventListener("close", () => {
@@ -812,21 +793,20 @@ $("notification-reload").addEventListener("click", async () => { await refresh()
 $("notification-manage-binding").addEventListener("click", () => {
   const ws = workspaceView, binding = ws?.data?.workspace?.binding;
   if (!ws || !binding?.connection_id || $("notification-manage-binding").disabled) return;
-  ws.eventsConnection = binding.connection_id;
-  $("gitlab-events-project").value = binding.project;
-  editGitLabEvents();
+  ws.gitlabDraft.connection_id = binding.connection_id; ws.gitlabDraft.events.project = binding.project;
+  editGitLabConfig();
 });
-$("gitlab-events-manage-connections").addEventListener("click", async () => {
+$("gitlab-manage-connections").addEventListener("click", async () => {
   showConnectionList(); $("settings-dialog").showModal(); await loadConnections();
 });
-for (const channel of ["events", "todos", "messages"]) {
+for (const channel of ["gitlab", "messages"]) {
   const tab = $(`notification-tab-${channel}`);
   tab.addEventListener("click", () => { if (workspaceView) workspaceView.notificationChannel = channel; renderGitLabEvents(); });
   tab.addEventListener("keydown", event => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
     event.preventDefault();
-    const tabs = ["events", "todos", "messages"];
-    const next = event.key === "Home" ? tabs[0] : event.key === "End" ? tabs.at(-1) : tabs[(tabs.indexOf(channel) + (event.key === "ArrowRight" ? 1 : 2)) % tabs.length];
+    const tabs = ["gitlab", "messages"];
+    const next = event.key === "Home" ? tabs[0] : event.key === "End" ? tabs.at(-1) : tabs[(tabs.indexOf(channel) + 1) % tabs.length];
     if (workspaceView) workspaceView.notificationChannel = next;
     renderGitLabEvents(); $(`notification-tab-${next}`).focus();
   });
@@ -2744,7 +2724,7 @@ $("dismiss-management").addEventListener("click", () => {
 });
 // Application secrets live only in memory and are never retried automatically.
 const connections = { items: [], selected: null, sending: false, generation: 0, formVersion: 0, discovery: null, detecting: false, auth: null, authTimer: null, gitlabAuth: null, gitlabTimer: null, gitlabPending: null };
-const connectionValidationErrors = { credential_unavailable: "登录凭据不可用，请核对账号授权或服务凭据配置。", credential_rejected: "认证失败，请核对当前账号登录和权限。", identity_mismatch: "profile 账号或应用已变化，请核对后重新验证。", permission_denied: "当前用户缺少读取权限，请检查授权。", cli_version_mismatch: "CLI 版本不匹配，需要已验收的 1.0.99。", cli_unavailable: "CLI 无法执行，请核对路径与后台运行权限。", query_failed: "连接失败，请检查地址或网络后重试验证。", invalid_response: "实例返回了无效的身份信息。" };
+const connectionValidationErrors = { credential_unavailable: "登录凭据不可用，请核对账号授权或服务凭据配置。", credential_rejected: "认证失败，请核对当前账号登录和权限。", identity_mismatch: "profile 账号或应用已变化，请核对后重新验证。", permission_denied: "当前用户缺少读取权限，请检查授权。", cli_version_mismatch: "CLI 版本不匹配，请使用对应工具已验收的固定版本。", cli_unavailable: "CLI 无法执行，请核对路径与后台运行权限。", query_failed: "连接失败，请检查地址或网络后重试验证。", invalid_response: "实例返回了无效的身份信息。" };
 function connectionFeedback(message = "", kind = "status") {
   const feedback = $("connections-feedback");
   feedback.textContent = message;
@@ -2761,20 +2741,23 @@ function connectionInputError(id, message) {
   $(id).focus();
 }
 function connectionAuthFields() {
-  const isLark = connectionIsLark();
+  const isLark = connectionIsLark(), isScion = connectionIsScion();
   for (const id of ["connection-executable", "connection-profile"]) $(id).setAttribute("aria-required", String(isLark));
   clearConnectionErrors();
   connectionFeedback();
   $("connection-validation").hidden=false;
-  if (isLark) $("connection-save").textContent = "保存连接";
+  if (isLark || isScion) $("connection-save").textContent = "保存连接";
+  $("connection-scion-row").hidden = !isScion;
   $("connection-profile-row").hidden = !isLark;
   $("connection-url-row").hidden = isLark;
   $("connection-url").required = !isLark;
-  $("gitlab-account-row").hidden = isLark;
-  if (isLark) $("gitlab-client-secret").value = "";
+  $("gitlab-account-row").hidden = isLark || isScion;
+  if (isLark || isScion) $("gitlab-client-secret").value = "";
   else renderGitLabAccount();
 }
-function connectionIsLark() { return $("connection-provider").value !== "gitlab"; }
+function connectionIsLark() { return ["feishu", "lark"].includes($("connection-provider").value); }
+function connectionIsScion() { return $("connection-provider").value === "scion"; }
+function scionProfileDraft() { return {version:1, executable:$("connection-scion-executable").value.trim(), profile:$("connection-scion-profile").value.trim(), brand:"scion", cli_version:"0.1.13"}; }
 function renderConnectionReferences() {
   const item = connections.selected;
   const affected = connectionIsLark() ? null : connections.gitlabPending?.affected || connections.gitlabAuth?.affected;
@@ -2918,7 +2901,7 @@ async function cancelGitLabAuth(keepalive = false) {
   clearGitLabConfirmation();
   const auth=connections.gitlabAuth;clearGitLabAuthView();connections.gitlabAuth=null;connections.formVersion++;
   if (auth) {try {const body=connectionPayload({session_id:auth.session_id}); if (keepalive) await globalThis.fetch("/v1/platform/connections/gitlab/cancel",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),credentials:"same-origin",keepalive:true}); else await request("/v1/platform/connections/gitlab/cancel",body);} catch { /* Explicit list refresh reconciles a late commit. */ }}
-  if (!connectionIsLark()) renderGitLabAccount();
+  if (!connectionIsLark() && !connectionIsScion()) renderGitLabAccount();
 }
 async function cancelConnectionAuth() {await cancelGitLabAuth();await cancelLarkAuth();}
 $("gitlab-login").addEventListener("click",()=>startGitLabAuth("login"));
@@ -3118,7 +3101,7 @@ function renderConnections() {
   $("connections-list").replaceChildren(...connections.items.map(item => {
     const button = document.createElement("button"); button.type = "button"; button.className = "connection-row";
     const label = document.createElement("span"), name = document.createElement("strong"), detail = document.createElement("small"), status = document.createElement("span");
-    name.textContent = item.name; detail.textContent = item.provider === "lark" ? `${item.cli_profile?.brand === "lark" ? "Lark" : "飞书"}${item.validation.username ? ` · ${item.validation.username}` : ""}` : `GitLab · ${item.url}`;
+    name.textContent = item.name; detail.textContent = item.provider === "lark" ? `${item.cli_profile?.brand === "lark" ? "Lark" : "飞书"}${item.validation.username ? ` · ${item.validation.username}` : ""}` : `${item.provider === "scion" ? "Scion" : "GitLab"} · ${item.url}`;
     status.textContent = item.credential_kind === "oauth" && item.authorization_status !== "active" ? (item.authorization_status === "logged_out" ? "已退出 ›" : "需要重新授权 ›") : item.validation.status === "valid" ? "已验证 ›" : item.validation.status === "failed" ? "验证失败 ›" : "未验证 ›";
     label.append(name, detail); button.append(label, status);
     button.addEventListener("click", () => editConnection(item)); return button;
@@ -3167,12 +3150,14 @@ function editConnection(item = null) {
   $("connection-form").hidden = false; $("connections-list-view").hidden = true;
   $("connection-title").textContent = item ? "编辑连接" : "新增连接";
   $("connection-name").value = item?.name || "";
-  $("connection-provider").value = item?.provider === "lark" ? item.cli_profile?.brand || "feishu" : "gitlab";
+  $("connection-provider").value = item?.provider === "lark" ? item.cli_profile?.brand || "feishu" : item?.provider || "gitlab";
   $("connection-provider").disabled = !!item;
   $("connection-url").value = item?.url || ""; $("connection-url").readOnly = !!item;
   $("connection-profile").replaceChildren(new Option("", item?.cli_profile?.profile || ""));
   $("connection-profile").value = item?.cli_profile?.profile || "";
   $("connection-executable").value = item?.cli_profile?.executable || "";
+  $("connection-scion-executable").value = item?.provider === "scion" ? item.cli_profile.executable : "";
+  $("connection-scion-profile").value = item?.provider === "scion" ? item.cli_profile.profile : "";
   $("connection-advanced").open = false;
   $("connection-notes").hidden = !item;
   const v = item?.validation;
@@ -3186,23 +3171,28 @@ function editConnection(item = null) {
   $("connection-fields").disabled = false; $("connection-name").focus();
   for (const id of ["connection-save", "connection-verify"]) $(id).disabled = false;
   if (connectionIsLark()) return detectLarkConnection();
-  renderGitLabAccount();
+  if (!connectionIsScion()) renderGitLabAccount();
 }
 function connectionDirty() {
  const item=connections.selected;
- return !item || $("connection-name").value.trim()!==item.name || (item.provider==="lark" && JSON.stringify(larkProfileDraft())!==JSON.stringify(item.cli_profile));
+ return !item || $("connection-name").value.trim()!==item.name || (item.provider==="lark" && JSON.stringify(larkProfileDraft())!==JSON.stringify(item.cli_profile)) || (item?.provider==="scion" && JSON.stringify(scionProfileDraft())!==JSON.stringify(item.cli_profile));
 }
 async function connectionAction(action) {
   if (connections.sending || connections.auth || connections.gitlabAuth || connections.gitlabPending || connections.detecting || !state.catalog) return;
   const item = connections.selected;
-  if (action === "save" && !connectionIsLark() && !item) return startGitLabAuth("login");
+  if (action === "save" && !connectionIsLark() && !connectionIsScion() && !item) return startGitLabAuth("login");
   if (action !== "save" && !item) return;
   if (action === "verify" && connectionDirty()) { connectionFeedback("请先保存更改，再验证连接。", "error"); return; }
   if (action === "delete" && !window.confirm(`删除「${item.name}」连接？`)) return;
   let payload = { id: item?.id || crypto.randomUUID().replaceAll("-", ""), version: item?.version || 0 };
   if (action === "save") {
     clearConnectionErrors();
-    payload = { ...payload, name: $("connection-name").value.trim(), provider: connectionIsLark() ? "lark" : "gitlab", url: connectionIsLark() ? connectionOrigin() : $("connection-url").value.trim() };
+    payload = { ...payload, name: $("connection-name").value.trim(), provider: connectionIsLark() ? "lark" : connectionIsScion() ? "scion" : "gitlab", url: connectionIsLark() ? connectionOrigin() : $("connection-url").value.trim() };
+    if (payload.provider === "scion") {
+      const profile = scionProfileDraft();
+      if (!/^[a-f0-9]{32}$/.test(profile.profile) || !profile.executable.startsWith("/") || /[\x00\r\n]/.test(profile.executable)) { connectionFeedback("请填写受管 profile 的 32 位小写十六进制 ID 和 teamx-scion 的绝对路径。", "error"); return; }
+      if (!item || JSON.stringify(profile) !== JSON.stringify(item.cli_profile)) payload.cli_profile = profile;
+    }
     if (payload.provider === "lark") {
       const profileName = $("connection-profile").value.trim();
       if (!profileName || !connections.discovery?.profiles.some(p => p.name === profileName)) { connectionFeedback("连接未保存：请先刷新账号并选择应用配置，首次使用请按提示配置应用。", "error"); return; }
@@ -3218,7 +3208,7 @@ async function connectionAction(action) {
     }
   }
   if (payload.cli_profile && item?.references?.length) {
-    if (!window.confirm(`替换「${item.name}」应用配置？影响房间：${item.references.map(ref=>ref.name).join("、")}。通知将暂停，需显式同步。`)) return;
+    if (!window.confirm(`替换「${item.name}」账号配置？影响房间：${item.references.map(ref=>ref.name).join("、")}。在途工具将结清，请重新验证连接并核对绑定。`)) return;
     payload.referenced_rooms=item.references.map(({room_id,room_instance})=>({room_id,room_instance}));
   }
   connections.sending = true; $("connection-fields").disabled = true;
@@ -3231,7 +3221,7 @@ async function connectionAction(action) {
     else if (action === "save") {
       savedResult = result;
       updateConnectionItem(result);
-      if (result.provider === "lark" && result.validation.status !== "valid") {
+      if (["lark", "scion"].includes(result.provider) && result.validation.status !== "valid") {
         connectionFeedback("连接已保存，正在验证账号…");
         result = await request("/v1/platform/connections/verify", connectionPayload({ id: result.id, version: result.version }), undefined, 40000);
         savedResult = result; updateConnectionItem(result);
@@ -3249,7 +3239,7 @@ async function connectionAction(action) {
       else connections.items[index] = result;
       showConnectionList(); renderConnections();
       $("connections-list-view").setAttribute("aria-busy", "false");
-      connectionFeedback(result.provider === "lark" ? "连接已保存，账号验证成功。" : "连接已保存。", "success");
+      connectionFeedback(["lark", "scion"].includes(result.provider) ? "连接已保存，账号验证成功。" : "连接已保存。", "success");
       $("connections-list").children[index].focus();
     } else { updateConnectionItem(result); await editConnection(result); connectionFeedback(result.validation.status === "valid" ? "连接验证成功。" : connectionValidationErrors[result.validation.error_code] || "验证失败。", result.validation.status === "valid" ? "success" : "error"); }
   } catch (error) {
@@ -3270,7 +3260,7 @@ $("open-settings").addEventListener("click", async () => {
 $("close-settings").addEventListener("click", async () => { await cancelConnectionAuth(); $("settings-dialog").close(); });
 $("settings-dialog").addEventListener("cancel", event => { if (connections.sending) event.preventDefault(); });
 $("settings-dialog").addEventListener("close", () => { void cancelConnectionAuth(); $("gitlab-client-secret").value = ""; connections.formVersion++; connections.generation++;
-  if ($("notification-detail").open) { $(workspaceView?.notificationChannel === "todos" ? "gitlab-todos-manage-connections" : "gitlab-events-manage-connections").focus(); void loadWorkspaceConnections(); }
+  if ($("notification-detail").open) { $(workspaceView?.notificationChannel === "messages" ? "lark-manage-connections" : "gitlab-manage-connections").focus(); void loadWorkspaceConnections(); }
   else $("open-settings").focus(); });
 $("connection-new").addEventListener("click", () => editConnection());
 $("connection-back").addEventListener("click", async () => { if (connections.auth || connections.gitlabAuth) await cancelConnectionAuth(); showConnectionList(); await loadConnections(); });

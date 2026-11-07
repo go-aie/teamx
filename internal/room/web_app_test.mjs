@@ -1,11 +1,28 @@
 const eventView = value => ({ provider: "gitlab", channel: "events", subscription_id: value.subscription_version ? "a".repeat(32) : "", ...structuredClone(value) });
 const todoView = value => ({ provider: "gitlab", channel: "todos", subscription_id: "", subscription_version: 0, available: true, status: "disabled", pending: 0, metrics: {},
   config: { enabled: false, connection_id: "", project_scope: "all", interval_seconds: 30, inactive_interval_seconds: 120, filter: {} }, ...structuredClone(value) });
-const notificationList = value => ({ subscriptions: [eventView(value), todoView()] });
+const notificationList = value => { const subscriptions = [eventView(value), todoView()]; return { subscriptions, gitlab: fixtureGitLabView(subscriptions) }; };
+function fixtureSourceConfig(config, channel) {
+  if (channel === "events") return { enabled: !!config.enabled, project: config.project || "", interval_seconds: config.interval_seconds ?? 5, etag_verified: !!config.etag_verified,
+    filter: { types: [...(config.filter?.types || [])], branches: [...(config.filter?.branches || [])], ignore_users: [...(config.filter?.ignore_users || [])] } };
+  return { enabled: !!config.enabled, project_scope: config.project_scope || "all", interval_seconds: config.interval_seconds ?? 30, inactive_interval_seconds: config.inactive_interval_seconds ?? 120,
+    filter: { reasons: [...(config.filter?.reasons ?? ["mentioned","assigned","review_requested","other"])], types: [...(config.filter?.types ?? ["merge_request","work_item"])] } };
+}
+function fixtureGitLabView(sources, record) {
+  const events = sources.find(s => s.channel === "events") || eventView({ available:true, config:{}, metrics:{} });
+  const todos = sources.find(s => s.channel === "todos") || todoView();
+  let common = events.config.enabled ? events.config : todos.config;
+  let connection = common.connection_id || events.config.connection_id || todos.config.connection_id || "";
+  if (events.config.enabled && todos.config.enabled && events.config.connection_id !== todos.config.connection_id) connection = "";
+  const config = record?.config || { connection_id:connection, target:common.target || {}, events:fixtureSourceConfig(events.config,"events"), todos:fixtureSourceConfig(todos.config,"todos") };
+  return { version:record?.version || 0, config:structuredClone(config), events, todos, pending:structuredClone(record?.pending || {}), errors:structuredClone(record?.errors || {}), applying:!!record?.applying };
+}
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as client from "./web/client.mjs";
 import { launch, settle } from "./web_app_harness.mjs";
+
+
 
 async function expandDisclosure(element) {
   element.open=true;await element.emit("toggle");await settle();
@@ -1240,50 +1257,6 @@ test("Workspace query reconnect keeps edits within one version and clears only t
 });
 
 
-test("GitLab settings use their own version and preserve drafts; uncertain saves never replay", async () => {
-  const api = server([makeRoom("A")]);
-  let events = { available: true, subscription_version: 0, config: { enabled: false, interval_seconds: 5, filter: {} }, status: "disabled", pending: 0, metrics: { calls: 12, response_bytes: 300 } };
-  let loseResponse = false;
-  api.hook = (path, data) => {
-    if (path.startsWith("/v1/platform/notifications?")) return notificationList(structuredClone(events));
-    if (path === "/v1/platform/notifications/configure") {
-      assert.equal(data.service_epoch, "manager"); assert.equal(data.room_instance, "instance-A"); assert.equal(data.caller.kind, "human");
-      assert.equal(data.subscription_version, events.subscription_version);
-      events = { ...events, config: data.config, subscription_version: events.subscription_version + 1, status: data.config.enabled ? "running" : "disabled", pending: 3 };
-      if (loseResponse) return Promise.reject(new Error("response lost after save"));
-      return eventView(events);
-    }
-    if (path === "/v1/platform/notifications/sync") { assert.equal(data.subscription_version, events.subscription_version); return eventView(events); }
-  };
-  const ui = await launch(api);
-  await ui.el("open-gitlab-source").emit("click"); await settle();
-  ui.el("gitlab-events-connection").value = "a".repeat(32); await ui.el("gitlab-events-connection").emit("change");
-  ui.el("gitlab-events-project").value = "group/project"; await ui.el("gitlab-events-project").emit("input");
-  assert.equal(ui.el("gitlab-events").hidden, false);
-  ui.el("gitlab-events-enabled").checked = true;
-  ui.el("gitlab-events-interval").value = "3";
-  ui.el("gitlab-events-branches").value = "main\nrelease";
-  ui.el("gitlab-events-ignore").value = "bot";
-  for (const type of ["opened", "merged", "closed", "note", "push"]) ui.el(`gitlab-events-type-${type}`).checked = type === "opened";
-  await ui.refresh();
-  assert.equal(ui.el("gitlab-events-interval").value, "3", "polling preserves unsaved edits");
-  await ui.el("gitlab-events-save").emit("click");
-  assert.deepEqual(events.config.filter, { types: ["merge_request.opened"], branches: ["main", "release"], ignore_users: ["bot"] });
-  assert.equal(ui.el("gitlab-events-sync").disabled, false);
-  assert.match(ui.el("gitlab-events-status").textContent, /待投递 3/);
-  assert.match(ui.el("gitlab-events-status").textContent, /完整补查 尚无/);
-  await ui.el("gitlab-events-sync").emit("click");
-  loseResponse = true;
-  ui.el("gitlab-events-enabled").checked = false;
-  await ui.el("gitlab-events-enabled").emit("change");
-  await ui.el("gitlab-events-save").emit("click");
-  await ui.refresh(); await ui.refresh();
-  assert.equal(api.calls.filter(call => call.path === "/v1/platform/notifications/configure").length, 2);
-  assert.equal(events.config.enabled, false);
-  assert.equal(ui.el("gitlab-events-sync").disabled, true);
-  assert.match(ui.el("gitlab-events-error").textContent, /不会自动重发/);
-  assert.equal(api.calls.filter(call => call.path === "/v1/workspace/apply").length, 0);
-});
 
 test("integration messages display GitLab author without becoming members", async () => {
   const api = server([makeRoom("A")]);
@@ -1296,113 +1269,8 @@ test("integration messages display GitLab author without becoming members", asyn
   assert.equal(String(ui.el("member-count").textContent), "0");
 });
 
-test("GitLab activity checkboxes preserve explicit choices and never save an empty choice as all", async () => {
-  const api = server([makeRoom("A")]);
-  let events = { available: true, subscription_version: 1, config: { enabled: true, interval_seconds: 5, filter: {} }, status: "running", pending: 0, metrics: { calls: 1, response_bytes: 100 } };
-  api.hook = (path, data) => {
-    if (path.startsWith("/v1/platform/notifications?")) return notificationList(structuredClone(events));
-    if (path === "/v1/platform/notifications/configure") {
-      events = { ...events, config: data.config, subscription_version: events.subscription_version + 1 };
-      return eventView(events);
-    }
-  };
-  const ui = await launch(api);
-  const types = ["opened", "merged", "closed", "note", "push"].map(type => ui.el(`gitlab-events-type-${type}`));
-  assert.ok(types.every(input => input.checked), "empty API filter visibly selects all types");
-  assert.equal(ui.el("gitlab-events-save").textContent, "已保存");
-  assert.equal(ui.el("gitlab-events-save").disabled, true);
-  ui.el("gitlab-events-all-types").checked = false;
-  await ui.el("gitlab-events-all-types").emit("change");
-  assert.ok(types.every(input => !input.checked));
-  assert.match(ui.el("gitlab-events-feedback").textContent, /至少选择/);
-  await ui.el("gitlab-events-save").emit("click");
-  assert.equal(api.calls.filter(call => call.path.endsWith("/configure")).length, 0);
-  ui.el("gitlab-events-type-note").checked = true;
-  await ui.el("gitlab-events-type-note").emit("change");
-  assert.equal(ui.el("gitlab-events-all-types").indeterminate, true);
-  assert.equal(ui.el("gitlab-events-save").textContent, "保存更改");
-  assert.equal(ui.el("gitlab-events-sync").disabled, true, "sync cannot silently ignore an unsaved filter");
-  await ui.refresh();
-  assert.deepEqual(types.map(input => input.checked), [false, false, false, true, false]);
-  await ui.el("gitlab-events-save").emit("click");
-  assert.deepEqual(events.config.filter.types, ["note"]);
-  assert.equal(ui.el("gitlab-events-save").disabled, true);
-  assert.equal(ui.el("gitlab-events-sync").disabled, false);
-  assert.match(ui.el("gitlab-events-feedback").textContent, /设置已保存/);
-  ui.el("gitlab-events-all-types").checked = true;
-  await ui.el("gitlab-events-all-types").emit("change");
-  await ui.el("gitlab-events-save").emit("click");
-  assert.deepEqual(events.config.filter.types, [], "all choices retain the existing server contract");
-  assert.ok(types.every(input => input.checked));
-});
 
-test("GitLab actions distinguish start, save, stop, sync and retry with request feedback", async () => {
-  const api = server([makeRoom("A")]);
-  let events = { available: true, subscription_version: 0, config: { enabled: false, interval_seconds: 5, filter: {} }, status: "disabled", pending: 0, metrics: { calls: 0, response_bytes: 0 } };
-  let releaseSave, releaseSync;
-  api.hook = (path, data) => {
-    if (path.startsWith("/v1/platform/notifications?")) return notificationList(structuredClone(events));
-    if (path === "/v1/platform/notifications/configure") return new Promise(resolve => {
-      releaseSave = () => { events = { ...events, config: data.config, subscription_version: events.subscription_version + 1, status: data.config.enabled ? "running" : "disabled" }; resolve(eventView(events)); };
-    });
-    if (path === "/v1/platform/notifications/sync") return new Promise(resolve => { releaseSync = () => resolve(eventView(events)); });
-  };
-  const ui = await launch(api);
-  await ui.el("open-gitlab-source").emit("click"); await settle();
-  ui.el("gitlab-events-connection").value = "a".repeat(32); await ui.el("gitlab-events-connection").emit("change");
-  ui.el("gitlab-events-project").value = "group/project"; await ui.el("gitlab-events-project").emit("input");
-  assert.equal(ui.el("gitlab-events-sync").hidden, true);
-  ui.el("gitlab-events-enabled").checked = true;
-  await ui.el("gitlab-events-enabled").emit("change");
-  assert.equal(ui.el("gitlab-events-save").textContent, "开启监听");
-  assert.match(ui.el("gitlab-events-feedback").textContent, /未保存/);
-  const saving = ui.el("gitlab-events-save").emit("click"); await settle();
-  assert.equal(ui.el("gitlab-events-save").textContent, "保存中…");
-  assert.equal(ui.el("gitlab-events-fields").disabled, true);
-  await ui.el("gitlab-events-save").emit("click");
-  assert.equal(api.calls.filter(call => call.path.endsWith("/configure")).length, 1);
-  releaseSave(); await saving;
-  assert.equal(ui.el("gitlab-events-sync").hidden, false);
-  assert.equal(ui.el("gitlab-events-sync-label").textContent, "立即同步");
-  events.status = "backoff"; events.error_code = "query_failed"; await ui.refresh();
-  assert.equal(ui.el("gitlab-events-sync-label").textContent, "重试同步");
-  const syncing = ui.el("gitlab-events-sync").emit("click"); await settle();
-  assert.equal(ui.el("gitlab-events-sync-label").textContent, "请求中…");
-  assert.equal(ui.el("gitlab-events-save").disabled, true);
-  releaseSync(); await syncing;
-  assert.match(ui.el("gitlab-events-feedback").textContent, /已发起同步/);
-  assert.doesNotMatch(ui.el("gitlab-events-feedback").textContent, /同步完成/);
-  ui.el("gitlab-events-interval").value = "6";
-  await ui.el("gitlab-events-interval").emit("input");
-  await ui.el("gitlab-events-sync").emit("click");
-  assert.equal(api.calls.filter(call => call.path.endsWith("/sync")).length, 1);
-  ui.el("gitlab-events-enabled").checked = false;
-  await ui.el("gitlab-events-enabled").emit("change");
-  assert.equal(ui.el("gitlab-events-save").textContent, "关闭监听");
-  const stopping = ui.el("gitlab-events-save").emit("click"); await settle(); releaseSave(); await stopping;
-  assert.equal(ui.el("gitlab-events-sync").hidden, true);
-  assert.equal(ui.el("gitlab-events-state").textContent, "已关闭");
-  assert.equal(ui.el("gitlab-events-feedback").textContent, "监听已关闭");
-});
 
-test("late GitLab save response stays with its original room after switching", async () => {
-  const api = server([makeRoom("A"), makeRoom("B")]);
-  const view = (version, interval) => ({ available: true, subscription_version: version, config: { enabled: true, interval_seconds: interval, filter: {} }, status: "running", pending: 0, metrics: { calls: 0, response_bytes: 0 } });
-  let release;
-  api.hook = (path, data) => {
-    if (path.startsWith("/v1/platform/notifications?")) return notificationList(new URL(path, "http://fixture").searchParams.get("room_id") === "A" ? view(1, 5) : view(8, 17));
-    if (path === "/v1/platform/notifications/configure") return new Promise(resolve => { release = resolve; });
-  };
-  const ui = await launch(api);
-  ui.el("gitlab-events-interval").value = "3";
-  await ui.el("gitlab-events-interval").emit("input");
-  const saving = ui.el("gitlab-events-save").emit("click"); await settle();
-  await ui.select("B"); await ui.refresh();
-  release(view(2, 3)); await saving;
-  assert.equal(String(ui.el("gitlab-events-interval").value), "17");
-  assert.equal(api.calls.filter(call => call.path === "/v1/platform/notifications/configure").length, 1);
-  assert.equal(api.calls.find(call => call.path === "/v1/platform/notifications/configure").data.room_instance, "instance-A");
-});
 
 
 test("connection save returns only after confirmation and a late list read cannot hide the saved item", async () => {
@@ -1539,36 +1407,6 @@ function notificationServer() {
   return { api, events };
 }
 
-test("notification source shares the rail, preserves edits through back, collapse and binding navigation, and saves without Workspace apply", async () => {
-  const { api, events } = notificationServer(), ui = await launch(api);
-  const source = ui.el("open-gitlab-source"), panel = ui.el("notification-detail"), list = ui.el("member-list-view");
-  assert.equal(ui.el("notification-sources").hidden, false);
-  assert.equal(ui.el("notification-source-count").textContent, "2");
-  assert.equal(ui.el("notification-source-state").textContent, "运行中");
-  assert.equal(String(ui.el("member-count").textContent), "0");
-  await source.emit("click"); await settle();
-  assert.equal(panel.open, true); assert.equal(panel.modal, false); assert.equal(list.hidden, true); assert.equal(list.inert, true);
-  assert.match(ui.el("notification-connection").textContent, /Company GitLab/);
-  assert.match(ui.el("notification-project").textContent, /group\/project-A · #7/);
-  ui.el("gitlab-events-branches").value = "main"; await ui.el("gitlab-events-branches").emit("input");
-  await ui.el("close-notification").emit("click");
-  assert.equal(list.hidden, false); assert.equal(list.inert, false);
-  await source.emit("click"); await ui.refresh();
-  assert.equal(ui.el("gitlab-events-branches").value, "main");
-  assert.match(ui.el("gitlab-events-feedback").textContent, /未保存/);
-  await ui.el("notification-manage-binding").emit("click");
-  assert.equal(ui.el("workspace-dialog").open, false);
-  assert.equal(ui.el("gitlab-events-project").value, "group/project-A");
-  assert.equal(panel.open, true); assert.equal(ui.el("gitlab-events-branches").value, "main");
-  await ui.el("toggle-members").emit("click");
-  assert.equal(panel.open, false); assert.equal(ui.el("member-rail").inert, true);
-  await ui.el("toggle-members").emit("click"); await source.emit("click");
-  assert.equal(ui.el("gitlab-events-branches").value, "main");
-  await ui.el("gitlab-events-save").emit("click");
-  assert.deepEqual(events.get("A").config.filter.branches, ["main"]);
-  assert.equal(api.calls.filter(c => c.path === "/v1/workspace/apply" || c.path === "/v1/member/activity" || c.path === "/v1/member/run").length, 0);
-  await panel.emit("keydown", { key: "Escape" }); assert.equal(list.hidden, false);
-});
 
 test("GitLab message author and keyboard avatar open notification details and close member activity reads", async () => {
   const { api } = notificationServer(), baseHook = api.hook;
@@ -1599,46 +1437,7 @@ test("GitLab message author and keyboard avatar open notification details and cl
   assert.equal(String(ui.el("member-count").textContent), "1");
 });
 
-test("notification details close on room switch and ignore a late save while retaining B settings", async () => {
-  const { api } = notificationServer(), baseHook = api.hook;
-  let release;
-  api.hook = (path, data) => path === "/v1/platform/notifications/configure" ? new Promise(resolve => { release = resolve; }) : baseHook(path, data);
-  const ui = await launch(api);
-  await ui.el("open-gitlab-source").emit("click");
-  ui.el("gitlab-events-interval").value = "3"; await ui.el("gitlab-events-interval").emit("input");
-  const saving = ui.el("gitlab-events-save").emit("click"); await settle();
-  await ui.el("close-notification").emit("click"); await ui.el("open-gitlab-source").emit("click");
-  assert.equal(ui.el("gitlab-events-save").textContent, "保存中…");
-  await ui.select("B"); assert.equal(ui.el("notification-detail").open, false);
-  await ui.el("open-gitlab-source").emit("click");
-  release({ available: true, subscription_version: 99, config: { enabled: true, interval_seconds: 3, filter: {} }, status: "running", metrics: {} }); await saving;
-  assert.equal(String(ui.el("gitlab-events-interval").value), "17");
-  assert.match(ui.el("notification-project").textContent, /project-B/);
-  assert.equal(api.calls.filter(c => c.path === "/v1/platform/notifications/configure").length, 1);
-});
 
-test("notification source handles missing binding and reconnect without replaying mutations", async () => {
-  const { api } = notificationServer(), baseHook = api.hook;
-  let offline = false;
-  api.hook = (path, data) => path.startsWith("/v1/platform/notifications?") && offline ? Promise.reject(new Error("offline")) : baseHook(path, data);
-  const ui = await launch(api);
-  await ui.el("open-gitlab-source").emit("click");
-  ui.el("gitlab-events-ignore").value = "bot"; await ui.el("gitlab-events-ignore").emit("input");
-  offline = true; await ui.refresh();
-  assert.equal(ui.el("gitlab-events-save").disabled, true); assert.equal(ui.el("notification-reload").hidden, false);
-  assert.match(ui.el("notification-notice").textContent, /暂不可读/);
-  offline = false; await ui.el("notification-reload").emit("click");
-  assert.equal(ui.el("gitlab-events-ignore").value, "bot"); assert.equal(ui.el("gitlab-events-save").disabled, false);
-  assert.equal(api.calls.filter(c => c.path === "/v1/platform/notifications/configure").length, 0);
-  const unbound = server([makeRoom("A")]);
-  unbound.history.set("A", [{ ...message(1, "unbound notification"), author: { kind: "integration", id: "gitlab" }, source: { provider: "gitlab", channel: "events" } }]);
-  const other = await launch(unbound);
-  assert.equal(other.el("notification-sources").hidden, false);
-  await other.document.getElementById("message-1").querySelector(".avatar").emit("click");
-  assert.equal(other.el("notification-detail").open, true); assert.equal(other.el("gitlab-events").hidden, false);
-  assert.equal(other.el("notification-notice").hidden, true);
-  assert.equal(other.el("notification-manage-binding").disabled, true);
-});
 
 function todosServer({ bound = true, enabled = false } = {}) {
   const { api, events } = notificationServer();
@@ -1648,179 +1447,46 @@ function todosServer({ bound = true, enabled = false } = {}) {
     recipient_id: enabled ? 101 : undefined, username: enabled ? "alice" : undefined, instance: enabled ? "https://gitlab.invalid" : undefined,
     config: { enabled, connection_id: enabled ? api.connections[0].id : "", project_scope: "all", interval_seconds: id === "A" ? 30 : 45, inactive_interval_seconds: 120, filter: {} }, status: enabled ? "running" : "disabled" })]));
   if (!bound) for (const ws of api.workspaces.values()) { delete ws.workspace.binding; delete ws.workspace.repository; }
-  const eventHook = api.hook;
+  const sourceHook = api.hook, records = new Map();
+  api.gitlabApplyFailure = new Set();
+  const viewFor = id => {
+    const sources = [eventView(events.get(id)), structuredClone(todos.get(id))];
+    return fixtureGitLabView(sources, records.get(id));
+  };
   api.hook = (path, data) => {
     if (path.startsWith("/v1/platform/notifications?")) {
-      const room = new URL(path, "http://fixture").searchParams.get("room_id");
-      return { subscriptions: [eventView(events.get(room)), structuredClone(todos.get(room))], retired_subscriptions: [todoView({ subscription_id: "f".repeat(32), retired: true })] };
+      const id = new URL(path, "http://fixture").searchParams.get("room_id");
+      return { subscriptions: [eventView(events.get(id)), structuredClone(todos.get(id))], gitlab: viewFor(id) };
     }
-    if (data?.channel === "todos" && ["/v1/platform/notifications/configure", "/v1/platform/notifications/sync"].includes(path)) {
-      const saved = todos.get(data.room_id);
-      assert.equal(data.subscription_id, saved.subscription_id); assert.equal(data.subscription_version, saved.subscription_version);
-      assert.equal(data.room_instance, `instance-${data.room_id}`); assert.equal(data.service_epoch, "manager"); assert.equal(data.caller.id, "tester");
-      if (data.config) {
-        const previous = saved.config;
-        saved.config = structuredClone(data.config);
-        if (saved.config.enabled) {
-          const connection = api.connections.find(item => item.id === saved.config.connection_id);
-          Object.assign(saved, { subscription_id: connection?.validation.user_id === 202 ? "e".repeat(32) : "c".repeat(32), recipient_id: connection?.validation.user_id, username: connection?.validation.username, instance: connection?.url });
-          saved.project = saved.config.project_scope === "current" ? structuredClone(api.workspaces.get(data.room_id).workspace.binding) : undefined;
-        } else {
-          saved.config.connection_id = previous.connection_id; saved.config.project_scope = previous.project_scope;
-        }
-      } else assert.equal(data.config, undefined);
-      saved.subscription_version++; saved.status = saved.config.enabled ? "running" : "disabled"; delete saved.error_code;
-      return structuredClone(saved);
+    if (path === "/v1/platform/gitlab/notifications/configure") {
+      const previous = viewFor(data.room_id);
+      if (data.version !== previous.version) throw Object.assign(new Error("conflict"), { code: "conflict" });
+      const config = structuredClone(data.config), saved = { version: previous.version + (JSON.stringify(config) !== JSON.stringify(previous.config) || !previous.version ? 1 : 0), config, pending: {}, errors: {} };
+      records.set(data.room_id, saved);
+      for (const channel of ["events", "todos"]) {
+        const runtime = channel === "events" ? events.get(data.room_id) : todos.get(data.room_id);
+        const desired = { ...config[channel], connection_id: config.connection_id, target: config.target };
+        const account = api.connections.find(c => c.id === config.connection_id);
+        const changed = JSON.stringify(fixtureSourceConfig(runtime.config, channel)) !== JSON.stringify(fixtureSourceConfig(desired, channel)) || runtime.config.connection_id !== desired.connection_id || JSON.stringify(runtime.config.target || {}) !== JSON.stringify(desired.target) || runtime.recipient_id !== account?.validation.user_id;
+        if (!desired.enabled && !runtime.config.enabled || !changed) continue;
+        if (api.gitlabApplyFailure.has(channel)) { saved.pending[channel] = true; saved.errors[channel] = "apply_failed"; continue; }
+        runtime.config = desired; runtime.subscription_version++; runtime.status = desired.enabled ? "running" : "disabled";
+        runtime.recipient_id = account?.validation.user_id; runtime.username = account?.validation.username; runtime.instance = account?.url;
+        runtime.subscription_id ||= (channel === "events" ? "a" : "c").repeat(32);
+        if (channel === "todos") runtime.project = desired.project_scope === "current" ? structuredClone(api.workspaces.get(data.room_id).workspace.binding) : undefined;
+      }
+      return viewFor(data.room_id);
     }
-    return eventHook(path, data);
+    if (path === "/v1/platform/gitlab/notifications/sync") {
+      const view = viewFor(data.room_id);
+      assert.equal(data.version, view.version); assert.equal(data.config, undefined);
+      return view;
+    }
+    return sourceHook(path, data);
   };
+  api.gitlabRecords = records;
   return { api, events, todos };
 }
-async function openTodos(ui) {
-  await ui.el("open-gitlab-source").emit("click"); await settle();
-  await ui.el("notification-tab-todos").emit("click");
-}
-async function selectTodoConnection(ui, id = "a".repeat(32)) {
-  ui.el("gitlab-todos-connection").value = id; await ui.el("gitlab-todos-connection").emit("change");
-}
-
-test("GT-03 unbound room exposes both channels and connection management without a personal connection", async () => {
-  const { api } = todosServer({ bound: false }); api.connections = [];
-  const ui = await launch(api); await openTodos(ui);
-  assert.equal(ui.el("notification-sources").hidden, false);
-  assert.equal(ui.el("notification-panel-events").hidden, true); assert.equal(ui.el("notification-panel-todos").hidden, false);
-  assert.match(ui.el("notification-summary").textContent, /项目活动：运行中 · 我的待办：已关闭/);
-  assert.equal(ui.el("gitlab-todos-save").disabled, true);
-  assert.equal(ui.el("gitlab-todos-scope").value, "all"); assert.equal(ui.el("gitlab-todos-scope").children[0].disabled, true);
-  await ui.el("gitlab-todos-manage-connections").emit("click");
-  assert.equal(ui.el("settings-dialog").open, true); assert.equal(ui.el("notification-detail").open, true);
-  api.connections = [{ id: "a".repeat(32), name: "Verified", provider: "gitlab", url: "https://gitlab.invalid", validation: { status: "valid", user_id: 101, username: "alice" } }];
-  await ui.el("close-settings").emit("click"); await settle(); await selectTodoConnection(ui);
-  assert.match(ui.el("gitlab-todos-recipient").textContent, /@alice（ID 101，已验证）/);
-  assert.equal(ui.el("gitlab-todos-scope").value, "all");
-  ui.el("gitlab-todos-enabled").checked = true; await ui.el("gitlab-todos-enabled").emit("change");
-  await ui.el("gitlab-todos-save").emit("click");
-  const call = api.calls.find(call => call.path.endsWith("/configure"));
-  assert.equal(call.data.channel, "todos"); assert.equal(call.data.subscription_id, ""); assert.equal(call.data.subscription_version, 0);
-  assert.equal(call.data.config.project_scope, "all");
-  assert.equal(api.calls.some(call => /workspace\/apply|member\/add|member\/restart/.test(call.path)), false);
-  assert.equal(JSON.stringify([...ui.saved]).includes("alice"), false);
-});
-
-test("GT-03 project scope defaults to the selected instance and old identity needs revalidation", async () => {
-  const { api } = todosServer(); const ui = await launch(api); await openTodos(ui); await selectTodoConnection(ui);
-  assert.equal(ui.el("gitlab-todos-scope").value, "current");
-  assert.match(ui.el("gitlab-todos-project").textContent, /project-A · #7/);
-  api.connections[1].url = "https://other.invalid";
-  await ui.el("close-notification").emit("click"); await openTodos(ui); await selectTodoConnection(ui, "b".repeat(32));
-  assert.equal(ui.el("gitlab-todos-scope").value, "all"); assert.equal(ui.el("gitlab-todos-scope").children[0].disabled, true);
-  api.connections[1].validation = { status: "valid", username: "legacy" };
-  await ui.el("close-notification").emit("click"); await openTodos(ui);
-  ui.el("gitlab-todos-enabled").checked = true; await ui.el("gitlab-todos-enabled").emit("change");
-  assert.match(ui.el("gitlab-todos-recipient").textContent, /需重新验证/); assert.equal(ui.el("gitlab-todos-save").disabled, true);
-});
-
-test("GT-03 tabs retain independent drafts, saved versions, requests and diagnostics", async () => {
-  const { api, events, todos } = todosServer({ enabled: true }); const ui = await launch(api); await openTodos(ui);
-  ui.el("gitlab-todos-reason-mentioned").checked = false; await ui.el("gitlab-todos-reason-mentioned").emit("change");
-  await ui.el("notification-tab-events").emit("click");
-  ui.el("gitlab-events-ignore").value = "bot"; await ui.el("gitlab-events-ignore").emit("input");
-  await ui.el("notification-tab-todos").emit("click"); await ui.el("close-notification").emit("click"); await openTodos(ui);
-  assert.equal(ui.el("gitlab-todos-reason-mentioned").checked, false); assert.equal(ui.el("gitlab-todos-sync").disabled, true);
-  await ui.el("gitlab-todos-save").emit("click");
-  assert.equal(todos.get("A").subscription_version, 4); assert.equal(events.get("A").subscription_version, 1);
-  assert.equal(ui.el("gitlab-events-ignore").value, "bot"); assert.equal(ui.el("gitlab-events-save").disabled, false);
-  await ui.el("gitlab-events-save").emit("click");
-  assert.equal(events.get("A").subscription_version, 2); assert.equal(todos.get("A").subscription_version, 4);
-  await ui.el("gitlab-todos-sync").emit("click");
-  assert.equal(todos.get("A").subscription_version, 5);
-  const sync = api.calls.find(call => call.path.endsWith("/sync")); assert.equal(sync.data.channel, "todos"); assert.equal(sync.data.subscription_version, 4); assert.equal(sync.data.config, undefined);
-  todos.get("A").last_check = "2026-11-03T01:00:00Z"; todos.get("A").scan = { state: "done", next_page: 9, limited: true }; todos.get("A").error_code = "scan_incomplete";
-  todos.get("A").skipped = { no_project: 3 }; await ui.refresh();
-  assert.match(ui.el("gitlab-todos-status").textContent, /已完成待办第 9 页（补查未完成）/); assert.match(ui.el("gitlab-todos-status").textContent, /无项目归属 3/);
-  assert.match(ui.el("gitlab-todos-error").textContent, /补查尚未完成/); assert.equal(ui.el("gitlab-events-error").hidden, true);
-  assert.match(ui.el("notification-summary").textContent, /项目活动：运行中 · 我的待办：运行中/);
-});
-
-test("GT-03 default filters select all and explicit empty filters stay empty across save, sync and reload", async () => {
-  const { api, todos } = todosServer({ enabled: true }); const ui = await launch(api); await openTodos(ui);
-  for (const reason of ["mentioned", "assigned", "review_requested", "other"]) { assert.equal(ui.el(`gitlab-todos-reason-${reason}`).checked, true); ui.el(`gitlab-todos-reason-${reason}`).checked = false; }
-  for (const type of ["merge_request", "work_item"]) { assert.equal(ui.el(`gitlab-todos-type-${type}`).checked, true); ui.el(`gitlab-todos-type-${type}`).checked = false; }
-  await ui.el("gitlab-todos-reason-mentioned").emit("change"); await ui.el("gitlab-todos-save").emit("click");
-  assert.deepEqual(todos.get("A").config.filter, { reasons: [], types: [] }); assert.match(ui.el("gitlab-todos-action-hint").textContent, /过滤为空/);
-  await ui.el("gitlab-todos-sync").emit("click"); await ui.refresh();
-  assert.equal(ui.el("gitlab-todos-reason-mentioned").checked, false);
-  const reload = await launch(api); await openTodos(reload); assert.equal(reload.el("gitlab-todos-type-work_item").checked, false);
-});
-
-test("GT-03 personal all-project channel remains usable when Workspace query fails or recovery is pending", async () => {
-  const { api } = todosServer({ enabled: true, bound: false });
-  api.workspaceHook = () => Promise.reject(new Error("workspace offline"));
-  const ui = await launch(api); await openTodos(ui);
-  assert.equal(ui.el("gitlab-events-save").disabled, true); assert.equal(ui.el("gitlab-todos-sync").disabled, false);
-  ui.el("gitlab-todos-interval").value = "60"; await ui.el("gitlab-todos-interval").emit("input");
-  await ui.el("gitlab-todos-save").emit("click"); assert.match(ui.el("gitlab-todos-feedback").textContent, /设置已保存/);
-  assert.equal(api.calls.filter(call => call.path.endsWith("/configure")).length, 1);
-});
-
-test("GT-03 changed project requires explicit review and save even when config fields are unchanged", async () => {
-  const { api, todos } = todosServer({ enabled: true });
-  const saved = todos.get("A"); saved.config.project_scope = "current"; saved.project = structuredClone(api.workspaces.get("A").workspace.binding);
-  const ui = await launch(api); await openTodos(ui);
-  assert.equal(ui.el("gitlab-todos-sync").disabled, false);
-  Object.assign(api.workspaces.get("A").workspace.binding, { project: "group/new-project", project_id: 99 });
-  await ui.refresh();
-  assert.equal(ui.el("gitlab-todos-sync").disabled, true); assert.equal(ui.el("gitlab-todos-save").textContent, "核对并保存");
-  assert.match(ui.el("gitlab-todos-project").textContent, /new-project.*原订阅项目：group\/project-A/);
-  await ui.el("gitlab-todos-sync").emit("click"); assert.equal(api.calls.some(call => call.path.endsWith("/sync")), false);
-  await ui.el("gitlab-todos-save").emit("click");
-  assert.equal(saved.project.project_id, 99); assert.equal(ui.el("gitlab-todos-sync").disabled, false);
-});
-
-test("GT-03 late save cannot overwrite a newly selected recipient or another room", async () => {
-  const { api } = todosServer({ enabled: true }); const hook = api.hook; let release;
-  api.hook = (path, data) => path.endsWith("/configure") && data.channel === "todos" ? new Promise(resolve => { release = () => resolve(hook(path, data)); }) : hook(path, data);
-  const ui = await launch(api); await openTodos(ui);
-  ui.el("gitlab-todos-interval").value = "60"; await ui.el("gitlab-todos-interval").emit("input");
-  const saving = ui.el("gitlab-todos-save").emit("click"); await settle();
-  await selectTodoConnection(ui, "b".repeat(32)); release(); await saving;
-  assert.equal(ui.el("gitlab-todos-connection").value, "b".repeat(32)); assert.match(ui.el("gitlab-todos-recipient").textContent, /@bob/);
-  assert.match(ui.el("gitlab-todos-action-hint").textContent, /停用旧账号/); assert.equal(ui.el("gitlab-todos-save").textContent, "为此账号重新开启");
-  const second = ui.el("gitlab-todos-save").emit("click"); await settle();
-  await ui.select("B"); release(); await second; await openTodos(ui);
-  assert.equal(String(ui.el("gitlab-todos-interval").value), "45"); assert.match(ui.el("gitlab-todos-recipient").textContent, /@alice/);
-  assert.equal(api.calls.filter(call => call.path.endsWith("/configure")).length, 2);
-});
-
-test("GT-03 a stale notification read cannot roll back a completed save, including account changes", async () => {
-  const { api, todos } = todosServer({ enabled: true }); const ui = await launch(api); await openTodos(ui); const hook = api.hook; let release;
-  api.hook = (path, data) => { if (path.startsWith("/v1/platform/notifications?")) { const old = hook(path, data); return new Promise(resolve => { release = () => resolve(old); }); } return hook(path, data); };
-  const reading = ui.refresh(); await settle();
-  await selectTodoConnection(ui, "b".repeat(32)); await ui.el("gitlab-todos-save").emit("click");
-  assert.equal(todos.get("A").recipient_id, 202); release(); await reading;
-  assert.equal(ui.el("gitlab-todos-sync").disabled, false); assert.match(ui.el("gitlab-todos-recipient").textContent, /@bob/);
-  assert.match(ui.el("gitlab-todos-status").textContent, /@bob（ID 202）/); assert.equal(ui.el("gitlab-todos-save").textContent, "已保存");
-});
-
-test("GT-03 uncertain save reads back once, preserves drafts and never replays a mutation", async () => {
-  const { api, todos } = todosServer({ enabled: true }); const hook = api.hook;
-  api.hook = (path, data) => { if (path.endsWith("/configure") && data.channel === "todos") { hook(path, data); throw new Error("response lost"); } return hook(path, data); };
-  const ui = await launch(api); await openTodos(ui); await selectTodoConnection(ui, "b".repeat(32)); await ui.el("gitlab-todos-save").emit("click");
-  assert.equal(todos.get("A").recipient_id, 202); assert.match(ui.el("gitlab-todos-error").textContent, /结果待核查/);
-  await ui.refresh(); await ui.el("notification-reload").emit("click");
-  assert.equal(api.calls.filter(call => call.path.endsWith("/configure")).length, 1); assert.equal(ui.el("gitlab-todos-connection").value, "b".repeat(32));
-  assert.equal(ui.el("gitlab-todos-sync").disabled, false);
-});
-
-test("GT-03 todo periods validate independently and disabling works after a connection disappears", async () => {
-  const { api, todos } = todosServer({ enabled: true }); const ui = await launch(api); await openTodos(ui);
-  ui.el("gitlab-todos-interval").value = "3601"; await ui.el("gitlab-todos-interval").emit("input"); assert.equal(ui.el("gitlab-todos-save").disabled, true);
-  ui.el("gitlab-todos-interval").value = "30"; ui.el("gitlab-todos-inactive-interval").value = "29"; await ui.el("gitlab-todos-interval").emit("input"); assert.equal(ui.el("gitlab-todos-save").disabled, true);
-  ui.el("gitlab-todos-inactive-interval").value = "86400"; await ui.el("gitlab-todos-inactive-interval").emit("input"); assert.equal(ui.el("gitlab-todos-save").disabled, false);
-  api.connections = []; await ui.el("close-notification").emit("click"); await openTodos(ui);
-  ui.el("gitlab-todos-enabled").checked = false; await ui.el("gitlab-todos-enabled").emit("change"); assert.equal(ui.el("gitlab-todos-save").disabled, false);
-  await ui.el("gitlab-todos-save").emit("click"); assert.equal(todos.get("A").config.enabled, false); assert.equal(ui.el("gitlab-todos-sync").hidden, true);
-});
 
 test("GT-03 message navigation requires explicit channels and keyboard tabs preserve selection", async () => {
   const { api } = todosServer(); api.history.set("A", ["events", "todos"].map((channel, index) => ({ ...message(index + 1, "integration fact"), author: { kind: "integration", id: "gitlab" }, source: { provider: "gitlab", channel } })));
@@ -1828,71 +1494,17 @@ test("GT-03 message navigation requires explicit channels and keyboard tabs pres
   for (let i = 1; i <= 2; i++) {
     const article = ui.document.getElementById(`message-${i}`), channel = i === 2 ? "todos" : "events";
     assert.equal(article.querySelector(".author").textContent, `GitLab · ${i === 2 ? "我的待办" : "项目活动"}`);
-    await article.querySelector(".author").emit("click"); assert.equal(ui.el(`notification-tab-${channel}`).attributes["aria-selected"], "true");
+    await article.querySelector(".author").emit("click"); assert.equal(ui.el("notification-tab-gitlab").attributes["aria-selected"], "true"); assert.equal(ui.el(`gitlab-${channel}-settings`).open, true);
     await ui.el("close-notification").emit("click"); await article.querySelector(".avatar").emit("keydown", { key: "Enter" });
-    assert.equal(ui.el(`notification-panel-${channel}`).hidden, false);
+    assert.equal(ui.el("notification-panel-gitlab").hidden, false); assert.equal(ui.el(`gitlab-${channel}-settings`).open, true);
   }
-  await ui.el("notification-tab-todos").emit("keydown", { key: "ArrowLeft" }); assert.equal(ui.el("notification-tab-events").attributes["tabindex"], "0");
-  await ui.el("notification-tab-events").emit("keydown", { key: "End" }); assert.equal(ui.el("notification-tab-messages").attributes["aria-selected"], "true");
+  await ui.el("notification-tab-messages").emit("keydown", { key: "ArrowLeft" }); assert.equal(ui.el("notification-tab-gitlab").attributes["tabindex"], "0");
+  await ui.el("notification-tab-gitlab").emit("keydown", { key: "End" }); assert.equal(ui.el("notification-tab-messages").attributes["aria-selected"], "true");
 });
 
-test("GT-03 reverified connection with the same ID but a new account requires explicit new subscription", async () => {
-  const { api } = todosServer({ enabled: true }); const ui = await launch(api); await openTodos(ui);
-  api.connections[0].validation = { status: "valid", user_id: 303, username: "carol" };
-  await ui.el("gitlab-todos-manage-connections").emit("click"); await ui.el("close-settings").emit("click"); await settle();
-  assert.match(ui.el("gitlab-todos-recipient").textContent, /@carol/);
-  assert.equal(ui.el("gitlab-todos-sync").disabled, true); assert.equal(ui.el("gitlab-todos-save").disabled, false);
-  assert.equal(ui.el("gitlab-todos-save").textContent, "为此账号重新开启");
-  assert.equal(api.calls.some(call => call.path.endsWith("/configure") || call.path.endsWith("/sync")), false);
-  ui.el("gitlab-todos-enabled").checked = false; await ui.el("gitlab-todos-enabled").emit("change");
-  await ui.el("gitlab-todos-save").emit("click");
-  assert.equal(ui.el("gitlab-todos-save").disabled, true, "a disabled old identity must not remain perpetually dirty");
-});
 
-test("GT-03 both channel mutations can be in flight with separate feedback and versions", async () => {
-  const { api } = todosServer({ enabled: true }); const hook = api.hook; const release = {};
-  api.hook = (path, data) => path.endsWith("/configure") ? new Promise(resolve => { release[data.channel] = () => resolve(hook(path, data)); }) : hook(path, data);
-  const ui = await launch(api); await openTodos(ui);
-  ui.el("gitlab-todos-interval").value = "60"; await ui.el("gitlab-todos-interval").emit("input");
-  const todoSave = ui.el("gitlab-todos-save").emit("click"); await settle();
-  await ui.el("notification-tab-events").emit("click");
-  ui.el("gitlab-events-ignore").value = "bot"; await ui.el("gitlab-events-ignore").emit("input");
-  assert.equal(ui.el("gitlab-events-save").disabled, false);
-  const eventSave = ui.el("gitlab-events-save").emit("click"); await settle();
-  release.todos(); await todoSave;
-  assert.match(ui.el("gitlab-todos-feedback").textContent, /设置已保存/); assert.equal(ui.el("gitlab-events-save").textContent, "保存中…");
-  release.events(); await eventSave; assert.equal(ui.el("gitlab-events-save").textContent, "已保存");
-  assert.equal(api.calls.filter(call => call.path.endsWith("/configure")).length, 2);
-});
 
-test("GT-03 account retirement followed by failed replacement is read back and only explicit save creates anew", async () => {
-  const { api, todos } = todosServer({ enabled: true }); const hook = api.hook; let fail = true;
-  api.hook = (path, data) => {
-    if (path.endsWith("/configure") && data.channel === "todos" && fail) { todos.set("A", todoView()); fail = false; throw new Error("creation failed after retirement"); }
-    return hook(path, data);
-  };
-  const ui = await launch(api); await openTodos(ui); await selectTodoConnection(ui, "b".repeat(32)); await ui.el("gitlab-todos-save").emit("click");
-  await ui.refresh(); assert.equal(api.calls.filter(call => call.path.endsWith("/configure")).length, 1);
-  assert.equal(ui.el("gitlab-todos-connection").value, "b".repeat(32)); assert.equal(ui.el("gitlab-todos-save").disabled, false);
-  await ui.el("gitlab-todos-save").emit("click");
-  const create = api.calls.filter(call => call.path.endsWith("/configure")).at(-1).data;
-  assert.equal(create.subscription_id, ""); assert.equal(create.subscription_version, 0); assert.equal(todos.get("A").recipient_id, 202);
-});
 
-test("GT-03 late response from an earlier service epoch cannot replace current channel state", async () => {
-  const { api } = todosServer({ enabled: true }); const hook = api.hook; let release;
-  api.hook = (path, data) => path.endsWith("/configure") && data.channel === "todos" ? new Promise(resolve => { release = resolve; }) : hook(path, data);
-  const ui = await launch(api); await openTodos(ui);
-  ui.el("gitlab-todos-interval").value = "60"; await ui.el("gitlab-todos-interval").emit("input");
-  const saving = ui.el("gitlab-todos-save").emit("click"); await settle();
-  api.catalog.service_epoch = "new-manager";
-  api.workspaceHook = path => path.startsWith("/v1/workspace?") ? structuredClone(api.workspaces.get("A")) : undefined;
-  await ui.refresh();
-  release(todoView({ subscription_id: "f".repeat(32), subscription_version: 99, recipient_id: 909, username: "stale", config: { enabled: true, connection_id: "a".repeat(32), project_scope: "all", interval_seconds: 90, inactive_interval_seconds: 120 } }));
-  await saving; await ui.refresh();
-  assert.equal(String(ui.el("gitlab-todos-interval").value), "60"); assert.doesNotMatch(ui.el("gitlab-todos-status").textContent, /stale|909/);
-  assert.equal(ui.el("gitlab-todos-save").textContent, "保存更改");
-});
 
 test("notifications with missing or unknown channels never open the Events source", async () => {
   const { api } = todosServer();
@@ -1924,60 +1536,9 @@ test("private activity rejects unordered diagnostics instead of displaying legac
 });
 
 
-test("Events selects a remote project without Git and Workspace prefill never changes saved target", async () => {
-  const { api, events } = notificationServer();
-  const saved = events.get("A");
-  saved.subscription_version = 0; saved.config.enabled = false;
-  delete saved.project; delete saved.config.connection_id; delete saved.config.project;
-  delete api.workspaces.get("A").workspace.binding; delete api.workspaces.get("A").workspace.repository;
-  const ui = await launch(api);
-  await ui.el("open-gitlab-source").emit("click"); await settle();
-  assert.equal(ui.el("gitlab-events").hidden, false);
-  assert.equal(ui.el("notification-manage-binding").disabled, true);
-  ui.el("gitlab-events-enabled").checked = true; await ui.el("gitlab-events-enabled").emit("change");
-  assert.equal(ui.el("gitlab-events-save").disabled, true);
-  ui.el("gitlab-events-connection").value = api.connections[0].id; await ui.el("gitlab-events-connection").emit("change");
-  ui.el("gitlab-events-project").value = "remote/project"; await ui.el("gitlab-events-project").emit("input");
-  assert.match(ui.el("gitlab-events-account").textContent, /alice.*101/);
-  await ui.el("gitlab-events-save").emit("click");
-  assert.equal(saved.config.project, "remote/project"); assert.equal(saved.config.connection_id, api.connections[0].id);
-  // Later Git configuration does not retarget the saved subscription.
-  api.workspaces.get("A").workspace.binding = { ...api.workspaces.get("B").workspace.binding };
-  await ui.refresh();
-  assert.equal(ui.el("gitlab-events-project").value, "remote/project");
-  await ui.el("notification-manage-binding").emit("click");
-  assert.equal(ui.el("gitlab-events-project").value, "group/project-B");
-  assert.equal(saved.config.project, "remote/project");
-  assert.equal(ui.el("gitlab-events-sync").disabled, true);
-  assert.match(ui.el("gitlab-events-action-hint").textContent, /新建订阅/);
-  await ui.refresh(); assert.equal(ui.el("gitlab-events-project").value, "group/project-B");
-  assert.equal(api.calls.filter(c => c.path === "/v1/workspace/apply" || c.path === "/v1/platform/tools/save").length, 0);
-});
-
-test("Events continues editing and syncing when only the Workspace read is unavailable", async () => {
-  const { api } = notificationServer(), ui = await launch(api);
-  api.workspaceHook = path => path.startsWith("/v1/workspace?") ? Promise.reject(new Error("local state unavailable")) : undefined;
-  await ui.refresh(); await ui.el("open-gitlab-source").emit("click"); await settle();
-  assert.equal(ui.el("notification-notice").hidden, true);
-  assert.equal(ui.el("gitlab-events-sync").disabled, false);
-  ui.el("gitlab-events-branches").value = "independent"; await ui.el("gitlab-events-branches").emit("input");
-  assert.equal(ui.el("gitlab-events-save").disabled, false);
-});
 
 
-test("Events offers explicit rebinding when a verified connection changes account", async () => {
-  const { api, events } = notificationServer();
-  Object.assign(events.get("A"), { recipient_id: 101, instance: "https://gitlab.invalid" });
-  const ui = await launch(api);
-  await ui.el("open-gitlab-source").emit("click"); await settle();
-  assert.equal(ui.el("gitlab-events-save").disabled, true);
-  api.connections[0].validation = { status: "valid", user_id: 202, username: "bob" };
-  await ui.el("notification-reload").emit("click");
-  assert.equal(ui.el("gitlab-events-save").disabled, false);
-  assert.equal(ui.el("gitlab-events-sync").disabled, true);
-  assert.match(ui.el("gitlab-events-action-hint").textContent, /新建订阅/);
-  assert.equal(api.calls.filter(c => c.path === "/v1/platform/notifications/configure").length, 0);
-});
+
 
 test("Enter sends once while composing, modified Enter and held keys never submit messages", async () => {
   const api = server([makeRoom("A")]), ui = await launch(api), input = ui.el("message-input");
@@ -2121,26 +1682,6 @@ test("duplicate create submissions retain one ID while an unrelated ready room s
   assert.equal(api.catalog.rooms.filter(room=>room.name==="B").length,1);
 });
 
-test("AN-01.2 selects an exact membership in source settings without starting collaboration", async () => {
-  const api = server([makeRoom("A")]);
-  const member = {agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"},execution:{paused:true,agent:{turn_number:0}}};
-  const events = eventView({available:true,subscription_version:1,config:{enabled:true,connection_id:"a".repeat(32),project:"remote/project",interval_seconds:5,filter:{}},status:"running",pending:0,metrics:{}});
-  api.hook = (path, data) => {
-    if (path === "/v1/member/list") return {members:[member]};
-    if (path.startsWith("/v1/platform/notifications?")) return {subscriptions:[events,todoView()]};
-    if (path === "/v1/platform/notifications/configure") { events.config = structuredClone(data.config);events.subscription_version++;return structuredClone(events); }
-  };
-  const ui=await launch(api);
-  await ui.el("open-gitlab-source").emit("click");await settle();
-  const target=ui.el("gitlab-events-target"),value=JSON.stringify({mode:"inbox",agent_id:member.agent_id,membership_id:member.membership_id});
-  assert.ok(target.options.some(option=>option.value===value));
-  target.value=value;await target.emit("change");
-  assert.equal(ui.el("gitlab-events-save").disabled,false);
-  await ui.refresh();await settle();assert.equal(target.value,value);
-  await ui.el("gitlab-events-save").emit("click");await settle();
-  assert.deepEqual(api.calls.find(call=>call.path==="/v1/platform/notifications/configure").data.config.target,JSON.parse(value));
-  assert.equal(api.calls.some(call=>call.path==="/v1/member/run"),false);
-});
 
 test("AN-01.2 Inbox snapshot paging never confirms, and late reads cannot cross rooms", async () => {
   const api=server([makeRoom("A"),makeRoom("B")]);
@@ -2636,4 +2177,162 @@ test("an unconfirmed enable is observed without automatically replaying the muta
   assert.match(ui.el("sync-error").textContent, /操作未确认/);
   await ui.refresh(); await settle();
   assert.equal(api.calls.filter(call => call.path === "/v1/member/run").length, 1);
+});
+
+const gitlabPath = action => `/v1/platform/gitlab/notifications/${action}`;
+const gitlabWrites = api => api.calls.filter(c => c.path === gitlabPath("configure"));
+async function openGitLab(ui) { await ui.el("open-gitlab-source").emit("click"); await settle(); }
+async function editGitLab(ui, id, value, event = "change") { ui.el(id).value = value; await ui.el(id).emit(event); }
+async function toggleGitLab(ui, id, checked) { ui.el(id).checked = checked; await ui.el(id).emit("change"); }
+
+test("GitLab saves one provider model with one version and no repeated shared fields", async () => {
+  const { api, events, todos } = todosServer({ enabled:true }), ui = await launch(api); await openGitLab(ui);
+  assert.equal(ui.el("gitlab-events-save"), undefined); assert.equal(ui.el("gitlab-todos-save"), undefined);
+  await editGitLab(ui,"gitlab-connection","b".repeat(32)); await ui.el("gitlab-save").emit("click");
+  assert.equal(gitlabWrites(api).length,1);
+  const body=gitlabWrites(api)[0].data;
+  assert.equal(body.version,0); assert.equal(body.channel,undefined); assert.equal(body.subscription_id,undefined);
+  assert.equal(body.config.connection_id,"b".repeat(32));
+  for(const source of [body.config.events,body.config.todos]) { assert.equal(source.connection_id,undefined); assert.equal(source.target,undefined); }
+  assert.equal(events.get("A").config.connection_id,"b".repeat(32)); assert.equal(todos.get("A").config.connection_id,"b".repeat(32));
+  assert.equal(ui.el("gitlab-save").disabled,true);
+  await ui.el("gitlab-sync").emit("click");
+  const sync=api.calls.find(c=>c.path===gitlabPath("sync")); assert.equal(sync.data.version,1); assert.equal(sync.data.config,undefined);
+});
+
+test("GitLab can save common settings while both message types are disabled", async()=>{
+  const {api,events}=todosServer(); Object.assign(events.get("A"),{subscription_version:0,status:"disabled"});events.get("A").config.enabled=false;
+  const ui=await launch(api);await openGitLab(ui);await editGitLab(ui,"gitlab-connection","b".repeat(32));
+  await ui.el("gitlab-save").emit("click");assert.equal(gitlabWrites(api).length,1);
+  assert.equal(api.gitlabRecords.get("A").config.connection_id,"b".repeat(32));
+  await ui.refresh();assert.equal(ui.el("gitlab-connection").value,"b".repeat(32));assert.equal(ui.el("gitlab-events-enabled").checked,false);
+});
+
+test("GitLab common target submits the exact membership once for both message types",async()=>{
+  const {api,events,todos}=todosServer({enabled:true}),hook=api.hook;
+  const member={agent_id:"reviewer",membership_id:"reviewer-generation-2",runner:{profile:"runtime"},status:"paused"};
+  api.hook=(path,body)=>path==="/v1/member/list"?{members:[member],latest_seq:1}:hook(path,body);
+  const ui=await launch(api);await openGitLab(ui);
+  const value=JSON.stringify({mode:"inbox",agent_id:member.agent_id,membership_id:member.membership_id});
+  await editGitLab(ui,"gitlab-target",value);await ui.el("gitlab-save").emit("click");
+  assert.deepEqual(gitlabWrites(api)[0].data.config.target,JSON.parse(value));
+  for (const source of [events,todos]) assert.deepEqual(source.get("A").config.target,JSON.parse(value));
+  assert.equal(api.calls.some(c=>/member\/(restart|enable|resume)/.test(c.path)),false);
+});
+
+test("GitLab enables one selected type while retaining one common config",async()=>{
+  const {api,events,todos}=todosServer({bound:false});events.get("A").config.enabled=false;events.get("A").subscription_version=0;
+  const ui=await launch(api);await openGitLab(ui);await editGitLab(ui,"gitlab-connection","a".repeat(32));
+  await toggleGitLab(ui,"gitlab-todos-enabled",true);await ui.el("gitlab-save").emit("click");
+  assert.equal(gitlabWrites(api).length,1);assert.equal(events.get("A").config.enabled,false);assert.equal(todos.get("A").config.enabled,true);
+});
+
+test("GitLab public draft survives polling, platform tabs, rail closing and connection management",async()=>{
+  const {api}=todosServer({enabled:true}),ui=await launch(api);await openGitLab(ui);
+  await editGitLab(ui,"gitlab-events-ignore","bot","input");await editGitLab(ui,"gitlab-todos-interval","60","input");
+  await ui.refresh();await ui.el("notification-tab-messages").emit("click");await ui.el("notification-tab-gitlab").emit("click");
+  await ui.el("gitlab-manage-connections").emit("click");await ui.el("close-settings").emit("click");await settle();
+  await ui.el("close-notification").emit("click");await openGitLab(ui);
+  assert.equal(ui.el("gitlab-events-ignore").value,"bot");assert.equal(String(ui.el("gitlab-todos-interval").value),"60");assert.equal(gitlabWrites(api).length,0);
+  await ui.el("gitlab-save").emit("click");assert.deepEqual(gitlabWrites(api)[0].data.config.events.filter.ignore_users,["bot"]);
+  assert.equal(gitlabWrites(api)[0].data.config.todos.interval_seconds,60);
+});
+
+test("GitLab rejects an empty activity selection and preserves explicit empty todo filters",async()=>{
+  const {api}=todosServer({enabled:true}),ui=await launch(api);await openGitLab(ui);
+  await toggleGitLab(ui,"gitlab-events-all-types",false);assert.equal(ui.el("gitlab-save").disabled,true);
+  await ui.refresh();assert.equal(ui.el("gitlab-events-type-opened").checked,false);
+  await toggleGitLab(ui,"gitlab-events-all-types",true);
+  for(const reason of ["mentioned","assigned","review_requested","other"])await toggleGitLab(ui,`gitlab-todos-reason-${reason}`,false);
+  await ui.el("gitlab-save").emit("click");assert.deepEqual(gitlabWrites(api)[0].data.config.todos.filter.reasons,[]);
+  await ui.refresh();assert.equal(ui.el("gitlab-todos-reason-mentioned").checked,false);
+});
+
+test("GitLab validates both type settings before the one save",async()=>{
+  const {api}=todosServer({enabled:true}),ui=await launch(api);await openGitLab(ui);
+  await editGitLab(ui,"gitlab-todos-interval","3601","input");assert.equal(ui.el("gitlab-save").disabled,true);
+  await editGitLab(ui,"gitlab-todos-interval","60","input");await editGitLab(ui,"gitlab-events-interval","31","input");assert.equal(ui.el("gitlab-save").disabled,true);
+  await editGitLab(ui,"gitlab-events-interval","10","input");assert.equal(ui.el("gitlab-save").disabled,false);
+  await ui.el("gitlab-save").emit("click");assert.equal(gitlabWrites(api).length,1);
+});
+
+test("GitLab saved settings with a failed source expose an explicit apply retry",async()=>{
+  const {api,events,todos}=todosServer({enabled:true}),ui=await launch(api);await openGitLab(ui);
+  api.gitlabApplyFailure.add("todos");await editGitLab(ui,"gitlab-connection","b".repeat(32));await ui.el("gitlab-save").emit("click");
+  const eventVersion=events.get("A").subscription_version;
+  assert.equal(api.gitlabRecords.get("A").config.connection_id,"b".repeat(32));assert.equal(todos.get("A").config.connection_id,"a".repeat(32));
+  assert.equal(ui.el("gitlab-save").textContent,"重试应用");assert.equal(ui.el("gitlab-sync").disabled,true);assert.equal(ui.el("gitlab-todos-settings").open,true);
+  await ui.refresh();assert.equal(ui.el("gitlab-save").textContent,"重试应用");assert.equal(gitlabWrites(api).length,1);
+  api.gitlabApplyFailure.clear();await ui.el("gitlab-save").emit("click");
+  assert.equal(gitlabWrites(api).length,2);assert.equal(gitlabWrites(api)[1].data.version,1);assert.equal(events.get("A").subscription_version,eventVersion);
+  assert.equal(todos.get("A").config.connection_id,"b".repeat(32));assert.equal(ui.el("gitlab-save").disabled,true);
+});
+
+test("GitLab lost committed response is read back without a second save",async()=>{
+  const {api}=todosServer({enabled:true}),hook=api.hook;let lose=true;
+  api.hook=(path,data)=>{const result=hook(path,data);if(path===gitlabPath("configure")&&lose){lose=false;throw new Error("response lost");}return result;};
+  const ui=await launch(api);await openGitLab(ui);await editGitLab(ui,"gitlab-todos-interval","61","input");await ui.el("gitlab-save").emit("click");
+  await ui.refresh();assert.equal(gitlabWrites(api).length,1);assert.equal(String(ui.el("gitlab-todos-interval").value),"61");assert.equal(ui.el("gitlab-save").disabled,true);
+});
+
+test("GitLab uncommitted timeout retains its draft and needs an explicit retry",async()=>{
+  const {api}=todosServer({enabled:true}),hook=api.hook;let fail=true;
+  api.hook=(path,data)=>{if(path===gitlabPath("configure")&&fail)throw new Error("timeout");return hook(path,data);};
+  const ui=await launch(api);await openGitLab(ui);await editGitLab(ui,"gitlab-todos-interval","62","input");await ui.el("gitlab-save").emit("click");
+  await ui.refresh();assert.equal(gitlabWrites(api).length,1);assert.equal(String(ui.el("gitlab-todos-interval").value),"62");assert.equal(ui.el("gitlab-save").disabled,false);
+  fail=false;await ui.el("gitlab-save").emit("click");assert.equal(gitlabWrites(api).length,2);
+});
+
+test("GitLab provider version conflicts read current state without replay",async()=>{
+  const {api}=todosServer({enabled:true}),hook=api.hook;let conflict=true;
+  api.hook=(path,data)=>{if(path===gitlabPath("configure")&&conflict)throw Object.assign(new Error("conflict"),{code:"conflict"});return hook(path,data);};
+  const ui=await launch(api);await openGitLab(ui);await editGitLab(ui,"gitlab-todos-interval","63","input");await ui.el("gitlab-save").emit("click");
+  assert.equal(gitlabWrites(api).length,1);assert.match(ui.el("gitlab-feedback").textContent,/版本已变化/);
+  conflict=false;await ui.el("gitlab-save").emit("click");assert.equal(gitlabWrites(api).length,2);
+});
+
+test("GitLab locks every setting during one save, blocks duplicate clicks and isolates late room replies",async()=>{
+  const {api}=todosServer({enabled:true}),hook=api.hook;let release;
+  api.hook=(path,data)=>path===gitlabPath("configure")?new Promise(resolve=>{release=()=>resolve(hook(path,data));}):hook(path,data);
+  const ui=await launch(api);await openGitLab(ui);await editGitLab(ui,"gitlab-connection","b".repeat(32));
+  const saving=ui.el("gitlab-save").emit("click");await settle();assert.equal(ui.el("gitlab-shared-fields").disabled,true);assert.equal(ui.el("gitlab-events-fields").disabled,true);assert.equal(ui.el("gitlab-todos-fields").disabled,true);
+  await ui.el("gitlab-save").emit("click");assert.equal(gitlabWrites(api).length,1);
+  await ui.select("B");release();await saving;await openGitLab(ui);
+  assert.equal(ui.el("gitlab-connection").value,"a".repeat(32));assert.equal(String(ui.el("gitlab-todos-interval").value),"45");assert.equal(ui.el("gitlab-feedback").textContent,"");
+});
+
+test("GitLab stale polling cannot roll back a completed provider save",async()=>{
+  const {api}=todosServer({enabled:true}),ui=await launch(api);await openGitLab(ui);const hook=api.hook;let release;
+  api.hook=(path,data)=>{if(path.startsWith("/v1/platform/notifications?")){const old=hook(path,data);return new Promise(resolve=>{release=()=>resolve(old);});}return hook(path,data);};
+  const reading=ui.refresh();await settle();await editGitLab(ui,"gitlab-connection","b".repeat(32));await editGitLab(ui,"gitlab-todos-interval","64","input");await ui.el("gitlab-save").emit("click");
+  release();await reading;assert.equal(String(ui.el("gitlab-todos-interval").value),"64");assert.equal(ui.el("gitlab-save").disabled,true);
+});
+
+test("GitLab works without Workspace and prefill changes only the public draft",async()=>{
+  const {api}=todosServer({enabled:true}),ui=await launch(api);await openGitLab(ui);
+  await editGitLab(ui,"gitlab-events-project","other/project","input");await ui.el("notification-manage-binding").emit("click");
+  assert.equal(ui.el("gitlab-events-project").value,"group/project-A");assert.equal(gitlabWrites(api).length,0);
+  const hook=api.hook;api.hook=(path,data)=>path.startsWith("/v1/workspace?")?Promise.reject(new Error("offline")):hook(path,data);
+  await ui.refresh();await editGitLab(ui,"gitlab-todos-interval","65","input");assert.equal(ui.el("gitlab-save").disabled,false);
+  await ui.el("gitlab-save").emit("click");assert.equal(gitlabWrites(api).length,1);assert.equal(api.calls.some(c=>c.path==="/v1/workspace/apply"),false);
+});
+
+test("GitLab same connection reverified as a new account requires explicit apply",async()=>{
+  const {api}=todosServer({enabled:true}),ui=await launch(api);await openGitLab(ui);
+  // Runtime identity is evidence of the previously accepted account.
+  api.gitlabRecords.set("A",{version:1,config:structuredClone(fixtureGitLabView([eventView({config:{enabled:true,connection_id:"a".repeat(32),project:"group/project-A",interval_seconds:5,filter:{}},metrics:{}}),todoView({config:{enabled:true,connection_id:"a".repeat(32),project_scope:"all",interval_seconds:30,inactive_interval_seconds:120,filter:{}}})]).config)});
+  api.connections[0].validation={status:"valid",user_id:303,username:"carol"};
+  await ui.el("gitlab-manage-connections").emit("click");await ui.el("close-settings").emit("click");await settle();
+  assert.match(ui.el("gitlab-account").textContent,/@carol/);assert.equal(ui.el("gitlab-save").disabled,false);assert.equal(gitlabWrites(api).length,0);
+  await ui.el("gitlab-save").emit("click");assert.equal(gitlabWrites(api).length,1);
+});
+
+test("GitLab reflects a provider operation started in another tab and keeps this tab's draft",async()=>{
+  const {api,events,todos}=todosServer({enabled:true}),ui=await launch(api);await openGitLab(ui);
+  await editGitLab(ui,"gitlab-todos-interval","66","input");
+  api.gitlabRecords.set("A",{version:1,config:fixtureGitLabView([eventView(events.get("A")),todoView(todos.get("A"))]).config,applying:true});
+  await ui.refresh();assert.equal(ui.el("gitlab-shared-fields").disabled,true);assert.equal(ui.el("gitlab-save").disabled,true);
+  assert.match(ui.el("gitlab-feedback").textContent,/正在应用/);assert.equal(String(ui.el("gitlab-todos-interval").value),"66");
+  api.gitlabRecords.get("A").applying=false;await ui.refresh();assert.equal(ui.el("gitlab-save").disabled,false);
+  await ui.el("gitlab-save").emit("click");assert.equal(gitlabWrites(api)[0].data.version,1);assert.equal(gitlabWrites(api)[0].data.config.todos.interval_seconds,66);
 });

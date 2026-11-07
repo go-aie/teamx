@@ -55,6 +55,9 @@ type TodosConfig struct {
 }
 
 func NormalizeTodosConfig(c TodosConfig) (TodosConfig, error) {
+	return normalizeTodosConfig(c, true)
+}
+func normalizeTodosConfig(c TodosConfig, requireConnection bool) (TodosConfig, error) {
 	if !c.Target.Valid() {
 		return c, notification.ErrRequest
 	}
@@ -67,7 +70,7 @@ func NormalizeTodosConfig(c TodosConfig) (TodosConfig, error) {
 	if c.ProjectScope == "" {
 		c.ProjectScope = "all"
 	}
-	if !validRestartID(c.ConnectionID) || (c.ProjectScope != "all" && c.ProjectScope != "current") || c.IntervalSeconds < 3 || c.IntervalSeconds > 3600 || c.InactiveIntervalSeconds < c.IntervalSeconds || c.InactiveIntervalSeconds > 86400 {
+	if requireConnection && !validRestartID(c.ConnectionID) || (c.ProjectScope != "all" && c.ProjectScope != "current") || c.IntervalSeconds < 3 || c.IntervalSeconds > 3600 || c.InactiveIntervalSeconds < c.IntervalSeconds || c.InactiveIntervalSeconds > 86400 {
 		return c, notification.ErrRequest
 	}
 	c.Filter.Reasons = slices.Clone(c.Filter.Reasons)

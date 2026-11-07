@@ -173,6 +173,7 @@ func (m *roomManager) runDeletion(target roomSummary, rt *roomRuntime) {
 	runErr = m.saveIndex(next)
 	if runErr == nil {
 		m.notifications.ForgetRoomLocked(target.RoomIdentity)
+		delete(m.gitlabNotifications, target.RoomIdentity)
 	}
 }
 

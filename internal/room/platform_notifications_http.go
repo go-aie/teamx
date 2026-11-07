@@ -198,10 +198,16 @@ func (m *roomManager) servePlatformNotifications(w http.ResponseWriter, r *http.
 			writeAPIError(w, err)
 			return
 		}
+		gitlabView, err := m.gitlabNotificationViewLocked(RoomIdentity{RoomID: q.Get("room_id"), RoomInstance: q.Get("room_instance")})
+		if err != nil {
+			writeAPIError(w, err)
+			return
+		}
 		_ = json.NewEncoder(w).Encode(struct {
-			Subscriptions []notificationView `json:"subscriptions"`
-			Retired       []notificationView `json:"retired_subscriptions"`
-		}{views, retired})
+			Subscriptions []notificationView     `json:"subscriptions"`
+			Retired       []notificationView     `json:"retired_subscriptions"`
+			GitLab        gitlabNotificationView `json:"gitlab"`
+		}{views, retired, gitlabView})
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -233,6 +239,17 @@ func (m *roomManager) servePlatformNotifications(w http.ResponseWriter, r *http.
 		return
 	}
 	key := notification.Key{Owner: req.RoomIdentity, Source: req.SourceID, SubscriptionID: req.SubscriptionID}
+	// Unified GitLab settings own all later configuration writes. The source
+	// endpoint cannot bypass provider settings or their version/operation gate.
+	if req.SourceID.Provider == "gitlab" {
+		m.mu.Lock()
+		_, unified := m.gitlabNotifications[req.RoomIdentity]
+		m.mu.Unlock()
+		if unified {
+			writeAPIError(w, ErrRequest)
+			return
+		}
+	}
 	var err error
 	if r.URL.Path == "/v1/platform/notifications/configure" {
 		// Config schema remains provider-owned; HTTP decoding and mapping stay here.

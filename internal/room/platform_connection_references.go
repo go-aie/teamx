@@ -24,6 +24,11 @@ func (m *roomManager) platformConnectionReferencesLocked(id string) ([]platformC
 	for _, owner := range m.notifications.ReferencesLocked(id) {
 		subscribed[owner] = true
 	}
+	for owner, saved := range m.gitlabNotifications {
+		if saved.Config.ConnectionID == id {
+			subscribed[owner] = true
+		}
+	}
 	for _, entry := range m.index.Rooms {
 		if entry.Status == "deleting" && entry.DeletionPhase == "removing" {
 			continue
