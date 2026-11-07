@@ -563,6 +563,10 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m.serveLarkChats(w, r)
 		return
 	}
+	if r.URL.Path == "/v1/platform/gitlab/projects" {
+		m.serveGitLabProjects(w, r)
+		return
+	}
 	if r.URL.Path == "/v1/platform/attachments" {
 		m.servePlatformAttachment(w, r)
 		return

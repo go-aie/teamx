@@ -3,6 +3,7 @@ package room
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -298,6 +299,12 @@ func TestIndependentEventsWorkspaceLifecycleDoesNotCancelQuery(t *testing.T) {
 func TestIndependentEventsAppHandler(t *testing.T) {
 	h, _ := newIndependentEventHarness(t)
 	eventLiveService(t, h)
+	h.m.platformHTTP = workspaceHTTPFunc(func(r *http.Request) (*http.Response, error) {
+		if r.Method != "GET" || r.URL.Path != "/api/v4/projects" {
+			t.Fatalf("unexpected project picker request %s %s", r.Method, r.URL)
+		}
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`[{"id":7,"name":"Project","path_with_namespace":"remote/project"},{"id":8,"name":"Other","path_with_namespace":"remote/other"}]`))}, nil
+	})
 	runAppHandler(t, h.m, "web_events_independent_handler.mjs")
 	if h.state().Config.Enabled || h.state().Binding.ProjectID != 8 {
 		t.Fatal("app did not persist independent settings")

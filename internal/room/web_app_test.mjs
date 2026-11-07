@@ -1492,6 +1492,7 @@ function todosServer({ bound = true, enabled = false } = {}) {
     return fixtureGitLabView(sources, records.get(id));
   };
   api.hook = (path, data) => {
+    if (path === "/v1/platform/gitlab/projects") return api.projectPage ? api.projectPage(data) : {projects:["group/project-A","group/changed","other/project"].map((path,index)=>({id:index+1,name:path.split("/").at(-1),path_with_namespace:path})),next_page:0};
     if (path.startsWith("/v1/platform/notifications?")) {
       const id = new URL(path, "http://fixture").searchParams.get("room_id");
       return { subscriptions: [eventView(events.get(id)), structuredClone(todos.get(id))], gitlab: viewFor(id) };
@@ -2220,6 +2221,11 @@ const gitlabPath = action => `/v1/platform/gitlab/notifications/${action}`;
 const gitlabWrites = api => api.calls.filter(c => c.path === gitlabPath("configure"));
 async function openGitLab(ui) { await ui.el("open-gitlab-source").emit("click"); await settle(); }
 async function editGitLab(ui, id, value, event = "change") { ui.el(id).value = value; await ui.el(id).emit(event); }
+async function selectGitLabProject(ui, path) {
+  await expandDisclosure(ui.el("gitlab-project-picker"));
+  const input=ui.el("gitlab-project-options").children.map(row=>row.children[0]).find(input=>input.value===path);
+  assert.ok(input,`project ${path} is listed`);input.checked=true;await input.emit("change");
+}
 async function toggleGitLab(ui, id, checked) { ui.el(id).checked = checked; await ui.el(id).emit("change"); }
 
 test("notification account status stays separate from connection management",async()=>{
@@ -2327,11 +2333,11 @@ test("GitLab enables one selected type while retaining one common config",async(
 
 test("GitLab public draft survives polling, platform tabs, rail closing and connection management",async()=>{
   const {api}=todosServer({enabled:true}),ui=await launch(api);await openGitLab(ui);
-  await editGitLab(ui,"gitlab-events-project","group/changed","input");await editGitLab(ui,"gitlab-interval","60","input");
+  await selectGitLabProject(ui,"group/changed");await editGitLab(ui,"gitlab-interval","60","input");
   await ui.refresh();await ui.el("notification-tab-messages").emit("click");await ui.el("notification-tab-gitlab").emit("click");
   await ui.el("gitlab-manage-connections").emit("click");await ui.el("close-settings").emit("click");await settle();
   await ui.el("close-notification").emit("click");await openGitLab(ui);
-  assert.equal(ui.el("gitlab-events-project").value,"group/changed");assert.equal(String(ui.el("gitlab-interval").value),"60");assert.equal(gitlabWrites(api).length,0);
+  assert.equal(ui.el("gitlab-project-summary").textContent,"group/changed");assert.equal(String(ui.el("gitlab-interval").value),"60");assert.equal(gitlabWrites(api).length,0);
   await ui.el("gitlab-save").emit("click");assert.equal(gitlabWrites(api)[0].data.config.events.project,"group/changed");
   assert.equal(gitlabWrites(api)[0].data.config.interval_seconds,60);
 });
@@ -2406,10 +2412,11 @@ test("GitLab stale polling cannot roll back a completed provider save",async()=>
   release();await reading;assert.equal(String(ui.el("gitlab-interval").value),"64");assert.equal(ui.el("gitlab-save").disabled,true);
 });
 
-test("GitLab works without Workspace and prefill changes only the public draft",async()=>{
+test("GitLab project selection works without Workspace and only edits the public draft",async()=>{
   const {api}=todosServer({enabled:true}),ui=await launch(api);await openGitLab(ui);
-  await editGitLab(ui,"gitlab-events-project","other/project","input");await ui.el("notification-manage-binding").emit("click");
-  assert.equal(ui.el("gitlab-events-project").value,"group/project-A");assert.equal(gitlabWrites(api).length,0);
+  assert.equal(ui.el("notification-manage-binding"),undefined);assert.equal(ui.el("gitlab-events-project"),undefined);
+  await selectGitLabProject(ui,"other/project");
+  assert.equal(ui.el("gitlab-project-summary").textContent,"other/project");assert.equal(gitlabWrites(api).length,0);
   const hook=api.hook;api.hook=(path,data)=>path.startsWith("/v1/workspace?")?Promise.reject(new Error("offline")):hook(path,data);
   await ui.refresh();await editGitLab(ui,"gitlab-interval","65","input");assert.equal(ui.el("gitlab-save").disabled,false);
   await ui.el("gitlab-save").emit("click");assert.equal(gitlabWrites(api).length,1);assert.equal(api.calls.some(c=>c.path==="/v1/workspace/apply"),false);
@@ -2470,4 +2477,73 @@ test("Scion Workspace rejects unverified and mismatched connections before retai
     assert.equal(api.calls.some(c=>c.path==="/v1/workspace/apply"),false);
     assert.match(ui.el("workspace-error").textContent,valid ? /实例不一致/ : /已验证/);
   }
+});
+
+test("GitLab project picker searches remotely, pages the current query and saves a single project",async()=>{
+  const {api}=todosServer({enabled:true});
+  const project=(id,path)=>({id,name:"同名项目",path_with_namespace:path});
+  api.projectPage=data=>data.search==="other" ? {projects:[project(data.page+10,`other/project-${data.page}`)],next_page:data.page===1 ? 2 : 0} : {projects:[project(1,"team/project")],next_page:2};
+  const ui=await launch(api);await openGitLab(ui);
+  assert.equal(api.calls.some(c=>c.path==="/v1/platform/gitlab/projects"),false);
+  await expandDisclosure(ui.el("gitlab-project-picker"));
+  assert.equal(ui.el("gitlab-project-options").children.length,1);
+  ui.el("gitlab-project-search").value="other";await ui.el("gitlab-project-search").emit("input");
+  assert.equal(ui.el("gitlab-project-options").children.length,0);
+  await ui.clock.advance(299);
+  assert.equal(api.calls.filter(c=>c.path==="/v1/platform/gitlab/projects").length,1);
+  await ui.clock.advance(1);
+  const first=api.calls.filter(c=>c.path==="/v1/platform/gitlab/projects").at(-1).data;
+  assert.equal(first.search,"other");assert.equal(first.page,1);assert.equal(first.connection_id,"a".repeat(32));
+  assert.equal(ui.el("gitlab-project-more").hidden,false);
+  await ui.el("gitlab-project-more").emit("click");
+  assert.equal(api.calls.filter(c=>c.path==="/v1/platform/gitlab/projects").at(-1).data.page,2);
+  assert.equal(ui.el("gitlab-project-options").children.length,2);assert.equal(ui.el("gitlab-project-more").hidden,true);
+  const input=ui.el("gitlab-project-options").children[1].children[0];input.checked=true;await input.emit("change");
+  assert.equal(ui.el("gitlab-project-summary").textContent,"other/project-2");assert.equal(ui.el("gitlab-project-picker").open,false);
+  assert.equal(gitlabWrites(api).length,0);
+  await ui.el("gitlab-save").emit("click");assert.equal(gitlabWrites(api)[0].data.config.events.project,"other/project-2");
+});
+
+test("GitLab project picker discards late search, connection and room responses",async()=>{
+  const {api}=todosServer({enabled:true});let finish;
+  const project=path=>({id:7,name:"Project",path_with_namespace:path});
+  api.projectPage=data=>data.search==="new" ? {projects:[project("new/project")],next_page:0} : new Promise(resolve=>{finish=resolve;});
+  const ui=await launch(api);await openGitLab(ui);await expandDisclosure(ui.el("gitlab-project-picker"));
+  const old=finish;
+  ui.el("gitlab-project-search").value="new";await ui.el("gitlab-project-search").emit("input");await ui.clock.advance(300);
+  old({projects:[project("old/project")],next_page:2});await settle();
+  assert.equal(ui.el("gitlab-project-options").children[0].children[0].value,"new/project");
+  api.projectPage=()=>new Promise(resolve=>{finish=resolve;});
+  const pending=ui.el("gitlab-project-refresh").emit("click");await settle();const previous=finish;
+  api.projectPage=()=>({projects:[project("other/project")],next_page:0});
+  await editGitLab(ui,"gitlab-connection","b".repeat(32));await settle();
+  previous({projects:[project("stale/project")],next_page:2});await pending;
+  assert.equal(ui.el("gitlab-project-search").value,"");assert.equal(ui.el("gitlab-project-options").children[0].children[0].value,"other/project");
+  api.projectPage=()=>new Promise(resolve=>{finish=resolve;});
+  const late=ui.el("gitlab-project-refresh").emit("click");await settle();const roomResponse=finish;
+  await ui.select("B");await openGitLab(ui);
+  roomResponse({projects:[project("room-a/project")],next_page:0});await late;
+  assert.equal(ui.el("gitlab-project-options").children.length,0);
+});
+
+test("GitLab project picker retains selection on failure and exposes refresh and empty results",async()=>{
+  const {api}=todosServer({enabled:true});api.projectPage=()=>Promise.reject(Error("offline"));
+  const ui=await launch(api);await openGitLab(ui);await expandDisclosure(ui.el("gitlab-project-picker"));
+  assert.match(ui.el("gitlab-project-status").textContent,/读取失败/);assert.equal(ui.el("gitlab-project-summary").textContent,"group/project-A");
+  assert.equal(ui.el("gitlab-project-refresh").disabled,false);
+  api.projectPage=()=>({projects:[],next_page:0});await ui.el("gitlab-project-refresh").emit("click");
+  assert.match(ui.el("gitlab-project-status").textContent,/没有匹配/);assert.equal(gitlabWrites(api).length,0);
+  await editGitLab(ui,"gitlab-connection","");
+  assert.equal(ui.el("gitlab-project-summary").textContent,"请先选择平台连接");
+  assert.equal(ui.el("gitlab-project-summary").attributes["aria-disabled"],"true");
+  assert.equal(ui.el("gitlab-project-hint").hidden,false);assert.match(ui.el("gitlab-project-hint").textContent,/在上方选择平台连接/);
+  api.connections[0].validation.status="unverified";
+  await openGitLab(ui);
+  await editGitLab(ui,"gitlab-connection","a".repeat(32));
+  assert.equal(ui.el("gitlab-project-summary").textContent,"请先验证平台连接");
+  assert.match(ui.el("gitlab-project-hint").textContent,/管理连接/);
+  api.connections[0].validation.status="valid";
+  await openGitLab(ui);
+  await editGitLab(ui,"gitlab-connection","a".repeat(32));await settle();
+  assert.equal(ui.el("gitlab-project-hint").hidden,true);assert.equal(ui.el("gitlab-project-summary").textContent,"group/project-A");
 });

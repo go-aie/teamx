@@ -366,12 +366,13 @@ async function syncGitLabNotifications(catalog, ws) {
 function larkConfigKey(c = {}) {return JSON.stringify({scope_mode:c.scope_mode || "specified",enabled:!!c.enabled,connection_id:c.connection_id || "",chats:[...(c.chats || [])].sort(),target:notificationTarget(c),private:!!c.private,group_mentions:!!c.group_mentions,group_all:!!c.group_all,at_all:!!c.at_all,bots:!!c.bots,interval_seconds:c.interval_seconds || 60,backfill_seconds:c.backfill_seconds || 0,backfill_start:c.backfill_start ? new Date(c.backfill_start).toISOString() : ""});}
 function larkMessagesDraft() {
   const custom=$("lark-backfill").value==="custom", start=new Date($("lark-backfill-start").value).getTime();
-  return {scope_mode:$("lark-scope").value || "specified",enabled:$("lark-enabled").checked, connection_id:$("lark-connection").value,
-    target:JSON.parse($("lark-target").value || "{}"), chats:$("lark-scope").value==="all" ? [] : larkChatIDs().sort(),
-    private:true, group_mentions:$("lark-group").checked, group_all:$("lark-scope").value!=="all" && $("lark-group-mode").value==="all", at_all:$("lark-all").checked, bots:true,
+  return {scope_mode:larkAllChats() ? "all" : "specified",enabled:$("lark-enabled").checked, connection_id:$("lark-connection").value,
+    target:JSON.parse($("lark-target").value || "{}"), chats:larkAllChats() ? [] : larkChatIDs().sort(),
+    private:true, group_mentions:$("lark-group").checked, group_all:!larkAllChats() && $("lark-group-mode").value==="all", at_all:$("lark-all").checked, bots:true,
     interval_seconds:Number($("lark-interval").value), backfill_seconds:custom ? 0 : Number($("lark-backfill").value || 0),
     ...(custom ? {backfill_start:Number.isFinite(start) ? new Date(start).toISOString() : ""} : {})};
 }
+function larkAllChats() { return $("lark-scope").checked; }
 function larkLocalTime(value) {
   const date=new Date(value),pad=n=>String(n).padStart(2,"0");
   return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
@@ -408,8 +409,16 @@ function selectLarkChat(id, selected) {
   renderLarkMessages();
 }
 function renderLarkChatPicker(ws, connection) {
-  const dir=larkChatDirectory(ws,connection), ids=larkChatIDs(), all=$("lark-scope").value==="all";
+  const dir=larkChatDirectory(ws,connection), ids=larkChatIDs(), all=larkAllChats();
+  const ready=connection?.validation?.status==="valid",busy=$("lark-fields").disabled,blocked=!ready || busy || all;
+  const needsConnection=!$("lark-connection").value;
+  $("lark-scope").disabled=!ready || busy;
   $("lark-chat-selection").hidden=all;
+  $("lark-chat-picker-summary").setAttribute("aria-disabled",String(blocked));
+  $("lark-chat-picker-hint").textContent=needsConnection ? "请先在上方选择平台连接，再选择会话。" : !connection ? "所选平台连接不可用，请在上方重新选择。" : !ready ? "请先在「管理连接」中验证所选连接，再选择会话。" : "";
+  $("lark-chat-picker-hint").hidden=ready;
+  $("lark-chat-search").disabled=blocked;$("lark-chat-type").disabled=blocked;
+  if(blocked)$("lark-chat-picker").open=false;
   const known=new Map((ws.messages?.config.connection_id===connection?.id ? ws.messages?.lark?.chats || [] : []).map(chat=>[chat.chat_id,chat]));
   for(const [id,chat] of dir.chats)known.set(id,chat);
   $("lark-chat-selected").replaceChildren(...ids.map(id=>{
@@ -417,31 +426,33 @@ function renderLarkChatPicker(ws, connection) {
     button.type="button";button.textContent=`${label} ×`;button.title=id;button.setAttribute("aria-label",`移除会话：${label}`);
     button.addEventListener("click",()=>selectLarkChat(id,false));return button;
   }));
-  $("lark-chat-picker-summary").textContent=ids.length ? `已选 ${ids.length} / 32 个 · 编辑` : "选择私聊或群聊";
+  $("lark-chat-picker-summary").textContent=!ready ? needsConnection ? "请先选择平台连接" : "请先验证平台连接" : ids.length ? `已选 ${ids.length} / 32 个 · 编辑` : "选择私聊或群聊";
   const query=$("lark-chat-search").value.trim().toLocaleLowerCase(),type=$("lark-chat-type").value || "all";
   const chats=[...dir.chats.values()].filter(chat=>(type==="all" || (type==="p2p" ? chat.chat_mode==="p2p" : chat.chat_mode!=="p2p")) && `${chat.name}\n${chat.chat_id}`.toLocaleLowerCase().includes(query));
   chats.sort((a,b)=>(a.name || a.chat_id).localeCompare(b.name || b.chat_id,"zh-CN"));
   $("lark-chat-options").replaceChildren(...chats.map(chat=>{
     const label=document.createElement("label"),input=document.createElement("input"),text=document.createElement("span"),name=document.createElement("span"),detail=document.createElement("small");
-    label.className="lark-chat-option";input.type="checkbox";input.value=chat.chat_id;input.checked=ids.includes(chat.chat_id);input.disabled=!input.checked && ids.length>=32;
+    label.className="lark-chat-option";input.type="checkbox";input.value=chat.chat_id;input.checked=ids.includes(chat.chat_id);input.disabled=blocked || !input.checked && ids.length>=32;
     name.textContent=larkChatLabel(chat,chat.chat_id);detail.textContent=larkChatType(chat);label.title=chat.chat_id;
-    text.append(name,detail);label.append(input,text);input.addEventListener("change",()=>selectLarkChat(chat.chat_id,input.checked));return label;
+    text.append(name,detail);label.append(input,text);input.addEventListener("change",()=>{
+      if(ws!==workspaceView || ws.larkChatDirectory!==dir || $("lark-fields").disabled || input.disabled)return;
+      selectLarkChat(chat.chat_id,input.checked);
+    });return label;
   }));
-  const ready=connection?.validation?.status==="valid";
   $("lark-chat-picker-status").textContent=!ready ? "请先选择并验证飞书连接。" : dir.error || (dir.loading ? `正在加载…已有 ${dir.chats.size} 个会话` : !dir.loaded ? "可选择私聊和已加入群聊，最多 32 个。" : `${dir.hasMore ? "尚未加载完整，搜索仅筛选已加载会话" : `已加载 ${dir.chats.size} 个会话`}${!chats.length ? (query || type!=="all" ? " · 无匹配会话" : " · 暂无会话") : ""}`);
-  $("lark-chat-more").hidden=!dir.hasMore;$("lark-chat-more").disabled=!ready || dir.loading || dir.chats.size>=10000 || dir.pages>=100;
-  $("lark-chat-refresh").disabled=!ready || dir.loading;
+  $("lark-chat-more").hidden=!dir.hasMore;$("lark-chat-more").disabled=blocked || dir.loading || dir.chats.size>=10000 || dir.pages>=100;
+  $("lark-chat-refresh").disabled=blocked || dir.loading;
 }
 async function loadLarkChats(reset=false) {
   const ws=workspaceView,epoch=state.catalog?.service_epoch,connection=ws?.larkConnections?.find(x=>x.id===$("lark-connection").value);
-  if(!ws || !epoch || connection?.validation?.status!=="valid" || $("lark-scope").value==="all")return;
+  if(!ws || !epoch || connection?.validation?.status!=="valid" || $("lark-fields").disabled || larkAllChats())return;
   const dir=larkChatDirectory(ws,connection);
   if(dir.loading || !reset && dir.loaded && !dir.hasMore)return;
   if(reset){dir.chats.clear();dir.token="";dir.loaded=false;dir.hasMore=false;dir.pages=0;}
   dir.loading=true;dir.error="";renderLarkMessages();
   try{
     const page=await request("/v1/platform/lark/chats",{service_epoch:epoch,...ws.room,caller:{kind:"human",id:ws.operator},connection_id:connection.id,connection_version:connection.version,page_token:dir.token},undefined,40000);
-    if(ws!==workspaceView || epoch!==state.catalog?.service_epoch || ws.larkChatDirectory!==dir || !$("notification-detail").open || !$("lark-chat-picker").open || $("lark-scope").value==="all")return;
+    if(ws!==workspaceView || epoch!==state.catalog?.service_epoch || ws.larkChatDirectory!==dir || !$("notification-detail").open || !$("lark-chat-picker").open || larkAllChats())return;
     if(!Array.isArray(page.chats) || typeof page.has_more!=="boolean" || page.has_more && (!page.page_token || page.page_token===dir.token))throw Error("invalid page");
     for(const chat of page.chats)dir.chats.set(chat.chat_id,chat);
     dir.loaded=true;dir.hasMore=page.has_more;dir.token=page.page_token || "";dir.pages++;
@@ -472,20 +483,22 @@ function renderLarkMessages() {
   if(target!=="{}"&&!targets.some(x=>x.value===target))targets.push(new Option("原接收成员已移除",target));
   setNotificationOptions("lark-target",targets);$("lark-target").value=target;
   if(fresh){
-    $("lark-scope").value=c.scope_mode || "specified";$("lark-enabled").checked=!!c.enabled;ws.larkSelectedChats=[...(c.chats || [])];
+    $("lark-scope").checked=c.scope_mode==="all";$("lark-enabled").checked=!!c.enabled;
+    if(c.scope_mode!=="all" || ws.larkSelectionConnection!==c.connection_id)ws.larkSelectedChats=[...(c.chats || [])];
     $("lark-group").checked=!!c.group_mentions;$("lark-group-mode").value=c.group_all ? "all" : "mentions";$("lark-all").checked=!!c.at_all;
     $("lark-interval").value=c.interval_seconds || 60;$("lark-backfill").value=c.backfill_start ? "custom" : String(c.backfill_seconds || 0);
     $("lark-backfill-start").value=c.backfill_start ? larkLocalTime(c.backfill_start) : "";
     ws.larkFilled=data.subscription_id+":"+data.subscription_version;
   }
+  ws.larkSelectionConnection=c.connection_id;
   $("lark-backfill").disabled=!!data.subscription_id;$("lark-backfill-start").disabled=!!data.subscription_id;
   $("lark-backfill-custom").hidden=$("lark-backfill").value!=="custom";
   $("lark-backfill-start").max=larkLocalTime(Date.now());
-  if($("lark-scope").value==="all")$("lark-group-mode").value="mentions";
-  $("lark-group-mode-all").disabled=$("lark-scope").value==="all";
+  if(larkAllChats())$("lark-group-mode").value="mentions";
+  $("lark-group-mode-all").disabled=larkAllChats();
   const groupAll=$("lark-group-mode").value==="all";
   $("lark-group").disabled=groupAll;$("lark-all").disabled=groupAll;$("lark-group-mentions").hidden=groupAll;
-  $("lark-scope-help").hidden=$("lark-scope").value!=="all";
+  $("lark-scope-help").hidden=!larkAllChats();
   const draft=larkMessagesDraft(), dirty=larkConfigKey(draft)!==larkConfigKey(data.config), connection=connections.find(x=>x.id===draft.connection_id);
   const start=Date.parse(draft.backfill_start || ""),custom=$("lark-backfill").value==="custom";
   const baseline=Date.parse(data.lark?.baseline || data.config.backfill_start || "");
@@ -529,28 +542,107 @@ for(const id of ["enabled","connection","target","scope","group","group-mode","a
   if(workspaceView)workspaceView.larkDirty=true;renderLarkMessages();
   if((id==="connection" || id==="scope") && $("lark-chat-picker").open)void loadLarkChats();
 });
-$("lark-chat-picker").addEventListener("toggle",()=>{if($("lark-chat-picker").open && !workspaceView?.larkChatDirectory?.loaded)void loadLarkChats();});
-$("lark-chat-search").addEventListener("input",()=>renderLarkMessages());
+$("lark-chat-picker-summary").addEventListener("click",event=>{if($("lark-chat-search").disabled)event.preventDefault();});
+$("lark-chat-picker").addEventListener("toggle",()=>{
+  if($("lark-chat-search").disabled){$("lark-chat-picker").open=false;return;}
+  if($("lark-chat-picker").open && !workspaceView?.larkChatDirectory?.loaded)void loadLarkChats();
+});
+$("lark-chat-search").addEventListener("input",()=>{if(!$("lark-chat-search").disabled)renderLarkMessages();});
 $("lark-backfill-start").addEventListener("input",()=>{if(workspaceView)workspaceView.larkDirty=true;renderLarkMessages();});
-$("lark-chat-type").addEventListener("change",()=>renderLarkMessages());
+$("lark-chat-type").addEventListener("change",()=>{if(!$("lark-chat-type").disabled)renderLarkMessages();});
 $("lark-chat-more").addEventListener("click",()=>loadLarkChats());
 $("lark-chat-refresh").addEventListener("click",()=>loadLarkChats(true));
 $("lark-save").addEventListener("click",()=>changeLarkMessages("configure"));
 $("lark-sync").addEventListener("click",()=>changeLarkMessages("sync"));
 $("lark-manage-connections").addEventListener("click",async()=>{showConnectionList();$("settings-dialog").showModal();await loadConnections();});
+function gitlabProjectDirectory(ws) {
+  const connection=todoConnection(ws);
+  const key=JSON.stringify([state.catalog?.service_epoch,connection?.id,connection?.version,connection?.validation]);
+  if(ws.gitlabProjectDirectory?.key!==key){
+    clearTimeout(ws.gitlabProjectDirectory?.timer);
+    ws.gitlabProjectDirectory={key,search:"",projects:new Map(),loaded:false,loading:false,nextPage:0,error:""};
+    $("gitlab-project-search").value="";
+  }
+  return ws.gitlabProjectDirectory;
+}
+function renderGitLabProjectPicker(ws) {
+  const dir=gitlabProjectDirectory(ws),connection=todoConnection(ws),ready=todoVerified(connection),busy=gitlabSettingsBusy(ws);
+  const selected=ws.gitlabDraft.events.project;
+  const needsConnection=!ws.gitlabDraft.connection_id;
+  $("gitlab-project-summary").textContent=ready ? selected || "选择项目" : needsConnection ? "请先选择平台连接" : "请先验证平台连接";
+  $("gitlab-project-hint").textContent=needsConnection ? "请先在上方选择平台连接，再选择项目。" : !connection ? "所选平台连接不可用，请在上方重新选择。" : !ready ? "请先在「管理连接」中验证所选连接，再选择项目。" : "";
+  $("gitlab-project-hint").hidden=ready;
+  if(!ready)$("gitlab-project-picker").open=false;
+  $("gitlab-project-summary").setAttribute("aria-disabled",String(!ready || busy));
+  $("gitlab-project-search").disabled=!ready || busy;
+  $("gitlab-project-options").replaceChildren(...[...dir.projects.values()].map(project=>{
+    const label=document.createElement("label"),input=document.createElement("input"),text=document.createElement("span"),name=document.createElement("span"),path=document.createElement("small");
+    label.className="gitlab-project-option";input.type="radio";input.name="gitlab-project";input.value=project.path_with_namespace;input.checked=selected===input.value;input.disabled=!ready || busy;
+    name.textContent=project.name;path.textContent=project.path_with_namespace;text.append(name,path);label.append(input,text);
+    input.addEventListener("change",()=>{
+      if(ws!==workspaceView || gitlabProjectDirectory(ws)!==dir || gitlabSettingsBusy(ws))return;
+      ws.gitlabDraft.events.project=project.path_with_namespace;
+      $("gitlab-project-picker").open=false;editGitLabConfig();$("gitlab-project-summary").focus();
+    });return label;
+  }));
+  $("gitlab-project-status").textContent=!ready ? "请先选择并验证 GitLab 连接。" : dir.error || (dir.loading || dir.timer ? "正在搜索项目…" : !dir.loaded ? "展开后加载可访问的项目。" : !dir.projects.size ? "没有匹配的项目，请更换关键词。" : `已加载 ${dir.projects.size} 个项目${dir.nextPage ? " · 可加载更多" : ""}`);
+  $("gitlab-project-more").hidden=!dir.nextPage;
+  $("gitlab-project-more").disabled=!ready || busy || dir.loading || !!dir.timer;
+  $("gitlab-project-refresh").disabled=!ready || busy || dir.loading || !!dir.timer;
+}
+async function loadGitLabProjects(reset=false) {
+  const ws=workspaceView,epoch=state.catalog?.service_epoch,connection=ws && todoConnection(ws);
+  if(!ws?.gitlabDraft || !epoch || !todoVerified(connection) || gitlabSettingsBusy(ws) || !$("gitlab-project-picker").open)return;
+  let dir=gitlabProjectDirectory(ws);
+  if(reset){
+    clearTimeout(dir.timer);
+    dir=ws.gitlabProjectDirectory={...dir,projects:new Map(),loaded:false,loading:false,nextPage:0,error:"",timer:null};
+  }
+  if(dir.loading || dir.timer || dir.loaded && !dir.nextPage)return;
+  const number=dir.loaded ? dir.nextPage : 1;
+  dir.loading=true;dir.error="";renderGitLabProjectPicker(ws);
+  try{
+    const page=await request("/v1/platform/gitlab/projects",{service_epoch:epoch,...ws.room,caller:{kind:"human",id:ws.operator},connection_id:connection.id,connection_version:connection.version,search:dir.search,page:number},undefined,45000);
+    if(ws!==workspaceView || epoch!==state.catalog?.service_epoch || gitlabProjectDirectory(ws)!==dir)return;
+    if(!Array.isArray(page.projects) || !Number.isInteger(page.next_page) || page.next_page!==0 && page.next_page<=number || page.projects.some(p=>!Number.isSafeInteger(p.id) || p.id<=0 || typeof p.name!=="string" || typeof p.path_with_namespace!=="string"))throw Error("invalid page");
+    for(const project of page.projects)dir.projects.set(project.id,project);
+    dir.loaded=true;dir.nextPage=page.next_page;
+  }catch(e){
+    if(ws===workspaceView && gitlabProjectDirectory(ws)===dir){
+      dir.error=e.code==="conflict" ? "连接已变化，请重新读取通知设置后重试。" : e.code==="credential" ? "连接已失效，请重新验证后重试。" : "项目列表读取失败，可刷新列表重试；已选项目保留。";
+    }
+  }finally{
+    dir.loading=false;
+    if(ws===workspaceView && gitlabProjectDirectory(ws)===dir)renderGitLabProjectPicker(ws);
+  }
+}
+$("gitlab-project-summary").addEventListener("click",event=>{if(!todoVerified(workspaceView && todoConnection(workspaceView)) || gitlabSettingsBusy(workspaceView))event.preventDefault();});
+$("gitlab-project-picker").addEventListener("toggle",()=>{if($("gitlab-project-picker").open && workspaceView?.gitlabDraft && !gitlabProjectDirectory(workspaceView).loaded)void loadGitLabProjects();});
+$("gitlab-project-search").addEventListener("input",()=>{
+  const ws=workspaceView;if(!ws?.gitlabDraft)return;
+  const old=gitlabProjectDirectory(ws),search=$("gitlab-project-search").value.trim();
+  if(search===old.search)return;
+  clearTimeout(old.timer);
+  const dir=ws.gitlabProjectDirectory={...old,search,projects:new Map(),loaded:false,loading:false,nextPage:0,error:""};
+  dir.timer=setTimeout(()=>{dir.timer=null;if(ws===workspaceView && gitlabProjectDirectory(ws)===dir)void loadGitLabProjects();},300);
+  renderGitLabProjectPicker(ws);
+});
+$("gitlab-project-picker").addEventListener("keydown",event=>{if(event.key==="Escape" && $("gitlab-project-picker").open){event.preventDefault();$("gitlab-project-picker").open=false;$("gitlab-project-summary").focus();}});
+$("gitlab-project-more").addEventListener("click",()=>loadGitLabProjects());
+$("gitlab-project-refresh").addEventListener("click",()=>loadGitLabProjects(true));
 function renderGitLabEvents() {
   renderNotificationSource(); renderGitLabTodos(); renderLarkMessages();
   const ws = workspaceView, data = ws?.events, config = ws?.gitlabDraft?.events;
   $("gitlab-events").hidden = !data || !data.available && !data.subscription_version;
   $("gitlab-events-fields").disabled = !config || gitlabSettingsBusy(ws);
   if (!data || !config) { renderGitLabSettings(); return; }
-  $("gitlab-events-project").value = config.project;
+  renderGitLabProjectPicker(ws);
   $("gitlab-events-enabled").checked = config.enabled;
   for (const input of gitlabEventTypeInputs()) input.checked = !ws.eventsEmptyTypes && (!config.filter.types.length || config.filter.types.includes(input.value));
   const draft = gitlabEventDraftState(data);
   $("gitlab-events-all-types").checked = draft.count === gitlabEventTypeIDs.length;
   $("gitlab-events-all-types").indeterminate = draft.count > 0 && draft.count < gitlabEventTypeIDs.length;
-  $("gitlab-events-feedback").textContent = draft.invalid ? draft.targetInvalid ? "请选择已验证连接并填写项目" : "请检查活动筛选" : "";
+  $("gitlab-events-feedback").textContent = draft.invalid ? draft.targetInvalid ? "请选择已验证连接和项目" : "请检查活动筛选" : "";
   $("gitlab-events-action-hint").textContent = draft.targetChanged && data.subscription_id ? "更换连接、账号或项目将新建订阅；旧进度与积压保留。" : "";
   notice("gitlab-events-error", gitlabApplyNotice(ws, "events") || notificationTargetErrors[data.delivery_error_code] || gitlabEventErrors[data.delivery_error_code] || gitlabEventErrors[data.error_code] || "");
   renderGitLabSettings();
@@ -560,12 +652,12 @@ function editGitLabEvents(event) {
   if (!ws?.gitlabDraft || gitlabSettingsBusy(ws)) { renderGitLabEvents(); return; }
   const types = gitlabEventTypeInputs().filter(input => input.checked).map(input => input.value);
   ws.eventsEmptyTypes = !types.length;
-  Object.assign(ws.gitlabDraft.events, { enabled: $("gitlab-events-enabled").checked, project: $("gitlab-events-project").value.trim(),
+  Object.assign(ws.gitlabDraft.events, { enabled: $("gitlab-events-enabled").checked,
     filter: { types: types.length === gitlabEventTypeIDs.length ? [] : types } });
   if (event?.target === $("gitlab-events-enabled")) $("gitlab-events-settings").open = event.target.checked;
   editGitLabConfig();
 }
-for (const id of ["gitlab-events-project", "gitlab-events-enabled", ...gitlabEventTypeIDs.map(id => `gitlab-events-type-${id}`)]) {
+for (const id of ["gitlab-events-enabled", ...gitlabEventTypeIDs.map(id => `gitlab-events-type-${id}`)]) {
   for (const event of ["input", "change"]) $(id).addEventListener(event, editGitLabEvents);
 }
 $("gitlab-events-all-types").addEventListener("change", () => {
@@ -701,6 +793,7 @@ function editGitLabShared(field) {
   else if (field === "interval") draft.interval_seconds = Number($("gitlab-interval").value);
   else draft.target = JSON.parse($("gitlab-target").value);
   editGitLabConfig();
+  if(field==="connection" && $("gitlab-project-picker").open)void loadGitLabProjects();
 }
 for (const field of ["connection", "target", "interval"]) $(`gitlab-${field}`).addEventListener("change", () => editGitLabShared(field));
 $("gitlab-interval").addEventListener("input", () => editGitLabShared("interval"));
@@ -750,7 +843,6 @@ function renderNotificationSource() {
   $("notification-source-count").textContent = available ? "2" : "0";
   $("lark-source-state").textContent = label("messages");
   $("notification-source-state").textContent = !ws?.eventsConnected && !ws?.todosConnected ? "状态不可读" : data?.config.enabled && ws?.todos?.config.enabled ? "两路已开启" : ws?.todos?.config.enabled ? `待办 · ${label("todos")}` : label("events");
-  $("notification-manage-binding").disabled = !ws?.connected || !ws.gitlabDraft || !ws.data?.workspace?.binding?.connection_id || gitlabSettingsBusy(ws);
   $("gitlab-manage-connections").disabled = !ws;
   const connected = tab === "messages" ? ws?.messagesConnected : ws?.gitlabConnected;
   notice("notification-notice", !ws ? "请先打开房间，再管理通知源。" : !connected ? "通知状态暂不可读，请重新读取。" : "");
@@ -789,12 +881,6 @@ $("notification-detail").addEventListener("keydown", event => {
   }
 });
 $("notification-reload").addEventListener("click", async () => { await refresh(); await loadWorkspaceConnections(); });
-$("notification-manage-binding").addEventListener("click", () => {
-  const ws = workspaceView, binding = ws?.data?.workspace?.binding;
-  if (!ws || !binding?.connection_id || $("notification-manage-binding").disabled) return;
-  ws.gitlabDraft.connection_id = binding.connection_id; ws.gitlabDraft.events.project = binding.project;
-  editGitLabConfig();
-});
 $("gitlab-manage-connections").addEventListener("click", async () => {
   showConnectionList(); $("settings-dialog").showModal(); await loadConnections();
 });
@@ -1027,7 +1113,7 @@ async function openWorkspace() {
 $("open-workspace").addEventListener("click", openWorkspace);
 $("close-workspace").addEventListener("click", () => $("workspace-dialog").close());
 $("workspace-dialog").addEventListener("close", () => {
-  ($("notification-detail").open ? $("notification-manage-binding") : $("workspace-trigger")).focus();
+  ($("notification-detail").open ? $("gitlab-project-summary") : $("workspace-trigger")).focus();
 });
 $("workspace-kind").addEventListener("change", () => { if (workspaceView) workspaceView.selectedConnection = ""; renderWorkspaceConnections(); renderWorkspace(); });
 for (const id of ["workspace-repository", "workspace-gitlab"]) $(id).addEventListener("change", renderWorkspace);
