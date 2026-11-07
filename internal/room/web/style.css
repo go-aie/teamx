@@ -1633,16 +1633,10 @@ textarea::placeholder {
 @keyframes workspace-appear { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:translateY(0); } }
 @media(prefers-reduced-motion:reduce) { .workspace-dialog[open],.workspace-popover { animation:none; } .workspace-button,.workspace-button .workspace-chevron { transition:none; } }
 
-.gitlab-events { margin: 18px 0; padding-top: 16px; border-top: 1px solid var(--line, #e5e7eb); }
-.gitlab-events-heading { display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
-.gitlab-events h3 { margin:0; font-size:14px; }
-.gitlab-events-heading > span { font-size:12px; }
 .gitlab-events-type-heading { display:flex; justify-content:space-between; align-items:center; margin-top:16px; font-weight:550; }
-.gitlab-events .gitlab-events-type-heading .workspace-check { margin:0; font-size:12px; color:var(--muted); }
+.notification-settings .gitlab-events-type-heading .workspace-check { margin:0; font-size:12px; color:var(--muted); }
 .gitlab-events-types { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:2px 16px; margin-top:8px; }
-.gitlab-events .gitlab-events-types .workspace-check { margin:0; min-height:36px; cursor:pointer; font-weight:400; }
-.gitlab-events input[type="checkbox"] { width:15px; height:15px; flex:none; cursor:pointer; }
-.gitlab-events input[type="checkbox"]:focus-visible { outline:2px solid #a9c6b2; outline-offset:3px; }
+.notification-settings .gitlab-events-types .workspace-check { margin:0; min-height:36px; cursor:pointer; font-weight:400; }
 .gitlab-events-actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:20px; }
 .gitlab-events-actions button { min-height:36px; transition:background-color .14s,color .14s,border-color .14s; }
 .gitlab-events-actions button:disabled { cursor:default; opacity:.55; }
@@ -1655,7 +1649,6 @@ textarea::placeholder {
 #gitlab-events-action-hint,#gitlab-events-type-hint { margin:8px 0 0; font-size:12px; }
 .gitlab-events-records { padding-top:8px; }
 .gitlab-events-records p { font-size:12px; }
-.gitlab-events textarea { width:100%; }
 .lark-chat-picker { border:1px solid #d9dfd7; border-radius:6px; padding:10px; background:#fff; }
 .workspace-form .lark-chat-picker > summary { color:inherit; font-size:13px; }
 .lark-chat-controls { display:grid; grid-template-columns:minmax(0,1fr) 100px; gap:8px; margin-top:12px; }
@@ -1668,6 +1661,62 @@ textarea::placeholder {
 .lark-chat-selected { display:flex; gap:6px; flex-wrap:wrap; }
 .lark-chat-selected button { display:flex; align-items:center; gap:8px; max-width:100%; padding:6px 9px; border-radius:5px; background:#eef3ea; color:#354d38; font-size:12px; text-align:left; overflow-wrap:anywhere; }
 .lark-chat-actions { display:flex; justify-content:space-between; gap:8px; margin-top:8px; }
+.notification-settings-row { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.notification-settings-row > div { min-width:0; }
+.notification-settings { container:notification-settings / inline-size; }
+.notification-settings select { appearance:none; padding-right:36px; background-image:linear-gradient(45deg,transparent 50%,#838a85 50%),linear-gradient(135deg,#838a85 50%,transparent 50%); background-position:right 18px center,right 14px center; background-size:4px 4px; background-repeat:no-repeat; text-overflow:ellipsis; }
+@supports (appearance:base-select) {
+  .notification-settings select,.notification-settings select::picker(select) { appearance:base-select; }
+  .notification-settings select { white-space:nowrap; overflow:hidden; }
+  .notification-settings select > button { display:flex; align-items:center; width:100%; min-width:0; padding:0; background:transparent; color:inherit; font:inherit; text-align:start; overflow:hidden; }
+  .notification-settings selectedcontent { display:block; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .notification-settings select::picker-icon { display:none; }
+  .notification-settings select:open { border-color:#9bb6a3; outline:2px solid #a9c6b2; outline-offset:1px; }
+  .notification-settings select::picker(select) { margin-block:4px; padding:4px; max-width:calc(100vw - 24px); max-height:min(280px,60dvh); overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; border:1px solid #d9dfd7; border-radius:8px; background:#fff; color:#252b29; box-shadow:0 6px 22px #17251b1a,0 1px 4px #17251b0a; font:inherit; }
+  .notification-settings option { display:flex; align-items:center; gap:8px; min-height:34px; padding:7px 10px; border-radius:4px; color:inherit; font-size:13px; font-weight:400; line-height:1.5; white-space:normal; overflow-wrap:anywhere; cursor:pointer; }
+  .notification-settings option:enabled:hover { background:#f3f6f1; }
+  .notification-settings option:checked { background:var(--soft); color:var(--accent); font-weight:550; }
+  .notification-settings option:focus-visible { outline:1px solid #a9c6b2; outline-offset:-1px; }
+  .notification-settings option:disabled { color:var(--muted); cursor:default; }
+  .notification-settings option::checkmark { color:var(--accent); font-size:12px; }
+}
+.lark-conversation-controls { display:grid; grid-template-columns:110px minmax(0,1fr); align-items:start; gap:10px; }
+.lark-conversation-controls:has(.lark-chat-picker[open]) #lark-chat-selection { grid-column:1 / -1; }
+.notification-settings .workspace-check { margin:0 0 2px; cursor:pointer; }
+.notification-settings label { margin-top:12px; }
+.notification-settings .quiet { margin:6px 0 0; font-size:11px; }
+.notification-body .notification-settings { margin:0; padding:0; border:0; }
+.notification-settings fieldset { margin:0 0 14px; }
+.notification-settings-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.notification-settings .notification-settings-heading .workspace-check,.notification-settings .notification-settings-heading .quiet { margin:0; }
+.notification-settings .notification-settings-heading .workspace-check { min-height:32px; }
+.notification-settings input[type="checkbox"] { width:15px; height:15px; flex:none; accent-color:var(--accent); }
+.notification-settings input[type="checkbox"]:focus-visible { outline:2px solid #a9c6b2; outline-offset:3px; }
+.lark-settings .lark-chat-picker { margin:0; padding:9px 10px; }
+.lark-settings .lark-chat-picker > summary { line-height:18px; }
+.lark-settings .lark-chat-selected:not(:empty) { margin-top:8px; }
+.lark-settings .lark-chat-selected button { padding:4px 8px; }
+.lark-settings .lark-chat-controls { margin-top:10px; }
+.lark-settings .lark-chat-controls input,.lark-settings .lark-chat-controls select { min-height:32px; }
+.lark-settings .lark-chat-option { gap:8px; padding:7px 4px; }
+.lark-settings .lark-chat-option > span { display:flex; align-items:baseline; justify-content:space-between; gap:8px; flex:1; }
+.lark-settings .lark-chat-option small { flex:none; margin:0; }
+.lark-group-controls { display:flex; align-items:center; gap:14px; }
+.lark-group-controls select { width:110px; flex:none; }
+.lark-group-mentions { display:flex; align-items:center; gap:12px; }
+.lark-settings .lark-group-mentions .workspace-check { margin:0; min-height:36px; font-weight:400; white-space:nowrap; cursor:pointer; }
+.notification-settings-actions > button:last-child { margin-left:auto; }
+.notification-settings .form-error:empty,.notification-settings .quiet:empty { display:none; }
+@container notification-settings (max-width:340px) {
+  .notification-settings-row { grid-template-columns:minmax(0,1fr); gap:0; }
+}
+@container notification-content (max-width:300px) {
+  .lark-conversation-controls { grid-template-columns:minmax(0,1fr); gap:8px; }
+  .lark-group-controls { flex-direction:column; align-items:stretch; gap:4px; }
+  .lark-group-controls select { width:100%; }
+  .lark-group-mentions { flex-wrap:wrap; gap:4px 16px; }
+  .lark-chat-controls { grid-template-columns:minmax(0,1fr); }
+}
 @media(max-width:400px) { .gitlab-events-types { grid-template-columns:1fr; } .gitlab-events-feedback { flex-basis:100%; } }
 @media(prefers-reduced-motion:reduce) { .gitlab-events-actions button { transition:none; } }
 .integration-avatar { background: #f8eadf; color: #925020; }
@@ -1678,9 +1727,6 @@ textarea::placeholder {
 .message.integration .message-text > p:last-child:not(:first-child) { margin-top:10px; color:#7c867c; font-size:11px; line-height:1.6; }
 .message.integration .message-text > p:last-child:not(:first-child) a { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; color:#718172; text-decoration:none; }
 .message.integration .message-text > p:last-child:not(:first-child) a:hover { color:var(--accent); text-decoration:underline; }
-
-.gitlab-events textarea { box-sizing: border-box; border: 1px solid #d9dfd7; border-radius: 6px; padding: 8px 10px; color: inherit; font: inherit; resize: vertical; }
-.gitlab-events textarea:focus-visible { outline: 2px solid #a9c6b2; outline-offset: 1px; }
 
 /* Service settings stays anchored below the independently scrolling Room list. */
 .rail-settings { margin-top:auto; padding:12px 10px; border-top:1px solid var(--line); }
@@ -1797,45 +1843,29 @@ textarea::placeholder {
 .notification-tabs { display:flex; gap:20px; border-bottom:1px solid var(--line); margin:16px 0 20px; }
 .notification-tabs button { padding:0 0 10px; border-radius:0; border-bottom:2px solid transparent; background:transparent; color:var(--muted); font-size:12px; cursor:pointer; }
 .notification-tabs button[aria-selected="true"] { border-bottom-color:var(--accent); color:var(--accent); font-weight:600; }
-.gitlab-shared { padding:0; }
-.gitlab-shared fieldset { margin:0 0 16px; }
-.gitlab-shared fieldset > label:first-child { margin-top:0; }
-.gitlab-shared .quiet { margin:6px 0; font-size:11px; }
-.gitlab-message-types { display:flex; flex-wrap:wrap; gap:8px 24px; }
-.gitlab-message-types .workspace-check { margin:10px 0 0; font-weight:400; }
-.gitlab-message-types input { accent-color:var(--accent); width:15px; height:15px; }
-#gitlab-manage-connections,#notification-manage-binding { font-size:12px; }
-.gitlab-channel { border-top:1px solid var(--line); }
-.gitlab-channel:last-of-type { border-bottom:1px solid var(--line); }
-.gitlab-channel > summary { display:flex; align-items:center; gap:12px; padding:16px 0; list-style:none; cursor:pointer; }
-.gitlab-channel > summary::-webkit-details-marker { display:none; }
-.gitlab-channel > summary::after { content:""; width:6px; height:6px; flex:none; border-right:1.5px solid var(--muted); border-bottom:1.5px solid var(--muted); transform:rotate(-45deg); transition:transform .14s; margin:0 3px; }
-.gitlab-channel[open] > summary::after { transform:rotate(45deg); }
-.gitlab-channel > summary:hover .gitlab-channel-label strong { color:var(--accent); }
-.gitlab-channel > summary:focus-visible { outline:2px solid #a9c6b2; outline-offset:2px; }
-.gitlab-channel-label { display:grid; flex:1; min-width:0; gap:4px; }
-.gitlab-channel-label strong { font-size:14px; font-weight:600; transition:color .14s; }
-.gitlab-channel-label small,.gitlab-channel > summary > .quiet { font-size:11px; color:var(--muted); }
-.gitlab-channel > summary > .quiet { flex-shrink:0; }
-.gitlab-channel > summary[data-error="true"] > .quiet { color:#9a493d; }
-.notification-body .gitlab-channel .gitlab-events { border:0; margin:0; padding:0 0 16px; }
-.gitlab-channel .workspace-form label { margin-top:12px; }
-.gitlab-channel .workspace-form fieldset { margin:0 0 12px; }
-.gitlab-channel .workspace-form .quiet { font-size:11px; line-height:1.6; margin:6px 0 0; }
-.gitlab-channel .gitlab-events-actions { margin-top:14px; }
-.gitlab-channel .gitlab-events-types .workspace-check { min-height:30px; }
-.gitlab-channel .gitlab-events-records { margin-bottom:0; }
-.gitlab-delivery-hint { margin:12px 0 0; font-size:11px; line-height:1.7; }
-@media(prefers-reduced-motion:reduce) { .gitlab-channel > summary::after,.gitlab-channel-label strong { transition:none; } }
-.notification-binding { font-size:12px; }
-.notification-binding > p { margin-top:0; }
-.notification-binding dl { display:grid; grid-template-columns:32px minmax(0,1fr); gap:10px 12px; margin:16px 0 12px; line-height:1.6; }
-.notification-binding dt { color:var(--muted); }
-.notification-binding dd { margin:0; }
-.notification-body .gitlab-events { padding:16px 0 0; margin:18px 0 0; }
+.notification-settings .notification-channel { border-top:1px solid var(--line); margin:0; }
+.notification-settings .notification-settings-row + .notification-channel { margin-top:14px; }
+.notification-channel > summary { display:flex; align-items:center; gap:12px; padding:8px 0; list-style:none; color:inherit; font-size:13px; cursor:pointer; }
+.notification-channel > summary::-webkit-details-marker { display:none; }
+.notification-channel > summary::after { content:""; width:6px; height:6px; flex:none; border-right:1.5px solid var(--muted); border-bottom:1.5px solid var(--muted); transform:rotate(-45deg); transition:transform .14s; margin:0 3px; }
+.notification-channel[open] > summary::after { transform:rotate(45deg); }
+.notification-channel > summary > .workspace-check { font-weight:600; cursor:pointer; }
+.notification-settings .notification-channel > summary > .quiet { flex-shrink:0; margin-left:auto; }
+.notification-channel > summary[data-error="true"] > .quiet { color:#9a493d; }
+.notification-channel > summary:focus-visible { outline:2px solid #a9c6b2; outline-offset:2px; }
+.notification-channel-body { container:notification-content / inline-size; min-width:0; margin:12px 0 16px; padding:0; }
+.notification-channel-body > :first-child,.notification-channel-body > fieldset > :first-child { margin-top:0; }
+.notification-channel-body .gitlab-events-types .workspace-check { min-height:30px; font-weight:400; }
+.notification-channel-body > .gitlab-events-actions:has(.gitlab-events-feedback:empty) { display:none; }
+#notification-manage-binding { margin-top:6px; font-size:12px; }
+@media(prefers-reduced-motion:reduce) { .notification-channel > summary::after { transition:none; } }
+.notification-sync-list { margin:8px 0 0; }
+.notification-sync-list > div { display:grid; grid-template-columns:64px minmax(0,1fr); gap:12px; padding:8px 0; line-height:1.6; }
+.notification-sync-list dt { font-size:12px; font-weight:550; }
+.notification-settings .notification-sync-list dd { min-width:0; margin:0; }
+.notification-sync-list dd[data-error="true"] { color:#9a493d; }
 .notification-body .gitlab-events-type-heading { flex-wrap:wrap; gap:8px; }
 .notification-body .gitlab-events-types { column-gap:8px; }
-.notification-body .gitlab-events > .quiet { font-size:11px; }
 @media(max-width:640px) { .member-rail .notification-detail { height:85dvh; } }
 
 /* Agent details share the context rail gutters and settings controls. */

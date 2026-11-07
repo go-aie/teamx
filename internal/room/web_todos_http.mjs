@@ -27,18 +27,23 @@ await Promise.all([...inflight]); await settle();
 assert.equal(ui.el("notification-sources").hidden, false);
 assert.equal(ui.el("gitlab-events").hidden, false, "Events can be configured without a Workspace project binding");
 const connections = ui.el("gitlab-connection").children.filter(option => option.value);
-assert.equal(connections.length, 2, ui.el("gitlab-account").textContent + " / " + ui.el("gitlab-todos-error").textContent);
+assert.equal(connections.length, 2, ui.el("gitlab-notification-account").textContent + " / " + ui.el("gitlab-todos-error").textContent);
 async function edit(id, value) { ui.el(id).value = value; await ui.el(id).emit("change"); }
 async function toggle(id, checked) { ui.el(id).checked = checked; await ui.el(id).emit("change"); }
 await edit("gitlab-connection", connections[0].value);
-assert.match(ui.el("gitlab-account").textContent, /ID 101，已验证/);
+assert.match(ui.el("gitlab-notification-account").textContent, /ID 101，已验证/);
 assert.equal(ui.el("gitlab-todos-scope"), undefined);
 assert.equal(String(ui.el("gitlab-interval").value), "30");
 await toggle("gitlab-todos-enabled", true); await ui.el("gitlab-save").emit("click");
 assert.equal(mutations[0].body.version, 0); assert.equal(mutations[0].body.config.todos.enabled, true);
-assert.match(ui.el("gitlab-todos-feedback").textContent, /设置已保存/);
-assert.match(ui.el("gitlab-todos-status").textContent, /当前订阅：[a-f0-9]{32}/, JSON.stringify({ status:ui.el("gitlab-todos-status").textContent, error:ui.el("gitlab-todos-error").textContent, feedback:ui.el("gitlab-feedback").textContent }));
-const initialID = ui.el("gitlab-todos-status").textContent.match(/当前订阅：([a-f0-9]{32})/)[1];
+assert.match(ui.el("gitlab-feedback").textContent, /设置已保存/);
+const savedTodo = async () => {
+  const {service_epoch,room_id,room_instance,caller} = mutations.at(-1).body;
+  const view = await call(`/v1/platform/notifications?${new URLSearchParams({service_epoch,room_id,room_instance,caller_id:caller.id})}`);
+  return view.subscriptions.find(source => source.channel === "todos");
+};
+const initialID = (await savedTodo()).subscription_id;
+assert.match(initialID, /^[a-f0-9]{32}$/);
 const messages = () => ui.el("messages").children.filter(child => /^message-\d+$/.test(child.id));
 async function untilMessageCount(count) {
   for (let i = 0; i < 100; i++) {
@@ -62,8 +67,8 @@ await edit("gitlab-connection", connections[1].value); await toggle("gitlab-todo
 for (const reason of ["mentioned", "assigned", "review_requested", "other"]) await toggle(`gitlab-todos-reason-${reason}`, true);
 assert.equal(ui.el("gitlab-save").disabled, false);
 await ui.el("gitlab-save").emit("click"); await untilMessageCount(2);
-assert.match(ui.el("gitlab-account").textContent, /ID 202，已验证/);
-const nextID = ui.el("gitlab-todos-status").textContent.match(/当前订阅：([a-f0-9]{32})/)[1]; assert.notEqual(nextID, initialID);
+assert.match(ui.el("gitlab-notification-account").textContent, /ID 202，已验证/);
+const nextID = (await savedTodo()).subscription_id; assert.notEqual(nextID, initialID);
 await toggle("gitlab-todos-enabled", false); await ui.el("gitlab-save").emit("click");
 await ui.refresh(); assert.equal(messages().length, 2);
 assert.equal(mutations.every(call => call.body.channel === undefined && call.body.subscription_id === undefined), true);

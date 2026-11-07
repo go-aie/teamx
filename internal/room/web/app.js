@@ -320,7 +320,7 @@ function editGitLabConfig() {
 }
 function gitlabConnectionOptions(selected, placeholder) {
   const connections = workspaceView?.connections || [];
-  const options = [new Option(placeholder, ""), ...connections.map(item => new Option(`${item.name} · ${item.url}`, item.id))];
+  const options = [new Option(placeholder, ""), ...connections.map(item => new Option(`${item.name} · ${item.validation?.username ? `@${item.validation.username}` : "待验证"}`, item.id))];
   if (selected && !connections.some(item => item.id === selected)) options.push(new Option("原连接暂不可用", selected));
   return options;
 }
@@ -367,7 +367,7 @@ function larkConfigKey(c = {}) {return JSON.stringify({scope_mode:c.scope_mode |
 function larkMessagesDraft() {
   const custom=$("lark-backfill").value==="custom", start=new Date($("lark-backfill-start").value).getTime();
   return {scope_mode:$("lark-scope").value || "specified",enabled:$("lark-enabled").checked, connection_id:$("lark-connection").value,
-    target:JSON.parse($("lark-target").value || "{}"), chats:$("lark-scope").value==="all" ? [] : $("lark-chats").value.split(/\s+/).filter(Boolean).sort(),
+    target:JSON.parse($("lark-target").value || "{}"), chats:$("lark-scope").value==="all" ? [] : larkChatIDs().sort(),
     private:true, group_mentions:$("lark-group").checked, group_all:$("lark-scope").value!=="all" && $("lark-group-mode").value==="all", at_all:$("lark-all").checked, bots:true,
     interval_seconds:Number($("lark-interval").value), backfill_seconds:custom ? 0 : Number($("lark-backfill").value || 0),
     ...(custom ? {backfill_start:Number.isFinite(start) ? new Date(start).toISOString() : ""} : {})};
@@ -376,7 +376,16 @@ function larkLocalTime(value) {
   const date=new Date(value),pad=n=>String(n).padStart(2,"0");
   return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
-function larkChatIDs() { return [...new Set($("lark-chats").value.split(/\s+/).filter(Boolean))]; }
+function notificationSyncSummary(data) {
+  const date=value=>new Date(value).toLocaleString("zh-CN");
+  const parts=[data.last_check ? `最近检查 ${date(data.last_check)}` : data.subscription_id ? (data.config.enabled ? "等待首次检查" : "已暂停") : "尚未开始同步"];
+  if(data.pending>0)parts.push(`待投递 ${data.pending}`);
+  if(data.retry_at)parts.push(`下次重试 ${date(data.retry_at)}`);
+  if(data.scan)parts.push(`历史检查中（第 ${data.scan.next_page} 页）`);
+  if(data.gap)parts.push("部分历史消息可能缺失");
+  return parts.join(" · ");
+}
+function larkChatIDs() { return [...new Set(workspaceView?.larkSelectedChats || [])]; }
 function larkChatType(chat) { return chat?.chat_mode==="p2p" || chat?.mode==="p2p" ? "私聊" : "群聊"; }
 function larkChatLabel(chat, id) { return chat?.name || `未命名${chat ? larkChatType(chat) : "会话"} · ${id}`; }
 function larkChatDirectory(ws, connection) {
@@ -393,7 +402,7 @@ function selectLarkChat(id, selected) {
     if(ids.length>=32){notice("lark-chat-selection-error","最多选择 32 个会话，请先移除已选会话。");return;}
     ids.push(id);
   }
-  $("lark-chats").value=(selected ? ids : ids.filter(x=>x!==id)).join("\n");
+  if(workspaceView)workspaceView.larkSelectedChats=selected ? ids : ids.filter(x=>x!==id);
   notice("lark-chat-selection-error","");
   if(workspaceView)workspaceView.larkDirty=true;
   renderLarkMessages();
@@ -408,18 +417,18 @@ function renderLarkChatPicker(ws, connection) {
     button.type="button";button.textContent=`${label} ×`;button.title=id;button.setAttribute("aria-label",`移除会话：${label}`);
     button.addEventListener("click",()=>selectLarkChat(id,false));return button;
   }));
-  $("lark-chat-picker-summary").textContent=`选择私聊或群聊${ids.length ? ` · 已选 ${ids.length} 个` : ""}`;
+  $("lark-chat-picker-summary").textContent=ids.length ? `已选 ${ids.length} / 32 个 · 编辑` : "选择私聊或群聊";
   const query=$("lark-chat-search").value.trim().toLocaleLowerCase(),type=$("lark-chat-type").value || "all";
   const chats=[...dir.chats.values()].filter(chat=>(type==="all" || (type==="p2p" ? chat.chat_mode==="p2p" : chat.chat_mode!=="p2p")) && `${chat.name}\n${chat.chat_id}`.toLocaleLowerCase().includes(query));
   chats.sort((a,b)=>(a.name || a.chat_id).localeCompare(b.name || b.chat_id,"zh-CN"));
   $("lark-chat-options").replaceChildren(...chats.map(chat=>{
     const label=document.createElement("label"),input=document.createElement("input"),text=document.createElement("span"),name=document.createElement("span"),detail=document.createElement("small");
     label.className="lark-chat-option";input.type="checkbox";input.value=chat.chat_id;input.checked=ids.includes(chat.chat_id);input.disabled=!input.checked && ids.length>=32;
-    name.textContent=larkChatLabel(chat,chat.chat_id);detail.textContent=`${larkChatType(chat)} · ${chat.chat_id}`;
+    name.textContent=larkChatLabel(chat,chat.chat_id);detail.textContent=larkChatType(chat);label.title=chat.chat_id;
     text.append(name,detail);label.append(input,text);input.addEventListener("change",()=>selectLarkChat(chat.chat_id,input.checked));return label;
   }));
   const ready=connection?.validation?.status==="valid";
-  $("lark-chat-picker-status").textContent=!ready ? "请先选择并验证飞书连接，再选择会话。" : dir.error || (dir.loading ? `正在加载会话…已加载 ${dir.chats.size} 个。` : !dir.loaded ? "展开后读取当前账号可访问的私聊和已加入群聊。" : `${dir.hasMore ? "会话列表尚未加载完整" : "会话列表已加载完成"} · 已加载 ${dir.chats.size} 个${!chats.length ? (query || type!=="all" ? "；当前筛选无匹配会话" : "；暂无可选会话") : ""}${dir.hasMore ? "。搜索仅筛选已加载会话，可加载更多继续查找。" : "。"}`);
+  $("lark-chat-picker-status").textContent=!ready ? "请先选择并验证飞书连接。" : dir.error || (dir.loading ? `正在加载…已有 ${dir.chats.size} 个会话` : !dir.loaded ? "可选择私聊和已加入群聊，最多 32 个。" : `${dir.hasMore ? "尚未加载完整，搜索仅筛选已加载会话" : `已加载 ${dir.chats.size} 个会话`}${!chats.length ? (query || type!=="all" ? " · 无匹配会话" : " · 暂无会话") : ""}`);
   $("lark-chat-more").hidden=!dir.hasMore;$("lark-chat-more").disabled=!ready || dir.loading || dir.chats.size>=10000 || dir.pages>=100;
   $("lark-chat-refresh").disabled=!ready || dir.loading;
 }
@@ -436,7 +445,7 @@ async function loadLarkChats(reset=false) {
     if(!Array.isArray(page.chats) || typeof page.has_more!=="boolean" || page.has_more && (!page.page_token || page.page_token===dir.token))throw Error("invalid page");
     for(const chat of page.chats)dir.chats.set(chat.chat_id,chat);
     dir.loaded=true;dir.hasMore=page.has_more;dir.token=page.page_token || "";dir.pages++;
-    if(dir.hasMore && (dir.chats.size>=10000 || dir.pages>=100))dir.error="已达到会话列表加载上限，请缩小范围或按会话 ID 添加。";
+    if(dir.hasMore && (dir.chats.size>=10000 || dir.pages>=100))dir.error="已达会话列表加载上限，可从已加载会话中搜索选择。";
   }catch(e){
     if(ws===workspaceView && ws.larkChatDirectory===dir){
       const errors={conflict:"连接已变化，请重新读取通知设置并核对连接。",identity_mismatch:"飞书登录账号已变化，请重新验证连接后刷新会话列表。",permission_denied:"读取会话的权限不足，请检查授权并重新验证连接。",credential:"飞书连接未验证或登录已失效，请重新验证连接。",cursor_expired:"会话列表已变化，请刷新会话列表后继续选择。"};
@@ -455,7 +464,7 @@ function renderLarkMessages() {
   const fresh=ws.larkFilled !== data.subscription_id+":"+data.subscription_version && !ws.larkDirty;
   const c=fresh ? data.config : larkMessagesDraft();
   const connections=ws.larkConnections || [];
-  const options=[new Option("请选择已验证连接", ""), ...connections.map(x=>new Option(`${x.name} · ${x.validation?.username || "待验证"}`,x.id))];
+  const options=[new Option("请选择连接", ""), ...connections.map(x=>new Option(`${x.name} · ${x.validation?.username || "待验证"}`,x.id))];
   if(c.connection_id && !connections.some(x=>x.id===c.connection_id))options.push(new Option("原连接暂不可用",c.connection_id));
   setNotificationOptions("lark-connection", options);$("lark-connection").value=c.connection_id || "";
   const target=JSON.stringify(c.target?.mode === "inbox" ? c.target : {});
@@ -463,7 +472,7 @@ function renderLarkMessages() {
   if(target!=="{}"&&!targets.some(x=>x.value===target))targets.push(new Option("原接收成员已移除",target));
   setNotificationOptions("lark-target",targets);$("lark-target").value=target;
   if(fresh){
-    $("lark-scope").value=c.scope_mode || "specified";$("lark-enabled").checked=!!c.enabled;$("lark-chats").value=(c.chats || []).join("\n");
+    $("lark-scope").value=c.scope_mode || "specified";$("lark-enabled").checked=!!c.enabled;ws.larkSelectedChats=[...(c.chats || [])];
     $("lark-group").checked=!!c.group_mentions;$("lark-group-mode").value=c.group_all ? "all" : "mentions";$("lark-all").checked=!!c.at_all;
     $("lark-interval").value=c.interval_seconds || 60;$("lark-backfill").value=c.backfill_start ? "custom" : String(c.backfill_seconds || 0);
     $("lark-backfill-start").value=c.backfill_start ? larkLocalTime(c.backfill_start) : "";
@@ -471,30 +480,37 @@ function renderLarkMessages() {
   }
   $("lark-backfill").disabled=!!data.subscription_id;$("lark-backfill-start").disabled=!!data.subscription_id;
   $("lark-backfill-custom").hidden=$("lark-backfill").value!=="custom";
-  $("lark-backfill-start").max=larkLocalTime(Date.now());$("lark-chats").disabled=$("lark-scope").value==="all";
+  $("lark-backfill-start").max=larkLocalTime(Date.now());
   if($("lark-scope").value==="all")$("lark-group-mode").value="mentions";
   $("lark-group-mode-all").disabled=$("lark-scope").value==="all";
   const groupAll=$("lark-group-mode").value==="all";
   $("lark-group").disabled=groupAll;$("lark-all").disabled=groupAll;$("lark-group-mentions").hidden=groupAll;
-  $("lark-group-mode-help").textContent=$("lark-scope").value==="all" ? "全部可访问会话模式下，群聊按 @ 筛选。要接收某个群的所有消息，请选择指定会话。" : "选择所有消息时，接收指定群的普通成员和机器人消息，无需 @；系统消息除外。";
+  $("lark-scope-help").hidden=$("lark-scope").value!=="all";
   const draft=larkMessagesDraft(), dirty=larkConfigKey(draft)!==larkConfigKey(data.config), connection=connections.find(x=>x.id===draft.connection_id);
   const start=Date.parse(draft.backfill_start || ""),custom=$("lark-backfill").value==="custom";
   const baseline=Date.parse(data.lark?.baseline || data.config.backfill_start || "");
   const backfillError=custom && !Number.isFinite(start) ? "请选择要开始接收消息的日期和时间。" : custom && start<=0 ? "请选择 1970 年之后的有效时间。" : custom && start>Date.now() ? "起始时间不能晚于当前时间。" : "";
-  $("lark-backfill-help").textContent=data.subscription_id ? `${Number.isFinite(baseline) ? `当前接收起点：${new Date(baseline).toLocaleString("zh-CN")}。` : ""}首次保存后接收起点已锁定。需要追溯更早消息，请新建房间并选择更早的起始时间；追溯完成后可关闭该房间的通知源。` : "默认从开启时刻接收，也可指定过去时间，无需等待新消息。首次保存后起点锁定；输入按浏览器本地时区解释，可追溯范围取决于当前账号可访问的历史消息。";
+  $("lark-backfill-help").textContent=data.subscription_id ? `${Number.isFinite(baseline) ? `接收起点：${new Date(baseline).toLocaleString("zh-CN")} · ` : ""}已锁定；接收更早消息请新建房间。` : "首次保存后锁定，后续修改设置沿用该起点。";
   notice("lark-backfill-error",backfillError);$("lark-backfill-start").setAttribute("aria-invalid",String(!!backfillError));
   const valid=!backfillError && (!draft.enabled || connection?.validation?.status==="valid") && draft.target.mode==="inbox" && (draft.scope_mode==="all" || draft.chats.length>0 && draft.chats.length<=32 && draft.chats.every(x=>/^oc_[A-Za-z0-9_-]+$/.test(x))) && draft.interval_seconds>=3 && draft.interval_seconds<=3600;
   $("lark-save").disabled=!ws.messagesConnected||!!ws.messagesSending||managementBusy()||!valid||(!dirty && !["credentials_invalid","binding_changed","capacity"].includes(data.status))||(!data.subscription_id && !draft.enabled);
   $("lark-sync").disabled=!ws.messagesConnected||!!ws.messagesSending||managementBusy()||dirty||!data.config.enabled;
-  $("lark-state").textContent=gitlabEventStatuses[data.status] || data.status;
-  $("lark-account").textContent=connection?.validation?.status==="valid" ? `读取账号：${connection.validation.username} · ${connection.validation.account?.id?.value || ""}` : "请选择连接并先验证用户身份。";
+  $("lark-save").textContent=ws.messagesSending==="configure" ? "保存中…" : "保存设置";
+  $("lark-sync").textContent=ws.messagesSending==="sync" ? "请求中…" : "立即同步";
+  $("lark-state").textContent=!ws.messagesConnected ? "状态不可读" : dirty ? "待保存" : gitlabEventStatuses[data.status] || data.status;
+  notice("lark-account",draft.connection_id && connection?.validation?.status!=="valid" ? "请先验证所选连接。" : "");
   renderLarkChatPicker(ws,connection);
-  $("lark-feedback").textContent=ws.messagesSending ? "正在处理…" : ws.messagesFeedback || (dirty ? "有尚未保存的设置。" : "");
+  $("lark-feedback").textContent=ws.messagesSending ? "正在处理…" : ws.messagesFeedback || (dirty ? "有未保存的更改" : "");
   const errors={...connectionValidationErrors,...notificationTargetErrors,capacity:"来源容量已满，进度保留；释放容量后显式同步。",binding_changed:"连接身份已变化；旧订阅保留，请核对原账号。",identity_mismatch:"账号已变化，进度保留；请核对原账号并重新验证连接。",credential_unavailable:"登录凭据不可用，进度保留；请验证连接，原账号下已开启的通知会自动恢复。",credential_rejected:"登录已失效，进度保留；请在原 profile 完成用户授权并验证连接，原账号下已开启的通知会自动恢复。",permission_denied:"读取权限不足，进度保留；请检查用户授权范围并验证连接，原账号下已开启的通知会自动恢复。",cursor_expired:"游标已过期，将在同一时间窗重扫。",query_failed:"读取失败，将退避重试。"};
   notice("lark-error",ws.messagesError || (!ws.messagesConnected ? "通知状态暂不可读。" : errors[data.delivery_error_code] || errors[data.error_code] || data.error_code || ""));
-  const d=data.lark || {}, date=x=>x?new Date(x).toLocaleString("zh-CN"):"尚无";
-  $("lark-diagnostics").textContent=`目录 ${d.directory_complete ? "完整" : "未完成"}${d.directory_scanning ? `（${d.directory_pages || 0} 页）` : ""} · 目录最近完成 ${date(d.directory_last_full)} · 读取受阻 ${d.failed_chats || 0} · 不在最新目录 ${d.unlisted_chats || 0} · 积压超过 24 小时 ${d.gap_chats || 0} · 最近检查 ${date(data.last_check)} · 全部会话检查上界 ${date(data.last_full)} · 待扫描 ${d.unchecked || 0} · 最久落后 ${d.oldest_lag_seconds || 0} 秒 · 来源积压 ${data.pending || 0} · 重试 ${date(data.retry_at)} · CLI ${d.cli_version || ""}`;
-  $("lark-chat-status").replaceChildren(...(d.chats || []).map(x=>{const li=document.createElement("li");li.textContent=`${x.name || x.chat_id} · ${x.mode || "待核验"} · ${x.error_code ? `读取受阻 ${x.error_code}，重试 ${date(x.retry_at)}` : x.scan ? `分页未完成（${x.scan.pages} 页）` : x.completed ? "窗口完成" : "待扫描"} · 最近完成 ${date(x.last_check)}`;return li;}));
+  const d=data.lark || {}, date=x=>new Date(x).toLocaleString("zh-CN");
+  const diagnostics=[notificationSyncSummary(data)];
+  if(data.subscription_id && data.config.scope_mode==="all" && !d.directory_complete)diagnostics.push(d.directory_scanning ? `会话目录加载中（${d.directory_pages || 0} 页）` : "会话目录尚未加载完整");
+  for(const [count,label] of [[d.failed_chats,"读取受阻"],[d.unlisted_chats,"不在最新目录"],[d.gap_chats,"积压超过 24 小时"],[d.unchecked,"待检查会话"]])if(count>0)diagnostics.push(`${label} ${count}`);
+  $("lark-diagnostics").textContent=diagnostics.join(" · ");
+  const chats=(d.chats || []).filter(x=>x.error_code || x.scan || !x.completed);
+  $("lark-chat-status").hidden=!chats.length;
+  $("lark-chat-status").replaceChildren(...chats.map(x=>{const li=document.createElement("li");li.textContent=`${x.name || x.chat_id} · ${x.error_code ? `读取受阻 ${x.error_code}${x.retry_at ? `，重试 ${date(x.retry_at)}` : ""}` : x.scan ? `检查中（${x.scan.pages} 页）` : "待检查"}`;return li;}));
 }
 async function changeLarkMessages(action) {
   const ws=workspaceView;if(!ws?.messages || ws.messagesSending || $(action==="configure"?"lark-save":"lark-sync").disabled)return;
@@ -503,12 +519,13 @@ async function changeLarkMessages(action) {
   ws.messagesRevision=(ws.messagesRevision||0)+1;ws.messagesSending=action;ws.messagesError="";renderLarkMessages();
   try{
     const data=await request(`/v1/platform/notifications/${action}`,payload);
-    if(ws!==workspaceView)return;const replaced=ws.messages.subscription_id && ws.messages.subscription_id!==data.subscription_id;ws.messages=data;ws.messagesConnected=true;ws.larkDirty=false;ws.larkFilled=null;ws.messagesFeedback=replaced ? "已为新连接开启订阅，旧订阅及积压保留并暂停。" : "已保存。积压保留原接收成员。";
+    if(ws!==workspaceView)return;const replaced=ws.messages.subscription_id && ws.messages.subscription_id!==data.subscription_id;ws.messages=data;ws.messagesConnected=true;ws.larkDirty=false;ws.larkFilled=null;ws.messagesFeedback=action==="sync" ? "已发起同步，结果将自动更新。" : replaced ? "已为新连接开启订阅，旧订阅已暂停。" : "设置已保存。";
   }catch(e){if(ws===workspaceView)ws.messagesError=e.code==="conflict"?"设置或账号已变化，请重新读取后核对。":"结果未确认，请重新读取状态；不会自动重发。";}
   finally{if(ws===workspaceView){ws.messagesRevision++;ws.messagesSending=false;renderGitLabEvents();}}
 }
-for(const id of ["enabled","connection","target","scope","chats","group","group-mode","all","interval","backfill","backfill-start"]) $("lark-"+id).addEventListener("change",()=>{
-  if(id==="connection")$("lark-chats").value="";
+for(const id of ["enabled","connection","target","scope","group","group-mode","all","interval","backfill","backfill-start"]) $("lark-"+id).addEventListener("change",()=>{
+  if(id==="enabled")$("lark-settings").open=$("lark-enabled").checked;
+  if(id==="connection" && workspaceView)workspaceView.larkSelectedChats=[];
   if(workspaceView)workspaceView.larkDirty=true;renderLarkMessages();
   if((id==="connection" || id==="scope") && $("lark-chat-picker").open)void loadLarkChats();
 });
@@ -533,11 +550,8 @@ function renderGitLabEvents() {
   const draft = gitlabEventDraftState(data);
   $("gitlab-events-all-types").checked = draft.count === gitlabEventTypeIDs.length;
   $("gitlab-events-all-types").indeterminate = draft.count > 0 && draft.count < gitlabEventTypeIDs.length;
-  $("gitlab-events-feedback").textContent = draft.invalid ? draft.targetInvalid ? "请选择已验证连接并填写项目" : "请检查活动筛选" : draft.dirty ? "有未保存的更改" : data.subscription_id ? "设置已保存" : "尚未开启";
+  $("gitlab-events-feedback").textContent = draft.invalid ? draft.targetInvalid ? "请选择已验证连接并填写项目" : "请检查活动筛选" : "";
   $("gitlab-events-action-hint").textContent = draft.targetChanged && data.subscription_id ? "更换连接、账号或项目将新建订阅；旧进度与积压保留。" : "";
-  const date = value => value ? new Date(value).toLocaleString("zh-CN") : "尚无";
-  $("gitlab-events-status").textContent = `${gitlabEventStatuses[data.status] || data.status} · 待投递 ${data.pending} · 最近检查 ${date(data.last_check)} · 完整补查 ${date(data.last_full)}` +
-    (data.retry_at ? ` · 下次重试 ${date(data.retry_at)}` : "") + (data.gap ? " · 长时间离线区间无法保证补齐" : "") + ` · 请求 ${data.metrics.calls} 次 / ${data.metrics.response_bytes} 字节`;
   notice("gitlab-events-error", gitlabApplyNotice(ws, "events") || notificationTargetErrors[data.delivery_error_code] || gitlabEventErrors[data.delivery_error_code] || gitlabEventErrors[data.error_code] || "");
   renderGitLabSettings();
 }
@@ -548,7 +562,7 @@ function editGitLabEvents(event) {
   ws.eventsEmptyTypes = !types.length;
   Object.assign(ws.gitlabDraft.events, { enabled: $("gitlab-events-enabled").checked, project: $("gitlab-events-project").value.trim(),
     filter: { types: types.length === gitlabEventTypeIDs.length ? [] : types } });
-  if (event?.target === $("gitlab-events-enabled") && event.target.checked) $("gitlab-events-settings").open = true;
+  if (event?.target === $("gitlab-events-enabled")) $("gitlab-events-settings").open = event.target.checked;
   editGitLabConfig();
 }
 for (const id of ["gitlab-events-project", "gitlab-events-enabled", ...gitlabEventTypeIDs.map(id => `gitlab-events-type-${id}`)]) {
@@ -561,10 +575,17 @@ $("gitlab-events-all-types").addEventListener("change", () => {
 const gitlabTodoReasons = ["mentioned", "assigned", "review_requested", "other"];
 const gitlabTodoTypes = ["merge_request", "work_item"];
 const gitlabTodoErrors = { ...gitlabEventErrors, credential_unavailable: "个人连接凭据不可用，请在平台连接中重新验证。", binding_changed: "账号身份已变化，请核对后显式保存。", scan_incomplete: "补查尚未完成，将按检查周期继续；完整同步时间尚未更新。" };
-const gitlabTodoSkipReasons = { no_project: "无项目归属", unsupported_target: "不支持的对象类型", target_unavailable: "对象暂不可用", untrusted_url: "链接无法核实", reason: "原因未勾选", type: "类型未勾选", before_baseline: "首次开启前创建" };
 function setNotificationOptions(id, options) {
   const select = $(id), signature = JSON.stringify(options.map(option => [option.value, option.textContent, !!option.disabled]));
-  if (select.dataset.options !== signature) { select.replaceChildren(...options); select.dataset.options = signature; }
+  if (select.dataset.options !== signature) {
+    const content = [];
+    // Keep long selected labels inside the text area of customizable native selects.
+    if (globalThis.CSS?.supports?.("appearance", "base-select") && select.closest?.(".notification-settings")) {
+      const button = document.createElement("button"); button.type = "button";
+      button.append(document.createElement("selectedcontent")); content.push(button);
+    }
+    select.replaceChildren(...content,...options); select.dataset.options = signature;
+  }
 }
 function todoConfig(config) {
   return { enabled: !!config.enabled,
@@ -595,22 +616,18 @@ function renderGitLabTodos() {
   $("gitlab-todos-fields").disabled = !config || gitlabSettingsBusy(ws);
   if (!data || !config) { notice("gitlab-todos-error", ""); return; }
   fillGitLabTodos(config);
-  const { switching, dirty, unavailable } = gitlabTodoDraftState(ws);
-  $("gitlab-todos-feedback").textContent = unavailable ? "请检查接收账号的连接" : dirty ? "有未保存的更改" : data.subscription_id ? "设置已保存" : "尚未开启";
+  const { switching, unavailable } = gitlabTodoDraftState(ws);
+  $("gitlab-todos-feedback").textContent = unavailable ? "请检查接收账号的连接" : "";
   $("gitlab-todos-action-hint").textContent = switching && config.enabled ? "保存将停用旧账号订阅，并为新账号建立新进度；旧消息和回执保留。" : "";
   if (!config.filter.reasons.length || !config.filter.types.length) $("gitlab-todos-action-hint").textContent += " 当前过滤为空，不接收匹配项。";
-  const date = value => value ? new Date(value).toLocaleString("zh-CN") : "尚无";
-  const skipped = Object.entries(data.skipped || {}).map(([reason, count]) => `${gitlabTodoSkipReasons[reason] || "其他原因"} ${count}`).join("、");
-  $("gitlab-todos-status").textContent = `当前订阅：${data.subscription_id || "尚未开启"} · 接收账号 ${data.username ? `@${data.username}（ID ${data.recipient_id}）` : "尚无"} · 待投递 ${data.pending || 0} · 最近检查 ${date(data.last_check)} · 完整同步 ${date(data.last_full)}` +
-    (data.retry_at ? ` · 下次重试 ${date(data.retry_at)}` : "") + (data.scan ? ` · ${data.scan.state === "done" ? "已完成待办" : "待处理待办"}第 ${data.scan.next_page} 页${data.scan.limited ? "（补查未完成）" : ""}` : "") +
-    ` · 请求 ${data.metrics?.calls || 0} 次 / ${data.metrics?.response_bytes || 0} 字节` + (skipped ? ` · 跳过：${skipped}` : "");
   notice("gitlab-todos-error", gitlabApplyNotice(ws, "todos") || notificationTargetErrors[data.delivery_error_code] || gitlabTodoErrors[data.delivery_error_code] || gitlabTodoErrors[data.error_code] || "");
 }
-function editGitLabTodos() {
+function editGitLabTodos(event) {
   const ws = workspaceView;
   if (!ws?.gitlabDraft || gitlabSettingsBusy(ws)) { renderGitLabEvents(); return; }
   Object.assign(ws.gitlabDraft.todos, { enabled: $("gitlab-todos-enabled").checked,
     filter: { reasons: gitlabTodoReasons.filter(value => $(`gitlab-todos-reason-${value}`).checked), types: gitlabTodoTypes.filter(value => $(`gitlab-todos-type-${value}`).checked) } });
+  if (event?.target === $("gitlab-todos-enabled")) $("gitlab-todos-settings").open = event.target.checked;
   editGitLabConfig();
 }
 for (const id of ["enabled", ...gitlabTodoReasons.map(value => `reason-${value}`), ...gitlabTodoTypes.map(value => `type-${value}`)]) {
@@ -636,12 +653,15 @@ function renderGitLabSettings() {
   const ws = workspaceView, shared = gitlabDraft();
   const busy = gitlabSettingsBusy(ws);
   $("gitlab-shared-fields").disabled = busy;
+  $("gitlab-interval").disabled = busy;
   $("gitlab-interval").value = shared.interval_seconds;
-  const connectionID = shared.connection_id, options = gitlabConnectionOptions(connectionID, "请选择 GitLab 连接");
+  const connectionID = shared.connection_id, options = gitlabConnectionOptions(connectionID, "请选择连接");
   setNotificationOptions("gitlab-connection", options); $("gitlab-connection").value = connectionID;
   const connection = ws?.connections?.find(item => item.id === connectionID);
-  $("gitlab-account").textContent = todoVerified(connection) ? `接收账号：@${connection.validation.username}（ID ${connection.validation.user_id}，已验证）；“我的待办”属于此账号。`
-    : ws?.connectionsError || (connectionID ? "接收账号：需重新验证平台连接。" : "请选择平台连接，再勾选要接收的消息。");
+  $("gitlab-connection").title = connection?.url || "";
+  $("gitlab-notification-account").textContent = todoVerified(connection) ? `接收账号：@${connection.validation.username}（ID ${connection.validation.user_id}，已验证）`
+    : ws?.connectionsError || (connectionID ? "请先验证所选连接。" : "");
+  $("gitlab-notification-account").hidden = todoVerified(connection) || !$("gitlab-notification-account").textContent;
   const target = JSON.stringify(shared.target), targetOptions = notificationTargetOptions();
   if (!targetOptions.some(option => option.value === target)) targetOptions.push(new Option("原接收成员已失效", target));
   setNotificationOptions("gitlab-target", targetOptions); $("gitlab-target").value = target;
@@ -652,14 +672,21 @@ function renderGitLabSettings() {
     $(`gitlab-${channel}-state`).textContent = !ws?.gitlabConnected ? "状态不可读" : ws.gitlab.pending?.[channel] ? "等待应用" : gitlabChannelDirty(channel) ? "待保存"
       : error && data?.status === "running" ? "需处理" : gitlabEventStatuses[data?.status] || data?.status || "已关闭";
     $(`gitlab-${channel}-summary`).setAttribute("data-error", String(!!error));
+    const errors = channel === "events" ? gitlabEventErrors : gitlabTodoErrors;
+    const problem = gitlabApplyNotice(ws, channel) || notificationTargetErrors[data?.delivery_error_code] ||
+      errors[data?.delivery_error_code] || errors[data?.error_code] || data?.delivery_error_code || data?.error_code || "";
+    const status = $(`gitlab-${channel}-status`);
+    status.textContent = !ws?.gitlabConnected || !data ? "状态暂不可读，请重新读取。" :
+      [notificationSyncSummary(data), problem].filter(Boolean).join(" · ");
+    status.setAttribute("data-error", String(!!problem || !ws?.gitlabConnected));
   }
   const pending = gitlabNeedsApply(ws), dirty = !!ws?.gitlabDirty;
   const invalid = !Number.isInteger(shared.interval_seconds) || shared.interval_seconds < 3 || shared.interval_seconds > 120 || !!ws?.gitlabDraft && (gitlabEventDraftState(ws.events).invalid || gitlabTodoDraftState(ws).unavailable);
   $("gitlab-save").disabled = busy || !(dirty || pending) || invalid;
   $("gitlab-save").textContent = ws?.gitlabSending === "configure" ? "保存中…" : !dirty && pending ? "重试应用" : "保存设置";
   const active = ws?.gitlab?.config.events.enabled || ws?.gitlab?.config.todos.enabled;
-  $("gitlab-sync").hidden = !active;
-  $("gitlab-sync").disabled = busy || dirty || pending;
+  $("gitlab-sync").hidden = false;
+  $("gitlab-sync").disabled = busy || dirty || pending || !active;
   $("gitlab-sync").textContent = ws?.gitlabSending === "sync" ? "请求中…" : "立即同步";
   $("gitlab-feedback").textContent = ws?.gitlabError || (ws?.gitlabSending ? "正在处理 GitLab 通知设置…"
     : ws?.gitlab?.applying ? "正在应用 GitLab 通知设置…"
@@ -708,7 +735,7 @@ function renderContextViews() {
   $("member-list-view").setAttribute("aria-hidden", String(detail || !panels.members));
 }
 function renderNotificationSource() {
-  const ws = workspaceView, data = ws?.events, binding = data?.project;
+  const ws = workspaceView, data = ws?.events;
   const available = !!ws;
   const channel = ws?.notificationChannel || "gitlab";
   const tab = channel === "messages" ? "messages" : "gitlab";
@@ -723,10 +750,6 @@ function renderNotificationSource() {
   $("notification-source-count").textContent = available ? "2" : "0";
   $("lark-source-state").textContent = label("messages");
   $("notification-source-state").textContent = !ws?.eventsConnected && !ws?.todosConnected ? "状态不可读" : data?.config.enabled && ws?.todos?.config.enabled ? "两路已开启" : ws?.todos?.config.enabled ? `待办 · ${label("todos")}` : label("events");
-  const connection = ws?.connections?.find(item => item.id === binding?.connection_id);
-  $("notification-connection").textContent = !binding ? "尚未绑定" : binding.connection_id
-    ? `${connection?.name || "共享连接"} · ${binding.url}` : `旧认证（尚未迁移） · ${binding.url}`;
-  $("notification-project").textContent = binding ? `${binding.project}${binding.project_id ? ` · #${binding.project_id}` : ""}` : "尚未绑定项目";
   $("notification-manage-binding").disabled = !ws?.connected || !ws.gitlabDraft || !ws.data?.workspace?.binding?.connection_id || gitlabSettingsBusy(ws);
   $("gitlab-manage-connections").disabled = !ws;
   const connected = tab === "messages" ? ws?.messagesConnected : ws?.gitlabConnected;
@@ -760,7 +783,10 @@ $("notification-detail").addEventListener("close", () => {
   notificationFocus = null;
 });
 $("notification-detail").addEventListener("keydown", event => {
-  if (event.key === "Escape") { event.preventDefault(); $("notification-detail").close(); }
+  if (event.key === "Escape") {
+    if (event.defaultPrevented || event.target?.closest?.("select:open")) return;
+    event.preventDefault(); $("notification-detail").close();
+  }
 });
 $("notification-reload").addEventListener("click", async () => { await refresh(); await loadWorkspaceConnections(); });
 $("notification-manage-binding").addEventListener("click", () => {

@@ -19,6 +19,7 @@ function fixtureGitLabView(sources, record) {
 }
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import * as client from "./web/client.mjs";
 import { launch, settle } from "./web_app_harness.mjs";
 
@@ -2184,6 +2185,62 @@ async function openGitLab(ui) { await ui.el("open-gitlab-source").emit("click");
 async function editGitLab(ui, id, value, event = "change") { ui.el(id).value = value; await ui.el(id).emit(event); }
 async function toggleGitLab(ui, id, checked) { ui.el(id).checked = checked; await ui.el(id).emit("change"); }
 
+test("notification account status stays separate from connection management",async()=>{
+  const html=await readFile(new URL("./web/index.html",import.meta.url),"utf8"),ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(match=>match[1]);
+  assert.equal(new Set(ids).size,ids.length,"HTML IDs must be unique across notification and connection dialogs");
+  const {api}=todosServer(),ui=await launch(api);await openGitLab(ui);
+  await editGitLab(ui,"gitlab-connection","a".repeat(32));
+  const account=ui.el("gitlab-notification-account").textContent;assert.match(account,/@alice/);
+  await ui.el("open-settings").emit("click");await ui.el("connection-new").emit("click");
+  assert.equal(ui.el("gitlab-notification-account").textContent,account);
+  assert.notEqual(ui.el("gitlab-account").textContent,account);
+});
+test("Escape dismisses an open native select before the notification panel",async()=>{
+  const {api}=todosServer(),ui=await launch(api);await openGitLab(ui);
+  const select=ui.el("gitlab-connection");let pickerOpen=true;
+  select.closest=selector=>selector==="select:open" && pickerOpen ? select : null;
+  await ui.el("notification-detail").emit("keydown",{key:"Escape",target:select});
+  assert.equal(ui.el("notification-detail").open,true);
+  pickerOpen=false;
+  await ui.el("notification-detail").emit("keydown",{key:"Escape",target:select,defaultPrevented:true});
+  assert.equal(ui.el("notification-detail").open,true);
+  await ui.el("notification-detail").emit("keydown",{key:"Escape",target:select});
+  assert.equal(ui.el("notification-detail").open,false);
+});
+test("GitLab channel switches reveal their own settings and retain independent drafts",async()=>{
+  const {api,events}=todosServer();events.get("A").config.enabled=false;
+  const ui=await launch(api);await openGitLab(ui);
+  assert.equal(ui.el("gitlab-sync").hidden,false);assert.equal(ui.el("gitlab-sync").disabled,true);
+  await toggleGitLab(ui,"gitlab-todos-enabled",true);
+  assert.equal(ui.el("gitlab-todos-settings").open,true);assert.equal(ui.el("gitlab-events-enabled").checked,false);
+  await toggleGitLab(ui,"gitlab-events-enabled",true);
+  assert.equal(ui.el("gitlab-events-settings").open,true);
+  await toggleGitLab(ui,"gitlab-events-enabled",false);assert.equal(ui.el("gitlab-events-settings").open,false);
+  await toggleGitLab(ui,"gitlab-events-enabled",true);assert.equal(ui.el("gitlab-events-settings").open,true);
+  await ui.el("notification-tab-messages").emit("click");await ui.el("notification-tab-gitlab").emit("click");
+  assert.equal(ui.el("gitlab-todos-enabled").checked,true);assert.equal(ui.el("gitlab-events-enabled").checked,true);
+  assert.equal(gitlabWrites(api).length,0);
+});
+test("GitLab shared sync status preserves independent failures and rejects stale success",async()=>{
+  const {api,events,todos}=todosServer({enabled:true}),original=api.hook;let offline=false;
+  Object.assign(events.get("A"),{status:"backoff",error_code:"query_failed",pending:2,last_check:"2026-11-07T01:00:00Z",retry_at:"2026-11-07T01:01:00Z"});
+  Object.assign(todos.get("A"),{last_check:"2026-11-07T01:00:30Z"});
+  api.hook=(path,body)=>offline && path.startsWith("/v1/platform/notifications?") ? Promise.reject(Error("offline")) : original(path,body);
+  const ui=await launch(api);await openGitLab(ui);
+  ui.el("gitlab-events-settings").open=false;ui.el("gitlab-todos-settings").open=false;
+  assert.match(ui.el("gitlab-events-status").textContent,/最近检查.*待投递 2.*下次重试.*查询失败/);
+  assert.equal(ui.el("gitlab-events-status").attributes["data-error"],"true");
+  assert.match(ui.el("gitlab-todos-status").textContent,/最近检查/);
+  assert.doesNotMatch(ui.el("gitlab-todos-status").textContent,/查询失败|下次重试|待投递/);
+  assert.equal(ui.el("gitlab-todos-status").attributes["data-error"],"false");
+  offline=true;await ui.refresh();await settle();
+  for(const channel of ["events","todos"]){
+    assert.match(ui.el(`gitlab-${channel}-status`).textContent,/状态暂不可读/);
+    assert.doesNotMatch(ui.el(`gitlab-${channel}-status`).textContent,/最近检查/);
+  }
+  assert.equal(gitlabWrites(api).length,0);
+});
+
 test("GitLab saves one provider model with one version and no repeated shared fields", async () => {
   const { api, events, todos } = todosServer({ enabled:true }), ui = await launch(api); await openGitLab(ui);
   for (const id of ["gitlab-events-interval", "gitlab-todos-interval", "gitlab-todos-inactive-interval", "gitlab-events-branches", "gitlab-events-ignore", "gitlab-todos-scope"]) assert.equal(ui.el(id), undefined);
@@ -2327,7 +2384,7 @@ test("GitLab same connection reverified as a new account requires explicit apply
   api.gitlabRecords.set("A",{version:1,config:structuredClone(fixtureGitLabView([eventView({config:{enabled:true,connection_id:"a".repeat(32),project:"group/project-A",interval_seconds:5,filter:{}},metrics:{}}),todoView({config:{enabled:true,connection_id:"a".repeat(32),interval_seconds:30,filter:{}}})]).config)});
   api.connections[0].validation={status:"valid",user_id:303,username:"carol"};
   await ui.el("gitlab-manage-connections").emit("click");await ui.el("close-settings").emit("click");await settle();
-  assert.match(ui.el("gitlab-account").textContent,/@carol/);assert.equal(ui.el("gitlab-save").disabled,false);assert.equal(gitlabWrites(api).length,0);
+  assert.match(ui.el("gitlab-notification-account").textContent,/@carol/);assert.equal(ui.el("gitlab-save").disabled,false);assert.equal(gitlabWrites(api).length,0);
   await ui.el("gitlab-save").emit("click");assert.equal(gitlabWrites(api).length,1);
 });
 
