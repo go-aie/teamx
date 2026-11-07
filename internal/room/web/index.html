@@ -450,7 +450,15 @@
             </ol>
           </section>
         </div>
-        <div id="connection-notes" class="connection-notes connection-field-wide" hidden><p id="connection-validation" class="quiet"></p><p id="connection-references" class="quiet" hidden></p></div>
+        <section id="connection-references" class="connection-references connection-field-wide" aria-labelledby="connection-references-title" hidden>
+          <h4 id="connection-references-title">引用房间</h4>
+          <div id="connection-reference-list" class="connection-reference-list" role="region" aria-label="引用房间列表" tabindex="0"></div>
+          <div id="gitlab-confirmation" class="gitlab-confirmation" hidden>
+            <p id="gitlab-confirmation-title"></p>
+            <div class="connection-account-actions"><button id="gitlab-confirm" class="settings-secondary-button" type="button">继续登录</button><button id="gitlab-dismiss" class="text-button" type="button">取消</button></div>
+          </div>
+        </section>
+        <div id="connection-notes" class="connection-notes connection-field-wide" hidden><p id="connection-validation" class="quiet"></p></div>
         <footer class="connection-field-wide"><button id="connection-delete" class="settings-secondary-button settings-danger-button" type="button" hidden>删除连接</button><button id="connection-verify" class="settings-secondary-button" type="button" hidden>验证连接</button><button id="connection-save" class="primary" type="submit">保存连接</button></footer>
       </fieldset>
     </form>

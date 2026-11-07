@@ -2651,7 +2651,7 @@ $("dismiss-management").addEventListener("click", () => {
   state.management = null; saveManagement(); state.managementError = ""; void refresh();
 });
 // Application secrets live only in memory and are never retried automatically.
-const connections = { items: [], selected: null, sending: false, generation: 0, formVersion: 0, discovery: null, detecting: false, auth: null, authTimer: null, gitlabAuth: null, gitlabTimer: null };
+const connections = { items: [], selected: null, sending: false, generation: 0, formVersion: 0, discovery: null, detecting: false, auth: null, authTimer: null, gitlabAuth: null, gitlabTimer: null, gitlabPending: null };
 const connectionValidationErrors = { credential_unavailable: "登录凭据不可用，请核对账号授权或服务凭据配置。", credential_rejected: "认证失败，请核对当前账号登录和权限。", identity_mismatch: "profile 账号或应用已变化，请核对后重新验证。", permission_denied: "当前用户缺少读取权限，请检查授权。", cli_version_mismatch: "CLI 版本不匹配，需要已验收的 1.0.99。", cli_unavailable: "CLI 无法执行，请核对路径与后台运行权限。", query_failed: "连接失败，请检查地址或网络后重试验证。", invalid_response: "实例返回了无效的身份信息。" };
 function connectionFeedback(message = "", kind = "status") {
   const feedback = $("connections-feedback");
@@ -2683,22 +2683,53 @@ function connectionAuthFields() {
   else renderGitLabAccount();
 }
 function connectionIsLark() { return $("connection-provider").value !== "gitlab"; }
+function renderConnectionReferences() {
+  const item = connections.selected;
+  const affected = connectionIsLark() ? null : connections.gitlabPending?.affected || connections.gitlabAuth?.affected;
+  const groups = affected ? affected.map(a => {
+    const connection = connections.items.find(c => c.id === a.id);
+    return { name: connection?.name || "其他共享连接", references: (a.referenced_rooms || []).map(ref => ({
+      ...ref, ...connection?.references?.find(r => r.room_id === ref.room_id && r.room_instance === ref.room_instance),
+    })) };
+  }) : item ? [{ name: item.name, references: item.references || [] }] : [];
+  const count = new Set(groups.flatMap(group => group.references.map(ref => JSON.stringify([ref.room_id, ref.room_instance])))).size;
+  $("connection-references").hidden = !groups.length;
+  $("connection-references").dataset.impact = String(!!affected);
+  $("connection-references-title").textContent = `引用房间 · ${count}`;
+  $("connection-reference-list").replaceChildren(...groups.map(group => {
+    const section = document.createElement("div"); section.className = "connection-reference-group";
+    if (groups.length > 1) { const title = document.createElement("h5"); title.textContent = group.name; section.append(title); }
+    const list = document.createElement("ul");
+    for (const ref of group.references) {
+      const row = document.createElement("li"), name = document.createElement("span");
+      name.textContent = ref.name || "房间信息待刷新"; row.append(name);
+      if (ref.pending) { const status = document.createElement("small"); status.textContent = "待完成绑定"; row.append(status); }
+      list.append(row);
+    }
+    if (!group.references.length) { const empty = document.createElement("li"); empty.className = "quiet"; empty.textContent = "暂无房间引用"; list.append(empty); }
+    section.append(list); return section;
+  }));
+}
 function renderGitLabAccount() {
   const item = connections.selected, active = !!connections.gitlabAuth;
+  const pending = !!connections.gitlabPending;
   const oauth = item?.credential_kind === "oauth";
   const status = item?.authorization_status;
   $("gitlab-account").textContent = active ? "正在处理授权…" : oauth ? status === "active" ? `已连接 · @${item.validation.username}` : status === "logged_out" ? item.revocation_status === "confirmed" ? "已退出登录" : "本地已断开，远端撤销未确认" : status ? "需要重新授权" : "未连接" : "未连接";
   $("gitlab-login").textContent = status && status !== "logged_out" ? "重新授权" : "登录 GitLab";
   $("gitlab-login").disabled = active;
   $("connection-validation").hidden = oauth;
-  $("gitlab-login").hidden = !item;
-  $("gitlab-logout").hidden = !status || status === "logged_out";
+  $("connection-notes").hidden = !item || oauth;
+  $("gitlab-login").hidden = !item || pending;
+  $("gitlab-logout").hidden = !status || status === "logged_out" || pending;
   $("gitlab-logout").disabled = active;
   $("gitlab-cancel").hidden = !active;
-  $("connection-save").disabled = active;
+  $("connection-save").disabled = active || pending;
+  $("gitlab-confirmation").hidden = !pending;
+  renderConnectionReferences();
   $("connection-verify").hidden = oauth || !item;
   $("connection-save").textContent = !item ? "登录并保存连接" : "保存连接";
-  for (const id of ["connection-name", "connection-url", "connection-provider", "gitlab-import"]) $(id).disabled = active || (id === "connection-provider" && !!item);
+  for (const id of ["connection-name", "connection-url", "connection-provider", "gitlab-import", "gitlab-repository-access"]) $(id).disabled = active || pending || (id === "connection-provider" && !!item);
 }
 function gitlabPreparePayload() {
   const item=connections.selected, repository_access=$("gitlab-repository-access").checked;
@@ -2715,14 +2746,14 @@ async function prepareGitLabConnection() {
   return result;
 }
 async function startGitLabAuth(action) {
-  if (connections.sending || connections.gitlabAuth || connectionIsLark()) return;
+  if (connections.sending || connections.gitlabAuth || connections.gitlabPending || connectionIsLark()) return;
   const item = connections.selected, version = connections.formVersion;
   if (item && connectionDirty()) {connectionFeedback("请先保存更改，再操作授权。", "error");return;}
   if (!item && !$("connection-name").value.trim()) {connectionInputError("connection-name", "请输入连接名称。");return;}
-  const popup = action === "login" ? window.open?.("about:blank", "_blank") : null;
-  if (popup) popup.opener = null;
   connections.sending = true; $("connection-fields").disabled = true;
   $("connection-back").disabled = true; $("close-settings").disabled = true;
+  connectionFeedback("正在检查 GitLab 应用配置…");
+  let pending;
   try {
     let prepared = await prepareGitLabConnection(); if (!prepared) return;
     if (version !== connections.formVersion) return;
@@ -2731,13 +2762,39 @@ async function startGitLabAuth(action) {
       connectionFeedback("请先完成一次应用配置，然后登录 GitLab。", "error");return;
     }
     const affected = prepared.affected || [];
-    const affectedItems = affected.map(a => connections.items.find(c => c.id === a.id));
-    const impact = affectedItems.filter(Boolean).map(c => `${c.name}${c.references?.length ? `（房间：${c.references.map(r=>r.name).join("、")}）` : ""}`).join("；");
-    if ((affected.length > 1 || affected.some(c=>c.referenced_rooms?.length)) && !window.confirm(`${action === "logout" ? "退出登录" : "应用新授权"}将影响连接：${impact}。通知将暂停，完成后需显式同步。继续？`)) return;
     const target = item ? {id:item.id,version:item.version} : {name:$("connection-name").value.trim(),origin:$("connection-url").value.trim()};
+    pending = { action, version, target, prepared, affected };
+    if (affected.length > 1 || affected.some(c=>c.referenced_rooms?.length)) {
+      connections.gitlabPending = pending;
+      $("gitlab-confirmation-title").textContent = action === "logout" ? "退出登录将暂停以上房间的通知。" : "本次登录将暂停以上房间的通知，完成后需手动同步恢复。";
+      $("gitlab-confirm").textContent = action === "logout" ? "确认退出" : "继续登录";
+      connectionFeedback();
+    }
+  } catch {
+    connectionFeedback("GitLab 应用配置检查失败，请稍后重试。", "error");
+  } finally {
+    connections.sending=false;$("connection-fields").disabled=false;$("connection-back").disabled=false;$("close-settings").disabled=false;renderGitLabAccount();
+  }
+  if (connections.gitlabPending) $("gitlab-confirm").focus();
+  else if (pending) await beginGitLabAuth(pending);
+}
+function clearGitLabConfirmation() {
+  connections.gitlabPending = null;
+  $("gitlab-confirmation").hidden = true;
+}
+async function beginGitLabAuth({action, version, target, prepared, affected}) {
+  if (connections.sending || connections.gitlabAuth || version !== connections.formVersion || connectionIsLark()) return;
+  clearGitLabConfirmation();
+  let popup;
+  connections.sending = true; $("connection-fields").disabled = true;
+  $("connection-back").disabled = true; $("close-settings").disabled = true;
+  connectionFeedback(action === "logout" ? "正在退出 GitLab…" : "正在打开 GitLab 授权页面…");
+  try {
+    popup = action === "login" ? window.open?.("about:blank", "_blank") : null;
+    if (popup) popup.opener = null;
     const auth = await request(`/v1/platform/connections/gitlab/${action}`,connectionPayload({...target,application_id:prepared.application_id,client_import_id:prepared.client_import_id,affected}));
     if (version !== connections.formVersion) return;
-    connections.gitlabAuth = auth; renderGitLabAccount();
+    connections.gitlabAuth = {...auth, affected}; renderGitLabAccount();
     if (auth.authorization_url) {$("gitlab-login-link").href = auth.authorization_url; $("gitlab-login-link").hidden = false; if (popup && !popup.closed) popup.location.replace(auth.authorization_url);}
     connectionFeedback(action === "logout" ? "正在退出并核对撤销结果…" : "请打开 GitLab 授权页面完成登录；本页会自动核对保存结果。");
     await pollGitLabAuth();
@@ -2766,6 +2823,7 @@ async function pollGitLabAuth() {
 }
 function clearGitLabAuthView() {clearTimeout(connections.gitlabTimer);connections.gitlabTimer=null;$("gitlab-login-link").hidden=true;$("gitlab-login-link").href="";}
 async function cancelGitLabAuth(keepalive = false) {
+  clearGitLabConfirmation();
   const auth=connections.gitlabAuth;clearGitLabAuthView();connections.gitlabAuth=null;connections.formVersion++;
   if (auth) {try {const body=connectionPayload({session_id:auth.session_id}); if (keepalive) await globalThis.fetch("/v1/platform/connections/gitlab/cancel",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),credentials:"same-origin",keepalive:true}); else await request("/v1/platform/connections/gitlab/cancel",body);} catch { /* Explicit list refresh reconciles a late commit. */ }}
   if (!connectionIsLark()) renderGitLabAccount();
@@ -2773,6 +2831,12 @@ async function cancelGitLabAuth(keepalive = false) {
 async function cancelConnectionAuth() {await cancelGitLabAuth();await cancelLarkAuth();}
 $("gitlab-login").addEventListener("click",()=>startGitLabAuth("login"));
 $("gitlab-logout").addEventListener("click",()=>startGitLabAuth("logout"));
+$("gitlab-confirm").addEventListener("click",()=>{if (connections.gitlabPending) return beginGitLabAuth(connections.gitlabPending);});
+$("gitlab-dismiss").addEventListener("click",()=>{
+  const action = connections.gitlabPending?.action;
+  clearGitLabConfirmation();renderGitLabAccount();connectionFeedback("已取消本次操作。");
+  $(action === "logout" ? "gitlab-logout" : "gitlab-login").focus();
+});
 $("gitlab-cancel").addEventListener("click",async()=>{await cancelGitLabAuth();connectionFeedback("已请求取消，请核对连接状态；已提交的授权不会回滚。");});
 $("gitlab-repository-access").addEventListener("change",()=>{
  $("gitlab-scope-hint").textContent=$("gitlab-repository-access").checked ? "权限选择 api 和 write_repository。" : "权限选择 api。";
@@ -2988,6 +3052,7 @@ async function loadConnections() {
   }
 }
 function showConnectionList() {
+  clearGitLabConfirmation();
   connections.formVersion++; connections.discovery = null; connections.detecting = false; clearLarkAuthView();
   connections.selected = null; $("gitlab-client-secret").value = "";
   $("connection-form").hidden = true; $("connections-list-view").hidden = false;
@@ -2995,6 +3060,7 @@ function showConnectionList() {
   connectionFeedback();
 }
 function editConnection(item = null) {
+  clearGitLabConfirmation();
   connections.formVersion++; connections.discovery = null; connections.detecting = false; clearLarkAuthView();
   clearConnectionErrors();
   connections.selected = item;
@@ -3014,8 +3080,7 @@ function editConnection(item = null) {
   $("connection-validation").textContent = v?.status === "valid" ? `已验证 · @${v.username}`
     : v?.status === "failed" ? connectionValidationErrors[v.error_code] || "验证失败。" : "尚未验证连接。";
   $("connection-validation").title = [v?.user_id ? `账号 ID ${v.user_id}` : "", v?.checked_at ? `验证于 ${new Date(v.checked_at).toLocaleString("zh-CN")}` : ""].filter(Boolean).join(" · ");
-  $("connection-references").textContent = item?.references?.length ? `引用房间：${item.references.map(ref => ref.name + (ref.pending ? "（待完成绑定）" : "")).join("、")}` : "";
-  $("connection-references").hidden = !item?.references?.length;
+  renderConnectionReferences();
   $("connection-delete").disabled = !!item?.references?.length;
   for (const id of ["connection-delete", "connection-verify"]) $(id).hidden = !item;
   connectionFeedback(); connectionAuthFields();
@@ -3029,7 +3094,7 @@ function connectionDirty() {
  return !item || $("connection-name").value.trim()!==item.name || (item.provider==="lark" && JSON.stringify(larkProfileDraft())!==JSON.stringify(item.cli_profile));
 }
 async function connectionAction(action) {
-  if (connections.sending || connections.auth || connections.gitlabAuth || connections.detecting || !state.catalog) return;
+  if (connections.sending || connections.auth || connections.gitlabAuth || connections.gitlabPending || connections.detecting || !state.catalog) return;
   const item = connections.selected;
   if (action === "save" && !connectionIsLark() && !item) return startGitLabAuth("login");
   if (action !== "save" && !item) return;
