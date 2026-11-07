@@ -815,7 +815,11 @@ function renderWorkspaceConnections() {
   if (!ws) return;
   const options = [new Option("请选择已有连接", "")];
   if (ws.data?.workspace?.binding && !ws.data.workspace.binding.connection_id) options.push(new Option("保留当前旧认证（尚未迁移）", "keep"));
-  for (const item of ws.connections || []) options.push(new Option(`${item.name} · ${item.url}`, item.id));
+  const provider = $("workspace-kind").value === "scion" ? "scion" : "gitlab";
+  for (const item of ws.repositoryConnections || ws.connections || []) {
+    if (item.provider !== provider || provider === "scion" && item.validation?.status !== "valid") continue;
+    options.push(new Option(`${item.name} · ${item.validation.username || item.validation.account?.id?.value || ""} · ${item.url}`, item.id));
+  }
   $("workspace-connection").replaceChildren(...options);
   $("workspace-connection").value = ws.selectedConnection || "";
 }
@@ -828,11 +832,13 @@ async function loadWorkspaceConnections() {
     const query = new URLSearchParams({ service_epoch: epoch, caller_id: ws.operator });
     const data = await request(`/v1/platform/connections?${query}`);
     if (ws !== workspaceView || state.catalog?.service_epoch !== epoch || read !== ws.connectionsRead) return;
+    ws.repositoryConnections = data.connections.filter(item => ["gitlab", "scion"].includes(item.provider));
+    ws.repositoryConnectionsError = "";
     ws.connections = data.connections.filter(item => item.provider === "gitlab");
     ws.larkConnections = data.connections.filter(item => item.provider === "lark");
     ws.connectionsError = ws.connections.length ? "" : "尚无平台连接，请先管理平台连接。";
     renderWorkspaceConnections();
-  } catch { if (ws === workspaceView && state.catalog?.service_epoch === epoch && read === ws.connectionsRead) ws.connectionsError = "平台连接加载失败，请重新打开通知源重试。"; }
+  } catch { if (ws === workspaceView && state.catalog?.service_epoch === epoch && read === ws.connectionsRead) { ws.connectionsError = "平台连接加载失败，请重新打开通知源重试。"; ws.repositoryConnectionsError = "平台连接加载失败，请重新打开 Workspace 设置重试。"; } }
   if (ws === workspaceView) renderWorkspace();
 }
 function fillWorkspaceForm() {
@@ -847,6 +853,7 @@ function fillWorkspaceForm() {
   $("workspace-root").value = current.root || "workspaces";
   // Suggestions only prefill text. Their checkboxes remain off until selected.
   $("workspace-repository").checked = !!target.repository;
+  $("workspace-kind").value = target.repository?.kind || suggestion.repository?.kind || "git";
   $("workspace-repo-url").value = target.repository?.url || suggestion.repository?.url || "";
   $("workspace-branch").value = target.repository ? target.repository.branch || "" : suggestion.repository?.branch || "main";
   $("workspace-gitlab").checked = !!target.binding;
@@ -878,7 +885,11 @@ function renderWorkspace() {
     const item = document.createElement("li"); item.textContent = `${member.agent_id} · ${member.workspace}`; return item;
   }));
   const repo = !!current?.repository, binding = !!current?.binding;
+  const scion = $("workspace-kind").value === "scion";
+  if (scion) $("workspace-gitlab").checked = true;
   const git = $("workspace-repository").checked, gitlab = git && $("workspace-gitlab").checked;
+  $("workspace-kind").disabled = repo;
+  $("workspace-binding-label").textContent = scion ? "绑定 Scion 连接（必需）" : "绑定 GitLab";
   $("workspace-fields").disabled = !data || !ws.connected || workspaceFormBusy() || managementBusy();
   $("workspace-root").readOnly = repo || git;
   $("workspace-root-hint").textContent = repo ? "仓库目录已固定；各成员使用独立 clone。" : git
@@ -886,16 +897,16 @@ function renderWorkspace() {
   $("workspace-repository").disabled = repo;
   $("workspace-repo-url").readOnly = repo;
   $("workspace-branch").readOnly = repo;
-  $("workspace-gitlab").disabled = binding;
+  $("workspace-gitlab").disabled = binding || scion;
   $("workspace-git-fields").hidden = !git;
   $("workspace-gitlab-fields").hidden = !gitlab;
   $("workspace-git-auth-hint").hidden = gitlab;
   $("workspace-repo-url").required = git;
   $("workspace-repo-url").disabled = !git;
   $("workspace-connection").disabled = !gitlab;
-  $("workspace-connection-feedback").textContent = ws.connectionsError || "选择连接后，应用时核实项目访问权限。旧认证仅在显式应用后迁移。";
+  $("workspace-connection-feedback").textContent = ws.repositoryConnectionsError || ($("workspace-connection").children.length <= 1 ? `尚无可选的 ${scion ? "Scion 已验证" : "GitLab"} 连接，请先管理平台连接。` : "选择同类型连接，应用时核实仓库访问权限；Scion 会核实分支存在。");
   $("workspace-credential-status").hidden = !binding;
-  $("workspace-credential-status").textContent = binding ? data.credential_status === "configured" ? current.binding.connection_id ? `共享连接已配置 · 项目 ID ${current.binding.project_id}（绑定时已核实）` : "旧凭据已配置（远端权限未验证）" : "凭据缺失，请检查平台连接或旧认证。" : "";
+  $("workspace-credential-status").textContent = binding ? data.credential_status === "configured" ? current.binding.connection_id ? current.binding.provider === "scion" ? `Scion 连接已配置 · ${current.binding.project}` : `共享连接已配置 · 项目 ID ${current.binding.project_id}（绑定时已核实）` : "旧凭据已配置（远端权限未验证）" : "凭据缺失，请检查平台连接或旧认证。" : "";
   $("workspace-status").textContent = status;
   notice("workspace-error", ws.error || (op?.status === "failed" ? workspaceErrors[op.error_code] || "操作未完成，请检查服务状态。" : ""));
   $("workspace-operation-detail").hidden = !op && !ws.pending;
@@ -908,32 +919,34 @@ function renderWorkspace() {
   $("workspace-new").hidden = !ws.missing;
   $("workspace-refresh").disabled = ws.sending;
 }
-function gitlabProjectFromRepository(value) {
+function platformProjectFromRepository(value, provider = "gitlab") {
   // Match the server's HTTPS origin and project-path rules. Keep explicit ports
   // (including :443) so the derived origin exactly matches the repository host.
   const raw = value.trim(), parts = /^https:\/\/([^/?#]+)(\/[^?#]*)?$/.exec(raw);
-  const invalid = () => new Error("请填写有效的仓库 HTTPS URL，以解析 GitLab 项目；地址不能含用户名、密码、Token 或查询参数。");
+  const invalid = () => new Error("请填写有效的仓库 HTTPS URL，以解析平台仓库；地址不能含用户名、密码、Token 或查询参数。");
   if (!parts || raw.length > 4096 || /[\s\\]/.test(raw)) throw invalid();
   let url;
   try { url = new URL(raw); } catch { throw invalid(); }
   if (!url.hostname || url.username || url.password) throw invalid();
   const path = (parts[2] || "").replace(/^\//, "").replace(/\/$/, "");
-  const project = path.replace(/\.git$/, "");
+  const project = provider === "scion" ? path : path.replace(/\.git$/, "");
   if (path.length > 2048 || !project.includes("/") || project.split("/").some(part =>
     !/^[A-Za-z0-9_.-]+$/.test(part) || part === "." || part === "..")) throw invalid();
-  return { provider: "gitlab", url: `https://${parts[1].toLowerCase()}`, project };
+  return { provider, url: `https://${parts[1].toLowerCase()}`, project };
 }
 function workspaceTarget() {
   const old = workspaceView.data.workspace;
   const git = $("workspace-repository").checked;
   const target = { root: old?.repository || !git ? $("workspace-root").value.trim() : old?.root || "" };
   if (git) {
+    const kind = $("workspace-kind").value || "git";
     target.repository = old?.repository ? { ...old.repository } : { url: $("workspace-repo-url").value.trim() };
+    if (!old?.repository) target.repository.kind = kind;
     if (!old?.repository && $("workspace-branch").value.trim()) target.repository.branch = $("workspace-branch").value.trim();
     if ($("workspace-gitlab").checked) {
-      target.binding = gitlabProjectFromRepository(target.repository.url);
+      target.binding = platformProjectFromRepository(target.repository.url, kind === "scion" ? "scion" : "gitlab");
       if (!old?.repository) {
-        target.repository.url = `${target.binding.url}/${target.binding.project}.git`;
+        target.repository.url = `${target.binding.url}/${target.binding.project}${kind === "scion" ? "" : ".git"}`;
         $("workspace-repo-url").value = target.repository.url;
       }
       const selected = $("workspace-connection").value;
@@ -941,8 +954,8 @@ function workspaceTarget() {
         if (!old?.binding || old.binding.connection_id) throw new Error("请选择平台连接。");
         target.binding = { ...old.binding };
       } else {
-        const connection = workspaceView.connections?.find(item => item.id === selected);
-        if (!connection) throw new Error("请选择已有平台连接，或前往管理平台连接。");
+        const connection = (workspaceView.repositoryConnections || workspaceView.connections)?.find(item => item.id === selected);
+        if (!connection || kind === "scion" && connection.validation?.status !== "valid") throw new Error("请选择已验证的平台连接，或前往管理平台连接。");
         if (connection.provider !== target.binding.provider || connection.url !== target.binding.url) throw new Error("所选连接与仓库实例不一致。");
         target.binding.connection_id = connection.id;
       }
@@ -966,7 +979,7 @@ async function submitWorkspace(retry = false) {
     if (!retry) {
       payload.expected_version = ws.data.workspace_version; payload.target = workspaceTarget();
       if (workspaceCanRevise()) payload.replaces_operation_id = ws.data.operation.operation_id;
-      if (payload.target.binding?.connection_id) payload.connection_version = ws.connections.find(item => item.id === payload.target.binding.connection_id).version;
+      if (payload.target.binding?.connection_id) payload.connection_version = (ws.repositoryConnections || ws.connections).find(item => item.id === payload.target.binding.connection_id).version;
     }
   } catch (error) { ws.error = error.message; renderWorkspace(); return; }
   ws.pending = { operation_id: payload.operation_id }; ws.missing = false; saveWorkspacePending(ws);
@@ -1016,6 +1029,7 @@ $("close-workspace").addEventListener("click", () => $("workspace-dialog").close
 $("workspace-dialog").addEventListener("close", () => {
   ($("notification-detail").open ? $("notification-manage-binding") : $("workspace-trigger")).focus();
 });
+$("workspace-kind").addEventListener("change", () => { if (workspaceView) workspaceView.selectedConnection = ""; renderWorkspaceConnections(); renderWorkspace(); });
 for (const id of ["workspace-repository", "workspace-gitlab"]) $(id).addEventListener("change", renderWorkspace);
 $("workspace-connection").addEventListener("change", () => { if (workspaceView) workspaceView.selectedConnection = $("workspace-connection").value; });
 $("workspace-manage-connections").addEventListener("click", async () => {
@@ -2722,8 +2736,8 @@ $("dismiss-management").addEventListener("click", () => {
   state.management = null; saveManagement(); state.managementError = ""; void refresh();
 });
 // Application secrets live only in memory and are never retried automatically.
-const connections = { items: [], selected: null, sending: false, generation: 0, formVersion: 0, discovery: null, detecting: false, auth: null, authTimer: null, gitlabAuth: null, gitlabTimer: null, gitlabPending: null };
-const connectionValidationErrors = { credential_unavailable: "登录凭据不可用，请核对账号授权或服务凭据配置。", credential_rejected: "认证失败，请核对当前账号登录和权限。", identity_mismatch: "profile 账号或应用已变化，请核对后重新验证。", permission_denied: "当前用户缺少读取权限，请检查授权。", cli_version_mismatch: "CLI 版本不匹配，请使用对应工具已验收的固定版本。", cli_unavailable: "CLI 无法执行，请核对路径与后台运行权限。", query_failed: "连接失败，请检查地址或网络后重试验证。", invalid_response: "实例返回了无效的身份信息。" };
+const connections = { items: [], selected: null, sending: false, generation: 0, formVersion: 0, discovery: null, detecting: false, auth: null, authTimer: null, gitlabAuth: null, gitlabTimer: null, gitlabPending: null, scionDiscovery:null, scionAuth:null, scionTimer:null };
+const connectionValidationErrors = { login_failed:"PAT 登录失败，请核对实例、令牌及权限。", timeout:"操作超时，请刷新账号核对结果；不会自动重新登录。", cancelled:"操作已取消，请刷新账号核对状态。", credential_unavailable: "登录凭据不可用，请核对账号授权或服务凭据配置。", credential_rejected: "认证失败，请核对当前账号登录和权限。", identity_mismatch: "profile 账号或应用已变化，请核对后重新验证。", permission_denied: "当前用户缺少读取权限，请检查授权。", cli_version_mismatch: "CLI 版本不匹配，请使用对应工具已验收的固定版本。", cli_unavailable: "CLI 无法执行，请核对路径与后台运行权限。", query_failed: "连接失败，请检查地址或网络后重试验证。", invalid_response: "实例返回了无效的身份信息。" };
 function connectionFeedback(message = "", kind = "status") {
   const feedback = $("connections-feedback");
   feedback.textContent = message;
@@ -2751,12 +2765,114 @@ function connectionAuthFields() {
   $("connection-url-row").hidden = isLark;
   $("connection-url").required = !isLark;
   $("gitlab-account-row").hidden = isLark || isScion;
+  $("connection-name").placeholder = isScion ? "公司 Scion" : isLark ? "我的飞书" : "公司 GitLab";
+  $("connection-url").placeholder = isScion ? "https://scion.example.com" : "https://gitlab.example.com";
+  if (!isScion) $("connection-scion-pat").value = "";
   if (isLark || isScion) $("gitlab-client-secret").value = "";
   else renderGitLabAccount();
 }
 function connectionIsLark() { return ["feishu", "lark"].includes($("connection-provider").value); }
 function connectionIsScion() { return $("connection-provider").value === "scion"; }
 function scionProfileDraft() { return {version:1, executable:$("connection-scion-executable").value.trim(), profile:$("connection-scion-profile").value.trim(), brand:"scion", cli_version:"0.1.13"}; }
+function renderScionAccount() {
+  const active = !!connections.scionAuth;
+  for (const id of ["connection-scion-executable", "connection-scion-profile", "connection-scion-detect", "connection-scion-login", "connection-scion-pat"]) $(id).disabled = active || connections.detecting;
+  $("connection-url").readOnly = !!connections.selected || active;
+  $("connection-provider").disabled = !!connections.selected || active;
+  $("connection-scion-cancel").hidden = !active;
+  $("connection-save").disabled = active || connections.detecting;
+  $("connection-verify").disabled = active || connections.detecting;
+  if (active) { $("connection-scion-account").textContent = "正在登录并核验账号…"; return; }
+  if (connections.detecting) { $("connection-scion-account").textContent = "正在检测账号…"; return; }
+  const selected = connections.scionDiscovery?.profiles.find(p => p.profile === $("connection-scion-profile").value);
+  $("connection-scion-account").textContent = selected ? `已识别账号 · ${selected.username}` : !$("connection-url").value.trim() ? "填写实例地址后自动检测账号。" : connections.scionDiscovery ? "尚未选择可用账号，可使用 PAT 登录。" : "请刷新账号以完成检测。";
+}
+function scionProfileOptions(data, selected) {
+  const users = new Map();
+  for (const p of data.profiles) users.set(p.username, (users.get(p.username) || 0) + 1);
+  const options = data.profiles.map(p => new Option(users.get(p.username) > 1 ? `${p.username} · ${p.profile.slice(-6)}` : p.username, p.profile));
+  if (data.profiles.length !== 1 || selected && !data.profiles.some(p => p.profile === selected)) options.unshift(new Option("选择账号", ""));
+  $("connection-scion-profile").replaceChildren(...options);
+  $("connection-scion-profile").value = data.profiles.some(p => p.profile === selected) ? selected : !selected && data.profiles.length === 1 ? data.profiles[0].profile : "";
+  $("connection-scion-choice").hidden = data.profiles.length <= 1 && (!selected || data.profiles.some(p => p.profile === selected));
+}
+async function detectScionConnection() {
+  if (!connectionIsScion() || connections.scionAuth) return;
+  const version = ++connections.formVersion, url = $("connection-url").value.trim();
+  const selected = $("connection-scion-profile").value;
+  connections.scionDiscovery = null;
+  if (!url) { renderScionAccount(); return; }
+  connections.detecting = true; renderScionAccount();
+  try {
+    const data = await request("/v1/platform/connections/scion/discover", connectionPayload({url, executable:$("connection-scion-executable").value.trim()}), undefined, 70000);
+    if (version !== connections.formVersion) return;
+    connections.scionDiscovery = {...data, origin:url};
+    $("connection-scion-executable").value = data.executable;
+    scionProfileOptions(data, selected);
+    connectionFeedback(data.unavailable ? "部分受管登录与当前实例不匹配或无法验证，可刷新或使用 PAT 登录。" : "");
+  } catch (error) {
+    if (version !== connections.formVersion) return;
+    connectionFeedback(connectionValidationErrors[error.code] || (error.code === "request" ? "请填写有效的 HTTPS 实例地址和 CLI 路径。" : "账号检测失败，请核对程序或网络后刷新。"), "error");
+  } finally {
+    if (version === connections.formVersion) { connections.detecting = false; renderScionAccount(); }
+  }
+}
+async function startScionLogin() {
+  if (!connectionIsScion() || connections.scionAuth || connections.sending || connections.detecting) return;
+  const pat = $("connection-scion-pat").value.trim();
+  $("connection-scion-pat").value = "";
+  if (!pat || !$("connection-url").value.trim()) { connectionFeedback("请填写实例地址和 PAT。", "error"); return; }
+  const auth = {session_id:crypto.randomUUID().replaceAll("-", ""), version:connections.formVersion, origin:$("connection-url").value.trim()};
+  connections.scionAuth = auth; renderScionAccount();
+  connectionFeedback("正在通过 Scion CLI 登录…");
+  try {
+    await request("/v1/platform/connections/scion/login", connectionPayload({session_id:auth.session_id,url:$("connection-url").value.trim(),executable:$("connection-scion-executable").value.trim(),pat}), undefined, 15000);
+  } catch (error) {
+    if (connections.scionAuth !== auth) return;
+    const rejected = {request:"请填写有效的 HTTPS 实例地址和 PAT。", identity:"服务身份已变化，请刷新页面。", capacity:"登录操作已达上限，请稍后刷新账号。", busy:"服务正忙，请稍后重试登录。"};
+    if (rejected[error.code]) { connections.scionAuth=null; renderScionAccount(); connectionFeedback(rejected[error.code],"error"); return; }
+    // A lost start response is recovered by ID through status, never by sending
+    // the PAT or login again. The operator still owns cancellation on close.
+  }
+  if (connections.scionAuth === auth) await pollScionAuth();
+}
+async function pollScionAuth() {
+  const auth = connections.scionAuth;
+  if (!auth) return;
+  try {
+    const result = await request("/v1/platform/connections/scion/status", connectionPayload({session_id:auth.session_id}));
+    if (connections.scionAuth !== auth || connections.formVersion !== auth.version) return;
+    if (result.status === "starting") { connections.scionTimer = setTimeout(() => { void pollScionAuth(); }, 1000); return; }
+    connections.scionAuth = null; clearTimeout(connections.scionTimer);
+    if (result.status === "succeeded" && result.cli_profile) {
+      const profile = result.cli_profile;
+      const data = {origin:auth.origin, executable:profile.executable, profiles:(connections.scionDiscovery?.profiles || []).filter(p => p.profile !== profile.profile), unavailable:0};
+      data.profiles.push({profile:profile.profile,username:result.username});
+      connections.scionDiscovery = data;
+      $("connection-scion-executable").value = profile.executable;
+      scionProfileOptions(data, profile.profile);
+      $("connection-scion-login-panel").open = false;
+      renderScionAccount(); connectionFeedback(`登录与账号验证成功 · ${result.username}。请保存连接以应用此账号。`, "success");
+    } else {
+      renderScionAccount(); connectionFeedback(result.status === "cancelled" ? "本次登录已取消。" : connectionValidationErrors[result.error_code] || "PAT 登录失败，请检查实例、令牌及权限。", "error");
+    }
+  } catch {
+    if (connections.scionAuth !== auth) return;
+    await cancelScionAuth();
+    connectionFeedback("登录结果未确认，请刷新账号核对；不会自动重新提交 PAT。", "error");
+  }
+}
+async function cancelScionAuth() {
+  const auth = connections.scionAuth;
+  $("connection-scion-pat").value = "";
+  clearTimeout(connections.scionTimer);
+  if (!auth) return;
+  connections.scionAuth = null;
+  try { await request("/v1/platform/connections/scion/cancel", connectionPayload({session_id:auth.session_id}), undefined, 12000); }
+  catch { connectionFeedback("登录取消结果未确认，请稍后刷新账号核对。", "error"); }
+  if (connectionIsScion()) renderScionAccount();
+}
+
 function renderConnectionReferences() {
   const item = connections.selected;
   const affected = connectionIsLark() ? null : connections.gitlabPending?.affected || connections.gitlabAuth?.affected;
@@ -2902,7 +3018,7 @@ async function cancelGitLabAuth(keepalive = false) {
   if (auth) {try {const body=connectionPayload({session_id:auth.session_id}); if (keepalive) await globalThis.fetch("/v1/platform/connections/gitlab/cancel",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),credentials:"same-origin",keepalive:true}); else await request("/v1/platform/connections/gitlab/cancel",body);} catch { /* Explicit list refresh reconciles a late commit. */ }}
   if (!connectionIsLark() && !connectionIsScion()) renderGitLabAccount();
 }
-async function cancelConnectionAuth() {await cancelGitLabAuth();await cancelLarkAuth();}
+async function cancelConnectionAuth() {await cancelScionAuth();await cancelGitLabAuth();await cancelLarkAuth();}
 $("gitlab-login").addEventListener("click",()=>startGitLabAuth("login"));
 $("gitlab-logout").addEventListener("click",()=>startGitLabAuth("logout"));
 $("gitlab-confirm").addEventListener("click",()=>{if (connections.gitlabPending) return beginGitLabAuth(connections.gitlabPending);});
@@ -3133,6 +3249,7 @@ async function loadConnections() {
   }
 }
 function showConnectionList() {
+  $("connection-scion-pat").value="";
   clearGitLabConfirmation();
   connections.formVersion++; connections.discovery = null; connections.detecting = false; clearLarkAuthView();
   connections.selected = null; $("gitlab-client-secret").value = "";
@@ -3141,6 +3258,8 @@ function showConnectionList() {
   connectionFeedback();
 }
 function editConnection(item = null) {
+  $("connection-scion-pat").value=""; connections.scionDiscovery=null;
+  $("connection-scion-login-panel").open=false;
   clearGitLabConfirmation();
   connections.formVersion++; connections.discovery = null; connections.detecting = false; clearLarkAuthView();
   clearConnectionErrors();
@@ -3156,6 +3275,7 @@ function editConnection(item = null) {
   $("connection-profile").value = item?.cli_profile?.profile || "";
   $("connection-executable").value = item?.cli_profile?.executable || "";
   $("connection-scion-executable").value = item?.provider === "scion" ? item.cli_profile.executable : "";
+  $("connection-scion-profile").replaceChildren(new Option("", item?.provider === "scion" ? item.cli_profile.profile : ""));
   $("connection-scion-profile").value = item?.provider === "scion" ? item.cli_profile.profile : "";
   $("connection-advanced").open = false;
   $("connection-notes").hidden = !item;
@@ -3170,14 +3290,15 @@ function editConnection(item = null) {
   $("connection-fields").disabled = false; $("connection-name").focus();
   for (const id of ["connection-save", "connection-verify"]) $(id).disabled = false;
   if (connectionIsLark()) return detectLarkConnection();
-  if (!connectionIsScion()) renderGitLabAccount();
+  if (connectionIsScion()) return detectScionConnection();
+  renderGitLabAccount();
 }
 function connectionDirty() {
  const item=connections.selected;
  return !item || $("connection-name").value.trim()!==item.name || (item.provider==="lark" && JSON.stringify(larkProfileDraft())!==JSON.stringify(item.cli_profile)) || (item?.provider==="scion" && JSON.stringify(scionProfileDraft())!==JSON.stringify(item.cli_profile));
 }
 async function connectionAction(action) {
-  if (connections.sending || connections.auth || connections.gitlabAuth || connections.gitlabPending || connections.detecting || !state.catalog) return;
+  if (connections.sending || connections.auth || connections.gitlabAuth || connections.gitlabPending || connections.scionAuth || connections.detecting || !state.catalog) return;
   const item = connections.selected;
   if (action === "save" && !connectionIsLark() && !connectionIsScion() && !item) return startGitLabAuth("login");
   if (action !== "save" && !item) return;
@@ -3188,8 +3309,9 @@ async function connectionAction(action) {
     clearConnectionErrors();
     payload = { ...payload, name: $("connection-name").value.trim(), provider: connectionIsLark() ? "lark" : connectionIsScion() ? "scion" : "gitlab", url: connectionIsLark() ? connectionOrigin() : $("connection-url").value.trim() };
     if (payload.provider === "scion") {
+      if ($("connection-scion-pat").value) { connectionFeedback("尚有未提交的 PAT，请先点击登录 Scion，再保存连接。", "error"); return; }
       const profile = scionProfileDraft();
-      if (!/^[a-f0-9]{32}$/.test(profile.profile) || !profile.executable.startsWith("/") || /[\x00\r\n]/.test(profile.executable)) { connectionFeedback("请填写受管 profile 的 32 位小写十六进制 ID 和 teamx-scion 的绝对路径。", "error"); return; }
+      if (!connections.scionDiscovery?.profiles.some(p=>p.profile===profile.profile) || connections.scionDiscovery.executable!==profile.executable || connections.scionDiscovery.origin!==payload.url) { connectionFeedback("连接未保存：请刷新账号并选择可用账号，或先使用 PAT 登录。", "error"); return; }
       if (!item || JSON.stringify(profile) !== JSON.stringify(item.cli_profile)) payload.cli_profile = profile;
     }
     if (payload.provider === "lark") {
@@ -3262,9 +3384,13 @@ $("settings-dialog").addEventListener("close", () => { void cancelConnectionAuth
   if ($("notification-detail").open) { $(workspaceView?.notificationChannel === "messages" ? "lark-manage-connections" : "gitlab-manage-connections").focus(); void loadWorkspaceConnections(); }
   else $("open-settings").focus(); });
 $("connection-new").addEventListener("click", () => editConnection());
-$("connection-back").addEventListener("click", async () => { if (connections.auth || connections.gitlabAuth) await cancelConnectionAuth(); showConnectionList(); await loadConnections(); });
+$("connection-back").addEventListener("click", async () => { if (connections.auth || connections.gitlabAuth || connections.scionAuth) await cancelConnectionAuth(); showConnectionList(); await loadConnections(); });
 $("connections-retry").addEventListener("click", loadConnections);
-$("connection-provider").addEventListener("change", () => {
+$("connection-provider").addEventListener("change", async () => {
+  if (connections.scionAuth) await cancelScionAuth();
+  $("connection-scion-pat").value=""; connections.scionDiscovery=null;
+  $("connection-scion-profile").replaceChildren();
+  $("connection-scion-login-panel").open=false;
   connections.formVersion++; connections.discovery = null; connections.detecting = false;
   $("connection-profile").replaceChildren();
   if (!connections.selected) {
@@ -3273,8 +3399,16 @@ $("connection-provider").addEventListener("change", () => {
   }
   connectionAuthFields();
   if (connectionIsLark()) return detectLarkConnection();
+  if (connectionIsScion()) return detectScionConnection();
   for (const id of ["connection-save", "connection-verify"]) $(id).disabled = false;
 });
+$("connection-scion-executable").addEventListener("change", detectScionConnection);
+$("connection-url").addEventListener("change", () => { if(connectionIsScion()) return detectScionConnection(); });
+$("connection-scion-detect").addEventListener("click", detectScionConnection);
+$("connection-scion-profile").addEventListener("change", () => {connectionFeedback();renderScionAccount();});
+$("connection-scion-login").addEventListener("click", startScionLogin);
+$("connection-scion-pat").addEventListener("keydown", event => { if(event.key==="Enter" && !event.isComposing) { event.preventDefault(); if(!event.repeat) return startScionLogin(); } });
+$("connection-scion-cancel").addEventListener("click", async () => {await cancelScionAuth();await detectScionConnection();});
 $("connection-profile").addEventListener("change", () => { connectionFeedback(); renderLarkAccount(); });
 $("connection-detect").addEventListener("click", detectLarkConnection);
 $("connection-executable").addEventListener("change", detectLarkConnection);

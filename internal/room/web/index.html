@@ -365,12 +365,13 @@
       <fieldset id="workspace-fields">
         <label for="workspace-root">房间内相对根目录</label><input id="workspace-root" placeholder="workspaces" autocomplete="off">
         <p id="workspace-root-hint" class="quiet">切换目录不搬迁文件，原目录保留。</p>
-        <label class="workspace-check"><input id="workspace-repository" type="checkbox">关联 Git 仓库 <span class="quiet">可选</span></label>
+        <label class="workspace-check"><input id="workspace-repository" type="checkbox">关联仓库 <span class="quiet">可选</span></label>
         <div id="workspace-git-fields" hidden>
+          <label for="workspace-kind">仓库类型</label><select id="workspace-kind"><option value="git">Git</option><option value="scion">Scion</option></select>
           <label for="workspace-repo-url">仓库 HTTPS URL</label><input id="workspace-repo-url" type="url" placeholder="https://git.example.com/group/project.git" autocomplete="off">
           <label for="workspace-branch">首次 checkout 分支 <span class="quiet">可选</span></label><input id="workspace-branch" autocomplete="off" placeholder="留空使用仓库默认分支">
           <p id="workspace-git-auth-hint" class="quiet">使用服务端已有的 Git 认证。</p>
-          <label class="workspace-check"><input id="workspace-gitlab" type="checkbox">绑定 GitLab</label>
+          <label class="workspace-check"><input id="workspace-gitlab" type="checkbox"><span id="workspace-binding-label">绑定 GitLab</span></label>
           <div id="workspace-gitlab-fields" hidden>
             <label for="workspace-connection">平台连接</label>
             <select id="workspace-connection"><option value="">请选择已有连接</option></select>
@@ -390,7 +391,7 @@
   </dialog>
   <dialog id="settings-dialog" class="workspace-dialog settings-dialog" aria-labelledby="settings-title">
     <header class="activity-header settings-header">
-      <div><p class="quiet settings-eyebrow">设置</p><h2 id="settings-title">平台连接</h2><p class="quiet settings-description">管理当前服务共享的 GitLab 与飞书连接。</p></div>
+      <div><p class="quiet settings-eyebrow">设置</p><h2 id="settings-title">平台连接</h2><p class="quiet settings-description">管理当前服务共享的 GitLab、Scion 与飞书连接。</p></div>
       <button id="close-settings" class="settings-icon-button" type="button" aria-label="关闭设置" title="关闭设置" autofocus><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button>
     </header>
     <section id="connections-list-view" class="connections-content">
@@ -416,9 +417,17 @@
         <div class="connection-field"><label for="connection-provider">平台</label><select id="connection-provider"><option value="gitlab">GitLab</option><option value="scion">Scion</option><option value="feishu">飞书</option><option value="lark">Lark</option></select></div>
         <div id="connection-url-row" class="connection-field connection-field-wide"><label for="connection-url">实例地址</label><input id="connection-url" type="url" required placeholder="https://gitlab.example.com"></div>
         <div id="connection-scion-row" class="connection-field connection-field-wide" hidden>
-          <label for="connection-scion-profile">Scion profile ID</label><input id="connection-scion-profile" spellcheck="false" placeholder="32 位小写十六进制 ID">
-          <label for="connection-scion-executable">teamx-scion 路径</label><input id="connection-scion-executable" spellcheck="false" placeholder="服务端可执行文件的绝对路径">
-          <p class="quiet">先在服务端的独立 profile 中完成原生 PAT 登录，再保存并验证连接。每个成员需在工具设置中单独选择此连接；更换账号时使用新的 profile ID。</p>
+          <label for="connection-scion-executable">Scion CLI 路径</label><input id="connection-scion-executable" spellcheck="false" placeholder="自动检测 teamx-scion / scn，也可填写绝对路径">
+          <div id="connection-scion-choice" hidden><label for="connection-scion-profile">账号</label><select id="connection-scion-profile" aria-describedby="connection-scion-account connections-feedback"></select></div>
+          <p id="connection-scion-account" class="connection-account" role="status" aria-live="polite">填写实例地址后自动检测账号。</p>
+          <button id="connection-scion-detect" class="text-button" type="button">刷新账号</button>
+          <details id="connection-scion-login-panel">
+            <summary>使用 PAT 登录或更换账号</summary>
+            <label for="connection-scion-pat">Personal Access Token</label><input id="connection-scion-pat" type="password" autocomplete="new-password" spellcheck="false" placeholder="填写此实例的 Scion PAT">
+            <p class="quiet">由 Scion CLI 验证并保存登录。登录成功后请保存连接，再为成员单独应用。</p>
+            <button id="connection-scion-login" class="settings-secondary-button" type="button">登录 Scion</button>
+          </details>
+          <button id="connection-scion-cancel" class="text-button" type="button" hidden>取消本次登录</button>
         </div>
         <div id="connection-profile-row" class="connection-field connection-field-wide" hidden>
           <div id="connection-profile-choice" hidden><label for="connection-profile">应用配置</label><select id="connection-profile" aria-describedby="connections-feedback"></select></div>

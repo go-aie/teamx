@@ -247,14 +247,9 @@ func (m *roomManager) startWorkspaceApply(req workspaceApplyRequest) (workspaceO
 	if replacement != nil && (replacement.PreviousVersion != saved.WorkspaceVersion || !reflect.DeepEqual(saved, *replacement.PreviousConfig)) {
 		return workspaceOperation{}, ErrConflict
 	}
-	target := canonical
-	if target.Binding != nil && target.Binding.ConnectionID != "" {
-		if req.connection == nil || m.checkProjectConnectionLocked(*req.connection) != nil {
-			return workspaceOperation{}, ErrConflict
-		}
-		b := *target.Binding
-		b.ConnectionGeneration, b.ProjectID = req.connection.record.Generation, req.connection.projectID
-		target.Binding = &b
+	target, err := m.workspaceConnectionTargetLocked(canonical, req.connection)
+	if err != nil {
+		return workspaceOperation{}, err
 	}
 	// First repository binding always gets a stable, fresh managed root. The
 	// submitted root may be omitted or equal the currently displayed plain root.

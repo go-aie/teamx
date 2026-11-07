@@ -11,7 +11,7 @@ import (
 // Check production transitive imports, including dependencies added indirectly.
 // Agent commands and built-in adapters must remain independently buildable.
 func TestCapabilityImportBoundaries(t *testing.T) {
-	cmd := exec.Command("go", "list", "-deps", "-json", "./internal/platform/...", "./tools/gitlab")
+	cmd := exec.Command("go", "list", "-deps", "-json", "./internal/platform/...", "./tools/gitlab", "./tools/scion")
 	cmd.Dir = "../.."
 	out, err := cmd.Output()
 	if err != nil {
@@ -47,12 +47,14 @@ func TestCapabilityImportBoundaries(t *testing.T) {
 			case root + "internal/platform":
 				forbidden = forbidden || strings.HasPrefix(dep, root+"internal/platform/") || strings.HasPrefix(dep, root+"tools/")
 			case root + "internal/platform/tool", root + "internal/platform/connection", root + "internal/platform/notification", root + "internal/platform/attachment":
-				forbidden = forbidden || strings.HasPrefix(dep, root+"internal/platform/gitlab") || strings.HasPrefix(dep, root+"internal/platform/lark") || strings.HasPrefix(dep, root+"tools/")
+				forbidden = forbidden || strings.HasPrefix(dep, root+"internal/platform/gitlab") || strings.HasPrefix(dep, root+"internal/platform/lark") || strings.HasPrefix(dep, root+"internal/platform/scion") || strings.HasPrefix(dep, root+"tools/")
 			case root + "internal/platform/lark":
 				forbidden = forbidden || strings.HasPrefix(dep, root+"internal/platform/gitlab") || strings.HasPrefix(dep, root+"internal/platform/tool") || strings.HasPrefix(dep, root+"tools/")
 			case root + "internal/platform/gitlab":
 				forbidden = forbidden || strings.HasPrefix(dep, root+"internal/platform/tool") || strings.HasPrefix(dep, root+"tools/")
-			case root + "tools/gitlab":
+			case root + "internal/platform/scion":
+				forbidden = forbidden || strings.HasPrefix(dep, root+"internal/platform/gitlab") || strings.HasPrefix(dep, root+"internal/platform/lark") || strings.HasPrefix(dep, root+"tools/")
+			case root + "tools/gitlab", root + "tools/scion":
 				forbidden = forbidden || strings.HasPrefix(dep, root+"internal/")
 			}
 			if forbidden {

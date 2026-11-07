@@ -12,6 +12,7 @@
 | [platform/gitlab](../internal/platform/gitlab/) | 内置账号/项目核验、Events/Todos Go 查询、来源算法及 Workspace 必需的 GitLab 请求 |
 | [platform/tool](../internal/platform/tool/) | 静态工具目录、程序定位、版本和环境、子进程及标准流、skill 读取 |
 | [tools/gitlab](../tools/gitlab/README.zh.md) | 独立 GitLab Go 工具；原生命令调用固定 glab，缺口由自身 Go 扩展处理 |
+| [platform/scion](../internal/platform/scion/)、[tools/scion](../tools/scion/README.zh.md) | Scion 受管 profile、原生 subject 核验与目的地址检查；独立封装调用固定 scn，保持原生 Review schema |
 | [room](../internal/room/) | 成员工具绑定、接纳与身份检查、查询作用域、最终消息提交和资源结清 |
 
 ```mermaid
@@ -19,7 +20,7 @@ flowchart LR
   C[连接与凭据] --> P[内置 Go 平台适配]
   P --> N[公共通知服务]
   N --> R[Room 消息]
-  P --> W[Workspace / Git]
+  P --> W[Workspace / Git 与 Scion]
   C --> T[通用工具启动]
   A[Agent CLI] --> T
   T --> G[独立 GitLab 工具]
@@ -30,7 +31,7 @@ flowchart LR
 
 ## 连接与身份
 
-全局连接的元数据、OAuth 应用及共享授权原子保存在私有的 `platform-connections.json`（版本 4）；飞书只保存 CLI profile 引用。公开状态只包含引用、版本和账号摘要。GitLab 运行时仅支持 OAuth，Workspace 和工具复用连接，不再保存房间 PAT 或引用服务环境变量。每次远端请求或有界进程通过服务获取短期令牌许可，授权变化先取消并结清旧调用；正常刷新保持稳定授权证据和通知进度。
+全局连接的元数据、OAuth 应用及共享授权原子保存在私有的 `platform-connections.json`（版本 4）；飞书和 Scion 只保存 CLI profile 引用。公开状态只包含引用、版本和账号摘要。GitLab 运行时仅支持 OAuth，Workspace 和工具复用连接，不再保存房间 PAT 或引用服务环境变量。每次远端请求或有界进程通过服务获取短期令牌许可，授权变化先取消并结清旧调用；正常刷新保持稳定授权证据和通知进度。
 
 工具、通知、Workspace 显式引用连接。删除连接检查各类引用；凭据轮换先阻断受影响的新执行、取消并等待旧任务，再重新核验。换实例或账号需显式重绑，不能继承旧账号的订阅或成员选择。凭据不得进入 URL、日志、提示词、普通 API 或 Session 配置快照。
 
@@ -52,7 +53,7 @@ flowchart LR
 
 ## 内置适配与扩展
 
-后台 Events/Todos、身份核验、项目核验与 Workspace 必需请求直接使用 Go HTTP，不通过 glab、独立工具或成员 Session，也不需要 Python 查询脚本。查询有时限和正文上限，拒绝重定向，保留安全的 HTTP 状态及等待提示，丢弃远端错误正文；分页与退避由来源算法管理。
+GitLab 后台 Events/Todos、身份核验、项目核验与 Workspace 必需请求直接使用 Go HTTP，不通过 glab、独立工具或成员 Session，也不需要 Python 查询脚本。查询有时限和正文上限，拒绝重定向，保留安全的 HTTP 状态及等待提示，丢弃远端错误正文；分页与退避由来源算法管理。
 
 连接 provider、通知 source 和工具 catalog 是独立的小型静态注册点。一个能力可以只有通知、只有工具，或不需要连接和 Workspace；不要求实现统一的大接口，不引入动态插件加载。具体进度与 schema 属于来源，公共层不把 GitLab 数字 ID、项目或 PAT 当作所有平台的合同。
 
@@ -103,3 +104,16 @@ R5 已统一生产入口，GitLab 原生正文分页未登记。R6 的非 GitLab
 ### 生产入口与 schema 检测（R5）
 
 `followups_entry.go` 与 `followups_cli.go` 沿用 inbox read、matters list/update、actions execute，新增按需 read、sources/source、resolve、ensure、notify/reply/instruct 及对话 policy update/publish。Agent 不再提交原生动作目标或 enrich/relate 图，human 管理保留长期规则编辑，详情查看问答和回执；动态指引覆盖冻结角色中的旧合同。新 Room 按需初始化 schema 2；启动校验当前 schema，不保留旧事项扫描、迁移或恢复分支。目录索引为 v3，仅保存完整 `owned_rooms`、`opens`、`shutdowns` 及 Workspace 操作；浏览器在本地保存查看选择，不再读取旧全局选择字段。当前 outbox 为 `followup_notice_receipts`，DSH 必须具备准确 `session.json` 引用，无引用的旧目录不推断恢复。服务不自动删除磁盘数据。完整使用合同见[通知手册](notifications.zh.md)。
+
+## Scion 连接与工具（S2）
+
+Scion 是独立 provider，不注册 GitLab MR、通知或内部动作适配器。profile 引用沿用连接快照 v4；`profile` 为服务私有 `scion-profiles` 下的 opaque ID，`executable` 为固定版本 `teamx-scion` 或原生 `scn` 的绝对路径。账号保留 `scion:subject` 字符串，不填入数字 `UserID`。
+
+当前连接页面通过服务端自动检测已有受管 profile，以实际 `whoami` 结果展示账号；PAT 登录调用固定 CLI，经 stdin 传入秘密，成功后返回非秘密 profile 引用和账号。登录始终创建新 profile，不原地覆盖已有凭据；操作会话仅保存在服务内存，取消和服务退出等待进程结清。登录/检测只允许操作者，不向 Agent 工具开放；失败的新 profile 清理，PAT 不进入公共响应或连接快照。
+
+连接验证和每次业务调用均使用隔离的原生 `whoami`；执行前将当前 origin 的凭据复制到本次私有目录，校验实际 subject 等于已绑定账号，同一副本供业务命令使用。源文件被替换不会让已接纳调用换号。PAT 路径不写回业务进程中的凭据更新；refresh-token 认证另行交付。
+
+工具准备回调在现有 platform call 生命周期内、manager 锁之外执行。连接替换、重新验证、停用、成员变更、关房和退出复用原有取消与等待。Endpoint/Hub 与仓库 URL 的接收 origin 必须匹配当前连接；登录、配置、daemon、自更新由操作者维护。无凭据帮助仍要求成员显式绑定。配置与安装见 [Scion 工具说明](../tools/scion/README.zh.md)，实际验证及未验项见 [S2 记录](scion-s2-acceptance.zh.md)。
+
+
+Scion Workspace 通过独立 `internal/workspace/scion` 适配器准备原生工作副本；共用管理仍只负责目录、操作与 Session 生命周期。仓库 kind 与平台 provider 分开校验，旧无 kind 快照不重写。Scion 平台桥接使用固定 CLI 验证 subject、canonical 仓库和已有分支，再以私有凭据副本 clone；账号和操作进程均受连接取消与结清管理，凭据不落入工作副本或 Session。回访与正常重开只检查本地结构和身份，日常工具绑定独立选择。当前实测与浏览器待验边界见 [S3b 记录](scion-s3b-acceptance.zh.md)。

@@ -25,7 +25,8 @@ type Definition struct {
 func Catalog() []Definition {
 	bin := ResolveExecutable("teamx-gitlab", os.Getenv("TEAMX_GITLAB_BIN"))
 	return []Definition{{Name: "gitlab", Description: "GitLab CLI and WorkItem extensions; uses account permissions", Version: "glab 1.127.0", Provider: "gitlab", Executable: bin, Skill: "skills/gitlab/SKILL.md",
-		Environment: map[string]string{"GITLAB_HOST": "instance", "GITLAB_TOKEN": "token"}}, {Name: "lark", Description: "飞书消息只读绑定；使用 teamx lark read --help 读取原消息或有界上下文", Provider: "lark", Version: "lark-cli 1.0.99", InternalOnly: true}}
+		Environment: map[string]string{"GITLAB_HOST": "instance", "GITLAB_TOKEN": "token"}}, {Name: "lark", Description: "飞书消息只读绑定；使用 teamx lark read --help 读取原消息或有界上下文", Provider: "lark", Version: "lark-cli 1.0.99", InternalOnly: true},
+		{Name: "scion", Description: "Scion native repository and Review CLI; uses account permissions", Version: "scn 0.1.13", Provider: "scion", Executable: ResolveExecutable("teamx-scion", os.Getenv("TEAMX_SCION_BIN")), Skill: "skills/scion/SKILL.md", Environment: map[string]string{"SCION_ENDPOINT": "instance", "SCION_HUB": "instance", "SCION_CREDENTIALS_FILE": "credentials_file", "SCION_CREDENTIALS": "credential_mode", "SCION_NO_DAEMON": "no_daemon", "SCION_CONFIG_FILE": "config_file"}}}
 }
 
 // Help requests need no account or credential resolution. No business routing.
@@ -51,6 +52,9 @@ type Process struct {
 	Input         io.Reader
 	Output, Error io.Writer
 	Values        map[string]string `json:"-"`
+	// Prepare runs inside the tracked call, outside manager locks. Its private
+	// directory lasts through execution and is removed even on cancellation.
+	Prepare func(context.Context, string) (map[string]string, error) `json:"-"`
 }
 
 func (Process) Format(s fmt.State, _ rune) { _, _ = io.WriteString(s, "[REDACTED tool process]") }
@@ -64,12 +68,24 @@ func (p Process) Run(ctx context.Context, args []string) int {
 		return 127
 	}
 	defer os.RemoveAll(private)
+	if p.Prepare != nil {
+		values, err := p.Prepare(ctx, private)
+		if err != nil {
+			if ctx.Err() != nil {
+				io.WriteString(p.Error, "tool interrupted before execution\n")
+				return 130
+			}
+			fmt.Fprintf(p.Error, "tool preparation failed: %s; operator must verify the connection before retry\n", err)
+			return 5
+		}
+		p.Values = values
+	}
 	dir := p.Directory
 	if dir == "" {
 		dir = private
 	}
 	env := []string{"HOME=" + private, "XDG_CONFIG_HOME=" + private, "TMPDIR=" + private}
-	for _, key := range []string{"PATH", "LANG", "LC_ALL", "TZ", "SSL_CERT_FILE", "SSL_CERT_DIR", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy", "TEAMX_GLAB_BIN"} {
+	for _, key := range []string{"PATH", "LANG", "LC_ALL", "TZ", "SSL_CERT_FILE", "SSL_CERT_DIR", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy", "TEAMX_GLAB_BIN", "TEAMX_SCN_BIN"} {
 		if value, ok := os.LookupEnv(key); ok {
 			env = append(env, key+"="+value)
 		}

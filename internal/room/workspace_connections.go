@@ -7,6 +7,8 @@ import (
 
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
+	"github.com/go-aie/teamx/internal/platform/scion"
+	workspacegit "github.com/go-aie/teamx/internal/workspace/git"
 )
 
 // Requires manager.mu. The caller supplies a validated effective Workspace or a
@@ -71,6 +73,19 @@ func (m *roomManager) prepareWorkspaceConnection(ctx context.Context, req *works
 	if err != nil {
 		return err
 	}
+	if req.Target.Binding.Provider == "scion" {
+		normalized, err := normalizeWorkspace(req.Target, true)
+		if err != nil {
+			return err
+		}
+		branch, err := scion.VerifyRepository(ctx, m.scionWorkspaceExecute(req.RoomIdentity, normalized, runScionPreparation), normalized.Binding.Project, normalized.Repository.Branch)
+		if err != nil {
+			return fmt.Errorf("%w: Scion repository or branch verification failed", ErrRequest)
+		}
+		resolved.branch = branch
+		req.connection = &resolved
+		return nil
+	}
 	projectID, err := m.verifyGitlabAccountProject(ctx, req.RoomIdentity, resolved.account, platform.Secret{}, req.Target.Binding.Project, verify)
 	if err != nil || projectID <= 0 {
 		return fmt.Errorf("%w: project access or identity verification failed", ErrRequest)
@@ -81,6 +96,26 @@ func (m *roomManager) prepareWorkspaceConnection(ctx context.Context, req *works
 	resolved.projectID = projectID
 	req.connection = &resolved
 	return nil
+}
+
+// Requires manager.mu. Keep the verified platform-native identity out of the
+// common Workspace operation flow; only this bridge fills GitLab ProjectID.
+func (m *roomManager) workspaceConnectionTargetLocked(w workspaceConfig, resolved *projectConnectionResolution) (workspaceConfig, error) {
+	if w.Binding == nil || w.Binding.ConnectionID == "" {
+		return w, nil
+	}
+	if resolved == nil || m.checkProjectConnectionLocked(*resolved) != nil {
+		return workspaceConfig{}, ErrConflict
+	}
+	b := *w.Binding
+	b.ConnectionGeneration, b.ProjectID = resolved.record.Generation, resolved.projectID
+	w.Binding = &b
+	if b.Provider == "scion" && w.Repository.Branch == "" {
+		repo := *w.Repository
+		repo.Branch = resolved.branch
+		w.Repository = &repo
+	}
+	return w, nil
 }
 
 func workspaceConnectionTools(b workspaceBinding) string {
@@ -99,7 +134,7 @@ func (m *roomManager) connectionExecute(owner RoomIdentity, w workspaceConfig, r
 		}
 		env = cloneToolEnv(env)
 		delete(env, "TEAMX_PLATFORM_TOKEN")
-		if !workspaceGitNetwork(executable, args) {
+		if !workspacegit.NetworkCommand(executable, args) {
 			// Revisit and local Git configuration must never refresh a remote grant.
 			out, err = run(ctx, dir, env, executable, args...)
 			m.mu.Lock()
@@ -126,24 +161,6 @@ func (m *roomManager) connectionExecute(owner RoomIdentity, w workspaceConfig, r
 		env["TEAMX_PLATFORM_TOKEN"] = credential.Token.Reveal()
 		return run(useCtx, dir, env, executable, args...)
 	}
-}
-
-// Preparation owns these argv; only its network commands receive access material.
-func workspaceGitNetwork(executable string, args []string) bool {
-	if executable != "git" {
-		return false
-	}
-	for len(args) >= 2 && args[0] == "-c" {
-		args = args[2:]
-	}
-	if len(args) == 0 {
-		return false
-	}
-	switch args[0] {
-	case "clone", "fetch", "push", "ls-remote":
-		return true
-	}
-	return false
 }
 
 func bOwner(b gitlab.Binding) RoomIdentity {

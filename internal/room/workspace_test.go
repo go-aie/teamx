@@ -57,7 +57,7 @@ func newWorkspaceFixture(t *testing.T) *workspaceFixture {
 	for _, id := range []string{"member-one", "member-two"} {
 		f.config.Members = append(f.config.Members, managedMember{MemberState: MemberState{MembershipID: id}, Workspace: workspaceMemberPath(*f.config.Workspace, id)})
 	}
-	f.p = workspacePreparer{run: f.run, remove: func(name string) error {
+	f.p = workspacePreparer{run: f.run, repository: workspaceRepositoryAdapter, remove: func(name string) error {
 		if err := os.Remove(name); err != nil {
 			return err
 		}
@@ -69,12 +69,14 @@ func newWorkspaceFixture(t *testing.T) *workspaceFixture {
 		}
 		return os.WriteFile(name, data, 0600)
 	}}
-	f.p.connection = func(owner RoomIdentity, w workspaceConfig) (projectConnectionResolution, error) {
+	access := gitLabWorkspaceAccess{write: f.p.write}
+	access.connection = func(owner RoomIdentity, w workspaceConfig) (projectConnectionResolution, error) {
 		return projectConnectionResolution{owner: owner, record: platformConnectionRecord{Connection: connection.Connection{ID: w.Binding.ConnectionID}, Generation: w.Binding.ConnectionGeneration}}, nil
 	}
-	f.p.connectionRead = func(projectConnectionResolution) gitlab.ReadAPI {
+	access.connectionRead = func(projectConnectionResolution) gitlab.ReadAPI {
 		return gitlab.NewReadAPI("https://gitlab.invalid", platform.NewSecret("offline-access"), workspaceHTTPFunc(f.http))
 	}
+	f.p.access = access.prepare
 	return f
 }
 

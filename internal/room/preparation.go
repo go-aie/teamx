@@ -31,6 +31,8 @@ func (b *preparationOutput) Write(p []byte) (int, error) {
 
 type preparationExitError struct{ code int }
 
+func (e preparationExitError) ExitCode() int { return e.code }
+
 type preparationTrackerKey struct{}
 type preparationTracker func(string, int) error
 
@@ -52,6 +54,7 @@ func runPreparation(ctx context.Context, dir string, env map[string]string, exec
 type preparationCommandOptions struct {
 	timeout     time.Duration
 	outputLimit int
+	isolated    bool
 }
 
 func runPreparationCommand(ctx context.Context, dir string, env map[string]string, options preparationCommandOptions, executable string, args ...string) ([]byte, error) {
@@ -60,6 +63,9 @@ func runPreparationCommand(ctx context.Context, dir string, env map[string]strin
 	cmd := exec.CommandContext(ctx, executable, args...)
 	cmd.Dir = dir
 	cmd.Env = preparationEnvironment(env)
+	if options.isolated {
+		cmd.Env = isolatedPreparationEnvironment(env)
+	}
 	configurePreparation(cmd)
 	out := preparationOutput{limit: options.outputLimit}
 	cmd.Stdout = &out
@@ -123,6 +129,24 @@ func preparationEnvironment(env map[string]string) []string {
 		}
 	}
 	values["GIT_TERMINAL_PROMPT"] = "0"
+	for k, v := range env {
+		values[k] = v
+	}
+	result := make([]string, 0, len(values))
+	for k, v := range values {
+		result = append(result, k+"="+v)
+	}
+	return result
+}
+
+// Scion preparation never inherits the operator login or unrelated secrets.
+func isolatedPreparationEnvironment(env map[string]string) []string {
+	values := map[string]string{}
+	for _, key := range []string{"PATH", "LANG", "LC_ALL", "TZ", "SSL_CERT_FILE", "SSL_CERT_DIR", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy", "TEAMX_SCN_BIN"} {
+		if value, ok := os.LookupEnv(key); ok {
+			values[key] = value
+		}
+	}
 	for k, v := range env {
 		values[k] = v
 	}

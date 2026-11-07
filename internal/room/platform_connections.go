@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
 
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/connection"
@@ -183,6 +184,7 @@ type projectConnectionResolution struct {
 	record    platformConnectionRecord
 	secret    workspaceSecret
 	projectID int64
+	branch    string
 	account   connection.Account
 }
 
@@ -246,7 +248,7 @@ func (m *roomManager) checkProjectConnectionLocked(resolved projectConnectionRes
 			continue
 		}
 		a, err := connection.ResolveAuthorization(file, c)
-		if err != nil || a != resolved.account {
+		if err != nil || !reflect.DeepEqual(a, resolved.account) {
 			return ErrConflict
 		}
 		return nil

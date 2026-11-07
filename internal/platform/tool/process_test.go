@@ -73,7 +73,7 @@ func TestHelpDoesNotInspectArgumentsAfterSeparator(t *testing.T) {
 	if Help([]string{"api", "--", "--help"}) {
 		t.Fatal("business value classified as help")
 	}
-	if got := Catalog(); len(got) != 2 || !got[1].InternalOnly || got[1].Executable != "" || got[1].Provider != "lark" || !reflect.DeepEqual(got[0].Environment, map[string]string{"GITLAB_HOST": "instance", "GITLAB_TOKEN": "token"}) {
+	if got := Catalog(); len(got) != 3 || !got[1].InternalOnly || got[1].Executable != "" || got[1].Provider != "lark" || !reflect.DeepEqual(got[0].Environment, map[string]string{"GITLAB_HOST": "instance", "GITLAB_TOKEN": "token"}) {
 		t.Fatal(got)
 	}
 }

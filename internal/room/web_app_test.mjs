@@ -23,7 +23,43 @@ import { readFile } from "node:fs/promises";
 import * as client from "./web/client.mjs";
 import { launch, settle } from "./web_app_harness.mjs";
 
-
+test("Scion connection discovers a managed account and saves its profile without manual IDs", async () => {
+  const api = server(); let item;
+  api.hook = (path, data) => {
+    if (path === "/v1/platform/connections/scion/discover") return {executable:"/service/teamx-scion", profiles:[{profile:"c".repeat(32),username:"alice"},{profile:"d".repeat(32),username:"bob"}]};
+    if (path.startsWith("/v1/platform/connections?")) return {connections:item ? [structuredClone(item)] : []};
+    if (path === "/v1/platform/connections/save") {
+      item = {...structuredClone(data), version:(item?.version || 0)+1, credential_kind:"cli_profile", validation:{status:"unverified"}};
+      return structuredClone(item);
+    }
+    if (path === "/v1/platform/connections/verify") {
+      assert.equal(data.id, item.id); assert.equal(data.version, item.version);
+      item.version++; item.validation={status:"valid",username:"alice",account:{provider:"scion",instance:item.url,id:{namespace:"scion:subject",value:"alice"}}};
+      return structuredClone(item);
+    }
+  };
+  const ui = await launch(api);
+  await ui.el("open-settings").emit("click"); await ui.el("connection-new").emit("click");
+  ui.el("connection-provider").value="scion"; await ui.el("connection-provider").emit("change");
+  assert.equal(ui.el("connection-scion-row").hidden,false);
+  assert.equal(ui.el("connection-profile-row").hidden,true);
+  assert.equal(ui.el("gitlab-account-row").hidden,true);
+  ui.el("connection-name").value="Scion demo";ui.el("connection-url").value="https://scion.invalid";
+  ui.el("connection-scion-executable").value="/service/teamx-scion";
+  await ui.el("connection-scion-executable").emit("change");
+  ui.el("connection-scion-profile").value="c".repeat(32);
+  await ui.el("connection-form").emit("submit");
+  assert.equal(item.provider,"scion");assert.equal(item.cli_profile.brand,"scion");assert.equal(item.cli_profile.cli_version,"0.1.13");
+  assert.equal(item.cli_profile.profile,"c".repeat(32));assert.equal(item.validation.username,"alice");
+  assert.equal(ui.el("connection-validation").hidden,false);
+  assert.equal(ui.el("connection-scion-profile").value,"c".repeat(32));
+  assert.match(ui.el("connections-feedback").textContent,/账号验证成功/);
+  assert.equal(api.calls.some(c => /connections\/(lark|gitlab)\//.test(c.path)),false);
+  await ui.el("connections-list").children[0].emit("click");
+  ui.el("connection-scion-profile").value="d".repeat(32);
+  await ui.el("connection-verify").emit("click");
+  assert.match(ui.el("connections-feedback").textContent,/先保存/);
+});
 
 async function expandDisclosure(element) {
   element.open=true;await element.emit("toggle");await settle();
@@ -1014,6 +1050,7 @@ test("Workspace allows discussion before explicit Git-only binding; keeps draft/
   await ui.el("workspace-form").emit("submit");
   const sent = api.calls.find(c => c.path === "/v1/workspace/apply").data;
   assert.equal(sent.target.repository.branch, "main");
+  assert.equal(sent.target.repository.kind, "git");
   assert.match(sent.operation_id, /^[0-9a-f]{32}$/); assert.equal(sent.pat, undefined); assert.equal(sent.target.binding, undefined);
   assert.equal(ui.el("message-input").value, "Unsent draft stays"); assert.equal(ui.el("message-count").textContent, "2 条消息");
   assert.equal(ui.el("workspace-repository").disabled, true); assert.equal(ui.el("workspace-repo-url").readOnly, true);
@@ -2396,4 +2433,41 @@ test("GitLab reflects a provider operation started in another tab and keeps this
   assert.match(ui.el("gitlab-feedback").textContent,/正在应用/);assert.equal(String(ui.el("gitlab-interval").value),"66");
   api.gitlabRecords.get("A").applying=false;await ui.refresh();assert.equal(ui.el("gitlab-save").disabled,false);
   await ui.el("gitlab-save").emit("click");assert.equal(gitlabWrites(api)[0].data.version,1);assert.equal(gitlabWrites(api)[0].data.config.interval_seconds,66);
+});
+
+test("Scion Workspace chooses its type and verified connection without Git suffixes or numeric project identity", async () => {
+  const api=workspaceServer();
+  api.connections.push({id:"c".repeat(32),provider:"scion",name:"Scion demo",url:"https://scion.invalid",version:3,validation:{status:"valid",username:"alice"}});
+  api.connections.push({id:"d".repeat(32),provider:"scion",name:"Unverified",url:"https://scion.invalid",version:1,validation:{status:"unverified"}});
+  const ui=await launch(api);await editWorkspace(ui);
+  ui.el("workspace-kind").value="scion";await ui.el("workspace-kind").emit("change");
+  assert.equal(ui.el("workspace-gitlab").checked,true);assert.equal(ui.el("workspace-gitlab").disabled,true);
+  const choices=ui.el("workspace-connection").children.map(x=>x.value);
+  assert.deepEqual(choices,["","c".repeat(32)]);
+  assert.match(ui.el("workspace-connection").children[1].textContent,/alice/);
+  ui.el("workspace-repo-url").value="https://scion.invalid/OpenCSG/teamx-demo";
+  ui.el("workspace-connection").value="c".repeat(32);await ui.el("workspace-connection").emit("change");
+  await ui.el("workspace-form").emit("submit");
+  const sent=api.calls.find(c=>c.path==="/v1/workspace/apply").data;
+  assert.deepEqual(sent.target.repository,{kind:"scion",url:"https://scion.invalid/OpenCSG/teamx-demo",branch:"main"});
+  assert.deepEqual(sent.target.binding,{provider:"scion",url:"https://scion.invalid",project:"OpenCSG/teamx-demo",connection_id:"c".repeat(32)});
+  assert.equal(sent.connection_version,3);
+  await ui.el("open-workspace").emit("click");
+  assert.equal(ui.el("workspace-kind").value,"scion");assert.equal(ui.el("workspace-kind").disabled,true);
+  assert.match(ui.el("workspace-credential-status").textContent,/Scion.*OpenCSG\/teamx-demo/);
+  const reload=await launch(api,ui.saved);await reload.el("open-workspace").emit("click");
+  assert.equal(reload.el("workspace-kind").value,"scion");assert.equal(reload.el("workspace-connection").value,"c".repeat(32));
+});
+
+test("Scion Workspace rejects unverified and mismatched connections before retaining an operation", async () => {
+  for(const valid of [false,true]){
+    const api=workspaceServer();api.connections.push({id:"c".repeat(32),provider:"scion",name:"Scion",url:"https://other.invalid",version:1,validation:{status:valid ? "valid" : "unverified"}});
+    const ui=await launch(api);await editWorkspace(ui);
+    ui.el("workspace-kind").value="scion";await ui.el("workspace-kind").emit("change");
+    ui.el("workspace-repo-url").value="https://scion.invalid/OpenCSG/teamx-demo";
+    ui.el("workspace-connection").value="c".repeat(32);
+    await ui.el("workspace-form").emit("submit");
+    assert.equal(api.calls.some(c=>c.path==="/v1/workspace/apply"),false);
+    assert.match(ui.el("workspace-error").textContent,valid ? /实例不一致/ : /已验证/);
+  }
 });

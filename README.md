@@ -106,6 +106,12 @@ GitLab 仅支持 OAuth。旧版本数据需先停止服务，再运行 `teamx co
 
 API 工具和通知无需先克隆仓库；开启通知不会自动启用成员工具。连接凭据只在设置中填写。
 
+## 使用 Scion（可选）
+
+「软件开发」团队也支持 Scion 原生仓库与 Review。安装固定 **scn 0.1.13**，在平台连接页面填写实例和 `scn` / `teamx-scion` 路径，自动检测账号或使用 PAT 登录；保存连接后，为成员绑定工具、应用 Scion Workspace，即可发送需求，进行开发、独立评审、修正与复审。
+
+首次配置、日常使用和常见问题见 [Scion 使用说明](docs/scion.zh.md)。
+
 ## 使用飞书（可选）
 
 在服务机器上安装并以用户身份登录官方 **lark-cli 1.0.99**，然后在界面中配置：
@@ -132,6 +138,7 @@ API 工具和通知无需先克隆仓库；开启通知不会自动启用成员�
 | [团队配置](.teamx/teams/README.md) | 自定义角色、模型、DSH 和工作区建议值 |
 | [运行手册](internal/room/README.zh.md) | 服务配置、用户目录、成员控制与恢复 |
 | [GitLab 工具](tools/gitlab/README.zh.md) | 安装、命令帮助、WorkItem 扩展与凭据配置 |
+| [Scion 使用说明](docs/scion.zh.md) | 页面 PAT 登录、账号自动检测、成员绑定与开发评审流程 |
 | [飞书使用说明](docs/lark.zh.md) | CLI profile、成员绑定、消息通知、收件测试与诊断恢复 |
 | [核心概念](docs/concepts.zh.md) | 对象、职责、配置边界及架构阅读路径 |
 | [Room 架构](docs/room-architecture.zh.md) / [Agent 运行时](docs/agent-runtime.zh.md) | 消息、调度、身份、生命周期及 DSH |

@@ -36,6 +36,19 @@ const row=(ui,n=0)=>ui.el("cli-member-options").children[n];
 const select=(ui,n=0)=>row(ui,n).children[1].children[0];
 const apply=(ui,n=0)=>row(ui,n).children[2];
 const feedback=(ui,n=0)=>row(ui,n).children[3];
+test("Scion member binding requires an explicit verified connection selection",async()=>{
+  const api=fixture();api.data.catalog.push({name:"scion",provider:"scion",version:"scn 0.1.13"});
+  const scion={id:"scion-profile",name:"Scion demo",provider:"scion",url:"https://scion.invalid",version:2,validation:{status:"valid",username:"alice"}};
+  api.hook=path=>path.startsWith("/v1/platform/connections?")?{connections:[scion,{...scion,id:"unverified",validation:{status:"unverified"}}]}:undefined;
+  const ui=await launch(api);await open(ui);
+  assert.equal(select(ui,2).value,"");assert.equal(select(ui,2).options.length,2);
+  assert.equal(api.calls.some(c=>c.path==="/v1/tools/bind"),false);
+  select(ui,2).value="scion-profile";await apply(ui,2).emit("click");
+  const {body}=api.calls.find(c=>c.path==="/v1/tools/bind");
+  assert.equal(body.binding.tool,"scion");assert.equal(body.binding.connection_id,"scion-profile");
+  assert.equal(body.connection_version,2);assert.equal(body.binding.action_authorization,undefined);
+  assert.match(feedback(ui,2).textContent,/Scion demo.*alice/);
+});
 test("Lark settings use a single connection apply and expose no per-mode switches",async()=>{
   const api=fixture();api.data.catalog.push({name:"lark",provider:"lark",version:"1.0.99"});
   api.hook=path=>path.startsWith("/v1/platform/connections?")?{connections:[{id:"lark",name:"飞书测试账号",provider:"lark",url:"https://open.feishu.cn",version:1,validation:{status:"valid",username:"测试用户"}}]}:undefined;

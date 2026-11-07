@@ -29,6 +29,10 @@ func (m *roomManager) shutdown(ctx context.Context) error {
 	m.mu.Lock()
 	m.closing = true
 	var authDone []<-chan struct{}
+	for _, s := range m.scionAuthSessions {
+		s.cancel()
+		authDone = append(authDone, s.done)
+	}
 	for _, s := range m.larkAuthSessions {
 		s.cancel()
 		authDone = append(authDone, s.done)

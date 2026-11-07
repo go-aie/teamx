@@ -9,6 +9,7 @@ import (
 	"github.com/go-aie/teamx/internal/platform/connection"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
 	"github.com/go-aie/teamx/internal/platform/lark"
+	"github.com/go-aie/teamx/internal/platform/scion"
 )
 
 // Static composition points are independent: a provider can offer connections,
@@ -24,6 +25,11 @@ func (m *roomManager) initPlatform() {
 	if m.connectionProviders == nil {
 		m.connectionProviders = map[string]connectionProvider{
 			"gitlab": {Normalize: connection.Normalize, LegacyIdentity: gitlab.LegacyAccountIdentity},
+			"scion": {Normalize: connection.Normalize, ValidProfile: func(_ string, p platform.CLIProfile) bool {
+				return scion.ValidProfile(p)
+			}, VerifyProfile: func(ctx context.Context, origin string, p platform.CLIProfile) platform.Validation {
+				return scion.VerifyProfile(ctx, m.store.dir, origin, p)
+			}},
 			"lark": {Normalize: connection.Normalize, ValidProfile: func(origin string, p platform.CLIProfile) bool {
 				return lark.ValidProfile(p) && origin == lark.Origin(p.Brand)
 			}, VerifyProfile: lark.VerifyIdentity},

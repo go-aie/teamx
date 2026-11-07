@@ -21,6 +21,7 @@ type workspaceConfig struct {
 }
 
 type workspaceRepository struct {
+	Kind   string `json:"kind,omitempty"`
 	URL    string `json:"url"`
 	Branch string `json:"branch,omitempty"`
 }
@@ -48,42 +49,7 @@ func normalizeWorkspace(input workspaceConfig, suggestion bool) (workspaceConfig
 	case "agents", "resources", "notifications", "notification-queries", "room.json", "room-config.json", "collaboration.json", "discussion-restart.json", ".lock":
 		return workspaceConfig{}, fmt.Errorf("%w: workspace root overlaps room management data", ErrRequest)
 	}
-	if w.Repository != nil {
-		repo := *w.Repository
-		u, err := workspaceHTTPSURL(repo.URL)
-		if err != nil || !workspaceProjectPath(strings.TrimPrefix(u.Path, "/")) || !validWorkspaceBranch(repo.Branch) {
-			return workspaceConfig{}, fmt.Errorf("%w: invalid workspace repository", ErrRequest)
-		}
-		repo.URL = u.String()
-		w.Repository = &repo
-	}
-	if w.Binding != nil {
-		b := *w.Binding
-		if b.Provider != "gitlab" || w.Repository == nil || !workspaceProjectPath(b.Project) || !strings.Contains(b.Project, "/") {
-			return workspaceConfig{}, fmt.Errorf("%w: GitLab binding requires a repository and project path", ErrRequest)
-		}
-		u, err := workspaceHTTPSURL(b.URL)
-		if err != nil || (u.Path != "" && u.Path != "/") {
-			return workspaceConfig{}, fmt.Errorf("%w: GitLab URL must be an HTTPS origin", ErrRequest)
-		}
-		u.Path = ""
-		b.URL = u.String()
-		repo, _ := url.Parse(w.Repository.URL)
-		if repo.Host != u.Host || strings.TrimSuffix(strings.TrimPrefix(repo.Path, "/"), ".git") != b.Project {
-			return workspaceConfig{}, fmt.Errorf("%w: repository and GitLab project do not match", ErrRequest)
-		}
-		if b.ConnectionID != "" {
-			if !validRestartID(b.ConnectionID) ||
-				(b.ConnectionGeneration != "" && !validRestartID(b.ConnectionGeneration)) || b.ProjectID < 0 ||
-				(!suggestion && (b.ConnectionGeneration == "" || b.ProjectID <= 0)) {
-				return workspaceConfig{}, fmt.Errorf("%w: invalid workspace connection reference", ErrRequest)
-			}
-		} else if !suggestion || b.ConnectionGeneration != "" || b.ProjectID != 0 {
-			return workspaceConfig{}, fmt.Errorf("%w: GitLab requires a platform connection", ErrRequest)
-		}
-		w.Binding = &b
-	}
-	return w, nil
+	return normalizeWorkspaceBackend(w, suggestion)
 }
 
 // Return static diagnostics: URLs can contain credentials and must not be echoed.
@@ -111,23 +77,6 @@ func workspaceProjectPath(value string) bool {
 			if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_' || c == '.') {
 				return false
 			}
-		}
-	}
-	return true
-}
-
-func validWorkspaceBranch(branch string) bool {
-	if branch == "" {
-		return true
-	}
-	if len(branch) > 255 || branch == "@" || strings.HasPrefix(branch, "-") ||
-		strings.Contains(branch, "..") || strings.Contains(branch, "@{") ||
-		strings.ContainsAny(branch, " ~^:?*[\\") || strings.IndexFunc(branch, unicode.IsControl) >= 0 || strings.HasSuffix(branch, ".") {
-		return false
-	}
-	for _, part := range strings.Split(branch, "/") {
-		if part == "" || strings.HasPrefix(part, ".") || strings.HasSuffix(part, ".lock") {
-			return false
 		}
 	}
 	return true

@@ -20,6 +20,11 @@ func (m *roomManager) servePlatformConnections(w http.ResponseWriter, r *http.Re
 		m.serveLarkAuth(w, r)
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, "/v1/platform/connections/scion/") {
+		m.serveScionAuth(w, r)
+		return
+	}
+
 	switch r.URL.Path {
 	case "/v1/platform/connections", "/v1/platform/connections/save", "/v1/platform/connections/delete", "/v1/platform/connections/verify":
 	default:

@@ -130,6 +130,7 @@ type roomManager struct {
 	oauthFlights          map[string]*oauthRefreshFlight
 	oauthLeases           map[string]map[*gitlabTokenLease]bool
 	larkAuthSessions      map[string]*larkAuthSession
+	scionAuthSessions     map[string]*scionAuthSession
 	gitlabAuthSessions    map[string]*gitlabAuthSession
 	connectionProviders   map[string]connectionProvider
 	referenceAdapters     map[string]referenceAdapterFactory

@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/connection"
+	"github.com/go-aie/teamx/internal/platform/scion"
 	"github.com/go-aie/teamx/internal/platform/tool"
 )
 
@@ -139,8 +140,9 @@ func (m *roomManager) selectionsLocked(f toolBindingsFile, caller Caller) ([]too
 			continue
 		}
 		s := toolSelection{Definition: d, ConnectionID: b.ConnectionID, ActionAuthorization: b.ActionAuthorization}
-		if d.Provider != "" {
-			caps, _ := m.referenceCapabilities(d.Provider)
+		// Internal action availability describes registered action adapters,
+		// not the native account permissions of independent CLI tools.
+		if caps, err := m.referenceCapabilities(d.Provider); err == nil {
 			if len(caps.Actions) == 0 {
 				s.ActionDisabledReason = "No sending adapter is implemented; newly introduced actions are disabled."
 			} else {
@@ -296,7 +298,11 @@ func (m *roomManager) prepareToolLocked(ctx context.Context, req toolsRequest) (
 	if len(req.Args) > 4096 {
 		return p, nil, nil, ErrRequest
 	}
-	admission, call, callCtx, err := m.preparePlatformCallLocked(ctx, req, tool.Help(req.Args))
+	help := tool.Help(req.Args)
+	if definition.Provider == "scion" {
+		help = scion.Help(req.Args)
+	}
+	admission, call, callCtx, err := m.preparePlatformCallLocked(ctx, req, help)
 	if err != nil {
 		return p, nil, nil, err
 	}
@@ -312,6 +318,29 @@ func (m *roomManager) prepareToolLocked(ctx context.Context, req toolsRequest) (
 		}
 	}()
 
+	if definition.Provider == "scion" && help {
+		// Help uses only executable metadata, even after logout or a failed check.
+		if file, err := m.connections.Load(); err == nil {
+			for _, c := range file.Connections {
+				if c.ID == call.connectionID && c.Provider == "scion" && c.CLIProfile != nil && scion.ValidProfile(*c.CLIProfile) {
+					p.Definition.Executable = c.CLIProfile.Executable
+				}
+			}
+		}
+	}
+	if definition.Provider == "scion" && !help {
+		if admission.account.CLIProfile == nil || !scion.ValidProfile(*admission.account.CLIProfile) {
+			return p, nil, nil, platform.ErrCredential
+		}
+		if err := scion.ValidateArguments(admission.account.URL, req.Args); err != nil {
+			return p, nil, nil, invalidField("args", "Scion destination must match the selected connection; login and CLI configuration are operator actions")
+		}
+		profile := *admission.account.CLIProfile
+		p.Definition.Executable = profile.Executable
+		p.Prepare = func(ctx context.Context, private string) (map[string]string, error) {
+			return scion.Prepare(ctx, m.store.dir, admission.account.URL, profile, admission.account.Identity, private)
+		}
+	}
 	entry, err := m.workspaceRoom(req.RoomIdentity)
 	if err != nil {
 		return p, nil, nil, err
