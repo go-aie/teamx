@@ -158,7 +158,10 @@ func (a *AgentInbox) ReadBatch(ctx actorx.Context, msg ReadInboxBatch, reply act
 		}
 		end := min(latest, agent.Turn.InboxSnapshotSeq)
 		if end <= c.Through {
-			return InboxBatchPage{}, ErrConflict
+			// A Room-only turn or an exhausted fixed snapshot has no Inbox work.
+			// Do not issue a receipt or change the durable consumption cursor.
+			return InboxBatchPage{InboxPage: InboxPage{MemberIdentity: a.id, SnapshotSeq: end, NextAfter: end, Entries: []InboxEntry{}},
+				Batch: InboxBatch{TurnNumber: msg.TurnNumber, Start: end, SnapshotSeq: end, PageThrough: end}}, nil
 		}
 		if c.Batch == nil || c.Batch.SnapshotSeq <= c.Through {
 			id, err := newOpaqueID()

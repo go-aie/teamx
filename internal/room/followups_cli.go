@@ -162,7 +162,7 @@ func runReferenceCLI(ctx context.Context, command string, args []string, stdin i
 		if err := writeJSON(stdout, output); err != nil {
 			return fmt.Errorf("page output incomplete; page not confirmed: %w", err)
 		}
-		if *peek {
+		if *peek || len(page.Entries) == 0 {
 			return nil
 		}
 		confirm := req

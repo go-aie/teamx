@@ -417,7 +417,7 @@ function renderLarkMessages() {
   $("lark-account").textContent=connection?.validation?.status==="valid" ? `读取账号：${connection.validation.username} · ${connection.validation.account?.id?.value || ""}` : "请选择连接并先验证用户身份。";
   renderLarkChatPicker(ws,connection);
   $("lark-feedback").textContent=ws.messagesSending ? "正在处理…" : ws.messagesFeedback || (dirty ? "有尚未保存的设置。" : "");
-  const errors={...connectionValidationErrors,...notificationTargetErrors,capacity:"来源容量已满，进度保留；释放容量后显式同步。",binding_changed:"连接身份已变化；旧订阅保留，请核对原账号。",identity_mismatch:"账号已变化，进度保留；核对原账号并重新验证连接后同步。",credential_rejected:"登录已失效，进度保留；请在原 profile 完成用户授权、验证连接后同步。",permission_denied:"读取权限不足，进度保留；请检查用户授权范围，验证连接后同步。",cursor_expired:"游标已过期，将在同一时间窗重扫。",query_failed:"读取失败，将退避重试。"};
+  const errors={...connectionValidationErrors,...notificationTargetErrors,capacity:"来源容量已满，进度保留；释放容量后显式同步。",binding_changed:"连接身份已变化；旧订阅保留，请核对原账号。",identity_mismatch:"账号已变化，进度保留；请核对原账号并重新验证连接。",credential_unavailable:"登录凭据不可用，进度保留；请验证连接，原账号下已开启的通知会自动恢复。",credential_rejected:"登录已失效，进度保留；请在原 profile 完成用户授权并验证连接，原账号下已开启的通知会自动恢复。",permission_denied:"读取权限不足，进度保留；请检查用户授权范围并验证连接，原账号下已开启的通知会自动恢复。",cursor_expired:"游标已过期，将在同一时间窗重扫。",query_failed:"读取失败，将退避重试。"};
   notice("lark-error",ws.messagesError || (!ws.messagesConnected ? "通知状态暂不可读。" : errors[data.delivery_error_code] || errors[data.error_code] || data.error_code || ""));
   const d=data.lark || {}, date=x=>x?new Date(x).toLocaleString("zh-CN"):"尚无";
   $("lark-diagnostics").textContent=`目录 ${d.directory_complete ? "完整" : "未完成"}${d.directory_scanning ? `（${d.directory_pages || 0} 页）` : ""} · 目录最近完成 ${date(d.directory_last_full)} · 读取受阻 ${d.failed_chats || 0} · 不在最新目录 ${d.unlisted_chats || 0} · 积压超过 24 小时 ${d.gap_chats || 0} · 最近检查 ${date(data.last_check)} · 全部会话检查上界 ${date(data.last_full)} · 待扫描 ${d.unchecked || 0} · 最久落后 ${d.oldest_lag_seconds || 0} 秒 · 来源积压 ${data.pending || 0} · 重试 ${date(data.retry_at)} · CLI ${d.cli_version || ""}`;
@@ -2776,7 +2776,7 @@ async function startLarkAuth(action) {
   const affected = connections.items.filter(c => c.provider === "lark" && c.cli_profile?.profile === profile.profile);
   const rooms = [...new Set(affected.flatMap(c => (c.references || []).map(ref => ref.name)))];
   if (action === "logout" || affected.length) {
-    const text = `${action === "logout" ? "退出此应用配置下的全部用户登录？" : "重新授权此应用配置？"}共享此配置的 CLI 和其他工具也会受影响。${rooms.length ? `影响房间：${rooms.join("、")}。` : ""}相关通知将暂停，重新验证后需在通知设置中显式同步。${action === "logout" ? "退出登录不等于取消应用的全部授权。" : ""}`;
+    const text = `${action === "logout" ? "退出此应用配置下的全部用户登录？" : "重新授权此应用配置？"}共享此配置的 CLI 和其他工具也会受影响。${rooms.length ? `影响房间：${rooms.join("、")}。` : ""}相关通知将暂停；重新验证为原账号后，仍开启的通知会自动恢复。${action === "logout" ? "退出登录不等于取消应用的全部授权。" : ""}`;
     if (!window.confirm(text)) return;
   }
   const version = connections.formVersion;
@@ -2828,7 +2828,7 @@ async function pollLarkAuth() {
       }
       const renewal = result.renewal_unavailable ? `本次未获得续期凭据，将于 ${new Date(result.expires_at).toLocaleString("zh-CN")} 失效。请应用管理员在开发者后台开启「刷新 user_access_token」并发布新版本，然后重新授权。` : "";
       const savedProfile = connections.selected && JSON.stringify(auth.profile) === JSON.stringify(connections.selected.cli_profile);
-      connectionFeedback(auth.action === "logout" ? "已退出此配置的登录。取消应用全部授权请前往飞书 / Lark 授权管理页。" : `登录与身份验证成功 · ${result.username}。${savedProfile ? "相关通知需在通知设置中显式同步。" : "请保存连接以应用此账号。"}${renewal}`, renewal ? "status" : "success");
+      connectionFeedback(auth.action === "logout" ? "已退出此配置的登录。取消应用全部授权请前往飞书 / Lark 授权管理页。" : `登录与身份验证成功 · ${result.username}。${savedProfile ? "原账号下因授权暂停且仍开启的通知会自动恢复；其他共享连接需分别重新验证。" : "请保存连接以应用此账号。"}${renewal}`, renewal ? "status" : "success");
     } else connectionFeedback(result.status === "cancelled" ? "已取消本次登录，请刷新账号核对状态。" : connectionValidationErrors[result.error_code] || "认证失败或已过期，请重新发起。", "error");
   } catch (error) {
     if (finished) { if (version === connections.formVersion) connectionFeedback("登录已完成，但连接验证结果未确认。请重新验证连接。", "error"); return; }

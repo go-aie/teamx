@@ -151,6 +151,11 @@ func (m *roomManager) verifyPlatformConnection(ctx context.Context, req platform
 	if err != nil {
 		return platformConnection{}, platformConnectionError(err)
 	}
+	if c.Provider == "lark" && c.Validation.Status == "valid" {
+		if err := m.resumeLarkSubscriptionsLocked(c.ID); err != nil {
+			return platformConnection{}, err
+		}
+	}
 	return m.publicPlatformConnectionLocked(c)
 }
 

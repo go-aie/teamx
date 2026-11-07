@@ -13,6 +13,42 @@ import (
 func larkBinding(a connection.Account) lark.Binding {
 	return lark.Binding{ConnectionID: a.ConnectionID, Generation: a.Generation, Account: a.Identity, CredentialVersion: a.CredentialVersion, Fingerprint: a.CredentialFingerprint}
 }
+
+// Verification restores only subscriptions paused for credentials under the
+// same native account. ChangedLocked fences the old worker; it starts the new
+// version after its predecessor exits, without waiting under manager.mu.
+func (m *roomManager) resumeLarkSubscriptionsLocked(connectionID string) error {
+	for _, room := range m.index.Rooms {
+		if room.Status != "ready" || m.roomBusyLocked(room.RoomIdentity) {
+			continue
+		}
+		for _, state := range m.notifications.StatesLocked(room.RoomIdentity) {
+			s, ok := state.(lark.State)
+			if !ok || s.Retired || !s.Config.Enabled || s.Binding.ConnectionID != connectionID || s.Status != "credentials_invalid" {
+				continue
+			}
+			a, _, err := m.resolvePlatformAccountLocked(room.RoomIdentity, connectionID, "lark")
+			if err != nil {
+				return notificationRoomError(err)
+			}
+			if a.Generation != s.Binding.Generation || a.Identity != s.Binding.Account {
+				continue
+			}
+			next, err := lark.Configure(room.RoomIdentity, &s, larkBinding(a), s.Config, m.notifications.Now())
+			if err != nil {
+				return notificationRoomError(err)
+			}
+			if err := m.notifications.SaveLocked(next); err != nil {
+				return notificationRoomError(err)
+			}
+			if m.notifications.ChangedLocked(next.Metadata().Key) == nil {
+				m.notifications.WakeLocked(next.Metadata().Key)
+			}
+		}
+	}
+	return nil
+}
+
 func (m *roomManager) larkNotificationAdapter() notificationAdapter {
 	return notificationAdapter{Source: &lark.Source{}, Admit: func(_ context.Context, state notification.State) (notification.Scope, error) {
 		s, ok := state.(lark.State)

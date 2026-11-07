@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -130,6 +131,145 @@ func (h *larkHarness) deliver() error {
 	s := h.state()
 	return h.m.notifications.Deliver(context.Background(), s.Metadata().Key, s.SubscriptionVersion)
 }
+
+func TestLarkVerificationResumesCredentialPausedSubscription(t *testing.T) {
+	h := newLarkHarness(t)
+	h.start()
+	before := h.state()
+	h.m.mu.Lock()
+	err := h.m.notifications.InvalidateConnectionLocked(h.c.ID)
+	h.m.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	paused := h.state()
+	if paused.Status != "credentials_invalid" {
+		t.Fatal("fixture did not pause subscription")
+	}
+	c, err := h.m.verifyPlatformConnection(context.Background(), platformConnectionRequest{ID: h.c.ID, Version: h.c.Version})
+	if err != nil || c.Validation.Status != "valid" {
+		t.Fatal("verification failed", err)
+	}
+	resumed := h.state()
+	if resumed.QueryPaused() || resumed.ErrorCode != "" || resumed.SubscriptionVersion != paused.SubscriptionVersion+1 || resumed.SubscriptionID != before.SubscriptionID || resumed.Binding != before.Binding || !reflect.DeepEqual(resumed.Config, before.Config) {
+		t.Fatal("subscription did not resume under its original identity/configuration")
+	}
+	if !resumed.Baseline.Equal(before.Baseline) || !resumed.LastFull.Equal(before.LastFull) || !reflect.DeepEqual(resumed.Chats, before.Chats) || !reflect.DeepEqual(resumed.Inbox, before.Inbox) || !reflect.DeepEqual(resumed.Observed, before.Observed) || !reflect.DeepEqual(resumed.Accepted, before.Accepted) {
+		t.Fatal("verification reset progress, deduplication or pending delivery")
+	}
+	// Re-verification of a running source is a no-op for subscription state.
+	if _, err = h.m.verifyPlatformConnection(context.Background(), platformConnectionRequest{ID: c.ID, Version: c.Version}); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(h.state(), resumed) {
+		t.Fatal("verification restarted an already-running subscription")
+	}
+	if err := h.deliver(); err != nil {
+		t.Fatal("resumed backlog was not delivered", err)
+	}
+	id := MemberIdentity{RoomIdentity: h.room.RoomIdentity, AgentID: h.members[0].AgentID, MembershipID: h.members[0].MembershipID}
+	if page := inboxRoutingPreview(t, h.svc, id); page.SnapshotSeq != 1 {
+		t.Fatal("backlog delivery missing", page)
+	}
+	h.clock.add(time.Minute)
+	h.messages(2)
+	h.m.mu.Lock()
+	runner := h.m.notifications.NewRunnerLocked(resumed.Metadata().Key)
+	h.m.mu.Unlock()
+	if _, stop := runner.Step(context.Background()); stop {
+		t.Fatal("resumed source did not query")
+	}
+	if err := h.deliver(); err != nil {
+		t.Fatal(err)
+	}
+	if page := inboxRoutingPreview(t, h.svc, id); page.SnapshotSeq != 2 {
+		t.Fatal("new message was not delivered exactly once", page)
+	}
+}
+
+func TestLarkVerificationPreservesOtherPauses(t *testing.T) {
+	for _, mode := range []string{"disabled", "retired", "capacity", "binding_changed", "different_account", "different_generation", "failed_verification", "other_connection"} {
+		t.Run(mode, func(t *testing.T) {
+			h := newLarkHarness(t)
+			h.start()
+			s := h.state()
+			s.RuntimeState.InvalidateCredential(true)
+			verify := h.c
+			switch mode {
+			case "disabled", "retired":
+				s.Config.Enabled = false
+				s.RuntimeState.Reset(false, false)
+				s.Retired = mode == "retired"
+			case "capacity", "binding_changed":
+				s.Status, s.ErrorCode = mode, mode
+			case "different_account", "failed_verification":
+				script := strings.ReplaceAll(l2Fixture, "ou_reader", "ou_other")
+				if mode == "failed_verification" {
+					script = "#!/usr/bin/env python3\nimport sys\nsys.exit(1)\n"
+				}
+				if err := os.WriteFile(filepath.Join(h.dir, "lark-cli"), []byte(script), 0700); err != nil {
+					t.Fatal(err)
+				}
+			case "different_generation":
+				s.Binding.Generation = strings.Repeat("f", 32)
+			case "other_connection":
+				verify = platformTestSave(t, h.m, platformConnectionRequest{ServiceEpoch: h.m.epoch, Caller: humanCaller, ID: strings.Repeat("d", 32), Name: "other", Provider: "lark", URL: h.c.URL, CLIProfile: h.c.CLIProfile})
+			}
+			h.m.mu.Lock()
+			err := h.m.notifications.SaveLocked(s)
+			h.m.mu.Unlock()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := h.m.verifyPlatformConnection(context.Background(), platformConnectionRequest{ID: verify.ID, Version: verify.Version}); err != nil {
+				t.Fatal(err)
+			}
+			h.m.mu.Lock()
+			got, ok := h.m.notifications.StateLocked(s.Metadata().Key)
+			h.m.mu.Unlock()
+			if !ok || !reflect.DeepEqual(got, s) {
+				t.Fatal("verification changed an ineligible subscription")
+			}
+		})
+	}
+}
+
+func TestLarkVerificationRestartsPausedWorker(t *testing.T) {
+	h := newLarkHarness(t)
+	h.start()
+	s := h.state()
+	h.m.mu.Lock()
+	err := h.m.notifications.InvalidateConnectionLocked(h.c.ID)
+	h.m.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.messages(2)
+	h.clock.add(time.Minute)
+	if err := h.m.notifications.Start(); err != nil {
+		t.Fatal(err)
+	}
+	h.m.mu.Lock()
+	oldWorker := h.m.notifications.DoneLocked(s.Metadata().Key)
+	h.m.mu.Unlock()
+	if oldWorker == nil {
+		t.Fatal("paused query lost its worker")
+	}
+	if _, err := h.m.verifyPlatformConnection(context.Background(), platformConnectionRequest{ID: h.c.ID, Version: h.c.Version}); err != nil {
+		t.Fatal(err)
+	}
+	awaitEventSignal(t, oldWorker, "verification did not settle the paused worker")
+	id := MemberIdentity{RoomIdentity: h.room.RoomIdentity, AgentID: h.members[0].AgentID, MembershipID: h.members[0].MembershipID}
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		if page := inboxRoutingPreview(t, h.svc, id); page.SnapshotSeq == 2 && !h.state().QueryPaused() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("verification did not restart polling and deliver the new message")
+}
+
 func TestLarkNotificationsInboxReferencesAndRoomQuestion(t *testing.T) {
 	h := newLarkHarness(t)
 	h.start()

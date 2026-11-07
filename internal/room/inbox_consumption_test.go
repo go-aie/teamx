@@ -3,6 +3,7 @@ package room
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -22,6 +23,14 @@ func inboxRunning(t *testing.T, h *inboxHarness, turn, end uint64) {
 	t.Helper()
 	if err := h.store.SaveAgent(AgentSnapshot{Version: formatVersion, MemberIdentity: h.id, TurnNumber: turn,
 		LastOfferedInboxSeq: end, Turn: &TurnRecord{Number: turn, Status: "running", InboxSnapshotSeq: end}}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func inboxRoomRunning(t *testing.T, h *inboxHarness, turn, seq uint64) {
+	t.Helper()
+	if err := h.store.SaveAgent(AgentSnapshot{Version: formatVersion, MemberIdentity: h.id, TurnNumber: turn,
+		LastOfferedUnreadSeq: seq, Turn: &TurnRecord{Number: turn, Status: "running", SnapshotSeq: seq, OfferedUnreadSeq: seq}}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -130,7 +139,10 @@ func TestInboxConsumptionLinkBeforeAckAndResume(t *testing.T) {
 	}
 	linkInboxPage(t, h, p3)
 	confirmInboxPage(t, h, p3)
-	inboxError[InboxBatchPage](t, h, ReadInboxBatch{MemberIdentity: h.id, TurnNumber: 1}, ErrConflict)
+	empty := inboxCall[InboxBatchPage](t, h, ReadInboxBatch{MemberIdentity: h.id, TurnNumber: 1})
+	if len(empty.Entries) != 0 || empty.HasMore || empty.SnapshotSeq != 2 || empty.NextAfter != 2 || empty.Batch.Receipt != "" {
+		t.Fatal("exhausted snapshot exposed later arrivals or issued a receipt", empty)
+	}
 	list, err := h.store.listFollowups(h.id, followupQuery{Limit: 25})
 	if err != nil || list.Total != 1 || list.Items[0].Status != "waiting_user" {
 		t.Fatal(list, err)
@@ -207,6 +219,49 @@ func TestInboxConsumptionCLIOutputAndIdentity(t *testing.T) {
 	if status, err := svc.memberInboxStatus(context.Background(), other); err != nil || status.ConsumedThrough != 0 {
 		t.Fatal("crossed members", status, err)
 	}
+	// Both repeat reads of a consumed snapshot and Room-only turns succeed.
+	// A notification arriving meanwhile must wait for a later Inbox turn.
+	if err := svc.receiveInbox(context.Background(), inboxTarget(id), h.receive("4").Item); err != nil {
+		t.Fatal(err)
+	}
+	cursor := filepath.Join(svc.store.dir, "inboxes", id.MembershipID, "consumption.json")
+	before, err := os.ReadFile(cursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, end := range []uint64{3, 0} {
+		if end == 0 {
+			post, err := svc.room.Call[PostReceipt](context.Background(), PostMessage{RoomIdentity: id.RoomIdentity, Caller: humanCaller, ClientMessageID: "room-only", Text: "Tools configured"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			inboxRoomRunning(t, h, uint64(i+1), post.Seq)
+		} else {
+			inboxRunning(t, h, uint64(i+1), end)
+		}
+		for _, args := range [][]string{{"inbox", "read"}, {"inbox", "read", "--peek"}} {
+			output.Reset()
+			if err := runCLI(context.Background(), args, &output, io.Discard, env); err != nil {
+				t.Fatal("empty CLI read failed", err)
+			}
+			var page agentReferenceInboxPage
+			if err := json.Unmarshal(output.Bytes(), &page); err != nil || page.Entries == nil || len(page.Entries) != 0 || page.HasMore || page.SnapshotSeq != end || page.NextAfter != end || page.Batch.Receipt != "" {
+				t.Fatal("invalid empty page", output.String(), err)
+			}
+		}
+	}
+	if after, err := os.ReadFile(cursor); err != nil || !bytes.Equal(before, after) {
+		t.Fatal("empty reads changed consumption", err)
+	}
+	inboxRunning(t, h, 3, 4)
+	output.Reset()
+	if err := runCLI(context.Background(), []string{"inbox", "read"}, &output, io.Discard, env); err != nil {
+		t.Fatal(err)
+	}
+	status, err = svc.memberInboxStatus(context.Background(), id)
+	if err != nil || status.ConsumedThrough != 4 {
+		t.Fatal("later turn did not consume the new notification", status, err)
+	}
 	// A caller cannot select a different Membership; human preview never consumes.
 	for _, req := range []apiRequest{
 		{ServiceInfo: svc.info, Caller: humanCaller},
@@ -216,6 +271,20 @@ func TestInboxConsumptionCLIOutputAndIdentity(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+}
+
+func TestInboxEmptySnapshotDoesNotCreateConsumption(t *testing.T) {
+	h := newInboxHarness(t, InboxLimits{})
+	post := roomCall[PostReceipt](t, h.roomHarness, h.post(humanCaller, "room-only", "Tools configured"))
+	inboxRoomRunning(t, h, 1, post.Seq)
+	page := inboxCall[InboxBatchPage](t, h, ReadInboxBatch{MemberIdentity: h.id, TurnNumber: 1})
+	if page.MemberIdentity != h.id || page.Entries == nil || len(page.Entries) != 0 || page.SnapshotSeq != 0 || page.NextAfter != 0 || page.HasMore || page.Batch.Receipt != "" {
+		t.Fatal(page)
+	}
+	if _, err := os.Stat(filepath.Join(h.store.dir, "inboxes", h.id.MembershipID, "consumption.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("empty snapshot persisted consumption", err)
+	}
+	inboxError[InboxBatchPage](t, h, ReadInboxBatch{MemberIdentity: h.id, TurnNumber: 2}, ErrConflict)
 }
 
 func TestInboxConsumptionInterruptedAssociation(t *testing.T) {
