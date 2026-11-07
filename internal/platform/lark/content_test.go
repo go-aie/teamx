@@ -62,13 +62,38 @@ func TestContentRichMentionsAndDeletedMessage(t *testing.T) {
 		{Key: "@_user_1", ID: "ou_reader", IDType: "open_id", Name: "接收者"},
 		{Key: "@_user_2", ID: "ou_other", IDType: "open_id", Name: "其他人"},
 	}
-	want := "发版\n@接收者（open_id: ou_reader；当前接收账号）\n确认\n@其他人（open_id: ou_other）\n@所有人\n@未映射用户（user_id: ou_unknown；身份未解析）\n![飞书图片](lark-image:img_fixture)\n[图片内容需通过附件读取]"
+	want := "发版\n@接收者（open_id: ou_reader；当前接收账号）确认@其他人（open_id: ou_other）@所有人@未映射用户（user_id: ou_unknown；身份未解析）![飞书图片](lark-image:img_fixture)\n[图片内容需通过附件读取]"
 	if got := m.ContentFor("ou_reader"); got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
 	m.Deleted = true
 	if got := m.ContentFor("ou_reader"); got != "消息已撤回" {
 		t.Fatal("deleted message exposed mention evidence", got)
+	}
+}
+
+func TestContentRichPostPreservesRowsAndInlineSpacing(t *testing.T) {
+	for _, locale := range []string{"", "zh_cn", "en_us", "ja_jp"} {
+		t.Run(locale, func(t *testing.T) {
+			m := sampleMessage("om_post", "oc_chat", "")
+			m.Type = "post"
+			post := map[string]any{"title": "", "content": []any{
+				[]any{map[string]string{"tag": "img", "image_key": "img_fixture"}},
+				[]any{map[string]string{"tag": "at", "user_id": "@_user_1"}, map[string]string{"tag": "text", "text": " "}, map[string]string{"tag": "at", "user_id": "@_user_2"}, map[string]string{"tag": "text", "text": "  空了帮忙看下这个"}},
+				[]any{map[string]string{"tag": "text", "text": "保留下一行\n及文字内换行"}},
+			}}
+			var body any = post
+			if locale != "" {
+				body = map[string]any{locale: post}
+			}
+			encoded, _ := json.Marshal(body)
+			m.Body.Content = string(encoded)
+			m.Mentions = []Mention{{Key: "@_user_1", ID: "ou_reader", IDType: "open_id", Name: "罗俊"}, {Key: "@_user_2", ID: "ou_peer", IDType: "open_id", Name: "王浩杰"}}
+			want := "![飞书图片](lark-image:img_fixture)\n@罗俊（open_id: ou_reader；当前接收账号） @王浩杰（open_id: ou_peer）  空了帮忙看下这个\n保留下一行\n及文字内换行\n[图片内容需通过附件读取]"
+			if got := m.ContentFor("ou_reader"); got != want {
+				t.Fatalf("got %q, want %q", got, want)
+			}
+		})
 	}
 }
 

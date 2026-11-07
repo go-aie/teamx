@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { markdownHTML, notificationOptions } from "./web/markdown.mjs";
+import { markdownHTML, notificationOptions, openImagePreview, renderMessageBody } from "./web/markdown.mjs";
 
 test("messages render Markdown structure and preserve ordinary line breaks", () => {
   const html = markdownHTML("## 方案\n\n**粗体**、*强调*、~~删除~~、`todo.py`\n下一行\n\n> 引用\n\n1. 添加\n2. 完成\n\n- [x] 已完成\n- [ ] 待处理\n\n---");
@@ -138,8 +138,9 @@ test("Lark images and legacy keys render same-origin previews bound to the exact
     const html = markdownHTML(text,options);
     assert.ok(html.includes('<img class="message-image"'));
     assert.ok(html.includes('class="attachment-preview"'));
-    assert.ok(html.includes('title="查看原图"'));
-    assert.ok(html.includes('target="_blank" rel="noopener noreferrer"'));
+    assert.ok(html.includes('<button class="attachment-preview" type="button"'));
+    assert.ok(html.includes('aria-label="放大查看图片"'));
+    assert.ok(!html.includes('target="_blank"'));
     assert.ok(html.includes("请分析图片"));
     const src = html.match(/<img[^>]+src="([^"]+)"/)[1].replaceAll("&amp;","&");
     const query = new URL(src,"http://fixture").searchParams;
@@ -149,6 +150,43 @@ test("Lark images and legacy keys render same-origin previews bound to the exact
   assert.ok(!markdownHTML("![image](lark-image:img_x)").includes("<img"));
   assert.ok(!markdownHTML("`![image](lark-image:img_x)`",options).includes("<img"));
   assert.equal(notificationOptions(imageInfo,"operator",{...source,channel:"other"},{seq:1}),undefined);
+});
+
+test("image preview reuses a modal, keeps the bound URL, and clears it on every close path", () => {
+  class Element {
+    constructor(tag) { this.tag = tag; this.children = []; this.attributes = {}; this.listeners = {}; this.open = false; }
+    append(...children) { this.children.push(...children); }
+    setAttribute(key, value) { this.attributes[key] = value; }
+    removeAttribute(key) { delete this[key]; }
+    addEventListener(name, fn) { (this.listeners[name] ||= []).push(fn); }
+    emit(name, data = {}) { for (const fn of this.listeners[name] || []) fn({target:this,preventDefault() {},stopPropagation() {},...data}); }
+    showModal() { this.open = true; this.modal = true; }
+    close() { this.open = false; this.emit("close"); }
+  }
+  const doc = {body:new Element("body"),createElement:tag => new Element(tag),createTreeWalker:() => ({nextNode:() => false})};
+  const src = "/v1/platform/attachments?room_id=room-a&membership_id=member-a&seq=35&path=lark-image%3Aimg_saved";
+  const button = new Element("button"), thumbnail = new Element("img");
+  thumbnail.src = src; thumbnail.alt = "截图 <img src=x>";
+  thumbnail.closest = selector => selector === "button.attachment-preview" ? button : null;
+  const container = {ownerDocument:doc,querySelectorAll:() => [thumbnail]};
+  renderMessageBody(container, "![截图](lark-image:img_saved)", "operator", {larkImages:true,attachmentURL:() => src});
+  assert.ok(container.innerHTML.includes('<button class="attachment-preview"'));
+  button.emit("click");
+  const dialog = doc.body.children[0], [toolbar, stage] = dialog.children, [title, close] = toolbar.children, [image, error] = stage.children;
+  assert.equal(dialog.open, true); assert.equal(dialog.modal, true);
+  assert.equal(image.src, src); assert.equal(image.referrerPolicy, "no-referrer");
+  assert.equal(title.textContent, "截图 <img src=x>");
+  dialog.emit("click", {target:image}); assert.equal(dialog.open, true);
+  image.emit("error"); assert.equal(error.hidden, false);
+  close.emit("click");
+  assert.equal(dialog.open, false); assert.equal(image.src, undefined); assert.equal(error.hidden, true);
+  for (const action of ["cancel", "click"]) {
+    openImagePreview(doc, src, "截图");
+    assert.equal(doc.body.children.length, 1);
+    assert.equal(error.hidden, true);
+    dialog.emit(action);
+    assert.equal(dialog.open, false); assert.equal(image.src, undefined);
+  }
 });
 
 test("compact Lark mentions show names and keep identity in tooltips without rewriting code or link destinations", () => {

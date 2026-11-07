@@ -63,7 +63,37 @@ function imageHTML({ href, text, title, width, height }, options) {
   if (!src) return webLink(href, escapeHTML(text || "图片"), title);
   const size = (width ? ` width="${width}"` : "") + (height ? ` height="${height}"` : "");
   const img = `<img class="message-image" src="${escapeHTML(src)}" alt="${escapeHTML(text || "图片")}"${title ? ` title="${escapeHTML(title)}"` : ""}${size} loading="lazy" decoding="async" referrerpolicy="no-referrer">`;
-  return options.larkImages ? `<a class="attachment-preview" href="${escapeHTML(src)}" target="_blank" rel="noopener noreferrer" title="查看原图">${img}</a>` : img;
+  return options.larkImages ? `<button class="attachment-preview" type="button" aria-label="放大查看图片" title="放大查看图片">${img}</button>` : img;
+}
+
+const imagePreviews = new WeakMap();
+
+export function openImagePreview(doc, src, alt) {
+  let preview = imagePreviews.get(doc);
+  if (!preview) {
+    const dialog = doc.createElement("dialog"); dialog.className = "message-image-dialog";
+    dialog.setAttribute("aria-label", "图片预览");
+    const toolbar = doc.createElement("div"); toolbar.className = "message-image-toolbar";
+    const title = doc.createElement("span");
+    const close = doc.createElement("button"); close.type = "button"; close.textContent = "关闭";
+    close.setAttribute("aria-label", "关闭图片预览");
+    toolbar.append(title, close);
+    const stage = doc.createElement("div"); stage.className = "message-image-stage";
+    const image = doc.createElement("img"); image.referrerPolicy = "no-referrer";
+    const error = doc.createElement("p"); error.hidden = true; error.setAttribute("role", "status");
+    error.textContent = "图片加载失败，请关闭后重试。";
+    stage.append(image, error); dialog.append(toolbar, stage); doc.body.append(dialog);
+    close.addEventListener("click", () => dialog.close());
+    dialog.addEventListener("cancel", event => { event.preventDefault(); dialog.close(); });
+    dialog.addEventListener("click", event => { if (event.target === dialog) dialog.close(); });
+    dialog.addEventListener("close", () => { image.removeAttribute("src"); image.alt = ""; error.hidden = true; });
+    image.addEventListener("error", () => { if (dialog.open) error.hidden = false; });
+    preview = {dialog, image, title, error}; imagePreviews.set(doc, preview);
+  }
+  preview.title.textContent = alt || "图片预览";
+  preview.image.alt = alt || "图片"; preview.error.hidden = true;
+  preview.image.src = src;
+  if (!preview.dialog.open) preview.dialog.showModal();
 }
 
 function makeMarkdown(options = {}) {
@@ -136,13 +166,16 @@ export function renderMessageBody(container, text, operator, options) {
   const doc = container.ownerDocument;
   if (options) {
     for (const img of container.querySelectorAll("img.message-image")) {
+      const preview = img.closest("button.attachment-preview");
+      if (preview) preview.addEventListener("click", event => {
+        event.preventDefault(); event.stopPropagation();
+        openImagePreview(doc, img.src, img.alt);
+      });
       img.addEventListener("error", () => {
-        const fallback = doc.createElement("a");
+        const fallback = doc.createElement("button"); fallback.type = "button";
         fallback.textContent = "图片加载失败，点击重试";
-        fallback.href = img.src;
-        fallback.target = "_blank"; fallback.rel = "noopener noreferrer";
         fallback.className = "attachment-error";
-        const preview = img.closest("a.attachment-preview");
+        fallback.addEventListener("click", () => openImagePreview(doc, img.src, img.alt));
         if (preview) preview.replaceWith(fallback);
         else img.replaceWith(fallback);
       }, { once: true });

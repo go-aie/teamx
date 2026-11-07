@@ -84,7 +84,31 @@ func (m Message) ContentFor(recipientID string) string {
 			}
 		}
 	}
-	walk(v, 0)
+	if m.Type == "post" {
+		post := v
+		for _, locale := range []string{"zh_cn", "en_us", "ja_jp"} {
+			if localized, ok := v[locale].(map[string]any); ok {
+				post = localized
+				break
+			}
+		}
+		if rows, ok := post["content"].([]any); ok {
+			if title, ok := post["title"].(string); ok && title != "" {
+				parts = append(parts, m.mentionText(title, recipientID))
+			}
+			for _, row := range rows {
+				start := len(parts)
+				walk(row, 0)
+				// Rich-post elements within one row are inline, including
+				// whitespace and mentions. Only native rows introduce newlines.
+				parts = append(parts[:start], strings.Join(parts[start:], ""))
+			}
+		} else {
+			walk(v, 0)
+		}
+	} else {
+		walk(v, 0)
+	}
 	if m.Type == "post" && resource {
 		parts = append(parts, "[附件未读取]")
 	}
