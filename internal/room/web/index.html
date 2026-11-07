@@ -409,7 +409,6 @@
         <div class="connection-field"><label for="connection-name">连接名称</label><input id="connection-name" maxlength="128" required placeholder="公司 GitLab"></div>
         <div class="connection-field"><label for="connection-provider">平台</label><select id="connection-provider"><option value="gitlab">GitLab</option><option value="feishu">飞书</option><option value="lark">Lark</option></select></div>
         <div id="connection-url-row" class="connection-field connection-field-wide"><label for="connection-url">实例地址</label><input id="connection-url" type="url" required placeholder="https://gitlab.example.com"></div>
-        <div id="connection-auth-row" class="connection-field connection-field-wide"><label for="connection-auth">认证方式</label><select id="connection-auth"><option value="pat">PAT</option><option value="env">服务环境变量</option></select></div>
         <div id="connection-profile-row" class="connection-field connection-field-wide" hidden>
           <div id="connection-profile-choice" hidden><label for="connection-profile">应用配置</label><select id="connection-profile" aria-describedby="connections-feedback"></select></div>
           <p id="connection-account" class="connection-account" role="status" aria-live="polite">正在检测账号…</p>
@@ -434,8 +433,23 @@
             <p id="connection-cli-hint" class="quiet">使用 TeamX 服务所在机器及运行用户的 lark-cli 1.0.99。登录凭据由 CLI 管理。</p>
           </details>
         </div>
-        <div id="connection-pat-row" class="connection-field connection-field-wide"><label for="connection-pat">Token</label><input id="connection-pat" type="password" autocomplete="new-password" maxlength="8192" placeholder="输入 PAT" aria-describedby="connection-credential"><p id="connection-credential" class="quiet connection-credential-hint" hidden>Token 保存后不回显。</p></div>
-        <div id="connection-env-row" class="connection-field connection-field-wide" hidden><label for="connection-env">环境变量名称</label><input id="connection-env" maxlength="128" placeholder="GITLAB_PAT" spellcheck="false"></div>
+        <div id="gitlab-account-row" class="connection-field connection-field-wide">
+          <p id="gitlab-account" class="connection-account" role="status" aria-live="polite">未连接</p>
+          <div class="connection-account-actions"><button id="gitlab-login" class="settings-secondary-button" type="button">登录 GitLab</button><button id="gitlab-logout" class="text-button" type="button" hidden>退出登录</button><button id="gitlab-cancel" class="text-button" type="button" hidden>取消本次登录</button></div>
+          <a id="gitlab-login-link" target="_blank" rel="noopener noreferrer" hidden>打开 GitLab 授权页面 ↗</a>
+          <section id="gitlab-setup" class="connection-setup gitlab-setup" aria-labelledby="gitlab-setup-title" hidden>
+            <h4 id="gitlab-setup-title">首次连接：配置 GitLab 应用</h4>
+            <p class="quiet">只需配置一次，之后使用 GitLab 账号登录。</p>
+            <ol class="gitlab-setup-steps">
+              <li><a id="gitlab-applications-link" target="_blank" rel="noopener noreferrer">在 GitLab 中添加应用 ↗</a>，名称填写 TeamX，勾选 Confidential。</li>
+              <li><label for="gitlab-redirect-uri">回调地址</label><input id="gitlab-redirect-uri" readonly spellcheck="false"><p id="gitlab-scope-hint" class="quiet">权限选择 api。</p>
+                <label class="workspace-check"><input id="gitlab-repository-access" type="checkbox">允许拉取和推送代码</label></li>
+              <li><label for="gitlab-client-id">Application ID</label><input id="gitlab-client-id" autocomplete="off" spellcheck="false">
+                <label for="gitlab-client-secret">Secret</label><input id="gitlab-client-secret" type="password" autocomplete="new-password">
+                <button id="gitlab-import" class="settings-secondary-button" type="button">保存应用配置</button></li>
+            </ol>
+          </section>
+        </div>
         <div id="connection-notes" class="connection-notes connection-field-wide" hidden><p id="connection-validation" class="quiet"></p><p id="connection-references" class="quiet" hidden></p></div>
         <footer class="connection-field-wide"><button id="connection-delete" class="settings-secondary-button settings-danger-button" type="button" hidden>删除连接</button><button id="connection-verify" class="settings-secondary-button" type="button" hidden>验证连接</button><button id="connection-save" class="primary" type="submit">保存连接</button></footer>
       </fieldset>

@@ -32,6 +32,11 @@ func (e *noteError) Error() string { return e.message }
 // NewNoteAPI shares the read boundary's origin, credential, redirect, timeout,
 // size and redaction rules. There is no business POST retry or redirect replay.
 func NewNoteAPI(origin string, secret platform.Secret, transport http.RoundTripper) NoteAPI {
+	return NewNoteAPIWithCredential(origin, platform.AccessCredential{Kind: "oauth", Token: secret}, transport)
+}
+
+func NewNoteAPIWithCredential(origin string, credential platform.AccessCredential, transport http.RoundTripper) NoteAPI {
+	secret := credential.Token
 	client := boundedHTTPClient(transport)
 	return func(ctx context.Context, projectID, mrIID, discussionID, body string) (APIResponse, error) {
 		before := func() (APIResponse, error) {
@@ -53,7 +58,9 @@ func NewNoteAPI(origin string, secret platform.Secret, transport http.RoundTripp
 			return before()
 		}
 		req.GetBody = nil // no replay, including 307/308 redirects
-		req.Header.Set("PRIVATE-TOKEN", secret.Reveal())
+		if setAuthentication(req, origin, credential) != nil {
+			return before()
+		}
 		req.Header.Set("Accept", "application/json")
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := client.Do(req)

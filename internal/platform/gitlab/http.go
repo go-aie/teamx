@@ -51,6 +51,13 @@ func validToken(token string) bool {
 // NewReadAPI never redirects or retries. Raw transport errors and remote error
 // bodies never leave this boundary. Byte accounting is on the original body.
 func NewReadAPI(origin string, secret platform.Secret, transport http.RoundTripper) ReadAPI {
+	return NewReadAPIWithCredential(origin, platform.AccessCredential{Kind: "oauth", Token: secret}, transport)
+}
+
+// NewReadAPIWithCredential is the typed service boundary. Callers retain a
+// bounded token lease until the full response has been consumed and closed.
+func NewReadAPIWithCredential(origin string, credential platform.AccessCredential, transport http.RoundTripper) ReadAPI {
+	secret := credential.Token
 	client := boundedHTTPClient(transport)
 	return func(ctx context.Context, path string, query url.Values, headers http.Header, limit int64) (APIResponse, error) {
 		var result APIResponse
@@ -74,7 +81,9 @@ func NewReadAPI(origin string, secret platform.Secret, transport http.RoundTripp
 		if req.Header == nil {
 			req.Header = make(http.Header)
 		}
-		req.Header.Set("PRIVATE-TOKEN", secret.Reveal())
+		if setAuthentication(req, origin, credential) != nil {
+			return result, &queryError{Code: "query_failed"}
+		}
 		req.Header.Set("Accept", "application/json")
 		resp, err := client.Do(req)
 		if err != nil {

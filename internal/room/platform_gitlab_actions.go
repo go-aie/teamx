@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/connection"
@@ -48,7 +49,7 @@ func (m *roomManager) prepareGitlabReferenceAction(ctx context.Context, id Membe
 		}
 		return merged, func() { stop(); cancel() }
 	}
-	read := gitlab.NewReadAPI(admission.account.URL, admission.secret, m.platformHTTP)
+	read := m.gitlabAccountRead(id.RoomIdentity, admission.account, admission.secret)
 	guardedRead := func(ctx context.Context, path string, q url.Values, h http.Header, limit int64) (gitlab.APIResponse, error) {
 		if err := check(ctx); err != nil {
 			return gitlab.APIResponse{}, err
@@ -61,7 +62,6 @@ func (m *roomManager) prepareGitlabReferenceAction(ctx context.Context, id Membe
 		}
 		return response, err
 	}
-	write := gitlab.NewNoteAPI(admission.account.URL, admission.secret, m.platformHTTP)
 	guardedWrite := func(ctx context.Context, project, iid, discussion, body string) (gitlab.APIResponse, error) {
 		if check(ctx) != nil {
 			return gitlab.APIResponse{}, gitlab.ErrNoteNotSent
@@ -70,9 +70,15 @@ func (m *roomManager) prepareGitlabReferenceAction(ctx context.Context, id Membe
 		defer finish()
 		// Never discard a known write outcome after revocation. Further requests
 		// still pass the guard; the original action retains the admitted account.
-		return write(ctx, project, iid, discussion, body)
+		useCtx, credential, release, err := m.acquireGitLabAccess(ctx, id.RoomIdentity, admission.account, admission.secret, 30*time.Second)
+		if err != nil {
+			return gitlab.APIResponse{}, gitlab.ErrNoteNotSent
+		}
+		response, writeErr := gitlab.NewNoteAPIWithCredential(admission.account.URL, credential, m.platformHTTP)(useCtx, project, iid, discussion, body)
+		_ = release() // preserve the known write outcome even when authorization changed
+		return response, writeErr
 	}
-	caps := platform.ReferenceCapabilities{CredentialKinds: []string{"gitlab:pat"}, Actions: gitlab.ReferenceActions(guardedRead, guardedWrite, admission.account.Username)}
+	caps := platform.ReferenceCapabilities{CredentialKinds: []string{"gitlab:oauth"}, Actions: gitlab.ReferenceActions(guardedRead, guardedWrite, admission.account.Username)}
 	return referenceActionSession{Access: access, Capabilities: caps, Check: check, Close: func() { m.finishPlatformCall(call) }}, nil
 }
 
@@ -92,7 +98,7 @@ func (m *roomManager) actionAccountLocked(req toolsRequest) (connection.Account,
 		}
 		for _, c := range file.Connections {
 			if c.ID == b.ConnectionID && c.Generation == b.ConnectionGeneration && c.Provider == "gitlab" {
-				a, _, err := connection.ResolveAccount(file, c)
+				a, _, err := connection.ResolveAccessAccount(file, c)
 				return a, err
 			}
 		}

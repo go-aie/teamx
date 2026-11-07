@@ -203,6 +203,18 @@ func (m *roomManager) serveToolRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer m.finishPlatformCall(call)
+	if call.account.Authorization.CredentialID != "" {
+		useCtx, credential, finish, err := m.acquireGitLabAccess(ctx, req.RoomIdentity, call.account, call.secret, maxGitLabTokenUse)
+		if err != nil {
+			writeAPIError(w, err)
+			return
+		}
+		defer func() { _ = finish() }()
+		ctx = useCtx
+		process.Values["token"] = credential.Token.Reveal()
+		// The registered process receives only access material, never refresh secrets.
+		process.Definition.Environment = cloneToolEnv(process.Definition.Environment)
+	}
 	ioDone := make(chan struct{})
 	ioStopped := make(chan struct{})
 	defer func() { close(ioDone); <-ioStopped }()

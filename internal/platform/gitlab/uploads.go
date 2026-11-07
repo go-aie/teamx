@@ -106,6 +106,11 @@ var (
 )
 
 func DownloadUploadWithLimits(ctx context.Context, origin string, secret platform.Secret, upload Upload, transport http.RoundTripper, limits UploadLimits) ([]byte, string, error) {
+	return DownloadUploadWithCredential(ctx, origin, platform.AccessCredential{Kind: "oauth", Token: secret}, upload, transport, limits)
+}
+
+func DownloadUploadWithCredential(ctx context.Context, origin string, credential platform.AccessCredential, upload Upload, transport http.RoundTripper, limits UploadLimits) ([]byte, string, error) {
+	secret := credential.Token
 	failed := ErrUploadUnavailable
 	if limits.MaxBytes == 0 {
 		limits.MaxBytes = MaxUploadBytes
@@ -123,7 +128,9 @@ func DownloadUploadWithLimits(ctx context.Context, origin string, secret platfor
 	if err != nil {
 		return nil, "", failed
 	}
-	req.Header.Set("PRIVATE-TOKEN", secret.Reveal())
+	if setAuthentication(req, origin, credential) != nil {
+		return nil, "", failed
+	}
 	req.Header.Set("Accept", "image/png, image/jpeg, image/gif, image/webp, application/octet-stream")
 	resp, err := boundedHTTPClient(transport).Do(req)
 	if err != nil {

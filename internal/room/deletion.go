@@ -133,12 +133,6 @@ func (m *roomManager) runDeletion(target roomSummary, rt *roomRuntime) {
 	// Scope deletion to the generated Room directory. RemoveAll unlinks nested
 	// symlinks; it does not follow them into external projects or team templates.
 	dir := m.roomDir(target.RoomID)
-	m.mu.Lock()
-	runErr = m.cleanupWorkspaceCredentialsLocked(target.RoomIdentity)
-	m.mu.Unlock()
-	if runErr != nil {
-		return
-	}
 	if runErr = os.RemoveAll(dir); runErr != nil {
 		return
 	}

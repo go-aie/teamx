@@ -43,7 +43,6 @@ type workspaceOperation struct {
 	SourceEpoch         string                      `json:"source_epoch,omitempty"`
 	PreviousConfig      *managedRoomConfig          `json:"previous_config,omitempty"`
 	RequestTarget       *workspaceConfig            `json:"request_target,omitempty"`
-	RequestPAT          bool                        `json:"request_pat,omitempty"`
 	PreparedConfig      *managedRoomConfig          `json:"prepared_config,omitempty"`
 	CreatedAt           time.Time                   `json:"created_at"`
 	UpdatedAt           time.Time                   `json:"updated_at"`
@@ -73,7 +72,7 @@ func (op workspaceOperation) validate() error {
 		return ErrInvalid
 	}
 	if op.RequestTarget != nil {
-		normalized, err := normalizeWorkspace(*op.RequestTarget, op.RequestTarget.Binding == nil || op.RequestTarget.Binding.CredentialID == "")
+		normalized, err := normalizeWorkspace(*op.RequestTarget, true)
 		if err != nil || !equalWorkspace(normalized, *op.RequestTarget) || op.PreviousConfig == nil || op.PreviousConfig.RoomIdentity != op.RoomIdentity || op.PreviousConfig.WorkspaceVersion != op.PreviousVersion || !validText(op.SourceEpoch) {
 			return ErrInvalid
 		}
@@ -118,7 +117,7 @@ func (op workspaceOperation) validate() error {
 		}
 	case "failed", "superseded":
 		// Error codes are bounded static diagnostics, never raw subprocess/API
-		// errors or form values which could contain a PAT.
+		// errors or form values which could contain credentials.
 		switch op.ErrorCode {
 		case "interrupted", "cleanup_failed", "preparation_failed", "commit_unknown", "session_failed", "credential_missing":
 		default:
@@ -299,7 +298,7 @@ func (m *roomManager) saveWorkspaceOperationLocked(op workspaceOperation) error 
 			continue
 		}
 		if previous.RoomIdentity != op.RoomIdentity || previous.ReplacesOperationID != op.ReplacesOperationID || previous.PreviousVersion != op.PreviousVersion || previous.TargetVersion != op.TargetVersion ||
-			!equalWorkspace(previous.Target, op.Target) || !reflect.DeepEqual(previous.RequestTarget, op.RequestTarget) || previous.RequestPAT != op.RequestPAT || previous.SourceEpoch != op.SourceEpoch || !reflect.DeepEqual(previous.PreviousConfig, op.PreviousConfig) || (previous.PreparedConfig != nil && (!reflect.DeepEqual(previous.PreparedConfig, op.PreparedConfig) || !reflect.DeepEqual(previous.RotateMembers, op.RotateMembers))) || !reflect.DeepEqual(previous.Members, op.Members) || !previous.CreatedAt.Equal(op.CreatedAt) ||
+			!equalWorkspace(previous.Target, op.Target) || !reflect.DeepEqual(previous.RequestTarget, op.RequestTarget) || previous.SourceEpoch != op.SourceEpoch || !reflect.DeepEqual(previous.PreviousConfig, op.PreviousConfig) || (previous.PreparedConfig != nil && (!reflect.DeepEqual(previous.PreparedConfig, op.PreparedConfig) || !reflect.DeepEqual(previous.RotateMembers, op.RotateMembers))) || !reflect.DeepEqual(previous.Members, op.Members) || !previous.CreatedAt.Equal(op.CreatedAt) ||
 			op.UpdatedAt.Before(previous.UpdatedAt) || workspaceOperationPhase(op.Phase) < workspaceOperationPhase(previous.Phase) ||
 			(previous.ConfigCommitted && !op.ConfigCommitted) || (previous.finished() && !reflect.DeepEqual(previous, op)) {
 			return ErrConflict
@@ -347,11 +346,6 @@ func (m *roomManager) saveWorkspaceOperationLocked(op workspaceOperation) error 
 			}
 		}
 	}
-	if op.Target.Binding != nil && op.Target.Binding.CredentialID != "" {
-		if _, err := m.readWorkspaceCredential(op.RoomIdentity, op.Target.Binding.CredentialID); err != nil {
-			return err
-		}
-	}
 	next.WorkspaceOperations = append(next.WorkspaceOperations, cloneWorkspaceOperation(op))
 	return m.saveIndex(next)
 }
@@ -381,10 +375,6 @@ func cloneWorkspaceOperation(op workspaceOperation) workspaceOperation {
 	}
 	if op.RequestTarget != nil {
 		w, _ := normalizeWorkspace(*op.RequestTarget, true)
-		// Effective requests can refer to the current credential.
-		if op.RequestTarget.Binding != nil && op.RequestTarget.Binding.CredentialID != "" {
-			w, _ = normalizeWorkspace(*op.RequestTarget, false)
-		}
 		op.RequestTarget = &w
 	}
 	op.RotateMembers = append([]string(nil), op.RotateMembers...)

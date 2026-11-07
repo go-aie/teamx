@@ -61,12 +61,12 @@ func standaloneEventsConfig(t *testing.T, cfg EventsConfig) (*EventsSource, *sou
 	cfg.Enabled = true
 	now := time.Date(2026, 11, 1, 23, 59, 50, 0, time.UTC)
 	owner := platform.RoomIdentity{RoomID: "source-room", RoomInstance: "source-instance"}
-	binding := platform.ProjectBinding{Provider: "gitlab", URL: "https://gitlab.invalid", Project: "group/project", TokenEnv: "SOURCE_TEST_PAT"}
+	binding := platform.ProjectBinding{Provider: "gitlab", URL: "https://gitlab.invalid", Project: "group/project", ConnectionID: strings.Repeat("a", 32), ConnectionGeneration: strings.Repeat("b", 32), ProjectID: 7}
 	state, err := ConfigureEvents(owner, nil, &binding, cfg, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, _ := json.Marshal(Binding{Version: 1, RoomID: owner.RoomID, RoomInstance: owner.RoomInstance, URL: binding.URL, Project: binding.Project, TokenEnv: binding.TokenEnv})
+	data, _ := json.Marshal(Binding{Version: 1, RoomID: owner.RoomID, RoomInstance: owner.RoomInstance, URL: binding.URL, Project: binding.Project, ConnectionID: binding.ConnectionID, ConnectionGeneration: binding.ConnectionGeneration, ProjectID: 7})
 	host := &sourceStepHost{state: state, scope: notification.Scope{Data: data, Revision: "scope-1", CredentialStamp: "credential-1", Current: true}, now: now, limits: notification.DefaultLimits()}
 	source := &EventsSource{Prepare: func(context.Context, string, Binding) (EventFetcher, int64, error) {
 		return sourceEventsFunc(func(context.Context, EventQuery) (EventBatch, error) {

@@ -22,8 +22,8 @@ func TestProductionNotificationsUseGoHTTPWithoutWorkspace(t *testing.T) {
 	t.Run("events", func(t *testing.T) {
 		h, _ := newIndependentEventHarness(t)
 		h.m.platformHTTP = workspaceHTTPFunc(func(r *http.Request) (*http.Response, error) {
-			if r.Header.Get("PRIVATE-TOKEN") != "test-platform-secret" {
-				t.Fatal("incorrect credential")
+			if r.Header.Get("Authorization") != "Bearer test-platform-secret" {
+				t.Error("incorrect credential")
 			}
 			body := `{"id":7,"path_with_namespace":"remote/project","http_url_to_repo":"https://gitlab.invalid/remote/project.git"}`
 			if strings.HasSuffix(r.URL.Path, "/events") {
@@ -48,8 +48,8 @@ func TestProductionNotificationsUseGoHTTPWithoutWorkspace(t *testing.T) {
 	t.Run("todos", func(t *testing.T) {
 		h := newTodoHarness(t)
 		h.m.platformHTTP = workspaceHTTPFunc(func(r *http.Request) (*http.Response, error) {
-			if r.URL.Path != "/api/v4/todos" || r.Header.Get("PRIVATE-TOKEN") != "test-platform-secret" {
-				t.Fatal("incorrect personal query")
+			if r.URL.Path != "/api/v4/todos" || r.Header.Get("Authorization") != "Bearer test-platform-secret" {
+				t.Error("incorrect personal query")
 			}
 			body := "[]"
 			if r.URL.Query().Get("state") == "pending" {
@@ -73,12 +73,12 @@ func TestProductionNotificationsUseGoHTTPWithoutWorkspace(t *testing.T) {
 }
 func TestNativeReadRejectsCredentialChangeAfterBody(t *testing.T) {
 	h, _ := newIndependentEventHarness(t)
-	t.Setenv("TEAMX_TEST_EVENTS_PAT", "verified-events-token")
+
 	connections := platformTestList(t, h.m)
 	req := platformTestRequest(h.m)
-	req.PAT, req.TokenEnv, req.Version = "", "TEAMX_TEST_EVENTS_PAT", connections[0].Version
+	req.Version = connections[0].Version
 	req.ReferencedRooms = []RoomIdentity{h.room.RoomIdentity}
-	verifyTodoAccount(t, h.m, platformTestSave(t, h.m, req), 101)
+	verifyTodoAccount(t, h.m, platformTestReauthorize(t, h.m, req), 101)
 	h.m.mu.Lock()
 	b, err := h.m.eventsBindingLocked(h.stateUnlocked())
 	h.m.mu.Unlock()
@@ -86,10 +86,10 @@ func TestNativeReadRejectsCredentialChangeAfterBody(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.m.platformHTTP = workspaceHTTPFunc(func(r *http.Request) (*http.Response, error) {
-		if r.Header.Get("PRIVATE-TOKEN") != "verified-events-token" {
-			t.Fatal("wrong admitted token")
+		if r.Header.Get("Authorization") != "Bearer rotated-token" {
+			t.Error("wrong admitted token")
 		}
-		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: &credentialDriftBody{Reader: strings.NewReader("[]"), onRead: func() { t.Setenv("TEAMX_TEST_EVENTS_PAT", "changed-token") }}}, nil
+		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: &credentialDriftBody{Reader: strings.NewReader("[]"), onRead: func() { changeTestConnectionRevision(t, h.m, connections[0].ID) }}}, nil
 	})
 	if _, err := h.m.eventsRead(b)(context.Background(), "/projects/7/events", nil, nil, 1024); !errors.Is(err, ErrConflict) {
 		t.Fatal("late response accepted after credential change", err)
@@ -117,13 +117,13 @@ func (b *credentialDriftBody) Read(p []byte) (int, error) {
 func (b *credentialDriftBody) Close() error { return nil }
 
 func TestWorkspaceGitCLI(t *testing.T) {
-	b := gitlab.Binding{Version: 1, RoomID: "room", RoomInstance: "instance", URL: "https://gitlab.example.com", Project: "group/project", TokenEnv: "ROOM_PAT"}
+	b := gitlab.Binding{Version: 1, RoomID: "room", RoomInstance: "instance", URL: "https://gitlab.example.com", Project: "group/project", ConnectionID: strings.Repeat("a", 32), ConnectionGeneration: strings.Repeat("b", 32), ProjectID: 7}
 	path := filepath.Join(t.TempDir(), "binding.json")
 	data, _ := json.Marshal(b)
 	os.WriteFile(path, data, 0600)
 	var out, stderr bytes.Buffer
 	env := func(k string) string {
-		if k == "ROOM_PAT" {
+		if k == "TEAMX_PLATFORM_TOKEN" {
 			return "offline-secret"
 		}
 		return ""
@@ -147,7 +147,7 @@ func TestProductionGitAskpassWithoutPythonOrGlab(t *testing.T) {
 		t.Skip("set TEAMX_TEST_CLI_BIN to the built TeamX CLI")
 	}
 	dir := t.TempDir()
-	b := gitlab.Binding{Version: 1, RoomID: "room", RoomInstance: "instance", URL: "https://gitlab.example.com", Project: "group/project", TokenEnv: "ROOM_PAT"}
+	b := gitlab.Binding{Version: 1, RoomID: "room", RoomInstance: "instance", URL: "https://gitlab.example.com", Project: "group/project", ConnectionID: strings.Repeat("a", 32), ConnectionGeneration: strings.Repeat("b", 32), ProjectID: 7}
 	data, _ := json.Marshal(b)
 	path := filepath.Join(dir, "binding.json")
 	os.WriteFile(path, data, 0600)
@@ -162,7 +162,7 @@ func TestProductionGitAskpassWithoutPythonOrGlab(t *testing.T) {
 	os.Symlink(gitPath, filepath.Join(search, "git"))
 
 	cmd := exec.Command(gitPath, "-c", "credential.helper=", "-c", "credential.useHttpPath=true", "credential", "fill")
-	cmd.Env = []string{"PATH=" + search, "HOME=" + dir, "GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0", "ROOM_PAT=offline-secret", "GIT_ASKPASS=" + bin, "TEAMX_GITLAB_TOOLS=" + dir}
+	cmd.Env = []string{"PATH=" + search, "HOME=" + dir, "GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0", "TEAMX_PLATFORM_TOKEN=offline-secret", "GIT_ASKPASS=" + bin, "TEAMX_GITLAB_TOOLS=" + dir}
 	cmd.Stdin = strings.NewReader("protocol=https\nhost=gitlab.example.com\npath=group/project.git\n\n")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

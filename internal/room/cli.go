@@ -131,6 +131,9 @@ func runCLIWithInput(ctx context.Context, args []string, stdin io.Reader, stdout
 		return writeOutput(stdout, []byte(rootCLIHelp))
 	}
 	command, args := args[0], args[1:]
+	if command == "connections" {
+		return runConnectionsUpgrade(args, stdout, stderr)
+	}
 	if command == "inbox" || command == "matters" || command == "actions" || command == "policy" {
 		return runReferenceCLI(ctx, command, args, stdin, stdout, stderr, env)
 	}

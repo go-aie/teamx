@@ -20,13 +20,19 @@ func VerifyProject(ctx context.Context, origin, project string, secret platform.
 	return VerifyProjectWithTransport(ctx, origin, project, secret, http.DefaultTransport)
 }
 func VerifyProjectWithTransport(ctx context.Context, origin, project string, secret platform.Secret, transport http.RoundTripper) (int64, error) {
+	return VerifyProjectWithCredential(ctx, origin, project, platform.AccessCredential{Kind: "oauth", Token: secret}, transport)
+}
+
+func VerifyProjectWithCredential(ctx context.Context, origin, project string, credential platform.AccessCredential, transport http.RoundTripper) (int64, error) {
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, origin+"/api/v4/projects/"+url.PathEscape(project), nil)
-	if err != nil {
+	if err != nil || !validOrigin(origin) || !validToken(credential.Token.Reveal()) {
 		return 0, errProjectVerification
 	}
-	req.Header.Set("PRIVATE-TOKEN", secret.Reveal())
+	if setAuthentication(req, origin, credential) != nil {
+		return 0, errProjectVerification
+	}
 	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	resp, err := client.Do(req)
 	if err != nil {

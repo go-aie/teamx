@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 )
 
-// Binding contains references only. CredentialFile must be resolved and ownership
-// checked by the room credential store before calling Prepare.
+// Binding contains only the verified connection and project references.
+// Access tokens are supplied by the service for each bounded operation.
 type Binding struct {
 	ConnectionID          string `json:"connection_id,omitempty"`
 	ConnectionGeneration  string `json:"connection_generation,omitempty"`
@@ -23,9 +23,6 @@ type Binding struct {
 	RoomInstance          string `json:"room_instance"`
 	URL                   string `json:"url"`
 	Project               string `json:"project"`
-	TokenEnv              string `json:"token_env,omitempty"`
-	CredentialID          string `json:"credential_id,omitempty"`
-	CredentialFile        string `json:"credential_file,omitempty"`
 }
 
 type Result struct {

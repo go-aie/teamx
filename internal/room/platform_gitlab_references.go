@@ -37,7 +37,7 @@ func (m *roomManager) resolveGitlabFollowup(ctx context.Context, id MemberIdenti
 		defer m.mu.Unlock()
 		return m.checkGitlabReferenceAccessLocked(callCtx, req, access)
 	}
-	read := gitlab.NewReadAPI(admission.account.URL, admission.secret, m.platformHTTP)
+	read := m.gitlabAccountRead(id.RoomIdentity, admission.account, admission.secret)
 	guarded := func(ctx context.Context, path string, q url.Values, h http.Header, limit int64) (gitlab.APIResponse, error) {
 		if err := check(); err != nil {
 			return gitlab.APIResponse{}, err
@@ -73,7 +73,7 @@ func (m *roomManager) checkGitlabReferenceAccessLocked(ctx context.Context, req 
 
 // Capability descriptions do not resolve credentials or issue HTTP requests.
 func gitlabReferenceCapabilities() platform.ReferenceCapabilities {
-	return platform.ReferenceCapabilities{CredentialKinds: []string{"gitlab:pat"}, Actions: gitlab.ReferenceActions(nil, nil, "")}
+	return platform.ReferenceCapabilities{CredentialKinds: []string{"gitlab:oauth"}, Actions: gitlab.ReferenceActions(nil, nil, "")}
 }
 
 func gitlabAccount(origin string, id platform.ExternalID) platform.AccountIdentity {

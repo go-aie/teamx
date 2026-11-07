@@ -201,7 +201,7 @@ func (m *roomManager) changeToolBindingLocked(ctx context.Context, req toolBindi
 					if c.Version != req.ConnectionVersion {
 						return f, nil, ErrConflict
 					}
-					if _, _, err := connection.ResolveAccount(file, c); err != nil {
+					if _, _, err := connection.ResolveAccessAccount(file, c); err != nil {
 						return f, nil, ErrConflict
 					}
 					b.ConnectionGeneration = c.Generation
@@ -238,6 +238,9 @@ func (m *roomManager) changeToolBindingLocked(ctx context.Context, req toolBindi
 
 // Agent tools add process-only preparation after the shared platform admission.
 func (m *roomManager) prepareToolLocked(ctx context.Context, req toolsRequest) (tool.Process, *platformCall, context.Context, error) {
+	if req.Tool == "workspace-git" {
+		return m.prepareWorkspaceGitLocked(ctx, req)
+	}
 	var p tool.Process
 	definition, err := m.toolDefinition(req.Tool)
 	if err != nil {

@@ -53,7 +53,7 @@ func TestReferenceActionNativeHTTP(t *testing.T) {
 				posts := 0
 				var origin string
 				server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					if r.Header.Get("PRIVATE-TOKEN") != "fixture-secret" {
+					if r.Header.Get("Authorization") != "Bearer fixture-secret" {
 						t.Error("credential lost")
 					}
 					data := actionPayload(origin, r.URL.Path)
@@ -237,7 +237,7 @@ func TestReferenceActionWriteBoundary(t *testing.T) {
 			var origin string
 			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				calls++
-				if r.Header.Get("PRIVATE-TOKEN") != secret {
+				if r.Header.Get("Authorization") != "Bearer "+secret {
 					t.Error("wrong credential")
 				}
 				if mode == "redirect" {

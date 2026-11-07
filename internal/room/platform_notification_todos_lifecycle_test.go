@@ -117,10 +117,10 @@ func TestTodosCredentialRotationWaitsBeforeSavingReplacement(t *testing.T) {
 	b := startBlockedTodo(t, h)
 	req := platformTestRequest(h.m)
 	req.Version = h.connection.Version
-	req.PAT = "rotated-private-token"
+
 	req.ReferencedRooms = []RoomIdentity{h.room.RoomIdentity}
 	done := make(chan error, 1)
-	go func() { _, err := h.m.updatePlatformConnection(req, false); done <- err }()
+	go func() { _, err := testReauthorizeConnection(h.m, req); done <- err }()
 	awaitEventSignal(t, b.canceled, "rotation did not cancel personal query")
 	// The public read may proceed while settlement is pending, but credentials
 	// have not been replaced and the old subscription is durably paused.
@@ -148,8 +148,8 @@ func TestTodosAndEventsOperationsCancelOnlyTheirOwnChannel(t *testing.T) {
 			t.Run(channel+"/"+operation, func(t *testing.T) {
 				h := newTodoHarness(t)
 				setTestEffectiveWorkspace(t, h.m, h.room, testGitLabWorkspace(), 1)
-				t.Setenv("GITLAB_PAT", "offline-events-token")
-				e, err := seedLegacyTestEvents(h.m, h.room.RoomIdentity, gitlab.EventsConfig{Enabled: true})
+
+				e, err := seedTestEvents(h.m, h.room.RoomIdentity, gitlab.EventsConfig{Enabled: true})
 				if err != nil {
 					t.Fatal(err)
 				}

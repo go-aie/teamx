@@ -128,6 +128,7 @@ func (a *app) native(ctx context.Context, args []string, help bool) int {
 	}
 	env = append(env, "GLAB_CONFIG_DIR="+config, "GLAB_CHECK_UPDATE=false", "GLAB_SEND_TELEMETRY=false", "GLAB_NO_PROMPT=true")
 	if !help {
+		env = append(env, "GLAB_IS_OAUTH2=true")
 		for _, k := range []string{"GITLAB_HOST", "GITLAB_TOKEN"} {
 			if v := a.getenv(k); v != "" {
 				env = append(env, k+"="+v)

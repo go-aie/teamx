@@ -2,12 +2,7 @@ package room
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"os"
 	"path/filepath"
 
 	"github.com/go-aie/teamx/internal/platform"
@@ -76,10 +71,7 @@ func (m *roomManager) prepareWorkspaceConnection(ctx context.Context, req *works
 	if err != nil {
 		return err
 	}
-	if verify == nil {
-		verify = verifyGitLabProject
-	}
-	projectID, err := verify(ctx, resolved.record.URL, req.Target.Binding.Project, resolved.secret)
+	projectID, err := m.verifyGitlabAccountProject(ctx, req.RoomIdentity, resolved.account, platform.Secret{}, req.Target.Binding.Project, verify)
 	if err != nil || projectID <= 0 {
 		return fmt.Errorf("%w: project access or identity verification failed", ErrRequest)
 	}
@@ -98,7 +90,7 @@ func workspaceConnectionTools(b workspaceBinding) string {
 // Go-owned subprocesses receive a short-lived value only through their process
 // environment. It is never added to prepared ToolEnv or a Session configuration.
 func (m *roomManager) connectionExecute(owner RoomIdentity, w workspaceConfig, run platform.Execute) platform.Execute {
-	return func(ctx context.Context, dir string, env map[string]string, executable string, args ...string) ([]byte, error) {
+	return func(ctx context.Context, dir string, env map[string]string, executable string, args ...string) (out []byte, err error) {
 		m.mu.Lock()
 		resolved, err := m.resolveWorkspaceConnectionLocked(owner, w)
 		m.mu.Unlock()
@@ -106,82 +98,52 @@ func (m *roomManager) connectionExecute(owner RoomIdentity, w workspaceConfig, r
 			return nil, err
 		}
 		env = cloneToolEnv(env)
-		env["TEAMX_PLATFORM_TOKEN"] = resolved.secret.value
-		out, err := run(ctx, dir, env, executable, args...)
-		m.mu.Lock()
-		currentErr := m.checkProjectConnectionLocked(resolved)
-		m.mu.Unlock()
-		if currentErr != nil {
-			return nil, ErrConflict
+		delete(env, "TEAMX_PLATFORM_TOKEN")
+		if !workspaceGitNetwork(executable, args) {
+			// Revisit and local Git configuration must never refresh a remote grant.
+			out, err = run(ctx, dir, env, executable, args...)
+			m.mu.Lock()
+			checkErr := m.checkProjectConnectionLocked(resolved)
+			m.mu.Unlock()
+			if checkErr != nil {
+				return nil, checkErr
+			}
+			return out, err
 		}
-		return out, err
+		if err := requireGitlabRepositoryScope(resolved.account); err != nil {
+			return nil, err
+		}
+		useCtx, credential, finish, err := m.acquireGitLabAccess(ctx, owner, resolved.account, platform.Secret{}, maxGitLabTokenUse)
+		if err != nil {
+			return nil, err
+		}
+		defer func() {
+			if checkErr := finish(); checkErr != nil {
+				out = nil
+				err = checkErr
+			}
+		}()
+		env["TEAMX_PLATFORM_TOKEN"] = credential.Token.Reveal()
+		return run(useCtx, dir, env, executable, args...)
 	}
 }
 
-// This private tool exchange is intentionally separate from ordinary management
-// APIs. Browser requests and humans cannot use it. No caller supplies a URL,
-// connection ID or credential ID: all are derived from the owning Room snapshot.
-func (m *roomManager) serveWorkspaceToolCredential(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost || r.Header.Get("Origin") != "" || r.Header.Get("Sec-Fetch-Mode") != "" || r.Header.Get("X-TeamX-Tool") != "credential" {
-		writeAPIError(w, ErrIdentity)
-		return
+// Preparation owns these argv; only its network commands receive access material.
+func workspaceGitNetwork(executable string, args []string) bool {
+	if executable != "git" {
+		return false
 	}
-	var req struct {
-		ServiceInfo
-		Caller Caller `json:"caller"`
+	for len(args) >= 2 && args[0] == "-c" {
+		args = args[2:]
 	}
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
-	dec.DisallowUnknownFields()
-	if dec.Decode(&req) != nil || dec.Decode(new(any)) != io.EOF {
-		writeAPIError(w, ErrRequest)
-		return
+	if len(args) == 0 {
+		return false
 	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	s, rt := m.runtimeServiceLocked(req.RoomIdentity)
-	if m.closing || m.busy || rt != nil && rt.busy && !rt.resuming || s == nil || s.closing.Load() || s.restarting.Load() || s.info != req.ServiceInfo || req.Caller.Kind != "agent" {
-		writeAPIError(w, ErrIdentity)
-		return
+	switch args[0] {
+	case "clone", "fetch", "push", "ls-remote":
+		return true
 	}
-	list, err := s.room.Call[MemberList](r.Context(), ListMembers{s.info.RoomIdentity})
-	if err != nil {
-		writeAPIError(w, ErrIdentity)
-		return
-	}
-	found := false
-	for _, member := range list.Members {
-		if member.AgentID == req.Caller.ID && member.MembershipID == req.Caller.MembershipID {
-			found = true
-		}
-	}
-	entry, err := m.workspaceRoom(req.RoomIdentity)
-	if !found || err != nil || m.checkWorkspaceOperations(req.RoomIdentity) != nil {
-		writeAPIError(w, ErrIdentity)
-		return
-	}
-	saved, err := m.readWorkspaceRoomConfig(entry)
-	if err != nil || saved.Workspace == nil {
-		writeAPIError(w, ErrIdentity)
-		return
-	}
-	resolved, err := m.resolveWorkspaceConnectionLocked(req.RoomIdentity, *saved.Workspace)
-	if err != nil {
-		writeAPIError(w, ErrIdentity)
-		return
-	}
-	// Explicit private wire DTO: workspaceSecret remains redacted everywhere else.
-	_ = json.NewEncoder(w).Encode(struct {
-		Token        string `json:"token"`
-		URL          string `json:"url"`
-		Project      string `json:"project"`
-		ProjectID    int64  `json:"project_id"`
-		ConnectionID string `json:"connection_id"`
-		Generation   string `json:"connection_generation"`
-	}{resolved.secret.value, resolved.record.URL, saved.Workspace.Binding.Project, saved.Workspace.Binding.ProjectID, resolved.record.ID, resolved.record.Generation})
-}
-
-func connectionFingerprint(secret workspaceSecret) string {
-	return fmt.Sprintf("%x", sha256.Sum256([]byte(secret.value)))
+	return false
 }
 
 func bOwner(b gitlab.Binding) RoomIdentity {
@@ -191,22 +153,22 @@ func (m *roomManager) gitLabBindingLocked(owner RoomIdentity, w workspaceConfig)
 	return m.gitLabProjectBindingLocked(owner, *w.Binding)
 }
 func (m *roomManager) gitLabProjectBindingLocked(owner RoomIdentity, b platform.ProjectBinding) (gitlab.Binding, error) {
-	ref := gitlab.Binding{Version: 1, RoomID: owner.RoomID, RoomInstance: owner.RoomInstance, URL: b.URL, Project: b.Project, TokenEnv: b.TokenEnv, CredentialID: b.CredentialID}
+	ref := gitlab.Binding{Version: 1, RoomID: owner.RoomID, RoomInstance: owner.RoomInstance, URL: b.URL, Project: b.Project}
 	if b.ConnectionID != "" {
 		resolved, err := m.resolveProjectConnectionLocked(owner, b)
 		if err != nil {
 			return ref, err
 		}
 		ref.ConnectionID, ref.ConnectionGeneration = b.ConnectionID, b.ConnectionGeneration
-		ref.ConnectionVersion, ref.CredentialVersion, ref.CredentialFingerprint = resolved.record.Version, resolved.record.CredentialVersion, connectionFingerprint(resolved.secret)
+		ref.ConnectionVersion, ref.CredentialVersion, ref.CredentialFingerprint = resolved.record.Version, resolved.record.CredentialVersion, resolved.fingerprint()
 		ref.ProjectID = b.ProjectID
-	} else if b.CredentialID != "" {
-		if _, err := m.readWorkspaceCredential(owner, b.CredentialID); err != nil {
-			return ref, err
-		}
-		ref.CredentialFile = filepath.Join(m.store.dir, "credentials", b.CredentialID+".json")
-	} else if !validWorkspacePAT(os.Getenv(b.TokenEnv)) {
-		return ref, platform.ErrCredential
+	} else {
+		return ref, ErrRequest
 	}
 	return ref, nil
+}
+
+func (r projectConnectionResolution) fingerprint() string { return r.account.CredentialFingerprint }
+func (m *roomManager) projectConnectionRead(r projectConnectionResolution) gitlab.ReadAPI {
+	return m.gitlabAccountRead(r.owner, r.account, platform.Secret{})
 }

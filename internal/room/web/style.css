@@ -1962,3 +1962,13 @@ textarea::placeholder {
 .followup-source > div { padding: 8px 0 0 12px; }
 .followup-technical { margin-top: 12px; font-size: 11px; }
 #policy-member-view .followup-technical p { color: var(--muted); }
+
+.gitlab-setup { margin-top:20px; padding-top:18px; border-top:1px solid var(--line); }
+.gitlab-setup h4 { margin:0 0 6px; font-size:14px; }
+.gitlab-setup-steps { margin:16px 0 0; padding-left:22px; font-size:13px; line-height:1.7; }
+.gitlab-setup-steps > li { padding-left:4px; margin-bottom:18px; }
+.settings-dialog .gitlab-setup label { margin-top:12px; }
+.gitlab-setup input[readonly] { color:var(--muted); font-size:12px; }
+.gitlab-setup .workspace-check { display:flex; gap:8px; align-items:center; font-weight:400; }
+.gitlab-setup .workspace-check input { width:auto; margin:0; }
+.gitlab-setup .settings-secondary-button { margin-top:14px; }

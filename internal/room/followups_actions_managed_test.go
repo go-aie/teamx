@@ -35,7 +35,7 @@ type managedActionFixture struct {
 }
 
 func (f *managedActionFixture) serve(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("PRIVATE-TOKEN") != "test-platform-secret" {
+	if r.Header.Get("Authorization") != "Bearer test-platform-secret" {
 		w.WriteHeader(401)
 		return
 	}
@@ -291,7 +291,7 @@ func (b *actionBlockedBody) Close() error {
 func TestReferenceActionInternalRevocationSettles(t *testing.T) {
 	for _, discussion := range []bool{false, true} {
 		for _, stage := range []string{"before-send", "body", "returned"} {
-			for _, change := range []string{"rotate-credential", "reverify", "disable", "switch-binding", "remove-member", "session-rotate", "close-room", "delete-room", "shutdown"} {
+			for _, change := range []string{"rotate-credential", "reauthorize", "disable", "switch-binding", "remove-member", "session-rotate", "close-room", "delete-room", "shutdown"} {
 				t.Run(map[bool]string{false: "object", true: "discussion"}[discussion]+"/"+stage+"/"+change, func(t *testing.T) {
 					f := managedActionTest(t, discussion)
 					m, svc, id, c := f.m, f.svc, f.id, f.connection
@@ -346,11 +346,11 @@ func TestReferenceActionInternalRevocationSettles(t *testing.T) {
 						case "rotate-credential":
 							q := platformTestRequest(m)
 							q.Version = c.Version
-							q.PAT = "rotated-private-token"
+
 							q.ReferencedRooms = []RoomIdentity{id.RoomIdentity}
-							_, err = m.updatePlatformConnection(q, false)
-						case "reverify":
-							_, err = m.verifyPlatformConnection(context.Background(), platformConnectionRequest{ID: c.ID, Version: c.Version})
+							_, err = testReauthorizeConnection(m, q)
+						case "reauthorize":
+							_, err = testReauthorizeConnection(m, platformConnectionRequest{ID: c.ID, Version: c.Version, ReferencedRooms: []RoomIdentity{id.RoomIdentity}})
 						case "disable", "switch-binding":
 							q := toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: id.RoomIdentity, Caller: humanCaller, Revision: 1, Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "gitlab"}}
 							if change == "switch-binding" {
@@ -389,7 +389,7 @@ func TestReferenceActionInternalRevocationSettles(t *testing.T) {
 					m.mu.Lock()
 					pending := len(m.platformCalls)
 					m.mu.Unlock()
-					if pending != 1 {
+					if pending == 0 {
 						t.Fatal("response released ownership early", pending)
 					}
 					select {

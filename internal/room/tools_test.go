@@ -105,8 +105,8 @@ func TestHelpSkipsCredentialAndDisableJoins(t *testing.T) {
 	// Break credential resolution after binding: help must still work.
 	m.mu.Lock()
 	file, _ := m.connections.Load()
-	old := file.Credentials[0].PAT
-	file.Credentials[0].PAT = "changed-secret"
+	old := file.OAuthCredentials[0].State
+	file.OAuthCredentials[0].State = "reauthorization_required"
 	_ = m.store.save(filepath.Join(m.store.dir, "platform-connections.json"), file, 1<<20)
 	m.mu.Unlock()
 	client, endpoint := toolPipeServer(t, m)
@@ -116,7 +116,7 @@ func TestHelpSkipsCredentialAndDisableJoins(t *testing.T) {
 		t.Fatal(err, out.String(), errOut.String())
 	}
 	m.mu.Lock()
-	file.Credentials[0].PAT = old
+	file.OAuthCredentials[0].State = old
 	_ = m.store.save(filepath.Join(m.store.dir, "platform-connections.json"), file, 1<<20)
 	m.mu.Unlock()
 	// Read the first output before stdin EOF, then disable and join the process.
@@ -182,9 +182,9 @@ func TestBindingCASAndAccountlessTool(t *testing.T) {
 	// Every call sees the latest explicitly verified replacement credential.
 	f = bindCLITool(t, m, room.RoomIdentity, members[0], c, "gitlab", f.Revision)
 	change := platformTestRequest(m)
-	change.ID, change.Version, change.PAT = c.ID, c.Version, "rotated-token"
+	change.ID, change.Version = c.ID, c.Version
 	change.ReferencedRooms = []RoomIdentity{room.RoomIdentity}
-	rotated, err := m.updatePlatformConnection(change, false)
+	rotated, err := testReauthorizeConnection(m, change)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +196,7 @@ func TestBindingCASAndAccountlessTool(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer m.finishPlatformCall(call)
-	if p.Values["token"] != "rotated-token" {
+	if p.Values["token"] != "" || call.account.Authorization.CredentialID == "" {
 		t.Fatal("stale credential")
 	}
 	_ = rotated
@@ -356,9 +356,9 @@ func TestProcessLifecycleSettlement(t *testing.T) {
 			case "rotation":
 				req := platformTestRequest(m)
 				req.Version = c.Version
-				req.PAT = "rotated-token"
+
 				req.ReferencedRooms = []RoomIdentity{room.RoomIdentity}
-				if _, err := m.updatePlatformConnection(req, false); err != nil {
+				if _, err := testReauthorizeConnection(m, req); err != nil {
 					t.Fatal(err)
 				}
 			case "deletion":

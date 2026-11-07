@@ -4,6 +4,7 @@ import "strings"
 
 const rootCLIHelp = `Usage: teamx COMMAND [--help]
   serve                         Start the service
+  connections upgrade           Upgrade connection data offline (--rooms-dir ROOT)
   member add/list/remove/run/pause/session rotate
   send | read                   Room messages
   inbox read                    Original platform notifications

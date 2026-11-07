@@ -45,6 +45,7 @@ func Help(args []string) bool {
 }
 
 type Process struct {
+	Args          []string `json:"-"`
 	Definition    Definition
 	Directory     string
 	Input         io.Reader
@@ -77,6 +78,9 @@ func (p Process) Run(ctx context.Context, args []string) int {
 		if value := p.Values[field]; value != "" {
 			env = append(env, key+"="+value)
 		}
+	}
+	if p.Args != nil {
+		args = p.Args
 	}
 	cmd := exec.CommandContext(ctx, p.Definition.Executable, args...)
 	cmd.Dir, cmd.Env, cmd.Stdin, cmd.Stdout, cmd.Stderr = dir, env, p.Input, p.Output, p.Error

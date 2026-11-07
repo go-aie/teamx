@@ -168,14 +168,11 @@ func TestIndependentEventsVerificationGuardsAndConnectionLifecycle(t *testing.T)
 	}
 	req := platformTestRequest(h.m)
 	req.Version = c.Version
-	req.PAT = "rotated-events-token"
+
 	req.ReferencedRooms = []RoomIdentity{h.room.RoomIdentity}
-	c = platformTestSave(t, h.m, req)
+	c = platformTestReauthorize(t, h.m, req)
 	if h.state().Status != "credentials_invalid" {
 		t.Fatal("rotation did not pause subscription")
-	}
-	if err := h.m.syncEventsSubscription(s.Metadata().Key, h.state().SubscriptionVersion); err == nil {
-		t.Fatal("unverified credential resumed subscription")
 	}
 	c = verifyTodoAccount(t, h.m, c, 101)
 	if err := h.m.syncEventsSubscription(s.Metadata().Key, h.state().SubscriptionVersion); err != nil {
@@ -185,8 +182,8 @@ func TestIndependentEventsVerificationGuardsAndConnectionLifecycle(t *testing.T)
 		t.Fatal("same-account rotation reset progress")
 	}
 	req.Version = c.Version
-	req.PAT = "other-account-events-token"
-	c = platformTestSave(t, h.m, req)
+
+	c = platformTestReauthorize(t, h.m, req)
 	verifyTodoAccount(t, h.m, c, 202)
 	if err := h.m.syncEventsSubscription(s.Metadata().Key, h.state().SubscriptionVersion); !errors.Is(err, ErrConflict) {
 		t.Fatal("account switch resumed old identity", err)
@@ -310,38 +307,13 @@ func TestIndependentEventsAppHandler(t *testing.T) {
 	}
 }
 
-func TestIndependentEventsLegacyCredentialSurvivesGitUnbind(t *testing.T) {
-	h := newEventHarness(t, gitlab.EventsConfig{})
-	id := saveTestWorkspaceCredential(t, h.m, h.room.RoomIdentity, "legacy-events-token")
-	s := h.state()
-	s.Binding = *credentialTestWorkspace(id).Binding
-	h.m.mu.Lock()
-	err := h.m.notifications.SaveLocked(s)
-	h.m.mu.Unlock()
-	if err != nil {
-		t.Fatal(err)
-	}
-	setTestEffectiveWorkspace(t, h.m, h.room, workspaceConfig{Root: "workspaces"}, 2)
-	if err := h.m.cleanupWorkspaceCredentials(h.room.RoomIdentity); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := h.m.loadWorkspaceCredential(h.room.RoomIdentity, id); err != nil {
-		t.Fatal("Git unbind removed subscription credential", err)
-	}
-	h.newRunner()
-	h.prepare()
-	if h.state().Binding.CredentialID != id {
-		t.Fatal("legacy subscription lost its saved credential")
-	}
-}
-
 func TestIndependentEventsInjectsOnlyVerifiedCredentialSnapshot(t *testing.T) {
 	h, c := newIndependentEventHarness(t)
-	t.Setenv("TEAMX_INDEPENDENT_EVENTS_PAT", "verified-events-token")
+
 	req := platformTestRequest(h.m)
-	req.PAT, req.TokenEnv, req.Version = "", "TEAMX_INDEPENDENT_EVENTS_PAT", c.Version
+	req.Version = c.Version
 	req.ReferencedRooms = []RoomIdentity{h.room.RoomIdentity}
-	c = verifyTodoAccount(t, h.m, platformTestSave(t, h.m, req), 101)
+	c = verifyTodoAccount(t, h.m, platformTestReauthorize(t, h.m, req), 101)
 	s := h.state()
 	h.m.mu.Lock()
 	binding, err := h.m.eventsBindingLocked(s)
@@ -352,15 +324,15 @@ func TestIndependentEventsInjectsOnlyVerifiedCredentialSnapshot(t *testing.T) {
 	called := false
 	h.m.platformHTTP = workspaceHTTPFunc(func(*http.Request) (*http.Response, error) { called = true; return nil, nil })
 	read := h.m.eventsRead(binding)
+	changeTestConnectionRevision(t, h.m, c.ID)
 
-	t.Setenv("TEAMX_INDEPENDENT_EVENTS_PAT", "unverified-other-token")
 	if _, err := read(context.Background(), "/projects/7/events", nil, nil, 1024); !errors.Is(err, ErrConflict) || called {
 		t.Fatal("unverified environment credential reached HTTP transport", err)
 	}
 	h.m.mu.Lock()
 	_, err = h.m.eventsBindingLocked(s)
 	h.m.mu.Unlock()
-	if err == nil {
-		t.Fatal("environment drift retained verified account admission")
+	if err != nil {
+		t.Fatal("metadata revision lost verified account", err)
 	}
 }

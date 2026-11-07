@@ -38,7 +38,7 @@ func TestPlatformGitLabVerificationTransport(t *testing.T) {
 			calls := 0
 			transport := platformRoundTrip(func(r *http.Request) (*http.Response, error) {
 				calls++
-				if r.URL.String() != "https://gitlab.invalid/api/v4/user" || r.Header.Get("PRIVATE-TOKEN") != "test-platform-secret" {
+				if r.URL.String() != "https://gitlab.invalid/api/v4/user" || r.Header.Get("Authorization") != "Bearer test-platform-secret" {
 					t.Error("incorrect target/auth")
 				}
 				return &http.Response{StatusCode: tc.status, Header: http.Header{"Location": []string{"https://other.invalid/"}}, Body: io.NopCloser(strings.NewReader(tc.body)), Request: r}, nil

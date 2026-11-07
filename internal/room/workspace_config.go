@@ -7,7 +7,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"unicode"
 
@@ -27,8 +26,6 @@ type workspaceRepository struct {
 }
 
 type workspaceBinding = platform.ProjectBinding
-
-var workspaceEnvName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 // Team suggestions may omit authentication; an effective binding must have
 // exactly one source. Normalization always copies nested values.
@@ -76,18 +73,13 @@ func normalizeWorkspace(input workspaceConfig, suggestion bool) (workspaceConfig
 			return workspaceConfig{}, fmt.Errorf("%w: repository and GitLab project do not match", ErrRequest)
 		}
 		if b.ConnectionID != "" {
-			if !validRestartID(b.ConnectionID) || b.TokenEnv != "" || b.CredentialID != "" ||
+			if !validRestartID(b.ConnectionID) ||
 				(b.ConnectionGeneration != "" && !validRestartID(b.ConnectionGeneration)) || b.ProjectID < 0 ||
 				(!suggestion && (b.ConnectionGeneration == "" || b.ProjectID <= 0)) {
 				return workspaceConfig{}, fmt.Errorf("%w: invalid workspace connection reference", ErrRequest)
 			}
-		} else if b.ConnectionGeneration != "" || b.ProjectID != 0 {
-			return workspaceConfig{}, ErrRequest
-		} else if (b.TokenEnv != "" && (!workspaceEnvName.MatchString(b.TokenEnv) || len(b.TokenEnv) > 128)) ||
-			(b.CredentialID != "" && !validRestartID(b.CredentialID)) ||
-			(b.TokenEnv != "" && b.CredentialID != "") ||
-			(suggestion && b.CredentialID != "") || (!suggestion && b.TokenEnv == "" && b.CredentialID == "") {
-			return workspaceConfig{}, fmt.Errorf("%w: invalid workspace authentication source", ErrRequest)
+		} else if !suggestion || b.ConnectionGeneration != "" || b.ProjectID != 0 {
+			return workspaceConfig{}, fmt.Errorf("%w: GitLab requires a platform connection", ErrRequest)
 		}
 		w.Binding = &b
 	}

@@ -12,7 +12,7 @@ import (
 
 func testGitLabWorkspace() workspaceConfig {
 	return workspaceConfig{Root: "workspaces", Repository: &workspaceRepository{URL: "https://gitlab.invalid/group/project.git", Branch: "main"},
-		Binding: &workspaceBinding{Provider: "gitlab", URL: "https://gitlab.invalid", Project: "group/project", TokenEnv: "GITLAB_PAT"}}
+		Binding: &workspaceBinding{Provider: "gitlab", URL: "https://gitlab.invalid", Project: "group/project", ConnectionID: strings.Repeat("a", 32), ConnectionGeneration: strings.Repeat("b", 32), ProjectID: 7}}
 }
 
 func TestWorkspaceConfigurationValidation(t *testing.T) {
@@ -48,10 +48,7 @@ func TestWorkspaceConfigurationValidation(t *testing.T) {
 		{"query", func(w *workspaceConfig) { w.Repository.URL += "?token=never-echo-this-secret" }},
 		{"fragment", func(w *workspaceConfig) { w.Repository.URL += "#never-echo-this-secret" }},
 		{"encoded-path", func(w *workspaceConfig) { w.Repository.URL = "https://gitlab.invalid/group%2fproject.git" }},
-		{"missing-auth", func(w *workspaceConfig) { w.Binding.TokenEnv = "" }},
-		{"both-auth", func(w *workspaceConfig) { w.Binding.CredentialID = strings.Repeat("a", 32) }},
-		{"invalid-env", func(w *workspaceConfig) { w.Binding.TokenEnv = "PAT=value" }},
-		{"invalid-id", func(w *workspaceConfig) { w.Binding.TokenEnv, w.Binding.CredentialID = "", "../secret" }},
+		{"missing-auth", func(w *workspaceConfig) { w.Binding.ConnectionID = "" }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			w := testGitLabWorkspace()
@@ -69,32 +66,31 @@ func TestWorkspaceConfigurationValidation(t *testing.T) {
 			t.Fatalf("accepted invalid branch %q", branch)
 		}
 	}
-	for _, kind := range []string{"git-only", "env", "credential", "suggestion"} {
+	for _, kind := range []string{"git-only", "connection", "suggestion"} {
 		w := testGitLabWorkspace()
-		switch kind {
-		case "git-only":
+		if kind == "git-only" {
 			w.Binding = nil
-		case "credential":
-			w.Binding.TokenEnv, w.Binding.CredentialID = "", strings.Repeat("a", 32)
-		case "suggestion":
-			w.Binding.TokenEnv = ""
+		}
+		if kind == "suggestion" {
+			w.Binding.ConnectionID = ""
+			w.Binding.ConnectionGeneration = ""
+			w.Binding.ProjectID = 0
 		}
 		if _, err := normalizeWorkspace(w, kind == "suggestion"); err != nil {
 			t.Fatal(kind, err)
 		}
 	}
-	w = testGitLabWorkspace()
-	w.Binding.TokenEnv, w.Binding.CredentialID = "", strings.Repeat("a", 32)
-	if _, err := normalizeWorkspace(w, true); err == nil {
-		t.Fatal("team may not reference room credentials")
-	}
+
 }
 
 func TestTeamWorkspaceDefaultsFreezeOnlyLocalConfiguration(t *testing.T) {
 	root, teams := t.TempDir(), t.TempDir()
 	team := testTeamDefinition(t)
 	w := testGitLabWorkspace()
-	w.Root, w.Binding.TokenEnv = "./local-output/./", ""
+	w.Root = "./local-output/./"
+	w.Binding.ConnectionID = ""
+	w.Binding.ConnectionGeneration = ""
+	w.Binding.ProjectID = 0
 	team.Workspace = &w // Suggested GitLab binding has no required credentials.
 	team.Members = append(team.Members, teamMember{ID: "writer", Name: "Writer", Instructions: "write carefully"})
 	dir := writeTestTeam(t, teams, team)

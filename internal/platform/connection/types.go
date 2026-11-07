@@ -3,6 +3,7 @@ package connection
 import (
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
 )
@@ -18,9 +19,11 @@ type Connection struct {
 	CredentialVersion    uint64               `json:"credential_version"`
 	CredentialKind       string               `json:"credential_kind"`
 	CLIProfile           *platform.CLIProfile `json:"cli_profile,omitempty"`
-	TokenEnv             string               `json:"token_env,omitempty"`
 	CredentialConfigured bool                 `json:"credential_configured"`
 	Validation           platform.Validation  `json:"validation"`
+	RevocationStatus     string               `json:"revocation_status,omitempty"`
+	AuthorizationStatus  string               `json:"authorization_status,omitempty"`
+	TokenExpiresAt       time.Time            `json:"token_expires_at,omitzero"`
 }
 
 // The disk record refers to an independently identified credential. Both are
@@ -45,21 +48,46 @@ func (Record) Format(s fmt.State, _ rune) {
 	_, _ = io.WriteString(s, "[REDACTED platform connection]")
 }
 
-// Only this private disk DTO serializes a plaintext PAT.
-type Credential struct {
-	ID           string `json:"id"`
-	ConnectionID string `json:"connection_id"`
-	PAT          string `json:"pat"`
-}
-
-func (Credential) Format(s fmt.State, _ rune) {
-	_, _ = io.WriteString(s, "[REDACTED platform credential]")
-}
-
 type Snapshot struct {
-	Version     int          `json:"version"`
-	Connections []Record     `json:"connections"`
-	Credentials []Credential `json:"credentials"`
+	Version            int                 `json:"version"`
+	Connections        []Record            `json:"connections"`
+	InstallationID     string              `json:"installation_id,omitempty"`
+	OAuthApplications  []OAuthApplication  `json:"oauth_applications,omitempty"`
+	OAuthCredentials   []OAuthCredential   `json:"oauth_credentials,omitempty"`
+	OAuthCleanup       []OAuthCleanup      `json:"oauth_cleanup,omitempty"`
+	OAuthClientImports []OAuthClientImport `json:"oauth_client_imports,omitempty"`
+}
+
+// Private OAuth records. Multiple connections may share one authorization.
+type OAuthApplication struct {
+	ID           string   `json:"id"`
+	Origin       string   `json:"origin"`
+	OwnerID      int64    `json:"owner_id"`
+	ClientID     string   `json:"client_id"`
+	ClientSecret string   `json:"client_secret"`
+	RedirectURI  string   `json:"redirect_uri"`
+	Scopes       []string `json:"scopes"`
+}
+
+type OAuthCredential struct {
+	ID               string    `json:"id"`
+	ApplicationID    string    `json:"application_id"`
+	UserID           int64     `json:"user_id"`
+	GrantGeneration  uint64    `json:"grant_generation"`
+	Scopes           []string  `json:"scopes"`
+	State            string    `json:"state"`
+	AccessToken      string    `json:"access_token,omitempty"`
+	RefreshToken     string    `json:"refresh_token,omitempty"`
+	ExpiresAt        time.Time `json:"expires_at,omitzero"`
+	TokenRevision    uint64    `json:"token_revision"`
+	RefreshAttemptID string    `json:"refresh_attempt_id,omitempty"`
+}
+
+func (OAuthApplication) Format(s fmt.State, _ rune) {
+	_, _ = io.WriteString(s, "[REDACTED OAuth application]")
+}
+func (OAuthCredential) Format(s fmt.State, _ rune) {
+	_, _ = io.WriteString(s, "[REDACTED OAuth credential]")
 }
 
 func (Snapshot) Format(s fmt.State, _ rune) {

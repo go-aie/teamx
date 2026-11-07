@@ -59,7 +59,7 @@ func (c *api) request(ctx context.Context, method, path string, body, out any) (
 	if err != nil {
 		return nil, errors.New("invalid API request")
 	}
-	req.Header.Set("PRIVATE-TOKEN", c.token)
+	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")

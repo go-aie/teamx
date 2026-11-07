@@ -7,7 +7,9 @@
     "provider": "gitlab",
     "url": "https://gitlab.invalid",
     "project": "group/project",
-    "token_env": "GITLAB_PAT"
+    "connection_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "connection_generation": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "project_id": 7
   },
   "project_id": 7,
   "config": {

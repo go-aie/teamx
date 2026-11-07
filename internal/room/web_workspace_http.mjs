@@ -25,10 +25,7 @@ if (process.env.TEAMX_WORKSPACE_UI_PHASE === "create") {
 } else {
   const catalogBefore = await ready();
   const origin = process.env.TEAMX_WORKSPACE_GITLAB_URL;
-  const connection = await api.request("/v1/platform/connections/save", {
-    service_epoch: catalogBefore.service_epoch, caller: { kind: "human", id: catalogBefore.operator },
-    id: crypto.randomUUID().replaceAll("-", ""), version: 0, name: "Workspace HTTP GitLab", provider: "gitlab", url: origin, token_env: "GITLAB_PAT",
-  });
+  const connection={id:process.env.TEAMX_WORKSPACE_CONNECTION_ID};
   await ui.el("open-workspace").emit("click");
   ui.el("workspace-repository").checked=true;
   await ui.el("workspace-repository").emit("change");

@@ -33,6 +33,14 @@ func (m *roomManager) shutdown(ctx context.Context) error {
 		s.cancel()
 		authDone = append(authDone, s.done)
 	}
+	for _, s := range m.gitlabAuthSessions {
+		m.cancelGitLabAuthLocked(s)
+		authDone = append(authDone, s.done)
+	}
+	for _, f := range m.oauthFlights {
+		f.cancel()
+		authDone = append(authDone, f.done)
+	}
 	globalDone, globalBusy := m.operationDone, m.busy
 	owners := map[RoomIdentity]*roomRuntime{}
 	for _, entry := range m.index.Rooms {
@@ -50,7 +58,7 @@ func (m *roomManager) shutdown(ctx context.Context) error {
 		}
 	}
 	// These only signal under the gate. Waiting happens outside it.
-	m.cancelPlatformCallsLocked(func(*platformCall) bool { return true })
+	authDone = append(authDone, m.cancelPlatformCallsLocked(func(*platformCall) bool { return true })...)
 	for owner := range owners {
 		m.notifications.CancelRoomLocked(owner)
 	}

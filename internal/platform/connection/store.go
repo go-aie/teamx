@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"io"
 	"os"
-
-	"github.com/go-aie/teamx/internal/platform"
 )
 
-const snapshotVersion = 2
+const snapshotVersion = 4
+const OAuthSnapshotVersion = snapshotVersion
+
 const maxPlatformConnectionsBytes int64 = 2 << 20
 
 // Store delegates all writes to the service's existing atomic snapshot owner.
@@ -32,43 +32,49 @@ func (m *Manager) Load() (Snapshot, error) {
 	name := m.store.Path
 	info, err := os.Lstat(name)
 	if errors.Is(err, os.ErrNotExist) {
-		return file, nil
+		file.InstallationID, err = newOpaqueID()
+		return file, err
 	}
-	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0600 {
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0600 || info.Size() > maxPlatformConnectionsBytes {
 		return file, fmt.Errorf("%w: platform connections must be a private regular file", ErrInvalid)
+	}
+	var header struct {
+		Version int `json:"version"`
+	}
+	data, readErr := os.ReadFile(name)
+	if readErr != nil || int64(len(data)) > maxPlatformConnectionsBytes || json.Unmarshal(data, &header) != nil {
+		return Snapshot{}, ErrInvalid
+	}
+	if header.Version != snapshotVersion {
+		return Snapshot{}, fmt.Errorf("%w: OAuth-only connections require version 4; stop the service and run teamx connections upgrade --rooms-dir ROOT", ErrInvalid)
 	}
 	var saved Snapshot
 	if readSnapshot(name, &saved) != nil {
 		return Snapshot{}, fmt.Errorf("%w: malformed platform connections", ErrInvalid)
 	}
 	file = saved
-	if file.Version != snapshotVersion && file.Version != 1 {
-		return Snapshot{}, fmt.Errorf("%w: unsupported platform connections version; supported versions are 1 (legacy credentials only) and 2", ErrInvalid)
+	return m.validateSnapshot(file)
+}
+
+func (m *Manager) validateSnapshot(file Snapshot) (Snapshot, error) {
+	if file.Version != snapshotVersion {
+		return Snapshot{}, fmt.Errorf("%w: unsupported platform connections version; supported version is 4; newer snapshots require a compatible binary", ErrInvalid)
 	}
-	if len(file.Connections) > 100 || len(file.Credentials) > 100 {
+	if len(file.Connections) > 100 {
 		return Snapshot{}, fmt.Errorf("%w: malformed platform connections", ErrInvalid)
 	}
-	seen := map[string]bool{}
-	credentials := map[string]Credential{}
-	for _, cred := range file.Credentials {
-		if !validRestartID(cred.ID) || !validRestartID(cred.ConnectionID) || !platform.ValidPAT(cred.PAT) || credentials[cred.ID].ID != "" {
-			return Snapshot{}, fmt.Errorf("%w: invalid platform credential", ErrInvalid)
-		}
-		credentials[cred.ID] = cred
+	if err := validateOAuth(file); err != nil {
+		return Snapshot{}, err
 	}
-	used := map[string]bool{}
+	seen := map[string]bool{}
 	for index, c := range file.Connections {
 		n, u, err := m.normalize(c.Name, c.Provider, c.URL)
-		sourceOK := c.CredentialKind == "pat" && credentials[c.CredentialID].ConnectionID == c.ID && !used[c.CredentialID] && c.TokenEnv == "" ||
-			c.CredentialKind == "env" && c.CredentialID == "" && envName.MatchString(c.TokenEnv) && len(c.TokenEnv) <= 128
-		if c.CredentialKind != "cli_profile" {
-			sourceOK = sourceOK && c.CLIProfile == nil
-		}
-		if c.CredentialKind == "cli_profile" {
-			sourceOK = file.Version == snapshotVersion && c.CLIProfile != nil && c.CredentialID == "" && c.TokenEnv == "" && m.validProfile != nil && m.validProfile(c.Provider, c.URL, *c.CLIProfile)
-		}
+		sourceOK := c.CredentialKind == "cli_profile" && c.CLIProfile != nil && c.CredentialID == "" && m.validProfile != nil && m.validProfile(c.Provider, c.URL, *c.CLIProfile)
 		if m.profileOnly != nil && m.profileOnly(c.Provider) {
 			sourceOK = sourceOK && c.CredentialKind == "cli_profile"
+		}
+		if c.CredentialKind == "oauth" {
+			sourceOK = validOAuthConnection(file, c)
 		}
 		v := c.Validation
 		identityOK := true
@@ -76,24 +82,16 @@ func (m *Manager) Load() (Snapshot, error) {
 			c.identity, identityOK = m.resolveIdentity(c.Provider, c.URL, v)
 		}
 		validationOK := identityOK && validValidation(v) && validIdentityBinding(c)
-		if file.Version == 1 {
-			validationOK = validationOK && c.CLIProfile == nil && v.Account == (platform.AccountIdentity{})
-		}
 		if c.CredentialKind == "cli_profile" && v.Status == "valid" {
 			validationOK = validationOK && v.Account.Valid() && v.Account.Provider == c.Provider && v.Account.Instance == c.URL && v.UserID == 0
 		}
 		if err != nil || n != c.Name || u != c.URL || !validRestartID(c.ID) || !validRestartID(c.Generation) || seen[c.ID] || c.Version == 0 ||
-			c.CredentialVersion == 0 || c.CredentialVersion > c.Version || !c.CredentialConfigured || !sourceOK || !validationOK {
+			c.RevocationStatus != "" || c.AuthorizationStatus != "" || !c.TokenExpiresAt.IsZero() ||
+			c.CredentialVersion == 0 || c.CredentialVersion > c.Version || (!c.CredentialConfigured && c.CredentialKind != "oauth") || !sourceOK || !validationOK {
 			return Snapshot{}, fmt.Errorf("%w: invalid platform connection", ErrInvalid)
 		}
 		file.Connections[index] = c
 		seen[c.ID] = true
-		if c.CredentialID != "" {
-			used[c.CredentialID] = true
-		}
-	}
-	if len(used) != len(credentials) {
-		return Snapshot{}, fmt.Errorf("%w: unreferenced platform credential", ErrInvalid)
 	}
 	return file, nil
 }

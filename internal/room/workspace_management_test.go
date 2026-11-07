@@ -18,9 +18,35 @@ import (
 	"time"
 )
 
-func workspaceRequest(m *roomManager, room roomSummary, target workspaceConfig) workspaceApplyRequest {
+func workspaceRequest(t *testing.T, m *roomManager, room roomSummary, target workspaceConfig) workspaceApplyRequest {
+	t.Helper()
 	id, _ := newOpaqueID()
-	return workspaceApplyRequest{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, OperationID: id, ExpectedVersion: 1, Target: target}
+	req := workspaceApplyRequest{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, OperationID: id, ExpectedVersion: 1, Target: target}
+	if target.Binding != nil {
+		file, err := m.connections.Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var c platformConnection
+		for _, v := range file.Connections {
+			if v.Provider == "gitlab" && v.URL == target.Binding.URL && (target.Binding.ConnectionID == "" || target.Binding.ConnectionID == v.ID) {
+				c.Connection = v.Connection
+				break
+			}
+		}
+		if c.ID == "" {
+			q := platformTestRequest(m)
+			q.URL = target.Binding.URL
+			c = platformTestSave(t, m, q)
+		}
+		binding := *target.Binding
+		binding.ConnectionID = c.ID
+		binding.ConnectionGeneration = ""
+		binding.ProjectID = 0
+		req.Target.Binding = &binding
+		req.ConnectionVersion = c.Version
+	}
+	return req
 }
 func awaitWorkspace(t *testing.T, m *roomManager) workspaceOperation {
 	t.Helper()
@@ -91,7 +117,7 @@ func TestWorkspaceApplyUntouchedMembersAndIdentity(t *testing.T) {
 	if _, err := s.control(context.Background(), apiRequest{AgentID: member.AgentID, MembershipID: member.MembershipID}, "pause"); err != nil {
 		t.Fatal(err)
 	}
-	req := workspaceRequest(m, room, workspaceConfig{Root: "outputs"})
+	req := workspaceRequest(t, m, room, workspaceConfig{Root: "outputs"})
 	applyWorkspace(t, m, req)
 	op := awaitWorkspace(t, m)
 	if op.Status != "completed" || !op.ConfigCommitted || len(op.SessionsUpdated) != len(saved.Members) {
@@ -176,7 +202,7 @@ func TestWorkspaceApplyJoinsRunningSessionsBeforePreparation(t *testing.T) {
 		t.Fatal("no active turn")
 	}
 	beforeRuns := runs.Load()
-	req := workspaceRequest(m, room, workspaceConfig{Root: "settled-target"})
+	req := workspaceRequest(t, m, room, workspaceConfig{Root: "settled-target"})
 	// A disconnected HTTP caller does not cancel management ownership.
 	data, _ := json.Marshal(req)
 	httpReq := httptest.NewRequest(http.MethodPost, "/v1/workspace/apply", bytes.NewReader(data))
@@ -245,101 +271,6 @@ func TestWorkspaceApplyJoinsRunningSessionsBeforePreparation(t *testing.T) {
 	}
 }
 
-func TestWorkspaceApplyGitLabPATReplacementAndReceipt(t *testing.T) {
-	f := newWorkspaceFixture(t)
-	m := activationTestManager(t)
-	m.workspaceRun = f.run
-	m.platformHTTP = workspaceHTTPFunc(f.http)
-	m.factory = controlledActivationFactory(nil, nil)
-	room := managerCreate(t, m, "binding")
-	openRoomOK(t, m, room, "initial")
-	req := workspaceRequest(m, room, workspaceConfig{Repository: f.config.Workspace.Repository, Binding: &workspaceBinding{Provider: "gitlab", URL: "https://gitlab.invalid", Project: "group/project"}})
-	req.PAT = "first-secret-pat"
-	applyWorkspace(t, m, req)
-	op := awaitWorkspace(t, m)
-	if op.Status != "completed" {
-		t.Fatal(op)
-	}
-	initialID := op.Target.Binding.CredentialID
-	if op.Target.Root != "workspaces/repos/"+req.OperationID || initialID == "" {
-		t.Fatal(op)
-	}
-	firstConfig, _ := readManagedRoom(t, m, room)
-	firstPaths := make([]string, 0)
-	for _, member := range firstConfig.Members {
-		firstPaths = append(firstPaths, member.Workspace)
-		if member.ToolEnv["TEAMX_GITLAB_TOOLS"] == "" || !strings.Contains(member.Instructions, "tools run gitlab --help") {
-			t.Fatal("provider not attached")
-		}
-	}
-	req.PAT = "ignored-secret-pat"
-	applyWorkspace(t, m, req)
-	req.PAT = ""
-	applyWorkspace(t, m, req)
-	entries, _ := os.ReadDir(filepath.Join(m.store.dir, "credentials"))
-	if len(entries) != 1 {
-		t.Fatal("duplicate stored PAT")
-	}
-	resolved, err := m.loadWorkspaceCredential(room.RoomIdentity, initialID)
-	if err != nil || resolved.value != "first-secret-pat" {
-		t.Fatal("duplicate replaced secret", err)
-	}
-	next := workspaceRequest(m, room, cloneWorkspaceOperation(op).Target)
-	next.ExpectedVersion = 2
-	next.PAT = "replacement-secret-pat"
-	next.Target.Binding.CredentialID = ""
-	applyWorkspace(t, m, next)
-	newOp := awaitWorkspace(t, m)
-	if newOp.Status != "completed" {
-		t.Fatal(newOp)
-	}
-	if newOp.Target.Binding.CredentialID == initialID {
-		t.Fatal("reused credential record")
-	}
-	secondConfig, _ := readManagedRoom(t, m, room)
-	for i, member := range secondConfig.Members {
-		if member.Workspace != firstPaths[i] {
-			t.Fatal("replacement changed clone")
-		}
-		if member.Instructions != firstConfig.Members[i].Instructions {
-			t.Fatal("duplicated usage")
-		}
-	}
-	status := queryWorkspace(t, m, room, next.OperationID)
-	if status.CredentialStatus != "configured" {
-		t.Fatal(status)
-	}
-	// PAT exists only in the credential files, never config, resources or receipts.
-	filepath.WalkDir(m.store.dir, func(path string, entry os.DirEntry, err error) error {
-		if err != nil || entry.IsDir() || strings.Contains(path, string(filepath.Separator)+"credentials"+string(filepath.Separator)) {
-			return err
-		}
-		data, _ := os.ReadFile(path)
-		if bytes.Contains(data, []byte("secret-pat")) {
-			t.Errorf("PAT leaked into %s", path)
-		}
-		return nil
-	})
-	// Revisit uses local checks and the committed provider configuration.
-	f.calls = nil
-	other := managerCreate(t, m, "other")
-	openRoomOK(t, m, other, "away")
-	openRoomOK(t, m, room, "return")
-	for _, call := range f.calls {
-		if strings.HasPrefix(call, "api ") || strings.Contains(call, "clone") {
-			t.Fatal("remote revisit", call)
-		}
-	}
-	for _, mutate := range []func(*workspaceApplyRequest){func(r *workspaceApplyRequest) { r.Target.Repository.URL = "https://gitlab.invalid/group/other.git" }, func(r *workspaceApplyRequest) { r.Target.Binding = nil }, func(r *workspaceApplyRequest) { r.Target.Root = "different" }} {
-		bad := workspaceRequest(m, room, newOp.Target)
-		bad.ExpectedVersion = 3
-		mutate(&bad)
-		if r := managerHTTP(m, "/v1/workspace/apply", bad); r.Code == 200 {
-			t.Fatal("unsupported binding change accepted")
-		}
-	}
-}
-
 func TestWorkspaceApplyPreparationFailureAndExplicitRetry(t *testing.T) {
 	f := newWorkspaceFixture(t)
 	f.failClone = true
@@ -349,7 +280,7 @@ func TestWorkspaceApplyPreparationFailureAndExplicitRetry(t *testing.T) {
 	m.factory = controlledActivationFactory(nil, nil)
 	room := managerCreate(t, m, "failure")
 	s := openRoomOK(t, m, room, "initial")
-	req := workspaceRequest(m, room, workspaceConfig{Repository: f.config.Workspace.Repository})
+	req := workspaceRequest(t, m, room, workspaceConfig{Repository: f.config.Workspace.Repository})
 	applyWorkspace(t, m, req)
 	op := awaitWorkspace(t, m)
 	if op.Status != "failed" || op.ErrorCode != "preparation_failed" || op.Phase != "preparing" {
@@ -396,7 +327,7 @@ func TestWorkspaceApplyRevisesSettledPreparationFailure(t *testing.T) {
 			m.factory = controlledActivationFactory(nil, nil)
 			room := managerCreate(t, m, "revise-failure")
 			openRoomOK(t, m, room, "initial")
-			original := workspaceRequest(m, room, testGitLabWorkspace())
+			original := workspaceRequest(t, m, room, testGitLabWorkspace())
 			original.Target.Repository.URL = strings.TrimSuffix(original.Target.Repository.URL, ".git")
 			applyWorkspace(t, m, original)
 			failed := awaitWorkspace(t, m)
@@ -408,9 +339,9 @@ func TestWorkspaceApplyRevisesSettledPreparationFailure(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			corrected := workspaceRequest(m, room, workspaceConfig{Root: "outputs"})
+			corrected := workspaceRequest(t, m, room, workspaceConfig{Root: "outputs"})
 			if repository {
-				corrected.Target = testGitLabWorkspace()
+				corrected = workspaceRequest(t, m, room, testGitLabWorkspace())
 			}
 			corrected.ReplacesOperationID = failed.OperationID
 			// Every uncertain or later-stage failure remains protected, including
@@ -466,7 +397,7 @@ func TestWorkspaceApplyRevisesSettledPreparationFailure(t *testing.T) {
 				t.Fatal("duplicate request performed preparation")
 			}
 			// Later configuration versions must not invalidate superseded history.
-			next := workspaceRequest(m, room, completed.Target)
+			next := workspaceRequest(t, m, room, completed.Target)
 			next.ExpectedVersion = completed.TargetVersion
 			applyWorkspace(t, m, next)
 			if op := awaitWorkspace(t, m); op.Status != "completed" {
@@ -525,7 +456,7 @@ func TestWorkspaceApplyReconcilesCrossFileInterruption(t *testing.T) {
 				}
 				return rename(from, to)
 			}
-			req := workspaceRequest(m, room, workspaceConfig{Root: "after-interruption"})
+			req := workspaceRequest(t, m, room, workspaceConfig{Root: "after-interruption"})
 			applyWorkspace(t, m, req)
 			op := awaitWorkspace(t, m)
 			if !injected.Load() || op.Status != "failed" {
@@ -579,7 +510,7 @@ func TestWorkspaceApplySupplementBindingPreservesCheckout(t *testing.T) {
 	m.platformHTTP = workspaceHTTPFunc(f.http)
 	room := managerCreate(t, m, "supplement")
 	openRoomOK(t, m, room, "initial")
-	req := workspaceRequest(m, room, workspaceConfig{Repository: f.config.Workspace.Repository})
+	req := workspaceRequest(t, m, room, workspaceConfig{Repository: f.config.Workspace.Repository})
 	applyWorkspace(t, m, req)
 	op := awaitWorkspace(t, m)
 	if op.Status != "completed" {
@@ -590,10 +521,12 @@ func TestWorkspaceApplySupplementBindingPreservesCheckout(t *testing.T) {
 	workspaceGit(t, dir, "checkout", "-b", "my-work")
 	os.WriteFile(filepath.Join(dir, "README"), []byte("local edits"), 0600)
 	f.calls = nil
-	next := workspaceRequest(m, room, cloneWorkspaceOperation(op).Target)
+	next := workspaceRequest(t, m, room, cloneWorkspaceOperation(op).Target)
 	next.ExpectedVersion = 2
-	next.Target.Binding = &workspaceBinding{Provider: "gitlab", URL: "https://gitlab.invalid", Project: "group/project"}
-	next.PAT = "supplement-pat"
+	c := platformTestSave(t, m, platformTestRequest(m))
+	next.Target.Binding = &workspaceBinding{Provider: "gitlab", URL: c.URL, Project: "group/project", ConnectionID: c.ID}
+	next.ConnectionVersion = c.Version
+
 	applyWorkspace(t, m, next)
 	op = awaitWorkspace(t, m)
 	if op.Status != "completed" {
@@ -639,7 +572,7 @@ func TestWorkspaceApplyMemberFailureBlocksTeamAndRetriesSameGeneration(t *testin
 		_ = os.WriteFile(path, data, 0600)
 		return svc, openErr
 	}
-	req := workspaceRequest(m, room, workspaceConfig{Root: "new-member-config"})
+	req := workspaceRequest(t, m, room, workspaceConfig{Root: "new-member-config"})
 	applyWorkspace(t, m, req)
 	op := awaitWorkspace(t, m)
 	if op.Status != "failed" || op.ErrorCode != "session_failed" || !op.ConfigCommitted || len(op.SessionsUpdated) != len(op.Members) {
@@ -668,7 +601,7 @@ func TestWorkspaceApplyConcurrentRequestsAndRedactedErrors(t *testing.T) {
 	m.factory = controlledActivationFactory(nil, nil)
 	room := managerCreate(t, m, "concurrent")
 	openRoomOK(t, m, room, "initial")
-	req := workspaceRequest(m, room, workspaceConfig{Root: "concurrent-target"})
+	req := workspaceRequest(t, m, room, workspaceConfig{Root: "concurrent-target"})
 	var wg sync.WaitGroup
 	codes := make(chan int, 12)
 	for i := 0; i < 12; i++ {
@@ -687,9 +620,9 @@ func TestWorkspaceApplyConcurrentRequestsAndRedactedErrors(t *testing.T) {
 		t.Fatal(op)
 	}
 	// Error bodies never echo URL credentials or a submitted PAT.
-	bad := workspaceRequest(m, room, workspaceConfig{Repository: &workspaceRepository{URL: "https://user:never-echo-this@gitlab.invalid/group/project.git"}})
+	bad := workspaceRequest(t, m, room, workspaceConfig{Repository: &workspaceRepository{URL: "https://user:never-echo-this@gitlab.invalid/group/project.git"}})
 	bad.ExpectedVersion = 2
-	bad.PAT = "never-echo-this"
+
 	r := managerHTTP(m, "/v1/workspace/apply", bad)
 	if r.Code == 200 || strings.Contains(r.Body.String(), "never-echo-this") {
 		t.Fatal(r.Code, r.Body.String())
@@ -722,7 +655,7 @@ func TestWorkspaceApplyHealthySessionUsesFreshGeneration(t *testing.T) {
 			t.Fatal(r.Code, r.Body.String())
 		}
 	}
-	req := workspaceRequest(m, room, workspaceConfig{Root: "fresh-context"})
+	req := workspaceRequest(t, m, room, workspaceConfig{Root: "fresh-context"})
 	applyWorkspace(t, m, req)
 	op := awaitWorkspace(t, m)
 	if op.Status != "completed" {
@@ -763,7 +696,7 @@ func TestWorkspaceRetryRequiresPreparationProcessSettlement(t *testing.T) {
 			// verification on an existing clone; no clone-pending marker is eligible
 			// for replay merely because the process group has exited.
 			m.workspaceRun = f.run
-			baseReq := workspaceRequest(m, room, workspaceConfig{Repository: f.config.Workspace.Repository})
+			baseReq := workspaceRequest(t, m, room, workspaceConfig{Repository: f.config.Workspace.Repository})
 			applyWorkspace(t, m, baseReq)
 			baseOp := awaitWorkspace(t, m)
 			if baseOp.Status != "completed" {
@@ -791,8 +724,8 @@ func TestWorkspaceRetryRequiresPreparationProcessSettlement(t *testing.T) {
 				return nil, errors.New("injected unsettled preparation")
 			}
 			target := baseOp.Target
-			target.Binding = &workspaceBinding{Provider: "gitlab", URL: "https://gitlab.invalid", Project: "group/project", TokenEnv: "GITLAB_PAT"}
-			req := workspaceRequest(m, room, target)
+			target.Binding = &workspaceBinding{Provider: "gitlab", URL: "https://gitlab.invalid", Project: "group/project", ConnectionID: strings.Repeat("a", 32), ConnectionGeneration: strings.Repeat("b", 32), ProjectID: 7}
+			req := workspaceRequest(t, m, room, target)
 			req.ExpectedVersion = 2
 			applyWorkspace(t, m, req)
 			op := awaitWorkspace(t, m)
@@ -861,7 +794,7 @@ func TestWorkspaceQuerySuggestionsAreDisplayOnly(t *testing.T) {
 	m := activationTestManager(t)
 	room := managerCreate(t, m, "workspace-suggestions")
 	saved, _ := readManagedRoom(t, m, room)
-	suggestion := workspaceConfig{Root: "suggested", Repository: &workspaceRepository{URL: "https://gitlab.invalid/group/project.git"}, Binding: &workspaceBinding{Provider: "gitlab", URL: "https://gitlab.invalid", Project: "group/project", TokenEnv: "ROOM_GITLAB_TOKEN"}}
+	suggestion := workspaceConfig{Root: "suggested", Repository: &workspaceRepository{URL: "https://gitlab.invalid/group/project.git"}, Binding: &workspaceBinding{Provider: "gitlab", URL: "https://gitlab.invalid", Project: "group/project"}}
 	m.teams = map[string]teamDefinition{saved.TeamID: {Workspace: &suggestion}}
 	response := queryWorkspace(t, m, room, "")
 	if response.Suggestions == nil || !equalWorkspace(*response.Suggestions, suggestion) || response.Workspace.Repository != nil || response.Workspace.Binding != nil || response.Operation != nil {

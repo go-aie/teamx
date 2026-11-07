@@ -89,7 +89,7 @@ test("Lark connection discovers the CLI and profile, derives origin and verifies
  assert.equal(ui.el("connection-executable").value,"/fixture/lark-cli");assert.equal(ui.el("connection-name").value,"飞书");
  assert.match(ui.el("connection-account").textContent,/测试用户/);
  await ui.el("connection-form").emit("submit");const saved=api.calls.find(x=>x.path==="/v1/platform/connections/save").body;
- assert.equal(saved.provider,"lark");assert.equal(saved.url,"https://open.feishu.cn");assert.equal(saved.snapshot_version,2);
+ assert.equal(saved.provider,"lark");assert.equal(saved.url,"https://open.feishu.cn");assert.equal(saved.snapshot_version,undefined);
  assert.equal(saved.cli_profile.cli_version,"1.0.99");assert.equal(saved.cli_profile.profile,"explicit");assert.equal(saved.cli_profile.brand,"feishu");
  assert.equal(saved.pat,undefined);assert.equal(saved.token_env,undefined);
  assert.equal(api.calls.filter(x=>x.path==="/v1/platform/connections/verify").length,1);

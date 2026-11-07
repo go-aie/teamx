@@ -182,14 +182,22 @@ func TestGitLabDeliveryChecksScopeAndStableActivation(t *testing.T) {
 			case "binding":
 				// Invalidate the subscription itself, independent of Workspace.
 				h.m.mu.Lock()
-				s.Binding.TokenEnv = "OTHER_PAT"
+				s.Binding.ConnectionGeneration = strings.Repeat("e", 32)
 				err := h.m.notifications.SaveLocked(s)
 				h.m.mu.Unlock()
 				if err != nil {
 					t.Fatal(err)
 				}
 			case "credential":
-				t.Setenv("GITLAB_PAT", "")
+				h.m.mu.Lock()
+				file, loadErr := h.m.connections.Load()
+				if loadErr == nil {
+					_, _, loadErr = h.m.connections.LogoutOAuth(file.Connections[0].CredentialID)
+				}
+				h.m.mu.Unlock()
+				if loadErr != nil {
+					t.Fatal(loadErr)
+				}
 			}
 			if err := h.m.notifications.Deliver(context.Background(), h.m.testEventsKey(owner), version); err == nil {
 				t.Fatal("crossed boundary")

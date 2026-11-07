@@ -1081,24 +1081,11 @@ test("Workspace selects an existing connection for initial and supplemental bind
   }
 });
 
-test("Workspace keeps legacy authentication until an explicit connection migration", async () => {
-  const api = workspaceServer(), ws = api.workspaces.get("A");
-  ws.workspace.repository = { url: "https://gitlab.invalid/group/project.git" };
-  ws.workspace.binding = { provider: "gitlab", url: "https://gitlab.invalid", project: "group/project", token_env: "LEGACY_PAT" };
-  const ui = await launch(api); await ui.el("open-workspace").emit("click");
-  assert.equal(ui.el("workspace-connection").value, "keep");
-  assert.equal(api.calls.some(c => c.path === "/v1/workspace/apply"), false);
-  ui.el("workspace-connection").value = "a".repeat(32); await ui.el("workspace-connection").emit("change");
-  await ui.el("workspace-form").emit("submit");
-  const sent = api.calls.find(c => c.path === "/v1/workspace/apply").data;
-  assert.equal(sent.target.binding.connection_id, "a".repeat(32));
-  assert.equal(sent.target.binding.token_env, undefined); assert.equal(sent.target.binding.credential_id, undefined);
-});
 
 test("Workspace plain root, connection choice and suggestions require an explicit application", async () => {
   const api = workspaceServer();
   api.workspaces.get("A").suggestions = { repository: { url: "https://gitlab.invalid/group/project.git", branch: "main" },
-    binding: { provider: "gitlab", url: "https://gitlab.invalid", project: "group/project", token_env: "GITLAB_PAT" } };
+    binding: { provider: "gitlab", url: "https://gitlab.invalid", project: "group/project" } };
   const ui = await launch(api); await ui.el("open-workspace").emit("click");
   assert.equal(ui.el("workspace-repository").checked, false); assert.equal(ui.el("workspace-gitlab").checked, false);
   assert.equal(ui.el("workspace-repo-url").value, "https://gitlab.invalid/group/project.git");
@@ -1150,7 +1137,7 @@ test("failed initialization restores an editable target, keeps message nodes sta
   const failedID = "a".repeat(32);
   ws.operation = { operation_id: failedID, status: "failed", phase: "preparing", error_code: "preparation_failed",
     target: { root: `workspaces/repos/${failedID}`, repository: { url: "https://gitlab.invalid/group/old", branch: "main" },
-      binding: { provider: "gitlab", url: "https://gitlab.invalid", project: "group/old", token_env: "GITLAB_PAT" } } };
+      binding: { provider: "gitlab", url: "https://gitlab.invalid", project: "group/old" } } };
   ws.can_revise = true; ws.observation = identity(room); delete api.catalog.rooms[0]?.service;
   const ui = await launch(api);
   await ui.el("open-workspace").emit("click");
@@ -1417,64 +1404,10 @@ test("late GitLab save response stays with its original room after switching", a
   assert.equal(api.calls.find(call => call.path === "/v1/platform/notifications/configure").data.room_instance, "instance-A");
 });
 
-test("platform settings save, verify, rotate and delete without storing credentials or changing rooms", async () => {
-  const api = server([makeRoom("A")]);
-  let items = [], serial = 0;
-  api.hook = (path, data) => {
-    if (path.startsWith("/v1/platform/connections?")) return { connections: structuredClone(items) };
-    if (!path.startsWith("/v1/platform/connections/")) return;
-    assert.equal(data.service_epoch, "manager"); assert.equal(data.caller.kind, "human");
-    const action = path.split("/").at(-1), old = items.find(item => item.id === data.id);
-    if (action === "delete") { items = []; return { deleted: true }; }
-    if (action === "verify") {
-      assert.deepEqual(Object.keys(data).sort(), ["caller", "id", "service_epoch", "version"]);
-      const item = { ...old, version: ++serial, validation: { status: "valid", username: "tester", user_id: 101, checked_at: "2026-11-02T00:00:00Z" } };
-      items = [item]; return structuredClone(item);
-    }
-    assert.equal(data.pat, serial ? "replacement-private-token" : "initial-private-token");
-    const item = { id: data.id, name: data.name, provider: data.provider, url: data.url, version: ++serial,
-      credential_version: (old?.credential_version || 0) + 1, credential_kind: "pat", credential_configured: true, validation: { status: "unverified" } };
-    items = [item]; return structuredClone(item);
-  };
-  const ui = await launch(api);
-  await ui.draft("keep my draft");
-  await ui.el("open-settings").emit("click"); assert.equal(ui.el("settings-dialog").open, true);
-  assert.equal(ui.el("connections-empty").hidden, false);
-  await ui.el("connection-new").emit("click");
-  ui.el("connection-name").value = "Company GitLab"; ui.el("connection-url").value = "https://gitlab.invalid";
-  ui.el("connection-pat").value = "initial-private-token";
-  await ui.el("connection-form").emit("submit");
-  assert.equal(ui.el("connection-pat").value, "");
-  assert.equal(ui.el("connection-form").hidden, true);
-  assert.equal(ui.el("connections-list-view").hidden, false);
-  assert.equal(ui.el("connections-list").children.length, 1);
-  assert.equal(ui.el("connections-feedback").textContent, "连接已保存。");
-  await ui.el("connections-list").children[0].emit("click");
-  assert.equal(ui.el("connection-url").readOnly, true);
-  assert.equal(ui.el("connection-credential").hidden, true);
-  await ui.el("connection-verify").emit("click");
-  assert.equal(ui.el("connection-validation").textContent, "已验证 · @tester");
-  assert.match(ui.el("connection-validation").title, /账号 ID 101/);
-  ui.el("connection-pat").value = "replacement-private-token";
-  const calls = api.calls.length;
-  await ui.el("connection-verify").emit("click");
-  assert.equal(api.calls.length, calls); assert.match(ui.el("connections-feedback").textContent, /先保存/);
-  await ui.el("connection-form").emit("submit");
-  assert.equal(ui.el("connection-form").hidden, true);
-  assert.equal(ui.el("connections-list-view").hidden, false);
-  assert.equal(ui.el("connections-list").children.length, 1);
-  await ui.el("connections-list").children[0].emit("click");
-  assert.match(ui.el("connection-validation").textContent, /尚未验证/);
-  assert.equal(JSON.stringify([...ui.saved]).includes("private-token"), false);
-  assert.equal(ui.el("message-input").value, "keep my draft");
-  await ui.el("connection-delete").emit("click");
-  assert.equal(ui.el("connections-empty").hidden, false);
-  assert.equal(ui.el("connections-feedback").textContent, "连接已删除。");
-  await ui.el("close-settings").emit("click"); assert.equal(ui.el("settings-dialog").open, false);
-});
 
 test("connection save returns only after confirmation and a late list read cannot hide the saved item", async () => {
   const api = server([]);
+ const item={id:"a".repeat(32),name:"Original GitLab",provider:"gitlab",url:"https://gitlab.invalid",version:1,credential_kind:"oauth",credential_configured:true,authorization_status:"active",validation:{status:"valid",username:"tester"}};
   let finishRead, finishSave;
   api.hook = path => {
     if (path.startsWith("/v1/platform/connections?")) return new Promise(resolve => { finishRead = resolve; });
@@ -1482,22 +1415,20 @@ test("connection save returns only after confirmation and a late list read canno
   };
   const ui = await launch(api);
   const opening = ui.el("open-settings").emit("click");
-  await ui.el("connection-new").emit("click");
+ finishRead({connections:[item]});await opening;
+ await ui.el("connections-list").children[0].emit("click");
   ui.el("connection-name").value = "Confirmed GitLab";
   ui.el("connection-url").value = "https://gitlab.invalid";
-  ui.el("connection-pat").value = "fixture-only-token";
   const saving = ui.el("connection-form").emit("submit");
   assert.equal(ui.el("connection-form").hidden, false);
   assert.equal(ui.el("connections-list-view").hidden, true);
   assert.equal(ui.el("connection-fields").disabled, true);
-  finishSave({ id: "a".repeat(32), name: "Confirmed GitLab", provider: "gitlab", url: "https://gitlab.invalid", version: 1, credential_kind: "pat", credential_configured: true, validation: { status: "unverified" } });
+  finishSave({ id: "a".repeat(32), name: "Confirmed GitLab", provider: "gitlab", url: "https://gitlab.invalid", version: 1, credential_kind: "oauth", credential_configured: true, validation: { status: "unverified" } });
   await saving;
   assert.equal(ui.el("connection-form").hidden, true);
   assert.equal(ui.el("connections-list-view").hidden, false);
-  assert.equal(ui.el("connection-pat").value, "");
   assert.equal(ui.el("connections-list").children.length, 1);
-  finishRead({ connections: [] });
-  await opening;
+
   assert.equal(ui.el("connections-list").children.length, 1);
   assert.equal(ui.el("connections-empty").hidden, true);
   assert.equal(ui.el("connections-list-view").attributes["aria-busy"], "false");
@@ -1566,51 +1497,7 @@ test("platform connections load on open and return, with retry only after a fail
   assert.equal(ui.el("connections-load-error").hidden, true);
 });
 
-test("uncertain platform save clears PAT, never replays and reconciles only through explicit refresh", async () => {
-  const api = server([]); let saves = 0, lists = 0;
-  api.hook = (path) => {
-    if (path.startsWith("/v1/platform/connections?")) { lists++; return { connections: [] }; }
-    if (path === "/v1/platform/connections/save") { saves++; return Promise.reject(new Error("lost response")); }
-  };
-  const ui = await launch(api);
-  await ui.el("open-settings").emit("click"); await ui.el("connection-new").emit("click");
-  ui.el("connection-name").value = "Personal"; ui.el("connection-url").value = "https://gitlab.invalid";
-  ui.el("connection-pat").value = "do-not-retain-me";
-  await ui.el("connection-form").emit("submit");
-  assert.equal(ui.el("connection-pat").value, "");
-  assert.equal(ui.el("connection-form").hidden, false);
-  assert.equal(ui.el("connections-list-view").hidden, true);
-  assert.equal(ui.el("connection-name").value, "Personal");
-  assert.match(ui.el("connections-feedback").textContent, /未确认/);
-  await ui.refresh(); await settle(); assert.equal(saves, 1); assert.equal(lists, 1);
-  await ui.el("connection-back").emit("click"); assert.equal(lists, 2); assert.equal(saves, 1);
-  const reload = await launch(api, ui.saved); await settle(); assert.equal(saves, 1);
-  assert.equal(JSON.stringify([...ui.saved]).includes("do-not-retain-me"), false);
-  assert.equal(reload.el("settings-dialog").open, false);
-});
 
-test("platform environment auth clears PAT on mode change and close", async () => {
-  const api = server([]); let saved;
-  api.hook = (path, data) => {
-    if (path.startsWith("/v1/platform/connections?")) return { connections: [] };
-    if (path === "/v1/platform/connections/save") {
-      saved = data; assert.equal(data.pat, undefined); assert.equal(data.token_env, "COMPANY_GITLAB_PAT");
-      return { ...data, credential_kind: "env", credential_configured: true, version: 1, validation: { status: "unverified" } };
-    }
-  };
-  const ui = await launch(api);
-  await ui.el("open-settings").emit("click"); await ui.el("connection-new").emit("click");
-  ui.el("connection-name").value = "Company"; ui.el("connection-url").value = "https://gitlab.invalid";
-  ui.el("connection-pat").value = "temporary-pat";
-  ui.el("connection-auth").value = "env"; await ui.el("connection-auth").emit("change");
-  assert.equal(ui.el("connection-pat").value, "");
-  ui.el("connection-env").value = "COMPANY_GITLAB_PAT";
-  await ui.el("connection-form").emit("submit"); assert.ok(saved);
-  ui.el("connection-pat").value = "pagehide-temporary-pat";
-  await ui.window.emit("pagehide"); assert.equal(ui.el("connection-pat").value, "");
-  ui.el("connection-pat").value = "another-temporary-pat";
-  await ui.el("close-settings").emit("click"); assert.equal(ui.el("connection-pat").value, "");
-});
 
 
 test("Workspace connection manager preserves selection, draft and project without applying", async () => {
@@ -1630,29 +1517,6 @@ test("Workspace connection manager preserves selection, draft and project withou
   assert.equal(api.calls.some(call => call.path === "/v1/workspace/apply"), false);
 });
 
-test("shared connection replacement shows impacted Rooms and acknowledges them only after confirmation", async () => {
-  const api = server([makeRoom("A")]);
-  const item = { id: "a".repeat(32), name: "Shared", provider: "gitlab", url: "https://gitlab.invalid", version: 4,
-    credential_kind: "pat", credential_configured: true, validation: { status: "unverified" },
-    references: [{ room_id: "A", room_instance: "instance-A", name: "Room A" }, { room_id: "B", room_instance: "instance-B", name: "Room B", pending: true }] };
-  const mutations = []; let allow = false;
-  api.confirm = text => { assert.match(text, /Room A、Room B/); return allow; };
-  api.hook = (path, data) => {
-    if (path.startsWith("/v1/platform/connections?")) return { connections: [structuredClone(item)] };
-    if (path === "/v1/platform/connections/save") { mutations.push(structuredClone(data)); return structuredClone({ ...item, version: 5 }); }
-  };
-  const ui = await launch(api); await ui.el("open-settings").emit("click");
-  await ui.el("connections-list").children[0].emit("click");
-  assert.equal(ui.el("connection-delete").disabled, true);
-  assert.match(ui.el("connection-references").textContent, /Room B（待完成绑定）/);
-  ui.el("connection-pat").value = "private-replacement";
-  await ui.el("connection-form").emit("submit"); assert.equal(mutations.length, 0);
-  allow = true; await ui.el("connection-form").emit("submit");
-  assert.equal(mutations.length, 1);
-  assert.deepEqual(mutations[0].referenced_rooms, [{ room_id: "A", room_instance: "instance-A" }, { room_id: "B", room_instance: "instance-B" }]);
-  assert.equal(ui.el("connection-pat").value, "");
-  assert.equal(JSON.stringify([...ui.saved]).includes("private-replacement"), false);
-});
 
 function notificationServer() {
   const api = workspaceServer();

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -126,13 +125,7 @@ func validEventBinding(b Binding) bool {
 			return false
 		}
 	}
-	if b.ConnectionID != "" {
-		return regexp.MustCompile(`^[a-f0-9]{32}$`).MatchString(b.ConnectionID) && regexp.MustCompile(`^[a-f0-9]{32}$`).MatchString(b.ConnectionGeneration) && b.ProjectID > 0 && b.TokenEnv == "" && b.CredentialID == "" && b.CredentialFile == ""
-	}
-	if b.TokenEnv != "" {
-		return regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,127}$`).MatchString(b.TokenEnv) && b.CredentialID == "" && b.CredentialFile == ""
-	}
-	return regexp.MustCompile(`^[a-f0-9]{32}$`).MatchString(b.CredentialID) && filepath.IsAbs(b.CredentialFile) && filepath.Base(b.CredentialFile) == b.CredentialID+".json"
+	return validRestartID(b.ConnectionID) && validRestartID(b.ConnectionGeneration) && b.ProjectID > 0
 }
 
 func (f *GoEventFetcher) FetchEvents(ctx context.Context, q EventQuery) (EventBatch, error) {

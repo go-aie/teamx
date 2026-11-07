@@ -113,8 +113,16 @@ func newEventHarness(t *testing.T, cfg gitlab.EventsConfig) *eventHarness {
 	t.Helper()
 	m := testManager(t, t.TempDir(), managerTestProfiles(t))
 	room := managerCreate(t, m, "event-room")
-	setTestEffectiveWorkspace(t, m, room, testGitLabWorkspace(), 1)
-	t.Setenv("GITLAB_PAT", "offline-events-test-token")
+	c := platformTestSave(t, m, platformTestRequest(m))
+	m.mu.Lock()
+	file, _ := m.connections.Load()
+	generation := file.Connections[0].Generation
+	m.mu.Unlock()
+	w := testGitLabWorkspace()
+	w.Binding.ConnectionID = c.ID
+	w.Binding.ConnectionGeneration = generation
+	setTestEffectiveWorkspace(t, m, room, w, 1)
+
 	clock := &eventTestClock{now: time.Date(2026, 11, 1, 23, 59, 50, 0, time.UTC)}
 	m.notifications.Clock = clock.get
 	pages := &eventPages{}
@@ -122,7 +130,7 @@ func newEventHarness(t *testing.T, cfg gitlab.EventsConfig) *eventHarness {
 		return pages, 7, nil
 	}
 	cfg.Enabled = true
-	s, err := seedLegacyTestEvents(m, room.RoomIdentity, cfg)
+	s, err := seedTestEvents(m, room.RoomIdentity, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +192,7 @@ func makeEventHarnessActive(t *testing.T, h *eventHarness) {
 
 // Existing persistence/poller fixtures exercise snapshots created before the
 // independent project selector. Production creation requires an explicit target.
-func seedLegacyTestEvents(m *roomManager, owner RoomIdentity, cfg gitlab.EventsConfig) (gitlab.EventsState, error) {
+func seedTestEvents(m *roomManager, owner RoomIdentity, cfg gitlab.EventsConfig) (gitlab.EventsState, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	entry, err := m.workspaceRoom(owner)
@@ -195,7 +203,17 @@ func seedLegacyTestEvents(m *roomManager, owner RoomIdentity, cfg gitlab.EventsC
 	if err != nil {
 		return gitlab.EventsState{}, err
 	}
-	s, err := gitlab.ConfigureEvents(owner, nil, saved.Workspace.Binding, cfg, m.notifications.Now())
+	binding := *saved.Workspace.Binding
+	account, _, err := m.resolvePlatformAccountLocked(owner, binding.ConnectionID, "gitlab")
+	if err != nil {
+		return gitlab.EventsState{}, err
+	}
+	binding.ConnectionGeneration = account.Generation
+	cfg.ConnectionID = binding.ConnectionID
+	cfg.Project = binding.Project
+	s, err := gitlab.ConfigureEvents(owner, nil, &binding, cfg, m.notifications.Now())
+	s.UserID = account.UserID
+	s.Username = account.Username
 	if err == nil {
 		err = m.notifications.SaveLocked(s)
 	}

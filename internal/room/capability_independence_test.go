@@ -76,15 +76,15 @@ cat
 
 func TestSecondConnectionProviderAndTool(t *testing.T) {
 	m, room, svc, gitlabAccount, members := cliToolFixture(t, `test -z "$GITLAB_TOKEN$GITLAB_HOST" || exit 91
-test "$FIXTURE_TOKEN" = fixture-secret || exit 92
+test -z "$FIXTURE_TOKEN" || exit 92
 test "$FIXTURE_INSTANCE" = https://fixture.invalid || exit 93
 printf '%s' "$1"
 `)
-	m.platformVerify = nil // Exercise the registered verifier, not the old test override.
+
 	verified := 0
-	m.connectionProviders["fixture"] = connectionProvider{Normalize: connection.Normalize, Verify: func(_ context.Context, origin string, secret platform.Secret) platform.Validation {
+	m.connectionProviders["fixture"] = connectionProvider{Normalize: connection.Normalize, ValidProfile: func(string, platform.CLIProfile) bool { return true }, VerifyProfile: func(_ context.Context, origin string, profile platform.CLIProfile) platform.Validation {
 		verified++
-		if origin != "https://fixture.invalid" || secret.Reveal() != "fixture-secret" {
+		if origin != "https://fixture.invalid" || profile.Profile != "fixture" {
 			t.Error("incorrect provider verification context")
 		}
 		return platform.Validation{Status: "valid", Account: platform.AccountIdentity{IdentityScope: platform.IdentityScope{Provider: "fixture", Instance: origin}, ID: platform.ExternalID{Namespace: "fixture:account", Value: "opaque-user"}}, Username: "fixture-user", CheckedAt: time.Now().UTC()}
@@ -94,9 +94,13 @@ printf '%s' "$1"
 	d.Environment = map[string]string{"FIXTURE_TOKEN": "token", "FIXTURE_INSTANCE": "instance"}
 	m.toolCatalog = append(m.toolCatalog, d)
 	req := platformTestRequest(m)
-	req.ID, req.Name, req.Provider, req.URL, req.PAT = strings.Repeat("b", 32), "Fixture", "fixture", "https://fixture.invalid", "fixture-secret"
-	c := platformTestSave(t, m, req)
-	c, err := m.verifyPlatformConnection(context.Background(), platformConnectionRequest{ID: c.ID, Version: c.Version})
+	req.ID, req.Name, req.Provider, req.URL = strings.Repeat("b", 32), "Fixture", "fixture", "https://fixture.invalid"
+	req.CLIProfile = &platform.CLIProfile{Version: 1, Executable: "/fixture-cli", Profile: "fixture"}
+	c, err := m.updatePlatformConnection(req, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err = m.verifyPlatformConnection(context.Background(), platformConnectionRequest{ID: c.ID, Version: c.Version})
 	if err != nil || verified != 1 || c.Validation.Username != "fixture-user" {
 		t.Fatal("registered verifier was not used", err)
 	}

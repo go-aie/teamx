@@ -20,12 +20,19 @@ func VerifyIdentity(ctx context.Context, origin string, secret platform.Secret) 
 }
 
 func VerifyIdentityWithTransport(ctx context.Context, origin string, secret platform.Secret, transport http.RoundTripper) platform.Validation {
+	return VerifyIdentityWithCredential(ctx, origin, platform.AccessCredential{Kind: "oauth", Token: secret}, transport)
+}
+
+func VerifyIdentityWithCredential(ctx context.Context, origin string, credential platform.AccessCredential, transport http.RoundTripper) platform.Validation {
+	secret := credential.Token
 	result := platform.Validation{Status: "failed", CheckedAt: time.Now().UTC(), ErrorCode: "query_failed"}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, origin+"/api/v4/user", nil)
 	if err != nil {
 		return result
 	}
-	req.Header.Set("PRIVATE-TOKEN", secret.Reveal())
+	if setAuthentication(req, origin, credential) != nil {
+		return result
+	}
 	req.Header.Set("Accept", "application/json")
 	client := &http.Client{Transport: transport, Timeout: 8 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	resp, err := client.Do(req)

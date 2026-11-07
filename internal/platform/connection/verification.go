@@ -12,8 +12,6 @@ import (
 	"github.com/go-aie/teamx/internal/platform"
 )
 
-type Verify func(context.Context, string, string, platform.Secret) platform.Validation
-
 // Verification captures immutable scope; it must not be serialized or logged.
 type Verification struct {
 	record        Record
@@ -28,6 +26,9 @@ func (m *Manager) BeginVerification(id string, version uint64) (Verification, er
 	}
 	for _, c := range file.Connections {
 		if c.ID == id && c.Version == version {
+			if c.CredentialKind != "cli_profile" {
+				return Verification{}, ErrRequest
+			}
 			secret, _, err := credentialEvidence(file, c)
 			return Verification{record: c, secret: secret, credentialErr: err}, nil
 		}
@@ -35,15 +36,11 @@ func (m *Manager) BeginVerification(id string, version uint64) (Verification, er
 	return Verification{}, ErrConflict
 }
 
-// Query uses the injected provider verifier, with an optional per-call override.
-func (m *Manager) Query(ctx context.Context, v Verification, override Verify) platform.Validation {
+// Query performs the bounded verification of a CLI-owned profile.
+func (m *Manager) Query(ctx context.Context, v Verification) platform.Validation {
 	result := platform.Validation{Status: "failed", CheckedAt: time.Now().UTC(), ErrorCode: "credential_unavailable"}
 	if v.credentialErr != nil {
 		return result
-	}
-	verify := m.verify
-	if override != nil {
-		verify = override
 	}
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
@@ -53,7 +50,7 @@ func (m *Manager) Query(ctx context.Context, v Verification, override Verify) pl
 		}
 		return m.verifyProfile(ctx, v.record.Provider, v.record.URL, *v.record.CLIProfile)
 	}
-	return verify(ctx, v.record.Provider, v.record.URL, v.secret)
+	return result
 }
 func (m *Manager) CompleteVerification(v Verification, result platform.Validation) (Connection, error) {
 	if !validValidation(result) || result.Status == "unverified" || result.Status == "valid" && (v.credentialErr != nil || !m.validAccountResult(v.record.Provider, v.record.URL, result)) {
@@ -62,9 +59,6 @@ func (m *Manager) CompleteVerification(v Verification, result platform.Validatio
 	file, err := m.Load()
 	if err != nil {
 		return Connection{}, err
-	}
-	if file.Version == 1 && result.Account != (platform.AccountIdentity{}) {
-		return Connection{}, fmt.Errorf("%w: native identity requires snapshot version 2", ErrInvalid)
 	}
 	selected := v.record
 	for i, c := range file.Connections {
@@ -101,10 +95,6 @@ func (m *Manager) CompleteVerification(v Verification, result platform.Validatio
 	return Connection{}, ErrConflict
 }
 
-func fingerprint(secret platform.Secret) string {
-	return fmt.Sprintf("%x", sha256.Sum256([]byte(secret.Reveal())))
-}
-
 func validValidation(v platform.Validation) bool {
 	return v.Status == "unverified" && v.CheckedAt.IsZero() && v.Username == "" && v.UserID == 0 && v.ErrorCode == "" && v.Account == (platform.AccountIdentity{}) ||
 		v.Status == "valid" && !v.CheckedAt.IsZero() && (v.Account == (platform.AccountIdentity{}) || v.Account.Valid()) && len(v.Username) <= 1024 && strings.IndexFunc(v.Username, unicode.IsControl) < 0 && v.ErrorCode == "" ||
@@ -123,6 +113,10 @@ func validIdentityBinding(c Record) bool {
 // VerifiedIdentity must be checked again at query admission and commit. A saved
 // username or an old validation cannot establish the current credential's user.
 func VerifiedIdentity(file Snapshot, c Record) (platform.Validation, error) {
+	if c.CredentialKind == "oauth" {
+		_, err := ResolveAuthorization(file, c)
+		return c.Validation, err
+	}
 	identity, _, err := ResolveVerifiedIdentity(file, c)
 	return identity, err
 }
@@ -154,6 +148,31 @@ func ResolveVerifiedIdentity(file Snapshot, c Record) (platform.Validation, plat
 // hidden when the resolved credential has changed; reading never rewrites disk.
 func Public(file Snapshot, c Record) Connection {
 	result := c.Connection
+	if c.CredentialKind == "oauth" {
+		if cred, app, err := OAuthRecord(file, c.CredentialID); err == nil {
+			result.AuthorizationStatus, result.TokenExpiresAt = cred.State, cred.ExpiresAt
+			if cred.State == "logged_out" {
+				result.RevocationStatus = "unconfirmed"
+				confirmed := false
+				pending := false
+				for _, cleanup := range file.OAuthCleanup {
+					if cleanup.Origin == app.Origin && cleanup.ClientID == app.ClientID {
+						if cleanup.State == "revoked" && !cleanup.UncertainGrant {
+							confirmed = true
+						} else {
+							pending = true
+						}
+					}
+				}
+				if confirmed && !pending {
+					result.RevocationStatus = "confirmed"
+				}
+			}
+			if cred.State == "refresh_pending" {
+				result.AuthorizationStatus = "refresh_unknown"
+			}
+		}
+	}
 	if c.Validation.Status == "valid" {
 		if _, err := VerifiedIdentity(file, c); err != nil {
 			result.Validation = platform.Validation{Status: "unverified"}
@@ -165,6 +184,7 @@ func Public(file Snapshot, c Record) Connection {
 // Account is immutable service-local execution evidence shared by notifications
 // and platform tools. It does not depend on a subscription or local repository.
 type Account struct {
+	Authorization         platform.AuthorizationEvidence
 	Identity              platform.AccountIdentity
 	CLIProfile            *platform.CLIProfile
 	ConnectionID          string
@@ -221,6 +241,15 @@ func credentialEvidence(file Snapshot, c Record) (platform.Secret, string, error
 		}
 		return platform.Secret{}, fmt.Sprintf("%x", sha256.Sum256(data)), nil
 	}
-	secret, err := ResolveCredential(file, c, c.Version, c.CredentialVersion)
-	return secret, fingerprint(secret), err
+	return platform.Secret{}, "", platform.ErrCredential
+}
+
+// ResolveAccessAccount separates stable authorization from short-lived OAuth
+// material. OAuth callers must acquire a service token lease outside the gate.
+func ResolveAccessAccount(file Snapshot, c Record) (Account, platform.Secret, error) {
+	if c.CredentialKind == "oauth" {
+		a, err := ResolveAuthorization(file, c)
+		return a, platform.Secret{}, err
+	}
+	return ResolveAccount(file, c)
 }

@@ -382,38 +382,3 @@ func TestGitLabEventsRetryHintsAuthPauseAndReconnect(t *testing.T) {
 		t.Fatal(h.state())
 	}
 }
-
-func TestGitLabEventsCrossRoomCredentialReferenceIsRejectedAfterBaseline(t *testing.T) {
-	h := newEventHarness(t, gitlab.EventsConfig{})
-	other := managerCreate(t, h.m, "credential-owner")
-	id := saveTestWorkspaceCredential(t, h.m, other.RoomIdentity, "never-echo-another-room-token")
-	workspace := credentialTestWorkspace(id)
-	setTestEffectiveWorkspace(t, h.m, h.room, workspace, 2)
-	s := h.state()
-	// Simulate a corrupt saved reference. A different room's credential must
-	// be rejected without consulting or trusting Workspace.
-	h.m.mu.Lock()
-	s.Binding = *workspace.Binding
-	err := h.m.notifications.SaveLocked(s)
-	h.m.mu.Unlock()
-	if err != nil {
-		t.Fatal(err)
-	}
-	next, err := h.m.configureEventsSubscription(context.Background(), h.m.testEventsKey(h.room.RoomIdentity), s.SubscriptionVersion, s.Config)
-	if err != nil || !next.Baseline.Equal(h.baseline) {
-		t.Fatal(next, err)
-	}
-	h.newRunner()
-	_, stop := h.runner.Step(context.Background())
-	if !stop || h.state().Status != "credentials_invalid" || h.state().ProjectID != 0 {
-		t.Fatal(h.state())
-	}
-	data, err := os.ReadFile(h.m.testNotificationPath(t, h.room.RoomIdentity))
-	if err != nil || string(data) == "" {
-		t.Fatal(err)
-	}
-	// The credential store, not the monitoring snapshot, owns PAT values.
-	if strings.Contains(string(data), "never-echo-another-room-token") {
-		t.Fatal("copied PAT into subscription")
-	}
-}

@@ -40,7 +40,7 @@ func TestRealReadProbe(t *testing.T) {
 	code := a.run(ctx, args)
 	sum := sha256.Sum256(out.Bytes())
 	message := errOut.String()
-	for _, key := range []string{"GITLAB_TOKEN", "GITLAB_PAT"} {
+	for _, key := range []string{"GITLAB_TOKEN"} {
 		if v := os.Getenv(key); v != "" {
 			message = strings.ReplaceAll(message, v, "[REDACTED]")
 		}

@@ -106,7 +106,7 @@ func TestRuntimeToolSettlementIsScopedToRoom(t *testing.T) {
 			}
 			switch action {
 			case "workspace":
-				applyWorkspace(t, m, workspaceRequest(m, a, workspaceConfig{Root: "changed"}))
+				applyWorkspace(t, m, workspaceRequest(t, m, a, workspaceConfig{Root: "changed"}))
 				if op := awaitWorkspace(t, m); op.Status != "completed" {
 					t.Fatal(op)
 				}
@@ -137,9 +137,9 @@ func TestRuntimeToolSettlementIsScopedToRoom(t *testing.T) {
 				}
 			case "shared-rotation":
 				req := platformTestRequest(m)
-				req.Version, req.PAT = c.Version, "rotated-shared-secret"
+				req.Version = c.Version
 				req.ReferencedRooms = []RoomIdentity{a.RoomIdentity, b.RoomIdentity}
-				platformTestSave(t, m, req)
+				platformTestReauthorize(t, m, req)
 			}
 			select {
 			case code := <-results[0]:
@@ -239,7 +239,7 @@ func TestRuntimeLifecycleOperationsProgressIndependently(t *testing.T) {
 	if r := managerHTTP(m, "/v1/rooms/open", roomOpenRequest{RoomIdentity: a.RoomIdentity, OpenID: "competing", ServiceEpoch: m.epoch, Caller: humanCaller}); r.Code != 409 {
 		t.Fatal("open crossed deletion", r.Code)
 	}
-	req := workspaceRequest(m, b, workspaceConfig{Root: "b-new"})
+	req := workspaceRequest(t, m, b, workspaceConfig{Root: "b-new"})
 	applyWorkspace(t, m, req)
 	if op := awaitWorkspace(t, m); op.Status != "completed" {
 		t.Fatal(op)

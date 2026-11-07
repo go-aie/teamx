@@ -59,7 +59,7 @@ class Element {
 export const settle = async () => { for (let i=0; i<15; i++) await new Promise(resolve => setImmediate(resolve)); };
 export async function launch(api, saved = new Map()) {
   const elements = new Map([...html.matchAll(/id="([^"]+)"/g)].map(match => [match[1], new Element()]));
-  for (const id of ["lark-scope", "lark-group-mode", "lark-chat-type", "lark-connection", "lark-target", "lark-backfill", "connection-provider", "connection-profile", "connection-auth", "team", "profile", "activity-member", "workspace-connection", "gitlab-events-connection", "gitlab-events-target", "gitlab-todos-target", "gitlab-todos-connection", "gitlab-todos-scope"]) elements.get(id).tag = "select";
+  for (const id of ["lark-scope", "lark-group-mode", "lark-chat-type", "lark-connection", "lark-target", "lark-backfill", "connection-provider", "connection-profile", "team", "profile", "activity-member", "workspace-connection", "gitlab-events-connection", "gitlab-events-target", "gitlab-todos-target", "gitlab-todos-connection", "gitlab-todos-scope"]) elements.get(id).tag = "select";
   for (const id of ["message-template", "member-template"]) elements.get(id).content = { firstElementChild: new Element() };
   for (const [, id, value] of html.matchAll(/<input id="(gitlab-(?:events-type|todos-reason|todos-type)-[^"]+)" type="checkbox" value="([^"]+)"/g)) {
     elements.get(id).tag = "input"; elements.get(id).value = value; elements.get(id).checked = false;
@@ -68,6 +68,7 @@ export async function launch(api, saved = new Map()) {
   elements.get("room-rail").clientWidth = 220;
   const window = new Element("window"); window.innerWidth = 1440; window.innerHeight = 900;
   window.confirm = text => api.confirm ? api.confirm(text) : true;
+  window.open = () => null; // Default to a blocked popup; UI retains its explicit link.
   const document = Object.assign(new Element("document"), { hidden: false, focused: true, title: "", hasFocus() { return this.focused; },
     getElementById(id) {
       if (elements.has(id)) return elements.get(id);

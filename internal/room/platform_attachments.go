@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/attachment"
@@ -172,7 +173,15 @@ func (m *roomManager) downloadAttachment(ctx context.Context, req attachmentRequ
 			data, mime, downloadErr = client.Image(callCtx, account.Identity, source, strings.TrimPrefix(req.Path, lark.ImagePrefix), limits)
 		}
 	} else {
-		data, mime, downloadErr = gitlab.DownloadUploadWithLimits(callCtx, account.URL, secret, upload, transport, limits)
+		useCtx, credential, release, err := m.acquireGitLabAccess(callCtx, req.RoomIdentity, account, secret, 30*time.Second)
+		if err != nil {
+			downloadErr = err
+		} else {
+			data, mime, downloadErr = gitlab.DownloadUploadWithCredential(useCtx, account.URL, credential, upload, transport, limits)
+			if checkErr := release(); checkErr != nil {
+				downloadErr = checkErr
+			}
+		}
 	}
 	m.mu.Lock()
 	checkErr := m.checkAttachmentAccessLocked(callCtx, access)

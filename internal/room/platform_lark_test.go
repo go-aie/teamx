@@ -77,7 +77,7 @@ func TestLarkConnectionAndMembershipReadBoundary(t *testing.T) {
 		t.Fatal("opened arbitrary lark CLI")
 	}
 	file, err := m.connections.Load()
-	if err != nil || len(file.Credentials) != 1 {
+	if err != nil || len(file.OAuthCredentials) != 1 {
 		t.Fatal("profile copied credentials", err)
 	}
 	// A profile switch after the page read discards candidate and pauses the

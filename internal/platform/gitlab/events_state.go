@@ -387,13 +387,7 @@ func validEventsProjectBinding(b platform.ProjectBinding) bool {
 			return false
 		}
 	}
-	if b.ConnectionID != "" {
-		return validRestartID(b.ConnectionID) && validRestartID(b.ConnectionGeneration) && b.ProjectID > 0 && b.TokenEnv == "" && b.CredentialID == ""
-	}
-	if b.ConnectionGeneration != "" || b.ProjectID != 0 {
-		return false
-	}
-	return b.TokenEnv != "" && regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,127}$`).MatchString(b.TokenEnv) && b.CredentialID == "" || b.TokenEnv == "" && validRestartID(b.CredentialID)
+	return validRestartID(b.ConnectionID) && validRestartID(b.ConnectionGeneration) && b.ProjectID > 0
 }
 
 func validEventsProjectPath(project string) bool {

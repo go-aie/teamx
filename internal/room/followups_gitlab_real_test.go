@@ -51,8 +51,8 @@ func TestReferenceFollowupsRealGitLab(t *testing.T) {
 	}
 	project, iid, ok := strings.Cut(strings.TrimPrefix(u.Path, "/"), "/-/merge_requests/")
 	iidNumber, parseErr := strconv.ParseInt(iid, 10, 64)
-	if !ok || parseErr != nil || iidNumber <= 0 || strconv.FormatInt(iidNumber, 10) != iid || os.Getenv("GITLAB_PAT") == "" {
-		t.Fatal("MR IID and GITLAB_PAT required")
+	if !ok || parseErr != nil || iidNumber <= 0 || strconv.FormatInt(iidNumber, 10) != iid {
+		t.Fatal("valid MR IID required")
 	}
 	if err := os.Mkdir(output, 0700); err != nil {
 		t.Fatal(err)
@@ -60,6 +60,7 @@ func TestReferenceFollowupsRealGitLab(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	origin := u.Scheme + "://" + u.Host
+	accessToken := selectedRealAccessToken(t, origin)
 	report := map[string]any{"scenario": "R6-real-GitLab-reference-actions", "status": "failed", "target": target, "comment_body": body, "reply_body": replyBody, "recorded_at": time.Now().UTC(), "model": "not involved"}
 	defer func() {
 		b, e := json.MarshalIndent(report, "", "  ")
@@ -81,7 +82,7 @@ func TestReferenceFollowupsRealGitLab(t *testing.T) {
 		if e != nil {
 			t.Fatal("invalid API request")
 		}
-		req.Header.Set("PRIVATE-TOKEN", os.Getenv("GITLAB_PAT"))
+		req.Header.Set("Authorization", "Bearer "+accessToken)
 		req.Header.Set("Content-Type", "application/json")
 		client := &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 		res, e := client.Do(req)
@@ -203,12 +204,8 @@ func TestReferenceFollowupsRealGitLab(t *testing.T) {
 	member := state.Members[0]
 	id := MemberIdentity{RoomIdentity: r.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
 	report["member"] = id
-	conn, err := m.updatePlatformConnection(platformConnectionRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("a", 32), Name: "R6 authorized acceptance", Provider: "gitlab", URL: origin, TokenEnv: "GITLAB_PAT"}, false)
-	if err != nil {
-		t.Fatal("connection save failed")
-	}
-	conn, err = m.verifyPlatformConnection(ctx, platformConnectionRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: conn.ID, Version: conn.Version})
-	if err != nil || conn.Validation.Status != "valid" || conn.Validation.UserID != user.ID {
+	conn := realOAuthConnection(t, m, origin)
+	if conn.Validation.UserID != user.ID {
 		t.Fatal("connection account verification failed")
 	}
 	m.toolCatalog = tool.Catalog()

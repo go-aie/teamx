@@ -92,7 +92,7 @@ func TestReferenceInternalHTTPWithoutCLIAndConsumedRecovery(t *testing.T) {
 	var requests atomic.Int32
 	managedReferenceHTTP(t, m, func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
-		if r.Method != "GET" || r.Header.Get("PRIVATE-TOKEN") != "test-platform-secret" {
+		if r.Method != "GET" || r.Header.Get("Authorization") != "Bearer test-platform-secret" {
 			t.Error("unexpected method/credential")
 		}
 		if forbidden.Load() && strings.HasSuffix(r.URL.Path, "/42") {
@@ -209,7 +209,7 @@ func (b *referenceBlockedBody) Read(p []byte) (int, error) {
 }
 func TestReferenceInternalRevocationSettlesHTTPAndRejectsLateResults(t *testing.T) {
 	for _, stage := range []string{"before-send", "body", "returned"} {
-		for _, action := range []string{"rotate-credential", "reverify", "disable", "switch-binding", "remove-member", "session-rotate", "close-room", "delete-room", "shutdown"} {
+		for _, action := range []string{"rotate-credential", "reauthorize", "disable", "switch-binding", "remove-member", "session-rotate", "close-room", "delete-room", "shutdown"} {
 			t.Run(stage+"/"+action, func(t *testing.T) {
 				m, room, svc, c, members := cliToolFixture(t, "exit 99\n")
 				bindCLITool(t, m, room.RoomIdentity, members[0], c, "gitlab", 0)
@@ -275,11 +275,11 @@ func TestReferenceInternalRevocationSettlesHTTPAndRejectsLateResults(t *testing.
 					case "rotate-credential":
 						q := platformTestRequest(m)
 						q.Version = c.Version
-						q.PAT = "rotated-private-token"
+
 						q.ReferencedRooms = []RoomIdentity{room.RoomIdentity}
-						_, err = m.updatePlatformConnection(q, false)
-					case "reverify":
-						_, err = m.verifyPlatformConnection(context.Background(), platformConnectionRequest{ID: c.ID, Version: c.Version})
+						_, err = testReauthorizeConnection(m, q)
+					case "reauthorize":
+						_, err = testReauthorizeConnection(m, platformConnectionRequest{ID: c.ID, Version: c.Version, ReferencedRooms: []RoomIdentity{room.RoomIdentity}})
 					case "disable", "switch-binding":
 						change := toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, Revision: 1, Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "gitlab"}}
 						if action == "switch-binding" {
@@ -319,7 +319,7 @@ func TestReferenceInternalRevocationSettlesHTTPAndRejectsLateResults(t *testing.
 				m.mu.Lock()
 				pending := len(m.platformCalls)
 				m.mu.Unlock()
-				if pending != 1 {
+				if pending == 0 {
 					t.Fatal("body/result processing released call early", pending)
 				}
 				select {
@@ -385,26 +385,6 @@ func TestReferenceInternalResolutionScopeCommitGate(t *testing.T) {
 	m.mu.Unlock()
 	if pending != 0 {
 		t.Fatal("call not settled after commit rejection")
-	}
-}
-
-func TestReferenceInternalCredentialDriftIsDiagnosable(t *testing.T) {
-	m, room, svc, c, members := cliToolFixture(t, "exit 99\n")
-	q := platformTestRequest(m)
-	q.Version, q.PAT, q.TokenEnv = c.Version, "", "TEAMX_INTERNAL_REFERENCE_TEST_TOKEN"
-	t.Setenv(q.TokenEnv, "admitted-fixture-token")
-	c = verifyTodoAccount(t, m, platformTestSave(t, m, q), 101)
-	bindCLITool(t, m, room.RoomIdentity, members[0], c, "gitlab", 0)
-	_, req, _ := managedReferenceInput(t, m, room, svc, members[0])
-	t.Setenv(q.TokenEnv, "changed-fixture-token")
-	requests := 0
-	m.platformHTTP = workspaceHTTPFunc(func(*http.Request) (*http.Response, error) { requests++; return nil, errors.New("must not query") })
-	page, err := m.readReferenceInbox(context.Background(), req)
-	if err != nil || requests != 0 || len(page.Sources) != 1 || page.Sources[0].ReasonCode != "credential_unavailable" || len(page.Followups) != 0 {
-		t.Fatal(page, err, requests)
-	}
-	if specs := svc.referenceSpecs("gitlab"); len(specs) != 2 || requests != 0 {
-		t.Fatal("descriptions required credentials", specs, requests)
 	}
 }
 

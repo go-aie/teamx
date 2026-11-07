@@ -37,7 +37,7 @@ func referenceServer(t *testing.T, handler func(http.ResponseWriter, *http.Reque
 	t.Helper()
 	var origin string
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "GET" || r.Header.Get("PRIVATE-TOKEN") != "fixture-secret" {
+		if r.Method != "GET" || r.Header.Get("Authorization") != "Bearer fixture-secret" {
 			t.Error("unexpected method or credential")
 			w.WriteHeader(403)
 			return

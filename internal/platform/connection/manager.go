@@ -10,8 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
-	"regexp"
 	"strings"
 	"unicode"
 
@@ -24,22 +22,20 @@ var (
 	ErrCapacity = errors.New("platform connection capacity exceeded")
 	ErrInvalid  = errors.New("invalid platform connection snapshot")
 )
-var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 // NormalizeFunc validates the supported provider and canonicalizes configuration.
 type NormalizeFunc func(name, provider, origin string) (string, string, error)
 type Manager struct {
 	store            Store
 	normalize        NormalizeFunc
-	verify           Verify
 	identityResolver func(string, string, platform.Validation) (platform.AccountIdentity, bool)
 	verifyProfile    func(context.Context, string, string, platform.CLIProfile) platform.Validation
 	profileOnly      func(string) bool
 	validProfile     func(string, string, platform.CLIProfile) bool
 }
 
-func New(store Store, normalize NormalizeFunc, verify Verify) *Manager {
-	return &Manager{store: store, normalize: normalize, verify: verify}
+func New(store Store, normalize NormalizeFunc) *Manager {
+	return &Manager{store: store, normalize: normalize}
 }
 
 // SetProfileSupport registers reference-only credentials without interpreting
@@ -55,11 +51,10 @@ func (m *Manager) SetIdentityResolver(resolve func(string, string, platform.Vali
 }
 
 type Request struct {
-	SnapshotVersion                    int
-	CLIProfile                         *platform.CLIProfile
-	ID                                 string
-	Version                            uint64
-	Name, Provider, URL, PAT, TokenEnv string
+	CLIProfile          *platform.CLIProfile
+	ID                  string
+	Version             uint64
+	Name, Provider, URL string
 }
 
 func (Request) Format(s fmt.State, _ rune) { fmt.Fprint(s, "[REDACTED platform request]") }
@@ -98,23 +93,10 @@ func (m *Manager) Plan(req Request, remove bool) (Change, error) {
 	if index < 0 && (remove || req.Version != 0) || index >= 0 && file.Connections[index].Version != req.Version {
 		return Change{}, ErrConflict
 	}
-	rotating := index >= 0 && (req.PAT != "" || req.TokenEnv != "" || req.CLIProfile != nil)
+	rotating := index >= 0 && req.CLIProfile != nil
 	if remove {
 		file.Connections = append(file.Connections[:index], file.Connections[index+1:]...)
-		file.removeCredential(req.ID)
 		return Change{file: file}, nil
-	}
-	if req.SnapshotVersion != 0 && req.SnapshotVersion != snapshotVersion {
-		return Change{}, ErrInvalid
-	}
-	if file.Version == 1 && req.SnapshotVersion == snapshotVersion {
-		file.Version = snapshotVersion
-	}
-	if file.Version == 1 && req.CLIProfile != nil {
-		if req.SnapshotVersion != snapshotVersion {
-			return Change{}, fmt.Errorf("%w: explicitly select snapshot_version 2 to add profile credentials", ErrInvalid)
-		}
-		file.Version = snapshotVersion
 	}
 	name, origin, err := m.normalize(req.Name, req.Provider, req.URL)
 	if err != nil {
@@ -123,6 +105,9 @@ func (m *Manager) Plan(req Request, remove bool) (Change, error) {
 	c := Record{Connection: Connection{ID: req.ID, Validation: platform.Validation{Status: "unverified"}}}
 	if index >= 0 {
 		c = file.Connections[index]
+		if c.CredentialKind == "oauth" && rotating {
+			return Change{}, fmt.Errorf("%w: OAuth authorization requires explicit replacement", ErrRequest)
+		}
 		if c.Provider != req.Provider || c.URL != origin {
 			return Change{}, fmt.Errorf("%w: create a new connection to change platform or instance", ErrRequest)
 		}
@@ -139,39 +124,12 @@ func (m *Manager) Plan(req Request, remove bool) (Change, error) {
 		return Change{}, ErrCapacity
 	}
 	c.Name, c.Provider, c.URL = name, req.Provider, origin
-	if req.CLIProfile != nil && (req.PAT != "" || req.TokenEnv != "" || m.validProfile == nil || !m.validProfile(req.Provider, origin, *req.CLIProfile)) {
-		return Change{}, ErrRequest
-	}
-	if req.PAT != "" && req.TokenEnv != "" {
-		return Change{}, ErrRequest
-	}
-	if req.PAT != "" || req.TokenEnv != "" {
-		if req.PAT != "" && !platform.ValidPAT(req.PAT) || req.TokenEnv != "" && (!envName.MatchString(req.TokenEnv) || len(req.TokenEnv) > 128) {
-			return Change{}, fmt.Errorf("%w: invalid credential source", ErrRequest)
-		}
-		file.removeCredential(c.ID)
-		c.CLIProfile = nil
-		c.CredentialID, c.TokenEnv, c.CredentialKind = "", req.TokenEnv, "pat"
-		if req.PAT != "" {
-			id, err := newOpaqueID()
-			if err != nil {
-				return Change{}, err
-			}
-			c.CredentialID = id
-			file.Credentials = append(file.Credentials, Credential{ID: id, ConnectionID: c.ID, PAT: req.PAT})
-		}
-		if c.TokenEnv != "" {
-			c.CredentialKind = "env"
-		}
-		c.CredentialConfigured = true
-		c.CredentialVersion++
-		c.Validation = platform.Validation{Status: "unverified"}
-		c.IdentityBinding = nil
-	}
 	if req.CLIProfile != nil {
+		if m.validProfile == nil || !m.validProfile(req.Provider, origin, *req.CLIProfile) {
+			return Change{}, ErrRequest
+		}
 		profile := *req.CLIProfile
-		file.removeCredential(c.ID)
-		c.CLIProfile, c.CredentialID, c.TokenEnv, c.CredentialKind = &profile, "", "", "cli_profile"
+		c.CLIProfile, c.CredentialID, c.CredentialKind = &profile, "", "cli_profile"
 		c.CredentialConfigured = true
 		c.CredentialVersion++
 		c.Validation = platform.Validation{Status: "unverified"}
@@ -180,7 +138,11 @@ func (m *Manager) Plan(req Request, remove bool) (Change, error) {
 	if m.profileOnly != nil && m.profileOnly(c.Provider) && c.CredentialKind != "cli_profile" {
 		return Change{}, ErrRequest
 	}
-	if !c.CredentialConfigured {
+	if c.CredentialKind == "" && c.Provider == "gitlab" {
+		c.CredentialKind = "oauth"
+		c.CredentialVersion = 1
+	}
+	if !c.CredentialConfigured && c.CredentialKind != "oauth" {
 		return Change{}, fmt.Errorf("%w: credential source required", ErrRequest)
 	}
 	c.Version++
@@ -213,41 +175,6 @@ func httpsURL(value string) (*url.URL, error) {
 	u.Host = strings.ToLower(u.Host)
 	u.Path = strings.TrimSuffix(u.Path, "/")
 	return u, nil
-}
-
-// This service-only resolver checks both revisions. Tool and event callers
-// derive the connection from a validated Room binding, never an agent target.
-func ResolveCredential(file Snapshot, c Record, version, credentialVersion uint64) (platform.Secret, error) {
-	if c.Version != version || c.CredentialVersion != credentialVersion {
-		return platform.Secret{}, ErrConflict
-	}
-	if c.CredentialKind == "cli_profile" {
-		return platform.Secret{}, platform.ErrCredential
-	}
-	value := ""
-	for _, cred := range file.Credentials {
-		if cred.ID == c.CredentialID && cred.ConnectionID == c.ID {
-			value = cred.PAT
-			break
-		}
-	}
-	if c.CredentialKind == "env" {
-		value = os.Getenv(c.TokenEnv)
-	}
-	if !platform.ValidPAT(value) {
-		return platform.Secret{}, errors.New("platform credential unavailable")
-	}
-	return platform.NewSecret(value), nil
-}
-
-func (file *Snapshot) removeCredential(connectionID string) {
-	kept := file.Credentials[:0]
-	for _, cred := range file.Credentials {
-		if cred.ConnectionID != connectionID {
-			kept = append(kept, cred)
-		}
-	}
-	file.Credentials = kept
 }
 
 func validRestartID(id string) bool {

@@ -41,14 +41,24 @@ func TestModelAttachmentRoomAndInboxShareDownloadWithoutConsumption(t *testing.T
 	var calls atomic.Int32
 	h.m.platformHTTP = workspaceHTTPFunc(func(r *http.Request) (*http.Response, error) {
 		calls.Add(1)
-		if r.Header.Get("PRIVATE-TOKEN") != "test-platform-secret" {
+		if r.Header.Get("Authorization") != "Bearer test-platform-secret" {
 			t.Error("missing subscription credential")
 		}
 		h.m.mu.Lock()
+		owned := false
 		for call := range h.m.platformCalls {
-			if call.agentID != reader.AgentID || call.membershipID != reader.MembershipID || call.connectionID == "" {
-				t.Error("unowned model attachment")
+			if call.owner != reader.RoomIdentity || call.connectionID == "" {
+				t.Error("attachment call escaped its Room or connection")
 			}
+			if call.tool != "gitlab-token" {
+				owned = true
+				if call.agentID != reader.AgentID || call.membershipID != reader.MembershipID {
+					t.Error("unowned model attachment")
+				}
+			}
+		}
+		if !owned {
+			t.Error("missing reader-owned attachment call")
 		}
 		h.m.mu.Unlock()
 		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(data))}, nil
@@ -198,9 +208,9 @@ func TestModelAttachmentCredentialRotationJoinsBeforeReplacement(t *testing.T) {
 	}()
 	awaitEventSignal(t, started, "download not started")
 	update := platformTestRequest(h.m)
-	update.Version, update.PAT, update.ReferencedRooms = connection.Version, "replacement-test-token", []RoomIdentity{req.RoomIdentity}
+	update.Version, update.ReferencedRooms = connection.Version, []RoomIdentity{req.RoomIdentity}
 	changed := make(chan error, 1)
-	go func() { _, err := h.m.updatePlatformConnection(update, false); changed <- err }()
+	go func() { _, err := testReauthorizeConnection(h.m, update); changed <- err }()
 	awaitEventSignal(t, canceled, "credential rotation did not cancel download")
 	h.m.mu.Lock()
 	file, err := h.m.connections.Load()

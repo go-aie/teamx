@@ -69,16 +69,10 @@ type todoHarness struct {
 
 func verifyTodoAccount(t *testing.T, m *roomManager, c platformConnection, id int64) platformConnection {
 	t.Helper()
-	m.mu.Lock()
-	m.platformVerify = func(context.Context, string, workspaceSecret) platformConnectionValidation {
-		return platformConnectionValidation{Status: "valid", UserID: id, Username: fmt.Sprintf("user%d", id), CheckedAt: time.Now().UTC()}
+	if c.Validation.Status == "valid" && c.Validation.UserID == id {
+		return c
 	}
-	m.mu.Unlock()
-	result, err := m.verifyPlatformConnection(context.Background(), platformConnectionRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: c.ID, Version: c.Version})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return result
+	return authorizeTestConnection(t, m, c, id, "test-platform-secret")
 }
 func newTodoHarness(t *testing.T) *todoHarness {
 	t.Helper()
@@ -309,7 +303,7 @@ func TestTodosPageCandidatesIncludeConcurrentAcknowledgementsAndMetadata(t *test
 		h.pages.hook = nil
 		r := platformTestRequest(h.m)
 		r.Version = h.connection.Version
-		r.PAT = ""
+
 		r.Name = "metadata only"
 		h.connection = platformTestSave(t, h.m, r)
 	}
@@ -500,7 +494,7 @@ func TestTodosAccountReplacementRetiresAndKeepsOldProgress(t *testing.T) {
 	req.ID = strings.Repeat("b", 32)
 	req.Name = "Other personal account"
 	req.URL = "https://other.gitlab.invalid"
-	req.PAT = "other-private-token"
+
 	other := verifyTodoAccount(t, h.m, platformTestSave(t, h.m, req), 102)
 	cfg := old.Config
 	cfg.ConnectionID = other.ID
@@ -602,9 +596,9 @@ func TestTodosCredentialRotationPausesUntilSameAccountExplicitSync(t *testing.T)
 	before := h.state()
 	req := platformTestRequest(h.m)
 	req.Version = h.connection.Version
-	req.PAT = "replacement-private-token"
+
 	req.ReferencedRooms = []RoomIdentity{h.room.RoomIdentity}
-	h.connection = platformTestSave(t, h.m, req)
+	h.connection = platformTestReauthorize(t, h.m, req)
 	paused := h.state()
 	if paused.Status != "credentials_invalid" || !paused.Baseline.Equal(before.Baseline) || len(paused.Inbox) != 1 {
 		t.Fatal(paused)
@@ -644,7 +638,7 @@ func TestTodosCurrentProjectRequiresExplicitBindingReview(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.Binding.TokenEnv = ""
+
 	w.Binding.ConnectionID = h.connection.ID
 	w.Binding.ConnectionGeneration = file.Connections[0].Generation
 	w.Binding.ProjectID = 7
@@ -782,45 +776,7 @@ func TestTodosRetryAfterAndAuthenticationPause(t *testing.T) {
 		})
 	}
 }
-func TestTodosEnvironmentDriftCannotResumeOnReverificationOrRestart(t *testing.T) {
-	h := newTodoHarness(t)
-	old := h.state()
-	req := platformTestRequest(h.m)
-	req.Version = h.connection.Version
-	req.PAT = ""
-	req.TokenEnv = "TEAMX_TODOS_DRIFT_TOKEN"
-	req.ReferencedRooms = []RoomIdentity{h.room.RoomIdentity}
-	t.Setenv(req.TokenEnv, "environment-token-one")
-	h.connection = platformTestSave(t, h.m, req)
-	h.connection = verifyTodoAccount(t, h.m, h.connection, 101)
-	if err := h.m.syncTodosSubscription(context.Background(), h.key, h.state().SubscriptionVersion); err != nil {
-		t.Fatal(err)
-	}
-	h.pages.pending = []gitlab.Todo{h.todo(1, 0, "pending")}
-	h.newRunner()
-	h.full()
-	t.Setenv(req.TokenEnv, "environment-token-two")
-	h.clock.add(130 * time.Second)
-	h.step()
-	if h.state().Status != "credentials_invalid" {
-		t.Fatal("drift did not pause subscription")
-	}
-	h.connection = verifyTodoAccount(t, h.m, h.connection, 101)
-	h.reopen()
-	before := len(h.pages.calls)
-	h.step()
-	if len(h.pages.calls) != before {
-		t.Fatal("reverification implicitly resumed new credential")
-	}
-	if err := h.m.syncTodosSubscription(context.Background(), h.key, h.state().SubscriptionVersion); err != nil {
-		t.Fatal(err)
-	}
-	h.newRunner()
-	h.full()
-	if !h.state().Baseline.Equal(old.Baseline) || h.state().SubscriptionID != old.SubscriptionID || len(h.state().Inbox) != 1 {
-		t.Fatal(h.state())
-	}
-}
+
 func TestTodosSkippedObjectsAreCountedWithoutDelivery(t *testing.T) {
 	h := newTodoHarness(t)
 	noProject := h.todo(1, 0, "pending")

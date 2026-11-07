@@ -71,18 +71,6 @@ func TestRealWorkspaceGitLabDSH(t *testing.T) {
 		d.report["error"] = err.Error()
 		t.Fatal(err)
 	}
-	gitlabSecret = os.Getenv("GITLAB_PAT")
-	if gitlabSecret == "" && *managementEnvFile != "" {
-		data, err := exec.CommandContext(ctx, "node", "--env-file="+*managementEnvFile, "-e", "process.stdout.write(process.env.GITLAB_PAT || '')").Output()
-		if err != nil {
-			t.Fatal("cannot load GitLab credential")
-		}
-		gitlabSecret = string(data)
-	}
-	if !validWorkspacePAT(gitlabSecret) {
-		t.Fatal("GITLAB_PAT required in environment or env file")
-	}
-	t.Setenv("GITLAB_PAT", gitlabSecret)
 	u, _ := url.Parse(w.Repository.URL)
 	project := strings.TrimSuffix(strings.TrimPrefix(u.Path, "/"), ".git")
 	platform := u.Scheme + "://" + u.Host
@@ -105,6 +93,12 @@ func TestRealWorkspaceGitLabDSH(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(source, "team.json"), data, 0600); err != nil {
 		t.Fatal(err)
 	}
+	oauthFile, oauthConnection := selectedRealOAuthSnapshot(t, platform)
+	oauthData, _ := json.Marshal(oauthFile)
+	if err := os.WriteFile(filepath.Join(d.dir, "platform-connections.json"), oauthData, 0600); err != nil {
+		t.Fatal(err)
+	}
+	gitlabSecret = oauthFile.OAuthCredentials[0].AccessToken
 	epoch, err := d.startManaged(1, filepath.Dir(source))
 	if err != nil {
 		d.report["error"] = err.Error()
@@ -116,7 +110,7 @@ func TestRealWorkspaceGitLabDSH(t *testing.T) {
 	// observed UI actions. The test does not claim browser evidence on its own.
 	uiPhase := func(phase string) error {
 		cmd := exec.CommandContext(ctx, "node", "web_workspace_http.mjs")
-		cmd.Env = append(operatorEnv(""), "TEAMX_WEB_ENDPOINT="+d.endpoint, "TEAMX_WORKSPACE_UI_PHASE="+phase, "TEAMX_WORKSPACE_REPOSITORY="+w.Repository.URL, "TEAMX_WORKSPACE_GITLAB_URL="+platform, "TEAMX_WORKSPACE_PROJECT="+project)
+		cmd.Env = append(operatorEnv(""), "TEAMX_WEB_ENDPOINT="+d.endpoint, "TEAMX_WORKSPACE_UI_PHASE="+phase, "TEAMX_WORKSPACE_REPOSITORY="+w.Repository.URL, "TEAMX_WORKSPACE_GITLAB_URL="+platform, "TEAMX_WORKSPACE_PROJECT="+project, "TEAMX_WORKSPACE_CONNECTION_ID="+oauthConnection.ID)
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("app HTTP driver failed: %s", output)
@@ -310,16 +304,16 @@ func TestRealWorkspaceGitLabDSH(t *testing.T) {
 		}
 	}
 
-	// A real clone failure retains its stable target and private PAT reference.
+	// A real clone failure retains its stable target and private OAuth token reference.
 	fail(d.selectManaged(epoch, b, "failure-b"))
 	bConfigPath := filepath.Join(d.dir, "rooms", b.RoomID, "room-config.json")
 	bBefore, err := os.ReadFile(bConfigPath)
 	fail(err)
 	failureID, err := newOpaqueID()
 	fail(err)
-	failureTarget := workspaceConfig{Repository: &workspaceRepository{URL: w.Repository.URL, Branch: "teamx-nonexistent-" + failureID}, Binding: &workspaceBinding{Provider: "gitlab", URL: platform, Project: project}}
+	failureTarget := workspaceConfig{Repository: &workspaceRepository{URL: w.Repository.URL, Branch: "teamx-nonexistent-" + failureID}, Binding: &workspaceBinding{Provider: "gitlab", URL: platform, Project: project, ConnectionID: oauthConnection.ID}}
 	var failed workspaceOperation
-	fail(d.managementRequest("/v1/workspace/apply", workspaceApplyRequest{ServiceEpoch: epoch, RoomIdentity: b.RoomIdentity, Caller: humanCaller, OperationID: failureID, ExpectedVersion: 1, Target: failureTarget, PAT: gitlabSecret}, &failed))
+	fail(d.managementRequest("/v1/workspace/apply", workspaceApplyRequest{ServiceEpoch: epoch, RoomIdentity: b.RoomIdentity, Caller: humanCaller, OperationID: failureID, ExpectedVersion: 1, Target: failureTarget, ConnectionVersion: oauthConnection.Version}, &failed))
 	waitFailure := func() error {
 		return d.until(func() (bool, error) {
 			ws, err := d.realWorkspaceStatus(epoch, b)
@@ -338,7 +332,7 @@ func TestRealWorkspaceGitLabDSH(t *testing.T) {
 		})
 	}
 	fail(waitFailure())
-	if failed.ErrorCode != "preparation_failed" || failed.Target.Binding.CredentialID == "" {
+	if failed.ErrorCode != "preparation_failed" || failed.Target.Binding.ConnectionID != oauthConnection.ID {
 		fail(errors.New("failed binding did not preserve credential reference"))
 	}
 	marker := filepath.Join(d.dir, "rooms", b.RoomID, failed.Members[0].Workspace) + ".clone-pending"
@@ -368,7 +362,7 @@ func TestRealWorkspaceGitLabDSH(t *testing.T) {
 	d.report["failureTimingsMS"] = failed.Timings
 
 	// Check only public/configuration surfaces. Private ACP history may naturally
-	// contain tool commands, but must not receive a raw PAT either.
+	// contain tool commands, but must not receive a raw OAuth token either.
 	fail(filepath.WalkDir(d.dir, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -391,7 +385,7 @@ func TestRealWorkspaceGitLabDSH(t *testing.T) {
 			return err
 		}
 		if bytes.Contains(data, []byte(gitlabSecret)) {
-			return errors.New("raw PAT leaked into Room data")
+			return errors.New("raw OAuth token leaked into Room data")
 		}
 		return nil
 	}))

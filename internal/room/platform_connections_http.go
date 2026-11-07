@@ -8,6 +8,14 @@ import (
 )
 
 func (m *roomManager) servePlatformConnections(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, "/v1/platform/connections/gitlab/") {
+		if r.URL.Path == gitlabCookiePath+"prepare" || r.URL.Path == gitlabCookiePath+"initialize" {
+			m.serveGitLabSetup(w, r)
+		} else {
+			m.serveGitLabAuth(w, r)
+		}
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, "/v1/platform/connections/lark/") {
 		m.serveLarkAuth(w, r)
 		return
@@ -73,7 +81,7 @@ func (m *roomManager) servePlatformConnections(w http.ResponseWriter, r *http.Re
 	case "/v1/platform/connections/save":
 		result, err = m.updatePlatformConnection(req, false)
 	default:
-		if req.CLIProfile != nil || req.SnapshotVersion != 0 || req.Name != "" || req.Provider != "" || req.URL != "" || req.PAT != "" || req.TokenEnv != "" {
+		if req.CLIProfile != nil || req.Name != "" || req.Provider != "" || req.URL != "" {
 			writeAPIError(w, ErrRequest)
 			return
 		}

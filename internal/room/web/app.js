@@ -946,7 +946,7 @@ async function submitWorkspace(retry = false) {
       ws.error = error.code === "conflict" ? "配置已变化，请查看最新状态后重新应用。" : "请求被拒绝，请核对配置、当前房间和服务状态；共享连接变化后请重新打开设置加载连接。";
     } else ws.error = "提交结果尚未确认，正在查询原操作；不会自动重发。";
   } finally {
-    delete payload.pat; ws.sending = false;
+ ws.sending = false;
     await refresh(); renderWorkspace(); composerState(); renderRooms();
   }
 }
@@ -2650,9 +2650,8 @@ $("dismiss-management").addEventListener("click", () => {
   if (state.catalog?.busy || state.managementSending) return;
   state.management = null; saveManagement(); state.managementError = ""; void refresh();
 });
-// Connection forms live only in memory. Neither a PAT nor its request is
-// persisted or retried automatically after a timeout.
-const connections = { items: [], selected: null, sending: false, generation: 0, formVersion: 0, discovery: null, detecting: false, auth: null, authTimer: null };
+// Application secrets live only in memory and are never retried automatically.
+const connections = { items: [], selected: null, sending: false, generation: 0, formVersion: 0, discovery: null, detecting: false, auth: null, authTimer: null, gitlabAuth: null, gitlabTimer: null };
 const connectionValidationErrors = { credential_unavailable: "登录凭据不可用，请核对账号授权或服务凭据配置。", credential_rejected: "认证失败，请核对当前账号登录和权限。", identity_mismatch: "profile 账号或应用已变化，请核对后重新验证。", permission_denied: "当前用户缺少读取权限，请检查授权。", cli_version_mismatch: "CLI 版本不匹配，需要已验收的 1.0.99。", cli_unavailable: "CLI 无法执行，请核对路径与后台运行权限。", query_failed: "连接失败，请检查地址或网络后重试验证。", invalid_response: "实例返回了无效的身份信息。" };
 function connectionFeedback(message = "", kind = "status") {
   const feedback = $("connections-feedback");
@@ -2660,7 +2659,7 @@ function connectionFeedback(message = "", kind = "status") {
   feedback.dataset.kind = kind;
   feedback.setAttribute("role", kind === "error" ? "alert" : "status");
 }
-const connectionInputs = ["connection-name", "connection-url", "connection-executable", "connection-profile", "connection-env", "connection-pat"];
+const connectionInputs = ["connection-name", "connection-url", "connection-executable", "connection-profile"];
 function clearConnectionErrors() {
   for (const id of connectionInputs) $(id).setAttribute("aria-invalid", "false");
 }
@@ -2671,19 +2670,128 @@ function connectionInputError(id, message) {
 }
 function connectionAuthFields() {
   const isLark = connectionIsLark();
-  const env = $("connection-auth").value === "env";
   for (const id of ["connection-executable", "connection-profile"]) $(id).setAttribute("aria-required", String(isLark));
   clearConnectionErrors();
   connectionFeedback();
+  $("connection-validation").hidden=false;
+  if (isLark) $("connection-save").textContent = "保存连接";
   $("connection-profile-row").hidden = !isLark;
   $("connection-url-row").hidden = isLark;
   $("connection-url").required = !isLark;
-  $("connection-auth-row").hidden = isLark;
-  $("connection-env-row").hidden = isLark || !env; $("connection-pat-row").hidden = isLark || env;
-  if (env) $("connection-pat").value = "";
-  else $("connection-env").value = "";
+  $("gitlab-account-row").hidden = isLark;
+  if (isLark) $("gitlab-client-secret").value = "";
+  else renderGitLabAccount();
 }
 function connectionIsLark() { return $("connection-provider").value !== "gitlab"; }
+function renderGitLabAccount() {
+  const item = connections.selected, active = !!connections.gitlabAuth;
+  const oauth = item?.credential_kind === "oauth";
+  const status = item?.authorization_status;
+  $("gitlab-account").textContent = active ? "正在处理授权…" : oauth ? status === "active" ? `已连接 · @${item.validation.username}` : status === "logged_out" ? item.revocation_status === "confirmed" ? "已退出登录" : "本地已断开，远端撤销未确认" : status ? "需要重新授权" : "未连接" : "未连接";
+  $("gitlab-login").textContent = status && status !== "logged_out" ? "重新授权" : "登录 GitLab";
+  $("gitlab-login").disabled = active;
+  $("connection-validation").hidden = oauth;
+  $("gitlab-login").hidden = !item;
+  $("gitlab-logout").hidden = !status || status === "logged_out";
+  $("gitlab-logout").disabled = active;
+  $("gitlab-cancel").hidden = !active;
+  $("connection-save").disabled = active;
+  $("connection-verify").hidden = oauth || !item;
+  $("connection-save").textContent = !item ? "登录并保存连接" : "保存连接";
+  for (const id of ["connection-name", "connection-url", "connection-provider", "gitlab-import"]) $(id).disabled = active || (id === "connection-provider" && !!item);
+}
+function gitlabPreparePayload() {
+  const item=connections.selected, repository_access=$("gitlab-repository-access").checked;
+  return {...(item ? {id:item.id,version:item.version} : {origin:$("connection-url").value.trim().replace(/\/$/,"")}),...(repository_access ? {repository_access:true} : {})};
+}
+async function prepareGitLabConnection() {
+  const version = connections.formVersion;
+  const result = await request("/v1/platform/connections/gitlab/prepare", connectionPayload(gitlabPreparePayload()), undefined, 50000);
+  if (version !== connections.formVersion || connectionIsLark()) return null;
+  $("gitlab-setup").hidden = ["ready","owner_verification_required"].includes(result.status);
+  $("gitlab-redirect-uri").value=result.redirect_uri;
+  $("gitlab-scope-hint").textContent=$("gitlab-repository-access").checked ? "权限选择 api 和 write_repository。" : "权限选择 api。";
+  $("gitlab-applications-link").href=result.applications_url;
+  return result;
+}
+async function startGitLabAuth(action) {
+  if (connections.sending || connections.gitlabAuth || connectionIsLark()) return;
+  const item = connections.selected, version = connections.formVersion;
+  if (item && connectionDirty()) {connectionFeedback("请先保存更改，再操作授权。", "error");return;}
+  if (!item && !$("connection-name").value.trim()) {connectionInputError("connection-name", "请输入连接名称。");return;}
+  const popup = action === "login" ? window.open?.("about:blank", "_blank") : null;
+  if (popup) popup.opener = null;
+  connections.sending = true; $("connection-fields").disabled = true;
+  $("connection-back").disabled = true; $("close-settings").disabled = true;
+  try {
+    let prepared = await prepareGitLabConnection(); if (!prepared) return;
+    if (version !== connections.formVersion) return;
+    if (!["ready", "owner_verification_required"].includes(prepared.status)) {
+      $("gitlab-setup").hidden = false;
+      connectionFeedback("请先完成一次应用配置，然后登录 GitLab。", "error");return;
+    }
+    const affected = prepared.affected || [];
+    const affectedItems = affected.map(a => connections.items.find(c => c.id === a.id));
+    const impact = affectedItems.filter(Boolean).map(c => `${c.name}${c.references?.length ? `（房间：${c.references.map(r=>r.name).join("、")}）` : ""}`).join("；");
+    if ((affected.length > 1 || affected.some(c=>c.referenced_rooms?.length)) && !window.confirm(`${action === "logout" ? "退出登录" : "应用新授权"}将影响连接：${impact}。通知将暂停，完成后需显式同步。继续？`)) return;
+    const target = item ? {id:item.id,version:item.version} : {name:$("connection-name").value.trim(),origin:$("connection-url").value.trim()};
+    const auth = await request(`/v1/platform/connections/gitlab/${action}`,connectionPayload({...target,application_id:prepared.application_id,client_import_id:prepared.client_import_id,affected}));
+    if (version !== connections.formVersion) return;
+    connections.gitlabAuth = auth; renderGitLabAccount();
+    if (auth.authorization_url) {$("gitlab-login-link").href = auth.authorization_url; $("gitlab-login-link").hidden = false; if (popup && !popup.closed) popup.location.replace(auth.authorization_url);}
+    connectionFeedback(action === "logout" ? "正在退出并核对撤销结果…" : "请打开 GitLab 授权页面完成登录；本页会自动核对保存结果。");
+    await pollGitLabAuth();
+  } catch (error) {
+    connectionFeedback(error.code === "identity" ? "登录需要从服务配置的规范地址打开 TeamX；请核对应用回调地址，并刷新页面。" : "授权操作结果未确认，请返回列表核对；不会自动重发。", "error");
+  } finally {if (popup && !connections.gitlabAuth && !popup.closed) popup.close(); connections.sending=false;$("connection-fields").disabled=false;$("connection-back").disabled=false;$("close-settings").disabled=false;renderGitLabAccount();}
+}
+async function pollGitLabAuth() {
+  const auth = connections.gitlabAuth, version = connections.formVersion;
+  if (!auth) return;
+  try {
+    const result = await request("/v1/platform/connections/gitlab/status",connectionPayload({session_id:auth.session_id}));
+    if (connections.gitlabAuth !== auth || version !== connections.formVersion) return;
+    if (["waiting", "exchanging", "settling", "committing", "cleaning", "disconnecting"].includes(result.status)) {
+      connections.gitlabTimer=setTimeout(()=>{void pollGitLabAuth();},1500);return;
+    }
+    clearGitLabAuthView();connections.gitlabAuth=null;
+    for (const item of result.connections || []) updateConnectionItem(item);
+    const saved=(result.connections || []).find(c=>c.id===connections.selected?.id) || (result.connections || []).find(c=>c.id===auth.connection_id) || result.connections?.[0];
+    if (saved) await editConnection(saved);else renderGitLabAccount();
+    const messages={succeeded:"登录授权已保存，账号核验成功。通知请显式同步恢复。",logged_out:"已退出登录，远端撤销已确认。",disconnected:"本地已断开，远端撤销或调用结清未确认。",cancelled:"本次登录已取消，请核对连接状态。",expired:"本次登录已过期，可以重新登录。",failed:"授权未完成，保存或切换结果请返回列表核对。"};
+    connectionFeedback(`${result.error_code === "identity_mismatch" ? "GitLab 账号与原账号不符，请为另一个账号新建连接；原连接未切换。" : messages[result.status] || "请核对连接状态。"}${result.cleanup_status === "manual_required" ? "候选授权待人工清理，未撤销现用授权。" : ["pending","unconfirmed"].includes(result.cleanup_status) ? "候选令牌或远端撤销未确认，请在 GitLab 个人应用页面核对授权。" : result.cleanup_status === "revoked" && result.status === "failed" ? "本次未采用的候选令牌已撤销。" : ""}`, ["succeeded","logged_out"].includes(result.status)?"success":"error");
+  } catch {
+    if (connections.gitlabAuth===auth && version===connections.formVersion) {connectionFeedback("授权状态读取失败，可关闭后重新检查连接；不会自动重发登录。", "error");clearGitLabAuthView();renderGitLabAccount();}
+  }
+}
+function clearGitLabAuthView() {clearTimeout(connections.gitlabTimer);connections.gitlabTimer=null;$("gitlab-login-link").hidden=true;$("gitlab-login-link").href="";}
+async function cancelGitLabAuth(keepalive = false) {
+  const auth=connections.gitlabAuth;clearGitLabAuthView();connections.gitlabAuth=null;connections.formVersion++;
+  if (auth) {try {const body=connectionPayload({session_id:auth.session_id}); if (keepalive) await globalThis.fetch("/v1/platform/connections/gitlab/cancel",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),credentials:"same-origin",keepalive:true}); else await request("/v1/platform/connections/gitlab/cancel",body);} catch { /* Explicit list refresh reconciles a late commit. */ }}
+  if (!connectionIsLark()) renderGitLabAccount();
+}
+async function cancelConnectionAuth() {await cancelGitLabAuth();await cancelLarkAuth();}
+$("gitlab-login").addEventListener("click",()=>startGitLabAuth("login"));
+$("gitlab-logout").addEventListener("click",()=>startGitLabAuth("logout"));
+$("gitlab-cancel").addEventListener("click",async()=>{await cancelGitLabAuth();connectionFeedback("已请求取消，请核对连接状态；已提交的授权不会回滚。");});
+$("gitlab-repository-access").addEventListener("change",()=>{
+ $("gitlab-scope-hint").textContent=$("gitlab-repository-access").checked ? "权限选择 api 和 write_repository。" : "权限选择 api。";
+});
+$("gitlab-import").addEventListener("click",async()=>{
+  if (connections.sending || connections.gitlabAuth) return;
+  const version=connections.formVersion;
+  connections.sending=true;$("connection-fields").disabled=true;$("connection-back").disabled=true;$("close-settings").disabled=true;
+  try {
+    const prepared=await prepareGitLabConnection();if (!prepared) return;
+    const source=gitlabPreparePayload();
+    if (!$("gitlab-client-id").value.trim() || !$("gitlab-client-secret").value) {connectionFeedback("请填写 Application ID 和 Secret。","error");return;}
+    const result=await request("/v1/platform/connections/gitlab/initialize",connectionPayload({...source,client:{client_id:$("gitlab-client-id").value.trim(),client_secret:$("gitlab-client-secret").value,redirect_uri:prepared.redirect_uri,scopes:source.repository_access ? ["api","write_repository"] : ["api"]}}),undefined,50000);
+    if (version!==connections.formVersion) return;
+    $("gitlab-setup").hidden=["ready","owner_verification_required"].includes(result.status);
+    connectionFeedback(["ready","owner_verification_required"].includes(result.status) ? "应用配置已保存，请点击登录 GitLab 完成账号核验。" : "应用配置尚未就绪，请检查填写内容。", "status");
+  } catch {connectionFeedback("应用配置保存结果未确认，请重新打开连接检查。", "error");}
+  finally {$("gitlab-client-secret").value="";connections.sending=false;$("connection-fields").disabled=false;$("connection-back").disabled=false;$("close-settings").disabled=false;}
+});
 function connectionBrand() { return $("connection-provider").value === "lark" ? "lark" : "feishu"; }
 function connectionOrigin() { return connectionBrand() === "lark" ? "https://open.larksuite.com" : "https://open.feishu.cn"; }
 function updateConnectionItem(item) {
@@ -2848,7 +2956,7 @@ function renderConnections() {
     const button = document.createElement("button"); button.type = "button"; button.className = "connection-row";
     const label = document.createElement("span"), name = document.createElement("strong"), detail = document.createElement("small"), status = document.createElement("span");
     name.textContent = item.name; detail.textContent = item.provider === "lark" ? `${item.cli_profile?.brand === "lark" ? "Lark" : "飞书"}${item.validation.username ? ` · ${item.validation.username}` : ""}` : `GitLab · ${item.url}`;
-    status.textContent = item.validation.status === "valid" ? "已验证 ›" : item.validation.status === "failed" ? "验证失败 ›" : "未验证 ›";
+    status.textContent = item.credential_kind === "oauth" && item.authorization_status !== "active" ? (item.authorization_status === "logged_out" ? "已退出 ›" : "需要重新授权 ›") : item.validation.status === "valid" ? "已验证 ›" : item.validation.status === "failed" ? "验证失败 ›" : "未验证 ›";
     label.append(name, detail); button.append(label, status);
     button.addEventListener("click", () => editConnection(item)); return button;
   }));
@@ -2881,7 +2989,7 @@ async function loadConnections() {
 }
 function showConnectionList() {
   connections.formVersion++; connections.discovery = null; connections.detecting = false; clearLarkAuthView();
-  connections.selected = null; $("connection-pat").value = "";
+  connections.selected = null; $("gitlab-client-secret").value = "";
   $("connection-form").hidden = true; $("connections-list-view").hidden = false;
   $("connections-load-error").hidden = true;
   connectionFeedback();
@@ -2890,20 +2998,17 @@ function editConnection(item = null) {
   connections.formVersion++; connections.discovery = null; connections.detecting = false; clearLarkAuthView();
   clearConnectionErrors();
   connections.selected = item;
+  $("gitlab-repository-access").checked = false; $("gitlab-setup").hidden = true; $("gitlab-scope-hint").textContent = ""; $("gitlab-client-id").value = ""; $("gitlab-client-secret").value = "";
   $("connection-form").hidden = false; $("connections-list-view").hidden = true;
   $("connection-title").textContent = item ? "编辑连接" : "新增连接";
   $("connection-name").value = item?.name || "";
   $("connection-provider").value = item?.provider === "lark" ? item.cli_profile?.brand || "feishu" : "gitlab";
   $("connection-provider").disabled = !!item;
   $("connection-url").value = item?.url || ""; $("connection-url").readOnly = !!item;
-  $("connection-auth").value = item?.credential_kind === "env" ? "env" : "pat";
   $("connection-profile").replaceChildren(new Option("", item?.cli_profile?.profile || ""));
   $("connection-profile").value = item?.cli_profile?.profile || "";
   $("connection-executable").value = item?.cli_profile?.executable || "";
   $("connection-advanced").open = false;
-  $("connection-env").value = item?.token_env || ""; $("connection-pat").value = "";
-  $("connection-pat").placeholder = item ? "留空保留现有 Token；输入新值替换" : "输入 PAT";
-  $("connection-credential").hidden = !!item?.credential_configured;
   $("connection-notes").hidden = !item;
   const v = item?.validation;
   $("connection-validation").textContent = v?.status === "valid" ? `已验证 · @${v.username}`
@@ -2917,22 +3022,22 @@ function editConnection(item = null) {
   $("connection-fields").disabled = false; $("connection-name").focus();
   for (const id of ["connection-save", "connection-verify"]) $(id).disabled = false;
   if (connectionIsLark()) return detectLarkConnection();
+  renderGitLabAccount();
 }
 function connectionDirty() {
-  const item = connections.selected;
-  return !item || $("connection-name").value.trim() !== item.name || (item.provider === "lark" ? JSON.stringify(larkProfileDraft()) !== JSON.stringify(item.cli_profile) : $("connection-auth").value !== item.credential_kind) ||
-    $("connection-pat").value !== "" || ($("connection-auth").value === "env" && $("connection-env").value !== item.token_env);
+ const item=connections.selected;
+ return !item || $("connection-name").value.trim()!==item.name || (item.provider==="lark" && JSON.stringify(larkProfileDraft())!==JSON.stringify(item.cli_profile));
 }
 async function connectionAction(action) {
-  if (connections.sending || connections.auth || connections.detecting || !state.catalog) return;
+  if (connections.sending || connections.auth || connections.gitlabAuth || connections.detecting || !state.catalog) return;
   const item = connections.selected;
+  if (action === "save" && !connectionIsLark() && !item) return startGitLabAuth("login");
   if (action !== "save" && !item) return;
   if (action === "verify" && connectionDirty()) { connectionFeedback("请先保存更改，再验证连接。", "error"); return; }
   if (action === "delete" && !window.confirm(`删除「${item.name}」连接？`)) return;
   let payload = { id: item?.id || crypto.randomUUID().replaceAll("-", ""), version: item?.version || 0 };
   if (action === "save") {
     clearConnectionErrors();
-    const auth = $("connection-auth").value;
     payload = { ...payload, name: $("connection-name").value.trim(), provider: connectionIsLark() ? "lark" : "gitlab", url: connectionIsLark() ? connectionOrigin() : $("connection-url").value.trim() };
     if (payload.provider === "lark") {
       const profileName = $("connection-profile").value.trim();
@@ -2944,19 +3049,13 @@ async function connectionAction(action) {
       if (!executable.startsWith("/") || /[\x00\r\n]/.test(executable)) {
         connectionInputError("connection-executable", "连接未保存：请填写 lark-cli 可执行文件的绝对路径，例如 /opt/homebrew/bin/lark-cli。"); return;
       }
-      if (!item) payload.snapshot_version = 2;
       const profile = larkProfileDraft();
       if (!item || JSON.stringify(profile) !== JSON.stringify(item.cli_profile)) payload.cli_profile = profile;
-    } else if (auth === "env") {
-      const tokenEnv = $("connection-env").value.trim();
-      if (!tokenEnv) { connectionInputError("connection-env", "连接未保存：请填写服务环境变量名称。"); return; }
-      if (!item || item.credential_kind !== "env" || item.token_env !== tokenEnv) payload.token_env = tokenEnv;
-    } else if ($("connection-pat").value) payload.pat = $("connection-pat").value;
-    else if (!item || item.credential_kind !== "pat") { connectionInputError("connection-pat", "连接未保存：请填写 PAT。"); return; }
+    }
   }
-  if ((payload.pat || payload.token_env || payload.cli_profile) && item?.references?.length) {
-    if (!window.confirm(`替换「${item.name}」凭据？影响房间：${item.references.map(ref => ref.name).join("、")}。通知将暂停，需显式同步。`)) return;
-    payload.referenced_rooms = item.references.map(({ room_id, room_instance }) => ({ room_id, room_instance }));
+  if (payload.cli_profile && item?.references?.length) {
+    if (!window.confirm(`替换「${item.name}」应用配置？影响房间：${item.references.map(ref=>ref.name).join("、")}。通知将暂停，需显式同步。`)) return;
+    payload.referenced_rooms=item.references.map(({room_id,room_instance})=>({room_id,room_instance}));
   }
   connections.sending = true; $("connection-fields").disabled = true;
   $("connection-back").disabled = true; $("close-settings").disabled = true;
@@ -2995,7 +3094,7 @@ async function connectionAction(action) {
     if (savedResult) { await editConnection(savedResult); connectionFeedback("连接已保存，但验证结果未确认。请重新验证账号；不会重复创建连接。", "error"); }
     else connectionFeedback(errors[error.code] || "操作结果未确认，请返回列表核对；不会自动重发。", "error");
   } finally {
-    delete payload.pat; $("connection-pat").value = "";
+
     connections.sending = false; $("connection-fields").disabled = false;
     $("connection-back").disabled = false; $("close-settings").disabled = false;
   }
@@ -3004,15 +3103,14 @@ $("open-settings").addEventListener("click", async () => {
   if (!state.managed || !state.catalog) return;
   showConnectionList(); $("settings-dialog").showModal(); await loadConnections();
 });
-$("close-settings").addEventListener("click", async () => { await cancelLarkAuth(); $("settings-dialog").close(); });
+$("close-settings").addEventListener("click", async () => { await cancelConnectionAuth(); $("settings-dialog").close(); });
 $("settings-dialog").addEventListener("cancel", event => { if (connections.sending) event.preventDefault(); });
-$("settings-dialog").addEventListener("close", () => { void cancelLarkAuth(); connections.formVersion++; connections.generation++; $("connection-pat").value = "";
+$("settings-dialog").addEventListener("close", () => { void cancelConnectionAuth(); $("gitlab-client-secret").value = ""; connections.formVersion++; connections.generation++;
   if ($("notification-detail").open) { $(workspaceView?.notificationChannel === "todos" ? "gitlab-todos-manage-connections" : "gitlab-events-manage-connections").focus(); void loadWorkspaceConnections(); }
   else $("open-settings").focus(); });
 $("connection-new").addEventListener("click", () => editConnection());
-$("connection-back").addEventListener("click", async () => { if (connections.auth) await cancelLarkAuth(); showConnectionList(); await loadConnections(); });
+$("connection-back").addEventListener("click", async () => { if (connections.auth || connections.gitlabAuth) await cancelConnectionAuth(); showConnectionList(); await loadConnections(); });
 $("connections-retry").addEventListener("click", loadConnections);
-$("connection-auth").addEventListener("change", connectionAuthFields);
 $("connection-provider").addEventListener("change", () => {
   connections.formVersion++; connections.discovery = null; connections.detecting = false;
   $("connection-profile").replaceChildren();
@@ -3031,7 +3129,7 @@ $("connection-login").addEventListener("click", () => startLarkAuth("login"));
 $("connection-logout").addEventListener("click", () => startLarkAuth("logout"));
 $("connection-login-cancel").addEventListener("click", async () => { await cancelLarkAuth(); await detectLarkConnection(); connectionFeedback("已请求取消本次登录。已完成的授权不会因此撤销，请核对账号状态。"); });
 function larkProfileDraft() {return {version:1, executable:$("connection-executable").value.trim(), profile:$("connection-profile").value.trim(), brand:connectionBrand(), cli_version:"1.0.99"};}
-window.addEventListener("pagehide", () => { $("connection-pat").value = ""; });
+window.addEventListener("pagehide", () => { $("gitlab-client-secret").value = ""; void cancelGitLabAuth(true); });
 $("connection-form").addEventListener("submit", event => { event.preventDefault(); return connectionAction("save"); });
 $("connection-verify").addEventListener("click", () => connectionAction("verify"));
 $("connection-delete").addEventListener("click", () => connectionAction("delete"));

@@ -45,7 +45,7 @@ teamx serve --config /绝对路径/config.toml
 
 新房间公共消息为空，成员、Session、工作区、游标和预算独立，开场消息仅填入草稿。已有房间切回不补填或覆盖草稿。受管房间必须保存完整 runtime 和 Workspace 配置；旧运行时和 Workspace 离线迁移命令已移除。
 
-[Workspace](../../docs/workspace.zh.md)通过输入框下方入口配置普通目录、可选 HTTPS 仓库和 GitLab 认证。新房间只准备普通成员目录，模板建议不自动生效。应用先结清旧执行，再准备目标、提交配置并更新已有 Session 代际；保留文件和公共历史，不自动重放旧工作。PAT 仅经 write-only 请求保存为私有凭据引用。已有仓库和项目只读，回访只做本地核对。
+[Workspace](../../docs/workspace.zh.md)通过输入框下方入口配置普通目录、可选 HTTPS 仓库和 GitLab 认证。新房间只准备普通成员目录，模板建议不自动生效。应用先结清旧执行，再准备目标、提交配置并更新已有 Session 代际；保留文件和公共历史，不自动重放旧工作。GitLab 只引用全局 OAuth 连接，短期凭据由服务管理，不再接收或保存房间 PAT。已有仓库和项目只读，回访只做本地核对。
 
 应用使用稳定操作 ID 和配置版本，提供 `GET /v1/workspace`、`POST /v1/workspace/apply`、`POST /v1/workspace/retry`。超时先查询，失败显式重试原目标；部分提交和不确定写入阻止执行。管理身份、请求结构与页面凭据处理见 [Workspace 接口](../../docs/workspace.zh.md#管理接口)。旧运行时与 Workspace 迁移命令已移除，受管房间必须具备完整 runtime 和 Workspace 快照。
 

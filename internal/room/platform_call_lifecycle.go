@@ -17,6 +17,8 @@ type platformCall struct {
 	tool, connectionID    string
 	cancel                context.CancelFunc
 	done                  chan struct{}
+	account               connection.Account
+	secret                platform.Secret
 	subscription          notification.Key // Set only for saved-notification attachments.
 }
 
@@ -123,7 +125,7 @@ func (m *roomManager) preparePlatformCallLocked(ctx context.Context, req toolsRe
 		found := false
 		for _, c := range file.Connections {
 			if c.ID == binding.ConnectionID && c.Generation == binding.ConnectionGeneration && c.Provider == a.definition.Provider {
-				a.account, a.secret, err = connection.ResolveAccount(file, c)
+				a.account, a.secret, err = connection.ResolveAccessAccount(file, c)
 				if err != nil {
 					if errors.Is(err, platform.ErrCredential) {
 						return a, nil, nil, platform.ErrCredential
@@ -139,7 +141,7 @@ func (m *roomManager) preparePlatformCallLocked(ctx context.Context, req toolsRe
 		}
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	call := &platformCall{owner: req.RoomIdentity, tool: req.Tool, connectionID: binding.ConnectionID, agentID: req.Caller.ID, membershipID: req.Caller.MembershipID, cancel: cancel, done: make(chan struct{})}
+	call := &platformCall{owner: req.RoomIdentity, tool: req.Tool, connectionID: binding.ConnectionID, account: a.account, secret: a.secret, agentID: req.Caller.ID, membershipID: req.Caller.MembershipID, cancel: cancel, done: make(chan struct{})}
 	if m.platformCalls == nil {
 		m.platformCalls = map[*platformCall]bool{}
 	}

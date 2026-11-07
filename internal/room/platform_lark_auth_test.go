@@ -124,7 +124,7 @@ func TestLarkAuthHTTPGuardsCancellationAndShutdown(t *testing.T) {
 	if !strings.Contains(page.Header().Get("Content-Security-Policy"), "img-src 'self';") {
 		t.Fatal("image fix changed the existing content security policy")
 	}
-	save := platformConnectionRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("e", 32), Name: "auth in progress", Provider: "lark", URL: lark.Origin("feishu"), CLIProfile: &p, SnapshotVersion: 2}
+	save := platformConnectionRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("e", 32), Name: "auth in progress", Provider: "lark", URL: lark.Origin("feishu"), CLIProfile: &p}
 	if r := managerHTTP(m, "/v1/platform/connections/save", save); r.Code != 409 {
 		t.Fatal("saved a connection while its profile was authenticating", r.Code)
 	}

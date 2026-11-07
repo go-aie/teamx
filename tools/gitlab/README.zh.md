@@ -16,8 +16,10 @@ TeamX 服务按相同顺序解析工具：显式 `TEAMX_GITLAB_BIN` → TeamX �
 工具使用标准环境变量：
 
 - `GITLAB_HOST`：明确的实例，例如 `git-devops.opencsg.com`；Go 扩展也接受 HTTPS origin。
-- `GITLAB_TOKEN`：本次账号的 Token。工具不自动加载 `.env`；本仓库的 `GITLAB_PAT` 需要调用方映射到此变量。
+- `GITLAB_TOKEN`：本次调用的 OAuth access token。工具不自动加载 `.env`、登录或续期。
 - `TEAMX_GLAB_BIN`：可选的 glab 可执行文件路径。
+
+GitLab API 统一使用 Bearer，原生 glab 固定设置 `GLAB_IS_OAUTH2=true`。TeamX 服务管理令牌刷新与每次最多 5 分钟的调用许可。
 
 凭据不进入 argv；原生子进程使用临时私有 glab 配置，不读取操作者的全局 glab 登录信息，过滤其他 GLAB/GITLAB 环境及替代 Token 来源。帮助不解析实例/凭据、不调用业务 API。此配置隔离不构成安全沙箱；账号的实际权限决定可用操作。Go 扩展只接受 HTTPS origin、不跟随重定向；不默认选择 gitlab.com。
 

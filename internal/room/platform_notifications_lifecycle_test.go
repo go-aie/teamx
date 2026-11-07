@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -184,7 +185,7 @@ func TestGitLabEventsSlowSubscriptionDoesNotBlockOtherRoom(t *testing.T) {
 			return gitlab.EventBatch{Version: 1, Events: []gitlab.Event{}, Complete: true}, nil
 		}), 7, nil
 	}
-	if _, err := seedLegacyTestEvents(h.m, other.RoomIdentity, gitlab.EventsConfig{Enabled: true}); err != nil {
+	if _, err := seedTestEvents(h.m, other.RoomIdentity, gitlab.EventsConfig{Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	h.clock.add(time.Second)
@@ -211,8 +212,8 @@ func TestGitLabEventsWorkspaceChangePreservesIndependentSubscription(t *testing.
 	h.prepare()
 	h.clock.add(time.Second)
 	newWorkspace := testGitLabWorkspace()
-	newWorkspace.Binding.TokenEnv = "OTHER_EVENTS_PAT"
-	t.Setenv("OTHER_EVENTS_PAT", "offline-replacement-token")
+	newWorkspace.Binding.ConnectionID = strings.Repeat("e", 32)
+
 	h.runner.Fetcher = eventFetchFunc(func(context.Context, gitlab.EventQuery) (gitlab.EventBatch, error) {
 		setTestEffectiveWorkspace(t, h.m, h.room, newWorkspace, 2)
 		return gitlab.EventBatch{Version: 1, Events: []gitlab.Event{h.event(1, 0)}, Complete: true}, nil
@@ -230,7 +231,7 @@ func TestGitLabEventsWorkspaceChangePreservesIndependentSubscription(t *testing.
 	disabled := h.state()
 	cfg.Enabled = true
 	resumed, err := h.m.configureEventsSubscription(context.Background(), h.m.testEventsKey(h.room.RoomIdentity), disabled.SubscriptionVersion, cfg)
-	if err != nil || resumed.Binding.TokenEnv != "GITLAB_PAT" || resumed.SubscriptionID != s.SubscriptionID || !resumed.Baseline.Equal(s.Baseline) {
+	if err != nil || resumed.Binding.ConnectionID != s.Binding.ConnectionID || resumed.SubscriptionID != s.SubscriptionID || !resumed.Baseline.Equal(s.Baseline) {
 		t.Fatal("explicit credential refresh reset subscription progress", resumed, err)
 	}
 }

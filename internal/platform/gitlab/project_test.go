@@ -16,7 +16,7 @@ func TestWorkspaceSharedProjectHTTPValidation(t *testing.T) {
 			count := 0
 			transport := platformRoundTrip(func(r *http.Request) (*http.Response, error) {
 				count++
-				if r.URL.String() != "https://gitlab.invalid/api/v4/projects/group%2Fproject" || r.Header.Get("PRIVATE-TOKEN") != "private-test-token" {
+				if r.URL.String() != "https://gitlab.invalid/api/v4/projects/group%2Fproject" || r.Header.Get("Authorization") != "Bearer private-test-token" {
 					t.Fatal("wrong bound origin/auth")
 				}
 				body := `{"id":7,"path_with_namespace":"group/project","http_url_to_repo":"https://gitlab.invalid/group/project.git"}`

@@ -118,7 +118,7 @@ func TestDownloadUploadBinaryAuthenticationAndMIME(t *testing.T) {
 	}
 	closed := false
 	transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if r.Method != "GET" || r.URL.String() != source.Instance+"/api/v4/projects/312"+path || r.Header.Get("PRIVATE-TOKEN") != "private-test-token" {
+		if r.Method != "GET" || r.URL.String() != source.Instance+"/api/v4/projects/312"+path || r.Header.Get("Authorization") != "Bearer private-test-token" {
 			t.Fatal("wrong attachment request")
 		}
 		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"application/octet-stream"}}, Body: closeBody{Reader: bytes.NewReader(imageBytes.Bytes()), closed: &closed}}, nil

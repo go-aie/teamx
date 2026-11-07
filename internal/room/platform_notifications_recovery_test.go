@@ -22,6 +22,11 @@ func TestPlatformNotificationInboxReloadClearAndContinuation(t *testing.T) {
 	if err := json.Unmarshal(data, &saved); err != nil {
 		t.Fatal(err)
 	}
+	saved.Binding = h.state().Binding
+	saved.Config.ConnectionID = h.state().Config.ConnectionID
+	saved.Config.Project = h.state().Config.Project
+	saved.UserID = h.state().UserID
+	saved.Username = h.state().Username
 	saved.RoomIdentity = h.room.RoomIdentity
 	saved.SubscriptionID = h.state().SubscriptionID
 	for key, entry := range saved.Inbox {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"io"
+	"strings"
 
 	"github.com/go-aie/teamx/internal/platform/gitlab"
 )
@@ -12,8 +13,14 @@ import (
 // Private Git helper, independent of the agent tools catalog and glab. It never
 // prints a token except as the password answer on Git's private askpass pipe.
 func runWorkspaceGitCLI(ctx context.Context, args []string, stdout, stderr io.Writer, env func(string) string) error {
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		return writeOutput(stdout, []byte("Usage: teamx workspace-git fetch|push|ls-remote [refs] [--prune|--tags|--dry-run|--force-with-lease|--delete|--heads]\nThe service uses the current member Workspace and bound repository. OAuth requires write_repository; each command is bounded to 5 minutes.\n"))
+	}
 	if len(args) == 0 {
 		return errors.New("usage: teamx workspace-git askpass --binding FILE PROMPT")
+	}
+	if args[0] == "fetch" || args[0] == "push" || args[0] == "ls-remote" {
+		return runToolsCLI(ctx, append([]string{"run", "workspace-git"}, args...), strings.NewReader(""), stdout, stderr, env)
 	}
 	command, args := args[0], args[1:]
 	if command != "askpass" {

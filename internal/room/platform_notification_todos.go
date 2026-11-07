@@ -95,7 +95,11 @@ func (m *roomManager) preparePlatformTodos(_ context.Context, _ string, owner Ro
 			return gitlab.APIResponse{}, err
 		}
 		m.mu.Lock()
-		current, secret, err := m.resolveTodosConnectionLocked(owner, b.Binding.ConnectionID)
+		current, _, err := m.resolveTodosConnectionLocked(owner, b.Binding.ConnectionID)
+		account, secret, accountErr := m.resolvePlatformAccountLocked(owner, b.Binding.ConnectionID, "gitlab")
+		if err == nil {
+			err = accountErr
+		}
 		m.mu.Unlock()
 		if err != nil {
 			return gitlab.APIResponse{}, err
@@ -103,7 +107,7 @@ func (m *roomManager) preparePlatformTodos(_ context.Context, _ string, owner Ro
 		if current != b {
 			return gitlab.APIResponse{}, notification.ErrBusy
 		}
-		response, err := gitlab.NewReadAPI(b.Binding.URL, secret, m.platformHTTP)(ctx, path, q, h, limit)
+		response, err := m.gitlabAccountRead(owner, account, secret)(ctx, path, q, h, limit)
 		m.mu.Lock()
 		current, _, checkErr := m.resolveTodosConnectionLocked(owner, b.Binding.ConnectionID)
 		m.mu.Unlock()

@@ -124,7 +124,12 @@ func TestMissingAndWrongDependency(t *testing.T) {
 	}
 	bin := filepath.Join(t.TempDir(), "glab")
 	os.WriteFile(bin, []byte("#!/bin/sh\necho 'glab 1.128.0 (other)'\n"), 0700)
-	a.getenv = func(string) string { return bin }
+	a.getenv = func(key string) string {
+		if key == "TEAMX_GLAB_BIN" {
+			return bin
+		}
+		return ""
+	}
 	out.Reset()
 	errOut.Reset()
 	if code := a.run(context.Background(), []string{"mr", "close", "1"}); code != 127 || !strings.Contains(errOut.String(), "unsupported glab") {
@@ -259,7 +264,7 @@ func TestIssueDiscussionsPaginationAndReplyStdin(t *testing.T) {
 	calls := 0
 	a, out, errOut := testApp(t, func(r *http.Request) (*http.Response, error) {
 		calls++
-		if r.Header.Get("PRIVATE-TOKEN") != "secret-test-token" || r.URL.Host != "gitlab.test" {
+		if r.Header.Get("Authorization") != "Bearer secret-test-token" || r.URL.Host != "gitlab.test" {
 			t.Fatal("context missing")
 		}
 		if r.URL.EscapedPath() != "/api/v4/projects/group%2Fproject/issues/7/discussions" {

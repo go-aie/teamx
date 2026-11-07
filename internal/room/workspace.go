@@ -7,7 +7,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strings"
 
@@ -21,13 +20,11 @@ type preparedWorkspaces struct {
 }
 
 type workspacePreparer struct {
-	run           platform.Execute
-	transport     http.RoundTripper
-	write         func(string, any) error
-	remove        func(string) error
-	credential    func(RoomIdentity, string) (workspaceSecret, error)
-	connection    func(RoomIdentity, workspaceConfig) (projectConnectionResolution, error)
-	credentialDir string
+	run            platform.Execute
+	write          func(string, any) error
+	remove         func(string) error
+	connection     func(RoomIdentity, workspaceConfig) (projectConnectionResolution, error)
+	connectionRead func(projectConnectionResolution) gitlab.ReadAPI
 }
 
 // Internal capability only. The management application in step 3 must establish
@@ -48,7 +45,7 @@ func (m *roomManager) ensureWorkspaces(ctx context.Context, saved managedRoomCon
 	if closing {
 		return preparedWorkspaces{}, ErrClosing
 	}
-	p := workspacePreparer{run: runPreparation, transport: m.platformHTTP, credential: m.loadWorkspaceCredential, credentialDir: filepath.Join(m.store.dir, "credentials"),
+	p := workspacePreparer{run: runPreparation,
 		write: func(name string, v any) error {
 			m.mu.Lock()
 			defer m.mu.Unlock()
@@ -84,9 +81,20 @@ func (m *roomManager) ensureWorkspaces(ctx context.Context, saved managedRoomCon
 			defer m.mu.Unlock()
 			return m.resolveWorkspaceConnectionLocked(owner, w)
 		}
+		p.connectionRead = m.projectConnectionRead
 		p.run = m.connectionExecute(saved.RoomIdentity, *saved.Workspace, p.run)
 	}
-	return p.ensure(ctx, m.roomDir(saved.RoomID), saved, initial)
+	result, err := p.ensure(ctx, m.roomDir(saved.RoomID), saved, initial)
+	if err == nil && p.connection != nil {
+		resolved, resolveErr := p.connection(saved.RoomIdentity, *saved.Workspace)
+		if resolveErr != nil {
+			return preparedWorkspaces{}, resolveErr
+		}
+		if resolved.account.Authorization.CredentialID != "" {
+			result.Instructions += "\nOAuth 仓库网络操作使用 \"$TEAMX_CLI\" workspace-git fetch|push|ls-remote [分支或引用]，由服务限定当前仓库并管理短期凭据。不要使用普通 git fetch/push 的 askpass；本地 diff/commit 继续用 git。需要 write_repository 授权；每次最多运行 5 分钟，中断后先核对远端结果。\n"
+		}
+	}
+	return result, err
 }
 
 func (p workspacePreparer) ensure(ctx context.Context, dir string, saved managedRoomConfig, initial bool) (preparedWorkspaces, error) {
@@ -133,7 +141,7 @@ func (p workspacePreparer) ensure(ctx context.Context, dir string, saved managed
 	var workspaceRead gitlab.ReadAPI
 	if w.Binding != nil {
 		b := w.Binding
-		ref := gitlab.Binding{Version: 1, RoomID: saved.RoomID, RoomInstance: saved.RoomInstance, URL: b.URL, Project: b.Project, TokenEnv: b.TokenEnv, CredentialID: b.CredentialID}
+		ref := gitlab.Binding{Version: 1, RoomID: saved.RoomID, RoomInstance: saved.RoomInstance, URL: b.URL, Project: b.Project}
 		if b.ConnectionID != "" {
 			if p.connection == nil {
 				return result, ErrIdentity
@@ -143,16 +151,8 @@ func (p workspacePreparer) ensure(ctx context.Context, dir string, saved managed
 				return result, ErrConflict
 			}
 			ref.ConnectionID, ref.ConnectionGeneration, ref.ProjectID = b.ConnectionID, b.ConnectionGeneration, b.ProjectID
-		} else if b.CredentialID != "" {
-			if p.credential == nil {
-				return result, ErrIdentity
-			}
-			if _, err := p.credential(saved.RoomIdentity, b.CredentialID); err != nil {
-				return result, err
-			}
-			ref.CredentialFile = filepath.Join(p.credentialDir, b.CredentialID+".json")
-		} else if initial && !validWorkspacePAT(os.Getenv(b.TokenEnv)) {
-			return result, errors.New("workspace credential is missing or invalid")
+		} else {
+			return result, ErrIdentity
 		}
 		tools := "resources/platforms/gitlab"
 		if b.ConnectionID != "" {
@@ -218,7 +218,7 @@ func (p workspacePreparer) ensure(ctx context.Context, dir string, saved managed
 		if w.Binding == nil {
 			continue
 		}
-		// Authentication is room-specific. These contain references only, never PAT.
+		// Authentication is room-specific. These contain references only, never tokens.
 		if initial {
 			for _, kv := range [][2]string{{"credential.helper", ""}, {"core.askPass", env["GIT_ASKPASS"]}} {
 				if _, err := p.git(ctx, workspace, env, "config", "--local", "--replace-all", kv[0], kv[1]); err != nil {
@@ -358,32 +358,13 @@ func missingGitConfig(err error) bool {
 // the complete HTTP response; credentials never enter prepared member state.
 func (p workspacePreparer) gitLabRead(owner RoomIdentity, w workspaceConfig, b gitlab.Binding) gitlab.ReadAPI {
 	return func(ctx context.Context, path string, q url.Values, h http.Header, limit int64) (gitlab.APIResponse, error) {
-		var secret platform.Secret
-		var admitted projectConnectionResolution
-		if b.ConnectionID != "" {
-			current, err := p.connection(owner, w)
-			if err != nil {
-				return gitlab.APIResponse{}, err
-			}
-			admitted = current
-			secret = platform.NewSecret(current.secret.value)
-		} else if b.CredentialID != "" {
-			value, err := p.credential(owner, b.CredentialID)
-			if err != nil {
-				return gitlab.APIResponse{}, err
-			}
-			secret = platform.NewSecret(value.value)
-		} else {
-			secret = platform.NewSecret(os.Getenv(b.TokenEnv))
+		if p.connection == nil || p.connectionRead == nil {
+			return gitlab.APIResponse{}, ErrIdentity
 		}
-		response, err := gitlab.NewReadAPI(b.URL, secret, p.transport)(ctx, path, q, h, limit)
-		if b.ConnectionID != "" {
-			current, e := p.connection(owner, w)
-			// Reloading allocates a new IdentityBinding pointer; compare its contents.
-			if e != nil || !reflect.DeepEqual(current.record, admitted.record) || current.secret.value != admitted.secret.value {
-				return gitlab.APIResponse{}, ErrConflict
-			}
+		current, err := p.connection(owner, w)
+		if err != nil {
+			return gitlab.APIResponse{}, err
 		}
-		return response, err
+		return p.connectionRead(current)(ctx, path, q, h, limit)
 	}
 }

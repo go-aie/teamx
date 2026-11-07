@@ -14,7 +14,7 @@ Workspace 是成员实际工作的本地目录，Git 仓库和平台绑定都是
 | 仅 Git | 使用 HTTPS 仓库 URL，首次 clone 并按需 checkout |
 | GitLab 绑定 | 从仓库 URL 派生实例与项目，核验目标与账号，准备 Git 作者和限定仓库路径的认证 |
 
-GitLab 连接可在全局管理后引用；内部配置还支持指定密钥环境或房间私有凭据引用。URL 不接受内嵌账号、密码、查询参数或 fragment。PAT 不进入 remote URL、命令参数、普通配置或响应；Git 通过受限 askpass/helper 按需取用。
+GitLab 绑定只引用全局 OAuth 连接。URL 不接受内嵌账号、密码、查询参数或 fragment。短期令牌不进入 remote URL、命令参数、成员环境或响应；网络 Git 使用 `teamx workspace-git fetch/push/ls-remote`，由服务取得有界令牌许可并等待进程结束。Git 读写需要 `write_repository`，本地 diff／commit 仍直接使用 Git。
 
 已有仓库、目录和项目只读，不能通过设置换仓库；同仓库可补 GitLab 或替换认证。普通根路径调整仅适用于未关联仓库的房间。首次绑定使用新的受管目录，保留旧普通目录及产物。
 
@@ -42,25 +42,26 @@ flowchart LR
 | 接口 | 身份与行为 |
 | --- | --- |
 | `GET /v1/workspace` | 目录 `service_epoch`、`caller_id`、RoomID/RoomInstance，可带 `operation_id`；返回配置、成员路径、操作状态及建议值 |
-| `POST /v1/workspace/apply` | human caller、目录/房间身份、32 位小写十六进制 `operation_id`、`expected_version`、`target`；连接引用另带 `connection_version`，直接凭据可带 `pat` |
-| `POST /v1/workspace/retry` | 同样的管理身份及原操作 ID；拒绝新目标或新 PAT |
+| `POST /v1/workspace/apply` | human caller、目录/房间身份、32 位小写十六进制 `operation_id`、`expected_version`、`target`；连接引用另带 `connection_version` |
+| `POST /v1/workspace/retry` | 同样的管理身份及原操作 ID；拒绝新目标或凭据字段 |
 
-同 ID 同参数返回已有操作，不重新执行；参数不同则冲突。PAT 首次接收后保存在私有凭据目录，操作只保存引用；`credential_status=configured` 仅表示本地凭据可解析，不证明平台权限仍有效。请求结构与实际阶段见 [workspace_management.go](../internal/room/workspace_management.go)、[workspace_records.go](../internal/room/workspace_records.go)。
+同 ID 同参数返回已有操作，不重新执行；参数不同则冲突。操作只保存平台连接引用；`credential_status=configured` 表示当前授权证据可解析，不证明远端权限仍有效。请求结构与实际阶段见 [workspace_management.go](../internal/room/workspace_management.go)、[workspace_records.go](../internal/room/workspace_records.go)。
 
 ## 页面与凭据
 
-页面展示当前目录、各成员路径、配置版本和初始化进度。轮询不覆盖同版本编辑，切房和迟到响应按房间实例隔离。PAT 只留在密码框和一次专用提交中；提交、关闭、切房、认证方式或配置变化、pagehide 均清空。浏览器仅保存按房间和操作者隔离的原操作 ID。
+页面展示当前目录、各成员路径、配置版本和初始化进度。轮询不覆盖同版本编辑，切房和迟到响应按房间实例隔离。页面不接收凭据，只选择已有 OAuth 连接。浏览器仅保存按房间和操作者隔离的原操作 ID。
 
-响应超时先查原操作，不自动重发。失败时只能显式重试原目标；查不到收据不证明凭据从未落盘，需核查后主动放弃未确认状态、重新填写并使用新 ID。连接轮换、引用保护与工具进程结清见[平台架构](platform-architecture.zh.md)。
+响应超时先查原操作，不自动重发。失败时只能显式重试原目标；查不到收据不证明原操作从未提交，需核查后主动放弃未确认状态、重新填写并使用新 ID。连接轮换、引用保护与工具进程结清见[平台架构](platform-architecture.zh.md)。
 
 当前受管房间要求完整 runtime 与 Workspace 快照，不再提供旧运行时或 Workspace 迁移命令。使用方法见[根 README](../README.md)。
 
 ## 真实验收
 
-[TestRealWorkspaceGitLabDSH](../internal/room/workspace_real_test.go) 使用[已安装的 DSH 与模型环境](agent-runtime.zh.md#真实验收)，显式环境或凭据文件还须提供 `GITLAB_PAT`：
+[TestRealWorkspaceGitLabDSH](../internal/room/workspace_real_test.go) 使用[已安装的 DSH 与模型环境](agent-runtime.zh.md#真实验收)，通过 `TEAMX_REAL_OAUTH_SNAPSHOT` 指定已登录的私有 OAuth 连接快照（`write_repository` 已授权）：
 
 ```sh
-go test ./internal/room -run '^TestRealWorkspaceGitLabDSH$' -count=1 -v -timeout 20m -args \
+TEAMX_REAL_OAUTH_SNAPSHOT=/absolute/platform-connections.json \
+ go test ./internal/room -run '^TestRealWorkspaceGitLabDSH$' -count=1 -v -timeout 20m -args \
   -teamx-workspace-real-output /absolute/new-workspace-evidence \
   -teamx-workspace-repository https://gitlab.example/group/project.git \
   -teamx-management-env-file /absolute/credentials.env \

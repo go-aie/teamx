@@ -14,7 +14,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -58,7 +57,7 @@ func TestRealGitLabEventsDSH(t *testing.T) {
 	var m *roomManager
 	var server *httptest.Server
 	trace := &ge04Trace{path: filepath.Join(d.output, "queries.jsonl")}
-	pat := ""
+	accessToken := ""
 	defer func() {
 		// Stop the owner before HTTP. Cleanup errors invalidate acceptance.
 		if m != nil {
@@ -78,7 +77,7 @@ func TestRealGitLabEventsDSH(t *testing.T) {
 			d.report["status"] = "failed"
 		}
 		data, err := json.MarshalIndent(d.report, "", "  ")
-		for _, secret := range []string{d.secret, pat} {
+		for _, secret := range []string{d.secret, accessToken} {
 			if secret != "" {
 				data = bytes.ReplaceAll(data, []byte(secret), []byte("[REDACTED]"))
 			}
@@ -112,21 +111,11 @@ func TestRealGitLabEventsDSH(t *testing.T) {
 	}
 	fail(d.setup()) // installed DSH, credential, model and real CLI
 	t.Setenv(d.report["apiKeyEnv"].(string), d.secret)
-	pat = os.Getenv("GITLAB_PAT")
-	if file := os.Getenv("TEAMX_DSH_ENV_FILE"); pat == "" && file != "" {
-		data, err := exec.CommandContext(ctx, "node", "--env-file="+file, "-e", "process.stdout.write(process.env.GITLAB_PAT || '')").Output()
-		if err != nil {
-			fail(errors.New("cannot load GitLab credential"))
-		}
-		pat = string(data)
-	}
-	if !validWorkspacePAT(pat) {
-		fail(errors.New("GITLAB_PAT required in environment or designated env file"))
-	}
-	t.Setenv("GITLAB_PAT", pat)
 	u, _ := url.Parse(w.Repository.URL)
 	project, origin := strings.TrimSuffix(strings.TrimPrefix(u.Path, "/"), ".git"), u.Scheme+"://"+u.Host
-	w.Binding = &workspaceBinding{Provider: "gitlab", URL: origin, Project: project, TokenEnv: "GITLAB_PAT"}
+	w.Binding = &workspaceBinding{Provider: "gitlab", URL: origin, Project: project}
+	oauthFile, oauthConnection := selectedRealOAuthSnapshot(t, origin)
+	accessToken = oauthFile.OAuthCredentials[0].AccessToken
 	marker, err := newOpaqueID()
 	fail(err)
 	marker = "GE04-" + marker
@@ -171,13 +160,15 @@ func TestRealGitLabEventsDSH(t *testing.T) {
 		server = nil
 	}
 	start("service-1")
+	realOAuthConnection(t, m, origin)
+	w.Binding.ConnectionID = oauthConnection.ID
 	var room roomSummary
 	fail(d.managementRequest("/v1/rooms/create", roomCreateRequest{ServiceEpoch: m.epoch, Caller: humanCaller, roomSelection: roomSelection{TeamID: team.ID, CreateID: "ge04", Name: "GE-04"}}, &room))
 	fail(d.selectManaged(m.epoch, room, "ge04-activate"))
 	// Apply through the production management API, with the inherited credential
 	// reference; no PAT is copied into the report or fixture configuration.
 	var op workspaceOperation
-	fail(d.managementRequest("/v1/workspace/apply", workspaceApplyRequest{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, OperationID: strings.TrimPrefix(marker, "GE04-"), ExpectedVersion: 1, Target: w}, &op))
+	fail(d.managementRequest("/v1/workspace/apply", workspaceApplyRequest{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, OperationID: strings.TrimPrefix(marker, "GE04-"), ExpectedVersion: 1, ConnectionVersion: oauthConnection.Version, Target: w}, &op))
 	fail(d.until(func() (bool, error) {
 		ws, err := d.realWorkspaceStatus(m.epoch, room)
 		if err != nil || ws.Operation == nil {
@@ -192,8 +183,7 @@ func TestRealGitLabEventsDSH(t *testing.T) {
 	// Events independently selects a verified account and project; the local
 	// checkout remains only for the separate development acceptance scenario.
 	var conn platformConnection
-	fail(d.managementRequest("/v1/platform/connections/save", platformConnectionRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.TrimPrefix(marker, "GE04-"), Name: "GE04 Events", Provider: "gitlab", URL: origin, TokenEnv: "GITLAB_PAT"}, &conn))
-	fail(d.managementRequest("/v1/platform/connections/verify", platformConnectionRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: conn.ID, Version: conn.Version}, &conn))
+	conn = oauthConnection
 	// Tool selection is explicit and independent of Workspace/notification.
 	var saved managedRoomConfig
 	fail(jsonFile(filepath.Join(d.dir, "rooms", room.RoomID, "room-config.json"), &saved))
@@ -238,8 +228,8 @@ func TestRealGitLabEventsDSH(t *testing.T) {
 	}
 	d.report["idle_load"] = load
 	// Separate scope and accounting: probes never enter the subscription cache.
-	probeBinding := gitlab.Binding{Version: 1, RoomID: room.RoomID, RoomInstance: room.RoomInstance, URL: origin, Project: project, TokenEnv: "GITLAB_PAT"}
-	probe, err := gitlab.NewEventFetcher(ctx, probeBinding, gitlab.NewReadAPI(origin, platform.NewSecret(os.Getenv("GITLAB_PAT")), nil))
+	probeBinding := gitlab.Binding{Version: 1, RoomID: room.RoomID, RoomInstance: room.RoomInstance, URL: origin, Project: project, ConnectionID: oauthConnection.ID, ConnectionGeneration: oauthFile.Connections[0].Generation, ProjectID: initial.ProjectID}
+	probe, err := gitlab.NewEventFetcher(ctx, probeBinding, gitlab.NewReadAPI(origin, platform.NewSecret(selectedRealAccessToken(t, origin)), nil))
 	fail(err)
 	etag, err := ge04ProbeETag(ctx, trace.wrap(probe, "etag-probe"))
 	fail(err)
@@ -599,7 +589,7 @@ func ge04CheckEvent(t *testing.T, d *realRoomDriver, room RoomIdentity, marker s
 	// about the SHA/state as proof of a real object read.
 	var output bytes.Buffer
 	binding := config.Workspace.Binding
-	process := tool.Process{Definition: tool.Catalog()[0], Values: map[string]string{"instance": binding.URL, "token": os.Getenv("GITLAB_PAT")}, Output: &output, Error: io.Discard}
+	process := tool.Process{Definition: tool.Catalog()[0], Values: map[string]string{"instance": binding.URL, "token": selectedRealAccessToken(t, binding.URL)}, Output: &output, Error: io.Discard}
 	if code := process.Run(ctx, []string{"mr", "view", strconv.FormatInt(e.IID, 10), "--repo", binding.URL + "/" + binding.Project, "-F", "json"}); code != 0 {
 		fail(fmt.Errorf("independent MR query exited with status %d", code))
 	}

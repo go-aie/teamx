@@ -20,7 +20,6 @@ type platformConnectionsFile = connection.Snapshot
 
 // Requests may carry secrets and must never appear in generic diagnostics.
 type platformConnectionRequest struct {
-	SnapshotVersion int                  `json:"snapshot_version,omitempty"`
 	CLIProfile      *platform.CLIProfile `json:"cli_profile,omitempty"`
 	ReferencedRooms []RoomIdentity       `json:"referenced_rooms,omitempty"`
 	ServiceEpoch    string               `json:"service_epoch"`
@@ -30,8 +29,6 @@ type platformConnectionRequest struct {
 	Name            string               `json:"name,omitempty"`
 	Provider        string               `json:"provider,omitempty"`
 	URL             string               `json:"url,omitempty"`
-	PAT             string               `json:"pat,omitempty"`
-	TokenEnv        string               `json:"token_env,omitempty"`
 }
 
 func (platformConnectionRequest) Format(s fmt.State, _ rune) {
@@ -53,10 +50,6 @@ func (m *roomManager) readPlatformConnections() (platformConnectionsFile, error)
 	file, err := m.connections.Load()
 	return file, platformConnectionError(err)
 }
-func resolvePlatformCredential(file platformConnectionsFile, c platformConnectionRecord, version, credentialVersion uint64) (workspaceSecret, error) {
-	secret, err := connection.ResolveCredential(file, c, version, credentialVersion)
-	return workspaceSecret{value: secret.Reveal()}, platformConnectionError(err)
-}
 func (m *roomManager) updatePlatformConnection(req platformConnectionRequest, remove bool) (platformConnection, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -75,7 +68,7 @@ func (m *roomManager) updatePlatformConnection(req platformConnectionRequest, re
 			return platformConnection{}, ErrBusy
 		}
 	}
-	change, err := m.connections.Plan(connection.Request{CLIProfile: req.CLIProfile, SnapshotVersion: req.SnapshotVersion, ID: req.ID, Version: req.Version, Name: req.Name, Provider: req.Provider, URL: req.URL, PAT: req.PAT, TokenEnv: req.TokenEnv}, remove)
+	change, err := m.connections.Plan(connection.Request{CLIProfile: req.CLIProfile, ID: req.ID, Version: req.Version, Name: req.Name, Provider: req.Provider, URL: req.URL}, remove)
 	if err != nil {
 		return platformConnection{}, platformConnectionError(err)
 	}
@@ -125,19 +118,11 @@ func (m *roomManager) verifyPlatformConnection(ctx context.Context, req platform
 		}
 	}
 	ticket, err := m.connections.BeginVerification(req.ID, req.Version)
-	// Capture the test seam under the same lock as the immutable selection.
-	verify := m.platformVerify
 	m.mu.Unlock()
 	if err != nil {
 		return platformConnection{}, platformConnectionError(err)
 	}
-	var override connection.Verify
-	if verify != nil {
-		override = func(ctx context.Context, _ string, origin string, secret platform.Secret) platform.Validation {
-			return verify(ctx, origin, workspaceSecret{value: secret.Reveal()})
-		}
-	}
-	result := m.connections.Query(ctx, ticket, override)
+	result := m.connections.Query(ctx, ticket)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.busy {
@@ -183,7 +168,7 @@ func (m *roomManager) resolvePlatformAccountLocked(owner RoomIdentity, id, provi
 		if c.Provider != provider {
 			return connection.Account{}, platform.Secret{}, ErrRequest
 		}
-		account, secret, err := connection.ResolveAccount(file, c)
+		account, secret, err := connection.ResolveAccessAccount(file, c)
 		if err != nil {
 			return connection.Account{}, platform.Secret{}, platform.ErrCredential
 		}
@@ -198,6 +183,7 @@ type projectConnectionResolution struct {
 	record    platformConnectionRecord
 	secret    workspaceSecret
 	projectID int64
+	account   connection.Account
 }
 
 func (projectConnectionResolution) Format(s fmt.State, _ rune) {
@@ -231,11 +217,11 @@ func (m *roomManager) resolveProjectConnectionLocked(owner RoomIdentity, b platf
 		if c.Provider != b.Provider || c.URL != b.URL || b.ConnectionGeneration != "" && c.Generation != b.ConnectionGeneration {
 			return result, ErrConflict
 		}
-		secret, err := resolvePlatformCredential(file, c, c.Version, c.CredentialVersion)
+		account, err := connection.ResolveAuthorization(file, c)
 		if err != nil {
 			return result, platform.ErrCredential
 		}
-		result.record, result.secret, result.projectID = c, secret, b.ProjectID
+		result.record, result.secret, result.projectID, result.account = c, workspaceSecret{}, b.ProjectID, account
 		return result, nil
 	}
 	return result, ErrConflict
@@ -259,8 +245,8 @@ func (m *roomManager) checkProjectConnectionLocked(resolved projectConnectionRes
 		if c.ID != resolved.record.ID {
 			continue
 		}
-		secret, err := resolvePlatformCredential(file, c, resolved.record.Version, resolved.record.CredentialVersion)
-		if err != nil || c.Generation != resolved.record.Generation || secret.value != resolved.secret.value {
+		a, err := connection.ResolveAuthorization(file, c)
+		if err != nil || a != resolved.account {
 			return ErrConflict
 		}
 		return nil

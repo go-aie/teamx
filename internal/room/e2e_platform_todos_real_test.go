@@ -13,7 +13,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -66,7 +65,7 @@ func TestRealGitLabTodosDSH(t *testing.T) {
 	events := &ge04Trace{path: filepath.Join(d.output, "events-queries.jsonl")}
 	var m *roomManager
 	var server *httptest.Server
-	pat := ""
+	accessToken := ""
 	defer func() {
 		if m != nil {
 			if err := m.close(); err != nil {
@@ -84,7 +83,7 @@ func TestRealGitLabTodosDSH(t *testing.T) {
 			d.report["status"] = "failed"
 		}
 		data, err := json.MarshalIndent(d.report, "", "  ")
-		for _, secret := range []string{pat, d.secret} {
+		for _, secret := range []string{accessToken, d.secret} {
 			if secret != "" {
 				data = bytes.ReplaceAll(data, []byte(secret), []byte("[REDACTED]"))
 			}
@@ -116,20 +115,10 @@ func TestRealGitLabTodosDSH(t *testing.T) {
 	fail(d.setup())
 	d.report["rooms_root"] = d.dir
 	t.Setenv(d.report["apiKeyEnv"].(string), d.secret)
-	pat = os.Getenv("GITLAB_PAT")
-	if file := os.Getenv("TEAMX_DSH_ENV_FILE"); pat == "" && file != "" {
-		out, err := exec.CommandContext(ctx, "node", "--env-file="+file, "-e", "process.stdout.write(process.env.GITLAB_PAT || '')").Output()
-		if err != nil {
-			fail(errors.New("cannot load GitLab credential"))
-		}
-		pat = string(out)
-	}
-	if !validWorkspacePAT(pat) {
-		fail(errors.New("GITLAB_PAT required"))
-	}
-	t.Setenv("GITLAB_PAT", pat)
 	u, _ := url.Parse(w.Repository.URL)
 	origin, project := u.Scheme+"://"+u.Host, strings.TrimSuffix(strings.TrimPrefix(u.Path, "/"), ".git")
+	oauthFile, oauthConnection := selectedRealOAuthSnapshot(t, origin)
+	accessToken = oauthFile.OAuthCredentials[0].AccessToken
 	marker, err := newOpaqueID()
 	fail(err)
 	marker = "GT04-" + marker
@@ -191,12 +180,12 @@ func TestRealGitLabTodosDSH(t *testing.T) {
 	}
 
 	start("service-1")
+	realOAuthConnection(t, m, origin)
 	var room roomSummary
 	var conn platformConnection
 	fail(d.managementRequest("/v1/rooms/create", roomCreateRequest{ServiceEpoch: m.epoch, Caller: humanCaller, roomSelection: roomSelection{TeamID: team.ID, CreateID: "gt04", Name: team.Name}}, &room))
 	fail(d.selectManaged(m.epoch, room, "gt04-activate"))
-	fail(d.managementRequest("/v1/platform/connections/save", platformConnectionRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.TrimPrefix(marker, "GT04-"), Name: "GT-04 personal", Provider: "gitlab", URL: origin, TokenEnv: "GITLAB_PAT"}, &conn))
-	fail(d.managementRequest("/v1/platform/connections/verify", platformConnectionRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: conn.ID, Version: conn.Version}, &conn))
+	conn = oauthConnection
 	d.report["room"] = room.RoomIdentity
 	if conn.Validation.Status != "valid" || conn.Validation.UserID <= 0 {
 		fail(errors.New("real personal identity verification failed"))
@@ -320,7 +309,7 @@ func TestRealGitLabTodosDSH(t *testing.T) {
 	checkpoint("offline-work-item-mention")
 	// Independent real read probe, same bounded Go HTTP adapter. Never writes
 	// state, changes production page size, or substitutes a fixture response.
-	probe, err := gitlab.NewTodoFetcher(origin, conn.Validation.UserID, gitlab.NewReadAPI(origin, platform.NewSecret(pat), nil))
+	probe, err := gitlab.NewTodoFetcher(origin, conn.Validation.UserID, gitlab.NewReadAPI(origin, platform.NewSecret(accessToken), nil))
 	fail(err)
 	probeFetch := trace.wrap(probe, "offline-probe")
 	var offline gitlab.Todo

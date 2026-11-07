@@ -301,8 +301,8 @@ func TestDSHMaterialsFinalCheckRejectsRevocationBeforePrompt(t *testing.T) {
 			case "credential":
 				connection := platformTestList(t, h.m)[0]
 				update := platformTestRequest(h.m)
-				update.Version, update.PAT, update.ReferencedRooms = connection.Version, "replacement-test-token", []RoomIdentity{reader.RoomIdentity}
-				if _, err := h.m.updatePlatformConnection(update, false); err != nil {
+				update.Version, update.ReferencedRooms = connection.Version, []RoomIdentity{reader.RoomIdentity}
+				if _, err := testReauthorizeConnection(h.m, update); err != nil {
 					t.Fatal(err)
 				}
 			case "epoch":

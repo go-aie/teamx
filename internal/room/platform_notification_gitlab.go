@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
@@ -53,18 +52,7 @@ func (m *roomManager) admitEventsLocked(s gitlab.EventsState) (notification.Scop
 		return scope, err
 	}
 	scope.Data, _ = json.Marshal(b)
-	stamp := fmt.Sprintf("%s|%d|%s|%s|%s|%s", b.ConnectionGeneration, b.CredentialVersion, b.CredentialFingerprint, b.CredentialID, b.CredentialFile, b.TokenEnv)
-	if b.ConnectionID == "" {
-		if b.TokenEnv != "" {
-			stamp += fmt.Sprintf("|%x", sha256.Sum256([]byte(os.Getenv(b.TokenEnv))))
-		} else {
-			secret, err := m.readWorkspaceCredential(s.RoomIdentity, b.CredentialID)
-			if err != nil {
-				return scope, platform.ErrCredential
-			}
-			stamp += "|" + connectionFingerprint(secret)
-		}
-	}
+	stamp := fmt.Sprintf("%s|%d|%s", b.ConnectionGeneration, b.CredentialVersion, b.CredentialFingerprint)
 	scope.CredentialStamp = stamp
 	scope.Revision = fmt.Sprintf("%x", sha256.Sum256(append(append([]byte{}, scope.Data...), []byte(stamp)...)))
 	return scope, nil
@@ -82,24 +70,17 @@ func (m *roomManager) preparePlatformEvents(ctx context.Context, _ string, b git
 // after the response body settles. No member files or subprocess are involved.
 func (m *roomManager) eventsRead(b gitlab.Binding) gitlab.ReadAPI {
 	return func(ctx context.Context, path string, q url.Values, h http.Header, limit int64) (gitlab.APIResponse, error) {
-		if b.ConnectionID == "" {
-			secret, err := gitlab.WorkspaceCredential(ctx, b, os.Getenv, nil)
-			if err != nil {
-				return gitlab.APIResponse{}, err
-			}
-			return gitlab.NewReadAPI(b.URL, secret, m.platformHTTP)(ctx, path, q, h, limit)
-		}
 		m.mu.Lock()
 		project := platform.ProjectBinding{Provider: "gitlab", URL: b.URL, Project: b.Project, ProjectID: b.ProjectID, ConnectionID: b.ConnectionID, ConnectionGeneration: b.ConnectionGeneration}
 		resolved, err := m.resolveProjectConnectionLocked(bOwner(b), project)
-		if err == nil && (resolved.record.Version != b.ConnectionVersion || resolved.record.CredentialVersion != b.CredentialVersion || connectionFingerprint(resolved.secret) != b.CredentialFingerprint) {
+		if err == nil && (resolved.record.Version != b.ConnectionVersion || resolved.record.CredentialVersion != b.CredentialVersion || resolved.fingerprint() != b.CredentialFingerprint) {
 			err = ErrConflict
 		}
 		m.mu.Unlock()
 		if err != nil {
 			return gitlab.APIResponse{}, err
 		}
-		response, err := gitlab.NewReadAPI(b.URL, platform.NewSecret(resolved.secret.value), m.platformHTTP)(ctx, path, q, h, limit)
+		response, err := m.projectConnectionRead(resolved)(ctx, path, q, h, limit)
 		m.mu.Lock()
 		currentErr := m.checkProjectConnectionLocked(resolved)
 		m.mu.Unlock()

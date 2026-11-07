@@ -88,7 +88,7 @@ func TestRealGitLabImageMaterials(t *testing.T) {
 			var requests []map[string]any
 			row["requests"] = &requests
 			m.platformHTTP = workspaceHTTPFunc(func(req *http.Request) (*http.Response, error) {
-				if req.Method != http.MethodGet || req.Header.Get("Cookie") != "" || req.Header.Get("PRIVATE-TOKEN") == "" {
+				if req.Method != http.MethodGet || req.Header.Get("Cookie") != "" || req.Header.Get("Authorization") == "" {
 					return nil, fmt.Errorf("acceptance requires token-only GET download")
 				}
 				if len(requests) == 0 {
@@ -385,16 +385,9 @@ func imageRealFixture(t *testing.T) (*roomManager, *service, MemberIdentity, not
 	if len(gitlab.FindNotificationImages(entry.Item.Text, source, gitlab.MaxImageReferences).Images) == 0 {
 		t.Fatal("selected saved notice has no image")
 	}
-	imageRealCredential(t, "GITLAB_PAT")
 	m := testManager(t, t.TempDir(), managerTestProfiles(t))
 	room := managerCreate(t, m, "image-i4")
-	req := platformTestRequest(m)
-	req.URL, req.PAT = source.Instance, os.Getenv("GITLAB_PAT")
-	c := platformTestSave(t, m, req)
-	c, err := m.verifyPlatformConnection(context.Background(), platformConnectionRequest{ID: c.ID, Version: c.Version})
-	if err != nil || c.Validation.Status != "valid" {
-		t.Fatal("real GitLab account verification failed")
-	}
+	c := realOAuthConnection(t, m, source.Instance)
 	// A new subscription has a real verified account and project, but no poller
 	// runs and no new external event is requested or written.
 	project := source.Project

@@ -127,13 +127,15 @@ type roomManager struct {
 	platformCalls         map[*platformCall]bool
 	platformMemberChanges map[MemberIdentity]bool
 	connections           *connection.Manager
+	oauthFlights          map[string]*oauthRefreshFlight
+	oauthLeases           map[string]map[*gitlabTokenLease]bool
 	larkAuthSessions      map[string]*larkAuthSession
+	gitlabAuthSessions    map[string]*gitlabAuthSession
 	connectionProviders   map[string]connectionProvider
 	referenceAdapters     map[string]referenceAdapterFactory
 	referenceResolvers    map[string]followupResolver
 	referenceExecutors    map[string]referenceActionPreparer
 	platformProject       func(context.Context, string, string, workspaceSecret) (int64, error)
-	platformVerify        func(context.Context, string, workspaceSecret) platformConnectionValidation
 	notifications         *notification.Manager
 	notificationAdapters  map[notification.SourceID]notificationAdapter
 	platformHTTP          http.RoundTripper // offline built-in HTTP seam; never used by agent tools
@@ -522,6 +524,10 @@ func writeRoomResource(path string, data []byte, mode os.FileMode) error {
 func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
+	if r.URL.Path == gitlabCallbackPath || r.URL.Path == gitlabCompletePath {
+		m.serveGitLabAuth(w, r)
+		return
+	}
 	if !sameOrigin(r) {
 		writeAPIError(w, ErrIdentity)
 		return
@@ -531,10 +537,6 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(struct {
 			Managed bool `json:"managed"`
 		}{true})
-		return
-	}
-	if r.URL.Path == "/v1/workspace/tool-credential" {
-		m.serveWorkspaceToolCredential(w, r)
 		return
 	}
 	if r.URL.Path == "/v1/actions/execute" {

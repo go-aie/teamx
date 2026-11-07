@@ -27,7 +27,7 @@ func fixtureRead(t *testing.T, body string, headers http.Header) (ReadAPI, *int)
 	calls := 0
 	read := NewReadAPI("https://gitlab.example.com", platform.NewSecret("offline-secret"), roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		calls++
-		if r.Method != "GET" || r.Header.Get("PRIVATE-TOKEN") != "offline-secret" {
+		if r.Method != "GET" || r.Header.Get("Authorization") != "Bearer offline-secret" {
 			t.Fatal("incorrect read scope")
 		}
 		if deadline, ok := r.Context().Deadline(); !ok || time.Until(deadline) > 30*time.Second {

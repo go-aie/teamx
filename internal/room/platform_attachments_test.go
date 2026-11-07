@@ -61,7 +61,7 @@ func TestPlatformAttachmentRoomAndInboxUseSavedSource(t *testing.T) {
 	var calls atomic.Int32
 	h.m.platformHTTP = workspaceHTTPFunc(func(r *http.Request) (*http.Response, error) {
 		calls.Add(1)
-		if r.Method != "GET" || r.URL.String() != "https://gitlab.invalid/api/v4/projects/7/uploads/524bb5cf042cd0bb3ef9a7a117a744b7/image.png" || r.Header.Get("PRIVATE-TOKEN") != "test-platform-secret" {
+		if r.Method != "GET" || r.URL.String() != "https://gitlab.invalid/api/v4/projects/7/uploads/524bb5cf042cd0bb3ef9a7a117a744b7/image.png" || r.Header.Get("Authorization") != "Bearer test-platform-secret" {
 			t.Error("wrong attachment API request")
 		}
 		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"application/octet-stream"}}, Body: io.NopCloser(bytes.NewReader(data))}, nil
@@ -124,7 +124,7 @@ func TestPlatformAttachmentLifecycleCancellationDiscardsBody(t *testing.T) {
 	h.m.mu.Lock()
 	waits := h.m.cancelPlatformCallsLocked(func(call *platformCall) bool { return call.owner == h.room.RoomIdentity })
 	h.m.mu.Unlock()
-	if len(waits) != 1 {
+	if len(waits) != 2 {
 		t.Fatal("attachment missing from lifecycle registry", len(waits))
 	}
 	select {

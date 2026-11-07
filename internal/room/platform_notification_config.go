@@ -111,11 +111,9 @@ func (m *roomManager) configureEventsSubscription(ctx context.Context, key notif
 				binding.ProjectID = current.Binding.ProjectID
 			} else {
 				verify := m.platformProject
-				if verify == nil {
-					verify = verifyGitLabProject
-				}
+
 				m.mu.Unlock()
-				projectID, verifyErr := verify(ctx, account.URL, cfg.Project, workspaceSecret{value: secret.Reveal()})
+				projectID, verifyErr := m.verifyGitlabAccountProject(ctx, key.Owner, account, secret, cfg.Project, verify)
 				m.mu.Lock()
 				if verifyErr != nil || projectID <= 0 {
 					return gitlab.EventsState{}, ErrRequest
@@ -239,7 +237,7 @@ func (m *roomManager) eventsBindingLocked(s gitlab.EventsState) (gitlab.Binding,
 			return gitlab.Binding{}, notification.ErrConflict
 		}
 		// Use the exact verified credential evidence, rather than resolving the
-		// environment a second time and potentially adopting an unverified PAT.
+		// mutable configuration a second time during an admitted operation.
 		return gitlab.Binding{Version: 1, RoomID: s.RoomID, RoomInstance: s.RoomInstance,
 			URL: s.Binding.URL, Project: s.Binding.Project, ProjectID: s.Binding.ProjectID,
 			ConnectionID: account.ConnectionID, ConnectionGeneration: account.Generation,

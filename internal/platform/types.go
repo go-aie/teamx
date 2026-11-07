@@ -20,6 +20,35 @@ func (s Secret) Reveal() string             { return s.value }
 func (Secret) MarshalJSON() ([]byte, error) { return json.Marshal("[REDACTED]") }
 func (Secret) Format(s fmt.State, _ rune)   { _, _ = io.WriteString(s, "[REDACTED]") }
 
+// AccessCredential carries short-lived service-owned access material.
+// Providers validate the explicit kind; token prefixes never select a protocol.
+type AccessCredential struct {
+	Kind  string
+	Token Secret
+}
+
+func (AccessCredential) Format(s fmt.State, _ rune) {
+	_, _ = io.WriteString(s, "[REDACTED platform access]")
+}
+
+// AuthorizationEvidence survives normal token rotation. Scopes is the sorted,
+// space-separated granted scope set. Token material and its revision are absent.
+type AuthorizationEvidence struct {
+	Origin, ApplicationID, ClientID, CredentialID string
+	UserID                                        int64
+	Generation                                    uint64
+	Scopes                                        string
+}
+
+// OAuthTokens is an in-memory protocol result, never a private disk DTO.
+type OAuthTokens struct {
+	AccessToken, RefreshToken Secret
+	ExpiresAt                 time.Time
+	Scopes                    []string
+}
+
+func (OAuthTokens) Format(s fmt.State, _ rune) { _, _ = io.WriteString(s, "[REDACTED OAuth tokens]") }
+
 type Validation struct {
 	Status    string          `json:"status"`
 	CheckedAt time.Time       `json:"checked_at,omitzero"`
@@ -51,11 +80,11 @@ func ValidUsername(s string) bool {
 	return true
 }
 
-func ValidPAT(pat string) bool {
-	if len(pat) == 0 || len(pat) > 8192 {
+func ValidCredential(value string) bool {
+	if len(value) == 0 || len(value) > 8192 {
 		return false
 	}
-	for _, c := range pat {
+	for _, c := range value {
 		if c < '!' || c > '~' {
 			return false
 		}
@@ -75,8 +104,6 @@ type ProjectBinding struct {
 	Provider             string `json:"provider"`
 	URL                  string `json:"url"`
 	Project              string `json:"project"`
-	TokenEnv             string `json:"token_env,omitempty"`
-	CredentialID         string `json:"credential_id,omitempty"`
 }
 
 // SourceRef identifies a notification independently of its provider's object IDs.

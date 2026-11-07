@@ -168,9 +168,6 @@ func TestWorkspaceOperationCommitUnknownFreezesManager(t *testing.T) {
 			if err := m.saveWorkspaceOperation(op); !errors.Is(err, ErrCommitUnknown) {
 				t.Fatal(err)
 			}
-			if _, err := m.saveWorkspaceCredential(room.RoomIdentity, "test-token"); !errors.Is(err, ErrCommitUnknown) {
-				t.Fatal("uncertain operation allowed other writes", err)
-			}
 			if err := m.close(); err != nil {
 				t.Fatal(err)
 			}

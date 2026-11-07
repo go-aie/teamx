@@ -52,6 +52,7 @@ func TestWorkspaceAppHTTPBinding(t *testing.T) {
 	m.workspaceRun = f.run
 	m.platformHTTP = workspaceHTTPFunc(f.http)
 	m.platformProject = func(context.Context, string, string, workspaceSecret) (int64, error) { return 7, nil }
+	c := platformTestSave(t, m, platformTestRequest(m))
 	server := httptest.NewUnstartedServer(m)
 	m.config.endpoint = "http://" + server.Listener.Addr().String()
 	server.Start()
@@ -60,7 +61,7 @@ func TestWorkspaceAppHTTPBinding(t *testing.T) {
 	defer cancel()
 	for _, phase := range []string{"create", "bind"} {
 		cmd := exec.CommandContext(ctx, node, "web_workspace_http.mjs")
-		cmd.Env = append(os.Environ(), "TEAMX_WEB_ENDPOINT="+server.URL, "TEAMX_WORKSPACE_UI_PHASE="+phase, "TEAMX_WORKSPACE_REPOSITORY="+strings.TrimSuffix(f.config.Workspace.Repository.URL, ".git")+"/", "TEAMX_WORKSPACE_GITLAB_URL=https://gitlab.invalid", "TEAMX_WORKSPACE_PROJECT=group/project")
+		cmd.Env = append(os.Environ(), "TEAMX_WEB_ENDPOINT="+server.URL, "TEAMX_WORKSPACE_UI_PHASE="+phase, "TEAMX_WORKSPACE_REPOSITORY="+strings.TrimSuffix(f.config.Workspace.Repository.URL, ".git")+"/", "TEAMX_WORKSPACE_GITLAB_URL=https://gitlab.invalid", "TEAMX_WORKSPACE_PROJECT=group/project", "TEAMX_WORKSPACE_CONNECTION_ID="+c.ID)
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			t.Fatalf("%s app/HTTP: %v\n%s", phase, err, output)

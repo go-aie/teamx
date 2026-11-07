@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
+	"github.com/go-aie/teamx/internal/platform/connection"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
 )
 
@@ -44,7 +45,7 @@ func newWorkspaceFixture(t *testing.T) *workspaceFixture {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", home)
-	t.Setenv("GITLAB_PAT", "offline-pat")
+
 	f := &workspaceFixture{dir: t.TempDir(), source: t.TempDir()}
 	workspaceGit(t, f.source, "init", "--initial-branch=main")
 	workspaceGit(t, f.source, "config", "user.name", "Source")
@@ -56,7 +57,7 @@ func newWorkspaceFixture(t *testing.T) *workspaceFixture {
 	for _, id := range []string{"member-one", "member-two"} {
 		f.config.Members = append(f.config.Members, managedMember{MemberState: MemberState{MembershipID: id}, Workspace: workspaceMemberPath(*f.config.Workspace, id)})
 	}
-	f.p = workspacePreparer{run: f.run, transport: workspaceHTTPFunc(f.http), remove: func(name string) error {
+	f.p = workspacePreparer{run: f.run, remove: func(name string) error {
 		if err := os.Remove(name); err != nil {
 			return err
 		}
@@ -68,6 +69,12 @@ func newWorkspaceFixture(t *testing.T) *workspaceFixture {
 		}
 		return os.WriteFile(name, data, 0600)
 	}}
+	f.p.connection = func(owner RoomIdentity, w workspaceConfig) (projectConnectionResolution, error) {
+		return projectConnectionResolution{owner: owner, record: platformConnectionRecord{Connection: connection.Connection{ID: w.Binding.ConnectionID}, Generation: w.Binding.ConnectionGeneration}}, nil
+	}
+	f.p.connectionRead = func(projectConnectionResolution) gitlab.ReadAPI {
+		return gitlab.NewReadAPI("https://gitlab.invalid", platform.NewSecret("offline-access"), workspaceHTTPFunc(f.http))
+	}
 	return f
 }
 
@@ -322,7 +329,7 @@ func TestWorkspaceSupplementGitLabAndFrozenResources(t *testing.T) {
 	}
 	// Current resources reopen without an API query; writes still need credentials.
 	f.calls = nil
-	t.Setenv("GITLAB_PAT", "")
+
 	visited, err := f.ensure(false)
 	if err != nil || visited.Instructions != string(current) {
 		t.Fatal(visited, err)
@@ -335,81 +342,6 @@ func TestWorkspaceSupplementGitLabAndFrozenResources(t *testing.T) {
 	os.RemoveAll(f.member(1))
 	if _, err := f.ensure(false); err == nil {
 		t.Fatal("recreated missing bound member during revisit")
-	}
-}
-
-func TestWorkspacePlatformFailureAndCredentialOwnership(t *testing.T) {
-	f := newWorkspaceFixture(t)
-	f.config.Workspace.Binding = testGitLabWorkspace().Binding
-	f.projectError = true
-	if _, err := f.ensure(true); err == nil {
-		t.Fatal("platform failure ignored")
-	}
-	if _, err := os.Stat(f.member(0)); !errors.Is(err, os.ErrNotExist) {
-		t.Fatal("cloned after platform failure", err)
-	}
-	f.projectError = false
-	b := f.config.Workspace.Binding
-	b.TokenEnv = ""
-	b.CredentialID = strings.Repeat("a", 32)
-	f.p.credential = func(owner RoomIdentity, id string) (workspaceSecret, error) { return workspaceSecret{}, ErrIdentity }
-	if _, err := f.ensure(true); !errors.Is(err, ErrIdentity) {
-		t.Fatal(err)
-	}
-}
-
-func TestWorkspaceProviderWithoutSoftwareTeam(t *testing.T) {
-	// Only a custom team.json and inline role exist; the working directory has
-	// not the shipped .teamx/teams/software-development template.
-	root, teams := t.TempDir(), t.TempDir()
-	team := testTeamDefinition(t)
-	writeTestTeam(t, teams, team)
-	m, err := newTeamRoomManager(root, teams, 4, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer m.close()
-	summary := createTeamRoom(t, m, "custom-provider")
-	saved, _ := readManagedRoom(t, m, summary)
-	if len(saved.Members) != 1 || saved.TeamID == "software-development" {
-		t.Fatal(saved)
-	}
-	f := newWorkspaceFixture(t)
-	saved.Workspace = f.config.Workspace
-	saved.Workspace.Binding = testGitLabWorkspace().Binding
-	credentialID, err := m.saveWorkspaceCredential(summary.RoomIdentity, "offline-room-secret")
-	if err != nil {
-		t.Fatal(err)
-	}
-	saved.Workspace.Binding.TokenEnv = ""
-	saved.Workspace.Binding.CredentialID = credentialID
-	f.p.credential = m.loadWorkspaceCredential
-	f.p.credentialDir = filepath.Join(m.store.dir, "credentials")
-	for i := range saved.Members {
-		saved.Members[i].Workspace = workspaceMemberPath(*saved.Workspace, saved.Members[i].MembershipID)
-	}
-	previous, _ := os.Getwd()
-	if err := os.Chdir(t.TempDir()); err != nil {
-		t.Fatal(err)
-	}
-	defer os.Chdir(previous)
-	result, err := f.p.ensure(context.Background(), m.roomDir(summary.RoomID), saved, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Resolve the actual private credential reference with the Go reader; the
-	// HTTP fixtures above exercised project/author preparation without Python.
-	b, err := gitlab.ReadWorkspaceBinding(filepath.Join(result.ToolEnv["TEAMX_GITLAB_TOOLS"], "binding.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	secret, err := gitlab.WorkspaceCredential(context.Background(), b, os.Getenv, nil)
-	if err != nil || secret.Reveal() != "offline-room-secret" {
-		t.Fatal("Go credential reference reader failed", err)
-	}
-
-	if !strings.Contains(result.Instructions, "tools list") {
-		t.Fatal(result)
 	}
 }
 
@@ -521,7 +453,7 @@ type workspaceHTTPFunc func(*http.Request) (*http.Response, error)
 func (f workspaceHTTPFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 func (f *workspaceFixture) http(r *http.Request) (*http.Response, error) {
 	f.calls = append(f.calls, "api "+r.URL.Path)
-	if r.Header.Get("PRIVATE-TOKEN") == "" {
+	if r.Header.Get("Authorization") == "" {
 		return nil, errors.New("missing private credential")
 	}
 	body := `{"id":7,"path_with_namespace":"group/project","http_url_to_repo":"https://gitlab.invalid/group/project.git"}`

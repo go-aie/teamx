@@ -19,10 +19,7 @@ import (
 func TestInboxRoutingRealGitLab(t *testing.T) {
 	origin := os.Getenv("TEAMX_AN_INBOX_REAL_URL")
 	if origin == "" {
-		t.Skip("set TEAMX_AN_INBOX_REAL_URL and GITLAB_PAT for read-only real acceptance")
-	}
-	if os.Getenv("GITLAB_PAT") == "" {
-		t.Fatal("GITLAB_PAT required")
+		t.Skip("set TEAMX_AN_INBOX_REAL_URL and TEAMX_REAL_OAUTH_SNAPSHOT for read-only real acceptance")
 	}
 	m := testManager(t, t.TempDir(), managerTestProfiles(t))
 	m.platformHTTP = workspaceHTTPFunc(func(req *http.Request) (*http.Response, error) {
@@ -41,14 +38,7 @@ func TestInboxRoutingRealGitLab(t *testing.T) {
 	m.runtimes[room.RoomIdentity] = &roomRuntime{service: svc, status: "ready"}
 	m.mu.Unlock()
 	id := inboxRoutingMember(t, svc, "assistant", strings.Repeat("1", 32))
-	conn, err := m.updatePlatformConnection(platformConnectionRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("a", 32), Name: "Inbox read-only acceptance", Provider: "gitlab", URL: origin, TokenEnv: "GITLAB_PAT"}, false)
-	if err != nil {
-		t.Fatal("cannot save isolated connection")
-	}
-	verified, err := m.verifyPlatformConnection(context.Background(), platformConnectionRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: conn.ID, Version: conn.Version})
-	if err != nil || verified.Validation.Status != "valid" {
-		t.Fatal("GitLab account verification failed")
-	}
+	conn := realOAuthConnection(t, m, origin)
 	clock := &eventTestClock{now: time.Now().UTC().Add(-30 * 24 * time.Hour)}
 	m.notifications.Clock = clock.get
 	s, err := m.configureTodosSubscription(context.Background(), notification.Key{Owner: room.RoomIdentity, Source: gitlab.TodosSourceID}, 0, gitlab.TodosConfig{Enabled: true, ConnectionID: conn.ID, ProjectScope: "all", Target: inboxTarget(id)})

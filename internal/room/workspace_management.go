@@ -30,7 +30,6 @@ type workspaceApplyRequest struct {
 	ReplacesOperationID string          `json:"replaces_operation_id,omitempty"`
 	ExpectedVersion     uint64          `json:"expected_version"`
 	Target              workspaceConfig `json:"target"`
-	PAT                 string          `json:"pat,omitempty"`
 }
 
 type workspaceResponse struct {
@@ -72,12 +71,7 @@ func (m *roomManager) workspaceStatus(id RoomIdentity, operationID string) (work
 			if _, err := m.resolveWorkspaceConnectionLocked(id, *saved.Workspace); err == nil {
 				result.CredentialStatus = "configured"
 			}
-		} else if b.CredentialID != "" {
-			if _, err := m.readWorkspaceCredential(id, b.CredentialID); err == nil {
-				result.CredentialStatus = "configured"
-			}
-		} else if validWorkspacePAT(os.Getenv(b.TokenEnv)) {
-			result.CredentialStatus = "configured"
+
 		}
 	}
 	for _, op := range m.index.WorkspaceOperations {
@@ -164,7 +158,7 @@ func (m *roomManager) serveWorkspace(w http.ResponseWriter, r *http.Request) {
 	var err error
 	var op workspaceOperation
 	if r.URL.Path == "/v1/workspace/retry" {
-		if req.ExpectedVersion != 0 || req.PAT != "" || req.ReplacesOperationID != "" || !reflect.DeepEqual(req.Target, workspaceConfig{}) {
+		if req.ExpectedVersion != 0 || req.ReplacesOperationID != "" || !reflect.DeepEqual(req.Target, workspaceConfig{}) {
 			writeAPIError(w, ErrRequest)
 			return
 		}
@@ -172,7 +166,6 @@ func (m *roomManager) serveWorkspace(w http.ResponseWriter, r *http.Request) {
 	} else {
 		op, err = m.startWorkspaceApply(req)
 	}
-	req.PAT = ""
 	if err != nil {
 		writeAPIError(w, err)
 		return
@@ -197,10 +190,6 @@ func (m *roomManager) startWorkspaceApply(req workspaceApplyRequest) (workspaceO
 	input := req.Target
 
 	canonical, err := normalizeWorkspace(input, true)
-	// Existing room credential references are allowed only after ownership checks.
-	if err != nil && input.Binding != nil && input.Binding.CredentialID != "" {
-		canonical, err = normalizeWorkspace(input, false)
-	}
 	if err != nil {
 		return workspaceOperation{}, err
 	}
@@ -286,20 +275,6 @@ func (m *roomManager) startWorkspaceApply(req workspaceApplyRequest) (workspaceO
 			return workspaceOperation{}, ErrConflict
 		}
 	}
-	if target.Binding != nil && req.PAT == "" && target.Binding.TokenEnv == "" && target.Binding.CredentialID == "" && target.Binding.ConnectionID == "" {
-		return workspaceOperation{}, ErrRequest
-	}
-	if req.PAT != "" && (target.Binding == nil || target.Binding.TokenEnv != "" || target.Binding.CredentialID != "" || target.Binding.ConnectionID != "") {
-		return workspaceOperation{}, ErrRequest
-	}
-	if req.PAT != "" && !validWorkspacePAT(req.PAT) {
-		return workspaceOperation{}, ErrRequest
-	}
-	if target.Binding != nil && target.Binding.CredentialID != "" {
-		if saved.Workspace == nil || saved.Workspace.Binding == nil || saved.Workspace.Binding.CredentialID != target.Binding.CredentialID {
-			return workspaceOperation{}, ErrIdentity
-		}
-	}
 	// Validate all target paths before writing a credential or reserving work.
 	for _, member := range saved.Members {
 		path := workspaceMemberPath(target, member.MembershipID)
@@ -311,15 +286,6 @@ func (m *roomManager) startWorkspaceApply(req workspaceApplyRequest) (workspaceO
 				return workspaceOperation{}, ErrRequest
 			}
 		}
-	}
-	if req.PAT != "" {
-		id, err := m.saveWorkspaceCredentialLocked(req.RoomIdentity, req.PAT)
-		if err != nil {
-			return workspaceOperation{}, err
-		}
-		b := *target.Binding
-		b.CredentialID = id
-		target.Binding = &b
 	}
 	target, err = normalizeWorkspace(target, false)
 	if err != nil {
@@ -335,7 +301,7 @@ func (m *roomManager) startWorkspaceApply(req workspaceApplyRequest) (workspaceO
 	} else {
 		sourceEpoch = svc.info.ServiceEpoch
 	}
-	op := workspaceOperation{Timings: map[string]int64{"local_checks": time.Since(checkedAt).Milliseconds()}, PreviousConfig: &previous, SourceEpoch: sourceEpoch, RoomIdentity: req.RoomIdentity, OperationID: req.OperationID, ReplacesOperationID: req.ReplacesOperationID, PreviousVersion: req.ExpectedVersion, TargetVersion: req.ExpectedVersion + 1, Target: target, RequestTarget: &canonical, RequestPAT: req.PAT != "", Status: "running", Phase: "waiting", CreatedAt: now, UpdatedAt: now}
+	op := workspaceOperation{Timings: map[string]int64{"local_checks": time.Since(checkedAt).Milliseconds()}, PreviousConfig: &previous, SourceEpoch: sourceEpoch, RoomIdentity: req.RoomIdentity, OperationID: req.OperationID, ReplacesOperationID: req.ReplacesOperationID, PreviousVersion: req.ExpectedVersion, TargetVersion: req.ExpectedVersion + 1, Target: target, RequestTarget: &canonical, Status: "running", Phase: "waiting", CreatedAt: now, UpdatedAt: now}
 	for _, member := range saved.Members {
 		op.Members = append(op.Members, workspaceMemberPathRecord{member.AgentID, member.MembershipID, workspaceMemberPath(target, member.MembershipID)})
 	}
