@@ -1890,6 +1890,19 @@ textarea::placeholder {
 #cli-member-feedback:empty { display:none; }
 #cli-member-refresh { margin-top:12px; padding-left:0; }
 
+.inbox-toolbar { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 -18px; padding: 10px 18px; background: var(--soft); border-bottom: 1px solid #d5dfd5; }
+.inbox-toolbar button,.inbox-pagination-bottom button { min-height: 32px; padding: 5px 8px; border: 1px solid #cbd6cb; border-radius: 6px; background: #fbfcf9; color: var(--accent); font-size: 12px; line-height: 20px; white-space: nowrap; }
+.inbox-toolbar button:hover:not(:disabled),.inbox-pagination-bottom button:hover:not(:disabled) { background: #e2ebe1; border-color: #a8bca9; }
+.inbox-summary { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.inbox-toolbar #inbox-reload { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 32px; padding: 6px; background: transparent; border-color: transparent; }
+.inbox-toolbar #inbox-reload:hover:not(:disabled) { background: #e2ebe1; }
+#inbox-reload svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+#inbox-status { min-width: 0; margin: 0; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.inbox-toolbar > .inbox-pagination { flex-shrink: 0; margin-left: auto; }
+.inbox-pagination { display: flex; align-items: center; gap: 8px; }
+.inbox-page { color: #59675d; font-size: 12px; line-height: 1.7; text-align: center; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.inbox-pagination-bottom { justify-content: flex-end; padding-top: 16px; }
+#inbox-entries > .activity-section { padding-bottom: 20px; border-bottom: 1px solid var(--line); }
 .inbox-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .inbox-entry-header { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; color: var(--muted); font-size: 12px; }
 .inbox-entry-seq { font-variant-numeric: tabular-nums; }
@@ -1922,22 +1935,28 @@ textarea::placeholder {
 #policy-cancel { margin-left: auto; border-color: transparent; color: var(--muted); }
 #policy-member-view #policy-editor-title { margin: 0; font-size: 13px; font-weight: 600; }
 #policy-entries p, #policy-matters p { overflow-wrap: anywhere; }
-#activity-dialog > #policy-member-view { padding-top: 16px; font-size: 12px; line-height: 1.6; }
+#activity-dialog > #policy-member-view { padding-top: 0; font-size: 12px; line-height: 1.6; }
 #policy-member-view h3 { margin: 0; font-size: 13px; font-weight: 600; }
 #policy-member-view h4 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0; font-size: 12px; font-weight: 600; }
 #policy-member-view .member-actions { align-items: center; gap: 8px; margin: 0; }
 #policy-member-view .member-actions button { min-height: 32px; padding: 5px 10px; font-size: 11px; line-height: 20px; white-space: nowrap; }
 .policy-toolbar, .policy-followups-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
-.policy-heading { display: flex; flex: 1 1 140px; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; min-width: 0; }
-#policy-status { margin: 0; color: #657068; font-size: 11px; overflow-wrap: anywhere; }
+.policy-toolbar { position: sticky; top: 0; z-index: 1; margin: 0 -18px; padding: 10px 18px; background: var(--soft); border-bottom: 1px solid #d5dfd5; }
+.policy-summary { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
+#policy-status { margin: 0; color: #657068; font-size: 12px; overflow-wrap: anywhere; }
+#policy-reload { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 32px; min-height: 32px; padding: 6px; border-radius: 6px; background: transparent; color: var(--accent); }
+#policy-reload:hover:not(:disabled) { background: #e2ebe1; }
+#policy-reload svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 #policy-member-view .policy-toolbar > .member-actions, #policy-member-view .policy-followups-toolbar > .member-actions { margin-left: auto; }
 #policy-member-view .policy-intro { margin: 10px 0 0; font-size: 11px; line-height: 1.7; color: #707a73; }
-#policy-member-view #policy-new { color: #fff; background: var(--accent); border-color: var(--accent); }
+#policy-member-view #policy-new { color: #fff; background: var(--accent); border-color: var(--accent); font-size: 12px; }
 #policy-member-view #policy-new:hover:not(:disabled) { background: #274e3d; border-color: #274e3d; }
 #activity-dialog .policy-entry { padding-top: 18px; }
 #policy-member-view .policy-entry + .policy-entry { border-top: 1px solid var(--line); margin-top: 18px; }
 .policy-entry-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
 #policy-member-view .policy-entry-header > .member-actions { margin-left: auto; }
+#policy-member-view .policy-entry-header .member-actions button { min-height: 28px; padding: 3px 6px; border-color: transparent; background: transparent; font-size: 12px; }
+#policy-member-view .policy-entry-header .member-actions button:hover:not(:disabled) { background: var(--soft); }
 .policy-entry-state { display: inline-block; padding: 1px 6px; border-radius: 4px; background: #f0f2ee; color: #677269; font-size: 10px; font-weight: 400; }
 .policy-entry-state[data-status="active"] { background: #eaf1e9; color: #315f4b; }
 #policy-member-view .member-actions .policy-revoke { border-color: transparent; color: #747b75; }
@@ -1959,7 +1978,6 @@ textarea::placeholder {
 .policy-source p { margin: 8px 0 0; }
 .policy-followups { margin-top: 24px; border-top: 1px solid var(--line); padding-top: 16px; }
 .policy-followups > summary { color: #252b29; font-weight: 600; cursor: pointer; }
-.policy-followups > summary .quiet { margin-left: 12px; font-weight: 400; }
 #policy-member-view .policy-followups > .quiet { margin: 10px 0 14px; color: #707a73; font-size: 11px; line-height: 1.7; }
 .policy-followups-toolbar { margin-bottom: 12px; }
 #followups-status { flex: 1 1 90px; margin: 0; font-size: 11px; overflow-wrap: anywhere; }

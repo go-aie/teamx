@@ -1409,7 +1409,7 @@ async function selectAgentTab(tab) {
   $("inbox-member-view").hidden = agentTab !== "inbox";
   $("policy-member-view").hidden = agentTab !== "policy";
   if (agentTab === "activity") await activity.select({ ...member, info: state.info });
-  else if (agentTab === "inbox") { activity.close(); await loadMemberInbox(true); }
+  else if (agentTab === "inbox") { activity.close(); await loadMemberInbox(); }
   else if (agentTab === "policy") { activity.close(); await loadMemberPolicy(true); }
   else {
     activity.close();
@@ -1463,8 +1463,9 @@ function policyCard(view, r, history) {
   status.textContent = expired ? `${policyStates[r.status]} · 已过期` : policyStates[r.status]; title.append(status);
   const body = document.createElement("p"); body.className = "inbox-text policy-entry-body"; body.textContent = r.text;
   const source = document.createElement("details"), summary = document.createElement("summary"); source.className = "policy-history";
-  summary.textContent = `来源与修订记录 · v${r.version}`;
-  const identity = document.createElement("p"); identity.textContent = `规则 ID：${r.id}`;
+  summary.textContent = "来源与历史";
+  summary.title = `当前版本 v${r.version}`;
+  const identity = document.createElement("p"); identity.textContent = `规则 ID：${r.id} · 当前版本 v${r.version}`;
   source.append(summary, identity);
   for (const v of history.filter(v => v.id === r.id)) {
     const revision = document.createElement("article"); revision.className = "policy-revision";
@@ -1488,9 +1489,12 @@ function policyCard(view, r, history) {
   }
   const actions = document.createElement("div"); actions.className = "member-actions";
   const edit = document.createElement("button"); edit.type = "button"; edit.textContent = r.status === "suggested" ? "审核并编辑" : "编辑";
+  edit.setAttribute("aria-label", `${r.status === "suggested" ? "审核并编辑" : "编辑"}规则：${r.text}`);
   edit.addEventListener("click",()=> { if (policyCurrent(view)) editPolicy(r); }); actions.append(edit);
   if (r.status !== "revoked") {
     const revoke = document.createElement("button"); revoke.type = "button"; revoke.className = "policy-revoke"; revoke.textContent = "撤销";
+    revoke.title = "撤销后不再生效，历史记录仍会保留";
+    revoke.setAttribute("aria-label", `撤销规则：${r.text}`);
     revoke.addEventListener("click",()=> { if (policyCurrent(view)) void savePolicyChange(view,{...policyChange(r),status:"revoked",source_text:`撤销长期规则 ${r.id} v${r.version}：${r.text}`}); }); actions.append(revoke);
   }
   header.append(title, actions); section.append(header, body, policyMetadata(r), source); return section;
@@ -1723,21 +1727,45 @@ function inboxSourceDetails(entry) {
   if (item.metadata_truncated) add("元数据状态","部分名称、提及或附件信息已截断");
   details.append(summary,metadata); return details;
 }
-async function loadMemberInbox(reset) {
+function inboxCurrent(view) {
+  return view && inboxView === view && state.info?.room_id === view.info.room_id && state.info?.room_instance === view.info.room_instance && state.info?.service_epoch === view.info.service_epoch && selectedAgent()?.membership_id === view.member.membership_id && agentTab === "inbox" && $("activity-dialog").open;
+}
+function renderInboxPagination(view) {
+  const entries = view.page?.entries || [];
+  const label = view.page ? entries.length ? `第 ${view.pageIndex + 1} 页` : "暂无通知" : "—";
+  for (const suffix of ["", "-bottom"]) {
+    $("inbox-prev" + suffix).disabled = view.loading || !view.page || view.pageIndex === 0;
+    $("inbox-next" + suffix).disabled = view.loading || !view.page?.has_more;
+    $("inbox-page" + suffix).textContent = label;
+    $("inbox-page" + suffix).title = entries.length ? `消息 #${entries[0].seq}–#${entries.at(-1).seq}` : "";
+  }
+  $("inbox-reload").disabled = view.loading;
+  $("inbox-pagination-bottom").hidden = !entries.length;
+  $("inbox-entries").setAttribute("aria-busy", String(view.loading));
+}
+async function loadMemberInbox(action = "reset") {
   const member = selectedAgent();
   if (!member || agentTab !== "inbox") return;
-  const prior = reset ? null : inboxView;
-  const view = { member, info: state.info, snapshot: prior?.page?.snapshot_seq, after: prior?.page?.next_after || 0 };
+  const prior = action === "reset" ? null : inboxCurrent(inboxView) ? inboxView : null;
+  if (action !== "reset" && (!prior?.page || prior.loading || action === "prev" && prior.pageIndex === 0 || action === "next" && !prior.page.has_more)) return;
+  const target = prior ? prior.pageIndex + (action === "prev" ? -1 : 1) : 0;
+  const cursors = prior ? [...prior.cursors] : [0];
+  const after = cursors[target];
+  const snapshot = prior?.page?.snapshot_seq;
+  const view = { member, info: state.info, cursors, pageIndex: prior?.pageIndex || 0, page: prior?.page, loading: true };
   inboxView = view;
   $("inbox-status").textContent = "正在读取…";
-  $("inbox-entries").replaceChildren(); $("inbox-next").hidden = true;
-  $("inbox-reload").disabled = true;
-  const current = () => inboxView === view && state.info?.room_id === view.info.room_id && state.info?.room_instance === view.info.room_instance && state.info?.service_epoch === view.info.service_epoch && selectedAgent()?.membership_id === member.membership_id && agentTab === "inbox" && $("activity-dialog").open;
+  $("inbox-status").title = "只读预览，不会推进成员读取进度，也不会启动自动处理。";
+  if (!prior) $("inbox-entries").replaceChildren();
+  renderInboxPagination(view);
   try {
-    const data = await rpc("/v1/member/inbox", {agent_id:member.agent_id, membership_id:member.membership_id, after:view.after, ...(view.snapshot === undefined ? {} : {snapshot_seq:view.snapshot}), limit:25}, view.info);
-    if (!current()) return;
+    const data = await rpc("/v1/member/inbox", {agent_id:member.agent_id, membership_id:member.membership_id, after, ...(snapshot === undefined ? {} : {snapshot_seq:snapshot}), limit:25}, view.info);
+    if (!inboxCurrent(view)) return;
     view.page = data;
-    $("inbox-status").textContent = `已接收 ${data.status.latest_seq} 条 · 占用 ${data.status.bytes} / ${data.status.limits.bytes} 字节 · 当前快照 ${data.snapshot_seq}` + (data.status.write_error ? ` · ${data.status.write_error}` : "") + (!data.entries.length ? " · 暂无通知" : "");
+    view.pageIndex = target;
+    if (data.has_more) view.cursors[target + 1] = data.next_after;
+    $("inbox-status").textContent = `共 ${data.snapshot_seq} 条` + (data.status.write_error ? ` · ${data.status.write_error}` : "");
+    $("inbox-status").title += `\n已接收 ${data.status.latest_seq} 条 · 占用 ${data.status.bytes} / ${data.status.limits.bytes} 字节 · 当前快照 ${data.snapshot_seq}`;
     $("inbox-entries").replaceChildren(...data.entries.map(entry => {
       const section = document.createElement("section"); section.className = "activity-section";
       const item = entry.item;
@@ -1786,12 +1814,16 @@ async function loadMemberInbox(reset) {
       section.append(inboxSourceDetails(entry));
       return section;
     }));
-    $("inbox-next").hidden = !data.has_more;
-  } catch(error) { if (current()) $("inbox-status").textContent = `读取失败：${error.message}`; }
-  finally { if (current()) $("inbox-reload").disabled = false; }
+    $("inbox-member-view").scrollTop = 0;
+    if (prior) $("inbox-page").focus();
+  } catch(error) { if (inboxCurrent(view)) $("inbox-status").textContent = `读取失败：${error.message}` + (prior ? "。当前页已保留，可重试翻页。" : "。请点击刷新重试。"); }
+  finally { if (inboxCurrent(view)) { view.loading = false; renderInboxPagination(view); } }
 }
-$("inbox-reload").addEventListener("click", () => loadMemberInbox(true));
-$("inbox-next").addEventListener("click", () => loadMemberInbox(false));
+$("inbox-reload").addEventListener("click", () => loadMemberInbox());
+for (const suffix of ["", "-bottom"]) {
+  $("inbox-prev" + suffix).addEventListener("click", () => loadMemberInbox("prev"));
+  $("inbox-next" + suffix).addEventListener("click", () => loadMemberInbox("next"));
+}
 function renderMemberActions(member, actions) {
   const execution = member.execution;
   const signature = JSON.stringify([member.agent_id, member.membership_id, member.status, execution?.paused, execution?.active,
@@ -2413,6 +2445,7 @@ function renderActivityTimeline(result, context) {
 $("close-activity").addEventListener("click", () => $("activity-dialog").close());
 $("activity-dialog").addEventListener("close", () => {
   activity.close(); memberToolsView = null; activityMember = null; agentTab = "activity"; activitySignature = "";
+  inboxView = null; $("inbox-entries").replaceChildren();
   activityScrollMember = ""; activityFollowing = true; activityScrollTop = 0; $("activity-jump-latest").hidden = true;
   activityTimelineContext = ""; activityTimelineRows.clear(); $("activity-timeline").replaceChildren();
   renderActivityControls();

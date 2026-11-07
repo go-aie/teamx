@@ -2173,6 +2173,104 @@ test("AN-01.2 Inbox snapshot paging never confirms, and late reads cannot cross 
   assert.equal(api.calls.some(call=>/confirm|member\/run/.test(call.path)),false);
 });
 
+test("Inbox navigation keeps cursor history and snapshot, synchronizes both pagers, and refresh starts over", async () => {
+  const api=server([makeRoom("A")]);
+  const member={agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"},execution:{paused:true,agent:{turn_number:0}}};
+  let latest=55;
+  api.hook=(path,data)=>{
+    if(path==="/v1/member/list")return {members:[member]};
+    if(path==="/v1/member/activity")return {member};
+    if(path==="/v1/member/inbox") {
+      // Byte limits can produce shorter pages; use returned cursors, not page size arithmetic.
+      const after=data.after, end=after===0 ? 3 : after===3 ? 9 : 12;
+      return {snapshot_seq:data.snapshot_seq ?? latest,next_after:end,has_more:end<12,status:{latest_seq:latest,bytes:100,limits:{bytes:1000}},entries:Array.from({length:end-after},(_,i)=>({seq:after+i+1,item:{provider:"gitlab",channel:"todos",text:`notice-${after+i+1}`}}))};
+    }
+  };
+  const ui=await launch(api);
+  await ui.el("members").children[0].querySelector(".member-summary").emit("click");
+  await ui.el("agent-tab-inbox").emit("click");await settle();
+  assert.equal(ui.el("inbox-prev").disabled,true);
+  assert.equal(ui.el("inbox-page").textContent,"第 1 页");
+  ui.el("inbox-member-view").scrollTop=500;
+  await ui.el("inbox-next-bottom").emit("click");await settle();
+  assert.equal(ui.el("inbox-member-view").scrollTop,0);
+  assert.equal(ui.el("inbox-page").textContent,"第 2 页");
+  assert.equal(ui.el("inbox-page-bottom").textContent,ui.el("inbox-page").textContent);
+  latest=60;
+  await ui.el("inbox-next").emit("click");await settle();
+  assert.equal(ui.el("inbox-next").disabled,true);
+  assert.equal(ui.el("inbox-next-bottom").disabled,true);
+  await ui.el("inbox-prev-bottom").emit("click");await settle();
+  assert.equal(ui.el("inbox-page").textContent,"第 2 页");
+  await ui.el("inbox-prev").emit("click");await settle();
+  assert.equal(ui.el("inbox-prev-bottom").disabled,true);
+  await ui.el("inbox-next").emit("click");await settle();
+  const reads=()=>api.calls.filter(call=>call.path==="/v1/member/inbox").map(call=>call.data);
+  assert.deepEqual(reads().map(data=>data.after),[0,3,9,3,0,3]);
+  assert.ok(reads().slice(1).every(data=>data.snapshot_seq===55));
+  await ui.el("inbox-reload").emit("click");await settle();
+  assert.equal(reads().at(-1).after,0);
+  assert.equal(reads().at(-1).snapshot_seq,undefined);
+  assert.equal(ui.el("inbox-page").textContent,"第 1 页");
+  assert.equal(api.calls.some(call=>/confirm|member\/run/.test(call.path)),false);
+});
+
+test("Inbox loading blocks duplicate navigation and failures preserve the page and retry cursor", async () => {
+  const api=server([makeRoom("A")]);
+  const member={agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"},execution:{paused:true,agent:{turn_number:0}}};
+  let rejectPage, fail=true;
+  api.hook=(path,data)=>{
+    if(path==="/v1/member/list")return {members:[member]};
+    if(path==="/v1/member/activity")return {member};
+    if(path==="/v1/member/inbox") {
+      if(data.after && fail)return new Promise((resolve,reject)=>rejectPage=reject);
+      return {snapshot_seq:2,next_after:data.after+1,has_more:!data.after,status:{latest_seq:2,bytes:100,limits:{bytes:1000}},entries:[{seq:data.after+1,item:{provider:"gitlab",channel:"todos",text:`notice-${data.after+1}`}}]};
+    }
+  };
+  const ui=await launch(api);
+  await ui.el("members").children[0].querySelector(".member-summary").emit("click");
+  await ui.el("agent-tab-inbox").emit("click");await settle();
+  const pending=ui.el("inbox-next").emit("click");await settle();
+  for(const id of ["inbox-reload","inbox-prev","inbox-next","inbox-prev-bottom","inbox-next-bottom"])assert.equal(ui.el(id).disabled,true);
+  await ui.el("inbox-next-bottom").emit("click");await settle();
+  assert.equal(api.calls.filter(call=>call.path==="/v1/member/inbox").length,2);
+  rejectPage(new Error("temporarily offline"));await pending;await settle();
+  assert.equal(ui.el("inbox-page").textContent,"第 1 页");
+  assert.match(ui.el("inbox-status").textContent,/当前页已保留/);
+  assert.equal(ui.el("inbox-entries").children[0].children[1].textContent,"notice-1");
+  assert.equal(ui.el("inbox-next").disabled,false);
+  fail=false;
+  await ui.el("inbox-next-bottom").emit("click");await settle();
+  assert.equal(ui.el("inbox-page").textContent,"第 2 页");
+  assert.equal(ui.el("inbox-entries").attributes["aria-busy"],"false");
+});
+
+test("Inbox empty state and initial read failure allow refresh without enabling pagination", async () => {
+  const api=server([makeRoom("A")]);
+  const member={agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"},execution:{paused:true,agent:{turn_number:0}}};
+  let fail=true;
+  api.hook=(path)=>{
+    if(path==="/v1/member/list")return {members:[member]};
+    if(path==="/v1/member/activity")return {member};
+    if(path==="/v1/member/inbox") {
+      if(fail)throw new Error("temporarily offline");
+      return {snapshot_seq:0,next_after:0,has_more:false,status:{latest_seq:0,bytes:0,limits:{bytes:1000}},entries:[]};
+    }
+  };
+  const ui=await launch(api);
+  await ui.el("members").children[0].querySelector(".member-summary").emit("click");
+  await ui.el("agent-tab-inbox").emit("click");await settle();
+  assert.match(ui.el("inbox-status").textContent,/请点击刷新重试/);
+  assert.equal(ui.el("inbox-reload").disabled,false);
+  assert.equal(ui.el("inbox-next").disabled,true);
+  fail=false;
+  await ui.el("inbox-reload").emit("click");await settle();
+  assert.equal(ui.el("inbox-page").textContent,"暂无通知");
+  assert.equal(ui.el("inbox-prev").disabled,true);
+  assert.equal(ui.el("inbox-next").disabled,true);
+  assert.equal(ui.el("inbox-pagination-bottom").hidden,true);
+});
+
 test("Lark Inbox separates channel, sender and conversation while retaining source evidence and attachment identity", async () => {
   const api=server([makeRoom("A")]);
   const member={agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"},execution:{paused:true,agent:{turn_number:0}}};
