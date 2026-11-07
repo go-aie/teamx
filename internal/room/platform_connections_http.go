@@ -4,9 +4,14 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 )
 
 func (m *roomManager) servePlatformConnections(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, "/v1/platform/connections/lark/") {
+		m.serveLarkAuth(w, r)
+		return
+	}
 	switch r.URL.Path {
 	case "/v1/platform/connections", "/v1/platform/connections/save", "/v1/platform/connections/delete", "/v1/platform/connections/verify":
 	default:

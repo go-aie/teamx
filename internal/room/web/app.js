@@ -2652,8 +2652,8 @@ $("dismiss-management").addEventListener("click", () => {
 });
 // Connection forms live only in memory. Neither a PAT nor its request is
 // persisted or retried automatically after a timeout.
-const connections = { items: [], selected: null, sending: false, generation: 0 };
-const connectionValidationErrors = { credential_unavailable: "凭据不可用，请检查服务环境变量。", credential_rejected: "认证失败，请核对当前账号登录和权限。", identity_mismatch: "profile 账号或应用已变化，请核对后重新验证。", permission_denied: "当前用户缺少读取权限，请检查授权。", cli_version_mismatch: "CLI 版本不匹配，需要已验收的 1.0.99。", cli_unavailable: "CLI 无法执行，请核对路径与后台运行权限。", query_failed: "连接失败，请检查地址或网络后重试验证。", invalid_response: "实例返回了无效的身份信息。" };
+const connections = { items: [], selected: null, sending: false, generation: 0, formVersion: 0, discovery: null, detecting: false, auth: null, authTimer: null };
+const connectionValidationErrors = { credential_unavailable: "登录凭据不可用，请核对账号授权或服务凭据配置。", credential_rejected: "认证失败，请核对当前账号登录和权限。", identity_mismatch: "profile 账号或应用已变化，请核对后重新验证。", permission_denied: "当前用户缺少读取权限，请检查授权。", cli_version_mismatch: "CLI 版本不匹配，需要已验收的 1.0.99。", cli_unavailable: "CLI 无法执行，请核对路径与后台运行权限。", query_failed: "连接失败，请检查地址或网络后重试验证。", invalid_response: "实例返回了无效的身份信息。" };
 function connectionFeedback(message = "", kind = "status") {
   const feedback = $("connections-feedback");
   feedback.textContent = message;
@@ -2670,16 +2670,174 @@ function connectionInputError(id, message) {
   $(id).focus();
 }
 function connectionAuthFields() {
-  const isLark = $("connection-provider").value === "lark";
+  const isLark = connectionIsLark();
   const env = $("connection-auth").value === "env";
   for (const id of ["connection-executable", "connection-profile"]) $(id).setAttribute("aria-required", String(isLark));
   clearConnectionErrors();
   connectionFeedback();
   $("connection-profile-row").hidden = !isLark;
+  $("connection-url-row").hidden = isLark;
+  $("connection-url").required = !isLark;
   $("connection-auth-row").hidden = isLark;
   $("connection-env-row").hidden = isLark || !env; $("connection-pat-row").hidden = isLark || env;
   if (env) $("connection-pat").value = "";
   else $("connection-env").value = "";
+}
+function connectionIsLark() { return $("connection-provider").value !== "gitlab"; }
+function connectionBrand() { return $("connection-provider").value === "lark" ? "lark" : "feishu"; }
+function connectionOrigin() { return connectionBrand() === "lark" ? "https://open.larksuite.com" : "https://open.feishu.cn"; }
+function updateConnectionItem(item) {
+  connections.generation++; // A confirmed mutation supersedes earlier list reads.
+  const index = connections.items.findIndex(c => c.id === item.id);
+  if (index < 0) connections.items.push(item); else connections.items[index] = item;
+  if (connections.selected?.id === item.id) connections.selected = item;
+}
+function clearLarkAuthView() {
+  clearTimeout(connections.authTimer); connections.authTimer = null;
+  $("connection-login-panel").hidden = true;
+  $("connection-login-link").href = ""; $("connection-login-qr").src = "";
+  $("connection-login-cancel").hidden = true;
+}
+function renderLarkAccount() {
+  const option = connections.discovery?.profiles.find(p => p.name === $("connection-profile").value);
+  const active = !!connections.auth;
+  $("connection-login").hidden = !option || active || connections.detecting;
+  $("connection-login").textContent = option?.user ? "重新授权" : `登录${connectionBrand() === "lark" ? "Lark" : "飞书"}`;
+  $("connection-logout").hidden = !option?.user || active || connections.detecting;
+  for (const id of ["connection-profile", "connection-executable", "connection-detect"]) $(id).disabled = active || connections.detecting;
+  $("connection-save").disabled = active || connections.detecting;
+  $("connection-verify").disabled = active || connections.detecting;
+  $("connection-provider").disabled = active || !!connections.selected;
+  $("connection-delete").disabled = active || !!connections.selected?.references?.length;
+  $("connection-login-cancel").hidden = !active;
+  $("connection-setup").hidden = !connections.discovery || connections.discovery.profiles.length > 0;
+  const executable = $("connection-executable").value || "lark-cli";
+  $("connection-setup-command").textContent = `'${executable.replaceAll("'", "'\\''")}' config init --new --brand ${connectionBrand()} --name ${connections.discovery?.setup_profile || `teamx-${connectionBrand()}`}`;
+  if (connections.selected?.provider === "lark") {
+    const v = connections.selected.validation;
+    const same = JSON.stringify(larkProfileDraft()) === JSON.stringify(connections.selected.cli_profile);
+    const changedUser = v.status === "valid" && option?.user && option.user !== v.username;
+    let label = "尚未验证账号。";
+    if (active) label = same ? "正在认证，原账号验证已失效。" : "正在认证，完成后请保存账号配置。";
+    else if (!same) label = "账号配置已更改，保存后自动验证。";
+    else if (changedUser) label = "账号信息已变化，请重新验证。";
+    else if (v.status === "valid") label = `已验证 · @${v.username}`;
+    $("connection-validation").textContent = label;
+    if (active || !same || changedUser || v.status !== "valid") $("connection-validation").title = "";
+  }
+  if (active) return;
+  if (connections.detecting) { $("connection-account").textContent = "正在检测账号…"; return; }
+  if (!connections.discovery) { $("connection-account").textContent = "暂未检测到 CLI，请在高级设置中核对路径后刷新账号。"; return; }
+  if (!connections.discovery.profiles.length) { $("connection-account").textContent = "尚未配置此平台的应用。"; return; }
+  if (!option) { $("connection-account").textContent = "请选择要连接的应用配置。"; return; }
+  const verified = connections.selected?.validation.status === "valid" && option?.user === connections.selected.validation.username && JSON.stringify(larkProfileDraft()) === JSON.stringify(connections.selected.cli_profile);
+  $("connection-account").textContent = option.user
+    ? `${verified ? "已连接" : "已识别账号"} · ${option.user}${option.tokenStatus === "expired" || option.tokenStatus === "error" ? "（需要重新授权）" : ""}`
+    : "尚未登录，请完成账号授权。";
+}
+async function detectLarkConnection() {
+  if (!connectionIsLark() || connections.auth) return;
+  const version = ++connections.formVersion, brand = connectionBrand();
+  const selected = $("connection-profile").value;
+  connections.detecting = true; connections.discovery = null; renderLarkAccount();
+  try {
+    const data = await request("/v1/platform/connections/lark/discover", connectionPayload({ executable: $("connection-executable").value.trim(), brand }), undefined, 40000);
+    if (version !== connections.formVersion) return;
+    connections.discovery = data;
+    $("connection-executable").value = data.executable;
+    const options = data.profiles.map(p => new Option(p.user ? `${p.user} · ${p.name}` : `${p.name}（未登录）`, p.name));
+    if (data.profiles.length !== 1 || selected && !data.profiles.some(p => p.name === selected)) options.unshift(new Option("选择应用配置", ""));
+    $("connection-profile").replaceChildren(...options);
+    $("connection-profile").value = data.profiles.some(p => p.name === selected) ? selected : selected ? "" : data.profiles.length === 1 ? data.profiles[0].name : "";
+    $("connection-profile-choice").hidden = data.profiles.length <= 1 && (!selected || data.profiles.some(p => p.name === selected));
+    connectionFeedback();
+  } catch (error) {
+    if (version !== connections.formVersion) return;
+    $("connection-advanced").open = true;
+    connectionFeedback(connectionValidationErrors[error.code] || "账号检测失败，请核对 CLI 配置或网络后重试。", "error");
+  } finally {
+    if (version === connections.formVersion) { connections.detecting = false; renderLarkAccount(); }
+  }
+}
+async function cancelLarkAuth() {
+  const auth = connections.auth;
+  clearLarkAuthView(); connections.formVersion++;
+  if (!auth) return;
+  // Stop local polling immediately. Cancellation is never a logout/revocation.
+  connections.auth = null;
+  try { await request("/v1/platform/connections/lark/cancel", connectionPayload({ session_id: auth.session_id })); }
+  catch { connectionFeedback("取消结果未确认，认证最多等待 10 分钟。请刷新账号核对登录状态。", "error"); }
+  renderLarkAccount();
+}
+async function startLarkAuth(action) {
+  if (connections.sending || connections.auth || connections.detecting || !connections.discovery) return;
+  const profile = larkProfileDraft();
+  if (!profile.profile) return;
+  const affected = connections.items.filter(c => c.provider === "lark" && c.cli_profile?.profile === profile.profile);
+  const rooms = [...new Set(affected.flatMap(c => (c.references || []).map(ref => ref.name)))];
+  if (action === "logout" || affected.length) {
+    const text = `${action === "logout" ? "退出此应用配置下的全部用户登录？" : "重新授权此应用配置？"}共享此配置的 CLI 和其他工具也会受影响。${rooms.length ? `影响房间：${rooms.join("、")}。` : ""}相关通知将暂停，重新验证后需在通知设置中显式同步。${action === "logout" ? "退出登录不等于取消应用的全部授权。" : ""}`;
+    if (!window.confirm(text)) return;
+  }
+  const version = connections.formVersion;
+  connections.sending = true; $("connection-fields").disabled = true; $("connection-back").disabled = true; $("close-settings").disabled = true;
+  connectionFeedback(action === "logout" ? "正在退出登录…" : "正在发起授权…");
+  try {
+    const result = await request(`/v1/platform/connections/lark/${action}`, connectionPayload({ cli_profile: profile, affected: affected.map(c => ({ id: c.id, version: c.version, referenced_rooms: (c.references || []).map(({room_id, room_instance}) => ({room_id, room_instance})) })) }), undefined, 40000);
+    if (version !== connections.formVersion) return;
+    for (const c of result.connections || []) updateConnectionItem(c);
+    connections.auth = { session_id: result.session_id, action, profile };
+    $("connection-account").textContent = action === "logout" ? "正在退出登录…" : "正在准备授权页面…";
+    await pollLarkAuth();
+  } catch (error) {
+    connectionFeedback(error.code === "conflict" ? "连接或引用范围已变化，请返回列表重新加载。" : error.code === "busy" ? "此配置正在认证或旧查询尚未结束，请稍后刷新账号。" : "认证操作结果未确认，请返回列表并刷新账号核对；不会自动重发。", "error");
+  } finally {
+    connections.sending = false; $("connection-fields").disabled = false; $("connection-back").disabled = false; $("close-settings").disabled = false;
+    renderLarkAccount();
+  }
+}
+async function pollLarkAuth() {
+  const auth = connections.auth;
+  if (!auth) return;
+  let finished = false, version = connections.formVersion;
+  try {
+    const result = await request("/v1/platform/connections/lark/status", connectionPayload({ session_id: auth.session_id }));
+    if (connections.auth !== auth) return;
+    if (result.status === "starting" || result.status === "waiting") {
+      if (result.verification_url && result.qrcode_url) {
+        $("connection-login-link").href = result.verification_url;
+        if (auth.qrURL !== result.qrcode_url) { $("connection-login-qr").src = result.qrcode_url; auth.qrURL = result.qrcode_url; }
+        $("connection-login-panel").hidden = false;
+        $("connection-account").textContent = "等待你完成授权…";
+        connectionFeedback("请打开授权页面或扫码，完成后会自动核验账号。");
+      }
+      connections.authTimer = setTimeout(() => { void pollLarkAuth(); }, 1500);
+      return;
+    }
+    clearLarkAuthView(); connections.auth = null; finished = true;
+    const detecting = detectLarkConnection(); version = connections.formVersion;
+    await detecting;
+    if (version !== connections.formVersion) return;
+    if (result.status === "succeeded") {
+      if (auth.action === "login" && connections.selected && JSON.stringify(auth.profile) === JSON.stringify(connections.selected.cli_profile)) {
+        const item = connections.selected;
+        const verified = await request("/v1/platform/connections/verify", connectionPayload({ id: item.id, version: item.version }), undefined, 40000);
+        if (version !== connections.formVersion) return;
+        updateConnectionItem(verified); renderLarkAccount();
+        if (verified.validation.status !== "valid") { connectionFeedback(`登录已完成，连接验证失败：${connectionValidationErrors[verified.validation.error_code] || "请重试验证。"}`, "error"); return; }
+      }
+      const renewal = result.renewal_unavailable ? `本次未获得续期凭据，将于 ${new Date(result.expires_at).toLocaleString("zh-CN")} 失效。请应用管理员在开发者后台开启「刷新 user_access_token」并发布新版本，然后重新授权。` : "";
+      const savedProfile = connections.selected && JSON.stringify(auth.profile) === JSON.stringify(connections.selected.cli_profile);
+      connectionFeedback(auth.action === "logout" ? "已退出此配置的登录。取消应用全部授权请前往飞书 / Lark 授权管理页。" : `登录与身份验证成功 · ${result.username}。${savedProfile ? "相关通知需在通知设置中显式同步。" : "请保存连接以应用此账号。"}${renewal}`, renewal ? "status" : "success");
+    } else connectionFeedback(result.status === "cancelled" ? "已取消本次登录，请刷新账号核对状态。" : connectionValidationErrors[result.error_code] || "认证失败或已过期，请重新发起。", "error");
+  } catch (error) {
+    if (finished) { if (version === connections.formVersion) connectionFeedback("登录已完成，但连接验证结果未确认。请重新验证连接。", "error"); return; }
+    if (connections.auth !== auth) return;
+    clearLarkAuthView(); connections.auth = null; renderLarkAccount();
+    connectionFeedback("认证状态未确认，请刷新账号核对；不会自动重新登录。", "error");
+    // Ensure an unobserved flow cannot keep changing credentials later.
+    void request("/v1/platform/connections/lark/cancel", connectionPayload({ session_id: auth.session_id })).catch(() => {});
+  }
 }
 function connectionPayload(extra) {
   return { service_epoch: state.catalog.service_epoch, caller: { kind: "human", id: state.operator }, ...extra };
@@ -2689,7 +2847,7 @@ function renderConnections() {
   $("connections-list").replaceChildren(...connections.items.map(item => {
     const button = document.createElement("button"); button.type = "button"; button.className = "connection-row";
     const label = document.createElement("span"), name = document.createElement("strong"), detail = document.createElement("small"), status = document.createElement("span");
-    name.textContent = item.name; detail.textContent = `${item.provider === "lark" ? "飞书" : "GitLab"} · ${item.url}`;
+    name.textContent = item.name; detail.textContent = item.provider === "lark" ? `${item.cli_profile?.brand === "lark" ? "Lark" : "飞书"}${item.validation.username ? ` · ${item.validation.username}` : ""}` : `GitLab · ${item.url}`;
     status.textContent = item.validation.status === "valid" ? "已验证 ›" : item.validation.status === "failed" ? "验证失败 ›" : "未验证 ›";
     label.append(name, detail); button.append(label, status);
     button.addEventListener("click", () => editConnection(item)); return button;
@@ -2722,24 +2880,27 @@ async function loadConnections() {
   }
 }
 function showConnectionList() {
+  connections.formVersion++; connections.discovery = null; connections.detecting = false; clearLarkAuthView();
   connections.selected = null; $("connection-pat").value = "";
   $("connection-form").hidden = true; $("connections-list-view").hidden = false;
   $("connections-load-error").hidden = true;
   connectionFeedback();
 }
 function editConnection(item = null) {
+  connections.formVersion++; connections.discovery = null; connections.detecting = false; clearLarkAuthView();
   clearConnectionErrors();
   connections.selected = item;
   $("connection-form").hidden = false; $("connections-list-view").hidden = true;
   $("connection-title").textContent = item ? "编辑连接" : "新增连接";
   $("connection-name").value = item?.name || "";
-  $("connection-provider").value = item?.provider || "gitlab";
+  $("connection-provider").value = item?.provider === "lark" ? item.cli_profile?.brand || "feishu" : "gitlab";
   $("connection-provider").disabled = !!item;
   $("connection-url").value = item?.url || ""; $("connection-url").readOnly = !!item;
   $("connection-auth").value = item?.credential_kind === "env" ? "env" : "pat";
-  $("connection-brand").value = item?.cli_profile?.brand || "feishu";
+  $("connection-profile").replaceChildren(new Option("", item?.cli_profile?.profile || ""));
   $("connection-profile").value = item?.cli_profile?.profile || "";
   $("connection-executable").value = item?.cli_profile?.executable || "";
+  $("connection-advanced").open = false;
   $("connection-env").value = item?.token_env || ""; $("connection-pat").value = "";
   $("connection-pat").placeholder = item ? "留空保留现有 Token；输入新值替换" : "输入 PAT";
   $("connection-credential").hidden = !!item?.credential_configured;
@@ -2754,6 +2915,8 @@ function editConnection(item = null) {
   for (const id of ["connection-delete", "connection-verify"]) $(id).hidden = !item;
   connectionFeedback(); connectionAuthFields();
   $("connection-fields").disabled = false; $("connection-name").focus();
+  for (const id of ["connection-save", "connection-verify"]) $(id).disabled = false;
+  if (connectionIsLark()) return detectLarkConnection();
 }
 function connectionDirty() {
   const item = connections.selected;
@@ -2761,7 +2924,7 @@ function connectionDirty() {
     $("connection-pat").value !== "" || ($("connection-auth").value === "env" && $("connection-env").value !== item.token_env);
 }
 async function connectionAction(action) {
-  if (connections.sending || !state.catalog) return;
+  if (connections.sending || connections.auth || connections.detecting || !state.catalog) return;
   const item = connections.selected;
   if (action !== "save" && !item) return;
   if (action === "verify" && connectionDirty()) { connectionFeedback("请先保存更改，再验证连接。", "error"); return; }
@@ -2770,12 +2933,12 @@ async function connectionAction(action) {
   if (action === "save") {
     clearConnectionErrors();
     const auth = $("connection-auth").value;
-    payload = { ...payload, name: $("connection-name").value.trim(), provider: $("connection-provider").value, url: $("connection-url").value.trim() };
+    payload = { ...payload, name: $("connection-name").value.trim(), provider: connectionIsLark() ? "lark" : "gitlab", url: connectionIsLark() ? connectionOrigin() : $("connection-url").value.trim() };
     if (payload.provider === "lark") {
       const profileName = $("connection-profile").value.trim();
-      if (!profileName) { connectionInputError("connection-profile", "连接未保存：请填写已登录的 profile。运行 lark-cli whoami --as user 查看 profile 字段。"); return; }
+      if (!profileName || !connections.discovery?.profiles.some(p => p.name === profileName)) { connectionFeedback("连接未保存：请先刷新账号并选择应用配置，首次使用请按提示配置应用。", "error"); return; }
       if (!/^[A-Za-z0-9_.-]{1,128}$/.test(profileName) || profileName === "." || profileName === "..") {
-        connectionInputError("connection-profile", "连接未保存：profile 请使用 CLI 返回的名称，限 1～128 位字母、数字、下划线、点或连字符。"); return;
+        connectionInputError("connection-profile", "连接未保存：应用配置名称无效，请刷新账号。", "error"); return;
       }
       const executable = $("connection-executable").value.trim();
       if (!executable.startsWith("/") || /[\x00\r\n]/.test(executable)) {
@@ -2798,10 +2961,23 @@ async function connectionAction(action) {
   connections.sending = true; $("connection-fields").disabled = true;
   $("connection-back").disabled = true; $("close-settings").disabled = true;
   connectionFeedback(action === "verify" ? "正在验证…" : action === "delete" ? "正在删除…" : "正在保存…");
+  let savedResult = null;
   try {
-    const result = await request(`/v1/platform/connections/${action}`, connectionPayload(payload), undefined, 40000);
+    let result = await request(`/v1/platform/connections/${action}`, connectionPayload(payload), undefined, 40000);
     if (action === "delete") { showConnectionList(); await loadConnections(); connectionFeedback("连接已删除。", "success"); }
     else if (action === "save") {
+      savedResult = result;
+      updateConnectionItem(result);
+      if (result.provider === "lark" && result.validation.status !== "valid") {
+        connectionFeedback("连接已保存，正在验证账号…");
+        result = await request("/v1/platform/connections/verify", connectionPayload({ id: result.id, version: result.version }), undefined, 40000);
+        savedResult = result; updateConnectionItem(result);
+        if (result.validation.status !== "valid") {
+          await editConnection(result);
+          connectionFeedback(`连接已保存，但验证失败：${connectionValidationErrors[result.validation.error_code] || "请核对账号授权后重试。"}`, "error");
+          return;
+        }
+      }
       // Use the confirmed save response immediately; an earlier list read must
       // not replace it with an older version after returning to the list.
       connections.generation++;
@@ -2810,13 +2986,14 @@ async function connectionAction(action) {
       else connections.items[index] = result;
       showConnectionList(); renderConnections();
       $("connections-list-view").setAttribute("aria-busy", "false");
-      connectionFeedback(result.provider === "lark" && result.validation.status !== "valid" ? "连接已保存，尚未验证。请打开该连接，点击「验证连接」。" : "连接已保存。", "success");
+      connectionFeedback(result.provider === "lark" ? "连接已保存，账号验证成功。" : "连接已保存。", "success");
       $("connections-list").children[index].focus();
-    } else { editConnection(result); connectionFeedback(result.validation.status === "valid" ? "连接验证成功。" : connectionValidationErrors[result.validation.error_code] || "验证失败。", result.validation.status === "valid" ? "success" : "error"); }
+    } else { updateConnectionItem(result); await editConnection(result); connectionFeedback(result.validation.status === "valid" ? "连接验证成功。" : connectionValidationErrors[result.validation.error_code] || "验证失败。", result.validation.status === "valid" ? "success" : "error"); }
   } catch (error) {
     // Reconcile only by explicit list refresh. Never resend a secret request.
-    const errors = { conflict: "连接已变化，请返回列表重新加载后再编辑。", request: payload.provider === "lark" ? "连接未保存：请检查连接名称、CLI 绝对路径、profile，以及品牌与实例地址是否匹配。" : "连接未保存：请检查连接名称、HTTPS 实例地址及认证来源。", identity: "服务身份已变化，请刷新页面后重试。", capacity: "平台连接数量已达上限。", busy: "管理操作或旧查询尚未结清，请返回列表核对连接和通知状态，再显式重试。" };
-    connectionFeedback(errors[error.code] || "操作结果未确认，请返回列表核对；不会自动重发。", "error");
+    const errors = { conflict: "连接已变化，请返回列表重新加载后再编辑。", request: payload.provider === "lark" ? "连接未保存：请检查连接名称及自动检测的 CLI 配置。" : "连接未保存：请检查连接名称、HTTPS 实例地址及认证来源。", identity: "服务身份已变化，请刷新页面后重试。", capacity: "平台连接数量已达上限。", busy: "管理操作或旧查询尚未结清，请返回列表核对连接和通知状态，再显式重试。" };
+    if (savedResult) { await editConnection(savedResult); connectionFeedback("连接已保存，但验证结果未确认。请重新验证账号；不会重复创建连接。", "error"); }
+    else connectionFeedback(errors[error.code] || "操作结果未确认，请返回列表核对；不会自动重发。", "error");
   } finally {
     delete payload.pat; $("connection-pat").value = "";
     connections.sending = false; $("connection-fields").disabled = false;
@@ -2827,21 +3004,33 @@ $("open-settings").addEventListener("click", async () => {
   if (!state.managed || !state.catalog) return;
   showConnectionList(); $("settings-dialog").showModal(); await loadConnections();
 });
-$("close-settings").addEventListener("click", () => $("settings-dialog").close());
+$("close-settings").addEventListener("click", async () => { await cancelLarkAuth(); $("settings-dialog").close(); });
 $("settings-dialog").addEventListener("cancel", event => { if (connections.sending) event.preventDefault(); });
-$("settings-dialog").addEventListener("close", () => { connections.generation++; $("connection-pat").value = "";
+$("settings-dialog").addEventListener("close", () => { void cancelLarkAuth(); connections.formVersion++; connections.generation++; $("connection-pat").value = "";
   if ($("notification-detail").open) { $(workspaceView?.notificationChannel === "todos" ? "gitlab-todos-manage-connections" : "gitlab-events-manage-connections").focus(); void loadWorkspaceConnections(); }
   else $("open-settings").focus(); });
 $("connection-new").addEventListener("click", () => editConnection());
-$("connection-back").addEventListener("click", async () => { showConnectionList(); await loadConnections(); });
+$("connection-back").addEventListener("click", async () => { if (connections.auth) await cancelLarkAuth(); showConnectionList(); await loadConnections(); });
 $("connections-retry").addEventListener("click", loadConnections);
 $("connection-auth").addEventListener("change", connectionAuthFields);
 $("connection-provider").addEventListener("change", () => {
-  if (!connections.selected) $("connection-url").value = $("connection-provider").value === "lark" ? "https://open.feishu.cn" : "";
+  connections.formVersion++; connections.discovery = null; connections.detecting = false;
+  $("connection-profile").replaceChildren();
+  if (!connections.selected) {
+    $("connection-url").value = connectionIsLark() ? connectionOrigin() : "";
+    if (!$("connection-name").value.trim() || ["飞书", "Lark"].includes($("connection-name").value)) $("connection-name").value = connectionIsLark() ? connectionBrand() === "lark" ? "Lark" : "飞书" : "";
+  }
   connectionAuthFields();
+  if (connectionIsLark()) return detectLarkConnection();
+  for (const id of ["connection-save", "connection-verify"]) $(id).disabled = false;
 });
-$("connection-brand").addEventListener("change", () => { if (!connections.selected) $("connection-url").value = $("connection-brand").value === "lark" ? "https://open.larksuite.com" : "https://open.feishu.cn"; });
-function larkProfileDraft() {return {version:1, executable:$("connection-executable").value.trim(), profile:$("connection-profile").value.trim(), brand:$("connection-brand").value, cli_version:"1.0.99"};}
+$("connection-profile").addEventListener("change", () => { connectionFeedback(); renderLarkAccount(); });
+$("connection-detect").addEventListener("click", detectLarkConnection);
+$("connection-executable").addEventListener("change", detectLarkConnection);
+$("connection-login").addEventListener("click", () => startLarkAuth("login"));
+$("connection-logout").addEventListener("click", () => startLarkAuth("logout"));
+$("connection-login-cancel").addEventListener("click", async () => { await cancelLarkAuth(); await detectLarkConnection(); connectionFeedback("已请求取消本次登录。已完成的授权不会因此撤销，请核对账号状态。"); });
+function larkProfileDraft() {return {version:1, executable:$("connection-executable").value.trim(), profile:$("connection-profile").value.trim(), brand:connectionBrand(), cli_version:"1.0.99"};}
 window.addEventListener("pagehide", () => { $("connection-pat").value = ""; });
 $("connection-form").addEventListener("submit", event => { event.preventDefault(); return connectionAction("save"); });
 $("connection-verify").addEventListener("click", () => connectionAction("verify"));

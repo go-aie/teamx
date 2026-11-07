@@ -1687,6 +1687,17 @@ textarea::placeholder {
 .connection-notes { margin-top:-4px; }
 .connection-notes p { margin:4px 0 0; overflow-wrap:anywhere; }
 .connection-credential-hint { margin:6px 0 0; }
+.connection-account { margin:0 0 10px; line-height:1.6; font-size:13px; }
+.connection-account-actions { display:flex; align-items:center; flex-wrap:wrap; gap:16px; }
+#connection-profile-choice { margin-bottom:16px; }
+.connection-advanced { margin-top:20px; padding-top:14px; border-top:1px solid var(--line); }
+.connection-advanced summary { color:var(--muted); font-size:12px; cursor:pointer; }
+.settings-dialog .connection-advanced label { margin-top:16px; }
+.connection-advanced p,.connection-setup p,.connection-login-panel p { font-size:12px; line-height:1.7; }
+.connection-setup code { overflow-wrap:anywhere; user-select:text; }
+.connection-login-panel { margin:16px 0 12px; }
+.connection-login-panel a { font-size:13px; color:var(--accent); }
+.connection-login-panel img { display:block; margin-top:12px; background:white; }
 .settings-dialog .workspace-form footer { margin:4px 0 0; padding-top:18px; border-top:1px solid var(--line); gap:8px; }
 .settings-dialog footer .primary { margin-left:0; }
 #connection-delete { margin-right:auto; }

@@ -127,6 +127,7 @@ type roomManager struct {
 	platformCalls         map[*platformCall]bool
 	platformMemberChanges map[MemberIdentity]bool
 	connections           *connection.Manager
+	larkAuthSessions      map[string]*larkAuthSession
 	connectionProviders   map[string]connectionProvider
 	referenceAdapters     map[string]referenceAdapterFactory
 	referenceResolvers    map[string]followupResolver

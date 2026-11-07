@@ -1,5 +1,5 @@
-// Package lark provides bounded, user-only reads through the pinned official CLI.
-// It exposes no arbitrary API, shell, credential or external-write entry point.
+// Package lark provides bounded user reads and operator-only authentication
+// through the pinned official CLI. Agents cannot access authentication commands.
 package lark
 
 import (
@@ -121,11 +121,18 @@ func (c *Client) run(ctx context.Context, args ...string) ([]byte, error) {
 }
 
 func (c *Client) runInDir(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	return c.runCommand(ctx, dir, 30*time.Second, args...)
+}
+
+func (c *Client) runCommand(ctx context.Context, dir string, timeout time.Duration, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	out := &limitedBuffer{limit: maxOutput, cancel: cancel}
 	stderr := &limitedBuffer{limit: 64 << 10, cancel: cancel}
-	argv := append([]string{"--profile", c.profile.Profile}, args...)
+	argv := args
+	if c.profile.Profile != "" {
+		argv = append([]string{"--profile", c.profile.Profile}, args...)
+	}
 	cmd := exec.CommandContext(ctx, c.profile.Executable, argv...)
 	cmd.Dir = dir
 	for _, k := range []string{"HOME", "USER", "LOGNAME", "PATH", "TMPDIR", "LANG", "LC_ALL", "TZ", "SSL_CERT_FILE", "SSL_CERT_DIR", "HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "all_proxy", "no_proxy"} {
@@ -150,6 +157,15 @@ func (c *Client) runInDir(ctx context.Context, dir string, args ...string) ([]by
 			return nil, failure("cli_unavailable")
 		}
 		err := classify(stderr.Bytes())
+		if ErrorCode(err) == "query_failed" {
+			var completion struct {
+				Event   string   `json:"event"`
+				Missing []string `json:"missing"`
+			}
+			if decode(out.Bytes(), &completion) == nil && completion.Event == "authorization_complete" && len(completion.Missing) > 0 {
+				err = failure("permission_denied")
+			}
+		}
 		if ErrorCode(err) == "rate_limited" {
 			c.requests.limited(ctx)
 		}

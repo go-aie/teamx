@@ -63,6 +63,18 @@ func (m *roomManager) updatePlatformConnection(req platformConnectionRequest, re
 	if m.busy {
 		return platformConnection{}, ErrBusy
 	}
+	if m.larkAuthBusyLocked(req.CLIProfile) {
+		return platformConnection{}, ErrBusy
+	}
+	file, err := m.readPlatformConnections()
+	if err != nil {
+		return platformConnection{}, err
+	}
+	for _, c := range file.Connections {
+		if c.ID == req.ID && m.larkAuthBusyLocked(c.CLIProfile) {
+			return platformConnection{}, ErrBusy
+		}
+	}
 	change, err := m.connections.Plan(connection.Request{CLIProfile: req.CLIProfile, SnapshotVersion: req.SnapshotVersion, ID: req.ID, Version: req.Version, Name: req.Name, Provider: req.Provider, URL: req.URL, PAT: req.PAT, TokenEnv: req.TokenEnv}, remove)
 	if err != nil {
 		return platformConnection{}, platformConnectionError(err)
@@ -100,6 +112,17 @@ func (m *roomManager) verifyPlatformConnection(ctx context.Context, req platform
 	if m.busy {
 		m.mu.Unlock()
 		return platformConnection{}, ErrBusy
+	}
+	file, loadErr := m.readPlatformConnections()
+	if loadErr != nil {
+		m.mu.Unlock()
+		return platformConnection{}, loadErr
+	}
+	for _, c := range file.Connections {
+		if c.ID == req.ID && m.larkAuthBusyLocked(c.CLIProfile) {
+			m.mu.Unlock()
+			return platformConnection{}, ErrBusy
+		}
 	}
 	ticket, err := m.connections.BeginVerification(req.ID, req.Version)
 	// Capture the test seam under the same lock as the immutable selection.

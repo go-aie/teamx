@@ -11,8 +11,18 @@ function fixture(){
   if(path==="/v1/rooms")return {service_epoch:"manager",operator:"tester",rooms:[{room_id:"A",room_instance:"instance-A",name:"A",status:"ready",runtime_status:"ready",service:{room_id:"A",room_instance:"instance-A",service_epoch:"active-A"}}],teams:[]};
   if(path.startsWith("/v1/workspace?"))return {workspace:{root:"workspaces"},workspace_version:1,members:[],credential_status:"missing"};
   if(path.startsWith("/v1/platform/notifications?"))return {subscriptions:[structuredClone(api.data)]};
-  if(path.startsWith("/v1/platform/connections?"))return {connections:[connection]};
-  if(path==="/v1/platform/connections/save")return {id:body.id,...body,version:1,validation:{status:"unverified"}};
+  if(path.startsWith("/v1/platform/connections?"))return {connections:api.connections};
+  if(path==="/v1/platform/connections/lark/discover")return {executable:"/fixture/lark-cli",profiles:api.profiles};
+  if(path==="/v1/platform/connections/lark/login" || path==="/v1/platform/connections/lark/logout")return {session_id:"auth-session",status:"starting",connections:[]};
+  if(path==="/v1/platform/connections/lark/status")return api.authView;
+  if(path==="/v1/platform/connections/lark/cancel")return {session_id:"auth-session",status:"cancelled"};
+  if(path==="/v1/platform/connections/save"){
+   const saved={id:body.id,...body,version:1,validation:{status:"unverified"}};api.connections.push(saved);return saved;
+  }
+  if(path==="/v1/platform/connections/verify"){
+   const saved=api.connections.find(c=>c.id===body.id),result={...saved,version:saved.version+1,validation:api.verifyError?{status:"failed",error_code:api.verifyError}:{status:"valid",username:"测试用户"}};
+   api.connections[api.connections.indexOf(saved)]=result;return result;
+  }
   if(path==="/v1/platform/notifications/configure"){
    if(api.fail)throw Object.assign(Error("conflict"),{code:"conflict"});
    api.data={...api.data,config:body.config,subscription_id:api.data.subscription_id || "subscription",subscription_version:api.data.subscription_version+1,status:"running"};return structuredClone(api.data);
@@ -20,7 +30,7 @@ function fixture(){
   if(path==="/v1/member/list")return {members,latest_seq:0};
   if(path==="/v1/read")return {messages:[],snapshot_seq:0,has_more:false};
   throw Error(`Unexpected ${path}`);
- }};return api;
+ }};api.connections=[connection];api.profiles=[{name:"explicit",brand:"feishu",user:"测试用户",tokenStatus:"valid"}];api.authView={session_id:"auth-session",status:"waiting",verification_url:"https://accounts.feishu.cn/oauth?code=fixture",qrcode_url:"/v1/platform/connections/lark/qrcode?session_id=auth-session"};return api;
 }
 async function draft(ui){
  await ui.el("open-lark-source").emit("click");await settle();
@@ -68,61 +78,115 @@ test("Lark switching to all chats clears group-all and requires explicit re-enab
  ui.el("lark-scope").value="specified";await ui.el("lark-scope").emit("change");
  assert.equal(ui.el("lark-group-mode-all").disabled,false);assert.equal(ui.el("lark-group-mode").value,"mentions");
 });
-test("Lark profile connection uses CLI reference with explicit format upgrade",async()=>{
- const api=fixture(),ui=await launch(api);await ui.el("open-settings").emit("click");await ui.el("connection-new").emit("click");
- ui.el("connection-provider").value="lark";await ui.el("connection-provider").emit("change");
- ui.el("connection-name").value="测试飞书";ui.el("connection-profile").value="explicit";ui.el("connection-executable").value="/fixture/lark-cli";
- ui.el("connection-brand").value="feishu";
- await ui.el("connection-form").emit("submit");const saved=api.calls.find(x=>x.path==="/v1/platform/connections/save").body;
- assert.equal(saved.provider,"lark");assert.equal(saved.snapshot_version,2);assert.equal(saved.cli_profile.cli_version,"1.0.99");assert.equal(saved.cli_profile.profile,"explicit");assert.equal(saved.pat,undefined);assert.equal(saved.token_env,undefined);
- assert.equal(ui.el("connection-form").hidden,true);assert.equal(ui.el("connections-list-view").hidden,false);
- assert.equal(ui.el("connections-feedback").dataset.kind,"success");assert.match(ui.el("connections-feedback").textContent,/连接已保存.*尚未验证/);
-});
-test("Lark missing profile identifies the unsaved field without submitting or clearing the draft",async()=>{
- const api=fixture(),ui=await launch(api);await ui.el("open-settings").emit("click");await ui.el("connection-new").emit("click");
- ui.el("connection-provider").value="lark";await ui.el("connection-provider").emit("change");
- ui.el("connection-name").value="我的飞书";ui.el("connection-executable").value="/fixture/lark-cli";
- let focused=false;ui.el("connection-profile").focus=()=>{focused=true;};
- await ui.el("connection-form").emit("submit");
- assert.equal(api.calls.filter(x=>x.path==="/v1/platform/connections/save").length,0);
- assert.equal(ui.el("connection-form").hidden,false);assert.equal(ui.el("connection-name").value,"我的飞书");assert.equal(ui.el("connection-executable").value,"/fixture/lark-cli");
- assert.equal(ui.el("connection-profile").attributes["aria-invalid"],"true");assert.equal(ui.el("connection-profile").attributes["aria-required"],"true");assert.equal(focused,true);
- assert.equal(ui.el("connections-feedback").dataset.kind,"error");assert.equal(ui.el("connections-feedback").attributes.role,"alert");
- assert.match(ui.el("connections-feedback").textContent,/连接未保存.*profile.*whoami/);
- ui.el("connection-profile").value="explicit";await ui.el("connection-form").emit("submit");
- assert.equal(ui.el("connection-profile").attributes["aria-invalid"],"false");assert.equal(ui.el("connection-form").hidden,true);
- assert.equal(ui.el("connections-feedback").dataset.kind,"success");
-});
-test("Lark invalid profile and relative executable are rejected locally",async()=>{
- const api=fixture(),ui=await launch(api);await ui.el("open-settings").emit("click");await ui.el("connection-new").emit("click");
- ui.el("connection-provider").value="lark";await ui.el("connection-provider").emit("change");ui.el("connection-name").value="飞书";
- ui.el("connection-profile").value="显示姓名";ui.el("connection-executable").value="/fixture/lark-cli";
- await ui.el("connection-form").emit("submit");assert.equal(ui.el("connection-profile").attributes["aria-invalid"],"true");
- ui.el("connection-profile").value="explicit";ui.el("connection-executable").value="lark-cli";
- await ui.el("connection-form").emit("submit");assert.equal(ui.el("connection-executable").attributes["aria-invalid"],"true");
- assert.match(ui.el("connections-feedback").textContent,/连接未保存.*绝对路径/);
- assert.equal(api.calls.filter(x=>x.path==="/v1/platform/connections/save").length,0);
-});
-test("Lark server rejection is visibly an error and never reports or retries success",async()=>{
- const api=fixture(),original=api.request;api.request=async(path,body)=>{if(path==="/v1/platform/connections/save"){api.calls.push({path,body});throw Object.assign(Error("invalid request"),{code:"request"});}return original(path,body);};
+async function connectionDraft(api,platform="feishu"){
  const ui=await launch(api);await ui.el("open-settings").emit("click");await ui.el("connection-new").emit("click");
- ui.el("connection-provider").value="lark";await ui.el("connection-provider").emit("change");
- ui.el("connection-name").value="飞书";ui.el("connection-profile").value="explicit";ui.el("connection-executable").value="/fixture/lark-cli";
- await ui.el("connection-form").emit("submit");await ui.refresh();
+ ui.el("connection-provider").value=platform;await ui.el("connection-provider").emit("change");return ui;
+}
+test("Lark connection discovers the CLI and profile, derives origin and verifies after saving",async()=>{
+ const api=fixture(),ui=await connectionDraft(api);
+ assert.equal(ui.el("connection-url-row").hidden,true);assert.equal(ui.el("connection-url").required,false);
+ assert.equal(ui.el("connection-profile").value,"explicit");assert.equal(ui.el("connection-profile-choice").hidden,true);
+ assert.equal(ui.el("connection-executable").value,"/fixture/lark-cli");assert.equal(ui.el("connection-name").value,"飞书");
+ assert.match(ui.el("connection-account").textContent,/测试用户/);
+ await ui.el("connection-form").emit("submit");const saved=api.calls.find(x=>x.path==="/v1/platform/connections/save").body;
+ assert.equal(saved.provider,"lark");assert.equal(saved.url,"https://open.feishu.cn");assert.equal(saved.snapshot_version,2);
+ assert.equal(saved.cli_profile.cli_version,"1.0.99");assert.equal(saved.cli_profile.profile,"explicit");assert.equal(saved.cli_profile.brand,"feishu");
+ assert.equal(saved.pat,undefined);assert.equal(saved.token_env,undefined);
+ assert.equal(api.calls.filter(x=>x.path==="/v1/platform/connections/verify").length,1);
+ assert.equal(ui.el("connection-form").hidden,true);assert.match(ui.el("connections-feedback").textContent,/连接已保存.*验证成功/);
+});
+test("Lark platform has its own default origin and brand without a duplicate brand selector",async()=>{
+ const api=fixture();api.profiles[0].brand="lark";const ui=await connectionDraft(api,"lark");
+ await ui.el("connection-form").emit("submit");const saved=api.calls.find(x=>x.path==="/v1/platform/connections/save").body;
+ assert.equal(saved.url,"https://open.larksuite.com");assert.equal(saved.cli_profile.brand,"lark");assert.equal(saved.name,"Lark");
+ assert.equal(ui.el("connection-brand"),undefined);
+});
+test("multiple configurations require selection and never ask the user to type a profile",async()=>{
+ const api=fixture();api.profiles.push({name:"another",brand:"feishu",user:"另一账号"});const ui=await connectionDraft(api);
+ assert.equal(ui.el("connection-profile-choice").hidden,false);assert.equal(ui.el("connection-profile").value,"");
+ await ui.el("connection-form").emit("submit");assert.equal(api.calls.filter(x=>x.path==="/v1/platform/connections/save").length,0);
+ assert.match(ui.el("connections-feedback").textContent,/连接未保存.*选择应用配置/);
+ ui.el("connection-profile").value="another";await ui.el("connection-profile").emit("change");
+ await ui.el("connection-form").emit("submit");assert.equal(api.calls.find(x=>x.path==="/v1/platform/connections/save").body.cli_profile.profile,"another");
+});
+test("missing application configuration shows setup guidance and preserves the connection draft",async()=>{
+ const api=fixture();api.profiles=[];const ui=await connectionDraft(api);ui.el("connection-name").value="我的飞书";
+ assert.equal(ui.el("connection-setup").hidden,false);assert.match(ui.el("connection-setup-command").textContent,/config init --new --brand feishu/);
+ assert.equal(ui.el("connection-login").hidden,true);await ui.el("connection-form").emit("submit");
+ assert.equal(ui.el("connection-name").value,"我的飞书");assert.equal(ui.el("connection-form").hidden,false);
+ assert.equal(ui.el("connections-feedback").dataset.kind,"error");assert.match(ui.el("connections-feedback").textContent,/连接未保存/);
+ api.profiles=[{name:"new-app",brand:"feishu"}];await ui.el("connection-detect").emit("click");
+ assert.equal(ui.el("connection-profile").value,"new-app");assert.equal(ui.el("connection-login").hidden,false);
+});
+test("relative executable is rejected before saving an automatically discovered account",async()=>{
+ const api=fixture(),ui=await connectionDraft(api);ui.el("connection-executable").value="lark-cli";
+ await ui.el("connection-form").emit("submit");assert.equal(ui.el("connection-executable").attributes["aria-invalid"],"true");
+ assert.match(ui.el("connections-feedback").textContent,/连接未保存.*绝对路径/);assert.equal(api.calls.filter(x=>x.path==="/v1/platform/connections/save").length,0);
+});
+test("server rejection is visibly an error and never retries a connection save",async()=>{
+ const api=fixture(),original=api.request;api.request=async(path,body)=>{if(path==="/v1/platform/connections/save"){api.calls.push({path,body});throw Object.assign(Error("invalid request"),{code:"request"});}return original(path,body);};
+ const ui=await connectionDraft(api);await ui.el("connection-form").emit("submit");await ui.refresh();
  assert.equal(ui.el("connection-form").hidden,false);assert.equal(ui.el("connection-profile").value,"explicit");
- assert.equal(ui.el("connections-feedback").dataset.kind,"error");assert.equal(ui.el("connections-feedback").attributes.role,"alert");
- assert.match(ui.el("connections-feedback").textContent,/连接未保存.*profile/);assert.doesNotMatch(ui.el("connections-feedback").textContent,/已保存/);
+ assert.equal(ui.el("connections-feedback").dataset.kind,"error");assert.match(ui.el("connections-feedback").textContent,/连接未保存/);
  assert.equal(api.calls.filter(x=>x.path==="/v1/platform/connections/save").length,1);
 });
-test("a late connection list read cannot erase a missing-profile error",async()=>{
- const api=fixture(),original=api.request;let finishRead;
- api.request=(path,body)=>path.startsWith("/v1/platform/connections?") ? new Promise(resolve=>{finishRead=resolve;}) : original(path,body);
- const ui=await launch(api),opening=ui.el("open-settings").emit("click");
- await ui.el("connection-new").emit("click");ui.el("connection-provider").value="lark";await ui.el("connection-provider").emit("change");
- ui.el("connection-name").value="飞书";ui.el("connection-executable").value="/fixture/lark-cli";
- await ui.el("connection-form").emit("submit");finishRead({connections:[]});await opening;
- assert.equal(ui.el("connections-feedback").dataset.kind,"error");assert.match(ui.el("connections-feedback").textContent,/连接未保存.*profile/);
- assert.equal(ui.el("connection-form").hidden,false);
+test("a saved connection with failed verification stays editable and is not reported as connected",async()=>{
+ const api=fixture();api.verifyError="permission_denied";const ui=await connectionDraft(api);await ui.el("connection-form").emit("submit");
+ assert.equal(ui.el("connection-form").hidden,false);assert.match(ui.el("connections-feedback").textContent,/连接已保存.*验证失败/);
+ assert.equal(ui.el("connections-feedback").dataset.kind,"error");assert.equal(api.calls.filter(x=>x.path==="/v1/platform/connections/save").length,1);
+});
+test("login shows the link and QR, polls read-only status, and does not persist the flow",async()=>{
+ const api=fixture(),ui=await connectionDraft(api);await ui.el("connection-login").emit("click");
+ assert.equal(ui.el("connection-login-panel").hidden,false);assert.match(ui.el("connection-login-link").href,/^https:\/\/accounts.feishu.cn/);
+ assert.match(ui.el("connection-login-qr").src,/^\/v1\/platform\/connections\/lark\/qrcode\?/);
+ assert.equal(ui.el("connection-save").disabled,true);assert.equal(ui.el("connection-login-cancel").hidden,false);
+ assert.equal(api.calls.filter(x=>x.path==="/v1/platform/connections/lark/login").length,1);
+ api.authView={session_id:"auth-session",status:"succeeded",username:"测试用户"};await ui.clock.advance(1500);
+ assert.equal(ui.el("connection-login-panel").hidden,true);assert.equal(ui.el("connection-login-link").href,"");assert.equal(ui.el("connection-save").disabled,false);
+ assert.match(ui.el("connections-feedback").textContent,/登录与身份验证成功/);
+ assert.equal(JSON.stringify([...ui.saved]).includes("auth-session"),false);assert.equal(JSON.stringify([...ui.saved]).includes("accounts.feishu.cn"),false);
+});
+test("closing during login cancels the server flow and ignores a late status response",async()=>{
+ const api=fixture(),ui=await connectionDraft(api);await ui.el("connection-login").emit("click");
+ await ui.el("close-settings").emit("click");assert.equal(ui.el("settings-dialog").open,false);
+ assert.equal(api.calls.filter(x=>x.path==="/v1/platform/connections/lark/cancel").length,1);
+ const reads=api.calls.filter(x=>x.path==="/v1/platform/connections/lark/status").length;
+ await ui.clock.advance(3000);assert.equal(api.calls.filter(x=>x.path==="/v1/platform/connections/lark/status").length,reads);
+ assert.equal(ui.el("connection-login-qr").src,"");
+});
+test("logout explicitly acknowledges all connections sharing the profile and its affected Rooms",async()=>{
+ const api=fixture();api.connections[0].cli_profile={version:1,executable:"/different/lark-cli",profile:"explicit",brand:"feishu",cli_version:"1.0.99"};
+ api.connections[0].references=[{name:"个人助手",room_id:"A",room_instance:"instance-A"}];
+ let prompt="";api.confirm=text=>{prompt=text;return true;};api.authView={session_id:"auth-session",status:"succeeded"};
+ const ui=await connectionDraft(api);await ui.el("connection-logout").emit("click");
+ assert.match(prompt,/个人助手/);assert.match(prompt,/不等于取消应用/);
+ const body=api.calls.find(x=>x.path==="/v1/platform/connections/lark/logout").body;
+ assert.deepEqual(body.affected,[{id:"lark-connection",version:1,referenced_rooms:[{room_id:"A",room_instance:"instance-A"}]}]);
+ assert.match(ui.el("connections-feedback").textContent,/已退出.*授权管理/);
+});
+test("a late detection cannot disable or change a newly selected GitLab form",async()=>{
+ const api=fixture(),original=api.request;let finish;
+ api.request=(path,body)=>path==="/v1/platform/connections/lark/discover" ? new Promise(resolve=>{finish=resolve;}) : original(path,body);
+ const ui=await launch(api);await ui.el("open-settings").emit("click");await ui.el("connection-new").emit("click");
+ ui.el("connection-provider").value="feishu";const detecting=ui.el("connection-provider").emit("change");
+ ui.el("connection-provider").value="gitlab";await ui.el("connection-provider").emit("change");
+ finish({executable:"/late/lark-cli",profiles:api.profiles});await detecting;
+ assert.equal(ui.el("connection-profile-row").hidden,true);assert.equal(ui.el("connection-url-row").hidden,false);assert.equal(ui.el("connection-save").disabled,false);
+ assert.notEqual(ui.el("connection-executable").value,"/late/lark-cli");
+});
+test("a removed saved profile never silently changes to another account",async()=>{
+ const api=fixture();api.connections[0].cli_profile={version:1,executable:"/fixture/lark-cli",profile:"removed",brand:"feishu",cli_version:"1.0.99"};
+ const ui=await launch(api);await ui.el("open-settings").emit("click");await ui.el("connections-list").children[0].emit("click");
+ assert.equal(ui.el("connection-profile").value,"");assert.equal(ui.el("connection-profile-choice").hidden,false);
+ await ui.el("connection-form").emit("submit");assert.equal(api.calls.filter(x=>x.path==="/v1/platform/connections/save").length,0);
+});
+test("an in-flight auth status cannot restore the QR after the settings close",async()=>{
+ const api=fixture(),original=api.request;let finish,reads=0;
+ api.request=(path,body)=>path==="/v1/platform/connections/lark/status" && ++reads>1 ? new Promise(resolve=>{finish=resolve;}) : original(path,body);
+ const ui=await connectionDraft(api);await ui.el("connection-login").emit("click");await ui.clock.advance(1500);
+ await ui.el("close-settings").emit("click");finish({session_id:"auth-session",status:"succeeded",username:"晚到账号"});await settle();
+ assert.equal(ui.el("settings-dialog").open,false);assert.equal(ui.el("connection-login-panel").hidden,true);assert.equal(ui.el("connection-login-qr").src,"");
+ assert.doesNotMatch(ui.el("connections-feedback").textContent,/晚到账号/);
 });
 test("Lark all-chat mode is explicit, preserves drafts and sends no stale specified IDs",async()=>{
  const api=fixture(),ui=await launch(api);await draft(ui);

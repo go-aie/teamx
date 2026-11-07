@@ -407,15 +407,32 @@
       <div class="connection-form-heading"><h3 id="connection-title">新增连接</h3><button id="connection-back" class="text-button" type="button">← 返回列表</button></div>
       <fieldset id="connection-fields">
         <div class="connection-field"><label for="connection-name">连接名称</label><input id="connection-name" maxlength="128" required placeholder="公司 GitLab"></div>
-        <div class="connection-field"><label for="connection-provider">平台</label><select id="connection-provider"><option value="gitlab">GitLab</option><option value="lark">飞书 / Lark</option></select></div>
-        <div class="connection-field connection-field-wide"><label for="connection-url">实例地址</label><input id="connection-url" type="url" required placeholder="https://gitlab.example.com"></div>
+        <div class="connection-field"><label for="connection-provider">平台</label><select id="connection-provider"><option value="gitlab">GitLab</option><option value="feishu">飞书</option><option value="lark">Lark</option></select></div>
+        <div id="connection-url-row" class="connection-field connection-field-wide"><label for="connection-url">实例地址</label><input id="connection-url" type="url" required placeholder="https://gitlab.example.com"></div>
         <div id="connection-auth-row" class="connection-field connection-field-wide"><label for="connection-auth">认证方式</label><select id="connection-auth"><option value="pat">PAT</option><option value="env">服务环境变量</option></select></div>
         <div id="connection-profile-row" class="connection-field connection-field-wide" hidden>
-          <label for="connection-brand">品牌</label><select id="connection-brand"><option value="feishu">飞书</option><option value="lark">Lark</option></select>
-          <label for="connection-executable">CLI 可执行文件绝对路径（必填）</label><input id="connection-executable" placeholder="/opt/homebrew/bin/lark-cli" aria-describedby="connections-feedback" spellcheck="false">
-          <label for="connection-profile">已登录的 profile（必填）</label><input id="connection-profile" placeholder="显式 profile 名称" maxlength="128" aria-describedby="connection-profile-hint connections-feedback" spellcheck="false">
-          <p id="connection-profile-hint" class="quiet">运行 <code>lark-cli whoami --as user</code>，填写返回的 <code>profile</code> 字段，不是姓名或邮箱。</p>
-          <p class="quiet">支持 lark-cli 1.0.99。凭据由 CLI 管理；保存后请验证用户身份。</p>
+          <div id="connection-profile-choice" hidden><label for="connection-profile">应用配置</label><select id="connection-profile" aria-describedby="connections-feedback"></select></div>
+          <p id="connection-account" class="connection-account" role="status" aria-live="polite">正在检测账号…</p>
+          <div class="connection-account-actions">
+            <button id="connection-login" class="settings-secondary-button" type="button" hidden>登录飞书</button>
+            <button id="connection-detect" class="text-button" type="button">刷新账号</button>
+            <button id="connection-logout" class="text-button" type="button" hidden>退出登录</button>
+          </div>
+          <div id="connection-login-panel" class="connection-login-panel" hidden>
+            <p class="quiet">打开链接或扫码完成授权，页面会自动更新。</p>
+            <a id="connection-login-link" target="_blank" rel="noopener noreferrer">打开授权页面 ↗</a>
+            <img id="connection-login-qr" width="192" height="192" alt="飞书 / Lark 登录授权二维码">
+          </div>
+          <button id="connection-login-cancel" class="text-button" type="button" hidden>取消本次登录</button>
+          <div id="connection-setup" class="connection-setup quiet" hidden>
+            <p>首次使用需先配置应用。请在运行 TeamX 的机器上执行以下命令，按提示完成后点击「刷新账号」。已有应用也可运行 <code>lark-cli config init</code> 配置。</p>
+            <code id="connection-setup-command"></code>
+          </div>
+          <details id="connection-advanced" class="connection-advanced">
+            <summary>高级设置</summary>
+            <label for="connection-executable">CLI 可执行文件路径</label><input id="connection-executable" placeholder="自动检测 lark-cli，可填写绝对路径" aria-describedby="connection-cli-hint connections-feedback" spellcheck="false">
+            <p id="connection-cli-hint" class="quiet">使用 TeamX 服务所在机器及运行用户的 lark-cli 1.0.99。登录凭据由 CLI 管理。</p>
+          </details>
         </div>
         <div id="connection-pat-row" class="connection-field connection-field-wide"><label for="connection-pat">Token</label><input id="connection-pat" type="password" autocomplete="new-password" maxlength="8192" placeholder="输入 PAT" aria-describedby="connection-credential"><p id="connection-credential" class="quiet connection-credential-hint" hidden>Token 保存后不回显。</p></div>
         <div id="connection-env-row" class="connection-field connection-field-wide" hidden><label for="connection-env">环境变量名称</label><input id="connection-env" maxlength="128" placeholder="GITLAB_PAT" spellcheck="false"></div>

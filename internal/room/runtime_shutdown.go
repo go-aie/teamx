@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
 type runtimeCleanup struct {
@@ -26,6 +28,11 @@ func (m *roomManager) shutdown(ctx context.Context) error {
 	defer m.shutdownGate.Unlock()
 	m.mu.Lock()
 	m.closing = true
+	var authDone []<-chan struct{}
+	for _, s := range m.larkAuthSessions {
+		s.cancel()
+		authDone = append(authDone, s.done)
+	}
 	globalDone, globalBusy := m.operationDone, m.busy
 	owners := map[RoomIdentity]*roomRuntime{}
 	for _, entry := range m.index.Rooms {
@@ -62,7 +69,7 @@ func (m *roomManager) shutdown(ctx context.Context) error {
 	m.mu.Unlock()
 	go func() { results <- runtimeCleanup{err: m.notifications.Stop(ctx)} }()
 	go func() {
-		var err error
+		err := notification.Wait(ctx, authDone)
 		if globalBusy {
 			select {
 			case <-globalDone:
