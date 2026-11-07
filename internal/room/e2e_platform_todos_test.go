@@ -90,7 +90,7 @@ func TestGitLabGT04TracePreservesRealTransportAndPrivateFields(t *testing.T) {
 	todo.Title = "private-title"
 	todo.Actor = &gitlab.TodoActor{ID: 1, Username: "private-actor"}
 	batch := gitlab.TodoBatch{Version: 1, Todos: []gitlab.Todo{todo}, ResponseBytes: 100, NextPage: 2}
-	q := gitlab.TodoQuery{State: "pending", Page: 1, PerPage: 100, ProjectID: 7}
+	q := gitlab.TodoQuery{State: "pending", Page: 1, PerPage: 100}
 	f := s.wrap(todoFetchFunc(func(_ context.Context, got gitlab.TodoQuery) (gitlab.TodoBatch, error) {
 		if got != q {
 			t.Fatal(got)

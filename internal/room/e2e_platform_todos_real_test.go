@@ -242,8 +242,8 @@ func TestRealGitLabTodosDSH(t *testing.T) {
 		return s.Config.Enabled && !s.LastFull.IsZero() && s.Scan == nil, trace.failure()
 	}))
 	initial := state()
-	if initial.Config.ProjectScope != "all" || initial.Config.IntervalSeconds != 30 || initial.Config.InactiveIntervalSeconds != 120 {
-		fail(errors.New("use all-project scope and default 30s/120s polling for cost measurement"))
+	if initial.Config.IntervalSeconds != 30 {
+		fail(errors.New("use the default shared 30s interval and fixed 120s background polling for cost measurement"))
 	}
 	ev, err := m.testEventsState(room.RoomIdentity)
 	fail(err)
@@ -316,7 +316,7 @@ func TestRealGitLabTodosDSH(t *testing.T) {
 	fail(gt04Until(ctx, 15*time.Minute, func() (bool, error) {
 		for _, remote := range []string{"pending", "done"} {
 			for page := 1; page <= 50; {
-				batch, err := probeFetch.FetchTodos(ctx, gitlab.TodoQuery{State: remote, Page: page, PerPage: 100, ProjectID: ev.ProjectID})
+				batch, err := probeFetch.FetchTodos(ctx, gitlab.TodoQuery{State: remote, Page: page, PerPage: 100})
 				if err != nil {
 					return false, errors.New("offline probe failed")
 				}
@@ -354,8 +354,12 @@ func TestRealGitLabTodosDSH(t *testing.T) {
 		fail(errors.New("restart changed subscription or baseline"))
 	}
 	// Explicit rescan must not replay either acknowledgement or integration.
-	var view notificationView
-	fail(d.managementRequest("/v1/platform/notifications/sync", map[string]any{"service_epoch": m.epoch, "room_id": room.RoomID, "room_instance": room.RoomInstance, "caller": humanCaller, "provider": "gitlab", "channel": "todos", "subscription_id": after.SubscriptionID, "subscription_version": after.SubscriptionVersion}, &view))
+	m.mu.Lock()
+	currentConfig, viewErr := m.gitlabNotificationViewLocked(room.RoomIdentity)
+	m.mu.Unlock()
+	fail(viewErr)
+	var view gitlabNotificationView
+	fail(d.managementRequest("/v1/platform/gitlab/notifications/sync", map[string]any{"service_epoch": m.epoch, "room_id": room.RoomID, "room_instance": room.RoomInstance, "caller": humanCaller, "version": currentConfig.Version}, &view))
 	fail(d.until(func() (bool, error) {
 		s := state()
 		return s.Scan == nil && s.LastFull.After(after.LastFull) && len(s.Inbox) == 0, trace.failure()
@@ -374,7 +378,7 @@ func TestRealGitLabTodosDSH(t *testing.T) {
 	for _, todo := range []gitlab.Todo{live, offline} {
 		found := false
 		for page := 1; page <= 50; {
-			batch, err := trace.wrap(probe, "final-state-probe").FetchTodos(ctx, gitlab.TodoQuery{State: todo.State, Page: page, PerPage: 100, ProjectID: todo.ProjectID})
+			batch, err := trace.wrap(probe, "final-state-probe").FetchTodos(ctx, gitlab.TodoQuery{State: todo.State, Page: page, PerPage: 100})
 			fail(err)
 			for _, v := range batch.Todos {
 				if v.ID == todo.ID {
@@ -432,7 +436,6 @@ type gt04Query struct {
 	State      string             `json:"state"`
 	Page       int                `json:"page"`
 	PerPage    int                `json:"per_page"`
-	ProjectID  int64              `json:"project_id"`
 	Started    time.Time          `json:"started_at"`
 	Ended      time.Time          `json:"ended_at"`
 	Bytes      int64              `json:"response_bytes"`
@@ -452,7 +455,7 @@ type gt04Trace struct {
 
 func (s *gt04Trace) wrap(f gitlab.TodoFetcher, run string) gitlab.TodoFetcher {
 	return todoFetchFunc(func(ctx context.Context, q gitlab.TodoQuery) (gitlab.TodoBatch, error) {
-		row := gt04Query{Run: run, State: q.State, Page: q.Page, PerPage: q.PerPage, ProjectID: q.ProjectID, Started: time.Now().UTC()}
+		row := gt04Query{Run: run, State: q.State, Page: q.Page, PerPage: q.PerPage, Started: time.Now().UTC()}
 		batch, err := f.FetchTodos(ctx, q)
 		row.Ended = time.Now().UTC()
 		row.Bytes, row.NextPage, row.Complete, row.RetryAfter, row.Failed = batch.ResponseBytes, batch.NextPage, batch.Complete, batch.RetryAfterSeconds, err != nil

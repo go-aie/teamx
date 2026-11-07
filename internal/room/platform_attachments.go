@@ -253,7 +253,7 @@ func (m *roomManager) attachmentAccountLocked(owner RoomIdentity, source platfor
 		}
 		id, generation, origin, user = s.Binding.ConnectionID, s.Binding.ConnectionGeneration, s.Binding.URL, s.UserID
 	case gitlab.TodosState:
-		if s.Retired || s.Status == "binding_changed" || s.Project != nil && (s.Project.ProjectID != source.ProjectID || s.Project.Project != source.Project) {
+		if s.Retired || s.Status == "binding_changed" {
 			return connection.Account{}, platform.Secret{}, ErrIdentity
 		}
 		id, generation, origin, user = s.Binding.ConnectionID, s.Binding.ConnectionGeneration, s.Binding.URL, s.Binding.UserID

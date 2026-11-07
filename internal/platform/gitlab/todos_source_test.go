@@ -14,7 +14,7 @@ func sourceTodoState(t *testing.T) TodosState {
 	t.Helper()
 	owner := platform.RoomIdentity{RoomID: "room", RoomInstance: "instance"}
 	b := TodosBinding{ConnectionID: strings.Repeat("a", 32), ConnectionGeneration: strings.Repeat("b", 32), URL: "https://gitlab.example.com", UserID: 101, Username: "recipient", CredentialVersion: 1, CredentialFingerprint: strings.Repeat("c", 64)}
-	s, err := ConfigureTodos(owner, nil, b, nil, TodosConfig{Enabled: true, ConnectionID: b.ConnectionID}, time.Date(2026, 11, 3, 0, 0, 0, 0, time.UTC))
+	s, err := ConfigureTodos(owner, nil, b, TodosConfig{Enabled: true, ConnectionID: b.ConnectionID}, time.Date(2026, 11, 3, 0, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,26 +64,26 @@ func TestTodosConfigCannotMutateAccountOrImportHistory(t *testing.T) {
 	cfg := s.Config
 	other := s.Binding
 	other.UserID++
-	if _, err := ConfigureTodos(s.RoomIdentity, &s, other, nil, cfg, s.Baseline.Add(time.Minute)); err == nil {
+	if _, err := ConfigureTodos(s.RoomIdentity, &s, other, cfg, s.Baseline.Add(time.Minute)); err == nil {
 		t.Fatal("changed account reused subscription")
 	}
 	for _, invalid := range []TodosConfig{
 		{Enabled: true, ConnectionID: s.Binding.ConnectionID, Filter: TodosFilter{Types: []string{"push"}}},
 		{Enabled: true, ConnectionID: s.Binding.ConnectionID, Filter: TodosFilter{Reasons: []string{"unknown"}}},
-		{Enabled: true, ConnectionID: s.Binding.ConnectionID, ProjectScope: "current"},
+		{Enabled: true, ConnectionID: s.Binding.ConnectionID, IntervalSeconds: 121},
 		{Enabled: true, ConnectionID: s.Binding.ConnectionID, IntervalSeconds: 2},
 	} {
-		if _, err := ConfigureTodos(s.RoomIdentity, &s, s.Binding, nil, invalid, s.Baseline.Add(time.Minute)); err == nil {
+		if _, err := ConfigureTodos(s.RoomIdentity, &s, s.Binding, invalid, s.Baseline.Add(time.Minute)); err == nil {
 			t.Fatal("invalid config accepted")
 		}
 	}
 	cfg.Enabled = false
-	disabled, err := ConfigureTodos(s.RoomIdentity, &s, s.Binding, nil, cfg, s.Baseline.Add(time.Minute))
+	disabled, err := ConfigureTodos(s.RoomIdentity, &s, s.Binding, cfg, s.Baseline.Add(time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
 	cfg.Enabled = true
-	resumed, err := ConfigureTodos(s.RoomIdentity, &disabled, s.Binding, nil, cfg, s.Baseline.Add(2*time.Minute))
+	resumed, err := ConfigureTodos(s.RoomIdentity, &disabled, s.Binding, cfg, s.Baseline.Add(2*time.Minute))
 	if err != nil || !resumed.Baseline.Equal(s.Baseline) || resumed.SubscriptionID != s.SubscriptionID {
 		t.Fatal(resumed, err)
 	}
@@ -91,7 +91,7 @@ func TestTodosConfigCannotMutateAccountOrImportHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = ConfigureTodos(s.RoomIdentity, &retired, s.Binding, nil, cfg, s.Baseline.Add(time.Minute)); err == nil {
+	if _, err = ConfigureTodos(s.RoomIdentity, &retired, s.Binding, cfg, s.Baseline.Add(time.Minute)); err == nil {
 		t.Fatal("retired identity resumed")
 	}
 }
@@ -100,7 +100,7 @@ func TestTodosExplicitEmptyFilterDoesNotMeanAll(t *testing.T) {
 	s := sourceTodoState(t)
 	cfg := s.Config
 	cfg.Filter.Reasons = []string{}
-	next, err := ConfigureTodos(s.RoomIdentity, &s, s.Binding, nil, cfg, s.Baseline.Add(time.Second))
+	next, err := ConfigureTodos(s.RoomIdentity, &s, s.Binding, cfg, s.Baseline.Add(time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func TestTodosExplicitEmptyFilterDoesNotMeanAll(t *testing.T) {
 	}
 	cfg.Filter.Reasons = nil
 	cfg.Filter.Types = []string{}
-	next, err = ConfigureTodos(s.RoomIdentity, &next, s.Binding, nil, cfg, s.Baseline.Add(3*time.Second))
+	next, err = ConfigureTodos(s.RoomIdentity, &next, s.Binding, cfg, s.Baseline.Add(3*time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}

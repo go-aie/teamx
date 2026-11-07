@@ -83,7 +83,7 @@ func newTodoHarness(t *testing.T) *todoHarness {
 	clock := &eventTestClock{now: time.Date(2026, 11, 3, 0, 0, 0, 0, time.UTC)}
 	m.notifications.Clock = clock.get
 	h := &todoHarness{t: t, m: m, room: room, clock: clock, connection: c, pages: &todoTestPages{}}
-	s, err := m.configureTodosSubscription(context.Background(), notification.Key{Owner: room.RoomIdentity, Source: gitlab.TodosSourceID}, 0, gitlab.TodosConfig{Enabled: true, ConnectionID: c.ID, ProjectScope: "all"})
+	s, err := m.configureTodosSubscription(context.Background(), notification.Key{Owner: room.RoomIdentity, Source: gitlab.TodosSourceID}, 0, gitlab.TodosConfig{Enabled: true, ConnectionID: c.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -392,24 +392,24 @@ func TestTodosPublicHTTPWorksWithoutWorkspaceAndGuardsIdentity(t *testing.T) {
 	if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &list) != nil || len(list.Subscriptions) != 3 || list.Subscriptions[1].RecipientID != 101 || !list.Subscriptions[1].Available || !list.Subscriptions[0].Available || strings.Contains(response.Body.String(), "fingerprint") {
 		t.Fatal(response.Code, response.Body.String())
 	}
-	s := h.state()
+	cfg := gitlab.NotificationConfig{ConnectionID: h.connection.ID, Todos: gitlab.TodoSettings{Enabled: true}}
 	request := func() map[string]any {
-		return map[string]any{"service_epoch": h.m.epoch, "room_id": h.room.RoomID, "room_instance": h.room.RoomInstance, "provider": "gitlab", "channel": "todos", "subscription_id": s.SubscriptionID, "subscription_version": s.SubscriptionVersion, "caller": humanCaller, "config": s.Config}
+		return map[string]any{"service_epoch": h.m.epoch, "room_id": h.room.RoomID, "room_instance": h.room.RoomInstance, "version": 0, "caller": humanCaller, "config": cfg}
 	}
-	for _, change := range []func(map[string]any){func(r map[string]any) { r["subscription_version"] = 0 }, func(r map[string]any) { r["subscription_id"] = "" }, func(r map[string]any) { r["room_instance"] = "old" }, func(r map[string]any) { r["caller"] = Caller{Kind: "agent", ID: "developer"} }, func(r map[string]any) { r["config"] = map[string]any{"enabled": true, "unknown": 1} }} {
+	for _, change := range []func(map[string]any){func(r map[string]any) { r["version"] = 9 }, func(r map[string]any) { r["channel"] = "todos" }, func(r map[string]any) { r["room_instance"] = "old" }, func(r map[string]any) { r["caller"] = Caller{Kind: "agent", ID: "developer"} }, func(r map[string]any) { r["config"] = map[string]any{"enabled": true, "unknown": 1} }} {
 		r := request()
 		change(r)
-		if got := managerHTTP(h.m, "/v1/platform/notifications/configure", r); got.Code == 200 {
+		if got := managerHTTP(h.m, "/v1/platform/gitlab/notifications/configure", r); got.Code == 200 {
 			t.Fatal("invalid request accepted")
 		}
 	}
-	if got := managerHTTP(h.m, "/v1/platform/notifications/configure", request()); got.Code != 200 {
+	if got := managerHTTP(h.m, "/v1/platform/gitlab/notifications/configure", request()); got.Code != 200 {
 		t.Fatal(got.Code, got.Body.String())
 	}
-	s = h.state()
 	r := request()
+	r["version"] = 1
 	delete(r, "config")
-	if got := managerHTTP(h.m, "/v1/platform/notifications/sync", r); got.Code != 200 {
+	if got := managerHTTP(h.m, "/v1/platform/gitlab/notifications/sync", r); got.Code != 200 {
 		t.Fatal(got.Code, got.Body.String())
 	}
 }
@@ -625,79 +625,24 @@ func TestTodosCredentialRotationPausesUntilSameAccountExplicitSync(t *testing.T)
 		t.Fatal("rotation duplicated backlog")
 	}
 }
-func TestTodosCurrentProjectRequiresExplicitBindingReview(t *testing.T) {
+func TestTodosWorkspaceChangesDoNotChangeAccountScope(t *testing.T) {
 	h := newTodoHarness(t)
-	s := h.state()
-	cfg := s.Config
-	cfg.ProjectScope = "current"
-	if _, err := h.m.configureTodosSubscription(context.Background(), h.key, s.SubscriptionVersion, cfg); err == nil {
-		t.Fatal("unbound project accepted")
-	}
+	before := h.state()
 	w := testGitLabWorkspace()
-	file, err := h.m.connections.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	w.Binding.ConnectionID = h.connection.ID
-	w.Binding.ConnectionGeneration = file.Connections[0].Generation
-	w.Binding.ProjectID = 7
-	setTestEffectiveWorkspace(t, h.m, h.room, w, 1)
-	// A project on another instance cannot scope a personal connection.
 	w.Binding.URL = "https://other.invalid"
 	w.Repository.URL = "https://other.invalid/group/project.git"
-	setTestEffectiveWorkspace(t, h.m, h.room, w, 2)
-	if _, err := h.m.configureTodosSubscription(context.Background(), h.key, s.SubscriptionVersion, cfg); err == nil {
-		t.Fatal("foreign instance project accepted")
-	}
-	w.Binding.URL = "https://gitlab.invalid"
-	w.Repository.URL = "https://gitlab.invalid/group/project.git"
-	setTestEffectiveWorkspace(t, h.m, h.room, w, 3)
-	s, err = h.m.configureTodosSubscription(context.Background(), h.key, s.SubscriptionVersion, cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	h.newRunner()
-	h.pages.pending = []gitlab.Todo{h.todo(1, 1, "pending")}
+	setTestEffectiveWorkspace(t, h.m, h.room, w, 1)
+	h.pages.pending = []gitlab.Todo{h.todo(1, 1, "pending"), h.todo(2, 2, "pending")}
+	h.pages.pending[1].ProjectID = 8
+	h.pages.pending[1].Project = "group/other"
+	h.pages.pending[1].URL = "https://gitlab.invalid/group/other/-/merge_requests/42"
 	h.full()
-	if h.pages.calls[0].ProjectID != 7 {
-		t.Fatal("project filter omitted")
+	after := h.state()
+	if len(after.Inbox) != 2 || after.Status == "binding_changed" || after.SubscriptionID != before.SubscriptionID || !after.Baseline.Equal(before.Baseline) {
+		t.Fatal("Workspace affected personal notifications", after)
 	}
-	w.Binding.ProjectID = 8
-	w.Binding.Project = "group/other"
-	w.Repository.URL = "https://gitlab.invalid/group/other.git"
-	setTestEffectiveWorkspace(t, h.m, h.room, w, 4)
-	h.clock.add(time.Minute)
-	h.step()
-	s = h.state()
-	if s.Status != "binding_changed" || s.ProjectID() != 7 {
-		t.Fatal("silently followed new project", s)
-	}
-	// The page must display the saved project beside the new Workspace binding
-	// before asking the operator to explicitly save the scope again.
-	query := url.Values{"service_epoch": {h.m.epoch}, "caller_id": {humanCaller.ID}, "room_id": {h.room.RoomID}, "room_instance": {h.room.RoomInstance}}
-	response := managerHTTP(h.m, "/v1/platform/notifications?"+query.Encode(), nil)
-	var list struct {
-		Subscriptions []notificationView `json:"subscriptions"`
-	}
-	if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &list) != nil {
-		t.Fatal(response.Code, response.Body.String())
-	}
-	var savedProject bool
-	for _, v := range list.Subscriptions {
-		if v.Channel == "todos" {
-			savedProject = v.Project != nil && v.Project.ProjectID == 7 && v.Project.Project == "group/project"
-		}
-	}
-	if !savedProject || strings.Contains(response.Body.String(), "fingerprint") || strings.Contains(response.Body.String(), "test-platform-secret") {
-		t.Fatal("missing saved scope or exposed query identity", response.Body.String())
-	}
-	if err = h.m.syncTodosSubscription(context.Background(), h.key, s.SubscriptionVersion); !errors.Is(err, ErrConflict) {
-		t.Fatal("sync adopted changed project", err)
-	}
-	s, err = h.m.configureTodosSubscription(context.Background(), h.key, h.state().SubscriptionVersion, cfg)
-	if err != nil || s.ProjectID() != 8 || !s.Baseline.Equal(h.baseline) {
-		t.Fatal(s, err)
+	if err := h.m.syncTodosSubscription(context.Background(), h.key, after.SubscriptionVersion); err != nil {
+		t.Fatal(err)
 	}
 }
 func TestTodosReceiptsSurviveClearAndRestart(t *testing.T) {
@@ -843,8 +788,8 @@ func TestTodosTCPHTTPConfigureSyncDisableAndRoomDelivery(t *testing.T) {
 	}
 	server := httptest.NewServer(m)
 	defer server.Close()
-	cfg := gitlab.TodosConfig{Enabled: true, ConnectionID: c.ID, ProjectScope: "all"}
-	payload := map[string]any{"service_epoch": m.epoch, "room_id": room.RoomID, "room_instance": room.RoomInstance, "provider": "gitlab", "channel": "todos", "subscription_id": "", "subscription_version": 0, "caller": humanCaller, "config": cfg}
+	cfg := gitlab.NotificationConfig{ConnectionID: c.ID, Todos: gitlab.TodoSettings{Enabled: true}}
+	payload := map[string]any{"service_epoch": m.epoch, "room_id": room.RoomID, "room_instance": room.RoomInstance, "version": 0, "caller": humanCaller, "config": cfg}
 	call := func(path string) notificationView {
 		t.Helper()
 		data, _ := json.Marshal(payload)
@@ -857,17 +802,17 @@ func TestTodosTCPHTTPConfigureSyncDisableAndRoomDelivery(t *testing.T) {
 		if err != nil || response.StatusCode != 200 || strings.Contains(string(body), "test-platform-secret") || strings.Contains(string(body), "fingerprint") {
 			t.Fatal(response.StatusCode, string(body), err)
 		}
-		var view notificationView
-		if err = json.Unmarshal(body, &view); err != nil {
+		var unified gitlabNotificationView
+		if err = json.Unmarshal(body, &unified); err != nil {
 			t.Fatal(err)
 		}
-		return view
+		payload["version"] = unified.Version
+		return unified.Todos
 	}
-	view := call("/v1/platform/notifications/configure")
+	view := call("/v1/platform/gitlab/notifications/configure")
 	if view.SubscriptionID == "" || view.RecipientID != 101 {
 		t.Fatal(view)
 	}
-	payload["subscription_id"], payload["subscription_version"] = view.SubscriptionID, view.Version
 	delete(payload, "config")
 	deadline := time.Now().Add(5 * time.Second)
 	for {
@@ -883,11 +828,10 @@ func TestTodosTCPHTTPConfigureSyncDisableAndRoomDelivery(t *testing.T) {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	view = call("/v1/platform/notifications/sync")
-	payload["subscription_version"] = view.Version
-	cfg.Enabled = false
+	view = call("/v1/platform/gitlab/notifications/sync")
+	cfg.Todos.Enabled = false
 	payload["config"] = cfg
-	view = call("/v1/platform/notifications/configure")
+	view = call("/v1/platform/gitlab/notifications/configure")
 	if view.Status != "disabled" {
 		t.Fatal(view)
 	}
@@ -921,5 +865,42 @@ func TestTodosInactiveBacklogDeliversOnlyAfterItsRoomIsActive(t *testing.T) {
 	_, current := readManagedRoom(t, h.m, h.room)
 	if len(current.Messages) != 1 || current.Messages[0].Source.Channel != "todos" || len(h.state().Inbox) != 0 {
 		t.Fatal(current)
+	}
+}
+
+func TestTodosCurrentIntervalAndFixedInactiveInterval(t *testing.T) {
+	h := newTodoHarness(t)
+	h.full()
+	// An unavailable Room collects again after 120 seconds, regardless of the
+	// default active interval. Step once per second to avoid suspension recovery.
+	calls := len(h.pages.calls)
+	for i := 0; i < 119; i++ {
+		if _, stop := h.step(); stop || len(h.pages.calls) != calls {
+			t.Fatal("inactive collector polled early", i, stop, h.pages.calls)
+		}
+	}
+	h.step()
+	if len(h.pages.calls) != calls+1 {
+		t.Fatal("inactive collector did not poll at 120 seconds")
+	}
+	h.full()
+	// Opening a Room checks immediately, then uses the common active default.
+	makeEventHarnessActive(t, &eventHarness{m: h.m, room: h.room})
+	calls = len(h.pages.calls)
+	h.step()
+	if len(h.pages.calls) != calls+1 {
+		t.Fatal("activation did not immediately check")
+	}
+	h.full()
+	calls = len(h.pages.calls)
+	for i := 0; i < 29; i++ {
+		h.step()
+		if len(h.pages.calls) != calls {
+			t.Fatal("active collector polled early", i)
+		}
+	}
+	h.step()
+	if len(h.pages.calls) != calls+1 {
+		t.Fatal("active collector did not use the common 30 second interval")
 	}
 }

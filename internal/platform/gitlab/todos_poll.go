@@ -45,7 +45,7 @@ func (r *TodosRunner) interval(s TodosState, current bool) time.Duration {
 	if current {
 		return time.Duration(s.Config.IntervalSeconds) * time.Second
 	}
-	return time.Duration(s.Config.InactiveIntervalSeconds) * time.Second
+	return time.Duration(InactiveIntervalSeconds) * time.Second
 }
 func todoCommitResult(err error) (time.Duration, bool) {
 	return time.Second, err != nil && !errors.Is(err, notification.ErrBusy)
@@ -140,7 +140,7 @@ func (r *TodosRunner) Step(ctx context.Context) (time.Duration, bool) {
 		cancel()
 		return r.failure(ctx, err, time.Since(started), false)
 	}
-	q := TodoQuery{State: s.Scan.State, Page: s.Scan.NextPage, PerPage: 100, ProjectID: s.ProjectID(), MaxBytes: min(int64(maxTodoOutput), limits.SliceBytes-r.sliceBytes), Timeout: min(30*time.Second, max(time.Millisecond, remaining-time.Since(started)))}
+	q := TodoQuery{State: s.Scan.State, Page: s.Scan.NextPage, PerPage: 100, MaxBytes: min(int64(maxTodoOutput), limits.SliceBytes-r.sliceBytes), Timeout: min(30*time.Second, max(time.Millisecond, remaining-time.Since(started)))}
 	batch, fetchErr := r.Fetcher.FetchTodos(requestCtx, q)
 	if fetchErr == nil && requestCtx.Err() != nil {
 		fetchErr = requestCtx.Err()

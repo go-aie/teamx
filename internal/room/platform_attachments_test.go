@@ -156,7 +156,7 @@ func TestPlatformAttachmentUpstreamFailureIsBoundedAndGeneric(t *testing.T) {
 func TestPlatformAttachmentTodosAndRetiredSubscription(t *testing.T) {
 	h, svc, id, query, data := attachmentFixture(t)
 	events := h.state()
-	state, err := h.m.configureTodosSubscription(context.Background(), notification.Key{Owner: h.room.RoomIdentity, Source: gitlab.TodosSourceID}, 0, gitlab.TodosConfig{Enabled: true, ConnectionID: events.Binding.ConnectionID, ProjectScope: "all"})
+	state, err := h.m.configureTodosSubscription(context.Background(), notification.Key{Owner: h.room.RoomIdentity, Source: gitlab.TodosSourceID}, 0, gitlab.TodosConfig{Enabled: true, ConnectionID: events.Binding.ConnectionID})
 	if err != nil {
 		t.Fatal(err)
 	}

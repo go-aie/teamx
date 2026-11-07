@@ -1,11 +1,11 @@
 const eventView = value => ({ provider: "gitlab", channel: "events", subscription_id: value.subscription_version ? "a".repeat(32) : "", ...structuredClone(value) });
 const todoView = value => ({ provider: "gitlab", channel: "todos", subscription_id: "", subscription_version: 0, available: true, status: "disabled", pending: 0, metrics: {},
-  config: { enabled: false, connection_id: "", project_scope: "all", interval_seconds: 30, inactive_interval_seconds: 120, filter: {} }, ...structuredClone(value) });
+  config: { enabled: false, connection_id: "", interval_seconds: 30, filter: {} }, ...structuredClone(value) });
 const notificationList = value => { const subscriptions = [eventView(value), todoView()]; return { subscriptions, gitlab: fixtureGitLabView(subscriptions) }; };
 function fixtureSourceConfig(config, channel) {
-  if (channel === "events") return { enabled: !!config.enabled, project: config.project || "", interval_seconds: config.interval_seconds ?? 5, etag_verified: !!config.etag_verified,
-    filter: { types: [...(config.filter?.types || [])], branches: [...(config.filter?.branches || [])], ignore_users: [...(config.filter?.ignore_users || [])] } };
-  return { enabled: !!config.enabled, project_scope: config.project_scope || "all", interval_seconds: config.interval_seconds ?? 30, inactive_interval_seconds: config.inactive_interval_seconds ?? 120,
+  if (channel === "events") return { enabled: !!config.enabled, project: config.project || "", etag_verified: !!config.etag_verified,
+    filter: { types: [...(config.filter?.types || [])] } };
+  return { enabled: !!config.enabled,
     filter: { reasons: [...(config.filter?.reasons ?? ["mentioned","assigned","review_requested","other"])], types: [...(config.filter?.types ?? ["merge_request","work_item"])] } };
 }
 function fixtureGitLabView(sources, record) {
@@ -14,7 +14,7 @@ function fixtureGitLabView(sources, record) {
   let common = events.config.enabled ? events.config : todos.config;
   let connection = common.connection_id || events.config.connection_id || todos.config.connection_id || "";
   if (events.config.enabled && todos.config.enabled && events.config.connection_id !== todos.config.connection_id) connection = "";
-  const config = record?.config || { connection_id:connection, target:common.target || {}, events:fixtureSourceConfig(events.config,"events"), todos:fixtureSourceConfig(todos.config,"todos") };
+  const config = record?.config || { connection_id:connection, target:common.target || {}, interval_seconds:common.interval_seconds || 30, events:fixtureSourceConfig(events.config,"events"), todos:fixtureSourceConfig(todos.config,"todos") };
   return { version:record?.version || 0, config:structuredClone(config), events, todos, pending:structuredClone(record?.pending || {}), errors:structuredClone(record?.errors || {}), applying:!!record?.applying };
 }
 import { test } from "node:test";
@@ -1445,7 +1445,7 @@ function todosServer({ bound = true, enabled = false } = {}) {
   api.connections.push({ ...structuredClone(api.connections[0]), id: "b".repeat(32), name: "Personal", validation: { status: "valid", user_id: 202, username: "bob" } });
   const todos = new Map(["A", "B"].map(id => [id, todoView({ subscription_id: enabled ? (id === "A" ? "c" : "d").repeat(32) : "", subscription_version: enabled ? 3 : 0,
     recipient_id: enabled ? 101 : undefined, username: enabled ? "alice" : undefined, instance: enabled ? "https://gitlab.invalid" : undefined,
-    config: { enabled, connection_id: enabled ? api.connections[0].id : "", project_scope: "all", interval_seconds: id === "A" ? 30 : 45, inactive_interval_seconds: 120, filter: {} }, status: enabled ? "running" : "disabled" })]));
+    config: { enabled, connection_id: enabled ? api.connections[0].id : "", interval_seconds: id === "A" ? 30 : 45, filter: {} }, status: enabled ? "running" : "disabled" })]));
   if (!bound) for (const ws of api.workspaces.values()) { delete ws.workspace.binding; delete ws.workspace.repository; }
   const sourceHook = api.hook, records = new Map();
   api.gitlabApplyFailure = new Set();
@@ -1465,15 +1465,14 @@ function todosServer({ bound = true, enabled = false } = {}) {
       records.set(data.room_id, saved);
       for (const channel of ["events", "todos"]) {
         const runtime = channel === "events" ? events.get(data.room_id) : todos.get(data.room_id);
-        const desired = { ...config[channel], connection_id: config.connection_id, target: config.target };
+        const desired = { ...config[channel], connection_id: config.connection_id, target: config.target, interval_seconds: config.interval_seconds };
         const account = api.connections.find(c => c.id === config.connection_id);
-        const changed = JSON.stringify(fixtureSourceConfig(runtime.config, channel)) !== JSON.stringify(fixtureSourceConfig(desired, channel)) || runtime.config.connection_id !== desired.connection_id || JSON.stringify(runtime.config.target || {}) !== JSON.stringify(desired.target) || runtime.recipient_id !== account?.validation.user_id;
+        const changed = JSON.stringify(fixtureSourceConfig(runtime.config, channel)) !== JSON.stringify(fixtureSourceConfig(desired, channel)) || runtime.config.interval_seconds !== desired.interval_seconds || runtime.config.connection_id !== desired.connection_id || JSON.stringify(runtime.config.target || {}) !== JSON.stringify(desired.target) || runtime.recipient_id !== account?.validation.user_id;
         if (!desired.enabled && !runtime.config.enabled || !changed) continue;
         if (api.gitlabApplyFailure.has(channel)) { saved.pending[channel] = true; saved.errors[channel] = "apply_failed"; continue; }
         runtime.config = desired; runtime.subscription_version++; runtime.status = desired.enabled ? "running" : "disabled";
         runtime.recipient_id = account?.validation.user_id; runtime.username = account?.validation.username; runtime.instance = account?.url;
         runtime.subscription_id ||= (channel === "events" ? "a" : "c").repeat(32);
-        if (channel === "todos") runtime.project = desired.project_scope === "current" ? structuredClone(api.workspaces.get(data.room_id).workspace.binding) : undefined;
       }
       return viewFor(data.room_id);
     }
@@ -2187,13 +2186,18 @@ async function toggleGitLab(ui, id, checked) { ui.el(id).checked = checked; awai
 
 test("GitLab saves one provider model with one version and no repeated shared fields", async () => {
   const { api, events, todos } = todosServer({ enabled:true }), ui = await launch(api); await openGitLab(ui);
+  for (const id of ["gitlab-events-interval", "gitlab-todos-interval", "gitlab-todos-inactive-interval", "gitlab-events-branches", "gitlab-events-ignore", "gitlab-todos-scope"]) assert.equal(ui.el(id), undefined);
+  await editGitLab(ui,"gitlab-interval","60","input");
   assert.equal(ui.el("gitlab-events-save"), undefined); assert.equal(ui.el("gitlab-todos-save"), undefined);
   await editGitLab(ui,"gitlab-connection","b".repeat(32)); await ui.el("gitlab-save").emit("click");
   assert.equal(gitlabWrites(api).length,1);
   const body=gitlabWrites(api)[0].data;
   assert.equal(body.version,0); assert.equal(body.channel,undefined); assert.equal(body.subscription_id,undefined);
   assert.equal(body.config.connection_id,"b".repeat(32));
-  for(const source of [body.config.events,body.config.todos]) { assert.equal(source.connection_id,undefined); assert.equal(source.target,undefined); }
+  assert.equal(body.config.interval_seconds,60);
+  for(const source of [body.config.events,body.config.todos]) { assert.equal(source.connection_id,undefined); assert.equal(source.target,undefined); assert.equal(source.interval_seconds,undefined); }
+  assert.equal(body.config.todos.project_scope,undefined);assert.equal(body.config.todos.inactive_interval_seconds,undefined);
+  for (const source of [events,todos]) assert.equal(source.get("A").config.interval_seconds,60);
   assert.equal(events.get("A").config.connection_id,"b".repeat(32)); assert.equal(todos.get("A").config.connection_id,"b".repeat(32));
   assert.equal(ui.el("gitlab-save").disabled,true);
   await ui.el("gitlab-sync").emit("click");
@@ -2229,13 +2233,13 @@ test("GitLab enables one selected type while retaining one common config",async(
 
 test("GitLab public draft survives polling, platform tabs, rail closing and connection management",async()=>{
   const {api}=todosServer({enabled:true}),ui=await launch(api);await openGitLab(ui);
-  await editGitLab(ui,"gitlab-events-ignore","bot","input");await editGitLab(ui,"gitlab-todos-interval","60","input");
+  await editGitLab(ui,"gitlab-events-project","group/changed","input");await editGitLab(ui,"gitlab-interval","60","input");
   await ui.refresh();await ui.el("notification-tab-messages").emit("click");await ui.el("notification-tab-gitlab").emit("click");
   await ui.el("gitlab-manage-connections").emit("click");await ui.el("close-settings").emit("click");await settle();
   await ui.el("close-notification").emit("click");await openGitLab(ui);
-  assert.equal(ui.el("gitlab-events-ignore").value,"bot");assert.equal(String(ui.el("gitlab-todos-interval").value),"60");assert.equal(gitlabWrites(api).length,0);
-  await ui.el("gitlab-save").emit("click");assert.deepEqual(gitlabWrites(api)[0].data.config.events.filter.ignore_users,["bot"]);
-  assert.equal(gitlabWrites(api)[0].data.config.todos.interval_seconds,60);
+  assert.equal(ui.el("gitlab-events-project").value,"group/changed");assert.equal(String(ui.el("gitlab-interval").value),"60");assert.equal(gitlabWrites(api).length,0);
+  await ui.el("gitlab-save").emit("click");assert.equal(gitlabWrites(api)[0].data.config.events.project,"group/changed");
+  assert.equal(gitlabWrites(api)[0].data.config.interval_seconds,60);
 });
 
 test("GitLab rejects an empty activity selection and preserves explicit empty todo filters",async()=>{
@@ -2248,11 +2252,11 @@ test("GitLab rejects an empty activity selection and preserves explicit empty to
   await ui.refresh();assert.equal(ui.el("gitlab-todos-reason-mentioned").checked,false);
 });
 
-test("GitLab validates both type settings before the one save",async()=>{
+test("GitLab validates the common interval before the one save",async()=>{
   const {api}=todosServer({enabled:true}),ui=await launch(api);await openGitLab(ui);
-  await editGitLab(ui,"gitlab-todos-interval","3601","input");assert.equal(ui.el("gitlab-save").disabled,true);
-  await editGitLab(ui,"gitlab-todos-interval","60","input");await editGitLab(ui,"gitlab-events-interval","31","input");assert.equal(ui.el("gitlab-save").disabled,true);
-  await editGitLab(ui,"gitlab-events-interval","10","input");assert.equal(ui.el("gitlab-save").disabled,false);
+  await editGitLab(ui,"gitlab-interval","121","input");assert.equal(ui.el("gitlab-save").disabled,true);
+  await editGitLab(ui,"gitlab-interval","2","input");assert.equal(ui.el("gitlab-save").disabled,true);
+  await editGitLab(ui,"gitlab-interval","10","input");assert.equal(ui.el("gitlab-save").disabled,false);
   await ui.el("gitlab-save").emit("click");assert.equal(gitlabWrites(api).length,1);
 });
 
@@ -2271,22 +2275,22 @@ test("GitLab saved settings with a failed source expose an explicit apply retry"
 test("GitLab lost committed response is read back without a second save",async()=>{
   const {api}=todosServer({enabled:true}),hook=api.hook;let lose=true;
   api.hook=(path,data)=>{const result=hook(path,data);if(path===gitlabPath("configure")&&lose){lose=false;throw new Error("response lost");}return result;};
-  const ui=await launch(api);await openGitLab(ui);await editGitLab(ui,"gitlab-todos-interval","61","input");await ui.el("gitlab-save").emit("click");
-  await ui.refresh();assert.equal(gitlabWrites(api).length,1);assert.equal(String(ui.el("gitlab-todos-interval").value),"61");assert.equal(ui.el("gitlab-save").disabled,true);
+  const ui=await launch(api);await openGitLab(ui);await editGitLab(ui,"gitlab-interval","61","input");await ui.el("gitlab-save").emit("click");
+  await ui.refresh();assert.equal(gitlabWrites(api).length,1);assert.equal(String(ui.el("gitlab-interval").value),"61");assert.equal(ui.el("gitlab-save").disabled,true);
 });
 
 test("GitLab uncommitted timeout retains its draft and needs an explicit retry",async()=>{
   const {api}=todosServer({enabled:true}),hook=api.hook;let fail=true;
   api.hook=(path,data)=>{if(path===gitlabPath("configure")&&fail)throw new Error("timeout");return hook(path,data);};
-  const ui=await launch(api);await openGitLab(ui);await editGitLab(ui,"gitlab-todos-interval","62","input");await ui.el("gitlab-save").emit("click");
-  await ui.refresh();assert.equal(gitlabWrites(api).length,1);assert.equal(String(ui.el("gitlab-todos-interval").value),"62");assert.equal(ui.el("gitlab-save").disabled,false);
+  const ui=await launch(api);await openGitLab(ui);await editGitLab(ui,"gitlab-interval","62","input");await ui.el("gitlab-save").emit("click");
+  await ui.refresh();assert.equal(gitlabWrites(api).length,1);assert.equal(String(ui.el("gitlab-interval").value),"62");assert.equal(ui.el("gitlab-save").disabled,false);
   fail=false;await ui.el("gitlab-save").emit("click");assert.equal(gitlabWrites(api).length,2);
 });
 
 test("GitLab provider version conflicts read current state without replay",async()=>{
   const {api}=todosServer({enabled:true}),hook=api.hook;let conflict=true;
   api.hook=(path,data)=>{if(path===gitlabPath("configure")&&conflict)throw Object.assign(new Error("conflict"),{code:"conflict"});return hook(path,data);};
-  const ui=await launch(api);await openGitLab(ui);await editGitLab(ui,"gitlab-todos-interval","63","input");await ui.el("gitlab-save").emit("click");
+  const ui=await launch(api);await openGitLab(ui);await editGitLab(ui,"gitlab-interval","63","input");await ui.el("gitlab-save").emit("click");
   assert.equal(gitlabWrites(api).length,1);assert.match(ui.el("gitlab-feedback").textContent,/版本已变化/);
   conflict=false;await ui.el("gitlab-save").emit("click");assert.equal(gitlabWrites(api).length,2);
 });
@@ -2298,14 +2302,14 @@ test("GitLab locks every setting during one save, blocks duplicate clicks and is
   const saving=ui.el("gitlab-save").emit("click");await settle();assert.equal(ui.el("gitlab-shared-fields").disabled,true);assert.equal(ui.el("gitlab-events-fields").disabled,true);assert.equal(ui.el("gitlab-todos-fields").disabled,true);
   await ui.el("gitlab-save").emit("click");assert.equal(gitlabWrites(api).length,1);
   await ui.select("B");release();await saving;await openGitLab(ui);
-  assert.equal(ui.el("gitlab-connection").value,"a".repeat(32));assert.equal(String(ui.el("gitlab-todos-interval").value),"45");assert.equal(ui.el("gitlab-feedback").textContent,"");
+  assert.equal(ui.el("gitlab-connection").value,"a".repeat(32));assert.equal(String(ui.el("gitlab-interval").value),"17");assert.equal(ui.el("gitlab-feedback").textContent,"");
 });
 
 test("GitLab stale polling cannot roll back a completed provider save",async()=>{
   const {api}=todosServer({enabled:true}),ui=await launch(api);await openGitLab(ui);const hook=api.hook;let release;
   api.hook=(path,data)=>{if(path.startsWith("/v1/platform/notifications?")){const old=hook(path,data);return new Promise(resolve=>{release=()=>resolve(old);});}return hook(path,data);};
-  const reading=ui.refresh();await settle();await editGitLab(ui,"gitlab-connection","b".repeat(32));await editGitLab(ui,"gitlab-todos-interval","64","input");await ui.el("gitlab-save").emit("click");
-  release();await reading;assert.equal(String(ui.el("gitlab-todos-interval").value),"64");assert.equal(ui.el("gitlab-save").disabled,true);
+  const reading=ui.refresh();await settle();await editGitLab(ui,"gitlab-connection","b".repeat(32));await editGitLab(ui,"gitlab-interval","64","input");await ui.el("gitlab-save").emit("click");
+  release();await reading;assert.equal(String(ui.el("gitlab-interval").value),"64");assert.equal(ui.el("gitlab-save").disabled,true);
 });
 
 test("GitLab works without Workspace and prefill changes only the public draft",async()=>{
@@ -2313,14 +2317,14 @@ test("GitLab works without Workspace and prefill changes only the public draft",
   await editGitLab(ui,"gitlab-events-project","other/project","input");await ui.el("notification-manage-binding").emit("click");
   assert.equal(ui.el("gitlab-events-project").value,"group/project-A");assert.equal(gitlabWrites(api).length,0);
   const hook=api.hook;api.hook=(path,data)=>path.startsWith("/v1/workspace?")?Promise.reject(new Error("offline")):hook(path,data);
-  await ui.refresh();await editGitLab(ui,"gitlab-todos-interval","65","input");assert.equal(ui.el("gitlab-save").disabled,false);
+  await ui.refresh();await editGitLab(ui,"gitlab-interval","65","input");assert.equal(ui.el("gitlab-save").disabled,false);
   await ui.el("gitlab-save").emit("click");assert.equal(gitlabWrites(api).length,1);assert.equal(api.calls.some(c=>c.path==="/v1/workspace/apply"),false);
 });
 
 test("GitLab same connection reverified as a new account requires explicit apply",async()=>{
   const {api}=todosServer({enabled:true}),ui=await launch(api);await openGitLab(ui);
   // Runtime identity is evidence of the previously accepted account.
-  api.gitlabRecords.set("A",{version:1,config:structuredClone(fixtureGitLabView([eventView({config:{enabled:true,connection_id:"a".repeat(32),project:"group/project-A",interval_seconds:5,filter:{}},metrics:{}}),todoView({config:{enabled:true,connection_id:"a".repeat(32),project_scope:"all",interval_seconds:30,inactive_interval_seconds:120,filter:{}}})]).config)});
+  api.gitlabRecords.set("A",{version:1,config:structuredClone(fixtureGitLabView([eventView({config:{enabled:true,connection_id:"a".repeat(32),project:"group/project-A",interval_seconds:5,filter:{}},metrics:{}}),todoView({config:{enabled:true,connection_id:"a".repeat(32),interval_seconds:30,filter:{}}})]).config)});
   api.connections[0].validation={status:"valid",user_id:303,username:"carol"};
   await ui.el("gitlab-manage-connections").emit("click");await ui.el("close-settings").emit("click");await settle();
   assert.match(ui.el("gitlab-account").textContent,/@carol/);assert.equal(ui.el("gitlab-save").disabled,false);assert.equal(gitlabWrites(api).length,0);
@@ -2329,10 +2333,10 @@ test("GitLab same connection reverified as a new account requires explicit apply
 
 test("GitLab reflects a provider operation started in another tab and keeps this tab's draft",async()=>{
   const {api,events,todos}=todosServer({enabled:true}),ui=await launch(api);await openGitLab(ui);
-  await editGitLab(ui,"gitlab-todos-interval","66","input");
+  await editGitLab(ui,"gitlab-interval","66","input");
   api.gitlabRecords.set("A",{version:1,config:fixtureGitLabView([eventView(events.get("A")),todoView(todos.get("A"))]).config,applying:true});
   await ui.refresh();assert.equal(ui.el("gitlab-shared-fields").disabled,true);assert.equal(ui.el("gitlab-save").disabled,true);
-  assert.match(ui.el("gitlab-feedback").textContent,/正在应用/);assert.equal(String(ui.el("gitlab-todos-interval").value),"66");
+  assert.match(ui.el("gitlab-feedback").textContent,/正在应用/);assert.equal(String(ui.el("gitlab-interval").value),"66");
   api.gitlabRecords.get("A").applying=false;await ui.refresh();assert.equal(ui.el("gitlab-save").disabled,false);
-  await ui.el("gitlab-save").emit("click");assert.equal(gitlabWrites(api)[0].data.version,1);assert.equal(gitlabWrites(api)[0].data.config.todos.interval_seconds,66);
+  await ui.el("gitlab-save").emit("click");assert.equal(gitlabWrites(api)[0].data.version,1);assert.equal(gitlabWrites(api)[0].data.config.interval_seconds,66);
 });

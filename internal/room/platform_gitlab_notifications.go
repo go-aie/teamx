@@ -61,7 +61,7 @@ func (m *roomManager) loadGitLabNotificationsLocked(owner RoomIdentity) error {
 		return err
 	}
 	cfg, err := gitlab.NormalizeNotificationConfig(saved.Config)
-	if err != nil || saved.Schema != 1 || saved.Version == 0 || saved.RoomIdentity != owner || !reflect.DeepEqual(cfg, saved.Config) {
+	if err != nil || saved.Schema != 2 || saved.Version == 0 || saved.RoomIdentity != owner || !reflect.DeepEqual(cfg, saved.Config) {
 		return ErrInvalid
 	}
 	m.gitlabNotifications[owner] = saved
@@ -95,22 +95,24 @@ func (m *roomManager) gitlabNotificationViewLocked(owner RoomIdentity) (gitlabNo
 	// Existing subscriptions are read only until the first explicit unified save.
 	// An inconsistent account requires a selection; no read changes a baseline.
 	events, todos := v.Events.Config.(gitlab.EventsConfig), v.Todos.Config.(gitlab.TodosConfig)
+	v.Config.IntervalSeconds = gitlab.DefaultIntervalSeconds
 	v.Config.Events, v.Config.Todos = gitlab.EventSettingsFrom(events), gitlab.TodoSettingsFrom(todos)
 	type common struct {
 		connection string
 		target     notification.Target
+		interval   int
 	}
 	var used []common
 	if events.Enabled || !todos.Enabled && v.Events.SubscriptionID != "" {
-		used = append(used, common{events.ConnectionID, events.Target})
+		used = append(used, common{events.ConnectionID, events.Target, events.IntervalSeconds})
 	}
 	if todos.Enabled || !events.Enabled && v.Todos.SubscriptionID != "" {
-		used = append(used, common{todos.ConnectionID, todos.Target})
+		used = append(used, common{todos.ConnectionID, todos.Target, todos.IntervalSeconds})
 	}
 	if len(used) > 0 {
-		v.Config.ConnectionID, v.Config.Target = used[0].connection, used[0].target
+		v.Config.ConnectionID, v.Config.Target, v.Config.IntervalSeconds = used[0].connection, used[0].target, used[0].interval
 		for _, c := range used[1:] {
-			if c.connection != v.Config.ConnectionID || c.target != v.Config.Target {
+			if c.connection != v.Config.ConnectionID || c.target != v.Config.Target || c.interval != v.Config.IntervalSeconds {
 				v.Config.ConnectionID = ""
 				v.Errors["config"] = "settings_mismatch"
 			}
@@ -152,8 +154,7 @@ func (m *roomManager) gitlabStateAppliedLocked(owner RoomIdentity, cfg gitlab.No
 		if err != nil || account.UserID != s.Binding.UserID || account.Generation != s.Binding.ConnectionGeneration || account.URL != s.Binding.URL {
 			return false
 		}
-		project, err := m.todosProjectLocked(owner, cfg.TodoConfig(), account.URL)
-		return err == nil && reflect.DeepEqual(project, s.Project)
+		return true
 	}
 	return false
 }
@@ -212,12 +213,6 @@ func (m *roomManager) configureGitLabNotifications(ctx context.Context, owner Ro
 				return gitlabNotificationView{}, err
 			}
 		}
-		if cfg.Todos.Enabled {
-			if _, err = m.todosProjectLocked(owner, cfg.TodoConfig(), account.URL); err != nil {
-				m.mu.Unlock()
-				return gitlabNotificationView{}, notificationRoomError(err)
-			}
-		}
 	}
 	cfg, err := gitlab.NormalizeNotificationConfig(cfg)
 	if err == nil {
@@ -237,7 +232,7 @@ func (m *roomManager) configureGitLabNotifications(ctx context.Context, owner Ro
 			m.mu.Unlock()
 			return gitlabNotificationView{}, ErrCapacity
 		}
-		saved = gitlabNotificationRecord{RoomIdentity: owner, Schema: 1, Version: saved.Version + 1, Config: cfg}
+		saved = gitlabNotificationRecord{RoomIdentity: owner, Schema: 2, Version: saved.Version + 1, Config: cfg}
 		if err = m.store.save(m.gitlabNotificationPath(owner), saved, maxGitLabConfigBytes); err != nil {
 			m.mu.Unlock()
 			return gitlabNotificationView{}, err

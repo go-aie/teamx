@@ -16,11 +16,10 @@ const TodosProtocolVersion = 1
 const maxTodoOutput = 4 << 20
 
 // TodoQuery is one page of one remote state, not a time window or cursor.
-// ProjectID=0 means all accessible projects. The host validates project scope.
+// Personal queries always cover all projects accessible to the account.
 type TodoQuery struct {
 	State         string
 	Page, PerPage int
-	ProjectID     int64
 	MaxBytes      int64
 	Timeout       time.Duration
 }
@@ -103,7 +102,7 @@ func (f *GoTodoFetcher) FetchTodos(ctx context.Context, q TodoQuery) (TodoBatch,
 	if q.Timeout == 0 {
 		q.Timeout = 30 * time.Second
 	}
-	if (q.State != "pending" && q.State != "done") || q.Page < 1 || q.Page > 10000 || q.PerPage < 1 || q.PerPage > 100 || q.ProjectID < 0 || q.MaxBytes < 1 || q.MaxBytes > maxTodoOutput || q.Timeout <= 0 || q.Timeout > 30*time.Second {
+	if (q.State != "pending" && q.State != "done") || q.Page < 1 || q.Page > 10000 || q.PerPage < 1 || q.PerPage > 100 || q.MaxBytes < 1 || q.MaxBytes > maxTodoOutput || q.Timeout <= 0 || q.Timeout > 30*time.Second {
 		return TodoBatch{}, errors.New("invalid GitLab todo query")
 	}
 	if err := ctx.Err(); err != nil {
@@ -112,9 +111,6 @@ func (f *GoTodoFetcher) FetchTodos(ctx context.Context, q TodoQuery) (TodoBatch,
 	ctx, cancel := context.WithTimeout(ctx, q.Timeout)
 	defer cancel()
 	query := url.Values{"state": {q.State}, "page": {strconv.Itoa(q.Page)}, "per_page": {strconv.Itoa(q.PerPage)}}
-	if q.ProjectID > 0 {
-		query.Set("project_id", strconv.FormatInt(q.ProjectID, 10))
-	}
 	response, err := f.read(ctx, "/todos", query, nil, q.MaxBytes)
 	if ctx.Err() != nil {
 		return TodoBatch{}, ctx.Err()
@@ -259,9 +255,9 @@ func validTodo(t Todo, origin string, recipientID int64, q TodoQuery) bool {
 		return false
 	}
 	if t.ProjectID == 0 {
-		return q.ProjectID == 0 && t.Project == "" && t.SkipReason == "no_project" && t.TargetID == 0 && t.TargetIID == 0 && t.URL == "" && t.TargetAuthor == nil && t.Title == "" && t.Body == ""
+		return t.Project == "" && t.SkipReason == "no_project" && t.TargetID == 0 && t.TargetIID == 0 && t.URL == "" && t.TargetAuthor == nil && t.Title == "" && t.Body == ""
 	}
-	if t.ProjectID < 0 || q.ProjectID != 0 && t.ProjectID != q.ProjectID || len(t.Project) > 4096 || !todoProjectPath.MatchString(t.Project) {
+	if t.ProjectID < 0 || len(t.Project) > 4096 || !todoProjectPath.MatchString(t.Project) {
 		return false
 	}
 	for _, p := range strings.Split(t.Project, "/") {

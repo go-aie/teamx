@@ -389,7 +389,7 @@ func TestRealGitLabOAuthG5(t *testing.T) {
 				t.Fatal("cannot load isolated subscription")
 			}
 			if state == nil {
-				created, err := m.configureTodosSubscription(ctx, notification.Key{Owner: room.RoomIdentity, Source: gitlab.TodosSourceID}, 0, gitlab.TodosConfig{Enabled: true, ConnectionID: record.ID, ProjectScope: "all", Target: inboxTarget(id)})
+				created, err := m.configureTodosSubscription(ctx, notification.Key{Owner: room.RoomIdentity, Source: gitlab.TodosSourceID}, 0, gitlab.TodosConfig{Enabled: true, ConnectionID: record.ID, Target: inboxTarget(id)})
 				if err != nil {
 					t.Fatal("cannot create isolated real-account subscription")
 				}

@@ -45,13 +45,11 @@ type TodosFilter struct {
 	Types   []string `json:"types"`
 }
 type TodosConfig struct {
-	Target                  notification.Target `json:"target,omitzero"`
-	Enabled                 bool                `json:"enabled"`
-	ConnectionID            string              `json:"connection_id"`
-	ProjectScope            string              `json:"project_scope"` // all or current
-	IntervalSeconds         int                 `json:"interval_seconds"`
-	InactiveIntervalSeconds int                 `json:"inactive_interval_seconds"`
-	Filter                  TodosFilter         `json:"filter"`
+	Target          notification.Target `json:"target,omitzero"`
+	Enabled         bool                `json:"enabled"`
+	ConnectionID    string              `json:"connection_id"`
+	IntervalSeconds int                 `json:"interval_seconds"`
+	Filter          TodosFilter         `json:"filter"`
 }
 
 func NormalizeTodosConfig(c TodosConfig) (TodosConfig, error) {
@@ -61,18 +59,11 @@ func normalizeTodosConfig(c TodosConfig, requireConnection bool) (TodosConfig, e
 	if !c.Target.Valid() {
 		return c, notification.ErrRequest
 	}
-	if c.IntervalSeconds == 0 {
-		c.IntervalSeconds = 30
-	}
-	if c.InactiveIntervalSeconds == 0 {
-		c.InactiveIntervalSeconds = 120
-	}
-	if c.ProjectScope == "" {
-		c.ProjectScope = "all"
-	}
-	if requireConnection && !validRestartID(c.ConnectionID) || (c.ProjectScope != "all" && c.ProjectScope != "current") || c.IntervalSeconds < 3 || c.IntervalSeconds > 3600 || c.InactiveIntervalSeconds < c.IntervalSeconds || c.InactiveIntervalSeconds > 86400 {
+	interval, err := normalizeInterval(c.IntervalSeconds)
+	if err != nil || requireConnection && !validRestartID(c.ConnectionID) {
 		return c, notification.ErrRequest
 	}
+	c.IntervalSeconds = interval
 	c.Filter.Reasons = slices.Clone(c.Filter.Reasons)
 	c.Filter.Types = slices.Clone(c.Filter.Types)
 	if c.Filter.Reasons == nil {
@@ -102,9 +93,8 @@ func normalizeTodosConfig(c TodosConfig, requireConnection bool) (TodosConfig, e
 }
 
 type TodosFilterRevision struct {
-	Since     time.Time   `json:"since"`
-	Filter    TodosFilter `json:"filter"`
-	ProjectID int64       `json:"project_id"`
+	Since  time.Time   `json:"since"`
+	Filter TodosFilter `json:"filter"`
 }
 type TodosObservation struct {
 	ID        int64     `json:"id"`
@@ -136,7 +126,6 @@ type TodosState struct {
 	SubscriptionVersion uint64                      `json:"subscription_version"`
 	Retired             bool                        `json:"retired"`
 	Binding             TodosBinding                `json:"binding"`
-	Project             *platform.ProjectBinding    `json:"project,omitempty"`
 	Config              TodosConfig                 `json:"config"`
 	Baseline            time.Time                   `json:"baseline"`
 	Filters             []TodosFilterRevision       `json:"filters"`
@@ -152,12 +141,6 @@ type TodosState struct {
 func TodosKey(b TodosBinding, id int64) string {
 	return b.URL + "|" + strconv.FormatInt(b.UserID, 10) + "|" + strconv.FormatInt(id, 10)
 }
-func (s TodosState) ProjectID() int64 {
-	if s.Project != nil {
-		return s.Project.ProjectID
-	}
-	return 0
-}
 func cloneTodosFilter(f TodosFilter) TodosFilter {
 	return TodosFilter{Reasons: slices.Clone(f.Reasons), Types: slices.Clone(f.Types)}
 }
@@ -167,10 +150,6 @@ func (s TodosState) Clone() TodosState {
 	next.Filters = append([]TodosFilterRevision(nil), s.Filters...)
 	for i := range next.Filters {
 		next.Filters[i].Filter = cloneTodosFilter(next.Filters[i].Filter)
-	}
-	if s.Project != nil {
-		p := *s.Project
-		next.Project = &p
 	}
 	if s.Scan != nil {
 		scan := *s.Scan
@@ -208,17 +187,14 @@ func (s TodosState) Validate(owner platform.RoomIdentity) error {
 	if err != nil || !reflect.DeepEqual(cfg, s.Config) || s.RoomIdentity != owner || !validRestartID(s.SubscriptionID) || s.SubscriptionVersion == 0 || !s.Binding.Valid() || cfg.ConnectionID != s.Binding.ConnectionID || s.Baseline.IsZero() || s.Retired && cfg.Enabled || s.RuntimeState.Validate(cfg.Enabled) != nil || s.Observed == nil || s.Inbox == nil || len(s.Observed) > 100000 || len(s.Inbox) > 10000 || len(s.Filters) == 0 || len(s.Filters) > 256 || !s.Filters[0].Since.Equal(s.Baseline) {
 		return notification.ErrInvalid
 	}
-	if cfg.ProjectScope == "all" && s.Project != nil || cfg.ProjectScope == "current" && (s.Project == nil || !validEventsProjectBinding(*s.Project) || s.Project.URL != s.Binding.URL || s.Project.ProjectID <= 0) {
-		return notification.ErrInvalid
-	}
 	for i, f := range s.Filters {
 		c, e := NormalizeTodosConfig(TodosConfig{ConnectionID: cfg.ConnectionID, Filter: f.Filter})
-		if e != nil || !reflect.DeepEqual(c.Filter, f.Filter) || f.ProjectID < 0 || i > 0 && f.Since.Before(s.Filters[i-1].Since) {
+		if e != nil || !reflect.DeepEqual(c.Filter, f.Filter) || i > 0 && f.Since.Before(s.Filters[i-1].Since) {
 			return notification.ErrInvalid
 		}
 	}
 	last := s.Filters[len(s.Filters)-1]
-	if !reflect.DeepEqual(last.Filter, cfg.Filter) || last.ProjectID != s.ProjectID() {
+	if !reflect.DeepEqual(last.Filter, cfg.Filter) {
 		return notification.ErrInvalid
 	}
 	if !s.LastCheck.IsZero() && s.LastCheck.Before(s.Baseline) || !s.LastFull.IsZero() && (s.LastFull.Before(s.Baseline) || s.LastCheck.Before(s.LastFull)) {
@@ -228,7 +204,7 @@ func (s TodosState) Validate(owner platform.RoomIdentity) error {
 		return notification.ErrInvalid
 	}
 	for key, o := range s.Observed {
-		if key != TodosKey(s.Binding, o.ID) || o.ID <= 0 || o.CreatedAt.Before(s.Baseline) || !slices.Contains([]string{"accepted", "reason", "type", "project", "no_project", "unsupported_target", "target_unavailable", "untrusted_url"}, o.Reason) {
+		if key != TodosKey(s.Binding, o.ID) || o.ID <= 0 || o.CreatedAt.Before(s.Baseline) || !slices.Contains([]string{"accepted", "reason", "type", "no_project", "unsupported_target", "target_unavailable", "untrusted_url"}, o.Reason) {
 			return notification.ErrInvalid
 		}
 	}
@@ -262,9 +238,6 @@ func (s TodosState) Reason(t Todo) string {
 			break
 		}
 		f = r
-	}
-	if f.ProjectID != 0 && t.ProjectID != f.ProjectID {
-		return "project"
 	}
 	if !slices.Contains(f.Filter.Reasons, t.Reason) {
 		return "reason"

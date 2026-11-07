@@ -112,7 +112,7 @@ func (r *EventsRunner) Step(ctx context.Context) (time.Duration, bool) {
 			r.NextQuick = now
 			r.RequestFull(now)
 		} else if !r.NextQuick.IsZero() {
-			r.NextQuick = now.Add(30 * time.Second)
+			r.NextQuick = now.Add(time.Duration(InactiveIntervalSeconds) * time.Second)
 		}
 	}
 	if force {
@@ -296,7 +296,7 @@ func (r *EventsRunner) Step(ctx context.Context) (time.Duration, bool) {
 		return time.Second, !errors.Is(err, notification.ErrBusy) // no candidate or validator was accepted
 	}
 	if q.Mode == "quick" {
-		interval := 30 * time.Second
+		interval := time.Duration(InactiveIntervalSeconds) * time.Second
 		if r.current {
 			interval = time.Duration(next.Config.IntervalSeconds) * time.Second
 		}

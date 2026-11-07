@@ -37,7 +37,7 @@ func TestTodosGoOnePersonalPageAndLimits(t *testing.T) {
 		t.Fatal(item)
 	}
 	before := *calls
-	for _, q := range []TodoQuery{{}, {State: "all"}, {State: "pending", Page: 10001}, {State: "pending", PerPage: 101}, {State: "pending", ProjectID: -1}, {State: "pending", MaxBytes: maxTodoOutput + 1}, {State: "pending", Timeout: 31 * time.Second}, {State: "pending", Timeout: -1}} {
+	for _, q := range []TodoQuery{{}, {State: "all"}, {State: "pending", Page: 10001}, {State: "pending", PerPage: 101}, {State: "pending", MaxBytes: maxTodoOutput + 1}, {State: "pending", Timeout: 31 * time.Second}, {State: "pending", Timeout: -1}} {
 		if _, err := f.FetchTodos(context.Background(), q); err == nil {
 			t.Fatal(q)
 		}
@@ -45,7 +45,7 @@ func TestTodosGoOnePersonalPageAndLimits(t *testing.T) {
 	if *calls != before {
 		t.Fatal("invalid query reached HTTP")
 	}
-	for _, q := range []TodoQuery{{State: "done"}, {State: "pending", ProjectID: 8}, {State: "pending", MaxBytes: 10}} {
+	for _, q := range []TodoQuery{{State: "done"}, {State: "pending", MaxBytes: 10}} {
 		if _, err := f.FetchTodos(context.Background(), q); err == nil {
 			t.Fatal(q)
 		}
@@ -63,7 +63,7 @@ func TestTodosGoNormalizationAndObservedSkips(t *testing.T) {
 			raw := strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(rawTodoFixture, "review_requested", action), "MergeRequest", kind), "pending", "done")
 			raw = strings.ReplaceAll(raw, "merge_requests/42", "work_items/42#note_12")
 			f, _ := todoFetcher(t, "["+raw+"]", nil)
-			b, err := f.FetchTodos(context.Background(), TodoQuery{State: "done", ProjectID: 7})
+			b, err := f.FetchTodos(context.Background(), TodoQuery{State: "done"})
 			if err != nil || b.Todos[0].Kind != "work_item" || b.Todos[0].Reason != todoReason(action) {
 				t.Fatal(b, err)
 			}
@@ -119,13 +119,13 @@ func TestTodosGoSafeErrorsQueryScopeAndCancellation(t *testing.T) {
 		read := NewReadAPI("https://gitlab.example.com", platform.NewSecret("secret"), roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			calls++
 			q := r.URL.Query()
-			if r.URL.Path != "/api/v4/todos" || q.Get("state") != "pending" || q.Get("project_id") != "7" || q.Get("page") != "1" || q.Get("per_page") != "100" || q.Get("sort") != "" {
+			if r.URL.Path != "/api/v4/todos" || q.Get("state") != "pending" || q.Has("project_id") || q.Get("page") != "1" || q.Get("per_page") != "100" || q.Get("sort") != "" {
 				t.Fatal(r.URL)
 			}
 			return fixtureResponse("sensitive-body", status, http.Header{"Retry-After": {"17"}}), nil
 		}))
 		f, _ := NewTodoFetcher("https://gitlab.example.com", 101, read)
-		_, err := f.FetchTodos(context.Background(), TodoQuery{State: "pending", ProjectID: 7})
+		_, err := f.FetchTodos(context.Background(), TodoQuery{State: "pending"})
 		var e *TodoQueryError
 		if !errors.As(err, &e) || e.HTTPStatus != status || e.RetryAfterSeconds != 17 || calls != 1 {
 			t.Fatal(err, calls)

@@ -57,7 +57,7 @@ type eventPollHarness struct {
 func newEventPollHarness(t *testing.T, cfg EventsConfig) *eventPollHarness {
 	t.Helper()
 	source, host, runner := standaloneEventsConfig(t, cfg)
-	host.scope.Current = false
+	host.scope.Current = true
 	pages := &eventPollPages{}
 	source.Prepare = func(context.Context, string, Binding) (EventFetcher, int64, error) { return pages, 7, nil }
 	return &eventPollHarness{t: t, host: host, runner: runner, pages: pages, baseline: host.state.Baseline}
@@ -129,7 +129,7 @@ func TestGitLabEventsBurstAcrossMidnightAndIdleQuickPage(t *testing.T) {
 }
 
 func TestGitLabEventsProcessesUnknownAfterKnownIDAndObservesFiltered(t *testing.T) {
-	h := newEventPollHarness(t, EventsConfig{Filter: EventsFilter{Branches: []string{"main"}, IgnoreUsers: []string{"bot"}}})
+	h := newEventPollHarness(t, EventsConfig{Filter: EventsFilter{Types: []string{"push"}}})
 	known := h.event(100, 1)
 	filtered := h.event(101, 2)
 	filtered.Kind = "merge_request"
@@ -140,16 +140,17 @@ func TestGitLabEventsProcessesUnknownAfterKnownIDAndObservesFiltered(t *testing.
 	unknown.SkipReason = "unsupported_event"
 	ignored := h.event(103, 4)
 	ignored.Author.Username = "BOT"
+	ignored.Branch = "feature/automation"
 	h.pages.events = []Event{known, filtered, unknown, ignored}
 	h.prepare()
 	h.advance(10 * time.Second)
 	h.step()
 	h.full()
 	s := h.state()
-	if len(s.Inbox) != 1 || len(s.Observed) != 4 {
+	if len(s.Inbox) != 2 || len(s.Observed) != 4 {
 		t.Fatal(s)
 	}
-	for id, reason := range map[int64]string{101: "missing_branch", 102: "unsupported_event", 103: "ignored_user"} {
+	for id, reason := range map[int64]string{101: "event_type", 102: "unsupported_event", 103: "accepted"} {
 		if s.Observed[EventsKey(s.Binding, 7, id)].Reason != reason {
 			t.Fatal(id, s.Observed)
 		}
@@ -161,7 +162,7 @@ func TestGitLabEventsProcessesUnknownAfterKnownIDAndObservesFiltered(t *testing.
 	h.advance(30 * time.Second)
 	h.step()
 	s = h.state()
-	if len(s.Inbox) != 2 || s.Metrics.NewItems != 5 || h.runner.NeedFull {
+	if len(s.Inbox) != 3 || s.Metrics.NewItems != 5 || h.runner.NeedFull {
 		t.Fatal("stopped early at known/max ID", s)
 	}
 	h.advance(30 * time.Second)
@@ -305,7 +306,7 @@ func TestGitLabEventsCompactionKeepsPendingAndRejectsOldReappearance(t *testing.
 func TestGitLabEventsScanBudgetsPreserveCheckpointAndYieldToQuick(t *testing.T) {
 	for _, kind := range []string{"pages", "bytes", "time"} {
 		t.Run(kind, func(t *testing.T) {
-			h := newEventPollHarness(t, EventsConfig{})
+			h := newEventPollHarness(t, EventsConfig{IntervalSeconds: 5})
 			h.host.scope.Current = true
 			for i := 1; i <= 55; i++ {
 				h.pages.events = append(h.pages.events, h.event(int64(i), i))
@@ -406,7 +407,7 @@ func TestGitLabEventsComputerResumeRestartsUnstablePageAndMarksRetentionGap(t *t
 }
 
 func TestGitLabEventsLongPollingHintDoesNotStarveCurrentRoomCatchup(t *testing.T) {
-	h := newEventPollHarness(t, EventsConfig{})
+	h := newEventPollHarness(t, EventsConfig{IntervalSeconds: 5})
 	h.host.scope.Current = true
 	h.prepare()
 	h.advance(time.Second)

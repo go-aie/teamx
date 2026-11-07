@@ -191,10 +191,10 @@ func TestRealGitLabEventsDSH(t *testing.T) {
 	fail(d.managementRequest("/v1/tools/bind", toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller,
 		Binding: tool.Binding{AgentID: saved.Members[0].AgentID, MembershipID: saved.Members[0].MembershipID, Tool: "gitlab", ConnectionID: conn.ID},
 		Enabled: true, ConnectionVersion: conn.Version}, &bindings))
-	var view notificationView
-	configure := map[string]any{"service_epoch": m.epoch, "room_id": room.RoomID, "room_instance": room.RoomInstance, "caller": humanCaller, "provider": "gitlab", "channel": "events", "subscription_id": m.testEventsKey(room.RoomIdentity).SubscriptionID, "subscription_version": 0,
-		"config": gitlab.EventsConfig{Enabled: true, ConnectionID: conn.ID, Project: project, IntervalSeconds: 5, Filter: gitlab.EventsFilter{Types: []string{"merge_request.opened"}}}}
-	fail(d.managementRequest("/v1/platform/notifications/configure", configure, &view))
+	var view gitlabNotificationView
+	configure := map[string]any{"service_epoch": m.epoch, "room_id": room.RoomID, "room_instance": room.RoomInstance, "caller": humanCaller, "version": 0,
+		"config": gitlab.NotificationConfig{ConnectionID: conn.ID, IntervalSeconds: 5, Events: gitlab.EventSettings{Enabled: true, Project: project, Filter: gitlab.EventsFilter{Types: []string{"merge_request.opened"}}}}}
+	fail(d.managementRequest("/v1/platform/gitlab/notifications/configure", configure, &view))
 	state := func() gitlab.EventsState {
 		s, err := m.testEventsState(room.RoomIdentity)
 		fail(err)
@@ -254,7 +254,7 @@ func TestRealGitLabEventsDSH(t *testing.T) {
 	t.Logf("GE-04: create a new MR in %s with exact title %s-live (no remote write is performed by this test)", project, marker)
 	live := waitEvent(marker+"-live", "service-1")
 	d.report["live"] = checkEvent(live, "service-1")
-	fail(d.managementRequest("/v1/platform/notifications/sync", map[string]any{"service_epoch": m.epoch, "room_id": room.RoomID, "room_instance": room.RoomInstance, "caller": humanCaller, "provider": "gitlab", "channel": "events", "subscription_id": m.testEventsKey(room.RoomIdentity).SubscriptionID, "subscription_version": initial.SubscriptionVersion}, &view))
+	fail(d.managementRequest("/v1/platform/gitlab/notifications/sync", map[string]any{"service_epoch": m.epoch, "room_id": room.RoomID, "room_instance": room.RoomInstance, "caller": humanCaller, "version": view.Version}, &view))
 	fail(d.until(func() (bool, error) { s := state(); return s.Scan == nil && s.Watermark.After(live.CreatedAt), nil }))
 	before := state()
 	beforeRoom := snapshot()

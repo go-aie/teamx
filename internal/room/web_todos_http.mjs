@@ -32,7 +32,8 @@ async function edit(id, value) { ui.el(id).value = value; await ui.el(id).emit("
 async function toggle(id, checked) { ui.el(id).checked = checked; await ui.el(id).emit("change"); }
 await edit("gitlab-connection", connections[0].value);
 assert.match(ui.el("gitlab-account").textContent, /ID 101，已验证/);
-assert.equal(ui.el("gitlab-todos-scope").value, "all");
+assert.equal(ui.el("gitlab-todos-scope"), undefined);
+assert.equal(String(ui.el("gitlab-interval").value), "30");
 await toggle("gitlab-todos-enabled", true); await ui.el("gitlab-save").emit("click");
 assert.equal(mutations[0].body.version, 0); assert.equal(mutations[0].body.config.todos.enabled, true);
 assert.match(ui.el("gitlab-todos-feedback").textContent, /设置已保存/);

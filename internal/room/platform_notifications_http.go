@@ -48,7 +48,7 @@ func (m *roomManager) eventsNotificationViewLocked(owner RoomIdentity, state *gi
 		return notificationView{}, ErrIdentity
 	}
 	v := notificationView{RoomIdentity: owner, SourceID: gitlab.EventsSourceID,
-		Available: true, Status: "disabled", Config: gitlab.EventsConfig{IntervalSeconds: 5}}
+		Available: true, Status: "disabled", Config: gitlab.EventsConfig{IntervalSeconds: gitlab.DefaultIntervalSeconds}}
 	if state != nil {
 		s := *state
 		v.Instance, v.RecipientID, v.Username, v.Retired = s.Binding.URL, s.UserID, s.Username, s.Retired
@@ -72,7 +72,7 @@ func (m *roomManager) todosNotificationViewLocked(owner RoomIdentity, state *git
 	if err != nil || entry.Status != "ready" {
 		return notificationView{}, ErrIdentity
 	}
-	v := notificationView{RoomIdentity: owner, SourceID: gitlab.TodosSourceID, Available: true, Status: "disabled", Config: gitlab.TodosConfig{ProjectScope: "all", IntervalSeconds: 30, InactiveIntervalSeconds: 120}}
+	v := notificationView{RoomIdentity: owner, SourceID: gitlab.TodosSourceID, Available: true, Status: "disabled", Config: gitlab.TodosConfig{IntervalSeconds: gitlab.DefaultIntervalSeconds}}
 	if state != nil {
 		s := *state
 		v.SubscriptionID, v.Version, v.Config, v.Status, v.Pending = s.SubscriptionID, s.SubscriptionVersion, s.Config, s.Status, len(s.Inbox)
@@ -81,7 +81,6 @@ func (m *roomManager) todosNotificationViewLocked(owner RoomIdentity, state *git
 			v.DeliveryErrorCode = code
 		}
 		v.RecipientID, v.Username, v.Instance, v.Retired, v.Scan = s.Binding.UserID, s.Binding.Username, s.Binding.URL, s.Retired, s.Scan
-		v.Project = s.Project
 		v.Skipped = map[string]int{}
 		for _, o := range s.Observed {
 			if o.Reason != "accepted" {
@@ -233,72 +232,33 @@ func (m *roomManager) servePlatformNotifications(w http.ResponseWriter, r *http.
 		writeAPIError(w, ErrIdentity)
 		return
 	}
-	// Provider-specific config mapping stays at the explicit assembly boundary.
-	if req.SourceID != gitlab.EventsSourceID && req.SourceID != gitlab.TodosSourceID && req.SourceID != lark.MessagesSourceID {
+	// GitLab configuration and sync have one provider-level authority, including
+	// before the first save. Per-source writes cannot split the common interval.
+	if req.SourceID != lark.MessagesSourceID {
 		writeAPIError(w, ErrRequest)
 		return
 	}
 	key := notification.Key{Owner: req.RoomIdentity, Source: req.SourceID, SubscriptionID: req.SubscriptionID}
-	// Unified GitLab settings own all later configuration writes. The source
-	// endpoint cannot bypass provider settings or their version/operation gate.
-	if req.SourceID.Provider == "gitlab" {
-		m.mu.Lock()
-		_, unified := m.gitlabNotifications[req.RoomIdentity]
-		m.mu.Unlock()
-		if unified {
-			writeAPIError(w, ErrRequest)
-			return
-		}
-	}
 	var err error
 	if r.URL.Path == "/v1/platform/notifications/configure" {
-		// Config schema remains provider-owned; HTTP decoding and mapping stay here.
-		var cfg any
-		if req.SourceID == gitlab.EventsSourceID {
-			cfg = &gitlab.EventsConfig{}
-		} else if req.SourceID == lark.MessagesSourceID {
-			cfg = &lark.Config{}
-		} else {
-			cfg = &gitlab.TodosConfig{}
-		}
+		var cfg lark.Config
 		decoder := json.NewDecoder(bytes.NewReader(req.Config))
 		decoder.DisallowUnknownFields()
-		if bytes.Equal(bytes.TrimSpace(req.Config), []byte("null")) || decoder.Decode(cfg) != nil || decoder.Decode(new(any)) != io.EOF {
+		if bytes.Equal(bytes.TrimSpace(req.Config), []byte("null")) || decoder.Decode(&cfg) != nil || decoder.Decode(new(any)) != io.EOF {
 			writeAPIError(w, ErrRequest)
 			return
 		}
-		switch c := cfg.(type) {
-		case *lark.Config:
-			var next lark.State
-			next, err = m.configureLarkSubscription(r.Context(), key, req.Version, *c)
-			if err == nil {
-				key = next.Metadata().Key
-			}
-		case *gitlab.EventsConfig:
-			var next gitlab.EventsState
-			next, err = m.configureEventsSubscription(r.Context(), key, req.Version, *c)
-			if err == nil {
-				key = next.Metadata().Key
-			}
-		case *gitlab.TodosConfig:
-			var next gitlab.TodosState
-			next, err = m.configureTodosSubscription(r.Context(), key, req.Version, *c)
-			if err == nil {
-				key = next.Metadata().Key
-			}
+		var next lark.State
+		next, err = m.configureLarkSubscription(r.Context(), key, req.Version, cfg)
+		if err == nil {
+			key = next.Metadata().Key
 		}
 	} else {
 		if len(req.Config) != 0 || req.SubscriptionID == "" {
 			writeAPIError(w, ErrRequest)
 			return
 		}
-		if req.SourceID == gitlab.EventsSourceID {
-			err = m.syncEventsSubscription(key, req.Version)
-		} else if req.SourceID == lark.MessagesSourceID {
-			err = m.syncLarkSubscription(r.Context(), key, req.Version)
-		} else {
-			err = m.syncTodosSubscription(r.Context(), key, req.Version)
-		}
+		err = m.syncLarkSubscription(r.Context(), key, req.Version)
 	}
 	if err != nil {
 		writeAPIError(w, err)
@@ -306,34 +266,17 @@ func (m *roomManager) servePlatformNotifications(w http.ResponseWriter, r *http.
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	var view notificationView
-	if key.Source == lark.MessagesSourceID {
-		state, ok := m.notifications.StateLocked(key)
-		if !ok {
-			writeAPIError(w, ErrIdentity)
-			return
-		}
-		s, ok := state.(lark.State)
-		if !ok {
-			writeAPIError(w, ErrIdentity)
-			return
-		}
-		view, err = m.larkNotificationViewLocked(req.RoomIdentity, &s)
-	} else if key.Source == gitlab.EventsSourceID {
-		state, ok := m.eventsSubscriptionLocked(key)
-		if !ok || state.Retired {
-			writeAPIError(w, ErrIdentity)
-			return
-		}
-		view, err = m.eventsNotificationViewLocked(req.RoomIdentity, &state)
-	} else {
-		state, ok := m.todosSubscriptionLocked(key)
-		if !ok || state.Retired {
-			writeAPIError(w, ErrIdentity)
-			return
-		}
-		view, err = m.todosNotificationViewLocked(req.RoomIdentity, &state)
+	state, ok := m.notifications.StateLocked(key)
+	if !ok {
+		writeAPIError(w, ErrIdentity)
+		return
 	}
+	s, ok := state.(lark.State)
+	if !ok {
+		writeAPIError(w, ErrIdentity)
+		return
+	}
+	view, err := m.larkNotificationViewLocked(req.RoomIdentity, &s)
 	if err != nil {
 		writeAPIError(w, err)
 		return

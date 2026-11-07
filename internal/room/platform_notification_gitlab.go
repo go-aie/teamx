@@ -35,9 +35,6 @@ func (m *roomManager) gitlabNotificationAdapters() map[notification.SourceID]not
 				if !ok {
 					return notification.Scope{}, notification.ErrInvalid
 				}
-				if s.Config.ProjectScope == "current" && m.checkWorkspaceOperations(s.RoomIdentity) != nil {
-					return notification.Scope{}, notification.ErrBusy
-				}
 				return m.admitTodosLocked(s)
 			},
 			CheckLoaded: func(owner RoomIdentity) error { _, err := m.currentTodosLocked(owner); return err },

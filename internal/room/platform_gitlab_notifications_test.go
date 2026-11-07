@@ -99,11 +99,11 @@ func TestGitLabUnifiedSettingsValidateBeforePersistence(t *testing.T) {
 	h, _ := newIndependentEventHarness(t)
 	for _, mutate := range []func(*gitlab.NotificationConfig){
 		func(c *gitlab.NotificationConfig) { c.ConnectionID = "" },
-		func(c *gitlab.NotificationConfig) { c.Events.IntervalSeconds = 31 },
+		func(c *gitlab.NotificationConfig) { c.IntervalSeconds = 121 },
 		func(c *gitlab.NotificationConfig) {
 			c.Target = notification.Target{Mode: "inbox", AgentID: "unknown", MembershipID: "unknown"}
 		},
-		func(c *gitlab.NotificationConfig) { c.Todos.Enabled = true; c.Todos.ProjectScope = "current" },
+		func(c *gitlab.NotificationConfig) { c.IntervalSeconds = 2 },
 	} {
 		cfg := unifiedGitLabConfig(t, h)
 		mutate(&cfg)
@@ -240,7 +240,7 @@ func TestGitLabUnifiedUnchangedCollectorIsNotCancelled(t *testing.T) {
 		awaitEventSignal(t, blocked.worker, "unchanged worker did not settle")
 	}()
 	cfg := unifiedGitLabConfig(t, h)
-	cfg.Todos.IntervalSeconds = 60
+	cfg.Todos.Filter.Reasons = []string{"mentioned"}
 	v, err := h.m.configureGitLabNotifications(context.Background(), h.room.RoomIdentity, 0, cfg)
 	if err != nil || v.Version != 1 || v.Pending["events"] {
 		t.Fatal(v, err)
@@ -281,5 +281,83 @@ func TestGitLabUnifiedShutdownFencesAnApplyingRequest(t *testing.T) {
 	}
 	if saved.Version != 1 || saved.Config.Events.Project != "remote/other" || len(saved.Errors) != 0 {
 		t.Fatal("request wrote status after shutdown fence", saved)
+	}
+}
+
+func TestGitLabCommonIntervalChangesBothCollectorsWithoutReplacingProgress(t *testing.T) {
+	h, _ := newIndependentEventHarness(t)
+	cfg := unifiedGitLabConfig(t, h)
+	cfg.Todos.Enabled = true
+	v, err := h.m.configureGitLabNotifications(context.Background(), h.room.RoomIdentity, 0, cfg)
+	if err != nil || len(v.Errors) != 0 {
+		t.Fatal(v, err)
+	}
+	// Preserve real pending evidence while the Room is unavailable for delivery.
+	h.pages.events = []gitlab.Event{h.event(1, 1)}
+	h.clock.add(2 * time.Second)
+	h.newRunner()
+	h.prepare()
+	h.full()
+	before := h.state()
+	if len(before.Inbox) != 1 {
+		t.Fatal("missing pending event", before)
+	}
+	cfg = v.Config
+	cfg.IntervalSeconds = 120
+	v, err = h.m.configureGitLabNotifications(context.Background(), h.room.RoomIdentity, v.Version, cfg)
+	after := h.state()
+	if err != nil || v.Pending["events"] || v.Pending["todos"] || len(v.Errors) != 0 || v.Config.IntervalSeconds != 120 || v.Events.Config.(gitlab.EventsConfig).IntervalSeconds != 120 || v.Todos.Config.(gitlab.TodosConfig).IntervalSeconds != 120 {
+		t.Fatal("common interval not applied to both collectors", v, err)
+	}
+	if after.SubscriptionID != before.SubscriptionID || !after.Baseline.Equal(before.Baseline) || !reflect.DeepEqual(after.Observed, before.Observed) || !reflect.DeepEqual(after.Inbox, before.Inbox) {
+		t.Fatal("interval update replaced progress or pending delivery", before, after)
+	}
+	if v.Todos.SubscriptionID == "" {
+		t.Fatal("Todo collector missing")
+	}
+	// Loading the persisted configuration restores the one common value.
+	h.m.mu.Lock()
+	delete(h.m.gitlabNotifications, h.room.RoomIdentity)
+	err = h.m.loadGitLabNotificationsLocked(h.room.RoomIdentity)
+	loaded, viewErr := h.m.gitlabNotificationViewLocked(h.room.RoomIdentity)
+	h.m.mu.Unlock()
+	if err != nil || viewErr != nil || loaded.Config.IntervalSeconds != 120 || loaded.Todos.SubscriptionID != v.Todos.SubscriptionID {
+		t.Fatal(loaded, err, viewErr)
+	}
+}
+
+func TestGitLabRemovedSettingsAndPerSourceWritesAreRejected(t *testing.T) {
+	h, _ := newIndependentEventHarness(t)
+	// Both old write paths are closed even before a unified configuration exists.
+	for _, channel := range []string{"events", "todos"} {
+		for _, action := range []string{"configure", "sync"} {
+			request := map[string]any{"service_epoch": h.m.epoch, "room_id": h.room.RoomID, "room_instance": h.room.RoomInstance, "caller": humanCaller, "provider": "gitlab", "channel": channel, "subscription_id": h.state().SubscriptionID, "subscription_version": h.state().SubscriptionVersion}
+			if response := managerHTTP(h.m, "/v1/platform/notifications/"+action, request); response.Code != http.StatusBadRequest {
+				t.Fatal("per-source write accepted", channel, action, response.Code)
+			}
+		}
+	}
+	for _, mutate := range []func(map[string]any){
+		func(c map[string]any) { c["events"].(map[string]any)["interval_seconds"] = 5 },
+		func(c map[string]any) { c["todos"].(map[string]any)["interval_seconds"] = 60 },
+		func(c map[string]any) { c["todos"].(map[string]any)["inactive_interval_seconds"] = 240 },
+		func(c map[string]any) { c["todos"].(map[string]any)["project_scope"] = "current" },
+		func(c map[string]any) {
+			c["events"].(map[string]any)["filter"].(map[string]any)["branches"] = []string{"main"}
+		},
+		func(c map[string]any) {
+			c["events"].(map[string]any)["filter"].(map[string]any)["ignore_users"] = []string{"bot"}
+		},
+	} {
+		data, _ := json.Marshal(unifiedGitLabConfig(t, h))
+		var cfg map[string]any
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			t.Fatal(err)
+		}
+		mutate(cfg)
+		request := map[string]any{"service_epoch": h.m.epoch, "room_id": h.room.RoomID, "room_instance": h.room.RoomInstance, "caller": humanCaller, "version": 0, "config": cfg}
+		if response := managerHTTP(h.m, "/v1/platform/gitlab/notifications/configure", request); response.Code != http.StatusBadRequest {
+			t.Fatal("removed setting accepted", cfg, response.Code)
+		}
 	}
 }

@@ -24,7 +24,7 @@ type EventsPrepare func(context.Context, string, Binding) (EventFetcher, int64, 
 type EventsSource struct{ Prepare EventsPrepare }
 
 func (*EventsSource) ID() notification.SourceID { return EventsSourceID }
-func (*EventsSource) Schema() int               { return 1 }
+func (*EventsSource) Schema() int               { return 2 }
 func (*EventsSource) Decode(data []byte, owner platform.RoomIdentity) (notification.State, error) {
 	var state EventsState
 	dec := json.NewDecoder(bytes.NewReader(data))

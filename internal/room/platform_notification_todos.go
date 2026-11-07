@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"reflect"
 
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
@@ -22,39 +21,6 @@ func (m *roomManager) resolveTodosConnectionLocked(owner RoomIdentity, id string
 		return gitlab.TodosQueryScope{}, secret, err
 	}
 	return gitlab.TodosQueryScope{Binding: gitlab.TodosBinding{ConnectionID: account.ConnectionID, ConnectionGeneration: account.Generation, URL: account.URL, UserID: account.UserID, Username: account.Username, CredentialVersion: account.CredentialVersion, CredentialFingerprint: account.CredentialFingerprint}, ConnectionVersion: account.ConnectionVersion}, secret, nil
-}
-func (m *roomManager) todosProjectLocked(owner RoomIdentity, cfg gitlab.TodosConfig, instance string) (*platform.ProjectBinding, error) {
-	if cfg.ProjectScope == "all" {
-		return nil, nil
-	}
-	entry, err := m.workspaceRoom(owner)
-	if err != nil {
-		return nil, notification.ErrIdentity
-	}
-	saved, err := m.readWorkspaceRoomConfig(entry)
-	if err != nil {
-		return nil, err
-	}
-	if saved.Workspace == nil || saved.Workspace.Binding == nil || saved.Workspace.Binding.URL != instance || saved.Workspace.Binding.ProjectID <= 0 {
-		return nil, notification.ErrConflict
-	}
-	project := *saved.Workspace.Binding
-	return &project, nil
-}
-
-// Only the explicit current-Workspace To-Do scope follows local binding
-// lifecycle. Independent Events and account-wide To-Dos keep polling.
-func (m *roomManager) cancelWorkspaceNotificationsLocked(owner RoomIdentity) []<-chan struct{} {
-	var done []<-chan struct{}
-	for _, state := range m.notifications.StatesLocked(owner) {
-		if s, ok := state.(gitlab.TodosState); ok && s.Config.ProjectScope == "current" {
-			done = append(done, m.cancelAttachmentCallsLocked(s.Metadata().Key)...)
-			if ch := m.notifications.CancelLocked(s.Metadata().Key); ch != nil {
-				done = append(done, ch)
-			}
-		}
-	}
-	return done
 }
 func (m *roomManager) admitTodosLocked(s gitlab.TodosState) (notification.Scope, error) {
 	var result notification.Scope
@@ -76,13 +42,6 @@ func (m *roomManager) admitTodosLocked(s gitlab.TodosState) (notification.Scope,
 	}
 	if current.Binding.CredentialVersion != s.Binding.CredentialVersion || current.Binding.CredentialFingerprint != s.Binding.CredentialFingerprint {
 		return result, platform.ErrCredential
-	}
-	project, err := m.todosProjectLocked(s.RoomIdentity, s.Config, current.Binding.URL)
-	if err != nil {
-		return result, err
-	}
-	if !reflect.DeepEqual(project, s.Project) {
-		return result, notification.ErrConflict
 	}
 	result.Data, _ = json.Marshal(current)
 	result.Revision = fmt.Sprintf("%d|%s|%s|%d|%d|%s", current.ConnectionVersion, current.Binding.ConnectionID, current.Binding.ConnectionGeneration, current.Binding.UserID, current.Binding.CredentialVersion, current.Binding.CredentialFingerprint)
@@ -164,7 +123,7 @@ func (m *roomManager) configureTodosSubscription(ctx context.Context, key notifi
 	previous, _ := m.currentTodosLocked(key.Owner)
 	next, done, err := m.configureTodosLocked(key, version, cfg)
 	var waits []<-chan struct{}
-	if err == nil && previous != nil && (next.Retired || !reflect.DeepEqual(previous.Project, next.Project)) {
+	if err == nil && previous != nil && next.Retired {
 		waits = m.cancelAttachmentCallsLocked(previous.Metadata().Key)
 	}
 	if done != nil {
@@ -235,25 +194,14 @@ func (m *roomManager) configureTodosLocked(key notification.Key, version uint64,
 		return gitlab.TodosState{}, nil, err
 	}
 	var b gitlab.TodosBinding
-	var project *platform.ProjectBinding
 	if current == nil || cfg.Enabled {
-		if cfg.ProjectScope == "current" {
-			if err = m.checkWorkspaceOperations(key.Owner); err != nil {
-				return gitlab.TodosState{}, nil, err
-			}
-		}
 		scope, _, e := m.resolveTodosConnectionLocked(key.Owner, cfg.ConnectionID)
 		if e != nil {
 			return gitlab.TodosState{}, nil, e
 		}
 		b = scope.Binding
-		project, err = m.todosProjectLocked(key.Owner, cfg, b.URL)
-		if err != nil {
-			return gitlab.TodosState{}, nil, err
-		}
 	} else {
 		b = current.Binding
-		project = current.Project
 	}
 	if current != nil && cfg.Enabled && !current.Binding.SameAccount(b) {
 		retired, e := gitlab.RetireTodos(*current)
@@ -265,7 +213,7 @@ func (m *roomManager) configureTodosLocked(key notification.Key, version uint64,
 		}
 		return retired, m.notifications.ChangedLocked(retired.Metadata().Key), nil
 	}
-	next, err := gitlab.ConfigureTodos(key.Owner, current, b, project, cfg, m.notifications.Now())
+	next, err := gitlab.ConfigureTodos(key.Owner, current, b, cfg, m.notifications.Now())
 	if err != nil {
 		return next, nil, err
 	}
@@ -285,21 +233,8 @@ func (m *roomManager) syncTodosSubscription(ctx context.Context, key notificatio
 		m.mu.Unlock()
 		return ErrIdentity
 	}
-	if s.Config.ProjectScope == "current" {
-		if err := m.checkWorkspaceOperations(key.Owner); err != nil {
-			m.mu.Unlock()
-			return err
-		}
-	}
 	scope, _, err := m.resolveTodosConnectionLocked(key.Owner, s.Binding.ConnectionID)
 	if err == nil && (!scope.Binding.SameAccount(s.Binding) || scope.Binding.ConnectionGeneration != s.Binding.ConnectionGeneration) {
-		err = notification.ErrConflict
-	}
-	var project *platform.ProjectBinding
-	if err == nil {
-		project, err = m.todosProjectLocked(key.Owner, s.Config, scope.Binding.URL)
-	}
-	if err == nil && !reflect.DeepEqual(project, s.Project) {
 		err = notification.ErrConflict
 	}
 	if err != nil {
@@ -312,7 +247,7 @@ func (m *roomManager) syncTodosSubscription(ctx context.Context, key notificatio
 		m.mu.Unlock()
 		return notificationRoomError(err)
 	}
-	next, err := gitlab.ConfigureTodos(key.Owner, &s, scope.Binding, project, s.Config, m.notifications.Now())
+	next, err := gitlab.ConfigureTodos(key.Owner, &s, scope.Binding, s.Config, m.notifications.Now())
 	if err == nil {
 		err = m.notifications.SaveLocked(next)
 	}

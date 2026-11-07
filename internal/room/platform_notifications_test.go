@@ -240,15 +240,15 @@ func TestGitLabEventsCacheIsConfirmedOnlyWithPageCommit(t *testing.T) {
 }
 
 func TestGitLabEventsConfigurationSnapshotsCannotMutateLiveFilters(t *testing.T) {
-	h := newEventHarness(t, gitlab.EventsConfig{Filter: gitlab.EventsFilter{Branches: []string{"main"}}})
+	h := newEventHarness(t, gitlab.EventsConfig{Filter: gitlab.EventsFilter{Types: []string{"push"}}})
 	first := h.state()
 	changed, err := h.m.configureEventsSubscription(context.Background(), h.m.testEventsKey(h.room.RoomIdentity), first.SubscriptionVersion, first.Config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	changed.Config.Filter.Branches[0] = "mutated"
-	changed.Filters[0].Filter.Branches[0] = "also-mutated"
-	if s := h.state(); s.Config.Filter.Branches[0] != "main" || s.Filters[0].Filter.Branches[0] != "main" {
+	changed.Config.Filter.Types[0] = "mutated"
+	changed.Filters[0].Filter.Types[0] = "also-mutated"
+	if s := h.state(); s.Config.Filter.Types[0] != "push" || s.Filters[0].Filter.Types[0] != "push" {
 		t.Fatal("configuration response mutated live filters", s)
 	}
 }
@@ -300,20 +300,20 @@ func TestPlatformNotificationPollingDoesNotCreateChatOrSessions(t *testing.T) {
 	}
 }
 
-func TestGitLabEventsCurrentFiveSecondsAndInactiveThirtySeconds(t *testing.T) {
+func TestGitLabEventsCurrentThirtySecondsAndInactiveTwoMinutes(t *testing.T) {
 	h := newEventHarness(t, gitlab.EventsConfig{})
 	h.prepare()
 	h.clock.add(time.Second)
 	h.step()
 	h.full()
-	if h.runner.NextQuick.Sub(h.state().LastCheck) != 30*time.Second {
+	if h.runner.NextQuick.Sub(h.state().LastCheck) != 120*time.Second {
 		t.Fatal("inactive interval", h.runner.NextQuick)
 	}
 	makeEventHarnessActive(t, h)
 	h.clock.add(time.Second)
 	calls := len(h.pages.calls)
 	h.step()
-	if len(h.pages.calls) != calls+1 || h.pages.calls[calls].Mode != "quick" || h.runner.NextQuick.Sub(h.clock.get()) != 5*time.Second || !h.runner.NeedFull {
+	if len(h.pages.calls) != calls+1 || h.pages.calls[calls].Mode != "quick" || h.runner.NextQuick.Sub(h.clock.get()) != 30*time.Second || !h.runner.NeedFull {
 		t.Fatal("activation did not immediately check both paths")
 	}
 	h.m.mu.Lock()
@@ -321,7 +321,7 @@ func TestGitLabEventsCurrentFiveSecondsAndInactiveThirtySeconds(t *testing.T) {
 	h.m.mu.Unlock()
 	h.clock.add(time.Second)
 	h.step()
-	if h.runner.NextQuick.Sub(h.clock.get()) != 30*time.Second {
+	if h.runner.NextQuick.Sub(h.clock.get()) != 120*time.Second {
 		t.Fatal("old room kept active interval")
 	}
 }

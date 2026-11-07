@@ -234,14 +234,14 @@ func TestIndependentEventsPublicConfigureAndStaleVerification(t *testing.T) {
 	h, c := newIndependentEventHarness(t)
 	other := managerCreate(t, h.m, "api-only")
 	req := map[string]any{"service_epoch": h.m.epoch, "caller": humanCaller, "room_id": other.RoomID, "room_instance": other.RoomInstance,
-		"provider": "gitlab", "channel": "events", "subscription_id": "", "subscription_version": 0,
-		"config": gitlab.EventsConfig{Enabled: true, ConnectionID: c.ID, Project: c.URL + "/remote/project"}}
-	response := managerHTTP(h.m, "/v1/platform/notifications/configure", req)
+		"version": 0,
+		"config":  gitlab.NotificationConfig{ConnectionID: c.ID, Events: gitlab.EventSettings{Enabled: true, Project: c.URL + "/remote/project"}}}
+	response := managerHTTP(h.m, "/v1/platform/gitlab/notifications/configure", req)
 	if response.Code != 200 || !strings.Contains(response.Body.String(), `"project":"remote/project"`) || !strings.Contains(response.Body.String(), `"recipient_id":101`) || strings.Contains(response.Body.String(), "test-platform-secret") {
 		t.Fatal("independent HTTP configuration failed", response.Code)
 	}
-	req["config"] = gitlab.EventsConfig{Enabled: true}
-	if response := managerHTTP(h.m, "/v1/platform/notifications/configure", req); response.Code != 409 {
+	req["config"] = gitlab.NotificationConfig{ConnectionID: c.ID, Events: gitlab.EventSettings{Enabled: true, Project: "remote/project"}}
+	if response := managerHTTP(h.m, "/v1/platform/gitlab/notifications/configure", req); response.Code != 409 {
 		t.Fatal("duplicate HTTP creation did not conflict", response.Code)
 	}
 	// Verification runs outside the Room gate. A concurrent edit must invalidate
@@ -279,12 +279,9 @@ func TestIndependentEventsPublicConfigureAndStaleVerification(t *testing.T) {
 func TestIndependentEventsWorkspaceLifecycleDoesNotCancelQuery(t *testing.T) {
 	h, _ := newIndependentEventHarness(t)
 	b := startBlockedEventWorker(t, h)
-	h.m.mu.Lock()
-	done := h.m.cancelWorkspaceNotificationsLocked(h.room.RoomIdentity)
-	h.m.mu.Unlock()
-	if len(done) != 0 {
-		t.Fatal("Workspace lifecycle waits for independent Events")
-	}
+	// Workspace changes no longer have a notification cancellation hook.
+	w := testGitLabWorkspace()
+	setTestEffectiveWorkspace(t, h.m, h.room, w, 1)
 	select {
 	case <-b.canceled:
 		t.Fatal("Workspace cancelled independent query")

@@ -185,6 +185,8 @@
                 <p id="gitlab-account" class="quiet" role="status"></p>
                 <button id="gitlab-manage-connections" class="text-button" type="button">管理平台连接 ↗</button>
                 <label for="gitlab-target">投递到</label><select id="gitlab-target"></select>
+                <label for="gitlab-interval">房间可接收时检查周期（3～120 秒）</label><input id="gitlab-interval" type="number" min="3" max="120" step="1" value="30" aria-describedby="gitlab-interval-hint">
+                <p id="gitlab-interval-hint" class="quiet">项目活动和我的待办共用。房间未打开或操作中时，每 120 秒检查并暂存，恢复可接收后投递。</p>
                 <div id="gitlab-message-types-label" class="gitlab-events-type-heading">接收消息</div>
                 <div class="gitlab-message-types" role="group" aria-labelledby="gitlab-message-types-label">
                   <label class="workspace-check"><input id="gitlab-events-enabled" type="checkbox">项目活动</label>
@@ -198,7 +200,7 @@
               <fieldset id="gitlab-events-fields">
                 <label for="gitlab-events-project">GitLab 项目地址或路径</label><input id="gitlab-events-project" type="text" placeholder="group/project 或 https://gitlab.example.com/group/project" spellcheck="false">
                 <button id="notification-manage-binding" class="text-button" type="button">从 Workspace 预填</button>
-                <details><summary>活动筛选与检查周期</summary>
+                <details><summary>活动筛选</summary>
                 <div class="gitlab-events-type-heading"><span id="gitlab-events-types-label">接收哪些活动</span><label class="workspace-check"><input id="gitlab-events-all-types" type="checkbox">全选</label></div>
                 <div id="gitlab-events-types" class="gitlab-events-types" role="group" aria-labelledby="gitlab-events-types-label" aria-describedby="gitlab-events-type-hint">
                   <label class="workspace-check"><input id="gitlab-events-type-opened" type="checkbox" value="merge_request.opened">MR 开启</label>
@@ -208,10 +210,6 @@
                   <label class="workspace-check"><input id="gitlab-events-type-push" type="checkbox" value="push">Push</label>
                 </div>
                 <p id="gitlab-events-type-hint" class="quiet">普通评论包含 Issue 评论。</p>
-                <label for="gitlab-events-interval">房间可接收时检查周期（3～30 秒）</label><input id="gitlab-events-interval" type="number" min="3" max="30" step="1" value="5">
-                <label for="gitlab-events-branches">分支（每行一个，留空表示全部）</label><textarea id="gitlab-events-branches" rows="2" spellcheck="false"></textarea>
-                <label for="gitlab-events-ignore">忽略这些操作者（每行一个账号）</label><textarea id="gitlab-events-ignore" rows="2" spellcheck="false"></textarea>
-                <p class="quiet">不接收这些账号发起的活动。</p>
                 </details>
               </fieldset>
               <div class="gitlab-events-actions">
@@ -230,9 +228,8 @@
               <summary id="gitlab-todos-summary"><span class="gitlab-channel-label"><strong id="gitlab-todos-title">我的待办</strong><small>@我、指派和评审请求</small></span><span id="gitlab-todos-state" class="quiet"></span></summary>
             <section id="gitlab-todos" class="workspace-form gitlab-events" aria-labelledby="gitlab-todos-title">
               <fieldset id="gitlab-todos-fields">
-                <label for="gitlab-todos-scope">项目范围</label><select id="gitlab-todos-scope"></select>
-                <p id="gitlab-todos-project" class="quiet"></p>
-                <details><summary>待办筛选与检查周期</summary>
+                <p class="quiet">接收此账号在所有可访问项目中的待办，不受项目活动或 Workspace 项目限制。</p>
+                <details><summary>待办筛选</summary>
                 <div id="gitlab-todos-reasons-label" class="gitlab-events-type-heading">接收原因</div>
                 <div class="gitlab-events-types" role="group" aria-labelledby="gitlab-todos-reasons-label">
                   <label class="workspace-check"><input id="gitlab-todos-reason-mentioned" type="checkbox" value="mentioned">@我</label>
@@ -245,8 +242,6 @@
                   <label class="workspace-check"><input id="gitlab-todos-type-merge_request" type="checkbox" value="merge_request">MR</label>
                   <label class="workspace-check"><input id="gitlab-todos-type-work_item" type="checkbox" value="work_item">工作项</label>
                 </div>
-                  <label for="gitlab-todos-interval">房间可接收时（3～3600 秒）</label><input id="gitlab-todos-interval" type="number" min="3" max="3600" step="1" value="30">
-                  <label for="gitlab-todos-inactive-interval">未打开或操作中（不小于可接收周期，最多 86400 秒）</label><input id="gitlab-todos-inactive-interval" type="number" min="3" max="86400" step="1" value="120">
                 </details>
               </fieldset>
               <div class="gitlab-events-actions">
@@ -256,7 +251,7 @@
               <p id="gitlab-todos-error" class="form-error" role="alert" hidden></p>
               <details class="gitlab-events-records"><summary>订阅详情与同步记录</summary><p id="gitlab-todos-status" class="quiet"></p>
 
-                <p class="quiet">首次开启只接收此后创建的待办，不导入历史。“所有可访问项目”仅接收有项目归属的 MR 与工作项。读取和投递不会修改 GitLab 待办状态。凭据重新验证后，需显式同步恢复。</p>
+                <p class="quiet">首次开启只接收此后创建的待办，不导入历史。仅接收有项目归属的 MR 与工作项。读取和投递不会修改 GitLab 待办状态。凭据重新验证后，需显式同步恢复。</p>
               </details>
             </section>
             </details>

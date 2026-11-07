@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/go-aie/teamx/internal/agent/dsh"
-	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
 var errWorkspaceOperationNotFound = errors.New("workspace operation not recorded")
@@ -367,7 +366,6 @@ func (m *roomManager) retryWorkspace(id RoomIdentity, operationID string) (works
 
 func (m *roomManager) launchWorkspace(op workspaceOperation) {
 	rt := m.reserveRuntimeLocked(op.RoomIdentity)
-	m.cancelWorkspaceNotificationsLocked(op.RoomIdentity)
 	m.cancelPlatformCallsLocked(func(c *platformCall) bool { return c.owner == op.RoomIdentity })
 	// Establish the execution boundary before returning the receipt. close drains
 	// requests already admitted and joins all member/Session/tool ownership.
@@ -417,13 +415,7 @@ func (m *roomManager) runWorkspace(op workspaceOperation, rt *roomRuntime) {
 		m.mu.Unlock()
 	}()
 	queryCtx, queryCancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
-	m.mu.Lock()
-	queries := m.cancelWorkspaceNotificationsLocked(op.RoomIdentity)
-	m.mu.Unlock()
 	runErr = m.stopRoomGrants(queryCtx, op.RoomIdentity)
-	if runErr == nil {
-		runErr = notification.Wait(queryCtx, queries)
-	}
 	if runErr == nil {
 		runErr = m.waitPlatformCalls(queryCtx, &op.RoomIdentity)
 	}

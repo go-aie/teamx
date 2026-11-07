@@ -297,16 +297,15 @@ function notificationTargetOptions() {
 }
 function gitlabConfig(config = {}) {
   const e = config.events || {}, t = todoConfig(config.todos || {});
-  delete t.connection_id; delete t.target;
-  return { connection_id: config.connection_id || "", target: notificationTarget(config),
-    events: { enabled: !!e.enabled, project: e.project || "", interval_seconds: e.interval_seconds ?? 5, etag_verified: !!e.etag_verified,
-      filter: { types: [...(e.filter?.types || [])], branches: [...(e.filter?.branches || [])], ignore_users: [...(e.filter?.ignore_users || [])] } }, todos: t };
+  return { connection_id: config.connection_id || "", target: notificationTarget(config), interval_seconds: config.interval_seconds ?? 30,
+    events: { enabled: !!e.enabled, project: e.project || "", etag_verified: !!e.etag_verified,
+      filter: { types: [...(e.filter?.types || [])] } }, todos: t };
 }
 function gitlabDraft() { return workspaceView?.gitlabDraft || gitlabConfig(); }
 function gitlabSettingsBusy(ws) { return !ws?.gitlabConnected || !!ws.gitlabSending || !!ws.gitlab?.applying || managementBusy(); }
 function gitlabConfigKey(config) {
   const c = gitlabConfig(config);
-  return JSON.stringify([c.connection_id, c.target, gitlabEventConfigKey(c.events), todoConfigKey(c.todos)]);
+  return JSON.stringify([c.connection_id, c.target, c.interval_seconds, gitlabEventConfigKey(c.events), todoConfigKey(c.todos)]);
 }
 function acceptGitLabView(ws, view, saved = false) {
   ws.gitlab = view; ws.gitlabConnected = true;
@@ -329,8 +328,8 @@ const gitlabEventTypeIDs = ["opened", "merged", "closed", "note", "push"];
 const gitlabEventTypeInputs = () => gitlabEventTypeIDs.map(id => $(`gitlab-events-type-${id}`));
 function gitlabEventConfigKey(config) {
   const unique = values => [...new Set(values || [])].sort(), types = unique(config.filter?.types);
-  return JSON.stringify({ project: config.project || "", enabled: config.enabled, interval: config.interval_seconds, etag_verified: !!config.etag_verified,
-    types: types.length === gitlabEventTypeIDs.length ? [] : types, branches: unique(config.filter?.branches), users: unique((config.filter?.ignore_users || []).map(user => user.toLowerCase())) });
+  return JSON.stringify({ project: config.project || "", enabled: config.enabled, etag_verified: !!config.etag_verified,
+    types: types.length === gitlabEventTypeIDs.length ? [] : types });
 }
 function gitlabEventDraftState(data) {
   const root = gitlabDraft(), config = root.events, connection = workspaceView?.connections?.find(c => c.id === root.connection_id);
@@ -339,7 +338,7 @@ function gitlabEventDraftState(data) {
   const targetInvalid = config.enabled && (!todoVerified(connection) || !config.project);
   const count = workspaceView?.eventsEmptyTypes ? 0 : config.filter.types.length || gitlabEventTypeIDs.length;
   return { config, count, dirty: !!workspaceView?.eventsEmptyTypes || identityChanged || gitlabEventConfigKey(config) !== gitlabEventConfigKey(workspaceView?.gitlab?.config.events || config), targetChanged, targetInvalid,
-    invalid: targetInvalid || config.enabled && (count === 0 || !Number.isInteger(config.interval_seconds) || config.interval_seconds < 3 || config.interval_seconds > 30) };
+    invalid: targetInvalid || config.enabled && count === 0 };
 }
 async function syncGitLabNotifications(catalog, ws) {
   if (ws !== workspaceView) return;
@@ -530,14 +529,11 @@ function renderGitLabEvents() {
   if (!data || !config) { renderGitLabSettings(); return; }
   $("gitlab-events-project").value = config.project;
   $("gitlab-events-enabled").checked = config.enabled;
-  $("gitlab-events-interval").value = config.interval_seconds;
   for (const input of gitlabEventTypeInputs()) input.checked = !ws.eventsEmptyTypes && (!config.filter.types.length || config.filter.types.includes(input.value));
-  $("gitlab-events-branches").value = config.filter.branches.join("\n");
-  $("gitlab-events-ignore").value = config.filter.ignore_users.join("\n");
   const draft = gitlabEventDraftState(data);
   $("gitlab-events-all-types").checked = draft.count === gitlabEventTypeIDs.length;
   $("gitlab-events-all-types").indeterminate = draft.count > 0 && draft.count < gitlabEventTypeIDs.length;
-  $("gitlab-events-feedback").textContent = draft.invalid ? draft.targetInvalid ? "请选择已验证连接并填写项目" : "请检查活动筛选和检查周期" : draft.dirty ? "有未保存的更改" : data.subscription_id ? "设置已保存" : "尚未开启";
+  $("gitlab-events-feedback").textContent = draft.invalid ? draft.targetInvalid ? "请选择已验证连接并填写项目" : "请检查活动筛选" : draft.dirty ? "有未保存的更改" : data.subscription_id ? "设置已保存" : "尚未开启";
   $("gitlab-events-action-hint").textContent = draft.targetChanged && data.subscription_id ? "更换连接、账号或项目将新建订阅；旧进度与积压保留。" : "";
   const date = value => value ? new Date(value).toLocaleString("zh-CN") : "尚无";
   $("gitlab-events-status").textContent = `${gitlabEventStatuses[data.status] || data.status} · 待投递 ${data.pending} · 最近检查 ${date(data.last_check)} · 完整补查 ${date(data.last_full)}` +
@@ -549,14 +545,13 @@ function editGitLabEvents(event) {
   const ws = workspaceView;
   if (!ws?.gitlabDraft || gitlabSettingsBusy(ws)) { renderGitLabEvents(); return; }
   const types = gitlabEventTypeInputs().filter(input => input.checked).map(input => input.value);
-  const lines = id => $(id).value.split(/\r?\n/).map(value => value.trim()).filter(Boolean);
   ws.eventsEmptyTypes = !types.length;
-  Object.assign(ws.gitlabDraft.events, { enabled: $("gitlab-events-enabled").checked, project: $("gitlab-events-project").value.trim(), interval_seconds: Number($("gitlab-events-interval").value),
-    filter: { types: types.length === gitlabEventTypeIDs.length ? [] : types, branches: lines("gitlab-events-branches"), ignore_users: lines("gitlab-events-ignore") } });
+  Object.assign(ws.gitlabDraft.events, { enabled: $("gitlab-events-enabled").checked, project: $("gitlab-events-project").value.trim(),
+    filter: { types: types.length === gitlabEventTypeIDs.length ? [] : types } });
   if (event?.target === $("gitlab-events-enabled") && event.target.checked) $("gitlab-events-settings").open = true;
   editGitLabConfig();
 }
-for (const id of ["gitlab-events-project", "gitlab-events-enabled", "gitlab-events-interval", "gitlab-events-branches", "gitlab-events-ignore", ...gitlabEventTypeIDs.map(id => `gitlab-events-type-${id}`)]) {
+for (const id of ["gitlab-events-project", "gitlab-events-enabled", ...gitlabEventTypeIDs.map(id => `gitlab-events-type-${id}`)]) {
   for (const event of ["input", "change"]) $(id).addEventListener(event, editGitLabEvents);
 }
 $("gitlab-events-all-types").addEventListener("change", () => {
@@ -565,15 +560,14 @@ $("gitlab-events-all-types").addEventListener("change", () => {
 });
 const gitlabTodoReasons = ["mentioned", "assigned", "review_requested", "other"];
 const gitlabTodoTypes = ["merge_request", "work_item"];
-const gitlabTodoErrors = { ...gitlabEventErrors, credential_unavailable: "个人连接凭据不可用，请在平台连接中重新验证。", binding_changed: "账号或当前项目绑定已变化，请核对后显式保存。", scan_incomplete: "补查尚未完成，将按检查周期继续；完整同步时间尚未更新。" };
-const gitlabTodoSkipReasons = { no_project: "无项目归属", unsupported_target: "不支持的对象类型", target_unavailable: "对象暂不可用", untrusted_url: "链接无法核实", project: "项目范围不匹配", reason: "原因未勾选", type: "类型未勾选", before_baseline: "首次开启前创建" };
+const gitlabTodoErrors = { ...gitlabEventErrors, credential_unavailable: "个人连接凭据不可用，请在平台连接中重新验证。", binding_changed: "账号身份已变化，请核对后显式保存。", scan_incomplete: "补查尚未完成，将按检查周期继续；完整同步时间尚未更新。" };
+const gitlabTodoSkipReasons = { no_project: "无项目归属", unsupported_target: "不支持的对象类型", target_unavailable: "对象暂不可用", untrusted_url: "链接无法核实", reason: "原因未勾选", type: "类型未勾选", before_baseline: "首次开启前创建" };
 function setNotificationOptions(id, options) {
   const select = $(id), signature = JSON.stringify(options.map(option => [option.value, option.textContent, !!option.disabled]));
   if (select.dataset.options !== signature) { select.replaceChildren(...options); select.dataset.options = signature; }
 }
 function todoConfig(config) {
-  return { target: notificationTarget(config), enabled: !!config.enabled, connection_id: config.connection_id || "", project_scope: config.project_scope || "all",
-    interval_seconds: config.interval_seconds ?? 30, inactive_interval_seconds: config.inactive_interval_seconds ?? 120,
+  return { enabled: !!config.enabled,
     filter: { reasons: [...(config.filter?.reasons ?? gitlabTodoReasons)], types: [...(config.filter?.types ?? gitlabTodoTypes)] } };
 }
 function todoConfigKey(config) {
@@ -581,35 +575,18 @@ function todoConfigKey(config) {
   c.filter.reasons.sort(); c.filter.types.sort();
   return JSON.stringify(c);
 }
-function todoConnection(ws, config) { return ws.connections?.find(item => item.id === (config.connection_id ?? ws.gitlabDraft?.connection_id)); }
+function todoConnection(ws) { return ws.connections?.find(item => item.id === ws.gitlabDraft?.connection_id); }
 function todoVerified(connection) { return connection?.validation?.status === "valid" && connection.validation.user_id > 0; }
-function todoCurrentProject(ws, config) {
-  const binding = ws.data?.workspace?.binding, connection = todoConnection(ws, config);
-  return ws.connected && binding?.project_id > 0 && connection?.url === binding.url ? binding : null;
-}
-function todoProjectChanged(ws) {
-  const data = ws.todos;
-  if (!data?.config.enabled || data.config.project_scope !== "current") return false;
-  if (!ws.connected || !ws.connections) return data.status === "binding_changed";
-  const current = todoCurrentProject(ws, data.config);
-  const key = p => JSON.stringify([p?.url, p?.project_id, p?.project, p?.connection_id, p?.connection_generation]);
-  return data.status === "binding_changed" || !!data.project && key(data.project) !== key(current);
-}
 function gitlabTodoDraftState(ws) {
   const data = ws.todos, config = ws.gitlabDraft.todos;
-  const connection = todoConnection(ws, config), project = todoCurrentProject(ws, config);
-  const changed = todoProjectChanged(ws);
+  const connection = todoConnection(ws);
   const switching = data.subscription_id && todoVerified(connection) && (data.recipient_id !== connection.validation.user_id || data.instance !== connection.url);
-  const dirty = todoConfigKey(config) !== todoConfigKey(ws.gitlab.config.todos) || changed || !!switching && config.enabled;
-  const invalid = !Number.isInteger(config.interval_seconds) || config.interval_seconds < 3 || config.interval_seconds > 3600 ||
-    !Number.isInteger(config.inactive_interval_seconds) || config.inactive_interval_seconds < config.interval_seconds || config.inactive_interval_seconds > 86400;
-  const unavailable = config.enabled && (!todoVerified(connection) || config.project_scope === "current" && !project);
-  return { connection, project, changed, switching, dirty, invalid, unavailable };
+  const dirty = todoConfigKey(config) !== todoConfigKey(ws.gitlab.config.todos) || !!switching && config.enabled;
+  const unavailable = config.enabled && !todoVerified(connection);
+  return { connection, switching, dirty, unavailable };
 }
 function fillGitLabTodos(config) {
   $("gitlab-todos-enabled").checked = config.enabled;
-  $("gitlab-todos-interval").value = config.interval_seconds;
-  $("gitlab-todos-inactive-interval").value = config.inactive_interval_seconds;
   for (const [group, values] of [["reason", gitlabTodoReasons], ["type", gitlabTodoTypes]])
     for (const value of values) $(`gitlab-todos-${group}-${value}`).checked = config.filter[group === "reason" ? "reasons" : "types"].includes(value);
 }
@@ -618,12 +595,8 @@ function renderGitLabTodos() {
   $("gitlab-todos-fields").disabled = !config || gitlabSettingsBusy(ws);
   if (!data || !config) { notice("gitlab-todos-error", ""); return; }
   fillGitLabTodos(config);
-  const { project, changed, switching, dirty, invalid, unavailable } = gitlabTodoDraftState(ws);
-  const current = new Option(project ? "当前绑定项目" : "当前绑定项目（同实例有效绑定不可用）", "current"); current.disabled = !project;
-  setNotificationOptions("gitlab-todos-scope", [current, new Option("所有可访问项目", "all")]); $("gitlab-todos-scope").value = config.project_scope;
-  $("gitlab-todos-project").textContent = project ? `当前项目：${project.project} · #${project.project_id}` : "无同实例项目绑定时，请选择所有可访问项目。";
-  if (changed) $("gitlab-todos-project").textContent += ` 原订阅项目：${data.project?.project || "绑定已变化"}。请核对范围后保存。`;
-  $("gitlab-todos-feedback").textContent = invalid || unavailable ? "请检查连接、范围与检查周期" : dirty ? "有未保存的更改" : data.subscription_id ? "设置已保存" : "尚未开启";
+  const { switching, dirty, unavailable } = gitlabTodoDraftState(ws);
+  $("gitlab-todos-feedback").textContent = unavailable ? "请检查接收账号的连接" : dirty ? "有未保存的更改" : data.subscription_id ? "设置已保存" : "尚未开启";
   $("gitlab-todos-action-hint").textContent = switching && config.enabled ? "保存将停用旧账号订阅，并为新账号建立新进度；旧消息和回执保留。" : "";
   if (!config.filter.reasons.length || !config.filter.types.length) $("gitlab-todos-action-hint").textContent += " 当前过滤为空，不接收匹配项。";
   const date = value => value ? new Date(value).toLocaleString("zh-CN") : "尚无";
@@ -636,12 +609,11 @@ function renderGitLabTodos() {
 function editGitLabTodos() {
   const ws = workspaceView;
   if (!ws?.gitlabDraft || gitlabSettingsBusy(ws)) { renderGitLabEvents(); return; }
-  Object.assign(ws.gitlabDraft.todos, { enabled: $("gitlab-todos-enabled").checked, project_scope: $("gitlab-todos-scope").value,
-    interval_seconds: Number($("gitlab-todos-interval").value), inactive_interval_seconds: Number($("gitlab-todos-inactive-interval").value),
+  Object.assign(ws.gitlabDraft.todos, { enabled: $("gitlab-todos-enabled").checked,
     filter: { reasons: gitlabTodoReasons.filter(value => $(`gitlab-todos-reason-${value}`).checked), types: gitlabTodoTypes.filter(value => $(`gitlab-todos-type-${value}`).checked) } });
   editGitLabConfig();
 }
-for (const id of ["enabled", "scope", "interval", "inactive-interval", ...gitlabTodoReasons.map(value => `reason-${value}`), ...gitlabTodoTypes.map(value => `type-${value}`)]) {
+for (const id of ["enabled", ...gitlabTodoReasons.map(value => `reason-${value}`), ...gitlabTodoTypes.map(value => `type-${value}`)]) {
   for (const event of ["input", "change"]) $(`gitlab-todos-${id}`).addEventListener(event, editGitLabTodos);
 }
 
@@ -649,7 +621,7 @@ const gitlabChannels = ["events", "todos"];
 function gitlabApplyNotice(ws, channel) {
   const code = ws?.gitlab?.errors?.[channel];
   if (code === "sync_failed") return "同步未完成，请核对连接后重试同步。";
-  return code ? "设置已保存，但此类消息尚未成功应用。修复连接或范围后，点击重试应用。" : ws?.gitlab?.pending?.[channel] ? "设置等待应用，请点击重试应用。" : "";
+  return code ? "设置已保存，但此类消息尚未成功应用。核对连接与设置后，点击重试应用。" : ws?.gitlab?.pending?.[channel] ? "设置等待应用，请点击重试应用。" : "";
 }
 function gitlabChannelDirty(channel) {
   const ws = workspaceView;
@@ -664,6 +636,7 @@ function renderGitLabSettings() {
   const ws = workspaceView, shared = gitlabDraft();
   const busy = gitlabSettingsBusy(ws);
   $("gitlab-shared-fields").disabled = busy;
+  $("gitlab-interval").value = shared.interval_seconds;
   const connectionID = shared.connection_id, options = gitlabConnectionOptions(connectionID, "请选择 GitLab 连接");
   setNotificationOptions("gitlab-connection", options); $("gitlab-connection").value = connectionID;
   const connection = ws?.connections?.find(item => item.id === connectionID);
@@ -681,7 +654,7 @@ function renderGitLabSettings() {
     $(`gitlab-${channel}-summary`).setAttribute("data-error", String(!!error));
   }
   const pending = gitlabNeedsApply(ws), dirty = !!ws?.gitlabDirty;
-  const invalid = !!ws?.gitlabDraft && (gitlabEventDraftState(ws.events).invalid || gitlabTodoDraftState(ws).invalid || gitlabTodoDraftState(ws).unavailable);
+  const invalid = !Number.isInteger(shared.interval_seconds) || shared.interval_seconds < 3 || shared.interval_seconds > 120 || !!ws?.gitlabDraft && (gitlabEventDraftState(ws.events).invalid || gitlabTodoDraftState(ws).unavailable);
   $("gitlab-save").disabled = busy || !(dirty || pending) || invalid;
   $("gitlab-save").textContent = ws?.gitlabSending === "configure" ? "保存中…" : !dirty && pending ? "重试应用" : "保存设置";
   const active = ws?.gitlab?.config.events.enabled || ws?.gitlab?.config.todos.enabled;
@@ -690,20 +663,20 @@ function renderGitLabSettings() {
   $("gitlab-sync").textContent = ws?.gitlabSending === "sync" ? "请求中…" : "立即同步";
   $("gitlab-feedback").textContent = ws?.gitlabError || (ws?.gitlabSending ? "正在处理 GitLab 通知设置…"
     : ws?.gitlab?.applying ? "正在应用 GitLab 通知设置…"
-    : ws?.gitlab?.errors?.config === "settings_mismatch" ? "现有订阅设置不一致，请选择公共连接和投递位置后保存。"
+    : ws?.gitlab?.errors?.config === "settings_mismatch" ? "现有订阅设置不一致，请选择公共连接、投递位置和检查周期后保存。"
     : pending && !dirty ? "设置已保存，部分消息等待应用。请核对提示后重试应用。" : dirty ? invalid ? "请完善设置后保存。" : "有未保存的更改" : ws?.gitlabFeedback || "");
 }
 function editGitLabShared(field) {
   const ws = workspaceView;
   if (!ws?.gitlabDraft || $("gitlab-shared-fields").disabled) { renderGitLabEvents(); return; }
   const draft = ws.gitlabDraft;
-  if (field === "connection") {
-    const previous = draft.connection_id; draft.connection_id = $("gitlab-connection").value;
-    if (!ws.todos.subscription_id && previous !== draft.connection_id) draft.todos.project_scope = todoCurrentProject(ws, draft.todos) ? "current" : "all";
-  } else draft.target = JSON.parse($("gitlab-target").value);
+  if (field === "connection") draft.connection_id = $("gitlab-connection").value;
+  else if (field === "interval") draft.interval_seconds = Number($("gitlab-interval").value);
+  else draft.target = JSON.parse($("gitlab-target").value);
   editGitLabConfig();
 }
-for (const field of ["connection", "target"]) $(`gitlab-${field}`).addEventListener("change", () => editGitLabShared(field));
+for (const field of ["connection", "target", "interval"]) $(`gitlab-${field}`).addEventListener("change", () => editGitLabShared(field));
+$("gitlab-interval").addEventListener("input", () => editGitLabShared("interval"));
 async function changeGitLabSettings(action) {
   const ws = workspaceView;
   if (!ws || $(action === "configure" ? "gitlab-save" : "gitlab-sync").disabled) return;
@@ -718,7 +691,7 @@ async function changeGitLabSettings(action) {
     ws.gitlabFeedback = action === "sync" ? "已发起同步，结果将自动更新。" : "设置已保存。";
   } catch (error) {
     if (ws !== workspaceView || state.catalog?.service_epoch !== payload.service_epoch) return;
-    ws.gitlabError = error.code === "conflict" ? action === "sync" ? "配置、账号或范围已变化，请核对最新状态。" : "设置版本已变化，请核对最新状态后重新保存。" : error.code === "request" ? "设置无效，请检查连接、范围和筛选。" : "结果未确认，请核对最新状态后显式重试；不会自动重发。";
+    ws.gitlabError = error.code === "conflict" ? action === "sync" ? "配置或账号已变化，请核对最新状态。" : "设置版本已变化，请核对最新状态后重新保存。" : error.code === "request" ? "设置无效，请检查连接、项目和筛选。" : "结果未确认，请核对最新状态后显式重试；不会自动重发。";
     ws.gitlabSending = false; await syncGitLabNotifications(state.catalog, ws);
   } finally {
     if (ws === workspaceView) { ws.gitlabRevision++; ws.gitlabSending = false; renderGitLabEvents(); }

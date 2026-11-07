@@ -2,45 +2,63 @@ package gitlab
 
 import "github.com/go-aie/teamx/internal/platform/notification"
 
+const (
+	DefaultIntervalSeconds  = 30
+	MinIntervalSeconds      = 3
+	InactiveIntervalSeconds = 120
+)
+
+func normalizeInterval(seconds int) (int, error) {
+	if seconds == 0 {
+		seconds = DefaultIntervalSeconds
+	}
+	if seconds < MinIntervalSeconds || seconds > InactiveIntervalSeconds {
+		return 0, notification.ErrRequest
+	}
+	return seconds, nil
+}
+
 // NotificationConfig is the user configuration for one Room's GitLab source.
 // The concrete source configs below are derived runtime snapshots, not settings.
 type NotificationConfig struct {
-	ConnectionID string              `json:"connection_id"`
-	Target       notification.Target `json:"target"`
-	Events       EventSettings       `json:"events"`
-	Todos        TodoSettings        `json:"todos"`
+	ConnectionID    string              `json:"connection_id"`
+	Target          notification.Target `json:"target"`
+	IntervalSeconds int                 `json:"interval_seconds"`
+	Events          EventSettings       `json:"events"`
+	Todos           TodoSettings        `json:"todos"`
 }
 
 type EventSettings struct {
-	Enabled         bool         `json:"enabled"`
-	Project         string       `json:"project"`
-	IntervalSeconds int          `json:"interval_seconds"`
-	Filter          EventsFilter `json:"filter"`
-	ETagVerified    bool         `json:"etag_verified,omitempty"`
+	Enabled      bool         `json:"enabled"`
+	Project      string       `json:"project"`
+	Filter       EventsFilter `json:"filter"`
+	ETagVerified bool         `json:"etag_verified,omitempty"`
 }
 
 type TodoSettings struct {
-	Enabled                 bool        `json:"enabled"`
-	ProjectScope            string      `json:"project_scope"`
-	IntervalSeconds         int         `json:"interval_seconds"`
-	InactiveIntervalSeconds int         `json:"inactive_interval_seconds"`
-	Filter                  TodosFilter `json:"filter"`
+	Enabled bool        `json:"enabled"`
+	Filter  TodosFilter `json:"filter"`
 }
 
 func (c NotificationConfig) EventConfig() EventsConfig {
-	return EventsConfig{ConnectionID: c.ConnectionID, Target: c.Target, Enabled: c.Events.Enabled, Project: c.Events.Project, IntervalSeconds: c.Events.IntervalSeconds, Filter: c.Events.Filter, ETagVerified: c.Events.ETagVerified}
+	return EventsConfig{ConnectionID: c.ConnectionID, Target: c.Target, Enabled: c.Events.Enabled, Project: c.Events.Project, IntervalSeconds: c.IntervalSeconds, Filter: c.Events.Filter, ETagVerified: c.Events.ETagVerified}
 }
 func (c NotificationConfig) TodoConfig() TodosConfig {
-	return TodosConfig{ConnectionID: c.ConnectionID, Target: c.Target, Enabled: c.Todos.Enabled, ProjectScope: c.Todos.ProjectScope, IntervalSeconds: c.Todos.IntervalSeconds, InactiveIntervalSeconds: c.Todos.InactiveIntervalSeconds, Filter: c.Todos.Filter}
+	return TodosConfig{ConnectionID: c.ConnectionID, Target: c.Target, Enabled: c.Todos.Enabled, IntervalSeconds: c.IntervalSeconds, Filter: c.Todos.Filter}
 }
 func EventSettingsFrom(c EventsConfig) EventSettings {
-	return EventSettings{c.Enabled, c.Project, c.IntervalSeconds, c.Filter, c.ETagVerified}
+	return EventSettings{Enabled: c.Enabled, Project: c.Project, Filter: c.Filter, ETagVerified: c.ETagVerified}
 }
 func TodoSettingsFrom(c TodosConfig) TodoSettings {
-	return TodoSettings{c.Enabled, c.ProjectScope, c.IntervalSeconds, c.InactiveIntervalSeconds, c.Filter}
+	return TodoSettings{Enabled: c.Enabled, Filter: c.Filter}
 }
 
 func NormalizeNotificationConfig(c NotificationConfig) (NotificationConfig, error) {
+	interval, err := normalizeInterval(c.IntervalSeconds)
+	if err != nil {
+		return c, err
+	}
+	c.IntervalSeconds = interval
 	if !c.Target.Inbox() {
 		if !c.Target.Valid() {
 			return c, notification.ErrRequest

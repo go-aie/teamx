@@ -25,15 +25,11 @@ const (
 )
 
 type EventsFilter struct {
-	Types       []string `json:"types,omitempty"`
-	Branches    []string `json:"branches,omitempty"`
-	IgnoreUsers []string `json:"ignore_users,omitempty"`
+	Types []string `json:"types,omitempty"`
 }
 
 func (f EventsFilter) Clone() EventsFilter {
 	f.Types = append([]string(nil), f.Types...)
-	f.Branches = append([]string(nil), f.Branches...)
-	f.IgnoreUsers = append([]string(nil), f.IgnoreUsers...)
 	return f
 }
 
@@ -123,40 +119,23 @@ func NormalizeEventsConfig(c EventsConfig) (EventsConfig, error) {
 	if c.ConnectionID != "" && !validRestartID(c.ConnectionID) || c.Project != "" && !validEventsProjectPath(c.Project) {
 		return c, notification.ErrRequest
 	}
-	if c.IntervalSeconds == 0 {
-		c.IntervalSeconds = 5
+	interval, err := normalizeInterval(c.IntervalSeconds)
+	if err != nil {
+		return c, err
 	}
-	if c.IntervalSeconds < 3 || c.IntervalSeconds > 30 {
-		return c, notification.ErrRequest
-	}
+	c.IntervalSeconds = interval
 	f := &c.Filter
 	f.Types = append([]string(nil), f.Types...)
-	f.Branches = append([]string(nil), f.Branches...)
-	f.IgnoreUsers = append([]string(nil), f.IgnoreUsers...)
 	for _, typ := range f.Types {
 		if !slices.Contains([]string{"merge_request.opened", "merge_request.merged", "merge_request.closed", "note", "push"}, typ) {
 			return c, notification.ErrRequest
 		}
 	}
-	for _, values := range [][]string{f.Types, f.Branches, f.IgnoreUsers} {
-		if len(values) > 64 {
-			return c, notification.ErrRequest
-		}
-		for _, v := range values {
-			if !validText(v) || len(v) > 256 || strings.ContainsAny(v, "\x00\r\n\t") {
-				return c, notification.ErrRequest
-			}
-		}
-	}
-	for i, v := range f.IgnoreUsers {
-		f.IgnoreUsers[i] = strings.ToLower(v)
+	if len(f.Types) > 64 {
+		return c, notification.ErrRequest
 	}
 	slices.Sort(f.Types)
 	f.Types = slices.Compact(f.Types)
-	slices.Sort(f.Branches)
-	f.Branches = slices.Compact(f.Branches)
-	slices.Sort(f.IgnoreUsers)
-	f.IgnoreUsers = slices.Compact(f.IgnoreUsers)
 	return c, nil
 }
 
@@ -237,7 +216,7 @@ func (s EventsState) Validate(owner platform.RoomIdentity) error {
 	}
 	for key, o := range s.Observed {
 		if o.ID <= 0 || key != EventsKey(s.Binding, s.ProjectID, o.ID) || o.CreatedAt.Before(s.Baseline) ||
-			!slices.Contains([]string{"accepted", "event_type", "ignored_user", "missing_branch", "branch", "unsupported_event", "teamx_note"}, o.Reason) {
+			!slices.Contains([]string{"accepted", "event_type", "unsupported_event", "teamx_note"}, o.Reason) {
 			return notification.ErrInvalid
 		}
 	}
@@ -301,17 +280,6 @@ func (s EventsState) Reason(e Event) string {
 	}
 	if len(filter.Types) > 0 && !slices.Contains(filter.Types, typ) {
 		return "event_type"
-	}
-	if slices.Contains(filter.IgnoreUsers, strings.ToLower(e.Author.Username)) {
-		return "ignored_user"
-	}
-	if len(filter.Branches) > 0 {
-		if e.Branch == "" {
-			return "missing_branch"
-		}
-		if !slices.Contains(filter.Branches, e.Branch) {
-			return "branch"
-		}
 	}
 	return "accepted"
 }

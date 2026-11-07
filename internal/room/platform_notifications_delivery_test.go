@@ -211,7 +211,7 @@ func TestGitLabDeliveryChecksScopeAndStableActivation(t *testing.T) {
 }
 
 func TestGitLabEventsManagementAuthorizationAndStatus(t *testing.T) {
-	h := newEventHarness(t, gitlab.EventsConfig{})
+	h, _ := newIndependentEventHarness(t)
 	view := func() *httptest.ResponseRecorder {
 		q := url.Values{"service_epoch": {h.m.epoch}, "caller_id": {"operator"}, "room_id": {h.room.RoomID}, "room_instance": {h.room.RoomInstance}}
 		w := httptest.NewRecorder()
@@ -222,28 +222,31 @@ func TestGitLabEventsManagementAuthorizationAndStatus(t *testing.T) {
 	if r.Code != 200 || strings.Contains(r.Body.String(), "GITLAB_PAT") || strings.Contains(r.Body.String(), "binding") {
 		t.Fatal(r.Code, r.Body.String())
 	}
-	req := map[string]any{"service_epoch": h.m.epoch, "room_id": h.room.RoomID, "room_instance": h.room.RoomInstance, "caller": humanCaller, "provider": "gitlab", "channel": "events", "subscription_id": h.state().SubscriptionID, "subscription_version": h.state().SubscriptionVersion, "config": gitlab.EventsConfig{Enabled: true, IntervalSeconds: 3, Filter: gitlab.EventsFilter{Branches: []string{"main"}}}}
-	if r := managerHTTP(h.m, "/v1/platform/notifications/configure", req); r.Code != 200 {
+	cfg := unifiedGitLabConfig(t, h)
+	cfg.IntervalSeconds = 3
+	cfg.Events.Filter.Types = []string{"push"}
+	req := map[string]any{"service_epoch": h.m.epoch, "room_id": h.room.RoomID, "room_instance": h.room.RoomInstance, "caller": humanCaller, "version": 0, "config": cfg}
+	if r := managerHTTP(h.m, "/v1/platform/gitlab/notifications/configure", req); r.Code != 200 {
 		t.Fatal(r.Code, r.Body.String())
 	}
-	if r := managerHTTP(h.m, "/v1/platform/notifications/configure", req); r.Code != 409 {
+	if r := managerHTTP(h.m, "/v1/platform/gitlab/notifications/configure", req); r.Code != 409 {
 		t.Fatal("stale version", r.Code)
 	}
-	req["subscription_version"] = h.state().SubscriptionVersion
+	req["version"] = 1
 	for _, kind := range []string{"agent", "integration"} {
 		req["caller"] = Caller{Author: Author{Kind: kind, ID: "gitlab"}}
-		if r := managerHTTP(h.m, "/v1/platform/notifications/configure", req); r.Code != 403 {
+		if r := managerHTTP(h.m, "/v1/platform/gitlab/notifications/configure", req); r.Code != 403 {
 			t.Fatal(kind, r.Code)
 		}
 	}
 	req["caller"] = humanCaller
 	req["service_epoch"] = "old"
-	if r := managerHTTP(h.m, "/v1/platform/notifications/configure", req); r.Code != 403 {
+	if r := managerHTTP(h.m, "/v1/platform/gitlab/notifications/configure", req); r.Code != 403 {
 		t.Fatal(r.Code)
 	}
 	req["service_epoch"] = h.m.epoch
 	delete(req, "config")
-	if r := managerHTTP(h.m, "/v1/platform/notifications/sync", req); r.Code != 200 {
+	if r := managerHTTP(h.m, "/v1/platform/gitlab/notifications/sync", req); r.Code != 200 {
 		t.Fatal(r.Code, r.Body.String())
 	}
 	// Public send never accepts integration identity even on the active service.
@@ -390,9 +393,9 @@ func TestPlatformNotificationsRequireExplicitSourceAndSubscription(t *testing.T)
 		{"missing source", func(r map[string]any) { delete(r, "provider") }, 400},
 		{"missing channel", func(r map[string]any) { delete(r, "channel") }, 400},
 		{"unknown channel", func(r map[string]any) { r["channel"] = "unknown" }, 400},
-		{"missing subscription", func(r map[string]any) { delete(r, "subscription_id") }, 409},
-		{"unknown subscription", func(r map[string]any) { r["subscription_id"] = strings.Repeat("b", 32) }, 409},
-		{"duplicate creation", func(r map[string]any) { r["subscription_id"] = ""; r["subscription_version"] = 0 }, 409},
+		{"missing subscription", func(r map[string]any) { delete(r, "subscription_id") }, 400},
+		{"unknown subscription", func(r map[string]any) { r["subscription_id"] = strings.Repeat("b", 32) }, 400},
+		{"duplicate creation", func(r map[string]any) { r["subscription_id"] = ""; r["subscription_version"] = 0 }, 400},
 		{"unknown config field", func(r map[string]any) { r["config"] = map[string]any{"enabled": true, "unknown": true} }, 400},
 	} {
 		t.Run(test.name, func(t *testing.T) {

@@ -20,7 +20,7 @@ type TodosPrepare func(context.Context, string, platform.RoomIdentity, TodosQuer
 type TodosSource struct{ Prepare TodosPrepare }
 
 func (*TodosSource) ID() notification.SourceID { return TodosSourceID }
-func (*TodosSource) Schema() int               { return 1 }
+func (*TodosSource) Schema() int               { return 2 }
 func (*TodosSource) Decode(data []byte, owner platform.RoomIdentity) (notification.State, error) {
 	var s TodosState
 	dec := json.NewDecoder(bytes.NewReader(data))
@@ -36,7 +36,7 @@ func (s *TodosSource) NewRunner(h notification.StepHost) notification.Runner {
 
 // Account changes are handled by the owner as retire-before-create. This
 // function never mutates an existing subscription into a different account.
-func ConfigureTodos(owner platform.RoomIdentity, current *TodosState, b TodosBinding, project *platform.ProjectBinding, cfg TodosConfig, now time.Time) (TodosState, error) {
+func ConfigureTodos(owner platform.RoomIdentity, current *TodosState, b TodosBinding, cfg TodosConfig, now time.Time) (TodosState, error) {
 	cfg, err := NormalizeTodosConfig(cfg)
 	if err != nil {
 		return TodosState{}, err
@@ -49,7 +49,7 @@ func ConfigureTodos(owner platform.RoomIdentity, current *TodosState, b TodosBin
 		}
 	}
 	if current == nil || cfg.Enabled {
-		if !b.Valid() || cfg.ConnectionID != b.ConnectionID || cfg.ProjectScope == "current" && (project == nil || !validEventsProjectBinding(*project) || project.ProjectID <= 0 || project.URL != b.URL) || cfg.ProjectScope == "all" && project != nil {
+		if !b.Valid() || cfg.ConnectionID != b.ConnectionID {
 			return next, notification.ErrRequest
 		}
 		if current != nil && !next.Binding.SameAccount(b) {
@@ -68,21 +68,17 @@ func ConfigureTodos(owner platform.RoomIdentity, current *TodosState, b TodosBin
 	}
 	if !cfg.Enabled {
 		cfg.ConnectionID = next.Binding.ConnectionID
-		cfg.ProjectScope = next.Config.ProjectScope
-		project = next.Project
 	} else {
 		next.Binding = b
 	}
-	next.Project = project
-	projectID := next.ProjectID()
-	if current == nil || !reflect.DeepEqual(cfg.Filter, next.Config.Filter) || projectID != current.ProjectID() {
+	if current == nil || !reflect.DeepEqual(cfg.Filter, next.Config.Filter) {
 		if len(next.Filters) >= 256 {
 			return next, notification.ErrCapacity
 		}
 		if len(next.Filters) > 0 && now.Before(next.Filters[len(next.Filters)-1].Since) {
 			return next, notification.ErrConflict
 		}
-		next.Filters = append(next.Filters, TodosFilterRevision{Since: now, Filter: cfg.Filter, ProjectID: projectID})
+		next.Filters = append(next.Filters, TodosFilterRevision{Since: now, Filter: cfg.Filter})
 	}
 	if next.SubscriptionVersion == ^uint64(0) {
 		return next, notification.ErrCapacity
