@@ -125,7 +125,7 @@ func runCLIWithInput(ctx context.Context, args []string, stdin io.Reader, stdout
 	}
 
 	if len(args) == 0 {
-		return fmt.Errorf("usage: teamx serve | member add/list/remove/run/pause/session rotate | send | read | inbox read | matters list/update | policy read/update/publish | actions execute | tools list/run")
+		return fmt.Errorf("usage: teamx init | doctor | serve | member add/list/remove/run/pause/session rotate | send | read | inbox read | matters list/update | policy read/update/publish | actions execute | tools list/run")
 	}
 	if args[0] == "--help" || args[0] == "-h" {
 		return writeOutput(stdout, []byte(rootCLIHelp))
@@ -427,6 +427,18 @@ func writeOutput(w io.Writer, data []byte) error {
 
 // Run dispatches the TeamX Room CLI. The caller owns process exit reporting.
 func Run(args []string, stdout, stderr io.Writer) error {
+	if len(args) == 1 && (args[0] == "--version" || args[0] == "version") {
+		_, err := fmt.Fprintf(stdout, "teamx %s commit=%s dirty=%s\n", distributionVersion, distributionCommit, distributionDirty)
+		return err
+	}
+	if len(args) > 0 {
+		switch args[0] {
+		case "init", "doctor":
+			return runBundle(args[0], args[1:], stdout, stderr)
+		case "bundle":
+			return bundleEntry(args[1:], stdout, stderr)
+		}
+	}
 	if len(args) > 0 && args[0] == "serve" {
 		return serve(args[1:], stdout, stderr)
 	}

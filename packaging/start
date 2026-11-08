@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+PATH="$ROOT/bin:$ROOT/runtime/node/bin:${PATH:-/usr/bin:/bin}"
+export PATH
+exec "$ROOT/bin/teamx" bundle --bundle-root "$ROOT" "$@"

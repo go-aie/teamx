@@ -12,9 +12,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -27,6 +27,9 @@ type realRoomDriver struct {
 	output, secret, profilePath, workspace, memberDir, sessionID string
 	report                                                       map[string]any
 	dshProcess                                                   realProcessIdentity
+	// Bundle acceptance supplies the archived CLI and the operator's complete
+	// model settings, including gateway compatibility. Other drivers still build.
+	modelOverride *dsh.ModelConfig
 }
 
 type realProcessIdentity struct {
@@ -67,6 +70,78 @@ func realProcesses(ctx context.Context) ([]realProcessIdentity, error) {
 	return rows, nil
 }
 
+// Bubblewrap gives the tool its own PID namespace. Resolve its reported $$ to
+// an observed descendant of DSH before cancellation, without reading argv/env.
+func realToolProcess(ctx context.Context, owner, toolPID int) (realProcessIdentity, error) {
+	rows, err := realProcesses(ctx)
+	if err != nil {
+		return realProcessIdentity{}, err
+	}
+	parents := make(map[int]int, len(rows))
+	for _, row := range rows {
+		parents[row.PID] = row.Parent
+	}
+	var matches []realProcessIdentity
+	for _, row := range rows {
+		parent := row.Parent
+		for n := 0; n < len(rows) && parent > 1 && parent != owner; n++ {
+			parent = parents[parent]
+		}
+		if parent != owner {
+			continue
+		}
+		pid := row.PID
+		if runtime.GOOS == "linux" {
+			data, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", row.PID))
+			if err != nil {
+				continue
+			}
+			pid = 0
+			for _, line := range strings.Split(string(data), "\n") {
+				fields := strings.Fields(line)
+				if len(fields) >= 2 && fields[0] == "NSpid:" {
+					pid, _ = strconv.Atoi(fields[len(fields)-1])
+					break
+				}
+			}
+		}
+		if pid == toolPID {
+			matches = append(matches, row)
+		}
+	}
+	if len(matches) != 1 {
+		return realProcessIdentity{}, errors.New("cannot uniquely observe cancellation tool in DSH process tree")
+	}
+	return matches[0], nil
+}
+
+func TestRealToolProcessRequiresObservedDescendant(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", "exec sleep 30")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	}()
+	observed, err := realToolProcess(ctx, os.Getpid(), cmd.Process.Pid)
+	if err != nil || observed.PID != cmd.Process.Pid || observed.Started == "" {
+		t.Fatalf("owned tool not observed: %+v, %v", observed, err)
+	}
+	if _, err := realToolProcess(ctx, cmd.Process.Pid, cmd.Process.Pid); err == nil {
+		t.Fatal("process outside owner's descendants accepted")
+	}
+	if err := cmd.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	_ = cmd.Wait()
+	if _, err := realToolProcess(ctx, os.Getpid(), observed.PID); err == nil {
+		t.Fatal("exited tool accepted as live evidence")
+	}
+}
+
 func (d *realRoomDriver) phase(name string) { d.report["phase"] = name }
 
 func (d *realRoomDriver) setup() error {
@@ -79,6 +154,9 @@ func (d *realRoomDriver) setup() error {
 	credentialCtx, cancel := context.WithTimeout(d.ctx, 15*time.Second)
 	defer cancel()
 	keyEnv := os.Getenv("TEAMX_DSH_API_KEY_ENV")
+	if d.modelOverride != nil {
+		keyEnv = d.modelOverride.APIKeyEnv
+	}
 	if keyEnv == "" {
 		keyEnv = "OPENAI_API_KEY"
 	}
@@ -121,6 +199,9 @@ func (d *realRoomDriver) setup() error {
 			"For later memory checks, use conversation memory rather than rereading old Room messages or instructions files. Never delegate or manage members.",
 		Model: dsh.ModelConfig{Protocol: "openai-completions", BaseURL: os.Getenv("MODEL_BASE_URL"), ModelID: model, APIKeyEnv: keyEnv},
 	}
+	if d.modelOverride != nil {
+		profile.Model = d.modelOverride.Clone()
+	}
 	d.profilePath = filepath.Join(d.output, "dsh-profiles.json")
 	config, err := json.MarshalIndent(map[string]dshProfile{"reviewer": profile}, "", "  ")
 	if err != nil {
@@ -128,6 +209,9 @@ func (d *realRoomDriver) setup() error {
 	}
 	if err := os.WriteFile(d.profilePath, config, 0600); err != nil {
 		return err
+	}
+	if d.binary != "" {
+		return nil
 	}
 	d.binary = filepath.Join(d.output, "teamx")
 	d.phase("build-cli")
@@ -154,7 +238,7 @@ func (d *realRoomDriver) startRealRoom(number int, roomID string) error {
 	}
 	cmd := exec.Command(d.binary, "serve", "--config", configPath, "--room", roomID, "--state-dir", d.dir,
 		"--listen", "127.0.0.1:0", "--merge-window", "0s", "--max-turns", "8", "--dsh-config", d.profilePath)
-	cmd.Env = append(operatorEnv(""), d.report["apiKeyEnv"].(string)+"="+d.secret)
+	cmd.Env = append(d.operatorEnv(""), d.report["apiKeyEnv"].(string)+"="+d.secret)
 	cmd.Stderr = log
 	pipe, err := cmd.StdoutPipe()
 	if err == nil {
@@ -387,7 +471,7 @@ func (d *realRoomDriver) accept() error {
 	d.report["historyAfterPost"] = page
 
 	d.phase("cancel-running-tool")
-	if err := d.command(nil, "send", "--text", `Read this message, then use the shell to run exactly: printf '%s' "$$" > cancel.pid; printf ready > cancel-started; sleep 90; printf late > cancel-finished. Wait for it to finish; do not post.`, "--id", "cancel-tool"); err != nil {
+	if err := d.command(nil, "send", "--text", `Read this message, then use bash to run exactly: printf '%s' "$$" > cancel.pid; printf ready > cancel-started; sleep 90; printf late > cancel-finished. This tests cancellation of a FOREGROUND tool: explicitly set run_in_background=false and timeout=120000. Do not start a background job, append &, or use jobs tools. Wait for the foreground call; do not post.`, "--id", "cancel-tool"); err != nil {
 		return err
 	}
 	if err := d.until(func() (bool, error) {
@@ -406,6 +490,19 @@ func (d *realRoomDriver) accept() error {
 	}); err != nil {
 		return err
 	}
+	pidData, err := os.ReadFile(filepath.Join(d.workspace, "cancel.pid"))
+	if err != nil {
+		return err
+	}
+	pid, err := strconv.Atoi(string(pidData))
+	if err != nil || pid <= 1 {
+		return errors.New("invalid cancellation tool PID")
+	}
+	toolProcess, err := realToolProcess(d.ctx, d.dshProcess.PID, pid)
+	if err != nil {
+		return err
+	}
+	d.report["cancelToolProcess"] = toolProcess
 	started := time.Now()
 	if err := d.command(nil, "member", "pause", "--agent", "reviewer", "--cancel"); err != nil {
 		return err
@@ -420,22 +517,23 @@ func (d *realRoomDriver) accept() error {
 	if err := d.privateResult("cancel", "cancelled"); err != nil {
 		return err
 	}
-	pidData, err := os.ReadFile(filepath.Join(d.workspace, "cancel.pid"))
+	rows, err = realProcesses(d.ctx)
 	if err != nil {
 		return err
 	}
-	pid, err := strconv.Atoi(string(pidData))
-	if err != nil || pid <= 1 {
-		return errors.New("invalid cancellation tool PID")
-	}
-	if err := syscall.Kill(pid, 0); !errors.Is(err, syscall.ESRCH) {
-		return errors.New("cancelled tool still alive or cannot be observed")
+	for _, row := range rows {
+		if row.PID == toolProcess.PID && row.Started == toolProcess.Started {
+			return errors.New("observed cancellation tool survived settled cancellation")
+		}
 	}
 	if _, err := os.Stat(filepath.Join(d.workspace, "cancel-finished")); !errors.Is(err, os.ErrNotExist) {
 		return errors.New("cancelled tool reached late side effect")
 	}
 	d.report["cancelSettledSeconds"], d.report["cancelToolStopped"] = time.Since(started).Seconds(), true
 	d.report["cancelMember"] = list
+	if list.Members[0].Execution.SessionResetRequired {
+		return errors.New("cancelled backend requires Session reset; refusing enable/rotation during original-session acceptance")
+	}
 
 	d.phase("same-session-after-cancel")
 	if err := d.command(nil, "send", "--text", "Read this new message, remain silent in the Room and privately recall the first token. The long tool was cancelled; do not replay it.", "--id", "after-cancel"); err != nil {
@@ -507,6 +605,25 @@ func (d *realRoomDriver) accept() error {
 		return err
 	}
 	d.report["restartedMembers"], d.report["finalHistory"] = list, page
+	// A ready service and an empty retry do not prove lazy Session recovery.
+	// Send new input and require the original backend ID and private memory.
+	d.phase("resume-original-session-prompt")
+	if err := d.command(nil, "send", "--text", "Read this new message using the TeamX CLI. Remain silent in the Room. Recall the FIRST private token and your private role marker from conversation memory. Do not reread earlier messages or inspect files for them.", "--id", "after-restart"); err != nil {
+		return err
+	}
+	if _, err := d.waitReal(5, "completed"); err != nil {
+		return err
+	}
+	if err := d.privateResult("afterRestart", "end_turn", memory, private); err != nil {
+		return err
+	}
+	if err := d.command(&page, "read", "--all"); err != nil {
+		return err
+	}
+	if err := verifyRealPublic(page, 6, public, private); err != nil {
+		return err
+	}
+	d.report["resumedOriginalSession"], d.report["finalHistory"] = true, page
 	if err := d.command(nil, "member", "remove", "--agent", "reviewer"); err != nil {
 		return err
 	}

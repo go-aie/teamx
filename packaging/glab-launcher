@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
+# Keep the distribution pinned, including version/help/doctor invocations.
+GLAB_CHECK_UPDATE=false
+export GLAB_CHECK_UPDATE
+exec "$ROOT/runtime/glab/bin/glab" "$@"

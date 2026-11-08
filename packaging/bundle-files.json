@@ -1,0 +1,206 @@
+{
+  "schema_version": 1,
+  "copy_policy": "explicit_files_only_no_recursive_directory_copy",
+  "builds": [
+    {
+      "package": "./cmd/teamx",
+      "destination": "bin/teamx"
+    },
+    {
+      "package": "./tools/gitlab",
+      "destination": "bin/teamx-gitlab"
+    },
+    {
+      "package": "./tools/scion",
+      "destination": "bin/teamx-scion"
+    }
+  ],
+  "files": [
+    {
+      "source": ".teamx/config.example.toml",
+      "destination": "share/teamx/config.example.toml"
+    },
+    {
+      "source": "LICENSE",
+      "destination": "LICENSE"
+    },
+    {
+      "source": "internal/room/web/vendor/marked-LICENSE.md",
+      "destination": "THIRD_PARTY_NOTICES/marked-LICENSE.md"
+    },
+    {
+      "source": ".teamx/teams/README.md",
+      "destination": "share/teamx/teams/README.md"
+    },
+    {
+      "source": ".teamx/teams/bookstore-night/README.md",
+      "destination": "share/teamx/teams/bookstore-night/README.md"
+    },
+    {
+      "source": ".teamx/teams/bookstore-night/prompts/alan.md",
+      "destination": "share/teamx/teams/bookstore-night/prompts/alan.md"
+    },
+    {
+      "source": ".teamx/teams/bookstore-night/prompts/laozhou.md",
+      "destination": "share/teamx/teams/bookstore-night/prompts/laozhou.md"
+    },
+    {
+      "source": ".teamx/teams/bookstore-night/prompts/qixi.md",
+      "destination": "share/teamx/teams/bookstore-night/prompts/qixi.md"
+    },
+    {
+      "source": ".teamx/teams/bookstore-night/prompts/xiaoye.md",
+      "destination": "share/teamx/teams/bookstore-night/prompts/xiaoye.md"
+    },
+    {
+      "source": ".teamx/teams/bookstore-night/team.json",
+      "destination": "share/teamx/teams/bookstore-night/team.json"
+    },
+    {
+      "source": ".teamx/teams/personal-assistant/README.md",
+      "destination": "share/teamx/teams/personal-assistant/README.md"
+    },
+    {
+      "source": ".teamx/teams/personal-assistant/prompts/assistant.md",
+      "destination": "share/teamx/teams/personal-assistant/prompts/assistant.md"
+    },
+    {
+      "source": ".teamx/teams/personal-assistant/team.json",
+      "destination": "share/teamx/teams/personal-assistant/team.json"
+    },
+    {
+      "source": ".teamx/teams/software-development/README.md",
+      "destination": "share/teamx/teams/software-development/README.md"
+    },
+    {
+      "source": ".teamx/teams/software-development/prompts/architect.md",
+      "destination": "share/teamx/teams/software-development/prompts/architect.md"
+    },
+    {
+      "source": ".teamx/teams/software-development/prompts/developer.md",
+      "destination": "share/teamx/teams/software-development/prompts/developer.md"
+    },
+    {
+      "source": ".teamx/teams/software-development/prompts/reviewer.md",
+      "destination": "share/teamx/teams/software-development/prompts/reviewer.md"
+    },
+    {
+      "source": ".teamx/teams/software-development/team.json",
+      "destination": "share/teamx/teams/software-development/team.json"
+    },
+    {
+      "source": ".teamx/teams/takeout-dinner/README.md",
+      "destination": "share/teamx/teams/takeout-dinner/README.md"
+    },
+    {
+      "source": ".teamx/teams/takeout-dinner/prompts/laochen.md",
+      "destination": "share/teamx/teams/takeout-dinner/prompts/laochen.md"
+    },
+    {
+      "source": ".teamx/teams/takeout-dinner/prompts/xiaolin.md",
+      "destination": "share/teamx/teams/takeout-dinner/prompts/xiaolin.md"
+    },
+    {
+      "source": ".teamx/teams/takeout-dinner/prompts/xiaoman.md",
+      "destination": "share/teamx/teams/takeout-dinner/prompts/xiaoman.md"
+    },
+    {
+      "source": ".teamx/teams/takeout-dinner/team.json",
+      "destination": "share/teamx/teams/takeout-dinner/team.json"
+    },
+    {
+      "source": "packaging/licenses/DSH-MIT.txt",
+      "destination": "THIRD_PARTY_NOTICES/DSH-MIT.txt"
+    },
+    {
+      "source": "packaging/licenses/Node-LICENSE.txt",
+      "destination": "THIRD_PARTY_NOTICES/Node-LICENSE.txt"
+    },
+    {
+      "source": "packaging/licenses/dugite-native-GPL-2.0.txt",
+      "destination": "THIRD_PARTY_NOTICES/dugite-native-GPL-2.0.txt"
+    },
+    {
+      "source": "packaging/licenses/glab-MIT.txt",
+      "destination": "THIRD_PARTY_NOTICES/glab-MIT.txt"
+    },
+    {
+      "source": "packaging/licenses/lark-cli-MIT.txt",
+      "destination": "THIRD_PARTY_NOTICES/lark-cli-MIT.txt"
+    },
+    {
+      "source": "packaging/licenses/github.com_go-aie_actorx-LICENSE.txt",
+      "destination": "THIRD_PARTY_NOTICES/github.com_go-aie_actorx-LICENSE.txt"
+    },
+    {
+      "source": "packaging/licenses/github.com_pelletier_go-toml_v2-LICENSE.txt",
+      "destination": "THIRD_PARTY_NOTICES/github.com_pelletier_go-toml_v2-LICENSE.txt"
+    },
+    {
+      "source": "packaging/licenses/github.com_yuin_goldmark-LICENSE.txt",
+      "destination": "THIRD_PARTY_NOTICES/github.com_yuin_goldmark-LICENSE.txt"
+    },
+    {
+      "source": "packaging/licenses/golang.org_x_image-LICENSE.txt",
+      "destination": "THIRD_PARTY_NOTICES/golang.org_x_image-LICENSE.txt"
+    },
+    {
+      "source": "packaging/start",
+      "destination": "start"
+    },
+    {
+      "source": "packaging/dsh-launcher",
+      "destination": "bin/dsh"
+    },
+    {
+      "source": "packaging/bundle-README.zh.md",
+      "destination": "README.zh.md"
+    },
+    {
+      "source": "packaging/licenses/git-lfs-MIT-BSD.txt",
+      "destination": "THIRD_PARTY_NOTICES/git-lfs-MIT-BSD.txt"
+    },
+    {
+      "source": "packaging/licenses/GCM-MIT.txt",
+      "destination": "THIRD_PARTY_NOTICES/GCM-MIT.txt"
+    },
+    {
+      "source": "packaging/Git-README.zh.md",
+      "destination": "THIRD_PARTY_NOTICES/Git-README.zh.md"
+    }
+  ],
+  "teams": [
+    "bookstore-night",
+    "personal-assistant",
+    "software-development",
+    "takeout-dinner"
+  ],
+  "embedded_resources": [
+    "internal/room/web.go",
+    "internal/platform/tool/skills.go",
+    "internal/platform/gitlab/tools/git-askpass.sh"
+  ],
+  "generated_by_later_phases": [],
+  "forbidden_sources": [
+    ".teamx/config.toml",
+    ".teamx/data/",
+    ".env",
+    ".env.*",
+    "bin/",
+    ".local/",
+    "dist/",
+    ".git/"
+  ],
+  "dependency_assets": "Only pinned artifacts from dependencies.lock.json and its explicit contract references; never copy the workspace bin directory.",
+  "generated_files": [
+    "manifest.json",
+    "checksums.txt",
+    "THIRD_PARTY_NOTICES/dsh-dependencies.json",
+    "bin/git (full)",
+    "runtime/glab (full)",
+    "runtime/lark (full)",
+    "runtime/git (full)",
+    "THIRD_PARTY_NOTICES/git-source (full)",
+    "THIRD_PARTY_NOTICES/git-materials.json (full)"
+  ]
+}

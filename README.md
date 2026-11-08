@@ -66,6 +66,10 @@ cp .teamx/config.example.toml .teamx/config.toml
 
 配置加载规则、用户目录用法及恢复说明见[运行手册](internal/room/README.zh.md#服务配置)。
 
+## 发行包与自行构建
+
+发行包包含固定 Node/DSH，使用者无需安装 Go 或 Node；首次启动与升级见[发行包使用说明](packaging/release-README.zh.md)。通过 GitHub Actions 获取开发快照、本地打包及正式发行的方法见[构建与发行指南](packaging/README.zh.md)。当前为开发预览，完整平台矩阵和正式发行尚未验收完成。
+
 ## 团队模板
 
 | 团队 | 适合体验 |

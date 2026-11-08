@@ -31,6 +31,7 @@ type cliDriver struct {
 	endpoint string
 	info     ServiceInfo
 	report   demoReport
+	env      []string // Optional isolated operator environment for archive acceptance.
 }
 
 type demoReport struct {
@@ -127,6 +128,17 @@ func operatorEnv(endpoint string) []string {
 	return env
 }
 
+func (d *cliDriver) operatorEnv(endpoint string) []string {
+	if d.env == nil {
+		return operatorEnv(endpoint)
+	}
+	env := append([]string(nil), d.env...)
+	if endpoint != "" {
+		env = append(env, "TEAMX_ENDPOINT="+endpoint)
+	}
+	return env
+}
+
 func (d *cliDriver) start(number int) error {
 	configPath, err := isolatedStartupConfig(d.dir, nil)
 	if err != nil {
@@ -188,7 +200,7 @@ func (d *cliDriver) stop() error {
 
 func (d *cliDriver) command(out any, args ...string) error {
 	cmd := exec.CommandContext(d.ctx, d.binary, append(args, "--json")...)
-	cmd.Env, cmd.WaitDelay = operatorEnv(d.endpoint), time.Second
+	cmd.Env, cmd.WaitDelay = d.operatorEnv(d.endpoint), time.Second
 	if d.info.RoomID != "" {
 		cmd.Env = append(cmd.Env, "TEAMX_ROOM_ID="+d.info.RoomID)
 	}

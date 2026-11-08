@@ -1,0 +1,220 @@
+name: Publish qualified release
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_run_id:
+        description: Successful tag-push candidate run covering the locked release profiles (core/standard)
+        required: true
+        type: string
+      candidate_run_attempt:
+        description: Exact successful candidate attempt (rerun the complete candidate workflow)
+        required: true
+        default: '1'
+        type: string
+      qualifications:
+        description: Public maintainer qualification JSON bound to the candidate archive hashes
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: release-publication-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  GOTOOLCHAIN: local
+  GOWORK: 'off'
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      version: ${{ steps.plan.outputs.version }}
+      commit: ${{ steps.plan.outputs.commit }}
+      go_version: ${{ steps.plan.outputs.go_version }}
+      node_version: ${{ steps.plan.outputs.node_version }}
+      context: ${{ steps.plan.outputs.context }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require exact tag, trusted successful candidate run and complete artifacts
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH_VERSION: ${{ github.ref_name }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          CANDIDATE_RUN_ATTEMPT: ${{ inputs.candidate_run_attempt }}
+        run: >-
+          node scripts/package-publish.mjs plan "$PUBLISH_VERSION"
+          "$CANDIDATE_RUN_ID" "$CANDIDATE_RUN_ATTEMPT" "$RUNNER_TEMP/release-source.json"
+
+  acceptance:
+    needs: plan
+    name: Accept ${{ matrix.target }} ${{ matrix.profile }}
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    environment: release-acceptance
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.plan.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ needs.plan.outputs.node_version }}
+          package-manager-cache: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: ${{ needs.plan.outputs.go_version }}
+          cache-dependency-path: go.sum
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: candidate-${{ needs.plan.outputs.version }}-${{ matrix.target }}-${{ matrix.profile }}-${{ inputs.candidate_run_attempt }}
+          path: ${{ runner.temp }}/candidate
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.candidate_run_id }}
+      - name: Verify the downloaded candidate on its native target
+        id: verify
+        env:
+          CANDIDATE_TARGET: ${{ matrix.target }}
+          CANDIDATE_PROFILE: ${{ matrix.profile }}
+          CANDIDATE_COMMIT: ${{ needs.plan.outputs.commit }}
+          CANDIDATE_VERSION: ${{ needs.plan.outputs.version }}
+        run: >-
+          node scripts/package-release.mjs verify "$RUNNER_TEMP/candidate"
+          "$CANDIDATE_TARGET" "$CANDIDATE_PROFILE" "$CANDIDATE_COMMIT" "$CANDIDATE_VERSION"
+          "$RUNNER_TEMP/download-report.json"
+      - name: Install locked verifier and Chromium outside the source and bundle
+        run: |
+          mkdir "$RUNNER_TEMP/verifier"
+          cp packaging/verifier/package*.json "$RUNNER_TEMP/verifier/"
+          npm ci --prefix "$RUNNER_TEMP/verifier" --ignore-scripts --no-audit --no-fund
+          "$RUNNER_TEMP/verifier/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Run real DSH, Session recovery and production browser acceptance
+        id: acceptance
+        env:
+          MODEL_CONFIG: ${{ secrets.TEAMX_RELEASE_MODEL_CONFIG }}
+          OPENAI_API_KEY: ${{ secrets.TEAMX_RELEASE_MODEL_API_KEY }}
+          NODE_PATH: ${{ runner.temp }}/verifier/node_modules
+          CANDIDATE_ARCHIVE: teamx-${{ needs.plan.outputs.version }}-${{ matrix.target }}-${{ matrix.profile }}.tar.gz
+        run: |
+          node --input-type=module -e 'import fs from "node:fs"; if (!process.env.MODEL_CONFIG || !process.env.OPENAI_API_KEY) throw Error("Configure release-acceptance model secrets"); fs.writeFileSync(process.env.RUNNER_TEMP + "/model.toml", process.env.MODEL_CONFIG, {mode: 0o600, flag: "wx"});'
+          ./scripts/package-acceptance.sh "$RUNNER_TEMP/candidate/$CANDIDATE_ARCHIVE" --output-dir "$RUNNER_TEMP/private-acceptance" --model-config "$RUNNER_TEMP/model.toml"
+      - name: Assess archive-specific automated and maintainer evidence
+        id: assess
+        if: ${{ !cancelled() && steps.verify.outcome == 'success' }}
+        env:
+          QUALIFICATIONS_JSON: ${{ inputs.qualifications }}
+          CANDIDATE_TARGET: ${{ matrix.target }}
+          CANDIDATE_PROFILE: ${{ matrix.profile }}
+          CANDIDATE_COMMIT: ${{ needs.plan.outputs.commit }}
+          CANDIDATE_VERSION: ${{ needs.plan.outputs.version }}
+          ACCEPTANCE_PASSED: ${{ steps.acceptance.outcome == 'success' }}
+        run: |
+          node --input-type=module -e 'import fs from "node:fs"; const data = process.env.QUALIFICATIONS_JSON ? JSON.parse(process.env.QUALIFICATIONS_JSON) : {schema_version: 1, version: process.env.CANDIDATE_VERSION, commit: process.env.CANDIDATE_COMMIT, records: []}; fs.writeFileSync(process.env.RUNNER_TEMP + "/qualifications.json", JSON.stringify(data), {mode: 0o600, flag: "wx"});'
+          evidence='-'
+          if [ "$ACCEPTANCE_PASSED" = true ]; then evidence="$RUNNER_TEMP/private-acceptance"; fi
+          node scripts/package-release.mjs assess "$RUNNER_TEMP/candidate" "$CANDIDATE_TARGET" "$CANDIDATE_PROFILE" "$CANDIDATE_COMMIT" "$CANDIDATE_VERSION" "$RUNNER_TEMP/assessment.json" "$evidence" "$RUNNER_TEMP/qualifications.json"
+      # Public fixed projections only. Model answers, Sessions, logs, account
+      # identifiers, credentials and screenshots never become artifacts.
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: ${{ !cancelled() && steps.verify.outcome == 'success' }}
+        with:
+          name: release-assessment-${{ matrix.target }}-${{ matrix.profile }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/assessment.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Remove private model and acceptance material
+        if: ${{ always() }}
+        run: rm -rf "$RUNNER_TEMP/model.toml" "$RUNNER_TEMP/private-acceptance" "$RUNNER_TEMP/qualifications.json"
+
+  assemble:
+    needs: [plan, acceptance]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      checksums_sha256: ${{ steps.seal.outputs.checksums_sha256 }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.plan.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ needs.plan.outputs.node_version }}
+          package-manager-cache: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          pattern: candidate-${{ needs.plan.outputs.version }}-*-*-${{ inputs.candidate_run_attempt }}
+          path: ${{ runner.temp }}/candidates
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.candidate_run_id }}
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          pattern: release-assessment-*-*-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/assessments
+      - name: Aggregate the complete matrix, licenses, instructions and checksums
+        id: seal
+        env:
+          RELEASE_CONTEXT: ${{ needs.plan.outputs.context }}
+        run: |
+          node --input-type=module -e 'import fs from "node:fs"; fs.writeFileSync(process.env.RUNNER_TEMP + "/release-source.json", process.env.RELEASE_CONTEXT, {flag: "wx"});'
+          node scripts/package-publish.mjs assemble "$RUNNER_TEMP/candidates" "$RUNNER_TEMP/assessments" "$RUNNER_TEMP/release-source.json" "$RUNNER_TEMP/release"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: qualified-release-${{ needs.plan.outputs.version }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+  publish:
+    needs: [plan, assemble]
+    runs-on: ubuntu-24.04
+    environment: release
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.plan.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ needs.plan.outputs.node_version }}
+          package-manager-cache: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          # A failed publish job may resume the same sealed assets. The plan's
+          # original attempt stays fixed when only this job is rerun.
+          name: qualified-release-${{ needs.plan.outputs.version }}-${{ fromJSON(needs.plan.outputs.context).publish_run_attempt }}
+          path: ${{ runner.temp }}/release
+      - name: Create draft, upload accepted bytes, download and verify every asset, publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_CONTEXT: ${{ needs.plan.outputs.context }}
+          RELEASE_SEAL: ${{ needs.assemble.outputs.checksums_sha256 }}
+        run: |
+          node --input-type=module -e 'import fs from "node:fs"; fs.writeFileSync(process.env.RUNNER_TEMP + "/release-source.json", process.env.RELEASE_CONTEXT, {flag: "wx"});'
+          node scripts/package-publish.mjs publish "$RUNNER_TEMP/release" "$RUNNER_TEMP/release-source.json" "$RELEASE_SEAL"
