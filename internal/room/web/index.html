@@ -425,36 +425,43 @@
         <div class="connection-field"><label for="connection-provider">平台</label><select id="connection-provider"><option value="gitlab">GitLab</option><option value="scion">Scion</option><option value="feishu">飞书</option><option value="lark">Lark</option></select></div>
         <div id="connection-url-row" class="connection-field connection-field-wide"><label for="connection-url">实例地址</label><input id="connection-url" type="url" required placeholder="https://gitlab.example.com"></div>
         <div id="connection-scion-row" class="connection-field connection-field-wide" hidden>
-          <label for="connection-scion-executable">Scion CLI 路径</label><input id="connection-scion-executable" spellcheck="false" placeholder="自动检测 teamx-scion / scn，也可填写绝对路径">
           <div id="connection-scion-choice" hidden><label for="connection-scion-profile">账号</label><select id="connection-scion-profile" aria-describedby="connection-scion-account connections-feedback"></select></div>
-          <p id="connection-scion-account" class="connection-account" role="status" aria-live="polite">填写实例地址后自动检测账号。</p>
-          <button id="connection-scion-detect" class="text-button" type="button">刷新账号</button>
-          <details id="connection-scion-login-panel">
-            <summary>使用 PAT 登录或更换账号</summary>
-            <label for="connection-scion-pat">Personal Access Token</label><input id="connection-scion-pat" type="password" autocomplete="new-password" spellcheck="false" placeholder="填写此实例的 Scion PAT">
-            <p class="quiet">由 Scion CLI 验证并保存登录。登录成功后请保存连接，再为成员单独应用。</p>
-            <button id="connection-scion-login" class="settings-secondary-button" type="button">登录 Scion</button>
+          <div class="connection-account-summary"><p id="connection-scion-account" class="connection-account" role="status" aria-live="polite">填写实例地址后自动检测账号。</p><button id="connection-scion-detect" class="settings-icon-button connection-account-refresh" type="button" aria-label="刷新账号" title="刷新账号"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 6.7M20 4v7h-7"/></svg></button></div>
+          <p id="connection-scion-status" class="scion-account-status quiet" role="status" aria-live="polite" hidden></p>
+          <div class="connection-account-actions">
+            <button id="connection-scion-login-open" class="settings-secondary-button" type="button" aria-controls="connection-scion-login-panel" aria-expanded="false">登录</button>
+            <button id="connection-scion-logout" class="text-button" type="button" hidden>退出登录</button>
+            <button id="connection-scion-cancel" class="text-button" type="button" hidden>取消本次登录</button>
+          </div>
+          <section id="connection-scion-login-panel" class="scion-login-panel" aria-label="使用 PAT 登录" hidden>
+            <div class="connection-pat-heading"><label for="connection-scion-pat">访问令牌（PAT）</label><a id="connection-scion-pat-link" target="_blank" rel="noopener noreferrer" hidden>查看或创建 PAT ↗</a></div>
+            <input id="connection-scion-pat" type="password" autocomplete="new-password" spellcheck="false" placeholder="填写此实例的 Scion PAT">
+            <p class="quiet">登录成功后，请保存连接，再到成员设置中应用。</p>
+            <div class="connection-account-actions"><button id="connection-scion-login" class="settings-secondary-button" type="button">登录</button><button id="connection-scion-login-dismiss" class="text-button" type="button">取消</button></div>
+          </section>
+          <details id="connection-scion-advanced" class="connection-advanced">
+            <summary>高级设置</summary>
+            <label for="connection-scion-executable">Scion CLI 路径</label><input id="connection-scion-executable" aria-describedby="connection-scion-cli-hint connections-feedback" spellcheck="false" placeholder="自动检测 teamx-scion / scn，也可填写绝对路径">
+            <p id="connection-scion-cli-hint" class="quiet">使用 TeamX 服务所在机器上的 Scion CLI，登录凭据由 CLI 管理。</p>
           </details>
-          <button id="connection-scion-cancel" class="text-button" type="button" hidden>取消本次登录</button>
         </div>
         <div id="connection-profile-row" class="connection-field connection-field-wide" hidden>
           <div id="connection-profile-choice" hidden><label for="connection-profile">应用配置</label><select id="connection-profile" aria-describedby="connections-feedback"></select></div>
-          <p id="connection-account" class="connection-account" role="status" aria-live="polite">正在检测账号…</p>
+          <div class="connection-account-summary"><p id="connection-account" class="connection-account" role="status" aria-live="polite">正在检测账号…</p><button id="connection-detect" class="settings-icon-button connection-account-refresh" type="button" aria-label="刷新账号" title="刷新账号"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 6.7M20 4v7h-7"/></svg></button></div>
           <div class="connection-account-actions">
             <button id="connection-login" class="settings-secondary-button" type="button" hidden>登录飞书</button>
-            <button id="connection-detect" class="text-button" type="button">刷新账号</button>
             <button id="connection-send-check" class="settings-secondary-button" type="button" hidden>检查发送条件</button>
             <button id="connection-target-authorize" class="settings-secondary-button" type="button" hidden>授权目标核验</button>
             <button id="connection-send-authorize" class="settings-secondary-button" type="button" hidden>授权发送权限</button>
             <span id="connection-send-status" class="settings-hint" hidden>发送未启用；请先检查账号与权限。</span>
             <button id="connection-logout" class="text-button" type="button" hidden>退出登录</button>
+            <button id="connection-login-cancel" class="text-button" type="button" hidden>取消本次登录</button>
           </div>
           <div id="connection-login-panel" class="connection-login-panel" hidden>
             <p class="quiet">打开链接或扫码完成授权，页面会自动更新。</p>
             <a id="connection-login-link" target="_blank" rel="noopener noreferrer">打开授权页面 ↗</a>
             <img id="connection-login-qr" width="192" height="192" alt="飞书 / Lark 登录授权二维码">
           </div>
-          <button id="connection-login-cancel" class="text-button" type="button" hidden>取消本次登录</button>
           <div id="connection-setup" class="connection-setup quiet" hidden>
             <p>首次使用需先配置应用。请在运行 TeamX 的机器上执行以下命令，按提示完成后点击「刷新账号」。已有应用也可运行 <code>lark-cli config init</code> 配置。</p>
             <code id="connection-setup-command"></code>
@@ -485,9 +492,10 @@
         <section id="connection-references" class="connection-references connection-field-wide" aria-labelledby="connection-references-title" hidden>
           <h4 id="connection-references-title">引用房间</h4>
           <div id="connection-reference-list" class="connection-reference-list" role="region" aria-label="引用房间列表" tabindex="0"></div>
-          <div id="gitlab-confirmation" class="gitlab-confirmation" hidden>
-            <p id="gitlab-confirmation-title"></p>
-            <div class="connection-account-actions"><button id="gitlab-confirm" class="settings-secondary-button" type="button">继续登录</button><button id="gitlab-dismiss" class="text-button" type="button">取消</button></div>
+          <div id="connection-auth-confirmation" class="connection-confirmation" hidden>
+            <p id="connection-auth-confirmation-title"></p>
+            <p id="connection-auth-confirmation-description" class="quiet" hidden></p>
+            <div class="connection-account-actions"><button id="connection-auth-confirm" class="settings-secondary-button" type="button">继续登录</button><button id="connection-auth-dismiss" class="text-button" type="button">取消</button></div>
           </div>
         </section>
         <div id="connection-notes" class="connection-notes connection-field-wide" hidden><p id="connection-validation" class="quiet"></p></div>

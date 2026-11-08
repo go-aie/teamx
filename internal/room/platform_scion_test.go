@@ -162,7 +162,7 @@ func TestScionMemberToolsIdentityAndHelp(t *testing.T) {
 
 func TestScionCallLifecycle(t *testing.T) {
 	for _, phase := range []string{"preflight", "block"} {
-		for _, action := range []string{"cancel", "disable", "rotation", "deletion", "shutdown"} {
+		for _, action := range []string{"cancel", "disable", "rotation", "logout", "deletion", "shutdown"} {
 			t.Run(phase+"/"+action, func(t *testing.T) {
 				m, room, svc, c, members, dir := scionRoomFixture(t)
 				c = verifyScion(t, m, c)
@@ -208,6 +208,14 @@ func TestScionCallLifecycle(t *testing.T) {
 					rotated, err := m.updatePlatformConnection(platformConnectionRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: c.ID, Version: c.Version, Name: c.Name, Provider: c.Provider, URL: c.URL, CLIProfile: &profile, ReferencedRooms: []RoomIdentity{room.RoomIdentity}}, false)
 					if err != nil || rotated.CredentialVersion <= c.CredentialVersion || rotated.Validation.Status != "unverified" {
 						t.Fatal(rotated, err)
+					}
+				case "logout":
+					r := managerHTTP(m, "/v1/platform/connections/scion/logout", scionAuthBody(m, map[string]any{"url": c.URL, "cli_profile": c.CLIProfile, "affected": []scionAuthConnection{{ID: c.ID, Version: c.Version, ReferencedRooms: []RoomIdentity{room.RoomIdentity}}}}))
+					if r.Code != 200 {
+						t.Fatal(r.Code, r.Body.String())
+					}
+					if _, err := os.Stat(filepath.Join(m.store.dir, "scion-profiles", c.CLIProfile.Profile)); !os.IsNotExist(err) {
+						t.Fatal("managed login survived logout", err)
 					}
 				case "deletion":
 					m.mu.Lock()

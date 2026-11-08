@@ -21,12 +21,20 @@ func (scionPAT) MarshalJSON() ([]byte, error) { return json.Marshal("[REDACTED]"
 func (scionPAT) Format(s fmt.State, _ rune)   { _, _ = io.WriteString(s, "[REDACTED]") }
 
 type scionAuthRequest struct {
-	ServiceEpoch string   `json:"service_epoch"`
-	Caller       Caller   `json:"caller"`
-	Executable   string   `json:"executable,omitempty"`
-	URL          string   `json:"url,omitempty"`
-	PAT          scionPAT `json:"pat,omitempty"`
-	SessionID    string   `json:"session_id,omitempty"`
+	ServiceEpoch string                `json:"service_epoch"`
+	Caller       Caller                `json:"caller"`
+	Executable   string                `json:"executable,omitempty"`
+	URL          string                `json:"url,omitempty"`
+	PAT          scionPAT              `json:"pat,omitempty"`
+	SessionID    string                `json:"session_id,omitempty"`
+	Profile      *platform.CLIProfile  `json:"cli_profile,omitempty"`
+	Affected     []scionAuthConnection `json:"affected,omitempty"`
+}
+
+type scionAuthConnection struct {
+	ID              string         `json:"id"`
+	Version         uint64         `json:"version"`
+	ReferencedRooms []RoomIdentity `json:"referenced_rooms"`
 }
 
 func (scionAuthRequest) Format(s fmt.State, _ rune) {
@@ -50,7 +58,7 @@ type scionAuthSession struct {
 
 func (m *roomManager) serveScionAuth(w http.ResponseWriter, r *http.Request) {
 	action := strings.TrimPrefix(r.URL.Path, "/v1/platform/connections/scion/")
-	if action != "discover" && action != "login" && action != "status" && action != "cancel" {
+	if action != "discover" && action != "login" && action != "logout" && action != "status" && action != "cancel" {
 		http.NotFound(w, r)
 		return
 	}
@@ -80,6 +88,24 @@ func (m *roomManager) serveScionAuth(w http.ResponseWriter, r *http.Request) {
 	if err := m.store.check(false); err != nil {
 		m.mu.Unlock()
 		writeAPIError(w, err)
+		return
+	}
+	if action == "logout" {
+		defer m.mu.Unlock()
+		result, err := m.logoutScionLocked(req)
+		if err != nil {
+			writeAPIError(w, err)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(struct {
+			Status      string               `json:"status"`
+			Connections []platformConnection `json:"connections"`
+		}{"succeeded", result})
+		return
+	}
+	if req.Profile != nil || len(req.Affected) != 0 {
+		m.mu.Unlock()
+		writeAPIError(w, ErrRequest)
 		return
 	}
 	if action == "status" || action == "cancel" {
@@ -207,6 +233,95 @@ func (m *roomManager) serveScionAuth(w http.ResponseWriter, r *http.Request) {
 	view := session.scionAuthView
 	m.mu.Unlock()
 	_ = json.NewEncoder(w).Encode(view)
+}
+
+// The complete impact is checked before cancellation or credential deletion.
+// Invalidate identity durably before releasing the catalog gate to join calls,
+// so even an already-scheduled Workspace operation cannot take a new snapshot.
+func (m *roomManager) logoutScionLocked(req scionAuthRequest) ([]platformConnection, error) {
+	if req.Profile == nil || !scion.ValidProfile(*req.Profile) || req.PAT != "" || req.SessionID != "" || req.Executable != "" || len(req.Affected) > 100 {
+		return nil, ErrRequest
+	}
+	_, origin, err := connection.Normalize("Scion", req.URL)
+	if err != nil {
+		return nil, ErrRequest
+	}
+	if m.busy {
+		return nil, ErrBusy
+	}
+	if err := m.store.check(true); err != nil {
+		return nil, err
+	}
+	file, err := m.readPlatformConnections()
+	if err != nil {
+		return nil, err
+	}
+	matching := []platformConnectionRecord{}
+	for _, c := range file.Connections {
+		if c.Provider == "scion" && c.CLIProfile != nil && c.CLIProfile.Profile == req.Profile.Profile {
+			if c.URL != origin {
+				return nil, ErrConflict
+			}
+			matching = append(matching, c)
+		}
+	}
+	if len(matching) != len(req.Affected) {
+		return nil, ErrConflict
+	}
+	for _, c := range matching {
+		refs, err := m.platformConnectionReferencesLocked(c.ID)
+		if err != nil {
+			return nil, err
+		}
+		found := false
+		for _, ack := range req.Affected {
+			if ack.ID == c.ID && ack.Version == c.Version && samePlatformReferences(refs, ack.ReferencedRooms) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, ErrConflict
+		}
+	}
+	var pending []<-chan struct{}
+	for _, c := range matching {
+		if err := m.invalidatePlatformQueriesLocked(c.ID); err != nil {
+			return nil, err
+		}
+		pending = append(pending, m.notifications.ConnectionDoneLocked(c.ID)...)
+		for call := range m.platformCalls {
+			if call.connectionID == c.ID {
+				pending = append(pending, call.done)
+			}
+		}
+	}
+	result := make([]platformConnection, 0, len(matching))
+	for _, c := range matching {
+		ticket, err := m.connections.BeginVerification(c.ID, c.Version)
+		if err != nil {
+			return nil, platformConnectionError(err)
+		}
+		updated, err := m.connections.CompleteVerification(ticket, platform.Validation{Status: "failed", CheckedAt: time.Now().UTC(), ErrorCode: "credential_unavailable"})
+		if err != nil {
+			return nil, platformConnectionError(err)
+		}
+		item, err := m.publicPlatformConnectionLocked(updated)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, item)
+	}
+	if err := m.settlePlatformCallsLocked(pending); err != nil {
+		return nil, err
+	}
+	if m.closing {
+		return nil, ErrClosing
+	}
+	if err := scion.Logout(m.store.dir, origin, *req.Profile); err != nil {
+		return nil, fmt.Errorf("%w: Scion local credential cleanup failed", ErrInvalid)
+	}
+	return result, nil
 }
 
 func writeScionAuthError(w http.ResponseWriter, code string) {

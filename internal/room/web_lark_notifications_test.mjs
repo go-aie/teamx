@@ -13,7 +13,7 @@ function fixture(){
   if(path.startsWith("/v1/platform/notifications?"))return {subscriptions:[structuredClone(api.data)]};
   if(path.startsWith("/v1/platform/connections?"))return {connections:api.connections};
   if(path==="/v1/platform/connections/lark/discover")return {executable:"/fixture/lark-cli",profiles:api.profiles};
-  if(path==="/v1/platform/connections/lark/login" || path==="/v1/platform/connections/lark/logout" || path==="/v1/platform/connections/lark/authorize-targets")return {session_id:"auth-session",status:"starting",connections:[]};
+  if(path==="/v1/platform/connections/lark/login" || path==="/v1/platform/connections/lark/logout" || path==="/v1/platform/connections/lark/authorize-targets" || path==="/v1/platform/connections/lark/authorize-sending")return {session_id:"auth-session",status:"starting",connections:[]};
   if(path==="/v1/platform/connections/lark/status")return api.authView;
   if(path==="/v1/platform/connections/lark/cancel")return {session_id:"auth-session",status:"cancelled"};
   if(path==="/v1/platform/connections/save"){
@@ -180,12 +180,70 @@ test("closing during login cancels the server flow and ignores a late status res
 test("logout explicitly acknowledges all connections sharing the profile and its affected Rooms",async()=>{
  const api=fixture();api.connections[0].cli_profile={version:1,executable:"/different/lark-cli",profile:"explicit",brand:"feishu",cli_version:"1.0.99"};
  api.connections[0].references=[{name:"个人助手",room_id:"A",room_instance:"instance-A"}];
- let prompt="";api.confirm=text=>{prompt=text;return true;};api.authView={session_id:"auth-session",status:"succeeded"};
+ api.confirm=()=>{throw Error("native confirmation must not open");};api.authView={session_id:"auth-session",status:"succeeded"};
  const ui=await connectionDraft(api);await ui.el("connection-logout").emit("click");
- assert.match(prompt,/个人助手/);assert.match(prompt,/不等于取消应用/);
+ assert.equal(ui.el("connection-auth-confirmation").hidden,false);
+ assert.match(ui.el("connection-auth-confirmation-description").textContent,/不等于取消应用/);
+ assert.equal(ui.el("connection-references-title").textContent,"引用房间 · 1");
+ assert.equal(ui.el("connection-reference-list").children[0].children.at(-1).children[0].children[0].textContent,"个人助手");
+ assert.equal(api.calls.some(c=>c.path.endsWith("/lark/logout")),false);
+ await ui.el("connection-auth-confirm").emit("click");
  const body=api.calls.find(x=>x.path==="/v1/platform/connections/lark/logout").body;
  assert.deepEqual(body.affected,[{id:"lark-connection",version:1,referenced_rooms:[{room_id:"A",room_instance:"instance-A"}]}]);
  assert.match(ui.el("connections-feedback").textContent,/已退出.*授权管理/);
+});
+test("Lark shares the grouped impact panel through confirmation and active authorization",async()=>{
+ const api=fixture();api.confirm=()=>{throw Error("native confirmation must not open");};
+ api.connections[0].cli_profile={version:1,executable:"/fixture/lark-cli",profile:"explicit",brand:"feishu",cli_version:"1.0.99"};
+ api.connections[0].references=[{room_id:"A",room_instance:"instance-A",name:"个人助手",pending:true}];
+ api.connections.push({...api.connections[0],id:"shared",name:"共享应用",references:[{room_id:"A",room_instance:"instance-A",name:"个人助手"},{room_id:"B",room_instance:"instance-B",name:"评审房间"}]});
+ const ui=await connectionDraft(api);
+ await ui.el("connection-login").emit("click");
+ assert.equal(ui.el("connection-auth-confirmation").hidden,false);
+ assert.equal(ui.el("connection-references").dataset.impact,"true");
+ assert.equal(ui.el("connection-references-title").textContent,"引用房间 · 2");
+ assert.equal(ui.el("connection-reference-list").children.length,2);
+ assert.equal(ui.el("connection-reference-list").children[1].children[0].textContent,"共享应用");
+ assert.equal(ui.el("connection-reference-list").children[0].children.at(-1).children[0].children[1].textContent,"待完成绑定");
+ assert.equal(ui.el("connection-save").disabled,true);
+ await ui.el("connection-form").emit("submit");assert.equal(api.calls.some(c=>c.path.endsWith("/save")),false);
+ await ui.el("connection-auth-confirm").emit("click");
+ assert.equal(ui.el("connection-auth-confirmation").hidden,true);
+ assert.equal(ui.el("connection-references").dataset.impact,"true");
+ assert.equal(ui.el("connection-references-title").textContent,"引用房间 · 2");
+ assert.equal(ui.el("connection-login-panel").hidden,false);
+ assert.equal(ui.el("connection-login-cancel").hidden,false);
+ assert.equal(ui.el("connection-login").disabled,true);
+ await ui.el("connection-login-cancel").emit("click");
+ assert.equal(ui.el("connection-references").dataset.impact,"false");
+ assert.equal(ui.el("connection-login-panel").hidden,true);
+ assert.equal(api.calls.filter(c=>c.path.endsWith("/lark/login")).length,1);
+});
+test("Lark shows an empty impact panel while processing and clears stale confirmations",async()=>{
+ for(const action of ["cancel","back","close","profile"]){
+  const api=fixture();api.connections[0].cli_profile={version:1,executable:"/fixture/lark-cli",profile:"explicit",brand:"feishu",cli_version:"1.0.99"};
+  api.connections[0].references=[];api.authView={session_id:"auth-session",status:"starting"};
+  const ui=await connectionDraft(api);await ui.el("connection-login").emit("click");
+  assert.equal(ui.el("connection-references-title").textContent,"引用房间 · 0");
+  assert.equal(ui.el("connection-reference-list").children[0].children.at(-1).children[0].textContent,"暂无房间引用");
+  if(action==="cancel"){
+   await ui.el("connection-auth-dismiss").emit("click");
+   assert.equal(ui.el("connection-name").disabled,false);
+   await ui.el("connection-login").emit("click");await ui.el("connection-auth-confirm").emit("click");
+   assert.equal(ui.el("connection-references").dataset.impact,"true");
+   assert.match(ui.el("connection-account").textContent,/正在处理授权/);
+   await ui.el("connection-login-cancel").emit("click");
+   assert.equal(ui.el("connection-references").dataset.impact,"false");
+  }else{
+   if(action==="back")await ui.el("connection-back").emit("click");
+   if(action==="close")await ui.el("close-settings").emit("click");
+   if(action==="profile"){ui.el("connection-profile").value="";await ui.el("connection-profile").emit("change");}
+   assert.equal(ui.el("connection-auth-confirmation").hidden,true);
+   assert.equal(ui.el("connection-name").disabled,false);
+   await ui.el("connection-auth-confirm").emit("click");
+   assert.equal(api.calls.some(c=>c.path.endsWith("/lark/login")),false);
+  }
+ }
 });
 test("a late detection cannot disable or change a newly selected GitLab form",async()=>{
  const api=fixture(),original=api.request;let finish;
@@ -435,6 +493,8 @@ test("L4-C target authorization is explicit and separate from sending and direct
  const api=fixture(),ui=await connectionDraft(api);
  assert.equal(ui.el("connection-target-authorize").hidden,false);
  await ui.el("connection-target-authorize").emit("click");
+ assert.equal(api.calls.some(c=>c.path.endsWith("/authorize-targets")),false);
+ await ui.el("connection-auth-confirm").emit("click");
  const call=api.calls.find(c=>c.path==="/v1/platform/connections/lark/authorize-targets");
  assert.ok(call);assert.equal(call.body.cli_profile.profile,"explicit");
  assert.equal(api.calls.some(c=>c.path==="/v1/platform/connections/lark/authorize-sending"),false);

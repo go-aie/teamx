@@ -91,6 +91,85 @@ func TestScionPATLoginDiscoveryAndIsolation(t *testing.T) {
 		})
 	}
 }
+
+func TestScionLogoutRemovesOnlySelectedManagedProfile(t *testing.T) {
+	root, p, path := profileFixture(t)
+	if err := os.WriteFile(path, []byte(`{"https://scion.invalid":"private-alice-pat"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(root, "scion-profiles", strings.Repeat("b", 32))
+	if err := os.Mkdir(other, 0700); err != nil {
+		t.Fatal(err)
+	}
+	otherFile := filepath.Join(other, "credentials.json")
+	if err := os.WriteFile(otherFile, []byte("unrelated-login"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	// Local logout works even when the CLI executable is no longer installed.
+	if err := os.Remove(p.Executable); err != nil {
+		t.Fatal(err)
+	}
+	if err := Logout(root, origin, p); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Dir(path)); !os.IsNotExist(err) {
+		t.Fatal("selected login survived", err)
+	}
+	if data, err := os.ReadFile(otherFile); err != nil || string(data) != "unrelated-login" {
+		t.Fatal("unrelated login changed", err)
+	}
+	if err := Logout(root, origin, p); err != nil {
+		t.Fatal("local cleanup is not idempotent", err)
+	}
+}
+
+func TestScionLogoutRejectsUnsafeTargets(t *testing.T) {
+	for _, mode := range []string{"parent-symlink", "profile-symlink", "credential-symlink", "permissions", "wrong-origin", "multiple-origins", "invalid-profile"} {
+		t.Run(mode, func(t *testing.T) {
+			root, p, path := profileFixture(t)
+			if mode != "multiple-origins" {
+				if err := os.WriteFile(path, []byte(`{"https://scion.invalid":"private-alice-pat"}`), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			targetOrigin := origin
+			switch mode {
+			case "parent-symlink", "profile-symlink":
+				dir := filepath.Dir(path)
+				if mode == "parent-symlink" {
+					dir = filepath.Dir(dir)
+				}
+				if err := os.Rename(dir, dir+"-original"); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(dir+"-original", dir); err != nil {
+					t.Fatal(err)
+				}
+			case "credential-symlink":
+				if err := os.Rename(path, path+"-original"); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(path+"-original", path); err != nil {
+					t.Fatal(err)
+				}
+			case "permissions":
+				if err := os.Chmod(path, 0644); err != nil {
+					t.Fatal(err)
+				}
+			case "wrong-origin":
+				targetOrigin = "https://other.invalid"
+			case "invalid-profile":
+				p.Profile = "../escape"
+			}
+			if err := Logout(root, targetOrigin, p); err == nil {
+				t.Fatal("unsafe logout accepted")
+			}
+			if _, err := os.Stat(path); err != nil {
+				t.Fatal("rejected logout removed credentials", err)
+			}
+		})
+	}
+}
 func TestScionPATFailuresAndCancelledUnpublishedProfile(t *testing.T) {
 	for _, mode := range []string{"reject", "mismatch", "version", "block"} {
 		t.Run(mode, func(t *testing.T) {

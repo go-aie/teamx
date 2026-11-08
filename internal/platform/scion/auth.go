@@ -200,3 +200,52 @@ func Login(ctx context.Context, root, origin, executable, id string, pat platfor
 	completed = true
 	return profile, validation, nil
 }
+
+// Logout removes only a TeamX-managed profile. It never invokes the operator's
+// global CLI logout or revokes the PAT on the remote instance. The caller must
+// first invalidate every sharing connection and settle its credential copies.
+func Logout(root, origin string, profile platform.CLIProfile) error {
+	if !ValidProfile(profile) {
+		return failure("invalid_profile")
+	}
+	parent := filepath.Join(root, "scion-profiles")
+	dir := filepath.Join(parent, profile.Profile)
+	for _, path := range []string{parent, dir} {
+		info, err := os.Lstat(path)
+		if os.IsNotExist(err) {
+			return nil
+		}
+		if err != nil || !info.IsDir() || info.Mode().Perm() != 0700 {
+			return failure("credential_unavailable")
+		}
+	}
+	path := filepath.Join(dir, "credentials.json")
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		if os.RemoveAll(dir) != nil {
+			return failure("credential_unavailable")
+		}
+		return nil
+	}
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0600 || info.Size() > 1<<20 {
+		return failure("credential_unavailable")
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return failure("credential_unavailable")
+	}
+	defer f.Close()
+	opened, err := f.Stat()
+	if err != nil || !os.SameFile(info, opened) {
+		return failure("credential_unavailable")
+	}
+	data, err := io.ReadAll(io.LimitReader(f, (1<<20)+1))
+	var credentials map[string]string
+	if err != nil || len(data) > 1<<20 || json.Unmarshal(data, &credentials) != nil || len(credentials) != 1 || !platform.ValidCredential(credentials[origin]) {
+		return failure("credential_unavailable")
+	}
+	if os.RemoveAll(dir) != nil {
+		return failure("credential_unavailable")
+	}
+	return nil
+}

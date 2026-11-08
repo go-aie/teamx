@@ -477,11 +477,11 @@ function renderLarkMessages() {
   const connections=ws.larkConnections || [];
   const options=[new Option("请选择连接", ""), ...connections.map(x=>new Option(`${x.name} · ${x.validation?.username || "待验证"}`,x.id))];
   if(c.connection_id && !connections.some(x=>x.id===c.connection_id))options.push(new Option("原连接暂不可用",c.connection_id));
-  setNotificationOptions("lark-connection", options);$("lark-connection").value=c.connection_id || "";
+  setSelectOptions("lark-connection", options, c.connection_id || "");
   const target=JSON.stringify(c.target?.mode === "inbox" ? c.target : {});
   const targets=[new Option("请选择接收成员", "{}"), ...state.members.map(x=>new Option(`${memberRole(x)?.name || x.agent_id} · 收件箱`,JSON.stringify({mode:"inbox",agent_id:x.agent_id,membership_id:x.membership_id})))];
   if(target!=="{}"&&!targets.some(x=>x.value===target))targets.push(new Option("原接收成员已移除",target));
-  setNotificationOptions("lark-target",targets);$("lark-target").value=target;
+  setSelectOptions("lark-target",targets,target);
   if(fresh){
     $("lark-scope").checked=c.scope_mode==="all";$("lark-enabled").checked=!!c.enabled;
     if(c.scope_mode!=="all" || ws.larkSelectionConnection!==c.connection_id)ws.larkSelectedChats=[...(c.chats || [])];
@@ -667,16 +667,26 @@ $("gitlab-events-all-types").addEventListener("change", () => {
 const gitlabTodoReasons = ["mentioned", "assigned", "review_requested", "other"];
 const gitlabTodoTypes = ["merge_request", "work_item"];
 const gitlabTodoErrors = { ...gitlabEventErrors, credential_unavailable: "个人连接凭据不可用，请在平台连接中重新验证。", binding_changed: "账号身份已变化，请核对后显式保存。", scan_incomplete: "补查尚未完成，将按检查周期继续；完整同步时间尚未更新。" };
-function setNotificationOptions(id, options) {
-  const select = $(id), signature = JSON.stringify(options.map(option => [option.value, option.textContent, !!option.disabled]));
+function setSelectOptions(id, options, value) {
+  const select = $(id), selectedValue = value ?? select.value;
+  const signature = JSON.stringify(options.map(option => [option.value, option.textContent, !!option.disabled]));
+  const customizable = globalThis.CSS?.supports?.("appearance", "base-select") && select.closest?.(".notification-settings,.settings-dialog");
   if (select.dataset.options !== signature) {
     const content = [];
     // Keep long selected labels inside the text area of customizable native selects.
-    if (globalThis.CSS?.supports?.("appearance", "base-select") && select.closest?.(".notification-settings")) {
+    if (customizable) {
       const button = document.createElement("button"); button.type = "button";
       button.append(document.createElement("selectedcontent")); content.push(button);
     }
     select.replaceChildren(...content,...options); select.dataset.options = signature;
+  }
+  select.value = selectedValue;
+  if (customizable) {
+    // Options populated while hidden do not always update selectedcontent in
+    // the browser. Keep its visible label in sync without dispatching changes.
+    const syncLabel = () => { const content=select.querySelector("selectedcontent"); if(content) content.textContent=select.selectedOptions[0]?.textContent || ""; };
+    syncLabel();
+    if (!select.dataset.captionBound) { select.addEventListener("change",syncLabel); select.dataset.captionBound="true"; }
   }
 }
 function todoConfig(config) {
@@ -748,7 +758,7 @@ function renderGitLabSettings() {
   $("gitlab-interval").disabled = busy;
   $("gitlab-interval").value = shared.interval_seconds;
   const connectionID = shared.connection_id, options = gitlabConnectionOptions(connectionID, "请选择连接");
-  setNotificationOptions("gitlab-connection", options); $("gitlab-connection").value = connectionID;
+  setSelectOptions("gitlab-connection", options, connectionID);
   const connection = ws?.connections?.find(item => item.id === connectionID);
   $("gitlab-connection").title = connection?.url || "";
   $("gitlab-notification-account").textContent = todoVerified(connection) ? `接收账号：@${connection.validation.username}（ID ${connection.validation.user_id}，已验证）`
@@ -756,7 +766,7 @@ function renderGitLabSettings() {
   $("gitlab-notification-account").hidden = todoVerified(connection) || !$("gitlab-notification-account").textContent;
   const target = JSON.stringify(shared.target), targetOptions = notificationTargetOptions();
   if (!targetOptions.some(option => option.value === target)) targetOptions.push(new Option("原接收成员已失效", target));
-  setNotificationOptions("gitlab-target", targetOptions); $("gitlab-target").value = target;
+  setSelectOptions("gitlab-target", targetOptions, target);
   for (const channel of gitlabChannels) {
     $(`gitlab-${channel}-enabled`).disabled = busy;
     if (gitlabApplyNotice(ws, channel)) $(`gitlab-${channel}-settings`).open = true;
@@ -2822,7 +2832,7 @@ $("dismiss-management").addEventListener("click", () => {
   state.management = null; saveManagement(); state.managementError = ""; void refresh();
 });
 // Application secrets live only in memory and are never retried automatically.
-const connections = { items: [], selected: null, sending: false, generation: 0, formVersion: 0, discovery: null, detecting: false, auth: null, authTimer: null, gitlabAuth: null, gitlabTimer: null, gitlabPending: null, scionDiscovery:null, scionAuth:null, scionTimer:null };
+const connections = { items: [], selected: null, sending: false, generation: 0, formVersion: 0, discovery: null, detecting: false, auth: null, authTimer: null, larkPending:null, larkStarting:null, gitlabAuth: null, gitlabTimer: null, gitlabPending: null, scionDiscovery:null, scionAuth:null, scionTimer:null, scionPending:null, scionLogout:null };
 const connectionValidationErrors = { login_failed:"PAT 登录失败，请核对实例、令牌及权限。", timeout:"操作超时，请刷新账号核对结果；不会自动重新登录。", cancelled:"操作已取消，请刷新账号核对状态。", credential_unavailable: "登录凭据不可用，请核对账号授权或服务凭据配置。", credential_rejected: "认证失败，请核对当前账号登录和权限。", identity_mismatch: "profile 账号或应用已变化，请核对后重新验证。", permission_denied: "当前用户缺少读取权限，请检查授权。", cli_version_mismatch: "CLI 版本不匹配，请使用对应工具已验收的固定版本。", cli_unavailable: "CLI 无法执行，请核对路径与后台运行权限。", query_failed: "连接失败，请检查地址或网络后重试验证。", invalid_response: "实例返回了无效的身份信息。" };
 function connectionFeedback(message = "", kind = "status") {
   const feedback = $("connections-feedback");
@@ -2845,6 +2855,7 @@ function connectionAuthFields() {
   clearConnectionErrors();
   connectionFeedback();
   $("connection-validation").hidden=false;
+  $("connection-notes").hidden = isScion || !connections.selected;
   if (isLark || isScion) $("connection-save").textContent = "保存连接";
   $("connection-scion-row").hidden = !isScion;
   $("connection-profile-row").hidden = !isLark;
@@ -2853,37 +2864,76 @@ function connectionAuthFields() {
   $("gitlab-account-row").hidden = isLark || isScion;
   $("connection-name").placeholder = isScion ? "公司 Scion" : isLark ? "我的飞书" : "公司 GitLab";
   $("connection-url").placeholder = isScion ? "https://scion.example.com" : "https://gitlab.example.com";
+  renderScionPATLink();
   if (!isScion) $("connection-scion-pat").value = "";
   if (isLark || isScion) $("gitlab-client-secret").value = "";
   else renderGitLabAccount();
 }
 function connectionIsLark() { return ["feishu", "lark"].includes($("connection-provider").value); }
 function connectionIsScion() { return $("connection-provider").value === "scion"; }
+function renderScionPATLink() {
+  const link = $("connection-scion-pat-link"), origin = $("connection-url").value.trim();
+  let href = "";
+  try {
+    const url = new URL(origin);
+    if (connectionIsScion() && url.protocol === "https:" && !url.username && !url.password &&
+        url.pathname === "/" && !origin.includes("?") && !origin.includes("#") && !/[\s\\]/.test(origin)) {
+      href = new URL("/profile?tab=tokens", url.origin).href;
+    }
+  } catch { /* Wait for a valid instance address. */ }
+  link.href = href;
+  link.hidden = !href;
+}
 function scionProfileDraft() { return {version:1, executable:$("connection-scion-executable").value.trim(), profile:$("connection-scion-profile").value.trim(), brand:"scion", cli_version:"0.1.13"}; }
 function renderScionAccount() {
-  const active = !!connections.scionAuth;
-  for (const id of ["connection-scion-executable", "connection-scion-profile", "connection-scion-detect", "connection-scion-login", "connection-scion-pat"]) $(id).disabled = active || connections.detecting;
-  $("connection-url").readOnly = !!connections.selected || active;
-  $("connection-provider").disabled = !!connections.selected || active;
-  $("connection-scion-cancel").hidden = !active;
-  $("connection-save").disabled = active || connections.detecting;
-  $("connection-verify").disabled = active || connections.detecting;
-  if (active) { $("connection-scion-account").textContent = "正在登录并核验账号…"; return; }
-  if (connections.detecting) { $("connection-scion-account").textContent = "正在检测账号…"; return; }
+  const active = !!connections.scionAuth || !!connections.scionLogout, pending = !!connections.scionPending;
+  for (const id of ["connection-scion-executable", "connection-scion-profile", "connection-scion-detect", "connection-scion-login-open", "connection-scion-login", "connection-scion-login-dismiss", "connection-scion-pat", "connection-scion-logout"]) $(id).disabled = active || pending || connections.detecting || connections.sending;
+  $("connection-scion-login-open").setAttribute("aria-expanded",String(!$("connection-scion-login-panel").hidden));
+  $("connection-scion-login-dismiss").hidden = active;
+  $("connection-url").readOnly = !!connections.selected || active || pending;
+  $("connection-provider").disabled = !!connections.selected || active || pending;
+  $("connection-name").disabled = pending || connections.sending;
+  $("connection-scion-cancel").hidden = !connections.scionAuth;
+  $("connection-save").disabled = active || pending || connections.detecting || connections.sending;
+  $("connection-verify").disabled = active || pending || connections.detecting || connections.sending;
+  $("connection-delete").disabled = active || pending || connections.sending || !!connections.selected?.references?.length;
   const selected = connections.scionDiscovery?.profiles.find(p => p.profile === $("connection-scion-profile").value);
-  $("connection-scion-account").textContent = selected ? `已识别账号 · ${selected.username}` : !$("connection-url").value.trim() ? "填写实例地址后自动检测账号。" : connections.scionDiscovery ? "尚未选择可用账号，可使用 PAT 登录。" : "请刷新账号以完成检测。";
+  $("connection-scion-login-open").textContent = selected ? "重新登录" : "登录";
+  $("connection-scion-logout").hidden = !selected;
+  $("connection-scion-account").title = "";
+  const status = $("connection-scion-status");
+  status.hidden = true; status.textContent = ""; status.title = ""; status.dataset.kind = "status";
+  renderConnectionReferences();
+  if (active) { $("connection-scion-account").textContent = connections.scionLogout ? "正在退出登录…" : "正在登录并核验账号…"; return; }
+  if (connections.detecting) { $("connection-scion-account").textContent = "正在检测账号…"; return; }
+  $("connection-scion-account").textContent = selected ? `已识别账号 · ${selected.username}` : !$("connection-url").value.trim() ? "填写实例地址后自动检测账号。" : connections.scionDiscovery ? connections.scionDiscovery.profiles.length ? "请选择账号，或点击登录。" : "尚未登录，请点击登录。" : "请刷新账号以完成检测。";
+  if (!selected) return;
+  const item = connections.selected, validation = item?.validation;
+  const same = item?.provider === "scion" && JSON.stringify(scionProfileDraft()) === JSON.stringify(item.cli_profile);
+  status.hidden = false;
+  if (!item) status.textContent = "保存连接后自动验证账号。";
+  else if (!same) status.textContent = "账号配置已更改，保存后自动验证。";
+  else if (validation?.status === "valid" && selected.username !== validation.username) {
+    status.textContent = "账号信息已变化，请重新验证。"; status.dataset.kind = "error";
+  } else if (validation?.status === "valid") {
+    $("connection-scion-account").textContent = `已连接 · ${selected.username}`;
+    $("connection-scion-account").title = $("connection-validation").title;
+    status.hidden = true;
+  } else if (validation?.status === "failed") {
+    status.textContent = connectionValidationErrors[validation.error_code] || "验证失败，请重新验证连接。"; status.dataset.kind = "error";
+  } else status.textContent = "尚未验证连接。";
 }
 function scionProfileOptions(data, selected) {
   const users = new Map();
   for (const p of data.profiles) users.set(p.username, (users.get(p.username) || 0) + 1);
   const options = data.profiles.map(p => new Option(users.get(p.username) > 1 ? `${p.username} · ${p.profile.slice(-6)}` : p.username, p.profile));
   if (data.profiles.length !== 1 || selected && !data.profiles.some(p => p.profile === selected)) options.unshift(new Option("选择账号", ""));
-  $("connection-scion-profile").replaceChildren(...options);
-  $("connection-scion-profile").value = data.profiles.some(p => p.profile === selected) ? selected : !selected && data.profiles.length === 1 ? data.profiles[0].profile : "";
-  $("connection-scion-choice").hidden = data.profiles.length <= 1 && (!selected || data.profiles.some(p => p.profile === selected));
+  setSelectOptions("connection-scion-profile", options, data.profiles.some(p => p.profile === selected) ? selected : !selected && data.profiles.length === 1 ? data.profiles[0].profile : "");
+  $("connection-scion-choice").hidden = !data.profiles.length || data.profiles.length === 1 && (!selected || data.profiles.some(p => p.profile === selected));
 }
 async function detectScionConnection() {
   if (!connectionIsScion() || connections.scionAuth) return;
+  clearScionConfirmation();
   const version = ++connections.formVersion, url = $("connection-url").value.trim();
   const selected = $("connection-scion-profile").value;
   connections.scionDiscovery = null;
@@ -2898,13 +2948,14 @@ async function detectScionConnection() {
     connectionFeedback(data.unavailable ? "部分受管登录与当前实例不匹配或无法验证，可刷新或使用 PAT 登录。" : "");
   } catch (error) {
     if (version !== connections.formVersion) return;
+    if (["cli_unavailable", "cli_version_mismatch"].includes(error.code)) $("connection-scion-advanced").open = true;
     connectionFeedback(connectionValidationErrors[error.code] || (error.code === "request" ? "请填写有效的 HTTPS 实例地址和 CLI 路径。" : "账号检测失败，请核对程序或网络后刷新。"), "error");
   } finally {
     if (version === connections.formVersion) { connections.detecting = false; renderScionAccount(); }
   }
 }
 async function startScionLogin() {
-  if (!connectionIsScion() || connections.scionAuth || connections.sending || connections.detecting) return;
+  if (!connectionIsScion() || connections.scionAuth || connections.scionPending || connections.sending || connections.detecting) return;
   const pat = $("connection-scion-pat").value.trim();
   $("connection-scion-pat").value = "";
   if (!pat || !$("connection-url").value.trim()) { connectionFeedback("请填写实例地址和 PAT。", "error"); return; }
@@ -2937,7 +2988,7 @@ async function pollScionAuth() {
       connections.scionDiscovery = data;
       $("connection-scion-executable").value = profile.executable;
       scionProfileOptions(data, profile.profile);
-      $("connection-scion-login-panel").open = false;
+      $("connection-scion-login-panel").hidden = true;
       renderScionAccount(); connectionFeedback(`登录与账号验证成功 · ${result.username}。请保存连接以应用此账号。`, "success");
     } else {
       renderScionAccount(); connectionFeedback(result.status === "cancelled" ? "本次登录已取消。" : connectionValidationErrors[result.error_code] || "PAT 登录失败，请检查实例、令牌及权限。", "error");
@@ -2950,6 +3001,7 @@ async function pollScionAuth() {
 }
 async function cancelScionAuth() {
   const auth = connections.scionAuth;
+  clearScionConfirmation();
   $("connection-scion-pat").value = "";
   clearTimeout(connections.scionTimer);
   if (!auth) return;
@@ -2959,15 +3011,76 @@ async function cancelScionAuth() {
   if (connectionIsScion()) renderScionAccount();
 }
 
+function clearScionConfirmation() {
+  const pending = connections.scionPending;
+  connections.scionPending = null;
+  if (pending) renderScionAccount();
+}
+function confirmScionLogout() {
+  if (!connectionIsScion() || connections.scionAuth || connections.scionPending || connections.sending || connections.detecting) return;
+  const profile = scionProfileDraft(), discovery = connections.scionDiscovery;
+  const selected = discovery?.profiles.find(p => p.profile === profile.profile);
+  if (!selected || discovery.executable !== profile.executable || discovery.origin !== $("connection-url").value.trim()) return;
+  const affected = connections.items.filter(c => c.provider === "scion" && c.cli_profile?.profile === profile.profile);
+  connections.scionPending = {version:connections.formVersion, profile, discovery, action:"logout",
+    title:`退出「${selected.username}」的登录？将停止以上房间中使用此账号的操作。`,
+    description:"将清除本地登录凭据，保留连接配置。平台上的 PAT 仍然有效，可在令牌管理页面撤销。", confirmLabel:"确认退出",
+    affected:affected.map(c => ({id:c.id, version:c.version, referenced_rooms:(c.references || []).map(({room_id,room_instance}) => ({room_id,room_instance}))}))};
+  connectionFeedback(); renderScionAccount(); $("connection-auth-confirm").focus();
+}
+async function logoutScion() {
+  const pending = connections.scionPending;
+  if (!pending || pending.version !== connections.formVersion || !connectionIsScion() || connections.scionAuth || connections.sending || connections.detecting) return;
+  const {version, profile, discovery, affected} = pending;
+  connections.scionLogout = pending;
+  clearScionConfirmation();
+  connections.sending = true; $("connection-fields").disabled = true;
+  $("connection-back").disabled = true; $("close-settings").disabled = true;
+  $("connection-scion-pat").value = "";
+  renderScionAccount(); connectionFeedback("正在退出登录…");
+  try {
+    const result = await request("/v1/platform/connections/scion/logout", connectionPayload({url:discovery.origin, cli_profile:profile, affected}), undefined, 15000);
+    if (version !== connections.formVersion) return;
+    if (result.status !== "succeeded" || !Array.isArray(result.connections)) throw new Error("unconfirmed logout");
+    for (const item of result.connections) updateConnectionItem(item);
+    connections.scionDiscovery = {...discovery, profiles:discovery.profiles.filter(p => p.profile !== profile.profile)};
+    scionProfileOptions(connections.scionDiscovery, profile.profile);
+    $("connection-scion-login-panel").hidden = true;
+    connectionFeedback("已退出登录，连接配置已保留。平台上的 PAT 仍然有效。", "success");
+  } catch (error) {
+    if (version !== connections.formVersion) return;
+    connections.scionDiscovery = null;
+    connectionFeedback(error.code === "conflict" ? "账号或引用已变化，请返回列表重新加载后重试。" : error.code === "busy" ? "操作尚未结清，请刷新账号并核对连接状态后再试。" : "退出结果未确认，请刷新账号并返回列表核对；不会自动重试。", "error");
+  } finally {
+    connections.scionLogout = null;
+    connections.sending = false; $("connection-fields").disabled = false;
+    $("connection-back").disabled = false; $("close-settings").disabled = false;
+    if (version === connections.formVersion) {
+      renderScionAccount();
+      if (connections.scionDiscovery) $("connection-scion-login-open").focus();
+    }
+  }
+}
+
 function renderConnectionReferences() {
   const item = connections.selected;
-  const affected = connectionIsLark() ? null : connections.gitlabPending?.affected || connections.gitlabAuth?.affected;
+  const pending = connectionIsLark() ? connections.larkPending : connectionIsScion() ? connections.scionPending : connections.gitlabPending;
+  const active = connectionIsLark() ? connections.larkStarting || connections.auth : connectionIsScion() ? connections.scionLogout : connections.gitlabAuth;
+  const flow = pending || active, affected = flow?.affected;
   const groups = affected ? affected.map(a => {
     const connection = connections.items.find(c => c.id === a.id);
     return { name: connection?.name || "其他共享连接", references: (a.referenced_rooms || []).map(ref => ({
       ...ref, ...connection?.references?.find(r => r.room_id === ref.room_id && r.room_instance === ref.room_instance),
     })) };
   }) : item ? [{ name: item.name, references: item.references || [] }] : [];
+  if (flow && !groups.length) groups.push({name:"",references:[]});
+  $("connection-auth-confirmation").hidden = !pending;
+  $("connection-auth-confirmation-title").textContent = pending?.title || "";
+  $("connection-auth-confirmation-description").textContent = pending?.description || "";
+  $("connection-auth-confirmation-description").hidden = !pending?.description;
+  $("connection-auth-confirm").textContent = pending?.confirmLabel || "继续登录";
+  $("connection-auth-confirm").classList.toggle("settings-danger-button",pending?.action === "logout");
+  for (const id of ["connection-auth-confirm","connection-auth-dismiss"]) $(id).disabled = connections.sending;
   const count = new Set(groups.flatMap(group => group.references.map(ref => JSON.stringify([ref.room_id, ref.room_instance])))).size;
   $("connection-references").hidden = !groups.length;
   $("connection-references").dataset.impact = String(!!affected);
@@ -3001,7 +3114,6 @@ function renderGitLabAccount() {
   $("gitlab-logout").disabled = active;
   $("gitlab-cancel").hidden = !active;
   $("connection-save").disabled = active || pending;
-  $("gitlab-confirmation").hidden = !pending;
   renderConnectionReferences();
   $("connection-verify").hidden = oauth || !item;
   $("connection-save").textContent = !item ? "登录并保存连接" : "保存连接";
@@ -3039,11 +3151,11 @@ async function startGitLabAuth(action) {
     }
     const affected = prepared.affected || [];
     const target = item ? {id:item.id,version:item.version} : {name:$("connection-name").value.trim(),origin:$("connection-url").value.trim()};
-    pending = { action, version, target, prepared, affected };
+    pending = { action, version, target, prepared, affected,
+      title:action === "logout" ? "退出登录将暂停以上房间的通知。" : "本次登录将暂停以上房间的通知，完成后需手动同步恢复。",
+      confirmLabel:action === "logout" ? "确认退出" : "继续登录" };
     if (affected.length > 1 || affected.some(c=>c.referenced_rooms?.length)) {
       connections.gitlabPending = pending;
-      $("gitlab-confirmation-title").textContent = action === "logout" ? "退出登录将暂停以上房间的通知。" : "本次登录将暂停以上房间的通知，完成后需手动同步恢复。";
-      $("gitlab-confirm").textContent = action === "logout" ? "确认退出" : "继续登录";
       connectionFeedback();
     }
   } catch {
@@ -3051,12 +3163,12 @@ async function startGitLabAuth(action) {
   } finally {
     connections.sending=false;$("connection-fields").disabled=false;$("connection-back").disabled=false;$("close-settings").disabled=false;renderGitLabAccount();
   }
-  if (connections.gitlabPending) $("gitlab-confirm").focus();
+  if (connections.gitlabPending) $("connection-auth-confirm").focus();
   else if (pending) await beginGitLabAuth(pending);
 }
 function clearGitLabConfirmation() {
   connections.gitlabPending = null;
-  $("gitlab-confirmation").hidden = true;
+  renderConnectionReferences();
 }
 async function beginGitLabAuth({action, version, target, prepared, affected}) {
   if (connections.sending || connections.gitlabAuth || version !== connections.formVersion || connectionIsLark()) return;
@@ -3107,11 +3219,16 @@ async function cancelGitLabAuth(keepalive = false) {
 async function cancelConnectionAuth() {await cancelScionAuth();await cancelGitLabAuth();await cancelLarkAuth();}
 $("gitlab-login").addEventListener("click",()=>startGitLabAuth("login"));
 $("gitlab-logout").addEventListener("click",()=>startGitLabAuth("logout"));
-$("gitlab-confirm").addEventListener("click",()=>{if (connections.gitlabPending) return beginGitLabAuth(connections.gitlabPending);});
-$("gitlab-dismiss").addEventListener("click",()=>{
-  const action = connections.gitlabPending?.action;
-  clearGitLabConfirmation();renderGitLabAccount();connectionFeedback("已取消本次操作。");
-  $(action === "logout" ? "gitlab-logout" : "gitlab-login").focus();
+$("connection-auth-confirm").addEventListener("click",()=>{
+  if (connectionIsScion()) return logoutScion();
+  if (connectionIsLark()) { if (connections.larkPending) return beginLarkAuth(connections.larkPending); }
+  else if (connections.gitlabPending) return beginGitLabAuth(connections.gitlabPending);
+});
+$("connection-auth-dismiss").addEventListener("click",()=>{
+  if (connectionIsScion()) {clearScionConfirmation();$("connection-scion-logout").focus();}
+  else if (connectionIsLark()) {const action=connections.larkPending?.action;clearLarkConfirmation();$(larkAuthButton(action)).focus();}
+  else {const action=connections.gitlabPending?.action;clearGitLabConfirmation();renderGitLabAccount();$(action === "logout" ? "gitlab-logout" : "gitlab-login").focus();}
+  connectionFeedback("已取消本次操作。");
 });
 $("gitlab-cancel").addEventListener("click",async()=>{await cancelGitLabAuth();connectionFeedback("已请求取消，请核对连接状态；已提交的授权不会回滚。");});
 $("gitlab-repository-access").addEventListener("change",()=>{
@@ -3148,23 +3265,26 @@ function clearLarkAuthView() {
 }
 function renderLarkAccount() {
   const option = connections.discovery?.profiles.find(p => p.name === $("connection-profile").value);
-  const active = !!connections.auth;
+  const active = !!connections.auth || !!connections.larkStarting, pending = !!connections.larkPending;
   const sendProfile=JSON.stringify(larkProfileDraft());
   if(connections.sendProfile!==sendProfile){connections.sendProfile=sendProfile;$("connection-send-status").textContent="发送未启用；请先检查账号与权限。";}
-  const sendAvailable=connectionIsLark() && !!option?.user && !active && !connections.detecting;
+  const sendAvailable=connectionIsLark() && !!option?.user && !active && !pending && !connections.detecting;
   $("connection-send-check").hidden=!sendAvailable;
   $("connection-send-authorize").hidden=!sendAvailable;
   $("connection-target-authorize").hidden=!sendAvailable;
-  $("connection-send-status").hidden=!connectionIsLark();
-  $("connection-login").hidden = !option || active || connections.detecting;
+  $("connection-send-status").hidden=!connectionIsLark() || active || pending;
+  $("connection-detect").hidden=active;
+  $("connection-notes").hidden=!connections.selected || active || pending;
+  $("connection-login").hidden = !option || connections.detecting;
   $("connection-login").textContent = option?.user ? "重新授权" : `登录${connectionBrand() === "lark" ? "Lark" : "飞书"}`;
-  $("connection-logout").hidden = !option?.user || active || connections.detecting;
-  for (const id of ["connection-profile", "connection-executable", "connection-detect"]) $(id).disabled = active || connections.detecting;
-  $("connection-save").disabled = active || connections.detecting;
-  $("connection-verify").disabled = active || connections.detecting;
-  $("connection-provider").disabled = active || !!connections.selected;
-  $("connection-delete").disabled = active || !!connections.selected?.references?.length;
-  $("connection-login-cancel").hidden = !active;
+  $("connection-logout").hidden = !option?.user || connections.detecting;
+  for (const id of ["connection-profile", "connection-executable", "connection-detect", "connection-login", "connection-logout"]) $(id).disabled = active || pending || connections.detecting;
+  $("connection-name").disabled = active || pending;
+  $("connection-save").disabled = active || pending || connections.detecting;
+  $("connection-verify").disabled = active || pending || connections.detecting;
+  $("connection-provider").disabled = active || pending || !!connections.selected;
+  $("connection-delete").disabled = active || pending || !!connections.selected?.references?.length;
+  $("connection-login-cancel").hidden = !connections.auth;
   $("connection-setup").hidden = !connections.discovery || connections.discovery.profiles.length > 0;
   const executable = $("connection-executable").value || "lark-cli";
   $("connection-setup-command").textContent = `'${executable.replaceAll("'", "'\\''")}' config init --new --brand ${connectionBrand()} --name ${connections.discovery?.setup_profile || `teamx-${connectionBrand()}`}`;
@@ -3173,14 +3293,16 @@ function renderLarkAccount() {
     const same = JSON.stringify(larkProfileDraft()) === JSON.stringify(connections.selected.cli_profile);
     const changedUser = v.status === "valid" && option?.user && option.user !== v.username;
     let label = "尚未验证账号。";
-    if (active) label = same ? "正在认证，原账号验证已失效。" : "正在认证，完成后请保存账号配置。";
+    if (connections.larkStarting) label = "正在发起授权…";
+    else if (active) label = same ? "正在认证，原账号验证已失效。" : "正在认证，完成后请保存账号配置。";
     else if (!same) label = "账号配置已更改，保存后自动验证。";
     else if (changedUser) label = "账号信息已变化，请重新验证。";
     else if (v.status === "valid") label = `已验证 · @${v.username}`;
     $("connection-validation").textContent = label;
     if (active || !same || changedUser || v.status !== "valid") $("connection-validation").title = "";
   }
-  if (active) return;
+  renderConnectionReferences();
+  if (active) {$("connection-account").textContent = (connections.auth || connections.larkStarting).action === "logout" ? "正在退出登录…" : connections.auth?.qrURL ? "等待你完成授权…" : "正在处理授权…"; return;}
   if (connections.detecting) { $("connection-account").textContent = "正在检测账号…"; return; }
   if (!connections.discovery) { $("connection-account").textContent = "暂未检测到 CLI，请在高级设置中核对路径后刷新账号。"; return; }
   if (!connections.discovery.profiles.length) { $("connection-account").textContent = "尚未配置此平台的应用。"; return; }
@@ -3192,6 +3314,7 @@ function renderLarkAccount() {
 }
 async function detectLarkConnection() {
   if (!connectionIsLark() || connections.auth) return;
+  clearLarkConfirmation();
   const version = ++connections.formVersion, brand = connectionBrand();
   const selected = $("connection-profile").value;
   connections.detecting = true; connections.discovery = null; renderLarkAccount();
@@ -3202,8 +3325,7 @@ async function detectLarkConnection() {
     $("connection-executable").value = data.executable;
     const options = data.profiles.map(p => new Option(p.user ? `${p.user} · ${p.name}` : `${p.name}（未登录）`, p.name));
     if (data.profiles.length !== 1 || selected && !data.profiles.some(p => p.name === selected)) options.unshift(new Option("选择应用配置", ""));
-    $("connection-profile").replaceChildren(...options);
-    $("connection-profile").value = data.profiles.some(p => p.name === selected) ? selected : selected ? "" : data.profiles.length === 1 ? data.profiles[0].name : "";
+    setSelectOptions("connection-profile", options, data.profiles.some(p => p.name === selected) ? selected : selected ? "" : data.profiles.length === 1 ? data.profiles[0].name : "");
     $("connection-profile-choice").hidden = data.profiles.length <= 1 && (!selected || data.profiles.some(p => p.name === selected));
     connectionFeedback();
   } catch (error) {
@@ -3215,6 +3337,7 @@ async function detectLarkConnection() {
   }
 }
 async function cancelLarkAuth() {
+  clearLarkConfirmation();
   const auth = connections.auth;
   clearLarkAuthView(); connections.formVersion++;
   if (!auth) return;
@@ -3224,29 +3347,49 @@ async function cancelLarkAuth() {
   catch { connectionFeedback("取消结果未确认，认证最多等待 10 分钟。请刷新账号核对登录状态。", "error"); }
   renderLarkAccount();
 }
+function larkAuthButton(action) {return action === "logout" ? "connection-logout" : action === "authorize-targets" ? "connection-target-authorize" : action === "authorize-sending" ? "connection-send-authorize" : "connection-login";}
+function clearLarkConfirmation() {
+  const pending = connections.larkPending;
+  connections.larkPending = null;
+  if (pending) renderLarkAccount();
+}
 async function startLarkAuth(action) {
-  if (connections.sending || connections.auth || connections.detecting || !connections.discovery) return;
+  if (connections.sending || connections.auth || connections.larkPending || connections.larkStarting || connections.detecting || !connections.discovery) return;
   const profile = larkProfileDraft();
   if (!profile.profile) return;
   const affected = connections.items.filter(c => c.provider === "lark" && c.cli_profile?.profile === profile.profile);
-  const rooms = [...new Set(affected.flatMap(c => (c.references || []).map(ref => ref.name)))];
+  const pending = {action,profile,version:connections.formVersion,
+    affected:affected.map(c => ({id:c.id,version:c.version,referenced_rooms:(c.references || []).map(({room_id,room_instance}) => ({room_id,room_instance}))})),
+    title:action === "logout" ? "退出登录将暂停以上房间的通知。" : "本次授权将暂停以上房间的通知，重新验证为原账号后会自动恢复。",
+    confirmLabel:action === "logout" ? "确认退出" : "继续授权",
+    description:`${action === "authorize-targets" ? "申请目标核验权限，保留读取权限，不启用发送。" : action === "authorize-sending" ? "申请发送权限，保留读取权限。应用连接后生效，每次执行仍需具体授权。" : ""}共享此应用配置的 CLI 和其他工具也会受影响。${action === "logout" ? "退出登录不等于取消应用的全部授权。" : ""}`};
   if (action === "logout" || action === "authorize-sending" || action === "authorize-targets" || affected.length) {
-    const text = `${action === "authorize-targets" ? "为主动消息核验对端／群成员，增量申请 im:chat.members:read，保留读取权限；普通群发言范围沿用已有群信息核验；不申请通讯录搜索权限，不启用发送。" : ""}${action === "authorize-sending" ? "仅增量申请 im:message.send_as_user 和 im:message，保留读取权限。授权后，在成员工具设置中应用连接即可使用已开放的消息能力；每次执行仍需具体授权。" : ""}${action === "logout" ? "退出此应用配置下的全部用户登录？" : "重新授权此应用配置？"}共享此配置的 CLI 和其他工具也会受影响。${rooms.length ? `影响房间：${rooms.join("、")}。` : ""}相关通知将暂停；重新验证为原账号后，仍开启的通知会自动恢复。${action === "logout" ? "退出登录不等于取消应用的全部授权。" : ""}`;
-    if (!window.confirm(text)) return;
+    connections.larkPending = pending;
+    connectionFeedback();renderLarkAccount();$("connection-auth-confirm").focus();
+    return;
   }
-  const version = connections.formVersion;
+  await beginLarkAuth(pending);
+}
+async function beginLarkAuth(pending) {
+  const {action,profile,version,affected} = pending;
+  if (!connectionIsLark() || connections.sending || connections.auth || connections.larkStarting || version !== connections.formVersion) return;
+  connections.larkStarting = pending;
+  clearLarkConfirmation();
   connections.sending = true; $("connection-fields").disabled = true; $("connection-back").disabled = true; $("close-settings").disabled = true;
+  renderLarkAccount();
   connectionFeedback(action === "logout" ? "正在退出登录…" : "正在发起授权…");
   try {
-    const result = await request(`/v1/platform/connections/lark/${action}`, connectionPayload({ cli_profile: profile, affected: affected.map(c => ({ id: c.id, version: c.version, referenced_rooms: (c.references || []).map(({room_id, room_instance}) => ({room_id, room_instance})) })) }), undefined, 40000);
+    const result = await request(`/v1/platform/connections/lark/${action}`, connectionPayload({cli_profile:profile,affected}), undefined, 40000);
     if (version !== connections.formVersion) return;
     for (const c of result.connections || []) updateConnectionItem(c);
-    connections.auth = { session_id: result.session_id, action, profile };
+    connections.auth = {session_id:result.session_id,action,profile,affected};
+    connections.larkStarting = null;
     $("connection-account").textContent = action === "logout" ? "正在退出登录…" : "正在准备授权页面…";
     await pollLarkAuth();
   } catch (error) {
     connectionFeedback(error.code === "conflict" ? "连接或引用范围已变化，请返回列表重新加载。" : error.code === "busy" ? "此配置正在认证或旧查询尚未结束，请稍后刷新账号。" : "认证操作结果未确认，请返回列表并刷新账号核对；不会自动重发。", "error");
   } finally {
+    connections.larkStarting = null;
     connections.sending = false; $("connection-fields").disabled = false; $("connection-back").disabled = false; $("close-settings").disabled = false;
     renderLarkAccount();
   }
@@ -3335,6 +3478,8 @@ async function loadConnections() {
   }
 }
 function showConnectionList() {
+  clearLarkConfirmation();
+  clearScionConfirmation();
   $("connection-scion-pat").value="";
   clearGitLabConfirmation();
   connections.formVersion++; connections.discovery = null; connections.detecting = false; clearLarkAuthView();
@@ -3344,8 +3489,11 @@ function showConnectionList() {
   connectionFeedback();
 }
 function editConnection(item = null) {
+  clearLarkConfirmation();
+  clearScionConfirmation();
   $("connection-scion-pat").value=""; connections.scionDiscovery=null;
-  $("connection-scion-login-panel").open=false;
+  $("connection-scion-login-panel").hidden=true;
+  $("connection-scion-advanced").open=false;
   clearGitLabConfirmation();
   connections.formVersion++; connections.discovery = null; connections.detecting = false; clearLarkAuthView();
   clearConnectionErrors();
@@ -3354,15 +3502,13 @@ function editConnection(item = null) {
   $("connection-form").hidden = false; $("connections-list-view").hidden = true;
   $("connection-title").textContent = item ? "编辑连接" : "新增连接";
   $("connection-name").value = item?.name || "";
-  $("connection-provider").value = item?.provider === "lark" ? item.cli_profile?.brand || "feishu" : item?.provider || "gitlab";
+  setSelectOptions("connection-provider",[new Option("GitLab","gitlab"),new Option("Scion","scion"),new Option("飞书","feishu"),new Option("Lark","lark")],item?.provider === "lark" ? item.cli_profile?.brand || "feishu" : item?.provider || "gitlab");
   $("connection-provider").disabled = !!item;
   $("connection-url").value = item?.url || ""; $("connection-url").readOnly = !!item;
-  $("connection-profile").replaceChildren(new Option("", item?.cli_profile?.profile || ""));
-  $("connection-profile").value = item?.cli_profile?.profile || "";
+  setSelectOptions("connection-profile",[new Option("", item?.cli_profile?.profile || "")],item?.cli_profile?.profile || "");
   $("connection-executable").value = item?.cli_profile?.executable || "";
   $("connection-scion-executable").value = item?.provider === "scion" ? item.cli_profile.executable : "";
-  $("connection-scion-profile").replaceChildren(new Option("", item?.provider === "scion" ? item.cli_profile.profile : ""));
-  $("connection-scion-profile").value = item?.provider === "scion" ? item.cli_profile.profile : "";
+  setSelectOptions("connection-scion-profile",[new Option("", item?.provider === "scion" ? item.cli_profile.profile : "")],item?.provider === "scion" ? item.cli_profile.profile : "");
   $("connection-advanced").open = false;
   $("connection-notes").hidden = !item;
   const v = item?.validation;
@@ -3384,7 +3530,7 @@ function connectionDirty() {
  return !item || $("connection-name").value.trim()!==item.name || (item.provider==="lark" && JSON.stringify(larkProfileDraft())!==JSON.stringify(item.cli_profile)) || (item?.provider==="scion" && JSON.stringify(scionProfileDraft())!==JSON.stringify(item.cli_profile));
 }
 async function connectionAction(action) {
-  if (connections.sending || connections.auth || connections.gitlabAuth || connections.gitlabPending || connections.scionAuth || connections.detecting || !state.catalog) return;
+  if (connections.sending || connections.auth || connections.larkPending || connections.gitlabAuth || connections.gitlabPending || connections.scionAuth || connections.scionPending || connections.detecting || !state.catalog) return;
   const item = connections.selected;
   if (action === "save" && !connectionIsLark() && !connectionIsScion() && !item) return startGitLabAuth("login");
   if (action !== "save" && !item) return;
@@ -3395,7 +3541,7 @@ async function connectionAction(action) {
     clearConnectionErrors();
     payload = { ...payload, name: $("connection-name").value.trim(), provider: connectionIsLark() ? "lark" : connectionIsScion() ? "scion" : "gitlab", url: connectionIsLark() ? connectionOrigin() : $("connection-url").value.trim() };
     if (payload.provider === "scion") {
-      if ($("connection-scion-pat").value) { connectionFeedback("尚有未提交的 PAT，请先点击登录 Scion，再保存连接。", "error"); return; }
+      if ($("connection-scion-pat").value) { connectionFeedback("尚有未提交的 PAT，请先点击「登录」，再保存连接。", "error"); return; }
       const profile = scionProfileDraft();
       if (!connections.scionDiscovery?.profiles.some(p=>p.profile===profile.profile) || connections.scionDiscovery.executable!==profile.executable || connections.scionDiscovery.origin!==payload.url) { connectionFeedback("连接未保存：请刷新账号并选择可用账号，或先使用 PAT 登录。", "error"); return; }
       if (!item || JSON.stringify(profile) !== JSON.stringify(item.cli_profile)) payload.cli_profile = profile;
@@ -3473,12 +3619,15 @@ $("connection-new").addEventListener("click", () => editConnection());
 $("connection-back").addEventListener("click", async () => { if (connections.auth || connections.gitlabAuth || connections.scionAuth) await cancelConnectionAuth(); showConnectionList(); await loadConnections(); });
 $("connections-retry").addEventListener("click", loadConnections);
 $("connection-provider").addEventListener("change", async () => {
+  clearLarkConfirmation();
+  clearScionConfirmation();
   if (connections.scionAuth) await cancelScionAuth();
   $("connection-scion-pat").value=""; connections.scionDiscovery=null;
-  $("connection-scion-profile").replaceChildren();
-  $("connection-scion-login-panel").open=false;
+  setSelectOptions("connection-scion-profile",[],"");
+  $("connection-scion-login-panel").hidden=true;
+  $("connection-scion-advanced").open=false;
   connections.formVersion++; connections.discovery = null; connections.detecting = false;
-  $("connection-profile").replaceChildren();
+  setSelectOptions("connection-profile",[],"");
   if (!connections.selected) {
     $("connection-url").value = connectionIsLark() ? connectionOrigin() : "";
     if (!$("connection-name").value.trim() || ["飞书", "Lark"].includes($("connection-name").value)) $("connection-name").value = connectionIsLark() ? connectionBrand() === "lark" ? "Lark" : "飞书" : "";
@@ -3489,13 +3638,25 @@ $("connection-provider").addEventListener("change", async () => {
   for (const id of ["connection-save", "connection-verify"]) $(id).disabled = false;
 });
 $("connection-scion-executable").addEventListener("change", detectScionConnection);
-$("connection-url").addEventListener("change", () => { if(connectionIsScion()) return detectScionConnection(); });
+$("connection-url").addEventListener("input", renderScionPATLink);
+$("connection-url").addEventListener("change", () => { renderScionPATLink(); if(connectionIsScion()) return detectScionConnection(); });
 $("connection-scion-detect").addEventListener("click", detectScionConnection);
-$("connection-scion-profile").addEventListener("change", () => {connectionFeedback();renderScionAccount();});
+$("connection-scion-profile").addEventListener("change", () => {clearScionConfirmation();connectionFeedback();renderScionAccount();});
 $("connection-scion-login").addEventListener("click", startScionLogin);
+$("connection-scion-login-open").addEventListener("click", () => {
+  if (connections.scionAuth || connections.scionPending || connections.sending || connections.detecting) return;
+  $("connection-scion-login-panel").hidden=false;
+  renderScionAccount();$("connection-scion-pat").focus();
+});
+$("connection-scion-login-dismiss").addEventListener("click", () => {
+  if (connections.scionAuth || connections.sending) return;
+  $("connection-scion-pat").value="";$("connection-scion-login-panel").hidden=true;
+  renderScionAccount();$("connection-scion-login-open").focus();
+});
+$("connection-scion-logout").addEventListener("click", confirmScionLogout);
 $("connection-scion-pat").addEventListener("keydown", event => { if(event.key==="Enter" && !event.isComposing) { event.preventDefault(); if(!event.repeat) return startScionLogin(); } });
 $("connection-scion-cancel").addEventListener("click", async () => {await cancelScionAuth();await detectScionConnection();});
-$("connection-profile").addEventListener("change", () => { connectionFeedback(); renderLarkAccount(); });
+$("connection-profile").addEventListener("change", () => {clearLarkConfirmation();connectionFeedback();renderLarkAccount();});
 $("connection-detect").addEventListener("click", detectLarkConnection);
 $("connection-executable").addEventListener("change", detectLarkConnection);
 $("connection-login").addEventListener("click", () => startLarkAuth("login"));

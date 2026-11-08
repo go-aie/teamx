@@ -1667,21 +1667,21 @@ textarea::placeholder {
 .notification-settings-row { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
 .notification-settings-row > div { min-width:0; }
 .notification-settings { container:notification-settings / inline-size; }
-.notification-settings select { appearance:none; padding-right:36px; background-image:linear-gradient(45deg,transparent 50%,#838a85 50%),linear-gradient(135deg,#838a85 50%,transparent 50%); background-position:right 18px center,right 14px center; background-size:4px 4px; background-repeat:no-repeat; text-overflow:ellipsis; }
+:is(.notification-settings,.settings-dialog) select { appearance:none; padding-right:36px; background-image:linear-gradient(45deg,transparent 50%,#838a85 50%),linear-gradient(135deg,#838a85 50%,transparent 50%); background-position:right 18px center,right 14px center; background-size:4px 4px; background-repeat:no-repeat; text-overflow:ellipsis; }
 @supports (appearance:base-select) {
-  .notification-settings select,.notification-settings select::picker(select) { appearance:base-select; }
-  .notification-settings select { white-space:nowrap; overflow:hidden; }
-  .notification-settings select > button { display:flex; align-items:center; width:100%; min-width:0; padding:0; background:transparent; color:inherit; font:inherit; text-align:start; overflow:hidden; }
-  .notification-settings selectedcontent { display:block; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .notification-settings select::picker-icon { display:none; }
-  .notification-settings select:open { border-color:#9bb6a3; outline:2px solid #a9c6b2; outline-offset:1px; }
-  .notification-settings select::picker(select) { margin-block:4px; padding:4px; max-width:calc(100vw - 24px); max-height:min(280px,60dvh); overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; border:1px solid #d9dfd7; border-radius:8px; background:#fff; color:#252b29; box-shadow:0 6px 22px #17251b1a,0 1px 4px #17251b0a; font:inherit; }
-  .notification-settings option { display:flex; align-items:center; gap:8px; min-height:34px; padding:7px 10px; border-radius:4px; color:inherit; font-size:13px; font-weight:400; line-height:1.5; white-space:normal; overflow-wrap:anywhere; cursor:pointer; }
-  .notification-settings option:enabled:hover { background:#f3f6f1; }
-  .notification-settings option:checked { background:var(--soft); color:var(--accent); font-weight:550; }
-  .notification-settings option:focus-visible { outline:1px solid #a9c6b2; outline-offset:-1px; }
-  .notification-settings option:disabled { color:var(--muted); cursor:default; }
-  .notification-settings option::checkmark { color:var(--accent); font-size:12px; }
+  :is(.notification-settings,.settings-dialog) select,:is(.notification-settings,.settings-dialog) select::picker(select) { appearance:base-select; }
+  :is(.notification-settings,.settings-dialog) select { white-space:nowrap; overflow:hidden; }
+  :is(.notification-settings,.settings-dialog) select > button { display:flex; align-items:center; width:100%; min-width:0; padding:0; background:transparent; color:inherit; font:inherit; text-align:start; overflow:hidden; }
+  :is(.notification-settings,.settings-dialog) selectedcontent { display:block; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  :is(.notification-settings,.settings-dialog) select::picker-icon { display:none; }
+  :is(.notification-settings,.settings-dialog) select:open { border-color:#9bb6a3; outline:2px solid #a9c6b2; outline-offset:1px; }
+  :is(.notification-settings,.settings-dialog) select::picker(select) { width:anchor-size(width); margin-block:4px; padding:4px; max-width:calc(100vw - 24px); max-height:min(280px,60dvh); overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; border:1px solid #d9dfd7; border-radius:8px; background:#fff; color:#252b29; box-shadow:0 6px 22px #17251b1a,0 1px 4px #17251b0a; font:inherit; }
+  :is(.notification-settings,.settings-dialog) option { display:flex; align-items:center; gap:8px; min-height:34px; padding:7px 10px; border-radius:4px; color:inherit; font-size:13px; font-weight:400; line-height:1.5; white-space:normal; overflow-wrap:anywhere; cursor:pointer; }
+  :is(.notification-settings,.settings-dialog) option:enabled:hover { background:#f3f6f1; }
+  :is(.notification-settings,.settings-dialog) option:checked { background:var(--soft); color:var(--accent); font-weight:550; }
+  :is(.notification-settings,.settings-dialog) option:focus-visible { outline:1px solid #a9c6b2; outline-offset:-1px; }
+  :is(.notification-settings,.settings-dialog) option:disabled { color:var(--muted); cursor:default; }
+  :is(.notification-settings,.settings-dialog) option::checkmark { color:var(--accent); font-size:12px; }
 }
 .lark-conversation-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:12px 0 6px; font-weight:550; }
 .notification-settings .lark-conversation-heading .workspace-check { margin:0; min-height:28px; font-weight:400; white-space:nowrap; }
@@ -1778,10 +1778,22 @@ textarea::placeholder {
 .connection-field { min-width:0; }
 .connection-field-wide { grid-column:1 / -1; }
 .settings-dialog .connection-field label { margin:0 0 7px; font-size:12px; }
+.connection-pat-heading { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:0 12px; }
+.connection-pat-heading a { margin-bottom:7px; color:var(--accent); font-size:12px; }
+.connection-pat-heading a:hover { text-decoration:underline; }
+.scion-account-status { margin:-4px 0 10px; line-height:1.6; }
+.scion-account-status[data-kind="error"] { color:#9c4b43; }
+#connection-scion-choice { margin-bottom:12px; }
+.scion-login-panel { margin-top:14px; }
+.scion-login-panel > .quiet { margin:8px 0 12px; }
+#connection-scion-advanced { margin-top:16px; padding-top:12px; }
 .connection-notes { margin-top:-4px; }
 .connection-notes p { margin:4px 0 0; overflow-wrap:anywhere; }
 .connection-credential-hint { margin:6px 0 0; }
 .connection-account { margin:0 0 10px; line-height:1.6; font-size:13px; }
+.connection-account-summary { display:flex; align-items:center; gap:6px; margin-bottom:10px; min-width:0; }
+.connection-account-summary .connection-account { margin:0; min-width:0; overflow-wrap:anywhere; }
+.connection-account-refresh { width:28px; height:28px; padding:5px; }
 .connection-account-actions { display:flex; align-items:center; flex-wrap:wrap; gap:16px; }
 .connection-references { padding:12px 16px; border-left:2px solid transparent; }
 .connection-references[data-impact="true"] { border-left-color:var(--accent); background:var(--soft); }
@@ -1794,9 +1806,9 @@ textarea::placeholder {
 .connection-reference-group li { display:flex; align-items:baseline; gap:8px; padding:4px 0; font-size:12px; line-height:1.6; overflow-wrap:anywhere; }
 .connection-reference-group li > span { min-width:0; flex:1; }
 .connection-reference-group small { flex-shrink:0; color:var(--muted); font-size:11px; }
-.gitlab-confirmation { margin-top:10px; padding-top:10px; border-top:1px solid var(--line); }
-.gitlab-confirmation p { margin:6px 0; font-size:12px; line-height:1.7; overflow-wrap:anywhere; }
-.gitlab-confirmation .connection-account-actions { margin-top:12px; }
+.connection-confirmation { margin-top:10px; padding-top:10px; border-top:1px solid var(--line); }
+.connection-confirmation p { margin:6px 0; font-size:12px; line-height:1.7; overflow-wrap:anywhere; }
+.connection-confirmation .connection-account-actions { margin-top:12px; }
 #connection-profile-choice { margin-bottom:16px; }
 .connection-advanced { margin-top:20px; padding-top:14px; border-top:1px solid var(--line); }
 .connection-advanced summary { color:var(--muted); font-size:12px; cursor:pointer; }
