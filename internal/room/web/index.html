@@ -11,19 +11,20 @@
 <body>
   <main id="workspace" class="workspace">
     <aside id="room-rail" class="room-rail" aria-label="房间导航" hidden>
+      <div id="room-resizer" class="sidebar-resizer room-resizer" role="separator" tabindex="0" aria-label="调整左侧栏宽度" aria-orientation="vertical" aria-controls="room-rail" title="左右拖动调整宽度"></div>
       <header class="rail-header room-rail-header">
         <a id="room-brand" class="brand" href="/" aria-label="TeamX 首页"><span class="brand-mark">t<span>×</span></span>TeamX</a>
         <button id="toggle-rooms" class="panel-toggle" type="button" aria-label="收起房间侧栏" title="收起房间侧栏" aria-controls="room-nav" aria-expanded="true" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><rect class="panel-fill" x="3.8" y="4.8" width="4.4" height="14.4"/><path d="M9 4v16"/></svg></button>
       </header>
       <nav id="room-nav" class="room-nav" aria-label="房间列表" hidden>
-        <div class="room-nav-heading"><h2>房间</h2><button id="new-room" class="icon-button" type="button" aria-label="新建房间" disabled>＋</button></div>
-        <p id="rooms-empty" class="quiet" hidden>还没有房间。新建房间，开始第一个任务。</p>
+        <div class="room-nav-heading"><h2>房间</h2><button id="new-room" class="add-button" type="button" aria-label="新建房间" title="新建房间" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
+        <p id="rooms-empty" class="quiet" hidden>还没有房间。点击右上角 ＋，开始第一个任务。</p>
         <div id="room-list"></div>
         <div id="management-notice" class="management-notice" role="status" hidden></div>
         <button id="retry-management" class="text-button" type="button" hidden>核对并重试</button>
         <button id="dismiss-management" class="text-button" type="button" hidden>保留房间，结束本次操作</button>
       </nav>
-      <footer class="rail-settings"><button id="open-settings" type="button" aria-label="设置 · 平台连接" title="设置 · 平台连接" aria-haspopup="dialog" aria-controls="settings-dialog"><span aria-hidden="true">⚙</span><span class="settings-label">设置</span></button></footer>
+      <footer class="rail-settings"><button id="open-settings" type="button" aria-label="设置 · 平台连接" title="设置 · 平台连接" aria-haspopup="dialog" aria-controls="settings-dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37a1.724 1.724 0 0 0 2.572-1.065Z"/><circle cx="12" cy="12" r="3"/></svg><span class="settings-label">设置</span></button></footer>
     </aside>
     <section class="conversation" aria-label="房间消息">
       <header id="room-header" class="room-header">
@@ -92,11 +93,11 @@
       <footer class="room-footer"><span id="connection" class="connection" role="status">正在连接</span><span>仅显式发言进入房间，Agent 的普通输出保持私有。</span></footer>
     </section>
     <aside id="member-rail" class="member-rail" aria-label="团队成员、通知源与详情">
-      <div id="member-resizer" class="member-resizer" role="separator" tabindex="0" aria-label="调整右侧栏宽度" aria-orientation="vertical" aria-controls="member-rail" title="左右拖动调整宽度"></div>
+      <div id="member-resizer" class="sidebar-resizer member-resizer" role="separator" tabindex="0" aria-label="调整右侧栏宽度" aria-orientation="vertical" aria-controls="member-rail" title="左右拖动调整宽度"></div>
       <div id="member-list-view" class="member-list-view">
         <header class="rail-header member-rail-header">
           <h2>团队成员 <span id="member-count">0</span></h2>
-          <div class="member-rail-actions"><button id="toggle-add" class="icon-button" aria-label="添加成员" aria-expanded="false" aria-controls="add-form">＋</button></div>
+          <div class="member-rail-actions"><button id="toggle-add" class="add-button" type="button" aria-label="添加成员" title="添加成员" aria-expanded="false" aria-controls="add-form"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
         </header>
         <div id="member-sidebar" class="sidebar" aria-label="成员与通知源">
           <form id="add-form" class="add-form" hidden>
@@ -321,20 +322,20 @@
               <p id="policy-status" role="status" aria-live="polite" title="未确认的建议不生效；具体操作取决于规则内容和可用能力。"></p>
               <button id="policy-reload" type="button" aria-label="刷新长期规则" title="刷新规则"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15.4-6.4L21 8M21 3v5h-5M21 12a9 9 0 0 1-15.4 6.4L3 16M3 21v-5h5"/></svg></button>
             </div>
-            <div class="member-actions"><button id="policy-new" type="button">新增规则</button></div>
+            <div class="member-actions"><button id="policy-new" class="add-button" type="button" aria-label="新增规则" title="新增规则"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
           </div>
-          <p class="quiet policy-intro">在 Room 中告诉 Agent 要记住的要求，也可在此管理。</p>
+          <p id="policy-empty" class="quiet policy-empty" hidden>可以在 Room 中告诉 Agent 今后应如何处理。</p>
           <div id="policy-entries"></div>
           <form id="policy-form" class="policy-form" hidden>
             <h3 id="policy-editor-title">新增长期规则</h3>
-            <label>内容<textarea id="policy-text" rows="4" maxlength="32768" placeholder="例如：AgenticHub 产品负责人是 huayi；涉及交付时间先问我" required></textarea></label>
+            <label>内容<textarea id="policy-text" rows="4" maxlength="32768" placeholder="例如：涉及交付时间，先向我确认。" aria-describedby="policy-save-hint" required></textarea></label>
             <label>有效期（可选）<input id="policy-expires" type="datetime-local" aria-describedby="policy-expires-hint" /><span id="policy-expires-hint" class="policy-field-hint">留空则不设到期时间。</span></label>
-            <p id="policy-save-hint" class="policy-form-note">把适用情况、处理要求、授权和例外写在正文中。有效表示规则进入 Agent 上下文，不表示允许所有操作。</p>
+            <p id="policy-save-hint" class="policy-form-note">写清适用情况、处理要求和例外；涉及授权时注明范围。</p>
             <div class="member-actions policy-form-actions"><button id="policy-save" type="submit">保存并生效</button><button id="policy-suggest" type="button">保存为建议</button><button id="policy-cancel" type="button">取消</button></div>
           </form>
           <details id="policy-followups" class="policy-followups">
             <summary>跟进记录</summary>
-            <p class="quiet">这些记录供 Agent 持续办理。需要你决定时，Agent 会在 Room 中询问；「待处理」不表示需要你操作。</p>
+            <p class="quiet">Agent 会持续跟进；需要你决定时，会在 Room 中询问。</p>
             <div class="policy-followups-toolbar">
               <p id="followups-status" class="quiet" role="status" aria-live="polite"></p>
               <div class="member-actions"><label><input id="followups-history" type="checkbox" /> 包含已完成记录</label><button id="followups-all" type="button" hidden>全部对象</button><button id="followups-reload" type="button">刷新记录</button></div>
@@ -405,13 +406,13 @@
     <section id="connections-list-view" class="connections-content">
       <div class="connections-heading">
         <h3>已保存的连接</h3>
-        <button id="connection-new" class="primary" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>新增连接</button>
+        <button id="connection-new" class="add-button" type="button" aria-label="新增连接" title="新增连接"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
       </div>
       <div id="connections-list" aria-label="平台连接列表"></div>
       <div id="connections-empty" class="connections-empty" hidden>
         <div class="connections-empty-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m10 13 4-4M8 15l-1 1a3.5 3.5 0 0 1-5-5l4-4a3.5 3.5 0 0 1 5 0M16 9l1-1a3.5 3.5 0 0 1 5 5l-4 4a3.5 3.5 0 0 1-5 0" transform="translate(0 -1)"/></svg></div>
         <h3>还没有平台连接</h3>
-        <p>添加连接后，可在房间中用于 Workspace、通知和房间工具。</p>
+        <p>点击右上角 ＋ 添加连接，用于 Workspace、通知和房间工具。</p>
       </div>
       <div id="connections-load-error" class="connections-load-error" hidden>
         <p class="quiet" role="status">连接列表加载失败，请重试。</p>

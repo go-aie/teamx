@@ -264,7 +264,7 @@ test("room list displays and sorts by last message time, with creation time for 
   api.history.set("A", [{ ...message(1, "MR closed"), created_at: a.last_message_at }]);
   api.history.set("Empty", []);
   const ui = await launch(api);
-  const format = value => "运行中 · " + new Date(value).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const format = value => "运行中 · 11/01 " + new Date(value).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
   const list = () => ui.el("room-list").children.map(row => row.children[0]);
   assert.deepEqual(list().map(button => button.children[0].textContent), ["B", "A", "Empty"]);
   assert.equal(list()[1].children[1].textContent, format(a.last_message_at));
@@ -279,6 +279,29 @@ test("room list displays and sorts by last message time, with creation time for 
   await ui.refresh();
   assert.deepEqual(list().map(button => button.children[0].textContent), ["A", "B", "Empty"]);
   assert.equal(list()[0].children[1].textContent, format(a.last_message_at));
+});
+
+test("settings and room creation dismiss only when the pointer starts and clicks outside the dialog", async () => {
+  const api = server(), ui = await launch(api);
+  for (const [opener, id] of [["open-settings", "settings-dialog"], ["new-room", "create-dialog"]]) {
+    await ui.el(opener).emit("click");
+    const dialog = ui.el(id);
+    dialog.rect = { left: 100, top: 100, right: 500, bottom: 500 };
+    const inside = { clientX: 200, clientY: 200 }, outside = { clientX: 20, clientY: 20 };
+    const gesture = async (down, click, button = 0) => {
+      await dialog.emit("pointerdown", { ...down, button });
+      await dialog.emit("click", click);
+    };
+    await gesture(inside, inside); assert.equal(dialog.open, true);
+    await gesture(inside, outside); assert.equal(dialog.open, true);
+    await gesture(outside, inside); assert.equal(dialog.open, true);
+    await gesture(outside, outside, 2); assert.equal(dialog.open, true);
+    await dialog.emit("pointerdown", { ...outside, button: 0 });
+    await dialog.emit("pointercancel"); await dialog.emit("click", outside);
+    assert.equal(dialog.open, true);
+    await gesture(outside, outside); assert.equal(dialog.open, false);
+  }
+  assert.equal(api.calls.some(call => /\/v1\/rooms\/(create|delete)|connections\/(save|delete)/.test(call.path)), false);
 });
 
 test("empty catalog -> create -> A/B/A retains history, draft and quote; opening is never sent", async () => {
@@ -684,12 +707,13 @@ test("shared sidebar drag resizing clamps width, persists it and supports keyboa
   const api = server([makeRoom("A")]), ui = await launch(api);
   const handle = ui.el("member-resizer"), workspace = ui.el("workspace"), rail = ui.el("member-rail");
   rail.clientWidth = 320;
+  workspace.style.setProperty("--members-open-width", "320px");
   rail.getBoundingClientRect = () => ({ width: Number.parseFloat(workspace.style.getPropertyValue("--members-open-width")) || rail.clientWidth });
   const calls = api.calls.length;
   await handle.emit("pointerdown", { button: 0, pointerId: 1, clientX: 1000 });
   assert.equal(handle.hasPointerCapture(1), true); assert.equal(workspace.classList.contains("resizing-members"), true);
   await handle.emit("pointermove", { pointerId: 2, clientX: 0 });
-  assert.equal(workspace.style.getPropertyValue("--members-open-width"), "");
+  assert.equal(workspace.style.getPropertyValue("--members-open-width"), "320px");
   await handle.emit("pointermove", { pointerId: 1, clientX: 820 });
   assert.equal(workspace.style.getPropertyValue("--members-open-width"), "500px");
   assert.equal(handle.attributes["aria-valuenow"], "500");
@@ -700,7 +724,7 @@ test("shared sidebar drag resizing clamps width, persists it and supports keyboa
   assert.equal(reload.el("workspace").style.getPropertyValue("--members-open-width"), "500px");
   const afterReloadCalls = api.calls.length;
   workspace.clientWidth = 800; await ui.window.emit("resize");
-  assert.equal(workspace.style.getPropertyValue("--members-open-width"), "340px");
+  assert.equal(workspace.style.getPropertyValue("--members-open-width"), "220px");
   workspace.clientWidth = 1440; await ui.window.emit("resize");
   assert.equal(workspace.style.getPropertyValue("--members-open-width"), "500px");
   await handle.emit("pointerdown", { button: 0, pointerId: 3, clientX: 1000 });
@@ -721,6 +745,38 @@ test("shared sidebar drag resizing clamps width, persists it and supports keyboa
   ui.window.innerWidth = 390;
   await handle.emit("pointerdown", { button: 0, pointerId: 4, clientX: 300 });
   assert.equal(handle.hasPointerCapture(4), false);
+  assert.equal(api.calls.length, afterReloadCalls);
+});
+
+test("left sidebar resizing persists, shares the message-space budget, and preserves preferences on narrow windows", async () => {
+  const api = server([makeRoom("A")]), ui = await launch(api);
+  const workspace = ui.el("workspace"), handle = ui.el("room-resizer");
+  await handle.emit("pointerdown", { button: 0, pointerId: 10, clientX: 240 });
+  await handle.emit("pointermove", { pointerId: 11, clientX: 1000 });
+  assert.equal(workspace.style.getPropertyValue("--rooms-open-width"), "240px");
+  await handle.emit("pointermove", { pointerId: 10, clientX: 320 });
+  await handle.emit("lostpointercapture", { pointerId: 10 });
+  assert.equal(workspace.style.getPropertyValue("--rooms-open-width"), "320px");
+  assert.equal(workspace.classList.contains("resizing-rooms"), false);
+  assert.equal(JSON.parse(ui.saved.get("teamx.room-panels")).roomWidth, 320);
+  const reload = await launch(api, ui.saved);
+  assert.equal(reload.el("workspace").style.getPropertyValue("--rooms-open-width"), "320px");
+  const afterReloadCalls = api.calls.length;
+  workspace.clientWidth = 800; await ui.window.emit("resize");
+  assert.equal(workspace.style.getPropertyValue("--rooms-open-width"), "200px");
+  assert.equal(workspace.style.getPropertyValue("--members-open-width"), "220px");
+  assert.equal(JSON.parse(ui.saved.get("teamx.room-panels")).roomWidth, 320);
+  workspace.clientWidth = 1440; await ui.window.emit("resize");
+  assert.equal(workspace.style.getPropertyValue("--rooms-open-width"), "320px");
+  await handle.emit("keydown", { key: "Home" });
+  assert.equal(workspace.style.getPropertyValue("--rooms-open-width"), "200px");
+  await handle.emit("keydown", { key: "ArrowRight" });
+  assert.equal(workspace.style.getPropertyValue("--rooms-open-width"), "220px");
+  await handle.emit("keydown", { key: "End" });
+  assert.equal(workspace.style.getPropertyValue("--rooms-open-width"), "360px");
+  await ui.el("toggle-rooms").emit("click");
+  await handle.emit("pointerdown", { button: 0, pointerId: 12, clientX: 52 });
+  assert.equal(handle.hasPointerCapture(12), false);
   assert.equal(api.calls.length, afterReloadCalls);
 });
 
@@ -882,6 +938,10 @@ test("activity follows appended spans and growing replies, pauses while reading 
 
 test("deletion requires confirmation and removes the active view and draft while preserving another Room", async () => {
   const api = server([makeRoom("A"), makeRoom("B")]), ui = await launch(api);
+  const remove = ui.el("room-list").children[0].children[1];
+  assert.equal(remove.textContent, "");
+  assert.equal(remove.children[0].tag, "svg");
+  assert.equal(remove.attributes["aria-label"], "删除房间「A」");
   await ui.draft("private A draft");
   let confirmation;
   api.confirm = text => { confirmation = text; return false; };
@@ -1329,6 +1389,9 @@ test("connection save returns only after confirmation and a late list read canno
   assert.equal(ui.el("connection-form").hidden, false);
   assert.equal(ui.el("connections-list-view").hidden, true);
   assert.equal(ui.el("connection-fields").disabled, true);
+  const dialog = ui.el("settings-dialog"), outside = { button: 0, clientX: -10, clientY: -10 };
+  await dialog.emit("pointerdown", outside); await dialog.emit("click", outside);
+  assert.equal(dialog.open, true);
   finishSave({ id: "a".repeat(32), name: "Confirmed GitLab", provider: "gitlab", url: "https://gitlab.invalid", version: 1, credential_kind: "oauth", credential_configured: true, validation: { status: "unverified" } });
   await saving;
   assert.equal(ui.el("connection-form").hidden, true);
@@ -1963,8 +2026,12 @@ test("natural-language policy settings distinguish suggestions and never run mem
  const ui=await launch(api);await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();
  await ui.el("agent-tab-policy").emit("click");await settle();
  assert.equal(ui.el("policy-member-view").hidden,false);
+ assert.equal(ui.el("policy-empty").hidden,false);
+ await ui.el("policy-new").emit("click");assert.equal(ui.el("policy-empty").hidden,true);
+ await ui.el("policy-cancel").emit("click");assert.equal(ui.el("policy-empty").hidden,false);
  await ui.el("policy-new").emit("click");ui.el("policy-text").value="简短中文回复";
  await ui.el("policy-suggest").emit("click");await settle();
+ assert.equal(ui.el("policy-empty").hidden,true);
  assert.match(elementText(ui.el("policy-entries").children[0].children[0]),/建议.*未生效/);
  await ui.el("policy-entries").children[0].children[0].children[1].children[0].emit("click");await ui.el("policy-form").emit("submit");await settle();
  assert.match(elementText(ui.el("policy-entries").children[0].children[0]),/有效/);
@@ -2119,7 +2186,7 @@ test("followup inspection ignores a closed panel's response and resets on tab re
   }
  };
  const ui=await launch(api);await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();await ui.el("agent-tab-policy").emit("click");await settle();
- assert.match(elementText(ui.el("policy-entries")),/尚未保存长期规则/);assert.equal(listCalls,0);
+ assert.equal(ui.el("policy-entries").children.length,0);assert.equal(ui.el("policy-empty").hidden,false);assert.equal(listCalls,0);
  await expandDisclosure(ui.el("policy-followups"));
  ui.el("policy-followups").open=false;await ui.el("policy-followups").emit("toggle");finish();await settle();
  assert.equal(ui.el("policy-matters").children.length,0);assert.equal(ui.el("followups-status").textContent,"");

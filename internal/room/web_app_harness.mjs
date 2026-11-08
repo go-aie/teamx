@@ -66,8 +66,12 @@ export async function launch(api, saved = new Map()) {
   }
   elements.get("lark-scope").tag = "input";
   const workspace = elements.get("workspace"); workspace.clientWidth = 1440;
-  elements.get("room-rail").clientWidth = 220;
+  elements.get("room-rail").clientWidth = 240;
+  for (const [rail, side, fallback] of [["room-rail", "rooms", 240], ["member-rail", "members", 340]]) {
+    elements.get(rail).getBoundingClientRect = () => ({ width: Number.parseFloat(workspace.style.getPropertyValue(`--${side}-open-width`)) || fallback });
+  }
   const window = new Element("window"); window.innerWidth = 1440; window.innerHeight = 900;
+  window.getComputedStyle = () => ({ getPropertyValue: name => name === "--rooms-default-width" ? "240px" : "340px" });
   window.confirm = text => api.confirm ? api.confirm(text) : true;
   window.open = () => null; // Default to a blocked popup; UI retains its explicit link.
   const document = Object.assign(new Element("document"), { hidden: false, focused: true, title: "", hasFocus() { return this.focused; },
@@ -77,7 +81,7 @@ export async function launch(api, saved = new Map()) {
       const dynamic = [...elements.values()].map(find).find(Boolean);
       assert.ok(dynamic, `unknown HTML id ${id}`); return dynamic;
     },
-    createElement: tag => new Element(tag), createDocumentFragment: () => new Element("fragment"),
+    createElement: tag => new Element(tag), createElementNS: (_, tag) => new Element(tag), createDocumentFragment: () => new Element("fragment"),
     querySelector: selector => selector === "dialog:modal" ? [...elements.values()].find(el => el.open && el.modal) || null : workspace,
     querySelectorAll: () => [] });
   const storage = { getItem: key => saved.get(key) || null, setItem: (key, value) => saved.set(key, value), removeItem: key => saved.delete(key) };

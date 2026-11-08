@@ -30,12 +30,12 @@ function selectRoom(room) {
   selectWorkspace(room, state.catalog?.operator || state.operator);
 }
 const panelsKey = "teamx.room-panels";
-const panels = { rooms: true, members: true, memberWidth: null };
-let memberResize = null;
+const panels = { rooms: true, members: true, roomWidth: null, memberWidth: null };
+let sidebarResize = null;
 try {
   const saved = JSON.parse(storage?.getItem(panelsKey));
   for (const side of ["rooms", "members"]) if (typeof saved?.[side] === "boolean") panels[side] = saved[side];
-  if (Number.isFinite(saved?.memberWidth) && saved.memberWidth > 0) panels.memberWidth = saved.memberWidth;
+  for (const key of ["roomWidth", "memberWidth"]) if (Number.isFinite(saved?.[key]) && saved[key] > 0) panels[key] = saved[key];
 } catch { /* Sidebars remain usable when tab storage is unavailable. */ }
 
 // Workspace state is scoped to a Room instance + operator, independent of the
@@ -1145,28 +1145,54 @@ function savePanels() {
   try { storage?.setItem(panelsKey, JSON.stringify(panels)); } catch { /* Keep this page's selection in memory. */ }
 }
 
-function memberWidthLimits() {
-  const available = $("workspace").clientWidth - (state.managed ? $("room-rail").getBoundingClientRect().width : 0);
-  const max = Math.max(180, Math.min(720, available - 240));
-  return { min: Math.min(220, max), max };
+const sidebarConfig = {
+  rooms: { rail: "room-rail", handle: "room-resizer", key: "roomWidth", min: 200, max: 360 },
+  members: { rail: "member-rail", handle: "member-resizer", key: "memberWidth", min: 220, max: 720 },
+};
+function sidebarBudget() {
+  const rooms = state.managed ? (panels.rooms ? 200 : 52) : 0;
+  const members = panels.members ? 220 : 0;
+  const total = $("workspace").clientWidth;
+  // Preserve 480px for messages where space permits; both sidebars retain their minimums on small desktops.
+  return total - Math.min(480, Math.max(0, total - rooms - members));
 }
-
-function applyMemberWidth() {
-  const limits = memberWidthLimits();
-  let width = $("member-rail").getBoundingClientRect().width;
-  if (Number.isFinite(panels.memberWidth)) {
-    width = Math.max(limits.min, Math.min(limits.max, panels.memberWidth));
-    $("workspace").style.setProperty("--members-open-width", `${width}px`);
+function sidebarWidthLimits(side) {
+  const config = sidebarConfig[side], other = side === "rooms" ? "members" : "rooms";
+  const otherWidth = other === "rooms" && !state.managed ? 0 : !panels[other] ? (other === "rooms" ? 52 : 0)
+    : $(sidebarConfig[other].rail).getBoundingClientRect().width;
+  return { min: config.min, max: Math.max(config.min, Math.min(config.max, sidebarBudget() - otherWidth)) };
+}
+function applySidebarWidths(priority = "rooms") {
+  if (window.innerWidth <= 640) return;
+  const workspace = $("workspace"), styles = window.getComputedStyle(workspace);
+  const widths = {};
+  for (const [side, config] of Object.entries(sidebarConfig)) {
+    const prefix = side === "rooms" ? "rooms" : "members";
+    const preferred = panels[config.key] ?? Number.parseFloat(styles.getPropertyValue(`--${prefix}-default-width`));
+    widths[side] = side === "rooms" && !state.managed ? 0 : !panels[side] ? (side === "rooms" ? 52 : 0)
+      : Math.max(config.min, Math.min(config.max, preferred));
   }
-  const handle = $("member-resizer");
-  handle.setAttribute("aria-valuemin", String(limits.min)); handle.setAttribute("aria-valuemax", String(limits.max));
-  handle.setAttribute("aria-valuenow", String(Math.round(width)));
+  const budget = sidebarBudget();
+  // Clamp displayed widths without overwriting the user's saved preference on a narrower window.
+  for (const side of [priority === "rooms" ? "members" : "rooms", priority]) {
+    if (!panels[side] || side === "rooms" && !state.managed) continue;
+    const other = side === "rooms" ? "members" : "rooms";
+    widths[side] = Math.max(sidebarConfig[side].min, Math.min(widths[side], budget - widths[other]));
+  }
+  for (const [side, config] of Object.entries(sidebarConfig)) {
+    if (!panels[side] || side === "rooms" && !state.managed) continue;
+    workspace.style.setProperty(`--${side === "rooms" ? "rooms" : "members"}-open-width`, `${widths[side]}px`);
+  }
+  for (const [side, config] of Object.entries(sidebarConfig)) {
+    const limits = sidebarWidthLimits(side), handle = $(config.handle);
+    handle.setAttribute("aria-valuemin", String(limits.min)); handle.setAttribute("aria-valuemax", String(limits.max));
+    handle.setAttribute("aria-valuenow", String(Math.round(widths[side])));
+  }
 }
-
-function setMemberWidth(width) {
-  const limits = memberWidthLimits();
-  panels.memberWidth = Math.round(Math.max(limits.min, Math.min(limits.max, width)));
-  applyMemberWidth();
+function setSidebarWidth(side, width) {
+  const limits = sidebarWidthLimits(side);
+  panels[sidebarConfig[side].key] = Math.round(Math.max(limits.min, Math.min(limits.max, width)));
+  applySidebarWidths(side);
 }
 
 function renderPanels() {
@@ -1188,7 +1214,7 @@ function renderPanels() {
   if (!panels.members && $("activity-dialog").open) $("activity-dialog").close();
   if (!panels.members && $("notification-detail").open) $("notification-detail").close();
   renderContextViews();
-  applyMemberWidth();
+  applySidebarWidths();
   for (const [side, name] of [["rooms", "房间侧栏"], ["members", "团队成员"]]) {
     const button = $("toggle-" + side);
     const label = `${panels[side] ? "收起" : "展开"}${name}`;
@@ -1202,32 +1228,37 @@ for (const side of ["rooms", "members"]) $("toggle-" + side).addEventListener("c
   savePanels();
   renderPanels();
 });
-$("member-resizer").addEventListener("pointerdown", event => {
-  if (event.button !== 0 || event.isPrimary === false || !panels.members || window.innerWidth <= 640) return;
-  event.preventDefault();
-  memberResize = { pointerId: event.pointerId, x: event.clientX, width: $("member-rail").getBoundingClientRect().width };
-  $("member-resizer").setPointerCapture(event.pointerId);
-  $("workspace").classList.add("resizing-members");
-});
-$("member-resizer").addEventListener("pointermove", event => {
-  if (memberResize?.pointerId !== event.pointerId) return;
-  setMemberWidth(memberResize.width + memberResize.x - event.clientX);
-});
-function finishMemberResize(event) {
-  if (!memberResize || memberResize.pointerId !== event.pointerId) return;
-  memberResize = null;
-  $("workspace").classList.remove("resizing-members");
-  if ($("member-resizer").hasPointerCapture(event.pointerId)) $("member-resizer").releasePointerCapture(event.pointerId);
-  savePanels();
+for (const [side, config] of Object.entries(sidebarConfig)) {
+  const handle = $(config.handle), direction = side === "rooms" ? 1 : -1;
+  const enabled = () => panels[side] && (side !== "rooms" || state.managed) && window.innerWidth > 640;
+  handle.addEventListener("pointerdown", event => {
+    if (event.button !== 0 || event.isPrimary === false || !enabled() || sidebarResize) return;
+    event.preventDefault();
+    sidebarResize = { side, pointerId: event.pointerId, x: event.clientX, width: $(config.rail).getBoundingClientRect().width };
+    handle.setPointerCapture(event.pointerId);
+    $("workspace").classList.add(`resizing-${side}`);
+  });
+  handle.addEventListener("pointermove", event => {
+    if (sidebarResize?.side !== side || sidebarResize.pointerId !== event.pointerId) return;
+    setSidebarWidth(side, sidebarResize.width + direction * (event.clientX - sidebarResize.x));
+  });
+  const finish = event => {
+    if (sidebarResize?.side !== side || sidebarResize.pointerId !== event.pointerId) return;
+    sidebarResize = null;
+    $("workspace").classList.remove(`resizing-${side}`);
+    if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
+    savePanels();
+  };
+  for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) handle.addEventListener(type, finish);
+  handle.addEventListener("keydown", event => {
+    if (!enabled()) return;
+    const limits = sidebarWidthLimits(side), width = $(config.rail).getBoundingClientRect().width;
+    const next = { ArrowLeft: width - direction * 20, ArrowRight: width + direction * 20, Home: limits.min, End: limits.max }[event.key];
+    if (next === undefined) return;
+    event.preventDefault(); setSidebarWidth(side, next); savePanels();
+  });
 }
-for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) $("member-resizer").addEventListener(type, finishMemberResize);
-$("member-resizer").addEventListener("keydown", event => {
-  const limits = memberWidthLimits(), width = $("member-rail").getBoundingClientRect().width;
-  const next = { ArrowLeft: width + 20, ArrowRight: width - 20, Home: limits.min, End: limits.max }[event.key];
-  if (next === undefined) return;
-  event.preventDefault(); setMemberWidth(next); savePanels();
-});
-window.addEventListener("resize", applyMemberWidth);
+window.addEventListener("resize", () => applySidebarWidths());
 renderPanels();
 let viewVersion = 0;
 const currentView = (version) => version === viewVersion;
@@ -1585,6 +1616,7 @@ function editPolicy(record = null) {
   const view = policyView;
   if (!view || !policyCurrent(view) || view.saving) return;
   policyEditor = {view, record, id:record?.id || `p-${Date.now()}-${Math.random().toString(36).slice(2,10)}`};
+  renderPolicyEmptyHint();
   $("policy-form").hidden = false;
   $("policy-editor-title").textContent = record ? "修改长期规则" : "新增长期规则";
   $("policy-text").value = record?.text || "";
@@ -1749,8 +1781,11 @@ function policyChange(record) {
 function renderPolicy(view) {
   if (!policyCurrent(view)) return;
   $("policy-entries").replaceChildren(...view.data.current.map(r=>policyCard(view,r,view.data.history)));
-  if(!view.data.current.length)followupParagraph($("policy-entries"),"尚未保存长期规则。你可以在 Room 中告诉 Agent 今后应如何处理。");
+  renderPolicyEmptyHint();
   $("policy-status").textContent=`${view.data.effective.length} 条有效`;
+}
+function renderPolicyEmptyHint() {
+  $("policy-empty").hidden = !policyView?.data || !policyCurrent(policyView) || policyView.data.current.length > 0 || !!policyEditor;
 }
 function renderPolicyFollowups(view) {
   if(!followupsCurrent(view))return;
@@ -1795,6 +1830,7 @@ async function loadMemberPolicy(resetFollowups = false) {
   $("policy-followups").open=!!keepOpen;
   if(!keepOpen)$("followups-history").checked=false;
   policyView=view; policyEditor=null; for(const id of ["policy-save","policy-suggest","policy-new","policy-reload","policy-next"]) $(id).disabled=false; $("policy-form").hidden=true; $("policy-entries").replaceChildren(); $("policy-matters").replaceChildren(); $("policy-next").hidden=true; $("policy-status").textContent="正在读取…";
+  renderPolicyEmptyHint();
   $("followups-status").textContent="";
   try {
     const data=await rpc("/v1/policy/read",view.member,view.info);
@@ -1822,7 +1858,7 @@ async function savePolicyForm(status) {
   await savePolicyChange(editor.view,c);
 }
 $("policy-new").addEventListener("click",()=>editPolicy());
-$("policy-cancel").addEventListener("click",()=>{$("policy-form").hidden=true;policyEditor=null;});
+$("policy-cancel").addEventListener("click",()=>{$("policy-form").hidden=true;policyEditor=null;renderPolicyEmptyHint();});
 $("policy-reload").addEventListener("click",()=>loadMemberPolicy());
 $("policy-followups").addEventListener("toggle",()=>{
   const view=policyView;if(!view || !policyCurrent(view))return;
@@ -2232,6 +2268,11 @@ function roomListTime(room) {
   return room.last_message_at || room.created_at;
 }
 
+function roomListDate(room) {
+  const time = new Date(roomListTime(room));
+  const pad = value => String(value).padStart(2, "0");
+  return `${pad(time.getMonth() + 1)}/${pad(time.getDate())} ${pad(time.getHours())}:${pad(time.getMinutes())}`;
+}
 function renderRooms() {
   document.querySelector(".workspace").classList.toggle("managed", state.managed);
   renderPanels();
@@ -2256,13 +2297,20 @@ function renderRooms() {
         : room.status === "creating" ? `创建待完成${room.error ? ` · ${room.error}` : " · 可重试原创建请求"}` : room.runtime_status === "opening" ? "正在打开…"
         : room.runtime_error ? `运行受阻 · ${room.runtime_error}`
         : room.busy ? "房间操作进行中…"
-        : `${room.runtime_status === "ready" ? "运行中 · " : "未打开 · "}${new Date(roomListTime(room)).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`;
+        : `${room.runtime_status === "ready" ? "运行中 · " : "未打开 · "}${roomListDate(room)}`;
+      name.title = room.name; updated.title = updated.textContent;
+      button.title = `${room.name}\n${updated.textContent}`;
       button.append(name, updated);
       button.disabled = room.status !== "ready" || !state.catalogConnected || !!catalog.busy;
       button.addEventListener("click", () => startSelection(room));
       const remove = document.createElement("button"); remove.type = "button"; remove.className = "room-delete";
-      remove.textContent = room.status === "deleting" ? "重试删除" : "删除";
-      remove.setAttribute("aria-label", `删除房间「${room.name}」`);
+      const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      icon.setAttribute("viewBox", "0 0 24 24"); icon.setAttribute("aria-hidden", "true");
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", "M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6m4-6v6");
+      icon.append(path); remove.append(icon);
+      remove.title = `${room.status === "deleting" ? "重试删除" : "删除"}房间「${room.name}」`;
+      remove.setAttribute("aria-label", remove.title);
       remove.disabled = !state.catalogConnected || !!catalog.busy || !!room.busy || !!state.management || !!catalog.write_error;
       remove.addEventListener("click", () => startDeletion(room));
       row.append(button, remove);
@@ -2808,12 +2856,32 @@ $("rename-form").addEventListener("submit", async (event) => {
   }
 });
 
+function dismissOnBackdrop(dialog, close) {
+  let pressedOutside = false;
+  const outside = event => {
+    const rect = dialog.getBoundingClientRect();
+    return event.target === dialog && (event.clientX < rect.left || event.clientX >= rect.right ||
+      event.clientY < rect.top || event.clientY >= rect.bottom);
+  };
+  dialog.addEventListener("pointerdown", event => {
+    pressedOutside = event.button === 0 && event.isPrimary !== false && outside(event);
+  });
+  dialog.addEventListener("pointercancel", () => { pressedOutside = false; });
+  dialog.addEventListener("close", () => { pressedOutside = false; });
+  dialog.addEventListener("click", event => {
+    const dismiss = pressedOutside && outside(event);
+    pressedOutside = false;
+    if (dialog.open && dismiss) return close();
+  });
+}
+
 $("new-room").addEventListener("click", () => {
   if ($("new-room").disabled) return;
   notice("create-error", ""); $("new-room-name").value = "";
   renderCreateSelection(); $("create-dialog").showModal(); $("team").focus();
 });
 $("close-create").addEventListener("click", () => $("create-dialog").close());
+dismissOnBackdrop($("create-dialog"), () => $("create-dialog").close());
 $("create-dialog").addEventListener("close", () => $("new-room").focus());
 $("team").addEventListener("change", renderCreateSelection);
 $("create-form").addEventListener("submit", (event) => {
@@ -3610,7 +3678,12 @@ $("open-settings").addEventListener("click", async () => {
   if (!state.managed || !state.catalog) return;
   showConnectionList(); $("settings-dialog").showModal(); await loadConnections();
 });
-$("close-settings").addEventListener("click", async () => { await cancelConnectionAuth(); $("settings-dialog").close(); });
+async function closeSettings() {
+  if ($("close-settings").disabled) return;
+  await cancelConnectionAuth(); $("settings-dialog").close();
+}
+$("close-settings").addEventListener("click", closeSettings);
+dismissOnBackdrop($("settings-dialog"), closeSettings);
 $("settings-dialog").addEventListener("cancel", event => { if (connections.sending) event.preventDefault(); });
 $("settings-dialog").addEventListener("close", () => { void cancelConnectionAuth(); $("gitlab-client-secret").value = ""; connections.formVersion++; connections.generation++;
   if ($("notification-detail").open) { $(workspaceView?.notificationChannel === "messages" ? "lark-manage-connections" : "gitlab-manage-connections").focus(); void loadWorkspaceConnections(); }
