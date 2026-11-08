@@ -10,12 +10,14 @@
 - `runtime.model`：`protocol` 为 `openai-completions` 或 `deepseek-messages`，包含 `model_id`、`api_key_env` 和可选 `base_url`；Completions 必须配置地址。仅保存密钥环境变量名称。
 - `runtime.model.context_window`、`runtime.model.max_tokens`：可选的上下文容量和单次生成 token 上限。Completions 未配置时保持原默认值 65,536 / 4,096；显式值须为正整数，输出上限不能超过上下文容量。`context_window` 仅用于 Completions；`max_tokens` 也可配置 DeepSeek Messages，未设置时沿用 DSH 默认。容量须与模型和实际网关一致，配置不会扩大服务端容量。例如 DeepSeek V4 Flash 可按实际服务配置 1,048,576 / 32,768；代理网关如有更低限制须相应下调。
 - `runtime.model.reasoning_effort`：可选，省略或空字符串保持原 DSH / 网关默认行为。DeepSeek 支持 `off`、`low`、`high`、`max`；其他 Completions 模型还可填写 `minimal`、`medium`、`xhigh`，实际支持以模型和网关为准，配置不会验证服务端能力。`low` 用于减少思考，`off` 用于关闭。DeepSeek Messages 传给 DSH 的 `reasoningEffort`；Completions 传给 provider 的 `reasoning` 并声明模型的档位。模型 ID 以 `deepseek-` 开头时，还配置 `thinkingFormat: deepseek`，使 `off` 明确发送 `thinking: {type: disabled}`，其他档位发送 `thinking: {type: enabled}` 和 `reasoning_effort`，并保持 `system` 提示角色。其他 Completions 模型的 `off` 不发送 reasoning 字段，是否关闭取决于接口默认行为。单房间旧配置同样可在各 profile 的 `model` 中设置该字段。
-- `members[]`：`id`、`name`，且必须只指定 `instructions` 或 `instructions_file` 之一。文件相对于 `team.json` 所在目录解析。
+- `members[]`：`id`、`name`，且必须只指定 `instructions` 或 `instructions_file` 之一。文件相对于 `team.json` 所在目录解析。角色文件只需描述职责、参与条件和业务流程；公共 TeamX 指引由程序统一组装，见 [Agent Instructions 的组装](../../docs/agent-instructions.zh.md)。
 - `runtime.model.compat.supports_developer_role`：可选布尔值，仅支持 `openai-completions`。设为 `false` 时，DSH 对该精确模型保持 `system` 提示角色，适用于拒绝 `developer` 角色的兼容网关；省略保持原默认，显式值不关闭 `reasoning_effort`，也不会清除 DeepSeek 的 `thinkingFormat`。JSON 例如 `"compat": {"supports_developer_role": false}`；全局 TOML 写在 `[runtime.model.compat]` 段。该字段随房间快照冻结，改变会影响 Session 恢复匹配。
 - `tool_env` 为成员可选的字符串映射。以 `./` 开头的值表示团队内的资源路径，如 `"HELPER": "./tools/helper.py"`；创建时检查资源存在，打开时解析到房间内的资源副本。其他值按字面量传递，不展开环境变量或 shell 表达式。凭据继续从环境继承。不能覆盖 TeamX 身份、`TEAMX_CLI`、DSH 保留环境或模型密钥绑定。
 - `workspace`：可选，`root` 默认为 `./workspaces`，只接受房间内相对路径；各成员使用 `<root>/<membership_id>/`，不是共享目录。`repository`、`binding` 作为设置入口的建议值预填，但创建时只采用根路径，不初始化仓库或 GitLab。模板不能保存 PAT 或房间凭据引用。[Workspace](../../docs/workspace.zh.md)通过输入框下方 Workspace 设置入口显式应用；建议值只预填文本，不自动勾选或执行绑定。
 
 每个团队统一使用一套 runtime；不支持成员模型覆盖、跨团队引用或继承。工作区、成员代际及 Session 目录由服务生成。每个房间保存 runtime、展开后的指令及资源副本，返回旧房间或重启时不把模板合并到生效配置；设置弹层可读取当前可用模板的建议值。配置只在服务启动时加载，编辑模板后重启才影响后续新建。
+
+编写角色提示词时，集中描述身份与关注点、何时介入、必要场景和业务限制、交付及停止条件。公共的发言、提问、授权、读取和工具协议由 TeamX 统一提供，不需在每个角色复制；平台细节使用对应工具 skill 与帮助。成员 Session 独立，团队背景可各保留短摘要，避免依赖同伴上下文。各团队的具体边界见 [角色模板说明](../../docs/agent-instructions.zh.md#角色模板的职责边界)。
 
 例如，减少 OpenAI 兼容 DeepSeek 网关的思考量，可在全局 `[runtime.model]` 设置 `reasoning_effort = "low"`（或 `"off"`）。团队完整覆盖 runtime 时，其 `model` 部分可写为：
 

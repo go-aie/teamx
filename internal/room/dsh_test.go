@@ -90,18 +90,17 @@ func TestDSHAdapterIsolationMetadataAndPrivateOutput(t *testing.T) {
 			Workspace: "/workspace/" + id.AgentID, ToolEnv: map[string]string{"ROLE_ENV": id.AgentID}},
 			open: func(_ context.Context, options dsh.Options) (dshComponent, error) {
 				opened = append(opened, options)
+				if strings.Count(options.Instructions, dshAgentGuide) != 1 ||
+					!strings.Contains(options.Instructions, `human operator is "room-owner"`) ||
+					!strings.Contains(options.Instructions, `mention "@room-owner"`) {
+					t.Error("Session must receive one common guide and the operator identity")
+				}
 				return &adapterComponent{run: func(_ context.Context, text string) (dsh.TurnResult, error) {
-					if strings.Contains(text, "secret message body") || !strings.Contains(text, "revision=9 unread=3 latest_seq=3 newest_unread_seq=3") {
+					if strings.Contains(text, "secret message body") || !strings.Contains(text, "Room unread=3.") {
 						t.Errorf("invalid notification: %s", text)
 					}
-					if !strings.Contains(text, `human operator is "room-owner"`) || !strings.Contains(text, `mention "@room-owner"`) {
-						t.Errorf("human mention instructions missing: %s", text)
-					}
-					if !strings.Contains(text, `"$TEAMX_CLI" tools list`) || !strings.Contains(text, "Current tool protocol:") {
-						t.Errorf("current tool protocol missing from Session turn: %s", text)
-					}
-					if !strings.Contains(text, "Tools run on the TeamX server") || !strings.Contains(text, "exit 127") || !strings.Contains(text, "Do not search for binaries") {
-						t.Errorf("server installation guidance missing from Session turn: %s", text)
+					if strings.Contains(text, "TeamX agent guide") || strings.Contains(text, "role-"+id.AgentID) || strings.Contains(text, "room-owner") {
+						t.Errorf("turn repeated fixed Session instructions: %s", text)
 					}
 					return dsh.TurnResult{StopReason: "end_turn", Text: "private answer"}, nil
 				}}, nil
@@ -144,6 +143,8 @@ func TestDSHAdapterIsolationMetadataAndPrivateOutput(t *testing.T) {
 	for i, options := range opened {
 		id := []MemberIdentity{a, b}[i]
 		if !strings.Contains(options.Instructions, "role-"+id.AgentID) || !strings.Contains(options.Instructions, `"$TEAMX_CLI" read --unread`) ||
+			!strings.Contains(options.Instructions, `"$TEAMX_CLI" tools list`) || !strings.Contains(options.Instructions, "Do not delegate or manage members") ||
+			!strings.Contains(options.Instructions, "Tools run on the TeamX server") || !strings.Contains(options.Instructions, "Do not bypass bindings") ||
 			options.ToolEnv["TEAMX_MEMBERSHIP_ID"] != id.MembershipID || options.ToolEnv["TEAMX_SERVICE_EPOCH"] != "current-service" ||
 			options.ToolEnv["ROLE_ENV"] != id.AgentID || options.ToolEnv["TEAMX_CLI"] != os.Args[0] ||
 			options.ToolEnv["OPENAI_API_KEY"] != "" || options.ToolEnv["DSH_HOME"] != "" || options.Permission != nil {

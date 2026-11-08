@@ -142,6 +142,7 @@ API 工具和通知无需先克隆仓库；开启通知不会自动启用成员�
 | [飞书使用说明](docs/lark.zh.md) | CLI profile、成员绑定、消息通知、收件测试与诊断恢复 |
 | [核心概念](docs/concepts.zh.md) | 对象、职责、配置边界及架构阅读路径 |
 | [Room 架构](docs/room-architecture.zh.md) / [Agent 运行时](docs/agent-runtime.zh.md) | 消息、调度、身份、生命周期及 DSH |
+| [Agent Instructions 组装](docs/agent-instructions.zh.md) | 公共指引、角色指令、Session 身份与每轮上下文 |
 | [Workspace](docs/workspace.zh.md) | 目录、仓库、配置应用与恢复 |
 | [平台架构](docs/platform-architecture.zh.md) / [通知](docs/notifications.zh.md) | 连接、独立工具、GitLab 活动／待办与飞书消息 |
 | [后续方向](docs/roadmap.zh.md) | 尚未实现的可选增强 |

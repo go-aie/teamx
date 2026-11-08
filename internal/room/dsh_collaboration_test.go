@@ -3,9 +3,9 @@ package room
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/go-aie/actorx"
@@ -19,13 +19,17 @@ func TestDSHMembersQueueMergeAndIsolateFailure(t *testing.T) {
 	state.Members = append(state.Members, MemberState{AgentID: "B", MembershipID: "generation-B", Runner: RunnerConfig{Kind: "dsh", Profile: "fixture-ignore"}})
 	h := newRoomHarness(t, state, nil)
 	var targets [2]actorx.Addr
-	entered := [2]chan string{make(chan string, 4), make(chan string, 4)}
+	entered := [2]chan TurnRecord{make(chan TurnRecord, 4), make(chan TurnRecord, 4)}
 	finish := [2]chan error{make(chan error, 4), make(chan error, 4)}
 	ids := [2]MemberIdentity{h.memberID("A", "generation-A"), h.memberID("B", "generation-B")}
 	for i, id := range ids {
 		backend := dshBackend{store: h.store, open: func(context.Context, dsh.Options) (dshComponent, error) {
 			return &adapterComponent{run: func(ctx context.Context, text string) (dsh.TurnResult, error) {
-				entered[i] <- text
+				agent, err := h.store.LoadAgent(id)
+				if err != nil || agent.Turn == nil {
+					return dsh.TurnResult{}, fmt.Errorf("missing turn snapshot: %v", err)
+				}
+				entered[i] <- *agent.Turn
 				select {
 				case err := <-finish[i]:
 					return dsh.TurnResult{StopReason: "end_turn"}, err
@@ -58,7 +62,7 @@ func TestDSHMembersQueueMergeAndIsolateFailure(t *testing.T) {
 	finish[0] <- nil
 	select {
 	case input := <-entered[1]:
-		if !strings.Contains(input, "latest_seq=6 newest_unread_seq=6") {
+		if input.SnapshotSeq != 6 || input.OfferedUnreadSeq != 6 {
 			t.Fatal(input)
 		}
 	case <-h.ctx.Done():
@@ -69,7 +73,7 @@ func TestDSHMembersQueueMergeAndIsolateFailure(t *testing.T) {
 	controlMember(t, h, targets[1], ids[1], "pause", UnreadChanged{}, false, false)
 	select {
 	case input := <-entered[0]:
-		if !strings.Contains(input, "latest_seq=6 newest_unread_seq=6") {
+		if input.SnapshotSeq != 6 || input.OfferedUnreadSeq != 6 {
 			t.Fatal(input)
 		}
 	case <-h.ctx.Done():

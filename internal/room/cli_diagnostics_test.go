@@ -53,7 +53,7 @@ func TestAgentCommandHelpIsScopedAndOffline(t *testing.T) {
 	for key, snippets := range map[string][]string{
 		"matters/read":    {"reply_to", "revision", "unit_version", "registered_actions", "new-ID"},
 		"actions/execute": {"target_ref", "context", "human message.seq", "verified discussion replies", "two attempts", "discussions one", "Unknown may already be written", "policy_changed"},
-		"inbox/read":      {"Full page output", "Confirmation failure", "business completion"},
+		"inbox/read":      {"Full page output", "Confirmation failure", "business completion", "context_only=true", "origin.kind=agent", "evidence_source=notification", "not_read"},
 		"policy/update":   {"suggest saves suggested only", "One-off consent", "source_text", "body {text,expires_at?}", "not blanket permission", "not natural-language applicability"},
 	} {
 		parts := strings.Split(key, "/")

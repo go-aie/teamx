@@ -159,7 +159,8 @@ test("Lark defaults exclude unavailable capabilities without exposing acceptance
  const api=fixture();
  api.data.catalog.push({name:"lark",provider:"lark",version:"1.0.99",actions:[
    {operation:"message.reply",target_kind:"message",object_types:["message"]},
-   {operation:"message.send",target_kind:"object",object_types:["user","chat"],disabled_reason:"lark_send_acceptance_pending: 真实验收说明。"}
+   {operation:"message.send",target_kind:"object",object_types:["user","chat"],disabled_reason:"lark_send_acceptance_pending: 真实验收说明。"},
+   {binding_evidence:"self_delivery",operation:"message.send_self",target_kind:"object",object_types:["user"],disabled_reason:"unavailable: 本人自聊不可用。"}
  ]});
  api.hook=path=>path.startsWith("/v1/platform/connections?")?{connections:[{id:"lark",name:"测试",provider:"lark",url:"https://open.feishu.cn",version:1,validation:{status:"valid",username:"测试用户"}}]}:undefined;
  const ui=await launch(api);await open(ui);
@@ -170,47 +171,44 @@ test("Lark defaults exclude unavailable capabilities without exposing acceptance
  const binding=api.calls.filter(c=>c.path==="/v1/tools/bind").at(-1).body.binding;
  assert.deepEqual(binding.action_authorization.grants,[{operation:"message.reply",target_kind:"message",object_type:"message"}]);
 });
-test("self delivery needs its own checkbox and clears when the selected account changes",async()=>{
+test("self delivery is included on a single apply without a separate control or client evidence",async()=>{
  const api=fixture();
  api.data.catalog.push({name:"lark",provider:"lark",version:"1.0.99",actions:[
   {operation:"message.reply",target_kind:"message",object_types:["message"]},
   {binding_evidence:"self_delivery",operation:"message.send_self",target_kind:"object",object_types:["user"]}
  ]});
- const connections=["one","two"].map(id=>({id,name:id,provider:"lark",url:"https://open.feishu.cn",version:1,validation:{status:"valid",username:id,account:{id:{value:`ou_${id}`}}}}));
- api.hook=(path,body)=>{
-  if(path.startsWith("/v1/platform/connections?"))return {connections};
-  if(path==="/v1/tools/bind" && body.binding.action_authorization?.grants.some(g=>g.operation==="message.send_self"))body.binding.capability_evidence=[{kind:"self_delivery",account:{id:{value:"ou_one"}},target:{containers:[{id:{value:"oc_self"}}]}}];
- };
+ const connections=["one","two"].map(id=>({id,name:id,provider:"lark",url:"https://open.feishu.cn",version:1,validation:{status:"valid",username:id}}));
+ api.hook=path=>path.startsWith("/v1/platform/connections?")?{connections}:undefined;
+ // Existing bindings acquire the default only when explicitly applied.
+ api.data.bindings.push({agent_id:"agent-a",membership_id:"member-a",tool:"lark",connection_id:"one"});
  const ui=await launch(api);await open(ui);
- select(ui,2).value="one";await select(ui,2).emit("change");
- assert.equal(row(ui,2).children[5].children[0].checked,false);
- await apply(ui,2).emit("click");
- let sent=api.calls.filter(c=>c.path==="/v1/tools/bind").at(-1).body.binding;
- assert.deepEqual(sent.action_authorization.grants,[{operation:"message.reply",target_kind:"message",object_type:"message"}]);
- row(ui,2).children[5].children[0].checked=true;
- await apply(ui,2).emit("click");
- sent=api.calls.filter(c=>c.path==="/v1/tools/bind").at(-1).body.binding;
- assert.equal(sent.action_authorization.grants.some(g=>g.operation==="message.send_self"),true);
- assert.equal(sent.capability_evidence,undefined);
- assert.equal(row(ui,2).children[5].children[0].checked,true);
- assert.match(row(ui,2).children[6].textContent,/ou_one.*oc_self.*Room/);
- select(ui,2).value="two";await select(ui,2).emit("change");
- assert.equal(row(ui,2).children[5].children[0].checked,false);
- assert.match(row(ui,2).children[6].textContent,/ou_two/);
- assert.doesNotMatch(row(ui,2).children[6].textContent,/oc_self/);
+ assert.equal(row(ui,2).children.length,5);
+ assert.match(row(ui,2).children[4].textContent,/按你的指令.*发送到本人自聊/);
+ assert.equal(api.calls.filter(c=>c.path==="/v1/tools/bind").length,0);
+ const grants=[{operation:"message.reply",target_kind:"message",object_type:"message"},{operation:"message.send_self",target_kind:"object",object_type:"user"}];
+ for (const id of ["one","two"]) {
+  select(ui,2).value=id;await select(ui,2).emit("change");
+  await apply(ui,2).emit("click");
+  const sent=api.calls.filter(c=>c.path==="/v1/tools/bind").at(-1).body.binding;
+  assert.equal(sent.connection_id,id);
+  assert.deepEqual(sent.action_authorization.grants,grants);
+  assert.equal(sent.capability_evidence,undefined);
+  assert.equal(row(ui,2).children.length,5);
+ }
 });
 
-test("an unavailable self connection shows the prerequisite without an enabled historical target",async()=>{
+test("an unavailable self connection can be disabled without exposing historical target IDs",async()=>{
  const api=fixture();
  api.data.catalog.push({name:"lark",provider:"lark",version:"1.0.99",actions:[{binding_evidence:"self_delivery",operation:"message.send_self",target_kind:"object",object_types:["user"]}]});
  api.data.bindings.push({agent_id:"agent-a",membership_id:"member-a",tool:"lark",connection_id:"old",action_authorization:{grants:[{operation:"message.send_self",target_kind:"object",object_type:"user"}]},capability_evidence:[{kind:"self_delivery",account:{id:{value:"ou_old"}},target:{containers:[{id:{value:"oc_old"}}]}}]});
  api.hook=path=>path.startsWith("/v1/platform/connections?")?{connections:[{id:"old",provider:"lark",validation:{status:"unverified"}}]}:undefined;
  const ui=await launch(api);await open(ui);
- const control=row(ui,2).children[5].children[0],help=row(ui,2).children[6];
- assert.equal(control.disabled,true);assert.equal(control.checked,false);assert.equal(apply(ui,2).disabled,true);
- assert.match(help.textContent,/先选择已验证的飞书用户连接/);assert.doesNotMatch(help.textContent,/oc_old|ou_old/);
+ assert.equal(row(ui,2).children.length,5);
+ assert.equal(apply(ui,2).disabled,true);
+ assert.match(select(ui,2).options.at(-1).textContent,/待验证或不可用/);
+ assert.doesNotMatch(row(ui,2).children[4].textContent,/oc_old|ou_old/);
  select(ui,2).value="";await select(ui,2).emit("change");
- assert.equal(apply(ui,2).disabled,false);assert.equal(control.disabled,true);
+ assert.equal(apply(ui,2).disabled,false);
  await apply(ui,2).emit("click");
  assert.equal(api.calls.filter(c=>c.path==="/v1/tools/bind").at(-1).body.enabled,false);
 });

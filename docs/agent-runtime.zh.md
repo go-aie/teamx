@@ -2,6 +2,8 @@
 
 [internal/agent/dsh](../internal/agent/dsh/) 管理一个本地 DSH 进程、一个 ACP v1 Session 和独占状态目录，不依赖 Room，也不内置回合队列。[Room 薄适配](../internal/room/dsh.go)负责角色、当前工具身份、懒启动、恢复选择及私有活动展示。
 
+角色指令、公共指引与 Session 身份如何组成固定 `AGENTS.md`，以及每轮动态上下文和修改生效边界，见 [Agent Instructions 的组装](agent-instructions.zh.md)。
+
 ## 准备 DSH 与配置
 
 用户先完整安装经验证版本的 DSH，再将其可执行程序路径填入 TeamX；DSH 的 Node、依赖包、profile 模板和运行时资源须完整保留，无需安装 DSH 源码仓库。还需模型网络和凭据，以及受支持的进程观察能力。当前进程治理支持 macOS/Linux。组件不安装或升级 DSH，调用方负责选择并验证实际安装版本。

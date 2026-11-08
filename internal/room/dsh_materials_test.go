@@ -101,7 +101,7 @@ func TestDSHMaterialsProductionAdapterFixedRangesAndNoConsumption(t *testing.T) 
 		if materialImageCount(received) != 1 || !bytes.Equal(received[4].Data, data) {
 			t.Fatal("missing or unordered image blocks", received)
 		}
-		for _, want := range []string{"Member policy context", "Reference followup", materialWarning, "Room #1", "Inbox #1", "图片说明", "Same source attachment as Room #1", "image positions [1]"} {
+		for _, want := range []string{"Member policy context", "Inbox: a fixed batch is available", materialWarning, "Room #1", "Inbox #1", "图片说明", "Same source attachment as Room #1", "image positions [1]"} {
 			if !strings.Contains(text, want) {
 				t.Fatal("missing material", want)
 			}
@@ -109,7 +109,7 @@ func TestDSHMaterialsProductionAdapterFixedRangesAndNoConsumption(t *testing.T) 
 		if !strings.HasPrefix(received[2].Text, "Third-party material: Room #1;") || received[3].Type != "text" || received[4].Type != "image" || !strings.HasPrefix(received[5].Text, "Third-party material: Inbox #1;") {
 			t.Fatal("group association lost")
 		}
-		if strings.Contains(text, "test-platform-secret") || strings.Contains(text, "/v1/platform/attachments") {
+		if strings.Contains(text, "TeamX agent guide") || strings.Contains(text, "test-platform-secret") || strings.Contains(text, "/v1/platform/attachments") {
 			t.Fatal("credential/proxy URL exposed")
 		}
 	}

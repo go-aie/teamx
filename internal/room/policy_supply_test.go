@@ -230,14 +230,14 @@ func TestPolicyAgentRecoveryReadAndManagementHistory(t *testing.T) {
 	}
 }
 
-func TestPolicyNotificationUsesSuppliedAuthority(t *testing.T) {
-	text := dshNotification(UnreadChanged{})
-	for _, part := range []string{"policy read", "completely replaces", "policy_token", "current_turn", "Reply style never authorizes external writes", "body is {text,expires_at?}", "ALL current restrictions", "does not verify natural-language applicability", "AgenticHub 产品负责人是 huayi", "hongwei 和 luojun", "saving one starts no listener", "pause only the affected operation", "Latest explicit restrictions/revocations win", "type save", "type confirm"} {
+func TestDSHGuideUsesSuppliedAuthority(t *testing.T) {
+	text := dshAgentGuide
+	for _, part := range []string{"policy read", "completely replaces", "including an empty set", "policy_token", "current_turn", "ALL current rule conditions", "Latest explicit corrections or revocations win", "alone do not authorize external writes", "you judge natural-language applicability", "one-off consent is not a standing rule", "start no listener or schedule", "continue independent work", "policy update", "suggestion and confirmation"} {
 		if !strings.Contains(text, part) {
 			t.Fatalf("missing %q", part)
 		}
 	}
-	for _, part := range []string{"policy decisions", "Before processing each turn and immediately before any action", "read current policy/decisions", "Rules may replace body.scope", "Preferences need no target scope", "body?,scope_from?"} {
+	for _, part := range []string{"policy decisions", "Before processing each turn and immediately before any action", "read current policy/decisions", "Rules may replace body.scope", "Preferences need no target scope", "body?,scope_from?", "AgenticHub", "huayi", "hongwei", "luojun"} {
 		if strings.Contains(text, part) {
 			t.Fatalf("obsolete reading instruction %q", part)
 		}

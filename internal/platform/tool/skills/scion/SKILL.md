@@ -17,7 +17,7 @@
 
 原生开发顺序是任务分支 `switch -c NAME`、修改与测试、`commit -m TEXT --author 'Name <email>' PATH...`、`land`，再读取实际发布 head。作者必须明确提供，认证 subject 与提交作者是两个概念。没有 staging area；省略 commit 路径会包含全部改动，不把 add 当隔离。禁止擅自清除已有改动、pending stack 或冲突。分支名区分 Room、membership 和任务。
 
-**两种 land：** `scn land` 发布当前任务分支，可能 rebase 并产生 rewritten ID；重新核实发布后的 head 与代码树，必要时补测。`scn review land N` 合入 Review 的目标分支，需要用户具体决定；评审通过不构成合入/关闭授权。当前流程使用普通版本化评论，不自动 approve/request-changes、合入或关闭。
+**两种 land：** `scn land` 发布当前任务分支，可能 rebase 并产生 rewritten ID；重新核实发布后的 head 与代码树，必要时补测。`scn review land N` 合入 Review 的目标分支，需要用户具体决定；评审通过不构成合入/关闭授权。当前流程使用普通版本化评论，不自动 approve/request-changes、合入或关闭；用户请求这些动作时，说明其属于另行实施的阶段及版本保证限制。
 
 发布任务分支后，先查是否已有本任务 Review，再以实际 head 创建 Review。修正时复用任务分支及同一 Review，commit/land 后 `review push NUMBER FULL_HEAD`，读取新 revision 并重新交接。`review update` 同样可能改变版本，不能沿用旧结论。
 
