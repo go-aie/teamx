@@ -4,10 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/go-aie/actorx"
@@ -45,33 +43,18 @@ func newFixtureService(dir, roomID string, config serviceConfig) (*service, erro
 	})
 }
 
-var fixtureBuild struct {
-	sync.Once
-	path string
-	err  error
-}
-
-// Compile once per suite. The launcher dispatches through a guarded test helper,
-// so no simulator, demo or testing switch is compiled into cmd/teamx.
+// Reuse this suite's binary, preserving its build tags, race instrumentation
+// and helper functions. No nested go test or extra compilation is necessary.
 func buildFixtureCLI(t *testing.T, path string) {
 	t.Helper()
-	fixtureBuild.Do(func() {
-		dir, err := os.MkdirTemp("", "teamx-fixture-binary-*")
-		if err != nil {
-			fixtureBuild.err = err
-			return
-		}
-		fixtureBuild.path = filepath.Join(dir, "room.test")
-		output, err := exec.Command("go", "test", "-c", "-o", fixtureBuild.path, ".").CombinedOutput()
-		if err != nil {
-			fixtureBuild.err = fmt.Errorf("build test harness: %w: %s", err, output)
-		}
-	})
-	if fixtureBuild.err != nil {
-		t.Fatal(fixtureBuild.err)
+	binary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
 	}
 	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
-	script := "#!/bin/sh\nTEAMX_ROOM_FIXTURE=1 TEAMX_FIXTURE_CLI=" + quote(path) + " exec " + quote(fixtureBuild.path) + " -test.run='^TestFixtureProcess$' -- \"$@\"\n"
+	// The race detector reports before exit. Short CLI helpers do not need its
+	// default one-second exit sleep; preserve all other inherited race options.
+	script := "#!/bin/sh\nGORACE=\"$GORACE atexit_sleep_ms=0\" TEAMX_ROOM_FIXTURE=1 TEAMX_FIXTURE_CLI=" + quote(path) + " exec " + quote(binary) + " -test.run='^TestFixtureProcess$' -- \"$@\"\n"
 	if err := os.WriteFile(path, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -102,14 +85,6 @@ func TestFixtureProcess(t *testing.T) {
 		os.Exit(1)
 	}
 	os.Exit(0)
-}
-
-func TestMain(m *testing.M) {
-	code := m.Run()
-	if fixtureBuild.path != "" {
-		_ = os.RemoveAll(filepath.Dir(fixtureBuild.path))
-	}
-	os.Exit(code)
 }
 
 // Real and fixture CLI drivers keep operator configuration outside their test scope.

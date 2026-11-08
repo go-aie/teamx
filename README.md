@@ -149,14 +149,22 @@ API 工具和通知无需先克隆仓库；开启通知不会自动启用成员�
 
 ## 开发
 
-常规检查需要 Go 和 Node：
+常规检查需要 Go 和 Node。默认流程只执行核心回归；本地 CLI、进程恢复和完整业务链路单独执行 integration：
 
 ```sh
-go test -race -count=1 -timeout 5m ./...
+make test
 go vet ./...
 node --test internal/room/web*_test.mjs
 ```
 
-代码生成、CLI 夹具及真实服务验收入口见[验证说明](internal/room/README.zh.md#验证入口)。
+涉及 CLI、平台或完整业务流程时，按修改范围执行常用 integration，例如：
+
+```sh
+make test-integration TEST_PACKAGES=./internal/room TEST_RUN=Lark
+```
+
+阶段性执行 `make test-integration` 覆盖全仓本地集成；修改并发、存储或资源持有逻辑时执行 `make test-race`。无需每次修改都串行运行这两套完整检查。
+
+按模块运行、计时及测试分层约定见[测试说明](docs/testing.zh.md)。代码生成、CLI 夹具及真实服务验收入口见[验证说明](internal/room/README.zh.md#验证入口)。
 
 当前 GitLab 工具、Workspace Git、浏览器操作和真实团队协作仍有专项待验项，范围见[当前待验项](internal/room/README.zh.md#当前待验项)。普通测试通过不代表这些真实链路已全部验证。

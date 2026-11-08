@@ -1,3 +1,5 @@
+//go:build integration || e2e
+
 package room
 
 import (
@@ -11,6 +13,7 @@ import (
 )
 
 func TestGitLabSetupIsLocalAndRequiresExplicitImport(t *testing.T) {
+	parallelFixtureTest(t)
 	m := testManager(t, t.TempDir(), nil)
 	m.config.endpoint = "http://127.0.0.1:8088"
 	m.platformHTTP = workspaceHTTPFunc(func(*http.Request) (*http.Response, error) { t.Fatal("setup contacted GitLab"); return nil, ErrRequest })
@@ -40,6 +43,7 @@ func TestGitLabSetupIsLocalAndRequiresExplicitImport(t *testing.T) {
 }
 
 func TestGitLabRejectsRemovedCredentialInputs(t *testing.T) {
+	parallelFixtureTest(t)
 	m := testManager(t, t.TempDir(), nil)
 	for _, field := range []string{"pat", "token_env"} {
 		q := map[string]any{"service_epoch": m.epoch, "caller": humanCaller, "id": strings.Repeat("a", 32), "name": "GitLab", "provider": "gitlab", "url": "https://gitlab.invalid", field: "never-echo-this"}
@@ -54,6 +58,7 @@ func TestGitLabRejectsRemovedCredentialInputs(t *testing.T) {
 }
 
 func TestOAuthConnectionMetadataPreservesGrant(t *testing.T) {
+	parallelFixtureTest(t)
 	m := testManager(t, t.TempDir(), nil)
 	c := platformTestSave(t, m, platformTestRequest(m))
 	file, _ := m.connections.Load()

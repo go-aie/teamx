@@ -1,3 +1,5 @@
+//go:build integration || e2e
+
 package room
 
 import (
@@ -15,6 +17,7 @@ import (
 )
 
 func TestGitLabEventsRestartRetainsBaselineInboxAndRescansCheckpoint(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newEventHarness(t, gitlab.EventsConfig{ETagVerified: true})
 	h.pages.etag = `"cached-page"`
 	for i := 1; i <= 35; i++ {
@@ -54,6 +57,7 @@ func TestGitLabEventsRestartRetainsBaselineInboxAndRescansCheckpoint(t *testing.
 }
 
 func TestGitLabEventsInitialFailureDisableAndFiltersPreserveBaseline(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newEventHarness(t, gitlab.EventsConfig{Filter: gitlab.EventsFilter{Types: []string{"push"}}})
 	h.m.notifications.Source(gitlab.EventsSourceID).(*gitlab.EventsSource).Prepare = func(context.Context, string, gitlab.Binding) (gitlab.EventFetcher, int64, error) {
 		return nil, 0, &gitlab.EventQueryError{Code: "query_failed", HTTPStatus: 401}
@@ -104,6 +108,7 @@ func TestGitLabEventsInitialFailureDisableAndFiltersPreserveBaseline(t *testing.
 }
 
 func TestGitLabEventsCapacityStopsWithoutProgressOrCache(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, kind := range []string{"inbox", "observed", "bytes"} {
 		t.Run(kind, func(t *testing.T) {
 			h := newEventHarness(t, gitlab.EventsConfig{ETagVerified: true})
@@ -150,6 +155,7 @@ func TestGitLabEventsCapacityStopsWithoutProgressOrCache(t *testing.T) {
 }
 
 func TestGitLabEventsPageCommitFailureIsAtomicAndUncertainWriteLatches(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, kind := range []string{"before-replace", "after-replace", "sync"} {
 		t.Run(kind, func(t *testing.T) {
 			h := newEventHarness(t, gitlab.EventsConfig{})
@@ -218,6 +224,7 @@ func TestGitLabEventsPageCommitFailureIsAtomicAndUncertainWriteLatches(t *testin
 }
 
 func TestGitLabEventsCacheIsConfirmedOnlyWithPageCommit(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newEventHarness(t, gitlab.EventsConfig{ETagVerified: true})
 	h.prepare()
 	h.clock.add(time.Second)
@@ -240,6 +247,7 @@ func TestGitLabEventsCacheIsConfirmedOnlyWithPageCommit(t *testing.T) {
 }
 
 func TestGitLabEventsConfigurationSnapshotsCannotMutateLiveFilters(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newEventHarness(t, gitlab.EventsConfig{Filter: gitlab.EventsFilter{Types: []string{"push"}}})
 	first := h.state()
 	changed, err := h.m.configureEventsSubscription(context.Background(), h.m.testEventsKey(h.room.RoomIdentity), first.SubscriptionVersion, first.Config)
@@ -254,6 +262,7 @@ func TestGitLabEventsConfigurationSnapshotsCannotMutateLiveFilters(t *testing.T)
 }
 
 func TestGitLabEventsDefaultInboxLimitReportsCapacityAndKeepsPageAtomic(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newEventHarness(t, gitlab.EventsConfig{})
 	h.prepare()
 	h.clock.add(time.Second)
@@ -281,6 +290,7 @@ func TestGitLabEventsDefaultInboxLimitReportsCapacityAndKeepsPageAtomic(t *testi
 }
 
 func TestPlatformNotificationPollingDoesNotCreateChatOrSessions(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newEventHarness(t, gitlab.EventsConfig{})
 	_, before := readManagedRoom(t, h.m, h.room)
 	h.pages.events = []gitlab.Event{h.event(1, 1)}
@@ -301,6 +311,7 @@ func TestPlatformNotificationPollingDoesNotCreateChatOrSessions(t *testing.T) {
 }
 
 func TestGitLabEventsCurrentThirtySecondsAndInactiveTwoMinutes(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newEventHarness(t, gitlab.EventsConfig{})
 	h.prepare()
 	h.clock.add(time.Second)
@@ -327,6 +338,7 @@ func TestGitLabEventsCurrentThirtySecondsAndInactiveTwoMinutes(t *testing.T) {
 }
 
 func TestGitLabEventsRetryHintsAuthPauseAndReconnect(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newEventHarness(t, gitlab.EventsConfig{})
 	h.prepare()
 	h.clock.add(time.Second)

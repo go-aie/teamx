@@ -1,3 +1,5 @@
+//go:build integration || e2e
+
 package lark
 
 import (
@@ -15,6 +17,7 @@ import (
 )
 
 func TestPinnedSendTransportSinglePOSTAndCancellation(t *testing.T) {
+	parallelClientTest(t)
 	if runtime.GOOS != "darwin" {
 		t.Skip("macOS pinned backend")
 	}
@@ -46,7 +49,7 @@ raise Exception('unexpected operation')`, 1)
 					}
 					setMode(t, dir, mode)
 					account := platform.AccountIdentity{IdentityScope: platform.IdentityScope{Provider: "lark", Instance: Origin("feishu"), Tenant: platform.ExternalID{Namespace: "lark:tenant_key", Value: "tenant"}}, ID: platform.ExternalID{Namespace: "lark:open_id:cli_fixture", Value: "ou_reader"}}
-					pin, err := Pin(context.Background(), p, account)
+					pin, err := NewClientFactory(0, 0, 0).Pin(context.Background(), p, account)
 					if err != nil {
 						t.Fatal(err)
 					}

@@ -34,11 +34,11 @@ func sampleRoom() RoomSnapshot {
 func samplePrivate(room RoomSnapshot) (AgentSnapshot, virtualSnapshot) {
 	id := MemberIdentity{RoomIdentity: room.RoomIdentity, AgentID: "reviewer", MembershipID: "membership-1"}
 	return AgentSnapshot{
-			Version: formatVersion, MemberIdentity: id, LastOfferedUnreadSeq: 1, TurnNumber: 2,
-			Turn: &TurnRecord{Number: 2, Status: "running", StartReadThrough: 0, SnapshotSeq: 1, OfferedUnreadSeq: 1},
-		}, virtualSnapshot{
-			Version: formatVersion, MemberIdentity: id, SessionID: "session-1", Turns: 1, ScriptPosition: 1, ProcessedThrough: 1,
-		}
+		Version: formatVersion, MemberIdentity: id, LastOfferedUnreadSeq: 1, TurnNumber: 2,
+		Turn: &TurnRecord{Number: 2, Status: "running", StartReadThrough: 0, SnapshotSeq: 1, OfferedUnreadSeq: 1},
+	}, virtualSnapshot{
+		Version: formatVersion, MemberIdentity: id, SessionID: "session-1", Turns: 1, ScriptPosition: 1, ProcessedThrough: 1,
+	}
 }
 
 func openTestStore(t *testing.T, dir string) *Store {

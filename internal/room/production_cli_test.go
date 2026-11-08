@@ -1,3 +1,5 @@
+//go:build integration || e2e
+
 package room
 
 import (
@@ -14,10 +16,8 @@ import (
 // This builds cmd/teamx, not the deterministic fixture launcher. No Session is
 // run: checking paused membership and CLI rejection needs no model credentials.
 func TestProductionCLIOnlyExposesDSHMembers(t *testing.T) {
-	binary := filepath.Join(t.TempDir(), "teamx")
-	if output, err := exec.Command("go", "build", "-o", binary, "../../cmd/teamx").CombinedOutput(); err != nil {
-		t.Fatal(err, string(output))
-	}
+	parallelFixtureTest(t)
+	binary := productionFixtureCLI(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	for _, args := range [][]string{{"demo"}, {"member", "add", "--agent", "A", "--runner", "manual"}, {"member", "add", "--agent", "A", "--runner", "scripted"}, {"member", "add", "--agent", "A", "--script", "read"}} {

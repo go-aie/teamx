@@ -1,3 +1,5 @@
+//go:build integration || e2e
+
 package room
 
 import (
@@ -10,6 +12,7 @@ import (
 )
 
 func TestLarkCustomBackfillHTTPReadsHistoryIntoMemberInbox(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newLarkHarness(t)
 	h.clock.add(14 * 24 * time.Hour)
 	member := h.members[0]

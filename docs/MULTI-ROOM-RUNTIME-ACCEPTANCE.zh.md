@@ -37,7 +37,7 @@ go test -race ./internal/room \
 ```sh
 # TEAMX_DSH_BINARY_PATH / TEAMX_DSH_BINARY_ARGS 按实际安装填写；后者必须是 JSON 字符串数组。
 # MODEL_ID 必须显式指定；MODEL_BASE_URL 也可用下方测试参数设置。
-go test ./internal/room -run '^TestRealDSHManagedRooms$' -count=1 -timeout=12m -v \
+go test -tags=e2e ./internal/room -run '^TestRealDSHManagedRooms$' -count=1 -timeout=12m -v \
   -teamx-management-real-output=/absolute/new-evidence-directory \
   -teamx-management-env-file=/absolute/model.env \
   -teamx-management-base-url=https://your-model-provider/v1

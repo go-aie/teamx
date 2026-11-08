@@ -1,4 +1,4 @@
-//go:build e2e
+//go:build integration || e2e
 
 package room
 
@@ -12,6 +12,7 @@ import (
 )
 
 func TestPolicyManagementHTTP(t *testing.T) {
+	parallelFixtureTest(t)
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("Node required")

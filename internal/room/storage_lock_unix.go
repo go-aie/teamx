@@ -24,3 +24,10 @@ func lockDirectory(dir string) (*os.File, error) {
 	}
 	return f, nil
 }
+
+func unlockDirectory(f *os.File) error {
+	// fork may temporarily retain a duplicate until exec closes CLOEXEC files.
+	// Closing only our descriptor would leave that duplicate holding the lock.
+	// Release ownership explicitly before closing the owning descriptor.
+	return errors.Join(syscall.Flock(int(f.Fd()), syscall.LOCK_UN), f.Close())
+}

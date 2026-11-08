@@ -32,7 +32,9 @@ func (m *roomManager) initPlatform() {
 			}},
 			"lark": {Normalize: connection.Normalize, ValidProfile: func(origin string, p platform.CLIProfile) bool {
 				return lark.ValidProfile(p) && origin == lark.Origin(p.Brand)
-			}, VerifyProfile: lark.VerifyIdentity},
+			}, VerifyProfile: func(ctx context.Context, origin string, p platform.CLIProfile) platform.Validation {
+				return m.larkClients.VerifyIdentity(ctx, origin, p)
+			}},
 		}
 	}
 	m.connections = connection.New(connection.Store{

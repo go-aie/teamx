@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/lark"
 )
@@ -42,7 +43,7 @@ func (m *roomManager) readLarkTarget(ctx context.Context, r larkReadRequest) (an
 	if err != nil {
 		return nil, err
 	}
-	reader, err := lark.New(*a.account.CLIProfile)
+	reader, err := m.larkClients.New(*a.account.CLIProfile)
 	if err != nil {
 		return nil, err
 	}

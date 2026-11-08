@@ -1,3 +1,5 @@
+//go:build integration || e2e
+
 package room
 
 import (
@@ -21,69 +23,8 @@ import (
 	"github.com/go-aie/teamx/internal/platform/gitlab"
 )
 
-func TestOAuthBusinessEventsTodosRefreshKeepsProgress(t *testing.T) {
-	h, c := newIndependentEventHarness(t)
-	h.prepare()
-	seedEventInbox(t, h, 1)
-	before := h.state()
-	account := installOAuthFixture(t, h.m, c, time.Now().Add(time.Second))
-	var refreshes, business atomic.Int32
-	refresh := oauthTransport(&refreshes, nil)
-	h.m.platformHTTP = workspaceHTTPFunc(func(r *http.Request) (*http.Response, error) {
-		if strings.HasPrefix(r.URL.Path, "/oauth/") || r.URL.Path == "/api/v4/user" {
-			return refresh.RoundTrip(r)
-		}
-		business.Add(1)
-		if r.Header.Get("Authorization") != "Bearer rotated-access" || r.Header.Get("PRIVATE-TOKEN") != "" {
-			t.Error("business request did not use rotated OAuth")
-		}
-		body := `[]`
-		if strings.Contains(r.URL.Path, "/projects/") && !strings.HasSuffix(r.URL.Path, "/events") {
-			body = `{"id":7,"path_with_namespace":"remote/project","http_url_to_repo":"https://gitlab.invalid/remote/project.git"}`
-		}
-		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body))}, nil
-	})
-	h.m.mu.Lock()
-	scope, err := h.m.admitEventsLocked(h.stateUnlocked())
-	h.m.mu.Unlock()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var b gitlab.Binding
-	if json.Unmarshal(scope.Data, &b) != nil {
-		t.Fatal("scope")
-	}
-	if _, err := h.m.eventsRead(b)(context.Background(), "/projects/7/events", nil, nil, 4096); err != nil {
-		t.Fatal(err)
-	}
-	h.m.mu.Lock()
-	afterScope, err := h.m.admitEventsLocked(h.stateUnlocked())
-	todos, _, todoErr := h.m.resolveTodosConnectionLocked(h.room.RoomIdentity, c.ID)
-	h.m.mu.Unlock()
-	if err != nil || todoErr != nil || !reflect.DeepEqual(scope, afterScope) {
-		t.Fatal("refresh changed admission", err, todoErr)
-	}
-	fetcher, err := h.m.preparePlatformTodos(context.Background(), "", h.room.RoomIdentity, todos)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = fetcher.FetchTodos(context.Background(), gitlab.TodoQuery{State: "pending", Page: 1, PerPage: 10}); err != nil {
-		t.Fatal(err)
-	}
-	after := h.state()
-	if !reflect.DeepEqual(before, after) || refreshes.Load() != 1 || business.Load() < 2 {
-		t.Fatal("progress changed or duplicate refresh")
-	}
-	h.m.mu.Lock()
-	current, _, err := h.m.resolvePlatformAccountLocked(h.room.RoomIdentity, c.ID, "gitlab")
-	h.m.mu.Unlock()
-	if err != nil || current != account {
-		t.Fatal("normal renewal changed stable evidence", err)
-	}
-	assertActionCallsSettled(t, h.m)
-}
-
 func TestOAuthBusinessReferencesAndMRWritePreservesRetryContract(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, status := range []int{201, 401, 500} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			f := managedActionTest(t, false)
@@ -147,6 +88,7 @@ func TestOAuthBusinessReferencesAndMRWritePreservesRetryContract(t *testing.T) {
 }
 
 func TestOAuthBusinessAttachmentAndTool(t *testing.T) {
+	parallelFixtureTest(t)
 	t.Run("saved attachment", func(t *testing.T) {
 		h, _, _, q, data := attachmentFixture(t)
 		c := platformTestList(t, h.m)[0]
@@ -319,6 +261,7 @@ func TestOAuthLocalWorkspaceCommandDoesNotRefreshOrExposeToken(t *testing.T) {
 }
 
 func TestOAuthBusinessDifferentConnectionsAndLogoutFence(t *testing.T) {
+	parallelFixtureTest(t)
 	m, room, svc, c, members := cliToolFixture(t, "printf ready\nsleep 30\n")
 	account := installOAuthFixture(t, m, c, time.Now().Add(time.Hour))
 	req := platformTestRequest(m)
@@ -380,7 +323,71 @@ func TestOAuthBusinessDifferentConnectionsAndLogoutFence(t *testing.T) {
 	assertActionCallsSettled(t, m)
 }
 
+func TestOAuthBusinessEventsTodosRefreshKeepsProgress(t *testing.T) {
+	parallelFixtureTest(t)
+	h, c := newIndependentEventHarness(t)
+	h.prepare()
+	seedEventInbox(t, h, 1)
+	before := h.state()
+	account := installOAuthFixture(t, h.m, c, time.Now().Add(time.Second))
+	var refreshes, business atomic.Int32
+	refresh := oauthTransport(&refreshes, nil)
+	h.m.platformHTTP = workspaceHTTPFunc(func(r *http.Request) (*http.Response, error) {
+		if strings.HasPrefix(r.URL.Path, "/oauth/") || r.URL.Path == "/api/v4/user" {
+			return refresh.RoundTrip(r)
+		}
+		business.Add(1)
+		if r.Header.Get("Authorization") != "Bearer rotated-access" || r.Header.Get("PRIVATE-TOKEN") != "" {
+			t.Error("business request did not use rotated OAuth")
+		}
+		body := `[]`
+		if strings.Contains(r.URL.Path, "/projects/") && !strings.HasSuffix(r.URL.Path, "/events") {
+			body = `{"id":7,"path_with_namespace":"remote/project","http_url_to_repo":"https://gitlab.invalid/remote/project.git"}`
+		}
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body))}, nil
+	})
+	h.m.mu.Lock()
+	scope, err := h.m.admitEventsLocked(h.stateUnlocked())
+	h.m.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var b gitlab.Binding
+	if json.Unmarshal(scope.Data, &b) != nil {
+		t.Fatal("scope")
+	}
+	if _, err := h.m.eventsRead(b)(context.Background(), "/projects/7/events", nil, nil, 4096); err != nil {
+		t.Fatal(err)
+	}
+	h.m.mu.Lock()
+	afterScope, err := h.m.admitEventsLocked(h.stateUnlocked())
+	todos, _, todoErr := h.m.resolveTodosConnectionLocked(h.room.RoomIdentity, c.ID)
+	h.m.mu.Unlock()
+	if err != nil || todoErr != nil || !reflect.DeepEqual(scope, afterScope) {
+		t.Fatal("refresh changed admission", err, todoErr)
+	}
+	fetcher, err := h.m.preparePlatformTodos(context.Background(), "", h.room.RoomIdentity, todos)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = fetcher.FetchTodos(context.Background(), gitlab.TodoQuery{State: "pending", Page: 1, PerPage: 10}); err != nil {
+		t.Fatal(err)
+	}
+	after := h.state()
+	if !reflect.DeepEqual(before, after) || refreshes.Load() != 1 || business.Load() < 2 {
+		t.Fatal("progress changed or duplicate refresh")
+	}
+	h.m.mu.Lock()
+	current, _, err := h.m.resolvePlatformAccountLocked(h.room.RoomIdentity, c.ID, "gitlab")
+	h.m.mu.Unlock()
+	if err != nil || current != account {
+		t.Fatal("normal renewal changed stable evidence", err)
+	}
+	assertActionCallsSettled(t, h.m)
+}
+
 func TestOAuthBusinessExplicitRepositoryScopeInitializationAndLogin(t *testing.T) {
+	parallelFixtureTest(t)
 	// The callback must verify the exact expanded grant, not accept API-only info.
 	for _, granted := range []string{`["api","write_repository"]`, `["api"]`} {
 		g := newGitlabLoginHarness(t)

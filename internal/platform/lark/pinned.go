@@ -25,13 +25,17 @@ type Pinned struct {
 }
 
 func Pin(ctx context.Context, p platform.CLIProfile, expected platform.AccountIdentity) (*Pinned, error) {
+	return (*ClientFactory)(nil).Pin(ctx, p, expected)
+}
+
+func (f *ClientFactory) Pin(ctx context.Context, p platform.CLIProfile, expected platform.AccountIdentity) (*Pinned, error) {
 	if runtime.GOOS != "darwin" {
 		return nil, failure("account_pinning_unavailable")
 	}
 	if !ValidAccount(expected, p) {
 		return nil, failure("identity_mismatch")
 	}
-	c, err := New(p)
+	c, err := f.New(p)
 	if err != nil {
 		return nil, err
 	}

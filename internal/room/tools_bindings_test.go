@@ -1,3 +1,5 @@
+//go:build integration || e2e
+
 package room
 
 import (
@@ -14,6 +16,7 @@ import (
 )
 
 func TestExplicitToolBindingPreservesRolesAndReadsSkillWithoutCredentials(t *testing.T) {
+	parallelFixtureTest(t)
 	m, room, svc, c, members := cliToolFixture(t, "printf 'native-output'")
 	m.toolCatalog[0].Skill = tool.Catalog()[0].Skill
 	dir := m.roomDir(room.RoomID)
@@ -62,6 +65,7 @@ func TestExplicitToolBindingPreservesRolesAndReadsSkillWithoutCredentials(t *tes
 }
 
 func TestRetiredRPCAndCLIRejectWithoutEffects(t *testing.T) {
+	parallelFixtureTest(t)
 	m, room, svc, c, members := cliToolFixture(t, "exit 99")
 	bindCLITool(t, m, room.RoomIdentity, members[0], c, "gitlab", 0)
 	for _, suffix := range []string{"", "/save", "/enable", "/delete", "/discover", "/execute"} {

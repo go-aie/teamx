@@ -162,7 +162,7 @@ func (m *roomManager) serveLarkAuth(w http.ResponseWriter, r *http.Request) {
 		m.mu.Unlock()
 		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 		defer cancel()
-		client, err := lark.New(*req.Profile)
+		client, err := m.larkClients.New(*req.Profile)
 		if err != nil {
 			writeLarkReadError(w, err)
 			return
@@ -172,7 +172,7 @@ func (m *roomManager) serveLarkAuth(w http.ResponseWriter, r *http.Request) {
 			writeLarkReadError(w, err)
 			return
 		}
-		pinned, err := lark.Pin(ctx, *req.Profile, validation.Account)
+		pinned, err := m.larkClients.Pin(ctx, *req.Profile, validation.Account)
 		if err != nil {
 			writeLarkReadError(w, err)
 			return

@@ -30,7 +30,7 @@ func (m *roomManager) prepareLarkBindingEvidence(ctx context.Context, req *toolB
 	m.mu.Unlock()
 	defer m.finishPlatformCall(call)
 	ctx = callCtx
-	pin, err := lark.Pin(ctx, *a.CLIProfile, a.Identity)
+	pin, err := m.larkClients.Pin(ctx, *a.CLIProfile, a.Identity)
 	if err != nil {
 		return err
 	}

@@ -71,7 +71,7 @@ clone 失败会保留目标旁的 `.clone-pending` 标记，即使原生 CLI 已
 
 ```sh
 TEAMX_REAL_OAUTH_SNAPSHOT=/absolute/platform-connections.json \
- go test ./internal/room -run '^TestRealWorkspaceGitLabDSH$' -count=1 -v -timeout 20m -args \
+ go test -tags=e2e ./internal/room -run '^TestRealWorkspaceGitLabDSH$' -count=1 -v -timeout 20m -args \
   -teamx-workspace-real-output /absolute/new-workspace-evidence \
   -teamx-workspace-repository https://gitlab.example/group/project.git \
   -teamx-management-env-file /absolute/credentials.env \

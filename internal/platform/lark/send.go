@@ -150,7 +150,7 @@ func (p *Pinned) SendText(ctx context.Context, target platform.TargetIdentity, b
 	}
 	if target.Object.Type == "user" && target.Object.ID == p.Account.ID {
 		ctx = context.WithValue(ctx, accountContextKey{}, p.Account.Instance+"|"+p.Account.ID.Namespace+"|"+p.Account.ID.Value)
-		release, err := selfSendRequests.acquire(ctx)
+		release, err := p.client.selfSend.acquire(ctx)
 		if err != nil {
 			return "", ErrSendNotSent
 		}

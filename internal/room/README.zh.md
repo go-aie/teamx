@@ -177,11 +177,15 @@ macOS/Linux 使用非阻塞文件锁，其他平台明确不支持。快照同�
 ## 验证入口
 
 ```sh
-go test -race -timeout 15m ./...
+make test
+make test-integration
+make test-race
 go vet ./...
 node --test internal/room/web*_test.mjs
-go test -tags=e2e ./... -run '^$'
+make test-e2e-check
 ```
+
+以上命令从仓库根目录执行，按改动范围选择，日常无需把全仓 integration 与 race 都跑一遍。默认核心测试、常用本地 integration 与少用的真实 e2e 验收分开运行，分层标准与按模块命令见[测试说明](../../docs/testing.zh.md)。
 
 修改 Actor handler 后运行 `go generate ./internal/room`。本地检查需要 Go 和 Node；最后一条命令只检查验收测试能否编译，不执行真实模型或平台操作。普通测试通过不代表真实链路已验证。
 

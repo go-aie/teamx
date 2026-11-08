@@ -33,7 +33,7 @@ type larkGroupDSHInput struct {
 // config and keychain. It rejects all writes except one exact authorized POST.
 // The exclusive dispatch file is outside the fresh Room directory, so another
 // test run/session cannot replay a possibly dispatched request.
-const larkGroupRealCLI = `#!/usr/bin/env python3
+const larkGroupRealCLI = `#!/usr/bin/env -S python3 -S
 import json,sys,os,subprocess,datetime
 cfg=json.loads(%s)
 a=sys.argv[1:]

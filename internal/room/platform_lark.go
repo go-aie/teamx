@@ -62,7 +62,7 @@ func (m *roomManager) readLark(ctx context.Context, r larkReadRequest) (any, err
 	if a.account.CLIProfile == nil || !lark.ValidAccount(a.account.Identity, *a.account.CLIProfile) {
 		return nil, ErrConflict
 	}
-	client, err := lark.New(*a.account.CLIProfile)
+	client, err := m.larkClients.New(*a.account.CLIProfile)
 	if err != nil {
 		return nil, err
 	}

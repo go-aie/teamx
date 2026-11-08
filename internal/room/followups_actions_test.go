@@ -97,6 +97,7 @@ func (f *referenceExecuteFixture) outcome(status, retry string) platform.TargetA
 // This is a structural contract test, not evidence that the Agent interprets
 // business authorization correctly. Even a style rule is structurally eligible.
 func TestReferenceActionRuleBodyIsAgentJudged(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, text := range []string{"先给结论，再给理由", "项目 A 的文档咨询直接回复；交付时间先问我"} {
 		t.Run(text, func(t *testing.T) {
 			f := referenceExecuteTest(t, "object")
@@ -135,6 +136,7 @@ func TestReferenceActionRuleBodyIsAgentJudged(t *testing.T) {
 }
 
 func TestReferenceActionThreeAuthorities(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, kind := range []string{"object", "discussion"} {
 		for _, authority := range []string{"human", "answer", "instruction", "rule"} {
 			t.Run(kind+"/"+authority, func(t *testing.T) {
@@ -200,6 +202,7 @@ func TestReferenceActionThreeAuthorities(t *testing.T) {
 	}
 }
 func TestReferenceActionUnknownRetryAndRecovery(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, tc := range []struct {
 		kind, first, second, want string
 		attempts                  int
@@ -256,6 +259,7 @@ func TestReferenceActionUnknownRetryAndRecovery(t *testing.T) {
 	}
 }
 func TestReferenceActionRefusals(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, mode := range []string{"target", "version", "expired-turn", "account", "unsupported", "wrong-kind", "reply-retry", "wrong-inspection", "fake-human", "ambiguous-answer", "changed-body", "revoked", "expired", "policy"} {
 		t.Run(mode, func(t *testing.T) {
 			f := referenceExecuteTest(t, "discussion")
@@ -346,6 +350,7 @@ func TestReferenceActionRefusals(t *testing.T) {
 	}
 }
 func TestReferenceActionIntentPersistenceAndProcessing(t *testing.T) {
+	parallelFixtureTest(t)
 	f := referenceExecuteTest(t, "discussion")
 	gate := make(chan struct{})
 	entered := make(chan struct{})
@@ -367,6 +372,7 @@ func TestReferenceActionIntentPersistenceAndProcessing(t *testing.T) {
 	}
 }
 func TestReferenceActionPersistenceFailures(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, mode := range []string{"intent", "attempt", "result", "unknown-intent"} {
 		t.Run(mode, func(t *testing.T) {
 			f := referenceExecuteTest(t, "discussion")
@@ -421,6 +427,7 @@ func TestReferenceActionPersistenceFailures(t *testing.T) {
 	}
 }
 func TestReferenceActionUnknownSurvivesLaterStop(t *testing.T) {
+	parallelFixtureTest(t)
 	f := referenceExecuteTest(t, "object")
 	f.result = func(int) platform.TargetActionResult { return f.outcome("unknown", "transient") }
 	inspections := 0
@@ -448,6 +455,7 @@ func TestReferenceActionUnknownSurvivesLaterStop(t *testing.T) {
 }
 
 func TestReferenceActionRechecksAuthorityBeforeRetry(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, mode := range []string{"rule", "instruction", "turn", "cancel"} {
 		t.Run(mode, func(t *testing.T) {
 			f := referenceExecuteTest(t, "object")
@@ -513,6 +521,7 @@ func TestReferenceActionRechecksAuthorityBeforeRetry(t *testing.T) {
 }
 
 func TestReferenceActionUsesLaterVerifiedAlias(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	initReferenceTest(t, h)
 	for _, key := range []string{"first", "later"} {
@@ -545,6 +554,7 @@ func TestReferenceActionUsesLaterVerifiedAlias(t *testing.T) {
 	}
 }
 func TestReferenceActionKeepsOtherUnansweredQuestion(t *testing.T) {
+	parallelFixtureTest(t)
 	f := referenceExecuteTest(t, "discussion")
 	u := f.unit(t)
 	u, err := f.svc.askFollowup(f.h.ctx, f.h.id, followupQuestionChange{followupCommand: conversationCommand(u, 1), Text: "另一个排期问题何时交付？"})
@@ -563,6 +573,7 @@ func TestReferenceActionKeepsOtherUnansweredQuestion(t *testing.T) {
 }
 
 func TestReferenceActionRuleLifecycleAdmission(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, mode := range []string{"suggested", "expired", "revoked", "old-version", "old-token", "foreign-member"} {
 		t.Run(mode, func(t *testing.T) {
 			f := referenceExecuteTest(t, "object")
@@ -619,6 +630,7 @@ func TestReferenceActionRuleLifecycleAdmission(t *testing.T) {
 }
 
 func TestReferenceActionRuleUnknownSnapshotRecovery(t *testing.T) {
+	parallelFixtureTest(t)
 	f := referenceExecuteTest(t, "discussion")
 	c := policyRule()
 	if _, err := f.h.store.changePolicy(f.h.id, humanCaller, c); err != nil {

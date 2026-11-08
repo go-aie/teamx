@@ -1,4 +1,4 @@
-//go:build e2e
+//go:build integration || e2e
 
 package room
 
@@ -17,6 +17,7 @@ import (
 )
 
 func TestFixtureDemoAndReport(t *testing.T) {
+	parallelFixtureTest(t)
 	binary := filepath.Join(t.TempDir(), "teamx")
 	buildFixtureCLI(t, binary)
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)

@@ -1,3 +1,5 @@
+//go:build integration || e2e
+
 package lark
 
 import (
@@ -13,6 +15,7 @@ import (
 // Fixed CLI read fixtures exercise native response contracts, without giving a
 // test process any valid real target, credential or write endpoint.
 func TestPinnedSendTargetNativeEvidence(t *testing.T) {
+	parallelClientTest(t)
 	if runtime.GOOS != "darwin" {
 		t.Skip("macOS pinning")
 	}
@@ -53,7 +56,7 @@ raise Exception('unexpected operation')`, 1)
 		t.Fatal(err)
 	}
 	a := platform.AccountIdentity{IdentityScope: platform.IdentityScope{Provider: "lark", Instance: Origin("feishu"), Tenant: platform.ExternalID{Namespace: "lark:tenant_key", Value: "tenant"}}, ID: platform.ExternalID{Namespace: "lark:open_id:cli_fixture", Value: "ou_reader"}}
-	pin, err := Pin(context.Background(), p, a)
+	pin, err := NewClientFactory(0, 0, 0).Pin(context.Background(), p, a)
 	if err != nil {
 		t.Fatal(err)
 	}

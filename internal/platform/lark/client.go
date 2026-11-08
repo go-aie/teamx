@@ -72,13 +72,23 @@ type Client struct {
 	configDir string // internal pinned context; never accepted from an Agent
 	profile   platform.CLIProfile
 	requests  *requestBudget
+	selfSend  *requestBudget
+	gates     *sync.Map
 }
 
 func New(p platform.CLIProfile) (*Client, error) {
+	return (*ClientFactory)(nil).New(p)
+}
+
+func (f *ClientFactory) New(p platform.CLIProfile) (*Client, error) {
 	if !ValidProfile(p) {
 		return nil, failure("invalid_profile")
 	}
-	return &Client{profile: p, requests: accountRequests}, nil
+	requests, selfSend, profileGates := accountRequests, selfSendRequests, &gates
+	if f != nil && f.requests != nil && f.selfSend != nil {
+		requests, selfSend, profileGates = f.requests, f.selfSend, &f.gates
+	}
+	return &Client{profile: p, requests: requests, selfSend: selfSend, gates: profileGates}, nil
 }
 
 // Shared gates include independently constructed clients and Rooms. Waiting is
@@ -87,7 +97,7 @@ var gates sync.Map
 
 func (c *Client) lock(ctx context.Context) (func(), error) {
 	key := c.profile.Profile
-	v, _ := gates.LoadOrStore(key, make(chan struct{}, 1))
+	v, _ := c.gates.LoadOrStore(key, make(chan struct{}, 1))
 	gate := v.(chan struct{})
 	select {
 	case gate <- struct{}{}:
@@ -335,7 +345,11 @@ func (c *Client) Verify(ctx context.Context) (platform.Validation, error) {
 	return c.verify(ctx)
 }
 func VerifyIdentity(ctx context.Context, origin string, p platform.CLIProfile) platform.Validation {
-	c, err := New(p)
+	return (*ClientFactory)(nil).VerifyIdentity(ctx, origin, p)
+}
+
+func (f *ClientFactory) VerifyIdentity(ctx context.Context, origin string, p platform.CLIProfile) platform.Validation {
+	c, err := f.New(p)
 	var v platform.Validation
 	if err == nil && origin != Origin(p.Brand) {
 		err = failure("identity_mismatch")

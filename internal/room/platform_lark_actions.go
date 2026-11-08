@@ -38,7 +38,7 @@ func (m *roomManager) prepareLarkReferenceActions(ctx context.Context, id Member
 		closeCall()
 		return referenceActionSession{}, ErrIdentity
 	}
-	pin, err := lark.Pin(callCtx, *account.CLIProfile, account.Identity)
+	pin, err := m.larkClients.Pin(callCtx, *account.CLIProfile, account.Identity)
 	if err != nil {
 		closeCall()
 		return referenceActionSession{}, err

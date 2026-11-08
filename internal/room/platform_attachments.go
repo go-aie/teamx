@@ -166,7 +166,7 @@ func (m *roomManager) downloadAttachment(ctx context.Context, req attachmentRequ
 	var mime string
 	var downloadErr error
 	if source.Provider == "lark" {
-		client, err := lark.New(*account.CLIProfile)
+		client, err := m.larkClients.New(*account.CLIProfile)
 		if err != nil {
 			downloadErr = err
 		} else {

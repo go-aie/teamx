@@ -45,7 +45,7 @@ export MODEL_ID=qwen3.8-flash
    ```sh
    TEAMX_DSH_IMAGE_REAL=1 TEAMX_DSH_IMAGE_RESUME=1 \
    TEAMX_DSH_OUTPUT=/absolute/new-independent-evidence \
-   go test ./internal/agent/dsh -run '^TestRealDSHImage$' -count=1 -v -timeout 7m
+   go test -tags=e2e ./internal/agent/dsh -run '^TestRealDSHImage$' -count=1 -v -timeout 7m
    ```
 
    随机八位数字和红／蓝图形仅在 PNG 像素中，工作区和 prompt 不包含答案。须准确读出数字和布局、无工具调用、正常关闭；恢复检查另要求相同 Session ID 和原图上下文。误读或 429 均如实失败，不重放业务动作。

@@ -1,3 +1,5 @@
+//go:build integration || e2e
+
 package room
 
 import (
@@ -11,6 +13,7 @@ import (
 )
 
 func TestRoomRenamePreservesRuntimeCreationReceiptAndReload(t *testing.T) {
+	parallelFixtureTest(t)
 	m := activationTestManager(t)
 	m.factory = controlledActivationFactory(nil, nil)
 	selection := roomSelection{CreateID: "named", TeamID: "takeout-dinner", Name: "Original"}
@@ -55,6 +58,7 @@ func TestRoomRenamePreservesRuntimeCreationReceiptAndReload(t *testing.T) {
 }
 
 func TestRoomRenameValidationAndConcurrentEdits(t *testing.T) {
+	parallelFixtureTest(t)
 	m := testManager(t, t.TempDir(), managerTestProfiles(t))
 	room := managerCreate(t, m, "one")
 	base := roomRenameRequest{m.epoch, humanCaller, room.RoomIdentity, "New name", room.Name}
@@ -100,6 +104,7 @@ func TestRoomRenameValidationAndConcurrentEdits(t *testing.T) {
 }
 
 func TestRoomRenameUncertainCommitReopensConsistently(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, replaced := range []bool{false, true} {
 		t.Run(map[bool]string{false: "before replace", true: "after replace"}[replaced], func(t *testing.T) {
 			m := testManager(t, t.TempDir(), managerTestProfiles(t))

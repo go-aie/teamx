@@ -1,4 +1,4 @@
-//go:build e2e
+//go:build integration || e2e
 
 package room
 
@@ -12,11 +12,12 @@ import (
 	"testing"
 )
 
-// Explicit opt-in: runs the production CLI binary over actual loopback TCP.
+// Runs a shared production build over local TCP; an explicit binary is optional.
 func TestLoopbackProductionCLI(t *testing.T) {
+	parallelFixtureTest(t)
 	bin := os.Getenv("TEAMX_TEST_CLI_BIN")
 	if bin == "" {
-		t.Skip("set TEAMX_TEST_CLI_BIN to the built TeamX CLI")
+		bin = productionFixtureCLI(t)
 	}
 	m, room, svc, c, members := cliToolFixture(t, "printf '%s' \"$1\"\ncat\nprintf failure >&2\nexit 43\n")
 	bindCLITool(t, m, room.RoomIdentity, members[0], c, "gitlab", 0)

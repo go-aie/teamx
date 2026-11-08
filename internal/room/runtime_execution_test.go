@@ -1,3 +1,5 @@
+//go:build integration || e2e
+
 package room
 
 import (
@@ -16,6 +18,7 @@ import (
 )
 
 func TestRuntimeBackgroundNotificationsIgnoreAnotherRoomsOperation(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newEventHarness(t, gitlab.EventsConfig{})
 	seedEventInbox(t, h, 1)
 	sa := eventLiveService(t, h)
@@ -56,6 +59,7 @@ func TestRuntimeBackgroundNotificationsIgnoreAnotherRoomsOperation(t *testing.T)
 // Production process ownership and Room lifecycle executors; only the tool
 // executable and DSH/model component are controlled local fixtures.
 func TestRuntimeToolSettlementIsScopedToRoom(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, action := range []string{"workspace", "delete", "restart", "shared-rotation"} {
 		t.Run(action, func(t *testing.T) {
 			m := activationTestManager(t)
@@ -195,6 +199,7 @@ func TestRuntimeToolSettlementIsScopedToRoom(t *testing.T) {
 }
 
 func TestRuntimeLifecycleOperationsProgressIndependently(t *testing.T) {
+	parallelFixtureTest(t)
 	m := activationTestManager(t)
 	a, b := managerCreate(t, m, "a"), managerCreate(t, m, "b")
 	entered, cleanup, release := make(chan struct{}, 1), make(chan struct{}, 1), make(chan struct{})
@@ -266,6 +271,7 @@ func TestRuntimeLifecycleOperationsProgressIndependently(t *testing.T) {
 }
 
 func TestRuntimeConcurrentOpenReceiptsKeepIndependentServices(t *testing.T) {
+	parallelFixtureTest(t)
 	m := activationTestManager(t)
 	a, b := managerCreate(t, m, "a"), managerCreate(t, m, "b")
 	entered, release := make(chan struct{}), make(chan struct{})

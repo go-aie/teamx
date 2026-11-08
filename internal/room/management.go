@@ -18,6 +18,7 @@ import (
 	"github.com/go-aie/teamx/internal/agent/dsh"
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/connection"
+	"github.com/go-aie/teamx/internal/platform/lark"
 	"github.com/go-aie/teamx/internal/platform/notification"
 	"github.com/go-aie/teamx/internal/platform/tool"
 )
@@ -126,6 +127,7 @@ type roomManager struct {
 	toolCatalog              []tool.Definition
 	platformCalls            map[*platformCall]bool
 	platformMemberChanges    map[MemberIdentity]bool
+	larkClients              *lark.ClientFactory // nil uses the shared production request queues
 	connections              *connection.Manager
 	oauthFlights             map[string]*oauthRefreshFlight
 	oauthLeases              map[string]map[*gitlabTokenLease]bool

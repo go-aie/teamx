@@ -26,7 +26,7 @@ func profileFixture(t *testing.T) (string, platform.CLIProfile, string) {
 	if err := os.WriteFile(file, data, 0600); err != nil {
 		t.Fatal(err)
 	}
-	script := `#!/usr/bin/env python3
+	script := `#!/usr/bin/env -S python3 -S
 import os,sys,json
 if sys.argv[1:]==['--version']:
  print('scn 0.1.13');sys.exit()

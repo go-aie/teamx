@@ -195,7 +195,7 @@ func (m *roomManager) checkDeletionSettled(target RoomIdentity) error {
 	if err != nil {
 		return err
 	}
-	defer lock.Close()
+	defer unlockDirectory(lock)
 	if _, err := os.Stat(filepath.Join(dir, "room.json")); errors.Is(err, os.ErrNotExist) {
 		// An interrupted creation has not published a Room or opened a backend.
 		if _, err := os.Lstat(filepath.Join(dir, "agents")); !errors.Is(err, os.ErrNotExist) {

@@ -1,3 +1,5 @@
+//go:build integration || e2e
+
 package room
 
 import (
@@ -10,6 +12,7 @@ import (
 )
 
 func TestRuntimeShutdownStopsEveryRoomDespiteUnsettledMember(t *testing.T) {
+	parallelFixtureTest(t)
 	m := activationTestManager(t)
 	a, b := managerCreate(t, m, "a"), managerCreate(t, m, "b")
 	entered := make(chan MemberIdentity, 8)
@@ -93,6 +96,7 @@ func TestRuntimeShutdownStopsEveryRoomDespiteUnsettledMember(t *testing.T) {
 }
 
 func TestRuntimeShutdownToolTimeoutStillClosesAllServices(t *testing.T) {
+	parallelFixtureTest(t)
 	m := activationTestManager(t)
 	m.factory = controlledActivationFactory(nil, nil)
 	a, b := managerCreate(t, m, "a"), managerCreate(t, m, "b")
@@ -135,6 +139,7 @@ func TestRuntimeShutdownToolTimeoutStillClosesAllServices(t *testing.T) {
 }
 
 func TestRuntimeShutdownCancelsRoomOperationBeforeWaiting(t *testing.T) {
+	parallelFixtureTest(t)
 	m := activationTestManager(t)
 	m.factory = controlledActivationFactory(nil, nil)
 	a, b := managerCreate(t, m, "operation"), managerCreate(t, m, "service")

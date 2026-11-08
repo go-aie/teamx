@@ -115,7 +115,7 @@ export TEAMX_DSH_BINARY_PATH=/absolute/path/to/dsh
 
 ```sh
 TEAMX_DSH_REAL=1 TEAMX_DSH_OUTPUT=/absolute/new-session-evidence \
-  go test ./internal/agent/dsh -run '^TestRealDSHSession$' -count=1 -v -timeout 10m
+  go test -tags=e2e ./internal/agent/dsh -run '^TestRealDSHSession$' -count=1 -v -timeout 10m
 ```
 
 | 开关 | 测试入口 | 范围 |

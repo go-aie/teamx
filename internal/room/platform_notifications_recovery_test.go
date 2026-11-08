@@ -1,3 +1,5 @@
+//go:build integration || e2e
+
 package room
 
 import (
@@ -13,6 +15,7 @@ import (
 )
 
 func TestPlatformNotificationInboxReloadClearAndContinuation(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newEventHarness(t, gitlab.EventsConfig{})
 	data, err := os.ReadFile("../platform/gitlab/testdata/events.json")
 	if err != nil {

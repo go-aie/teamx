@@ -1,3 +1,5 @@
+//go:build integration || e2e
+
 package room
 
 import (
@@ -11,6 +13,7 @@ import (
 )
 
 func TestConnectionsUpgradeRequiresStoppedServiceAndPreservesReferences(t *testing.T) {
+	parallelFixtureTest(t)
 	m := testManager(t, t.TempDir(), nil)
 	c := platformTestSave(t, m, platformTestRequest(m))
 	file, _ := m.connections.Load()

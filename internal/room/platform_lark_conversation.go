@@ -56,7 +56,7 @@ func (m *roomManager) inboxLarkConversation(ctx context.Context, svc *service, s
 	defer cancel()
 	stop := context.AfterFunc(svc.ctx, cancel)
 	defer stop()
-	client, err := lark.New(*a.CLIProfile)
+	client, err := m.larkClients.New(*a.CLIProfile)
 	if err != nil {
 		return empty, err
 	}

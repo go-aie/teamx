@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/connection"
 	"github.com/go-aie/teamx/internal/platform/lark"
@@ -50,7 +51,9 @@ func (m *roomManager) resumeLarkSubscriptionsLocked(connectionID string) error {
 }
 
 func (m *roomManager) larkNotificationAdapter() notificationAdapter {
-	return notificationAdapter{Source: &lark.Source{}, Admit: func(_ context.Context, state notification.State) (notification.Scope, error) {
+	return notificationAdapter{Source: &lark.Source{Reader: func(q lark.QueryScope) (lark.MessageReader, error) {
+		return m.larkClients.New(q.Profile)
+	}}, Admit: func(_ context.Context, state notification.State) (notification.Scope, error) {
 		s, ok := state.(lark.State)
 		if !ok {
 			return notification.Scope{}, notification.ErrInvalid

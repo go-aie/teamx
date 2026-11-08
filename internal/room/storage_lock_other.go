@@ -10,3 +10,5 @@ import (
 func lockDirectory(string) (*os.File, error) {
 	return nil, fmt.Errorf("Room snapshot directory locking requires macOS or Linux")
 }
+
+func unlockDirectory(f *os.File) error { return f.Close() }

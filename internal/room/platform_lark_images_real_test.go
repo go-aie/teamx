@@ -44,6 +44,7 @@ func TestRealLarkImageMaterials(t *testing.T) {
 	report := map[string]any{"status": "failed", "remote_writes": 0, "live_room_modified": false, "model_requested": os.Getenv("TEAMX_LARK_IMAGE_MODEL") == "1", "browser": "not exercised", "scheduler": "seeded fixed turn only"}
 	defer imageRealReport(t, output, report)
 	h := newLarkHarness(t)
+	h.m.larkClients = nil // Real acceptance retains process-wide production pacing.
 	c := platformTestSave(t, h.m, platformConnectionRequest{ServiceEpoch: h.m.epoch, Caller: humanCaller, ID: strings.Repeat("e", 32), Name: "isolated image acceptance", Provider: "lark", URL: lark.Origin(input.Profile.Brand), CLIProfile: &input.Profile})
 	c, err = h.m.verifyPlatformConnection(context.Background(), platformConnectionRequest{ID: c.ID, Version: c.Version})
 	if err != nil || c.Validation.Status != "valid" {

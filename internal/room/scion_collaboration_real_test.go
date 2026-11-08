@@ -63,7 +63,7 @@ func TestScionRealDSHCollaboration(t *testing.T) {
 	// This fault adapter runs the real thin wrapper and hides exactly one successful
 	// comment response. The model must reconcile by reading, without a second post.
 	wrapped := filepath.Join(output, "fault-scion")
-	script := fmt.Sprintf(`#!/usr/bin/env python3
+	script := fmt.Sprintf(`#!/usr/bin/env -S python3 -S
 import os,sys,subprocess,json
 args=sys.argv[1:]
 root=os.path.dirname(os.path.realpath(__file__))

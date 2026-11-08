@@ -44,7 +44,11 @@ type Store struct {
 	lock                 *os.File
 	uncertain            bool
 	ops                  snapshotOps
+	directoryMu          sync.Mutex
+	durableDirectories   map[string]directoryIdentity
 }
+
+type directoryIdentity struct{ directory, parent os.FileInfo }
 
 type snapshotFile interface {
 	io.Writer
@@ -55,6 +59,7 @@ type snapshotFile interface {
 
 // The narrow I/O seam lets tests stop at exact commit boundaries.
 type snapshotOps struct {
+	makeDir    func(string) error
 	createTemp func(string, string) (snapshotFile, error)
 	rename     func(string, string) error
 	syncDir    func(string) error
@@ -62,6 +67,7 @@ type snapshotOps struct {
 
 func defaultSnapshotOps() snapshotOps {
 	return snapshotOps{
+		makeDir:    makeDurableDir,
 		createTemp: func(dir, pattern string) (snapshotFile, error) { return os.CreateTemp(dir, pattern) },
 		rename:     os.Rename,
 		syncDir:    syncDirectory,
@@ -114,7 +120,7 @@ func (s *Store) Close() error {
 	if s.lock == nil {
 		return nil
 	}
-	err := s.lock.Close()
+	err := unlockDirectory(s.lock)
 	s.lock = nil
 	// Never remove the lock file: unlinking a locked inode permits a second
 	// service to lock a different inode under the same pathname.
@@ -249,7 +255,7 @@ func (s *Store) check(writing bool) error {
 // all writes in this Store, including writes to other snapshot files.
 func (s *Store) save(path string, v any, limit int64) error {
 	dir := filepath.Dir(path)
-	if err := makeDurableDir(dir); err != nil {
+	if err := s.ensureSnapshotDirectory(dir); err != nil {
 		return err
 	}
 	f, err := s.ops.createTemp(dir, ".snapshot-*")
@@ -285,6 +291,39 @@ func (s *Store) save(path string, v any, limit int64) error {
 		s.uncertain = true
 		return fmt.Errorf("%w: sync directory: %w", ErrCommitUnknown, err)
 	}
+	return nil
+}
+
+// Directory creation is a durability boundary, but an already initialized
+// directory need not be synced again before every write. Keep the file Sync
+// and the post-rename directory Sync on every commit. Recheck both inodes so
+// replacing a directory or its parent requires initialization again.
+func (s *Store) ensureSnapshotDirectory(dir string) error {
+	s.directoryMu.Lock()
+	defer s.directoryMu.Unlock()
+	info, statErr := os.Stat(dir)
+	parent, parentErr := os.Stat(filepath.Dir(dir))
+	previous, found := s.durableDirectories[dir]
+	if found && statErr == nil && parentErr == nil &&
+		os.SameFile(previous.directory, info) && os.SameFile(previous.parent, parent) {
+		return nil
+	}
+	delete(s.durableDirectories, dir)
+	if err := s.ops.makeDir(dir); err != nil {
+		return err
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		return err
+	}
+	parent, err = os.Stat(filepath.Dir(dir))
+	if err != nil {
+		return err
+	}
+	if s.durableDirectories == nil {
+		s.durableDirectories = map[string]directoryIdentity{}
+	}
+	s.durableDirectories[dir] = directoryIdentity{info, parent}
 	return nil
 }
 

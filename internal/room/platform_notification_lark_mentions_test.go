@@ -1,3 +1,5 @@
+//go:build integration || e2e
+
 package room
 
 import (
@@ -13,6 +15,7 @@ import (
 )
 
 func TestLarkMentionIdentityInAgentInboxWithoutReadBinding(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newLarkHarness(t)
 	m := lark.Message{ID: "om_mention", ChatID: "oc_chat", Type: "text", Created: "100000", Updated: "100000", Sender: lark.Sender{ID: "ou_sender", IDType: "open_id", Type: "user"}, Mentions: []lark.Mention{
 		{Key: "@_user_1", ID: "ou_reader", IDType: "open_id", Name: "接收者"},

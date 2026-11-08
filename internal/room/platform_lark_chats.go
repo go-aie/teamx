@@ -70,7 +70,7 @@ func (m *roomManager) listLarkChats(ctx context.Context, req larkChatsRequest) (
 	m.platformCalls[call] = true
 	m.mu.Unlock()
 	defer m.finishPlatformCall(call)
-	client, err := lark.New(*a.CLIProfile)
+	client, err := m.larkClients.New(*a.CLIProfile)
 	if err != nil {
 		return lark.ChatPage{}, err
 	}

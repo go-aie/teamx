@@ -1,3 +1,5 @@
+//go:build integration || e2e
+
 package room
 
 import (
@@ -16,6 +18,7 @@ import (
 )
 
 func TestLarkNotificationRecoversConsumedBindingFailureLocally(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newLarkHarness(t)
 	h.start()
 	if err := h.deliver(); err != nil {
@@ -95,6 +98,7 @@ func TestLarkNotificationRecoversConsumedBindingFailureLocally(t *testing.T) {
 }
 
 func TestLarkNotificationResolutionIsBoundToSavedEnvelope(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newLarkHarness(t)
 	h.start()
 	if err := h.deliver(); err != nil {
