@@ -82,6 +82,10 @@ func TestLarkChatPickerListsMetadataBeforeSubscription(t *testing.T) {
 		func(r *larkChatsRequest) { r.RoomInstance = "stale" },
 		func(r *larkChatsRequest) { r.ConnectionVersion++ },
 		func(r *larkChatsRequest) { r.PageToken = "invalid\npage" },
+		func(r *larkChatsRequest) { r.Query = strings.Repeat("字", 51) },
+		func(r *larkChatsRequest) { r.Query = "bad\nquery" },
+		func(r *larkChatsRequest) { r.Query = " " },
+		func(r *larkChatsRequest) { r.Type = "unknown" },
 	} {
 		bad := req
 		mutate(&bad)
@@ -94,6 +98,76 @@ func TestLarkChatPickerListsMetadataBeforeSubscription(t *testing.T) {
 	if w.Code != 405 {
 		t.Fatal(w.Code)
 	}
+}
+
+func installChatSearchFixture(t *testing.T, h *larkHarness) {
+	t.Helper()
+	bin := filepath.Join(h.dir, "lark-cli")
+	script, err := os.ReadFile(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	search := `if a[:2]==['im','+chat-search']:
+ assert a[a.index('--query')+1]=='yanfa'
+ assert '--disable-search-by-user' in a
+ data={'chats':[{'chat_id':'oc_search_group','chat_mode':'DEFAULT','name':'研发群'}],'has_more':False,'page_token':''}
+ print(json.dumps({'ok':True,'identity':'user','data':data}));sys.exit()
+if a[:2]==['contact','+search-user']:
+ assert '--has-chatted' in a
+ data={'users':[{'open_id':'ou_peer','localized_name':'研发同事','p2p_chat_id':'oc_search_peer'}],'has_more':True}
+ print(json.dumps({'ok':True,'identity':'user','data':data}));sys.exit()
+if a[:2]==['contact','+search-bot']:
+ print(json.dumps({'ok':False,'error':{'type':'authorization'}}),file=sys.stderr);sys.exit(1)
+`
+	script = []byte(strings.Replace(string(script), "if a[:2]==['im','+chat-list']:", search+"\nif a[:2]==['im','+chat-list']:", 1))
+	if err := os.WriteFile(bin, script, 0700); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLarkChatPickerSearchesMetadataWithPartialPermissions(t *testing.T) {
+	h := newLarkHarness(t)
+	installChatSearchFixture(t, h)
+	req := larkChatsRequest{ServiceEpoch: h.m.epoch, RoomIdentity: h.room.RoomIdentity, Caller: humanCaller, ConnectionID: h.c.ID, ConnectionVersion: h.c.Version, Query: "yanfa", Type: "all"}
+	response := managerHTTP(h.m, "/v1/platform/lark/chats", req)
+	var page lark.ChatPage
+	if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &page) != nil || len(page.Chats) != 2 || len(page.SearchWarnings) != 2 || page.HasMore {
+		t.Fatal(response.Code, response.Body.String())
+	}
+	if page.Chats[0].Mode != "group" || page.Chats[1].ID != "oc_search_peer" {
+		t.Fatal(page)
+	}
+	for _, c := range platformTestList(t, h.m) {
+		if c.ID == h.c.ID && (c.Version != h.c.Version || c.Validation.Status != "valid") {
+			t.Fatal("optional permission changed connection", c)
+		}
+	}
+	h.m.mu.Lock()
+	defer h.m.mu.Unlock()
+	if len(h.m.notifications.StatesLocked(h.room.RoomIdentity)) != 0 || len(h.m.platformCalls) != 0 {
+		t.Fatal("search changed subscription or leaked calls")
+	}
+}
+
+func TestLarkChatSearchBrowser(t *testing.T) {
+	if os.Getenv("TEAMX_LARK_SCOPE_BROWSER") != "1" {
+		t.Skip("optional local Chromium acceptance")
+	}
+	h := newLarkHarness(t)
+	installChatSearchFixture(t, h)
+	raw, _ := json.Marshal(lark.ChatPage{Chats: []lark.Chat{{ID: "oc_private", Mode: "p2p", Name: "同事"}, {ID: "oc_group", Mode: "group", Name: "项目群"}}})
+	if err := os.WriteFile(filepath.Join(h.dir, "directory.json"), raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(h.m)
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "node", "testdata/lark_search_browser.cjs", server.URL).CombinedOutput()
+	if err != nil {
+		t.Fatalf("browser: %v\n%s", err, out)
+	}
+	t.Log(strings.TrimSpace(string(out)))
 }
 
 func TestLarkChatPickerRejectsConnectionChangedDuringRead(t *testing.T) {

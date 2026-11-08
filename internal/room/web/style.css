@@ -1767,6 +1767,9 @@ textarea::placeholder {
 .lark-settings .lark-chat-option small { flex:none; margin:0; }
 .lark-group-controls { display:flex; align-items:center; gap:14px; }
 .lark-group-controls select { width:110px; flex:none; }
+.lark-backfill-locked { display:flex; align-items:baseline; flex-wrap:wrap; gap:4px 8px; min-height:36px; padding:8px 0; color:var(--muted); font-size:13px; line-height:1.5; cursor:default; }
+.lark-backfill-locked > span { overflow-wrap:anywhere; }
+.lark-backfill-locked > small { font-size:11px; white-space:nowrap; }
 .lark-group-mentions { display:flex; align-items:center; gap:12px; }
 .lark-settings .lark-group-mentions .workspace-check { margin:0; min-height:36px; font-weight:400; white-space:nowrap; cursor:pointer; }
 .notification-settings-actions > button:last-child { margin-left:auto; }
@@ -2062,6 +2065,9 @@ textarea::placeholder {
 .inbox-channel { padding: 2px 7px; border: 1px solid var(--line); border-radius: 5px; background: #f3f5f1; color: #59675d; line-height: 1.5; }
 .inbox-entry-header time { margin-left: auto; font-variant-numeric: tabular-nums; }
 .activity-section .inbox-sender { margin: 0 0 10px; font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+.inbox-message-heading { display:flex; align-items:baseline; flex-wrap:wrap; gap:4px 12px; margin:0 0 10px; }
+.activity-section .inbox-message-heading .inbox-sender { margin:0; }
+.inbox-message-heading .inbox-chat { margin:0; }
 .inbox-chat { margin: 14px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
 .inbox-change { margin: 0 0 10px; font-size: 12px; }
 .inbox-source-details { margin-top: 12px; color: var(--muted); font-size: 12px; }

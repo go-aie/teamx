@@ -1,5 +1,8 @@
-export async function request(path, payload, fetcher = globalThis.fetch, timeout = 10000) {
+export async function request(path, payload, fetcher = globalThis.fetch, timeout = 10000, signal) {
   const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (signal?.aborted) abort();
+  else signal?.addEventListener("abort", abort, { once: true });
   const timer = setTimeout(() => controller.abort(), timeout);
   try {
     const response = await fetcher(path, { method: payload ? "POST" : "GET", cache: "no-store",
@@ -12,7 +15,7 @@ export async function request(path, payload, fetcher = globalThis.fetch, timeout
       throw error;
     }
     return result;
-  } finally { clearTimeout(timer); }
+  } finally { clearTimeout(timer); signal?.removeEventListener("abort", abort); }
 }
 
 // Never overwrite an existing draft or an uncertain send when loading a team.

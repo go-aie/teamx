@@ -147,7 +147,7 @@
                         <details id="lark-chat-picker" class="lark-chat-picker">
                           <summary id="lark-chat-picker-summary" aria-describedby="lark-chat-picker-hint">选择私聊或群聊</summary>
                           <div class="lark-chat-controls">
-                            <label for="lark-chat-search" class="sr-only">搜索会话名称</label><input id="lark-chat-search" type="search" placeholder="搜索会话名称" autocomplete="off">
+                            <label for="lark-chat-search" class="sr-only">搜索会话名称</label><input id="lark-chat-search" type="search" placeholder="搜索群名或联系人姓名" autocomplete="off">
                             <label for="lark-chat-type" class="sr-only">会话类型</label><select id="lark-chat-type"><option value="all">全部类型</option><option value="p2p">私聊</option><option value="group">群聊</option></select>
                           </div>
                           <p id="lark-chat-picker-status" class="quiet" role="status" aria-live="polite"></p>
@@ -160,17 +160,19 @@
                       <p id="lark-chat-picker-hint" class="quiet" role="status" hidden></p>
                     </div>
                     <p id="lark-scope-help" class="quiet" hidden>接收可访问私聊和已加入群聊的消息。</p>
-                    <label for="lark-group-mode">群聊消息</label>
-                    <div class="lark-group-controls">
-                      <select id="lark-group-mode" aria-describedby="lark-group-mode-help"><option value="mentions">按 @</option><option id="lark-group-mode-all" value="all">全部消息</option></select>
-                      <div id="lark-group-mentions" class="lark-group-mentions">
-                        <label class="workspace-check"><input id="lark-group" type="checkbox" checked>@我</label>
-                        <label class="workspace-check"><input id="lark-all" type="checkbox">@所有人</label>
+                    <div id="lark-group-settings">
+                      <label for="lark-group-mode">群聊消息</label>
+                      <div class="lark-group-controls">
+                        <select id="lark-group-mode" aria-describedby="lark-group-mode-help"><option value="mentions">按 @</option><option id="lark-group-mode-all" value="all">全部消息</option></select>
+                        <div id="lark-group-mentions" class="lark-group-mentions">
+                          <label class="workspace-check"><input id="lark-group" type="checkbox" checked>@我</label>
+                          <label class="workspace-check"><input id="lark-all" type="checkbox">@所有人</label>
+                        </div>
                       </div>
+                      <p id="lark-group-mode-help" class="quiet">私聊接收全部消息；“我”指所选连接账号。</p>
                     </div>
-                    <p id="lark-group-mode-help" class="quiet">私聊接收全部消息；“我”指所选连接账号。</p>
                     <div class="notification-settings-row">
-                      <div><label for="lark-backfill">开始接收时间</label><select id="lark-backfill" aria-describedby="lark-backfill-help"><option value="0">从开启时刻</option><option value="3600">最近 1 小时</option><option value="86400">最近 24 小时</option><option value="custom">指定时间</option></select></div>
+                      <div><label for="lark-backfill">开始接收时间</label><select id="lark-backfill" aria-describedby="lark-backfill-help"><option value="0">从开启时刻</option><option value="3600">最近 1 小时</option><option value="86400">最近 24 小时</option><option value="custom">指定时间</option></select><div id="lark-backfill-locked" class="lark-backfill-locked" aria-describedby="lark-backfill-help" hidden><span id="lark-backfill-value"></span><small>已锁定</small></div></div>
                       <div><label for="lark-interval">检查间隔（秒）</label><input id="lark-interval" type="number" min="3" max="3600" value="60" title="3～3600 秒"></div>
                     </div>
                     <div id="lark-backfill-custom" hidden><label for="lark-backfill-start">起始时间（本地时间）</label><input id="lark-backfill-start" type="datetime-local" step="1" aria-describedby="lark-backfill-help lark-backfill-error"></div>

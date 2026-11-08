@@ -20,9 +20,10 @@ type ChatsRequest struct {
 	PageToken string
 }
 type ChatPage struct {
-	Chats     []Chat `json:"chats"`
-	HasMore   bool   `json:"has_more"`
-	PageToken string `json:"page_token"`
+	Chats          []Chat              `json:"chats"`
+	HasMore        bool                `json:"has_more"`
+	PageToken      string              `json:"page_token"`
+	SearchWarnings []ChatSearchWarning `json:"search_warnings,omitempty"`
 }
 type DirectoryReader interface {
 	Chats(context.Context, platform.AccountIdentity, ChatsRequest) (ChatPage, error)

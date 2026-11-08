@@ -392,7 +392,8 @@ function larkChatLabel(chat, id) { return chat?.name || `未命名${chat ? larkC
 function larkChatDirectory(ws, connection) {
   const key=JSON.stringify([state.catalog?.service_epoch,connection?.id,connection?.version,connection?.validation?.account]);
   if(ws.larkChatDirectory?.key!==key){
-    ws.larkChatDirectory={key,chats:new Map(),loaded:false,loading:false,hasMore:false,token:"",error:"",pages:0};
+    clearTimeout(ws.larkChatDirectory?.timer);ws.larkChatDirectory?.controller?.abort();
+    ws.larkChatDirectory={key,query:"",type:"all",known:new Map(),chats:new Map(),loaded:false,loading:false,hasMore:false,token:"",error:"",pages:0,warnings:[]};
     $("lark-chat-search").value="";$("lark-chat-type").value="all";
   }
   return ws.larkChatDirectory;
@@ -420,16 +421,19 @@ function renderLarkChatPicker(ws, connection) {
   $("lark-chat-search").disabled=blocked;$("lark-chat-type").disabled=blocked;
   if(blocked)$("lark-chat-picker").open=false;
   const known=new Map((ws.messages?.config.connection_id===connection?.id ? ws.messages?.lark?.chats || [] : []).map(chat=>[chat.chat_id,chat]));
-  for(const [id,chat] of dir.chats)known.set(id,chat);
+  for(const [id,chat] of dir.known)known.set(id,chat);
+  $("lark-group-settings").hidden=!all && ids.length>0 && ids.every(id=>{
+    const chat=known.get(id);return (chat?.chat_mode || chat?.mode)==="p2p";
+  });
   $("lark-chat-selected").replaceChildren(...ids.map(id=>{
     const chat=known.get(id),label=larkChatLabel(chat,id),button=document.createElement("button");
     button.type="button";button.textContent=`${label} ×`;button.title=id;button.setAttribute("aria-label",`移除会话：${label}`);
     button.addEventListener("click",()=>selectLarkChat(id,false));return button;
   }));
   $("lark-chat-picker-summary").textContent=!ready ? needsConnection ? "请先选择平台连接" : "请先验证平台连接" : ids.length ? `已选 ${ids.length} / 32 个 · 编辑` : "选择私聊或群聊";
-  const query=$("lark-chat-search").value.trim().toLocaleLowerCase(),type=$("lark-chat-type").value || "all";
-  const chats=[...dir.chats.values()].filter(chat=>(type==="all" || (type==="p2p" ? chat.chat_mode==="p2p" : chat.chat_mode!=="p2p")) && `${chat.name}\n${chat.chat_id}`.toLocaleLowerCase().includes(query));
-  chats.sort((a,b)=>(a.name || a.chat_id).localeCompare(b.name || b.chat_id,"zh-CN"));
+  const query=dir.query,type=dir.type;
+  const chats=[...dir.chats.values()].filter(chat=>type==="all" || (type==="p2p" ? chat.chat_mode==="p2p" : chat.chat_mode!=="p2p"));
+  if(!query)chats.sort((a,b)=>(a.name || a.chat_id).localeCompare(b.name || b.chat_id,"zh-CN"));
   $("lark-chat-options").replaceChildren(...chats.map(chat=>{
     const label=document.createElement("label"),input=document.createElement("input"),text=document.createElement("span"),name=document.createElement("span"),detail=document.createElement("small");
     label.className="lark-chat-option";input.type="checkbox";input.value=chat.chat_id;input.checked=ids.includes(chat.chat_id);input.disabled=blocked || !input.checked && ids.length>=32;
@@ -439,26 +443,38 @@ function renderLarkChatPicker(ws, connection) {
       selectLarkChat(chat.chat_id,input.checked);
     });return label;
   }));
-  $("lark-chat-picker-status").textContent=!ready ? "请先选择并验证飞书连接。" : dir.error || (dir.loading ? `正在加载…已有 ${dir.chats.size} 个会话` : !dir.loaded ? "可选择私聊和已加入群聊，最多 32 个。" : `${dir.hasMore ? "尚未加载完整，搜索仅筛选已加载会话" : `已加载 ${dir.chats.size} 个会话`}${!chats.length ? (query || type!=="all" ? " · 无匹配会话" : " · 暂无会话") : ""}`);
+  const warningText=dir.warnings.map(w=>{
+    const name={group:"群聊",user:"人员私聊",bot:"机器人私聊"}[w.source] || "部分会话";
+    if(w.code==="refine_query")return `${name}结果较多，请输入更完整的名称`;
+    if(w.code==="permission_denied")return `${name}搜索权限不足，请补充授权；也可清空关键词浏览会话列表`;
+    return `${name}搜索暂不可用，可重试`;
+  }).join("；");
+  const summary=dir.loading ? (query ? "正在搜索…" : `正在加载…已有 ${dir.chats.size} 个会话`) : !dir.loaded ? (query ? "等待搜索…" : "可选择私聊和已加入群聊，输入名称可远程搜索。") : query ? `已找到 ${dir.chats.size} 个会话${dir.hasMore ? "，可加载更多群聊" : ""}${!chats.length ? (dir.warnings.length ? " · 当前未返回匹配会话" : " · 无匹配会话") : ""}` : `已加载 ${dir.chats.size} 个会话${dir.hasMore ? "，可加载更多或输入名称搜索" : ""}${!chats.length ? " · 暂无会话" : ""}`;
+  $("lark-chat-picker-status").textContent=!ready ? "请先选择并验证飞书连接。" : dir.error || `${summary}${warningText ? `；${warningText}` : ""}`;
   $("lark-chat-more").hidden=!dir.hasMore;$("lark-chat-more").disabled=blocked || dir.loading || dir.chats.size>=10000 || dir.pages>=100;
-  $("lark-chat-refresh").disabled=blocked || dir.loading;
+  $("lark-chat-more").textContent=query ? "加载更多群聊" : "加载更多";
+  $("lark-chat-refresh").textContent=query ? "重新搜索" : "刷新会话列表";
+  $("lark-chat-refresh").disabled=blocked || dir.loading || !!dir.timer;
 }
 async function loadLarkChats(reset=false) {
   const ws=workspaceView,epoch=state.catalog?.service_epoch,connection=ws?.larkConnections?.find(x=>x.id===$("lark-connection").value);
-  if(!ws || !epoch || connection?.validation?.status!=="valid" || $("lark-fields").disabled || larkAllChats())return;
-  const dir=larkChatDirectory(ws,connection);
+  if(!ws || !epoch || connection?.validation?.status!=="valid" || $("lark-fields").disabled || larkAllChats() || !$("notification-detail").open || !$("lark-chat-picker").open)return;
+  let dir=larkChatDirectory(ws,connection);
   if(dir.loading || !reset && dir.loaded && !dir.hasMore)return;
-  if(reset){dir.chats.clear();dir.token="";dir.loaded=false;dir.hasMore=false;dir.pages=0;}
+  if(reset)dir=resetLarkChatSearch(ws,dir,dir.query,dir.type);
+  if([...dir.query].length>50){dir.error="搜索名称最多 50 个字符。";renderLarkMessages();return;}
+  clearTimeout(dir.timer);dir.timer=null;dir.controller=new AbortController();
   dir.loading=true;dir.error="";renderLarkMessages();
   try{
-    const page=await request("/v1/platform/lark/chats",{service_epoch:epoch,...ws.room,caller:{kind:"human",id:ws.operator},connection_id:connection.id,connection_version:connection.version,page_token:dir.token},undefined,40000);
+    const page=await request("/v1/platform/lark/chats",{service_epoch:epoch,...ws.room,caller:{kind:"human",id:ws.operator},connection_id:connection.id,connection_version:connection.version,page_token:dir.token,query:dir.query,type:dir.type},undefined,40000,dir.controller.signal);
     if(ws!==workspaceView || epoch!==state.catalog?.service_epoch || ws.larkChatDirectory!==dir || !$("notification-detail").open || !$("lark-chat-picker").open || larkAllChats())return;
     if(!Array.isArray(page.chats) || typeof page.has_more!=="boolean" || page.has_more && (!page.page_token || page.page_token===dir.token))throw Error("invalid page");
-    for(const chat of page.chats)dir.chats.set(chat.chat_id,chat);
+    for(const chat of page.chats){dir.chats.set(chat.chat_id,chat);dir.known.set(chat.chat_id,chat);}
+    for(const warning of page.search_warnings || [])if(!dir.warnings.some(w=>w.source===warning.source && w.code===warning.code))dir.warnings.push(warning);
     dir.loaded=true;dir.hasMore=page.has_more;dir.token=page.page_token || "";dir.pages++;
-    if(dir.hasMore && (dir.chats.size>=10000 || dir.pages>=100))dir.error="已达会话列表加载上限，可从已加载会话中搜索选择。";
+    if(dir.hasMore && (dir.chats.size>=10000 || dir.pages>=100))dir.error="已达会话列表加载上限，请输入更完整的名称搜索。";
   }catch(e){
-    if(ws===workspaceView && ws.larkChatDirectory===dir){
+    if(ws===workspaceView && ws.larkChatDirectory===dir && !dir.controller.signal.aborted){
       const errors={conflict:"连接已变化，请重新读取通知设置并核对连接。",identity_mismatch:"飞书登录账号已变化，请重新验证连接后刷新会话列表。",permission_denied:"读取会话的权限不足，请检查授权并重新验证连接。",credential:"飞书连接未验证或登录已失效，请重新验证连接。",cursor_expired:"会话列表已变化，请刷新会话列表后继续选择。"};
       dir.error=errors[e.code] || "会话列表读取失败，已选会话保留；可刷新列表重试。";
     }
@@ -466,6 +482,32 @@ async function loadLarkChats(reset=false) {
     dir.loading=false;
     if(ws===workspaceView && ws.larkChatDirectory===dir)renderLarkMessages();
   }
+}
+function resetLarkChatSearch(ws,dir,query,type) {
+  clearTimeout(dir.timer);dir.controller?.abort();
+  // Retain only selected labels across queries; result caches stay bounded.
+  const known=new Map([...dir.known].filter(([id])=>larkChatIDs().includes(id)));
+  return ws.larkChatDirectory={key:dir.key,query,type,known,chats:new Map(),loaded:false,loading:false,hasMore:false,token:"",error:"",pages:0,warnings:[]};
+}
+function queueLarkChatSearch(composing=false,delay=300) {
+  const ws=workspaceView;if(!ws || $("lark-chat-search").disabled)return;
+  const connection=ws.larkConnections?.find(x=>x.id===$("lark-connection").value);
+  let dir=larkChatDirectory(ws,connection);
+  const query=$("lark-chat-search").value.trim(),type=$("lark-chat-type").value || "all";
+  if(!query && !dir.query)dir.type=type;
+  else if(query!==dir.query || type!==dir.type)dir=resetLarkChatSearch(ws,dir,query,type);
+  clearTimeout(dir.timer);dir.timer=null;
+  if([...query].length>50)dir.error="搜索名称最多 50 个字符。";
+  else if(!composing && !dir.loaded && !dir.loading){
+    dir.timer=setTimeout(()=>{dir.timer=null;if(ws===workspaceView && ws.larkChatDirectory===dir)void loadLarkChats();},query ? delay : 0);
+  }
+  renderLarkMessages();
+}
+function stopLarkChatSearch() {
+  const ws=workspaceView,dir=ws?.larkChatDirectory;if(!dir)return;
+  ws.larkChatComposing=false;
+  clearTimeout(dir.timer);dir.controller?.abort();
+  ws.larkChatDirectory={...dir,loading:false,timer:null,controller:null};
 }
 function renderLarkMessages() {
   const ws=workspaceView,data=ws?.messages;
@@ -491,8 +533,10 @@ function renderLarkMessages() {
     ws.larkFilled=data.subscription_id+":"+data.subscription_version;
   }
   ws.larkSelectionConnection=c.connection_id;
-  $("lark-backfill").disabled=!!data.subscription_id;$("lark-backfill-start").disabled=!!data.subscription_id;
-  $("lark-backfill-custom").hidden=$("lark-backfill").value!=="custom";
+  const backfillLocked=!!data.subscription_id;
+  $("lark-backfill").disabled=backfillLocked;$("lark-backfill-start").disabled=backfillLocked;
+  $("lark-backfill").hidden=backfillLocked;$("lark-backfill-locked").hidden=!backfillLocked;
+  $("lark-backfill-custom").hidden=backfillLocked || $("lark-backfill").value!=="custom";
   $("lark-backfill-start").max=larkLocalTime(Date.now());
   if(larkAllChats())$("lark-group-mode").value="mentions";
   $("lark-group-mode-all").disabled=larkAllChats();
@@ -502,8 +546,9 @@ function renderLarkMessages() {
   const draft=larkMessagesDraft(), dirty=larkConfigKey(draft)!==larkConfigKey(data.config), connection=connections.find(x=>x.id===draft.connection_id);
   const start=Date.parse(draft.backfill_start || ""),custom=$("lark-backfill").value==="custom";
   const baseline=Date.parse(data.lark?.baseline || data.config.backfill_start || "");
+  $("lark-backfill-value").textContent=Number.isFinite(baseline) ? new Date(baseline).toLocaleString("zh-CN") : "首次接收时已确定";
   const backfillError=custom && !Number.isFinite(start) ? "请选择要开始接收消息的日期和时间。" : custom && start<=0 ? "请选择 1970 年之后的有效时间。" : custom && start>Date.now() ? "起始时间不能晚于当前时间。" : "";
-  $("lark-backfill-help").textContent=data.subscription_id ? `${Number.isFinite(baseline) ? `接收起点：${new Date(baseline).toLocaleString("zh-CN")} · ` : ""}已锁定；接收更早消息请新建房间。` : "首次保存后锁定，后续修改设置沿用该起点。";
+  $("lark-backfill-help").textContent=backfillLocked ? "接收起点已锁定；接收更早消息请新建房间。" : "首次保存后锁定，后续修改设置沿用该起点。";
   notice("lark-backfill-error",backfillError);$("lark-backfill-start").setAttribute("aria-invalid",String(!!backfillError));
   const valid=!backfillError && (!draft.enabled || connection?.validation?.status==="valid") && draft.target.mode==="inbox" && (draft.scope_mode==="all" || draft.chats.length>0 && draft.chats.length<=32 && draft.chats.every(x=>/^oc_[A-Za-z0-9_-]+$/.test(x))) && draft.interval_seconds>=3 && draft.interval_seconds<=3600;
   $("lark-save").disabled=!ws.messagesConnected||!!ws.messagesSending||managementBusy()||!valid||(!dirty && !["credentials_invalid","binding_changed","capacity"].includes(data.status))||(!data.subscription_id && !draft.enabled);
@@ -544,12 +589,15 @@ for(const id of ["enabled","connection","target","scope","group","group-mode","a
 });
 $("lark-chat-picker-summary").addEventListener("click",event=>{if($("lark-chat-search").disabled)event.preventDefault();});
 $("lark-chat-picker").addEventListener("toggle",()=>{
-  if($("lark-chat-search").disabled){$("lark-chat-picker").open=false;return;}
-  if($("lark-chat-picker").open && !workspaceView?.larkChatDirectory?.loaded)void loadLarkChats();
+  if($("lark-chat-search").disabled)$("lark-chat-picker").open=false;
+  if(!$("lark-chat-picker").open)stopLarkChatSearch();
+  else if(!workspaceView?.larkChatDirectory?.loaded)void loadLarkChats();
 });
-$("lark-chat-search").addEventListener("input",()=>{if(!$("lark-chat-search").disabled)renderLarkMessages();});
+$("lark-chat-search").addEventListener("compositionstart",()=>{if(workspaceView)workspaceView.larkChatComposing=true;queueLarkChatSearch(true);});
+$("lark-chat-search").addEventListener("compositionend",()=>{if(workspaceView)workspaceView.larkChatComposing=false;queueLarkChatSearch();});
+$("lark-chat-search").addEventListener("input",event=>queueLarkChatSearch(event.isComposing || workspaceView?.larkChatComposing));
 $("lark-backfill-start").addEventListener("input",()=>{if(workspaceView)workspaceView.larkDirty=true;renderLarkMessages();});
-$("lark-chat-type").addEventListener("change",()=>{if(!$("lark-chat-type").disabled)renderLarkMessages();});
+$("lark-chat-type").addEventListener("change",()=>queueLarkChatSearch(false,0));
 $("lark-chat-more").addEventListener("click",()=>loadLarkChats());
 $("lark-chat-refresh").addEventListener("click",()=>loadLarkChats(true));
 $("lark-save").addEventListener("click",()=>changeLarkMessages("configure"));
@@ -879,6 +927,7 @@ $("open-lark-source").addEventListener("click", () => openNotificationSource($("
 $("close-notification").addEventListener("click", () => $("notification-detail").close());
 $("notification-detail").addEventListener("close", () => {
   if ($("notification-detail").open) return;
+  stopLarkChatSearch();
   renderContextViews();
   if (!$("activity-dialog").open && !$("workspace-dialog").open)
     (panels.members && notificationFocus?.isConnected ? notificationFocus : $("toggle-members")).focus();
@@ -1967,30 +2016,35 @@ async function loadMemberInbox(action = "reset") {
         time.title = `${created.getTime() > 0 ? "消息时间" : "接收时间"}：${date.toLocaleString("zh-CN")}`;
       } else time.textContent = "时间未获取";
       heading.append(seq,channel,time); section.append(heading);
+      const lark = source.provider === "lark", context = item.conversation || item.context;
+      const identity = document.createElement("div"); identity.className = "inbox-message-heading";
       if (item.sender) {
         const sender = document.createElement("h3"); sender.className = "inbox-sender"; sender.textContent = notificationParticipant(item.sender) + (item.action ? ` · ${item.action}` : "");
-        section.append(sender);
-        if (item.changed) {
-          const change = document.createElement("p"); change.className = "inbox-change quiet";
-          change.textContent = "消息已变更 · 关联原消息，不自动重做已完成动作"; section.append(change);
-        }
+        (lark ? identity : section).append(sender);
       }
-      const body = document.createElement("div"); body.className = "message-text";
-      const options = notificationOptions(view.info, state.operator, source, { seq: entry.seq, agent_id: member.agent_id, membership_id: member.membership_id });
-      renderMessageBody(body, item.text, state.operator, source.provider === "lark" ? {...options, compactLarkMentions:true} : options);
-      section.append(body);
-      const context = item.conversation || item.context;
-      if (context || source.provider === "lark") {
-        const chat = document.createElement("p"); chat.className = "inbox-chat";
+      let chat;
+      if (lark ? ["group","topic"].includes(item.conversation?.type) : context) {
+        chat = document.createElement(lark ? "span" : "p"); chat.className = "inbox-chat";
         const label = context?.name || "会话名称未获取";
+        if(lark)chat.setAttribute("aria-label",`群聊：${label}`);
         let url;
         try { url = new URL(context?.url); } catch { /* A source may have no original link. */ }
         if (url && ["https:","http:"].includes(url.protocol) && !url.username && !url.password) {
           const link = document.createElement("a"); link.textContent = label; link.href = url.href;
           link.target = "_blank"; link.rel = "noopener noreferrer"; chat.append(link);
         } else chat.textContent = label;
-        section.append(chat);
+        if(lark)identity.append(chat);
       }
+      if(lark && identity.children.length)section.append(identity);
+      if (item.sender && item.changed) {
+        const change = document.createElement("p"); change.className = "inbox-change quiet";
+        change.textContent = "消息已变更 · 关联原消息，不自动重做已完成动作"; section.append(change);
+      }
+      const body = document.createElement("div"); body.className = "message-text";
+      const options = notificationOptions(view.info, state.operator, source, { seq: entry.seq, agent_id: member.agent_id, membership_id: member.membership_id });
+      renderMessageBody(body, item.text, state.operator, lark ? {...options, compactLarkMentions:true} : options);
+      section.append(body);
+      if(!lark && chat)section.append(chat);
       if (item.truncated || item.metadata_truncated) {
         const notice = document.createElement("p"); notice.className = "inbox-change quiet";
         notice.textContent = item.truncated ? "正文已截断，内容可能不完整" : "部分名称、提及或附件信息已截断"; section.append(notice);

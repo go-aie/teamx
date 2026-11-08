@@ -95,6 +95,18 @@ test("timeout aborts a request; API errors retain their code", async () => {
     (error) => error.code === "busy" && error.message === "Room commit pending");
 });
 
+test("picker cancellation aborts transport, including an already cancelled signal", async () => {
+  const controller = new AbortController();
+  const pending = request("/v1/platform/lark/chats", {}, async (_, { signal }) =>
+    new Promise((_, reject) => signal.addEventListener("abort", () => reject(new Error("cancelled")))), 1000, controller.signal);
+  controller.abort();
+  await assert.rejects(pending, /cancelled/);
+  await assert.rejects(request("/v1/platform/lark/chats", {}, async (_, { signal }) => {
+    assert.equal(signal.aborted, true);
+    throw new Error("cancelled");
+  }, 1000, controller.signal), /cancelled/);
+});
+
 test("late private output cannot replace a different member or a closed drawer", async () => {
   const resolvers = [], rendered = [];
   const reader = createActivityReader(() => new Promise(resolve => resolvers.push(resolve)),

@@ -21,6 +21,8 @@ type larkChatsRequest struct {
 	ConnectionID      string `json:"connection_id"`
 	ConnectionVersion uint64 `json:"connection_version"`
 	PageToken         string `json:"page_token,omitempty"`
+	Query             string `json:"query,omitempty"`
+	Type              string `json:"type,omitempty"`
 }
 
 func (m *roomManager) checkLarkChatsLocked(ctx context.Context, req larkChatsRequest, expected *connection.Account) (connection.Account, error) {
@@ -47,6 +49,13 @@ func (m *roomManager) listLarkChats(ctx context.Context, req larkChatsRequest) (
 	if len(req.PageToken) > 8192 || strings.ContainsAny(req.PageToken, "\x00\r\n") {
 		return lark.ChatPage{}, ErrRequest
 	}
+	if req.Type == "" {
+		req.Type = "all"
+	}
+	search := lark.ChatSearchRequest{Query: req.Query, Type: req.Type, PageToken: req.PageToken}
+	if req.Type != "all" && req.Type != "group" && req.Type != "p2p" || req.Query != "" && !search.Valid() {
+		return lark.ChatPage{}, ErrRequest
+	}
 	m.mu.Lock()
 	a, err := m.checkLarkChatsLocked(ctx, req, nil)
 	if err != nil {
@@ -65,7 +74,12 @@ func (m *roomManager) listLarkChats(ctx context.Context, req larkChatsRequest) (
 	if err != nil {
 		return lark.ChatPage{}, err
 	}
-	page, err := client.Chats(callCtx, a.Identity, lark.ChatsRequest{PageSize: 100, PageToken: req.PageToken})
+	var page lark.ChatPage
+	if req.Query != "" {
+		page, err = client.SearchChats(callCtx, a.Identity, search)
+	} else {
+		page, err = client.Chats(callCtx, a.Identity, lark.ChatsRequest{PageSize: 100, PageToken: req.PageToken})
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, checkErr := m.checkLarkChatsLocked(callCtx, req, &a); checkErr != nil {
