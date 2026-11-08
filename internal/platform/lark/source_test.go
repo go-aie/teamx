@@ -94,7 +94,7 @@ func newStepHarness(t *testing.T) (*stepHarness, *fakeReader, notification.Runne
 	return h, f, s.NewRunner(h)
 }
 func TestMessagesFilteringAndContent(t *testing.T) {
-	c := Config{Private: true, GroupMentions: true}
+	c := Config{Private: true, GroupMentions: true, Chats: []string{"oc_chat"}}
 	m := sampleMessage("om_one", "oc_chat", "hello")
 	for _, test := range []struct {
 		name            string
@@ -103,7 +103,7 @@ func TestMessagesFilteringAndContent(t *testing.T) {
 		all, bots, want bool
 	}{
 		{"private", func(*Message) {}, "p2p", false, false, true},
-		{"self", func(m *Message) { m.Sender.ID = "ou_reader" }, "p2p", false, false, false},
+		{"self", func(m *Message) { m.Sender.ID = "ou_reader" }, "p2p", false, false, true},
 		{"system", func(m *Message) { m.Type = "system" }, "p2p", false, false, false},
 		{"bot_off", func(m *Message) { m.Sender.Type = "app" }, "p2p", false, false, false},
 		{"bot_on", func(m *Message) { m.Sender.Type = "app" }, "p2p", false, true, true},
@@ -124,7 +124,7 @@ func TestMessagesFilteringAndContent(t *testing.T) {
 			cfg := c
 			cfg.AtAll = test.all
 			cfg.Bots = test.bots
-			if Matches(v, Chat{Mode: test.mode}, "ou_reader", cfg) != test.want {
+			if Matches(v, Chat{ID: "oc_chat", Mode: test.mode}, "ou_reader", cfg) != test.want {
 				t.Fatal("filter mismatch")
 			}
 		})

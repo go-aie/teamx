@@ -1927,11 +1927,12 @@ test("Lark Inbox separates channel, sender and conversation while retaining sour
     {...common,sender:actor("本人姓名","ou_self",true),text:"新消息"},
     {...common,sender:actor("张三","ou_peer"),changed:true,text:"更正后的正文"},
     {...common,sender:actor("雷九零","ou_peer"),conversation:chat("迭代v0.10.0","topic"),mentions:[actor("罗彭","ou_self",true)],text:"@罗彭（open_id: ou_self；当前接收账号） 请确认"},
+    {...common,sender:actor("本人姓名","ou_self",true),context_only:true,text:"已代发"},
   ];
   api.hook=(path)=>{
     if(path==="/v1/member/list")return {members:[member]};
     if(path==="/v1/member/activity")return {member};
-    if(path==="/v1/member/inbox")return {snapshot_seq:items.length,next_after:items.length,has_more:false,status:{latest_seq:items.length,bytes:100,limits:{bytes:1000}},entries:items.map((item,i)=>({seq:i+1,source:{source_ref:`src_${i}`,status:"not_checked"},received_at:"2026-11-06T08:06:57Z",item:{...item,created_at:"2026-11-06T07:00:00Z"}}))};
+    if(path==="/v1/member/inbox")return {snapshot_seq:items.length,next_after:items.length,has_more:false,status:{latest_seq:items.length,bytes:100,limits:{bytes:1000}},entries:items.map((item,i)=>({seq:i+1,origin:i===7?{kind:"agent",agent_id:"assistant",status:"succeeded"}:undefined,source:{source_ref:`src_${i}`,status:"not_checked"},received_at:"2026-11-06T08:06:57Z",item:{...item,created_at:"2026-11-06T07:00:00Z"}}))};
   };
   const ui=await launch(api);
   await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();
@@ -1969,6 +1970,8 @@ test("Lark Inbox separates channel, sender and conversation while retaining sour
   assert.equal(part(rows[6],"message-text").markdownOptions.compactLarkMentions,true);
   assert.equal(part(rows[6],"message-text").textContent,items[6].text);
   assert.match(elementText(part(rows[6],"inbox-source-details")),/罗彭（我）/);
+  assert.equal(part(rows[7],"inbox-sender").textContent,"本人姓名（我） · Agent 代发");
+  assert.match(elementText(part(rows[7],"inbox-source-details")),/进展上下文，不触发新的自动回复或待办/);
   assert.equal(api.calls.some(call=>/confirm|member\/run/.test(call.path)),false);
 });
 

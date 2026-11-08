@@ -44,8 +44,8 @@ func TestReplyAdapterExactTargetAndReceipt(t *testing.T) {
 			if err != nil || r.Status != "succeeded" || r.Account != a.Account || r.ResultID.Value != "om_receipt" || calls != 1 || cap.Spec.Retry.MaxAttempts != 1 || cap.Spec.Retry.RetryUnknown || !cap.Spec.RequiresAuthorization {
 				t.Fatal(r, err, calls)
 			}
-			if Matches(f.messages[r.ResultID.Value], f.chat, a.Account.ID.Value, Config{Private: true, GroupMentions: true, AtAll: true}) {
-				t.Fatal("self-produced reply reentered notifications")
+			if !Matches(f.messages[r.ResultID.Value], f.chat, a.Account.ID.Value, Config{Chats: []string{f.chat.ID}}) {
+				t.Fatal("self-produced reply must remain visible as progress evidence")
 			}
 		})
 	}

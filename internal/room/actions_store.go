@@ -290,6 +290,9 @@ func (s *Store) beginReferenceAction(id MemberIdentity, q referenceActionRequest
 	if targetReference(id, request.Target) != q.TargetRef || !sameNativeTarget(request.Target, i.Target) || i.Account != access.Account || !access.Valid() {
 		return referenceActionReceipt{}, false, ErrIdentity
 	}
+	if i.ContextOnly && q.Authority.RuleID != "" {
+		return referenceActionReceipt{}, false, conflictReason("target_ref", "own messages are context only and cannot trigger an automatic reply", "Use the message as progress evidence; a new reply requires explicit human authority.")
+	}
 	actions, err := s.loadActionsLocked(id)
 	if err != nil {
 		return referenceActionReceipt{}, false, err

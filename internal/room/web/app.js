@@ -1945,6 +1945,9 @@ function inboxSourceDetails(entry) {
   add("项目",item.project); add("项目 ID",item.project_id && String(item.project_id));
   add("会话",item.conversation?.name); id("会话 ID",item.conversation?.id);
   if (item.sender) add("发送者",notificationParticipant(item.sender));
+  if (entry.origin?.kind === "agent") add("代发",`Agent ${entry.origin.agent_id} · ${entry.origin.status}`);
+  if (entry.origin?.uncertain_send) add("发送状态","该会话有结果未确定的代发动作；仅作进展上下文");
+  if (item.context_only) add("用途","进展上下文，不触发新的自动回复或待办");
   id("发送者 ID",item.sender?.id); id("接收账号 ID",item.receiver?.id);
   add("消息时间",date(item.created_at)); add("接收时间",date(entry.received_at));
   id("消息 ID",item.message_id); id("回复消息",item.reply_to); id("根消息",item.root_id); id("话题 ID",item.thread_id);
@@ -2019,7 +2022,7 @@ async function loadMemberInbox(action = "reset") {
       const lark = source.provider === "lark", context = item.conversation || item.context;
       const identity = document.createElement("div"); identity.className = "inbox-message-heading";
       if (item.sender) {
-        const sender = document.createElement("h3"); sender.className = "inbox-sender"; sender.textContent = notificationParticipant(item.sender) + (item.action ? ` · ${item.action}` : "");
+        const sender = document.createElement("h3"); sender.className = "inbox-sender"; sender.textContent = notificationParticipant(item.sender) + (entry.origin?.kind === "agent" ? " · Agent 代发" : "") + (item.action ? ` · ${item.action}` : "");
         (lark ? identity : section).append(sender);
       }
       let chat;

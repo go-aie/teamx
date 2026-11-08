@@ -43,3 +43,24 @@ func TestContentBudgetAccountsForJSONEscapingWithoutChangingRawEvidence(t *testi
 		t.Fatal("combined JSON budget exceeded", len(b))
 	}
 }
+
+func TestOwnContextRequiresExactReceiverIdentity(t *testing.T) {
+	id := platform.ExternalID{Namespace: "lark:open_id:cli_a", Value: "ou_reader"}
+	item := Item{Source: platform.SourceRef{Provider: "lark", Reference: platform.NotificationReference{RecipientID: id}},
+		Content: &Content{Sender: &Participant{ID: id, IsReceiver: true}}}
+	if !Project(item).ContextOnly {
+		t.Fatal("own message is not context only")
+	}
+	item.Content.Sender.ID.Namespace = "lark:open_id:cli_b"
+	if Project(item).ContextOnly {
+		t.Fatal("same raw ID from another app was treated as receiver")
+	}
+	item.Content.Sender.ID, item.Content.Sender.IsReceiver = id, false
+	if Project(item).ContextOnly {
+		t.Fatal("unverified sender was treated as receiver")
+	}
+	item.Content.Sender.IsReceiver, item.Source.Provider = true, "gitlab"
+	if Project(item).ContextOnly {
+		t.Fatal("Lark exception changed another provider")
+	}
+}

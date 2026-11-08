@@ -118,7 +118,11 @@ func projectAgentInboxRead(id MemberIdentity, page referenceInboxPage) (agentRef
 		if source == nil {
 			return agentReferenceInboxPage{}, ErrInvalid
 		}
-		entries = append(entries, projectInboxEntry(e, *source))
+		entry := projectInboxEntry(e, *source)
+		if origin, ok := page.Origins[e.Seq]; ok {
+			entry.Origin = &origin
+		}
+		entries = append(entries, entry)
 	}
 	followups := make([]agentFollowupSummary, 0, len(page.Followups))
 	for _, v := range page.Followups {

@@ -15,6 +15,7 @@ type inboxEntryView struct {
 	Item       notification.View     `json:"item"`
 	ReceivedAt time.Time             `json:"received_at"`
 	Source     followupSourceSummary `json:"source"`
+	Origin     *inboxMessageOrigin   `json:"origin,omitempty"`
 }
 
 func projectInboxEntry(e InboxEntry, source followupSourceSummary) inboxEntryView {
@@ -22,7 +23,11 @@ func projectInboxEntry(e InboxEntry, source followupSourceSummary) inboxEntryVie
 	if item.Content == nil && item.Source.Provider == "lark" {
 		item.Content = lark.SavedContent(item)
 	}
-	return inboxEntryView{e.Seq, notification.Project(item), e.ReceivedAt, source}
+	return inboxEntryView{Seq: e.Seq, Item: notification.Project(item), ReceivedAt: e.ReceivedAt, Source: source}
+}
+
+func inboxContextOnly(e InboxEntry) bool {
+	return projectInboxEntry(e, followupSourceSummary{}).Item.ContextOnly
 }
 
 type inboxPreviewPage struct {
@@ -40,6 +45,10 @@ func (s *Store) projectInboxPreview(page InboxPage, status InboxStatus) (inboxPr
 	v := inboxPreviewPage{MemberIdentity: page.MemberIdentity, SnapshotSeq: page.SnapshotSeq,
 		NextAfter: page.NextAfter, HasMore: page.HasMore, Entries: []inboxEntryView{}, Status: status}
 	v.Status.Batch = nil
+	origins, err := s.inboxMessageOriginsLocked(page.Entries)
+	if err != nil {
+		return v, err
+	}
 	for _, e := range page.Entries {
 		source := followupSourceSummary{Seq: e.Seq, SourceRef: referenceDigest("src_", e.MemberIdentity, e.Seq, e.Item.DeliveryID), Status: "not_checked"}
 		if _, err := os.Stat(s.eventPath(e.MemberIdentity, e.Seq)); err == nil {
@@ -51,7 +60,11 @@ func (s *Store) projectInboxPreview(page InboxPage, status InboxStatus) (inboxPr
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return v, err
 		}
-		v.Entries = append(v.Entries, projectInboxEntry(e, source))
+		entry := projectInboxEntry(e, source)
+		if origin, ok := origins[e.Seq]; ok {
+			entry.Origin = &origin
+		}
+		v.Entries = append(v.Entries, entry)
 	}
 	return v, nil
 }

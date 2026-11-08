@@ -63,7 +63,8 @@ func ReplyActions(reader MessageReader, write ReplyWriter, disabledReason string
 		if chat.Mode == "topic" || message.ThreadID != "" {
 			return platform.TargetActionInspection{}, failure("reply_mode_unavailable")
 		}
-		return platform.TargetActionInspection{Target: q.Target, Account: a.Account, ContainerLabel: chat.Name}, nil
+		own := message.Sender.Type == "user" && message.Sender.IDType == "open_id" && message.Sender.ID == a.Account.ID.Value
+		return platform.TargetActionInspection{Target: q.Target, Account: a.Account, ContainerLabel: chat.Name, ContextOnly: own}, nil
 	}
 	return map[platform.Operation]platform.ActionCapability{platform.OperationMessageReply: {Spec: spec, Inspect: inspect, Execute: func(ctx context.Context, q platform.TargetActionRequest, a platform.AccessContext) (platform.TargetActionResult, error) {
 		result := platform.TargetActionResult{Target: q.Target, Account: a.Account, Status: "not_applied", RetryClass: "never"}

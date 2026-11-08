@@ -176,7 +176,10 @@ func Matches(m Message, chat Chat, accountID string, c Config) bool {
 		return false
 	}
 	if m.Sender.Type == "user" && m.Sender.IDType == "open_id" && m.Sender.ID == accountID {
-		return false
+		// Own messages complete the conversation regardless of the incoming-message
+		// filters. Scope is checked here too so this exception cannot widen a subscription.
+		return (chat.Mode == "p2p" || chat.Mode == "group" || chat.Mode == "topic") &&
+			(c.AllChats() || slices.Contains(c.Chats, chat.ID))
 	}
 	if chat.Mode == "p2p" {
 		return c.Private && (m.Sender.Type == "user" && m.Sender.IDType == "open_id" || c.Bots && m.Sender.Type == "app")

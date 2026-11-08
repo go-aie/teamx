@@ -170,6 +170,7 @@ type TargetActionInspection struct {
 	AccountLabel   string          `json:"account_label,omitempty"`
 	ContainerLabel string          `json:"container_label,omitempty"`
 	URL            string          `json:"url,omitempty"`
+	ContextOnly    bool            `json:"context_only,omitempty"` // Native target is progress evidence, not an automatic reply trigger.
 }
 
 type InspectTargetAction func(context.Context, TargetActionRequest, AccessContext) (TargetActionInspection, error)

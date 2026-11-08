@@ -16,9 +16,10 @@ type followupResolver func(context.Context, MemberIdentity, platform.SourceRef) 
 
 type referenceInboxPage struct {
 	InboxPage
-	Batch     InboxBatch              `json:"batch"`
-	Sources   []followupSourceSummary `json:"sources"`
-	Followups []followupSummary       `json:"followups"`
+	Batch     InboxBatch                    `json:"batch"`
+	Sources   []followupSourceSummary       `json:"sources"`
+	Followups []followupSummary             `json:"followups"`
+	Origins   map[uint64]inboxMessageOrigin `json:"-"`
 }
 
 // AgentInbox owns the original batches and receipts. Business linkage is saved
@@ -57,12 +58,21 @@ func (s *service) readReferenceInbox(ctx context.Context, id MemberIdentity, tur
 		if link.ObjectRef == "" || seen[link.ObjectRef] {
 			continue
 		}
-		seen[link.ObjectRef] = true
 		u, err := s.store.readFollowup(id, link.ObjectRef, referenceDigest("unit_", link.ObjectRef))
+		if inboxContextOnly(entry) && errors.Is(err, os.ErrNotExist) {
+			continue // Own messages never open new pending work, but can link existing work.
+		}
 		if err != nil {
 			return view, err
 		}
+		seen[link.ObjectRef] = true
 		view.Followups = append(view.Followups, unitSummary(u))
+	}
+	s.store.mu.Lock()
+	view.Origins, err = s.store.inboxMessageOriginsLocked(page.Entries)
+	s.store.mu.Unlock()
+	if err != nil {
+		return view, err
 	}
 	// Preserve Inbox's page limit, and bound the additional summaries explicitly.
 	b, err := json.Marshal(view)
