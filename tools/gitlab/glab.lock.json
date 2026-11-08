@@ -7,5 +7,34 @@
     "platform": "darwin_arm64",
     "sha256": "72ee06bd462003eaa770479614d662871702ef53264cdd25653eb1e2d8c581e4",
     "provenance": "Temporary release binary retained from the plan assessment; this phase rechecked its version and binary digest. Archive checksum verification was not repeated because the configured proxy is unavailable."
+  },
+  "source_commit": "2e352a17e7e00bef420b0f38e0ce9ab4e1a38e5d",
+  "platforms": {
+    "darwin_arm64": {
+      "archive": "glab_1.127.0_darwin_arm64.tar.gz",
+      "url": "https://gitlab.com/gitlab-org/cli/-/releases/v1.127.0/downloads/glab_1.127.0_darwin_arm64.tar.gz",
+      "sha256": "017b14c9bb8d54ba1ea2007607f86dbde0352ad8dea566e2647e9c1bae86bcac",
+      "verification": {
+        "checked_on": "2026-11-08",
+        "archive_sha256_verified": true,
+        "binary_sha256": "72ee06bd462003eaa770479614d662871702ef53264cdd25653eb1e2d8c581e4",
+        "version_output": "glab 1.127.0 (2e352a17e)"
+      }
+    },
+    "linux_amd64": {
+      "archive": "glab_1.127.0_linux_amd64.tar.gz",
+      "url": "https://gitlab.com/gitlab-org/cli/-/releases/v1.127.0/downloads/glab_1.127.0_linux_amd64.tar.gz",
+      "sha256": "90a440866e7ddbb25101a4cc85e50f1914c73c0dabab472e6f1027b51c4a3316"
+    },
+    "linux_arm64": {
+      "archive": "glab_1.127.0_linux_arm64.tar.gz",
+      "url": "https://gitlab.com/gitlab-org/cli/-/releases/v1.127.0/downloads/glab_1.127.0_linux_arm64.tar.gz",
+      "sha256": "c2c43f6a21f66b8c992fe5b70a06d52d01b94b3ab4470bdf547ef596d49a2e6b"
+    },
+    "darwin_amd64": {
+      "archive": "glab_1.127.0_darwin_amd64.tar.gz",
+      "url": "https://gitlab.com/gitlab-org/cli/-/releases/v1.127.0/downloads/glab_1.127.0_darwin_amd64.tar.gz",
+      "sha256": "ce8f078dc9070af4856831fb14d5555edf33f8f7d63674cf16c1c76e68468063"
+    }
   }
 }

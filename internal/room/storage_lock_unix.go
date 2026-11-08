@@ -11,7 +11,15 @@ import (
 )
 
 func lockDirectory(dir string) (*os.File, error) {
-	f, err := os.OpenFile(filepath.Join(dir, ".lock"), os.O_CREATE|os.O_RDWR, 0600)
+	return lockDirectoryFile(dir, ".lock")
+}
+
+func lockBundleHome(dir string) (*os.File, error) {
+	return lockDirectoryFile(dir, ".bundle.lock")
+}
+
+func lockDirectoryFile(dir, name string) (*os.File, error) {
+	f, err := os.OpenFile(filepath.Join(dir, name), os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
 		return nil, err
 	}

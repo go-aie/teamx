@@ -18,3 +18,7 @@ __pycache__/
 .local/
 /data/
 /bin/
+
+# Distribution archives and isolated build state
+/dist/
+/.packaging/

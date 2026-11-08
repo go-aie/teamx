@@ -1,0 +1,2 @@
+# Preserve vendored license text byte-for-byte.
+packaging/licenses/*.txt -whitespace

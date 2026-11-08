@@ -3,6 +3,7 @@ package room
 import "strings"
 
 const rootCLIHelp = `Usage: teamx COMMAND [--help]
+  init | doctor                 Initialize or diagnose a distribution (--bundle-root, --home)
   serve                         Start the service
   connections upgrade           Upgrade connection data offline (--rooms-dir ROOT)
   member add/list/remove/run/pause/session rotate

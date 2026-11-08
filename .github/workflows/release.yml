@@ -1,0 +1,183 @@
+name: Release candidates
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-candidate-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  GOTOOLCHAIN: local
+  GOWORK: 'off'
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      version: ${{ steps.plan.outputs.version }}
+      commit: ${{ steps.plan.outputs.commit }}
+      go_version: ${{ steps.plan.outputs.go_version }}
+      node_version: ${{ steps.plan.outputs.node_version }}
+      dependency_key: ${{ steps.plan.outputs.dependency_key }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require clean version tag and all included targets/profiles
+        id: plan
+        env:
+          CANDIDATE_VERSION: ${{ github.ref_name }}
+        run: node scripts/package-release.mjs plan "$CANDIDATE_VERSION"
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ steps.plan.outputs.node_version }}
+          package-manager-cache: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: ${{ steps.plan.outputs.go_version }}
+          cache-dependency-path: go.sum
+      - name: Inventory, packaging and core regression
+        run: |
+          node scripts/check-packaging.mjs
+          node --test scripts/*.test.mjs
+          make test
+          go vet ./...
+          node --test internal/room/web*_test.mjs
+
+  candidate:
+    needs: checks
+    name: Candidate ${{ matrix.target }} ${{ matrix.profile }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.checks.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.checks.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ needs.checks.outputs.node_version }}
+          package-manager-cache: false
+      - name: Require native runner
+        env:
+          CANDIDATE_TARGET: ${{ matrix.target }}
+        run: node scripts/package-ci.mjs host "$CANDIDATE_TARGET"
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: ${{ needs.checks.outputs.go_version }}
+          cache-dependency-path: go.sum
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: .packaging/cache
+          key: candidate-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-${{ matrix.profile }}-node${{ needs.checks.outputs.node_version }}-${{ needs.checks.outputs.dependency_key }}
+      # Opt-in only. Missing credentials or any signing/notarization failure
+      # fails the job; never retry it as unsigned or re-sign an accepted archive.
+      - name: Prepare isolated Apple signing credentials
+        if: ${{ startsWith(matrix.target, 'darwin-') && vars.TEAMX_MACOS_SIGNING == 'developer-id' }}
+        env:
+          TEAMX_MACOS_P12_BASE64: ${{ secrets.TEAMX_MACOS_P12_BASE64 }}
+          TEAMX_MACOS_P12_PASSWORD: ${{ secrets.TEAMX_MACOS_P12_PASSWORD }}
+          TEAMX_APPLE_API_KEY_BASE64: ${{ secrets.TEAMX_APPLE_API_KEY_BASE64 }}
+          TEAMX_APPLE_API_KEY_ID: ${{ secrets.TEAMX_APPLE_API_KEY_ID }}
+          TEAMX_APPLE_API_ISSUER: ${{ secrets.TEAMX_APPLE_API_ISSUER }}
+          TEAMX_SIGN_IDENTITY: ${{ vars.TEAMX_SIGN_IDENTITY }}
+        run: node scripts/package-signing.mjs prepare "$RUNNER_TEMP/apple-signing"
+      - name: Build, sign, notarize, seal and smoke candidate
+        env:
+          CANDIDATE_VERSION: ${{ needs.checks.outputs.version }}
+          CANDIDATE_COMMIT: ${{ needs.checks.outputs.commit }}
+          CANDIDATE_TARGET: ${{ matrix.target }}
+          CANDIDATE_PROFILE: ${{ matrix.profile }}
+          MACOS_SIGNING: ${{ startsWith(matrix.target, 'darwin-') && vars.TEAMX_MACOS_SIGNING || 'unsigned' }}
+          TEAMX_SIGN_IDENTITY: ${{ vars.TEAMX_SIGN_IDENTITY }}
+        run: |
+          ./scripts/package.sh --channel release --candidate --version "$CANDIDATE_VERSION" --profile "$CANDIDATE_PROFILE" --target "$CANDIDATE_TARGET" --macos-signing "${MACOS_SIGNING:-unsigned}" --output-dir "$RUNNER_TEMP/candidate"
+          node scripts/package-release.mjs record "$RUNNER_TEMP/candidate" "$CANDIDATE_TARGET" "$CANDIDATE_PROFILE" "$CANDIDATE_COMMIT" "$CANDIDATE_VERSION"
+      - name: Delete temporary keychain and credential material
+        if: ${{ always() && startsWith(matrix.target, 'darwin-') && vars.TEAMX_MACOS_SIGNING == 'developer-id' }}
+        run: node scripts/package-signing.mjs cleanup "$RUNNER_TEMP/apple-signing"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: candidate-${{ needs.checks.outputs.version }}-${{ matrix.target }}-${{ matrix.profile }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/candidate/*.tar.gz
+            ${{ runner.temp }}/candidate/*.tar.gz.sha256
+            ${{ runner.temp }}/candidate/*-report.json
+            ${{ runner.temp }}/candidate/*-security.json
+            ${{ runner.temp }}/candidate/candidate.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+  verify:
+    needs: [checks, candidate]
+    if: ${{ !cancelled() && needs.checks.result == 'success' }}
+    name: Verify candidate ${{ matrix.target }} ${{ matrix.profile }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.checks.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.checks.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ needs.checks.outputs.node_version }}
+          package-manager-cache: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: candidate-${{ needs.checks.outputs.version }}-${{ matrix.target }}-${{ matrix.profile }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/downloaded
+      - name: Verify downloaded bytes and isolated archive smoke
+        id: verify
+        env:
+          CANDIDATE_TARGET: ${{ matrix.target }}
+          CANDIDATE_PROFILE: ${{ matrix.profile }}
+          CANDIDATE_COMMIT: ${{ needs.checks.outputs.commit }}
+          CANDIDATE_VERSION: ${{ needs.checks.outputs.version }}
+        run: >-
+          node scripts/package-release.mjs verify "$RUNNER_TEMP/downloaded"
+          "$CANDIDATE_TARGET" "$CANDIDATE_PROFILE" "$CANDIDATE_COMMIT" "$CANDIDATE_VERSION"
+          "$RUNNER_TEMP/download-report.json"
+      - name: Report archive-specific acceptance gaps (exit 2 means incomplete)
+        env:
+          CANDIDATE_TARGET: ${{ matrix.target }}
+          CANDIDATE_PROFILE: ${{ matrix.profile }}
+          CANDIDATE_COMMIT: ${{ needs.checks.outputs.commit }}
+          CANDIDATE_VERSION: ${{ needs.checks.outputs.version }}
+        run: >-
+          node scripts/package-release.mjs assess "$RUNNER_TEMP/downloaded"
+          "$CANDIDATE_TARGET" "$CANDIDATE_PROFILE" "$CANDIDATE_COMMIT" "$CANDIDATE_VERSION"
+          "$RUNNER_TEMP/candidate-assessment.json"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: ${{ !cancelled() && steps.verify.outcome == 'success' }}
+        with:
+          name: candidate-verification-${{ needs.checks.outputs.version }}-${{ matrix.target }}-${{ matrix.profile }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/download-report.json
+            ${{ runner.temp }}/candidate-assessment.json
+          if-no-files-found: error
+          retention-days: 30
+
+# P4.2 only: no contents:write, GitHub Release creation or publication job.
+# Incomplete P3/system-security evidence remains a visible failing gate.

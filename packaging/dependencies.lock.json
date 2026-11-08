@@ -1,0 +1,681 @@
+{
+  "schema_version": 1,
+  "reviewed_on": "2026-11-08",
+  "stage": "P0",
+  "status": "inventory_locked_runtime_acceptance_pending",
+  "scope_overrides": [
+    {
+      "dependency": "scn",
+      "decision": "deferred",
+      "reason": "User deferred Scion during P0; neither profile promises Scion operation. Existing teamx-scion wrapper remains a build asset."
+    }
+  ],
+  "targets": {
+    "darwin-arm64": {
+      "delivery": "included",
+      "required_by_plan": true,
+      "support": "not_accepted",
+      "runner": "macos-15",
+      "runner_evidence": "https://github.com/actions/runner-images#available-images",
+      "runner_execution": "not_run",
+      "qualification_baseline": {
+        "os": "macOS 15",
+        "system_libraries": [
+          "libSystem",
+          "CoreServices.framework",
+          "Security.framework",
+          "system libcurl",
+          "system libexpat",
+          "system zlib",
+          "system libiconv"
+        ]
+      },
+      "acceptance": {
+        "archive_smoke": "not_run",
+        "real_dsh_acp": "not_run",
+        "real_platforms": "not_run",
+        "browser": "not_run"
+      },
+      "blockers": [
+        "dsh_deployment",
+        "git_redistribution_materials",
+        "native_runtime_acceptance"
+      ]
+    },
+    "linux-amd64": {
+      "delivery": "included",
+      "required_by_plan": true,
+      "support": "not_accepted",
+      "runner": "ubuntu-24.04",
+      "runner_evidence": "https://github.com/actions/runner-images#available-images",
+      "runner_execution": "not_run",
+      "qualification_baseline": {
+        "os": "Ubuntu 24.04 LTS (glibc)",
+        "glibc": "2.39",
+        "node_minimum_glibc": "2.28",
+        "node_minimum_libstdcxx": "GLIBCXX_3.4.25",
+        "system_libraries": [
+          "glibc",
+          "libstdc++",
+          "libgcc_s",
+          "system CA store"
+        ]
+      },
+      "acceptance": {
+        "archive_smoke": "not_run",
+        "real_dsh_acp": "not_run",
+        "real_platforms": "not_run",
+        "browser": "not_run"
+      },
+      "blockers": [
+        "dsh_deployment",
+        "git_redistribution_materials",
+        "native_runtime_acceptance",
+        "git_tls_runtime"
+      ]
+    },
+    "linux-arm64": {
+      "delivery": "included",
+      "required_by_plan": false,
+      "support": "not_accepted",
+      "runner": "ubuntu-24.04-arm",
+      "runner_evidence": "https://github.com/actions/runner-images#available-images",
+      "runner_execution": "not_run",
+      "qualification_baseline": {
+        "os": "Ubuntu 24.04 LTS (glibc)",
+        "glibc": "2.39",
+        "node_minimum_glibc": "2.28",
+        "node_minimum_libstdcxx": "GLIBCXX_3.4.25",
+        "system_libraries": [
+          "glibc",
+          "libstdc++",
+          "libgcc_s",
+          "system CA store"
+        ]
+      },
+      "acceptance": {
+        "archive_smoke": "not_run",
+        "real_dsh_acp": "not_run",
+        "real_platforms": "not_run",
+        "browser": "not_run"
+      },
+      "blockers": [
+        "dsh_deployment",
+        "git_redistribution_materials",
+        "native_runtime_acceptance",
+        "git_tls_runtime"
+      ]
+    },
+    "darwin-amd64": {
+      "delivery": "included",
+      "required_by_plan": false,
+      "support": "not_accepted",
+      "runner": "macos-15-intel",
+      "runner_evidence": "https://github.com/actions/runner-images#available-images",
+      "runner_execution": "not_run",
+      "qualification_baseline": {
+        "os": "macOS 15",
+        "system_libraries": [
+          "libSystem",
+          "CoreServices.framework",
+          "Security.framework",
+          "system libcurl",
+          "system libexpat",
+          "system zlib",
+          "system libiconv"
+        ]
+      },
+      "acceptance": {
+        "archive_smoke": "not_run",
+        "real_dsh_acp": "not_run",
+        "real_platforms": "not_run",
+        "browser": "not_run"
+      },
+      "blockers": [
+        "dsh_deployment",
+        "git_redistribution_materials",
+        "native_runtime_acceptance"
+      ]
+    }
+  },
+  "profiles": {
+    "core": {
+      "required_dependencies": [
+        "node",
+        "dsh"
+      ],
+      "native_platform_clis": [],
+      "scion": "deferred",
+      "requires_host_git_for_workspace": true
+    },
+    "full": {
+      "required_dependencies": [
+        "node",
+        "dsh",
+        "glab",
+        "lark-cli",
+        "git"
+      ],
+      "native_platform_clis": [
+        "glab",
+        "lark-cli"
+      ],
+      "scion": "deferred",
+      "requires_host_git_for_workspace": false
+    }
+  },
+  "system_requirements": [
+    "POSIX shell and standard utilities",
+    "/bin/ps and process observation permissions",
+    "macOS: /usr/bin/sandbox-exec for DSH workspace-write command tools",
+    "writable private home",
+    "system CA certificates",
+    "no Alpine/musl or Windows support"
+  ],
+  "build_tools": {
+    "go": {
+      "version": "1.27.1",
+      "contract": "go.mod",
+      "usage": "three first-party binaries"
+    },
+    "node": "24.22.2",
+    "npm": "11.19.1",
+    "pnpm": {
+      "version": "11.28.5",
+      "usage": "only if building the exact DSH source commit as an explicit fallback"
+    }
+  },
+  "dependencies": {
+    "node": {
+      "version": "24.22.2",
+      "source": "https://nodejs.org/dist/v24.22.2/",
+      "checksums": {
+        "url": "https://nodejs.org/dist/v24.22.2/SHASUMS256.txt",
+        "sha256": "aec92ae945293821c22aed4c37b97741688254bac353b861fc9fb25b81ce4567"
+      },
+      "license": {
+        "spdx": "MIT",
+        "file": "packaging/licenses/Node-LICENSE.txt",
+        "sha256": "5888dbb9a1d2b18f2c3e6c5f6af1b39de658372b402a0577b002777f14c62ace",
+        "source": "https://raw.githubusercontent.com/nodejs/node/v24.22.2/LICENSE",
+        "bundled_notices": "Node-LICENSE.txt includes bundled third-party notices; preserve the complete runtime as well."
+      },
+      "platforms": {
+        "darwin-arm64": {
+          "archive": "node-v24.22.2-darwin-arm64.tar.gz",
+          "url": "https://nodejs.org/dist/v24.22.2/node-v24.22.2-darwin-arm64.tar.gz",
+          "sha256": "aa9549349e47dffaa42dcf95d6e06ade8c4bdafc980979883b88767670df385a",
+          "layout": {
+            "strip_components": 1,
+            "destination": "runtime/node",
+            "preserve": "complete archive"
+          },
+          "verification": "archive_sha256_and_version_verified"
+        },
+        "linux-amd64": {
+          "archive": "node-v24.22.2-linux-x64.tar.xz",
+          "url": "https://nodejs.org/dist/v24.22.2/node-v24.22.2-linux-x64.tar.xz",
+          "sha256": "48cc0e21e048790e54c0cf5749c2725005313d652651c40b7a21feb9697aaf75",
+          "layout": {
+            "strip_components": 1,
+            "destination": "runtime/node",
+            "preserve": "complete archive"
+          },
+          "verification": "upstream_checksum"
+        },
+        "linux-arm64": {
+          "archive": "node-v24.22.2-linux-arm64.tar.xz",
+          "url": "https://nodejs.org/dist/v24.22.2/node-v24.22.2-linux-arm64.tar.xz",
+          "sha256": "eb187837a2230d4047161ac0be008584e16b46f726e9c9490ee35dc6b17d9ba8",
+          "layout": {
+            "strip_components": 1,
+            "destination": "runtime/node",
+            "preserve": "complete archive"
+          },
+          "verification": "upstream_checksum"
+        },
+        "darwin-amd64": {
+          "archive": "node-v24.22.2-darwin-x64.tar.gz",
+          "url": "https://nodejs.org/dist/v24.22.2/node-v24.22.2-darwin-x64.tar.gz",
+          "sha256": "d5e336d588c45be0c37dbd52cc29895593009ca4997a77a1fd02815131ed0e52",
+          "layout": {
+            "strip_components": 1,
+            "destination": "runtime/node",
+            "preserve": "complete archive"
+          },
+          "verification": "upstream_checksum"
+        }
+      },
+      "verify_argv": [
+        "runtime/node/bin/node",
+        "--version"
+      ],
+      "expected_version": "v24.22.2",
+      "blockers": []
+    },
+    "dsh": {
+      "version": "0.2.2-rc.1",
+      "tag": "dsh-v0.2.2-rc.1",
+      "commit": "66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db",
+      "prerelease": true,
+      "release": "https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.2-rc.1",
+      "source_kind": "npm",
+      "package": "@deepseek-ai/dsh",
+      "minimum_node": "24.9.0",
+      "artifact": {
+        "url": "https://registry.npmjs.org/@deepseek-ai/dsh/-/dsh-0.2.2-rc.1.tgz",
+        "integrity": "sha512-ijR9UEVYkG15Q/Q79JzvzLBzQOQfc63VLr9n6flpwHPhr5IKn2UxthnSoto/P9l7qGd7pPvI1Ra6TW7LH3oKpg==",
+        "sha256": "ad21968aed0337a326b853507a23b30eacbbec4d67ab07f3b6fde69b75b19cd6",
+        "verification": "tarball_sha256_and_npm_integrity_verified"
+      },
+      "upstream_lock": {
+        "url": "https://raw.githubusercontent.com/deepseek-ai/deepseek-harness/66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db/pnpm-lock.yaml",
+        "sha256": "aa1293f2e8d3ee82cb3cfcb0e65ba8a0ef73ab80fad4c35d7ed2f7c67b95a625",
+        "purpose": "source fallback provenance; not an npm deployment lock"
+      },
+      "layout": {
+        "destination": "runtime/dsh",
+        "entrypoint": "node_modules/@deepseek-ai/dsh/lib/bin.js",
+        "preserve": "complete production dependency closure and profiles; target-native optional dependencies; no external symlinks"
+      },
+      "license": {
+        "spdx": "MIT",
+        "file": "packaging/licenses/DSH-MIT.txt",
+        "sha256": "ebb4f09972aee8608be255debaf78451a68e95c290f55c240dec2ecfa16ea6be",
+        "source": "https://raw.githubusercontent.com/deepseek-ai/deepseek-harness/66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db/LICENSE"
+      },
+      "verify_argv": [
+        "bin/dsh",
+        "--version"
+      ],
+      "expected_version": "0.2.2-rc.1",
+      "acp": {
+        "identity": "not_observed",
+        "capabilities": "not_accepted",
+        "required": [
+          "initialize identity and capabilities",
+          "new session and minimum model turn",
+          "tool call",
+          "cancellation and clean shutdown",
+          "restart and original session resume"
+        ],
+        "expected_identity": {
+          "name": "deepseek-harness-acp",
+          "version": "0.0.1"
+        },
+        "identity_evidence": {
+          "package": "@deepseek-ai/dsh-acp@0.2.2-rc.1",
+          "file": "lib/index.js",
+          "integrity": "sha512-z0NCGE6JcxcCocwiq4pCAt7qb4OHkpuFjw8hd8GvF/dDt6aeVhCvPQ1t4YsHOlttKXRLK3xf1F/9m7TS/gFt9w==",
+          "verification": "static inspection of integrity-verified official npm tarball; not an ACP handshake"
+        }
+      },
+      "platforms": {
+        "darwin-arm64": {
+          "status": "production_deployment_pending",
+          "native_system_package": "@deepseek-ai/node-addon-system-darwin-arm64",
+          "native_system_version": "0.1.2",
+          "other_native_packages": [
+            "sharp@0.35.5 + libvips@1.3.4",
+            "@vscode/ripgrep@1.18.0",
+            "node-pty@1.2.0-beta.15",
+            "koffi@3.1.1"
+          ]
+        },
+        "linux-amd64": {
+          "status": "production_deployment_pending",
+          "native_system_package": "@deepseek-ai/node-addon-system-linux-x64",
+          "native_system_version": "0.1.2",
+          "other_native_packages": [
+            "sharp@0.35.5 + libvips@1.3.4",
+            "@vscode/ripgrep@1.18.0",
+            "node-pty@1.2.0-beta.15",
+            "koffi@3.1.1"
+          ]
+        },
+        "linux-arm64": {
+          "status": "production_deployment_pending",
+          "native_system_package": "@deepseek-ai/node-addon-system-linux-arm64",
+          "native_system_version": "0.1.2",
+          "other_native_packages": [
+            "sharp@0.35.5 + libvips@1.3.4",
+            "@vscode/ripgrep@1.18.0",
+            "node-pty@1.2.0-beta.15",
+            "koffi@3.1.1"
+          ]
+        },
+        "darwin-amd64": {
+          "status": "production_deployment_pending",
+          "native_system_package": "@deepseek-ai/node-addon-system-darwin-x64",
+          "native_system_version": "0.1.2",
+          "other_native_packages": [
+            "sharp@0.35.5 + libvips@1.3.4",
+            "@vscode/ripgrep@1.18.0",
+            "node-pty@1.2.0-beta.15",
+            "koffi@3.1.1"
+          ]
+        }
+      },
+      "blockers": [
+        "dsh_deployment"
+      ],
+      "deployment_lock": {
+        "file": "packaging/dsh/package-lock.json",
+        "sha256": "32d6292ff1222f9d47d0708e905046f2a2e7828691c1b54271880c1be4028044",
+        "package_json": "packaging/dsh/package.json",
+        "package_json_sha256": "21b1e9063bc54a96e7199718278dbca38dc058be463426101580ec5a113ff62d",
+        "lockfile_version": 3,
+        "package_count": 724,
+        "generator": {
+          "node": "24.22.2",
+          "npm": "11.19.1"
+        },
+        "installation": "npm ci --omit=dev --include=optional on each target; review the listed lifecycle scripts before enabling them; never npm install at startup",
+        "verification": "package-lock-only with scripts disabled; no runtime deployed"
+      },
+      "native_archive_inspection": {
+        "node-pty": {
+          "package": "node-pty",
+          "version": "1.2.0-beta.15",
+          "sha256": "114ac80c3fe075eff76217a4122d135576582695f49c03a5da3835cdfc2f89c5",
+          "integrity_verified": true,
+          "target_files": [
+            "package/prebuilds/darwin-arm64/spawn-helper",
+            "package/prebuilds/darwin-x64/spawn-helper",
+            "package/prebuilds/darwin-arm64/pty.node",
+            "package/prebuilds/darwin-x64/pty.node",
+            "package/prebuilds/linux-arm64/pty.node",
+            "package/prebuilds/linux-x64/pty.node"
+          ]
+        }
+      }
+    },
+    "glab": {
+      "version": "1.127.0",
+      "commit": "2e352a17e7e00bef420b0f38e0ce9ab4e1a38e5d",
+      "contract": "tools/gitlab/glab.lock.json",
+      "platforms_ref": "tools/gitlab/glab.lock.json#/platforms",
+      "license": {
+        "spdx": "MIT",
+        "file": "packaging/licenses/glab-MIT.txt",
+        "sha256": "98654bbe32fd0b66042368a5fad4a796696a785ad67386fe9b23c1c7c2d6b12e",
+        "source": "https://gitlab.com/gitlab-org/cli/-/raw/2e352a17e7e00bef420b0f38e0ce9ab4e1a38e5d/LICENSE"
+      },
+      "layout": {
+        "executable": "bin/glab",
+        "resources": [
+          "LICENSE",
+          "README.md",
+          "CHANGELOG.md"
+        ]
+      },
+      "verify_argv": [
+        "bin/glab",
+        "version"
+      ],
+      "expected_version_prefix": "glab 1.127.0",
+      "blockers": [],
+      "platform_verification": {
+        "darwin-arm64": "archive_sha256_and_version_verified",
+        "other_targets": "upstream_checksum"
+      }
+    },
+    "lark-cli": {
+      "version": "1.0.99",
+      "commit": "8d8357d39dd15ac5e9aa815d4ab2639d56bd3239",
+      "contract": "internal/platform/lark/client.go#CLIVersion",
+      "source_kind": "native_go_release",
+      "release": "https://github.com/larksuite/cli/releases/tag/v1.0.99",
+      "checksums_evidence": "https://github.com/larksuite/cli/releases/expanded_assets/v1.0.99",
+      "build_evidence": "https://raw.githubusercontent.com/larksuite/cli/v1.0.99/.goreleaser.yml",
+      "license": {
+        "spdx": "MIT",
+        "file": "packaging/licenses/lark-cli-MIT.txt",
+        "sha256": "c969fc7e3af68e6bf40b0d8dd9c3dcc377eb685a2139535b203b39fdcad739ee",
+        "source": "https://raw.githubusercontent.com/larksuite/cli/8d8357d39dd15ac5e9aa815d4ab2639d56bd3239/LICENSE"
+      },
+      "platforms": {
+        "darwin-arm64": {
+          "archive": "lark-cli-1.0.99-darwin-arm64.tar.gz",
+          "url": "https://github.com/larksuite/cli/releases/download/v1.0.99/lark-cli-1.0.99-darwin-arm64.tar.gz",
+          "sha256": "f24f4106d1b0b1a4ee9a24ec0953dee6e518476bbe3d9758f78a732477525b21",
+          "layout": {
+            "strip_components": 0,
+            "executable": "lark-cli",
+            "destination": "bin/lark-cli",
+            "resources": [
+              "LICENSE",
+              "README.md",
+              "CHANGELOG.md"
+            ]
+          },
+          "verification": "archive_sha256_and_version_verified"
+        },
+        "linux-amd64": {
+          "archive": "lark-cli-1.0.99-linux-amd64.tar.gz",
+          "url": "https://github.com/larksuite/cli/releases/download/v1.0.99/lark-cli-1.0.99-linux-amd64.tar.gz",
+          "sha256": "fd29f51030dde6919b6ca9173bc87852d3846f253d198022ea2d9ee63527b945",
+          "layout": {
+            "strip_components": 0,
+            "executable": "lark-cli",
+            "destination": "bin/lark-cli",
+            "resources": [
+              "LICENSE",
+              "README.md",
+              "CHANGELOG.md"
+            ]
+          },
+          "verification": "upstream_checksum"
+        },
+        "linux-arm64": {
+          "archive": "lark-cli-1.0.99-linux-arm64.tar.gz",
+          "url": "https://github.com/larksuite/cli/releases/download/v1.0.99/lark-cli-1.0.99-linux-arm64.tar.gz",
+          "sha256": "2837145e72922d558538494d0da30ac6c509681fc0791f8818f4ddb87f5125b4",
+          "layout": {
+            "strip_components": 0,
+            "executable": "lark-cli",
+            "destination": "bin/lark-cli",
+            "resources": [
+              "LICENSE",
+              "README.md",
+              "CHANGELOG.md"
+            ]
+          },
+          "verification": "upstream_checksum"
+        },
+        "darwin-amd64": {
+          "archive": "lark-cli-1.0.99-darwin-amd64.tar.gz",
+          "url": "https://github.com/larksuite/cli/releases/download/v1.0.99/lark-cli-1.0.99-darwin-amd64.tar.gz",
+          "sha256": "31f900409082728761346a94b7b81038c78b302883b69c36b849b23d843d7de1",
+          "layout": {
+            "strip_components": 0,
+            "executable": "lark-cli",
+            "destination": "bin/lark-cli",
+            "resources": [
+              "LICENSE",
+              "README.md",
+              "CHANGELOG.md"
+            ]
+          },
+          "verification": "upstream_checksum"
+        }
+      },
+      "system_requirements": {
+        "darwin": "system Keychain/Security.framework",
+        "linux": "D-Bus/Secret Service for OS keyring; verify supported headless credential storage separately"
+      },
+      "verify_argv": [
+        "bin/lark-cli",
+        "--version"
+      ],
+      "expected_version": "lark-cli version 1.0.99",
+      "blockers": []
+    },
+    "git": {
+      "version": "2.56.0",
+      "distribution": "desktop/dugite-native",
+      "tag": "v2.56.0-2",
+      "commit": "a44aeca2f8593510c8080d8b7767468fa210a02c",
+      "release": "https://github.com/desktop/dugite-native/releases/tag/v2.56.0-2",
+      "license": {
+        "spdx": "GPL-2.0-only",
+        "file": "packaging/licenses/dugite-native-GPL-2.0.txt",
+        "sha256": "db296f2f7f35bca3a174efb0eb392b3b17bd94b341851429a3dff411b1c2fc73",
+        "source": "https://raw.githubusercontent.com/desktop/dugite-native/a44aeca2f8593510c8080d8b7767468fa210a02c/LICENSE.md"
+      },
+      "platforms": {
+        "darwin-arm64": {
+          "archive": "dugite-native-v2.56.0-a44aeca-macOS-arm64.lzma",
+          "url": "https://github.com/desktop/dugite-native/releases/download/v2.56.0-2/dugite-native-v2.56.0-a44aeca-macOS-arm64.lzma",
+          "sha256": "0db3bc84019b9241a1ec86b5d5855e74f59fc289347584605874c0792c0bb97c",
+          "layout": {
+            "strip_components": 0,
+            "destination": "runtime/git",
+            "executable": "bin/git",
+            "preserve": "complete archive including symlinks, libexec/git-core, share and certificates"
+          },
+          "verification": "upstream_checksum_lzma_same_release"
+        },
+        "linux-amd64": {
+          "archive": "dugite-native-v2.56.0-a44aeca-ubuntu-x64.tar.gz",
+          "url": "https://github.com/desktop/dugite-native/releases/download/v2.56.0-2/dugite-native-v2.56.0-a44aeca-ubuntu-x64.tar.gz",
+          "sha256": "1efd8ce0516b670b6b6d0f49ecaf395ceb8cf7fff3f5857259763d97a1238df9",
+          "layout": {
+            "strip_components": 0,
+            "destination": "runtime/git",
+            "executable": "bin/git",
+            "preserve": "complete archive including symlinks, libexec/git-core, share and certificates"
+          },
+          "verification": "upstream_checksum"
+        },
+        "linux-arm64": {
+          "archive": "dugite-native-v2.56.0-a44aeca-ubuntu-arm64.tar.gz",
+          "url": "https://github.com/desktop/dugite-native/releases/download/v2.56.0-2/dugite-native-v2.56.0-a44aeca-ubuntu-arm64.tar.gz",
+          "sha256": "d5ce120515bf3013a014e6a918aa87ec0f7a6f5f9687c48d50127e637cb9b6c2",
+          "layout": {
+            "strip_components": 0,
+            "destination": "runtime/git",
+            "executable": "bin/git",
+            "preserve": "complete archive including symlinks, libexec/git-core, share and certificates"
+          },
+          "verification": "upstream_checksum"
+        },
+        "darwin-amd64": {
+          "archive": "dugite-native-v2.56.0-a44aeca-macOS-x64.tar.gz",
+          "url": "https://github.com/desktop/dugite-native/releases/download/v2.56.0-2/dugite-native-v2.56.0-a44aeca-macOS-x64.tar.gz",
+          "sha256": "52cc663281e1ec2f1d76ba781193ca4847e62dbbf767f6c99ec9ec5b978a7659",
+          "layout": {
+            "strip_components": 0,
+            "destination": "runtime/git",
+            "executable": "bin/git",
+            "preserve": "complete archive including symlinks, libexec/git-core, share and certificates"
+          },
+          "verification": "upstream_checksum"
+        }
+      },
+      "bundled_components": {
+        "git-lfs": "3.8.1",
+        "git-credential-manager": "2.9.1"
+      },
+      "redistribution": {
+        "status": "source_locked_runtime_notices_required",
+        "requirements": [
+          "retain all component licenses and notices",
+          "provide matching complete corresponding source and build materials for GPL components",
+          "inventory bundled TLS, certificate, Git LFS and GCM licenses per target"
+        ],
+        "sources": [
+          {
+            "archive": "dugite-native-a44aeca2f8593510c8080d8b7767468fa210a02c.tar.gz",
+            "url": "https://codeload.github.com/desktop/dugite-native/tar.gz/a44aeca2f8593510c8080d8b7767468fa210a02c",
+            "sha256": "4bce3003d1c988a5cd6f32a9ac82d4f4e8f8d109175f317e41b9c5e3850f75c3",
+            "destination": "dugite"
+          },
+          {
+            "archive": "git-a018953688f1b10bddf91bff8747068f5f4746a4.tar.gz",
+            "url": "https://codeload.github.com/git/git/tar.gz/a018953688f1b10bddf91bff8747068f5f4746a4",
+            "sha256": "898ecd505bcec4390b3b7b2c1882509af3f11f3b62c56147d19f01e2a4e81355",
+            "destination": "dugite/git"
+          }
+        ],
+        "component_notices": [
+          {
+            "component": "git-lfs",
+            "version": "3.8.1",
+            "commit": "a662a6dbfedf706cfa9fc7a5b7bcc7ba2e2c8a65",
+            "source": "https://raw.githubusercontent.com/git-lfs/git-lfs/a662a6dbfedf706cfa9fc7a5b7bcc7ba2e2c8a65/LICENSE.md",
+            "file": "packaging/licenses/git-lfs-MIT-BSD.txt",
+            "sha256": "4fae9062ab5cdd5fb15486b728534d8aded8b4ae9d84b6d66a956f5162c366b6"
+          },
+          {
+            "component": "git-credential-manager",
+            "version": "2.9.1",
+            "source": "https://raw.githubusercontent.com/git-ecosystem/git-credential-manager/v2.9.1/LICENSE",
+            "file": "packaging/licenses/GCM-MIT.txt",
+            "sha256": "b47f1a8a744ecdc7a3da35804f88552805d33f51a726b87a2105acdfae406b07"
+          }
+        ]
+      },
+      "launcher_requirements": [
+        "set GIT_EXEC_PATH relative to runtime/git/libexec/git-core",
+        "preserve share/git-core/templates",
+        "use bundled Linux CA material with relocatable paths",
+        "no references to staging or Homebrew"
+      ],
+      "verify_argv": [
+        "runtime/git/bin/git",
+        "--version"
+      ],
+      "expected_version": "git version 2.56.0",
+      "blockers": [
+        "git_redistribution_materials"
+      ],
+      "source_git_commit": "a018953688f1b10bddf91bff8747068f5f4746a4",
+      "source_git_evidence": "https://github.com/desktop/dugite-native/tree/v2.56.0-2/git",
+      "checksums_evidence": "https://github.com/desktop/dugite-native/releases/expanded_assets/v2.56.0-2",
+      "archive_selection": "P2 selects the official .lzma asset for darwin-arm64 from the same fixed release after tar.gz HTTP 504; other targets retain tar.gz. All target SHA-256 values are fixed before assembly; no automatic format/source fallback."
+    },
+    "scn": {
+      "version": "0.1.13",
+      "contract": "tools/scion/scn.lock.json",
+      "status": "deferred",
+      "included_profiles": []
+    }
+  },
+  "blockers": {
+    "dsh_deployment": "Deploy complete pinned npm closure on each native target; inventory licenses and verify profiles/native modules/ACP.",
+    "git_redistribution_materials": "Collect corresponding source, build materials and all bundled component notices before distribution.",
+    "native_runtime_acceptance": "P1-P3 archive construction and native clean-environment acceptance have not run.",
+    "git_tls_runtime": "Linux dugite Git HTTPS helpers dynamically link libcurl.so.4 and its TLS closure; these libraries and their redistribution materials are not bundled yet. Do not accept host libraries as a full runtime."
+  },
+  "go_module_notices": [
+    {
+      "module": "github.com/go-aie/actorx",
+      "version": "v0.0.0-20261030042159-66d1a455bafa",
+      "sum": "h1:Snvtf4FhtWMWrdirZqo5451adsulVeR48/BoE1dtkvo=",
+      "license_file": "packaging/licenses/github.com_go-aie_actorx-LICENSE.txt",
+      "license_sha256": "27961c65c9d7bbbccffbeafbc0db701e98ed352c269e5c5229fd4c2f6489feb2"
+    },
+    {
+      "module": "github.com/pelletier/go-toml/v2",
+      "version": "v2.3.0",
+      "sum": "h1:k59bC/lIZREW0/iVaQR8nDHxVq8OVlIzYCOJf421CaM=",
+      "license_file": "packaging/licenses/github.com_pelletier_go-toml_v2-LICENSE.txt",
+      "license_sha256": "26844e4b53c5adec04e557fd7dfef281cc0205a7d355626b1c68b778b99e9e7b"
+    },
+    {
+      "module": "github.com/yuin/goldmark",
+      "version": "v1.8.7",
+      "sum": "h1:XT/tNqCIbabh0ln675w4x3dv04kQBKi8NwYqi9IJaxI=",
+      "license_file": "packaging/licenses/github.com_yuin_goldmark-LICENSE.txt",
+      "license_sha256": "c1d6f653c38c80294dc7994647ba0dcc508ce64a86996303c804efa2f7982bff"
+    },
+    {
+      "module": "golang.org/x/image",
+      "version": "v0.47.0",
+      "sum": "h1:za/8gVz++PPZqmZJBNSISICN5Rrj5zixP/8K++fgmqo=",
+      "license_file": "packaging/licenses/golang.org_x_image-LICENSE.txt",
+      "license_sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad"
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
+GIT_EXEC_PATH="$ROOT/runtime/git/libexec/git-core"
+GIT_TEMPLATE_DIR="$ROOT/runtime/git/share/git-core/templates"
+GIT_CONFIG_SYSTEM="$ROOT/runtime/git/etc/gitconfig"
+export GIT_EXEC_PATH GIT_TEMPLATE_DIR GIT_CONFIG_SYSTEM
+if [ -f "$ROOT/runtime/git/ssl/cacert.pem" ]; then
+  GIT_SSL_CAINFO=${GIT_SSL_CAINFO:-"$ROOT/runtime/git/ssl/cacert.pem"}
+  export GIT_SSL_CAINFO
+fi
+PATH="$ROOT/bin:$GIT_EXEC_PATH:${PATH:-/usr/bin:/bin}"
+export PATH
+exec "$ROOT/runtime/git/bin/git" "$@"
