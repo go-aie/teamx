@@ -252,3 +252,45 @@ func TestGitLabFactTemplatesAndLoopFilter(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestEventsHistoricalStartFiltersAndLocks(t *testing.T) {
+	_, h, _ := standaloneEvents(t)
+	for _, seconds := range []int{0, 3600, 86400} {
+		cfg := h.state.Config
+		cfg.BackfillSeconds = seconds
+		s, err := ConfigureEvents(h.state.RoomIdentity, nil, &h.state.Binding, cfg, h.now)
+		if err != nil || !s.Baseline.Equal(h.now.Add(-time.Duration(seconds)*time.Second)) {
+			t.Fatal(s, err)
+		}
+		if !s.Watermark.Equal(s.Baseline) || !s.IgnoreBefore.Equal(s.Baseline) || !s.Filters[0].Since.Equal(s.Baseline) {
+			t.Fatal("incomplete historical window", s)
+		}
+		s.ProjectID = h.state.Binding.ProjectID
+		_, _, err = s.Accept([]Event{{ID: 1, ProjectID: s.ProjectID, Kind: "push", CreatedAt: s.Baseline}, {ID: 2, ProjectID: s.ProjectID, Kind: "push", CreatedAt: s.Baseline.Add(-time.Nanosecond)}}, h.now)
+		if err != nil || len(s.Inbox) != 1 || len(s.Observed) != 1 {
+			t.Fatal(s, err)
+		}
+		next, err := ConfigureEvents(s.RoomIdentity, &s, &s.Binding, cfg, h.now.Add(time.Hour))
+		if err != nil || !next.Baseline.Equal(s.Baseline) || next.SubscriptionID != s.SubscriptionID || len(next.Inbox) != 1 {
+			t.Fatal(next, err)
+		}
+		cfg.BackfillSeconds++
+		if _, err := ConfigureEvents(s.RoomIdentity, &s, &s.Binding, cfg, h.now.Add(time.Hour)); err == nil {
+			t.Fatal("reception start changed")
+		}
+	}
+	cfg := h.state.Config
+	cfg.BackfillStart = h.now.Add(-48 * time.Hour)
+	s, err := ConfigureEvents(h.state.RoomIdentity, nil, &h.state.Binding, cfg, h.now)
+	if err != nil || !s.Baseline.Equal(cfg.BackfillStart) {
+		t.Fatal(s, err)
+	}
+	data, _ := json.Marshal(s)
+	if _, err := (&EventsSource{}).Decode(data, s.RoomIdentity); err != nil {
+		t.Fatal("historical start did not survive reload", err)
+	}
+	cfg.BackfillStart = h.now.Add(time.Second)
+	if _, err := ConfigureEvents(h.state.RoomIdentity, nil, &h.state.Binding, cfg, h.now); err == nil {
+		t.Fatal("future start accepted")
+	}
+}

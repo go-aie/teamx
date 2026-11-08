@@ -119,13 +119,14 @@ func (h *todoHarness) step() (time.Duration, bool) {
 }
 func (h *todoHarness) full() {
 	h.t.Helper()
+	calls := len(h.pages.calls)
 	for i := 0; i < 200; i++ {
 		_, stop := h.step()
 		if stop {
 			h.t.Fatalf("stopped: %+v", h.state())
 		}
 		s := h.state()
-		if s.Scan == nil && !s.LastFull.IsZero() {
+		if s.Scan == nil && !s.LastFull.IsZero() && (len(h.pages.calls) == calls || h.pages.calls[len(h.pages.calls)-1].State == "done") {
 			return
 		}
 	}
@@ -807,6 +808,7 @@ func TestTodosTCPHTTPConfigureSyncDisableAndRoomDelivery(t *testing.T) {
 			t.Fatal(err)
 		}
 		payload["version"] = unified.Version
+		cfg = unified.Config
 		return unified.Todos
 	}
 	view := call("/v1/platform/gitlab/notifications/configure")
@@ -902,5 +904,57 @@ func TestTodosCurrentIntervalAndFixedInactiveInterval(t *testing.T) {
 	h.step()
 	if len(h.pages.calls) != calls+1 {
 		t.Fatal("active collector did not use the common 30 second interval")
+	}
+}
+
+func TestTodosQuickPollsBoundRequestsAndFullReconciliationFindsDeeperItems(t *testing.T) {
+	h := newTodoHarness(t)
+	h.full()
+	full := h.state().LastFull
+	for i := 0; i < 25; i++ {
+		h.pages.pending = append(h.pages.pending, h.todo(int64(100+i), -1, "pending"))
+		h.pages.done = append(h.pages.done, h.todo(int64(200+i), -1, "done"))
+	}
+	// Neither an old timestamp nor a known/high ID is a safe early-stop cursor.
+	h.pages.pending = append(h.pages.pending, h.todo(1, 0, "pending"))
+	h.pages.done = append(h.pages.done, h.todo(2, 0, "done"))
+	calls := len(h.pages.calls)
+	for i := 0; i < 120; i++ {
+		h.step()
+	}
+	h.step() // Finish the second quick page.
+	if len(h.pages.calls) != calls+2 {
+		t.Fatal("ordinary poll traversed historical pages", h.pages.calls[calls:])
+	}
+	for _, q := range h.pages.calls[calls:] {
+		if q.Page != 1 || q.PerPage != 20 {
+			t.Fatal(q)
+		}
+	}
+	if !h.state().LastFull.Equal(full) || h.state().Scan != nil || len(h.state().Inbox) != 0 {
+		t.Fatal("quick check claimed full coverage", h.state())
+	}
+	for i := 0; i < 400 && h.state().LastFull.Equal(full); i++ {
+		h.step()
+	}
+	s := h.state()
+	if !s.LastFull.After(full) || len(s.Inbox) != 2 || len(s.Observed) != 2 {
+		t.Fatal("reconciliation missed items beyond page one", s)
+	}
+	if _, ok := s.Inbox[gitlab.TodosKey(s.Binding, 1)]; !ok {
+		t.Fatal("low ID pending item lost")
+	}
+	if _, ok := s.Inbox[gitlab.TodosKey(s.Binding, 2)]; !ok {
+		t.Fatal("done item lost")
+	}
+	// Manual sync still performs a complete scan immediately.
+	calls = len(h.pages.calls)
+	if err := h.m.syncTodosSubscription(context.Background(), h.key, s.SubscriptionVersion); err != nil {
+		t.Fatal(err)
+	}
+	h.newRunner()
+	h.full()
+	if len(h.pages.calls) != calls+2 || h.pages.calls[calls].PerPage != 100 || len(h.state().Inbox) != 2 {
+		t.Fatal("manual sync did not reconcile or deduplicate", h.pages.calls[calls:])
 	}
 }

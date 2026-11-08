@@ -42,13 +42,12 @@ func NormalizeConfig(c Config) (Config, error) {
 	if c.GroupAll && c.AllChats() {
 		return c, notification.ErrRequest
 	}
-	if !c.BackfillStart.IsZero() {
-		if c.BackfillSeconds != 0 || c.BackfillStart.Unix() <= 0 {
-			return c, notification.ErrRequest
-		}
-		c.BackfillStart = c.BackfillStart.UTC().Truncate(time.Second)
+	start, err := notification.NormalizeBackfill(c.BackfillSeconds, c.BackfillStart)
+	if err != nil {
+		return c, err
 	}
-	if !component(c.ConnectionID) || !c.Target.Valid() || !c.Target.Inbox() || (c.ScopeMode != "" && c.ScopeMode != "specified" && c.ScopeMode != "all") || c.AllChats() && len(c.Chats) != 0 || !c.AllChats() && (len(c.Chats) == 0 || len(c.Chats) > 32) || c.IntervalSeconds < 3 || c.IntervalSeconds > 3600 || c.BackfillSeconds < 0 || c.BackfillSeconds > 86400 {
+	c.BackfillStart = start
+	if !component(c.ConnectionID) || !c.Target.Valid() || !c.Target.Inbox() || (c.ScopeMode != "" && c.ScopeMode != "specified" && c.ScopeMode != "all") || c.AllChats() && len(c.Chats) != 0 || !c.AllChats() && (len(c.Chats) == 0 || len(c.Chats) > 32) || c.IntervalSeconds < 3 || c.IntervalSeconds > 3600 {
 		return c, notification.ErrRequest
 	}
 	c.Chats = slices.Clone(c.Chats)
@@ -261,12 +260,9 @@ func Configure(owner platform.RoomIdentity, current *State, b Binding, c Config,
 		if !c.Enabled || !b.Valid() {
 			return n, notification.ErrRequest
 		}
-		baseline := now.Add(-time.Duration(c.BackfillSeconds) * time.Second)
-		if !c.BackfillStart.IsZero() {
-			if c.BackfillStart.After(now) {
-				return n, notification.ErrRequest
-			}
-			baseline = c.BackfillStart
+		baseline, err := notification.BackfillBaseline(c.BackfillSeconds, c.BackfillStart, now)
+		if err != nil {
+			return n, err
 		}
 		var id [16]byte
 		if _, e = rand.Read(id[:]); e != nil {

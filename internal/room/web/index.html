@@ -172,7 +172,7 @@
                       <p id="lark-group-mode-help" class="quiet">规则用于筛选他人消息；范围内本人发送的消息和回复始终接收。“我”指所选连接账号。</p>
                     </div>
                     <div class="notification-settings-row">
-                      <div><label for="lark-backfill">开始接收时间</label><select id="lark-backfill" aria-describedby="lark-backfill-help"><option value="0">从开启时刻</option><option value="3600">最近 1 小时</option><option value="86400">最近 24 小时</option><option value="custom">指定时间</option></select><div id="lark-backfill-locked" class="lark-backfill-locked" aria-describedby="lark-backfill-help" hidden><span id="lark-backfill-value"></span><small>已锁定</small></div></div>
+                      <div><label for="lark-backfill">开始接收时间</label><select id="lark-backfill" aria-describedby="lark-backfill-help"><option value="0">从开启时刻</option><option value="3600">最近 1 小时</option><option value="86400">最近 24 小时</option><option value="custom">指定时间</option></select><div id="lark-backfill-locked" class="notification-backfill-locked" aria-describedby="lark-backfill-help" hidden><span id="lark-backfill-value"></span><small>已锁定</small></div></div>
                       <div><label for="lark-interval">检查间隔（秒）</label><input id="lark-interval" type="number" min="3" max="3600" value="60" title="3～3600 秒"></div>
                     </div>
                     <div id="lark-backfill-custom" hidden><label for="lark-backfill-start">起始时间（本地时间）</label><input id="lark-backfill-start" type="datetime-local" step="1" aria-describedby="lark-backfill-help lark-backfill-error"></div>
@@ -255,8 +255,12 @@
                 </section>
               </details>
               <div class="notification-settings-row">
+                <div><label for="gitlab-backfill">开始接收时间</label><select id="gitlab-backfill" aria-describedby="gitlab-backfill-help"><option value="0">从开启时刻</option><option value="3600">最近 1 小时</option><option value="86400">最近 24 小时</option><option value="custom">指定时间</option></select><div id="gitlab-backfill-locked" class="notification-backfill-locked" aria-describedby="gitlab-backfill-help" hidden><span id="gitlab-backfill-value"></span><small>已锁定</small></div></div>
                 <div><label for="gitlab-interval">检查间隔（秒）</label><input id="gitlab-interval" type="number" min="3" max="120" step="1" value="30" title="3～120 秒" aria-describedby="gitlab-interval-hint"></div>
               </div>
+              <div id="gitlab-backfill-custom" hidden><label for="gitlab-backfill-start">起始时间（本地时间）</label><input id="gitlab-backfill-start" type="datetime-local" step="1" aria-describedby="gitlab-backfill-help gitlab-backfill-error"></div>
+              <p id="gitlab-backfill-help" class="quiet">首次开启后锁定，项目活动和我的待办共用该起点。</p>
+              <p id="gitlab-backfill-error" class="form-error" role="alert" hidden></p>
               <p id="gitlab-interval-hint" class="quiet">房间未打开或操作中时，每 120 秒检查，恢复后投递。</p>
               <div class="gitlab-events-actions notification-settings-actions"><button id="gitlab-save" class="primary" type="button">保存设置</button><button id="gitlab-sync" class="text-button" type="button">立即同步</button><button id="gitlab-manage-connections" class="text-button" type="button">管理连接 ↗</button></div>
               <p id="gitlab-feedback" class="quiet" role="status" aria-live="polite"></p>

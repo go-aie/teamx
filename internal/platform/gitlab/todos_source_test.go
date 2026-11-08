@@ -119,3 +119,46 @@ func TestTodosExplicitEmptyFilterDoesNotMeanAll(t *testing.T) {
 		t.Fatal("empty types broadened subscription")
 	}
 }
+
+func TestTodosHistoricalStartFiltersAndLocks(t *testing.T) {
+	seed := sourceTodoState(t)
+	now := seed.Baseline
+	for _, seconds := range []int{0, 3600, 86400} {
+		cfg := seed.Config
+		cfg.BackfillSeconds = seconds
+		s, err := ConfigureTodos(seed.RoomIdentity, nil, seed.Binding, cfg, now)
+		if err != nil || !s.Baseline.Equal(now.Add(-time.Duration(seconds)*time.Second)) {
+			t.Fatal(s, err)
+		}
+		atStart := Todo{ID: 1, RecipientID: 101, ProjectID: 7, Project: "group/project", Action: "review_requested", Reason: "review_requested", Kind: "merge_request", TargetType: "MergeRequest", TargetID: 70, TargetIID: 42, Actor: &TodoActor{ID: 2, Username: "alice"}, Title: "history", URL: "https://gitlab.example.com/group/project/-/merge_requests/42", CreatedAt: s.Baseline, State: "pending"}
+		before := atStart
+		before.ID = 2
+		before.CreatedAt = s.Baseline.Add(-time.Nanosecond)
+		s.Accept([]Todo{before, atStart}, now)
+		if len(s.Inbox) != 1 || len(s.Observed) != 1 || s.Reason(atStart) != "accepted" {
+			t.Fatal("history filter did not cover baseline", s)
+		}
+		next, err := ConfigureTodos(s.RoomIdentity, &s, s.Binding, cfg, now.Add(time.Hour))
+		if err != nil || !next.Baseline.Equal(s.Baseline) || next.SubscriptionID != s.SubscriptionID || len(next.Inbox) != 1 {
+			t.Fatal(next, err)
+		}
+		cfg.BackfillSeconds++
+		if _, err := ConfigureTodos(s.RoomIdentity, &s, s.Binding, cfg, now.Add(time.Hour)); err == nil {
+			t.Fatal("reception start changed")
+		}
+	}
+	cfg := seed.Config
+	cfg.BackfillStart = now.Add(-48 * time.Hour)
+	s, err := ConfigureTodos(seed.RoomIdentity, nil, seed.Binding, cfg, now)
+	if err != nil || !s.Baseline.Equal(cfg.BackfillStart) || !s.Filters[0].Since.Equal(s.Baseline) {
+		t.Fatal(s, err)
+	}
+	data, _ := json.Marshal(s)
+	if _, err := (&TodosSource{}).Decode(data, s.RoomIdentity); err != nil {
+		t.Fatal("historical start did not survive reload", err)
+	}
+	cfg.BackfillStart = now.Add(time.Second)
+	if _, err := ConfigureTodos(seed.RoomIdentity, nil, seed.Binding, cfg, now); err == nil {
+		t.Fatal("future start accepted")
+	}
+}

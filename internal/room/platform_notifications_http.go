@@ -26,6 +26,7 @@ type notificationView struct {
 	Pending           int                      `json:"pending"`
 	LastCheck         time.Time                `json:"last_check,omitzero"`
 	LastFull          time.Time                `json:"last_full,omitzero"`
+	Baseline          time.Time                `json:"baseline,omitzero"`
 	RetryAt           time.Time                `json:"retry_at,omitzero"`
 	ErrorCode         string                   `json:"error_code,omitempty"`
 	DeliveryErrorCode string                   `json:"delivery_error_code,omitempty"`
@@ -51,6 +52,7 @@ func (m *roomManager) eventsNotificationViewLocked(owner RoomIdentity, state *gi
 		Available: true, Status: "disabled", Config: gitlab.EventsConfig{IntervalSeconds: gitlab.DefaultIntervalSeconds}}
 	if state != nil {
 		s := *state
+		v.Baseline = s.Baseline
 		v.Instance, v.RecipientID, v.Username, v.Retired = s.Binding.URL, s.UserID, s.Username, s.Retired
 		v.Project = &platform.ProjectBinding{Provider: "gitlab", URL: s.Binding.URL, Project: s.Binding.Project, ProjectID: s.Binding.ProjectID, ConnectionID: s.Binding.ConnectionID}
 		if s.ProjectID > 0 {
@@ -75,6 +77,7 @@ func (m *roomManager) todosNotificationViewLocked(owner RoomIdentity, state *git
 	v := notificationView{RoomIdentity: owner, SourceID: gitlab.TodosSourceID, Available: true, Status: "disabled", Config: gitlab.TodosConfig{IntervalSeconds: gitlab.DefaultIntervalSeconds}}
 	if state != nil {
 		s := *state
+		v.Baseline = s.Baseline
 		v.SubscriptionID, v.Version, v.Config, v.Status, v.Pending = s.SubscriptionID, s.SubscriptionVersion, s.Config, s.Status, len(s.Inbox)
 		v.LastCheck, v.LastFull, v.RetryAt, v.ErrorCode, v.Metrics, v.DeliveryErrorCode = s.LastCheck, s.LastFull, s.RetryAt, s.ErrorCode, s.Metrics, s.DeliveryErrorCode
 		if code := m.notificationTargetErrorLocked(owner, s.PendingItems()); code != "" {

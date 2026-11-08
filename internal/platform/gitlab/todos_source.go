@@ -56,15 +56,22 @@ func ConfigureTodos(owner platform.RoomIdentity, current *TodosState, b TodosBin
 			return next, notification.ErrConflict
 		}
 	}
+	if current != nil && (cfg.BackfillSeconds != current.Config.BackfillSeconds || !cfg.BackfillStart.Equal(current.Config.BackfillStart)) {
+		return next, notification.ErrConflict
+	}
 	if current == nil {
 		if !cfg.Enabled {
 			return next, notification.ErrRequest
+		}
+		baseline, err := notification.BackfillBaseline(cfg.BackfillSeconds, cfg.BackfillStart, now)
+		if err != nil {
+			return next, err
 		}
 		var id [16]byte
 		if _, err = rand.Read(id[:]); err != nil {
 			return next, err
 		}
-		next = TodosState{RoomIdentity: owner, SubscriptionID: hex.EncodeToString(id[:]), Binding: b, Baseline: now, Observed: map[string]TodosObservation{}, Inbox: map[string]TodosInboxEntry{}}
+		next = TodosState{RoomIdentity: owner, SubscriptionID: hex.EncodeToString(id[:]), Binding: b, Baseline: baseline, Observed: map[string]TodosObservation{}, Inbox: map[string]TodosInboxEntry{}}
 	}
 	if !cfg.Enabled {
 		cfg.ConnectionID = next.Binding.ConnectionID
@@ -78,7 +85,11 @@ func ConfigureTodos(owner platform.RoomIdentity, current *TodosState, b TodosBin
 		if len(next.Filters) > 0 && now.Before(next.Filters[len(next.Filters)-1].Since) {
 			return next, notification.ErrConflict
 		}
-		next.Filters = append(next.Filters, TodosFilterRevision{Since: now, Filter: cfg.Filter})
+		since := now
+		if current == nil {
+			since = next.Baseline
+		}
+		next.Filters = append(next.Filters, TodosFilterRevision{Since: since, Filter: cfg.Filter})
 	}
 	if next.SubscriptionVersion == ^uint64(0) {
 		return next, notification.ErrCapacity

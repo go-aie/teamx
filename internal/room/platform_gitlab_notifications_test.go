@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,6 +27,26 @@ func unifiedGitLabConfig(t *testing.T, h *eventHarness) gitlab.NotificationConfi
 		t.Fatal(err)
 	}
 	return v.Config
+}
+
+func TestNotificationReceptionBrowser(t *testing.T) {
+	if os.Getenv("TEAMX_RECEPTION_BROWSER") != "1" {
+		t.Skip("optional local Chromium acceptance")
+	}
+	m := testManager(t, t.TempDir(), managerTestProfiles(t))
+	verifyTodoAccount(t, m, platformTestSave(t, m, platformTestRequest(m)), 101)
+	room := managerCreate(t, m, "reception-browser")
+	eventLiveService(t, &eventHarness{m: m, room: room})
+	server := httptest.NewServer(m)
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "node", "testdata/notification_reception_browser.cjs", server.URL)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("browser: %v\n%s", err, out)
+	}
+	t.Log(strings.TrimSpace(string(out)))
 }
 
 func TestGitLabUnifiedConfigurationPersistenceAndVersion(t *testing.T) {
@@ -359,5 +382,92 @@ func TestGitLabRemovedSettingsAndPerSourceWritesAreRejected(t *testing.T) {
 		if response := managerHTTP(h.m, "/v1/platform/gitlab/notifications/configure", request); response.Code != http.StatusBadRequest {
 			t.Fatal("removed setting accepted", cfg, response.Code)
 		}
+	}
+}
+
+func TestGitLabUnifiedBackfillFreezesBeforeCollectorsAndAcrossLaterEnable(t *testing.T) {
+	h, c := newIndependentEventHarness(t)
+	room := managerCreate(t, h.m, "historical-gitlab")
+	cfg := gitlab.NotificationConfig{ConnectionID: c.ID, BackfillSeconds: 3600, Events: gitlab.EventSettings{Enabled: true, Project: "remote/project"}}
+	expected := h.clock.get().Add(-time.Hour)
+	v, err := h.m.configureGitLabNotifications(context.Background(), room.RoomIdentity, 0, cfg)
+	if err != nil || len(v.Errors) != 0 || !v.BackfillLocked || !v.Config.BackfillStart.Equal(expected) || v.Config.BackfillSeconds != 0 || !v.Events.Baseline.Equal(expected) {
+		t.Fatal(v, err)
+	}
+	h.clock.add(2 * time.Hour)
+	cfg = v.Config
+	cfg.Todos.Enabled = true
+	v, err = h.m.configureGitLabNotifications(context.Background(), room.RoomIdentity, v.Version, cfg)
+	if err != nil || len(v.Errors) != 0 || !v.Events.Baseline.Equal(expected) || !v.Todos.Baseline.Equal(expected) {
+		t.Fatal(v, err)
+	}
+	h.m.mu.Lock()
+	delete(h.m.gitlabNotifications, room.RoomIdentity)
+	err = h.m.loadGitLabNotificationsLocked(room.RoomIdentity)
+	reloaded, viewErr := h.m.gitlabNotificationViewLocked(room.RoomIdentity)
+	h.m.mu.Unlock()
+	if err != nil || viewErr != nil || !reloaded.BackfillLocked || !reflect.DeepEqual(v.Config, reloaded.Config) {
+		t.Fatal(reloaded, err, viewErr)
+	}
+	changed := v.Config
+	changed.BackfillStart = expected.Add(-time.Hour)
+	if _, err := h.m.configureGitLabNotifications(context.Background(), room.RoomIdentity, v.Version, changed); !errors.Is(err, ErrConflict) {
+		t.Fatal("locked start changed", err)
+	}
+	cfg = v.Config
+	cfg.Events.Enabled = false
+	cfg.Todos.Enabled = false
+	v, err = h.m.configureGitLabNotifications(context.Background(), room.RoomIdentity, v.Version, cfg)
+	if err != nil || !v.BackfillLocked || !v.Config.BackfillStart.Equal(expected) {
+		t.Fatal(v, err)
+	}
+}
+
+func TestGitLabUnifiedBackfillFailureKeepsStartAndInvalidTimesNeverPersist(t *testing.T) {
+	h, c := newIndependentEventHarness(t)
+	room := managerCreate(t, h.m, "retry-historical-gitlab")
+	cfg := gitlab.NotificationConfig{ConnectionID: c.ID, BackfillStart: h.clock.get().Add(time.Second), Events: gitlab.EventSettings{Enabled: true, Project: "remote/project"}}
+	if _, err := h.m.configureGitLabNotifications(context.Background(), room.RoomIdentity, 0, cfg); err == nil {
+		t.Fatal("future start accepted")
+	}
+	if _, err := os.Stat(h.m.gitlabNotificationPath(room.RoomIdentity)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("invalid settings persisted", err)
+	}
+	cfg.BackfillStart = time.Time{}
+	cfg.BackfillSeconds = 86400
+	verify := h.m.platformProject
+	h.m.platformProject = func(context.Context, string, string, workspaceSecret) (int64, error) { return 0, ErrRequest }
+	v, err := h.m.configureGitLabNotifications(context.Background(), room.RoomIdentity, 0, cfg)
+	if err != nil || !v.BackfillLocked || !v.Pending["events"] || v.Config.BackfillStart.IsZero() {
+		t.Fatal(v, err)
+	}
+	start := v.Config.BackfillStart
+	h.clock.add(time.Hour)
+	h.m.platformProject = verify
+	v, err = h.m.configureGitLabNotifications(context.Background(), room.RoomIdentity, v.Version, v.Config)
+	if err != nil || v.Pending["events"] || !v.Events.Baseline.Equal(start) {
+		t.Fatal(v, err)
+	}
+}
+
+func TestGitLabUnifiedExistingHistoricalSubscriptionKeepsChoice(t *testing.T) {
+	h, c := newIndependentEventHarness(t)
+	room := managerCreate(t, h.m, "existing-historical")
+	cfg := gitlab.EventsConfig{Enabled: true, ConnectionID: c.ID, Project: "remote/project", BackfillSeconds: 3600}
+	source, err := h.m.configureEventsSubscription(context.Background(), notification.Key{Owner: room.RoomIdentity, Source: gitlab.EventsSourceID}, 0, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.m.mu.Lock()
+	v, err := h.m.gitlabNotificationViewLocked(room.RoomIdentity)
+	h.m.mu.Unlock()
+	if err != nil || !v.BackfillLocked || v.Config.BackfillSeconds != 3600 {
+		t.Fatal(v, err)
+	}
+	shared := v.Config
+	shared.IntervalSeconds = 10
+	v, err = h.m.configureGitLabNotifications(context.Background(), room.RoomIdentity, v.Version, shared)
+	if err != nil || len(v.Errors) != 0 || !v.Events.Baseline.Equal(source.Baseline) {
+		t.Fatal(v, err)
 	}
 }

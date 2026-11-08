@@ -11,7 +11,12 @@ import (
 	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
+// Complete reconciliation retains coverage when offset pages move or an item
+// changes state outside the latest page. Ordinary polls read only two pages.
+const TodosFullInterval = 5 * time.Minute
+
 type TodosRunner struct {
+	quickState   string
 	Host         notification.StepHost
 	Source       *TodosSource
 	Fetcher      TodoFetcher
@@ -92,10 +97,12 @@ func (r *TodosRunner) Step(ctx context.Context) (time.Duration, bool) {
 		}
 		s = next
 		r.ready = true
+		r.quickState = ""
 		r.sliceStarted = time.Time{}
 		r.slicePages = 0
 		r.sliceBytes = 0
 	}
+	quick := false
 	if s.Scan == nil {
 		if r.nextPoll.IsZero() {
 			r.nextPoll = s.LastFull.Add(interval)
@@ -103,12 +110,17 @@ func (r *TodosRunner) Step(ctx context.Context) (time.Duration, bool) {
 		if r.nextPoll.After(now) {
 			return r.nextPoll.Sub(now), false
 		}
-		next := s.Clone()
-		next.Scan = &TodosScan{StartedAt: now, State: "pending", NextPage: 1}
-		if err = r.Host.Commit(next); err != nil {
-			return todoCommitResult(err)
+		if !s.LastFull.IsZero() && now.Before(s.LastFull.Add(TodosFullInterval)) {
+			quick = true
+		} else {
+			next := s.Clone()
+			next.Scan = &TodosScan{StartedAt: now, State: "pending", NextPage: 1}
+			if err = r.Host.Commit(next); err != nil {
+				return todoCommitResult(err)
+			}
+			s = next
+			r.quickState = ""
 		}
-		s = next
 	}
 	limits := r.Host.Limits()
 	if r.sliceStarted.IsZero() {
@@ -117,7 +129,9 @@ func (r *TodosRunner) Step(ctx context.Context) (time.Duration, bool) {
 	remaining := limits.SliceTime - time.Since(r.sliceStarted)
 	if r.slicePages >= limits.SlicePages || r.sliceBytes >= limits.SliceBytes || remaining <= 0 {
 		next := s.Clone()
-		next.Scan.Limited = true
+		if next.Scan != nil {
+			next.Scan.Limited = true
+		}
 		next.ErrorCode = "scan_incomplete"
 		next.RetryAt = now.Add(interval)
 		if err = r.Host.Commit(next); err != nil {
@@ -140,7 +154,14 @@ func (r *TodosRunner) Step(ctx context.Context) (time.Duration, bool) {
 		cancel()
 		return r.failure(ctx, err, time.Since(started), false)
 	}
-	q := TodoQuery{State: s.Scan.State, Page: s.Scan.NextPage, PerPage: 100, MaxBytes: min(int64(maxTodoOutput), limits.SliceBytes-r.sliceBytes), Timeout: min(30*time.Second, max(time.Millisecond, remaining-time.Since(started)))}
+	q := TodoQuery{Page: 1, PerPage: 20, State: "pending", MaxBytes: min(int64(maxTodoOutput), limits.SliceBytes-r.sliceBytes), Timeout: min(30*time.Second, max(time.Millisecond, remaining-time.Since(started)))}
+	if quick {
+		if r.quickState != "" {
+			q.State = r.quickState
+		}
+	} else {
+		q.State, q.Page, q.PerPage = s.Scan.State, s.Scan.NextPage, 100
+	}
 	batch, fetchErr := r.Fetcher.FetchTodos(requestCtx, q)
 	if fetchErr == nil && requestCtx.Err() != nil {
 		fetchErr = requestCtx.Err()
@@ -164,7 +185,7 @@ func (r *TodosRunner) Step(ctx context.Context) (time.Duration, bool) {
 	}
 	// Re-read to include concurrent acknowledgements. A competing candidate after
 	// this read is rejected by Commit; runtime page/budget progress stays unchanged.
-	if latest.Scan == nil || *latest.Scan != *s.Scan {
+	if (latest.Scan == nil) != (s.Scan == nil) || s.Scan != nil && *latest.Scan != *s.Scan {
 		return time.Second, false
 	}
 	if !validTodosBatch(q, batch, latest) {
@@ -184,19 +205,21 @@ func (r *TodosRunner) Step(ctx context.Context) (time.Duration, bool) {
 	if batch.RetryAfterSeconds > 0 {
 		next.ServerNotBefore = now.Add(time.Duration(batch.RetryAfterSeconds) * time.Second)
 	}
-	next.Scan.Pages++
-	next.Scan.Bytes += batch.ResponseBytes
-	next.Scan.Limited = false
-	if batch.Complete {
-		if q.State == "pending" {
-			next.Scan.State = "done"
-			next.Scan.NextPage = 1
+	if !quick {
+		next.Scan.Pages++
+		next.Scan.Bytes += batch.ResponseBytes
+		next.Scan.Limited = false
+		if batch.Complete {
+			if q.State == "pending" {
+				next.Scan.State = "done"
+				next.Scan.NextPage = 1
+			} else {
+				next.Scan = nil
+				next.LastFull = now
+			}
 		} else {
-			next.Scan = nil
-			next.LastFull = now
+			next.Scan.NextPage = batch.NextPage
 		}
-	} else {
-		next.Scan.NextPage = batch.NextPage
 	}
 	if err = r.Host.Commit(next); err != nil {
 		if errors.Is(err, notification.ErrCapacity) {
@@ -209,8 +232,16 @@ func (r *TodosRunner) Step(ctx context.Context) (time.Duration, bool) {
 	}
 	r.slicePages++
 	r.sliceBytes += batch.ResponseBytes
+	if quick && q.State == "pending" {
+		r.quickState = "done"
+		return time.Millisecond, false
+	}
 	if next.Scan == nil {
+		r.quickState = ""
 		r.nextPoll = now.Add(r.Host.Jitter(interval))
+		if fullDue := next.LastFull.Add(TodosFullInterval); r.nextPoll.After(fullDue) {
+			r.nextPoll = fullDue
+		}
 		r.sliceStarted = time.Time{}
 		r.slicePages = 0
 		r.sliceBytes = 0

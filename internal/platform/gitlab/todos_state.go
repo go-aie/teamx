@@ -45,6 +45,8 @@ type TodosFilter struct {
 	Types   []string `json:"types"`
 }
 type TodosConfig struct {
+	BackfillSeconds int                 `json:"backfill_seconds,omitempty"`
+	BackfillStart   time.Time           `json:"backfill_start,omitzero"`
 	Target          notification.Target `json:"target,omitzero"`
 	Enabled         bool                `json:"enabled"`
 	ConnectionID    string              `json:"connection_id"`
@@ -64,6 +66,11 @@ func normalizeTodosConfig(c TodosConfig, requireConnection bool) (TodosConfig, e
 		return c, notification.ErrRequest
 	}
 	c.IntervalSeconds = interval
+	start, err := notification.NormalizeBackfill(c.BackfillSeconds, c.BackfillStart)
+	if err != nil {
+		return c, err
+	}
+	c.BackfillStart = start
 	c.Filter.Reasons = slices.Clone(c.Filter.Reasons)
 	c.Filter.Types = slices.Clone(c.Filter.Types)
 	if c.Filter.Reasons == nil {
@@ -183,6 +190,9 @@ func (s TodosState) Clone() TodosState {
 	return next
 }
 func (s TodosState) Validate(owner platform.RoomIdentity) error {
+	if !s.Config.BackfillStart.IsZero() && !s.Baseline.Equal(s.Config.BackfillStart) {
+		return notification.ErrInvalid
+	}
 	cfg, err := NormalizeTodosConfig(s.Config)
 	if err != nil || !reflect.DeepEqual(cfg, s.Config) || s.RoomIdentity != owner || !validRestartID(s.SubscriptionID) || s.SubscriptionVersion == 0 || !s.Binding.Valid() || cfg.ConnectionID != s.Binding.ConnectionID || s.Baseline.IsZero() || s.Retired && cfg.Enabled || s.RuntimeState.Validate(cfg.Enabled) != nil || s.Observed == nil || s.Inbox == nil || len(s.Observed) > 100000 || len(s.Inbox) > 10000 || len(s.Filters) == 0 || len(s.Filters) > 256 || !s.Filters[0].Since.Equal(s.Baseline) {
 		return notification.ErrInvalid

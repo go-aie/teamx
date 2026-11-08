@@ -300,6 +300,7 @@ function notificationTargetOptions() {
 function gitlabConfig(config = {}) {
   const e = config.events || {}, t = todoConfig(config.todos || {});
   return { connection_id: config.connection_id || "", target: notificationTarget(config), interval_seconds: config.interval_seconds ?? 30,
+    backfill_seconds: config.backfill_seconds || 0, ...(config.backfill_start ? {backfill_start: new Date(config.backfill_start).toISOString()} : {}),
     events: { enabled: !!e.enabled, project: e.project || "", etag_verified: !!e.etag_verified,
       filter: { types: [...(e.filter?.types || [])] } }, todos: t };
 }
@@ -307,12 +308,12 @@ function gitlabDraft() { return workspaceView?.gitlabDraft || gitlabConfig(); }
 function gitlabSettingsBusy(ws) { return !ws?.gitlabConnected || !!ws.gitlabSending || !!ws.gitlab?.applying || managementBusy(); }
 function gitlabConfigKey(config) {
   const c = gitlabConfig(config);
-  return JSON.stringify([c.connection_id, c.target, c.interval_seconds, gitlabEventConfigKey(c.events), todoConfigKey(c.todos)]);
+  return JSON.stringify([c.connection_id, c.target, c.interval_seconds, c.backfill_seconds, config.backfill_start === "" ? "custom" : c.backfill_start || "", gitlabEventConfigKey(c.events), todoConfigKey(c.todos)]);
 }
 function acceptGitLabView(ws, view, saved = false) {
   ws.gitlab = view; ws.gitlabConnected = true;
   ws.events = view.events; ws.todos = view.todos; ws.eventsConnected = ws.todosConnected = true;
-  if (saved || !ws.gitlabDirty || !ws.eventsEmptyTypes && gitlabConfigKey(ws.gitlabDraft) === gitlabConfigKey(view.config)) { ws.gitlabDraft = gitlabConfig(view.config); ws.gitlabDirty = false; ws.eventsEmptyTypes = false; }
+  if (saved || !ws.gitlabDirty || !ws.eventsEmptyTypes && gitlabConfigKey(ws.gitlabDraft) === gitlabConfigKey(view.config)) { ws.gitlabDraft = gitlabConfig(view.config); ws.gitlabDirty = false; ws.eventsEmptyTypes = false; ws.gitlabBackfillEditing = false; }
 }
 function editGitLabConfig() {
   const ws = workspaceView;
@@ -367,17 +368,37 @@ async function syncGitLabNotifications(catalog, ws) {
 }
 function larkConfigKey(c = {}) {return JSON.stringify({scope_mode:c.scope_mode || "specified",enabled:!!c.enabled,connection_id:c.connection_id || "",chats:[...(c.chats || [])].sort(),target:notificationTarget(c),private:!!c.private,group_mentions:!!c.group_mentions,group_all:!!c.group_all,at_all:!!c.at_all,bots:!!c.bots,interval_seconds:c.interval_seconds || 60,backfill_seconds:c.backfill_seconds || 0,backfill_start:c.backfill_start ? new Date(c.backfill_start).toISOString() : ""});}
 function larkMessagesDraft() {
-  const custom=$("lark-backfill").value==="custom", start=new Date($("lark-backfill-start").value).getTime();
   return {scope_mode:larkAllChats() ? "all" : "specified",enabled:$("lark-enabled").checked, connection_id:$("lark-connection").value,
     target:JSON.parse($("lark-target").value || "{}"), chats:larkAllChats() ? [] : larkChatIDs().sort(),
     private:true, group_mentions:$("lark-group").checked, group_all:!larkAllChats() && $("lark-group-mode").value==="all", at_all:$("lark-all").checked, bots:true,
-    interval_seconds:Number($("lark-interval").value), backfill_seconds:custom ? 0 : Number($("lark-backfill").value || 0),
-    ...(custom ? {backfill_start:Number.isFinite(start) ? new Date(start).toISOString() : ""} : {})};
+    interval_seconds:Number($("lark-interval").value), ...backfillDraft("lark")};
 }
 function larkAllChats() { return $("lark-scope").checked; }
-function larkLocalTime(value) {
+function notificationLocalTime(value) {
   const date=new Date(value),pad=n=>String(n).padStart(2,"0");
   return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+function backfillDraft(prefix) {
+  const mode=$(`${prefix}-backfill`).value, start=new Date($(`${prefix}-backfill-start`).value).getTime();
+  return {backfill_seconds:mode==="custom" ? 0 : Number(mode || 0),
+    ...(mode==="custom" ? {backfill_start:Number.isFinite(start) ? new Date(start).toISOString() : ""} : {})};
+}
+function fillBackfill(prefix, config) {
+  $(`${prefix}-backfill`).value=config.backfill_start ? "custom" : String(config.backfill_seconds || 0);
+  $(`${prefix}-backfill-start`).value=config.backfill_start ? notificationLocalTime(config.backfill_start) : "";
+}
+function renderBackfill(prefix, locked, baseline, busy=false) {
+  const mode=$(`${prefix}-backfill`).value, start=Date.parse(backfillDraft(prefix).backfill_start || "");
+  $(`${prefix}-backfill`).disabled=locked || busy;$(`${prefix}-backfill-start`).disabled=locked || busy;
+  $(`${prefix}-backfill`).hidden=locked;$(`${prefix}-backfill-locked`).hidden=!locked;
+  $(`${prefix}-backfill-custom`).hidden=locked || mode!=="custom";
+  $(`${prefix}-backfill-start`).max=notificationLocalTime(Date.now());
+  const time=Date.parse(baseline || "");
+  $(`${prefix}-backfill-value`).textContent=Number.isFinite(time) ? new Date(time).toLocaleString("zh-CN") : "首次接收时已确定";
+  const error=mode==="custom" && !Number.isFinite(start) ? "请选择要开始接收消息的日期和时间。" : mode==="custom" && start<=0 ? "请选择 1970 年之后的有效时间。" : mode==="custom" && start>Date.now() ? "起始时间不能晚于当前时间。" : "";
+  $(`${prefix}-backfill-help`).textContent=locked ? "接收起点已锁定；接收更早消息请新建房间。" : "首次开启后锁定，后续修改设置沿用该起点。";
+  notice(`${prefix}-backfill-error`,error);$(`${prefix}-backfill-start`).setAttribute("aria-invalid",String(!!error));
+  return error;
 }
 function notificationSyncSummary(data) {
   const date=value=>new Date(value).toLocaleString("zh-CN");
@@ -530,28 +551,17 @@ function renderLarkMessages() {
     $("lark-scope").checked=c.scope_mode==="all";$("lark-enabled").checked=!!c.enabled;
     if(c.scope_mode!=="all" || ws.larkSelectionConnection!==c.connection_id)ws.larkSelectedChats=[...(c.chats || [])];
     $("lark-group").checked=!!c.group_mentions;$("lark-group-mode").value=c.group_all ? "all" : "mentions";$("lark-all").checked=!!c.at_all;
-    $("lark-interval").value=c.interval_seconds || 60;$("lark-backfill").value=c.backfill_start ? "custom" : String(c.backfill_seconds || 0);
-    $("lark-backfill-start").value=c.backfill_start ? larkLocalTime(c.backfill_start) : "";
+    $("lark-interval").value=c.interval_seconds || 60;fillBackfill("lark",c);
     ws.larkFilled=data.subscription_id+":"+data.subscription_version;
   }
   ws.larkSelectionConnection=c.connection_id;
-  const backfillLocked=!!data.subscription_id;
-  $("lark-backfill").disabled=backfillLocked;$("lark-backfill-start").disabled=backfillLocked;
-  $("lark-backfill").hidden=backfillLocked;$("lark-backfill-locked").hidden=!backfillLocked;
-  $("lark-backfill-custom").hidden=backfillLocked || $("lark-backfill").value!=="custom";
-  $("lark-backfill-start").max=larkLocalTime(Date.now());
   if(larkAllChats())$("lark-group-mode").value="mentions";
   $("lark-group-mode-all").disabled=larkAllChats();
   const groupAll=$("lark-group-mode").value==="all";
   $("lark-group").disabled=groupAll;$("lark-all").disabled=groupAll;$("lark-group-mentions").hidden=groupAll;
   $("lark-scope-help").hidden=!larkAllChats();
   const draft=larkMessagesDraft(), dirty=larkConfigKey(draft)!==larkConfigKey(data.config), connection=connections.find(x=>x.id===draft.connection_id);
-  const start=Date.parse(draft.backfill_start || ""),custom=$("lark-backfill").value==="custom";
-  const baseline=Date.parse(data.lark?.baseline || data.config.backfill_start || "");
-  $("lark-backfill-value").textContent=Number.isFinite(baseline) ? new Date(baseline).toLocaleString("zh-CN") : "首次接收时已确定";
-  const backfillError=custom && !Number.isFinite(start) ? "请选择要开始接收消息的日期和时间。" : custom && start<=0 ? "请选择 1970 年之后的有效时间。" : custom && start>Date.now() ? "起始时间不能晚于当前时间。" : "";
-  $("lark-backfill-help").textContent=backfillLocked ? "接收起点已锁定；接收更早消息请新建房间。" : "首次保存后锁定，后续修改设置沿用该起点。";
-  notice("lark-backfill-error",backfillError);$("lark-backfill-start").setAttribute("aria-invalid",String(!!backfillError));
+  const backfillError=renderBackfill("lark",!!data.subscription_id,data.lark?.baseline || data.config.backfill_start);
   const valid=!backfillError && (!draft.enabled || connection?.validation?.status==="valid") && draft.target.mode==="inbox" && (draft.scope_mode==="all" || draft.chats.length>0 && draft.chats.length<=32 && draft.chats.every(x=>/^oc_[A-Za-z0-9_-]+$/.test(x))) && draft.interval_seconds>=3 && draft.interval_seconds<=3600;
   $("lark-save").disabled=!ws.messagesConnected||!!ws.messagesSending||managementBusy()||!valid||(!dirty && !["credentials_invalid","binding_changed","capacity"].includes(data.status))||(!data.subscription_id && !draft.enabled);
   $("lark-sync").disabled=!ws.messagesConnected||!!ws.messagesSending||managementBusy()||dirty||!data.config.enabled;
@@ -808,6 +818,10 @@ function renderGitLabSettings() {
   $("gitlab-shared-fields").disabled = busy;
   $("gitlab-interval").disabled = busy;
   $("gitlab-interval").value = shared.interval_seconds;
+  if (!ws?.gitlabBackfillEditing) fillBackfill("gitlab",shared);
+  const backfillLocked=!!ws?.gitlab?.backfill_locked || !!ws?.events?.subscription_id || !!ws?.todos?.subscription_id;
+  const backfillError=renderBackfill("gitlab",backfillLocked,shared.backfill_start || ws?.events?.baseline || ws?.todos?.baseline,busy);
+  if (!backfillLocked) $("gitlab-backfill-help").textContent="首次开启后锁定，项目活动和我的待办共用该起点。";
   const connectionID = shared.connection_id, options = gitlabConnectionOptions(connectionID, "请选择连接");
   setSelectOptions("gitlab-connection", options, connectionID);
   const connection = ws?.connections?.find(item => item.id === connectionID);
@@ -834,12 +848,12 @@ function renderGitLabSettings() {
     status.setAttribute("data-error", String(!!problem || !ws?.gitlabConnected));
   }
   const pending = gitlabNeedsApply(ws), dirty = !!ws?.gitlabDirty;
-  const invalid = !Number.isInteger(shared.interval_seconds) || shared.interval_seconds < 3 || shared.interval_seconds > 120 || !!ws?.gitlabDraft && (gitlabEventDraftState(ws.events).invalid || gitlabTodoDraftState(ws).unavailable);
+  const invalid = !!backfillError || !Number.isInteger(shared.interval_seconds) || shared.interval_seconds < 3 || shared.interval_seconds > 120 || !!ws?.gitlabDraft && (gitlabEventDraftState(ws.events).invalid || gitlabTodoDraftState(ws).unavailable);
   $("gitlab-save").disabled = busy || !(dirty || pending) || invalid;
   $("gitlab-save").textContent = ws?.gitlabSending === "configure" ? "保存中…" : !dirty && pending ? "重试应用" : "保存设置";
   const active = ws?.gitlab?.config.events.enabled || ws?.gitlab?.config.todos.enabled;
   $("gitlab-sync").hidden = false;
-  $("gitlab-sync").disabled = busy || dirty || pending || !active;
+  $("gitlab-sync").disabled = busy || dirty || pending || invalid || !active;
   $("gitlab-sync").textContent = ws?.gitlabSending === "sync" ? "请求中…" : "立即同步";
   $("gitlab-feedback").textContent = ws?.gitlabError || (ws?.gitlabSending ? "正在处理 GitLab 通知设置…"
     : ws?.gitlab?.applying ? "正在应用 GitLab 通知设置…"
@@ -858,6 +872,17 @@ function editGitLabShared(field) {
 }
 for (const field of ["connection", "target", "interval"]) $(`gitlab-${field}`).addEventListener("change", () => editGitLabShared(field));
 $("gitlab-interval").addEventListener("input", () => editGitLabShared("interval"));
+function editGitLabBackfill() {
+  const ws=workspaceView;
+  if (!ws?.gitlabDraft || $("gitlab-backfill").disabled || $("gitlab-shared-fields").disabled) return;
+  ws.gitlabBackfillEditing=true;
+  delete ws.gitlabDraft.backfill_start;
+  Object.assign(ws.gitlabDraft,backfillDraft("gitlab"));
+  editGitLabConfig();
+}
+$("gitlab-backfill").addEventListener("change",editGitLabBackfill);
+$("gitlab-backfill-start").addEventListener("change",editGitLabBackfill);
+$("gitlab-backfill-start").addEventListener("input",editGitLabBackfill);
 async function changeGitLabSettings(action) {
   const ws = workspaceView;
   if (!ws || $(action === "configure" ? "gitlab-save" : "gitlab-sync").disabled) return;

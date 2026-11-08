@@ -60,16 +60,23 @@ func ConfigureEvents(owner platform.RoomIdentity, current *EventsState, binding 
 			return EventsState{}, notification.ErrConflict
 		}
 	}
+	if current != nil && (cfg.BackfillSeconds != current.Config.BackfillSeconds || !cfg.BackfillStart.Equal(current.Config.BackfillStart)) {
+		return next, notification.ErrConflict
+	}
 	if current == nil {
 		if !cfg.Enabled {
 			return EventsState{}, notification.ErrRequest
+		}
+		baseline, err := notification.BackfillBaseline(cfg.BackfillSeconds, cfg.BackfillStart, now)
+		if err != nil {
+			return next, err
 		}
 		var opaque [16]byte
 		if _, err := rand.Read(opaque[:]); err != nil {
 			return EventsState{}, err
 		}
 		next = EventsState{RoomIdentity: owner, SubscriptionID: hex.EncodeToString(opaque[:]), Binding: *binding,
-			Baseline: now, Watermark: now, IgnoreBefore: now, Filters: []EventsFilterRevision{{Since: now, Filter: cfg.Filter}},
+			Baseline: baseline, Watermark: baseline, IgnoreBefore: baseline, Filters: []EventsFilterRevision{{Since: baseline, Filter: cfg.Filter}},
 			Observed: map[string]EventsObservation{}, Inbox: map[string]EventsInboxEntry{}}
 	} else if !reflect.DeepEqual(cfg.Filter, next.Config.Filter) {
 		next.Compact()

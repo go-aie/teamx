@@ -15,7 +15,7 @@ function fixtureGitLabView(sources, record) {
   let connection = common.connection_id || events.config.connection_id || todos.config.connection_id || "";
   if (events.config.enabled && todos.config.enabled && events.config.connection_id !== todos.config.connection_id) connection = "";
   const config = record?.config || { connection_id:connection, target:common.target || {}, interval_seconds:common.interval_seconds || 30, events:fixtureSourceConfig(events.config,"events"), todos:fixtureSourceConfig(todos.config,"todos") };
-  return { version:record?.version || 0, config:structuredClone(config), events, todos, pending:structuredClone(record?.pending || {}), errors:structuredClone(record?.errors || {}), applying:!!record?.applying };
+  return { version:record?.version || 0, config:structuredClone(config), events, todos, pending:structuredClone(record?.pending || {}), errors:structuredClone(record?.errors || {}), applying:!!record?.applying, backfill_locked:!!record?.backfill_locked || !!events.subscription_id || !!todos.subscription_id };
 }
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -1563,11 +1563,17 @@ function todosServer({ bound = true, enabled = false } = {}) {
     if (path === "/v1/platform/gitlab/notifications/configure") {
       const previous = viewFor(data.room_id);
       if (data.version !== previous.version) throw Object.assign(new Error("conflict"), { code: "conflict" });
-      const config = structuredClone(data.config), saved = { version: previous.version + (JSON.stringify(config) !== JSON.stringify(previous.config) || !previous.version ? 1 : 0), config, pending: {}, errors: {} };
+      const config = structuredClone(data.config);
+      const backfillLocked = previous.backfill_locked || config.events.enabled || config.todos.enabled;
+      if (!previous.backfill_locked && (config.events.enabled || config.todos.enabled)) {
+        config.backfill_start ||= new Date(Math.floor((Date.now()-(config.backfill_seconds || 0)*1000)/1000)*1000).toISOString();
+        config.backfill_seconds = 0;
+      }
+      const saved = {backfill_locked:backfillLocked,  version: previous.version + (JSON.stringify(config) !== JSON.stringify(previous.config) || !previous.version ? 1 : 0), config, pending: {}, errors: {} };
       records.set(data.room_id, saved);
       for (const channel of ["events", "todos"]) {
         const runtime = channel === "events" ? events.get(data.room_id) : todos.get(data.room_id);
-        const desired = { ...config[channel], connection_id: config.connection_id, target: config.target, interval_seconds: config.interval_seconds };
+        const desired = { ...config[channel], connection_id: config.connection_id, target: config.target, interval_seconds: config.interval_seconds, backfill_seconds:config.backfill_seconds || 0, ...(config.backfill_start ? {backfill_start:config.backfill_start} : {}) };
         const account = api.connections.find(c => c.id === config.connection_id);
         const changed = JSON.stringify(fixtureSourceConfig(runtime.config, channel)) !== JSON.stringify(fixtureSourceConfig(desired, channel)) || runtime.config.interval_seconds !== desired.interval_seconds || runtime.config.connection_id !== desired.connection_id || JSON.stringify(runtime.config.target || {}) !== JSON.stringify(desired.target) || runtime.recipient_id !== account?.validation.user_id;
         if (!desired.enabled && !runtime.config.enabled || !changed) continue;
@@ -2618,4 +2624,61 @@ test("GitLab project picker retains selection on failure and exposes refresh and
   await openGitLab(ui);
   await editGitLab(ui,"gitlab-connection","a".repeat(32));await settle();
   assert.equal(ui.el("gitlab-project-hint").hidden,true);assert.equal(ui.el("gitlab-project-summary").textContent,"group/project-A");
+});
+
+function freshGitLabServer() {
+ const result=todosServer();
+ Object.assign(result.events.get("A"),{subscription_id:"",subscription_version:0,status:"disabled"});
+ result.events.get("A").config.enabled=false;
+ return result;
+}
+function gitlabLocalTime(date) {
+ return new Date(date.getTime()-date.getTimezoneOffset()*60000).toISOString().slice(0,19);
+}
+test("GitLab custom reception start survives drafts and reload and is shared by both channels",async()=>{
+ const {api,events,todos}=freshGitLabServer(),ui=await launch(api);await openGitLab(ui);
+ assert.equal(ui.el("gitlab-backfill").disabled,false);assert.equal(ui.el("gitlab-backfill").value,"0");
+ await toggleGitLab(ui,"gitlab-events-enabled",true);await toggleGitLab(ui,"gitlab-todos-enabled",true);
+ await editGitLab(ui,"gitlab-backfill","custom");
+ assert.equal(ui.el("gitlab-backfill-custom").hidden,false);assert.equal(ui.el("gitlab-save").disabled,true);
+ assert.match(ui.el("gitlab-backfill-error").textContent,/请选择/);
+ await ui.refresh();assert.equal(ui.el("gitlab-backfill").value,"custom");assert.equal(ui.el("gitlab-save").disabled,true);
+ const start=new Date(Math.floor((Date.now()-7*86400000)/1000)*1000),local=gitlabLocalTime(start);
+ await editGitLab(ui,"gitlab-backfill-start",local,"input");
+ await ui.refresh();assert.equal(ui.el("gitlab-backfill-start").value,local);
+ await ui.el("notification-tab-messages").emit("click");await ui.el("notification-tab-gitlab").emit("click");
+ assert.equal(ui.el("gitlab-backfill-start").value,local);assert.equal(ui.el("gitlab-save").disabled,false);
+ await ui.el("gitlab-save").emit("click");
+ assert.equal(gitlabWrites(api)[0].data.config.backfill_start,start.toISOString());
+ for(const source of [events,todos])assert.equal(source.get("A").config.backfill_start,start.toISOString());
+ assert.equal(ui.el("gitlab-backfill").disabled,true);assert.equal(ui.el("gitlab-backfill").hidden,true);
+ assert.equal(ui.el("gitlab-backfill-locked").hidden,false);assert.equal(ui.el("gitlab-save").disabled,true);
+ const reloaded=await launch(api);await openGitLab(reloaded);
+ assert.equal(reloaded.el("gitlab-backfill-start").value,local);assert.equal(reloaded.el("gitlab-backfill").disabled,true);
+ await editGitLab(reloaded,"gitlab-interval","10","input");await reloaded.el("gitlab-save").emit("click");
+ assert.equal(gitlabWrites(api)[1].data.config.backfill_start,start.toISOString());
+});
+for(const seconds of [0,3600,86400])test(`GitLab reception preset ${seconds} freezes and is retained on later channel enable`,async()=>{
+ const {api,todos}=freshGitLabServer(),ui=await launch(api);await openGitLab(ui);
+ await toggleGitLab(ui,"gitlab-events-enabled",true);
+ await editGitLab(ui,"gitlab-backfill",String(seconds));await ui.el("gitlab-save").emit("click");
+ const submitted=gitlabWrites(api)[0].data.config;
+ assert.equal(submitted.backfill_seconds,seconds);assert.equal(submitted.backfill_start,undefined);
+ const saved=api.gitlabRecords.get("A").config,start=saved.backfill_start;
+ assert.ok(Math.abs(Date.now()-Date.parse(start)-seconds*1000)<2000);
+ assert.equal(ui.el("gitlab-backfill").disabled,true);
+ await toggleGitLab(ui,"gitlab-todos-enabled",true);await ui.el("gitlab-save").emit("click");
+ assert.equal(gitlabWrites(api)[1].data.config.backfill_start,start);assert.equal(todos.get("A").config.backfill_start,start);
+});
+test("GitLab invalid custom times block saves and returning to the default clears the timestamp",async()=>{
+ const {api}=freshGitLabServer(),ui=await launch(api);await openGitLab(ui);
+ await toggleGitLab(ui,"gitlab-todos-enabled",true);
+ await editGitLab(ui,"gitlab-backfill","custom");
+ await editGitLab(ui,"gitlab-backfill-start",gitlabLocalTime(new Date(Date.now()+86400000)),"input");
+ assert.equal(ui.el("gitlab-save").disabled,true);assert.match(ui.el("gitlab-backfill-error").textContent,/不能晚于/);
+ await ui.el("gitlab-save").emit("click");assert.equal(gitlabWrites(api).length,0);
+ await editGitLab(ui,"gitlab-backfill","0");
+ assert.equal(ui.el("gitlab-backfill-custom").hidden,true);assert.equal(ui.el("gitlab-backfill-error").hidden,true);
+ await ui.el("gitlab-save").emit("click");
+ assert.equal(gitlabWrites(api)[0].data.config.backfill_start,undefined);
 });

@@ -1,6 +1,9 @@
 package gitlab
 
-import "github.com/go-aie/teamx/internal/platform/notification"
+import (
+	"github.com/go-aie/teamx/internal/platform/notification"
+	"time"
+)
 
 const (
 	DefaultIntervalSeconds  = 30
@@ -21,6 +24,8 @@ func normalizeInterval(seconds int) (int, error) {
 // NotificationConfig is the user configuration for one Room's GitLab source.
 // The concrete source configs below are derived runtime snapshots, not settings.
 type NotificationConfig struct {
+	BackfillSeconds int                 `json:"backfill_seconds,omitempty"`
+	BackfillStart   time.Time           `json:"backfill_start,omitzero"`
 	ConnectionID    string              `json:"connection_id"`
 	Target          notification.Target `json:"target"`
 	IntervalSeconds int                 `json:"interval_seconds"`
@@ -41,10 +46,10 @@ type TodoSettings struct {
 }
 
 func (c NotificationConfig) EventConfig() EventsConfig {
-	return EventsConfig{ConnectionID: c.ConnectionID, Target: c.Target, Enabled: c.Events.Enabled, Project: c.Events.Project, IntervalSeconds: c.IntervalSeconds, Filter: c.Events.Filter, ETagVerified: c.Events.ETagVerified}
+	return EventsConfig{BackfillSeconds: c.BackfillSeconds, BackfillStart: c.BackfillStart, ConnectionID: c.ConnectionID, Target: c.Target, Enabled: c.Events.Enabled, Project: c.Events.Project, IntervalSeconds: c.IntervalSeconds, Filter: c.Events.Filter, ETagVerified: c.Events.ETagVerified}
 }
 func (c NotificationConfig) TodoConfig() TodosConfig {
-	return TodosConfig{ConnectionID: c.ConnectionID, Target: c.Target, Enabled: c.Todos.Enabled, IntervalSeconds: c.IntervalSeconds, Filter: c.Todos.Filter}
+	return TodosConfig{BackfillSeconds: c.BackfillSeconds, BackfillStart: c.BackfillStart, ConnectionID: c.ConnectionID, Target: c.Target, Enabled: c.Todos.Enabled, IntervalSeconds: c.IntervalSeconds, Filter: c.Todos.Filter}
 }
 func EventSettingsFrom(c EventsConfig) EventSettings {
 	return EventSettings{Enabled: c.Enabled, Project: c.Project, Filter: c.Filter, ETagVerified: c.ETagVerified}
@@ -59,6 +64,11 @@ func NormalizeNotificationConfig(c NotificationConfig) (NotificationConfig, erro
 		return c, err
 	}
 	c.IntervalSeconds = interval
+	start, err := notification.NormalizeBackfill(c.BackfillSeconds, c.BackfillStart)
+	if err != nil {
+		return c, err
+	}
+	c.BackfillStart = start
 	if !c.Target.Inbox() {
 		if !c.Target.Valid() {
 			return c, notification.ErrRequest

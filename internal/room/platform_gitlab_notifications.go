@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"time"
 
 	"github.com/go-aie/teamx/internal/platform/gitlab"
 	"github.com/go-aie/teamx/internal/platform/notification"
@@ -21,20 +22,22 @@ const maxGitLabConfigBytes = 32 << 10
 // configuration accepted with their progress and frozen item routes.
 type gitlabNotificationRecord struct {
 	RoomIdentity
-	Schema  int                       `json:"schema"`
-	Version uint64                    `json:"version"`
-	Config  gitlab.NotificationConfig `json:"config"`
-	Errors  map[string]string         `json:"errors,omitempty"`
+	Schema         int                       `json:"schema"`
+	Version        uint64                    `json:"version"`
+	Config         gitlab.NotificationConfig `json:"config"`
+	Errors         map[string]string         `json:"errors,omitempty"`
+	BackfillLocked bool                      `json:"backfill_locked,omitempty"`
 }
 
 type gitlabNotificationView struct {
-	Version  uint64                    `json:"version"`
-	Config   gitlab.NotificationConfig `json:"config"`
-	Events   notificationView          `json:"events"`
-	Todos    notificationView          `json:"todos"`
-	Pending  map[string]bool           `json:"pending"`
-	Errors   map[string]string         `json:"errors"`
-	Applying bool                      `json:"applying"`
+	Version        uint64                    `json:"version"`
+	Config         gitlab.NotificationConfig `json:"config"`
+	Events         notificationView          `json:"events"`
+	Todos          notificationView          `json:"todos"`
+	Pending        map[string]bool           `json:"pending"`
+	Errors         map[string]string         `json:"errors"`
+	Applying       bool                      `json:"applying"`
+	BackfillLocked bool                      `json:"backfill_locked"`
 }
 
 func (m *roomManager) gitlabNotificationPath(owner RoomIdentity) string {
@@ -74,6 +77,11 @@ func (m *roomManager) gitlabNotificationViewLocked(owner RoomIdentity) (gitlabNo
 		return gitlabNotificationView{}, err
 	}
 	v := gitlabNotificationView{Pending: map[string]bool{}, Errors: map[string]string{}, Applying: m.gitlabConfiguring[owner]}
+	for _, state := range m.notifications.StatesLocked(owner) {
+		if state.Metadata().Key.Source.Provider == "gitlab" {
+			v.BackfillLocked = true
+		}
+	}
 	for _, view := range views {
 		if view.SourceID == gitlab.EventsSourceID {
 			v.Events = view
@@ -83,6 +91,7 @@ func (m *roomManager) gitlabNotificationViewLocked(owner RoomIdentity) (gitlabNo
 		}
 	}
 	if saved, ok := m.gitlabNotifications[owner]; ok {
+		v.BackfillLocked = v.BackfillLocked || saved.BackfillLocked
 		v.Version, v.Config = saved.Version, saved.Config
 		if saved.Errors != nil {
 			v.Errors = maps.Clone(saved.Errors)
@@ -98,21 +107,24 @@ func (m *roomManager) gitlabNotificationViewLocked(owner RoomIdentity) (gitlabNo
 	v.Config.IntervalSeconds = gitlab.DefaultIntervalSeconds
 	v.Config.Events, v.Config.Todos = gitlab.EventSettingsFrom(events), gitlab.TodoSettingsFrom(todos)
 	type common struct {
-		connection string
-		target     notification.Target
-		interval   int
+		connection      string
+		target          notification.Target
+		interval        int
+		backfillSeconds int
+		backfillStart   time.Time
 	}
 	var used []common
 	if events.Enabled || !todos.Enabled && v.Events.SubscriptionID != "" {
-		used = append(used, common{events.ConnectionID, events.Target, events.IntervalSeconds})
+		used = append(used, common{events.ConnectionID, events.Target, events.IntervalSeconds, events.BackfillSeconds, events.BackfillStart})
 	}
 	if todos.Enabled || !events.Enabled && v.Todos.SubscriptionID != "" {
-		used = append(used, common{todos.ConnectionID, todos.Target, todos.IntervalSeconds})
+		used = append(used, common{todos.ConnectionID, todos.Target, todos.IntervalSeconds, todos.BackfillSeconds, todos.BackfillStart})
 	}
 	if len(used) > 0 {
 		v.Config.ConnectionID, v.Config.Target, v.Config.IntervalSeconds = used[0].connection, used[0].target, used[0].interval
+		v.Config.BackfillSeconds, v.Config.BackfillStart = used[0].backfillSeconds, used[0].backfillStart
 		for _, c := range used[1:] {
-			if c.connection != v.Config.ConnectionID || c.target != v.Config.Target || c.interval != v.Config.IntervalSeconds {
+			if c.connection != v.Config.ConnectionID || c.target != v.Config.Target || c.interval != v.Config.IntervalSeconds || c.backfillSeconds != v.Config.BackfillSeconds || !c.backfillStart.Equal(v.Config.BackfillStart) {
 				v.Config.ConnectionID = ""
 				v.Errors["config"] = "settings_mismatch"
 			}
@@ -215,6 +227,24 @@ func (m *roomManager) configureGitLabNotifications(ctx context.Context, owner Ro
 		}
 	}
 	cfg, err := gitlab.NormalizeNotificationConfig(cfg)
+	previous, viewErr := m.gitlabNotificationViewLocked(owner)
+	if err == nil {
+		err = viewErr
+	}
+	locked := previous.BackfillLocked
+	if err == nil && locked && (cfg.BackfillSeconds != previous.Config.BackfillSeconds || !cfg.BackfillStart.Equal(previous.Config.BackfillStart)) {
+		err = ErrConflict
+	}
+	if err == nil && !locked {
+		// Freeze a relative choice before either collector starts, so retries and
+		// enabling the second channel later use exactly the same reception start.
+		start, startErr := notification.BackfillBaseline(cfg.BackfillSeconds, cfg.BackfillStart, m.notifications.Now())
+		err = startErr
+		if err == nil && (cfg.Events.Enabled || cfg.Todos.Enabled) {
+			cfg.BackfillSeconds, cfg.BackfillStart = 0, start.UTC().Truncate(time.Second)
+			locked = true
+		}
+	}
 	if err == nil {
 		err = m.validateNotificationTargetLocked(ctx, owner, cfg.Target, cfg.Events.Enabled || cfg.Todos.Enabled)
 	}
@@ -227,12 +257,12 @@ func (m *roomManager) configureGitLabNotifications(ctx context.Context, owner Ro
 		return gitlabNotificationView{}, err
 	}
 	saved := m.gitlabNotifications[owner]
-	if saved.Version == 0 || !reflect.DeepEqual(saved.Config, cfg) {
+	if saved.Version == 0 || !reflect.DeepEqual(saved.Config, cfg) || saved.BackfillLocked != locked {
 		if saved.Version == ^uint64(0) {
 			m.mu.Unlock()
 			return gitlabNotificationView{}, ErrCapacity
 		}
-		saved = gitlabNotificationRecord{RoomIdentity: owner, Schema: 2, Version: saved.Version + 1, Config: cfg}
+		saved = gitlabNotificationRecord{RoomIdentity: owner, Schema: 2, Version: saved.Version + 1, Config: cfg, BackfillLocked: locked}
 		if err = m.store.save(m.gitlabNotificationPath(owner), saved, maxGitLabConfigBytes); err != nil {
 			m.mu.Unlock()
 			return gitlabNotificationView{}, err

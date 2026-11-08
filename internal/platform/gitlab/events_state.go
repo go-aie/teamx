@@ -34,6 +34,8 @@ func (f EventsFilter) Clone() EventsFilter {
 }
 
 type EventsConfig struct {
+	BackfillSeconds int                 `json:"backfill_seconds,omitempty"`
+	BackfillStart   time.Time           `json:"backfill_start,omitzero"`
 	Target          notification.Target `json:"target,omitzero"`
 	ConnectionID    string              `json:"connection_id,omitempty"`
 	Project         string              `json:"project,omitempty"`
@@ -124,6 +126,11 @@ func NormalizeEventsConfig(c EventsConfig) (EventsConfig, error) {
 		return c, err
 	}
 	c.IntervalSeconds = interval
+	start, err := notification.NormalizeBackfill(c.BackfillSeconds, c.BackfillStart)
+	if err != nil {
+		return c, err
+	}
+	c.BackfillStart = start
 	f := &c.Filter
 	f.Types = append([]string(nil), f.Types...)
 	for _, typ := range f.Types {
@@ -179,6 +186,9 @@ func (s EventsState) Clone() EventsState {
 }
 
 func (s EventsState) Validate(owner platform.RoomIdentity) error {
+	if !s.Config.BackfillStart.IsZero() && !s.Baseline.Equal(s.Config.BackfillStart) {
+		return notification.ErrInvalid
+	}
 	if s.Retired && s.Config.Enabled || s.UserID < 0 || s.UserID == 0 && s.Username != "" || s.Config.ConnectionID != "" && s.UserID <= 0 || s.UserID > 0 && (!platform.ValidUsername(s.Username) || s.Binding.ConnectionID == "") ||
 		s.Config.ConnectionID != "" && s.Config.ConnectionID != s.Binding.ConnectionID || s.Config.Project != "" && s.Config.Project != s.Binding.Project {
 		return notification.ErrInvalid

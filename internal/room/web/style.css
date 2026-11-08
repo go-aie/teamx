@@ -1767,9 +1767,9 @@ textarea::placeholder {
 .lark-settings .lark-chat-option small { flex:none; margin:0; }
 .lark-group-controls { display:flex; align-items:center; gap:14px; }
 .lark-group-controls select { width:110px; flex:none; }
-.lark-backfill-locked { display:flex; align-items:baseline; flex-wrap:wrap; gap:4px 8px; min-height:36px; padding:8px 0; color:var(--muted); font-size:13px; line-height:1.5; cursor:default; }
-.lark-backfill-locked > span { overflow-wrap:anywhere; }
-.lark-backfill-locked > small { font-size:11px; white-space:nowrap; }
+.notification-backfill-locked { display:flex; align-items:baseline; flex-wrap:wrap; gap:4px 8px; min-height:36px; padding:8px 0; color:var(--muted); font-size:13px; line-height:1.5; cursor:default; }
+.notification-backfill-locked > span { overflow-wrap:anywhere; }
+.notification-backfill-locked > small { font-size:11px; white-space:nowrap; }
 .lark-group-mentions { display:flex; align-items:center; gap:12px; }
 .lark-settings .lark-group-mentions .workspace-check { margin:0; min-height:36px; font-weight:400; white-space:nowrap; cursor:pointer; }
 .notification-settings-actions > button:last-child { margin-left:auto; }
