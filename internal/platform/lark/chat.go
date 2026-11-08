@@ -8,10 +8,11 @@ import (
 
 // Chat is verified independently from the sending account's tenant.
 type Chat struct {
-	ID        string `json:"chat_id"`
-	Mode      string `json:"chat_mode"`
-	Name      string `json:"name"`
-	TenantKey string `json:"tenant_key"`
+	ID        string               `json:"chat_id"`
+	Mode      string               `json:"chat_mode"`
+	Name      string               `json:"name"`
+	TenantKey string               `json:"tenant_key"`
+	Relation  ConversationRelation `json:"relation,omitzero"`
 }
 
 func (c Chat) Valid() bool {

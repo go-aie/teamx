@@ -44,13 +44,21 @@ func verifySendTarget(ctx context.Context, t platform.TargetIdentity, a platform
 	var name string
 	var err error
 	if t.Object.Type == "user" {
-		// Native user self-delivery passed a bounded real probe. Managed self-target
-		// and owner-evidence integration still needs implementation/acceptance;
-		// never infer Room account ownership or substitute a bot notification.
 		if t.Object.ID == a.Account.ID {
-			return Chat{}, "", failure("self_send_unavailable")
+			self, ok := reader.(interface {
+				SelfChat(context.Context, platform.AccountIdentity) (Chat, error)
+			})
+			if !ok {
+				return Chat{}, "", failure("self_send_unavailable")
+			}
+			chat, err = self.SelfChat(ctx, a.Account)
+			if err == nil && (!chat.Relation.ValidFor(a.Account, chat.ID) || chat.Relation.Kind != "self") {
+				err = failure("conversation_unverified")
+			}
+			name = "本人自聊"
+		} else {
+			chat, name, err = reader.DirectUser(ctx, a.Account, t.Object.ID.Value)
 		}
-		chat, name, err = reader.DirectUser(ctx, a.Account, t.Object.ID.Value)
 		if err == nil && (chat.Mode != "p2p" || len(t.Containers) == 1 && chat.ID != t.Containers[0].ID.Value) {
 			err = failure("peer_mismatch")
 		}
@@ -74,6 +82,13 @@ func ResolveSendTarget(ctx context.Context, l platform.TargetLocator, a platform
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	r := platform.TargetResolution{Status: platform.ResolutionUnsupported, ReasonCode: "send_locator_required", Account: a.Account, CheckedAt: time.Now().UTC()}
+	if l.Self {
+		if l.URL != "" || l.Source != nil || l.TargetRef != "" || l.Candidate != nil || l.Query != nil {
+			return r, nil
+		}
+		t := platform.TargetIdentity{IdentityScope: a.Account.IdentityScope, Object: platform.NativeIdentity{Type: "user", ID: a.Account.ID}}
+		l.Candidate = &t
+	}
 	if l.URL != "" || l.Source != nil || l.TargetRef != "" || (l.Candidate == nil) == (l.Query == nil) || reader == nil || !a.Valid() {
 		return r, nil
 	}
@@ -102,7 +117,7 @@ func ResolveSendTarget(ctx context.Context, l platform.TargetLocator, a platform
 			r.Reason = "无法核验目标访问；私聊对端／群成员核验需 im:chat.members:read，普通群发言范围通过群信息 moderation_permission 核验；仍需原生访问权限。可在连接设置中使用授权目标核验；读取或发送授权不代替目标核验。"
 		}
 		if r.ReasonCode == "self_send_unavailable" {
-			r.Reason = "用户身份向本人原生投递已通过单次探测；self 目标与本人关联的受控 Agent 链路尚未接入，当前模式未开放，不会回退机器人。"
+			r.Reason = "无法完整核验当前用户账号的本人自聊关系；请核对目标核验权限，不会改用其他收件人或机器人。"
 		}
 		return r, nil
 	}

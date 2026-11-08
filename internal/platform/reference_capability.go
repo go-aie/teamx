@@ -19,6 +19,7 @@ const (
 // A locator is untrusted input. Neither a candidate target nor URL establishes
 // native identity. Source is optional: explicit reads need no notification.
 type TargetLocator struct {
+	Self            bool             `json:"self,omitempty"`
 	Query           *TargetQuery     `json:"query,omitempty"`
 	VerifiedAliases []TargetIdentity `json:"-"` // service-owned evidence for a previously saved reference
 	TargetRef       string           `json:"target_ref,omitempty"`
@@ -121,6 +122,7 @@ const (
 	OperationDiscussionReply Operation = "discussion.reply"
 	OperationMessageReply    Operation = "message.reply"
 	OperationMessageSend     Operation = "message.send"
+	OperationMessageSendSelf Operation = "message.send_self"
 )
 
 type RetryPolicy struct {
@@ -129,6 +131,9 @@ type RetryPolicy struct {
 }
 
 type ActionSpec struct {
+	// BindingEvidence names the verified operator capability used as the action
+	// basis. Empty keeps the existing rule/instruction/human business authority.
+	BindingEvidence           string          `json:"binding_evidence,omitempty"`
 	DirectRoomInstructionOnly bool            `json:"direct_room_instruction_only,omitempty"`
 	DisabledReason            string          `json:"disabled_reason,omitempty"` // provider acceptance/readiness gate, independent of member authorization
 	RequiresAuthorization     bool            `json:"requires_authorization,omitempty"`
@@ -176,9 +181,12 @@ type TargetActionInspection struct {
 type InspectTargetAction func(context.Context, TargetActionRequest, AccessContext) (TargetActionInspection, error)
 
 type ActionCapability struct {
-	Inspect InspectTargetAction
-	Spec    ActionSpec
-	Execute ExecuteTargetAction
+	// AppliesTo supplements native object-type matching when a capability has
+	// account-relative restrictions. It does not replace Inspect or Execute.
+	AppliesTo func(TargetIdentity, AccountIdentity) bool
+	Inspect   InspectTargetAction
+	Spec      ActionSpec
+	Execute   ExecuteTargetAction
 }
 
 // Independently optional capabilities, not a mandatory provider interface.

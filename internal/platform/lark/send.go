@@ -12,7 +12,7 @@ import (
 	"github.com/go-aie/teamx/internal/platform"
 )
 
-const SendDisabledReason = "lark_send_acceptance_pending: 主动私信的完整 Agent 链路尚未完成验收，暂未开放。"
+const SendDisabledReason = "lark_send_acceptance_pending: 向其他用户主动私信的完整 Agent 链路尚未完成验收，暂未开放。"
 
 var ErrSendNotSent = errors.New("lark send request was not dispatched")
 
@@ -99,8 +99,9 @@ func SendActions(reader SendReader, write SendWriter, disabled string) map[platf
 }
 
 // AcceptedActionCapabilities publishes only modes with real managed Agent
-// acceptance: ordinary replies and single-group sends. User sends remain absent
-// from the public schema and are also rejected before any adapter read/write.
+// acceptance: ordinary replies, single-group sends and exact self delivery.
+// Other user sends remain absent from the public schema and are rejected before
+// any adapter read/write.
 func AcceptedActionCapabilities(reader SendReader, reply ReplyWriter, send SendWriter) platform.ReferenceCapabilities {
 	caps := ActionCapabilities(reader, reply, send, "", "")
 	cap := caps.Actions[platform.OperationMessageSend]
@@ -119,6 +120,7 @@ func AcceptedActionCapabilities(reader SendReader, reply ReplyWriter, send SendW
 		return execute(ctx, q, a)
 	}
 	caps.Actions[platform.OperationMessageSend] = cap
+	caps.Actions[platform.OperationMessageSendSelf] = SelfSendAction(reader, send)
 	return caps
 }
 
@@ -126,7 +128,7 @@ func ActionCapabilities(reader SendReader, reply ReplyWriter, send SendWriter, r
 	caps := ReplyCapabilities(reader, reply, replyDisabled)
 	resolve := caps.Resolve
 	caps.Resolve = func(ctx context.Context, l platform.TargetLocator, a platform.AccessContext) (platform.TargetResolution, error) {
-		if l.Query != nil || l.Candidate != nil && (l.Candidate.Object.Type == "user" || l.Candidate.Object.Type == "chat") {
+		if l.Self || l.Query != nil || l.Candidate != nil && (l.Candidate.Object.Type == "user" || l.Candidate.Object.Type == "chat") {
 			return ResolveSendTarget(ctx, l, a, reader)
 		}
 		return resolve(ctx, l, a)
@@ -143,8 +145,16 @@ func (p *Pinned) SendText(ctx context.Context, target platform.TargetIdentity, b
 	}
 
 	input, _ := json.Marshal(SendInput{Body: body})
-	if _, err := sendInput(input); err != nil || !utf8.ValidString(body) || !validSendIdentity(target, p.Account) || target.Object.ID == p.Account.ID || len(key) != 32 || strings.Trim(key, "0123456789abcdef") != "" || target.Object.Type == "user" && len(target.Containers) != 1 {
+	if _, err := sendInput(input); err != nil || !utf8.ValidString(body) || !validSendIdentity(target, p.Account) || len(key) != 32 || strings.Trim(key, "0123456789abcdef") != "" || target.Object.Type == "user" && len(target.Containers) != 1 {
 		return "", ErrSendNotSent
+	}
+	if target.Object.Type == "user" && target.Object.ID == p.Account.ID {
+		ctx = context.WithValue(ctx, accountContextKey{}, p.Account.Instance+"|"+p.Account.ID.Namespace+"|"+p.Account.ID.Value)
+		release, err := selfSendRequests.acquire(ctx)
+		if err != nil {
+			return "", ErrSendNotSent
+		}
+		defer release()
 	}
 	permission, err := p.SendPermission(ctx)
 	if err != nil || permission.UserScopes != "granted" || permission.ApplicationScopes != "granted" {

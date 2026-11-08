@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/go-aie/actorx"
+	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
 const inboxBatchSize uint64 = 25
@@ -108,6 +109,13 @@ func (s *Store) saveInboxConsumption(c inboxConsumption, confirm bool) error {
 			if err != nil {
 				return err
 			}
+			admission, err := s.inboxAdmissionLocked(e)
+			if err != nil {
+				return err
+			}
+			if !admission.Verified {
+				return ErrBusy
+			}
 			if err := s.checkInboxBusinessLinkLocked(e); err != nil {
 				return err
 			}
@@ -117,7 +125,14 @@ func (s *Store) saveInboxConsumption(c inboxConsumption, confirm bool) error {
 }
 
 func (s *Store) checkInboxBusinessLinkLocked(e InboxEntry) error {
-	_, err := s.loadFollowupEventLocked(e)
+	admission, err := s.inboxAdmissionLocked(e)
+	if err != nil {
+		return err
+	}
+	if admission.Verified && admission.Decision == notification.AdmissionExcluded {
+		return nil
+	}
+	_, err = s.loadFollowupEventLocked(e)
 	return err
 }
 

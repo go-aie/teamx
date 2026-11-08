@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
 var (
@@ -31,16 +33,17 @@ const (
 // these blocking methods from controlled tasks, never from their state loop.
 // Agent and Session files have separate owners; they are not a transaction.
 type Store struct {
-	mu                  sync.Mutex
-	activeDSH           sync.Map                    // MemberIdentity -> *dshSession; observations only, never persisted.
-	activeInboxes       sync.Map                    // MembershipID -> *AgentInbox; reserved until all owned tasks settle.
-	executingReferences map[referenceActionKey]bool // protected by mu; never replayed
-	dir                 string
-	roomID              string
-	instance            string
-	lock                *os.File
-	uncertain           bool
-	ops                 snapshotOps
+	notificationAdapters func(string) notification.Capabilities
+	mu                   sync.Mutex
+	activeDSH            sync.Map                    // MemberIdentity -> *dshSession; observations only, never persisted.
+	activeInboxes        sync.Map                    // MembershipID -> *AgentInbox; reserved until all owned tasks settle.
+	executingReferences  map[referenceActionKey]bool // protected by mu; never replayed
+	dir                  string
+	roomID               string
+	instance             string
+	lock                 *os.File
+	uncertain            bool
+	ops                  snapshotOps
 }
 
 type snapshotFile interface {

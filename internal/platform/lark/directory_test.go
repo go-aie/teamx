@@ -33,7 +33,7 @@ func (f *discoveryReader) Chat(_ context.Context, _ platform.AccountIdentity, id
 	if code := f.chatError[id]; code != "" {
 		return Chat{}, failure(code)
 	}
-	return Chat{ID: id, Mode: "p2p", TenantKey: "external_tenant"}, nil
+	return Chat{ID: id, Mode: "p2p", TenantKey: "external_tenant", Relation: ConversationRelation{Account: sampleBinding().Account, ChatID: id, Kind: "peer", Peer: platform.ExternalID{Namespace: sampleBinding().Account.ID.Namespace, Value: "ou_sender"}}}, nil
 }
 func (f *discoveryReader) Messages(_ context.Context, _ platform.AccountIdentity, q MessagesRequest) (MessagePage, error) {
 	f.calls++

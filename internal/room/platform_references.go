@@ -2,6 +2,7 @@ package room
 
 import (
 	"context"
+	"encoding/json"
 	"sort"
 
 	"github.com/go-aie/teamx/internal/platform"
@@ -20,6 +21,12 @@ type referenceResolutionScopeKey struct{}
 type referenceAdapterFactory func() platform.ReferenceCapabilities
 
 func (m *roomManager) initPlatformReferences() {
+	if m.bindingEvidencePreparers == nil {
+		m.bindingEvidencePreparers = map[string]bindingEvidencePreparer{"lark": m.prepareLarkBindingEvidence}
+	}
+	if m.inboxAdmissionResolvers == nil {
+		m.inboxAdmissionResolvers = map[string]inboxAdmissionResolver{"lark": m.resolveLarkInboxAdmission}
+	}
 	if m.referenceAdapters == nil {
 		m.referenceAdapters = map[string]referenceAdapterFactory{
 			"gitlab": gitlabReferenceCapabilities,
@@ -50,6 +57,13 @@ func (m *roomManager) referenceCapabilities(provider string) (platform.Reference
 // Shared by runtime assembly and isolated provider acceptance. Registration
 // changes only the adapter maps; ownership and capability dispatch stay here.
 func (m *roomManager) bindPlatformReferences(svc *service) {
+	svc.resolveInboxAdmission = func(ctx context.Context, source platform.SourceRef) (json.RawMessage, error) {
+		resolve := m.inboxAdmissionResolvers[source.Provider]
+		if resolve == nil {
+			return nil, ErrBusy
+		}
+		return resolve(ctx, svc, source)
+	}
 	svc.materialAttachments = &materialAttachments{download: m.downloadAttachment, check: m.checkMaterialAttachments}
 	svc.beginPlatformMemberChange = func(ctx context.Context, id MemberIdentity) (func(), error) {
 		return m.beginPlatformMemberChange(ctx, svc, id)

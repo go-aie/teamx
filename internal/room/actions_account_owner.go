@@ -9,7 +9,7 @@ import (
 )
 
 // Operator/account association is evidence only. It grants no send capability
-// and cannot turn an unaccepted self-delivery mode into a usable action.
+// and does not replace the separately enabled, verified self-delivery binding.
 type actionAccountOwner struct {
 	Version int `json:"version"`
 	MemberIdentity

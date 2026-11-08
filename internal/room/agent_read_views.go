@@ -136,8 +136,10 @@ func projectAgentInboxRead(id MemberIdentity, page referenceInboxPage) (agentRef
 // Every action remains visible, including completed work and exact body. Only
 // repeated admission/inspection/spec/rule snapshots require --detail.
 type agentActionRecord struct {
+	CapabilityBasis   *platform.CapabilityEvidence `json:"capability_basis,omitempty"`
+	CapabilityVersion uint64                       `json:"capability_version,omitempty"`
 	ID                string                       `json:"id"`
-	Authority         agentActionAuthority         `json:"authority"`
+	Authority         agentActionAuthority         `json:"authority,omitzero"`
 	Retry             platform.RetryPolicy         `json:"retry"`
 	Basis             *followupReplyBasis          `json:"basis,omitempty"`
 	TargetRef         string                       `json:"target_ref"`
@@ -156,6 +158,10 @@ func projectActionRecords(actions []referenceAction) []agentActionRecord {
 	records := make([]agentActionRecord, 0, len(actions))
 	for _, a := range actions {
 		v := agentActionRecord{ID: a.Request.ID, Authority: projectActionAuthority(a.Request.Authority), Retry: a.Spec.Retry, TargetRef: a.Request.TargetRef, Target: a.Target, Account: a.Access.Account, Operation: a.Request.Operation, Input: a.Request.Input, Status: a.Status, Attempts: a.Attempts, PossibleDuplicate: a.PossibleDuplicate, Result: a.Result, UpdatedAt: a.UpdatedAt}
+		if a.CapabilityBasis != nil {
+			v.CapabilityBasis = a.CapabilityBasis
+			v.CapabilityVersion = a.Access.ActionAuthorizationVersion
+		}
 		if a.Status != "succeeded" {
 			v.Basis = a.Basis
 		}
@@ -171,14 +177,16 @@ type agentDetailLocator struct {
 	Omitted    []string `json:"omitted"`
 }
 type agentActionDetail struct {
-	ID              string                          `json:"id"`
-	Authority       agentActionAuthority            `json:"authority"`
-	Inspection      platform.TargetActionInspection `json:"inspection"`
-	Spec            platform.ActionSpec             `json:"spec"`
-	Rule            *PolicyRevision                 `json:"rule,omitempty"`
-	Basis           *followupReplyBasis             `json:"basis,omitempty"`
-	ObservedVersion uint64                          `json:"observed_unit_version"`
-	TurnNumber      uint64                          `json:"turn_number"`
+	CapabilityBasis   *platform.CapabilityEvidence    `json:"capability_basis,omitempty"`
+	CapabilityVersion uint64                          `json:"capability_version,omitempty"`
+	ID                string                          `json:"id"`
+	Authority         agentActionAuthority            `json:"authority,omitzero"`
+	Inspection        platform.TargetActionInspection `json:"inspection"`
+	Spec              platform.ActionSpec             `json:"spec"`
+	Rule              *PolicyRevision                 `json:"rule,omitempty"`
+	Basis             *followupReplyBasis             `json:"basis,omitempty"`
+	ObservedVersion   uint64                          `json:"observed_unit_version"`
+	TurnNumber        uint64                          `json:"turn_number"`
 }
 type agentFollowupDetails struct {
 	Actions []agentActionDetail `json:"actions"`
@@ -187,7 +195,11 @@ type agentFollowupDetails struct {
 func projectFollowupDetails(u followupUnit) *agentFollowupDetails {
 	v := &agentFollowupDetails{Actions: []agentActionDetail{}}
 	for _, a := range u.Actions {
-		v.Actions = append(v.Actions, agentActionDetail{a.Request.ID, projectActionAuthority(a.Request.Authority), a.Inspection, a.Spec, a.Rule, a.Basis, a.Request.Revision, a.Request.TurnNumber})
+		detail := agentActionDetail{ID: a.Request.ID, Authority: projectActionAuthority(a.Request.Authority), Inspection: a.Inspection, Spec: a.Spec, Rule: a.Rule, Basis: a.Basis, ObservedVersion: a.Request.Revision, TurnNumber: a.Request.TurnNumber, CapabilityBasis: a.CapabilityBasis}
+		if a.CapabilityBasis != nil {
+			detail.CapabilityVersion = a.Access.ActionAuthorizationVersion
+		}
+		v.Actions = append(v.Actions, detail)
 	}
 	return v
 }

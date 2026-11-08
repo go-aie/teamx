@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
+	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
 // Supplied by static platform assembly, never an Agent-provided identity report.
@@ -38,15 +39,36 @@ func (s *service) readReferenceInbox(ctx context.Context, id MemberIdentity, tur
 	if err != nil {
 		return view, err
 	}
+	status, err := addr.Call[InboxStatus](ctx, InspectInbox{id})
+	if err != nil {
+		return view, err
+	}
+	if _, err = s.reconcileInboxAdmission(ctx, id, status); err != nil {
+		return view, err
+	}
 	page, err := addr.Call[InboxBatchPage](ctx, ReadInboxBatch{MemberIdentity: id, TurnNumber: turn, Limit: limit})
 	if err != nil {
 		return view, err
 	}
 	view = referenceInboxPage{InboxPage: page.InboxPage, Batch: page.Batch, Sources: []followupSourceSummary{}, Followups: []followupSummary{}}
+	view.Entries = []InboxEntry{}
 	seen := map[string]bool{}
 	// Cached source evidence prevents repeated remote resolution on a repeated
 	// read or restart. A failed source is retried only through explicit re-resolve.
 	for _, entry := range page.Entries {
+		s.store.mu.Lock()
+		admission, classificationErr := s.store.inboxAdmissionLocked(entry)
+		s.store.mu.Unlock()
+		if classificationErr != nil {
+			return view, classificationErr
+		}
+		if admission.Verified && admission.Decision == notification.AdmissionExcluded {
+			continue
+		}
+		if !admission.Verified {
+			return view, ErrBusy
+		}
+		view.Entries = append(view.Entries, entry)
 		if err := ctx.Err(); err != nil {
 			return view, err
 		}
@@ -69,7 +91,7 @@ func (s *service) readReferenceInbox(ctx context.Context, id MemberIdentity, tur
 		view.Followups = append(view.Followups, unitSummary(u))
 	}
 	s.store.mu.Lock()
-	view.Origins, err = s.store.inboxMessageOriginsLocked(page.Entries)
+	view.Origins, err = s.store.inboxMessageOriginsLocked(view.Entries)
 	s.store.mu.Unlock()
 	if err != nil {
 		return view, err
@@ -95,6 +117,14 @@ func (s *service) resolveFollowupEvent(ctx context.Context, id MemberIdentity, s
 	}
 	if err == nil {
 		entry, err = s.store.inboxEntryLocked(id, seq)
+	}
+	if err == nil {
+		admission, e := s.store.inboxAdmissionLocked(entry)
+		if e != nil {
+			err = e
+		} else if !admission.Verified || admission.Decision != notification.AdmissionAllow {
+			err = ErrBusy
+		}
 	}
 	if err == nil {
 		old, err = s.store.loadFollowupEventLocked(entry)

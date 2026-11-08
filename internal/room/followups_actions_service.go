@@ -10,16 +10,23 @@ import (
 )
 
 type referenceActionSession struct {
-	Access       platform.AccessContext
-	Capabilities platform.ReferenceCapabilities
-	Check        func(context.Context) error
-	Close        func()
+	CapabilityBasis *platform.CapabilityEvidence
+	Access          platform.AccessContext
+	Capabilities    platform.ReferenceCapabilities
+	Check           func(context.Context) error
+	Close           func()
 }
 type referenceActionPreparer func(context.Context, MemberIdentity, platform.AccessContext) (referenceActionSession, error)
 
 func actionInputJSON(input ActionInput) json.RawMessage { b, _ := json.Marshal(input); return b }
 
 func actionAuthorityMatchesSpec(q referenceActionRequest, spec platform.ActionSpec) bool {
+	if spec.BindingEvidence != "" {
+		return spec.RequiresAuthorization && !spec.DirectRoomInstructionOnly && q.capabilityAuthorityShape()
+	}
+	if q.capabilityAuthorityShape() {
+		return false
+	}
 	return !spec.DirectRoomInstructionOnly || (q.Authority.RoomSeq != 0 && q.Authority.RuleID == "" && q.Authority.InstructionRef == "" && q.Authority.QuestionRef == "" && len(q.Authority.MessageRefs) == 0)
 }
 
@@ -69,6 +76,7 @@ func (m *roomManager) executeReferenceAction(ctx context.Context, req apiRequest
 				for _, b := range bindings.Bindings {
 					if b.AgentID == id.AgentID && b.MembershipID == id.MembershipID && b.ConnectionID == session.Access.ConnectionID && b.ConnectionGeneration == session.Access.Generation && b.ActionAuthorization != nil {
 						session.Access.ActionAuthorizationVersion = b.ActionAuthorization.Revision
+						session.CapabilityBasis = b.Evidence(cap.Spec.BindingEvidence)
 					}
 				}
 			}
@@ -93,6 +101,9 @@ func (m *roomManager) executeReferenceAction(ctx context.Context, req apiRequest
 }
 
 func validReferenceSpec(spec platform.ActionSpec, q referenceActionRequest, t platform.TargetIdentity) bool {
+	if spec.BindingEvidence != "" && (!spec.RequiresAuthorization || spec.DirectRoomInstructionOnly || len(spec.BindingEvidence) > 128) {
+		return false
+	}
 	kind := "object"
 	if t.Discussion.Valid() {
 		kind = "discussion"
@@ -129,13 +140,6 @@ func (s *service) executeReferenceAction(ctx context.Context, id MemberIdentity,
 	if err := referenceActionRequestError(q); err != nil {
 		return referenceActionReceipt{}, err
 	}
-	view, err := s.store.readAgentPolicy(id)
-	if err != nil {
-		return referenceActionReceipt{}, err
-	}
-	if view.PolicyToken != q.PolicyToken {
-		return referenceActionReceipt{ID: q.ID, Status: "policy_changed", Policy: &view}, nil
-	}
 	request, old, err := s.store.referenceActionEvidence(id, q)
 	if err != nil {
 		return referenceActionReceipt{}, err
@@ -156,13 +160,22 @@ func (s *service) executeReferenceAction(ctx context.Context, id MemberIdentity,
 	}
 	cap, ok := session.Capabilities.Actions[q.Operation]
 	if ok && !actionAuthorityMatchesSpec(q, cap.Spec) {
-		return referenceActionReceipt{}, invalidField("authority", "this action requires a direct human Room instruction (room_seq), without rule, instruction, question or message refs")
+		return referenceActionReceipt{}, invalidField("authority", "request authority does not match the registered action's business or member-capability basis")
 	}
 	if ok && cap.Spec.DisabledReason != "" {
 		return referenceActionReceipt{}, conflictReason("operation", cap.Spec.DisabledReason, "Read actions resolve for current provider readiness.")
 	}
-	if !ok || cap.Inspect == nil || cap.Execute == nil || !validReferenceSpec(cap.Spec, q, request.Target) {
+	if !ok || cap.Inspect == nil || cap.Execute == nil || !validReferenceSpec(cap.Spec, q, request.Target) || (cap.AppliesTo != nil && !cap.AppliesTo(request.Target, access.Account)) {
 		return referenceActionReceipt{}, platform.ErrReference
+	}
+	if cap.Spec.BindingEvidence == "" {
+		view, err := s.store.readAgentPolicy(id)
+		if err != nil {
+			return referenceActionReceipt{}, err
+		}
+		if view.PolicyToken != q.PolicyToken {
+			return referenceActionReceipt{ID: q.ID, Status: "policy_changed", Policy: &view}, nil
+		}
 	}
 	inspect := func() (platform.TargetActionInspection, error) {
 		if err := ctx.Err(); err != nil {
@@ -185,7 +198,7 @@ func (s *service) executeReferenceAction(ctx context.Context, id MemberIdentity,
 	if err != nil {
 		return referenceActionReceipt{}, err
 	}
-	receipt, started, err := s.store.beginReferenceAction(id, q, request, access, inspected, cap.Spec)
+	receipt, started, err := s.store.beginReferenceActionWithBasis(id, q, request, access, inspected, cap.Spec, session.CapabilityBasis)
 	if err != nil || !started {
 		return receipt, err
 	}

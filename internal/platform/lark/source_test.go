@@ -38,9 +38,13 @@ type fakeReader struct {
 	requests []MessagesRequest
 }
 
-func (f *fakeReader) Chat(context.Context, platform.AccountIdentity, string) (Chat, error) {
+func (f *fakeReader) Chat(_ context.Context, a platform.AccountIdentity, _ string) (Chat, error) {
 	f.calls++
-	return f.chat, nil
+	chat := f.chat
+	if chat.Mode == "p2p" && chat.Relation == (ConversationRelation{}) {
+		chat.Relation = ConversationRelation{Account: a, ChatID: chat.ID, Kind: "peer", Peer: platform.ExternalID{Namespace: a.ID.Namespace, Value: "ou_sender"}}
+	}
+	return chat, nil
 }
 func (f *fakeReader) Messages(_ context.Context, _ platform.AccountIdentity, r MessagesRequest) (MessagePage, error) {
 	f.calls++

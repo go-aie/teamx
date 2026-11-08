@@ -38,6 +38,7 @@ type Attachment struct {
 // admission. Older records retain their body and known envelope facts with
 // structured=false; display labels are never guessed into native identities.
 type Content struct {
+	ContextOnly       bool          `json:"context_only,omitempty"`
 	Text              string        `json:"text"`
 	Structured        bool          `json:"structured"`
 	Sender            *Participant  `json:"sender,omitempty"`
@@ -58,19 +59,18 @@ type Content struct {
 // this view and remain the normal tool arguments.
 type View struct {
 	Content
-	ContextOnly bool                     `json:"context_only,omitempty"`
-	Provider    string                   `json:"provider"`
-	Channel     string                   `json:"channel"`
-	Instance    string                   `json:"instance"`
-	Tenant      platform.ExternalID      `json:"tenant,omitzero"`
-	Receiver    platform.AccountIdentity `json:"receiver,omitzero"`
-	CreatedAt   time.Time                `json:"created_at"`
-	Project     string                   `json:"project,omitempty"`
-	ProjectID   int64                    `json:"project_id,omitempty"`
-	MessageID   platform.ExternalID      `json:"message_id,omitzero"`
-	ReplyTo     platform.ExternalID      `json:"reply_to,omitzero"`
-	RootID      platform.ExternalID      `json:"root_id,omitzero"`
-	ThreadID    platform.ExternalID      `json:"thread_id,omitzero"`
+	Provider  string                   `json:"provider"`
+	Channel   string                   `json:"channel"`
+	Instance  string                   `json:"instance"`
+	Tenant    platform.ExternalID      `json:"tenant,omitzero"`
+	Receiver  platform.AccountIdentity `json:"receiver,omitzero"`
+	CreatedAt time.Time                `json:"created_at"`
+	Project   string                   `json:"project,omitempty"`
+	ProjectID int64                    `json:"project_id,omitempty"`
+	MessageID platform.ExternalID      `json:"message_id,omitzero"`
+	ReplyTo   platform.ExternalID      `json:"reply_to,omitzero"`
+	RootID    platform.ExternalID      `json:"root_id,omitzero"`
+	ThreadID  platform.ExternalID      `json:"thread_id,omitzero"`
 }
 
 func Project(item Item) View {
@@ -94,10 +94,6 @@ func Project(item Item) View {
 		b, _ := json.Marshal(item.Content)
 		_ = json.Unmarshal(b, &v.Content)
 	}
-	// Own Lark messages are evidence of progress, including while a send's
-	// receipt is still pending or unknown. Receipt timing must not control safety.
-	v.ContextOnly = s.Provider == "lark" && v.Sender != nil && v.Sender.IsReceiver &&
-		v.Receiver.ID.Valid() && v.Sender.ID == v.Receiver.ID
 	return v
 }
 

@@ -484,10 +484,10 @@ test("L4-A sending checks report both permission layers and keep writes disabled
 
 test("Lark sending status reports accepted modes and keeps direct user sends distinct",async()=>{
  const api=fixture(),original=api.request;
- api.request=(path,body)=>path==="/v1/platform/connections/lark/sending-status"?Promise.resolve({account_fixed:true,application_scopes:"granted",user_scopes:"granted",adapter_implemented:true,reply_enabled:true,group_send_enabled:true,user_send_enabled:false}):original(path,body);
+ api.request=(path,body)=>path==="/v1/platform/connections/lark/sending-status"?Promise.resolve({account_fixed:true,application_scopes:"granted",user_scopes:"granted",adapter_implemented:true,reply_enabled:true,group_send_enabled:true,self_send_enabled:true,user_send_enabled:false}):original(path,body);
  const ui=await connectionDraft(api);
  await ui.el("connection-send-check").emit("click");
- assert.match(ui.el("connection-send-status").textContent,/应用发送权限：已开通.*用户发送授权：已授权.*可用：普通回复、群消息.*应用连接后生效.*主动私信暂未开放/);
+ assert.match(ui.el("connection-send-status").textContent,/应用发送权限：已开通.*用户发送授权：已授权.*可用：普通回复、群消息、本人自聊（需单独启用）.*应用连接后生效.*向其他用户主动私信暂未开放/);
  assert.equal(api.calls.some(c=>c.path.includes("/actions/execute")),false);
 });
 

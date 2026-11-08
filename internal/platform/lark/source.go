@@ -10,6 +10,7 @@ import (
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/notification"
 	"io"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -114,7 +115,7 @@ func acceptPage(s State, id string, page MessagePage, limits notification.Limits
 		}
 		route := notification.Route{Target: n.Config.Target, Version: n.SubscriptionVersion}
 		oldRoute, wasAccepted := n.Accepted[MessageKey(n.Binding, m)]
-		accepted := wasAccepted || Matches(m, p.Chat, n.Binding.Account.ID.Value, n.Config)
+		accepted := p.Chat.Relation.Kind != "self" && (wasAccepted || Matches(m, p.Chat, n.Binding.Account.ID.Value, n.Config))
 		if wasAccepted {
 			route = oldRoute
 		}
@@ -232,8 +233,8 @@ func (r *runner) Step(ctx context.Context) (time.Duration, bool) {
 	queryCtx, cancel := notification.QueryContext(ctx, limits.SliceTime)
 	defer cancel()
 	p.LastAttempt = now
-	if !verified || p.NeedsVerification || !p.VerifiedAt.IsZero() && !now.Before(p.VerifiedAt.Add(DirectoryInterval)) {
-		chat, e := reader.Chat(queryCtx, s.Binding.Account, id)
+	if !verified || p.NeedsVerification || p.Chat.Mode == "p2p" && !p.Chat.Relation.ValidFor(s.Binding.Account, id) || !p.VerifiedAt.IsZero() && !now.Before(p.VerifiedAt.Add(DirectoryInterval)) {
+		chat, e := notificationChat(queryCtx, reader, s.Binding.Account, id)
 		if ctx.Err() != nil {
 			return time.Second, true
 		}
@@ -258,6 +259,9 @@ func (r *runner) Step(ctx context.Context) (time.Duration, bool) {
 		p.ErrorCode = ""
 		p.RetryAt = time.Time{}
 		s.Chats[id] = p
+		if s.Metadata().Pending == 0 {
+			s.DeliveryErrorCode = ""
+		}
 		// Keep this scheduling slot until its message page is read. With many
 		// slow chats, rotating after metadata alone can let verification expire
 		// before the next visit, repeatedly delaying the first message read.
@@ -266,6 +270,18 @@ func (r *runner) Step(ctx context.Context) (time.Duration, bool) {
 		s.ErrorCode = ""
 		s.Metrics.Calls++
 		r.slicePages++
+		if r.h.Commit(s) != nil {
+			return time.Second, false
+		}
+		return time.Millisecond, false
+	}
+	if p.Chat.Relation.Kind == "self" {
+		// Retain existing source evidence; never collect bodies or resume an old scan.
+		p.Scan = nil
+		p.Completed = now.Unix() - 1
+		p.LastCheck = now
+		s.Chats[id] = p
+		s.updateFull(now)
 		if r.h.Commit(s) != nil {
 			return time.Second, false
 		}
@@ -335,6 +351,21 @@ func (r *runner) Step(ctx context.Context) (time.Duration, bool) {
 // An unbounded hot chat still cannot pin a Room.
 func (s *State) selectChat(now time.Time, force bool) (string, time.Duration) {
 	ids := s.ChatIDs()
+	listed := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		listed[id] = true
+	}
+	// Frozen deliveries outside today's subscription scope still need a native
+	// relationship check before recovery can deliver them. Verify metadata only;
+	// once proven they leave this list, so no out-of-scope message scan starts.
+	for _, e := range s.Inbox {
+		p := s.Chats[e.Message.ChatID]
+		if p.Chat.Mode == "p2p" && (!p.Chat.Relation.ValidFor(s.Binding.Account, p.Chat.ID) || p.NeedsVerification) && !listed[e.Message.ChatID] {
+			ids = append(ids, e.Message.ChatID)
+			listed[e.Message.ChatID] = true
+		}
+	}
+	slices.Sort(ids)
 	wait := time.Duration(s.Config.IntervalSeconds) * time.Second
 	if s.Config.AllChats() && s.Directory != nil && s.Directory.Scan == nil && s.Directory.RetryAt.After(now) {
 		wait = min(wait, s.Directory.RetryAt.Sub(now))
@@ -384,11 +415,11 @@ func (s *State) selectChat(now time.Time, force bool) (string, time.Duration) {
 	return ids[selected], 0
 }
 func validChatError(code string) bool {
-	return code == "" || code == "permission_denied" || code == "chat_unavailable"
+	return code == "" || code == "permission_denied" || code == "chat_unavailable" || code == "conversation_unverified"
 }
 func (r *runner) chatFailed(s State, id string, err error, now time.Time) (time.Duration, bool) {
 	code := ErrorCode(err)
-	if code == "permission_denied" || code == "chat_unavailable" {
+	if code == "permission_denied" || code == "chat_unavailable" || code == "conversation_unverified" {
 		p := s.Chats[id]
 		if p.Chat.ID == "" {
 			p.Chat.ID = id

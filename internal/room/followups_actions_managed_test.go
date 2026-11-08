@@ -109,6 +109,23 @@ func (f *managedActionFixture) run() (referenceActionReceipt, error) {
 }
 func assertActionCallsSettled(t *testing.T, m *roomManager) {
 	t.Helper()
+	// A client can read the terminal frame before the HTTP handler runs its
+	// deferred lease/call settlement. Wait for that contract, not scheduler luck.
+	m.mu.Lock()
+	var pending []<-chan struct{}
+	for call := range m.platformCalls {
+		pending = append(pending, call.done)
+	}
+	m.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	for _, done := range pending {
+		select {
+		case <-done:
+		case <-ctx.Done():
+			t.Fatal("platform calls did not settle", ctx.Err())
+		}
+	}
 	m.mu.Lock()
 	n := len(m.platformCalls)
 	m.mu.Unlock()

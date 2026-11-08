@@ -47,7 +47,7 @@ func (s *Store) loadActionsLocked(id MemberIdentity) ([]referenceAction, error) 
 		if a.IdempotencyKey != referenceDigest("", id, a.Request.ID)[:32] {
 			return nil, ErrInvalid
 		}
-		if record.MemberIdentity != id || path != s.actionPath(id, a.Request.ID) || !validReferenceActionRequest(a.Request) || targetReference(id, a.Target) != a.Request.TargetRef || !sameNativeTarget(a.Target, a.Inspection.Target) || a.Access.RoomIdentity != id.RoomIdentity || a.Access.AgentID != id.AgentID || a.Access.MembershipID != id.MembershipID || !a.Access.Valid() || a.Access.Account != a.Inspection.Account || !validReferenceSpec(a.Spec, a.Request, a.Target) || a.Attempts < 0 || a.Attempts > a.Spec.Retry.MaxAttempts || a.UpdatedAt.IsZero() || (a.Rule == nil) == (a.Basis == nil) {
+		if record.MemberIdentity != id || path != s.actionPath(id, a.Request.ID) || !validReferenceActionRequest(a.Request) || targetReference(id, a.Target) != a.Request.TargetRef || !sameNativeTarget(a.Target, a.Inspection.Target) || a.Access.RoomIdentity != id.RoomIdentity || a.Access.AgentID != id.AgentID || a.Access.MembershipID != id.MembershipID || !a.Access.Valid() || a.Access.Account != a.Inspection.Account || !validReferenceSpec(a.Spec, a.Request, a.Target) || a.Attempts < 0 || a.Attempts > a.Spec.Retry.MaxAttempts || a.UpdatedAt.IsZero() || !validActionBasis(a) {
 			return nil, ErrInvalid
 		}
 		if a.Status != "unknown" && a.Status != "not_applied" && a.Status != "succeeded" {
@@ -275,6 +275,15 @@ func sameActionSource(a, b referenceActionAuthority) bool {
 	return a.RoomSeq == b.RoomSeq && a.RuleID == b.RuleID && a.RuleVersion == b.RuleVersion && a.InstructionRef == b.InstructionRef && a.InstructionVersion == b.InstructionVersion
 }
 func (s *Store) beginReferenceAction(id MemberIdentity, q referenceActionRequest, request platform.TargetActionRequest, access platform.AccessContext, i platform.TargetActionInspection, spec platform.ActionSpec) (referenceActionReceipt, bool, error) {
+	return s.beginReferenceActionWithBasis(id, q, request, access, i, spec, nil)
+}
+func validActionBasis(a referenceAction) bool {
+	if a.Spec.BindingEvidence != "" {
+		return a.Rule == nil && a.Basis == nil && a.Access.ActionAuthorizationVersion > 0 && a.CapabilityBasis.Matches(a.Spec.BindingEvidence, a.Access, a.Target)
+	}
+	return a.CapabilityBasis == nil && (a.Rule == nil) != (a.Basis == nil)
+}
+func (s *Store) beginReferenceActionWithBasis(id MemberIdentity, q referenceActionRequest, request platform.TargetActionRequest, access platform.AccessContext, i platform.TargetActionInspection, spec platform.ActionSpec, evidence *platform.CapabilityEvidence) (referenceActionReceipt, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !actionAuthorityMatchesSpec(q, spec) {
@@ -316,21 +325,31 @@ func (s *Store) beginReferenceAction(id MemberIdentity, q referenceActionRequest
 			}
 			return s.referenceReceiptLocked(id, u, a), false, nil
 		}
-		if a.Status == "unknown" && (q.sameBusiness(a.Request) || (sameActionSource(q.Authority, a.Request.Authority) && (q.Input == a.Request.Input || (q.Input.Body != "" && q.Input.Body == a.Request.Input.Body)))) {
+		sameCapabilityContent := (spec.BindingEvidence != "" || a.Spec.BindingEvidence != "") && q.Input.Body != "" && q.Input.Body == a.Request.Input.Body
+		if a.Status == "unknown" && (sameCapabilityContent || q.sameBusiness(a.Request) || (sameActionSource(q.Authority, a.Request.Authority) && (q.Input == a.Request.Input || (q.Input.Body != "" && q.Input.Body == a.Request.Input.Body)))) {
 			return referenceActionReceipt{}, false, conflictReason("id", "the authorization already has an uncertain write", "Read actions read; do not change ID, platform or operation to resend.")
 		}
 	}
 	if len(actions) >= followupCapacity {
 		return referenceActionReceipt{}, false, ErrCapacity
 	}
-	rule, basis, view, err := s.actionAuthorityLocked(id, u, q, nil)
+	var rule *PolicyRevision
+	var basis *followupReplyBasis
+	var view *agentPolicyView
+	if spec.BindingEvidence != "" {
+		if access.ActionAuthorizationVersion == 0 || !currentCapabilityEvidence(evidence, spec, access, request.Target) {
+			return referenceActionReceipt{}, false, ErrIdentity
+		}
+	} else {
+		rule, basis, view, err = s.actionAuthorityLocked(id, u, q, nil)
+	}
 	if err != nil {
 		return referenceActionReceipt{}, false, err
 	}
 	if view != nil {
 		return referenceActionReceipt{ID: q.ID, Status: "policy_changed", Policy: view}, false, nil
 	}
-	a := referenceAction{IdempotencyKey: referenceDigest("", id, q.ID)[:32], Ledger: true, Request: q, Target: request.Target, Access: access, Inspection: i, Spec: spec, Rule: rule, Basis: basis, Status: "unknown", UpdatedAt: time.Now().UTC()}
+	a := referenceAction{IdempotencyKey: referenceDigest("", id, q.ID)[:32], Ledger: true, CapabilityBasis: evidence, Request: q, Target: request.Target, Access: access, Inspection: i, Spec: spec, Rule: rule, Basis: basis, Status: "unknown", UpdatedAt: time.Now().UTC()}
 	if err := s.saveActionLocked(id, a); err != nil {
 		return referenceActionReceipt{}, false, err
 	}
@@ -367,7 +386,11 @@ func (s *Store) referenceActionAttempt(id MemberIdentity, q referenceActionReque
 	}
 	for _, a := range actions {
 		if a.Request.ID == q.ID {
-			_, _, view, err := s.actionAuthorityLocked(id, u, q, a.Basis)
+			var view *agentPolicyView
+			var err error
+			if a.Spec.BindingEvidence == "" {
+				_, _, view, err = s.actionAuthorityLocked(id, u, q, a.Basis)
+			}
 			if err != nil || view != nil {
 				return view, err
 			}

@@ -98,6 +98,7 @@ func (p *Pinned) Verify(ctx context.Context) (platform.Validation, error) {
 const SendScopes = "im:message.send_as_user im:message"
 
 type SendPermission struct {
+	SelfSendEnabled    bool     `json:"self_send_enabled"`
 	UserSendEnabled    bool     `json:"user_send_enabled"`
 	GroupSendEnabled   bool     `json:"group_send_enabled"`
 	SendReason         string   `json:"send_reason"`
@@ -177,6 +178,7 @@ func (p *Pinned) SendPermission(ctx context.Context) (SendPermission, error) {
 	// particular member's saved grants or permission to perform a business action.
 	result.ReplyEnabled = result.UserScopes == "granted" && result.ApplicationScopes == "granted"
 	result.GroupSendEnabled = result.ReplyEnabled
+	result.SelfSendEnabled = result.ReplyEnabled
 	return result, nil
 }
 

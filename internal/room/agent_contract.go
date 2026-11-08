@@ -3,6 +3,7 @@ package room
 import (
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"time"
 
@@ -32,14 +33,19 @@ type agentActionRequest struct {
 	TargetRef   string                 `json:"target_ref,omitempty"`
 	Context     *actionBusinessContext `json:"context,omitempty"`
 	ID          string                 `json:"id"`
-	PolicyToken string                 `json:"policy_token"`
-	Authority   agentActionAuthority   `json:"authority"`
+	PolicyToken string                 `json:"policy_token,omitempty"`
+	Authority   agentActionAuthority   `json:"authority,omitzero"`
 	Operation   platform.Operation     `json:"operation"`
 	Input       ActionInput            `json:"input"`
 }
 
 func (q agentActionRequest) internalAuthority() (referenceActionAuthority, error) {
 	a := q.Authority
+	// Parsing accepts an absent business basis; the trusted registered action
+	// spec decides whether operator capability evidence can authorize execution.
+	if q.PolicyToken == "" && reflect.DeepEqual(a, agentActionAuthority{}) {
+		return referenceActionAuthority{}, nil
+	}
 	r := referenceActionAuthority{RoomSeq: a.RoomSeq, QuestionRef: a.QuestionRef, MessageRefs: a.MessageRefs, Constraints: a.Constraints, Reason: a.Reason}
 	switch a.Type {
 	case "rule":
@@ -290,6 +296,9 @@ type agentInstructionStatusChange struct {
 }
 
 func projectActionAuthority(a referenceActionAuthority) agentActionAuthority {
+	if reflect.DeepEqual(a, referenceActionAuthority{}) {
+		return agentActionAuthority{}
+	}
 	v := agentActionAuthority{RoomSeq: a.RoomSeq, QuestionRef: a.QuestionRef, MessageRefs: a.MessageRefs, Constraints: a.Constraints, Reason: a.Reason}
 	switch {
 	case a.RuleID != "":
@@ -311,6 +320,10 @@ func (a *agentActionAuthority) UnmarshalJSON(data []byte) error {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(data, &fields); err != nil {
 		return err
+	}
+	if len(fields) == 0 {
+		*a = agentActionAuthority{}
+		return nil
 	}
 	allowed := "type reason"
 	switch v.Type {

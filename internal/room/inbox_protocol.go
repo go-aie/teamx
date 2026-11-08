@@ -70,12 +70,15 @@ type InspectInbox struct{ MemberIdentity }
 
 type InboxStatus struct {
 	MemberIdentity
-	ConsumedThrough uint64      `json:"consumed_through"`
-	Batch           *InboxBatch `json:"batch,omitempty"`
-	LatestSeq       uint64      `json:"latest_seq"`
-	Bytes           int64       `json:"bytes"`
-	Limits          InboxLimits `json:"limits"`
-	Committing      bool        `json:"committing"`
-	Previewing      bool        `json:"previewing"`
-	WriteError      string      `json:"write_error,omitempty"`
+	AutomaticChecked bool        `json:"automatic_checked,omitempty"`
+	AutomaticReady   bool        `json:"automatic_ready,omitempty"`
+	AutomaticBlocked bool        `json:"automatic_blocked,omitempty"`
+	ConsumedThrough  uint64      `json:"consumed_through"`
+	Batch            *InboxBatch `json:"batch,omitempty"`
+	LatestSeq        uint64      `json:"latest_seq"`
+	Bytes            int64       `json:"bytes"`
+	Limits           InboxLimits `json:"limits"`
+	Committing       bool        `json:"committing"`
+	Previewing       bool        `json:"previewing"`
+	WriteError       string      `json:"write_error,omitempty"`
 }

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
+	"github.com/go-aie/teamx/internal/platform/connection"
 	"github.com/go-aie/teamx/internal/platform/notification"
 	"github.com/go-aie/teamx/internal/platform/tool"
 )
@@ -146,6 +147,28 @@ func (m *roomManager) serveTools(w http.ResponseWriter, r *http.Request) {
 			writeAPIError(w, err)
 			return
 		}
+		// Historical evidence stays on disk, but must not appear enabled after
+		// connection rotation or a newly verified account in the same profile.
+		connections, err := m.connections.Load()
+		if err != nil {
+			writeAPIError(w, err)
+			return
+		}
+		for i, b := range f.Bindings {
+			visible := []platform.CapabilityEvidence{}
+			for _, evidence := range b.CapabilityEvidence {
+				for _, c := range connections.Connections {
+					if c.ID != b.ConnectionID || c.Generation != b.ConnectionGeneration {
+						continue
+					}
+					account, _, err := connection.ResolveAccessAccount(connections, c)
+					if err == nil && evidence.Current(evidence.Kind, platform.AccessContext{Account: account.Identity, CredentialVersion: account.CredentialVersion}, evidence.Target) {
+						visible = append(visible, evidence)
+					}
+				}
+			}
+			f.Bindings[i].CapabilityEvidence = visible
+		}
 		_ = json.NewEncoder(w).Encode(struct {
 			toolBindingsFile
 			Catalog []toolCatalogView `json:"catalog"`
@@ -158,6 +181,10 @@ func (m *roomManager) serveTools(w http.ResponseWriter, r *http.Request) {
 		}
 		var req toolBindingChange
 		if !decodeToolRequest(w, r, &req) {
+			return
+		}
+		if err := m.prepareBindingEvidence(r.Context(), &req); err != nil {
+			writeAPIError(w, err)
 			return
 		}
 		m.mu.Lock()

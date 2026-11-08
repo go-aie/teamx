@@ -40,6 +40,7 @@ func SavedContent(item notification.Item) *notification.Content {
 		p.Name = ""
 	}
 	c.Sender, c.Text = &p, lines[2]
+	c.ContextOnly = p.IsReceiver && a.ID.Valid() && p.ID == a.ID
 	c.Changed = strings.HasPrefix(lines[0], "飞书消息变更")
 	name := strings.TrimPrefix(lines[0], "飞书 · ")
 	if name == lines[0] || strings.HasPrefix(name, "会话 oc_") {
@@ -80,6 +81,7 @@ func messageContent(m Message, chat Chat, account platform.AccountIdentity, chan
 	}
 	sender := participant(m.Sender.Name, m.Sender.ID, m.Sender.IDType, m.Sender.Type, m.Sender.TenantKey)
 	c.Sender = &sender
+	c.ContextOnly = sender.IsReceiver
 	for i, at := range m.Mentions {
 		if i == 32 {
 			c.MetadataTruncated = true

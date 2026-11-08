@@ -318,7 +318,7 @@ func (m *MemberAgent) roomReady() bool {
 
 func (m *MemberAgent) inboxReady() bool {
 	i := m.inbox
-	return i != nil && i.WriteError == "" && i.LatestSeq > i.ConsumedThrough &&
+	return i != nil && i.WriteError == "" && (!i.AutomaticChecked || i.AutomaticReady && !i.AutomaticBlocked) && i.LatestSeq > i.ConsumedThrough &&
 		(m.retry || m.state.LastOfferedInboxSeq == 0 || i.ConsumedThrough >= m.state.LastOfferedInboxSeq || i.ConsumedThrough > m.state.LastOfferedInboxThrough)
 }
 
@@ -331,7 +331,7 @@ func (m *MemberAgent) pollInbox() {
 	_, err := actorx.StartTask(m.owner, m.Inbox, func(status InboxStatus, err error) bool {
 		m.inboxPolling = false
 		if err == nil {
-			changed := m.inbox == nil || m.inbox.LatestSeq != status.LatestSeq || m.inbox.ConsumedThrough != status.ConsumedThrough
+			changed := m.inbox == nil || m.inbox.LatestSeq != status.LatestSeq || m.inbox.ConsumedThrough != status.ConsumedThrough || m.inbox.AutomaticReady != status.AutomaticReady || m.inbox.AutomaticBlocked != status.AutomaticBlocked
 			m.inbox = &status
 			if changed && m.due.IsZero() {
 				m.due = m.now().Add(m.MergeWindow)

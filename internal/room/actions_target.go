@@ -163,7 +163,7 @@ func (m *roomManager) resolveActionTarget(ctx context.Context, req apiRequest, q
 	var r platform.TargetResolution
 	var session referenceActionSession
 	if locator.TargetRef != "" {
-		if locator.Candidate != nil || locator.Source != nil || locator.URL != "" || locator.Query != nil {
+		if locator.Self || locator.Candidate != nil || locator.Source != nil || locator.URL != "" || locator.Query != nil {
 			return actionTargetView{}, ErrRequest
 		}
 		resolved, access, e := svc.store.actionReferenceEvidence(id, locator.TargetRef, q.TurnNumber)
@@ -232,6 +232,19 @@ func (m *roomManager) resolveActionTarget(ctx context.Context, req apiRequest, q
 	if err != nil {
 		return actionTargetView{}, err
 	}
+	m.mu.Lock()
+	bindings, bindingErr := m.readToolBindingsLocked(id.RoomIdentity)
+	if bindingErr == nil {
+		for _, b := range bindings.Bindings {
+			if b.AgentID == id.AgentID && b.MembershipID == id.MembershipID && b.ConnectionID == session.Access.ConnectionID && b.ConnectionGeneration == session.Access.Generation && bindingConfirmsAccount(b, session.Access, session.Capabilities) {
+				confirmed = true
+			}
+		}
+	}
+	m.mu.Unlock()
+	if bindingErr != nil {
+		return actionTargetView{}, bindingErr
+	}
 	r.AccountOwnerConfirmed = confirmed
 	view := actionTargetView{Resolution: r, Actions: []actionTargetCapability{}}
 	if r.Status != platform.ResolutionResolved || !r.Complete || !r.ObjectVerified || r.Target == nil {
@@ -242,6 +255,9 @@ func (m *roomManager) resolveActionTarget(ctx context.Context, req apiRequest, q
 		return actionTargetView{}, ErrIdentity
 	}
 	for _, cap := range session.Capabilities.Actions {
+		if cap.AppliesTo != nil && !cap.AppliesTo(*r.Target, session.Access.Account) {
+			continue
+		}
 		if cap.Inspect != nil && cap.Execute != nil && applicableActionSpec(cap.Spec, *r.Target) {
 			availability := actionTargetCapability{ActionSpec: cap.Spec, Executable: cap.Spec.DisabledReason == "", DisabledReason: cap.Spec.DisabledReason}
 			if availability.Executable && cap.Spec.RequiresAuthorization {

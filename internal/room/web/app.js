@@ -174,6 +174,7 @@ function renderCLITools(v) {
   $("cli-member-options").replaceChildren(...v.cli.catalog.map(d => {
     const b = v.cli.bindings.find(b => b.agent_id === v.member.agent_id && b.membership_id === v.member.membership_id && b.tool === d.name);
     const actionControls = [];
+    let updateSelfTarget = null;
     const row = document.createElement("div"); row.className = "cli-tool-row";
     const pending = v.cliPending?.tool === d.name;
     row.setAttribute("aria-busy", String(pending));
@@ -200,8 +201,9 @@ function renderCLITools(v) {
       apply.disabled = v.cliBusy || !live || !valid();
       for (const {checkbox,spec} of actionControls) {
         checkbox.checked = false;
-        checkbox.disabled = v.cliBusy || !live || !select.value || Boolean(spec.disabled_reason);
+        checkbox.disabled = v.cliBusy || !live || !select.value || !valid() || Boolean(spec.disabled_reason);
       }
+      if (updateSelfTarget) updateSelfTarget();
       if (v.cliResult?.tool === d.name) { v.cliResult = null; feedback.textContent = ""; }
     });
     apply.addEventListener("click", async () => {
@@ -213,15 +215,16 @@ function renderCLITools(v) {
       if (selected) binding.connection_id = selected.id;
       if (selected && d.provider === "lark") {
         binding.action_authorization = {version:1,revision:b?.action_authorization?.revision || 1,
-          grants:(d.actions || []).filter(spec => !spec.disabled_reason).flatMap(spec => (spec.object_types || []).map(objectType =>
-            ({operation:spec.operation,target_kind:spec.target_kind,object_type:objectType})))};
+          grants:(d.actions || []).filter(spec => !spec.disabled_reason && !spec.binding_evidence).flatMap(spec => (spec.object_types || []).map(objectType =>
+            ({operation:spec.operation,target_kind:spec.target_kind,object_type:objectType}))).concat(actionControls.filter(c => c.checkbox.checked && !c.checkbox.disabled).map(c => c.grant))};
       } else if (selected && (actionControls.some(c => c.checkbox.checked) || b?.action_authorization && select.value === b.connection_id)) {
         binding.action_authorization = {version:1,revision:b?.action_authorization?.revision || 1,
           grants:actionControls.filter(c => c.checkbox.checked && !c.checkbox.disabled).map(c => c.grant)};
       }
       try {
         const data = await request("/v1/tools/bind", { ...v.identity, revision: v.cli.revision, binding,
-          enabled: Boolean(select.value), connection_version: selected?.version || 0 });
+          enabled: Boolean(select.value), connection_version: selected?.version || 0 }, undefined,
+          binding.action_authorization?.grants.some(g => d.actions?.some(spec => spec.operation === g.operation && spec.binding_evidence)) ? 40000 : 10000);
         if (!toolsCurrent(v)) return;
         v.cli = { ...v.cli, ...data }; v.cliBusy = false; v.cliPending = null;
         v.cliResult = { tool: d.name, message: !select.value ? `✓ ${d.name} 已停用。` : selected ?
@@ -246,6 +249,24 @@ function renderCLITools(v) {
       if (available.some(spec => spec.operation === "message.send" && spec.object_types?.includes("user"))) modes.push("发送私信");
       note.textContent = `应用后，可按你的指令${modes.join("、")}。`;
       row.append(note);
+      const selfSpec = available.find(spec => spec.operation === "message.send_self");
+      if (selfSpec) {
+        const control = document.createElement("label"); control.className = "cli-action-row";
+        const checkbox = document.createElement("input"); checkbox.type = "checkbox";
+        checkbox.setAttribute("aria-label", "lark 发送到本人自聊");
+        const grant = {operation:selfSpec.operation,target_kind:"object",object_type:"user"};
+        checkbox.checked = Boolean(valid() && select.value === b?.connection_id && b?.capability_evidence?.find(e => e.kind === selfSpec.binding_evidence) && b?.action_authorization?.grants?.some(g => g.operation === selfSpec.operation));
+        checkbox.disabled = v.cliBusy || !live || !select.value || !valid();
+        const text = document.createElement("span"); text.textContent = "发送到本人自聊（确认所选账号属于我）";
+        control.append(checkbox,text); row.append(control);
+        const help = document.createElement("p"); help.className = "cli-tool-feedback quiet";
+        updateSelfTarget = () => {
+          const selectedAccount = connections.find(c => c.id === select.value)?.validation?.account?.id?.value;
+          help.textContent = b?.capability_evidence?.find(e => e.kind === selfSpec.binding_evidence) && select.value === b.connection_id && valid() ? `本人目标：${b.capability_evidence.find(e => e.kind === selfSpec.binding_evidence).account.id.value} · ${b.capability_evidence.find(e => e.kind === selfSpec.binding_evidence).target.containers[0].id.value}。本人自聊用于保存，Room 用于交代任务。` : !select.value || !valid() ? "请先选择已验证的飞书用户连接，再勾选并应用本人投递。本人自聊用于保存，Room 用于交代任务。" : `${selectedAccount ? `当前账号：${selectedAccount}。` : ""}启用时核验所选账号与本人自聊；本人自聊用于保存，Room 用于交代任务。`;
+        };
+        updateSelfTarget();
+        row.append(help); actionControls.push({checkbox,spec:selfSpec,grant});
+      }
       return row;
     }
     const actions = document.createElement("div"); actions.className = "cli-tool-actions";
@@ -563,12 +584,13 @@ function renderLarkMessages() {
   notice("lark-error",ws.messagesError || (!ws.messagesConnected ? "通知状态暂不可读。" : errors[data.delivery_error_code] || errors[data.error_code] || data.error_code || ""));
   const d=data.lark || {}, date=x=>new Date(x).toLocaleString("zh-CN");
   const diagnostics=[notificationSyncSummary(data)];
+  if(d.excluded_items>0)diagnostics.push(`本人自聊历史已排除 ${d.excluded_items}`);
   if(data.subscription_id && data.config.scope_mode==="all" && !d.directory_complete)diagnostics.push(d.directory_scanning ? `会话目录加载中（${d.directory_pages || 0} 页）` : "会话目录尚未加载完整");
   for(const [count,label] of [[d.failed_chats,"读取受阻"],[d.unlisted_chats,"不在最新目录"],[d.gap_chats,"积压超过 24 小时"],[d.unchecked,"待检查会话"]])if(count>0)diagnostics.push(`${label} ${count}`);
   $("lark-diagnostics").textContent=diagnostics.join(" · ");
-  const chats=(d.chats || []).filter(x=>x.error_code || x.scan || !x.completed);
+  const chats=(d.chats || []).filter(x=>x.relationship==="self" || x.relationship==="pending" || x.error_code || x.scan || !x.completed);
   $("lark-chat-status").hidden=!chats.length;
-  $("lark-chat-status").replaceChildren(...chats.map(x=>{const li=document.createElement("li");li.textContent=`${x.name || x.chat_id} · ${x.error_code ? `读取受阻 ${x.error_code}${x.retry_at ? `，重试 ${date(x.retry_at)}` : ""}` : x.scan ? `检查中（${x.scan.pages} 页）` : "待检查"}`;return li;}));
+  $("lark-chat-status").replaceChildren(...chats.map(x=>{const li=document.createElement("li");li.textContent=`${x.name || x.chat_id} · ${x.relationship==="self" ? "本人自聊，已排除自动接收与处理" : x.relationship==="pending" ? `会话关系待核验${x.error_code ? `（${x.error_code}）` : ""}` : x.error_code ? `读取受阻 ${x.error_code}${x.retry_at ? `，重试 ${date(x.retry_at)}` : ""}` : x.scan ? `检查中（${x.scan.pages} 页）` : "待检查"}`;return li;}));
 }
 async function changeLarkMessages(action) {
   const ws=workspaceView;if(!ws?.messages || ws.messagesSending || $(action==="configure"?"lark-save":"lark-sync").disabled)return;
@@ -1948,6 +1970,11 @@ function inboxSourceDetails(entry) {
   if (entry.origin?.kind === "agent") add("代发",`Agent ${entry.origin.agent_id} · ${entry.origin.status}`);
   if (entry.origin?.uncertain_send) add("发送状态","该会话有结果未确定的代发动作；仅作进展上下文");
   if (item.context_only) add("用途","进展上下文，不触发新的自动回复或待办");
+  if (entry.automatic_admission) {
+    const admission = entry.automatic_admission;
+    const reasons = {self_excluded:"本人自聊历史，已排除；需要办理时请在 Room 提出",relationship_pending:"会话关系待核验，暂不作为 Agent 输入"};
+    add("自动处理",reasons[admission.reason_code] || (!admission.verified ? "来源证据待核验，暂不作为 Agent 输入" : admission.decision === "excluded" ? "已排除自动处理，历史记录保留" : "可自动处理"));
+  }
   id("发送者 ID",item.sender?.id); id("接收账号 ID",item.receiver?.id);
   add("消息时间",date(item.created_at)); add("接收时间",date(entry.received_at));
   id("消息 ID",item.message_id); id("回复消息",item.reply_to); id("根消息",item.root_id); id("话题 ID",item.thread_id);
@@ -3799,8 +3826,8 @@ $("connection-send-check").addEventListener("click",async()=>{
   try {
     const state=await request("/v1/platform/connections/lark/sending-status",connectionPayload({cli_profile:larkProfileDraft()}),undefined,65000);
     if(version!==connections.formVersion)return;
-    const available = [state.reply_enabled && "普通回复", state.group_send_enabled && "群消息", state.user_send_enabled && "主动私信"].filter(Boolean);
-    $("connection-send-status").textContent = `账号固定：${state.account_fixed?"已核验":"不可用"}；应用发送权限：${state.application_scopes==="granted"?"已开通":"未齐备"}；用户发送授权：${state.user_scopes==="granted"?"已授权":"未授权"}。${available.length ? `可用：${available.join("、")}；在成员工具设置中应用连接后生效。` : "发送条件尚未齐备。"}${state.group_send_enabled && !state.user_send_enabled ? "主动私信暂未开放。" : ""}`;
+    const available = [state.reply_enabled && "普通回复", state.group_send_enabled && "群消息", state.self_send_enabled && "本人自聊（需单独启用）", state.user_send_enabled && "主动私信"].filter(Boolean);
+    $("connection-send-status").textContent = `账号固定：${state.account_fixed?"已核验":"不可用"}；应用发送权限：${state.application_scopes==="granted"?"已开通":"未齐备"}；用户发送授权：${state.user_scopes==="granted"?"已授权":"未授权"}。${available.length ? `可用：${available.join("、")}；在成员工具设置中应用连接后生效。` : "发送条件尚未齐备。"}${state.group_send_enabled && !state.user_send_enabled ? "向其他用户主动私信暂未开放。" : ""}`;
   }catch(error){if(version===connections.formVersion)$("connection-send-status").textContent="发送条件核验失败，发送保持关闭。请核对应用、账号与权限。";}
   finally{$("connection-send-check").disabled=false;}
 });

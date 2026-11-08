@@ -172,6 +172,9 @@ func (m Message) mention(key, name, recipientID string) string {
 }
 
 func Matches(m Message, chat Chat, accountID string, c Config) bool {
+	if chat.Relation.Kind == "self" {
+		return false
+	}
 	if m.Type == "system" || m.Sender.Type == "" || m.Sender.ID == "" {
 		return false
 	}

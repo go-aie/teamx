@@ -123,42 +123,44 @@ type roomsIndex struct {
 // The root lock owns the catalog and its live services. Durable
 // operations retain an owner independently of an HTTP caller.
 type roomManager struct {
-	toolCatalog           []tool.Definition
-	platformCalls         map[*platformCall]bool
-	platformMemberChanges map[MemberIdentity]bool
-	connections           *connection.Manager
-	oauthFlights          map[string]*oauthRefreshFlight
-	oauthLeases           map[string]map[*gitlabTokenLease]bool
-	larkAuthSessions      map[string]*larkAuthSession
-	scionAuthSessions     map[string]*scionAuthSession
-	gitlabAuthSessions    map[string]*gitlabAuthSession
-	connectionProviders   map[string]connectionProvider
-	referenceAdapters     map[string]referenceAdapterFactory
-	referenceResolvers    map[string]followupResolver
-	referenceExecutors    map[string]referenceActionPreparer
-	actionResolvers       map[string]actionTargetResolver
-	platformProject       func(context.Context, string, string, workspaceSecret) (int64, error)
-	notifications         *notification.Manager
-	notificationAdapters  map[notification.SourceID]notificationAdapter
-	gitlabNotifications   map[RoomIdentity]gitlabNotificationRecord
-	gitlabConfiguring     map[RoomIdentity]bool
-	platformHTTP          http.RoundTripper // offline built-in HTTP seam; never used by agent tools
-	workspaceRun          platform.Execute  // offline subprocess seam; no public configuration hook
-	teams                 map[string]teamDefinition
-	teamsDir              string
-	mu                    sync.Mutex
-	shutdownGate          sync.Mutex
-	store                 *Store // reuse atomic snapshot replacement and commit-unknown latch
-	epoch                 string
-	index                 roomsIndex
-	maxTurns              uint64
-	config                serviceConfig
-	factory               func(string, string, serviceConfig) (*service, error)
-	runtimes              map[RoomIdentity]*roomRuntime
-	busy                  bool
-	closing               bool
-	operationDone         chan struct{}
-	recoveryStarted       bool
+	toolCatalog              []tool.Definition
+	platformCalls            map[*platformCall]bool
+	platformMemberChanges    map[MemberIdentity]bool
+	connections              *connection.Manager
+	oauthFlights             map[string]*oauthRefreshFlight
+	oauthLeases              map[string]map[*gitlabTokenLease]bool
+	larkAuthSessions         map[string]*larkAuthSession
+	scionAuthSessions        map[string]*scionAuthSession
+	gitlabAuthSessions       map[string]*gitlabAuthSession
+	connectionProviders      map[string]connectionProvider
+	referenceAdapters        map[string]referenceAdapterFactory
+	referenceResolvers       map[string]followupResolver
+	referenceExecutors       map[string]referenceActionPreparer
+	actionResolvers          map[string]actionTargetResolver
+	inboxAdmissionResolvers  map[string]inboxAdmissionResolver
+	bindingEvidencePreparers map[string]bindingEvidencePreparer
+	platformProject          func(context.Context, string, string, workspaceSecret) (int64, error)
+	notifications            *notification.Manager
+	notificationAdapters     map[notification.SourceID]notificationAdapter
+	gitlabNotifications      map[RoomIdentity]gitlabNotificationRecord
+	gitlabConfiguring        map[RoomIdentity]bool
+	platformHTTP             http.RoundTripper // offline built-in HTTP seam; never used by agent tools
+	workspaceRun             platform.Execute  // offline subprocess seam; no public configuration hook
+	teams                    map[string]teamDefinition
+	teamsDir                 string
+	mu                       sync.Mutex
+	shutdownGate             sync.Mutex
+	store                    *Store // reuse atomic snapshot replacement and commit-unknown latch
+	epoch                    string
+	index                    roomsIndex
+	maxTurns                 uint64
+	config                   serviceConfig
+	factory                  func(string, string, serviceConfig) (*service, error)
+	runtimes                 map[RoomIdentity]*roomRuntime
+	busy                     bool
+	closing                  bool
+	operationDone            chan struct{}
+	recoveryStarted          bool
 }
 
 func newRoomManager(dir string, maxTurns uint64) (_ *roomManager, err error) {

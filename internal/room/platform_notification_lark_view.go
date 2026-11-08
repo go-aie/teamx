@@ -6,17 +6,19 @@ import (
 )
 
 type larkChatDiagnostic struct {
-	ID        string     `json:"chat_id"`
-	Name      string     `json:"name"`
-	Mode      string     `json:"mode"`
-	LastCheck time.Time  `json:"last_check,omitzero"`
-	Completed int64      `json:"completed"`
-	ErrorCode string     `json:"error_code,omitempty"`
-	RetryAt   time.Time  `json:"retry_at,omitzero"`
-	Unlisted  bool       `json:"unlisted,omitempty"`
-	Scan      *lark.Scan `json:"scan,omitempty"`
+	ID           string     `json:"chat_id"`
+	Name         string     `json:"name"`
+	Mode         string     `json:"mode"`
+	LastCheck    time.Time  `json:"last_check,omitzero"`
+	Completed    int64      `json:"completed"`
+	ErrorCode    string     `json:"error_code,omitempty"`
+	RetryAt      time.Time  `json:"retry_at,omitzero"`
+	Unlisted     bool       `json:"unlisted,omitempty"`
+	Scan         *lark.Scan `json:"scan,omitempty"`
+	Relationship string     `json:"relationship"`
 }
 type larkDiagnostics struct {
+	ExcludedItems     int                  `json:"excluded_items"`
 	CLIVersion        string               `json:"cli_version"`
 	ScopeMode         string               `json:"scope_mode"`
 	Baseline          time.Time            `json:"baseline,omitzero"`
@@ -42,7 +44,8 @@ func (m *roomManager) larkNotificationViewLocked(owner RoomIdentity, s *lark.Sta
 	if s == nil {
 		return v, nil
 	}
-	v.SubscriptionID, v.Version, v.Config, v.Status, v.Pending = s.SubscriptionID, s.SubscriptionVersion, s.Config, s.Status, len(s.Inbox)
+	v.SubscriptionID, v.Version, v.Config, v.Status, v.Pending = s.SubscriptionID, s.SubscriptionVersion, s.Config, s.Status, s.Metadata().Pending
+	v.Lark.ExcludedItems = s.ExcludedItems()
 	v.LastCheck, v.LastFull, v.RetryAt, v.ErrorCode, v.Metrics, v.DeliveryErrorCode = s.LastCheck, s.LastFull, s.RetryAt, s.ErrorCode, s.Metrics, s.DeliveryErrorCode
 	v.Retired = s.Retired
 	v.Account = s.Binding.Account
@@ -73,6 +76,13 @@ func (m *roomManager) larkNotificationViewLocked(owner RoomIdentity, s *lark.Sta
 	for _, id := range s.ChatIDs() {
 		p, ok := s.Chats[id]
 		d := larkChatDiagnostic{ID: id, Name: p.Chat.Name, Mode: p.Chat.Mode, LastCheck: p.LastCheck, Completed: p.Completed, ErrorCode: p.ErrorCode, RetryAt: p.RetryAt, Unlisted: p.Unlisted}
+		d.Relationship = "business"
+		if !ok || p.Chat.Mode == "p2p" {
+			d.Relationship = "pending"
+			if p.Chat.Relation.ValidFor(s.Binding.Account, id) && !p.NeedsVerification {
+				d.Relationship = p.Chat.Relation.Kind
+			}
+		}
 		if !ok && !s.Config.AllChats() {
 			v.Lark.DirectoryComplete = false
 		}

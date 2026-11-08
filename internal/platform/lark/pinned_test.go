@@ -3,11 +3,13 @@ package lark
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"github.com/go-aie/teamx/internal/platform"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -81,7 +83,7 @@ func TestPinnedAccountIsolatesExternalProfileAndFailsOnRevocation(t *testing.T) 
 			t.Fatal(mode, v, err)
 		}
 		permission, err := pin.SendPermission(context.Background())
-		if err != nil || !permission.AccountFixed || !permission.AdapterImplemented || permission.ReplyEnabled != (mode != "missing") || permission.GroupSendEnabled != permission.ReplyEnabled || permission.UserSendEnabled || (mode == "missing" && permission.UserScopes != "missing") {
+		if err != nil || !permission.AccountFixed || !permission.AdapterImplemented || permission.ReplyEnabled != (mode != "missing") || permission.GroupSendEnabled != permission.ReplyEnabled || permission.SelfSendEnabled != permission.ReplyEnabled || permission.UserSendEnabled || (mode == "missing" && permission.UserScopes != "missing") {
 			t.Fatal(permission, err)
 		}
 	}
@@ -93,6 +95,74 @@ func TestPinnedAccountIsolatesExternalProfileAndFailsOnRevocation(t *testing.T) 
 	pin.Close()
 	if _, err := os.Stat(root); !os.IsNotExist(err) {
 		t.Fatal("pinned state retained", err)
+	}
+}
+
+func TestSelfSendPinnedQueueCancellationAndFinalGuard(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS pinning contract")
+	}
+	profile, dir := authTestProfile(t)
+	script := strings.Replace(pinnedFixture, "raise Exception('unexpected operation')", `if a[:3]==['api','POST','/open-apis/im/v1/messages']:
+ with open(base+'/posts','a') as f:f.write('post\n')
+ print(json.dumps({'ok':True,'identity':'user','data':{'message_id':'om_receipt'}}));sys.exit()
+raise Exception('unexpected operation')`, 1)
+	if err := os.WriteFile(profile.Executable, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	account := platform.AccountIdentity{IdentityScope: platform.IdentityScope{Provider: "lark", Instance: Origin("feishu"), Tenant: platform.ExternalID{Namespace: "lark:tenant_key", Value: "tenant"}}, ID: platform.ExternalID{Namespace: "lark:open_id:cli_fixture", Value: "ou_reader"}}
+	pins := make([]*Pinned, 2)
+	for i := range pins {
+		pin, err := Pin(t.Context(), profile, account)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pins[i] = pin
+		defer pin.Close()
+	}
+	key := account.Instance + "|" + account.ID.Namespace + "|" + account.ID.Value
+	ctx := context.WithValue(t.Context(), accountContextKey{}, key)
+	release, err := selfSendRequests.acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := platform.TargetIdentity{IdentityScope: account.IdentityScope, Object: platform.NativeIdentity{Type: "user", ID: account.ID}, Containers: []platform.NativeIdentity{{Type: "chat", ID: platform.ExternalID{Namespace: "lark:chat_id:cli_fixture", Value: "oc_self"}}}}
+	cancelled, cancel := context.WithCancel(ctx)
+	done := make(chan error, 2)
+	go func() {
+		_, e := pins[0].SendText(cancelled, target, "cancelled", strings.Repeat("a", 32), func(context.Context) error { return nil })
+		done <- e
+	}()
+	awaitQueue(t, selfSendRequests, key, 1)
+	var allowed atomic.Bool
+	allowed.Store(true)
+	go func() {
+		_, e := pins[1].SendText(ctx, target, "revoked while waiting", strings.Repeat("b", 32), func(context.Context) error {
+			if !allowed.Load() {
+				return errors.New("binding revoked")
+			}
+			return nil
+		})
+		done <- e
+	}()
+	awaitQueue(t, selfSendRequests, key, 2)
+	cancel()
+	allowed.Store(false)
+	release()
+	for range 2 {
+		if e := <-done; !errors.Is(e, ErrSendNotSent) {
+			t.Fatal("cancelled/revoked queue entry was dispatched", e)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "posts")); !os.IsNotExist(err) {
+		t.Fatal("queue revocation reached POST", err)
+	}
+	// Cancelled waiters release capacity and cannot strand the shared account.
+	if id, err := pins[0].SendText(ctx, target, "new authorized task", strings.Repeat("c", 32), func(context.Context) error { return nil }); err != nil || id != "om_receipt" {
+		t.Fatal(id, err)
+	}
+	if b, err := os.ReadFile(filepath.Join(dir, "posts")); err != nil || strings.TrimSpace(string(b)) != "post" {
+		t.Fatal("unexpected native dispatches", string(b), err)
 	}
 }
 

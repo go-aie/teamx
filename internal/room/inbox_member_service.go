@@ -11,19 +11,26 @@ import (
 // lost wake. It is a MemberAgent-owned task, never a synchronous actor callback.
 func (s *service) memberInboxStatus(ctx context.Context, id MemberIdentity) (InboxStatus, error) {
 	s.inboxMu.Lock()
-	defer s.inboxMu.Unlock()
 	if s.inboxes[id.MembershipID].IsZero() {
 		if _, err := os.Stat(filepath.Join(s.store.dir, "inboxes", id.MembershipID)); errors.Is(err, os.ErrNotExist) {
+			s.inboxMu.Unlock()
 			return InboxStatus{MemberIdentity: id}, nil
 		} else if err != nil {
+			s.inboxMu.Unlock()
 			return InboxStatus{}, err
 		}
 	}
 	addr, err := s.inboxLocked(ctx, id)
 	if err != nil {
+		s.inboxMu.Unlock()
 		return InboxStatus{}, err
 	}
-	return addr.Call[InboxStatus](ctx, InspectInbox{id})
+	status, err := addr.Call[InboxStatus](ctx, InspectInbox{id})
+	s.inboxMu.Unlock()
+	if err != nil {
+		return status, err
+	}
+	return s.reconcileInboxAdmission(ctx, id, status)
 }
 
 func (s *service) memberInbox(ctx context.Context, req apiRequest, operation string) (any, error) {

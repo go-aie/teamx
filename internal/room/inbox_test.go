@@ -84,6 +84,7 @@ func (h *inboxHarness) reload(t *testing.T, reopen bool) {
 			t.Fatal(err)
 		}
 		dir := h.store.dir
+		adapters := h.store.notificationAdapters
 		if err := h.store.Close(); err != nil {
 			t.Fatal(err)
 		}
@@ -92,6 +93,7 @@ func (h *inboxHarness) reload(t *testing.T, reopen bool) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		h.store.notificationAdapters = adapters
 	}
 	var err error
 	h.addr, err = SpawnAgentInbox(h.rt, h.store, h.id, InboxLimits{})

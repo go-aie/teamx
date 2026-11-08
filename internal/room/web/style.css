@@ -2037,6 +2037,7 @@ textarea::placeholder {
 .cli-action-row { display:flex; align-items:center; gap:8px; min-height:30px; margin:0; font-size:12px; line-height:1.6; }
 .cli-action-row input[type="checkbox"] { width:15px; height:15px; flex:none; margin:0; accent-color:var(--accent); }
 .cli-action-row > span { min-width:0; overflow-wrap:anywhere; }
+.cli-tool-row > .cli-action-row { grid-column:1 / -1; display:flex; align-items:center; font-size:12px; }
 .cli-action-status { margin-left:auto; flex:none; color:var(--muted); font-size:11px; }
 .cli-action-help { color:var(--muted); font-size:11px; line-height:1.8; }
 .cli-action-help > summary { width:fit-content; padding:4px 0; cursor:pointer; }

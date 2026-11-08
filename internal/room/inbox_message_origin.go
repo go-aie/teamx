@@ -16,31 +16,17 @@ type inboxMessageOrigin struct {
 	UncertainSend bool   `json:"uncertain_send,omitempty"`
 }
 
-func actionChat(t platform.TargetIdentity) platform.ExternalID {
-	if t.Object.Type == "chat" {
-		return t.Object.ID
-	}
-	for _, c := range t.Containers {
-		if c.Type == "chat" {
-			return c.ID
-		}
-	}
-	return platform.ExternalID{}
-}
-
 // Store lock held. Check all current members: several Agents can send through
 // the same account. Their exact receipts are shared evidence in this Room.
 // No receipt means only "account", never proof that a human wrote the message.
 func (s *Store) inboxMessageOriginsLocked(entries []InboxEntry) (map[uint64]inboxMessageOrigin, error) {
 	origins := map[uint64]inboxMessageOrigin{}
 	views := map[uint64]notification.View{}
-	chats := map[uint64]platform.ExternalID{}
 	for _, e := range entries {
 		v := projectInboxEntry(e, followupSourceSummary{}).Item
 		if v.ContextOnly {
 			origins[e.Seq] = inboxMessageOrigin{Kind: "account"}
 			views[e.Seq] = v
-			chats[e.Seq] = e.Item.Source.Reference.ChatID
 		}
 	}
 	if len(origins) == 0 {
@@ -57,7 +43,8 @@ func (s *Store) inboxMessageOriginsLocked(entries []InboxEntry) (map[uint64]inbo
 			return nil, err
 		}
 		for _, a := range actions {
-			if a.Access.Account.Provider != "lark" || (a.Request.Operation != platform.OperationMessageReply && a.Request.Operation != platform.OperationMessageSend) || a.Status == "not_applied" {
+			match := s.notificationCapabilities(a.Access.Account.Provider).MatchAction
+			if match == nil || a.Status == "not_applied" {
 				continue
 			}
 			for seq, v := range views {
@@ -65,7 +52,7 @@ func (s *Store) inboxMessageOriginsLocked(entries []InboxEntry) (map[uint64]inbo
 				if origin.Kind == "agent" {
 					continue
 				}
-				if v.Receiver != a.Access.Account || chats[seq] != actionChat(a.Target) {
+				if v.Receiver != a.Access.Account || !match(v, platform.TargetActionRequest{Target: a.Target, Operation: a.Request.Operation}, a.Access) {
 					continue
 				}
 				if a.Result != nil && a.Result.ResultID.Valid() && a.Result.ResultID == v.MessageID {

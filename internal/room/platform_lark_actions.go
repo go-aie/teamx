@@ -45,6 +45,22 @@ func (m *roomManager) prepareLarkReferenceActions(ctx context.Context, id Member
 	}
 	access := larkReferenceAccess(id, account, platform.SourceRef{})
 	access.Receiver = old.Receiver
+	m.mu.Lock()
+	bindings, bindingErr := m.readToolBindingsLocked(id.RoomIdentity)
+	if bindingErr == nil {
+		for _, b := range bindings.Bindings {
+			if b.Tool == "lark" && b.AgentID == id.AgentID && b.MembershipID == id.MembershipID && b.ConnectionID == access.ConnectionID && b.ConnectionGeneration == access.Generation && b.ActionAuthorization != nil {
+				access.ActionAuthorizationVersion = b.ActionAuthorization.Revision
+			}
+		}
+	}
+	m.mu.Unlock()
+	if bindingErr != nil {
+		pin.Close()
+		closeCall()
+		return referenceActionSession{}, bindingErr
+	}
+
 	check := func(ctx context.Context) error {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -76,7 +92,19 @@ func (m *roomManager) prepareLarkReferenceActions(ctx context.Context, id Member
 	}, func(ctx context.Context, target platform.TargetIdentity, body, key string) (string, error) {
 		ctx, finish := merge(ctx)
 		defer finish()
-		return pin.SendText(ctx, target, body, key, check)
+		guard := check
+		if target.Object.Type == "user" && target.Object.ID == account.Identity.ID {
+			granted := access
+			guard = func(ctx context.Context) error {
+				if e := check(ctx); e != nil {
+					return e
+				}
+				m.mu.Lock()
+				defer m.mu.Unlock()
+				return m.checkActionAuthorizationLocked(req, granted, platform.ActionSpec{Operation: platform.OperationMessageSendSelf, TargetKind: "object", BindingEvidence: "self_delivery"}, target)
+			}
+		}
+		return pin.SendText(ctx, target, body, key, guard)
 	})
 	resolve := caps.Resolve
 	caps.Resolve = func(ctx context.Context, l platform.TargetLocator, a platform.AccessContext) (platform.TargetResolution, error) {

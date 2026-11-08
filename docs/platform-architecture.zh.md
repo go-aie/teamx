@@ -29,6 +29,16 @@ flowchart LR
 
 公共连接、通知和工具模块不依赖具体平台或 Agent 工具；内置 GitLab 不依赖工具运行模块；独立 GitLab 工具不 import TeamX 内部包，也不回调平台业务 RPC。[依赖检查](../internal/platform/boundaries_test.go)覆盖传递依赖。
 
+## 通知准入与成员能力依据
+
+通知适配器通过 [notification/capability.go](../internal/platform/notification/capability.go) 独立注册自动处理准入、历史消息投影和动作消息关联。平台不需要这些能力时可以不实现；GitLab 沿用已有 Inbox 合同。静态装配位于 [platform_notification_capabilities.go](../internal/room/platform_notification_capabilities.go)，Room／Inbox 核心不解释原生会话类型、账号命名空间或平台关系快照。
+
+自动处理准入分别表达是否完成核验，以及完成后的 `allow / excluded` 决定。未核验不等于排除，也不能当作放行。适配器负责原生证据及其 codec，公共协调负责保存不透明证据、退避和顺序消费；已声明需要核验但缺少解析器或权限时，该 Inbox 自动处理等待，不绕过消费游标。排除记录保留供人查看，不创建新的事项；独立 Room 对话仍可运行。飞书本人自聊核验和旧消息包络解释位于 [notification_capability.go](../internal/platform/lark/notification_capability.go)，普通业务会话的本人发言继续作为 `context_only` 上下文。
+
+动作的 `ActionSpec.binding_evidence` 声明是否使用已启用成员能力作为授权依据。空值保留规则／单次指令／human 消息合同；非空值要求服务端生成的同类 `CapabilityEvidence`，不接受 Agent 自选授权模式或提交证明。公共层核对操作者、成员、准确账号／目标、连接代次、凭据与能力版本，并统一保存意图、执行和结清回执；适配器负责原生目标关系，以及可选的 `AppliesTo` 限制。飞书本人投递登记 `self_delivery` 依据，其他平台可登记自己的依据、操作名和目标结构，无需修改动作账本。
+
+成员绑定保存 `capability_evidence`，动作冻结 `capability_basis`。旧 `self_delivery` 字段仅在解码边界转换，不续期凭据或重新派发；既有飞书关系快照路径继续可读。扩展合同的测试使用非飞书适配器，覆盖未核验阻塞、排除／混合消费、独立操作与目标、缺失或失效证明、unknown 不补发及重新打开 Store。核心依赖约束见 [platform_boundaries_test.go](../internal/room/platform_boundaries_test.go)；组件证据不代替真实平台或浏览器验收。
+
 ## 连接与身份
 
 全局连接的元数据、OAuth 应用及共享授权原子保存在私有的 `platform-connections.json`（版本 4）；飞书和 Scion 只保存 CLI profile 引用。公开状态只包含引用、版本和账号摘要。GitLab 运行时仅支持 OAuth，Workspace 和工具复用连接，不再保存房间 PAT 或引用服务环境变量。每次远端请求或有界进程通过服务获取短期令牌许可，授权变化先取消并结清旧调用；正常刷新保持稳定授权证据和通知进度。

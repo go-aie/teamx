@@ -68,8 +68,8 @@ type referenceActionRequest struct {
 	followupCommand
 	TargetRef   string                   `json:"target_ref"`
 	ID          string                   `json:"id"`
-	PolicyToken string                   `json:"policy_token"`
-	Authority   referenceActionAuthority `json:"authority"`
+	PolicyToken string                   `json:"policy_token,omitempty"`
+	Authority   referenceActionAuthority `json:"authority,omitzero"`
 	Operation   platform.Operation       `json:"operation"`
 	Input       ActionInput              `json:"input"`
 }
@@ -82,6 +82,7 @@ type referenceAction struct {
 	Access            platform.AccessContext          `json:"access"`
 	Inspection        platform.TargetActionInspection `json:"inspection"`
 	Spec              platform.ActionSpec             `json:"spec"`
+	CapabilityBasis   *platform.CapabilityEvidence    `json:"capability_basis,omitempty"`
 	Rule              *PolicyRevision                 `json:"rule,omitempty"`
 	Basis             *followupReplyBasis             `json:"basis,omitempty"`
 	Status            string                          `json:"status"`
@@ -118,6 +119,9 @@ func (q referenceActionRequest) sameBusiness(o referenceActionRequest) bool {
 func validReferenceActionRequest(q referenceActionRequest) bool {
 	return referenceActionRequestError(q) == nil
 }
+func (q referenceActionRequest) capabilityAuthorityShape() bool {
+	return q.PolicyToken == "" && reflect.DeepEqual(q.Authority, referenceActionAuthority{})
+}
 func referenceActionRequestError(q referenceActionRequest) error {
 	if q.UnitRef != "" && !validOpaqueRef(q.ObjectRef, "ref_") {
 		return invalidField("object_ref", "required stable ref_ reference")
@@ -137,13 +141,13 @@ func referenceActionRequestError(q referenceActionRequest) error {
 	if !safeMembershipID(q.ID) {
 		return invalidField("id", "required stable action ID; see actions execute --help")
 	}
-	if len(q.PolicyToken) != 64 {
+	if !q.capabilityAuthorityShape() && len(q.PolicyToken) != 64 {
 		return invalidField("policy_token", "required runtime policy token (64 characters)")
 	}
 	if b, err := json.Marshal(q.Input); err != nil || len(b) > 16<<10 || (q.Input.raw == "" && !handlingText(q.Input.Body)) {
 		return invalidField("input.body", "required nonempty text, at most 4096 bytes")
 	}
-	if !handlingText(q.Authority.Reason) {
+	if !q.capabilityAuthorityShape() && !handlingText(q.Authority.Reason) {
 		return invalidField("authority.reason", "required nonempty text, at most 4096 bytes")
 	}
 	if len(q.Authority.Constraints) > 4096 {

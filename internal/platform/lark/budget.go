@@ -17,6 +17,7 @@ type requestBudget struct {
 	gates    map[string]*requestQueue
 	interval time.Duration
 	cooldown time.Duration
+	capacity int
 }
 type requestQueue struct {
 	waiters []*requestWaiter
@@ -26,6 +27,8 @@ type requestQueue struct {
 type requestWaiter struct{ ready chan struct{} }
 
 const AccountRequestInterval = 250 * time.Millisecond
+
+var selfSendRequests = &requestBudget{interval: time.Second, cooldown: time.Minute, capacity: 8}
 
 var accountRequests = &requestBudget{interval: AccountRequestInterval, cooldown: time.Minute}
 
@@ -46,6 +49,10 @@ func (b *requestBudget) acquire(ctx context.Context) (func(), error) {
 	if q == nil {
 		q = &requestQueue{}
 		b.gates[key] = q
+	}
+	if b.capacity > 0 && len(q.waiters) >= b.capacity {
+		b.mu.Unlock()
+		return nil, failure("send_capacity")
 	}
 	q.waiters = append(q.waiters, w)
 	b.admit(q)

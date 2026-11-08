@@ -213,6 +213,9 @@ func (m *roomManager) changeToolBindingLocked(ctx context.Context, req toolBindi
 		if err != nil {
 			return f, nil, err
 		}
+		if err := validateBindingEvidence(b, caps, req.Caller.ID); err != nil {
+			return f, nil, err
+		}
 		for _, g := range b.ActionAuthorization.Grants {
 			cap, ok := caps.Actions[platform.Operation(g.Operation)]
 			if ok && cap.Spec.DisabledReason != "" {
@@ -223,6 +226,8 @@ func (m *roomManager) changeToolBindingLocked(ctx context.Context, req toolBindi
 			}
 		}
 		b.ActionAuthorization = &tool.ActionAuthorization{Version: 1, Revision: f.Revision + 1, Grants: append([]tool.ActionGrant(nil), b.ActionAuthorization.Grants...)}
+	} else if len(b.CapabilityEvidence) != 0 {
+		return f, nil, ErrRequest
 	}
 	if !validText(b.AgentID) || !safeMembershipID(b.MembershipID) || !tool.ValidName(b.Tool) || b.ConnectionGeneration != "" {
 		return f, nil, ErrRequest
@@ -249,6 +254,11 @@ func (m *roomManager) changeToolBindingLocked(ctx context.Context, req toolBindi
 					}
 					if _, _, err := connection.ResolveAccessAccount(file, c); err != nil {
 						return f, nil, ErrConflict
+					}
+					for _, e := range b.CapabilityEvidence {
+						if e.Account != c.Validation.Account || e.CredentialVersion != c.CredentialVersion {
+							return f, nil, ErrIdentity
+						}
 					}
 					b.ConnectionGeneration = c.Generation
 					found = true
@@ -378,6 +388,9 @@ func (m *roomManager) checkActionAuthorizationLocked(req toolsRequest, access pl
 			}
 			for _, g := range b.ActionAuthorization.Grants {
 				if g.Operation == string(spec.Operation) && g.TargetKind == spec.TargetKind && g.ObjectType == target.Object.Type {
+					if spec.BindingEvidence != "" && !currentCapabilityEvidence(b.Evidence(spec.BindingEvidence), spec, access, target) {
+						return ErrIdentity
+					}
 					return nil
 				}
 			}

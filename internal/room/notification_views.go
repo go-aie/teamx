@@ -5,25 +5,21 @@ import (
 	"os"
 	"time"
 
-	"github.com/go-aie/teamx/internal/platform/lark"
 	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
 // Both endpoints share this entry. Preview never resolves or consumes sources.
 type inboxEntryView struct {
-	Seq        uint64                `json:"seq"`
-	Item       notification.View     `json:"item"`
-	ReceivedAt time.Time             `json:"received_at"`
-	Source     followupSourceSummary `json:"source"`
-	Origin     *inboxMessageOrigin   `json:"origin,omitempty"`
+	Seq                uint64                  `json:"seq"`
+	Item               notification.View       `json:"item"`
+	ReceivedAt         time.Time               `json:"received_at"`
+	Source             followupSourceSummary   `json:"source"`
+	Origin             *inboxMessageOrigin     `json:"origin,omitempty"`
+	AutomaticAdmission *notification.Admission `json:"automatic_admission,omitempty"`
 }
 
 func projectInboxEntry(e InboxEntry, source followupSourceSummary) inboxEntryView {
-	item := e.Item
-	if item.Content == nil && item.Source.Provider == "lark" {
-		item.Content = lark.SavedContent(item)
-	}
-	return inboxEntryView{Seq: e.Seq, Item: notification.Project(item), ReceivedAt: e.ReceivedAt, Source: source}
+	return inboxEntryView{Seq: e.Seq, Item: projectNotification(e.Item), ReceivedAt: e.ReceivedAt, Source: source}
 }
 
 func inboxContextOnly(e InboxEntry) bool {
@@ -61,6 +57,13 @@ func (s *Store) projectInboxPreview(page InboxPage, status InboxStatus) (inboxPr
 			return v, err
 		}
 		entry := projectInboxEntry(e, source)
+		admission, err := s.inboxAdmissionLocked(e)
+		if err != nil {
+			return v, err
+		}
+		if !admission.Verified || admission.Decision == notification.AdmissionExcluded {
+			entry.AutomaticAdmission = &admission
+		}
 		if origin, ok := origins[e.Seq]; ok {
 			entry.Origin = &origin
 		}

@@ -332,7 +332,7 @@ func TestLarkReplyUnknownMixedTargetsAndRestart(t *testing.T) {
 func TestLarkReplyProductionRegistrationRequiresSavedGrant(t *testing.T) {
 	h := newLarkHarness(t)
 	caps, err := h.m.referenceCapabilities("lark")
-	if err != nil || len(caps.Actions) != 2 || caps.Actions[platform.OperationMessageReply].Spec.DisabledReason != "" || h.m.referenceExecutors["lark"] == nil || h.m.actionResolvers["lark"] == nil {
+	if err != nil || len(caps.Actions) != 3 || caps.Actions[platform.OperationMessageReply].Spec.DisabledReason != "" || h.m.referenceExecutors["lark"] == nil || h.m.actionResolvers["lark"] == nil {
 		t.Fatal(caps, err)
 	}
 	f := bindCLITool(t, h.m, h.room.RoomIdentity, h.members[0], h.c, "lark", 0)

@@ -280,7 +280,7 @@ func TestLarkSendProductionGateAndCatalog(t *testing.T) {
 	h.m.mu.Unlock()
 	for _, d := range catalog {
 		if d.Provider == "lark" {
-			if len(d.Actions) != 2 {
+			if len(d.Actions) != 3 {
 				t.Fatal(d)
 			}
 			for _, spec := range d.Actions {

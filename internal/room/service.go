@@ -88,6 +88,10 @@ type service struct {
 	imageMaterials            imageMaterialConfig
 	materialAttachments       *materialAttachments
 	referenceResolver         followupResolver
+	resolveInboxAdmission     func(context.Context, platform.SourceRef) (json.RawMessage, error)
+	inboxAdmissionMu          sync.Mutex
+	inboxAdmissionRetry       map[string]time.Time
+	inboxAdmissionChecks      map[string]automaticInboxCheck
 	referenceCommit           func(context.Context, MemberIdentity, platform.AccessContext, func() (followupEvent, error)) (followupEvent, error)
 	referenceSpecs            func(string) []platform.ActionSpec
 	inboxMu                   sync.Mutex

@@ -33,6 +33,10 @@ if path=='/open-apis/authen/v1/user_info':data={'open_id':'ou_reader','tenant_ke
 elif path=='/open-apis/contact/v3/users/basic_batch':
  assert a[1]=='POST' and json.loads(a[4])=={'user_id_type':'open_id'}
  data={'users':[{'user_id':id,'name':'测试发送者'} for id in json.loads(a[6])['user_ids']]}
+elif path=='/open-apis/im/v1/chat_p2p/batch_query':
+ data={'p2p_chats':[{'chat_id':'oc_chat'}]}
+elif path.endswith('/members'):
+ data={'items':[{'member_id':'ou_reader','member_id_type':'open_id','tenant_key':'account_tenant'},{'member_id':'ou_sender','member_id_type':'open_id','tenant_key':'external_tenant'}],'has_more':False}
 elif path.startswith('/open-apis/im/v1/chats/'):data={'chat_mode':'p2p','name':'脱敏会话','tenant_key':'external_tenant'}
 else:
  messages=json.load(open(base+'/messages.json'))
@@ -346,7 +350,7 @@ func TestLarkNotificationsInboxReferencesAndRoomQuestion(t *testing.T) {
 	if saved.LatestSeq == 0 || !strings.Contains(saved.Messages[len(saved.Messages)-1].Text, "请确认") {
 		t.Fatal("question not in Room")
 	}
-	if caps, _ := h.m.referenceCapabilities("lark"); caps.Read == nil || len(caps.Actions) != 2 || caps.Actions[platform.OperationMessageReply].Spec.DisabledReason != "" || caps.Actions[platform.OperationMessageSend].Spec.DisabledReason != "" || h.m.referenceExecutors["lark"] == nil {
+	if caps, _ := h.m.referenceCapabilities("lark"); caps.Read == nil || len(caps.Actions) != 3 || caps.Actions[platform.OperationMessageReply].Spec.DisabledReason != "" || caps.Actions[platform.OperationMessageSend].Spec.DisabledReason != "" || h.m.referenceExecutors["lark"] == nil {
 		t.Fatal("accepted capability registration missing")
 	}
 	// Another member cannot borrow the source account to read a saved target.

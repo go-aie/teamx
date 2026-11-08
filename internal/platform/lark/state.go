@@ -129,7 +129,18 @@ type State struct {
 }
 
 func (s State) Metadata() notification.Metadata {
-	return notification.Metadata{Key: notification.Key{Owner: s.RoomIdentity, Source: MessagesSourceID, SubscriptionID: s.SubscriptionID}, Version: s.SubscriptionVersion, Enabled: s.Config.Enabled, ConnectionID: s.Binding.ConnectionID, Observed: len(s.Observed), Pending: len(s.Inbox), DeliveryError: s.DeliveryErrorCode}
+	return notification.Metadata{Key: notification.Key{Owner: s.RoomIdentity, Source: MessagesSourceID, SubscriptionID: s.SubscriptionID}, Version: s.SubscriptionVersion, Enabled: s.Config.Enabled, ConnectionID: s.Binding.ConnectionID, Observed: len(s.Observed), Pending: len(s.Inbox) - s.ExcludedItems(), DeliveryError: s.DeliveryErrorCode}
+}
+
+func (s State) ExcludedItems() int {
+	count := 0
+	for _, e := range s.Inbox {
+		r := s.Chats[e.Message.ChatID].Chat.Relation
+		if r.Kind == "self" && r.ValidFor(s.Binding.Account, e.Message.ChatID) {
+			count++
+		}
+	}
+	return count
 }
 func (s State) Validate(owner platform.RoomIdentity) error {
 	c, e := NormalizeConfig(s.Config)
@@ -156,6 +167,9 @@ func (s State) Validate(owner platform.RoomIdentity) error {
 		}
 	}
 	for id, p := range s.Chats {
+		if p.Chat.Relation != (ConversationRelation{}) && (!p.Chat.Relation.ValidFor(s.Binding.Account, id) || p.Chat.Mode == "p2p" && p.Chat.Relation.Kind == "group" || p.Chat.Mode != "p2p" && p.Chat.Relation.Kind != "group") {
+			return notification.ErrInvalid
+		}
 		if !(p.Chat.Valid() || p.NeedsVerification && p.Chat == (Chat{ID: id}) && nativeID(id, "oc_") && p.Completed == 0 && p.Scan == nil) || p.Chat.ID != id || p.Completed < 0 || p.LastActivity < 0 || !validChatError(p.ErrorCode) || p.Scan != nil && (p.Scan.Start < s.Baseline.Unix() || p.Scan.End < p.Scan.Start || p.Scan.Pages < 0 || len(p.Scan.Token) > 8192) {
 			return notification.ErrInvalid
 		}
@@ -200,6 +214,10 @@ func (s State) CloneState() notification.State { return s.Clone() }
 func (s State) PendingItems() []notification.Item {
 	out := []notification.Item{}
 	for _, e := range s.Inbox {
+		p := s.Chats[e.Message.ChatID]
+		if p.Chat.Mode == "p2p" && (!p.Chat.Relation.ValidFor(s.Binding.Account, p.Chat.ID) || p.Chat.Relation.Kind != "peer" || p.NeedsVerification) {
+			continue
+		}
 		out = append(out, e.Item)
 	}
 	return out
