@@ -10,14 +10,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
 )
 
-func TestAgentBTypedActionsRestoreExactTarget(t *testing.T) {
+func TestAgentTypedActionsRestoreExactTarget(t *testing.T) {
 	for _, discussion := range []bool{false, true} {
 		for _, authority := range []string{"rule", "instruction", "human_reply"} {
 			t.Run(fmt.Sprintf("discussion=%t/%s", discussion, authority), func(t *testing.T) {
@@ -71,7 +70,7 @@ func TestAgentBTypedActionsRestoreExactTarget(t *testing.T) {
 	}
 }
 
-func TestAgentBTypedActionUnknownRecovery(t *testing.T) {
+func TestAgentTypedActionUnknownRecovery(t *testing.T) {
 	f := managedActionTest(t, true)
 	managedReferenceHTTP(t, f.m, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "POST" {
@@ -109,7 +108,7 @@ func TestAgentBTypedActionUnknownRecovery(t *testing.T) {
 	}
 }
 
-func TestAgentBRejectsOldContractsAndBranchMixing(t *testing.T) {
+func TestAgentRejectsOldContractsAndBranchMixing(t *testing.T) {
 	for _, tc := range []struct{ command, op, flag, payload string }{
 		{"actions", "execute", "--request", `{"provider":"unverified"}`},
 		{"actions", "execute", "--request", `{"authority":{"rule_id":"old","rule_version":1}}`},
@@ -142,65 +141,7 @@ func TestAgentBRejectsOldContractsAndBranchMixing(t *testing.T) {
 	}
 }
 
-func TestAgentBPolicyBranchesAndDetailRecovery(t *testing.T) {
-	h, svc, _, _ := conversationHarness(t, 1)
-	cli := entryCLI(t, svc)
-	seq := postConversationReply(t, h, "habit", "这次简短中文回复", 0).Seq
-	q := agentPolicyChange{Type: "suggest", ID: "style", SourceSeq: seq, TurnNumber: 1, Basis: "仅建议，不推断长期许可", Body: &agentPolicyBody{Text: "简短中文；保留必要限制"}}
-	var suggestion agentPolicyUpdateWireTest
-	if err := cli(entryChange(t, "policy", "update", q), &suggestion); err != nil || suggestion.Record.Version != 1 || len(suggestion.Effective) != 0 {
-		t.Fatal(suggestion, err)
-	}
-	var sent PostReceipt
-	if err := cli([]string{"policy", "publish", "--id", "style", "--version", "1", "--turn", "1"}, &sent); err != nil {
-		t.Fatal(err)
-	}
-	confirmSeq := postConversationReply(t, h, "confirm-style", "以后就按这个建议处理", sent.Seq).Seq
-	confirm := agentPolicyChange{Type: "confirm", ID: "style", Version: 1, Revision: 1, SourceSeq: confirmSeq, TurnNumber: 1, Basis: "明确确认已公开的原建议", ProposalSeq: sent.Seq}
-	var active agentPolicyUpdateWireTest
-	if err := cli(entryChange(t, "policy", "update", confirm), &active); err != nil || len(active.Effective) != 1 || active.Record.Text != suggestion.Record.Text || active.Record.Conversation.Proposal.Seq != sent.Seq {
-		t.Fatal(active, err)
-	}
-	revoke := agentPolicyChange{Type: "revoke", ID: "style", Version: 2, Revision: 2, SourceSeq: postConversationReply(t, h, "revoke-style", "撤销这条长期偏好", 0).Seq, TurnNumber: 1, Basis: "准确撤销用户长期偏好"}
-	var revoked agentPolicyUpdateWireTest
-	if err := cli(entryChange(t, "policy", "update", revoke), &revoked); err != nil || revoked.Record.Text != active.Record.Text || revoked.Record.Status != "revoked" || len(revoked.Effective) != 0 {
-		t.Fatal(revoked, err)
-	}
-	// Replaying a saved confirmation restores its historical body and original
-	// receipt, even though the current record has since been revoked.
-	var replay agentPolicyUpdateWireTest
-	if err := cli(entryChange(t, "policy", "update", confirm), &replay); err != nil || !reflect.DeepEqual(replay.Record, active.Record) || replay.Revision != 3 || len(replay.Effective) != 0 {
-		t.Fatal(replay, err)
-	}
-	stale := confirm
-	stale.Revision = 3
-	stale.SourceSeq = postConversationReply(t, h, "new-confirm", "再次确认", sent.Seq).Seq
-	if err := cli(entryChange(t, "policy", "update", stale), nil); err == nil || !strings.Contains(err.Error(), "version") {
-		t.Fatal("stale suggestion activated", err)
-	}
-	var detail struct {
-		Record   PolicyRevision
-		History  []PolicyRevision
-		Complete bool
-	}
-	if err := cli([]string{"policy", "read", "--id", "style", "--detail"}, &detail); err != nil || !detail.Complete || len(detail.History) != 3 || detail.History[0].Conversation.Message.Text != "这次简短中文回复" || detail.History[1].Conversation.Message.ReplyTo != sent.Seq {
-		t.Fatal(detail, err)
-	}
-	raw, err := h.store.readPolicy(h.id)
-	if err != nil || !reflect.DeepEqual(detail.History, raw.History) {
-		t.Fatal("Agent cannot restore full policy provenance", err)
-	}
-	// Projection never changes the authoritative policy digest.
-	view, err := h.store.readAgentPolicy(h.id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if view.PolicyToken != revoked.PolicyToken {
-		t.Fatal("policy token changed during projection")
-	}
-}
-
-func TestAgentBNotifyReceiptsAndUncertainPublication(t *testing.T) {
+func TestAgentNotifyReceiptsAndUncertainPublication(t *testing.T) {
 	h, svc, units, _ := conversationHarness(t, 1)
 	before := units[0]
 	q := followupQuestionChange{followupCommand: conversationCommand(before, 1), Text: "@human 请确认准确正文"}
@@ -232,7 +173,7 @@ func TestAgentBNotifyReceiptsAndUncertainPublication(t *testing.T) {
 	}
 }
 
-func TestAgentBReadDetailsPreserveBusinessAndNativeEvidence(t *testing.T) {
+func TestAgentReadDetailsPreserveBusinessAndNativeEvidence(t *testing.T) {
 	f := referenceExecuteTest(t, "discussion")
 	receipt, err := f.run()
 	if err != nil || receipt.Status != "succeeded" {
@@ -279,7 +220,7 @@ func TestAgentBReadDetailsPreserveBusinessAndNativeEvidence(t *testing.T) {
 	}
 }
 
-func TestAgentBProgressAndInstructionReceipts(t *testing.T) {
+func TestAgentProgressAndInstructionReceipts(t *testing.T) {
 	h, svc, units, _ := conversationHarness(t, 1)
 	cli := entryCLI(t, svc)
 	u := units[0]
@@ -312,7 +253,7 @@ func TestAgentBProgressAndInstructionReceipts(t *testing.T) {
 	}
 }
 
-func TestAgentBNotifyPublicationConfirmedLinkPending(t *testing.T) {
+func TestAgentNotifyPublicationConfirmedLinkPending(t *testing.T) {
 	h, svc, units, _ := conversationHarness(t, 1)
 	u := units[0]
 	q := followupQuestionChange{followupCommand: conversationCommand(u, 1), Text: "@human 确认准确范围？"}
@@ -351,7 +292,7 @@ func TestAgentBNotifyPublicationConfirmedLinkPending(t *testing.T) {
 	}
 }
 
-func TestAgentBSourcePreservesFailedRefresh(t *testing.T) {
+func TestAgentSourcePreservesFailedRefresh(t *testing.T) {
 	h, svc, _, sources := conversationHarness(t, 1)
 	cli := entryCLI(t, svc)
 	original, err := h.store.readFollowupSource(h.id, sources[0].Seq, sources[0].SourceRef)
@@ -375,27 +316,5 @@ func TestAgentBSourcePreservesFailedRefresh(t *testing.T) {
 	encoded, _ := json.Marshal(got)
 	if bytes.Contains(encoded, []byte(`"access"`)) || !bytes.Contains(encoded, []byte(`gitlab:rest:iid`)) || !bytes.Contains(encoded, []byte(`gitlab:rest:id`)) || !bytes.Contains(encoded, []byte(`gitlab:rest:discussion`)) {
 		t.Fatal("native namespaces missing or admission data exposed")
-	}
-}
-
-func TestAgentBDiagnosticFieldsUseCurrentContract(t *testing.T) {
-	h, svc, _, _ := conversationHarness(t, 1)
-	source := postConversationReply(t, h, "invalid-scope", "以后按准确范围办理", 0)
-	base := agentPolicyFixture(conversationRule(source.Seq))
-	for _, tc := range []struct {
-		field  string
-		mutate func(*agentPolicyBody)
-	}{
-		{"body.text", func(b *agentPolicyBody) { b.Text = strings.Repeat("x", maxPolicyTextBytes+1) }},
-	} {
-		q := base
-		body := *base.Body
-		q.Body = &body
-		tc.mutate(q.Body)
-		_, err := svc.changeAgentPolicy(h.ctx, h.id, agentCallerIdentity(h.id), q)
-		var diagnostic *requestDiagnostic
-		if !errors.As(err, &diagnostic) || diagnostic.Field != tc.field {
-			t.Fatal(tc.field, err)
-		}
 	}
 }

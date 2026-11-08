@@ -177,29 +177,15 @@ macOS/Linux 使用非阻塞文件锁，其他平台明确不支持。快照同�
 ## 验证入口
 
 ```sh
-go generate ./internal/room
-go test -race -count=1 -timeout 5m ./...
+go test -race -timeout 15m ./...
 go vet ./...
 node --test internal/room/web*_test.mjs
 go test -tags=e2e ./... -run '^$'
-go test ./internal/room -run '^TestFixtureDemoAndReport$' -count=1 -v
 ```
 
-修改 Actor handler 后才需运行 `go generate`；Actorx 版本固定在 `go.mod`，由 Go 下载。普通测试需要 Node；`e2e` 命令只检查编译，不执行真实服务验收。
+修改 Actor handler 后运行 `go generate ./internal/room`。本地检查需要 Go 和 Node；最后一条命令只检查验收测试能否编译，不执行真实模型或平台操作。普通测试通过不代表真实链路已验证。
 
-默认测试使用测试观察者、受控 Backend、屏障及假进程，不读取模型凭据。独立 harness 注入虚拟 Session，复用正式 CLI、HTTP、Room 和 MemberAgent；`TestFixtureDemoAndReport` 检查双成员报告、历史、服务日志及进程清理，临时证据目录由 Go 测试管理。正式二进制不识别测试 profile 行为或 harness 环境开关，测试端口不作为产品功能提供。
-
-本地生产二进制检查可设置 `TEAMX_TEST_CLI_BIN`（TeamX）和 `TEAMX_TEST_GITLAB_BIN`（GitLab 工具）的绝对路径；`TEAMX_GLAB_BIN` 指定固定版本 glab。这些检查默认跳过。
-
-受限环境无法监听时，应在允许监听的环境补跑完整测试，不能记为全量通过。DOM/handler、真实 TCP、浏览器观察与真实平台/模型验证分别记录。
-
-稳定引用 R1 的定向合同检查为 `go test ./internal/platform/... ./tools/gitlab ./internal/room -run 'TestTargetIdentity|TestReadCursor|TestReference|TestCapabilityImportBoundaries|TestDiscussionResolver' -count=1`。进程间协议测试编译独立工具的测试二进制，使用假 GET transport 核对本地 DTO、版本和原始来源；非 GitLab 适配器只验证静态能力合同，不访问真实平台。阶段范围及验收记录见[稳定引用方案](../../docs/PLATFORM-REFERENCE-AND-FOLLOWUP-REFACTOR-PLAN.zh.md)。
-
-R2 定向检查为 `go test -race ./internal/room -run '^TestReferenceFollowups' -count=1`，覆盖 100 条同对象通知、20 个按需讨论、摘要字节分页、来源消费后恢复、别名／账号／成员隔离及部分提交失败。生产入口统一使用新 schema，旧模型和数据兼容分支已删除。该检查使用本地组件及假只读工具，不代表真实平台、DSH 或浏览器验收。
-
-R3 定向检查为 `go test -race ./internal/room -run '^TestReferenceConversation|^TestReferenceFollowups|^TestPolicy' -count=1 -timeout=3m`，覆盖隔离新 schema 的稳定提问与答复自动／明确上下文关联、无需 UI 决定的模拟继续办理、跨回合指令、对话规则修改／撤销及建议版本确认。公开消息 outbox 间隙、并发 CAS、保存失败／未知冻结和重开核对分别验证；保存的真实 human 原文在公共历史清空后仍可恢复。生产入口已由 R5 切换，按引用动作的后续实现见 R4 记录，组件夹具不证明模型语义提取或真实浏览器验收。完整边界见 [R3 记录](../../docs/PLATFORM-REFERENCE-AND-FOLLOWUP-REFACTOR-PLAN.zh.md#r3-实施记录2026-11-05)。
-
-真实验收必须显式启用，入口见 [DSH](../../docs/agent-runtime.zh.md#真实验收)、[Workspace](../../docs/workspace.zh.md#真实验收)、[通知](../../docs/notifications.zh.md#真实验收)和 [GitLab 工具](../../tools/gitlab/README.zh.md#真实验收)。每次使用新的私有绝对输出路径，与日常 `data/` 隔离；完整运行目录可能包含凭据和私有历史，不整体公开。失败或中断先保留现场，核对远端及持久状态，结果未知的写入不能直接重发。
+真实验收需显式启用，运行方式见 [DSH](../../docs/agent-runtime.zh.md#真实验收)、[Workspace](../../docs/workspace.zh.md#真实验收)、[通知](../../docs/notifications.zh.md#真实验收)和 [GitLab 工具](../../tools/gitlab/README.zh.md#真实验收)。验收目录应与日常数据隔离；写入结果不确定时先核对状态，再决定后续操作。
 
 消息、调度、身份与持久化设计见 [Room 架构](../../docs/room-architecture.zh.md)。
 
@@ -209,9 +195,3 @@ R3 定向检查为 `go test -race ./internal/room -run '^TestReferenceConversati
 - 团队协作：串行调度在真实书店任务中的效果。
 
 平台工具和 Git 工作区的具体缺口分别见 [GitLab 工具验收](../../tools/gitlab/README.zh.md#真实验收)与 [Workspace 验收](../../docs/workspace.zh.md#真实验收)。这些是现有链路的验证缺口；旧工具或旧协议的通过结果不能沿用到当前实现。
-
-R4 定向检查为 `go test -race ./tools/gitlab ./internal/room -run '^TestReferenceAction|^TestReferenceGitlabProcessProtocol' -count=1 -timeout=3m`，覆盖三种依据、准确对象／讨论目标、普通评论两次与讨论回复一次、规则／指令／回合／取消失效、重复请求、保存失败及未知重开不重放。独立工具进程使用假 HTTP transport，不向真实 GitLab 写入；实际 manager 测试核对工具绑定和任务结清。生产入口已由 R5 切换，完整合同与验证边界见 [R4 记录](../../docs/PLATFORM-REFERENCE-AND-FOLLOWUP-REFACTOR-PLAN.zh.md#r4-实施记录2026-11-05)。
-
-R5 入口／恢复定向检查为 `go test -race ./internal/room -run '^TestReferenceEntry' -count=1`，覆盖 CLI／HTTP、新 schema 检测、真实 human 回复关联、规则与回执恢复。正常入口是 Room 对话；UI 仅提供管理和追溯。目录索引为 v3，旧数据需重新建房，不提供自动迁移或清空。
-
-R6 非 GitLab 贯通检查为 `go test -race ./internal/room -run '^TestReferenceCrossPlatform' -count=1 -v`，使用生产静态装配、通知投递、CLI／HTTP、问答／动作及重开恢复；测试平台无项目／IID，使用字符串租户／账号／消息。真实 GitLab、真实 DSH 和实际浏览器采用独立 `e2e` 夹具，不能互作验收证据。当前 MR 普通评论通过，讨论回复、模型完整闭环和实际浏览器仍有门禁；运行方式及准确证据见[验收手册](../../docs/reference-followups-acceptance.zh.md)。

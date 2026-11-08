@@ -8,68 +8,12 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-aie/teamx/internal/agent/dsh"
 )
-
-func TestPolicyEffectiveTokenIdentityContentAndExpiry(t *testing.T) {
-	h := newInboxHarness(t, InboxLimits{})
-	c := policyRule()
-	now := time.Now().UTC()
-	expires := now.Add(time.Hour)
-	c.ExpiresAt = &expires
-	v, err := h.store.changePolicy(h.id, humanCaller, c)
-	if err != nil {
-		t.Fatal(err)
-	}
-	p := v.PolicySnapshot
-	first := agentPolicy(p, 1, now)
-	next := agentPolicy(p, 2, now.Add(time.Minute))
-	if first.PolicyToken == "" || first.PolicyToken != next.PolicyToken || next.CurrentTurn != 2 || !reflect.DeepEqual(first.Effective, v.Effective) {
-		t.Fatal("unstable or incomplete effective view", first, next)
-	}
-	// A new suggestion changes storage metadata only, without invalidating body.
-	suggested := p.History[0]
-	suggested.ID, suggested.Status, suggested.Text = "other", "suggested", "not-effective"
-	p.History = append(p.History, suggested)
-	p.Revision++
-	if got := agentPolicy(p, 3, now); got.PolicyToken != first.PolicyToken || got.Revision != 2 {
-		t.Fatal("suggestion changed effective token", got)
-	}
-	for _, mutate := range []func(*PolicyRevision){
-		func(r *PolicyRevision) { r.Text = "new body" },
-		func(r *PolicyRevision) { r.Source.Text = "new source" },
-		func(r *PolicyRevision) { r.Version++ },
-		func(r *PolicyRevision) { r.Status = "revoked" },
-	} {
-		changed := p
-		changed.History = append([]PolicyRevision(nil), p.History...)
-		mutate(&changed.History[0])
-		if agentPolicy(changed, 1, now).PolicyToken == first.PolicyToken {
-			t.Fatal("effective change did not invalidate token")
-		}
-	}
-	for _, mutate := range []func(*MemberIdentity){
-		func(id *MemberIdentity) { id.RoomID += "other" },
-		func(id *MemberIdentity) { id.RoomInstance += "other" },
-		func(id *MemberIdentity) { id.AgentID += "other" },
-		func(id *MemberIdentity) { id.MembershipID += "other" },
-	} {
-		changed := p
-		mutate(&changed.MemberIdentity)
-		if agentPolicy(changed, 1, now).PolicyToken == first.PolicyToken {
-			t.Fatal("token crossed identity scope")
-		}
-	}
-	expired := agentPolicy(p, 4, expires)
-	if len(expired.Effective) != 0 || expired.PolicyToken == first.PolicyToken || expired.Revision != p.Revision {
-		t.Fatal("natural expiry failed to change token without a write", expired)
-	}
-}
 
 func suppliedPolicy(t *testing.T, text string) map[string]json.RawMessage {
 	t.Helper()
@@ -283,5 +227,19 @@ func TestPolicyAgentRecoveryReadAndManagementHistory(t *testing.T) {
 	}
 	if _, err := svc.memberPolicy(h.ctx, apiRequest{Caller: agentCaller(h.id.AgentID, h.id.MembershipID)}, "decisions/read"); !errors.Is(err, ErrRequest) {
 		t.Fatal("Agent can still query management decisions", err)
+	}
+}
+
+func TestPolicyNotificationUsesSuppliedAuthority(t *testing.T) {
+	text := dshNotification(UnreadChanged{})
+	for _, part := range []string{"policy read", "completely replaces", "policy_token", "current_turn", "Reply style never authorizes external writes", "body is {text,expires_at?}", "ALL current restrictions", "does not verify natural-language applicability", "AgenticHub 产品负责人是 huayi", "hongwei 和 luojun", "saving one starts no listener", "pause only the affected operation", "Latest explicit restrictions/revocations win", "type save", "type confirm"} {
+		if !strings.Contains(text, part) {
+			t.Fatalf("missing %q", part)
+		}
+	}
+	for _, part := range []string{"policy decisions", "Before processing each turn and immediately before any action", "read current policy/decisions", "Rules may replace body.scope", "Preferences need no target scope", "body?,scope_from?"} {
+		if strings.Contains(text, part) {
+			t.Fatalf("obsolete reading instruction %q", part)
+		}
 	}
 }

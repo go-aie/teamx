@@ -368,3 +368,58 @@ func appendMemberInput(t *testing.T, h *roomHarness, first, last uint64) {
 		h.idle(t)
 	}
 }
+
+func TestMemberAgentBudgetPausesWithoutLosingPendingInput(t *testing.T) {
+	for _, cancelTurn := range []bool{false, true} {
+		t.Run(map[bool]string{false: "failure", true: "cancellation"}[cancelTurn], func(t *testing.T) {
+			b := newControlledBackend()
+			h, addr, id := memberHarness(t, b, nil, func(m *MemberAgent) { m.MaxTurns = 1 })
+			input := UnreadChanged{MemberIdentity: id, Revision: 1, LatestSeq: 1, NewestUnreadSeq: 1, UnreadCount: 1}
+			controlMember(t, h, addr, id, "run", input, false, false)
+			awaitTurn(t, h, b)
+			appendMemberInput(t, h, 2, 8)
+			input.Revision, input.LatestSeq, input.NewestUnreadSeq, input.UnreadCount = 8, 8, 8, 8
+			if err := addr.Send(h.ctx, input); err != nil {
+				t.Fatal(err)
+			}
+			if cancelTurn {
+				controlMember(t, h, addr, id, "pause", input, false, true)
+			} else {
+				b.finish <- errors.New("failure consumes one attempt")
+			}
+			settled := waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool { return !s.Active })
+			if settled.Status != "budget_exhausted" || !settled.Paused || settled.TurnBudget.Limit != 1 || settled.TurnBudget.Used != 1 ||
+				settled.Notification.NewestUnreadSeq != 8 || settled.Agent.LastOfferedUnreadSeq != 1 {
+				t.Fatal(settled)
+			}
+			for _, retry := range []bool{false, true} {
+				if _, err := addr.Call[MemberStatus](h.ctx, ControlMember{MemberIdentity: id, Action: "run", State: input, Retry: retry}); !errors.Is(err, ErrTurnBudget) {
+					t.Fatal("run renewed exhausted budget", err)
+				}
+			}
+			if err := addr.Send(h.ctx, input); err != nil {
+				t.Fatal(err)
+			}
+			if status := inspectMember(t, h.ctx, addr, id); status.Active || status.Agent.TurnNumber != 1 || b.opens.Load() != 1 {
+				t.Fatal(status, b.opens.Load())
+			}
+		})
+	}
+}
+
+func TestMemberAgentFailedTaskAdmissionDoesNotConsumeBudget(t *testing.T) {
+	h := newRoomHarness(t, historyRoom(8, "body"), nil, actorx.WithTaskLimit(1))
+	id := h.memberID("A", "generation-A")
+	b := newControlledBackend()
+	addr, err := h.spawn(&MemberAgent{Options: SessionOptions{MemberIdentity: id}, Store: h.store, Room: h.addr, Backend: b, MaxTurns: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := UnreadChanged{MemberIdentity: id, Revision: 8, LatestSeq: 8, NewestUnreadSeq: 8, UnreadCount: 8}
+	controlMember(t, h, addr, id, "run", input, false, false)
+	status := waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool { return s.Error != "" })
+	// The member's maintenance task occupies its sole worker slot.
+	if status.Active || status.TurnBudget.Used != 0 || status.Error == "" || b.opens.Load() != 0 {
+		t.Fatal(status, b.opens.Load())
+	}
+}

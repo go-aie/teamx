@@ -2,6 +2,7 @@ package room
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -543,5 +544,35 @@ func TestDiscardCleanupFailureIsRetainedInMemberExit(t *testing.T) {
 	exit, err := addr.Wait(h.ctx)
 	if err != nil || !errors.Is(exit.Reason, errCleanupTest) || b.closes.Load() != 1 {
 		t.Fatal("discard cleanup failure was hidden or cleanup ran twice", exit, err, b.closes.Load())
+	}
+}
+
+func TestRecoveryRejectsLegacyRunnersWithoutChangingData(t *testing.T) {
+	for _, kind := range []string{"manual", "scripted"} {
+		t.Run(kind, func(t *testing.T) {
+			dir, id := recoveryFixture(t)
+			path := filepath.Join(dir, "room.json")
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data = bytes.Replace(data, []byte(`"kind":"dsh"`), []byte(`"kind":"`+kind+`"`), 1)
+			if kind == "scripted" {
+				data = bytes.Replace(data, []byte(`"profile":"fixture-fail,ignore"`), []byte(`"script":"fail,ignore"`), 1)
+			}
+			if err := os.WriteFile(path, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if svc, err := newService(dir, id.RoomID, recoveryConfig()); err == nil {
+				closeService(t, svc)
+				t.Fatal("legacy runner restored")
+			} else if !strings.Contains(err.Error(), "unsupported runner") && !strings.Contains(err.Error(), "unknown field") {
+				t.Fatal(err)
+			}
+			after, err := os.ReadFile(path)
+			if err != nil || !bytes.Equal(data, after) {
+				t.Fatal("legacy data changed", err)
+			}
+		})
 	}
 }

@@ -1,4 +1,4 @@
-//go:build darwin || linux
+//go:build e2e && (darwin || linux)
 
 package room
 

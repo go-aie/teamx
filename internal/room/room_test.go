@@ -716,3 +716,17 @@ func TestRoomFailedReadConfirmationKeepsCursorAndReceipt(t *testing.T) {
 func (h *roomHarness) spawn(member actorx.Actor) (actorx.Addr, error) {
 	return spawnScheduledMember(h.rt, member, h.scheduler)
 }
+
+func TestRoomHistoryByteCapacityPreservesReadableHistory(t *testing.T) {
+	state := historyRoom(maxHistoryBytes/maxTextBytes, strings.Repeat("x", maxTextBytes))
+	r := &Room{state: state}
+	post := PostMessage{RoomIdentity: state.RoomIdentity, Caller: humanCaller, ClientMessageID: "exceeds-by-one", Text: "x"}
+	if err := r.Post(nil, post, actorx.Reply[PostReceipt]{}); !errors.Is(err, ErrCapacity) || r.committing {
+		t.Fatal("byte capacity did not reject before committing", err)
+	}
+	page, err := r.Read(nil, ReadMessages{RoomIdentity: state.RoomIdentity, Caller: humanCaller, Mode: ReadAll})
+	if err != nil || page.SnapshotSeq != state.LatestSeq || len(page.Messages) != maxPageBytes/maxTextBytes || !page.HasMore ||
+		!reflect.DeepEqual(r.state, state) {
+		t.Fatal("capacity rejection changed history or preview", page, err)
+	}
+}

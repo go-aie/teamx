@@ -5,9 +5,6 @@ package room
 import (
 	"context"
 	"encoding/json"
-	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/lark"
-	"github.com/go-aie/teamx/internal/platform/notification"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -15,6 +12,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/go-aie/teamx/internal/platform"
+	"github.com/go-aie/teamx/internal/platform/lark"
+	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
 // Test input contains only explicit profile, chat IDs and a bounded historical

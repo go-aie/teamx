@@ -487,3 +487,12 @@ func TestRemovedMigrationCommands(t *testing.T) {
 		}
 	}
 }
+
+func TestServeRejectsUnboundedTurnBudget(t *testing.T) {
+	for _, limit := range []string{"0", "-1"} {
+		var stdout, stderr bytes.Buffer
+		if err := serve([]string{"--config", writeStartupConfig(t, t.TempDir(), ""), "--max-turns", limit}, &stdout, &stderr); err == nil || stdout.Len() != 0 {
+			t.Fatal("invalid turn limit accepted", limit, err)
+		}
+	}
+}

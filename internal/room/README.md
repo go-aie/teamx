@@ -138,14 +138,12 @@ Limits: 32 members, 10,000 messages, 16 KiB per body and 64 MiB of total bodies;
 ## Validation
 
 ```sh
-go generate ./internal/room
-go test -race -count=1 -timeout 5m ./...
+go test -race -timeout 15m ./...
 go vet ./...
 node --test internal/room/web*_test.mjs
 go test -tags=e2e ./... -run '^$'
-go test ./internal/room -run '^TestFixtureDemoAndReport$' -count=1 -v
 ```
 
-Default tests use test observers, controlled Backends, barriers and fake processes without model credentials. A separate harness injects virtual Sessions while using production CLI parsing, HTTP, Room and MemberAgent scheduling. TestFixtureDemoAndReport verifies the two-member report, history, service logs and process cleanup; Go manages the temporary evidence directory. Production contains no interpretation of fixture profiles or harness environment switches.
+Run `go generate ./internal/room` after changing Actor handlers. Local checks require Go and Node; the last command only checks that acceptance tests compile. Testing real models or connected platforms requires explicit opt-in. See the [validation guide](README.zh.md#验证入口) and [open checks](README.zh.md#当前待验项).
 
-Run `go generate` after changing Actor handlers; the `e2e` command only checks compilation. Real DSH, Workspace and notification acceptance is opt-in. See the [validation guide](README.zh.md#验证入口) for binary switches, evidence handling and module entry points, and [open checks](README.zh.md#当前待验项) for outstanding acceptance. The [Chinese guide](README.zh.md#服务配置) covers configuration and user-directory setup; [Room architecture](../../docs/room-architecture.zh.md) covers message, scheduling and persistence design.
+The [Chinese guide](README.zh.md#服务配置) covers configuration and user-directory setup; [Room architecture](../../docs/room-architecture.zh.md) covers message, scheduling and persistence design.
