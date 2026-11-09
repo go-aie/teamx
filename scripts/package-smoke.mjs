@@ -185,7 +185,7 @@ try {
     'bundled runtime versions and CLI help without host Go/Node/platform CLIs'
   );
   const start = p.join(bundle, 'start');
-  exec('start', ['init']);
+  exec('start', ['init', '--non-interactive']);
   const portable = p.join(bundle, '.teamx'),
     config = p.join(portable, 'config.toml');
   const initialized = fs.readFileSync(config, 'utf8');
@@ -199,7 +199,7 @@ try {
       must(output.includes(field), `Missing exact diagnostic ${field}`);
   }
   must(failed, 'Unconfigured start must fail');
-  exec('start', ['init']);
+  exec('start', ['init', '--non-interactive']);
   must(fs.readFileSync(config, 'utf8') === initialized, 'init replaced config');
   // Validate all distributed teams, and run ordinary manager HTTP against the real DSH
   // configuration without ever opening a DSH session or sending a prompt.
@@ -231,7 +231,7 @@ try {
   const template = p.join(portable, 'teams/bookstore-night/prompts/alan.md');
   fs.appendFileSync(template, '\nuser change\n');
   const changed = fs.readFileSync(template, 'utf8');
-  exec('start', ['init']);
+  exec('start', ['init', '--non-interactive']);
   must(fs.readFileSync(template, 'utf8') === changed, 'init replaced template');
   pass('portable init, exact model diagnostics, optional Git and preservation');
   async function launch(homeArg = []) {
@@ -336,7 +336,7 @@ try {
   // A separate explicit home exercises ACP with a fixed fixture. The real bundled
   // DSH already passed version/help checks above; this is not model acceptance.
   const external = p.join(temp, 'external home');
-  exec('start', ['init', '--home', external]);
+  exec('start', ['init', '--non-interactive', '--home', external]);
   const fixture = p.join(temp, 'fixture');
   fs.mkdirSync(fixture);
   fs.copyFileSync(
@@ -368,7 +368,7 @@ try {
     modes.push([dir, fs.statSync(dir).mode & 0o777]);
   for (const [file, mode] of modes) fs.chmodSync(file, mode & ~0o222);
   try {
-    exec('start', ['init', '--home', external]);
+    exec('start', ['init', '--non-interactive', '--home', external]);
     configure(p.join(external, 'config.toml'), fixtureBin);
     const externalConfig = p.join(external, 'config.toml');
     fs.writeFileSync(

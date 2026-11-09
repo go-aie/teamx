@@ -29,7 +29,7 @@ func TestBundleInitPreservesUserFilesAndSerializesPaths(t *testing.T) {
 	root := bundleTestRoot(t)
 	for _, home := range []string{filepath.Join(root, ".teamx"), filepath.Join(t.TempDir(), "home ' quoted")} {
 		var output bytes.Buffer
-		args := []string{"--bundle-root", root, "--home", home}
+		args := []string{"--bundle-root", root, "--home", home, "--non-interactive"}
 		if err := runBundle("init", args, &output, &output); err != nil {
 			t.Fatal(err)
 		}

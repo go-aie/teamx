@@ -21,7 +21,7 @@ export async function acceptBrowser({ bundle, output, env }) {
   const home = p.join(output, 'user home'), cwd = p.join(output, 'other cwd');
   fs.mkdirSync(cwd);
   const start = p.join(bundle, 'start');
-  const init = () => run(start, ['init', '--home', home], { env, cwd, timeout: 30000 });
+  const init = () => run(start, ['init', '--non-interactive', '--home', home], { env, cwd, timeout: 30000 });
   init();
   const config = p.join(home, 'config.toml');
   fs.writeFileSync(config, fs.readFileSync(config, 'utf8')

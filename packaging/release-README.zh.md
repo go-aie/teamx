@@ -39,14 +39,15 @@ cd teamx-archive
 
 ```sh
 ./start init
-# 编辑输出位置的 config.toml，设置 runtime.model 的 protocol、base_url 和 model_id。
-export OPENAI_API_KEY='自己的模型密钥'
+# 按提示填写模型协议、Base URL、模型 ID 和 API Key 环境变量名。
 ./start doctor
 ./start
 ```
 
 浏览器访问配置的监听地址，默认 `http://127.0.0.1:8088`。按 Ctrl-C 停止服务，等待退出后再启动。
-默认凭据变量是 `OPENAI_API_KEY`；若修改了 `api_key_env`，请导出对应变量。
+默认协议是 `openai-completions`，凭据变量名是 `OPENAI_API_KEY`。若该变量已经导出，初始化会直接使用，后续启动也需保持该变量。
+否则会提示隐藏输入 API Key，自动保存到私有配置（文件权限 `0600`），后续启动自动加载，无需手动编辑文件或 export。
+已导出的变量优先于保存值；不要将凭据变量导出为空值。
 `doctor` 会显示缺少的模型配置或运行条件，不会发送模型 prompt。
 
 默认配置、团队模板和私有数据保存在包内 `.teamx/`。`init` 只补充缺失文件，保留已有配置与模板修改。
@@ -54,12 +55,13 @@ export OPENAI_API_KEY='自己的模型密钥'
 
 ```sh
 ./start init --home "$HOME/.teamx"
-# 编辑该目录的 config.toml，并配置模型凭据。
 ./start doctor --home "$HOME/.teamx"
 ./start --home "$HOME/.teamx"
 ```
 
 可以从其他目录通过绝对路径调用 `start`。使用独立 home 时包本体可只读，home 必须可写，同一个 home 同时只运行一个服务实例。
+首次初始化在终端中自动进入交互引导；`./start init --non-interactive` 或重定向标准输入时只生成默认配置，适合自动化流程。
+已有配置不会再次询问模型设置；非交互初始化和后续修改设置仍可编辑私有目录中的 `config.toml`。
 平台登录、连接绑定和通知订阅由使用者显式配置，启动不会自动启用。
 
 ## 系统要求与 macOS 下载提示

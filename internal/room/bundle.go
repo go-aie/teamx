@@ -24,11 +24,15 @@ func runBundle(command string, args []string, stdout, stderr io.Writer) error {
 	root := flags.String("bundle-root", "", "distribution directory")
 	home := flags.String("home", "", "private configuration, teams and data directory")
 	config := flags.String("config", "", "configuration to diagnose")
+	nonInteractive := flags.Bool("non-interactive", false, "initialize defaults without terminal prompts (init only)")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if flags.NArg() != 0 {
 		return ErrRequest
+	}
+	if *nonInteractive && command != "init" {
+		return fmt.Errorf("--non-interactive is only supported by init")
 	}
 	if *root == "" {
 		executable, err := os.Executable()
@@ -70,10 +74,31 @@ func runBundle(command string, args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	defer unlockDirectory(lock)
-	if err = initializeBundle(*root, *home); err != nil {
+	var setup *bundleModelSetup
+	if command == "init" && !*nonInteractive {
+		if _, e := os.Lstat(*config); errors.Is(e, os.ErrNotExist) {
+			prompt, e := newBundlePrompt(os.Stdin, stderr)
+			if e != nil {
+				return e
+			}
+			if prompt != nil {
+				setup, err = promptBundleModel(prompt)
+				if err != nil {
+					return err
+				}
+			}
+		} else if e != nil {
+			return e
+		}
+	}
+	if err = initializeBundleWithModel(*root, *home, setup); err != nil {
 		return err
 	}
 	if command == "init" {
+		if setup != nil {
+			_, err = fmt.Fprintf(stdout, "Configuration saved: %s\nRun ./start doctor, then ./start.\n", *config)
+			return err
+		}
 		_, err = fmt.Fprintf(stdout, "Configuration: %s\nSet runtime.model.base_url, runtime.model.model_id and the credential environment before starting.\n", *config)
 		return err
 	}
@@ -84,10 +109,23 @@ func runBundle(command string, args []string, stdout, stderr io.Writer) error {
 }
 
 func initializeBundle(root, home string) error {
+	return initializeBundleWithModel(root, home, nil)
+}
+
+func initializeBundleWithModel(root, home string, setup *bundleModelSetup) error {
 	// TOML is serialized by Go, including arbitrary spaces, quotes and backslashes.
 	config := map[string]any{
 		"server":  map[string]any{"listen": "127.0.0.1:8088", "data_dir": "./data", "teams_dir": "./teams", "max_turns": 16, "dsh_turn_timeout": "15m"},
 		"runtime": map[string]any{"dsh": map[string]any{"binary_path": filepath.Join(root, "bin", "dsh")}, "model": map[string]any{"protocol": "openai-completions", "base_url": "", "model_id": "", "api_key_env": "OPENAI_API_KEY"}},
+	}
+	if setup != nil {
+		config["runtime"].(map[string]any)["model"] = map[string]any{
+			"protocol": setup.Model.Protocol, "base_url": setup.Model.BaseURL,
+			"model_id": setup.Model.ModelID, "api_key_env": setup.Model.APIKeyEnv,
+		}
+		if len(setup.Env) > 0 {
+			config["env"] = setup.Env
+		}
 	}
 	// Portable homes use a config-relative path; explicit external homes bind this bundle.
 	if home == filepath.Join(root, ".teamx") {
