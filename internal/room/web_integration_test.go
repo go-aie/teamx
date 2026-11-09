@@ -29,7 +29,13 @@ func TestManagedWebBootstrapAssetsAndOrigin(t *testing.T) {
 				t.Fatalf("busy=%v %s: %d %s", busy, path, res.Code, res.Body.String())
 			}
 			if path == "/v1/ui" {
-				if strings.TrimSpace(res.Body.String()) != `{"managed":true}` || res.Header().Get("Cache-Control") != "no-store" {
+				var bootstrap struct {
+					Managed         bool   `json:"managed"`
+					ServiceEpoch    string `json:"service_epoch"`
+					TimeZone        string `json:"time_zone"`
+					SettingsVersion uint64 `json:"settings_version"`
+				}
+				if json.Unmarshal(res.Body.Bytes(), &bootstrap) != nil || !bootstrap.Managed || bootstrap.ServiceEpoch != m.epoch || bootstrap.TimeZone == "" || bootstrap.SettingsVersion == 0 || res.Header().Get("Cache-Control") != "no-store" {
 					t.Fatal(res.Body.String(), res.Header())
 				}
 			} else if res.Header().Get("Content-Security-Policy") == "" {

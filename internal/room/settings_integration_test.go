@@ -28,7 +28,7 @@ func TestSystemSettingsServePersistsToStartupPath(t *testing.T) {
 				if err := os.Mkdir(filepath.Dir(configPath), 0700); err != nil {
 					t.Fatal(err)
 				}
-				writeStartupConfig(t, filepath.Dir(configPath), "# preserve this comment\n[server]\nmax_turns = 2 # allowance\n")
+				writeStartupConfig(t, filepath.Dir(configPath), "# preserve this comment\n[server]\nsession_max_turns = 2 # allowance\n")
 				args = append(args, "--config", "custom/config.toml")
 			}
 			if strings.HasPrefix(mode, "single") {
@@ -91,7 +91,7 @@ func TestSystemSettingsServePersistsToStartupPath(t *testing.T) {
 			if err != nil {
 				t.Fatal("save did not use startup config path", err)
 			}
-			if strings.HasSuffix(mode, "relative") && (!strings.Contains(string(data), "# preserve this comment") || !strings.Contains(string(data), "max_turns = 2 # allowance")) {
+			if strings.HasSuffix(mode, "relative") && (!strings.Contains(string(data), "# preserve this comment") || !strings.Contains(string(data), "session_max_turns = 2 # allowance")) {
 				t.Fatal("other config text changed")
 			}
 			p = start()

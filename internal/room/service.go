@@ -24,6 +24,16 @@ type ServiceInfo struct {
 
 // Only these explicit DTOs cross HTTP. Actor addresses remain in the service.
 type apiRequest struct {
+	automatic        bool
+	automaticInbox   *InboxStatus
+	internalPause    bool
+	expectedPause    *uint64
+	OperationID      string `json:"operation_id,omitempty"`
+	FromGeneration   string `json:"from_generation,omitempty"`
+	RotationReason   string `json:"rotation_reason,omitempty"`
+	ContinueRotation bool   `json:"continue_rotation,omitempty"`
+	rotationLocked   bool
+
 	ServiceInfo
 	Caller             Caller                        `json:"caller"`
 	TurnNumber         uint64                        `json:"turn_number,omitempty"`
@@ -272,6 +282,30 @@ func (s *service) close(ctx context.Context) error {
 		}
 		s.grantsStopped.Store(true)
 	}
+	// A retained rotation may be waiting for an active turn while owning
+	// management. Signal cancellation before joining that lifecycle owner.
+	s.mu.Lock()
+	pending := make(map[string]actorx.Addr, len(s.targets))
+	for membership, target := range s.targets {
+		pending[membership] = target
+	}
+	s.mu.Unlock()
+	roster, err := s.room.Call[MemberList](ctx, ListMembers{s.info.RoomIdentity})
+	if err != nil {
+		return err
+	}
+	for membership, target := range pending {
+		if target.IsZero() {
+			continue
+		}
+		// Removed actors are already being canceled by their removal owner.
+		for _, member := range roster.Members {
+			if member.MembershipID == membership {
+				id := MemberIdentity{RoomIdentity: s.info.RoomIdentity, AgentID: member.AgentID, MembershipID: membership}
+				_, _ = target.Call[MemberStatus](ctx, ControlMember{MemberIdentity: id, Action: "settle"})
+			}
+		}
+	}
 	// Join an admitted add/remove before taking the ownership snapshot.
 	for !s.management.TryLock() {
 		select {
@@ -474,17 +508,68 @@ func (s *service) control(ctx context.Context, req apiRequest, action string) (M
 				}
 				reset = execution.SessionResetRequired
 			}
-			if reset && s.beginPlatformMemberChange != nil {
-				release, err := s.beginPlatformMemberChange(ctx, id)
+			var lease *rotationLease
+			var rotationReplenish bool
+			if reset {
+				execution, err := s.target(member.MembershipID).Call[MemberStatus](ctx, InspectMember{id})
 				if err != nil {
 					return MemberStatus{}, err
 				}
-				defer release()
+				if action == "rotate" && req.OperationID != "" && execution.Rotation != nil && execution.Rotation.OperationID == req.OperationID {
+					r := execution.Rotation
+					rotationReplenish = r.Replenish
+					reason := req.RotationReason
+					if reason == "" {
+						reason = "manual"
+					}
+					if r.FromGeneration != req.FromGeneration || r.Reason != reason {
+						return execution, ErrConflict
+					}
+					// Actor validates all fixed parameters even on an observation/retry.
+					if r.Status != "failed" || !req.ContinueRotation {
+						return s.target(member.MembershipID).Call[MemberStatus](ctx, ControlMember{MemberIdentity: id, Action: "rotate", OperationID: req.OperationID, FromGeneration: req.FromGeneration, Reason: req.RotationReason, Cancel: req.Cancel, Resume: req.Resume, Replenish: r.Replenish})
+					}
+				}
+				if !req.rotationLocked && !s.management.TryLock() {
+					return execution, ErrBusy
+				}
+				releaseManagement := func() {
+					if !req.rotationLocked {
+						s.management.Unlock()
+					}
+				}
+				var releasePlatform func()
+				lease = &rotationLease{gateDone: make(chan struct{}), release: func() {
+					if releasePlatform != nil {
+						releasePlatform()
+					}
+					releaseManagement()
+				}}
+				lease.begin = func(taskCtx context.Context) error {
+					if s.closing.Load() {
+						return ErrClosing
+					}
+					if s.beginPlatformMemberChange == nil {
+						return nil
+					}
+					var err error
+					releasePlatform, err = s.beginPlatformMemberChange(taskCtx, id)
+					return err
+				}
 			}
+
 			state := UnreadChanged{MemberIdentity: id, Revision: list.Revision, LatestSeq: list.LatestSeq,
 				NewestUnreadSeq: member.NewestUnreadSeq, UnreadCount: member.UnreadCount}
-			return s.target(member.MembershipID).Call[MemberStatus](ctx, ControlMember{MemberIdentity: id, Action: action,
-				Retry: req.Retry, Cancel: req.Cancel, Resume: req.Resume, State: state})
+			callCtx := ctx
+			if lease != nil && s.ctx != nil {
+				callCtx = s.ctx
+			}
+			result, err := s.target(member.MembershipID).Call[MemberStatus](callCtx, ControlMember{MemberIdentity: id, Action: action,
+				automatic: req.automatic, automaticInbox: req.automaticInbox, Retry: req.Retry, Cancel: req.Cancel, Resume: req.Resume, State: state, OperationID: req.OperationID, FromGeneration: req.FromGeneration, Reason: req.RotationReason, ContinueRotation: req.ContinueRotation, Replenish: rotationReplenish, lease: lease, internalPause: req.internalPause, expectedPause: req.expectedPause})
+			if err != nil {
+				lease.close()
+			}
+			return result, err
 		}
 	}
 	return MemberStatus{}, ErrIdentity
@@ -637,7 +722,7 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeAPIError(w, ErrClosing)
 			return
 		}
-		if s.restarting.Load() {
+		if s.restarting.Load() && r.URL.Path != "/v1/member/pause" && r.URL.Path != "/v1/member/session/status" {
 			writeAPIError(w, fmt.Errorf("%w: discussion restart in progress", ErrBusy))
 			return
 		}
@@ -676,8 +761,15 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		result, err = s.control(r.Context(), req, "enable")
 	case "/v1/member/pause":
 		result, err = s.control(r.Context(), req, "pause")
+	case "/v1/member/session/status":
+		id := MemberIdentity{RoomIdentity: s.info.RoomIdentity, AgentID: req.AgentID, MembershipID: req.MembershipID}
+		result, err = s.target(req.MembershipID).Call[MemberStatus](r.Context(), InspectMember{id})
 	case "/v1/member/session/rotate":
-		result, err = s.rotateSession(r.Context(), req)
+		if !validRestartID(req.OperationID) || !validSessionGeneration(req.FromGeneration) {
+			err = fmt.Errorf("%w: rotation requires operation_id and from_generation", ErrRequest)
+		} else {
+			result, err = s.rotateSession(r.Context(), req)
+		}
 	case "/v1/send":
 		result, err = s.room.Call[PostReceipt](r.Context(), PostMessage{RoomIdentity: req.RoomIdentity, Caller: req.Caller,
 			ClientMessageID: req.ClientMessageID, Text: req.Text, ReplyTo: req.ReplyTo})

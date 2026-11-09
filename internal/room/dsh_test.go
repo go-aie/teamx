@@ -37,10 +37,14 @@ func (c *adapterComponent) RunPrompt(ctx context.Context, prompt []dsh.ContentBl
 	if c.runPrompt != nil {
 		return c.runPrompt(ctx, prompt)
 	}
-	if len(prompt) != 1 || prompt[0].Type != "text" {
-		return dsh.TurnResult{}, errors.New("text-only test adapter")
+	var texts []string
+	for _, block := range prompt {
+		if block.Type != "text" {
+			return dsh.TurnResult{}, errors.New("text-only test adapter")
+		}
+		texts = append(texts, block.Text)
 	}
-	return c.Run(ctx, prompt[0].Text)
+	return c.Run(ctx, strings.Join(texts, "\n"))
 }
 func (c *adapterComponent) SupportsImages() bool { return c.images }
 func (c *adapterComponent) Close(ctx context.Context) error {
@@ -481,7 +485,7 @@ func TestMissingCredentialsDoNotConsumeTurnOrSessionOnRun(t *testing.T) {
 		t.Fatal(list, err)
 	}
 	m := list.Members[0]
-	if m.Status != "paused" || m.Execution.Rotation != nil || m.Execution.TurnBudget.Used != 0 || m.Execution.Agent.TurnNumber != 0 || m.UnreadCount != 1 {
+	if m.Status != "paused" || m.Execution.Rotation != nil || m.Execution.SessionTurns.Total != 0 || m.Execution.Agent.TurnNumber != 0 || m.UnreadCount != 1 {
 		t.Fatal("credential rejection consumed work", m)
 	}
 	for _, name := range []string{"session.json", "session.json.dsh"} {

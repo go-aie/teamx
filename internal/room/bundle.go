@@ -115,7 +115,7 @@ func initializeBundle(root, home string) error {
 func initializeBundleWithModel(root, home string, setup *bundleModelSetup) error {
 	// TOML is serialized by Go, including arbitrary spaces, quotes and backslashes.
 	config := map[string]any{
-		"server":  map[string]any{"listen": "127.0.0.1:8088", "data_dir": "./data", "teams_dir": "./teams", "max_turns": 16, "dsh_turn_timeout": "15m"},
+		"server":  map[string]any{"listen": "127.0.0.1:8088", "data_dir": "./data", "teams_dir": "./teams", "session_max_turns": 16, "dsh_turn_timeout": "15m"},
 		"runtime": map[string]any{"dsh": map[string]any{"binary_path": filepath.Join(root, "bin", "dsh")}, "model": map[string]any{"protocol": "openai-completions", "base_url": "", "model_id": "", "api_key_env": "OPENAI_API_KEY"}},
 	}
 	if setup != nil {

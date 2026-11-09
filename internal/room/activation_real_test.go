@@ -32,7 +32,7 @@ func (d *realRoomDriver) startManaged(number int, teamsDir string) (string, erro
 	if err != nil {
 		return "", err
 	}
-	cmd := exec.Command(d.binary, "serve", "--config", configPath, "--listen", "127.0.0.1:0", "--merge-window", "0s", "--max-turns", "8")
+	cmd := exec.Command(d.binary, "serve", "--config", configPath, "--listen", "127.0.0.1:0", "--merge-window", "0s", "--session-max-turns", "8")
 	cmd.Dir = os.TempDir() // Activation must use frozen Room data, independent of cwd.
 	cmd.Env = append(operatorEnv(""), d.report["apiKeyEnv"].(string)+"="+d.secret)
 	cmd.Stderr = log
@@ -274,7 +274,7 @@ func (d *realRoomDriver) acceptManagedRooms(t *testing.T) error {
 	if err != nil {
 		return err
 	}
-	if member.ReadThrough != 2 || member.Execution.TurnBudget.Used != 2 {
+	if member.ReadThrough != 2 || member.Execution.SessionTurns.Total != 2 {
 		return errors.New("cursor or cumulative budget changed across switch")
 	}
 	if err := d.privateResult("aAfterSwitch", "end_turn", token); err != nil {
@@ -305,7 +305,7 @@ func (d *realRoomDriver) acceptManagedRooms(t *testing.T) error {
 	if err != nil {
 		return err
 	}
-	if d.info.RoomIdentity != before.RoomIdentity || d.info.ServiceEpoch == before.ServiceEpoch || !member.Execution.Paused || member.Execution.TurnBudget.Used != 2 {
+	if d.info.RoomIdentity != before.RoomIdentity || d.info.ServiceEpoch == before.ServiceEpoch || !member.Execution.Paused || member.Execution.SessionTurns.Total != 2 {
 		return errors.New("restart lost selection, pause intent, budget or new epoch")
 	}
 	if err := d.selectManaged(epoch, b, "return-b"); err != nil {
@@ -512,7 +512,7 @@ func (d *realRoomDriver) acceptManagedRooms(t *testing.T) error {
 			used = 4
 		}
 		e := member.Execution
-		if !e.Paused || e.Active || e.Agent.Turn == nil || e.Agent.Turn.Status != "interrupted" || e.TurnBudget.Used != used {
+		if !e.Paused || e.Active || e.Agent.Turn == nil || e.Agent.Turn.Status != "interrupted" || e.SessionTurns.Total != used {
 			return errors.New("shutdown interrupted turn replayed or budget changed")
 		}
 	}

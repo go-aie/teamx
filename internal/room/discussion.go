@@ -136,12 +136,18 @@ func (s *service) runDiscussionRestart(record discussionRestart, members []Membe
 	defer s.management.Unlock()
 	defer s.restarting.Store(false)
 	memberRequest := func(member MemberInfo) apiRequest {
-		return apiRequest{AgentID: member.AgentID, MembershipID: member.MembershipID, Cancel: true}
+		return apiRequest{AgentID: member.AgentID, MembershipID: member.MembershipID, Cancel: true, rotationLocked: true, RotationReason: "discussion_restart"}
 	}
+	pauseRevisions := make(map[string]uint64)
 	pause := func() error {
 		var result error
 		for _, member := range members {
-			_, err := s.control(s.ctx, memberRequest(member), "pause")
+			req := memberRequest(member)
+			req.internalPause = true
+			status, err := s.control(s.ctx, req, "pause")
+			if _, exists := pauseRevisions[member.MembershipID]; !exists {
+				pauseRevisions[member.MembershipID] = status.PauseRevision
+			}
 			result = errors.Join(result, err)
 		}
 		return result
@@ -215,7 +221,10 @@ func (s *service) runDiscussionRestart(record discussionRestart, members []Membe
 			return err
 		}
 		for _, member := range members {
-			_, err := s.control(s.ctx, memberRequest(member), "run")
+			req := memberRequest(member)
+			revision := pauseRevisions[member.MembershipID]
+			req.expectedPause = &revision
+			_, err := s.control(s.ctx, req, "run")
 			if errors.Is(err, ErrTurnBudget) {
 				record.PausedMembers = append(record.PausedMembers, member.AgentID)
 			} else if err != nil {

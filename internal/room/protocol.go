@@ -14,7 +14,7 @@ var (
 	ErrCapacity    = errors.New("room capacity exceeded")
 	ErrReadExpired = errors.New("read receipt expired, replaced or unknown")
 	ErrClosing     = errors.New("room service is shutting down")
-	ErrTurnBudget  = errors.New("member turn budget exhausted for this service lifetime")
+	ErrTurnBudget  = errors.New("member cumulative turn budget exhausted")
 )
 
 // Caller is the business identity checked by Room. The HTTP adapter
@@ -157,6 +157,10 @@ type InboxInput struct {
 
 type InspectMember struct{ MemberIdentity }
 type MemberStatus struct {
+	CurrentGeneration    string           `json:"current_generation,omitempty"`
+	PauseRevision        uint64           `json:"-"`
+	SessionGeneration    string           `json:"session_generation,omitempty"`
+	SessionStartUsed     uint64           `json:"session_start_used"`
 	SessionResetRequired bool             `json:"session_reset_required,omitempty"`
 	Inbox                *InboxStatus     `json:"inbox,omitempty"`
 	Rotation             *SessionRotation `json:"rotation,omitempty"`
@@ -166,16 +170,34 @@ type MemberStatus struct {
 	Active               bool             `json:"active"`
 	Agent                *AgentSnapshot   `json:"agent,omitempty"`
 	Error                string           `json:"error,omitempty"`
+	SessionTurns         *SessionTurns    `json:"session_turns,omitempty"`
 	TurnBudget           *TurnBudget      `json:"turn_budget,omitempty"`
 }
 
 type SessionRotation struct {
-	Status       string `json:"status"` // waiting, closing, completed, failed
-	ContextReset bool   `json:"private_context_reset"`
-	Error        string `json:"error,omitempty"`
+	Cancel         bool   `json:"cancel"`
+	Resume         bool   `json:"resume"`
+	Replenish      bool   `json:"replenish"`
+	OperationID    string `json:"operation_id"`
+	Reason         string `json:"reason"`
+	FromGeneration string `json:"from_generation"`
+	ToGeneration   string `json:"to_generation"`
+	BaseUsed       uint64 `json:"base_used"`
+	Phase          string `json:"phase"`
+	FailedStep     string `json:"failed_step,omitempty"`
+	Status         string `json:"status"` // waiting, closing, completed, failed
+	ContextReset   bool   `json:"private_context_reset"`
+	Error          string `json:"error,omitempty"`
 }
 
-// Budget is runtime state, independent of the persisted lifetime turn number.
+// Admission budget is persisted separately from the worker turn checkpoints.
+type SessionTurns struct {
+	BaselineKnown bool   `json:"baseline_known"`
+	Limit         uint64 `json:"limit"`
+	Used          uint64 `json:"used"`
+	Total         uint64 `json:"total"`
+}
+
 type TurnBudget struct {
 	Limit uint64 `json:"limit"`
 	Used  uint64 `json:"used"`
@@ -183,10 +205,20 @@ type TurnBudget struct {
 }
 
 type ControlMember struct {
+	automatic      bool
+	automaticInbox *InboxStatus
+	internalPause  bool
+	expectedPause  *uint64
 	MemberIdentity
-	Action string
-	Retry  bool
-	Cancel bool
-	Resume bool
-	State  UnreadChanged
+	Action           string
+	ContinueRotation bool
+	OperationID      string
+	FromGeneration   string
+	Reason           string
+	Replenish        bool
+	lease            *rotationLease
+	Retry            bool
+	Cancel           bool
+	Resume           bool
+	State            UnreadChanged
 }

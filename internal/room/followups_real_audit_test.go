@@ -55,8 +55,8 @@ func (b policyRealBackend) OpenSession(ctx context.Context, opts SessionOptions)
 	return s, err
 }
 
-func (b policyRealBackend) RotateSession(opts SessionOptions, settled bool) (Backend, error) {
-	next, err := b.dshBackend.RotateSession(opts, settled)
+func (b policyRealBackend) switchSession(opts SessionOptions, from, to string) (Backend, error) {
+	next, err := b.dshBackend.switchSession(opts, from, to)
 	if err != nil {
 		return nil, err
 	}

@@ -252,8 +252,8 @@ func (m *roomManager) prepare(selection roomSelection) (roomIndexEntry, error) {
 	runtime := *team.Runtime
 	runtime.DSH.BinaryArgs = slices.Clone(team.Runtime.DSH.BinaryArgs)
 	runtime.Model = team.Runtime.Model.Clone()
-	init := &roomInitialization{Config: managedRoomConfig{PlatformToolsVersion: 1, Version: formatVersion, RoomIdentity: e.RoomIdentity, Name: name, TeamID: team.ID,
-		Runtime: &runtime, OpeningMessage: team.OpeningMessage, MaxTurns: m.maxTurns, Workspace: &w, WorkspaceVersion: 1}, Resources: team.resources}
+	init := &roomInitialization{Config: managedRoomConfig{PlatformToolsVersion: 1, Version: managedConfigVersion, RoomIdentity: e.RoomIdentity, Name: name, TeamID: team.ID,
+		Runtime: &runtime, OpeningMessage: team.OpeningMessage, SessionMaxTurns: m.maxTurns, Workspace: &w, WorkspaceVersion: 1}, Resources: team.resources}
 	for _, member := range team.Members {
 		membership, err := newOpaqueID()
 		if err != nil {

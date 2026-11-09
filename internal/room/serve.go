@@ -33,7 +33,10 @@ func serveWithFactory(args []string, stdout, stderr io.Writer, create func(strin
 	dir := flags.String("state-dir", "", "single-room directory (default: <config-dir>/data/design-review)")
 	listen := flags.String("listen", "127.0.0.1:8088", "loopback address")
 	mergeWindow := flags.Duration("merge-window", 100*time.Millisecond, "member notification merge window")
-	maxTurns := flags.Uint64("max-turns", defaultMaxTurns, "initial turn allowance and explicit enable grant per membership (persistent in managed rooms; per service in single-room mode)")
+	flags.Func("max-turns", "removed; use --session-max-turns", func(string) error {
+		return fmt.Errorf("--max-turns was removed; use --session-max-turns: cumulative hard stop is now per-session rotation")
+	})
+	maxTurns := flags.Uint64("session-max-turns", defaultMaxTurns, "DSH attempts per Session before automatic rotation (positive; frozen for new managed rooms)")
 	dshTurnTimeout := flags.Duration("dsh-turn-timeout", dsh.DefaultTurnTimeout, "maximum duration of a DSH turn, including model and tools (must be positive)")
 	dshConfig := flags.String("dsh-config", "", "JSON file of named DSH member profiles")
 	if err := flags.Parse(args); err != nil {
@@ -64,7 +67,7 @@ func serveWithFactory(args []string, stdout, stderr io.Writer, create func(strin
 		return err
 	}
 	if *mergeWindow < 0 || *maxTurns == 0 {
-		return ErrRequest
+		return fmt.Errorf("%w: session-max-turns must be positive and merge-window nonnegative", ErrRequest)
 	}
 	if *dshTurnTimeout <= 0 {
 		return fmt.Errorf("%w: dsh-turn-timeout must be positive", ErrRequest)

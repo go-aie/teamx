@@ -7,7 +7,9 @@ listen = "127.0.0.1:8088"
 time_zone = "Asia/Shanghai"
 data_dir = "./data"
 teams_dir = "./teams"
-max_turns = 16
+# DSH 每会话最多受理的回合数；下次有输入时自动轮换。正数，默认 16。
+# 受管房间保存创建时阈值；修改默认值只影响新房间。旧 max_turns 已移除。
+session_max_turns = 16
 # Total time per DSH turn, including model and tools. Use "30m" for large tasks.
 dsh_turn_timeout = "15m"
 # merge_window = "100ms"

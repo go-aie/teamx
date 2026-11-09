@@ -685,7 +685,7 @@ func TestWorkspaceApplyHealthySessionUsesFreshGeneration(t *testing.T) {
 	for _, member := range saved.Members {
 		id := MemberIdentity{RoomIdentity: room.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
 		status, err := m.runtimes[room.RoomIdentity].service.target(id.MembershipID).Call[MemberStatus](ctx, InspectMember{id})
-		if err != nil || status.Paused || status.TurnBudget.Used != 1 {
+		if err != nil || status.Paused || status.SessionTurns.Total != 1 {
 			t.Fatal("healthy enable intent or budget lost", status, err)
 		}
 	}

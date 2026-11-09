@@ -55,10 +55,10 @@ func TestManagedActivationHistoryIntentBudgetAndRestart(t *testing.T) {
 	for _, member := range list.Members {
 		status := member.Execution
 		if member.MembershipID == paused.MembershipID {
-			if !status.Paused || status.TurnBudget.Used != 0 {
+			if !status.Paused || status.SessionTurns.Total != 0 {
 				t.Fatal("manual pause lost", status)
 			}
-		} else if status.Paused || status.TurnBudget.Used != 1 {
+		} else if status.Paused || status.SessionTurns.Total != 1 {
 			t.Fatal("healthy enable intent or budget lost", status)
 		}
 	}
@@ -94,7 +94,7 @@ func TestManagedActivationHistoryIntentBudgetAndRestart(t *testing.T) {
 		t.Fatal("restart reinitialized Room or budget")
 	}
 	status, _ := restored.runtimes[a.RoomIdentity].service.members(ctx)
-	if !status.Members[0].Execution.Paused || status.Members[1].Execution.TurnBudget.Used != 1 {
+	if !status.Members[0].Execution.Paused || status.Members[1].Execution.SessionTurns.Total != 1 {
 		t.Fatal(status)
 	}
 }
@@ -224,7 +224,7 @@ func TestManagedActivationFailureReceiptsAndInterruptedRecovery(t *testing.T) {
 	}
 }
 
-func TestManagedRecoveryKeepsUnsafeAndExhaustedMembersPaused(t *testing.T) {
+func TestManagedRecoveryPreservesUnsafePauseAndConvertsLegacyCounts(t *testing.T) {
 	parallelFixtureTest(t)
 	for _, kind := range []string{"healthy", "manual-pause", "failed", "interrupted", "running", "budget", "blocked"} {
 		t.Run(kind, func(t *testing.T) {
@@ -281,10 +281,10 @@ func TestManagedRecoveryKeepsUnsafeAndExhaustedMembersPaused(t *testing.T) {
 			}
 			for _, member := range list.Members {
 				status := member.Execution
-				if status.Active || status.Paused != (kind != "healthy") {
+				if status.Active || status.Paused != (kind != "healthy" && kind != "budget") {
 					t.Fatal(kind, status)
 				}
-				if kind == "budget" && status.Status != "budget_exhausted" {
+				if kind == "budget" && (status.Status != "idle" || status.SessionGeneration != "" || status.SessionTurns.Total != 7 || status.SessionTurns.BaselineKnown) {
 					t.Fatal(status)
 				}
 				if kind == "running" && status.Agent.Turn.Status != "interrupted" {

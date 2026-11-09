@@ -21,14 +21,15 @@ type startupConfig struct {
 	source []byte
 	file   os.FileInfo
 	Server struct {
-		TimeZone       *string             `toml:"time_zone"`
-		Listen         *string             `toml:"listen"`
-		DataDir        *string             `toml:"data_dir"`
-		TeamsDir       *string             `toml:"teams_dir"`
-		MaxTurns       *uint64             `toml:"max_turns"`
-		MergeWindow    *string             `toml:"merge_window"`
-		DSHTurnTimeout *string             `toml:"dsh_turn_timeout"`
-		ImageMaterials imageMaterialConfig `toml:"image_materials"`
+		TimeZone        *string             `toml:"time_zone"`
+		Listen          *string             `toml:"listen"`
+		DataDir         *string             `toml:"data_dir"`
+		TeamsDir        *string             `toml:"teams_dir"`
+		MaxTurns        *uint64             `toml:"max_turns"` // Retired; decoded only to report the replacement.
+		SessionMaxTurns *uint64             `toml:"session_max_turns"`
+		MergeWindow     *string             `toml:"merge_window"`
+		DSHTurnTimeout  *string             `toml:"dsh_turn_timeout"`
+		ImageMaterials  imageMaterialConfig `toml:"image_materials"`
 	} `toml:"server"`
 	Runtime *teamRuntime      `toml:"runtime"`
 	Env     map[string]string `toml:"env"`
@@ -74,6 +75,9 @@ func loadStartupConfig(name string, required bool) (startupConfig, error) {
 			return startupConfig{}, fmt.Errorf("invalid config %q; check TOML syntax and fields against config.example.toml", path)
 		}
 		config.source = data
+	}
+	if config.Server.MaxTurns != nil {
+		return startupConfig{}, fmt.Errorf("%w: server.max_turns was removed; use server.session_max_turns: cumulative hard stop is now per-session rotation", ErrRequest)
 	}
 	config.path = path
 	if config.Server.TimeZone == nil {
@@ -156,9 +160,9 @@ func applyStartupEnv(values map[string]string) (func(), error) {
 
 func applyStartupSettings(flags *flag.FlagSet, explicit map[string]bool, startup startupConfig) error {
 	settings := map[string]*string{"listen": startup.Server.Listen, "merge-window": startup.Server.MergeWindow, "dsh-turn-timeout": startup.Server.DSHTurnTimeout}
-	if startup.Server.MaxTurns != nil {
-		value := strconv.FormatUint(*startup.Server.MaxTurns, 10)
-		settings["max-turns"] = &value
+	if startup.Server.SessionMaxTurns != nil {
+		value := strconv.FormatUint(*startup.Server.SessionMaxTurns, 10)
+		settings["session-max-turns"] = &value
 	}
 	for name, value := range settings {
 		if value != nil && !explicit[name] {

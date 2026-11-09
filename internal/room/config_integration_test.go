@@ -23,13 +23,13 @@ func TestServeConfigCLIOverridesAndSecretIsolation(t *testing.T) {
 	team.Runtime = nil
 	writeTestTeam(t, filepath.Join(dir, "teams"), team)
 	const secret = "private-startup-secret-not-in-room-files"
-	config := "[server]\nlisten = 'invalid'\ndata_dir = './data'\nteams_dir = './teams'\nmax_turns = 0\n[env]\nTEAMX_TEST_CONFIG_SECRET = '" + secret + "'\n"
+	config := "[server]\nlisten = 'invalid'\ndata_dir = './data'\nteams_dir = './teams'\nsession_max_turns = 0\n[env]\nTEAMX_TEST_CONFIG_SECRET = '" + secret + "'\n"
 	runtime := testTeamDefinition(t).Runtime
 	config += "[runtime.dsh]\nbinary_path = '" + runtime.DSH.BinaryPath + "'\n[runtime.model]\nprotocol = '" + runtime.Model.Protocol + "'\nbase_url = '" + runtime.Model.BaseURL + "'\nmodel_id = '" + runtime.Model.ModelID + "'\napi_key_env = '" + runtime.Model.APIKeyEnv + "'\n"
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	for _, mode := range []string{"absolute", "project-relative"} {
-		args := []string{"serve", "--listen", "127.0.0.1:0", "--max-turns", "7"}
+		args := []string{"serve", "--listen", "127.0.0.1:0", "--session-max-turns", "7"}
 		cwd := t.TempDir()
 		configDir := dir
 		configText := config
@@ -75,7 +75,7 @@ func TestServeConfigCLIOverridesAndSecretIsolation(t *testing.T) {
 		p.stop(t)
 		var saved managedRoomConfig
 		file := filepath.Join(configDir, "data/rooms", room.RoomID, "room-config.json")
-		if err := readSnapshot(file, &saved, maxRoomsFileBytes); err != nil || saved.MaxTurns != 7 || saved.Runtime == nil {
+		if err := readSnapshot(file, &saved, maxRoomsFileBytes); err != nil || saved.SessionMaxTurns != 7 || saved.Runtime == nil {
 			t.Fatal("config paths or explicit CLI precedence lost", err)
 		}
 		if strings.Contains(p.logs.String(), secret) {

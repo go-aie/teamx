@@ -116,7 +116,7 @@ func TestReferenceEntryCLIConversationAndRecovery(t *testing.T) {
 	}
 	// Exercise the real durable Session rotation reference before opening a new runtime.
 	backend := dshBackend{store: h.store}
-	if _, err := backend.RotateSession(adapterOptions(h.store, h.id), false); err != nil {
+	if _, err := rotateAdapterForTest(backend, adapterOptions(h.store, h.id), false); err != nil {
 		t.Fatal(err)
 	}
 	// A new runtime/turn recovers the same business identity and human evidence.

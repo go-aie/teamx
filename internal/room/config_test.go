@@ -117,7 +117,7 @@ func TestStartupConfigRejectsInvalidInputWithoutSecrets(t *testing.T) {
 	for _, text := range []string{
 		`[env]` + "\nKEY = " + secret,
 		`[env]` + "\nKEY = \"" + secret + "\"\n[server]\nunknown = \"" + secret + "\"",
-		"[server]\nmax_turns = \"" + secret + "\"",
+		"[server]\nsession_max_turns = \"" + secret + "\"",
 		"[env]\nKEY = 123",
 		"[env]\nKEY = \"first\"\nKEY = \"second\"",
 		"[env]\nTEAMX_AGENT_ID = \"forged\"",
@@ -161,19 +161,19 @@ func TestStartupEnvironmentPrecedenceAndCleanup(t *testing.T) {
 }
 
 func TestStartupServerSettingsPrecedence(t *testing.T) {
-	config, err := loadStartupConfig(writeStartupConfig(t, t.TempDir(), "[server]\nlisten = '127.0.0.1:8089'\ndata_dir = './saved'\nteams_dir = './catalog'\nmax_turns = 9\nmerge_window = '250ms'\ndsh_turn_timeout = '30m'\n"), true)
+	config, err := loadStartupConfig(writeStartupConfig(t, t.TempDir(), "[server]\nlisten = '127.0.0.1:8089'\ndata_dir = './saved'\nteams_dir = './catalog'\nsession_max_turns = 9\nmerge_window = '250ms'\ndsh_turn_timeout = '30m'\n"), true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, explicit := range []bool{false, true} {
 		f := flag.NewFlagSet("serve", flag.ContinueOnError)
 		listen := f.String("listen", "127.0.0.1:8088", "")
-		turns := f.Uint64("max-turns", 16, "")
+		turns := f.Uint64("session-max-turns", 16, "")
 		merge := f.Duration("merge-window", 0, "")
 		timeout := f.Duration("dsh-turn-timeout", 15*time.Minute, "")
 		args := []string{}
 		if explicit {
-			args = []string{"--listen", "127.0.0.1:0", "--max-turns", "7", "--merge-window", "0s", "--dsh-turn-timeout", "20m"}
+			args = []string{"--listen", "127.0.0.1:0", "--session-max-turns", "7", "--merge-window", "0s", "--dsh-turn-timeout", "20m"}
 		}
 		if err := f.Parse(args); err != nil {
 			t.Fatal(err)

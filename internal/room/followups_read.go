@@ -67,6 +67,7 @@ type followupQuery struct {
 	Cursor           string
 	Limit            int
 	IncludeCompleted bool
+	preferredObjects map[string]bool // Internal first-page recovery ordering only.
 }
 
 type followupPage struct {
@@ -162,12 +163,19 @@ func followupCursorKey(id MemberIdentity, q followupQuery) string {
 func (s *Store) listFollowups(id MemberIdentity, q followupQuery) (followupPage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.listFollowupsLocked(id, q)
+}
+
+func (s *Store) listFollowupsLocked(id MemberIdentity, q followupQuery) (followupPage, error) {
 	page := followupPage{Items: []followupSummary{}}
 	if err := s.checkFollowupsLocked(id, false); err != nil {
 		return page, err
 	}
 	if q.Limit < 1 || q.Limit > 25 || len(q.Cursor) > 512 {
 		return page, ErrRequest
+	}
+	if len(q.preferredObjects) != 0 && q.Cursor != "" {
+		return page, ErrRequest // Recovery ordering is only a first-page preview.
 	}
 	after := ""
 	key := followupCursorKey(id, q)
@@ -261,7 +269,12 @@ func (s *Store) listFollowups(id MemberIdentity, q followupQuery) (followupPage,
 		}
 		items = append(items, v)
 	}
-	sort.Slice(items, func(i, j int) bool { return items[i].Ref < items[j].Ref })
+	sort.Slice(items, func(i, j int) bool {
+		if q.preferredObjects[items[i].ObjectRef] != q.preferredObjects[items[j].ObjectRef] {
+			return q.preferredObjects[items[i].ObjectRef]
+		}
+		return items[i].Ref < items[j].Ref
+	})
 	page.Total = len(items)
 	size := 0
 	for _, item := range items {

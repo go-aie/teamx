@@ -2683,3 +2683,24 @@ test("GitLab invalid custom times block saves and returning to the default clear
  await ui.el("gitlab-save").emit("click");
  assert.equal(gitlabWrites(api)[0].data.config.backfill_start,undefined);
 });
+
+test("DSH threshold shows Session counts and keeps pause available during automatic rotation", async () => {
+  const api = server([makeRoom("A")]);
+  const member = {agent_id:"reviewer",membership_id:"generation-reviewer",status:"rotating",runner:{profile:"runtime"},unread_count:1,read_through:6,
+    execution:{paused:false,active:false,session_turns:{used:2,limit:2,total:6,baseline_known:true},agent:{turn_number:6},rotation:{reason:"session_max_turns",phase:"old_closed",status:"closing"}}};
+  api.hook = path => {
+    if(path==="/v1/member/list")return {members:[structuredClone(member)]};
+    if(path==="/v1/member/activity")return {member:structuredClone(member)};
+    if(path==="/v1/member/pause"){member.execution.paused=true;return structuredClone(member.execution)};
+  };
+  const ui=await launch(api);
+  await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();
+  assert.equal(ui.el("activity-budget").textContent,"2 / 2 · 累计 6");
+  assert.match(ui.el("activity-rotation").textContent,/达到会话回合阈值 · old_closed/);
+  assert.equal(ui.el("agent-enable-hint").hidden,true);
+  const pause=ui.el("agent-actions").children[0];
+  assert.equal(pause.textContent,"暂停");assert.equal(pause.disabled,false);
+  await pause.emit("click");await settle();
+  assert.equal(api.calls.filter(c=>c.path==="/v1/member/pause").length,1);
+  assert.equal(api.calls.some(c=>c.path==="/v1/member/run"||c.path==="/v1/member/session/rotate"),false);
+});

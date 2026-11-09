@@ -11,8 +11,6 @@ import (
 	"reflect"
 	"strings"
 	"time"
-
-	"github.com/go-aie/teamx/internal/agent/dsh"
 )
 
 var errWorkspaceOperationNotFound = errors.New("workspace operation not recorded")
@@ -673,34 +671,46 @@ func cloneToolEnv(input map[string]string) map[string]string {
 // member that has never opened a Session receives no synthetic rotation.
 func updateWorkspaceSession(store *Store, id MemberIdentity, operationID string) error {
 	opts := SessionOptions{MemberIdentity: id, StatePath: filepath.Join(store.dir, "agents", id.MembershipID, "session.json")}
-	ref, exists, err := (dshBackend{store: store}).reference(opts)
+	b := dshBackend{store: store}
+	ref, exists, err := b.reference(opts)
 	if err != nil {
 		return err
-	}
-	desired := filepath.Base(dshStateDir(opts.StatePath)) + "-" + operationID
-	if ref.Directory == desired && ref.Pending {
-		return nil
 	}
 	if !exists && !ref.Pending {
 		return nil
 	}
-	if exists {
-		directory := ref.Directory
-		if directory == "" {
-			directory = filepath.Base(dshStateDir(opts.StatePath))
+	state, err := store.loadScheduling(id)
+	if errors.Is(err, os.ErrNotExist) {
+		agent, loadErr := store.LoadAgent(id)
+		if loadErr != nil && !errors.Is(loadErr, os.ErrNotExist) {
+			return loadErr
 		}
-		if err := dsh.CheckReset(filepath.Join(filepath.Dir(opts.StatePath), directory)); err != nil {
-			return err
-		}
+		state = memberScheduling{Version: formatVersion, MemberIdentity: id, Used: agent.TurnNumber}
+		err = store.saveScheduling(state)
 	}
-	next := dshReference{Version: formatVersion, MemberIdentity: id, Directory: desired, Pending: true}
-	store.mu.Lock()
-	defer store.mu.Unlock()
-	path, err := store.dshPath(id, "session.json", true)
 	if err != nil {
 		return err
 	}
-	return store.save(path, next, maxPrivateFileBytes)
+	r, err := store.loadRotation(id)
+	if err != nil {
+		return err
+	}
+	if r == nil || r.OperationID != operationID {
+		if r != nil && r.Phase != "completed" {
+			return ErrBusy
+		}
+		if ref.Directory == "session.json.dsh-"+operationID {
+			return ErrConflict
+		}
+		r = &rotationRecord{Version: rotationVersion, MemberIdentity: id, OperationID: operationID, Reason: "workspace_apply", From: ref.Directory, To: "session.json.dsh-" + operationID, BaseUsed: state.Used, Phase: "prepared"}
+		if err := store.saveRotation(*r); err != nil {
+			return err
+		}
+	}
+	if r.Reason != "workspace_apply" || r.To != "session.json.dsh-"+operationID {
+		return ErrConflict
+	}
+	return reconcileRotation(store, opts, r, &state)
 }
 
 // A recorded progress bit never substitutes for checking the actual reference.
@@ -718,7 +728,7 @@ func reconcileWorkspaceSession(store *Store, id MemberIdentity, operationID stri
 		return nil
 	}
 	if ref.Directory == desired && ref.Pending {
-		return nil
+		return updateWorkspaceSession(store, id, operationID)
 	}
 	if updated || !exists && !ref.Pending {
 		return ErrConflict

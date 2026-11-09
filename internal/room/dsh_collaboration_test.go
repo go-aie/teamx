@@ -140,6 +140,9 @@ func TestDSHRecoveryAdmitsOnlyStoppedOriginalSession(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(dshStateDir(opts.StatePath), "backend.json"), data, 0600); err != nil {
 				t.Fatal(err)
 			}
+			if err := store.saveScheduling(memberScheduling{Version: formatVersion, MemberIdentity: id, Enabled: true, Used: 1}); err != nil {
+				t.Fatal(err)
+			}
 			_ = store.Close()
 			config := recoveryConfig()
 			config.dshProfiles = map[string]dshProfile{"reviewer": {Model: dsh.ModelConfig{APIKeyEnv: "TEAMX_RECOVERY_TEST_KEY"}}}
@@ -162,7 +165,7 @@ func TestDSHRecoveryAdmitsOnlyStoppedOriginalSession(t *testing.T) {
 			// Enabling scheduling must report idle while retaining the last
 			// attempt. Already offered input must not launch or replay a turn.
 			resumed, err := svc.control(context.Background(), apiRequest{AgentID: id.AgentID, MembershipID: id.MembershipID}, "run")
-			if err != nil || resumed.Status != "idle" || resumed.Paused || resumed.Active || resumed.TurnBudget.Used != 0 {
+			if err != nil || resumed.Status != "idle" || resumed.Paused || resumed.Active || resumed.SessionTurns.Total != 1 {
 				t.Fatal("resumed member retained historical execution status", resumed, err)
 			}
 			list, err := svc.members(context.Background())

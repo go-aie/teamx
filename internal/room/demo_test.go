@@ -149,7 +149,7 @@ func (d *cliDriver) start(number int) error {
 		return err
 	}
 	cmd := exec.CommandContext(d.ctx, d.binary, "serve", "--config", configPath, "--room", "design-review", "--state-dir", d.dir,
-		"--listen", "127.0.0.1:0", "--merge-window", "0s", "--max-turns", "3")
+		"--listen", "127.0.0.1:0", "--merge-window", "0s", "--session-max-turns", "3")
 	cmd.Env, cmd.Stderr, cmd.WaitDelay = operatorEnv(""), log, time.Second
 	cmd.Cancel = func() error { return cmd.Process.Signal(os.Interrupt) }
 	cmd.WaitDelay = 7 * time.Second

@@ -94,9 +94,15 @@ flowchart LR
 
 受管服务按各房间的持久协作意图恢复，界面是否查看不参与判断；已全部暂停且已结清的房间按需打开。重复打开健康实例不更换 Session 或续额。恢复时更新当前 CLI 身份；恢复失败不静默新建。遗留 running 回合记为 interrupted 并暂停，正常恢复资格不意味着自动重放旧回合。失败会话可在执行结清后显式重置，但结清证明不等于原会话正常恢复许可。
 
+手动轮换由服务生命周期准入统一协调，先冻结执行受理并取消／等待平台调用，再确认旧资源结清。`rotation.json` 保存固定操作 ID、from/to、`base_used` 和 `prepared → old_closed → completed` 阶段；`collaboration.json` 同次保存代际与起始计数。文件逐个原子替换，启动按已确认阶段对账，不重新分配目标。完成后按最新协作意图等待正常输入，用户暂停始终有效。查询／继续命令见[运行手册](../internal/room/README.zh.md#回合预算与轮换)。
+
+每次新建或正常恢复 Session 后，首个正常业务回合会提供只读恢复材料：本轮固定快照内最近最多 20 条 Room 消息、最多 25 项未完成事项摘要，以及已保存未知动作的数量和查询入口。总计最多 32 KiB，并受现有提示文本／帧限制；预算不足会整项省略并说明未覆盖范围，可选 Room 预览超时会降级，必要业务记录损坏或身份不符则阻断回合。准备过程不确认已读、不消费 Inbox、不关联回答、不推进事项，也不调用远端解析。模型仍须按需查回原通知、回答和动作回执；已确认动作不重复执行，未知结果必须核实。重要进度应写入现有事项或 Workspace 任务文件，旧私有思路不保证恢复。首次供给仅在提示执行成功后完成；失败不自动重试，正常重启可重新供给。
+
+DSH 成员的累计受理次数在单房间与受管模式都持久保存，Room／Inbox 共用；失败和取消计数，未受理撤销。使用 `server.session_max_turns`／`--session-max-turns` 设置每会话阈值，默认 16，必须大于 0。达到阈值后只在下一批正常输入前自动轮换，不因累计次数暂停或要求人工续额；没有输入便休眠。受管房间保存创建时阈值，服务默认值只影响新房间，单房间使用启动配置。旧配置名称明确报错；既有房间加载时按版本一次转换，未知旧基线要求先换代，保留累计次数和最新暂停意图。异常恢复、失败与取消仍需原有的显式继续。
+
 状态目录含锁、启动记录、`backend.json`、独立 DSH home/agents 及私有历史；Room 在 `session.json` 引用具体代际。`settled.json` 仅供显式重置核对，并在再次启动前消费，不授予原会话恢复权。
 
-当前不支持宿主崩溃后的自动进程接管、私有记忆自动摘要迁移或自动轮换。命令见[运行手册](../internal/room/README.zh.md#回合预算与轮换)。
+当前不支持宿主崩溃后的自动进程接管、私有记忆自动摘要迁移或按上下文用量轮换。命令见[运行手册](../internal/room/README.zh.md#回合预算与轮换)。
 
 ## 真实验收
 
@@ -123,6 +129,7 @@ TEAMX_DSH_REAL=1 TEAMX_DSH_OUTPUT=/absolute/new-session-evidence \
 | `TEAMX_DSH_REAL` | `internal/agent/dsh: TestRealDSHSession` | Session 角色、记忆、工具、取消与关闭 |
 | `TEAMX_DSH_IMAGE_REAL` | `internal/agent/dsh: TestRealDSHImage` | I1 独立图片的随机数字短码与布局识别、正常关闭；另设 `TEAMX_DSH_IMAGE_RESUME=1` 可附加恢复后读图检查 |
 | `TEAMX_GITLAB_IMAGE_REAL` | `internal/room: TestRealGitLabImageMaterials`（`-tags e2e`） | 真实私有 GitLab 图片的 Room／Inbox 材料与纯文本降级；另设 `TEAMX_GITLAB_IMAGE_MODEL=1` 验证真实模型，详见[手册](gitlab-image-acceptance.zh.md) |
+| `TEAMX_ROTATION_REAL` | `internal/room: TestAutomaticRotationReal`（`-tags e2e`） | 小阈值跨两次自动轮换、正常重启计数；设置 `TEAMX_ROTATION_BROWSER=1`，出现 browser-ready.json 后从仓库根目录运行 `node internal/room/testdata/session_auto_rotation_browser.cjs ABS_OUTPUT`（需已安装 Playwright／Chromium） |
 | `TEAMX_GITLAB_IMAGE_COVERAGE` | `internal/room: TestRealGitLabImageCoverage`（`-tags e2e`） | 两图、缺图、截断及预算的真实下载；不涉及模型 |
 | `TEAMX_GITLAB_IMAGE_BROWSER` | `internal/room: TestRealGitLabImagePreview`（`-tags e2e`） | 隔离页面和 Room／Inbox 图片地址；浏览器须另行核对并保存截图 |
 | `TEAMX_DSH_ROOM_REAL` | `internal/room: TestRealDSHRoom` | 生产 CLI 单成员协作 |

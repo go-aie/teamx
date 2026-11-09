@@ -159,7 +159,7 @@ func TestDSHTimeSupplyLifecycleAndPolicyIndependence(t *testing.T) {
 	if err := session.Close(h.ctx); err != nil {
 		t.Fatal(err)
 	}
-	next, err := b.RotateSession(opts, true)
+	next, err := rotateAdapterForTest(b, opts, true)
 	if err != nil {
 		t.Fatal(err)
 	}

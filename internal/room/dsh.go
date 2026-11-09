@@ -85,12 +85,13 @@ type dshComponent interface {
 }
 
 type dshBackend struct {
-	store       *Store
-	settings    *systemSettings
-	prepare     func(context.Context, UnreadChanged, uint64, bool) (*dshMaterials, error)
-	profile     dshProfile
-	turnTimeout time.Duration // Service policy; not part of the frozen Room runtime.
-	recover     bool          // Only set by startup after checking normal shutdown evidence.
+	store           *Store
+	settings        *systemSettings
+	prepare         func(context.Context, UnreadChanged, uint64, bool) (*dshMaterials, error)
+	recoveryContext func(context.Context, UnreadChanged, uint64) (*dshRecoveryContext, error)
+	profile         dshProfile
+	turnTimeout     time.Duration // Service policy; not part of the frozen Room runtime.
+	recover         bool          // Only set by startup after checking normal shutdown evidence.
 	// A narrow seam for offline adapter tests; production always uses dsh.Open.
 	open func(context.Context, dsh.Options) (dshComponent, error)
 }
@@ -310,8 +311,9 @@ type dshSession struct {
 	backend   dshBackend
 	opts      SessionOptions
 	// In-memory only: opening, resuming or rotating creates a new supply scope.
-	policyToken string
-	timeZone    string // Last successfully supplied zone; independent of policy.
+	policyToken      string
+	recoverySupplied bool   // Only a successful RunPrompt clears first-supply work.
+	timeZone         string // Last successfully supplied zone; independent of policy.
 }
 
 func dshTimeContext(settings settingsSnapshot, now time.Time, previous string) string {
@@ -370,6 +372,16 @@ func (s *dshSession) Run(ctx context.Context, input UnreadChanged) (err error) {
 	if !materialPromptFits(prompt) {
 		return dshFailure(errors.New("DSH material prompt exceeds text/frame budget"))
 	}
+	if !s.recoverySupplied && s.backend.recoveryContext != nil {
+		recovery, err := s.backend.recoveryContext(ctx, input, policy.CurrentTurn)
+		if err != nil {
+			return dshFailure(err)
+		}
+		prompt, err = recovery.appendTo(prompt)
+		if err != nil {
+			return dshFailure(err)
+		}
+	}
 	if materials != nil {
 		if err := materials.check(ctx); err != nil {
 			return dshFailure(err)
@@ -380,6 +392,7 @@ func (s *dshSession) Run(ctx context.Context, input UnreadChanged) (err error) {
 	}
 	result, runErr := s.component.RunPrompt(ctx, prompt)
 	if runErr == nil {
+		s.recoverySupplied = true
 		s.policyToken = policy.PolicyToken
 		s.timeZone = settings.TimeZone
 	} else {

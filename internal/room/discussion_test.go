@@ -167,7 +167,7 @@ func TestDiscussionRestartSettlesWholeTeamBeforeClearing(t *testing.T) {
 		}
 		id := MemberIdentity{RoomIdentity: svc.info.RoomIdentity, AgentID: m.AgentID, MembershipID: m.MembershipID}
 		status := inspectMember(t, context.Background(), svc.target(m.MembershipID), id)
-		if status.Paused || status.Active || status.Status != "idle" || status.TurnBudget.Used != uint64(1-i) {
+		if status.Paused || status.Active || status.Status != "idle" || status.SessionTurns.Total != uint64(1-i) {
 			t.Fatal("team not resumed or budget renewed", status)
 		}
 		data, err := os.ReadFile(filepath.Join(svc.store.dir, "agents", m.MembershipID, "session.json"))
@@ -436,7 +436,7 @@ func (f discussionClearFailureFile) Write(data []byte) (int, error) {
 	return f.snapshotFile.Write(data)
 }
 
-func TestDiscussionRestartDoesNotRenewExhaustedBudget(t *testing.T) {
+func TestDiscussionRestartUpdatesSessionBaselineAndPreservesTotal(t *testing.T) {
 	svc := discussionService(t, t.TempDir(), func(context.Context, dsh.Options) (dshComponent, error) {
 		return &adapterComponent{run: func(context.Context, string) (dsh.TurnResult, error) {
 			return dsh.TurnResult{StopReason: "end_turn"}, nil
@@ -463,11 +463,51 @@ func TestDiscussionRestartDoesNotRenewExhaustedBudget(t *testing.T) {
 		t.Fatal(code)
 	}
 	result := awaitDiscussion(t, svc)
-	if result.Status != "completed" || len(result.PausedMembers) != 1 || result.PausedMembers[0] != "A" {
+	if result.Status != "completed" || len(result.PausedMembers) != 0 {
 		t.Fatal(result)
 	}
 	status := inspectMember(t, ctx, svc.target(m.MembershipID), id)
-	if !status.Paused || status.Status != "budget_exhausted" || status.TurnBudget.Used != 1 || status.Agent.TurnNumber != 1 {
+	if status.Paused || status.Status != "idle" || status.SessionTurns.Total != 1 || status.SessionTurns.Used != 0 || status.Agent.TurnNumber != 1 {
 		t.Fatal("restart renewed budget or turn count", status)
+	}
+}
+
+func TestDiscussionRestartDoesNotOverwriteNewPause(t *testing.T) {
+	closing, release := make(chan struct{}), make(chan struct{})
+	svc := discussionService(t, t.TempDir(), func(context.Context, dsh.Options) (dshComponent, error) {
+		return &adapterComponent{
+			run:   func(context.Context, string) (dsh.TurnResult, error) { return dsh.TurnResult{}, nil },
+			close: func(context.Context) error { close(closing); <-release; return nil },
+		}, nil
+	})
+	defer closeService(t, svc)
+	member, err := svc.add(apiRequest{AgentID: "A", Runner: RunnerConfig{Kind: "dsh", Profile: "reviewer"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := apiRequest{ServiceInfo: svc.info, Caller: humanCaller, AgentID: member.AgentID, MembershipID: member.MembershipID}
+	if code := discussionHTTP(t, svc, "/v1/send", apiRequest{ServiceInfo: svc.info, Caller: humanCaller, ClientMessageID: "one", Text: "body"}, nil); code != http.StatusOK {
+		t.Fatal(code)
+	}
+	if _, err := svc.control(svc.ctx, req, "run"); err != nil {
+		t.Fatal(err)
+	}
+	id := MemberIdentity{RoomIdentity: svc.info.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
+	waitMember(t, svc.ctx, svc.target(member.MembershipID), id, func(s MemberStatus) bool { return !s.Active && s.Agent.TurnNumber == 1 })
+	if _, err := svc.startDiscussionRestart(apiRequest{Caller: humanCaller, RestartID: strings.Repeat("f", 32)}); err != nil {
+		t.Fatal(err)
+	}
+	<-closing
+	if code := discussionHTTP(t, svc, "/v1/member/pause", req, nil); code != http.StatusOK {
+		t.Fatal("pause rejected during restart", code)
+	}
+	close(release)
+	if result := awaitDiscussion(t, svc); result.Status != "completed" {
+		t.Fatal(result)
+	}
+	status := inspectMember(t, svc.ctx, svc.target(member.MembershipID), id)
+	state, err := svc.store.loadScheduling(id)
+	if err != nil || !status.Paused || state.Enabled {
+		t.Fatal("discussion completion overwrote newer pause", status, state, err)
 	}
 }

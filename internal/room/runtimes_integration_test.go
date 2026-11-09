@@ -55,7 +55,7 @@ func TestRuntimeOpenRoutesAndReusesInstances(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, member := range members.Members {
-			if member.Execution == nil || member.Execution.TurnBudget.Used > 1 {
+			if member.Execution == nil || member.Execution.SessionTurns.Total > 1 {
 				t.Fatal("open reset execution accounting", member)
 			}
 		}

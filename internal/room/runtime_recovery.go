@@ -131,6 +131,21 @@ func (m *roomManager) runtimeRecoveryNeeded(owner RoomIdentity) (bool, error) {
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return false, err
 		}
+		rotation, err := store.loadRotation(id)
+		if err != nil {
+			return false, err
+		}
+		needed = needed || rotation != nil && rotation.Phase != "completed"
+		if intent.Version == formatVersion {
+			intent, err = convertScheduling(intent)
+			if err != nil {
+				return false, err
+			}
+			intent.Limit = 0
+			if err := store.saveScheduling(intent); err != nil {
+				return false, err
+			}
+		}
 		needed = needed || intent.Enabled
 		agent, err := store.LoadAgent(id)
 		if err != nil && !errors.Is(err, os.ErrNotExist) {

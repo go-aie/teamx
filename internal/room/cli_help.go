@@ -6,7 +6,7 @@ const rootCLIHelp = `Usage: teamx COMMAND [--help]
   init | doctor                 Initialize or diagnose a distribution (--bundle-root, --home; init: --non-interactive)
   serve                         Start the service
   connections upgrade           Upgrade connection data offline (--rooms-dir ROOT)
-  member add/list/remove/run/pause/session rotate
+  member add/list/remove/run/pause/session rotate/status
   send | read                   Room messages
   inbox read                    Original platform notifications
   matters list/read/sources/source/resolve/ensure/update/notify/reply/instruct/instruction-status

@@ -3,8 +3,10 @@
 package room
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -50,6 +52,20 @@ func (d *realRoomDriver) rotationAcceptance() error {
 		return errors.New("first turn did not consume input")
 	}
 	d.memberDir = filepath.Join(d.dir, "agents", m.MembershipID)
+	// Seed one real local business record through the operator API. Rotation
+	// must preserve it byte-for-byte, independently of the model's private state.
+	policyReq := apiRequest{ServiceInfo: d.info, Caller: humanCaller, AgentID: m.AgentID, MembershipID: m.MembershipID, Policy: &PolicyChange{ID: "s1-retained-rule", Status: "active", Text: "Keep acceptance replies concise.", SourceText: "Keep acceptance replies concise."}}
+	client := cliClient{endpoint: d.endpoint, http: &http.Client{Timeout: 10 * time.Second}}
+	var policyView PolicyView
+	if err := client.request(d.ctx, "/v1/policy/update", &policyReq, &policyView); err != nil {
+		return err
+	}
+	businessPath := filepath.Join(d.memberDir, "policy.json")
+	businessBefore, err := os.ReadFile(businessPath)
+	if err != nil {
+		return err
+	}
+
 	var old struct {
 		SessionID string `json:"sessionId"`
 	}
@@ -69,7 +85,7 @@ func (d *realRoomDriver) rotationAcceptance() error {
 	if rotated, err = d.rotateReal(false); err != nil {
 		return err
 	}
-	if rotated.Rotation == nil || rotated.Rotation.Status != "completed" || !rotated.Paused || rotated.Active || rotated.TurnBudget.Used != 1 {
+	if rotated.Rotation == nil || rotated.Rotation.Status != "completed" || !rotated.Paused || rotated.Active || rotated.SessionTurns.Total != 1 {
 		return errors.New("invalid settled rotation")
 	}
 	var after RoomSnapshot
@@ -93,6 +109,22 @@ func (d *realRoomDriver) rotationAcceptance() error {
 	if _, err := os.Stat(nextDir); !errors.Is(err, os.ErrNotExist) {
 		return errors.New("new backend launched during lazy rotation")
 	}
+
+	if rotated.SessionGeneration != ref.Directory || rotated.SessionStartUsed != 1 || rotated.Rotation.Phase != "completed" {
+		return errors.New("rotation baseline not committed")
+	}
+	businessAfter, err := os.ReadFile(businessPath)
+	if err != nil || !bytes.Equal(businessBefore, businessAfter) {
+		return errors.New("rotation changed business record")
+	}
+	var repeated MemberStatus
+	if err := d.command(&repeated, "member", "session", "rotate", "--agent", "reviewer", "--operation-id", rotated.Rotation.OperationID, "--from-generation", rotated.Rotation.FromGeneration); err != nil {
+		return err
+	}
+	if repeated.Rotation.ToGeneration != ref.Directory || repeated.SessionTurns.Total != 1 {
+		return errors.New("duplicate operation rotated twice")
+	}
+	d.report["businessRecordPreserved"], d.report["duplicateOperationIdempotent"] = true, true
 	d.report["rotation"], d.report["preservedRoom"], d.report["newDirectory"] = rotated, after, ref.Directory
 	d.phase("history-context-after-rotation")
 	text := "Read this new message, then use the TeamX CLI read --all --json to recover the shared history token from the first Room message. Include that token in your ordinary private answer. Do not send to the Room."
@@ -181,7 +213,7 @@ func (d *realRoomDriver) rotationAcceptance() error {
 	if rotated, err = d.rotateReal(true); err != nil {
 		return err
 	}
-	if rotated.Active || !rotated.Paused || rotated.Agent.TurnNumber != 3 || rotated.Agent.Turn.Status != "interrupted" || rotated.TurnBudget.Used != 3 {
+	if rotated.Active || !rotated.Paused || rotated.Agent.TurnNumber != 3 || rotated.Agent.Turn.Status != "interrupted" || rotated.SessionTurns.Total != 3 {
 		return errors.New("cancel rotation lost turn settlement")
 	}
 	if err := d.stoppedRoots(owned...); err != nil {
@@ -247,6 +279,45 @@ func (d *realRoomDriver) rotationAcceptance() error {
 	if err := store.Close(); err != nil {
 		return err
 	}
+
+	// A normal restart preserves both cumulative admissions and the new baseline.
+	if err := d.startReal(2); err != nil {
+		return err
+	}
+	restored, err := d.members()
+	if err != nil {
+		return err
+	}
+	restoredMember, err := findMember(restored, "reviewer")
+	if err != nil {
+		return err
+	}
+	if restoredMember.Execution.SessionTurns.Total != 4 || restoredMember.Execution.SessionStartUsed != 3 || restoredMember.Execution.SessionGeneration != ref.Directory {
+		return errors.New("normal restart lost cumulative count or baseline")
+	}
+	if err := d.command(nil, "send", "--text", "Read this new message through the configured CLI and finish privately. Do not send.", "--id", "after-restart"); err != nil {
+		return err
+	}
+	continued, err := d.waitAgent("reviewer", 5, "completed")
+	if err != nil {
+		return err
+	}
+	if continued.Execution.SessionTurns.Total != 5 || continued.Execution.SessionStartUsed != 3 {
+		return errors.New("normal restart reset counters")
+	}
+	var resumedBackend struct {
+		SessionID string `json:"sessionId"`
+	}
+	if err := jsonFile(filepath.Join(lastDir, "backend.json"), &resumedBackend); err != nil {
+		return err
+	}
+	if resumedBackend.SessionID != last.SessionID {
+		return errors.New("normal restart replaced original Session")
+	}
+	d.report["normalRestartPreservesCounts"], d.report["normalRestartSessionID"] = true, resumedBackend.SessionID
+	if err := d.stopReal(); err != nil {
+		return err
+	}
 	d.report["normalResumeEligible"] = true
 	d.phase("complete")
 	return nil
@@ -255,19 +326,33 @@ func (d *realRoomDriver) rotationAcceptance() error {
 // A command deadline bounds its wait, not the retained rotation task. Observe
 // the original operation after incomplete/unknown; never submit a second one.
 func (d *realRoomDriver) rotateReal(cancelTurn bool) (MemberStatus, error) {
-	args := []string{"member", "session", "rotate", "--agent", "reviewer"}
+	list, err := d.members()
+	if err != nil {
+		return MemberStatus{}, err
+	}
+	member, err := findMember(list, "reviewer")
+	if err != nil {
+		return MemberStatus{}, err
+	}
+	operationID, err := newOpaqueID()
+	if err != nil {
+		return MemberStatus{}, err
+	}
+	args := []string{"member", "session", "rotate", "--agent", "reviewer", "--operation-id", operationID, "--from-generation", member.Execution.SessionGeneration}
 	if cancelTurn {
 		args = append(args, "--cancel")
 	}
+
 	var status MemberStatus
-	err := d.command(&status, args...)
+	err = d.command(&status, args...)
 	if err == nil {
 		return status, nil
 	}
-	if !strings.Contains(err.Error(), "rotation incomplete") && !strings.Contains(err.Error(), "rotation outcome unknown") {
-		return status, err
-	}
-	d.report["rotationCommandWaitExpired"] = true
+	// Public diagnostics intentionally hide internal errors. Even a generic
+	// command failure can be a completed or still-owned operation: query its
+	// exact ID before interpreting the result, without submitting another rotate.
+	commandErr := err
+	d.report["rotationCommandOutcomeReconciled"] = true
 	deadline := time.Now().Add(30 * time.Second)
 	err = d.until(func() (bool, error) {
 		list, err := d.members()
@@ -279,8 +364,8 @@ func (d *realRoomDriver) rotateReal(cancelTurn bool) (MemberStatus, error) {
 			return false, err
 		}
 		status = *member.Execution
-		if status.Rotation == nil {
-			return false, errors.New("rotation observation missing")
+		if status.Rotation == nil || status.Rotation.OperationID != operationID {
+			return false, commandErr
 		}
 		switch status.Rotation.Status {
 		case "completed":

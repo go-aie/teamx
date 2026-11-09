@@ -66,11 +66,18 @@ func TestRotationWaitsForTurnAndCleanupWithoutRenewingBudget(t *testing.T) {
 			<-entered
 			svc := &service{info: ServiceInfo{RoomIdentity: id.RoomIdentity}, room: h.addr,
 				targets: map[string]actorx.Addr{id.MembershipID: addr}, dshProfiles: map[string]dshProfile{"reviewer": {}}}
-			wait, cancel := context.WithTimeout(h.ctx, 30*time.Millisecond)
+			platformStarted := make(chan struct{})
+			svc.beginPlatformMemberChange = func(context.Context, MemberIdentity) (func(), error) { close(platformStarted); return func() {}, nil }
+			wait, cancel := context.WithTimeout(h.ctx, 150*time.Millisecond)
 			_, err = svc.rotateSession(wait, apiRequest{AgentID: id.AgentID, MembershipID: id.MembershipID, Cancel: cancelTurn})
 			cancel()
 			if err == nil || (!strings.Contains(err.Error(), "incomplete") && !strings.Contains(err.Error(), "unknown")) {
 				t.Fatal("command did not report unfinished rotation", err)
+			}
+			select {
+			case <-platformStarted:
+			case <-time.After(time.Second):
+				t.Fatal("platform admission was not frozen during active turn")
 			}
 			if cancelTurn {
 				<-canceled
@@ -145,7 +152,9 @@ func TestRotationCleanupFailureNeverAuthorizesReplacement(t *testing.T) {
 		t.Fatal("ran after failed cleanup")
 	}
 	// A repeat still sees the same failed cleanup; no replacement authority.
-	controlMember(t, h, addr, id, "rotate", UnreadChanged{}, false, false)
+	if _, err := addr.Call[MemberStatus](h.ctx, ControlMember{MemberIdentity: id, Action: "rotate", OperationID: s.Rotation.OperationID, FromGeneration: s.Rotation.FromGeneration, ContinueRotation: true}); err != nil {
+		t.Fatal(err)
+	}
 	waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool { return s.Rotation.Status == "failed" })
 	_ = addr.Stop(nil)
 	exit, err := addr.Wait(h.ctx)
@@ -243,7 +252,7 @@ func TestRotationRequiresDurableSettlementAfterRestart(t *testing.T) {
 			}
 			b := dshBackend{store: store}
 			before, _ := os.ReadFile(opts.StatePath)
-			_, err = b.RotateSession(opts, false)
+			_, err = rotateAdapterForTest(b, opts, false)
 			allowed := mode == "stopped" || mode == "settled" || mode == "pending"
 			if (err == nil) != allowed {
 				t.Fatal(mode, err)
@@ -358,11 +367,11 @@ func TestRotationCommitFailureDoesNotLaunch(t *testing.T) {
 				h.store.ops.createTemp = func(string, string) (snapshotFile, error) { return nil, errors.New("disk unavailable") }
 			}
 			h.store.mu.Unlock()
-			if _, err := b.RotateSession(opts, false); err == nil {
+			if _, err := rotateAdapterForTest(b, opts, false); err == nil {
 				t.Fatal("rotation succeeded")
 			}
 			if uncertain {
-				if _, err := b.RotateSession(opts, false); !errors.Is(err, ErrCommitUnknown) {
+				if _, err := rotateAdapterForTest(b, opts, false); !errors.Is(err, ErrCommitUnknown) {
 					t.Fatal(err)
 				}
 			}
@@ -429,7 +438,7 @@ func TestRotatedSessionResumeUsesSameDirectoryAndRole(t *testing.T) {
 	}
 	profile := dshProfile{Instructions: "reviewer role"}
 	backend := dshBackend{store: store, profile: profile, open: fake}
-	next, err := backend.RotateSession(opts, false)
+	next, err := rotateAdapterForTest(backend, opts, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -441,6 +450,9 @@ func TestRotatedSessionResumeUsesSameDirectoryAndRole(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := store.SaveAgent(AgentSnapshot{Version: formatVersion, MemberIdentity: id, TurnNumber: 1, LastOfferedUnreadSeq: 3, Turn: &TurnRecord{Number: 1, Status: "completed", SnapshotSeq: 3, OfferedUnreadSeq: 3}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.saveScheduling(memberScheduling{Version: formatVersion, MemberIdentity: id, Enabled: true, Used: 1}); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Close(); err != nil {
@@ -504,5 +516,86 @@ func TestRotationShutdownJoinsOldCleanupBeforeReleasingActor(t *testing.T) {
 	after, _ := os.ReadFile(opts.StatePath)
 	if string(before) != string(after) || opens.Load() != 1 {
 		t.Fatal("shutdown launched or committed a replacement")
+	}
+}
+
+func TestServiceShutdownCancelsTurnOwnedByWaitingRotation(t *testing.T) {
+	entered := make(chan struct{})
+	svc := discussionService(t, t.TempDir(), func(context.Context, dsh.Options) (dshComponent, error) {
+		return &adapterComponent{
+			run: func(ctx context.Context, _ string) (dsh.TurnResult, error) {
+				close(entered)
+				<-ctx.Done()
+				return dsh.TurnResult{}, ctx.Err()
+			},
+		}, nil
+	})
+	defer closeService(t, svc)
+	member, err := svc.add(apiRequest{AgentID: "A", Runner: RunnerConfig{Kind: "dsh", Profile: "reviewer"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = svc.room.Call[PostReceipt](svc.ctx, PostMessage{RoomIdentity: svc.info.RoomIdentity, Caller: humanCaller, ClientMessageID: "one", Text: "body"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := apiRequest{AgentID: member.AgentID, MembershipID: member.MembershipID}
+	if _, err := svc.control(svc.ctx, req, "run"); err != nil {
+		t.Fatal(err)
+	}
+	<-entered
+	if _, err := svc.control(svc.ctx, req, "rotate"); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := svc.close(ctx); err != nil {
+		t.Fatal("shutdown did not settle waiting rotation", err)
+	}
+}
+
+func TestRotationCLILegacyGenerationWithoutBaseline(t *testing.T) {
+	config := recoveryConfig()
+	config.dshProfiles = map[string]dshProfile{"reviewer": {}}
+	dir := t.TempDir()
+	svc, err := newService(dir, "legacy-generation", config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	member, err := svc.add(apiRequest{AgentID: "A", Runner: RunnerConfig{Kind: "dsh", Profile: "reviewer"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := MemberIdentity{RoomIdentity: svc.info.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
+	// A legacy rotated reference predates both baseline and rotation journals.
+	opts := adapterOptions(svc.store, id)
+	if _, err := rotateAdapterForTest(dshBackend{store: svc.store}, opts, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.store.saveScheduling(memberScheduling{Version: formatVersion, MemberIdentity: id}); err != nil {
+		t.Fatal(err)
+	}
+	closeService(t, svc)
+	svc, err = newService(dir, id.RoomID, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeService(t, svc)
+	old := http.DefaultTransport
+	http.DefaultTransport = rotationTransport{svc}
+	defer func() { http.DefaultTransport = old }()
+	var out, logs bytes.Buffer
+	env := func(key string) string {
+		if key == "TEAMX_ENDPOINT" {
+			return config.endpoint
+		}
+		return ""
+	}
+	if err := runCLI(context.Background(), []string{"member", "session", "rotate", "--agent", "A", "--json"}, &out, &logs, env); err != nil {
+		t.Fatal(err)
+	}
+	var status MemberStatus
+	if err := json.Unmarshal(out.Bytes(), &status); err != nil || status.Rotation.Status != "completed" || status.Rotation.FromGeneration == "session.json.dsh" {
+		t.Fatal(status, err)
 	}
 }

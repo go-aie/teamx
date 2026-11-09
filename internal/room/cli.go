@@ -153,12 +153,12 @@ func runCLIWithInput(ctx context.Context, args []string, stdin io.Reader, stdout
 		}
 		operation, args = args[0], args[1:]
 		if operation == "session" {
-			if len(args) == 0 || args[0] != "rotate" {
+			if len(args) == 0 || (args[0] != "rotate" && args[0] != "status") {
 				return fmt.Errorf("usage: teamx member session rotate [ROOM] --agent ID [--cancel] [--run]")
 			}
-			operation, args = "session/rotate", args[1:]
+			operation, args = "session/"+args[0], args[1:]
 		}
-		if operation != "add" && operation != "list" && operation != "remove" && operation != "run" && operation != "pause" && operation != "session/rotate" {
+		if operation != "add" && operation != "list" && operation != "remove" && operation != "run" && operation != "pause" && operation != "session/rotate" && operation != "session/status" {
 			return ErrRequest
 		}
 	} else if command != "send" && command != "read" {
@@ -185,7 +185,8 @@ func runCLIWithInput(ctx context.Context, args []string, stdin io.Reader, stdout
 	flags.StringVar(&roomID, "room", roomID, "explicit Room to address (required in management mode)")
 	asJSON := flags.Bool("json", false, "write JSON (one object per read page)")
 	var agent, runner, profile, text, messageID string
-	var retry, cancelTurn, resume bool
+	var retry, cancelTurn, resume, continueRotation bool
+	var operationID, fromGeneration, rotationReason string
 	var replyTo uint64
 	var all, unread, peek bool
 	var latest, limit int
@@ -205,6 +206,10 @@ func runCLIWithInput(ctx context.Context, args []string, stdin io.Reader, stdout
 			flags.BoolVar(&cancelTurn, "cancel", false, "cancel current turn and wait for settlement before any later turn")
 		}
 		if operation == "session/rotate" {
+			flags.StringVar(&operationID, "operation-id", "", "stable rotation operation ID (32 hex characters)")
+			flags.StringVar(&fromGeneration, "from-generation", "", "expected current Session directory; required when continuing")
+			flags.StringVar(&rotationReason, "reason", "manual", "rotation reason; fixed for this operation")
+			flags.BoolVar(&continueRotation, "continue", false, "continue the same failed operation; requires --operation-id and --from-generation")
 			flags.BoolVar(&cancelTurn, "cancel", false, "cancel old turn and wait for full cleanup")
 			flags.BoolVar(&resume, "run", false, "resume scheduling after rotation; does not replay offered unread")
 		}
@@ -257,17 +262,24 @@ func runCLIWithInput(ctx context.Context, args []string, stdin io.Reader, stdout
 				}
 				if m.Execution != nil {
 					fmt.Fprintf(&output, " paused=%t active=%t turn=%d error=%q", m.Execution.Paused, m.Execution.Active, m.Execution.Agent.TurnNumber, m.Execution.Error)
+					if b := m.Execution.SessionTurns; b != nil {
+						if b.BaselineKnown {
+							fmt.Fprintf(&output, " session_turns=%d/%d total_turns=%d", b.Used, b.Limit, b.Total)
+						} else {
+							fmt.Fprintf(&output, " session_turns=unknown/%d total_turns=%d", b.Limit, b.Total)
+						}
+					}
 					if b := m.Execution.TurnBudget; b != nil {
 						fmt.Fprintf(&output, " turns_used=%d turn_limit=%d", b.Used, b.Limit)
 					}
 					if r := m.Execution.Rotation; r != nil {
-						fmt.Fprintf(&output, " rotation=%s private_context_reset=%t rotation_error=%q", r.Status, r.ContextReset, r.Error)
+						fmt.Fprintf(&output, " rotation=%s operation_id=%s reason=%s phase=%s from_generation=%s to_generation=%s private_context_reset=%t rotation_error=%q", r.Status, r.OperationID, r.Reason, r.Phase, r.FromGeneration, r.ToGeneration, r.ContextReset, r.Error)
 					}
 				}
 				fmt.Fprintln(&output)
 			}
 			return writeOutput(stdout, output.Bytes())
-		case "remove", "run", "pause", "session/rotate":
+		case "remove", "run", "pause", "session/rotate", "session/status":
 			var list serviceMembers
 			if err := client.request(ctx, "/v1/member/list", &req, &list); err != nil {
 				return err
@@ -275,6 +287,28 @@ func runCLIWithInput(ctx context.Context, args []string, stdin io.Reader, stdout
 			for _, m := range list.Members {
 				if m.AgentID == agent {
 					req.MembershipID = m.MembershipID
+					if operation == "session/rotate" {
+						if continueRotation && (operationID == "" || fromGeneration == "") {
+							return fmt.Errorf("--continue requires --operation-id and --from-generation")
+						}
+						if fromGeneration == "" && m.Execution != nil {
+							fromGeneration = m.Execution.CurrentGeneration
+							if fromGeneration == "" {
+								fromGeneration = m.Execution.SessionGeneration
+							}
+						}
+						if fromGeneration == "" {
+							fromGeneration = "session.json.dsh"
+						}
+						if operationID == "" {
+							var err error
+							operationID, err = newOpaqueID()
+							if err != nil {
+								return err
+							}
+						}
+						req.OperationID, req.FromGeneration, req.RotationReason, req.ContinueRotation = operationID, fromGeneration, rotationReason, continueRotation
+					}
 					break
 				}
 			}
@@ -282,12 +316,18 @@ func runCLIWithInput(ctx context.Context, args []string, stdin io.Reader, stdout
 				return ErrIdentity
 			}
 		}
-		if operation == "run" || operation == "pause" || operation == "session/rotate" {
+		if operation == "run" || operation == "pause" || operation == "session/rotate" || operation == "session/status" {
 			var result MemberStatus
 			if err := client.request(ctx, "/v1/member/"+operation, &req, &result); err != nil {
+				if operation == "session/rotate" {
+					return fmt.Errorf("operation_id=%s from_generation=%s; query member session status before continuing: %w", req.OperationID, req.FromGeneration, err)
+				}
 				return err
 			}
 			if *asJSON {
+				return writeJSON(stdout, result)
+			}
+			if operation == "session/status" {
 				return writeJSON(stdout, result)
 			}
 			if operation == "session/rotate" {

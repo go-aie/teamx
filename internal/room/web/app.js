@@ -1797,7 +1797,7 @@ function renderActivityControls() {
   const execution = member.execution;
   const reset = execution?.session_reset_required || member.status === "backend_blocked";
   const budget = execution?.turn_budget;
-  const exhausted = budget && budget.used >= budget.limit;
+  const exhausted = !execution?.session_turns && budget && budget.used >= budget.limit;
   const effects = [];
   if (reset) effects.push("重置会话，清除私有上下文");
   if (exhausted) effects.push(`追加 ${budget.grant || 16} 回合`);
@@ -2279,7 +2279,7 @@ function renderMemberActions(member, actions) {
   const add = (label, action, cancel) => {
     const button = document.createElement("button"); button.type = "button"; button.textContent = label;
     button.setAttribute("aria-label", `${label} ${member.agent_id}`);
-    button.disabled = memberBusy.has(member.membership_id) || !state.connected || discussionBusy() || ["rotating", "checkpoint_failed"].includes(member.status);
+    button.disabled = memberBusy.has(member.membership_id) || !state.connected || discussionBusy() || member.status === "checkpoint_failed" || member.status === "rotating" && action !== "pause";
     button.addEventListener("click", () => controlMember(member, action, cancel)); actions.append(button);
   };
   add(enable ? "启用协作" : "暂停", enable ? "run" : "pause", false);
@@ -2364,7 +2364,7 @@ function renderMembers() {
     status.classList.toggle("failed", /failed|blocked|unavailable|interrupted/.test(member.status));
     const budget = execution?.turn_budget;
     el.querySelector(".member-details").textContent = `${member.unread_count} 条未读 · 已读至 #${member.read_through}` +
-      (budget ? `\n回合 ${budget.used} / ${budget.limit}` : "");
+      (execution?.session_turns ? `\n${execution.session_turns.baseline_known ? `本会话 ${execution.session_turns.used} / ${execution.session_turns.limit}` : "待接入轮换"} · 累计 ${execution.session_turns.total}` : budget ? `\n回合 ${budget.used} / ${budget.limit}` : "");
     if (execution?.error) {
       const error = el.querySelector(".member-error");
       error.hidden = false;
@@ -2804,7 +2804,11 @@ function renderActivity({ loading, data, error }, selected) {
   $("activity-status").textContent = execution?.active ? "运行中" : statusNames[member.status] || member.status;
   $("activity-progress").textContent = `已读至 #${member.read_through} · ${member.unread_count} 条未读`;
   const budget = execution?.turn_budget;
-  $("activity-budget").textContent = budget ? `${budget.used} / ${budget.limit}` : "暂不可用";
+  const session = execution?.session_turns;
+  $("activity-budget").textContent = session ? `${session.baseline_known ? `${session.used} / ${session.limit}` : "待接入轮换"} · 累计 ${session.total}` : budget ? `${budget.used} / ${budget.limit}` : "暂不可用";
+  const rotation = execution?.rotation;
+  const rotationReasons = { session_max_turns: "达到会话回合阈值", manual: "手动轮换" };
+  notice("activity-rotation", rotation ? `${rotationReasons[rotation.reason] || rotation.reason} · ${rotation.phase}${rotation.error ? ` · ${rotation.error}` : ""}` : "");
   const turn = execution?.agent?.turn;
   $("activity-turn").textContent = execution?.agent ? `${execution.agent.turn_number}` +
     (turn ? ` · ${statusNames[turn.status] || turn.status}` : " · 尚未运行") : "暂不可用";

@@ -82,6 +82,8 @@ type managedMember struct {
 	Workspace    string            `json:"workspace"` // relative to this Room
 }
 
+const managedConfigVersion = 2
+
 type managedRoomConfig struct {
 	PlatformToolsVersion int              `json:"platform_tools_version,omitempty"`
 	Workspace            *workspaceConfig `json:"workspace"`
@@ -90,10 +92,11 @@ type managedRoomConfig struct {
 	Runtime              *teamRuntime     `json:"runtime"`
 	Version              int              `json:"version"`
 	RoomIdentity
-	Name           string          `json:"name"`
-	OpeningMessage string          `json:"opening_message"`
-	MaxTurns       uint64          `json:"max_turns"`
-	Members        []managedMember `json:"members"`
+	Name            string          `json:"name"`
+	OpeningMessage  string          `json:"opening_message"`
+	SessionMaxTurns uint64          `json:"session_max_turns,omitempty"`
+	MaxTurns        uint64          `json:"max_turns,omitempty"`
+	Members         []managedMember `json:"members"`
 }
 
 type roomResource struct {
@@ -200,6 +203,9 @@ func newRoomManager(dir string, maxTurns uint64) (_ *roomManager, err error) {
 		err = m.saveIndex(m.index)
 	}
 	if err != nil {
+		return nil, err
+	}
+	if err := m.upgradeSessionThresholds(); err != nil {
 		return nil, err
 	}
 	if err := m.validateIndex(); err != nil {
@@ -319,9 +325,9 @@ func validateInitialization(e roomIndexEntry, init roomInitialization) error {
 	}
 	// The catalog owns the current display name. Creation selections and frozen
 	// configs retain the original name so creation receipts remain idempotent.
-	if c.Version != formatVersion || c.RoomIdentity != e.RoomIdentity || (e.Status == "creating" && c.Name != e.Name) ||
+	if !((c.Version == formatVersion && c.MaxTurns > 0 && c.SessionMaxTurns == 0) || (c.Version == managedConfigVersion && c.SessionMaxTurns > 0 && c.MaxTurns == 0)) || c.RoomIdentity != e.RoomIdentity || (e.Status == "creating" && c.Name != e.Name) ||
 		(e.Selection.Name != "" && c.Name != e.Selection.Name) || c.TeamID != e.TeamID ||
-		!validText(c.Name) || len(c.Name) > 256 || c.MaxTurns == 0 || !validText(c.OpeningMessage) || len(c.OpeningMessage) > maxTextBytes ||
+		!validText(c.Name) || len(c.Name) > 256 || !validText(c.OpeningMessage) || len(c.OpeningMessage) > maxTextBytes ||
 		len(c.Members) == 0 || len(c.Members) > maxMembers {
 		return ErrInvalid
 	}
@@ -725,4 +731,14 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = json.NewEncoder(w).Encode(result)
+}
+
+// Freeze the previous threshold once; never derive it from a new service default.
+func convertManagedRoomConfig(c managedRoomConfig) (managedRoomConfig, error) {
+	if c.Version != formatVersion || c.MaxTurns == 0 || c.SessionMaxTurns != 0 {
+		return c, ErrVersion
+	}
+	c.Version = managedConfigVersion
+	c.SessionMaxTurns, c.MaxTurns = c.MaxTurns, 0
+	return c, nil
 }

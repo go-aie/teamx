@@ -157,7 +157,7 @@ func TestRoomManagerCreationIsolationPersistenceAndDeduplication(t *testing.T) {
 	}
 	config, state := readManagedRoom(t, m, first)
 	_, other := readManagedRoom(t, m, second)
-	if config.MaxTurns != 7 || config.OpeningMessage == "" || len(config.Members) != 3 || len(state.Messages) != 0 || state.LatestSeq != 0 || state.Revision != 0 {
+	if config.SessionMaxTurns != 7 || config.OpeningMessage == "" || len(config.Members) != 3 || len(state.Messages) != 0 || state.LatestSeq != 0 || state.Revision != 0 {
 		t.Fatal(config, state)
 	}
 	for i, member := range state.Members {
@@ -341,7 +341,7 @@ func TestRoomManagerFrozenResourcesAndExplicitInterruptedCreationRetry(t *testin
 		t.Fatal(summary, err)
 	}
 	config, state := readManagedRoom(t, restored, summary)
-	if config.MaxTurns != 7 || len(state.Members) != 2 || state.Members[0].MembershipID != e.Initialization.Config.Members[0].MembershipID {
+	if config.SessionMaxTurns != 7 || len(state.Members) != 2 || state.Members[0].MembershipID != e.Initialization.Config.Members[0].MembershipID {
 		t.Fatal(config, state)
 	}
 	for _, resource := range e.Initialization.Resources {

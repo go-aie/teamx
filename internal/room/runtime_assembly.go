@@ -62,6 +62,19 @@ func (m *roomManager) checkRoomSettled(id string) error {
 	for _, member := range state.Members {
 		identity := MemberIdentity{RoomIdentity: state.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
 		opts := SessionOptions{MemberIdentity: identity, StatePath: filepath.Join(store.dir, "agents", member.MembershipID, "session.json")}
+		rotation, err := store.loadRotation(identity)
+		if err != nil {
+			return err
+		}
+		if rotation != nil {
+			scheduling, err := store.loadScheduling(identity)
+			if err != nil {
+				return err
+			}
+			if err := reconcileRotation(store, opts, rotation, &scheduling); err != nil {
+				return fmt.Errorf("previous Room rotation: %w", err)
+			}
+		}
 		ref, exists, err := (dshBackend{store: store}).reference(opts)
 		if err != nil {
 			return err
@@ -184,7 +197,7 @@ func (m *roomManager) workspaceActivationConfig(id RoomIdentity, applying string
 	config := m.config
 	config.settings = m.settings
 	config.workspaceOperationID = authorizedOperationID
-	config.maxTurns, config.dshProfiles = saved.MaxTurns, profiles
+	config.maxTurns, config.dshProfiles = saved.SessionMaxTurns, profiles
 	config.persistentScheduling = true
 	return config, nil
 }

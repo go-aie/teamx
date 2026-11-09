@@ -134,7 +134,7 @@ func TestPolicySessionSupplyFirstUnchangedChangesAndRebuild(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A member's explicit rotation also starts with a complete policy body.
-	rotated, err := b.RotateSession(adapterOptions(h.store, h.id), true)
+	rotated, err := rotateAdapterForTest(b, adapterOptions(h.store, h.id), true)
 	if err != nil {
 		t.Fatal(err)
 	}

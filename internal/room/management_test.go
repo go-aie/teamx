@@ -106,7 +106,7 @@ func readManagedRoom(t *testing.T, m *roomManager, summary roomSummary) (managed
 }
 
 func TestServeManagementFlagsRejectMixedModes(t *testing.T) {
-	for _, args := range [][]string{{"--dsh-config", "old.json"}, {"--state-dir", ""}, {"--max-turns", "0"}, {"--merge-window", "-1s"}} {
+	for _, args := range [][]string{{"--dsh-config", "old.json"}, {"--state-dir", ""}, {"--session-max-turns", "0"}, {"--merge-window", "-1s"}} {
 		var stdout, stderr bytes.Buffer
 		args = append([]string{"--config", writeStartupConfig(t, t.TempDir(), "")}, args...)
 		if err := serve(args, &stdout, &stderr); !errors.Is(err, ErrRequest) || stdout.Len() != 0 {

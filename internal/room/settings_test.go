@@ -62,9 +62,9 @@ func TestSystemSettingsPatchPreservesConfig(t *testing.T) {
 		"# empty config\n",
 		"[server]",
 		"[server] # server comment\nlisten = '127.0.0.1:1' # keep\n[env]\nSECRET = 'keep me'\n",
-		"[server]\ntime_zone = 'Asia/Shanghai' # local\nmax_turns = 2\n",
+		"[server]\ntime_zone = 'Asia/Shanghai' # local\nsession_max_turns = 2\n",
 		"[ 'server' ]\n 'time_zone' = '''Asia/Shanghai''' # local\n",
-		"server.time_zone = \"\"\"Asia/Shanghai\"\"\" # local\nserver.max_turns = 2\n",
+		"server.time_zone = \"\"\"Asia/Shanghai\"\"\" # local\nserver.session_max_turns = 2\n",
 		"server.listen = '127.0.0.1:1'\n",
 		"server = { listen = '127.0.0.1:1', time_zone = 'Asia/Shanghai' } # keep\n",
 		"server = { listen = '127.0.0.1:1' } # keep\n",
@@ -171,7 +171,7 @@ func TestSystemSettingsWriteFailuresAndReconciliation(t *testing.T) {
 	failure := errors.New("injected IO failure")
 	for _, boundary := range []string{"mkdir", "create", "write", "sync", "close", "rename-before", "rename-after", "directory-sync"} {
 		t.Run(boundary, func(t *testing.T) {
-			path := writeStartupConfig(t, t.TempDir(), "# keep\n[server]\nmax_turns = 2\n[env]\nSECRET = 'never echo'\n")
+			path := writeStartupConfig(t, t.TempDir(), "# keep\n[server]\nsession_max_turns = 2\n[env]\nSECRET = 'never echo'\n")
 			s := settingsFromFile(t, path, true)
 			before := bytes.Clone(s.source)
 			switch boundary {
@@ -242,10 +242,10 @@ func TestSystemSettingsRejectsExternalEdits(t *testing.T) {
 		t.Run(when, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "config.toml")
 			if when != "created" {
-				writeStartupConfig(t, filepath.Dir(path), "[server]\nmax_turns = 2\n")
+				writeStartupConfig(t, filepath.Dir(path), "[server]\nsession_max_turns = 2\n")
 			}
 			s := settingsFromFile(t, path, when != "created")
-			external := []byte("[server]\nmax_turns = 99 # external edit\n")
+			external := []byte("[server]\nsession_max_turns = 99 # external edit\n")
 			edit := func() {
 				if when == "replaced" {
 					_ = os.Remove(path)
@@ -308,7 +308,7 @@ func TestSystemSettingsConcurrentVersionAndSnapshot(t *testing.T) {
 }
 
 func TestSystemSettingsOtherServiceCannotOverwriteConfig(t *testing.T) {
-	path := writeStartupConfig(t, t.TempDir(), "[server]\nmax_turns = 2\n")
+	path := writeStartupConfig(t, t.TempDir(), "[server]\nsession_max_turns = 2\n")
 	if err := os.Chmod(path, 0640); err != nil {
 		t.Fatal(err)
 	}

@@ -411,7 +411,7 @@ func TestMemberAgentFailedTaskAdmissionDoesNotConsumeBudget(t *testing.T) {
 	h := newRoomHarness(t, historyRoom(8, "body"), nil, actorx.WithTaskLimit(1))
 	id := h.memberID("A", "generation-A")
 	b := newControlledBackend()
-	addr, err := h.spawn(&MemberAgent{Options: SessionOptions{MemberIdentity: id}, Store: h.store, Room: h.addr, Backend: b, MaxTurns: 1})
+	addr, err := h.spawn(&MemberAgent{Options: adapterOptions(h.store, id), Store: h.store, Room: h.addr, Backend: rotatingControlledBackend{b}, MaxTurns: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -419,6 +419,10 @@ func TestMemberAgentFailedTaskAdmissionDoesNotConsumeBudget(t *testing.T) {
 	controlMember(t, h, addr, id, "run", input, false, false)
 	status := waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool { return s.Error != "" })
 	// The member's maintenance task occupies its sole worker slot.
+	saved, err := h.store.loadScheduling(id)
+	if err != nil || saved.Version != schedulingVersion || saved.Used != 0 || saved.SessionStartUsed != 0 {
+		t.Fatal("unadmitted turn persisted a charge", saved, err)
+	}
 	if status.Active || status.TurnBudget.Used != 0 || status.Error == "" || b.opens.Load() != 0 {
 		t.Fatal(status, b.opens.Load())
 	}

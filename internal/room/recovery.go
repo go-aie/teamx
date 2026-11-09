@@ -27,6 +27,7 @@ type serviceConfig struct {
 }
 
 type recoveredMember struct {
+	automatic     bool
 	id            MemberIdentity
 	state         *AgentSnapshot
 	resume        bool
@@ -46,13 +47,17 @@ func (s *service) loadMembers(state RoomSnapshot) error {
 		if s.cliPath == "" || s.endpoint == "" {
 			return fmt.Errorf("restore %s: member CLI environment unavailable", member.AgentID)
 		}
-		recovered := recoveredMember{id: id}
+		recovered := recoveredMember{id: id, automatic: true}
 		agent, err := s.store.LoadAgent(id)
 		if errors.Is(err, os.ErrNotExist) {
 			agent = AgentSnapshot{Version: formatVersion, MemberIdentity: id}
 			recovered.notice = "missing agent checkpoint initialized; member paused"
 		} else if err != nil {
 			return fmt.Errorf("restore %s agent: %w", member.AgentID, err)
+		}
+		rotation, rotationErr := s.recoverMemberRotation(id, agent)
+		if rotationErr != nil {
+			recovered.blocked = "rotation recovery blocked: " + rotationErr.Error()
 		}
 		opts := SessionOptions{MemberIdentity: id, StatePath: filepath.Join(s.store.dir, "agents", id.MembershipID, "session.json")}
 		ref, exists, err := (dshBackend{store: s.store}).reference(opts)
@@ -70,10 +75,10 @@ func (s *service) loadMembers(state RoomSnapshot) error {
 				recovered.notice = "DSH original session will resume lazily using current tool identity"
 			}
 		} else if ref.Pending {
-			recovered.contextReset = s.workspaceOperationID != "" && ref.Directory == filepath.Base(dshStateDir(opts.StatePath))+"-"+s.workspaceOperationID
+			recovered.contextReset = rotation != nil && rotation.Phase == "completed" || s.workspaceOperationID != "" && ref.Directory == filepath.Base(dshStateDir(opts.StatePath))+"-"+s.workspaceOperationID
 			recovered.notice = "explicit rotation committed; private context reset; fresh Session will open on explicit run"
 			if recovered.contextReset {
-				recovered.notice = "workspace applied; private context reset; fresh Session will open lazily for new work"
+				recovered.notice = "rotation completed; private context reset; fresh Session will open lazily for new work"
 			}
 		} else if agent.Turn != nil {
 			recovered.blocked = "DSH recovery blocked: backend reference missing for recorded turn"
@@ -93,10 +98,9 @@ func (s *service) loadMembers(state RoomSnapshot) error {
 		if recovered.blocked != "" {
 			recovered.notice = recovered.blocked + "; member paused"
 		}
-		if s.persistentScheduling {
-			if err := s.restoreScheduling(&recovered, agent); err != nil {
-				return fmt.Errorf("restore %s collaboration: %w", member.AgentID, err)
-			}
+		// DSH counts survive normal restart in standalone mode too.
+		if err := s.restoreScheduling(&recovered, agent); err != nil {
+			return fmt.Errorf("restore %s collaboration: %w", member.AgentID, err)
 		}
 		recovered.state = &agent
 		s.recovered = append(s.recovered, recovered)
@@ -112,7 +116,7 @@ func (s *service) loadMembers(state RoomSnapshot) error {
 
 func (s *service) newMember(id MemberIdentity, runner RunnerConfig, restored *AgentSnapshot) actorx.Actor {
 	opts := SessionOptions{MemberIdentity: id, StatePath: filepath.Join(s.store.dir, "agents", id.MembershipID, "session.json"), CLIPath: s.cliPath, CLIEnv: s.toolEnv(id)}
-	backend := dshBackend{store: s.store, settings: s.settings, profile: s.dshProfiles[runner.Profile], turnTimeout: s.dshTurnTimeout, prepare: s.prepareDSHMaterials}
+	backend := dshBackend{store: s.store, settings: s.settings, profile: s.dshProfiles[runner.Profile], turnTimeout: s.dshTurnTimeout, prepare: s.prepareDSHMaterials, recoveryContext: s.prepareDSHRecoveryContext}
 	blocked := ""
 	var used, limit uint64
 	for _, recovered := range s.recovered {
@@ -125,7 +129,7 @@ func (s *service) newMember(id MemberIdentity, runner RunnerConfig, restored *Ag
 	}
 	return &MemberAgent{Options: opts, Store: s.store, Room: s.room, Restored: restored,
 		Inbox:   func(ctx context.Context) (InboxStatus, error) { return s.memberInboxStatus(ctx, id) },
-		Backend: backend, MergeWindow: s.mergeWindow, MaxTurns: s.maxTurns, BackendBlocked: blocked, PersistentScheduling: s.persistentScheduling, RestoredTurnsUsed: used, RestoredTurnLimit: limit, ExecutionFrozen: s.grantsFrozen}
+		Backend: backend, MergeWindow: s.mergeWindow, MaxTurns: s.maxTurns, SessionMaxTurns: s.maxTurns, RequestRotation: s.requestMemberRotation, BackendBlocked: blocked, PersistentScheduling: true, RestoredTurnsUsed: used, RestoredTurnLimit: limit, ExecutionFrozen: s.grantsFrozen}
 }
 
 func (s *service) spawnMember(id MemberIdentity, runner RunnerConfig, restored *AgentSnapshot) (actorx.Addr, error) {

@@ -360,10 +360,6 @@ func TestRoomTurnsWithdrawWaitingMemberAndRecheckUnread(t *testing.T) {
 
 type rotatingControlledBackend struct{ *controlledBackend }
 
-func (b rotatingControlledBackend) RotateSession(SessionOptions, bool) (Backend, error) {
-	return b, nil
-}
-
 type turnBackendFunc func(context.Context, SessionOptions) (Session, error)
 
 func (f turnBackendFunc) OpenSession(ctx context.Context, opts SessionOptions) (Session, error) {

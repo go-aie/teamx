@@ -58,7 +58,7 @@ func TestRuntimeRecoveryRestoresEnabledRoomsWithoutSelection(t *testing.T) {
 			t.Fatal(err)
 		}
 		for i, member := range list.Members {
-			if member.Execution == nil || member.Execution.Paused != (i == 0) || member.Execution.TurnBudget.Used != map[bool]uint64{true: 0, false: 1}[i == 0] {
+			if member.Execution == nil || member.Execution.Paused != (i == 0) || member.Execution.SessionTurns.Total != map[bool]uint64{true: 0, false: 1}[i == 0] {
 				t.Fatal("pause or budget changed on recovery", member)
 			}
 		}
@@ -234,7 +234,7 @@ func TestRuntimeRecoveryInterruptedTurnAndCorruptIntentDoNotAffectHealthyRoom(t 
 			managedPost(t, restored, ra.service, "new-a")
 			for _, member := range list.Members {
 				status := member.Execution
-				if status == nil || !status.Paused || status.Active || status.Agent.Turn.Status != "interrupted" || status.TurnBudget.Used != 1 {
+				if status == nil || !status.Paused || status.Active || status.Agent.Turn.Status != "interrupted" || status.SessionTurns.Total != 1 {
 					t.Fatal("unsafe execution was replayed or budget changed", member)
 				}
 			}
