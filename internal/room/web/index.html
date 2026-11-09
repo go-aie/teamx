@@ -511,18 +511,29 @@
           <p id="gitlab-account" class="connection-account" role="status" aria-live="polite">未连接</p>
           <div class="connection-account-actions"><button id="gitlab-login" class="settings-secondary-button" type="button">登录 GitLab</button><button id="gitlab-logout" class="text-button" type="button" hidden>退出登录</button><button id="gitlab-cancel" class="text-button" type="button" hidden>取消本次登录</button></div>
           <a id="gitlab-login-link" target="_blank" rel="noopener noreferrer" hidden>打开 GitLab 授权页面 ↗</a>
-          <section id="gitlab-setup" class="connection-setup gitlab-setup" aria-labelledby="gitlab-setup-title" hidden>
-            <h4 id="gitlab-setup-title">首次连接：配置 GitLab 应用</h4>
-            <p class="quiet">只需配置一次，之后使用 GitLab 账号登录。</p>
-            <ol class="gitlab-setup-steps">
-              <li><a id="gitlab-applications-link" target="_blank" rel="noopener noreferrer">在 GitLab 中添加应用 ↗</a>，名称填写 TeamX，勾选 Confidential。</li>
-              <li><label for="gitlab-redirect-uri">回调地址</label><input id="gitlab-redirect-uri" readonly spellcheck="false"><p id="gitlab-scope-hint" class="quiet">权限选择 api。</p>
-                <label class="workspace-check"><input id="gitlab-repository-access" type="checkbox">允许拉取和推送代码</label></li>
-              <li><label for="gitlab-client-id">Application ID</label><input id="gitlab-client-id" autocomplete="off" spellcheck="false">
+          <details id="gitlab-advanced" class="connection-advanced">
+            <summary id="gitlab-advanced-title" aria-controls="gitlab-setup">高级设置</summary>
+            <section id="gitlab-setup" class="connection-setup gitlab-setup" aria-labelledby="gitlab-setup-title" hidden>
+              <h4 id="gitlab-setup-title">GitLab 应用配置</h4>
+              <section class="gitlab-setup-group" aria-labelledby="gitlab-prepare-title">
+                <h5 id="gitlab-prepare-title">1. 在 GitLab 中准备应用</h5>
+                <p class="quiet"><a id="gitlab-applications-link" target="_blank" rel="noopener noreferrer">打开 GitLab 应用设置 ↗</a>，新建时勾选 Confidential。</p>
+                <label for="gitlab-redirect-uri">回调地址</label><input id="gitlab-redirect-uri" readonly spellcheck="false">
+                <label class="workspace-check"><input id="gitlab-repository-access" type="checkbox" aria-describedby="gitlab-scope-hint">允许拉取和推送代码</label>
+                <p id="gitlab-scope-hint" class="quiet">GitLab 应用权限：api</p>
+              </section>
+              <section class="gitlab-setup-group" aria-labelledby="gitlab-credentials-title">
+                <h5 id="gitlab-credentials-title">2. 填写应用凭据</h5>
+                <label for="gitlab-client-id">Application ID</label><input id="gitlab-client-id" autocomplete="off" spellcheck="false">
                 <label for="gitlab-client-secret">Secret</label><input id="gitlab-client-secret" type="password" autocomplete="new-password">
-                <button id="gitlab-import" class="settings-secondary-button" type="button">保存应用配置</button></li>
-            </ol>
-          </section>
+              </section>
+              <div class="gitlab-setup-actions">
+                <button id="gitlab-import" class="settings-secondary-button" type="button" aria-describedby="gitlab-setup-hint">保存应用配置</button>
+                <p id="gitlab-setup-hint" class="quiet">保存后登录 GitLab 完成验证</p>
+                <p id="gitlab-setup-feedback" class="gitlab-setup-feedback" role="status" aria-live="polite" hidden></p>
+              </div>
+            </section>
+          </details>
         </div>
         <section id="connection-references" class="connection-references connection-field-wide" aria-labelledby="connection-references-title" hidden>
           <h4 id="connection-references-title">引用房间</h4>

@@ -24,6 +24,7 @@ type gitlabClientImport struct {
 func (gitlabClientImport) Format(s fmt.State, _ rune) { fmt.Fprint(s, "[REDACTED GitLab client]") }
 
 type gitlabSetupRequest struct {
+	EditApplication  bool                `json:"edit_application,omitempty"`
 	RepositoryAccess bool                `json:"repository_access,omitempty"`
 	ServiceEpoch     string              `json:"service_epoch"`
 	Caller           Caller              `json:"caller"`
@@ -31,6 +32,7 @@ type gitlabSetupRequest struct {
 	Origin           string              `json:"origin,omitempty"`
 	Version          uint64              `json:"version,omitempty"`
 	Client           *gitlabClientImport `json:"client,omitempty"`
+	ClientImportID   string              `json:"client_import_id,omitempty"`
 }
 
 func (gitlabSetupRequest) Format(s fmt.State, _ rune) {
@@ -38,6 +40,7 @@ func (gitlabSetupRequest) Format(s fmt.State, _ rune) {
 }
 
 type gitlabSetupView struct {
+	ClientID        string                 `json:"client_id,omitempty"`
 	Affected        []gitlabAuthConnection `json:"affected,omitempty"`
 	Status          string                 `json:"status"`
 	ApplicationID   string                 `json:"application_id,omitempty"`
@@ -88,7 +91,7 @@ func (m *roomManager) serveGitLabSetup(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, ErrBusy)
 		return
 	}
-	if (action == "initialize") != (req.Client != nil) {
+	if (action == "initialize") != (req.Client != nil) || action == "prepare" && req.ClientImportID != "" {
 		writeAPIError(w, ErrRequest)
 		return
 	}
@@ -128,6 +131,14 @@ func (m *roomManager) serveGitLabSetup(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, ErrRequest)
 		return
 	}
+	var currentApp connection.OAuthApplication
+	if target.CredentialID != "" {
+		_, currentApp, err = connection.OAuthRecord(file, target.CredentialID)
+		if err != nil {
+			writeAPIError(w, platformConnectionError(err))
+			return
+		}
+	}
 	scopes := []string{"api"}
 	if req.RepositoryAccess {
 		scopes = append(scopes, "write_repository")
@@ -135,16 +146,41 @@ func (m *roomManager) serveGitLabSetup(w http.ResponseWriter, r *http.Request) {
 	view := gitlabSetupView{Status: "configuration_required", RedirectURI: redirect, ApplicationsURL: origin + "/-/user_settings/applications", Scopes: scopes}
 	if req.Client != nil {
 		input := req.Client
-		if target.CredentialID != "" || input.RedirectURI != redirect || !slices.Equal(input.Scopes, scopes) {
+		if input.RedirectURI != redirect || !slices.Equal(input.Scopes, scopes) {
 			writeAPIError(w, ErrRequest)
 			return
 		}
-		view.ClientImportID, err = m.connections.ImportOAuthClient(connection.OAuthClientImport{Origin: origin, ClientID: input.ClientID, ClientSecret: input.ClientSecret, RedirectURI: redirect, Scopes: scopes, ActorID: req.Caller.ID})
+		candidate := connection.OAuthClientImport{Origin: origin, ClientID: input.ClientID, ClientSecret: input.ClientSecret, RedirectURI: redirect, Scopes: scopes, ActorID: req.Caller.ID, ReplacesApplicationID: currentApp.ID}
+		for _, session := range m.gitlabAuthSessions {
+			select {
+			case <-session.done:
+			default:
+				if session.app.Origin == origin && (session.importID == req.ClientImportID && req.ClientImportID != "" || session.app.ClientID == input.ClientID || currentApp.ID != "" && session.app.ID == currentApp.ID) {
+					writeAPIError(w, ErrBusy)
+					return
+				}
+			}
+		}
+		if req.ClientImportID != "" {
+			view.ClientImportID, err = m.connections.ReplaceOAuthClientImport(req.ClientImportID, candidate)
+		} else {
+			view.ClientImportID, err = m.connections.ImportOAuthClient(candidate)
+		}
 		if err != nil {
 			writeAPIError(w, platformConnectionError(err))
 			return
 		}
 		view.Status = "owner_verification_required"
+		view.ClientID = input.ClientID
+	} else if req.EditApplication && currentApp.ID != "" {
+		view.Scopes = currentApp.Scopes
+		view.ClientID = currentApp.ClientID
+		for _, v := range file.OAuthClientImports {
+			if v.ReplacesApplicationID == currentApp.ID && v.ActorID == req.Caller.ID && v.RedirectURI == redirect {
+				view.Status, view.ClientImportID, view.Scopes = "owner_verification_required", v.ID, v.Scopes
+				view.ClientID = v.ClientID
+			}
+		}
 	} else {
 		var apps []connection.OAuthApplication
 		for _, app := range file.OAuthApplications {
@@ -158,6 +194,7 @@ func (m *roomManager) serveGitLabSetup(w http.ResponseWriter, r *http.Request) {
 			app := apps[0]
 			view.Status = "ready"
 			view.ApplicationID = app.ID
+			view.ClientID = app.ClientID
 			view.Scopes = app.Scopes
 			records, e := m.gitlabAuthImpactLocked(file, req.ID, app)
 			if e == nil {
@@ -169,12 +206,23 @@ func (m *roomManager) serveGitLabSetup(w http.ResponseWriter, r *http.Request) {
 			}
 		} else if target.CredentialID == "" {
 			for _, v := range file.OAuthClientImports {
-				if v.Origin == origin && v.ActorID == req.Caller.ID && v.RedirectURI == redirect && (!req.RepositoryAccess || slices.Equal(v.Scopes, scopes)) {
+				if v.ReplacesApplicationID == "" && v.Origin == origin && v.ActorID == req.Caller.ID && v.RedirectURI == redirect && (!req.RepositoryAccess || slices.Equal(v.Scopes, scopes)) {
 					view.Status = "owner_verification_required"
 					view.ClientImportID = v.ID
+					view.ClientID = v.ClientID
 					view.Scopes = v.Scopes
 				}
 			}
+		}
+	}
+	if currentApp.ID != "" && (req.Client != nil || req.EditApplication) {
+		records, e := m.gitlabAuthImpactLocked(file, target.ID, currentApp)
+		if e == nil {
+			view.Affected, _, e = m.gitlabAuthReferencesLocked(records)
+		}
+		if e != nil {
+			writeAPIError(w, e)
+			return
 		}
 	}
 	// A pending existing connection still participates in the authorization fence.

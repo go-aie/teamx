@@ -54,6 +54,7 @@ type gitlabAuthSession struct {
 	gitlabAuthView
 	owner, state, browser, verifier string
 	app                             connection.OAuthApplication
+	previousApp                     connection.OAuthApplication
 	importID, targetID, name        string
 	records                         []connection.Record
 	references                      map[string]string
@@ -158,7 +159,12 @@ func (m *roomManager) checkGitLabAuthLocked(s *gitlabAuthSession) error {
 			return ErrConflict
 		}
 	} else if !slices.ContainsFunc(file.OAuthClientImports, func(a connection.OAuthClientImport) bool {
-		return a.ID == s.importID && a.ActorID == s.owner && a.ClientID == s.app.ClientID && a.ClientSecret == s.app.ClientSecret && a.RedirectURI == s.app.RedirectURI
+		return a.ID == s.importID && a.ActorID == s.owner && a.ClientID == s.app.ClientID && a.ClientSecret == s.app.ClientSecret && a.RedirectURI == s.app.RedirectURI && slices.Equal(a.Scopes, s.app.Scopes) && a.ReplacesApplicationID == s.previousApp.ID
+	}) {
+		return ErrConflict
+	}
+	if s.previousApp.ID != "" && !slices.ContainsFunc(file.OAuthApplications, func(a connection.OAuthApplication) bool {
+		return a.ID == s.previousApp.ID && a.ClientID == s.previousApp.ClientID && a.ClientSecret == s.previousApp.ClientSecret && a.OwnerID == s.previousApp.OwnerID && a.RedirectURI == s.previousApp.RedirectURI && slices.Equal(a.Scopes, s.previousApp.Scopes)
 	}) {
 		return ErrConflict
 	}
@@ -286,6 +292,7 @@ func (m *roomManager) newGitLabAuthLocked(req gitlabAuthRequest, action string) 
 		return nil, ErrConflict
 	}
 	var app connection.OAuthApplication
+	var previousApp connection.OAuthApplication
 	importID := ""
 	if target.ID != "" {
 		if req.Name != "" || req.Origin != "" {
@@ -310,7 +317,7 @@ func (m *roomManager) newGitLabAuthLocked(req gitlabAuthRequest, action string) 
 		}
 		if req.ClientImportID != "" && req.ApplicationID == "" {
 			for _, v := range file.OAuthClientImports {
-				if v.ID == req.ClientImportID && v.ActorID == req.Caller.ID && v.Origin == origin {
+				if v.ReplacesApplicationID == "" && v.ID == req.ClientImportID && v.ActorID == req.Caller.ID && v.Origin == origin {
 					app = connection.OAuthApplication{ID: v.ID, Origin: v.Origin, ClientID: v.ClientID, ClientSecret: v.ClientSecret, RedirectURI: v.RedirectURI, Scopes: v.Scopes}
 					importID = v.ID
 				}
@@ -328,10 +335,27 @@ func (m *roomManager) newGitLabAuthLocked(req gitlabAuthRequest, action string) 
 			}
 		}
 		for _, v := range file.OAuthClientImports {
-			if req.ApplicationID == "" && v.ID == req.ClientImportID && v.ActorID == req.Caller.ID && v.Origin == target.URL {
+			if v.ReplacesApplicationID == "" && req.ApplicationID == "" && v.ID == req.ClientImportID && v.ActorID == req.Caller.ID && v.Origin == target.URL {
 				app = connection.OAuthApplication{ID: v.ID, Origin: v.Origin, ClientID: v.ClientID, ClientSecret: v.ClientSecret, RedirectURI: v.RedirectURI, Scopes: v.Scopes}
 				importID = v.ID
 			}
+		}
+	}
+	if target.CredentialID != "" && req.ClientImportID != "" {
+		if action != "login" || req.ApplicationID != "" {
+			return nil, ErrRequest
+		}
+		previousApp = app
+		found := false
+		for _, v := range file.OAuthClientImports {
+			if v.ID == req.ClientImportID && v.ActorID == req.Caller.ID && v.Origin == target.URL && v.ReplacesApplicationID == app.ID {
+				app = connection.OAuthApplication{ID: app.ID, OwnerID: app.OwnerID, Origin: v.Origin, ClientID: v.ClientID, ClientSecret: v.ClientSecret, RedirectURI: v.RedirectURI, Scopes: v.Scopes}
+				importID, found = v.ID, true
+				break
+			}
+		}
+		if !found {
+			return nil, ErrConflict
 		}
 	}
 	if err != nil {
@@ -398,7 +422,7 @@ func (m *roomManager) newGitLabAuthLocked(req gitlabAuthRequest, action string) 
 	}
 	expires := time.Now().Add(10 * time.Minute)
 	ctx, cancel := context.WithDeadline(context.Background(), expires)
-	s := &gitlabAuthSession{gitlabAuthView: gitlabAuthView{SessionID: id, ConnectionID: req.ID, Status: "waiting", ExpiresAt: expires}, owner: req.Caller.ID, state: state, browser: browser, verifier: verifier, app: app, importID: importID, targetID: req.ID, name: req.Name, records: records, references: refs, ctx: ctx, cancel: cancel, done: make(chan struct{})}
+	s := &gitlabAuthSession{gitlabAuthView: gitlabAuthView{SessionID: id, ConnectionID: req.ID, Status: "waiting", ExpiresAt: expires}, owner: req.Caller.ID, state: state, browser: browser, verifier: verifier, app: app, previousApp: previousApp, importID: importID, targetID: req.ID, name: req.Name, records: records, references: refs, ctx: ctx, cancel: cancel, done: make(chan struct{})}
 	challenge := sha256.Sum256([]byte(verifier))
 	q := url.Values{"client_id": {app.ClientID}, "redirect_uri": {redirect}, "response_type": {"code"}, "scope": {strings.Join(app.Scopes, " ")}, "state": {state}, "code_challenge": {base64.RawURLEncoding.EncodeToString(challenge[:])}, "code_challenge_method": {"S256"}}
 	s.URL = app.Origin + "/oauth/authorize?" + q.Encode()

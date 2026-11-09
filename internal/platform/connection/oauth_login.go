@@ -136,23 +136,37 @@ func (m *Manager) CommitOAuthLogin(expected []Record, targetID, name string, app
 		return nil, ErrRequest
 	}
 	foundApp := false
+	previousApp := app
 	for _, a := range file.OAuthApplications {
 		if a.ID == app.ID {
+			previousApp = a
 			foundApp = a.ClientID == app.ClientID && a.ClientSecret == app.ClientSecret && a.Origin == app.Origin && a.RedirectURI == app.RedirectURI && a.OwnerID == app.OwnerID
 		}
 	}
 	if importID != "" {
 		found := false
+		replacement := false
 		for _, v := range file.OAuthClientImports {
-			if v.ID == importID && v.ActorID == actor && v.ClientID == app.ClientID && v.ClientSecret == app.ClientSecret && v.Origin == app.Origin && v.RedirectURI == app.RedirectURI {
-				found = true
+			if v.ID == importID && v.ActorID == actor && v.ClientID == app.ClientID && v.ClientSecret == app.ClientSecret && v.Origin == app.Origin && v.RedirectURI == app.RedirectURI && slices.Equal(v.Scopes, app.Scopes) {
+				replacement = v.ReplacesApplicationID != ""
+				found = !replacement && app.ID == v.ID || replacement && v.ReplacesApplicationID == app.ID && previousApp.ID == app.ID && previousApp.Origin == app.Origin && previousApp.OwnerID == identity.UserID
 			}
 		}
-		if !found || foundApp || len(file.OAuthApplications) >= 100 {
+		if !found || !replacement && (foundApp || len(file.OAuthApplications) >= 100) {
 			return nil, ErrConflict
 		}
-		file.OAuthClientImports = slices.DeleteFunc(file.OAuthClientImports, func(v OAuthClientImport) bool { return v.ID == importID })
-		file.OAuthApplications = append(file.OAuthApplications, app)
+		file.OAuthClientImports = slices.DeleteFunc(file.OAuthClientImports, func(v OAuthClientImport) bool {
+			return v.ID == importID || replacement && v.ReplacesApplicationID == app.ID
+		})
+		if replacement {
+			for i, a := range file.OAuthApplications {
+				if a.ID == app.ID {
+					file.OAuthApplications[i] = app
+				}
+			}
+		} else {
+			file.OAuthApplications = append(file.OAuthApplications, app)
+		}
 		foundApp = true
 	}
 	if !foundApp {
@@ -219,7 +233,7 @@ func (m *Manager) CommitOAuthLogin(expected []Record, targetID, name string, app
 		}
 		uncertain := cred.State == "refresh_pending" || cred.State == "refresh_unknown"
 		if cred.AccessToken != tokens.AccessToken.Reveal() || uncertain {
-			cleanupID, e := addOAuthCleanup(&file, app, cred.AccessToken, "manual")
+			cleanupID, e := addOAuthCleanup(&file, previousApp, cred.AccessToken, "manual")
 			if e != nil {
 				return nil, e
 			}

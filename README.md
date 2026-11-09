@@ -98,6 +98,10 @@ go build -o bin/teamx-gitlab ./tools/gitlab
 
 需要 OAuth 仓库读写时，首次配置时选择「允许拉取和推送代码」，并在 GitLab 应用中勾选 `api` 和 `write_repository`。成员用 `teamx workspace-git fetch/push/ls-remote` 执行网络 Git，本地 diff／commit 仍使用 Git；API-only 授权不会自动扩权。本次 OAuth 简化后的真实账号与 Git 网络链路尚未重新验收。
 
+首次直接展示「GitLab 应用配置」表单；尚未验证成功时，可在同一表单中更正后重新保存。已验证连接需要更换应用或 Secret 时，展开「高级设置」使用同一表单，再点击「验证并更新」；核验成功后才更新原配置，共享该应用的连接一起更新。
+
+重新打开表单会带出已保存的 Application ID 和代码读写选项，并显示当前服务的回调地址；Secret 不回显，更换时重新填写。
+
 GitLab 仅支持 OAuth。旧版本数据需先停止服务，再运行 `teamx connections upgrade --rooms-dir ROOT`；已有 OAuth 授权保留，旧 PAT 连接保留原 ID 和房间引用并需要重新登录。升级不访问 GitLab，也不撤销远端 PAT。
 
 **工具、Workspace 和通知分别配置**：

@@ -381,6 +381,109 @@ func TestGitLabAuthImportedClientOwnershipAndNewConnection(t *testing.T) {
 	}
 }
 
+func TestGitLabAuthApplicationReplacement(t *testing.T) {
+	parallelFixtureTest(t)
+	for _, scenario := range []string{"secret", "application", "invalid_client", "foreign_owner"} {
+		t.Run(scenario, func(t *testing.T) {
+			g := newGitlabLoginHarness(t)
+			initial, cookie := g.login(t)
+			g.callback(initial, cookie, nil)
+			m := g.h.m
+			m.mu.Lock()
+			before, err := m.connections.Load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			second := before.Connections[0]
+			second.ID, second.Name = strings.Repeat("d", 32), "shared"
+			before.Connections = append(before.Connections, second)
+			if err := m.store.save(m.connectionsPathForTest(), before, 2<<20); err != nil {
+				t.Fatal(err)
+			}
+			m.mu.Unlock()
+			first, oldApp := before.Connections[0], before.OAuthApplications[0]
+			clientID := oldApp.ClientID
+			if scenario == "application" {
+				clientID = "replacement-client"
+			}
+			setupReq := gitlabSetupRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: first.ID, Version: first.Version, Client: &gitlabClientImport{ClientID: clientID, ClientSecret: "replacement-secret", RedirectURI: oldApp.RedirectURI, Scopes: oldApp.Scopes}}
+			candidate := gitlabSetupHTTP(t, g.h, "initialize", setupReq)
+			readReq := setupReq
+			readReq.Client = nil
+			current := gitlabSetupHTTP(t, g.h, "prepare", readReq)
+			if current.ApplicationID != oldApp.ID || current.ClientImportID != "" || current.ClientID != oldApp.ClientID {
+				t.Fatal("normal login selected an unverified replacement")
+			}
+			readReq.EditApplication = true
+			if edit := gitlabSetupHTTP(t, g.h, "prepare", readReq); edit.ClientImportID != candidate.ClientImportID || edit.ClientID != clientID || len(edit.Affected) != 2 {
+				t.Fatal("replacement not recoverable or shared impact missing")
+			}
+			g.req = gitlabAuthRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: first.ID, Version: first.Version, ClientImportID: candidate.ClientImportID, Affected: candidate.Affected}
+			partial := g.req
+			partial.Affected = partial.Affected[:1]
+			if response := gitlabAuthHTTP(m, "login", partial, nil); response.Code != 409 {
+				t.Fatal("partial shared replacement accepted", response.Code)
+			}
+			original := m.platformHTTP
+			m.platformHTTP = workspaceHTTPFunc(func(r *http.Request) (*http.Response, error) {
+				status, body := 200, ""
+				switch r.URL.Path {
+				case "/oauth/token":
+					_ = r.ParseForm()
+					if r.Form.Get("client_id") != clientID || r.Form.Get("client_secret") != "replacement-secret" {
+						t.Error("replacement login used original configuration")
+					}
+					body = `{"access_token":"replacement-access","refresh_token":"replacement-refresh","token_type":"bearer","expires_in":600}`
+					if scenario == "invalid_client" {
+						status, body = 401, `{"error":"invalid_client"}`
+					}
+				case "/oauth/token/info":
+					body = fmt.Sprintf(`{"resource_owner_id":101,"scope":["api"],"application":{"uid":%q}}`, clientID)
+				case "/api/v4/user/applications":
+					body = fmt.Sprintf(`[{"id":55,"application_id":%q,"application_name":"TeamX replacement","callback_url":%q,"confidential":true}]`, clientID, oldApp.RedirectURI)
+					if scenario == "foreign_owner" {
+						body = `[]`
+					}
+				default:
+					return original.RoundTrip(r)
+				}
+				return &http.Response{StatusCode: status, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+			})
+			next, cookie := g.login(t)
+			pending, _ := m.connections.Load()
+			if pending.OAuthApplications[0].ClientSecret != oldApp.ClientSecret || pending.Connections[0].Version != first.Version {
+				t.Fatal("active configuration changed before authorization")
+			}
+			g.callback(next, cookie, nil)
+			result := g.status(t, next, cookie)
+			after, err := m.connections.Load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if scenario == "invalid_client" || scenario == "foreign_owner" {
+				if result.Status != "failed" || after.OAuthApplications[0].ClientSecret != oldApp.ClientSecret || after.Connections[0].Version != first.Version || after.OAuthCredentials[0].AccessToken != before.OAuthCredentials[0].AccessToken {
+					t.Fatal("failed replacement changed active connection", result.Status, result.ErrorCode)
+				}
+			} else {
+				if result.Status != "succeeded" || len(result.Connections) != 2 || len(after.OAuthClientImports) != 0 || after.OAuthApplications[0].ClientID != clientID || after.OAuthApplications[0].ClientSecret != "replacement-secret" {
+					t.Fatal("replacement did not commit", result.Status, result.ErrorCode)
+				}
+				for i, c := range after.Connections {
+					if _, err := connection.ResolveAuthorization(after, c); err != nil || c.Version != before.Connections[i].Version+1 || c.Generation != before.Connections[i].Generation {
+						t.Fatal("shared connection not updated", err)
+					}
+				}
+				if len(after.OAuthCleanup) != 1 || after.OAuthCleanup[0].ClientID != oldApp.ClientID || after.OAuthCleanup[0].ClientSecret != oldApp.ClientSecret {
+					t.Fatal("old grant cleanup credentials changed")
+				}
+			}
+			if g.revokes.Load() != 0 {
+				t.Fatal("replacement revoked the existing application's grant")
+			}
+		})
+	}
+}
+
 func TestGitLabAuthAdditionalConnectionSharesGrantAtomically(t *testing.T) {
 	parallelFixtureTest(t)
 	g := newGitlabLoginHarness(t)
