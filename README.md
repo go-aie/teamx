@@ -92,15 +92,15 @@ go build -o bin/teamx-gitlab ./tools/gitlab
 
 服务启动后：
 
-1. 在左下角「设置 → 平台连接」填写连接名称和实例地址，点击「登录 GitLab」完成授权。首次按页面引导注册一次 GitLab 个人应用，填写 Application ID 和 Secret；配置完成后只需账号登录。
+1. 在左下角「设置 → 平台连接」填写连接名称和实例地址。首次注册 GitLab 个人应用并填写 Application ID 和 Secret，点击「连接 GitLab」完成授权；已有应用可直接复用。
 2. 点击成员，进入「工具设置」，为该成员选择 GitLab 连接并应用。
 3. 在房间里提出具体任务。工具沿用所选账号的有效权限，操作取决于用户意图和成员职责。
 
-需要 OAuth 仓库读写时，首次配置时选择「允许拉取和推送代码」，并在 GitLab 应用中勾选 `api` 和 `write_repository`。成员用 `teamx workspace-git fetch/push/ls-remote` 执行网络 Git，本地 diff／commit 仍使用 Git；API-only 授权不会自动扩权。本次 OAuth 简化后的真实账号与 Git 网络链路尚未重新验收。
+新配置默认选择 `api` 和 `write_repository`，已有配置恢复保存的选择。`api` 用于 API 读写，是必需权限；`write_repository` 用于 HTTPS 拉取和推送代码，可按需取消。GitLab 应用中需勾选所选权限，修改选择后重新授权。成员用 `teamx workspace-git fetch/push/ls-remote` 执行网络 Git，本地 diff／commit 仍使用 Git；已有 API-only 授权不会自动扩权。本次 OAuth 简化后的真实账号与 Git 网络链路尚未重新验收。
 
-首次直接展示「GitLab 应用配置」表单；尚未验证成功时，可在同一表单中更正后重新保存。已验证连接需要更换应用或 Secret 时，展开「高级设置」使用同一表单，再点击「验证并更新」；核验成功后才更新原配置，共享该应用的连接一起更新。
+已有连接提供「重新授权」「退出登录」「修改应用配置」。需要更换应用或 Secret 时，点击「修改应用配置」，确认影响范围后填写表单，再点击「更新并授权」；核验成功后才更新原配置。修改和退出使用同一处引用房间列表展示影响范围；取消修改会清空 Secret 并返回账号操作。授权成功后自动保存，名称有改动时才显示「保存名称」。
 
-重新打开表单会带出已保存的 Application ID 和代码读写选项，并显示当前服务的回调地址；Secret 不回显，更换时重新填写。
+重新打开表单会带出已保存的 Application ID 和申请权限，并显示当前服务的回调地址；Secret 不回显，更换时重新填写。
 
 GitLab 仅支持 OAuth。旧版本数据需先停止服务，再运行 `teamx connections upgrade --rooms-dir ROOT`；已有 OAuth 授权保留，旧 PAT 连接保留原 ID 和房间引用并需要重新登录。升级不访问 GitLab，也不撤销远端 PAT。
 

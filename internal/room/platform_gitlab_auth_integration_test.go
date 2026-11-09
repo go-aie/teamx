@@ -99,6 +99,45 @@ func TestGitLabAuthRejectsStateBrowserOperatorAndEpoch(t *testing.T) {
 	}
 }
 
+func TestGitLabAuthAuthorizationErrorCallback(t *testing.T) {
+	parallelFixtureTest(t)
+	for _, remoteError := range []string{"invalid_scope", "invalid_client", "access_denied", "untrusted-remote-error"} {
+		t.Run(remoteError, func(t *testing.T) {
+			g := newGitlabLoginHarness(t)
+			v, cookie := g.login(t)
+			response := g.callback(v, cookie, func(q url.Values) {
+				q.Del("code")
+				q.Set("error", remoteError)
+				q.Set("error_description", "private-remote-description")
+			})
+			if response.Code != 303 || g.posts.Load() != 0 {
+				t.Fatal("authorization error exchanged a token or did not complete")
+			}
+			result := g.status(t, v, cookie)
+			if remoteError == "access_denied" {
+				if result.Status != "cancelled" || result.ErrorCode != "" {
+					t.Fatal("user denial was not preserved")
+				}
+			} else {
+				code := remoteError
+				if remoteError == "untrusted-remote-error" {
+					code = "authorization_failed"
+				}
+				if result.Status != "failed" || result.ErrorCode != code {
+					t.Fatal("authorization error lost", result.Status, result.ErrorCode)
+				}
+				if remoteError == "invalid_scope" && !reflect.DeepEqual(result.RequestedScopes, []string{"api"}) {
+					t.Fatal("requested permissions missing", result.RequestedScopes)
+				}
+			}
+			encoded, _ := json.Marshal(result)
+			if strings.Contains(string(encoded), "private-remote-description") || strings.Contains(string(encoded), "untrusted-remote-error") {
+				t.Fatal("untrusted remote diagnostics exposed")
+			}
+		})
+	}
+}
+
 func TestGitLabAuthCancellationExpiryAndRestart(t *testing.T) {
 	parallelFixtureTest(t)
 	for _, mode := range []string{"cancel", "expire", "restart", "denied", "version"} {
@@ -383,7 +422,7 @@ func TestGitLabAuthImportedClientOwnershipAndNewConnection(t *testing.T) {
 
 func TestGitLabAuthApplicationReplacement(t *testing.T) {
 	parallelFixtureTest(t)
-	for _, scenario := range []string{"secret", "application", "invalid_client", "foreign_owner"} {
+	for _, scenario := range []string{"secret", "application", "application_extra_scopes", "application_missing_scope", "invalid_client", "invalid_scope", "foreign_owner"} {
 		t.Run(scenario, func(t *testing.T) {
 			g := newGitlabLoginHarness(t)
 			initial, cookie := g.login(t)
@@ -406,7 +445,11 @@ func TestGitLabAuthApplicationReplacement(t *testing.T) {
 			if scenario == "application" {
 				clientID = "replacement-client"
 			}
-			setupReq := gitlabSetupRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: first.ID, Version: first.Version, Client: &gitlabClientImport{ClientID: clientID, ClientSecret: "replacement-secret", RedirectURI: oldApp.RedirectURI, Scopes: oldApp.Scopes}}
+			requestedScopes := oldApp.Scopes
+			if scenario == "application_missing_scope" {
+				requestedScopes = []string{"api", "write_repository"}
+			}
+			setupReq := gitlabSetupRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: first.ID, Version: first.Version, Scopes: requestedScopes, Client: &gitlabClientImport{ClientID: clientID, ClientSecret: "replacement-secret", RedirectURI: oldApp.RedirectURI, Scopes: requestedScopes}}
 			candidate := gitlabSetupHTTP(t, g.h, "initialize", setupReq)
 			readReq := setupReq
 			readReq.Client = nil
@@ -436,11 +479,19 @@ func TestGitLabAuthApplicationReplacement(t *testing.T) {
 					body = `{"access_token":"replacement-access","refresh_token":"replacement-refresh","token_type":"bearer","expires_in":600}`
 					if scenario == "invalid_client" {
 						status, body = 401, `{"error":"invalid_client"}`
+					} else if scenario == "invalid_scope" {
+						status, body = 400, `{"error":"invalid_scope"}`
 					}
 				case "/oauth/token/info":
-					body = fmt.Sprintf(`{"resource_owner_id":101,"scope":["api"],"application":{"uid":%q}}`, clientID)
+					scopeJSON, _ := json.Marshal(requestedScopes)
+					body = fmt.Sprintf(`{"resource_owner_id":101,"scope":%s,"application":{"uid":%q}}`, scopeJSON, clientID)
 				case "/api/v4/user/applications":
 					body = fmt.Sprintf(`[{"id":55,"application_id":%q,"application_name":"TeamX replacement","callback_url":%q,"confidential":true}]`, clientID, oldApp.RedirectURI)
+					if scenario == "application_extra_scopes" {
+						body = strings.Replace(body, `"confidential":true`, `"confidential":true,"scopes":["api","read_api","read_repository","write_repository"]`, 1)
+					} else if scenario == "application_missing_scope" {
+						body = strings.Replace(body, `"confidential":true`, `"confidential":true,"scopes":["api"]`, 1)
+					}
 					if scenario == "foreign_owner" {
 						body = `[]`
 					}
@@ -460,13 +511,24 @@ func TestGitLabAuthApplicationReplacement(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if scenario == "invalid_client" || scenario == "foreign_owner" {
+			if scenario == "invalid_client" || scenario == "invalid_scope" || scenario == "application_missing_scope" || scenario == "foreign_owner" {
 				if result.Status != "failed" || after.OAuthApplications[0].ClientSecret != oldApp.ClientSecret || after.Connections[0].Version != first.Version || after.OAuthCredentials[0].AccessToken != before.OAuthCredentials[0].AccessToken {
 					t.Fatal("failed replacement changed active connection", result.Status, result.ErrorCode)
+				}
+				if scenario == "invalid_scope" || scenario == "application_missing_scope" {
+					if result.ErrorCode != "invalid_scope" || !reflect.DeepEqual(result.RequestedScopes, requestedScopes) {
+						t.Fatal("scope failure lost requested permissions", result.ErrorCode, result.RequestedScopes)
+					}
+					if scenario == "application_missing_scope" && !reflect.DeepEqual(result.MissingScopes, []string{"write_repository"}) {
+						t.Fatal("missing application permission not reported", result.MissingScopes)
+					}
 				}
 			} else {
 				if result.Status != "succeeded" || len(result.Connections) != 2 || len(after.OAuthClientImports) != 0 || after.OAuthApplications[0].ClientID != clientID || after.OAuthApplications[0].ClientSecret != "replacement-secret" {
 					t.Fatal("replacement did not commit", result.Status, result.ErrorCode)
+				}
+				if !reflect.DeepEqual(after.OAuthApplications[0].Scopes, requestedScopes) || !reflect.DeepEqual(after.OAuthCredentials[0].Scopes, requestedScopes) {
+					t.Fatal("application capabilities expanded the requested grant")
 				}
 				for i, c := range after.Connections {
 					if _, err := connection.ResolveAuthorization(after, c); err != nil || c.Version != before.Connections[i].Version+1 || c.Generation != before.Connections[i].Generation {

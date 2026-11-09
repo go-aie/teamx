@@ -24,15 +24,15 @@ type gitlabClientImport struct {
 func (gitlabClientImport) Format(s fmt.State, _ rune) { fmt.Fprint(s, "[REDACTED GitLab client]") }
 
 type gitlabSetupRequest struct {
-	EditApplication  bool                `json:"edit_application,omitempty"`
-	RepositoryAccess bool                `json:"repository_access,omitempty"`
-	ServiceEpoch     string              `json:"service_epoch"`
-	Caller           Caller              `json:"caller"`
-	ID               string              `json:"id,omitempty"`
-	Origin           string              `json:"origin,omitempty"`
-	Version          uint64              `json:"version,omitempty"`
-	Client           *gitlabClientImport `json:"client,omitempty"`
-	ClientImportID   string              `json:"client_import_id,omitempty"`
+	EditApplication bool                `json:"edit_application,omitempty"`
+	Scopes          []string            `json:"scopes,omitempty"`
+	ServiceEpoch    string              `json:"service_epoch"`
+	Caller          Caller              `json:"caller"`
+	ID              string              `json:"id,omitempty"`
+	Origin          string              `json:"origin,omitempty"`
+	Version         uint64              `json:"version,omitempty"`
+	Client          *gitlabClientImport `json:"client,omitempty"`
+	ClientImportID  string              `json:"client_import_id,omitempty"`
 }
 
 func (gitlabSetupRequest) Format(s fmt.State, _ rune) {
@@ -139,9 +139,13 @@ func (m *roomManager) serveGitLabSetup(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	scopes := []string{"api"}
-	if req.RepositoryAccess {
-		scopes = append(scopes, "write_repository")
+	scopes := req.Scopes
+	if scopes == nil {
+		scopes = []string{"api"}
+	}
+	if !connection.GitLabLoginScopes(scopes) {
+		writeAPIError(w, ErrRequest)
+		return
 	}
 	view := gitlabSetupView{Status: "configuration_required", RedirectURI: redirect, ApplicationsURL: origin + "/-/user_settings/applications", Scopes: scopes}
 	if req.Client != nil {
@@ -184,7 +188,7 @@ func (m *roomManager) serveGitLabSetup(w http.ResponseWriter, r *http.Request) {
 	} else {
 		var apps []connection.OAuthApplication
 		for _, app := range file.OAuthApplications {
-			if app.Origin == origin && app.RedirectURI == redirect && (!req.RepositoryAccess || slices.Equal(app.Scopes, scopes)) && (target.CredentialID == "" || slices.ContainsFunc(file.OAuthCredentials, func(c connection.OAuthCredential) bool {
+			if app.Origin == origin && app.RedirectURI == redirect && (target.CredentialID == "" || slices.ContainsFunc(file.OAuthCredentials, func(c connection.OAuthCredential) bool {
 				return c.ID == target.CredentialID && c.ApplicationID == app.ID
 			})) {
 				apps = append(apps, app)
@@ -206,7 +210,7 @@ func (m *roomManager) serveGitLabSetup(w http.ResponseWriter, r *http.Request) {
 			}
 		} else if target.CredentialID == "" {
 			for _, v := range file.OAuthClientImports {
-				if v.ReplacesApplicationID == "" && v.Origin == origin && v.ActorID == req.Caller.ID && v.RedirectURI == redirect && (!req.RepositoryAccess || slices.Equal(v.Scopes, scopes)) {
+				if v.ReplacesApplicationID == "" && v.Origin == origin && v.ActorID == req.Caller.ID && v.RedirectURI == redirect {
 					view.Status = "owner_verification_required"
 					view.ClientImportID = v.ID
 					view.ClientID = v.ClientID

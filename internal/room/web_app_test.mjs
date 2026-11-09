@@ -1401,7 +1401,7 @@ test("connection save returns only after confirmation and a late list read canno
   assert.equal(ui.el("connections-list").children.length, 1);
   assert.equal(ui.el("connections-empty").hidden, true);
   assert.equal(ui.el("connections-list-view").attributes["aria-busy"], "false");
-  assert.equal(ui.el("connections-feedback").textContent, "连接已保存。");
+  assert.equal(ui.el("connections-feedback").textContent, "名称已保存。");
 });
 
 test("platform connections load on open and return, with retry only after a failed read", async () => {

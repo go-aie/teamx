@@ -105,3 +105,40 @@ func TestGitLabSetupCorrectsPendingApplicationAndRejectsStaleOrActiveEdits(t *te
 		t.Fatal("correction not saved independently of login", err)
 	}
 }
+
+func TestGitLabSetupRequestedScopes(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		scopes []string
+		valid  bool
+	}{
+		{"api_only", []string{"api"}, true},
+		{"api_and_repository", []string{"api", "write_repository"}, true},
+		{"empty", []string{}, false},
+		{"missing_api", []string{"write_repository"}, false},
+		{"unsupported", []string{"api", "read_api"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			scopes := tc.scopes
+			m := testManager(t, t.TempDir(), nil)
+			m.config.endpoint = "http://127.0.0.1:8088"
+			client := gitlabClientImport{ClientID: "scope-client", ClientSecret: "fixture-secret", RedirectURI: m.config.endpoint + gitlabCallbackPath, Scopes: scopes}
+			req := map[string]any{"service_epoch": m.epoch, "caller": humanCaller, "origin": "https://gitlab.invalid", "scopes": scopes, "client": client}
+			response := managerHTTP(m, gitlabCookiePath+"initialize", req)
+			if tc.valid && response.Code != http.StatusOK || !tc.valid && response.Code != http.StatusBadRequest {
+				t.Fatal("scope selection accepted incorrectly", scopes, response.Code)
+			}
+			file, err := m.connections.Load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.valid {
+				if len(file.OAuthClientImports) != 1 || strings.Join(file.OAuthClientImports[0].Scopes, " ") != strings.Join(scopes, " ") {
+					t.Fatal("requested scopes were not preserved")
+				}
+			} else if len(file.OAuthClientImports) != 0 {
+				t.Fatal("invalid scope selection was saved")
+			}
+		})
+	}
+}

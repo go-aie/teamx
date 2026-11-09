@@ -17,7 +17,7 @@ func TestGitLabSetupIsLocalAndRequiresExplicitImport(t *testing.T) {
 	m := testManager(t, t.TempDir(), nil)
 	m.config.endpoint = "http://127.0.0.1:8088"
 	m.platformHTTP = workspaceHTTPFunc(func(*http.Request) (*http.Response, error) { t.Fatal("setup contacted GitLab"); return nil, ErrRequest })
-	req := gitlabSetupRequest{ServiceEpoch: m.epoch, Caller: humanCaller, Origin: "https://gitlab.invalid", RepositoryAccess: true}
+	req := gitlabSetupRequest{ServiceEpoch: m.epoch, Caller: humanCaller, Origin: "https://gitlab.invalid", Scopes: []string{"api", "write_repository"}}
 	r := managerHTTP(m, gitlabCookiePath+"prepare", req)
 	var view gitlabSetupView
 	if r.Code != 200 || json.Unmarshal(r.Body.Bytes(), &view) != nil || view.Status != "configuration_required" || view.RedirectURI != m.config.endpoint+gitlabCallbackPath {

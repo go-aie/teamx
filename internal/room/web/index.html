@@ -509,31 +509,9 @@
         </div>
         <div id="gitlab-account-row" class="connection-field connection-field-wide">
           <p id="gitlab-account" class="connection-account" role="status" aria-live="polite">未连接</p>
-          <div class="connection-account-actions"><button id="gitlab-login" class="settings-secondary-button" type="button">登录 GitLab</button><button id="gitlab-logout" class="text-button" type="button" hidden>退出登录</button><button id="gitlab-cancel" class="text-button" type="button" hidden>取消本次登录</button></div>
+          <div class="connection-account-actions"><button id="gitlab-login" class="settings-secondary-button" type="button">登录 GitLab</button><button id="gitlab-logout" class="text-button" type="button" hidden>退出登录</button><button id="gitlab-edit-application" class="text-button" type="button" hidden>修改应用配置</button><button id="gitlab-cancel" class="text-button" type="button" hidden>取消本次登录</button></div>
           <a id="gitlab-login-link" target="_blank" rel="noopener noreferrer" hidden>打开 GitLab 授权页面 ↗</a>
-          <details id="gitlab-advanced" class="connection-advanced">
-            <summary id="gitlab-advanced-title" aria-controls="gitlab-setup">高级设置</summary>
-            <section id="gitlab-setup" class="connection-setup gitlab-setup" aria-labelledby="gitlab-setup-title" hidden>
-              <h4 id="gitlab-setup-title">GitLab 应用配置</h4>
-              <section class="gitlab-setup-group" aria-labelledby="gitlab-prepare-title">
-                <h5 id="gitlab-prepare-title">1. 在 GitLab 中准备应用</h5>
-                <p class="quiet"><a id="gitlab-applications-link" target="_blank" rel="noopener noreferrer">打开 GitLab 应用设置 ↗</a>，新建时勾选 Confidential。</p>
-                <label for="gitlab-redirect-uri">回调地址</label><input id="gitlab-redirect-uri" readonly spellcheck="false">
-                <label class="workspace-check"><input id="gitlab-repository-access" type="checkbox" aria-describedby="gitlab-scope-hint">允许拉取和推送代码</label>
-                <p id="gitlab-scope-hint" class="quiet">GitLab 应用权限：api</p>
-              </section>
-              <section class="gitlab-setup-group" aria-labelledby="gitlab-credentials-title">
-                <h5 id="gitlab-credentials-title">2. 填写应用凭据</h5>
-                <label for="gitlab-client-id">Application ID</label><input id="gitlab-client-id" autocomplete="off" spellcheck="false">
-                <label for="gitlab-client-secret">Secret</label><input id="gitlab-client-secret" type="password" autocomplete="new-password">
-              </section>
-              <div class="gitlab-setup-actions">
-                <button id="gitlab-import" class="settings-secondary-button" type="button" aria-describedby="gitlab-setup-hint">保存应用配置</button>
-                <p id="gitlab-setup-hint" class="quiet">保存后登录 GitLab 完成验证</p>
-                <p id="gitlab-setup-feedback" class="gitlab-setup-feedback" role="status" aria-live="polite" hidden></p>
-              </div>
-            </section>
-          </details>
+
         </div>
         <section id="connection-references" class="connection-references connection-field-wide" aria-labelledby="connection-references-title" hidden>
           <h4 id="connection-references-title">引用房间</h4>
@@ -544,8 +522,32 @@
             <div class="connection-account-actions"><button id="connection-auth-confirm" class="settings-secondary-button" type="button">继续登录</button><button id="connection-auth-dismiss" class="text-button" type="button">取消</button></div>
           </div>
         </section>
+        <div id="gitlab-app-config-row" class="connection-field connection-field-wide">
+          <details id="gitlab-advanced" class="connection-advanced">
+            <summary id="gitlab-advanced-title" aria-controls="gitlab-setup">应用配置</summary>
+            <section id="gitlab-setup" class="connection-setup gitlab-setup" aria-labelledby="gitlab-setup-title" hidden>
+              <header class="gitlab-setup-heading"><h4 id="gitlab-setup-title">配置 GitLab 应用</h4><a id="gitlab-applications-link" target="_blank" rel="noopener noreferrer">应用设置 ↗</a></header>
+              <p id="gitlab-initial-hint" class="quiet">创建应用时勾选 Confidential，填写以下信息。</p>
+              <label for="gitlab-redirect-uri">回调地址</label><input id="gitlab-redirect-uri" readonly spellcheck="false">
+              <div class="gitlab-client-fields">
+                <div><label for="gitlab-client-id">Application ID</label><input id="gitlab-client-id" autocomplete="off" spellcheck="false"></div>
+                <div><label for="gitlab-client-secret">Secret</label><input id="gitlab-client-secret" type="password" autocomplete="new-password"></div>
+              </div>
+              <fieldset class="gitlab-scopes">
+                <legend>权限</legend>
+                <label class="gitlab-scope-option" title="API 读写，用于通知、查询、评论等。TeamX 必需。"><input id="gitlab-scope-api" type="checkbox" checked disabled aria-label="api（必需）" aria-describedby="gitlab-scope-api-description"><code>api</code><span id="gitlab-scope-api-description" class="sr-only">API 读写，用于通知、查询、评论等。TeamX 必需。</span></label>
+                <label class="gitlab-scope-option" title="通过 HTTPS 拉取、推送代码。GitLab 应用需包含所选权限。"><input id="gitlab-scope-write-repository" type="checkbox" checked aria-describedby="gitlab-scope-write-repository-description"><code>write_repository</code><span id="gitlab-scope-write-repository-description" class="sr-only">通过 HTTPS 拉取、推送代码。</span></label>
+              </fieldset>
+              <div class="gitlab-setup-actions">
+                <button id="gitlab-import" class="settings-secondary-button" type="button">连接 GitLab</button>
+                <button id="gitlab-edit-cancel" class="text-button" type="button" hidden>取消修改</button>
+                <p id="gitlab-setup-feedback" class="gitlab-setup-feedback" role="status" aria-live="polite" hidden></p>
+              </div>
+            </section>
+          </details>
+        </div>
         <div id="connection-notes" class="connection-notes connection-field-wide" hidden><p id="connection-validation" class="quiet"></p></div>
-        <footer class="connection-field-wide"><button id="connection-delete" class="settings-secondary-button settings-danger-button" type="button" hidden>删除连接</button><button id="connection-verify" class="settings-secondary-button" type="button" hidden>验证连接</button><button id="connection-save" class="primary" type="submit">保存连接</button></footer>
+        <footer id="connection-actions" class="connection-field-wide"><button id="connection-delete" class="settings-secondary-button settings-danger-button" type="button" hidden>删除连接</button><button id="connection-verify" class="settings-secondary-button" type="button" hidden>验证连接</button><button id="connection-save" class="primary" type="submit">保存连接</button></footer>
       </fieldset>
     </form>
     <p id="connections-feedback" class="connections-feedback quiet" role="status" aria-live="polite"></p>

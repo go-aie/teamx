@@ -41,14 +41,16 @@ type gitlabAuthRequest struct {
 	Affected       []gitlabAuthConnection `json:"affected,omitempty"`
 }
 type gitlabAuthView struct {
-	ConnectionID string               `json:"connection_id"`
-	SessionID    string               `json:"session_id"`
-	Status       string               `json:"status"`
-	URL          string               `json:"authorization_url,omitempty"`
-	ErrorCode    string               `json:"error_code,omitempty"`
-	Cleanup      string               `json:"cleanup_status,omitempty"`
-	ExpiresAt    time.Time            `json:"expires_at"`
-	Connections  []platformConnection `json:"connections,omitempty"`
+	ConnectionID    string               `json:"connection_id"`
+	SessionID       string               `json:"session_id"`
+	Status          string               `json:"status"`
+	URL             string               `json:"authorization_url,omitempty"`
+	ErrorCode       string               `json:"error_code,omitempty"`
+	RequestedScopes []string             `json:"requested_scopes,omitempty"`
+	MissingScopes   []string             `json:"missing_scopes,omitempty"`
+	Cleanup         string               `json:"cleanup_status,omitempty"`
+	ExpiresAt       time.Time            `json:"expires_at"`
+	Connections     []platformConnection `json:"connections,omitempty"`
 }
 type gitlabAuthSession struct {
 	gitlabAuthView
@@ -83,6 +85,9 @@ func (m *roomManager) canonicalGitLabRequestLocked(r *http.Request) bool {
 }
 func (m *roomManager) finishGitLabAuthLocked(s *gitlabAuthSession, status, code string) {
 	s.Status, s.ErrorCode, s.URL, s.state, s.verifier = status, code, "", "", ""
+	if code == "invalid_scope" {
+		s.RequestedScopes = slices.Clone(s.app.Scopes)
+	}
 	s.cancel()
 	select {
 	case <-s.done:
@@ -489,7 +494,15 @@ func (m *roomManager) serveGitLabCallback(w http.ResponseWriter, r *http.Request
 	s.state = ""
 	s.URL = "" // consume before any network work
 	if q.Get("error") != "" || !platform.ValidCredential(q.Get("code")) {
-		m.finishGitLabAuthLocked(s, "cancelled", "")
+		status, code := "cancelled", ""
+		switch q.Get("error") {
+		case "invalid_scope", "invalid_client":
+			status, code = "failed", q.Get("error")
+		case "", "access_denied":
+		default:
+			status, code = "failed", "authorization_failed"
+		}
+		m.finishGitLabAuthLocked(s, status, code)
 		m.mu.Unlock()
 		http.Redirect(w, r, gitlabCompletePath, 303)
 		return
@@ -500,18 +513,23 @@ func (m *roomManager) serveGitLabCallback(w http.ResponseWriter, r *http.Request
 	transport := m.platformHTTP
 	m.mu.Unlock()
 	tokens, identity, exchangeErr := gitlab.ExchangeOAuthCode(s.ctx, gitlab.OAuthLoginRequest{Origin: s.app.Origin, ClientID: s.app.ClientID, ClientSecret: platform.NewSecret(s.app.ClientSecret), RedirectURI: s.app.RedirectURI, Code: platform.NewSecret(q.Get("code")), Verifier: platform.NewSecret(verifier), UserID: s.app.OwnerID, Scopes: strings.Join(s.app.Scopes, " ")}, transport)
+	code := "authorization_failed"
+	var missingScopes []string
 	// Imported applications need proof of native ownership, not merely a user
 	// authorized by somebody else's application. OAuth user-app listing is read only.
 	if exchangeErr == nil && s.importID != "" {
 		remote, e := gitlab.OwnedApplications(s.ctx, s.app.Origin, tokens.AccessToken, transport)
 		ownerApp := s.app
 		ownerApp.OwnerID = identity.UserID
-		if e != nil || !slices.ContainsFunc(remote, func(a gitlab.UserApplication) bool { return applicationMatches(a, ownerApp) }) {
+		index := slices.IndexFunc(remote, func(a gitlab.UserApplication) bool { return applicationMatches(a, ownerApp) })
+		if e != nil || index < 0 {
 			exchangeErr = ErrIdentity
+		} else if missingScopes = gitlabApplicationMissingScopes(remote[index].Scopes, ownerApp.Scopes); len(missingScopes) > 0 {
+			exchangeErr, code = ErrRequest, "invalid_scope"
 		}
 	}
 	m.mu.Lock()
-	code := "authorization_failed"
+	s.MissingScopes = missingScopes
 	var protocolErr *gitlab.OAuthRefreshError
 	if errors.As(exchangeErr, &protocolErr) {
 		code = protocolErr.Code
@@ -734,7 +752,22 @@ func (m *roomManager) runGitLabLogout(s *gitlabAuthSession) {
 }
 
 func applicationMatches(remote gitlab.UserApplication, local connection.OAuthApplication) bool {
-	return remote.ClientID == local.ClientID && remote.RedirectURI == local.RedirectURI && remote.Confidential && (len(remote.Scopes) == 0 || slices.Equal(remote.Scopes, local.Scopes))
+	return remote.ClientID == local.ClientID && remote.RedirectURI == local.RedirectURI && remote.Confidential
+}
+
+func gitlabApplicationMissingScopes(available, requested []string) []string {
+	// Some GitLab versions omit application scopes. The token's actual granted
+	// scopes are always checked independently during exchange.
+	if len(available) == 0 {
+		return nil
+	}
+	var missing []string
+	for _, scope := range requested {
+		if !slices.Contains(available, scope) {
+			missing = append(missing, scope)
+		}
+	}
+	return missing
 }
 func gitlabAuthReferencesFingerprint(refs []platformConnectionReference) string {
 	data, _ := json.Marshal(refs)

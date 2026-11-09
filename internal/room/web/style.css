@@ -2196,20 +2196,27 @@ textarea::placeholder {
 .followup-technical { margin-top: 12px; font-size: 11px; }
 #policy-member-view .followup-technical p { color: var(--muted); }
 
-.gitlab-setup { margin:16px 0 0 4px; padding-left:16px; border-left:2px solid var(--line); }
-.gitlab-setup > h4 { margin:0 0 8px; font-size:14px; font-weight:600; }
-.gitlab-setup-group { margin-top:22px; }
-.gitlab-setup-group h5 { margin:0 0 8px; font-size:13px; font-weight:600; }
-.gitlab-setup-group > .quiet { margin:6px 0 0; }
+.gitlab-setup { margin-top:12px; }
+#gitlab-advanced { margin:0; padding:0; border:0; }
+.gitlab-setup-heading { display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
+.gitlab-setup-heading h4 { margin:0; font-size:13px; font-weight:600; }
+.gitlab-setup-heading a { flex:none; font-size:12px; color:var(--accent); }
+.gitlab-setup > .quiet { margin:6px 0 0; }
+.gitlab-client-fields { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px; }
 .settings-dialog .gitlab-setup label { margin-top:12px; }
+.gitlab-setup input:not([type="checkbox"]) { min-height:34px; padding:7px 10px; }
 .gitlab-setup input[readonly] { color:var(--muted); font-size:12px; }
-.gitlab-setup .workspace-check { display:flex; gap:8px; align-items:center; font-weight:400; }
-.gitlab-setup .workspace-check input { width:auto; margin:0; }
+.settings-dialog .gitlab-scopes { display:flex; flex-wrap:wrap; align-items:center; gap:8px 20px; min-width:0; margin:12px 0 0; padding:0; border:0; }
+.gitlab-scopes legend { padding:0; font-size:12px; font-weight:600; }
+.settings-dialog .gitlab-setup .gitlab-scope-option { display:flex; gap:6px; align-items:center; margin:4px 0 0; min-height:28px; font-weight:400; cursor:pointer; }
+.gitlab-scope-option input { flex:none; width:auto; margin:0; accent-color:var(--accent); }
+.gitlab-scope-option code { font-size:12px; overflow-wrap:anywhere; }
 .gitlab-setup-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px 12px; margin-top:16px; }
 .gitlab-setup-actions > .quiet { margin:0; }
 .gitlab-setup-feedback { flex-basis:100%; margin:0; color:var(--muted); }
 .gitlab-setup-feedback[data-kind="error"] { color:#9c4b43; }
 .gitlab-setup-feedback[data-kind="success"] { color:var(--accent); }
 @media (max-width:540px) {
+  .gitlab-client-fields { grid-template-columns:minmax(0,1fr); gap:0; }
   .gitlab-setup-actions > .quiet { flex-basis:100%; }
 }
