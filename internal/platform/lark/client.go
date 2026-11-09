@@ -148,24 +148,9 @@ func (c *Client) runProcess(ctx context.Context, dir string, timeout time.Durati
 	defer cancel()
 	out := &limitedBuffer{limit: maxOutput, cancel: cancel}
 	stderr := &limitedBuffer{limit: 64 << 10, cancel: cancel}
-	argv := args
-	if c.profile.Profile != "" {
-		argv = append([]string{"--profile", c.profile.Profile}, args...)
-	}
-	cmd := exec.CommandContext(ctx, c.profile.Executable, argv...)
-	cmd.Dir = dir
-	for _, k := range []string{"HOME", "USER", "LOGNAME", "PATH", "TMPDIR", "LANG", "LC_ALL", "TZ", "SSL_CERT_FILE", "SSL_CERT_DIR", "HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "all_proxy", "no_proxy"} {
-		if v, ok := os.LookupEnv(k); ok {
-			cmd.Env = append(cmd.Env, k+"="+v)
-		}
-	}
-	cmd.Env = append(cmd.Env, "LARKSUITE_CLI_NO_UPDATE_NOTIFIER=1", "LARKSUITE_CLI_NO_SKILLS_NOTIFIER=1")
-	if c.configDir != "" {
-		cmd.Env = append(cmd.Env, "LARKSUITE_CLI_CONFIG_DIR="+c.configDir)
-	}
+	cmd := c.command(ctx, dir, args...)
 	cmd.Stdout = out
 	cmd.Stderr = stderr
-	configureProcess(cmd)
 	err := cmd.Run()
 	settleProcess(cmd)
 	if out.overflow || stderr.overflow {
@@ -198,6 +183,28 @@ func (c *Client) runProcess(ctx context.Context, dir string, timeout time.Durati
 		return nil, err
 	}
 	return out.Bytes(), nil
+}
+
+// All operator processes use the same environment and process-tree cleanup.
+// In particular, config init must not inherit workspace or credential overrides.
+func (c *Client) command(ctx context.Context, dir string, args ...string) *exec.Cmd {
+	argv := args
+	if c.profile.Profile != "" {
+		argv = append([]string{"--profile", c.profile.Profile}, args...)
+	}
+	cmd := exec.CommandContext(ctx, c.profile.Executable, argv...)
+	cmd.Dir = dir
+	for _, k := range []string{"HOME", "USER", "LOGNAME", "PATH", "TMPDIR", "LANG", "LC_ALL", "TZ", "SSL_CERT_FILE", "SSL_CERT_DIR", "HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "all_proxy", "no_proxy"} {
+		if v, ok := os.LookupEnv(k); ok {
+			cmd.Env = append(cmd.Env, k+"="+v)
+		}
+	}
+	cmd.Env = append(cmd.Env, "LARKSUITE_CLI_NO_UPDATE_NOTIFIER=1", "LARKSUITE_CLI_NO_SKILLS_NOTIFIER=1")
+	if c.configDir != "" {
+		cmd.Env = append(cmd.Env, "LARKSUITE_CLI_CONFIG_DIR="+c.configDir)
+	}
+	configureProcess(cmd)
+	return cmd
 }
 func classify(data []byte) error {
 	var e struct {

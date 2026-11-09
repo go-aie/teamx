@@ -100,7 +100,7 @@ test("Scion sends PAT once, clears the password immediately, then saves only the
  api.view={status:"succeeded",username:"alice",cli_profile:profile("b")};
  await ui.clock.advance(1000);
  assert.equal(ui.el("connection-scion-profile").value,"b".repeat(32));
- assert.match(ui.el("connections-feedback").textContent,/登录与账号验证成功/);
+ assert.match(ui.el("connections-feedback").textContent,/账号已验证.*请保存连接/);
  await ui.el("connection-form").emit("submit");
  assert.equal(api.calls.filter(c=>c.path.endsWith("/scion/login")).length,1);
  const save=api.calls.find(c=>c.path.endsWith("/save"));assert.equal(save.data.pat,undefined);assert.deepEqual(save.data.cli_profile,profile("b"));

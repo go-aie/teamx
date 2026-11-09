@@ -108,7 +108,7 @@ async function connectionDraft(api,platform="feishu"){
 test("Lark connection discovers the CLI and profile, derives origin and verifies after saving",async()=>{
  const api=fixture(),ui=await connectionDraft(api);
  assert.equal(ui.el("connection-url-row").hidden,true);assert.equal(ui.el("connection-url").required,false);
- assert.equal(ui.el("connection-profile").value,"explicit");assert.equal(ui.el("connection-profile-choice").hidden,true);
+ assert.equal(ui.el("connection-profile").value,"explicit");assert.equal(ui.el("connection-application-picker").hidden,true);
  assert.equal(ui.el("connection-executable").value,"/fixture/lark-cli");assert.equal(ui.el("connection-name").value,"飞书");
  assert.match(ui.el("connection-account").textContent,/测试用户/);
  await ui.el("connection-form").emit("submit");const saved=api.calls.find(x=>x.path==="/v1/platform/connections/save").body;
@@ -128,18 +128,36 @@ test("multiple configurations require selection and never ask the user to type a
  const api=fixture();api.profiles.push({name:"another",brand:"feishu",user:"另一账号"});const ui=await connectionDraft(api);
  assert.equal(ui.el("connection-profile-choice").hidden,false);assert.equal(ui.el("connection-profile").value,"");
  await ui.el("connection-form").emit("submit");assert.equal(api.calls.filter(x=>x.path==="/v1/platform/connections/save").length,0);
- assert.match(ui.el("connections-feedback").textContent,/连接未保存.*选择应用配置/);
+ assert.match(ui.el("connections-feedback").textContent,/连接未保存.*选择或连接应用/);
  ui.el("connection-profile").value="another";await ui.el("connection-profile").emit("change");
  await ui.el("connection-form").emit("submit");assert.equal(api.calls.find(x=>x.path==="/v1/platform/connections/save").body.cli_profile.profile,"another");
 });
 test("missing application configuration shows setup guidance and preserves the connection draft",async()=>{
- const api=fixture();api.profiles=[];const ui=await connectionDraft(api);ui.el("connection-name").value="我的飞书";
- assert.equal(ui.el("connection-setup").hidden,false);assert.match(ui.el("connection-setup-command").textContent,/config init --new --brand feishu/);
+ for(const brand of ["feishu","lark"]){
+ const api=fixture();api.profiles=[];const ui=await connectionDraft(api,brand);ui.el("connection-name").value="我的连接";
+ assert.equal(ui.el("connection-setup").hidden,false);assert.match(ui.el("connection-setup-command").textContent,new RegExp(`config init --new --brand ${brand} --name teamx-${brand}`));
+ assert.equal(ui.el("connection-sending").hidden,true);assert.equal(ui.el("connection-send-status").hidden,true);
+ assert.equal(ui.el("connection-save").hidden,true);assert.equal(ui.el("connection-actions").hidden,true);
+ let copied;
+ ui.window.navigator={clipboard:{async writeText(text){copied=text;}}};
+ await ui.el("connection-setup-copy").emit("click");assert.equal(copied,ui.el("connection-setup-command").textContent);assert.equal(ui.el("connection-setup-copy").textContent,"已复制");
+ ui.el("connection-setup-existing").checked=true;ui.el("connection-setup-new").checked=false;await ui.el("connection-setup-existing").emit("change");
+ assert.doesNotMatch(ui.el("connection-setup-command").textContent,/--new/);
+ assert.match(ui.el("connection-setup-command").textContent,new RegExp(`config init --brand ${brand} --name teamx-${brand}`));
+ assert.match(ui.el("connection-setup-hint").textContent,/App ID.*App Secret/);assert.equal(ui.el("connection-setup-copy").textContent,"复制命令");
+ ui.window.navigator={};await ui.el("connection-setup-copy").emit("click");assert.match(ui.el("connection-setup-copy-status").textContent,/请选中上方命令复制/);
  assert.equal(ui.el("connection-login").hidden,true);await ui.el("connection-form").emit("submit");
- assert.equal(ui.el("connection-name").value,"我的飞书");assert.equal(ui.el("connection-form").hidden,false);
+ assert.equal(ui.el("connection-name").value,"我的连接");assert.equal(ui.el("connection-form").hidden,false);
  assert.equal(ui.el("connections-feedback").dataset.kind,"error");assert.match(ui.el("connections-feedback").textContent,/连接未保存/);
- api.profiles=[{name:"new-app",brand:"feishu"}];await ui.el("connection-detect").emit("click");
+ api.profiles=[{name:"new-app",brand}];await ui.el("connection-detect").emit("click");
  assert.equal(ui.el("connection-profile").value,"new-app");assert.equal(ui.el("connection-login").hidden,false);
+ assert.equal(ui.el("connection-advanced").open,false);assert.equal(ui.el("connection-application-name").textContent,"new-app");assert.equal(ui.el("connection-account").textContent,"尚未登录");
+ assert.equal(ui.el("connection-save").hidden,true);assert.equal(ui.el("connection-sending").hidden,true);
+ api.profiles[0].user="测试用户";await ui.el("connection-detect").emit("click");
+ assert.equal(ui.el("connection-save").hidden,false);assert.equal(ui.el("connection-actions").hidden,false);
+ assert.equal(ui.el("connection-sending").hidden,false);assert.equal(ui.el("connection-sending").open,false);
+ assert.equal(ui.el("connection-account").textContent,"测试用户");assert.match(ui.el("connection-account-state").textContent,/已登录/);
+ }
 });
 test("relative executable is rejected before saving an automatically discovered account",async()=>{
  const api=fixture(),ui=await connectionDraft(api);ui.el("connection-executable").value="lark-cli";
@@ -166,7 +184,7 @@ test("login shows the link and QR, polls read-only status, and does not persist 
  assert.equal(api.calls.filter(x=>x.path==="/v1/platform/connections/lark/login").length,1);
  api.authView={session_id:"auth-session",status:"succeeded",username:"测试用户"};await ui.clock.advance(1500);
  assert.equal(ui.el("connection-login-panel").hidden,true);assert.equal(ui.el("connection-login-link").href,"");assert.equal(ui.el("connection-save").disabled,false);
- assert.match(ui.el("connections-feedback").textContent,/登录与身份验证成功/);
+ assert.match(ui.el("connections-feedback").textContent,/账号已验证/);
  assert.equal(JSON.stringify([...ui.saved]).includes("auth-session"),false);assert.equal(JSON.stringify([...ui.saved]).includes("accounts.feishu.cn"),false);
 });
 test("closing during login cancels the server flow and ignores a late status response",async()=>{
@@ -190,7 +208,7 @@ test("logout explicitly acknowledges all connections sharing the profile and its
  await ui.el("connection-auth-confirm").emit("click");
  const body=api.calls.find(x=>x.path==="/v1/platform/connections/lark/logout").body;
  assert.deepEqual(body.affected,[{id:"lark-connection",version:1,referenced_rooms:[{room_id:"A",room_instance:"instance-A"}]}]);
- assert.match(ui.el("connections-feedback").textContent,/已退出.*授权管理/);
+ assert.match(ui.el("connections-feedback").textContent,/已退出登录/);assert.match(ui.el("connections-feedback-detail").textContent,/授权管理/);
 });
 test("Lark shares the grouped impact panel through confirmation and active authorization",async()=>{
  const api=fixture();api.confirm=()=>{throw Error("native confirmation must not open");};
@@ -231,7 +249,7 @@ test("Lark shows an empty impact panel while processing and clears stale confirm
    assert.equal(ui.el("connection-name").disabled,false);
    await ui.el("connection-login").emit("click");await ui.el("connection-auth-confirm").emit("click");
    assert.equal(ui.el("connection-references").dataset.impact,"true");
-   assert.match(ui.el("connection-account").textContent,/正在处理授权/);
+   assert.match(ui.el("connection-account").textContent,/正在准备账号授权/);
    await ui.el("connection-login-cancel").emit("click");
    assert.equal(ui.el("connection-references").dataset.impact,"false");
   }else{
@@ -478,7 +496,7 @@ test("L4-A sending checks report both permission layers and keep writes disabled
  const ui=await connectionDraft(api);
  assert.equal(ui.el("connection-send-check").hidden,false);
  await ui.el("connection-send-check").emit("click");
- assert.match(ui.el("connection-send-status").textContent,/应用发送权限：未齐备.*用户发送授权：未授权.*发送条件尚未齐备/);
+ assert.match(ui.el("connection-send-status").textContent,/发送条件未齐备.*开通应用发送权限.*用户发送授权/);
  assert.equal(api.calls.some(c=>c.path==="/v1/platform/connections/lark/login"),false);
 });
 
@@ -487,7 +505,7 @@ test("Lark sending status reports accepted modes and keeps direct user sends dis
  api.request=(path,body)=>path==="/v1/platform/connections/lark/sending-status"?Promise.resolve({account_fixed:true,application_scopes:"granted",user_scopes:"granted",adapter_implemented:true,reply_enabled:true,group_send_enabled:true,self_send_enabled:true,user_send_enabled:false}):original(path,body);
  const ui=await connectionDraft(api);
  await ui.el("connection-send-check").emit("click");
- assert.match(ui.el("connection-send-status").textContent,/应用发送权限：已开通.*用户发送授权：已授权.*可用：普通回复、群消息、本人自聊.*应用连接后生效.*向其他用户主动私信暂未开放/);
+ assert.match(ui.el("connection-send-status").textContent,/可用：普通回复、群消息、本人自聊.*成员工具设置.*主动私信暂未开放/);
  assert.equal(api.calls.some(c=>c.path.includes("/actions/execute")),false);
 });
 
@@ -568,4 +586,234 @@ test("closing Lark search cancels pending work and late results cannot replace a
  ui.el("lark-chat-search").value="";await ui.el("lark-chat-search").emit("input");await openChatPicker(ui);
  finish({chats:[{chat_id:"oc_late",name:"旧查询",chat_mode:"group"}],has_more:false,page_token:""});await settle();
  assert.equal(chatChoice(ui,"oc_late"),undefined);assert.ok(chatChoice(ui,"oc_fixture"));
+});
+
+const setupProfile = {version:1,executable:"/fixture/lark-cli",profile:"teamx-feishu-guided",brand:"feishu",cli_version:"1.0.99"};
+function guidedFixture() {
+ const api=fixture(),original=api.request;api.profiles=[];
+ api.authView={session_id:"setup-session",stage:"application",status:"waiting",verification_url:"https://open.feishu.cn/page/cli?user_code=fixture",qrcode_url:"/v1/platform/connections/lark/qrcode?session_id=setup-session"};
+ api.request=async(path,body,...args)=>{
+  if(path.endsWith("/lark/setup")){api.calls.push({path,body:structuredClone(body)});return {session_id:"setup-session",stage:"application",status:"starting"};}
+  if(path.endsWith("/lark/cancel")){api.calls.push({path,body:structuredClone(body)});return api.cancelView || {session_id:body.session_id,stage:"application",status:"cancelled"};}
+  return original(path,body,...args);
+ };
+ return api;
+}
+function configuredView(status="waiting",stage="authorization",extra={}) {
+ return {session_id:"setup-session",stage,status,configuration_found:true,cli_profile:setupProfile,app_id:"cli_fixture",app_name:"测试应用",...extra};
+}
+test("guided connection is primary for Feishu and Lark keeps its explicit fallback",async()=>{
+ for(const brand of ["feishu","lark"]){
+  const api=guidedFixture(),ui=await connectionDraft(api,brand);
+  assert.equal(ui.el("connection-guided").hidden,false);assert.equal(ui.el("connection-advanced").open,false);
+  assert.equal(ui.el("connection-setup-start").hidden,brand==="lark");
+  assert.match(ui.el("connection-guided-hint").textContent,brand==="lark"?/尚未验证/:/官方页面.*已有应用.*无需手动填写/);
+  assert.equal(api.calls.some(c=>c.path.endsWith("/lark/setup")),false);
+ }
+ const api=fixture(),ui=await connectionDraft(api);
+ assert.equal(ui.el("connection-guided").hidden,true);assert.equal(ui.el("connection-setup-other").hidden,false);
+ assert.equal(ui.el("connection-profile").value,"explicit");
+});
+test("guided setup changes stages, clears old QR, pins the returned profile and saves only on submit",async()=>{
+ const api=guidedFixture(),ui=await connectionDraft(api);ui.el("connection-name").value="我的飞书草稿";
+ await ui.el("connection-setup-start").emit("click");
+ const start=api.calls.find(c=>c.path.endsWith("/lark/setup")).body;
+ assert.deepEqual(start,{service_epoch:"manager",caller:{kind:"human",id:"tester"},executable:"/fixture/lark-cli",brand:"feishu"});
+ assert.equal(ui.el("connection-login-link").textContent,"打开配置页面 ↗");assert.match(ui.el("connection-account").textContent,/等待你完成应用配置/);
+ assert.equal(ui.el("connection-save").hidden,true);assert.equal(ui.el("connection-login-cancel").hidden,false);
+ assert.equal(ui.el("connection-sending").hidden,true);await ui.el("connection-setup-start").emit("click");
+ assert.equal(api.calls.filter(c=>c.path.endsWith("/lark/setup")).length,1);
+ api.profiles=[{name:"other",brand:"feishu",user:"其他账号"},{name:setupProfile.profile,brand:"feishu"}];
+ api.authView=configuredView("starting");await ui.clock.advance(1500);
+ assert.equal(ui.el("connection-login-panel").hidden,true);assert.equal(ui.el("connection-login-qr").src,"");assert.equal(ui.el("connection-login-link").href,"");
+ assert.equal(ui.el("connection-application-name").textContent,"测试应用");
+ api.authView=configuredView("waiting","authorization",{verification_url:"https://accounts.feishu.cn/oauth?code=fixture",qrcode_url:"/v1/platform/connections/lark/qrcode?session_id=setup-session"});
+ await ui.clock.advance(1500);assert.equal(ui.el("connection-login-panel").hidden,false);assert.equal(ui.el("connection-login-link").textContent,"打开授权页面 ↗");
+ api.profiles[1].user="本次用户";api.authView=configuredView("succeeded","complete",{username:"本次用户"});await ui.clock.advance(1500);
+ assert.equal(ui.el("connection-profile").value,setupProfile.profile);assert.equal(ui.el("connection-profile-choice").hidden,false);
+ assert.equal(ui.el("connection-name").value,"我的飞书草稿");assert.equal(ui.el("connection-save").hidden,false);assert.equal(ui.el("connection-save").disabled,false);
+ assert.equal(ui.el("connection-guided").hidden,true);assert.equal(ui.el("connection-advanced").open,false);assert.equal(ui.el("connection-sending").open,false);
+ assert.equal(api.calls.some(c=>c.path.endsWith("/connections/save")),false);
+ assert.match(ui.el("connections-feedback").textContent,/账号已验证.*请保存连接/);
+ assert.doesNotMatch(JSON.stringify([...ui.saved]),/setup-session|user_code|accounts.feishu.cn/);
+ await ui.el("connection-form").emit("submit");
+ assert.equal(api.calls.find(c=>c.path.endsWith("/connections/save")).body.cli_profile.profile,setupProfile.profile);
+ assert.equal(api.calls.some(c=>/notifications\/configure|authorize-sending|authorize-targets/.test(c.path)),false);
+});
+test("OAuth failure keeps the configured app and resumes login without another registration",async()=>{
+ const api=guidedFixture(),ui=await connectionDraft(api);await ui.el("connection-setup-start").emit("click");
+ api.profiles=[{name:setupProfile.profile,brand:"feishu"}];api.authView=configuredView("failed","authorization",{error_code:"permission_denied"});
+ await ui.clock.advance(1500);
+ assert.match(ui.el("connections-feedback").textContent,/应用已配置.*读取权限不足.*继续授权/);
+ assert.equal(ui.el("connection-login").textContent,"继续账号授权");assert.equal(ui.el("connection-login").hidden,false);assert.equal(ui.el("connection-save").hidden,true);
+ await ui.el("connection-form").emit("submit");assert.equal(api.calls.some(c=>c.path.endsWith("/connections/save")),false);
+ api.authView={session_id:"auth-session",status:"waiting",verification_url:"https://accounts.feishu.cn/oauth",qrcode_url:"/v1/platform/connections/lark/qrcode?session_id=auth-session"};
+ await ui.el("connection-login").emit("click");
+ assert.equal(api.calls.find(c=>c.path.endsWith("/lark/login")).body.cli_profile.profile,setupProfile.profile);
+ api.profiles[0].user="恢复用户";api.authView={session_id:"auth-session",status:"succeeded",username:"恢复用户"};await ui.clock.advance(1500);
+ assert.equal(api.calls.filter(c=>c.path.endsWith("/lark/setup")).length,1);
+ assert.equal(ui.el("connection-save").hidden,false);assert.match(ui.el("connection-account").textContent,/恢复用户/);
+});
+test("failed application results and missing returned profiles never select another account",async()=>{
+ for(const view of [configuredView("failed","application",{error_code:"identity_mismatch"}),configuredView("succeeded","complete",{username:"本次用户"})]){
+  const api=guidedFixture(),ui=await connectionDraft(api);await ui.el("connection-setup-start").emit("click");
+  api.profiles=[{name:"unrelated",brand:"feishu",user:"其他用户"}];api.authView=view;await ui.clock.advance(1500);
+  assert.equal(ui.el("connection-profile").value,"");assert.equal(ui.el("connection-profile-choice").hidden,false);assert.equal(ui.el("connection-save").hidden,true);
+  assert.equal(ui.el("connections-feedback").dataset.kind,"error");assert.equal(api.calls.some(c=>c.path.endsWith("/lark/login")),false);
+  await ui.el("connection-recheck").emit("click");assert.equal(ui.el("connection-profile").value,"");
+ }
+});
+test("mismatched application remains blocked until explicit detection or selection",async()=>{
+ const api=guidedFixture(),ui=await connectionDraft(api);await ui.el("connection-setup-start").emit("click");
+ api.profiles=[{name:setupProfile.profile,brand:"feishu",user:"已有用户"}];api.authView=configuredView("failed","application",{error_code:"configuration_unconfirmed"});await ui.clock.advance(1500);
+ assert.equal(ui.el("connection-login").hidden,true);assert.equal(ui.el("connection-save").hidden,true);assert.equal(ui.el("connection-sending").hidden,true);
+ assert.match(ui.el("connections-feedback").textContent,/已发现本机配置.*结果未确认.*重新检测/);
+ await ui.el("connection-recheck").emit("click");assert.equal(ui.el("connection-account-manage").hidden,false);
+ assert.equal(api.calls.some(c=>c.path.endsWith("/lark/login")),false);
+});
+test("expired and cancelled setup explicitly report found configuration and preserve the name",async()=>{
+ for(const status of ["expired","cancelled"]){
+  const api=guidedFixture(),ui=await connectionDraft(api);ui.el("connection-name").value="保留草稿";await ui.el("connection-setup-start").emit("click");
+  api.authView={session_id:"setup-session",stage:"application",status,error_code:status==="expired"?"timeout":"cancelled"};await ui.clock.advance(1500);
+  assert.match(ui.el("connections-feedback").textContent,status==="expired"?/应用配置已过期.*尚未确认/:/应用配置已取消.*尚未确认/);
+  assert.equal(ui.el("connection-name").value,"保留草稿");assert.equal(ui.el("connection-login-qr").src,"");
+  assert.equal(ui.el("connection-recheck").hidden,false);assert.equal(api.calls.filter(c=>c.path.endsWith("/lark/setup")).length,1);
+ }
+ const api=guidedFixture(),ui=await connectionDraft(api);await ui.el("connection-setup-start").emit("click");
+ api.profiles=[{name:setupProfile.profile,brand:"feishu"}];api.cancelView=configuredView("cancelled","authorization",{error_code:"cancelled"});
+ await ui.el("connection-login-cancel").emit("click");assert.equal(ui.el("connection-login").textContent,"继续账号授权");
+ assert.equal(ui.el("connection-profile").value,setupProfile.profile);assert.equal(ui.el("connection-login-qr").src,"");
+ assert.equal(api.calls.filter(c=>c.path.endsWith("/lark/cancel")).length,1);
+});
+test("setup request failure requires detection before retry and fixed-version errors stay visible",async()=>{
+ for(const code of ["cli_version_mismatch","busy",undefined]){
+  const api=guidedFixture(),original=api.request;
+  api.request=async(path,body,...args)=>{if(path.endsWith("/lark/setup")){api.calls.push({path,body});throw Object.assign(Error("failed"),{code});}return original(path,body,...args);};
+  const ui=await connectionDraft(api);await ui.el("connection-setup-start").emit("click");await ui.el("connection-setup-start").emit("click");
+  assert.equal(api.calls.filter(c=>c.path.endsWith("/lark/setup")).length,1);assert.equal(ui.el("connection-recheck").hidden,false);
+  assert.match(ui.el("connections-feedback").textContent,code==="cli_version_mismatch"?/版本不匹配/:code==="busy"?/正在处理/:/结果未确认/);
+  await ui.el("connection-recheck").emit("click");assert.equal(ui.el("connection-setup-start").disabled,false);
+ }
+});
+test("setup rejects duplicate starts while the initial response is pending",async()=>{
+ const api=guidedFixture(),original=api.request;let release;
+ api.request=async(path,body,...args)=>{if(path.endsWith("/lark/setup")){const result=await original(path,body,...args);await new Promise(r=>release=r);return result;}return original(path,body,...args);};
+ const ui=await connectionDraft(api),starting=ui.el("connection-setup-start").emit("click");await settle();
+ await ui.el("connection-setup-start").emit("click");assert.equal(api.calls.filter(c=>c.path.endsWith("/lark/setup")).length,1);
+ release();await starting;assert.equal(ui.el("connection-login-panel").hidden,false);
+});
+test("closing setup cancels waiting, ignores an outstanding status and rediscovers when reopened",async()=>{
+ const api=guidedFixture(),original=api.request,ui=await connectionDraft(api);await ui.el("connection-setup-start").emit("click");let release;
+ api.request=async(path,body,...args)=>path.endsWith("/lark/status")?await new Promise(r=>release=r):original(path,body,...args);
+ const reading=ui.clock.advance(1500);await settle();await ui.el("close-settings").emit("click");
+ release(configuredView("succeeded","complete",{username:"晚到用户"}));await reading;
+ assert.equal(ui.el("connection-login-panel").hidden,true);assert.equal(ui.el("connection-login-link").href,"");
+ assert.equal(api.calls.filter(c=>c.path.endsWith("/lark/cancel")).length,1);
+ api.profiles=[{name:setupProfile.profile,brand:"feishu"}];api.request=original;
+ await ui.el("open-settings").emit("click");await ui.el("connection-new").emit("click");ui.el("connection-provider").value="feishu";await ui.el("connection-provider").emit("change");
+ assert.equal(ui.el("connection-profile").value,setupProfile.profile);assert.equal(ui.el("connection-login").hidden,false);
+ assert.equal(api.calls.filter(c=>c.path.endsWith("/lark/setup")).length,1);
+});
+test("pagehide uses keepalive cancellation and a late start response is cancelled with its owner",async()=>{
+ const api=guidedFixture(),ui=await connectionDraft(api);await ui.el("connection-setup-start").emit("click");
+ const originalFetch=globalThis.fetch,requests=[];
+ try {
+  globalThis.fetch=async(path,options)=>{requests.push({path,...options});return {};};await ui.window.emit("pagehide");
+ } finally {globalThis.fetch=originalFetch;}
+ assert.equal(requests.length,1);assert.equal(requests[0].keepalive,true);assert.equal(requests[0].credentials,"same-origin");
+ assert.equal(JSON.parse(requests[0].body).session_id,"setup-session");assert.equal(ui.el("connection-login-qr").src,"");
+ const late=guidedFixture(),original=late.request;let release;
+ late.request=async(path,body,...args)=>{if(path.endsWith("/lark/setup")){const result=await original(path,body,...args);await new Promise(r=>release=r);return result;}return original(path,body,...args);};
+ const reopened=await connectionDraft(late),starting=reopened.el("connection-setup-start").emit("click");await settle();
+ await reopened.window.emit("pagehide");release();await starting;await settle();
+ assert.equal(late.calls.filter(c=>c.path.endsWith("/lark/cancel")).length,1);assert.equal(reopened.el("connection-login-panel").hidden,true);
+});
+
+test("a changed user after guided verification cannot be saved as the verified account",async()=>{
+ const api=guidedFixture(),ui=await connectionDraft(api);await ui.el("connection-setup-start").emit("click");
+ api.profiles=[{name:setupProfile.profile,brand:"feishu",user:"其他用户"}];api.authView=configuredView("succeeded","complete",{username:"本次用户"});await ui.clock.advance(1500);
+ assert.equal(ui.el("connection-save").hidden,true);assert.equal(ui.el("connection-login").hidden,true);
+ assert.match(ui.el("connections-feedback").textContent,/账号与核验结果不符.*连接未保存/);
+ await ui.el("connection-form").emit("submit");assert.equal(api.calls.some(c=>c.path.endsWith("/connections/save")),false);
+});
+test("status read failure cancels setup before recovery and never retries creation",async()=>{
+ const api=guidedFixture(),ui=await connectionDraft(api),original=api.request;await ui.el("connection-setup-start").emit("click");
+ api.request=async(path,body,...args)=>{if(path.endsWith("/lark/status"))throw Error("network");return original(path,body,...args);};
+ api.cancelView=configuredView("cancelled","authorization",{error_code:"cancelled"});api.profiles=[{name:setupProfile.profile,brand:"feishu"}];
+ await ui.clock.advance(1500);
+ assert.equal(api.calls.filter(c=>c.path.endsWith("/lark/cancel")).length,1);assert.equal(ui.el("connection-login-qr").src,"");
+ assert.match(ui.el("connections-feedback").textContent,/结果未确认.*重新检测/);
+ await ui.el("connection-recheck").emit("click");assert.equal(ui.el("connection-profile").value,setupProfile.profile);
+ assert.equal(api.calls.filter(c=>c.path.endsWith("/lark/setup")).length,1);
+});
+
+test("cancellation that settles a completed setup reports success and later logout clears its state",async()=>{
+ const api=guidedFixture(),ui=await connectionDraft(api);await ui.el("connection-setup-start").emit("click");
+ api.profiles=[{name:setupProfile.profile,brand:"feishu",user:"本次用户"}];api.cancelView=configuredView("succeeded","complete",{username:"本次用户"});
+ await ui.el("connection-login-cancel").emit("click");assert.match(ui.el("connections-feedback").textContent,/取消前授权已完成.*保存连接/);
+ assert.equal(ui.el("connection-account-state").textContent,"已验证");assert.equal(ui.el("connection-save").disabled,false);
+ await ui.el("connection-logout").emit("click");api.profiles[0].user=undefined;api.authView={session_id:"auth-session",status:"succeeded"};await ui.el("connection-auth-confirm").emit("click");
+ assert.match(ui.el("connections-feedback").textContent,/已退出/);assert.equal(ui.el("connection-save").hidden,true);
+});
+
+test("connected Lark form separates application and account and hides routine configuration",async()=>{
+ const api=fixture();api.profiles[0].appId="cli_distinct_app";
+ api.connections[0].cli_profile={version:1,executable:"/fixture/lark-cli",profile:"explicit",brand:"feishu",cli_version:"1.0.99"};
+ const ui=await launch(api);await ui.el("open-settings").emit("click");await ui.el("connections-list").children[0].emit("click");
+ assert.equal(ui.el("connection-application-name").textContent,"cli_distinct_app");assert.equal(ui.el("connection-account").textContent,"测试用户");
+ assert.equal(ui.el("connection-account-state").textContent,"已验证");assert.equal(ui.el("connection-notes").hidden,true);
+ assert.equal(ui.el("connection-guided").hidden,true);assert.equal(ui.el("connection-advanced").hidden,true);assert.equal(ui.el("connection-verify").hidden,true);
+ assert.equal(ui.el("connection-account-manage").hidden,false);assert.equal(ui.el("connection-account-manage").open,false);
+ assert.equal(ui.el("connection-login").hidden,true);assert.equal(ui.el("connection-save").disabled,true);
+ ui.el("connection-name").value="改名";await ui.el("connection-name").emit("input");assert.equal(ui.el("connection-save").disabled,false);
+ ui.el("connection-account-manage").open=true;await ui.el("connection-reauthorize").emit("click");
+ assert.equal(ui.el("connection-auth-confirmation").hidden,false);assert.equal(ui.el("connection-account-manage").open,false);
+ assert.equal(api.calls.some(c=>c.path.endsWith("/lark/login")),false);
+});
+test("application chooser opens deliberately, preserves the name and applies only to the draft",async()=>{
+ const api=fixture();api.profiles[0].appId="cli_first";api.profiles.push({name:"second",brand:"feishu",appId:"cli_second",user:"第二用户"});
+ const ui=await connectionDraft(api);ui.el("connection-name").value="名称草稿";
+ assert.equal(ui.el("connection-application-picker").hidden,true);assert.equal(ui.el("connection-profile").value,"");
+ await ui.el("connection-application-change").emit("click");assert.equal(ui.el("connection-application-picker").hidden,false);
+ assert.equal(ui.el("connection-profile").options[1].textContent,"cli_first");
+ ui.el("connection-profile").value="second";await ui.el("connection-profile").emit("change");
+ assert.equal(ui.el("connection-application-picker").hidden,true);assert.equal(ui.el("connection-application-name").textContent,"cli_second");
+ assert.equal(ui.el("connection-account").textContent,"第二用户");assert.equal(ui.el("connection-name").value,"名称草稿");
+ assert.equal(api.calls.some(c=>/connections\/save|lark\/login|lark\/setup/.test(c.path)),false);
+ await ui.el("connection-application-change").emit("click");await ui.el("connection-application-dismiss").emit("click");
+ assert.equal(ui.el("connection-profile").value,"second");
+});
+test("expired credentials show an immediate authorization action while tool failures reveal repair",async()=>{
+ const api=fixture();api.profiles[0].tokenStatus="expired";const ui=await connectionDraft(api);
+ assert.equal(ui.el("connection-login").hidden,false);assert.equal(ui.el("connection-login").textContent,"重新授权");
+ assert.equal(ui.el("connection-account-state").textContent,"需要重新授权");assert.equal(ui.el("connection-advanced").hidden,false);
+ api.profiles[0].tokenStatus="no_token";await ui.el("connection-detect").emit("click");assert.equal(ui.el("connection-login").hidden,false);assert.equal(ui.el("connection-account-state").textContent,"需要重新授权");
+ api.profiles[0].tokenStatus="valid";await ui.el("connection-detect").emit("click");assert.equal(ui.el("connection-advanced").hidden,true);
+ const failed=fixture(),original=failed.request;failed.request=async(path,body,...args)=>{if(path.endsWith("/lark/discover"))throw Object.assign(Error("version"),{code:"cli_version_mismatch"});return original(path,body,...args);};
+ const broken=await connectionDraft(failed);assert.equal(broken.el("connection-advanced").hidden,false);assert.equal(broken.el("connection-advanced").open,true);
+ assert.match(broken.el("connections-feedback").textContent,/版本不匹配/);assert.equal(broken.el("connection-guided").hidden,true);
+});
+
+test("saved-profile authorization only mentions other connections when they exist",async()=>{
+ for(const shared of [false,true]){
+  const api=fixture(),profile={version:1,executable:"/fixture/lark-cli",profile:"explicit",brand:"feishu",cli_version:"1.0.99"};
+  api.connections[0].cli_profile=profile;
+  if(shared)api.connections.push({...api.connections[0],id:"shared-connection",name:"另一个连接"});
+  const ui=await launch(api);await ui.el("open-settings").emit("click");await ui.el("connections-list").children[0].emit("click");
+  await ui.el("connection-reauthorize").emit("click");api.authView={session_id:"auth-session",status:"succeeded",username:"测试用户"};await ui.el("connection-auth-confirm").emit("click");
+  assert.equal(ui.el("connections-feedback").textContent,shared?"账号已验证。另有 1 个共享连接需重新验证。":"账号已验证。");
+  assert.equal(ui.el("connections-feedback-details").hidden,true);assert.equal(ui.el("connection-account-state").textContent,"已验证");
+ }
+});
+test("renewal failure stays visible while its instructions are expandable and cleared by the next operation",async()=>{
+ const api=fixture(),ui=await connectionDraft(api);await ui.el("connection-reauthorize").emit("click");
+ api.authView={session_id:"auth-session",status:"succeeded",username:"测试用户",renewal_unavailable:true,expires_at:"2027-01-01T00:00:00Z"};await ui.clock.advance(1500);
+ assert.match(ui.el("connections-feedback").textContent,/账号已验证.*请保存连接.*无法自动续期.*管理员/);
+ assert.doesNotMatch(ui.el("connections-feedback").textContent,/user_access_token|发布新版本/);
+ assert.equal(ui.el("connections-feedback-details").hidden,false);assert.equal(ui.el("connections-feedback-details").open,false);
+ assert.match(ui.el("connections-feedback-detail").textContent,/到期.*刷新 user_access_token.*发布新版本.*重新授权/);
+ ui.el("connections-feedback-details").open=true;await ui.el("connection-form").emit("submit");
+ assert.match(ui.el("connections-feedback").textContent,/连接已保存/);
+ assert.equal(ui.el("connections-feedback-details").hidden,true);assert.equal(ui.el("connections-feedback-details").open,false);
+ assert.equal(ui.el("connections-feedback-detail").textContent,"");
 });

@@ -42,6 +42,11 @@ type larkAuthView struct {
 	ExpiresAt          time.Time            `json:"expires_at,omitempty"`
 	ErrorCode          string               `json:"error_code,omitempty"`
 	Connections        []platformConnection `json:"connections,omitempty"`
+	Stage              string               `json:"stage,omitempty"`
+	Profile            *platform.CLIProfile `json:"cli_profile,omitempty"`
+	AppID              string               `json:"app_id,omitempty"`
+	AppName            string               `json:"app_name,omitempty"`
+	ConfigurationFound bool                 `json:"configuration_found,omitempty"`
 }
 
 // Sessions are service-local, bounded and owned by the initiating operator.
@@ -53,6 +58,7 @@ type larkAuthSession struct {
 	cancel  context.CancelFunc
 	done    chan struct{}
 	expires time.Time
+	setup   bool
 }
 
 func (m *roomManager) larkAuthBusyLocked(p *platform.CLIProfile) bool {
@@ -60,7 +66,7 @@ func (m *roomManager) larkAuthBusyLocked(p *platform.CLIProfile) bool {
 		return false
 	}
 	for _, s := range m.larkAuthSessions {
-		if s.profile.Profile == p.Profile {
+		if s.setup || s.profile.Profile == p.Profile {
 			select {
 			case <-s.done:
 			default:
@@ -74,7 +80,7 @@ func (m *roomManager) larkAuthBusyLocked(p *platform.CLIProfile) bool {
 func (m *roomManager) serveLarkAuth(w http.ResponseWriter, r *http.Request) {
 	action := strings.TrimPrefix(r.URL.Path, "/v1/platform/connections/lark/")
 	switch action {
-	case "discover", "login", "authorize-sending", "authorize-targets", "sending-status", "logout", "status", "cancel", "qrcode":
+	case "discover", "setup", "login", "authorize-sending", "authorize-targets", "sending-status", "logout", "status", "cancel", "qrcode":
 	default:
 		http.NotFound(w, r)
 		return
@@ -146,6 +152,10 @@ func (m *roomManager) serveLarkAuth(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_ = json.NewEncoder(w).Encode(result)
+		return
+	}
+	if action == "setup" {
+		m.startLarkSetupLocked(w, req)
 		return
 	}
 	if req.Profile == nil || !lark.ValidProfile(*req.Profile) || req.SessionID != "" || req.Executable != "" || req.Brand != "" || len(req.Affected) > 128 {
@@ -358,11 +368,21 @@ func (m *roomManager) runLarkAuth(ctx context.Context, s *larkAuthSession, actio
 	s.URL, s.QRCode = "", ""
 	s.Status, s.Username = "succeeded", login.Validation.Username
 	s.RenewalUnavailable, s.ExpiresAt = login.RenewalUnavailable, login.ExpiresAt
+	// A late success must never revive an explicitly cancelled setup session.
+	if s.setup && ctx.Err() != nil {
+		err = ctx.Err()
+	}
 	if err != nil {
 		s.Status, s.ErrorCode = "failed", lark.ErrorCode(err)
+		s.Username = ""
 		if ctx.Err() == context.Canceled {
 			s.Status = "cancelled"
 		}
+		if s.setup && ctx.Err() == context.DeadlineExceeded {
+			s.Status = "expired"
+		}
+	} else if s.setup {
+		s.Stage = "complete"
 	}
 	close(s.done)
 }

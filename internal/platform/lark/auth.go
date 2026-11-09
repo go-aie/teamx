@@ -18,6 +18,7 @@ import (
 type ProfileOption struct {
 	Name        string `json:"name"`
 	Brand       string `json:"brand"`
+	AppID       string `json:"appId,omitempty"`
 	User        string `json:"user,omitempty"`
 	TokenStatus string `json:"tokenStatus,omitempty"`
 }
@@ -73,6 +74,10 @@ func Discover(ctx context.Context, executable, brand string) (Discovery, error) 
 			return result, failure("invalid_response")
 		}
 		seen[p.Name] = true
+		// App IDs are display metadata; never pass through arbitrary config fields.
+		if p.AppID != "" && !validAppID(p.AppID) {
+			return result, failure("invalid_response")
+		}
 		switch p.TokenStatus {
 		case "valid", "expired", "refreshable", "no_token", "error", "":
 		default:
@@ -119,6 +124,11 @@ func LoginSendTargets(ctx context.Context, p platform.CLIProfile, ready func(str
 	return loginWithScopes(ctx, p, readerScopes+" "+SendTargetScopes, ready)
 }
 func loginWithScopes(ctx context.Context, p platform.CLIProfile, scopes string, ready func(string, string)) (LoginResult, error) {
+	writeUnlock, err := lockConfiguration(ctx)
+	if err != nil {
+		return LoginResult{}, err
+	}
+	defer writeUnlock()
 	c, err := New(p)
 	if err != nil {
 		return LoginResult{}, err
@@ -175,6 +185,11 @@ func loginWithScopes(ctx context.Context, p platform.CLIProfile, scopes string, 
 }
 
 func Logout(ctx context.Context, p platform.CLIProfile) error {
+	writeUnlock, err := lockConfiguration(ctx)
+	if err != nil {
+		return err
+	}
+	defer writeUnlock()
 	c, err := New(p)
 	if err != nil {
 		return err

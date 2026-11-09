@@ -19,7 +19,7 @@ if a[:2]==['--profile','fixture']:a=a[2:]
 if a==['--version']:
  print('lark-cli version '+('0.0.0' if mode=='version' else '1.0.99'));sys.exit()
 if a==['profile','list']:
- print(json.dumps([{'name':'fixture','brand':'feishu','user':'测试用户','tokenStatus':'valid','private':'not projected'},{'name':'teamx-feishu','brand':'lark'}]));sys.exit()
+ print(json.dumps([{'name':'fixture','brand':'feishu','appId':'unsafe' if mode=='discovery-app-id' else 'cli_fixture','user':'测试用户','tokenStatus':'valid','private':'not projected'},{'name':'teamx-feishu','brand':'lark'}]));sys.exit()
 if a==['config','show']:
  print(json.dumps({'profile':'fixture','brand':'lark' if mode=='brand' else 'feishu','appSecret':'****'}));sys.exit()
 if a[:2]==['auth','login'] and '--no-wait' in a:

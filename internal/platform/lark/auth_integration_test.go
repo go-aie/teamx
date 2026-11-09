@@ -19,7 +19,7 @@ func TestDiscoverProfilesWithoutChangingDefaultOrExposingSecrets(t *testing.T) {
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	for _, executable := range []string{p.Executable, ""} {
 		d, err := Discover(context.Background(), executable, "feishu")
-		if err != nil || d.Executable != p.Executable || len(d.Profiles) != 1 || d.Profiles[0].Name != "fixture" {
+		if err != nil || d.Executable != p.Executable || len(d.Profiles) != 1 || d.Profiles[0].Name != "fixture" || d.Profiles[0].AppID != "cli_fixture" {
 			t.Fatal(d, err)
 		}
 		if d.SetupProfile != "teamx-feishu-2" {
@@ -29,6 +29,10 @@ func TestDiscoverProfilesWithoutChangingDefaultOrExposingSecrets(t *testing.T) {
 		if strings.Contains(string(data), "private") || strings.Contains(string(data), "other") {
 			t.Fatal("discovery exposed fields outside selected platform")
 		}
+	}
+	setMode(t, dir, "discovery-app-id")
+	if _, err := Discover(context.Background(), p.Executable, "feishu"); ErrorCode(err) != "invalid_response" {
+		t.Fatal("unsafe application display ID admitted", err)
 	}
 	setMode(t, dir, "version")
 	if _, err := Discover(context.Background(), p.Executable, "feishu"); ErrorCode(err) != "cli_version_mismatch" {

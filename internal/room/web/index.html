@@ -482,30 +482,68 @@
           </details>
         </div>
         <div id="connection-profile-row" class="connection-field connection-field-wide" hidden>
-          <div id="connection-profile-choice" hidden><label for="connection-profile">应用配置</label><select id="connection-profile" aria-describedby="connections-feedback"></select></div>
-          <div class="connection-account-summary"><p id="connection-account" class="connection-account" role="status" aria-live="polite">正在检测账号…</p><button id="connection-detect" class="settings-icon-button connection-account-refresh" type="button" aria-label="刷新账号" title="刷新账号"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 6.7M20 4v7h-7"/></svg></button></div>
+          <div id="connection-application" class="connection-identity-row" hidden>
+            <div class="connection-identity-copy"><p class="connection-section-label">应用</p><p id="connection-application-name" class="connection-identity-value"></p></div>
+            <button id="connection-application-change" class="text-button" type="button" aria-controls="connection-application-picker" aria-expanded="false">更换…</button>
+          </div>
+          <section id="connection-application-picker" class="connection-inline-panel" aria-label="更换应用" hidden>
+            <div id="connection-profile-choice" hidden><label for="connection-profile">选择本机应用</label><select id="connection-profile" aria-describedby="connections-feedback"></select></div>
+            <div class="connection-account-actions"><button id="connection-setup-other" class="settings-secondary-button" type="button">连接其他应用</button><button id="connection-application-dismiss" class="text-button" type="button">收起</button></div>
+          </section>
+          <div id="connection-account-section" class="connection-identity-row">
+            <div class="connection-identity-copy"><p class="connection-section-label">账号</p><div class="connection-account-line"><p id="connection-account" class="connection-account" role="status" aria-live="polite">正在检测账号…</p><span id="connection-account-state" class="connection-account-state" hidden></span></div></div>
+            <details id="connection-account-manage" class="connection-manage" hidden>
+              <summary>管理…</summary>
+              <div class="connection-manage-actions">
+                <button id="connection-reauthorize" class="text-button" type="button">重新授权</button>
+                <button id="connection-account-reverify" class="text-button" type="button">重新验证</button>
+                <button id="connection-logout" class="text-button" type="button" hidden>退出登录</button>
+              </div>
+            </details>
+          </div>
+          <section id="connection-guided" class="connection-guided" aria-label="应用配置" hidden>
+            <p id="connection-guided-hint" class="quiet"></p>
+            <button id="connection-setup-start" class="settings-secondary-button" type="button">配置并连接</button>
+          </section>
           <div class="connection-account-actions">
             <button id="connection-login" class="settings-secondary-button" type="button" hidden>登录飞书</button>
-            <button id="connection-send-check" class="settings-secondary-button" type="button" hidden>检查发送条件</button>
-            <button id="connection-target-authorize" class="settings-secondary-button" type="button" hidden>授权目标核验</button>
-            <button id="connection-send-authorize" class="settings-secondary-button" type="button" hidden>授权发送权限</button>
-            <span id="connection-send-status" class="settings-hint" hidden>发送未启用；请先检查账号与权限。</span>
-            <button id="connection-logout" class="text-button" type="button" hidden>退出登录</button>
             <button id="connection-login-cancel" class="text-button" type="button" hidden>取消本次登录</button>
+            <button id="connection-recheck" class="settings-secondary-button" type="button" hidden>重新检测</button>
           </div>
           <div id="connection-login-panel" class="connection-login-panel" hidden>
-            <p class="quiet">打开链接或扫码完成授权，页面会自动更新。</p>
+            <p id="connection-login-hint" class="quiet">打开链接或扫码完成授权，页面会自动更新。</p>
             <a id="connection-login-link" target="_blank" rel="noopener noreferrer">打开授权页面 ↗</a>
             <img id="connection-login-qr" width="192" height="192" alt="飞书 / Lark 登录授权二维码">
           </div>
-          <div id="connection-setup" class="connection-setup quiet" hidden>
-            <p>首次使用需先配置应用。请在运行 TeamX 的机器上执行以下命令，按提示完成后点击「刷新账号」。已有应用也可运行 <code>lark-cli config init</code> 配置。</p>
-            <code id="connection-setup-command"></code>
-          </div>
           <details id="connection-advanced" class="connection-advanced">
-            <summary>高级设置</summary>
+            <summary>修复连接</summary>
+            <p class="quiet">先检查本机工具与应用配置，修复后重新检测。</p>
+            <details id="connection-setup" class="connection-setup" hidden>
+              <summary>通过 CLI 配置应用</summary>
+              <fieldset class="connection-setup-choice">
+                <legend class="sr-only">选择应用配置方式</legend>
+                <label><input id="connection-setup-new" type="radio" name="connection-setup-mode" value="new" checked>创建新应用</label>
+                <label><input id="connection-setup-existing" type="radio" name="connection-setup-mode" value="existing">使用已有应用</label>
+              </fieldset>
+              <p id="connection-setup-hint"></p>
+              <p class="quiet">请在运行 TeamX 的机器上，使用启动 TeamX 的同一系统用户执行。</p>
+              <div class="connection-setup-command"><code id="connection-setup-command"></code><button id="connection-setup-copy" class="settings-secondary-button" type="button">复制命令</button></div>
+              <p id="connection-setup-copy-status" class="quiet" role="status" aria-live="polite"></p>
+              <p class="quiet">完成配置后，点击「重新检测」继续。</p>
+            </details>
             <label for="connection-executable">CLI 可执行文件路径</label><input id="connection-executable" placeholder="自动检测 lark-cli，可填写绝对路径" aria-describedby="connection-cli-hint connections-feedback" spellcheck="false">
             <p id="connection-cli-hint" class="quiet">使用 TeamX 服务所在机器及运行用户的 lark-cli 1.0.99。登录凭据由 CLI 管理。</p>
+            <button id="connection-detect" class="settings-secondary-button" type="button">重新检测</button>
+          </details>
+          <details id="connection-sending" class="connection-advanced" hidden>
+            <summary>消息发送（可选）</summary>
+            <p class="quiet">需要助手回复或发送消息时，再检查并授权相关权限。</p>
+            <div class="connection-account-actions">
+              <button id="connection-send-check" class="settings-secondary-button" type="button" hidden>检查发送条件</button>
+              <button id="connection-target-authorize" class="settings-secondary-button" type="button" hidden>授权目标核验</button>
+              <button id="connection-send-authorize" class="settings-secondary-button" type="button" hidden>授权发送权限</button>
+            </div>
+            <p id="connection-send-status" class="settings-hint" hidden>请先检查账号与发送权限。</p>
           </details>
         </div>
         <div id="gitlab-account-row" class="connection-field connection-field-wide">
@@ -552,6 +590,7 @@
       </fieldset>
     </form>
     <p id="connections-feedback" class="connections-feedback quiet" role="status" aria-live="polite"></p>
+    <details id="connections-feedback-details" class="connections-feedback-details" hidden><summary>查看说明</summary><p id="connections-feedback-detail"></p></details>
     </section>
       </div>
     </div>
