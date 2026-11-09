@@ -17,7 +17,7 @@ import (
 // The operator UI ships in the same binary and uses the existing Room API.
 // Static/bootstrap routes expose no private output or backend configuration.
 //
-//go:embed web/index.html web/style.css web/app.js web/client.mjs web/markdown.mjs web/vendor/marked.mjs
+//go:embed web/index.html web/style.css web/app.js web/client.mjs web/markdown.mjs web/vendor/marked.mjs web/time.mjs web/vendor/temporal.mjs web/vendor/jsbi.mjs
 var webFiles embed.FS
 
 type memberActivity struct {
@@ -102,9 +102,10 @@ func (s *service) serveWeb(w http.ResponseWriter, r *http.Request) bool {
 		w.Header().Set("Cache-Control", "no-store")
 		_ = json.NewEncoder(w).Encode(struct {
 			ServiceInfo
+			settingsView
 			Operator string   `json:"operator"`
 			Profiles []string `json:"profiles"`
-		}{s.info, operator, s.uiProfiles})
+		}{s.info, s.settings.snapshot().settingsView, operator, s.uiProfiles})
 		return true
 	}
 	file, contentType := "", ""
@@ -119,6 +120,12 @@ func (s *service) serveWeb(w http.ResponseWriter, r *http.Request) bool {
 		file, contentType = "web/client.mjs", "text/javascript; charset=utf-8"
 	case "/ui/markdown.mjs":
 		file, contentType = "web/markdown.mjs", "text/javascript; charset=utf-8"
+	case "/ui/time.mjs":
+		file, contentType = "web/time.mjs", "text/javascript; charset=utf-8"
+	case "/ui/vendor/temporal.mjs":
+		file, contentType = "web/vendor/temporal.mjs", "text/javascript; charset=utf-8"
+	case "/ui/vendor/jsbi.mjs":
+		file, contentType = "web/vendor/jsbi.mjs", "text/javascript; charset=utf-8"
 	case "/ui/vendor/marked.mjs":
 		file, contentType = "web/vendor/marked.mjs", "text/javascript; charset=utf-8"
 	default:

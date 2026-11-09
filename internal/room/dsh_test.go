@@ -71,6 +71,9 @@ func TestServicePassesDSHTurnTimeoutToComponent(t *testing.T) {
 	defer closeService(t, svc)
 	agent := svc.newMember(id, RunnerConfig{Kind: "dsh", Profile: "fixture-fail,ignore"}, nil).(*MemberAgent)
 	backend := agent.Backend.(dshBackend)
+	if backend.settings != svc.settings {
+		t.Fatal("DSH does not share live service settings")
+	}
 	opts, err := backend.componentOptions(agent.Options, dshReference{})
 	if err != nil || opts.Limits.TurnTimeout != 30*time.Minute {
 		t.Fatal("service timeout lost before component Open/Resume", opts.Limits.TurnTimeout, err)

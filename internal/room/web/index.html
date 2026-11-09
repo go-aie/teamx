@@ -24,7 +24,7 @@
         <button id="retry-management" class="text-button" type="button" hidden>核对并重试</button>
         <button id="dismiss-management" class="text-button" type="button" hidden>保留房间，结束本次操作</button>
       </nav>
-      <footer class="rail-settings"><button id="open-settings" type="button" aria-label="设置 · 平台连接" title="设置 · 平台连接" aria-haspopup="dialog" aria-controls="settings-dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37a1.724 1.724 0 0 0 2.572-1.065Z"/><circle cx="12" cy="12" r="3"/></svg><span class="settings-label">设置</span></button></footer>
+      <footer class="rail-settings"><button id="open-settings" type="button" aria-label="设置 · 通用与平台连接" title="设置 · 通用与平台连接" aria-haspopup="dialog" aria-controls="settings-dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37a1.724 1.724 0 0 0 2.572-1.065Z"/><circle cx="12" cy="12" r="3"/></svg><span class="settings-label">设置</span></button></footer>
     </aside>
     <section class="conversation" aria-label="房间消息">
       <header id="room-header" class="room-header">
@@ -38,11 +38,13 @@
           </form>
         </div>
         <div class="room-actions">
+          <button id="open-general-settings" class="text-button" type="button" aria-haspopup="dialog" aria-controls="settings-dialog" hidden>设置</button>
           <span id="message-count" class="quiet">— 条消息</span>
           <button id="toggle-members" class="room-panel-toggle" type="button" aria-label="收起团队成员" title="收起团队成员" aria-controls="member-rail" aria-expanded="true"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 21v-2a6 6 0 0 1 12 0v2M16 5a3 3 0 0 1 0 6m2 4a5 5 0 0 1 3 4v2"/></svg></button>
           <details id="room-menu" class="room-menu"><summary aria-label="房间操作">···</summary><button id="restart-discussion" class="text-button" type="button" disabled>重新开始</button></details>
         </div>
       </header>
+      <div id="timezone-error" class="notice" role="alert" hidden></div>
       <div id="sync-error" class="notice" role="status" hidden></div>
       <div id="restart-notice" class="notice" role="status" hidden></div>
       <div class="mention-notice" role="status" hidden id="mention-notice"><button id="view-mention" type="button"></button></div>
@@ -175,7 +177,7 @@
                       <div><label for="lark-backfill">开始接收时间</label><select id="lark-backfill" aria-describedby="lark-backfill-help"><option value="0">从开启时刻</option><option value="3600">最近 1 小时</option><option value="86400">最近 24 小时</option><option value="custom">指定时间</option></select><div id="lark-backfill-locked" class="notification-backfill-locked" aria-describedby="lark-backfill-help" hidden><span id="lark-backfill-value"></span><small>已锁定</small></div></div>
                       <div><label for="lark-interval">检查间隔（秒）</label><input id="lark-interval" type="number" min="3" max="3600" value="60" title="3～3600 秒"></div>
                     </div>
-                    <div id="lark-backfill-custom" hidden><label for="lark-backfill-start">起始时间（本地时间）</label><input id="lark-backfill-start" type="datetime-local" step="1" aria-describedby="lark-backfill-help lark-backfill-error"></div>
+                    <div id="lark-backfill-custom" hidden><label id="lark-backfill-start-label" for="lark-backfill-start">起始时间（系统时区）</label><input id="lark-backfill-start" type="datetime-local" step="1" aria-describedby="lark-backfill-help lark-backfill-error"></div>
                     <p id="lark-backfill-help" class="quiet">首次保存后锁定，后续修改设置沿用该起点。</p>
                     <p id="lark-backfill-error" class="form-error" role="alert" hidden></p>
                   </div>
@@ -258,7 +260,7 @@
                 <div><label for="gitlab-backfill">开始接收时间</label><select id="gitlab-backfill" aria-describedby="gitlab-backfill-help"><option value="0">从开启时刻</option><option value="3600">最近 1 小时</option><option value="86400">最近 24 小时</option><option value="custom">指定时间</option></select><div id="gitlab-backfill-locked" class="notification-backfill-locked" aria-describedby="gitlab-backfill-help" hidden><span id="gitlab-backfill-value"></span><small>已锁定</small></div></div>
                 <div><label for="gitlab-interval">检查间隔（秒）</label><input id="gitlab-interval" type="number" min="3" max="120" step="1" value="30" title="3～120 秒" aria-describedby="gitlab-interval-hint"></div>
               </div>
-              <div id="gitlab-backfill-custom" hidden><label for="gitlab-backfill-start">起始时间（本地时间）</label><input id="gitlab-backfill-start" type="datetime-local" step="1" aria-describedby="gitlab-backfill-help gitlab-backfill-error"></div>
+              <div id="gitlab-backfill-custom" hidden><label id="gitlab-backfill-start-label" for="gitlab-backfill-start">起始时间（系统时区）</label><input id="gitlab-backfill-start" type="datetime-local" step="1" aria-describedby="gitlab-backfill-help gitlab-backfill-error"></div>
               <p id="gitlab-backfill-help" class="quiet">首次开启后锁定，项目活动和我的待办共用该起点。</p>
               <p id="gitlab-backfill-error" class="form-error" role="alert" hidden></p>
               <p id="gitlab-interval-hint" class="quiet">房间未打开或操作中时，每 120 秒检查，恢复后投递。</p>
@@ -335,7 +337,7 @@
           <form id="policy-form" class="policy-form" hidden>
             <h3 id="policy-editor-title">新增长期规则</h3>
             <label>内容<textarea id="policy-text" rows="4" maxlength="32768" placeholder="例如：涉及交付时间，先向我确认。" aria-describedby="policy-save-hint" required></textarea></label>
-            <label>有效期（可选）<input id="policy-expires" type="datetime-local" aria-describedby="policy-expires-hint" /><span id="policy-expires-hint" class="policy-field-hint">留空则不设到期时间。</span></label>
+            <label>有效期（可选）<input id="policy-expires" type="datetime-local" step="1" aria-describedby="policy-expires-hint" /><span id="policy-expires-hint" class="policy-field-hint">留空则不设到期时间。</span></label>
             <p id="policy-save-hint" class="policy-form-note">写清适用情况、处理要求和例外；涉及授权时注明范围。</p>
             <div class="member-actions policy-form-actions"><button id="policy-save" type="submit">保存并生效</button><button id="policy-suggest" type="button">保存为建议</button><button id="policy-cancel" type="button">取消</button></div>
           </form>
@@ -406,9 +408,35 @@
   </dialog>
   <dialog id="settings-dialog" class="workspace-dialog settings-dialog" aria-labelledby="settings-title">
     <header class="activity-header settings-header">
-      <div><p class="quiet settings-eyebrow">设置</p><h2 id="settings-title">平台连接</h2><p class="quiet settings-description">管理当前服务共享的 GitLab、Scion 与飞书连接。</p></div>
+      <div><h2 id="settings-title">设置</h2><p class="quiet settings-description">当前服务的设置由全部 Room 共享。</p></div>
       <button id="close-settings" class="settings-icon-button" type="button" aria-label="关闭设置" title="关闭设置" autofocus><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button>
     </header>
+    <div class="settings-layout">
+      <nav id="settings-navigation" class="settings-navigation" role="tablist" aria-label="设置分类" aria-orientation="vertical">
+        <button id="settings-tab-general" type="button" role="tab" aria-selected="true" aria-controls="general-settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1M5.6 18.4l2.1-2.1m8.6-8.6 2.1-2.1"/><circle cx="12" cy="12" r="5"/></svg><span>通用</span></button>
+        <button id="settings-tab-connections" type="button" role="tab" aria-selected="false" aria-controls="platform-settings" tabindex="-1"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 13 4-4M8 15l-1 1a3.5 3.5 0 0 1-5-5l4-4a3.5 3.5 0 0 1 5 0M16 9l1-1a3.5 3.5 0 0 1 5 5l-4 4a3.5 3.5 0 0 1-5 0"/></svg><span>平台连接</span></button>
+      </nav>
+      <div class="settings-panels">
+    <section id="general-settings" class="connections-content general-settings" role="tabpanel" aria-labelledby="settings-tab-general">
+      <h3 id="general-title">通用</h3>
+      <form id="timezone-form">
+        <label for="system-timezone">系统时区</label>
+        <p id="timezone-current" class="quiet" role="status"></p>
+        <div id="timezone-picker" class="settings-picker">
+          <div class="settings-picker-field">
+            <input id="system-timezone" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="timezone-options" autocomplete="off" required placeholder="搜索 IANA 时区，如 Asia/Shanghai" aria-describedby="timezone-current timezone-draft-hint timezone-feedback">
+            <button id="timezone-picker-toggle" class="settings-picker-toggle" type="button" aria-label="选择系统时区" aria-expanded="false" aria-controls="timezone-options"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg></button>
+          </div>
+          <div id="timezone-options" class="settings-picker-options" role="listbox" aria-label="IANA 时区" hidden></div>
+        </div>
+        <div class="timezone-actions">
+          <button id="timezone-browser" class="text-button" type="button" hidden></button>
+          <div class="timezone-save-actions"><span id="timezone-draft-hint" class="quiet" role="status" aria-live="polite" hidden></span><button id="timezone-save" class="primary" type="submit" disabled>保存时区</button></div>
+        </div>
+        <p id="timezone-feedback" class="quiet" role="status" aria-live="polite"></p>
+      </form>
+    </section>
+    <section id="platform-settings" role="tabpanel" aria-labelledby="settings-tab-connections" hidden>
     <section id="connections-list-view" class="connections-content">
       <div class="connections-heading">
         <h3>已保存的连接</h3>
@@ -510,6 +538,9 @@
       </fieldset>
     </form>
     <p id="connections-feedback" class="connections-feedback quiet" role="status" aria-live="polite"></p>
+    </section>
+      </div>
+    </div>
   </dialog>
   <template id="message-template"><article class="message"><div class="avatar"></div><div class="message-main"><div class="message-meta"><button class="author" type="button" disabled></button><span class="author-kind"></span><time></time><span class="sequence"></span><button class="reply-button" type="button">引用</button></div><button class="message-reference text-button" type="button" hidden></button><div class="message-text"></div></div></article></template>
   <template id="member-template"><section class="member"><button class="member-summary" type="button" aria-controls="activity-dialog"><span class="member-top"><span class="avatar agent-avatar" aria-hidden="true"></span><span class="member-title"><span class="member-name"></span><span class="member-profile quiet"></span></span><span class="member-status"></span><span aria-hidden="true">›</span></span><span class="member-details"></span><span class="member-error" hidden></span></button></section></template>

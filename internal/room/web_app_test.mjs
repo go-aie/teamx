@@ -264,7 +264,7 @@ test("room list displays and sorts by last message time, with creation time for 
   api.history.set("A", [{ ...message(1, "MR closed"), created_at: a.last_message_at }]);
   api.history.set("Empty", []);
   const ui = await launch(api);
-  const format = value => "运行中 · 11/01 " + new Date(value).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
+  const format = value => "运行中 · 11/01 " + new Date(value).toLocaleTimeString("en-GB", { timeZone: "Asia/Shanghai", hour: "2-digit", minute: "2-digit", hour12: false });
   const list = () => ui.el("room-list").children.map(row => row.children[0]);
   assert.deepEqual(list().map(button => button.children[0].textContent), ["B", "A", "Empty"]);
   assert.equal(list()[1].children[1].textContent, format(a.last_message_at));
@@ -2633,7 +2633,8 @@ function freshGitLabServer() {
  return result;
 }
 function gitlabLocalTime(date) {
- return new Date(date.getTime()-date.getTimezoneOffset()*60000).toISOString().slice(0,19);
+ const parts=Object.fromEntries(new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Shanghai",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"}).formatToParts(date).map(p=>[p.type,p.value]));
+ return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`;
 }
 test("GitLab custom reception start survives drafts and reload and is shared by both channels",async()=>{
  const {api,events,todos}=freshGitLabServer(),ui=await launch(api);await openGitLab(ui);

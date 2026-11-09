@@ -85,6 +85,7 @@ type apiError struct {
 }
 
 type service struct {
+	settings                  *systemSettings
 	imageMaterials            imageMaterialConfig
 	materialAttachments       *materialAttachments
 	referenceResolver         followupResolver
@@ -144,6 +145,9 @@ func newService(dir, roomID string, config serviceConfig) (*service, error) {
 // startService establishes resource ownership before assembling members. The
 // assembly callback also lets in-package tests inject deterministic Backends.
 func startService(dir, roomID string, config serviceConfig, assemble func(*service, RoomSnapshot) error) (_ *service, err error) {
+	if config.settings == nil {
+		config.settings = defaultSystemSettings()
+	}
 	if _, err := config.imageMaterials.limits(); err != nil {
 		return nil, err
 	}
@@ -204,6 +208,7 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 		return nil, err
 	}
 	s := &service{
+		settings:             config.settings,
 		workspaceOperationID: config.workspaceOperationID,
 		info:                 ServiceInfo{RoomIdentity: state.RoomIdentity, ServiceEpoch: epoch}, store: store,
 		rt: rt, room: addr, scheduler: scheduler, ctx: ctx, cancel: cancel,
@@ -561,7 +566,14 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Path == "/v1/info" && r.Method == http.MethodGet {
-		_ = json.NewEncoder(w).Encode(s.info)
+		_ = json.NewEncoder(w).Encode(struct {
+			ServiceInfo
+			settingsView
+		}{s.info, s.settings.snapshot().settingsView})
+		return
+	}
+	if r.URL.Path == "/v1/settings" || r.URL.Path == "/v1/settings/save" {
+		serveSystemSettings(w, r, s.settings, s.info)
 		return
 	}
 	if r.Method != http.MethodPost {

@@ -13,4 +13,6 @@ func lockDirectory(string) (*os.File, error) {
 
 func lockBundleHome(dir string) (*os.File, error) { return lockDirectory(dir) }
 
+func lockDirectoryFile(dir, _ string) (*os.File, error) { return lockDirectory(dir) }
+
 func unlockDirectory(f *os.File) error { return f.Close() }

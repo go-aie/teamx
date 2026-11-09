@@ -26,6 +26,8 @@ Use **删除** (Delete) beside a room in the list and confirm to stop it, verify
 
 Startup settings and default runtime live in `config.toml`; see the [root README](../../README.md#快速开始) and [example](../../.teamx/config.example.toml). Teams may omit runtime or replace it completely. Existing Rooms retain their frozen runtime. The collaboration flow below retains explicit single-room mode.
 
+`server.time_zone` defaults to `Asia/Shanghai`. Settings → General saves an IANA time zone to the startup configuration without a restart, shared by all Rooms. Page timestamps, day groups and date/time inputs use this zone; stored instants and message text stay intact. The browser-zone button only fills the form. DST gaps and ambiguous wall times require correction; resolved inputs retain their instant across zone changes, while unresolved drafts need confirmation. Manual configuration edits require a restart. Agents receive the current local time each turn and a time zone convention on their first turn and after a zone change. Changes take effect on the next normal turn; source timestamps retain their original representation.
+
 ## Start and collaborate
 
 Requirements: Go 1.27+, a complete DSH installation, loopback listening, process observation and model credentials/network access. Follow the [Agent runtime guide](../../docs/agent-runtime.zh.md). Explicit single-room mode requires a JSON file with named `reviewer` and `observer` profiles, each specifying `binary_path`, `workspace`, `instructions` and `model`; see [dshProfile](dsh.go) for the fields. Use local absolute paths and create the workspaces first. The service inherits credentials and does not automatically load `.env`. Actorx is pinned in `go.mod` and downloaded by Go.

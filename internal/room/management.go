@@ -29,6 +29,7 @@ const maxRoomsFileBytes int64 = 64 << 20
 // Management identity has no implicit Room. Room tools must continue to carry
 // their full identity; they cannot target this catalog.
 type roomsResponse struct {
+	settingsView
 	Busy         bool                 `json:"busy"`
 	ServiceEpoch string               `json:"service_epoch"`
 	WriteError   string               `json:"write_error,omitempty"`
@@ -124,6 +125,7 @@ type roomsIndex struct {
 // The root lock owns the catalog and its live services. Durable
 // operations retain an owner independently of an HTTP caller.
 type roomManager struct {
+	settings                 *systemSettings
 	toolCatalog              []tool.Definition
 	platformCalls            map[*platformCall]bool
 	platformMemberChanges    map[MemberIdentity]bool
@@ -190,7 +192,7 @@ func newRoomManager(dir string, maxTurns uint64) (_ *roomManager, err error) {
 	if maxTurns == 0 {
 		maxTurns = defaultMaxTurns
 	}
-	m := &roomManager{store: store, epoch: epoch, maxTurns: maxTurns, factory: newService, runtimes: make(map[RoomIdentity]*roomRuntime)}
+	m := &roomManager{settings: defaultSystemSettings(), store: store, epoch: epoch, maxTurns: maxTurns, factory: newService, runtimes: make(map[RoomIdentity]*roomRuntime)}
 	m.initPlatform()
 	err = readSnapshot(m.indexPath(), &m.index, maxRoomsFileBytes)
 	if errors.Is(err, os.ErrNotExist) {
@@ -543,8 +545,20 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/v1/ui" && r.Method == http.MethodGet {
 		// Bootstrap remains available with an empty catalog and during switching.
 		_ = json.NewEncoder(w).Encode(struct {
-			Managed bool `json:"managed"`
-		}{true})
+			Managed      bool   `json:"managed"`
+			ServiceEpoch string `json:"service_epoch"`
+			settingsView
+		}{true, m.epoch, m.settings.snapshot().settingsView})
+		return
+	}
+	if r.URL.Path == "/v1/settings" || r.URL.Path == "/v1/settings/save" {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		if m.closing {
+			writeAPIError(w, ErrClosing)
+			return
+		}
+		serveSystemSettings(w, r, m.settings, ServiceInfo{ServiceEpoch: m.epoch})
 		return
 	}
 	if strings.HasPrefix(r.URL.Path, "/v1/actions/") {
@@ -654,7 +668,7 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			rooms = append(rooms, summary)
 		}
-		response := roomsResponse{ServiceEpoch: m.epoch, Rooms: rooms,
+		response := roomsResponse{settingsView: m.settings.snapshot().settingsView, ServiceEpoch: m.epoch, Rooms: rooms,
 			Operator: humanOperator(), Busy: m.busy, Teams: m.teamSummaries()}
 		if m.store.uncertain {
 			response.WriteError = ErrCommitUnknown.Error()

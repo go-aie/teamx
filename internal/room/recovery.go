@@ -13,6 +13,7 @@ import (
 )
 
 type serviceConfig struct {
+	settings             *systemSettings
 	imageMaterials       imageMaterialConfig
 	workspaceOperationID string // verified managed configuration only
 	endpoint             string
@@ -111,7 +112,7 @@ func (s *service) loadMembers(state RoomSnapshot) error {
 
 func (s *service) newMember(id MemberIdentity, runner RunnerConfig, restored *AgentSnapshot) actorx.Actor {
 	opts := SessionOptions{MemberIdentity: id, StatePath: filepath.Join(s.store.dir, "agents", id.MembershipID, "session.json"), CLIPath: s.cliPath, CLIEnv: s.toolEnv(id)}
-	backend := dshBackend{store: s.store, profile: s.dshProfiles[runner.Profile], turnTimeout: s.dshTurnTimeout, prepare: s.prepareDSHMaterials}
+	backend := dshBackend{store: s.store, settings: s.settings, profile: s.dshProfiles[runner.Profile], turnTimeout: s.dshTurnTimeout, prepare: s.prepareDSHMaterials}
 	blocked := ""
 	var used, limit uint64
 	for _, recovered := range s.recovered {

@@ -21,6 +21,7 @@ func TestWebRoomAssets(t *testing.T) {
 		"/": "text/html", "/ui/style.css": "text/css", "/ui/app.js": "text/javascript",
 		"/ui/client.mjs": "text/javascript", "/ui/markdown.mjs": "text/javascript",
 		"/ui/vendor/marked.mjs": "text/javascript",
+		"/ui/time.mjs":          "text/javascript", "/ui/vendor/temporal.mjs": "text/javascript", "/ui/vendor/jsbi.mjs": "text/javascript",
 	} {
 		response := httptest.NewRecorder()
 		if !svc.serveWeb(response, httptest.NewRequest(http.MethodGet, path, nil)) ||

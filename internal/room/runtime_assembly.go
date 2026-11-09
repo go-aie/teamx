@@ -182,6 +182,7 @@ func (m *roomManager) workspaceActivationConfig(id RoomIdentity, applying string
 		profiles[member.Runner.Profile] = p
 	}
 	config := m.config
+	config.settings = m.settings
 	config.workspaceOperationID = authorizedOperationID
 	config.maxTurns, config.dshProfiles = saved.MaxTurns, profiles
 	config.persistentScheduling = true

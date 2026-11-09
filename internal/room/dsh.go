@@ -86,6 +86,7 @@ type dshComponent interface {
 
 type dshBackend struct {
 	store       *Store
+	settings    *systemSettings
 	prepare     func(context.Context, UnreadChanged, uint64, bool) (*dshMaterials, error)
 	profile     dshProfile
 	turnTimeout time.Duration // Service policy; not part of the frozen Room runtime.
@@ -310,6 +311,21 @@ type dshSession struct {
 	opts      SessionOptions
 	// In-memory only: opening, resuming or rotating creates a new supply scope.
 	policyToken string
+	timeZone    string // Last successfully supplied zone; independent of policy.
+}
+
+func dshTimeContext(settings settingsSnapshot, now time.Time, previous string) string {
+	var text string
+	if previous != settings.TimeZone {
+		text = fmt.Sprintf("System time convention: The current system time zone is %s.\n", settings.TimeZone)
+		if previous != "" {
+			text = fmt.Sprintf("System time convention: The system time zone is now %s. This convention replaces the previous system time zone convention.\n", settings.TimeZone)
+		}
+		text += "In structured system timestamps, Z means UTC; interpret other explicit offsets as given. Convert times to the system time zone when describing them to users; do not copy UTC clock times as local times.\n" +
+			"Interpret \"today/yesterday\" in the system time zone. Use full dates when the date is uncertain or a long turn lacks an up-to-date time reference.\n" +
+			"Interpret times in third-party text and images using their explicit time zone labels; do not guess a missing time zone.\n"
+	}
+	return text + "Current time (turn-start reference): " + now.In(settings.location).Format(time.RFC3339) + "\n"
 }
 
 type dshDiagnostic struct {
@@ -317,7 +333,14 @@ type dshDiagnostic struct {
 	Error  string         `json:"error,omitempty"`
 }
 
-func (s *dshSession) Run(ctx context.Context, input UnreadChanged) error {
+func (s *dshSession) Run(ctx context.Context, input UnreadChanged) (err error) {
+	defer func() {
+		if err != nil {
+			s.timeZone = "" // A failed turn is not evidence of retained context.
+		}
+	}()
+	// Keep one settings snapshot even if a save occurs during preparation/run.
+	settings, started := s.backend.settings.snapshot(), time.Now()
 	if input.MemberIdentity != s.opts.MemberIdentity {
 		return errors.Join(errDSHPaused, ErrIdentity)
 	}
@@ -335,16 +358,19 @@ func (s *dshSession) Run(ctx context.Context, input UnreadChanged) error {
 	}
 	s.backend.store.activeDSH.Store(s.opts.MemberIdentity, s)
 	defer s.backend.store.activeDSH.CompareAndDelete(s.opts.MemberIdentity, s)
-	prompt := []dsh.ContentBlock{{Type: "text", Text: "Member policy context (JSON):\n" + string(body) + "\n\n" + dshNotification(input)}}
+	prompt := []dsh.ContentBlock{{Type: "text", Text: "Member policy context (JSON):\n" + string(body) + "\n\n" + dshTimeContext(settings, started, s.timeZone) + "\n" + dshNotification(input)}}
+	var materials *dshMaterials
 	if s.backend.prepare != nil {
-		materials, err := s.backend.prepare(ctx, input, policy.CurrentTurn, s.component.SupportsImages())
+		materials, err = s.backend.prepare(ctx, input, policy.CurrentTurn, s.component.SupportsImages())
 		if err != nil {
 			return dshFailure(err)
 		}
 		prompt = materials.blocks(prompt[0].Text)
-		if !materialPromptFits(prompt) {
-			return dshFailure(errors.New("DSH material prompt exceeds text/frame budget"))
-		}
+	}
+	if !materialPromptFits(prompt) {
+		return dshFailure(errors.New("DSH material prompt exceeds text/frame budget"))
+	}
+	if materials != nil {
 		if err := materials.check(ctx); err != nil {
 			return dshFailure(err)
 		}
@@ -355,6 +381,7 @@ func (s *dshSession) Run(ctx context.Context, input UnreadChanged) error {
 	result, runErr := s.component.RunPrompt(ctx, prompt)
 	if runErr == nil {
 		s.policyToken = policy.PolicyToken
+		s.timeZone = settings.TimeZone
 	} else {
 		// A failed prompt is not evidence that its body remains in context.
 		s.policyToken = ""

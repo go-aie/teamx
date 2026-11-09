@@ -17,7 +17,11 @@ import (
 
 // Startup settings stay outside Room snapshots. Only the resolved runtime is frozen.
 type startupConfig struct {
+	path   string
+	source []byte
+	file   os.FileInfo
 	Server struct {
+		TimeZone       *string             `toml:"time_zone"`
 		Listen         *string             `toml:"listen"`
 		DataDir        *string             `toml:"data_dir"`
 		TeamsDir       *string             `toml:"teams_dir"`
@@ -52,6 +56,10 @@ func loadStartupConfig(name string, required bool) (startupConfig, error) {
 	}
 	if err == nil {
 		defer f.Close()
+		config.file, err = f.Stat()
+		if err != nil || !config.file.Mode().IsRegular() {
+			return startupConfig{}, fmt.Errorf("cannot stat regular config %q", path)
+		}
 		data, err := io.ReadAll(io.LimitReader(f, (1<<20)+1))
 		if err != nil || len(data) > 1<<20 {
 			return config, fmt.Errorf("cannot read config %q (maximum 1 MiB)", path)
@@ -65,6 +73,15 @@ func loadStartupConfig(name string, required bool) (startupConfig, error) {
 			}
 			return startupConfig{}, fmt.Errorf("invalid config %q; check TOML syntax and fields against config.example.toml", path)
 		}
+		config.source = data
+	}
+	config.path = path
+	if config.Server.TimeZone == nil {
+		value := defaultTimeZone
+		config.Server.TimeZone = &value
+	}
+	if _, err := loadTimeZone(*config.Server.TimeZone); err != nil {
+		return startupConfig{}, err
 	}
 	if _, err := config.Server.ImageMaterials.limits(); err != nil {
 		return startupConfig{}, err

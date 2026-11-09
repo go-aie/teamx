@@ -3,6 +3,8 @@
 # Relative paths below resolve from this file's directory; no shell expansion.
 [server]
 listen = "127.0.0.1:8088"
+# Shared by all Rooms and page time displays. Settings can save this without restart.
+time_zone = "Asia/Shanghai"
 data_dir = "./data"
 teams_dir = "./teams"
 max_turns = 16

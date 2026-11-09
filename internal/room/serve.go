@@ -59,6 +59,7 @@ func serveWithFactory(args []string, stdout, stderr io.Writer, create func(strin
 		return err
 	}
 	dataDir, teamsDir := startup.Server.DataDir, startup.Server.TeamsDir
+	settings := newSystemSettings(startup)
 	if err := applyStartupSettings(flags, explicit, startup); err != nil {
 		return err
 	}
@@ -100,7 +101,7 @@ func serveWithFactory(args []string, stdout, stderr io.Writer, create func(strin
 	}
 	defer listener.Close()
 	if !singleRoom {
-		return serveRoomManager(listener, *dataDir, *teamsDir, serviceConfig{endpoint: "http://" + listener.Addr().String(), mergeWindow: *mergeWindow, maxTurns: *maxTurns, dshTurnTimeout: *dshTurnTimeout, imageMaterials: startup.Server.ImageMaterials}, startup.Runtime, create, stdout, stderr)
+		return serveRoomManager(listener, *dataDir, *teamsDir, serviceConfig{settings: settings, endpoint: "http://" + listener.Addr().String(), mergeWindow: *mergeWindow, maxTurns: *maxTurns, dshTurnTimeout: *dshTurnTimeout, imageMaterials: startup.Server.ImageMaterials}, startup.Runtime, create, stdout, stderr)
 	}
 	uiProfiles := profileNames(profiles)
 	cliPath, err := os.Executable()
@@ -108,6 +109,7 @@ func serveWithFactory(args []string, stdout, stderr io.Writer, create func(strin
 		return err
 	}
 	svc, err := create(*dir, *roomID, serviceConfig{
+		settings: settings,
 		endpoint: "http://" + listener.Addr().String(), cliPath: cliPath, mergeWindow: *mergeWindow, maxTurns: *maxTurns,
 		dshProfiles: profiles, uiProfiles: uiProfiles, dshTurnTimeout: *dshTurnTimeout, imageMaterials: startup.Server.ImageMaterials,
 	})
@@ -189,6 +191,9 @@ func serveRoomManager(listener net.Listener, dir, teamsDir string, config servic
 		return err
 	}
 	manager.config, manager.factory = config, create
+	if config.settings != nil {
+		manager.settings = config.settings
+	}
 	if err := manager.notifications.Start(); err != nil {
 		return err
 	}

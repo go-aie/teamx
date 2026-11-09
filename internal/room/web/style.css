@@ -1802,11 +1802,45 @@ textarea::placeholder {
 .rooms-collapsed .rail-settings { padding:12px 4px; }
 .rooms-collapsed .rail-settings button { justify-content:center; padding:8px 0; }
 .rooms-collapsed .settings-label { display:none; }
-.settings-dialog { width:min(600px,calc(100vw - 32px)); border-radius:16px; box-shadow:0 24px 72px #17251b26; }
+.settings-dialog { width:min(800px,calc(100vw - 32px)); border-radius:16px; box-shadow:0 24px 72px #17251b26; overflow:hidden; }
 .settings-dialog .settings-header { align-items:flex-start; padding:24px; gap:16px; }
 .settings-eyebrow { margin:0 0 6px; font-size:11px; line-height:1.5; }
 .settings-dialog .settings-header h2 { margin:0; font-size:19px; line-height:1.4; font-weight:600; }
 .settings-description { margin:8px 0 0; line-height:1.7; }
+.settings-layout { display:grid; grid-template-columns:156px minmax(0,1fr); height:min(520px,calc(100dvh - 160px)); }
+.settings-navigation { display:flex; flex-direction:column; gap:6px; padding:16px 12px; border-right:1px solid var(--line); background:#f7f8f6; }
+.settings-navigation button { display:flex; align-items:center; gap:10px; min-height:40px; padding:10px 12px; border-radius:7px; background:transparent; color:#657268; text-align:left; font-size:13px; line-height:1.5; }
+.settings-navigation button:hover:not(:disabled) { color:var(--accent); background:#edf1eb; }
+.settings-navigation button[aria-selected="true"] { color:var(--accent); background:#e7eee7; font-weight:550; }
+.settings-navigation svg { width:17px; height:17px; }
+.settings-panels { min-width:0; overflow:auto; overscroll-behavior:contain; scrollbar-width:thin; }
+.settings-panels > [role="tabpanel"] { animation:arrive .14s ease-out; }
+.settings-dialog :is(input:not([type="checkbox"],[type="radio"]),select) { width:100%; min-height:36px; padding:8px 10px; border:1px solid #d9dfd7; border-radius:7px; background-color:white; color:#303a2d; font-size:13px; font-weight:400; line-height:1.5; transition:border-color .15s,box-shadow .15s; }
+.settings-dialog :is(input:not([type="checkbox"],[type="radio"]),select):focus-visible { outline:none; border-color:#9bb6a3; box-shadow:0 0 0 3px #e8f0e9; }
+.settings-dialog select { padding-right:36px; }
+.settings-dialog .text-button { min-height:36px; padding:8px 10px; border-radius:7px; font-size:12px; line-height:1.5; }
+.settings-dialog .text-button:hover:not(:disabled) { background:var(--soft); }
+.settings-dialog button { transition:background .15s,color .15s,border-color .15s; }
+.settings-dialog .general-settings { padding-top:24px; }
+.general-settings h3 { margin:0 0 18px; font-size:14px; }
+.general-settings form { padding-bottom:4px; }
+.general-settings label { display:block; font-size:12px; font-weight:550; }
+.general-settings .quiet { font-size:12px; line-height:1.7; }
+.timezone-actions { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-top:16px; }
+.timezone-save-actions { display:flex; align-items:center; justify-content:flex-end; gap:12px; margin-left:auto; }
+#timezone-draft-hint { white-space:nowrap; }
+.settings-picker { position:relative; }
+.settings-picker-field { position:relative; }
+.settings-dialog .settings-picker-field input { padding-right:40px; }
+.settings-picker-toggle { position:absolute; inset:1px 1px 1px auto; display:grid; place-items:center; width:36px; padding:0; border-radius:0 6px 6px 0; color:#838a85; background:transparent; }
+.settings-picker-toggle:hover:not(:disabled) { color:var(--accent); background:var(--soft); }
+.settings-picker-toggle svg { transition:transform .15s; }
+.settings-picker-toggle[aria-expanded="true"] svg { transform:rotate(180deg); }
+.settings-picker-options { position:absolute; z-index:3; top:calc(100% + 4px); left:0; right:0; max-height:224px; padding:4px; overflow:auto; overscroll-behavior:contain; scrollbar-width:thin; border:1px solid #d9dfd7; border-radius:8px; background:white; box-shadow:0 6px 22px #17251b1a,0 1px 4px #17251b0a; animation:arrive .12s ease-out; }
+.settings-picker-options button { display:block; width:100%; padding:8px 10px; border-radius:4px; text-align:left; background:transparent; color:inherit; font-size:13px; line-height:1.5; overflow-wrap:anywhere; }
+.settings-picker-options button:hover,.settings-picker-options button[data-active="true"] { background:#f3f6f1; }
+.settings-picker-options button[aria-selected="true"] { background:var(--soft); color:var(--accent); font-weight:550; }
+.settings-picker-options p { margin:6px 8px; font-size:12px; color:var(--muted); line-height:1.7; }
 .settings-icon-button { display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; width:32px; height:32px; padding:7px; border-radius:7px; color:#727d75; background:transparent; }
 .settings-icon-button:hover:not(:disabled) { color:var(--accent); background:var(--soft); }
 .settings-dialog svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; flex-shrink:0; }
@@ -1891,9 +1925,17 @@ textarea::placeholder {
 .connections-feedback:empty { padding:0; }
 @media(max-width:640px) {
   .settings-dialog .settings-header { padding:20px; }
+  .settings-layout { grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); height:min(560px,calc(100dvh - 166px)); }
+  .settings-navigation { flex-direction:row; gap:6px; padding:10px 16px; border-right:0; border-bottom:1px solid var(--line); background:white; }
+  .settings-navigation button { justify-content:center; flex:1; min-height:36px; padding:8px; }
+  .settings-dialog .general-settings { padding-top:20px; }
   .connections-content,.settings-dialog .workspace-form { padding:0 20px 20px; }
   .connections-feedback { padding:0 20px 20px; }
   .connections-feedback:empty { padding:0; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .settings-panels > [role="tabpanel"],.settings-picker-options { animation:none; }
+  .settings-dialog button,.settings-dialog input,.settings-dialog select,.settings-picker-toggle svg { transition:none; }
 }
 @media(max-width:400px) {
   .settings-dialog fieldset { grid-template-columns:minmax(0,1fr); }

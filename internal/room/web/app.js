@@ -1,5 +1,6 @@
 import { request, readPages as collectPages, createActivityReader, createRoomDrafts, sameService, mentionRanges, unseenMentions } from "/ui/client.mjs";
 import { renderMessageBody, notificationOptions } from "/ui/markdown.mjs";
+import { createSystemTime, createTimeInput } from "/ui/time.mjs";
 
 const $ = (id) => document.getElementById(id);
 const state = { info: null, operator: "operator", messages: new Map(), lastSeq: 0, oldest: 0,
@@ -8,6 +9,168 @@ const state = { info: null, operator: "operator", messages: new Map(), lastSeq: 
   management: null, managementSending: false, managementError: "", draft: {}, restart: null };
 let refreshTask = null;
 let historyLoading = false;
+const systemTime = createSystemTime();
+const timeInputs = new Map(["lark-backfill-start", "gitlab-backfill-start", "policy-expires"].map(id => [id, createTimeInput(systemTime)]));
+const timezoneForm = {dirty:false, saving:false, message:""};
+let settingsTab = "general";
+const timezonePicker = {open:false, query:"", active:-1, candidates:[], shown:[]};
+let browserTimeZone = "";
+try { browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch { /* Detection is optional. */ }
+function formatDate(value, options) { return systemTime.format(value, options); }
+function bindSystemTime(element, render) {
+  element.dataset.systemTime = ""; element.refreshSystemTime = render; render();
+}
+function fillTimeInput(id, value) { $(id).value = timeInputs.get(id).fill(value); }
+function readTimeInput(id) {
+  if ($(id).validity?.badInput) throw new Error("请输入完整有效的时间；若系统时区已变更，请重新确认或修改。");
+  return timeInputs.get(id).read($(id).value);
+}
+for (const [id, input] of timeInputs) {
+  const edit = () => input.edit($(id).value, $(id).validity?.badInput);
+  $(id).addEventListener("input", edit);
+  $(id).addEventListener("change", edit);
+}
+function timeZoneHasChanges() { return $("system-timezone").value.trim() !== systemTime.zone; }
+function canSaveTimeZone() {
+  return !timezoneForm.saving && !!systemTime.epoch && !!$("system-timezone").value.trim() && timeZoneHasChanges();
+}
+function isTimeZoneDraftHint() { return ["有未保存的更改", "已填入浏览器时区，保存后生效。"].includes(timezoneForm.message); }
+function renderTimeZoneFeedback() {
+  const draftHint = isTimeZoneDraftHint();
+  $("timezone-draft-hint").hidden = !draftHint;
+  $("timezone-draft-hint").textContent = draftHint ? "有未保存的更改" : "";
+  $("timezone-feedback").textContent = draftHint ? "" : timezoneForm.message;
+}
+function renderTimeZone() {
+  $("timezone-current").textContent = systemTime.error || `当前生效：${systemTime.zone}`;
+  $("timezone-current").dataset.kind = systemTime.error ? "error" : "";
+  if (!timezoneForm.dirty) $("system-timezone").value = systemTime.zone || "";
+  $("system-timezone").disabled = timezoneForm.saving;
+  $("timezone-picker-toggle").disabled = timezoneForm.saving;
+  $("timezone-save").disabled = !canSaveTimeZone();
+  $("timezone-save").textContent = timezoneForm.saving ? "保存中…" : "保存时区";
+  $("timezone-browser").hidden = !browserTimeZone || browserTimeZone === systemTime.zone;
+  $("timezone-browser").disabled = timezoneForm.saving;
+  $("timezone-browser").textContent = `使用浏览器时区（${browserTimeZone}）`;
+  if (!timeZoneHasChanges() && isTimeZoneDraftHint()) timezoneForm.message = "";
+  renderTimeZoneFeedback();
+  let supported = [];
+  try { supported = Intl.supportedValuesOf("timeZone"); } catch { /* The server validates manually entered names too. */ }
+  timezonePicker.candidates = [...new Set(["Asia/Shanghai", "UTC", systemTime.zone, browserTimeZone, ...supported])].filter(Boolean);
+  if (timezoneForm.saving) timezonePicker.open = false;
+  renderTimeZoneOptions(); renderSettingsNavigation();
+  notice("timezone-error", systemTime.error);
+}
+function renderTimeZoneOptions() {
+  const picker = timezonePicker, query = picker.query.trim().toLowerCase();
+  picker.shown = picker.candidates.filter(zone => zone.toLowerCase().includes(query));
+  if (picker.active >= picker.shown.length) picker.active = -1;
+  $("timezone-options").hidden = !picker.open;
+  for (const id of ["system-timezone", "timezone-picker-toggle"]) $(id).setAttribute("aria-expanded", String(picker.open));
+  $("system-timezone").setAttribute("aria-activedescendant", picker.open && picker.active >= 0 ? `timezone-option-${picker.active}` : "");
+  if (!picker.open) return;
+  const nodes = picker.shown.map((zone,index) => {
+    const option = document.createElement("button"); option.type = "button"; option.id = `timezone-option-${index}`;
+    option.setAttribute("role", "option"); option.setAttribute("tabindex", "-1"); option.setAttribute("aria-selected", String(zone === $("system-timezone").value));
+    option.dataset.active = String(index === picker.active); option.textContent = zone;
+    option.addEventListener("click", () => chooseTimeZone(zone)); return option;
+  });
+  if (!nodes.length) { const empty=document.createElement("p"); empty.textContent="未找到候选时区，可输入完整 IANA 名称后保存验证。"; nodes.push(empty); }
+  $("timezone-options").replaceChildren(...nodes);
+}
+function chooseTimeZone(zone) {
+  $("system-timezone").value = zone; timezoneForm.dirty = true; timezoneForm.message = timeZoneHasChanges() ? "有未保存的更改" : "";
+  timezonePicker.open = false; renderTimeZone(); $("system-timezone").focus();
+}
+function settingsNavigationBusy() {
+  return timezoneForm.saving || connections.sending || !!connections.auth || !!connections.gitlabAuth || !!connections.scionAuth ||
+    !!connections.larkStarting || !!connections.gitlabStarting || !!connections.scionStarting;
+}
+function renderSettingsNavigation() {
+  if (!state.managed) settingsTab = "general";
+  $("general-settings").hidden = settingsTab !== "general";
+  $("platform-settings").hidden = settingsTab !== "connections";
+  $("settings-tab-connections").hidden = !state.managed;
+  $("settings-navigation").setAttribute("aria-orientation", window.innerWidth <= 640 ? "horizontal" : "vertical");
+  for (const tab of ["general", "connections"]) {
+    const button = $(`settings-tab-${tab}`), selected = settingsTab === tab;
+    button.setAttribute("aria-selected", String(selected)); button.setAttribute("tabindex", selected ? "0" : "-1");
+    button.disabled = settingsNavigationBusy();
+  }
+}
+function selectSettingsTab(tab) {
+  if (settingsNavigationBusy() || tab === "connections" && !state.managed) return;
+  settingsTab = tab; timezonePicker.open = false; renderTimeZoneOptions(); renderSettingsNavigation();
+}
+for (const tab of ["general", "connections"]) {
+  $(`settings-tab-${tab}`).addEventListener("click", () => selectSettingsTab(tab));
+  $(`settings-tab-${tab}`).addEventListener("keydown", event => {
+    if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) || settingsNavigationBusy()) return;
+    event.preventDefault();
+    const next = event.key === "Home" || !state.managed ? "general" : event.key === "End" ? "connections" : tab === "general" ? "connections" : "general";
+    selectSettingsTab(next); $(`settings-tab-${next}`).focus();
+  });
+}
+function applyTimeZone(data) {
+  if (!systemTime.update(data)) return;
+  for (const [id, input] of timeInputs) {
+    if ($(id).validity?.badInput) { input.edit("", true); input.rebase(); }
+    else $(id).value = input.rebase();
+  }
+  for (const prefix of ["lark", "gitlab"]) $(`${prefix}-backfill-start`).max = systemTime.local(Date.now());
+  $("policy-expires-hint").textContent = `按系统时区 ${systemTime.zone || "（异常）"} 输入；留空则不设到期时间。`;
+  renderTimeZone();
+  const top = $("timeline").scrollTop;
+  renderMessages(); $("timeline").scrollTop = top;
+  for (const element of document.querySelectorAll("[data-system-time]")) element.refreshSystemTime?.();
+  renderRooms(); renderWorkspace();
+  if (policyEditor && ($("policy-expires").value || $("policy-expires").validity?.badInput)) {
+    try { readTimeInput("policy-expires"); }
+    catch (error) { $("policy-status").textContent = error.message; }
+  }
+}
+$("system-timezone").addEventListener("input", () => {
+  timezoneForm.dirty = true; timezoneForm.message = timeZoneHasChanges() ? "有未保存的更改" : ""; renderTimeZoneFeedback();
+  $("timezone-save").disabled = !canSaveTimeZone();
+  timezonePicker.open = true; timezonePicker.query = $("system-timezone").value; timezonePicker.active = -1; renderTimeZoneOptions();
+});
+$("system-timezone").addEventListener("click", () => {
+  if (timezoneForm.saving || timezonePicker.open) return;
+  timezonePicker.open = true; timezonePicker.query = ""; timezonePicker.active = -1; renderTimeZoneOptions();
+});
+$("timezone-picker-toggle").addEventListener("click", () => { timezonePicker.open = !timezonePicker.open; timezonePicker.query = ""; timezonePicker.active = -1; renderTimeZoneOptions(); });
+$("system-timezone").addEventListener("keydown", event => {
+  const picker = timezonePicker;
+  if (event.key === "Escape" && picker.open) { event.preventDefault(); event.stopPropagation?.(); picker.open = false; renderTimeZoneOptions(); }
+  else if (["ArrowDown", "ArrowUp"].includes(event.key)) {
+    event.preventDefault(); if (!picker.open) { picker.open = true; picker.query = ""; }
+    const count = picker.candidates.filter(zone => zone.toLowerCase().includes(picker.query.trim().toLowerCase())).length;
+    picker.active = count ? (picker.active + (event.key === "ArrowDown" ? 1 : picker.active < 0 ? 0 : -1) + count) % count : -1;
+    renderTimeZoneOptions(); if (picker.active >= 0) $(`timezone-option-${picker.active}`).scrollIntoView({block:"nearest"});
+  } else if (event.key === "Enter" && picker.open && picker.active >= 0) { event.preventDefault(); chooseTimeZone(picker.shown[picker.active]); }
+});
+document.addEventListener("pointerdown", event => { if (timezonePicker.open && !event.target.closest?.("#timezone-picker")) { timezonePicker.open = false; renderTimeZoneOptions(); } });
+$("timezone-browser").addEventListener("click", () => { $("system-timezone").value = browserTimeZone; timezoneForm.dirty = true; timezoneForm.message = "已填入浏览器时区，保存后生效。"; renderTimeZone(); });
+$("timezone-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  if (!canSaveTimeZone()) return;
+  const identity = state.managed ? {service_epoch:systemTime.epoch} : {...state.info};
+  const epoch = systemTime.epoch;
+  timezoneForm.saving = true; timezoneForm.message = ""; renderTimeZone();
+  try {
+    const data = await request("/v1/settings/save", {...identity, caller:{kind:"human",id:state.operator}, expected_version:systemTime.version, time_zone:$("system-timezone").value.trim()});
+    if (epoch !== systemTime.epoch) return;
+    applyTimeZone({...data, service_epoch:epoch});
+    timezoneForm.dirty = false;
+    timezoneForm.message = `已保存；当前生效：${systemTime.zone}。影响全部 Room 和 Agent；页面立即生效，Agent 从下一回合生效，无需重启。`;
+  } catch (error) {
+    if (epoch !== systemTime.epoch) return;
+    timezoneForm.message = `保存失败，草稿已保留：${error.message}`;
+    if (error.code === "conflict") {
+      try { const current = await request("/v1/settings"); if (current.service_epoch === epoch && systemTime.epoch === epoch) applyTimeZone(current); } catch { /* Keep the draft for explicit retry. */ }
+    }
+  } finally { timezoneForm.saving = false; renderTimeZone(); }
+});
 const memberBusy = new Set();
 let storage;
 try { storage = sessionStorage; } catch { /* The UI also works without storage. */ }
@@ -374,18 +537,16 @@ function larkMessagesDraft() {
     interval_seconds:Number($("lark-interval").value), ...backfillDraft("lark")};
 }
 function larkAllChats() { return $("lark-scope").checked; }
-function notificationLocalTime(value) {
-  const date=new Date(value),pad=n=>String(n).padStart(2,"0");
-  return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-}
+function notificationLocalTime(value) { return systemTime.local(value); }
 function backfillDraft(prefix) {
-  const mode=$(`${prefix}-backfill`).value, start=new Date($(`${prefix}-backfill-start`).value).getTime();
+  const mode=$(`${prefix}-backfill`).value;
+  let start=""; try { start=readTimeInput(`${prefix}-backfill-start`); } catch { /* renderBackfill reports the conversion error. */ }
   return {backfill_seconds:mode==="custom" ? 0 : Number(mode || 0),
-    ...(mode==="custom" ? {backfill_start:Number.isFinite(start) ? new Date(start).toISOString() : ""} : {})};
+    ...(mode==="custom" ? {backfill_start:start} : {})};
 }
 function fillBackfill(prefix, config) {
   $(`${prefix}-backfill`).value=config.backfill_start ? "custom" : String(config.backfill_seconds || 0);
-  $(`${prefix}-backfill-start`).value=config.backfill_start ? notificationLocalTime(config.backfill_start) : "";
+  fillTimeInput(`${prefix}-backfill-start`,config.backfill_start);
 }
 function renderBackfill(prefix, locked, baseline, busy=false) {
   const mode=$(`${prefix}-backfill`).value, start=Date.parse(backfillDraft(prefix).backfill_start || "");
@@ -394,14 +555,16 @@ function renderBackfill(prefix, locked, baseline, busy=false) {
   $(`${prefix}-backfill-custom`).hidden=locked || mode!=="custom";
   $(`${prefix}-backfill-start`).max=notificationLocalTime(Date.now());
   const time=Date.parse(baseline || "");
-  $(`${prefix}-backfill-value`).textContent=Number.isFinite(time) ? new Date(time).toLocaleString("zh-CN") : "首次接收时已确定";
-  const error=mode==="custom" && !Number.isFinite(start) ? "请选择要开始接收消息的日期和时间。" : mode==="custom" && start<=0 ? "请选择 1970 年之后的有效时间。" : mode==="custom" && start>Date.now() ? "起始时间不能晚于当前时间。" : "";
+  $(`${prefix}-backfill-value`).textContent=Number.isFinite(time) ? formatDate(time) : "首次接收时已确定";
+  let conversionError=""; try { readTimeInput(`${prefix}-backfill-start`); } catch(error) { conversionError=error.message; }
+  const error=systemTime.error || (mode==="custom" && conversionError) || (mode==="custom" && !Number.isFinite(start) ? "请选择要开始接收消息的日期和时间。" : mode==="custom" && start<=0 ? "请选择 1970 年之后的有效时间。" : mode==="custom" && start>Date.now() ? "起始时间不能晚于当前时间。" : "");
+  $(`${prefix}-backfill-start-label`).textContent=`起始时间（${systemTime.zone || "系统时区异常"}）`;
   $(`${prefix}-backfill-help`).textContent=locked ? "接收起点已锁定；接收更早消息请新建房间。" : "首次开启后锁定，后续修改设置沿用该起点。";
   notice(`${prefix}-backfill-error`,error);$(`${prefix}-backfill-start`).setAttribute("aria-invalid",String(!!error));
   return error;
 }
 function notificationSyncSummary(data) {
-  const date=value=>new Date(value).toLocaleString("zh-CN");
+  const date=value=>formatDate(value);
   const parts=[data.last_check ? `最近检查 ${date(data.last_check)}` : data.subscription_id ? (data.config.enabled ? "等待首次检查" : "已暂停") : "尚未开始同步"];
   if(data.pending>0)parts.push(`待投递 ${data.pending}`);
   if(data.retry_at)parts.push(`下次重试 ${date(data.retry_at)}`);
@@ -573,7 +736,7 @@ function renderLarkMessages() {
   $("lark-feedback").textContent=ws.messagesSending ? "正在处理…" : ws.messagesFeedback || (dirty ? "有未保存的更改" : "");
   const errors={...connectionValidationErrors,...notificationTargetErrors,capacity:"来源容量已满，进度保留；释放容量后显式同步。",binding_changed:"连接身份已变化；旧订阅保留，请核对原账号。",identity_mismatch:"账号已变化，进度保留；请核对原账号并重新验证连接。",credential_unavailable:"登录凭据不可用，进度保留；请验证连接，原账号下已开启的通知会自动恢复。",credential_rejected:"登录已失效，进度保留；请在原 profile 完成用户授权并验证连接，原账号下已开启的通知会自动恢复。",permission_denied:"读取权限不足，进度保留；请检查用户授权范围并验证连接，原账号下已开启的通知会自动恢复。",cursor_expired:"游标已过期，将在同一时间窗重扫。",query_failed:"读取失败，将退避重试。"};
   notice("lark-error",ws.messagesError || (!ws.messagesConnected ? "通知状态暂不可读。" : errors[data.delivery_error_code] || errors[data.error_code] || data.error_code || ""));
-  const d=data.lark || {}, date=x=>new Date(x).toLocaleString("zh-CN");
+  const d=data.lark || {}, date=x=>formatDate(x);
   const diagnostics=[notificationSyncSummary(data)];
   if(d.excluded_items>0)diagnostics.push(`本人自聊历史已排除 ${d.excluded_items}`);
   if(data.subscription_id && data.config.scope_mode==="all" && !d.directory_complete)diagnostics.push(d.directory_scanning ? `会话目录加载中（${d.directory_pages || 0} 页）` : "会话目录尚未加载完整");
@@ -615,7 +778,7 @@ $("lark-chat-more").addEventListener("click",()=>loadLarkChats());
 $("lark-chat-refresh").addEventListener("click",()=>loadLarkChats(true));
 $("lark-save").addEventListener("click",()=>changeLarkMessages("configure"));
 $("lark-sync").addEventListener("click",()=>changeLarkMessages("sync"));
-$("lark-manage-connections").addEventListener("click",async()=>{showConnectionList();$("settings-dialog").showModal();await loadConnections();});
+$("lark-manage-connections").addEventListener("click",async()=>{await openSettings("connections");});
 function gitlabProjectDirectory(ws) {
   const connection=todoConnection(ws);
   const key=JSON.stringify([state.catalog?.service_epoch,connection?.id,connection?.version,connection?.validation]);
@@ -969,7 +1132,7 @@ $("notification-detail").addEventListener("keydown", event => {
 });
 $("notification-reload").addEventListener("click", async () => { await refresh(); await loadWorkspaceConnections(); });
 $("gitlab-manage-connections").addEventListener("click", async () => {
-  showConnectionList(); $("settings-dialog").showModal(); await loadConnections();
+  await openSettings("connections");
 });
 for (const channel of ["gitlab", "messages"]) {
   const tab = $(`notification-tab-${channel}`);
@@ -1206,7 +1369,7 @@ $("workspace-kind").addEventListener("change", () => { if (workspaceView) worksp
 for (const id of ["workspace-repository", "workspace-gitlab"]) $(id).addEventListener("change", renderWorkspace);
 $("workspace-connection").addEventListener("change", () => { if (workspaceView) workspaceView.selectedConnection = $("workspace-connection").value; });
 $("workspace-manage-connections").addEventListener("click", async () => {
-  $("workspace-dialog").close(); showConnectionList(); $("settings-dialog").showModal(); await loadConnections();
+  $("workspace-dialog").close(); await openSettings("connections");
 });
 $("workspace-form").addEventListener("submit", event => { event.preventDefault(); return submitWorkspace(); });
 $("workspace-retry").addEventListener("click", () => submitWorkspace(true));
@@ -1335,7 +1498,7 @@ for (const [side, config] of Object.entries(sidebarConfig)) {
     event.preventDefault(); setSidebarWidth(side, next); savePanels();
   });
 }
-window.addEventListener("resize", () => applySidebarWidths());
+window.addEventListener("resize", () => { applySidebarWidths(); renderSettingsNavigation(); });
 renderPanels();
 let viewVersion = 0;
 const currentView = (version) => version === viewVersion;
@@ -1345,8 +1508,7 @@ let mentionSeen = new Set();
 const mentionVisibleSince = new Map();
 let mentionTimer = null, mentionFramePending = false;
 const mentionDwell = 1000;
-const dateFormat = new Intl.DateTimeFormat("zh-CN", { month: "long", day: "numeric", weekday: "short" });
-const timeFormat = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit" });
+
 let activitySignature = "";
 let activityTimelineContext = "";
 let activityScrollMember = "";
@@ -1529,9 +1691,9 @@ function messageElement(message) {
   renderMessageBody(text, message.text, state.operator, integration ? notificationOptions(state.info, state.operator, message.source, { seq: message.seq }) : undefined);
   el.classList.toggle("mentioned", message.seq > mentionSeenThrough && !mentionSeen.has(message.seq) && ranges.length > 0 && !(message.author.kind === "human" && message.author.id === state.operator));
   const time = el.querySelector("time");
-  time.textContent = timeFormat.format(new Date(message.created_at));
+  time.textContent = formatDate(message.created_at, {hour:"2-digit",minute:"2-digit"});
   time.dateTime = message.created_at;
-  time.title = new Date(message.created_at).toLocaleString("zh-CN");
+  time.title = formatDate(message.created_at);
   el.querySelector(".sequence").textContent = `#${message.seq}`;
   el.querySelector(".reply-button").addEventListener("click", () => {
     if (state.draft.pending || !state.connected || discussionBusy()) return;
@@ -1564,12 +1726,12 @@ function renderMessages() {
   let day = "";
   for (const message of messages) {
     const date = new Date(message.created_at);
-    const nextDay = date.toLocaleDateString();
+    const nextDay = systemTime.day(date);
     if (nextDay !== day) {
       day = nextDay;
       const divider = document.createElement("div");
       divider.className = "day-divider";
-      divider.textContent = dateFormat.format(date);
+      divider.textContent = formatDate(date, {month:"long",day:"numeric",weekday:"short"});
       fragment.append(divider);
     }
     fragment.append(messageElement(message));
@@ -1697,17 +1859,17 @@ function editPolicy(record = null) {
   $("policy-form").hidden = false;
   $("policy-editor-title").textContent = record ? "修改长期规则" : "新增长期规则";
   $("policy-text").value = record?.text || "";
-  $("policy-expires").value = record?.expires_at ? new Date(new Date(record.expires_at).getTime()-new Date(record.expires_at).getTimezoneOffset()*60000).toISOString().slice(0,16) : "";
+  fillTimeInput("policy-expires",record?.expires_at);
   $("policy-text").focus();
 }
 function policyDateText(value) {
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString("zh-CN", {year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false});
+  return Number.isNaN(date.getTime()) ? value : formatDate(date, {year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"});
 }
 function policyMetadata(record) {
   const meta = document.createElement("div"); meta.className = "policy-entry-meta";
   if (record.expires_at) {
-    const expires = document.createElement("p"); expires.textContent = `有效期至：${policyDateText(record.expires_at)}`; meta.append(expires);
+    const expires = document.createElement("p"); bindSystemTime(expires, () => { expires.textContent = `有效期至：${policyDateText(record.expires_at)}`; }); meta.append(expires);
   }
   return meta;
 }
@@ -1728,7 +1890,7 @@ function policyCard(view, r, history) {
     const revision = document.createElement("article"); revision.className = "policy-revision";
     const heading = document.createElement("h5"); heading.textContent = `v${v.version} · ${policyStates[v.status]}`;
     const metadata = document.createElement("p"); metadata.className = "policy-revision-meta";
-    const time = document.createElement("time"); time.dateTime = v.updated_at; time.title = v.updated_at; time.textContent = policyDateText(v.updated_at);
+    const time = document.createElement("time"); time.dateTime = v.updated_at; bindSystemTime(time, () => { time.title = formatDate(v.updated_at); time.textContent = policyDateText(v.updated_at); });
     const origin = document.createElement("span");
     origin.textContent = ` · 操作者 ${v.changed_by.id}\n${v.source.seq ? "Room 消息 #"+v.source.seq : "成员设置"} · 来源用户 ${v.source.user}`;
     metadata.append(time, origin);
@@ -1930,7 +2092,8 @@ async function savePolicyChange(view,change) {
 async function savePolicyForm(status) {
   const editor=policyEditor; if(!editor || !policyCurrent(editor.view)) return;
   const c={id:editor.id,version:editor.record?.version || 0,revision:editor.view.data.revision,status,text:$("policy-text").value};
-  if($("policy-expires").value) c.expires_at=new Date($("policy-expires").value).toISOString();
+  try { const expires=readTimeInput("policy-expires"); if(expires)c.expires_at=expires; }
+  catch(error) { $("policy-status").textContent=error.message; return; }
   c.source_text=`成员设置：${status === "active" ? "保存并生效" : "保存为建议"} · 长期规则\n${c.text}` + (c.expires_at ? `\n有效期至：${c.expires_at}` : "");
   await savePolicyChange(editor.view,c);
 }
@@ -1966,9 +2129,10 @@ function inboxSourceDetails(entry) {
     key.textContent = label; text.textContent = value;
     if (namespace) text.title = namespace;
     metadata.append(key,text);
+    return text;
   };
   const id = (label, value) => add(label, value?.value, value?.namespace);
-  const date = value => value && new Date(value).getTime() > 0 ? new Date(value).toLocaleString("zh-CN") : "";
+  const date = value => value && new Date(value).getTime() > 0 ? formatDate(value) : "";
   add("实例",item.instance); id("来源租户",item.tenant); id("接收账号租户",item.receiver?.tenant);
   add("项目",item.project); add("项目 ID",item.project_id && String(item.project_id));
   add("会话",item.conversation?.name); id("会话 ID",item.conversation?.id);
@@ -1982,7 +2146,10 @@ function inboxSourceDetails(entry) {
     add("自动处理",reasons[admission.reason_code] || (!admission.verified ? "来源证据待核验，暂不作为 Agent 输入" : admission.decision === "excluded" ? "已排除自动处理，历史记录保留" : "可自动处理"));
   }
   id("发送者 ID",item.sender?.id); id("接收账号 ID",item.receiver?.id);
-  add("消息时间",date(item.created_at)); add("接收时间",date(entry.received_at));
+  for (const [label,value] of [["消息时间",item.created_at],["接收时间",entry.received_at]]) {
+    const element=add(label,date(value));
+    if(element)bindSystemTime(element,()=>{element.textContent=date(value);});
+  }
   id("消息 ID",item.message_id); id("回复消息",item.reply_to); id("根消息",item.root_id); id("话题 ID",item.thread_id);
   if (item.mentions?.length) add("提及",item.mentions.map(at => `${at.all ? "@所有人" : "@" + notificationParticipant(at)}${at.id?.value ? `（${at.id.value}）` : ""}`).join("、"));
   if (item.attachments?.length) add("附件",item.attachments.map(a => `${a.type} · ${a.reference} · ${a.status === "not_read" ? "未读取" : a.status}`).join("\n"));
@@ -2048,8 +2215,10 @@ async function loadMemberInbox(action = "reset") {
       const date = created.getTime() > 0 ? created : received;
       if (Number.isFinite(date.getTime())) {
         time.dateTime = date.toISOString();
-        time.textContent = date.toLocaleString("zh-CN", {month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit",hour12:false});
-        time.title = `${created.getTime() > 0 ? "消息时间" : "接收时间"}：${date.toLocaleString("zh-CN")}`;
+        bindSystemTime(time, () => {
+          time.textContent = formatDate(date, {month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"});
+          time.title = `${created.getTime() > 0 ? "消息时间" : "接收时间"}：${formatDate(date)}`;
+        });
       } else time.textContent = "时间未获取";
       heading.append(seq,channel,time); section.append(heading);
       const lark = source.provider === "lark", context = item.conversation || item.context;
@@ -2359,21 +2528,21 @@ function roomListTime(room) {
 }
 
 function roomListDate(room) {
-  const time = new Date(roomListTime(room));
-  const pad = value => String(value).padStart(2, "0");
-  return `${pad(time.getMonth() + 1)}/${pad(time.getDate())} ${pad(time.getHours())}:${pad(time.getMinutes())}`;
+  return formatDate(roomListTime(room), {month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"});
 }
 function renderRooms() {
   document.querySelector(".workspace").classList.toggle("managed", state.managed);
   renderPanels();
-  $("open-settings").disabled = !state.catalogConnected;
+  $("open-general-settings").hidden = state.managed;
+  $("open-general-settings").disabled = !state.connected;
+  $("open-settings").disabled = state.managed ? !state.catalogConnected : !state.connected;
   $("toggle-add").hidden = state.managed;
   if (state.managed) $("add-form").hidden = true;
   if (!state.managed || !state.catalog) return;
   const catalog = state.catalog;
   $("rooms-empty").hidden = catalog.rooms.length > 0;
   $("new-room").disabled = !state.catalogConnected || discussionBusy() || !!state.management || state.managementSending || !!catalog.write_error;
-  const signature = JSON.stringify({ rooms: catalog.rooms, selected: selectedRoom,
+  const signature = JSON.stringify({ rooms: catalog.rooms, selected: selectedRoom, timeZone:systemTime.zone, timeError:systemTime.error,
     busy: discussionBusy(), management: !!state.management, sending: state.managementSending, connected: state.catalogConnected });
   if ($("room-list").dataset.signature !== signature) {
     $("room-list").dataset.signature = signature;
@@ -2479,6 +2648,7 @@ function startDeletion(room) {
 }
 
 function composerState() {
+  renderSettingsNavigation();
   const namedRoom = state.catalog?.rooms.find(room => room.room_instance === state.info?.room_instance);
   $("rename-room").setAttribute("aria-label", namedRoom ? `${namedRoom.name}，修改房间名称` : $("room-name").textContent);
   $("rename-room").disabled = !state.managed || !state.catalogConnected || discussionBusy() || !!state.catalog?.write_error || namedRoom?.status !== "ready" || renameSending;
@@ -2504,10 +2674,12 @@ async function sync() {
     let config = await request("/v1/ui");
     if (!currentView(version)) return;
     state.managed = !!config.managed;
+    applyTimeZone(config);
     if (state.managed) {
       const catalog = await request("/v1/rooms");
       if (!currentView(version)) return;
       state.catalog = catalog; state.catalogConnected = true;
+      applyTimeZone(catalog);
       if (!selectionLoaded) {
         selectionLoaded = true;
         if (!selectedRoom) {
@@ -2993,8 +3165,10 @@ $("dismiss-management").addEventListener("click", () => {
 const connections = { items: [], selected: null, sending: false, generation: 0, formVersion: 0, discovery: null, detecting: false, auth: null, authTimer: null, larkPending:null, larkStarting:null, gitlabAuth: null, gitlabTimer: null, gitlabPending: null, scionDiscovery:null, scionAuth:null, scionTimer:null, scionPending:null, scionLogout:null };
 const connectionValidationErrors = { login_failed:"PAT 登录失败，请核对实例、令牌及权限。", timeout:"操作超时，请刷新账号核对结果；不会自动重新登录。", cancelled:"操作已取消，请刷新账号核对状态。", credential_unavailable: "登录凭据不可用，请核对账号授权或服务凭据配置。", credential_rejected: "认证失败，请核对当前账号登录和权限。", identity_mismatch: "profile 账号或应用已变化，请核对后重新验证。", permission_denied: "当前用户缺少读取权限，请检查授权。", cli_version_mismatch: "CLI 版本不匹配，请使用对应工具已验收的固定版本。", cli_unavailable: "CLI 无法执行，请核对路径与后台运行权限。", query_failed: "连接失败，请检查地址或网络后重试验证。", invalid_response: "实例返回了无效的身份信息。" };
 function connectionFeedback(message = "", kind = "status") {
+  renderSettingsNavigation();
   const feedback = $("connections-feedback");
-  feedback.textContent = message;
+  if (typeof message === "function") bindSystemTime(feedback, () => { feedback.textContent = message(); });
+  else { feedback.refreshSystemTime = null; feedback.textContent = message; }
   feedback.dataset.kind = kind;
   feedback.setAttribute("role", kind === "error" ? "alert" : "status");
 }
@@ -3044,6 +3218,7 @@ function renderScionPATLink() {
 }
 function scionProfileDraft() { return {version:1, executable:$("connection-scion-executable").value.trim(), profile:$("connection-scion-profile").value.trim(), brand:"scion", cli_version:"0.1.13"}; }
 function renderScionAccount() {
+  renderSettingsNavigation();
   const active = !!connections.scionAuth || !!connections.scionLogout, pending = !!connections.scionPending;
   for (const id of ["connection-scion-executable", "connection-scion-profile", "connection-scion-detect", "connection-scion-login-open", "connection-scion-login", "connection-scion-login-dismiss", "connection-scion-pat", "connection-scion-logout"]) $(id).disabled = active || pending || connections.detecting || connections.sending;
   $("connection-scion-login-open").setAttribute("aria-expanded",String(!$("connection-scion-login-panel").hidden));
@@ -3211,7 +3386,7 @@ async function logoutScion() {
     connectionFeedback(error.code === "conflict" ? "账号或引用已变化，请返回列表重新加载后重试。" : error.code === "busy" ? "操作尚未结清，请刷新账号并核对连接状态后再试。" : "退出结果未确认，请刷新账号并返回列表核对；不会自动重试。", "error");
   } finally {
     connections.scionLogout = null;
-    connections.sending = false; $("connection-fields").disabled = false;
+    connections.sending = false; renderSettingsNavigation(); $("connection-fields").disabled = false;
     $("connection-back").disabled = false; $("close-settings").disabled = false;
     if (version === connections.formVersion) {
       renderScionAccount();
@@ -3258,6 +3433,7 @@ function renderConnectionReferences() {
   }));
 }
 function renderGitLabAccount() {
+  renderSettingsNavigation();
   const item = connections.selected, active = !!connections.gitlabAuth;
   const pending = !!connections.gitlabPending;
   const oauth = item?.credential_kind === "oauth";
@@ -3319,7 +3495,7 @@ async function startGitLabAuth(action) {
   } catch {
     connectionFeedback("GitLab 应用配置检查失败，请稍后重试。", "error");
   } finally {
-    connections.sending=false;$("connection-fields").disabled=false;$("connection-back").disabled=false;$("close-settings").disabled=false;renderGitLabAccount();
+    connections.sending=false;renderSettingsNavigation();$("connection-fields").disabled=false;$("connection-back").disabled=false;$("close-settings").disabled=false;renderGitLabAccount();
   }
   if (connections.gitlabPending) $("connection-auth-confirm").focus();
   else if (pending) await beginGitLabAuth(pending);
@@ -3346,7 +3522,7 @@ async function beginGitLabAuth({action, version, target, prepared, affected}) {
     await pollGitLabAuth();
   } catch (error) {
     connectionFeedback(error.code === "identity" ? "登录需要从服务配置的规范地址打开 TeamX；请核对应用回调地址，并刷新页面。" : "授权操作结果未确认，请返回列表核对；不会自动重发。", "error");
-  } finally {if (popup && !connections.gitlabAuth && !popup.closed) popup.close(); connections.sending=false;$("connection-fields").disabled=false;$("connection-back").disabled=false;$("close-settings").disabled=false;renderGitLabAccount();}
+  } finally {if (popup && !connections.gitlabAuth && !popup.closed) popup.close(); connections.sending=false;renderSettingsNavigation();$("connection-fields").disabled=false;$("connection-back").disabled=false;$("close-settings").disabled=false;renderGitLabAccount();}
 }
 async function pollGitLabAuth() {
   const auth = connections.gitlabAuth, version = connections.formVersion;
@@ -3405,7 +3581,7 @@ $("gitlab-import").addEventListener("click",async()=>{
     $("gitlab-setup").hidden=["ready","owner_verification_required"].includes(result.status);
     connectionFeedback(["ready","owner_verification_required"].includes(result.status) ? "应用配置已保存，请点击登录 GitLab 完成账号核验。" : "应用配置尚未就绪，请检查填写内容。", "status");
   } catch {connectionFeedback("应用配置保存结果未确认，请重新打开连接检查。", "error");}
-  finally {$("gitlab-client-secret").value="";connections.sending=false;$("connection-fields").disabled=false;$("connection-back").disabled=false;$("close-settings").disabled=false;}
+  finally {$("gitlab-client-secret").value="";connections.sending=false;renderSettingsNavigation();$("connection-fields").disabled=false;$("connection-back").disabled=false;$("close-settings").disabled=false;}
 });
 function connectionBrand() { return $("connection-provider").value === "lark" ? "lark" : "feishu"; }
 function connectionOrigin() { return connectionBrand() === "lark" ? "https://open.larksuite.com" : "https://open.feishu.cn"; }
@@ -3422,6 +3598,7 @@ function clearLarkAuthView() {
   $("connection-login-cancel").hidden = true;
 }
 function renderLarkAccount() {
+  renderSettingsNavigation();
   const option = connections.discovery?.profiles.find(p => p.name === $("connection-profile").value);
   const active = !!connections.auth || !!connections.larkStarting, pending = !!connections.larkPending;
   const sendProfile=JSON.stringify(larkProfileDraft());
@@ -3548,7 +3725,7 @@ async function beginLarkAuth(pending) {
     connectionFeedback(error.code === "conflict" ? "连接或引用范围已变化，请返回列表重新加载。" : error.code === "busy" ? "此配置正在认证或旧查询尚未结束，请稍后刷新账号。" : "认证操作结果未确认，请返回列表并刷新账号核对；不会自动重发。", "error");
   } finally {
     connections.larkStarting = null;
-    connections.sending = false; $("connection-fields").disabled = false; $("connection-back").disabled = false; $("close-settings").disabled = false;
+    connections.sending = false; renderSettingsNavigation(); $("connection-fields").disabled = false; $("connection-back").disabled = false; $("close-settings").disabled = false;
     renderLarkAccount();
   }
 }
@@ -3582,9 +3759,9 @@ async function pollLarkAuth() {
         updateConnectionItem(verified); renderLarkAccount();
         if (verified.validation.status !== "valid") { connectionFeedback(`登录已完成，连接验证失败：${connectionValidationErrors[verified.validation.error_code] || "请重试验证。"}`, "error"); return; }
       }
-      const renewal = result.renewal_unavailable ? `本次未获得续期凭据，将于 ${new Date(result.expires_at).toLocaleString("zh-CN")} 失效。请应用管理员在开发者后台开启「刷新 user_access_token」并发布新版本，然后重新授权。` : "";
+      const renewal = () => result.renewal_unavailable ? `本次未获得续期凭据，将于 ${formatDate(result.expires_at)} 失效。请应用管理员在开发者后台开启「刷新 user_access_token」并发布新版本，然后重新授权。` : "";
       const savedProfile = connections.selected && JSON.stringify(auth.profile) === JSON.stringify(connections.selected.cli_profile);
-      connectionFeedback(auth.action === "logout" ? "已退出此配置的登录。取消应用全部授权请前往飞书 / Lark 授权管理页。" : `登录与身份验证成功 · ${result.username}。${savedProfile ? "原账号下因授权暂停且仍开启的通知会自动恢复；其他共享连接需分别重新验证。" : "请保存连接以应用此账号。"}${renewal}`, renewal ? "status" : "success");
+      connectionFeedback(() => auth.action === "logout" ? "已退出此配置的登录。取消应用全部授权请前往飞书 / Lark 授权管理页。" : `登录与身份验证成功 · ${result.username}。${savedProfile ? "原账号下因授权暂停且仍开启的通知会自动恢复；其他共享连接需分别重新验证。" : "请保存连接以应用此账号。"}${renewal()}`, result.renewal_unavailable ? "status" : "success");
     } else connectionFeedback(result.status === "cancelled" ? "已取消本次登录，请刷新账号核对状态。" : connectionValidationErrors[result.error_code] || "认证失败或已过期，请重新发起。", "error");
   } catch (error) {
     if (finished) { if (version === connections.formVersion) connectionFeedback("登录已完成，但连接验证结果未确认。请重新验证连接。", "error"); return; }
@@ -3642,11 +3819,13 @@ function showConnectionList() {
   clearGitLabConfirmation();
   connections.formVersion++; connections.discovery = null; connections.detecting = false; clearLarkAuthView();
   connections.selected = null; $("gitlab-client-secret").value = "";
-  $("connection-form").hidden = true; $("connections-list-view").hidden = false;
+  settingsTab = "connections"; renderSettingsNavigation();
+  $("connection-form").hidden = true; $("connections-list-view").hidden = !state.managed;
   $("connections-load-error").hidden = true;
   connectionFeedback();
 }
 function editConnection(item = null) {
+  settingsTab = "connections"; renderSettingsNavigation();
   clearLarkConfirmation();
   clearScionConfirmation();
   $("connection-scion-pat").value=""; connections.scionDiscovery=null;
@@ -3672,7 +3851,7 @@ function editConnection(item = null) {
   const v = item?.validation;
   $("connection-validation").textContent = v?.status === "valid" ? `已验证 · @${v.username}`
     : v?.status === "failed" ? connectionValidationErrors[v.error_code] || "验证失败。" : "尚未验证连接。";
-  $("connection-validation").title = [v?.user_id ? `账号 ID ${v.user_id}` : "", v?.checked_at ? `验证于 ${new Date(v.checked_at).toLocaleString("zh-CN")}` : ""].filter(Boolean).join(" · ");
+  bindSystemTime($("connection-validation"), () => { $("connection-validation").title = [v?.user_id ? `账号 ID ${v.user_id}` : "", v?.checked_at ? `验证于 ${formatDate(v.checked_at)}` : ""].filter(Boolean).join(" · "); });
   renderConnectionReferences();
   $("connection-delete").disabled = !!item?.references?.length;
   for (const id of ["connection-delete", "connection-verify"]) $(id).hidden = !item;
@@ -3760,14 +3939,17 @@ async function connectionAction(action) {
     else connectionFeedback(errors[error.code] || "操作结果未确认，请返回列表核对；不会自动重发。", "error");
   } finally {
 
-    connections.sending = false; $("connection-fields").disabled = false;
+    connections.sending = false; renderSettingsNavigation(); $("connection-fields").disabled = false;
     $("connection-back").disabled = false; $("close-settings").disabled = false;
   }
 }
-$("open-settings").addEventListener("click", async () => {
-  if (!state.managed || !state.catalog) return;
-  showConnectionList(); $("settings-dialog").showModal(); await loadConnections();
-});
+async function openSettings(tab = settingsTab) {
+  if (state.managed ? !state.catalog : !state.info) return;
+  showConnectionList(); settingsTab = state.managed ? tab : "general";
+  timezonePicker.open = false; renderTimeZone(); $("settings-dialog").showModal(); if(state.managed)await loadConnections();
+}
+$("open-settings").addEventListener("click", () => openSettings());
+$("open-general-settings").addEventListener("click", () => openSettings());
 async function closeSettings() {
   if ($("close-settings").disabled) return;
   await cancelConnectionAuth(); $("settings-dialog").close();
@@ -3775,9 +3957,9 @@ async function closeSettings() {
 $("close-settings").addEventListener("click", closeSettings);
 dismissOnBackdrop($("settings-dialog"), closeSettings);
 $("settings-dialog").addEventListener("cancel", event => { if (connections.sending) event.preventDefault(); });
-$("settings-dialog").addEventListener("close", () => { void cancelConnectionAuth(); $("gitlab-client-secret").value = ""; connections.formVersion++; connections.generation++;
+$("settings-dialog").addEventListener("close", () => { timezonePicker.open = false; renderTimeZoneOptions(); void cancelConnectionAuth(); $("gitlab-client-secret").value = ""; connections.formVersion++; connections.generation++;
   if ($("notification-detail").open) { $(workspaceView?.notificationChannel === "messages" ? "lark-manage-connections" : "gitlab-manage-connections").focus(); void loadWorkspaceConnections(); }
-  else $("open-settings").focus(); });
+  else $(state.managed ? "open-settings" : "open-general-settings").focus(); });
 $("connection-new").addEventListener("click", () => editConnection());
 $("connection-back").addEventListener("click", async () => { if (connections.auth || connections.gitlabAuth || connections.scionAuth) await cancelConnectionAuth(); showConnectionList(); await loadConnections(); });
 $("connections-retry").addEventListener("click", loadConnections);

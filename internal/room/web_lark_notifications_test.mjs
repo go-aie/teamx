@@ -424,9 +424,9 @@ test("Lark saved chats remain removable when the directory cannot load",async()=
  assert.equal(ui.el("lark-chat-selected").children.length,0);assert.equal(ui.el("lark-save").disabled,true);
 });
 
-function localDateTime(date){
- const pad=n=>String(n).padStart(2,"0");
- return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+function localDateTime(date) {
+ const parts=Object.fromEntries(new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Shanghai",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"}).formatToParts(date).map(p=>[p.type,p.value]));
+ return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`;
 }
 test("Lark custom historical start uses local time and survives refresh and saved reload",async()=>{
  const api=fixture(),ui=await launch(api);await draft(ui);

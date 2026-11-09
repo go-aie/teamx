@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import * as client from "./web/client.mjs";
 import { notificationOptions } from "./web/markdown.mjs";
+import * as time from "./web/time.mjs";
 
 // Exercise the actual entry point and its events without a browser dependency.
 // This DOM implements events and content only; it is not visual acceptance.
@@ -83,7 +84,11 @@ export async function launch(api, saved = new Map()) {
     },
     createElement: tag => new Element(tag), createElementNS: (_, tag) => new Element(tag), createDocumentFragment: () => new Element("fragment"),
     querySelector: selector => selector === "dialog:modal" ? [...elements.values()].find(el => el.open && el.modal) || null : workspace,
-    querySelectorAll: () => [] });
+    querySelectorAll: selector => {
+      if (selector !== "[data-system-time]") return [];
+      const visit = el => [...(el.refreshSystemTime ? [el] : []), ...el.children.flatMap(visit), ...[...el.parts.values()].flatMap(visit)];
+      return [...elements.values()].flatMap(visit);
+    } });
   const storage = { getItem: key => saved.get(key) || null, setItem: (key, value) => saved.set(key, value), removeItem: key => saved.delete(key) };
   let now = 0, timerID = 0;
   const timers = new Map();
@@ -96,13 +101,19 @@ export async function launch(api, saved = new Map()) {
     }
     now = end; await settle();
   } };
-  const names = ["document", "window", "sessionStorage", "Option", "setInterval", "requestAnimationFrame", "renderMessageBody", "notificationOptions", "performance", "setTimeout", "clearTimeout", ...Object.keys(client).map(name => name === "readPages" ? "collectPages" : name)];
+  const names = ["document", "window", "sessionStorage", "Option", "setInterval", "requestAnimationFrame", "renderMessageBody", "notificationOptions", "performance", "setTimeout", "clearTimeout", ...Object.keys(time), ...Object.keys(client).map(name => name === "readPages" ? "collectPages" : name)];
   const values = [document, window, storage,
     function(text, value) { const el = new Element("option"); el.textContent = text; el.value = value; return el; },
     () => {}, fn => fn(), (el, text, operator, options) => { el.textContent = text; el.markdownOptions = options; }, notificationOptions, { now: () => now },
     (fn, delay) => { const id = ++timerID; timers.set(id, { fn, at: now + delay }); return id; },
-    id => timers.delete(id), ...Object.values(client)];
-  values[names.indexOf("request")] = api.request;
+    id => timers.delete(id), ...Object.values(time), ...Object.values(client)];
+  values[names.indexOf("request")] = async (path, body, ...args) => {
+    const data = await api.request(path, body, ...args);
+    // Existing fixtures predate service-wide settings. New tests can supply
+    // null explicitly to exercise invalid/missing settings without a fallback.
+    if (path === "/v1/ui" || path === "/v1/rooms") return {time_zone:"Asia/Shanghai",settings_version:1,...(data.managed ? {service_epoch:"manager"} : {}),...data};
+    return data;
+  };
   const AsyncFunction = Object.getPrototypeOf(async function() {}).constructor;
   const entry = new AsyncFunction(...names, app + "\nreturn { refresh };\n");
   const entrypoint = await entry(...values);
