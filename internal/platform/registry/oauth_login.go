@@ -1,12 +1,35 @@
 package registry
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
 )
+
+var ErrAccountConnected = errors.New("GitLab account already connected")
+
+// New platforms bind a distinct native account. Existing shared grants remain
+// readable and can still be reauthorized together.
+func GitLabAccountConnected(file Snapshot, targetID, origin string, userID int64) bool {
+	for _, c := range file.Platforms {
+		if c.ID == targetID && c.CredentialID != "" {
+			return false
+		}
+	}
+	for _, c := range file.Platforms {
+		if c.ID == targetID || c.Provider != "gitlab" || c.URL != origin || c.CredentialID == "" {
+			continue
+		}
+		cred, _, err := OAuthRecord(file, c.CredentialID)
+		if err == nil && cred.UserID == userID {
+			return true
+		}
+	}
+	return false
+}
 
 // Pending revocations are deliberately not business credentials. Unknown or
 // manual records are never replayed automatically, including after restart.
@@ -213,6 +236,9 @@ func (m *Manager) CommitOAuthLogin(expected []Record, targetID, name string, app
 		}
 	}
 	targetExists := slices.ContainsFunc(file.Platforms, func(c Record) bool { return c.ID == targetID })
+	if GitLabAccountConnected(file, targetID, app.Origin, identity.UserID) {
+		return nil, ErrAccountConnected
+	}
 	if !targetExists {
 		if !validRestartID(targetID) || len(file.Platforms) >= 100 {
 			return nil, ErrRequest

@@ -492,9 +492,12 @@
         <button id="onboarding-use" class="settings-secondary-button connection-field-wide" type="button" hidden>为成员启用此平台</button>
         <section id="gitlab-reuse" class="connection-field-wide connection-inline-panel" aria-label="GitLab 应用复用" hidden>
           <p id="gitlab-reuse-summary" role="status" aria-live="polite"></p>
+          <button id="gitlab-repair-application" class="primary" type="button" hidden>修改应用配置</button>
           <div id="gitlab-application-choice" hidden><label for="gitlab-application">选择兼容应用</label><select id="gitlab-application"></select></div>
-          <ul id="gitlab-application-issues"></ul>
-          <button id="gitlab-prepare-retry" class="text-button" type="button">重新检查应用</button>
+          <details id="gitlab-compatibility-details" hidden>
+            <summary>查看详情</summary>
+            <ul id="gitlab-application-issues"></ul>
+          </details>
         </section>
         <div id="connection-scion-row" class="connection-field connection-field-wide" hidden>
           <div id="connection-scion-choice" hidden><label for="connection-scion-profile">账号</label><select id="connection-scion-profile" aria-describedby="connection-scion-account platforms-feedback"></select></div>
@@ -584,6 +587,11 @@
         </div>
         <div id="gitlab-account-row" class="connection-field connection-field-wide">
           <p id="gitlab-account" class="connection-account" role="status" aria-live="polite">未连接</p>
+          <section id="gitlab-account-choice" class="connection-inline-panel" aria-label="连接 GitLab 账号" hidden>
+            <p id="gitlab-account-choice-hint" class="quiet"></p>
+            <a id="gitlab-switch-account" class="settings-secondary-button" target="_blank" rel="noopener noreferrer">前往 GitLab 切换账号 ↗</a>
+            <p id="gitlab-account-switch-help" class="quiet">在 GitLab 网页退出当前账号并登录另一个，再返回授权。</p>
+          </section>
           <div class="connection-account-actions"><button id="gitlab-login" class="settings-secondary-button" type="button">登录 GitLab</button><button id="gitlab-logout" class="text-button" type="button" hidden>退出登录</button><button id="gitlab-edit-application" class="text-button" type="button" hidden>修改应用配置</button><button id="gitlab-cancel" class="text-button" type="button" hidden>取消本次登录</button></div>
           <a id="gitlab-login-link" target="_blank" rel="noopener noreferrer" hidden>打开 GitLab 授权页面 ↗</a>
 

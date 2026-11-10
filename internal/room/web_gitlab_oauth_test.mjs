@@ -20,7 +20,7 @@ function fixture(kind="oauth") {
 }
 async function edit(api) {const ui=await launch(api);await ui.el("open-settings").emit("click");await ui.el("platforms-list").children[0].emit("click");return ui;}
 async function openApplication(ui) {
- await ui.el("gitlab-edit-application").emit("click");
+ await ui.el(ui.el("gitlab-repair-application").hidden ? "gitlab-edit-application" : "gitlab-repair-application").emit("click");
  if (!ui.el("connection-auth-confirmation").hidden) await ui.el("connection-auth-confirm").emit("click");
 }
 function referenceNames(ui,id="connection-reference-list") {return ui.el(id).children.flatMap(group=>group.children.at(-1).children.map(row=>row.children[0]?.textContent));}
@@ -28,6 +28,103 @@ async function authorize(ui, action="login") {
  await ui.el(`gitlab-${action}`).emit("click");
  if (!ui.el("connection-auth-confirmation").hidden) await ui.el("connection-auth-confirm").emit("click");
 }
+test("GitLab reauthorization keeps saved scopes and displays incompatible callback details",async()=>{
+ const api=fixture();api.prepared={...api.prepared,status:"application_incompatible",application_id:undefined,scopes:["api"],applications:[{client_id:"saved-client",scopes:["api"],callback_compatible:false,missing_scopes:[]}]};
+ const ui=await edit(api);
+ assert.equal(api.calls.find(c=>c.path.endsWith("/gitlab/prepare")).body.scopes,undefined);
+ assert.equal(ui.el("gitlab-scope-write-repository").checked,false);
+ assert.equal(ui.el("gitlab-reuse").hidden,false);
+ assert.equal(ui.el("gitlab-repair-application").hidden,false);
+ assert.equal(ui.el("gitlab-repair-application").disabled,false);
+ assert.equal(ui.el("gitlab-edit-application").hidden,true);
+ assert.equal(ui.el("gitlab-login").hidden,true);
+ assert.equal(ui.el("gitlab-reuse-summary").textContent,"回调地址不匹配。请修改应用配置后重新授权。");
+ assert.equal(ui.el("gitlab-compatibility-details").hidden,false);
+ assert.equal(ui.el("gitlab-compatibility-details").open,false);
+ assert.doesNotMatch(ui.el("gitlab-application-issues").children[0].textContent,/saved-client/);
+ assert.match(ui.el("gitlab-application-issues").children[0].textContent,/回调地址不匹配/);
+ assert.ok(ui.el("gitlab-application-issues").children[0].textContent.includes(api.prepared.redirect_uri));
+ await ui.el("gitlab-login").emit("click");
+ assert.equal(api.calls.filter(c=>c.path.endsWith("/gitlab/prepare")).at(-1).body.scopes,undefined);
+ assert.equal(api.calls.some(c=>c.path.endsWith("/gitlab/login")),false);
+ ui.el("gitlab-compatibility-details").open=true;
+ await ui.el("connection-back").emit("click");await ui.el("platforms-list").children[0].emit("click");
+ assert.equal(ui.el("gitlab-compatibility-details").open,false);
+ api.editPrepared={...api.prepared,status:"configuration_required",client_id:"saved-client"};
+ await ui.el("gitlab-repair-application").emit("click");
+ assert.equal(ui.el("connection-auth-confirmation").hidden,false);
+ assert.equal(api.calls.some(c=>c.path.endsWith("/gitlab/initialize")),false);
+ await ui.el("connection-auth-confirm").emit("click");
+ assert.equal(ui.el("gitlab-reuse").hidden,true);
+ assert.equal(ui.el("gitlab-setup").hidden,false);
+});
+
+test("GitLab compatibility summary names only actual issues and keeps multiple application IDs in details",async()=>{
+ const api=fixture();api.prepared={...api.prepared,status:"application_incompatible",applications:[{client_id:"first-client",callback_compatible:true,missing_scopes:["write_repository"]},{client_id:"second-client",callback_compatible:true,missing_scopes:["write_repository"]}]};
+ const ui=await edit(api);
+ assert.equal(ui.el("gitlab-reuse-summary").textContent,"缺少权限 write_repository。请修改应用配置后重新授权。");
+ assert.match(ui.el("gitlab-application-issues").children[0].textContent,/first-client/);
+ assert.match(ui.el("gitlab-application-issues").children[1].textContent,/second-client/);
+});
+
+test("GitLab reauthorization uses existing application scopes without requesting repository access",async()=>{
+ const api=fixture();api.prepared={...api.prepared,scopes:["api"]};
+ const ui=await edit(api);await authorize(ui);
+ assert.ok(api.calls.filter(c=>c.path.endsWith("/gitlab/prepare")).every(c=>c.body.scopes===undefined));
+ assert.deepEqual(api.calls.find(c=>c.path.endsWith("/gitlab/login")).body.scopes,["api"]);
+});
+
+test("GitLab application reuse exposes account switching and explains duplicate account rejection before retry",async()=>{
+ const api=fixture();api.prepared={...api.prepared,scopes:["api"],affected:[]};
+ const original=structuredClone(api.items[0]);
+ const ui=await launch(api);await ui.el("open-settings").emit("click");await ui.el("connection-new").emit("click");
+ ui.el("connection-name").value="Other account";ui.el("connection-url").value="https://gitlab.invalid";
+ await ui.el("connection-url").emit("change");
+ assert.equal(ui.el("gitlab-account-choice").hidden,false);
+ assert.match(ui.el("gitlab-account-choice-hint").textContent,/@tester.*另一个账号/);
+ assert.equal(ui.el("gitlab-switch-account").href,"https://gitlab.invalid/");
+ assert.match(ui.el("gitlab-switch-account").textContent,/切换账号/);
+ assert.equal(ui.el("gitlab-login").textContent,"授权新账号");
+ api.status={status:"failed",error_code:"account_already_connected",account_username:"tester",cleanup_status:"manual_required"};
+ await ui.el("gitlab-login").emit("click");
+ const login=api.calls.find(c=>c.path.endsWith("/gitlab/login")).body;
+ assert.equal(login.id,undefined);assert.equal(login.application_id,"app");assert.equal(login.name,"Other account");
+ assert.equal(ui.el("platforms-feedback").textContent,"@tester 已连接其他平台，请切换账号后重试。");
+ assert.doesNotMatch(ui.el("platforms-feedback").textContent,/候选授权|返回列表核对/);
+ assert.match(ui.el("platforms-feedback-detail").textContent,/已有平台的授权保持不变/);
+ assert.equal(ui.el("platforms-feedback-details").hidden,false);
+ assert.equal(ui.el("platforms-feedback-details").open,false);
+ assert.equal(ui.el("gitlab-account-choice").hidden,false);
+ assert.equal(ui.el("gitlab-login").disabled,false);
+ assert.deepEqual(api.items[0],original);
+ assert.equal(api.calls.some(c=>/\/gitlab\/initialize$|\/platforms\/save$/.test(c.path)),false);
+ api.status={status:"succeeded",platforms:[{...original,id:"second-account",name:"Other account",validation:{status:"valid",username:"other"}}]};
+ await ui.el("gitlab-login").emit("click");
+ assert.match(ui.el("gitlab-account").textContent,/@other/);
+ assert.equal(ui.el("gitlab-account-choice").hidden,true);
+ assert.deepEqual(api.items[0],original);
+});
+
+test("GitLab application updates repair an incompatible saved callback and preserve explicit scope changes",async()=>{
+ const api=fixture();api.prepared={...api.prepared,status:"application_incompatible",application_id:undefined,scopes:["api"],applications:[{client_id:"saved-client",callback_compatible:false,missing_scopes:[]}]};
+ api.editPrepared={...api.prepared,status:"configuration_required",client_id:"saved-client"};
+ const ui=await edit(api);await openApplication(ui);
+ assert.equal(ui.el("gitlab-scope-write-repository").checked,false);
+ await ui.el("gitlab-import").emit("click");
+ assert.match(ui.el("gitlab-setup-feedback").textContent,/请填写 Secret/);
+ assert.equal(api.calls.some(c=>c.path.endsWith("/gitlab/initialize")),false);
+ ui.el("gitlab-scope-write-repository").checked=true;await ui.el("gitlab-scope-write-repository").emit("change");
+ ui.el("gitlab-client-secret").value="updated-secret";
+ await ui.el("gitlab-import").emit("click");
+ const prepared=api.calls.filter(c=>c.path.endsWith("/gitlab/prepare")).at(-1).body;
+ assert.equal(prepared.edit_application,true);
+ const imported=api.calls.find(c=>c.path.endsWith("/gitlab/initialize")).body;
+ assert.equal(imported.id,"original");assert.equal(imported.client.redirect_uri,api.prepared.redirect_uri);
+ assert.deepEqual(imported.client.scopes,["api","write_repository"]);
+ assert.equal(api.calls.find(c=>c.path.endsWith("/gitlab/login")).body.client_import_id,"imported");
+ assert.equal(ui.el("gitlab-client-secret").value,"");
+});
+
 test("GitLab OAuth login starts once without a second confirmation and automatically saves the result",async()=>{
  const api=fixture(),ui=await edit(api);api.confirm=()=>{throw Error("native confirmation must not open")};
  assert.match(ui.el("gitlab-account").textContent,/已连接/);

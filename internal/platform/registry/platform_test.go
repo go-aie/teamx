@@ -2,6 +2,7 @@ package registry
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"reflect"
 	"strings"
@@ -55,6 +56,30 @@ func addSecondOAuthUser(t *testing.T, m *Manager) Record {
 		t.Fatal("bad shared application snapshot", err)
 	}
 	return f.Platforms[1]
+}
+
+func TestNewGitLabPlatformRejectsExistingAccountWithoutChangingGrant(t *testing.T) {
+	for _, acknowledged := range []bool{false, true} {
+		t.Run(fmt.Sprint(acknowledged), func(t *testing.T) {
+			m, _ := oauthFixture(t)
+			before, _ := m.Load()
+			app := before.OAuthApplications[0]
+			identity := before.Platforms[0].Validation
+			tokens := platform.OAuthTokens{AccessToken: platform.NewSecret("duplicate-access"), RefreshToken: platform.NewSecret("duplicate-refresh"), ExpiresAt: time.Now().Add(time.Hour), Scopes: app.Scopes}
+			var expected []Record
+			if acknowledged {
+				expected = before.Platforms
+			}
+			_, err := m.CommitOAuthLogin(expected, strings.Repeat("d", 32), "Duplicate account", app, "", "tester", tokens, identity)
+			if !errors.Is(err, ErrAccountConnected) {
+				t.Fatal("duplicate account not identified", err)
+			}
+			after, _ := m.Load()
+			if !reflect.DeepEqual(before, after) {
+				t.Fatal("duplicate account changed persisted state")
+			}
+		})
+	}
 }
 
 func TestSharedApplicationUsersSurviveRestartAndRefreshIndependently(t *testing.T) {

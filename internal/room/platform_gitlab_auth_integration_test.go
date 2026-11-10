@@ -536,7 +536,7 @@ func TestGitLabAuthApplicationReplacement(t *testing.T) {
 	}
 }
 
-func TestGitLabAuthAdditionalPlatformSharesGrantAtomically(t *testing.T) {
+func TestGitLabAuthNewPlatformRejectsExistingAccountAndCanRetryAnother(t *testing.T) {
 	parallelFixtureTest(t)
 	g := newGitlabLoginHarness(t)
 	v, c := g.login(t)
@@ -546,19 +546,31 @@ func TestGitLabAuthAdditionalPlatformSharesGrantAtomically(t *testing.T) {
 	g.req.Version = 0
 	g.req.Name = "second account view"
 	g.req.Origin = old.URL
-	g.req.Affected = []gitlabAuthPlatform{{ID: old.ID, Version: old.Version}}
+	before, _ := g.h.m.platforms.Load()
+	for _, acknowledged := range []bool{false, true} {
+		g.req.Affected = nil
+		if acknowledged {
+			g.req.Affected = []gitlabAuthPlatform{{ID: old.ID, Version: old.Version}}
+		}
+		next, cookie := g.login(t)
+		g.callback(next, cookie, nil)
+		result := g.status(t, next, cookie)
+		if result.Status != "failed" || result.ErrorCode != "account_already_connected" || result.AccountUsername != "tester" || result.Cleanup != "manual_required" {
+			t.Fatal("duplicate account not explained", result.Status, result.ErrorCode, result.Cleanup)
+		}
+		file, err := g.h.m.platforms.Load()
+		if err != nil || !reflect.DeepEqual(file.Platforms, before.Platforms) || !reflect.DeepEqual(file.OAuthCredentials, before.OAuthCredentials) || g.revokes.Load() != 0 {
+			t.Fatal("duplicate login changed the existing platform or authorization", err)
+		}
+	}
+	g.req.Affected = nil
+	g.user.Store(202)
 	next, cookie := g.login(t)
 	g.callback(next, cookie, nil)
 	result := g.status(t, next, cookie)
-	if result.Status != "succeeded" || len(result.Platforms) != 2 || result.PlatformID == old.ID {
-		t.Fatal("new shared connection not committed", result.Status, result.ErrorCode)
-	}
 	file, err := g.h.m.platforms.Load()
-	if err != nil || len(file.OAuthCredentials) != 1 || file.Platforms[0].CredentialID != file.Platforms[1].CredentialID {
-		t.Fatal("grant not shared", err)
-	}
-	if g.revokes.Load() != 0 || len(file.OAuthCleanup) != 0 {
-		t.Fatal("old grant revoked before instance acceptance")
+	if err != nil || result.Status != "succeeded" || len(file.Platforms) != 2 || len(file.OAuthCredentials) != 2 || !reflect.DeepEqual(file.Platforms[0], before.Platforms[0]) || !reflect.DeepEqual(file.OAuthCredentials[0], before.OAuthCredentials[0]) {
+		t.Fatal("another account could not connect independently", result.Status, result.ErrorCode, err)
 	}
 }
 

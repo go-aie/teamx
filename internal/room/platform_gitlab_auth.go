@@ -43,6 +43,7 @@ type gitlabAuthRequest struct {
 	Affected       []gitlabAuthPlatform `json:"affected,omitempty"`
 }
 type gitlabAuthView struct {
+	AccountUsername string            `json:"account_username,omitempty"`
 	OnboardingID    string            `json:"onboarding_id,omitempty"`
 	PlatformID      string            `json:"platform_id"`
 	SessionID       string            `json:"session_id"`
@@ -625,6 +626,13 @@ func (m *roomManager) serveGitLabCallback(w http.ResponseWriter, r *http.Request
 		code = "source_changed"
 	}
 	if exchangeErr == nil {
+		file, e := m.platforms.Load()
+		exchangeErr = e
+		if e == nil && registry.GitLabAccountConnected(file, s.targetID, s.app.Origin, identity.UserID) {
+			exchangeErr = registry.ErrAccountConnected
+		}
+	}
+	if exchangeErr == nil {
 		s.Status = "settling"
 		for _, c := range s.records {
 			if exchangeErr = m.invalidatePlatformQueriesLocked(c.ID); exchangeErr != nil {
@@ -676,6 +684,9 @@ func (m *roomManager) serveGitLabCallback(w http.ResponseWriter, r *http.Request
 		}
 		if s.Status == "settling" || s.Status == "committing" {
 			code = "switch_unconfirmed"
+		}
+		if errors.Is(exchangeErr, registry.ErrAccountConnected) {
+			code, s.AccountUsername = "account_already_connected", identity.Username
 		}
 		s.Status = "cleaning"
 		m.mu.Unlock()

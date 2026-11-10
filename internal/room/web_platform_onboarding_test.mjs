@@ -59,7 +59,7 @@ test("one eligible member is prefilled and a compatible GitLab application logs 
   const api=fixture(),ui=await add(api);
   assert.equal(ui.el("onboarding-room").value,"instance-R");assert.equal(ui.el("onboarding-member").value,"member-0");
   assert.match(ui.el("onboarding-summary").textContent,/我的待办.*Inbox.*启用/);
-  assert.equal(ui.el("gitlab-setup").hidden,true);assert.equal(ui.el("gitlab-login").hidden,false);assert.match(ui.el("gitlab-reuse-summary").textContent,/复用.*client-A/);
+  assert.equal(ui.el("gitlab-setup").hidden,true);assert.equal(ui.el("gitlab-login").hidden,false);assert.match(ui.el("gitlab-reuse-summary").textContent,/复用.*账号需单独授权/);
   await ui.el("gitlab-login").emit("click");
   const body=calls(api,"/v1/platforms/onboarding/prepare")[0].body;
   assert.equal(body.membership_id,"member-0");assert.equal(body.room_instance,"instance-R");assert.equal(body.agent_id,"agent-0");assert.equal(body.provider,"gitlab");
@@ -102,6 +102,94 @@ test("GitLab multiple applications are selected explicitly and incompatible appl
   const ui2=await add(api2);assert.match(ui2.el("gitlab-application-issues").children[0].textContent,/回调地址不匹配.*缺少权限 write_repository/);
   await ui2.el("gitlab-import").emit("click");assert.equal(calls(api2,"/v1/platforms/gitlab/login").length,0);assert.equal(calls(api2,"/v1/platforms/gitlab/initialize").length,0);
 });
+
+test("opting out of repository access automatically rereads compatibility without a separate check action",async()=>{
+  const api=fixture();api.prepared={...api.prepared,status:"application_incompatible",application_id:undefined,applications:[{client_id:"api-only-client",callback_compatible:true,missing_scopes:["write_repository"]}]};
+  api.hook=(path,body)=>path==="/v1/platforms/gitlab/prepare" && !body.scopes.includes("write_repository") ? {...api.prepared,status:"ready",application_id:"api-only-app",scopes:["api"]} : undefined;
+  const ui=await add(api);
+  assert.equal(ui.el("gitlab-import").disabled,true);
+  ui.el("gitlab-scope-write-repository").checked=false;await ui.el("gitlab-scope-write-repository").emit("change");
+  assert.equal(ui.el("gitlab-compatibility-details").hidden,true);
+  assert.equal(ui.el("gitlab-login").hidden,false);
+  await ui.el("gitlab-login").emit("click");
+  assert.equal(api.login.application_id,"api-only-app");assert.deepEqual(api.login.scopes,["api"]);
+});
+
+test("duplicate GitLab accounts keep the result panel hidden and reuse the operation when another account connects",async()=>{
+  const api=fixture(),ui=await add(api,undefined,true);
+  api.auth={status:"failed",error_code:"account_already_connected",account_username:"Alice",cleanup_status:"manual_required"};
+  await ui.el("gitlab-login").emit("click");
+  const operationID=api.login.onboarding_id;
+  assert.equal(ui.el("onboarding-result").hidden,true);
+  assert.equal(ui.el("gitlab-account-choice").hidden,false);
+  assert.equal(ui.el("platforms-feedback").textContent,"@Alice 已连接其他平台，请切换账号后重试。");
+  assert.equal(ui.el("platforms-feedback-details").open,false);
+  await ui.refresh();assert.equal(ui.el("onboarding-result").hidden,true);
+  const op=api.ops.get(operationID);op.connection={status:"connected",version:1};
+  const account={id:op.platform_id,name:"Company GitLab",provider:"gitlab",url:"https://gitlab.invalid",version:1,credential_kind:"oauth",authorization_status:"active",validation:{status:"valid",username:"Bob"},references:[]};
+  api.platforms=[account];api.auth={status:"succeeded",platforms:[account]};
+  await ui.el("gitlab-login").emit("click");
+  assert.equal(api.login.onboarding_id,operationID);
+  assert.equal(calls(api,"/v1/platforms/onboarding/prepare").length,1);
+  assert.equal(ui.el("onboarding-result").hidden,false);
+  assert.match(ui.el("onboarding-result-account").textContent,/@Bob/);
+});
+
+for (const exit of ["close-settings","connection-back","native-close"]) {
+  test(`leaving an unfinished account login via ${exit} clears its setup record and allows a fresh connection`,async()=>{
+    const api=fixture(),ui=await add(api,undefined,true);
+    await ui.el("gitlab-login").emit("click");
+    const id=api.login.onboarding_id;
+    if(exit==="native-close") {ui.el("settings-dialog").close();await settle();}
+    else await ui.el(exit).emit("click");
+    if(exit!=="connection-back") await ui.el("open-settings").emit("click");
+    assert.equal(api.ops.get(id).cancelled,true);
+    assert.equal(ui.el("onboarding-result").hidden,true);
+    assert.equal(ui.saved.has("teamx.platform-onboarding:tester"),false);
+    assert.equal(calls(api,"/v1/platforms/gitlab/cancel").length,1);
+    await ui.el("connection-new").emit("click");
+    assert.equal(ui.el("connection-form").hidden,false);
+    ui.el("connection-name").value="Another GitLab";ui.el("connection-url").value="https://gitlab.invalid";
+    await ui.el("connection-url").emit("change");await ui.el("gitlab-login").emit("click");
+    assert.notEqual(api.login.onboarding_id,id);
+  });
+}
+
+test("reopening settings discards an old waiting record saved by an earlier page",async()=>{
+  const api=fixture(),ui=await add(api);await ui.el("gitlab-login").emit("click");
+  const id=api.login.onboarding_id,next=await launch(api,ui.saved);
+  await next.el("open-settings").emit("click");
+  assert.equal(api.ops.get(id).cancelled,true);
+  assert.equal(next.el("onboarding-result").hidden,true);
+  assert.equal(next.saved.has("teamx.platform-onboarding:tester"),false);
+  assert.equal(calls(api,"/v1/platforms/gitlab/login").length,1);
+});
+
+test("leaving reconciles a late connected account and retains its unfinished notification receipt",async()=>{
+  const api=fixture(),ui=await add(api);await ui.el("gitlab-login").emit("click");
+  const id=api.login.onboarding_id,op=api.ops.get(id);
+  op.connection={status:"connected",version:2};op.notifications={status:"failed",error_code:"settings_changed"};
+  await ui.el("close-settings").emit("click");await ui.el("open-settings").emit("click");
+  assert.equal(calls(api,"/v1/platforms/onboarding/cancel").length,0);
+  assert.equal(ui.el("onboarding-result").hidden,false);
+  assert.equal(ui.el("onboarding-apply").hidden,false);
+  assert.equal(JSON.parse(ui.saved.get("teamx.platform-onboarding:tester")).operation_id,id);
+});
+
+for (const failure of ["status","cancel"]) {
+  test(`an unconfirmed ${failure} keeps the saved operation until exit can be reconciled`,async()=>{
+    const api=fixture(),ui=await add(api);await ui.el("gitlab-login").emit("click");
+    const id=api.login.onboarding_id;
+    api.hook=path=>path===`/v1/platforms/onboarding/${failure}` ? Promise.reject(Error("lost response")) : undefined;
+    await ui.el("close-settings").emit("click");await ui.el("open-settings").emit("click");
+    assert.equal(JSON.parse(ui.saved.get("teamx.platform-onboarding:tester")).operation_id,id);
+    assert.equal(ui.el("onboarding-result").hidden,false);
+    assert.match(ui.el("onboarding-result-error").textContent,/未确认/);
+    api.hook=null;await ui.el("close-settings").emit("click");await ui.el("open-settings").emit("click");
+    assert.equal(ui.el("onboarding-result").hidden,true);
+    assert.equal(ui.saved.has("teamx.platform-onboarding:tester"),false);
+  });
+}
 
 test("auth completion reports each part, and reload retries only the saved P5 operation with a fresh epoch",async()=>{
   const api=fixture(),ui=await add(api);await ui.el("gitlab-login").emit("click");

@@ -2267,4 +2267,5 @@ textarea::placeholder {
 .notification-platform-row label { display:flex; align-items:center; gap:6px; font-size:13px; }
 .notification-platform-row p { margin:8px 0; line-height:1.6; overflow-wrap:anywhere; }
 #gitlab-reuse-summary, #gitlab-application-issues { font-size:13px; line-height:1.7; overflow-wrap:anywhere; }
+#gitlab-compatibility-details { margin-top:10px; }
 #gitlab-application { width:100%; }
