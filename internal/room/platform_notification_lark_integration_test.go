@@ -302,6 +302,7 @@ func TestLarkNotificationsRestartImmutableTargetAndDeliveryCapacity(t *testing.T
 		t.Fatal(e)
 	}
 	h.m = testManager(t, root, managerTestProfiles(t))
+	h.m.notifications.Clock = h.clock.get
 	h.svc = eventLiveService(t, &eventHarness{m: h.m, room: h.room})
 	if len(h.state().Inbox) != 1 || h.state().Baseline != old.Baseline {
 		t.Fatal("restart lost source")
@@ -335,6 +336,7 @@ func TestLarkNotificationsAckCrashReusesDeliveryID(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.m = testManager(t, root, managerTestProfiles(t))
+	h.m.notifications.Clock = h.clock.get
 	h.svc = eventLiveService(t, &eventHarness{m: h.m, room: h.room})
 	if err := h.deliver(); err != nil {
 		t.Fatal(err)

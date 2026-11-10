@@ -24,6 +24,8 @@ class Element {
   }
   get options() { return this.children; }
   append(...children) { this.children.push(...children.flatMap(child => child.tag === "fragment" ? child.children : [child])); }
+  insertBefore(child, before) { child.remove(); const i=this.children.indexOf(before); this.children.splice(i<0?this.children.length:i,0,child); child.parentElement=this; }
+  remove() { if(this.parentElement){const list=this.parentElement.children;list.splice(list.indexOf(this),1);this.parentElement=null;} }
   replaceChildren(...children) { this.children = []; this.append(...children); if (this.tag === "select") this.value = this.children[0]?.value || ""; }
   setAttribute(key, value) { this.attributes[key] = value; }
   querySelector(selector) {
@@ -90,6 +92,9 @@ export async function launch(api, saved = new Map()) {
       const visit = el => [...(el.refreshSystemTime ? [el] : []), ...el.children.flatMap(visit), ...[...el.parts.values()].flatMap(visit)];
       return [...elements.values()].flatMap(visit);
     } });
+  for(const el of elements.values())el.focus=()=>{document.activeElement=el;};
+  const createElement=document.createElement;
+  document.createElement=tag=>{const el=createElement(tag);el.focus=()=>{document.activeElement=el;};return el;};
   const storage = { getItem: key => saved.get(key) || null, setItem: (key, value) => saved.set(key, value), removeItem: key => saved.delete(key) };
   let now = 0, timerID = 0;
   const timers = new Map();

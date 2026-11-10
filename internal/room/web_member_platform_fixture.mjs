@@ -78,7 +78,11 @@ export function fixture({empty=false}={}) {
     if(path.endsWith("notifications/sync")){assert.ok(body.target?.mode,"sync requires explicit target mode");return copy(records.get(key(body.platform_id || "lark",body.target)));}
     if(path==="/v1/member/list")return {members:copy(members),latest_seq:0};
     if(path==="/v1/member/activity")return {member:copy(members.find(m=>m.membership_id===body.membership_id))};
-    if(path==="/v1/member/inbox")return {snapshot_seq:50,next_after:body.after ? 50 : 25,has_more:!body.after,status:{latest_seq:51,bytes:100,limits:{bytes:1000}},entries:[{seq:body.after ? 26 : 1,item:{provider:"gitlab",channel:"todos",text:`${body.agent_id}通知`},notification_source:{provider:"gitlab",channel:"todos",subscription_id:`sub-gl-${body.membership_id}`,instance:"https://gitlab.invalid"},source:{status:"not_checked"}}]};
+    if(path==="/v1/member/inbox/status")return {latest_seq:50,expired_through:0,retained_entries:50,bytes:100,limits:{bytes:1000}};
+    if(path==="/v1/member/inbox"){
+      const end=Math.min(body.snapshot_seq,body.after+body.limit);
+      return {snapshot_seq:body.snapshot_seq,next_after:end,has_more:end<body.snapshot_seq,status:{latest_seq:50,expired_through:0,retained_entries:50,bytes:100,limits:{bytes:1000}},entries:Array.from({length:end-body.after},(_,i)=>({seq:body.after+i+1,item:{provider:"gitlab",channel:"todos",text:`${body.agent_id}通知`},notification_source:{provider:"gitlab",channel:"todos",subscription_id:`sub-gl-${body.membership_id}`,instance:"https://gitlab.invalid"},source:{status:"not_checked"}}))};
+    }
     if(path==="/v1/read")return {messages:[],snapshot_seq:0,has_more:false};
     throw Error(`Unexpected ${path}`);
   }};

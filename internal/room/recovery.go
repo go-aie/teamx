@@ -10,11 +10,13 @@ import (
 
 	"github.com/go-aie/actorx"
 	"github.com/go-aie/teamx/internal/agent/dsh"
+	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
 type serviceConfig struct {
 	settings             *systemSettings
 	imageMaterials       imageMaterialConfig
+	inboxExpiry          notification.ExpiryPolicy
 	workspaceOperationID string // verified managed configuration only
 	endpoint             string
 	cliPath              string

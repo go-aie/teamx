@@ -348,8 +348,8 @@ func (m *MemberAgent) roomReady() bool {
 
 func (m *MemberAgent) inboxReady() bool {
 	i := m.inbox
-	return i != nil && i.WriteError == "" && (!i.AutomaticChecked || i.AutomaticReady && !i.AutomaticBlocked) && i.LatestSeq > i.ConsumedThrough &&
-		(m.retry || m.state.LastOfferedInboxSeq == 0 || i.ConsumedThrough >= m.state.LastOfferedInboxSeq || i.ConsumedThrough > m.state.LastOfferedInboxThrough)
+	return i != nil && i.WriteError == "" && (!i.AutomaticChecked || i.AutomaticReady && !i.AutomaticBlocked) && i.LatestSeq > i.inputThrough() &&
+		(m.retry || m.state.LastOfferedInboxSeq == 0 || i.inputThrough() >= m.state.LastOfferedInboxSeq || i.inputThrough() > m.state.LastOfferedInboxThrough)
 }
 
 func (m *MemberAgent) pollInbox() {
@@ -361,7 +361,7 @@ func (m *MemberAgent) pollInbox() {
 	_, err := actorx.StartTask(m.owner, m.Inbox, func(status InboxStatus, err error) bool {
 		m.inboxPolling = false
 		if err == nil {
-			changed := m.inbox == nil || m.inbox.LatestSeq != status.LatestSeq || m.inbox.ConsumedThrough != status.ConsumedThrough || m.inbox.AutomaticReady != status.AutomaticReady || m.inbox.AutomaticBlocked != status.AutomaticBlocked
+			changed := m.inbox == nil || m.inbox.LatestSeq != status.LatestSeq || m.inbox.ConsumedThrough != status.ConsumedThrough || m.inbox.ExpiredThrough != status.ExpiredThrough || m.inbox.SkippedThrough != status.SkippedThrough || m.inbox.AutomaticReady != status.AutomaticReady || m.inbox.AutomaticBlocked != status.AutomaticBlocked
 			m.inbox = &status
 			if changed && m.due.IsZero() {
 				m.due = m.now().Add(m.MergeWindow)
@@ -558,11 +558,12 @@ func (m *MemberAgent) StartGranted(_ actorx.Context, msg startGrantedTurn) error
 	}
 	if m.inboxReady() {
 		i := m.inbox
-		end := min(i.LatestSeq, i.ConsumedThrough+inboxBatchSize)
-		if i.Batch != nil && i.Batch.SnapshotSeq > i.ConsumedThrough {
+		through := i.inputThrough()
+		end := min(i.LatestSeq, through+inboxBatchSize)
+		if i.Batch != nil && i.Batch.SnapshotSeq > through {
 			end = i.Batch.SnapshotSeq
 		}
-		input.Inbox = &InboxInput{Through: i.ConsumedThrough, SnapshotSeq: end}
+		input.Inbox = &InboxInput{Through: through, SnapshotSeq: end}
 	}
 	m.startTurn(input, list.LatestSeq, member.ReadThrough)
 	return nil

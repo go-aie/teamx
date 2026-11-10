@@ -15,6 +15,7 @@ import (
 	"github.com/go-aie/actorx"
 	"github.com/go-aie/teamx/internal/agent/dsh"
 	"github.com/go-aie/teamx/internal/platform"
+	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
 type ServiceInfo struct {
@@ -98,6 +99,8 @@ type apiError struct {
 type service struct {
 	settings                  *systemSettings
 	imageMaterials            imageMaterialConfig
+	inboxExpiry               notification.ExpiryPolicy
+	maintainInbox             atomic.Pointer[inboxMaintenance]
 	materialAttachments       *materialAttachments
 	referenceResolver         followupResolver
 	resolveInboxAdmission     func(context.Context, platform.SourceRef) (json.RawMessage, error)
@@ -160,6 +163,9 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 		config.settings = defaultSystemSettings()
 	}
 	if _, err := config.imageMaterials.limits(); err != nil {
+		return nil, err
+	}
+	if err := config.inboxExpiry.Resolved().Validate(); err != nil {
 		return nil, err
 	}
 	if config.maxTurns == 0 {
@@ -227,6 +233,7 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 		endpoint: config.endpoint, cliPath: config.cliPath, mergeWindow: config.mergeWindow,
 		dshTurnTimeout:       config.dshTurnTimeout,
 		imageMaterials:       config.imageMaterials,
+		inboxExpiry:          config.inboxExpiry,
 		maxTurns:             config.maxTurns,
 		persistentScheduling: config.persistentScheduling,
 		grantsFrozen:         grantsFrozen,
@@ -753,6 +760,9 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/v1/member/inbox":
 		w.Header().Set("Cache-Control", "no-store")
 		result, err = s.previewInbox(r.Context(), req)
+	case "/v1/member/inbox/status":
+		w.Header().Set("Cache-Control", "no-store")
+		result, err = s.inspectInbox(r.Context(), req)
 	case "/v1/member/activity":
 		w.Header().Set("Cache-Control", "no-store")
 		result, err = s.memberActivity(r.Context(), req)
@@ -812,6 +822,8 @@ func writeAPIError(w http.ResponseWriter, err error) {
 		code, status = "conflict", http.StatusConflict
 	case errors.Is(err, ErrReadExpired):
 		code, status = "read_expired", http.StatusConflict
+	case errors.Is(err, ErrInboxExpired):
+		code, status = "inbox_expired", http.StatusConflict
 	case errors.Is(err, ErrCapacity):
 		code, status = "capacity", http.StatusConflict
 	case errors.Is(err, ErrRequest):
@@ -820,7 +832,7 @@ func writeAPIError(w http.ResponseWriter, err error) {
 	// Only authored diagnostics may disclose detail. Wrapped filesystem/platform
 	// errors can contain private paths, credentials or untrusted remote text.
 	message, hint := "operation failed", "Outcome may be uncertain; query saved/remote state before any write retry."
-	for _, known := range []error{ErrVersion, ErrClosing, ErrTurnBudget, ErrBusy, ErrIdentity, ErrConflict, ErrReadExpired, ErrCapacity, ErrRequest} {
+	for _, known := range []error{ErrVersion, ErrClosing, ErrTurnBudget, ErrBusy, ErrIdentity, ErrConflict, ErrReadExpired, ErrInboxExpired, ErrCapacity, ErrRequest} {
 		if errors.Is(err, known) {
 			message, hint = known.Error(), ""
 			break

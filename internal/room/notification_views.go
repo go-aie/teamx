@@ -37,17 +37,18 @@ func inboxContextOnly(e InboxEntry) bool {
 
 type inboxPreviewPage struct {
 	MemberIdentity
-	SnapshotSeq uint64           `json:"snapshot_seq"`
-	NextAfter   uint64           `json:"next_after"`
-	HasMore     bool             `json:"has_more"`
-	Entries     []inboxEntryView `json:"entries"`
-	Status      InboxStatus      `json:"status"`
+	ExpiredThrough uint64           `json:"expired_through"`
+	SnapshotSeq    uint64           `json:"snapshot_seq"`
+	NextAfter      uint64           `json:"next_after"`
+	HasMore        bool             `json:"has_more"`
+	Entries        []inboxEntryView `json:"entries"`
+	Status         InboxStatus      `json:"status"`
 }
 
 func (s *Store) projectInboxPreview(page InboxPage, status InboxStatus) (inboxPreviewPage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	v := inboxPreviewPage{MemberIdentity: page.MemberIdentity, SnapshotSeq: page.SnapshotSeq,
+	v := inboxPreviewPage{MemberIdentity: page.MemberIdentity, ExpiredThrough: page.ExpiredThrough, SnapshotSeq: page.SnapshotSeq,
 		NextAfter: page.NextAfter, HasMore: page.HasMore, Entries: []inboxEntryView{}, Status: status}
 	v.Status.Batch = nil
 	origins, err := s.inboxMessageOriginsLocked(page.Entries)

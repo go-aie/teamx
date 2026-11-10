@@ -131,13 +131,13 @@ test("M4.5 returning to Activity preserves its tab and scroll and resumes read-o
  await ui.refresh();assert.ok(calls(api,"/v1/member/activity").length>reads);assert.equal(api.calls.some(c=>/member\/(run|enable)|inbox\/(read|confirm)/.test(c.path)),false);
 });
 
-test("platform Tab switches preserve Inbox snapshot, page, DOM and scroll until explicit refresh",async()=>{
+test("platform Tab switches and manual refresh preserve Inbox snapshot, page, DOM and scroll",async()=>{
  const api=fixture(),ui=await launch(api);await openMemberInbox(ui,"member-a");await ui.el("inbox-next").emit("click");
  ui.el("inbox-member-view").scrollTop=180;const entries=ui.el("inbox-entries").children,reads=calls(api,"/v1/member/inbox").length;
  await ui.el("agent-tab-platforms").emit("click");assert.equal(ui.el("inbox-member-view").hidden,true);assert.equal(ui.el("platforms-member-view").hidden,false);
  await row(ui,"gl").children[0].emit("click");await ui.el("close-notification").emit("click");assert.equal(ui.el("agent-tab-platforms").attributes["aria-selected"],"true");
  await ui.el("agent-tab-inbox").emit("click");assert.equal(ui.el("inbox-page").textContent,"第 2 页");assert.equal(ui.el("inbox-entries").children,entries);assert.equal(ui.el("inbox-member-view").scrollTop,180);assert.equal(calls(api,"/v1/member/inbox").length,reads);
- await ui.el("inbox-reload").emit("click");assert.equal(ui.el("inbox-page").textContent,"第 1 页");assert.equal(calls(api,"/v1/member/inbox").length,reads+1);
+ await ui.el("inbox-reload").emit("click");assert.equal(ui.el("inbox-page").textContent,"第 2 页");assert.equal(calls(api,"/v1/member/inbox").length,reads+1);
 });
 
 test("Inbox empty-state Add opens the platforms Tab without consuming or refreshing messages",async()=>{

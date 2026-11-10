@@ -1,6 +1,9 @@
 package room
 
 import (
+	"errors"
+	"fmt"
+	"os"
 	"path/filepath"
 )
 
@@ -9,7 +12,20 @@ func (s *Store) inboxEntryLocked(id MemberIdentity, seq uint64) (InboxEntry, err
 	if _, _, err := s.memberPath(id, "agent.json", false); err != nil {
 		return e, err
 	}
+	header, err := s.inboxHeaderLocked(id)
+	if err != nil {
+		return e, err
+	}
+	if seq == 0 {
+		return e, ErrRequest
+	}
+	if seq <= header.ExpiredThrough {
+		return e, ErrInboxExpired
+	}
 	if err := readSnapshot(filepath.Join(s.dir, "inboxes", id.MembershipID, inboxEntryName(seq)), &e, DefaultInboxLimits().EntryBytes); err != nil {
+		if errors.Is(err, os.ErrNotExist) && seq <= header.LatestSeq {
+			return e, fmt.Errorf("%w: retained inbox entry #%d missing: %v", ErrInvalid, seq, err)
+		}
 		return e, err
 	}
 	if err := e.validate(id); err != nil {
@@ -19,6 +35,23 @@ func (s *Store) inboxEntryLocked(id MemberIdentity, seq uint64) (InboxEntry, err
 		return e, ErrInvalid
 	}
 	return e, nil
+}
+
+func (s *Store) inboxHeaderLocked(id MemberIdentity) (inboxHeader, error) {
+	var h inboxHeader
+	if err := readSnapshot(filepath.Join(s.dir, "inboxes", id.MembershipID, "inbox.json"), &h, maxPrivateFileBytes); err != nil {
+		return h, err
+	}
+	if h.Version != 1 {
+		return h, ErrVersion
+	}
+	if h.MemberIdentity != id {
+		return h, ErrIdentity
+	}
+	if !h.Limits.valid() || h.ExpiredThrough > h.LatestSeq {
+		return h, ErrInvalid
+	}
+	return h, nil
 }
 func (s *Store) runningTurnLocked(id MemberIdentity, turn uint64) (AgentSnapshot, error) {
 	var agent AgentSnapshot

@@ -155,6 +155,7 @@ func (s EventsState) Notification(key string) (notification.Item, bool) {
 func (s EventsState) Acknowledge(key string) notification.State {
 	next := s.Clone()
 	delete(next.Inbox, key)
+	next.RuntimeState.ResumeCapacity()
 	next.DeliveryErrorCode = ""
 	next.Compact()
 	return next

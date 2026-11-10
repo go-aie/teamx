@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -234,9 +235,9 @@ func TestInboxRoutingCloseJoinsAdmittedDelivery(t *testing.T) {
 	seedEventInbox(t, h, 1)
 	entered, release := make(chan struct{}), make(chan struct{})
 	original := svc.store.ops.createTemp
+	var firstWrite sync.Once
 	svc.store.ops.createTemp = func(dir, pattern string) (snapshotFile, error) {
-		close(entered)
-		<-release
+		firstWrite.Do(func() { close(entered); <-release })
 		return original(dir, pattern)
 	}
 	delivered := make(chan error, 1)

@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/lark"
+	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
 // One source resolution owns its admitted call through durable linkage. This
@@ -57,6 +58,23 @@ func (m *roomManager) referenceCapabilities(provider string) (platform.Reference
 // Shared by runtime assembly and isolated provider acceptance. Registration
 // changes only the adapter maps; ownership and capability dispatch stay here.
 func (m *roomManager) bindPlatformReferences(svc *service) {
+	svc.maintainInbox.Store(&inboxMaintenance{run: func(ctx context.Context, id MemberIdentity) error {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		if m.closing {
+			return ErrClosing
+		}
+		current, _ := m.runtimeServiceLocked(id.RoomIdentity)
+		if current != svc {
+			return ErrBusy
+		}
+		target := notification.Target{Mode: "inbox", AgentID: id.AgentID, MembershipID: id.MembershipID}
+		if err := m.notifications.ExpireTargetLocked(id.RoomIdentity, target); err != nil {
+			return notificationRoomError(err)
+		}
+		return svc.maintainInboxLocal(ctx, id, m.notifications.PendingDeliveriesLocked(id.RoomIdentity, target), m.notifications.Now())
+	}})
+
 	svc.resolveInboxAdmission = func(ctx context.Context, source platform.SourceRef) (json.RawMessage, error) {
 		resolve := m.inboxAdmissionResolvers[source.Provider]
 		if resolve == nil {

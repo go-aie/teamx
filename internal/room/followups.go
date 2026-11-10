@@ -45,6 +45,7 @@ type followupEvent struct {
 	Resolution  platform.TargetResolution  `json:"resolution"`
 	LastAttempt *followupResolutionAttempt `json:"last_attempt,omitempty"`
 	Revision    uint64                     `json:"revision"`
+	ContextOnly bool                       `json:"context_only,omitempty"`
 }
 
 type followupResolutionAttempt struct {
@@ -282,6 +283,37 @@ func (s *Store) loadFollowupEventLocked(e InboxEntry) (followupEvent, error) {
 	if err := readSnapshot(s.eventPath(e.MemberIdentity, e.Seq), &r, followupBytes); err != nil {
 		return r, err
 	}
+	contextOnly := inboxContextOnly(e)
+	if r.ContextOnly && !contextOnly {
+		return r, ErrInvalid
+	}
+	return s.validateFollowupEventLocked(e, r, contextOnly)
+}
+
+// For an expired source the existing event owns source/target resolution, and
+// the committed Inbox boundary owns the absence of its body. The envelope below
+// is used only for identity validation; it is never returned as original content.
+func (s *Store) followupEventAtLocked(id MemberIdentity, seq uint64) (followupEvent, error) {
+	e, err := s.inboxEntryLocked(id, seq)
+	if err == nil {
+		return s.loadFollowupEventLocked(e)
+	}
+	if !errors.Is(err, ErrInboxExpired) {
+		return followupEvent{}, err
+	}
+	var r followupEvent
+	if err := readSnapshot(s.eventPath(id, seq), &r, followupBytes); err != nil {
+		return r, err
+	}
+	e = InboxEntry{MemberIdentity: id, Seq: seq}
+	e.Item.DeliveryID, e.Item.Source = r.DeliveryID, r.Source
+	if !validText(r.DeliveryID) || !validIntegrationSource(r.Source) {
+		return r, ErrInvalid
+	}
+	return s.validateFollowupEventLocked(e, r, r.ContextOnly)
+}
+
+func (s *Store) validateFollowupEventLocked(e InboxEntry, r followupEvent, contextOnly bool) (followupEvent, error) {
 	if r.Version != followupSchema || r.MemberIdentity != e.MemberIdentity || r.Seq != e.Seq || r.DeliveryID != e.Item.DeliveryID ||
 		r.Source != e.Item.Source || r.SourceRef != referenceDigest("src_", e.MemberIdentity, e.Seq, e.Item.DeliveryID) || r.Revision == 0 {
 		return r, ErrInvalid
@@ -310,7 +342,7 @@ func (s *Store) loadFollowupEventLocked(e InboxEntry) (followupEvent, error) {
 		if !sameNativeTarget(t.Target, verifiedResolutionTarget(r.Resolution)) {
 			return r, ErrInvalid
 		}
-		if _, err := s.loadUnitLocked(e.MemberIdentity, r.ObjectRef, referenceDigest("unit_", r.ObjectRef)); err != nil && !(inboxContextOnly(e) && errors.Is(err, os.ErrNotExist)) {
+		if _, err := s.loadUnitLocked(e.MemberIdentity, r.ObjectRef, referenceDigest("unit_", r.ObjectRef)); err != nil && !(contextOnly && errors.Is(err, os.ErrNotExist)) {
 			return r, err
 		}
 	} else if r.ObjectRef != "" || r.TargetRef != "" {
@@ -448,7 +480,7 @@ func (s *Store) recordFollowupResolution(id MemberIdentity, seq, turn, expected 
 		}
 	}
 	link := followupEvent{followupHeader: followupHeader{followupSchema, id}, Seq: seq, DeliveryID: e.Item.DeliveryID,
-		SourceRef: referenceDigest("src_", id, seq, e.Item.DeliveryID), Source: e.Item.Source, Resolution: r, Access: access, Revision: expected + 1}
+		SourceRef: referenceDigest("src_", id, seq, e.Item.DeliveryID), Source: e.Item.Source, Resolution: r, Access: access, Revision: expected + 1, ContextOnly: inboxContextOnly(e)}
 	if r.ObjectVerified {
 		object, err := s.saveTargetLocked(id, objectIdentity(*r.Target))
 		if err != nil {

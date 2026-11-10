@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -133,7 +135,26 @@ func (s *service) materialInboxPage(ctx context.Context, id MemberIdentity, afte
 	if err != nil {
 		return InboxPage{}, err
 	}
-	return addr.Call[InboxPage](ctx, PreviewInbox{MemberIdentity: id, After: after, SnapshotSeq: &end, Limit: 1})
+	page, err := addr.Call[InboxPage](ctx, PreviewInbox{MemberIdentity: id, After: after, SnapshotSeq: &end, Limit: 1})
+	if err != nil {
+		return page, err
+	}
+	// Materials are Agent input too. Never download or disclose an image from
+	// input already excluded by expiry, even when its body is still retained.
+	s.store.mu.Lock()
+	defer s.store.mu.Unlock()
+	var c inboxConsumption
+	if err := readSnapshot(filepath.Join(s.store.dir, "inboxes", id.MembershipID, "consumption.json"), &c, maxPrivateFileBytes); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return InboxPage{}, err
+	}
+	entries := page.Entries[:0]
+	for _, e := range page.Entries {
+		if !c.skipped(e.Seq) {
+			entries = append(entries, e)
+		}
+	}
+	page.Entries = entries
+	return page, nil
 }
 
 func (s *service) prepareDSHMaterials(ctx context.Context, input UnreadChanged, number uint64, images bool) (*dshMaterials, error) {
@@ -188,12 +209,15 @@ func (s *service) prepareDSHMaterials(ctx context.Context, input UnreadChanged, 
 			result.notes = append(result.notes, fmt.Sprintf("Inbox #%d..#%d not scanned: preview unavailable or preparation timed out.", after+1, turn.InboxSnapshotSeq))
 			break
 		}
-		if page.MemberIdentity != input.MemberIdentity || page.SnapshotSeq != turn.InboxSnapshotSeq || page.NextAfter <= after || len(page.Entries) != 1 {
+		if page.MemberIdentity != input.MemberIdentity || page.SnapshotSeq != turn.InboxSnapshotSeq || page.NextAfter <= after || len(page.Entries) > 1 {
 			return nil, ErrIdentity
 		}
-		entry := page.Entries[0]
 		remaining--
 		after = page.NextAfter
+		if len(page.Entries) == 0 {
+			continue
+		}
+		entry := page.Entries[0]
 		if entry.Item.Source.Provider != "gitlab" && entry.Item.Source.Provider != "lark" {
 			continue
 		}

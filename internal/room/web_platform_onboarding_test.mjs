@@ -17,7 +17,8 @@ function fixture(count=1) {
       if(path.startsWith("/v1/platform/notifications?"))return {subscriptions:[],gitlab_platforms:[]};
       if(path.startsWith("/v1/platforms?"))return {platforms:structuredClone(api.platforms)};
       if(path==="/v1/member/list")return {members:structuredClone(api.members),latest_seq:0};
-      if(path==="/v1/member/inbox")return {snapshot_seq:0,entries:[],has_more:false,status:{latest_seq:0,limits:{bytes:1000},bytes:0}};
+      if(path==="/v1/member/inbox/status")return {latest_seq:0,expired_through:0,retained_entries:0,limits:{bytes:1000},bytes:0};
+    if(path==="/v1/member/inbox")return {snapshot_seq:0,entries:[],has_more:false,status:{latest_seq:0,expired_through:0,retained_entries:0,limits:{bytes:1000},bytes:0}};
       if(path==="/v1/member/activity")return {member:members.find(m=>m.membership_id===body.membership_id)};
       if(path==="/v1/read")return {messages:[],snapshot_seq:0,has_more:false};
       if(path.startsWith("/v1/tools/bindings?"))return {revision:0,bindings:[],catalog:[]};

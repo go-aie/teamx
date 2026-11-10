@@ -417,11 +417,10 @@ func validatePlatformFollowups(s *Store) error {
 			if err := readSnapshot(path, &event, followupBytes); err != nil {
 				return err
 			}
-			var inbox InboxEntry
-			if err := readSnapshot(filepath.Join(s.dir, "inboxes", event.MembershipID, inboxEntryName(event.Seq)), &inbox, DefaultInboxLimits().EntryBytes); err != nil {
-				return err
+			if event.MembershipID != p[1] || filepath.Base(path) != inboxEntryName(event.Seq) {
+				return ErrInvalid
 			}
-			_, err := s.loadFollowupEventLocked(inbox)
+			_, err := s.followupEventAtLocked(event.MemberIdentity, event.Seq)
 			return err
 		case "objects":
 			if len(p) == 7 && p[5] == "units" {

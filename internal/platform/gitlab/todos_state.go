@@ -259,6 +259,9 @@ func (s TodosState) Reason(t Todo) string {
 }
 func (s *TodosState) Accept(todos []Todo, now time.Time) {
 	for _, todo := range todos {
+		if s.Config.Target.Inbox() && notification.Expired(todo.CreatedAt, s.ExpiredBefore) {
+			continue
+		}
 		key := TodosKey(s.Binding, todo.ID)
 		if _, known := s.Observed[key]; known || todo.CreatedAt.Before(s.Baseline) {
 			continue
@@ -298,6 +301,7 @@ func (s TodosState) Acknowledge(key string) notification.State {
 		next.DeliveredObjects[key] = entry.Todo
 	}
 	delete(next.Inbox, key)
+	next.RuntimeState.ResumeCapacity()
 	next.DeliveryErrorCode = ""
 	return next
 }

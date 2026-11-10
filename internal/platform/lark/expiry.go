@@ -1,0 +1,51 @@
+package lark
+
+import (
+	"time"
+
+	"github.com/go-aie/teamx/internal/platform/notification"
+)
+
+func (s State) Expire(cutoff time.Time) notification.State {
+	effective := cutoff
+	if s.ExpiredBefore.After(effective) {
+		effective = s.ExpiredBefore
+	}
+	found := false
+	for _, e := range s.Inbox {
+		if notification.Expired(e.Item.CreatedAt, effective) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return s
+	}
+	n := s.Clone()
+	if cutoff.After(n.ExpiredBefore) {
+		n.ExpiredBefore = cutoff
+	}
+	removed := false
+	for k, e := range n.Inbox {
+		if notification.Expired(e.Item.CreatedAt, n.ExpiredBefore) {
+			delete(n.Inbox, k)
+			delete(n.Observed, k)
+			n.Metrics.ExpiredSkipped++
+			removed = true
+		}
+	}
+	if removed {
+		n.RuntimeState.ResumeCapacity()
+		if n.Metadata().Pending == 0 {
+			n.DeliveryErrorCode = ""
+		}
+	}
+	return n
+}
+func (s State) OutstandingItems() []notification.Item {
+	out := make([]notification.Item, 0, len(s.Inbox))
+	for _, e := range s.Inbox {
+		out = append(out, e.Item)
+	}
+	return out
+}

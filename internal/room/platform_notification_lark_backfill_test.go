@@ -14,6 +14,9 @@ import (
 func TestLarkCustomBackfillHTTPReadsHistoryIntoMemberInbox(t *testing.T) {
 	parallelFixtureTest(t)
 	h := newLarkHarness(t)
+	// This acceptance explicitly requests processing 14-day history.
+	h.m.config.inboxExpiry = notification.ExpiryPolicy{AfterDays: 3, SkipExpired: false}
+	h.svc.inboxExpiry = h.m.config.inboxExpiry
 	h.clock.add(14 * 24 * time.Hour)
 	member := h.members[0]
 	cfg := lark.Config{Enabled: true, PlatformID: h.c.ID, Private: lark.PrivateConfig{Enabled: true, Scope: "specified", ChatIDs: []string{"oc_chat"}}, Target: notification.Target{Mode: "inbox", AgentID: member.AgentID, MembershipID: member.MembershipID}, BackfillStart: time.Unix(1, 0).UTC()}

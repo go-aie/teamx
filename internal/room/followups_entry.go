@@ -137,23 +137,25 @@ func (s *service) memberFollowups(ctx context.Context, req apiRequest, path stri
 	case "/v1/matters/sources":
 		return s.store.listFollowupSources(id, q.ObjectRef, sourceAfter, limit)
 	case "/v1/matters/source":
-		event, err := s.store.readFollowupSource(id, q.Seq, q.SourceRef)
-		if err != nil {
-			return nil, err
-		}
-		s.store.mu.Lock()
-		entry, err := s.store.inboxEntryLocked(id, q.Seq)
-		s.store.mu.Unlock()
+		event, entry, err := s.store.readFollowupSourceContent(id, q.Seq, q.SourceRef)
 		if err != nil {
 			return nil, err
 		}
 		if req.Caller.Kind == "agent" {
-			return projectSource(event, entry), nil
+			if entry == nil {
+				return projectSource(event, InboxEntry{}), nil
+			}
+			return projectSource(event, *entry), nil
+		}
+		status := "retained"
+		if entry == nil {
+			status = "expired"
 		}
 		return struct {
 			followupEvent
-			Entry InboxEntry `json:"entry"`
-		}{event, entry}, err
+			Entry       *InboxEntry `json:"entry,omitempty"`
+			EntryStatus string      `json:"entry_status"`
+		}{event, entry, status}, nil
 	case "/v1/matters/read":
 		var unit followupUnit
 		if req.Caller.Kind == "agent" {

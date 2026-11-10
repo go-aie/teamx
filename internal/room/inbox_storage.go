@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/go-aie/teamx/internal/platform/notification"
@@ -18,12 +19,17 @@ import (
 type inboxHeader struct {
 	Version int `json:"version"`
 	MemberIdentity
-	Limits InboxLimits `json:"limits"`
+	Limits         InboxLimits `json:"limits"`
+	LatestSeq      uint64      `json:"latest_seq,omitempty"`
+	ExpiredThrough uint64      `json:"expired_through,omitempty"`
 }
 
+var ErrInboxExpired = errors.New("inbox notification expired; original content is no longer retained")
+
 type inboxIndex struct {
-	seq    uint64
-	digest [32]byte
+	seq       uint64
+	digest    [32]byte
+	createdAt time.Time
 }
 
 func inboxEntryName(seq uint64) string { return fmt.Sprintf("%020d.json", seq) }
@@ -116,7 +122,16 @@ func (s *Store) loadInbox(a *AgentInbox, requested InboxLimits) error {
 	if requested != (InboxLimits{}) && requested != header.Limits {
 		return ErrConflict
 	}
+	if header.ExpiredThrough > header.LatestSeq {
+		return ErrInvalid
+	}
 	a.limits = header.Limits
+	a.latest, a.expiredThrough = header.LatestSeq, header.ExpiredThrough
+	// The committed boundary authorizes deletion, including after an interrupted
+	// cleanup. Never inspect expired bodies as though they were retained data.
+	if err := s.removeExpiredInboxFilesLocked(a.dir, a.expiredThrough); err != nil {
+		return err
+	}
 	dir, err := os.Open(a.dir)
 	if err != nil {
 		return err
@@ -150,7 +165,7 @@ func (s *Store) loadInbox(a *AgentInbox, requested InboxLimits) error {
 			}
 			a.bytes += size
 			a.latest = max(a.latest, entry.Seq)
-			a.receipts[entry.Item.DeliveryID] = inboxIndex{entry.Seq, inboxDigest(entry.Item)}
+			a.receipts[entry.Item.DeliveryID] = inboxIndex{entry.Seq, inboxDigest(entry.Item), entry.Item.CreatedAt}
 			if len(a.receipts) > a.limits.Entries || a.bytes > a.limits.Bytes {
 				return ErrCapacity
 			}
@@ -159,9 +174,18 @@ func (s *Store) loadInbox(a *AgentInbox, requested InboxLimits) error {
 			break
 		}
 	}
-	// Unique, positive file sequences with max == count imply no gaps.
-	if a.latest != uint64(len(a.receipts)) {
+	// Unique sequences above the expired boundary, with max minus boundary
+	// equal to count, imply a contiguous retained interval.
+	if a.latest-a.expiredThrough != uint64(len(a.receipts)) {
 		return ErrInvalid
+	}
+	// Legacy headers have no sequence checkpoint. A crash after an entry commit
+	// can also leave the header one entry behind; the immutable entry wins.
+	if header.LatestSeq != a.latest {
+		header.LatestSeq = a.latest
+		if err := s.save(filepath.Join(a.dir, "inbox.json"), header, maxPrivateFileBytes); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -179,21 +203,36 @@ func (s *Store) saveInboxEntry(a *AgentInbox, entry InboxEntry) error {
 		}
 		return ErrConflict // Immutable entries can never be replaced.
 	}
-	return s.save(path, entry, a.limits.EntryBytes)
+	if err := s.save(path, entry, a.limits.EntryBytes); err != nil {
+		return err
+	}
+	header := inboxHeader{Version: 1, MemberIdentity: a.id, Limits: a.limits, LatestSeq: entry.Seq, ExpiredThrough: a.expiredThrough}
+	if err := s.save(filepath.Join(a.dir, "inbox.json"), header, maxPrivateFileBytes); err != nil {
+		// The entry is already durable even if the second file did not commit.
+		s.uncertain = true
+		return fmt.Errorf("%w: inbox sequence checkpoint: %w", ErrCommitUnknown, err)
+	}
+	return nil
 }
 
 func (s *Store) previewInbox(a *AgentInbox, after, snapshot uint64, limit int) (InboxPage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	page := InboxPage{MemberIdentity: a.id, SnapshotSeq: snapshot, NextAfter: after, Entries: []InboxEntry{}}
+	page := InboxPage{MemberIdentity: a.id, ExpiredThrough: a.expiredThrough, SnapshotSeq: snapshot, NextAfter: after, Entries: []InboxEntry{}}
 	if err := s.check(false); err != nil {
 		return InboxPage{}, err
 	}
+	if snapshot < a.expiredThrough || (after != 0 && after < a.expiredThrough) {
+		return InboxPage{}, ErrInboxExpired
+	}
+	// A fresh read starts at the first retained entry. A continuation into a
+	// reclaimed prefix expires instead of silently changing its fixed snapshot.
+	page.NextAfter = max(after, a.expiredThrough)
 	var bytes int64
-	for seq := after + 1; seq <= snapshot && len(page.Entries) < limit; seq++ {
+	for seq := page.NextAfter + 1; seq <= snapshot && len(page.Entries) < limit; seq++ {
 		var entry InboxEntry
 		if err := readSnapshot(filepath.Join(a.dir, inboxEntryName(seq)), &entry, a.limits.EntryBytes); err != nil {
-			return InboxPage{}, err
+			return InboxPage{}, fmt.Errorf("%w: retained inbox entry #%d: %w", ErrInvalid, seq, err)
 		}
 		if err := entry.validate(a.id); err != nil {
 			return InboxPage{}, err

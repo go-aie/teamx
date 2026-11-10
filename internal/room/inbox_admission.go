@@ -16,6 +16,7 @@ type inboxAdmissionResolver func(context.Context, *service, platform.SourceRef) 
 
 type automaticInboxCheck struct {
 	latest, through uint64
+	skipped         int
 	ready, blocked  bool
 	until           time.Time
 }
@@ -77,7 +78,7 @@ func (s *service) reconcileInboxAdmission(ctx context.Context, id MemberIdentity
 	defer s.inboxAdmissionMu.Unlock()
 	status.AutomaticChecked = true
 	status.AutomaticReady, status.AutomaticBlocked = false, false
-	if c, ok := s.inboxAdmissionChecks[id.MembershipID]; ok && c.latest == status.LatestSeq && c.through == status.ConsumedThrough && time.Now().Before(c.until) {
+	if c, ok := s.inboxAdmissionChecks[id.MembershipID]; ok && c.latest == status.LatestSeq && c.through == status.inputThrough() && c.skipped == status.SkippedEntries && time.Now().Before(c.until) {
 		status.AutomaticReady, status.AutomaticBlocked = c.ready, c.blocked
 		return status, nil
 	}
@@ -85,12 +86,23 @@ func (s *service) reconcileInboxAdmission(ctx context.Context, id MemberIdentity
 		if s.inboxAdmissionChecks == nil {
 			s.inboxAdmissionChecks = map[string]automaticInboxCheck{}
 		}
-		s.inboxAdmissionChecks[id.MembershipID] = automaticInboxCheck{status.LatestSeq, status.ConsumedThrough, status.AutomaticReady, status.AutomaticBlocked, time.Now().Add(time.Minute)}
+		s.inboxAdmissionChecks[id.MembershipID] = automaticInboxCheck{status.LatestSeq, status.inputThrough(), status.SkippedEntries, status.AutomaticReady, status.AutomaticBlocked, time.Now().Add(time.Minute)}
 	}
-	for seq := status.ConsumedThrough + 1; seq <= status.LatestSeq; seq++ {
+	var consumption inboxConsumption
+	s.store.mu.Lock()
+	readErr := readSnapshot(filepath.Join(s.store.dir, "inboxes", id.MembershipID, "consumption.json"), &consumption, maxPrivateFileBytes)
+	s.store.mu.Unlock()
+	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+		return status, readErr
+	}
+	for seq := status.inputThrough() + 1; seq <= status.LatestSeq; seq++ {
 		s.store.mu.Lock()
 		e, err := s.store.inboxEntryLocked(id, seq)
 		var result notification.Admission
+		if err == nil && consumption.skipped(seq) {
+			s.store.mu.Unlock()
+			continue
+		}
 		if err == nil {
 			result, err = s.store.inboxAdmissionLocked(e)
 		}

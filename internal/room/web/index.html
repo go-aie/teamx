@@ -363,19 +363,24 @@
           <div class="inbox-toolbar">
             <div class="inbox-summary">
               <p id="inbox-status" class="quiet" role="status" aria-live="polite" title="只读预览，不会推进成员读取进度，也不会启动自动处理。"></p>
-              <button id="inbox-reload" type="button" aria-label="查看最新通知并返回第一页" title="查看最新通知，返回第一页">查看最新</button>
+              <button id="inbox-reload" type="button" aria-label="刷新收件箱，保留当前位置" title="刷新，保留当前位置"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 6.7M20 4v7h-7"/></svg></button>
+              <button id="inbox-latest" type="button" aria-label="跳到最新记录" title="跳到最新记录">最新</button>
             </div>
             <nav class="inbox-pagination" aria-label="收件箱分页">
-              <button id="inbox-prev" type="button" disabled>上一页</button>
-              <span id="inbox-page" class="inbox-page" role="status" aria-live="polite" tabindex="-1">第 1 页</span>
-              <button id="inbox-next" type="button" disabled>下一页</button>
+              <button id="inbox-prev" type="button" aria-label="查看较新记录" title="查看较新记录" disabled>较新</button>
+              <span id="inbox-page" class="inbox-page" role="status" aria-live="polite" tabindex="-1">—</span>
+              <button id="inbox-next" type="button" aria-label="查看较早记录" title="查看较早记录" disabled>较早</button>
             </nav>
           </div>
+          <p id="inbox-notice" class="quiet" role="status" aria-live="polite"></p>
+          <p id="inbox-runtime" class="quiet" role="status"></p>
+          <p id="inbox-backlog" class="quiet" role="status"></p>
+          <button id="inbox-followups" class="text-button" type="button">查看跟进与待你答复</button>
           <div id="inbox-entries" aria-busy="false"></div>
           <nav id="inbox-pagination-bottom" class="inbox-pagination inbox-pagination-bottom" aria-label="收件箱底部分页" hidden>
-            <button id="inbox-prev-bottom" type="button" disabled>上一页</button>
-            <span id="inbox-page-bottom" class="inbox-page">第 1 页</span>
-            <button id="inbox-next-bottom" type="button" disabled>下一页</button>
+            <button id="inbox-prev-bottom" type="button" aria-label="查看较新记录" title="查看较新记录" disabled>较新</button>
+            <span id="inbox-page-bottom" class="inbox-page">—</span>
+            <button id="inbox-next-bottom" type="button" aria-label="查看较早记录" title="查看较早记录" disabled>较早</button>
           </nav>
         </div>
         <div id="policy-member-view" class="activity-body" role="tabpanel" aria-labelledby="agent-tab-policy" hidden>

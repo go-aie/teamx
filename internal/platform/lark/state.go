@@ -281,6 +281,7 @@ func (s State) Notification(k string) (notification.Item, bool) {
 func (s State) Acknowledge(k string) notification.State {
 	n := s.Clone()
 	delete(n.Inbox, k)
+	n.RuntimeState.ResumeCapacity()
 	n.DeliveryErrorCode = ""
 	return n
 }

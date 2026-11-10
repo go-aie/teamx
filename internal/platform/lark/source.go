@@ -92,6 +92,9 @@ func sourceRef(s State, m Message, key string, chat Chat) platform.SourceRef {
 }
 func acceptPage(s State, id string, page MessagePage, limits notification.Limits) (State, error) {
 	n := s.Clone()
+	if limits.ExpireBefore.After(n.ExpiredBefore) {
+		n.ExpiredBefore = limits.ExpireBefore
+	}
 	p := n.Chats[id]
 	if p.Scan == nil || len(page.Items) > 50 || page.HasMore && (page.PageToken == "" || page.PageToken == p.Scan.Token) || len(page.PageToken) > 8192 {
 		return s, failure("invalid_response")
@@ -107,6 +110,9 @@ func acceptPage(s State, id string, page MessagePage, limits notification.Limits
 		p.LastActivity = max(p.LastActivity, ms)
 		seen[m.ID] = true
 		if ms < n.Baseline.UnixMilli() {
+			continue
+		}
+		if notification.Expired(time.UnixMilli(ms), n.ExpiredBefore) {
 			continue
 		}
 		key := RevisionKey(n.Binding, m)
@@ -145,6 +151,7 @@ func acceptPage(s State, id string, page MessagePage, limits notification.Limits
 		n.Inbox[key] = Entry{Message: m, Item: item}
 		n.Metrics.NewItems++
 	}
+	n = n.Expire(limits.ExpireBefore).(State)
 	if len(n.Observed) > limits.Observed || len(n.Inbox) > limits.Inbox {
 		return s, notification.ErrCapacity
 	}

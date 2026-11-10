@@ -147,6 +147,7 @@ func (m *Manager) SaveLocked(state State) error {
 	if err := m.host.Check(true); err != nil {
 		return err
 	}
+	state = ApplyExpiry(state, m.expiryCutoff())
 	meta := state.Metadata()
 	source := m.sources[meta.Key.Source]
 	if source == nil || source.Schema() <= 0 {

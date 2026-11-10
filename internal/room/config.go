@@ -21,15 +21,17 @@ type startupConfig struct {
 	source []byte
 	file   os.FileInfo
 	Server struct {
-		TimeZone        *string             `toml:"time_zone"`
-		Listen          *string             `toml:"listen"`
-		DataDir         *string             `toml:"data_dir"`
-		TeamsDir        *string             `toml:"teams_dir"`
-		MaxTurns        *uint64             `toml:"max_turns"` // Retired; decoded only to report the replacement.
-		SessionMaxTurns *uint64             `toml:"session_max_turns"`
-		MergeWindow     *string             `toml:"merge_window"`
-		DSHTurnTimeout  *string             `toml:"dsh_turn_timeout"`
-		ImageMaterials  imageMaterialConfig `toml:"image_materials"`
+		TimeZone             *string             `toml:"time_zone"`
+		Listen               *string             `toml:"listen"`
+		DataDir              *string             `toml:"data_dir"`
+		TeamsDir             *string             `toml:"teams_dir"`
+		MaxTurns             *uint64             `toml:"max_turns"` // Retired; decoded only to report the replacement.
+		SessionMaxTurns      *uint64             `toml:"session_max_turns"`
+		MergeWindow          *string             `toml:"merge_window"`
+		DSHTurnTimeout       *string             `toml:"dsh_turn_timeout"`
+		InboxExpireAfterDays *int                `toml:"inbox_expire_after_days"`
+		InboxSkipExpired     *bool               `toml:"inbox_skip_expired"`
+		ImageMaterials       imageMaterialConfig `toml:"image_materials"`
 	} `toml:"server"`
 	Runtime *teamRuntime      `toml:"runtime"`
 	Env     map[string]string `toml:"env"`
@@ -163,6 +165,14 @@ func applyStartupSettings(flags *flag.FlagSet, explicit map[string]bool, startup
 	if startup.Server.SessionMaxTurns != nil {
 		value := strconv.FormatUint(*startup.Server.SessionMaxTurns, 10)
 		settings["session-max-turns"] = &value
+	}
+	if startup.Server.InboxExpireAfterDays != nil {
+		v := strconv.Itoa(*startup.Server.InboxExpireAfterDays)
+		settings["inbox-expire-after-days"] = &v
+	}
+	if startup.Server.InboxSkipExpired != nil {
+		v := strconv.FormatBool(*startup.Server.InboxSkipExpired)
+		settings["inbox-skip-expired"] = &v
 	}
 	for name, value := range settings {
 		if value != nil && !explicit[name] {

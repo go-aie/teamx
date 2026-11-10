@@ -48,6 +48,8 @@ func (m *roomManager) initPlatformNotifications() {
 		Save:            m.store.save,
 		Admit:           m.admitPlatformNotificationLocked,
 		Deliver:         m.commitPlatformNotificationLocked,
+		Expiry:          func() notification.ExpiryPolicy { return m.config.inboxExpiry.Resolved() },
+		Maintain:        m.maintainNotificationInboxLocked,
 	}, sources...)
 }
 func (m *roomManager) loadPlatformNotificationsLocked() error {

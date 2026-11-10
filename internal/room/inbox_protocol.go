@@ -6,8 +6,8 @@ import (
 	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
-// InboxLimits are persisted on first creation. Consumption retains entries and
-// receipts; a full inbox rejects deliveries rather than evicting evidence.
+// InboxLimits are persisted on first creation and count retained records only.
+// Consumption alone does not reclaim entries or receipts.
 type InboxLimits struct {
 	Entries    int   `json:"entries"`
 	Bytes      int64 `json:"bytes"` // Encoded durable records, including receipts and metadata.
@@ -60,13 +60,23 @@ type PreviewInbox struct {
 
 type InboxPage struct {
 	MemberIdentity
-	SnapshotSeq uint64       `json:"snapshot_seq"`
-	NextAfter   uint64       `json:"next_after"`
-	HasMore     bool         `json:"has_more"`
-	Entries     []InboxEntry `json:"entries"`
+	ExpiredThrough uint64       `json:"expired_through"`
+	SnapshotSeq    uint64       `json:"snapshot_seq"`
+	NextAfter      uint64       `json:"next_after"`
+	HasMore        bool         `json:"has_more"`
+	Entries        []InboxEntry `json:"entries"`
 }
 
 type InspectInbox struct{ MemberIdentity }
+
+// ReclaimInbox is an internal storage primitive, with no service/CLI endpoint.
+// The caller must establish expiration and source acknowledgement eligibility
+// for the entire prefix. It never changes the Agent consumption checkpoint.
+// Automatic maintenance establishes these conditions under the catalog gate.
+type ReclaimInbox struct {
+	MemberIdentity
+	Through uint64
+}
 
 type InboxStatus struct {
 	MemberIdentity
@@ -74,6 +84,10 @@ type InboxStatus struct {
 	AutomaticReady   bool        `json:"automatic_ready,omitempty"`
 	AutomaticBlocked bool        `json:"automatic_blocked,omitempty"`
 	ConsumedThrough  uint64      `json:"consumed_through"`
+	SkippedEntries   int         `json:"skipped_entries"`
+	SkippedThrough   uint64      `json:"skipped_through"`
+	ExpiredThrough   uint64      `json:"expired_through"`
+	RetainedEntries  int         `json:"retained_entries"`
 	Batch            *InboxBatch `json:"batch,omitempty"`
 	LatestSeq        uint64      `json:"latest_seq"`
 	Bytes            int64       `json:"bytes"`
@@ -81,4 +95,8 @@ type InboxStatus struct {
 	Committing       bool        `json:"committing"`
 	Previewing       bool        `json:"previewing"`
 	WriteError       string      `json:"write_error,omitempty"`
+}
+
+func (s InboxStatus) inputThrough() uint64 {
+	return max(s.ConsumedThrough, s.ExpiredThrough, s.SkippedThrough)
 }

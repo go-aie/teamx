@@ -63,6 +63,7 @@ type snapshotOps struct {
 	createTemp func(string, string) (snapshotFile, error)
 	rename     func(string, string) error
 	syncDir    func(string) error
+	remove     func(string) error
 }
 
 func defaultSnapshotOps() snapshotOps {
@@ -71,6 +72,7 @@ func defaultSnapshotOps() snapshotOps {
 		createTemp: func(dir, pattern string) (snapshotFile, error) { return os.CreateTemp(dir, pattern) },
 		rename:     os.Rename,
 		syncDir:    syncDirectory,
+		remove:     os.Remove,
 	}
 }
 
@@ -190,9 +192,12 @@ func (s *Store) LoadAgent(id MemberIdentity) (AgentSnapshot, error) {
 		return AgentSnapshot{}, fmt.Errorf("%w: agent progress exceeds room history", ErrInvalid)
 	}
 	if v.LastOfferedInboxSeq != 0 {
-		if _, err := s.inboxEntryLocked(id, v.LastOfferedInboxSeq); err != nil {
+		if _, err := s.inboxEntryLocked(id, v.LastOfferedInboxSeq); err != nil && !errors.Is(err, ErrInboxExpired) {
 			return AgentSnapshot{}, err
 		}
+	}
+	if err := s.checkAgentInboxTurnLocked(v); err != nil {
+		return AgentSnapshot{}, err
 	}
 	return v, nil
 }
@@ -211,11 +216,27 @@ func (s *Store) SaveAgent(v AgentSnapshot) error {
 		return fmt.Errorf("%w: agent progress exceeds room history", ErrInvalid)
 	}
 	if v.LastOfferedInboxSeq != 0 {
-		if _, err := s.inboxEntryLocked(v.MemberIdentity, v.LastOfferedInboxSeq); err != nil {
+		if _, err := s.inboxEntryLocked(v.MemberIdentity, v.LastOfferedInboxSeq); err != nil && !errors.Is(err, ErrInboxExpired) {
 			return err
 		}
 	}
+	if err := s.checkAgentInboxTurnLocked(v); err != nil {
+		return err
+	}
 	return s.save(path, v, maxPrivateFileBytes)
+}
+
+func (s *Store) checkAgentInboxTurnLocked(v AgentSnapshot) error {
+	if v.Turn != nil && v.Turn.Status == "running" && v.Turn.InboxSnapshotSeq != 0 {
+		h, err := s.inboxHeaderLocked(v.MemberIdentity)
+		if err != nil {
+			return err
+		}
+		if v.Turn.InboxStart < h.ExpiredThrough {
+			return ErrInboxExpired // Reject a stale offer racing with reclamation.
+		}
+	}
+	return nil
 }
 
 func (s *Store) memberPath(id MemberIdentity, name string, writing bool) (string, uint64, error) {

@@ -3,6 +3,7 @@ package room
 import (
 	"context"
 	"errors"
+	"math"
 	"time"
 
 	"github.com/go-aie/actorx"
@@ -14,18 +15,19 @@ import (
 //
 //actorx:actor
 type AgentInbox struct {
-	id          MemberIdentity
-	dir         string
-	store       *Store
-	limits      InboxLimits
-	receipts    map[string]inboxIndex
-	latest      uint64
-	bytes       int64
-	committing  bool
-	previewing  bool
-	writeErr    error
-	started     bool
-	consumption inboxConsumption
+	id             MemberIdentity
+	dir            string
+	store          *Store
+	limits         InboxLimits
+	receipts       map[string]inboxIndex
+	latest         uint64
+	expiredThrough uint64
+	bytes          int64
+	committing     bool
+	previewing     bool
+	writeErr       error
+	started        bool
+	consumption    inboxConsumption
 
 	save    func(InboxEntry) error
 	preview func(uint64, uint64, int) (InboxPage, error)
@@ -101,6 +103,9 @@ func (a *AgentInbox) Receive(ctx actorx.Context, msg ReceiveInbox, reply actorx.
 		reply.Complete(InboxReceipt{MemberIdentity: a.id, Seq: previous.seq, DeliveryID: msg.Item.DeliveryID}, nil)
 		return nil
 	}
+	if a.latest == math.MaxUint64 {
+		return ErrCapacity
+	}
 	entry := InboxEntry{Version: 1, MemberIdentity: a.id, Seq: a.latest + 1, Item: msg.Item, ReceivedAt: time.Now().UTC()}
 	entry.Item.CreatedAt = entry.Item.CreatedAt.UTC()
 	size, err := inboxEntrySize(entry)
@@ -126,7 +131,7 @@ func (a *AgentInbox) Receive(ctx actorx.Context, msg ReceiveInbox, reply actorx.
 			return true
 		}
 		a.latest, a.bytes = entry.Seq, a.bytes+size
-		a.receipts[entry.Item.DeliveryID] = inboxIndex{entry.Seq, digest}
+		a.receipts[entry.Item.DeliveryID] = inboxIndex{entry.Seq, digest, entry.Item.CreatedAt}
 		reply.Complete(InboxReceipt{MemberIdentity: a.id, Seq: entry.Seq, DeliveryID: entry.Item.DeliveryID}, nil)
 		return true
 	}, nil)
@@ -140,6 +145,9 @@ func (a *AgentInbox) Preview(ctx actorx.Context, msg PreviewInbox, reply actorx.
 	if msg.MemberIdentity != a.id {
 		return ErrIdentity
 	}
+	if a.writeErr != nil {
+		return a.writeErr
+	}
 	if a.previewing {
 		return ErrBusy
 	}
@@ -149,6 +157,9 @@ func (a *AgentInbox) Preview(ctx actorx.Context, msg PreviewInbox, reply actorx.
 	}
 	if msg.Limit < 0 || msg.Limit > a.limits.PageSize || snapshot > a.latest || msg.After > snapshot {
 		return ErrRequest
+	}
+	if snapshot < a.expiredThrough || (msg.SnapshotSeq != nil && msg.After < a.expiredThrough) {
+		return ErrInboxExpired
 	}
 	limit := msg.Limit
 	if limit == 0 {
@@ -179,7 +190,7 @@ func (a *AgentInbox) Inspect(_ actorx.Context, msg InspectInbox) (InboxStatus, e
 }
 
 func (a *AgentInbox) inboxStatus() InboxStatus {
-	status := InboxStatus{MemberIdentity: a.id, LatestSeq: a.latest, ConsumedThrough: a.consumption.Through, Bytes: a.bytes, Limits: a.limits, Committing: a.committing, Previewing: a.previewing}
+	status := InboxStatus{MemberIdentity: a.id, SkippedThrough: a.consumption.inputThrough(a.expiredThrough), SkippedEntries: len(a.consumption.Skipped), LatestSeq: a.latest, ExpiredThrough: a.expiredThrough, RetainedEntries: len(a.receipts), ConsumedThrough: a.consumption.Through, Bytes: a.bytes, Limits: a.limits, Committing: a.committing, Previewing: a.previewing}
 	if a.consumption.Batch != nil {
 		b := *a.consumption.Batch
 		status.Batch = &b

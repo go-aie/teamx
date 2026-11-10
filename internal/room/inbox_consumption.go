@@ -25,6 +25,7 @@ type inboxConsumption struct {
 	Version int `json:"version"`
 	MemberIdentity
 	Through uint64      `json:"through"`
+	Skipped []uint64    `json:"skipped,omitempty"`
 	Batch   *InboxBatch `json:"batch,omitempty"`
 }
 
@@ -68,8 +69,13 @@ func (s *Store) loadInboxConsumption(a *AgentInbox) error {
 	if c.Version != 1 || c.MemberIdentity != a.id || c.Through > a.latest || (c.Through != 0 && c.Batch == nil) {
 		return ErrInvalid
 	}
+	for i, seq := range c.Skipped {
+		if seq == 0 || seq > a.latest || i > 0 && seq <= c.Skipped[i-1] {
+			return ErrInvalid
+		}
+	}
 	if b := c.Batch; b != nil {
-		if !safeMembershipID(b.ID) || !safeMembershipID(b.Receipt) || b.TurnNumber == 0 || b.Start > c.Through ||
+		if !safeMembershipID(b.ID) || !safeMembershipID(b.Receipt) || b.TurnNumber == 0 || b.Start > c.inputThrough(a.expiredThrough) ||
 			c.Through > b.PageThrough || b.PageThrough > b.SnapshotSeq || b.SnapshotSeq > a.latest || b.Start >= b.SnapshotSeq ||
 			b.SnapshotSeq-b.Start > inboxBatchSize {
 			return ErrInvalid
@@ -77,12 +83,22 @@ func (s *Store) loadInboxConsumption(a *AgentInbox) error {
 	}
 	// A consumed notification must still have its authoritative business
 	// record. Never recover a cursor that would hide a missing/corrupt followup event.
-	for seq := uint64(1); seq <= c.Through; seq++ {
+	for seq := a.expiredThrough + 1; seq <= c.Through; seq++ {
+		if c.skipped(seq) {
+			continue
+		}
 		e, err := s.inboxEntryLocked(a.id, seq)
 		if err != nil {
 			return err
 		}
 		if err := s.checkInboxBusinessLinkLocked(e); err != nil {
+			return err
+		}
+	}
+	if a.expiredThrough != 0 {
+		// Existing business evidence remains independently valid after its
+		// original Inbox body has legitimately been reclaimed.
+		if err := s.visitFollowupEventsLocked(a.id, func(followupEvent) error { return nil }); err != nil {
 			return err
 		}
 	}
@@ -105,6 +121,9 @@ func (s *Store) saveInboxConsumption(c inboxConsumption, confirm bool) error {
 	}
 	if confirm {
 		for seq := c.Batch.Start + 1; seq <= c.Through; seq++ {
+			if c.skipped(seq) {
+				continue
+			}
 			e, err := s.inboxEntryLocked(c.MemberIdentity, seq)
 			if err != nil {
 				return err
@@ -160,6 +179,7 @@ func (a *AgentInbox) ReadBatch(ctx actorx.Context, msg ReadInboxBatch, reply act
 		c.Batch = &b
 	}
 	latest := a.latest
+	through := c.inputThrough(a.expiredThrough)
 	a.committing, a.previewing = true, true
 	_, err := actorx.StartTask(ctx.WithContext(context.WithoutCancel(ctx)), func(ctx context.Context) (InboxBatchPage, error) {
 		if err := ctx.Err(); err != nil {
@@ -172,29 +192,29 @@ func (a *AgentInbox) ReadBatch(ctx actorx.Context, msg ReadInboxBatch, reply act
 			return InboxBatchPage{}, err
 		}
 		end := min(latest, agent.Turn.InboxSnapshotSeq)
-		if end <= c.Through {
+		if end <= through {
 			// A Room-only turn or an exhausted fixed snapshot has no Inbox work.
 			// Do not issue a receipt or change the durable consumption cursor.
-			return InboxBatchPage{InboxPage: InboxPage{MemberIdentity: a.id, SnapshotSeq: end, NextAfter: end, Entries: []InboxEntry{}},
+			return InboxBatchPage{InboxPage: InboxPage{MemberIdentity: a.id, ExpiredThrough: a.expiredThrough, SnapshotSeq: end, NextAfter: end, Entries: []InboxEntry{}},
 				Batch: InboxBatch{TurnNumber: msg.TurnNumber, Start: end, SnapshotSeq: end, PageThrough: end}}, nil
 		}
-		if c.Batch == nil || c.Batch.SnapshotSeq <= c.Through {
+		if c.Batch == nil || c.Batch.SnapshotSeq <= through {
 			id, err := newOpaqueID()
 			if err != nil {
 				return InboxBatchPage{}, err
 			}
-			c.Batch = &InboxBatch{ID: id, TurnNumber: msg.TurnNumber, Start: c.Through, SnapshotSeq: min(end, c.Through+inboxBatchSize)}
+			c.Batch = &InboxBatch{ID: id, TurnNumber: msg.TurnNumber, Start: through, SnapshotSeq: min(end, through+inboxBatchSize)}
 		} else {
 			if c.Batch.SnapshotSeq > end {
 				return InboxBatchPage{}, ErrConflict
 			}
 			c.Batch.TurnNumber = msg.TurnNumber // Explicitly resumed execution, same batch.
 		}
-		page, err := a.preview(c.Through, c.Batch.SnapshotSeq, limit)
+		page, err := a.preview(through, c.Batch.SnapshotSeq, limit)
 		if err != nil {
 			return InboxBatchPage{}, err
 		}
-		if page.NextAfter <= c.Through {
+		if page.NextAfter <= through {
 			return InboxBatchPage{}, ErrInvalid
 		}
 		// Persist a single outstanding page. Re-reading it preserves its receipt.
@@ -204,6 +224,13 @@ func (a *AgentInbox) ReadBatch(ctx actorx.Context, msg ReadInboxBatch, reply act
 				return InboxBatchPage{}, err
 			}
 		}
+		entries := page.Entries[:0]
+		for _, entry := range page.Entries {
+			if !c.skipped(entry.Seq) {
+				entries = append(entries, entry)
+			}
+		}
+		page.Entries = entries
 		c.Batch.PageThrough = page.NextAfter
 		if err := a.store.saveInboxConsumption(c, false); err != nil {
 			return InboxBatchPage{}, err

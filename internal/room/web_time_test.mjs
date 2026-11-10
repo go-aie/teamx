@@ -66,7 +66,8 @@ function fixture(managed=true) {
       if(path==="/v1/read")return {messages:api.messages.filter(m=>m.seq>(body.after || 0)),snapshot_seq:2,has_more:false};
       if(path==="/v1/settings")return {...api.settings,...(!managed ? info : {})};
       if(path==="/v1/settings/save") {api.settings={...api.settings,time_zone:body.time_zone,settings_version:api.settings.settings_version+1};return {time_zone:api.settings.time_zone,settings_version:api.settings.settings_version};}
-      if(path==="/v1/member/inbox")return {entries:[{seq:1,received_at:"2026-11-08T17:05:00Z",item:{provider:"gitlab",channel:"todos",created_at:api.messages[1].created_at,text:"通知正文 17:04"}}],snapshot_seq:1,has_more:false,status:{latest_seq:1,bytes:0,limits:{bytes:1000}}};
+      if(path==="/v1/member/inbox/status")return {latest_seq:1,expired_through:0,retained_entries:1,bytes:0,limits:{bytes:1000}};
+      if(path==="/v1/member/inbox")return {next_after:1,entries:[{seq:1,received_at:"2026-11-08T17:05:00Z",item:{provider:"gitlab",channel:"todos",created_at:api.messages[1].created_at,text:"通知正文 17:04"}}],snapshot_seq:1,has_more:false,status:{latest_seq:1,expired_through:0,retained_entries:1,bytes:0,limits:{bytes:1000}}};
       if(path==="/v1/policy/read")return {revision:0,current:[],effective:[],history:[]};
       if(path==="/v1/policy/update")return {};
       throw new Error(`Unexpected request ${path}`);

@@ -27,7 +27,8 @@ function fixture(){
    if(api.fail)throw Object.assign(Error("conflict"),{code:"conflict"});
    api.data={...api.data,config:body.config,subscription_id:api.data.subscription_id || "subscription",subscription_version:api.data.subscription_version+1,status:"running"};return structuredClone(api.data);
   }
-  if(path==="/v1/member/inbox")return {snapshot_seq:0,entries:[],has_more:false,status:{latest_seq:0,limits:{bytes:1000},bytes:0}};
+  if(path==="/v1/member/inbox/status")return {latest_seq:0,expired_through:0,retained_entries:0,limits:{bytes:1000},bytes:0};
+    if(path==="/v1/member/inbox")return {snapshot_seq:0,entries:[],has_more:false,status:{latest_seq:0,expired_through:0,retained_entries:0,limits:{bytes:1000},bytes:0}};
   if(path==="/v1/member/activity")return {member:members[0]};
   if(path==="/v1/member/list")return {members,latest_seq:0};
   if(path==="/v1/read")return {messages:[],snapshot_seq:0,has_more:false};

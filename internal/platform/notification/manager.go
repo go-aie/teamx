@@ -100,11 +100,19 @@ func (m *Manager) run(ctx context.Context, key Key, w *worker, runner Runner) {
 		delay, stop := time.Second, false
 		m.host.Gate.Lock()
 		force := w.force
+		current, exists := m.states[key]
+		deliveryBlocked := exists && current.state.Metadata().DeliveryError == "inbox_capacity"
 		m.host.Gate.Unlock()
+		if queryStopped {
+			m.host.Gate.Lock()
+			current, ok := m.states[key]
+			queryStopped = ok && current.state.QueryPaused()
+			m.host.Gate.Unlock()
+		}
 		if force {
 			queryStopped = false
 		}
-		if !queryStopped {
+		if !queryStopped && !deliveryBlocked {
 			// The source bounds its remote request with QueryContext. Its step keeps
 			// the lifecycle context so a request deadline can still commit backoff.
 			delay, stop = runner.Step(ctx)
@@ -279,7 +287,9 @@ func (s *session) Jitter(d time.Duration) time.Duration { return s.m.Jitter(d) }
 func (s *session) Limits() Limits {
 	s.m.host.Gate.Lock()
 	defer s.m.host.Gate.Unlock()
-	return s.m.Limits
+	limits := s.m.Limits
+	limits.ExpireBefore = s.m.expiryCutoff()
+	return limits
 }
 func (s *session) ConsumeForce() bool {
 	s.m.host.Gate.Lock()

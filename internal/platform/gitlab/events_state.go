@@ -319,6 +319,9 @@ func (s *EventsState) Accept(events []Event, now time.Time) (unknown, known int,
 		if e.ID <= 0 || e.ProjectID != s.ProjectID || e.CreatedAt.IsZero() {
 			return 0, 0, notification.ErrInvalid
 		}
+		if s.Config.Target.Inbox() && notification.Expired(e.CreatedAt, s.ExpiredBefore) {
+			continue
+		}
 		key := EventsKey(s.Binding, s.ProjectID, e.ID)
 		if _, ok := s.Observed[key]; ok || e.CreatedAt.Before(s.IgnoreBefore) {
 			known++

@@ -83,12 +83,13 @@ type agentInboxBatch struct {
 
 type agentReferenceInboxPage struct {
 	MemberIdentity
-	SnapshotSeq uint64                 `json:"snapshot_seq"`
-	NextAfter   uint64                 `json:"next_after"`
-	HasMore     bool                   `json:"has_more"`
-	Entries     []agentInboxEntry      `json:"entries"`
-	Batch       agentInboxBatch        `json:"batch"`
-	Followups   []agentFollowupSummary `json:"followups"`
+	ExpiredThrough uint64                 `json:"expired_through"`
+	SnapshotSeq    uint64                 `json:"snapshot_seq"`
+	NextAfter      uint64                 `json:"next_after"`
+	HasMore        bool                   `json:"has_more"`
+	Entries        []agentInboxEntry      `json:"entries"`
+	Batch          agentInboxBatch        `json:"batch"`
+	Followups      []agentFollowupSummary `json:"followups"`
 }
 
 func projectAgentInboxRead(id MemberIdentity, page referenceInboxPage) (agentReferenceInboxPage, error) {
@@ -129,7 +130,7 @@ func projectAgentInboxRead(id MemberIdentity, page referenceInboxPage) (agentRef
 		followups = append(followups, projectFollowupSummary(v))
 	}
 	b := page.Batch
-	return agentReferenceInboxPage{id, page.SnapshotSeq, page.NextAfter, page.HasMore, entries,
+	return agentReferenceInboxPage{id, page.ExpiredThrough, page.SnapshotSeq, page.NextAfter, page.HasMore, entries,
 		agentInboxBatch{b.ID, b.TurnNumber, b.Start, b.SnapshotSeq, b.PageThrough, b.Receipt}, followups}, nil
 }
 
@@ -301,12 +302,17 @@ type agentSourceView struct {
 }
 type agentSourceEntry struct {
 	Seq        uint64            `json:"seq"`
-	Item       notification.View `json:"item"`
-	ReceivedAt time.Time         `json:"received_at"`
+	Status     string            `json:"status"`
+	Item       notification.View `json:"item,omitzero"`
+	ReceivedAt time.Time         `json:"received_at,omitzero"`
 }
 
 func projectSource(e followupEvent, entry InboxEntry) agentSourceView {
-	v := agentSourceView{e.SourceRef, e.Revision, e.Seq, e.DeliveryID, e.Source, e.ObjectRef, e.TargetRef, e.Resolution, nil, agentSourceEntry{entry.Seq, projectInboxEntry(entry, sourceSummary(e)).Item, entry.ReceivedAt}}
+	v := agentSourceView{SourceRef: e.SourceRef, SourceVersion: e.Revision, Seq: e.Seq, DeliveryID: e.DeliveryID, Source: e.Source, ObjectRef: e.ObjectRef, TargetRef: e.TargetRef, Resolution: e.Resolution,
+		Entry: agentSourceEntry{Seq: e.Seq, Status: "expired"}}
+	if entry.Seq != 0 {
+		v.Entry = agentSourceEntry{Seq: entry.Seq, Status: "retained", Item: projectInboxEntry(entry, sourceSummary(e)).Item, ReceivedAt: entry.ReceivedAt}
+	}
 	if e.LastAttempt != nil {
 		v.LastAttempt = &e.LastAttempt.Resolution
 	}

@@ -29,6 +29,7 @@ type realRoomDriver struct {
 	dshProcess                                                   realProcessIdentity
 	// Bundle acceptance supplies the archived CLI and the operator's complete
 	// model settings, including gateway compatibility. Other drivers still build.
+	serveArgs       []string
 	sessionMaxTurns uint64
 	modelOverride   *dsh.ModelConfig
 }
@@ -243,6 +244,7 @@ func (d *realRoomDriver) startRealRoom(number int, roomID string) error {
 	}
 	cmd := exec.Command(d.binary, "serve", "--config", configPath, "--room", roomID, "--state-dir", d.dir,
 		"--listen", "127.0.0.1:0", "--merge-window", "0s", "--session-max-turns", strconv.FormatUint(threshold, 10), "--dsh-config", d.profilePath)
+	cmd.Args = append(cmd.Args, d.serveArgs...)
 	cmd.Env = append(d.operatorEnv(""), d.report["apiKeyEnv"].(string)+"="+d.secret)
 	cmd.Stderr = log
 	pipe, err := cmd.StdoutPipe()

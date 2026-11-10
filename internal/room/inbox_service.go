@@ -78,6 +78,24 @@ func (s *service) previewInbox(ctx context.Context, req apiRequest) (any, error)
 	return s.store.projectInboxPreview(page, status)
 }
 
+// Human polling inspects durable counters only. It must not run maintenance,
+// reconcile admission, create a batch or advance the Agent's input progress.
+func (s *service) inspectInbox(ctx context.Context, req apiRequest) (any, error) {
+	if req.Caller.Kind != "human" || req.Caller.MembershipID != "" {
+		return nil, ErrIdentity
+	}
+	s.inboxMu.Lock()
+	defer s.inboxMu.Unlock()
+	id := MemberIdentity{RoomIdentity: s.info.RoomIdentity, AgentID: req.AgentID, MembershipID: req.MembershipID}
+	addr, err := s.inboxLocked(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	status, err := addr.Call[InboxStatus](ctx, InspectInbox{id})
+	status.Batch = nil
+	return status, err
+}
+
 // Call only with inboxMu held; Stop/Wait joins all persistence/preview tasks.
 func (s *service) stopInboxLocked(ctx context.Context, membership string) error {
 	addr := s.inboxes[membership]

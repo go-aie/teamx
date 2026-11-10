@@ -2100,8 +2100,13 @@ textarea::placeholder {
 .inbox-toolbar { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 -18px; padding: 10px 18px; background: var(--soft); border-bottom: 1px solid #d5dfd5; }
 .inbox-toolbar button,.inbox-pagination-bottom button { min-height: 32px; padding: 5px 8px; border: 1px solid #cbd6cb; border-radius: 6px; background: #fbfcf9; color: var(--accent); font-size: 12px; line-height: 20px; white-space: nowrap; }
 .inbox-toolbar button:hover:not(:disabled),.inbox-pagination-bottom button:hover:not(:disabled) { background: #e2ebe1; border-color: #a8bca9; }
-.inbox-summary { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.inbox-toolbar #inbox-reload { flex-shrink:0; padding:5px 8px; background:transparent; border-color:transparent; }
+.inbox-summary { display: flex; flex-wrap:wrap; align-items: center; gap: 8px; min-width: 0; }
+#inbox-notice:empty,#inbox-runtime:empty,#inbox-backlog:empty { display:none; }
+#inbox-notice,#inbox-runtime,#inbox-backlog { margin:10px 0; font-size:12px; line-height:1.7; overflow-wrap:anywhere; }
+#inbox-followups { margin:0 0 14px; font-size:12px; }
+.inbox-toolbar #inbox-reload { display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; width:32px; height:32px; padding:7px; background:transparent; border-color:transparent; }
+.inbox-toolbar #inbox-reload svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+.inbox-toolbar #inbox-latest { min-width:56px; }
 .inbox-toolbar #inbox-reload:hover:not(:disabled) { background:#e2ebe1; }
 #inbox-status { min-width: 0; margin: 0; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
 .inbox-toolbar > .inbox-pagination { flex-shrink: 0; margin-left: auto; }

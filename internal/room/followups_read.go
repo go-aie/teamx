@@ -3,6 +3,7 @@ package room
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -140,11 +141,7 @@ func (s *Store) visitFollowupEventsLocked(id MemberIdentity, visit func(followup
 		if _, err := fmt.Sscanf(name, "%020d.json", &seq); err != nil || seq == 0 || name != inboxEntryName(seq) {
 			return ErrInvalid
 		}
-		e, err := s.inboxEntryLocked(id, seq)
-		if err != nil {
-			return err
-		}
-		link, err := s.loadFollowupEventLocked(e)
+		link, err := s.followupEventAtLocked(id, seq)
 		if err != nil {
 			return err
 		}
@@ -379,15 +376,36 @@ func (s *Store) readFollowupSource(id MemberIdentity, seq uint64, sourceRef stri
 	if err := s.checkFollowupsLocked(id, false); err != nil {
 		return followupEvent{}, err
 	}
-	e, err := s.inboxEntryLocked(id, seq)
-	if err != nil {
-		return followupEvent{}, err
-	}
-	link, err := s.loadFollowupEventLocked(e)
+	link, err := s.followupEventAtLocked(id, seq)
 	if err == nil && link.SourceRef != sourceRef {
 		return followupEvent{}, ErrIdentity
 	}
 	return link, err
+}
+
+// Load evidence and original content under one lock so cleanup cannot split a
+// successful evidence read from its content status.
+func (s *Store) readFollowupSourceContent(id MemberIdentity, seq uint64, sourceRef string) (followupEvent, *InboxEntry, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.checkFollowupsLocked(id, false); err != nil {
+		return followupEvent{}, nil, err
+	}
+	link, err := s.followupEventAtLocked(id, seq)
+	if err != nil {
+		return link, nil, err
+	}
+	if link.SourceRef != sourceRef {
+		return followupEvent{}, nil, ErrIdentity
+	}
+	entry, err := s.inboxEntryLocked(id, seq)
+	if errors.Is(err, ErrInboxExpired) {
+		return link, nil, nil
+	}
+	if err != nil {
+		return link, nil, err
+	}
+	return link, &entry, nil
 }
 
 // Labels name verified alternate native IDs with their namespaces. In particular,

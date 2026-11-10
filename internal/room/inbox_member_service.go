@@ -5,11 +5,21 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // Polling reconciles the durable Inbox progress, including after restart or a
 // lost wake. It is a MemberAgent-owned task, never a synchronous actor callback.
 func (s *service) memberInboxStatus(ctx context.Context, id MemberIdentity) (InboxStatus, error) {
+	var maintenanceErr error
+	if hook := s.maintainInbox.Load(); hook != nil {
+		maintenanceErr = hook.run(ctx, id)
+	} else if s.workspaceOperationID == "" {
+		maintenanceErr = s.maintainInboxLocal(ctx, id, nil, time.Now().UTC())
+	}
+	if maintenanceErr != nil {
+		return InboxStatus{}, maintenanceErr
+	}
 	s.inboxMu.Lock()
 	if s.inboxes[id.MembershipID].IsZero() {
 		if _, err := os.Stat(filepath.Join(s.store.dir, "inboxes", id.MembershipID)); errors.Is(err, os.ErrNotExist) {

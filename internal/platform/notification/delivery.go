@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"time"
 )
@@ -30,6 +31,14 @@ func (m *Manager) Deliver(ctx context.Context, key Key, version uint64) error {
 	if !ok || current.state.Metadata().Version != version || !current.state.Metadata().Enabled {
 		return ErrIdentity
 	}
+	next := ApplyExpiry(current.state, m.expiryCutoff())
+	if !reflect.DeepEqual(next, current.state) {
+		if err := m.SaveLocked(next); err != nil {
+			return err
+		}
+		current = m.states[key]
+	}
+
 	scope, err := m.host.Admit(ctx, current.state)
 	if err != nil {
 		if errors.Is(err, ErrIdentity) && current.state.Metadata().Pending > 0 && current.state.Metadata().DeliveryError != "target_removed" {
@@ -47,8 +56,12 @@ func (m *Manager) Deliver(ctx context.Context, key Key, version uint64) error {
 		}
 		return ErrBusy
 	}
+
 	items := current.state.PendingItems()
 	if len(items) == 0 {
+		if m.host.Maintain != nil {
+			return m.host.Maintain(ctx, current.state.Metadata())
+		}
 		return nil
 	}
 	sort.Slice(items, func(i, j int) bool {
@@ -61,6 +74,13 @@ func (m *Manager) Deliver(ctx context.Context, key Key, version uint64) error {
 	item, ok := current.state.Notification(items[0].Key)
 	if !ok {
 		return ErrInvalid
+	}
+	if m.host.Maintain != nil {
+		meta := current.state.Metadata()
+		meta.Target = item.Route.Target.Canonical()
+		if err := m.host.Maintain(ctx, meta); err != nil && !errors.Is(err, ErrBusy) {
+			return err
+		}
 	}
 	// The owner holds this same gate through its target commit. Clear/restart keeps
 	// receipts, so an ambiguous ack repeats this stable ID rather than a new post.

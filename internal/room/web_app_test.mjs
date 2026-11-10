@@ -1798,133 +1798,134 @@ test("duplicate create submissions retain one ID while an unrelated ready room s
 });
 
 
-test("AN-01.2 Inbox snapshot paging never confirms, and late reads cannot cross rooms", async () => {
-  const api=server([makeRoom("A"),makeRoom("B")]);
-  const member={agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"},execution:{paused:true,agent:{turn_number:0}}};
-  let finish;
-  const page=(after)=>({snapshot_seq:2,next_after:after+1,has_more:after===0,status:{latest_seq:2,bytes:100,limits:{bytes:1000}},entries:[{seq:after+1,received_at:"2026-11-04T01:00:00Z",item:{provider:"gitlab",channel:"todos",instance:"https://gitlab.invalid",project_id:312,text:`notice-${after+1}`}}]});
-  api.hook=(path,data)=>{
-    if(path==="/v1/member/list")return {members:[member]};
-    if(path==="/v1/member/activity")return {member};
-    if(path==="/v1/member/inbox")return data.after===1 ? new Promise(resolve=>finish=()=>resolve(page(1))) : page(0);
+function inboxFixture(latest = 60) {
+  const api = server([makeRoom("A"),makeRoom("B")]);
+  api.member = {agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"},execution:{paused:true,agent:{turn_number:0}}};
+  api.latest = latest; api.expired = 0; api.chunk = 25; api.inboxHook = null;
+  api.inboxStatus = () => ({latest_seq:api.latest,expired_through:api.expired,retained_entries:api.latest-api.expired,consumed_through:0,skipped_through:api.expired,skipped_entries:0,bytes:100,limits:{bytes:1000,entries:10000}});
+  api.inboxPage = data => {
+    if(data.after<api.expired)throw Object.assign(new Error("expired"),{code:"inbox_expired"});
+    const end=Math.min(data.snapshot_seq,data.after+data.limit,data.after+api.chunk);
+    return {snapshot_seq:data.snapshot_seq,expired_through:api.expired,next_after:end,has_more:end<data.snapshot_seq,status:api.inboxStatus(),entries:Array.from({length:end-data.after},(_,i)=>({seq:data.after+i+1,item:{provider:"gitlab",channel:"todos",text:`notice-${data.after+i+1}`},source:{status:"not_checked"}}))};
   };
-  const ui=await launch(api);
-  await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();
-  await ui.el("agent-tab-inbox").emit("click");await settle();
-  assert.equal(ui.el("inbox-member-view").hidden,false);
-  assert.equal(ui.el("inbox-entries").children[0].children[1].textContent,"notice-1");
-  const imagePath = "/uploads/524bb5cf042cd0bb3ef9a7a117a744b7/image.png";
-  const imageURL = ui.el("inbox-entries").children[0].children[1].markdownOptions.attachmentURL(imagePath);
-  const imageQuery = new URL(imageURL, "http://fixture").searchParams;
-  assert.equal(imageQuery.get("agent_id"), member.agent_id);
-  assert.equal(imageQuery.get("membership_id"), member.membership_id);
-  assert.equal(imageQuery.get("seq"), "1");
-  assert.equal(imageQuery.get("room_id"), "A");
-  assert.equal(imageQuery.get("service_epoch"), "epoch-A");
-  const pending=ui.el("inbox-next").emit("click");await settle();
-  const calls=api.calls.filter(call=>call.path==="/v1/member/inbox");
-  assert.equal(calls[1].data.snapshot_seq,2);assert.equal(calls[1].data.after,1);
-  await ui.select("B");finish();await pending;await settle();
-  assert.equal(ui.el("inbox-entries").children.length,0);
-  assert.equal(api.calls.some(call=>/confirm|member\/run/.test(call.path)),false);
-});
-
-test("Inbox navigation keeps cursor history and snapshot, synchronizes both pagers, and refresh starts over", async () => {
-  const api=server([makeRoom("A")]);
-  const member={agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"},execution:{paused:true,agent:{turn_number:0}}};
-  let latest=55;
   api.hook=(path,data)=>{
-    if(path==="/v1/member/list")return {members:[member]};
-    if(path==="/v1/member/activity")return {member};
-    if(path==="/v1/member/inbox") {
-      // Byte limits can produce shorter pages; use returned cursors, not page size arithmetic.
-      const after=data.after, end=after===0 ? 3 : after===3 ? 9 : 12;
-      return {snapshot_seq:data.snapshot_seq ?? latest,next_after:end,has_more:end<12,status:{latest_seq:latest,bytes:100,limits:{bytes:1000}},entries:Array.from({length:end-after},(_,i)=>({seq:after+i+1,item:{provider:"gitlab",channel:"todos",text:`notice-${after+i+1}`}}))};
-    }
+    const result=api.inboxHook?.(path,data);if(result!==undefined)return result;
+    if(path==="/v1/member/list")return {members:[api.member]};
+    if(path==="/v1/member/activity")return {member:api.member};
+    if(path==="/v1/member/inbox/status")return api.inboxStatus();
+    if(path==="/v1/member/inbox")return api.inboxPage(data);
   };
+  return api;
+}
+async function openInboxFixture(api) {
   const ui=await launch(api);
   await ui.el("members").children[0].querySelector(".member-summary").emit("click");
-  await ui.el("agent-tab-inbox").emit("click");await settle();
-  assert.equal(ui.el("inbox-prev").disabled,true);
+  await ui.el("agent-tab-inbox").emit("click");await settle();return ui;
+}
+const inboxSequences = ui => ui.el("inbox-entries").children.map(row=>Number(row.dataset.inboxSeq));
+
+test("Inbox opens the latest page, fills short byte-limited reads, and browses a fixed snapshot",async()=>{
+  const api=inboxFixture();api.chunk=7;const ui=await openInboxFixture(api);
+  assert.deepEqual(inboxSequences(ui),Array.from({length:25},(_,i)=>i+36));
   assert.equal(ui.el("inbox-page").textContent,"第 1 页");
+  assert.match(ui.el("inbox-status").textContent,/保留 60 条/);
+  assert.equal(ui.el("inbox-prev").disabled,true);
+  const reads=()=>api.calls.filter(c=>c.path==="/v1/member/inbox");
+  assert.deepEqual(reads().map(c=>c.data.after),[35,42,49,56]);
   ui.el("inbox-member-view").scrollTop=500;
-  await ui.el("inbox-next-bottom").emit("click");await settle();
+  await ui.el("inbox-next-bottom").emit("click");
+  assert.deepEqual(inboxSequences(ui),Array.from({length:25},(_,i)=>i+11));
   assert.equal(ui.el("inbox-member-view").scrollTop,0);
-  assert.equal(ui.el("inbox-page").textContent,"第 2 页");
   assert.equal(ui.el("inbox-page-bottom").textContent,ui.el("inbox-page").textContent);
-  latest=60;
-  await ui.el("inbox-next").emit("click");await settle();
-  assert.equal(ui.el("inbox-next").disabled,true);
-  assert.equal(ui.el("inbox-next-bottom").disabled,true);
-  await ui.el("inbox-prev-bottom").emit("click");await settle();
   assert.equal(ui.el("inbox-page").textContent,"第 2 页");
-  await ui.el("inbox-prev").emit("click");await settle();
-  assert.equal(ui.el("inbox-prev-bottom").disabled,true);
-  await ui.el("inbox-next").emit("click");await settle();
-  const reads=()=>api.calls.filter(call=>call.path==="/v1/member/inbox").map(call=>call.data);
-  assert.deepEqual(reads().map(data=>data.after),[0,3,9,3,0,3]);
-  assert.ok(reads().slice(1).every(data=>data.snapshot_seq===55));
-  await ui.el("inbox-reload").emit("click");await settle();
-  assert.equal(reads().at(-1).after,0);
-  assert.equal(reads().at(-1).snapshot_seq,undefined);
-  assert.equal(ui.el("inbox-page").textContent,"第 1 页");
-  assert.equal(api.calls.some(call=>/confirm|member\/run/.test(call.path)),false);
+  api.latest=65;
+  await ui.el("inbox-next").emit("click");assert.deepEqual(inboxSequences(ui),Array.from({length:10},(_,i)=>i+1));
+  assert.equal(ui.el("inbox-page").textContent,"第 3 页");
+  assert.equal(ui.el("inbox-next").disabled,true);
+  await ui.el("inbox-prev-bottom").emit("click");
+  // Return using sequence windows; the last partial old page must not skip #11.
+  assert.deepEqual(inboxSequences(ui),Array.from({length:25},(_,i)=>i+11));
+  assert.equal(ui.el("inbox-page").textContent,"第 2 页");
+  assert.ok(reads().every(c=>c.data.snapshot_seq===60));
+  assert.equal(api.calls.some(c=>/confirm|member\/run/.test(c.path)),false);
 });
 
-test("Inbox loading blocks duplicate navigation and failures preserve the page and retry cursor", async () => {
-  const api=server([makeRoom("A")]);
-  const member={agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"},execution:{paused:true,agent:{turn_number:0}}};
-  let rejectPage, fail=true;
-  api.hook=(path,data)=>{
-    if(path==="/v1/member/list")return {members:[member]};
-    if(path==="/v1/member/activity")return {member};
-    if(path==="/v1/member/inbox") {
-      if(data.after && fail)return new Promise((resolve,reject)=>rejectPage=reject);
-      return {snapshot_seq:2,next_after:data.after+1,has_more:!data.after,status:{latest_seq:2,bytes:100,limits:{bytes:1000}},entries:[{seq:data.after+1,item:{provider:"gitlab",channel:"todos",text:`notice-${data.after+1}`}}]};
-    }
-  };
-  const ui=await launch(api);
-  await ui.el("members").children[0].querySelector(".member-summary").emit("click");
-  await ui.el("agent-tab-inbox").emit("click");await settle();
+test("Inbox polling and manual refresh preserve history, expanded evidence, focus and position; latest is explicit",async()=>{
+  const api=inboxFixture(),ui=await openInboxFixture(api);
+  await ui.el("inbox-next").emit("click");
+  const row=ui.el("inbox-entries").children[0],details=row.children.at(-1);details.open=true;
+  ui.el("inbox-member-view").scrollTop=450;details.children[0].focus();
+  const before=api.calls.filter(c=>c.path==="/v1/member/inbox").length;
+  api.latest=63;await ui.refresh();await settle();
+  assert.equal(api.calls.filter(c=>c.path==="/v1/member/inbox").length,before,"polling only inspects status");
+  assert.match(ui.el("inbox-latest").textContent,/有更新/);
+  assert.match(ui.el("inbox-status").textContent,/保留 63 条/);
+  await ui.el("inbox-reload").emit("click");
+  assert.equal(ui.el("inbox-entries").children[0],row);assert.equal(details.open,true);
+  assert.equal(ui.el("inbox-member-view").scrollTop,450);
+  assert.equal(ui.document.activeElement,details.children[0]);
+  assert.equal(ui.el("inbox-page").textContent,"第 2 页");
+  assert.equal(inboxSequences(ui)[0],11);
+  await ui.el("inbox-latest").emit("click");
+  assert.equal(inboxSequences(ui).at(-1),63);assert.equal(ui.el("inbox-member-view").scrollTop,0);
+  assert.equal(ui.el("inbox-latest").textContent,"最新");
+  assert.equal(ui.el("inbox-page").textContent,"第 1 页");
+});
+
+test("Inbox cleanup invalidates visible history and races in short reads relocate once",async()=>{
+  const api=inboxFixture(),ui=await openInboxFixture(api);
+  await ui.el("inbox-next").emit("click");
+  api.expired=20;await ui.refresh();await settle();
+  assert.equal(inboxSequences(ui)[0],36);assert.equal(ui.el("inbox-page").textContent,"第 1 页");assert.match(ui.el("inbox-notice").textContent,/已过期.*重新定位/);
+  assert.match(ui.el("inbox-status").textContent,/保留 40 条/);
+  api.chunk=5;let race=true;
+  api.inboxHook=(path,data)=>{if(path==="/v1/member/inbox" && data.after===40 && race){race=false;api.expired=45;return api.inboxPage(data);}};
+  await ui.el("inbox-reload").emit("click");
+  assert.equal(inboxSequences(ui)[0],46);assert.equal(inboxSequences(ui).at(-1),60);
+  assert.equal(ui.el("inbox-page").textContent,"第 1 页");
+  api.expired=api.latest;await ui.refresh();await settle();
+  assert.deepEqual(inboxSequences(ui),[]);assert.equal(ui.el("inbox-next").disabled,true);
+});
+
+test("Inbox read failures retain the page and retry, and loading blocks duplicate navigation",async()=>{
+  const api=inboxFixture(),ui=await openInboxFixture(api);let reject;
+  api.inboxHook=path=>{if(path==="/v1/member/inbox")return new Promise((_,r)=>reject=r);};
+  const row=ui.el("inbox-entries").children[0];
   const pending=ui.el("inbox-next").emit("click");await settle();
-  for(const id of ["inbox-reload","inbox-prev","inbox-next","inbox-prev-bottom","inbox-next-bottom"])assert.equal(ui.el(id).disabled,true);
-  await ui.el("inbox-next-bottom").emit("click");await settle();
-  assert.equal(api.calls.filter(call=>call.path==="/v1/member/inbox").length,2);
-  rejectPage(new Error("temporarily offline"));await pending;await settle();
+  for(const id of ["inbox-reload","inbox-latest","inbox-prev","inbox-next","inbox-next-bottom"])assert.equal(ui.el(id).disabled,true);
+  const count=api.calls.length;await ui.el("inbox-next-bottom").emit("click");assert.equal(api.calls.length,count);
+  reject(new Error("offline"));await pending;
+  assert.equal(ui.el("inbox-entries").children[0],row);assert.match(ui.el("inbox-notice").textContent,/当前页已保留/);
   assert.equal(ui.el("inbox-page").textContent,"第 1 页");
-  assert.match(ui.el("inbox-status").textContent,/当前页已保留/);
-  assert.equal(ui.el("inbox-entries").children[0].children[1].textContent,"notice-1");
-  assert.equal(ui.el("inbox-next").disabled,false);
-  fail=false;
-  await ui.el("inbox-next-bottom").emit("click");await settle();
+  await ui.refresh();await settle();assert.match(ui.el("inbox-notice").textContent,/读取失败/);
+  api.inboxHook=null;await ui.el("inbox-next").emit("click");assert.equal(inboxSequences(ui)[0],11);
   assert.equal(ui.el("inbox-page").textContent,"第 2 页");
-  assert.equal(ui.el("inbox-entries").attributes["aria-busy"],"false");
 });
 
-test("Inbox empty state and initial read failure allow refresh without enabling pagination", async () => {
-  const api=server([makeRoom("A")]);
-  const member={agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"},execution:{paused:true,agent:{turn_number:0}}};
-  let fail=true;
-  api.hook=(path)=>{
-    if(path==="/v1/member/list")return {members:[member]};
-    if(path==="/v1/member/activity")return {member};
-    if(path==="/v1/member/inbox") {
-      if(fail)throw new Error("temporarily offline");
-      return {snapshot_seq:0,next_after:0,has_more:false,status:{latest_seq:0,bytes:0,limits:{bytes:1000}},entries:[]};
-    }
-  };
-  const ui=await launch(api);
-  await ui.el("members").children[0].querySelector(".member-summary").emit("click");
-  await ui.el("agent-tab-inbox").emit("click");await settle();
-  assert.match(ui.el("inbox-status").textContent,/请点击刷新重试/);
-  assert.equal(ui.el("inbox-reload").disabled,false);
-  assert.equal(ui.el("inbox-next").disabled,true);
-  fail=false;
-  await ui.el("inbox-reload").emit("click");await settle();
-  assert.equal(ui.el("inbox-page").textContent,"暂无通知");
-  assert.equal(ui.el("inbox-prev").disabled,true);
-  assert.equal(ui.el("inbox-next").disabled,true);
-  assert.equal(ui.el("inbox-pagination-bottom").hidden,true);
+test("Inbox late reads and status checks cannot cross Room or Membership contexts",async()=>{
+  for(const operation of ["page","status"]) {
+    const api=inboxFixture(),ui=await openInboxFixture(api);let finish;
+    api.inboxHook=(path,data)=>{
+      if(path===(operation==="page"?"/v1/member/inbox":"/v1/member/inbox/status"))return new Promise(resolve=>finish=()=>resolve(operation==="page"?api.inboxPage(data):api.inboxStatus()));
+    };
+    const pending=operation==="page"?ui.el("inbox-next").emit("click"):ui.refresh();await settle();
+    api.inboxHook=null;await ui.select("B");finish();await pending;await settle();
+    assert.equal(ui.el("inbox-entries").children.length,0);
+    await ui.el("members").children[0].querySelector(".member-summary").emit("click");await ui.el("agent-tab-inbox").emit("click");await settle();
+    api.inboxHook=(path,data)=>path==="/v1/member/inbox"?new Promise(resolve=>finish=()=>resolve(api.inboxPage(data))):undefined;
+    const late=ui.el("inbox-next").emit("click");await settle();
+    api.member={...api.member,membership_id:"2".repeat(32)};api.inboxHook=null;
+    await ui.refresh();await settle();finish();await late;
+    assert.equal(ui.el("activity-dialog").open,false);
+  }
+});
+
+test("Inbox initial failures and empty snapshots retain a working refresh entry",async()=>{
+  const api=inboxFixture(0);api.inboxHook=path=>{if(path==="/v1/member/inbox/status")throw new Error("offline");};
+  const ui=await openInboxFixture(api);assert.match(ui.el("inbox-notice").textContent,/请点击刷新重试/);
+  api.inboxHook=null;await ui.el("inbox-reload").emit("click");
+  assert.equal(ui.el("inbox-page").textContent,"暂无通知");assert.equal(ui.el("inbox-next").disabled,true);
+  api.latest=1;await ui.refresh();await settle();assert.match(ui.el("inbox-latest").textContent,/有更新/);
 });
 
 test("Lark Inbox separates channel, sender and conversation while retaining source evidence and attachment identity", async () => {
@@ -1946,7 +1947,8 @@ test("Lark Inbox separates channel, sender and conversation while retaining sour
   api.hook=(path)=>{
     if(path==="/v1/member/list")return {members:[member]};
     if(path==="/v1/member/activity")return {member};
-    if(path==="/v1/member/inbox")return {snapshot_seq:items.length,next_after:items.length,has_more:false,status:{latest_seq:items.length,bytes:100,limits:{bytes:1000}},entries:items.map((item,i)=>({seq:i+1,origin:i===7?{kind:"agent",agent_id:"assistant",status:"succeeded"}:undefined,source:{source_ref:`src_${i}`,status:"not_checked"},received_at:"2026-11-06T08:06:57Z",item:{...item,created_at:"2026-11-06T07:00:00Z"}}))};
+    if(path==="/v1/member/inbox/status")return {latest_seq:items.length,expired_through:0,retained_entries:items.length,bytes:100,limits:{bytes:1000}};
+    if(path==="/v1/member/inbox")return {snapshot_seq:items.length,next_after:items.length,has_more:false,status:{latest_seq:items.length,expired_through:0,retained_entries:items.length,bytes:100,limits:{bytes:1000}},entries:items.map((item,i)=>({seq:i+1,origin:i===7?{kind:"agent",agent_id:"assistant",status:"succeeded"}:undefined,source:{source_ref:`src_${i}`,status:"not_checked"},received_at:"2026-11-06T08:06:57Z",item:{...item,created_at:"2026-11-06T07:00:00Z"}}))};
   };
   const ui=await launch(api);
   await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();
@@ -2014,7 +2016,8 @@ test("Lark Inbox preview binds image requests to the saved membership and sequen
   api.hook = (path) => {
     if (path === "/v1/member/list") return {members:[member]};
     if (path === "/v1/member/activity") return {member};
-    if (path === "/v1/member/inbox") return {snapshot_seq:9,next_after:9,has_more:false,status:{latest_seq:9,bytes:100,limits:{bytes:1000}},entries:[{seq:9,item:{provider:"lark",channel:"messages",message_id:{value:"om_fixture"},text:"image_key: img_fixture\n请分析图片"}}]};
+    if (path === "/v1/member/inbox/status") return {latest_seq:9,expired_through:8,retained_entries:1,bytes:100,limits:{bytes:1000}};
+    if (path === "/v1/member/inbox") return {snapshot_seq:9,next_after:9,has_more:false,status:{latest_seq:9,expired_through:8,retained_entries:1,bytes:100,limits:{bytes:1000}},entries:[{seq:9,item:{provider:"lark",channel:"messages",message_id:{value:"om_fixture"},text:"image_key: img_fixture\n请分析图片"}}]};
   };
   const ui = await launch(api);
   await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();
@@ -2147,6 +2150,7 @@ test("R5 management navigates native followups, human evidence, receipts and sou
    return {target:{target:{provider:"gitlab",instance:"https://gitlab.test",object:{type:"MergeRequest",id:{value:"9001"}}}},unit:{revision:4,status:"waiting_followup",summary:"已回复",next:"等待确认",questions:[{text:"选 A 吗？",room_seq:5,answers:[{message:{author:{id:"tester"},seq:6,text:"这次选 A"}}]}],instructions:[{status:"fulfilled",intent:{body:"准确回复正文"},source:{seq:6,text:"这次选 A"}}],actions:[{request:{id:"reply-1",operation:"object.comment",input:{body:"准确回复正文"}},status:"succeeded",attempts:1,inspection:{account_label:"bot"},access:{account:{id:{value:"101"}}},result:{message:"已回复",url:"https://gitlab.test/p/-/merge_requests/42#note_99"}}]}};
   }
   if(path==="/v1/matters/sources"){sourceRequests++;return {items:[{seq:data.after ? 2 : 1,source_ref:data.after ? "src-two":"src-one",status:"resolved"}],total:2,next_after:1,complete:!!data.after};}
+  if(path==="/v1/matters/source" && data.followup.seq===2)return {source:{url:"https://gitlab.test/p/-/merge_requests/42"},delivery_id:"expired-delivery",resolution:{status:"resolved"},entry_status:"expired"};
   if(path==="/v1/matters/source")return {source:{url:"https://gitlab.test/p/-/merge_requests/42"},delivery_id:"immutable-delivery",resolution:{status:"resolved"},entry:{item:{text:"<script>原始通知正文</script>"}}};
  };
  const ui=await launch(api);await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();await ui.el("agent-tab-policy").emit("click");await settle();
@@ -2169,6 +2173,7 @@ test("R5 management navigates native followups, human evidence, receipts and sou
  source.open=false;await source.emit("toggle");await expandDisclosure(source);
  assert.equal(api.calls.filter(call=>call.path==="/v1/matters/source").length,1);
  await sourceList.children[1].emit("click");await settle();assert.equal(sourceRequests,2);
+ await expandDisclosure(sourceList.children.at(-1));assert.match(elementText(sourceList.children.at(-1)),/原通知正文已过期.*跟进与动作记录继续保留/);
  ui.el("followups-history").checked=true;await ui.el("followups-history").emit("change");await settle();
  assert.equal(api.calls.filter(call=>call.path==="/v1/matters/list").at(-1).data.followup.include_completed,true);
  assert.equal(api.calls.some(call=>/decisions\/|member\/run|inbox\/confirm|actions\/execute/.test(call.path)),false);
@@ -2782,7 +2787,8 @@ function ruleRefreshFixture() {
     if(path==="/v1/member/list")return {members:[member]};
     if(path==="/v1/policy/read")return api.readRules();
     if(path==="/v1/policy/update")return {};
-    if(path==="/v1/member/inbox")return {snapshot_seq:0,entries:[],has_more:false,status:{latest_seq:0,limits:{bytes:1000},bytes:0}};
+    if(path==="/v1/member/inbox/status")return {latest_seq:0,expired_through:0,retained_entries:0,limits:{bytes:1000},bytes:0};
+    if(path==="/v1/member/inbox")return {snapshot_seq:0,entries:[],has_more:false,status:{latest_seq:0,expired_through:0,retained_entries:0,limits:{bytes:1000},bytes:0}};
     if(path==="/v1/matters/list")return {items:[],total:0,complete:true};
   };
   return api;

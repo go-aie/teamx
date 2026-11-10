@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/go-aie/teamx/internal/agent/dsh"
+	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
 // Allow prompt cancellation, protocol close, and process exit to finish with
@@ -38,6 +39,8 @@ func serveWithFactory(args []string, stdout, stderr io.Writer, create func(strin
 	})
 	maxTurns := flags.Uint64("session-max-turns", defaultMaxTurns, "DSH attempts per Session before automatic rotation (positive; frozen for new managed rooms)")
 	dshTurnTimeout := flags.Duration("dsh-turn-timeout", dsh.DefaultTurnTimeout, "maximum duration of a DSH turn, including model and tools (must be positive)")
+	inboxDays := flags.Int("inbox-expire-after-days", 3, "Inbox expiration in days (positive; original event time)")
+	inboxSkip := flags.Bool("inbox-skip-expired", true, "skip expired unconsumed Inbox input")
 	dshConfig := flags.String("dsh-config", "", "JSON file of named DSH member profiles")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -72,6 +75,10 @@ func serveWithFactory(args []string, stdout, stderr io.Writer, create func(strin
 	if *dshTurnTimeout <= 0 {
 		return fmt.Errorf("%w: dsh-turn-timeout must be positive", ErrRequest)
 	}
+	inboxExpiry := notification.ExpiryPolicy{AfterDays: *inboxDays, SkipExpired: *inboxSkip}
+	if err := inboxExpiry.Validate(); err != nil {
+		return err
+	}
 	singleRoom := explicit["room"] || explicit["state-dir"]
 	if singleRoom && !explicit["state-dir"] {
 		if !validText(*dataDir) {
@@ -104,7 +111,7 @@ func serveWithFactory(args []string, stdout, stderr io.Writer, create func(strin
 	}
 	defer listener.Close()
 	if !singleRoom {
-		return serveRoomManager(listener, *dataDir, *teamsDir, serviceConfig{settings: settings, endpoint: "http://" + listener.Addr().String(), mergeWindow: *mergeWindow, maxTurns: *maxTurns, dshTurnTimeout: *dshTurnTimeout, imageMaterials: startup.Server.ImageMaterials}, startup.Runtime, create, stdout, stderr)
+		return serveRoomManager(listener, *dataDir, *teamsDir, serviceConfig{settings: settings, endpoint: "http://" + listener.Addr().String(), mergeWindow: *mergeWindow, maxTurns: *maxTurns, dshTurnTimeout: *dshTurnTimeout, inboxExpiry: inboxExpiry, imageMaterials: startup.Server.ImageMaterials}, startup.Runtime, create, stdout, stderr)
 	}
 	uiProfiles := profileNames(profiles)
 	cliPath, err := os.Executable()
@@ -114,7 +121,7 @@ func serveWithFactory(args []string, stdout, stderr io.Writer, create func(strin
 	svc, err := create(*dir, *roomID, serviceConfig{
 		settings: settings,
 		endpoint: "http://" + listener.Addr().String(), cliPath: cliPath, mergeWindow: *mergeWindow, maxTurns: *maxTurns,
-		dshProfiles: profiles, uiProfiles: uiProfiles, dshTurnTimeout: *dshTurnTimeout, imageMaterials: startup.Server.ImageMaterials,
+		dshProfiles: profiles, uiProfiles: uiProfiles, dshTurnTimeout: *dshTurnTimeout, inboxExpiry: inboxExpiry, imageMaterials: startup.Server.ImageMaterials,
 	})
 	if err != nil {
 		return err

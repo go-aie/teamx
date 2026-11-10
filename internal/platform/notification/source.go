@@ -107,9 +107,12 @@ type Limits struct {
 	SlicePages      int
 	SliceBytes      int64
 	SliceTime       time.Duration
+	ExpireBefore    time.Time // Resolved for each step; only Inbox destinations apply it.
 }
 
-func DefaultLimits() Limits { return Limits{100000, 10000, 64 << 20, 20, 16 << 20, 30 * time.Second} }
+func DefaultLimits() Limits {
+	return Limits{Observed: 100000, Inbox: 10000, Bytes: 64 << 20, SlicePages: 20, SliceBytes: 16 << 20, SliceTime: 30 * time.Second}
+}
 
 // Host is the Room-owned admission and final-commit boundary. The service has no
 // private mutex to hold while calling it. Gate -> Room service read lock -> actor
@@ -122,6 +125,8 @@ type Host struct {
 	Save            func(string, any, int64) error
 	Admit           func(context.Context, State) (Scope, error)
 	Deliver         func(context.Context, Metadata, Item) error
+	Expiry          func() ExpiryPolicy
+	Maintain        func(context.Context, Metadata) error
 }
 
 // QueryContext applies the common hard bound even when a source requests a

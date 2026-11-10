@@ -8,9 +8,11 @@ func (a *AgentInbox) Bindings() []actorx.Binding {
 	return []actorx.Binding{
 		actorx.HandleDeferred(a.ConfirmBatch),
 		actorx.Handle(a.Inspect),
+		actorx.HandleDeferred(a.Maintain),
 		actorx.HandleDeferred(a.Preview),
 		actorx.HandleDeferred(a.ReadBatch),
 		actorx.HandleDeferred(a.Receive),
+		actorx.HandleDeferred(a.Reclaim),
 		actorx.HandleMessage(a.Started),
 		actorx.HandleMessage(a.Stopped),
 	}

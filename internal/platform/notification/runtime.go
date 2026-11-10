@@ -8,6 +8,7 @@ import (
 // RuntimeState is shared scheduling/diagnostic state. Provider progress (dates,
 // cursors, filters, scan checkpoints) never belongs here.
 type RuntimeState struct {
+	ExpiredBefore       time.Time `json:"expired_before,omitzero"`
 	RetryAt             time.Time `json:"retry_at"`
 	ServerNotBefore     time.Time `json:"server_not_before"`
 	ConsecutiveFailures int       `json:"consecutive_failures"`
@@ -17,11 +18,12 @@ type RuntimeState struct {
 	Metrics             Metrics   `json:"metrics"`
 }
 type Metrics struct {
-	Calls         uint64 `json:"calls"`
-	Failures      uint64 `json:"failures"`
-	DurationMS    int64  `json:"duration_ms"`
-	ResponseBytes int64  `json:"response_bytes"`
-	NewItems      uint64 `json:"new_items"`
+	ExpiredSkipped uint64 `json:"expired_skipped,omitempty"`
+	Calls          uint64 `json:"calls"`
+	Failures       uint64 `json:"failures"`
+	DurationMS     int64  `json:"duration_ms"`
+	ResponseBytes  int64  `json:"response_bytes"`
+	NewItems       uint64 `json:"new_items"`
 }
 type Failure struct {
 	Called             bool
@@ -91,4 +93,12 @@ func (r *RuntimeState) Failure(now time.Time, failure Failure, jitter func(time.
 	}
 	r.RetryAt = now.Add(delay)
 	return delay
+}
+
+// Capacity relief must not reset credentials, user opt-out or binding errors.
+func (r *RuntimeState) ResumeCapacity() {
+	if r.Status == "capacity" {
+		r.Status = "running"
+		r.ErrorCode = ""
+	}
 }

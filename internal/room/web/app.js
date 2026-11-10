@@ -470,9 +470,12 @@ function renderMemberPlatforms() {
   renderMemberPlatformAddition();
   const subscriptions=configured.filter(item=>notificationConfigured(item,notificationView(ws,item,target)));
   $("inbox-empty-hint").hidden=!inboxView?.page || !!inboxView.page.entries.length;
-  $("inbox-empty-hint").textContent=!ws.notificationsConnected ? "通知状态暂不可读，请查看平台设置。" : !subscriptions.length ? "添加平台，开始接收通知。" : issues.length ? "尚未收到通知，请查看平台异常提示。" : subscriptions.some(item=>notificationView(ws,item,target).config.enabled) ? "暂未收到通知。" : "通知已暂停。";
+  $("inbox-empty-hint").textContent=inboxView?.status?.expired_through && !inboxView?.page?.entries.length ? "当前没有保留的通知，旧通知已过期清理。" : !ws.notificationsConnected ? "通知状态暂不可读，请查看平台设置。" : !subscriptions.length ? "添加平台，开始接收通知。" : issues.length ? "尚未收到通知，请查看平台异常提示。" : subscriptions.some(item=>notificationView(ws,item,target).config.enabled) ? "暂未收到通知。" : "通知已暂停。";
   $("inbox-add-platform").hidden=!!subscriptions.length;
-  $("inbox-platform-issues").replaceChildren(...issues.map(item=>{const b=document.createElement("button");b.type="button";b.className="text-button";b.textContent=`${item.name}：查看设置`;b.addEventListener("click",()=>openMemberPlatform(b,item,target));return b;}));
+  const inboxIssues = configured.filter(item => notificationConfigured(item,notificationView(ws,item,target)) && notificationIssue(ws,item,notificationView(ws,item,target)));
+  $("inbox-platform-issues").replaceChildren(...inboxIssues.map(item=>{const b=document.createElement("button");b.type="button";b.className="text-button";b.textContent=`${item.name}：${notificationIssue(ws,item,notificationView(ws,item,target))} 查看设置`;b.addEventListener("click",()=>openMemberPlatform(b,item,target));return b;}));
+  const pending = [...(ws.allSubscriptions || []),...(ws.retiredSources || [])].filter(source=>sameNotificationTarget(source.target || source.config?.target,target)).reduce((n,source)=>n+(source.pending || 0),0);
+  $("inbox-backlog").textContent = !ws.notificationsConnected ? "来源状态暂不可读，可到平台设置重试读取。" : pending ? `来源积压 ${pending} 条等待投递；容量释放后会自动重试，凭据和绑定异常需在平台设置处理。` : "";
 }
 async function openMemberPlatform(opener,item,target=memberNotificationTarget()) {
   return openNotificationSource(opener,item.provider==="lark" ? "messages" : item.provider==="gitlab" ? "gitlab" : "tools",item.id,target);
@@ -2317,7 +2320,7 @@ function renderFollowupSource(panel,event) {
   const resolution=event.last_attempt?.resolution || event.resolution;
   if(resolution.reason) followupParagraph(panel,resolution.reason);
   const body=document.createElement("div");body.className="inbox-text";
-  renderMessageBody(body,event.entry?.item?.text || "没有通知正文。");panel.append(body);
+  renderMessageBody(body,event.entry_status === "expired" ? "原通知正文已过期，跟进与动作记录继续保留。需要当前内容时可按需读取平台。" : event.entry?.item?.text || "没有通知正文。");panel.append(body);
   if(followupResultURL(event.source?.url)) { const link=document.createElement("a");link.textContent="打开来源";link.href=followupResultURL(event.source.url);link.target="_blank";link.rel="noopener noreferrer";panel.append(link); }
   const technical=followupDisclosure(panel,"技术信息","followup-technical");
   followupParagraph(technical,`投递 ID：${event.delivery_id} · 解析状态：${resolution.status}`);
@@ -2515,45 +2518,122 @@ function inboxSourceDetails(entry) {
   details.append(summary,metadata); return details;
 }
 function inboxCurrent(view) {
-  return view && inboxView === view && state.info?.room_id === view.info.room_id && state.info?.room_instance === view.info.room_instance && state.info?.service_epoch === view.info.service_epoch && selectedAgent()?.membership_id === view.member.membership_id && agentTab === "inbox" && $("activity-dialog").open;
+  return view && inboxView === view && state.info?.room_id === view.info.room_id && state.info?.room_instance === view.info.room_instance && state.info?.service_epoch === view.info.service_epoch && selectedAgent()?.agent_id === view.member.agent_id && selectedAgent()?.membership_id === view.member.membership_id && agentTab === "inbox" && $("activity-dialog").open;
+}
+function renderInboxStatus(view) {
+  if (!inboxCurrent(view)) return;
+  const status = view.status;
+  if (status) {
+    $("inbox-status").textContent = `保留 ${status.retained_entries} 条` + (status.write_error ? ` · 写入受阻：${status.write_error}` : "");
+    $("inbox-status").title = `只读预览，不推进 Agent 消费进度。\n占用 ${status.bytes} / ${status.limits.bytes} 字节 · 最新序号 #${status.latest_seq} · 已清理至 #${status.expired_through}`;
+  }
+  const newer = view.page && status?.latest_seq > view.page.snapshot_seq;
+  $("inbox-latest").textContent = newer ? "有更新" : "最新";
+  $("inbox-latest").title = newer ? "有新记录，点击跳到最新" : "跳到最新记录";
+  $("inbox-latest").setAttribute("aria-label", $("inbox-latest").title);
+  $("inbox-notice").textContent = view.error || view.syncError || view.notice || (status?.expired_through ? "旧通知正文已过期清理，跟进和动作记录继续保留。" : "");
+  const member = selectedAgent(), execution = member?.execution;
+  const paused = execution?.paused ? "自动处理已暂停" : execution?.active ? "Agent 正在处理" : `Agent ${statusNames[member?.status] || member?.status || ""}`;
+  const through = Math.max(status?.consumed_through || 0, status?.expired_through || 0, status?.skipped_through || 0);
+  const pending = status && status.latest_seq > through;
+  const capacity = status && (status.retained_entries >= status.limits.entries || status.bytes >= status.limits.bytes);
+  $("inbox-runtime").textContent = [paused, execution?.error && `自动处理受阻：${execution.error}`, pending && "有输入等待处理或来源核验", capacity && "容量已满，来源积压等待空间释放后自动重试"].filter(Boolean).join(" · ");
 }
 function renderInboxPagination(view) {
   const entries = view.page?.entries || [];
-  const label = view.page ? entries.length ? `第 ${view.pageIndex + 1} 页` : "暂无通知" : "—";
+  const label = view.page ? entries.length ? `第 ${view.pageNumber} 页` : "暂无通知" : "—";
   for (const suffix of ["", "-bottom"]) {
-    $("inbox-prev" + suffix).disabled = view.loading || !view.page || view.pageIndex === 0;
-    $("inbox-next" + suffix).disabled = view.loading || !view.page?.has_more;
+    $("inbox-prev" + suffix).disabled = view.loading || !entries.length || view.end >= view.page.snapshot_seq;
+    $("inbox-next" + suffix).disabled = view.loading || !entries.length || view.after <= view.status.expired_through;
     $("inbox-page" + suffix).textContent = label;
     $("inbox-page" + suffix).title = entries.length ? `消息 #${entries[0].seq}–#${entries.at(-1).seq}` : "";
   }
-  $("inbox-reload").disabled = view.loading;
+  $("inbox-reload").disabled = $("inbox-latest").disabled = view.loading;
   $("inbox-pagination-bottom").hidden = !entries.length;
   $("inbox-entries").setAttribute("aria-busy", String(view.loading));
 }
-async function loadMemberInbox(action = "reset") {
+async function refreshMemberInbox() {
+  const view = inboxView;
+  if (!inboxCurrent(view) || view.loading || view.refreshing || document.hidden || !document.hasFocus() || $("notification-detail").open) return;
+  view.refreshing = true;
+  try {
+    const status = await rpc("/v1/member/inbox/status", view.member, view.info);
+    if (!inboxCurrent(view) || view.loading) return;
+    view.status = status; view.syncError = "";
+    // A page touching reclaimed records cannot remain a readable old snapshot.
+    if (!view.page) await loadMemberInbox("refresh", status);
+    else if (view.after < status.expired_through) await loadMemberInbox("relocate", status);
+    else { renderInboxStatus(view); renderInboxPagination(view); }
+  } catch (error) {
+    if (inboxCurrent(view) && !view.loading) { view.syncError = `同步失败：${error.message}。当前页已保留，可点击刷新重试。`; renderInboxStatus(view); }
+  } finally { view.refreshing = false; }
+}
+async function loadMemberInbox(action = "latest", knownStatus) {
   const member = selectedAgent();
   if (!member || agentTab !== "inbox") return;
-  const prior = action === "reset" ? null : inboxCurrent(inboxView) ? inboxView : null;
-  if (action !== "reset" && (!prior?.page || prior.loading || action === "prev" && prior.pageIndex === 0 || action === "next" && !prior.page.has_more)) return;
-  const target = prior ? prior.pageIndex + (action === "prev" ? -1 : 1) : 0;
-  const cursors = prior ? [...prior.cursors] : [0];
-  const after = cursors[target];
-  const snapshot = prior?.page?.snapshot_seq;
-  const view = { member, info: state.info, cursors, pageIndex: prior?.pageIndex || 0, page: prior?.page, loading: true };
+  const prior = inboxCurrent(inboxView) ? inboxView : null;
+  if (prior?.loading) return;
+  if (["prev", "next"].includes(action) && (!prior?.page || $("inbox-" + action).disabled)) return;
+  const keepPosition = action === "refresh" || action === "relocate";
+  const view = {member:{agent_id:member.agent_id,membership_id:member.membership_id}, info:{...state.info}, page:prior?.page, pageNumber:prior?.pageNumber || 1, status:prior?.status, after:prior?.after, end:prior?.end, loading:true, notice:action === "latest" ? "" : prior?.notice};
   inboxView = view;
-  $("inbox-status").textContent = "正在读取…";
-  $("inbox-status").title = "只读预览，不会推进成员读取进度，也不会启动自动处理。";
-  if (!prior) $("inbox-entries").replaceChildren();
+  if (!prior) { $("inbox-entries").replaceChildren(); $("inbox-status").textContent = "正在读取…"; $("inbox-notice").textContent = $("inbox-runtime").textContent = ""; }
   renderInboxPagination(view);
   try {
-    const data = await rpc("/v1/member/inbox", {agent_id:member.agent_id, membership_id:member.membership_id, after, ...(snapshot === undefined ? {} : {snapshot_seq:snapshot}), limit:25}, view.info);
+    let status = knownStatus || await rpc("/v1/member/inbox/status", view.member, view.info);
     if (!inboxCurrent(view)) return;
-    view.page = data;
-    view.pageIndex = target;
-    if (data.has_more) view.cursors[target + 1] = data.next_after;
-    $("inbox-status").textContent = `共 ${data.snapshot_seq} 条` + (data.status.write_error ? ` · ${data.status.write_error}` : "");
-    $("inbox-status").title += `\n已接收 ${data.status.latest_seq} 条 · 占用 ${data.status.bytes} / ${data.status.limits.bytes} 字节 · 当前快照 ${data.snapshot_seq}`;
-    $("inbox-entries").replaceChildren(...data.entries.map(entry => {
+    let snapshot = action === "latest" || !prior?.page ? status.latest_seq : prior.page.snapshot_seq;
+    let pageNumber = action === "latest" || !prior?.page ? 1 : prior.pageNumber;
+    if (action === "next") pageNumber++;
+    if (action === "prev") pageNumber--;
+    let end = snapshot;
+    if (action === "next") end = prior.after;
+    if (action === "prev") end = Math.min(snapshot, prior.end + 25);
+    if (keepPosition && prior?.page) end = prior.end;
+    let after = Math.max(status.expired_through, end - 25);
+    if (keepPosition && prior?.page) after = prior.after;
+    let data;
+    // Cleanup may race either the inspection or any short byte-limited page.
+    // Retry once with a fresh boundary; repeated races remain a visible retry.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (after < status.expired_through || end <= status.expired_through && status.latest_seq > status.expired_through || snapshot < status.expired_through) {
+        view.notice = "当前记录已过期，已重新定位到保留记录。";
+        snapshot = status.latest_seq;
+        // A new browsing session starts at the latest retained page. Page
+        // numbers are local navigation state, never a count of stored pages.
+        pageNumber = 1;
+        end = snapshot;
+        after = Math.max(status.expired_through, end - 25);
+      }
+      if (action === "relocate") view.notice = "当前记录已过期，已重新定位到保留记录。";
+      try {
+        const entries = [];
+        let cursor = after;
+        do {
+          const page = await rpc("/v1/member/inbox", {...view.member, after:cursor, snapshot_seq:snapshot, limit:Math.max(1, end - cursor)}, view.info);
+          if (!inboxCurrent(view)) return;
+          entries.push(...page.entries);
+          data = {...page, entries};
+          if (cursor < end && page.next_after <= cursor) throw new Error("分页未推进，请重试");
+          cursor = page.next_after;
+        } while (cursor < end);
+        // The status in the preview may be newer than the initial inspection.
+        status = data.status;
+        if (after < status.expired_through) throw Object.assign(new Error("通知已过期"), {code:"inbox_expired"});
+        break;
+      } catch (error) {
+        if (error.code !== "inbox_expired" || attempt) throw error;
+        status = await rpc("/v1/member/inbox/status", view.member, view.info);
+        if (!inboxCurrent(view)) return;
+        view.notice = "当前记录已过期，已重新定位到保留记录。";
+      }
+    }
+    view.page = data; view.pageNumber = pageNumber; view.status = status; view.after = after; view.end = end; view.error = "";
+    const scrollTop = $("inbox-member-view").scrollTop;
+    const previous = new Map([...(prior?.page?.entries || [])].map((entry, i) => [entry.seq, {entry, node:$("inbox-entries").children[i]}]));
+    const nodes = data.entries.map(entry => {
+      const old = previous.get(entry.seq);
+      if (old?.node && JSON.stringify(old.entry) === JSON.stringify(entry)) return old.node;
       const section = document.createElement("section"); section.className = "activity-section";
       const item = entry.item;
       const source = item;
@@ -2606,14 +2686,44 @@ async function loadMemberInbox(action = "reset") {
         notice.textContent = item.truncated ? "正文已截断，内容可能不完整" : "部分名称、提及或附件信息已截断"; section.append(notice);
       }
       section.append(inboxSourceDetails(entry));
+      section.dataset.inboxSeq = String(entry.seq);
+      if (old?.node?.querySelector("details")?.open) section.querySelector("details").open = true;
       return section;
-    }));
-    $("inbox-member-view").scrollTop = 0;
-    if (prior) $("inbox-page").focus();
-  } catch(error) { if (inboxCurrent(view)) $("inbox-status").textContent = `读取失败：${error.message}` + (prior ? "。当前页已保留，可重试翻页。" : "。请点击刷新重试。"); }
-  finally { if (inboxCurrent(view)) { view.loading = false; renderInboxPagination(view); renderNotificationPlatforms(); } }
+    });
+    const container = $("inbox-entries");
+    const unchanged = nodes.length === container.children.length && nodes.every((node, i) => node === container.children[i]);
+    if (!unchanged) {
+      const focused = document.activeElement;
+      const focusedRow = [...container.children].find(row => row.contains?.(focused));
+      const focusPath = [];
+      for (let child = focused; focusedRow && child !== focusedRow; child = child.parentElement) focusPath.unshift([...child.parentElement.children].indexOf(child));
+      // Keep retained nodes attached: replaceChildren would blur even reused nodes.
+      const retained = new Set(nodes);
+      for (const node of [...container.children]) if (!retained.has(node)) node.remove();
+      for (let i = 0; i < nodes.length; i++) if (container.children[i] !== nodes[i]) container.insertBefore(nodes[i], container.children[i] || null);
+      if (keepPosition && focusedRow && !focused.isConnected) {
+        let replacement = nodes.find(row => row.dataset.inboxSeq === focusedRow.dataset.inboxSeq);
+        for (const index of focusPath) replacement = replacement?.children[index];
+        (replacement || $("inbox-page")).focus({preventScroll:true});
+      }
+    }
+    $("inbox-member-view").scrollTop = keepPosition ? scrollTop : 0;
+    if (prior && !keepPosition) $("inbox-page").focus({preventScroll:true});
+    if (action === "latest" && !view.notice?.includes("重新定位")) view.notice = "";
+  } catch(error) {
+    if (inboxCurrent(view)) view.error = `读取失败：${error.message}` + (prior?.page ? "。当前页已保留，可点击刷新或重试翻页。" : "。请点击刷新重试。");
+  } finally {
+    if (inboxCurrent(view)) { view.loading = false; renderInboxStatus(view); renderInboxPagination(view); renderNotificationPlatforms(); }
+  }
 }
-$("inbox-reload").addEventListener("click", () => loadMemberInbox());
+$("inbox-reload").addEventListener("click", () => loadMemberInbox("refresh"));
+$("inbox-latest").addEventListener("click", () => loadMemberInbox("latest"));
+$("inbox-followups").addEventListener("click", async () => {
+  await selectAgentTab("policy");
+  if (!policyCurrent(policyView)) return;
+  $("policy-followups").open = true;
+  if (!policyView.followupsLoading) await loadPolicyFollowups(policyView);
+});
 for (const suffix of ["", "-bottom"]) {
   $("inbox-prev" + suffix).addEventListener("click", () => loadMemberInbox("prev"));
   $("inbox-next" + suffix).addEventListener("click", () => loadMemberInbox("next"));
@@ -3108,7 +3218,7 @@ async function sync() {
     renderMentionNotice();
     state.members = members.members;
     state.connected = true;
-    renderMembers(); void activity.refresh();void refreshMemberPolicy();
+    renderMembers(); void activity.refresh();void refreshMemberPolicy();void refreshMemberInbox();
     $("connection").textContent = "已连接 · 自动刷新";
     $("connection").classList.remove("offline");
     notice("sync-error", members.write_error ? `房间写入暂停：${members.write_error}` : "");

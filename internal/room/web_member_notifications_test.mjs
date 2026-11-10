@@ -39,7 +39,7 @@ test("M4 settings, toggles and readback preserve the Inbox snapshot, cursors, sc
   assert.equal(ui.el("inbox-page").textContent,"第 2 页");assert.equal(ui.el("inbox-member-view").scrollTop,420);
   assert.equal(ui.el("inbox-entries").children,entries);assert.equal(reads(api).length,before);
   assert.equal(ui.el("member-notification-add-toggle").attributes["aria-expanded"],"true");
-  await ui.el("inbox-prev").emit("click");assert.equal(reads(api).at(-1).body.snapshot_seq,50);assert.equal(reads(api).at(-1).body.after,0);
+  await ui.el("inbox-prev").emit("click");assert.equal(reads(api).at(-1).body.snapshot_seq,50);assert.equal(reads(api).at(-1).body.after,25);
   assert.equal(api.calls.some(c=>/member\/(run|enable)|inbox\/(read|confirm)/.test(c.path)),false);
 });
 function recordsValue(api,id,member){return api.records.get(key(id,target(member)));}
@@ -238,4 +238,22 @@ test("selected notification content explains an inactive collector without contr
   assert.equal(ui.el("gitlab-todos-state").textContent,"采集未启动");
   assert.equal(ui.el("gitlab-events-enabled").checked,false);
   assert.equal(ui.el("gitlab-events-state").textContent,"");
+});
+
+test("Inbox shows source capacity/backlog separately from retained input and uses existing followups",async()=>{
+  const api=fixture();
+  const record=api.records.get(key("gl",target("a")));record.todos.delivery_error_code="inbox_capacity";
+  api.hook=(path)=>{
+    if(path.startsWith("/v1/platform/notifications?"))return {subscriptions:[{provider:"gitlab",channel:"todos",target:target("a"),subscription_id:"fixture",pending:4}],gitlab_platforms:[copy(record)]};
+    if(path==="/v1/policy/read")return {revision:1,current:[],history:[],effective:[]};
+    if(path==="/v1/matters/list")return {items:[{kind:"object",ref:"fixture",status:"waiting_user",questions:[{text:"请确认范围"}]}],total:1,complete:true};
+  };
+  const ui=await launch(api);await openMemberInbox(ui,"member-a");
+  assert.match(ui.el("inbox-platform-issues").children[0].textContent,/容量已满.*积压/);
+  assert.match(ui.el("inbox-backlog").textContent,/来源积压 4 条/);
+  assert.match(ui.el("inbox-status").textContent,/保留 50 条/);
+  await ui.el("inbox-followups").emit("click");
+  assert.equal(ui.el("policy-followups").open,true);
+  assert.equal(ui.el("policy-matters").children[0].children.at(-1).textContent,"待你答复：请确认范围");
+  assert.equal(api.calls.some(c=>/member\/run|inbox\/confirm|actions\/execute/.test(c.path)),false);
 });
