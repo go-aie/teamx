@@ -668,7 +668,7 @@ test("member list and activity details share the right sidebar, with back, colla
       return structuredClone({ member, current_output: { result: { events: [{ seq: 1, kind: "text", text: member.agent_id }] } } });
     }
   };
-  const ui = await launch(api), toggle = ui.el("toggle-members"), panel = ui.el("activity-dialog"), select = ui.el("activity-member");
+  const ui = await launch(api), toggle = ui.el("toggle-members"), panel = ui.el("activity-dialog");
   const list = ui.el("member-list-view");
   const reads = () => api.calls.filter(call => call.path === "/v1/member/activity");
   const open = async () => {
@@ -681,10 +681,10 @@ test("member list and activity details share the right sidebar, with back, colla
   await open();
   assert.equal(panel.open, true); assert.equal(panel.modal, false);
   assert.equal(toggle.attributes["aria-expanded"], "true"); assert.equal(list.hidden, true); assert.equal(list.inert, true);
-  assert.equal(select.value, "generation-reviewer"); assert.equal(select.options.find(option => option.value === select.value).textContent, "reviewer");
-  assert.equal(select.hidden, false);
-  select.value = "generation-observer"; await select.emit("change"); await settle();
-  assert.equal(select.value, "generation-observer"); assert.equal(reads().at(-1).data.agent_id, "observer");
+  assert.equal(ui.selectedAgent().membership_id, "generation-reviewer"); assert.equal(ui.el("activity-title").textContent, "reviewer");
+  assert.equal(ui.el("activity-member"), undefined);
+  await ui.el("close-activity").emit("click");await ui.el("members").children[0].querySelector(".member-summary").emit("click");await ui.el("agent-tab-activity").emit("click");await settle();
+  assert.equal(ui.selectedAgent().membership_id, "generation-observer"); assert.equal(reads().at(-1).data.agent_id, "observer");
   await ui.el("close-activity").emit("click"); await settle();
   assert.equal(panel.open, false); assert.equal(list.hidden, false); assert.equal(list.inert, false);
   const closedReads = reads().length; await ui.refresh(); await settle(); assert.equal(reads().length, closedReads);
@@ -808,14 +808,14 @@ test("execution hints open the matching member activity without sending or chang
   const close = async () => { await ui.el("close-activity").emit("click"); await settle(); };
   assert.equal(buttons()[0].textContent, "reviewer 正在处理…");
   await open(buttons()[0]);
-  assert.equal(ui.el("activity-member").value, "generation-reviewer");
+  assert.equal(ui.selectedAgent()?.membership_id, "generation-reviewer");
   assert.equal(reads().at(-1).data.membership_id, members[0].membership_id);
   assert.equal(ui.el("activity-timeline").children[0].children[1].children[0].textContent, "activity-reviewer");
   await close();
   members[1].status = "running"; members[1].execution.active = true;
   await ui.refresh(); await settle();
   assert.deepEqual(buttons().map(button => button.textContent), ["reviewer", "developer"]);
-  await open(buttons()[1]); assert.equal(ui.el("activity-member").value, members[1].membership_id); await close();
+  await open(buttons()[1]); assert.equal(ui.selectedAgent()?.membership_id, members[1].membership_id); await close();
   const oldButton = buttons()[1];
   members[1].membership_id = "replacement-developer";
   await ui.refresh(); await settle();
@@ -827,7 +827,7 @@ test("execution hints open the matching member activity without sending or chang
   members[1].status = "waiting"; members[1].execution.active = false;
   await ui.refresh(); await settle();
   assert.equal(buttons()[0].textContent, "developer 正在等待执行…");
-  await open(buttons()[0]); assert.equal(ui.el("activity-member").value, members[1].membership_id); await close();
+  await open(buttons()[0]); assert.equal(ui.selectedAgent()?.membership_id, members[1].membership_id); await close();
   assert.equal(api.calls.some(call => /^\/v1\/(send|member\/(run|pause|cancel))$/.test(call.path)), false);
 });
 
@@ -2083,7 +2083,7 @@ test("long-term rule editing preserves expiry and separates source from interpre
  assert.match(elementText(card.children[3]),/Room 消息 #18.*来源用户 tester/s);
  assert.match(elementText(card.children[3]),/原始来源.*记住这类报错.*Agent 理解：上下文明确/s);
  await card.children[0].children[1].children[0].emit("click");
- assert.equal(ui.el("policy-editor-title").textContent,"修改长期规则");
+ assert.equal(ui.el("policy-editor-title").textContent,"修改规则");
  assert.equal(ui.el("policy-text").value,record.text);
  ui.el("policy-text").value="AgenticHub 这类报错先建议找 hongwei；联系前询问我";await ui.el("policy-form").emit("submit");await settle();
  let change=api.calls.filter(c=>c.path==="/v1/policy/update").at(-1).data.policy;
@@ -2132,8 +2132,9 @@ test("AN-02.2 lost saves require a fresh version and late reads cannot cross roo
  const ui=await launch(api);await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();await ui.el("agent-tab-policy").emit("click");await settle();
  await ui.el("policy-new").emit("click");ui.el("policy-text").value="简短回复";
  await ui.el("policy-form").emit("submit");await settle();await ui.el("policy-form").emit("submit");await settle();
- assert.equal(api.calls.filter(c=>c.path==="/v1/policy/update").length,1);assert.match(ui.el("policy-status").textContent,/刷新核对/);
- delay=true;const pending=ui.el("policy-reload").emit("click");await settle();await ui.select("B");finish();await pending;await settle();
+ assert.equal(api.calls.filter(c=>c.path==="/v1/policy/update").length,1);assert.match(ui.el("policy-status").textContent,/重试读取.*核对/);
+ const readsBeforeRetry=api.calls.filter(c=>c.path==="/v1/policy/read").length;await ui.refresh();await settle();assert.equal(api.calls.filter(c=>c.path==="/v1/policy/read").length,readsBeforeRetry);
+ delay=true;const pending=ui.el("policy-retry").emit("click");await settle();await ui.select("B");finish();await pending;await settle();
  assert.doesNotMatch(ui.el("policy-status").textContent,/99/);
 });
 
@@ -2738,4 +2739,74 @@ test("GitLab platform selection reads saved preferences without copying another 
   assert.equal(ui.el("gitlab-todos-reason-mentioned").checked,false);
   assert.equal(ui.el("gitlab-save").disabled,true);
   assert.equal(gitlabWrites(api).length,0);
+});
+
+
+function ruleRefreshFixture() {
+  const api=server([makeRoom("A"),makeRoom("B")]);
+  const member={agent_id:"assistant",membership_id:"rule-member",status:"idle",runner:{profile:"runtime"}};
+  const rule={id:"reply",version:1,status:"active",text:"先核实再回复",source:{user:"tester",text:"先核实再回复"},changed_by:{kind:"human",id:"tester"},updated_at:"2026-11-10T00:00:00Z"};
+  api.rules={revision:1,current:[rule],history:[rule],effective:[rule]};
+  api.readRules=()=>structuredClone(api.rules);
+  api.hook=(path)=>{
+    if(path==="/v1/member/list")return {members:[member]};
+    if(path==="/v1/policy/read")return api.readRules();
+    if(path==="/v1/policy/update")return {};
+    if(path==="/v1/member/inbox")return {snapshot_seq:0,entries:[],has_more:false,status:{latest_seq:0,limits:{bytes:1000},bytes:0}};
+    if(path==="/v1/matters/list")return {items:[],total:0,complete:true};
+  };
+  return api;
+}
+async function openRuleView(api) {
+  const ui=await launch(api);await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();
+  await ui.el("agent-tab-policy").emit("click");await settle();return ui;
+}
+const ruleReads=api=>api.calls.filter(c=>c.path==="/v1/policy/read").length;
+
+test("rules update automatically without rebuilding unchanged cards or moving reading position",async()=>{
+  const api=ruleRefreshFixture(),ui=await openRuleView(api);
+  assert.equal(ui.el("policy-reload"),undefined);assert.equal(ui.el("policy-retry").hidden,true);
+  const original=ui.el("policy-entries").children[0];original.children[3].open=true;ui.el("policy-member-view").scrollTop=123;
+  await ui.refresh();await settle();assert.equal(ui.el("policy-entries").children[0],original);
+  api.rules.current[0].text="先查最新文档再回复";api.rules.revision=2;
+  await ui.refresh();await settle();
+  const updated=ui.el("policy-entries").children[0];assert.match(elementText(updated),/先查最新文档再回复/);
+  assert.equal(updated.children[3].open,true);assert.equal(ui.el("policy-member-view").scrollTop,123);
+  assert.equal(api.calls.some(c=>/policy\/update|inbox\/(read|confirm)|member\/run/.test(c.path)),false);
+});
+
+test("rule polling protects draft fields and rejects a response started before editing",async()=>{
+  const api=ruleRefreshFixture(),ui=await openRuleView(api);let finish;
+  api.readRules=()=>new Promise(resolve=>finish=resolve);
+  await ui.refresh();await settle();
+  await ui.el("policy-new").emit("click");ui.el("policy-text").value="未保存的草稿";ui.el("policy-expires").value="2099-01-01T12:30";
+  const reads=ruleReads(api);await ui.refresh();await settle();assert.equal(ruleReads(api),reads);
+  finish({revision:9,current:[],history:[],effective:[]});await settle();
+  assert.equal(ui.el("policy-form").hidden,false);assert.equal(ui.el("policy-text").value,"未保存的草稿");assert.equal(ui.el("policy-expires").value,"2099-01-01T12:30");
+  assert.equal(ui.el("policy-entries").children.length,1);
+  api.readRules=()=>({revision:2,current:[],history:[],effective:[]});
+  await ui.el("policy-cancel").emit("click");await settle();assert.equal(ui.el("policy-entries").children.length,0);
+});
+
+test("rule read errors retain the list and show Retry only until a successful read",async()=>{
+  const api=ruleRefreshFixture(),ui=await openRuleView(api),card=ui.el("policy-entries").children[0];
+  api.readRules=()=>{throw Error("offline");};await ui.refresh();await settle();
+  assert.equal(ui.el("policy-entries").children[0],card);assert.equal(ui.el("policy-retry").hidden,false);assert.match(ui.el("policy-status").textContent,/读取失败/);
+  api.readRules=()=>structuredClone(api.rules);await ui.el("policy-retry").emit("click");await settle();
+  assert.equal(ui.el("policy-retry").hidden,true);assert.equal(ui.el("policy-new").disabled,false);
+  await ui.el("agent-tab-inbox").emit("click");const reads=ruleReads(api);await ui.refresh();await settle();assert.equal(ruleReads(api),reads);
+});
+
+test("an initial rule read failure recovers automatically and enables editing",async()=>{
+  const api=ruleRefreshFixture();api.readRules=()=>{throw Error("offline");};const ui=await openRuleView(api);
+  assert.equal(ui.el("policy-retry").hidden,false);assert.equal(ui.el("policy-new").disabled,true);
+  api.readRules=()=>structuredClone(api.rules);await ui.refresh();await settle();
+  assert.equal(ui.el("policy-retry").hidden,true);assert.equal(ui.el("policy-new").disabled,false);assert.equal(ui.el("policy-entries").children.length,1);
+});
+
+test("a late automatic rule response cannot replace a new tab context",async()=>{
+  const api=ruleRefreshFixture(),ui=await openRuleView(api);let finish;
+  api.readRules=()=>new Promise(resolve=>finish=resolve);await ui.refresh();await settle();
+  api.readRules=()=>structuredClone(api.rules);await ui.el("agent-tab-inbox").emit("click");await ui.el("agent-tab-policy").emit("click");await settle();
+  const card=ui.el("policy-entries").children[0];finish({revision:99,current:[],history:[],effective:[]});await settle();assert.equal(ui.el("policy-entries").children[0],card);
 });

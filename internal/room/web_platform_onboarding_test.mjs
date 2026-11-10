@@ -241,12 +241,12 @@ test("platform notification summaries toggle only the chosen platform and preser
  };
  const ui=await launch(api);await openMemberInbox(ui);
  assert.equal(ui.el("gitlab-connection").hidden,true);assert.equal(ui.el("member-notification-platforms").children.length,2);
- const toggle=ui.el("member-notification-platforms").children[0].children[1];
+ const toggle=ui.el("member-notification-platforms").children[0].children[1].children[1];
  assert.equal(toggle.checked,true);assert.match(ui.el("member-notification-platforms").children[0].children[0].children[1].children[1].textContent,/我的待办/);
  const before=structuredClone(views[0].config);toggle.checked=false;await toggle.emit("change");
  const sent=calls(api,"/v1/platform/gitlab/notifications/configure")[0].body;
  assert.equal(sent.platform_id,"one");assert.deepEqual(sent.config,{...before,enabled:false});assert.equal(views[1].config.enabled,true);
- assert.equal(ui.el("member-notification-platforms").children[0].children[1].checked,false);
+ assert.equal(ui.el("member-notification-platforms").children[0].children[1].children[1].checked,false);
 });
 
 test("invalid account-bearing origins are rejected before persisting a prepare request or sending PAT",async()=>{
@@ -283,9 +283,9 @@ test("sidebar details open the exact same-type platform, without an intermediate
 test("quick pause preserves a detail draft and subsequent saves retain the confirmed pause and version",async()=>{
  const {api,views}=notificationFixture(),ui=await launch(api);await openNotification(ui,"gitlab","one");
  ui.el("gitlab-interval").value="73";await ui.el("gitlab-interval").emit("input");
- ui.el("notification-enabled").checked=false;await ui.el("notification-enabled").emit("change");
+ ui.notificationToggle().checked=false;await ui.notificationToggle().emit("change");
  assert.equal(views[0].config.interval_seconds,30);assert.equal(views[0].config.enabled,false);
- assert.equal(ui.el("gitlab-interval").value,73);assert.equal(ui.el("notification-enabled").checked,false);
+ assert.equal(ui.el("gitlab-interval").value,73);assert.equal(ui.notificationToggle().checked,false);
  await ui.el("gitlab-save").emit("click");
  assert.equal(views[0].config.interval_seconds,73);assert.equal(views[0].config.enabled,false);assert.equal(views[1].config.enabled,true);
  assert.equal(calls(api,"/v1/platform/gitlab/notifications/configure").length,2);
@@ -294,16 +294,16 @@ test("quick pause preserves a detail draft and subsequent saves retain the confi
 test("quick switches roll back on rejection, block duplicate writes and recover an unknown committed result by reading",async()=>{
  const {api,views}=notificationFixture(),original=api.hook;let finish;
  api.hook=(path,body)=>path==="/v1/platform/gitlab/notifications/configure" ? new Promise((resolve,reject)=>{finish={resolve,reject,body};}) : original(path,body);
- const ui=await launch(api);await openMemberInbox(ui);const toggle=ui.el("member-notification-platforms").children[0].children[1];
+ const ui=await launch(api);await openMemberInbox(ui);const toggle=ui.el("member-notification-platforms").children[0].children[1].children[1];
  toggle.checked=false;const saving=toggle.emit("change");await settle();
- assert.equal(ui.el("member-notification-platforms").children[0].children[1].disabled,true);
+ assert.equal(ui.el("member-notification-platforms").children[0].children[1].children[1].disabled,true);
  await toggle.emit("change");assert.equal(calls(api,"/v1/platform/gitlab/notifications/configure").length,1);
  finish.reject(Object.assign(Error("rejected"),{code:"request"}));await saving;
- assert.equal(ui.el("member-notification-platforms").children[0].children[1].checked,true);
- assert.match(ui.el("member-notification-platforms").children[0].children[3].textContent,/完善接收设置/);
- const next=ui.el("member-notification-platforms").children[0].children[1];next.checked=false;const uncertain=next.emit("change");await settle();
+ assert.equal(ui.el("member-notification-platforms").children[0].children[1].children[1].checked,true);
+ assert.match(ui.el("member-notification-platforms").children[0].children[2].textContent,/完善接收设置/);
+ const next=ui.el("member-notification-platforms").children[0].children[1].children[1];next.checked=false;const uncertain=next.emit("change");await settle();
  views[0].config.enabled=false;views[0].version++;finish.reject(Error("lost response"));await uncertain;
- assert.equal(ui.el("member-notification-platforms").children[0].children[1].checked,false);
+ assert.equal(ui.el("member-notification-platforms").children[0].children[1].children[1].checked,false);
  assert.equal(calls(api,"/v1/platform/gitlab/notifications/configure").length,2);
 });
 
@@ -325,19 +325,19 @@ test("Lark quick pause preserves selected chats, target, history and an unsaved 
  };
  const before=structuredClone(source.config),ui=await launch(api);await openNotification(ui,"lark");
  ui.el("lark-interval").value="90";await ui.el("lark-interval").emit("change");
- ui.el("notification-enabled").checked=false;await ui.el("notification-enabled").emit("change");
+ ui.notificationToggle().checked=false;await ui.notificationToggle().emit("change");
  assert.deepEqual(source.config,{...before,enabled:false});assert.equal(ui.el("lark-interval").value,"90");assert.equal(ui.el("lark-enabled").checked,false);
  await ui.el("lark-save").emit("click");assert.equal(source.config.interval_seconds,90);assert.equal(source.config.enabled,false);assert.deepEqual(source.config.groups.chat_ids,["group"]);
 });
 
-test("an existing Lark account can start default reception without an extra edit or tool grant",async()=>{
+test("saving first Lark settings creates a paused subscription without granting tools",async()=>{
  const api=fixture();api.platforms=[{id:"lark",name:"公司飞书",provider:"lark",url:"https://open.feishu.cn",validation:{status:"valid",username:"Alice"}}];
  api.hook=(path,body)=>path==="/v1/platform/notifications/configure" ? {provider:"lark",channel:"messages",subscription_id:"new-sub",subscription_version:1,status:"running",config:structuredClone(body.config),lark:{}} : undefined;
  const ui=await launch(api);assert.equal(ui.el("member-notification-platforms").children.length,0);
  await openNotification(ui,"lark");assert.equal(ui.el("lark-save").disabled,false);
  await ui.el("lark-save").emit("click");
  const saved=calls(api,"/v1/platform/notifications/configure")[0].body;
- assert.equal(saved.config.platform_id,"lark");assert.equal(saved.config.enabled,true);assert.equal(saved.config.private.enabled,true);assert.equal(saved.config.target.membership_id,"member-0");
+ assert.equal(saved.config.platform_id,"lark");assert.equal(saved.config.enabled,false);assert.equal(saved.config.private.enabled,true);assert.equal(saved.config.target.membership_id,"member-0");
  assert.equal(calls(api,"/v1/tools/bind").length,0);assert.equal(ui.el("member-notification-platforms").children.length,1);
 });
 
@@ -345,7 +345,7 @@ test("a failed detail selection hides the previous account's form and retry read
  const {api}=notificationFixture(),original=api.hook;let fail=true;
  api.hook=(path,body)=>path.startsWith("/v1/platform/gitlab/notifications?") && new URL(path,"http://fixture").searchParams.get("platform_id")==="two" && fail ? Promise.reject(Error("offline")) : original(path,body);
  const ui=await launch(api);await openNotification(ui,"gitlab","one");await openNotification(ui,"gitlab","two");
- assert.equal(ui.el("notification-title").textContent,"agent-0 · GitLab two 设置");assert.equal(ui.el("notification-panel-gitlab").hidden,true);assert.equal(ui.el("notification-enabled").disabled,true);
+ assert.equal(ui.el("notification-title").textContent,"agent-0 · GitLab two 设置");assert.equal(ui.el("notification-panel-gitlab").hidden,true);assert.equal(ui.el("gitlab-save").disabled,true);
  fail=false;await ui.el("notification-reload").emit("click");
  assert.equal(ui.el("notification-panel-gitlab").hidden,false);assert.equal(ui.el("gitlab-connection").value,"two");
 });

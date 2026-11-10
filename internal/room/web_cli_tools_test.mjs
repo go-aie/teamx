@@ -41,8 +41,8 @@ async function open(ui) {
  await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();
 }
 const row=(ui,id="connection")=>ui.el("member-notification-platforms").children.find(r=>r.dataset.platformId===id);
-const toggle=(ui,id)=>row(ui,id).children[5].children[0];
-const feedback=(ui,id)=>row(ui,id).children[3].textContent;
+const toggle=(ui,id)=>row(ui,id).children[1].children[2].children[0];
+const feedback=(ui,id)=>row(ui,id).children[2].textContent;
 const binds=api=>api.calls.filter(c=>c.path==="/v1/tools/bind");
 async function change(ui,id,enabled){const input=toggle(ui,id);input.checked=enabled;await input.emit("change");}
 
@@ -62,9 +62,9 @@ test("Scion has no notification switch and only verified accounts can enable too
  const platforms=[{id:"scion",name:"Scion demo",provider:"scion",version:2,validation:{status:"valid",username:"alice"}},{id:"bad",name:"待验证",provider:"scion",validation:{status:"unverified"}}];
  api.hook=path=>path.startsWith("/v1/platforms?")?{platforms}:undefined;
  const ui=await launch(api);await open(ui);
- assert.equal(row(ui,"scion").children[1].hidden,true);assert.equal(toggle(ui,"bad").disabled,true);assert.equal(binds(api).length,0);
+ assert.equal(row(ui,"scion").children[1].children[1].hidden,true);assert.equal(toggle(ui,"bad").disabled,true);assert.equal(binds(api).length,0);
  await change(ui,"scion",true);assert.equal(binds(api)[0].body.binding.tool,"scion");assert.equal(binds(api)[0].body.platform_version,2);
- await row(ui,"scion").children[2].emit("click");assert.match(ui.el("notification-title").textContent,/Scion demo 设置/);assert.match(ui.el("notification-notice").textContent,/无通知能力/);
+ await row(ui,"scion").children[0].emit("click");assert.match(ui.el("notification-title").textContent,/Scion demo 设置/);assert.match(ui.el("notification-notice").textContent,/暂无可调整的配置/);
 });
 test("member platforms omit the empty other-tools section and routine reload controls",async()=>{
  const api=fixture(),ui=await launch(api);await open(ui);
@@ -81,8 +81,8 @@ test("pending tool writes block duplicates even after switching away and back",a
  api.hook=path=>path==="/v1/tools/bind" ? new Promise(r=>release=r) : undefined;
  const saving=change(ui,"connection",true);await settle();assert.equal(toggle(ui).checked,true);assert.equal(toggle(ui).disabled,true);
  await toggle(ui).emit("change");assert.equal(binds(api).length,1);
- ui.el("activity-member").value="member-b";await ui.el("activity-member").emit("change");await settle();
- ui.el("activity-member").value="member-a";await ui.el("activity-member").emit("change");await settle();assert.equal(toggle(ui).disabled,true);
+ await ui.el("close-activity").emit("click");await ui.el("members").children[1].querySelector(".member-summary").emit("click");await settle();
+ await ui.el("close-activity").emit("click");await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();assert.equal(toggle(ui).disabled,true);
  api.data.bindings.push({agent_id:"agent-a",membership_id:"member-a",tool:"gitlab",platform_id:"connection"});api.data.disabled=[];api.data.revision=1;release(structuredClone(api.data));await saving;
  assert.equal(toggle(ui).checked,true);assert.equal(toggle(ui).disabled,false);assert.equal(binds(api).length,1);
 });
@@ -107,7 +107,7 @@ test("late retry reads cannot replace a different member's platforms",async()=>{
  api.hook=path=>path.startsWith("/v1/tools/bindings?")?new Promise(r=>release=r):undefined;
  const reading=ui.el("member-notification-list-reload").emit("click");await settle();api.hook=null;
  api.data.disabled.push({agent_id:"agent-b",membership_id:"member-b",tool:"gitlab",platform_id:"connection"});
- ui.el("activity-member").value="member-b";await ui.el("activity-member").emit("change");await settle();
+ await ui.el("close-activity").emit("click");await ui.el("members").children[1].querySelector(".member-summary").emit("click");await settle();
  const rows=ui.el("member-notification-platforms").children;release({...api.data,catalog:[]});await reading;
  assert.equal(ui.el("member-notification-platforms").children,rows);assert.equal(rows.length,1);
  await change(ui,"connection",true);assert.equal(binds(api).at(-1).body.binding.membership_id,"member-b");
@@ -125,8 +125,7 @@ for(const self of [false,true])test(`Lark switch retains accepted capabilities, 
  await change(ui,"one",false);await change(ui,"one",true);await change(ui,"two",true);
  const sent=binds(api).at(-1).body.binding;assert.equal(sent.platform_id,"two");assert.equal(sent.capability_evidence,undefined);
  assert.deepEqual(sent.action_authorization.grants,[{operation:"message.reply",target_kind:"message",object_type:"message"},...(self ? [{operation:"message.send_self",target_kind:"object",object_type:"user"}] : [])]);
- await row(ui,"one").children[2].emit("click");assert.doesNotMatch(ui.el("member-platform-tool-help").textContent,/private detail|验收|oc_old/);
- if(self)assert.match(ui.el("member-platform-tool-help").textContent,/发送到本人自聊/);
+ await row(ui,"one").children[0].emit("click");assert.equal(ui.el("member-platform-tool-control"),undefined);
  await change(ui,"one",false);assert.equal(toggle(ui,"two").checked,true);
 });
 test("unavailable accounts can be disabled without exposing historical target IDs",async()=>{

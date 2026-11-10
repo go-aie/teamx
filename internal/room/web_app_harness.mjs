@@ -60,11 +60,12 @@ class Element {
 export const settle = async () => { for (let i=0; i<15; i++) await new Promise(resolve => setImmediate(resolve)); };
 export async function launch(api, saved = new Map()) {
   const elements = new Map([...html.matchAll(/id="([^"]+)"/g)].map(match => [match[1], new Element()]));
-  for (const id of ["lark-group-mode", "lark-chat-type", "lark-connection", "lark-target", "lark-backfill", "connection-provider", "connection-profile", "connection-scion-profile", "team", "profile", "activity-member", "workspace-connection", "gitlab-connection", "gitlab-target", "onboarding-room", "onboarding-member", "onboarding-backfill", "gitlab-application"]) elements.get(id).tag = "select";
+  for (const id of ["lark-group-mode", "lark-chat-type", "lark-connection", "lark-target", "lark-backfill", "connection-provider", "connection-profile", "connection-scion-profile", "team", "profile", "workspace-connection", "gitlab-connection", "gitlab-target", "onboarding-room", "onboarding-member", "onboarding-backfill", "gitlab-application"]) elements.get(id).tag = "select";
   for (const id of ["message-template", "member-template"]) elements.get(id).content = { firstElementChild: new Element() };
   for (const [, id, value] of html.matchAll(/<input id="(gitlab-(?:events-type|todos-reason|todos-type)-[^"]+)" type="checkbox" value="([^"]+)"/g)) {
     elements.get(id).tag = "input"; elements.get(id).value = value; elements.get(id).checked = false;
   }
+  for(const id of ["notification-add-picker","member-notification-add-picker"]) elements.get(id).hidden=true;
   elements.get("lark-scope").tag = "input";
   const workspace = elements.get("workspace"); workspace.clientWidth = 1440;
   elements.get("room-rail").clientWidth = 240;
@@ -115,10 +116,14 @@ export async function launch(api, saved = new Map()) {
     return data;
   };
   const AsyncFunction = Object.getPrototypeOf(async function() {}).constructor;
-  const entry = new AsyncFunction(...names, app + "\nreturn { refresh, openNotificationSource, selectedAgent };\n");
+  const entry = new AsyncFunction(...names, app + `\nreturn { refresh, openNotificationSource, selectedAgent, notificationToggle: () => {
+    const target=activeNotificationTarget(),list=target.mode!=="inbox" ? $("notification-platforms") : state.members.some(m=>m.membership_id===target.membership_id) ? $("member-notification-platforms") : $("notification-orphan-items");
+    const row=[...list.children].find(row=>row.dataset.platformId===workspaceView.notificationPlatformID);
+    return row?.className.includes("member-platform-row") ? row.children[1].children[1] : row?.children[1];
+  } };\n`);
   const entrypoint = await entry(...values);
   assert.ok(!elements.get("sync-error").textContent, elements.get("sync-error").textContent);
-  return { el: id => elements.get(id), saved, document, window, clock, refresh: entrypoint.refresh, openNotificationSource:entrypoint.openNotificationSource, selectedAgent:entrypoint.selectedAgent,
+  return { el: id => elements.get(id), saved, document, window, clock, refresh: entrypoint.refresh, openNotificationSource:entrypoint.openNotificationSource, selectedAgent:entrypoint.selectedAgent, notificationToggle:entrypoint.notificationToggle,
     async draft(text) { elements.get("message-input").value = text; await elements.get("message-input").emit("input"); },
     async select(name) {
       const choice = elements.get("room-list").children.map(row => row.children[0]).find(button => button.children[0].textContent === name);
@@ -163,11 +168,11 @@ export function withOnboarding(api) {
 }
 
 export async function openMemberInbox(ui, membershipID = "") {
+  if(membershipID && ui.selectedAgent()?.membership_id!==membershipID && ui.el("activity-dialog").open){await ui.el("close-activity").emit("click");await settle();}
   if(!ui.el("activity-dialog").open) {
     const row=ui.el("members").children.find(row=>!membershipID || row.querySelector(".member-summary").dataset.activityMember===membershipID) || ui.el("members").children[0];
     assert.ok(row,"member is listed");await row.querySelector(".member-summary").emit("click");await settle();
   }
-  if(membershipID && ui.el("activity-member").value!==membershipID){ui.el("activity-member").value=membershipID;await ui.el("activity-member").emit("change");await settle();}
   if(ui.el("agent-tab-inbox").attributes["aria-selected"]!=="true"){await ui.el("agent-tab-inbox").emit("click");await settle();}
 }
 export async function openNotification(ui, provider, platformID = "", member = provider === "lark") {

@@ -70,17 +70,16 @@ test("Lark settings distinguish an unsaved switch from saved state and sync feed
  const ui=await launch(api);await draft(ui);
  assert.equal(ui.el("lark-state").textContent,"待保存");assert.equal(ui.el("lark-sync").disabled,true);
  await ui.el("lark-save").emit("click");
- assert.equal(ui.el("lark-state").textContent,"运行中");assert.equal(ui.el("lark-feedback").textContent,"设置已保存。");
+ assert.equal(ui.el("lark-state").textContent,"");assert.equal(ui.el("lark-feedback").textContent,"设置已保存。");
  await ui.el("lark-sync").emit("click");
  assert.equal(api.calls.filter(call=>call.path==="/v1/platform/notifications/sync").length,1);
  assert.match(ui.el("lark-feedback").textContent,/已发起同步/);
 });
-test("Lark enable reveals configuration and disabling preserves the draft",async()=>{
+test("Lark scope edits preserve the interval and selected chats without saving",async()=>{
  const api=fixture(),ui=await launch(api);await draft(ui);
- await ui.el("lark-enabled").emit("change");assert.equal(ui.el("lark-settings").open,true);
  ui.el("lark-interval").value="90";await ui.el("lark-interval").emit("change");
- ui.el("lark-enabled").checked=false;await ui.el("lark-enabled").emit("change");assert.equal(ui.el("lark-settings").open,false);
- ui.el("lark-enabled").checked=true;await ui.el("lark-enabled").emit("change");assert.equal(ui.el("lark-settings").open,true);
+ ui.el("lark-groups-enabled").checked=false;await ui.el("lark-groups-enabled").emit("change");assert.equal(ui.el("lark-group-settings").hidden,true);
+ ui.el("lark-groups-enabled").checked=true;await ui.el("lark-groups-enabled").emit("change");assert.equal(ui.el("lark-group-settings").hidden,false);
  assert.equal(ui.el("lark-interval").value,"90");assert.equal(ui.el("lark-chat-selected").children.length,1);
  assert.equal(api.calls.some(call=>call.path==="/v1/platform/notifications/configure"),false);
 });
@@ -474,7 +473,7 @@ test("Lark custom historical start uses local time and survives refresh and save
  const reloaded=await launch(api);await openNotification(reloaded,"lark");await settle();
  assert.equal(reloaded.el("lark-backfill").value,"custom");assert.equal(reloaded.el("lark-backfill-start").value,local);
  assert.equal(reloaded.el("lark-backfill").disabled,true);assert.equal(reloaded.el("lark-backfill-start").disabled,true);
- assert.match(reloaded.el("lark-backfill-help").textContent,/已锁定.*新建房间/);
+ assert.match(reloaded.el("lark-backfill-help").textContent,/更早消息.*新建房间/);
 });
 test("Lark rejects future backfill dates and switching back to default clears custom submission",async()=>{
  const api=fixture(),ui=await launch(api);await draft(ui);
@@ -492,7 +491,7 @@ test("Lark locked history start does not block other settings or rewrite the sav
  const api=fixture(),start=new Date(Math.floor((Date.now()-86400000)/1000)*1000);
  api.data={...api.data,subscription_id:"existing",subscription_version:3,status:"running",config:{...api.data.config,enabled:true,platform_id:"lark-connection",groups:{...api.data.config.groups,enabled:true,chat_ids:["oc_fixture"]},backfill_start:start.toISOString(),target:{mode:"inbox",agent_id:"assistant",membership_id:"member-a"}},lark:{...api.data.lark,baseline:start.toISOString()}};
  const ui=await launch(api);await openNotification(ui,"lark");await settle();
- assert.equal(ui.el("lark-backfill").disabled,true);assert.match(ui.el("lark-backfill-help").textContent,/接收起点.*已锁定.*新建房间/);
+ assert.equal(ui.el("lark-backfill").disabled,true);assert.match(ui.el("lark-backfill-help").textContent,/更早消息.*新建房间/);
  ui.el("lark-interval").value="10";await ui.el("lark-interval").emit("change");
  assert.equal(ui.el("lark-save").disabled,false);await ui.el("lark-save").emit("click");
  const saved=api.calls.find(x=>x.path==="/v1/platform/notifications/configure").body;
