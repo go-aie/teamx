@@ -24,7 +24,7 @@ func larkImageHarness(t *testing.T, legacy bool) (*larkHarness, MemberIdentity, 
 	if err := os.WriteFile(filepath.Join(h.dir, "image.png"), data.Bytes(), 0600); err != nil {
 		t.Fatal(err)
 	}
-	script := strings.Replace(l2Fixture, "path=a[2]", `if a[:2]==['im','+messages-resources-download']:
+	script := strings.Replace(larkFixtureScript(), "path=a[2]", `if a[:2]==['im','+messages-resources-download']:
  assert a[2:8]==['--message-id','om_image','--file-key','img_fixture','--type','image'] and a[8:]==['--output','image.bin','--as','user','--format','json']
  with open(base+'/downloads','a') as f:f.write(os.getcwd()+'\n')
  open(base+'/download-started','w').write('yes')

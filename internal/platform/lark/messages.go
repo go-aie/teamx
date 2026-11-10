@@ -119,7 +119,7 @@ func (c *Client) Message(ctx context.Context, account platform.AccountIdentity, 
 			Items []Message `json:"items"`
 		}
 		if err := c.api(ctx, "/open-apis/im/v1/messages/"+id, struct{}{}, &wire); err != nil {
-			return err
+			return messageReadError(err)
 		}
 		if len(wire.Items) != 1 || wire.Items[0].ID != id || !wire.Items[0].valid() {
 			return failure("invalid_response")

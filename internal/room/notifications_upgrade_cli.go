@@ -8,6 +8,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/go-aie/teamx/internal/platform/lark"
 )
 
 // These explicit offline commands convert local notification settings/scopes.
@@ -54,7 +56,7 @@ func runNotificationsUpgrade(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(stdout, "Notification scope format: GitLab settings schema %d, sources schema 3; upgraded %d files. Subscription IDs, progress, frozen routes and receipts are preserved. Private .vN.bak backups and member-notifications-upgrade.json support recovery; restore the complete backup set to roll back.\n", gitlabNotificationSchema, count)
+	_, err = fmt.Fprintf(stdout, "Notification scope format: GitLab settings schema %d, sources schema 3; Lark sources schema %d; upgraded %d files. Subscription IDs, progress, frozen routes and receipts are preserved. Private .vN.bak backups and %s support recovery. After new deliveries, recover the latest complete state with a compatible binary; do not replace it with a pre-upgrade backup.\n", gitlabNotificationSchema, m.notificationAdapters[lark.MessagesSourceID].Source.Schema(), count, m.notificationUpgradeJournal())
 	return err
 }
 

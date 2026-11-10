@@ -258,7 +258,8 @@ func (m *roomManager) servePlatformNotifications(w http.ResponseWriter, r *http.
 			Retired         []notificationView       `json:"retired_subscriptions"`
 			GitLab          *gitlabNotificationView  `json:"gitlab,omitempty"`
 			GitLabPlatforms []gitlabNotificationView `json:"gitlab_platforms"`
-		}{views, retired, single, platformViews})
+			LarkDefaults    lark.Config              `json:"lark_defaults"`
+		}{views, retired, single, platformViews, m.defaultLarkConfig("")})
 		return
 	}
 	if r.Method != http.MethodPost {

@@ -27,6 +27,7 @@ type PrivateConfig struct {
 	ChatIDs []string `json:"chat_ids"`
 }
 type GroupConfig struct {
+	Scope       string   `json:"scope,omitempty"`
 	Enabled     bool     `json:"enabled"`
 	ChatIDs     []string `json:"chat_ids"`
 	MessageMode string   `json:"message_mode"`
@@ -83,9 +84,10 @@ func NormalizeConfig(c Config) (Config, error) {
 	c.BackfillStart = start
 	if !component(c.PlatformID) || !c.Target.Valid() || !c.Target.Inbox() ||
 		(c.Private.Scope != "all" && c.Private.Scope != "specified") ||
+		(c.Groups.Scope != "" && c.Groups.Scope != "specified" && c.Groups.Scope != "all") ||
 		(c.Groups.MessageMode != "mentions" && c.Groups.MessageMode != "all") ||
 		c.Private.Enabled && c.Private.Scope == "specified" && len(c.Private.ChatIDs) == 0 ||
-		c.Groups.Enabled && len(c.Groups.ChatIDs) == 0 ||
+		c.Groups.Enabled && c.Groups.Scope != "all" && len(c.Groups.ChatIDs) == 0 ||
 		c.Enabled && !c.Private.Enabled && !c.Groups.Enabled ||
 		c.IntervalSeconds < 3 || c.IntervalSeconds > 3600 {
 		return c, notification.ErrRequest
@@ -111,7 +113,7 @@ func (c Config) Includes(chat Chat) bool {
 	case "p2p":
 		return c.Private.Enabled && (c.Private.Scope == "all" || slices.Contains(c.Private.ChatIDs, chat.ID))
 	case "group", "topic":
-		return c.Groups.Enabled && slices.Contains(c.Groups.ChatIDs, chat.ID)
+		return c.Groups.Enabled && (c.Groups.Scope == "all" || slices.Contains(c.Groups.ChatIDs, chat.ID))
 	}
 	return false
 }
@@ -162,6 +164,7 @@ type Entry struct {
 }
 type State struct {
 	platform.RoomIdentity
+	Search              *SearchProgress               `json:"search,omitempty"`
 	Retired             bool                          `json:"retired,omitempty"`
 	SubscriptionID      string                        `json:"subscription_id"`
 	SubscriptionVersion uint64                        `json:"subscription_version"`
@@ -197,6 +200,9 @@ func (s State) ExcludedItems() int {
 func (s State) Validate(owner platform.RoomIdentity) error {
 	c, e := NormalizeConfig(s.Config)
 	if e != nil || !reflect.DeepEqual(c, s.Config) || s.RoomIdentity != owner || owner.RoomID == "" || owner.RoomInstance == "" || !component(s.SubscriptionID) || s.SubscriptionVersion == 0 || !s.Binding.Valid() || s.Config.PlatformID != s.Binding.PlatformID || s.Baseline.IsZero() && (c.Enabled || len(s.Chats)+len(s.Observed)+len(s.Accepted)+len(s.Inbox) > 0 || s.Directory != nil || !s.LastFull.IsZero()) || s.Chats == nil || s.Observed == nil || s.Accepted == nil || s.Inbox == nil || s.NextChat < 0 || s.NextChat >= MaxChats || len(s.Chats) > MaxChats || s.PriorityTurn < 0 || s.PriorityTurn > 2 || s.RuntimeState.Validate(c.Enabled) != nil || s.Retired && c.Enabled {
+		return notification.ErrInvalid
+	}
+	if s.Search != nil && s.validateSearch() != nil {
 		return notification.ErrInvalid
 	}
 	if !s.Baseline.IsZero() && !c.BackfillStart.IsZero() && !s.Baseline.Equal(c.BackfillStart) {
@@ -306,6 +312,13 @@ func (s State) ScopeFailed(e error) notification.State {
 	return n
 }
 func Configure(owner platform.RoomIdentity, current *State, b Binding, c Config, now time.Time) (State, error) {
+	if c.Groups.Scope == "all" && (current == nil || current.Search == nil) {
+		return State{}, notification.ErrRequest
+	}
+	return configure(owner, current, b, c, now)
+}
+
+func configure(owner platform.RoomIdentity, current *State, b Binding, c Config, now time.Time) (State, error) {
 	c, e := NormalizeConfig(c)
 	if e != nil {
 		return State{}, e
@@ -363,6 +376,9 @@ func Configure(owner platform.RoomIdentity, current *State, b Binding, c Config,
 		p.ErrorCode = ""
 		p.RetryAt = time.Time{}
 		n.Chats[id] = p
+	}
+	if n.Search != nil {
+		n.reconfigureSearch()
 	}
 	n.pruneObserved()
 	if !n.Baseline.IsZero() {

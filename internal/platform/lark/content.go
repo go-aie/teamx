@@ -196,7 +196,13 @@ func Matches(m Message, chat Chat, accountID string, c Config) bool {
 			return true
 		}
 	}
-	// Rich posts can encode @all in an at element without an entry in mentions.
+	// Rich posts can carry native identities without a mentions entry.
+	if m.Type == "post" && c.Groups.AtMe {
+		var v any
+		if json.Unmarshal([]byte(m.Body.Content), &v) == nil && hasNativeAt(v, accountID, 0) {
+			return true
+		}
+	}
 	if c.Groups.AtAll && (m.Type == "post" || m.Type == "text") {
 		if m.Type == "text" {
 			var body struct {
@@ -206,28 +212,28 @@ func Matches(m Message, chat Chat, accountID string, c Config) bool {
 		}
 		var v any
 		if json.Unmarshal([]byte(m.Body.Content), &v) == nil {
-			return hasAll(v, 0)
+			return hasNativeAt(v, "all", 0)
 		}
 	}
 	return false
 }
-func hasAll(v any, depth int) bool {
+func hasNativeAt(v any, id string, depth int) bool {
 	if depth > 20 {
 		return false
 	}
 	switch x := v.(type) {
 	case map[string]any:
-		if x["tag"] == "at" && x["user_id"] == "all" {
+		if x["tag"] == "at" && x["user_id"] == id {
 			return true
 		}
 		for _, v := range x {
-			if hasAll(v, depth+1) {
+			if hasNativeAt(v, id, depth+1) {
 				return true
 			}
 		}
 	case []any:
 		for _, v := range x {
-			if hasAll(v, depth+1) {
+			if hasNativeAt(v, id, depth+1) {
 				return true
 			}
 		}

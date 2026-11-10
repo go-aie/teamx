@@ -63,7 +63,7 @@ func newLarkHarness(t *testing.T) *larkHarness {
 	m.bindPlatformReferences(svc)
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "lark-cli")
-	if e := os.WriteFile(bin, []byte(l2Fixture), 0700); e != nil {
+	if e := os.WriteFile(bin, []byte(larkFixtureScript()), 0700); e != nil {
 		t.Fatal(e)
 	}
 	c := platformTestSave(t, m, managedPlatformRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("c", 32), Name: "飞书", Provider: "lark", URL: lark.Origin("feishu"), CLIProfile: &platform.CLIProfile{Version: 1, Executable: bin, Profile: "fixture", Brand: "feishu", CLIVersion: lark.CLIVersion}})
@@ -126,10 +126,54 @@ func (h *larkHarness) start() {
 	h.m.mu.Lock()
 	r := h.m.notifications.NewRunnerLocked(s.Metadata().Key)
 	h.m.mu.Unlock()
-	r.Step(context.Background())
-	r.Step(context.Background())
+	for step := 0; step < 32; step++ {
+		_, stop := r.Step(context.Background())
+		state := h.state()
+		if stop || state.ErrorCode != "" {
+			h.t.Fatal("search fixture stopped", state.ErrorCode)
+		}
+		if !state.LastFull.IsZero() && state.LastFull.Unix() >= h.clock.get().Unix()-1 {
+			return
+		}
+	}
+	h.t.Fatal("search fixture did not finish")
 }
 func (h *larkHarness) deliver() error {
 	s := h.state()
 	return h.m.notifications.Deliver(context.Background(), s.Metadata().Key, s.SubscriptionVersion)
+}
+
+func refreshLarkSearchFixture(t *testing.T, state lark.State) lark.State {
+	t.Helper()
+	state.Search = nil
+	raw, _ := json.Marshal(state)
+	raw, err := lark.UpgradeSearchState(raw, 3, state.RoomIdentity)
+	if err != nil || json.Unmarshal(raw, &state) != nil {
+		t.Fatal("search fixture request binding", err)
+	}
+	return state
+}
+
+func larkFixtureScript() string {
+	search := `
+if path=='/open-apis/im/v1/messages/search':
+ from datetime import datetime,timezone
+ f=json.loads(a[6])['filter'];items=[]
+ start=datetime.fromisoformat(f['time_range']['start_time'].replace('Z','+00:00')).timestamp()
+ end=datetime.fromisoformat(f['time_range']['end_time'].replace('Z','+00:00')).timestamp()
+ for m in json.load(open(base+'/messages.json')):
+  p2p=m['chat_id']=='oc_chat'
+  if (f['chat_type']=='p2p')!=p2p or not start<=int(m['create_time'])/1000<=end:continue
+  if f.get('chat_ids') and m['chat_id'] not in f['chat_ids']:continue
+  if f.get('from_ids') and m['sender']['id'] not in f['from_ids']:continue
+  if f.get('is_at_me') and not m.get('mentions'):continue
+  items.append({'id':m['message_id'],'meta_data':{'message_id':m['message_id'],'chat_id':m['chat_id'],'from_id':m['sender']['id'],'create_time':datetime.fromtimestamp(int(m['create_time'])/1000,timezone.utc).isoformat(),'is_p2p_chat':p2p}})
+ print(json.dumps({'ok':True,'identity':'user','data':{'items':items,'has_more':False}}));sys.exit()
+if path=='/open-apis/im/v1/messages/mget':
+ ids=json.loads(a[4])['message_ids'];items=[m for m in json.load(open(base+'/messages.json')) if m['message_id'] in ids]
+ print(json.dumps({'ok':True,'identity':'user','data':{'items':items}}));sys.exit()
+`
+	script := strings.Replace(l2Fixture, "path=a[2]", "path=a[2]\n"+search, 1)
+	script = strings.Replace(script, "data={'chat_mode':'p2p','name':'脱敏会话','tenant_key':'external_tenant'}", "data={'chat_mode':'p2p' if path.endswith('/oc_chat') else 'group','name':'脱敏会话','tenant_key':'external_tenant'}", 1)
+	return script
 }

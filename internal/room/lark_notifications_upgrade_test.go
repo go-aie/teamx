@@ -20,6 +20,7 @@ func oldLarkSnapshot(t *testing.T, m *roomManager, s lark.State, bots bool) (str
 	raw, _ := json.Marshal(s)
 	var fields map[string]json.RawMessage
 	_ = json.Unmarshal(raw, &fields)
+	delete(fields, "search")
 	cfg := map[string]any{"enabled": s.Config.Enabled, "platform_id": s.Binding.PlatformID, "chats": s.Config.Private.ChatIDs, "target": s.Config.Target, "private": true, "group_mentions": true, "at_all": false, "bots": bots, "interval_seconds": s.Config.IntervalSeconds, "backfill_seconds": s.Config.BackfillSeconds}
 	fields["config"], _ = json.Marshal(cfg)
 	raw, _ = json.Marshal(fields)
@@ -84,6 +85,7 @@ func TestLarkNotificationsOfflineUpgradePreservesEvidenceAndIsRepeatable(t *test
 	// NormalizeConfig adds the explicit category representation only. Runtime
 	// identity, progress, pending items and frozen destinations must match exactly.
 	want.Config = got.Config
+	want.Search, want.LastFull = got.Search, got.LastFull
 	if !reflect.DeepEqual(got, want) {
 		t.Fatal("upgrade changed identity/progress/backlog")
 	}

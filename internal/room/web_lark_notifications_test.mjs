@@ -907,3 +907,51 @@ test("Lark onboarding opt-out keeps first reception start editable",async()=>{
  const saved=api.calls.find(c=>c.path==="/v1/platform/notifications/configure").body;
  assert.equal(saved.subscription_id,"unstarted");assert.equal(saved.config.backfill_seconds,0);
 });
+
+test("Lark search defaults come from the server and reading them never creates a subscription",async()=>{
+ const api=fixture(),original=api.request;
+ const defaults={enabled:true,private:{enabled:true,scope:"all",chat_ids:[]},groups:{enabled:true,scope:"all",chat_ids:[],message_mode:"mentions",at_me:true,at_all:true},interval_seconds:10};
+ api.request=async(path,body)=>path.startsWith("/v1/platform/notifications?") ? {subscriptions:[],lark_defaults:defaults} : original(path,body);
+ const ui=await launch(api);await openNotification(ui,"lark");
+ assert.equal(ui.el("lark-groups-enabled").checked,true);assert.equal(ui.el("lark-groups-scope").checked,true);
+ assert.equal(ui.el("lark-scope").checked,true);assert.equal(ui.el("lark-all").checked,true);
+ assert.equal(ui.el("lark-groups-chat-selection").hidden,true);assert.equal(ui.el("lark-groups-scope-option").hidden,false);
+ assert.equal(ui.el("lark-group-cost-warning").hidden,true);
+ assert.equal(api.calls.some(c=>c.path==="/v1/platform/notifications/configure"),false);
+});
+
+test("Lark all-group scope preserves selections, mention switches and cost guidance through save and reload",async()=>{
+ const api=fixture();api.data.subscription_id="saved";api.data.subscription_version=1;
+ api.data.config.enabled=true;api.data.config.private.enabled=false;
+ api.data.config.groups={enabled:true,chat_ids:["oc_fixture","oc_2","oc_3","oc_4","oc_5"],message_mode:"all",at_me:false,at_all:true};
+ api.data.lark.search={branches:[]};
+ const ui=await launch(api);await openNotification(ui,"lark");
+ assert.equal(ui.el("lark-groups-scope").checked,false);assert.equal(ui.el("lark-save").disabled,true);
+ assert.equal(ui.el("lark-groups-chat-selected").children.length,5);assert.equal(ui.el("lark-group-cost-warning").hidden,true);
+ ui.el("lark-groups-scope").checked=true;await ui.el("lark-groups-scope").emit("change");
+ assert.equal(ui.el("lark-groups-chat-selection").hidden,true);assert.equal(ui.el("lark-save").disabled,false);
+ assert.equal(ui.el("lark-group-cost-warning").hidden,false);
+ for(const enabled of [false,true]){ui.el("lark-groups-enabled").checked=enabled;await ui.el("lark-groups-enabled").emit("change");assert.equal(ui.el("lark-group-cost-warning").hidden,!enabled);}
+ ui.el("lark-group-mode").value="mentions";await ui.el("lark-group-mode").emit("change");
+ assert.equal(ui.el("lark-group-cost-warning").hidden,true);assert.equal(ui.el("lark-all").checked,true);assert.equal(ui.el("lark-group").checked,false);
+ ui.el("lark-all").checked=false;await ui.el("lark-all").emit("change");
+ assert.equal(ui.el("lark-save").disabled,false);assert.match(ui.el("lark-error").textContent,/^$/);
+ await ui.el("lark-save").emit("click");
+ assert.equal(api.data.config.groups.scope,"all");assert.equal(api.data.config.groups.at_me,false);assert.equal(api.data.config.groups.at_all,false);assert.equal(api.data.config.groups.chat_ids.length,5);
+ const reloaded=await launch(api);await openNotification(reloaded,"lark");
+ assert.equal(reloaded.el("lark-save").disabled,true);assert.equal(reloaded.el("lark-groups-scope").checked,true);
+ assert.match(reloaded.el("member-notification-platforms").children[0].children[0].children[1].children[1].textContent,/全部群聊/);
+ reloaded.el("lark-groups-scope").checked=false;await reloaded.el("lark-groups-scope").emit("change");
+ assert.equal(reloaded.el("lark-groups-chat-selected").children.length,5);
+ assert.equal(reloaded.el("lark-group-mode").value,"mentions");assert.equal(reloaded.el("lark-all").checked,false);
+});
+
+test("Lark search diagnostics show branch failures and page progress independently of directory state",async()=>{
+ const api=fixture();api.data.subscription_id="saved";api.data.config.enabled=true;
+ api.data.lark={directory_complete:false,unchecked:42,search:{branches:[{kind:"groups",completed:100,last_success:"2026-11-10T00:00:00Z",stage:"page",page_done:2,page_items:5,error_code:"permission_denied",retry_at:"2026-11-10T01:00:00Z"},{kind:"own",completed:0,stage:"waiting"}]}};
+ const ui=await launch(api);await openNotification(ui,"lark");
+ assert.doesNotMatch(ui.el("lark-diagnostics").textContent,/目录|待检查会话/);
+ assert.equal(ui.el("lark-branch-status").hidden,false);
+ assert.match(ui.el("lark-branch-status").children[0].textContent,/群聊消息.*当前页 2\/5.*读取受阻.*读取权限不足.*重试/);
+ assert.match(ui.el("lark-branch-status").children[1].textContent,/群内本人上下文.*首个时间窗/);
+});

@@ -564,6 +564,7 @@ async function syncGitLabNotifications(catalog, ws) {
     ws.notificationsConnected = true;
     ws.allSubscriptions = data.subscriptions || [];
     ws.retiredSources = data.retired_subscriptions || [];
+    ws.larkDefaults = data.lark_defaults;
     ws.larkSources = ws.allSubscriptions.filter(v=>v.provider === "lark" && v.channel === "messages");
     ws.gitlabPlatforms = data.gitlab_platforms || [];
     if (scope !== ws.notificationScope) return;
@@ -582,17 +583,17 @@ async function syncGitLabNotifications(catalog, ws) {
     if(scope===ws.notificationScope){ws.gitlabConnected=false;ws.messagesConnected=false;}
   }
 }
-function larkConfigKey(c = {}) {return JSON.stringify({enabled:!!c.enabled,platform_id:c.platform_id || "",target:notificationTarget(c),private:{enabled:!!c.private?.enabled,scope:c.private?.scope || "all",chat_ids:[...(c.private?.chat_ids || [])].sort()},groups:{enabled:!!c.groups?.enabled,chat_ids:[...(c.groups?.chat_ids || [])].sort(),message_mode:c.groups?.message_mode || "mentions",at_me:!!c.groups?.at_me,at_all:!!c.groups?.at_all},interval_seconds:c.interval_seconds || 10,backfill_seconds:c.backfill_seconds || 0,backfill_start:c.backfill_start ? new Date(c.backfill_start).toISOString() : ""});}
+function larkConfigKey(c = {}) {return JSON.stringify({enabled:!!c.enabled,platform_id:c.platform_id || "",target:notificationTarget(c),private:{enabled:!!c.private?.enabled,scope:c.private?.scope || "all",chat_ids:[...(c.private?.chat_ids || [])].sort()},groups:{enabled:!!c.groups?.enabled,scope:c.groups?.scope || "specified",chat_ids:[...(c.groups?.chat_ids || [])].sort(),message_mode:c.groups?.message_mode || "mentions",at_me:!!c.groups?.at_me,at_all:!!c.groups?.at_all},interval_seconds:c.interval_seconds || 10,backfill_seconds:c.backfill_seconds || 0,backfill_start:c.backfill_start ? new Date(c.backfill_start).toISOString() : ""});}
 function larkMessagesDraft() {
   const ws=workspaceView,privateIDs=larkChatIDs("private").sort(),groups=larkChatIDs("groups").sort();
   return {enabled:$("lark-enabled").checked,platform_id:$("lark-connection").value,target:structuredClone(activeNotificationTarget(ws)),
     private:{enabled:$("lark-private-enabled").checked,scope:larkAllChats() ? "all" : "specified",chat_ids:privateIDs},
-    groups:{enabled:$("lark-groups-enabled").checked,chat_ids:groups,message_mode:$("lark-group-mode").value || "mentions",at_me:$("lark-group").checked,at_all:$("lark-all").checked},
+    groups:{enabled:$("lark-groups-enabled").checked,scope:$("lark-groups-scope").checked ? "all" : "specified",chat_ids:groups,message_mode:$("lark-group-mode").value || "mentions",at_me:$("lark-group").checked,at_all:$("lark-all").checked},
     interval_seconds:Number($("lark-interval").value),...backfillDraft("lark")};
 }
 function selectLarkPlatform(ws,id) {
   stopLarkChatSearch();
-  ws.messages=structuredClone(ws.larkSources?.find(s=>s.config.platform_id===id && sameNotificationTarget(s.config.target,activeNotificationTarget(ws))) || {provider:"lark",channel:"messages",available:true,subscription_id:"",subscription_version:0,status:"disabled",config:{enabled:false,platform_id:id,target:structuredClone(activeNotificationTarget(ws)),private:{enabled:true,scope:"all",chat_ids:[]},groups:{enabled:false,chat_ids:[],message_mode:"mentions",at_me:true,at_all:false},interval_seconds:10,backfill_seconds:0},lark:{chats:[]}});
+  ws.messages=structuredClone(ws.larkSources?.find(s=>s.config.platform_id===id && sameNotificationTarget(s.config.target,activeNotificationTarget(ws))) || {provider:"lark",channel:"messages",available:true,subscription_id:"",subscription_version:0,status:"disabled",config:{...(ws.larkDefaults || {private:{enabled:true,scope:"all",chat_ids:[]},groups:{enabled:false,scope:"specified",chat_ids:[],message_mode:"mentions",at_me:true,at_all:false},interval_seconds:10,backfill_seconds:0}),enabled:false,platform_id:id,target:structuredClone(activeNotificationTarget(ws))},lark:{chats:[]}});
   ws.larkDirty=false;ws.larkFilled=null;ws.larkSelectedChats={private:[],groups:[]};ws.messagesFeedback="";ws.messagesError="";ws.messagesRevision=(ws.messagesRevision || 0)+1;
 }
 function larkAllChats() { return $("lark-scope").checked; }
@@ -666,8 +667,8 @@ function larkChatPickerActive(kind) {
 function renderLarkChatPicker(ws, connection, kind) {
   const dir=larkChatDirectory(ws,connection,kind), ids=larkChatIDs(kind),noun=kind==="private" ? "人员" : "群聊";
   const ready=connection?.validation?.status==="valid",busy=$("lark-fields").disabled,blocked=!ready || busy;
-  const needsPlatform=!$("lark-connection").value,hidden=kind==="private" && larkAllChats();
-  $("lark-scope").disabled=blocked;
+  const needsPlatform=!$("lark-connection").value,hidden=kind==="private" ? larkAllChats() : $("lark-groups-scope").checked;
+  $(kind==="private" ? "lark-scope" : "lark-groups-scope").disabled=blocked;
   larkChatElement(kind,"selection").hidden=hidden;
   larkChatElement(kind,"picker-summary").setAttribute("aria-disabled",String(blocked));
   larkChatElement(kind,"picker-hint").textContent=needsPlatform ? "请先选择平台，再选择会话。" : !connection ? "所选平台不可用，请重新选择。" : !ready ? "请先在「管理平台」中验证所选连接，再选择会话。" : "";
@@ -782,7 +783,7 @@ function renderLarkMessages() {
   const target=JSON.stringify(activeNotificationTarget(ws));
   setSelectOptions("lark-target",[new Option("固定接收者",target)],target);$("lark-target").disabled=true;
   if(fresh){
-    $("lark-scope").checked=c.private?.scope==="all";$("lark-enabled").checked=!!c.enabled;
+    $("lark-scope").checked=c.private?.scope==="all";$("lark-groups-scope").checked=c.groups?.scope==="all";$("lark-enabled").checked=!!c.enabled;
     $("lark-private-enabled").checked=!!c.private?.enabled;$("lark-groups-enabled").checked=!!c.groups?.enabled;
     ws.larkSelectedChats={private:[...(c.private?.chat_ids || [])],groups:[...(c.groups?.chat_ids || [])]};
     $("lark-group").checked=!!c.groups?.at_me;$("lark-group-mode").value=c.groups?.message_mode || "mentions";$("lark-all").checked=!!c.groups?.at_all;
@@ -791,15 +792,17 @@ function renderLarkMessages() {
     ws.larkRestore=null;
   }
   ws.larkSelectionPlatform=c.platform_id;
+  $("lark-groups-scope-option").hidden=ws.larkDefaults?.groups?.scope!=="all" && !data.lark?.search;
   $("lark-group-mode-all").disabled=false;
   const groupAll=$("lark-group-mode").value==="all";
+  $("lark-group-cost-warning").hidden=!$("lark-groups-enabled").checked || !$("lark-groups-scope").checked || !groupAll;
   $("lark-group").disabled=groupAll;$("lark-all").disabled=groupAll;$("lark-group-mentions").hidden=groupAll;
   $("lark-scope-help").hidden=!larkAllChats();
   const draft=larkMessagesDraft(), dirty=larkConfigKey(draft)!==larkConfigKey(data.config) || !data.subscription_id && !!draft.platform_id, connection=platforms.find(x=>x.id===draft.platform_id);
-  const scopeError=draft.enabled && !draft.private.enabled && !draft.groups.enabled ? "请选择至少一种接收内容。" : draft.private.enabled && draft.private.scope==="specified" && !draft.private.chat_ids.length ? "请至少选择一个人员私聊，或关闭人员私聊接收。" : draft.groups.enabled && !draft.groups.chat_ids.length ? "请至少选择一个群聊，或关闭群聊接收。" : "";
+  const scopeError=draft.enabled && !draft.private.enabled && !draft.groups.enabled ? "请选择至少一种接收内容。" : draft.private.enabled && draft.private.scope==="specified" && !draft.private.chat_ids.length ? "请至少选择一个人员私聊，或关闭人员私聊接收。" : draft.groups.enabled && draft.groups.scope!=="all" && !draft.groups.chat_ids.length ? "请至少选择一个群聊，或关闭群聊接收。" : "";
   const backfillError=renderBackfill("lark",!!data.subscription_id && (!!data.lark?.baseline || data.status!=="disabled"),data.lark?.baseline || data.config.backfill_start);
-  const valid=!backfillError && (!draft.enabled || connection?.validation?.status==="valid") && draft.target.mode==="inbox" && (!draft.enabled || draft.private.enabled || draft.groups.enabled) && (!draft.private.enabled || draft.private.scope==="all" || draft.private.chat_ids.length>0) && (!draft.groups.enabled || draft.groups.chat_ids.length>0) && draft.interval_seconds>=3 && draft.interval_seconds<=3600;
-  $("lark-save").disabled=notificationWritePending(ws)||!ws.messagesConnected||!!ws.messagesSending||managementBusy()||!valid||(!dirty && !["credentials_invalid","binding_changed","capacity"].includes(data.status));
+  const valid=!backfillError && (!draft.enabled || connection?.validation?.status==="valid") && draft.target.mode==="inbox" && (!draft.enabled || draft.private.enabled || draft.groups.enabled) && (!draft.private.enabled || draft.private.scope==="all" || draft.private.chat_ids.length>0) && (!draft.groups.enabled || draft.groups.scope==="all" || draft.groups.chat_ids.length>0) && draft.interval_seconds>=3 && draft.interval_seconds<=3600;
+  $("lark-save").disabled=notificationWritePending(ws)||!ws.messagesConnected||!!ws.messagesSending||managementBusy()||!valid||!dirty;
   $("lark-sync").disabled=notificationWritePending(ws)||!ws.messagesConnected||!!ws.messagesSending||managementBusy()||dirty||!data.config.enabled;
   $("lark-save").textContent=ws.messagesSending==="configure" ? "保存中…" : "保存设置";
   $("lark-sync").textContent=ws.messagesSending==="sync" ? "请求中…" : "立即同步";
@@ -812,9 +815,17 @@ function renderLarkMessages() {
   const d=data.lark || {}, date=x=>formatDate(x);
   const diagnostics=[notificationSyncSummary(data)];
   if(d.excluded_items>0)diagnostics.push(`本人自聊历史已排除 ${d.excluded_items}`);
-  if(data.subscription_id && data.config.private?.enabled && data.config.private?.scope==="all" && !d.directory_complete)diagnostics.push(d.directory_scanning ? `会话目录加载中（${d.directory_pages || 0} 页）` : "会话目录尚未加载完整");
-  for(const [count,label] of [[d.failed_chats,"读取受阻"],[d.unlisted_chats,"不在最新目录"],[d.gap_chats,"积压超过 24 小时"],[d.unchecked,"待检查会话"]])if(count>0)diagnostics.push(`${label} ${count}`);
+  if(!d.search && data.subscription_id && data.config.private?.enabled && data.config.private?.scope==="all" && !d.directory_complete)diagnostics.push(d.directory_scanning ? `会话目录加载中（${d.directory_pages || 0} 页）` : "会话目录尚未加载完整");
+  if(!d.search)for(const [count,label] of [[d.failed_chats,"读取受阻"],[d.unlisted_chats,"不在最新目录"],[d.gap_chats,"积压超过 24 小时"],[d.unchecked,"待检查会话"]])if(count>0)diagnostics.push(`${label} ${count}`);
   $("lark-diagnostics").textContent=diagnostics.join(" · ");
+  const branches=d.search?.branches || [];
+  $("lark-branch-status").hidden=!d.search;
+  $("lark-branch-status").replaceChildren(...branches.map(b=>{
+    const li=document.createElement("li"),name={private:"人员私聊",groups:"群聊消息",own:"群内本人上下文"}[b.kind] || b.kind;
+    const progress=b.completed ? `已检查至 ${date(b.completed*1000)}` : "等待完成首个时间窗";
+    const stage=b.stage==="page" ? `当前页 ${b.page_done}/${b.page_items}` : b.stage==="search" ? "正在查询" : "等待检查";
+    li.textContent=`${name} · ${progress} · ${stage}${b.start ? ` · 当前范围 ${date(b.start*1000)} 至 ${date(b.end*1000)}` : ""}${b.last_success ? ` · 最近完成 ${date(b.last_success)}` : ""}${b.error_code ? ` · 读取受阻：${errors[b.error_code] || b.error_code}` : ""}${b.retry_at ? ` · 重试 ${date(b.retry_at)}` : ""}`;return li;
+  }));
   const chats=(d.chats || []).filter(x=>x.relationship==="self" || x.relationship==="pending" || x.error_code || x.scan || !x.completed);
   $("lark-chat-status").hidden=!chats.length;
   $("lark-chat-status").replaceChildren(...chats.map(x=>{const li=document.createElement("li");li.textContent=`${x.name || x.chat_id} · ${x.relationship==="self" ? "本人自聊，已排除自动接收与处理" : x.relationship==="pending" ? `会话关系待核验${x.error_code ? `（${x.error_code}）` : ""}` : x.error_code ? `读取受阻 ${x.error_code}${x.retry_at ? `，重试 ${date(x.retry_at)}` : ""}` : x.scan ? `检查中（${x.scan.pages} 页）` : "待检查"}`;return li;}));
@@ -838,7 +849,7 @@ async function changeLarkMessages(action) {
   }catch(e){if(current())ws.messagesError=e.code==="conflict"?"设置或账号已变化，请重新读取后核对。":"结果未确认，请重新读取状态；不会自动重发。";}
   finally{ws.notificationWrites?.delete(scope);if(current()){ws.messagesRevision++;ws.messagesSending=false;renderGitLabEvents();}else if(ws===workspaceView)renderGitLabEvents();}
 }
-for(const id of ["enabled","connection","target","private-enabled","groups-enabled","scope","group","group-mode","all","interval","backfill","backfill-start"]) $("lark-"+id).addEventListener("change",()=>{
+for(const id of ["enabled","connection","target","private-enabled","groups-enabled","scope","groups-scope","group","group-mode","all","interval","backfill","backfill-start"]) $("lark-"+id).addEventListener("change",()=>{
   if(id==="connection" && workspaceView)selectLarkPlatform(workspaceView,$("lark-connection").value);
   else if(workspaceView)workspaceView.larkDirty=true;renderLarkMessages();
   if(id==="scope" && larkChatPickerActive("private"))void loadLarkChats("private");
@@ -953,7 +964,7 @@ function notificationIssue(ws, item, view) {
 function notificationDescription(config) {
   if (!config) return "设置接收";
   const content = config.todos || config.events ? [config.todos?.enabled ? "我的待办" : "", config.events?.enabled ? "项目互动" : ""].filter(Boolean).join("、")
-    : [config.private?.enabled ? config.private.scope === "all" ? "全部人员私聊" : "指定私聊" : "", config.groups?.enabled ? `指定群聊 · ${config.groups.message_mode === "all" ? "全部消息" : [config.groups.at_me ? "@我" : "",config.groups.at_all ? "@所有人" : ""].filter(Boolean).join("、")}` : ""].filter(Boolean).join("、");
+    : [config.private?.enabled ? config.private.scope === "all" ? "全部人员私聊" : "指定私聊" : "", config.groups?.enabled ? `${config.groups.scope === "all" ? "全部群聊" : "指定群聊"} · ${config.groups.message_mode === "all" ? "全部消息" : [config.groups.at_me ? "@我" : "",config.groups.at_all ? "@所有人" : ""].filter(Boolean).join("、")}` : ""].filter(Boolean).join("、");
   return `${config.enabled ? "" : "已暂停 · "}${content || "未选择内容"}`;
 }
 function notificationRow(ws, item, target, editable = false) {

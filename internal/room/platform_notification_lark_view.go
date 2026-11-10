@@ -18,21 +18,40 @@ type larkChatDiagnostic struct {
 	Relationship string     `json:"relationship"`
 }
 type larkDiagnostics struct {
-	ExcludedItems     int                  `json:"excluded_items"`
-	CLIVersion        string               `json:"cli_version"`
-	PrivateScope      string               `json:"private_scope"`
-	Baseline          time.Time            `json:"baseline,omitzero"`
-	DirectoryLastFull time.Time            `json:"directory_last_full,omitzero"`
-	DirectoryPages    int                  `json:"directory_pages"`
-	DirectoryScanning bool                 `json:"directory_scanning"`
-	FailedChats       int                  `json:"failed_chats"`
-	UnlistedChats     int                  `json:"unlisted_chats"`
-	GapChats          int                  `json:"gap_chats"`
-	RequestIntervalMS int                  `json:"request_interval_ms"`
-	DirectoryComplete bool                 `json:"directory_complete"`
-	Unchecked         int                  `json:"unchecked"`
-	OldestLagSeconds  int64                `json:"oldest_lag_seconds"`
-	Chats             []larkChatDiagnostic `json:"chats"`
+	Search            *larkSearchDiagnostic `json:"search,omitempty"`
+	ExcludedItems     int                   `json:"excluded_items"`
+	CLIVersion        string                `json:"cli_version"`
+	PrivateScope      string                `json:"private_scope"`
+	Baseline          time.Time             `json:"baseline,omitzero"`
+	DirectoryLastFull time.Time             `json:"directory_last_full,omitzero"`
+	DirectoryPages    int                   `json:"directory_pages"`
+	DirectoryScanning bool                  `json:"directory_scanning"`
+	FailedChats       int                   `json:"failed_chats"`
+	UnlistedChats     int                   `json:"unlisted_chats"`
+	GapChats          int                   `json:"gap_chats"`
+	RequestIntervalMS int                   `json:"request_interval_ms"`
+	DirectoryComplete bool                  `json:"directory_complete"`
+	Unchecked         int                   `json:"unchecked"`
+	OldestLagSeconds  int64                 `json:"oldest_lag_seconds"`
+	Chats             []larkChatDiagnostic  `json:"chats"`
+}
+
+type larkSearchDiagnostic struct {
+	Branches []larkSearchBranchDiagnostic `json:"branches"`
+	Metrics  lark.SearchMetrics           `json:"metrics"`
+}
+
+type larkSearchBranchDiagnostic struct {
+	Kind        string    `json:"kind"`
+	Completed   int64     `json:"completed"`
+	LastSuccess time.Time `json:"last_success,omitzero"`
+	RetryAt     time.Time `json:"retry_at,omitzero"`
+	ErrorCode   string    `json:"error_code,omitempty"`
+	Start       int64     `json:"start,omitempty"`
+	End         int64     `json:"end,omitempty"`
+	Stage       string    `json:"stage"`
+	PageItems   int       `json:"page_items"`
+	PageDone    int       `json:"page_done"`
 }
 
 func (m *roomManager) larkNotificationViewLocked(owner RoomIdentity, s *lark.State) (notificationView, error) {
@@ -40,7 +59,7 @@ func (m *roomManager) larkNotificationViewLocked(owner RoomIdentity, s *lark.Sta
 	if err != nil || entry.Status != "ready" {
 		return notificationView{}, ErrIdentity
 	}
-	v := notificationView{RoomIdentity: owner, SourceID: lark.MessagesSourceID, Available: true, Status: "disabled", Config: lark.DefaultConfig(""), Lark: &larkDiagnostics{CLIVersion: lark.CLIVersion, Chats: []larkChatDiagnostic{}}}
+	v := notificationView{RoomIdentity: owner, SourceID: lark.MessagesSourceID, Available: true, Status: "disabled", Config: m.defaultLarkConfig(""), Lark: &larkDiagnostics{CLIVersion: lark.CLIVersion, Chats: []larkChatDiagnostic{}}}
 	if s == nil {
 		return v, nil
 	}
@@ -55,6 +74,22 @@ func (m *roomManager) larkNotificationViewLocked(owner RoomIdentity, s *lark.Sta
 	v.Lark.Baseline = s.Baseline
 	if code := m.notificationTargetErrorLocked(owner, s.PendingItems()); code != "" {
 		v.DeliveryErrorCode = code
+	}
+	if s.Search != nil {
+		v.Lark.Search = &larkSearchDiagnostic{Branches: []larkSearchBranchDiagnostic{}, Metrics: s.Search.Metrics}
+		for _, b := range s.Search.Branches {
+			d := larkSearchBranchDiagnostic{Kind: b.Kind, Completed: b.Completed, LastSuccess: b.LastSuccess, RetryAt: b.RetryAt, ErrorCode: b.ErrorCode, Stage: "waiting"}
+			if b.Scan != nil {
+				d.Start, d.End, d.Stage = b.Scan.Start, b.Scan.End, "search"
+				if p := b.Scan.Page; p != nil {
+					d.Stage, d.PageItems, d.PageDone = "page", len(p.Items), p.Done
+				}
+			}
+			v.Lark.Search.Branches = append(v.Lark.Search.Branches, d)
+		}
+		// Search progress is independent of directory completeness. Never expose
+		// fingerprints, cursors, candidate IDs, member tokens or message bodies.
+		return v, nil
 	}
 	v.Lark.PrivateScope = "specified"
 	v.Lark.DirectoryComplete = true

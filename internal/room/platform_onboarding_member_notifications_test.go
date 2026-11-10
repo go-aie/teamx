@@ -109,7 +109,7 @@ func TestMemberNotificationLarkOnboardingMembersReceiptRecoveryAndEpoch(t *testi
 	}
 	h.m.store.ops = original
 	b := larkOnboardingSubscriptionForTest(t, h.m, bReq)
-	if b.SubscriptionID == a.SubscriptionID || !b.Config.DiscoverPrivate() || b.Config.Groups.Enabled {
+	if b.SubscriptionID == a.SubscriptionID || !b.Config.DiscoverPrivate() || !b.Config.Groups.Enabled || b.Config.Groups.Scope != "all" || !b.Config.Groups.AtAll {
 		t.Fatal("B did not get independent defaults")
 	}
 	root := h.m.store.dir

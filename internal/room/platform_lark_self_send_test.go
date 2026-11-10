@@ -16,7 +16,7 @@ func selfSendHarness(t *testing.T) *larkHarness {
 		t.Skip("fixed-account user dispatch requires macOS")
 	}
 	h := newLarkHarness(t)
-	script := strings.Replace(l2Fixture, "path=a[2]", `if a==['config','show']:
+	script := strings.Replace(larkFixtureScript(), "path=a[2]", `if a==['config','show']:
  print(json.dumps({'profile':'fixture','appId':'cli_fixture','brand':'feishu','dpopMode':'required'}));sys.exit()
 if a==['auth','scopes','--json']:
  print(json.dumps({'appId':'cli_fixture','userScopes':['im:message.send_as_user','im:message'],'tokenType':'user'}));sys.exit()

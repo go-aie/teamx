@@ -32,8 +32,9 @@ func TestLarkCustomBackfillHTTPReadsHistoryIntoMemberInbox(t *testing.T) {
 	h.m.mu.Lock()
 	runner := h.m.notifications.NewRunnerLocked(s.Metadata().Key)
 	h.m.mu.Unlock()
-	runner.Step(context.Background())
-	runner.Step(context.Background())
+	for range 12 {
+		runner.Step(context.Background())
+	}
 	if len(h.state().Inbox) != 1 {
 		t.Fatal("historical message older than 24h was not collected")
 	}

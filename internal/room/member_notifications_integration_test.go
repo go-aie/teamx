@@ -379,7 +379,7 @@ func TestMemberNotificationLarkMembersHTTPIndependentProgressAndSyncIdentity(t *
 	}
 	h.clock.add(3 * time.Second)
 	for _, s := range states {
-		stepNotificationCollector(t, h.m, s.Metadata().Key, 2)
+		stepNotificationCollector(t, h.m, s.Metadata().Key, 12)
 		current := notificationSnapshotForTest(t, h.m, s.Metadata().Key)
 		if current.Metadata().Pending != 1 {
 			t.Fatal("member missing Lark fact", current)
@@ -467,7 +467,7 @@ func TestMemberNotificationLarkRemovedTargetPreservesBacklogAndSourceLocator(t *
 	h.m.mu.Lock()
 	runner := h.m.notifications.NewRunnerLocked(old.Metadata().Key)
 	h.m.mu.Unlock()
-	source := h.m.notifications.Source(lark.MessagesSourceID).(*lark.Source)
+	source := h.m.notifications.Source(lark.MessagesSourceID).(*lark.SearchSource)
 	originalReader := source.Reader
 	reads := 0
 	source.Reader = func(lark.QueryScope) (lark.MessageReader, error) { reads++; return nil, ErrRequest }
@@ -534,6 +534,13 @@ func TestMemberNotificationLarkRetirementWaitsOnlyForItsOwnAttachments(t *testin
 	}
 	// Preserve an old native-account generation, as after an explicit replacement.
 	a.Binding.Generation = strings.Repeat("f", 32)
+	// Refresh request fingerprints through the pure explicit conversion fixture.
+	a.Search = nil
+	raw, _ := json.Marshal(a)
+	raw, err = lark.UpgradeSearchState(raw, 3, a.RoomIdentity)
+	if err != nil || json.Unmarshal(raw, &a) != nil {
+		t.Fatal("old-generation search fixture", err)
+	}
 	callCtx, cancel := context.WithCancel(context.Background())
 	call := &platformCall{owner: h.room.RoomIdentity, platformID: h.c.ID, subscription: a.Metadata().Key, cancel: cancel, done: make(chan struct{})}
 	h.m.mu.Lock()

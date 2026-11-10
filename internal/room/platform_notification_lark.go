@@ -15,6 +15,22 @@ func larkBinding(a registry.Account) lark.Binding {
 	return lark.Binding{PlatformID: a.PlatformID, Generation: a.Generation, Account: a.Identity, CredentialVersion: a.CredentialVersion, Fingerprint: a.CredentialFingerprint}
 }
 
+// Lifecycle operations follow the registered codec. Production registers only
+// search collection after the explicit offline upgrade.
+func (m *roomManager) defaultLarkConfig(id string) lark.Config {
+	if m.notifications.Source(lark.MessagesSourceID).Schema() == lark.SearchSchema {
+		return lark.DefaultSearchConfig(id)
+	}
+	return lark.DefaultConfig(id)
+}
+
+func (m *roomManager) configureLarkState(owner RoomIdentity, current *lark.State, binding lark.Binding, cfg lark.Config) (lark.State, error) {
+	if m.notifications.Source(lark.MessagesSourceID).Schema() == lark.SearchSchema {
+		return lark.ConfigureSearch(owner, current, binding, cfg, m.notifications.Now())
+	}
+	return lark.Configure(owner, current, binding, cfg, m.notifications.Now())
+}
+
 // Verification restores only subscriptions paused for credentials under the
 // same native account. ChangedLocked fences the old worker; it starts the new
 // version after its predecessor exits, without waiting under manager.mu.
@@ -35,7 +51,7 @@ func (m *roomManager) resumeLarkSubscriptionsLocked(platformID string) error {
 			if a.Generation != s.Binding.Generation || a.Identity != s.Binding.Account {
 				continue
 			}
-			next, err := lark.Configure(room.RoomIdentity, &s, larkBinding(a), s.Config, m.notifications.Now())
+			next, err := m.configureLarkState(room.RoomIdentity, &s, larkBinding(a), s.Config)
 			if err != nil {
 				return notificationRoomError(err)
 			}
@@ -51,9 +67,9 @@ func (m *roomManager) resumeLarkSubscriptionsLocked(platformID string) error {
 }
 
 func (m *roomManager) larkNotificationAdapter() notificationAdapter {
-	return notificationAdapter{Source: &lark.Source{Reader: func(q lark.QueryScope) (lark.MessageReader, error) {
+	return notificationAdapter{Source: &lark.SearchSource{Source: lark.Source{Reader: func(q lark.QueryScope) (lark.MessageReader, error) {
 		return m.larkClients.New(q.Profile)
-	}}, Admit: func(_ context.Context, state notification.State) (notification.Scope, error) {
+	}}}, Admit: func(_ context.Context, state notification.State) (notification.Scope, error) {
 		s, ok := state.(lark.State)
 		if !ok {
 			return notification.Scope{}, notification.ErrInvalid
@@ -99,6 +115,9 @@ func (m *roomManager) configureLarkSubscription(ctx context.Context, key notific
 	cfg, normalizeErr = lark.NormalizeConfig(cfg)
 	if normalizeErr != nil {
 		return lark.State{}, notificationRoomError(normalizeErr)
+	}
+	if cfg.Groups.Scope == "all" && m.notifications.Source(lark.MessagesSourceID).Schema() != lark.SearchSchema {
+		return lark.State{}, ErrRequest
 	}
 	if err := ctx.Err(); err != nil {
 		return lark.State{}, err
@@ -185,7 +204,7 @@ func (m *roomManager) configureLarkSubscription(ctx context.Context, key notific
 	if err := m.validateNotificationTargetLocked(ctx, key.Owner, cfg.Target, cfg.Enabled); err != nil {
 		return lark.State{}, err
 	}
-	next, err := lark.Configure(key.Owner, current, b, cfg, m.notifications.Now())
+	next, err := m.configureLarkState(key.Owner, current, b, cfg)
 	if err != nil {
 		return next, notificationRoomError(err)
 	}
@@ -235,7 +254,7 @@ func (m *roomManager) syncLarkSubscription(ctx context.Context, key notification
 	if err != nil {
 		return notificationRoomError(err)
 	}
-	next, err := lark.Configure(key.Owner, &s, larkBinding(a), s.Config, m.notifications.Now())
+	next, err := m.configureLarkState(key.Owner, &s, larkBinding(a), s.Config)
 	if err != nil {
 		return notificationRoomError(err)
 	}

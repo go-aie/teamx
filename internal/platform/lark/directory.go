@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
 const DirectoryInterval = 10 * time.Minute
@@ -97,58 +96,6 @@ type DirectoryProgress struct {
 	Yield    bool           `json:"yield,omitempty"`
 }
 
-func acceptDirectory(s State, page ChatPage, now time.Time) (State, error) {
-	n := s.Clone()
-	if n.Directory == nil || n.Directory.Scan == nil {
-		return s, notification.ErrInvalid
-	}
-	scan := n.Directory.Scan
-	if err := validateChatPage(page, ChatsRequest{PageSize: 50, PageToken: scan.Token}); err != nil {
-		return s, err
-	}
-	for _, chat := range page.Chats {
-		// Directory discovery only widens the person-private category. Groups
-		// are addressed by explicit IDs, never scanned from this directory.
-		if chat.Mode != "p2p" {
-			continue
-		}
-		scan.Seen[chat.ID] = true
-		p, exists := n.Chats[chat.ID]
-		if !exists {
-			p = ChatProgress{Chat: chat, NeedsVerification: true}
-		} else if p.Chat.Mode == chat.Mode && chat.Name != "" {
-			// Refresh display names without changing verified tenant or progress.
-			p.Chat.Name = chat.Name
-		}
-		if p.Unlisted {
-			p.NeedsVerification = true
-			p.RetryAt = time.Time{}
-		}
-		p.Unlisted = false
-		n.Chats[chat.ID] = p
-	}
-	if len(n.Chats) > MaxChats {
-		return s, notification.ErrCapacity
-	}
-	scan.Pages++
-	n.Directory.Yield = true
-	if page.HasMore {
-		scan.Token = page.PageToken
-	} else {
-		for id, p := range n.Chats {
-			if p.Chat.Mode == "p2p" {
-				p.Unlisted = !scan.Seen[id]
-			}
-			n.Chats[id] = p
-		}
-		n.Directory.Scan = nil
-		n.Directory.LastFull = now
-		n.Directory.RetryAt = now.Add(DirectoryInterval)
-	}
-	n.LastFull = time.Time{} // recomputed from the current directory and checkpoints
-	n.updateFull(now)
-	return n, nil
-}
 func (s State) ChatIDs() []string {
 	ids := []string{}
 	if s.Config.Private.Enabled {
@@ -169,6 +116,20 @@ func (s State) ChatIDs() []string {
 	return slices.Compact(ids)
 }
 func (s *State) updateFull(now time.Time) {
+	if s.Search != nil {
+		s.LastFull = time.Time{}
+		for _, b := range s.Search.Branches {
+			if b.Completed == 0 {
+				s.LastFull = time.Time{}
+				return
+			}
+			t := time.Unix(b.Completed, 0).UTC()
+			if s.LastFull.IsZero() || t.Before(s.LastFull) {
+				s.LastFull = t
+			}
+		}
+		return
+	}
 	s.LastFull = now
 	ids := s.ChatIDs()
 	if len(ids) == 0 || s.Config.DiscoverPrivate() && (s.Directory == nil || s.Directory.Scan != nil || s.Directory.LastFull.IsZero()) {
@@ -202,6 +163,21 @@ func (s *State) pruneObserved() {
 		cutoff := p.Completed - 300
 		if p.Scan != nil {
 			cutoff = min(cutoff, p.Scan.Start)
+		}
+		if s.Search != nil {
+			for _, b := range s.Search.Branches {
+				if (p.Chat.Mode == "p2p") != (b.Kind == "private") {
+					continue
+				}
+				if b.Completed == 0 {
+					cutoff = s.Baseline.Unix()
+				} else {
+					cutoff = min(cutoff, b.Completed-searchOverlap)
+				}
+				if b.Scan != nil {
+					cutoff = min(cutoff, b.Scan.Start)
+				}
+			}
 		}
 		ms, _ := strconv.ParseInt(o.Message.Created, 10, 64)
 		if ms/1000 < cutoff {

@@ -16,6 +16,14 @@ import (
 )
 
 const memberNotificationsJournal = "member-notifications-upgrade.json"
+const larkSearchUpgradeJournal = "lark-search-upgrade.json"
+
+func (m *roomManager) notificationUpgradeJournal() string {
+	if adapter, ok := m.notificationAdapters[lark.MessagesSourceID]; ok && adapter.Source.Schema() == lark.SearchSchema {
+		return larkSearchUpgradeJournal
+	}
+	return memberNotificationsJournal
+}
 
 type notificationEnvelope struct {
 	notification.SourceID
@@ -24,16 +32,18 @@ type notificationEnvelope struct {
 }
 
 func checkMemberNotificationsUpgrade(root string) error {
-	var j platformUpgrade
-	err := readLarkUpgradeJournal(filepath.Join(root, memberNotificationsJournal), &j)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if j.Version != 1 || !j.Complete {
-		return fmt.Errorf("%w: notification scope upgrade incomplete; stop service and run teamx notifications upgrade --rooms-dir ROOT", ErrVersion)
+	for _, name := range []string{memberNotificationsJournal, larkSearchUpgradeJournal} {
+		var j platformUpgrade
+		err := readLarkUpgradeJournal(filepath.Join(root, name), &j)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if j.Version != 1 || !j.Complete {
+			return fmt.Errorf("%w: notification scope upgrade incomplete (%s); stop service and run teamx notifications upgrade --rooms-dir ROOT using the version that started the upgrade", ErrVersion, name)
+		}
 	}
 	return nil
 }
@@ -49,13 +59,19 @@ func (m *roomManager) convertNotificationSource(owner RoomIdentity, path string,
 	if !ok {
 		return nil, nil, ErrInvalid
 	}
-	if wire.Schema != adapter.Source.Schema() && wire.Schema != 2 && !(wire.SourceID == lark.MessagesSourceID && wire.Schema == 1) {
+	if wire.Schema != adapter.Source.Schema() && wire.Schema != 2 && !(wire.SourceID == lark.MessagesSourceID && wire.Schema == 3 && adapter.Source.Schema() == lark.SearchSchema) && !(wire.SourceID == lark.MessagesSourceID && wire.Schema == 1) {
 		return nil, nil, ErrVersion
 	}
 	raw := wire.State
 	var err error
 	if wire.SourceID == lark.MessagesSourceID && wire.Schema == 1 {
 		raw, err = lark.UpgradeState(raw, owner)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	if wire.SourceID == lark.MessagesSourceID && adapter.Source.Schema() == lark.SearchSchema && wire.Schema != lark.SearchSchema {
+		raw, err = lark.UpgradeSearchState(raw, 3, owner)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -337,7 +353,7 @@ func (m *roomManager) planMemberNotificationsUpgrade(overrides map[string]json.R
 				slot := sourcePlatform{meta.Key.Source, meta.PlatformID}
 				format := formats[slot]
 				format.Count++
-				format.Legacy = format.Legacy || envelope.Schema != m.notificationAdapters[meta.Key.Source].Source.Schema()
+				format.Legacy = format.Legacy || envelope.Schema < 3
 				if format.Legacy && format.Count > 1 {
 					return j, fmt.Errorf("%w: Room %s platform %s has duplicate legacy %s subscriptions", ErrConflict, owner.RoomID, meta.PlatformID, meta.Key.Source.Channel)
 				}
@@ -432,7 +448,7 @@ func (m *roomManager) upgradeMemberNotificationsLocked() (int, error) {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return 0, err
 	}
-	path := filepath.Join(m.store.dir, memberNotificationsJournal)
+	path := filepath.Join(m.store.dir, m.notificationUpgradeJournal())
 	var prior platformUpgrade
 	err := readLarkUpgradeJournal(path, &prior)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -513,5 +529,5 @@ func (m *roomManager) commitMemberNotificationsUpgrade(j platformUpgrade) error 
 		}
 	}
 	j.Complete = true
-	return m.store.save(filepath.Join(m.store.dir, memberNotificationsJournal), j, platformUpgradeLimit)
+	return m.store.save(filepath.Join(m.store.dir, m.notificationUpgradeJournal()), j, platformUpgradeLimit)
 }

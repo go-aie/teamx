@@ -61,7 +61,7 @@ func collectRealLark(t *testing.T, m *roomManager, svc *service, id MemberIdenti
 	t.Helper()
 	clock := &eventTestClock{now: time.Unix(q.End, 0).UTC()}
 	m.notifications.Clock = clock.get
-	m.notifications.Source(lark.MessagesSourceID).(*lark.Source).Reader = func(s lark.QueryScope) (lark.MessageReader, error) {
+	m.notifications.Source(lark.MessagesSourceID).(*lark.SearchSource).Reader = func(s lark.QueryScope) (lark.MessageReader, error) {
 		c, e := lark.New(s.Profile)
 		return smallLarkPages{c}, e
 	}
@@ -173,6 +173,10 @@ func TestRealLarkNotificationInbox(t *testing.T) {
 
 }
 func TestRealLarkNotificationDSH(t *testing.T) {
+	runRealLarkNotificationDSH(t, collectRealLark)
+}
+
+func runRealLarkNotificationDSH(t *testing.T, collect func(*testing.T, *roomManager, *service, MemberIdentity, managedPlatform, larkRealInput, bool) lark.State) {
 	if os.Getenv("TEAMX_LARK_DSH_REAL") != "1" {
 		t.Skip("set TEAMX_LARK_DSH_REAL=1 with model credentials and a new TEAMX_DSH_OUTPUT")
 	}
@@ -225,7 +229,7 @@ func TestRealLarkNotificationDSH(t *testing.T) {
 	id := MemberIdentity{RoomIdentity: r.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
 	c := realLarkPlatform(t, m, q)
 	bindCLITool(t, m, r.RoomIdentity, MemberState{AgentID: id.AgentID, MembershipID: id.MembershipID}, c, "lark", 0)
-	source := collectRealLark(t, m, svc, id, c, q, false)
+	source := collect(t, m, svc, id, c, q, false)
 	if _, e = svc.control(ctx, apiRequest{AgentID: id.AgentID, MembershipID: id.MembershipID}, "run"); e != nil {
 		t.Fatal(e)
 	}

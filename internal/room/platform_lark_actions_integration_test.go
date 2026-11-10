@@ -206,7 +206,7 @@ func TestLarkReplyProductionResolvesCapturedMessageWithReadOnlyBinding(t *testin
 		t.Fatal(err)
 	}
 	// Extend only the local CLI fixture to support isolated fixed configuration.
-	script := strings.Replace(l2Fixture, "path=a[2]", `if a==['config','show']:
+	script := strings.Replace(larkFixtureScript(), "path=a[2]", `if a==['config','show']:
  print(json.dumps({'profile':'fixture','appId':'cli_fixture','brand':'feishu','dpopMode':'required'}));sys.exit()
 assert a[1]=='GET' or a[2]=='/open-apis/contact/v3/users/basic_batch', 'unexpected write'
 path=a[2]`, 1)

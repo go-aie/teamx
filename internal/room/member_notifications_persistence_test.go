@@ -198,7 +198,7 @@ func TestMemberNotificationUpgradePreservesFrozenRoutesAndWholeState(t *testing.
 	if env.Schema != 3 {
 		t.Fatal("old source codec still accepts envelope", env.Schema)
 	}
-	if restored.notifications.Source(gitlab.TodosSourceID).Schema() != 3 || restored.notifications.Source(lark.MessagesSourceID).Schema() != 3 {
+	if restored.notifications.Source(gitlab.TodosSourceID).Schema() != 3 || restored.notifications.Source(lark.MessagesSourceID).Schema() != lark.SearchSchema {
 		t.Fatal("incomplete format fence")
 	}
 	if err := restored.close(); err != nil {
@@ -259,7 +259,7 @@ func TestMemberNotificationUpgradeInterruptedGroupBlocksStartupAndResumes(t *tes
 				store.ops.createTemp = func(dir, pattern string) (snapshotFile, error) {
 					if dir == store.dir {
 						var j platformUpgrade
-						if readLarkUpgradeJournal(filepath.Join(store.dir, memberNotificationsJournal), &j) == nil && !j.Complete {
+						if readLarkUpgradeJournal(filepath.Join(store.dir, offline.notificationUpgradeJournal()), &j) == nil && !j.Complete {
 							var env notificationEnvelope
 							data, _ := os.ReadFile(sourcePath)
 							_ = json.Unmarshal(data, &env)
@@ -392,7 +392,9 @@ func TestMemberNotificationLarkOnlyOldEnvelopeRequiresAndReceivesFormatFence(t *
 	if err := h.m.close(); err != nil {
 		t.Fatal(err)
 	}
-	raw, _ := json.Marshal(want)
+	legacy := want.Clone()
+	legacy.Search, legacy.Directory = nil, nil
+	raw, _ := json.Marshal(legacy)
 	before, _ := json.Marshal(notificationEnvelope{SourceID: lark.MessagesSourceID, Schema: 2, State: raw})
 	if err := os.WriteFile(path, before, 0600); err != nil {
 		t.Fatal(err)
@@ -407,13 +409,17 @@ func TestMemberNotificationLarkOnlyOldEnvelopeRequiresAndReceivesFormatFence(t *
 	}
 	restored := testManager(t, root, managerTestProfiles(t))
 	got, ok := restored.notifications.StateLocked(want.Metadata().Key)
+	if ok {
+		loaded := got.(lark.State)
+		want.Search, want.LastFull = loaded.Search, loaded.LastFull
+	}
 	if !ok || !reflect.DeepEqual(got, want) {
 		t.Fatal("Lark migration changed evidence")
 	}
 	data, _ := os.ReadFile(path)
 	var env notificationEnvelope
 	_ = json.Unmarshal(data, &env)
-	if env.Schema != 3 {
+	if env.Schema != lark.SearchSchema {
 		t.Fatal("Lark old binary not fenced")
 	}
 	if _, err := os.Stat(restored.gitlabNotificationPath(want.RoomIdentity)); !errors.Is(err, os.ErrNotExist) {

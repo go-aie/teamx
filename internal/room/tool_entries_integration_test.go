@@ -178,7 +178,7 @@ func TestPlatformEntriesLarkIndependentProfilesAndBuiltinDispatch(t *testing.T) 
 	parallelFixtureTest(t)
 	h := newLarkHarness(t)
 	h.m.toolCatalog[len(h.m.toolCatalog)-1].Skill = tool.Catalog()[1].Skill
-	script := strings.Replace(l2Fixture, "path=a[2]", `if a==['config','show']:
+	script := strings.Replace(larkFixtureScript(), "path=a[2]", `if a==['config','show']:
  print(json.dumps({'profile':'fixture','appId':'cli_fixture','brand':'feishu','dpopMode':'required'}));sys.exit()
 path=a[2]`, 1)
 	if err := os.WriteFile(filepath.Join(h.dir, "lark-cli"), []byte(script), 0700); err != nil {

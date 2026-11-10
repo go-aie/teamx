@@ -2388,6 +2388,7 @@ textarea::placeholder {
 .notification-body .notification-filter-row > label { margin:0; }
 .notification-filter-row .lark-group-controls { flex-wrap:wrap; gap:6px 12px; min-width:0; }
 .notification-body .notification-help { margin:12px 0; }
+.notification-cost-warning { margin:12px 0; padding:10px 12px; border-left:3px solid #b67718; background:#fff5df; color:#704609; font-size:13px; line-height:1.6; overflow-wrap:anywhere; }
 .notification-body .notification-help > summary { min-height:28px; font-size:12px; }
 .notification-body .notification-advanced { margin:14px 0 0; padding-top:10px; }
 .notification-body .notification-advanced > summary,.notification-body .gitlab-events-records > summary { min-height:32px; margin:0; font-size:12px; }

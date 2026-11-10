@@ -53,7 +53,7 @@ func TestLarkSelfConversationSharedAccountSourceAndInboxRecovery(t *testing.T) {
 			}
 		}
 	}
-	script := strings.Replace(l2Fixture, "'tenant_key':'external_tenant'}\nelse:", "'tenant_key':'account_tenant'}\nelse:", 1)
+	script := strings.Replace(larkFixtureScript(), "'tenant_key':'external_tenant'}\nelse:", "'tenant_key':'account_tenant'}\nelse:", 1)
 	script = strings.Replace(script, ",{'member_id':'ou_sender','member_id_type':'open_id','tenant_key':'external_tenant'}", "", 1)
 	// A self conversation never needs automatic body reads. Explicit lark read
 	// still uses the separate Messages API; this guard covers only this test run.
@@ -65,8 +65,10 @@ func TestLarkSelfConversationSharedAccountSourceAndInboxRecovery(t *testing.T) {
 	h.m.mu.Lock()
 	runner := h.m.notifications.NewRunnerLocked(s.Metadata().Key)
 	h.m.mu.Unlock()
-	runner.Step(t.Context())
-	runner.Step(t.Context())
+	h.clock.add(time.Minute)
+	for range 12 {
+		runner.Step(t.Context())
+	}
 	if got := h.state(); got.Chats["oc_chat"].Chat.Relation.Kind != "self" || len(got.PendingItems()) != 0 || len(got.Inbox) != 1 {
 		t.Fatal("source self history leaked or vanished", got.Chats["oc_chat"])
 	}
@@ -115,6 +117,7 @@ func TestLarkHistoricalConversationUsesCurrentCredentialForSameAccount(t *testin
 	// Historical credentials are evidence, never credentials to execute with.
 	s.Binding.CredentialVersion++
 	s.Binding.Fingerprint = strings.Repeat("e", 64)
+	s = refreshLarkSearchFixture(t, s)
 	s, err := lark.Retire(s)
 	if err != nil {
 		t.Fatal(err)

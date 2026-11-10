@@ -41,7 +41,10 @@ func ValidAccount(a platform.AccountIdentity, p platform.CLIProfile) bool {
 	return a.Valid() && a.Provider == "lark" && a.Instance == Origin(p.Brand) && strings.HasPrefix(a.ID.Namespace, "lark:open_id:cli_") && strings.HasPrefix(a.ID.Value, "ou_") && a.Tenant.Namespace == "lark:tenant_key" && a.Tenant.Value != ""
 }
 
-type Error struct{ Code string }
+type Error struct {
+	Code       string
+	NativeCode int // Structured upstream evidence; never include remote text.
+}
 
 func (e *Error) Error() string  { return "lark read: " + e.Code }
 func failure(code string) error { return &Error{Code: code} }
@@ -217,27 +220,29 @@ func classify(data []byte) error {
 	if json.Unmarshal(data, &e) != nil {
 		return failure("query_failed")
 	}
+	classified := func(code string) error { return &Error{Code: code, NativeCode: e.Error.Code} }
+
 	switch {
 	case e.Error.Code == 1020:
-		return failure("cursor_expired")
+		return classified("cursor_expired")
 	case e.Error.Code == 99991400 || e.Error.Subtype == "rate_limit":
-		return failure("rate_limited")
+		return classified("rate_limited")
 	case e.Error.Type == "authentication" && e.Error.Subtype == "refresh_server_error":
-		return failure("network_error")
+		return classified("network_error")
 	case e.Error.Type == "config" && e.Error.Subtype == "invalid_client":
-		return failure("credential_rejected")
+		return classified("credential_rejected")
 	case e.Error.Type == "config":
-		return failure("credential_unavailable")
+		return classified("credential_unavailable")
 	case e.Error.Type == "authentication":
-		return failure("credential_rejected")
+		return classified("credential_rejected")
 	case e.Error.Type == "authorization" || e.Error.Type == "permission":
-		return failure("permission_denied")
+		return classified("permission_denied")
 	case e.Error.Type == "network" && e.Error.Subtype == "timeout":
-		return failure("timeout")
+		return classified("timeout")
 	case e.Error.Type == "network":
-		return failure("network_error")
+		return classified("network_error")
 	default:
-		return failure("query_failed")
+		return classified("query_failed")
 	}
 }
 func decode(data []byte, v any) error {

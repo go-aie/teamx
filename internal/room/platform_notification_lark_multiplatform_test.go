@@ -32,7 +32,7 @@ func secondLarkPlatform(t *testing.T, h *larkHarness) managedPlatform {
 	t.Helper()
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "lark-cli")
-	fixture := strings.NewReplacer("cli_fixture", "cli_second", "ou_reader", "ou_second", "'fixture'", "'second'").Replace(l2Fixture)
+	fixture := strings.NewReplacer("cli_fixture", "cli_second", "ou_reader", "ou_second", "'fixture'", "'second'").Replace(larkFixtureScript())
 	if err := os.WriteFile(bin, []byte(fixture), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -71,8 +71,9 @@ func TestLarkMultiplePlatformsCollectPauseAndRecoverIndependently(t *testing.T) 
 	h.m.mu.Lock()
 	runner := h.m.notifications.NewRunnerLocked(b.Metadata().Key)
 	h.m.mu.Unlock()
-	runner.Step(t.Context())
-	runner.Step(t.Context())
+	for range 12 {
+		runner.Step(t.Context())
+	}
 	b = larkStateFor(t, h.m, h.room.RoomIdentity, c.ID)
 	if len(a.Inbox) != 1 || len(b.Inbox) != 1 {
 		t.Fatal("independent reception", len(a.Inbox), len(b.Inbox))
@@ -147,12 +148,12 @@ func TestLarkPlatformBRemainsConfigurableWhileAQuerySettles(t *testing.T) {
 	// A delayed worker query must settle outside the shared Room manager gate.
 	started := make(chan struct{})
 	release := make(chan struct{})
-	h.m.notifications.Source(lark.MessagesSourceID).(*lark.Source).Reader = func(q lark.QueryScope) (lark.MessageReader, error) {
+	h.m.notifications.Source(lark.MessagesSourceID).(*lark.SearchSource).Reader = func(q lark.QueryScope) (lark.MessageReader, error) {
 		client, err := lark.New(q.Profile)
 		if q.Binding.PlatformID != a.Binding.PlatformID {
 			return client, err
 		}
-		return &blockingLarkReader{MessageReader: client, started: started, release: release}, err
+		return &blockingLarkReader{Client: client, started: started, release: release}, err
 	}
 	h.clock.add(time.Minute)
 	if err := h.m.notifications.Start(); err != nil {
@@ -210,15 +211,15 @@ func TestLarkPlatformBRemainsConfigurableWhileAQuerySettles(t *testing.T) {
 }
 
 type blockingLarkReader struct {
-	lark.MessageReader
+	*lark.Client
 	started chan struct{}
 	release chan struct{}
 }
 
-func (r *blockingLarkReader) Messages(ctx context.Context, a platform.AccountIdentity, q lark.MessagesRequest) (lark.MessagePage, error) {
+func (r *blockingLarkReader) SearchMessages(ctx context.Context, a platform.AccountIdentity, q lark.MessageSearchRequest) (lark.MessageSearchPage, error) {
 	close(r.started)
 	<-r.release
-	return r.MessageReader.Messages(ctx, a, q)
+	return r.Client.SearchMessages(ctx, a, q)
 }
 
 // Ensure platform IDs also accompany the public notification JSON, without

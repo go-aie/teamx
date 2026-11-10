@@ -64,8 +64,10 @@ func TestLarkVerificationResumesCredentialPausedSubscription(t *testing.T) {
 	h.m.mu.Lock()
 	runner := h.m.notifications.NewRunnerLocked(resumed.Metadata().Key)
 	h.m.mu.Unlock()
-	if _, stop := runner.Step(context.Background()); stop {
-		t.Fatal("resumed source did not query")
+	for range 12 {
+		if _, stop := runner.Step(context.Background()); stop {
+			t.Fatal("resumed source did not query")
+		}
 	}
 	if err := h.deliver(); err != nil {
 		t.Fatal(err)
@@ -92,7 +94,7 @@ func TestLarkVerificationPreservesOtherPauses(t *testing.T) {
 			case "capacity", "binding_changed":
 				s.Status, s.ErrorCode = mode, mode
 			case "different_account", "failed_verification":
-				script := strings.ReplaceAll(l2Fixture, "ou_reader", "ou_other")
+				script := strings.ReplaceAll(larkFixtureScript(), "ou_reader", "ou_other")
 				if mode == "failed_verification" {
 					script = "#!/usr/bin/env -S python3 -S\nimport sys\nsys.exit(1)\n"
 				}
@@ -101,6 +103,7 @@ func TestLarkVerificationPreservesOtherPauses(t *testing.T) {
 				}
 			case "different_generation":
 				s.Binding.Generation = strings.Repeat("f", 32)
+				s = refreshLarkSearchFixture(t, s)
 			case "other_connection":
 				verify = platformTestSave(t, h.m, managedPlatformRequest{ServiceEpoch: h.m.epoch, Caller: humanCaller, ID: strings.Repeat("d", 32), Name: "other", Provider: "lark", URL: h.c.URL, CLIProfile: h.c.CLIProfile})
 			}
@@ -418,30 +421,26 @@ func TestLarkBackgroundPollingDeliversWithoutEnablingMember(t *testing.T) {
 	}
 }
 
-func TestLarkAllChatDiscoveryPersistsAndProjectsSafeDiagnostics(t *testing.T) {
+func TestLarkAllPrivateSearchPersistsAndProjectsSafeDiagnostics(t *testing.T) {
 	parallelFixtureTest(t)
 	h := newLarkHarness(t)
-	directory := lark.ChatPage{Chats: []lark.Chat{{ID: "oc_chat", Mode: "p2p"}}, HasMore: true, PageToken: "private-page-token"}
-	b, _ := json.Marshal(directory)
-	if err := os.WriteFile(filepath.Join(h.dir, "directory.json"), b, 0600); err != nil {
+	// Directory discovery is irrelevant to search, including an unreadable page.
+	if err := os.WriteFile(filepath.Join(h.dir, "directory.json"), []byte(`{"invalid":"directory fixture must not be used"}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	cfg := lark.Config{Enabled: true, PlatformID: h.c.ID, Private: lark.PrivateConfig{Enabled: true, Scope: "all"}, Target: notification.Target{Mode: "inbox", AgentID: h.members[0].AgentID, MembershipID: h.members[0].MembershipID}}
 	s := h.configure(cfg)
 	h.clock.add(3 * time.Second)
-	h.m.mu.Lock()
-	runner := h.m.notifications.NewRunnerLocked(s.Metadata().Key)
-	h.m.mu.Unlock()
-	runner.Step(context.Background())
+	stepNotificationCollector(t, h.m, s.Metadata().Key, 2)
 	s = h.state()
-	if s.Directory == nil || s.Directory.Scan == nil || s.Directory.Scan.Token != "private-page-token" {
-		t.Fatal("directory checkpoint missing")
+	if s.Directory != nil || s.Search == nil || s.Search.Branches[0].Scan == nil || s.Search.Branches[0].Scan.Page == nil {
+		t.Fatal("search page checkpoint missing")
 	}
 	h.m.mu.Lock()
 	view, err := h.m.larkNotificationViewLocked(h.room.RoomIdentity, &s)
 	h.m.mu.Unlock()
 	encoded, _ := json.Marshal(view)
-	if err != nil || view.Lark.DirectoryComplete || !view.Lark.DirectoryScanning || view.Lark.DirectoryPages != 1 || strings.Contains(string(encoded), "private-page-token") || strings.Contains(string(encoded), `"profile"`) {
+	if err != nil || view.Lark.Search == nil || view.Lark.DirectoryScanning || strings.Contains(string(encoded), `"profile"`) || strings.Contains(string(encoded), "page_token") {
 		t.Fatal("inaccurate or sensitive diagnostics", err)
 	}
 	root := h.m.store.dir
@@ -451,32 +450,20 @@ func TestLarkAllChatDiscoveryPersistsAndProjectsSafeDiagnostics(t *testing.T) {
 	h.m = testManager(t, root, managerTestProfiles(t))
 	h.m.notifications.Clock = h.clock.get
 	h.svc = eventLiveService(t, &eventHarness{m: h.m, room: h.room})
-	if h.state().Directory.Scan.Token != s.Directory.Scan.Token || h.state().Baseline != s.Baseline {
-		t.Fatal("restart lost directory checkpoint")
+	restored := h.state()
+	if !reflect.DeepEqual(restored.Search, s.Search) || restored.Baseline != s.Baseline {
+		t.Fatal("restart lost search page checkpoint")
 	}
-	directory.HasMore = false
-	directory.PageToken = ""
-	b, _ = json.Marshal(directory)
-	if err = os.WriteFile(filepath.Join(h.dir, "directory.json"), b, 0600); err != nil {
-		t.Fatal(err)
-	}
-	h.m.mu.Lock()
-	runner = h.m.notifications.NewRunnerLocked(s.Metadata().Key)
-	h.m.mu.Unlock()
-	for i := 0; i < 4; i++ {
-		if _, stop := runner.Step(context.Background()); stop {
-			t.Fatal(h.state().ErrorCode)
-		}
-	}
+	stepNotificationCollector(t, h.m, s.Metadata().Key, 10)
 	s = h.state()
-	if s.Directory.LastFull.IsZero() || s.Chats["oc_chat"].Completed == 0 || len(s.Inbox) != 1 {
-		t.Fatal("directory/history resume failed")
+	if s.LastFull.IsZero() || len(s.Inbox) != 1 || s.Directory != nil {
+		t.Fatal("search resume failed")
 	}
 	if err = h.deliver(); err != nil {
 		t.Fatal(err)
 	}
 	id := MemberIdentity{RoomIdentity: h.room.RoomIdentity, AgentID: h.members[0].AgentID, MembershipID: h.members[0].MembershipID}
 	if inboxRoutingPreview(t, h.svc, id).SnapshotSeq != 1 {
-		t.Fatal("all-chat source did not reach Inbox")
+		t.Fatal("all-private search did not reach Inbox")
 	}
 }

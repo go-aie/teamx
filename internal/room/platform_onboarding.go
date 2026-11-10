@@ -290,7 +290,7 @@ func (m *roomManager) prepareOnboardingLocked(ctx context.Context, req platformO
 					op.Notifications.Status = "preserved"
 				}
 			}
-			cfg := lark.DefaultConfig(id)
+			cfg := m.defaultLarkConfig(id)
 			if current != nil {
 				cfg = current.Config
 			}

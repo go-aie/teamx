@@ -172,6 +172,7 @@
                   <details id="lark-groups-settings" class="notification-channel">
                     <summary class="notification-settings-heading"><label class="workspace-check"><input id="lark-groups-enabled" type="checkbox" aria-label="启用群聊"></label><span class="notification-channel-disclosure"><span id="lark-groups-title" class="notification-channel-title">群聊</span></span></summary>
                     <div class="notification-channel-body" aria-labelledby="lark-groups-title">
+                      <label id="lark-groups-scope-option" class="workspace-check"><input id="lark-groups-scope" type="checkbox">全部群聊</label>
                       <div id="lark-groups-chat-selection">
                         <details id="lark-groups-chat-picker" class="lark-chat-picker">
                           <summary id="lark-groups-chat-picker-summary" aria-describedby="lark-groups-chat-picker-hint">选择群聊</summary>
@@ -196,7 +197,8 @@
                           </div>
                         </div>
                       </div>
-                      <details class="notification-help"><summary>接收说明</summary><p id="lark-group-mode-help" class="quiet">筛选用于他人消息；本人消息和回复作为上下文接收。“我”指当前平台账号。</p></details>
+                      <p id="lark-group-cost-warning" class="notification-cost-warning" role="status" hidden>全部群消息可能显著增加模型用量和费用，建议选择指定群，或仅接收「@我／@所有人」。</p>
+                      <details class="notification-help"><summary>接收说明</summary><p id="lark-group-mode-help" class="quiet">筛选用于他人消息；本人消息和回复作为上下文接收。两个 @ 选项均关闭时，仅接收本人上下文。“我”指当前平台账号。</p></details>
                     </div>
                   </details>
                   <details id="lark-advanced-settings" class="notification-advanced"><summary>高级设置</summary>
@@ -212,7 +214,7 @@
               </fieldset>
               <div class="gitlab-events-actions notification-settings-actions"><button id="lark-save" class="primary" type="button">保存设置</button><p id="lark-feedback" class="quiet" role="status" aria-live="polite"></p></div>
               <p id="lark-error" class="form-error" role="alert" hidden></p>
-              <details id="lark-sync-status" class="gitlab-events-records"><summary>同步与诊断</summary><button id="lark-sync" class="text-button" type="button">立即同步</button><p id="lark-diagnostics" class="quiet"></p><ul id="lark-chat-status" hidden></ul><button id="lark-manage-platforms" class="text-button" type="button">管理平台 ↗</button></details>
+              <details id="lark-sync-status" class="gitlab-events-records"><summary>同步与诊断</summary><button id="lark-sync" class="text-button" type="button">立即同步</button><p id="lark-diagnostics" class="quiet"></p><ul id="lark-branch-status" hidden></ul><ul id="lark-chat-status" hidden></ul><button id="lark-manage-platforms" class="text-button" type="button">管理平台 ↗</button></details>
             </section>
           </div>
           <div id="notification-panel-gitlab" aria-label="GitLab 通知设置">

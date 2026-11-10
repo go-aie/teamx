@@ -20,7 +20,7 @@ func TestLarkLogoutAcknowledgesAllSharedPlatformsAndPreservesNotificationProgres
 	h := newLarkHarness(t)
 	h.start()
 	before := h.state()
-	script := strings.Replace(l2Fixture, "import sys,json,os", "import sys,json,os,time", 1)
+	script := strings.Replace(larkFixtureScript(), "import sys,json,os", "import sys,json,os,time", 1)
 	script = strings.Replace(script, "if a==['--version']:", roomAuthCommands+"\nif a==['--version']:", 1)
 	if err := os.WriteFile(h.c.CLIProfile.Executable, []byte(script), 0700); err != nil {
 		t.Fatal(err)
