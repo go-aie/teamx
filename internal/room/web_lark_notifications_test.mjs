@@ -41,8 +41,7 @@ async function draft(ui){
  ui.el("lark-enabled").checked=true;await ui.el("lark-enabled").emit("change");
  ui.el("lark-target").value=JSON.stringify({mode:"inbox",agent_id:"assistant",membership_id:"member-a"});
  ui.el("lark-scope").checked=false;ui.el("lark-groups-enabled").checked=true;
- // This shared fixture exercises group reception; enable private discovery so
- // selected groups do not stand in for a private selection.
+ // This shared fixture exercises group reception with private reception off.
  ui.el("lark-private-enabled").checked=false;
  await ui.el("lark-groups-enabled").emit("change");await openChatPicker(ui);
  const choice=chatChoice(ui,"oc_fixture");choice.checked=true;await choice.emit("change");
@@ -50,7 +49,7 @@ async function draft(ui){
 test("Lark specified-chat settings preserve drafts and submit frozen Membership",async()=>{
  const api=fixture(),ui=await launch(api);await draft(ui);
  assert.equal(ui.el("notification-panel-messages").hidden,false);assert.equal(ui.el("lark-save").disabled,false);
- await ui.refresh();assert.match(ui.el("lark-chat-selected").children[0].textContent,/产品讨论群/);assert.equal(ui.el("lark-enabled").checked,true);
+ await ui.refresh();assert.match(ui.el("lark-groups-chat-selected").children[0].textContent,/产品讨论群/);assert.equal(ui.el("lark-enabled").checked,true);
  await ui.el("lark-save").emit("click");const saved=api.calls.find(x=>x.path==="/v1/platform/notifications/configure").body;
  assert.equal(saved.provider,"lark");assert.equal(saved.channel,"messages");assert.equal(saved.subscription_version,0);assert.equal(saved.config.target.membership_id,"member-a");
  assert.deepEqual(saved.config.groups.chat_ids,["oc_fixture"]);assert.equal(saved.config.groups.at_all,false);assert.equal(saved.config.bots,undefined);
@@ -59,7 +58,7 @@ test("Lark specified-chat settings preserve drafts and submit frozen Membership"
 test("Lark failed saves retain draft without automatic retry",async()=>{
  const api=fixture(),ui=await launch(api);await draft(ui);api.fail=true;await ui.el("lark-save").emit("click");await ui.refresh();
  assert.equal(api.calls.filter(x=>x.path==="/v1/platform/notifications/configure").length,1);
- assert.match(ui.el("lark-chat-selected").children[0].textContent,/产品讨论群/);assert.match(ui.el("lark-error").textContent,/变化.*核对/);
+ assert.match(ui.el("lark-groups-chat-selected").children[0].textContent,/产品讨论群/);assert.match(ui.el("lark-error").textContent,/变化.*核对/);
 });
 test("Lark settings distinguish an unsaved switch from saved state and sync feedback",async()=>{
  const api=fixture(),original=api.request;
@@ -78,9 +77,9 @@ test("Lark settings distinguish an unsaved switch from saved state and sync feed
 test("Lark scope edits preserve the interval and selected chats without saving",async()=>{
  const api=fixture(),ui=await launch(api);await draft(ui);
  ui.el("lark-interval").value="90";await ui.el("lark-interval").emit("change");
- ui.el("lark-groups-enabled").checked=false;await ui.el("lark-groups-enabled").emit("change");assert.equal(ui.el("lark-group-settings").hidden,true);
+ ui.el("lark-groups-enabled").checked=false;await ui.el("lark-groups-enabled").emit("change");assert.equal(ui.el("lark-group-settings").hidden,false);
  ui.el("lark-groups-enabled").checked=true;await ui.el("lark-groups-enabled").emit("change");assert.equal(ui.el("lark-group-settings").hidden,false);
- assert.equal(ui.el("lark-interval").value,"90");assert.equal(ui.el("lark-chat-selected").children.length,1);
+ assert.equal(ui.el("lark-interval").value,"90");assert.equal(ui.el("lark-groups-chat-selected").children.length,1);
  assert.equal(api.calls.some(call=>call.path==="/v1/platform/notifications/configure"),false);
 });
 test("Lark group receiving mode survives refresh and save with private messages always included",async()=>{
@@ -107,6 +106,46 @@ test("Lark private discovery keeps selected group mode on scope changes",async()
  assert.equal(saved.config.groups.message_mode,"all");assert.equal(saved.config.private.scope,"all");
  ui.el("lark-scope").checked=false;await ui.el("lark-scope").emit("change");
  assert.equal(ui.el("lark-group-mode-all").disabled,false);assert.equal(ui.el("lark-group-mode").value,"all");
+});
+test("Lark category switches preserve disclosure state and private scope remembers selected people after saving",async()=>{
+ const api=fixture(),ui=await launch(api);await openNotification(ui,"lark");
+ assert.equal(ui.el("lark-private-enabled").checked,true);assert.equal(ui.el("lark-groups-enabled").checked,false);
+ assert.equal(ui.el("lark-scope").checked,true);assert.equal(ui.el("lark-private-chat-selection").hidden,true);
+ assert.equal(ui.el("lark-private-settings").open,false);assert.equal(ui.el("lark-groups-settings").open,false);
+ ui.el("lark-enabled").checked=true;await ui.el("lark-enabled").emit("change");
+ ui.el("lark-scope").checked=false;await ui.el("lark-scope").emit("change");await openChatPicker(ui,"private");
+ const person=chatChoice(ui,"oc_private","private");person.checked=true;await person.emit("change");
+ ui.el("lark-private-enabled").checked=false;await ui.el("lark-private-enabled").emit("change");
+ assert.equal(ui.el("lark-private-settings").open,true);assert.equal(ui.el("lark-private-chat-selected").children.length,1);
+ ui.el("lark-private-enabled").checked=true;await ui.el("lark-private-enabled").emit("change");
+ ui.el("lark-scope").checked=true;await ui.el("lark-scope").emit("change");
+ assert.equal(ui.el("lark-private-chat-selection").hidden,true);assert.equal(ui.el("lark-private-chat-picker").open,false);
+ await ui.el("lark-save").emit("click");
+ assert.equal(api.data.config.private.scope,"all");assert.equal(api.data.config.groups.enabled,false);
+ ui.el("lark-scope").checked=false;await ui.el("lark-scope").emit("change");
+ assert.equal(ui.el("lark-private-chat-selection").hidden,false);assert.match(ui.el("lark-private-chat-selected").children[0].textContent,/张同学/);
+ await ui.el("lark-save").emit("click");
+ const reloaded=await launch(api);await openNotification(reloaded,"lark");
+ assert.equal(reloaded.el("lark-scope").checked,false);assert.equal(reloaded.el("lark-private-enabled").checked,true);
+ assert.equal(reloaded.el("lark-groups-enabled").checked,false);assert.equal(reloaded.el("lark-private-chat-selected").children.length,1);
+ assert.equal(reloaded.el("lark-groups-chat-selected").children.length,0);assert.equal(reloaded.el("lark-save").disabled,true);
+});
+test("Lark private and group searches stay independent and closing one category only aborts its own request",async()=>{
+ const api=fixture(),original=api.request,pending=new Map();
+ api.request=(path,body,fetcher,timeout,signal)=>path==="/v1/platform/lark/chats" && body.query
+  ? new Promise(resolve=>pending.set(body.type,{resolve,signal,body})) : original(path,body);
+ const ui=await launch(api);await draft(ui);await openChatPicker(ui,"private");
+ ui.el("lark-private-chat-search").value="同事";await ui.el("lark-private-chat-search").emit("input");
+ ui.el("lark-groups-chat-search").value="项目";await ui.el("lark-groups-chat-search").emit("input");await ui.clock.advance(300);
+ assert.equal(pending.get("p2p").body.query,"同事");assert.equal(pending.get("group").body.query,"项目");
+ ui.el("lark-private-settings").open=false;await ui.el("lark-private-settings").emit("toggle");
+ assert.equal(pending.get("p2p").signal.aborted,true);assert.equal(pending.get("group").signal.aborted,false);
+ pending.get("p2p").resolve({chats:[{chat_id:"oc_late_person",name:"晚到私聊",chat_mode:"p2p"}],has_more:false,page_token:""});
+ pending.get("group").resolve({chats:[{chat_id:"oc_live_group",name:"项目群",chat_mode:"group"}],has_more:false,page_token:""});await settle();
+ assert.equal(chatChoice(ui,"oc_late_person","private"),undefined);assert.ok(chatChoice(ui,"oc_live_group"));
+ assert.equal(ui.el("lark-private-chat-search").value,"同事");assert.equal(ui.el("lark-groups-chat-search").value,"项目");
+ assert.match(ui.el("lark-groups-chat-selected").children[0].textContent,/产品讨论群/);
+ assert.equal(api.calls.some(c=>c.path==="/v1/platform/notifications/configure"),false);
 });
 async function connectionDraft(api,platform="feishu"){
  const ui=await launch(api);await ui.el("open-settings").emit("click");await ui.el("connection-new").emit("click");
@@ -298,16 +337,16 @@ test("Lark all-chat mode is explicit, preserves drafts and sends no stale specif
  const api=fixture(),ui=await launch(api);await draft(ui);
  assert.equal(ui.el("lark-scope").checked,false);
  ui.el("lark-scope").checked=true;await ui.el("lark-scope").emit("change");
- assert.equal(ui.el("lark-chat-selection").hidden,false);assert.equal(ui.el("lark-save").disabled,false);
+ assert.equal(ui.el("lark-groups-chat-selection").hidden,false);assert.equal(ui.el("lark-save").disabled,false);
  await ui.refresh();assert.equal(ui.el("lark-scope").checked,true);
  await ui.el("lark-save").emit("click");const saved=api.calls.find(x=>x.path==="/v1/platform/notifications/configure").body;
  assert.equal(saved.config.private.scope,"all");assert.deepEqual(saved.config.groups.chat_ids,["oc_fixture"]);
  assert.equal(saved.config.target.membership_id,"member-a");
- assert.equal(ui.el("lark-scope-help").hidden,true);
- assert.equal(ui.el("lark-scope-option").hidden,true);
+ assert.equal(ui.el("lark-scope-help").hidden,false);
+ assert.equal(ui.el("lark-scope-option").hidden,false);
  ui.el("lark-scope").checked=false;await ui.el("lark-scope").emit("change");
- assert.equal(ui.el("lark-chat-selection").hidden,false);assert.equal(ui.el("lark-scope-help").hidden,true);
- assert.equal(ui.el("lark-chat-selected").children.length,1);assert.match(ui.el("lark-chat-picker-summary").textContent,/已选 1/);
+ assert.equal(ui.el("lark-groups-chat-selection").hidden,false);assert.equal(ui.el("lark-scope-help").hidden,true);
+ assert.equal(ui.el("lark-groups-chat-selected").children.length,1);assert.match(ui.el("lark-groups-chat-picker-summary").textContent,/已选 1/);
  await ui.el("lark-save").emit("click");
  const restored=api.calls.filter(x=>x.path==="/v1/platform/notifications/configure").at(-1).body.config;
  assert.equal(restored.private.scope,"specified");assert.deepEqual(restored.groups.chat_ids,["oc_fixture"]);
@@ -333,84 +372,81 @@ test("Lark compact sync status omits empty diagnostics and successful chat rows"
  assert.match(active.el("lark-chat-status").children[0].textContent,/oc_blocked.*permission_denied/);
 });
 
-async function openChatPicker(ui){
- ui.el("lark-chat-picker").open=true;await ui.el("lark-chat-picker").emit("toggle");await settle();
+async function openChatPicker(ui,kind="groups"){
+ ui.el(`lark-${kind}-settings`).open=true;await ui.el(`lark-${kind}-settings`).emit("toggle");
+ ui.el(`lark-${kind}-chat-picker`).open=true;await ui.el(`lark-${kind}-chat-picker`).emit("toggle");await settle();
 }
-function chatChoice(ui,id){return ui.el("lark-chat-options").children.find(row=>row.children[0].value===id)?.children[0];}
+function chatChoice(ui,id,kind="groups"){return ui.el(`lark-${kind}-chat-options`).children.find(row=>row.children[0].value===id)?.children[0];}
 test("Lark chat picker explains prerequisites and blocks browsing until the connection is verified",async()=>{
  const api=fixture();api.platforms[0].validation.status="unverified";
  const ui=await launch(api);await openNotification(ui,"lark");await settle();
- assert.equal(ui.el("lark-chat-picker-summary").textContent,"请先验证平台");
- assert.equal(ui.el("lark-chat-picker-hint").hidden,false);assert.match(ui.el("lark-chat-picker-hint").textContent,/管理平台/);
- assert.equal(ui.el("lark-chat-search").disabled,true);assert.equal(ui.el("lark-chat-type").disabled,true);
+ assert.equal(ui.el("lark-groups-chat-picker-summary").textContent,"请先验证平台");
+ assert.equal(ui.el("lark-groups-chat-picker-hint").hidden,false);assert.match(ui.el("lark-groups-chat-picker-hint").textContent,/管理平台/);
+ assert.equal(ui.el("lark-groups-chat-search").disabled,true);assert.equal(ui.el("lark-private-chat-search").disabled,true);
  assert.equal(ui.el("lark-scope").disabled,true);
- await openChatPicker(ui);await ui.el("lark-chat-refresh").emit("click");
- assert.equal(ui.el("lark-chat-picker").open,false);assert.equal(api.calls.some(x=>x.path==="/v1/platform/lark/chats"),false);
+ await openChatPicker(ui);await ui.el("lark-groups-chat-refresh").emit("click");
+ assert.equal(ui.el("lark-groups-chat-picker").open,false);assert.equal(api.calls.some(x=>x.path==="/v1/platform/lark/chats"),false);
  api.platforms[0].validation.status="unverified";
  ui.el("lark-connection").value="lark-connection";await ui.el("lark-connection").emit("change");
- assert.equal(ui.el("lark-chat-picker-summary").textContent,"请先验证平台");assert.match(ui.el("lark-chat-picker-hint").textContent,/管理平台/);
+ assert.equal(ui.el("lark-groups-chat-picker-summary").textContent,"请先验证平台");assert.match(ui.el("lark-groups-chat-picker-hint").textContent,/管理平台/);
  await openChatPicker(ui);assert.equal(api.calls.some(x=>x.path==="/v1/platform/lark/chats"),false);
  api.platforms[0].validation.status="valid";await ui.el("lark-connection").emit("change");await openChatPicker(ui);
- assert.equal(ui.el("lark-chat-picker-hint").hidden,true);assert.equal(ui.el("lark-chat-search").disabled,false);assert.equal(ui.el("lark-chat-type").disabled,false);
+ assert.equal(ui.el("lark-groups-chat-picker-hint").hidden,true);assert.equal(ui.el("lark-groups-chat-search").disabled,false);assert.equal(ui.el("lark-private-chat-search").disabled,false);
  assert.equal(ui.el("lark-scope").disabled,false);
  assert.equal(api.calls.filter(x=>x.path==="/v1/platform/lark/chats").length,1);
  api.platforms[0].validation.status="failed";await ui.el("lark-connection").emit("change");
- assert.equal(ui.el("lark-chat-picker").open,false);assert.equal(ui.el("lark-chat-picker-summary").attributes["aria-disabled"],"true");
+ assert.equal(ui.el("lark-groups-chat-picker").open,false);assert.equal(ui.el("lark-groups-chat-picker-summary").attributes["aria-disabled"],"true");
  const choice=chatChoice(ui,"oc_fixture");assert.equal(choice.disabled,true);choice.checked=true;await choice.emit("change");
- assert.equal(ui.el("lark-chat-selected").children.length,0);
- await ui.el("lark-chat-refresh").emit("click");assert.equal(api.calls.filter(x=>x.path==="/v1/platform/lark/chats").length,1);
+ assert.equal(ui.el("lark-groups-chat-selected").children.length,0);
+ await ui.el("lark-groups-chat-refresh").emit("click");assert.equal(api.calls.filter(x=>x.path==="/v1/platform/lark/chats").length,1);
 });
-test("Lark conversation dropdown selects names and types, searches and saves native IDs",async()=>{
- const api=fixture(),ui=await launch(api);await draft(ui);await ui.el("lark-chat-selected").children[0].emit("click");
- await openChatPicker(ui);
- const browse=api.calls.find(x=>x.path==="/v1/platform/lark/chats").body;
- assert.equal(browse.platform_id,"lark-connection");assert.equal(browse.platform_version,1);assert.equal(browse.caller.kind,"human");assert.equal(browse.room_instance,"instance-A");
- assert.match(ui.el("lark-chat-picker-status").textContent,/已加载 2 个会话/);
- ui.el("lark-chat-search").value="张";await ui.el("lark-chat-search").emit("input");
- await ui.clock.advance(300);
- assert.equal(ui.el("lark-chat-options").children.length,1);assert.ok(chatChoice(ui,"oc_private"));
- const privateChat=chatChoice(ui,"oc_private");privateChat.checked=true;await privateChat.emit("change");
- assert.match(ui.el("lark-chat-selected").children[0].textContent,/张同学/);
- ui.el("lark-chat-search").value="";await ui.el("lark-chat-search").emit("input");
- await ui.clock.advance(0);
- ui.el("lark-chat-type").value="group";await ui.el("lark-chat-type").emit("change");
- assert.equal(ui.el("lark-chat-options").children.length,1);assert.ok(chatChoice(ui,"oc_fixture"));
+test("Lark separate dropdowns select people and groups and save native IDs independently",async()=>{
+ const api=fixture(),ui=await launch(api);await draft(ui);await ui.el("lark-groups-chat-selected").children[0].emit("click");
+ ui.el("lark-private-enabled").checked=true;await ui.el("lark-private-enabled").emit("change");
+ await openChatPicker(ui,"private");
+ const browse=api.calls.filter(x=>x.path==="/v1/platform/lark/chats").at(-1).body;
+ assert.equal(browse.platform_id,"lark-connection");assert.equal(browse.platform_version,1);assert.equal(browse.caller.kind,"human");assert.equal(browse.room_instance,"instance-A");assert.equal(browse.type,"p2p");
+ assert.equal(ui.el("lark-private-chat-options").children.length,1);assert.equal(chatChoice(ui,"oc_fixture","private"),undefined);
+ ui.el("lark-private-chat-search").value="张";await ui.el("lark-private-chat-search").emit("input");await ui.clock.advance(300);
+ const privateChat=chatChoice(ui,"oc_private","private");privateChat.checked=true;await privateChat.emit("change");
+ assert.match(ui.el("lark-private-chat-selected").children[0].textContent,/张同学/);
+ assert.equal(ui.el("lark-groups-chat-options").children.length,1);assert.equal(chatChoice(ui,"oc_private"),undefined);
  const group=chatChoice(ui,"oc_fixture");group.checked=true;await group.emit("change");
- await ui.refresh();assert.equal(ui.el("lark-chat-selected").children.length,2);
+ await ui.refresh();assert.equal(ui.el("lark-private-chat-selected").children.length,1);assert.equal(ui.el("lark-groups-chat-selected").children.length,1);
  await ui.el("lark-save").emit("click");
  const saved=api.calls.find(x=>x.path==="/v1/platform/notifications/configure").body.config;
  assert.deepEqual(saved.groups.chat_ids,["oc_fixture"]);assert.deepEqual(saved.private.chat_ids,["oc_private"]);assert.equal(saved.bots,undefined);
- await ui.el("lark-chat-selected").children[0].emit("click");assert.equal(ui.el("lark-chat-selected").children.length,1);
+ await ui.el("lark-private-chat-selected").children[0].emit("click");assert.equal(ui.el("lark-private-chat-selected").children.length,0);assert.equal(ui.el("lark-groups-chat-selected").children.length,1);
 });
 test("Lark dropdown pagination and failures preserve selection and offer remote search",async()=>{
  const api=fixture(),original=api.request;let fail=false;
  api.request=async(path,body)=>{
   if(path!=="/v1/platform/lark/chats")return original(path,body);
   api.calls.push({path,body});if(fail)throw Error("read failed");
-  return body.page_token ? {chats:[{chat_id:"oc_next",chat_mode:"p2p",name:"下一页同事"}],has_more:false,page_token:""} : {chats:[api.chats[0]],has_more:true,page_token:"next-page"};
+  return body.page_token ? {chats:[{chat_id:"oc_next",chat_mode:"group",name:"下一页群聊"}],has_more:false,page_token:""} : {chats:[api.chats[0]],has_more:true,page_token:"next-page"};
  };
  const ui=await launch(api);await draft(ui);
- assert.match(ui.el("lark-chat-picker-status").textContent,/可加载更多或输入名称搜索/);
- fail=true;await ui.el("lark-chat-more").emit("click");
- assert.match(ui.el("lark-chat-picker-status").textContent,/读取失败.*已选会话保留/);assert.match(ui.el("lark-chat-selected").children[0].textContent,/产品讨论群/);
- fail=false;await ui.el("lark-chat-more").emit("click");
+ assert.match(ui.el("lark-groups-chat-picker-status").textContent,/可加载更多或输入名称搜索/);
+ fail=true;await ui.el("lark-groups-chat-more").emit("click");
+ assert.match(ui.el("lark-groups-chat-picker-status").textContent,/读取失败.*已选会话保留/);assert.match(ui.el("lark-groups-chat-selected").children[0].textContent,/产品讨论群/);
+ fail=false;await ui.el("lark-groups-chat-more").emit("click");
  assert.equal(api.calls.filter(x=>x.path==="/v1/platform/lark/chats").at(-1).body.page_token,"next-page");
- assert.ok(chatChoice(ui,"oc_next"));assert.equal(ui.el("lark-chat-more").hidden,true);
+ assert.ok(chatChoice(ui,"oc_next"));assert.equal(ui.el("lark-groups-chat-more").hidden,true);
 });
 test("Lark dropdown limits selection and discards a late result after connection changes",async()=>{
  const api=fixture(),original=api.request;let finish,delay=false;
  api.request=(path,body)=>delay && path==="/v1/platform/lark/chats" ? new Promise(resolve=>{finish=resolve;}) : original(path,body);
  api.chats.push(...Array.from({length:32},(_,i)=>({chat_id:`oc_${i}`,name:`会话 ${i}`,chat_mode:"group"})));
- const ui=await launch(api);await draft(ui);await ui.el("lark-chat-selected").children[0].emit("click");
+ const ui=await launch(api);await draft(ui);await ui.el("lark-groups-chat-selected").children[0].emit("click");
  for(let i=0;i<32;i++){const choice=chatChoice(ui,`oc_${i}`);choice.checked=true;await choice.emit("change");}
  delay=true;
  assert.equal(chatChoice(ui,"oc_fixture").disabled,true);
- await ui.el("lark-chat-selected").children[0].emit("click");assert.equal(chatChoice(ui,"oc_fixture").disabled,false);
- const refreshing=ui.el("lark-chat-refresh").emit("click");await settle();
+ await ui.el("lark-groups-chat-selected").children[0].emit("click");assert.equal(chatChoice(ui,"oc_fixture").disabled,false);
+ const refreshing=ui.el("lark-groups-chat-refresh").emit("click");await settle();
  ui.el("lark-connection").value="";await ui.el("lark-connection").emit("change");
  finish({chats:api.chats,has_more:false,page_token:""});await refreshing;
- assert.equal(ui.el("lark-chat-options").children.length,0);assert.equal(ui.el("lark-chat-selected").children.length,0);
- assert.match(ui.el("lark-chat-picker-status").textContent,/先选择并验证/);
+ assert.equal(ui.el("lark-groups-chat-options").children.length,0);assert.equal(ui.el("lark-groups-chat-selected").children.length,0);
+ assert.match(ui.el("lark-groups-chat-picker-status").textContent,/先选择并验证/);
 });
 test("Lark all-only group filtering is saved independently of private reception",async()=>{
  const api=fixture(),ui=await launch(api);await draft(ui);
@@ -446,9 +482,9 @@ test("Lark saved chats remain removable when the directory cannot load",async()=
  api.data={...api.data,subscription_id:"existing",subscription_version:1,config:{...api.data.config,enabled:true,platform_id:"lark-connection",groups:{...api.data.config.groups,enabled:true,chat_ids:["oc_missing"]},target:{mode:"inbox",agent_id:"assistant",membership_id:"member-a"}}};
  api.request=(path,body)=>path==="/v1/platform/lark/chats" ? Promise.reject(Error("unavailable")) : original(path,body);
  const ui=await launch(api);await openNotification(ui,"lark");await settle();await openChatPicker(ui);
- assert.equal(ui.el("lark-chats"),undefined);assert.match(ui.el("lark-chat-selected").children[0].textContent,/oc_missing/);
- await ui.el("lark-chat-selected").children[0].emit("click");
- assert.equal(ui.el("lark-chat-selected").children.length,0);assert.equal(ui.el("lark-save").disabled,true);
+ assert.equal(ui.el("lark-chats"),undefined);assert.match(ui.el("lark-groups-chat-selected").children[0].textContent,/oc_missing/);
+ await ui.el("lark-groups-chat-selected").children[0].emit("click");
+ assert.equal(ui.el("lark-groups-chat-selected").children.length,0);assert.equal(ui.el("lark-save").disabled,true);
 });
 
 function localDateTime(date) {
@@ -537,20 +573,20 @@ test("Lark searches remote matches with debounce and preserves selected labels a
   return body.page_token ? {chats:[{chat_id:"oc_more",name:"更多群",chat_mode:"topic"}],has_more:false,page_token:""} : {chats:[{chat_id:"oc_remote",name:"研发群",chat_mode:"group"}],has_more:true,page_token:"next-search"};
  };
  const ui=await launch(api);await draft(ui);
- ui.el("lark-chat-search").value="yan";await ui.el("lark-chat-search").emit("input");
+ ui.el("lark-groups-chat-search").value="yan";await ui.el("lark-groups-chat-search").emit("input");
  await ui.clock.advance(200);
- ui.el("lark-chat-search").value="yanfa";await ui.el("lark-chat-search").emit("input");
+ ui.el("lark-groups-chat-search").value="yanfa";await ui.el("lark-groups-chat-search").emit("input");
  await ui.clock.advance(299);assert.equal(api.calls.filter(c=>c.body?.query).length,0);
  await ui.clock.advance(1);
- const call=api.calls.filter(c=>c.body?.query)[0];assert.equal(call.body.query,"yanfa");assert.equal(call.body.type,"all");
+ const call=api.calls.filter(c=>c.body?.query)[0];assert.equal(call.body.query,"yanfa");assert.equal(call.body.type,"group");
  assert.ok(chatChoice(ui,"oc_remote")); // Remote pinyin matches must not be locally filtered out.
  const choice=chatChoice(ui,"oc_remote");choice.checked=true;await choice.emit("change");
- await ui.el("lark-chat-more").emit("click");assert.equal(api.calls.at(-1).body.page_token,"next-search");
+ await ui.el("lark-groups-chat-more").emit("click");assert.equal(api.calls.at(-1).body.page_token,"next-search");
  assert.ok(chatChoice(ui,"oc_more"));
- ui.el("lark-chat-search").value="other";await ui.el("lark-chat-search").emit("input");await ui.clock.advance(300);
- assert.equal(api.calls.at(-1).body.page_token,"");assert.match(ui.el("lark-chat-selected").children[1].textContent,/研发群/);
- ui.el("lark-chat-search").value="";await ui.el("lark-chat-search").emit("input");await ui.clock.advance(0);
- assert.ok(chatChoice(ui,"oc_private"));assert.match(ui.el("lark-chat-selected").children[1].textContent,/研发群/);
+ ui.el("lark-groups-chat-search").value="other";await ui.el("lark-groups-chat-search").emit("input");await ui.clock.advance(300);
+ assert.equal(api.calls.at(-1).body.page_token,"");assert.match(ui.el("lark-groups-chat-selected").children[1].textContent,/研发群/);
+ ui.el("lark-groups-chat-search").value="";await ui.el("lark-groups-chat-search").emit("input");await ui.clock.advance(0);
+ assert.ok(chatChoice(ui,"oc_fixture"));assert.match(ui.el("lark-groups-chat-selected").children[1].textContent,/研发群/);
 });
 
 test("Lark search ignores stale responses, aborts superseded requests and waits for Chinese composition",async()=>{
@@ -560,39 +596,38 @@ test("Lark search ignores stale responses, aborts superseded requests and waits 
   return original(path,body);
  };
  const ui=await launch(api);await draft(ui);
- ui.el("lark-chat-search").value="old";await ui.el("lark-chat-search").emit("input");await ui.clock.advance(300);
- await ui.el("lark-chat-search").emit("compositionstart");
- ui.el("lark-chat-search").value="zhang";await ui.el("lark-chat-search").emit("input",{isComposing:true});
+ ui.el("lark-groups-chat-search").value="old";await ui.el("lark-groups-chat-search").emit("input");await ui.clock.advance(300);
+ await ui.el("lark-groups-chat-search").emit("compositionstart");
+ ui.el("lark-groups-chat-search").value="zhang";await ui.el("lark-groups-chat-search").emit("input",{isComposing:true});
  assert.equal(oldSignal.aborted,true);await ui.clock.advance(1000);
  assert.equal(api.calls.some(c=>c.body?.query==="zhang"),false);
- ui.el("lark-chat-search").value="张";await ui.el("lark-chat-search").emit("compositionend");await ui.clock.advance(300);
- assert.ok(chatChoice(ui,"oc_private"));
+ ui.el("lark-groups-chat-search").value="产品";await ui.el("lark-groups-chat-search").emit("compositionend");await ui.clock.advance(300);
+ assert.ok(chatChoice(ui,"oc_fixture"));
  finish({chats:[{chat_id:"oc_stale",name:"旧结果",chat_mode:"group"}],has_more:false,page_token:""});await settle();
- assert.equal(chatChoice(ui,"oc_stale"),undefined);assert.ok(chatChoice(ui,"oc_private"));
- ui.el("lark-chat-type").value="p2p";await ui.el("lark-chat-type").emit("change");await ui.clock.advance(0);
- assert.equal(api.calls.at(-1).body.type,"p2p");assert.equal(api.calls.at(-1).body.page_token,"");
+ assert.equal(chatChoice(ui,"oc_stale"),undefined);assert.ok(chatChoice(ui,"oc_fixture"));
+ assert.equal(api.calls.at(-1).body.type,"group");assert.equal(api.calls.at(-1).body.page_token,"");
  const count=api.calls.length;
- ui.el("lark-chat-search").value="字".repeat(51);await ui.el("lark-chat-search").emit("input");await ui.clock.advance(300);
- assert.equal(api.calls.length,count);assert.match(ui.el("lark-chat-picker-status").textContent,/最多 50/);
+ ui.el("lark-groups-chat-search").value="字".repeat(51);await ui.el("lark-groups-chat-search").emit("input");await ui.clock.advance(300);
+ assert.equal(api.calls.length,count);assert.match(ui.el("lark-groups-chat-picker-status").textContent,/最多 50/);
 });
 
 test("Lark search reports partial permissions and refinement without hiding usable results",async()=>{
  const api=fixture(),original=api.request;
  api.request=(path,body)=>path==="/v1/platform/lark/chats" && body.query ? Promise.resolve({chats:[{chat_id:"oc_found",name:"匹配群",chat_mode:"group"}],has_more:false,page_token:"",search_warnings:[{source:"user",code:"refine_query"},{source:"bot",code:"permission_denied"}]}) : original(path,body);
  const ui=await launch(api);await draft(ui);
- ui.el("lark-chat-search").value="匹配";await ui.el("lark-chat-search").emit("input");await ui.clock.advance(300);
- assert.ok(chatChoice(ui,"oc_found"));assert.equal(ui.el("lark-chat-more").hidden,true);
- assert.match(ui.el("lark-chat-picker-status").textContent,/人员私聊结果较多.*完整的名称.*机器人私聊搜索权限不足/);
- assert.match(ui.el("lark-chat-selected").children[0].textContent,/产品讨论群/);
+ ui.el("lark-groups-chat-search").value="匹配";await ui.el("lark-groups-chat-search").emit("input");await ui.clock.advance(300);
+ assert.ok(chatChoice(ui,"oc_found"));assert.equal(ui.el("lark-groups-chat-more").hidden,true);
+ assert.match(ui.el("lark-groups-chat-picker-status").textContent,/人员私聊结果较多.*完整的名称.*机器人私聊搜索权限不足/);
+ assert.match(ui.el("lark-groups-chat-selected").children[0].textContent,/产品讨论群/);
 });
 
 test("closing Lark search cancels pending work and late results cannot replace a reopened picker",async()=>{
  const api=fixture(),original=api.request;let finish,signal;
  api.request=(path,body,fetcher,timeout,s)=>path==="/v1/platform/lark/chats" && body.query ? new Promise(resolve=>{finish=resolve;signal=s;}) : original(path,body);
  const ui=await launch(api);await draft(ui);
- ui.el("lark-chat-search").value="late";await ui.el("lark-chat-search").emit("input");await ui.clock.advance(300);
- ui.el("lark-chat-picker").open=false;await ui.el("lark-chat-picker").emit("toggle");assert.equal(signal.aborted,true);
- ui.el("lark-chat-search").value="";await ui.el("lark-chat-search").emit("input");await openChatPicker(ui);
+ ui.el("lark-groups-chat-search").value="late";await ui.el("lark-groups-chat-search").emit("input");await ui.clock.advance(300);
+ ui.el("lark-groups-chat-picker").open=false;await ui.el("lark-groups-chat-picker").emit("toggle");assert.equal(signal.aborted,true);
+ ui.el("lark-groups-chat-search").value="";await ui.el("lark-groups-chat-search").emit("input");await openChatPicker(ui);
  finish({chats:[{chat_id:"oc_late",name:"旧查询",chat_mode:"group"}],has_more:false,page_token:""});await settle();
  assert.equal(chatChoice(ui,"oc_late"),undefined);assert.ok(chatChoice(ui,"oc_fixture"));
 });

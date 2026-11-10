@@ -17,6 +17,8 @@ import (
 
 var MessagesSourceID = notification.SourceID{Provider: "lark", Channel: "messages"}
 
+const DefaultIntervalSeconds = 10
+
 // PrivateConfig selects proven person-to-person conversations. Saved selections
 // survive switching to all, or disabling this category.
 type PrivateConfig struct {
@@ -44,7 +46,7 @@ type Config struct {
 
 // DefaultConfig is a draft only; reading it never creates a subscription.
 func DefaultConfig(platformID string) Config {
-	return Config{Enabled: true, PlatformID: platformID, Private: PrivateConfig{Enabled: true, Scope: "all"}, Groups: GroupConfig{MessageMode: "mentions", AtMe: true}, IntervalSeconds: 60}
+	return Config{Enabled: true, PlatformID: platformID, Private: PrivateConfig{Enabled: true, Scope: "all"}, Groups: GroupConfig{MessageMode: "mentions", AtMe: true}, IntervalSeconds: DefaultIntervalSeconds}
 }
 func (c Config) DiscoverPrivate() bool { return c.Private.Enabled && c.Private.Scope == "all" }
 
@@ -66,7 +68,7 @@ func normalizeChatIDs(ids []string) ([]string, error) {
 }
 func NormalizeConfig(c Config) (Config, error) {
 	if c.IntervalSeconds == 0 {
-		c.IntervalSeconds = 60
+		c.IntervalSeconds = DefaultIntervalSeconds
 	}
 	if c.Private.Scope == "" {
 		c.Private.Scope = "all"

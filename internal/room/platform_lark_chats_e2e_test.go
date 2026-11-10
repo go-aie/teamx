@@ -14,13 +14,23 @@ import (
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform/lark"
+	"github.com/go-aie/teamx/internal/platform/notification"
 )
+
+func prepareLarkBrowserMember(h *larkHarness) {
+	config := lark.DefaultConfig(h.c.ID)
+	config.Enabled = false
+	member := h.members[0]
+	config.Target = notification.Target{Mode: "inbox", AgentID: member.AgentID, MembershipID: member.MembershipID}
+	h.configure(config)
+}
 
 func TestLarkChatScopeBrowser(t *testing.T) {
 	if os.Getenv("TEAMX_LARK_SCOPE_BROWSER") != "1" {
 		t.Skip("optional local Chromium acceptance")
 	}
 	h := newLarkHarness(t)
+	prepareLarkBrowserMember(h)
 	page := lark.ChatPage{Chats: []lark.Chat{{ID: "oc_private", Mode: "p2p", Name: "同事"}, {ID: "oc_group", Mode: "group", Name: "项目群"}}}
 	raw, _ := json.Marshal(page)
 	if err := os.WriteFile(filepath.Join(h.dir, "directory.json"), raw, 0600); err != nil {
@@ -43,6 +53,7 @@ func TestLarkChatSearchBrowser(t *testing.T) {
 		t.Skip("optional local Chromium acceptance")
 	}
 	h := newLarkHarness(t)
+	prepareLarkBrowserMember(h)
 	installChatSearchFixture(t, h)
 	raw, _ := json.Marshal(lark.ChatPage{Chats: []lark.Chat{{ID: "oc_private", Mode: "p2p", Name: "同事"}, {ID: "oc_group", Mode: "group", Name: "项目群"}}})
 	if err := os.WriteFile(filepath.Join(h.dir, "directory.json"), raw, 0600); err != nil {

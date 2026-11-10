@@ -2343,15 +2343,16 @@ test("Escape dismisses an open native select before the notification panel",asyn
   await ui.el("notification-detail").emit("keydown",{key:"Escape",target:select});
   assert.equal(ui.el("notification-detail").open,false);
 });
-test("GitLab channel switches reveal their own settings and retain independent drafts",async()=>{
+test("GitLab channel switches preserve disclosure state and retain independent drafts",async()=>{
   const {api,events}=todosServer();events.get("A").config.enabled=false;
   const ui=await launch(api);await openGitLab(ui);
   assert.equal(ui.el("gitlab-sync").hidden,false);assert.equal(ui.el("gitlab-sync").disabled,true);
   await toggleGitLab(ui,"gitlab-todos-enabled",true);
-  assert.equal(ui.el("gitlab-todos-settings").open,true);assert.equal(ui.el("gitlab-events-enabled").checked,false);
+  assert.equal(ui.el("gitlab-todos-settings").open,false);assert.equal(ui.el("gitlab-events-enabled").checked,false);
   await toggleGitLab(ui,"gitlab-events-enabled",true);
-  assert.equal(ui.el("gitlab-events-settings").open,true);
-  await toggleGitLab(ui,"gitlab-events-enabled",false);assert.equal(ui.el("gitlab-events-settings").open,false);
+  assert.equal(ui.el("gitlab-events-settings").open,false);
+  await expandDisclosure(ui.el("gitlab-events-settings"));
+  await toggleGitLab(ui,"gitlab-events-enabled",false);assert.equal(ui.el("gitlab-events-settings").open,true);
   await toggleGitLab(ui,"gitlab-events-enabled",true);assert.equal(ui.el("gitlab-events-settings").open,true);
   await ui.el("close-notification").emit("click");await openGitLab(ui);
   assert.equal(ui.el("gitlab-todos-enabled").checked,true);assert.equal(ui.el("gitlab-events-enabled").checked,true);
@@ -2436,9 +2437,44 @@ test("GitLab rejects an empty activity selection and preserves explicit empty to
   await toggleGitLab(ui,"gitlab-events-all-types",false);assert.equal(ui.el("gitlab-save").disabled,true);
   await ui.refresh();assert.equal(ui.el("gitlab-events-type-opened").checked,false);
   await toggleGitLab(ui,"gitlab-events-all-types",true);
-  for(const reason of ["mentioned","assigned","review_requested","other"])await toggleGitLab(ui,`gitlab-todos-reason-${reason}`,false);
+  await toggleGitLab(ui,"gitlab-todos-all-reasons",false);
   await ui.el("gitlab-save").emit("click");assert.deepEqual(gitlabWrites(api)[0].data.config.todos.filter.reasons,[]);
   await ui.refresh();assert.equal(ui.el("gitlab-todos-reason-mentioned").checked,false);
+});
+
+test("GitLab todo select-all controls track partial selections and keep groups independent",async()=>{
+  const {api}=todosServer({enabled:true}),ui=await launch(api);await openGitLab(ui);
+  const groups = [
+    ["reasons","reason",["mentioned","assigned","review_requested","other"]],
+    ["types","type",["merge_request","work_item"]],
+  ];
+  for (const [group,prefix,values] of groups) {
+    const all=ui.el(`gitlab-todos-all-${group}`),first=`gitlab-todos-${prefix}-${values[0]}`;
+    const other=ui.el(`gitlab-todos-all-${group === "reasons" ? "types" : "reasons"}`);
+    assert.equal(all.checked,true);assert.equal(all.indeterminate,false);
+    await toggleGitLab(ui,first,false);
+    assert.equal(all.checked,false);assert.equal(all.indeterminate,true);
+    await toggleGitLab(ui,`gitlab-todos-all-${group}`,true);
+    assert.equal(all.checked,true);assert.equal(all.indeterminate,false);
+    for(const value of values)assert.equal(ui.el(`gitlab-todos-${prefix}-${value}`).checked,true);
+    await toggleGitLab(ui,`gitlab-todos-all-${group}`,false);
+    assert.equal(all.checked,false);assert.equal(all.indeterminate,false);
+    for(const value of values)assert.equal(ui.el(`gitlab-todos-${prefix}-${value}`).checked,false);
+    assert.equal(other.checked,true);assert.equal(ui.el("gitlab-events-all-types").checked,true);
+    await toggleGitLab(ui,first,true);
+    assert.equal(all.checked,false);assert.equal(all.indeterminate,true);
+    await toggleGitLab(ui,`gitlab-todos-all-${group}`,true);
+  }
+  await toggleGitLab(ui,"gitlab-todos-all-reasons",false);
+  await toggleGitLab(ui,"gitlab-todos-type-work_item",false);
+  assert.equal(gitlabWrites(api).length,0);
+  await ui.el("gitlab-save").emit("click");
+  assert.deepEqual(gitlabWrites(api)[0].data.config.todos.filter,{reasons:[],types:["merge_request"]});
+  await ui.refresh();
+  assert.equal(ui.el("gitlab-todos-all-reasons").checked,false);
+  assert.equal(ui.el("gitlab-todos-all-reasons").indeterminate,false);
+  assert.equal(ui.el("gitlab-todos-all-types").checked,false);
+  assert.equal(ui.el("gitlab-todos-all-types").indeterminate,true);
 });
 
 test("GitLab validates the common interval before the one save",async()=>{

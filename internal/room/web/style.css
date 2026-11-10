@@ -1694,8 +1694,7 @@ textarea::placeholder {
 .workspace-form .lark-chat-picker > summary { color:inherit; font-size:13px; }
 .lark-chat-picker:has(> summary[aria-disabled="true"]) { background:#f3f5f1; }
 .workspace-form .lark-chat-picker > summary[aria-disabled="true"] { color:var(--muted); cursor:not-allowed; }
-#lark-chat-picker-hint { margin:6px 0 0; font-size:12px; }
-.lark-chat-controls { display:grid; grid-template-columns:minmax(0,1fr) 100px; gap:8px; margin-top:12px; }
+.lark-chat-controls { display:grid; grid-template-columns:minmax(0,1fr); gap:8px; margin-top:12px; }
 .lark-chat-options { max-height:240px; overflow-y:auto; overscroll-behavior:contain; }
 .workspace-form .lark-chat-option { display:flex; align-items:center; gap:10px; margin:0; padding:9px 6px; border-radius:4px; font-weight:400; cursor:pointer; }
 .lark-chat-option:hover { background:#f3f6f1; }
@@ -1724,9 +1723,6 @@ textarea::placeholder {
   :is(.notification-settings,.settings-dialog) option:disabled { color:var(--muted); cursor:default; }
   :is(.notification-settings,.settings-dialog) option::checkmark { color:var(--accent); font-size:12px; }
 }
-.lark-conversation-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:12px 0 6px; font-weight:550; }
-.notification-settings .lark-conversation-heading .workspace-check { margin:0; min-height:28px; font-weight:400; white-space:nowrap; }
-.lark-conversation-controls { min-width:0; }
 .notification-settings .workspace-check { margin:0 0 2px; cursor:pointer; }
 .notification-settings label { margin-top:12px; }
 .notification-settings .quiet { margin:6px 0 0; font-size:11px; }
@@ -1982,11 +1978,13 @@ textarea::placeholder {
 .notification-settings .notification-settings-row + .notification-channel { margin-top:14px; }
 .notification-channel > summary { display:flex; align-items:center; gap:12px; padding:8px 0; list-style:none; color:inherit; font-size:13px; cursor:pointer; }
 .notification-channel > summary::-webkit-details-marker { display:none; }
-.notification-channel > summary::after { content:""; width:6px; height:6px; flex:none; border-right:1.5px solid var(--muted); border-bottom:1.5px solid var(--muted); transform:rotate(-45deg); transition:transform .14s; margin:0 3px; }
-.notification-channel[open] > summary::after { transform:rotate(45deg); }
-.notification-channel > summary > .workspace-check { font-weight:600; cursor:pointer; }
-.notification-settings .notification-channel > summary > .quiet { flex-shrink:0; margin-left:auto; }
-.notification-channel > summary[data-error="true"] > .quiet { color:#9a493d; }
+.notification-channel-disclosure { display:flex; align-items:center; gap:12px; flex:1; min-width:0; }
+.notification-channel-disclosure::after { content:""; width:6px; height:6px; flex:none; border-right:1.5px solid var(--muted); border-bottom:1.5px solid var(--muted); transform:rotate(-45deg); transition:transform .14s; margin:0 3px; }
+.notification-channel[open] > summary > .notification-channel-disclosure::after { transform:rotate(45deg); }
+.notification-channel > summary > .workspace-check { cursor:pointer; }
+.notification-channel-title { flex:1; min-width:0; font-weight:600; }
+.notification-settings .notification-channel-disclosure > .quiet { flex-shrink:0; margin:0 0 0 auto; }
+.notification-channel > summary[data-error="true"] > .notification-channel-disclosure > .quiet { color:#9a493d; }
 .notification-channel > summary:focus-visible { outline:2px solid #a9c6b2; outline-offset:2px; }
 .notification-channel-body { container:notification-content / inline-size; min-width:0; margin:12px 0 16px; padding:0; }
 .notification-channel-body > :first-child,.notification-channel-body > fieldset > :first-child { margin-top:0; }
@@ -2005,13 +2003,13 @@ textarea::placeholder {
 .gitlab-project-option span { min-width:0; overflow-wrap:anywhere; }
 .gitlab-project-option small { display:block; margin-top:3px; font-size:11px; color:var(--muted); }
 .gitlab-project-actions { display:flex; justify-content:space-between; gap:8px; margin-top:8px; }
-@media(prefers-reduced-motion:reduce) { .notification-channel > summary::after { transition:none; } }
+@media(prefers-reduced-motion:reduce) { .notification-channel-disclosure::after { transition:none; } }
 .notification-sync-list { margin:8px 0 0; }
 .notification-sync-list > div { display:grid; grid-template-columns:64px minmax(0,1fr); gap:12px; padding:8px 0; line-height:1.6; }
 .notification-sync-list dt { font-size:12px; font-weight:550; }
 .notification-settings .notification-sync-list dd { min-width:0; margin:0; }
 .notification-sync-list dd[data-error="true"] { color:#9a493d; }
-.notification-body .gitlab-events-type-heading { flex-wrap:wrap; gap:8px; }
+.notification-body .gitlab-events-type-heading { justify-content:flex-start; flex-wrap:wrap; gap:8px 12px; }
 .notification-body .gitlab-events-types { column-gap:8px; }
 @media(max-width:640px) { .member-rail .notification-detail { height:85dvh; } }
 
@@ -2273,8 +2271,6 @@ textarea::placeholder {
 @media (prefers-reduced-motion:reduce) {
   .notification-switch,.notification-switch::before { transition:none; }
 }
-.lark-conversation-heading { flex-wrap:wrap; justify-content:flex-start; gap:4px 14px; }
-#lark-scope-option { flex-basis:100%; }
 
 /* Member platform navigation reuses notification controls. */
 .member-notification-sources { border-bottom:1px solid var(--line); }
@@ -2348,14 +2344,17 @@ textarea::placeholder {
 .notification-body .notification-settings label { font-size:13px; font-weight:500; }
 .notification-body .notification-settings .workspace-check { font-size:13px; font-weight:400; }
 .notification-body .notification-settings .notification-channel { border:0; margin:0; }
-.notification-body .notification-channel > summary { min-height:44px; padding:4px 0; font-size:13px; gap:8px; }
-.notification-body .notification-channel > summary > .workspace-check { flex:1; min-width:0; font-weight:500; }
-.notification-body .notification-channel > summary > .quiet { font-size:12px; }
+.notification-body .notification-channel > summary { min-height:44px; padding:0; font-size:13px; gap:4px; }
+.notification-body .notification-channel > summary > .workspace-check { display:flex; align-items:center; justify-content:center; flex:0 0 44px; min-height:44px; margin:0 0 0 -14px; border-radius:4px; }
+.notification-body .notification-channel-disclosure { min-height:44px; padding:0 4px; gap:8px; border-radius:4px; }
+.notification-body .notification-channel > summary > .workspace-check:hover,.notification-body .notification-channel-disclosure:hover { background:rgba(49,94,73,.06); }
+.notification-body .notification-channel-title { font-weight:500; }
+.notification-body .notification-channel-disclosure > .quiet { font-size:12px; }
 .notification-body .notification-channel-body { margin:0 0 12px; padding:0 0 4px 23px; }
 .notification-body .notification-settings fieldset { margin:0; }
 .notification-body .notification-settings fieldset:has(> .notification-settings-row > [hidden]):not(:has(> :not(.notification-settings-row))) { margin:0; }
-.notification-scope .lark-conversation-heading { margin:0 0 10px; gap:4px 16px; }
-.notification-scope .lark-conversation-heading .workspace-check { min-height:32px; }
+#lark-scope-option { min-height:32px; }
+#lark-scope-help { margin-bottom:8px; }
 .notification-scope .lark-chat-picker { margin:0; }
 .notification-scope .lark-chat-picker > summary { font-size:13px; }
 .notification-scope .lark-chat-selected:not(:empty) { margin:10px 0; }

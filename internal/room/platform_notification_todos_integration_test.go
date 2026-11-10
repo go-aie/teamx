@@ -802,7 +802,7 @@ func TestTodosCurrentIntervalAndFixedInactiveInterval(t *testing.T) {
 	}
 	h.full()
 	calls = len(h.pages.calls)
-	for i := 0; i < 29; i++ {
+	for i := 0; i < gitlab.DefaultIntervalSeconds-1; i++ {
 		h.step()
 		if len(h.pages.calls) != calls {
 			t.Fatal("active collector polled early", i)
@@ -810,7 +810,7 @@ func TestTodosCurrentIntervalAndFixedInactiveInterval(t *testing.T) {
 	}
 	h.step()
 	if len(h.pages.calls) != calls+1 {
-		t.Fatal("active collector did not use the common 30 second interval")
+		t.Fatal("active collector did not use the common default interval")
 	}
 }
 

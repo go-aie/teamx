@@ -145,39 +145,61 @@
                 </div>
                 <section id="lark-settings" class="notification-scope" aria-label="接收范围">
                   <input id="lark-enabled" type="checkbox" hidden><span id="lark-state" class="sr-only" role="status"></span>
-                  <div class="lark-conversation-heading"><span id="lark-conversation-label" class="sr-only">接收会话类别</span><label class="workspace-check"><input id="lark-private-enabled" type="checkbox">人员私聊</label><label class="workspace-check"><input id="lark-groups-enabled" type="checkbox">指定群聊</label><label id="lark-scope-option" class="workspace-check"><input id="lark-scope" type="checkbox" aria-describedby="lark-scope-help">全部人员私聊</label></div>
-                  <div class="lark-conversation-controls">
-                    <div id="lark-chat-selection">
-                      <details id="lark-chat-picker" class="lark-chat-picker">
-                        <summary id="lark-chat-picker-summary" aria-describedby="lark-chat-picker-hint">选择私聊或群聊</summary>
-                        <div id="lark-chat-selected" class="lark-chat-selected" aria-label="已选会话"></div>
-                        <div class="lark-chat-controls">
-                          <label for="lark-chat-search" class="sr-only">搜索会话名称</label><input id="lark-chat-search" type="search" placeholder="搜索群名或联系人姓名" autocomplete="off">
-                          <label for="lark-chat-type" class="sr-only">会话类型</label><select id="lark-chat-type"><option value="all">全部类型</option><option value="p2p">私聊</option><option value="group">群聊</option></select>
-                        </div>
-                        <p id="lark-chat-picker-status" class="quiet" role="status" aria-live="polite"></p>
-                        <div id="lark-chat-options" class="lark-chat-options" aria-label="可选会话"></div>
-                        <div class="lark-chat-actions"><button id="lark-chat-more" type="button" class="text-button" hidden>加载更多</button><button id="lark-chat-refresh" type="button" class="text-button">刷新会话列表</button></div>
-                      </details>
-                      <p id="lark-chat-selection-error" class="form-error" role="alert" hidden></p>
-                    </div>
-                    <p id="lark-chat-picker-hint" class="quiet" role="status" hidden></p>
-                  </div>
-                  <div id="lark-group-settings" class="notification-filter-row">
-                    <label for="lark-group-mode">群聊消息</label>
-                    <div class="lark-group-controls">
-                      <select id="lark-group-mode" aria-describedby="lark-group-mode-help"><option value="mentions">按 @</option><option id="lark-group-mode-all" value="all">全部消息</option></select>
-                      <div id="lark-group-mentions" class="lark-group-mentions">
-                        <label class="workspace-check"><input id="lark-group" type="checkbox" checked>@我</label>
-                        <label class="workspace-check"><input id="lark-all" type="checkbox">@所有人</label>
+                  <details id="lark-private-settings" class="notification-channel">
+                    <summary class="notification-settings-heading"><label class="workspace-check"><input id="lark-private-enabled" type="checkbox" aria-label="启用人员私聊"></label><span class="notification-channel-disclosure"><span id="lark-private-title" class="notification-channel-title">人员私聊</span></span></summary>
+                    <div class="notification-channel-body" aria-labelledby="lark-private-title">
+                      <label id="lark-scope-option" class="workspace-check"><input id="lark-scope" type="checkbox" aria-describedby="lark-scope-help">全部人员</label>
+                      <p id="lark-scope-help" class="quiet" hidden>自动接收后续新增的人员私聊。</p>
+                      <div id="lark-private-chat-selection">
+                        <details id="lark-private-chat-picker" class="lark-chat-picker">
+                          <summary id="lark-private-chat-picker-summary" aria-describedby="lark-private-chat-picker-hint">选择人员</summary>
+                          <div id="lark-private-chat-selected" class="lark-chat-selected" aria-label="已选人员"></div>
+                          <div class="lark-chat-controls">
+                            <label for="lark-private-chat-search" class="sr-only">搜索人员名称</label><input id="lark-private-chat-search" type="search" placeholder="搜索联系人姓名" autocomplete="off">
+                          </div>
+                          <p id="lark-private-chat-picker-status" class="quiet" role="status" aria-live="polite"></p>
+                          <div id="lark-private-chat-options" class="lark-chat-options" aria-label="可选人员"></div>
+                          <div class="lark-chat-actions"><button id="lark-private-chat-more" type="button" class="text-button" hidden>加载更多</button><button id="lark-private-chat-refresh" type="button" class="text-button">刷新列表</button></div>
+                        </details>
+                        <p id="lark-private-chat-selection-error" class="form-error" role="alert" hidden></p>
                       </div>
+                      <p id="lark-private-chat-picker-hint" class="quiet" role="status" hidden></p>
                     </div>
-                  </div>
-                  <details class="notification-help"><summary>接收说明</summary><p id="lark-scope-help" class="quiet" hidden>自动接收新私聊；群聊需单独选择。</p><p id="lark-group-mode-help" class="quiet">筛选用于他人消息；本人消息和回复作为上下文接收。“我”指当前平台账号。</p></details>
+                  </details>
+                  <details id="lark-groups-settings" class="notification-channel">
+                    <summary class="notification-settings-heading"><label class="workspace-check"><input id="lark-groups-enabled" type="checkbox" aria-label="启用群聊"></label><span class="notification-channel-disclosure"><span id="lark-groups-title" class="notification-channel-title">群聊</span></span></summary>
+                    <div class="notification-channel-body" aria-labelledby="lark-groups-title">
+                      <div id="lark-groups-chat-selection">
+                        <details id="lark-groups-chat-picker" class="lark-chat-picker">
+                          <summary id="lark-groups-chat-picker-summary" aria-describedby="lark-groups-chat-picker-hint">选择群聊</summary>
+                          <div id="lark-groups-chat-selected" class="lark-chat-selected" aria-label="已选群聊"></div>
+                          <div class="lark-chat-controls">
+                            <label for="lark-groups-chat-search" class="sr-only">搜索群聊名称</label><input id="lark-groups-chat-search" type="search" placeholder="搜索群名" autocomplete="off">
+                          </div>
+                          <p id="lark-groups-chat-picker-status" class="quiet" role="status" aria-live="polite"></p>
+                          <div id="lark-groups-chat-options" class="lark-chat-options" aria-label="可选群聊"></div>
+                          <div class="lark-chat-actions"><button id="lark-groups-chat-more" type="button" class="text-button" hidden>加载更多</button><button id="lark-groups-chat-refresh" type="button" class="text-button">刷新列表</button></div>
+                        </details>
+                        <p id="lark-groups-chat-selection-error" class="form-error" role="alert" hidden></p>
+                      </div>
+                      <p id="lark-groups-chat-picker-hint" class="quiet" role="status" hidden></p>
+                      <div id="lark-group-settings" class="notification-filter-row">
+                        <label for="lark-group-mode">群聊消息</label>
+                        <div class="lark-group-controls">
+                          <select id="lark-group-mode" aria-describedby="lark-group-mode-help"><option value="mentions">按 @</option><option id="lark-group-mode-all" value="all">全部消息</option></select>
+                          <div id="lark-group-mentions" class="lark-group-mentions">
+                            <label class="workspace-check"><input id="lark-group" type="checkbox" checked>@我</label>
+                            <label class="workspace-check"><input id="lark-all" type="checkbox">@所有人</label>
+                          </div>
+                        </div>
+                      </div>
+                      <details class="notification-help"><summary>接收说明</summary><p id="lark-group-mode-help" class="quiet">筛选用于他人消息；本人消息和回复作为上下文接收。“我”指当前平台账号。</p></details>
+                    </div>
+                  </details>
                   <details class="notification-advanced"><summary>高级设置</summary>
                   <div class="notification-settings-row">
                     <div><label for="lark-backfill">开始接收时间</label><select id="lark-backfill" aria-describedby="lark-backfill-help"><option value="0">从开启时刻</option><option value="3600">最近 1 小时</option><option value="86400">最近 24 小时</option><option value="custom">指定时间</option></select><div id="lark-backfill-locked" class="notification-backfill-locked" aria-describedby="lark-backfill-help" hidden><span id="lark-backfill-value"></span><small>已锁定</small></div></div>
-                    <div><label for="lark-interval">检查间隔（秒）</label><input id="lark-interval" type="number" min="3" max="3600" value="60" title="3～3600 秒"></div>
+                    <div><label for="lark-interval">检查间隔（秒）</label><input id="lark-interval" type="number" min="3" max="3600" value="10" title="3～3600 秒"></div>
                   </div>
                   <div id="lark-backfill-custom" hidden><label id="lark-backfill-start-label" for="lark-backfill-start">起始时间（系统时区）</label><input id="lark-backfill-start" type="datetime-local" step="1" aria-describedby="lark-backfill-help lark-backfill-error"></div>
                   <p id="lark-backfill-help" class="quiet">首次开启后固定接收起点。</p>
@@ -198,8 +220,33 @@
                   <div hidden><select id="gitlab-target" disabled aria-label="固定接收者"></select></div>
                 </div>
               </fieldset>
+              <details id="gitlab-todos-settings" class="notification-channel">
+                <summary id="gitlab-todos-summary" class="notification-settings-heading"><label class="workspace-check"><input id="gitlab-todos-enabled" type="checkbox" aria-label="启用我的待办"></label><span class="notification-channel-disclosure"><span id="gitlab-todos-title" class="notification-channel-title">我的待办</span><span id="gitlab-todos-state" class="quiet" role="status"></span></span></summary>
+                <section id="gitlab-todos" class="notification-channel-body" aria-labelledby="gitlab-todos-title">
+                  <fieldset id="gitlab-todos-fields">
+                    <p class="quiet">接收账号下所有项目的待办，不受「项目活动」所选项目限制。</p>
+                    <div class="gitlab-events-type-heading"><span id="gitlab-todos-reasons-label">接收原因</span><label class="workspace-check"><input id="gitlab-todos-all-reasons" type="checkbox" aria-label="全选接收原因">全选</label></div>
+                    <div class="gitlab-events-types" role="group" aria-labelledby="gitlab-todos-reasons-label">
+                      <label class="workspace-check"><input id="gitlab-todos-reason-mentioned" type="checkbox" value="mentioned">@我</label>
+                      <label class="workspace-check"><input id="gitlab-todos-reason-assigned" type="checkbox" value="assigned">指派给我</label>
+                      <label class="workspace-check"><input id="gitlab-todos-reason-review_requested" type="checkbox" value="review_requested">请求我评审</label>
+                      <label class="workspace-check"><input id="gitlab-todos-reason-other" type="checkbox" value="other">其他待办</label>
+                    </div>
+                    <div class="gitlab-events-type-heading"><span id="gitlab-todos-types-label">对象类型</span><label class="workspace-check"><input id="gitlab-todos-all-types" type="checkbox" aria-label="全选对象类型">全选</label></div>
+                    <div class="gitlab-events-types" role="group" aria-labelledby="gitlab-todos-types-label">
+                      <label class="workspace-check"><input id="gitlab-todos-type-merge_request" type="checkbox" value="merge_request">MR</label>
+                      <label class="workspace-check"><input id="gitlab-todos-type-work_item" type="checkbox" value="work_item">工作项</label>
+                    </div>
+                  </fieldset>
+                  <div class="gitlab-events-actions">
+                    <span id="gitlab-todos-feedback" class="gitlab-events-feedback" role="status" aria-live="polite"></span>
+                  </div>
+                  <p id="gitlab-todos-action-hint" class="quiet"></p>
+                  <p id="gitlab-todos-error" class="form-error" role="alert" hidden></p>
+                </section>
+              </details>
               <details id="gitlab-events-settings" class="notification-channel">
-                <summary id="gitlab-events-summary" class="notification-settings-heading"><label class="workspace-check"><input id="gitlab-events-enabled" type="checkbox" aria-label="启用项目活动"><span id="gitlab-events-title">项目活动</span></label><span id="gitlab-events-state" class="quiet" role="status"></span></summary>
+                <summary id="gitlab-events-summary" class="notification-settings-heading"><label class="workspace-check"><input id="gitlab-events-enabled" type="checkbox" aria-label="启用项目活动"></label><span class="notification-channel-disclosure"><span id="gitlab-events-title" class="notification-channel-title">项目活动</span><span id="gitlab-events-state" class="quiet" role="status"></span></span></summary>
                 <section id="gitlab-events" class="notification-channel-body" aria-labelledby="gitlab-events-title" hidden>
                   <fieldset id="gitlab-events-fields">
                     <label id="gitlab-project-label">项目</label>
@@ -212,17 +259,15 @@
                       <div class="gitlab-project-actions"><button id="gitlab-project-more" type="button" class="text-button" hidden>加载更多</button><button id="gitlab-project-refresh" type="button" class="text-button">刷新项目列表</button></div>
                     </details>
                     <p id="gitlab-project-hint" class="quiet" role="status" hidden></p>
-                    <details><summary>活动筛选</summary>
-                      <div class="gitlab-events-type-heading"><span id="gitlab-events-types-label">接收哪些活动</span><label class="workspace-check"><input id="gitlab-events-all-types" type="checkbox">全选</label></div>
-                      <div id="gitlab-events-types" class="gitlab-events-types" role="group" aria-labelledby="gitlab-events-types-label" aria-describedby="gitlab-events-type-hint">
-                        <label class="workspace-check"><input id="gitlab-events-type-opened" type="checkbox" value="merge_request.opened">MR 开启</label>
-                        <label class="workspace-check"><input id="gitlab-events-type-merged" type="checkbox" value="merge_request.merged">MR 合并</label>
-                        <label class="workspace-check"><input id="gitlab-events-type-closed" type="checkbox" value="merge_request.closed">MR 关闭</label>
-                        <label class="workspace-check"><input id="gitlab-events-type-note" type="checkbox" value="note">普通评论</label>
-                        <label class="workspace-check"><input id="gitlab-events-type-push" type="checkbox" value="push">Push</label>
-                      </div>
-                      <p id="gitlab-events-type-hint" class="quiet">普通评论包含 Issue 评论。</p>
-                    </details>
+                    <div class="gitlab-events-type-heading"><span id="gitlab-events-types-label">接收哪些活动</span><label class="workspace-check"><input id="gitlab-events-all-types" type="checkbox">全选</label></div>
+                    <div id="gitlab-events-types" class="gitlab-events-types" role="group" aria-labelledby="gitlab-events-types-label" aria-describedby="gitlab-events-type-hint">
+                      <label class="workspace-check"><input id="gitlab-events-type-opened" type="checkbox" value="merge_request.opened">MR 开启</label>
+                      <label class="workspace-check"><input id="gitlab-events-type-merged" type="checkbox" value="merge_request.merged">MR 合并</label>
+                      <label class="workspace-check"><input id="gitlab-events-type-closed" type="checkbox" value="merge_request.closed">MR 关闭</label>
+                      <label class="workspace-check"><input id="gitlab-events-type-note" type="checkbox" value="note">普通评论</label>
+                      <label class="workspace-check"><input id="gitlab-events-type-push" type="checkbox" value="push">Push</label>
+                    </div>
+                    <p id="gitlab-events-type-hint" class="quiet">普通评论包含 Issue 评论。</p>
                   </fieldset>
                   <div class="gitlab-events-actions">
                     <span id="gitlab-events-feedback" class="gitlab-events-feedback" role="status" aria-live="polite"></span>
@@ -231,37 +276,10 @@
                   <p id="gitlab-events-error" class="form-error" role="alert" hidden></p>
                 </section>
               </details>
-              <details id="gitlab-todos-settings" class="notification-channel">
-                <summary id="gitlab-todos-summary" class="notification-settings-heading"><label class="workspace-check"><input id="gitlab-todos-enabled" type="checkbox" aria-label="启用我的待办"><span id="gitlab-todos-title">我的待办</span></label><span id="gitlab-todos-state" class="quiet" role="status"></span></summary>
-                <section id="gitlab-todos" class="notification-channel-body" aria-labelledby="gitlab-todos-title">
-                  <fieldset id="gitlab-todos-fields">
-                    <p class="quiet">接收账号下所有项目的待办，不受上方项目限制。</p>
-                    <details><summary>待办筛选</summary>
-                      <div id="gitlab-todos-reasons-label" class="gitlab-events-type-heading">接收原因</div>
-                      <div class="gitlab-events-types" role="group" aria-labelledby="gitlab-todos-reasons-label">
-                        <label class="workspace-check"><input id="gitlab-todos-reason-mentioned" type="checkbox" value="mentioned">@我</label>
-                        <label class="workspace-check"><input id="gitlab-todos-reason-assigned" type="checkbox" value="assigned">指派给我</label>
-                        <label class="workspace-check"><input id="gitlab-todos-reason-review_requested" type="checkbox" value="review_requested">请求我评审</label>
-                        <label class="workspace-check"><input id="gitlab-todos-reason-other" type="checkbox" value="other">其他待办</label>
-                      </div>
-                      <div id="gitlab-todos-types-label" class="gitlab-events-type-heading">对象类型</div>
-                      <div class="gitlab-events-types" role="group" aria-labelledby="gitlab-todos-types-label">
-                        <label class="workspace-check"><input id="gitlab-todos-type-merge_request" type="checkbox" value="merge_request">MR</label>
-                        <label class="workspace-check"><input id="gitlab-todos-type-work_item" type="checkbox" value="work_item">工作项</label>
-                      </div>
-                    </details>
-                  </fieldset>
-                  <div class="gitlab-events-actions">
-                    <span id="gitlab-todos-feedback" class="gitlab-events-feedback" role="status" aria-live="polite"></span>
-                  </div>
-                  <p id="gitlab-todos-action-hint" class="quiet"></p>
-                  <p id="gitlab-todos-error" class="form-error" role="alert" hidden></p>
-                </section>
-              </details>
               <details class="notification-advanced"><summary>高级设置</summary>
               <div class="notification-settings-row">
                 <div><label for="gitlab-backfill">开始接收时间</label><select id="gitlab-backfill" aria-describedby="gitlab-backfill-help"><option value="0">从开启时刻</option><option value="3600">最近 1 小时</option><option value="86400">最近 24 小时</option><option value="custom">指定时间</option></select><div id="gitlab-backfill-locked" class="notification-backfill-locked" aria-describedby="gitlab-backfill-help" hidden><span id="gitlab-backfill-value"></span><small>已锁定</small></div></div>
-                <div><label for="gitlab-interval">检查间隔（秒）</label><input id="gitlab-interval" type="number" min="3" max="120" step="1" value="30" title="3～120 秒" aria-describedby="gitlab-interval-hint"></div>
+                <div><label for="gitlab-interval">检查间隔（秒）</label><input id="gitlab-interval" type="number" min="3" max="120" step="1" value="10" title="3～120 秒" aria-describedby="gitlab-interval-hint"></div>
               </div>
               <div id="gitlab-backfill-custom" hidden><label id="gitlab-backfill-start-label" for="gitlab-backfill-start">起始时间（系统时区）</label><input id="gitlab-backfill-start" type="datetime-local" step="1" aria-describedby="gitlab-backfill-help gitlab-backfill-error"></div>
               <p id="gitlab-backfill-help" class="quiet">首次开启后固定接收起点。</p>
@@ -271,8 +289,8 @@
               <div class="gitlab-events-actions notification-settings-actions"><button id="gitlab-save" class="primary" type="button">保存设置</button><p id="gitlab-feedback" class="quiet" role="status" aria-live="polite"></p></div>
               <details id="gitlab-sync-status" class="gitlab-events-records"><summary>同步与诊断</summary><button id="gitlab-sync" class="text-button" type="button">立即同步</button>
                 <dl class="notification-sync-list">
-                  <div><dt>项目活动</dt><dd id="gitlab-events-status" class="quiet"></dd></div>
                   <div><dt>我的待办</dt><dd id="gitlab-todos-status" class="quiet"></dd></div>
+                  <div><dt>项目活动</dt><dd id="gitlab-events-status" class="quiet"></dd></div>
                 </dl>
                 <button id="gitlab-manage-platforms" class="text-button" type="button">管理平台 ↗</button>
               </details>

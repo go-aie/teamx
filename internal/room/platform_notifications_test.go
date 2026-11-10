@@ -310,7 +310,7 @@ func TestPlatformNotificationPollingDoesNotCreateChatOrSessions(t *testing.T) {
 	}
 }
 
-func TestGitLabEventsCurrentThirtySecondsAndInactiveTwoMinutes(t *testing.T) {
+func TestGitLabEventsCurrentIntervalAndInactiveTwoMinutes(t *testing.T) {
 	parallelFixtureTest(t)
 	h := newEventHarness(t, gitlab.EventsConfig{})
 	h.prepare()
@@ -324,7 +324,7 @@ func TestGitLabEventsCurrentThirtySecondsAndInactiveTwoMinutes(t *testing.T) {
 	h.clock.add(time.Second)
 	calls := len(h.pages.calls)
 	h.step()
-	if len(h.pages.calls) != calls+1 || h.pages.calls[calls].Mode != "quick" || h.runner.NextQuick.Sub(h.clock.get()) != 30*time.Second || !h.runner.NeedFull {
+	if len(h.pages.calls) != calls+1 || h.pages.calls[calls].Mode != "quick" || h.runner.NextQuick.Sub(h.clock.get()) != time.Duration(gitlab.DefaultIntervalSeconds)*time.Second || !h.runner.NeedFull {
 		t.Fatal("activation did not immediately check both paths")
 	}
 	h.m.mu.Lock()

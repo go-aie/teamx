@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	DefaultIntervalSeconds  = 30
+	DefaultIntervalSeconds  = 10
 	MinIntervalSeconds      = 3
 	InactiveIntervalSeconds = 120
 )
