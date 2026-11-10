@@ -38,7 +38,9 @@ cd teamx-archive
 在解压目录执行：
 
 ```sh
-./start init
+# macOS 首次运行使用系统 shell，以便先处理下载隔离：
+/bin/sh ./start init
+# Linux 也可直接执行 ./start init。
 # 按提示填写模型协议、Base URL、模型 ID 和 API Key 环境变量名。
 ./start doctor
 ./start
@@ -54,12 +56,12 @@ cd teamx-archive
 也可使用独立目录；初始化、诊断和启动时始终传入同一个 `--home`：
 
 ```sh
-./start init --home "$HOME/.teamx"
+/bin/sh ./start init --home "$HOME/.teamx"
 ./start doctor --home "$HOME/.teamx"
 ./start --home "$HOME/.teamx"
 ```
 
-可以从其他目录通过绝对路径调用 `start`。使用独立 home 时包本体可只读，home 必须可写，同一个 home 同时只运行一个服务实例。
+可以从其他目录通过绝对路径调用 `start`。使用独立 home 时包本体可只读（macOS 须先完成下载隔离处理），home 必须可写，同一个 home 同时只运行一个服务实例。
 首次初始化在终端中自动进入交互引导；`./start init --non-interactive` 或重定向标准输入时只生成默认配置，适合自动化流程。
 已有配置不会再次询问模型设置；非交互初始化和后续修改设置仍可编辑私有目录中的 `config.toml`。
 平台登录、连接绑定和通知订阅由使用者显式配置，启动不会自动启用。
@@ -72,9 +74,14 @@ cd teamx-archive
 
 macOS 包可能未进行 TeamX Developer ID 签名或 Apple 公证。正式发行的具体状态见下载页面与
 `release.json` 中对应包的 `signing` 字段；开发快照不承诺已完成 TeamX 签名／公证。上游或 ad-hoc 签名不代表 TeamX 已签名。
-首次启动若被系统拦截，先核对下载来源与归档 SHA-256，再按系统提示在
-“系统设置 → 隐私与安全性”中允许运行相应程序并重试；不要全局关闭 Gatekeeper。
-遇到无法允许的系统限制时，保留报错并报告问题。
+先核对下载来源与归档 SHA-256，再用 `/bin/sh ./start init` 启动。若包带有下载隔离标记，
+启动脚本会显示当前包目录；明确输入 `yes` 后，统一解除该目录及附带工具的下载隔离，
+无需逐个允许运行。其他输入或直接回车会取消，包内程序不会执行。后续启动没有隔离标记时不再询问；
+新下载的版本可能需要再次确认。此操作不提供签名或公证，也不会全局关闭 Gatekeeper。
+
+下载隔离处理要求包目录可读写；失败时启动会停止。非交互模式不会自动同意解除隔离，
+应先在终端完成确认，再运行自动化流程。若仍被系统拦截，保留报错并报告问题。
+Linux 通常没有这种下载隔离提示；若出现 `Permission denied`，检查执行权限、目录所在文件系统是否有 `noexec` 限制，以及本机安全策略。
 
 ## 升级
 

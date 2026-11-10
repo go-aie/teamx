@@ -53,7 +53,7 @@ node scripts/package-release.mjs qualification-template \
 | 检查 | 必须确认的行为 |
 | --- | --- |
 | `clean_machine` | 全新解压、独立 home、没有宿主 Go／Node／平台 CLI，系统依赖满足基线；full 还需没有宿主 Git |
-| `downloaded_system_security`：macOS | 实际下载并保留 quarantine，记录首次启动是否被阻止；被阻止时按系统提示允许运行，确认最终能启动 |
+| `downloaded_system_security`：macOS | 实际下载并保留 quarantine 至启动前，用 `/bin/sh ./start init` 运行；确认拒绝时不执行包内程序，同意后附带工具可运行，再次启动不重复询问；另记录系统是否拦截，必要时按系统提示允许运行 |
 | `downloaded_system_security`：Linux | 在声明系统中检查实际动态库和运行能力均在基线内 |
 | `git_tls_clone`：full | 包内 Git 的 helper、证书验证、HTTPS clone 与本地 commit 均可用，未借用宿主 Git |
 | `platform_login_read_bind`：standard／full | 用隔离账号完成 GitLab／飞书登录、只读查询和 TeamX 连接绑定，远端写入为 0 |

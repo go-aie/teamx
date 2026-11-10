@@ -1,6 +1,52 @@
 #!/bin/sh
 set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+
+# Run only system tools until the user has approved any downloaded code. -s
+# operates on symlinks themselves, so recursive removal cannot follow them out
+# of the bundle. Do not cache approval: a later download may be quarantined again.
+if [ "$(/usr/bin/uname -s)" = Darwin ]; then
+  quarantine_attributes() {
+    if ! attributes=$(/usr/bin/xattr -rs "$ROOT"); then
+      printf '%s\n' '无法检查 TeamX 包的下载隔离属性；请确认目录可读后重试。' >&2
+      exit 1
+    fi
+    printf '%s\n' "$attributes" | /usr/bin/grep -q ': com.apple.quarantine$'
+  }
+
+  if quarantine_attributes; then
+    interactive=true
+    for arg do
+      if [ "$arg" = --non-interactive ]; then interactive=false; fi
+    done
+    if [ ! -t 0 ] || [ "$interactive" = false ]; then
+      printf '%s\n' '此 TeamX 包带有 macOS 下载隔离标记，尚未获得解除确认。' \
+        '请先核对下载来源与归档 SHA-256，再在终端执行 /bin/sh ./start init 并确认。' >&2
+      exit 1
+    fi
+    printf '%s\n' \
+      '此 TeamX 包带有 macOS 下载隔离标记，可能未经 Developer ID 签名或 Apple 公证。' \
+      '请先核对下载来源与归档 SHA-256。' \
+      '继续将为以下目录及其附带工具统一解除下载隔离，允许它们在本机运行：' \
+      "  $ROOT" \
+      '此操作不会签名或公证程序，也不会全局关闭 Gatekeeper。' >&2
+    printf '%s' '确认信任此包并继续？输入 yes 确认，其他输入取消：[默认取消] ' >&2
+    if ! IFS= read -r answer || [ "$answer" != yes ]; then
+      printf '\n%s\n' '已取消，未执行包内程序。' >&2
+      exit 1
+    fi
+    if ! /usr/bin/xattr -drs com.apple.quarantine "$ROOT"; then
+      printf '%s\n' '解除下载隔离失败；请将包放到当前用户可写的目录后重试。' >&2
+      exit 1
+    fi
+    if quarantine_attributes; then
+      printf '%s\n' '包内仍有下载隔离标记，启动已停止；请保留报错并报告问题。' >&2
+      exit 1
+    fi
+    printf '%s\n' '已解除当前 TeamX 包的下载隔离，继续启动。' >&2
+  fi
+fi
+
 PATH="$ROOT/bin:$ROOT/runtime/node/bin:${PATH:-/usr/bin:/bin}"
 export PATH
 exec "$ROOT/bin/teamx" bundle --bundle-root "$ROOT" "$@"
