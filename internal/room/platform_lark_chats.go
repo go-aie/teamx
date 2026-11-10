@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-aie/teamx/internal/platform/connection"
 	"github.com/go-aie/teamx/internal/platform/lark"
+	"github.com/go-aie/teamx/internal/platform/registry"
 )
 
 // A human can browse conversation metadata before enabling a subscription or
@@ -17,29 +17,29 @@ import (
 type larkChatsRequest struct {
 	ServiceEpoch string `json:"service_epoch"`
 	RoomIdentity
-	Caller            Caller `json:"caller"`
-	ConnectionID      string `json:"connection_id"`
-	ConnectionVersion uint64 `json:"connection_version"`
-	PageToken         string `json:"page_token,omitempty"`
-	Query             string `json:"query,omitempty"`
-	Type              string `json:"type,omitempty"`
+	Caller          Caller `json:"caller"`
+	PlatformID      string `json:"platform_id"`
+	PlatformVersion uint64 `json:"platform_version"`
+	PageToken       string `json:"page_token,omitempty"`
+	Query           string `json:"query,omitempty"`
+	Type            string `json:"type,omitempty"`
 }
 
-func (m *roomManager) checkLarkChatsLocked(ctx context.Context, req larkChatsRequest, expected *connection.Account) (connection.Account, error) {
+func (m *roomManager) checkLarkChatsLocked(ctx context.Context, req larkChatsRequest, expected *registry.Account) (registry.Account, error) {
 	if err := ctx.Err(); err != nil {
-		return connection.Account{}, err
+		return registry.Account{}, err
 	}
 	if req.ServiceEpoch != m.epoch || req.Caller.Kind != "human" || !validText(req.Caller.ID) || req.Caller.MembershipID != "" {
-		return connection.Account{}, ErrIdentity
+		return registry.Account{}, ErrIdentity
 	}
 	if m.busy || m.roomBusyLocked(req.RoomIdentity) {
-		return connection.Account{}, ErrBusy
+		return registry.Account{}, ErrBusy
 	}
-	a, _, err := m.resolvePlatformAccountLocked(req.RoomIdentity, req.ConnectionID, "lark")
+	a, _, err := m.resolvePlatformAccountLocked(req.RoomIdentity, req.PlatformID, "lark")
 	if err != nil {
 		return a, err
 	}
-	if a.ConnectionVersion != req.ConnectionVersion || a.CLIProfile == nil || !lark.ValidAccount(a.Identity, *a.CLIProfile) || expected != nil && (a.ConnectionVersion != expected.ConnectionVersion || larkBinding(a) != larkBinding(*expected) || *a.CLIProfile != *expected.CLIProfile) {
+	if a.PlatformVersion != req.PlatformVersion || a.CLIProfile == nil || !lark.ValidAccount(a.Identity, *a.CLIProfile) || expected != nil && (a.PlatformVersion != expected.PlatformVersion || larkBinding(a) != larkBinding(*expected) || *a.CLIProfile != *expected.CLIProfile) {
 		return a, ErrConflict
 	}
 	return a, nil
@@ -63,7 +63,7 @@ func (m *roomManager) listLarkChats(ctx context.Context, req larkChatsRequest) (
 		return lark.ChatPage{}, err
 	}
 	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	call := &platformCall{owner: req.RoomIdentity, connectionID: a.ConnectionID, cancel: cancel, done: make(chan struct{})}
+	call := &platformCall{owner: req.RoomIdentity, platformID: a.PlatformID, cancel: cancel, done: make(chan struct{})}
 	if m.platformCalls == nil {
 		m.platformCalls = map[*platformCall]bool{}
 	}

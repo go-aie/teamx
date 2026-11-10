@@ -26,7 +26,7 @@ func (m *roomManager) prepareLarkReferenceActions(ctx context.Context, id Member
 		m.mu.Unlock()
 		return referenceActionSession{}, ErrIdentity
 	}
-	req := toolsRequest{ServiceInfo: svc.info, Caller: agentCallerIdentity(id), Tool: "lark"}
+	req := toolsRequest{ServiceInfo: svc.info, Caller: agentCallerIdentity(id), Tool: "lark", platformID: old.PlatformID}
 	admission, call, callCtx, err := m.preparePlatformCallLocked(ctx, req, false)
 	m.mu.Unlock()
 	if err != nil {
@@ -34,7 +34,7 @@ func (m *roomManager) prepareLarkReferenceActions(ctx context.Context, id Member
 	}
 	closeCall := func() { m.finishPlatformCall(call) }
 	account := admission.account
-	if account.CLIProfile == nil || old.Account.Valid() && (old.Account != account.Identity || old.ConnectionID != account.ConnectionID || old.Generation != account.Generation) {
+	if account.CLIProfile == nil || old.Account.Valid() && (old.Account != account.Identity || old.PlatformID != account.PlatformID || old.Generation != account.Generation) {
 		closeCall()
 		return referenceActionSession{}, ErrIdentity
 	}
@@ -49,7 +49,7 @@ func (m *roomManager) prepareLarkReferenceActions(ctx context.Context, id Member
 	bindings, bindingErr := m.readToolBindingsLocked(id.RoomIdentity)
 	if bindingErr == nil {
 		for _, b := range bindings.Bindings {
-			if b.Tool == "lark" && b.AgentID == id.AgentID && b.MembershipID == id.MembershipID && b.ConnectionID == access.ConnectionID && b.ConnectionGeneration == access.Generation && b.ActionAuthorization != nil {
+			if b.Tool == "lark" && b.AgentID == id.AgentID && b.MembershipID == id.MembershipID && b.PlatformID == access.PlatformID && b.PlatformGeneration == access.Generation && b.ActionAuthorization != nil {
 				access.ActionAuthorizationVersion = b.ActionAuthorization.Revision
 			}
 		}
@@ -144,6 +144,20 @@ func (m *roomManager) prepareLarkReferenceActions(ctx context.Context, id Member
 
 func (m *roomManager) resolveLarkActionTarget(ctx context.Context, id MemberIdentity, l platform.TargetLocator) (platform.TargetResolution, referenceActionSession, error) {
 	old := platform.AccessContext{}
+	if l.Source == nil {
+		if _, ok := ctx.Value(toolEntryContextKey{}).(toolEntryContext); !ok {
+			return platform.TargetResolution{}, referenceActionSession{}, invalidField("tool", "select an exact entry from teamx tools list")
+		}
+	}
+	if l.Source != nil {
+		m.mu.Lock()
+		var err error
+		old.PlatformID, err = m.sourcePlatformLocked(id.RoomIdentity, *l.Source)
+		m.mu.Unlock()
+		if err != nil {
+			return platform.TargetResolution{}, referenceActionSession{}, err
+		}
+	}
 	if l.Source != nil && l.Source.Reference.RecipientID.Valid() {
 		old.Receiver = platform.AccountIdentity{IdentityScope: platform.IdentityScope{Provider: "lark", Instance: l.Source.Instance, Tenant: l.Source.Reference.AccountTenant}, ID: l.Source.Reference.RecipientID}
 	}

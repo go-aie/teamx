@@ -23,10 +23,10 @@ func TestGitLabAuthBrowser(t *testing.T) {
 	defer server.Close()
 	m.config.endpoint = server.URL
 	m.mu.Lock()
-	file, _ := m.connections.Load()
+	file, _ := m.platforms.Load()
 	file.OAuthApplications[0].RedirectURI = server.URL + gitlabCallbackPath
 
-	if err := m.store.save(m.connectionsPathForTest(), file, 2<<20); err != nil {
+	if err := m.store.save(m.platformsPathForTest(), file, 2<<20); err != nil {
 		t.Fatal(err)
 	}
 	original := m.platformHTTP

@@ -14,7 +14,7 @@ func (m *roomManager) prepareLarkBindingEvidence(ctx context.Context, req *toolB
 	if req.Binding.Tool != "lark" {
 		return ErrRequest
 	}
-	q := larkChatsRequest{ServiceEpoch: req.ServiceEpoch, RoomIdentity: req.RoomIdentity, Caller: req.Caller, ConnectionID: req.Binding.ConnectionID, ConnectionVersion: req.ConnectionVersion}
+	q := larkChatsRequest{ServiceEpoch: req.ServiceEpoch, RoomIdentity: req.RoomIdentity, Caller: req.Caller, PlatformID: req.Binding.PlatformID, PlatformVersion: req.PlatformVersion}
 	m.mu.Lock()
 	a, err := m.checkLarkChatsLocked(ctx, q, nil)
 	if err != nil {
@@ -22,7 +22,7 @@ func (m *roomManager) prepareLarkBindingEvidence(ctx context.Context, req *toolB
 		return err
 	}
 	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	call := &platformCall{owner: req.RoomIdentity, connectionID: a.ConnectionID, cancel: cancel, done: make(chan struct{})}
+	call := &platformCall{owner: req.RoomIdentity, platformID: a.PlatformID, cancel: cancel, done: make(chan struct{})}
 	if m.platformCalls == nil {
 		m.platformCalls = map[*platformCall]bool{}
 	}

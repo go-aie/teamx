@@ -19,7 +19,7 @@ func TestSpecifiedGroupAllFiltering(t *testing.T) {
 		{name: "system excluded", mode: "group", chatID: "oc_chat", senderType: "user", messageType: "system", all: true},
 		{name: "default still requires mention", mode: "group", chatID: "oc_chat", senderType: "user"},
 		{name: "other group excluded", mode: "group", chatID: "oc_other", senderType: "user", all: true},
-		{name: "discovery scope excluded", mode: "group", chatID: "oc_chat", senderType: "user", all: true, scope: "all"},
+		{name: "private discovery and selected group combined", mode: "group", chatID: "oc_chat", senderType: "user", all: true, scope: "all", want: true},
 		{name: "private still requires opt in", mode: "p2p", chatID: "oc_chat", senderType: "user", all: true},
 		{name: "private opt in preserved", mode: "p2p", chatID: "oc_chat", senderType: "user", all: true, private: true, want: true},
 		{name: "private bots still require opt in", mode: "p2p", chatID: "oc_chat", senderType: "app", all: true, private: true},
@@ -30,8 +30,8 @@ func TestSpecifiedGroupAllFiltering(t *testing.T) {
 			if tt.messageType != "" {
 				m.Type = tt.messageType
 			}
-			cfg := Config{ScopeMode: tt.scope, Chats: []string{"oc_chat"}, GroupAll: tt.all, Private: tt.private}
-			if got := Matches(m, Chat{ID: tt.chatID, Mode: tt.mode}, "ou_reader", cfg); got != tt.want {
+			cfg := Config{Private: PrivateConfig{Enabled: tt.private, Scope: tt.scope, ChatIDs: []string{"oc_chat"}}, Groups: GroupConfig{Enabled: true, ChatIDs: []string{"oc_chat"}, MessageMode: map[bool]string{true: "all", false: "mentions"}[tt.all]}}
+			if got := Matches(m, peerChat(tt.chatID, tt.mode), "ou_reader", cfg); got != tt.want {
 				t.Fatalf("Matches = %v, want %v", got, tt.want)
 			}
 		})
@@ -41,7 +41,9 @@ func TestSpecifiedGroupAllFiltering(t *testing.T) {
 func TestSpecifiedGroupAllPersistsAndBuffersOrdinaryMessages(t *testing.T) {
 	h, f, r := newStepHarness(t)
 	cfg := h.s.Config
-	cfg.GroupAll, cfg.GroupMentions = true, false
+	cfg.Private.Enabled = false
+	cfg.Private.ChatIDs = nil
+	cfg.Groups = GroupConfig{Enabled: true, ChatIDs: []string{"oc_chat"}, MessageMode: "all"}
 	var err error
 	h.s, err = Configure(h.s.RoomIdentity, &h.s, h.s.Binding, cfg, h.now)
 	if err != nil {
@@ -64,7 +66,7 @@ func TestSpecifiedGroupAllPersistsAndBuffersOrdinaryMessages(t *testing.T) {
 		t.Fatal(err)
 	}
 	decoded, err := (&Source{}).Decode(raw, h.s.RoomIdentity)
-	if err != nil || !decoded.(State).Config.GroupAll || len(decoded.(State).Inbox) != 2 {
+	if err != nil || decoded.(State).Config.Groups.MessageMode != "all" || len(decoded.(State).Inbox) != 2 {
 		t.Fatal("group-all setting and buffered messages did not survive reload", err)
 	}
 	// Re-reading the same window must not create duplicate notifications.
@@ -79,17 +81,20 @@ func TestSpecifiedGroupAllPersistsAndBuffersOrdinaryMessages(t *testing.T) {
 	}
 }
 
-func TestGroupAllRequiresSpecifiedScopeAndDefaultsOff(t *testing.T) {
+func TestGroupAllCombinesWithPrivateDiscoveryAndDefaultsOff(t *testing.T) {
 	s := sampleState(t)
-	raw, _ := json.Marshal(s)
-	decoded, err := (&Source{}).Decode(raw, s.RoomIdentity)
-	if err != nil || decoded.(State).Config.GroupAll {
-		t.Fatal("legacy settings enabled group-all", err)
+	if s.Config.Groups.Enabled || s.Config.Groups.MessageMode == "all" {
+		t.Fatal("groups enabled by default")
 	}
 	cfg := s.Config
-	cfg.ScopeMode, cfg.Chats, cfg.GroupAll = "all", nil, true
+	cfg.Private.Scope = "all"
+	cfg.Groups = GroupConfig{Enabled: true, ChatIDs: []string{"oc_group"}, MessageMode: "all"}
+	if _, err := NormalizeConfig(cfg); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Groups.ChatIDs = nil
 	if _, err := NormalizeConfig(cfg); err == nil {
-		t.Fatal("group-all accepted for all-chat discovery")
+		t.Fatal("enabled groups accepted without selection")
 	}
 }
 
@@ -114,7 +119,7 @@ func TestGroupMentionChoicesAreIndependent(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			m := sampleMessage("om_group", "oc_chat", tt.text)
 			m.Mentions = tt.mentions
-			if got := Matches(m, Chat{ID: "oc_chat", Mode: "group"}, "ou_reader", Config{GroupMentions: tt.me, AtAll: tt.all}); got != tt.want {
+			if got := Matches(m, Chat{ID: "oc_chat", Mode: "group"}, "ou_reader", Config{Groups: GroupConfig{Enabled: true, ChatIDs: []string{"oc_chat"}, MessageMode: "mentions", AtMe: tt.me, AtAll: tt.all}}); got != tt.want {
 				t.Fatalf("Matches = %v, want %v", got, tt.want)
 			}
 		})

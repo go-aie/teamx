@@ -33,7 +33,7 @@ func contractSource(key, object string) platform.SourceRef {
 func contractAccess(id MemberIdentity, scope platform.IdentityScope) platform.AccessContext {
 	a := platform.AccountIdentity{IdentityScope: scope, ID: platform.ExternalID{Namespace: "contract:account", Value: "account-alice"}}
 	return platform.AccessContext{RoomIdentity: id.RoomIdentity, AgentID: id.AgentID, MembershipID: id.MembershipID,
-		Account: a, Receiver: a, ConnectionID: "contract-connection", Generation: "contract-generation", ConnectionVersion: 1, CredentialVersion: 1}
+		Account: a, Receiver: a, PlatformID: "contract-connection", Generation: "contract-generation", PlatformVersion: 1, CredentialVersion: 1}
 }
 
 func (a *referenceContractAdapter) capabilities() platform.ReferenceCapabilities {
@@ -103,10 +103,13 @@ func contractDeliver(t *testing.T, m *roomManager, svc *service, id MemberIdenti
 	}
 }
 
-func contractCLI(t *testing.T, endpoint string, svc *service, id MemberIdentity) func([]string, any) error {
+func contractCLI(t *testing.T, endpoint string, svc *service, id MemberIdentity, entries ...string) func([]string, any) error {
 	t.Helper()
 	env := cliToolEnv(endpoint, svc, MemberState{AgentID: id.AgentID, MembershipID: id.MembershipID})
 	return func(args []string, out any) error {
+		if len(entries) != 0 && len(args) > 1 && args[0] == "actions" && args[1] == "resolve" {
+			args = append(append([]string{}, args...), "--tool", entries[0])
+		}
 		var stdout, stderr bytes.Buffer
 		err := runCLI(context.Background(), args, &stdout, &stderr, env)
 		if err == nil && out != nil {

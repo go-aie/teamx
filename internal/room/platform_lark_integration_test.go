@@ -16,7 +16,7 @@ import (
 	"github.com/go-aie/teamx/internal/platform/tool"
 )
 
-func TestLarkConnectionAndMembershipReadBoundary(t *testing.T) {
+func TestLarkPlatformAndMembershipReadBoundary(t *testing.T) {
 	parallelFixtureTest(t)
 	m, room, svc, _, members := cliToolFixture(t, "exit 0")
 	m.toolCatalog = append(m.toolCatalog, tool.Definition{Name: "lark", Provider: "lark", InternalOnly: true})
@@ -28,18 +28,18 @@ func TestLarkConnectionAndMembershipReadBoundary(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "mode"), []byte("ok"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	q := platformConnectionRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("b", 32), Name: "飞书", Provider: "lark", URL: lark.Origin("feishu"), CLIProfile: &platform.CLIProfile{Version: 1, Executable: bin, Profile: "fixture", Brand: "feishu", CLIVersion: lark.CLIVersion}}
+	q := managedPlatformRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("b", 32), Name: "飞书", Provider: "lark", URL: lark.Origin("feishu"), CLIProfile: &platform.CLIProfile{Version: 1, Executable: bin, Profile: "fixture", Brand: "feishu", CLIVersion: lark.CLIVersion}}
 	c := platformTestSave(t, m, q)
-	bind := toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, Enabled: true, Binding: tool.Binding{AgentID: members[0].AgentID, MembershipID: members[0].MembershipID, Tool: "lark", ConnectionID: c.ID}, ConnectionVersion: c.Version}
+	bind := toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, Enabled: true, Binding: tool.Binding{AgentID: members[0].AgentID, MembershipID: members[0].MembershipID, Tool: "lark", PlatformID: c.ID}, PlatformVersion: c.Version}
 	if r := managerHTTP(m, "/v1/tools/bind", bind); r.Code == 200 {
 		t.Fatal("unverified profile bound")
 	}
-	c, err := m.verifyPlatformConnection(context.Background(), platformConnectionRequest{ID: c.ID, Version: c.Version})
+	c, err := m.verifyPlatform(context.Background(), managedPlatformRequest{ID: c.ID, Version: c.Version})
 	if err != nil || c.Validation.Status != "valid" || c.Validation.Username != "中文用户" || c.Validation.UserID != 0 {
 		t.Fatal(c, err)
 	}
 	bindCLITool(t, m, room.RoomIdentity, members[0], c, "lark", 0)
-	req := larkReadRequest{ServiceInfo: svc.info, Caller: agentCaller(members[0].AgentID, members[0].MembershipID), Messages: &lark.MessagesRequest{ChatID: "oc_chat", Start: 99, End: 101, PageSize: 2}}
+	req := larkReadRequest{ServiceInfo: svc.info, Tool: c.ToolEntryID, Caller: agentCaller(members[0].AgentID, members[0].MembershipID), Messages: &lark.MessagesRequest{ChatID: "oc_chat", Start: 99, End: 101, PageSize: 2}}
 	response := managerHTTP(m, "/v1/platform/lark/messages", req)
 	if response.Code != 200 || !strings.Contains(response.Body.String(), "fixture message") {
 		t.Fatal(response.Code, response.Body.String())
@@ -64,7 +64,7 @@ func TestLarkConnectionAndMembershipReadBoundary(t *testing.T) {
 	if err == nil {
 		t.Fatal("opened arbitrary lark CLI")
 	}
-	file, err := m.connections.Load()
+	file, err := m.platforms.Load()
 	if err != nil || len(file.OAuthCredentials) != 1 {
 		t.Fatal("profile copied credentials", err)
 	}
@@ -93,7 +93,7 @@ func TestLarkConnectionAndMembershipReadBoundary(t *testing.T) {
 			c = x
 		}
 	}
-	c, err = m.verifyPlatformConnection(context.Background(), platformConnectionRequest{ID: c.ID, Version: c.Version})
+	c, err = m.verifyPlatform(context.Background(), managedPlatformRequest{ID: c.ID, Version: c.Version})
 	if err != nil || c.Validation.Status != "valid" {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestLarkConnectionAndMembershipReadBoundary(t *testing.T) {
 		case <-time.After(10 * time.Millisecond):
 		}
 	}
-	response = managerHTTP(m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, Revision: 1, Binding: tool.Binding{AgentID: members[0].AgentID, MembershipID: members[0].MembershipID, Tool: "lark"}})
+	response = managerHTTP(m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, Revision: 1, Binding: tool.Binding{AgentID: members[0].AgentID, MembershipID: members[0].MembershipID, Tool: "lark", PlatformID: c.ID}})
 	if response.Code != 200 {
 		t.Fatal("revoke did not settle", response.Code, response.Body.String())
 	}

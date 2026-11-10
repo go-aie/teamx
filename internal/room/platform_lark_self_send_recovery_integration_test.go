@@ -25,7 +25,7 @@ func TestLarkSelfSendIndependentProcessRecovery(t *testing.T) {
 			h := selfSendHarness(t)
 			id, _ := enableSelfSend(t, h, h.members[0], 0)
 			server := httptest.NewServer(h.m)
-			q := selfSendRequest(t, contractCLI(t, server.URL, h.svc, id), "stable-process-intent")
+			q := selfSendRequest(t, contractCLI(t, server.URL, h.svc, id, h.c.ToolEntryID), "stable-process-intent")
 			server.Close()
 			if mode != "settled" {
 				path := filepath.Join(h.dir, "lark-cli")
@@ -123,7 +123,7 @@ func TestLarkSelfSendLedgerFailures(t *testing.T) {
 			id, _ := enableSelfSend(t, h, h.members[0], 0)
 			server := httptest.NewServer(h.m)
 			defer server.Close()
-			cli := contractCLI(t, server.URL, h.svc, id)
+			cli := contractCLI(t, server.URL, h.svc, id, h.c.ToolEntryID)
 			q := selfSendRequest(t, cli, "durable-intent")
 			ops, saves := h.svc.store.ops, 0
 			h.svc.store.ops.createTemp = func(dir, pattern string) (snapshotFile, error) {
@@ -179,7 +179,7 @@ func TestLarkSelfSendBindingViewExpires(t *testing.T) {
 	id, saved := enableSelfSend(t, h, h.members[0], 0)
 	server := httptest.NewServer(h.m)
 	defer server.Close()
-	cli := contractCLI(t, server.URL, h.svc, id)
+	cli := contractCLI(t, server.URL, h.svc, id, h.c.ToolEntryID)
 	request := selfSendRequest(t, cli, "after-generation-change")
 	read := func() toolBindingsFile {
 		t.Helper()
@@ -220,15 +220,15 @@ func TestLarkSelfSendBindingViewExpires(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.m.mu.Lock()
-	refs, err := h.m.platformConnectionReferencesLocked(h.c.ID)
+	refs, err := h.m.managedPlatformReferencesLocked(h.c.ID)
 	h.m.mu.Unlock()
-	var rotated platformConnection
+	var rotated managedPlatform
 	if err == nil {
 		owners := make([]RoomIdentity, len(refs))
 		for i, ref := range refs {
 			owners[i] = ref.RoomIdentity
 		}
-		rotated, err = h.m.updatePlatformConnection(platformConnectionRequest{ID: h.c.ID, Version: h.c.Version, Name: h.c.Name, Provider: "lark", URL: h.c.URL, CLIProfile: h.c.CLIProfile, ReferencedRooms: owners}, false)
+		rotated, err = h.m.updatePlatform(managedPlatformRequest{ID: h.c.ID, Version: h.c.Version, Name: h.c.Name, Provider: "lark", URL: h.c.URL, CLIProfile: h.c.CLIProfile, ReferencedRooms: owners}, false)
 	}
 	if err != nil {
 		t.Fatal(err)
@@ -236,7 +236,7 @@ func TestLarkSelfSendBindingViewExpires(t *testing.T) {
 	if read().Bindings[0].Evidence("self_delivery") != nil {
 		t.Fatal("stale self capability displayed as enabled")
 	}
-	verified, err := h.m.verifyPlatformConnection(context.Background(), platformConnectionRequest{ID: rotated.ID, Version: rotated.Version})
+	verified, err := h.m.verifyPlatform(context.Background(), managedPlatformRequest{ID: rotated.ID, Version: rotated.Version})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -288,7 +288,7 @@ func TestLarkSelfSendConcurrentRoomsAndMembers(t *testing.T) {
 	}
 	done := make(chan outcome, 9)
 	for i, id := range ids {
-		cli := contractCLI(t, server.URL, services[i], id)
+		cli := contractCLI(t, server.URL, services[i], id, h.c.ToolEntryID)
 		q := selfSendRequest(t, cli, "stable-intent")
 		q.Input.Body = fmt.Sprintf("member %s", id.MembershipID)
 		for range 3 {
@@ -334,7 +334,7 @@ func TestLarkSelfSendRevocationRaces(t *testing.T) {
 			}
 			server := httptest.NewServer(h.m)
 			defer server.Close()
-			cli := contractCLI(t, server.URL, h.svc, id)
+			cli := contractCLI(t, server.URL, h.svc, id, h.c.ToolEntryID)
 			q := selfSendRequest(t, cli, "inflight")
 			path := filepath.Join(h.dir, "lark-cli")
 			b, err := os.ReadFile(path)
@@ -395,9 +395,9 @@ func TestLarkSelfSendRevocationRaces(t *testing.T) {
 			}
 			switch mode {
 			case "disable", "unbind":
-				req := toolBindingChange{ServiceEpoch: h.m.epoch, RoomIdentity: id.RoomIdentity, Caller: humanCaller, Revision: bindings.Revision, Enabled: mode == "disable", Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "lark"}}
+				req := toolBindingChange{ServiceEpoch: h.m.epoch, RoomIdentity: id.RoomIdentity, Caller: humanCaller, Revision: bindings.Revision, Enabled: mode == "disable", Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "lark", PlatformID: h.c.ID}}
 				if req.Enabled {
-					req.Binding.ConnectionID, req.ConnectionVersion = h.c.ID, h.c.Version
+					req.Binding.PlatformID, req.PlatformVersion = h.c.ID, h.c.Version
 				}
 				r := managerHTTP(h.m, "/v1/tools/bind", req)
 				if r.Code != 200 {
@@ -412,7 +412,7 @@ func TestLarkSelfSendRevocationRaces(t *testing.T) {
 				}
 				// Verification invalidates owned calls before accepting either a
 				// fresh connection version or another actual profile user.
-				if _, err = h.m.verifyPlatformConnection(context.Background(), platformConnectionRequest{ID: h.c.ID, Version: h.c.Version}); err != nil {
+				if _, err = h.m.verifyPlatform(context.Background(), managedPlatformRequest{ID: h.c.ID, Version: h.c.Version}); err != nil {
 					t.Fatal(err)
 				}
 			case "remove":

@@ -40,8 +40,8 @@ func (f *discoveryReader) Messages(_ context.Context, _ platform.AccountIdentity
 func allHarness(t *testing.T) (*stepHarness, *discoveryReader, *Source) {
 	h, fr, _ := newStepHarness(t)
 	cfg := h.s.Config
-	cfg.ScopeMode = "all"
-	cfg.Chats = nil
+	cfg.Private.Scope = "all"
+	cfg.Private.ChatIDs = nil
 	var err error
 	h.s, err = Configure(h.s.RoomIdentity, &h.s, h.s.Binding, cfg, h.now)
 	if err != nil {
@@ -232,7 +232,7 @@ func TestSlowWideDirectoryReadsMessagesBeforeVerificationExpires(t *testing.T) {
 func TestDirectoryAtomicSavePermissionIsolationAndAuthRecovery(t *testing.T) {
 	h, f, source := allHarness(t)
 	f.list = func(ChatsRequest) (ChatPage, error) {
-		return ChatPage{Chats: []Chat{{ID: "oc_a", Mode: "p2p"}, {ID: "oc_b", Mode: "group"}}}, nil
+		return ChatPage{Chats: []Chat{{ID: "oc_a", Mode: "p2p"}, {ID: "oc_b", Mode: "p2p"}}}, nil
 	}
 	r := source.NewRunner(h)
 	stepOK(t, h, r)
@@ -360,22 +360,22 @@ func TestAllChatOptInAndLegacyCodec(t *testing.T) {
 	raw, _ := json.Marshal(s)
 	source := &Source{}
 	state, err := source.Decode(raw, s.RoomIdentity)
-	if err != nil || state.(State).Config.AllChats() || state.(State).Directory != nil {
+	if err != nil || state.(State).Config.DiscoverPrivate() || state.(State).Directory != nil {
 		t.Fatal("legacy snapshot enabled discovery", err)
 	}
 	for _, mode := range []string{"unknown", "ALL"} {
 		cfg := s.Config
-		cfg.ScopeMode = mode
+		cfg.Private.Scope = mode
 		if _, err := NormalizeConfig(cfg); err == nil {
 			t.Fatal("unknown scope accepted")
 		}
 	}
 	cfg := s.Config
-	cfg.ScopeMode = "all"
-	if _, err := NormalizeConfig(cfg); err == nil {
-		t.Fatal("all scope retained stale specified IDs")
+	cfg.Private.Scope = "all"
+	if _, err := NormalizeConfig(cfg); err != nil {
+		t.Fatal("all scope must preserve specified IDs", err)
 	}
-	cfg.Chats = nil
+	cfg.Private.ChatIDs = nil
 	if _, err := NormalizeConfig(cfg); err != nil {
 		t.Fatal(err)
 	}

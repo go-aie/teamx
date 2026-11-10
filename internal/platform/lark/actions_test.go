@@ -12,7 +12,7 @@ import (
 
 func replyFixture(t *testing.T) (*fakeReader, platform.AccessContext, platform.TargetActionRequest) {
 	t.Helper()
-	a := platform.AccessContext{RoomIdentity: platform.RoomIdentity{RoomID: "room", RoomInstance: "instance"}, AgentID: "agent", MembershipID: "member", Account: sampleBinding().Account, ConnectionID: "connection", Generation: "generation", ConnectionVersion: 1, CredentialVersion: 1}
+	a := platform.AccessContext{RoomIdentity: platform.RoomIdentity{RoomID: "room", RoomInstance: "instance"}, AgentID: "agent", MembershipID: "member", Account: sampleBinding().Account, PlatformID: "connection", Generation: "generation", PlatformVersion: 1, CredentialVersion: 1}
 	m := sampleMessage("om_original", "oc_chat", "收到的问题")
 	receipt := sampleMessage("om_receipt", "oc_chat", "正文\n\"精确\" @./literal")
 	receipt.Sender = Sender{ID: a.Account.ID.Value, IDType: "open_id", Type: "user", TenantKey: a.Account.Tenant.Value}
@@ -44,7 +44,7 @@ func TestReplyAdapterExactTargetAndReceipt(t *testing.T) {
 			if err != nil || r.Status != "succeeded" || r.Account != a.Account || r.ResultID.Value != "om_receipt" || calls != 1 || cap.Spec.Retry.MaxAttempts != 1 || cap.Spec.Retry.RetryUnknown || !cap.Spec.RequiresAuthorization {
 				t.Fatal(r, err, calls)
 			}
-			if !Matches(f.messages[r.ResultID.Value], f.chat, a.Account.ID.Value, Config{Chats: []string{f.chat.ID}}) {
+			if !Matches(f.messages[r.ResultID.Value], peerChat(f.chat.ID, f.chat.Mode), a.Account.ID.Value, Config{Private: PrivateConfig{Enabled: true, Scope: "all"}, Groups: GroupConfig{Enabled: true, ChatIDs: []string{f.chat.ID}}}) {
 				t.Fatal("self-produced reply must remain visible as progress evidence")
 			}
 		})

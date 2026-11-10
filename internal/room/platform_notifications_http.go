@@ -14,8 +14,9 @@ import (
 )
 
 type notificationView struct {
-	Account platform.AccountIdentity `json:"account,omitzero"`
-	Lark    *larkDiagnostics         `json:"lark,omitempty"`
+	PlatformID string                   `json:"platform_id,omitempty"`
+	Account    platform.AccountIdentity `json:"account,omitzero"`
+	Lark       *larkDiagnostics         `json:"lark,omitempty"`
 	RoomIdentity
 	notification.SourceID
 	SubscriptionID    string                   `json:"subscription_id"`
@@ -52,9 +53,10 @@ func (m *roomManager) eventsNotificationViewLocked(owner RoomIdentity, state *gi
 		Available: true, Status: "disabled", Config: gitlab.EventsConfig{IntervalSeconds: gitlab.DefaultIntervalSeconds}}
 	if state != nil {
 		s := *state
+		v.PlatformID = s.Binding.PlatformID
 		v.Baseline = s.Baseline
 		v.Instance, v.RecipientID, v.Username, v.Retired = s.Binding.URL, s.UserID, s.Username, s.Retired
-		v.Project = &platform.ProjectBinding{Provider: "gitlab", URL: s.Binding.URL, Project: s.Binding.Project, ProjectID: s.Binding.ProjectID, ConnectionID: s.Binding.ConnectionID}
+		v.Project = &platform.ProjectBinding{Provider: "gitlab", URL: s.Binding.URL, Project: s.Binding.Project, ProjectID: s.Binding.ProjectID, PlatformID: s.Binding.PlatformID}
 		if s.ProjectID > 0 {
 			v.Project.ProjectID = s.ProjectID
 		}
@@ -77,6 +79,7 @@ func (m *roomManager) todosNotificationViewLocked(owner RoomIdentity, state *git
 	v := notificationView{RoomIdentity: owner, SourceID: gitlab.TodosSourceID, Available: true, Status: "disabled", Config: gitlab.TodosConfig{IntervalSeconds: gitlab.DefaultIntervalSeconds}}
 	if state != nil {
 		s := *state
+		v.PlatformID = s.Binding.PlatformID
 		v.Baseline = s.Baseline
 		v.SubscriptionID, v.Version, v.Config, v.Status, v.Pending = s.SubscriptionID, s.SubscriptionVersion, s.Config, s.Status, len(s.Inbox)
 		v.LastCheck, v.LastFull, v.RetryAt, v.ErrorCode, v.Metrics, v.DeliveryErrorCode = s.LastCheck, s.LastFull, s.RetryAt, s.ErrorCode, s.Metrics, s.DeliveryErrorCode
@@ -94,52 +97,51 @@ func (m *roomManager) todosNotificationViewLocked(owner RoomIdentity, state *git
 	return v, nil
 }
 func (m *roomManager) notificationViewsLocked(owner RoomIdentity) ([]notificationView, error) {
-	var events *gitlab.EventsState
-	var todos *gitlab.TodosState
-	var messages *lark.State
-	for _, state := range m.notifications.StatesLocked(owner) {
-		switch s := state.(type) {
-		case lark.State:
-			if s.Retired {
+	// Keep source order stable, but give each concrete platform its own view.
+	out := []notificationView{}
+	for _, source := range []notification.SourceID{gitlab.EventsSourceID, gitlab.TodosSourceID, lark.MessagesSourceID} {
+		found := false
+		for _, state := range m.notifications.StatesLocked(owner) {
+			if state.Metadata().Key.Source != source || state.Metadata().Retired {
 				continue
 			}
-			if messages != nil {
+			var v notificationView
+			var err error
+			switch s := state.(type) {
+			case gitlab.EventsState:
+				v, err = m.eventsNotificationViewLocked(owner, &s)
+			case gitlab.TodosState:
+				v, err = m.todosNotificationViewLocked(owner, &s)
+			case lark.State:
+				v, err = m.larkNotificationViewLocked(owner, &s)
+			default:
 				return nil, ErrInvalid
 			}
-			messages = &s
-		case gitlab.EventsState:
-			if s.Retired {
-				continue
+			if err != nil {
+				return nil, err
 			}
-			if events != nil {
-				return nil, ErrInvalid
+			v.PlatformID = state.Metadata().PlatformID
+			out = append(out, v)
+			found = true
+		}
+		if !found {
+			var v notificationView
+			var err error
+			switch source {
+			case gitlab.EventsSourceID:
+				v, err = m.eventsNotificationViewLocked(owner, nil)
+			case gitlab.TodosSourceID:
+				v, err = m.todosNotificationViewLocked(owner, nil)
+			case lark.MessagesSourceID:
+				v, err = m.larkNotificationViewLocked(owner, nil)
 			}
-			events = &s
-		case gitlab.TodosState:
-			if s.Retired {
-				continue
+			if err != nil {
+				return nil, err
 			}
-			if todos != nil {
-				return nil, ErrInvalid
-			}
-			todos = &s
-		default:
-			return nil, ErrInvalid
+			out = append(out, v)
 		}
 	}
-	ev, err := m.eventsNotificationViewLocked(owner, events)
-	if err != nil {
-		return nil, err
-	}
-	tv, err := m.todosNotificationViewLocked(owner, todos)
-	if err != nil {
-		return nil, err
-	}
-	lv, err := m.larkNotificationViewLocked(owner, messages)
-	if err != nil {
-		return nil, err
-	}
-	return []notificationView{ev, tv, lv}, nil
+	return out, nil
 }
 func (m *roomManager) retiredNotificationViewsLocked(owner RoomIdentity) ([]notificationView, error) {
 	views := []notificationView{}
@@ -200,16 +202,55 @@ func (m *roomManager) servePlatformNotifications(w http.ResponseWriter, r *http.
 			writeAPIError(w, err)
 			return
 		}
-		gitlabView, err := m.gitlabNotificationViewLocked(RoomIdentity{RoomID: q.Get("room_id"), RoomInstance: q.Get("room_instance")})
-		if err != nil {
-			writeAPIError(w, err)
-			return
+		owner := RoomIdentity{RoomID: q.Get("room_id"), RoomInstance: q.Get("room_instance")}
+		platformViews := []gitlabNotificationView{}
+		for _, id := range m.gitlabPlatformIDsLocked(owner) {
+			v, err := m.gitlabNotificationViewLocked(owner, id)
+			if err != nil {
+				writeAPIError(w, err)
+				return
+			}
+			platformViews = append(platformViews, v)
+		}
+		var single *gitlabNotificationView
+		if id := q.Get("platform_id"); id != "" {
+			v, err := m.gitlabNotificationViewLocked(owner, id)
+			if err != nil {
+				writeAPIError(w, err)
+				return
+			}
+			single = &v
+		}
+		if single == nil && len(platformViews) == 1 {
+			single = &platformViews[0]
+		}
+		if single == nil && len(platformViews) == 0 {
+			v, err := m.gitlabNotificationViewLocked(owner)
+			if err != nil {
+				writeAPIError(w, err)
+				return
+			}
+			single = &v
+		}
+		if single == nil {
+			ev, err := m.eventsNotificationViewLocked(owner, nil)
+			if err != nil {
+				writeAPIError(w, err)
+				return
+			}
+			tv, err := m.todosNotificationViewLocked(owner, nil)
+			if err != nil {
+				writeAPIError(w, err)
+				return
+			}
+			single = &gitlabNotificationView{Config: gitlab.DefaultNotificationConfig(""), Events: ev, Todos: tv, Pending: map[string]bool{}, Errors: map[string]string{}}
 		}
 		_ = json.NewEncoder(w).Encode(struct {
-			Subscriptions []notificationView     `json:"subscriptions"`
-			Retired       []notificationView     `json:"retired_subscriptions"`
-			GitLab        gitlabNotificationView `json:"gitlab"`
-		}{views, retired, gitlabView})
+			Subscriptions   []notificationView       `json:"subscriptions"`
+			Retired         []notificationView       `json:"retired_subscriptions"`
+			GitLab          *gitlabNotificationView  `json:"gitlab,omitempty"`
+			GitLabPlatforms []gitlabNotificationView `json:"gitlab_platforms"`
+		}{views, retired, single, platformViews})
 		return
 	}
 	if r.Method != http.MethodPost {

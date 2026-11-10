@@ -51,7 +51,7 @@ type larkHarness struct {
 	room    roomSummary
 	svc     *service
 	members []MemberState
-	c       platformConnection
+	c       managedPlatform
 	dir     string
 	clock   *eventTestClock
 }
@@ -66,8 +66,8 @@ func newLarkHarness(t *testing.T) *larkHarness {
 	if e := os.WriteFile(bin, []byte(l2Fixture), 0700); e != nil {
 		t.Fatal(e)
 	}
-	c := platformTestSave(t, m, platformConnectionRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("c", 32), Name: "飞书", Provider: "lark", URL: lark.Origin("feishu"), CLIProfile: &platform.CLIProfile{Version: 1, Executable: bin, Profile: "fixture", Brand: "feishu", CLIVersion: lark.CLIVersion}})
-	c, e := m.verifyPlatformConnection(context.Background(), platformConnectionRequest{ID: c.ID, Version: c.Version})
+	c := platformTestSave(t, m, managedPlatformRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("c", 32), Name: "飞书", Provider: "lark", URL: lark.Origin("feishu"), CLIProfile: &platform.CLIProfile{Version: 1, Executable: bin, Profile: "fixture", Brand: "feishu", CLIVersion: lark.CLIVersion}})
+	c, e := m.verifyPlatform(context.Background(), managedPlatformRequest{ID: c.ID, Version: c.Version})
 	if e != nil || c.Validation.Status != "valid" {
 		t.Fatal(e)
 	}
@@ -120,7 +120,7 @@ func (h *larkHarness) configure(c lark.Config) lark.State {
 func (h *larkHarness) start() {
 	h.t.Helper()
 	member := h.members[0]
-	h.configure(lark.Config{Enabled: true, ConnectionID: h.c.ID, Chats: []string{"oc_chat"}, Target: notification.Target{Mode: "inbox", AgentID: member.AgentID, MembershipID: member.MembershipID}, Private: true, GroupMentions: true})
+	h.configure(lark.Config{Enabled: true, PlatformID: h.c.ID, Private: lark.PrivateConfig{Enabled: true, Scope: "specified", ChatIDs: []string{"oc_chat"}}, Target: notification.Target{Mode: "inbox", AgentID: member.AgentID, MembershipID: member.MembershipID}})
 	h.clock.add(3 * time.Second)
 	s := h.state()
 	h.m.mu.Lock()

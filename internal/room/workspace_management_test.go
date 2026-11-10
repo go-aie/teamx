@@ -15,14 +15,14 @@ func workspaceRequest(t *testing.T, m *roomManager, room roomSummary, target wor
 	id, _ := newOpaqueID()
 	req := workspaceApplyRequest{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, OperationID: id, ExpectedVersion: 1, Target: target}
 	if target.Binding != nil {
-		file, err := m.connections.Load()
+		file, err := m.platforms.Load()
 		if err != nil {
 			t.Fatal(err)
 		}
-		var c platformConnection
-		for _, v := range file.Connections {
-			if v.Provider == "gitlab" && v.URL == target.Binding.URL && (target.Binding.ConnectionID == "" || target.Binding.ConnectionID == v.ID) {
-				c.Connection = v.Connection
+		var c managedPlatform
+		for _, v := range file.Platforms {
+			if v.Provider == "gitlab" && v.URL == target.Binding.URL && (target.Binding.PlatformID == "" || target.Binding.PlatformID == v.ID) {
+				c.Platform = v.Platform
 				break
 			}
 		}
@@ -32,11 +32,11 @@ func workspaceRequest(t *testing.T, m *roomManager, room roomSummary, target wor
 			c = platformTestSave(t, m, q)
 		}
 		binding := *target.Binding
-		binding.ConnectionID = c.ID
-		binding.ConnectionGeneration = ""
+		binding.PlatformID = c.ID
+		binding.PlatformGeneration = ""
 		binding.ProjectID = 0
 		req.Target.Binding = &binding
-		req.ConnectionVersion = c.Version
+		req.PlatformVersion = c.Version
 	}
 	return req
 }

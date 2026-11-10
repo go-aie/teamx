@@ -131,6 +131,19 @@ func applicableActionSpec(spec platform.ActionSpec, t platform.TargetIdentity) b
 	return validReferenceSpec(spec, referenceActionRequest{Operation: spec.Operation}, t)
 }
 func (m *roomManager) resolveActionTarget(ctx context.Context, req apiRequest, q actionResolveRequest) (actionTargetView, error) {
+	if req.Tool != "" {
+		var err error
+		ctx, err = m.withToolEntry(ctx, toolsRequest{ServiceInfo: req.ServiceInfo, Caller: req.Caller, Tool: req.Tool})
+		if err != nil {
+			return actionTargetView{}, err
+		}
+	}
+	if entry, ok := ctx.Value(toolEntryContextKey{}).(toolEntryContext); ok {
+		if q.Provider != "" && q.Provider != entry.provider {
+			return actionTargetView{}, ErrIdentity
+		}
+		q.Provider = entry.provider
+	}
 	id := MemberIdentity{RoomIdentity: req.RoomIdentity, AgentID: req.Caller.ID, MembershipID: req.Caller.MembershipID}
 	m.mu.Lock()
 	svc, _ := m.runtimeServiceLocked(req.RoomIdentity)
@@ -187,7 +200,39 @@ func (m *roomManager) resolveActionTarget(ctx context.Context, req apiRequest, q
 			if resolve == nil {
 				return actionTargetView{}, platform.ErrReference
 			}
-			r, session, err = resolve(ctx, id, platform.TargetLocator{Candidate: &target})
+			// Captured Lark evidence deliberately lacks access credentials. Use
+			// its original subscription instead of choosing a member's first tool.
+			var source *platform.SourceRef
+			svc.store.mu.Lock()
+			err = svc.store.visitFollowupEventsLocked(id, func(e followupEvent) error {
+				if e.TargetRef != locator.TargetRef {
+					return nil
+				}
+				if source != nil && source.SubscriptionID != e.Source.SubscriptionID {
+					return ErrIdentity
+				}
+				s := e.Source
+				source = &s
+				return nil
+			})
+			svc.store.mu.Unlock()
+			if err != nil {
+				return actionTargetView{}, err
+			}
+			if source != nil {
+				m.mu.Lock()
+				platformID, e := m.sourcePlatformLocked(id.RoomIdentity, *source)
+				m.mu.Unlock()
+				if e != nil {
+					return actionTargetView{}, e
+				}
+				session, err = prepare(ctx, id, platform.AccessContext{PlatformID: platformID})
+				if err == nil && session.Capabilities.Resolve != nil {
+					r, err = session.Capabilities.Resolve(ctx, platform.TargetLocator{Candidate: &target, VerifiedAliases: resolved.Aliases}, session.Access)
+				}
+			} else {
+				r, session, err = resolve(ctx, id, platform.TargetLocator{Candidate: &target})
+			}
 		} else {
 			session, err = prepare(ctx, id, access)
 		}
@@ -236,7 +281,7 @@ func (m *roomManager) resolveActionTarget(ctx context.Context, req apiRequest, q
 	bindings, bindingErr := m.readToolBindingsLocked(id.RoomIdentity)
 	if bindingErr == nil {
 		for _, b := range bindings.Bindings {
-			if b.AgentID == id.AgentID && b.MembershipID == id.MembershipID && b.ConnectionID == session.Access.ConnectionID && b.ConnectionGeneration == session.Access.Generation && bindingConfirmsAccount(b, session.Access, session.Capabilities) {
+			if b.AgentID == id.AgentID && b.MembershipID == id.MembershipID && b.PlatformID == session.Access.PlatformID && b.PlatformGeneration == session.Access.Generation && bindingConfirmsAccount(b, session.Access, session.Capabilities) {
 				confirmed = true
 			}
 		}
@@ -266,7 +311,7 @@ func (m *roomManager) resolveActionTarget(ctx context.Context, req apiRequest, q
 				f, err := m.readToolBindingsLocked(id.RoomIdentity)
 				if err == nil {
 					for _, b := range f.Bindings {
-						if b.AgentID == id.AgentID && b.MembershipID == id.MembershipID && b.ConnectionID == a.ConnectionID && b.ConnectionGeneration == a.Generation && b.ActionAuthorization != nil {
+						if b.AgentID == id.AgentID && b.MembershipID == id.MembershipID && b.PlatformID == a.PlatformID && b.PlatformGeneration == a.Generation && b.ActionAuthorization != nil {
 							a.ActionAuthorizationVersion = b.ActionAuthorization.Revision
 						}
 					}

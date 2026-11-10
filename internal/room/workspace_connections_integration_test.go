@@ -18,7 +18,7 @@ import (
 	"github.com/go-aie/teamx/internal/platform/gitlab"
 )
 
-func TestWorkspaceSharedConnectionReuseFailureAndLateProjectCheck(t *testing.T) {
+func TestWorkspaceSharedPlatformReuseFailureAndLateProjectCheck(t *testing.T) {
 	m, _ := sharedWorkspaceManager(t)
 	a, b := managerCreate(t, m, "A"), managerCreate(t, m, "B")
 	req := platformTestRequest(m)
@@ -27,9 +27,9 @@ func TestWorkspaceSharedConnectionReuseFailureAndLateProjectCheck(t *testing.T) 
 	sharedWorkspace(t, m, a, c, 1)
 	openRoomOK(t, m, b, "B")
 	before, raw := readManagedRoom(t, m, b)
-	target := workspaceConfig{Repository: &workspaceRepository{URL: c.URL + "/group/project.git"}, Binding: &workspaceBinding{Provider: "gitlab", URL: c.URL, Project: "group/project", ConnectionID: c.ID}}
+	target := workspaceConfig{Repository: &workspaceRepository{URL: c.URL + "/group/project.git"}, Binding: &workspaceBinding{Provider: "gitlab", URL: c.URL, Project: "group/project", PlatformID: c.ID}}
 	bad := workspaceRequest(t, m, b, target)
-	bad.ConnectionVersion = c.Version
+	bad.PlatformVersion = c.Version
 	verify := m.platformProject
 	m.platformProject = func(context.Context, string, string, workspaceSecret) (int64, error) {
 		return 0, errors.New("private-response-must-not-escape")
@@ -69,9 +69,9 @@ func TestWorkspaceSharedConnectionReuseFailureAndLateProjectCheck(t *testing.T) 
 	}
 }
 
-func TestGitLabEventsSharedConnectionRotationDropsLateResultsAndPreservesProgress(t *testing.T) {
+func TestGitLabEventsSharedPlatformRotationDropsLateResultsAndPreservesProgress(t *testing.T) {
 	parallelFixtureTest(t)
-	h, req, c := eventHarnessSharedConnection(t)
+	h, req, c := eventHarnessSharedPlatform(t)
 	h.clock.add(time.Minute)
 	h.step()
 	h.full()
@@ -110,9 +110,9 @@ func TestGitLabEventsSharedConnectionRotationDropsLateResultsAndPreservesProgres
 	}
 }
 
-func TestWorkspaceSharedConnectionRestartAndUncertainStore(t *testing.T) {
+func TestWorkspaceSharedPlatformRestartAndUncertainStore(t *testing.T) {
 	parallelFixtureTest(t)
-	h, _, _ := eventHarnessSharedConnection(t)
+	h, _, _ := eventHarnessSharedPlatform(t)
 	before := h.state()
 	dir, profiles := h.m.store.dir, managerTestProfiles(t)
 	if err := h.m.close(); err != nil {
@@ -130,13 +130,13 @@ func TestWorkspaceSharedConnectionRestartAndUncertainStore(t *testing.T) {
 		restored.mu.Unlock()
 		t.Fatal(err)
 	}
-	resolution, err := restored.resolveWorkspaceConnectionLocked(h.room.RoomIdentity, *saved.Workspace)
+	resolution, err := restored.resolveWorkspacePlatformLocked(h.room.RoomIdentity, *saved.Workspace)
 	if err != nil || resolution.secret.value != "" || resolution.account.Authorization.CredentialID == "" {
 		restored.mu.Unlock()
 		t.Fatal("restart failed to resolve shared credential", err)
 	}
 	restored.store.uncertain = true
-	_, err = restored.resolveWorkspaceConnectionLocked(h.room.RoomIdentity, *saved.Workspace)
+	_, err = restored.resolveWorkspacePlatformLocked(h.room.RoomIdentity, *saved.Workspace)
 	restored.store.uncertain = false
 	restored.mu.Unlock()
 	if !errors.Is(err, ErrCommitUnknown) {
@@ -146,12 +146,12 @@ func TestWorkspaceSharedConnectionRestartAndUncertainStore(t *testing.T) {
 
 func TestGitLabEventsSharedRotationJoinsOldWorkerBeforeCredentialCommit(t *testing.T) {
 	parallelFixtureTest(t)
-	h, req, c := eventHarnessSharedConnection(t)
+	h, req, c := eventHarnessSharedPlatform(t)
 	blocked := startBlockedEventWorker(t, h)
 	req.Version, req.ReferencedRooms = c.Version, []RoomIdentity{h.room.RoomIdentity}
 	finished := make(chan *httptest.ResponseRecorder, 1)
 	go func() {
-		c, err := testReauthorizeConnection(h.m, req)
+		c, err := testReauthorizePlatform(h.m, req)
 		r := httptest.NewRecorder()
 		if err != nil {
 			writeAPIError(r, err)
@@ -162,10 +162,10 @@ func TestGitLabEventsSharedRotationJoinsOldWorkerBeforeCredentialCommit(t *testi
 	}()
 	<-blocked.canceled
 	h.m.mu.Lock()
-	file, err := h.m.readPlatformConnections()
+	file, err := h.m.readPlatforms()
 	busy := h.m.busy
 	h.m.mu.Unlock()
-	if err != nil || file.Connections[0].CredentialVersion != c.CredentialVersion || !busy {
+	if err != nil || file.Platforms[0].CredentialVersion != c.CredentialVersion || !busy {
 		t.Error("credential committed before old worker settled")
 	}
 	select {
@@ -187,7 +187,7 @@ func TestGitLabEventsSharedPreparationPreservesAuthenticationErrors(t *testing.T
 	parallelFixtureTest(t)
 	for _, status := range []int{401, 403} {
 		t.Run(fmt.Sprint(status), func(t *testing.T) {
-			h, _, _ := eventHarnessSharedConnection(t)
+			h, _, _ := eventHarnessSharedPlatform(t)
 			before := h.state()
 			calls := 0
 			h.m.platformHTTP = workspaceHTTPFunc(func(r *http.Request) (*http.Response, error) {

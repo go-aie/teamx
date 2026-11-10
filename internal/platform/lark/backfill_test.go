@@ -38,7 +38,7 @@ func TestCustomBackfillFreezesAbsoluteStartAcrossSaveAndReload(t *testing.T) {
 	}
 	cfg.Enabled = true
 	cfg.IntervalSeconds = 120
-	cfg.Chats = []string{"oc_new"}
+	cfg.Private.ChatIDs = []string{"oc_new"}
 	resumed, err := Configure(s.RoomIdentity, &paused, s.Binding, cfg, now.Add(2*time.Hour))
 	if err != nil || resumed.Baseline != first.Baseline {
 		t.Fatal("resume or new chat changed baseline", err)

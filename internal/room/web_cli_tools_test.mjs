@@ -13,13 +13,13 @@ function fixture() {
     if(path==="/v1/rooms")return {service_epoch:"manager",operator:"tester",rooms:[{room_id:"A",room_instance:"instance-A",name:"A",status:"ready",runtime_status:"ready",service:{room_id:"A",room_instance:"instance-A",service_epoch:"active-A"}}],teams:[]};
     if(path.startsWith("/v1/workspace?"))return {workspace:{root:"workspaces"},workspace_version:1,members:[],credential_status:"missing"};
     if(path.startsWith("/v1/platform/notifications?"))return {subscriptions:[]};
-    if(path.startsWith("/v1/platform/connections?"))return {connections:[connection]};
+    if(path.startsWith("/v1/platforms?"))return {platforms:[connection]};
     if(path.startsWith("/v1/tools/bindings?"))return structuredClone(data);
     if(path==="/v1/tools/bind") {
       assert.equal(body.revision,data.revision);assert.equal(body.service_epoch,"manager");
       const b=body.binding;assert.ok(!("operations" in b));assert.ok(!("scope" in b));
-      data.bindings=data.bindings.filter(old=>old.tool!==b.tool||old.membership_id!==b.membership_id);
-      if(body.enabled)data.bindings.push({...b,connection_generation:b.connection_id?"generation":undefined});
+      data.bindings=data.bindings.filter(old=>old.tool!==b.tool||old.membership_id!==b.membership_id||old.platform_id!==b.platform_id);
+      if(body.enabled)data.bindings.push({...b,platform_generation:b.platform_id?"generation":undefined});
       data.revision++;return structuredClone(data);
     }
     if(path==="/v1/member/list")return {members:structuredClone(members),latest_seq:0};
@@ -36,28 +36,43 @@ const row=(ui,n=0)=>ui.el("cli-member-options").children[n];
 const select=(ui,n=0)=>row(ui,n).children[1].children[0];
 const apply=(ui,n=0)=>row(ui,n).children[2];
 const feedback=(ui,n=0)=>row(ui,n).children[3];
+test("same-type platform rows preserve independent bindings and dependency feedback",async()=>{
+ const api=fixture();
+ const platforms=["one","two"].map(id=>({id,name:id,provider:"gitlab",version:1,url:"https://gitlab.invalid",validation:{status:"valid",username:id}}));
+ api.hook=path=>path.startsWith("/v1/platforms?")?{platforms}:undefined;
+ api.data.bindings=platforms.map(p=>({agent_id:"agent-a",membership_id:"member-a",tool:"gitlab",platform_id:p.id}));
+ api.data.selections=[{agent_id:"agent-a",membership_id:"member-a",tool_type:"gitlab",platform_id:"two",capabilities:["read"],unavailable_reason:"executable_unavailable"}];
+ const ui=await launch(api);await open(ui);
+ assert.equal(select(ui,0).value,"one");assert.equal(select(ui,1).value,"two");
+ assert.match(feedback(ui,1).textContent,/程序缺失.*保留启用设置/);
+ select(ui,0).value="";await apply(ui,0).emit("click");
+ const sent=api.calls.filter(c=>c.path==="/v1/tools/bind").at(-1).body;
+ assert.equal(sent.enabled,false);assert.equal(sent.binding.platform_id,"one");assert.equal(sent.platform_version,0);
+ assert.deepEqual(api.data.bindings.map(b=>b.platform_id),["two"]);
+ assert.equal(select(ui,1).value,"two");assert.match(feedback(ui,1).textContent,/程序缺失/);
+});
 test("Scion member binding requires an explicit verified connection selection",async()=>{
   const api=fixture();api.data.catalog.push({name:"scion",provider:"scion",version:"scn 0.1.13"});
   const scion={id:"scion-profile",name:"Scion demo",provider:"scion",url:"https://scion.invalid",version:2,validation:{status:"valid",username:"alice"}};
-  api.hook=path=>path.startsWith("/v1/platform/connections?")?{connections:[scion,{...scion,id:"unverified",validation:{status:"unverified"}}]}:undefined;
+  api.hook=path=>path.startsWith("/v1/platforms?")?{platforms:[scion,{...scion,id:"unverified",validation:{status:"unverified"}}]}:undefined;
   const ui=await launch(api);await open(ui);
   assert.equal(select(ui,2).value,"");assert.equal(select(ui,2).options.length,2);
   assert.equal(api.calls.some(c=>c.path==="/v1/tools/bind"),false);
   select(ui,2).value="scion-profile";await apply(ui,2).emit("click");
   const {body}=api.calls.find(c=>c.path==="/v1/tools/bind");
-  assert.equal(body.binding.tool,"scion");assert.equal(body.binding.connection_id,"scion-profile");
-  assert.equal(body.connection_version,2);assert.equal(body.binding.action_authorization,undefined);
+  assert.equal(body.binding.tool,"scion");assert.equal(body.binding.platform_id,"scion-profile");
+  assert.equal(body.platform_version,2);assert.equal(body.binding.action_authorization,undefined);
   assert.match(feedback(ui,2).textContent,/Scion demo.*alice/);
 });
 test("Lark settings use a single connection apply and expose no per-mode switches",async()=>{
   const api=fixture();api.data.catalog.push({name:"lark",provider:"lark",version:"1.0.99"});
-  api.hook=path=>path.startsWith("/v1/platform/connections?")?{connections:[{id:"lark",name:"飞书测试账号",provider:"lark",url:"https://open.feishu.cn",version:1,validation:{status:"valid",username:"测试用户"}}]}:undefined;
+  api.hook=path=>path.startsWith("/v1/platforms?")?{platforms:[{id:"lark",name:"飞书测试账号",provider:"lark",url:"https://open.feishu.cn",version:1,validation:{status:"valid",username:"测试用户"}}]}:undefined;
   const ui=await launch(api);await open(ui);
   assert.equal(row(ui,2).children.length,5);
   assert.equal(row(ui,2).children[4].tag,"p");
   assert.match(row(ui,2).children[4].textContent,/应用后.*按你的指令/);
   assert.equal(api.calls.some(c=>c.path==="/v1/tools/bind"),false);
-  assert.match(select(ui,2).options[1].textContent,/飞书测试账号.*测试用户/);
+  assert.equal(select(ui,2).options[1].textContent,"启用");assert.match(row(ui,2).children[0].children[0].textContent,/测试用户/);
   select(ui,2).value="lark";await apply(ui,2).emit("click");
   const binding=api.calls.find(c=>c.path==="/v1/tools/bind").body.binding;
   assert.deepEqual(binding.action_authorization.grants,[]);
@@ -67,19 +82,19 @@ test("member tool settings use only explicit CLI bindings and retire legacy cont
   assert.equal(ui.el("tools-dialog"),undefined);assert.equal(ui.el("tools-member-options"),undefined);
   assert.equal(api.calls.some(c=>c.path.startsWith("/v1/platform/tools")),false);
   assert.equal(select(ui).value,"");assert.equal(api.data.bindings.length,0);
-  assert.match(select(ui).options[1].textContent,/@me.*gitlab.invalid/);
+  assert.equal(select(ui).options[1].textContent,"启用");assert.match(row(ui).children[0].children[0].textContent,/@me.*gitlab.invalid/);
   select(ui).value="connection";await select(ui).emit("change");
   assert.equal(api.calls.filter(c=>c.path==="/v1/tools/bind").length,0);
   await apply(ui).emit("click");
   const call=api.calls.find(c=>c.path==="/v1/tools/bind");
-  assert.equal(call.body.binding.connection_id,"connection");assert.equal(call.body.connection_version,3);
+  assert.equal(call.body.binding.platform_id,"connection");assert.equal(call.body.platform_version,3);
   assert.match(feedback(ui).textContent,/已应用.*Personal.*@me/);
   await ui.refresh();assert.match(feedback(ui).textContent,/已应用/);
   select(ui,1).value="on";await apply(ui,1).emit("click");
-  assert.equal(api.data.bindings[1].tool,"local");assert.equal(api.data.bindings[1].connection_id,undefined);
+  assert.equal(api.data.bindings[1].tool,"local");assert.equal(api.data.bindings[1].platform_id,undefined);
   assert.match(feedback(ui,1).textContent,/local 已启用/);
   select(ui).value="";await apply(ui).emit("click");assert.equal(api.data.bindings.length,1);
-  assert.match(feedback(ui).textContent,/gitlab 已停用/);
+  assert.match(feedback(ui).textContent,/Personal 已停用/);
   select(ui).value="connection";await select(ui).emit("change");assert.equal(feedback(ui).textContent,"");
 });
 test("pending binding stays visible and blocks duplicate submissions until confirmed",async()=>{
@@ -91,7 +106,7 @@ test("pending binding stays visible and blocks duplicate submissions until confi
   assert.equal(select(ui).disabled,true);assert.equal(apply(ui,1).disabled,true);
   await apply(ui).emit("click");await ui.el("cli-member-refresh").emit("click");
   assert.equal(api.calls.filter(c=>c.path==="/v1/tools/bind").length,1);
-  release({...api.data,revision:1,bindings:[{agent_id:"agent-a",membership_id:"member-a",tool:"gitlab",connection_id:"connection"}]});
+  release({...api.data,revision:1,bindings:[{agent_id:"agent-a",membership_id:"member-a",tool:"gitlab",platform_id:"connection"}]});
   await saving;assert.match(feedback(ui).textContent,/已应用/);assert.equal(select(ui).disabled,false);
 });
 test("uncertain binding is read back explicitly without replay",async()=>{
@@ -132,27 +147,28 @@ test("Lark applies all accepted capabilities by default on the selected connecti
     {operation:"message.reply",target_kind:"message",object_types:["message"]},
     {operation:"message.send",target_kind:"object",object_types:["chat"]}
   ]});
-  const connections=["one","two"].map(id=>({id,name:id,provider:"lark",url:"https://open.feishu.cn",version:1,validation:{status:"valid",username:id}}));
-  api.hook=path=>path.startsWith("/v1/platform/connections?")?{connections}:undefined;
+  const platforms=["one","two"].map(id=>({id,name:id,provider:"lark",url:"https://open.feishu.cn",version:1,validation:{status:"valid",username:id}}));
+  api.hook=path=>path.startsWith("/v1/platforms?")?{platforms}:undefined;
   const ui=await launch(api);await open(ui);
   const grants=[{operation:"message.reply",target_kind:"message",object_type:"message"},{operation:"message.send",target_kind:"object",object_type:"chat"}];
   // Merely loading an existing read-only binding must not mutate it.
-  api.data.bindings.push({agent_id:"agent-a",membership_id:"member-a",tool:"lark",connection_id:"one"});
+  api.data.bindings.push({agent_id:"agent-a",membership_id:"member-a",tool:"lark",platform_id:"one"});
   await ui.el("cli-member-refresh").emit("click");
   assert.equal(api.data.bindings[0].action_authorization,undefined);
   assert.equal(api.calls.filter(c=>c.path==="/v1/tools/bind").length,0);
   assert.equal(row(ui,2).children.length,5);
   await apply(ui,2).emit("click");
   let binding=api.calls.filter(c=>c.path==="/v1/tools/bind").at(-1).body.binding;
-  assert.equal(binding.connection_id,"one");assert.deepEqual(binding.action_authorization.grants,grants);
-  select(ui,2).value="two";await select(ui,2).emit("change");
+  assert.equal(binding.platform_id,"one");assert.deepEqual(binding.action_authorization.grants,grants);
+  select(ui,3).value="two";await select(ui,3).emit("change");
   assert.equal(api.calls.filter(c=>c.path==="/v1/tools/bind").length,1);
-  await apply(ui,2).emit("click");
+  await apply(ui,3).emit("click");
   binding=api.calls.filter(c=>c.path==="/v1/tools/bind").at(-1).body.binding;
-  assert.equal(binding.connection_id,"two");assert.deepEqual(binding.action_authorization.grants,grants);
+  assert.equal(binding.platform_id,"two");assert.deepEqual(binding.action_authorization.grants,grants);
   select(ui,2).value="";await apply(ui,2).emit("click");
   assert.equal(api.calls.filter(c=>c.path==="/v1/tools/bind").at(-1).body.enabled,false);
-  assert.equal(api.data.bindings.length,0);
+  assert.equal(api.data.bindings.length,1);
+  assert.equal(api.data.bindings[0].platform_id,"two");
 });
 
 test("Lark defaults exclude unavailable capabilities without exposing acceptance details",async()=>{
@@ -162,7 +178,7 @@ test("Lark defaults exclude unavailable capabilities without exposing acceptance
    {operation:"message.send",target_kind:"object",object_types:["user","chat"],disabled_reason:"lark_send_acceptance_pending: 真实验收说明。"},
    {binding_evidence:"self_delivery",operation:"message.send_self",target_kind:"object",object_types:["user"],disabled_reason:"unavailable: 本人自聊不可用。"}
  ]});
- api.hook=path=>path.startsWith("/v1/platform/connections?")?{connections:[{id:"lark",name:"测试",provider:"lark",url:"https://open.feishu.cn",version:1,validation:{status:"valid",username:"测试用户"}}]}:undefined;
+ api.hook=path=>path.startsWith("/v1/platforms?")?{platforms:[{id:"lark",name:"测试",provider:"lark",url:"https://open.feishu.cn",version:1,validation:{status:"valid",username:"测试用户"}}]}:undefined;
  const ui=await launch(api);await open(ui);
  select(ui,2).value="lark";await select(ui,2).emit("change");
  assert.equal(row(ui,2).children.length,5);
@@ -177,20 +193,20 @@ test("self delivery is included on a single apply without a separate control or 
   {operation:"message.reply",target_kind:"message",object_types:["message"]},
   {binding_evidence:"self_delivery",operation:"message.send_self",target_kind:"object",object_types:["user"]}
  ]});
- const connections=["one","two"].map(id=>({id,name:id,provider:"lark",url:"https://open.feishu.cn",version:1,validation:{status:"valid",username:id}}));
- api.hook=path=>path.startsWith("/v1/platform/connections?")?{connections}:undefined;
+ const platforms=["one","two"].map(id=>({id,name:id,provider:"lark",url:"https://open.feishu.cn",version:1,validation:{status:"valid",username:id}}));
+ api.hook=path=>path.startsWith("/v1/platforms?")?{platforms}:undefined;
  // Existing bindings acquire the default only when explicitly applied.
- api.data.bindings.push({agent_id:"agent-a",membership_id:"member-a",tool:"lark",connection_id:"one"});
+ api.data.bindings.push({agent_id:"agent-a",membership_id:"member-a",tool:"lark",platform_id:"one"});
  const ui=await launch(api);await open(ui);
  assert.equal(row(ui,2).children.length,5);
  assert.match(row(ui,2).children[4].textContent,/按你的指令.*发送到本人自聊/);
  assert.equal(api.calls.filter(c=>c.path==="/v1/tools/bind").length,0);
  const grants=[{operation:"message.reply",target_kind:"message",object_type:"message"},{operation:"message.send_self",target_kind:"object",object_type:"user"}];
- for (const id of ["one","two"]) {
-  select(ui,2).value=id;await select(ui,2).emit("change");
-  await apply(ui,2).emit("click");
+ for (const [index,id] of ["one","two"].entries()) {
+  select(ui,2+index).value=id;await select(ui,2+index).emit("change");
+  await apply(ui,2+index).emit("click");
   const sent=api.calls.filter(c=>c.path==="/v1/tools/bind").at(-1).body.binding;
-  assert.equal(sent.connection_id,id);
+  assert.equal(sent.platform_id,id);
   assert.deepEqual(sent.action_authorization.grants,grants);
   assert.equal(sent.capability_evidence,undefined);
   assert.equal(row(ui,2).children.length,5);
@@ -200,8 +216,8 @@ test("self delivery is included on a single apply without a separate control or 
 test("an unavailable self connection can be disabled without exposing historical target IDs",async()=>{
  const api=fixture();
  api.data.catalog.push({name:"lark",provider:"lark",version:"1.0.99",actions:[{binding_evidence:"self_delivery",operation:"message.send_self",target_kind:"object",object_types:["user"]}]});
- api.data.bindings.push({agent_id:"agent-a",membership_id:"member-a",tool:"lark",connection_id:"old",action_authorization:{grants:[{operation:"message.send_self",target_kind:"object",object_type:"user"}]},capability_evidence:[{kind:"self_delivery",account:{id:{value:"ou_old"}},target:{containers:[{id:{value:"oc_old"}}]}}]});
- api.hook=path=>path.startsWith("/v1/platform/connections?")?{connections:[{id:"old",provider:"lark",validation:{status:"unverified"}}]}:undefined;
+ api.data.bindings.push({agent_id:"agent-a",membership_id:"member-a",tool:"lark",platform_id:"old",action_authorization:{grants:[{operation:"message.send_self",target_kind:"object",object_type:"user"}]},capability_evidence:[{kind:"self_delivery",account:{id:{value:"ou_old"}},target:{containers:[{id:{value:"oc_old"}}]}}]});
+ api.hook=path=>path.startsWith("/v1/platforms?")?{platforms:[{id:"old",provider:"lark",validation:{status:"unverified"}}]}:undefined;
  const ui=await launch(api);await open(ui);
  assert.equal(row(ui,2).children.length,5);
  assert.equal(apply(ui,2).disabled,true);

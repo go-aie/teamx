@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
@@ -33,8 +34,8 @@ func workspaceRepositoryAdapter(run platform.Execute, w workspaceConfig) (worksp
 
 type gitLabWorkspaceAccess struct {
 	write          func(string, any) error
-	connection     func(RoomIdentity, workspaceConfig) (projectConnectionResolution, error)
-	connectionRead func(projectConnectionResolution) gitlab.ReadAPI
+	connection     func(RoomIdentity, workspaceConfig) (projectPlatformResolution, error)
+	connectionRead func(projectPlatformResolution) gitlab.ReadAPI
 }
 
 func (p gitLabWorkspaceAccess) prepare(ctx context.Context, dir string, saved managedRoomConfig, initial bool) (workspace.Access, error) {
@@ -43,21 +44,21 @@ func (p gitLabWorkspaceAccess) prepare(ctx context.Context, dir string, saved ma
 	if w.Binding != nil {
 		b := w.Binding
 		ref := gitlab.Binding{Version: 1, RoomID: saved.RoomID, RoomInstance: saved.RoomInstance, URL: b.URL, Project: b.Project}
-		if b.ConnectionID != "" {
+		if b.PlatformID != "" {
 			if p.connection == nil {
 				return result, ErrIdentity
 			}
 			resolved, err := p.connection(saved.RoomIdentity, w)
-			if err != nil || resolved.record.Generation != b.ConnectionGeneration {
+			if err != nil || resolved.record.Generation != b.PlatformGeneration {
 				return result, ErrConflict
 			}
-			ref.ConnectionID, ref.ConnectionGeneration, ref.ProjectID = b.ConnectionID, b.ConnectionGeneration, b.ProjectID
+			ref.PlatformID, ref.PlatformGeneration, ref.ProjectID = b.PlatformID, b.PlatformGeneration, b.ProjectID
 		} else {
 			return result, ErrIdentity
 		}
 		tools := "resources/platforms/gitlab"
-		if b.ConnectionID != "" {
-			tools = filepath.ToSlash(workspaceConnectionTools(*b))
+		if b.PlatformID != "" {
+			tools = filepath.ToSlash(workspacePlatformTools(*b))
 		}
 		if saved.PlatformToolsVersion > 0 {
 			tools += "/git-only"
@@ -75,6 +76,11 @@ func (p gitLabWorkspaceAccess) prepare(ctx context.Context, dir string, saved ma
 			return result, err
 		}
 		result.Env, result.Instructions = prepared.Env, prepared.Instructions
+		// Frozen Room resources retain their original bytes. Update only the
+		// supplied Agent guidance; this does not require a resource migration.
+		result.Instructions = strings.ReplaceAll(result.Instructions, "tools run gitlab", "tools run ENTRY")
+		result.Instructions = strings.ReplaceAll(result.Instructions, "tools skill gitlab", "tools skill ENTRY")
+		result.Instructions += "\nENTRY 使用 tools list 返回的准确平台入口，不使用平台类型别名。\n"
 		result.ResourceDir = filepath.Join(dir, filepath.FromSlash(tools))
 		var userName, userEmail string
 		result.Author = func(ctx context.Context) (string, string, error) {
@@ -164,7 +170,7 @@ func (m *roomManager) ensureWorkspaces(ctx context.Context, saved managedRoomCon
 					return workspace.Access{}, ErrConflict
 				}
 			}
-			return workspace.Access{Env: map[string]string{}, Instructions: "当前 Workspace 是原生 Scion 工作副本。通过 tools skill scion 读取协议；日常命令使用成员显式绑定的 Scion 连接。提交时显式提供 --author 'Name <email>'；提交作者与平台操作账号分别核对。"}, nil
+			return workspace.Access{Env: map[string]string{}, Instructions: "当前 Workspace 是原生 Scion 工作副本。先运行 tools list，使用返回的准确平台入口执行 tools skill ENTRY 读取协议；日常命令使用成员显式启用的 Scion 平台。提交时显式提供 --author 'Name <email>'；提交作者与平台操作账号分别核对。"}, nil
 		}
 		return p.ensure(ctx, m.roomDir(saved.RoomID), saved, initial)
 	}
@@ -172,13 +178,13 @@ func (m *roomManager) ensureWorkspaces(ctx context.Context, saved managedRoomCon
 		p.run = m.workspaceRun
 	}
 	access := gitLabWorkspaceAccess{write: p.write}
-	if saved.Workspace != nil && saved.Workspace.Binding != nil && saved.Workspace.Binding.ConnectionID != "" {
-		access.connection = func(owner RoomIdentity, w workspaceConfig) (projectConnectionResolution, error) {
+	if saved.Workspace != nil && saved.Workspace.Binding != nil && saved.Workspace.Binding.PlatformID != "" {
+		access.connection = func(owner RoomIdentity, w workspaceConfig) (projectPlatformResolution, error) {
 			m.mu.Lock()
 			defer m.mu.Unlock()
-			return m.resolveWorkspaceConnectionLocked(owner, w)
+			return m.resolveWorkspacePlatformLocked(owner, w)
 		}
-		access.connectionRead = m.projectConnectionRead
+		access.connectionRead = m.projectPlatformRead
 		p.run = m.connectionExecute(saved.RoomIdentity, *saved.Workspace, p.run)
 	}
 	p.access = access.prepare

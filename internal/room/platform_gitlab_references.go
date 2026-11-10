@@ -7,8 +7,8 @@ import (
 	"strconv"
 
 	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/connection"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
+	"github.com/go-aie/teamx/internal/platform/registry"
 )
 
 // Internal resolution shares admission and cancellation with tools, but requires
@@ -21,6 +21,12 @@ func (m *roomManager) resolveGitlabFollowup(ctx context.Context, id MemberIdenti
 		return platform.TargetResolution{}, platform.AccessContext{}, ErrIdentity
 	}
 	req := toolsRequest{ServiceInfo: svc.info, Caller: agentCallerIdentity(id), Tool: "gitlab"}
+	platformID, err := m.sourcePlatformLocked(id.RoomIdentity, source)
+	req.platformID = platformID
+	if err != nil {
+		m.mu.Unlock()
+		return platform.TargetResolution{}, platform.AccessContext{}, err
+	}
 	admission, call, callCtx, err := m.preparePlatformCallLocked(ctx, req, false)
 	m.mu.Unlock()
 	if err != nil {
@@ -55,6 +61,15 @@ func (m *roomManager) resolveGitlabFollowup(ctx context.Context, id MemberIdenti
 	return result, access, err
 }
 func (m *roomManager) checkGitlabReferenceAccessLocked(ctx context.Context, req toolsRequest, access platform.AccessContext) error {
+	if req.platformID != "" && req.platformID != access.PlatformID {
+		return ErrIdentity
+	}
+	req.platformID = access.PlatformID
+	var err error
+	req, err = constrainToolRequest(ctx, req)
+	if err != nil {
+		return err
+	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -82,12 +97,12 @@ func gitlabAccount(origin string, id platform.ExternalID) platform.AccountIdenti
 
 // Converts existing connection evidence at the GitLab boundary. Neither the new
 // account contract nor access/cursor contracts require a username or numeric ID.
-func gitlabReferenceAccess(id MemberIdentity, account connection.Account, receiver platform.ExternalID) platform.AccessContext {
+func gitlabReferenceAccess(id MemberIdentity, account registry.Account, receiver platform.ExternalID) platform.AccessContext {
 	a := platform.AccessContext{
 		RoomIdentity: id.RoomIdentity, AgentID: id.AgentID, MembershipID: id.MembershipID,
-		Account:      gitlabAccount(account.URL, platform.ExternalID{Namespace: "gitlab:rest:id", Value: strconv.FormatInt(account.UserID, 10)}),
-		ConnectionID: account.ConnectionID, Generation: account.Generation,
-		ConnectionVersion: account.ConnectionVersion, CredentialVersion: account.CredentialVersion,
+		Account:    gitlabAccount(account.URL, platform.ExternalID{Namespace: "gitlab:rest:id", Value: strconv.FormatInt(account.UserID, 10)}),
+		PlatformID: account.PlatformID, Generation: account.Generation,
+		PlatformVersion: account.PlatformVersion, CredentialVersion: account.CredentialVersion,
 	}
 	if receiver != (platform.ExternalID{}) {
 		a.Receiver = gitlabAccount(account.URL, receiver)

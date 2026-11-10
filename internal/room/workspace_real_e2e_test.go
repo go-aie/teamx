@@ -85,7 +85,7 @@ func TestRealWorkspaceGitLabDSH(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(source, "team.json"), data, 0600); err != nil {
 		t.Fatal(err)
 	}
-	oauthFile, oauthConnection := selectedRealOAuthSnapshot(t, platform)
+	oauthFile, oauthPlatform := selectedRealOAuthSnapshot(t, platform)
 	oauthData, _ := json.Marshal(oauthFile)
 	if err := os.WriteFile(filepath.Join(d.dir, "platform-connections.json"), oauthData, 0600); err != nil {
 		t.Fatal(err)
@@ -102,7 +102,7 @@ func TestRealWorkspaceGitLabDSH(t *testing.T) {
 	// observed UI actions. The test does not claim browser evidence on its own.
 	uiPhase := func(phase string) error {
 		cmd := exec.CommandContext(ctx, "node", "web_workspace_http.mjs")
-		cmd.Env = append(operatorEnv(""), "TEAMX_WEB_ENDPOINT="+d.endpoint, "TEAMX_WORKSPACE_UI_PHASE="+phase, "TEAMX_WORKSPACE_REPOSITORY="+w.Repository.URL, "TEAMX_WORKSPACE_GITLAB_URL="+platform, "TEAMX_WORKSPACE_PROJECT="+project, "TEAMX_WORKSPACE_CONNECTION_ID="+oauthConnection.ID)
+		cmd.Env = append(operatorEnv(""), "TEAMX_WEB_ENDPOINT="+d.endpoint, "TEAMX_WORKSPACE_UI_PHASE="+phase, "TEAMX_WORKSPACE_REPOSITORY="+w.Repository.URL, "TEAMX_WORKSPACE_GITLAB_URL="+platform, "TEAMX_WORKSPACE_PROJECT="+project, "TEAMX_WORKSPACE_CONNECTION_ID="+oauthPlatform.ID)
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("app HTTP driver failed: %s", output)
@@ -303,9 +303,9 @@ func TestRealWorkspaceGitLabDSH(t *testing.T) {
 	fail(err)
 	failureID, err := newOpaqueID()
 	fail(err)
-	failureTarget := workspaceConfig{Repository: &workspaceRepository{URL: w.Repository.URL, Branch: "teamx-nonexistent-" + failureID}, Binding: &workspaceBinding{Provider: "gitlab", URL: platform, Project: project, ConnectionID: oauthConnection.ID}}
+	failureTarget := workspaceConfig{Repository: &workspaceRepository{URL: w.Repository.URL, Branch: "teamx-nonexistent-" + failureID}, Binding: &workspaceBinding{Provider: "gitlab", URL: platform, Project: project, PlatformID: oauthPlatform.ID}}
 	var failed workspaceOperation
-	fail(d.managementRequest("/v1/workspace/apply", workspaceApplyRequest{ServiceEpoch: epoch, RoomIdentity: b.RoomIdentity, Caller: humanCaller, OperationID: failureID, ExpectedVersion: 1, Target: failureTarget, ConnectionVersion: oauthConnection.Version}, &failed))
+	fail(d.managementRequest("/v1/workspace/apply", workspaceApplyRequest{ServiceEpoch: epoch, RoomIdentity: b.RoomIdentity, Caller: humanCaller, OperationID: failureID, ExpectedVersion: 1, Target: failureTarget, PlatformVersion: oauthPlatform.Version}, &failed))
 	waitFailure := func() error {
 		return d.until(func() (bool, error) {
 			ws, err := d.realWorkspaceStatus(epoch, b)
@@ -324,7 +324,7 @@ func TestRealWorkspaceGitLabDSH(t *testing.T) {
 		})
 	}
 	fail(waitFailure())
-	if failed.ErrorCode != "preparation_failed" || failed.Target.Binding.ConnectionID != oauthConnection.ID {
+	if failed.ErrorCode != "preparation_failed" || failed.Target.Binding.PlatformID != oauthPlatform.ID {
 		fail(errors.New("failed binding did not preserve credential reference"))
 	}
 	marker := filepath.Join(d.dir, "rooms", b.RoomID, failed.Members[0].Workspace) + ".clone-pending"

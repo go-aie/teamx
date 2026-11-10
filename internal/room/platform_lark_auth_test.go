@@ -47,7 +47,7 @@ func roomAuthProfile(t *testing.T) (platform.CLIProfile, string) {
 
 func authHTTP(t *testing.T, m *roomManager, action string, req larkAuthRequest) larkAuthView {
 	t.Helper()
-	r := managerHTTP(m, "/v1/platform/connections/lark/"+action, req)
+	r := managerHTTP(m, "/v1/platforms/lark/"+action, req)
 	var view larkAuthView
 	if r.Code != 200 || json.Unmarshal(r.Body.Bytes(), &view) != nil {
 		t.Fatal(action, r.Code, r.Body.String())
@@ -75,14 +75,14 @@ func authWait(t *testing.T, m *roomManager, req larkAuthRequest, status string) 
 	return larkAuthView{}
 }
 
-func authImpact(t *testing.T, m *roomManager, profile string) []larkAuthConnection {
+func authImpact(t *testing.T, m *roomManager, profile string) []larkAuthPlatform {
 	t.Helper()
-	var result []larkAuthConnection
+	var result []larkAuthPlatform
 	for _, c := range platformTestList(t, m) {
 		if c.CLIProfile == nil || c.CLIProfile.Profile != profile {
 			continue
 		}
-		ack := larkAuthConnection{ID: c.ID, Version: c.Version}
+		ack := larkAuthPlatform{ID: c.ID, Version: c.Version}
 		for _, ref := range c.References {
 			ack.ReferencedRooms = append(ack.ReferencedRooms, ref.RoomIdentity)
 		}

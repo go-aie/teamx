@@ -6,29 +6,29 @@ import (
 	"fmt"
 
 	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/connection"
 	"github.com/go-aie/teamx/internal/platform/lark"
 	"github.com/go-aie/teamx/internal/platform/notification"
+	"github.com/go-aie/teamx/internal/platform/registry"
 )
 
-func larkBinding(a connection.Account) lark.Binding {
-	return lark.Binding{ConnectionID: a.ConnectionID, Generation: a.Generation, Account: a.Identity, CredentialVersion: a.CredentialVersion, Fingerprint: a.CredentialFingerprint}
+func larkBinding(a registry.Account) lark.Binding {
+	return lark.Binding{PlatformID: a.PlatformID, Generation: a.Generation, Account: a.Identity, CredentialVersion: a.CredentialVersion, Fingerprint: a.CredentialFingerprint}
 }
 
 // Verification restores only subscriptions paused for credentials under the
 // same native account. ChangedLocked fences the old worker; it starts the new
 // version after its predecessor exits, without waiting under manager.mu.
-func (m *roomManager) resumeLarkSubscriptionsLocked(connectionID string) error {
+func (m *roomManager) resumeLarkSubscriptionsLocked(platformID string) error {
 	for _, room := range m.index.Rooms {
 		if room.Status != "ready" || m.roomBusyLocked(room.RoomIdentity) {
 			continue
 		}
 		for _, state := range m.notifications.StatesLocked(room.RoomIdentity) {
 			s, ok := state.(lark.State)
-			if !ok || s.Retired || !s.Config.Enabled || s.Binding.ConnectionID != connectionID || s.Status != "credentials_invalid" {
+			if !ok || s.Retired || !s.Config.Enabled || s.Binding.PlatformID != platformID || s.Status != "credentials_invalid" {
 				continue
 			}
-			a, _, err := m.resolvePlatformAccountLocked(room.RoomIdentity, connectionID, "lark")
+			a, _, err := m.resolvePlatformAccountLocked(room.RoomIdentity, platformID, "lark")
 			if err != nil {
 				return notificationRoomError(err)
 			}
@@ -61,7 +61,7 @@ func (m *roomManager) larkNotificationAdapter() notificationAdapter {
 		if s.Retired {
 			return notification.Scope{}, notification.ErrIdentity
 		}
-		a, _, err := m.resolvePlatformAccountLocked(s.RoomIdentity, s.Binding.ConnectionID, "lark")
+		a, _, err := m.resolvePlatformAccountLocked(s.RoomIdentity, s.Binding.PlatformID, "lark")
 		if err != nil {
 			return notification.Scope{}, err
 		}
@@ -71,28 +71,27 @@ func (m *roomManager) larkNotificationAdapter() notificationAdapter {
 		if larkBinding(a) != s.Binding || a.CLIProfile == nil {
 			return notification.Scope{}, platform.ErrCredential
 		}
-		q := lark.QueryScope{Binding: s.Binding, Profile: *a.CLIProfile, ConnectionVersion: a.ConnectionVersion}
+		q := lark.QueryScope{Binding: s.Binding, Profile: *a.CLIProfile, PlatformVersion: a.PlatformVersion}
 		data, _ := json.Marshal(q)
-		return notification.Scope{Data: data, Revision: fmt.Sprintf("%d|%s", a.ConnectionVersion, data), CredentialStamp: fmt.Sprintf("%d|%s", a.CredentialVersion, a.CredentialFingerprint)}, nil
-	}, CheckLoaded: func(owner RoomIdentity) error { _, err := m.currentLarkLocked(owner); return err }}
+		return notification.Scope{Data: data, Revision: fmt.Sprintf("%d|%s", a.PlatformVersion, data), CredentialStamp: fmt.Sprintf("%d|%s", a.CredentialVersion, a.CredentialFingerprint)}, nil
+	}}
 }
-func (m *roomManager) currentLarkLocked(owner RoomIdentity) (*lark.State, error) {
-	var current *lark.State
-	for _, state := range m.notifications.StatesLocked(owner) {
-		if s, ok := state.(lark.State); ok {
-			if s.Retired {
-				if m.notifications.DoneLocked(s.Metadata().Key) != nil {
-					return nil, ErrBusy
-				}
-				continue
-			}
-			if current != nil {
-				return nil, ErrInvalid
-			}
-			current = &s
-		}
+
+// The shared notification manager enforces one active subscription per Room/platform.
+func (m *roomManager) currentLarkLocked(owner RoomIdentity, platformIDs ...string) (*lark.State, error) {
+	id, err := m.notificationPlatformLocked(owner, lark.MessagesSourceID, platformIDs...)
+	if err != nil {
+		return nil, err
 	}
-	return current, nil
+	state, err := m.notifications.CurrentLocked(owner, lark.MessagesSourceID, id)
+	if err != nil || state == nil {
+		return nil, notificationRoomError(err)
+	}
+	s, ok := state.(lark.State)
+	if !ok {
+		return nil, ErrInvalid
+	}
+	return &s, nil
 }
 func (m *roomManager) configureLarkSubscription(ctx context.Context, key notification.Key, version uint64, cfg lark.Config) (lark.State, error) {
 	var normalizeErr error
@@ -105,6 +104,10 @@ func (m *roomManager) configureLarkSubscription(ctx context.Context, key notific
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if err := m.checkOnboardingContextLocked(ctx); err != nil {
+		return lark.State{}, err
+	}
+
 	if key.Source != lark.MessagesSourceID {
 		return lark.State{}, ErrRequest
 	}
@@ -115,11 +118,14 @@ func (m *roomManager) configureLarkSubscription(ctx context.Context, key notific
 	if err != nil || entry.Status != "ready" {
 		return lark.State{}, ErrIdentity
 	}
-	current, err := m.currentLarkLocked(key.Owner)
+	current, err := m.currentLarkLocked(key.Owner, m.subscriptionPlatformLocked(key, cfg.PlatformID))
 	if err != nil {
 		return lark.State{}, err
 	}
 	if key.SubscriptionID == "" && (version != 0 || current != nil) || key.SubscriptionID != "" && (current == nil || current.SubscriptionID != key.SubscriptionID || current.SubscriptionVersion != version) {
+		return lark.State{}, ErrConflict
+	}
+	if current != nil && cfg.PlatformID != current.Binding.PlatformID {
 		return lark.State{}, ErrConflict
 	}
 	if err = m.validateNotificationTargetLocked(ctx, key.Owner, cfg.Target, cfg.Enabled); err != nil {
@@ -129,16 +135,16 @@ func (m *roomManager) configureLarkSubscription(ctx context.Context, key notific
 	if current != nil {
 		b = current.Binding
 	}
-	if cfg.Enabled {
-		a, _, e := m.resolvePlatformAccountLocked(key.Owner, cfg.ConnectionID, "lark")
+	if cfg.Enabled || current == nil {
+		a, _, e := m.resolvePlatformAccountLocked(key.Owner, cfg.PlatformID, "lark")
 		if e != nil {
 			return lark.State{}, notificationRoomError(e)
 		}
 		b = larkBinding(a)
 	}
-	// A different native account/connection is a new opt-in; old evidence remains
+	// A different native account is a new opt-in; old evidence remains
 	// inspectable in its retired snapshot, with its original frozen destinations.
-	if current != nil && cfg.Enabled && (b.ConnectionID != current.Binding.ConnectionID || b.Generation != current.Binding.Generation || b.Account != current.Binding.Account) {
+	if current != nil && cfg.Enabled && (b.PlatformID != current.Binding.PlatformID || b.Generation != current.Binding.Generation || b.Account != current.Binding.Account) {
 		retired, e := lark.Retire(*current)
 		if e != nil {
 			return retired, notificationRoomError(e)
@@ -155,8 +161,8 @@ func (m *roomManager) configureLarkSubscription(ctx context.Context, key notific
 		if e != nil {
 			return retired, e
 		}
-		active, e := m.currentLarkLocked(key.Owner)
-		a, _, accountErr := m.resolvePlatformAccountLocked(key.Owner, cfg.ConnectionID, "lark")
+		active, e := m.currentLarkLocked(key.Owner, m.subscriptionPlatformLocked(key, cfg.PlatformID))
+		a, _, accountErr := m.resolvePlatformAccountLocked(key.Owner, cfg.PlatformID, "lark")
 		if m.closing || m.roomBusyLocked(key.Owner) || e != nil || active != nil || accountErr != nil || larkBinding(a) != b {
 			return retired, ErrConflict
 		}
@@ -204,7 +210,7 @@ func (m *roomManager) syncLarkSubscription(ctx context.Context, key notification
 	if s.Retired || !s.Config.Enabled {
 		return ErrRequest
 	}
-	a, _, err := m.resolvePlatformAccountLocked(key.Owner, s.Binding.ConnectionID, "lark")
+	a, _, err := m.resolvePlatformAccountLocked(key.Owner, s.Binding.PlatformID, "lark")
 	if err != nil {
 		return notificationRoomError(err)
 	}

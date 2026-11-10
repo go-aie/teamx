@@ -26,7 +26,7 @@ func TestPlatformNotificationInboxReloadClearAndContinuation(t *testing.T) {
 		t.Fatal(err)
 	}
 	saved.Binding = h.state().Binding
-	saved.Config.ConnectionID = h.state().Config.ConnectionID
+	saved.Config.PlatformID = h.state().Config.PlatformID
 	saved.Config.Project = h.state().Config.Project
 	saved.UserID = h.state().UserID
 	saved.Username = h.state().Username

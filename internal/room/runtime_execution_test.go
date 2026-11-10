@@ -71,7 +71,7 @@ func TestRuntimeToolSettlementIsScopedToRoom(t *testing.T) {
 				t.Fatal(err)
 			}
 			name, provider := "local", ""
-			var c platformConnection
+			var c managedPlatform
 			if action == "shared-rotation" {
 				name, provider = "gitlab", "gitlab"
 				c = verifyTodoAccount(t, m, platformTestSave(t, m, platformTestRequest(m)), 101)

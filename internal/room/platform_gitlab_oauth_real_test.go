@@ -21,9 +21,9 @@ import (
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/connection"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
 	"github.com/go-aie/teamx/internal/platform/notification"
+	"github.com/go-aie/teamx/internal/platform/registry"
 	"github.com/go-aie/teamx/internal/platform/tool"
 )
 
@@ -105,11 +105,11 @@ func TestRealGitLabOAuthG5(t *testing.T) {
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Hour)
 	defer cancel()
-	load := func() connection.Snapshot {
+	load := func() registry.Snapshot {
 		t.Helper()
 		m.mu.Lock()
 		defer m.mu.Unlock()
-		file, err := m.connections.Load()
+		file, err := m.platforms.Load()
 		if err != nil {
 			t.Fatal("cannot load private G5 snapshot")
 		}
@@ -144,7 +144,7 @@ func TestRealGitLabOAuthG5(t *testing.T) {
 				return
 			case <-ticker.C:
 				file := load()
-				for _, c := range file.Connections {
+				for _, c := range file.Platforms {
 					report["connection"] = map[string]any{"id": c.ID, "kind": c.CredentialKind, "user_id": c.Validation.UserID, "username": c.Validation.Username}
 				}
 				m.mu.Lock()
@@ -156,15 +156,15 @@ func TestRealGitLabOAuthG5(t *testing.T) {
 				report["auth_sessions"] = sessions
 				saveReport()
 				if _, err := os.Stat(filepath.Join(root, "stop-browser")); err == nil {
-					report["status"] = "stopped_inspect_connection_and_browser_evidence"
+					report["status"] = "stopped_inspect_platform_and_browser_evidence"
 					return
 				}
 			}
 		}
 	}
 	file := load()
-	var record connection.Record
-	for _, c := range file.Connections {
+	var record registry.Record
+	for _, c := range file.Platforms {
 		if c.Provider == "gitlab" && c.URL == origin && c.CredentialKind == "oauth" {
 			record = c
 			break
@@ -174,13 +174,13 @@ func TestRealGitLabOAuthG5(t *testing.T) {
 		t.Fatal("real browser login has not saved an OAuth connection")
 	}
 	if phase == "revoked" {
-		cred, _, err := connection.OAuthRecord(file, record.CredentialID)
+		cred, _, err := registry.OAuthRecord(file, record.CredentialID)
 		if err != nil || cred.State != "logged_out" {
 			t.Fatal("perform explicit UI logout first")
 		}
-		for _, c := range file.Connections {
+		for _, c := range file.Platforms {
 			if c.CredentialID == record.CredentialID {
-				if _, err := connection.ResolveAuthorization(file, c); err == nil {
+				if _, err := registry.ResolveAuthorization(file, c); err == nil {
 					t.Fatal("shared logged-out authorization remains readable")
 				}
 			}
@@ -193,11 +193,11 @@ func TestRealGitLabOAuthG5(t *testing.T) {
 		report["status"] = "local_block_passed_remote_effect_unverified"
 		return
 	}
-	account, err := connection.ResolveAuthorization(file, record)
+	account, err := registry.ResolveAuthorization(file, record)
 	if err != nil || account.UserID != 13 {
 		t.Fatal("OAuth grant is unavailable or belongs to another user")
 	}
-	cred, _, err := connection.OAuthRecord(file, record.CredentialID)
+	cred, _, err := registry.OAuthRecord(file, record.CredentialID)
 	if err != nil {
 		t.Fatal("OAuth material unavailable")
 	}
@@ -236,7 +236,7 @@ func TestRealGitLabOAuthG5(t *testing.T) {
 		report["observed_after_real_expiry_at"] = time.Now().UTC()
 	}
 	// Two durable, inactive Rooms exercise per-Room token leases without starting
-	// any Agent/DSH process. They share this explicitly selected OAuth connection.
+	// any Agent/DSH process. They share this explicitly selected OAuth registry.
 	if len(m.index.Rooms) == 0 {
 		profiles := managerTestProfiles(t)
 		m.teams = map[string]teamDefinition{"takeout-dinner": {ID: "takeout-dinner", Name: "G5 read-only", OpeningMessage: "Isolated read-only OAuth acceptance; do not start collaboration.", Runtime: &teamRuntime{Model: profiles["runtime"].Model}, Members: []teamMember{{ID: "reader", Name: "reader", Instructions: "Read-only acceptance"}}}}
@@ -273,11 +273,11 @@ func TestRealGitLabOAuthG5(t *testing.T) {
 		}
 	}
 	after := load()
-	current, err := connection.ResolveAuthorization(after, after.Connections[0])
+	current, err := registry.ResolveAuthorization(after, after.Platforms[0])
 	if err != nil || current != account {
 		t.Fatal("normal refresh changed authorization evidence")
 	}
-	rotated, _, err := connection.OAuthRecord(after, record.CredentialID)
+	rotated, _, err := registry.OAuthRecord(after, record.CredentialID)
 	if err != nil {
 		t.Fatal("cannot load rotated credential")
 	}
@@ -369,7 +369,7 @@ func TestRealGitLabOAuthG5(t *testing.T) {
 			t.Fatal("cannot read isolated tool bindings")
 		}
 		if len(bindings.Bindings) == 0 {
-			bindCLITool(t, m, room.RoomIdentity, member, platformConnection{Connection: record.Connection}, "gitlab", bindings.Revision)
+			bindCLITool(t, m, room.RoomIdentity, member, managedPlatform{Platform: record.Platform}, "gitlab", bindings.Revision)
 		}
 		id := MemberIdentity{RoomIdentity: room.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
 		resolution, _, err := m.resolveGitlabFollowup(ctx, id, fixture.Source)
@@ -389,7 +389,7 @@ func TestRealGitLabOAuthG5(t *testing.T) {
 				t.Fatal("cannot load isolated subscription")
 			}
 			if state == nil {
-				created, err := m.configureTodosSubscription(ctx, notification.Key{Owner: room.RoomIdentity, Source: gitlab.TodosSourceID}, 0, gitlab.TodosConfig{Enabled: true, ConnectionID: record.ID, Target: inboxTarget(id)})
+				created, err := m.configureTodosSubscription(ctx, notification.Key{Owner: room.RoomIdentity, Source: gitlab.TodosSourceID}, 0, gitlab.TodosConfig{Enabled: true, PlatformID: record.ID, Target: inboxTarget(id)})
 				if err != nil {
 					t.Fatal("cannot create isolated real-account subscription")
 				}
@@ -443,13 +443,13 @@ func g5Logout(t *testing.T, ctx context.Context, m *roomManager, report map[stri
 	t.Helper()
 	progress := g5Progress(t, m)
 	m.mu.Lock()
-	file, err := m.connections.Load()
-	if err != nil || len(file.Connections) == 0 {
+	file, err := m.platforms.Load()
+	if err != nil || len(file.Platforms) == 0 {
 		m.mu.Unlock()
 		t.Fatal("cannot capture logout evidence")
 	}
-	record := file.Connections[0]
-	cred, app, err := connection.OAuthRecord(file, record.CredentialID)
+	record := file.Platforms[0]
+	cred, app, err := registry.OAuthRecord(file, record.CredentialID)
 	if err != nil {
 		m.mu.Unlock()
 		t.Fatal("cannot capture active grant")
@@ -479,14 +479,14 @@ func g5Logout(t *testing.T, ctx context.Context, m *roomManager, report map[stri
 	}
 	m.mu.Lock()
 	status := session.Status
-	after, err := m.connections.Load()
+	after, err := m.platforms.Load()
 	m.mu.Unlock()
 	if err != nil || status != "logged_out" {
 		t.Fatal("remote logout receipt not confirmed")
 	}
-	for _, record := range after.Connections {
+	for _, record := range after.Platforms {
 		if record.CredentialID == cred.ID {
-			if _, err := connection.ResolveAuthorization(after, record); err == nil {
+			if _, err := registry.ResolveAuthorization(after, record); err == nil {
 				t.Fatal("shared authorization remains readable after logout")
 			}
 		}
@@ -495,7 +495,7 @@ func g5Logout(t *testing.T, ctx context.Context, m *roomManager, report map[stri
 	if statusCode != http.StatusUnauthorized {
 		t.Fatal("remote token invalidation not confirmed")
 	}
-	report["logout"] = map[string]any{"status": status, "shared_connections": len(records), "old_access_http_status": statusCode, "application_retained": len(after.OAuthApplications) == len(file.OAuthApplications)}
+	report["logout"] = map[string]any{"status": status, "shared_platforms": len(records), "old_access_http_status": statusCode, "application_retained": len(after.OAuthApplications) == len(file.OAuthApplications)}
 	if !reflect.DeepEqual(progress, g5Progress(t, m)) {
 		t.Fatal("logout changed notification progress, Inbox or receipts")
 	}

@@ -38,10 +38,20 @@ func todosAppManager(t *testing.T) (*roomManager, roomSummary) {
 func checkTodosAppResult(t *testing.T, m *roomManager, room roomSummary) {
 	t.Helper()
 	m.mu.Lock()
-	current, err := m.currentTodosLocked(room.RoomIdentity)
+	current, err := m.currentTodosLocked(room.RoomIdentity, strings.Repeat("b", 32))
 	history, histErr := m.retiredNotificationViewsLocked(room.RoomIdentity)
+	states := m.notifications.StatesLocked(room.RoomIdentity)
+	if len(states) != 2 {
+		t.Fatal("platform subscriptions were replaced", states)
+	}
+	for _, state := range states {
+		if state.Metadata().Enabled || state.Metadata().Retired {
+			t.Fatal("platform disable did not preserve subscriptions", state)
+		}
+	}
+
 	m.mu.Unlock()
-	if err != nil || histErr != nil || current == nil || current.Config.Enabled || current.Binding.UserID != 202 || len(history) != 1 || !history[0].Retired {
+	if err != nil || histErr != nil || current == nil || current.Config.Enabled || current.Binding.UserID != 202 || len(history) != 0 {
 		t.Fatal(current, history, err, histErr)
 	}
 	_, snapshot := readManagedRoom(t, m, room)

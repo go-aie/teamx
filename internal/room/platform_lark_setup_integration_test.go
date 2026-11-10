@@ -71,21 +71,21 @@ func TestLarkSetupHTTPStagesOwnershipAndLoginHandoff(t *testing.T) {
 	if qr := managerHTTP(m, waiting.QRCodeURL, nil); qr.Code != 200 || qr.Header().Get("Cache-Control") != "no-store" || !strings.HasPrefix(qr.Body.String(), "\x89PNG") {
 		t.Fatal("application QR missing")
 	}
-	if r := managerHTTP(m, "/v1/platform/connections/lark/setup", startReq); r.Code != 409 {
+	if r := managerHTTP(m, "/v1/platforms/lark/setup", startReq); r.Code != 409 {
 		t.Fatal("duplicate setup admitted", r.Code)
 	}
 	other := req
 	other.Caller.ID = "different-operator"
-	if r := managerHTTP(m, "/v1/platform/connections/lark/status", other); r.Code == 200 {
+	if r := managerHTTP(m, "/v1/platforms/lark/status", other); r.Code == 200 {
 		t.Fatal("session exposed to a different operator")
 	}
 	other = req
 	other.ServiceEpoch = "another-service"
-	if r := managerHTTP(m, "/v1/platform/connections/lark/cancel", other); r.Code == 200 {
+	if r := managerHTTP(m, "/v1/platforms/lark/cancel", other); r.Code == 200 {
 		t.Fatal("different service epoch cancelled setup")
 	}
 	p := platform.CLIProfile{Version: 1, Executable: bin, Profile: "baseline", Brand: "feishu", CLIVersion: lark.CLIVersion}
-	if r := managerHTTP(m, "/v1/platform/connections/lark/login", larkAuthRequest{ServiceEpoch: m.epoch, Caller: humanCaller, Profile: &p}); r.Code != 409 {
+	if r := managerHTTP(m, "/v1/platforms/lark/login", larkAuthRequest{ServiceEpoch: m.epoch, Caller: humanCaller, Profile: &p}); r.Code != 409 {
 		t.Fatal("login overlapped configuration writer", r.Code)
 	}
 	setupRelease(t, dir, "app")
@@ -195,13 +195,13 @@ func TestLarkSetupRejectsUnverifiedBrandAndExpiresWithoutRevival(t *testing.T) {
 	m := testManager(t, t.TempDir(), nil)
 	bin, _ := roomSetupFixture(t, "block")
 	req := larkAuthRequest{ServiceEpoch: m.epoch, Caller: humanCaller, Executable: bin, Brand: "lark"}
-	r := managerHTTP(m, "/v1/platform/connections/lark/setup", req)
+	r := managerHTTP(m, "/v1/platforms/lark/setup", req)
 	if r.Code == 200 || !strings.Contains(r.Body.String(), "setup_brand_unverified") {
 		t.Fatal("unverified Lark page enabled")
 	}
 	for _, caller := range []Caller{{Kind: "agent", ID: "assistant"}, {Kind: "human", ID: "operator", MembershipID: "member"}} {
 		req.Caller, req.Brand = caller, "feishu"
-		if r := managerHTTP(m, "/v1/platform/connections/lark/setup", req); r.Code == 200 {
+		if r := managerHTTP(m, "/v1/platforms/lark/setup", req); r.Code == 200 {
 			t.Fatal("non-operator started configuration")
 		}
 	}

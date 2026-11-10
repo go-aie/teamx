@@ -95,7 +95,7 @@ func TestActionsAdapterInputAndMessageTargetAreGeneric(t *testing.T) {
 	}
 	svc := referenceTestService(h)
 	target := platform.TargetIdentity{IdentityScope: platform.IdentityScope{Provider: "structured-test", Instance: "native:test"}, Object: platform.NativeIdentity{Type: "WorkObject", ID: platform.ExternalID{Namespace: "object", Value: "42"}}, Message: platform.ExternalID{Namespace: "message", Value: "1"}}
-	access := platform.AccessContext{RoomIdentity: h.id.RoomIdentity, AgentID: h.id.AgentID, MembershipID: h.id.MembershipID, Account: platform.AccountIdentity{IdentityScope: target.IdentityScope, ID: platform.ExternalID{Namespace: "actor", Value: "writer"}}, ConnectionID: "connection", Generation: "generation", ConnectionVersion: 1, CredentialVersion: 1}
+	access := platform.AccessContext{RoomIdentity: h.id.RoomIdentity, AgentID: h.id.AgentID, MembershipID: h.id.MembershipID, Account: platform.AccountIdentity{IdentityScope: target.IdentityScope, ID: platform.ExternalID{Namespace: "actor", Value: "writer"}}, PlatformID: "connection", Generation: "generation", PlatformVersion: 1, CredentialVersion: 1}
 	resolution := platform.TargetResolution{Status: platform.ResolutionResolved, Target: &target, Account: access.Account, ObjectVerified: true, MessageVerified: true, Complete: true, CheckedAt: time.Now().UTC()}
 	ref, err := h.store.saveActionTarget(h.id, resolution, access)
 	if err != nil {

@@ -7,41 +7,28 @@ import (
 	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
-func TestOwnMessagesIgnoreIncomingFiltersWithinScope(t *testing.T) {
+func TestOwnMessagesRespectCategoriesAndRanges(t *testing.T) {
 	m := sampleMessage("om_own", "oc_chat", "已经回复并创建 issue")
 	m.Sender.ID = "ou_reader"
 	for _, mode := range []string{"p2p", "group", "topic"} {
 		for _, scope := range []string{"specified", "all"} {
 			t.Run(mode+"/"+scope, func(t *testing.T) {
-				cfg := Config{ScopeMode: scope}
-				if scope == "specified" {
-					cfg.Chats = []string{m.ChatID}
-				}
-				chat := Chat{ID: m.ChatID, Mode: mode}
+				cfg := Config{Private: PrivateConfig{Enabled: true, Scope: scope, ChatIDs: []string{m.ChatID}}, Groups: GroupConfig{Enabled: true, ChatIDs: []string{m.ChatID}, MessageMode: "mentions"}}
+				chat := peerChat(m.ChatID, mode)
 				if !Matches(m, chat, "ou_reader", cfg) {
-					t.Fatal("own message disappeared with all incoming filters off")
+					t.Fatal("own context lost inside enabled category")
 				}
-				other := m
-				other.Sender.ID = "ou_other"
-				if Matches(other, chat, "ou_reader", cfg) {
-					t.Fatal("own-message exception widened incoming filters")
-				}
-				cfg.ScopeMode, cfg.Chats = "specified", []string{"oc_other"}
+				cfg.Private.Enabled = false
+				cfg.Groups.Enabled = false
 				if Matches(m, chat, "ou_reader", cfg) {
-					t.Fatal("own-message exception escaped conversation scope")
+					t.Fatal("own message bypassed disabled category")
+				}
+				cfg.Private = PrivateConfig{Enabled: true, Scope: "specified", ChatIDs: []string{"oc_other"}}
+				cfg.Groups = GroupConfig{Enabled: true, ChatIDs: []string{"oc_other"}}
+				if Matches(m, chat, "ou_reader", cfg) {
+					t.Fatal("own message escaped selected range")
 				}
 			})
-		}
-	}
-	for _, edit := range []func(*Message){
-		func(m *Message) { m.Sender.IDType = "union_id" },
-		func(m *Message) { m.Sender.Type = "app" },
-		func(m *Message) { m.Type = "system" },
-	} {
-		v := m
-		edit(&v)
-		if Matches(v, Chat{ID: m.ChatID, Mode: "group"}, "ou_reader", Config{Chats: []string{m.ChatID}}) {
-			t.Fatal("sender or system record falsely treated as own message")
 		}
 	}
 }

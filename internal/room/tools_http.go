@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/connection"
 	"github.com/go-aie/teamx/internal/platform/notification"
+	"github.com/go-aie/teamx/internal/platform/registry"
 	"github.com/go-aie/teamx/internal/platform/tool"
 )
 
@@ -107,17 +107,17 @@ func (m *roomManager) serveTools(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if r.URL.Path == "/v1/tools/skill" {
-			for _, b := range f.Bindings {
-				if b.Tool == req.Tool && b.AgentID == req.Caller.ID && b.MembershipID == req.Caller.MembershipID {
-					d, err := m.toolDefinition(b.Tool)
-					if err == nil {
-						data, err := tool.ReadSkill(d)
-						if err == nil {
-							w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-							_, _ = w.Write(data)
-							return
-						}
-					}
+			if err := m.checkToolEntryLocked(req); err != nil {
+				writeAPIError(w, err)
+				return
+			}
+			_, d, err := m.resolveToolBindingLocked(f, req)
+			if err == nil {
+				data, err := entrySkill(d, req.Tool)
+				if err == nil {
+					w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+					_, _ = w.Write(data)
+					return
 				}
 			}
 			writeAPIError(w, ErrRequest)
@@ -128,7 +128,13 @@ func (m *roomManager) serveTools(w http.ResponseWriter, r *http.Request) {
 			writeAPIError(w, err)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(selections)
+		available := []toolSelection{}
+		for _, s := range selections {
+			if len(s.Capabilities) != 0 {
+				available = append(available, s)
+			}
+		}
+		_ = json.NewEncoder(w).Encode(available)
 		return
 	case "/v1/tools/bindings":
 		if r.Method != http.MethodGet {
@@ -149,7 +155,7 @@ func (m *roomManager) serveTools(w http.ResponseWriter, r *http.Request) {
 		}
 		// Historical evidence stays on disk, but must not appear enabled after
 		// connection rotation or a newly verified account in the same profile.
-		connections, err := m.connections.Load()
+		platforms, err := m.platforms.Load()
 		if err != nil {
 			writeAPIError(w, err)
 			return
@@ -157,11 +163,11 @@ func (m *roomManager) serveTools(w http.ResponseWriter, r *http.Request) {
 		for i, b := range f.Bindings {
 			visible := []platform.CapabilityEvidence{}
 			for _, evidence := range b.CapabilityEvidence {
-				for _, c := range connections.Connections {
-					if c.ID != b.ConnectionID || c.Generation != b.ConnectionGeneration {
+				for _, c := range platforms.Platforms {
+					if c.ID != b.PlatformID || c.Generation != b.PlatformGeneration {
 						continue
 					}
-					account, _, err := connection.ResolveAccessAccount(connections, c)
+					account, _, err := registry.ResolveAccessAccount(platforms, c)
 					if err == nil && evidence.Current(evidence.Kind, platform.AccessContext{Account: account.Identity, CredentialVersion: account.CredentialVersion}, evidence.Target) {
 						visible = append(visible, evidence)
 					}
@@ -169,10 +175,27 @@ func (m *roomManager) serveTools(w http.ResponseWriter, r *http.Request) {
 			}
 			f.Bindings[i].CapabilityEvidence = visible
 		}
+		// Settings inspect all members; the caller remains the human operator.
+		selections := []toolSelection{}
+		seenMembers := map[[2]string]bool{}
+		for _, b := range f.Bindings {
+			key := [2]string{b.AgentID, b.MembershipID}
+			if seenMembers[key] {
+				continue
+			}
+			seenMembers[key] = true
+			items, e := m.selectionsLocked(f, Caller{ID: b.AgentID, MembershipID: b.MembershipID})
+			if e != nil {
+				writeAPIError(w, e)
+				return
+			}
+			selections = append(selections, items...)
+		}
 		_ = json.NewEncoder(w).Encode(struct {
 			toolBindingsFile
-			Catalog []toolCatalogView `json:"catalog"`
-		}{f, m.toolCatalogViewLocked()})
+			Catalog    []toolCatalogView `json:"catalog"`
+			Selections []toolSelection   `json:"selections"`
+		}{f, m.toolCatalogViewLocked(), selections})
 		return
 	case "/v1/tools/bind":
 		if r.Method != http.MethodPost {
@@ -244,6 +267,18 @@ func (m *roomManager) serveToolRun(w http.ResponseWriter, r *http.Request) {
 	}
 	controller := http.NewResponseController(w)
 	_ = controller.EnableFullDuplex()
+	w.Header().Set("Connection", "close")
+	entryCtx, err := m.withToolEntry(r.Context(), req)
+	if err != nil {
+		writeAPIError(w, err)
+		return
+	}
+	if entry, ok := entryCtx.Value(toolEntryContextKey{}).(toolEntryContext); ok {
+		if dispatch := builtinToolDispatchers[entry.provider]; dispatch != nil {
+			dispatch(m, w, r.WithContext(entryCtx), req)
+			return
+		}
+	}
 	_ = controller.SetReadDeadline(time.Time{})
 	_ = controller.SetWriteDeadline(time.Time{})
 	m.mu.Lock()
@@ -266,19 +301,8 @@ func (m *roomManager) serveToolRun(w http.ResponseWriter, r *http.Request) {
 		// The registered process receives only access material, never refresh secrets.
 		process.Definition.Environment = cloneToolEnv(process.Definition.Environment)
 	}
-	ioDone := make(chan struct{})
-	ioStopped := make(chan struct{})
-	defer func() { close(ioDone); <-ioStopped }()
-	go func() {
-		defer close(ioStopped)
-		select {
-		case <-ctx.Done():
-			// A disconnected/slow reader must not prevent disabling or shutdown.
-			_ = controller.SetReadDeadline(time.Now())
-			_ = controller.SetWriteDeadline(time.Now().Add(2 * time.Second))
-		case <-ioDone:
-		}
-	}()
+	stopIO := watchToolIO(ctx, controller)
+	defer stopIO()
 
 	// A file descriptor avoids exec's input-copy goroutine waiting forever when
 	// the executable exits without consuming interactive stdin.
@@ -309,4 +333,20 @@ func (m *roomManager) serveToolRun(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(toolFrame{Stream: "exit", Code: code})
 	_ = controller.Flush()
 	stream.mu.Unlock()
+}
+
+// A disconnected or slow reader must not prevent binding revocation and
+// shutdown, whether output came from a process or a bounded built-in handler.
+func watchToolIO(ctx context.Context, controller *http.ResponseController) func() {
+	done, stopped := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(stopped)
+		select {
+		case <-ctx.Done():
+			_ = controller.SetReadDeadline(time.Now())
+			_ = controller.SetWriteDeadline(time.Now().Add(2 * time.Second))
+		case <-done:
+		}
+	}()
+	return func() { close(done); <-stopped }
 }

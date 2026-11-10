@@ -114,7 +114,7 @@ func TestAgentReadDetailsPreserveBusinessAndNativeEvidence(t *testing.T) {
 		t.Fatal(got, err)
 	}
 	encoded, _ := json.Marshal(detail)
-	for _, internal := range []string{`"credential_version"`, `"connection_id"`, `"generation"`, `"policy_token"`, `"access"`} {
+	for _, internal := range []string{`"credential_version"`, `"platform_id"`, `"generation"`, `"policy_token"`, `"access"`} {
 		if bytes.Contains(encoded, []byte(internal)) {
 			t.Fatal("internal admission data exposed", internal)
 		}

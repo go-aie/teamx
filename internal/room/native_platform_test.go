@@ -35,7 +35,7 @@ func (b *credentialDriftBody) Read(p []byte) (int, error) {
 func (b *credentialDriftBody) Close() error { return nil }
 
 func TestWorkspaceGitCLI(t *testing.T) {
-	b := gitlab.Binding{Version: 1, RoomID: "room", RoomInstance: "instance", URL: "https://gitlab.example.com", Project: "group/project", ConnectionID: strings.Repeat("a", 32), ConnectionGeneration: strings.Repeat("b", 32), ProjectID: 7}
+	b := gitlab.Binding{Version: 1, RoomID: "room", RoomInstance: "instance", URL: "https://gitlab.example.com", Project: "group/project", PlatformID: strings.Repeat("a", 32), PlatformGeneration: strings.Repeat("b", 32), ProjectID: 7}
 	path := filepath.Join(t.TempDir(), "binding.json")
 	data, _ := json.Marshal(b)
 	os.WriteFile(path, data, 0600)
@@ -65,7 +65,7 @@ func TestProductionGitAskpassWithoutPythonOrGlab(t *testing.T) {
 		t.Skip("set TEAMX_TEST_CLI_BIN to the built TeamX CLI")
 	}
 	dir := t.TempDir()
-	b := gitlab.Binding{Version: 1, RoomID: "room", RoomInstance: "instance", URL: "https://gitlab.example.com", Project: "group/project", ConnectionID: strings.Repeat("a", 32), ConnectionGeneration: strings.Repeat("b", 32), ProjectID: 7}
+	b := gitlab.Binding{Version: 1, RoomID: "room", RoomInstance: "instance", URL: "https://gitlab.example.com", Project: "group/project", PlatformID: strings.Repeat("a", 32), PlatformGeneration: strings.Repeat("b", 32), ProjectID: 7}
 	data, _ := json.Marshal(b)
 	path := filepath.Join(dir, "binding.json")
 	os.WriteFile(path, data, 0600)

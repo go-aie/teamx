@@ -50,7 +50,7 @@ func awaitScionAuth(t *testing.T, m *roomManager, id string) scionAuthView {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		r := managerHTTP(m, "/v1/platform/connections/scion/status", scionAuthBody(m, map[string]any{"session_id": id}))
+		r := managerHTTP(m, "/v1/platforms/scion/status", scionAuthBody(m, map[string]any{"session_id": id}))
 		var view scionAuthView
 		if r.Code != 200 || json.Unmarshal(r.Body.Bytes(), &view) != nil {
 			t.Fatal(r.Code, r.Body.String())
@@ -65,7 +65,7 @@ func awaitScionAuth(t *testing.T, m *roomManager, id string) scionAuthView {
 }
 func startScionAuth(t *testing.T, m *roomManager, exe, id, pat string) {
 	t.Helper()
-	r := managerHTTP(m, "/v1/platform/connections/scion/login", scionAuthBody(m, map[string]any{"session_id": id, "url": "https://scion.invalid", "executable": exe, "pat": pat}))
+	r := managerHTTP(m, "/v1/platforms/scion/login", scionAuthBody(m, map[string]any{"session_id": id, "url": "https://scion.invalid", "executable": exe, "pat": pat}))
 	if r.Code != 200 || strings.Contains(r.Body.String(), pat) {
 		t.Fatal("unsafe login start", r.Code, r.Body.String())
 	}

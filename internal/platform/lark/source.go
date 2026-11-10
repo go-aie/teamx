@@ -18,16 +18,16 @@ import (
 )
 
 type QueryScope struct {
-	Binding           Binding             `json:"binding"`
-	Profile           platform.CLIProfile `json:"profile"`
-	ConnectionVersion uint64              `json:"connection_version"`
+	Binding         Binding             `json:"binding"`
+	Profile         platform.CLIProfile `json:"profile"`
+	PlatformVersion uint64              `json:"platform_version"`
 }
 type Source struct {
 	Reader func(QueryScope) (MessageReader, error)
 }
 
 func (*Source) ID() notification.SourceID { return MessagesSourceID }
-func (*Source) Schema() int               { return 1 }
+func (*Source) Schema() int               { return 2 }
 func (*Source) Decode(b []byte, o platform.RoomIdentity) (notification.State, error) {
 	var s State
 	d := json.NewDecoder(bytes.NewReader(b))
@@ -115,7 +115,7 @@ func acceptPage(s State, id string, page MessagePage, limits notification.Limits
 		}
 		route := notification.Route{Target: n.Config.Target, Version: n.SubscriptionVersion}
 		oldRoute, wasAccepted := n.Accepted[MessageKey(n.Binding, m)]
-		accepted := p.Chat.Relation.Kind != "self" && (wasAccepted || Matches(m, p.Chat, n.Binding.Account.ID.Value, n.Config))
+		accepted := n.Config.Includes(p.Chat) && p.Chat.Relation.Kind != "self" && (wasAccepted || Matches(m, p.Chat, n.Binding.Account.ID.Value, n.Config))
 		if wasAccepted {
 			route = oldRoute
 		}
@@ -203,7 +203,7 @@ func (r *runner) Step(ctx context.Context) (time.Duration, bool) {
 	}
 	previousChat, previousPriority := s.NextChat, s.PriorityTurn
 	id, wait := s.selectChat(now, force)
-	if s.Config.AllChats() {
+	if s.Config.DiscoverPrivate() {
 		if s.Directory == nil {
 			s.Directory = &DirectoryProgress{}
 		}
@@ -272,6 +272,14 @@ func (r *runner) Step(ctx context.Context) (time.Duration, bool) {
 		r.slicePages++
 		if r.h.Commit(s) != nil {
 			return time.Second, false
+		}
+		return time.Millisecond, false
+	}
+	if !s.Config.Includes(p.Chat) {
+		// Frozen out-of-scope deliveries may request metadata verification, but
+		// must never start or resume message scans. Report wrong selected types.
+		if slices.Contains(s.Config.Private.ChatIDs, id) || slices.Contains(s.Config.Groups.ChatIDs, id) {
+			return r.chatFailed(s, id, failure("conversation_type_mismatch"), now)
 		}
 		return time.Millisecond, false
 	}
@@ -367,7 +375,7 @@ func (s *State) selectChat(now time.Time, force bool) (string, time.Duration) {
 	}
 	slices.Sort(ids)
 	wait := time.Duration(s.Config.IntervalSeconds) * time.Second
-	if s.Config.AllChats() && s.Directory != nil && s.Directory.Scan == nil && s.Directory.RetryAt.After(now) {
+	if s.Config.DiscoverPrivate() && s.Directory != nil && s.Directory.Scan == nil && s.Directory.RetryAt.After(now) {
 		wait = min(wait, s.Directory.RetryAt.Sub(now))
 	}
 	if len(ids) == 0 {
@@ -415,11 +423,11 @@ func (s *State) selectChat(now time.Time, force bool) (string, time.Duration) {
 	return ids[selected], 0
 }
 func validChatError(code string) bool {
-	return code == "" || code == "permission_denied" || code == "chat_unavailable" || code == "conversation_unverified"
+	return code == "" || code == "permission_denied" || code == "chat_unavailable" || code == "conversation_unverified" || code == "conversation_type_mismatch"
 }
 func (r *runner) chatFailed(s State, id string, err error, now time.Time) (time.Duration, bool) {
 	code := ErrorCode(err)
-	if code == "permission_denied" || code == "chat_unavailable" || code == "conversation_unverified" {
+	if code == "permission_denied" || code == "chat_unavailable" || code == "conversation_unverified" || code == "conversation_type_mismatch" {
 		p := s.Chats[id]
 		if p.Chat.ID == "" {
 			p.Chat.ID = id

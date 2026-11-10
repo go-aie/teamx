@@ -194,8 +194,8 @@ func TestWorkspaceApplySupplementBindingPreservesCheckout(t *testing.T) {
 	next := workspaceRequest(t, m, room, cloneWorkspaceOperation(op).Target)
 	next.ExpectedVersion = 2
 	c := platformTestSave(t, m, platformTestRequest(m))
-	next.Target.Binding = &workspaceBinding{Provider: "gitlab", URL: c.URL, Project: "group/project", ConnectionID: c.ID}
-	next.ConnectionVersion = c.Version
+	next.Target.Binding = &workspaceBinding{Provider: "gitlab", URL: c.URL, Project: "group/project", PlatformID: c.ID}
+	next.PlatformVersion = c.Version
 
 	applyWorkspace(t, m, next)
 	op = awaitWorkspace(t, m)
@@ -256,7 +256,7 @@ func TestWorkspaceRetryRequiresPreparationProcessSettlement(t *testing.T) {
 				return nil, errors.New("injected unsettled preparation")
 			}
 			target := baseOp.Target
-			target.Binding = &workspaceBinding{Provider: "gitlab", URL: "https://gitlab.invalid", Project: "group/project", ConnectionID: strings.Repeat("a", 32), ConnectionGeneration: strings.Repeat("b", 32), ProjectID: 7}
+			target.Binding = &workspaceBinding{Provider: "gitlab", URL: "https://gitlab.invalid", Project: "group/project", PlatformID: strings.Repeat("a", 32), PlatformGeneration: strings.Repeat("b", 32), ProjectID: 7}
 			req := workspaceRequest(t, m, room, target)
 			req.ExpectedVersion = 2
 			applyWorkspace(t, m, req)

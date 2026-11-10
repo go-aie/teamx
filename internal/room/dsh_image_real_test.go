@@ -387,14 +387,14 @@ func imageRealFixture(t *testing.T) (*roomManager, *service, MemberIdentity, not
 	}
 	m := testManager(t, t.TempDir(), managerTestProfiles(t))
 	room := managerCreate(t, m, "image-i4")
-	c := realOAuthConnection(t, m, source.Instance)
+	c := realOAuthPlatform(t, m, source.Instance)
 	// A new subscription has a real verified account and project, but no poller
 	// runs and no new external event is requested or written.
 	project := source.Project
 	if project == "" {
 		project, _, _ = strings.Cut(strings.TrimPrefix(source.URL, source.Instance+"/"), "/-/")
 	}
-	state, err := m.configureEventsSubscription(context.Background(), notification.Key{Owner: room.RoomIdentity, Source: gitlab.EventsSourceID}, 0, gitlab.EventsConfig{Enabled: true, ConnectionID: c.ID, Project: source.Instance + "/" + project})
+	state, err := m.configureEventsSubscription(context.Background(), notification.Key{Owner: room.RoomIdentity, Source: gitlab.EventsSourceID}, 0, gitlab.EventsConfig{Enabled: true, PlatformID: c.ID, Project: source.Instance + "/" + project})
 	if err != nil || state.Binding.ProjectID != source.ProjectID {
 		t.Fatal("real project verification failed")
 	}

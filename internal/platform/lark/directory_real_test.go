@@ -58,7 +58,7 @@ func TestRealLarkAllChatsContinuous(t *testing.T) {
 	now := time.Now().UTC()
 	binding := sampleBinding()
 	binding.Account = v.Account
-	state, err := Configure(platform.RoomIdentity{RoomID: "isolated", RoomInstance: "continuous"}, nil, binding, Config{Enabled: true, ConnectionID: binding.ConnectionID, ScopeMode: "all", Target: notification.Target{Mode: "inbox", AgentID: "acceptance", MembershipID: "isolated-member"}, Private: true, GroupMentions: true}, now)
+	state, err := Configure(platform.RoomIdentity{RoomID: "isolated", RoomInstance: "continuous"}, nil, binding, Config{Enabled: true, PlatformID: binding.PlatformID, Private: PrivateConfig{Enabled: true, Scope: "all"}, Target: notification.Target{Mode: "inbox", AgentID: "acceptance", MembershipID: "isolated-member"}}, now)
 	if err != nil {
 		t.Fatal("isolated source configuration failed")
 	}

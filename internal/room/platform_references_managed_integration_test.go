@@ -119,7 +119,7 @@ func TestReferenceInternalHTTPWithoutCLIAndConsumedRecovery(t *testing.T) {
 	}
 }
 
-func TestReferenceInternalRequiresSelectedMemberConnection(t *testing.T) {
+func TestReferenceInternalRequiresSelectedMemberPlatform(t *testing.T) {
 	parallelFixtureTest(t)
 	m, room, svc, c, members := cliToolFixture(t, "exit 99\n")
 	id, req, _ := managedReferenceInput(t, m, room, svc, members[0])
@@ -156,12 +156,13 @@ func TestReferenceInternalRevocationSettlesHTTPAndRejectsLateResults(t *testing.
 					svc.setTarget(id.MembershipID, target)
 					svc.dshProfiles = map[string]dshProfile{members[0].Runner.Profile: {}}
 				}
-				nextConnection := c
+				nextPlatform := c
 				if action == "switch-binding" {
+
 					q := platformTestRequest(m)
 					q.ID = strings.Repeat("b", 32)
 					q.Name = "Second account"
-					nextConnection = verifyTodoAccount(t, m, platformTestSave(t, m, q), 202)
+					nextPlatform = verifyTodoAccount(t, m, platformTestSave(t, m, q), 202)
 				}
 				entered, canceled, release := make(chan struct{}), make(chan struct{}), make(chan struct{})
 				var releaseOnce sync.Once
@@ -211,15 +212,21 @@ func TestReferenceInternalRevocationSettlesHTTPAndRejectsLateResults(t *testing.
 						q.Version = c.Version
 
 						q.ReferencedRooms = []RoomIdentity{room.RoomIdentity}
-						_, err = testReauthorizeConnection(m, q)
+						_, err = testReauthorizePlatform(m, q)
 					case "reauthorize":
-						_, err = testReauthorizeConnection(m, platformConnectionRequest{ID: c.ID, Version: c.Version, ReferencedRooms: []RoomIdentity{room.RoomIdentity}})
+						_, err = testReauthorizePlatform(m, managedPlatformRequest{ID: c.ID, Version: c.Version, ReferencedRooms: []RoomIdentity{room.RoomIdentity}})
 					case "disable", "switch-binding":
-						change := toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, Revision: 1, Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "gitlab"}}
+						change := toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, Revision: 1, Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "gitlab", PlatformID: c.ID}}
 						if action == "switch-binding" {
+							revoked := managerHTTP(m, "/v1/tools/bind", change)
+							if revoked.Code != 200 {
+								err = errors.New(revoked.Body.String())
+								break
+							}
+							change.Revision++
 							change.Enabled = true
-							change.Binding.ConnectionID = nextConnection.ID
-							change.ConnectionVersion = nextConnection.Version
+							change.Binding.PlatformID = nextPlatform.ID
+							change.PlatformVersion = nextPlatform.Version
 						}
 						response := managerHTTP(m, "/v1/tools/bind", change)
 						if response.Code != 200 {

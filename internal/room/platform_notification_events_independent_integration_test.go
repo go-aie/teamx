@@ -133,7 +133,7 @@ func TestIndependentEventsReplacementKeepsOldInboxAndRejectsReplay(t *testing.T)
 	}
 }
 
-func TestIndependentEventsVerificationGuardsAndConnectionLifecycle(t *testing.T) {
+func TestIndependentEventsVerificationGuardsAndPlatformLifecycle(t *testing.T) {
 	parallelFixtureTest(t)
 	h, c := newIndependentEventHarness(t)
 	s := h.state()
@@ -152,7 +152,7 @@ func TestIndependentEventsVerificationGuardsAndConnectionLifecycle(t *testing.T)
 	if len(refs) != 1 || refs[0].RoomIdentity != h.room.RoomIdentity {
 		t.Fatal("missing independent connection reference")
 	}
-	if _, err := h.m.updatePlatformConnection(platformConnectionRequest{ID: c.ID, Version: c.Version}, true); !errors.Is(err, ErrConflict) {
+	if _, err := h.m.updatePlatform(managedPlatformRequest{ID: c.ID, Version: c.Version}, true); !errors.Is(err, ErrConflict) {
 		t.Fatal("deleted referenced connection", err)
 	}
 	req := platformTestRequest(h.m)
@@ -226,12 +226,12 @@ func TestIndependentEventsPublicConfigureAndStaleVerification(t *testing.T) {
 	other := managerCreate(t, h.m, "api-only")
 	req := map[string]any{"service_epoch": h.m.epoch, "caller": humanCaller, "room_id": other.RoomID, "room_instance": other.RoomInstance,
 		"version": 0,
-		"config":  gitlab.NotificationConfig{ConnectionID: c.ID, Events: gitlab.EventSettings{Enabled: true, Project: c.URL + "/remote/project"}}}
+		"config":  gitlab.NotificationConfig{Enabled: true, PlatformID: c.ID, Events: gitlab.EventSettings{Enabled: true, Project: c.URL + "/remote/project"}}}
 	response := managerHTTP(h.m, "/v1/platform/gitlab/notifications/configure", req)
 	if response.Code != 200 || !strings.Contains(response.Body.String(), `"project":"remote/project"`) || !strings.Contains(response.Body.String(), `"recipient_id":101`) || strings.Contains(response.Body.String(), "test-platform-secret") {
 		t.Fatal("independent HTTP configuration failed", response.Code)
 	}
-	req["config"] = gitlab.NotificationConfig{ConnectionID: c.ID, Events: gitlab.EventSettings{Enabled: true, Project: "remote/project"}}
+	req["config"] = gitlab.NotificationConfig{Enabled: true, PlatformID: c.ID, Events: gitlab.EventSettings{Enabled: true, Project: "remote/project"}}
 	if response := managerHTTP(h.m, "/v1/platform/gitlab/notifications/configure", req); response.Code != 409 {
 		t.Fatal("duplicate HTTP creation did not conflict", response.Code)
 	}
@@ -305,7 +305,7 @@ func TestIndependentEventsInjectsOnlyVerifiedCredentialSnapshot(t *testing.T) {
 	called := false
 	h.m.platformHTTP = workspaceHTTPFunc(func(*http.Request) (*http.Response, error) { called = true; return nil, nil })
 	read := h.m.eventsRead(binding)
-	changeTestConnectionRevision(t, h.m, c.ID)
+	changeTestPlatformRevision(t, h.m, c.ID)
 
 	if _, err := read(context.Background(), "/projects/7/events", nil, nil, 1024); !errors.Is(err, ErrConflict) || called {
 		t.Fatal("unverified environment credential reached HTTP transport", err)

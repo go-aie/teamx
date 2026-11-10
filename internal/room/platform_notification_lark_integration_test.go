@@ -25,7 +25,7 @@ func TestLarkVerificationResumesCredentialPausedSubscription(t *testing.T) {
 	h.start()
 	before := h.state()
 	h.m.mu.Lock()
-	err := h.m.notifications.InvalidateConnectionLocked(h.c.ID)
+	err := h.m.notifications.InvalidatePlatformLocked(h.c.ID)
 	h.m.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)
@@ -34,7 +34,7 @@ func TestLarkVerificationResumesCredentialPausedSubscription(t *testing.T) {
 	if paused.Status != "credentials_invalid" {
 		t.Fatal("fixture did not pause subscription")
 	}
-	c, err := h.m.verifyPlatformConnection(context.Background(), platformConnectionRequest{ID: h.c.ID, Version: h.c.Version})
+	c, err := h.m.verifyPlatform(context.Background(), managedPlatformRequest{ID: h.c.ID, Version: h.c.Version})
 	if err != nil || c.Validation.Status != "valid" {
 		t.Fatal("verification failed", err)
 	}
@@ -46,7 +46,7 @@ func TestLarkVerificationResumesCredentialPausedSubscription(t *testing.T) {
 		t.Fatal("verification reset progress, deduplication or pending delivery")
 	}
 	// Re-verification of a running source is a no-op for subscription state.
-	if _, err = h.m.verifyPlatformConnection(context.Background(), platformConnectionRequest{ID: c.ID, Version: c.Version}); err != nil {
+	if _, err = h.m.verifyPlatform(context.Background(), managedPlatformRequest{ID: c.ID, Version: c.Version}); err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(h.state(), resumed) {
@@ -102,7 +102,7 @@ func TestLarkVerificationPreservesOtherPauses(t *testing.T) {
 			case "different_generation":
 				s.Binding.Generation = strings.Repeat("f", 32)
 			case "other_connection":
-				verify = platformTestSave(t, h.m, platformConnectionRequest{ServiceEpoch: h.m.epoch, Caller: humanCaller, ID: strings.Repeat("d", 32), Name: "other", Provider: "lark", URL: h.c.URL, CLIProfile: h.c.CLIProfile})
+				verify = platformTestSave(t, h.m, managedPlatformRequest{ServiceEpoch: h.m.epoch, Caller: humanCaller, ID: strings.Repeat("d", 32), Name: "other", Provider: "lark", URL: h.c.URL, CLIProfile: h.c.CLIProfile})
 			}
 			h.m.mu.Lock()
 			err := h.m.notifications.SaveLocked(s)
@@ -110,7 +110,7 @@ func TestLarkVerificationPreservesOtherPauses(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := h.m.verifyPlatformConnection(context.Background(), platformConnectionRequest{ID: verify.ID, Version: verify.Version}); err != nil {
+			if _, err := h.m.verifyPlatform(context.Background(), managedPlatformRequest{ID: verify.ID, Version: verify.Version}); err != nil {
 				t.Fatal(err)
 			}
 			h.m.mu.Lock()
@@ -129,7 +129,7 @@ func TestLarkVerificationRestartsPausedWorker(t *testing.T) {
 	h.start()
 	s := h.state()
 	h.m.mu.Lock()
-	err := h.m.notifications.InvalidateConnectionLocked(h.c.ID)
+	err := h.m.notifications.InvalidatePlatformLocked(h.c.ID)
 	h.m.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)
@@ -145,7 +145,7 @@ func TestLarkVerificationRestartsPausedWorker(t *testing.T) {
 	if oldWorker == nil {
 		t.Fatal("paused query lost its worker")
 	}
-	if _, err := h.m.verifyPlatformConnection(context.Background(), platformConnectionRequest{ID: h.c.ID, Version: h.c.Version}); err != nil {
+	if _, err := h.m.verifyPlatform(context.Background(), managedPlatformRequest{ID: h.c.ID, Version: h.c.Version}); err != nil {
 		t.Fatal(err)
 	}
 	awaitEventSignal(t, oldWorker, "verification did not settle the paused worker")
@@ -339,20 +339,20 @@ func TestLarkNotificationsAckCrashReusesDeliveryID(t *testing.T) {
 	}
 }
 
-func TestLarkConnectionReplacementRetainsOldSource(t *testing.T) {
+func TestLarkAdditionalPlatformRetainsOldSource(t *testing.T) {
 	parallelFixtureTest(t)
 	h := newLarkHarness(t)
 	h.start()
 	old := h.state()
-	c := platformTestSave(t, h.m, platformConnectionRequest{ServiceEpoch: h.m.epoch, Caller: humanCaller, ID: strings.Repeat("d", 32), Name: "另一个显式连接", Provider: "lark", URL: h.c.URL, CLIProfile: h.c.CLIProfile})
-	c, e := h.m.verifyPlatformConnection(context.Background(), platformConnectionRequest{ID: c.ID, Version: c.Version})
+	c := platformTestSave(t, h.m, managedPlatformRequest{ServiceEpoch: h.m.epoch, Caller: humanCaller, ID: strings.Repeat("d", 32), Name: "另一个显式连接", Provider: "lark", URL: h.c.URL, CLIProfile: h.c.CLIProfile})
+	c, e := h.m.verifyPlatform(context.Background(), managedPlatformRequest{ID: c.ID, Version: c.Version})
 	if e != nil || c.Validation.Status != "valid" {
 		t.Fatal(e)
 	}
 	cfg := old.Config
-	cfg.ConnectionID = c.ID
+	cfg.PlatformID = c.ID
 	bad := cfg
-	bad.Chats = []string{"invalid"}
+	bad.Private.ChatIDs = []string{"invalid"}
 	if _, e = h.m.configureLarkSubscription(context.Background(), old.Metadata().Key, old.SubscriptionVersion, bad); !errors.Is(e, ErrRequest) {
 		t.Fatal(e)
 	}
@@ -360,20 +360,21 @@ func TestLarkConnectionReplacementRetainsOldSource(t *testing.T) {
 		t.Fatal("invalid change retired source")
 	}
 	h.clock.add(time.Minute)
-	next := h.configure(cfg)
-	if next.SubscriptionID == old.SubscriptionID || len(next.Inbox) != 0 || !next.Baseline.After(old.Baseline) {
-		t.Fatal("replacement adopted old account progress")
+	if _, e := h.m.configureLarkSubscription(t.Context(), old.Metadata().Key, old.SubscriptionVersion, cfg); !errors.Is(e, ErrConflict) {
+		t.Fatal("moved existing subscription", e)
+	}
+	next, e := h.m.configureLarkSubscription(t.Context(), notification.Key{Owner: h.room.RoomIdentity, Source: lark.MessagesSourceID}, 0, cfg)
+	if e != nil || next.SubscriptionID == old.SubscriptionID || len(next.Inbox) != 0 || !next.Baseline.After(old.Baseline) {
+		t.Fatal("additional platform adopted old progress", e)
 	}
 	h.m.mu.Lock()
 	stored, ok := h.m.notifications.StateLocked(old.Metadata().Key)
 	history, e := h.m.retiredNotificationViewsLocked(h.room.RoomIdentity)
 	h.m.mu.Unlock()
-	if !ok || !stored.(lark.State).Retired || stored.Metadata().Enabled || len(stored.PendingItems()) != 1 || e != nil || len(history) != 1 || history[0].Pending != 1 {
-		t.Fatal("old backlog disappeared", e)
+	if !ok || !reflect.DeepEqual(stored.(lark.State), old) || e != nil || len(history) != 0 {
+		t.Fatal("old platform changed", e)
 	}
-	if e = h.m.syncLarkSubscription(context.Background(), old.Metadata().Key, stored.Metadata().Version); !errors.Is(e, ErrRequest) {
-		t.Fatal("retired source resumed", e)
-	}
+
 }
 
 func TestLarkBackgroundPollingDeliversWithoutEnablingMember(t *testing.T) {
@@ -418,7 +419,7 @@ func TestLarkAllChatDiscoveryPersistsAndProjectsSafeDiagnostics(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(h.dir, "directory.json"), b, 0600); err != nil {
 		t.Fatal(err)
 	}
-	cfg := lark.Config{Enabled: true, ConnectionID: h.c.ID, ScopeMode: "all", Target: notification.Target{Mode: "inbox", AgentID: h.members[0].AgentID, MembershipID: h.members[0].MembershipID}, Private: true, GroupMentions: true}
+	cfg := lark.Config{Enabled: true, PlatformID: h.c.ID, Private: lark.PrivateConfig{Enabled: true, Scope: "all"}, Target: notification.Target{Mode: "inbox", AgentID: h.members[0].AgentID, MembershipID: h.members[0].MembershipID}}
 	s := h.configure(cfg)
 	h.clock.add(3 * time.Second)
 	h.m.mu.Lock()

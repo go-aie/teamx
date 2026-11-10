@@ -49,7 +49,7 @@ func ConfigureTodos(owner platform.RoomIdentity, current *TodosState, b TodosBin
 		}
 	}
 	if current == nil || cfg.Enabled {
-		if !b.Valid() || cfg.ConnectionID != b.ConnectionID {
+		if !b.Valid() || cfg.PlatformID != b.PlatformID {
 			return next, notification.ErrRequest
 		}
 		if current != nil && !next.Binding.SameAccount(b) {
@@ -74,7 +74,7 @@ func ConfigureTodos(owner platform.RoomIdentity, current *TodosState, b TodosBin
 		next = TodosState{RoomIdentity: owner, SubscriptionID: hex.EncodeToString(id[:]), Binding: b, Baseline: baseline, Observed: map[string]TodosObservation{}, Inbox: map[string]TodosInboxEntry{}}
 	}
 	if !cfg.Enabled {
-		cfg.ConnectionID = next.Binding.ConnectionID
+		cfg.PlatformID = next.Binding.PlatformID
 	} else {
 		next.Binding = b
 	}

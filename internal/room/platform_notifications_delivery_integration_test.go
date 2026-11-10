@@ -81,7 +81,7 @@ func TestGitLabDeliveryChecksScopeAndStableActivation(t *testing.T) {
 			case "binding":
 				// Invalidate the subscription itself, independent of Workspace.
 				h.m.mu.Lock()
-				s.Binding.ConnectionGeneration = strings.Repeat("e", 32)
+				s.Binding.PlatformGeneration = strings.Repeat("e", 32)
 				err := h.m.notifications.SaveLocked(s)
 				h.m.mu.Unlock()
 				if err != nil {
@@ -89,9 +89,9 @@ func TestGitLabDeliveryChecksScopeAndStableActivation(t *testing.T) {
 				}
 			case "credential":
 				h.m.mu.Lock()
-				file, loadErr := h.m.connections.Load()
+				file, loadErr := h.m.platforms.Load()
 				if loadErr == nil {
-					_, _, loadErr = h.m.connections.LogoutOAuth(file.Connections[0].CredentialID)
+					_, _, loadErr = h.m.platforms.LogoutOAuth(file.Platforms[0].CredentialID)
 				}
 				h.m.mu.Unlock()
 				if loadErr != nil {

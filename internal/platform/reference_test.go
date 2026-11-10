@@ -15,8 +15,8 @@ func fixtureTarget() TargetIdentity {
 func fixtureAccess() AccessContext {
 	t := fixtureTarget()
 	return AccessContext{RoomIdentity: RoomIdentity{"room", "instance"}, AgentID: "agent", MembershipID: "membership",
-		Account:      AccountIdentity{t.IdentityScope, ExternalID{"account", "user-alpha"}},
-		ConnectionID: "connection", Generation: "generation", ConnectionVersion: 1, CredentialVersion: 1}
+		Account:    AccountIdentity{t.IdentityScope, ExternalID{"account", "user-alpha"}},
+		PlatformID: "connection", Generation: "generation", PlatformVersion: 1, CredentialVersion: 1}
 }
 
 func TestTargetIdentityIsolation(t *testing.T) {
@@ -95,10 +95,10 @@ func TestReadCursorBindsTargetScopeAndAccess(t *testing.T) {
 		func(a *AccessContext) { a.AgentID = "other-agent" },
 		func(a *AccessContext) { a.Account.ID.Value = "other-account" },
 		func(a *AccessContext) { a.Receiver = a.Account },
-		func(a *AccessContext) { a.ConnectionID = "other" },
+		func(a *AccessContext) { a.PlatformID = "other" },
 		func(a *AccessContext) { a.Generation = "new-generation" },
 		func(a *AccessContext) { a.CredentialVersion++ },
-		func(a *AccessContext) { a.ConnectionVersion++ },
+		func(a *AccessContext) { a.PlatformVersion++ },
 	} {
 		a := access
 		change(&a)

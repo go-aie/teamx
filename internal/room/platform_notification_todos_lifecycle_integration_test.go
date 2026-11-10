@@ -90,17 +90,17 @@ func TestTodosCredentialRotationWaitsBeforeSavingReplacement(t *testing.T) {
 
 	req.ReferencedRooms = []RoomIdentity{h.room.RoomIdentity}
 	done := make(chan error, 1)
-	go func() { _, err := testReauthorizeConnection(h.m, req); done <- err }()
+	go func() { _, err := testReauthorizePlatform(h.m, req); done <- err }()
 	awaitEventSignal(t, b.canceled, "rotation did not cancel personal query")
 	// The public read may proceed while settlement is pending, but credentials
 	// have not been replaced and the old subscription is durably paused.
 	h.m.mu.Lock()
-	file, err := h.m.connections.Load()
+	file, err := h.m.platforms.Load()
 	h.m.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if file.Connections[0].CredentialVersion != h.connection.CredentialVersion || h.state().Status != "credentials_invalid" {
+	if file.Platforms[0].CredentialVersion != h.connection.CredentialVersion || h.state().Status != "credentials_invalid" {
 		t.Fatal("credential replaced before settlement")
 	}
 	b.finish()

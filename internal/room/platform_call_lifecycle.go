@@ -6,18 +6,18 @@ import (
 	"path/filepath"
 
 	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/connection"
 	"github.com/go-aie/teamx/internal/platform/notification"
+	"github.com/go-aie/teamx/internal/platform/registry"
 	"github.com/go-aie/teamx/internal/platform/tool"
 )
 
 type platformCall struct {
 	agentID, membershipID string
 	owner                 RoomIdentity
-	tool, connectionID    string
+	tool, platformID      string
 	cancel                context.CancelFunc
 	done                  chan struct{}
-	account               connection.Account
+	account               registry.Account
 	secret                platform.Secret
 	subscription          notification.Key // Set only for saved-notification attachments.
 }
@@ -87,12 +87,17 @@ func (m *roomManager) waitPlatformCalls(ctx context.Context, owner *RoomIdentity
 // Requires manager.mu; callers perform requests and join outside the gate.
 type platformAdmission struct {
 	definition tool.Definition
-	account    connection.Account
+	account    registry.Account
 	secret     platform.Secret
 }
 
 func (m *roomManager) preparePlatformCallLocked(ctx context.Context, req toolsRequest, help bool) (platformAdmission, *platformCall, context.Context, error) {
 	var a platformAdmission
+	var err error
+	req, err = constrainToolRequest(ctx, req)
+	if err != nil {
+		return a, nil, nil, err
+	}
 	if err := ctx.Err(); err != nil {
 		return a, nil, nil, err
 	}
@@ -103,29 +108,20 @@ func (m *roomManager) preparePlatformCallLocked(ctx context.Context, req toolsRe
 	if err != nil {
 		return a, nil, nil, err
 	}
-	var binding *tool.Binding
-	for i, b := range f.Bindings {
-		if b.Tool == req.Tool && b.AgentID == req.Caller.ID && b.MembershipID == req.Caller.MembershipID {
-			binding = &f.Bindings[i]
-			break
-		}
-	}
-	if binding == nil {
-		return a, nil, nil, ErrRequest
-	}
-	a.definition, err = m.toolDefinition(req.Tool)
+	binding, definition, err := m.resolveToolBindingLocked(f, req)
+	a.definition = definition
 	if err != nil {
 		return a, nil, nil, err
 	}
 	if a.definition.Provider != "" && !help {
-		file, err := m.connections.Load()
+		file, err := m.platforms.Load()
 		if err != nil {
 			return a, nil, nil, err
 		}
 		found := false
-		for _, c := range file.Connections {
-			if c.ID == binding.ConnectionID && c.Generation == binding.ConnectionGeneration && c.Provider == a.definition.Provider {
-				a.account, a.secret, err = connection.ResolveAccessAccount(file, c)
+		for _, c := range file.Platforms {
+			if c.ID == binding.PlatformID && c.Generation == binding.PlatformGeneration && c.Provider == a.definition.Provider {
+				a.account, a.secret, err = registry.ResolveAccessAccount(file, c)
 				if err != nil {
 					if errors.Is(err, platform.ErrCredential) {
 						return a, nil, nil, platform.ErrCredential
@@ -141,7 +137,7 @@ func (m *roomManager) preparePlatformCallLocked(ctx context.Context, req toolsRe
 		}
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	call := &platformCall{owner: req.RoomIdentity, tool: req.Tool, connectionID: binding.ConnectionID, account: a.account, secret: a.secret, agentID: req.Caller.ID, membershipID: req.Caller.MembershipID, cancel: cancel, done: make(chan struct{})}
+	call := &platformCall{owner: req.RoomIdentity, tool: a.definition.Name, platformID: binding.PlatformID, account: a.account, secret: a.secret, agentID: req.Caller.ID, membershipID: req.Caller.MembershipID, cancel: cancel, done: make(chan struct{})}
 	if m.platformCalls == nil {
 		m.platformCalls = map[*platformCall]bool{}
 	}

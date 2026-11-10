@@ -107,6 +107,11 @@ func acceptDirectory(s State, page ChatPage, now time.Time) (State, error) {
 		return s, err
 	}
 	for _, chat := range page.Chats {
+		// Directory discovery only widens the person-private category. Groups
+		// are addressed by explicit IDs, never scanned from this directory.
+		if chat.Mode != "p2p" {
+			continue
+		}
 		scan.Seen[chat.ID] = true
 		p, exists := n.Chats[chat.ID]
 		if !exists {
@@ -131,7 +136,9 @@ func acceptDirectory(s State, page ChatPage, now time.Time) (State, error) {
 		scan.Token = page.PageToken
 	} else {
 		for id, p := range n.Chats {
-			p.Unlisted = !scan.Seen[id]
+			if p.Chat.Mode == "p2p" {
+				p.Unlisted = !scan.Seen[id]
+			}
 			n.Chats[id] = p
 		}
 		n.Directory.Scan = nil
@@ -143,22 +150,28 @@ func acceptDirectory(s State, page ChatPage, now time.Time) (State, error) {
 	return n, nil
 }
 func (s State) ChatIDs() []string {
-	if !s.Config.AllChats() {
-		return append([]string(nil), s.Config.Chats...)
-	}
-	ids := make([]string, 0, len(s.Chats))
-	for id, p := range s.Chats {
-		if !p.Unlisted {
-			ids = append(ids, id)
+	ids := []string{}
+	if s.Config.Private.Enabled {
+		if s.Config.DiscoverPrivate() {
+			for id, p := range s.Chats {
+				if p.Chat.Mode == "p2p" && !p.Unlisted {
+					ids = append(ids, id)
+				}
+			}
+		} else {
+			ids = append(ids, s.Config.Private.ChatIDs...)
 		}
 	}
+	if s.Config.Groups.Enabled {
+		ids = append(ids, s.Config.Groups.ChatIDs...)
+	}
 	slices.Sort(ids)
-	return ids
+	return slices.Compact(ids)
 }
 func (s *State) updateFull(now time.Time) {
 	s.LastFull = now
 	ids := s.ChatIDs()
-	if len(ids) == 0 || s.Config.AllChats() && (s.Directory == nil || s.Directory.Scan != nil || s.Directory.LastFull.IsZero()) {
+	if len(ids) == 0 || s.Config.DiscoverPrivate() && (s.Directory == nil || s.Directory.Scan != nil || s.Directory.LastFull.IsZero()) {
 		s.LastFull = time.Time{}
 		return
 	}

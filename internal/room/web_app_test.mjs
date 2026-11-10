@@ -1,6 +1,6 @@
 const eventView = value => ({ provider: "gitlab", channel: "events", subscription_id: value.subscription_version ? "a".repeat(32) : "", ...structuredClone(value) });
 const todoView = value => ({ provider: "gitlab", channel: "todos", subscription_id: "", subscription_version: 0, available: true, status: "disabled", pending: 0, metrics: {},
-  config: { enabled: false, connection_id: "", interval_seconds: 30, filter: {} }, ...structuredClone(value) });
+  config: { enabled: false, platform_id: "", interval_seconds: 30, filter: {} }, ...structuredClone(value) });
 const notificationList = value => { const subscriptions = [eventView(value), todoView()]; return { subscriptions, gitlab: fixtureGitLabView(subscriptions) }; };
 function fixtureSourceConfig(config, channel) {
   if (channel === "events") return { enabled: !!config.enabled, project: config.project || "", etag_verified: !!config.etag_verified,
@@ -12,27 +12,27 @@ function fixtureGitLabView(sources, record) {
   const events = sources.find(s => s.channel === "events") || eventView({ available:true, config:{}, metrics:{} });
   const todos = sources.find(s => s.channel === "todos") || todoView();
   let common = events.config.enabled ? events.config : todos.config;
-  let connection = common.connection_id || events.config.connection_id || todos.config.connection_id || "";
-  if (events.config.enabled && todos.config.enabled && events.config.connection_id !== todos.config.connection_id) connection = "";
-  const config = record?.config || { connection_id:connection, target:common.target || {}, interval_seconds:common.interval_seconds || 30, events:fixtureSourceConfig(events.config,"events"), todos:fixtureSourceConfig(todos.config,"todos") };
+  let connection = common.platform_id || events.config.platform_id || todos.config.platform_id || "";
+  if (events.config.enabled && todos.config.enabled && events.config.platform_id !== todos.config.platform_id) connection = "";
+  const config = record?.config || { platform_id:connection, target:common.target || {}, interval_seconds:common.interval_seconds || 30, events:fixtureSourceConfig(events.config,"events"), todos:fixtureSourceConfig(todos.config,"todos") };
   return { version:record?.version || 0, config:structuredClone(config), events, todos, pending:structuredClone(record?.pending || {}), errors:structuredClone(record?.errors || {}), applying:!!record?.applying, backfill_locked:!!record?.backfill_locked || !!events.subscription_id || !!todos.subscription_id };
 }
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import * as client from "./web/client.mjs";
-import { launch, settle } from "./web_app_harness.mjs";
+import { launch, settle, withOnboarding } from "./web_app_harness.mjs";
 
 test("Scion connection discovers a managed account and saves its profile without manual IDs", async () => {
   const api = server(); let item;
   api.hook = (path, data) => {
-    if (path === "/v1/platform/connections/scion/discover") return {executable:"/service/teamx-scion", profiles:[{profile:"c".repeat(32),username:"alice"},{profile:"d".repeat(32),username:"bob"}]};
-    if (path.startsWith("/v1/platform/connections?")) return {connections:item ? [structuredClone(item)] : []};
-    if (path === "/v1/platform/connections/save") {
+    if (path === "/v1/platforms/scion/discover") return {executable:"/service/teamx-scion", profiles:[{profile:"c".repeat(32),username:"alice"},{profile:"d".repeat(32),username:"bob"}]};
+    if (path.startsWith("/v1/platforms?")) return {platforms:item ? [structuredClone(item)] : []};
+    if (path === "/v1/platforms/save") {
       item = {...structuredClone(data), version:(item?.version || 0)+1, credential_kind:"cli_profile", validation:{status:"unverified"}};
       return structuredClone(item);
     }
-    if (path === "/v1/platform/connections/verify") {
+    if (path === "/v1/platforms/verify") {
       assert.equal(data.id, item.id); assert.equal(data.version, item.version);
       item.version++; item.validation={status:"valid",username:"alice",account:{provider:"scion",instance:item.url,id:{namespace:"scion:subject",value:"alice"}}};
       return structuredClone(item);
@@ -53,12 +53,12 @@ test("Scion connection discovers a managed account and saves its profile without
   assert.equal(item.cli_profile.profile,"c".repeat(32));assert.equal(item.validation.username,"alice");
   assert.equal(ui.el("connection-validation").hidden,false);
   assert.equal(ui.el("connection-scion-profile").value,"c".repeat(32));
-  assert.match(ui.el("connections-feedback").textContent,/账号验证成功/);
-  assert.equal(api.calls.some(c => /connections\/(lark|gitlab)\//.test(c.path)),false);
-  await ui.el("connections-list").children[0].emit("click");
+  assert.match(ui.el("platforms-feedback").textContent,/账号验证成功/);
+  assert.equal(api.calls.some(c => /platforms\/(lark|gitlab)\//.test(c.path)),false);
+  await ui.el("platforms-list").children[0].emit("click");
   ui.el("connection-scion-profile").value="d".repeat(32);
   await ui.el("connection-verify").emit("click");
-  assert.match(ui.el("connections-feedback").textContent,/先保存/);
+  assert.match(ui.el("platforms-feedback").textContent,/先保存/);
 });
 
 async function expandDisclosure(element) {
@@ -82,7 +82,7 @@ function server(rooms = []) {
     async request(path, data) {
       calls.push({ path, data: structuredClone(data) });
       if (api.hook) { const intercepted = api.hook(path, data); if (intercepted !== undefined) return intercepted; }
-      if (path.startsWith("/v1/platform/connections?")) return { connections: [{ id: "a".repeat(32), name: "GitLab", provider: "gitlab", url: "https://gitlab.invalid", validation: { status: "valid", user_id: 101, username: "alice" } }] };
+      if (path.startsWith("/v1/platforms?")) return { platforms: [{ id: "a".repeat(32), name: "GitLab", provider: "gitlab", url: "https://gitlab.invalid", validation: { status: "valid", user_id: 101, username: "alice" } }] };
       if (path === "/v1/ui") return { managed: true };
       if (path === "/v1/rooms") {
         return structuredClone(catalog);
@@ -143,7 +143,7 @@ function server(rooms = []) {
       throw new Error(`Unexpected request ${path}`);
     },
   };
-  return api;
+  return withOnboarding(api);
 }
 
 test("rename updates title, navigation and reload while preserving identity, history and draft", async () => {
@@ -301,7 +301,7 @@ test("settings and room creation dismiss only when the pointer starts and clicks
     assert.equal(dialog.open, true);
     await gesture(outside, outside); assert.equal(dialog.open, false);
   }
-  assert.equal(api.calls.some(call => /\/v1\/rooms\/(create|delete)|connections\/(save|delete)/.test(call.path)), false);
+  assert.equal(api.calls.some(call => /\/v1\/rooms\/(create|delete)|platforms\/(save|delete)/.test(call.path)), false);
 });
 
 test("empty catalog -> create -> A/B/A retains history, draft and quote; opening is never sent", async () => {
@@ -1030,10 +1030,10 @@ function workspaceServer(rooms = [makeRoom("A"), makeRoom("B")]) {
   const workspaces = new Map(rooms.map(room => [room.room_id, { ...identity(room), workspace: { root: "workspaces" }, workspace_version: 1,
     credential_status: "missing", members: [{ agent_id: "developer", membership_id: `member-${room.room_id}`, workspace: `workspaces/member-${room.room_id}` }] }]));
   api.workspaces = workspaces;
-  api.connections = [{ id: "a".repeat(32), name: "Company GitLab", provider: "gitlab", url: "https://gitlab.invalid", version: 1, credential_configured: true, validation: { status: "unverified" } }];
+  api.platforms = [{ id: "a".repeat(32), name: "Company GitLab", provider: "gitlab", url: "https://gitlab.invalid", version: 1, credential_configured: true, validation: { status: "unverified" } }];
   api.workspaceHook = null;
   api.request = async (path, data) => {
-    if (path.startsWith("/v1/platform/connections?")) return { connections: structuredClone(api.connections) };
+    if (path.startsWith("/v1/platforms?")) return { platforms: structuredClone(api.platforms) };
     if (!path.startsWith("/v1/workspace")) return base(path, data);
     api.calls.push({ path, data: structuredClone(data) });
     if (api.workspaceHook) {
@@ -1060,7 +1060,7 @@ function workspaceServer(rooms = [makeRoom("A"), makeRoom("B")]) {
       const target = structuredClone(data.target);
       if (target.repository && !ws.workspace.repository) target.root = `workspaces/repos/${data.operation_id}`;
       assert.equal(data.pat, undefined);
-      if (target.binding?.connection_id) { target.binding.project_id = 7; target.binding.connection_generation = "f".repeat(32); }
+      if (target.binding?.platform_id) { target.binding.project_id = 7; target.binding.platform_generation = "f".repeat(32); }
       ws.workspace = target; ws.workspace_version++;
       ws.credential_status = target.binding ? "configured" : "missing";
       ws.members[0].workspace = `${target.root}/${ws.members[0].membership_id}`;
@@ -1151,7 +1151,7 @@ test("GitLab binding derives its origin and nested project only from the final r
     ["https://gitlab.invalid:8443/group/project/", "https://gitlab.invalid:8443", "group/project"],
     ["https://GITLAB.invalid:443/group/project.git/", "https://gitlab.invalid:443", "group/project"],
   ]) {
-    const api = workspaceServer(); api.connections[0].url = origin; const ui = await launch(api);
+    const api = workspaceServer(); api.platforms[0].url = origin; const ui = await launch(api);
     assert.equal(ui.el("workspace-platform-url"), undefined); assert.equal(ui.el("workspace-project"), undefined);
     await editWorkspace(ui, true);
     ui.el("workspace-repo-url").value = url;
@@ -1160,7 +1160,7 @@ test("GitLab binding derives its origin and nested project only from the final r
     const sent = api.calls.find(c => c.path === "/v1/workspace/apply").data;
     assert.equal(sent.target.repository.url, `${origin}/${project}.git`);
     assert.equal(ui.el("workspace-repo-url").value, `${origin}/${project}.git`);
-    assert.deepEqual(sent.target.binding, { provider: "gitlab", url: origin, project, connection_id: "a".repeat(32) });
+    assert.deepEqual(sent.target.binding, { provider: "gitlab", url: origin, project, platform_id: "a".repeat(32) });
     assert.equal(sent.pat, undefined);
   }
 });
@@ -1188,7 +1188,7 @@ test("Workspace selects an existing connection for initial and supplemental bind
     await ui.el("workspace-form").emit("submit");
     const first = api.calls.filter(c => c.path === "/v1/workspace/apply").at(-1).data;
     assert.equal(first.pat, undefined); assert.equal(first.target.binding.credential_id, undefined);
-    assert.equal(first.target.binding.connection_id, "a".repeat(32)); assert.equal(first.connection_version, 1);
+    assert.equal(first.target.binding.platform_id, "a".repeat(32)); assert.equal(first.platform_version, 1);
     assert.equal(ui.el("workspace-gitlab").disabled, true);
     const reload = await launch(api, ui.saved); await reload.el("open-workspace").emit("click");
     assert.equal(reload.el("workspace-connection").value, "a".repeat(32));
@@ -1209,7 +1209,7 @@ test("Workspace plain root, connection choice and suggestions require an explici
   await editWorkspace(ui, true);
   await ui.el("workspace-form").emit("submit");
   const sent = api.calls.filter(c => c.path === "/v1/workspace/apply").at(-1).data;
-  assert.equal(sent.pat, undefined); assert.equal(sent.target.binding.connection_id, "a".repeat(32));
+  assert.equal(sent.pat, undefined); assert.equal(sent.target.binding.platform_id, "a".repeat(32));
 });
 
 test("Workspace lost response observes original ID across reload, blocks duplicates, and explicitly retries only the receipt", async () => {
@@ -1376,18 +1376,18 @@ test("connection save returns only after confirmation and a late list read canno
  const item={id:"a".repeat(32),name:"Original GitLab",provider:"gitlab",url:"https://gitlab.invalid",version:1,credential_kind:"oauth",credential_configured:true,authorization_status:"active",validation:{status:"valid",username:"tester"}};
   let finishRead, finishSave;
   api.hook = path => {
-    if (path.startsWith("/v1/platform/connections?")) return new Promise(resolve => { finishRead = resolve; });
-    if (path === "/v1/platform/connections/save") return new Promise(resolve => { finishSave = resolve; });
+    if (path.startsWith("/v1/platforms?")) return new Promise(resolve => { finishRead = resolve; });
+    if (path === "/v1/platforms/save") return new Promise(resolve => { finishSave = resolve; });
   };
   const ui = await launch(api);
   const opening = ui.el("open-settings").emit("click");
- finishRead({connections:[item]});await opening;
- await ui.el("connections-list").children[0].emit("click");
+ finishRead({platforms:[item]});await opening;
+ await ui.el("platforms-list").children[0].emit("click");
   ui.el("connection-name").value = "Confirmed GitLab";
   ui.el("connection-url").value = "https://gitlab.invalid";
   const saving = ui.el("connection-form").emit("submit");
   assert.equal(ui.el("connection-form").hidden, false);
-  assert.equal(ui.el("connections-list-view").hidden, true);
+  assert.equal(ui.el("platforms-list-view").hidden, true);
   assert.equal(ui.el("connection-fields").disabled, true);
   const dialog = ui.el("settings-dialog"), outside = { button: 0, clientX: -10, clientY: -10 };
   await dialog.emit("pointerdown", outside); await dialog.emit("click", outside);
@@ -1395,75 +1395,75 @@ test("connection save returns only after confirmation and a late list read canno
   finishSave({ id: "a".repeat(32), name: "Confirmed GitLab", provider: "gitlab", url: "https://gitlab.invalid", version: 1, credential_kind: "oauth", credential_configured: true, validation: { status: "unverified" } });
   await saving;
   assert.equal(ui.el("connection-form").hidden, true);
-  assert.equal(ui.el("connections-list-view").hidden, false);
-  assert.equal(ui.el("connections-list").children.length, 1);
+  assert.equal(ui.el("platforms-list-view").hidden, false);
+  assert.equal(ui.el("platforms-list").children.length, 1);
 
-  assert.equal(ui.el("connections-list").children.length, 1);
-  assert.equal(ui.el("connections-empty").hidden, true);
-  assert.equal(ui.el("connections-list-view").attributes["aria-busy"], "false");
-  assert.equal(ui.el("connections-feedback").textContent, "名称已保存。");
+  assert.equal(ui.el("platforms-list").children.length, 1);
+  assert.equal(ui.el("platforms-empty").hidden, true);
+  assert.equal(ui.el("platforms-list-view").attributes["aria-busy"], "false");
+  assert.equal(ui.el("platforms-feedback").textContent, "名称已保存。");
 });
 
-test("platform connections load on open and return, with retry only after a failed read", async () => {
+test("platform platforms load on open and return, with retry only after a failed read", async () => {
   const api = server([]);
   let finish, reads = 0;
   const item = { id: "a".repeat(32), name: "Company GitLab", provider: "gitlab", url: "https://gitlab.invalid", validation: { status: "valid" } };
   api.hook = path => {
-    if (path.startsWith("/v1/platform/connections?")) {
+    if (path.startsWith("/v1/platforms?")) {
       reads++;
       return new Promise((resolve, reject) => { finish = { resolve, reject }; });
     }
   };
   const ui = await launch(api);
-  assert.equal(ui.el("connections-reload"), undefined);
+  assert.equal(ui.el("platforms-reload"), undefined);
   const opening = ui.el("open-settings").emit("click");
   assert.equal(reads, 1);
-  assert.equal(ui.el("connections-list-view").attributes["aria-busy"], "true");
-  assert.equal(ui.el("connections-load-error").hidden, true);
-  assert.equal(ui.el("connections-feedback").textContent, "");
-  finish.resolve({ connections: [structuredClone(item)] });
+  assert.equal(ui.el("platforms-list-view").attributes["aria-busy"], "true");
+  assert.equal(ui.el("platforms-load-error").hidden, true);
+  assert.equal(ui.el("platforms-feedback").textContent, "");
+  finish.resolve({ platforms: [structuredClone(item)] });
   await opening;
-  const row = ui.el("connections-list").children[0];
-  assert.equal(ui.el("connections-list-view").attributes["aria-busy"], "false");
-  assert.equal(ui.el("connections-empty").hidden, true);
-  assert.equal(ui.el("connections-load-error").hidden, true);
+  const row = ui.el("platforms-list").children[0];
+  assert.equal(ui.el("platforms-list-view").attributes["aria-busy"], "false");
+  assert.equal(ui.el("platforms-empty").hidden, true);
+  assert.equal(ui.el("platforms-load-error").hidden, true);
 
   await ui.el("close-settings").emit("click");
   const reopening = ui.el("open-settings").emit("click");
   assert.equal(reads, 2);
-  assert.equal(ui.el("connections-list").children[0], row);
+  assert.equal(ui.el("platforms-list").children[0], row);
   finish.reject(new Error("fixture failure"));
   await reopening;
-  assert.equal(ui.el("connections-load-error").hidden, false);
-  assert.equal(ui.el("connections-empty").hidden, true);
-  assert.equal(ui.el("connections-retry").disabled, false);
-  const failedRetry = ui.el("connections-retry").emit("click");
-  assert.equal(ui.el("connections-load-error").hidden, false);
-  assert.equal(ui.el("connections-retry").disabled, true);
-  assert.equal(ui.el("connections-retry").textContent, "重试中…");
-  await ui.el("connections-retry").emit("click");
+  assert.equal(ui.el("platforms-load-error").hidden, false);
+  assert.equal(ui.el("platforms-empty").hidden, true);
+  assert.equal(ui.el("platforms-retry").disabled, false);
+  const failedRetry = ui.el("platforms-retry").emit("click");
+  assert.equal(ui.el("platforms-load-error").hidden, false);
+  assert.equal(ui.el("platforms-retry").disabled, true);
+  assert.equal(ui.el("platforms-retry").textContent, "重试中…");
+  await ui.el("platforms-retry").emit("click");
   assert.equal(reads, 3);
   finish.reject(new Error("still offline"));
   await failedRetry;
-  assert.equal(ui.el("connections-list").children[0], row);
-  assert.equal(ui.el("connections-load-error").hidden, false);
-  assert.equal(ui.el("connections-retry").disabled, false);
-  assert.equal(ui.el("connections-retry").textContent, "重试");
+  assert.equal(ui.el("platforms-list").children[0], row);
+  assert.equal(ui.el("platforms-load-error").hidden, false);
+  assert.equal(ui.el("platforms-retry").disabled, false);
+  assert.equal(ui.el("platforms-retry").textContent, "重试");
 
-  const recovered = ui.el("connections-retry").emit("click");
-  finish.resolve({ connections: [] });
+  const recovered = ui.el("platforms-retry").emit("click");
+  finish.resolve({ platforms: [] });
   await recovered;
   assert.equal(reads, 4);
-  assert.equal(ui.el("connections-load-error").hidden, true);
-  assert.equal(ui.el("connections-empty").hidden, false);
-  assert.equal(ui.el("connections-list-view").attributes["aria-busy"], "false");
+  assert.equal(ui.el("platforms-load-error").hidden, true);
+  assert.equal(ui.el("platforms-empty").hidden, false);
+  assert.equal(ui.el("platforms-list-view").attributes["aria-busy"], "false");
   await ui.el("connection-new").emit("click");
   const returning = ui.el("connection-back").emit("click");
   assert.equal(reads, 5);
-  finish.resolve({ connections: [structuredClone(item)] });
+  finish.resolve({ platforms: [structuredClone(item)] });
   await returning;
-  assert.equal(ui.el("connections-list").children.length, 1);
-  assert.equal(ui.el("connections-load-error").hidden, true);
+  assert.equal(ui.el("platforms-list").children.length, 1);
+  assert.equal(ui.el("platforms-load-error").hidden, true);
 });
 
 
@@ -1474,7 +1474,7 @@ test("Workspace connection manager preserves selection, draft and project withou
   await ui.draft("draft while setting up project");
   await editWorkspace(ui, true);
   ui.el("workspace-branch").value = "feature/setup";
-  await ui.el("workspace-manage-connections").emit("click");
+  await ui.el("workspace-manage-platforms").emit("click");
   assert.equal(ui.el("workspace-dialog").open, false);
   assert.equal(ui.el("settings-dialog").open, true);
   await ui.el("close-settings").emit("click");
@@ -1490,12 +1490,12 @@ test("Workspace connection manager preserves selection, draft and project withou
 function notificationServer() {
   const api = workspaceServer();
   const events = new Map(["A", "B"].map(id => [id, { available: true, subscription_version: 1,
-    config: { connection_id: "a".repeat(32), project: `group/project-${id}`, enabled: true, interval_seconds: id === "A" ? 5 : 17, filter: {} }, status: "running", pending: 0, metrics: { calls: 1, response_bytes: 100 } }]));
+    config: { platform_id: "a".repeat(32), project: `group/project-${id}`, enabled: true, interval_seconds: id === "A" ? 5 : 17, filter: {} }, status: "running", pending: 0, metrics: { calls: 1, response_bytes: 100 } }]));
   for (const [id, ws] of api.workspaces) {
     ws.workspace.repository = { url: `https://gitlab.invalid/group/project-${id}.git` };
-    ws.workspace.binding = { provider: "gitlab", url: "https://gitlab.invalid", project: `group/project-${id}`, project_id: id === "A" ? 7 : 8, connection_id: "a".repeat(32) };
+    ws.workspace.binding = { provider: "gitlab", url: "https://gitlab.invalid", project: `group/project-${id}`, project_id: id === "A" ? 7 : 8, platform_id: "a".repeat(32) };
   }
-  api.connections[0].validation = { status: "valid", user_id: 101, username: "alice" };
+  api.platforms[0].validation = { status: "valid", user_id: 101, username: "alice" };
   for (const [id, value] of events) value.project = structuredClone(api.workspaces.get(id).workspace.binding);
   api.hook = (path, data) => {
     if (path.startsWith("/v1/platform/notifications?")) return notificationList(structuredClone(events.get(new URL(path, "http://fixture").searchParams.get("room_id"))));
@@ -1542,11 +1542,11 @@ test("GitLab message author and keyboard avatar open notification details and cl
 
 function todosServer({ bound = true, enabled = false } = {}) {
   const { api, events } = notificationServer();
-  api.connections[0].validation = { status: "valid", user_id: 101, username: "alice" };
-  api.connections.push({ ...structuredClone(api.connections[0]), id: "b".repeat(32), name: "Personal", validation: { status: "valid", user_id: 202, username: "bob" } });
+  api.platforms[0].validation = { status: "valid", user_id: 101, username: "alice" };
+  api.platforms.push({ ...structuredClone(api.platforms[0]), id: "b".repeat(32), name: "Personal", validation: { status: "valid", user_id: 202, username: "bob" } });
   const todos = new Map(["A", "B"].map(id => [id, todoView({ subscription_id: enabled ? (id === "A" ? "c" : "d").repeat(32) : "", subscription_version: enabled ? 3 : 0,
     recipient_id: enabled ? 101 : undefined, username: enabled ? "alice" : undefined, instance: enabled ? "https://gitlab.invalid" : undefined,
-    config: { enabled, connection_id: enabled ? api.connections[0].id : "", interval_seconds: id === "A" ? 30 : 45, filter: {} }, status: enabled ? "running" : "disabled" })]));
+    config: { enabled, platform_id: enabled ? api.platforms[0].id : "", interval_seconds: id === "A" ? 30 : 45, filter: {} }, status: enabled ? "running" : "disabled" })]));
   if (!bound) for (const ws of api.workspaces.values()) { delete ws.workspace.binding; delete ws.workspace.repository; }
   const sourceHook = api.hook, records = new Map();
   api.gitlabApplyFailure = new Set();
@@ -1573,9 +1573,9 @@ function todosServer({ bound = true, enabled = false } = {}) {
       records.set(data.room_id, saved);
       for (const channel of ["events", "todos"]) {
         const runtime = channel === "events" ? events.get(data.room_id) : todos.get(data.room_id);
-        const desired = { ...config[channel], connection_id: config.connection_id, target: config.target, interval_seconds: config.interval_seconds, backfill_seconds:config.backfill_seconds || 0, ...(config.backfill_start ? {backfill_start:config.backfill_start} : {}) };
-        const account = api.connections.find(c => c.id === config.connection_id);
-        const changed = JSON.stringify(fixtureSourceConfig(runtime.config, channel)) !== JSON.stringify(fixtureSourceConfig(desired, channel)) || runtime.config.interval_seconds !== desired.interval_seconds || runtime.config.connection_id !== desired.connection_id || JSON.stringify(runtime.config.target || {}) !== JSON.stringify(desired.target) || runtime.recipient_id !== account?.validation.user_id;
+        const desired = { ...config[channel], platform_id: config.platform_id, target: config.target, interval_seconds: config.interval_seconds, backfill_seconds:config.backfill_seconds || 0, ...(config.backfill_start ? {backfill_start:config.backfill_start} : {}) };
+        const account = api.platforms.find(c => c.id === config.platform_id);
+        const changed = JSON.stringify(fixtureSourceConfig(runtime.config, channel)) !== JSON.stringify(fixtureSourceConfig(desired, channel)) || runtime.config.interval_seconds !== desired.interval_seconds || runtime.config.platform_id !== desired.platform_id || JSON.stringify(runtime.config.target || {}) !== JSON.stringify(desired.target) || runtime.recipient_id !== account?.validation.user_id;
         if (!desired.enabled && !runtime.config.enabled || !changed) continue;
         if (api.gitlabApplyFailure.has(channel)) { saved.pending[channel] = true; saved.errors[channel] = "apply_failed"; continue; }
         runtime.config = desired; runtime.subscription_version++; runtime.status = desired.enabled ? "running" : "disabled";
@@ -2092,7 +2092,7 @@ test("long-term rules save without type, platform connection or project fields",
  };
  const ui=await launch(api);await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();
  await ui.el("agent-tab-policy").emit("click");
- const before=api.calls.filter(c=>c.path.startsWith("/v1/platform/connections")).length;
+ const before=api.calls.filter(c=>c.path.startsWith("/v1/platforms")).length;
  await ui.el("policy-new").emit("click");await settle();
  for(const id of ["policy-kind","policy-rule-fields","policy-connection","policy-project","policy-object-type"])assert.equal(ui.el(id),undefined);
  ui.el("policy-text").value="项目 A 的使用问题核实现行文档后直接回复；涉及交付时间先问我。";
@@ -2100,7 +2100,7 @@ test("long-term rules save without type, platform connection or project fields",
  const change=api.calls.find(c=>c.path==="/v1/policy/update").data.policy;
  assert.equal(change.text,"项目 A 的使用问题核实现行文档后直接回复；涉及交付时间先问我。");
  for(const key of ["kind","scope","scope_from","actions","conditions","exceptions"])assert.equal(Object.hasOwn(change,key),false);
- assert.equal(api.calls.filter(c=>c.path.startsWith("/v1/platform/connections")).length,before);
+ assert.equal(api.calls.filter(c=>c.path.startsWith("/v1/platforms")).length,before);
  assert.equal(api.calls.some(c=>/actions\/execute|member\/run/.test(c.path)),false);
 });
 
@@ -2371,12 +2371,12 @@ test("GitLab saves one provider model with one version and no repeated shared fi
   assert.equal(gitlabWrites(api).length,1);
   const body=gitlabWrites(api)[0].data;
   assert.equal(body.version,0); assert.equal(body.channel,undefined); assert.equal(body.subscription_id,undefined);
-  assert.equal(body.config.connection_id,"b".repeat(32));
+  assert.equal(body.config.platform_id,"b".repeat(32));
   assert.equal(body.config.interval_seconds,60);
-  for(const source of [body.config.events,body.config.todos]) { assert.equal(source.connection_id,undefined); assert.equal(source.target,undefined); assert.equal(source.interval_seconds,undefined); }
+  for(const source of [body.config.events,body.config.todos]) { assert.equal(source.platform_id,undefined); assert.equal(source.target,undefined); assert.equal(source.interval_seconds,undefined); }
   assert.equal(body.config.todos.project_scope,undefined);assert.equal(body.config.todos.inactive_interval_seconds,undefined);
   for (const source of [events,todos]) assert.equal(source.get("A").config.interval_seconds,60);
-  assert.equal(events.get("A").config.connection_id,"b".repeat(32)); assert.equal(todos.get("A").config.connection_id,"b".repeat(32));
+  assert.equal(events.get("A").config.platform_id,"b".repeat(32)); assert.equal(todos.get("A").config.platform_id,"b".repeat(32));
   assert.equal(ui.el("gitlab-save").disabled,true);
   await ui.el("gitlab-sync").emit("click");
   const sync=api.calls.find(c=>c.path===gitlabPath("sync")); assert.equal(sync.data.version,1); assert.equal(sync.data.config,undefined);
@@ -2386,7 +2386,7 @@ test("GitLab can save common settings while both message types are disabled", as
   const {api,events}=todosServer(); Object.assign(events.get("A"),{subscription_version:0,status:"disabled"});events.get("A").config.enabled=false;
   const ui=await launch(api);await openGitLab(ui);await editGitLab(ui,"gitlab-connection","b".repeat(32));
   await ui.el("gitlab-save").emit("click");assert.equal(gitlabWrites(api).length,1);
-  assert.equal(api.gitlabRecords.get("A").config.connection_id,"b".repeat(32));
+  assert.equal(api.gitlabRecords.get("A").config.platform_id,"b".repeat(32));
   await ui.refresh();assert.equal(ui.el("gitlab-connection").value,"b".repeat(32));assert.equal(ui.el("gitlab-events-enabled").checked,false);
 });
 
@@ -2413,7 +2413,7 @@ test("GitLab public draft survives polling, platform tabs, rail closing and conn
   const {api}=todosServer({enabled:true}),ui=await launch(api);await openGitLab(ui);
   await selectGitLabProject(ui,"group/changed");await editGitLab(ui,"gitlab-interval","60","input");
   await ui.refresh();await ui.el("notification-tab-messages").emit("click");await ui.el("notification-tab-gitlab").emit("click");
-  await ui.el("gitlab-manage-connections").emit("click");await ui.el("close-settings").emit("click");await settle();
+  await ui.el("gitlab-manage-platforms").emit("click");await ui.el("close-settings").emit("click");await settle();
   await ui.el("close-notification").emit("click");await openGitLab(ui);
   assert.equal(ui.el("gitlab-project-summary").textContent,"group/changed");assert.equal(String(ui.el("gitlab-interval").value),"60");assert.equal(gitlabWrites(api).length,0);
   await ui.el("gitlab-save").emit("click");assert.equal(gitlabWrites(api)[0].data.config.events.project,"group/changed");
@@ -2442,12 +2442,12 @@ test("GitLab saved settings with a failed source expose an explicit apply retry"
   const {api,events,todos}=todosServer({enabled:true}),ui=await launch(api);await openGitLab(ui);
   api.gitlabApplyFailure.add("todos");await editGitLab(ui,"gitlab-connection","b".repeat(32));await ui.el("gitlab-save").emit("click");
   const eventVersion=events.get("A").subscription_version;
-  assert.equal(api.gitlabRecords.get("A").config.connection_id,"b".repeat(32));assert.equal(todos.get("A").config.connection_id,"a".repeat(32));
+  assert.equal(api.gitlabRecords.get("A").config.platform_id,"b".repeat(32));assert.equal(todos.get("A").config.platform_id,"a".repeat(32));
   assert.equal(ui.el("gitlab-save").textContent,"重试应用");assert.equal(ui.el("gitlab-sync").disabled,true);assert.equal(ui.el("gitlab-todos-settings").open,true);
   await ui.refresh();assert.equal(ui.el("gitlab-save").textContent,"重试应用");assert.equal(gitlabWrites(api).length,1);
   api.gitlabApplyFailure.clear();await ui.el("gitlab-save").emit("click");
   assert.equal(gitlabWrites(api).length,2);assert.equal(gitlabWrites(api)[1].data.version,1);assert.equal(events.get("A").subscription_version,eventVersion);
-  assert.equal(todos.get("A").config.connection_id,"b".repeat(32));assert.equal(ui.el("gitlab-save").disabled,true);
+  assert.equal(todos.get("A").config.platform_id,"b".repeat(32));assert.equal(ui.el("gitlab-save").disabled,true);
 });
 
 test("GitLab lost committed response is read back without a second save",async()=>{
@@ -2503,9 +2503,9 @@ test("GitLab project selection works without Workspace and only edits the public
 test("GitLab same connection reverified as a new account requires explicit apply",async()=>{
   const {api}=todosServer({enabled:true}),ui=await launch(api);await openGitLab(ui);
   // Runtime identity is evidence of the previously accepted account.
-  api.gitlabRecords.set("A",{version:1,config:structuredClone(fixtureGitLabView([eventView({config:{enabled:true,connection_id:"a".repeat(32),project:"group/project-A",interval_seconds:5,filter:{}},metrics:{}}),todoView({config:{enabled:true,connection_id:"a".repeat(32),interval_seconds:30,filter:{}}})]).config)});
-  api.connections[0].validation={status:"valid",user_id:303,username:"carol"};
-  await ui.el("gitlab-manage-connections").emit("click");await ui.el("close-settings").emit("click");await settle();
+  api.gitlabRecords.set("A",{version:1,config:structuredClone(fixtureGitLabView([eventView({config:{enabled:true,platform_id:"a".repeat(32),project:"group/project-A",interval_seconds:5,filter:{}},metrics:{}}),todoView({config:{enabled:true,platform_id:"a".repeat(32),interval_seconds:30,filter:{}}})]).config)});
+  api.platforms[0].validation={status:"valid",user_id:303,username:"carol"};
+  await ui.el("gitlab-manage-platforms").emit("click");await ui.el("close-settings").emit("click");await settle();
   assert.match(ui.el("gitlab-notification-account").textContent,/@carol/);assert.equal(ui.el("gitlab-save").disabled,false);assert.equal(gitlabWrites(api).length,0);
   await ui.el("gitlab-save").emit("click");assert.equal(gitlabWrites(api).length,1);
 });
@@ -2522,8 +2522,8 @@ test("GitLab reflects a provider operation started in another tab and keeps this
 
 test("Scion Workspace chooses its type and verified connection without Git suffixes or numeric project identity", async () => {
   const api=workspaceServer();
-  api.connections.push({id:"c".repeat(32),provider:"scion",name:"Scion demo",url:"https://scion.invalid",version:3,validation:{status:"valid",username:"alice"}});
-  api.connections.push({id:"d".repeat(32),provider:"scion",name:"Unverified",url:"https://scion.invalid",version:1,validation:{status:"unverified"}});
+  api.platforms.push({id:"c".repeat(32),provider:"scion",name:"Scion demo",url:"https://scion.invalid",version:3,validation:{status:"valid",username:"alice"}});
+  api.platforms.push({id:"d".repeat(32),provider:"scion",name:"Unverified",url:"https://scion.invalid",version:1,validation:{status:"unverified"}});
   const ui=await launch(api);await editWorkspace(ui);
   ui.el("workspace-kind").value="scion";await ui.el("workspace-kind").emit("change");
   assert.equal(ui.el("workspace-gitlab").checked,true);assert.equal(ui.el("workspace-gitlab").disabled,true);
@@ -2535,8 +2535,8 @@ test("Scion Workspace chooses its type and verified connection without Git suffi
   await ui.el("workspace-form").emit("submit");
   const sent=api.calls.find(c=>c.path==="/v1/workspace/apply").data;
   assert.deepEqual(sent.target.repository,{kind:"scion",url:"https://scion.invalid/OpenCSG/teamx-demo",branch:"main"});
-  assert.deepEqual(sent.target.binding,{provider:"scion",url:"https://scion.invalid",project:"OpenCSG/teamx-demo",connection_id:"c".repeat(32)});
-  assert.equal(sent.connection_version,3);
+  assert.deepEqual(sent.target.binding,{provider:"scion",url:"https://scion.invalid",project:"OpenCSG/teamx-demo",platform_id:"c".repeat(32)});
+  assert.equal(sent.platform_version,3);
   await ui.el("open-workspace").emit("click");
   assert.equal(ui.el("workspace-kind").value,"scion");assert.equal(ui.el("workspace-kind").disabled,true);
   assert.match(ui.el("workspace-credential-status").textContent,/Scion.*OpenCSG\/teamx-demo/);
@@ -2544,9 +2544,9 @@ test("Scion Workspace chooses its type and verified connection without Git suffi
   assert.equal(reload.el("workspace-kind").value,"scion");assert.equal(reload.el("workspace-connection").value,"c".repeat(32));
 });
 
-test("Scion Workspace rejects unverified and mismatched connections before retaining an operation", async () => {
+test("Scion Workspace rejects unverified and mismatched platforms before retaining an operation", async () => {
   for(const valid of [false,true]){
-    const api=workspaceServer();api.connections.push({id:"c".repeat(32),provider:"scion",name:"Scion",url:"https://other.invalid",version:1,validation:{status:valid ? "valid" : "unverified"}});
+    const api=workspaceServer();api.platforms.push({id:"c".repeat(32),provider:"scion",name:"Scion",url:"https://other.invalid",version:1,validation:{status:valid ? "valid" : "unverified"}});
     const ui=await launch(api);await editWorkspace(ui);
     ui.el("workspace-kind").value="scion";await ui.el("workspace-kind").emit("change");
     ui.el("workspace-repo-url").value="https://scion.invalid/OpenCSG/teamx-demo";
@@ -2571,7 +2571,7 @@ test("GitLab project picker searches remotely, pages the current query and saves
   assert.equal(api.calls.filter(c=>c.path==="/v1/platform/gitlab/projects").length,1);
   await ui.clock.advance(1);
   const first=api.calls.filter(c=>c.path==="/v1/platform/gitlab/projects").at(-1).data;
-  assert.equal(first.search,"other");assert.equal(first.page,1);assert.equal(first.connection_id,"a".repeat(32));
+  assert.equal(first.search,"other");assert.equal(first.page,1);assert.equal(first.platform_id,"a".repeat(32));
   assert.equal(ui.el("gitlab-project-more").hidden,false);
   await ui.el("gitlab-project-more").emit("click");
   assert.equal(api.calls.filter(c=>c.path==="/v1/platform/gitlab/projects").at(-1).data.page,2);
@@ -2612,15 +2612,15 @@ test("GitLab project picker retains selection on failure and exposes refresh and
   api.projectPage=()=>({projects:[],next_page:0});await ui.el("gitlab-project-refresh").emit("click");
   assert.match(ui.el("gitlab-project-status").textContent,/没有匹配/);assert.equal(gitlabWrites(api).length,0);
   await editGitLab(ui,"gitlab-connection","");
-  assert.equal(ui.el("gitlab-project-summary").textContent,"请先选择平台连接");
+  assert.equal(ui.el("gitlab-project-summary").textContent,"请先选择平台");
   assert.equal(ui.el("gitlab-project-summary").attributes["aria-disabled"],"true");
-  assert.equal(ui.el("gitlab-project-hint").hidden,false);assert.match(ui.el("gitlab-project-hint").textContent,/在上方选择平台连接/);
-  api.connections[0].validation.status="unverified";
+  assert.equal(ui.el("gitlab-project-hint").hidden,false);assert.match(ui.el("gitlab-project-hint").textContent,/在上方选择平台/);
+  api.platforms[0].validation.status="unverified";
   await openGitLab(ui);
   await editGitLab(ui,"gitlab-connection","a".repeat(32));
-  assert.equal(ui.el("gitlab-project-summary").textContent,"请先验证平台连接");
-  assert.match(ui.el("gitlab-project-hint").textContent,/管理连接/);
-  api.connections[0].validation.status="valid";
+  assert.equal(ui.el("gitlab-project-summary").textContent,"请先验证平台");
+  assert.match(ui.el("gitlab-project-hint").textContent,/管理平台/);
+  api.platforms[0].validation.status="valid";
   await openGitLab(ui);
   await editGitLab(ui,"gitlab-connection","a".repeat(32));await settle();
   assert.equal(ui.el("gitlab-project-hint").hidden,true);assert.equal(ui.el("gitlab-project-summary").textContent,"group/project-A");
@@ -2703,4 +2703,29 @@ test("DSH threshold shows Session counts and keeps pause available during automa
   await pause.emit("click");await settle();
   assert.equal(api.calls.filter(c=>c.path==="/v1/member/pause").length,1);
   assert.equal(api.calls.some(c=>c.path==="/v1/member/run"||c.path==="/v1/member/session/rotate"),false);
+});
+
+test("GitLab platform selection reads saved preferences without copying another platform's draft", async () => {
+  const {api} = todosServer({enabled:true}), hook = api.hook;
+  let first;
+  const second = structuredClone(fixtureGitLabView([todoView({config:{enabled:false,platform_id:"b".repeat(32),interval_seconds:60,filter:{reasons:["assigned"],types:["work_item"]}}})]));
+  second.platform_id = "b".repeat(32); second.version = 9; second.config.enabled = false;
+  api.hook = (path, body) => {
+    if (path.startsWith("/v1/platform/notifications?")) {
+      const data = hook(path, body);
+      first = structuredClone(data.gitlab); first.platform_id = "a".repeat(32); first.config.enabled = true;
+      return {...data, gitlab:first, gitlab_platforms:[first,second]};
+    }
+    if (path.startsWith("/v1/platform/gitlab/notifications?")) return structuredClone(new URL(path,"http://fixture").searchParams.get("platform_id") === second.platform_id ? second : first);
+    return hook(path, body);
+  };
+  const ui = await launch(api); await openGitLab(ui);
+  await editGitLab(ui,"gitlab-interval","73","input");
+  await editGitLab(ui,"gitlab-connection",second.platform_id);
+  assert.equal(String(ui.el("gitlab-interval").value),"60");
+  assert.equal(ui.el("gitlab-todos-enabled").checked,false);
+  assert.equal(ui.el("gitlab-todos-reason-assigned").checked,true);
+  assert.equal(ui.el("gitlab-todos-reason-mentioned").checked,false);
+  assert.equal(ui.el("gitlab-save").disabled,true);
+  assert.equal(gitlabWrites(api).length,0);
 });

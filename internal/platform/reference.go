@@ -94,9 +94,9 @@ type AccessContext struct {
 	MembershipID               string          `json:"membership_id"`
 	Receiver                   AccountIdentity `json:"receiver,omitzero"`
 	Account                    AccountIdentity `json:"account"`
-	ConnectionID               string          `json:"connection_id"`
+	PlatformID                 string          `json:"platform_id"`
 	Generation                 string          `json:"generation"`
-	ConnectionVersion          uint64          `json:"connection_version"`
+	PlatformVersion            uint64          `json:"platform_version"`
 	ActionAuthorizationVersion uint64          `json:"action_authorization_version,omitempty"`
 	CredentialVersion          uint64          `json:"credential_version"`
 }
@@ -104,5 +104,5 @@ type AccessContext struct {
 func (a AccessContext) Valid() bool {
 	return identityText(a.RoomID) && identityText(a.RoomInstance) && identityText(a.AgentID) && identityText(a.MembershipID) &&
 		a.Account.Valid() && (a.Receiver == (AccountIdentity{}) || a.Receiver.Valid()) &&
-		identityText(a.ConnectionID) && identityText(a.Generation) && a.ConnectionVersion > 0 && a.CredentialVersion > 0
+		identityText(a.PlatformID) && identityText(a.Generation) && a.PlatformVersion > 0 && a.CredentialVersion > 0
 }

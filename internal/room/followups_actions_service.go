@@ -32,6 +32,13 @@ func actionAuthorityMatchesSpec(q referenceActionRequest, spec platform.ActionSp
 
 // Managed execution shares member binding admission and platform call ownership.
 func (m *roomManager) executeReferenceAction(ctx context.Context, req apiRequest, q referenceActionRequest) (referenceActionReceipt, error) {
+	if req.Tool != "" {
+		var err error
+		ctx, err = m.withToolEntry(ctx, toolsRequest{ServiceInfo: req.ServiceInfo, Caller: req.Caller, Tool: req.Tool})
+		if err != nil {
+			return referenceActionReceipt{}, err
+		}
+	}
 	tr := toolsRequest{ServiceInfo: req.ServiceInfo, Caller: req.Caller}
 	m.mu.Lock()
 	err := m.checkToolMemberLocked(ctx, tr)
@@ -44,6 +51,15 @@ func (m *roomManager) executeReferenceAction(ctx context.Context, req apiRequest
 		return referenceActionReceipt{}, ErrIdentity
 	}
 	id := MemberIdentity{RoomIdentity: req.RoomIdentity, AgentID: req.Caller.ID, MembershipID: req.Caller.MembershipID}
+	if entry, ok := ctx.Value(toolEntryContextKey{}).(toolEntryContext); ok {
+		_, access, err := svc.store.referenceActionEvidence(id, q)
+		if err != nil {
+			return referenceActionReceipt{}, err
+		}
+		if access.PlatformID != entry.platformID || access.Account.Provider != entry.provider {
+			return referenceActionReceipt{}, ErrIdentity
+		}
+	}
 	return svc.executeReferenceAction(ctx, id, q, func(ctx context.Context, id MemberIdentity, old platform.AccessContext) (referenceActionSession, error) {
 		m.mu.Lock()
 		current, _ := m.runtimeServiceLocked(req.RoomIdentity)
@@ -74,7 +90,7 @@ func (m *roomManager) executeReferenceAction(ctx context.Context, req apiRequest
 			bindings, bindingErr := m.readToolBindingsLocked(id.RoomIdentity)
 			if bindingErr == nil {
 				for _, b := range bindings.Bindings {
-					if b.AgentID == id.AgentID && b.MembershipID == id.MembershipID && b.ConnectionID == session.Access.ConnectionID && b.ConnectionGeneration == session.Access.Generation && b.ActionAuthorization != nil {
+					if b.AgentID == id.AgentID && b.MembershipID == id.MembershipID && b.PlatformID == session.Access.PlatformID && b.PlatformGeneration == session.Access.Generation && b.ActionAuthorization != nil {
 						session.Access.ActionAuthorizationVersion = b.ActionAuthorization.Revision
 						session.CapabilityBasis = b.Evidence(cap.Spec.BindingEvidence)
 					}
@@ -155,7 +171,7 @@ func (s *service) executeReferenceAction(ctx context.Context, id MemberIdentity,
 	access := session.Access
 	// Preserve the existing receiving/executing account equality contract. Credential
 	// rotations require fresh inspection, and never rename the stored target.
-	if !access.Valid() || access.RoomIdentity != id.RoomIdentity || access.AgentID != id.AgentID || access.MembershipID != id.MembershipID || access.Account != old.Account || access.ConnectionID != old.ConnectionID || access.Generation != old.Generation {
+	if !access.Valid() || access.RoomIdentity != id.RoomIdentity || access.AgentID != id.AgentID || access.MembershipID != id.MembershipID || access.Account != old.Account || access.PlatformID != old.PlatformID || access.Generation != old.Generation {
 		return referenceActionReceipt{}, ErrIdentity
 	}
 	cap, ok := session.Capabilities.Actions[q.Operation]

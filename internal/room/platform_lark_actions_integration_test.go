@@ -178,7 +178,7 @@ func TestLarkReplyProductionRegistrationRequiresSavedGrant(t *testing.T) {
 	if e != nil || len(selected) != 1 || selected[0].ActionAuthorization != nil {
 		t.Fatal("read-only binding silently gained grants", selected, e)
 	}
-	r := managerHTTP(h.m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: h.m.epoch, RoomIdentity: h.room.RoomIdentity, Caller: humanCaller, Revision: f.Revision, Enabled: true, ConnectionVersion: h.c.Version, Binding: tool.Binding{AgentID: h.members[0].AgentID, MembershipID: h.members[0].MembershipID, Tool: "lark", ConnectionID: h.c.ID, ActionAuthorization: &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: []tool.ActionGrant{{Operation: "message.reply", TargetKind: "message", ObjectType: "message"}}}}})
+	r := managerHTTP(h.m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: h.m.epoch, RoomIdentity: h.room.RoomIdentity, Caller: humanCaller, Revision: f.Revision, Enabled: true, PlatformVersion: h.c.Version, Binding: tool.Binding{AgentID: h.members[0].AgentID, MembershipID: h.members[0].MembershipID, Tool: "lark", PlatformID: h.c.ID, ActionAuthorization: &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: []tool.ActionGrant{{Operation: "message.reply", TargetKind: "message", ObjectType: "message"}}}}})
 	if r.Code != 200 {
 		t.Fatal("accepted reply grant rejected", r.Code, r.Body.String())
 	}
@@ -259,7 +259,7 @@ if a[1]=='GET' and path.startswith('/open-apis/im/v1/messages/'):
 		if mode == "cancel" {
 			cancel()
 		} else {
-			r := managerHTTP(h.m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: h.m.epoch, RoomIdentity: id.RoomIdentity, Caller: humanCaller, Revision: 1, Enabled: false, Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "lark"}})
+			r := managerHTTP(h.m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: h.m.epoch, RoomIdentity: id.RoomIdentity, Caller: humanCaller, Revision: 1, Enabled: false, Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "lark", PlatformID: h.c.ID}})
 			if r.Code != 200 {
 				cancel()
 				t.Fatal(r.Code, r.Body.String())
@@ -291,7 +291,7 @@ func TestLarkReplyMixedGitlabDispatch(t *testing.T) {
 	f := newLarkReplyContract(t)
 	f.grant(t)
 	larkView := f.resolve(t, f.page.Entries[0].Source.TargetRef)
-	var c platformConnection
+	var c managedPlatform
 	for _, candidate := range platformTestList(t, f.h.m) {
 		if candidate.Provider == "gitlab" {
 			c = candidate

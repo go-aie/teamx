@@ -41,7 +41,7 @@ func (r *TodosRunner) read(ctx context.Context) (TodosState, TodosQueryScope, no
 	var b TodosQueryScope
 	dec := json.NewDecoder(bytes.NewReader(scope.Data))
 	dec.DisallowUnknownFields()
-	if dec.Decode(&b) != nil || dec.Decode(new(any)) != io.EOF || !b.Binding.Valid() || b.ConnectionVersion == 0 || b.Binding.ConnectionID != s.Binding.ConnectionID || b.Binding.ConnectionGeneration != s.Binding.ConnectionGeneration || !b.Binding.SameAccount(s.Binding) || b.Binding.CredentialVersion != s.Binding.CredentialVersion || b.Binding.CredentialFingerprint != s.Binding.CredentialFingerprint {
+	if dec.Decode(&b) != nil || dec.Decode(new(any)) != io.EOF || !b.Binding.Valid() || b.PlatformVersion == 0 || b.Binding.PlatformID != s.Binding.PlatformID || b.Binding.PlatformGeneration != s.Binding.PlatformGeneration || !b.Binding.SameAccount(s.Binding) || b.Binding.CredentialVersion != s.Binding.CredentialVersion || b.Binding.CredentialFingerprint != s.Binding.CredentialFingerprint {
 		return s, b, scope, notification.ErrInvalid
 	}
 	return s, b, scope, nil

@@ -9,20 +9,21 @@ import (
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/connection"
 	"github.com/go-aie/teamx/internal/platform/lark"
+	"github.com/go-aie/teamx/internal/platform/registry"
 )
 
 // Bounded reads use explicit per-Membership binding and settled call lifetimes.
 type larkReadRequest struct {
 	ServiceInfo
+	Tool      string                `json:"tool,omitempty"`
 	Caller    Caller                `json:"caller"`
 	Messages  *lark.MessagesRequest `json:"messages,omitempty"`
 	MessageID string                `json:"message_id,omitempty"`
 	Target    *larkTargetRequest    `json:"target,omitempty"`
 }
 
-func (m *roomManager) checkLarkReadLocked(ctx context.Context, req toolsRequest, expected connection.Account) error {
+func (m *roomManager) checkLarkReadLocked(ctx context.Context, req toolsRequest, expected registry.Account) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -34,12 +35,12 @@ func (m *roomManager) checkLarkReadLocked(ctx context.Context, req toolsRequest,
 		return err
 	}
 	for _, b := range f.Bindings {
-		if b.Tool == "lark" && b.AgentID == req.Caller.ID && b.MembershipID == req.Caller.MembershipID && b.ConnectionID == expected.ConnectionID && b.ConnectionGeneration == expected.Generation {
-			current, _, err := m.resolvePlatformAccountLocked(req.RoomIdentity, b.ConnectionID, "lark")
+		if b.Tool == "lark" && b.AgentID == req.Caller.ID && b.MembershipID == req.Caller.MembershipID && b.PlatformID == expected.PlatformID && b.PlatformGeneration == expected.Generation {
+			current, _, err := m.resolvePlatformAccountLocked(req.RoomIdentity, b.PlatformID, "lark")
 			if err != nil {
 				return err
 			}
-			if current.Identity != expected.Identity || current.ConnectionVersion != expected.ConnectionVersion || current.CredentialVersion != expected.CredentialVersion || current.CredentialFingerprint != expected.CredentialFingerprint {
+			if current.Identity != expected.Identity || current.PlatformVersion != expected.PlatformVersion || current.CredentialVersion != expected.CredentialVersion || current.CredentialFingerprint != expected.CredentialFingerprint {
 				return ErrConflict
 			}
 			return nil
@@ -48,6 +49,16 @@ func (m *roomManager) checkLarkReadLocked(ctx context.Context, req toolsRequest,
 	return ErrConflict
 }
 func (m *roomManager) readLark(ctx context.Context, r larkReadRequest) (any, error) {
+	if r.Tool != "" {
+		var err error
+		ctx, err = m.withToolEntry(ctx, toolsRequest{ServiceInfo: r.ServiceInfo, Caller: r.Caller, Tool: r.Tool})
+		if err != nil {
+			return nil, err
+		}
+	}
+	if r.Target == nil && r.Tool == "" {
+		return nil, invalidField("tool", "use an exact entry from teamx tools list")
+	}
 	if r.Target != nil {
 		return m.readLarkTarget(ctx, r)
 	}
@@ -86,18 +97,18 @@ func (m *roomManager) readLark(ctx context.Context, r larkReadRequest) (any, err
 	return result, nil
 }
 
-func (m *roomManager) recordLarkReadFailureLocked(account connection.Account, err error) error {
+func (m *roomManager) recordLarkReadFailureLocked(account registry.Account, err error) error {
 	switch lark.ErrorCode(err) {
 	case "identity_mismatch", "credential_unavailable", "credential_rejected", "permission_denied", "cli_version_mismatch":
 		// Preserve the binding, but require explicit connection verification before
 		// admitting another read. Existing notification progress is preserved.
-		ticket, beginErr := m.connections.BeginVerification(account.ConnectionID, account.ConnectionVersion)
+		ticket, beginErr := m.platforms.BeginVerification(account.PlatformID, account.PlatformVersion)
 		if beginErr != nil {
-			return platformConnectionError(beginErr)
+			return managedPlatformError(beginErr)
 		}
-		_, saveErr := m.connections.CompleteVerification(ticket, platform.Validation{Status: "failed", CheckedAt: time.Now().UTC(), ErrorCode: lark.ErrorCode(err)})
+		_, saveErr := m.platforms.CompleteVerification(ticket, platform.Validation{Status: "failed", CheckedAt: time.Now().UTC(), ErrorCode: lark.ErrorCode(err)})
 		if saveErr != nil {
-			return platformConnectionError(saveErr)
+			return managedPlatformError(saveErr)
 		}
 	}
 	return nil

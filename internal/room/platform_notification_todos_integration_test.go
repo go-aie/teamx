@@ -199,7 +199,7 @@ func TestTodosPageCandidatesIncludeConcurrentAcknowledgementsAndMetadata(t *test
 		t.Fatal("accepted stale metadata candidate", after)
 	}
 	h.full()
-	if !h.state().Config.Enabled || cfg.ConnectionID != h.state().Config.ConnectionID {
+	if !h.state().Config.Enabled || cfg.PlatformID != h.state().Config.PlatformID {
 		t.Fatal("metadata edit changed binding")
 	}
 }
@@ -283,7 +283,7 @@ func TestTodosPublicHTTPWorksWithoutWorkspaceAndGuardsIdentity(t *testing.T) {
 	if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &list) != nil || len(list.Subscriptions) != 3 || list.Subscriptions[1].RecipientID != 101 || !list.Subscriptions[1].Available || !list.Subscriptions[0].Available || strings.Contains(response.Body.String(), "fingerprint") {
 		t.Fatal(response.Code, response.Body.String())
 	}
-	cfg := gitlab.NotificationConfig{ConnectionID: h.connection.ID, Todos: gitlab.TodoSettings{Enabled: true}}
+	cfg := gitlab.NotificationConfig{Enabled: true, PlatformID: h.connection.ID, Todos: gitlab.TodoSettings{Enabled: true}}
 	request := func() map[string]any {
 		return map[string]any{"service_epoch": h.m.epoch, "room_id": h.room.RoomID, "room_instance": h.room.RoomInstance, "version": 0, "caller": humanCaller, "config": cfg}
 	}
@@ -384,7 +384,7 @@ func TestTodosAccountReplacementRetiresAndKeepsOldProgress(t *testing.T) {
 
 	other := verifyTodoAccount(t, h.m, platformTestSave(t, h.m, req), 102)
 	cfg := old.Config
-	cfg.ConnectionID = other.ID
+	cfg.PlatformID = other.ID
 	h.clock.add(time.Minute)
 	next, err := h.m.configureTodosSubscription(context.Background(), h.key, old.SubscriptionVersion, cfg)
 	if err != nil {
@@ -400,8 +400,8 @@ func TestTodosAccountReplacementRetiresAndKeepsOldProgress(t *testing.T) {
 	if err = h.m.notifications.Deliver(context.Background(), h.key, retired.SubscriptionVersion); !errors.Is(err, notification.ErrIdentity) {
 		t.Fatal("retired inbox delivered", err)
 	}
-	remove := platformConnectionRequest{ServiceEpoch: h.m.epoch, Caller: humanCaller, ID: h.connection.ID, Version: h.connection.Version}
-	if _, err = h.m.updatePlatformConnection(remove, true); !errors.Is(err, errPlatformReferenced) {
+	remove := managedPlatformRequest{ServiceEpoch: h.m.epoch, Caller: humanCaller, ID: h.connection.ID, Version: h.connection.Version}
+	if _, err = h.m.updatePlatform(remove, true); !errors.Is(err, errPlatformReferenced) {
 		t.Fatal("retired subscription lost connection reference", err)
 	}
 	root := h.m.store.dir
@@ -688,7 +688,7 @@ func TestTodosTCPHTTPConfigureSyncDisableAndRoomDelivery(t *testing.T) {
 	}
 	server := httptest.NewServer(m)
 	defer server.Close()
-	cfg := gitlab.NotificationConfig{ConnectionID: c.ID, Todos: gitlab.TodoSettings{Enabled: true}}
+	cfg := gitlab.NotificationConfig{Enabled: true, PlatformID: c.ID, Todos: gitlab.TodoSettings{Enabled: true}}
 	payload := map[string]any{"service_epoch": m.epoch, "room_id": room.RoomID, "room_instance": room.RoomInstance, "version": 0, "caller": humanCaller, "config": cfg}
 	call := func(path string) notificationView {
 		t.Helper()

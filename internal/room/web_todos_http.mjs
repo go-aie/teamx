@@ -26,11 +26,11 @@ await ui.el("open-gitlab-source").emit("click"); await settle(); ui.el("gitlab-t
 await Promise.all([...inflight]); await settle();
 assert.equal(ui.el("notification-sources").hidden, false);
 assert.equal(ui.el("gitlab-events").hidden, false, "Events can be configured without a Workspace project binding");
-const connections = ui.el("gitlab-connection").children.filter(option => option.value);
-assert.equal(connections.length, 2, ui.el("gitlab-notification-account").textContent + " / " + ui.el("gitlab-todos-error").textContent);
+const platforms = ui.el("gitlab-connection").children.filter(option => option.value);
+assert.equal(platforms.length, 2, ui.el("gitlab-notification-account").textContent + " / " + ui.el("gitlab-todos-error").textContent);
 async function edit(id, value) { ui.el(id).value = value; await ui.el(id).emit("change"); }
 async function toggle(id, checked) { ui.el(id).checked = checked; await ui.el(id).emit("change"); }
-await edit("gitlab-connection", connections[0].value);
+await edit("gitlab-connection", platforms[0].value);
 assert.match(ui.el("gitlab-notification-account").textContent, /ID 101，已验证/);
 assert.equal(ui.el("gitlab-todos-scope"), undefined);
 assert.equal(String(ui.el("gitlab-interval").value), "30");
@@ -40,7 +40,7 @@ assert.match(ui.el("gitlab-feedback").textContent, /设置已保存/);
 const savedTodo = async () => {
   const {service_epoch,room_id,room_instance,caller} = mutations.at(-1).body;
   const view = await call(`/v1/platform/notifications?${new URLSearchParams({service_epoch,room_id,room_instance,caller_id:caller.id})}`);
-  return view.subscriptions.find(source => source.channel === "todos");
+  return view.subscriptions.find(source => source.channel === "todos" && source.platform_id === ui.el("gitlab-connection").value);
 };
 const initialID = (await savedTodo()).subscription_id;
 assert.match(initialID, /^[a-f0-9]{32}$/);
@@ -63,7 +63,7 @@ for (const reason of ["mentioned", "assigned", "review_requested", "other"]) awa
 await ui.el("gitlab-save").emit("click"); assert.deepEqual(mutations.at(-1).body.config.todos.filter.reasons, []);
 await toggle("gitlab-todos-enabled", false); await ui.el("gitlab-save").emit("click");
 assert.equal(ui.el("gitlab-todos-state").textContent, "已关闭");
-await edit("gitlab-connection", connections[1].value); await toggle("gitlab-todos-enabled", true);
+await edit("gitlab-connection", platforms[1].value); await toggle("gitlab-todos-enabled", true);
 for (const reason of ["mentioned", "assigned", "review_requested", "other"]) await toggle(`gitlab-todos-reason-${reason}`, true);
 assert.equal(ui.el("gitlab-save").disabled, false);
 await ui.el("gitlab-save").emit("click"); await untilMessageCount(2);
@@ -72,6 +72,6 @@ const nextID = (await savedTodo()).subscription_id; assert.notEqual(nextID, init
 await toggle("gitlab-todos-enabled", false); await ui.el("gitlab-save").emit("click");
 await ui.refresh(); assert.equal(messages().length, 2);
 assert.equal(mutations.every(call => call.body.channel === undefined && call.body.subscription_id === undefined), true);
-console.error("GT-03 app/handler: unbound room, personal identity, configure, sync, empty filter, account replacement, channel navigation and disable passed");
+console.error("GT-03 app/handler: unbound room, personal identity, configure, sync, empty filter, independent platforms, channel navigation and disable passed");
 await Promise.all([...inflight]); await settle();
 if (process.env.TEAMX_WEB_TRANSPORT === "stdio") process.stdin.destroy();

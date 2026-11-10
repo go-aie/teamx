@@ -210,7 +210,7 @@ func TestScionWorkspaceCloneCancelSettles(t *testing.T) {
 				profile := *c.CLIProfile
 				profile.Profile = strings.Repeat("e", 32)
 				scionWriteCredential(t, m, profile.Profile, "alice")
-				rotated, err := m.updatePlatformConnection(platformConnectionRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: c.ID, Version: c.Version, Name: c.Name, Provider: c.Provider, URL: c.URL, CLIProfile: &profile, ReferencedRooms: []RoomIdentity{room.RoomIdentity}}, false)
+				rotated, err := m.updatePlatform(managedPlatformRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: c.ID, Version: c.Version, Name: c.Name, Provider: c.Provider, URL: c.URL, CLIProfile: &profile, ReferencedRooms: []RoomIdentity{room.RoomIdentity}}, false)
 				if err != nil || rotated.CredentialVersion <= c.CredentialVersion {
 					t.Fatal("rotation", err)
 				}
@@ -239,7 +239,7 @@ func TestScionWorkspaceConfigCompatibility(t *testing.T) {
 	valid := base
 	valid.Repository = &workspaceRepository{Kind: "scion", URL: base.Repository.URL, Branch: "main"}
 	b := *base.Binding
-	b.ConnectionGeneration = strings.Repeat("a", 32)
+	b.PlatformGeneration = strings.Repeat("a", 32)
 	valid.Binding = &b
 	if _, err := normalizeWorkspace(valid, false); err != nil {
 		t.Fatal(err)

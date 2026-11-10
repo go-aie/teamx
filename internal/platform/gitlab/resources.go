@@ -1,4 +1,4 @@
-// Package gitlab provides TeamX built-in GitLab connections, notifications and
+// Package gitlab provides TeamX built-in GitLab platforms, notifications and
 // Workspace Git preparation independently of agent tools.
 package gitlab
 

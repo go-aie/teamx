@@ -13,7 +13,7 @@ import (
 )
 
 func eventTestBinding() Binding {
-	return Binding{Version: 1, RoomID: "room", RoomInstance: "generation", URL: "https://gitlab.example.com", Project: "group/project", ConnectionID: strings.Repeat("a", 32), ConnectionGeneration: strings.Repeat("b", 32), ProjectID: 7}
+	return Binding{Version: 1, RoomID: "room", RoomInstance: "generation", URL: "https://gitlab.example.com", Project: "group/project", PlatformID: strings.Repeat("a", 32), PlatformGeneration: strings.Repeat("b", 32), ProjectID: 7}
 }
 
 const rawEventFixture = `{"id":9,"project_id":7,"action_name":"opened","target_type":"MergeRequest","target_id":70,"target_iid":42,"target_title":"修复登录失败","created_at":"2026-11-01T12:00:00Z","author":{"id":2,"username":"alice","name":"Alice"}}`

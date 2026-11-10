@@ -12,10 +12,10 @@ import (
 
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/attachment"
-	"github.com/go-aie/teamx/internal/platform/connection"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
 	"github.com/go-aie/teamx/internal/platform/lark"
 	"github.com/go-aie/teamx/internal/platform/notification"
+	"github.com/go-aie/teamx/internal/platform/registry"
 )
 
 // Attachment requests identify a saved Room message or member Inbox entry. The
@@ -41,7 +41,7 @@ type attachmentAccess struct {
 	reader  *attachmentReader
 	source  platform.SourceRef
 	text    string
-	account connection.Account
+	account registry.Account
 	secret  platform.Secret
 }
 
@@ -151,7 +151,7 @@ func (m *roomManager) downloadAttachment(ctx context.Context, req attachmentRequ
 	}
 	access := &attachmentAccess{request: req, reader: reader, source: source, text: saved, account: account, secret: secret}
 	callCtx, cancel := context.WithCancel(ctx)
-	call := &platformCall{owner: req.RoomIdentity, connectionID: account.ConnectionID, agentID: req.AgentID, membershipID: req.MembershipID, cancel: cancel, done: make(chan struct{}), subscription: notification.Key{Owner: req.RoomIdentity, Source: notification.SourceID{Provider: source.Provider, Channel: source.Channel}, SubscriptionID: source.SubscriptionID}}
+	call := &platformCall{owner: req.RoomIdentity, platformID: account.PlatformID, agentID: req.AgentID, membershipID: req.MembershipID, cancel: cancel, done: make(chan struct{}), subscription: notification.Key{Owner: req.RoomIdentity, Source: notification.SourceID{Provider: source.Provider, Channel: source.Channel}, SubscriptionID: source.SubscriptionID}}
 	if reader != nil {
 		call.agentID, call.membershipID = reader.AgentID, reader.MembershipID
 	}
@@ -225,47 +225,47 @@ func (m *roomManager) attachmentSourceLocked(req attachmentRequest) (platform.So
 	return platform.SourceRef{}, "", ErrIdentity
 }
 
-func (m *roomManager) attachmentAccountLocked(owner RoomIdentity, source platform.SourceRef) (connection.Account, platform.Secret, error) {
+func (m *roomManager) attachmentAccountLocked(owner RoomIdentity, source platform.SourceRef) (registry.Account, platform.Secret, error) {
 	key := notification.Key{Owner: owner, Source: notification.SourceID{Provider: source.Provider, Channel: source.Channel}, SubscriptionID: source.SubscriptionID}
 	state, ok := m.notifications.StateLocked(key)
 	if !ok {
-		return connection.Account{}, platform.Secret{}, ErrIdentity
+		return registry.Account{}, platform.Secret{}, ErrIdentity
 	}
 	if s, ok := state.(lark.State); ok {
 		if s.Retired || source.Provider != "lark" || source.Channel != "messages" || source.Instance != s.Binding.Account.Instance || source.Reference.RecipientID != s.Binding.Account.ID || source.Reference.AccountTenant != s.Binding.Account.Tenant {
-			return connection.Account{}, platform.Secret{}, ErrIdentity
+			return registry.Account{}, platform.Secret{}, ErrIdentity
 		}
-		account, secret, err := m.resolvePlatformAccountLocked(owner, s.Binding.ConnectionID, "lark")
+		account, secret, err := m.resolvePlatformAccountLocked(owner, s.Binding.PlatformID, "lark")
 		if err != nil || account.CLIProfile == nil || larkBinding(account) != s.Binding {
-			return connection.Account{}, platform.Secret{}, ErrConflict
+			return registry.Account{}, platform.Secret{}, ErrConflict
 		}
 		return account, secret, nil
 	}
 	if source.Provider != "gitlab" {
-		return connection.Account{}, platform.Secret{}, ErrIdentity
+		return registry.Account{}, platform.Secret{}, ErrIdentity
 	}
 	var id, generation, origin string
 	var user int64
 	switch s := state.(type) {
 	case gitlab.EventsState:
 		if s.Retired || s.Status == "binding_changed" || s.Binding.Project != source.Project || (s.ProjectID != source.ProjectID && s.Binding.ProjectID != source.ProjectID) {
-			return connection.Account{}, platform.Secret{}, ErrIdentity
+			return registry.Account{}, platform.Secret{}, ErrIdentity
 		}
-		id, generation, origin, user = s.Binding.ConnectionID, s.Binding.ConnectionGeneration, s.Binding.URL, s.UserID
+		id, generation, origin, user = s.Binding.PlatformID, s.Binding.PlatformGeneration, s.Binding.URL, s.UserID
 	case gitlab.TodosState:
 		if s.Retired || s.Status == "binding_changed" {
-			return connection.Account{}, platform.Secret{}, ErrIdentity
+			return registry.Account{}, platform.Secret{}, ErrIdentity
 		}
-		id, generation, origin, user = s.Binding.ConnectionID, s.Binding.ConnectionGeneration, s.Binding.URL, s.Binding.UserID
+		id, generation, origin, user = s.Binding.PlatformID, s.Binding.PlatformGeneration, s.Binding.URL, s.Binding.UserID
 	default:
-		return connection.Account{}, platform.Secret{}, ErrIdentity
+		return registry.Account{}, platform.Secret{}, ErrIdentity
 	}
 	account, secret, err := m.resolvePlatformAccountLocked(owner, id, "gitlab")
 	if err != nil {
 		return account, secret, ErrIdentity
 	}
 	if origin != source.Instance || account.URL != origin || account.Generation != generation || account.UserID != user {
-		return connection.Account{}, platform.Secret{}, ErrConflict
+		return registry.Account{}, platform.Secret{}, ErrConflict
 	}
 	return account, secret, nil
 }

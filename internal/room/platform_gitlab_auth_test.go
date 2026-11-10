@@ -27,7 +27,7 @@ func newGitlabLoginHarness(t *testing.T) *gitlabLoginHarness {
 	t.Helper()
 	h := newGitlabSetupHarness(t)
 	init := gitlabSetupHTTP(t, h, "prepare", h.req)
-	g := &gitlabLoginHarness{h: h, req: gitlabAuthRequest{ServiceEpoch: h.m.epoch, Caller: humanCaller, ID: h.req.ID, Version: h.req.Version, ApplicationID: init.ApplicationID, Affected: []gitlabAuthConnection{{ID: h.req.ID, Version: h.req.Version}}}}
+	g := &gitlabLoginHarness{h: h, req: gitlabAuthRequest{ServiceEpoch: h.m.epoch, Caller: humanCaller, ID: h.req.ID, Version: h.req.Version, ApplicationID: init.ApplicationID, Affected: []gitlabAuthPlatform{{ID: h.req.ID, Version: h.req.Version}}}}
 	g.user.Store(101)
 	g.revokeStatus.Store(200)
 	h.m.platformHTTP = workspaceHTTPFunc(func(r *http.Request) (*http.Response, error) {

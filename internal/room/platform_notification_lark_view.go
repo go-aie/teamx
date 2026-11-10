@@ -20,7 +20,7 @@ type larkChatDiagnostic struct {
 type larkDiagnostics struct {
 	ExcludedItems     int                  `json:"excluded_items"`
 	CLIVersion        string               `json:"cli_version"`
-	ScopeMode         string               `json:"scope_mode"`
+	PrivateScope      string               `json:"private_scope"`
 	Baseline          time.Time            `json:"baseline,omitzero"`
 	DirectoryLastFull time.Time            `json:"directory_last_full,omitzero"`
 	DirectoryPages    int                  `json:"directory_pages"`
@@ -40,7 +40,7 @@ func (m *roomManager) larkNotificationViewLocked(owner RoomIdentity, s *lark.Sta
 	if err != nil || entry.Status != "ready" {
 		return notificationView{}, ErrIdentity
 	}
-	v := notificationView{RoomIdentity: owner, SourceID: lark.MessagesSourceID, Available: true, Status: "disabled", Config: lark.Config{IntervalSeconds: 60, Private: true, Bots: true, GroupMentions: true}, Lark: &larkDiagnostics{CLIVersion: lark.CLIVersion, Chats: []larkChatDiagnostic{}}}
+	v := notificationView{RoomIdentity: owner, SourceID: lark.MessagesSourceID, Available: true, Status: "disabled", Config: lark.DefaultConfig(""), Lark: &larkDiagnostics{CLIVersion: lark.CLIVersion, Chats: []larkChatDiagnostic{}}}
 	if s == nil {
 		return v, nil
 	}
@@ -49,16 +49,17 @@ func (m *roomManager) larkNotificationViewLocked(owner RoomIdentity, s *lark.Sta
 	v.LastCheck, v.LastFull, v.RetryAt, v.ErrorCode, v.Metrics, v.DeliveryErrorCode = s.LastCheck, s.LastFull, s.RetryAt, s.ErrorCode, s.Metrics, s.DeliveryErrorCode
 	v.Retired = s.Retired
 	v.Account = s.Binding.Account
+	v.PlatformID = s.Binding.PlatformID
 	v.Instance = s.Binding.Account.Instance
 	v.Lark.Baseline = s.Baseline
 	if code := m.notificationTargetErrorLocked(owner, s.PendingItems()); code != "" {
 		v.DeliveryErrorCode = code
 	}
-	v.Lark.ScopeMode = "specified"
+	v.Lark.PrivateScope = "specified"
 	v.Lark.DirectoryComplete = true
 	v.Lark.RequestIntervalMS = int(lark.AccountRequestInterval.Milliseconds())
-	if s.Config.AllChats() {
-		v.Lark.ScopeMode = "all"
+	if s.Config.DiscoverPrivate() {
+		v.Lark.PrivateScope = "all"
 		v.Lark.DirectoryComplete = s.Directory != nil && !s.Directory.LastFull.IsZero() && s.Directory.Scan == nil
 		if s.Directory != nil {
 			v.Lark.DirectoryLastFull = s.Directory.LastFull
@@ -83,7 +84,7 @@ func (m *roomManager) larkNotificationViewLocked(owner RoomIdentity, s *lark.Sta
 				d.Relationship = p.Chat.Relation.Kind
 			}
 		}
-		if !ok && !s.Config.AllChats() {
+		if !ok && !s.Config.DiscoverPrivate() {
 			v.Lark.DirectoryComplete = false
 		}
 		if !ok || p.Completed == 0 || p.Scan != nil || p.NeedsVerification || p.ErrorCode != "" || m.notifications.Now().Unix()-p.Completed >= int64(s.Config.IntervalSeconds) {

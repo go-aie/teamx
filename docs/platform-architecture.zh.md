@@ -1,13 +1,13 @@
 # 平台架构
 
-平台连接、通知、Agent 工具与 Workspace 各自拥有配置和生命周期，按需共享连接。TeamX 内置适配使用 Go；面向 Agent 的平台操作由独立程序承担，复杂流程放在按需读取的 skill 中。
+具体平台表示一份明确账号接入；通知、成员工具与 Workspace 各自拥有配置和生命周期，直接引用平台。TeamX 内置适配使用 Go；Agent 的平台工具入口按类型分派到共用外部程序或已登记的内置能力，复杂流程放在按需读取的 skill 中。
 
 ## 模块与依赖
 
 | 模块 | 职责 |
 | --- | --- |
 | [platform/reference.go](../internal/platform/reference.go)、[reference_capability.go](../internal/platform/reference_capability.go) | 通用原生目标／账号身份、访问上下文，以及可选的解析、分页读取、单次动作合同 |
-| [platform/connection](../internal/platform/connection/) | 全局连接、账号核验、凭据解析与版本证据 |
+| [platform/registry](../internal/platform/registry/) | 全局平台、账号核验、凭据解析与版本证据 |
 | [platform/notification](../internal/platform/notification/) | 来源装配、任务生命周期、原子状态保存、收件箱与投递协调 |
 | [platform/gitlab](../internal/platform/gitlab/) | 内置账号/项目核验、Events/Todos Go 查询、来源算法及 Workspace 必需的 GitLab 请求 |
 | [platform/tool](../internal/platform/tool/) | 静态工具目录、程序定位、版本和环境、子进程及标准流、skill 读取 |
@@ -41,7 +41,11 @@ flowchart LR
 
 ## 连接与身份
 
-全局连接的元数据、OAuth 应用及共享授权原子保存在私有的 `platform-connections.json`（版本 4）；飞书和 Scion 只保存 CLI profile 引用。公开状态只包含引用、版本和账号摘要。GitLab 运行时仅支持 OAuth，Workspace 和工具复用连接，不再保存房间 PAT 或引用服务环境变量。每次远端请求或有界进程通过服务获取短期令牌许可，授权变化先取消并结清旧调用；正常刷新保持稳定授权证据和通知进度。
+全局连接的元数据、OAuth 应用及共享授权原子保存在私有的 `platform-connections.json`（版本 5）；飞书和 Scion 只保存 CLI profile 引用。一条连接就是一个具体平台，平台 ID 沿用原稳定 ID，不另建连接业务对象。[静态类型目录](../internal/platform/catalog.go)登记通知通道和工具实现类型；平台记录的 `tool_entry_id` 独立生成，改名保留、删除重建不复用。入口存在不授予成员权限，当前成员工具命令与绑定方式仍按下节执行。
+
+GitLab 应用所有者仅用于应用管理与导入核验；账号授权按应用 ID 和原生用户 ID 唯一保存，平台通过 `credential_id` 引用准确授权。同一应用可保存多个用户的独立授权；P5 已接通兼容应用选择、实际新账号登录、固定账号重新授权／退出以及完整共同配置影响范围，详见 [P5 实施记录](platform-configuration-p5-acceptance.zh.md)。首次接入操作在账号核验后复用原通知和工具绑定数据，按固定 Room／成员持久化各部分结果与恢复版本；配置界面复用同一编排：成员入口固定完整身份，Room／全局入口选择一次使用目标；账号、通知和工具分别报告结果，重启后可读取原操作继续。旧版本需停服执行显式离线升级，升级前保存私有原快照备份，操作和恢复方式见 [P1 实施记录](platform-configuration-p1-acceptance.zh.md)。
+
+公开状态只包含引用、版本和账号摘要。GitLab 运行时仅支持 OAuth，Workspace 和工具复用连接，不再保存房间 PAT 或引用服务环境变量。每次远端请求或有界进程通过服务获取短期令牌许可，授权变化先取消并结清旧调用；正常刷新保持稳定授权证据和通知进度。
 
 工具、通知、Workspace 显式引用连接。删除连接检查各类引用；凭据轮换先阻断受影响的新执行、取消并等待旧任务，再重新核验。换实例或账号需显式重绑，不能继承旧账号的订阅或成员选择。凭据不得进入 URL、日志、提示词、普通 API 或 Session 配置快照。
 
@@ -49,15 +53,19 @@ flowchart LR
 
 ```sh
 "$TEAMX_CLI" tools list
-"$TEAMX_CLI" tools run gitlab --help
-"$TEAMX_CLI" tools skill gitlab
+"$TEAMX_CLI" tools run ENTRY --help
+"$TEAMX_CLI" tools skill ENTRY
 ```
 
-成员在详情的工具设置中显式启用工具并选择连接。绑定保存在房间 `tool-bindings.json`，关联 AgentID、MembershipID、工具和连接 generation；移除后重加的成员不继承同名旧成员绑定。每成员每工具选择一个连接，无账号工具可以不引用连接。
+`ENTRY` 使用 `tools list` 返回的准确入口，即使只有一个平台也不使用 `gitlab/lark/scion` 类型别名。列表显示入口、平台名称、类型、账号与当前可用能力；同成员可同时启用同类型的多个平台。成员设置分别启用各平台，无需填写程序路径。绑定保存在房间 `tool-bindings.json`，唯一范围为 RoomIdentity、MembershipID、工具类型、platform_id，并核对 AgentID 和平台 generation；移除后重加的成员不继承同名旧成员绑定。无账号工具保留独立入口。
 
-服务按完整房间身份找到所属实例，再核对 service epoch、实际成员、绑定版本和账号后，仅启动登记的独立程序，原样传递其参数与标准流。它不解释 GitLab 子命令、不维护项目白名单、逐操作授权或外部写入回执。工具沿用所选账号的有效权限；这不是限制平台权限的安全沙箱。旧 PC 阶段的 `platform tools list/execute`、`received_todos` 操作范围、确认令牌与 reconcile 收据协议已移除。
+服务按“入口 → 平台 → 当前成员绑定 → 类型实现”解析，核对完整房间身份、service epoch、实际成员、平台 generation、账号和凭据。GitLab、Scion 启动登记的共用独立程序，原样传递参数与标准流；飞书分派到有界内置读取和已开放的托管动作，不转发任意原生 CLI 命令。外部 GitLab 启动器不解释其子命令、不维护项目白名单或外部写入回执。工具沿用所选账号的有效权限；这不是限制平台权限的安全沙箱。旧 PC 阶段的 `platform tools list/execute`、`received_todos` 操作范围、确认令牌与 reconcile 收据协议已移除。
 
 成员 CLI 使用 `POST /v1/tools/list`、`/run`、`/skill`；run 传输二进制 stdin 和分帧 stdout/stderr/退出码，HTTP 中断会取消并结清子进程。工具安装在服务机器上，由服务启动环境定位，Agent shell 的 PATH 不转发给服务。构建、路径与固定 glab 版本见[工具手册](../tools/gitlab/README.zh.md)。
+
+缺少外部程序只移除依赖它的能力，保留成员启用意图。GitLab 内置 HTTP 读取／动作不依赖 glab；飞书读取依赖准确 profile 的 CLI，固定账号动作还依赖当前主机支持。每次发现与执行重新检查，修复依赖后恢复；不会借用另一平台。帮助和 skill 使用相同入口，skill 示例由服务端注入入口标识。
+
+通知／跟进通过保存的订阅或访问证据恢复原平台；历史来源仅在原生接收账号和实例唯一匹配时可恢复，歧义拒绝。`actions resolve/execute --tool ENTRY` 可显式限定平台，入口与引用不一致时拒绝，不切换账号。飞书入口还支持 `tools run ENTRY read ...` 和 `tools run ENTRY actions resolve/execute --request JSON`，沿用现有授权、能力门槛、动作 ID 和回执。
 
 停用绑定、换账号、切房、轮换、删房和退出先阻断新调用，再取消并等待相关进程。取消不能撤销已经发生的远端副作用；断线或超时后先核实远端，不自动重发写入。工具绑定由当前成员显式选择，通知和 Workspace 不赋予工具权限。
 
@@ -127,3 +135,12 @@ Scion 是独立 provider，不注册 GitLab MR、通知或内部动作适配器�
 
 
 Scion Workspace 通过独立 `internal/workspace/scion` 适配器准备原生工作副本；共用管理仍只负责目录、操作与 Session 生命周期。仓库 kind 与平台 provider 分开校验，旧无 kind 快照不重写。Scion 平台桥接使用固定 CLI 验证 subject、canonical 仓库和已有分支，再以私有凭据副本 clone；账号和操作进程均受连接取消与结清管理，凭据不落入工作副本或 Session。回访与正常重开只检查本地结构和身份，日常工具绑定独立选择。当前实测与浏览器待验边界见 [S3b 记录](scion-s3b-acceptance.zh.md)。
+
+
+### 平台公共模型与格式（P2.5）
+
+公共 `platform.Platform` 表示唯一的平台账号接入；`registry` 保存私有记录、generation 和适配器认证引用，不另建 Connection 管理器。GitLab 的 `credential_id` 仍精确指向 OAuth 用户授权；飞书和 Scion 仍使用各自 CLI profile，公共类型不依赖 registry 或适配器。
+
+通知、工具绑定、Workspace、访问及动作证据统一使用 `platform_id`、`platform_generation`、`platform_version`。全局管理 API 使用 `/v1/platforms` 及其子路径，集合字段为 `platforms`；新请求不接受旧连接字段。平台配置版本与授权／凭据版本继续分别核验。P2.5 沿用 P1 的稳定工具标识；P4 已接通路由，见 [P4 实施与验证](platform-configuration-p4-acceptance.zh.md)。
+
+停服转换入口为 `teamx platforms upgrade --rooms-dir ROOT`，详见 [P2.5 升级与验证](platform-configuration-p2.5-acceptance.zh.md)。固定物理文件名 `platform-connections.json` 保留，格式版本升至 6；Room 文件仍由原业务 schema 管理，跨文件平台字段转换由版本 1 的 `platform-model-upgrade.json` 记录统一协调。

@@ -10,22 +10,23 @@ import (
 	"strings"
 )
 
-// Definition describes a standalone executable, never platform subcommands.
+// Definition registers a reusable executable or a bounded built-in dispatcher.
 type Definition struct {
-	InternalOnly bool              `json:"internal_only,omitempty"`
-	Name         string            `json:"name"`
-	Description  string            `json:"description"`
-	Version      string            `json:"version"`
-	Provider     string            `json:"provider,omitempty"`
-	Skill        string            `json:"skill,omitempty"`
-	Executable   string            `json:"-"`
-	Environment  map[string]string `json:"-"` // child variable -> account field
+	InternalOnly bool                   `json:"internal_only,omitempty"`
+	Name         string                 `json:"name"`
+	Description  string                 `json:"description"`
+	Version      string                 `json:"version"`
+	Provider     string                 `json:"provider,omitempty"`
+	Skill        string                 `json:"skill,omitempty"`
+	Executable   string                 `json:"-"`
+	Environment  map[string]string      `json:"-"` // child variable -> account field
+	Dependencies []ExecutableDependency `json:"-"`
 }
 
 func Catalog() []Definition {
 	bin := ResolveExecutable("teamx-gitlab", os.Getenv("TEAMX_GITLAB_BIN"))
 	return []Definition{{Name: "gitlab", Description: "GitLab CLI and WorkItem extensions; uses account permissions", Version: "glab 1.127.0", Provider: "gitlab", Executable: bin, Skill: "skills/gitlab/SKILL.md",
-		Environment: map[string]string{"GITLAB_HOST": "instance", "GITLAB_TOKEN": "token"}}, {Name: "lark", Description: "飞书消息只读绑定；使用 teamx lark read --help 读取原消息或有界上下文", Provider: "lark", Version: "lark-cli 1.0.99", InternalOnly: true},
+		Environment: map[string]string{"GITLAB_HOST": "instance", "GITLAB_TOKEN": "token"}, Dependencies: []ExecutableDependency{{Name: "glab", OverrideEnvironment: "TEAMX_GLAB_BIN"}}}, {Name: "lark", Description: "飞书内置消息读取与已开放的托管动作；使用入口 --help 查看命令", Provider: "lark", Version: "lark-cli 1.0.99", InternalOnly: true, Skill: "skills/lark/SKILL.md"},
 		{Name: "scion", Description: "Scion native repository and Review CLI; uses account permissions", Version: "scn 0.1.13", Provider: "scion", Executable: ResolveExecutable("teamx-scion", os.Getenv("TEAMX_SCION_BIN")), Skill: "skills/scion/SKILL.md", Environment: map[string]string{"SCION_ENDPOINT": "instance", "SCION_HUB": "instance", "SCION_CREDENTIALS_FILE": "credentials_file", "SCION_CREDENTIALS": "credential_mode", "SCION_NO_DAEMON": "no_daemon", "SCION_CONFIG_FILE": "config_file"}}}
 }
 
@@ -62,6 +63,10 @@ func (Process) Format(s fmt.State, _ rune) { _, _ = io.WriteString(s, "[REDACTED
 // Run uses a small environment allowlist. Model credentials, operator tokens,
 // global login config and Room identity never enter a tool process.
 func (p Process) Run(ctx context.Context, args []string) int {
+	if !DependenciesAvailable(p.Definition) {
+		io.WriteString(p.Error, "tool dependency unavailable on TeamX server (exit 127). Operator: repair the registered executable dependencies beside the tool or on the server PATH, or fix the configured dependency override. Agent shell PATH/env changes do not affect server tools.\n")
+		return 127
+	}
 	private, err := os.MkdirTemp("", "teamx-tool-")
 	if err != nil {
 		io.WriteString(p.Error, "cannot prepare tool environment\n")

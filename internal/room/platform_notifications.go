@@ -19,8 +19,8 @@ type notificationAdapter struct {
 }
 
 func (m *roomManager) initPlatformNotifications() {
-	m.gitlabNotifications = make(map[RoomIdentity]gitlabNotificationRecord)
-	m.gitlabConfiguring = make(map[RoomIdentity]bool)
+	m.gitlabNotifications = make(map[RoomIdentity]map[string]gitlabNotificationRecord)
+	m.gitlabConfiguring = make(map[platformNotificationKey]bool)
 	if m.notificationAdapters == nil {
 		m.notificationAdapters = m.gitlabNotificationAdapters()
 		m.notificationAdapters[lark.MessagesSourceID] = m.larkNotificationAdapter()
@@ -88,10 +88,10 @@ func (m *roomManager) admitPlatformNotificationLocked(ctx context.Context, state
 	}
 	meta := state.Metadata()
 	if meta.Key.Source.Provider == "gitlab" {
-		if m.gitlabConfiguring[meta.Key.Owner] {
+		if m.gitlabConfiguring[platformNotificationKey{meta.Key.Owner, meta.PlatformID}] {
 			return scope, notification.ErrBusy
 		}
-		if saved, ok := m.gitlabNotifications[meta.Key.Owner]; ok && !gitlabConfigApplied(saved.Config, state) {
+		if saved, ok := m.gitlabNotifications[meta.Key.Owner][meta.PlatformID]; ok && !gitlabConfigApplied(saved.Config, state) {
 			return scope, notification.ErrBusy
 		}
 	}
@@ -107,7 +107,7 @@ func (m *roomManager) admitPlatformNotificationLocked(ctx context.Context, state
 	if err != nil {
 		return scope, err
 	}
-	if saved, ok := m.gitlabNotifications[meta.Key.Owner]; ok && meta.Key.Source.Provider == "gitlab" {
+	if saved, ok := m.gitlabNotifications[meta.Key.Owner][meta.PlatformID]; ok && meta.Key.Source.Provider == "gitlab" {
 		scope.Revision += fmt.Sprintf("|config:%d", saved.Version)
 	}
 	scope.Directory = filepath.Join(m.roomDir(meta.Key.Owner.RoomID), "notification-queries", meta.Key.Source.Provider+"."+meta.Key.Source.Channel+"."+meta.Key.SubscriptionID)

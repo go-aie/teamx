@@ -43,7 +43,7 @@ func TestScionRealMemberRead(t *testing.T) {
 	if os.MkdirAll(dir, 0700) != nil || os.WriteFile(filepath.Join(dir, "credentials.json"), data, 0600) != nil {
 		t.Fatal("cannot prepare private profile")
 	}
-	c := platformTestSave(t, m, platformConnectionRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("d", 32), Name: "Scion read acceptance", Provider: "scion", URL: origin, CLIProfile: profile})
+	c := platformTestSave(t, m, managedPlatformRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("d", 32), Name: "Scion read acceptance", Provider: "scion", URL: origin, CLIProfile: profile})
 	c = verifyScion(t, m, c)
 	bindCLITool(t, m, room.RoomIdentity, member, c, "scion", 0)
 	t.Logf("verified %s / %s", c.Validation.Account.ID.Namespace, c.Validation.Account.ID.Value)
@@ -61,9 +61,9 @@ func TestScionRealMemberRead(t *testing.T) {
 			args   []string
 			schema string
 		}{
-			{[]string{"run", "scion", "--json", "whoami", origin}, "scion.cli.whoami/v1"},
-			{[]string{"run", "scion", "--json", "repo", "info", repo}, "scion.cli.repo/v1"},
-			{[]string{"run", "scion", "--json", "--repo", repo, "review", "ls", "--state", "all", "--limit", "100"}, "scion.cli.reviews/v1"},
+			{[]string{"run", c.ToolEntryID, "--json", "whoami", origin}, "scion.cli.whoami/v1"},
+			{[]string{"run", c.ToolEntryID, "--json", "repo", "info", repo}, "scion.cli.repo/v1"},
+			{[]string{"run", c.ToolEntryID, "--json", "--repo", repo, "review", "ls", "--state", "all", "--limit", "100"}, "scion.cli.reviews/v1"},
 		} {
 			var out, stderr bytes.Buffer
 			if err := runToolsWithClient(context.Background(), check.args, bytes.NewReader(nil), &out, &stderr, env, client); err != nil {
@@ -106,14 +106,14 @@ func TestScionRealLoginDiscovery(t *testing.T) {
 			_, snapshot := readManagedRoom(t, m, room)
 			member := snapshot.Members[0]
 			id := strings.Repeat("a", 32)
-			r := managerHTTP(m, "/v1/platform/connections/scion/login", scionAuthBody(m, map[string]any{"session_id": id, "url": origin, "executable": exe, "pat": credentials[origin]}))
+			r := managerHTTP(m, "/v1/platforms/scion/login", scionAuthBody(m, map[string]any{"session_id": id, "url": origin, "executable": exe, "pat": credentials[origin]}))
 			if r.Code != 200 {
 				t.Fatal("native login start rejected", r.Code)
 			}
 			var view scionAuthView
 			deadline := time.Now().Add(65 * time.Second)
 			for {
-				r = managerHTTP(m, "/v1/platform/connections/scion/status", scionAuthBody(m, map[string]any{"session_id": id}))
+				r = managerHTTP(m, "/v1/platforms/scion/status", scionAuthBody(m, map[string]any{"session_id": id}))
 				if r.Code != 200 || json.Unmarshal(r.Body.Bytes(), &view) != nil {
 					t.Fatal("native login status unavailable")
 				}
@@ -128,18 +128,18 @@ func TestScionRealLoginDiscovery(t *testing.T) {
 			if view.Status != "succeeded" || view.Profile == nil || view.Username != "csgship" {
 				t.Fatal("native PAT login did not verify the expected subject", view.Status, view.ErrorCode)
 			}
-			r = managerHTTP(m, "/v1/platform/connections/scion/discover", scionAuthBody(m, map[string]any{"url": origin, "executable": exe}))
+			r = managerHTTP(m, "/v1/platforms/scion/discover", scionAuthBody(m, map[string]any{"url": origin, "executable": exe}))
 			var discovery scion.Discovery
 			if r.Code != 200 || json.Unmarshal(r.Body.Bytes(), &discovery) != nil || len(discovery.Profiles) != 1 || discovery.Profiles[0].Profile != view.Profile.Profile || discovery.Profiles[0].Username != view.Username {
 				t.Fatal("native account discovery failed")
 			}
-			c := platformTestSave(t, m, platformConnectionRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("b", 32), Name: "Scion native login acceptance", Provider: "scion", URL: origin, CLIProfile: view.Profile})
+			c := platformTestSave(t, m, managedPlatformRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("b", 32), Name: "Scion native login acceptance", Provider: "scion", URL: origin, CLIProfile: view.Profile})
 			c = verifyScion(t, m, c)
 			bindCLITool(t, m, room.RoomIdentity, member, c, "scion", 0)
 			svc := eventLiveService(t, &eventHarness{m: m, room: room})
 			client, endpoint := toolPipeServer(t, m)
 			var out, stderr bytes.Buffer
-			if err := runToolsWithClient(context.Background(), []string{"run", "scion", "--json", "repo", "info", "OpenCSG/teamx-demo"}, bytes.NewReader(nil), &out, &stderr, cliToolEnv(endpoint, svc, member), client); err != nil {
+			if err := runToolsWithClient(context.Background(), []string{"run", c.ToolEntryID, "--json", "repo", "info", "OpenCSG/teamx-demo"}, bytes.NewReader(nil), &out, &stderr, cliToolEnv(endpoint, svc, member), client); err != nil {
 				t.Fatal("member repository read failed", err)
 			}
 			var repo struct{ Schema, Name string }

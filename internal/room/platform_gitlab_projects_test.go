@@ -31,7 +31,7 @@ func TestGitLabProjectPickerBeforeSubscription(t *testing.T) {
 		}
 		return &http.Response{StatusCode: 200, Header: http.Header{"X-Next-Page": {"3"}}, Body: io.NopCloser(strings.NewReader(`[{"id":7,"name":"Project","path_with_namespace":"team/project","description":"private-extra"}]`))}, nil
 	})
-	req := gitlabProjectsRequest{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, ConnectionID: c.ID, ConnectionVersion: c.Version, Search: " team/project ", Page: 2}
+	req := gitlabProjectsRequest{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, PlatformID: c.ID, PlatformVersion: c.Version, Search: " team/project ", Page: 2}
 	response := managerHTTP(m, "/v1/platform/gitlab/projects", req)
 	if response.Code != 200 || !strings.Contains(response.Body.String(), `"next_page":3`) || strings.Contains(response.Body.String(), "private-extra") || strings.Contains(response.Body.String(), "access") {
 		t.Fatal(response.Code, response.Body.String())
@@ -50,7 +50,7 @@ func TestGitLabProjectPickerBeforeSubscription(t *testing.T) {
 		func(r *gitlabProjectsRequest) { r.Caller.Kind = "agent" },
 		func(r *gitlabProjectsRequest) { r.ServiceEpoch = "stale" },
 		func(r *gitlabProjectsRequest) { r.RoomInstance = "stale" },
-		func(r *gitlabProjectsRequest) { r.ConnectionVersion++ },
+		func(r *gitlabProjectsRequest) { r.PlatformVersion++ },
 		func(r *gitlabProjectsRequest) { r.Search = "bad\nsearch" },
 		func(r *gitlabProjectsRequest) { r.Page = -1 },
 		func(r *gitlabProjectsRequest) { r.Page = 1001 },
@@ -77,14 +77,14 @@ func TestGitLabProjectPickerDiscardsRevokedAccount(t *testing.T) {
 	a := installOAuthFixture(t, h.m, c, time.Now().Add(time.Hour))
 	h.m.platformHTTP = workspaceHTTPFunc(func(*http.Request) (*http.Response, error) {
 		h.m.mu.Lock()
-		_, _, err := h.m.connections.LogoutOAuth(a.Authorization.CredentialID)
+		_, _, err := h.m.platforms.LogoutOAuth(a.Authorization.CredentialID)
 		h.m.mu.Unlock()
 		if err != nil {
 			t.Fatal(err)
 		}
 		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`[{"id":7,"name":"Project","path_with_namespace":"team/project"}]`))}, nil
 	})
-	req := gitlabProjectsRequest{ServiceEpoch: h.m.epoch, RoomIdentity: h.room.RoomIdentity, Caller: humanCaller, ConnectionID: c.ID, ConnectionVersion: c.Version}
+	req := gitlabProjectsRequest{ServiceEpoch: h.m.epoch, RoomIdentity: h.room.RoomIdentity, Caller: humanCaller, PlatformID: c.ID, PlatformVersion: c.Version}
 	w := managerHTTP(h.m, "/v1/platform/gitlab/projects", req)
 	if w.Code == 200 || strings.Contains(w.Body.String(), "team/project") {
 		t.Fatal("revoked account result disclosed", w.Code, w.Body.String())

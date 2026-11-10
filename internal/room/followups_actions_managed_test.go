@@ -19,7 +19,7 @@ type managedActionFixture struct {
 	m          *roomManager
 	room       roomSummary
 	svc        *service
-	connection platformConnection
+	connection managedPlatform
 	member     MemberState
 	id         MemberIdentity
 	req        apiRequest

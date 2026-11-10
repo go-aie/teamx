@@ -18,9 +18,9 @@ var errWorkspaceOperationNotFound = errors.New("workspace operation not recorded
 // Workspace management uses the catalog epoch: it must remain addressable while
 // the per-room service is closed, including after an interrupted config commit.
 type workspaceApplyRequest struct {
-	connection        *projectConnectionResolution
-	ConnectionVersion uint64 `json:"connection_version,omitempty"`
-	ServiceEpoch      string `json:"service_epoch"`
+	connection      *projectPlatformResolution
+	PlatformVersion uint64 `json:"platform_version,omitempty"`
+	ServiceEpoch    string `json:"service_epoch"`
 	RoomIdentity
 	Caller              Caller          `json:"caller"`
 	OperationID         string          `json:"operation_id"`
@@ -64,8 +64,8 @@ func (m *roomManager) workspaceStatus(id RoomIdentity, operationID string) (work
 	}
 	if saved.Workspace != nil && saved.Workspace.Binding != nil {
 		b := saved.Workspace.Binding
-		if b.ConnectionID != "" {
-			if _, err := m.resolveWorkspaceConnectionLocked(id, *saved.Workspace); err == nil {
+		if b.PlatformID != "" {
+			if _, err := m.resolveWorkspacePlatformLocked(id, *saved.Workspace); err == nil {
 				result.CredentialStatus = "configured"
 			}
 
@@ -104,7 +104,7 @@ func (m *roomManager) serveWorkspace(w http.ResponseWriter, r *http.Request) {
 			writeAPIError(w, ErrRequest)
 			return
 		}
-		if err := m.prepareWorkspaceConnection(r.Context(), &req); err != nil {
+		if err := m.prepareWorkspacePlatform(r.Context(), &req); err != nil {
 			writeAPIError(w, err)
 			return
 		}
@@ -245,7 +245,7 @@ func (m *roomManager) startWorkspaceApply(req workspaceApplyRequest) (workspaceO
 	if replacement != nil && (replacement.PreviousVersion != saved.WorkspaceVersion || !reflect.DeepEqual(saved, *replacement.PreviousConfig)) {
 		return workspaceOperation{}, ErrConflict
 	}
-	target, err := m.workspaceConnectionTargetLocked(canonical, req.connection)
+	target, err := m.workspacePlatformTargetLocked(canonical, req.connection)
 	if err != nil {
 		return workspaceOperation{}, err
 	}

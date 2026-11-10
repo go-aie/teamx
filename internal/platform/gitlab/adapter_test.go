@@ -14,7 +14,7 @@ import (
 
 func TestAdapterFrozenResourcesAndBindingChecks(t *testing.T) {
 	tools := filepath.Join(t.TempDir(), "tools")
-	binding := Binding{Version: 1, RoomID: "room", RoomInstance: "generation", URL: "https://gitlab.invalid", Project: "group/project", ConnectionID: strings.Repeat("a", 32), ConnectionGeneration: strings.Repeat("b", 32)}
+	binding := Binding{Version: 1, RoomID: "room", RoomInstance: "generation", URL: "https://gitlab.invalid", Project: "group/project", PlatformID: strings.Repeat("a", 32), PlatformGeneration: strings.Repeat("b", 32)}
 	calls := 0
 	run := func(context.Context, string, url.Values, http.Header, int64) (APIResponse, error) {
 		calls++
@@ -78,7 +78,7 @@ func TestAdapterRejectsUnsafeResourceAndWrongProject(t *testing.T) {
 			if kind == "empty" {
 				os.WriteFile(filepath.Join(tools, "git-askpass.sh"), nil, 0600)
 			}
-			binding := Binding{Version: 1, URL: "https://gitlab.invalid", Project: "group/project", ConnectionID: strings.Repeat("a", 32), ConnectionGeneration: strings.Repeat("b", 32)}
+			binding := Binding{Version: 1, URL: "https://gitlab.invalid", Project: "group/project", PlatformID: strings.Repeat("a", 32), PlatformGeneration: strings.Repeat("b", 32)}
 			run := func(context.Context, string, url.Values, http.Header, int64) (APIResponse, error) {
 				return APIResponse{Data: []byte(`{"id":8,"path_with_namespace":"other/project","http_url_to_repo":"https://gitlab.invalid/other/project.git"}`)}, nil
 			}

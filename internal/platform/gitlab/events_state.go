@@ -37,7 +37,7 @@ type EventsConfig struct {
 	BackfillSeconds int                 `json:"backfill_seconds,omitempty"`
 	BackfillStart   time.Time           `json:"backfill_start,omitzero"`
 	Target          notification.Target `json:"target,omitzero"`
-	ConnectionID    string              `json:"connection_id,omitempty"`
+	PlatformID      string              `json:"platform_id,omitempty"`
 	Project         string              `json:"project,omitempty"`
 	Enabled         bool                `json:"enabled"`
 	IntervalSeconds int                 `json:"interval_seconds"`
@@ -118,7 +118,7 @@ func NormalizeEventsConfig(c EventsConfig) (EventsConfig, error) {
 	if !c.Target.Valid() {
 		return c, notification.ErrRequest
 	}
-	if c.ConnectionID != "" && !validRestartID(c.ConnectionID) || c.Project != "" && !validEventsProjectPath(c.Project) {
+	if c.PlatformID != "" && !validRestartID(c.PlatformID) || c.Project != "" && !validEventsProjectPath(c.Project) {
 		return c, notification.ErrRequest
 	}
 	interval, err := normalizeInterval(c.IntervalSeconds)
@@ -189,8 +189,8 @@ func (s EventsState) Validate(owner platform.RoomIdentity) error {
 	if !s.Config.BackfillStart.IsZero() && !s.Baseline.Equal(s.Config.BackfillStart) {
 		return notification.ErrInvalid
 	}
-	if s.Retired && s.Config.Enabled || s.UserID < 0 || s.UserID == 0 && s.Username != "" || s.Config.ConnectionID != "" && s.UserID <= 0 || s.UserID > 0 && (!platform.ValidUsername(s.Username) || s.Binding.ConnectionID == "") ||
-		s.Config.ConnectionID != "" && s.Config.ConnectionID != s.Binding.ConnectionID || s.Config.Project != "" && s.Config.Project != s.Binding.Project {
+	if s.Retired && s.Config.Enabled || s.UserID < 0 || s.UserID == 0 && s.Username != "" || s.Config.PlatformID != "" && s.UserID <= 0 || s.UserID > 0 && (!platform.ValidUsername(s.Username) || s.Binding.PlatformID == "") ||
+		s.Config.PlatformID != "" && s.Config.PlatformID != s.Binding.PlatformID || s.Config.Project != "" && s.Config.Project != s.Binding.Project {
 		return notification.ErrInvalid
 	}
 	if s.RoomIdentity != owner || !validRestartID(s.SubscriptionID) || s.SubscriptionVersion == 0 ||
@@ -365,7 +365,7 @@ func validEventsProjectBinding(b platform.ProjectBinding) bool {
 			return false
 		}
 	}
-	return validRestartID(b.ConnectionID) && validRestartID(b.ConnectionGeneration) && b.ProjectID > 0
+	return validRestartID(b.PlatformID) && validRestartID(b.PlatformGeneration) && b.ProjectID > 0
 }
 
 func validEventsProjectPath(project string) bool {

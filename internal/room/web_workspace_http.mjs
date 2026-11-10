@@ -45,7 +45,7 @@ if (process.env.TEAMX_WORKSPACE_UI_PHASE === "create") {
   assert.equal(ws.workspace.repository.url,`${process.env.TEAMX_WORKSPACE_GITLAB_URL}/${process.env.TEAMX_WORKSPACE_PROJECT}.git`);
   assert.equal(ws.workspace.binding.url,process.env.TEAMX_WORKSPACE_GITLAB_URL);
   assert.equal(ws.workspace.binding.project,process.env.TEAMX_WORKSPACE_PROJECT);
-  assert.equal(ws.workspace.binding.connection_id,connection.id);
+  assert.equal(ws.workspace.binding.platform_id,connection.id);
   assert.ok(ws.workspace.binding.project_id > 0);
 }
 console.log(JSON.stringify({status:"passed",phase:process.env.TEAMX_WORKSPACE_UI_PHASE,surface:"actual app events + real HTTP; DOM substitute"}));

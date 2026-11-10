@@ -115,12 +115,12 @@ func newEventHarness(t *testing.T, cfg gitlab.EventsConfig) *eventHarness {
 	room := managerCreate(t, m, "event-room")
 	c := platformTestSave(t, m, platformTestRequest(m))
 	m.mu.Lock()
-	file, _ := m.connections.Load()
-	generation := file.Connections[0].Generation
+	file, _ := m.platforms.Load()
+	generation := file.Platforms[0].Generation
 	m.mu.Unlock()
 	w := testGitLabWorkspace()
-	w.Binding.ConnectionID = c.ID
-	w.Binding.ConnectionGeneration = generation
+	w.Binding.PlatformID = c.ID
+	w.Binding.PlatformGeneration = generation
 	setTestEffectiveWorkspace(t, m, room, w, 1)
 
 	clock := &eventTestClock{now: time.Date(2026, 11, 1, 23, 59, 50, 0, time.UTC)}
@@ -204,12 +204,12 @@ func seedTestEvents(m *roomManager, owner RoomIdentity, cfg gitlab.EventsConfig)
 		return gitlab.EventsState{}, err
 	}
 	binding := *saved.Workspace.Binding
-	account, _, err := m.resolvePlatformAccountLocked(owner, binding.ConnectionID, "gitlab")
+	account, _, err := m.resolvePlatformAccountLocked(owner, binding.PlatformID, "gitlab")
 	if err != nil {
 		return gitlab.EventsState{}, err
 	}
-	binding.ConnectionGeneration = account.Generation
-	cfg.ConnectionID = binding.ConnectionID
+	binding.PlatformGeneration = account.Generation
+	cfg.PlatformID = binding.PlatformID
 	cfg.Project = binding.Project
 	s, err := gitlab.ConfigureEvents(owner, nil, &binding, cfg, m.notifications.Now())
 	s.UserID = account.UserID

@@ -60,7 +60,7 @@ class Element {
 export const settle = async () => { for (let i=0; i<15; i++) await new Promise(resolve => setImmediate(resolve)); };
 export async function launch(api, saved = new Map()) {
   const elements = new Map([...html.matchAll(/id="([^"]+)"/g)].map(match => [match[1], new Element()]));
-  for (const id of ["lark-group-mode", "lark-chat-type", "lark-connection", "lark-target", "lark-backfill", "connection-provider", "connection-profile", "connection-scion-profile", "team", "profile", "activity-member", "workspace-connection", "gitlab-connection", "gitlab-target"]) elements.get(id).tag = "select";
+  for (const id of ["lark-group-mode", "lark-chat-type", "lark-connection", "lark-target", "lark-backfill", "connection-provider", "connection-profile", "connection-scion-profile", "team", "profile", "activity-member", "workspace-connection", "gitlab-connection", "gitlab-target", "onboarding-room", "onboarding-member", "onboarding-backfill", "gitlab-application"]) elements.get(id).tag = "select";
   for (const id of ["message-template", "member-template"]) elements.get(id).content = { firstElementChild: new Element() };
   for (const [, id, value] of html.matchAll(/<input id="(gitlab-(?:events-type|todos-reason|todos-type)-[^"]+)" type="checkbox" value="([^"]+)"/g)) {
     elements.get(id).tag = "input"; elements.get(id).value = value; elements.get(id).checked = false;
@@ -132,4 +132,32 @@ export async function launch(api, saved = new Map()) {
       await elements.get("new-room").emit("click"); elements.get("new-room-name").value = name;
       await elements.get("create-form").emit("submit"); await settle();
     } };
+}
+
+// Legacy account-editor fixtures opt into the P5 operation protocol. Dedicated
+// onboarding tests provide their own API and exercise failure/recovery states.
+export function withOnboarding(api) {
+  const original=api.request.bind(api), ops=new Map();
+  api.request=async(path,body,...args)=>{
+    if(path.startsWith("/v1/platforms/onboarding/targets?")) {
+      const q=new URL(path,"http://fixture").searchParams;
+      const data=await original("/v1/member/list",{});
+      return {members:data.members.map(m=>({room_id:q.get("room_id"),room_instance:q.get("room_instance"),agent_id:m.agent_id,membership_id:m.membership_id}))};
+    }
+    if(path.startsWith("/v1/platforms/onboarding/")) {
+      api.calls.push({path,body:structuredClone(body),data:structuredClone(body)});
+      if(path.endsWith("/prepare")) {
+        const {service_epoch,caller,operation_id,...input}=body;
+        ops.set(operation_id,{operation_id,input,platform_id:input.platform_id || operation_id,connection:{status:"waiting"},notifications:{status:input.only_platform ? "skipped":"pending"},tool:{status:input.only_platform ? "skipped":"pending"}});
+      }
+      const op=ops.get(body.operation_id);if(!op)throw Object.assign(Error("missing"),{code:"identity"});
+      if(path.endsWith("/cancel")) op.cancelled=true;
+      if(path.endsWith("/apply")) {op.connection={status:"connected"};if(!op.input.only_platform){op.notifications={status:"applied",version:1};op.tool={status:"applied",version:1};}}
+      return structuredClone(op);
+    }
+    const result=await original(path,body,...args);
+    if(body?.onboarding_id && path.endsWith("/gitlab/login")) return {...result,onboarding_id:body.onboarding_id};
+    return result;
+  };
+  return api;
 }

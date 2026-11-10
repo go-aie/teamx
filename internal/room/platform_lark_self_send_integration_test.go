@@ -29,7 +29,7 @@ func TestLarkSelfSendManagedCapability(t *testing.T) {
 	}
 	server := httptest.NewServer(h.m)
 	defer server.Close()
-	cli := contractCLI(t, server.URL, h.svc, id)
+	cli := contractCLI(t, server.URL, h.svc, id, h.c.ToolEntryID)
 	resolve := func() actionTargetView {
 		t.Helper()
 		var v actionTargetView
@@ -43,7 +43,7 @@ func TestLarkSelfSendManagedCapability(t *testing.T) {
 	if len(v.Actions) != 1 || v.Actions[0].Executable {
 		t.Fatal("read binding acquired self send", v)
 	}
-	grant := toolBindingChange{ServiceEpoch: h.m.epoch, RoomIdentity: id.RoomIdentity, Caller: humanCaller, Revision: bindings.Revision, Enabled: true, ConnectionVersion: h.c.Version, Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "lark", ConnectionID: h.c.ID, ActionAuthorization: &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: []tool.ActionGrant{{Operation: "message.send_self", TargetKind: "object", ObjectType: "user"}}}}}
+	grant := toolBindingChange{ServiceEpoch: h.m.epoch, RoomIdentity: id.RoomIdentity, Caller: humanCaller, Revision: bindings.Revision, Enabled: true, PlatformVersion: h.c.Version, Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "lark", PlatformID: h.c.ID, ActionAuthorization: &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: []tool.ActionGrant{{Operation: "message.send_self", TargetKind: "object", ObjectType: "user"}}}}}
 	r := managerHTTP(h.m, "/v1/tools/bind", grant)
 	if r.Code != 200 {
 		t.Fatal(r.Code, r.Body.String())

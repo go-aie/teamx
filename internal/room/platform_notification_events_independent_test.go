@@ -9,7 +9,7 @@ import (
 	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
-func newIndependentEventHarness(t *testing.T) (*eventHarness, platformConnection) {
+func newIndependentEventHarness(t *testing.T) (*eventHarness, managedPlatform) {
 	t.Helper()
 	m := testManager(t, t.TempDir(), managerTestProfiles(t))
 	room := managerCreate(t, m, "remote-project")
@@ -32,7 +32,7 @@ func newIndependentEventHarness(t *testing.T) (*eventHarness, platformConnection
 	m.notifications.Source(gitlab.EventsSourceID).(*gitlab.EventsSource).Prepare = func(_ context.Context, _ string, b gitlab.Binding) (gitlab.EventFetcher, int64, error) {
 		return pages, b.ProjectID, nil
 	}
-	cfg := gitlab.EventsConfig{Enabled: true, ConnectionID: c.ID, Project: c.URL + "/remote/project.git"}
+	cfg := gitlab.EventsConfig{Enabled: true, PlatformID: c.ID, Project: c.URL + "/remote/project.git"}
 	s, err := m.configureEventsSubscription(context.Background(), notification.Key{Owner: room.RoomIdentity, Source: gitlab.EventsSourceID}, 0, cfg)
 	if err != nil {
 		t.Fatal(err)

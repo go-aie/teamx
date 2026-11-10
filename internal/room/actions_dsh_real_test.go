@@ -81,7 +81,7 @@ func TestActionsStandaloneRealDSHAcceptance(t *testing.T) {
 	id := MemberIdentity{RoomIdentity: room.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
 	scope := platform.IdentityScope{Provider: "forge-test", Instance: "https://forge.invalid"}
 	account := platform.AccountIdentity{IdentityScope: scope, ID: platform.ExternalID{Namespace: "forge:user", Value: "accepted-writer"}}
-	access := platform.AccessContext{RoomIdentity: id.RoomIdentity, AgentID: id.AgentID, MembershipID: id.MembershipID, Account: account, ConnectionID: strings.Repeat("a", 32), Generation: strings.Repeat("b", 32), ConnectionVersion: 1, CredentialVersion: 1}
+	access := platform.AccessContext{RoomIdentity: id.RoomIdentity, AgentID: id.AgentID, MembershipID: id.MembershipID, Account: account, PlatformID: strings.Repeat("a", 32), Generation: strings.Repeat("b", 32), PlatformVersion: 1, CredentialVersion: 1}
 	targets := map[string]platform.TargetIdentity{
 		"https://forge.invalid/users/one": {IdentityScope: scope, Object: platform.NativeIdentity{Type: "user", ID: platform.ExternalID{Namespace: "forge:user", Value: "one"}}},
 		"https://forge.invalid/chats/one": {IdentityScope: scope, Object: platform.NativeIdentity{Type: "chat", ID: platform.ExternalID{Namespace: "forge:chat", Value: "one"}}},

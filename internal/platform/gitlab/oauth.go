@@ -74,7 +74,7 @@ type OAuthLoginRequest struct {
 }
 
 // ExchangeOAuthCode consumes a code once, with confidential client authentication
-// and PKCE. UserID zero is allowed only for a fresh imported client.
+// and PKCE. UserID zero discovers a new account; reauthorization always pins its user.
 func ExchangeOAuthCode(ctx context.Context, in OAuthLoginRequest, transport http.RoundTripper) (platform.OAuthTokens, platform.Validation, error) {
 	input := OAuthRefreshRequest{Origin: in.Origin, ClientID: in.ClientID, ClientSecret: in.ClientSecret, RedirectURI: in.RedirectURI, UserID: in.UserID, Scopes: in.Scopes}
 	if !validOrigin(in.Origin) || !validToken(in.ClientID) || !validToken(in.ClientSecret.Reveal()) || !validToken(in.Code.Reveal()) || len(in.Verifier.Reveal()) < 43 || len(in.Verifier.Reveal()) > 128 || (in.Scopes != "api" && in.Scopes != "api write_repository") {

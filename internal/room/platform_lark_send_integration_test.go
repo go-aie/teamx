@@ -6,6 +6,9 @@ import (
 	"context"
 	"encoding/json"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -121,7 +124,7 @@ func TestLarkSendStandaloneCommonContract(t *testing.T) {
 				opposite = "user"
 			}
 			grant := func(objectType string, revision uint64) {
-				r := managerHTTP(h.m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: h.m.epoch, RoomIdentity: id.RoomIdentity, Caller: humanCaller, Revision: revision, Enabled: true, ConnectionVersion: h.c.Version, Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "lark", ConnectionID: h.c.ID, ActionAuthorization: &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: []tool.ActionGrant{{Operation: "message.send", TargetKind: "object", ObjectType: objectType}}}}})
+				r := managerHTTP(h.m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: h.m.epoch, RoomIdentity: id.RoomIdentity, Caller: humanCaller, Revision: revision, Enabled: true, PlatformVersion: h.c.Version, Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "lark", PlatformID: h.c.ID, ActionAuthorization: &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: []tool.ActionGrant{{Operation: "message.send", TargetKind: "object", ObjectType: objectType}}}}})
 				if r.Code != 200 {
 					t.Fatal(r.Code, r.Body.String())
 				}
@@ -234,6 +237,24 @@ func TestLarkSendStandaloneCommonContract(t *testing.T) {
 			if ok, err := h.svc.store.actionAccountOwner(id, access, 0, 1); err != nil || !ok {
 				t.Fatal("ownership persistence", ok, err)
 			}
+			// P4 keeps independently confirmed accounts side by side. The former
+			// provider-only proof remains usable only for its exact old platform.
+			root := h.svc.store.actionRoot(id)
+			if err := os.Rename(filepath.Join(root, "account-owner-"+referenceDigest("", access.Account.Provider, access.PlatformID)+".json"), filepath.Join(root, "account-owner-"+referenceDigest("", access.Account.Provider)+".json")); err != nil {
+				t.Fatal(err)
+			}
+			other := access
+			other.PlatformID = strings.Repeat("d", 32)
+			other.Account.ID.Value = "ou_other"
+			if ok, err := h.svc.store.actionAccountOwner(id, other, 0, 1); err != nil || ok {
+				t.Fatal("legacy owner proof crossed account", ok, err)
+			}
+			if ok, err := h.svc.store.actionAccountOwner(id, other, ownerPost.Seq, 1); err != nil || !ok {
+				t.Fatal("second owner proof", ok, err)
+			}
+			if ok, err := h.svc.store.actionAccountOwner(id, access, 0, 1); err != nil || !ok {
+				t.Fatal("second account displaced original proof", ok, err)
+			}
 			access.Account.ID.Value = "ou_switched"
 			if ok, err := h.svc.store.actionAccountOwner(id, access, 0, 1); err != nil || ok {
 				t.Fatal("ownership survived account switch", ok, err)
@@ -250,7 +271,7 @@ func TestLarkSendProductionGateAndCatalog(t *testing.T) {
 		t.Fatal(caps, err)
 	}
 	for _, kind := range []string{"user", "chat"} {
-		r := managerHTTP(h.m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: h.m.epoch, RoomIdentity: h.room.RoomIdentity, Caller: humanCaller, Enabled: true, ConnectionVersion: h.c.Version, Binding: tool.Binding{AgentID: h.members[0].AgentID, MembershipID: h.members[0].MembershipID, Tool: "lark", ConnectionID: h.c.ID, ActionAuthorization: &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: []tool.ActionGrant{{Operation: "message.send", TargetKind: "object", ObjectType: kind}}}}})
+		r := managerHTTP(h.m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: h.m.epoch, RoomIdentity: h.room.RoomIdentity, Caller: humanCaller, Enabled: true, PlatformVersion: h.c.Version, Binding: tool.Binding{AgentID: h.members[0].AgentID, MembershipID: h.members[0].MembershipID, Tool: "lark", PlatformID: h.c.ID, ActionAuthorization: &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: []tool.ActionGrant{{Operation: "message.send", TargetKind: "object", ObjectType: kind}}}}})
 		if (kind == "chat") != (r.Code == 200) {
 			t.Fatal("only accepted group sends may be granted", kind, r.Code, r.Body.String())
 		}

@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/connection"
+	"github.com/go-aie/teamx/internal/platform/registry"
 	"github.com/go-aie/teamx/internal/platform/scion"
 	"github.com/go-aie/teamx/internal/platform/tool"
 )
@@ -17,6 +17,8 @@ import (
 // Bindings require explicit selection; retired read-only or received-todos
 // grants never become complete account permissions automatically.
 type toolBindingsFile struct {
+	LegacyUnknown bool           `json:"legacy_unknown,omitempty"`
+	Disabled      []tool.Binding `json:"disabled"` // nil is historical unknown intent; new writes use an array
 	RoomIdentity
 	Version  int            `json:"version"`
 	Revision uint64         `json:"revision"`
@@ -26,25 +28,32 @@ type toolSelection struct {
 	ActionAuthorization  *tool.ActionAuthorization `json:"action_authorization,omitempty"`
 	ActionDisabledReason string                    `json:"action_disabled_reason,omitempty"`
 	tool.Definition
-	ConnectionID string `json:"connection_id,omitempty"`
-	Instance     string `json:"instance,omitempty"`
-	Username     string `json:"username,omitempty"`
-	Status       string `json:"status,omitempty"`
+	PlatformID        string   `json:"platform_id,omitempty"`
+	Instance          string   `json:"instance,omitempty"`
+	Username          string   `json:"username,omitempty"`
+	Status            string   `json:"status,omitempty"`
+	ToolType          string   `json:"tool_type"`
+	PlatformName      string   `json:"platform_name,omitempty"`
+	Capabilities      []string `json:"capabilities"`
+	UnavailableReason string   `json:"unavailable_reason,omitempty"`
+	AgentID           string   `json:"agent_id"`
+	MembershipID      string   `json:"membership_id"`
 }
 type toolsRequest struct {
 	ServiceInfo
-	Caller Caller   `json:"caller"`
-	Tool   string   `json:"tool,omitempty"`
-	Args   []string `json:"args,omitempty"`
+	Caller     Caller   `json:"caller"`
+	Tool       string   `json:"tool,omitempty"`
+	Args       []string `json:"args,omitempty"`
+	platformID string   // server-owned routing evidence; never accepted over HTTP
 }
 type toolBindingChange struct {
 	ServiceEpoch string `json:"service_epoch"`
 	RoomIdentity
-	Caller            Caller       `json:"caller"`
-	Revision          uint64       `json:"revision"`
-	Binding           tool.Binding `json:"binding"`
-	Enabled           bool         `json:"enabled"`
-	ConnectionVersion uint64       `json:"connection_version,omitempty"`
+	Caller          Caller       `json:"caller"`
+	Revision        uint64       `json:"revision"`
+	Binding         tool.Binding `json:"binding"`
+	Enabled         bool         `json:"enabled"`
+	PlatformVersion uint64       `json:"platform_version,omitempty"`
 }
 
 func (m *roomManager) toolDefinitions() []tool.Definition {
@@ -80,17 +89,20 @@ func (m *roomManager) readToolBindingsLocked(owner RoomIdentity) (toolBindingsFi
 	if err != nil {
 		return f, err
 	}
-	if f.RoomIdentity != owner || f.Version != 1 || f.Revision == 0 || f.Bindings == nil || len(f.Bindings) > 3200 {
+	if f.RoomIdentity != owner || f.Version != 1 || f.Revision == 0 || f.Bindings == nil || len(f.Bindings)+len(f.Disabled) > 3200 {
 		return f, ErrInvalid
 	}
-	seen := map[[3]string]bool{}
-	for _, b := range f.Bindings {
-		key := [3]string{b.AgentID, b.MembershipID, b.Tool}
+	seen := map[[4]string]bool{}
+	for i, b := range append(slices.Clone(f.Bindings), f.Disabled...) {
+		key := [4]string{b.AgentID, b.MembershipID, b.Tool, b.PlatformID}
 		if !validText(b.AgentID) || !safeMembershipID(b.MembershipID) || !tool.ValidName(b.Tool) || seen[key] || !b.ActionAuthorization.Valid() ||
-			(b.ConnectionID == "") != (b.ConnectionGeneration == "") || b.ConnectionID != "" && (!tool.OpaqueID(b.ConnectionID) || !tool.OpaqueID(b.ConnectionGeneration)) {
+			i < len(f.Bindings) && (b.PlatformID == "") != (b.PlatformGeneration == "") || b.PlatformID != "" && (!tool.OpaqueID(b.PlatformID) || b.PlatformGeneration != "" && !tool.OpaqueID(b.PlatformGeneration)) {
 			return f, ErrInvalid
 		}
 		seen[key] = true
+	}
+	if f.Disabled == nil {
+		f.LegacyUnknown = true
 	}
 	return f, nil
 }
@@ -130,7 +142,7 @@ func (m *roomManager) checkToolMemberLocked(ctx context.Context, req toolsReques
 }
 func (m *roomManager) selectionsLocked(f toolBindingsFile, caller Caller) ([]toolSelection, error) {
 	selections := []toolSelection{}
-	var connections *connection.Snapshot
+	var platforms *registry.Snapshot
 	for _, b := range f.Bindings {
 		if b.AgentID != caller.ID || b.MembershipID != caller.MembershipID {
 			continue
@@ -139,7 +151,8 @@ func (m *roomManager) selectionsLocked(f toolBindingsFile, caller Caller) ([]too
 		if err != nil {
 			continue
 		}
-		s := toolSelection{Definition: d, ConnectionID: b.ConnectionID, ActionAuthorization: b.ActionAuthorization}
+		s := toolSelection{Definition: d, ToolType: d.Name, PlatformID: b.PlatformID, ActionAuthorization: b.ActionAuthorization, Capabilities: []string{}}
+		s.AgentID, s.MembershipID = b.AgentID, b.MembershipID
 		// Internal action availability describes registered action adapters,
 		// not the native account permissions of independent CLI tools.
 		if caps, err := m.referenceCapabilities(d.Provider); err == nil {
@@ -158,20 +171,31 @@ func (m *roomManager) selectionsLocked(f toolBindingsFile, caller Caller) ([]too
 				}
 			}
 		}
-		if b.ConnectionID != "" {
-			if connections == nil {
-				file, err := m.connections.Load()
+		if b.PlatformID != "" {
+			if platforms == nil {
+				file, err := m.platforms.Load()
 				if err != nil {
 					return nil, err
 				}
-				connections = &file
+				platforms = &file
 			}
 			s.Status = "unavailable"
-			for _, c := range connections.Connections {
-				if c.ID == b.ConnectionID && c.Generation == b.ConnectionGeneration && c.Provider == d.Provider {
-					public := connection.Public(*connections, c)
+			for _, c := range platforms.Platforms {
+				if c.ID == b.PlatformID && c.Generation == b.PlatformGeneration && c.Provider == d.Provider {
+					public := registry.Public(*platforms, c)
 					s.Instance, s.Username, s.Status = public.URL, public.Validation.Username, public.Validation.Status
+					s.Name, s.PlatformName = c.ToolEntryID, c.Name
+					m.toolAvailability(*platforms, c, b, d, &s)
 				}
+			}
+			if s.Name == d.Name {
+				s.UnavailableReason = "platform_changed"
+			}
+		} else if d.Provider == "" {
+			if tool.ExecutableAvailable(d.Executable) {
+				s.Capabilities = append(s.Capabilities, "run")
+			} else {
+				s.UnavailableReason = "executable_unavailable"
 			}
 		}
 		selections = append(selections, s)
@@ -229,7 +253,7 @@ func (m *roomManager) changeToolBindingLocked(ctx context.Context, req toolBindi
 	} else if len(b.CapabilityEvidence) != 0 {
 		return f, nil, ErrRequest
 	}
-	if !validText(b.AgentID) || !safeMembershipID(b.MembershipID) || !tool.ValidName(b.Tool) || b.ConnectionGeneration != "" {
+	if !validText(b.AgentID) || !safeMembershipID(b.MembershipID) || !tool.ValidName(b.Tool) || b.PlatformGeneration != "" {
 		return f, nil, ErrRequest
 	}
 	if req.Enabled {
@@ -242,17 +266,20 @@ func (m *roomManager) changeToolBindingLocked(ctx context.Context, req toolBindi
 			return f, nil, err
 		}
 		if d.Provider != "" {
-			file, err := m.connections.Load()
+			file, err := m.platforms.Load()
 			if err != nil {
 				return f, nil, err
 			}
 			found := false
-			for _, c := range file.Connections {
-				if c.ID == b.ConnectionID && c.Provider == d.Provider {
-					if c.Version != req.ConnectionVersion {
+			for _, c := range file.Platforms {
+				if c.ID == b.PlatformID && c.Provider == d.Provider {
+					if c.ToolEntryID == "" {
+						return f, nil, invalidField("tool", "platform type has no registered tool entry")
+					}
+					if c.Version != req.PlatformVersion {
 						return f, nil, ErrConflict
 					}
-					if _, _, err := connection.ResolveAccessAccount(file, c); err != nil {
+					if _, _, err := registry.ResolveAccessAccount(file, c); err != nil {
 						return f, nil, ErrConflict
 					}
 					for _, e := range b.CapabilityEvidence {
@@ -260,26 +287,43 @@ func (m *roomManager) changeToolBindingLocked(ctx context.Context, req toolBindi
 							return f, nil, ErrIdentity
 						}
 					}
-					b.ConnectionGeneration = c.Generation
+					b.PlatformGeneration = c.Generation
 					found = true
 				}
 			}
 			if !found {
 				return f, nil, ErrRequest
 			}
-		} else if b.ConnectionID != "" || req.ConnectionVersion != 0 {
+		} else if b.PlatformID != "" || req.PlatformVersion != 0 {
 			return f, nil, ErrRequest
 		}
-	} else if b.ConnectionID != "" || req.ConnectionVersion != 0 {
+	} else if req.PlatformVersion != 0 || b.PlatformID != "" && !tool.OpaqueID(b.PlatformID) {
 		return f, nil, ErrRequest
 	}
+	// A revocation must identify the exact platform. Never disable a sibling
+	// account based on a type name or whichever binding happens to be first.
+	if !req.Enabled {
+		d, err := m.toolDefinition(b.Tool)
+		if err != nil || d.Provider != "" && b.PlatformID == "" || d.Provider == "" && b.PlatformID != "" {
+			return f, nil, ErrRequest
+		}
+	}
+	if f.Disabled == nil {
+		f.Disabled = []tool.Binding{}
+	}
+	f.Disabled = slices.DeleteFunc(f.Disabled, func(old tool.Binding) bool {
+		return old.AgentID == b.AgentID && old.MembershipID == b.MembershipID && old.Tool == b.Tool && old.PlatformID == b.PlatformID
+	})
+	if !req.Enabled {
+		f.Disabled = append(f.Disabled, b)
+	}
 	f.Bindings = slices.DeleteFunc(f.Bindings, func(old tool.Binding) bool {
-		return old.AgentID == b.AgentID && old.MembershipID == b.MembershipID && old.Tool == b.Tool
+		return old.AgentID == b.AgentID && old.MembershipID == b.MembershipID && old.Tool == b.Tool && old.PlatformID == b.PlatformID
 	})
 	if req.Enabled {
 		f.Bindings = append(f.Bindings, b)
 	}
-	if len(f.Bindings) > 3200 || f.Revision == ^uint64(0) {
+	if len(f.Bindings)+len(f.Disabled) > 3200 || f.Revision == ^uint64(0) {
 		return f, nil, ErrCapacity
 	}
 	f.Revision++
@@ -287,7 +331,7 @@ func (m *roomManager) changeToolBindingLocked(ctx context.Context, req toolBindi
 		return f, nil, err
 	}
 	pending := m.cancelPlatformCallsLocked(func(c *platformCall) bool {
-		return c.owner == req.RoomIdentity && c.tool == b.Tool && c.agentID == b.AgentID && c.membershipID == b.MembershipID
+		return c.owner == req.RoomIdentity && c.tool == b.Tool && c.platformID == b.PlatformID && c.agentID == b.AgentID && c.membershipID == b.MembershipID
 	})
 	return f, pending, nil
 }
@@ -298,7 +342,11 @@ func (m *roomManager) prepareToolLocked(ctx context.Context, req toolsRequest) (
 		return m.prepareWorkspaceGitLocked(ctx, req)
 	}
 	var p tool.Process
-	definition, err := m.toolDefinition(req.Tool)
+	f, err := m.readToolBindingsLocked(req.RoomIdentity)
+	if err != nil {
+		return p, nil, nil, err
+	}
+	_, definition, err := m.resolveToolBindingLocked(f, req)
 	if err != nil {
 		return p, nil, nil, err
 	}
@@ -318,7 +366,7 @@ func (m *roomManager) prepareToolLocked(ctx context.Context, req toolsRequest) (
 	}
 	p.Definition = admission.definition
 	p.Values = map[string]string{}
-	if admission.account.ConnectionID != "" {
+	if admission.account.PlatformID != "" {
 		p.Values = map[string]string{"instance": admission.account.URL, "token": admission.secret.Reveal()}
 	}
 	prepared := false
@@ -330,9 +378,9 @@ func (m *roomManager) prepareToolLocked(ctx context.Context, req toolsRequest) (
 
 	if definition.Provider == "scion" && help {
 		// Help uses only executable metadata, even after logout or a failed check.
-		if file, err := m.connections.Load(); err == nil {
-			for _, c := range file.Connections {
-				if c.ID == call.connectionID && c.Provider == "scion" && c.CLIProfile != nil && scion.ValidProfile(*c.CLIProfile) {
+		if file, err := m.platforms.Load(); err == nil {
+			for _, c := range file.Platforms {
+				if c.ID == call.platformID && c.Provider == "scion" && c.CLIProfile != nil && scion.ValidProfile(*c.CLIProfile) {
 					p.Definition.Executable = c.CLIProfile.Executable
 				}
 			}
@@ -382,7 +430,7 @@ func (m *roomManager) checkActionAuthorizationLocked(req toolsRequest, access pl
 		return err
 	}
 	for _, b := range f.Bindings {
-		if b.AgentID == req.Caller.ID && b.MembershipID == req.Caller.MembershipID && b.ConnectionID == access.ConnectionID && b.ConnectionGeneration == access.Generation && b.ActionAuthorization != nil {
+		if b.AgentID == req.Caller.ID && b.MembershipID == req.Caller.MembershipID && b.PlatformID == access.PlatformID && b.PlatformGeneration == access.Generation && b.ActionAuthorization != nil {
 			if access.ActionAuthorizationVersion != b.ActionAuthorization.Revision {
 				return ErrConflict
 			}

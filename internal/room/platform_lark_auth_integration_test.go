@@ -15,7 +15,7 @@ import (
 	"github.com/go-aie/teamx/internal/platform/lark"
 )
 
-func TestLarkLogoutAcknowledgesAllSharedConnectionsAndPreservesNotificationProgress(t *testing.T) {
+func TestLarkLogoutAcknowledgesAllSharedPlatformsAndPreservesNotificationProgress(t *testing.T) {
 	parallelFixtureTest(t)
 	h := newLarkHarness(t)
 	h.start()
@@ -25,12 +25,12 @@ func TestLarkLogoutAcknowledgesAllSharedConnectionsAndPreservesNotificationProgr
 	if err := os.WriteFile(h.c.CLIProfile.Executable, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
-	second := platformTestSave(t, h.m, platformConnectionRequest{ServiceEpoch: h.m.epoch, Caller: humanCaller, ID: strings.Repeat("d", 32), Name: "shared profile", Provider: "lark", URL: h.c.URL, CLIProfile: h.c.CLIProfile})
-	if _, err := h.m.verifyPlatformConnection(context.Background(), platformConnectionRequest{ID: second.ID, Version: second.Version}); err != nil {
+	second := platformTestSave(t, h.m, managedPlatformRequest{ServiceEpoch: h.m.epoch, Caller: humanCaller, ID: strings.Repeat("d", 32), Name: "shared profile", Provider: "lark", URL: h.c.URL, CLIProfile: h.c.CLIProfile})
+	if _, err := h.m.verifyPlatform(context.Background(), managedPlatformRequest{ID: second.ID, Version: second.Version}); err != nil {
 		t.Fatal(err)
 	}
 	req := larkAuthRequest{ServiceEpoch: h.m.epoch, Caller: humanCaller, Profile: h.c.CLIProfile}
-	if r := managerHTTP(h.m, "/v1/platform/connections/lark/logout", req); r.Code != 409 {
+	if r := managerHTTP(h.m, "/v1/platforms/lark/logout", req); r.Code != 409 {
 		t.Fatal("unacknowledged shared profile mutation", r.Code)
 	}
 	if _, err := os.Stat(filepath.Join(h.dir, "auth-logout")); err == nil {
@@ -38,13 +38,13 @@ func TestLarkLogoutAcknowledgesAllSharedConnectionsAndPreservesNotificationProgr
 	}
 	req.Affected = authImpact(t, h.m, "fixture")
 	stale := req
-	stale.Affected = append([]larkAuthConnection(nil), req.Affected...)
+	stale.Affected = append([]larkAuthPlatform(nil), req.Affected...)
 	stale.Affected[0].Version++
-	if r := managerHTTP(h.m, "/v1/platform/connections/lark/logout", stale); r.Code != 409 {
+	if r := managerHTTP(h.m, "/v1/platforms/lark/logout", stale); r.Code != 409 {
 		t.Fatal("stale impact snapshot allowed", r.Code)
 	}
 	view := authHTTP(t, h.m, "logout", req)
-	if len(view.Connections) != 2 {
+	if len(view.Platforms) != 2 {
 		t.Fatal("shared connection omitted")
 	}
 	authWait(t, h.m, larkAuthRequest{ServiceEpoch: h.m.epoch, Caller: humanCaller, SessionID: view.SessionID}, "succeeded")
@@ -68,20 +68,20 @@ func TestLarkAuthHTTPGuardsCancellationAndShutdown(t *testing.T) {
 	p, dir := roomAuthProfile(t)
 	req := larkAuthRequest{ServiceEpoch: m.epoch, Caller: humanCaller, Profile: &p}
 	for _, bad := range []larkAuthRequest{{ServiceEpoch: "stale", Caller: humanCaller, Profile: &p}, {ServiceEpoch: m.epoch, Caller: agentCaller("assistant", "member"), Profile: &p}} {
-		if r := managerHTTP(m, "/v1/platform/connections/lark/login", bad); r.Code == 200 {
+		if r := managerHTTP(m, "/v1/platforms/lark/login", bad); r.Code == 200 {
 			t.Fatal("authentication admitted non-operator")
 		}
 	}
-	if r := managerHTTP(m, "/v1/platform/connections/lark/unknown", req); r.Code != 404 {
+	if r := managerHTTP(m, "/v1/platforms/lark/unknown", req); r.Code != 404 {
 		t.Fatal(r.Code)
 	}
-	if r := managerHTTP(m, "/v1/platform/connections/lark/login", nil); r.Code != 405 {
+	if r := managerHTTP(m, "/v1/platforms/lark/login", nil); r.Code != 405 {
 		t.Fatal(r.Code)
 	}
 	start := authHTTP(t, m, "login", req)
 	status := larkAuthRequest{ServiceEpoch: m.epoch, Caller: humanCaller, SessionID: start.SessionID}
 	waiting := authWait(t, m, status, "waiting")
-	if waiting.URL == "" || !strings.HasPrefix(waiting.QRCodeURL, "/v1/platform/connections/lark/qrcode?") || waiting.QRCode != "" {
+	if waiting.URL == "" || !strings.HasPrefix(waiting.QRCodeURL, "/v1/platforms/lark/qrcode?") || waiting.QRCode != "" {
 		t.Fatal("authorization link or QR missing")
 	}
 	qr := managerHTTP(m, waiting.QRCodeURL, nil)
@@ -92,8 +92,8 @@ func TestLarkAuthHTTPGuardsCancellationAndShutdown(t *testing.T) {
 	if !strings.Contains(page.Header().Get("Content-Security-Policy"), "img-src 'self';") {
 		t.Fatal("image fix changed the existing content security policy")
 	}
-	save := platformConnectionRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("e", 32), Name: "auth in progress", Provider: "lark", URL: lark.Origin("feishu"), CLIProfile: &p}
-	if r := managerHTTP(m, "/v1/platform/connections/save", save); r.Code != 409 {
+	save := managedPlatformRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("e", 32), Name: "auth in progress", Provider: "lark", URL: lark.Origin("feishu"), CLIProfile: &p}
+	if r := managerHTTP(m, "/v1/platforms/save", save); r.Code != 409 {
 		t.Fatal("saved a connection while its profile was authenticating", r.Code)
 	}
 	borrowed, err := url.Parse(waiting.QRCodeURL)
@@ -108,10 +108,10 @@ func TestLarkAuthHTTPGuardsCancellationAndShutdown(t *testing.T) {
 	}
 	other := status
 	other.Caller.ID = "another-operator"
-	if r := managerHTTP(m, "/v1/platform/connections/lark/status", other); r.Code == 200 {
+	if r := managerHTTP(m, "/v1/platforms/lark/status", other); r.Code == 200 {
 		t.Fatal("flow borrowed by another operator")
 	}
-	if r := managerHTTP(m, "/v1/platform/connections/lark/login", req); r.Code != 409 {
+	if r := managerHTTP(m, "/v1/platforms/lark/login", req); r.Code != 409 {
 		t.Fatal("overlapping auth allowed", r.Code)
 	}
 	view := authHTTP(t, m, "cancel", status)
@@ -143,7 +143,7 @@ func TestLarkAuthHTTPGuardsCancellationAndShutdown(t *testing.T) {
 	}
 }
 
-func TestLarkLoginCompletesWithoutSavingConnectionOrLeakingFlow(t *testing.T) {
+func TestLarkLoginCompletesWithoutSavingPlatformOrLeakingFlow(t *testing.T) {
 	parallelFixtureTest(t)
 	m := testManager(t, t.TempDir(), nil)
 	p, dir := roomAuthProfile(t)
@@ -157,7 +157,7 @@ func TestLarkLoginCompletesWithoutSavingConnectionOrLeakingFlow(t *testing.T) {
 	if view.Username != "中文用户" || view.URL != "" || view.QRCode != "" || len(platformTestList(t, m)) != 0 {
 		t.Fatal("login did not verify or saved a connection implicitly")
 	}
-	r := httptest.NewRequest("POST", "/v1/platform/connections/lark/status", strings.NewReader(`{}`))
+	r := httptest.NewRequest("POST", "/v1/platforms/lark/status", strings.NewReader(`{}`))
 	w := httptest.NewRecorder()
 	m.ServeHTTP(w, r)
 	if w.Header().Get("Cache-Control") != "no-store" {

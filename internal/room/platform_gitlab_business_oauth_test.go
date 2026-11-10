@@ -19,8 +19,8 @@ import (
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/connection"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
+	"github.com/go-aie/teamx/internal/platform/registry"
 )
 
 func TestOAuthBusinessReferencesAndMRWritePreservesRetryContract(t *testing.T) {
@@ -121,7 +121,7 @@ func TestOAuthBusinessAttachmentAndTool(t *testing.T) {
 		m.platformHTTP = oauthTransport(&refreshes, nil)
 		client, endpoint := toolPipeServer(t, m)
 		var out, stderr bytes.Buffer
-		err := runToolsWithClient(context.Background(), []string{"run", "gitlab", "api", "user"}, strings.NewReader(""), &out, &stderr, cliToolEnv(endpoint, svc, members[0]), client)
+		err := runToolsWithClient(context.Background(), []string{"run", c.ToolEntryID, "api", "user"}, strings.NewReader(""), &out, &stderr, cliToolEnv(endpoint, svc, members[0]), client)
 		if err != nil || out.String() != "oauth-process-ok" || refreshes.Load() != 1 {
 			t.Fatal(err, out.String(), stderr.String())
 		}
@@ -147,7 +147,7 @@ func TestOAuthBusinessWorkspaceAndManagedGit(t *testing.T) {
 		t.Fatal("API-only grant reached Git")
 	}
 	m.mu.Lock()
-	file, err := m.connections.Load()
+	file, err := m.platforms.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,11 +155,11 @@ func TestOAuthBusinessWorkspaceAndManagedGit(t *testing.T) {
 	app.Scopes = []string{"api", "write_repository"}
 	file.OAuthApplications[0] = app
 	// Use the normal login commit to establish the explicitly expanded grant.
-	records := append([]connection.Record{}, file.Connections...)
-	if err := m.store.save(m.connectionsPathForTest(), file, 2<<20); err != nil {
+	records := append([]registry.Record{}, file.Platforms...)
+	if err := m.store.save(m.platformsPathForTest(), file, 2<<20); err != nil {
 		t.Fatal(err)
 	}
-	_, err = m.connections.CommitOAuthLogin(records, c.ID, c.Name, app, "", humanCaller.ID, platform.OAuthTokens{AccessToken: platform.NewSecret("git-access"), RefreshToken: platform.NewSecret("git-refresh"), ExpiresAt: time.Now().Add(time.Hour), Scopes: app.Scopes}, platform.Validation{Status: "valid", UserID: 101, Username: "user101", CheckedAt: time.Now().UTC()})
+	_, err = m.platforms.CommitOAuthLogin(records, c.ID, c.Name, app, "", humanCaller.ID, platform.OAuthTokens{AccessToken: platform.NewSecret("git-access"), RefreshToken: platform.NewSecret("git-refresh"), ExpiresAt: time.Now().Add(time.Hour), Scopes: app.Scopes}, platform.Validation{Status: "valid", UserID: 101, Username: "user101", CheckedAt: time.Now().UTC()})
 	m.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)
@@ -260,7 +260,7 @@ func TestOAuthLocalWorkspaceCommandDoesNotRefreshOrExposeToken(t *testing.T) {
 	}
 }
 
-func TestOAuthBusinessDifferentConnectionsAndLogoutFence(t *testing.T) {
+func TestOAuthBusinessDifferentPlatformsAndLogoutFence(t *testing.T) {
 	parallelFixtureTest(t)
 	m, room, svc, c, members := cliToolFixture(t, "printf ready\nsleep 30\n")
 	account := installOAuthFixture(t, m, c, time.Now().Add(time.Hour))
@@ -290,7 +290,7 @@ func TestOAuthBusinessDifferentConnectionsAndLogoutFence(t *testing.T) {
 	var stderr bytes.Buffer
 	done := make(chan error, 1)
 	go func() {
-		done <- runToolsWithClient(context.Background(), []string{"run", "gitlab", "api"}, bytes.NewReader(nil), ready, &stderr, cliToolEnv(endpoint, svc, members[0]), client)
+		done <- runToolsWithClient(context.Background(), []string{"run", c.ToolEntryID, "api"}, bytes.NewReader(nil), ready, &stderr, cliToolEnv(endpoint, svc, members[0]), client)
 	}()
 	select {
 	case <-ready.started:
@@ -298,8 +298,8 @@ func TestOAuthBusinessDifferentConnectionsAndLogoutFence(t *testing.T) {
 		t.Fatal("OAuth process did not start")
 	}
 	m.mu.Lock()
-	_, _, err = m.connections.LogoutOAuth(account.Authorization.CredentialID)
-	pending := m.cancelPlatformCallsLocked(func(call *platformCall) bool { return call.connectionID == c.ID })
+	_, _, err = m.platforms.LogoutOAuth(account.Authorization.CredentialID)
+	pending := m.cancelPlatformCallsLocked(func(call *platformCall) bool { return call.platformID == c.ID })
 	m.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)
@@ -361,7 +361,7 @@ func TestOAuthBusinessEventsTodosRefreshKeepsProgress(t *testing.T) {
 	}
 	h.m.mu.Lock()
 	afterScope, err := h.m.admitEventsLocked(h.stateUnlocked())
-	todos, _, todoErr := h.m.resolveTodosConnectionLocked(h.room.RoomIdentity, c.ID)
+	todos, _, todoErr := h.m.resolveTodosPlatformLocked(h.room.RoomIdentity, c.ID)
 	h.m.mu.Unlock()
 	if err != nil || todoErr != nil || !reflect.DeepEqual(scope, afterScope) {
 		t.Fatal("refresh changed admission", err, todoErr)
@@ -393,11 +393,11 @@ func TestOAuthBusinessExplicitRepositoryScopeInitializationAndLogin(t *testing.T
 		g := newGitlabLoginHarness(t)
 		m := g.h.m
 		m.mu.Lock()
-		file, err := m.connections.Load()
+		file, err := m.platforms.Load()
 		if err == nil {
 			file.OAuthApplications[0].Scopes = []string{"api", "write_repository"}
 
-			err = m.store.save(m.connectionsPathForTest(), file, 2<<20)
+			err = m.store.save(m.platformsPathForTest(), file, 2<<20)
 		}
 		m.mu.Unlock()
 		if err != nil {

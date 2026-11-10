@@ -19,11 +19,11 @@ func sampleMessage(id, chat, text string) Message {
 	return m
 }
 func sampleBinding() Binding {
-	return Binding{ConnectionID: "connection", Generation: "generation", CredentialVersion: 1, Fingerprint: strings.Repeat("a", 64), Account: platform.AccountIdentity{IdentityScope: platform.IdentityScope{Provider: "lark", Instance: Origin("feishu"), Tenant: platform.ExternalID{Namespace: "lark:tenant_key", Value: "account_tenant"}}, ID: platform.ExternalID{Namespace: "lark:open_id:cli_fixture", Value: "ou_reader"}}}
+	return Binding{PlatformID: "connection", Generation: "generation", CredentialVersion: 1, Fingerprint: strings.Repeat("a", 64), Account: platform.AccountIdentity{IdentityScope: platform.IdentityScope{Provider: "lark", Instance: Origin("feishu"), Tenant: platform.ExternalID{Namespace: "lark:tenant_key", Value: "account_tenant"}}, ID: platform.ExternalID{Namespace: "lark:open_id:cli_fixture", Value: "ou_reader"}}}
 }
 func sampleState(t *testing.T) State {
 	t.Helper()
-	s, e := Configure(platform.RoomIdentity{RoomID: "room", RoomInstance: "instance"}, nil, sampleBinding(), Config{Enabled: true, ConnectionID: "connection", Chats: []string{"oc_chat"}, Target: notification.Target{Mode: "inbox", AgentID: "agent", MembershipID: "member"}, Private: true, GroupMentions: true, IntervalSeconds: 60}, time.Unix(1000, 0))
+	s, e := Configure(platform.RoomIdentity{RoomID: "room", RoomInstance: "instance"}, nil, sampleBinding(), Config{Enabled: true, PlatformID: "connection", Private: PrivateConfig{Enabled: true, Scope: "specified", ChatIDs: []string{"oc_chat"}}, Target: notification.Target{Mode: "inbox", AgentID: "agent", MembershipID: "member"}, IntervalSeconds: 60}, time.Unix(1000, 0))
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -69,7 +69,7 @@ type stepHarness struct {
 }
 
 func (h *stepHarness) Read(context.Context) (notification.State, notification.Scope, error) {
-	q := QueryScope{Binding: h.s.Binding, ConnectionVersion: 1, Profile: platform.CLIProfile{Version: 1, Executable: "/fixture/lark-cli", Profile: "fixture", Brand: "feishu", CLIVersion: CLIVersion}}
+	q := QueryScope{Binding: h.s.Binding, PlatformVersion: 1, Profile: platform.CLIProfile{Version: 1, Executable: "/fixture/lark-cli", Profile: "fixture", Brand: "feishu", CLIVersion: CLIVersion}}
 	if h.profile != nil {
 		q.Profile = *h.profile
 	}
@@ -98,7 +98,7 @@ func newStepHarness(t *testing.T) (*stepHarness, *fakeReader, notification.Runne
 	return h, f, s.NewRunner(h)
 }
 func TestMessagesFilteringAndContent(t *testing.T) {
-	c := Config{Private: true, GroupMentions: true, Chats: []string{"oc_chat"}}
+	c := Config{Private: PrivateConfig{Enabled: true, Scope: "specified", ChatIDs: []string{"oc_chat"}}, Groups: GroupConfig{Enabled: true, ChatIDs: []string{"oc_chat"}, MessageMode: "mentions", AtMe: true}}
 	m := sampleMessage("om_one", "oc_chat", "hello")
 	for _, test := range []struct {
 		name            string
@@ -110,7 +110,7 @@ func TestMessagesFilteringAndContent(t *testing.T) {
 		{"self", func(m *Message) { m.Sender.ID = "ou_reader" }, "p2p", false, false, true},
 		{"system", func(m *Message) { m.Type = "system" }, "p2p", false, false, false},
 		{"bot_off", func(m *Message) { m.Sender.Type = "app" }, "p2p", false, false, false},
-		{"bot_on", func(m *Message) { m.Sender.Type = "app" }, "p2p", false, true, true},
+		{"bot_on", func(m *Message) { m.Sender.Type = "app" }, "p2p", false, true, false},
 		{"name_not_identity", func(m *Message) { m.Mentions = []Mention{{ID: "ou_other", IDType: "open_id", Name: "reader"}} }, "group", false, false, false},
 		{"at_me", func(m *Message) { m.Mentions = []Mention{{ID: "ou_reader", IDType: "open_id"}} }, "group", false, false, true},
 		{"native_all", func(m *Message) { m.Mentions = nil; m.Body.Content = `{"text":"@_all fixture"}` }, "group", true, false, true},
@@ -126,9 +126,8 @@ func TestMessagesFilteringAndContent(t *testing.T) {
 			v := m
 			test.edit(&v)
 			cfg := c
-			cfg.AtAll = test.all
-			cfg.Bots = test.bots
-			if Matches(v, Chat{ID: "oc_chat", Mode: test.mode}, "ou_reader", cfg) != test.want {
+			cfg.Groups.AtAll = test.all
+			if Matches(v, peerChat("oc_chat", test.mode), "ou_reader", cfg) != test.want {
 				t.Fatal("filter mismatch")
 			}
 		})
@@ -224,6 +223,8 @@ func TestMessagesPageRecoveryAtomicCheckpointAndRevision(t *testing.T) {
 
 func TestMentionIdentitySurvivesNotificationAndTargetReads(t *testing.T) {
 	s := sampleState(t)
+	s.Config.Private = PrivateConfig{Scope: "all"}
+	s.Config.Groups = GroupConfig{Enabled: true, ChatIDs: []string{"oc_chat"}, MessageMode: "mentions", AtMe: true}
 	chat := Chat{ID: "oc_chat", Mode: "group"}
 	s.Chats[chat.ID] = ChatProgress{Chat: chat, Scan: &Scan{Start: 1000, End: 1010}}
 	m := sampleMessage("om_mention", chat.ID, "@_user_1 请和 @_user_2 确认发版")
@@ -247,7 +248,7 @@ func TestMentionIdentitySurvivesNotificationAndTargetReads(t *testing.T) {
 	if len(items) != 1 || items[0].Text != "飞书\n"+want || strings.Contains(items[0].Text, "@_user_") {
 		t.Fatal("delivery lost mention identities", items)
 	}
-	access := platform.AccessContext{RoomIdentity: s.RoomIdentity, AgentID: "agent", MembershipID: "member", Account: s.Binding.Account, Receiver: s.Binding.Account, ConnectionID: "connection", Generation: "generation", ConnectionVersion: 1, CredentialVersion: 1}
+	access := platform.AccessContext{RoomIdentity: s.RoomIdentity, AgentID: "agent", MembershipID: "member", Account: s.Binding.Account, Receiver: s.Binding.Account, PlatformID: "connection", Generation: "generation", PlatformVersion: 1, CredentialVersion: 1}
 	f := &fakeReader{chat: chat, messages: map[string]Message{m.ID: m}}
 	resolution, err := ResolveTarget(context.Background(), platform.TargetLocator{Source: &items[0].Source}, access, f)
 	if err != nil || resolution.Target == nil || resolution.Status != platform.ResolutionResolved {
@@ -307,7 +308,7 @@ func TestMessageReferenceResolutionNativeGroupingAndReads(t *testing.T) {
 	chat := Chat{ID: m.ChatID, Mode: "group", TenantKey: "external_tenant"}
 	f := &fakeReader{chat: chat, messages: map[string]Message{m.ID: m, root.ID: root}}
 	source := sourceRef(s, m, RevisionKey(s.Binding, m), chat)
-	access := platform.AccessContext{RoomIdentity: s.RoomIdentity, AgentID: "agent", MembershipID: "member", Account: s.Binding.Account, Receiver: s.Binding.Account, ConnectionID: "connection", Generation: "generation", ConnectionVersion: 1, CredentialVersion: 1}
+	access := platform.AccessContext{RoomIdentity: s.RoomIdentity, AgentID: "agent", MembershipID: "member", Account: s.Binding.Account, Receiver: s.Binding.Account, PlatformID: "connection", Generation: "generation", PlatformVersion: 1, CredentialVersion: 1}
 	r, e := ResolveTarget(context.Background(), platform.TargetLocator{Source: &source}, access, f)
 	if e != nil || r.Status != platform.ResolutionResolved || r.Target.Object.ID.Value != root.ID || r.Target.Tenant == access.Account.Tenant || !r.DiscussionVerified {
 		t.Fatal(r, e)
@@ -344,7 +345,7 @@ func TestMessageReferenceResolutionNativeGroupingAndReads(t *testing.T) {
 	if e != nil || page.Next == nil || page.Complete {
 		t.Fatal(page, e)
 	}
-	access.ConnectionVersion++
+	access.PlatformVersion++
 	if _, e = ReadTarget(context.Background(), platform.ReadTargetRequest{Target: *r.Target, Scope: "context", Limits: limits, Cursor: page.Next}, access, f); e == nil {
 		t.Fatal("cursor crossed account revision")
 	}
@@ -428,7 +429,7 @@ func TestMessagesSlicePageBudgetKeepsContinuation(t *testing.T) {
 
 func TestPrivateSenderSurvivesDeliveryPersistenceAndContext(t *testing.T) {
 	s := sampleState(t)
-	chat := Chat{ID: "oc_chat", Mode: "p2p"} // Native private chat name can be empty.
+	chat := peerChat("oc_chat", "p2p") // Native private chat name can be empty.
 	s.Chats[chat.ID] = ChatProgress{Chat: chat, Scan: &Scan{Start: 1000, End: 1010}}
 	one := sampleMessage("om_one", chat.ID, "第一条")
 	one.Sender.Name = "同名用户"
@@ -451,7 +452,7 @@ func TestPrivateSenderSurvivesDeliveryPersistenceAndContext(t *testing.T) {
 			t.Fatal("private notification lost sender", text)
 		}
 	}
-	access := platform.AccessContext{RoomIdentity: s.RoomIdentity, AgentID: "agent", MembershipID: "member", Account: s.Binding.Account, Receiver: s.Binding.Account, ConnectionID: "connection", Generation: "generation", ConnectionVersion: 1, CredentialVersion: 1}
+	access := platform.AccessContext{RoomIdentity: s.RoomIdentity, AgentID: "agent", MembershipID: "member", Account: s.Binding.Account, Receiver: s.Binding.Account, PlatformID: "connection", Generation: "generation", PlatformVersion: 1, CredentialVersion: 1}
 	f := &fakeReader{chat: chat, messages: map[string]Message{one.ID: one, two.ID: two}}
 	ref := n.Inbox[RevisionKey(s.Binding, one)].Item.Source
 	r, err := ResolveTarget(context.Background(), platform.TargetLocator{Source: &ref}, access, f)
@@ -469,4 +470,12 @@ func TestPrivateSenderSurvivesDeliveryPersistenceAndContext(t *testing.T) {
 	if RevisionKey(s.Binding, one) != key {
 		t.Fatal("display name change caused duplicate delivery")
 	}
+}
+
+func peerChat(id, mode string) Chat {
+	c := Chat{ID: id, Mode: mode}
+	if mode == "p2p" {
+		c.Relation = ConversationRelation{Account: sampleBinding().Account, ChatID: id, Kind: "peer", Peer: platform.ExternalID{Namespace: sampleBinding().Account.ID.Namespace, Value: "ou_sender"}}
+	}
+	return c
 }

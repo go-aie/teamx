@@ -39,7 +39,7 @@ func TestCLIDuplexStreamsAndExitWithoutWorkspace(t *testing.T) {
 		t.Fatal(err, out.String())
 	}
 	out.Reset()
-	err := runToolsWithClient(context.Background(), []string{"run", "gitlab", "api", "a b", "--", "$HOME"}, bytes.NewBufferString("stdin\x00data"), &out, &errOut, env, client)
+	err := runToolsWithClient(context.Background(), []string{"run", c.ToolEntryID, "api", "a b", "--", "$HOME"}, bytes.NewBufferString("stdin\x00data"), &out, &errOut, env, client)
 	var exit *ExitError
 	if !errors.As(err, &exit) || exit.Code != 37 || out.String() != "api\na b\n--\n$HOME\nstdin\x00data" || errOut.String() != "stderr-data" {
 		t.Fatal(err, out.String(), errOut.String())
@@ -54,7 +54,7 @@ func TestCLIDuplexStreamsAndExitWithoutWorkspace(t *testing.T) {
 		t.Fatal(err, string(disk))
 	}
 	m.mu.Lock()
-	refs, err := m.platformConnectionReferencesLocked(c.ID)
+	refs, err := m.managedPlatformReferencesLocked(c.ID)
 	m.mu.Unlock()
 	if err != nil || len(refs) != 1 {
 		t.Fatal(refs, err)
@@ -73,7 +73,7 @@ func TestHelpSkipsCredentialAndDisableJoins(t *testing.T) {
 	f := bindCLITool(t, m, room.RoomIdentity, members[0], c, "gitlab", 0)
 	// Break credential resolution after binding: help must still work.
 	m.mu.Lock()
-	file, _ := m.connections.Load()
+	file, _ := m.platforms.Load()
 	old := file.OAuthCredentials[0].State
 	file.OAuthCredentials[0].State = "reauthorization_required"
 	_ = m.store.save(filepath.Join(m.store.dir, "platform-connections.json"), file, 1<<20)
@@ -81,7 +81,7 @@ func TestHelpSkipsCredentialAndDisableJoins(t *testing.T) {
 	client, endpoint := toolPipeServer(t, m)
 	env := cliToolEnv(endpoint, svc, members[0])
 	var out, errOut bytes.Buffer
-	if err := runToolsWithClient(context.Background(), []string{"run", "gitlab", "--help"}, bytes.NewReader(nil), &out, &errOut, env, client); err != nil || !strings.Contains(out.String(), "extension help") {
+	if err := runToolsWithClient(context.Background(), []string{"run", c.ToolEntryID, "--help"}, bytes.NewReader(nil), &out, &errOut, env, client); err != nil || !strings.Contains(out.String(), "extension help") {
 		t.Fatal(err, out.String(), errOut.String())
 	}
 	m.mu.Lock()
@@ -89,7 +89,7 @@ func TestHelpSkipsCredentialAndDisableJoins(t *testing.T) {
 	_ = m.store.save(filepath.Join(m.store.dir, "platform-connections.json"), file, 1<<20)
 	m.mu.Unlock()
 	// Read the first output before stdin EOF, then disable and join the process.
-	req := toolsRequest{ServiceInfo: svc.info, Caller: agentCaller(members[0].AgentID, members[0].MembershipID), Tool: "gitlab", Args: []string{"api"}}
+	req := toolsRequest{ServiceInfo: svc.info, Caller: agentCaller(members[0].AgentID, members[0].MembershipID), Tool: c.ToolEntryID, Args: []string{"api"}}
 	data, _ := json.Marshal(req)
 	upload, send := io.Pipe()
 	defer send.Close()
@@ -115,7 +115,7 @@ func TestHelpSkipsCredentialAndDisableJoins(t *testing.T) {
 		}
 		exitResult <- frame
 	}()
-	changed := managerHTTP(m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, Revision: f.Revision, Binding: tool.Binding{AgentID: members[0].AgentID, MembershipID: members[0].MembershipID, Tool: "gitlab"}})
+	changed := managerHTTP(m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, Revision: f.Revision, Binding: tool.Binding{AgentID: members[0].AgentID, MembershipID: members[0].MembershipID, Tool: "gitlab", PlatformID: c.ID}})
 	if changed.Code != 200 {
 		t.Fatal(changed.Code, changed.Body.String())
 	}
@@ -135,13 +135,13 @@ func TestHelpSkipsCredentialAndDisableJoins(t *testing.T) {
 func TestBindingCASAndAccountlessTool(t *testing.T) {
 	parallelFixtureTest(t)
 	m, room, svc, c, members := cliToolFixture(t, "printf local\n")
-	f := bindCLITool(t, m, room.RoomIdentity, members[0], platformConnection{}, "local", 0)
+	f := bindCLITool(t, m, room.RoomIdentity, members[0], managedPlatform{}, "local", 0)
 	client, endpoint := toolPipeServer(t, m)
 	var out, errOut bytes.Buffer
 	if err := runToolsWithClient(context.Background(), []string{"run", "local"}, bytes.NewReader(nil), &out, &errOut, cliToolEnv(endpoint, svc, members[0]), client); err != nil || out.String() != "local" {
 		t.Fatal(err, out.String())
 	}
-	req := toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, Revision: 0, Binding: tool.Binding{AgentID: members[0].AgentID, MembershipID: members[0].MembershipID, Tool: "gitlab", ConnectionID: c.ID}, Enabled: true, ConnectionVersion: c.Version}
+	req := toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, Revision: 0, Binding: tool.Binding{AgentID: members[0].AgentID, MembershipID: members[0].MembershipID, Tool: "gitlab", PlatformID: c.ID}, Enabled: true, PlatformVersion: c.Version}
 	if r := managerHTTP(m, "/v1/tools/bind", req); r.Code == 200 {
 		t.Fatal("stale revision accepted")
 	}
@@ -155,13 +155,13 @@ func TestBindingCASAndAccountlessTool(t *testing.T) {
 	change := platformTestRequest(m)
 	change.ID, change.Version = c.ID, c.Version
 	change.ReferencedRooms = []RoomIdentity{room.RoomIdentity}
-	rotated, err := testReauthorizeConnection(m, change)
+	rotated, err := testReauthorizePlatform(m, change)
 	if err != nil {
 		t.Fatal(err)
 	}
 	rotated = verifyTodoAccount(t, m, rotated, 101)
 	m.mu.Lock()
-	p, call, _, err := m.prepareToolLocked(context.Background(), toolsRequest{ServiceInfo: svc.info, Caller: agentCaller(members[0].AgentID, members[0].MembershipID), Tool: "gitlab", Args: []string{"api", "user"}})
+	p, call, _, err := m.prepareToolLocked(context.Background(), toolsRequest{ServiceInfo: svc.info, Caller: agentCaller(members[0].AgentID, members[0].MembershipID), Tool: c.ToolEntryID, Args: []string{"api", "user"}})
 	m.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)
@@ -191,7 +191,7 @@ func TestNoRetryOnFailureAndWorkspaceFiles(t *testing.T) {
 	bindCLITool(t, m, room.RoomIdentity, members[0], c, "gitlab", 0)
 	client, endpoint := toolPipeServer(t, m)
 	var out, errOut bytes.Buffer
-	err = runToolsWithClient(context.Background(), []string{"run", "gitlab", "api", "write"}, bytes.NewReader(nil), &out, &errOut, cliToolEnv(endpoint, svc, members[0]), client)
+	err = runToolsWithClient(context.Background(), []string{"run", c.ToolEntryID, "api", "write"}, bytes.NewReader(nil), &out, &errOut, cliToolEnv(endpoint, svc, members[0]), client)
 	var exit *ExitError
 	if !errors.As(err, &exit) || exit.Code != 9 || out.String() != "file-content" {
 		t.Fatal(err, out.String(), errOut.String())
@@ -209,7 +209,7 @@ func TestMissingToolReturnsServerGuidance(t *testing.T) {
 	m.toolCatalog[0].Executable = filepath.Join(t.TempDir(), "missing-tool")
 	client, endpoint := toolPipeServer(t, m)
 	var out, errOut bytes.Buffer
-	err := runToolsWithClient(context.Background(), []string{"run", "gitlab", "--help"}, bytes.NewReader(nil), &out, &errOut, cliToolEnv(endpoint, svc, members[0]), client)
+	err := runToolsWithClient(context.Background(), []string{"run", c.ToolEntryID, "--help"}, bytes.NewReader(nil), &out, &errOut, cliToolEnv(endpoint, svc, members[0]), client)
 	var exit *ExitError
 	if !errors.As(err, &exit) || exit.Code != 127 || out.Len() != 0 {
 		t.Fatal(err, out.String(), errOut.String())
@@ -231,20 +231,21 @@ func TestIndependentGitLabHelp(t *testing.T) {
 	m.toolCatalog[0] = tool.Catalog()[0]
 	m.toolCatalog[0].Executable = bin
 	bindCLITool(t, m, room.RoomIdentity, members[0], c, "gitlab", 0)
-	// A help request must not even need a resolvable connection snapshot.
-	path := filepath.Join(m.store.dir, "platform-connections.json")
-	original, err := os.ReadFile(path)
+	// Help resolves entry metadata without requiring an active authorization.
+	m.mu.Lock()
+	file, err := m.platforms.Load()
+	if err == nil {
+		file.OAuthCredentials[0].State = "reauthorization_required"
+		err = m.store.save(filepath.Join(m.store.dir, "platform-connections.json"), file, 1<<20)
+	}
+	m.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte("invalid snapshot"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.WriteFile(path, original, 0600) })
 	client, endpoint := toolPipeServer(t, m)
 	for _, path := range []string{"", "issue update", "work-items", "work-items close", "work-items discussions", "issue discussions reply"} {
 		t.Run(path, func(t *testing.T) {
-			args := append([]string{"run", "gitlab"}, strings.Fields(path)...)
+			args := append([]string{"run", c.ToolEntryID}, strings.Fields(path)...)
 			args = append(args, "--help")
 			var out, errOut bytes.Buffer
 			if err := runToolsWithClient(context.Background(), args, bytes.NewReader(nil), &out, &errOut, cliToolEnv(endpoint, svc, members[0]), client); err != nil || out.Len() == 0 {
@@ -266,7 +267,7 @@ func TestProcessLifecycleSettlement(t *testing.T) {
 			m, room, svc, c, members := cliToolFixture(t, "printf ready\nsleep 30\n")
 			bindCLITool(t, m, room.RoomIdentity, members[0], c, "gitlab", 0)
 			m.mu.Lock()
-			p, call, ctx, err := m.prepareToolLocked(context.Background(), toolsRequest{ServiceInfo: svc.info, Caller: agentCaller(members[0].AgentID, members[0].MembershipID), Tool: "gitlab", Args: []string{"api"}})
+			p, call, ctx, err := m.prepareToolLocked(context.Background(), toolsRequest{ServiceInfo: svc.info, Caller: agentCaller(members[0].AgentID, members[0].MembershipID), Tool: c.ToolEntryID, Args: []string{"api"}})
 			m.mu.Unlock()
 			if err != nil {
 				t.Fatal(err)
@@ -287,7 +288,7 @@ func TestProcessLifecycleSettlement(t *testing.T) {
 				req.Version = c.Version
 
 				req.ReferencedRooms = []RoomIdentity{room.RoomIdentity}
-				if _, err := testReauthorizeConnection(m, req); err != nil {
+				if _, err := testReauthorizePlatform(m, req); err != nil {
 					t.Fatal(err)
 				}
 			case "deletion":
@@ -337,7 +338,7 @@ func TestCLICancellationJoinsServerProcess(t *testing.T) {
 	var stderr bytes.Buffer
 	result := make(chan error, 1)
 	go func() {
-		result <- runToolsWithClient(ctx, []string{"run", "gitlab", "api"}, bytes.NewReader(nil), ready, &stderr, cliToolEnv(endpoint, svc, members[0]), client)
+		result <- runToolsWithClient(ctx, []string{"run", c.ToolEntryID, "api"}, bytes.NewReader(nil), ready, &stderr, cliToolEnv(endpoint, svc, members[0]), client)
 	}()
 	select {
 	case <-ready.started:
@@ -367,7 +368,7 @@ func TestCLICancellationJoinsServerProcess(t *testing.T) {
 
 func TestAdmissionFailureDoesNotWaitForStdinEOF(t *testing.T) {
 	parallelFixtureTest(t)
-	m, _, svc, _, members := cliToolFixture(t, "exit 99\n")
+	m, _, svc, c, members := cliToolFixture(t, "exit 99\n")
 	client, endpoint := toolPipeServer(t, m)
 	input, feed := io.Pipe()
 	defer input.Close()
@@ -375,7 +376,7 @@ func TestAdmissionFailureDoesNotWaitForStdinEOF(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	var out, stderr bytes.Buffer
-	err := runToolsWithClient(ctx, []string{"run", "gitlab", "api"}, input, &out, &stderr, cliToolEnv(endpoint, svc, members[0]), client)
+	err := runToolsWithClient(ctx, []string{"run", c.ToolEntryID, "api"}, input, &out, &stderr, cliToolEnv(endpoint, svc, members[0]), client)
 	if ctx.Err() != nil || err == nil {
 		t.Fatal("admission waited for stdin", err)
 	}

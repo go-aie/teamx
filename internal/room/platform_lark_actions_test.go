@@ -157,7 +157,7 @@ func (f *larkReplyContract) grant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := managerHTTP(h.m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: h.m.epoch, RoomIdentity: f.id.RoomIdentity, Caller: humanCaller, Revision: bindings.Revision, Enabled: true, ConnectionVersion: h.c.Version, Binding: tool.Binding{AgentID: f.id.AgentID, MembershipID: f.id.MembershipID, Tool: "lark", ConnectionID: h.c.ID, ActionAuthorization: &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: []tool.ActionGrant{{Operation: "message.reply", TargetKind: "message", ObjectType: "message"}}}}})
+	r := managerHTTP(h.m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: h.m.epoch, RoomIdentity: f.id.RoomIdentity, Caller: humanCaller, Revision: bindings.Revision, Enabled: true, PlatformVersion: h.c.Version, Binding: tool.Binding{AgentID: f.id.AgentID, MembershipID: f.id.MembershipID, Tool: "lark", PlatformID: h.c.ID, ActionAuthorization: &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: []tool.ActionGrant{{Operation: "message.reply", TargetKind: "message", ObjectType: "message"}}}}})
 	if r.Code != 200 {
 		t.Fatal(r.Code, r.Body.String())
 	}

@@ -14,7 +14,7 @@ import (
 	"github.com/go-aie/teamx/internal/platform/tool"
 )
 
-func cliToolFixture(t *testing.T, body string) (*roomManager, roomSummary, *service, platformConnection, []MemberState) {
+func cliToolFixture(t *testing.T, body string) (*roomManager, roomSummary, *service, managedPlatform, []MemberState) {
 	t.Helper()
 	m := testManager(t, t.TempDir(), managerTestProfiles(t))
 	// Native CLI fixtures retain account queues and cancellation without remote pacing.
@@ -31,15 +31,15 @@ func cliToolFixture(t *testing.T, body string) (*roomManager, roomSummary, *serv
 	m.toolCatalog = []tool.Definition{{Name: "gitlab", Provider: "gitlab", Version: "fixture", Executable: bin, Environment: map[string]string{"GITLAB_TOKEN": "token", "GITLAB_HOST": "instance"}}, {Name: "local", Executable: bin, Version: "fixture"}}
 	return m, room, svc, c, members
 }
-func bindCLITool(t *testing.T, m *roomManager, owner RoomIdentity, member MemberState, c platformConnection, name string, revision uint64) toolBindingsFile {
+func bindCLITool(t *testing.T, m *roomManager, owner RoomIdentity, member MemberState, c managedPlatform, name string, revision uint64) toolBindingsFile {
 	t.Helper()
 	b := tool.Binding{AgentID: member.AgentID, MembershipID: member.MembershipID, Tool: name}
 	version := uint64(0)
 	if c.ID != "" {
-		b.ConnectionID = c.ID
+		b.PlatformID = c.ID
 		version = c.Version
 	}
-	r := managerHTTP(m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: owner, Caller: humanCaller, Revision: revision, Binding: b, Enabled: true, ConnectionVersion: version})
+	r := managerHTTP(m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: owner, Caller: humanCaller, Revision: revision, Binding: b, Enabled: true, PlatformVersion: version})
 	var f toolBindingsFile
 	if r.Code != 200 || json.Unmarshal(r.Body.Bytes(), &f) != nil {
 		t.Fatal(r.Code, r.Body.String())
@@ -51,7 +51,7 @@ func cliToolEnv(endpoint string, s *service, member MemberState) func(string) st
 	return func(k string) string { return env[k] }
 }
 
-// Real net/http HTTP/1 duplex on in-memory connections; no TCP listener.
+// Real net/http HTTP/1 duplex on in-memory platforms; no TCP listener.
 // A separate opt-in test covers loopback where the environment permits it.
 type toolPipeListener struct {
 	conns chan net.Conn

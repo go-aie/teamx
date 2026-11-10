@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/go-aie/teamx/internal/platform/connection"
+	"github.com/go-aie/teamx/internal/platform/registry"
 	"github.com/go-aie/teamx/internal/platform/tool"
 )
 
-func requireGitlabRepositoryScope(a connection.Account) error {
+func requireGitlabRepositoryScope(a registry.Account) error {
 	if a.Authorization.CredentialID != "" && !strings.Contains(" "+a.Authorization.Scopes+" ", " write_repository ") {
 		return fmt.Errorf("%w: Git over HTTPS requires explicit write_repository authorization; import an application with api and write_repository and log in again", ErrRequest)
 	}
@@ -42,10 +42,10 @@ func (m *roomManager) prepareWorkspaceGitLocked(ctx context.Context, req toolsRe
 		return p, nil, nil, err
 	}
 	saved, err := m.readWorkspaceRoomConfig(entry)
-	if err != nil || saved.Workspace == nil || saved.Workspace.Binding == nil || saved.Workspace.Repository == nil || saved.Workspace.Binding.ConnectionID == "" {
+	if err != nil || saved.Workspace == nil || saved.Workspace.Binding == nil || saved.Workspace.Repository == nil || saved.Workspace.Binding.PlatformID == "" {
 		return p, nil, nil, ErrRequest
 	}
-	resolved, err := m.resolveWorkspaceConnectionLocked(req.RoomIdentity, *saved.Workspace)
+	resolved, err := m.resolveWorkspacePlatformLocked(req.RoomIdentity, *saved.Workspace)
 	if err != nil {
 		return p, nil, nil, err
 	}
@@ -74,7 +74,7 @@ func (m *roomManager) prepareWorkspaceGitLocked(ctx context.Context, req toolsRe
 	if err != nil {
 		return p, nil, nil, ErrRequest
 	}
-	tools := workspaceConnectionTools(*saved.Workspace.Binding)
+	tools := workspacePlatformTools(*saved.Workspace.Binding)
 	if saved.PlatformToolsVersion > 0 {
 		tools = filepath.Join(tools, "git-only")
 	}
@@ -86,7 +86,7 @@ func (m *roomManager) prepareWorkspaceGitLocked(ctx context.Context, req toolsRe
 	// Args are carried privately on the process rather than altering caller intent.
 	p.Args = req.Args
 	callCtx, cancel := context.WithCancel(ctx)
-	call := &platformCall{owner: req.RoomIdentity, agentID: req.Caller.ID, membershipID: req.Caller.MembershipID, tool: "workspace-git", connectionID: account.ConnectionID, account: account, secret: secret, cancel: cancel, done: make(chan struct{})}
+	call := &platformCall{owner: req.RoomIdentity, agentID: req.Caller.ID, membershipID: req.Caller.MembershipID, tool: "workspace-git", platformID: account.PlatformID, account: account, secret: secret, cancel: cancel, done: make(chan struct{})}
 	if m.platformCalls == nil {
 		m.platformCalls = map[*platformCall]bool{}
 	}

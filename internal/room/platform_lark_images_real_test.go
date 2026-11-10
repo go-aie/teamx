@@ -45,15 +45,15 @@ func TestRealLarkImageMaterials(t *testing.T) {
 	defer imageRealReport(t, output, report)
 	h := newLarkHarness(t)
 	h.m.larkClients = nil // Real acceptance retains process-wide production pacing.
-	c := platformTestSave(t, h.m, platformConnectionRequest{ServiceEpoch: h.m.epoch, Caller: humanCaller, ID: strings.Repeat("e", 32), Name: "isolated image acceptance", Provider: "lark", URL: lark.Origin(input.Profile.Brand), CLIProfile: &input.Profile})
-	c, err = h.m.verifyPlatformConnection(context.Background(), platformConnectionRequest{ID: c.ID, Version: c.Version})
+	c := platformTestSave(t, h.m, managedPlatformRequest{ServiceEpoch: h.m.epoch, Caller: humanCaller, ID: strings.Repeat("e", 32), Name: "isolated image acceptance", Provider: "lark", URL: lark.Origin(input.Profile.Brand), CLIProfile: &input.Profile})
+	c, err = h.m.verifyPlatform(context.Background(), managedPlatformRequest{ID: c.ID, Version: c.Version})
 	if err != nil || c.Validation.Status != "valid" {
 		t.Fatal("real profile verification failed")
 	}
 	h.c = c
 	member := h.members[0]
 	id := MemberIdentity{RoomIdentity: h.room.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
-	s := h.configure(lark.Config{Enabled: true, ConnectionID: c.ID, Chats: []string{input.Item.Source.Reference.ChatID.Value}, Private: true, GroupMentions: true, Target: inboxTarget(id)})
+	s := h.configure(realLarkScopeConfig(t, c, []string{input.Item.Source.Reference.ChatID.Value}, inboxTarget(id)))
 	item := input.Item
 	item.Source.SubscriptionID = s.SubscriptionID
 	item.Route = notification.Route{Target: inboxTarget(id), Version: s.SubscriptionVersion}

@@ -1,8 +1,9 @@
 package gitlab
 
 import (
-	"github.com/go-aie/teamx/internal/platform/notification"
 	"time"
+
+	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
 const (
@@ -21,12 +22,13 @@ func normalizeInterval(seconds int) (int, error) {
 	return seconds, nil
 }
 
-// NotificationConfig is the user configuration for one Room's GitLab source.
+// NotificationConfig is the user configuration for one Room's GitLab platform.
 // The concrete source configs below are derived runtime snapshots, not settings.
 type NotificationConfig struct {
+	Enabled         bool                `json:"enabled"`
 	BackfillSeconds int                 `json:"backfill_seconds,omitempty"`
 	BackfillStart   time.Time           `json:"backfill_start,omitzero"`
-	ConnectionID    string              `json:"connection_id"`
+	PlatformID      string              `json:"platform_id"`
 	Target          notification.Target `json:"target"`
 	IntervalSeconds int                 `json:"interval_seconds"`
 	Events          EventSettings       `json:"events"`
@@ -46,10 +48,10 @@ type TodoSettings struct {
 }
 
 func (c NotificationConfig) EventConfig() EventsConfig {
-	return EventsConfig{BackfillSeconds: c.BackfillSeconds, BackfillStart: c.BackfillStart, ConnectionID: c.ConnectionID, Target: c.Target, Enabled: c.Events.Enabled, Project: c.Events.Project, IntervalSeconds: c.IntervalSeconds, Filter: c.Events.Filter, ETagVerified: c.Events.ETagVerified}
+	return EventsConfig{BackfillSeconds: c.BackfillSeconds, BackfillStart: c.BackfillStart, PlatformID: c.PlatformID, Target: c.Target, Enabled: c.Enabled && c.Events.Enabled, Project: c.Events.Project, IntervalSeconds: c.IntervalSeconds, Filter: c.Events.Filter, ETagVerified: c.Events.ETagVerified}
 }
 func (c NotificationConfig) TodoConfig() TodosConfig {
-	return TodosConfig{BackfillSeconds: c.BackfillSeconds, BackfillStart: c.BackfillStart, ConnectionID: c.ConnectionID, Target: c.Target, Enabled: c.Todos.Enabled, IntervalSeconds: c.IntervalSeconds, Filter: c.Todos.Filter}
+	return TodosConfig{BackfillSeconds: c.BackfillSeconds, BackfillStart: c.BackfillStart, PlatformID: c.PlatformID, Target: c.Target, Enabled: c.Enabled && c.Todos.Enabled, IntervalSeconds: c.IntervalSeconds, Filter: c.Todos.Filter}
 }
 func EventSettingsFrom(c EventsConfig) EventSettings {
 	return EventSettings{Enabled: c.Enabled, Project: c.Project, Filter: c.Filter, ETagVerified: c.ETagVerified}
@@ -75,17 +77,23 @@ func NormalizeNotificationConfig(c NotificationConfig) (NotificationConfig, erro
 		}
 		c.Target = notification.Target{}
 	}
-	if (c.Events.Enabled || c.Todos.Enabled) && !validRestartID(c.ConnectionID) {
+	if !validRestartID(c.PlatformID) {
 		return c, notification.ErrRequest
 	}
 	events, err := NormalizeEventsConfig(c.EventConfig())
 	if err != nil {
 		return c, err
 	}
-	todos, err := normalizeTodosConfig(c.TodoConfig(), c.ConnectionID != "" || c.Todos.Enabled)
+	todos, err := normalizeTodosConfig(c.TodoConfig(), c.PlatformID != "" || c.Todos.Enabled)
 	if err != nil {
 		return c, err
 	}
-	c.Events, c.Todos = EventSettingsFrom(events), TodoSettingsFrom(todos)
+	c.Events.Filter, c.Todos.Filter = events.Filter, todos.Filter
 	return c, nil
+}
+
+// DefaultNotificationConfig is only a first-use draft. Reading it never enables
+// collection, and persisted settings are never merged with these defaults.
+func DefaultNotificationConfig(platformID string) NotificationConfig {
+	return NotificationConfig{Enabled: true, PlatformID: platformID, IntervalSeconds: DefaultIntervalSeconds, Todos: TodoSettings{Enabled: true}}
 }

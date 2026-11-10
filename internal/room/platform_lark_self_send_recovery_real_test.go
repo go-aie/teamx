@@ -102,7 +102,7 @@ func TestRealLarkSelfReadOnlyRecovery(t *testing.T) {
 	}
 	m := testManager(t, root, managerTestProfiles(t))
 	m.mu.Lock()
-	account, _, err := m.resolvePlatformAccountLocked(id.RoomIdentity, a.Access.ConnectionID, "lark")
+	account, _, err := m.resolvePlatformAccountLocked(id.RoomIdentity, a.Access.PlatformID, "lark")
 	m.mu.Unlock()
 	if err != nil || account.Identity != a.Access.Account || account.CLIProfile == nil {
 		t.Fatal("original real account unavailable", err)

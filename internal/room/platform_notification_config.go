@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/connection"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
 	"github.com/go-aie/teamx/internal/platform/notification"
+	"github.com/go-aie/teamx/internal/platform/registry"
 )
 
 func (m *roomManager) eventsSubscriptionLocked(key notification.Key) (gitlab.EventsState, bool) {
@@ -20,25 +20,28 @@ func (m *roomManager) eventsSubscriptionLocked(key notification.Key) (gitlab.Eve
 	return s, ok
 }
 
-// Exactly one non-retired Events subscription is allowed per room. A retired
+// Exactly one non-retired Events subscription is allowed per Room/platform. A retired
 // worker must settle before a replacement can be admitted, including on retry.
-func (m *roomManager) currentEventsLocked(owner RoomIdentity) (*gitlab.EventsState, error) {
-	var current *gitlab.EventsState
-	for _, state := range m.notifications.StatesLocked(owner) {
-		if s, ok := state.(gitlab.EventsState); ok {
-			if s.Retired {
-				if m.notifications.DoneLocked(s.Metadata().Key) != nil || m.attachmentCallsBusyLocked(s.Metadata().Key) {
-					return nil, ErrBusy
-				}
-				continue
-			}
-			if current != nil {
-				return nil, ErrInvalid
-			}
-			current = &s
+func (m *roomManager) currentEventsLocked(owner RoomIdentity, platformIDs ...string) (*gitlab.EventsState, error) {
+	id, err := m.notificationPlatformLocked(owner, gitlab.EventsSourceID, platformIDs...)
+	if err != nil {
+		return nil, err
+	}
+	for _, previous := range m.notifications.StatesLocked(owner) {
+		meta := previous.Metadata()
+		if meta.Key.Source == gitlab.EventsSourceID && meta.PlatformID == id && meta.Retired && m.attachmentCallsBusyLocked(meta.Key) {
+			return nil, ErrBusy
 		}
 	}
-	return current, nil
+	state, err := m.notifications.CurrentLocked(owner, gitlab.EventsSourceID, id)
+	if err != nil || state == nil {
+		return nil, notificationRoomError(err)
+	}
+	s, ok := state.(gitlab.EventsState)
+	if !ok {
+		return nil, ErrInvalid
+	}
+	return &s, nil
 }
 
 // Project URLs and namespace paths are accepted only against the selected
@@ -72,7 +75,7 @@ func (m *roomManager) configureEventsSubscription(ctx context.Context, key notif
 	if err != nil || entry.Status != "ready" {
 		return gitlab.EventsState{}, ErrIdentity
 	}
-	current, err := m.currentEventsLocked(key.Owner)
+	current, err := m.currentEventsLocked(key.Owner, m.subscriptionPlatformLocked(key, cfg.PlatformID))
 	if err != nil {
 		return gitlab.EventsState{}, err
 	}
@@ -83,20 +86,20 @@ func (m *roomManager) configureEventsSubscription(ctx context.Context, key notif
 		return gitlab.EventsState{}, err
 	}
 	var binding platform.ProjectBinding
-	var account connection.Account
+	var account registry.Account
 	if current != nil {
 		binding = current.Binding
-		if cfg.ConnectionID == "" {
-			cfg.ConnectionID = current.Config.ConnectionID
+		if cfg.PlatformID == "" {
+			cfg.PlatformID = current.Config.PlatformID
 		}
 		if cfg.Project == "" {
 			cfg.Project = current.Config.Project
 		}
 	}
 	if cfg.Enabled {
-		if cfg.ConnectionID != "" {
+		if cfg.PlatformID != "" {
 			var secret platform.Secret
-			account, secret, err = m.resolvePlatformAccountLocked(key.Owner, cfg.ConnectionID, "gitlab")
+			account, secret, err = m.resolvePlatformAccountLocked(key.Owner, cfg.PlatformID, "gitlab")
 			if err != nil {
 				return gitlab.EventsState{}, notificationRoomError(err)
 			}
@@ -104,10 +107,10 @@ func (m *roomManager) configureEventsSubscription(ctx context.Context, key notif
 			if err != nil {
 				return gitlab.EventsState{}, err
 			}
-			binding = platform.ProjectBinding{Provider: "gitlab", URL: account.URL, Project: cfg.Project, ConnectionID: account.ConnectionID, ConnectionGeneration: account.Generation}
+			binding = platform.ProjectBinding{Provider: "gitlab", URL: account.URL, Project: cfg.Project, PlatformID: account.PlatformID, PlatformGeneration: account.Generation}
 			// Only a new target needs remote verification. Existing snapshots have
 			// already verified the stable project ID; credential resolution stays live.
-			if current != nil && current.Binding == (platform.ProjectBinding{Provider: "gitlab", URL: binding.URL, Project: binding.Project, ConnectionID: binding.ConnectionID, ConnectionGeneration: binding.ConnectionGeneration, ProjectID: current.Binding.ProjectID}) && current.UserID == account.UserID {
+			if current != nil && current.Binding == (platform.ProjectBinding{Provider: "gitlab", URL: binding.URL, Project: binding.Project, PlatformID: binding.PlatformID, PlatformGeneration: binding.PlatformGeneration, ProjectID: current.Binding.ProjectID}) && current.UserID == account.UserID {
 				binding.ProjectID = current.Binding.ProjectID
 			} else {
 				verify := m.platformProject
@@ -118,18 +121,18 @@ func (m *roomManager) configureEventsSubscription(ctx context.Context, key notif
 				if verifyErr != nil || projectID <= 0 {
 					return gitlab.EventsState{}, ErrRequest
 				}
-				selected, _, selectErr := m.resolvePlatformAccountLocked(key.Owner, cfg.ConnectionID, "gitlab")
-				latest, readErr := m.currentEventsLocked(key.Owner)
+				selected, _, selectErr := m.resolvePlatformAccountLocked(key.Owner, cfg.PlatformID, "gitlab")
+				latest, readErr := m.currentEventsLocked(key.Owner, m.subscriptionPlatformLocked(key, cfg.PlatformID))
 				if m.roomBusyLocked(key.Owner) || selectErr != nil || selected != account || readErr != nil || (current == nil) != (latest == nil) || current != nil && (latest.SubscriptionID != current.SubscriptionID || latest.SubscriptionVersion != current.SubscriptionVersion) {
 					return gitlab.EventsState{}, ErrConflict
 				}
 				binding.ProjectID = projectID
 			}
-		} else if current == nil || current.Config.ConnectionID != "" {
+		} else if current == nil || current.Config.PlatformID != "" {
 			return gitlab.EventsState{}, ErrRequest
 		}
 	} else if current != nil {
-		cfg.ConnectionID, cfg.Project = current.Config.ConnectionID, current.Config.Project
+		cfg.PlatformID, cfg.Project = current.Config.PlatformID, current.Config.Project
 	}
 	cfg, err = gitlab.NormalizeEventsConfig(cfg)
 	if err != nil {
@@ -160,10 +163,13 @@ func (m *roomManager) configureEventsSubscription(ctx context.Context, key notif
 			return retired, err
 		}
 		latest, ok := m.eventsSubscriptionLocked(retired.Metadata().Key)
-		active, readErr := m.currentEventsLocked(key.Owner)
-		selected, _, selectErr := m.resolvePlatformAccountLocked(key.Owner, cfg.ConnectionID, "gitlab")
+		active, readErr := m.currentEventsLocked(key.Owner, m.subscriptionPlatformLocked(key, cfg.PlatformID))
+		selected, _, selectErr := m.resolvePlatformAccountLocked(key.Owner, cfg.PlatformID, "gitlab")
 		if m.roomBusyLocked(key.Owner) || !ok || latest.SubscriptionVersion != retired.SubscriptionVersion || readErr != nil || active != nil || selectErr != nil || selected != account {
 			return retired, ErrConflict
+		}
+		if saved, ok := m.gitlabNotifications[key.Owner][cfg.PlatformID]; ok && saved.BackfillLocked && saved.Config.BackfillStart.IsZero() {
+			cfg.BackfillSeconds, cfg.BackfillStart = 0, current.Baseline
 		}
 		current = nil
 	}
@@ -229,19 +235,19 @@ func (m *roomManager) eventsBindingLocked(s gitlab.EventsState) (gitlab.Binding,
 		return gitlab.Binding{}, notification.ErrIdentity
 	}
 	if s.UserID > 0 {
-		account, _, err := m.resolvePlatformAccountLocked(s.RoomIdentity, s.Binding.ConnectionID, "gitlab")
+		account, _, err := m.resolvePlatformAccountLocked(s.RoomIdentity, s.Binding.PlatformID, "gitlab")
 		if err != nil {
 			return gitlab.Binding{}, err
 		}
-		if account.URL != s.Binding.URL || account.Generation != s.Binding.ConnectionGeneration || account.UserID != s.UserID {
+		if account.URL != s.Binding.URL || account.Generation != s.Binding.PlatformGeneration || account.UserID != s.UserID {
 			return gitlab.Binding{}, notification.ErrConflict
 		}
 		// Use the exact verified credential evidence, rather than resolving the
 		// mutable configuration a second time during an admitted operation.
 		return gitlab.Binding{Version: 1, RoomID: s.RoomID, RoomInstance: s.RoomInstance,
 			URL: s.Binding.URL, Project: s.Binding.Project, ProjectID: s.Binding.ProjectID,
-			ConnectionID: account.ConnectionID, ConnectionGeneration: account.Generation,
-			ConnectionVersion: account.ConnectionVersion, CredentialVersion: account.CredentialVersion,
+			PlatformID: account.PlatformID, PlatformGeneration: account.Generation,
+			PlatformVersion: account.PlatformVersion, CredentialVersion: account.CredentialVersion,
 			CredentialFingerprint: account.CredentialFingerprint}, nil
 	}
 	b, err := m.gitLabProjectBindingLocked(s.RoomIdentity, s.Binding)

@@ -35,13 +35,13 @@ func normalizeGitWorkspace(w workspaceConfig, suggestion bool) (workspaceConfig,
 		if repo.Host != u.Host || strings.TrimSuffix(strings.TrimPrefix(repo.Path, "/"), ".git") != b.Project {
 			return workspaceConfig{}, fmt.Errorf("%w: repository and GitLab project do not match", ErrRequest)
 		}
-		if b.ConnectionID != "" {
-			if !validRestartID(b.ConnectionID) ||
-				(b.ConnectionGeneration != "" && !validRestartID(b.ConnectionGeneration)) || b.ProjectID < 0 ||
-				(!suggestion && (b.ConnectionGeneration == "" || b.ProjectID <= 0)) {
+		if b.PlatformID != "" {
+			if !validRestartID(b.PlatformID) ||
+				(b.PlatformGeneration != "" && !validRestartID(b.PlatformGeneration)) || b.ProjectID < 0 ||
+				(!suggestion && (b.PlatformGeneration == "" || b.ProjectID <= 0)) {
 				return workspaceConfig{}, fmt.Errorf("%w: invalid workspace connection reference", ErrRequest)
 			}
-		} else if !suggestion || b.ConnectionGeneration != "" || b.ProjectID != 0 {
+		} else if !suggestion || b.PlatformGeneration != "" || b.ProjectID != 0 {
 			return workspaceConfig{}, fmt.Errorf("%w: GitLab requires a platform connection", ErrRequest)
 		}
 		w.Binding = &b

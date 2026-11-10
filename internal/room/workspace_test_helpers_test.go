@@ -7,16 +7,16 @@ import (
 
 func setTestEffectiveWorkspace(t *testing.T, m *roomManager, room roomSummary, w workspaceConfig, version uint64) {
 	t.Helper()
-	if w.Binding != nil && w.Binding.ConnectionID != "" {
+	if w.Binding != nil && w.Binding.PlatformID != "" {
 		m.mu.Lock()
-		file, err := m.connections.Load()
+		file, err := m.platforms.Load()
 		m.mu.Unlock()
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, conn := range file.Connections {
-			if conn.ID == w.Binding.ConnectionID {
-				w.Binding.ConnectionGeneration = conn.Generation
+		for _, conn := range file.Platforms {
+			if conn.ID == w.Binding.PlatformID {
+				w.Binding.PlatformGeneration = conn.Generation
 			}
 		}
 	}

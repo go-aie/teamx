@@ -26,13 +26,14 @@ func TestGitLabUnifiedConfigurationPersistenceAndVersion(t *testing.T) {
 	if err != nil || v.Version != 1 || len(v.Errors) != 0 || v.Pending["events"] || v.Pending["todos"] {
 		t.Fatal(v, err)
 	}
-	if v.Config.ConnectionID != connection.ID || v.Events.Config.(gitlab.EventsConfig).ConnectionID != connection.ID || v.Todos.Config.(gitlab.TodosConfig).ConnectionID != connection.ID {
+	if v.Config.PlatformID != connection.ID || v.Events.Config.(gitlab.EventsConfig).PlatformID != connection.ID || v.Todos.Config.(gitlab.TodosConfig).PlatformID != connection.ID {
 		t.Fatal("shared connection not applied")
 	}
-	var saved gitlabNotificationRecord
-	if err := readSnapshot(h.m.gitlabNotificationPath(h.room.RoomIdentity), &saved, maxGitLabConfigBytes); err != nil {
+	var registry gitlabNotificationFile
+	if err := readSnapshot(h.m.gitlabNotificationPath(h.room.RoomIdentity), &registry, maxGitLabConfigBytes); err != nil {
 		t.Fatal(err)
 	}
+	saved := registry.Platforms[cfg.PlatformID]
 	if saved.Version != 1 || !reflect.DeepEqual(saved.Config, v.Config) {
 		t.Fatal(saved)
 	}
@@ -44,7 +45,7 @@ func TestGitLabUnifiedConfigurationPersistenceAndVersion(t *testing.T) {
 	cfg.Events.Enabled = false
 	cfg.Todos.Enabled = false
 	v, err = h.m.configureGitLabNotifications(context.Background(), h.room.RoomIdentity, 1, cfg)
-	if err != nil || v.Version != 2 || v.Config.ConnectionID != connection.ID || v.Events.Config.(gitlab.EventsConfig).Enabled || v.Todos.Config.(gitlab.TodosConfig).Enabled {
+	if err != nil || v.Version != 2 || v.Config.PlatformID != connection.ID || v.Events.Config.(gitlab.EventsConfig).Enabled || v.Todos.Config.(gitlab.TodosConfig).Enabled {
 		t.Fatal(v, err)
 	}
 	h.m.mu.Lock()
@@ -92,7 +93,7 @@ func TestGitLabUnifiedSettingsValidateBeforePersistence(t *testing.T) {
 	parallelFixtureTest(t)
 	h, _ := newIndependentEventHarness(t)
 	for _, mutate := range []func(*gitlab.NotificationConfig){
-		func(c *gitlab.NotificationConfig) { c.ConnectionID = "" },
+		func(c *gitlab.NotificationConfig) { c.PlatformID = "" },
 		func(c *gitlab.NotificationConfig) { c.IntervalSeconds = 121 },
 		func(c *gitlab.NotificationConfig) {
 			c.Target = notification.Target{Mode: "inbox", AgentID: "unknown", MembershipID: "unknown"}
@@ -208,18 +209,18 @@ func TestGitLabUnifiedChangeDrainsOldQueryAndRejectsConcurrentSave(t *testing.T)
 	}
 }
 
-func TestGitLabUnifiedDisabledConfigReferencesItsConnection(t *testing.T) {
+func TestGitLabUnifiedDisabledConfigReferencesItsPlatform(t *testing.T) {
 	parallelFixtureTest(t)
 	m := testManager(t, t.TempDir(), managerTestProfiles(t))
 	room := managerCreate(t, m, "disabled-notifications")
 	c := verifyTodoAccount(t, m, platformTestSave(t, m, platformTestRequest(m)), 101)
-	cfg, _ := gitlab.NormalizeNotificationConfig(gitlab.NotificationConfig{ConnectionID: c.ID})
+	cfg, _ := gitlab.NormalizeNotificationConfig(gitlab.NotificationConfig{Enabled: true, PlatformID: c.ID})
 	v, err := m.configureGitLabNotifications(context.Background(), room.RoomIdentity, 0, cfg)
 	if err != nil || v.Version != 1 {
 		t.Fatal(v, err)
 	}
 	m.mu.Lock()
-	refs, err := m.platformConnectionReferencesLocked(c.ID)
+	refs, err := m.managedPlatformReferencesLocked(c.ID)
 	states := m.notifications.StatesLocked(room.RoomIdentity)
 	m.mu.Unlock()
 	if err != nil || len(refs) != 1 || refs[0].RoomIdentity != room.RoomIdentity || len(states) != 0 {
@@ -275,10 +276,11 @@ func TestGitLabUnifiedShutdownFencesAnApplyingRequest(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("applying request did not settle during shutdown")
 	}
-	var saved gitlabNotificationRecord
-	if err := readSnapshot(h.m.gitlabNotificationPath(h.room.RoomIdentity), &saved, maxGitLabConfigBytes); err != nil {
+	var registry gitlabNotificationFile
+	if err := readSnapshot(h.m.gitlabNotificationPath(h.room.RoomIdentity), &registry, maxGitLabConfigBytes); err != nil {
 		t.Fatal(err)
 	}
+	saved := registry.Platforms[cfg.PlatformID]
 	if saved.Version != 1 || saved.Config.Events.Project != "remote/other" || len(saved.Errors) != 0 {
 		t.Fatal("request wrote status after shutdown fence", saved)
 	}
@@ -368,7 +370,7 @@ func TestGitLabUnifiedBackfillFreezesBeforeCollectorsAndAcrossLaterEnable(t *tes
 	parallelFixtureTest(t)
 	h, c := newIndependentEventHarness(t)
 	room := managerCreate(t, h.m, "historical-gitlab")
-	cfg := gitlab.NotificationConfig{ConnectionID: c.ID, BackfillSeconds: 3600, Events: gitlab.EventSettings{Enabled: true, Project: "remote/project"}}
+	cfg := gitlab.NotificationConfig{Enabled: true, PlatformID: c.ID, BackfillSeconds: 3600, Events: gitlab.EventSettings{Enabled: true, Project: "remote/project"}}
 	expected := h.clock.get().Add(-time.Hour)
 	v, err := h.m.configureGitLabNotifications(context.Background(), room.RoomIdentity, 0, cfg)
 	if err != nil || len(v.Errors) != 0 || !v.BackfillLocked || !v.Config.BackfillStart.Equal(expected) || v.Config.BackfillSeconds != 0 || !v.Events.Baseline.Equal(expected) {
@@ -407,7 +409,7 @@ func TestGitLabUnifiedBackfillFailureKeepsStartAndInvalidTimesNeverPersist(t *te
 	parallelFixtureTest(t)
 	h, c := newIndependentEventHarness(t)
 	room := managerCreate(t, h.m, "retry-historical-gitlab")
-	cfg := gitlab.NotificationConfig{ConnectionID: c.ID, BackfillStart: h.clock.get().Add(time.Second), Events: gitlab.EventSettings{Enabled: true, Project: "remote/project"}}
+	cfg := gitlab.NotificationConfig{Enabled: true, PlatformID: c.ID, BackfillStart: h.clock.get().Add(time.Second), Events: gitlab.EventSettings{Enabled: true, Project: "remote/project"}}
 	if _, err := h.m.configureGitLabNotifications(context.Background(), room.RoomIdentity, 0, cfg); err == nil {
 		t.Fatal("future start accepted")
 	}
@@ -435,7 +437,7 @@ func TestGitLabUnifiedExistingHistoricalSubscriptionKeepsChoice(t *testing.T) {
 	parallelFixtureTest(t)
 	h, c := newIndependentEventHarness(t)
 	room := managerCreate(t, h.m, "existing-historical")
-	cfg := gitlab.EventsConfig{Enabled: true, ConnectionID: c.ID, Project: "remote/project", BackfillSeconds: 3600}
+	cfg := gitlab.EventsConfig{Enabled: true, PlatformID: c.ID, Project: "remote/project", BackfillSeconds: 3600}
 	source, err := h.m.configureEventsSubscription(context.Background(), notification.Key{Owner: room.RoomIdentity, Source: gitlab.EventsSourceID}, 0, cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -451,5 +453,36 @@ func TestGitLabUnifiedExistingHistoricalSubscriptionKeepsChoice(t *testing.T) {
 	v, err = h.m.configureGitLabNotifications(context.Background(), room.RoomIdentity, v.Version, shared)
 	if err != nil || len(v.Errors) != 0 || !v.Events.Baseline.Equal(source.Baseline) {
 		t.Fatal(v, err)
+	}
+}
+
+func TestGitLabLegacyRelativeStartIsNotReinterpretedForLaterChannel(t *testing.T) {
+	parallelFixtureTest(t)
+	h, c := newIndependentEventHarness(t)
+	room := managerCreate(t, h.m, "legacy-relative-start")
+	source, err := h.m.configureEventsSubscription(context.Background(), notification.Key{Owner: room.RoomIdentity, Source: gitlab.EventsSourceID}, 0, gitlab.EventsConfig{Enabled: true, PlatformID: c.ID, Project: "remote/project", BackfillSeconds: 3600})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := platformGitLabView(t, h.m, room.RoomIdentity, c.ID).Config
+	v := applyPlatformGitLab(t, h.m, room.RoomIdentity, 0, cfg)
+	h.clock.add(2 * time.Hour)
+	cfg = v.Config
+	cfg.Todos.Enabled = true
+	v = applyPlatformGitLab(t, h.m, room.RoomIdentity, v.Version, cfg)
+	if !v.Todos.Baseline.Equal(source.Baseline) || !v.Events.Baseline.Equal(source.Baseline) {
+		t.Fatal("legacy start was reinterpreted", v)
+	}
+	cfg = v.Config
+	cfg.IntervalSeconds = 60
+	v = applyPlatformGitLab(t, h.m, room.RoomIdentity, v.Version, cfg)
+	if !v.Todos.Baseline.Equal(source.Baseline) || !v.Events.Baseline.Equal(source.Baseline) {
+		t.Fatal("legacy start changed with interval", v)
+	}
+	cfg = v.Config
+	cfg.Events.Project = "remote/other"
+	v = applyPlatformGitLab(t, h.m, room.RoomIdentity, v.Version, cfg)
+	if !v.Events.Baseline.Equal(source.Baseline) {
+		t.Fatal("project update reset reception start", v)
 	}
 }

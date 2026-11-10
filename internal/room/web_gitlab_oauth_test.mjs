@@ -1,24 +1,24 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
-import {launch,settle} from "./web_app_harness.mjs";
+import {launch,settle,withOnboarding} from "./web_app_harness.mjs";
 function fixture(kind="oauth") {
  const item={id:"original",name:"Company GitLab",provider:"gitlab",url:"https://gitlab.invalid",version:2,credential_kind:kind,credential_configured:true,authorization_status:kind==="oauth"?"active":undefined,validation:{status:"valid",username:"tester"},references:[{room_id:"R",room_instance:"instance",name:"Review"}]};
- const api={calls:[],items:[item],prepared:{status:"ready",application_id:"app",redirect_uri:"http://127.0.0.1:8088/v1/platform/connections/gitlab/callback",applications_url:"https://gitlab.invalid/-/user_settings/applications",affected:[{id:item.id,version:2,referenced_rooms:[{room_id:"R",room_instance:"instance"}]}]},status:{session_id:"session",connection_id:item.id,status:"waiting"},async request(path,body){
+ const api={calls:[],items:[item],prepared:{status:"ready",application_id:"app",redirect_uri:"http://127.0.0.1:8088/v1/platforms/gitlab/callback",applications_url:"https://gitlab.invalid/-/user_settings/applications",affected:[{id:item.id,version:2,referenced_rooms:[{room_id:"R",room_instance:"instance"}]}]},status:{session_id:"session",platform_id:item.id,status:"waiting"},async request(path,body){
   api.calls.push({path,body:structuredClone(body)});
   if(path==="/v1/ui")return {managed:true};
   if(path==="/v1/rooms")return {service_epoch:"manager",operator:"tester",rooms:[],teams:[]};
-  if(path.startsWith("/v1/platform/connections?"))return {connections:structuredClone(api.items)};
+  if(path.startsWith("/v1/platforms?"))return {platforms:structuredClone(api.items)};
   if(path.endsWith("/gitlab/prepare"))return structuredClone(body.edit_application ? api.editPrepared || api.prepared : api.prepared);
   if(path.endsWith("/gitlab/initialize"))return structuredClone({...api.prepared,...api.initialized,status:api.initialized?.status || "owner_verification_required",application_id:undefined,client_import_id:api.initialized?.client_import_id || "imported",client_id:body.client.client_id,scopes:body.client.scopes});
-  if(path.endsWith("/gitlab/login"))return {session_id:"session",connection_id:api.targetID || item.id,status:"waiting",authorization_url:"https://gitlab.invalid/oauth/authorize?state=fixture-state"};
-  if(path.endsWith("/gitlab/logout"))return {session_id:"session",connection_id:item.id,status:"disconnecting"};
+  if(path.endsWith("/gitlab/login"))return {session_id:"session",platform_id:api.targetID || item.id,status:"waiting",authorization_url:"https://gitlab.invalid/oauth/authorize?state=fixture-state"};
+  if(path.endsWith("/gitlab/logout"))return {session_id:"session",platform_id:item.id,status:"disconnecting"};
   if(path.endsWith("/gitlab/status"))return typeof api.status==="function" ? api.status() : structuredClone(api.status);
   if(path.endsWith("/gitlab/cancel"))return {status:"cancelled"};
-  if(path.endsWith("/connections/save"))return {...item,...body,version:3};
+  if(path.endsWith("/platforms/save"))return {...item,...body,version:3};
   throw Error(`Unexpected ${path}`);
- }};return api;
+ }};return withOnboarding(api);
 }
-async function edit(api) {const ui=await launch(api);await ui.el("open-settings").emit("click");await ui.el("connections-list").children[0].emit("click");return ui;}
+async function edit(api) {const ui=await launch(api);await ui.el("open-settings").emit("click");await ui.el("platforms-list").children[0].emit("click");return ui;}
 async function openApplication(ui) {
  await ui.el("gitlab-edit-application").emit("click");
  if (!ui.el("connection-auth-confirmation").hidden) await ui.el("connection-auth-confirm").emit("click");
@@ -47,9 +47,9 @@ test("GitLab OAuth login starts once without a second confirmation and automatic
  await ui.el("gitlab-login").emit("click");assert.equal(popups,1);
  const request=api.calls.find(c=>c.path.endsWith("/gitlab/login")).body;
  assert.deepEqual(request.affected,api.prepared.affected);assert.equal(api.calls.filter(c=>c.path.endsWith("/gitlab/login")).length,1);
- assert.equal(api.calls.filter(c=>c.path.endsWith("/connections/save")).length,0);
- api.status={status:"succeeded",connections:[{...api.items[0],version:3,credential_kind:"oauth",authorization_status:"active"}]};await ui.clock.advance(1500);
- assert.match(ui.el("gitlab-account").textContent,/已连接.*tester/);assert.match(ui.el("connections-feedback").textContent,/授权已更新/);
+ assert.equal(api.calls.filter(c=>c.path.endsWith("/platforms/save")).length,0);
+ api.status={status:"succeeded",platforms:[{...api.items[0],version:3,credential_kind:"oauth",authorization_status:"active"}]};await ui.clock.advance(1500);
+ assert.match(ui.el("gitlab-account").textContent,/已连接.*tester/);assert.match(ui.el("platforms-feedback").textContent,/授权已更新/);
  assert.equal(ui.el("gitlab-setup").hidden,true);
  assert.equal(ui.el("connection-references").dataset.impact,"false");
  assert.equal(ui.el("gitlab-login-link").href,"");assert.doesNotMatch(JSON.stringify([...ui.saved]),/fixture-state/);
@@ -57,13 +57,13 @@ test("GitLab OAuth login starts once without a second confirmation and automatic
 test("GitLab closing cancels the browser flow and ignores a late status",async()=>{
  const api=fixture(),ui=await edit(api);await authorize(ui);let finish;
  api.status=()=>new Promise(r=>{finish=r});const polling=ui.clock.advance(1500);await settle();await ui.el("close-settings").emit("click");
- finish({status:"succeeded",connections:[{...api.items[0],validation:{status:"valid",username:"late-user"}}]});await polling;
+ finish({status:"succeeded",platforms:[{...api.items[0],validation:{status:"valid",username:"late-user"}}]});await polling;
  assert.equal(api.calls.filter(c=>c.path.endsWith("/gitlab/cancel")).length,1);assert.equal(ui.el("gitlab-login-link").href,"");assert.doesNotMatch(ui.el("gitlab-account").textContent,/late-user/);
 });
 test("GitLab shared logout displays local disconnect when remote revocation is unknown",async()=>{
- const api=fixture("oauth"),ui=await edit(api);api.status={status:"disconnected",connections:[{...api.items[0],authorization_status:"logged_out",revocation_status:"unconfirmed",credential_configured:false,validation:{status:"unverified"}}]};
+ const api=fixture("oauth"),ui=await edit(api);api.status={status:"disconnected",platforms:[{...api.items[0],authorization_status:"logged_out",revocation_status:"unconfirmed",credential_configured:false,validation:{status:"unverified"}}]};
  await ui.el("gitlab-logout").emit("click");assert.equal(ui.el("connection-auth-confirm").textContent,"确认退出");
- await ui.el("connection-auth-confirm").emit("click");assert.match(ui.el("gitlab-account").textContent,/本地已断开.*未确认/);assert.match(ui.el("connections-feedback").textContent,/本地已断开/);
+ await ui.el("connection-auth-confirm").emit("click");assert.match(ui.el("gitlab-account").textContent,/本地已断开.*未确认/);assert.match(ui.el("platforms-feedback").textContent,/本地已断开/);
  assert.equal(ui.el("gitlab-setup").hidden,true);assert.equal(ui.el("gitlab-logout").hidden,true);
 });
 test("GitLab first connection imports and authorizes once, then saves without another button",async()=>{
@@ -77,10 +77,10 @@ test("GitLab first connection imports and authorizes once, then saves without an
  assert.equal(logins.length,1);assert.equal(logins[0].body.client_import_id,"imported");assert.equal(logins[0].body.name,"New GitLab");
  assert.equal(ui.el("connection-save").hidden,true);assert.equal(ui.el("connection-actions").hidden,true);
  assert.equal(ui.el("gitlab-client-secret").value,"");assert.match(ui.el("gitlab-account").textContent,/等待 GitLab 授权/);
- api.status={status:"succeeded",connections:[{...fixture().items[0],name:"New GitLab",references:[],version:3}]};
+ api.status={status:"succeeded",platforms:[{...fixture().items[0],name:"New GitLab",references:[],version:3}]};
  await ui.clock.advance(1500);
- assert.match(ui.el("connections-feedback").textContent,/已连接 GitLab/);
- assert.equal(api.calls.some(c=>c.path.endsWith("/connections/save")),false);
+ assert.match(ui.el("platforms-feedback").textContent,/已连接 GitLab/);
+ assert.equal(api.calls.some(c=>c.path.endsWith("/platforms/save")),false);
  assert.equal(ui.el("connection-save").hidden,true);
 });
 test("GitLab first connection requires a name and can reuse saved credentials without another import",async()=>{
@@ -111,19 +111,19 @@ test("GitLab changing a saved application's requested scopes requires credential
 
 test("GitLab status failure preserves a cancel path and never claims success or retries login",async()=>{
  const api=fixture(),ui=await edit(api);api.status=()=>{throw Error("read failed")};await authorize(ui);
- assert.match(ui.el("connections-feedback").textContent,/状态读取失败/);assert.equal(ui.el("gitlab-cancel").hidden,false);
+ assert.match(ui.el("platforms-feedback").textContent,/状态读取失败/);assert.equal(ui.el("gitlab-cancel").hidden,false);
  await ui.el("gitlab-cancel").emit("click");assert.equal(api.calls.filter(c=>c.path.endsWith("/gitlab/cancel")).length,1);assert.equal(api.calls.filter(c=>c.path.endsWith("/gitlab/login")).length,1);
 });
 test("GitLab logout confirmation can be cancelled or left without starting a remote operation",async()=>{
  const api=fixture(),ui=await edit(api);let popups=0;ui.window.open=()=>{popups++;return null};
  await ui.el("gitlab-logout").emit("click");await ui.el("connection-auth-dismiss").emit("click");
  assert.equal(ui.el("connection-auth-confirmation").hidden,true);assert.equal(ui.el("connection-name").disabled,false);assert.equal(ui.el("connection-save").disabled,true);
- assert.match(ui.el("connections-feedback").textContent,/已取消/);
+ assert.match(ui.el("platforms-feedback").textContent,/已取消/);
  assert.equal(ui.el("connection-references").hidden,false);
  assert.equal(ui.el("connection-references").dataset.impact,"false");assert.deepEqual(referenceNames(ui),["Review"]);
  await ui.el("gitlab-logout").emit("click");await ui.el("connection-back").emit("click");
  await ui.el("connection-auth-confirm").emit("click");
- await ui.el("connections-list").children[0].emit("click");assert.equal(ui.el("connection-auth-confirmation").hidden,true);
+ await ui.el("platforms-list").children[0].emit("click");assert.equal(ui.el("connection-auth-confirmation").hidden,true);
  await ui.el("gitlab-logout").emit("click");await ui.el("close-settings").emit("click");await ui.el("connection-auth-confirm").emit("click");
  assert.equal(popups,0);assert.equal(api.calls.some(c=>/\/gitlab\/(login|logout|cancel)$/.test(c.path)),false);
 });
@@ -143,7 +143,7 @@ test("GitLab connection without shared impact logs in directly and keeps a link 
  for (const open of [()=>null,()=>{throw Error("popup denied")}]) {
   const api=fixture();api.items[0].references=[];api.prepared.affected=[{id:"original",version:2}];const ui=await edit(api);ui.window.open=open;
   await ui.el("gitlab-login").emit("click");assert.equal(ui.el("connection-auth-confirmation").hidden,true);
-  assert.equal(ui.el("gitlab-login-link").hidden,false);assert.match(ui.el("connections-feedback").textContent,/等待 GitLab 授权/);
+  assert.equal(ui.el("gitlab-login-link").hidden,false);assert.match(ui.el("platforms-feedback").textContent,/等待 GitLab 授权/);
   assert.equal(api.calls.filter(c=>c.path.endsWith("/gitlab/login")).length,1);
  }
 });
@@ -176,7 +176,7 @@ test("GitLab late discovery preserves a changed scope selection and saved api-on
  finish(api.prepared);await reading;
  assert.equal(ui.el("gitlab-scope-write-repository").checked,false);
  api.request=request;api.items=fixture().items;api.editPrepared={...api.prepared,status:"configuration_required",scopes:["api"],client_id:"api-only-client"};
- await ui.el("connection-back").emit("click");await ui.el("connections-list").children[0].emit("click");await openApplication(ui);
+ await ui.el("connection-back").emit("click");await ui.el("platforms-list").children[0].emit("click");await openApplication(ui);
  assert.equal(ui.el("gitlab-scope-api").checked,true);assert.equal(ui.el("gitlab-scope-api").disabled,true);
  assert.equal(ui.el("gitlab-scope-write-repository").checked,false);
  assert.equal(api.calls.some(c=>c.path.endsWith("/gitlab/initialize")),false);
@@ -217,7 +217,7 @@ test("GitLab configuration save conflict keeps correction form open and clears t
  await ui.el("gitlab-import").emit("click");
  assert.equal(ui.el("gitlab-setup").hidden,false);assert.equal(ui.el("gitlab-client-secret").value,"");
  assert.equal(ui.el("gitlab-advanced-title").attributes["aria-disabled"],"false");assert.match(ui.el("gitlab-setup-feedback").textContent,/已变化.*返回列表重新打开连接/);
- assert.equal(ui.el("gitlab-setup-feedback").attributes.role,"alert");assert.equal(ui.el("connections-feedback").textContent,"");
+ assert.equal(ui.el("gitlab-setup-feedback").attributes.role,"alert");assert.equal(ui.el("platforms-feedback").textContent,"");
 });
 
 test("GitLab first and saved unverified applications show the same form directly",async()=>{
@@ -230,7 +230,7 @@ test("GitLab first and saved unverified applications show the same form directly
  await ui.el("connection-back").emit("click");
  api.items=[{...fixture().items[0],credential_configured:false,authorization_status:undefined,validation:{status:"unverified"}}];
  api.prepared={...api.prepared,status:"owner_verification_required",client_import_id:"pending"};
- await ui.el("open-settings").emit("click");await ui.el("connections-list").children[0].emit("click");
+ await ui.el("open-settings").emit("click");await ui.el("platforms-list").children[0].emit("click");
  assert.equal(ui.el("gitlab-advanced").open,true);
  assert.equal(ui.el("gitlab-setup").hidden,false);
  assert.equal(ui.el("gitlab-advanced-title").hidden,true);
@@ -253,19 +253,19 @@ for (const status of ["succeeded","failed"]) test(`GitLab verified application r
  assert.equal(ui.el("connection-save").disabled,true);
  const login=api.calls.find(c=>c.path.endsWith("/gitlab/login")).body;
  assert.equal(login.client_import_id,"replacement");assert.equal(login.application_id,undefined);assert.deepEqual(login.affected,api.prepared.affected);
- api.status={status,...(status === "succeeded" ? {connections:[{...api.items[0],version:3}]} : {})};
+ api.status={status,...(status === "succeeded" ? {platforms:[{...api.items[0],version:3}]} : {})};
  await ui.clock.advance(1500);
  assert.match(ui.el("gitlab-account").textContent,/已连接.*tester/);
- if(status === "succeeded") {assert.equal(ui.el("gitlab-advanced").open,false);assert.equal(ui.el("gitlab-setup").hidden,true);assert.match(ui.el("connections-feedback").textContent,/应用配置已更新/);assert.equal(ui.el("connection-save").disabled,true);assert.equal(api.calls.some(c=>c.path.endsWith("/connections/save")),false);}
- else {assert.match(ui.el("gitlab-setup-feedback").textContent,/授权未完成/);assert.equal(ui.el("connections-feedback").textContent,"");}
+ if(status === "succeeded") {assert.equal(ui.el("gitlab-advanced").open,false);assert.equal(ui.el("gitlab-setup").hidden,true);assert.match(ui.el("platforms-feedback").textContent,/应用配置已更新/);assert.equal(ui.el("connection-save").disabled,true);assert.equal(api.calls.some(c=>c.path.endsWith("/platforms/save")),false);}
+ else {assert.match(ui.el("gitlab-setup-feedback").textContent,/授权未完成/);assert.equal(ui.el("platforms-feedback").textContent,"");}
  assert.doesNotMatch(JSON.stringify([...ui.saved]),/replacement-secret/);
 });
 
-test("GitLab existing connections only enable saving for a changed nonempty name",async()=>{
+test("GitLab existing platforms only enable saving for a changed nonempty name",async()=>{
  const api=fixture(),ui=await edit(api);
  assert.equal(ui.el("connection-save").textContent,"保存名称");assert.equal(ui.el("connection-save").disabled,true);
  await ui.el("connection-form").emit("submit");
- assert.equal(api.calls.some(c=>c.path.endsWith("/connections/save")),false);
+ assert.equal(api.calls.some(c=>c.path.endsWith("/platforms/save")),false);
  ui.el("connection-name").value="Renamed GitLab";await ui.el("connection-name").emit("input");
  assert.equal(ui.el("connection-save").disabled,false);
  ui.el("connection-name").value=` ${api.items[0].name} `;await ui.el("connection-name").emit("input");
@@ -274,11 +274,11 @@ test("GitLab existing connections only enable saving for a changed nonempty name
  assert.equal(ui.el("connection-save").disabled,true);
  ui.el("connection-name").value="Renamed GitLab";await ui.el("connection-name").emit("input");
  await ui.el("connection-form").emit("submit");
- const saves=api.calls.filter(c=>c.path.endsWith("/connections/save"));
+ const saves=api.calls.filter(c=>c.path.endsWith("/platforms/save"));
  assert.equal(saves.length,1);assert.equal(saves[0].body.name,"Renamed GitLab");
- assert.match(ui.el("connections-feedback").textContent,/名称已保存/);
+ assert.match(ui.el("platforms-feedback").textContent,/名称已保存/);
  assert.equal(api.calls.some(c=>c.path.endsWith("/gitlab/login")),false);
- await ui.el("connections-list").children[0].emit("click");
+ await ui.el("platforms-list").children[0].emit("click");
  assert.equal(ui.el("connection-save").textContent,"保存名称");assert.equal(ui.el("connection-save").disabled,true);
 });
 
@@ -319,7 +319,7 @@ test("GitLab application preparation failures close the reserved popup and a nam
  ui.el("connection-name").value="Unsaved name";await ui.el("connection-name").emit("input");
  await ui.el("gitlab-import").emit("click");
  assert.equal(opened,0);assert.equal(api.calls.some(c=>c.path.endsWith("/gitlab/initialize")),false);
- assert.match(ui.el("connections-feedback").textContent,/先保存名称/);
+ assert.match(ui.el("platforms-feedback").textContent,/先保存名称/);
  ui.el("connection-name").value=api.items[0].name;await ui.el("connection-name").emit("input");
  const request=api.request;api.request=async(path,body)=>{if(path.endsWith("/gitlab/initialize"))throw Error("unconfirmed import");return request(path,body)};
  await ui.el("gitlab-import").emit("click");
@@ -352,7 +352,7 @@ test("GitLab reopening application settings restores saved public fields and lea
  assert.equal(ui.el("gitlab-client-id").value,"draft-client");assert.equal(ui.el("gitlab-client-secret").value,"draft-secret");
  await ui.el("gitlab-edit-cancel").emit("click");assert.equal(ui.el("gitlab-client-secret").value,"");await openApplication(ui);
  assert.equal(ui.el("gitlab-client-id").value,"saved-client");
- await ui.el("connection-back").emit("click");await ui.el("connections-list").children[0].emit("click");await openApplication(ui);
+ await ui.el("connection-back").emit("click");await ui.el("platforms-list").children[0].emit("click");await openApplication(ui);
  assert.equal(ui.el("gitlab-client-id").value,"saved-client");assert.equal(ui.el("gitlab-client-secret").value,"");
  assert.equal(ui.el("gitlab-scope-write-repository").checked,true);assert.equal(ui.el("gitlab-setup-feedback").hidden,true);
 });
@@ -366,7 +366,7 @@ test("GitLab invalid application feedback stays beside verification and correcti
  await ui.el("gitlab-import").emit("click");
  assert.match(ui.el("gitlab-setup-feedback").textContent,/应用凭据无效.*Application ID 和 Secret/);
  assert.equal(ui.el("gitlab-setup-feedback").hidden,false);assert.equal(ui.el("gitlab-setup-feedback").attributes.role,"alert");
- assert.equal(ui.el("connections-feedback").textContent,"");assert.equal(ui.el("gitlab-advanced").open,true);
+ assert.equal(ui.el("platforms-feedback").textContent,"");assert.equal(ui.el("gitlab-advanced").open,true);
  assert.equal(ui.el("gitlab-client-id").value,"saved-client");assert.equal(ui.el("gitlab-client-secret").value,"");
  ui.el("gitlab-client-secret").value="correct-secret";await ui.el("gitlab-import").emit("click");
  const correction=api.calls.filter(c=>c.path.endsWith("/gitlab/initialize")).at(-1).body;
@@ -395,8 +395,8 @@ test("GitLab scope failures explain missing or requested permissions beside appl
 test("GitLab ordinary login scope failures name api without suggesting unnecessary repository access",async()=>{
  const api=fixture(),ui=await edit(api);api.status={status:"failed",error_code:"invalid_scope",requested_scopes:["api"]};
  await authorize(ui);
- assert.match(ui.el("connections-feedback").textContent,/拒绝了申请的权限：api.*GitLab 应用设置.*Application ID.*重新登录/);
- assert.doesNotMatch(ui.el("connections-feedback").textContent,/write_repository|本次申请权限/);
+ assert.match(ui.el("platforms-feedback").textContent,/拒绝了申请的权限：api.*GitLab 应用设置.*Application ID.*重新登录/);
+ assert.doesNotMatch(ui.el("platforms-feedback").textContent,/write_repository|本次申请权限/);
 });
 
 test("GitLab automatic application discovery ignores superseded reads and failures after leaving the form",async()=>{
@@ -412,7 +412,7 @@ test("GitLab automatic application discovery ignores superseded reads and failur
  api.request=async(path,body)=>path.endsWith("/gitlab/prepare") ? new Promise((_,reject)=>{finish=reject}) : request(path,body);
  const failed=ui.el("connection-url").emit("change");await settle();
  await ui.el("connection-back").emit("click");finish(Error("late failure"));await failed;
- assert.equal(ui.el("connections-feedback").textContent,"");
+ assert.equal(ui.el("platforms-feedback").textContent,"");
 });
 
 test("GitLab modifying application configuration confirms the same affected rooms as logout before opening",async()=>{
@@ -445,7 +445,7 @@ test("GitLab loading an application edit only opens a confirmation and a stale c
  finish({...api.prepared,status:"configuration_required",application_id:undefined});await opening;
  assert.equal(ui.el("gitlab-app-config-row").hidden,true);assert.equal(ui.el("connection-auth-confirmation").hidden,false);
  api.request=request;
- await ui.el("connection-back").emit("click");await ui.el("connections-list").children[0].emit("click");
+ await ui.el("connection-back").emit("click");await ui.el("platforms-list").children[0].emit("click");
  await ui.el("connection-auth-confirm").emit("click");
  assert.equal(ui.el("gitlab-app-config-row").hidden,true);
  assert.equal(api.calls.some(c=>c.path.endsWith("/gitlab/initialize") || c.path.endsWith("/gitlab/login")),false);

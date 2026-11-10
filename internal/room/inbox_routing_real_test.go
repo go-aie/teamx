@@ -40,10 +40,10 @@ func TestInboxRoutingRealGitLab(t *testing.T) {
 	m.runtimes[room.RoomIdentity] = &roomRuntime{service: svc, status: "ready"}
 	m.mu.Unlock()
 	id := inboxRoutingMember(t, svc, "assistant", strings.Repeat("1", 32))
-	conn := realOAuthConnection(t, m, origin)
+	conn := realOAuthPlatform(t, m, origin)
 	clock := &eventTestClock{now: time.Now().UTC().Add(-30 * 24 * time.Hour)}
 	m.notifications.Clock = clock.get
-	s, err := m.configureTodosSubscription(context.Background(), notification.Key{Owner: room.RoomIdentity, Source: gitlab.TodosSourceID}, 0, gitlab.TodosConfig{Enabled: true, ConnectionID: conn.ID, Target: inboxTarget(id)})
+	s, err := m.configureTodosSubscription(context.Background(), notification.Key{Owner: room.RoomIdentity, Source: gitlab.TodosSourceID}, 0, gitlab.TodosConfig{Enabled: true, PlatformID: conn.ID, Target: inboxTarget(id)})
 	if err != nil {
 		t.Fatal("cannot configure isolated subscription", err)
 	}

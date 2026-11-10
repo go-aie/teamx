@@ -17,57 +17,108 @@ import (
 
 var MessagesSourceID = notification.SourceID{Provider: "lark", Channel: "messages"}
 
+// PrivateConfig selects proven person-to-person conversations. Saved selections
+// survive switching to all, or disabling this category.
+type PrivateConfig struct {
+	Enabled bool     `json:"enabled"`
+	Scope   string   `json:"scope"`
+	ChatIDs []string `json:"chat_ids"`
+}
+type GroupConfig struct {
+	Enabled     bool     `json:"enabled"`
+	ChatIDs     []string `json:"chat_ids"`
+	MessageMode string   `json:"message_mode"`
+	AtMe        bool     `json:"at_me"`
+	AtAll       bool     `json:"at_all"`
+}
 type Config struct {
-	ScopeMode       string              `json:"scope_mode,omitempty"`
 	Enabled         bool                `json:"enabled"`
-	ConnectionID    string              `json:"connection_id"`
-	Chats           []string            `json:"chats"`
+	PlatformID      string              `json:"platform_id"`
 	Target          notification.Target `json:"target"`
-	Private         bool                `json:"private"`
-	GroupMentions   bool                `json:"group_mentions"`
-	GroupAll        bool                `json:"group_all,omitempty"`
-	AtAll           bool                `json:"at_all"`
-	Bots            bool                `json:"bots"`
+	Private         PrivateConfig       `json:"private"`
+	Groups          GroupConfig         `json:"groups"`
 	IntervalSeconds int                 `json:"interval_seconds"`
 	BackfillSeconds int                 `json:"backfill_seconds"`
 	BackfillStart   time.Time           `json:"backfill_start,omitzero"`
 }
 
-func (c Config) AllChats() bool { return c.ScopeMode == "all" }
+// DefaultConfig is a draft only; reading it never creates a subscription.
+func DefaultConfig(platformID string) Config {
+	return Config{Enabled: true, PlatformID: platformID, Private: PrivateConfig{Enabled: true, Scope: "all"}, Groups: GroupConfig{MessageMode: "mentions", AtMe: true}, IntervalSeconds: 60}
+}
+func (c Config) DiscoverPrivate() bool { return c.Private.Enabled && c.Private.Scope == "all" }
 
+func normalizeChatIDs(ids []string) ([]string, error) {
+	if len(ids) > 32 {
+		return nil, notification.ErrRequest
+	}
+	out := slices.Clone(ids)
+	slices.Sort(out)
+	if len(slices.Compact(slices.Clone(out))) != len(out) {
+		return nil, notification.ErrRequest
+	}
+	for _, id := range out {
+		if !nativeID(id, "oc_") {
+			return nil, notification.ErrRequest
+		}
+	}
+	return out, nil
+}
 func NormalizeConfig(c Config) (Config, error) {
 	if c.IntervalSeconds == 0 {
 		c.IntervalSeconds = 60
 	}
-	if c.GroupAll && c.AllChats() {
-		return c, notification.ErrRequest
+	if c.Private.Scope == "" {
+		c.Private.Scope = "all"
+	}
+	if c.Groups.MessageMode == "" {
+		c.Groups.MessageMode = "mentions"
 	}
 	start, err := notification.NormalizeBackfill(c.BackfillSeconds, c.BackfillStart)
 	if err != nil {
 		return c, err
 	}
 	c.BackfillStart = start
-	if !component(c.ConnectionID) || !c.Target.Valid() || !c.Target.Inbox() || (c.ScopeMode != "" && c.ScopeMode != "specified" && c.ScopeMode != "all") || c.AllChats() && len(c.Chats) != 0 || !c.AllChats() && (len(c.Chats) == 0 || len(c.Chats) > 32) || c.IntervalSeconds < 3 || c.IntervalSeconds > 3600 {
+	if !component(c.PlatformID) || !c.Target.Valid() || !c.Target.Inbox() ||
+		(c.Private.Scope != "all" && c.Private.Scope != "specified") ||
+		(c.Groups.MessageMode != "mentions" && c.Groups.MessageMode != "all") ||
+		c.Private.Enabled && c.Private.Scope == "specified" && len(c.Private.ChatIDs) == 0 ||
+		c.Groups.Enabled && len(c.Groups.ChatIDs) == 0 ||
+		c.Enabled && !c.Private.Enabled && !c.Groups.Enabled ||
+		c.IntervalSeconds < 3 || c.IntervalSeconds > 3600 {
 		return c, notification.ErrRequest
 	}
-	c.Chats = slices.Clone(c.Chats)
-	slices.Sort(c.Chats)
-	if len(slices.Compact(slices.Clone(c.Chats))) != len(c.Chats) {
-		return c, notification.ErrRequest
+	if c.Private.ChatIDs, err = normalizeChatIDs(c.Private.ChatIDs); err != nil {
+		return c, err
 	}
-	for _, id := range c.Chats {
-		if !nativeID(id, "oc_") {
+	if c.Groups.ChatIDs, err = normalizeChatIDs(c.Groups.ChatIDs); err != nil {
+		return c, err
+	}
+	for _, id := range c.Private.ChatIDs {
+		if slices.Contains(c.Groups.ChatIDs, id) {
 			return c, notification.ErrRequest
 		}
 	}
 	return c, nil
+}
+
+// Includes checks category and range before any sender/message exception. Native
+// P2P relationship proof is checked separately before message bodies are read.
+func (c Config) Includes(chat Chat) bool {
+	switch chat.Mode {
+	case "p2p":
+		return c.Private.Enabled && (c.Private.Scope == "all" || slices.Contains(c.Private.ChatIDs, chat.ID))
+	case "group", "topic":
+		return c.Groups.Enabled && slices.Contains(c.Groups.ChatIDs, chat.ID)
+	}
+	return false
 }
 func component(s string) bool {
 	return len(s) > 0 && len(s) <= 128 && strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") == ""
 }
 
 type Binding struct {
-	ConnectionID      string                   `json:"connection_id"`
+	PlatformID        string                   `json:"platform_id"`
 	Generation        string                   `json:"generation"`
 	Account           platform.AccountIdentity `json:"account"`
 	CredentialVersion uint64                   `json:"credential_version"`
@@ -75,7 +126,7 @@ type Binding struct {
 }
 
 func (b Binding) Valid() bool {
-	return component(b.ConnectionID) && component(b.Generation) && b.Account.Valid() && b.Account.Provider == "lark" && (b.Account.Instance == Origin("feishu") || b.Account.Instance == Origin("lark")) && b.Account.Tenant.Namespace == "lark:tenant_key" && b.Account.Tenant.Value != "" && strings.HasPrefix(b.Account.ID.Namespace, "lark:open_id:cli_") && nativeID(b.Account.ID.Value, "ou_") && b.CredentialVersion > 0 && len(b.Fingerprint) == 64 && strings.Trim(b.Fingerprint, "0123456789abcdef") == ""
+	return component(b.PlatformID) && component(b.Generation) && b.Account.Valid() && b.Account.Provider == "lark" && (b.Account.Instance == Origin("feishu") || b.Account.Instance == Origin("lark")) && b.Account.Tenant.Namespace == "lark:tenant_key" && b.Account.Tenant.Value != "" && strings.HasPrefix(b.Account.ID.Namespace, "lark:open_id:cli_") && nativeID(b.Account.ID.Value, "ou_") && b.CredentialVersion > 0 && len(b.Fingerprint) == 64 && strings.Trim(b.Fingerprint, "0123456789abcdef") == ""
 }
 
 type Scan struct {
@@ -128,7 +179,7 @@ type State struct {
 }
 
 func (s State) Metadata() notification.Metadata {
-	return notification.Metadata{Key: notification.Key{Owner: s.RoomIdentity, Source: MessagesSourceID, SubscriptionID: s.SubscriptionID}, Version: s.SubscriptionVersion, Enabled: s.Config.Enabled, ConnectionID: s.Binding.ConnectionID, Observed: len(s.Observed), Pending: len(s.Inbox) - s.ExcludedItems(), DeliveryError: s.DeliveryErrorCode}
+	return notification.Metadata{Key: notification.Key{Owner: s.RoomIdentity, Source: MessagesSourceID, SubscriptionID: s.SubscriptionID}, Version: s.SubscriptionVersion, Enabled: s.Config.Enabled, Retired: s.Retired, PlatformID: s.Binding.PlatformID, Observed: len(s.Observed), Pending: len(s.Inbox) - s.ExcludedItems(), DeliveryError: s.DeliveryErrorCode}
 }
 
 func (s State) ExcludedItems() int {
@@ -143,10 +194,10 @@ func (s State) ExcludedItems() int {
 }
 func (s State) Validate(owner platform.RoomIdentity) error {
 	c, e := NormalizeConfig(s.Config)
-	if e != nil || !reflect.DeepEqual(c, s.Config) || s.RoomIdentity != owner || owner.RoomID == "" || owner.RoomInstance == "" || !component(s.SubscriptionID) || s.SubscriptionVersion == 0 || !s.Binding.Valid() || s.Config.ConnectionID != s.Binding.ConnectionID || s.Baseline.IsZero() || s.Chats == nil || s.Observed == nil || s.Accepted == nil || s.Inbox == nil || s.NextChat < 0 || s.NextChat >= MaxChats || len(s.Chats) > MaxChats || s.PriorityTurn < 0 || s.PriorityTurn > 2 || s.RuntimeState.Validate(c.Enabled) != nil || s.Retired && c.Enabled {
+	if e != nil || !reflect.DeepEqual(c, s.Config) || s.RoomIdentity != owner || owner.RoomID == "" || owner.RoomInstance == "" || !component(s.SubscriptionID) || s.SubscriptionVersion == 0 || !s.Binding.Valid() || s.Config.PlatformID != s.Binding.PlatformID || s.Baseline.IsZero() && (c.Enabled || len(s.Chats)+len(s.Observed)+len(s.Accepted)+len(s.Inbox) > 0 || s.Directory != nil || !s.LastFull.IsZero()) || s.Chats == nil || s.Observed == nil || s.Accepted == nil || s.Inbox == nil || s.NextChat < 0 || s.NextChat >= MaxChats || len(s.Chats) > MaxChats || s.PriorityTurn < 0 || s.PriorityTurn > 2 || s.RuntimeState.Validate(c.Enabled) != nil || s.Retired && c.Enabled {
 		return notification.ErrInvalid
 	}
-	if !c.BackfillStart.IsZero() && !s.Baseline.Equal(c.BackfillStart) {
+	if !s.Baseline.IsZero() && !c.BackfillStart.IsZero() && !s.Baseline.Equal(c.BackfillStart) {
 		return notification.ErrInvalid
 	}
 	if s.Directory != nil {
@@ -238,6 +289,7 @@ func (s State) WithDeliveryError(code string) notification.State {
 }
 func (s State) InvalidateCredential() (notification.State, error) {
 	n := s.Clone()
+
 	if n.SubscriptionVersion == ^uint64(0) {
 		return n, notification.ErrCapacity
 	}
@@ -257,12 +309,16 @@ func Configure(owner platform.RoomIdentity, current *State, b Binding, c Config,
 	}
 	var n State
 	if current == nil {
-		if !c.Enabled || !b.Valid() {
+		if !b.Valid() {
 			return n, notification.ErrRequest
 		}
-		baseline, err := notification.BackfillBaseline(c.BackfillSeconds, c.BackfillStart, now)
-		if err != nil {
-			return n, err
+		var baseline time.Time
+		if c.Enabled {
+			var err error
+			baseline, err = notification.BackfillBaseline(c.BackfillSeconds, c.BackfillStart, now)
+			if err != nil {
+				return n, err
+			}
 		}
 		var id [16]byte
 		if _, e = rand.Read(id[:]); e != nil {
@@ -274,23 +330,30 @@ func Configure(owner platform.RoomIdentity, current *State, b Binding, c Config,
 		if n.Retired {
 			return n, notification.ErrConflict
 		}
-		if b.ConnectionID != n.Binding.ConnectionID || b.Generation != n.Binding.Generation || b.Account != n.Binding.Account || c.BackfillSeconds != n.Config.BackfillSeconds || !c.BackfillStart.Equal(n.Config.BackfillStart) {
+		if b.PlatformID != n.Binding.PlatformID || b.Generation != n.Binding.Generation || b.Account != n.Binding.Account || !n.Baseline.IsZero() && (c.BackfillSeconds != n.Config.BackfillSeconds || !c.BackfillStart.Equal(n.Config.BackfillStart)) {
 			return n, notification.ErrConflict
 		}
+	}
+	if n.Baseline.IsZero() && c.Enabled {
+		baseline, err := notification.BackfillBaseline(c.BackfillSeconds, c.BackfillStart, now)
+		if err != nil {
+			return n, err
+		}
+		n.Baseline = baseline
 	}
 	if n.SubscriptionVersion == ^uint64(0) {
 		return n, notification.ErrCapacity
 	}
 	if !c.Enabled {
-		c.ConnectionID = b.ConnectionID
+		c.PlatformID = b.PlatformID
 	}
 	n.SubscriptionVersion++
 	n.Binding = b
 	n.Config = c
-	if c.AllChats() && n.Directory == nil {
+	if c.Enabled && c.DiscoverPrivate() && n.Directory == nil {
 		n.Directory = &DirectoryProgress{}
 	}
-	if current != nil && c.ScopeMode != current.Config.ScopeMode && n.Directory != nil {
+	if current != nil && (c.Private.Scope != current.Config.Private.Scope || c.Private.Enabled != current.Config.Private.Enabled) && n.Directory != nil {
 		n.Directory.RetryAt = time.Time{}
 	}
 	for id, p := range n.Chats {
@@ -299,7 +362,9 @@ func Configure(owner platform.RoomIdentity, current *State, b Binding, c Config,
 		n.Chats[id] = p
 	}
 	n.pruneObserved()
-	n.updateFull(now)
+	if !n.Baseline.IsZero() {
+		n.updateFull(now)
+	}
 	n.NextChat = 0
 	n.RuntimeState.Reset(c.Enabled, n.LastFull.IsZero())
 	return n, n.Validate(owner)

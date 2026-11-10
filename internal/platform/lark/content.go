@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
-	"slices"
 	"strings"
 )
 
@@ -172,34 +171,33 @@ func (m Message) mention(key, name, recipientID string) string {
 }
 
 func Matches(m Message, chat Chat, accountID string, c Config) bool {
-	if chat.Relation.Kind == "self" {
+	if !c.Includes(chat) || chat.Relation.Kind == "self" || chat.Mode == "p2p" && (chat.Relation.Kind != "peer" || !chat.Relation.ValidFor(chat.Relation.Account, chat.ID) || chat.Relation.Account.ID.Value != accountID) {
 		return false
 	}
 	if m.Type == "system" || m.Sender.Type == "" || m.Sender.ID == "" {
 		return false
 	}
 	if m.Sender.Type == "user" && m.Sender.IDType == "open_id" && m.Sender.ID == accountID {
-		// Own messages complete the conversation regardless of the incoming-message
-		// filters. Scope is checked here too so this exception cannot widen a subscription.
-		return (chat.Mode == "p2p" || chat.Mode == "group" || chat.Mode == "topic") &&
-			(c.AllChats() || slices.Contains(c.Chats, chat.ID))
-	}
-	if chat.Mode == "p2p" {
-		return c.Private && (m.Sender.Type == "user" && m.Sender.IDType == "open_id" || c.Bots && m.Sender.Type == "app")
-	}
-	if c.GroupAll && !c.AllChats() && (chat.Mode == "group" || chat.Mode == "topic") && slices.Contains(c.Chats, chat.ID) {
+		// Own messages are progress context only inside an enabled category.
 		return true
 	}
-	if !c.GroupMentions && !c.AtAll {
+	if chat.Mode == "p2p" {
+		return m.Sender.Type == "user" && m.Sender.IDType == "open_id"
+	}
+	if c.Groups.MessageMode == "all" {
+		return true
+	}
+	if !c.Groups.AtMe && !c.Groups.AtAll {
 		return false
 	}
+
 	for _, at := range m.Mentions {
-		if c.GroupMentions && at.IDType == "open_id" && at.ID == accountID || c.AtAll && at.ID == "all" {
+		if c.Groups.AtMe && at.IDType == "open_id" && at.ID == accountID || c.Groups.AtAll && at.ID == "all" {
 			return true
 		}
 	}
 	// Rich posts can encode @all in an at element without an entry in mentions.
-	if c.AtAll && (m.Type == "post" || m.Type == "text") {
+	if c.Groups.AtAll && (m.Type == "post" || m.Type == "text") {
 		if m.Type == "text" {
 			var body struct {
 				Text string `json:"text"`

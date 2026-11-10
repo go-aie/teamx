@@ -398,7 +398,7 @@ func TestReferenceFollowupsOpaqueStringIdentityIsolation(t *testing.T) {
 	inboxRunning(t, h, 1, 1)
 	target := platform.TargetIdentity{IdentityScope: platform.IdentityScope{Provider: source.Provider, Instance: source.Instance, Tenant: source.Tenant}, Object: platform.NativeIdentity{Type: "Document", ID: platform.ExternalID{Namespace: "document", Value: "opaque/doc:blue"}}}
 	access := platform.AccessContext{RoomIdentity: h.id.RoomIdentity, AgentID: h.id.AgentID, MembershipID: h.id.MembershipID,
-		Account: platform.AccountIdentity{IdentityScope: target.IdentityScope, ID: platform.ExternalID{Namespace: "account", Value: "reader-blue"}}, ConnectionID: "fixture", Generation: "v1", ConnectionVersion: 1, CredentialVersion: 1}
+		Account: platform.AccountIdentity{IdentityScope: target.IdentityScope, ID: platform.ExternalID{Namespace: "account", Value: "reader-blue"}}, PlatformID: "fixture", Generation: "v1", PlatformVersion: 1, CredentialVersion: 1}
 	r := platform.TargetResolution{Status: platform.ResolutionResolved, ObjectVerified: true, Complete: true, Target: &target, Account: access.Account, CheckedAt: time.Now().UTC()}
 	view, err := referenceTestService(h).readReferenceInbox(h.ctx, h.id, 1, 25, func(context.Context, MemberIdentity, platform.SourceRef) (platform.TargetResolution, platform.AccessContext, error) {
 		return r, access, nil

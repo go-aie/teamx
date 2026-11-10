@@ -5,7 +5,7 @@ import "strings"
 const rootCLIHelp = `Usage: teamx COMMAND [--help]
   init | doctor                 Initialize or diagnose a distribution (--bundle-root, --home; init: --non-interactive)
   serve                         Start the service
-  connections upgrade           Upgrade connection data offline (--rooms-dir ROOT)
+  platforms upgrade           Upgrade platform model and references offline (--rooms-dir ROOT)
   member add/list/remove/run/pause/session rotate/status
   send | read                   Room messages
   inbox read                    Original platform notifications
@@ -13,7 +13,7 @@ const rootCLIHelp = `Usage: teamx COMMAND [--help]
   actions resolve/execute/read/list Managed platform actions
   policy read/update/publish     Member long-term rules
   lark read                     Read verified Lark message/context (no replies)
-  tools list/run/skill           Enabled external tools
+  tools list/run/skill           Enabled platform and standalone tools
 Use teamx COMMAND SUBCOMMAND --help for parameters and constraints.
 `
 
@@ -109,14 +109,14 @@ var referenceCommandHelps = map[string]referenceCommandHelp{
 		"Revocation requires the real human correction. This records business evidence, not an action execution receipt. Re-read on version conflict; never silently substitute current versions.",
 	},
 	"actions/resolve": {
-		"actions resolve --request JSON", "Verify an execution target and save a member-scoped target_ref.",
+		"actions resolve --request JSON [--tool ENTRY]", "Verify an execution target and save a member-scoped target_ref. Select an exact tools-list entry for standalone platform requests; saved references retain their platform.",
 		"--request: {provider?, locator:{target_ref} or an adapter-supported locator {self,url,candidate,source,query}, turn_number, account_owner_seq?}. Raw IDs require provider-native type/namespace and an approved resolver.",
 		"target_ref, native identity, executing account, completeness, applicable actions/input_schema/binding_evidence/retry and disabled_reason.",
 		`teamx actions resolve --request '{"locator":{"target_ref":"ref_..."},"turn_number":1}'`,
 		"References and accessible targets grant no business authority. Only complete verified resolutions become execution targets. Current production GitLab targets enter through existing followups; standalone GitLab URLs are unsupported. Lark ordinary replies and single-group sends are available on an applied member connection; other user sends remain unavailable pending managed acceptance. For send targets use provider:lark with locator.query:{object_type:user|chat,text} to find candidates, then locator.candidate with the exact namespaced native user/chat identity. Search is partial evidence and never selects a target. A user candidate resolves the exact P2P peer; a chat candidate must be a joined ordinary group with verified speaking permission. Cross-tenant and restricted groups remain unavailable. For “my Lark”, use provider:lark and locator:{self:true}; the service generates the exact current account target. Applying a Lark member connection enables self delivery by default after native account and self-chat verification; no separate switch is required. Account/connection generation/credential replacement/member changes invalidate the evidence; re-verify the connection and apply it again. Historical receipts remain queryable. Resolve the exact saved message reference for reply schema and disabled_reason. Never invent a source or native ID.",
 	},
 	"actions/execute": {
-		"actions execute --request JSON", "Execute one supported action against a verified target.",
+		"actions execute --request JSON [--tool ENTRY]", "Execute one supported action against a verified target. An explicit entry must match the saved target account.",
 		"--request: {target_ref,turn_number,id,operation,input,context?}; The resolved action's binding_evidence selects its authority contract: when nonempty, omit policy_token/authority and use the enabled verified member capability; otherwise both are required. Never supply capability evidence yourself. context={object_ref,unit_ref,unit_version} is optional business association. Input follows the target's schema. authority: rule {type,id,version,reason}; instruction {type,id,version,reason,constraints?}; human_reply {type,room_seq,reason,question_ref?,message_refs?,constraints?}.",
 		"ID, status (processing/unknown/not_applied/succeeded/policy_changed), actual attempts, account, target and result. Optional unit_version describes associated progress; policy_changed includes the replacement effective view.",
 		`teamx actions execute --request '{"target_ref":"ref_...","turn_number":1,"id":"reply-1","policy_token":"<runtime token>","authority":{"type":"human_reply","room_seq":18,"reason":"Exact human instruction"},"operation":"object.comment","input":{"body":"Received"}}'`,

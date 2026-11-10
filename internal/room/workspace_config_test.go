@@ -11,7 +11,7 @@ import (
 
 func testGitLabWorkspace() workspaceConfig {
 	return workspaceConfig{Root: "workspaces", Repository: &workspaceRepository{URL: "https://gitlab.invalid/group/project.git", Branch: "main"},
-		Binding: &workspaceBinding{Provider: "gitlab", URL: "https://gitlab.invalid", Project: "group/project", ConnectionID: strings.Repeat("a", 32), ConnectionGeneration: strings.Repeat("b", 32), ProjectID: 7}}
+		Binding: &workspaceBinding{Provider: "gitlab", URL: "https://gitlab.invalid", Project: "group/project", PlatformID: strings.Repeat("a", 32), PlatformGeneration: strings.Repeat("b", 32), ProjectID: 7}}
 }
 
 func TestWorkspaceConfigurationValidation(t *testing.T) {
@@ -47,7 +47,7 @@ func TestWorkspaceConfigurationValidation(t *testing.T) {
 		{"query", func(w *workspaceConfig) { w.Repository.URL += "?token=never-echo-this-secret" }},
 		{"fragment", func(w *workspaceConfig) { w.Repository.URL += "#never-echo-this-secret" }},
 		{"encoded-path", func(w *workspaceConfig) { w.Repository.URL = "https://gitlab.invalid/group%2fproject.git" }},
-		{"missing-auth", func(w *workspaceConfig) { w.Binding.ConnectionID = "" }},
+		{"missing-auth", func(w *workspaceConfig) { w.Binding.PlatformID = "" }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			w := testGitLabWorkspace()
@@ -71,8 +71,8 @@ func TestWorkspaceConfigurationValidation(t *testing.T) {
 			w.Binding = nil
 		}
 		if kind == "suggestion" {
-			w.Binding.ConnectionID = ""
-			w.Binding.ConnectionGeneration = ""
+			w.Binding.PlatformID = ""
+			w.Binding.PlatformGeneration = ""
 			w.Binding.ProjectID = 0
 		}
 		if _, err := normalizeWorkspace(w, kind == "suggestion"); err != nil {
@@ -87,8 +87,8 @@ func TestTeamWorkspaceDefaultsFreezeOnlyLocalConfiguration(t *testing.T) {
 	team := testTeamDefinition(t)
 	w := testGitLabWorkspace()
 	w.Root = "./local-output/./"
-	w.Binding.ConnectionID = ""
-	w.Binding.ConnectionGeneration = ""
+	w.Binding.PlatformID = ""
+	w.Binding.PlatformGeneration = ""
 	w.Binding.ProjectID = 0
 	team.Workspace = &w // Suggested GitLab binding has no required credentials.
 	team.Members = append(team.Members, teamMember{ID: "writer", Name: "Writer", Instructions: "write carefully"})

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-aie/teamx/internal/platform/connection"
+	"github.com/go-aie/teamx/internal/platform/registry"
 )
 
 func TestGitLabSetupIsLocalAndRequiresExplicitImport(t *testing.T) {
@@ -23,7 +23,7 @@ func TestGitLabSetupIsLocalAndRequiresExplicitImport(t *testing.T) {
 	if r.Code != 200 || json.Unmarshal(r.Body.Bytes(), &view) != nil || view.Status != "configuration_required" || view.RedirectURI != m.config.endpoint+gitlabCallbackPath {
 		t.Fatal(r.Code, r.Body.String())
 	}
-	if _, err := os.Stat(m.connectionsPathForTest()); !os.IsNotExist(err) {
+	if _, err := os.Stat(m.platformsPathForTest()); !os.IsNotExist(err) {
 		t.Fatal("prepare wrote a snapshot")
 	}
 	req.Client = &gitlabClientImport{ClientID: "client", ClientSecret: "private-app-secret", RedirectURI: view.RedirectURI, Scopes: []string{"api", "write_repository"}}
@@ -31,8 +31,8 @@ func TestGitLabSetupIsLocalAndRequiresExplicitImport(t *testing.T) {
 	if r.Code != 200 || json.Unmarshal(r.Body.Bytes(), &view) != nil || view.Status != "owner_verification_required" || strings.Contains(r.Body.String(), "private-app-secret") {
 		t.Fatal(r.Code, r.Body.String())
 	}
-	file, err := m.connections.Load()
-	if err != nil || len(file.Connections) != 0 || len(file.OAuthCredentials) != 0 || len(file.OAuthClientImports) != 1 {
+	file, err := m.platforms.Load()
+	if err != nil || len(file.Platforms) != 0 || len(file.OAuthCredentials) != 0 || len(file.OAuthClientImports) != 1 {
 		t.Fatal("import authorized business access", err)
 	}
 	req.Client = nil
@@ -47,7 +47,7 @@ func TestGitLabRejectsRemovedCredentialInputs(t *testing.T) {
 	m := testManager(t, t.TempDir(), nil)
 	for _, field := range []string{"pat", "token_env"} {
 		q := map[string]any{"service_epoch": m.epoch, "caller": humanCaller, "id": strings.Repeat("a", 32), "name": "GitLab", "provider": "gitlab", "url": "https://gitlab.invalid", field: "never-echo-this"}
-		r := managerHTTP(m, "/v1/platform/connections/save", q)
+		r := managerHTTP(m, "/v1/platforms/save", q)
 		if r.Code != 400 || strings.Contains(r.Body.String(), "never-echo-this") {
 			t.Fatal("removed credential input accepted or reflected")
 		}
@@ -57,24 +57,24 @@ func TestGitLabRejectsRemovedCredentialInputs(t *testing.T) {
 	}
 }
 
-func TestOAuthConnectionMetadataPreservesGrant(t *testing.T) {
+func TestOAuthPlatformMetadataPreservesGrant(t *testing.T) {
 	parallelFixtureTest(t)
 	m := testManager(t, t.TempDir(), nil)
 	c := platformTestSave(t, m, platformTestRequest(m))
-	file, _ := m.connections.Load()
-	before, err := connection.ResolveAuthorization(file, file.Connections[0])
+	file, _ := m.platforms.Load()
+	before, err := registry.ResolveAuthorization(file, file.Platforms[0])
 	if err != nil {
 		t.Fatal(err)
 	}
 	q := platformTestRequest(m)
 	q.Version = c.Version
 	q.Name = "Renamed"
-	updated, err := m.updatePlatformConnection(q, false)
+	updated, err := m.updatePlatform(q, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	file, _ = m.connections.Load()
-	after, err := connection.ResolveAuthorization(file, file.Connections[0])
+	file, _ = m.platforms.Load()
+	after, err := registry.ResolveAuthorization(file, file.Platforms[0])
 	if err != nil || updated.Name != "Renamed" || updated.CredentialVersion != c.CredentialVersion || after.Authorization != before.Authorization || after.Identity != before.Identity {
 		t.Fatal("metadata edit changed authorization", err)
 	}

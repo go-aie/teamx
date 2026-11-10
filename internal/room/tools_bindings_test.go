@@ -30,29 +30,29 @@ func TestExplicitToolBindingPreservesRolesAndReadsSkillWithoutCredentials(t *tes
 	if err := runToolsWithClient(context.Background(), []string{"list"}, nil, &out, &stderr, env, client); err != nil || strings.TrimSpace(out.String()) != "[]" {
 		t.Fatal(err, out.String())
 	}
-	if err := runToolsWithClient(context.Background(), []string{"skill", "gitlab"}, nil, &out, &stderr, env, client); err == nil {
+	if err := runToolsWithClient(context.Background(), []string{"skill", c.ToolEntryID}, nil, &out, &stderr, env, client); err == nil {
 		t.Fatal("unbound member inherited a tool")
 	}
 	bindCLITool(t, m, room.RoomIdentity, members[0], c, "gitlab", 0)
 	out.Reset()
-	if err := runToolsWithClient(context.Background(), []string{"run", "gitlab", "mr", "view", "42", "--repo", "group/project"}, bytes.NewReader(nil), &out, &stderr, env, client); err != nil || out.String() != "native-output" {
+	if err := runToolsWithClient(context.Background(), []string{"run", c.ToolEntryID, "mr", "view", "42", "--repo", "group/project"}, bytes.NewReader(nil), &out, &stderr, env, client); err != nil || out.String() != "native-output" {
 		t.Fatal(err, out.String(), stderr.String())
 	}
-	// Reading an embedded workflow does not load credentials, run a process,
-	// query GitLab or require a Workspace.
+	// Reading an embedded workflow resolves its stable platform entry but does
+	// not require usable credentials, a process, a remote query or a Workspace.
 	m.mu.Lock()
 	connectionPath := filepath.Join(m.store.dir, "platform-connections.json")
-	connectionData, err := os.ReadFile(connectionPath)
+	file, err := m.platforms.Load()
 	if err == nil {
-		err = os.WriteFile(connectionPath, []byte("unavailable"), 0600)
+		file.OAuthCredentials[0].State = "reauthorization_required"
+		err = m.store.save(connectionPath, file, 1<<20)
 	}
 	m.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.WriteFile(connectionPath, connectionData, 0600) })
 	out.Reset()
-	if err := runToolsWithClient(context.Background(), []string{"skill", "gitlab"}, nil, &out, &stderr, env, client); err != nil || !strings.Contains(out.String(), "准确版本评审") || !strings.Contains(out.String(), "--auto-merge=false") {
+	if err := runToolsWithClient(context.Background(), []string{"skill", c.ToolEntryID}, nil, &out, &stderr, env, client); err != nil || !strings.Contains(out.String(), "准确版本评审") || !strings.Contains(out.String(), "--auto-merge=false") {
 		t.Fatal(err, out.String())
 	}
 	if strings.Contains(out.String(), "test-platform-secret") {

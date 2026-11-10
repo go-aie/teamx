@@ -125,7 +125,7 @@ func validEventBinding(b Binding) bool {
 			return false
 		}
 	}
-	return validRestartID(b.ConnectionID) && validRestartID(b.ConnectionGeneration) && b.ProjectID > 0
+	return validRestartID(b.PlatformID) && validRestartID(b.PlatformGeneration) && b.ProjectID > 0
 }
 
 func (f *GoEventFetcher) FetchEvents(ctx context.Context, q EventQuery) (EventBatch, error) {

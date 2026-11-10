@@ -194,7 +194,7 @@ func TestReferenceFollowupsRealGitLab(t *testing.T) {
 	m := testManager(t, filepath.Join(output, "rooms-root"), managerTestProfiles(t))
 	r := managerCreate(t, m, "r6-gitlab")
 	svc := eventLiveService(t, &eventHarness{m: m, room: r})
-	// Share the production static provider registry. Only execution is wrapped
+	// Share the production static provider connection. Only execution is wrapped
 	// to enforce this acceptance's one-send-per-operation budget on disk.
 	m.bindPlatformReferences(svc)
 	state, err := svc.store.LoadRoom()
@@ -204,7 +204,7 @@ func TestReferenceFollowupsRealGitLab(t *testing.T) {
 	member := state.Members[0]
 	id := MemberIdentity{RoomIdentity: r.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
 	report["member"] = id
-	conn := realOAuthConnection(t, m, origin)
+	conn := realOAuthPlatform(t, m, origin)
 	if conn.Validation.UserID != user.ID {
 		t.Fatal("connection account verification failed")
 	}

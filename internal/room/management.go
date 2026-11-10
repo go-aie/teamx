@@ -17,9 +17,9 @@ import (
 
 	"github.com/go-aie/teamx/internal/agent/dsh"
 	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/connection"
 	"github.com/go-aie/teamx/internal/platform/lark"
 	"github.com/go-aie/teamx/internal/platform/notification"
+	"github.com/go-aie/teamx/internal/platform/registry"
 	"github.com/go-aie/teamx/internal/platform/tool"
 )
 
@@ -128,12 +128,13 @@ type roomsIndex struct {
 // The root lock owns the catalog and its live services. Durable
 // operations retain an owner independently of an HTTP caller.
 type roomManager struct {
+	onboardingRunning        map[string]bool
 	settings                 *systemSettings
 	toolCatalog              []tool.Definition
 	platformCalls            map[*platformCall]bool
 	platformMemberChanges    map[MemberIdentity]bool
 	larkClients              *lark.ClientFactory // nil uses the shared production request queues
-	connections              *connection.Manager
+	platforms                *registry.Manager
 	oauthFlights             map[string]*oauthRefreshFlight
 	oauthLeases              map[string]map[*gitlabTokenLease]bool
 	larkAuthSessions         map[string]*larkAuthSession
@@ -149,8 +150,8 @@ type roomManager struct {
 	platformProject          func(context.Context, string, string, workspaceSecret) (int64, error)
 	notifications            *notification.Manager
 	notificationAdapters     map[notification.SourceID]notificationAdapter
-	gitlabNotifications      map[RoomIdentity]gitlabNotificationRecord
-	gitlabConfiguring        map[RoomIdentity]bool
+	gitlabNotifications      map[RoomIdentity]map[string]gitlabNotificationRecord
+	gitlabConfiguring        map[platformNotificationKey]bool
 	platformHTTP             http.RoundTripper // offline built-in HTTP seam; never used by agent tools
 	workspaceRun             platform.Execute  // offline subprocess seam; no public configuration hook
 	teams                    map[string]teamDefinition
@@ -188,6 +189,12 @@ func newRoomManager(dir string, maxTurns uint64) (_ *roomManager, err error) {
 			_ = store.Close()
 		}
 	}()
+	if err := checkLarkNotificationUpgrade(store.dir); err != nil {
+		return nil, err
+	}
+	if err := checkPlatformUpgrade(store.dir); err != nil {
+		return nil, err
+	}
 	epoch, err := newOpaqueID()
 	if err != nil {
 		return nil, err
@@ -231,7 +238,10 @@ func newRoomManager(dir string, maxTurns uint64) (_ *roomManager, err error) {
 			}
 		}
 	}
-	if _, err := m.readPlatformConnections(); err != nil {
+	if _, err := m.onboardingOperationsLocked(); err != nil {
+		return nil, err
+	}
+	if _, err := m.readPlatforms(); err != nil {
 		return nil, err
 	}
 	for _, entry := range m.index.Rooms {
@@ -575,8 +585,8 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m.serveTools(w, r)
 		return
 	}
-	if strings.HasPrefix(r.URL.Path, "/v1/platform/connections") {
-		m.servePlatformConnections(w, r)
+	if strings.HasPrefix(r.URL.Path, "/v1/platforms") {
+		m.servePlatforms(w, r)
 		return
 	}
 	if r.URL.Path == "/v1/platform/lark/target" || r.URL.Path == "/v1/platform/lark/messages" || r.URL.Path == "/v1/platform/lark/message" {

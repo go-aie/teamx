@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/go-aie/teamx/internal/platform/connection"
+	"github.com/go-aie/teamx/internal/platform/registry"
 )
 
 type gitlabSetupHarness struct {
@@ -31,14 +31,14 @@ func newGitlabSetupHarness(t *testing.T) *gitlabSetupHarness {
 	h.m.config.endpoint = "http://127.0.0.1:8088"
 	req := platformTestRequest(h.m)
 	req.URL = h.server.URL
-	c, err := h.m.updatePlatformConnection(req, false)
+	c, err := h.m.updatePlatform(req, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	h.m.mu.Lock()
-	file, _ := h.m.connections.Load()
-	file.OAuthApplications = []connection.OAuthApplication{{ID: strings.Repeat("b", 32), Origin: c.URL, OwnerID: 101, ClientID: "private-client-id", ClientSecret: "private-client-secret", RedirectURI: h.m.config.endpoint + gitlabCallbackPath, Scopes: []string{"api"}}}
-	err = h.m.store.save(h.m.connectionsPathForTest(), file, 2<<20)
+	file, _ := h.m.platforms.Load()
+	file.OAuthApplications = []registry.OAuthApplication{{ID: strings.Repeat("b", 32), Origin: c.URL, OwnerID: 101, ClientID: "private-client-id", ClientSecret: "private-client-secret", RedirectURI: h.m.config.endpoint + gitlabCallbackPath, Scopes: []string{"api"}}}
+	err = h.m.store.save(h.m.platformsPathForTest(), file, 2<<20)
 	h.m.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)
@@ -48,7 +48,7 @@ func newGitlabSetupHarness(t *testing.T) *gitlabSetupHarness {
 }
 func gitlabSetupHTTP(t *testing.T, h *gitlabSetupHarness, action string, req gitlabSetupRequest) gitlabSetupView {
 	t.Helper()
-	r := managerHTTP(h.m, "/v1/platform/connections/gitlab/"+action, req)
+	r := managerHTTP(h.m, "/v1/platforms/gitlab/"+action, req)
 	var view gitlabSetupView
 	if r.Code != 200 || json.Unmarshal(r.Body.Bytes(), &view) != nil {
 		t.Fatal(r.Code, r.Body.String())
@@ -81,7 +81,7 @@ func TestGitLabSetupCorrectsPendingApplicationAndRejectsStaleOrActiveEdits(t *te
 	req.ClientImportID = first.ClientImportID
 	req.Client.ClientSecret = "correct-secret"
 	done := make(chan struct{})
-	m.gitlabAuthSessions = map[string]*gitlabAuthSession{"pending": {importID: first.ClientImportID, app: connection.OAuthApplication{Origin: req.Origin, ClientID: "wrong-client"}, done: done}}
+	m.gitlabAuthSessions = map[string]*gitlabAuthSession{"pending": {importID: first.ClientImportID, app: registry.OAuthApplication{Origin: req.Origin, ClientID: "wrong-client"}, done: done}}
 	t.Cleanup(func() { m.gitlabAuthSessions = nil })
 	if response := managerHTTP(m, gitlabCookiePath+"initialize", req); response.Code != http.StatusConflict {
 		t.Fatal("active authorization edit accepted", response.Code, response.Body.String())
@@ -100,8 +100,8 @@ func TestGitLabSetupCorrectsPendingApplicationAndRejectsStaleOrActiveEdits(t *te
 	if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &prepared) != nil || prepared.ClientImportID != final.ClientImportID || prepared.ClientID != "correct-client" || strings.Contains(response.Body.String(), "client_secret") {
 		t.Fatal("prepare reused wrong application", response.Code, response.Body.String())
 	}
-	file, err := m.connections.Load()
-	if err != nil || len(file.OAuthClientImports) != 1 || file.OAuthClientImports[0].ClientSecret != "correct-secret" || file.OAuthClientImports[0].ClientID != "correct-client" || len(file.Connections) != 0 {
+	file, err := m.platforms.Load()
+	if err != nil || len(file.OAuthClientImports) != 1 || file.OAuthClientImports[0].ClientSecret != "correct-secret" || file.OAuthClientImports[0].ClientID != "correct-client" || len(file.Platforms) != 0 {
 		t.Fatal("correction not saved independently of login", err)
 	}
 }
@@ -128,7 +128,7 @@ func TestGitLabSetupRequestedScopes(t *testing.T) {
 			if tc.valid && response.Code != http.StatusOK || !tc.valid && response.Code != http.StatusBadRequest {
 				t.Fatal("scope selection accepted incorrectly", scopes, response.Code)
 			}
-			file, err := m.connections.Load()
+			file, err := m.platforms.Load()
 			if err != nil {
 				t.Fatal(err)
 			}

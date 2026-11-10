@@ -29,7 +29,7 @@ func TestActionsStandaloneCLIAndAssociatedContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	target := platform.TargetIdentity{IdentityScope: platform.IdentityScope{Provider: "forge-test", Instance: "https://forge.invalid"}, Containers: []platform.NativeIdentity{{Type: "Project", ID: platform.ExternalID{Namespace: "forge:project", Value: "1"}}}, Object: platform.NativeIdentity{Type: "MergeRequest", ID: platform.ExternalID{Namespace: "forge:object", Value: "42"}}}
-	access := platform.AccessContext{RoomIdentity: id.RoomIdentity, AgentID: id.AgentID, MembershipID: id.MembershipID, Account: platform.AccountIdentity{IdentityScope: target.IdentityScope, ID: platform.ExternalID{Namespace: "forge:user", Value: "writer"}}, ConnectionID: strings.Repeat("a", 32), Generation: strings.Repeat("b", 32), ConnectionVersion: 1, CredentialVersion: 1}
+	access := platform.AccessContext{RoomIdentity: id.RoomIdentity, AgentID: id.AgentID, MembershipID: id.MembershipID, Account: platform.AccountIdentity{IdentityScope: target.IdentityScope, ID: platform.ExternalID{Namespace: "forge:user", Value: "writer"}}, PlatformID: strings.Repeat("a", 32), Generation: strings.Repeat("b", 32), PlatformVersion: 1, CredentialVersion: 1}
 	var calls atomic.Int32
 	var uncertain atomic.Bool
 	prepare := func(ctx context.Context, member MemberIdentity, old platform.AccessContext) (referenceActionSession, error) {

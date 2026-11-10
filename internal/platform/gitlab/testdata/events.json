@@ -7,8 +7,8 @@
     "provider": "gitlab",
     "url": "https://gitlab.invalid",
     "project": "group/project",
-    "connection_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "connection_generation": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "platform_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "platform_generation": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "project_id": 7
   },
   "project_id": 7,

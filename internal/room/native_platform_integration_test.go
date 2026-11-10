@@ -74,9 +74,9 @@ func TestNativeReadRejectsCredentialChangeAfterBody(t *testing.T) {
 	parallelFixtureTest(t)
 	h, _ := newIndependentEventHarness(t)
 
-	connections := platformTestList(t, h.m)
+	platforms := platformTestList(t, h.m)
 	req := platformTestRequest(h.m)
-	req.Version = connections[0].Version
+	req.Version = platforms[0].Version
 	req.ReferencedRooms = []RoomIdentity{h.room.RoomIdentity}
 	verifyTodoAccount(t, h.m, platformTestReauthorize(t, h.m, req), 101)
 	h.m.mu.Lock()
@@ -89,7 +89,7 @@ func TestNativeReadRejectsCredentialChangeAfterBody(t *testing.T) {
 		if r.Header.Get("Authorization") != "Bearer rotated-token" {
 			t.Error("wrong admitted token")
 		}
-		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: &credentialDriftBody{Reader: strings.NewReader("[]"), onRead: func() { changeTestConnectionRevision(t, h.m, connections[0].ID) }}}, nil
+		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: &credentialDriftBody{Reader: strings.NewReader("[]"), onRead: func() { changeTestPlatformRevision(t, h.m, platforms[0].ID) }}}, nil
 	})
 	if _, err := h.m.eventsRead(b)(context.Background(), "/projects/7/events", nil, nil, 1024); !errors.Is(err, ErrConflict) {
 		t.Fatal("late response accepted after credential change", err)

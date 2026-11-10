@@ -220,11 +220,11 @@ func (m *Manager) Stop(ctx context.Context) error {
 	return Wait(ctx, done)
 }
 
-// InvalidateConnectionLocked pauses all referencing subscriptions before a new
+// InvalidatePlatformLocked pauses all referencing subscriptions before a new
 // credential is saved. It returns exactly the query owners requiring settlement.
-func (m *Manager) InvalidateConnectionLocked(id string) error {
+func (m *Manager) InvalidatePlatformLocked(id string) error {
 	for key, s := range m.states {
-		if s.state.Metadata().ConnectionID != id {
+		if s.state.Metadata().PlatformID != id {
 			continue
 		}
 		next, err := s.state.InvalidateCredential()
@@ -240,10 +240,10 @@ func (m *Manager) InvalidateConnectionLocked(id string) error {
 	}
 	return nil
 }
-func (m *Manager) ConnectionDoneLocked(id string) []<-chan struct{} {
+func (m *Manager) PlatformDoneLocked(id string) []<-chan struct{} {
 	var out []<-chan struct{}
 	for key, s := range m.states {
-		if s.state.Metadata().ConnectionID == id {
+		if s.state.Metadata().PlatformID == id {
 			if w := m.workers[key]; w != nil {
 				out = append(out, w.done)
 			}

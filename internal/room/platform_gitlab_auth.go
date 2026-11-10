@@ -16,53 +16,68 @@ import (
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/connection"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
+	"github.com/go-aie/teamx/internal/platform/registry"
 )
 
-const gitlabCookiePath = "/v1/platform/connections/gitlab/"
+const gitlabCookiePath = "/v1/platforms/gitlab/"
 const gitlabCompletePath = gitlabCookiePath + "complete"
 
-type gitlabAuthConnection struct {
+type gitlabAuthPlatform struct {
 	ID              string         `json:"id"`
 	Version         uint64         `json:"version"`
 	ReferencedRooms []RoomIdentity `json:"referenced_rooms"`
 }
 type gitlabAuthRequest struct {
-	ServiceEpoch   string                 `json:"service_epoch"`
-	Caller         Caller                 `json:"caller"`
-	ID             string                 `json:"id,omitempty"`
-	Version        uint64                 `json:"version,omitempty"`
-	Name           string                 `json:"name,omitempty"`
-	Origin         string                 `json:"origin,omitempty"`
-	ApplicationID  string                 `json:"application_id,omitempty"`
-	ClientImportID string                 `json:"client_import_id,omitempty"`
-	SessionID      string                 `json:"session_id,omitempty"`
-	Affected       []gitlabAuthConnection `json:"affected,omitempty"`
+	OnboardingID   string               `json:"onboarding_id,omitempty"`
+	Scopes         []string             `json:"scopes,omitempty"`
+	ServiceEpoch   string               `json:"service_epoch"`
+	Caller         Caller               `json:"caller"`
+	ID             string               `json:"id,omitempty"`
+	Version        uint64               `json:"version,omitempty"`
+	Name           string               `json:"name,omitempty"`
+	Origin         string               `json:"origin,omitempty"`
+	ApplicationID  string               `json:"application_id,omitempty"`
+	ClientImportID string               `json:"client_import_id,omitempty"`
+	SessionID      string               `json:"session_id,omitempty"`
+	Affected       []gitlabAuthPlatform `json:"affected,omitempty"`
 }
 type gitlabAuthView struct {
-	ConnectionID    string               `json:"connection_id"`
-	SessionID       string               `json:"session_id"`
-	Status          string               `json:"status"`
-	URL             string               `json:"authorization_url,omitempty"`
-	ErrorCode       string               `json:"error_code,omitempty"`
-	RequestedScopes []string             `json:"requested_scopes,omitempty"`
-	MissingScopes   []string             `json:"missing_scopes,omitempty"`
-	Cleanup         string               `json:"cleanup_status,omitempty"`
-	ExpiresAt       time.Time            `json:"expires_at"`
-	Connections     []platformConnection `json:"connections,omitempty"`
+	OnboardingID    string            `json:"onboarding_id,omitempty"`
+	PlatformID      string            `json:"platform_id"`
+	SessionID       string            `json:"session_id"`
+	Status          string            `json:"status"`
+	URL             string            `json:"authorization_url,omitempty"`
+	ErrorCode       string            `json:"error_code,omitempty"`
+	RequestedScopes []string          `json:"requested_scopes,omitempty"`
+	MissingScopes   []string          `json:"missing_scopes,omitempty"`
+	Cleanup         string            `json:"cleanup_status,omitempty"`
+	ExpiresAt       time.Time         `json:"expires_at"`
+	Platforms       []managedPlatform `json:"platforms,omitempty"`
 }
 type gitlabAuthSession struct {
 	gitlabAuthView
 	owner, state, browser, verifier string
-	app                             connection.OAuthApplication
-	previousApp                     connection.OAuthApplication
+	app                             registry.OAuthApplication
+	previousApp                     registry.OAuthApplication
 	importID, targetID, name        string
-	records                         []connection.Record
+	records                         []registry.Record
 	references                      map[string]string
 	ctx                             context.Context
 	cancel                          context.CancelFunc
 	done                            chan struct{}
+}
+
+func (s *gitlabAuthSession) expectedUserID() int64 {
+	if s.importID != "" {
+		return s.app.OwnerID
+	}
+	for _, c := range s.records {
+		if c.ID == s.targetID && c.CredentialID != "" {
+			return c.Validation.UserID
+		}
+	}
+	return 0
 }
 
 func oauthRandom() (string, error) {
@@ -85,7 +100,7 @@ func (m *roomManager) canonicalGitLabRequestLocked(r *http.Request) bool {
 }
 func (m *roomManager) finishGitLabAuthLocked(s *gitlabAuthSession, status, code string) {
 	s.Status, s.ErrorCode, s.URL, s.state, s.verifier = status, code, "", "", ""
-	if code == "invalid_scope" {
+	if code == "invalid_scope" && len(s.RequestedScopes) == 0 {
 		s.RequestedScopes = slices.Clone(s.app.Scopes)
 	}
 	s.cancel()
@@ -101,29 +116,37 @@ func (m *roomManager) cancelGitLabAuthLocked(s *gitlabAuthSession) {
 		m.finishGitLabAuthLocked(s, "cancelled", "")
 	}
 }
-func (m *roomManager) gitlabAuthImpactLocked(file connection.Snapshot, targetID string, app connection.OAuthApplication) ([]connection.Record, error) {
+
+// Account operations follow the selected authorization. Application management
+// explicitly fences every authorization, including logged-out accounts.
+func (m *roomManager) gitlabAuthImpactLocked(file registry.Snapshot, targetID string, app registry.OAuthApplication, allAccounts ...bool) ([]registry.Record, error) {
 	credentialID := ""
-	for _, c := range file.OAuthCredentials {
-		if c.ApplicationID == app.ID && c.UserID == app.OwnerID {
-			if credentialID != "" {
-				return nil, ErrConflict
-			}
-			credentialID = c.ID
+	for _, c := range file.Platforms {
+		if c.ID == targetID {
+			credentialID = c.CredentialID
 		}
 	}
-	var records []connection.Record
-	for _, c := range file.Connections {
-		if c.ID == targetID || credentialID != "" && c.CredentialKind == "oauth" && c.CredentialID == credentialID {
+	var records []registry.Record
+	for _, c := range file.Platforms {
+		shared := credentialID != "" && c.CredentialKind == "oauth" && c.CredentialID == credentialID
+		if len(allAccounts) > 0 && allAccounts[0] && c.CredentialKind == "oauth" {
+			cred, _, err := registry.OAuthRecord(file, c.CredentialID)
+			if err != nil {
+				return nil, err
+			}
+			shared = cred.ApplicationID == app.ID
+		}
+		if c.ID == targetID || shared {
 			records = append(records, c)
 		}
 	}
 	return records, nil
 }
-func (m *roomManager) gitlabAuthReferencesLocked(records []connection.Record) ([]gitlabAuthConnection, map[string]string, error) {
-	affected := []gitlabAuthConnection{}
+func (m *roomManager) gitlabAuthReferencesLocked(records []registry.Record) ([]gitlabAuthPlatform, map[string]string, error) {
+	affected := []gitlabAuthPlatform{}
 	fingerprints := map[string]string{}
 	for _, c := range records {
-		refs, err := m.platformConnectionReferencesLocked(c.ID)
+		refs, err := m.managedPlatformReferencesLocked(c.ID)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -131,7 +154,7 @@ func (m *roomManager) gitlabAuthReferencesLocked(records []connection.Record) ([
 		for _, r := range refs {
 			rooms = append(rooms, r.RoomIdentity)
 		}
-		affected = append(affected, gitlabAuthConnection{ID: c.ID, Version: c.Version, ReferencedRooms: rooms})
+		affected = append(affected, gitlabAuthPlatform{ID: c.ID, Version: c.Version, ReferencedRooms: rooms})
 		fingerprints[c.ID] = gitlabAuthReferencesFingerprint(refs)
 	}
 	return affected, fingerprints, nil
@@ -153,37 +176,46 @@ func (m *roomManager) checkGitLabAuthLocked(s *gitlabAuthSession) error {
 	if err != nil || redirect != s.app.RedirectURI {
 		return ErrConflict
 	}
-	file, err := m.connections.Load()
+	file, err := m.platforms.Load()
 	if err != nil {
 		return err
 	}
 	if s.importID == "" {
-		if !slices.ContainsFunc(file.OAuthApplications, func(a connection.OAuthApplication) bool {
-			return a.ID == s.app.ID && a.ClientID == s.app.ClientID && a.ClientSecret == s.app.ClientSecret && a.RedirectURI == s.app.RedirectURI && a.OwnerID == s.app.OwnerID
+		if !slices.ContainsFunc(file.OAuthApplications, func(a registry.OAuthApplication) bool {
+			return a.ID == s.app.ID && a.ClientID == s.app.ClientID && a.ClientSecret == s.app.ClientSecret && a.RedirectURI == s.app.RedirectURI && a.OwnerID == s.app.OwnerID && a.Origin == s.app.Origin && slices.Equal(a.Scopes, s.app.Scopes)
 		}) {
 			return ErrConflict
 		}
-	} else if !slices.ContainsFunc(file.OAuthClientImports, func(a connection.OAuthClientImport) bool {
+	} else if !slices.ContainsFunc(file.OAuthClientImports, func(a registry.OAuthClientImport) bool {
 		return a.ID == s.importID && a.ActorID == s.owner && a.ClientID == s.app.ClientID && a.ClientSecret == s.app.ClientSecret && a.RedirectURI == s.app.RedirectURI && slices.Equal(a.Scopes, s.app.Scopes) && a.ReplacesApplicationID == s.previousApp.ID
 	}) {
 		return ErrConflict
 	}
-	if s.previousApp.ID != "" && !slices.ContainsFunc(file.OAuthApplications, func(a connection.OAuthApplication) bool {
+	if s.previousApp.ID != "" && !slices.ContainsFunc(file.OAuthApplications, func(a registry.OAuthApplication) bool {
 		return a.ID == s.previousApp.ID && a.ClientID == s.previousApp.ClientID && a.ClientSecret == s.previousApp.ClientSecret && a.OwnerID == s.previousApp.OwnerID && a.RedirectURI == s.previousApp.RedirectURI && slices.Equal(a.Scopes, s.previousApp.Scopes)
 	}) {
 		return ErrConflict
 	}
-	current, err := m.gitlabAuthImpactLocked(file, s.targetID, s.app)
+	current, err := m.gitlabAuthImpactLocked(file, s.targetID, s.app, s.previousApp.ID != "")
+	if s.name != "" && len(s.records) > 0 && s.records[0].CredentialID != "" && s.previousApp.ID == "" {
+		credentialID := s.records[0].CredentialID
+		current = nil
+		for _, c := range file.Platforms {
+			if c.CredentialID == credentialID {
+				current = append(current, c)
+			}
+		}
+	}
 	if err != nil || len(current) != len(s.records) {
 		return ErrConflict
 	}
 	for _, want := range s.records {
-		if !slices.ContainsFunc(current, func(c connection.Record) bool {
+		if !slices.ContainsFunc(current, func(c registry.Record) bool {
 			return c.ID == want.ID && c.Generation == want.Generation && c.Version == want.Version && c.CredentialVersion == want.CredentialVersion && c.CredentialID == want.CredentialID
 		}) {
 			return ErrConflict
 		}
-		refs, err := m.platformConnectionReferencesLocked(want.ID)
+		refs, err := m.managedPlatformReferencesLocked(want.ID)
 		if err != nil {
 			return err
 		}
@@ -244,7 +276,7 @@ func (m *roomManager) serveGitLabAuth(w http.ResponseWriter, r *http.Request) {
 	if action == "status" || action == "cancel" {
 		s := m.gitlabAuthSessions[req.SessionID]
 		cookie, err := r.Cookie(gitlabCookieName(req.SessionID))
-		if s == nil || s.owner != req.Caller.ID || time.Now().After(s.ExpiresAt.Add(time.Minute)) || err != nil || cookie.Value != s.browser || req.ID != "" || req.Version != 0 || req.Name != "" || req.Origin != "" || req.ApplicationID != "" || req.ClientImportID != "" || len(req.Affected) != 0 {
+		if s == nil || s.owner != req.Caller.ID || time.Now().After(s.ExpiresAt.Add(time.Minute)) || err != nil || cookie.Value != s.browser || req.ID != "" || req.Version != 0 || req.Name != "" || req.Origin != "" || req.ApplicationID != "" || req.ClientImportID != "" || len(req.Affected) != 0 || len(req.Scopes) != 0 || req.OnboardingID != "" {
 			m.mu.Unlock()
 			writeAPIError(w, ErrIdentity)
 			return
@@ -270,7 +302,7 @@ func (m *roomManager) serveGitLabAuth(w http.ResponseWriter, r *http.Request) {
 	s, err := m.newGitLabAuthLocked(req, action)
 	if err != nil {
 		m.mu.Unlock()
-		writeAPIError(w, platformConnectionError(err))
+		writeAPIError(w, managedPlatformError(err))
 		return
 	}
 	secure := strings.HasPrefix(s.app.RedirectURI, "https:")
@@ -283,34 +315,63 @@ func (m *roomManager) serveGitLabAuth(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(view)
 }
 func (m *roomManager) newGitLabAuthLocked(req gitlabAuthRequest, action string) (*gitlabAuthSession, error) {
-	file, err := m.connections.Load()
+	var onboarding platformOnboarding
+	if req.OnboardingID != "" {
+		if action != "login" {
+			return nil, ErrRequest
+		}
+		var e error
+		onboarding, e = m.readOnboardingLocked(req.OnboardingID, req.Caller.ID)
+		if e != nil {
+			return nil, e
+		}
+		if onboarding.Cancelled || onboarding.Input.Provider != "gitlab" || req.ID != "" && req.ID != onboarding.PlatformID {
+			return nil, ErrConflict
+		}
+	}
+	file, err := m.platforms.Load()
 	if err != nil {
 		return nil, err
 	}
-	var target connection.Record
-	for _, c := range file.Connections {
+	var target registry.Record
+	for _, c := range file.Platforms {
 		if c.ID == req.ID && c.Version == req.Version {
 			target = c
+		}
+	}
+	if onboarding.ID != "" {
+		if target.ID != "" {
+			if target.URL != onboarding.Input.Origin || onboarding.Generation != "" && target.Generation != onboarding.Generation {
+				return nil, ErrConflict
+			}
+		} else {
+			_, origin, e := registry.Normalize(req.Name, req.Origin)
+			if e != nil || origin != onboarding.Input.Origin {
+				return nil, ErrConflict
+			}
+			if req.ID == onboarding.PlatformID {
+				req.ID = ""
+			}
 		}
 	}
 	if req.ID != "" && (target.ID == "" || target.Provider != "gitlab") {
 		return nil, ErrConflict
 	}
-	var app connection.OAuthApplication
-	var previousApp connection.OAuthApplication
+	var app registry.OAuthApplication
+	var previousApp registry.OAuthApplication
 	importID := ""
 	if target.ID != "" {
 		if req.Name != "" || req.Origin != "" {
 			return nil, ErrRequest
 		}
 		if target.CredentialID != "" {
-			_, app, err = connection.OAuthRecord(file, target.CredentialID)
+			_, app, err = registry.OAuthRecord(file, target.CredentialID)
 		}
 	} else {
 		if action == "logout" || req.Version != 0 {
 			return nil, ErrRequest
 		}
-		name, origin, e := connection.Normalize(req.Name, req.Origin)
+		name, origin, e := registry.Normalize(req.Name, req.Origin)
 		if e != nil {
 			return nil, e
 		}
@@ -323,12 +384,15 @@ func (m *roomManager) newGitLabAuthLocked(req gitlabAuthRequest, action string) 
 		if req.ClientImportID != "" && req.ApplicationID == "" {
 			for _, v := range file.OAuthClientImports {
 				if v.ReplacesApplicationID == "" && v.ID == req.ClientImportID && v.ActorID == req.Caller.ID && v.Origin == origin {
-					app = connection.OAuthApplication{ID: v.ID, Origin: v.Origin, ClientID: v.ClientID, ClientSecret: v.ClientSecret, RedirectURI: v.RedirectURI, Scopes: v.Scopes}
+					app = registry.OAuthApplication{ID: v.ID, Origin: v.Origin, ClientID: v.ClientID, ClientSecret: v.ClientSecret, RedirectURI: v.RedirectURI, Scopes: v.Scopes}
 					importID = v.ID
 				}
 			}
 		}
 		req.ID, err = newOpaqueID()
+		if onboarding.ID != "" {
+			req.ID = onboarding.PlatformID
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -341,7 +405,7 @@ func (m *roomManager) newGitLabAuthLocked(req gitlabAuthRequest, action string) 
 		}
 		for _, v := range file.OAuthClientImports {
 			if v.ReplacesApplicationID == "" && req.ApplicationID == "" && v.ID == req.ClientImportID && v.ActorID == req.Caller.ID && v.Origin == target.URL {
-				app = connection.OAuthApplication{ID: v.ID, Origin: v.Origin, ClientID: v.ClientID, ClientSecret: v.ClientSecret, RedirectURI: v.RedirectURI, Scopes: v.Scopes}
+				app = registry.OAuthApplication{ID: v.ID, Origin: v.Origin, ClientID: v.ClientID, ClientSecret: v.ClientSecret, RedirectURI: v.RedirectURI, Scopes: v.Scopes}
 				importID = v.ID
 			}
 		}
@@ -354,7 +418,7 @@ func (m *roomManager) newGitLabAuthLocked(req gitlabAuthRequest, action string) 
 		found := false
 		for _, v := range file.OAuthClientImports {
 			if v.ID == req.ClientImportID && v.ActorID == req.Caller.ID && v.Origin == target.URL && v.ReplacesApplicationID == app.ID {
-				app = connection.OAuthApplication{ID: app.ID, OwnerID: app.OwnerID, Origin: v.Origin, ClientID: v.ClientID, ClientSecret: v.ClientSecret, RedirectURI: v.RedirectURI, Scopes: v.Scopes}
+				app = registry.OAuthApplication{ID: app.ID, OwnerID: app.OwnerID, Origin: v.Origin, ClientID: v.ClientID, ClientSecret: v.ClientSecret, RedirectURI: v.RedirectURI, Scopes: v.Scopes}
 				importID, found = v.ID, true
 				break
 			}
@@ -370,13 +434,35 @@ func (m *roomManager) newGitLabAuthLocked(req gitlabAuthRequest, action string) 
 	if err != nil {
 		return nil, err
 	}
-	if app.ID == "" || app.RedirectURI != redirect || !connection.GitLabLoginScopes(app.Scopes) || req.ApplicationID != "" && req.ApplicationID != app.ID {
+	if app.ID == "" || app.RedirectURI != redirect || !registry.GitLabLoginScopes(app.Scopes) || req.ApplicationID != "" && req.ApplicationID != app.ID {
+		return nil, ErrRequest
+	}
+	scopes := req.Scopes
+	if scopes == nil {
+		scopes = app.Scopes
+	}
+	if !registry.GitLabLoginScopes(scopes) || len(gitlabApplicationMissingScopes(app.Scopes, scopes)) != 0 {
 		return nil, ErrRequest
 	}
 	if action == "logout" && target.CredentialKind != "oauth" {
 		return nil, ErrRequest
 	}
-	records, err := m.gitlabAuthImpactLocked(file, req.ID, app)
+	records, err := m.gitlabAuthImpactLocked(file, req.ID, app, previousApp.ID != "")
+	if target.ID == "" && previousApp.ID == "" && len(req.Affected) > 0 {
+		for _, want := range req.Affected {
+			for _, c := range file.Platforms {
+				if c.ID == want.ID && c.CredentialKind == "oauth" {
+					cred, _, e := registry.OAuthRecord(file, c.CredentialID)
+					if e != nil {
+						return nil, e
+					}
+					if cred.ApplicationID == app.ID {
+						records = append(records, c)
+					}
+				}
+			}
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -388,7 +474,7 @@ func (m *roomManager) newGitLabAuthLocked(req gitlabAuthRequest, action string) 
 		return nil, ErrConflict
 	}
 	for _, v := range affected {
-		if !slices.ContainsFunc(req.Affected, func(a gitlabAuthConnection) bool {
+		if !slices.ContainsFunc(req.Affected, func(a gitlabAuthPlatform) bool {
 			return a.ID == v.ID && a.Version == v.Version && slices.Equal(a.ReferencedRooms, v.ReferencedRooms)
 		}) {
 			return nil, ErrConflict
@@ -401,7 +487,7 @@ func (m *roomManager) newGitLabAuthLocked(req gitlabAuthRequest, action string) 
 				delete(m.gitlabAuthSessions, id)
 			}
 		default:
-			if s.app.Origin == app.Origin && (s.app.ClientID == app.ClientID || slices.ContainsFunc(s.records, func(c connection.Record) bool { return c.ID == req.ID })) {
+			if s.app.Origin == app.Origin && ((s.app.ClientID == app.ClientID && (previousApp.ID != "" || s.previousApp.ID != "" || target.CredentialID == "" || s.expectedUserID() == 0 || s.expectedUserID() == target.Validation.UserID)) || slices.ContainsFunc(s.records, func(c registry.Record) bool { return c.ID == req.ID })) {
 				return nil, ErrBusy
 			}
 		}
@@ -427,9 +513,9 @@ func (m *roomManager) newGitLabAuthLocked(req gitlabAuthRequest, action string) 
 	}
 	expires := time.Now().Add(10 * time.Minute)
 	ctx, cancel := context.WithDeadline(context.Background(), expires)
-	s := &gitlabAuthSession{gitlabAuthView: gitlabAuthView{SessionID: id, ConnectionID: req.ID, Status: "waiting", ExpiresAt: expires}, owner: req.Caller.ID, state: state, browser: browser, verifier: verifier, app: app, previousApp: previousApp, importID: importID, targetID: req.ID, name: req.Name, records: records, references: refs, ctx: ctx, cancel: cancel, done: make(chan struct{})}
+	s := &gitlabAuthSession{gitlabAuthView: gitlabAuthView{SessionID: id, PlatformID: req.ID, OnboardingID: req.OnboardingID, Status: "waiting", ExpiresAt: expires, RequestedScopes: slices.Clone(scopes)}, owner: req.Caller.ID, state: state, browser: browser, verifier: verifier, app: app, previousApp: previousApp, importID: importID, targetID: req.ID, name: req.Name, records: records, references: refs, ctx: ctx, cancel: cancel, done: make(chan struct{})}
 	challenge := sha256.Sum256([]byte(verifier))
-	q := url.Values{"client_id": {app.ClientID}, "redirect_uri": {redirect}, "response_type": {"code"}, "scope": {strings.Join(app.Scopes, " ")}, "state": {state}, "code_challenge": {base64.RawURLEncoding.EncodeToString(challenge[:])}, "code_challenge_method": {"S256"}}
+	q := url.Values{"client_id": {app.ClientID}, "redirect_uri": {redirect}, "response_type": {"code"}, "scope": {strings.Join(scopes, " ")}, "state": {state}, "code_challenge": {base64.RawURLEncoding.EncodeToString(challenge[:])}, "code_challenge_method": {"S256"}}
 	s.URL = app.Origin + "/oauth/authorize?" + q.Encode()
 	if action == "logout" {
 		s.Status = "disconnecting"
@@ -512,7 +598,7 @@ func (m *roomManager) serveGitLabCallback(w http.ResponseWriter, r *http.Request
 	s.verifier = ""
 	transport := m.platformHTTP
 	m.mu.Unlock()
-	tokens, identity, exchangeErr := gitlab.ExchangeOAuthCode(s.ctx, gitlab.OAuthLoginRequest{Origin: s.app.Origin, ClientID: s.app.ClientID, ClientSecret: platform.NewSecret(s.app.ClientSecret), RedirectURI: s.app.RedirectURI, Code: platform.NewSecret(q.Get("code")), Verifier: platform.NewSecret(verifier), UserID: s.app.OwnerID, Scopes: strings.Join(s.app.Scopes, " ")}, transport)
+	tokens, identity, exchangeErr := gitlab.ExchangeOAuthCode(s.ctx, gitlab.OAuthLoginRequest{Origin: s.app.Origin, ClientID: s.app.ClientID, ClientSecret: platform.NewSecret(s.app.ClientSecret), RedirectURI: s.app.RedirectURI, Code: platform.NewSecret(q.Get("code")), Verifier: platform.NewSecret(verifier), UserID: s.expectedUserID(), Scopes: strings.Join(s.RequestedScopes, " ")}, transport)
 	code := "authorization_failed"
 	var missingScopes []string
 	// Imported applications need proof of native ownership, not merely a user
@@ -555,17 +641,19 @@ func (m *roomManager) serveGitLabCallback(w http.ResponseWriter, r *http.Request
 		if exchangeErr == nil {
 			s.Status = "committing"
 			app := s.app
-			app.OwnerID = identity.UserID
-			var saved []connection.Connection
-			saved, exchangeErr = m.connections.CommitOAuthLogin(s.records, s.targetID, s.name, app, s.importID, s.owner, tokens, identity)
+			if s.importID != "" {
+				app.OwnerID = identity.UserID
+			}
+			var saved []platform.Platform
+			saved, exchangeErr = m.platforms.CommitOAuthLogin(s.records, s.targetID, s.name, app, s.importID, s.owner, tokens, identity)
 			if exchangeErr == nil {
 				for _, c := range saved {
-					v, e := m.publicPlatformConnectionLocked(c)
+					v, e := m.publicPlatformLocked(c)
 					if e != nil {
 						exchangeErr = e
 						break
 					}
-					s.Connections = append(s.Connections, v)
+					s.Platforms = append(s.Platforms, v)
 				}
 			}
 		}
@@ -573,13 +661,16 @@ func (m *roomManager) serveGitLabCallback(w http.ResponseWriter, r *http.Request
 	if exchangeErr == nil {
 		m.finishGitLabAuthLocked(s, "succeeded", "")
 		m.mu.Unlock()
+		if s.OnboardingID != "" {
+			_, _ = m.applyOnboarding(r.Context(), s.OnboardingID, s.owner)
+		}
 	} else {
 		// A commit-unknown save must never lead to revoking a possibly adopted token.
 		s.Cleanup = "not_required"
 		if tokens.AccessToken.Reveal() != "" || protocolErr != nil && protocolErr.State == "refresh_unknown" {
 			s.Cleanup = "unconfirmed"
 		}
-		cleanupID, e := m.connections.KeepOAuthCandidate(s.app, tokens)
+		cleanupID, e := m.platforms.KeepOAuthCandidate(s.app, tokens)
 		if e == nil && cleanupID != "" {
 			s.Cleanup = "pending"
 		}
@@ -600,14 +691,14 @@ func (m *roomManager) serveGitLabCallback(w http.ResponseWriter, r *http.Request
 func (m *roomManager) settleGitLabAuthLocked(s *gitlabAuthSession) error {
 	var pending []<-chan struct{}
 	for _, c := range s.records {
-		pending = append(pending, m.notifications.ConnectionDoneLocked(c.ID)...)
+		pending = append(pending, m.notifications.PlatformDoneLocked(c.ID)...)
 		for call := range m.platformCalls {
-			if call.connectionID == c.ID {
+			if call.platformID == c.ID {
 				pending = append(pending, call.done)
 			}
 		}
 	}
-	// Refresh belongs to the shared credential, not just the selected connection.
+	// Refresh belongs to the shared credential, not just the selected registry.
 	seen := map[string]bool{}
 	for _, c := range s.records {
 		if !seen[c.CredentialID] {
@@ -622,7 +713,7 @@ func (m *roomManager) settleGitLabAuthLocked(s *gitlabAuthSession) error {
 }
 func (m *roomManager) cleanupGitLabCandidate(s *gitlabAuthSession, id string) {
 	m.mu.Lock()
-	file, err := m.connections.Load()
+	file, err := m.platforms.Load()
 	if err == nil {
 		for _, c := range file.OAuthCleanup {
 			if c.ID == id && c.State == "manual" {
@@ -647,7 +738,7 @@ func (m *roomManager) cleanupGitLabCandidate(s *gitlabAuthSession, id string) {
 			}
 		}
 	}
-	item, err := m.connections.BeginOAuthCleanup(id)
+	item, err := m.platforms.BeginOAuthCleanup(id)
 	transport := m.platformHTTP
 	if err != nil {
 		m.mu.Unlock()
@@ -664,7 +755,7 @@ func (m *roomManager) cleanupGitLabCandidate(s *gitlabAuthSession, id string) {
 	err = gitlab.RevokeOAuth(ctx, item.Origin, item.ClientID, platform.NewSecret(item.ClientSecret), platform.NewSecret(item.Token), transport)
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	saved := m.connections.FinishOAuthCleanup(id, err == nil)
+	saved := m.platforms.FinishOAuthCleanup(id, err == nil)
 	s.Cleanup = "unconfirmed"
 	if err == nil && saved == nil {
 		s.Cleanup = "revoked"
@@ -674,10 +765,10 @@ func (m *roomManager) cleanupGitLabCandidate(s *gitlabAuthSession, id string) {
 func (m *roomManager) runGitLabLogout(s *gitlabAuthSession) {
 	m.mu.Lock()
 	err := m.checkGitLabAuthLocked(s)
-	var saved []connection.Connection
+	var saved []platform.Platform
 	var ids []string
 	if err == nil {
-		saved, ids, err = m.connections.LogoutOAuth(s.records[0].CredentialID)
+		saved, ids, err = m.platforms.LogoutOAuth(s.records[0].CredentialID)
 	}
 	if err != nil {
 		m.finishGitLabAuthLocked(s, "failed", "logout_unconfirmed")
@@ -686,12 +777,12 @@ func (m *roomManager) runGitLabLogout(s *gitlabAuthSession) {
 	}
 	s.Cleanup = "pending"
 	for _, c := range saved {
-		v, e := m.publicPlatformConnectionLocked(c)
+		v, e := m.publicPlatformLocked(c)
 		if e != nil {
 			err = e
 			break
 		}
-		s.Connections = append(s.Connections, v)
+		s.Platforms = append(s.Platforms, v)
 	}
 	for _, c := range s.records {
 		if e := m.invalidatePlatformQueriesLocked(c.ID); e != nil {
@@ -707,7 +798,7 @@ func (m *roomManager) runGitLabLogout(s *gitlabAuthSession) {
 		return
 	}
 	// Include a token returned by a refresh that was already in flight at logout.
-	file, e := m.connections.Load()
+	file, e := m.platforms.Load()
 	if e == nil {
 		for _, c := range file.OAuthCleanup {
 			if c.Origin == s.app.Origin && c.ClientID == s.app.ClientID && c.State == "pending" && !slices.Contains(ids, c.ID) {
@@ -730,10 +821,10 @@ func (m *roomManager) runGitLabLogout(s *gitlabAuthSession) {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	s.Connections = nil
+	s.Platforms = nil
 	for _, c := range saved {
-		if v, e := m.publicPlatformConnectionLocked(c); e == nil {
-			s.Connections = append(s.Connections, v)
+		if v, e := m.publicPlatformLocked(c); e == nil {
+			s.Platforms = append(s.Platforms, v)
 			if v.RevocationStatus != "confirmed" {
 				allConfirmed = false
 			}
@@ -751,7 +842,7 @@ func (m *roomManager) runGitLabLogout(s *gitlabAuthSession) {
 	}
 }
 
-func applicationMatches(remote gitlab.UserApplication, local connection.OAuthApplication) bool {
+func applicationMatches(remote gitlab.UserApplication, local registry.OAuthApplication) bool {
 	return remote.ClientID == local.ClientID && remote.RedirectURI == local.RedirectURI && remote.Confidential
 }
 
@@ -769,7 +860,7 @@ func gitlabApplicationMissingScopes(available, requested []string) []string {
 	}
 	return missing
 }
-func gitlabAuthReferencesFingerprint(refs []platformConnectionReference) string {
+func gitlabAuthReferencesFingerprint(refs []managedPlatformReference) string {
 	data, _ := json.Marshal(refs)
 	return fmt.Sprintf("%x", sha256.Sum256(data))
 }

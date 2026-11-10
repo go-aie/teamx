@@ -103,7 +103,7 @@ sys.stdout.buffer.write(p.stdout);sys.stderr.buffer.write(p.stderr);sys.exit(p.r
 	if os.MkdirAll(dir, 0700) != nil || os.WriteFile(filepath.Join(dir, "credentials.json"), credentials, 0600) != nil {
 		t.Fatal("profile setup failed")
 	}
-	c := platformTestSave(t, m, platformConnectionRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("d", 32), Name: "S4 isolated Scion", Provider: "scion", URL: "https://scion.opencsg.com", CLIProfile: profile})
+	c := platformTestSave(t, m, managedPlatformRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("d", 32), Name: "S4 isolated Scion", Provider: "scion", URL: "https://scion.opencsg.com", CLIProfile: profile})
 	c = verifyScion(t, m, c)
 	report["account"] = c.Validation.Account
 	openRoomOK(t, m, room, "s4-before-workspace")
@@ -129,7 +129,7 @@ sys.stdout.buffer.write(p.stdout);sys.stderr.buffer.write(p.stderr);sys.exit(p.r
 	readTool := func(args ...string) []byte {
 		t.Helper()
 		var out, stderr bytes.Buffer
-		err := runToolsWithClient(ctx, append([]string{"run", "scion", "--json"}, args...), bytes.NewReader(nil), &out, &stderr, cliToolEnv(endpoint, svc, members["developer"]), client)
+		err := runToolsWithClient(ctx, append([]string{"run", c.ToolEntryID, "--json"}, args...), bytes.NewReader(nil), &out, &stderr, cliToolEnv(endpoint, svc, members["developer"]), client)
 		if err != nil {
 			t.Fatal("read-only verification failed", args, err, stderr.String())
 		}

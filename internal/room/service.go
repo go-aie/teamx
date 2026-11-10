@@ -39,6 +39,7 @@ type apiRequest struct {
 	TurnNumber         uint64                        `json:"turn_number,omitempty"`
 	Policy             *PolicyChange                 `json:"policy,omitempty"`
 	ActionResolve      *actionResolveRequest         `json:"action_resolve,omitempty"`
+	Tool               string                        `json:"tool,omitempty"` // optional exact platform entry for managed actions
 	ReferenceAction    *agentActionRequest           `json:"action_request,omitempty"`
 	Progress           *agentProgressChange          `json:"progress,omitempty"`
 	InstructionStatus  *agentInstructionStatusChange `json:"instruction_status,omitempty"`

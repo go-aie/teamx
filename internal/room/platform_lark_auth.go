@@ -15,7 +15,7 @@ import (
 	"github.com/go-aie/teamx/internal/platform/lark"
 )
 
-type larkAuthConnection struct {
+type larkAuthPlatform struct {
 	ID              string         `json:"id"`
 	Version         uint64         `json:"version"`
 	ReferencedRooms []RoomIdentity `json:"referenced_rooms"`
@@ -28,7 +28,7 @@ type larkAuthRequest struct {
 	Brand        string               `json:"brand,omitempty"`
 	Profile      *platform.CLIProfile `json:"cli_profile,omitempty"`
 	SessionID    string               `json:"session_id,omitempty"`
-	Affected     []larkAuthConnection `json:"affected,omitempty"`
+	Affected     []larkAuthPlatform   `json:"affected,omitempty"`
 }
 
 type larkAuthView struct {
@@ -41,7 +41,7 @@ type larkAuthView struct {
 	RenewalUnavailable bool                 `json:"renewal_unavailable,omitempty"`
 	ExpiresAt          time.Time            `json:"expires_at,omitempty"`
 	ErrorCode          string               `json:"error_code,omitempty"`
-	Connections        []platformConnection `json:"connections,omitempty"`
+	Platforms          []managedPlatform    `json:"platforms,omitempty"`
 	Stage              string               `json:"stage,omitempty"`
 	Profile            *platform.CLIProfile `json:"cli_profile,omitempty"`
 	AppID              string               `json:"app_id,omitempty"`
@@ -78,7 +78,7 @@ func (m *roomManager) larkAuthBusyLocked(p *platform.CLIProfile) bool {
 }
 
 func (m *roomManager) serveLarkAuth(w http.ResponseWriter, r *http.Request) {
-	action := strings.TrimPrefix(r.URL.Path, "/v1/platform/connections/lark/")
+	action := strings.TrimPrefix(r.URL.Path, "/v1/platforms/lark/")
 	switch action {
 	case "discover", "setup", "login", "authorize-sending", "authorize-targets", "sending-status", "logout", "status", "cancel", "qrcode":
 	default:
@@ -236,7 +236,7 @@ func (m *roomManager) serveLarkAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view := s.larkAuthView
-	view.Connections = affected
+	view.Platforms = affected
 	go m.runLarkAuth(ctx, s, action)
 	m.mu.Unlock()
 	_ = json.NewEncoder(w).Encode(view)
@@ -246,7 +246,7 @@ func (m *roomManager) publicLarkAuthView(s *larkAuthSession) larkAuthView {
 	view := s.larkAuthView
 	if s.Status == "waiting" && s.QRCode != "" {
 		q := url.Values{"service_epoch": {m.epoch}, "caller_id": {s.owner}, "session_id": {s.SessionID}}
-		view.QRCodeURL = "/v1/platform/connections/lark/qrcode?" + q.Encode()
+		view.QRCodeURL = "/v1/platforms/lark/qrcode?" + q.Encode()
 	}
 	return view
 }
@@ -278,14 +278,14 @@ func (m *roomManager) serveLarkAuthQRCode(w http.ResponseWriter, r *http.Request
 	_, _ = w.Write(data)
 }
 
-func (m *roomManager) invalidateLarkAuthLocked(req larkAuthRequest) ([]platformConnection, error) {
-	file, err := m.readPlatformConnections()
+func (m *roomManager) invalidateLarkAuthLocked(req larkAuthRequest) ([]managedPlatform, error) {
+	file, err := m.readPlatforms()
 	if err != nil {
 		return nil, err
 	}
-	var matching []platformConnectionRecord
-	for _, c := range file.Connections {
-		// A profile name identifies the shared CLI account even when connections
+	var matching []managedPlatformRecord
+	for _, c := range file.Platforms {
+		// A profile name identifies the shared CLI account even when platforms
 		// use different paths to the same CLI executable.
 		if c.Provider == "lark" && c.CLIProfile != nil && c.CLIProfile.Profile == req.Profile.Profile {
 			matching = append(matching, c)
@@ -295,7 +295,7 @@ func (m *roomManager) invalidateLarkAuthLocked(req larkAuthRequest) ([]platformC
 		return nil, ErrConflict
 	}
 	for _, c := range matching {
-		refs, err := m.platformConnectionReferencesLocked(c.ID)
+		refs, err := m.managedPlatformReferencesLocked(c.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -322,17 +322,17 @@ func (m *roomManager) invalidateLarkAuthLocked(req larkAuthRequest) ([]platformC
 			return nil, err
 		}
 	}
-	var result []platformConnection
+	var result []managedPlatform
 	for _, c := range matching {
-		ticket, err := m.connections.BeginVerification(c.ID, c.Version)
+		ticket, err := m.platforms.BeginVerification(c.ID, c.Version)
 		if err != nil {
-			return nil, platformConnectionError(err)
+			return nil, managedPlatformError(err)
 		}
-		updated, err := m.connections.CompleteVerification(ticket, platform.Validation{Status: "failed", CheckedAt: time.Now().UTC(), ErrorCode: "credential_unavailable"})
+		updated, err := m.platforms.CompleteVerification(ticket, platform.Validation{Status: "failed", CheckedAt: time.Now().UTC(), ErrorCode: "credential_unavailable"})
 		if err != nil {
-			return nil, platformConnectionError(err)
+			return nil, managedPlatformError(err)
 		}
-		item, err := m.publicPlatformConnectionLocked(updated)
+		item, err := m.publicPlatformLocked(updated)
 		if err != nil {
 			return nil, err
 		}

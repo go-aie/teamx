@@ -88,10 +88,31 @@ func TestScionRealDSHReviewContinuation(t *testing.T) {
 		}
 	}
 	client, endpoint := toolPipeServer(t, m)
+
+	var listOutput, listError bytes.Buffer
+	if e := runToolsWithClient(ctx, []string{"list"}, nil, &listOutput, &listError, cliToolEnv(endpoint, svc, members["developer"]), client); e != nil {
+		t.Fatal(e)
+	}
+	var selections []toolSelection
+	if json.Unmarshal(listOutput.Bytes(), &selections) != nil {
+		t.Fatal("tool discovery failed")
+	}
+	entry := ""
+	for _, s := range selections {
+		if s.Provider == "scion" {
+			if entry != "" {
+				t.Fatal("ambiguous Scion acceptance platform")
+			}
+			entry = s.Name
+		}
+	}
+	if entry == "" {
+		t.Fatal("Scion acceptance platform unavailable")
+	}
 	readTool := func(args ...string) []byte {
 		t.Helper()
 		var out, stderr bytes.Buffer
-		if e := runToolsWithClient(ctx, append([]string{"run", "scion", "--json"}, args...), bytes.NewReader(nil), &out, &stderr, cliToolEnv(endpoint, svc, members["developer"]), client); e != nil {
+		if e := runToolsWithClient(ctx, append([]string{"run", entry, "--json"}, args...), bytes.NewReader(nil), &out, &stderr, cliToolEnv(endpoint, svc, members["developer"]), client); e != nil {
 			t.Fatal(e, stderr.String())
 		}
 		return out.Bytes()

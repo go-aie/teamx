@@ -104,8 +104,8 @@ elif b[:2]==['api','GET']:`, 1)
 		t.Fatal(err)
 	}
 	p := platform.CLIProfile{Version: 1, Executable: wrapper, Profile: q.Profile, Brand: "feishu", CLIVersion: lark.CLIVersion}
-	c := platformTestSave(t, m, platformConnectionRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("e", 32), Name: "S2 isolated self user", Provider: "lark", URL: lark.Origin("feishu"), CLIProfile: &p})
-	c, err = m.verifyPlatformConnection(ctx, platformConnectionRequest{ID: c.ID, Version: c.Version})
+	c := platformTestSave(t, m, managedPlatformRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("e", 32), Name: "S2 isolated self user", Provider: "lark", URL: lark.Origin("feishu"), CLIProfile: &p})
+	c, err = m.verifyPlatform(ctx, managedPlatformRequest{ID: c.ID, Version: c.Version})
 	if err != nil || c.Validation.Status != "valid" || c.Validation.Account.ID.Value != q.ExpectedUserID {
 		t.Fatal("expected actual account verification failed", err)
 	}
@@ -119,13 +119,13 @@ elif b[:2]==['api','GET']:`, 1)
 		t.Fatal("send permission not verified", err)
 	}
 	// No readiness override: the normal production registry and human settings path.
-	r := managerHTTP(m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: id.RoomIdentity, Caller: humanCaller, Enabled: true, ConnectionVersion: c.Version, Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "lark", ConnectionID: c.ID, ActionAuthorization: &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: []tool.ActionGrant{{Operation: "message.send_self", TargetKind: "object", ObjectType: "user"}}}}})
+	r := managerHTTP(m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: id.RoomIdentity, Caller: humanCaller, Enabled: true, PlatformVersion: c.Version, Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "lark", PlatformID: c.ID, ActionAuthorization: &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: []tool.ActionGrant{{Operation: "message.send_self", TargetKind: "object", ObjectType: "user"}}}}})
 	if r.Code != 200 {
 		t.Fatal("self enable failed", r.Code, r.Body.String())
 	}
 	clock := &eventTestClock{now: time.Now().UTC()}
 	m.notifications.Clock = clock.get
-	state, err := m.configureLarkSubscription(ctx, notification.Key{Owner: room.RoomIdentity, Source: lark.MessagesSourceID}, 0, lark.Config{Enabled: true, ConnectionID: c.ID, Chats: []string{q.ChatID}, Private: true, Target: notification.Target{Mode: "inbox", AgentID: id.AgentID, MembershipID: id.MembershipID}})
+	state, err := m.configureLarkSubscription(ctx, notification.Key{Owner: room.RoomIdentity, Source: lark.MessagesSourceID}, 0, lark.Config{Enabled: true, PlatformID: c.ID, Private: lark.PrivateConfig{Enabled: true, Scope: "specified", ChatIDs: []string{q.ChatID}}, Target: notification.Target{Mode: "inbox", AgentID: id.AgentID, MembershipID: id.MembershipID}})
 	if err != nil {
 		t.Fatal(err)
 	}

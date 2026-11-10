@@ -259,7 +259,7 @@ func TestDSHMaterialsFinalCheckRejectsRevocationBeforePrompt(t *testing.T) {
 				connection := platformTestList(t, h.m)[0]
 				update := platformTestRequest(h.m)
 				update.Version, update.ReferencedRooms = connection.Version, []RoomIdentity{reader.RoomIdentity}
-				if _, err := testReauthorizeConnection(h.m, update); err != nil {
+				if _, err := testReauthorizePlatform(h.m, update); err != nil {
 					t.Fatal(err)
 				}
 			case "epoch":

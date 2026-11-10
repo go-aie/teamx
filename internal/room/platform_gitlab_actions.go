@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/connection"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
+	"github.com/go-aie/teamx/internal/platform/registry"
 )
 
 func (m *roomManager) prepareGitlabReferenceAction(ctx context.Context, id MemberIdentity, old platform.AccessContext) (referenceActionSession, error) {
@@ -18,7 +18,7 @@ func (m *roomManager) prepareGitlabReferenceAction(ctx context.Context, id Membe
 		m.mu.Unlock()
 		return referenceActionSession{}, ErrIdentity
 	}
-	req := toolsRequest{ServiceInfo: svc.info, Caller: agentCallerIdentity(id), Tool: "gitlab"}
+	req := toolsRequest{ServiceInfo: svc.info, Caller: agentCallerIdentity(id), Tool: "gitlab", platformID: old.PlatformID}
 	admission, call, callCtx, err := m.preparePlatformCallLocked(ctx, req, false)
 	m.mu.Unlock()
 	if err != nil {
@@ -85,25 +85,24 @@ func (m *roomManager) prepareGitlabReferenceAction(ctx context.Context, id Membe
 }
 
 // Selected connection evidence is shared by internal capabilities and Agent tools.
-func (m *roomManager) actionAccountLocked(req toolsRequest) (connection.Account, error) {
+func (m *roomManager) actionAccountLocked(req toolsRequest) (registry.Account, error) {
 	f, err := m.readToolBindingsLocked(req.RoomIdentity)
 	if err != nil {
-		return connection.Account{}, err
+		return registry.Account{}, err
 	}
-	file, err := m.connections.Load()
+	file, err := m.platforms.Load()
 	if err != nil {
-		return connection.Account{}, err
+		return registry.Account{}, err
 	}
-	for _, b := range f.Bindings {
-		if b.Tool != "gitlab" || b.AgentID != req.Caller.ID || b.MembershipID != req.Caller.MembershipID {
-			continue
-		}
-		for _, c := range file.Connections {
-			if c.ID == b.ConnectionID && c.Generation == b.ConnectionGeneration && c.Provider == "gitlab" {
-				a, _, err := connection.ResolveAccessAccount(file, c)
-				return a, err
-			}
+	b, d, err := m.resolveToolBindingLocked(f, req)
+	if err != nil || d.Provider != "gitlab" {
+		return registry.Account{}, ErrConflict
+	}
+	for _, c := range file.Platforms {
+		if c.ID == b.PlatformID && c.Generation == b.PlatformGeneration && c.Provider == "gitlab" {
+			a, _, err := registry.ResolveAccessAccount(file, c)
+			return a, err
 		}
 	}
-	return connection.Account{}, ErrConflict
+	return registry.Account{}, ErrConflict
 }

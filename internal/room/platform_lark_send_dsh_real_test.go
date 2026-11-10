@@ -155,8 +155,8 @@ func TestRealLarkGroupDSHSendAndRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := platform.CLIProfile{Version: 1, Executable: wrapper, Profile: q.Profile, Brand: "feishu", CLIVersion: lark.CLIVersion}
-	c := platformTestSave(t, m, platformConnectionRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("e", 32), Name: "L4-C isolated real user send", Provider: "lark", URL: lark.Origin("feishu"), CLIProfile: &p})
-	c, err = m.verifyPlatformConnection(ctx, platformConnectionRequest{ID: c.ID, Version: c.Version})
+	c := platformTestSave(t, m, managedPlatformRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("e", 32), Name: "L4-C isolated real user send", Provider: "lark", URL: lark.Origin("feishu"), CLIProfile: &p})
+	c, err = m.verifyPlatform(ctx, managedPlatformRequest{ID: c.ID, Version: c.Version})
 	if err != nil || c.Validation.Status != "valid" || c.Validation.Account.ID.Value != q.ExpectedUserID {
 		t.Fatal("expected real account verification failed", err)
 	}
@@ -215,7 +215,7 @@ func TestRealLarkGroupDSHSendAndRecovery(t *testing.T) {
 		r, e := session.Capabilities.Resolve(ctx, l, session.Access)
 		return r, session, e
 	}
-	r := managerHTTP(m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: id.RoomIdentity, Caller: humanCaller, Enabled: true, ConnectionVersion: c.Version, Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "lark", ConnectionID: c.ID, ActionAuthorization: &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: []tool.ActionGrant{{Operation: "message.send", TargetKind: "object", ObjectType: "chat"}}}}})
+	r := managerHTTP(m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: id.RoomIdentity, Caller: humanCaller, Enabled: true, PlatformVersion: c.Version, Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "lark", PlatformID: c.ID, ActionAuthorization: &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: []tool.ActionGrant{{Operation: "message.send", TargetKind: "object", ObjectType: "chat"}}}}})
 	if r.Code != 200 {
 		t.Fatal("explicit member group-send grant failed", r.Code, r.Body.String())
 	}

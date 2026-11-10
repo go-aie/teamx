@@ -117,7 +117,7 @@ func TestRealGitLabTodosDSH(t *testing.T) {
 	t.Setenv(d.report["apiKeyEnv"].(string), d.secret)
 	u, _ := url.Parse(w.Repository.URL)
 	origin, project := u.Scheme+"://"+u.Host, strings.TrimSuffix(strings.TrimPrefix(u.Path, "/"), ".git")
-	oauthFile, oauthConnection := selectedRealOAuthSnapshot(t, origin)
+	oauthFile, oauthPlatform := selectedRealOAuthSnapshot(t, origin)
 	accessToken = oauthFile.OAuthCredentials[0].AccessToken
 	marker, err := newOpaqueID()
 	fail(err)
@@ -180,12 +180,12 @@ func TestRealGitLabTodosDSH(t *testing.T) {
 	}
 
 	start("service-1")
-	realOAuthConnection(t, m, origin)
+	realOAuthPlatform(t, m, origin)
 	var room roomSummary
-	var conn platformConnection
+	var conn managedPlatform
 	fail(d.managementRequest("/v1/rooms/create", roomCreateRequest{ServiceEpoch: m.epoch, Caller: humanCaller, roomSelection: roomSelection{TeamID: team.ID, CreateID: "gt04", Name: team.Name}}, &room))
 	fail(d.selectManaged(m.epoch, room, "gt04-activate"))
-	conn = oauthConnection
+	conn = oauthPlatform
 	d.report["room"] = room.RoomIdentity
 	if conn.Validation.Status != "valid" || conn.Validation.UserID <= 0 {
 		fail(errors.New("real personal identity verification failed"))
@@ -209,9 +209,9 @@ func TestRealGitLabTodosDSH(t *testing.T) {
 		}
 	}
 	checkpoint("browser-unbound")
-	w.Binding = &workspaceBinding{Provider: "gitlab", URL: origin, Project: project, ConnectionID: conn.ID}
+	w.Binding = &workspaceBinding{Provider: "gitlab", URL: origin, Project: project, PlatformID: conn.ID}
 	var op workspaceOperation
-	fail(d.managementRequest("/v1/workspace/apply", workspaceApplyRequest{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, OperationID: strings.TrimPrefix(marker, "GT04-"), ExpectedVersion: 1, ConnectionVersion: conn.Version, Target: w}, &op))
+	fail(d.managementRequest("/v1/workspace/apply", workspaceApplyRequest{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, OperationID: strings.TrimPrefix(marker, "GT04-"), ExpectedVersion: 1, PlatformVersion: conn.Version, Target: w}, &op))
 	fail(d.until(func() (bool, error) {
 		ws, err := d.realWorkspaceStatus(m.epoch, room)
 		if err != nil || ws.Operation == nil {

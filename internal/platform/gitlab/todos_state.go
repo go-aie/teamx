@@ -17,8 +17,8 @@ import (
 // TodosBinding is account evidence, never a token. The credential stamp remains
 // durable so a restart cannot silently adopt a rotated or re-resolved credential.
 type TodosBinding struct {
-	ConnectionID          string `json:"connection_id"`
-	ConnectionGeneration  string `json:"connection_generation"`
+	PlatformID            string `json:"platform_id"`
+	PlatformGeneration    string `json:"platform_generation"`
 	URL                   string `json:"url"`
 	UserID                int64  `json:"user_id"`
 	Username              string `json:"username"`
@@ -31,13 +31,13 @@ func (b TodosBinding) SameAccount(other TodosBinding) bool {
 }
 func (b TodosBinding) Valid() bool {
 	u, err := url.Parse(b.URL)
-	return err == nil && u.Scheme == "https" && u.Hostname() != "" && u.User == nil && u.Path == "" && u.RawQuery == "" && !u.ForceQuery && u.Fragment == "" && u.RawPath == "" && len(b.URL) <= 2048 && !strings.ContainsAny(b.URL, "# \t\r\n") && validRestartID(b.ConnectionID) && validRestartID(b.ConnectionGeneration) && b.UserID > 0 && platform.ValidUsername(b.Username) && b.CredentialVersion > 0 && len(b.CredentialFingerprint) == 64 && strings.Trim(b.CredentialFingerprint, "0123456789abcdef") == ""
+	return err == nil && u.Scheme == "https" && u.Hostname() != "" && u.User == nil && u.Path == "" && u.RawQuery == "" && !u.ForceQuery && u.Fragment == "" && u.RawPath == "" && len(b.URL) <= 2048 && !strings.ContainsAny(b.URL, "# \t\r\n") && validRestartID(b.PlatformID) && validRestartID(b.PlatformGeneration) && b.UserID > 0 && platform.ValidUsername(b.Username) && b.CredentialVersion > 0 && len(b.CredentialFingerprint) == 64 && strings.Trim(b.CredentialFingerprint, "0123456789abcdef") == ""
 }
 
 // Scope adds the current metadata revision without persisting it as identity.
 type TodosQueryScope struct {
-	Binding           TodosBinding `json:"binding"`
-	ConnectionVersion uint64       `json:"connection_version"`
+	Binding         TodosBinding `json:"binding"`
+	PlatformVersion uint64       `json:"platform_version"`
 }
 
 type TodosFilter struct {
@@ -49,7 +49,7 @@ type TodosConfig struct {
 	BackfillStart   time.Time           `json:"backfill_start,omitzero"`
 	Target          notification.Target `json:"target,omitzero"`
 	Enabled         bool                `json:"enabled"`
-	ConnectionID    string              `json:"connection_id"`
+	PlatformID      string              `json:"platform_id"`
 	IntervalSeconds int                 `json:"interval_seconds"`
 	Filter          TodosFilter         `json:"filter"`
 }
@@ -57,12 +57,12 @@ type TodosConfig struct {
 func NormalizeTodosConfig(c TodosConfig) (TodosConfig, error) {
 	return normalizeTodosConfig(c, true)
 }
-func normalizeTodosConfig(c TodosConfig, requireConnection bool) (TodosConfig, error) {
+func normalizeTodosConfig(c TodosConfig, requirePlatform bool) (TodosConfig, error) {
 	if !c.Target.Valid() {
 		return c, notification.ErrRequest
 	}
 	interval, err := normalizeInterval(c.IntervalSeconds)
-	if err != nil || requireConnection && !validRestartID(c.ConnectionID) {
+	if err != nil || requirePlatform && !validRestartID(c.PlatformID) {
 		return c, notification.ErrRequest
 	}
 	c.IntervalSeconds = interval
@@ -194,11 +194,11 @@ func (s TodosState) Validate(owner platform.RoomIdentity) error {
 		return notification.ErrInvalid
 	}
 	cfg, err := NormalizeTodosConfig(s.Config)
-	if err != nil || !reflect.DeepEqual(cfg, s.Config) || s.RoomIdentity != owner || !validRestartID(s.SubscriptionID) || s.SubscriptionVersion == 0 || !s.Binding.Valid() || cfg.ConnectionID != s.Binding.ConnectionID || s.Baseline.IsZero() || s.Retired && cfg.Enabled || s.RuntimeState.Validate(cfg.Enabled) != nil || s.Observed == nil || s.Inbox == nil || len(s.Observed) > 100000 || len(s.Inbox) > 10000 || len(s.Filters) == 0 || len(s.Filters) > 256 || !s.Filters[0].Since.Equal(s.Baseline) {
+	if err != nil || !reflect.DeepEqual(cfg, s.Config) || s.RoomIdentity != owner || !validRestartID(s.SubscriptionID) || s.SubscriptionVersion == 0 || !s.Binding.Valid() || cfg.PlatformID != s.Binding.PlatformID || s.Baseline.IsZero() || s.Retired && cfg.Enabled || s.RuntimeState.Validate(cfg.Enabled) != nil || s.Observed == nil || s.Inbox == nil || len(s.Observed) > 100000 || len(s.Inbox) > 10000 || len(s.Filters) == 0 || len(s.Filters) > 256 || !s.Filters[0].Since.Equal(s.Baseline) {
 		return notification.ErrInvalid
 	}
 	for i, f := range s.Filters {
-		c, e := NormalizeTodosConfig(TodosConfig{ConnectionID: cfg.ConnectionID, Filter: f.Filter})
+		c, e := NormalizeTodosConfig(TodosConfig{PlatformID: cfg.PlatformID, Filter: f.Filter})
 		if e != nil || !reflect.DeepEqual(c.Filter, f.Filter) || i > 0 && f.Since.Before(s.Filters[i-1].Since) {
 			return notification.ErrInvalid
 		}
@@ -272,7 +272,7 @@ func (s *TodosState) Accept(todos []Todo, now time.Time) {
 	}
 }
 func (s TodosState) Metadata() notification.Metadata {
-	return notification.Metadata{Key: notification.Key{Owner: s.RoomIdentity, Source: TodosSourceID, SubscriptionID: s.SubscriptionID}, Version: s.SubscriptionVersion, Enabled: s.Config.Enabled, ConnectionID: s.Binding.ConnectionID, Observed: len(s.Observed), Pending: len(s.Inbox), DeliveryError: s.DeliveryErrorCode}
+	return notification.Metadata{Key: notification.Key{Owner: s.RoomIdentity, Source: TodosSourceID, SubscriptionID: s.SubscriptionID}, Version: s.SubscriptionVersion, Enabled: s.Config.Enabled, Retired: s.Retired, PlatformID: s.Binding.PlatformID, Observed: len(s.Observed), Pending: len(s.Inbox), DeliveryError: s.DeliveryErrorCode}
 }
 func (s TodosState) CloneState() notification.State { return s.Clone() }
 func (s TodosState) PendingItems() []notification.Item {

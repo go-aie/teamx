@@ -13,49 +13,49 @@ import (
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/connection"
+	"github.com/go-aie/teamx/internal/platform/registry"
 )
 
 // Business fixtures install verified OAuth grants through the existing snapshot
 // owner, without performing a remote login or modifying any real account.
-func installOAuthFixture(t *testing.T, m *roomManager, c platformConnection, expiry time.Time) connection.Account {
+func installOAuthFixture(t *testing.T, m *roomManager, c managedPlatform, expiry time.Time) registry.Account {
 	t.Helper()
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	file, err := m.connections.Load()
+	file, err := m.platforms.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	file.Version = connection.OAuthSnapshotVersion
+	file.Version = registry.OAuthSnapshotVersion
 	file.InstallationID = strings.Repeat("e", 32)
-	app := connection.OAuthApplication{ID: strings.Repeat("b", 32), Origin: c.URL, OwnerID: 101, ClientID: "fixture-client", ClientSecret: "fixture-client-secret", RedirectURI: "http://127.0.0.1:8088/callback", Scopes: []string{"api"}}
-	cred := connection.OAuthCredential{ID: strings.Repeat("c", 32), ApplicationID: app.ID, UserID: 101, GrantGeneration: 1, Scopes: []string{"api"}, State: "active", AccessToken: "fixture-access", RefreshToken: "fixture-refresh", ExpiresAt: expiry.UTC(), TokenRevision: 1}
-	file.OAuthApplications = []connection.OAuthApplication{app}
-	file.OAuthCredentials = []connection.OAuthCredential{cred}
+	app := registry.OAuthApplication{ID: strings.Repeat("b", 32), Origin: c.URL, OwnerID: 101, ClientID: "fixture-client", ClientSecret: "fixture-client-secret", RedirectURI: "http://127.0.0.1:8088/callback", Scopes: []string{"api"}}
+	cred := registry.OAuthCredential{ID: strings.Repeat("c", 32), ApplicationID: app.ID, UserID: 101, GrantGeneration: 1, Scopes: []string{"api"}, State: "active", AccessToken: "fixture-access", RefreshToken: "fixture-refresh", ExpiresAt: expiry.UTC(), TokenRevision: 1}
+	file.OAuthApplications = []registry.OAuthApplication{app}
+	file.OAuthCredentials = []registry.OAuthCredential{cred}
 	e := platform.AuthorizationEvidence{Origin: app.Origin, ApplicationID: app.ID, ClientID: app.ClientID, CredentialID: cred.ID, UserID: 101, Generation: 1, Scopes: "api"}
 	b, _ := json.Marshal(e)
-	for i := range file.Connections {
-		file.Connections[i].CredentialKind = "oauth"
-		file.Connections[i].CredentialID = cred.ID
-		file.Connections[i].IdentityBinding.CredentialFingerprint = fmt.Sprintf("%x", sha256.Sum256(b))
+	for i := range file.Platforms {
+		file.Platforms[i].CredentialKind = "oauth"
+		file.Platforms[i].CredentialID = cred.ID
+		file.Platforms[i].IdentityBinding.CredentialFingerprint = fmt.Sprintf("%x", sha256.Sum256(b))
 	}
-	if err = m.store.save(m.connectionsPathForTest(), file, 2<<20); err != nil {
+	if err = m.store.save(m.platformsPathForTest(), file, 2<<20); err != nil {
 		t.Fatal(err)
 	}
-	file, err = m.connections.Load()
+	file, err = m.platforms.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := connection.ResolveAuthorization(file, file.Connections[0])
+	a, err := registry.ResolveAuthorization(file, file.Platforms[0])
 	if err != nil {
 		t.Fatal(err)
 	}
 	return a
 }
-func (m *roomManager) connectionsPathForTest() string {
+func (m *roomManager) platformsPathForTest() string {
 	return m.store.dir + "/platform-connections.json"
 }
-func oauthTestManager(t *testing.T, expiry time.Time) (*roomManager, connection.Account) {
+func oauthTestManager(t *testing.T, expiry time.Time) (*roomManager, registry.Account) {
 	t.Helper()
 	m := testManager(t, t.TempDir(), nil)
 	c := platformTestSave(t, m, platformTestRequest(m))

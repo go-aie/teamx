@@ -98,12 +98,12 @@ type RoomIdentity struct {
 	RoomInstance string `json:"room_instance"`
 }
 type ProjectBinding struct {
-	ConnectionID         string `json:"connection_id,omitempty"`
-	ConnectionGeneration string `json:"connection_generation,omitempty"`
-	ProjectID            int64  `json:"project_id,omitempty"`
-	Provider             string `json:"provider"`
-	URL                  string `json:"url"`
-	Project              string `json:"project"`
+	PlatformID         string `json:"platform_id,omitempty"`
+	PlatformGeneration string `json:"platform_generation,omitempty"`
+	ProjectID          int64  `json:"project_id,omitempty"`
+	Provider           string `json:"provider"`
+	URL                string `json:"url"`
+	Project            string `json:"project"`
 }
 
 // SourceRef identifies a notification independently of its provider's object IDs.

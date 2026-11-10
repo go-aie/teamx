@@ -118,7 +118,7 @@ func TestPlatformAttachmentTodosAndRetiredSubscription(t *testing.T) {
 	parallelFixtureTest(t)
 	h, svc, id, query, data := attachmentFixture(t)
 	events := h.state()
-	state, err := h.m.configureTodosSubscription(context.Background(), notification.Key{Owner: h.room.RoomIdentity, Source: gitlab.TodosSourceID}, 0, gitlab.TodosConfig{Enabled: true, ConnectionID: events.Binding.ConnectionID})
+	state, err := h.m.configureTodosSubscription(context.Background(), notification.Key{Owner: h.room.RoomIdentity, Source: gitlab.TodosSourceID}, 0, gitlab.TodosConfig{Enabled: true, PlatformID: events.Binding.PlatformID})
 	if err != nil {
 		t.Fatal(err)
 	}

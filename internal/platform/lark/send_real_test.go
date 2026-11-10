@@ -40,7 +40,7 @@ func TestRealLarkSendTargetPreflight(t *testing.T) {
 	if chat.ID != group || chat.Mode != "group" || chat.TenantKey != v.Account.Tenant.Value {
 		t.Fatal("group identity mismatch")
 	}
-	access := platform.AccessContext{RoomIdentity: platform.RoomIdentity{RoomID: "preflight", RoomInstance: "preflight"}, AgentID: "preflight", MembershipID: "preflight", Account: v.Account, ConnectionID: "preflight", Generation: "preflight", ConnectionVersion: 1, CredentialVersion: 1}
+	access := platform.AccessContext{RoomIdentity: platform.RoomIdentity{RoomID: "preflight", RoomInstance: "preflight"}, AgentID: "preflight", MembershipID: "preflight", Account: v.Account, PlatformID: "preflight", Generation: "preflight", PlatformVersion: 1, CredentialVersion: 1}
 	target := platform.TargetIdentity{IdentityScope: v.Account.IdentityScope, Object: platform.NativeIdentity{Type: "user", ID: v.Account.ID}}
 	r, err := ResolveSendTarget(ctx, platform.TargetLocator{Candidate: &target}, access, pin.SendReader())
 	if err != nil || r.Status != platform.ResolutionResolved || r.Target == nil || r.Target.Object.ID != v.Account.ID || len(r.Target.Containers) != 1 {

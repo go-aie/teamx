@@ -98,7 +98,7 @@ func (m *roomManager) runLarkSetup(ctx context.Context, s *larkAuthSession, exec
 		err = context.Canceled
 	}
 	if err == nil {
-		// Normally there are no affected connections for a freshly allocated
+		// Normally there are no affected platforms for a freshly allocated
 		// profile. Recheck at the handoff; never bypass existing impact guards.
 		_, err = m.invalidateLarkAuthLocked(larkAuthRequest{Profile: &s.profile})
 		if err != nil {

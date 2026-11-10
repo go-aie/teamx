@@ -22,7 +22,7 @@ func TestLarkChatPickerListsMetadataBeforeSubscription(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(h.dir, "directory.json"), raw, 0600); err != nil {
 		t.Fatal(err)
 	}
-	req := larkChatsRequest{ServiceEpoch: h.m.epoch, RoomIdentity: h.room.RoomIdentity, Caller: humanCaller, ConnectionID: h.c.ID, ConnectionVersion: h.c.Version}
+	req := larkChatsRequest{ServiceEpoch: h.m.epoch, RoomIdentity: h.room.RoomIdentity, Caller: humanCaller, PlatformID: h.c.ID, PlatformVersion: h.c.Version}
 	response := managerHTTP(h.m, "/v1/platform/lark/chats", req)
 	if response.Code != 200 {
 		t.Fatal(response.Code, response.Body.String())
@@ -59,7 +59,7 @@ func TestLarkChatPickerListsMetadataBeforeSubscription(t *testing.T) {
 		func(r *larkChatsRequest) { r.Caller = agentCaller(h.members[0].AgentID, h.members[0].MembershipID) },
 		func(r *larkChatsRequest) { r.ServiceEpoch = "stale" },
 		func(r *larkChatsRequest) { r.RoomInstance = "stale" },
-		func(r *larkChatsRequest) { r.ConnectionVersion++ },
+		func(r *larkChatsRequest) { r.PlatformVersion++ },
 		func(r *larkChatsRequest) { r.PageToken = "invalid\npage" },
 		func(r *larkChatsRequest) { r.Query = strings.Repeat("字", 51) },
 		func(r *larkChatsRequest) { r.Query = "bad\nquery" },
@@ -83,7 +83,7 @@ func TestLarkChatPickerSearchesMetadataWithPartialPermissions(t *testing.T) {
 	parallelFixtureTest(t)
 	h := newLarkHarness(t)
 	installChatSearchFixture(t, h)
-	req := larkChatsRequest{ServiceEpoch: h.m.epoch, RoomIdentity: h.room.RoomIdentity, Caller: humanCaller, ConnectionID: h.c.ID, ConnectionVersion: h.c.Version, Query: "yanfa", Type: "all"}
+	req := larkChatsRequest{ServiceEpoch: h.m.epoch, RoomIdentity: h.room.RoomIdentity, Caller: humanCaller, PlatformID: h.c.ID, PlatformVersion: h.c.Version, Query: "yanfa", Type: "all"}
 	response := managerHTTP(h.m, "/v1/platform/lark/chats", req)
 	var page lark.ChatPage
 	if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &page) != nil || len(page.Chats) != 2 || len(page.SearchWarnings) != 2 || page.HasMore {
@@ -104,17 +104,17 @@ func TestLarkChatPickerSearchesMetadataWithPartialPermissions(t *testing.T) {
 	}
 }
 
-func TestLarkChatPickerRejectsConnectionChangedDuringRead(t *testing.T) {
+func TestLarkChatPickerRejectsPlatformChangedDuringRead(t *testing.T) {
 	parallelFixtureTest(t)
 	h := newLarkHarness(t)
-	req := larkChatsRequest{ServiceEpoch: h.m.epoch, RoomIdentity: h.room.RoomIdentity, Caller: humanCaller, ConnectionID: h.c.ID, ConnectionVersion: h.c.Version}
+	req := larkChatsRequest{ServiceEpoch: h.m.epoch, RoomIdentity: h.room.RoomIdentity, Caller: humanCaller, PlatformID: h.c.ID, PlatformVersion: h.c.Version}
 	h.m.mu.Lock()
 	a, err := h.m.checkLarkChatsLocked(context.Background(), req, nil)
 	h.m.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = h.m.verifyPlatformConnection(context.Background(), platformConnectionRequest{ID: h.c.ID, Version: h.c.Version}); err != nil {
+	if _, err = h.m.verifyPlatform(context.Background(), managedPlatformRequest{ID: h.c.ID, Version: h.c.Version}); err != nil {
 		t.Fatal(err)
 	}
 	h.m.mu.Lock()
@@ -135,7 +135,7 @@ func TestLarkChatPickerDiscardsCLIIdentitySwitch(t *testing.T) {
 	if err := os.WriteFile(bin, []byte(text), 0700); err != nil {
 		t.Fatal(err)
 	}
-	req := larkChatsRequest{ServiceEpoch: h.m.epoch, RoomIdentity: h.room.RoomIdentity, Caller: humanCaller, ConnectionID: h.c.ID, ConnectionVersion: h.c.Version}
+	req := larkChatsRequest{ServiceEpoch: h.m.epoch, RoomIdentity: h.room.RoomIdentity, Caller: humanCaller, PlatformID: h.c.ID, PlatformVersion: h.c.Version}
 	response := managerHTTP(h.m, "/v1/platform/lark/chats", req)
 	if response.Code == 200 || !strings.Contains(response.Body.String(), "identity_mismatch") || strings.Contains(response.Body.String(), "discard-this-name") {
 		t.Fatal(response.Code, response.Body.String())

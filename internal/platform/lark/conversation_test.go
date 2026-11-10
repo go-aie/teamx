@@ -21,8 +21,7 @@ func (f incompleteConversationReader) NotificationChat(_ context.Context, _ plat
 
 func TestUnverifiedP2PWaitsWithoutBlockingOtherSourceChats(t *testing.T) {
 	h, f, _ := newStepHarness(t)
-	h.s.Config.Chats = append(h.s.Config.Chats, "oc_group")
-	h.s.Config.GroupAll = true
+	h.s.Config.Groups = GroupConfig{Enabled: true, ChatIDs: []string{"oc_group"}, MessageMode: "all"}
 	f.pages = func(q MessagesRequest) (MessagePage, error) {
 		if q.ChatID != "oc_group" {
 			t.Fatal("unverified private body read")
@@ -47,13 +46,13 @@ func TestSelfConversationSourceBacklogRestartAndScope(t *testing.T) {
 			m := sampleMessage("om_manual", chat.ID, "自聊中手写的待办")
 			m.Sender.ID = h.s.Binding.Account.ID.Value
 			var err error
-			h.s, err = acceptPage(h.s, chat.ID, MessagePage{Items: []Message{m}}, h.limits)
+			h.s, err = acceptLegacyP2PPage(h.s, chat.ID, MessagePage{Items: []Message{m}}, h.limits)
 			if err != nil || len(h.s.Inbox) != 1 || len(h.s.PendingItems()) != 0 {
 				t.Fatal("legacy backlog leaked before verification", err)
 			}
 			if all {
-				h.s.Config.ScopeMode = "all"
-				h.s.Config.Chats = nil
+				h.s.Config.Private.Scope = "all"
+				h.s.Config.Private.ChatIDs = nil
 				h.s.Directory = &DirectoryProgress{LastFull: h.now, RetryAt: h.now.Add(time.Hour)}
 			}
 			chat.Relation = ConversationRelation{Account: h.s.Binding.Account, ChatID: chat.ID, Kind: "self"}
@@ -96,11 +95,11 @@ func TestSourceVerifiesFrozenOutOfScopeP2PBacklog(t *testing.T) {
 	m := sampleMessage("om_old", "oc_old", "history")
 	h.s.Chats[m.ChatID] = ChatProgress{Chat: Chat{ID: m.ChatID, Mode: "p2p", TenantKey: h.s.Binding.Account.Tenant.Value}, Scan: &Scan{Start: 1000, End: 1010}}
 	var err error
-	h.s, err = acceptPage(h.s, m.ChatID, MessagePage{Items: []Message{m}}, notification.DefaultLimits())
+	h.s, err = acceptLegacyP2PPage(h.s, m.ChatID, MessagePage{Items: []Message{m}}, notification.DefaultLimits())
 	if err != nil {
 		t.Fatal(err)
 	}
-	h.s.Config.Chats = []string{"oc_new"}
+	h.s.Config.Private.ChatIDs = []string{"oc_new"}
 	f.chat = Chat{ID: m.ChatID, Mode: "p2p", TenantKey: h.s.Binding.Account.Tenant.Value, Relation: ConversationRelation{Account: h.s.Binding.Account, ChatID: m.ChatID, Kind: "self"}}
 	// Put the configured chat on cooldown so the frozen route is selected first.
 	h.s.Chats["oc_new"] = ChatProgress{Chat: Chat{ID: "oc_new", Mode: "group"}, RetryAt: h.now.Add(time.Hour)}
@@ -112,4 +111,22 @@ func TestSourceVerifiesFrozenOutOfScopeP2PBacklog(t *testing.T) {
 	if ids := h.s.ChatIDs(); len(ids) != 1 || ids[0] != "oc_new" {
 		t.Fatal("verification widened subscription", ids)
 	}
+}
+
+// Build an old frozen delivery with missing relationship evidence. Current
+// collection requires proof; historical envelopes may predate that contract.
+func acceptLegacyP2PPage(s State, id string, page MessagePage, limits notification.Limits) (State, error) {
+	original := s.Chats[id]
+	p := original
+	p.Chat = peerChat(id, "p2p")
+	p.Chat.TenantKey = original.Chat.TenantKey
+	s.Chats[id] = p
+	cfg := s.Config
+	s.Config.Private = PrivateConfig{Enabled: true, Scope: "all"}
+	n, err := acceptPage(s, id, page, limits)
+	p = n.Chats[id]
+	p.Chat = original.Chat
+	n.Chats[id] = p
+	n.Config = cfg
+	return n, err
 }

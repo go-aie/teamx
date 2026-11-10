@@ -14,24 +14,25 @@ import (
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/connection"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
 	"github.com/go-aie/teamx/internal/platform/notification"
+	"github.com/go-aie/teamx/internal/platform/registry"
 )
 
-func TestOAuthConcurrentRefreshSharedConnections(t *testing.T) {
+func TestOAuthConcurrentRefreshSharedPlatforms(t *testing.T) {
 	parallelFixtureTest(t)
 	m, account := oauthTestManager(t, time.Now().Add(time.Second))
 	m.mu.Lock()
-	file, _ := m.connections.Load()
-	second := file.Connections[0]
+	file, _ := m.platforms.Load()
+	second := file.Platforms[0]
 	second.ID = strings.Repeat("d", 32)
-	file.Connections = append(file.Connections, second)
-	if err := m.store.save(m.connectionsPathForTest(), file, 2<<20); err != nil {
+	second.ToolEntryID = "gitlab-" + strings.Repeat("d", 32)
+	file.Platforms = append(file.Platforms, second)
+	if err := m.store.save(m.platformsPathForTest(), file, 2<<20); err != nil {
 		t.Fatal(err)
 	}
-	file, _ = m.connections.Load()
-	other, err := connection.ResolveAuthorization(file, file.Connections[1])
+	file, _ = m.platforms.Load()
+	other, err := registry.ResolveAuthorization(file, file.Platforms[1])
 	m.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)
@@ -92,11 +93,11 @@ func TestOAuthConcurrentRefreshSharedConnections(t *testing.T) {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	file, err = m.connections.Load()
+	file, err = m.platforms.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	after, err := connection.ResolveAuthorization(file, file.Connections[0])
+	after, err := registry.ResolveAuthorization(file, file.Platforms[0])
 	if err != nil || after != account || file.OAuthCredentials[0].TokenRevision != 2 {
 		t.Fatal("normal renewal changed authorization", err)
 	}
@@ -113,9 +114,9 @@ func TestOAuthRefreshWaitsForSettledTokenUsers(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.mu.Lock()
-	file, _ := m.connections.Load()
+	file, _ := m.platforms.Load()
 	file.OAuthCredentials[0].ExpiresAt = time.Now().Add(35 * time.Second)
-	if err = m.store.save(m.connectionsPathForTest(), file, 2<<20); err != nil {
+	if err = m.store.save(m.platformsPathForTest(), file, 2<<20); err != nil {
 		t.Fatal(err)
 	}
 	m.mu.Unlock()
@@ -157,9 +158,9 @@ func TestOAuthOldGrantResultsRejectedAndUseBounded(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.mu.Lock()
-	file, _ := m.connections.Load()
+	file, _ := m.platforms.Load()
 	file.OAuthCredentials[0].State = "reauthorization_required"
-	if err = m.store.save(m.connectionsPathForTest(), file, 2<<20); err != nil {
+	if err = m.store.save(m.platformsPathForTest(), file, 2<<20); err != nil {
 		t.Fatal(err)
 	}
 	m.mu.Unlock()
@@ -186,7 +187,7 @@ func TestOAuthRefreshUnknownIsNotReplayedAfterRestart(t *testing.T) {
 		t.Fatal("unknown refresh replayed", err)
 	}
 	m.mu.Lock()
-	file, err := m.connections.Load()
+	file, err := m.platforms.Load()
 	m.mu.Unlock()
 	if err != nil || file.OAuthCredentials[0].State != "refresh_unknown" {
 		t.Fatal("missing uncertainty evidence", err)
@@ -247,7 +248,7 @@ func TestOAuthRefreshStorageFailures(t *testing.T) {
 			m.store.mu.Lock()
 			m.store.ops = original
 			m.store.mu.Unlock()
-			file, err := m.connections.Load()
+			file, err := m.platforms.Load()
 			m.mu.Unlock()
 			if err != nil {
 				t.Fatal(err)
@@ -332,11 +333,11 @@ func TestOAuthRenewalPreservesNotificationCoreProgress(t *testing.T) {
 	// notification core. Concrete Events/Todos transport wiring belongs to G4.
 	adapter := h.m.notificationAdapters[gitlab.TodosSourceID]
 	adapter.Admit = func(_ context.Context, state notification.State) (notification.Scope, error) {
-		file, err := h.m.connections.Load()
+		file, err := h.m.platforms.Load()
 		if err != nil {
 			return notification.Scope{}, err
 		}
-		current, err := connection.ResolveAuthorization(file, file.Connections[0])
+		current, err := registry.ResolveAuthorization(file, file.Platforms[0])
 		if err != nil {
 			return notification.Scope{}, err
 		}
@@ -344,8 +345,8 @@ func TestOAuthRenewalPreservesNotificationCoreProgress(t *testing.T) {
 			return notification.Scope{}, notification.ErrConflict
 		}
 		s := state.(gitlab.TodosState)
-		data, _ := json.Marshal(gitlab.TodosQueryScope{Binding: s.Binding, ConnectionVersion: current.ConnectionVersion})
-		return notification.Scope{Data: data, Revision: fmt.Sprint(current.ConnectionVersion), CredentialStamp: current.CredentialFingerprint}, nil
+		data, _ := json.Marshal(gitlab.TodosQueryScope{Binding: s.Binding, PlatformVersion: current.PlatformVersion})
+		return notification.Scope{Data: data, Revision: fmt.Sprint(current.PlatformVersion), CredentialStamp: current.CredentialFingerprint}, nil
 	}
 	h.m.notificationAdapters[gitlab.TodosSourceID] = adapter
 	h.m.notifications.Source(gitlab.TodosSourceID).(*gitlab.TodosSource).Prepare = func(context.Context, string, RoomIdentity, gitlab.TodosQueryScope) (gitlab.TodoFetcher, error) {
@@ -376,7 +377,7 @@ func TestOAuthCrashBarrierSurvivesServiceRestart(t *testing.T) {
 	parallelFixtureTest(t)
 	m, account := oauthTestManager(t, time.Now().Add(time.Second))
 	m.mu.Lock()
-	_, err := m.connections.BeginOAuthRefresh(account.Authorization)
+	_, err := m.platforms.BeginOAuthRefresh(account.Authorization)
 	m.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)

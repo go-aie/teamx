@@ -84,7 +84,7 @@ sys.exit(r.returncode)
 // Real Agent -> managed Lark reply path -> one exact native reply POST ->
 // independent read -> service reload -> receipt query and identical-ID recovery.
 // The isolated manager admits only this exact one-shot reply. Accepted production
-// modes are selected separately by the production registry.
+// modes are selected separately by the production connection.
 func TestRealLarkReplyDSHAndRecovery(t *testing.T) {
 	if os.Getenv("TEAMX_LARK_REPLY_DSH_REAL") != "1" {
 		t.Skip("explicit real send opt-in and exact authorized input required")
@@ -161,8 +161,8 @@ func TestRealLarkReplyDSHAndRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := platform.CLIProfile{Version: 1, Executable: wrapper, Profile: q.Profile, Brand: "feishu", CLIVersion: lark.CLIVersion}
-	c := platformTestSave(t, m, platformConnectionRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("e", 32), Name: "L4-B isolated real user reply", Provider: "lark", URL: lark.Origin("feishu"), CLIProfile: &p})
-	c, err = m.verifyPlatformConnection(ctx, platformConnectionRequest{ID: c.ID, Version: c.Version})
+	c := platformTestSave(t, m, managedPlatformRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("e", 32), Name: "L4-B isolated real user reply", Provider: "lark", URL: lark.Origin("feishu"), CLIProfile: &p})
+	c, err = m.verifyPlatform(ctx, managedPlatformRequest{ID: c.ID, Version: c.Version})
 	if err != nil || c.Validation.Status != "valid" || c.Validation.Account.ID.Value != q.ExpectedUserID {
 		t.Fatal("expected real account verification failed", err)
 	}
@@ -230,7 +230,7 @@ func TestRealLarkReplyDSHAndRecovery(t *testing.T) {
 		r, e := session.Capabilities.Resolve(ctx, l, session.Access)
 		return r, session, e
 	}
-	r := managerHTTP(m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: id.RoomIdentity, Caller: humanCaller, Enabled: true, ConnectionVersion: c.Version, Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "lark", ConnectionID: c.ID, ActionAuthorization: &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: []tool.ActionGrant{{Operation: "message.reply", TargetKind: "message", ObjectType: "message"}}}}})
+	r := managerHTTP(m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: id.RoomIdentity, Caller: humanCaller, Enabled: true, PlatformVersion: c.Version, Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "lark", PlatformID: c.ID, ActionAuthorization: &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: []tool.ActionGrant{{Operation: "message.reply", TargetKind: "message", ObjectType: "message"}}}}})
 	if r.Code != 200 {
 		t.Fatal("explicit member reply grant failed", r.Code, r.Body.String())
 	}

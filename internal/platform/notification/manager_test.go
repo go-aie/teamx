@@ -19,19 +19,19 @@ import (
 // A second, non-GitLab schema exercises the common engine without Room or any
 // concrete provider. Its progress is deliberately unrelated to date pagination.
 type fixtureState struct {
-	Format     int
-	K          Key
-	Version    uint64
-	Enabled    bool
-	Connection string
-	Offset     int
-	Seen       map[string]bool
-	Inbox      map[string]Item
+	Format   int
+	K        Key
+	Version  uint64
+	Enabled  bool
+	Platform string
+	Offset   int
+	Seen     map[string]bool
+	Inbox    map[string]Item
 	RuntimeState
 }
 
 func (s fixtureState) Metadata() Metadata {
-	return Metadata{Key: s.K, Version: s.Version, Enabled: s.Enabled, ConnectionID: s.Connection, Observed: len(s.Seen), Pending: len(s.Inbox), DeliveryError: s.DeliveryErrorCode}
+	return Metadata{Key: s.K, Version: s.Version, Enabled: s.Enabled, PlatformID: s.Platform, Observed: len(s.Seen), Pending: len(s.Inbox), DeliveryError: s.DeliveryErrorCode}
 }
 func (s fixtureState) Validate(owner platform.RoomIdentity) error {
 	if s.Format != 7 || s.K.Owner != owner || s.K.SubscriptionID == "" || s.Version == 0 || s.Seen == nil || s.Inbox == nil {
@@ -188,7 +188,7 @@ func (f *notificationFixture) path(key Key) string {
 	return filepath.Join(f.dir, key.Owner.RoomID, key.Source.Provider+"."+key.Source.Channel+"."+key.SubscriptionID+".json")
 }
 func fixtureSubscription(id string, source SourceID) fixtureState {
-	return fixtureState{Format: 7, K: Key{Owner: platform.RoomIdentity{RoomID: "room", RoomInstance: "instance"}, Source: source, SubscriptionID: id}, Version: 1, Enabled: true, Connection: "connection", Seen: map[string]bool{}, Inbox: map[string]Item{}, RuntimeState: RuntimeState{Status: "running"}}
+	return fixtureState{Format: 7, K: Key{Owner: platform.RoomIdentity{RoomID: "room", RoomInstance: "instance"}, Source: source, SubscriptionID: id}, Version: 1, Enabled: true, Platform: "connection", Seen: map[string]bool{}, Inbox: map[string]Item{}, RuntimeState: RuntimeState{Status: "running"}}
 }
 func (f *notificationFixture) save(t *testing.T, state State) {
 	t.Helper()
@@ -248,6 +248,7 @@ func TestSubscriptionsInSameRoomAreIsolatedAndCancellationJoinsAll(t *testing.T)
 	f := newNotificationFixture(t, source)
 	t.Cleanup(finish) // Release before manager cleanup, even if an assertion fails.
 	slow, fast := fixtureSubscription("slow", source.id), fixtureSubscription("fast", source.id)
+	slow.Platform, fast.Platform = "platform-slow", "platform-fast"
 	f.save(t, slow)
 	f.save(t, fast)
 	if err := f.m.Start(); err != nil {
@@ -415,15 +416,15 @@ func TestDeliveryAcknowledgesOnlyAfterCommitAndKeepsStableOrder(t *testing.T) {
 	}
 }
 
-func TestSourceSchemaReloadAndConnectionInvalidationAreIsolated(t *testing.T) {
+func TestSourceSchemaReloadAndPlatformInvalidationAreIsolated(t *testing.T) {
 	a, b := fixtureSource{id: SourceID{Provider: "fixture", Channel: "alpha"}}, fixtureSource{id: SourceID{Provider: "fixture", Channel: "beta"}}
 	f := newNotificationFixture(t, a, b)
 	one, two := fixtureSubscription("one", a.id), fixtureSubscription("two", b.id)
-	two.Connection = "other-connection"
+	two.Platform = "other-connection"
 	f.save(t, one)
 	f.save(t, two)
 	f.mu.Lock()
-	err := f.m.InvalidateConnectionLocked(one.Connection)
+	err := f.m.InvalidatePlatformLocked(one.Platform)
 	f.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)

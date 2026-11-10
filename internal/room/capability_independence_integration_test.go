@@ -14,13 +14,13 @@ import (
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/connection"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
 	"github.com/go-aie/teamx/internal/platform/notification"
+	"github.com/go-aie/teamx/internal/platform/registry"
 	"github.com/go-aie/teamx/internal/platform/tool"
 )
 
-func TestSecondConnectionProviderAndTool(t *testing.T) {
+func TestSecondPlatformProviderRequiresToolTypeRegistration(t *testing.T) {
 	parallelFixtureTest(t)
 	m, room, svc, gitlabAccount, members := cliToolFixture(t, `test -z "$GITLAB_TOKEN$GITLAB_HOST" || exit 91
 test -z "$FIXTURE_TOKEN" || exit 92
@@ -29,7 +29,7 @@ printf '%s' "$1"
 `)
 
 	verified := 0
-	m.connectionProviders["fixture"] = connectionProvider{Normalize: connection.Normalize, ValidProfile: func(string, platform.CLIProfile) bool { return true }, VerifyProfile: func(_ context.Context, origin string, profile platform.CLIProfile) platform.Validation {
+	m.connectionProviders["fixture"] = connectionProvider{Normalize: registry.Normalize, ValidProfile: func(string, platform.CLIProfile) bool { return true }, VerifyProfile: func(_ context.Context, origin string, profile platform.CLIProfile) platform.Validation {
 		verified++
 		if origin != "https://fixture.invalid" || profile.Profile != "fixture" {
 			t.Error("incorrect provider verification context")
@@ -43,11 +43,11 @@ printf '%s' "$1"
 	req := platformTestRequest(m)
 	req.ID, req.Name, req.Provider, req.URL = strings.Repeat("b", 32), "Fixture", "fixture", "https://fixture.invalid"
 	req.CLIProfile = &platform.CLIProfile{Version: 1, Executable: "/fixture-cli", Profile: "fixture"}
-	c, err := m.updatePlatformConnection(req, false)
+	c, err := m.updatePlatform(req, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err = m.verifyPlatformConnection(context.Background(), platformConnectionRequest{ID: c.ID, Version: c.Version})
+	c, err = m.verifyPlatform(context.Background(), managedPlatformRequest{ID: c.ID, Version: c.Version})
 	if err != nil || verified != 1 || c.Validation.Username != "fixture-user" {
 		t.Fatal("registered verifier was not used", err)
 	}
@@ -58,15 +58,20 @@ printf '%s' "$1"
 		t.Fatal("connection registration implicitly enabled another capability", err)
 	}
 	wrong := toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, Enabled: true,
-		Binding: tool.Binding{AgentID: members[0].AgentID, MembershipID: members[0].MembershipID, Tool: d.Name, ConnectionID: gitlabAccount.ID}, ConnectionVersion: gitlabAccount.Version}
+		Binding: tool.Binding{AgentID: members[0].AgentID, MembershipID: members[0].MembershipID, Tool: d.Name, PlatformID: gitlabAccount.ID}, PlatformVersion: gitlabAccount.Version}
 	if r := managerHTTP(m, "/v1/tools/bind", wrong); r.Code != 400 {
 		t.Fatal("tool accepted another provider's account", r.Code)
 	}
-	bindCLITool(t, m, room.RoomIdentity, members[0], c, d.Name, 0)
+	// A verifier alone does not register a public tool implementation. The
+	// static platform type catalog must opt in before an entry can be enabled.
+	wrong.Binding.PlatformID, wrong.PlatformVersion = c.ID, c.Version
+	if r := managerHTTP(m, "/v1/tools/bind", wrong); r.Code != 400 {
+		t.Fatal("unregistered tool type acquired a binding", r.Code)
+	}
 	client, endpoint := toolPipeServer(t, m)
 	var out, stderr bytes.Buffer
-	if err := runToolsWithClient(context.Background(), []string{"run", d.Name, "opaque arg"}, strings.NewReader(""), &out, &stderr, cliToolEnv(endpoint, svc, members[0]), client); err != nil || out.String() != "opaque arg" {
-		t.Fatal(err, out.String(), stderr.String())
+	if err := runToolsWithClient(context.Background(), []string{"run", d.Name, "opaque arg"}, strings.NewReader(""), &out, &stderr, cliToolEnv(endpoint, svc, members[0]), client); err == nil {
+		t.Fatal("unregistered type executed", out.String(), stderr.String())
 	}
 	m.mu.Lock()
 	_, _, err = m.resolvePlatformAccountLocked(room.RoomIdentity, c.ID, "gitlab")
@@ -75,7 +80,7 @@ printf '%s' "$1"
 		t.Fatal("GitLab notification admission accepted another provider", err)
 	}
 	req.ID, req.Provider = strings.Repeat("c", 32), "unregistered"
-	if _, err := m.updatePlatformConnection(req, false); !errors.Is(err, ErrRequest) {
+	if _, err := m.updatePlatform(req, false); !errors.Is(err, ErrRequest) {
 		t.Fatal("unknown provider accepted", err)
 	}
 }
@@ -132,7 +137,7 @@ func TestLocalGitFetchPushAndExactSHA(t *testing.T) {
 	}
 }
 
-func TestAccountlessToolWithoutConnectionsOrWorkspace(t *testing.T) {
+func TestAccountlessToolWithoutPlatformsOrWorkspace(t *testing.T) {
 	parallelFixtureTest(t)
 	m := testManager(t, t.TempDir(), managerTestProfiles(t))
 	room := managerCreate(t, m, "local-tool")
@@ -164,8 +169,8 @@ cat
 		t.Fatal(err)
 	}
 	defer os.Remove(path)
-	f := bindCLITool(t, m, room.RoomIdentity, snapshot.Members[0], platformConnection{}, "local-fixture", 0)
-	if len(f.Bindings) != 1 || f.Bindings[0].ConnectionID != "" {
+	f := bindCLITool(t, m, room.RoomIdentity, snapshot.Members[0], managedPlatform{}, "local-fixture", 0)
+	if len(f.Bindings) != 1 || f.Bindings[0].PlatformID != "" {
 		t.Fatal("local tool required an account")
 	}
 	client, endpoint := toolPipeServer(t, m)
@@ -301,7 +306,7 @@ func TestToolDisablePreservesNotificationsWorkspaceAndSession(t *testing.T) {
 			m.toolCatalog = []tool.Definition{{Name: "fixture-tool", Provider: "gitlab", Executable: "/unused"}}
 			f := bindCLITool(t, m, room.RoomIdentity, member, c, "fixture-tool", 0)
 			r := managerHTTP(m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, Revision: f.Revision,
-				Binding: tool.Binding{AgentID: member.AgentID, MembershipID: member.MembershipID, Tool: "fixture-tool"}})
+				Binding: tool.Binding{AgentID: member.AgentID, MembershipID: member.MembershipID, Tool: "fixture-tool", PlatformID: c.ID}})
 			if r.Code != 200 {
 				t.Fatal(r.Code, r.Body.String())
 			}

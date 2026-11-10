@@ -16,7 +16,7 @@ import (
 func referenceFixture(origin string) (platform.SourceRef, platform.AccessContext) {
 	source := platform.SourceRef{Provider: "gitlab", Instance: origin, Channel: "events", SubscriptionID: "subscription", ItemKey: "note-101", URL: origin + "/g/p/-/merge_requests/42#note_101", Reference: platform.NotificationReference{Version: 1, RecipientID: restID(13, "id"), Scope: "project", ProjectID: restID(123, "id"), Object: objectReference("MergeRequest", 9001, 42), NoteID: restID(101, "id")}}
 	account := platform.AccountIdentity{IdentityScope: platform.IdentityScope{Provider: "gitlab", Instance: origin}, ID: restID(13, "id")}
-	access := platform.AccessContext{RoomIdentity: platform.RoomIdentity{RoomID: "room", RoomInstance: "generation"}, AgentID: "agent", MembershipID: "member", Account: account, Receiver: account, ConnectionID: "connection", Generation: "generation", ConnectionVersion: 1, CredentialVersion: 1}
+	access := platform.AccessContext{RoomIdentity: platform.RoomIdentity{RoomID: "room", RoomInstance: "generation"}, AgentID: "agent", MembershipID: "member", Account: account, Receiver: account, PlatformID: "connection", Generation: "generation", PlatformVersion: 1, CredentialVersion: 1}
 	return source, access
 }
 func referencePayload(origin, path string) any {

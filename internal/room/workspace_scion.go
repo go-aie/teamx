@@ -15,13 +15,13 @@ import (
 func (m *roomManager) scionWorkspaceExecute(owner RoomIdentity, w workspaceConfig, run platform.Execute) platform.Execute {
 	return func(ctx context.Context, dir string, _ map[string]string, _ string, args ...string) (out []byte, err error) {
 		m.mu.Lock()
-		resolved, err := m.resolveWorkspaceConnectionLocked(owner, w)
+		resolved, err := m.resolveWorkspacePlatformLocked(owner, w)
 		if err != nil {
 			m.mu.Unlock()
 			return nil, err
 		}
 		useCtx, cancel := context.WithCancel(ctx)
-		call := &platformCall{owner: owner, tool: "scion", connectionID: resolved.record.ID, account: resolved.account, cancel: cancel, done: make(chan struct{})}
+		call := &platformCall{owner: owner, tool: "scion", platformID: resolved.record.ID, account: resolved.account, cancel: cancel, done: make(chan struct{})}
 		if m.platformCalls == nil {
 			m.platformCalls = map[*platformCall]bool{}
 		}
@@ -64,7 +64,7 @@ func (m *roomManager) scionWorkspaceExecute(owner RoomIdentity, w workspaceConfi
 		}
 		out, err = run(useCtx, dir, env, profile.Executable, args...)
 		m.mu.Lock()
-		checkErr := m.checkProjectConnectionLocked(resolved)
+		checkErr := m.checkProjectPlatformLocked(resolved)
 		m.mu.Unlock()
 		if checkErr != nil {
 			return nil, checkErr

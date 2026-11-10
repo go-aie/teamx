@@ -170,7 +170,7 @@ func TestGitLabEventsWorkspaceChangePreservesIndependentSubscription(t *testing.
 	h.prepare()
 	h.clock.add(time.Second)
 	newWorkspace := testGitLabWorkspace()
-	newWorkspace.Binding.ConnectionID = strings.Repeat("e", 32)
+	newWorkspace.Binding.PlatformID = strings.Repeat("e", 32)
 
 	h.runner.Fetcher = eventFetchFunc(func(context.Context, gitlab.EventQuery) (gitlab.EventBatch, error) {
 		setTestEffectiveWorkspace(t, h.m, h.room, newWorkspace, 2)
@@ -189,7 +189,7 @@ func TestGitLabEventsWorkspaceChangePreservesIndependentSubscription(t *testing.
 	disabled := h.state()
 	cfg.Enabled = true
 	resumed, err := h.m.configureEventsSubscription(context.Background(), h.m.testEventsKey(h.room.RoomIdentity), disabled.SubscriptionVersion, cfg)
-	if err != nil || resumed.Binding.ConnectionID != s.Binding.ConnectionID || resumed.SubscriptionID != s.SubscriptionID || !resumed.Baseline.Equal(s.Baseline) {
+	if err != nil || resumed.Binding.PlatformID != s.Binding.PlatformID || resumed.SubscriptionID != s.SubscriptionID || !resumed.Baseline.Equal(s.Baseline) {
 		t.Fatal("explicit credential refresh reset subscription progress", resumed, err)
 	}
 }

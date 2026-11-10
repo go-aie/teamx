@@ -36,7 +36,8 @@ type Metadata struct {
 	Key               Key
 	Version           uint64
 	Enabled           bool
-	ConnectionID      string
+	Retired           bool
+	PlatformID        string
 	Observed, Pending int
 	DeliveryError     string
 }

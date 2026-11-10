@@ -60,7 +60,7 @@ function fixture(managed=true) {
       if(path==="/v1/rooms")return {...api.settings,operator:"tester",rooms:[{...info,name:"A",status:"ready",runtime_status:"ready",service:info,created_at:api.messages[1].created_at}],teams:[]};
       if(path.startsWith("/v1/workspace?"))return {workspace:{root:"workspaces"},workspace_version:1,members:[]};
       if(path.startsWith("/v1/platform/notifications?"))return {subscriptions:[]};
-      if(path.startsWith("/v1/platform/connections?"))return {connections:[]};
+      if(path.startsWith("/v1/platforms?"))return {platforms:[]};
       if(path==="/v1/member/list")return {members:[member]};
       if(path==="/v1/member/activity")return {member};
       if(path==="/v1/read")return {messages:api.messages.filter(m=>m.seq>(body.after || 0)),snapshot_seq:2,has_more:false};
@@ -147,7 +147,7 @@ test("policy time inputs submit system-zone instants, preserve resolved drafts o
 
 test("single-Room settings carry full identity and unavailable zones show an explicit error", async () => {
   const api=fixture(false),ui=await launch(api);await ui.el("open-general-settings").emit("click");
-  assert.equal(ui.el("general-settings").hidden,false);assert.equal(ui.el("connections-list-view").hidden,true);
+  assert.equal(ui.el("general-settings").hidden,false);assert.equal(ui.el("platforms-list-view").hidden,true);
   await saveZone(ui,"UTC");const save=api.calls.find(c=>c.path==="/v1/settings/save").body;
   assert.equal(save.room_id,"A");assert.equal(save.room_instance,"instance-A");assert.equal(save.service_epoch,"room-A");
   api.settings={...api.settings,time_zone:null,settings_version:3};await ui.refresh();
@@ -171,17 +171,17 @@ test("settings categories isolate panels and preserve both time-zone and connect
   assert.equal(ui.el("general-settings").hidden,false);assert.equal(ui.el("platform-settings").hidden,true);
   ui.el("system-timezone").value="America/New_York";await ui.el("system-timezone").emit("input");
   await ui.el("settings-tab-general").emit("keydown",{key:"ArrowDown"});
-  assert.equal(ui.el("settings-tab-connections").attributes["aria-selected"],"true");
+  assert.equal(ui.el("settings-tab-platforms").attributes["aria-selected"],"true");
   assert.equal(ui.el("general-settings").hidden,true);assert.equal(ui.el("platform-settings").hidden,false);
   await ui.el("connection-new").emit("click");ui.el("connection-name").value="未保存的连接";
   await ui.el("settings-tab-general").emit("click");assert.equal(ui.el("system-timezone").value,"America/New_York");
-  await ui.el("settings-tab-connections").emit("click");assert.equal(ui.el("connection-form").hidden,false);
+  await ui.el("settings-tab-platforms").emit("click");assert.equal(ui.el("connection-form").hidden,false);
   assert.equal(ui.el("connection-name").value,"未保存的连接");
-  assert.equal(api.calls.some(c=>/settings\/save|connections\/save/.test(c.path)),false);
+  assert.equal(api.calls.some(c=>/settings\/save|platforms\/save/.test(c.path)),false);
   await ui.el("settings-tab-general").emit("click");await ui.el("close-settings").emit("click");
-  await ui.el("lark-manage-connections").emit("click");
-  assert.equal(ui.el("settings-tab-connections").attributes["aria-selected"],"true");
-  assert.equal(ui.el("connection-form").hidden,true);assert.equal(ui.el("connections-list-view").hidden,false);
+  await ui.el("lark-manage-platforms").emit("click");
+  assert.equal(ui.el("settings-tab-platforms").attributes["aria-selected"],"true");
+  assert.equal(ui.el("connection-form").hidden,true);assert.equal(ui.el("platforms-list-view").hidden,false);
 });
 
 test("styled time-zone picker searches, selects with mouse/keyboard and never saves implicitly", async () => {
@@ -209,11 +209,11 @@ test("settings navigation blocks changes during a save and adapts to narrow or s
   const api=fixture(),ui=await launch(api);let finish;
   api.hook=path=>path==="/v1/settings/save" ? new Promise(resolve=>{finish=()=>resolve({time_zone:"UTC",settings_version:2});}) : undefined;
   await ui.el("open-settings").emit("click");const pending=saveZone(ui,"UTC");await settle();
-  assert.equal(ui.el("settings-tab-connections").disabled,true);await ui.el("settings-tab-connections").emit("click");
+  assert.equal(ui.el("settings-tab-platforms").disabled,true);await ui.el("settings-tab-platforms").emit("click");
   assert.equal(ui.el("general-settings").hidden,false);finish();await pending;
-  assert.equal(ui.el("settings-tab-connections").disabled,false);await ui.el("settings-tab-connections").emit("click");
+  assert.equal(ui.el("settings-tab-platforms").disabled,false);await ui.el("settings-tab-platforms").emit("click");
   ui.window.innerWidth=390;await ui.window.emit("resize");assert.equal(ui.el("settings-navigation").attributes["aria-orientation"],"horizontal");
   assert.equal(ui.el("platform-settings").hidden,false);
   const single=await launch(fixture(false));await single.el("open-general-settings").emit("click");
-  assert.equal(single.el("settings-tab-connections").hidden,true);assert.equal(single.el("general-settings").hidden,false);
+  assert.equal(single.el("settings-tab-platforms").hidden,true);assert.equal(single.el("general-settings").hidden,false);
 });

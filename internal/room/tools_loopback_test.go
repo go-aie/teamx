@@ -24,7 +24,7 @@ func TestLoopbackProductionCLI(t *testing.T) {
 	server := httptest.NewServer(m)
 	defer server.Close()
 	env := cliToolEnv(server.URL, svc, members[0])
-	cmd := exec.CommandContext(context.Background(), bin, "tools", "run", "gitlab", "a b")
+	cmd := exec.CommandContext(context.Background(), bin, "tools", "run", c.ToolEntryID, "a b")
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH")}
 	for _, key := range []string{"TEAMX_ENDPOINT", "TEAMX_ROOM_ID", "TEAMX_ROOM_INSTANCE", "TEAMX_SERVICE_EPOCH", "TEAMX_AGENT_ID", "TEAMX_MEMBERSHIP_ID"} {
 		cmd.Env = append(cmd.Env, key+"="+env(key))

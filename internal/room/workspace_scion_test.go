@@ -40,7 +40,7 @@ json.dump({'format':1,'files':{}},open(args[2]+'/.scion/dirstate.json','w'))
 open(args[2]+'/README.md','w').write('baseline')
 `
 
-func scionWorkspaceManager(t *testing.T) (*roomManager, roomSummary, platformConnection, string) {
+func scionWorkspaceManager(t *testing.T) (*roomManager, roomSummary, managedPlatform, string) {
 	t.Helper()
 	m := activationTestManager(t)
 	m.factory = controlledActivationFactory(nil, nil)
@@ -53,11 +53,11 @@ func scionWorkspaceManager(t *testing.T) (*roomManager, roomSummary, platformCon
 	}
 	p := &platform.CLIProfile{Version: 1, Brand: "scion", Profile: strings.Repeat("c", 32), CLIVersion: scion.CLIVersion, Executable: bin}
 	scionWriteCredential(t, m, p.Profile, "alice")
-	c := platformTestSave(t, m, platformConnectionRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("d", 32), Name: "Scion Workspace", Provider: "scion", URL: "https://scion.invalid", CLIProfile: p})
+	c := platformTestSave(t, m, managedPlatformRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("d", 32), Name: "Scion Workspace", Provider: "scion", URL: "https://scion.invalid", CLIProfile: p})
 	c = verifyScion(t, m, c)
 	return m, room, c, dir
 }
-func scionWorkspaceRequest(m *roomManager, room roomSummary, c platformConnection) workspaceApplyRequest {
+func scionWorkspaceRequest(m *roomManager, room roomSummary, c managedPlatform) workspaceApplyRequest {
 	id, _ := newOpaqueID()
-	return workspaceApplyRequest{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, OperationID: id, ExpectedVersion: 1, ConnectionVersion: c.Version, Target: workspaceConfig{Repository: &workspaceRepository{Kind: "scion", URL: c.URL + "/OpenCSG/teamx-demo"}, Binding: &workspaceBinding{Provider: "scion", URL: c.URL, Project: "OpenCSG/teamx-demo", ConnectionID: c.ID}}}
+	return workspaceApplyRequest{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, OperationID: id, ExpectedVersion: 1, PlatformVersion: c.Version, Target: workspaceConfig{Repository: &workspaceRepository{Kind: "scion", URL: c.URL + "/OpenCSG/teamx-demo"}, Binding: &workspaceBinding{Provider: "scion", URL: c.URL, Project: "OpenCSG/teamx-demo", PlatformID: c.ID}}}
 }

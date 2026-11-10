@@ -53,16 +53,16 @@ type todoHarness struct {
 	pages      *todoTestPages
 	runner     *gitlab.TodosRunner
 	key        notification.Key
-	connection platformConnection
+	connection managedPlatform
 	baseline   time.Time
 }
 
-func verifyTodoAccount(t *testing.T, m *roomManager, c platformConnection, id int64) platformConnection {
+func verifyTodoAccount(t *testing.T, m *roomManager, c managedPlatform, id int64) managedPlatform {
 	t.Helper()
 	if c.Validation.Status == "valid" && c.Validation.UserID == id {
 		return c
 	}
-	return authorizeTestConnection(t, m, c, id, "test-platform-secret")
+	return authorizeTestPlatform(t, m, c, id, "test-platform-secret")
 }
 func newTodoHarness(t *testing.T) *todoHarness {
 	t.Helper()
@@ -73,7 +73,7 @@ func newTodoHarness(t *testing.T) *todoHarness {
 	clock := &eventTestClock{now: time.Date(2026, 11, 3, 0, 0, 0, 0, time.UTC)}
 	m.notifications.Clock = clock.get
 	h := &todoHarness{t: t, m: m, room: room, clock: clock, connection: c, pages: &todoTestPages{}}
-	s, err := m.configureTodosSubscription(context.Background(), notification.Key{Owner: room.RoomIdentity, Source: gitlab.TodosSourceID}, 0, gitlab.TodosConfig{Enabled: true, ConnectionID: c.ID})
+	s, err := m.configureTodosSubscription(context.Background(), notification.Key{Owner: room.RoomIdentity, Source: gitlab.TodosSourceID}, 0, gitlab.TodosConfig{Enabled: true, PlatformID: c.ID})
 	if err != nil {
 		t.Fatal(err)
 	}

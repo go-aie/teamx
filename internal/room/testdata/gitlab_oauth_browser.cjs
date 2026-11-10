@@ -18,7 +18,7 @@ const {chromium}=require('playwright');
   if(await page.locator('#gitlab-setup').isVisible())throw Error('setup shown for configured connection');
   if(await page.locator('#connection-pat').count())throw Error('token in normal form');
   const popupPromise=context.waitForEvent('page');await page.locator('#gitlab-login').click();
-  try { await page.locator('#gitlab-login-link').waitFor({state:'visible',timeout:8000}); } catch {throw Error('start feedback: '+await page.locator('#connections-feedback').textContent()+'; init: '+await page.locator('#gitlab-scope-hint').textContent());}
+  try { await page.locator('#gitlab-login-link').waitFor({state:'visible',timeout:8000}); } catch {throw Error('start feedback: '+await page.locator('#platforms-feedback').textContent()+'; init: '+await page.locator('#gitlab-scope-hint').textContent());}
   const popup=await popupPromise;
   await popup.locator('#grant').click();await popup.waitForURL('**/gitlab/complete');
   if(new URL(popup.url()).search)throw Error('code not stripped');

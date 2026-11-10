@@ -48,16 +48,16 @@ func (c smallLarkPages) Messages(ctx context.Context, a platform.AccountIdentity
 	q.PageSize = 2
 	return c.Client.Messages(ctx, a, q)
 }
-func realLarkConnection(t *testing.T, m *roomManager, q larkRealInput) platformConnection {
+func realLarkPlatform(t *testing.T, m *roomManager, q larkRealInput) managedPlatform {
 	t.Helper()
-	c := platformTestSave(t, m, platformConnectionRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("e", 32), Name: "L2 isolated read-only", Provider: "lark", URL: lark.Origin(q.Brand), CLIProfile: &platform.CLIProfile{Version: 1, Executable: "/opt/homebrew/bin/lark-cli", Profile: q.Profile, Brand: q.Brand, CLIVersion: lark.CLIVersion}})
-	c, e := m.verifyPlatformConnection(context.Background(), platformConnectionRequest{ID: c.ID, Version: c.Version})
+	c := platformTestSave(t, m, managedPlatformRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("e", 32), Name: "L2 isolated read-only", Provider: "lark", URL: lark.Origin(q.Brand), CLIProfile: &platform.CLIProfile{Version: 1, Executable: "/opt/homebrew/bin/lark-cli", Profile: q.Profile, Brand: q.Brand, CLIVersion: lark.CLIVersion}})
+	c, e := m.verifyPlatform(context.Background(), managedPlatformRequest{ID: c.ID, Version: c.Version})
 	if e != nil || c.Validation.Status != "valid" {
 		t.Fatal("real profile verification failed")
 	}
 	return c
 }
-func collectRealLark(t *testing.T, m *roomManager, svc *service, id MemberIdentity, c platformConnection, q larkRealInput, atAll bool) lark.State {
+func collectRealLark(t *testing.T, m *roomManager, svc *service, id MemberIdentity, c managedPlatform, q larkRealInput, atAll bool) lark.State {
 	t.Helper()
 	clock := &eventTestClock{now: time.Unix(q.End, 0).UTC()}
 	m.notifications.Clock = clock.get
@@ -65,7 +65,10 @@ func collectRealLark(t *testing.T, m *roomManager, svc *service, id MemberIdenti
 		c, e := lark.New(s.Profile)
 		return smallLarkPages{c}, e
 	}
-	s, e := m.configureLarkSubscription(context.Background(), notification.Key{Owner: id.RoomIdentity, Source: lark.MessagesSourceID}, 0, lark.Config{Enabled: true, ConnectionID: c.ID, Chats: q.Chats, Target: inboxTarget(id), Private: true, GroupMentions: true, AtAll: atAll, BackfillSeconds: int(q.End - q.Start)})
+	cfg := realLarkScopeConfig(t, c, q.Chats, inboxTarget(id))
+	cfg.Groups.AtAll = atAll
+	cfg.BackfillSeconds = int(q.End - q.Start)
+	s, e := m.configureLarkSubscription(context.Background(), notification.Key{Owner: id.RoomIdentity, Source: lark.MessagesSourceID}, 0, cfg)
 	if e != nil {
 		t.Fatal("real source configuration failed")
 	}
@@ -132,7 +135,7 @@ func TestRealLarkNotificationInbox(t *testing.T) {
 	}
 	member := snapshot.Members[0]
 	id := MemberIdentity{RoomIdentity: r.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
-	c := realLarkConnection(t, m, q)
+	c := realLarkPlatform(t, m, q)
 	bindCLITool(t, m, r.RoomIdentity, member, c, "lark", 0)
 	source := collectRealLark(t, m, svc, id, c, q, false)
 	if e = svc.store.SaveAgent(AgentSnapshot{Version: formatVersion, MemberIdentity: id, TurnNumber: 1, LastOfferedInboxSeq: uint64(len(source.Inbox)), Turn: &TurnRecord{Number: 1, Status: "running", InboxSnapshotSeq: uint64(len(source.Inbox))}}); e != nil {
@@ -220,7 +223,7 @@ func TestRealLarkNotificationDSH(t *testing.T) {
 		t.Fatal(e)
 	}
 	id := MemberIdentity{RoomIdentity: r.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
-	c := realLarkConnection(t, m, q)
+	c := realLarkPlatform(t, m, q)
 	bindCLITool(t, m, r.RoomIdentity, MemberState{AgentID: id.AgentID, MembershipID: id.MembershipID}, c, "lark", 0)
 	source := collectRealLark(t, m, svc, id, c, q, false)
 	if _, e = svc.control(ctx, apiRequest{AgentID: id.AgentID, MembershipID: id.MembershipID}, "run"); e != nil {
@@ -260,4 +263,29 @@ func TestRealLarkNotificationDSH(t *testing.T) {
 		t.Fatal(e)
 	}
 	t.Log("real Lark -> Inbox -> stable references -> DSH summary + Room question passed; no Lark writes")
+}
+
+func realLarkScopeConfig(t *testing.T, c managedPlatform, ids []string, target notification.Target) lark.Config {
+	t.Helper()
+	client, err := lark.New(*c.CLIProfile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := lark.Config{Enabled: true, PlatformID: c.ID, Target: target, Private: lark.PrivateConfig{Scope: "specified"}, Groups: lark.GroupConfig{MessageMode: "mentions", AtMe: true}}
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	for _, id := range ids {
+		chat, err := client.NotificationChat(ctx, c.Validation.Account, id)
+		if err != nil {
+			t.Fatal("native category verification", lark.ErrorCode(err))
+		}
+		if chat.Mode == "p2p" {
+			cfg.Private.Enabled = true
+			cfg.Private.ChatIDs = append(cfg.Private.ChatIDs, id)
+		} else {
+			cfg.Groups.Enabled = true
+			cfg.Groups.ChatIDs = append(cfg.Groups.ChatIDs, id)
+		}
+	}
+	return cfg
 }

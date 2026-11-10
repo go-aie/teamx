@@ -43,7 +43,7 @@ func (m *roomManager) inboxLarkConversation(ctx context.Context, svc *service, s
 			}
 		}
 	}
-	a, _, err := m.resolvePlatformAccountLocked(svc.info.RoomIdentity, original.Binding.ConnectionID, "lark")
+	a, _, err := m.resolvePlatformAccountLocked(svc.info.RoomIdentity, original.Binding.PlatformID, "lark")
 	// Retired sources keep their historical credential stamp. A currently
 	// verified credential for the same generation/account may classify history;
 	// it does not restore the source or grant any write capability.
@@ -67,8 +67,8 @@ func (m *roomManager) inboxLarkConversation(ctx context.Context, svc *service, s
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	current, _ = m.runtimeServiceLocked(svc.info.RoomIdentity)
-	after, _, err := m.resolvePlatformAccountLocked(svc.info.RoomIdentity, a.ConnectionID, "lark")
-	if err != nil || m.closing || current != svc || queryCtx.Err() != nil || after.ConnectionVersion != a.ConnectionVersion || larkBinding(after) != larkBinding(a) {
+	after, _, err := m.resolvePlatformAccountLocked(svc.info.RoomIdentity, a.PlatformID, "lark")
+	if err != nil || m.closing || current != svc || queryCtx.Err() != nil || after.PlatformVersion != a.PlatformVersion || larkBinding(after) != larkBinding(a) {
 		return empty, ErrConflict
 	}
 	if !chat.Relation.MatchesSource(source) {

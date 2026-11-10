@@ -120,7 +120,7 @@ func (m *Manager) loadPathLocked(owner platform.RoomIdentity, path string) error
 	}
 	source := m.sources[saved.SourceID]
 	if source == nil || saved.Schema != source.Schema() {
-		return ErrInvalid
+		return fmt.Errorf("%w: notification %s/%s schema %d requires explicit offline upgrade", ErrInvalid, saved.Provider, saved.Channel, saved.Schema)
 	}
 	state, err := source.Decode(saved.State, owner)
 	if err != nil || state == nil || state.Validate(owner) != nil || state.Metadata().Key.Source != source.ID() {
@@ -133,6 +133,9 @@ func (m *Manager) loadPathLocked(owner platform.RoomIdentity, path string) error
 	}
 	if _, exists := m.states[key]; exists {
 		return ErrInvalid
+	}
+	if err := m.uniqueLocked(state); err != nil {
+		return err
 	}
 	m.states[key] = subscription{state: state.CloneState(), source: source, revision: 1}
 	return nil
@@ -153,6 +156,9 @@ func (m *Manager) SaveLocked(state State) error {
 		return ErrCapacity
 	}
 	if err := state.Validate(meta.Key.Owner); err != nil {
+		return err
+	}
+	if err := m.uniqueLocked(state); err != nil {
 		return err
 	}
 	progress, err := json.Marshal(state)
@@ -226,10 +232,51 @@ func (m *Manager) ReferencesLocked(id string) []platform.RoomIdentity {
 	out := []platform.RoomIdentity{}
 	seen := map[platform.RoomIdentity]bool{}
 	for key, s := range m.states {
-		if s.state.Metadata().ConnectionID == id && !seen[key.Owner] {
+		if s.state.Metadata().PlatformID == id && !seen[key.Owner] {
 			out = append(out, key.Owner)
 			seen[key.Owner] = true
 		}
 	}
 	return out
+}
+
+// CurrentLocked selects the one live subscription for an exact platform and
+// channel. Disabled subscriptions still own their identity and progress.
+func (m *Manager) CurrentLocked(owner platform.RoomIdentity, source SourceID, platformID string) (State, error) {
+	var current State
+	for key, saved := range m.states {
+		meta := saved.state.Metadata()
+		if key.Owner != owner || key.Source != source || meta.PlatformID != platformID {
+			continue
+		}
+		if meta.Retired {
+			if m.DoneLocked(key) != nil {
+				return nil, ErrBusy
+			}
+			continue
+		}
+		if current != nil {
+			return nil, ErrInvalid
+		}
+		current = saved.state.CloneState()
+	}
+	return current, nil
+}
+
+func (m *Manager) uniqueLocked(state State) error {
+	meta := state.Metadata()
+	previous, exists := m.states[meta.Key]
+	if exists && previous.state.Metadata().PlatformID != meta.PlatformID {
+		return ErrIdentity
+	}
+	if meta.Retired {
+		return nil
+	}
+	for key, saved := range m.states {
+		other := saved.state.Metadata()
+		if key != meta.Key && key.Owner == meta.Key.Owner && key.Source == meta.Key.Source && other.PlatformID == meta.PlatformID && !other.Retired {
+			return ErrConflict
+		}
+	}
+	return nil
 }

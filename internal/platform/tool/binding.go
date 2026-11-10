@@ -8,16 +8,16 @@ import (
 	"github.com/go-aie/teamx/internal/platform"
 )
 
-// Binding is one explicitly selected tool and optional connection per member.
+// Binding enables one implementation type and optional platform per member.
 // CapabilityEvidence is generated only by the server's registered adapters.
 type Binding struct {
-	CapabilityEvidence   []platform.CapabilityEvidence `json:"capability_evidence,omitempty"`
-	ActionAuthorization  *ActionAuthorization          `json:"action_authorization,omitempty"`
-	AgentID              string                        `json:"agent_id"`
-	MembershipID         string                        `json:"membership_id"`
-	Tool                 string                        `json:"tool"`
-	ConnectionID         string                        `json:"connection_id,omitempty"`
-	ConnectionGeneration string                        `json:"connection_generation,omitempty"`
+	CapabilityEvidence  []platform.CapabilityEvidence `json:"capability_evidence,omitempty"`
+	ActionAuthorization *ActionAuthorization          `json:"action_authorization,omitempty"`
+	AgentID             string                        `json:"agent_id"`
+	MembershipID        string                        `json:"membership_id"`
+	Tool                string                        `json:"tool"`
+	PlatformID          string                        `json:"platform_id,omitempty"`
+	PlatformGeneration  string                        `json:"platform_generation,omitempty"`
 }
 
 func (b Binding) Evidence(kind string) *platform.CapabilityEvidence {

@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/connection"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
 	"github.com/go-aie/teamx/internal/platform/notification"
+	"github.com/go-aie/teamx/internal/platform/registry"
 )
 
 const oauthRefreshWindow = 30 * time.Second
@@ -23,45 +23,45 @@ type oauthRefreshFlight struct {
 }
 type gitlabTokenLease struct {
 	credential platform.AccessCredential
-	account    connection.Account
+	account    registry.Account
 	ctx        context.Context
 	call       *platformCall
 }
 
 // Requires manager.mu. This is authorization evidence only, with no synchronous
 // network work or raw token resolution under the service gate.
-func (m *roomManager) oauthAccountLocked(expected connection.Account) (connection.Account, connection.OAuthCredential, error) {
+func (m *roomManager) oauthAccountLocked(expected registry.Account) (registry.Account, registry.OAuthCredential, error) {
 	if m.closing {
-		return connection.Account{}, connection.OAuthCredential{}, ErrClosing
+		return registry.Account{}, registry.OAuthCredential{}, ErrClosing
 	}
 	if err := m.store.check(true); err != nil {
-		return connection.Account{}, connection.OAuthCredential{}, err
+		return registry.Account{}, registry.OAuthCredential{}, err
 	}
-	file, err := m.connections.Load()
+	file, err := m.platforms.Load()
 	if err != nil {
-		return connection.Account{}, connection.OAuthCredential{}, err
+		return registry.Account{}, registry.OAuthCredential{}, err
 	}
-	for _, c := range file.Connections {
-		if c.ID != expected.ConnectionID {
+	for _, c := range file.Platforms {
+		if c.ID != expected.PlatformID {
 			continue
 		}
-		a, err := connection.ResolveAuthorization(file, c)
+		a, err := registry.ResolveAuthorization(file, c)
 		if err != nil {
-			return a, connection.OAuthCredential{}, err
+			return a, registry.OAuthCredential{}, err
 		}
 		if a != expected || a.Authorization.CredentialID == "" {
-			return a, connection.OAuthCredential{}, ErrConflict
+			return a, registry.OAuthCredential{}, ErrConflict
 		}
-		cred, _, err := connection.OAuthRecord(file, c.CredentialID)
+		cred, _, err := registry.OAuthRecord(file, c.CredentialID)
 		return a, cred, err
 	}
-	return connection.Account{}, connection.OAuthCredential{}, ErrConflict
+	return registry.Account{}, registry.OAuthCredential{}, ErrConflict
 }
 
 // acquireGitLabToken is a waiting service boundary, never called with manager.mu
 // held. The caller has already authorized the Room/member/business operation.
 // Each business request retains the lease through complete response settlement.
-func (m *roomManager) acquireGitLabToken(ctx context.Context, owner RoomIdentity, expected connection.Account, use time.Duration) (*gitlabTokenLease, error) {
+func (m *roomManager) acquireGitLabToken(ctx context.Context, owner RoomIdentity, expected registry.Account, use time.Duration) (*gitlabTokenLease, error) {
 	if use <= 0 || use > maxGitLabTokenUse {
 		return nil, ErrRequest
 	}
@@ -98,7 +98,7 @@ func (m *roomManager) acquireGitLabToken(ctx context.Context, owner RoomIdentity
 		}
 		if cred.ExpiresAt.After(time.Now().Add(use + oauthRefreshWindow)) {
 			leaseCtx, cancel := context.WithTimeout(ctx, use)
-			call := &platformCall{owner: owner, connectionID: account.ConnectionID, tool: "gitlab-token", cancel: cancel, done: make(chan struct{})}
+			call := &platformCall{owner: owner, platformID: account.PlatformID, tool: "gitlab-token", cancel: cancel, done: make(chan struct{})}
 			if m.platformCalls == nil {
 				m.platformCalls = map[*platformCall]bool{}
 			}
@@ -145,7 +145,7 @@ func (m *roomManager) acquireGitLabToken(ctx context.Context, owner RoomIdentity
 	}
 }
 
-func (m *roomManager) refreshGitLabToken(ctx context.Context, expected connection.Account, pending []<-chan struct{}) error {
+func (m *roomManager) refreshGitLabToken(ctx context.Context, expected registry.Account, pending []<-chan struct{}) error {
 	// A canceled context is not settlement. The lease owner releases only after
 	// its HTTP body/process has actually finished, including cleanup.
 	if err := notification.Wait(ctx, pending); err != nil {
@@ -156,9 +156,9 @@ func (m *roomManager) refreshGitLabToken(ctx context.Context, expected connectio
 	if err == nil {
 		err = ctx.Err()
 	}
-	var ticket connection.OAuthRefresh
+	var ticket registry.OAuthRefresh
 	if err == nil {
-		ticket, err = m.connections.BeginOAuthRefresh(expected.Authorization)
+		ticket, err = m.platforms.BeginOAuthRefresh(expected.Authorization)
 	}
 	transport := m.platformHTTP
 	m.mu.Unlock()
@@ -175,10 +175,10 @@ func (m *roomManager) refreshGitLabToken(ctx context.Context, expected connectio
 	defer m.mu.Unlock()
 	// Shutdown may forbid a final save. Durable refresh_pending already blocks
 	// future admission and survives process termination without a POST replay.
-	if err := m.connections.CompleteOAuthRefresh(ticket, tokens, outcome); err != nil {
+	if err := m.platforms.CompleteOAuthRefresh(ticket, tokens, outcome); err != nil {
 		// Logout may have durably blocked the grant while the destructive POST was in flight. Keep its returned candidate solely for cleanup.
 		if tokens.AccessToken.Reveal() != "" {
-			_, _ = m.connections.KeepOAuthCandidate(ticket.Application, tokens)
+			_, _ = m.platforms.KeepOAuthCandidate(ticket.Application, tokens)
 		}
 		return err
 	}
@@ -206,7 +206,7 @@ func (m *roomManager) finishGitLabToken(lease *gitlabTokenLease) error {
 // acquireGitLabAccess resolves material only for a single bounded operation.
 // Authorization is checked independently of token rotation. No business request
 // is retried at this boundary.
-func (m *roomManager) acquireGitLabAccess(ctx context.Context, owner RoomIdentity, account connection.Account, secret platform.Secret, use time.Duration) (context.Context, platform.AccessCredential, func() error, error) {
+func (m *roomManager) acquireGitLabAccess(ctx context.Context, owner RoomIdentity, account registry.Account, secret platform.Secret, use time.Duration) (context.Context, platform.AccessCredential, func() error, error) {
 	if account.Authorization.CredentialID == "" || !strings.Contains(" "+account.Authorization.Scopes+" ", " api ") {
 		return nil, platform.AccessCredential{}, nil, platform.ErrCredential
 	}
@@ -217,7 +217,7 @@ func (m *roomManager) acquireGitLabAccess(ctx context.Context, owner RoomIdentit
 	return lease.ctx, lease.credential, func() error { return m.finishGitLabToken(lease) }, nil
 }
 
-func (m *roomManager) gitlabAccountRead(owner RoomIdentity, account connection.Account, secret platform.Secret) gitlab.ReadAPI {
+func (m *roomManager) gitlabAccountRead(owner RoomIdentity, account registry.Account, secret platform.Secret) gitlab.ReadAPI {
 	return func(ctx context.Context, path string, q url.Values, h http.Header, limit int64) (response gitlab.APIResponse, err error) {
 		useCtx, credential, finish, err := m.acquireGitLabAccess(ctx, owner, account, secret, 30*time.Second)
 		if err != nil {
@@ -233,7 +233,7 @@ func (m *roomManager) gitlabAccountRead(owner RoomIdentity, account connection.A
 	}
 }
 
-func (m *roomManager) verifyGitlabAccountProject(ctx context.Context, owner RoomIdentity, a connection.Account, secret platform.Secret, project string, override func(context.Context, string, string, workspaceSecret) (int64, error)) (id int64, err error) {
+func (m *roomManager) verifyGitlabAccountProject(ctx context.Context, owner RoomIdentity, a registry.Account, secret platform.Secret, project string, override func(context.Context, string, string, workspaceSecret) (int64, error)) (id int64, err error) {
 	useCtx, credential, finish, err := m.acquireGitLabAccess(ctx, owner, a, secret, 30*time.Second)
 	if err != nil {
 		return 0, err

@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/connection"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
 )
 
@@ -67,10 +66,10 @@ func newWorkspaceFixture(t *testing.T) *workspaceFixture {
 		return os.WriteFile(name, data, 0600)
 	}}
 	access := gitLabWorkspaceAccess{write: f.p.write}
-	access.connection = func(owner RoomIdentity, w workspaceConfig) (projectConnectionResolution, error) {
-		return projectConnectionResolution{owner: owner, record: platformConnectionRecord{Connection: connection.Connection{ID: w.Binding.ConnectionID}, Generation: w.Binding.ConnectionGeneration}}, nil
+	access.connection = func(owner RoomIdentity, w workspaceConfig) (projectPlatformResolution, error) {
+		return projectPlatformResolution{owner: owner, record: managedPlatformRecord{Platform: platform.Platform{ID: w.Binding.PlatformID}, Generation: w.Binding.PlatformGeneration}}, nil
 	}
-	access.connectionRead = func(projectConnectionResolution) gitlab.ReadAPI {
+	access.connectionRead = func(projectPlatformResolution) gitlab.ReadAPI {
 		return gitlab.NewReadAPI("https://gitlab.invalid", platform.NewSecret("offline-access"), workspaceHTTPFunc(f.http))
 	}
 	f.p.access = access.prepare

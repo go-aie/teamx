@@ -16,7 +16,7 @@ func TestLarkCustomBackfillHTTPReadsHistoryIntoMemberInbox(t *testing.T) {
 	h := newLarkHarness(t)
 	h.clock.add(14 * 24 * time.Hour)
 	member := h.members[0]
-	cfg := lark.Config{Enabled: true, ConnectionID: h.c.ID, Chats: []string{"oc_chat"}, Target: notification.Target{Mode: "inbox", AgentID: member.AgentID, MembershipID: member.MembershipID}, Private: true, BackfillStart: time.Unix(1, 0).UTC()}
+	cfg := lark.Config{Enabled: true, PlatformID: h.c.ID, Private: lark.PrivateConfig{Enabled: true, Scope: "specified", ChatIDs: []string{"oc_chat"}}, Target: notification.Target{Mode: "inbox", AgentID: member.AgentID, MembershipID: member.MembershipID}, BackfillStart: time.Unix(1, 0).UTC()}
 	req := map[string]any{"service_epoch": h.m.epoch, "room_id": h.room.RoomID, "room_instance": h.room.RoomInstance, "caller": humanCaller, "provider": "lark", "channel": "messages", "subscription_id": "", "subscription_version": 0, "config": cfg}
 	response := managerHTTP(h.m, "/v1/platform/notifications/configure", req)
 	if response.Code != 200 {

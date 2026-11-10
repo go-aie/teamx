@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/connection"
+	"github.com/go-aie/teamx/internal/platform/registry"
 	"github.com/go-aie/teamx/internal/platform/scion"
 	"github.com/go-aie/teamx/internal/platform/tool"
 )
@@ -21,17 +21,17 @@ func (scionPAT) MarshalJSON() ([]byte, error) { return json.Marshal("[REDACTED]"
 func (scionPAT) Format(s fmt.State, _ rune)   { _, _ = io.WriteString(s, "[REDACTED]") }
 
 type scionAuthRequest struct {
-	ServiceEpoch string                `json:"service_epoch"`
-	Caller       Caller                `json:"caller"`
-	Executable   string                `json:"executable,omitempty"`
-	URL          string                `json:"url,omitempty"`
-	PAT          scionPAT              `json:"pat,omitempty"`
-	SessionID    string                `json:"session_id,omitempty"`
-	Profile      *platform.CLIProfile  `json:"cli_profile,omitempty"`
-	Affected     []scionAuthConnection `json:"affected,omitempty"`
+	ServiceEpoch string               `json:"service_epoch"`
+	Caller       Caller               `json:"caller"`
+	Executable   string               `json:"executable,omitempty"`
+	URL          string               `json:"url,omitempty"`
+	PAT          scionPAT             `json:"pat,omitempty"`
+	SessionID    string               `json:"session_id,omitempty"`
+	Profile      *platform.CLIProfile `json:"cli_profile,omitempty"`
+	Affected     []scionAuthPlatform  `json:"affected,omitempty"`
 }
 
-type scionAuthConnection struct {
+type scionAuthPlatform struct {
 	ID              string         `json:"id"`
 	Version         uint64         `json:"version"`
 	ReferencedRooms []RoomIdentity `json:"referenced_rooms"`
@@ -57,7 +57,7 @@ type scionAuthSession struct {
 }
 
 func (m *roomManager) serveScionAuth(w http.ResponseWriter, r *http.Request) {
-	action := strings.TrimPrefix(r.URL.Path, "/v1/platform/connections/scion/")
+	action := strings.TrimPrefix(r.URL.Path, "/v1/platforms/scion/")
 	if action != "discover" && action != "login" && action != "logout" && action != "status" && action != "cancel" {
 		http.NotFound(w, r)
 		return
@@ -98,8 +98,8 @@ func (m *roomManager) serveScionAuth(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_ = json.NewEncoder(w).Encode(struct {
-			Status      string               `json:"status"`
-			Connections []platformConnection `json:"connections"`
+			Status    string            `json:"status"`
+			Platforms []managedPlatform `json:"platforms"`
 		}{"succeeded", result})
 		return
 	}
@@ -134,7 +134,7 @@ func (m *roomManager) serveScionAuth(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(view)
 		return
 	}
-	_, origin, err := connection.Normalize("Scion", req.URL)
+	_, origin, err := registry.Normalize("Scion", req.URL)
 	if err != nil || action == "discover" && (req.PAT != "" || req.SessionID != "") || action == "login" && (!tool.OpaqueID(req.SessionID) || !platform.ValidCredential(string(req.PAT))) {
 		m.mu.Unlock()
 		writeAPIError(w, ErrRequest)
@@ -238,11 +238,11 @@ func (m *roomManager) serveScionAuth(w http.ResponseWriter, r *http.Request) {
 // The complete impact is checked before cancellation or credential deletion.
 // Invalidate identity durably before releasing the catalog gate to join calls,
 // so even an already-scheduled Workspace operation cannot take a new snapshot.
-func (m *roomManager) logoutScionLocked(req scionAuthRequest) ([]platformConnection, error) {
+func (m *roomManager) logoutScionLocked(req scionAuthRequest) ([]managedPlatform, error) {
 	if req.Profile == nil || !scion.ValidProfile(*req.Profile) || req.PAT != "" || req.SessionID != "" || req.Executable != "" || len(req.Affected) > 100 {
 		return nil, ErrRequest
 	}
-	_, origin, err := connection.Normalize("Scion", req.URL)
+	_, origin, err := registry.Normalize("Scion", req.URL)
 	if err != nil {
 		return nil, ErrRequest
 	}
@@ -252,12 +252,12 @@ func (m *roomManager) logoutScionLocked(req scionAuthRequest) ([]platformConnect
 	if err := m.store.check(true); err != nil {
 		return nil, err
 	}
-	file, err := m.readPlatformConnections()
+	file, err := m.readPlatforms()
 	if err != nil {
 		return nil, err
 	}
-	matching := []platformConnectionRecord{}
-	for _, c := range file.Connections {
+	matching := []managedPlatformRecord{}
+	for _, c := range file.Platforms {
 		if c.Provider == "scion" && c.CLIProfile != nil && c.CLIProfile.Profile == req.Profile.Profile {
 			if c.URL != origin {
 				return nil, ErrConflict
@@ -269,7 +269,7 @@ func (m *roomManager) logoutScionLocked(req scionAuthRequest) ([]platformConnect
 		return nil, ErrConflict
 	}
 	for _, c := range matching {
-		refs, err := m.platformConnectionReferencesLocked(c.ID)
+		refs, err := m.managedPlatformReferencesLocked(c.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -289,24 +289,24 @@ func (m *roomManager) logoutScionLocked(req scionAuthRequest) ([]platformConnect
 		if err := m.invalidatePlatformQueriesLocked(c.ID); err != nil {
 			return nil, err
 		}
-		pending = append(pending, m.notifications.ConnectionDoneLocked(c.ID)...)
+		pending = append(pending, m.notifications.PlatformDoneLocked(c.ID)...)
 		for call := range m.platformCalls {
-			if call.connectionID == c.ID {
+			if call.platformID == c.ID {
 				pending = append(pending, call.done)
 			}
 		}
 	}
-	result := make([]platformConnection, 0, len(matching))
+	result := make([]managedPlatform, 0, len(matching))
 	for _, c := range matching {
-		ticket, err := m.connections.BeginVerification(c.ID, c.Version)
+		ticket, err := m.platforms.BeginVerification(c.ID, c.Version)
 		if err != nil {
-			return nil, platformConnectionError(err)
+			return nil, managedPlatformError(err)
 		}
-		updated, err := m.connections.CompleteVerification(ticket, platform.Validation{Status: "failed", CheckedAt: time.Now().UTC(), ErrorCode: "credential_unavailable"})
+		updated, err := m.platforms.CompleteVerification(ticket, platform.Validation{Status: "failed", CheckedAt: time.Now().UTC(), ErrorCode: "credential_unavailable"})
 		if err != nil {
-			return nil, platformConnectionError(err)
+			return nil, managedPlatformError(err)
 		}
-		item, err := m.publicPlatformConnectionLocked(updated)
+		item, err := m.publicPlatformLocked(updated)
 		if err != nil {
 			return nil, err
 		}

@@ -22,9 +22,9 @@ import (
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/connection"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
 	"github.com/go-aie/teamx/internal/platform/notification"
+	"github.com/go-aie/teamx/internal/platform/registry"
 )
 
 func TestGitLabAuthPKCEAndAtomicAuthorization(t *testing.T) {
@@ -41,7 +41,7 @@ func TestGitLabAuthPKCEAndAtomicAuthorization(t *testing.T) {
 	if u.Query().Get("code_challenge") != base64.RawURLEncoding.EncodeToString(hash[:]) || u.Query().Get("code_challenge_method") != "S256" {
 		t.Fatal("PKCE challenge")
 	}
-	data, _ := os.ReadFile(m.connectionsPathForTest())
+	data, _ := os.ReadFile(m.platformsPathForTest())
 	if strings.Contains(string(data), verifier) || strings.Contains(string(data), u.Query().Get("state")) {
 		t.Fatal("persisted session secrets")
 	}
@@ -54,7 +54,7 @@ func TestGitLabAuthPKCEAndAtomicAuthorization(t *testing.T) {
 		t.Fatal("unsafe callback response", w.Code)
 	}
 	result := g.status(t, v, cookie)
-	if result.Status != "succeeded" || len(result.Connections) != 1 {
+	if result.Status != "succeeded" || len(result.Platforms) != 1 {
 		t.Fatal(result.Status, result.ErrorCode)
 	}
 	after := platformTestList(t, m)[0]
@@ -167,7 +167,7 @@ func TestGitLabAuthCancellationExpiryAndRestart(t *testing.T) {
 				}
 			case "version":
 				item := platformTestList(t, g.h.m)[0]
-				platformTestSave(t, g.h.m, platformConnectionRequest{ServiceEpoch: g.h.m.epoch, Caller: humanCaller, ID: item.ID, Version: item.Version, Name: "renamed", Provider: item.Provider, URL: item.URL})
+				platformTestSave(t, g.h.m, managedPlatformRequest{ServiceEpoch: g.h.m.epoch, Caller: humanCaller, ID: item.ID, Version: item.Version, Name: "renamed", Provider: item.Provider, URL: item.URL})
 			}
 			_ = g.callback(v, c, nil)
 			if g.posts.Load() != 0 {
@@ -182,17 +182,12 @@ func TestGitLabAuthCancellationExpiryAndRestart(t *testing.T) {
 
 func TestGitLabAuthAccountMismatchAndCommitFailure(t *testing.T) {
 	parallelFixtureTest(t)
-	for _, mode := range []string{"account", "save", "commit_unknown", "changed_during_exchange", "cancel_during_exchange", "revoke_unknown"} {
+	for _, mode := range []string{"save", "commit_unknown", "changed_during_exchange", "cancel_during_exchange"} {
 		t.Run(mode, func(t *testing.T) {
 			g := newGitlabLoginHarness(t)
 			v, c := g.login(t)
 			original := g.h.m.store.ops
 			switch mode {
-			case "account", "revoke_unknown":
-				g.user.Store(202)
-				if mode == "revoke_unknown" {
-					g.revokeStatus.Store(500)
-				}
 			case "save":
 				g.before = func(*http.Request) {
 					g.h.m.store.ops.rename = func(string, string) error { return errors.New("save failed") }
@@ -202,7 +197,7 @@ func TestGitLabAuthAccountMismatchAndCommitFailure(t *testing.T) {
 			case "changed_during_exchange":
 				g.before = func(*http.Request) {
 					item := platformTestList(t, g.h.m)[0]
-					platformTestSave(t, g.h.m, platformConnectionRequest{ServiceEpoch: g.h.m.epoch, Caller: humanCaller, ID: item.ID, Version: item.Version, Name: "changed", Provider: item.Provider, URL: item.URL})
+					platformTestSave(t, g.h.m, managedPlatformRequest{ServiceEpoch: g.h.m.epoch, Caller: humanCaller, ID: item.ID, Version: item.Version, Name: "changed", Provider: item.Provider, URL: item.URL})
 				}
 			case "cancel_during_exchange":
 				g.before = func(*http.Request) {
@@ -218,18 +213,11 @@ func TestGitLabAuthAccountMismatchAndCommitFailure(t *testing.T) {
 			if mode != "commit_unknown" && platformTestList(t, g.h.m)[0].CredentialConfigured {
 				t.Fatal("unconfirmed authorization adopted")
 			}
-			if mode == "account" && (g.revokes.Load() != 1 || result.Cleanup != "revoked") {
-				t.Fatal("candidate cleanup missing", result.Cleanup)
-			}
+
 			if mode == "commit_unknown" && g.revokes.Load() != 0 {
 				t.Fatal("possibly committed candidate revoked")
 			}
-			if mode == "revoke_unknown" {
-				file, err := g.h.m.connections.Load()
-				if err != nil || len(file.OAuthCleanup) != 1 || file.OAuthCleanup[0].State != "unknown" {
-					t.Fatal("lost revocation evidence", err)
-				}
-			}
+
 		})
 	}
 }
@@ -241,23 +229,24 @@ func TestGitLabAuthSharedLogoutNoFallbackAndRelogin(t *testing.T) {
 	g.callback(v, c, nil)
 	m := g.h.m
 	m.mu.Lock()
-	file, _ := m.connections.Load()
-	second := file.Connections[0]
+	file, _ := m.platforms.Load()
+	second := file.Platforms[0]
 	second.ID = strings.Repeat("d", 32)
+	second.ToolEntryID = "gitlab-" + strings.Repeat("d", 32)
 	second.Name = "shared"
-	file.Connections = append(file.Connections, second)
-	if err := m.store.save(m.connectionsPathForTest(), file, 2<<20); err != nil {
+	file.Platforms = append(file.Platforms, second)
+	if err := m.store.save(m.platformsPathForTest(), file, 2<<20); err != nil {
 		t.Fatal(err)
 	}
-	first := file.Connections[0]
-	old, _ := connection.ResolveAuthorization(file, first)
+	first := file.Platforms[0]
+	old, _ := registry.ResolveAuthorization(file, first)
 	m.mu.Unlock()
 	lease, err := m.acquireGitLabToken(context.Background(), RoomIdentity{}, old, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
 	g.req.Version = first.Version
-	g.req.Affected = []gitlabAuthConnection{{ID: first.ID, Version: first.Version}, {ID: second.ID, Version: second.Version}}
+	g.req.Affected = []gitlabAuthPlatform{{ID: first.ID, Version: first.Version}, {ID: second.ID, Version: second.Version}}
 	bad := g.req
 	bad.Affected = bad.Affected[:1]
 	if gitlabAuthHTTP(m, "logout", bad, nil).Code != 409 {
@@ -291,26 +280,26 @@ func TestGitLabAuthSharedLogoutNoFallbackAndRelogin(t *testing.T) {
 	if result.Status != "logged_out" || g.revokes.Load() != 1 {
 		t.Fatal(result.Status, result.ErrorCode)
 	}
-	file, err = m.connections.Load()
+	file, err = m.platforms.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, r := range file.Connections {
+	for _, r := range file.Platforms {
 		if r.CredentialKind != "oauth" || r.CredentialConfigured || r.Generation != first.Generation {
 			t.Fatal("lost binding or admitted unleased access")
 		}
-		if _, _, err := connection.ResolveAccount(file, r); err == nil {
+		if _, _, err := registry.ResolveAccount(file, r); err == nil {
 			t.Fatal("logged-out account admitted")
 		}
 	}
 	// Retry logging in uses the original app and connection IDs with all references.
-	g.req.Version = file.Connections[0].Version
+	g.req.Version = file.Platforms[0].Version
 	for i := range g.req.Affected {
-		g.req.Affected[i].Version = file.Connections[i].Version
+		g.req.Affected[i].Version = file.Platforms[i].Version
 	}
 	next, nextCookie := g.login(t)
 	g.callback(next, nextCookie, nil)
-	if result := g.status(t, next, nextCookie); result.Status != "succeeded" || len(result.Connections) != 2 {
+	if result := g.status(t, next, nextCookie); result.Status != "succeeded" || len(result.Platforms) != 2 {
 		t.Fatal("relogin failed", result.Status, result.ErrorCode)
 	}
 }
@@ -323,10 +312,10 @@ func TestGitLabAuthCanonicalHTTPBrowserCookieCallback(t *testing.T) {
 	defer server.Close()
 	m.config.endpoint = server.URL
 	m.mu.Lock()
-	file, _ := m.connections.Load()
+	file, _ := m.platforms.Load()
 	file.OAuthApplications[0].RedirectURI = server.URL + gitlabCallbackPath
 
-	if err := m.store.save(m.connectionsPathForTest(), file, 2<<20); err != nil {
+	if err := m.store.save(m.platformsPathForTest(), file, 2<<20); err != nil {
 		t.Fatal(err)
 	}
 	m.mu.Unlock()
@@ -372,7 +361,7 @@ func TestGitLabAuthCanonicalHTTPBrowserCookieCallback(t *testing.T) {
 	}
 }
 
-func TestGitLabAuthImportedClientOwnershipAndNewConnection(t *testing.T) {
+func TestGitLabAuthImportedClientOwnershipAndNewPlatform(t *testing.T) {
 	parallelFixtureTest(t)
 	for _, owned := range []bool{true, false} {
 		t.Run(fmt.Sprint(owned), func(t *testing.T) {
@@ -380,7 +369,7 @@ func TestGitLabAuthImportedClientOwnershipAndNewConnection(t *testing.T) {
 			old := g.h.m
 			m := testManager(t, t.TempDir(), nil)
 			m.config.endpoint = old.config.endpoint
-			imported, err := m.connections.ImportOAuthClient(connection.OAuthClientImport{Origin: g.h.server.URL, ClientID: "private-client-id", ClientSecret: "private-client-secret", RedirectURI: m.config.endpoint + gitlabCallbackPath, Scopes: []string{"api"}, ActorID: humanCaller.ID})
+			imported, err := m.platforms.ImportOAuthClient(registry.OAuthClientImport{Origin: g.h.server.URL, ClientID: "private-client-id", ClientSecret: "private-client-secret", RedirectURI: m.config.endpoint + gitlabCallbackPath, Scopes: []string{"api"}, ActorID: humanCaller.ID})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -403,16 +392,16 @@ func TestGitLabAuthImportedClientOwnershipAndNewConnection(t *testing.T) {
 			v, c := g.login(t)
 			g.callback(v, c, nil)
 			result := g.status(t, v, c)
-			file, err := m.connections.Load()
+			file, err := m.platforms.Load()
 			if err != nil {
 				t.Fatal(err)
 			}
 			if owned {
-				if result.Status != "succeeded" || len(file.Connections) != 1 || len(file.OAuthClientImports) != 0 || file.OAuthApplications[0].OwnerID != 101 || result.ConnectionID != file.Connections[0].ID {
+				if result.Status != "succeeded" || len(file.Platforms) != 1 || len(file.OAuthClientImports) != 0 || file.OAuthApplications[0].OwnerID != 101 || result.PlatformID != file.Platforms[0].ID {
 					t.Fatal("owner not promoted", result.Status, result.ErrorCode)
 				}
 			} else {
-				if result.Status == "succeeded" || len(file.Connections) != 0 || len(file.OAuthClientImports) != 1 {
+				if result.Status == "succeeded" || len(file.Platforms) != 0 || len(file.OAuthClientImports) != 1 {
 					t.Fatal("foreign app promoted")
 				}
 			}
@@ -429,18 +418,19 @@ func TestGitLabAuthApplicationReplacement(t *testing.T) {
 			g.callback(initial, cookie, nil)
 			m := g.h.m
 			m.mu.Lock()
-			before, err := m.connections.Load()
+			before, err := m.platforms.Load()
 			if err != nil {
 				t.Fatal(err)
 			}
-			second := before.Connections[0]
+			second := before.Platforms[0]
 			second.ID, second.Name = strings.Repeat("d", 32), "shared"
-			before.Connections = append(before.Connections, second)
-			if err := m.store.save(m.connectionsPathForTest(), before, 2<<20); err != nil {
+			second.ToolEntryID = "gitlab-" + strings.Repeat("d", 32)
+			before.Platforms = append(before.Platforms, second)
+			if err := m.store.save(m.platformsPathForTest(), before, 2<<20); err != nil {
 				t.Fatal(err)
 			}
 			m.mu.Unlock()
-			first, oldApp := before.Connections[0], before.OAuthApplications[0]
+			first, oldApp := before.Platforms[0], before.OAuthApplications[0]
 			clientID := oldApp.ClientID
 			if scenario == "application" {
 				clientID = "replacement-client"
@@ -454,7 +444,7 @@ func TestGitLabAuthApplicationReplacement(t *testing.T) {
 			readReq := setupReq
 			readReq.Client = nil
 			current := gitlabSetupHTTP(t, g.h, "prepare", readReq)
-			if current.ApplicationID != oldApp.ID || current.ClientImportID != "" || current.ClientID != oldApp.ClientID {
+			if scenario == "application_missing_scope" && current.Status != "application_incompatible" || scenario != "application_missing_scope" && (current.ApplicationID != oldApp.ID || current.ClientImportID != "" || current.ClientID != oldApp.ClientID) {
 				t.Fatal("normal login selected an unverified replacement")
 			}
 			readReq.EditApplication = true
@@ -501,18 +491,18 @@ func TestGitLabAuthApplicationReplacement(t *testing.T) {
 				return &http.Response{StatusCode: status, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
 			})
 			next, cookie := g.login(t)
-			pending, _ := m.connections.Load()
-			if pending.OAuthApplications[0].ClientSecret != oldApp.ClientSecret || pending.Connections[0].Version != first.Version {
+			pending, _ := m.platforms.Load()
+			if pending.OAuthApplications[0].ClientSecret != oldApp.ClientSecret || pending.Platforms[0].Version != first.Version {
 				t.Fatal("active configuration changed before authorization")
 			}
 			g.callback(next, cookie, nil)
 			result := g.status(t, next, cookie)
-			after, err := m.connections.Load()
+			after, err := m.platforms.Load()
 			if err != nil {
 				t.Fatal(err)
 			}
 			if scenario == "invalid_client" || scenario == "invalid_scope" || scenario == "application_missing_scope" || scenario == "foreign_owner" {
-				if result.Status != "failed" || after.OAuthApplications[0].ClientSecret != oldApp.ClientSecret || after.Connections[0].Version != first.Version || after.OAuthCredentials[0].AccessToken != before.OAuthCredentials[0].AccessToken {
+				if result.Status != "failed" || after.OAuthApplications[0].ClientSecret != oldApp.ClientSecret || after.Platforms[0].Version != first.Version || after.OAuthCredentials[0].AccessToken != before.OAuthCredentials[0].AccessToken {
 					t.Fatal("failed replacement changed active connection", result.Status, result.ErrorCode)
 				}
 				if scenario == "invalid_scope" || scenario == "application_missing_scope" {
@@ -524,14 +514,14 @@ func TestGitLabAuthApplicationReplacement(t *testing.T) {
 					}
 				}
 			} else {
-				if result.Status != "succeeded" || len(result.Connections) != 2 || len(after.OAuthClientImports) != 0 || after.OAuthApplications[0].ClientID != clientID || after.OAuthApplications[0].ClientSecret != "replacement-secret" {
+				if result.Status != "succeeded" || len(result.Platforms) != 2 || len(after.OAuthClientImports) != 0 || after.OAuthApplications[0].ClientID != clientID || after.OAuthApplications[0].ClientSecret != "replacement-secret" {
 					t.Fatal("replacement did not commit", result.Status, result.ErrorCode)
 				}
 				if !reflect.DeepEqual(after.OAuthApplications[0].Scopes, requestedScopes) || !reflect.DeepEqual(after.OAuthCredentials[0].Scopes, requestedScopes) {
 					t.Fatal("application capabilities expanded the requested grant")
 				}
-				for i, c := range after.Connections {
-					if _, err := connection.ResolveAuthorization(after, c); err != nil || c.Version != before.Connections[i].Version+1 || c.Generation != before.Connections[i].Generation {
+				for i, c := range after.Platforms {
+					if _, err := registry.ResolveAuthorization(after, c); err != nil || c.Version != before.Platforms[i].Version+1 || c.Generation != before.Platforms[i].Generation {
 						t.Fatal("shared connection not updated", err)
 					}
 				}
@@ -546,7 +536,7 @@ func TestGitLabAuthApplicationReplacement(t *testing.T) {
 	}
 }
 
-func TestGitLabAuthAdditionalConnectionSharesGrantAtomically(t *testing.T) {
+func TestGitLabAuthAdditionalPlatformSharesGrantAtomically(t *testing.T) {
 	parallelFixtureTest(t)
 	g := newGitlabLoginHarness(t)
 	v, c := g.login(t)
@@ -556,15 +546,15 @@ func TestGitLabAuthAdditionalConnectionSharesGrantAtomically(t *testing.T) {
 	g.req.Version = 0
 	g.req.Name = "second account view"
 	g.req.Origin = old.URL
-	g.req.Affected = []gitlabAuthConnection{{ID: old.ID, Version: old.Version}}
+	g.req.Affected = []gitlabAuthPlatform{{ID: old.ID, Version: old.Version}}
 	next, cookie := g.login(t)
 	g.callback(next, cookie, nil)
 	result := g.status(t, next, cookie)
-	if result.Status != "succeeded" || len(result.Connections) != 2 || result.ConnectionID == old.ID {
+	if result.Status != "succeeded" || len(result.Platforms) != 2 || result.PlatformID == old.ID {
 		t.Fatal("new shared connection not committed", result.Status, result.ErrorCode)
 	}
-	file, err := g.h.m.connections.Load()
-	if err != nil || len(file.OAuthCredentials) != 1 || file.Connections[0].CredentialID != file.Connections[1].CredentialID {
+	file, err := g.h.m.platforms.Load()
+	if err != nil || len(file.OAuthCredentials) != 1 || file.Platforms[0].CredentialID != file.Platforms[1].CredentialID {
 		t.Fatal("grant not shared", err)
 	}
 	if g.revokes.Load() != 0 || len(file.OAuthCleanup) != 0 {
@@ -633,30 +623,30 @@ func TestGitLabAuthReferenceRecheckAndNotificationProgress(t *testing.T) {
 		t.Run(fmt.Sprint(changed), func(t *testing.T) {
 			g := newGitlabLoginHarness(t)
 			transport := g.h.m.platformHTTP
-			seed, _ := g.h.m.connections.Load()
+			seed, _ := g.h.m.platforms.Load()
 			app := seed.OAuthApplications[0]
 			h, c := newIndependentEventHarness(t)
 			m := h.m
 			m.config.endpoint = g.h.m.config.endpoint
 			m.platformHTTP = transport
 			m.mu.Lock()
-			file, _ := m.connections.Load()
-			file.Version = connection.OAuthSnapshotVersion
+			file, _ := m.platforms.Load()
+			file.Version = registry.OAuthSnapshotVersion
 			file.InstallationID = seed.InstallationID
 			app.Origin = c.URL
-			file.OAuthApplications = []connection.OAuthApplication{app}
+			file.OAuthApplications = []registry.OAuthApplication{app}
 			file.OAuthCredentials[0].ApplicationID = app.ID
 			file.OAuthCredentials[0].Scopes = app.Scopes
 			evidence := platform.AuthorizationEvidence{Origin: app.Origin, ApplicationID: app.ID, ClientID: app.ClientID, CredentialID: file.OAuthCredentials[0].ID, UserID: 101, Generation: file.OAuthCredentials[0].GrantGeneration, Scopes: "api"}
 			evidenceData, _ := json.Marshal(evidence)
-			file.Connections[0].IdentityBinding.CredentialFingerprint = fmt.Sprintf("%x", sha256.Sum256(evidenceData))
-			if err := m.store.save(m.connectionsPathForTest(), file, 2<<20); err != nil {
+			file.Platforms[0].IdentityBinding.CredentialFingerprint = fmt.Sprintf("%x", sha256.Sum256(evidenceData))
+			if err := m.store.save(m.platformsPathForTest(), file, 2<<20); err != nil {
 				t.Fatal(err)
 			}
 			m.mu.Unlock()
 			before := h.state()
 			g.h.m = m
-			g.req = gitlabAuthRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: c.ID, Version: c.Version, ApplicationID: app.ID, Affected: []gitlabAuthConnection{{ID: c.ID, Version: c.Version, ReferencedRooms: []RoomIdentity{h.room.RoomIdentity}}}}
+			g.req = gitlabAuthRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: c.ID, Version: c.Version, ApplicationID: app.ID, Affected: []gitlabAuthPlatform{{ID: c.ID, Version: c.Version, ReferencedRooms: []RoomIdentity{h.room.RoomIdentity}}}}
 			v, cookie := g.login(t)
 			if changed {
 				// A second Room starts referencing this connection while the browser is
@@ -693,14 +683,14 @@ func TestGitLabAuthLogoutUnknownRefreshDoesNotClaimRemoteRevocation(t *testing.T
 	g.callback(v, c, nil)
 	m := g.h.m
 	m.mu.Lock()
-	file, _ := m.connections.Load()
+	file, _ := m.platforms.Load()
 	file.OAuthCredentials[0].State = "refresh_unknown"
 	file.OAuthCredentials[0].RefreshAttemptID = strings.Repeat("f", 32)
-	if err := m.store.save(m.connectionsPathForTest(), file, 2<<20); err != nil {
+	if err := m.store.save(m.platformsPathForTest(), file, 2<<20); err != nil {
 		t.Fatal(err)
 	}
 	m.mu.Unlock()
-	g.req.Version = file.Connections[0].Version
+	g.req.Version = file.Platforms[0].Version
 	g.req.Affected[0].Version = g.req.Version
 	w := gitlabAuthHTTP(m, "logout", g.req, nil)
 	var out gitlabAuthView

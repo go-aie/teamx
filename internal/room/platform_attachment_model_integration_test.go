@@ -37,7 +37,7 @@ func TestModelAttachmentRoomAndInboxShareDownloadWithoutConsumption(t *testing.T
 		h.m.mu.Lock()
 		owned := false
 		for call := range h.m.platformCalls {
-			if call.owner != reader.RoomIdentity || call.connectionID == "" {
+			if call.owner != reader.RoomIdentity || call.platformID == "" {
 				t.Error("attachment call escaped its Room or connection")
 			}
 			if call.tool != "gitlab-token" {
@@ -203,12 +203,12 @@ func TestModelAttachmentCredentialRotationJoinsBeforeReplacement(t *testing.T) {
 	update := platformTestRequest(h.m)
 	update.Version, update.ReferencedRooms = connection.Version, []RoomIdentity{req.RoomIdentity}
 	changed := make(chan error, 1)
-	go func() { _, err := testReauthorizeConnection(h.m, update); changed <- err }()
+	go func() { _, err := testReauthorizePlatform(h.m, update); changed <- err }()
 	awaitEventSignal(t, canceled, "credential rotation did not cancel download")
 	h.m.mu.Lock()
-	file, err := h.m.connections.Load()
+	file, err := h.m.platforms.Load()
 	h.m.mu.Unlock()
-	if err != nil || file.Connections[0].CredentialVersion != connection.CredentialVersion {
+	if err != nil || file.Platforms[0].CredentialVersion != connection.CredentialVersion {
 		t.Fatal("credential replaced before download settled", err)
 	}
 	select {

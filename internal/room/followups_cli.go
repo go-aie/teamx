@@ -23,6 +23,7 @@ func runReferenceCLI(ctx context.Context, command string, args []string, stdin i
 	f.SetOutput(stderr)
 	f.Usage = func() { _ = writeOutput(stdout, []byte(referenceHelpText(command, op))) }
 	endpoint := f.String("endpoint", env("TEAMX_ENDPOINT"), "bound Room endpoint")
+	entry := f.String("tool", "", "exact platform entry from tools list")
 	payloadName := "change"
 	if command == "actions" {
 		payloadName = "request"
@@ -76,6 +77,7 @@ func runReferenceCLI(ctx context.Context, command string, args []string, stdin i
 		timeout = actionClientTimeout
 	}
 	var req apiRequest
+	req.Tool = *entry
 	req.Followup = &q
 	req.TurnNumber = q.TurnNumber
 	switch command + "/" + op {
@@ -183,6 +185,9 @@ func runReferenceCLI(ctx context.Context, command string, args []string, stdin i
 
 func referenceCLIFlags(command, op string) string {
 	common := "endpoint json"
+	if command == "actions" && (op == "resolve" || op == "execute") {
+		common += " tool"
+	}
 	if name := referencePayloadFlag(command, op); name != "" {
 		return common + " " + name + " " + name + "-file"
 	}

@@ -56,7 +56,7 @@ func TestScionRealWorkspace(t *testing.T) {
 	if os.MkdirAll(dir, 0700) != nil || os.WriteFile(filepath.Join(dir, "credentials.json"), data, 0600) != nil {
 		t.Fatal("cannot prepare profile")
 	}
-	c := platformTestSave(t, m, platformConnectionRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("d", 32), Name: "Scion Workspace acceptance", Provider: "scion", URL: origin, CLIProfile: profile})
+	c := platformTestSave(t, m, managedPlatformRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("d", 32), Name: "Scion Workspace acceptance", Provider: "scion", URL: origin, CLIProfile: profile})
 	c = verifyScion(t, m, c)
 	req := scionWorkspaceRequest(m, room, c)
 	req.Target.Repository.Branch = "definitely-missing-s3b"
@@ -122,7 +122,7 @@ func TestScionRealWorkspace(t *testing.T) {
 		// Clone authority does not silently grant a member the native CLI tool.
 		runtimeMember := MemberState{AgentID: member.AgentID, MembershipID: member.MembershipID}
 		env := cliToolEnv(endpoint, svc, runtimeMember)
-		if err := runToolsWithClient(context.Background(), []string{"run", "scion", "--help"}, bytes.NewReader(nil), &out, &stderr, env, client); err == nil {
+		if err := runToolsWithClient(context.Background(), []string{"run", c.ToolEntryID, "--help"}, bytes.NewReader(nil), &out, &stderr, env, client); err == nil {
 			t.Fatal("clone implicitly enabled member tool")
 		}
 		bindings := bindCLITool(t, m, room.RoomIdentity, runtimeMember, c, "scion", revision)
@@ -130,7 +130,7 @@ func TestScionRealWorkspace(t *testing.T) {
 		env = cliToolEnv(endpoint, svc, runtimeMember)
 		out.Reset()
 		stderr.Reset()
-		if err := runToolsWithClient(context.Background(), []string{"run", "scion", "--json", "status"}, bytes.NewReader(nil), &out, &stderr, env, client); err != nil {
+		if err := runToolsWithClient(context.Background(), []string{"run", c.ToolEntryID, "--json", "status"}, bytes.NewReader(nil), &out, &stderr, env, client); err != nil {
 			t.Fatal("member native status", err, stderr.String())
 		}
 		var state struct {
@@ -152,7 +152,7 @@ func TestScionRealWorkspace(t *testing.T) {
 	json.Unmarshal(raw, &state)
 	out.Reset()
 	stderr.Reset()
-	if err := runToolsWithClient(context.Background(), []string{"run", "scion", "--json", "switch", "--detach", state.Base}, bytes.NewReader(nil), &out, &stderr, cliToolEnv(endpoint, svc, MemberState{AgentID: reviewer.AgentID, MembershipID: reviewer.MembershipID}), client); err != nil {
+	if err := runToolsWithClient(context.Background(), []string{"run", c.ToolEntryID, "--json", "switch", "--detach", state.Base}, bytes.NewReader(nil), &out, &stderr, cliToolEnv(endpoint, svc, MemberState{AgentID: reviewer.AgentID, MembershipID: reviewer.MembershipID}), client); err != nil {
 		t.Fatal("detach", err, stderr.String())
 	}
 	developer := saved.Members[1]

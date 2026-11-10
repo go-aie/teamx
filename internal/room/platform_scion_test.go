@@ -38,7 +38,7 @@ if mode=='block':
 print('native-result');sys.exit(23)
 `
 
-func scionRoomFixture(t *testing.T) (*roomManager, roomSummary, *service, platformConnection, []MemberState, string) {
+func scionRoomFixture(t *testing.T) (*roomManager, roomSummary, *service, managedPlatform, []MemberState, string) {
 	t.Helper()
 	m, room, svc, _, members := cliToolFixture(t, "exit 0")
 	dir := t.TempDir()
@@ -54,7 +54,7 @@ func scionRoomFixture(t *testing.T) (*roomManager, roomSummary, *service, platfo
 	definition := scion.Definition(bin)
 	definition.Skill = "skills/scion/SKILL.md"
 	m.toolCatalog = append(m.toolCatalog, definition)
-	c := platformTestSave(t, m, platformConnectionRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("d", 32), Name: "Scion", Provider: "scion", URL: "https://scion.invalid", CLIProfile: p})
+	c := platformTestSave(t, m, managedPlatformRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("d", 32), Name: "Scion", Provider: "scion", URL: "https://scion.invalid", CLIProfile: p})
 	return m, room, svc, c, members, dir
 }
 
@@ -72,9 +72,9 @@ func scionWriteCredential(t *testing.T, m *roomManager, profile, subject string)
 	return path
 }
 
-func verifyScion(t *testing.T, m *roomManager, c platformConnection) platformConnection {
+func verifyScion(t *testing.T, m *roomManager, c managedPlatform) managedPlatform {
 	t.Helper()
-	c, err := m.verifyPlatformConnection(context.Background(), platformConnectionRequest{ID: c.ID, Version: c.Version})
+	c, err := m.verifyPlatform(context.Background(), managedPlatformRequest{ID: c.ID, Version: c.Version})
 	if err != nil || c.Validation.Status != "valid" || c.Validation.UserID != 0 || c.Validation.Account.ID.Namespace != "scion:subject" {
 		t.Fatal(c, err)
 	}

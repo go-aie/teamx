@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/connection"
+	"github.com/go-aie/teamx/internal/platform/registry"
 )
 
 func gitlabReferenceFixture() (platform.SourceRef, platform.AccessContext, platform.TargetResolution) {
@@ -18,14 +18,14 @@ func gitlabReferenceFixture() (platform.SourceRef, platform.AccessContext, platf
 	source := platform.SourceRef{Provider: "gitlab", Instance: "https://gitlab.example.com", Channel: "todos", SubscriptionID: "subscription", ItemKey: "item", ProjectID: 123, Project: "g/p", Object: "display", URL: "https://gitlab.example.com/g/p/-/merge_requests/42#note_101",
 		Reference: platform.NotificationReference{Version: 1, RecipientID: user, Scope: "account", ProjectID: pid, Target: obj, Object: obj, NoteID: note, DiscussionID: thread, Branch: "main", Ref: "refs/heads/main", RefType: "branch", SHA: "sha", BeforeSHA: "before"}}
 	access := gitlabReferenceAccess(MemberIdentity{RoomIdentity: RoomIdentity{RoomID: "room", RoomInstance: "room-generation"}, AgentID: "agent", MembershipID: "membership"},
-		connection.Account{ConnectionID: "connection", Generation: "generation", URL: source.Instance, UserID: 13, Username: "bot", ConnectionVersion: 2, CredentialVersion: 1}, user)
+		registry.Account{PlatformID: "connection", Generation: "generation", URL: source.Instance, UserID: 13, Username: "bot", PlatformVersion: 2, CredentialVersion: 1}, user)
 	r := platform.TargetResolution{}
 	return source, access, r
 }
 func TestReferenceCapabilitiesWithoutGitlabOrNotification(t *testing.T) {
 	scope := platform.IdentityScope{Provider: "fixture", Instance: "region:one", Tenant: platform.ExternalID{Namespace: "tenant", Value: "org-alpha"}}
 	target := platform.TargetIdentity{IdentityScope: scope, Object: platform.NativeIdentity{Type: "message", ID: platform.ExternalID{Namespace: "message", Value: "msg-alpha"}}}
-	access := platform.AccessContext{RoomIdentity: RoomIdentity{RoomID: "room", RoomInstance: "instance"}, AgentID: "agent", MembershipID: "membership", Account: platform.AccountIdentity{IdentityScope: scope, ID: platform.ExternalID{Namespace: "account", Value: "user-alpha"}}, ConnectionID: "connection", Generation: "generation", ConnectionVersion: 1, CredentialVersion: 1}
+	access := platform.AccessContext{RoomIdentity: RoomIdentity{RoomID: "room", RoomInstance: "instance"}, AgentID: "agent", MembershipID: "membership", Account: platform.AccountIdentity{IdentityScope: scope, ID: platform.ExternalID{Namespace: "account", Value: "user-alpha"}}, PlatformID: "connection", Generation: "generation", PlatformVersion: 1, CredentialVersion: 1}
 	attempts := 0
 	m := &roomManager{referenceAdapters: map[string]referenceAdapterFactory{
 		"fixture": func() platform.ReferenceCapabilities {

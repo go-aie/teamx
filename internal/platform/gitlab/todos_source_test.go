@@ -13,8 +13,8 @@ import (
 func sourceTodoState(t *testing.T) TodosState {
 	t.Helper()
 	owner := platform.RoomIdentity{RoomID: "room", RoomInstance: "instance"}
-	b := TodosBinding{ConnectionID: strings.Repeat("a", 32), ConnectionGeneration: strings.Repeat("b", 32), URL: "https://gitlab.example.com", UserID: 101, Username: "recipient", CredentialVersion: 1, CredentialFingerprint: strings.Repeat("c", 64)}
-	s, err := ConfigureTodos(owner, nil, b, TodosConfig{Enabled: true, ConnectionID: b.ConnectionID}, time.Date(2026, 11, 3, 0, 0, 0, 0, time.UTC))
+	b := TodosBinding{PlatformID: strings.Repeat("a", 32), PlatformGeneration: strings.Repeat("b", 32), URL: "https://gitlab.example.com", UserID: 101, Username: "recipient", CredentialVersion: 1, CredentialFingerprint: strings.Repeat("c", 64)}
+	s, err := ConfigureTodos(owner, nil, b, TodosConfig{Enabled: true, PlatformID: b.PlatformID}, time.Date(2026, 11, 3, 0, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,10 +68,10 @@ func TestTodosConfigCannotMutateAccountOrImportHistory(t *testing.T) {
 		t.Fatal("changed account reused subscription")
 	}
 	for _, invalid := range []TodosConfig{
-		{Enabled: true, ConnectionID: s.Binding.ConnectionID, Filter: TodosFilter{Types: []string{"push"}}},
-		{Enabled: true, ConnectionID: s.Binding.ConnectionID, Filter: TodosFilter{Reasons: []string{"unknown"}}},
-		{Enabled: true, ConnectionID: s.Binding.ConnectionID, IntervalSeconds: 121},
-		{Enabled: true, ConnectionID: s.Binding.ConnectionID, IntervalSeconds: 2},
+		{Enabled: true, PlatformID: s.Binding.PlatformID, Filter: TodosFilter{Types: []string{"push"}}},
+		{Enabled: true, PlatformID: s.Binding.PlatformID, Filter: TodosFilter{Reasons: []string{"unknown"}}},
+		{Enabled: true, PlatformID: s.Binding.PlatformID, IntervalSeconds: 121},
+		{Enabled: true, PlatformID: s.Binding.PlatformID, IntervalSeconds: 2},
 	} {
 		if _, err := ConfigureTodos(s.RoomIdentity, &s, s.Binding, invalid, s.Baseline.Add(time.Minute)); err == nil {
 			t.Fatal("invalid config accepted")

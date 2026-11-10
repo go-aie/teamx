@@ -39,7 +39,7 @@ func normalizeScionWorkspace(w workspaceConfig, suggestion bool) (workspaceConfi
 		return workspaceConfig{}, fmt.Errorf("%w: Scion repository and binding must match", ErrRequest)
 	}
 	b.URL = u.String()
-	if !validRestartID(b.ConnectionID) || b.ConnectionGeneration != "" && !validRestartID(b.ConnectionGeneration) || !suggestion && (b.ConnectionGeneration == "" || w.Repository.Branch == "") {
+	if !validRestartID(b.PlatformID) || b.PlatformGeneration != "" && !validRestartID(b.PlatformGeneration) || !suggestion && (b.PlatformGeneration == "" || w.Repository.Branch == "") {
 		return workspaceConfig{}, ErrRequest
 	}
 	w.Binding = &b

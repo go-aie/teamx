@@ -32,7 +32,7 @@ func runToolsCLI(ctx context.Context, args []string, stdin io.Reader, stdout, st
 
 func runToolsWithClient(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer, env func(string) string, httpClient *http.Client) error {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
-		_, err := fmt.Fprintln(stdout, "Usage: teamx tools list | teamx tools run <tool> [args...] | teamx tools skill <tool>\nRun <tool> --help to discover its commands. Read a skill only when its workflow is needed.")
+		_, err := fmt.Fprintln(stdout, "Usage: teamx tools list | teamx tools run <tool> [args...] | teamx tools skill <tool>\nThe list contains enabled, currently available platform entries and their accounts/capabilities. Use the exact entry, including for a single platform; never switch accounts after a failure. Run <tool> --help to discover its commands. Read a skill only when its workflow is needed.")
 		return err
 	}
 	if args[0] != "list" && args[0] != "run" && args[0] != "skill" || args[0] == "list" && len(args) != 1 || args[0] == "run" && len(args) < 2 || args[0] == "skill" && len(args) != 2 {
@@ -72,7 +72,7 @@ func runToolsWithClient(ctx context.Context, args []string, stdin io.Reader, std
 		}
 		defer response.Body.Close()
 		if response.StatusCode != http.StatusOK {
-			return fmt.Errorf("tool skill HTTP %s", response.Status)
+			return toolResponseError(response)
 		}
 		_, err = io.Copy(stdout, io.LimitReader(response.Body, 64<<10))
 		return err
@@ -102,11 +102,7 @@ func runToolsWithClient(ctx context.Context, args []string, stdin io.Reader, std
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		var failure apiError
-		if json.NewDecoder(io.LimitReader(response.Body, 32<<10)).Decode(&failure) == nil && failure.Error != "" {
-			return failure.cliError()
-		}
-		return fmt.Errorf("tool launcher HTTP %s", response.Status)
+		return toolResponseError(response)
 	}
 	decoder := json.NewDecoder(response.Body)
 	for {
@@ -135,6 +131,17 @@ func runToolsWithClient(ctx context.Context, args []string, stdin io.Reader, std
 			return ErrRequest
 		}
 	}
+}
+
+func toolResponseError(response *http.Response) error {
+	var failure apiError
+	if json.NewDecoder(io.LimitReader(response.Body, 32<<10)).Decode(&failure) == nil && (failure.Error != "" || failure.Code != "") {
+		if failure.Error == "" && failure.Message == "" {
+			return fmt.Errorf("platform tool: %s", failure.Code)
+		}
+		return failure.cliError()
+	}
+	return fmt.Errorf("tool launcher HTTP %s", response.Status)
 }
 
 func toolTransportError(ctx context.Context, stderr io.Writer, message string) error {

@@ -204,7 +204,7 @@ func TestWorkspaceSupplementGitLabAndFrozenResources(t *testing.T) {
 	if workspaceGit(t, f.member(1), "config", "user.name") != "Bound User" {
 		t.Fatal("did not fill missing author")
 	}
-	if len(result.ToolEnv) == 0 || !strings.Contains(result.Instructions, "tools run gitlab --help") {
+	if len(result.ToolEnv) == 0 || !strings.Contains(result.Instructions, "tools run ENTRY --help") {
 		t.Fatal(result)
 	}
 	for _, call := range f.calls {
@@ -220,6 +220,9 @@ func TestWorkspaceSupplementGitLabAndFrozenResources(t *testing.T) {
 	}
 	// Revisit requires current resources and never replaces unexpected bytes.
 	usage := filepath.Join(tools, "USAGE.md")
+	if body, err := os.ReadFile(usage); err != nil || !strings.Contains(string(body), "tools run gitlab --help") {
+		t.Fatal("P4 guidance rewrote frozen workspace resource", err)
+	}
 	current, err := os.ReadFile(usage)
 	if err != nil {
 		t.Fatal(err)
@@ -238,7 +241,7 @@ func TestWorkspaceSupplementGitLabAndFrozenResources(t *testing.T) {
 	f.calls = nil
 
 	visited, err := f.ensure(false)
-	if err != nil || visited.Instructions != string(current) {
+	if err != nil || visited.Instructions != result.Instructions {
 		t.Fatal(visited, err)
 	}
 	for _, call := range f.calls {

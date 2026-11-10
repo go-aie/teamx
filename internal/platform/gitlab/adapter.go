@@ -12,9 +12,9 @@ import (
 // Binding contains only the verified connection and project references.
 // Access tokens are supplied by the service for each bounded operation.
 type Binding struct {
-	ConnectionID          string `json:"connection_id,omitempty"`
-	ConnectionGeneration  string `json:"connection_generation,omitempty"`
-	ConnectionVersion     uint64 `json:"connection_version,omitempty"`
+	PlatformID            string `json:"platform_id,omitempty"`
+	PlatformGeneration    string `json:"platform_generation,omitempty"`
+	PlatformVersion       uint64 `json:"platform_version,omitempty"`
 	CredentialVersion     uint64 `json:"credential_version,omitempty"`
 	CredentialFingerprint string `json:"credential_fingerprint,omitempty"`
 	ProjectID             int64  `json:"project_id,omitempty"`
