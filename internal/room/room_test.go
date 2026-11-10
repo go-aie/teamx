@@ -48,7 +48,12 @@ func historyRoom(n int, text string) RoomSnapshot {
 
 func newRoomHarness(t *testing.T, state RoomSnapshot, configure func(*Room, *Store), options ...actorx.Option) *roomHarness {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	return newRoomHarnessWithTimeout(t, state, configure, 10*time.Second, options...)
+}
+
+func newRoomHarnessWithTimeout(t *testing.T, state RoomSnapshot, configure func(*Room, *Store), timeout time.Duration, options ...actorx.Option) *roomHarness {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	store, err := OpenStore(t.TempDir(), state.RoomID)
 	if err != nil {
 		cancel()

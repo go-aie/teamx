@@ -125,7 +125,7 @@ func TestGitLabEventsManagementAuthorizationAndStatus(t *testing.T) {
 	cfg := unifiedGitLabConfig(t, h)
 	cfg.IntervalSeconds = 3
 	cfg.Events.Filter.Types = []string{"push"}
-	req := map[string]any{"service_epoch": h.m.epoch, "room_id": h.room.RoomID, "room_instance": h.room.RoomInstance, "caller": humanCaller, "version": 0, "config": cfg}
+	req := map[string]any{"service_epoch": h.m.epoch, "room_id": h.room.RoomID, "room_instance": h.room.RoomInstance, "caller": humanCaller, "version": 0, "config": explicitRoomNotificationConfig(cfg)}
 	if r := managerHTTP(h.m, "/v1/platform/gitlab/notifications/configure", req); r.Code != 200 {
 		t.Fatal(r.Code, r.Body.String())
 	}
@@ -146,6 +146,8 @@ func TestGitLabEventsManagementAuthorizationAndStatus(t *testing.T) {
 	}
 	req["service_epoch"] = h.m.epoch
 	delete(req, "config")
+	req["target"] = notification.Target{Mode: "room"}
+	req["platform_id"] = cfg.PlatformID
 	if r := managerHTTP(h.m, "/v1/platform/gitlab/notifications/sync", req); r.Code != 200 {
 		t.Fatal(r.Code, r.Body.String())
 	}
@@ -229,7 +231,7 @@ func TestPlatformNotificationsRequireExplicitSourceAndSubscription(t *testing.T)
 	var list struct {
 		Subscriptions []notificationView `json:"subscriptions"`
 	}
-	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &list) != nil || len(list.Subscriptions) != 3 {
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &list) != nil || len(list.Subscriptions) != 1 {
 		t.Fatal("invalid notification list", w.Code, w.Body.String())
 	}
 	view := list.Subscriptions[0]

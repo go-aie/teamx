@@ -32,6 +32,11 @@ func (m *Manager) Deliver(ctx context.Context, key Key, version uint64) error {
 	}
 	scope, err := m.host.Admit(ctx, current.state)
 	if err != nil {
+		if errors.Is(err, ErrIdentity) && current.state.Metadata().Pending > 0 && current.state.Metadata().DeliveryError != "target_removed" {
+			if saveErr := m.SaveLocked(current.state.WithDeliveryError("target_removed")); saveErr != nil {
+				return saveErr
+			}
+		}
 		return err
 	}
 	if !scope.Current {

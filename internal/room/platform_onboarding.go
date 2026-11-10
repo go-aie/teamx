@@ -24,14 +24,23 @@ import (
 // initializes local settings; it never retries OAuth exchanges or remote writes.
 type platformOnboardingSpec struct {
 	MemberIdentity
-	PlatformID    string                     `json:"platform_id,omitempty"`
-	Provider      string                     `json:"provider,omitempty"`
-	Origin        string                     `json:"origin,omitempty"`
-	OnlyPlatform  bool                       `json:"only_platform,omitempty"`
-	Notifications *bool                      `json:"notifications,omitempty"`
-	Tool          *bool                      `json:"tool,omitempty"`
-	GitLab        *gitlab.NotificationConfig `json:"gitlab,omitempty"`
-	Lark          *lark.Config               `json:"lark,omitempty"`
+	PlatformID   string `json:"platform_id,omitempty"`
+	Provider     string `json:"provider,omitempty"`
+	Origin       string `json:"origin,omitempty"`
+	OnlyPlatform bool   `json:"only_platform,omitempty"`
+	// Add initializes missing settings; it never overwrites an existing choice.
+	PreserveExisting  bool                       `json:"preserve_existing,omitempty"`
+	SkipNotifications bool                       `json:"skip_notifications,omitempty"`
+	SkipTool          bool                       `json:"skip_tool,omitempty"`
+	Backfill          *onboardingBackfill        `json:"backfill,omitempty"`
+	Notifications     *bool                      `json:"notifications,omitempty"`
+	Tool              *bool                      `json:"tool,omitempty"`
+	GitLab            *gitlab.NotificationConfig `json:"gitlab,omitempty"`
+	Lark              *lark.Config               `json:"lark,omitempty"`
+}
+type onboardingBackfill struct {
+	Seconds int       `json:"seconds"`
+	Start   time.Time `json:"start,omitzero"`
 }
 type platformOnboardingRequest struct {
 	platformOnboardingSpec
@@ -60,6 +69,15 @@ type platformOnboarding struct {
 	BeforeNotificationVersion uint64                     `json:"before_notification_version"`
 	GitLab                    *gitlab.NotificationConfig `json:"gitlab,omitempty"`
 	Lark                      *lark.Config               `json:"lark,omitempty"`
+}
+
+const platformOnboardingSchema = 2
+
+// This target is fixed before login and is also the notification settings
+// locator: Input supplies the complete Room/member identity, PlatformID the
+// concrete platform, and the saved config the matching notification target.
+func (op platformOnboarding) notificationTarget() notification.Target {
+	return notification.Target{Mode: "inbox", AgentID: op.Input.AgentID, MembershipID: op.Input.MembershipID}
 }
 
 type onboardingContextKey struct{}
@@ -148,8 +166,16 @@ func (m *roomManager) prepareOnboardingLocked(ctx context.Context, req platformO
 	}
 	spec := req.platformOnboardingSpec
 	def, ok := platform.LookupType(spec.Provider)
-	if !ok || spec.OnlyPlatform && (spec.MemberIdentity != (MemberIdentity{}) || spec.GitLab != nil || spec.Lark != nil) {
+	if !ok || spec.OnlyPlatform && (spec.MemberIdentity != (MemberIdentity{}) || spec.GitLab != nil || spec.Lark != nil || spec.Backfill != nil || spec.PreserveExisting || spec.SkipNotifications || spec.SkipTool) {
 		return prior, ErrRequest
+	}
+	if spec.Backfill != nil {
+		if len(def.NotificationChannels) == 0 || spec.SkipNotifications || spec.GitLab != nil || spec.Lark != nil {
+			return prior, ErrRequest
+		}
+		if _, err := notification.BackfillBaseline(spec.Backfill.Seconds, spec.Backfill.Start, m.notifications.Now()); err != nil {
+			return prior, notificationRoomError(err)
+		}
 	}
 	_, origin, err := registry.Normalize("platform", spec.Origin)
 	if err != nil || origin != spec.Origin {
@@ -165,7 +191,7 @@ func (m *roomManager) prepareOnboardingLocked(ctx context.Context, req platformO
 	if err != nil || !tool.OpaqueID(id) {
 		return prior, ErrRequest
 	}
-	op := platformOnboarding{Schema: 1, ID: req.OperationID, Owner: req.Caller.ID, Input: spec, PlatformID: id, Connection: onboardingStep{Status: "waiting"}, Notifications: onboardingStep{Status: "pending"}, Tool: onboardingStep{Status: "pending"}}
+	op := platformOnboarding{Schema: platformOnboardingSchema, ID: req.OperationID, Owner: req.Caller.ID, Input: spec, PlatformID: id, Connection: onboardingStep{Status: "waiting"}, Notifications: onboardingStep{Status: "pending"}, Tool: onboardingStep{Status: "pending"}}
 	file, err := m.platforms.Load()
 	if err != nil {
 		return op, err
@@ -187,10 +213,10 @@ func (m *roomManager) prepareOnboardingLocked(ctx context.Context, req platformO
 	if spec.PlatformID != "" && !found {
 		return op, ErrIdentity
 	}
-	if spec.OnlyPlatform || len(def.NotificationChannels) == 0 {
+	if spec.OnlyPlatform || spec.SkipNotifications || len(def.NotificationChannels) == 0 {
 		op.Notifications.Status = "skipped"
 	}
-	if spec.OnlyPlatform || def.ToolType == "" {
+	if spec.OnlyPlatform || spec.SkipTool || def.ToolType == "" {
 		op.Tool.Status = "skipped"
 	}
 	if !spec.OnlyPlatform {
@@ -200,20 +226,20 @@ func (m *roomManager) prepareOnboardingLocked(ctx context.Context, req platformO
 		}
 		op.BeforeToolRevision = f.Revision
 		for i, b := range append(append([]tool.Binding(nil), f.Bindings...), f.Disabled...) {
-			if b.AgentID == spec.AgentID && b.MembershipID == spec.MembershipID && b.PlatformID == id && b.Tool == def.ToolType && op.Tool.Status != "skipped" && (spec.Tool == nil || *spec.Tool == (i < len(f.Bindings))) {
+			if b.AgentID == spec.AgentID && b.MembershipID == spec.MembershipID && b.PlatformID == id && b.Tool == def.ToolType && op.Tool.Status != "skipped" && (spec.PreserveExisting || spec.Tool == nil || *spec.Tool == (i < len(f.Bindings))) {
 				op.Tool.Status = "preserved"
 			}
 		}
 
 		// Historical disable removed the binding entirely. Absence in such a
 		// snapshot cannot authorize reopening a possibly disabled account.
-		if op.Tool.Status == "pending" && spec.Tool == nil && f.Revision > 0 && (f.LegacyUnknown || f.Disabled == nil) {
+		if op.Tool.Status == "pending" && (spec.PreserveExisting || spec.Tool == nil) && f.Revision > 0 && (f.LegacyUnknown || f.Disabled == nil) {
 			op.Tool = onboardingStep{Status: "preserved", ErrorCode: "legacy_tool_choice_unknown"}
 		}
-		target := notification.Target{Mode: "inbox", AgentID: spec.AgentID, MembershipID: spec.MembershipID}
+		target := op.notificationTarget()
 		switch spec.Provider {
 		case "gitlab":
-			current, e := m.gitlabNotificationViewLocked(spec.RoomIdentity, id)
+			current, e := m.gitlabNotificationViewForTargetLocked(spec.RoomIdentity, id, target)
 			if e != nil {
 				return op, e
 			}
@@ -223,21 +249,22 @@ func (m *roomManager) prepareOnboardingLocked(ctx context.Context, req platformO
 			if existing {
 				cfg = current.Config
 			}
-			if spec.GitLab != nil {
+			if spec.GitLab != nil && !(spec.PreserveExisting && existing) {
 				cfg = *spec.GitLab
 			}
-			if spec.GitLab == nil && spec.Notifications == nil && existing && op.Notifications.Status != "skipped" {
+			if (spec.PreserveExisting || spec.GitLab == nil && spec.Notifications == nil) && existing && op.Notifications.Status != "skipped" {
 				op.Notifications.Status = "preserved"
 			}
 			if cfg.PlatformID != "" && cfg.PlatformID != id || spec.GitLab != nil && cfg.Target != (notification.Target{}) && cfg.Target != target {
 				return op, ErrRequest
 			}
 			cfg.PlatformID = id
-			if !existing || spec.GitLab != nil {
-				cfg.Target = target
-			}
-			if spec.Notifications != nil {
+			cfg.Target = target
+			if spec.Notifications != nil && !(spec.PreserveExisting && existing) {
 				cfg.Enabled = *spec.Notifications
+			}
+			if spec.Backfill != nil && !existing {
+				cfg.BackfillSeconds, cfg.BackfillStart = spec.Backfill.Seconds, spec.Backfill.Start
 			}
 			cfg, e = gitlab.NormalizeNotificationConfig(cfg)
 			if e != nil {
@@ -253,13 +280,13 @@ func (m *roomManager) prepareOnboardingLocked(ctx context.Context, req platformO
 				return op, ErrRequest
 			}
 		case "lark":
-			current, e := m.currentLarkLocked(spec.RoomIdentity, id)
+			current, e := m.currentLarkForTargetLocked(spec.RoomIdentity, id, target)
 			if e != nil {
 				return op, e
 			}
 			if current != nil {
 				op.BeforeNotificationVersion = current.SubscriptionVersion
-				if spec.Lark == nil && spec.Notifications == nil && op.Notifications.Status != "skipped" {
+				if (spec.PreserveExisting || spec.Lark == nil && spec.Notifications == nil) && op.Notifications.Status != "skipped" {
 					op.Notifications.Status = "preserved"
 				}
 			}
@@ -267,18 +294,19 @@ func (m *roomManager) prepareOnboardingLocked(ctx context.Context, req platformO
 			if current != nil {
 				cfg = current.Config
 			}
-			if spec.Lark != nil {
+			if spec.Lark != nil && !(spec.PreserveExisting && current != nil) {
 				cfg = *spec.Lark
 			}
 			if cfg.PlatformID != "" && cfg.PlatformID != id || spec.Lark != nil && cfg.Target != (notification.Target{}) && cfg.Target != target {
 				return op, ErrRequest
 			}
 			cfg.PlatformID = id
-			if current == nil || spec.Lark != nil {
-				cfg.Target = target
-			}
-			if spec.Notifications != nil {
+			cfg.Target = target
+			if spec.Notifications != nil && !(spec.PreserveExisting && current != nil) {
 				cfg.Enabled = *spec.Notifications
+			}
+			if spec.Backfill != nil && current == nil {
+				cfg.BackfillSeconds, cfg.BackfillStart = spec.Backfill.Seconds, spec.Backfill.Start
 			}
 			cfg, e = lark.NormalizeConfig(cfg)
 			if e != nil {
@@ -352,6 +380,16 @@ func (m *roomManager) applyOnboarding(ctx context.Context, id, owner string) (pl
 	if err != nil {
 		m.mu.Unlock()
 		return op, err
+	}
+	// Completed pre-member-subscription operations are history only. Their
+	// preserved notification may belong to a different member or the Room.
+	// Never reinterpret or replay them under the new target contract.
+	if op.Schema != platformOnboardingSchema {
+		m.mu.Unlock()
+		if op.Cancelled || !onboardingFinished(op.Notifications) || !onboardingFinished(op.Tool) {
+			return op, ErrConflict
+		}
+		return op, nil
 	}
 	if m.closing || m.busy || m.onboardingRunning[id] {
 		m.mu.Unlock()
@@ -430,27 +468,35 @@ func (m *roomManager) applyOnboarding(ctx context.Context, id, owner string) (pl
 	// Prepare the first save's absolute baseline. If an earlier attempt never
 	// committed settings, retry uses its new save time; a committed configuration
 	// is the authority and keeps the exact previous start for receipt recovery.
-	if !onboardingFinished(op.Notifications) && op.BeforeNotificationVersion == 0 {
-		unconfigured := false
+	if !onboardingFinished(op.Notifications) {
+		unstarted := false
+		seconds := 0
+		var start time.Time
 		if op.GitLab != nil {
-			current, e := m.gitlabNotificationViewLocked(op.Input.RoomIdentity, op.PlatformID)
+			current, e := m.gitlabNotificationViewForTargetLocked(op.Input.RoomIdentity, op.PlatformID, op.notificationTarget())
 			if e != nil {
 				m.mu.Unlock()
 				return op, e
 			}
-			unconfigured = current.Version == 0 && !current.BackfillLocked
+			unstarted = current.Version == op.BeforeNotificationVersion && !current.BackfillLocked
+			seconds, start = current.Config.BackfillSeconds, current.Config.BackfillStart
 		}
 		if op.Lark != nil {
-			current, e := m.currentLarkLocked(op.Input.RoomIdentity, op.PlatformID)
+			current, e := m.currentLarkForTargetLocked(op.Input.RoomIdentity, op.PlatformID, op.notificationTarget())
 			if e != nil {
 				m.mu.Unlock()
 				return op, e
 			}
-			unconfigured = current == nil
+			unstarted = current == nil
+			if current != nil {
+				unstarted = current.SubscriptionVersion == op.BeforeNotificationVersion && current.Baseline.IsZero()
+				seconds, start = current.Config.BackfillSeconds, current.Config.BackfillStart
+			}
 		}
-		if unconfigured {
-			seconds := 0
-			var start time.Time
+		if unstarted {
+			if op.Input.Backfill != nil && op.BeforeNotificationVersion == 0 {
+				seconds, start = op.Input.Backfill.Seconds, op.Input.Backfill.Start
+			}
 			if op.Input.GitLab != nil {
 				seconds, start = op.Input.GitLab.BackfillSeconds, op.Input.GitLab.BackfillStart
 			}
@@ -506,7 +552,7 @@ func (m *roomManager) applyOnboardingNotifications(ctx context.Context, op platf
 	var key notification.Key
 	recovered := false
 	if err == nil && op.GitLab != nil {
-		current, e := m.gitlabNotificationViewLocked(op.Input.RoomIdentity, op.PlatformID)
+		current, e := m.gitlabNotificationViewForTargetLocked(op.Input.RoomIdentity, op.PlatformID, op.notificationTarget())
 		err = e
 		version = current.Version
 		recovered = version == op.BeforeNotificationVersion+1 && reflect.DeepEqual(current.Config, *op.GitLab)
@@ -520,7 +566,7 @@ func (m *roomManager) applyOnboardingNotifications(ctx context.Context, op platf
 		}
 	}
 	if err == nil && op.Lark != nil {
-		current, e := m.currentLarkLocked(op.Input.RoomIdentity, op.PlatformID)
+		current, e := m.currentLarkForTargetLocked(op.Input.RoomIdentity, op.PlatformID, op.notificationTarget())
 		err = e
 		key = notification.Key{Owner: op.Input.RoomIdentity, Source: lark.MessagesSourceID}
 		if current != nil {
@@ -785,10 +831,21 @@ func (m *roomManager) onboardingOperationsLocked() ([]platformOnboarding, error)
 }
 
 func validOnboarding(op platformOnboarding) bool {
-	if op.Schema != 1 || !tool.OpaqueID(op.ID) || !tool.OpaqueID(op.PlatformID) || !validText(op.Owner) || op.Generation != "" && !tool.OpaqueID(op.Generation) || op.Account != (platform.AccountIdentity{}) && !op.Account.Valid() {
+	if (op.Schema != 1 && op.Schema != platformOnboardingSchema) || !tool.OpaqueID(op.ID) || !tool.OpaqueID(op.PlatformID) || !validText(op.Owner) || op.Generation != "" && !tool.OpaqueID(op.Generation) || op.Account != (platform.AccountIdentity{}) && !op.Account.Valid() {
 		return false
 	}
 	if _, ok := platform.LookupType(op.Input.Provider); !ok {
+		return false
+	}
+	if op.Input.Backfill != nil {
+		if op.Input.SkipNotifications || op.Input.OnlyPlatform || op.Input.GitLab != nil || op.Input.Lark != nil || (op.Input.Provider != "gitlab" && op.Input.Provider != "lark") {
+			return false
+		}
+		if _, err := notification.NormalizeBackfill(op.Input.Backfill.Seconds, op.Input.Backfill.Start); err != nil {
+			return false
+		}
+	}
+	if op.Input.SkipTool && op.Tool.Status != "skipped" || op.Input.SkipNotifications && op.Notifications.Status != "skipped" {
 		return false
 	}
 	if op.Input.PlatformID != "" && op.Input.PlatformID != op.PlatformID {
@@ -803,6 +860,30 @@ func validOnboarding(op platformOnboarding) bool {
 	}
 	if op.GitLab != nil && (op.Input.Provider != "gitlab" || op.GitLab.PlatformID != op.PlatformID) || op.Lark != nil && (op.Input.Provider != "lark" || op.Lark.PlatformID != op.PlatformID) {
 		return false
+	}
+	if op.Schema == platformOnboardingSchema {
+		if op.Input.OnlyPlatform {
+			if op.Input.MemberIdentity != (MemberIdentity{}) || op.Input.Backfill != nil || op.Input.PreserveExisting || op.Input.SkipNotifications || op.Input.SkipTool || op.Input.GitLab != nil || op.Input.Lark != nil || op.GitLab != nil || op.Lark != nil || op.Notifications.Status != "skipped" || op.Tool.Status != "skipped" {
+				return false
+			}
+		} else {
+			target := op.notificationTarget()
+			if op.Input.Provider == "gitlab" && op.GitLab == nil || op.Input.Provider == "lark" && op.Lark == nil {
+				return false
+			}
+			if op.GitLab != nil {
+				cfg, err := gitlab.NormalizeNotificationConfig(*op.GitLab)
+				if err != nil || cfg.Target != target || !reflect.DeepEqual(cfg, *op.GitLab) {
+					return false
+				}
+			}
+			if op.Lark != nil {
+				cfg, err := lark.NormalizeConfig(*op.Lark)
+				if err != nil || cfg.Target != target || !reflect.DeepEqual(cfg, *op.Lark) {
+					return false
+				}
+			}
+		}
 	}
 	if op.Connection.Status != "waiting" && op.Connection.Status != "connected" && op.Connection.Status != "failed" {
 		return false

@@ -38,7 +38,7 @@ go build -o bin/teamx ./cmd/teamx
 
 ### 4. 为成员启用工具
 
-进入各成员的「工具设置」，为 `scion` 选择刚保存的连接并「应用」。developer、reviewer 分别绑定；architect 需要提交设计时也须绑定。可以共用一个平台账号，也可以分别选择各自的已验证连接。
+进入各成员详情的「平台 → 添加平台」，选择刚保存的连接，勾选「使用工具」并「添加并启用」；之后可在平台行直接开关工具。Scion 显示「无通知能力」。developer、reviewer 分别绑定；architect 需要提交设计时也须绑定。可以共用一个平台账号，也可以分别选择各自的已验证连接。
 
 ### 5. 初始化 Scion Workspace
 

@@ -226,12 +226,12 @@ func TestIndependentEventsPublicConfigureAndStaleVerification(t *testing.T) {
 	other := managerCreate(t, h.m, "api-only")
 	req := map[string]any{"service_epoch": h.m.epoch, "caller": humanCaller, "room_id": other.RoomID, "room_instance": other.RoomInstance,
 		"version": 0,
-		"config":  gitlab.NotificationConfig{Enabled: true, PlatformID: c.ID, Events: gitlab.EventSettings{Enabled: true, Project: c.URL + "/remote/project"}}}
+		"config":  gitlab.NotificationConfig{Target: notification.Target{Mode: "room"}, Enabled: true, PlatformID: c.ID, Events: gitlab.EventSettings{Enabled: true, Project: c.URL + "/remote/project"}}}
 	response := managerHTTP(h.m, "/v1/platform/gitlab/notifications/configure", req)
 	if response.Code != 200 || !strings.Contains(response.Body.String(), `"project":"remote/project"`) || !strings.Contains(response.Body.String(), `"recipient_id":101`) || strings.Contains(response.Body.String(), "test-platform-secret") {
 		t.Fatal("independent HTTP configuration failed", response.Code)
 	}
-	req["config"] = gitlab.NotificationConfig{Enabled: true, PlatformID: c.ID, Events: gitlab.EventSettings{Enabled: true, Project: "remote/project"}}
+	req["config"] = gitlab.NotificationConfig{Target: notification.Target{Mode: "room"}, Enabled: true, PlatformID: c.ID, Events: gitlab.EventSettings{Enabled: true, Project: "remote/project"}}
 	if response := managerHTTP(h.m, "/v1/platform/gitlab/notifications/configure", req); response.Code != 409 {
 		t.Fatal("duplicate HTTP creation did not conflict", response.Code)
 	}

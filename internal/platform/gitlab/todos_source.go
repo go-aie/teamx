@@ -20,7 +20,7 @@ type TodosPrepare func(context.Context, string, platform.RoomIdentity, TodosQuer
 type TodosSource struct{ Prepare TodosPrepare }
 
 func (*TodosSource) ID() notification.SourceID { return TodosSourceID }
-func (*TodosSource) Schema() int               { return 2 }
+func (*TodosSource) Schema() int               { return 3 }
 func (*TodosSource) Decode(data []byte, owner platform.RoomIdentity) (notification.State, error) {
 	var s TodosState
 	dec := json.NewDecoder(bytes.NewReader(data))

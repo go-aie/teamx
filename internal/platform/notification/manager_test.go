@@ -19,6 +19,8 @@ import (
 // A second, non-GitLab schema exercises the common engine without Room or any
 // concrete provider. Its progress is deliberately unrelated to date pagination.
 type fixtureState struct {
+	Target   Target
+	Retired  bool
 	Format   int
 	K        Key
 	Version  uint64
@@ -31,7 +33,7 @@ type fixtureState struct {
 }
 
 func (s fixtureState) Metadata() Metadata {
-	return Metadata{Key: s.K, Version: s.Version, Enabled: s.Enabled, PlatformID: s.Platform, Observed: len(s.Seen), Pending: len(s.Inbox), DeliveryError: s.DeliveryErrorCode}
+	return Metadata{Target: s.Target, Retired: s.Retired, Key: s.K, Version: s.Version, Enabled: s.Enabled, PlatformID: s.Platform, Observed: len(s.Seen), Pending: len(s.Inbox), DeliveryError: s.DeliveryErrorCode}
 }
 func (s fixtureState) Validate(owner platform.RoomIdentity) error {
 	if s.Format != 7 || s.K.Owner != owner || s.K.SubscriptionID == "" || s.Version == 0 || s.Seen == nil || s.Inbox == nil {

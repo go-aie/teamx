@@ -1,7 +1,7 @@
-const eventView = value => ({ provider: "gitlab", channel: "events", subscription_id: value.subscription_version ? "a".repeat(32) : "", ...structuredClone(value) });
-const todoView = value => ({ provider: "gitlab", channel: "todos", subscription_id: "", subscription_version: 0, available: true, status: "disabled", pending: 0, metrics: {},
+const eventView = value => ({ platform_id:value.config?.platform_id, instance:"https://gitlab.invalid", provider: "gitlab", channel: "events", subscription_id: value.subscription_version ? "a".repeat(32) : "", ...structuredClone(value) });
+const todoView = value => ({ platform_id:value?.config?.platform_id, provider: "gitlab", channel: "todos", subscription_id: "", subscription_version: 0, available: true, status: "disabled", pending: 0, metrics: {},
   config: { enabled: false, platform_id: "", interval_seconds: 30, filter: {} }, ...structuredClone(value) });
-const notificationList = value => { const subscriptions = [eventView(value), todoView()]; return { subscriptions, gitlab: fixtureGitLabView(subscriptions) }; };
+const notificationList = value => { const subscriptions = [eventView(value), todoView()]; return { subscriptions, gitlab: fixtureGitLabView(subscriptions),gitlab_platforms:[fixtureGitLabView(subscriptions)] }; };
 function fixtureSourceConfig(config, channel) {
   if (channel === "events") return { enabled: !!config.enabled, project: config.project || "", etag_verified: !!config.etag_verified,
     filter: { types: [...(config.filter?.types || [])] } };
@@ -15,13 +15,13 @@ function fixtureGitLabView(sources, record) {
   let connection = common.platform_id || events.config.platform_id || todos.config.platform_id || "";
   if (events.config.enabled && todos.config.enabled && events.config.platform_id !== todos.config.platform_id) connection = "";
   const config = record?.config || { platform_id:connection, target:common.target || {}, interval_seconds:common.interval_seconds || 30, events:fixtureSourceConfig(events.config,"events"), todos:fixtureSourceConfig(todos.config,"todos") };
-  return { version:record?.version || 0, config:structuredClone(config), events, todos, pending:structuredClone(record?.pending || {}), errors:structuredClone(record?.errors || {}), applying:!!record?.applying, backfill_locked:!!record?.backfill_locked || !!events.subscription_id || !!todos.subscription_id };
+  return { platform_id:config.platform_id, version:record?.version || 0, config:structuredClone(config), events, todos, pending:structuredClone(record?.pending || {}), errors:structuredClone(record?.errors || {}), applying:!!record?.applying, backfill_locked:!!record?.backfill_locked || !!events.subscription_id || !!todos.subscription_id };
 }
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import * as client from "./web/client.mjs";
-import { launch, settle, withOnboarding } from "./web_app_harness.mjs";
+import { launch, settle, withOnboarding, openNotification } from "./web_app_harness.mjs";
 
 test("Scion connection discovers a managed account and saves its profile without manual IDs", async () => {
   const api = server(); let item;
@@ -96,7 +96,11 @@ function server(rooms = []) {
         const q = new URL(path, "http://fixture").searchParams;
         return { room_id: q.get("room_id"), room_instance: q.get("room_instance"), workspace: { root: "workspaces" }, workspace_version: 1, members: [], credential_status: "missing" };
       }
-      if (path.startsWith("/v1/platform/notifications?")) return notificationList({ available: true, subscription_version: 0, config: { enabled: false, interval_seconds: 5, filter: {} }, status: "disabled", pending: 0, metrics: { calls: 0, response_bytes: 0 } });
+      if(path.startsWith("/v1/platform/gitlab/notifications?")) {
+      const q=new URL(path,"http://fixture").searchParams,view=notificationList(structuredClone(events.get(q.get("room_id")))).gitlab;
+      view.config.platform_id=q.get("platform_id");view.platform_id=q.get("platform_id");return view;
+    }
+    if (path.startsWith("/v1/platform/notifications?")) return notificationList({ available: true, subscription_version: 0, config: { enabled: false, interval_seconds: 5, filter: {} }, status: "disabled", pending: 0, metrics: { calls: 0, response_bytes: 0 } });
       if (path === "/v1/rooms/create") {
         assert.equal(data.caller.id, "tester");
         let room = catalog.rooms.find(room => room.create_id === data.create_id);
@@ -668,7 +672,7 @@ test("member list and activity details share the right sidebar, with back, colla
   const list = ui.el("member-list-view");
   const reads = () => api.calls.filter(call => call.path === "/v1/member/activity");
   const open = async () => {
-    await ui.el("members").children[1].querySelector(".member-summary").emit("click"); await settle();
+    await ui.el("members").children[1].querySelector(".member-summary").emit("click"); await ui.el("agent-tab-activity").emit("click"); await settle();
   };
   assert.equal(ui.el("toggle-activity"), undefined); assert.equal(list.hidden, false);
   members.push(...["observer", "reviewer"].map((id, index) => ({ agent_id: id, membership_id: `generation-${id}`,
@@ -842,7 +846,7 @@ test("activity flow keeps interleaved order, row identity and disclosure choices
   api.hook = path => path === "/v1/member/list" ? { members: [member] }
     : path === "/v1/member/activity" ? structuredClone(output) : undefined;
   const ui = await launch(api);
-  await ui.el("members").children[0].querySelector(".member-summary").emit("click");
+  await ui.el("members").children[0].querySelector(".member-summary").emit("click"); await ui.el("agent-tab-activity").emit("click");
   await settle();
   assert.equal(ui.el("activity-timeline").hidden, false);
   const rows = () => ui.el("activity-timeline").children;
@@ -904,7 +908,7 @@ test("activity follows appended spans and growing replies, pauses while reading 
   Object.defineProperty(body, "scrollTop", { get: () => top, set: value => { top = Math.max(0, Math.min(value, body.scrollHeight - body.clientHeight)); } });
   const atBottom = () => assert.equal(body.scrollTop, body.scrollHeight - body.clientHeight);
   const open = async () => {
-    await ui.el("members").children[0].querySelector(".member-summary").emit("click"); await settle();
+    await ui.el("members").children[0].querySelector(".member-summary").emit("click"); await ui.el("agent-tab-activity").emit("click"); await settle();
   };
   await open(); atBottom(); assert.equal(jump.hidden, true);
   result.events.push({ seq: 2, kind: "tool", tool: { id: "test", title: "运行测试", status: "in_progress" } });
@@ -1498,6 +1502,10 @@ function notificationServer() {
   api.platforms[0].validation = { status: "valid", user_id: 101, username: "alice" };
   for (const [id, value] of events) value.project = structuredClone(api.workspaces.get(id).workspace.binding);
   api.hook = (path, data) => {
+    if(path.startsWith("/v1/platform/gitlab/notifications?")) {
+      const q=new URL(path,"http://fixture").searchParams,view=notificationList(structuredClone(events.get(q.get("room_id")))).gitlab;
+      view.config.platform_id=q.get("platform_id");view.platform_id=q.get("platform_id");return view;
+    }
     if (path.startsWith("/v1/platform/notifications?")) return notificationList(structuredClone(events.get(new URL(path, "http://fixture").searchParams.get("room_id"))));
     if (path === "/v1/platform/notifications/configure") {
       const saved = events.get(data.room_id);
@@ -1522,7 +1530,7 @@ test("GitLab message author and keyboard avatar open notification details and cl
   await ui.el("members").children[0].querySelector(".member-summary").emit("click"); await settle();
   assert.equal(ui.el("activity-dialog").open, true);
   await msg.querySelector(".author").emit("click"); await settle();
-  assert.equal(ui.el("activity-dialog").open, false); assert.equal(ui.el("notification-detail").open, true);
+  assert.equal(ui.el("activity-dialog").hidden, true); assert.equal(ui.el("notification-detail").open, true);
   const reads = api.calls.filter(c => c.path === "/v1/member/activity").length;
   await ui.refresh(); assert.equal(api.calls.filter(c => c.path === "/v1/member/activity").length, reads);
   await ui.el("close-notification").emit("click");
@@ -1558,7 +1566,13 @@ function todosServer({ bound = true, enabled = false } = {}) {
     if (path === "/v1/platform/gitlab/projects") return api.projectPage ? api.projectPage(data) : {projects:["group/project-A","group/changed","other/project"].map((path,index)=>({id:index+1,name:path.split("/").at(-1),path_with_namespace:path})),next_page:0};
     if (path.startsWith("/v1/platform/notifications?")) {
       const id = new URL(path, "http://fixture").searchParams.get("room_id");
-      return { subscriptions: [eventView(events.get(id)), structuredClone(todos.get(id))], gitlab: viewFor(id) };
+      return { subscriptions: [eventView(events.get(id)), structuredClone(todos.get(id))], gitlab: viewFor(id),gitlab_platforms:[viewFor(id)] };
+    }
+    if(path.startsWith("/v1/platform/gitlab/notifications?")) {
+      const q=new URL(path,"http://fixture").searchParams,v=viewFor(q.get("room_id"));
+      v.config.platform_id=q.get("platform_id");v.platform_id=q.get("platform_id");
+      if(q.get("target_mode")==="inbox")v.config.target={mode:"inbox",agent_id:q.get("agent_id"),membership_id:q.get("membership_id")};
+      return v;
     }
     if (path === "/v1/platform/gitlab/notifications/configure") {
       const previous = viewFor(data.room_id);
@@ -1595,18 +1609,18 @@ function todosServer({ bound = true, enabled = false } = {}) {
   return { api, events, todos };
 }
 
-test("GT-03 message navigation requires explicit channels and keyboard tabs preserve selection", async () => {
-  const { api } = todosServer(); api.history.set("A", ["events", "todos"].map((channel, index) => ({ ...message(index + 1, "integration fact"), author: { kind: "integration", id: "gitlab" }, source: { provider: "gitlab", channel } })));
+test("GT-03 message navigation opens direct platform details and the requested channel", async () => {
+  const { api } = todosServer({enabled:true}); api.history.set("A", ["events", "todos"].map((channel, index) => ({ ...message(index + 1, "integration fact"), author: { kind: "integration", id: "gitlab" }, source: { provider: "gitlab", channel, subscription_id:(channel==="todos" ? "c" : "a").repeat(32), platform_id:"a".repeat(32) } })));
   const ui = await launch(api);
   for (let i = 1; i <= 2; i++) {
     const article = ui.document.getElementById(`message-${i}`), channel = i === 2 ? "todos" : "events";
     assert.equal(article.querySelector(".author").textContent, `GitLab · ${i === 2 ? "我的待办" : "项目活动"}`);
-    await article.querySelector(".author").emit("click"); assert.equal(ui.el("notification-tab-gitlab").attributes["aria-selected"], "true"); assert.equal(ui.el(`gitlab-${channel}-settings`).open, true);
+    await article.querySelector(".author").emit("click"); assert.equal(ui.el("notification-panel-gitlab").hidden, false); assert.equal(ui.el(`gitlab-${channel}-settings`).open, true);
     await ui.el("close-notification").emit("click"); await article.querySelector(".avatar").emit("keydown", { key: "Enter" });
     assert.equal(ui.el("notification-panel-gitlab").hidden, false); assert.equal(ui.el(`gitlab-${channel}-settings`).open, true);
   }
-  await ui.el("notification-tab-messages").emit("keydown", { key: "ArrowLeft" }); assert.equal(ui.el("notification-tab-gitlab").attributes["tabindex"], "0");
-  await ui.el("notification-tab-gitlab").emit("keydown", { key: "End" }); assert.equal(ui.el("notification-tab-messages").attributes["aria-selected"], "true");
+  assert.equal(ui.el("notification-tab-gitlab"),undefined);
+  assert.equal(ui.el("notification-settings-details"),undefined);
 });
 
 
@@ -1633,7 +1647,7 @@ test("private activity rejects unordered diagnostics instead of displaying legac
   api.hook = path => path === "/v1/member/list" ? {members:[member]}
     : path === "/v1/member/activity" ? structuredClone({member,last_output:{result}}) : undefined;
   const ui = await launch(api);
-  await ui.el("members").children[0].querySelector(".member-summary").emit("click"); await settle();
+  await ui.el("members").children[0].querySelector(".member-summary").emit("click"); await ui.el("agent-tab-activity").emit("click"); await settle();
   assert.equal(ui.el("activity-output").hidden, true);
   assert.match(ui.el("activity-notice").textContent, /格式无效/);
   result = {events:[],stopReason:"cancelled"};
@@ -2297,7 +2311,7 @@ test("an unconfirmed enable is observed without automatically replaying the muta
 
 const gitlabPath = action => `/v1/platform/gitlab/notifications/${action}`;
 const gitlabWrites = api => api.calls.filter(c => c.path === gitlabPath("configure"));
-async function openGitLab(ui) { await ui.el("open-gitlab-source").emit("click"); await settle(); }
+async function openGitLab(ui) { await openNotification(ui,"gitlab"); await settle(); }
 async function editGitLab(ui, id, value, event = "change") { ui.el(id).value = value; await ui.el(id).emit(event); }
 async function selectGitLabProject(ui, path) {
   await expandDisclosure(ui.el("gitlab-project-picker"));
@@ -2338,7 +2352,7 @@ test("GitLab channel switches reveal their own settings and retain independent d
   assert.equal(ui.el("gitlab-events-settings").open,true);
   await toggleGitLab(ui,"gitlab-events-enabled",false);assert.equal(ui.el("gitlab-events-settings").open,false);
   await toggleGitLab(ui,"gitlab-events-enabled",true);assert.equal(ui.el("gitlab-events-settings").open,true);
-  await ui.el("notification-tab-messages").emit("click");await ui.el("notification-tab-gitlab").emit("click");
+  await ui.el("close-notification").emit("click");await openGitLab(ui);
   assert.equal(ui.el("gitlab-todos-enabled").checked,true);assert.equal(ui.el("gitlab-events-enabled").checked,true);
   assert.equal(gitlabWrites(api).length,0);
 });
@@ -2365,9 +2379,9 @@ test("GitLab shared sync status preserves independent failures and rejects stale
 test("GitLab saves one provider model with one version and no repeated shared fields", async () => {
   const { api, events, todos } = todosServer({ enabled:true }), ui = await launch(api); await openGitLab(ui);
   for (const id of ["gitlab-events-interval", "gitlab-todos-interval", "gitlab-todos-inactive-interval", "gitlab-events-branches", "gitlab-events-ignore", "gitlab-todos-scope"]) assert.equal(ui.el(id), undefined);
+  await openNotification(ui,"gitlab","b".repeat(32));
   await editGitLab(ui,"gitlab-interval","60","input");
-  assert.equal(ui.el("gitlab-events-save"), undefined); assert.equal(ui.el("gitlab-todos-save"), undefined);
-  await editGitLab(ui,"gitlab-connection","b".repeat(32)); await ui.el("gitlab-save").emit("click");
+  assert.equal(ui.el("gitlab-events-save"), undefined); assert.equal(ui.el("gitlab-todos-save"), undefined); await ui.el("gitlab-save").emit("click");
   assert.equal(gitlabWrites(api).length,1);
   const body=gitlabWrites(api)[0].data;
   assert.equal(body.version,0); assert.equal(body.channel,undefined); assert.equal(body.subscription_id,undefined);
@@ -2390,16 +2404,12 @@ test("GitLab can save common settings while both message types are disabled", as
   await ui.refresh();assert.equal(ui.el("gitlab-connection").value,"b".repeat(32));assert.equal(ui.el("gitlab-events-enabled").checked,false);
 });
 
-test("GitLab common target submits the exact membership once for both message types",async()=>{
-  const {api,events,todos}=todosServer({enabled:true}),hook=api.hook;
-  const member={agent_id:"reviewer",membership_id:"reviewer-generation-2",runner:{profile:"runtime"},status:"paused"};
-  api.hook=(path,body)=>path==="/v1/member/list"?{members:[member],latest_seq:1}:hook(path,body);
-  const ui=await launch(api);await openGitLab(ui);
-  const value=JSON.stringify({mode:"inbox",agent_id:member.agent_id,membership_id:member.membership_id});
-  await editGitLab(ui,"gitlab-target",value);await ui.el("gitlab-save").emit("click");
-  assert.deepEqual(gitlabWrites(api)[0].data.config.target,JSON.parse(value));
-  for (const source of [events,todos]) assert.deepEqual(source.get("A").config.target,JSON.parse(value));
-  assert.equal(api.calls.some(c=>/member\/(restart|enable|resume)/.test(c.path)),false);
+test("GitLab room target is fixed and ignores a forged recipient selector",async()=>{
+  const {api}=todosServer({enabled:true}),ui=await launch(api);await openGitLab(ui);
+  await editGitLab(ui,"gitlab-target",JSON.stringify({mode:"inbox",agent_id:"other",membership_id:"other"}));
+  await editGitLab(ui,"gitlab-interval","60","input");await ui.el("gitlab-save").emit("click");
+  assert.deepEqual(gitlabWrites(api)[0].data.config.target,{mode:"room"});
+  assert.equal(ui.el("gitlab-target").disabled,true);
 });
 
 test("GitLab enables one selected type while retaining one common config",async()=>{
@@ -2409,10 +2419,10 @@ test("GitLab enables one selected type while retaining one common config",async(
   assert.equal(gitlabWrites(api).length,1);assert.equal(events.get("A").config.enabled,false);assert.equal(todos.get("A").config.enabled,true);
 });
 
-test("GitLab public draft survives polling, platform tabs, rail closing and connection management",async()=>{
+test("GitLab public draft survives polling, detail reopening, rail closing and connection management",async()=>{
   const {api}=todosServer({enabled:true}),ui=await launch(api);await openGitLab(ui);
   await selectGitLabProject(ui,"group/changed");await editGitLab(ui,"gitlab-interval","60","input");
-  await ui.refresh();await ui.el("notification-tab-messages").emit("click");await ui.el("notification-tab-gitlab").emit("click");
+  await ui.refresh();await ui.el("close-notification").emit("click");await openGitLab(ui);
   await ui.el("gitlab-manage-platforms").emit("click");await ui.el("close-settings").emit("click");await settle();
   await ui.el("close-notification").emit("click");await openGitLab(ui);
   assert.equal(ui.el("gitlab-project-summary").textContent,"group/changed");assert.equal(String(ui.el("gitlab-interval").value),"60");assert.equal(gitlabWrites(api).length,0);
@@ -2594,7 +2604,7 @@ test("GitLab project picker discards late search, connection and room responses"
   api.projectPage=()=>new Promise(resolve=>{finish=resolve;});
   const pending=ui.el("gitlab-project-refresh").emit("click");await settle();const previous=finish;
   api.projectPage=()=>({projects:[project("other/project")],next_page:0});
-  await editGitLab(ui,"gitlab-connection","b".repeat(32));await settle();
+  await openNotification(ui,"gitlab","b".repeat(32));await expandDisclosure(ui.el("gitlab-project-picker"));await settle();
   previous({projects:[project("stale/project")],next_page:2});await pending;
   assert.equal(ui.el("gitlab-project-search").value,"");assert.equal(ui.el("gitlab-project-options").children[0].children[0].value,"other/project");
   api.projectPage=()=>new Promise(resolve=>{finish=resolve;});
@@ -2647,7 +2657,7 @@ test("GitLab custom reception start survives drafts and reload and is shared by 
  const start=new Date(Math.floor((Date.now()-7*86400000)/1000)*1000),local=gitlabLocalTime(start);
  await editGitLab(ui,"gitlab-backfill-start",local,"input");
  await ui.refresh();assert.equal(ui.el("gitlab-backfill-start").value,local);
- await ui.el("notification-tab-messages").emit("click");await ui.el("notification-tab-gitlab").emit("click");
+ await ui.el("close-notification").emit("click");await openGitLab(ui);
  assert.equal(ui.el("gitlab-backfill-start").value,local);assert.equal(ui.el("gitlab-save").disabled,false);
  await ui.el("gitlab-save").emit("click");
  assert.equal(gitlabWrites(api)[0].data.config.backfill_start,start.toISOString());
@@ -2694,7 +2704,7 @@ test("DSH threshold shows Session counts and keeps pause available during automa
     if(path==="/v1/member/pause"){member.execution.paused=true;return structuredClone(member.execution)};
   };
   const ui=await launch(api);
-  await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();
+  await ui.el("members").children[0].querySelector(".member-summary").emit("click"); await ui.el("agent-tab-activity").emit("click");await settle();
   assert.equal(ui.el("activity-budget").textContent,"2 / 2 · 累计 6");
   assert.match(ui.el("activity-rotation").textContent,/达到会话回合阈值 · old_closed/);
   assert.equal(ui.el("agent-enable-hint").hidden,true);

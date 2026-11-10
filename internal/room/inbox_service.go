@@ -98,27 +98,41 @@ func (s *service) stopInboxLocked(ctx context.Context, membership string) error 
 	return nil
 }
 
+// Query admission also checks targets when no backlog exists. Collaboration
+// state and model budgets do not participate in notification admission.
+func (m *roomManager) checkNotificationTargetLocked(ctx context.Context, owner RoomIdentity, target notification.Target) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if !target.Valid() {
+		return ErrRequest
+	}
+	if !target.Inbox() {
+		return nil
+	}
+	id := MemberIdentity{RoomIdentity: owner, AgentID: target.AgentID, MembershipID: target.MembershipID}
+	if m.platformMemberChanges[id] {
+		return ErrBusy
+	}
+	roster, err := m.toolRosterLocked(ctx, owner)
+	if err != nil {
+		return err
+	}
+	if !memberExists(roster, target.AgentID, target.MembershipID) {
+		return ErrIdentity
+	}
+	return nil
+}
 func (m *roomManager) validateNotificationTargetLocked(ctx context.Context, owner RoomIdentity, target notification.Target, enabled bool) error {
 	if !target.Valid() {
 		return ErrRequest
 	}
-	if !enabled || !target.Inbox() {
+	// Configure callers validate new scopes even when disabled. An existing
+	// orphan may always be paused without requiring a live member.
+	if !enabled {
 		return nil
 	}
-	svc, _ := m.runtimeServiceLocked(owner)
-	if svc == nil || svc.closing.Load() || svc.restarting.Load() {
-		return ErrBusy
-	}
-	list, err := svc.room.Call[MemberList](ctx, ListMembers{owner})
-	if err != nil {
-		return err
-	}
-	for _, member := range list.Members {
-		if member.AgentID == target.AgentID && member.MembershipID == target.MembershipID {
-			return nil
-		}
-	}
-	return ErrIdentity
+	return m.checkNotificationTargetLocked(ctx, owner, target)
 }
 
 // Prefer current target diagnostics even before the next delivery attempt. A

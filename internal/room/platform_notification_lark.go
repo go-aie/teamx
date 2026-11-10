@@ -77,13 +77,14 @@ func (m *roomManager) larkNotificationAdapter() notificationAdapter {
 	}}
 }
 
-// The shared notification manager enforces one active subscription per Room/platform.
-func (m *roomManager) currentLarkLocked(owner RoomIdentity, platformIDs ...string) (*lark.State, error) {
-	id, err := m.notificationPlatformLocked(owner, lark.MessagesSourceID, platformIDs...)
-	if err != nil {
-		return nil, err
+func (m *roomManager) currentLarkForTargetLocked(owner RoomIdentity, id string, target notification.Target) (*lark.State, error) {
+	for _, previous := range m.notifications.StatesLocked(owner) {
+		meta := previous.Metadata()
+		if meta.Key.Source == lark.MessagesSourceID && meta.PlatformID == id && meta.Target.ScopeKey() == target.ScopeKey() && meta.Retired && m.attachmentCallsBusyLocked(meta.Key) {
+			return nil, ErrBusy
+		}
 	}
-	state, err := m.notifications.CurrentLocked(owner, lark.MessagesSourceID, id)
+	state, err := m.notifications.CurrentLocked(owner, lark.MessagesSourceID, id, target)
 	if err != nil || state == nil {
 		return nil, notificationRoomError(err)
 	}
@@ -118,7 +119,10 @@ func (m *roomManager) configureLarkSubscription(ctx context.Context, key notific
 	if err != nil || entry.Status != "ready" {
 		return lark.State{}, ErrIdentity
 	}
-	current, err := m.currentLarkLocked(key.Owner, m.subscriptionPlatformLocked(key, cfg.PlatformID))
+	if old, exists := m.notifications.StateLocked(key); exists && (old.Metadata().Target != cfg.Target || old.Metadata().PlatformID != cfg.PlatformID) {
+		return lark.State{}, ErrIdentity
+	}
+	current, err := m.currentLarkForTargetLocked(key.Owner, m.subscriptionPlatformLocked(key, cfg.PlatformID), cfg.Target)
 	if err != nil {
 		return lark.State{}, err
 	}
@@ -127,6 +131,11 @@ func (m *roomManager) configureLarkSubscription(ctx context.Context, key notific
 	}
 	if current != nil && cfg.PlatformID != current.Binding.PlatformID {
 		return lark.State{}, ErrConflict
+	}
+	if current == nil {
+		if err := m.checkNotificationTargetLocked(ctx, key.Owner, cfg.Target); err != nil {
+			return lark.State{}, err
+		}
 	}
 	if err = m.validateNotificationTargetLocked(ctx, key.Owner, cfg.Target, cfg.Enabled); err != nil {
 		return lark.State{}, err
@@ -153,15 +162,17 @@ func (m *roomManager) configureLarkSubscription(ctx context.Context, key notific
 			return retired, notificationRoomError(e)
 		}
 		done := m.notifications.ChangedLocked(retired.Metadata().Key)
-		m.mu.Unlock()
+		waits := m.cancelAttachmentCallsLocked(retired.Metadata().Key)
 		if done != nil {
-			e = notification.Wait(ctx, []<-chan struct{}{done})
+			waits = append(waits, done)
 		}
+		m.mu.Unlock()
+		e = notification.Wait(ctx, waits)
 		m.mu.Lock()
 		if e != nil {
 			return retired, e
 		}
-		active, e := m.currentLarkLocked(key.Owner, m.subscriptionPlatformLocked(key, cfg.PlatformID))
+		active, e := m.currentLarkForTargetLocked(key.Owner, m.subscriptionPlatformLocked(key, cfg.PlatformID), cfg.Target)
 		a, _, accountErr := m.resolvePlatformAccountLocked(key.Owner, cfg.PlatformID, "lark")
 		if m.closing || m.roomBusyLocked(key.Owner) || e != nil || active != nil || accountErr != nil || larkBinding(a) != b {
 			return retired, ErrConflict
@@ -193,7 +204,7 @@ func (m *roomManager) configureLarkSubscription(ctx context.Context, key notific
 	m.notifications.EnsureLocked(next.Metadata().Key)
 	return next, nil
 }
-func (m *roomManager) syncLarkSubscription(ctx context.Context, key notification.Key, version uint64) error {
+func (m *roomManager) syncLarkSubscription(ctx context.Context, key notification.Key, version uint64, target notification.Target) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.closing || m.roomBusyLocked(key.Owner) {
@@ -206,6 +217,16 @@ func (m *roomManager) syncLarkSubscription(ctx context.Context, key notification
 	s, ok := state.(lark.State)
 	if !ok || s.SubscriptionVersion != version {
 		return ErrConflict
+	}
+	target, err := target.Normalize()
+	if err != nil {
+		return notificationRoomError(err)
+	}
+	if s.Config.Target != target {
+		return ErrIdentity
+	}
+	if err := m.validateNotificationTargetLocked(ctx, key.Owner, target, true); err != nil {
+		return err
 	}
 	if s.Retired || !s.Config.Enabled {
 		return ErrRequest
@@ -227,8 +248,20 @@ func (m *roomManager) syncLarkSubscription(ctx context.Context, key notification
 		err = notification.Wait(ctx, []<-chan struct{}{done})
 	}
 	m.mu.Lock()
-	if err == nil {
-		m.notifications.WakeLocked(key)
+	if err != nil {
+		return err
 	}
-	return err
+	latest, ok := m.notifications.StateLocked(key)
+	if !ok || latest.Metadata().Version != next.SubscriptionVersion || latest.Metadata().Target != target {
+		return ErrConflict
+	}
+	if err := m.checkNotificationTargetLocked(ctx, key.Owner, target); err != nil {
+		return err
+	}
+	account, _, err := m.resolvePlatformAccountLocked(key.Owner, next.Binding.PlatformID, "lark")
+	if err != nil || larkBinding(account) != next.Binding {
+		return ErrConflict
+	}
+	m.notifications.WakeLocked(key)
+	return nil
 }

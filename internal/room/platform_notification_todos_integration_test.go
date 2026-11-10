@@ -280,10 +280,10 @@ func TestTodosPublicHTTPWorksWithoutWorkspaceAndGuardsIdentity(t *testing.T) {
 	var list struct {
 		Subscriptions []notificationView `json:"subscriptions"`
 	}
-	if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &list) != nil || len(list.Subscriptions) != 3 || list.Subscriptions[1].RecipientID != 101 || !list.Subscriptions[1].Available || !list.Subscriptions[0].Available || strings.Contains(response.Body.String(), "fingerprint") {
+	if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &list) != nil || len(list.Subscriptions) != 1 || list.Subscriptions[0].RecipientID != 101 || !list.Subscriptions[0].Available || strings.Contains(response.Body.String(), "fingerprint") {
 		t.Fatal(response.Code, response.Body.String())
 	}
-	cfg := gitlab.NotificationConfig{Enabled: true, PlatformID: h.connection.ID, Todos: gitlab.TodoSettings{Enabled: true}}
+	cfg := gitlab.NotificationConfig{Target: notification.Target{Mode: "room"}, Enabled: true, PlatformID: h.connection.ID, Todos: gitlab.TodoSettings{Enabled: true}}
 	request := func() map[string]any {
 		return map[string]any{"service_epoch": h.m.epoch, "room_id": h.room.RoomID, "room_instance": h.room.RoomInstance, "version": 0, "caller": humanCaller, "config": cfg}
 	}
@@ -300,6 +300,8 @@ func TestTodosPublicHTTPWorksWithoutWorkspaceAndGuardsIdentity(t *testing.T) {
 	r := request()
 	r["version"] = 1
 	delete(r, "config")
+	r["target"] = notification.Target{Mode: "room"}
+	r["platform_id"] = cfg.PlatformID
 	if got := managerHTTP(h.m, "/v1/platform/gitlab/notifications/sync", r); got.Code != 200 {
 		t.Fatal(got.Code, got.Body.String())
 	}
@@ -371,7 +373,7 @@ func TestTodosCapacityRejectsWholePage(t *testing.T) {
 	}
 }
 
-func TestTodosAccountReplacementRetiresAndKeepsOldProgress(t *testing.T) {
+func TestTodosAdditionalAccountKeepsIndependentProgress(t *testing.T) {
 	parallelFixtureTest(t)
 	h := newTodoHarness(t)
 	h.pages.pending = []gitlab.Todo{h.todo(1, 0, "pending")}
@@ -386,23 +388,23 @@ func TestTodosAccountReplacementRetiresAndKeepsOldProgress(t *testing.T) {
 	cfg := old.Config
 	cfg.PlatformID = other.ID
 	h.clock.add(time.Minute)
-	next, err := h.m.configureTodosSubscription(context.Background(), h.key, old.SubscriptionVersion, cfg)
+	if _, err := h.m.configureTodosSubscription(context.Background(), h.key, old.SubscriptionVersion, cfg); !errors.Is(err, ErrIdentity) {
+		t.Fatal("existing subscription moved to another platform", err)
+	}
+	next, err := h.m.configureTodosSubscription(context.Background(), notification.Key{Owner: h.room.RoomIdentity, Source: gitlab.TodosSourceID}, 0, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if next.SubscriptionID == old.SubscriptionID || !next.Baseline.After(old.Baseline) || len(next.Inbox) != 0 || len(next.Observed) != 0 || next.Binding.UserID != 102 || next.Binding.URL != other.URL {
 		t.Fatal(next)
 	}
-	retired := h.state()
-	if !retired.Retired || retired.Config.Enabled || len(retired.Inbox) != 1 || len(retired.Observed) != 1 || !retired.Baseline.Equal(old.Baseline) {
-		t.Fatal(retired)
-	}
-	if err = h.m.notifications.Deliver(context.Background(), h.key, retired.SubscriptionVersion); !errors.Is(err, notification.ErrIdentity) {
-		t.Fatal("retired inbox delivered", err)
+	retained := h.state()
+	if retained.Retired || !retained.Config.Enabled || len(retained.Inbox) != 1 || len(retained.Observed) != 1 || !retained.Baseline.Equal(old.Baseline) || retained.SubscriptionID != old.SubscriptionID {
+		t.Fatal("additional account changed original progress", retained)
 	}
 	remove := managedPlatformRequest{ServiceEpoch: h.m.epoch, Caller: humanCaller, ID: h.connection.ID, Version: h.connection.Version}
 	if _, err = h.m.updatePlatform(remove, true); !errors.Is(err, errPlatformReferenced) {
-		t.Fatal("retired subscription lost connection reference", err)
+		t.Fatal("original subscription lost connection reference", err)
 	}
 	root := h.m.store.dir
 	if err = h.m.close(); err != nil {
@@ -411,11 +413,12 @@ func TestTodosAccountReplacementRetiresAndKeepsOldProgress(t *testing.T) {
 	h.m = testManager(t, root, managerTestProfiles(t))
 	h.m.notifications.Clock = h.clock.get
 	h.m.mu.Lock()
-	current, err := h.m.currentTodosLocked(h.room.RoomIdentity)
+	current, err := h.m.currentTodosForTargetLocked(h.room.RoomIdentity, other.ID, notification.Target{})
+	original, originalErr := h.m.currentTodosForTargetLocked(h.room.RoomIdentity, h.connection.ID, notification.Target{})
 	views, viewErr := h.m.notificationViewsLocked(h.room.RoomIdentity)
 	history, histErr := h.m.retiredNotificationViewsLocked(h.room.RoomIdentity)
 	h.m.mu.Unlock()
-	if err != nil || viewErr != nil || histErr != nil || current.SubscriptionID != next.SubscriptionID || len(views) != 3 || views[1].SubscriptionID != next.SubscriptionID || len(history) != 1 || !history[0].Retired || history[0].Pending != 1 {
+	if err != nil || originalErr != nil || viewErr != nil || histErr != nil || current == nil || original == nil || current.SubscriptionID != next.SubscriptionID || original.SubscriptionID != old.SubscriptionID || len(original.Inbox) != 1 || len(original.Observed) != 1 || !original.Baseline.Equal(old.Baseline) || len(views) != 2 || len(history) != 0 {
 		t.Fatal(current, views, history, err, viewErr, histErr)
 	}
 }
@@ -688,7 +691,7 @@ func TestTodosTCPHTTPConfigureSyncDisableAndRoomDelivery(t *testing.T) {
 	}
 	server := httptest.NewServer(m)
 	defer server.Close()
-	cfg := gitlab.NotificationConfig{Enabled: true, PlatformID: c.ID, Todos: gitlab.TodoSettings{Enabled: true}}
+	cfg := gitlab.NotificationConfig{Target: notification.Target{Mode: "room"}, Enabled: true, PlatformID: c.ID, Todos: gitlab.TodoSettings{Enabled: true}}
 	payload := map[string]any{"service_epoch": m.epoch, "room_id": room.RoomID, "room_instance": room.RoomInstance, "version": 0, "caller": humanCaller, "config": cfg}
 	call := func(path string) notificationView {
 		t.Helper()
@@ -715,6 +718,8 @@ func TestTodosTCPHTTPConfigureSyncDisableAndRoomDelivery(t *testing.T) {
 		t.Fatal(view)
 	}
 	delete(payload, "config")
+	payload["target"] = notification.Target{Mode: "room"}
+	payload["platform_id"] = cfg.PlatformID
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		_, snapshot := readManagedRoom(t, m, room)
@@ -731,6 +736,7 @@ func TestTodosTCPHTTPConfigureSyncDisableAndRoomDelivery(t *testing.T) {
 	}
 	view = call("/v1/platform/gitlab/notifications/sync")
 	cfg.Todos.Enabled = false
+	delete(payload, "target")
 	payload["config"] = cfg
 	view = call("/v1/platform/gitlab/notifications/configure")
 	if view.Status != "disabled" {

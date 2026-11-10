@@ -24,7 +24,7 @@ type EventsPrepare func(context.Context, string, Binding) (EventFetcher, int64, 
 type EventsSource struct{ Prepare EventsPrepare }
 
 func (*EventsSource) ID() notification.SourceID { return EventsSourceID }
-func (*EventsSource) Schema() int               { return 2 }
+func (*EventsSource) Schema() int               { return 3 }
 func (*EventsSource) Decode(data []byte, owner platform.RoomIdentity) (notification.State, error) {
 	var state EventsState
 	dec := json.NewDecoder(bytes.NewReader(data))
@@ -135,7 +135,7 @@ func SyncEvents(s EventsState, binding platform.ProjectBinding) (EventsState, bo
 }
 
 func (s EventsState) Metadata() notification.Metadata {
-	return notification.Metadata{Key: notification.Key{Owner: s.RoomIdentity, Source: EventsSourceID, SubscriptionID: s.SubscriptionID}, Version: s.SubscriptionVersion, Enabled: s.Config.Enabled, Retired: s.Retired, PlatformID: s.Binding.PlatformID, Observed: len(s.Observed), Pending: len(s.Inbox), DeliveryError: s.DeliveryErrorCode}
+	return notification.Metadata{Target: s.Config.Target.Canonical(), Key: notification.Key{Owner: s.RoomIdentity, Source: EventsSourceID, SubscriptionID: s.SubscriptionID}, Version: s.SubscriptionVersion, Enabled: s.Config.Enabled, Retired: s.Retired, PlatformID: s.Binding.PlatformID, Observed: len(s.Observed), Pending: len(s.Inbox), DeliveryError: s.DeliveryErrorCode}
 }
 func (s EventsState) CloneState() notification.State { return s.Clone() }
 func (s EventsState) PendingItems() []notification.Item {

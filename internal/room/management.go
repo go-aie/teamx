@@ -150,7 +150,7 @@ type roomManager struct {
 	platformProject          func(context.Context, string, string, workspaceSecret) (int64, error)
 	notifications            *notification.Manager
 	notificationAdapters     map[notification.SourceID]notificationAdapter
-	gitlabNotifications      map[RoomIdentity]map[string]gitlabNotificationRecord
+	gitlabNotifications      map[RoomIdentity]map[notificationScope]gitlabNotificationRecord
 	gitlabConfiguring        map[platformNotificationKey]bool
 	platformHTTP             http.RoundTripper // offline built-in HTTP seam; never used by agent tools
 	workspaceRun             platform.Execute  // offline subprocess seam; no public configuration hook
@@ -189,6 +189,9 @@ func newRoomManager(dir string, maxTurns uint64) (_ *roomManager, err error) {
 			_ = store.Close()
 		}
 	}()
+	if err := checkMemberNotificationsUpgrade(store.dir); err != nil {
+		return nil, err
+	}
 	if err := checkLarkNotificationUpgrade(store.dir); err != nil {
 		return nil, err
 	}

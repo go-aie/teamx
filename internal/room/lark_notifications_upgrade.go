@@ -87,13 +87,13 @@ func (m *roomManager) upgradeLarkNotificationsLocked() (int, error) {
 			if decodeNotificationJSON(before, &wire) != nil || wire.SourceID != lark.MessagesSourceID {
 				return 0, ErrInvalid
 			}
-			if wire.Schema == (&lark.Source{}).Schema() {
+			if wire.Schema == 2 || wire.Schema == (&lark.Source{}).Schema() {
 				state, e := decodeLarkUpgradeState(wire.State, room.RoomIdentity)
 				if e != nil {
 					return 0, e
 				}
 				if !state.Metadata().Retired {
-					key := room.RoomInstance + "/" + state.Metadata().PlatformID
+					key := room.RoomInstance + "/" + state.Metadata().PlatformID + "/" + state.Metadata().Target.ScopeKey()
 					if active[key] {
 						return 0, ErrConflict
 					}
@@ -116,13 +116,13 @@ func (m *roomManager) upgradeLarkNotificationsLocked() (int, error) {
 				return 0, ErrInvalid
 			}
 			if !state.Metadata().Retired {
-				key := room.RoomInstance + "/" + state.Metadata().PlatformID
+				key := room.RoomInstance + "/" + state.Metadata().PlatformID + "/" + state.Metadata().Target.ScopeKey()
 				if active[key] {
 					return 0, ErrConflict
 				}
 				active[key] = true
 			}
-			wire.Schema = (&lark.Source{}).Schema()
+			wire.Schema = 2
 			after, e := json.Marshal(wire)
 			if e != nil {
 				return 0, e

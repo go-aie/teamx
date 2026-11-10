@@ -171,8 +171,26 @@ func (m *roomManager) beginPlatformMemberChange(ctx context.Context, svc *servic
 	done := m.cancelPlatformCallsLocked(func(call *platformCall) bool {
 		return call.owner == id.RoomIdentity && call.agentID == id.AgentID && call.membershipID == id.MembershipID
 	})
+	var keys []notification.Key
+	for _, state := range m.notifications.StatesLocked(id.RoomIdentity) {
+		meta := state.Metadata()
+		if meta.Target.Inbox() && meta.Target.AgentID == id.AgentID && meta.Target.MembershipID == id.MembershipID {
+			keys = append(keys, meta.Key)
+			if settled := m.notifications.CancelLocked(meta.Key); settled != nil {
+				done = append(done, settled)
+			}
+			done = append(done, m.cancelAttachmentCallsLocked(meta.Key)...)
+		}
+	}
 	m.mu.Unlock()
-	release := func() { m.mu.Lock(); delete(m.platformMemberChanges, id); m.mu.Unlock() }
+	release := func() {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		delete(m.platformMemberChanges, id)
+		for _, key := range keys {
+			m.notifications.EnsureLocked(key)
+		}
+	}
 	wait, cancel := context.WithTimeout(ctx, serviceShutdownTimeout)
 	defer cancel()
 	if err := notification.Wait(wait, done); err != nil {

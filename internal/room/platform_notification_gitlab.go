@@ -89,8 +89,12 @@ func (m *roomManager) eventsRead(b gitlab.Binding) gitlab.ReadAPI {
 }
 
 func (m *roomManager) checkGitLabSubscriptionsLocked(owner RoomIdentity, source notification.SourceID) error {
-	for _, id := range m.gitlabPlatformIDsLocked(owner) {
-		if _, err := m.notifications.CurrentLocked(owner, source, id); err != nil {
+	for _, state := range m.notifications.StatesLocked(owner) {
+		meta := state.Metadata()
+		if meta.Key.Source != source {
+			continue
+		}
+		if _, err := m.notifications.CurrentLocked(owner, source, meta.PlatformID, meta.Target); err != nil {
 			return err
 		}
 	}

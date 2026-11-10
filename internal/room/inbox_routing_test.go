@@ -42,12 +42,14 @@ func inboxRoutingConfigure(t *testing.T, h *eventHarness, target notification.Ta
 	s := h.state()
 	cfg := s.Config
 	cfg.Target = target
-	next, err := h.m.configureEventsSubscription(context.Background(), s.Metadata().Key, s.SubscriptionVersion, cfg)
+	next, err := gitlab.ConfigureEvents(s.RoomIdentity, &s, &s.Binding, cfg, h.m.notifications.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
+	loadHistoricalNotificationFixture(t, h.m, next)
+	h.newRunner()
 	if next.SubscriptionID != s.SubscriptionID || !next.Baseline.Equal(s.Baseline) {
-		t.Fatal("route switch reset source baseline")
+		t.Fatal("historical route fixture reset source baseline")
 	}
 	return next
 }
@@ -118,6 +120,38 @@ func TestInboxRoutingStoppedInboxReleasesStore(t *testing.T) {
 		t.Fatal("settled failure prevented recovery", err)
 	}
 	if err := reopened.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Constructs upgraded historical progress whose current target differs from a
+// frozen pending route. Production configure must reject such a target change.
+// These fixtures have no workers; reloading uses the normal source codecs.
+func loadHistoricalNotificationFixture(t *testing.T, m *roomManager, state notification.State) {
+	t.Helper()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, prior := range m.notifications.StatesLocked(state.Metadata().Key.Owner) {
+		if m.notifications.DoneLocked(prior.Metadata().Key) != nil {
+			t.Fatal("historical fixture has live worker")
+		}
+	}
+	path, err := m.notifications.StatePathLocked(state.Metadata().Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope := notificationEnvelope{SourceID: state.Metadata().Key.Source, Schema: m.notifications.Source(state.Metadata().Key.Source).Schema(), State: raw}
+	if err := m.store.save(path, envelope, m.notifications.Limits.Bytes); err != nil {
+		t.Fatal(err)
+	}
+	clock, limits := m.notifications.Clock, m.notifications.Limits
+	m.initPlatformNotifications()
+	m.notifications.Clock, m.notifications.Limits = clock, limits
+	if err := m.loadPlatformNotificationsLocked(); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -64,8 +64,11 @@ func TestLarkMentionIdentityInAgentInboxWithoutReadBinding(t *testing.T) {
 		t.Fatal("native mention placeholders reached Agent Inbox", text)
 	}
 	previewAfter := inboxRoutingPreview(t, h.svc, id)
-	if !reflect.DeepEqual(previewBefore.Entries[0].Item, item) || !reflect.DeepEqual(previewAfter.Entries[0], inbox.Entries[0]) {
+	if !reflect.DeepEqual(previewBefore.Entries[0].Item, item) || !reflect.DeepEqual(previewAfter.Entries[0].Item, item) || !reflect.DeepEqual(previewAfter.Entries[0].Source, inbox.Entries[0].Source) {
 		t.Fatal("human and Agent notification views differ", previewAfter, inbox)
+	}
+	if previewAfter.Entries[0].NotificationSource == nil || previewAfter.Entries[0].NotificationSource.SubscriptionID != h.state().SubscriptionID || inbox.Entries[0].NotificationSource != nil {
+		t.Fatal("operator source navigation must remain separate from Agent material")
 	}
 	data, _ := json.Marshal(inbox.Entries[0])
 	for _, key := range []string{`"subscription_id":`, `"item_key":`, `"delivery_id":`, `"route":`, `"order":`, `"version":`, `"key":`} {

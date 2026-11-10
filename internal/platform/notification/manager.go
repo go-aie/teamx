@@ -10,10 +10,11 @@ import (
 )
 
 type worker struct {
-	version    uint64
-	cancel     context.CancelFunc
-	done, wake chan struct{}
-	force      bool
+	version            uint64
+	cancel             context.CancelFunc
+	done, wake         chan struct{}
+	force              bool
+	cancelled, restart bool
 }
 type Manager struct {
 	host    Host
@@ -87,7 +88,7 @@ func (m *Manager) run(ctx context.Context, key Key, w *worker, runner Runner) {
 		defer m.host.Gate.Unlock()
 		if m.workers[key] == w {
 			delete(m.workers, key)
-			if next, ok := m.states[key]; ok && next.state.Metadata().Version != w.version {
+			if next, ok := m.states[key]; ok && (next.state.Metadata().Version != w.version || w.restart) {
 				m.startLocked(key)
 			}
 		}
@@ -172,6 +173,7 @@ func (m *Manager) CancelRoomLocked(owner platform.RoomIdentity) {
 // caller's responsibility after releasing the shared gate.
 func (m *Manager) CancelLocked(key Key) <-chan struct{} {
 	if w := m.workers[key]; w != nil {
+		w.cancelled = true
 		w.cancel()
 		return w.done
 	}
@@ -361,7 +363,15 @@ func (s *session) Commit(next State) error {
 // at construction, not discovered or registered dynamically.
 func (m *Manager) Source(id SourceID) Source { return m.sources[id] }
 
-func (m *Manager) EnsureLocked(key Key) { m.startLocked(key) }
+// EnsureLocked also remembers admission requested while an explicitly cancelled
+// predecessor is still settling. A timed-out member change can then resume the
+// unchanged version once the old query exits; startLocked rechecks its target.
+func (m *Manager) EnsureLocked(key Key) {
+	if w := m.workers[key]; w != nil && w.cancelled {
+		w.restart = true
+	}
+	m.startLocked(key)
+}
 func (m *Manager) EnsureRoomLocked(owner platform.RoomIdentity) {
 	for key := range m.states {
 		if key.Owner == owner {

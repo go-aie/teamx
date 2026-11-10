@@ -30,8 +30,10 @@ func (m *roomManager) managedPlatformReferencesLocked(id string) ([]managedPlatf
 		subscribed[owner] = true
 	}
 	for owner, saved := range m.gitlabNotifications {
-		if _, ok := saved[id]; ok {
-			subscribed[owner] = true
+		for key := range saved {
+			if key.PlatformID == id {
+				subscribed[owner] = true
+			}
 		}
 	}
 	for _, entry := range m.index.Rooms {

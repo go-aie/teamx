@@ -179,7 +179,7 @@ type State struct {
 }
 
 func (s State) Metadata() notification.Metadata {
-	return notification.Metadata{Key: notification.Key{Owner: s.RoomIdentity, Source: MessagesSourceID, SubscriptionID: s.SubscriptionID}, Version: s.SubscriptionVersion, Enabled: s.Config.Enabled, Retired: s.Retired, PlatformID: s.Binding.PlatformID, Observed: len(s.Observed), Pending: len(s.Inbox) - s.ExcludedItems(), DeliveryError: s.DeliveryErrorCode}
+	return notification.Metadata{Target: s.Config.Target.Canonical(), Key: notification.Key{Owner: s.RoomIdentity, Source: MessagesSourceID, SubscriptionID: s.SubscriptionID}, Version: s.SubscriptionVersion, Enabled: s.Config.Enabled, Retired: s.Retired, PlatformID: s.Binding.PlatformID, Observed: len(s.Observed), Pending: len(s.Inbox) - s.ExcludedItems(), DeliveryError: s.DeliveryErrorCode}
 }
 
 func (s State) ExcludedItems() int {

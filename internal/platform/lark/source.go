@@ -27,7 +27,7 @@ type Source struct {
 }
 
 func (*Source) ID() notification.SourceID { return MessagesSourceID }
-func (*Source) Schema() int               { return 2 }
+func (*Source) Schema() int               { return 3 }
 func (*Source) Decode(b []byte, o platform.RoomIdentity) (notification.State, error) {
 	var s State
 	d := json.NewDecoder(bytes.NewReader(b))

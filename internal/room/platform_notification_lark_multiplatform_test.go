@@ -93,7 +93,7 @@ func TestLarkMultiplePlatformsCollectPauseAndRecoverIndependently(t *testing.T) 
 	}
 	cfg = b.Config
 	cfg.PlatformID = a.Binding.PlatformID
-	if _, err := h.m.configureLarkSubscription(t.Context(), b.Metadata().Key, b.SubscriptionVersion, cfg); !errors.Is(err, ErrConflict) {
+	if _, err := h.m.configureLarkSubscription(t.Context(), b.Metadata().Key, b.SubscriptionVersion, cfg); !errors.Is(err, ErrIdentity) {
 		t.Fatal("subscription moved between platforms", err)
 	}
 	if _, err := h.m.configureLarkSubscription(t.Context(), b.Metadata().Key, b.SubscriptionVersion-1, b.Config); !errors.Is(err, ErrConflict) {

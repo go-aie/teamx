@@ -17,7 +17,7 @@ import (
 	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
-func TestInboxRoutingSwitchFreezesPendingAndPreviewDoesNotConsume(t *testing.T) {
+func TestInboxRoutingHistoricalSwitchPreservesPendingAndPreviewDoesNotConsume(t *testing.T) {
 	parallelFixtureTest(t)
 	h := newEventHarness(t, gitlab.EventsConfig{})
 	svc := eventLiveService(t, h)
@@ -202,10 +202,11 @@ func TestInboxRoutingTodosAdapter(t *testing.T) {
 	s := h.state()
 	cfg := s.Config
 	cfg.Target = inboxTarget(id)
-	next, err := h.m.configureTodosSubscription(context.Background(), h.key, s.SubscriptionVersion, cfg)
+	next, err := gitlab.ConfigureTodos(s.RoomIdentity, &s, s.Binding, cfg, h.m.notifications.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
+	loadHistoricalNotificationFixture(t, h.m, next)
 	h.pages.pending = []gitlab.Todo{h.todo(1, 1, "pending")}
 	h.newRunner()
 	h.full()

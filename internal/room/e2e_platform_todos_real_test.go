@@ -23,6 +23,7 @@ import (
 	"github.com/go-aie/teamx/internal/agent/dsh"
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
+	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
 var gt04Output = flag.String("teamx-gt04-output", "", "new absolute private directory; enables real GitLab To-Do/DSH acceptance")
@@ -359,7 +360,7 @@ func TestRealGitLabTodosDSH(t *testing.T) {
 	m.mu.Unlock()
 	fail(viewErr)
 	var view gitlabNotificationView
-	fail(d.managementRequest("/v1/platform/gitlab/notifications/sync", map[string]any{"service_epoch": m.epoch, "room_id": room.RoomID, "room_instance": room.RoomInstance, "caller": humanCaller, "version": currentConfig.Version}, &view))
+	fail(d.managementRequest("/v1/platform/gitlab/notifications/sync", map[string]any{"service_epoch": m.epoch, "room_id": room.RoomID, "room_instance": room.RoomInstance, "caller": humanCaller, "version": currentConfig.Version, "platform_id": currentConfig.PlatformID, "target": notification.Target{Mode: "room"}}, &view))
 	fail(d.until(func() (bool, error) {
 		s := state()
 		return s.Scan == nil && s.LastFull.After(after.LastFull) && len(s.Inbox) == 0, trace.failure()

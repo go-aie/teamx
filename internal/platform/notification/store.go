@@ -241,13 +241,20 @@ func (m *Manager) ReferencesLocked(id string) []platform.RoomIdentity {
 }
 
 // CurrentLocked selects the one live subscription for an exact platform and
-// channel. Disabled subscriptions still own their identity and progress.
-func (m *Manager) CurrentLocked(owner platform.RoomIdentity, source SourceID, platformID string) (State, error) {
+// channel and destination. Disabled subscriptions still own their identity and progress.
+func (m *Manager) CurrentLocked(owner platform.RoomIdentity, source SourceID, platformID string, target Target) (State, error) {
+	target, err := target.Normalize()
+	if err != nil {
+		return nil, err
+	}
 	var current State
 	for key, saved := range m.states {
 		meta := saved.state.Metadata()
-		if key.Owner != owner || key.Source != source || meta.PlatformID != platformID {
+		if key.Owner != owner || key.Source != source || meta.PlatformID != platformID || meta.Target.ScopeKey() != target.ScopeKey() {
 			continue
+		}
+		if meta.Target != target {
+			return nil, ErrIdentity
 		}
 		if meta.Retired {
 			if m.DoneLocked(key) != nil {
@@ -265,16 +272,26 @@ func (m *Manager) CurrentLocked(owner platform.RoomIdentity, source SourceID, pl
 
 func (m *Manager) uniqueLocked(state State) error {
 	meta := state.Metadata()
-	previous, exists := m.states[meta.Key]
-	if exists && previous.state.Metadata().PlatformID != meta.PlatformID {
-		return ErrIdentity
+	target, err := meta.Target.Normalize()
+	if err != nil || target != meta.Target {
+		return ErrInvalid
 	}
-	if meta.Retired {
-		return nil
+	previous, exists := m.states[meta.Key]
+	if exists && (previous.state.Metadata().PlatformID != meta.PlatformID || previous.state.Metadata().Target != meta.Target) {
+		return ErrIdentity
 	}
 	for key, saved := range m.states {
 		other := saved.state.Metadata()
-		if key != meta.Key && key.Owner == meta.Key.Owner && key.Source == meta.Key.Source && other.PlatformID == meta.PlatformID && !other.Retired {
+		if key.Owner == meta.Key.Owner && meta.Target.Inbox() && other.Target.Inbox() && other.Target.MembershipID == meta.Target.MembershipID && other.Target.AgentID != meta.Target.AgentID {
+			return ErrIdentity
+		}
+		if key != meta.Key && key.Owner == meta.Key.Owner && key.Source == meta.Key.Source && other.PlatformID == meta.PlatformID && other.Target.ScopeKey() == meta.Target.ScopeKey() {
+			if other.Target != meta.Target {
+				return ErrIdentity
+			}
+			if meta.Retired || other.Retired {
+				continue
+			}
 			return ErrConflict
 		}
 	}

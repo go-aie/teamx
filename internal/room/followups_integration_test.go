@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
 )
@@ -52,7 +53,9 @@ func TestReferenceFollowupsManagedBindingAssembly(t *testing.T) {
 }
 
 func TestReferenceFollowupsHundredNotificationsRecovery(t *testing.T) {
-	h := newInboxHarness(t, InboxLimits{})
+	// This recovery fixture performs hundreds of durable writes and full source
+	// scans; it has no ten-second latency contract, especially under -race.
+	h := newInboxHarnessWithTimeout(t, InboxLimits{}, time.Minute)
 	initReferenceTest(t, h)
 	for i := 1; i <= 100; i++ {
 		key := fmt.Sprint(i)

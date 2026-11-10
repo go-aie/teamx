@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { launch, settle } from "./web_app_harness.mjs";
+import { launch, settle, openNotification } from "./web_app_harness.mjs";
 import { request } from "./web/client.mjs";
 const endpoint = process.env.TEAMX_WEB_ENDPOINT;
 let call = (path, body) => request(endpoint + path, body);
@@ -23,7 +23,7 @@ const ui = await launch({ request: (path, body) => {
   const task = call(path, body); inflight.add(task);
   return task.finally(() => inflight.delete(task));
 } });
-await ui.el("open-gitlab-source").emit("click"); await settle(); await Promise.all([...inflight]); await settle();
+await Promise.all([...inflight]); await settle(); await openNotification(ui,"gitlab","",false); await Promise.all([...inflight]); await settle();
 assert.equal(ui.el("notification-manage-binding"), undefined);
 assert.equal(ui.el("gitlab-project-summary").textContent, "remote/project");
 const catalog = await call("/v1/rooms");

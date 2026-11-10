@@ -246,7 +246,7 @@ func TestLarkNotificationsInboxReferencesAndRoomQuestion(t *testing.T) {
 	}
 }
 
-func TestLarkNotificationsRestartSwitchAndDeliveryCapacity(t *testing.T) {
+func TestLarkNotificationsRestartImmutableTargetAndDeliveryCapacity(t *testing.T) {
 	parallelFixtureTest(t)
 	h := newLarkHarness(t)
 	h.messages(2)
@@ -266,6 +266,11 @@ func TestLarkNotificationsRestartSwitchAndDeliveryCapacity(t *testing.T) {
 	}
 	cfg.Enabled = true
 	cfg.Target = notification.Target{Mode: "inbox", AgentID: h.members[1].AgentID, MembershipID: h.members[1].MembershipID}
+	paused := h.state()
+	if _, err := h.m.configureLarkSubscription(t.Context(), paused.Metadata().Key, paused.SubscriptionVersion, cfg); !errors.Is(err, ErrIdentity) {
+		t.Fatal("existing subscription changed receiver", err)
+	}
+	cfg.Target = old.Config.Target
 	next := h.configure(cfg)
 	if next.Baseline != old.Baseline || next.SubscriptionID != old.SubscriptionID {
 		t.Fatal("switch reset baseline")
@@ -360,7 +365,7 @@ func TestLarkAdditionalPlatformRetainsOldSource(t *testing.T) {
 		t.Fatal("invalid change retired source")
 	}
 	h.clock.add(time.Minute)
-	if _, e := h.m.configureLarkSubscription(t.Context(), old.Metadata().Key, old.SubscriptionVersion, cfg); !errors.Is(e, ErrConflict) {
+	if _, e := h.m.configureLarkSubscription(t.Context(), old.Metadata().Key, old.SubscriptionVersion, cfg); !errors.Is(e, ErrIdentity) {
 		t.Fatal("moved existing subscription", e)
 	}
 	next, e := h.m.configureLarkSubscription(t.Context(), notification.Key{Owner: h.room.RoomIdentity, Source: lark.MessagesSourceID}, 0, cfg)

@@ -88,18 +88,14 @@ func (m *roomManager) todosSubscriptionLocked(key notification.Key) (gitlab.Todo
 	s, ok := state.(gitlab.TodosState)
 	return s, ok
 }
-func (m *roomManager) currentTodosLocked(owner RoomIdentity, platformIDs ...string) (*gitlab.TodosState, error) {
-	id, err := m.notificationPlatformLocked(owner, gitlab.TodosSourceID, platformIDs...)
-	if err != nil {
-		return nil, err
-	}
+func (m *roomManager) currentTodosForTargetLocked(owner RoomIdentity, id string, target notification.Target) (*gitlab.TodosState, error) {
 	for _, previous := range m.notifications.StatesLocked(owner) {
 		meta := previous.Metadata()
-		if meta.Key.Source == gitlab.TodosSourceID && meta.PlatformID == id && meta.Retired && m.attachmentCallsBusyLocked(meta.Key) {
+		if meta.Key.Source == gitlab.TodosSourceID && meta.PlatformID == id && meta.Target.ScopeKey() == target.ScopeKey() && meta.Retired && m.attachmentCallsBusyLocked(meta.Key) {
 			return nil, ErrBusy
 		}
 	}
-	state, err := m.notifications.CurrentLocked(owner, gitlab.TodosSourceID, id)
+	state, err := m.notifications.CurrentLocked(owner, gitlab.TodosSourceID, id, target)
 	if err != nil || state == nil {
 		return nil, notificationRoomError(err)
 	}
@@ -110,6 +106,11 @@ func (m *roomManager) currentTodosLocked(owner RoomIdentity, platformIDs ...stri
 	return &s, nil
 }
 func (m *roomManager) configureTodosSubscription(ctx context.Context, key notification.Key, version uint64, cfg gitlab.TodosConfig) (gitlab.TodosState, error) {
+	var targetErr error
+	cfg.Target, targetErr = cfg.Target.Normalize()
+	if targetErr != nil {
+		return gitlab.TodosState{}, notificationRoomError(targetErr)
+	}
 	if key.Source != gitlab.TodosSourceID {
 		return gitlab.TodosState{}, ErrRequest
 	}
@@ -123,7 +124,7 @@ func (m *roomManager) configureTodosSubscription(ctx context.Context, key notifi
 			return gitlab.TodosState{}, notificationRoomError(targetErr)
 		}
 	}
-	previous, _ := m.currentTodosLocked(key.Owner, m.subscriptionPlatformLocked(key, cfg.PlatformID))
+	previous, _ := m.currentTodosForTargetLocked(key.Owner, m.subscriptionPlatformLocked(key, cfg.PlatformID), cfg.Target)
 	next, done, err := m.configureTodosLocked(key, version, cfg)
 	var waits []<-chan struct{}
 	if err == nil && previous != nil && next.Retired {
@@ -153,7 +154,7 @@ func (m *roomManager) configureTodosSubscription(ctx context.Context, key notifi
 			m.mu.Unlock()
 			return next, ErrConflict
 		}
-		if saved, ok := m.gitlabNotifications[key.Owner][cfg.PlatformID]; ok && saved.BackfillLocked && saved.Config.BackfillStart.IsZero() {
+		if saved, ok := m.gitlabNotifications[key.Owner][notificationScopeFor(cfg.PlatformID, cfg.Target)]; ok && saved.BackfillLocked && saved.Config.BackfillStart.IsZero() {
 			cfg.BackfillSeconds, cfg.BackfillStart = 0, next.Baseline
 		}
 		created, _, createErr := m.configureTodosLocked(notification.Key{Owner: key.Owner, Source: key.Source}, 0, cfg)
@@ -172,6 +173,11 @@ func (m *roomManager) configureTodosSubscription(ctx context.Context, key notifi
 // Requires the shared gate. A retired predecessor with a live worker prevents
 // concurrent replacement creation, including retries of a failed HTTP response.
 func (m *roomManager) configureTodosLocked(key notification.Key, version uint64, cfg gitlab.TodosConfig) (gitlab.TodosState, <-chan struct{}, error) {
+	var targetErr error
+	cfg.Target, targetErr = cfg.Target.Normalize()
+	if targetErr != nil {
+		return gitlab.TodosState{}, nil, targetErr
+	}
 	if m.closing {
 		return gitlab.TodosState{}, nil, notification.ErrClosing
 	}
@@ -182,7 +188,10 @@ func (m *roomManager) configureTodosLocked(key notification.Key, version uint64,
 	if err != nil || entry.Status != "ready" {
 		return gitlab.TodosState{}, nil, notification.ErrIdentity
 	}
-	current, err := m.currentTodosLocked(key.Owner, m.subscriptionPlatformLocked(key, cfg.PlatformID))
+	if old, exists := m.notifications.StateLocked(key); exists && (old.Metadata().Target != cfg.Target || old.Metadata().PlatformID != cfg.PlatformID) {
+		return gitlab.TodosState{}, nil, notification.ErrIdentity
+	}
+	current, err := m.currentTodosForTargetLocked(key.Owner, m.subscriptionPlatformLocked(key, cfg.PlatformID), cfg.Target)
 	if err != nil {
 		return gitlab.TodosState{}, nil, err
 	}
@@ -191,6 +200,11 @@ func (m *roomManager) configureTodosLocked(key notification.Key, version uint64,
 	}
 	if current != nil && cfg.PlatformID == "" {
 		cfg.PlatformID = current.Binding.PlatformID
+	}
+	if current == nil {
+		if err := m.checkNotificationTargetLocked(context.Background(), key.Owner, cfg.Target); err != nil {
+			return gitlab.TodosState{}, nil, roomNotificationError(err)
+		}
 	}
 	if err := m.validateNotificationTargetLocked(context.Background(), key.Owner, cfg.Target, cfg.Enabled); err != nil {
 		return gitlab.TodosState{}, nil, roomNotificationError(err)
@@ -238,6 +252,10 @@ func (m *roomManager) syncTodosSubscription(ctx context.Context, key notificatio
 	if !ok || s.Retired || !s.Config.Enabled || s.SubscriptionVersion != version {
 		m.mu.Unlock()
 		return ErrIdentity
+	}
+	if err := m.checkNotificationTargetLocked(ctx, key.Owner, s.Config.Target); err != nil {
+		m.mu.Unlock()
+		return err
 	}
 	scope, _, err := m.resolveTodosPlatformLocked(key.Owner, s.Binding.PlatformID)
 	if err == nil && (!scope.Binding.SameAccount(s.Binding) || scope.Binding.PlatformGeneration != s.Binding.PlatformGeneration) {

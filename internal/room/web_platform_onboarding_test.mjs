@@ -1,7 +1,8 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
-import {launch,settle} from "./web_app_harness.mjs";
+import {launch,settle,openNotification as openSource,openMemberInbox} from "./web_app_harness.mjs";
 
+const openNotification=(ui,provider,id="")=>openSource(ui,provider,id,true);
 function fixture(count=1) {
   const members=Array.from({length:count},(_,i)=>({agent_id:`agent-${i}`,membership_id:`member-${i}`,runner:{kind:"dsh",profile:"p"},status:"idle"}));
   const room={room_id:"R",room_instance:"instance-R",name:"Review",status:"ready",service:{room_id:"R",room_instance:"instance-R",service_epoch:"runtime"}};
@@ -16,6 +17,7 @@ function fixture(count=1) {
       if(path.startsWith("/v1/platform/notifications?"))return {subscriptions:[],gitlab_platforms:[]};
       if(path.startsWith("/v1/platforms?"))return {platforms:structuredClone(api.platforms)};
       if(path==="/v1/member/list")return {members:structuredClone(api.members),latest_seq:0};
+      if(path==="/v1/member/inbox")return {snapshot_seq:0,entries:[],has_more:false,status:{latest_seq:0,limits:{bytes:1000},bytes:0}};
       if(path==="/v1/member/activity")return {member:members.find(m=>m.membership_id===body.membership_id)};
       if(path==="/v1/read")return {messages:[],snapshot_seq:0,has_more:false};
       if(path.startsWith("/v1/tools/bindings?"))return {revision:0,bindings:[],catalog:[]};
@@ -23,7 +25,7 @@ function fixture(count=1) {
       if(path==="/v1/platforms/onboarding/prepare") {
         if(!api.ops.has(body.operation_id)) {
           const {service_epoch,caller,operation_id,...input}=body;
-          api.ops.set(operation_id,{schema:1,operation_id,input,platform_id:input.platform_id || "a".repeat(32),connection:{status:"waiting"},notifications:{status:input.only_platform ? "skipped":"pending"},tool:{status:input.only_platform ? "skipped":"pending"}});
+          api.ops.set(operation_id,{schema:2,operation_id,input,platform_id:input.platform_id || "a".repeat(32),connection:{status:"waiting"},notifications:{status:input.only_platform ? "skipped":"pending"},tool:{status:input.only_platform ? "skipped":"pending"}});
         }
         return structuredClone(api.ops.get(body.operation_id));
       }
@@ -48,8 +50,10 @@ function fixture(count=1) {
     }};
   return api;
 }
-async function add(api,saved) {
-  const ui=await launch(api,saved);await ui.el("open-settings").emit("click");await ui.el("connection-new").emit("click");
+async function add(api,saved,global=false) {
+  const ui=await launch(api,saved);
+  if(global){await ui.el("open-settings").emit("click");await ui.el("connection-new").emit("click");}
+  else {await openMemberInbox(ui);await ui.el("notification-add-platform").emit("click");}
   ui.el("connection-name").value="Company GitLab";ui.el("connection-url").value="https://gitlab.invalid";
   await ui.el("connection-url").emit("change");return ui;
 }
@@ -70,27 +74,23 @@ test("one eligible member is prefilled and a compatible GitLab application logs 
   assert.equal(ui.el("onboarding-member").disabled,true);
 });
 
-test("multiple members require one explicit choice and the member entry fixes complete identity",async()=>{
+test("member Inbox entry fixes the selected member even when several members are eligible",async()=>{
   const api=fixture(2),ui=await add(api);
-  assert.equal(ui.el("onboarding-member").value,"");await ui.el("gitlab-login").emit("click");
-  assert.equal(calls(api,"/v1/platforms/gitlab/login").length,0);assert.match(ui.el("onboarding-target-error").textContent,/选择/);
-  ui.el("onboarding-member").value="member-1";await ui.el("onboarding-member").emit("change");await ui.el("gitlab-login").emit("click");
-  assert.equal(calls(api,"/v1/platforms/onboarding/prepare")[0].body.membership_id,"member-1");
-  await ui.el("close-settings").emit("click");await ui.el("open-settings").emit("click");await ui.el("onboarding-cancel").emit("click");
-  await ui.el("close-settings").emit("click");
-  await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();await ui.el("agent-tab-tools").emit("click");
-  await ui.el("cli-member-add-platform").emit("click");
-  assert.equal(ui.el("onboarding-member").value,"member-0");assert.equal(ui.el("onboarding-member").disabled,true);assert.equal(ui.el("onboarding-room").disabled,true);
+  assert.equal(ui.el("onboarding-member").value,"member-0");assert.equal(ui.el("onboarding-member").disabled,true);
+  await ui.el("gitlab-login").emit("click");
+  assert.equal(calls(api,"/v1/platforms/onboarding/prepare")[0].body.membership_id,"member-0");
 });
 
 test("only adding a platform omits member identity; explicit choices and history use P5 config",async()=>{
-  const api=fixture(),ui=await add(api);
+  const api=fixture(),ui=await add(api,undefined,true);
+  assert.equal(ui.el("onboarding-options").hidden,true);
+  assert.equal(calls(api,"/v1/platforms/onboarding/targets?").length,0);
   ui.el("onboarding-only").checked=true;await ui.el("onboarding-only").emit("change");await ui.el("gitlab-login").emit("click");
   const body=calls(api,"/v1/platforms/onboarding/prepare")[0].body;assert.equal(body.only_platform,true);assert.equal(body.membership_id,undefined);assert.equal(body.room_id,undefined);
   const api2=fixture(),ui2=await add(api2);
   ui2.el("onboarding-tool").checked=false;await ui2.el("onboarding-tool").emit("change");ui2.el("onboarding-backfill").value="3600";await ui2.el("onboarding-backfill").emit("change");await ui2.el("gitlab-login").emit("click");
   const custom=calls(api2,"/v1/platforms/onboarding/prepare")[0].body;
-  assert.equal(custom.tool,false);assert.equal(custom.gitlab.backfill_seconds,3600);assert.equal(custom.gitlab.todos.enabled,true);assert.equal(custom.gitlab.events.enabled,false);
+  assert.equal(custom.tool,false);assert.equal(custom.backfill.seconds,3600);assert.equal(custom.gitlab,undefined);assert.equal(custom.preserve_existing,true);
 });
 
 test("GitLab multiple applications are selected explicitly and incompatible applications never import or log in",async()=>{
@@ -209,12 +209,12 @@ test("Lark profile save hands the fixed operation to the server and does not ope
   const saved=calls(api,"/v1/platforms/save")[0].body,prepared=calls(api,"/v1/platforms/onboarding/prepare")[0].body;
   assert.equal(saved.onboarding_id,prepared.operation_id);assert.equal(saved.id,api.ops.get(prepared.operation_id).platform_id);assert.equal(prepared.provider,"lark");assert.equal(prepared.origin,"https://open.feishu.cn");
   assert.equal(calls(api,"/v1/platforms/verify").length,0);assert.equal(calls(api,"/v1/tools/bind").length,0);assert.equal(calls(api,"/v1/platform/notifications/configure").length,0);
-  assert.equal(ui.el("onboarding-steps").children[1].children[1].textContent,"已保存 · v1");
+  assert.equal(ui.el("onboarding-steps").children[1].children[1].textContent,"已保存");
 });
 
 test("late member discovery cannot select a member in a different Room",async()=>{
   const api=fixture();let finish;api.hook=path=>path.startsWith("/v1/platforms/onboarding/targets?") ? new Promise(resolve=>{finish=resolve}):undefined;
-  const ui=await launch(api);await ui.el("open-settings").emit("click");const adding=ui.el("connection-new").emit("click");await settle();
+  const ui=await launch(api);await ui.el("open-settings").emit("click");await ui.el("connection-new").emit("click");ui.el("onboarding-room").value="instance-R";const adding=ui.el("onboarding-room").emit("change");await settle();
   ui.el("onboarding-room").value="";await ui.el("onboarding-room").emit("change");finish({members:api.members});await adding;
   assert.equal(ui.el("onboarding-member").value,"");assert.equal(ui.el("onboarding-member").options.length,1);
 });
@@ -239,14 +239,14 @@ test("platform notification summaries toggle only the chosen platform and preser
   if(path.startsWith("/v1/platform/notifications?"))return {subscriptions:[],gitlab_platforms:structuredClone(views),gitlab:structuredClone(views[0])};
   if(path==="/v1/platform/gitlab/notifications/configure") {const v=views.find(v=>v.platform_id===body.platform_id);v.config=structuredClone(body.config);v.version++;return structuredClone(v);}
  };
- const ui=await launch(api);await ui.el("open-gitlab-source").emit("click");await settle();
- assert.equal(ui.el("gitlab-connection").hidden,true);assert.equal(ui.el("notification-platforms").children.length,2);
- const toggle=ui.el("notification-platforms").children[0].children[0].children[1].children[0];
- assert.equal(toggle.checked,true);assert.match(ui.el("notification-platforms").children[0].children[1].textContent,/我的待办.*agent-0 Inbox.*@one/);
+ const ui=await launch(api);await openMemberInbox(ui);
+ assert.equal(ui.el("gitlab-connection").hidden,true);assert.equal(ui.el("member-notification-platforms").children.length,2);
+ const toggle=ui.el("member-notification-platforms").children[0].children[1];
+ assert.equal(toggle.checked,true);assert.match(ui.el("member-notification-platforms").children[0].children[0].children[1].children[1].textContent,/我的待办/);
  const before=structuredClone(views[0].config);toggle.checked=false;await toggle.emit("change");
  const sent=calls(api,"/v1/platform/gitlab/notifications/configure")[0].body;
  assert.equal(sent.platform_id,"one");assert.deepEqual(sent.config,{...before,enabled:false});assert.equal(views[1].config.enabled,true);
- assert.equal(ui.el("notification-platforms").children[0].children[0].children[1].children[0].checked,false);
+ assert.equal(ui.el("member-notification-platforms").children[0].children[1].checked,false);
 });
 
 test("invalid account-bearing origins are rejected before persisting a prepare request or sending PAT",async()=>{
@@ -255,4 +255,97 @@ test("invalid account-bearing origins are rejected before persisting a prepare r
  await ui.el("connection-scion-login").emit("click");
  assert.equal(ui.el("connection-scion-pat").value,"");assert.equal(calls(api,"/v1/platforms/onboarding/prepare").length,0);assert.equal(calls(api,"/v1/platforms/scion/login").length,0);
  assert.doesNotMatch(JSON.stringify([...ui.saved]),/private-url-password|private-pat/);assert.match(ui.el("platforms-feedback").textContent,/HTTPS 实例地址/);
+});
+
+function notificationFixture() {
+ const api=fixture();
+ api.platforms=["one","two"].map((id,i)=>({id,provider:"gitlab",name:`GitLab ${id}`,url:"https://gitlab.invalid",version:1,validation:{status:"valid",username:id,user_id:101+i}}));
+ const views=api.platforms.map(p=>({platform_id:p.id,version:2,config:{platform_id:p.id,enabled:true,target:{mode:"inbox",agent_id:"agent-0",membership_id:"member-0"},interval_seconds:30,events:{enabled:false,project:"",filter:{types:[]}},todos:{enabled:true,filter:{reasons:["assigned"],types:["work_item"]}}},events:{available:true,config:{enabled:false},status:"disabled"},todos:{available:true,config:{enabled:true},status:"running"},pending:{},errors:{}}));
+ api.hook=(path,body)=>{
+  if(path.startsWith("/v1/platform/notifications?")){const id=new URL(path,"http://fixture").searchParams.get("platform_id");return {subscriptions:[],gitlab_platforms:structuredClone(views),gitlab:structuredClone(views.find(v=>v.platform_id===id)||views[0])};}
+  if(path.startsWith("/v1/platform/gitlab/notifications?"))return structuredClone(views.find(v=>v.platform_id===new URL(path,"http://fixture").searchParams.get("platform_id")));
+  if(path==="/v1/platform/gitlab/notifications/configure") {const v=views.find(v=>v.platform_id===body.platform_id);assert.equal(body.version,v.version);v.config=structuredClone(body.config);v.version++;return structuredClone(v);}
+ };
+ return {api,views};
+}
+
+test("sidebar details open the exact same-type platform, without an intermediate list or provider tabs",async()=>{
+ const {api}=notificationFixture(),ui=await launch(api);await openMemberInbox(ui);
+ assert.equal(ui.el("member-notification-source-count").textContent,"2");
+ await openNotification(ui,"gitlab","two");
+ assert.equal(ui.el("notification-title").textContent,"agent-0 · GitLab two 设置");
+ assert.match(ui.el("notification-account").textContent,/@two/);
+ assert.equal(ui.el("gitlab-connection").value,"two");
+ assert.equal(ui.el("notification-tab-gitlab"),undefined);assert.equal(ui.el("notification-settings-details"),undefined);
+ assert.equal(calls(api,"/v1/platform/gitlab/notifications/configure").length,0);
+});
+
+test("quick pause preserves a detail draft and subsequent saves retain the confirmed pause and version",async()=>{
+ const {api,views}=notificationFixture(),ui=await launch(api);await openNotification(ui,"gitlab","one");
+ ui.el("gitlab-interval").value="73";await ui.el("gitlab-interval").emit("input");
+ ui.el("notification-enabled").checked=false;await ui.el("notification-enabled").emit("change");
+ assert.equal(views[0].config.interval_seconds,30);assert.equal(views[0].config.enabled,false);
+ assert.equal(ui.el("gitlab-interval").value,73);assert.equal(ui.el("notification-enabled").checked,false);
+ await ui.el("gitlab-save").emit("click");
+ assert.equal(views[0].config.interval_seconds,73);assert.equal(views[0].config.enabled,false);assert.equal(views[1].config.enabled,true);
+ assert.equal(calls(api,"/v1/platform/gitlab/notifications/configure").length,2);
+});
+
+test("quick switches roll back on rejection, block duplicate writes and recover an unknown committed result by reading",async()=>{
+ const {api,views}=notificationFixture(),original=api.hook;let finish;
+ api.hook=(path,body)=>path==="/v1/platform/gitlab/notifications/configure" ? new Promise((resolve,reject)=>{finish={resolve,reject,body};}) : original(path,body);
+ const ui=await launch(api);await openMemberInbox(ui);const toggle=ui.el("member-notification-platforms").children[0].children[1];
+ toggle.checked=false;const saving=toggle.emit("change");await settle();
+ assert.equal(ui.el("member-notification-platforms").children[0].children[1].disabled,true);
+ await toggle.emit("change");assert.equal(calls(api,"/v1/platform/gitlab/notifications/configure").length,1);
+ finish.reject(Object.assign(Error("rejected"),{code:"request"}));await saving;
+ assert.equal(ui.el("member-notification-platforms").children[0].children[1].checked,true);
+ assert.match(ui.el("member-notification-platforms").children[0].children[3].textContent,/完善接收设置/);
+ const next=ui.el("member-notification-platforms").children[0].children[1];next.checked=false;const uncertain=next.emit("change");await settle();
+ views[0].config.enabled=false;views[0].version++;finish.reject(Error("lost response"));await uncertain;
+ assert.equal(ui.el("member-notification-platforms").children[0].children[1].checked,false);
+ assert.equal(calls(api,"/v1/platform/gitlab/notifications/configure").length,2);
+});
+
+test("switching same-type details retains each platform's own draft",async()=>{
+ const {api}=notificationFixture(),ui=await launch(api);await openNotification(ui,"gitlab","one");
+ ui.el("gitlab-interval").value="73";await ui.el("gitlab-interval").emit("input");
+ await ui.el("close-notification").emit("click");await openNotification(ui,"gitlab","two");
+ assert.equal(ui.el("gitlab-interval").value,30);
+ await ui.el("close-notification").emit("click");await openNotification(ui,"gitlab","one");
+ assert.equal(ui.el("gitlab-interval").value,73);assert.equal(ui.el("gitlab-save").disabled,false);
+});
+
+test("Lark quick pause preserves selected chats, target, history and an unsaved detail draft",async()=>{
+ const api=fixture();api.platforms=[{id:"lark",name:"公司飞书",provider:"lark",url:"https://open.feishu.cn",validation:{status:"valid",username:"Alice"}}];
+ let source={provider:"lark",channel:"messages",available:true,subscription_id:"lark-sub",subscription_version:3,status:"running",config:{enabled:true,platform_id:"lark",target:{mode:"inbox",agent_id:"agent-0",membership_id:"member-0"},private:{enabled:true,scope:"all",chat_ids:[]},groups:{enabled:true,chat_ids:["group"],message_mode:"mentions",at_me:true,at_all:false},interval_seconds:60,backfill_start:"2026-11-01T00:00:00Z"},lark:{baseline:"2026-11-01T00:00:00Z",chats:[{chat_id:"group",name:"产品群",chat_mode:"group"}]}};
+ api.hook=(path,body)=>{
+  if(path.startsWith("/v1/platform/notifications?"))return {subscriptions:[structuredClone(source)],gitlab_platforms:[]};
+  if(path==="/v1/platform/notifications/configure"){assert.equal(body.subscription_id,source.subscription_id);assert.equal(body.subscription_version,source.subscription_version);source={...source,config:structuredClone(body.config),subscription_version:source.subscription_version+1};return structuredClone(source);}
+ };
+ const before=structuredClone(source.config),ui=await launch(api);await openNotification(ui,"lark");
+ ui.el("lark-interval").value="90";await ui.el("lark-interval").emit("change");
+ ui.el("notification-enabled").checked=false;await ui.el("notification-enabled").emit("change");
+ assert.deepEqual(source.config,{...before,enabled:false});assert.equal(ui.el("lark-interval").value,"90");assert.equal(ui.el("lark-enabled").checked,false);
+ await ui.el("lark-save").emit("click");assert.equal(source.config.interval_seconds,90);assert.equal(source.config.enabled,false);assert.deepEqual(source.config.groups.chat_ids,["group"]);
+});
+
+test("an existing Lark account can start default reception without an extra edit or tool grant",async()=>{
+ const api=fixture();api.platforms=[{id:"lark",name:"公司飞书",provider:"lark",url:"https://open.feishu.cn",validation:{status:"valid",username:"Alice"}}];
+ api.hook=(path,body)=>path==="/v1/platform/notifications/configure" ? {provider:"lark",channel:"messages",subscription_id:"new-sub",subscription_version:1,status:"running",config:structuredClone(body.config),lark:{}} : undefined;
+ const ui=await launch(api);assert.equal(ui.el("member-notification-platforms").children.length,0);
+ await openNotification(ui,"lark");assert.equal(ui.el("lark-save").disabled,false);
+ await ui.el("lark-save").emit("click");
+ const saved=calls(api,"/v1/platform/notifications/configure")[0].body;
+ assert.equal(saved.config.platform_id,"lark");assert.equal(saved.config.enabled,true);assert.equal(saved.config.private.enabled,true);assert.equal(saved.config.target.membership_id,"member-0");
+ assert.equal(calls(api,"/v1/tools/bind").length,0);assert.equal(ui.el("member-notification-platforms").children.length,1);
+});
+
+test("a failed detail selection hides the previous account's form and retry reads the exact selected platform",async()=>{
+ const {api}=notificationFixture(),original=api.hook;let fail=true;
+ api.hook=(path,body)=>path.startsWith("/v1/platform/gitlab/notifications?") && new URL(path,"http://fixture").searchParams.get("platform_id")==="two" && fail ? Promise.reject(Error("offline")) : original(path,body);
+ const ui=await launch(api);await openNotification(ui,"gitlab","one");await openNotification(ui,"gitlab","two");
+ assert.equal(ui.el("notification-title").textContent,"agent-0 · GitLab two 设置");assert.equal(ui.el("notification-panel-gitlab").hidden,true);assert.equal(ui.el("notification-enabled").disabled,true);
+ fail=false;await ui.el("notification-reload").emit("click");
+ assert.equal(ui.el("notification-panel-gitlab").hidden,false);assert.equal(ui.el("gitlab-connection").value,"two");
 });

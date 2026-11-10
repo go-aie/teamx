@@ -25,9 +25,14 @@ type inboxHarness struct {
 
 func newInboxHarness(t *testing.T, limits InboxLimits, options ...actorx.Option) *inboxHarness {
 	t.Helper()
+	return newInboxHarnessWithTimeout(t, limits, 10*time.Second, options...)
+}
+
+func newInboxHarnessWithTimeout(t *testing.T, limits InboxLimits, timeout time.Duration, options ...actorx.Option) *inboxHarness {
+	t.Helper()
 	room := historyRoom(0, "")
 	room.Members = append(room.Members, MemberState{AgentID: "B", MembershipID: "generation-B", Runner: room.Members[0].Runner})
-	r := newRoomHarness(t, room, nil, options...)
+	r := newRoomHarnessWithTimeout(t, room, nil, timeout, options...)
 	id := r.memberID("A", "generation-A")
 	addr, err := SpawnAgentInbox(r.rt, r.store, id, limits)
 	if err != nil {

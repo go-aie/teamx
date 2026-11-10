@@ -2,9 +2,12 @@ package room
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
@@ -14,9 +17,12 @@ import (
 )
 
 type notificationView struct {
-	PlatformID string                   `json:"platform_id,omitempty"`
-	Account    platform.AccountIdentity `json:"account,omitzero"`
-	Lark       *larkDiagnostics         `json:"lark,omitempty"`
+	PlatformID      string                   `json:"platform_id,omitempty"`
+	Target          notification.Target      `json:"target"`
+	TargetErrorCode string                   `json:"target_error_code,omitempty"`
+	RuntimePaused   bool                     `json:"runtime_paused"`
+	Account         platform.AccountIdentity `json:"account,omitzero"`
+	Lark            *larkDiagnostics         `json:"lark,omitempty"`
 	RoomIdentity
 	notification.SourceID
 	SubscriptionID    string                   `json:"subscription_id"`
@@ -53,6 +59,7 @@ func (m *roomManager) eventsNotificationViewLocked(owner RoomIdentity, state *gi
 		Available: true, Status: "disabled", Config: gitlab.EventsConfig{IntervalSeconds: gitlab.DefaultIntervalSeconds}}
 	if state != nil {
 		s := *state
+		m.setNotificationTargetViewLocked(&v, s.Config.Target)
 		v.PlatformID = s.Binding.PlatformID
 		v.Baseline = s.Baseline
 		v.Instance, v.RecipientID, v.Username, v.Retired = s.Binding.URL, s.UserID, s.Username, s.Retired
@@ -79,6 +86,7 @@ func (m *roomManager) todosNotificationViewLocked(owner RoomIdentity, state *git
 	v := notificationView{RoomIdentity: owner, SourceID: gitlab.TodosSourceID, Available: true, Status: "disabled", Config: gitlab.TodosConfig{IntervalSeconds: gitlab.DefaultIntervalSeconds}}
 	if state != nil {
 		s := *state
+		m.setNotificationTargetViewLocked(&v, s.Config.Target)
 		v.PlatformID = s.Binding.PlatformID
 		v.Baseline = s.Baseline
 		v.SubscriptionID, v.Version, v.Config, v.Status, v.Pending = s.SubscriptionID, s.SubscriptionVersion, s.Config, s.Status, len(s.Inbox)
@@ -97,10 +105,14 @@ func (m *roomManager) todosNotificationViewLocked(owner RoomIdentity, state *git
 	return v, nil
 }
 func (m *roomManager) notificationViewsLocked(owner RoomIdentity) ([]notificationView, error) {
-	// Keep source order stable, but give each concrete platform its own view.
+	// Only saved subscriptions belong in the summary; new settings are selected
+	// explicitly by platform and target. Keep source order stable.
+	entry, err := m.workspaceRoom(owner)
+	if err != nil || entry.Status != "ready" {
+		return nil, ErrIdentity
+	}
 	out := []notificationView{}
 	for _, source := range []notification.SourceID{gitlab.EventsSourceID, gitlab.TodosSourceID, lark.MessagesSourceID} {
-		found := false
 		for _, state := range m.notifications.StatesLocked(owner) {
 			if state.Metadata().Key.Source != source || state.Metadata().Retired {
 				continue
@@ -121,23 +133,6 @@ func (m *roomManager) notificationViewsLocked(owner RoomIdentity) ([]notificatio
 				return nil, err
 			}
 			v.PlatformID = state.Metadata().PlatformID
-			out = append(out, v)
-			found = true
-		}
-		if !found {
-			var v notificationView
-			var err error
-			switch source {
-			case gitlab.EventsSourceID:
-				v, err = m.eventsNotificationViewLocked(owner, nil)
-			case gitlab.TodosSourceID:
-				v, err = m.todosNotificationViewLocked(owner, nil)
-			case lark.MessagesSourceID:
-				v, err = m.larkNotificationViewLocked(owner, nil)
-			}
-			if err != nil {
-				return nil, err
-			}
 			out = append(out, v)
 		}
 	}
@@ -203,9 +198,51 @@ func (m *roomManager) servePlatformNotifications(w http.ResponseWriter, r *http.
 			return
 		}
 		owner := RoomIdentity{RoomID: q.Get("room_id"), RoomInstance: q.Get("room_instance")}
+		target, err := notificationQueryTarget(q, false)
+		if err != nil {
+			writeAPIError(w, err)
+			return
+		}
+		// A saved message can locate its original (including retired) source
+		// by the full physical key. Never navigate by provider alone.
+		sourceSelected := q.Has("subscription_id") || q.Has("provider") || q.Has("channel")
+		if sourceSelected && (!validText(q.Get("subscription_id")) || !validText(q.Get("provider")) || !validText(q.Get("channel"))) {
+			writeAPIError(w, ErrRequest)
+			return
+		}
+		id := q.Get("platform_id")
+		if target != nil {
+			for _, v := range append(append([]notificationView{}, views...), retired...) {
+				if (id == "" || v.PlatformID == id) && v.Target.ScopeKey() == target.ScopeKey() && v.Target.Canonical() != *target {
+					writeAPIError(w, ErrIdentity)
+					return
+				}
+			}
+		}
+		matches := func(v notificationView) bool {
+			return (id == "" || v.PlatformID == id) && (target == nil || v.Target.Canonical() == *target) &&
+				(!sourceSelected || v.SubscriptionID == q.Get("subscription_id") && v.Provider == q.Get("provider") && v.Channel == q.Get("channel"))
+		}
+		views = filterNotificationViews(views, matches)
+		retired = filterNotificationViews(retired, matches)
+		if sourceSelected && len(views)+len(retired) != 1 {
+			writeAPIError(w, ErrIdentity)
+			return
+		}
 		platformViews := []gitlabNotificationView{}
-		for _, id := range m.gitlabPlatformIDsLocked(owner) {
-			v, err := m.gitlabNotificationViewLocked(owner, id)
+		for _, scope := range m.gitlabNotificationScopesLocked(owner) {
+			if sourceSelected && (len(views) != 1 || views[0].PlatformID != scope.PlatformID || views[0].Target.ScopeKey() != scope.Target) {
+				continue
+			}
+			if id != "" && scope.PlatformID != id || target != nil && scope.Target != target.ScopeKey() {
+				continue
+			}
+			t := m.gitlabNotificationScopeTargetLocked(owner, scope)
+			if target != nil && t != *target {
+				writeAPIError(w, ErrIdentity)
+				return
+			}
+			v, err := m.gitlabNotificationViewForTargetLocked(owner, scope.PlatformID, t)
 			if err != nil {
 				writeAPIError(w, err)
 				return
@@ -213,37 +250,8 @@ func (m *roomManager) servePlatformNotifications(w http.ResponseWriter, r *http.
 			platformViews = append(platformViews, v)
 		}
 		var single *gitlabNotificationView
-		if id := q.Get("platform_id"); id != "" {
-			v, err := m.gitlabNotificationViewLocked(owner, id)
-			if err != nil {
-				writeAPIError(w, err)
-				return
-			}
-			single = &v
-		}
-		if single == nil && len(platformViews) == 1 {
+		if len(platformViews) == 1 {
 			single = &platformViews[0]
-		}
-		if single == nil && len(platformViews) == 0 {
-			v, err := m.gitlabNotificationViewLocked(owner)
-			if err != nil {
-				writeAPIError(w, err)
-				return
-			}
-			single = &v
-		}
-		if single == nil {
-			ev, err := m.eventsNotificationViewLocked(owner, nil)
-			if err != nil {
-				writeAPIError(w, err)
-				return
-			}
-			tv, err := m.todosNotificationViewLocked(owner, nil)
-			if err != nil {
-				writeAPIError(w, err)
-				return
-			}
-			single = &gitlabNotificationView{Config: gitlab.DefaultNotificationConfig(""), Events: ev, Todos: tv, Pending: map[string]bool{}, Errors: map[string]string{}}
 		}
 		_ = json.NewEncoder(w).Encode(struct {
 			Subscriptions   []notificationView       `json:"subscriptions"`
@@ -261,10 +269,11 @@ func (m *roomManager) servePlatformNotifications(w http.ResponseWriter, r *http.
 		ServiceEpoch string `json:"service_epoch"`
 		RoomIdentity
 		notification.SourceID
-		SubscriptionID string          `json:"subscription_id"`
-		Caller         Caller          `json:"caller"`
-		Version        uint64          `json:"subscription_version"`
-		Config         json.RawMessage `json:"config,omitempty"`
+		SubscriptionID string               `json:"subscription_id"`
+		Caller         Caller               `json:"caller"`
+		Version        uint64               `json:"subscription_version"`
+		Target         *notification.Target `json:"target,omitempty"`
+		Config         json.RawMessage      `json:"config,omitempty"`
 	}
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 32<<10))
 	dec.DisallowUnknownFields()
@@ -285,6 +294,10 @@ func (m *roomManager) servePlatformNotifications(w http.ResponseWriter, r *http.
 	key := notification.Key{Owner: req.RoomIdentity, Source: req.SourceID, SubscriptionID: req.SubscriptionID}
 	var err error
 	if r.URL.Path == "/v1/platform/notifications/configure" {
+		if req.Target != nil || !notificationConfigHasTarget(req.Config) {
+			writeAPIError(w, ErrRequest)
+			return
+		}
 		var cfg lark.Config
 		decoder := json.NewDecoder(bytes.NewReader(req.Config))
 		decoder.DisallowUnknownFields()
@@ -302,7 +315,11 @@ func (m *roomManager) servePlatformNotifications(w http.ResponseWriter, r *http.
 			writeAPIError(w, ErrRequest)
 			return
 		}
-		err = m.syncLarkSubscription(r.Context(), key, req.Version)
+		if req.Target == nil || req.Target.Mode == "" {
+			writeAPIError(w, ErrRequest)
+			return
+		}
+		err = m.syncLarkSubscription(r.Context(), key, req.Version, *req.Target)
 	}
 	if err != nil {
 		writeAPIError(w, err)
@@ -326,4 +343,79 @@ func (m *roomManager) servePlatformNotifications(w http.ResponseWriter, r *http.
 		return
 	}
 	_ = json.NewEncoder(w).Encode(view)
+}
+
+// A single-settings request must explicitly select a destination. Only the
+// summary endpoint permits an absent target, meaning all saved scopes.
+func notificationQueryTarget(q url.Values, required bool) (*notification.Target, error) {
+	mode, present := q["target_mode"]
+	if !present {
+		if required || q.Has("agent_id") || q.Has("membership_id") {
+			return nil, ErrRequest
+		}
+		return nil, nil
+	}
+	if len(mode) != 1 || mode[0] == "" || len(q["agent_id"]) > 1 || len(q["membership_id"]) > 1 {
+		return nil, ErrRequest
+	}
+	target, err := (notification.Target{Mode: mode[0], AgentID: q.Get("agent_id"), MembershipID: q.Get("membership_id")}).Normalize()
+	if err != nil {
+		return nil, notificationRoomError(err)
+	}
+	return &target, nil
+}
+func notificationConfigHasTarget(raw json.RawMessage) bool {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		return false
+	}
+	var target notification.Target
+	data, ok := fields["target"]
+	return ok && !bytes.Equal(bytes.TrimSpace(data), []byte("null")) && json.Unmarshal(data, &target) == nil && target.Mode != "" && target.Valid()
+}
+func filterNotificationViews(views []notificationView, matches func(notificationView) bool) []notificationView {
+	out := []notificationView{}
+	for _, v := range views {
+		if matches(v) {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+func (m *roomManager) setNotificationTargetViewLocked(v *notificationView, target notification.Target) {
+	v.Target = target.Canonical()
+	if v.Target.Mode == "" {
+		v.Target.Mode = "room"
+	}
+	if err := m.checkNotificationTargetLocked(context.Background(), v.RoomIdentity, target); err != nil {
+		v.TargetErrorCode = "target_unavailable"
+		if errors.Is(err, ErrIdentity) {
+			v.TargetErrorCode = "target_removed"
+		}
+		v.RuntimePaused = true
+	}
+}
+
+func (v notificationView) MarshalJSON() ([]byte, error) {
+	type wire notificationView
+	switch c := v.Config.(type) {
+	case gitlab.EventsConfig:
+		if !c.Target.Inbox() {
+			c.Target.Mode = "room"
+		}
+		v.Config = c
+	case gitlab.TodosConfig:
+		if !c.Target.Inbox() {
+			c.Target.Mode = "room"
+		}
+		v.Config = c
+	}
+	return json.Marshal(wire(v))
+}
+func (v gitlabNotificationView) MarshalJSON() ([]byte, error) {
+	type wire gitlabNotificationView
+	if !v.Config.Target.Inbox() {
+		v.Config.Target.Mode = "room"
+	}
+	return json.Marshal(wire(v))
 }

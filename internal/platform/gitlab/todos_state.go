@@ -272,7 +272,7 @@ func (s *TodosState) Accept(todos []Todo, now time.Time) {
 	}
 }
 func (s TodosState) Metadata() notification.Metadata {
-	return notification.Metadata{Key: notification.Key{Owner: s.RoomIdentity, Source: TodosSourceID, SubscriptionID: s.SubscriptionID}, Version: s.SubscriptionVersion, Enabled: s.Config.Enabled, Retired: s.Retired, PlatformID: s.Binding.PlatformID, Observed: len(s.Observed), Pending: len(s.Inbox), DeliveryError: s.DeliveryErrorCode}
+	return notification.Metadata{Target: s.Config.Target.Canonical(), Key: notification.Key{Owner: s.RoomIdentity, Source: TodosSourceID, SubscriptionID: s.SubscriptionID}, Version: s.SubscriptionVersion, Enabled: s.Config.Enabled, Retired: s.Retired, PlatformID: s.Binding.PlatformID, Observed: len(s.Observed), Pending: len(s.Inbox), DeliveryError: s.DeliveryErrorCode}
 }
 func (s TodosState) CloneState() notification.State { return s.Clone() }
 func (s TodosState) PendingItems() []notification.Item {

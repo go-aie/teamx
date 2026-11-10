@@ -190,11 +190,10 @@ func TestNotificationsUpgradeFailureBoundaries(t *testing.T) {
 			offline.initPlatform()
 			ops := offline.store.ops
 			injected := errors.New("notification upgrade write failure")
-			// Temp filenames are generic; fail the second create for a known commit failure.
-			creates := 0
+			// Track durable files so injected failures follow named boundaries.
+			journalWritten, backupWritten := false, false
 			offline.store.ops.createTemp = func(dir, pattern string) (snapshotFile, error) {
-				creates++
-				if stage == "backup-write" || stage == "commit-write" && creates == 2 {
+				if stage == "backup-write" && journalWritten || stage == "commit-write" && backupWritten {
 					return nil, injected
 				}
 				return ops.createTemp(dir, pattern)
@@ -203,12 +202,18 @@ func TestNotificationsUpgradeFailureBoundaries(t *testing.T) {
 				if err := ops.rename(from, to); err != nil {
 					return err
 				}
+				if filepath.Base(to) == memberNotificationsJournal {
+					journalWritten = true
+				}
+				if to == backup {
+					backupWritten = true
+				}
 				if stage == "commit-unknown" && to == path {
 					return injected
 				}
 				return nil
 			}
-			_, err := offline.upgradeGitLabNotificationsLocked()
+			_, err := offline.upgradeMemberNotificationsLocked()
 			if err == nil {
 				t.Fatal("fault not observed")
 			}
@@ -244,7 +249,7 @@ func TestNotificationsUpgradeRefusesIncompatibleLegacyScope(t *testing.T) {
 	before := notificationSourceBytes(t, h.m, h.room.RoomIdentity)
 	offline := &roomManager{store: h.m.store, index: h.m.index}
 	offline.initPlatform()
-	if _, err := offline.upgradeGitLabNotificationsLocked(); !errors.Is(err, ErrConflict) {
+	if _, err := offline.upgradeMemberNotificationsLocked(); !errors.Is(err, ErrConflict) {
 		t.Fatal("incompatible settings silently changed", err)
 	}
 	path := h.m.gitlabNotificationPath(h.room.RoomIdentity)

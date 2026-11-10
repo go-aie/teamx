@@ -101,7 +101,7 @@
           <h2>团队成员 <span id="member-count">0</span></h2>
           <div class="member-rail-actions"><button id="toggle-add" class="add-button" type="button" aria-label="添加成员" title="添加成员" aria-expanded="false" aria-controls="add-form"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
         </header>
-        <div id="member-sidebar" class="sidebar" aria-label="成员与通知源">
+        <div id="member-sidebar" class="sidebar" aria-label="成员与房间通知">
           <form id="add-form" class="add-form" hidden>
             <label for="agent-name">成员名称</label><input id="agent-name" placeholder="例如 reviewer" required maxlength="128" autocomplete="off">
             <label for="profile">角色配置</label><select id="profile" required></select>
@@ -111,43 +111,45 @@
           </form>
           <div id="member-empty" class="member-empty"><span class="member-empty-icon">◎</span><p>还没有 Agent 加入</p><span>添加成员后，启用它的自动协作。</span></div>
           <div id="members"></div>
+          <p id="notification-next-step" class="quiet" role="status" tabindex="-1" hidden></p>
           <div class="sidebar-note"><span class="note-icon">↳</span><p>启用的成员会收到新消息通知，自行决定阅读、分析或回复。</p></div>
           <section id="notification-sources" class="notification-sources" aria-labelledby="notification-sources-title" hidden>
-            <h2 id="notification-sources-title">平台通知 <span id="notification-source-count">0</span></h2>
-            <button id="open-gitlab-source" class="notification-source" type="button" aria-controls="notification-detail">
-              <span class="avatar integration-avatar" aria-hidden="true">GL</span><span class="notification-source-name">GitLab <small>通知</small></span><span id="notification-source-state" class="quiet"></span><span aria-hidden="true">›</span>
-            </button>
-            <button id="open-lark-source" class="notification-source" type="button" aria-haspopup="dialog" aria-controls="notification-detail">
-              <span class="avatar integration-avatar" aria-hidden="true">飞</span><span class="notification-source-name">飞书 <small>消息</small></span><span id="lark-source-state" class="quiet"></span><span aria-hidden="true">›</span>
-            </button>
+            <h2 id="notification-sources-title">房间通知 <span id="notification-source-count">0</span></h2>
+            <div id="notification-platforms" aria-label="发送到当前房间的通知"></div>
+            <p id="notification-empty" class="quiet">添加房间通知，发送到当前房间消息流。</p>
+            <p id="notification-list-error" class="form-error" role="status" hidden></p>
+            <button id="notification-list-reload" class="text-button" type="button" hidden>重新读取</button>
+            <details id="notification-add-picker" class="notification-add-picker">
+              <summary>＋ 添加房间通知</summary>
+              <label for="notification-add-search" class="sr-only">搜索平台</label><input id="notification-add-search" type="search" placeholder="搜索 GitLab 平台" autocomplete="off">
+              <div id="notification-add-options" aria-label="选择已有平台"></div>
+
+            </details>
           </section>
+          <details id="notification-orphans" hidden><summary>通知接收异常</summary><div id="notification-orphan-items"></div></details>
         </div>
       </div>
       <dialog id="notification-detail" class="activity-dialog notification-detail" aria-labelledby="notification-title">
-        <header class="activity-header"><h2 id="notification-title">平台 · 通知</h2><button id="close-notification" class="text-button" type="button" aria-label="返回成员与通知源列表">返回</button></header>
+        <header class="activity-header"><h2 id="notification-title" tabindex="-1">平台通知</h2><button id="close-notification" class="text-button" type="button" aria-label="返回原成员页面">返回</button></header>
         <div class="notification-body">
-          <p id="notification-summary" class="sr-only" aria-live="polite"></p>
-          <button id="notification-add-platform" class="text-button" type="button">接入平台</button>
-          <div id="notification-platforms" aria-label="平台通知列表"></div>
-          <details id="notification-settings-details" class="notification-channel">
-          <summary id="notification-selected-platform">详细设置</summary>
-          <div class="notification-tabs" role="tablist" aria-label="通知平台">
-            <button id="notification-tab-gitlab" type="button" role="tab" aria-selected="true" aria-controls="notification-panel-gitlab">GitLab</button>
-            <button id="notification-tab-messages" type="button" role="tab" aria-selected="false" aria-controls="notification-panel-messages" tabindex="-1">飞书消息</button>
-          </div>
+          <p id="notification-account" class="notification-account quiet"></p>
+          <section id="member-platform-tool-detail" hidden><h3>平台工具</h3><div id="member-platform-tool-control"></div><p id="member-platform-tool-help" class="quiet"></p></section>
+          <p id="notification-destination" class="quiet"></p>
+          <label class="notification-master workspace-check"><input id="notification-enabled" type="checkbox" role="switch">接收通知<span id="notification-enabled-state" class="quiet" role="status"></span></label>
+          <p id="notification-toggle-error" class="form-error" role="status" hidden></p>
           <p id="notification-notice" class="quiet" role="status" hidden></p>
           <button id="notification-reload" class="text-button" type="button" hidden>重新读取</button>
-          <div id="notification-panel-messages" role="tabpanel" aria-labelledby="notification-tab-messages" hidden>
-            <section class="workspace-form notification-settings lark-settings" aria-labelledby="notification-tab-messages">
+          <div id="notification-panel-messages" aria-label="飞书通知设置" hidden>
+            <section class="workspace-form notification-settings lark-settings" aria-label="飞书通知设置">
               <fieldset id="lark-fields">
                 <div class="notification-settings-row">
-                  <div><label for="lark-connection" hidden>平台</label><select id="lark-connection" hidden aria-describedby="lark-account"></select><p id="lark-account" class="quiet" role="status" hidden></p></div>
-                  <div><label for="lark-target">接收位置</label><select id="lark-target"></select></div>
+                  <div hidden><label for="lark-connection">平台</label><select id="lark-connection" aria-describedby="lark-account"></select><p id="lark-account" class="quiet" role="status"></p></div>
+                  <div hidden><select id="lark-target" disabled aria-label="固定接收者"></select></div>
                 </div>
-                <details id="lark-settings" class="notification-channel">
-                  <summary id="lark-settings-summary" class="notification-settings-heading"><label class="workspace-check"><input id="lark-enabled" type="checkbox">启用</label><span id="lark-state" class="quiet" role="status"></span></summary>
+                <details id="lark-settings" class="notification-channel" open>
+                  <summary id="lark-settings-summary" class="notification-settings-heading"><span>接收内容</span><input id="lark-enabled" type="checkbox" hidden><span id="lark-state" class="quiet" role="status"></span></summary>
                   <div class="notification-channel-body">
-                    <div class="lark-conversation-heading"><span id="lark-conversation-label">会话</span><label class="workspace-check"><input id="lark-private-enabled" type="checkbox">人员私聊</label><label class="workspace-check"><input id="lark-groups-enabled" type="checkbox">指定群聊</label><label class="workspace-check"><input id="lark-scope" type="checkbox" aria-describedby="lark-scope-help">全部人员私聊</label></div>
+                    <div class="lark-conversation-heading"><span id="lark-conversation-label" class="sr-only">接收会话类别</span><label class="workspace-check"><input id="lark-private-enabled" type="checkbox">人员私聊</label><label class="workspace-check"><input id="lark-groups-enabled" type="checkbox">指定群聊</label><label id="lark-scope-option" class="workspace-check"><input id="lark-scope" type="checkbox" aria-describedby="lark-scope-help">全部人员私聊</label></div>
                     <div class="lark-conversation-controls">
                       <div id="lark-chat-selection">
                         <details id="lark-chat-picker" class="lark-chat-picker">
@@ -175,8 +177,9 @@
                           <label class="workspace-check"><input id="lark-all" type="checkbox">@所有人</label>
                         </div>
                       </div>
-                      <p id="lark-group-mode-help" class="quiet">规则用于筛选他人消息；已开启类别及范围内，本人发送的消息和回复作为进展上下文接收。“我”指所选连接账号。</p>
+                      <p id="lark-group-mode-help" class="quiet">规则用于筛选他人消息；已开启类别及范围内，本人发送的消息和回复作为进展上下文接收。“我”指当前平台账号。</p>
                     </div>
+                    <details class="notification-advanced"><summary>高级设置</summary>
                     <div class="notification-settings-row">
                       <div><label for="lark-backfill">开始接收时间</label><select id="lark-backfill" aria-describedby="lark-backfill-help"><option value="0">从开启时刻</option><option value="3600">最近 1 小时</option><option value="86400">最近 24 小时</option><option value="custom">指定时间</option></select><div id="lark-backfill-locked" class="notification-backfill-locked" aria-describedby="lark-backfill-help" hidden><span id="lark-backfill-value"></span><small>已锁定</small></div></div>
                       <div><label for="lark-interval">检查间隔（秒）</label><input id="lark-interval" type="number" min="3" max="3600" value="60" title="3～3600 秒"></div>
@@ -184,20 +187,21 @@
                     <div id="lark-backfill-custom" hidden><label id="lark-backfill-start-label" for="lark-backfill-start">起始时间（系统时区）</label><input id="lark-backfill-start" type="datetime-local" step="1" aria-describedby="lark-backfill-help lark-backfill-error"></div>
                     <p id="lark-backfill-help" class="quiet">首次保存后锁定，后续修改设置沿用该起点。</p>
                     <p id="lark-backfill-error" class="form-error" role="alert" hidden></p>
+                    </details>
                   </div>
                 </details>
               </fieldset>
-              <div class="gitlab-events-actions notification-settings-actions"><button id="lark-save" class="primary" type="button">保存设置</button><button id="lark-sync" class="text-button" type="button">立即同步</button><button id="lark-manage-platforms" class="text-button" type="button">管理平台 ↗</button></div>
+              <div class="gitlab-events-actions notification-settings-actions"><button id="lark-save" class="primary" type="button">保存设置</button><button id="lark-manage-platforms" class="text-button" type="button">管理平台 ↗</button></div>
               <p id="lark-feedback" class="quiet" role="status"></p><p id="lark-error" class="form-error" role="alert" hidden></p>
-              <details class="gitlab-events-records"><summary>同步状态</summary><p id="lark-diagnostics" class="quiet"></p><ul id="lark-chat-status" hidden></ul></details>
+              <details class="gitlab-events-records"><summary>同步状态与诊断</summary><button id="lark-sync" class="text-button" type="button">立即同步</button><p id="lark-diagnostics" class="quiet"></p><ul id="lark-chat-status" hidden></ul></details>
             </section>
           </div>
-          <div id="notification-panel-gitlab" role="tabpanel" aria-labelledby="notification-tab-gitlab">
-            <section class="workspace-form notification-settings" aria-labelledby="notification-tab-gitlab">
+          <div id="notification-panel-gitlab" aria-label="GitLab 通知设置">
+            <section class="workspace-form notification-settings" aria-label="GitLab 通知设置">
               <fieldset id="gitlab-shared-fields">
                 <div class="notification-settings-row">
-                  <div><label for="gitlab-connection" hidden>平台</label><select id="gitlab-connection" hidden aria-describedby="gitlab-notification-account"></select><p id="gitlab-notification-account" class="quiet" role="status" hidden></p></div>
-                  <div><label for="gitlab-target">接收位置</label><select id="gitlab-target"></select></div>
+                  <div hidden><label for="gitlab-connection">平台</label><select id="gitlab-connection" aria-describedby="gitlab-notification-account"></select><p id="gitlab-notification-account" class="quiet" role="status"></p></div>
+                  <div hidden><select id="gitlab-target" disabled aria-label="固定接收者"></select></div>
                 </div>
               </fieldset>
               <details id="gitlab-events-settings" class="notification-channel">
@@ -260,6 +264,7 @@
                   <p id="gitlab-todos-error" class="form-error" role="alert" hidden></p>
                 </section>
               </details>
+              <details class="notification-advanced"><summary>高级设置</summary>
               <div class="notification-settings-row">
                 <div><label for="gitlab-backfill">开始接收时间</label><select id="gitlab-backfill" aria-describedby="gitlab-backfill-help"><option value="0">从开启时刻</option><option value="3600">最近 1 小时</option><option value="86400">最近 24 小时</option><option value="custom">指定时间</option></select><div id="gitlab-backfill-locked" class="notification-backfill-locked" aria-describedby="gitlab-backfill-help" hidden><span id="gitlab-backfill-value"></span><small>已锁定</small></div></div>
                 <div><label for="gitlab-interval">检查间隔（秒）</label><input id="gitlab-interval" type="number" min="3" max="120" step="1" value="30" title="3～120 秒" aria-describedby="gitlab-interval-hint"></div>
@@ -268,9 +273,10 @@
               <p id="gitlab-backfill-help" class="quiet">首次开启后锁定，项目活动和我的待办共用该起点。</p>
               <p id="gitlab-backfill-error" class="form-error" role="alert" hidden></p>
               <p id="gitlab-interval-hint" class="quiet">房间未打开或操作中时，每 120 秒检查，恢复后投递。</p>
-              <div class="gitlab-events-actions notification-settings-actions"><button id="gitlab-save" class="primary" type="button">保存设置</button><button id="gitlab-sync" class="text-button" type="button">立即同步</button><button id="gitlab-manage-platforms" class="text-button" type="button">管理平台 ↗</button></div>
+              </details>
+              <div class="gitlab-events-actions notification-settings-actions"><button id="gitlab-save" class="primary" type="button">保存设置</button><button id="gitlab-manage-platforms" class="text-button" type="button">管理平台 ↗</button></div>
               <p id="gitlab-feedback" class="quiet" role="status" aria-live="polite"></p>
-              <details id="gitlab-sync-status" class="gitlab-events-records"><summary>同步状态</summary>
+              <details id="gitlab-sync-status" class="gitlab-events-records"><summary>同步状态与诊断</summary><button id="gitlab-sync" class="text-button" type="button">立即同步</button>
                 <dl class="notification-sync-list">
                   <div><dt>项目活动</dt><dd id="gitlab-events-status" class="quiet"></dd></div>
                   <div><dt>我的待办</dt><dd id="gitlab-todos-status" class="quiet"></dd></div>
@@ -278,7 +284,6 @@
               </details>
             </section>
           </div>
-          </details>
         </div>
       </dialog>
       <dialog id="activity-dialog" class="activity-dialog" aria-labelledby="activity-title">
@@ -290,12 +295,41 @@
         <p id="agent-enable-hint" class="agent-enable-hint quiet" role="status" hidden></p>
         <p id="agent-error" class="agent-error form-error" role="status" hidden></p>
         <div id="agent-tabs" class="notification-tabs agent-tabs" role="tablist" aria-label="Agent 详情">
-          <button id="agent-tab-activity" type="button" role="tab" aria-selected="true" aria-controls="activity-body">活动记录</button>
-          <button id="agent-tab-inbox" type="button" role="tab" aria-selected="false" aria-controls="inbox-member-view" tabindex="-1">收件箱</button>
+          <button id="agent-tab-platforms" type="button" role="tab" aria-selected="true" aria-controls="platforms-member-view">平台</button>
           <button id="agent-tab-policy" type="button" role="tab" aria-selected="false" aria-controls="policy-member-view" tabindex="-1">长期规则</button>
-          <button id="agent-tab-tools" type="button" role="tab" aria-selected="false" aria-controls="tools-member-view" tabindex="-1">工具设置</button>
+          <button id="agent-tab-inbox" type="button" role="tab" aria-selected="false" aria-controls="inbox-member-view" tabindex="-1">收件箱</button>
+          <button id="agent-tab-activity" type="button" role="tab" aria-selected="false" aria-controls="activity-body" tabindex="-1">活动记录</button>
         </div>
-        <div id="activity-body" class="activity-body" role="tabpanel" aria-labelledby="agent-tab-activity" aria-busy="false">
+        <div id="platforms-member-view" class="activity-body" role="tabpanel" aria-labelledby="agent-tab-platforms">
+          <section id="member-notification-sources" class="member-notification-sources" aria-label="当前成员平台" hidden>
+            <div class="member-sources-heading"><h3>平台 <span id="member-notification-source-count">0</span></h3><button id="member-notification-collapse" class="text-button" type="button" aria-expanded="true" aria-controls="member-notification-content">收起</button></div>
+            <div id="member-platform-issues" role="status"></div>
+            <div id="member-notification-content">
+              <div id="member-notification-platforms"></div>
+              <p id="member-notification-empty" class="quiet"></p>
+              <p id="member-notification-list-error" class="form-error" role="status" hidden></p>
+              <button id="member-notification-list-reload" class="text-button" type="button" hidden>重新读取平台</button>
+              <details id="member-notification-add-picker" class="notification-add-picker">
+                <summary>＋ 添加平台</summary>
+                <label for="member-notification-add-search" class="sr-only">搜索平台</label><input id="member-notification-add-search" type="search" placeholder="搜索平台或账号" autocomplete="off">
+                <div id="member-notification-add-options" aria-label="选择已有平台"></div>
+                <div id="member-platform-add-selection" hidden>
+                  <h4 id="member-platform-add-title"></h4>
+                  <label class="workspace-check"><input id="member-platform-add-notifications" type="checkbox" checked>接收通知</label>
+                  <label class="workspace-check"><input id="member-platform-add-tool" type="checkbox" checked>使用工具</label>
+                  <p id="member-platform-add-summary" class="quiet"></p>
+                  <button id="member-platform-add-customize" class="text-button" type="button">调整通知详情与起点</button>
+                  <button id="member-platform-add-submit" class="primary" type="button">添加并启用</button>
+                </div>
+                <button id="notification-add-platform" class="text-button" type="button">连接新平台…</button>
+              </details>
+                <p id="member-platform-add-result" class="quiet" role="status" aria-live="polite"></p>
+                <button id="member-platform-add-resume" class="text-button" type="button" hidden>读取接入进度</button>
+                <button id="member-platform-add-retry" class="text-button" type="button" hidden>继续未完成步骤</button>
+            </div>
+          </section>
+        </div>
+        <div id="activity-body" class="activity-body" role="tabpanel" aria-labelledby="agent-tab-activity" aria-busy="false" hidden>
           <p id="activity-notice" class="activity-notice" role="status">正在读取…</p>
           <section id="activity-state" class="activity-section" hidden>
             <h3>当前状态</h3>
@@ -312,6 +346,10 @@
           </section>
         </div>
         <div id="inbox-member-view" class="activity-body" role="tabpanel" aria-labelledby="agent-tab-inbox" hidden>
+          <h3 class="inbox-received-heading">已收到的通知</h3>
+          <p id="inbox-empty-hint" class="quiet" role="status" hidden></p>
+          <button id="inbox-add-platform" class="text-button" type="button" hidden>添加平台</button>
+          <div id="inbox-platform-issues"></div>
           <div class="inbox-toolbar">
             <div class="inbox-summary">
               <p id="inbox-status" class="quiet" role="status" aria-live="polite" title="只读预览，不会推进成员读取进度，也不会启动自动处理。"></p>
@@ -357,13 +395,6 @@
             <div id="policy-matters"></div>
             <button id="policy-next" type="button" hidden>下一页记录</button>
           </details>
-        </div>
-        <div id="tools-member-view" class="activity-body agent-tools-panel" role="tabpanel" aria-labelledby="agent-tab-tools" hidden>
-          <p class="tool-member-hint quiet">为 Agent 选择工具与连接，点击“应用”后生效。</p>
-          <p id="cli-member-feedback" class="quiet" role="status" aria-live="polite"></p>
-          <div id="cli-member-options"></div>
-          <button id="cli-member-add-platform" class="settings-secondary-button" type="button">接入平台</button>
-          <button id="cli-member-refresh" class="text-button" type="button">重新读取工具</button>
         </div>
         <footer id="activity-footer" class="activity-footer"><span>仅操作者可见，不会自动发送到房间。</span><button id="activity-jump-latest" class="text-button" type="button" hidden>回到最新 ↓</button></footer>
       </dialog>
@@ -453,7 +484,7 @@
       <div id="platforms-empty" class="platforms-empty" hidden>
         <div class="platforms-empty-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m10 13 4-4M8 15l-1 1a3.5 3.5 0 0 1-5-5l4-4a3.5 3.5 0 0 1 5 0M16 9l1-1a3.5 3.5 0 0 1 5 5l-4 4a3.5 3.5 0 0 1-5 0" transform="translate(0 -1)"/></svg></div>
         <h3>还没有平台</h3>
-        <p>点击右上角 ＋ 为成员接入平台，完成后自动接收通知并启用工具。</p>
+        <p>点击右上角 ＋ 连接账号，再到 Room 接收通知或为成员启用工具。</p>
       </div>
       <div id="platforms-load-error" class="platforms-load-error" hidden>
         <p class="quiet" role="status">平台列表加载失败，请重试。</p>
@@ -469,27 +500,26 @@
         <section id="onboarding-options" class="connection-field-wide onboarding-options" aria-label="接入后使用方式">
           <div id="onboarding-targets" class="notification-settings-row">
             <div><label for="onboarding-room">使用的 Room</label><select id="onboarding-room"></select></div>
-            <div><label for="onboarding-member">使用成员</label><select id="onboarding-member"></select></div>
+            <div id="onboarding-member-field"><label for="onboarding-member">使用成员</label><select id="onboarding-member"></select></div>
           </div>
           <p id="onboarding-target-error" class="form-error" role="alert" hidden></p>
           <button id="onboarding-target-retry" class="text-button" type="button" hidden>重新读取成员</button>
           <p id="onboarding-summary" class="quiet" role="status" aria-live="polite"></p>
-          <details id="onboarding-details" class="connection-advanced">
-            <summary>详细设置</summary>
-            <label class="workspace-check"><input id="onboarding-only" type="checkbox">仅添加平台</label>
+            <label id="onboarding-only-option" class="workspace-check"><input id="onboarding-only" type="checkbox">仅添加平台</label>
             <div id="onboarding-enable-options">
               <label class="workspace-check"><input id="onboarding-notifications" type="checkbox" checked>接收平台通知</label>
-              <label class="workspace-check"><input id="onboarding-tool" type="checkbox" checked>启用平台工具</label>
-              <p class="quiet">已有通知目标、开关和能力选择会保留。更改本页选项才会明确更新对应设置；接入不改变自动协作与回合预算。</p>
+              <label class="workspace-check"><input id="onboarding-tool" type="checkbox" checked>使用工具</label>
+              <p class="quiet">已有设置保留；已关闭的项请在成员平台区用对应开关开启。</p>
+              <details id="onboarding-details" class="connection-advanced"><summary>调整首次接收时间</summary>
               <div id="onboarding-notification-details">
                 <label for="onboarding-backfill">开始接收时间</label><select id="onboarding-backfill"><option value="0">从开启时刻</option><option value="3600">最近 1 小时</option><option value="86400">最近 24 小时</option><option value="custom">指定时间</option></select>
                 <div id="onboarding-backfill-custom" hidden><label id="onboarding-backfill-start-label" for="onboarding-backfill-start">起始时间</label><input id="onboarding-backfill-start" type="datetime-local" step="1"></div>
                 <p class="quiet">首次成功开启后锁定起点。已有接收进度保持原起点。</p>
               </div>
+              </details>
             </div>
-          </details>
+
         </section>
-        <button id="onboarding-use" class="settings-secondary-button connection-field-wide" type="button" hidden>为成员启用此平台</button>
         <section id="gitlab-reuse" class="connection-field-wide connection-inline-panel" aria-label="GitLab 应用复用" hidden>
           <p id="gitlab-reuse-summary" role="status" aria-live="polite"></p>
           <button id="gitlab-repair-application" class="primary" type="button" hidden>修改应用配置</button>
@@ -637,7 +667,7 @@
       <h3>接入结果</h3><p id="onboarding-result-target" class="quiet"></p><p id="onboarding-result-account"></p>
       <dl id="onboarding-steps" class="activity-stats" aria-live="polite"></dl>
       <p id="onboarding-result-error" class="form-error" role="alert" hidden></p>
-      <div class="connection-account-actions"><button id="onboarding-prepare-retry" class="settings-secondary-button" type="button" hidden>重试准备接入</button><button id="onboarding-resume" class="settings-secondary-button" type="button">读取接入进度</button><button id="onboarding-continue-login" class="settings-secondary-button" type="button" hidden>继续连接账号</button><button id="onboarding-apply" class="primary" type="button" hidden>继续启用</button><button id="onboarding-cancel" class="text-button" type="button" hidden>停止剩余步骤</button><button id="onboarding-dismiss" class="text-button" type="button" hidden>收起结果</button><button id="onboarding-notification-settings" class="text-button" type="button" hidden>调整通知范围</button></div>
+      <div class="connection-account-actions"><button id="onboarding-prepare-retry" class="settings-secondary-button" type="button" hidden>重试准备接入</button><button id="onboarding-resume" class="settings-secondary-button" type="button">读取接入进度</button><button id="onboarding-continue-login" class="settings-secondary-button" type="button" hidden>继续连接账号</button><button id="onboarding-apply" class="primary" type="button" hidden>继续启用</button><button id="onboarding-cancel" class="text-button" type="button" hidden>停止剩余步骤</button><button id="onboarding-dismiss" class="text-button" type="button" hidden>收起结果</button><button id="onboarding-use-room" class="text-button" type="button" hidden>在当前 Room 中使用</button><button id="onboarding-notification-settings" class="text-button" type="button" hidden>调整通知范围</button></div>
     </section>
     <p id="platforms-feedback" class="platforms-feedback quiet" role="status" aria-live="polite"></p>
     <details id="platforms-feedback-details" class="platforms-feedback-details" hidden><summary>查看说明</summary><p id="platforms-feedback-detail"></p></details>

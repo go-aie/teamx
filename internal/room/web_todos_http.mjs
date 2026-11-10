@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { launch, settle } from "./web_app_harness.mjs";
+import { launch, settle, openNotification } from "./web_app_harness.mjs";
 import { request } from "./web/client.mjs";
 let call = (path, body) => request(process.env.TEAMX_WEB_ENDPOINT + path, body);
 if (process.env.TEAMX_WEB_TRANSPORT === "stdio") {
@@ -22,15 +22,14 @@ const ui = await launch({ request: (path, body) => {
   const task = call(path, body); inflight.add(task);
   return task.finally(() => inflight.delete(task));
 } });
-await ui.el("open-gitlab-source").emit("click"); await settle(); ui.el("gitlab-todos-settings").open = true;
 await Promise.all([...inflight]); await settle();
+const platforms = ui.el("notification-add-options").children.map(button=>({value:button.dataset.platformId}));
+await openNotification(ui,"gitlab",platforms[0].value,false); ui.el("gitlab-todos-settings").open = true;
 assert.equal(ui.el("notification-sources").hidden, false);
 assert.equal(ui.el("gitlab-events").hidden, false, "Events can be configured without a Workspace project binding");
-const platforms = ui.el("gitlab-connection").children.filter(option => option.value);
 assert.equal(platforms.length, 2, ui.el("gitlab-notification-account").textContent + " / " + ui.el("gitlab-todos-error").textContent);
 async function edit(id, value) { ui.el(id).value = value; await ui.el(id).emit("change"); }
 async function toggle(id, checked) { ui.el(id).checked = checked; await ui.el(id).emit("change"); }
-await edit("gitlab-connection", platforms[0].value);
 assert.match(ui.el("gitlab-notification-account").textContent, /ID 101，已验证/);
 assert.equal(ui.el("gitlab-todos-scope"), undefined);
 assert.equal(String(ui.el("gitlab-interval").value), "30");
@@ -56,14 +55,14 @@ async function untilMessageCount(count) {
 await untilMessageCount(1);
 const message = messages()[0];
 assert.equal(message.querySelector(".author").textContent, "GitLab · 我的待办");
-await message.querySelector(".author").emit("click"); assert.equal(ui.el("notification-tab-gitlab").attributes["aria-selected"], "true"); assert.equal(ui.el("gitlab-todos-settings").open, true);
+await message.querySelector(".author").emit("click"); assert.equal(ui.el("notification-panel-gitlab").hidden, false); assert.match(ui.el("notification-title").textContent,/房间/); assert.equal(ui.el("gitlab-todos-settings").open, true);
 await ui.el("gitlab-sync").emit("click"); assert.equal(mutations[1].body.version, 1);
 assert.equal(mutations[1].body.config, undefined);
 for (const reason of ["mentioned", "assigned", "review_requested", "other"]) await toggle(`gitlab-todos-reason-${reason}`, false);
 await ui.el("gitlab-save").emit("click"); assert.deepEqual(mutations.at(-1).body.config.todos.filter.reasons, []);
 await toggle("gitlab-todos-enabled", false); await ui.el("gitlab-save").emit("click");
 assert.equal(ui.el("gitlab-todos-state").textContent, "已关闭");
-await edit("gitlab-connection", platforms[1].value); await toggle("gitlab-todos-enabled", true);
+await ui.el("close-notification").emit("click"); await openNotification(ui,"gitlab",platforms[1].value,false); await toggle("gitlab-todos-enabled", true);
 for (const reason of ["mentioned", "assigned", "review_requested", "other"]) await toggle(`gitlab-todos-reason-${reason}`, true);
 assert.equal(ui.el("gitlab-save").disabled, false);
 await ui.el("gitlab-save").emit("click"); await untilMessageCount(2);

@@ -192,10 +192,11 @@ func TestGitLabPlatformsIndependentDefaultsPauseRecoveryAndDelivery(t *testing.T
 		t.Fatal("delivery lost account identity")
 	}
 	q := url.Values{"service_epoch": {m.epoch}, "caller_id": {"operator"}, "room_id": {room.RoomID}, "room_instance": {room.RoomInstance}}
-	if r := managerHTTP(m, "/v1/platform/gitlab/notifications?"+q.Encode(), nil); r.Code != http.StatusConflict {
+	if r := managerHTTP(m, "/v1/platform/gitlab/notifications?"+q.Encode(), nil); r.Code != http.StatusBadRequest {
 		t.Fatal("ambiguous platform selected", r.Code)
 	}
 	q.Set("platform_id", b)
+	q.Set("target_mode", "room")
 	if r := managerHTTP(m, "/v1/platform/gitlab/notifications?"+q.Encode(), nil); r.Code != http.StatusOK {
 		t.Fatal(r.Body.String())
 	}

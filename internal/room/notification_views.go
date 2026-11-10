@@ -8,14 +8,23 @@ import (
 	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
+// Source location is exposed only to the human preview, never Agent input.
+type notificationSourceLocation struct {
+	Provider       string `json:"provider"`
+	Channel        string `json:"channel"`
+	SubscriptionID string `json:"subscription_id"`
+	Instance       string `json:"instance"`
+}
+
 // Both endpoints share this entry. Preview never resolves or consumes sources.
 type inboxEntryView struct {
-	Seq                uint64                  `json:"seq"`
-	Item               notification.View       `json:"item"`
-	ReceivedAt         time.Time               `json:"received_at"`
-	Source             followupSourceSummary   `json:"source"`
-	Origin             *inboxMessageOrigin     `json:"origin,omitempty"`
-	AutomaticAdmission *notification.Admission `json:"automatic_admission,omitempty"`
+	NotificationSource *notificationSourceLocation `json:"notification_source,omitempty"`
+	Seq                uint64                      `json:"seq"`
+	Item               notification.View           `json:"item"`
+	ReceivedAt         time.Time                   `json:"received_at"`
+	Source             followupSourceSummary       `json:"source"`
+	Origin             *inboxMessageOrigin         `json:"origin,omitempty"`
+	AutomaticAdmission *notification.Admission     `json:"automatic_admission,omitempty"`
 }
 
 func projectInboxEntry(e InboxEntry, source followupSourceSummary) inboxEntryView {
@@ -57,6 +66,8 @@ func (s *Store) projectInboxPreview(page InboxPage, status InboxStatus) (inboxPr
 			return v, err
 		}
 		entry := projectInboxEntry(e, source)
+		original := e.Item.Source
+		entry.NotificationSource = &notificationSourceLocation{Provider: original.Provider, Channel: original.Channel, SubscriptionID: original.SubscriptionID, Instance: original.Instance}
 		admission, err := s.inboxAdmissionLocked(e)
 		if err != nil {
 			return v, err

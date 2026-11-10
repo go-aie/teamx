@@ -20,20 +20,16 @@ func (m *roomManager) eventsSubscriptionLocked(key notification.Key) (gitlab.Eve
 	return s, ok
 }
 
-// Exactly one non-retired Events subscription is allowed per Room/platform. A retired
+// Exactly one non-retired Events subscription is allowed per Room/platform/target. A retired
 // worker must settle before a replacement can be admitted, including on retry.
-func (m *roomManager) currentEventsLocked(owner RoomIdentity, platformIDs ...string) (*gitlab.EventsState, error) {
-	id, err := m.notificationPlatformLocked(owner, gitlab.EventsSourceID, platformIDs...)
-	if err != nil {
-		return nil, err
-	}
+func (m *roomManager) currentEventsForTargetLocked(owner RoomIdentity, id string, target notification.Target) (*gitlab.EventsState, error) {
 	for _, previous := range m.notifications.StatesLocked(owner) {
 		meta := previous.Metadata()
-		if meta.Key.Source == gitlab.EventsSourceID && meta.PlatformID == id && meta.Retired && m.attachmentCallsBusyLocked(meta.Key) {
+		if meta.Key.Source == gitlab.EventsSourceID && meta.PlatformID == id && meta.Target.ScopeKey() == target.ScopeKey() && meta.Retired && m.attachmentCallsBusyLocked(meta.Key) {
 			return nil, ErrBusy
 		}
 	}
-	state, err := m.notifications.CurrentLocked(owner, gitlab.EventsSourceID, id)
+	state, err := m.notifications.CurrentLocked(owner, gitlab.EventsSourceID, id, target)
 	if err != nil || state == nil {
 		return nil, notificationRoomError(err)
 	}
@@ -63,6 +59,11 @@ func eventsProjectPath(origin, input string) (string, error) {
 }
 
 func (m *roomManager) configureEventsSubscription(ctx context.Context, key notification.Key, version uint64, cfg gitlab.EventsConfig) (gitlab.EventsState, error) {
+	var targetErr error
+	cfg.Target, targetErr = cfg.Target.Normalize()
+	if targetErr != nil {
+		return gitlab.EventsState{}, notificationRoomError(targetErr)
+	}
 	if key.Source != gitlab.EventsSourceID {
 		return gitlab.EventsState{}, ErrRequest
 	}
@@ -75,12 +76,20 @@ func (m *roomManager) configureEventsSubscription(ctx context.Context, key notif
 	if err != nil || entry.Status != "ready" {
 		return gitlab.EventsState{}, ErrIdentity
 	}
-	current, err := m.currentEventsLocked(key.Owner, m.subscriptionPlatformLocked(key, cfg.PlatformID))
+	if old, exists := m.notifications.StateLocked(key); exists && (old.Metadata().Target != cfg.Target || old.Metadata().PlatformID != cfg.PlatformID) {
+		return gitlab.EventsState{}, ErrIdentity
+	}
+	current, err := m.currentEventsForTargetLocked(key.Owner, m.subscriptionPlatformLocked(key, cfg.PlatformID), cfg.Target)
 	if err != nil {
 		return gitlab.EventsState{}, err
 	}
 	if key.SubscriptionID == "" && (version != 0 || current != nil) || key.SubscriptionID != "" && (current == nil || current.SubscriptionID != key.SubscriptionID || current.SubscriptionVersion != version) {
 		return gitlab.EventsState{}, ErrConflict
+	}
+	if current == nil {
+		if err := m.checkNotificationTargetLocked(context.Background(), key.Owner, cfg.Target); err != nil {
+			return gitlab.EventsState{}, err
+		}
 	}
 	if err := m.validateNotificationTargetLocked(ctx, key.Owner, cfg.Target, cfg.Enabled); err != nil {
 		return gitlab.EventsState{}, err
@@ -122,7 +131,7 @@ func (m *roomManager) configureEventsSubscription(ctx context.Context, key notif
 					return gitlab.EventsState{}, ErrRequest
 				}
 				selected, _, selectErr := m.resolvePlatformAccountLocked(key.Owner, cfg.PlatformID, "gitlab")
-				latest, readErr := m.currentEventsLocked(key.Owner, m.subscriptionPlatformLocked(key, cfg.PlatformID))
+				latest, readErr := m.currentEventsForTargetLocked(key.Owner, m.subscriptionPlatformLocked(key, cfg.PlatformID), cfg.Target)
 				if m.roomBusyLocked(key.Owner) || selectErr != nil || selected != account || readErr != nil || (current == nil) != (latest == nil) || current != nil && (latest.SubscriptionID != current.SubscriptionID || latest.SubscriptionVersion != current.SubscriptionVersion) {
 					return gitlab.EventsState{}, ErrConflict
 				}
@@ -163,12 +172,12 @@ func (m *roomManager) configureEventsSubscription(ctx context.Context, key notif
 			return retired, err
 		}
 		latest, ok := m.eventsSubscriptionLocked(retired.Metadata().Key)
-		active, readErr := m.currentEventsLocked(key.Owner, m.subscriptionPlatformLocked(key, cfg.PlatformID))
+		active, readErr := m.currentEventsForTargetLocked(key.Owner, m.subscriptionPlatformLocked(key, cfg.PlatformID), cfg.Target)
 		selected, _, selectErr := m.resolvePlatformAccountLocked(key.Owner, cfg.PlatformID, "gitlab")
 		if m.roomBusyLocked(key.Owner) || !ok || latest.SubscriptionVersion != retired.SubscriptionVersion || readErr != nil || active != nil || selectErr != nil || selected != account {
 			return retired, ErrConflict
 		}
-		if saved, ok := m.gitlabNotifications[key.Owner][cfg.PlatformID]; ok && saved.BackfillLocked && saved.Config.BackfillStart.IsZero() {
+		if saved, ok := m.gitlabNotifications[key.Owner][notificationScopeFor(cfg.PlatformID, cfg.Target)]; ok && saved.BackfillLocked && saved.Config.BackfillStart.IsZero() {
 			cfg.BackfillSeconds, cfg.BackfillStart = 0, current.Baseline
 		}
 		current = nil
@@ -211,6 +220,9 @@ func (m *roomManager) syncEventsSubscription(key notification.Key, version uint6
 	s, ok := m.eventsSubscriptionLocked(key)
 	if !ok || s.Retired || s.SubscriptionVersion != version {
 		return ErrIdentity
+	}
+	if err := m.checkNotificationTargetLocked(context.Background(), key.Owner, s.Config.Target); err != nil {
+		return err
 	}
 	if _, err := m.eventsBindingLocked(s); err != nil {
 		return notificationRoomError(err)

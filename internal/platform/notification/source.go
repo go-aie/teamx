@@ -33,6 +33,7 @@ type Key struct {
 	SubscriptionID string
 }
 type Metadata struct {
+	Target            Target // Derived from Config.Target, never from a pending Route.
 	Key               Key
 	Version           uint64
 	Enabled           bool

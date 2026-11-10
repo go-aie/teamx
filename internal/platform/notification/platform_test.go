@@ -32,7 +32,7 @@ func TestPlatformChannelUniquenessAndRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []fixtureState{a, b} {
-		got, err := f.m.CurrentLocked(want.K.Owner, source.id, want.Platform)
+		got, err := f.m.CurrentLocked(want.K.Owner, source.id, want.Platform, want.Metadata().Target)
 		if err != nil || got == nil || got.Metadata().Key != want.K {
 			t.Fatal(got, err)
 		}

@@ -115,10 +115,10 @@ export async function launch(api, saved = new Map()) {
     return data;
   };
   const AsyncFunction = Object.getPrototypeOf(async function() {}).constructor;
-  const entry = new AsyncFunction(...names, app + "\nreturn { refresh };\n");
+  const entry = new AsyncFunction(...names, app + "\nreturn { refresh, openNotificationSource, selectedAgent };\n");
   const entrypoint = await entry(...values);
   assert.ok(!elements.get("sync-error").textContent, elements.get("sync-error").textContent);
-  return { el: id => elements.get(id), saved, document, window, clock, refresh: entrypoint.refresh,
+  return { el: id => elements.get(id), saved, document, window, clock, refresh: entrypoint.refresh, openNotificationSource:entrypoint.openNotificationSource, selectedAgent:entrypoint.selectedAgent,
     async draft(text) { elements.get("message-input").value = text; await elements.get("message-input").emit("input"); },
     async select(name) {
       const choice = elements.get("room-list").children.map(row => row.children[0]).find(button => button.children[0].textContent === name);
@@ -148,7 +148,7 @@ export function withOnboarding(api) {
       api.calls.push({path,body:structuredClone(body),data:structuredClone(body)});
       if(path.endsWith("/prepare")) {
         const {service_epoch,caller,operation_id,...input}=body;
-        ops.set(operation_id,{operation_id,input,platform_id:input.platform_id || operation_id,connection:{status:"waiting"},notifications:{status:input.only_platform ? "skipped":"pending"},tool:{status:input.only_platform ? "skipped":"pending"}});
+        ops.set(operation_id,{schema:2,operation_id,input,platform_id:input.platform_id || operation_id,connection:{status:"waiting"},notifications:{status:input.only_platform ? "skipped":"pending"},tool:{status:input.only_platform ? "skipped":"pending"}});
       }
       const op=ops.get(body.operation_id);if(!op)throw Object.assign(Error("missing"),{code:"identity"});
       if(path.endsWith("/cancel")) op.cancelled=true;
@@ -160,4 +160,25 @@ export function withOnboarding(api) {
     return result;
   };
   return api;
+}
+
+export async function openMemberInbox(ui, membershipID = "") {
+  if(!ui.el("activity-dialog").open) {
+    const row=ui.el("members").children.find(row=>!membershipID || row.querySelector(".member-summary").dataset.activityMember===membershipID) || ui.el("members").children[0];
+    assert.ok(row,"member is listed");await row.querySelector(".member-summary").emit("click");await settle();
+  }
+  if(membershipID && ui.el("activity-member").value!==membershipID){ui.el("activity-member").value=membershipID;await ui.el("activity-member").emit("change");await settle();}
+  if(ui.el("agent-tab-inbox").attributes["aria-selected"]!=="true"){await ui.el("agent-tab-inbox").emit("click");await settle();}
+}
+export async function openNotification(ui, provider, platformID = "", member = provider === "lark") {
+  if(member)await openMemberInbox(ui,typeof member==="string" ? member : "");
+  const prefix=member ? "member-notification-" : "notification-";
+  const rows=ui.el(prefix+"platforms").children;
+  const button=rows.filter(row=>!platformID || row.dataset.platformId===platformID).map(row=>row.children[0]).find(b=>b.dataset.provider===provider)
+    || ui.el(prefix+"add-options").children.find(b=>b.dataset.provider===provider && (!platformID || b.dataset.platformId===platformID));
+  assert.ok(button,`${provider} platform is available from ${member ? "member inbox" : "room notifications"}`);
+  if(member && !rows.some(row=>row.children[0]===button)){
+    const m=ui.selectedAgent();
+    await ui.openNotificationSource(button,provider==="lark" ? "messages" : "gitlab",platformID || button.dataset.platformId,{mode:"inbox",agent_id:m.agent_id,membership_id:m.membership_id});
+  }else await button.emit("click");await settle();
 }

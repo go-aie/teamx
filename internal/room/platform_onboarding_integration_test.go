@@ -386,7 +386,7 @@ func TestOnboardingMissingMemberPreservesConnectedPlatform(t *testing.T) {
 	}
 	m.mu.Lock()
 	bindings, err := m.readToolBindingsLocked(room.RoomIdentity)
-	_, configured := m.gitlabNotifications[room.RoomIdentity][c.ID]
+	_, configured := m.gitlabNotifications[room.RoomIdentity][notificationScope{c.ID, "inbox:" + members[0].MembershipID}]
 	m.mu.Unlock()
 	if err != nil || len(bindings.Bindings) != 0 || configured {
 		t.Fatal("missing member acquired settings", err)

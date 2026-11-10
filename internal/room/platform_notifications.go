@@ -19,7 +19,7 @@ type notificationAdapter struct {
 }
 
 func (m *roomManager) initPlatformNotifications() {
-	m.gitlabNotifications = make(map[RoomIdentity]map[string]gitlabNotificationRecord)
+	m.gitlabNotifications = make(map[RoomIdentity]map[notificationScope]gitlabNotificationRecord)
 	m.gitlabConfiguring = make(map[platformNotificationKey]bool)
 	if m.notificationAdapters == nil {
 		m.notificationAdapters = m.gitlabNotificationAdapters()
@@ -88,16 +88,19 @@ func (m *roomManager) admitPlatformNotificationLocked(ctx context.Context, state
 	}
 	meta := state.Metadata()
 	if meta.Key.Source.Provider == "gitlab" {
-		if m.gitlabConfiguring[platformNotificationKey{meta.Key.Owner, meta.PlatformID}] {
+		if m.gitlabConfiguring[notificationApplyKey(meta.Key.Owner, meta.PlatformID, meta.Target)] {
 			return scope, notification.ErrBusy
 		}
-		if saved, ok := m.gitlabNotifications[meta.Key.Owner][meta.PlatformID]; ok && !gitlabConfigApplied(saved.Config, state) {
+		if saved, ok := m.gitlabNotifications[meta.Key.Owner][notificationScopeFor(meta.PlatformID, meta.Target)]; ok && !gitlabConfigApplied(saved.Config, state) {
 			return scope, notification.ErrBusy
 		}
 	}
 	entry, err := m.workspaceRoom(meta.Key.Owner)
 	if err != nil || entry.Status != "ready" {
 		return scope, notification.ErrIdentity
+	}
+	if err := m.checkNotificationTargetLocked(ctx, meta.Key.Owner, meta.Target); err != nil {
+		return scope, roomNotificationError(err)
 	}
 	adapter, ok := m.notificationAdapters[meta.Key.Source]
 	if !ok || adapter.Admit == nil {
@@ -107,7 +110,7 @@ func (m *roomManager) admitPlatformNotificationLocked(ctx context.Context, state
 	if err != nil {
 		return scope, err
 	}
-	if saved, ok := m.gitlabNotifications[meta.Key.Owner][meta.PlatformID]; ok && meta.Key.Source.Provider == "gitlab" {
+	if saved, ok := m.gitlabNotifications[meta.Key.Owner][notificationScopeFor(meta.PlatformID, meta.Target)]; ok && meta.Key.Source.Provider == "gitlab" {
 		scope.Revision += fmt.Sprintf("|config:%d", saved.Version)
 	}
 	scope.Directory = filepath.Join(m.roomDir(meta.Key.Owner.RoomID), "notification-queries", meta.Key.Source.Provider+"."+meta.Key.Source.Channel+"."+meta.Key.SubscriptionID)
@@ -130,6 +133,9 @@ func (m *roomManager) commitPlatformNotificationLocked(ctx context.Context, meta
 	defer svc.changes.RUnlock()
 	if svc.closing.Load() || svc.restarting.Load() {
 		return notification.ErrBusy
+	}
+	if err := m.checkNotificationTargetLocked(ctx, owner, item.Route.Target); err != nil {
+		return roomNotificationError(err)
 	}
 	if item.Route.Target.Inbox() {
 		return roomNotificationError(svc.receiveInbox(ctx, item.Route.Target, item))

@@ -44,6 +44,7 @@ func (m *roomManager) larkNotificationViewLocked(owner RoomIdentity, s *lark.Sta
 	if s == nil {
 		return v, nil
 	}
+	m.setNotificationTargetViewLocked(&v, s.Config.Target)
 	v.SubscriptionID, v.Version, v.Config, v.Status, v.Pending = s.SubscriptionID, s.SubscriptionVersion, s.Config, s.Status, s.Metadata().Pending
 	v.Lark.ExcludedItems = s.ExcludedItems()
 	v.LastCheck, v.LastFull, v.RetryAt, v.ErrorCode, v.Metrics, v.DeliveryErrorCode = s.LastCheck, s.LastFull, s.RetryAt, s.ErrorCode, s.Metrics, s.DeliveryErrorCode

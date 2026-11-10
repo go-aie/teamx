@@ -206,6 +206,7 @@ try {
 // Workspace connection choices stay in memory until an explicit application.
 let memberToolsView = null;
 let workspaceView = null;
+let notificationNavigation = 0;
 const workspaceKey = (room, operator) => JSON.stringify(["teamx.workspace", room.room_instance, operator]);
 const workspaceStages = { waiting: "正在结清旧执行", preparing: "正在初始化目录与绑定", committing: "正在保存配置", sessions: "正在更新成员 Session", completed: "设置已生效" };
 const workspaceErrors = { interrupted: "服务曾中断，请核查后显式重试。", cleanup_failed: "旧执行未能结清，请先检查服务状态。", preparation_failed: "初始化失败，原配置和目录现场已保留，请检查仓库、认证或目标目录。", commit_unknown: "配置提交结果待核查，请重新打开服务后查看状态。", session_failed: "成员 Session 更新未完成，请核查后显式重试。", credential_missing: "凭据缺失，请检查服务端凭据或指定的环境变量。" };
@@ -227,14 +228,28 @@ function saveWorkspacePending(ws) {
 }
 function selectWorkspace(room, operator) {
   const key = room && workspaceKey(room, operator);
-  if (key === workspaceView?.key) return;
+  const notificationEpoch=JSON.stringify([state.catalog?.service_epoch,room?.service?.service_epoch]);
+  if (key === workspaceView?.key) {
+    if(!workspaceView)return;
+    if(workspaceView.notificationEpoch!==notificationEpoch){
+      notificationNavigation++;stopLarkChatSearch();$("notification-detail").close();
+      // Workspace operation recovery keeps its durable key; notification forms
+      // and requests must start afresh across manager or Room service epochs.
+      for(const field of Object.keys(workspaceView))if(/^(notification|gitlab|lark|events|todos|messages|memberSource|memberPlatform|memberTool)/.test(field))delete workspaceView[field];
+      delete workspaceView.allSubscriptions;delete workspaceView.retiredSources;
+      delete workspaceView.allPlatforms;memberToolsView=null;
+      workspaceView.notificationEpoch=notificationEpoch;
+      if($("activity-dialog").open && selectedAgent())void openMemberTools(selectedAgent());
+    }
+    return;
+  }
 
   closeWorkspacePicker();
   memberToolsView = null;
   $("notification-detail").close();
   $("workspace-dialog").close();
   workspaceView = room ? { room: { room_id: room.room_id, room_instance: room.room_instance }, operator, key,
-    data: null, sending: false, pending: null, closeOnComplete: null, error: "", formVersion: null, missing: false, connected: false } : null;
+    notificationEpoch, data: null, sending: false, pending: null, closeOnComplete: null, error: "", formVersion: null, missing: false, connected: false } : null;
   if (!workspaceView) return;
   try {
     const pending = JSON.parse(storage?.getItem(key));
@@ -281,6 +296,8 @@ async function syncWorkspace(catalog) {
   }
   await syncGitLabNotifications(catalog, ws);
   if (ws !== workspaceView) return;
+  if (!ws.platforms) await loadWorkspacePlatforms();
+  if (ws !== workspaceView) return;
   renderWorkspace();
   if (completed) {
     ws.closeOnComplete = null;
@@ -293,191 +310,178 @@ function toolsCurrent(v) {
   return v === memberToolsView &&
     (!v.member || $("activity-dialog").open && activityMember?.membership_id === v.member.membership_id &&
       state.members.some(m => m.agent_id === v.member.agent_id && m.membership_id === v.member.membership_id)) &&
-    state.catalog?.service_epoch === v.identity.service_epoch &&
-    state.operator === v.identity.caller.id && state.info?.room_instance === v.identity.room_instance;
+    state.catalog?.service_epoch === v.identity.service_epoch && v.runtimeEpoch===state.info?.service_epoch &&
+    state.operator === v.identity.caller.id && state.info?.room_id===v.identity.room_id && state.info?.room_instance === v.identity.room_instance;
 }
 function toolsIdentity() {
   return { service_epoch: state.catalog.service_epoch, room_id: state.info.room_id,
     room_instance: state.info.room_instance, caller: { kind: "human", id: state.operator } };
 }
-function cliToolsFeedback(message, kind = "") {
-  const feedback = $("cli-member-feedback");
-  feedback.textContent = message;
-  feedback.dataset.kind = kind;
-}
 async function openMemberTools(member) {
-  $("cli-member-options").replaceChildren();
-  cliToolsFeedback("");
   if (!state.managed || !state.info || !state.catalogConnected) {
-    cliToolsFeedback("设置暂不可读，请恢复连接后重新读取。", "error"); return;
+    renderNotificationPlatforms();return;
   }
-  const v = memberToolsView = { identity: toolsIdentity(), member, cli: null, cliBusy: false };
+  const v = memberToolsView = { identity: toolsIdentity(), runtimeEpoch:state.info.service_epoch, member, cli: null, cliConnected:false };
   await loadCLITools(v);
 }
 // CLI bindings have a separate revision and never inherit legacy grants.
 async function loadCLITools(v) {
   const read = v.cliRead = (v.cliRead || 0) + 1;
-  cliToolsFeedback("正在读取 CLI 工具…");
   try {
     const q = new URLSearchParams({ service_epoch: v.identity.service_epoch, caller_id: v.identity.caller.id,
       room_id: v.identity.room_id, room_instance: v.identity.room_instance });
     const cq = new URLSearchParams({ service_epoch: v.identity.service_epoch, caller_id: v.identity.caller.id });
     const [data, platforms] = await Promise.all([request(`/v1/tools/bindings?${q}`), request(`/v1/platforms?${cq}`)]);
     if (!toolsCurrent(v) || read !== v.cliRead) return;
-    v.cli = data; v.cliPlatforms = platforms.platforms; v.cliBusy = false; v.cliResult = null;
-    cliToolsFeedback(""); renderCLITools(v);
+    v.cli = data;v.cliConnected=true; v.cliPlatforms = platforms.platforms; if(workspaceView)workspaceView.allPlatforms=platforms.platforms; v.cliResult = null;
+    renderMemberTools(v);
   } catch {
     if (!toolsCurrent(v) || read !== v.cliRead) return;
-    v.cli = null; $("cli-member-options").replaceChildren();
-    cliToolsFeedback("CLI 工具暂不可读，请重新读取。", "error");
+    v.cliConnected=false;
+    renderMemberTools(v);
   }
 }
-function renderCLITools(v) {
-  const live = state.connected && state.catalogConnected && !discussionBusy();
-  $("cli-member-options").replaceChildren(...v.cli.catalog.flatMap(d => {
-    if (!d.provider) return [d];
-    const platforms = v.cliPlatforms.filter(c => c.provider === d.provider);
-    const ids = new Set(platforms.map(c => c.id));
-    for (const b of v.cli.bindings) if (b.tool === d.name && b.agent_id === v.member.agent_id && b.membership_id === v.member.membership_id && !ids.has(b.platform_id)) {
-      platforms.push({id:b.platform_id,provider:d.provider,name:"原平台暂不可用",validation:{status:"unavailable"}}); ids.add(b.platform_id);
-    }
-    return platforms.length ? platforms.map(platform => ({...d,platform,platformID:platform.id})) : [d];
-  }).map(d => {
-    const b = v.cli.bindings.find(b => b.agent_id === v.member.agent_id && b.membership_id === v.member.membership_id && b.tool === d.name && (!d.platformID || b.platform_id === d.platformID));
-    const key = d.platformID ? `${d.name}:${d.platformID}` : d.name;
-    const actionControls = [];
-    const row = document.createElement("div"); row.className = "cli-tool-row";
-    const pending = v.cliPending?.tool === key;
-    row.setAttribute("aria-busy", String(pending));
-    const title = document.createElement("strong"); title.textContent = d.platform?.name || d.name;
-    const version = document.createElement("small"); version.textContent = [d.version,d.platform?.validation?.username ? `@${d.platform.validation.username} · ${d.platform.url}` : ""].filter(Boolean).join(" · "); title.append(version);
-    const label = document.createElement("label"); label.textContent = "工具状态";
-    const select = document.createElement("select"); select.setAttribute("aria-label", `${d.platform?.name || d.name} ${label.textContent}`);
-    const platforms = (d.platform ? [d.platform] : []).filter(c => c.validation?.status === "valid");
-    select.append(new Option("未启用", ""));
-    if (d.provider) {
-      select.append(...platforms.map(c => new Option("启用", c.id)));
-      if (b && !platforms.some(c => c.id === b.platform_id)) select.append(new Option(`平台 ${b.platform_id} 待验证或不可用`, b.platform_id));
-    } else select.append(new Option("启用", "on"));
-    select.value = pending ? v.cliPending.value : b ? b.platform_id || "on" : "";
-    select.disabled = v.cliBusy || !live || Boolean(d.provider && !d.platformID); label.append(select);
-    const apply = document.createElement("button"); apply.type = "button"; apply.className = "primary"; apply.textContent = pending ? "应用中…" : "应用";
-    const feedback = document.createElement("p"); feedback.className = "cli-tool-feedback";
-    feedback.setAttribute("role", "status"); feedback.setAttribute("aria-live", "polite");
-    feedback.textContent = pending ? "正在保存工具设置…" : v.cliResult?.tool === key ? v.cliResult.message : "";
-    const availability = v.cli.selections?.find(s => s.agent_id === v.member.agent_id && s.membership_id === v.member.membership_id && s.tool_type === d.name && s.platform_id === d.platformID);
-    if (!pending && b && availability?.unavailable_reason) feedback.textContent += (feedback.textContent ? " " : "") + (({executable_unavailable:"程序缺失，已保留启用设置；修复后会重新检查。",account_unavailable:"账号暂不可用，已保留启用设置，请重新核验。",platform_changed:"平台已变化，需重新启用。"})[availability.unavailable_reason] || "工具暂不可用，已保留启用设置。");
-    if (!feedback.textContent && d.provider && !d.platformID) feedback.textContent = "先在全局设置中添加平台并核验账号。";
-    feedback.dataset.kind = pending ? "pending" : "success";
-    const valid = () => (!d.provider || Boolean(d.platformID)) && (!select.value || !d.provider || platforms.some(c => c.id === select.value));
-    apply.disabled = v.cliBusy || !live || !valid();
-    select.addEventListener("change", () => {
-      apply.disabled = v.cliBusy || !live || !valid();
-      for (const {checkbox,spec} of actionControls) {
-        checkbox.checked = false;
-        checkbox.disabled = v.cliBusy || !live || !select.value || !valid() || Boolean(spec.disabled_reason);
-      }
-      if (v.cliResult?.tool === key) { v.cliResult = null; feedback.textContent = ""; }
-    });
-    apply.addEventListener("click", async () => {
-      if (!toolsCurrent(v) || v.cliBusy || !live || !valid()) return;
-      v.cliBusy = true; v.cliPending = { tool: key, value: select.value }; v.cliResult = null;
-      v.cliRead = (v.cliRead || 0) + 1; cliToolsFeedback(""); renderCLITools(v);
-      const selected = platforms.find(c => c.id === select.value);
-      const binding = { agent_id: v.member.agent_id, membership_id: v.member.membership_id, tool: d.name };
-      if (d.platformID) binding.platform_id = d.platformID;
-      if (selected && d.provider === "lark") {
-        binding.action_authorization = {version:1,revision:b?.action_authorization?.revision || 1,
-          grants:(d.actions || []).filter(spec => !spec.disabled_reason).flatMap(spec => (spec.object_types || []).map(objectType =>
-            ({operation:spec.operation,target_kind:spec.target_kind,object_type:objectType})))};
-      } else if (selected && (actionControls.some(c => c.checkbox.checked) || b?.action_authorization && select.value === b.platform_id)) {
-        binding.action_authorization = {version:1,revision:b?.action_authorization?.revision || 1,
-          grants:actionControls.filter(c => c.checkbox.checked && !c.checkbox.disabled).map(c => c.grant)};
-      }
-      try {
-        const data = await request("/v1/tools/bind", { ...v.identity, revision: v.cli.revision, binding,
-          enabled: Boolean(select.value), platform_version: selected?.version || 0 }, undefined,
-          binding.action_authorization?.grants.some(g => d.actions?.some(spec => spec.operation === g.operation && spec.binding_evidence)) ? 40000 : 10000);
-        if (!toolsCurrent(v)) return;
-        let current = { ...v.cli, ...data }, availabilityRead = true;
-        try {
-          const q = new URLSearchParams({service_epoch:v.identity.service_epoch,caller_id:v.identity.caller.id,room_id:v.identity.room_id,room_instance:v.identity.room_instance});
-          current = {...current,...await request(`/v1/tools/bindings?${q}`)};
-        } catch { availabilityRead = false; }
-        if (!toolsCurrent(v)) return;
-        v.cli = current; v.cliBusy = false; v.cliPending = null;
-        v.cliResult = { tool: key, message: !select.value ? `✓ ${d.platform?.name || d.name} 已停用。` : selected ?
-          `✓ 已应用：${selected.name} · @${selected.validation.username}。` : `✓ ${d.name} 已启用。` };
-        if (!availabilityRead) v.cliResult.message += " 当前可用性暂不可读，请重新读取。";
-        renderCLITools(v);
-      } catch (error) {
-        if (!toolsCurrent(v)) return;
-        v.cli = null; v.cliBusy = false; v.cliPending = null; $("cli-member-options").replaceChildren();
-        const rejected = { conflict: "工具设置或平台已变化，请重新读取后再应用。", identity: "房间或成员身份已变化，请重新打开工具设置。",
-          request: "工具或平台不可用，请重新读取并核验平台。", capacity: "工具配置已达容量上限，请调整后再试。" };
-        cliToolsFeedback(rejected[error.code] ? `应用失败：${rejected[error.code]}` :
-          "应用结果未确认，不会自动重发。请重新读取后核对。", "error");
-      }
-    });
-    row.append(title, label, apply, feedback);
-    if (d.provider === "lark") {
-      const note = document.createElement("p"); note.className = "cli-tool-feedback quiet";
-      const available = (d.actions || []).filter(spec => !spec.disabled_reason);
-      const modes = ["读取消息"];
-      if (available.some(spec => spec.operation === "message.reply")) modes.push("回复");
-      if (available.some(spec => spec.operation === "message.send" && spec.object_types?.includes("chat"))) modes.push("发送群消息");
-      if (available.some(spec => spec.operation === "message.send" && spec.object_types?.includes("user"))) modes.push("发送私信");
-      if (available.some(spec => spec.operation === "message.send_self")) modes.push("发送到本人自聊");
-      note.textContent = `应用后，可按你的指令${modes.join("、")}。`;
-      row.append(note);
-      return row;
-    }
-    const actions = document.createElement("div"); actions.className = "cli-tool-actions";
-    const reasons = new Set();
-    for (const spec of d.actions || []) {
-      if (spec.disabled_reason) {
-        reasons.add(spec.disabled_reason.replace(/^[a-z0-9_]+:\s*/, ""));
-      }
-      for (const objectType of spec.object_types || []) {
-        const grant = {operation:spec.operation,target_kind:spec.target_kind,object_type:objectType};
-        const control = document.createElement("label"); control.className = "cli-action-row";
-        const checkbox = document.createElement("input"); checkbox.type = "checkbox";
-        const name = spec.operation === "message.send" ? (objectType === "user" ? "主动私信" : "指定单群消息") : spec.operation === "message.reply" ? "普通消息回复" : `${spec.operation} · ${objectType}`;
-        checkbox.setAttribute("aria-label",`${d.name} ${name}`);
-        checkbox.checked = Boolean(b?.action_authorization?.grants?.some(g => g.operation === grant.operation && g.target_kind === grant.target_kind && g.object_type === grant.object_type));
-        checkbox.disabled = v.cliBusy || !live || !select.value || Boolean(spec.disabled_reason);
-        const label = document.createElement("span"); label.textContent = name;
-        control.append(checkbox,label);
-        if (spec.disabled_reason) {
-          const status = document.createElement("small"); status.className = "cli-action-status"; status.textContent = "暂未开放";
-          control.append(status);
-        }
-        actionControls.push({checkbox,spec,grant}); actions.append(control);
-      }
-    }
-    if (actionControls.length) {
-      const help = document.createElement("details"); help.className = "cli-action-help";
-      const summary = document.createElement("summary"); summary.textContent = "权限与可用性说明";
-      const note = document.createElement("p");
-      note.textContent = "连接账号不会自动授权回复和发送。需单独勾选并应用，每次执行仍需具体授权。";
-      help.append(summary,note);
-      for (const reason of reasons) {
-        const detail = document.createElement("p"); detail.textContent = reason; help.append(detail);
-      }
-      actions.append(help); row.append(actions);
-    }
-    return row;
-  }));
+function toolBinding(v, item) {
+  const name=typeof item==="string" ? item : v?.cli?.catalog?.find(d=>d.provider===item.provider)?.name;
+  return v?.cli?.bindings?.find(b=>b.agent_id===v.member.agent_id && b.membership_id===v.member.membership_id && b.tool===name && (typeof item==="string" ? !b.platform_id : b.platform_id===item.id));
 }
-$("cli-member-refresh").addEventListener("click", () => {
-  const v = memberToolsView; if (v && toolsCurrent(v) && !v.cliBusy) return loadCLITools(v);
-});
+function toolIssue(v,item) {
+  const selection=v?.cli?.selections?.find(s=>s.agent_id===v.member.agent_id && s.membership_id===v.member.membership_id && s.platform_id===item.id);
+  const unavailable=toolBinding(v,item) && selection?.unavailable_reason ? ({executable_unavailable:"程序缺失，已保留启用设置；修复后会重新检查。",account_unavailable:"账号暂不可用，已保留启用设置，请重新核验。",platform_changed:"平台已变化，需重新启用。"}[selection.unavailable_reason] || "工具暂不可用，已保留启用设置。") : "";
+  return [v?.cliResult?.tool===item.id ? v.cliResult.message : "",unavailable].filter(Boolean).join(" ");
+}
+function toolSwitch(v,item) {
+  const label=document.createElement("label"),input=document.createElement("input"),text=document.createElement("span");
+  const d=typeof item==="string" ? v?.cli?.catalog?.find(d=>d.name===item) : v?.cli?.catalog?.find(d=>d.provider===item.provider);
+  const key=typeof item==="string" ? item : item.id,b=toolBinding(v,item);
+  label.className="member-platform-tool workspace-check";input.type="checkbox";input.className="notification-switch";input.setAttribute("role","switch");
+  input.setAttribute("aria-label",`${typeof item==="string" ? item : item.name} 使用工具`);
+  input.checked=v?.cliPending?.tool===key ? v.cliPending.enabled : !!b;
+  input.disabled=!v?.cli || !v.cliConnected || !d || !!workspaceView?.memberToolBusy || onboarding.busy || !state.connected || !state.catalogConnected || discussionBusy() || (!b && typeof item!=="string" && item.validation?.status!=="valid");
+  text.textContent="使用工具";label.append(input,text);
+  input.addEventListener("change",()=>changeMemberTool(v,item,input.checked));return label;
+}
+async function changeMemberTool(v,item,enabled) {
+  const ws=workspaceView;if(!toolsCurrent(v) || !v.cliConnected || ws.memberToolBusy || onboarding.busy)return;
+  const d=typeof item==="string" ? v.cli.catalog.find(d=>d.name===item) : v.cli.catalog.find(d=>d.provider===item.provider);
+  if(!d || enabled && typeof item!=="string" && item.validation?.status!=="valid")return;
+  const key=typeof item==="string" ? item : item.id,b=toolBinding(v,item);
+  const binding={agent_id:v.member.agent_id,membership_id:v.member.membership_id,tool:d.name,...(typeof item!=="string" ? {platform_id:item.id} : {})};
+  if(enabled && d.provider==="lark")binding.action_authorization={version:1,revision:b?.action_authorization?.revision || 1,grants:(d.actions || []).filter(s=>!s.disabled_reason).flatMap(s=>(s.object_types || []).map(object_type=>({operation:s.operation,target_kind:s.target_kind,object_type})))};
+  else if(enabled && b?.action_authorization)binding.action_authorization=structuredClone(b.action_authorization);
+  ws.memberToolBusy=true;v.cliPending={tool:key,enabled};v.cliResult=null;v.cliRead=(v.cliRead || 0)+1;renderMemberTools(v);
+  let message="";
+  try {
+    const next=await request("/v1/tools/bind",{...v.identity,revision:v.cli.revision,binding,enabled,platform_version:enabled && typeof item!=="string" ? item.version : 0},undefined,binding.action_authorization?.grants.some(g=>d.actions?.some(s=>s.operation===g.operation && s.binding_evidence)) ? 40000 : 10000);
+    if(toolsCurrent(v))v.cli={...v.cli,...next};
+    message=`${typeof item==="string" ? item : item.name} 工具${enabled ? "已启用" : "已停用"}。`;
+  } catch(error) {
+    message=["conflict","identity","request","capacity"].includes(error.code) ? "保存失败，请核对当前成员、平台与权限后重试。" : "保存结果未确认，请核对读回状态；不会自动重发。";
+  } finally {
+    ws.memberToolBusy=false;v.cliPending=null;
+    // A read resolves unknown local writes; no bind request is replayed.
+    if(toolsCurrent(v)){await loadCLITools(v);if(!v.cliConnected)message+=" 当前状态暂不可读，请重新读取。";v.cliResult={tool:key,message,error:!v.cliConnected || /失败|未确认/.test(message)};renderMemberTools(v);}
+    else if(memberToolsView?.cli && toolsCurrent(memberToolsView))await loadCLITools(memberToolsView);
+  }
+}
+function renderMemberTools(v) {
+  if(!toolsCurrent(v))return;
+  renderNotificationPlatforms();renderMemberPlatformDetail();
+}
+function memberPlatformItems(ws=workspaceView,v=memberToolsView) {
+  const items=new Map((ws?.allPlatforms || notificationPlatforms(ws)).map(p=>[p.id,p]));
+  for(const view of [...(ws?.gitlabPlatforms || []),...(ws?.larkSources || [])]){
+    const id=view.platform_id || view.config.platform_id;
+    if(id && !items.has(id))items.set(id,{id,name:"原平台暂不可用",provider:view.provider || "gitlab",validation:{status:"unavailable"}});
+  }
+  // Keep unavailable and explicitly disabled bindings inspectable.
+  for(const b of [...(v?.cli?.bindings || []),...(v?.cli?.disabled || [])]) {
+    if(b.agent_id!==v.member.agent_id || b.membership_id!==v.member.membership_id || !b.platform_id || items.has(b.platform_id))continue;
+    const d=v.cli.catalog.find(d=>d.name===b.tool);items.set(b.platform_id,{id:b.platform_id,name:"原平台暂不可用",provider:d?.provider,validation:{status:"unavailable"}});
+  }
+  return [...items.values()];
+}
+function memberHasPlatform(item,target,v=memberToolsView) {
+  return notificationConfigured(item,notificationView(workspaceView,item,target)) || [...(v?.cli?.bindings || []),...(v?.cli?.disabled || [])].some(b=>b.agent_id===target.agent_id && b.membership_id===target.membership_id && b.platform_id===item.id);
+}
+function renderMemberPlatforms() {
+  const ws=workspaceView,target=memberNotificationTarget(),v=memberToolsView;
+  $("member-notification-sources").hidden=!state.managed || !ws || !target;
+  if(!ws || !target)return;
+  const items=memberPlatformItems(ws,v),configured=items.filter(item=>memberHasPlatform(item,target,v));
+  $("member-notification-platforms").replaceChildren(...configured.map(item=>{
+    const view=notificationView(ws,item,target),hasNotifications=["gitlab","lark"].includes(item.provider);
+    const row=notificationRow(ws,item,target);
+    row.className+=" member-platform-row";
+    row.children[0].setAttribute("aria-label",`${item.name} 设置`);row.children[2].textContent="设置";row.children[2].setAttribute("aria-label",`${item.name} 设置`);
+    row.children[0].children[1].children[1].textContent=[hasNotifications ? notificationConfigured(item,view) ? notificationDescription(view.config) : "尚未开启通知" : "无通知能力",item.validation?.username ? `@${item.validation.username}` : "账号待核验"].join(" · ");
+    const input=row.children[1],label=document.createElement("label");input.id=`member-platform-notify-${item.id}`;label.htmlFor=input.id;label.className="member-platform-notify-label";label.textContent=hasNotifications ? "接收通知" : "无通知能力";
+    input.hidden=!hasNotifications;if(!notificationConfigured(item,view) && onboarding.busy)input.disabled=true;label.classList.toggle("quiet",!hasNotifications);
+    row.children[3].textContent=[notificationConfigured(item,view) ? notificationIssue(ws,item,view) : "",toolIssue(v,item)].filter(Boolean).join(" ");row.children[3].hidden=!row.children[3].textContent;row.children[3].dataset.kind=v?.cliResult?.tool===item.id && !v.cliResult.error ? "success" : "error";
+    row.append(label,toolSwitch(v,item));return row;
+  }));
+  $("member-notification-source-count").textContent=String(configured.length);
+  $("member-notification-empty").hidden=!!configured.length;
+  $("member-notification-empty").textContent="添加平台，接收通知或使用工具。";
+  ws.memberSourceExpanded ||= new Map();const expanded=ws.memberSourceExpanded.get(target.membership_id)!==false;
+  $("member-notification-content").hidden=!expanded;$("member-notification-collapse").textContent=expanded ? "收起" : "展开";$("member-notification-collapse").setAttribute("aria-expanded",String(expanded));
+  const issues=configured.filter(item=>{
+    const view=notificationView(ws,item,target);
+    const availability=v?.cli?.selections?.find(s=>s.agent_id===target.agent_id && s.membership_id===target.membership_id && s.platform_id===item.id);
+    return notificationConfigured(item,view) && notificationIssue(ws,item,view) || !!availability?.unavailable_reason || v?.cliResult?.tool===item.id && v.cliResult.error;
+  });
+  $("member-platform-issues").replaceChildren(...issues.map(item=>{
+    const button=document.createElement("button");button.type="button";button.className="text-button";button.textContent=`${item.name}：查看异常`;button.addEventListener("click",()=>openMemberPlatform(button,item,target));return button;
+  }));
+  notice("member-notification-list-error",!ws.notificationsConnected || !v?.cliConnected ? "部分设置暂不可读，请重新读取。" : "");$("member-notification-list-reload").hidden=!!ws.notificationsConnected && !!v?.cliConnected;
+  const q=$("member-notification-add-search").value.trim().toLowerCase();
+  $("member-notification-add-options").replaceChildren(...items.filter(item=>!configured.includes(item) && [item.name,item.validation?.username,item.url].join(" ").toLowerCase().includes(q)).map(item=>{
+    const button=document.createElement("button"),title=document.createElement("strong"),account=document.createElement("small");button.type="button";button.className="notification-add-option";button.dataset.platformId=item.id;button.dataset.provider=item.provider;
+    title.textContent=item.name;account.textContent=item.validation?.username ? `@${item.validation.username}` : "账号待核验";button.append(title,account);button.disabled=!v?.cliConnected || !ws.notificationsConnected || !!ws.memberToolBusy;
+    button.addEventListener("click",()=>selectMemberPlatformAddition(item));return button;
+  }));
+  renderMemberPlatformAddition();
+  const subscriptions=configured.filter(item=>notificationConfigured(item,notificationView(ws,item,target)));
+  $("inbox-empty-hint").hidden=!inboxView?.page || !!inboxView.page.entries.length;
+  $("inbox-empty-hint").textContent=!ws.notificationsConnected ? "通知状态暂不可读，请查看平台设置。" : !subscriptions.length ? "添加平台后开始接收；查看此页不会启动自动处理。" : issues.length ? "尚未收到通知，请查看平台异常提示。" : subscriptions.some(item=>notificationView(ws,item,target).config.enabled) ? "平台已配置，尚未收到通知；可在设置查看采集状态。" : "通知已暂停，已收到的内容会保留。";
+  $("inbox-add-platform").hidden=!!subscriptions.length;
+  $("inbox-platform-issues").replaceChildren(...issues.map(item=>{const b=document.createElement("button");b.type="button";b.className="text-button";b.textContent=`${item.name}：查看设置`;b.addEventListener("click",()=>openMemberPlatform(b,item,target));return b;}));
+}
+async function openMemberPlatform(opener,item,target=memberNotificationTarget()) {
+  return openNotificationSource(opener,item.provider==="lark" ? "messages" : item.provider==="gitlab" ? "gitlab" : "tools",item.id,target);
+}
+function renderMemberPlatformDetail() {
+  const ws=workspaceView,target=activeNotificationTarget(ws),item=memberPlatformItems().find(p=>p.id===ws?.notificationPlatformID),v=memberToolsView;
+  const visible=!!item && target.mode==="inbox" && !!v && sameNotificationTarget(memberNotificationTarget(v.member),target);
+  $("member-platform-tool-detail").hidden=!visible;
+  if(!visible)return;
+  $("member-platform-tool-control").replaceChildren(toolSwitch(v,item));
+  const d=v.cli?.catalog?.find(d=>d.provider===item.provider),modes=["读取消息"];
+  if(d?.actions?.some(s=>s.operation==="message.reply" && !s.disabled_reason))modes.push("回复");
+  if(d?.actions?.some(s=>s.operation==="message.send" && !s.disabled_reason))modes.push("发送消息");
+  if(d?.actions?.some(s=>s.operation==="message.send_self" && !s.disabled_reason))modes.push("发送到本人自聊");
+  $("member-platform-tool-help").textContent=[item.provider==="lark" ? `开启后，可按你的指令${modes.join("、")}。` : "使用工具与接收通知独立，具体动作仍需授权。",toolIssue(v,item)].filter(Boolean).join(" ");
+}
 const gitlabEventStatuses = { disabled: "已关闭", initializing: "初始化中", running: "运行中", backoff: "退避中", credentials_invalid: "凭据失效", capacity: "接收容量已满", binding_changed: "绑定已变化" };
 const gitlabEventErrors = { credential_unavailable: "凭据不可用，请验证所选平台。", credential_rejected: "GitLab 拒绝访问，请检查权限和凭据。", binding_changed: "绑定已变化，请核对后保存设置。", project_identity_changed: "项目身份已变化，需要核查绑定。", capacity: "接收容量已满，进度未推进。", query_failed: "查询失败，将按退避计划重试。", room_capacity: "房间消息或投递回执容量已满，事件保留在积压中。" };
 const notificationTargetErrors = { target_unavailable: "投递目标暂不可用，通知保留在来源积压中。", target_removed: "接收成员已移除，旧积压保留原目标；同名新成员不会继承。", inbox_capacity: "成员收件箱容量已满，新通知保留在来源积压中。" };
 function notificationTarget(config) { const t = config?.target; return t?.mode === "inbox" ? { mode: "inbox", agent_id: t.agent_id, membership_id: t.membership_id } : {}; }
-function notificationTargetOptions() {
-  return [new Option("房间消息（公开）", "{}"), ...state.members.map(member => new Option(`${memberRole(member)?.name || member.agent_id} · 收件箱`, JSON.stringify({ mode: "inbox", agent_id: member.agent_id, membership_id: member.membership_id })))];
+function sameNotificationTarget(a, b) { return JSON.stringify(notificationTarget({target:a})) === JSON.stringify(notificationTarget({target:b})); }
+function memberNotificationTarget(member = selectedAgent()) { return member ? {mode:"inbox",agent_id:member.agent_id,membership_id:member.membership_id} : null; }
+function activeNotificationTarget(ws = workspaceView) { return ws?.notificationTarget || {}; }
+function notificationScopeKey(target, id = "") { return JSON.stringify([state.catalog?.service_epoch,state.info?.service_epoch,notificationTarget({target}), id]); }
+function notificationRequestTarget(target) { return target?.mode === "inbox" ? notificationTarget({target}) : {mode:"room"}; }
+function notificationTargetQuery(target) { return target?.mode === "inbox" ? {target_mode:"inbox",agent_id:target.agent_id,membership_id:target.membership_id} : {target_mode:"room"}; }
+function notificationWritePending(ws, key = ws?.notificationScope) { return !!ws?.notificationWrites?.has(key); }
+function beginNotificationWrite(ws, key) { (ws.notificationWrites ||= new Set()).add(key); }
+function notificationContextCurrent(ws, key, epoch) { return ws === workspaceView && ws.notificationScope === key && state.catalog?.service_epoch === epoch; }
+function rememberNotificationDraft(ws) {
+  if (!ws?.notificationScope) return;
+  ws.notificationDrafts ||= new Map();
+  const messages = ws.notificationChannel === "messages";
+  if (messages && ws.messages && ws.larkDirty) ws.notificationDrafts.set(ws.notificationScope, {config:larkMessagesDraft(),directory:ws.larkChatDirectory});
+  else if (!messages && ws.gitlabDirty) ws.notificationDrafts.set(ws.notificationScope, {config:structuredClone(ws.gitlabDraft),emptyTypes:ws.eventsEmptyTypes});
+  else ws.notificationDrafts.delete(ws.notificationScope);
 }
 function gitlabConfig(config = {}) {
   const e = config.events || {}, t = todoConfig(config.todos || {});
@@ -487,7 +491,7 @@ function gitlabConfig(config = {}) {
       filter: { types: [...(e.filter?.types || [])] } }, todos: t };
 }
 function gitlabDraft() { return workspaceView?.gitlabDraft || gitlabConfig(); }
-function gitlabSettingsBusy(ws) { return !ws?.gitlabConnected || !!ws.gitlabSending || !!ws.notificationToggle || !!ws.gitlab?.applying || managementBusy(); }
+function gitlabSettingsBusy(ws) { return !ws?.gitlabConnected || notificationWritePending(ws) || !!ws.gitlabSending || !!ws.notificationToggle || !!ws.gitlab?.applying || managementBusy(); }
 function gitlabConfigKey(config) {
   const c = gitlabConfig(config);
   return JSON.stringify([c.enabled, c.platform_id, c.target, c.interval_seconds, c.backfill_seconds, config.backfill_start === "" ? "custom" : c.backfill_start || "", gitlabEventConfigKey(c.events), todoConfigKey(c.todos)]);
@@ -496,6 +500,10 @@ function acceptGitLabView(ws, view, saved = false) {
   ws.gitlab = view; ws.gitlabConnected = true;
   ws.events = view.events; ws.todos = view.todos; ws.eventsConnected = ws.todosConnected = true;
   if (saved || !ws.gitlabDirty || !ws.eventsEmptyTypes && gitlabConfigKey(ws.gitlabDraft) === gitlabConfigKey(view.config)) { ws.gitlabDraft = gitlabConfig(view.config); ws.gitlabDirty = false; ws.eventsEmptyTypes = false; ws.gitlabBackfillEditing = false; }
+  else if (view.version && ws.gitlabDraft.platform_id===view.config.platform_id) {
+    ws.gitlabDraft.enabled=view.config.enabled;
+    ws.gitlabDirty=!!ws.eventsEmptyTypes || gitlabConfigKey(ws.gitlabDraft)!==gitlabConfigKey(view.config);
+  }
 }
 function editGitLabConfig() {
   const ws = workspaceView;
@@ -527,32 +535,32 @@ function gitlabEventDraftState(data) {
 }
 async function syncGitLabNotifications(catalog, ws) {
   if (ws !== workspaceView) return;
-  const revisions = { messages: ws.messagesRevision, gitlab: ws.gitlabRevision };
+  const revisions = {messages:ws.messagesRevision,gitlab:ws.gitlabRevision};
   const read = ws.notificationsRead = (ws.notificationsRead || 0) + 1;
+  const scope = ws.notificationScope, context = ws.notificationEpoch;
   try {
-    const params = new URLSearchParams({ service_epoch: catalog.service_epoch, caller_id: ws.operator, ...ws.room });
-    if (ws.gitlab?.config?.platform_id) params.set("platform_id", ws.gitlab.config.platform_id);
+    const params = new URLSearchParams({service_epoch:catalog.service_epoch,caller_id:ws.operator,...ws.room});
     const data = await request(`/v1/platform/notifications?${params}`);
-    if (ws !== workspaceView || state.catalog.service_epoch !== catalog.service_epoch || read !== ws.notificationsRead) return;
-    ws.notificationsConnected=true;
-    for (const channel of ["messages"]) {
-      if (ws[`${channel}Sending`] || ws[`${channel}Revision`] !== revisions[channel]) continue;
-      ws.larkSources=data.subscriptions.filter(source=>source.provider==="lark" && source.channel==="messages");
-      if(!ws.messages && ws.larkSources.length>1)selectLarkPlatform(ws,"");
-      const selected=ws.messages?.config.platform_id;
-      const next=ws.larkSources.find(source=>source.config.platform_id===selected) || (!selected && ws.larkSources.length===1 ? ws.larkSources[0] : ws.messages);
-      ws[channel] = next;
-      ws[`${channel}Connected`] = !!ws[channel];
+    if (ws !== workspaceView || state.catalog?.service_epoch !== catalog.service_epoch || read !== ws.notificationsRead || context !== ws.notificationEpoch) return;
+    ws.notificationsConnected = true;
+    ws.allSubscriptions = data.subscriptions || [];
+    ws.retiredSources = data.retired_subscriptions || [];
+    ws.larkSources = ws.allSubscriptions.filter(v=>v.provider === "lark" && v.channel === "messages");
+    ws.gitlabPlatforms = data.gitlab_platforms || [];
+    if (scope !== ws.notificationScope) return;
+    const target = activeNotificationTarget(ws), id = ws.notificationPlatformID;
+    if (!ws.notificationToggle && !ws.messagesSending && revisions.messages === ws.messagesRevision) {
+      const next=ws.larkSources.find(v=>v.config.platform_id===id && sameNotificationTarget(v.config.target,target));
+      if (next) { ws.messages=next; ws.messagesConnected=true; if(ws.larkDirty && next.subscription_id)$("lark-enabled").checked=!!next.config.enabled; }
     }
-    if (!ws.gitlabSending && ws.gitlabRevision === revisions.gitlab) {
-      ws.gitlabPlatforms = data.gitlab_platforms;
-      if (data.gitlab) acceptGitLabView(ws, data.gitlab); else ws.gitlabConnected = ws.eventsConnected = ws.todosConnected = false;
+    if (!ws.notificationToggle && !ws.gitlabSending && revisions.gitlab === ws.gitlabRevision) {
+      const next=ws.gitlabPlatforms.find(v=>v.platform_id===id && sameNotificationTarget(v.config.target,target));
+      if(next)acceptGitLabView(ws,next);
     }
   } catch {
-    if (ws !== workspaceView || state.catalog?.service_epoch !== catalog.service_epoch || read !== ws.notificationsRead) return;
+    if (ws !== workspaceView || state.catalog?.service_epoch !== catalog.service_epoch || read !== ws.notificationsRead || context !== ws.notificationEpoch) return;
     ws.notificationsConnected=false;
-    if (!ws.gitlabSending && ws.gitlabRevision === revisions.gitlab) ws.gitlabConnected = ws.eventsConnected = ws.todosConnected = false;
-    for (const channel of ["messages"]) if (!ws[`${channel}Sending`] && ws[`${channel}Revision`] === revisions[channel]) ws[`${channel}Connected`] = false;
+    if(scope===ws.notificationScope){ws.gitlabConnected=false;ws.messagesConnected=false;}
   }
 }
 function larkConfigKey(c = {}) {return JSON.stringify({enabled:!!c.enabled,platform_id:c.platform_id || "",target:notificationTarget(c),private:{enabled:!!c.private?.enabled,scope:c.private?.scope || "all",chat_ids:[...(c.private?.chat_ids || [])].sort()},groups:{enabled:!!c.groups?.enabled,chat_ids:[...(c.groups?.chat_ids || [])].sort(),message_mode:c.groups?.message_mode || "mentions",at_me:!!c.groups?.at_me,at_all:!!c.groups?.at_all},interval_seconds:c.interval_seconds || 60,backfill_seconds:c.backfill_seconds || 0,backfill_start:c.backfill_start ? new Date(c.backfill_start).toISOString() : ""});}
@@ -563,14 +571,14 @@ function larkMessagesDraft() {
     const group=ws?.messages?.config.groups?.chat_ids?.includes(id) || ["group","topic"].includes(chat?.chat_mode || chat?.mode);
     (group ? groups : privateIDs).push(id);
   }
-  return {enabled:$("lark-enabled").checked,platform_id:$("lark-connection").value,target:JSON.parse($("lark-target").value || "{}"),
+  return {enabled:$("lark-enabled").checked,platform_id:$("lark-connection").value,target:structuredClone(activeNotificationTarget(ws)),
     private:{enabled:$("lark-private-enabled").checked,scope:larkAllChats() ? "all" : "specified",chat_ids:privateIDs},
     groups:{enabled:$("lark-groups-enabled").checked,chat_ids:groups,message_mode:$("lark-group-mode").value || "mentions",at_me:$("lark-group").checked,at_all:$("lark-all").checked},
     interval_seconds:Number($("lark-interval").value),...backfillDraft("lark")};
 }
 function selectLarkPlatform(ws,id) {
   stopLarkChatSearch();
-  ws.messages=structuredClone(ws.larkSources?.find(s=>s.config.platform_id===id) || {provider:"lark",channel:"messages",available:true,subscription_id:"",subscription_version:0,status:"disabled",config:{enabled:true,platform_id:id,target:{},private:{enabled:true,scope:"all",chat_ids:[]},groups:{enabled:false,chat_ids:[],message_mode:"mentions",at_me:true,at_all:false},interval_seconds:60,backfill_seconds:0},lark:{chats:[]}});
+  ws.messages=structuredClone(ws.larkSources?.find(s=>s.config.platform_id===id && sameNotificationTarget(s.config.target,activeNotificationTarget(ws))) || {provider:"lark",channel:"messages",available:true,subscription_id:"",subscription_version:0,status:"disabled",config:{enabled:true,platform_id:id,target:structuredClone(activeNotificationTarget(ws)),private:{enabled:true,scope:"all",chat_ids:[]},groups:{enabled:false,chat_ids:[],message_mode:"mentions",at_me:true,at_all:false},interval_seconds:60,backfill_seconds:0},lark:{chats:[]}});
   ws.larkDirty=false;ws.larkFilled=null;ws.larkSelectedChats=[];ws.messagesFeedback="";ws.messagesError="";ws.messagesRevision=(ws.messagesRevision || 0)+1;
 }
 function larkAllChats() { return $("lark-scope").checked; }
@@ -613,7 +621,7 @@ function larkChatIDs() { return [...new Set(workspaceView?.larkSelectedChats || 
 function larkChatType(chat) { return chat?.chat_mode==="p2p" || chat?.mode==="p2p" ? "私聊" : "群聊"; }
 function larkChatLabel(chat, id) { return chat?.name || `未命名${chat ? larkChatType(chat) : "会话"} · ${id}`; }
 function larkChatDirectory(ws, connection) {
-  const key=JSON.stringify([state.catalog?.service_epoch,connection?.id,connection?.version,connection?.validation?.account]);
+  const key=JSON.stringify([state.catalog?.service_epoch,ws.notificationScope,connection?.id,connection?.version,connection?.validation?.account]);
   if(ws.larkChatDirectory?.key!==key){
     clearTimeout(ws.larkChatDirectory?.timer);ws.larkChatDirectory?.controller?.abort();
     ws.larkChatDirectory={key,query:"",type:"all",known:new Map(),chats:new Map(),loaded:false,loading:false,hasMore:false,token:"",error:"",pages:0,warnings:[]};
@@ -732,19 +740,17 @@ function stopLarkChatSearch() {
 }
 function renderLarkMessages() {
   const ws=workspaceView,data=ws?.messages;
-  $("lark-fields").disabled=!data || !!ws?.messagesSending || !!ws?.notificationToggle || managementBusy();
+  $("lark-fields").disabled=!data || notificationWritePending(ws) || !!ws?.messagesSending || !!ws?.notificationToggle || managementBusy();
   $("lark-save").disabled=true;$("lark-sync").disabled=true;
   if(!data) return;
-  const fresh=ws.larkFilled !== data.config.platform_id+":"+data.subscription_id+":"+data.subscription_version && !ws.larkDirty;
-  const c=fresh ? data.config : larkMessagesDraft();
+  const fresh=!!ws.larkRestore || ws.larkFilled !== data.config.platform_id+":"+data.subscription_id+":"+data.subscription_version && !ws.larkDirty;
+  const c=ws.larkRestore || (fresh ? data.config : larkMessagesDraft());
   const platforms=ws.larkPlatforms || [];
   const options=[new Option("请选择连接", ""), ...platforms.map(x=>new Option(`${x.name} · ${x.validation?.username || "待验证"}`,x.id))];
   if(c.platform_id && !platforms.some(x=>x.id===c.platform_id))options.push(new Option("原连接暂不可用",c.platform_id));
   setSelectOptions("lark-connection", options, c.platform_id || "");$("lark-connection").hidden=true;
-  const target=JSON.stringify(c.target?.mode === "inbox" ? c.target : {});
-  const targets=[new Option("请选择接收成员", "{}"), ...state.members.map(x=>new Option(`${memberRole(x)?.name || x.agent_id} · 收件箱`,JSON.stringify({mode:"inbox",agent_id:x.agent_id,membership_id:x.membership_id})))];
-  if(target!=="{}"&&!targets.some(x=>x.value===target))targets.push(new Option("原接收成员已移除",target));
-  setSelectOptions("lark-target",targets,target);
+  const target=JSON.stringify(activeNotificationTarget(ws));
+  setSelectOptions("lark-target",[new Option("固定接收者",target)],target);$("lark-target").disabled=true;
   if(fresh){
     $("lark-scope").checked=c.private?.scope==="all";$("lark-enabled").checked=!!c.enabled;
     $("lark-private-enabled").checked=!!c.private?.enabled;$("lark-groups-enabled").checked=!!c.groups?.enabled;
@@ -752,19 +758,21 @@ function renderLarkMessages() {
     $("lark-group").checked=!!c.groups?.at_me;$("lark-group-mode").value=c.groups?.message_mode || "mentions";$("lark-all").checked=!!c.groups?.at_all;
     $("lark-interval").value=c.interval_seconds || 60;fillBackfill("lark",c);
     ws.larkFilled=data.config.platform_id+":"+data.subscription_id+":"+data.subscription_version;
+    ws.larkRestore=null;
   }
   ws.larkSelectionPlatform=c.platform_id;
   $("lark-group-mode-all").disabled=false;
   const groupAll=$("lark-group-mode").value==="all";
   $("lark-group").disabled=groupAll;$("lark-all").disabled=groupAll;$("lark-group-mentions").hidden=groupAll;
-  $("lark-scope-help").hidden=!larkAllChats();
-  const draft=larkMessagesDraft(), dirty=larkConfigKey(draft)!==larkConfigKey(data.config), connection=platforms.find(x=>x.id===draft.platform_id);
+  $("lark-scope-option").hidden=!$("lark-private-enabled").checked;
+  $("lark-scope-help").hidden=!$("lark-private-enabled").checked || !larkAllChats();
+  const draft=larkMessagesDraft(), dirty=larkConfigKey(draft)!==larkConfigKey(data.config) || !data.subscription_id && !!draft.platform_id, connection=platforms.find(x=>x.id===draft.platform_id);
   const scopeError=draft.enabled && !draft.private.enabled && !draft.groups.enabled ? "请选择接收内容，或关闭通知总开关。" : draft.private.enabled && draft.private.scope==="specified" && !draft.private.chat_ids.length ? "请至少选择一个人员私聊，或关闭人员私聊接收。" : draft.groups.enabled && !draft.groups.chat_ids.length ? "请至少选择一个群聊，或关闭群聊接收。" : "";
   const backfillError=renderBackfill("lark",!!data.subscription_id && (!!data.lark?.baseline || data.status!=="disabled"),data.lark?.baseline || data.config.backfill_start);
   const valid=!backfillError && (!draft.enabled || connection?.validation?.status==="valid") && draft.target.mode==="inbox" && (!draft.enabled || draft.private.enabled || draft.groups.enabled) && (!draft.private.enabled || draft.private.scope==="all" || draft.private.chat_ids.length>0) && (!draft.groups.enabled || draft.groups.chat_ids.length>0) && draft.interval_seconds>=3 && draft.interval_seconds<=3600;
-  $("lark-save").disabled=!ws.messagesConnected||!!ws.messagesSending||managementBusy()||!valid||(!dirty && !["credentials_invalid","binding_changed","capacity"].includes(data.status))||(!data.subscription_id && !draft.enabled);
-  $("lark-sync").disabled=!ws.messagesConnected||!!ws.messagesSending||managementBusy()||dirty||!data.config.enabled;
-  $("lark-save").textContent=ws.messagesSending==="configure" ? "保存中…" : "保存设置";
+  $("lark-save").disabled=notificationWritePending(ws)||!ws.messagesConnected||!!ws.messagesSending||managementBusy()||!valid||(!dirty && !["credentials_invalid","binding_changed","capacity"].includes(data.status))||(!data.subscription_id && !draft.enabled);
+  $("lark-sync").disabled=notificationWritePending(ws)||!ws.messagesConnected||!!ws.messagesSending||managementBusy()||dirty||!data.config.enabled;
+  $("lark-save").textContent=ws.messagesSending==="configure" ? "保存中…" : ws.notificationAddition?.key===ws.notificationScope ? "确认并返回添加" : "保存设置";
   $("lark-sync").textContent=ws.messagesSending==="sync" ? "请求中…" : "立即同步";
   $("lark-state").textContent=!ws.messagesConnected ? "状态不可读" : dirty ? "待保存" : gitlabEventStatuses[data.status] || data.status;
   notice("lark-account",connection?.validation?.status==="valid" ? `接收账号：${connection.validation.username}` : draft.platform_id ? "请先核验此平台账号。" : "请从上方选择平台详情。");
@@ -785,13 +793,20 @@ function renderLarkMessages() {
 async function changeLarkMessages(action) {
   const ws=workspaceView;if(!ws?.messages || ws.messagesSending || $(action==="configure"?"lark-save":"lark-sync").disabled)return;
   const payload={service_epoch:state.catalog.service_epoch,caller:{kind:"human",id:ws.operator},...ws.room,provider:"lark",channel:"messages",subscription_id:ws.messages.subscription_id,subscription_version:ws.messages.subscription_version};
+  const scope=ws.notificationScope;
   if(action==="configure")payload.config=larkMessagesDraft();
-  ws.messagesRevision=(ws.messagesRevision||0)+1;ws.messagesSending=action;ws.messagesError="";renderLarkMessages();
+  else payload.target=notificationRequestTarget(activeNotificationTarget(ws));
+  if(action==="configure" && captureMemberPlatformDraft(payload.config))return;
+  beginNotificationWrite(ws,scope);
+  ws.messagesRevision=(ws.messagesRevision||0)+1;ws.messagesSending=action;ws.messagesError="";
+  const revision=ws.messagesRevision;
+  const current=()=>notificationContextCurrent(ws,scope,payload.service_epoch) && ws.messagesRevision===revision;
+  renderLarkMessages();
   try{
     const data=await request(`/v1/platform/notifications/${action}`,payload);
-    if(ws!==workspaceView)return;const replaced=ws.messages.subscription_id && ws.messages.subscription_id!==data.subscription_id;ws.messages=data;ws.larkSources=[...(ws.larkSources || []).filter(s=>s.config.platform_id!==data.config.platform_id),data];ws.messagesConnected=true;ws.larkDirty=false;ws.larkFilled=null;ws.messagesFeedback=action==="sync" ? "已发起同步，结果将自动更新。" : replaced ? "已为新连接开启订阅，旧订阅已暂停。" : "设置已保存。";
-  }catch(e){if(ws===workspaceView)ws.messagesError=e.code==="conflict"?"设置或账号已变化，请重新读取后核对。":"结果未确认，请重新读取状态；不会自动重发。";}
-  finally{if(ws===workspaceView){ws.messagesRevision++;ws.messagesSending=false;renderGitLabEvents();}}
+    if(!current())return;if(data.config.platform_id!==ws.notificationPlatformID || !sameNotificationTarget(data.config.target,activeNotificationTarget(ws)))throw Error("Notification scope mismatch");const replaced=ws.messages.subscription_id && ws.messages.subscription_id!==data.subscription_id;ws.messages=data;ws.larkSources=[...(ws.larkSources || []).filter(s=>s.config.platform_id!==data.config.platform_id || !sameNotificationTarget(s.config.target,data.config.target)),data];ws.messagesConnected=true;ws.larkDirty=false;ws.larkFilled=null;ws.messagesFeedback=action==="sync" ? "已发起同步，结果将自动更新。" : replaced ? "已为新连接开启订阅，旧订阅已暂停。" : "设置已保存。";
+  }catch(e){if(current())ws.messagesError=e.code==="conflict"?"设置或账号已变化，请重新读取后核对。":"结果未确认，请重新读取状态；不会自动重发。";}
+  finally{ws.notificationWrites?.delete(scope);if(current()){ws.messagesRevision++;ws.messagesSending=false;renderGitLabEvents();}else if(ws===workspaceView)renderGitLabEvents();}
 }
 for(const id of ["enabled","connection","target","private-enabled","groups-enabled","scope","group","group-mode","all","interval","backfill","backfill-start"]) $("lark-"+id).addEventListener("change",()=>{
   if(id==="enabled")$("lark-settings").open=$("lark-enabled").checked;
@@ -817,7 +832,7 @@ $("lark-sync").addEventListener("click",()=>changeLarkMessages("sync"));
 $("lark-manage-platforms").addEventListener("click",async()=>{await openSettings("platforms");});
 function gitlabProjectDirectory(ws) {
   const connection=todoPlatform(ws);
-  const key=JSON.stringify([state.catalog?.service_epoch,connection?.id,connection?.version,connection?.validation]);
+  const key=JSON.stringify([state.catalog?.service_epoch,ws.notificationScope,connection?.id,connection?.version,connection?.validation]);
   if(ws.gitlabProjectDirectory?.key!==key){
     clearTimeout(ws.gitlabProjectDirectory?.timer);
     ws.gitlabProjectDirectory={key,search:"",projects:new Map(),loaded:false,loading:false,nextPage:0,error:""};
@@ -890,60 +905,112 @@ $("gitlab-project-search").addEventListener("input",()=>{
 $("gitlab-project-picker").addEventListener("keydown",event=>{if(event.key==="Escape" && $("gitlab-project-picker").open){event.preventDefault();$("gitlab-project-picker").open=false;$("gitlab-project-summary").focus();}});
 $("gitlab-project-more").addEventListener("click",()=>loadGitLabProjects());
 $("gitlab-project-refresh").addEventListener("click",()=>loadGitLabProjects(true));
+function notificationPlatforms(ws = workspaceView) { return [...(ws?.platforms || []), ...(ws?.larkPlatforms || [])]; }
+function notificationView(ws, item, target = activeNotificationTarget(ws)) {
+  return item.provider === "gitlab" ? ws?.gitlabPlatforms?.find(v => v.platform_id === item.id && sameNotificationTarget(v.config.target,target))
+    : ws?.larkSources?.find(v => v.config.platform_id === item.id && sameNotificationTarget(v.config.target,target));
+}
+function notificationConfigured(item, view) { return item.provider === "gitlab" ? !!view?.version || !!view?.events?.subscription_id || !!view?.todos?.subscription_id : !!view?.subscription_id; }
+function notificationIssue(ws, item, view) {
+  const error = view?.target_error_code || (item.provider === "gitlab" ? Object.values(view?.errors || {}).find(Boolean) || view?.events?.error_code || view?.todos?.error_code || view?.events?.delivery_error_code || view?.todos?.delivery_error_code : view?.error_code || view?.delivery_error_code);
+  return !ws.notificationsConnected ? "通知状态暂不可读" : ws.notificationToggleError?.key === notificationScopeKey(view?.config.target,item.id) ? ws.notificationToggleError.message
+    : error ? notificationTargetErrors[error] || gitlabEventErrors[error] || "通知需处理，请查看详情"
+    : item.validation?.status !== "valid" ? "账号需要核验" : item.provider === "gitlab" && Object.values(view?.pending || {}).some(Boolean) ? "部分通知等待应用" : "";
+}
+function notificationDescription(config) {
+  if (!config) return "设置接收";
+  const content = config.todos || config.events ? [config.todos?.enabled ? "我的待办" : "", config.events?.enabled ? "项目互动" : ""].filter(Boolean).join("、")
+    : [config.private?.enabled ? config.private.scope === "all" ? "全部人员私聊" : "指定私聊" : "", config.groups?.enabled ? `指定群聊 · ${config.groups.message_mode === "all" ? "全部消息" : [config.groups.at_me ? "@我" : "",config.groups.at_all ? "@所有人" : ""].filter(Boolean).join("、")}` : ""].filter(Boolean).join("、");
+  return `${config.enabled ? "" : "已暂停 · "}${content || "未选择内容"}`;
+}
+function notificationRow(ws, item, target) {
+  const view=notificationView(ws,item,target) || {config:{}}, row=document.createElement("div"), detail=document.createElement("button");
+  row.className="notification-source-row";row.dataset.platformId=item.id;row.dataset.membershipId=target.membership_id || "";
+  detail.type="button";detail.className="notification-source";detail.dataset.provider=item.provider;
+  detail.setAttribute("aria-controls","notification-detail");detail.setAttribute("aria-label",`${item.name} 通知详情`);
+  const avatar=document.createElement("span"),label=document.createElement("span"),title=document.createElement("strong"),summary=document.createElement("small"),arrow=document.createElement("button");
+  avatar.className="avatar integration-avatar";avatar.textContent=item.provider==="gitlab" ? "GL" : "飞";avatar.setAttribute("aria-hidden","true");
+  label.className="notification-source-name";title.textContent=item.name;summary.textContent=notificationDescription(view.config);label.append(title,summary);detail.append(avatar,label);
+  arrow.type="button";arrow.className="notification-source-arrow";arrow.textContent="›";arrow.setAttribute("aria-label",`${item.name} 通知详情`);
+  const open=opener=>target.mode==="inbox" ? openMemberPlatform(opener,item,target) : openNotificationSource(opener,"gitlab",item.id,target);
+  detail.addEventListener("click",()=>open(detail));arrow.addEventListener("click",()=>open(arrow));
+  const toggle=document.createElement("input");toggle.type="checkbox";toggle.className="notification-switch";
+  toggle.checked=ws.notificationToggle===item.id && sameNotificationTarget(ws.notificationToggleTarget,target) ? ws.notificationToggleEnabled : !!view.config.enabled;
+  toggle.setAttribute("role","switch");toggle.setAttribute("aria-label",`${item.name} 接收通知`);
+  toggle.disabled=notificationWritePending(ws,notificationScopeKey(target,item.id)) || !state.catalogConnected || !ws.notificationsConnected || !!ws.notificationToggle || !!ws.gitlabSending || !!ws.messagesSending || managementBusy();
+  toggle.addEventListener("change",()=>notificationConfigured(item,notificationView(ws,item,target)) ? togglePlatformNotification(ws,item,toggle.checked,target) : initializeMemberNotifications(item,target,toggle.checked));
+  const issue=document.createElement("p");issue.className="notification-source-issue";issue.setAttribute("role","status");issue.textContent=notificationIssue(ws,item,view);issue.hidden=!issue.textContent;
+  row.append(detail,toggle,arrow,issue);return row;
+}
+function renderNotificationList(prefix, target) {
+  const ws=workspaceView,items=notificationPlatforms(ws).filter(item=>target.mode==="inbox" || item.provider==="gitlab");
+  const configured=items.filter(item=>notificationConfigured(item,notificationView(ws,item,target)));
+  $(`${prefix}platforms`).replaceChildren(...configured.map(item=>notificationRow(ws,item,target)));
+  $(`${prefix}source-count`).textContent=String(configured.length);
+  $(`${prefix}empty`).hidden=!!configured.length;
+  $(`${prefix}empty`).textContent=ws?.platformsLoading ? "正在读取平台…" : target.mode==="inbox" ? "尚未配置来源，添加通知来源后开始接收。" : "添加房间通知，发送到当前房间消息流。";
+  const unavailable=!!ws && (!ws.notificationsConnected || !!ws.repositoryPlatformsError);
+  notice(`${prefix}list-error`,unavailable ? ws.repositoryPlatformsError || "通知状态暂不可读，请重新读取。" : "");
+  $(`${prefix}list-reload`).hidden=!unavailable;
+  const query=$(`${prefix}add-search`).value.trim().toLowerCase();
+  $(`${prefix}add-options`).replaceChildren(...items.filter(item=>!configured.includes(item) && [item.name,item.validation?.username,item.url].join(" ").toLowerCase().includes(query)).map(item=>{
+    const button=document.createElement("button");button.type="button";button.className="notification-add-option";button.dataset.provider=item.provider;button.dataset.platformId=item.id;
+    const name=document.createElement("strong"),account=document.createElement("small");name.textContent=item.name;account.textContent=`${item.validation?.username ? `@${item.validation.username} · ` : ""}设置接收 ›`;button.append(name,account);
+    button.disabled=!ws.notificationsConnected || managementBusy();
+    button.addEventListener("click",()=>{ $(`${prefix}add-picker`).open=false;return openNotificationSource(button,item.provider==="lark" ? "messages" : "gitlab",item.id,target); });return button;
+  }));
+  return configured;
+}
 function renderNotificationPlatforms() {
   const ws=workspaceView;
-  const platforms=[...(ws?.platforms || []),...(ws?.larkPlatforms || [])];
-  const selected=ws?.notificationChannel==="messages" ? ws.messages?.config.platform_id : ws?.gitlabDraft?.platform_id;
-  $("notification-selected-platform").textContent=`${platforms.find(p=>p.id===selected)?.name || "平台通知"} · 详细设置`;
-  $("notification-platforms").replaceChildren(...platforms.map(item=>{
-    const gitlab=item.provider==="gitlab";
-    const view=gitlab ? ws.gitlabPlatforms?.find(v=>v.platform_id===item.id) || (ws.gitlab?.config.platform_id===item.id ? ws.gitlab : null) : ws.larkSources?.find(v=>v.config.platform_id===item.id);
-    const configured=gitlab ? !!view?.version : !!view?.subscription_id;
-    const config=view?.config, busy=!state.catalogConnected || !ws.notificationsConnected || !!ws.notificationToggle || !!ws.gitlabSending || !!ws.messagesSending || managementBusy();
-    const row=document.createElement("section");row.className="notification-platform-row";
-    const heading=document.createElement("div"),title=document.createElement("strong"),label=document.createElement("label"),toggle=document.createElement("input");
-    title.textContent=item.name;toggle.type="checkbox";toggle.checked=configured && !!config.enabled;
-    toggle.setAttribute("aria-label",`${item.name} 通知总开关`);toggle.disabled=busy || !configured;
-    const toggleLabel=document.createElement("span");toggleLabel.textContent="启用";label.append(toggle,toggleLabel);heading.append(title,label);
-    const summary=document.createElement("p");summary.className="quiet";
-    const categories=!config ? "尚未配置" : gitlab ? [config.todos?.enabled ? "我的待办" : "",config.events?.enabled ? "项目互动" : ""].filter(Boolean).join("、") || "未选择通知内容" : [config.private?.enabled ? config.private.scope==="all" ? "全部人员私聊" : "指定人员私聊" : "",config.groups?.enabled ? "指定群聊" : "群聊未开启"].filter(Boolean).join("、");
-    const target=config?.target,member=state.members.find(m=>m.membership_id===target?.membership_id);
-    const destination=target?.mode==="inbox" ? `${memberRole(member || {})?.name || member?.agent_id || "原成员不可用"} Inbox` : "Room 消息";
-    summary.textContent=`${categories}${configured ? ` → ${destination}` : ""}${item.validation?.username ? ` · @${item.validation.username}` : ""}`;
-    const issue=document.createElement("p");issue.className="form-error";issue.setAttribute("role","status");
-    const error=gitlab ? Object.values(view?.errors || {}).find(Boolean) || view?.events?.error_code || view?.todos?.error_code || view?.events?.delivery_error_code || view?.todos?.delivery_error_code : view?.error_code || view?.delivery_error_code;
-    issue.textContent=!ws.notificationsConnected ? "通知设置暂不可读，请重新读取。" : ws.notificationToggleError?.id===item.id ? ws.notificationToggleError.message : error ? notificationTargetErrors[error] || gitlabEventErrors[error] || "通知需处理，请展开详情核对。" : gitlab && Object.values(view?.pending || {}).some(Boolean) ? "设置已保存，部分通道等待应用。" : item.validation?.status!=="valid" ? "账号需要核验。" : "";
-    issue.hidden=!issue.textContent;
-    const detail=document.createElement("button");detail.type="button";detail.className="text-button";detail.textContent="详细设置";detail.disabled=busy;
-    detail.addEventListener("click",async()=>{
-      if(ws!==workspaceView)return;
-      ws.notificationChannel=gitlab ? "gitlab" : "messages";
-      if(gitlab) {$("gitlab-connection").value=item.id;await editGitLabShared("connection");}
-      else {selectLarkPlatform(ws,item.id);renderLarkMessages();}
-      if(ws!==workspaceView)return;
-      $("notification-settings-details").open=true;renderGitLabEvents();$("notification-selected-platform").focus();
-    });
-    toggle.addEventListener("change",async()=>{
-      if(ws!==workspaceView || busy || !configured)return;
-      const epoch=state.catalog.service_epoch;
-      ws.notificationToggle=item.id;ws.notificationToggleError=null;renderNotificationPlatforms();
-      try {
-        const body={service_epoch:epoch,caller:{kind:"human",id:ws.operator},...ws.room,platform_id:item.id,config:{...structuredClone(config),enabled:toggle.checked}};
-        if(gitlab)body.version=view.version;
-        else Object.assign(body,{provider:"lark",channel:"messages",subscription_id:view.subscription_id,subscription_version:view.subscription_version});
-        await request(gitlab ? "/v1/platform/gitlab/notifications/configure" : "/v1/platform/notifications/configure",body,undefined,50000);
-      } catch(error) {if(ws===workspaceView)ws.notificationToggleError={id:item.id,message:error.code==="request" ? "请在详情中选择通知内容与有效接收位置，再开启。" : error.code==="conflict" ? "设置已变化，请核对当前配置后重试。" : "结果未确认，请读取当前设置后重试。"};}
-      finally {if(ws===workspaceView && state.catalog?.service_epoch===epoch){ws.notificationToggle=null;await syncGitLabNotifications(state.catalog,ws);renderGitLabEvents();}}
-    });
-    row.append(heading,summary,issue,detail);
-    if(!configured){const connect=document.createElement("button");connect.type="button";connect.className="text-button";connect.textContent="连接并启用";connect.disabled=busy;connect.addEventListener("click",async()=>{
-      await openSettings("platforms");if(onboarding.pending && !onboardingDone())return;clearOnboarding();await editPlatform(item);await startOnboardingOptions();
-      if(item.provider==="gitlab")renderGitLabSave();else{$("connection-save").hidden=false;$("connection-save").disabled=false;$("connection-save").textContent="连接并启用";}
-    });row.append(connect);}return row;
+  renderNotificationList("notification-",{});
+  renderMemberPlatforms();
+  const orphanViews=[...(ws?.gitlabPlatforms || []),...(ws?.larkSources || [])].filter(v=>v.config.target?.mode==="inbox" && !state.members.some(m=>sameNotificationTarget(memberNotificationTarget(m),v.config.target)));
+  $("notification-orphans").hidden=!orphanViews.length;
+  $("notification-orphan-items").replaceChildren(...orphanViews.map(v=>{
+    const item=notificationPlatforms(ws).find(p=>p.id===(v.platform_id || v.config.platform_id));
+    const button=document.createElement("button");button.type="button";button.className="text-button";button.textContent=`${v.config.target.agent_id} · ${item?.name || v.config.platform_id}：成员已移除，查看诊断`;
+    button.addEventListener("click",()=>openNotificationSource(button,item?.provider==="lark" ? "messages" : "gitlab",v.config.platform_id,v.config.target));return button;
   }));
 }
+$("member-notification-collapse").addEventListener("click",()=>{
+  const ws=workspaceView,target=memberNotificationTarget();if(!ws || !target)return;
+  ws.memberSourceExpanded ||= new Map();ws.memberSourceExpanded.set(target.membership_id,ws.memberSourceExpanded.get(target.membership_id)===false);renderNotificationPlatforms();
+});
+for(const prefix of ["notification-","member-notification-"]) $(`${prefix}add-search`).addEventListener("input",renderNotificationPlatforms);
+async function togglePlatformNotification(ws, item, enabled, target=activeNotificationTarget(ws)) {
+  if(ws!==workspaceView || !ws.notificationsConnected || ws.notificationToggle || ws.gitlabSending || ws.messagesSending || managementBusy())return;
+  const view=notificationView(ws,item,target);if(!notificationConfigured(item,view) || notificationWritePending(ws,notificationScopeKey(target,item.id)))return;
+  const epoch=state.catalog.service_epoch,scope=ws.notificationScope,gitlab=item.provider==="gitlab",key=notificationScopeKey(target,item.id);
+  beginNotificationWrite(ws,key);
+  const revisionKey=gitlab ? "gitlabRevision" : "messagesRevision";ws[revisionKey]=(ws[revisionKey] || 0)+1;
+  const revision=ws[revisionKey];
+  const current=()=>notificationContextCurrent(ws,scope,epoch) && ws[revisionKey]===revision;
+  ws.notificationToggle=item.id;ws.notificationToggleTarget=target;ws.notificationToggleEnabled=enabled;ws.notificationToggleError=null;renderGitLabEvents();
+  try {
+    const body={service_epoch:epoch,caller:{kind:"human",id:ws.operator},...ws.room,config:{...structuredClone(view.config),enabled,target:notificationRequestTarget(target)}};
+    if(gitlab)Object.assign(body,{platform_id:item.id,version:view.version});
+    else Object.assign(body,{provider:"lark",channel:"messages",subscription_id:view.subscription_id,subscription_version:view.subscription_version});
+    const next=await request(gitlab ? "/v1/platform/gitlab/notifications/configure" : "/v1/platform/notifications/configure",body,undefined,50000);
+    if(!current())return;
+    if(!sameNotificationTarget(next.config.target,target) || next.config.platform_id!==item.id)throw Error("Notification scope mismatch");
+    if(gitlab){
+      ws.gitlabPlatforms=[...(ws.gitlabPlatforms || []).filter(v=>notificationScopeKey(v.config.target,v.platform_id)!==key),next];
+      if(ws.gitlab?.config.platform_id===item.id && sameNotificationTarget(activeNotificationTarget(ws),target))acceptGitLabView(ws,next);
+    } else {
+      ws.larkSources=[...(ws.larkSources || []).filter(v=>notificationScopeKey(v.config.target,v.config.platform_id)!==key),next];
+      if(ws.messages?.config.platform_id===item.id && sameNotificationTarget(activeNotificationTarget(ws),target)){ws.messages=next;$("lark-enabled").checked=!!next.config.enabled;}
+    }
+  }catch(error){
+    if(current())ws.notificationToggleError={key,message:error.code==="request" ? "请先在详情完善接收设置" : error.code==="conflict" ? "设置已变化，请核对后重试" : "结果未确认，请重新读取"};
+  }finally{
+    ws.notificationWrites?.delete(key);
+    if(current()){ws[revisionKey]++;ws.notificationToggle=null;await syncGitLabNotifications(state.catalog,ws);renderGitLabEvents();}
+    else if(ws===workspaceView)renderGitLabEvents();
+  }
+}
 function renderGitLabEvents() {
-  renderNotificationPlatforms();renderNotificationSource(); renderGitLabTodos(); renderLarkMessages();
+  renderNotificationPlatforms(); renderGitLabTodos(); renderLarkMessages(); renderNotificationSource();
   const ws = workspaceView, data = ws?.events, config = ws?.gitlabDraft?.events;
   $("gitlab-events").hidden = !data || !data.available && !data.subscription_version;
   $("gitlab-events-fields").disabled = !config || gitlabSettingsBusy(ws);
@@ -1080,15 +1147,14 @@ function renderGitLabSettings() {
   $("gitlab-notification-account").textContent = todoVerified(connection) ? `接收账号：@${connection.validation.username}（ID ${connection.validation.user_id}，已验证）`
     : ws?.platformsError || (connectionID ? "请先验证所选连接。" : "");
   $("gitlab-notification-account").hidden = !$("gitlab-notification-account").textContent;
-  const target = JSON.stringify(shared.target), targetOptions = notificationTargetOptions();
-  if (!targetOptions.some(option => option.value === target)) targetOptions.push(new Option("原接收成员已失效", target));
-  setSelectOptions("gitlab-target", targetOptions, target);
+  const target = JSON.stringify(activeNotificationTarget(ws));
+  setSelectOptions("gitlab-target", [new Option("固定接收者",target)], target);$("gitlab-target").disabled=true;
   for (const channel of gitlabChannels) {
     $(`gitlab-${channel}-enabled`).disabled = busy;
     if (gitlabApplyNotice(ws, channel)) $(`gitlab-${channel}-settings`).open = true;
     const data = ws?.[channel], error = ws?.gitlab?.errors?.[channel] || data?.error_code || data?.delivery_error_code;
     $(`gitlab-${channel}-state`).textContent = !ws?.gitlabConnected ? "状态不可读" : ws.gitlab.pending?.[channel] ? "等待应用" : gitlabChannelDirty(channel) ? "待保存"
-      : error && data?.status === "running" ? "需处理" : gitlabEventStatuses[data?.status] || data?.status || "已关闭";
+      : shared[channel].enabled && !shared.enabled ? "已选择 · 通知已暂停" : error && data?.status === "running" ? "需处理" : gitlabEventStatuses[data?.status] || data?.status || "已关闭";
     $(`gitlab-${channel}-summary`).setAttribute("data-error", String(!!error));
     const errors = channel === "events" ? gitlabEventErrors : gitlabTodoErrors;
     const problem = gitlabApplyNotice(ws, channel) || notificationTargetErrors[data?.delivery_error_code] ||
@@ -1101,8 +1167,8 @@ function renderGitLabSettings() {
   const pending = gitlabNeedsApply(ws), dirty = !!ws?.gitlabDirty || !!shared.platform_id && !ws?.gitlab?.version && !ws?.events?.subscription_id && !ws?.todos?.subscription_id;
   const invalid = !!backfillError || !Number.isInteger(shared.interval_seconds) || shared.interval_seconds < 3 || shared.interval_seconds > 120 || !!ws?.gitlabDraft && (gitlabEventDraftState(ws.events).invalid || gitlabTodoDraftState(ws).unavailable);
   $("gitlab-save").disabled = busy || !(dirty || pending) || invalid;
-  $("gitlab-save").textContent = ws?.gitlabSending === "configure" ? "保存中…" : !dirty && pending ? "重试应用" : "保存设置";
-  const active = ws?.gitlab?.config.events.enabled || ws?.gitlab?.config.todos.enabled;
+  $("gitlab-save").textContent = ws?.gitlabSending === "configure" ? "保存中…" : ws?.notificationAddition?.key===ws?.notificationScope ? "确认并返回添加" : !dirty && pending ? "重试应用" : "保存设置";
+  const active = ws?.gitlab?.config.enabled !== false && (ws?.gitlab?.config.events.enabled || ws?.gitlab?.config.todos.enabled);
   $("gitlab-sync").hidden = false;
   $("gitlab-sync").disabled = busy || dirty || pending || invalid || !active;
   $("gitlab-sync").textContent = ws?.gitlabSending === "sync" ? "请求中…" : "立即同步";
@@ -1122,7 +1188,7 @@ async function editGitLabShared(field) {
       const epoch = state.catalog.service_epoch;
       ws.gitlabSending = "select"; renderGitLabEvents();
       try {
-        const params = new URLSearchParams({service_epoch:epoch,caller_id:ws.operator,...ws.room,platform_id:id});
+        const params = new URLSearchParams({service_epoch:epoch,caller_id:ws.operator,...ws.room,platform_id:id,...notificationTargetQuery(activeNotificationTarget(ws))});
         const view = await request(`/v1/platform/gitlab/notifications?${params}`);
         if (ws !== workspaceView || state.catalog?.service_epoch !== epoch || ws.gitlabRevision !== revision) return;
         acceptGitLabView(ws, view, true); ws.gitlabError = ""; ws.gitlabFeedback = "";
@@ -1137,7 +1203,7 @@ async function editGitLabShared(field) {
     draft.platform_id = id;
   }
   else if (field === "interval") draft.interval_seconds = Number($("gitlab-interval").value);
-  else draft.target = JSON.parse($("gitlab-target").value);
+  else return;
   editGitLabConfig();
   if(field==="connection" && $("gitlab-project-picker").open)void loadGitLabProjects();
 }
@@ -1159,23 +1225,33 @@ async function changeGitLabSettings(action) {
   if (!ws || $(action === "configure" ? "gitlab-save" : "gitlab-sync").disabled) return;
   const payload = { service_epoch: state.catalog.service_epoch, caller: { kind: "human", id: ws.operator }, ...ws.room, version: ws.gitlab.version };
   payload.platform_id = action === "configure" ? ws.gitlabDraft.platform_id : ws.gitlab.config.platform_id;
+  const scope=ws.notificationScope;
+  if(action === "sync") payload.target=notificationRequestTarget(activeNotificationTarget(ws));
   if (action === "configure") {
-    payload.config = structuredClone(ws.gitlabDraft);
-    if (ws.gitlab.config.platform_id !== payload.platform_id && ws.gitlabPlatforms) payload.version = ws.gitlabPlatforms.find(view => view.platform_id === payload.platform_id)?.version || 0;
+    payload.config = {...structuredClone(ws.gitlabDraft),target:notificationRequestTarget(activeNotificationTarget(ws))};
+    if (ws.gitlab.config.platform_id !== payload.platform_id && ws.gitlabPlatforms) payload.version = ws.gitlabPlatforms.find(view => view.platform_id === payload.platform_id && sameNotificationTarget(view.config.target,activeNotificationTarget(ws)))?.version || 0;
   }
+  if(action==="configure" && captureMemberPlatformDraft(payload.config))return;
+  beginNotificationWrite(ws,scope);
   ws.gitlabRevision = (ws.gitlabRevision || 0) + 1; ws.gitlabSending = action; ws.gitlabError = "";
+  const revision=ws.gitlabRevision;
+  const current=()=>notificationContextCurrent(ws,scope,payload.service_epoch) && ws.gitlabRevision===revision;
   renderGitLabEvents();
   try {
     const view = await request(`/v1/platform/gitlab/notifications/${action}`, payload);
-    if (ws !== workspaceView || state.catalog?.service_epoch !== payload.service_epoch) return;
+    if (!current()) return;
+    if(view.config.platform_id!==payload.platform_id || !sameNotificationTarget(view.config.target,activeNotificationTarget(ws)))throw Error("Notification scope mismatch");
     acceptGitLabView(ws, view, true);
+    ws.gitlabPlatforms = [...(ws.gitlabPlatforms || []).filter(v => v.platform_id !== view.config.platform_id || !sameNotificationTarget(v.config.target,view.config.target)), {...view, platform_id:view.config.platform_id}];
     ws.gitlabFeedback = action === "sync" ? "已发起同步，结果将自动更新。" : "设置已保存。";
   } catch (error) {
-    if (ws !== workspaceView || state.catalog?.service_epoch !== payload.service_epoch) return;
+    if (!current()) return;
     ws.gitlabError = error.code === "conflict" ? action === "sync" ? "配置或账号已变化，请核对最新状态。" : "设置版本已变化，请核对最新状态后重新保存。" : error.code === "request" ? "设置无效，请检查连接、项目和筛选。" : "结果未确认，请核对最新状态后显式重试；不会自动重发。";
     ws.gitlabSending = false; await syncGitLabNotifications(state.catalog, ws);
   } finally {
-    if (ws === workspaceView) { ws.gitlabRevision++; ws.gitlabSending = false; renderGitLabEvents(); }
+    ws.notificationWrites?.delete(scope);
+    if (current()) { ws.gitlabRevision++; ws.gitlabSending = false; renderGitLabEvents(); }
+    else if(ws===workspaceView)renderGitLabEvents();
   }
 }
 $("gitlab-save").addEventListener("click", () => changeGitLabSettings("configure"));
@@ -1183,59 +1259,139 @@ $("gitlab-sync").addEventListener("click", () => changeGitLabSettings("sync"));
 let notificationFocus = null;
 function renderContextViews() {
   const detail = $("activity-dialog").open || $("notification-detail").open;
-  $("open-gitlab-source").setAttribute("aria-expanded", String($("notification-detail").open));
   $("member-list-view").hidden = detail;
   $("member-list-view").inert = detail || !panels.members;
   $("member-list-view").setAttribute("aria-hidden", String(detail || !panels.members));
 }
 function renderNotificationSource() {
-  const ws = workspaceView, data = ws?.events;
-  const available = !!ws;
-  const channel = ws?.notificationChannel || "gitlab";
-  const tab = channel === "messages" ? "messages" : "gitlab";
-  const label = (key) => ws?.[`${key}Connected`] ? gitlabEventStatuses[ws[key]?.status] || "已关闭" : "状态不可读";
-  $("notification-summary").textContent = `项目活动：${label("events")} · 我的待办：${label("todos")} · 飞书：${label("messages")}`;
-  for (const key of ["gitlab", "messages"]) {
-    $(`notification-panel-${key}`).hidden = key !== tab;
-    $(`notification-tab-${key}`).setAttribute("aria-selected", String(key === tab));
-    $(`notification-tab-${key}`).setAttribute("tabindex", key === tab ? "0" : "-1");
-  }
-  $("notification-sources").hidden = !available;
-  $("notification-source-count").textContent = available ? "2" : "0";
-  $("lark-source-state").textContent = label("messages");
-  $("notification-source-state").textContent = !ws?.eventsConnected && !ws?.todosConnected ? "状态不可读" : data?.config.enabled && ws?.todos?.config.enabled ? "两路已开启" : ws?.todos?.config.enabled ? `待办 · ${label("todos")}` : label("events");
+  const ws = workspaceView, messages = ws?.notificationChannel === "messages";
+  const id = ws?.notificationPlatformID || (messages ? ws?.messages?.config.platform_id : ws?.gitlabDraft?.platform_id);
+  const item = memberPlatformItems(ws).find(p => p.id === id), view = item && notificationView(ws, item);
+  const target=activeNotificationTarget(ws),member=state.members.find(m=>sameNotificationTarget(memberNotificationTarget(m),target));
+  const name=target.mode==="inbox" ? memberRole(member || {})?.name || target.agent_id : "房间";
+  $("notification-title").textContent=`${name} · ${item?.name || memberPlatformItems(ws).find(p=>p.id===id)?.name || (messages ? "飞书" : "GitLab")} ${target.mode==="inbox" ? "设置" : "通知"}`;
+  $("notification-account").textContent=item ? [item.validation?.username ? `@${item.validation.username}` : "账号待核验",item.url].filter(Boolean).join(" · ") : "";
+  const coexist=target.mode==="inbox" && notificationView(ws,item || {},{})?.config.enabled || target.mode!=="inbox" && ws?.gitlabPlatforms?.some(v=>v.platform_id===id && v.config.target?.mode==="inbox" && v.config.enabled);
+  $("notification-destination").textContent=(target.mode==="inbox" ? `固定接收者：${name} · 收件箱${member ? "" : "（原成员已移除）"}` : "发送到当前房间，成员可见") + (coexist ? "。成员和房间分别订阅时，可能同时看到同一通知。" : "");
+  $("notification-sources").hidden=!ws;
+  const matches=!!id && (messages ? ws?.messages?.config.platform_id : ws?.gitlabDraft?.platform_id)===id && sameNotificationTarget(messages ? ws?.messages?.config.target : ws?.gitlabDraft?.target,target);
+  const connected=matches && (messages ? ws?.messagesConnected : ws?.gitlabConnected) && !ws?.notificationHistory;
+  $("notification-panel-messages").hidden=!messages || !connected;$("notification-panel-gitlab").hidden=messages || !connected;
+  notice("notification-notice",ws?.notificationHistory || (!connected ? "通知状态暂不可读，请重新读取。" : item && item.validation?.status!=="valid" ? "账号需要核验，请在管理平台中处理。" : ""));
+  $("notification-reload").hidden=!!connected || !!ws?.notificationHistory;
+  const configured=item && notificationConfigured(item,view),enabled=configured ? !!view.config.enabled : messages ? !!ws?.messages?.config.enabled : !!ws?.gitlabDraft?.enabled;
+  $("notification-enabled").checked=id && ws?.notificationToggle===id && sameNotificationTarget(ws.notificationToggleTarget,target) ? ws.notificationToggleEnabled : enabled;
+  $("notification-enabled").disabled=notificationWritePending(ws) || !item || !connected || !!ws?.notificationToggle || !!ws?.gitlabSending || !!ws?.messagesSending || managementBusy();
+  $("notification-enabled-state").textContent=id && ws?.notificationToggle===id ? "保存中…" : configured ? enabled ? "已开启" : "已暂停" : "保存设置后生效";
+  notice("notification-toggle-error",ws?.notificationToggleError?.key===notificationScopeKey(target,id) ? ws.notificationToggleError.message : "");
+  if(ws?.notificationAddition?.key===ws?.notificationScope)$("notification-enabled").disabled=true;
+  if(ws?.notificationHistory){$("notification-title").textContent="通知来源诊断";$("notification-account").textContent="";$("notification-destination").textContent="";}
+  const toolsOnly=ws?.notificationChannel==="tools";
+  $("notification-enabled").parentElement && ($("notification-enabled").parentElement.hidden=toolsOnly);
+  if(toolsOnly){$("notification-panel-messages").hidden=true;$("notification-panel-gitlab").hidden=true;$("notification-enabled-state").textContent="无通知能力";notice("notification-notice","此平台无通知能力。");$("notification-reload").hidden=true;}
+  renderMemberPlatformDetail();
   $("gitlab-manage-platforms").disabled = !ws;
-  const connected = tab === "messages" ? ws?.messagesConnected : ws?.gitlabConnected;
-  notice("notification-notice", !ws ? "请先打开房间，再管理通知源。" : !connected ? "通知状态暂不可读，请重新读取。" : "");
-  $("notification-reload").hidden = !ws || !!connected;
   renderContextViews();
 }
-function openNotificationSource(opener, channel) {
-  notificationFocus = opener;
-  if (workspaceView && channel) workspaceView.notificationChannel = channel;
-  $("activity-dialog").close();
-  panels.members = true; savePanels(); renderPanels();
-  if (!$("notification-detail").open) $("notification-detail").show();
-  renderGitLabEvents(); $("close-notification").focus();
-  if (channel === "events" || channel === "todos") {
-    $("notification-settings-details").open=true;
-    $(`gitlab-${channel}-settings`).open = true;
-    $(`gitlab-${channel}-summary`).focus();
-    $(`gitlab-${channel}-settings`).scrollIntoView({ block: "nearest" });
+async function openNotificationSource(opener, channel, platformID, target = {}) {
+  const ws=workspaceView;if(!ws || !platformID || channel==="messages" && target.mode!=="inbox")return;
+  const navigation=++notificationNavigation;
+  const epoch=state.catalog?.service_epoch,opening=ws.notificationOpen=(ws.notificationOpen || 0)+1;
+  rememberNotificationDraft(ws);
+  const key=notificationScopeKey(target,platformID),same=ws.notificationScope===key;
+  notificationFocus=opener;
+  if($("activity-dialog").open && !ws.notificationReturn)ws.notificationReturn={info:{...state.info},member:{...activityMember},tab:agentTab,platformScroll:$("platforms-member-view").scrollTop,activityScroll:$("activity-dialog").scrollTop,bodyScroll:$("activity-body").scrollTop,policyScroll:$("policy-member-view").scrollTop,scroll:$("inbox-member-view").scrollTop,windowScroll:{left:window.scrollX,top:window.scrollY}};
+  ws.notificationTarget=structuredClone(target);ws.notificationScope=key;ws.notificationChannel=channel==="messages" ? "messages" : channel==="tools" ? "tools" : "gitlab";ws.notificationPlatformID=platformID;ws.notificationHistory="";
+  if(!same){
+    stopLarkChatSearch();ws.gitlabRevision=(ws.gitlabRevision || 0)+1;ws.messagesRevision=(ws.messagesRevision || 0)+1;
+    ws.gitlabSending=false;ws.messagesSending=false;ws.notificationToggle=null;ws.notificationToggleError=null;
+    ws.gitlab=null;ws.gitlabDraft=null;ws.events=null;ws.todos=null;ws.messages=null;ws.gitlabConnected=false;ws.messagesConnected=false;
+    ws.gitlabDirty=false;ws.larkDirty=false;ws.eventsEmptyTypes=false;ws.gitlabBackfillEditing=false;ws.gitlabError="";ws.gitlabFeedback="";ws.messagesError="";ws.messagesFeedback="";ws.larkChatDirectory=null;ws.gitlabProjectDirectory=null;
   }
-  if (window.innerWidth <= 640) $("notification-detail").scrollIntoView({ block: "start" });
-  if (workspaceView) void loadWorkspacePlatforms();
+  $("activity-dialog").hidden=true;activity.close();panels.members=true;savePanels();renderPanels();
+  if(!$("notification-detail").open)$("notification-detail").show();
+  renderGitLabEvents();
+  await loadWorkspacePlatforms();
+  if(!notificationContextCurrent(ws,key,epoch) || opening!==ws.notificationOpen || navigation!==notificationNavigation)return;
+  if(channel==="tools"){renderNotificationSource();return;}
+  if(channel==="messages"){
+    if(!same){
+      selectLarkPlatform(ws,platformID);
+      const cached=ws.notificationDrafts?.get(key);
+      if(cached){ws.larkRestore={...cached.config,enabled:ws.messages.config.enabled};ws.larkChatDirectory=cached.directory;ws.larkDirty=true;}
+    }
+    ws.messagesConnected=!!ws.notificationsConnected;
+    $("lark-settings").open=true;
+  }else if(!same || !ws.gitlabConnected){
+    const revision=ws.gitlabRevision=(ws.gitlabRevision || 0)+1;
+    ws.gitlabSending="select";renderGitLabEvents();
+    try{
+      const params=new URLSearchParams({service_epoch:epoch,caller_id:ws.operator,...ws.room,platform_id:platformID,...notificationTargetQuery(target)});
+      const view=await request(`/v1/platform/gitlab/notifications?${params}`);
+      if(!notificationContextCurrent(ws,key,epoch) || revision!==ws.gitlabRevision || navigation!==notificationNavigation)return;
+      if(view.config.platform_id!==platformID || !sameNotificationTarget(view.config.target,target))throw Error("Notification scope mismatch");
+      acceptGitLabView(ws,view,true);
+      const cached=ws.notificationDrafts?.get(key);
+      if(cached){ws.gitlabDraft=structuredClone(cached.config);ws.gitlabDraft.enabled=view.config.enabled;ws.eventsEmptyTypes=cached.emptyTypes;ws.gitlabDirty=!!cached.emptyTypes || gitlabConfigKey(ws.gitlabDraft)!==gitlabConfigKey(view.config);fillBackfill("gitlab",ws.gitlabDraft);}
+    }catch{
+      if(!notificationContextCurrent(ws,key,epoch) || revision!==ws.gitlabRevision || navigation!==notificationNavigation)return;
+      ws.gitlabConnected=false;ws.gitlabError="平台通知设置暂不可读，请重新读取。";
+    }finally{if(notificationContextCurrent(ws,key,epoch) && revision===ws.gitlabRevision){ws.gitlabSending=false;ws.gitlabRevision++;}}
+  }
+  if(!notificationContextCurrent(ws,key,epoch) || opening!==ws.notificationOpen || navigation!==notificationNavigation)return;
+  if(channel==="events" || channel==="todos")$(`gitlab-${channel}-settings`).open=true;
+  renderGitLabEvents();$("notification-title").focus();
+  if(window.innerWidth<=640)$("notification-detail").scrollIntoView({block:"start"});
 }
-$("open-gitlab-source").addEventListener("click", () => openNotificationSource($("open-gitlab-source"),"gitlab"));
-$("open-lark-source").addEventListener("click", () => openNotificationSource($("open-lark-source"),"messages"));
+async function openNotificationMessage(opener, source) {
+  const ws=workspaceView,epoch=state.catalog?.service_epoch,navigation=++notificationNavigation;if(!ws)return;
+  const showHistory=message=>{
+    if(ws!==workspaceView || state.catalog?.service_epoch!==epoch || navigation!==notificationNavigation)return;
+    ws.notificationHistory=message;ws.notificationPlatformID=source?.platform_id || "";notificationFocus=opener;
+    $("notification-detail").show();renderNotificationSource();$("notification-title").focus();
+  };
+  if(!source?.subscription_id || !source?.provider || !source?.channel){showHistory("此历史消息缺少完整来源身份，无法唯一定位原配置。");return;}
+  try{
+    const params=new URLSearchParams({service_epoch:epoch,caller_id:ws.operator,...ws.room,provider:source.provider,channel:source.channel,subscription_id:source.subscription_id,...(source.platform_id ? {platform_id:source.platform_id} : {})});
+    const data=await request(`/v1/platform/notifications?${params}`);
+    if(ws!==workspaceView || state.catalog?.service_epoch!==epoch || navigation!==notificationNavigation)return;
+    const views=[...(data.subscriptions || []),...(data.retired_subscriptions || [])];
+    const exact=views.filter(v=>v.subscription_id===source.subscription_id && v.provider===source.provider && v.channel===source.channel && (!source.platform_id || v.platform_id===source.platform_id));
+    if(exact.length!==1){showHistory("无法唯一定位此消息的原订阅；请检查来源诊断。");return;}
+    const original=exact[0];
+    if(source.instance && (original.instance || original.account?.instance)!==source.instance){showHistory("原订阅的实例身份与消息不匹配，请检查历史来源。");return;}
+    if(original.retired){showHistory(`此消息来自已退役订阅 ${original.subscription_id}；原目标和历史消息保持不变。${notificationSyncSummary(original)}`);return;}
+    await openNotificationSource(opener,source.channel==="messages" ? "messages" : source.channel,original.platform_id,original.target || original.config.target);
+  }catch{showHistory("原订阅暂不可读或身份不匹配，未打开其他成员的设置。");}
+}
+$("notification-enabled").addEventListener("change", () => {
+  const ws = workspaceView, item = notificationPlatforms(ws).find(p => p.id === ws?.notificationPlatformID);
+  if (!item || $("notification-enabled").disabled) return;
+  if (ws.notificationAddition?.key===ws.notificationScope){$("notification-enabled").checked=true;return;}
+  if (!notificationConfigured(item, notificationView(ws,item)) && activeNotificationTarget(ws).mode==="inbox")return initializeMemberNotifications(item,activeNotificationTarget(ws),$("notification-enabled").checked);
+  if (notificationConfigured(item, notificationView(ws, item))) return togglePlatformNotification(ws, item, $("notification-enabled").checked);
+  if (item.provider === "lark") { $("lark-enabled").checked = $("notification-enabled").checked; ws.larkDirty = true; renderLarkMessages(); }
+  else { ws.gitlabDraft.enabled = $("notification-enabled").checked; editGitLabConfig(); }
+  renderNotificationSource();
+});
 $("close-notification").addEventListener("click", () => $("notification-detail").close());
-$("notification-detail").addEventListener("close", () => {
-  if ($("notification-detail").open) return;
-  stopLarkChatSearch();
-  renderContextViews();
-  if (!$("activity-dialog").open && !$("workspace-dialog").open)
-    (panels.members && notificationFocus?.isConnected ? notificationFocus : $("toggle-members")).focus();
-  notificationFocus = null;
+$("notification-detail").addEventListener("close",()=>{
+  if($("notification-detail").open)return;
+  notificationNavigation++;
+  const ws=workspaceView,back=ws?.notificationReturn;
+  if(ws){ws.notificationOpen=(ws.notificationOpen || 0)+1;if(ws.gitlabSending==="select"){ws.gitlabRevision++;ws.gitlabSending=false;}}
+  rememberNotificationDraft(ws);stopLarkChatSearch();
+  $("activity-dialog").hidden=false;
+  if(ws){ws.notificationReturn=null;ws.notificationAddition=null;}
+  if(back && sameService(state.info,back.info) && selectedAgent()?.membership_id===back.member.membership_id && $("activity-dialog").open){
+    (notificationFocus?.isConnected ? notificationFocus : $(`agent-tab-${agentTab}`)).focus({preventScroll:true});
+    $("platforms-member-view").scrollTop=back.platformScroll;
+    if(back.tab==="activity" && agentTab==="activity")void activity.select({...selectedAgent(),info:state.info}).then(()=>{if($("activity-dialog").open && selectedAgent()?.membership_id===back.member.membership_id && agentTab==="activity")$("activity-body").scrollTop=back.bodyScroll;});
+    $("activity-dialog").scrollTop=back.activityScroll;$("activity-body").scrollTop=back.bodyScroll;$("policy-member-view").scrollTop=back.policyScroll;
+    $("inbox-member-view").scrollTop=back.scroll;
+    window.scrollTo?.(back.windowScroll);
+  }else if(!$("activity-dialog").open && !$("workspace-dialog").open)(notificationFocus?.isConnected ? notificationFocus : $("notification-add-picker")).focus();
+  notificationFocus=null;renderContextViews();
 });
 $("notification-detail").addEventListener("keydown", event => {
   if (event.key === "Escape") {
@@ -1243,22 +1399,20 @@ $("notification-detail").addEventListener("keydown", event => {
     event.preventDefault(); $("notification-detail").close();
   }
 });
-$("notification-reload").addEventListener("click", async () => { await refresh(); await loadWorkspacePlatforms(); });
-$("gitlab-manage-platforms").addEventListener("click", async () => {
-  await openSettings("platforms");
-});
-for (const channel of ["gitlab", "messages"]) {
-  const tab = $(`notification-tab-${channel}`);
-  tab.addEventListener("click", () => { if (workspaceView) workspaceView.notificationChannel = channel; renderGitLabEvents(); });
-  tab.addEventListener("keydown", event => {
-    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-    event.preventDefault();
-    const tabs = ["gitlab", "messages"];
-    const next = event.key === "Home" ? tabs[0] : event.key === "End" ? tabs.at(-1) : tabs[(tabs.indexOf(channel) + 1) % tabs.length];
-    if (workspaceView) workspaceView.notificationChannel = next;
-    renderGitLabEvents(); $(`notification-tab-${next}`).focus();
-  });
+async function reloadNotifications() {
+  const ws=workspaceView,id=ws?.notificationPlatformID,channel=ws?.notificationChannel,target=structuredClone(activeNotificationTarget(ws)),scope=ws?.notificationScope;
+  await loadWorkspacePlatforms();
+  if(ws!==workspaceView)return;
+  await syncGitLabNotifications(state.catalog,ws);
+  if(ws!==workspaceView || ws.notificationScope!==scope)return;
+  if(ws.notificationsConnected)ws.notificationToggleError=null;
+  if($("notification-detail").open && id)await openNotificationSource(notificationFocus,channel,id,target);
+  renderGitLabEvents();
 }
+$("notification-reload").addEventListener("click",reloadNotifications);
+$("notification-list-reload").addEventListener("click",reloadNotifications);
+$("member-notification-list-reload").addEventListener("click",async()=>{await reloadNotifications();if(memberToolsView && toolsCurrent(memberToolsView))await loadCLITools(memberToolsView);});
+$("gitlab-manage-platforms").addEventListener("click", () => openSettings("platforms"));
 function renderWorkspacePlatforms() {
   const ws = workspaceView;
   if (!ws) return;
@@ -1276,11 +1430,12 @@ async function loadWorkspacePlatforms() {
   const ws = workspaceView, epoch = state.catalog?.service_epoch;
   if (!ws || !epoch) return;
   const read = ws.platformsRead = (ws.platformsRead || 0) + 1;
-  ws.platformsError = "正在加载平台…"; renderWorkspace();
+  ws.platformsLoading = true; ws.platformsError = "正在加载平台…"; renderWorkspace();
   try {
     const query = new URLSearchParams({ service_epoch: epoch, caller_id: ws.operator });
     const data = await request(`/v1/platforms?${query}`);
     if (ws !== workspaceView || state.catalog?.service_epoch !== epoch || read !== ws.platformsRead) return;
+    ws.allPlatforms = data.platforms;
     ws.repositoryPlatforms = data.platforms.filter(item => ["gitlab", "scion"].includes(item.provider));
     ws.repositoryPlatformsError = "";
     ws.platforms = data.platforms.filter(item => item.provider === "gitlab");
@@ -1288,7 +1443,7 @@ async function loadWorkspacePlatforms() {
     ws.platformsError = ws.platforms.length ? "" : "尚无平台，请先管理平台。";
     renderWorkspacePlatforms();
   } catch { if (ws === workspaceView && state.catalog?.service_epoch === epoch && read === ws.platformsRead) { ws.platformsError = "平台加载失败，请重新打开通知源重试。"; ws.repositoryPlatformsError = "平台加载失败，请重新打开 Workspace 设置重试。"; } }
-  if (ws === workspaceView) renderWorkspace();
+  if (ws === workspaceView) { ws.platformsLoading = false; renderWorkspace(); }
 }
 function fillWorkspaceForm() {
   const ws = workspaceView;
@@ -1772,13 +1927,13 @@ function messageElement(message) {
     author.disabled = false;
     author.setAttribute("aria-label", "查看 GitLab 通知源");
     author.setAttribute("aria-controls", "notification-detail");
-    author.addEventListener("click", () => openNotificationSource(author, channel));
+    author.addEventListener("click", () => openNotificationMessage(author, message.source));
     avatar.setAttribute("role", "button"); avatar.setAttribute("tabindex", "0");
     avatar.setAttribute("aria-label", "查看 GitLab 通知源");
     avatar.setAttribute("aria-controls", "notification-detail");
-    avatar.addEventListener("click", () => openNotificationSource(avatar, channel));
+    avatar.addEventListener("click", () => openNotificationMessage(avatar, message.source));
     avatar.addEventListener("keydown", event => {
-      if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openNotificationSource(avatar, channel); }
+      if (event.key === "Enter" || event.key === " ") { event.preventDefault(); return openNotificationMessage(avatar, message.source); }
     });
   } else if (agent) {
     const author = el.querySelector(".author");
@@ -1873,18 +2028,23 @@ function memberRole(member) {
   return selectedEntry()?.members?.find(role => role.id === member.agent_id);
 }
 
-function openMemberActivity(member, opener) {
+function openMemberActivity(member, opener, tab = state.managed ? "platforms" : "activity") {
+  notice("notification-next-step", "");
+  notificationNavigation++;
   if (!state.connected || !state.info) return;
   const current = state.members.find(item => item.agent_id === member.agent_id && item.membership_id === member.membership_id);
   if (!current) return;
   if (opener !== $("activity-member")) activityFocus = { element: opener, membership: current.membership_id };
   $("notification-detail").close();
+  $("activity-dialog").hidden=false;
   activityMember = { agent_id: current.agent_id, membership_id: current.membership_id };
   panels.members = true; savePanels(); renderPanels();
   if (!$("activity-dialog").open) $("activity-dialog").show();
   memberToolsView = null;
   renderActivityControls();
-  void selectAgentTab(opener === $("activity-member") ? agentTab : "activity");
+  renderNotificationPlatforms();
+  if(state.managed){void openMemberTools(current);void loadWorkspacePlatforms();void restoreOnboarding()?.then(()=>renderMemberPlatforms());}
+  void selectAgentTab(opener === $("activity-member") ? agentTab : tab);
   if (window.innerWidth <= 640) $("activity-dialog").scrollIntoView({ block: "start" });
 }
 
@@ -1900,7 +2060,7 @@ function renderActivityControls() {
   select.value = activityMember?.membership_id || "";
   select.hidden = !state.members.length; select.disabled = !state.connected || state.members.length < 2;
   $("agent-tabs").hidden = false;
-  $("agent-tab-tools").hidden = !state.managed;
+  $("agent-tab-platforms").hidden = !state.managed;
   const member = selectedAgent();
   if (!member || !panel.open) return;
   $("agent-status").textContent = member.execution?.active ? "运行中" : statusNames[member.status] || member.status;
@@ -1919,7 +2079,7 @@ function renderActivityControls() {
   if (memberToolsView?.cli) {
     const signature = JSON.stringify([state.connected, state.catalogConnected, discussionBusy()]);
     if (memberToolsView.availability !== signature) {
-      memberToolsView.availability = signature; renderCLITools(memberToolsView);
+      memberToolsView.availability = signature; renderMemberTools(memberToolsView);
     }
   }
 }
@@ -1927,33 +2087,36 @@ function selectedAgent() {
   return state.members.find(m => m.agent_id === activityMember?.agent_id && m.membership_id === activityMember?.membership_id);
 }
 async function selectAgentTab(tab) {
+  notificationNavigation++;
   const member = selectedAgent();
   if (!$("activity-dialog").open || !member) return;
-  agentTab = tab === "policy" ? "policy" : tab === "inbox" ? "inbox" : state.managed && tab === "tools" ? "tools" : "activity";
-  for (const key of ["activity", "inbox", "policy", "tools"]) {
+  if(agentTab==="inbox" && inboxCurrent(inboxView))inboxView.scrollTop=$("inbox-member-view").scrollTop;
+  agentTab = tab === "platforms" && state.managed ? "platforms" : tab === "policy" ? "policy" : tab === "inbox" ? "inbox" : "activity";
+  for (const key of ["platforms", "policy", "inbox", "activity"]) {
     const button = $(`agent-tab-${key}`);
     button.setAttribute("aria-selected", String(agentTab === key));
     button.setAttribute("tabindex", agentTab === key ? "0" : "-1");
   }
   $("activity-body").hidden = $("activity-footer").hidden = agentTab !== "activity";
-  $("tools-member-view").hidden = agentTab !== "tools";
+  $("platforms-member-view").hidden = agentTab !== "platforms";
   $("inbox-member-view").hidden = agentTab !== "inbox";
   $("policy-member-view").hidden = agentTab !== "policy";
   if (agentTab === "activity") await activity.select({ ...member, info: state.info });
-  else if (agentTab === "inbox") { activity.close(); await loadMemberInbox(); }
-  else if (agentTab === "policy") { activity.close(); await loadMemberPolicy(true); }
-  else {
-    activity.close();
-    if (!memberToolsView || !toolsCurrent(memberToolsView)) await openMemberTools(member);
+  else if (agentTab === "inbox") {
+    activity.close();renderNotificationPlatforms();void loadWorkspacePlatforms();
+    if(inboxView?.page && !inboxView.loading && sameService(inboxView.info,state.info) && inboxView.member.agent_id===member.agent_id && inboxView.member.membership_id===member.membership_id)$("inbox-member-view").scrollTop=inboxView.scrollTop || 0;
+    else await loadMemberInbox();
   }
+  else if (agentTab === "platforms") { activity.close();renderNotificationPlatforms(); }
+  else if (agentTab === "policy") { activity.close(); await loadMemberPolicy(true); }
 }
-for (const key of ["activity", "inbox", "policy", "tools"]) {
+for (const key of ["platforms", "policy", "inbox", "activity"]) {
   const button = $(`agent-tab-${key}`);
   button.addEventListener("click", () => selectAgentTab(key));
   button.addEventListener("keydown", event => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
     event.preventDefault();
-    const keys = state.managed ? ["activity", "inbox", "policy", "tools"] : ["activity", "inbox", "policy"];
+    const keys = state.managed ? ["platforms", "policy", "inbox", "activity"] : ["policy", "inbox", "activity"];
     const current = keys.indexOf(key);
     const next = event.key === "Home" ? keys[0] : event.key === "End" ? keys.at(-1) : keys[(current + (event.key === "ArrowLeft" ? keys.length - 1 : 1)) % keys.length];
     $(`agent-tab-${next}`).focus(); void selectAgentTab(next);
@@ -2274,6 +2437,10 @@ function inboxSourceDetails(entry) {
   if (item.structured === false) add("结构化信息","历史通知，仅保留已知信息；缺失字段未补全");
   if (item.truncated) add("内容状态","正文已截断，内容可能不完整");
   if (item.metadata_truncated) add("元数据状态","部分名称、提及或附件信息已截断");
+  if(entry.notification_source){
+    const settings=document.createElement("button");settings.type="button";settings.className="text-button";settings.textContent="查看通知来源设置";
+    settings.addEventListener("click",()=>openNotificationMessage(settings,entry.notification_source));details.append(settings);
+  }
   details.append(summary,metadata); return details;
 }
 function inboxCurrent(view) {
@@ -2373,7 +2540,7 @@ async function loadMemberInbox(action = "reset") {
     $("inbox-member-view").scrollTop = 0;
     if (prior) $("inbox-page").focus();
   } catch(error) { if (inboxCurrent(view)) $("inbox-status").textContent = `读取失败：${error.message}` + (prior ? "。当前页已保留，可重试翻页。" : "。请点击刷新重试。"); }
-  finally { if (inboxCurrent(view)) { view.loading = false; renderInboxPagination(view); } }
+  finally { if (inboxCurrent(view)) { view.loading = false; renderInboxPagination(view); renderNotificationPlatforms(); } }
 }
 $("inbox-reload").addEventListener("click", () => loadMemberInbox());
 for (const suffix of ["", "-bottom"]) {
@@ -2434,7 +2601,7 @@ function renderExecutionHint() {
     button.dataset.activityMember = member.membership_id;
     button.setAttribute("aria-label", `查看详情 ${name}`);
     button.title = `查看 ${name} 的详情`;
-    button.addEventListener("click", () => openMemberActivity(member, button));
+    button.addEventListener("click", () => openMemberActivity(member, button, "activity"));
     content.append(button);
   }
   if (primary.length > 1) {
@@ -2562,6 +2729,7 @@ function selectView(info, operator) {
   activityMember = null;
   $("room-menu").open = false;
   state.info = info; state.operator = operator; state.connected = false;
+  notice("notification-next-step", "");
   resetMentionViewing();
   if (info) restoreMentionProgress();
   state.draft = info ? drafts.get(info, operator) : {};
@@ -3310,14 +3478,15 @@ function onboardingOrigin() {
 }
 function renderOnboarding() {
   const active=onboarding.active, fixed=!!onboarding.pending, only=$("onboarding-only").checked, provider=onboardingProvider();
-  $("onboarding-options").hidden=!active;
-  $("onboarding-use").hidden=active || !platforms.selected;
-  $("onboarding-use").disabled=platforms.sending || !!platforms.gitlabAuth || !!platforms.auth || !!platforms.scionAuth;
-  $("onboarding-targets").hidden=only;
+  $("onboarding-options").hidden=!active || !onboarding.fixed || fixed && !!onboarding.operation?.input.only_platform;
+  $("onboarding-targets").hidden=only || !!onboarding.fixed?.membership_id || onboarding.members.length===1;
+  $("onboarding-room").parentElement?.classList.toggle("onboarding-room-fixed", !!onboarding.fixed);
+  $("onboarding-member-field").hidden=!!onboarding.fixed?.membership_id || onboarding.members.length===1;
+  $("onboarding-only-option").hidden=!onboarding.fixed;
   $("onboarding-enable-options").hidden=only;
-  $("onboarding-notification-details").hidden=provider==="scion" || !$("onboarding-notifications").checked || !!platforms.selected;
+  $("onboarding-notification-details").hidden=provider==="scion" || !$("onboarding-notifications").checked;
   $("onboarding-notifications").disabled=provider==="scion" || fixed;
-  for (const id of ["onboarding-room","onboarding-member","onboarding-only","onboarding-tool","onboarding-backfill","onboarding-backfill-start"]) $(id).disabled=fixed || !!onboarding.fixed && ["onboarding-room","onboarding-member"].includes(id);
+  for (const id of ["onboarding-room","onboarding-member","onboarding-only","onboarding-tool","onboarding-backfill","onboarding-backfill-start"]) $(id).disabled=fixed || !!onboarding.fixed && (id==="onboarding-room" || id==="onboarding-member" && !!onboarding.fixed.membership_id);
   $("onboarding-backfill-custom").hidden=$("onboarding-backfill").value!=="custom";
   $("onboarding-backfill-start-label").textContent=`起始时间（${systemTime.zone || "系统时区异常"}）`;
   const member=onboardingMember(), room=onboardingRoom();
@@ -3334,16 +3503,17 @@ function renderOnboarding() {
   const errors={account_unavailable:"请先完成登录或核验账号，再读取进度。",account_changed:"账号已变化，请停止本次接入并核对平台。",target_changed:"原 Room 或成员已变化，请重新选择目标发起接入。",settings_changed:"设置已被修改；请核对当前选择，再发起新的接入。",executable_unavailable:"程序缺失，启用意图已保存；安装后会重新检查。",legacy_tool_choice_unknown:"原工具选择未确认，已保留。请在成员工具设置中明确启用。",cancelled:"剩余步骤已停止，已保存的设置保留。",busy:"正在处理，请稍后读取进度。",binding_changed:"绑定已变化，请核对当前平台与成员。"};
   $("onboarding-steps").replaceChildren(...(op ? [["账号",op.connection],["通知",op.notifications],["工具",op.tool]].map(([title,step])=>{
     const row=document.createElement("div"),dt=document.createElement("dt"),dd=document.createElement("dd");dt.textContent=title;
-    dd.textContent=`${status[step.status] || step.status}${step.version ? ` · v${step.version}` : ""}${step.error_code ? ` · ${errors[step.error_code] || "暂不可用，请核对平台、权限及当前设置后重试。"}` : ""}`;row.append(dt,dd);return row;
+    dd.textContent=`${status[step.status] || step.status}${step.error_code ? ` · ${errors[step.error_code] || "暂不可用，请核对平台、权限及当前设置后重试。"}` : ""}`;row.append(dt,dd);return row;
   }) : []));
   notice("onboarding-result-error",onboarding.error);
   const done=onboardingDone(op);
+  $("onboarding-use-room").hidden=!done || !op?.input.only_platform || !workspaceView || !["gitlab","lark"].includes(op.input.provider);
   $("onboarding-prepare-retry").hidden=!onboarding.pending?.prepare || !!op;
   $("onboarding-continue-login").hidden=!op || done || op.connection.status==="connected";
   $("onboarding-apply").hidden=!op || done || op.connection.status!=="connected";
   $("onboarding-cancel").hidden=!onboarding.pending || done;
   $("onboarding-dismiss").hidden=!done;
-  $("onboarding-notification-settings").hidden=!op || op.connection.status!=="connected" || op.input.only_platform || !["gitlab","lark"].includes(op.input.provider);
+  $("onboarding-notification-settings").hidden=!op || op.connection.status!=="connected" || op.input.only_platform || op.schema!==2 || !["gitlab","lark"].includes(op.input.provider);
   for (const id of ["onboarding-prepare-retry","onboarding-resume","onboarding-continue-login","onboarding-apply","onboarding-cancel","onboarding-dismiss","onboarding-notification-settings"]) $(id).disabled=onboarding.busy || platforms.sending || !!platforms.gitlabAuth || !!platforms.auth || !!platforms.scionAuth;
 }
 async function loadOnboardingMembers(preferred = "") {
@@ -3370,12 +3540,13 @@ async function startOnboardingOptions(fixed = null) {
   onboarding.active=true;onboarding.fixed=fixed;onboarding.notices=new Set();
   const rooms=(state.catalog?.rooms || []).filter(r=>r.status==="ready" && !r.busy);
   const preferred=fixed?.room_instance || selectedRoom?.room_instance;
-  const selected=rooms.find(r=>r.room_instance===preferred)?.room_instance || (rooms.length===1 ? rooms[0].room_instance : "");
+  const selected=rooms.find(r=>r.room_instance===preferred)?.room_instance || (!fixed && rooms.length===1 ? rooms[0].room_instance : "");
   const options=rooms.map(r=>new Option(r.name,r.room_instance));if (!selected) options.unshift(new Option("选择使用的 Room",""));
   setSelectOptions("onboarding-room",options,selected);
-  $("onboarding-only").checked=!rooms.length;$("onboarding-details").open=!rooms.length;
+  $("onboarding-only").checked=!fixed;$("onboarding-details").open=false;
   $("onboarding-notifications").checked=true;$("onboarding-tool").checked=true;$("onboarding-backfill").value="0";fillTimeInput("onboarding-backfill-start","");
-  renderOnboarding();await loadOnboardingMembers(fixed?.membership_id || "");
+  renderOnboarding();
+  if (fixed) await loadOnboardingMembers(fixed.membership_id || "");
 }
 async function prepareOnboarding() {
   if (!onboarding.active) return null;
@@ -3384,17 +3555,18 @@ async function prepareOnboarding() {
     if (!onboarding.pending.prepare) throw Error("请先读取接入进度。");
   }
   const only=$("onboarding-only").checked, member=onboardingMember(), room=onboardingRoom();
-  if (!only && (!member || !room || onboarding.fixed && (member.membership_id!==onboarding.fixed.membership_id || room.room_instance!==onboarding.fixed.room_instance))) {
+  if (!only && (!member || !room || onboarding.fixed && (onboarding.fixed.membership_id && member.membership_id!==onboarding.fixed.membership_id || room.room_instance!==onboarding.fixed.room_instance))) {
     notice("onboarding-target-error","请选择有效的 Room 和使用成员，再连接并启用。");throw Error("请选择使用成员。");
   }
   let spec={provider:onboardingProvider(),origin:onboardingOrigin(),...(platforms.selected ? {platform_id:platforms.selected.id} : {}),...(only ? {only_platform:true} : {room_id:room.room_id,room_instance:room.room_instance,agent_id:member.agent_id,membership_id:member.membership_id})};
   if (!only) {
+    spec.preserve_existing=true;
     for (const name of ["notifications","tool"]) if (onboarding.notices.has(name) || !$("onboarding-"+name).checked) spec[name]=$("onboarding-"+name).checked;
-    if (!platforms.selected && onboarding.notices.has("backfill") && spec.provider!=="scion") {
+    if (onboarding.notices.has("backfill") && spec.provider!=="scion") {
       const mode=$("onboarding-backfill").value;
       const backfill={backfill_seconds:mode==="custom" ? 0 : Number(mode),...(mode==="custom" ? {backfill_start:readTimeInput("onboarding-backfill-start")} : {})};
       if (mode==="custom" && !backfill.backfill_start) throw Error("请选择有效的开始接收时间。");
-      spec[spec.provider]={enabled:spec.notifications!==false,platform_id:"",target:{},interval_seconds:spec.provider==="gitlab" ? 30 : 60,...backfill,...(spec.provider==="gitlab" ? {events:{enabled:false,project:"",filter:{}},todos:{enabled:true,filter:{}}} : {private:{enabled:true,scope:"all",chat_ids:[]},groups:{enabled:false,chat_ids:[],message_mode:"mentions",at_me:true,at_all:false}})};
+      spec.backfill={seconds:backfill.backfill_seconds,...(backfill.backfill_start ? {start:backfill.backfill_start} : {})};
     }
   }
   const pending=onboarding.pending || {operation_id:crypto.randomUUID().replaceAll("-",""),prepare:spec};
@@ -3439,11 +3611,7 @@ async function addPlatformForMember(fixed = null) {
   if (onboarding.pending && !onboardingDone()) {onboarding.error="请先继续上次接入，或停止其剩余步骤后重新添加。";renderOnboarding();return;}
   clearOnboarding();await editPlatform();await startOnboardingOptions(fixed);
 }
-$("cli-member-add-platform").addEventListener("click",()=>{
-  const v=memberToolsView;if (!v || !toolsCurrent(v)) return;
-  return addPlatformForMember({...v.identity,agent_id:v.member.agent_id,membership_id:v.member.membership_id});
-});
-$("notification-add-platform").addEventListener("click",()=>addPlatformForMember());
+$("notification-add-platform").addEventListener("click",()=> { $("notification-add-picker").open=false; const member=selectedAgent();if(!member || !workspaceView)return; return addPlatformForMember({...workspaceView.room,agent_id:member.agent_id,membership_id:member.membership_id}); });
 $("onboarding-room").addEventListener("change",()=>loadOnboardingMembers());
 $("onboarding-target-retry").addEventListener("click",()=>loadOnboardingMembers(onboarding.fixed?.membership_id || ""));
 $("onboarding-member").addEventListener("change",renderOnboarding);
@@ -3469,19 +3637,121 @@ $("onboarding-prepare-retry").addEventListener("click",async()=>{
   finally{onboarding.busy=false;renderOnboarding();}
 });
 $("onboarding-dismiss").addEventListener("click",()=>{clearOnboarding();showPlatformList();});
-$("onboarding-use").addEventListener("click",async()=>{
-  if(connectionDirty()){connectionFeedback("请先保存平台更改，再为成员启用。","error");return;}
-  if (onboarding.pending && !onboardingDone()) {onboarding.error="请先处理上次接入。";renderOnboarding();return;}
-  clearOnboarding();await startOnboardingOptions();$("connection-save").hidden=false;$("connection-actions").hidden=false;$("connection-save").disabled=false;$("connection-save").textContent="连接并启用";
+$("onboarding-use-room").addEventListener("click",async()=>{
+  const op=onboarding.operation,ws=workspaceView;
+  if(!op || !ws)return;
+  const item=platforms.items.find(p=>p.id===op.platform_id);if(!item)return;
+  await closeSettings();if(ws!==workspaceView)return;
+  $("notification-detail").close();$("activity-dialog").close();
+  panels.members=true;savePanels();renderPanels();await loadWorkspacePlatforms();
+  if(ws!==workspaceView)return;
+  notice("notification-next-step",`选择成员，在顶部平台区添加「${item.name}」。`);
+  $("notification-next-step").focus({preventScroll:true});
 });
 $("onboarding-notification-settings").addEventListener("click",async()=>{
   const op=onboarding.operation,room=state.catalog?.rooms.find(r=>r.room_id===op?.input.room_id && r.room_instance===op?.input.room_instance);
-  if (!room) {onboarding.error="原 Room 不可用，请核对后打开通知设置。";renderOnboarding();return;}
-  await closeSettings();selectRoom(room);await refresh();
-  if(state.info?.room_instance!==room.room_instance) return;
-  openNotificationSource($(op.input.provider==="lark" ? "open-lark-source" : "open-gitlab-source"),op.input.provider==="lark" ? "messages" : "gitlab");
-  await loadWorkspacePlatforms();
-  const select=$(op.input.provider==="lark" ? "lark-connection" : "gitlab-connection");select.value=op.platform_id;if (op.input.provider==="lark") {selectLarkPlatform(workspaceView,op.platform_id);renderLarkMessages();} else editGitLabShared("connection");
+  if(!room || op.schema!==2 || op.input.only_platform){onboarding.error="接入结果缺少有效的成员定位，请检查原 Room 和成员。";renderOnboarding();return;}
+  await closeSettings();
+  if(state.info?.room_id!==room.room_id || state.info?.room_instance!==room.room_instance){selectRoom(room);await refresh();}
+  if(state.info?.room_instance!==room.room_instance)return;
+  const member=state.members.find(m=>m.agent_id===op.input.agent_id && m.membership_id===op.input.membership_id);
+  if(!member){await openSettings("platforms");onboarding.error="原接收成员已移除或替换，账号连接已保留。";renderOnboarding();return;}
+  if(!$("activity-dialog").open || selectedAgent()?.membership_id!==member.membership_id)openMemberActivity(member,$("onboarding-notification-settings"));
+  await openNotificationSource($("member-notification-collapse"),op.input.provider==="lark" ? "messages" : "gitlab",op.platform_id,memberNotificationTarget(member));
+});
+function selectMemberPlatformAddition(item) {
+  const v=memberToolsView;if(!v || !toolsCurrent(v))return;
+  v.addition={item,notifications:["gitlab","lark"].includes(item.provider),tool:!!v.cli?.catalog?.some(d=>d.provider===item.provider)};
+  $("member-platform-add-notifications").checked=v.addition.notifications;$("member-platform-add-tool").checked=v.addition.tool;renderMemberPlatformAddition();
+}
+function renderMemberPlatformAddition() {
+  const v=memberToolsView,a=v?.addition,op=onboarding.operation;
+  const own=op && op.input.room_instance===workspaceView?.room.room_instance && op.input.agent_id===v?.member.agent_id && op.input.membership_id===v?.member.membership_id;
+  $("member-platform-add-selection").hidden=!a;
+  if(a){
+    $("member-platform-add-title").textContent=a.item.name;
+    const notifications=["gitlab","lark"].includes(a.item.provider),tool=!!v.cli?.catalog?.some(d=>d.provider===a.item.provider);
+    $("member-platform-add-notifications").disabled=!notifications || onboarding.busy;
+    $("member-platform-add-tool").disabled=!tool || onboarding.busy;
+    $("member-platform-add-customize").hidden=!notifications || !a.notifications;
+    $("member-platform-add-summary").textContent=[notifications ? a.notifications ? a.config ? notificationDescription(a.config) : a.item.provider==="gitlab" ? "我的待办 · 从首次开启时刻接收" : "全部人员私聊 · 从首次开启时刻接收" : "不接收通知" : "无通知能力",a.tool ? "使用平台工具" : "不使用工具","已有设置保留，关闭项需用对应开关开启。"].join("；");
+    $("member-platform-add-submit").disabled=!v.cliConnected || !workspaceView?.notificationsConnected || onboarding.busy || !!workspaceView?.memberToolBusy || a.item.validation?.status!=="valid" || !!onboarding.pending && !onboardingDone();
+  }
+  const status={applied:"已保存",preserved:"保留原设置",skipped:"本次不修改",pending:"等待应用",failed:"未完成"};
+  $("member-platform-add-result").textContent=own ? `通知：${status[op.notifications.status]}；工具：${status[op.tool.status]}。${onboarding.error || (op.notifications.status==="failed" || op.tool.status==="failed" ? "已成功部分保留，请读取进度后继续未完成步骤。" : "")}` : onboarding.pending && !onboardingDone() ? `有未完成的接入，请读取进度后继续。${onboarding.error}` : onboarding.error;
+  $("member-platform-add-resume").hidden=!onboarding.pending || onboardingDone();
+  const canApply=own && (op.connection.status==="connected" || op.connection.status==="waiting" && memberPlatformItems().some(p=>p.id===op.platform_id && p.validation?.status==="valid"));
+  $("member-platform-add-retry").hidden=!onboarding.pending || onboardingDone() || !!op && !canApply;
+  $("member-platform-add-resume").disabled=$("member-platform-add-retry").disabled=onboarding.busy;
+}
+async function runMemberOnboarding(v,spec) {
+  if(!toolsCurrent(v) || !v.cliConnected || workspaceView?.memberToolBusy || onboarding.busy)return;
+  if(onboarding.pending && !onboardingDone()){onboarding.error="请先读取并完成上次接入，或在全局设置停止剩余步骤。";renderMemberPlatformAddition();return;}
+  clearOnboarding();
+  const identity=onboardingIdentity(),ws=workspaceView;
+  onboarding.pending={operation_id:crypto.randomUUID().replaceAll("-",""),prepare:spec};onboarding.owner=state.operator;saveOnboarding();onboarding.busy=true;renderMemberPlatforms();
+  const id=onboarding.pending.operation_id;let preparing=true;
+  const current=()=>identity.epoch===state.catalog?.service_epoch && identity.operator===state.operator && onboarding.pending?.operation_id===id;
+  try {
+    let op=await request("/v1/platforms/onboarding/prepare",{service_epoch:identity.epoch,caller:{kind:"human",id:identity.operator},operation_id:id,...spec});
+    if(!current())return;acceptOnboarding(op);preparing=false;
+    op=await request("/v1/platforms/onboarding/apply",{service_epoch:identity.epoch,caller:{kind:"human",id:identity.operator},operation_id:id},undefined,50000);
+    if(!current())return;acceptOnboarding(op);
+    if(op.notifications.status==="applied"){
+      const key=notificationScopeKey({mode:"inbox",agent_id:spec.agent_id,membership_id:spec.membership_id},spec.platform_id);
+      ws.notificationDrafts?.delete(key);
+      if(ws.notificationScope===key){ws.gitlabDirty=false;ws.larkDirty=false;ws.larkFilled=null;}
+    }
+    if(onboardingDone(op) && toolsCurrent(v))v.addition=null;
+  }catch(error){if(current()){
+    if(preparing && ["request","identity"].includes(error.code)){onboarding.pending=null;saveOnboarding();onboarding.error="接入未准备，请核对成员、平台与通知范围后重试。";}
+    else onboarding.error="接入结果未确认，请读取进度；不会自动重发。";
+  }}
+  finally{
+    onboarding.busy=false;
+    if(ws===workspaceView && identity.epoch===state.catalog?.service_epoch){await syncGitLabNotifications(state.catalog,ws);if(memberToolsView && toolsCurrent(memberToolsView))await loadCLITools(memberToolsView);renderGitLabEvents();}
+  }
+}
+async function initializeMemberNotifications(item,target,enabled=true) {
+  const v=memberToolsView;
+  if(!v || !toolsCurrent(v) || !sameNotificationTarget(memberNotificationTarget(v.member),target))return;
+  return runMemberOnboarding(v,{...workspaceView.room,agent_id:target.agent_id,membership_id:target.membership_id,platform_id:item.id,provider:item.provider,origin:item.url,notifications:enabled,skip_tool:true});
+}
+function captureMemberPlatformDraft(config) {
+  const ws=workspaceView,a=ws?.notificationAddition,v=memberToolsView;
+  if(!a || a.key!==ws.notificationScope || a.v!==v || !toolsCurrent(v) || !v.addition || v.addition.item.id!==config.platform_id)return false;
+  v.addition.config=structuredClone(config);ws.gitlabDirty=false;ws.larkDirty=false;ws.notificationDrafts?.delete(a.key);ws.notificationAddition=null;$("notification-detail").close();renderMemberPlatformAddition();return true;
+}
+for(const [id,key] of [["member-platform-add-notifications","notifications"],["member-platform-add-tool","tool"]])$(id).addEventListener("change",()=>{if(memberToolsView?.addition)memberToolsView.addition[key]=$(id).checked;renderMemberPlatformAddition();});
+$("member-platform-add-submit").addEventListener("click",()=>{
+  const v=memberToolsView,a=v?.addition;if(!a || $("member-platform-add-submit").disabled)return;
+  const spec={...workspaceView.room,agent_id:v.member.agent_id,membership_id:v.member.membership_id,platform_id:a.item.id,provider:a.item.provider,origin:a.item.url,preserve_existing:true,notifications:a.notifications,tool:a.tool};
+  if(a.config && a.notifications)spec[a.item.provider]=a.config;
+  return runMemberOnboarding(v,spec);
+});
+$("member-platform-add-customize").addEventListener("click",async()=>{
+  const ws=workspaceView,v=memberToolsView,a=v?.addition;if(!a || !toolsCurrent(v))return;
+  await openMemberPlatform($("member-platform-add-customize"),a.item,memberNotificationTarget(v.member));
+  if(ws!==workspaceView || !toolsCurrent(v) || a!==v.addition)return;
+  ws.notificationAddition={key:ws.notificationScope,v};
+  if(a.config){if(a.item.provider==="gitlab"){ws.gitlabDraft=structuredClone(a.config);ws.gitlabDirty=true;fillBackfill("gitlab",a.config);}else{ws.larkRestore=structuredClone(a.config);ws.larkDirty=true;}}
+  renderGitLabEvents();
+});
+$("member-platform-add-resume").addEventListener("click",async()=>{await onboardingAction("status");renderMemberPlatformAddition();});
+$("member-platform-add-retry").addEventListener("click",async()=>{
+  if(!onboarding.operation && onboarding.pending?.prepare){
+    if(onboarding.busy)return;
+    const pending=onboarding.pending,identity=onboardingIdentity();onboarding.busy=true;renderMemberPlatformAddition();
+    const current=()=>onboarding.pending===pending && state.catalog?.service_epoch===identity.epoch && state.operator===identity.operator;
+    try{const op=await request("/v1/platforms/onboarding/prepare",connectionPayload({...pending.prepare,operation_id:pending.operation_id}));if(current())acceptOnboarding(op);}catch{if(current())onboarding.error="准备结果未确认，请读取进度。";}finally{onboarding.busy=false;renderMemberPlatformAddition();}return;
+  }
+  await onboardingAction("apply");if(memberToolsView && toolsCurrent(memberToolsView))await loadCLITools(memberToolsView);if(workspaceView)await loadWorkspacePlatforms();renderMemberPlatformAddition();
+});
+$("inbox-add-platform").addEventListener("click",async()=>{
+  const ws=workspaceView,target=memberNotificationTarget();if(!ws || !target)return;
+  await selectAgentTab("platforms");
+  if(ws!==workspaceView || !sameNotificationTarget(target,memberNotificationTarget()))return;
+  ws.memberSourceExpanded ||= new Map();ws.memberSourceExpanded.set(target.membership_id,true);renderMemberPlatforms();$("member-notification-add-picker").open=true;$("member-notification-add-search").focus({preventScroll:true});
 });
 const gitlabScopeOptions = [
   {id:"gitlab-scope-api",scope:"api",required:true,defaultSelected:true},
@@ -4624,6 +4894,7 @@ async function connectionAction(action) {
   }
 }
 async function openSettings(tab = settingsTab) {
+  notificationNavigation++;
   if (state.managed ? !state.catalog : !state.info) return;
   showPlatformList(); settingsTab = state.managed ? tab : "general";
   timezonePicker.open = false; renderTimeZone(); $("settings-dialog").showModal(); if(state.managed) {await loadPlatforms();await restoreOnboarding();}
@@ -4639,6 +4910,7 @@ dismissOnBackdrop($("settings-dialog"), closeSettings);
 $("settings-dialog").addEventListener("cancel", event => { if (platforms.sending) event.preventDefault(); });
 $("settings-dialog").addEventListener("close", () => { timezonePicker.open = false; renderTimeZoneOptions(); void cancelPlatformAuth(); $("gitlab-client-secret").value = ""; platforms.formVersion++; platforms.generation++;
   if ($("notification-detail").open) { $(workspaceView?.notificationChannel === "messages" ? "lark-manage-platforms" : "gitlab-manage-platforms").focus(); void loadWorkspacePlatforms(); }
+  else if($("activity-dialog").open){$("member-notification-collapse").focus({preventScroll:true});void loadWorkspacePlatforms();if(memberToolsView && toolsCurrent(memberToolsView))void loadCLITools(memberToolsView);}
   else $(state.managed ? "open-settings" : "open-general-settings").focus(); });
 $("connection-new").addEventListener("click",async()=>{
   if (onboarding.pending && !onboardingDone()) {onboarding.error="请先继续上次接入，或停止剩余步骤。";renderOnboarding();return;}
@@ -4738,7 +5010,7 @@ $("connection-send-check").addEventListener("click",async()=>{
     if(version!==platforms.formVersion)return;
     const available = [state.reply_enabled && "普通回复", state.group_send_enabled && "群消息", state.self_send_enabled && "本人自聊", state.user_send_enabled && "主动私信"].filter(Boolean);
     const missing = [!state.account_fixed && "重新验证账号", state.application_scopes !== "granted" && "开通应用发送权限", state.user_scopes !== "granted" && "完成用户发送授权"].filter(Boolean);
-    $("connection-send-status").textContent = missing.length ? `发送条件未齐备，请${missing.join("、")}。` : available.length ? `可用：${available.join("、")}。具体可用能力以成员工具设置为准。${state.group_send_enabled && !state.user_send_enabled ? "主动私信暂未开放。" : ""}` : "发送暂不可用，请检查账号与权限。";
+    $("connection-send-status").textContent = missing.length ? `发送条件未齐备，请${missing.join("、")}。` : available.length ? `可用：${available.join("、")}。具体可用能力以成员平台设置为准。${state.group_send_enabled && !state.user_send_enabled ? "主动私信暂未开放。" : ""}` : "发送暂不可用，请检查账号与权限。";
   }catch(error){if(version===platforms.formVersion)$("connection-send-status").textContent="发送条件检查失败，请检查账号与权限。";}
   finally{$("connection-send-check").disabled=false;}
 });

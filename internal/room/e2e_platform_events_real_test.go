@@ -26,6 +26,7 @@ import (
 	"github.com/go-aie/teamx/internal/agent/dsh"
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
+	"github.com/go-aie/teamx/internal/platform/notification"
 	"github.com/go-aie/teamx/internal/platform/tool"
 )
 
@@ -193,7 +194,7 @@ func TestRealGitLabEventsDSH(t *testing.T) {
 		Enabled: true, PlatformVersion: conn.Version}, &bindings))
 	var view gitlabNotificationView
 	configure := map[string]any{"service_epoch": m.epoch, "room_id": room.RoomID, "room_instance": room.RoomInstance, "caller": humanCaller, "version": 0,
-		"config": gitlab.NotificationConfig{Enabled: true, PlatformID: conn.ID, IntervalSeconds: 5, Events: gitlab.EventSettings{Enabled: true, Project: project, Filter: gitlab.EventsFilter{Types: []string{"merge_request.opened"}}}}}
+		"config": gitlab.NotificationConfig{Target: notification.Target{Mode: "room"}, Enabled: true, PlatformID: conn.ID, IntervalSeconds: 5, Events: gitlab.EventSettings{Enabled: true, Project: project, Filter: gitlab.EventsFilter{Types: []string{"merge_request.opened"}}}}}
 	fail(d.managementRequest("/v1/platform/gitlab/notifications/configure", configure, &view))
 	state := func() gitlab.EventsState {
 		s, err := m.testEventsState(room.RoomIdentity)
@@ -254,7 +255,7 @@ func TestRealGitLabEventsDSH(t *testing.T) {
 	t.Logf("GE-04: create a new MR in %s with exact title %s-live (no remote write is performed by this test)", project, marker)
 	live := waitEvent(marker+"-live", "service-1")
 	d.report["live"] = checkEvent(live, "service-1")
-	fail(d.managementRequest("/v1/platform/gitlab/notifications/sync", map[string]any{"service_epoch": m.epoch, "room_id": room.RoomID, "room_instance": room.RoomInstance, "caller": humanCaller, "version": view.Version}, &view))
+	fail(d.managementRequest("/v1/platform/gitlab/notifications/sync", map[string]any{"service_epoch": m.epoch, "room_id": room.RoomID, "room_instance": room.RoomInstance, "caller": humanCaller, "version": view.Version, "platform_id": view.PlatformID, "target": view.Config.Target}, &view))
 	fail(d.until(func() (bool, error) { s := state(); return s.Scan == nil && s.Watermark.After(live.CreatedAt), nil }))
 	before := state()
 	beforeRoom := snapshot()
