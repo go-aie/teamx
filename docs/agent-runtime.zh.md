@@ -154,3 +154,25 @@ go test -tags e2e ./internal/room -run '^TestRealDSHModelCompatibility$' -count=
 要求配置包含显式 `supports_developer_role = false` 及推理档位。检查实际请求有 `system`、没有 `developer`，原模型与 `reasoning_effort` 保留，真实 HTTP 200、正确回答、无工具调用及正常关闭；429 或其他故障保留失败报告，不自动重试。
 
 2026-11-05 已用当前 `.teamx/config.toml` 的 `qwen3.8-flash`、`reasoning_effort = "low"`、`max_tokens = 32768`、图片模态及 `compat.supports_developer_role = false` 完成该入口。使用配置中的本地 Node／DSH JS 安装，单次真实请求的角色为 `system,user,user,user`，无 `developer`，推理参数保持 `low`，网关返回 HTTP 200，模型精确回答 `TEAMX_COMPAT_OK`，无工具调用、正常终态与关闭。报告保留在本机私有 `.local/developer-role-compat-real-01/report.json`。这验证角色兼容，不替代图片像素识别或旧失败 Room 的恢复验收。
+
+## 轮换与时间验证
+
+这些入口使用真实 DSH／模型，只操作隔离数据；输出目录必须是尚不存在的绝对路径，凭据沿用环境、配置 `[env]` 或显式的 `TEAMX_DSH_ENV_FILE`。从仓库根目录选择一个场景运行，不使用现有业务目录。
+
+| 场景 | 测试名（`internal/room`，`-tags=e2e`） | 必需开关及配置 |
+| --- | --- | --- |
+| 接手材料与正常恢复 | `TestDSHRecoveryContextReal` | `TEAMX_RECOVERY_DSH_REAL=1`、`TEAMX_RECOVERY_CONFIG`、`TEAMX_DSH_OUTPUT`；平台动作使用本地 contract 接收器 |
+| 自动轮换 | `TestAutomaticRotationReal` | `TEAMX_ROTATION_REAL=1`、`TEAMX_ROTATION_CONFIG`、`TEAMX_DSH_OUTPUT`；可另设 `TEAMX_ROTATION_BROWSER=1` |
+| 时间换算与恢复 | `TestDSHTimeRealModel` | `TEAMX_TIME_DSH_REAL=1`、`TEAMX_TIME_CONFIG`、`TEAMX_DSH_OUTPUT` |
+
+配置路径均使用绝对路径。例如：
+
+```sh
+TEAMX_TIME_DSH_REAL=1 TEAMX_TIME_CONFIG="$PWD/.teamx/config.toml" \
+TEAMX_DSH_ENV_FILE="$PWD/.env" TEAMX_DSH_OUTPUT=/absolute/new-time-evidence \
+go test -tags=e2e ./internal/room -run '^TestDSHTimeRealModel$' -count=1 -timeout=8m -v
+```
+
+已有真实验证覆盖手动轮换后的接手、自动轮换跨两个阈值周期、正常服务重启，以及实际浏览器的发送与暂停。时间样本覆盖时区切换、明确偏移、无时区材料和同 Session 正常恢复；样本正确不保证模型每次换算都正确。修改时区只在下一正常回合提供新约定，不主动启动模型。
+
+按上下文用量轮换、宿主崩溃接管、失败自动重试、定时跟进及费用预算仍未交付。文件锁只能协调遵守相同协议的写入者；外部编辑器在最终检查与替换之间写入时仍可能被覆盖。相关实现边界和回归须继续保留，不能用正常重启或受控时间样本替代这些验证。

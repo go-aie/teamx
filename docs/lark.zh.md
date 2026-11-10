@@ -123,7 +123,7 @@ go build -o bin/teamx ./cmd/teamx
 
 页面预览与模型输入分别执行：打开图片不会消费 Inbox；已经消费的历史通知不会因打开预览而自动再次送给模型。纯文本 Session 不下载图片；权限不足、图片撤回、超限或超时均向模型明确说明未读，不阻止其他可用图片。单独的文件、视频、语音和卡片图片不在本次支持范围。
 
-官方 CLI 下载会使用私有临时目录，请求结束后删除；TeamX 不新增持久图片缓存。成功传给 DSH 的图片仍由其私有 Session 附件机制管理。真实验证范围见 [图片验收记录](lark-image-acceptance.zh.md)。
+官方 CLI 下载会使用私有临时目录，请求结束后删除；TeamX 不新增持久图片缓存。成功传给 DSH 的图片仍由其私有 Session 附件机制管理。真实验证范围见下文[图片验证](#图片验证)。
 
 在飞书消息页展开「同步记录与诊断」：
 
@@ -145,8 +145,44 @@ go build -o bin/teamx ./cmd/teamx
 ## 当前边界
 
 - 普通私聊／群聊回复与指定单群发送已通过真实用户身份 Agent 验收，应用成员连接后可用；每次动作仍核验账号、目标与具体业务授权。不改变飞书客户端已读状态。
-- 主动私信（含向本人发送）的完整 Agent 链路尚未验收，暂不开放，不会回退为机器人发送。连接设置中的发送 OAuth 与目标核验 OAuth 仍独立，授权本身不修改成员绑定。姓名搜索为可选权限，准确原生 ID 无需全通讯录授权。验收范围见 [L4-B 记录](lark-l4-b-acceptance.zh.md)和 [L4-C 记录](lark-l4-c-acceptance.zh.md)。
+- 本人投递已提供，需成员单独启用并核验本人会话；本人自聊不回流到 Inbox。向其他用户主动私信仍未开放，不会回退为机器人发送。发送 OAuth 与目标核验 OAuth 独立，授权本身不修改成员绑定；姓名搜索为可选权限，准确原生 ID 无需全通讯录授权。
 - 图片消息与富文本图片支持收件箱预览及模型输入；其他附件保留资源引用和未读取说明，完整原生话题历史尚未交付。
 - 全会话代码已实施，跨 Token 到期续期、实际后台身份／钥匙串访问，以及长期覆盖和到达时延仍有待现场验收。
 
-通知、消费和跟进的通用语义见 [平台通知](notifications.zh.md)；实际验证范围及复验入口见 [L2 验收记录](lark-l2-acceptance.zh.md)和 [L3 验收记录](lark-l3-acceptance.zh.md)。
+通知、消费和跟进的通用语义见 [平台通知](notifications.zh.md)；实际验证范围及复验入口见下文[真实验收](#真实验收)。
+
+## 真实验收
+
+当前验证范围按能力分别判断：
+
+| 能力 | 已有真实验证 | 仍待验证 |
+| --- | --- | --- |
+| 连接引导 | 飞书已有应用的官方页面回传、指定 profile 与用户 OAuth 身份核验 | 新应用、Lark 网页路径、完整连接与实体手机扫码 |
+| 收件与模型消费 | 指定历史窗口到 Inbox、稳定引用、DSH 摘要和 Room 提问 | 现场新消息触发、长期覆盖与时延、后台身份／钥匙串及跨令牌到期续期 |
+| 普通回复、指定单群发送 | 指定真实目标的 user 身份 Agent 闭环、独立正文／作者／目标回读及服务重载后不重发 | 话题回复、其他主动私信、正式 bot Agent 链路及真实多平台同时写入 |
+| 本人投递 | 一次真实 Agent 投递且无 Inbox 回流；历史真实回执在独立进程恢复；Chromium 界面检查 | 真实平台写后超时与并发发送故障；已有故障注入使用隔离测试端 |
+
+### 连接验证
+
+`node internal/room/testdata/lark_guided_connection_browser.cjs` 检查生产页面的引导状态及桌面／手机尺寸布局，API 使用隔离模拟数据；不能算作新应用、Lark 或实体手机的真实连接通过。
+
+### 消息与动作验证
+
+历史窗口闭环入口为 `TestRealLarkNotificationInbox`（`internal/room`，`-tags=e2e`），通过 `TEAMX_LARK_TEST_INPUT` 提供私有 JSON：明确的 `profile`、`brand`、两个 `chats` 和不超过 24 小时的 Unix 秒 `start/end`。真实模型另设 `TEAMX_LARK_DSH_REAL=1`、全新绝对 `TEAMX_DSH_OUTPUT` 及[DSH 安装／模型环境](agent-runtime.zh.md#真实验收)。
+
+持续发现仅使用隔离来源状态，不创建生产订阅或更改登录：
+
+```sh
+TEAMX_LARK_ALL_REAL=1 TEAMX_LARK_TEST_PROFILE=EXPLICIT_PROFILE \
+TEAMX_LARK_TEST_BIN=/absolute/lark-cli TEAMX_LARK_TEST_BRAND=feishu \
+TEAMX_LARK_RUN_SECONDS=180 TEAMX_LARK_REPORT=/absolute/private/report.json \
+go test -tags=e2e ./internal/platform/lark -run '^TestRealLarkAllChatsContinuous$' -count=1 -v
+```
+
+允许运行 30～1800 秒，报告只保存聚合数量；前台 CLI 持续运行不替代后台部署及跨到期验证。普通回复、群发送和本人投递的复跑分别使用 `platform_lark_reply_dsh_real_test.go`、`platform_lark_send_dsh_real_test.go` 和 `platform_lark_self_send_dsh_real_test.go` 的显式开关与输入合同。新发送须另行指定准确账号、目标、正文及次数；保留 `.local/lark-l4-c/*native-attempt*`、`.local/lark-self-send-s2/native-attempt*`、原消息 ID 和 unknown 回执，不删除防重记录来重试。`TestRealLarkSelfReadOnlyRecovery` 可通过 `TEAMX_LARK_SELF_RECOVERY_SOURCE` 指向成功投递的 rooms root 只读复验，不新增发送。
+
+### 图片验证
+
+真实下载和模型读图已有通过记录，实际浏览器图片视觉检查尚未通过；服务重启后的新消息闭环、已消费历史消息补图、恢复／轮换后识图及完整权限变化矩阵仍待验证。
+
+复跑入口为 `TestRealLarkImageMaterials`（`internal/room`，`-tags=e2e`）：`TEAMX_LARK_IMAGE_INPUT` 指向包含 `profile`（`platform.CLIProfile`）、已保存通知 `item` 和可选 `model` 的私有 JSON，不含 OAuth 凭据；`TEAMX_DSH_OUTPUT` 使用全新绝对路径。模型验证另设 `TEAMX_LARK_IMAGE_MODEL=1` 及 `TEAMX_LARK_IMAGE_EXPECT`（像素中独有文字的 JSON 数组，不放入提示），安装与凭据沿用 DSH 配置。`TEAMX_LARK_IMAGE_BROWSER=1` 启动隔离页面，实际目视确认后才写输出目录的 `browser-done`。下载、模型结果与页面显示分别判定，不互相替代。

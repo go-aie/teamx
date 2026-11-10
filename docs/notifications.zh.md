@@ -20,7 +20,7 @@
 
 GitLab 默认每 30 秒检查，允许 3～120 秒；Room 不可接收时沿用后台间隔。部分通道显示「等待应用」时，在详情点击「重试应用」继续已保存的版本，成功通道保留进度。服务重启后可继续原接入操作；读取进度或继续启用不会重新交换授权码或重放远端业务动作。目标成员、账号或设置已变化时核对提示，停止旧操作后以新的明确选择重新接入。停止剩余步骤不撤销已经保存的设置。
 
-旧运行目录先停服、备份，再按[平台格式升级说明](platform-configuration-p2.5-acceptance.zh.md)显式升级；不要删除旧 Room 或平台数据来跳过升级。
+旧运行目录先停服、备份，再按[平台格式升级说明](platform-architecture.zh.md#停服升级)显式升级；不要删除旧 Room 或平台数据来跳过升级。
 GitLab 配置保存在房间的 `gitlab-notifications.json`，以平台＋目标区分记录，各自版本独立于采集器进度。`GET /v1/platform/gitlab/notifications` 携带 `platform_id` 和 `target_mode=room`，或 `target_mode=inbox&agent_id=...&membership_id=...`，返回该范围的统一配置及两类运行状态；`POST /v1/platform/gitlab/notifications/configure` 提交 `{platform_id, version, config}`，由 `config.target` 固定范围；`POST /v1/platform/gitlab/notifications/sync` 提交 `{platform_id, version, target}`，均携带房间身份、服务 epoch 和 human caller。汇总 GET 返回记录集合，不按平台 ID 任取一条。公共 `interval_seconds` 是两类采集器唯一的可接收时周期配置，`backfill_seconds`／`backfill_start` 是互斥的相对／绝对接收起点；首次开启任一类型前解析为固定 `backfill_start` 并持久保存，响应的 `backfill_locked` 表示不可再修改起点，后续请求需沿用返回配置；`events`／`todos` 不重复公共字段，不提供分支、忽略操作者、待办项目范围或后台周期字段。采集器快照仅保留已应用配置、独立身份、进度和冻结投递路径；GitLab 的分渠道写配置和同步接口始终拒绝请求，统一使用上述公共入口。
 
 GitLab 与飞书统一提供「开始接收时间」：从开启时刻、最近 1 小时、最近 24 小时、指定时间。指定时间按系统设置时区输入，不能选择未来时间；首次开启后锁定，暂停、重启及修改其他设置均沿用原起点与去重记录。GitLab 项目活动和我的待办共用该选择：首次开启任一类型时，将选择固定为绝对起点并保存，初始化失败后的重试、稍后开启另一类型也沿用它。已有订阅保留原起点，不自动回填；要接收更早历史，在新房间首次开启前选择时间。实际历史范围取决于平台保留和账号可访问范围。
@@ -237,4 +237,4 @@ ETag 仅用于已验证支持条件请求的快速页，缓存与页面同次落
 
 旧事项图和 decisions 生产接口已移除。业务响应禁止缓存，所有修改检查成员归属、回合和预期版本。Store 继续原子保存和结果未知写入冻结。定向验证：`go test -race ./internal/room -run '^TestReferenceEntry|^TestReferenceConversation|^TestReferenceAction' -count=1 -timeout=3m`；前端使用 `node --test internal/room/web*_test.mjs`。
 
-组件和协议证据见[实施记录](PLATFORM-REFERENCE-AND-FOLLOWUP-REFACTOR-PLAN.zh.md)。R6 已新增非 GitLab 贯通及新协议的独立真实验收夹具；MR 普通评论通过并发生一次已授权写入，真实讨论、DSH 全闭环和实际浏览器仍未通过，详见[验收手册](reference-followups-acceptance.zh.md)。此前 AN 阶段真实 GitLab／DSH 记录保留在[原计划](ASSISTANT-NOTIFICATION-INBOX-PLAN.zh.md)，它们验证旧合同，不能用旧命令补发或当作新合同通过。
+组件和协议证据见[实施记录](PLATFORM-REFERENCE-AND-FOLLOWUP-REFACTOR-PLAN.zh.md)。R6 已新增非 GitLab 贯通及新协议的独立真实验收夹具；MR 普通评论通过并发生一次已授权写入，真实讨论、DSH 全闭环和实际浏览器仍未通过，详见[验收手册](reference-followups-acceptance.zh.md)。此前 AN 阶段真实 GitLab／DSH 记录保留在[原计划](implementation/legacy-agent-inbox/ASSISTANT-NOTIFICATION-INBOX-PLAN.zh.md)，它们验证旧合同，不能用旧命令补发或当作新合同通过。

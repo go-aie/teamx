@@ -43,7 +43,7 @@ flowchart LR
 
 全局连接的元数据、OAuth 应用及共享授权原子保存在私有的 `platform-connections.json`（版本 5）；飞书和 Scion 只保存 CLI profile 引用。一条连接就是一个具体平台，平台 ID 沿用原稳定 ID，不另建连接业务对象。[静态类型目录](../internal/platform/catalog.go)登记通知通道和工具实现类型；平台记录的 `tool_entry_id` 独立生成，改名保留、删除重建不复用。入口存在不授予成员权限，当前成员工具命令与绑定方式仍按下节执行。
 
-GitLab 应用所有者仅用于应用管理与导入核验；账号授权按应用 ID 和原生用户 ID 唯一保存，平台通过 `credential_id` 引用准确授权。同一应用可保存多个用户的独立授权；P5 已接通兼容应用选择、实际新账号登录、固定账号重新授权／退出以及完整共同配置影响范围，详见 [P5 实施记录](platform-configuration-p5-acceptance.zh.md)。首次接入操作在账号核验后复用原通知和工具绑定数据，按固定 Room／成员持久化各部分结果与恢复版本；配置界面复用同一编排：成员「平台」Tab 入口固定完整身份；全局入口仅连接账号。账号、通知和工具分别报告结果，重启后可读取原操作继续。成员详情的「平台」Tab 按准确 Membership／平台列出通知与工具设置的并集，两个开关独立即时保存，详情固定接收者；Room 侧栏只管理直接投递到消息流的「房间通知」。通知开关不提交详情草稿或修改成员工具绑定；添加已有／新平台复用持久首次接入，保留已有选择，通知与工具分别恢复已完成结果。收件箱保留消息与来源导航。旧版本需停服执行显式离线升级，升级前保存私有原快照备份，操作和恢复方式见 [P1 实施记录](platform-configuration-p1-acceptance.zh.md)。
+GitLab 应用所有者仅用于应用管理与导入核验；账号授权按应用 ID 和原生用户 ID 唯一保存，平台通过 `credential_id` 引用准确授权。同一应用可保存多个用户的独立授权；P5 已接通兼容应用选择、实际新账号登录、固定账号重新授权／退出以及完整共同配置影响范围，详见 [平台配置验证](platform-architecture.zh.md#平台配置验证)。首次接入操作在账号核验后复用原通知和工具绑定数据，按固定 Room／成员持久化各部分结果与恢复版本；配置界面复用同一编排：成员「平台」Tab 入口固定完整身份；全局入口仅连接账号。账号、通知和工具分别报告结果，重启后可读取原操作继续。成员详情的「平台」Tab 按准确 Membership／平台列出通知与工具设置的并集，两个开关独立即时保存，详情固定接收者；Room 侧栏只管理直接投递到消息流的「房间通知」。通知开关不提交详情草稿或修改成员工具绑定；添加已有／新平台复用持久首次接入，保留已有选择，通知与工具分别恢复已完成结果。收件箱保留消息与来源导航。旧版本需停服执行显式离线升级，升级前保存私有原快照备份，操作和恢复方式见 [平台配置验证](platform-architecture.zh.md#平台配置验证)。
 
 公开状态只包含引用、版本和账号摘要。GitLab 运行时仅支持 OAuth，Workspace 和工具复用连接，不再保存房间 PAT 或引用服务环境变量。每次远端请求或有界进程通过服务获取短期令牌许可，授权变化先取消并结清旧调用；正常刷新保持稳定授权证据和通知进度。
 
@@ -131,16 +131,36 @@ Scion 是独立 provider，不注册 GitLab MR、通知或内部动作适配器�
 
 连接验证和每次业务调用均使用隔离的原生 `whoami`；执行前将当前 origin 的凭据复制到本次私有目录，校验实际 subject 等于已绑定账号，同一副本供业务命令使用。源文件被替换不会让已接纳调用换号。PAT 路径不写回业务进程中的凭据更新；refresh-token 认证另行交付。
 
-工具准备回调在现有 platform call 生命周期内、manager 锁之外执行。连接替换、重新验证、停用、成员变更、关房和退出复用原有取消与等待。Endpoint/Hub 与仓库 URL 的接收 origin 必须匹配当前连接；登录、配置、daemon、自更新由操作者维护。无凭据帮助仍要求成员显式绑定。配置与安装见 [Scion 工具说明](../tools/scion/README.zh.md)，实际验证及未验项见 [S2 记录](scion-s2-acceptance.zh.md)。
+工具准备回调在现有 platform call 生命周期内、manager 锁之外执行。连接替换、重新验证、停用、成员变更、关房和退出复用原有取消与等待。Endpoint/Hub 与仓库 URL 的接收 origin 必须匹配当前连接；登录、配置、daemon、自更新由操作者维护。无凭据帮助仍要求成员显式绑定。配置与安装见 [Scion 工具说明](../tools/scion/README.zh.md)，实际验证及未验项见 [Scion 验证与待验项](scion.zh.md#验证与待验项)。
 
 
-Scion Workspace 通过独立 `internal/workspace/scion` 适配器准备原生工作副本；共用管理仍只负责目录、操作与 Session 生命周期。仓库 kind 与平台 provider 分开校验，旧无 kind 快照不重写。Scion 平台桥接使用固定 CLI 验证 subject、canonical 仓库和已有分支，再以私有凭据副本 clone；账号和操作进程均受连接取消与结清管理，凭据不落入工作副本或 Session。回访与正常重开只检查本地结构和身份，日常工具绑定独立选择。当前实测与浏览器待验边界见 [S3b 记录](scion-s3b-acceptance.zh.md)。
+Scion Workspace 通过独立 `internal/workspace/scion` 适配器准备原生工作副本；共用管理仍只负责目录、操作与 Session 生命周期。仓库 kind 与平台 provider 分开校验，旧无 kind 快照不重写。Scion 平台桥接使用固定 CLI 验证 subject、canonical 仓库和已有分支，再以私有凭据副本 clone；账号和操作进程均受连接取消与结清管理，凭据不落入工作副本或 Session。回访与正常重开只检查本地结构和身份，日常工具绑定独立选择。当前实测与浏览器待验边界见 [Scion 验证与待验项](scion.zh.md#验证与待验项)。
 
 
 ### 平台公共模型与格式（P2.5）
 
 公共 `platform.Platform` 表示唯一的平台账号接入；`registry` 保存私有记录、generation 和适配器认证引用，不另建 Connection 管理器。GitLab 的 `credential_id` 仍精确指向 OAuth 用户授权；飞书和 Scion 仍使用各自 CLI profile，公共类型不依赖 registry 或适配器。
 
-通知、工具绑定、Workspace、访问及动作证据统一使用 `platform_id`、`platform_generation`、`platform_version`。全局管理 API 使用 `/v1/platforms` 及其子路径，集合字段为 `platforms`；新请求不接受旧连接字段。平台配置版本与授权／凭据版本继续分别核验。P2.5 沿用 P1 的稳定工具标识；P4 已接通路由，见 [P4 实施与验证](platform-configuration-p4-acceptance.zh.md)。
+通知、工具绑定、Workspace、访问及动作证据统一使用 `platform_id`、`platform_generation`、`platform_version`。全局管理 API 使用 `/v1/platforms` 及其子路径，集合字段为 `platforms`；新请求不接受旧连接字段。平台配置版本与授权／凭据版本继续分别核验。P2.5 沿用 P1 的稳定工具标识；P4 已接通路由，见 [平台配置验证](platform-architecture.zh.md#平台配置验证)。
 
-停服转换入口为 `teamx platforms upgrade --rooms-dir ROOT`，详见 [P2.5 升级与验证](platform-configuration-p2.5-acceptance.zh.md)。固定物理文件名 `platform-connections.json` 保留，格式版本升至 6；Room 文件仍由原业务 schema 管理，跨文件平台字段转换由版本 1 的 `platform-model-upgrade.json` 记录统一协调。
+停服转换入口为 `teamx platforms upgrade --rooms-dir ROOT`，详见 [平台格式升级说明](platform-architecture.zh.md#停服升级)。固定物理文件名 `platform-connections.json` 保留，格式版本升至 6；Room 文件仍由原业务 schema 管理，跨文件平台字段转换由版本 1 的 `platform-model-upgrade.json` 记录统一协调。
+
+## 停服升级
+
+先正常停止服务，备份完整服务根目录，包括私有凭据、Room、Inbox、动作、Session 和工作目录，再执行：
+
+```sh
+teamx platforms upgrade --rooms-dir /absolute/service/root
+```
+
+命令持有服务目录锁，不启动采集器、模型、CLI 认证或远端动作。公共平台字段转换以已完成既有账号授权和多平台通知升级的数据为输入；不支持的更早格式须先用对应旧程序升级并校验，不能手改版本号跳过。
+
+物理文件名 `platform-connections.json` 保留。跨文件字段转换由 `platform-model-upgrade.json` 协调；后续平台格式仍按各自版本核验。升级只处理服务索引列出的配置、绑定、通知及事项／动作文件，保留业务正文、原生身份、版本数值和回执，不遍历仓库、资源或 DSH 目录，不转换符号链接。
+
+恢复日志以 `0600` 保存变更文件的完整前后像，属于敏感备份。多文件提交不是单一事务：日志未完成时阻止服务启动，停服重跑相同命令核对原始或已提交内容，遇到第三种内容报冲突；成功后的重复升级不覆盖新业务状态。回退使用配套完整目录备份，不能只回退全局配置或用旧恢复日志覆盖升级后的新写入。
+
+## 平台配置验证
+
+平台配置、账号隔离、通知与工具开关、格式升级和中断恢复已有本地组件／integration 覆盖；前端测试使用模拟 API，不能代替真实平台或实际浏览器。日常命令见[测试说明](testing.zh.md)。
+
+GitLab 双账号持续使用、共同应用变更与多账号远端撤销隔离，飞书账号／profile 实机隔离，以及真实平台整体验收仍待完成。GitLab 单连接的自然到期刷新与后端退出已有通过记录，重新登录恢复等缺口见 [OAuth 复跑手册](gitlab-oauth-g5-acceptance.zh.md)。同应用仍有其他活动授权时，不把本地退出视为远端撤销完成。

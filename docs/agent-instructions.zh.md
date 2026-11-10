@@ -80,3 +80,23 @@ team.json 的 instructions / instructions_file
 4. 固定指令在真实 DSH 恢复及上下文压缩后的可见性、有效性专项验收留待后续。本次沿用现有 Instructions / AGENTS.md 机制，不新增首轮标记、压缩回调或补注入策略。
 
 这里记录当前实现与生效边界；后续若引入房间级指令编辑或公共指引版本管理，应同时明确快照、升级和 Session 轮换策略。
+
+## 长期规则验证
+
+自然语言规则的真实 DSH／模型固定场景和独立进程正常启动／恢复已有通过记录；平台写入边界使用本地 contract fixture。实际浏览器、真实平台写入和旧数据清理后的正式启用仍需分别核验。
+
+下面的入口不触碰正式数据，输出目录须为尚不存在的绝对路径；模型及密钥来自显式配置和环境，`TEAMX_N3_MODEL` 可覆盖验收模型：
+
+```sh
+TEAMX_N3_PROCESS=1 TEAMX_N3_CONFIG="$PWD/.teamx/config.toml" \
+TEAMX_DSH_OUTPUT=/absolute/new-rules-process \
+go test -tags=e2e ./internal/room -run '^TestNaturalRulesBrowserProcessRecovery$' -count=1 -timeout=3m -v
+
+TEAMX_N3_DSH_REAL=1 TEAMX_N3_CONFIG="$PWD/.teamx/config.toml" \
+TEAMX_DSH_ENV_FILE="$PWD/.env" TEAMX_DSH_OUTPUT=/absolute/new-rules-model \
+go test -tags=e2e ./internal/room -run '^TestNaturalRulesRealDSH$' -count=1 -timeout=23m -v
+```
+
+真实浏览器模式将 `TEAMX_N3_PROCESS=1` 换成 `TEAMX_N3_BROWSER=1`，超时改为 `22m`。打开 `browser-ready.json` 的 endpoint，在「长期规则」新增 `AgenticHub 产品负责人是 huayi` 和 `AgenticHub 创建智能体时报错优先建议找 hongwei 和 luojun。`；将第二条改为 `AgenticHub 创建智能体时报错，优先建议找 hongwei 和 luojun；联系前先询问。` 后撤销。核对正文、来源、有效期、v1／v2／v3 修订和第一条仍有效。完成实际操作后才写 `browser-done.json` 为 `{"status":"passed"}`；夹具重启后打开 `browser-restarted.json` 的新 endpoint，再核对状态和完整历史，完成后写同格式的 `browser-restart-done.json`。失败写 `failed`，页面截图与后端持久化核对分别保留。
+
+旧结构不兼容且 `policy.json` 仍为版本 1。启用前由操作者停服并核实准确的数据目录，按已选择的重建方式处理旧规则、含旧规则快照的事项／动作和旧 Session；仅删除 `policy.json` 不够，不因本说明自动清理数据。核对实际可用模型后使用干净数据重建规则。模型固定样本通过不保证自然语言语义永不误判；真实平台动作仍须独立核实目标、账号和具体授权。

@@ -83,3 +83,5 @@ go test -tags=e2e ./internal/room -run '^TestRealDSHRoom$' -count=1 -timeout=25m
 ```
 
 该命令仍需场景的显式启用参数，否则会跳过。具体方式见 [Agent 运行时](agent-runtime.zh.md#真实验收)、[Workspace](workspace.zh.md#真实验收)、[通知](notifications.zh.md#真实验收)与 [GitLab 工具](../tools/gitlab/README.zh.md#真实验收)。不要把全部 e2e 加进日常核心或 integration 入口。
+
+阶段验收结束后，将仍需维护的复跑方法与未完成项收进对应模块说明，删除重复的阶段记录；不要求每次实施新增一份永久验收文档。私有回执、防重记录和必要失败证据独立保留。

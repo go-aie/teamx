@@ -26,7 +26,7 @@ GitLab 绑定只引用全局 OAuth 连接。URL 不接受内嵌账号、密码�
 
 Scion 页面按类型派生 origin 与仓库名，不追加 `.git`；分支留空时核实并冻结默认分支。应用前读取仓库与实际分支列表，拒绝不存在或没有提交的分支。每名成员独立执行原生 clone，并核对 `.scion/state.json` 的 format、endpoint、canonical repo、完整 changeset ID 及 dirstate。回访只检查本地状态，保留任务分支、dirty 文件和 detached 状态；不执行 clone/sync/switch。clone 使用 Workspace 连接，日常命令使用成员单独启用的工具连接，两者互不授予权限。
 
-Scion 准备使用固定封装版本、所选账号的私有凭据副本和隔离环境，沿用进程取消与持久 PID 结清。作者通过每次 commit 的 `--author 'Name <email>'` 明确提供，不能把平台 subject 当作提交作者。S3b 实际结果与未验项见 [验收记录](scion-s3b-acceptance.zh.md)。
+Scion 准备使用固定封装版本、所选账号的私有凭据副本和隔离环境，沿用进程取消与持久 PID 结清。作者通过每次 commit 的 `--author 'Name <email>'` 明确提供，不能把平台 subject 当作提交作者。S3b 实际结果与未验项见 [Scion 验证与待验项](scion.zh.md#验证与待验项)。
 
 ## 应用与恢复
 

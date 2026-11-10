@@ -1,6 +1,6 @@
 # 独立 Scion 工具
 
-`teamx-scion` 是只依赖 Go 标准库的原生 CLI 封装，每次先核对 **scn 0.1.13**，再原样执行命令。不导入 TeamX 内部包，不调用内部协议，不重写 Review API。通过 TeamX 开发与评审的首次配置见 [Scion 使用说明](../../docs/scion.zh.md)；本文维护安装、认证与执行细节。[接入方案](../../docs/SCION-SOFTWARE-DEVELOPMENT-PLAN.zh.md)的 S1–S4 已实施，真实流程与未验项见 [S4 验收记录](../../docs/scion-s4-acceptance.zh.md)。
+`teamx-scion` 是只依赖 Go 标准库的原生 CLI 封装，每次先核对 **scn 0.1.13**，再原样执行命令。不导入 TeamX 内部包，不调用内部协议，不重写 Review API。通过 TeamX 开发与评审的首次配置见 [Scion 使用说明](../../docs/scion.zh.md)；本文维护安装、认证与执行细节。[接入方案](../../docs/SCION-SOFTWARE-DEVELOPMENT-PLAN.zh.md)的 S1–S4 已实施，真实流程与未验项见 [Scion 验证与待验项](../../docs/scion.zh.md#验证与待验项)。
 
 ## 安装
 
@@ -101,7 +101,7 @@ TEAMX_SCN_BIN=/absolute/path/to/verified/scn \
   go test -race -count=1 ./tools/scion
 ```
 
-前两项为组件验证；最后一项额外使用固定官方二进制验证离线帮助、版本、原生用法错误、相对 `-C`、JSON 和配置隔离。组件测试覆盖 argv/stdin/输出/退出码保留、二进制解析、错误版本、取消探测与业务进程、后代结清及无控制终端。未提供 `TEAMX_SCN_BIN` 时，官方二进制测试明确跳过。实际阶段证据见 [S1 验收记录](../../docs/scion-s1-acceptance.zh.md)。
+前两项为组件验证；最后一项额外使用固定官方二进制验证离线帮助、版本、原生用法错误、相对 `-C`、JSON 和配置隔离。组件测试覆盖 argv/stdin/输出/退出码保留、二进制解析、错误版本、取消探测与业务进程、后代结清及无控制终端。未提供 `TEAMX_SCN_BIN` 时，官方二进制测试明确跳过。当前验证范围见 [Scion 验证与待验项](../../docs/scion.zh.md#验证与待验项)。
 
 连接与页面回归由 `go test -race ./internal/platform/scion ./internal/room -run '^TestScion|^TestProfile'` 和 `node --test internal/room/web*_test.mjs` 验证。`TestScionRealLoginDiscovery` 通过 `TEAMX_SCION_AUTH_REAL=1` 显式启用，需提供 `TEAMX_SCION_TEST_CREDENTIALS` 私有原生 PAT 凭据源、`TEAMX_SCN_BIN` 与 `TEAMX_SCION_BIN` 绝对路径。
 
@@ -138,10 +138,10 @@ chmod 0600 "$scion_profile_root/credentials.json"
 }
 ```
 
-每名成员再到详情的工具设置单独选择 Scion 连接并应用。无工作副本可通过 `tools run scion --json --repo OWNER/REPOSITORY review ls` 读取 Review；启用工具不初始化 `.scion`。Workspace 设置选择 Scion 类型、仓库 HTTPS URL、分支和已验证连接，再显式应用，为每个 membership 分别 clone；留空分支会核实并冻结默认分支。提交作者每次用 `--author` 明确提供；三角色流程与验收见 [S4 记录](../../docs/scion-s4-acceptance.zh.md)。
+每名成员再到详情的工具设置单独选择 Scion 连接并应用。无工作副本可通过 `tools run scion --json --repo OWNER/REPOSITORY review ls` 读取 Review；启用工具不初始化 `.scion`。Workspace 设置选择 Scion 类型、仓库 HTTPS URL、分支和已验证连接，再显式应用，为每个 membership 分别 clone；留空分支会核实并冻结默认分支。提交作者每次用 `--author` 明确提供；三角色流程与验收见 [Scion 验证与待验项](../../docs/scion.zh.md#验证与待验项)。
 
 服务为每次调用复制仅含当前 origin 的凭据至私有临时文件，并用该文件核对实际 subject 后执行同一调用；结束或取消后删除。原 profile 不被业务调用修改。此路径只验收原生 PAT，不承诺 refresh-token 轮换保存。原生错误输出保留；执行前检查失败返回 5 和安全分类，如 `identity_mismatch` / `credential_unavailable`，业务命令不启动。
 
 在页面重新登录会自动创建新 profile ID，保存替换引用后重新验证，再核对成员绑定。命令行重新登录也应使用新 profile。替换引用、重新验证、停用、关房和退出均取消并等待在途调用。外部原地换号也会被下一次调用的 subject 检查阻止；已接纳调用只使用其已核验的凭据副本。帮助无需凭据，但仍要求该成员已显式绑定工具。
 
-服务固定 Endpoint/Hub 为所选 HTTPS origin，拒绝指向其他 origin 的全局参数或仓库 URL，不继承全局 `SCION_*`。成员入口不执行 login/logout/token/config/daemon/self-update；这些由操作者维护。常规提交明确提供 `--author`。测试与实际边界见 [S2 验收记录](../../docs/scion-s2-acceptance.zh.md)。
+服务固定 Endpoint/Hub 为所选 HTTPS origin，拒绝指向其他 origin 的全局参数或仓库 URL，不继承全局 `SCION_*`。成员入口不执行 login/logout/token/config/daemon/self-update；这些由操作者维护。常规提交明确提供 `--author`。测试与实际边界见 [Scion 验证与待验项](../../docs/scion.zh.md#验证与待验项)。

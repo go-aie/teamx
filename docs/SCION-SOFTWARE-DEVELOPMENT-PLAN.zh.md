@@ -1,6 +1,6 @@
 # Scion 接入 TeamX 软件开发团队方案
 
-状态：S0、S1 已通过；S2 已实施，连接、成员工具和真实只读/重启验证通过，页面自动化通过、实际浏览器操作待验。见 [S0 记录](scion-s0-acceptance.zh.md)、[S1 记录](scion-s1-acceptance.zh.md)、[S2 记录](scion-s2-acceptance.zh.md)。S3a 已实施并通过 Git/GitLab 定向回归、race 与架构边界检查，见 [S3a 记录](scion-s3a-acceptance.zh.md)。S3b 已实施，组件、三份真实原生 clone、失败重试与正常重启验证通过；页面自动化通过，实际浏览器操作待验，见 [S3b 记录](scion-s3b-acceptance.zh.md)。S4 已实施，真实 DSH 创建 Review、独立评审、修正、同一 Review 更新与复审，以及一次真实评论响应丢失后的核查通过；限流后分段续验，实际浏览器操作仍待验，见 [S4 记录](scion-s4-acceptance.zh.md)。S5 尚未实施。S2 没有初始化 Workspace、创建 Review、发表评论或执行 Review 合入。
+状态：S0–S4 已实施，原生 CLI、成员只读、独立 Workspace、正常重启及真实 DSH Review 版本化协作已有通过记录；实际浏览器、复杂设计交接、完整故障矩阵及 S5 合入仍待验证。当前复跑方法和边界见[Scion 验证与待验项](scion.zh.md#验证与待验项)。
 
 调研日期：2026-11-07。目标团队为 `.teamx/teams/software-development`，目标实例为 `https://scion.opencsg.com`。用户已提供并指定后续实施与验证仓库：[OpenCSG/teamx-demo](https://scion.opencsg.com/OpenCSG/teamx-demo)。
 
@@ -55,7 +55,7 @@ TeamX 继续负责 Room 协作、成员身份、进程生命周期和 Workspace 
 
 使用固定官方 `scn 0.1.13` 和用户提供的原生 PAT 完成指定私有凭据文件登录，实际 subject 为 `csgship`；后续新进程读取已保存凭据，`whoami`、`repo info OpenCSG/teamx-demo` 和显式 Hub 的 `review ls` 均成功。当前实例仍未声明 `auth.device`。
 
-仓库 canonical name 已核实，默认分支为 `main`。初次探测时分支列表为空，定向读取返回 `REF_NOT_FOUND`；用户随后明确选择用已展示的最小 README 初始化。现已完成原生 clone、仅 README 的 commit、分支 land、远端逐项核验及另一目录的独立 clone，完整基线为 `c1078e705cc235a88699caf8aaf51c45803df33aafb8849ea36949756f8a36d4a0`。原生默认提交作者是 `scion <scion@localhost>`，与认证 subject 不同；后续成员作者配置仍须显式提供。具体命令、退出码、校验值和范围见 [S0 验收记录](scion-s0-acceptance.zh.md)。
+仓库 canonical name 已核实，默认分支为 `main`。初次探测时分支列表为空，定向读取返回 `REF_NOT_FOUND`；用户随后明确选择用已展示的最小 README 初始化。现已完成原生 clone、仅 README 的 commit、分支 land、远端逐项核验及另一目录的独立 clone，完整基线为 `c1078e705cc235a88699caf8aaf51c45803df33aafb8849ea36949756f8a36d4a0`。原生默认提交作者是 `scion <scion@localhost>`，与认证 subject 不同；后续成员作者配置仍须显式提供。当前复跑方法与验证边界见 [Scion 验证与待验项](scion.zh.md#验证与待验项)。
 
 ## 3. Scion 的实际能力与语义
 
@@ -461,11 +461,11 @@ POC 验收只要求“一次正确的真实闭环 + 新边界的必要回归”�
 | 阶段 | 可单独评审的交付 | 验收标准与后续边界 |
 | --- | --- | --- |
 | S0：凭据与实例探测 | 当前实例先用有效 PAT 完成原生隔离登录；核实已指定的 `OpenCSG/teamx-demo`、目标分支与账号 | 固定发布包 `whoami/repo info` 和 Hub 读取成功；不把本次 REST Bearer 当作 CLI 通过证据；浏览器登录需另启用 device flow |
-| S1：独立工具（已通过） | `tools/scion`、lock、安装说明、原生执行和错误保留 | 固定版本帮助、参数/stdin/输出/退出码、取消及环境隔离通过；独立工具无 TeamX 内部依赖，见 [S1 验收记录](scion-s1-acceptance.zh.md) |
-| S2：连接与工具绑定（已实施） | Scion provider、profile 身份核验、运行环境注入、Catalog、skill、成员设置 | 每成员显式绑定；未登录、账号变化、连接轮换、取消/关房均正确结清；可无 clone 读取 Review。组件与真实只读/重启通过，实际浏览器操作待验，见 [S2 记录](scion-s2-acceptance.zh.md) |
-| S3a：Workspace 解耦（已通过） | 共用仓库接口、GitAdapter、平台访问桥接；保留操作与 Session 生命周期 | 既有 Git/GitLab 行为回归通过，共用层不直接执行 Git 或读取 `.git`；此阶段不引入 Scion 初始化，见 [S3a 记录](scion-s3a-acceptance.zh.md) |
-| S3b：原生 Scion Workspace（已实施） | ScionAdapter、repository.kind、操作恢复、页面类型/连接选择 | 组件、三份真实独立 clone、空分支/错误仓库/非空目录/失败重试、回访及重启恢复通过；复用 S3a 的生命周期合同。页面自动化通过，实际浏览器操作待验，见 [S3b 记录](scion-s3b-acceptance.zh.md) |
-| S4：团队协作（已实施） | 通用三角色 prompt、团队 README、Scion 开发/评审流程 | 真实 DSH 在 demo 上创建 Review #1、独立检出测试、版本化评论、更新 revision 2 与复审，Room 交接一致；限流后分段续验、真实未知评论核查通过，实际浏览器操作待验，见 [S4 记录](scion-s4-acceptance.zh.md) |
+| S1：独立工具（已通过） | `tools/scion`、lock、安装说明、原生执行和错误保留 | 固定版本帮助、参数/stdin/输出/退出码、取消及环境隔离通过；独立工具无 TeamX 内部依赖，见 [Scion 验证与待验项](scion.zh.md#验证与待验项) |
+| S2：连接与工具绑定（已实施） | Scion provider、profile 身份核验、运行环境注入、Catalog、skill、成员设置 | 每成员显式绑定；未登录、账号变化、连接轮换、取消/关房均正确结清；可无 clone 读取 Review。组件与真实只读/重启通过，实际浏览器操作待验，见 [Scion 验证与待验项](scion.zh.md#验证与待验项) |
+| S3a：Workspace 解耦（已通过） | 共用仓库接口、GitAdapter、平台访问桥接；保留操作与 Session 生命周期 | 既有 Git/GitLab 行为回归通过，共用层不直接执行 Git 或读取 `.git`；此阶段不引入 Scion 初始化，见 [Scion 验证与待验项](scion.zh.md#验证与待验项) |
+| S3b：原生 Scion Workspace（已实施） | ScionAdapter、repository.kind、操作恢复、页面类型/连接选择 | 组件、三份真实独立 clone、空分支/错误仓库/非空目录/失败重试、回访及重启恢复通过；复用 S3a 的生命周期合同。页面自动化通过，实际浏览器操作待验，见 [Scion 验证与待验项](scion.zh.md#验证与待验项) |
+| S4：团队协作（已实施） | 通用三角色 prompt、团队 README、Scion 开发/评审流程 | 真实 DSH 在 demo 上创建 Review #1、独立检出测试、版本化评论、更新 revision 2 与复审，Room 交接一致；限流后分段续验、真实未知评论核查通过，实际浏览器操作待验，见 [Scion 验证与待验项](scion.zh.md#验证与待验项) |
 | S5：用户决定后的合入 | 可选，需先明确/补齐 Scion 的版本锁定能力 | 版本改变拒绝、并发、排队、最终 landed、未知写入恢复均真实验证；不计入首期完成条件 |
 
 S1–S4 为接入主线，第一期取第 9.0 节定义的最小范围；S0 的成功是目标实例验收前提。可逐阶段实施并记录各自证据，不要求一次完成所有扩展。
@@ -519,4 +519,4 @@ git -C /Users/russellluo/Projects/work/opencsg/projects/scion show v0.1.13:proto
 
 其他关键证据：`client/cli/src/ctx.rs`（凭据、仓库与作者）、`creds.rs`/`daemon.rs`（隔离和后台行为）、`cmd/commit.rs`（发布与 rewritten）、`client/wc/src/state.rs`/`lib.rs`（本地状态和 clone）、`hub/hub/src/review.rs`（入队与合入）、`hub/hub/src/download.rs`（发布下载）、`common/object/src/id.rs`（原生 ID）。
 
-TeamX 现状以当前工作区的 [工具执行](../internal/platform/tool/process.go)、[成员绑定](../internal/room/tools.go)、[连接装配](../internal/room/platform.go)、[连接验证](../internal/platform/connection/verification.go)、[Workspace 配置](../internal/room/workspace_config.go)、[Workspace 准备](../internal/room/workspace.go)、[团队说明](../.teamx/teams/software-development/README.md) 为依据。S1 独立工具、S2 连接/工具绑定、S3a Workspace 解耦、S3b 原生 Scion Workspace 及 S4 团队协作已按阶段交付；S5 尚未实施的阶段交付仍为提案。S3a 实际接口采用 `Check/Clone/Configure` 与独立纯配置校验，未要求按第 5.4 节拟议 DTO 名称全量改写历史结构，见 [验收记录](scion-s3a-acceptance.zh.md)。
+TeamX 现状以当前工作区的 [工具执行](../internal/platform/tool/process.go)、[成员绑定](../internal/room/tools.go)、[连接装配](../internal/room/platform.go)、[连接验证](../internal/platform/registry/verification.go)、[Workspace 配置](../internal/room/workspace_config.go)、[Workspace 准备](../internal/room/workspace.go)、[团队说明](../.teamx/teams/software-development/README.md) 为依据。S1 独立工具、S2 连接/工具绑定、S3a Workspace 解耦、S3b 原生 Scion Workspace 及 S4 团队协作已按阶段交付；S5 尚未实施的阶段交付仍为提案。S3a 实际接口采用 `Check/Clone/Configure` 与独立纯配置校验，未要求按第 5.4 节拟议 DTO 名称全量改写历史结构，见 [Scion 验证与待验项](scion.zh.md#验证与待验项)。

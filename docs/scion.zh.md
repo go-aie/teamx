@@ -76,4 +76,23 @@ go build -o bin/teamx ./cmd/teamx
 | 模型 HTTP 429 | 等待模型服务额度恢复，再「启用协作」；不要反复发送同一任务。 |
 | 创建、发布或评论结果未知 | 先核查远端分支、Review 或评论，再决定后续操作，不重复写入来探测结果。 |
 
-角色职责见[团队 README](../.teamx/teams/software-development/README.md)，实施与验证边界见 [S4 验收记录](scion-s4-acceptance.zh.md)。
+角色职责见[团队 README](../.teamx/teams/software-development/README.md)，验证边界见下节。
+
+## 验证与待验项
+
+固定 CLI 的只读成员调用、三份原生 clone、失败后的显式重试和正常重启已有通过记录。真实 DSH 已完成开发、创建 Review、独立评审、修正、更新同一 Review revision 与复审，并在一次评论响应丢失后只读核查作者、正文、版本与唯一性。续验经过模型限流后的结清与正常恢复，不证明连续无干预协作可用。
+
+实际连接、工具绑定与 Workspace 页面操作，多任务／多账号、完整故障矩阵、复杂设计交接和 Review 合入仍待验证；其他发布平台及非 Unix 进程树结清也未验收。组件或模拟页面通过不替代这些结果。
+
+只读入口为 `TestScionRealMemberRead`、`TestScionRealWorkspace`（`internal/room`，`-tags=e2e`），设置 `TEAMX_SCION_REAL=1`、`TEAMX_SCION_TEST_CREDENTIALS`、`TEAMX_SCION_BIN`、`TEAMX_SCN_BIN`，路径均明确指向隔离凭据和实际程序；登录发现另受 `TEAMX_SCION_AUTH_REAL` 控制。新协作验收会真实发布任务分支、提交、Review 及评论，须先指定仓库与写入范围：
+
+```sh
+TEAMX_SCION_S4_REAL=1 TEAMX_SCION_S4_MAX_TOKENS=8192 \
+TEAMX_SCION_CONFIG=/absolute/config.toml TEAMX_DSH_ENV_FILE=/absolute/private/model.env \
+TEAMX_DSH_OUTPUT=/absolute/new-evidence-dir \
+TEAMX_SCION_TEST_CREDENTIALS=/absolute/private/credentials.json \
+TEAMX_SCION_BIN=/absolute/teamx-scion TEAMX_SCN_BIN=/absolute/scn \
+go test -tags=e2e ./internal/room -run '^TestScionRealDSHCollaboration$' -count=1 -timeout=25m -v
+```
+
+失败后先检查原 Room、分支、pending、Review 和评论，不直接重跑新建流程。`TestScionRealDSHReviewContinuation` 只用于已经核实的既有 Review，`TEAMX_SCION_S4_SOURCE` 指向原证据根；从修正阶段续验时设置 `TEAMX_SCION_S4_START=correction` 及 `TEAMX_SCION_S4_PRIOR_EVIDENCE`。保留工作副本和原回执，通过正式恢复门禁继续，不重建 Review 或重放未知写入。
