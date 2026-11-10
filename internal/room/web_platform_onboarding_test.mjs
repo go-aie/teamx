@@ -131,7 +131,7 @@ test("duplicate GitLab accounts keep the result panel hidden and reuse the opera
   await ui.el("gitlab-login").emit("click");
   assert.equal(api.login.onboarding_id,operationID);
   assert.equal(calls(api,"/v1/platforms/onboarding/prepare").length,1);
-  assert.equal(ui.el("onboarding-result").hidden,false);
+  assert.equal(ui.el("onboarding-result").hidden,true);
   assert.match(ui.el("onboarding-result-account").textContent,/@Bob/);
 });
 
@@ -209,7 +209,9 @@ test("Lark profile save hands the fixed operation to the server and does not ope
   const saved=calls(api,"/v1/platforms/save")[0].body,prepared=calls(api,"/v1/platforms/onboarding/prepare")[0].body;
   assert.equal(saved.onboarding_id,prepared.operation_id);assert.equal(saved.id,api.ops.get(prepared.operation_id).platform_id);assert.equal(prepared.provider,"lark");assert.equal(prepared.origin,"https://open.feishu.cn");
   assert.equal(calls(api,"/v1/platforms/verify").length,0);assert.equal(calls(api,"/v1/tools/bind").length,0);assert.equal(calls(api,"/v1/platform/notifications/configure").length,0);
-  assert.equal(ui.el("onboarding-steps").children[1].children[1].textContent,"已保存");
+  assert.equal(ui.el("onboarding-result").hidden,true);
+  assert.match(ui.el("platforms-feedback").textContent,/账号验证成功/);
+  await ui.clock.advance(5000);assert.equal(ui.el("platforms-feedback").textContent,"");
 });
 
 test("late member discovery cannot select a member in a different Room",async()=>{
@@ -219,7 +221,7 @@ test("late member discovery cannot select a member in a different Room",async()=
   assert.equal(ui.el("onboarding-member").value,"");assert.equal(ui.el("onboarding-member").options.length,1);
 });
 
-test("an unconfirmed prepare retries its exact saved request and cancellation leaves confirmed steps visible",async()=>{
+test("an unconfirmed prepare retries its exact saved request and cancellation hides the completed receipt",async()=>{
  const api=fixture(),ui=await add(api);let lost=true;
  api.hook=(path,body)=>{if(path==="/v1/platforms/onboarding/prepare" && lost){lost=false;throw Error("lost prepare response");}};
  await ui.el("gitlab-login").emit("click");assert.equal(api.login,undefined);assert.equal(ui.el("onboarding-prepare-retry").hidden,false);
@@ -228,7 +230,7 @@ test("an unconfirmed prepare retries its exact saved request and cancellation le
  const op=api.ops.get(original.operation_id);op.connection={status:"connected",version:2};op.notifications={status:"applied",version:1};
  await ui.el("onboarding-resume").emit("click");await ui.el("onboarding-cancel").emit("click");
  assert.match(ui.el("onboarding-steps").children[1].children[1].textContent,/已保存/);assert.equal(ui.el("onboarding-continue-login").hidden,true);
- await ui.el("onboarding-dismiss").emit("click");assert.equal(ui.el("connection-form").hidden,true);assert.equal(ui.el("onboarding-result").hidden,true);
+ assert.equal(ui.el("onboarding-result").hidden,true);assert.equal(ui.el("platforms-feedback").textContent,"已停止接入。");
 });
 
 test("platform notification summaries toggle only the chosen platform and preserve its full saved configuration",async()=>{
@@ -348,4 +350,36 @@ test("a failed detail selection hides the previous account's form and retry read
  assert.equal(ui.el("notification-title").textContent,"agent-0 · GitLab two 设置");assert.equal(ui.el("notification-panel-gitlab").hidden,true);assert.equal(ui.el("gitlab-save").disabled,true);
  fail=false;await ui.el("notification-reload").emit("click");
  assert.equal(ui.el("notification-panel-gitlab").hidden,false);assert.equal(ui.el("gitlab-connection").value,"two");
+});
+
+
+for(const provider of ["gitlab","lark","scion"])test(`completed ${provider} onboarding stays hidden after settings reopen`,async()=>{
+ const api=fixture(),id="c".repeat(32),op={schema:2,operation_id:id,platform_id:"a".repeat(32),input:{provider,room_id:"R",room_instance:"instance-R",agent_id:"agent-0",membership_id:"member-0"},connection:{status:"connected"},notifications:{status:provider==="scion" ? "skipped" : "applied"},tool:{status:"applied"}};
+ api.ops.set(id,op);api.platforms=[{id:op.platform_id,provider,name:provider,url:"https://gitlab.invalid",version:1,validation:{status:"valid",username:"Alice"}}];
+ const ui=await launch(api,new Map([["teamx.platform-onboarding:tester",JSON.stringify({operation_id:id})]]));
+ await ui.el("open-settings").emit("click");assert.equal(ui.el("onboarding-result").hidden,true);assert.equal(ui.el("platforms-feedback").textContent,"");
+ await ui.el("close-settings").emit("click");await ui.el("open-settings").emit("click");assert.equal(ui.el("onboarding-result").hidden,true);
+ assert.equal(calls(api,"/v1/platforms/onboarding/apply").length,0);assert.equal(calls(api,"/v1/platforms/onboarding/cancel").length,0);
+ assert.equal(ui.el("onboarding-notification-settings").hidden,true);
+});
+
+test("unfinished onboarding uses a compact summary and disappears from another platform form",async()=>{
+ const api=fixture(),id="b".repeat(32),op={schema:2,operation_id:id,platform_id:"a".repeat(32),input:{provider:"gitlab",room_id:"R",room_instance:"instance-R",agent_id:"agent-0",membership_id:"member-0"},connection:{status:"connected"},notifications:{status:"failed",error_code:"settings_changed"},tool:{status:"applied"}};
+ api.ops.set(id,op);api.platforms=[op.platform_id,"d".repeat(32)].map((id,i)=>({id,provider:"gitlab",name:i ? "Other GitLab" : "Company GitLab",url:"https://gitlab.invalid",version:1,validation:{status:"valid",username:i ? "Bob" : "Alice"}}));
+ const ui=await launch(api,new Map([["teamx.platform-onboarding:tester",JSON.stringify({operation_id:id})]]));await ui.el("open-settings").emit("click");
+ assert.equal(ui.el("onboarding-result").hidden,false);assert.equal(ui.el("onboarding-result-details").open,false);
+ assert.equal(ui.el("onboarding-result-summary").textContent,"Company GitLab 已连接，通知设置尚未完成。");assert.equal(ui.el("onboarding-apply").hidden,false);assert.equal(ui.el("onboarding-resume").hidden,true);
+ await ui.el("platforms-list").children[1].emit("click");assert.equal(ui.el("onboarding-result").hidden,true);
+ await ui.el("connection-back").emit("click");assert.equal(ui.el("onboarding-result").hidden,false);
+ ui.el("onboarding-result-details").open=true;await ui.el("onboarding-apply").emit("click");
+ assert.equal(calls(api,"/v1/platforms/onboarding/apply").at(-1).body.operation_id,id);assert.equal(ui.el("onboarding-result").hidden,true);
+ assert.equal(ui.el("platforms-feedback").textContent,"已完成接入。");await ui.clock.advance(5000);assert.equal(ui.el("platforms-feedback").textContent,"");
+});
+
+test("an unknown onboarding outcome keeps its receipt and offers a status check before retrying",async()=>{
+ const api=fixture(),id="e".repeat(32);api.hook=path=>path==="/v1/platforms/onboarding/status" ? Promise.reject(Error("offline")) : undefined;
+ const ui=await launch(api,new Map([["teamx.platform-onboarding:tester",JSON.stringify({operation_id:id})]]));await ui.el("open-settings").emit("click");
+ assert.equal(ui.el("onboarding-result").hidden,false);assert.equal(ui.el("onboarding-result-details").open,false);assert.match(ui.el("onboarding-result-summary").textContent,/结果待确认/);
+ assert.equal(ui.el("onboarding-resume").hidden,false);assert.equal(ui.el("onboarding-apply").hidden,true);assert.ok(ui.saved.get("teamx.platform-onboarding:tester"));
+ assert.equal(calls(api,"/v1/platforms/onboarding/apply").length,0);assert.equal(calls(api,"/v1/platforms/onboarding/cancel").length,0);
 });

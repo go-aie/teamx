@@ -107,12 +107,10 @@ export async function verifyMemberNotificationsBrowser({browser,tab,output,drive
   assert.equal(await locator('inbox-add-platform').isVisible(),true);
   await locator('inbox-add-platform').click();
   await locator('member-notification-add-search').fill('M5');
-  await p.locator('#member-notification-add-options button:not(:disabled)').filter({hasText:'M5 飞书'}).waitFor({state:'visible',timeoutMs:15000});
-  await p.locator('#member-notification-add-options button').filter({hasText:'M5 飞书'}).click({timeoutMs:15000});
-  await locator('member-platform-add-selection').waitFor({state:'visible',timeoutMs:15000});
-  assert.equal(await checked(locator('member-platform-add-notifications')),true);
-  assert.equal(await checked(locator('member-platform-add-tool')),true);
-  await locator('member-platform-add-submit').click({timeoutMs:15000});
+  const option=p.locator(`#member-notification-add-options [data-platform-id="${ready.lark_platform}"]`);
+  await option.waitFor({state:'visible',timeoutMs:15000});
+  await option.hover();
+  await option.getByRole('button',{name:/添加并启用/}).click({timeoutMs:15000});
   await row(ready.lark_platform).waitFor({state:'visible',timeoutMs:30000});
   await settled(ready.lark_platform);
   assert.equal(await checked(row(ready.lark_platform).locator('input[role="switch"]').nth(0)),true);

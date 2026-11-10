@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 import {launch,settle,openMemberInbox} from "./web_app_harness.mjs";
 import {fixture,target,key} from "./web_member_platform_fixture.mjs";
-const choose=async(ui,id)=>{await ui.el("member-notification-add-options").children.find(b=>b.dataset.platformId===id).emit("click");};
+const choice=(ui,id,action="settings")=>ui.el("member-notification-add-options").children.find(b=>b.dataset.platformId===id).children[1].children.find(b=>b.dataset.action===action);
+const choose=async(ui,id)=>{await choice(ui,id).emit("click");};
 const calls=(api,path)=>api.calls.filter(c=>c.path===path);
 const row=(ui,id)=>ui.el("member-notification-platforms").children.find(r=>r.dataset.platformId===id);
 const toolToggle=(ui,id)=>row(ui,id).children[1].children[2].children[0];
@@ -27,11 +28,11 @@ test("M4.5 platforms are the default Tab followed by policy, Inbox and activity"
 for(const notifications of [false,true])for(const tool of [false,true])test(`M4.5 add existing platform uses defaults with independent choices (${notifications}/${tool})`,async()=>{
  const api=fixture({empty:true}),ui=await launch(api);await openMemberInbox(ui,"member-a");
  await choose(ui,"gl");assert.equal(ui.el("member-platform-add-notifications").checked,true);assert.equal(ui.el("member-platform-add-tool").checked,true);
- assert.match(ui.el("member-platform-add-summary").textContent,/我的待办.*首次开启/);assert.equal(ui.el("notification-detail").open,false);
+ assert.equal(ui.el("gitlab-todos-enabled").checked,true);assert.equal(ui.el("notification-detail").open,true);
  for(const [id,value] of [["notifications",notifications],["tool",tool]]){ui.el(`member-platform-add-${id}`).checked=value;await ui.el(`member-platform-add-${id}`).emit("change");}
  await ui.el("member-platform-add-submit").emit("click");
  const sent=calls(api,"/v1/platforms/onboarding/prepare")[0].body;
- assert.equal(sent.preserve_existing,true);assert.equal(sent.notifications,notifications);assert.equal(sent.tool,tool);assert.equal(sent.gitlab,undefined);assert.equal(sent.lark,undefined);
+ assert.equal(sent.preserve_existing,true);assert.equal(sent.notifications,notifications);assert.equal(sent.tool,tool);assert.equal(sent.gitlab?.todos.enabled,notifications ? true : undefined);assert.equal(sent.lark,undefined);
  assert.equal(sent.agent_id,"a");assert.equal(sent.membership_id,"member-a");assert.equal(sent.room_instance,"instance-R");assert.equal(sent.platform_id,"gl");
  assert.equal(api.records.get(key("gl",target())).config.enabled,notifications);assert.equal(toolToggle(ui,"gl").checked,tool);assert.equal(row(ui,"gl").children[1].children[1].checked,notifications);
  assert.equal(calls(api,"/v1/tools/bind").length,0);assert.equal(calls(api,"/v1/platform/gitlab/notifications/configure").length,0);
@@ -40,12 +41,13 @@ for(const notifications of [false,true])for(const tool of [false,true])test(`M4.
 test("M4.5 first custom notification draft waits for Add and keeps the Inbox position",async()=>{
  const api=fixture({empty:true}),ui=await launch(api);await openMemberInbox(ui,"member-b");await ui.el("inbox-next").emit("click");
  ui.el("inbox-member-view").scrollTop=220;const entries=ui.el("inbox-entries").children,reads=calls(api,"/v1/member/inbox").length;
- await choose(ui,"gl2");await ui.el("member-platform-add-customize").emit("click");assert.equal(ui.el("notification-title").textContent,"b · 个人 GitLab 设置");
+ await choose(ui,"gl2");assert.equal(ui.el("notification-title").textContent,"添加 个人 GitLab");
  ui.el("gitlab-interval").value="80";await ui.el("gitlab-interval").emit("input");
  ui.el("gitlab-backfill").value="3600";await ui.el("gitlab-backfill").emit("change");
- await ui.el("gitlab-save").emit("click");assert.equal(ui.el("notification-detail").open,false);assert.equal(api.records.size,0);
+ assert.equal(api.records.size,0);assert.equal(calls(api,"/v1/platforms/onboarding/prepare").length,0);
  assert.equal(ui.el("inbox-page").textContent,"第 2 页");assert.equal(ui.el("inbox-member-view").scrollTop,220);assert.equal(ui.el("inbox-entries").children,entries);
  await ui.el("member-platform-add-submit").emit("click");const config=calls(api,"/v1/platforms/onboarding/prepare")[0].body.gitlab;
+ assert.equal(ui.el("notification-detail").open,false);
  assert.equal(config.interval_seconds,80);assert.equal(config.backfill_seconds,3600);assert.deepEqual(config.target,target("b"));assert.equal(calls(api,"/v1/member/inbox").length,reads);
 });
 test("M4.5 a tool-only platform initializes notifications without changing its saved tool choice",async()=>{
@@ -110,10 +112,14 @@ test("M4.5 restarting the page restores partial add receipts before permitting a
 
 test("M4.5 a rejected prepare retains the first draft and allows correction",async()=>{
  const api=fixture({empty:true}),ui=await launch(api);await openMemberInbox(ui,"member-a");await choose(ui,"gl");
+ ui.el("gitlab-interval").value="80";await ui.el("gitlab-interval").emit("input");
+ ui.el("gitlab-backfill").value="3600";await ui.el("gitlab-backfill").emit("change");
  api.hook=path=>path==="/v1/platforms/onboarding/prepare"?Promise.reject(Object.assign(Error("invalid"),{code:"request"})):undefined;
  await ui.el("member-platform-add-submit").emit("click");assert.match(ui.el("member-platform-add-result").textContent,/核对成员、平台与通知范围/);assert.equal(ui.el("member-platform-add-submit").disabled,false);
- assert.equal(ui.saved.has("teamx.platform-onboarding:tester"),false);assert.equal(ui.el("member-platform-add-selection").hidden,false);
+ assert.equal(ui.saved.has("teamx.platform-onboarding:tester"),false);assert.equal(ui.el("notification-detail").open,true);
+ assert.equal(ui.el("gitlab-interval").value,80);assert.equal(ui.el("gitlab-backfill").value,"3600");assert.match(ui.el("notification-notice").textContent,/核对成员、平台与通知范围/);
  api.hook=null;await ui.el("member-platform-add-submit").emit("click");assert.equal(calls(api,"/v1/platforms/onboarding/apply").length,1);
+ assert.equal(calls(api,"/v1/platforms/onboarding/prepare").at(-1).body.gitlab.backfill_seconds,3600);
 });
 
 test("M4.5 returning to Activity preserves its tab and scroll and resumes read-only updates",async()=>{
@@ -138,4 +144,48 @@ test("Inbox empty-state Add opens the platforms Tab without consuming or refresh
  const api=fixture({empty:true}),ui=await launch(api);await openMemberInbox(ui,"member-b");const reads=calls(api,"/v1/member/inbox").length;
  await ui.el("inbox-add-platform").emit("click");assert.equal(ui.el("agent-tab-platforms").attributes["aria-selected"],"true");assert.equal(ui.el("member-notification-add-picker").hidden,false);
  await ui.el("agent-tab-inbox").emit("click");assert.equal(calls(api,"/v1/member/inbox").length,reads);assert.equal(api.calls.some(c=>/member\/(run|enable)|inbox\/(read|confirm)/.test(c.path)),false);
+});
+
+
+test("platform quick add applies defaults in one click without opening settings",async()=>{
+ const api=fixture({empty:true}),ui=await launch(api);await openMemberInbox(ui,"member-a");
+ const option=ui.el("member-notification-add-options").children.find(r=>r.dataset.platformId==="gl");
+ await option.emit("click");assert.equal(api.operations.size,0);
+ const reads=api.calls.filter(c=>c.path.startsWith("/v1/platform/gitlab/notifications?")).length;
+ await choice(ui,"gl","add").emit("click");
+ const sent=calls(api,"/v1/platforms/onboarding/prepare")[0].body;
+ assert.equal(sent.notifications,true);assert.equal(sent.tool,true);assert.equal(sent.gitlab,undefined);
+ assert.equal(ui.el("notification-detail").open,false);assert.equal(ui.el("member-notification-add-picker").hidden,true);
+ assert.equal(api.calls.filter(c=>c.path.startsWith("/v1/platform/gitlab/notifications?")).length,reads);
+ assert.equal(api.records.get(key("gl",target())).config.todos.enabled,true);assert.equal(toolToggle(ui,"gl").checked,true);
+});
+
+test("cancelling first settings writes nothing and quick add ignores the cancelled history draft",async()=>{
+ const api=fixture({empty:true}),ui=await launch(api);await openMemberInbox(ui,"member-a");
+ await choose(ui,"gl");assert.equal(api.operations.size,0);
+ ui.el("gitlab-backfill").value="3600";await ui.el("gitlab-backfill").emit("change");
+ await ui.el("member-platform-add-cancel").emit("click");assert.equal(api.records.size,0);assert.equal(api.operations.size,0);
+ await choose(ui,"gl");assert.equal(ui.el("gitlab-backfill").value,"0");await ui.el("member-platform-add-cancel").emit("click");
+ await choice(ui,"gl","add").emit("click");const sent=calls(api,"/v1/platforms/onboarding/prepare")[0].body;
+ assert.equal(sent.gitlab,undefined);assert.equal(api.records.get(key("gl",target())).config.backfill_seconds,0);
+});
+
+test("custom add validates history before writing, while tool-only add needs no notification form",async()=>{
+ const api=fixture({empty:true}),ui=await launch(api);await openMemberInbox(ui,"member-a");await choose(ui,"gl");
+ ui.el("gitlab-backfill").value="custom";await ui.el("gitlab-backfill").emit("change");
+ assert.equal(ui.el("member-platform-add-submit").disabled,true);await ui.el("member-platform-add-submit").emit("click");assert.equal(api.operations.size,0);
+ ui.el("member-platform-add-notifications").checked=false;await ui.el("member-platform-add-notifications").emit("change");
+ assert.equal(ui.el("notification-panel-gitlab").hidden,true);assert.equal(ui.el("member-platform-add-submit").disabled,false);
+ await ui.el("member-platform-add-submit").emit("click");const sent=calls(api,"/v1/platforms/onboarding/prepare")[0].body;
+ assert.equal(sent.notifications,false);assert.equal(sent.tool,true);assert.equal(sent.gitlab,undefined);
+});
+
+for(const provider of ["lark","scion"])test(`first ${provider} settings enable only supported capabilities`,async()=>{
+ const api=fixture({empty:true});if(provider==="scion")api.platforms.push({id:"scion",provider:"scion",name:"Scion",url:"https://scion.invalid",validation:{status:"valid",username:"alice"}});
+ const ui=await launch(api);await openMemberInbox(ui,"member-a");await choose(ui,provider);
+ assert.equal(ui.el("member-platform-add-notifications").checked,provider==="lark");assert.equal(ui.el("member-platform-add-notifications").disabled,provider==="scion");
+ assert.equal(ui.el("member-platform-add-tool").checked,true);assert.equal(ui.el("member-platform-add-submit").disabled,false);
+ await ui.el("member-platform-add-submit").emit("click");const sent=calls(api,"/v1/platforms/onboarding/prepare")[0].body;
+ assert.equal(sent.notifications,provider==="lark");assert.equal(sent.tool,true);
+ if(provider==="lark"){assert.equal(sent.lark.enabled,true);assert.equal(sent.lark.private.scope,"all");assert.equal(sent.lark.groups.enabled,false);}
 });

@@ -82,6 +82,8 @@ test("saving changes old message labels, grouping and Room list immediately; oth
   const api=fixture(),ui=await launch(api),other=await launch(api);
   const original=structuredClone(api.messages);
   assert.equal(ui.el("messages").children.length,4);
+  assert.equal(ui.el("messages").children[0].textContent,"11月8日 周日");
+  assert.equal(ui.el("messages").children[2].textContent,"11月9日 周一");
   assert.equal(times(ui)[1].textContent,"01:04");assert.match(times(ui)[1].title,/11\/09 01:04/);
   await ui.el("open-settings").emit("click");
   assert.equal(ui.el("timezone-save").disabled,true);

@@ -147,8 +147,8 @@ for(const provider of ["gitlab","lark"])test(`M4 ${provider} returning to a savi
   assert.equal(ui.notificationToggle().disabled,false);
 });
 
-for(const removed of [false,true])test(`M4 onboarding result locates original B independently of current A (removed=${removed})`,async()=>{
-  const api=fixture(),operation={schema:2,operation_id:"f".repeat(32),platform_id:"gl",input:{provider:"gitlab",room_id:"R",room_instance:"instance-R",agent_id:"b",membership_id:"member-b"},connection:{status:"connected"},notifications:{status:"preserved",version:2},tool:{status:"applied",version:1}};
+for(const removed of [false,true])test(`M4 unfinished onboarding details locate original B independently of current A (removed=${removed})`,async()=>{
+  const api=fixture(),operation={schema:2,operation_id:"f".repeat(32),platform_id:"gl",input:{provider:"gitlab",room_id:"R",room_instance:"instance-R",agent_id:"b",membership_id:"member-b"},connection:{status:"connected"},notifications:{status:"failed",error_code:"settings_changed"},tool:{status:"applied",version:1}};
   api.hook=path=>path==="/v1/platforms/onboarding/status" ? copy(operation) : undefined;
   const saved=new Map([["teamx.platform-onboarding:tester",JSON.stringify({operation_id:operation.operation_id})]]),ui=await launch(api,saved);
   await openMemberInbox(ui,"member-a");await ui.el("open-settings").emit("click");
@@ -209,13 +209,13 @@ test("M4 room notification toggle, save and sync explicitly select mode=room",as
 });
 
 
-test("M4 a global-only connection returns to explicit member selection without initializing subscriptions",async()=>{
+test("a completed global-only connection has no permanent receipt or member writes",async()=>{
   const api=fixture(),operation={schema:2,operation_id:"e".repeat(32),platform_id:"gl",input:{provider:"gitlab",only_platform:true},connection:{status:"connected"},notifications:{status:"skipped"},tool:{status:"skipped"}};
   api.hook=path=>path==="/v1/platforms/onboarding/status" ? copy(operation) : undefined;
   const ui=await launch(api,new Map([["teamx.platform-onboarding:tester",JSON.stringify({operation_id:operation.operation_id})]]));
-  await openMemberInbox(ui,"member-a");await ui.el("open-settings").emit("click");await ui.el("onboarding-use-room").emit("click");
-  assert.equal(ui.el("activity-dialog").open,false);assert.equal(ui.el("notification-detail").open,false);
-  assert.equal(ui.el("member-list-view").hidden,false);assert.match(ui.el("notification-next-step").textContent,/选择成员.*公司 GitLab/);assert.equal(writes(api).length,0);
+  await openMemberInbox(ui,"member-a");await ui.el("open-settings").emit("click");
+  assert.equal(ui.el("onboarding-result").hidden,true);assert.equal(ui.el("onboarding-notification-settings").hidden,true);
+  assert.equal(writes(api).length,0);assert.equal(api.calls.some(c=>/onboarding\/(apply|cancel)/.test(c.path)),false);
 });
 
 

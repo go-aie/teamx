@@ -39,7 +39,6 @@
         </div>
         <div class="room-actions">
           <button id="open-general-settings" class="text-button" type="button" aria-haspopup="dialog" aria-controls="settings-dialog" hidden>设置</button>
-          <span id="message-count" class="quiet">— 条消息</span>
           <button id="toggle-members" class="room-panel-toggle" type="button" aria-label="收起团队成员" title="收起团队成员" aria-controls="member-rail" aria-expanded="true"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 21v-2a6 6 0 0 1 12 0v2M16 5a3 3 0 0 1 0 6m2 4a5 5 0 0 1 3 4v2"/></svg></button>
           <details id="room-menu" class="room-menu"><summary aria-label="房间操作">···</summary><button id="restart-discussion" class="text-button" type="button" disabled>重新开始</button></details>
         </div>
@@ -136,6 +135,10 @@
           <p id="notification-toggle-error" class="form-error" role="status" hidden></p>
           <p id="notification-notice" class="quiet" role="status" hidden></p>
           <button id="notification-reload" class="text-button" type="button" hidden>重新读取</button>
+          <div id="member-platform-add-selection" hidden>
+            <label class="workspace-check"><input id="member-platform-add-notifications" type="checkbox" checked>接收通知</label>
+            <label class="workspace-check"><input id="member-platform-add-tool" type="checkbox" checked>使用工具</label>
+          </div>
           <div id="notification-panel-messages" aria-label="飞书通知设置" hidden>
             <section class="workspace-form notification-settings lark-settings" aria-label="飞书通知设置">
               <fieldset id="lark-fields">
@@ -196,7 +199,7 @@
                       <details class="notification-help"><summary>接收说明</summary><p id="lark-group-mode-help" class="quiet">筛选用于他人消息；本人消息和回复作为上下文接收。“我”指当前平台账号。</p></details>
                     </div>
                   </details>
-                  <details class="notification-advanced"><summary>高级设置</summary>
+                  <details id="lark-advanced-settings" class="notification-advanced"><summary>高级设置</summary>
                   <div class="notification-settings-row">
                     <div><label for="lark-backfill">开始接收时间</label><select id="lark-backfill" aria-describedby="lark-backfill-help"><option value="0">从开启时刻</option><option value="3600">最近 1 小时</option><option value="86400">最近 24 小时</option><option value="custom">指定时间</option></select><div id="lark-backfill-locked" class="notification-backfill-locked" aria-describedby="lark-backfill-help" hidden><span id="lark-backfill-value"></span><small>已锁定</small></div></div>
                     <div><label for="lark-interval">检查间隔（秒）</label><input id="lark-interval" type="number" min="3" max="3600" value="10" title="3～3600 秒"></div>
@@ -209,7 +212,7 @@
               </fieldset>
               <div class="gitlab-events-actions notification-settings-actions"><button id="lark-save" class="primary" type="button">保存设置</button><p id="lark-feedback" class="quiet" role="status" aria-live="polite"></p></div>
               <p id="lark-error" class="form-error" role="alert" hidden></p>
-              <details class="gitlab-events-records"><summary>同步与诊断</summary><button id="lark-sync" class="text-button" type="button">立即同步</button><p id="lark-diagnostics" class="quiet"></p><ul id="lark-chat-status" hidden></ul><button id="lark-manage-platforms" class="text-button" type="button">管理平台 ↗</button></details>
+              <details id="lark-sync-status" class="gitlab-events-records"><summary>同步与诊断</summary><button id="lark-sync" class="text-button" type="button">立即同步</button><p id="lark-diagnostics" class="quiet"></p><ul id="lark-chat-status" hidden></ul><button id="lark-manage-platforms" class="text-button" type="button">管理平台 ↗</button></details>
             </section>
           </div>
           <div id="notification-panel-gitlab" aria-label="GitLab 通知设置">
@@ -276,7 +279,7 @@
                   <p id="gitlab-events-error" class="form-error" role="alert" hidden></p>
                 </section>
               </details>
-              <details class="notification-advanced"><summary>高级设置</summary>
+              <details id="gitlab-advanced-settings" class="notification-advanced"><summary>高级设置</summary>
               <div class="notification-settings-row">
                 <div><label for="gitlab-backfill">开始接收时间</label><select id="gitlab-backfill" aria-describedby="gitlab-backfill-help"><option value="0">从开启时刻</option><option value="3600">最近 1 小时</option><option value="86400">最近 24 小时</option><option value="custom">指定时间</option></select><div id="gitlab-backfill-locked" class="notification-backfill-locked" aria-describedby="gitlab-backfill-help" hidden><span id="gitlab-backfill-value"></span><small>已锁定</small></div></div>
                 <div><label for="gitlab-interval">检查间隔（秒）</label><input id="gitlab-interval" type="number" min="3" max="120" step="1" value="10" title="3～120 秒" aria-describedby="gitlab-interval-hint"></div>
@@ -295,6 +298,10 @@
                 <button id="gitlab-manage-platforms" class="text-button" type="button">管理平台 ↗</button>
               </details>
             </section>
+          </div>
+          <div id="member-platform-add-actions" class="notification-settings-actions" hidden>
+            <button id="member-platform-add-cancel" class="text-button" type="button">取消</button>
+            <button id="member-platform-add-submit" class="primary" type="button">添加并启用</button>
           </div>
         </div>
       </dialog>
@@ -322,16 +329,9 @@
               <p id="member-notification-list-error" class="form-error" role="status" hidden></p>
               <button id="member-notification-list-reload" class="text-button" type="button" hidden>重新读取平台</button>
               <div id="member-notification-add-picker" class="notification-add-picker" hidden>
+                <p class="quiet">默认启用通知和工具，从添加时刻接收。</p>
                 <label for="member-notification-add-search" class="sr-only">搜索平台</label><input id="member-notification-add-search" type="search" placeholder="搜索平台或账号" autocomplete="off">
                 <div id="member-notification-add-options" aria-label="选择已有平台"></div>
-                <div id="member-platform-add-selection" hidden>
-                  <h4 id="member-platform-add-title"></h4>
-                  <label class="workspace-check"><input id="member-platform-add-notifications" type="checkbox" checked>接收通知</label>
-                  <label class="workspace-check"><input id="member-platform-add-tool" type="checkbox" checked>使用工具</label>
-                  <p id="member-platform-add-summary" class="quiet"></p>
-                  <button id="member-platform-add-customize" class="text-button" type="button">调整通知详情与起点</button>
-                  <button id="member-platform-add-submit" class="primary" type="button">添加并启用</button>
-                </div>
                 <button id="notification-add-platform" class="text-button" type="button">连接新平台…</button>
               </div>
                 <p id="member-platform-add-result" class="quiet" role="status" aria-live="polite"></p>
@@ -673,11 +673,18 @@
         <footer id="connection-actions" class="connection-field-wide"><button id="connection-delete" class="settings-secondary-button settings-danger-button" type="button" hidden>移除平台</button><button id="connection-verify" class="settings-secondary-button" type="button" hidden>核验账号</button><button id="connection-save" class="primary" type="submit">保存连接</button></footer>
       </fieldset>
     </form>
-    <section id="onboarding-result" class="onboarding-result platforms-content" aria-label="接入结果" hidden>
-      <h3>接入结果</h3><p id="onboarding-result-target" class="quiet"></p><p id="onboarding-result-account"></p>
-      <dl id="onboarding-steps" class="activity-stats" aria-live="polite"></dl>
-      <p id="onboarding-result-error" class="form-error" role="alert" hidden></p>
-      <div class="connection-account-actions"><button id="onboarding-prepare-retry" class="settings-secondary-button" type="button" hidden>重试准备接入</button><button id="onboarding-resume" class="settings-secondary-button" type="button">读取接入进度</button><button id="onboarding-continue-login" class="settings-secondary-button" type="button" hidden>继续连接账号</button><button id="onboarding-apply" class="primary" type="button" hidden>继续启用</button><button id="onboarding-cancel" class="text-button" type="button" hidden>停止剩余步骤</button><button id="onboarding-dismiss" class="text-button" type="button" hidden>收起结果</button><button id="onboarding-use-room" class="text-button" type="button" hidden>在当前 Room 中使用</button><button id="onboarding-notification-settings" class="text-button" type="button" hidden>调整通知范围</button></div>
+    <section id="onboarding-result" class="onboarding-result" aria-label="接入状态" hidden>
+      <div class="onboarding-status">
+        <p id="onboarding-result-summary" role="status" aria-live="polite"></p>
+        <div class="connection-account-actions"><button id="onboarding-resume" class="text-button" type="button" hidden>检查状态</button><button id="onboarding-continue-login" class="text-button" type="button" hidden>继续连接</button><button id="onboarding-apply" class="text-button" type="button" hidden>继续启用</button></div>
+      </div>
+      <details id="onboarding-result-details">
+        <summary>详情</summary>
+        <p id="onboarding-result-target" class="quiet"></p><p id="onboarding-result-account" class="quiet"></p>
+        <dl id="onboarding-steps" class="activity-stats"></dl>
+        <p id="onboarding-result-error" class="form-error" role="alert" hidden></p>
+        <div class="connection-account-actions"><button id="onboarding-prepare-retry" class="settings-secondary-button" type="button" hidden>重试准备接入</button><button id="onboarding-cancel" class="text-button" type="button" hidden>停止剩余步骤</button><button id="onboarding-notification-settings" class="text-button" type="button" hidden>调整通知范围</button></div>
+      </details>
     </section>
     <p id="platforms-feedback" class="platforms-feedback quiet" role="status" aria-live="polite"></p>
     <details id="platforms-feedback-details" class="platforms-feedback-details" hidden><summary>查看说明</summary><p id="platforms-feedback-detail"></p></details>

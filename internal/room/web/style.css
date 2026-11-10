@@ -210,9 +210,6 @@ h1 {
   border-color:#dce7d7;
   color:var(--accent);
 }
-#message-count {
-  font-variant-numeric:tabular-nums;
-}
 .timeline-wrap {
   flex:1;
   min-height:0;
@@ -1186,7 +1183,6 @@ textarea::placeholder {
   .room-header {
     padding:0 25px;
   }
-  #message-count { display:none; }
   .message {
     padding:18px 25px;
   }
@@ -2235,10 +2231,18 @@ textarea::placeholder {
 .onboarding-options { border-block:1px solid var(--line); padding-block:16px; }
 .onboarding-options select { width:100%; }
 .onboarding-options .workspace-check { margin-block:10px; }
-.onboarding-result { border-top:1px solid var(--line); padding-top:18px; }
-.onboarding-result h3 { font-size:15px; margin:0 0 10px; }
+.onboarding-result { margin:0 24px 16px; padding-top:12px; border-top:1px solid var(--line); font-size:13px; }
+.onboarding-status { display:flex; align-items:center; flex-wrap:wrap; gap:4px 12px; }
+#onboarding-result-summary { flex:1 1 200px; margin:0; line-height:1.7; overflow-wrap:anywhere; }
+.onboarding-status .connection-account-actions { flex:none; margin:0; }
+.onboarding-status .text-button { min-height:36px; padding:4px 0; font-size:12px; }
+#onboarding-result-details { margin-top:4px; }
+#onboarding-result-details > summary { width:fit-content; padding:6px 0; color:var(--muted); cursor:pointer; font-size:12px; }
+#onboarding-result-details > p { margin:8px 0; }
+#onboarding-result-details .activity-stats { margin:12px 0; }
 .onboarding-result dd { overflow-wrap:anywhere; }
 .onboarding-result .connection-account-actions { flex-wrap:wrap; }
+@media(max-width:640px) { .onboarding-result { margin-inline:18px; } .onboarding-status .text-button { min-height:44px; } }
 #gitlab-reuse-summary, #gitlab-application-issues { font-size:13px; line-height:1.7; overflow-wrap:anywhere; }
 #gitlab-compatibility-details { margin-top:10px; }
 #gitlab-application { width:100%; }
@@ -2315,10 +2319,27 @@ textarea::placeholder {
 .member-platform-row .notification-source-issue[data-kind="success"] { color:var(--muted); }
 #member-platform-issues:empty,#inbox-platform-issues:empty { display:none; }
 #member-platform-issues button,#inbox-platform-issues button { display:block; text-align:left; color:#9c4b43; font-size:11px; }
-#member-platform-add-selection { margin:10px 0; padding:8px 0; border-top:1px solid var(--line); }
-#member-platform-add-selection h4 { margin:4px 0 10px; font-size:12px; }
-#member-platform-add-selection .workspace-check { display:flex; margin:8px 0; font-size:12px; }
-#member-platform-add-summary,#member-platform-add-result { font-size:11px; line-height:1.7; }
+#member-platform-add-selection { margin:0 0 16px; }
+#member-platform-add-selection .workspace-check { display:flex; align-items:center; gap:6px; min-height:36px; margin:0; font-size:13px; }
+#member-platform-add-actions { display:flex; justify-content:flex-end; align-items:center; gap:12px; margin-top:20px; }
+#member-platform-add-result { font-size:11px; line-height:1.7; }
+.member-platform-add-option { display:flex; align-items:center; gap:12px; cursor:default; }
+.member-platform-add-info { flex:1; min-width:0; }
+.member-platform-add-info strong,.member-platform-add-info small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.member-platform-add-buttons { display:flex; flex:none; align-items:center; gap:10px; opacity:0; pointer-events:none; transition:opacity .12s; }
+.member-platform-add-option:hover .member-platform-add-buttons,.member-platform-add-option:focus-within .member-platform-add-buttons { opacity:1; pointer-events:auto; }
+.member-platform-add-buttons button { min-height:36px; font-size:11px; white-space:nowrap; }
+.member-platform-add-buttons .primary { padding:7px 10px; }
+.member-platform-add-buttons .text-button { padding:7px 2px; }
+@media (hover:none),(pointer:coarse),(max-width:640px) {
+  .member-platform-add-buttons { opacity:1; pointer-events:auto; }
+  .member-platform-add-buttons button { min-height:44px; }
+}
+@media (max-width:400px) {
+  .member-platform-add-option { flex-wrap:wrap; gap:4px 12px; }
+  .member-platform-add-buttons { margin-left:auto; }
+}
+@media (prefers-reduced-motion:reduce) { .member-platform-add-buttons { transition:none; } }
 /* Shared detail navigation and compact notification configuration. */
 .detail-header { justify-content:flex-start; }
 .detail-header .back-button { display:inline-flex; align-items:center; justify-content:center; flex:none; gap:6px; min-height:36px; padding:6px 8px; margin-left:-8px; border-radius:5px; color:var(--muted); background:transparent; font-size:12px; font-weight:400; white-space:nowrap; }

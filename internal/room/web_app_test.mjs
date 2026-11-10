@@ -167,7 +167,6 @@ test("rename updates title, navigation and reload while preserving identity, his
   assert.equal(ui.document.title, "新名称 · TeamX");
   assert.deepEqual(api.catalog.rooms[0]?.service, info);
   assert.equal(ui.el("message-input").value, "Keep this draft");
-  assert.equal(ui.el("message-count").textContent, "1 条消息");
   const reload = await launch(api, ui.saved);
   assert.equal(reload.el("room-name").textContent, "新名称");
   assert.equal(reload.el("message-input").value, "Keep this draft");
@@ -323,14 +322,12 @@ test("empty catalog -> create -> A/B/A retains history, draft and quote; opening
   const article = ui.el("messages").children.find(el => el.id === "message-1");
   await article.querySelector(".reply-button").emit("click");
   await ui.create("B");
-  assert.equal(ui.el("message-count").textContent, "0 条消息");
   assert.equal(ui.el("message-input").value, "Opening");
   assert.equal(ui.el("reply-context").hidden, true);
   await ui.draft("draft-B"); await ui.select("A");
   assert.equal(ui.el("message-input").value, "draft-A");
   assert.equal(ui.el("reply-context").hidden, false);
   assert.match(ui.el("reply-label").textContent, /quote-A/);
-  assert.equal(ui.el("message-count").textContent, "1 条消息");
   await ui.select("B"); assert.equal(ui.el("message-input").value, "draft-B");
   const reload = await launch(api, ui.saved);
   assert.equal(reload.el("message-input").value, "draft-B");
@@ -958,13 +955,11 @@ test("deletion requires confirmation and removes the active view and draft while
   await ui.delete("A");
   assert.deepEqual(api.catalog.rooms.map(room => room.name), ["B"]);
   assert.equal(ui.el("room-name").textContent, "选择或新建房间");
-  assert.equal(ui.el("message-count").textContent, "0 条消息");
   assert.equal(ui.el("message-input").value, "");
   assert.equal(ui.el("send").disabled, true);
   assert.equal(ui.saved.has(JSON.stringify(["teamx.draft", "instance-A", "tester"])), false);
   assert.match(ui.el("management-notice").textContent, /已删除/);
   await ui.select("B");
-  assert.equal(ui.el("message-count").textContent, "1 条消息");
   assert.equal(api.calls.filter(call => call.path === "/v1/rooms/delete").length, 1);
 });
 
@@ -1116,7 +1111,7 @@ test("Workspace allows discussion before explicit Git-only binding; keeps draft/
   assert.equal(sent.target.repository.branch, "main");
   assert.equal(sent.target.repository.kind, "git");
   assert.match(sent.operation_id, /^[0-9a-f]{32}$/); assert.equal(sent.pat, undefined); assert.equal(sent.target.binding, undefined);
-  assert.equal(ui.el("message-input").value, "Unsent draft stays"); assert.equal(ui.el("message-count").textContent, "2 条消息");
+  assert.equal(ui.el("message-input").value, "Unsent draft stays");
   assert.equal(ui.el("workspace-repository").disabled, true); assert.equal(ui.el("workspace-repo-url").readOnly, true);
   assert.equal(ui.el("workspace-dialog").open, false);
   assert.match(ui.el("workspace-current").textContent, /workspaces\/repos/);
@@ -1237,7 +1232,6 @@ test("Workspace lost response observes original ID across reload, blocks duplica
   assert.equal(ui.el("workspace-dialog").open, true);
   assert.equal(ui.el("message-input").readOnly, true); assert.match(ui.el("workspace-summary").textContent, /正在初始化/);
   assert.match(ui.el("management-notice").textContent, /Workspace/);
-  assert.equal(ui.el("message-count").textContent, "1 条消息");
   const reload = await launch(api, ui.saved); await reload.el("open-workspace").emit("click");
 
   assert.equal(api.calls.filter(c => c.path === "/v1/workspace/apply").length, 1);
