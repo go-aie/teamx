@@ -9,10 +9,12 @@ import (
 	"os"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
+	"github.com/go-aie/teamx/internal/platform/gitlab"
 	"github.com/go-aie/teamx/internal/platform/lark"
 	"github.com/go-aie/teamx/internal/platform/notification"
 	"github.com/go-aie/teamx/internal/platform/tool"
@@ -28,6 +30,11 @@ func (req platformMemberRequest) chatsRequest() larkChatsRequest {
 	return larkChatsRequest{member: &toolsRequest{ServiceInfo: req.ServiceInfo, Caller: req.Caller}, ServiceEpoch: req.ServiceEpoch, RoomIdentity: req.RoomIdentity, Caller: req.Caller, PlatformID: req.Input.PlatformID, PlatformVersion: req.Input.PlatformVersion, Query: req.Query, PageToken: req.PageToken, Type: "group"}
 }
 
+func (req platformMemberRequest) projectsRequest() gitlabProjectsRequest {
+	page, _ := strconv.Atoi(req.PageToken)
+	return gitlabProjectsRequest{member: &toolsRequest{ServiceInfo: req.ServiceInfo, Caller: req.Caller}, ServiceEpoch: req.ServiceEpoch, RoomIdentity: req.RoomIdentity, Caller: req.Caller, PlatformID: req.Input.PlatformID, PlatformVersion: req.Input.PlatformVersion, Search: req.Query, Page: page}
+}
+
 type platformMemberView struct {
 	MemberIdentity
 	PlatformID          string                   `json:"platform_id"`
@@ -35,6 +42,7 @@ type platformMemberView struct {
 	Account             platform.AccountIdentity `json:"account"`
 	NotificationVersion uint64                   `json:"notification_version"`
 	Config              *lark.Config             `json:"notification_config,omitempty"`
+	GitLab              *gitlabNotificationView  `json:"gitlab_notifications,omitempty"`
 	Baseline            time.Time                `json:"baseline,omitzero"`
 	ToolRevision        uint64                   `json:"tool_revision"`
 	ToolEnabled         bool                     `json:"tool_enabled"`
@@ -43,17 +51,29 @@ type platformMemberView struct {
 
 func (m *roomManager) platformMemberViewLocked(ctx context.Context, req platformMemberRequest) (platformMemberView, error) {
 	v := platformMemberView{MemberIdentity: req.member()}
-	a, err := m.checkLarkChatsLocked(ctx, req.chatsRequest(), nil)
+	a, err := m.platformMemberAccountLocked(ctx, req)
 	if err != nil {
 		return v, err
 	}
 	v.PlatformID, v.PlatformVersion, v.Account = a.PlatformID, a.PlatformVersion, a.Identity
-	s, err := m.currentLarkForTargetLocked(req.RoomIdentity, a.PlatformID, platformMemberTarget(v.MemberIdentity))
-	if err != nil {
-		return v, err
-	}
-	if s != nil {
-		v.NotificationVersion, v.Config, v.Baseline = s.SubscriptionVersion, &s.Config, s.Baseline
+	if a.Identity.Provider == "gitlab" {
+		n, err := m.gitlabNotificationViewForTargetLocked(req.RoomIdentity, a.PlatformID, platformMemberTarget(v.MemberIdentity))
+		if err != nil {
+			return v, err
+		}
+		v.NotificationVersion, v.GitLab = n.Version, &n
+		v.Baseline = n.Config.BackfillStart
+		if v.Baseline.IsZero() {
+			v.Baseline = m.gitlabMemberBaselineLocked(req)
+		}
+	} else {
+		s, err := m.currentLarkForTargetLocked(req.RoomIdentity, a.PlatformID, platformMemberTarget(v.MemberIdentity))
+		if err != nil {
+			return v, err
+		}
+		if s != nil {
+			v.NotificationVersion, v.Config, v.Baseline = s.SubscriptionVersion, &s.Config, s.Baseline
+		}
 	}
 	f, err := m.readToolBindingsLocked(req.RoomIdentity)
 	if err != nil {
@@ -186,6 +206,10 @@ func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, 
 		m.mu.Unlock()
 		return op, err
 	}
+	if !validPlatformMemberProviderInput(v.Account.Provider, kind, *req.Input) {
+		m.mu.Unlock()
+		return op, ErrRequest
+	}
 	admission := platformMemberAdmission{Request: req, Account: v.Account, Kind: kind}
 	ctx = context.WithValue(ctx, platformMemberContextKey{}, admission)
 	if err = m.checkPlatformMemberContextLocked(ctx); err != nil {
@@ -202,6 +226,16 @@ func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, 
 			return op, err
 		}
 		chats = page.Chats
+	}
+	var project *gitlab.Project
+	if req.Input.ProjectID != 0 {
+		q := req.projectsRequest()
+		q.verifyID, q.verifyPath = req.Input.ProjectID, req.Input.ProjectPath
+		page, e := m.listGitLabProjects(ctx, q)
+		if e != nil {
+			return op, e
+		}
+		project = &page.Projects[0]
 	}
 	m.mu.Lock()
 	// Recheck ID and source reservations after yielding for exact-ID verification.
@@ -228,14 +262,21 @@ func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, 
 		m.mu.Unlock()
 		return op, err
 	}
-	op = platformMemberOperation{Schema: 1, MemberIdentity: req.member(), ID: req.OperationID, Kind: kind, Source: source, Input: *req.Input, Account: v.Account, Status: "unknown", Result: onboardingStep{Status: "unknown", ErrorCode: "submission_unconfirmed"}, Chats: chats, CreatedAt: time.Now().UTC()}
+	op = platformMemberOperation{Schema: 1, MemberIdentity: req.member(), ID: req.OperationID, Kind: kind, Source: source, Input: *req.Input, Account: v.Account, Status: "unknown", Result: onboardingStep{Status: "unknown", ErrorCode: "submission_unconfirmed"}, Chats: chats, Project: project, CreatedAt: time.Now().UTC()}
 	if kind == "notifications" {
-		cfg, e := memberNotificationConfig(m, v, *req.Input)
-		if e != nil {
-			m.mu.Unlock()
-			return op, e
+		if v.Account.Provider == "gitlab" {
+			var cfg gitlab.NotificationConfig
+			cfg, err = m.gitlabMemberNotificationConfigLocked(v, req)
+			op.GitLabConfig = &cfg
+		} else {
+			var cfg lark.Config
+			cfg, err = memberNotificationConfig(m, v, *req.Input)
+			op.Config = &cfg
 		}
-		op.Config = &cfg
+		if err != nil {
+			m.mu.Unlock()
+			return op, err
+		}
 	}
 	if err = m.savePlatformMemberLocked(op); err != nil {
 		m.mu.Unlock()
@@ -244,6 +285,17 @@ func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, 
 	if kind == "tool" {
 		op.Result, err = m.applyPlatformMemberToolLocked(ctx, op)
 		m.mu.Unlock()
+	} else if op.GitLabConfig != nil {
+		m.mu.Unlock()
+		var next gitlabNotificationView
+		next, err = m.configureGitLabNotifications(ctx, req.RoomIdentity, req.Input.NotificationVersion, *op.GitLabConfig)
+		op.Result = onboardingStep{Status: "applied", Version: next.Version}
+		if next.Version != 0 {
+			op.GitLabConfig = &next.Config
+		}
+		if err == nil && (next.Applying || len(next.Errors) != 0 || next.Pending["events"] || next.Pending["todos"]) {
+			err = ErrConflict
+		}
 	} else {
 		key := notification.Key{Owner: req.RoomIdentity, Source: lark.MessagesSourceID}
 		current, e := m.currentLarkForTargetLocked(req.RoomIdentity, req.Input.PlatformID, platformMemberTarget(req.member()))
@@ -284,13 +336,13 @@ func (m *roomManager) applyPlatformMemberToolLocked(ctx context.Context, op plat
 	if !ok {
 		return onboardingStep{}, ErrIdentity
 	}
-	account, err := m.checkLarkChatsLocked(ctx, admission.Request.chatsRequest(), nil)
+	account, err := m.platformMemberAccountLocked(ctx, admission.Request)
 	if err != nil {
 		return onboardingStep{}, err
 	}
 	enabled := *op.Input.Enabled
 	for i, b := range append(slices.Clone(f.Bindings), f.Disabled...) {
-		if b.AgentID == op.AgentID && b.MembershipID == op.MembershipID && b.PlatformID == op.Input.PlatformID && b.Tool == "lark" && enabled == (i < len(f.Bindings)) && (!enabled || b.PlatformGeneration == account.Generation) {
+		if b.AgentID == op.AgentID && b.MembershipID == op.MembershipID && b.PlatformID == op.Input.PlatformID && b.Tool == op.Account.Provider && enabled == (i < len(f.Bindings)) && (!enabled || b.PlatformGeneration == account.Generation) {
 			// Preserve existing grants and unrelated settings on repeated enable.
 			return onboardingStep{Status: "preserved", Version: f.Revision}, nil
 		}
@@ -299,7 +351,7 @@ func (m *roomManager) applyPlatformMemberToolLocked(ctx context.Context, op plat
 	if !enabled {
 		version = 0
 	}
-	next, waits, err := m.changeToolBindingLocked(ctx, toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: op.RoomIdentity, Caller: Caller{Kind: "human", ID: op.Source.Author.ID}, Revision: op.Input.ToolRevision, PlatformVersion: version, Binding: tool.Binding{AgentID: op.AgentID, MembershipID: op.MembershipID, PlatformID: op.Input.PlatformID, Tool: "lark"}, Enabled: enabled})
+	next, waits, err := m.changeToolBindingLocked(ctx, toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: op.RoomIdentity, Caller: Caller{Kind: "human", ID: op.Source.Author.ID}, Revision: op.Input.ToolRevision, PlatformVersion: version, Binding: tool.Binding{AgentID: op.AgentID, MembershipID: op.MembershipID, PlatformID: op.Input.PlatformID, Tool: op.Account.Provider}, Enabled: enabled})
 	if err == nil {
 		err = m.waitOnboardingToolLocked(ctx, waits)
 	}
@@ -351,8 +403,8 @@ func (m *roomManager) servePlatformMember(w http.ResponseWriter, r *http.Request
 		return
 	}
 	action := strings.TrimPrefix(r.URL.Path, "/v1/platforms/member/")
-	if r.URL.Path == "/v1/platforms/chats" {
-		action = "chats"
+	if r.URL.Path == "/v1/platforms/chats" || r.URL.Path == "/v1/platforms/projects" {
+		action = strings.TrimPrefix(r.URL.Path, "/v1/platforms/")
 	}
 	var result any
 	var err error
@@ -379,7 +431,7 @@ func (m *roomManager) servePlatformMember(w http.ResponseWriter, r *http.Request
 						Operations []platformMemberOperation `json:"operations"`
 					}{ops}
 				}
-			case "get", "chats":
+			case "get", "chats", "projects":
 				if req.Input == nil || req.OperationID != "" || req.SourceSeq != 0 {
 					err = ErrRequest
 				} else {
@@ -395,6 +447,32 @@ func (m *roomManager) servePlatformMember(w http.ResponseWriter, r *http.Request
 			}
 		}
 		m.mu.Unlock()
+		if err == nil && action == "projects" {
+			if req.PageToken != "" {
+				n, e := strconv.Atoi(req.PageToken)
+				if e != nil || n < 1 || n > 1000 {
+					err = ErrRequest
+				}
+			}
+			if err == nil {
+				var page gitlab.ProjectPage
+				page, err = m.listGitLabProjects(r.Context(), req.projectsRequest())
+				if err == nil {
+					m.mu.Lock()
+					account, checkErr := m.platformMemberAccountLocked(r.Context(), req)
+					m.mu.Unlock()
+					err = checkErr
+					if err == nil {
+						result = struct {
+							PlatformID      string                   `json:"platform_id"`
+							PlatformVersion uint64                   `json:"platform_version"`
+							Account         platform.AccountIdentity `json:"account"`
+							gitlab.ProjectPage
+						}{req.Input.PlatformID, req.Input.PlatformVersion, account.Identity, page}
+					}
+				}
+			}
+		}
 		if err == nil && action == "chats" {
 			var page lark.ChatPage
 			page, err = m.listLarkChats(r.Context(), req.chatsRequest())
@@ -421,7 +499,7 @@ func (m *roomManager) servePlatformMember(w http.ResponseWriter, r *http.Request
 			w.WriteHeader(http.StatusNotFound)
 			_ = json.NewEncoder(w).Encode(apiError{Error: "member configuration operation not found", Code: "operation_not_found", Message: "No member configuration operation matches this request."})
 		} else {
-			writeLarkReadError(w, err)
+			writePlatformSetupReadError(w, err)
 		}
 		return
 	}

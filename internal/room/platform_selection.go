@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
+	"github.com/go-aie/teamx/internal/platform/gitlab"
 	"github.com/go-aie/teamx/internal/platform/lark"
 	"github.com/go-aie/teamx/internal/platform/registry"
 	"github.com/go-aie/teamx/internal/platform/tool"
@@ -24,16 +25,21 @@ import (
 // applies its immutable receipt using the existing connect/member commands.
 type platformSelectionInput struct {
 	Kind            string `json:"kind"`
+	Provider        string `json:"provider,omitempty"`
+	Origin          string `json:"origin,omitempty"`
 	PlatformID      string `json:"platform_id,omitempty"`
 	PlatformVersion uint64 `json:"platform_version,omitempty"`
 	Query           string `json:"query,omitempty"`
 }
 type platformSelectionDraft struct {
-	PlatformID       string   `json:"platform_id,omitempty"`
-	PlatformVersion  uint64   `json:"platform_version,omitempty"`
-	Name             string   `json:"name,omitempty"`
-	ChatIDs          []string `json:"chat_ids,omitempty"`
-	GroupMessageMode string   `json:"group_message_mode,omitempty"`
+	PlatformID       string               `json:"platform_id,omitempty"`
+	PlatformVersion  uint64               `json:"platform_version,omitempty"`
+	Name             string               `json:"name,omitempty"`
+	ChatIDs          []string             `json:"chat_ids,omitempty"`
+	GroupMessageMode string               `json:"group_message_mode,omitempty"`
+	ProjectID        int64                `json:"project_id,omitempty"`
+	ProjectPath      string               `json:"project_path,omitempty"`
+	EventsFilter     *gitlab.EventsFilter `json:"events_filter,omitempty"`
 }
 type platformSelection struct {
 	Schema int `json:"schema"`
@@ -48,6 +54,7 @@ type platformSelection struct {
 	ResultVersion    uint64                   `json:"result_version"`
 	Status           string                   `json:"status"`
 	Account          platform.AccountIdentity `json:"account"`
+	Project          *gitlab.Project          `json:"project,omitempty"`
 	Chats            []lark.Chat              `json:"chats,omitempty"`
 	CreatedAt        time.Time                `json:"created_at"`
 	ExpiresAt        time.Time                `json:"expires_at"`
@@ -78,6 +85,12 @@ func (m *roomManager) selectionPath(id string) string {
 	return filepath.Join(m.store.dir, "platform-selections", id+".json")
 }
 func validSelectionDraft(in platformSelectionInput, d platformSelectionDraft) bool {
+	if selectionProvider(in) == "gitlab" {
+		return validGitLabSelectionDraft(in, d)
+	}
+	if d.ProjectID != 0 || d.ProjectPath != "" || d.EventsFilter != nil {
+		return false
+	}
 	if in.Kind == "account" {
 		if d.Name != "" {
 			name, _, err := registry.Normalize(d.Name, lark.Origin("feishu"))
@@ -127,7 +140,19 @@ func (m *roomManager) readPlatformSelectionLocked(id string) (platformSelection,
 	} else if s.Status != "completed" && s.Status != "cancelled" && s.Status != "expired" || s.ResultVersion != 1 || s.ResultAt.IsZero() || s.SubmittedVersion == 0 {
 		return s, ErrInvalid
 	}
+	if s.Input.Kind != "projects" && s.Project != nil || selectionProvider(s.Input) == "gitlab" && len(s.Chats) != 0 {
+		return s, ErrInvalid
+	}
 	if s.Status == "completed" {
+		if selectionProvider(s.Input) == "gitlab" && s.Input.Kind == "account" && (s.Draft.PlatformID == "" || !s.Account.Valid() || s.Account.Instance != s.Input.Origin) {
+			return s, ErrInvalid
+		}
+		if s.Input.Kind == "projects" && (s.Account.Provider != "gitlab" || !s.Account.Valid() || s.Project == nil || s.Project.ID != s.Draft.ProjectID || s.Project.Path != s.Draft.ProjectPath || s.Project.Name == "") {
+			return s, ErrInvalid
+		}
+		if s.Account.Valid() && s.Account.Provider != selectionProvider(s.Input) {
+			return s, ErrInvalid
+		}
 		if s.Input.Kind == "groups" && (!s.Account.Valid() || len(s.Chats) != len(s.Draft.ChatIDs) || len(s.Chats) == 0) {
 			return s, ErrInvalid
 		}
@@ -143,6 +168,12 @@ func (m *roomManager) readPlatformSelectionLocked(id string) (platformSelection,
 	return s, nil
 }
 func validSelectionInput(in platformSelectionInput) bool {
+	if selectionProvider(in) == "gitlab" {
+		return validGitLabSelectionInput(in)
+	}
+	if in.Provider != "" && in.Provider != "lark" || in.Origin != "" {
+		return false
+	}
 	return len(in.Query) <= 256 && !strings.ContainsAny(in.Query, "\x00\r\n") && (in.Kind == "account" && in.PlatformID == "" && in.PlatformVersion == 0 && in.Query == "" || in.Kind == "groups" && tool.OpaqueID(in.PlatformID) && in.PlatformVersion > 0)
 }
 func (m *roomManager) savePlatformSelectionLocked(s platformSelection) error {
@@ -268,7 +299,7 @@ func (m *roomManager) startPlatformSelectionLocked(ctx context.Context, req plat
 		return s, ErrCapacity
 	}
 	for _, p := range all {
-		if p.RoomIdentity == req.RoomIdentity && p.AgentID == req.Caller.ID && p.MembershipID == req.Caller.MembershipID && p.Source.Seq == req.SourceSeq && p.Input.Kind == req.Input.Kind {
+		if p.RoomIdentity == req.RoomIdentity && p.AgentID == req.Caller.ID && p.MembershipID == req.Caller.MembershipID && p.Source.Seq == req.SourceSeq && p.Input.Kind == req.Input.Kind && selectionProvider(p.Input) == selectionProvider(*req.Input) {
 			return s, conflictReason("source_seq", "selection already exists", "Query selection status with the original source_seq.")
 		}
 	}
@@ -283,6 +314,16 @@ func (m *roomManager) startPlatformSelectionLocked(ctx context.Context, req plat
 	}
 	now := time.Now().UTC()
 	s = platformSelection{Schema: 1, MemberIdentity: MemberIdentity{RoomIdentity: req.RoomIdentity, AgentID: req.Caller.ID, MembershipID: req.Caller.MembershipID}, ID: req.OperationID, Source: source, Input: *req.Input, InitialDraft: d, Draft: d, Version: 1, Status: "waiting", CreatedAt: now, ExpiresAt: now.Add(24 * time.Hour)}
+	if s.Input.Kind == "projects" {
+		a, err := m.platformMemberAccountLocked(ctx, s.memberRequest(req.ServiceInfo))
+		if err != nil {
+			return s, err
+		}
+		if a.Identity.Provider != "gitlab" {
+			return s, ErrRequest
+		}
+		s.Account = a.Identity
+	}
 	if s.Input.Kind == "groups" {
 		a, err := m.checkLarkChatsLocked(ctx, s.memberRequest(req.ServiceInfo).chatsRequest(), nil)
 		if err != nil {
@@ -329,17 +370,20 @@ func (m *roomManager) submitPlatformSelection(ctx context.Context, req platformS
 					continue
 				}
 				found = true
-				if c.Provider != "lark" || c.Version != s.Draft.PlatformVersion {
+				if c.Provider != selectionProvider(s.Input) || c.Version != s.Draft.PlatformVersion || s.Input.Origin != "" && c.URL != s.Input.Origin {
 					err = ErrConflict
 					break
 				}
 				a, _, e := registry.ResolveAccessAccount(file, c)
 				err = e
 				if err == nil {
-					q := member.chatsRequest()
-					q.PlatformID = c.ID
-					q.PlatformVersion = c.Version
-					_, err = m.checkLarkChatsLocked(ctx, q, &a)
+					q := member
+					q.Input = &platformMemberInput{PlatformID: c.ID, PlatformVersion: c.Version}
+					var current registry.Account
+					current, err = m.platformMemberAccountLocked(ctx, q)
+					if err == nil && !reflect.DeepEqual(current, a) {
+						err = ErrConflict
+					}
 				}
 				if err == nil {
 					s.Account = a.Identity
@@ -349,13 +393,16 @@ func (m *roomManager) submitPlatformSelection(ctx context.Context, req platformS
 			if !found {
 				err = ErrConflict
 			}
-		} else if !validText(s.Draft.Name) {
+		} else if selectionProvider(s.Input) == "gitlab" || !validText(s.Draft.Name) {
 			err = ErrRequest
 		}
 		if err != nil {
 			m.mu.Unlock()
 			return s, err
 		}
+	} else if s.Input.Kind == "projects" {
+		m.mu.Unlock()
+		return m.submitGitLabProjectSelection(ctx, req, s, member)
 	} else {
 		if len(s.Draft.ChatIDs) == 0 {
 			m.mu.Unlock()
@@ -552,7 +599,25 @@ func (m *roomManager) servePlatformSelection(w http.ResponseWriter, r *http.Requ
 					break
 				}
 				if s.Input.Kind == "account" {
-					result, err = m.selectionAccountsLocked()
+					result, err = m.selectionAccountsForInputLocked(s.Input)
+				} else if s.Input.Kind == "projects" {
+					q := member.projectsRequest()
+					q.Search = req.Query
+					var page gitlab.ProjectPage
+					if req.PageToken != "" {
+						n, e := selectionProjectPage(req.PageToken)
+						err = e
+						q.Page = n
+					}
+					if err == nil {
+						m.mu.Unlock()
+						page, err = m.listGitLabProjects(r.Context(), q)
+						m.mu.Lock()
+						if err == nil {
+							err = m.checkProjectSelectionCurrentLocked(r.Context(), req, s, member)
+						}
+					}
+					result = page
 				} else {
 					q := member.chatsRequest()
 					q.Query = req.Query
@@ -594,7 +659,7 @@ func (m *roomManager) servePlatformSelection(w http.ResponseWriter, r *http.Requ
 			w.WriteHeader(http.StatusNotFound)
 			_ = json.NewEncoder(w).Encode(apiError{Error: "selection not found", Code: "operation_not_found", Message: "No selection matches this request."})
 		} else {
-			writeLarkReadError(w, err)
+			writePlatformSetupReadError(w, err)
 		}
 		return
 	}
@@ -609,14 +674,14 @@ type platformSelectionAccount struct {
 	Account  platform.AccountIdentity `json:"account"`
 }
 
-func (m *roomManager) selectionAccountsLocked() ([]platformSelectionAccount, error) {
+func (m *roomManager) selectionAccountsForInputLocked(in platformSelectionInput) ([]platformSelectionAccount, error) {
 	file, err := m.platforms.Load()
 	if err != nil {
 		return nil, err
 	}
 	out := []platformSelectionAccount{}
 	for _, c := range file.Platforms {
-		if c.Provider != "lark" {
+		if c.Provider != selectionProvider(in) || in.Origin != "" && c.URL != in.Origin {
 			continue
 		}
 		a, _, e := registry.ResolveAccessAccount(file, c)

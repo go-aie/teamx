@@ -2,6 +2,7 @@ package gitlab
 
 import (
 	"context"
+	"errors"
 	"net/url"
 	"strconv"
 	"strings"
@@ -52,4 +53,41 @@ func ListProjects(ctx context.Context, read ReadAPI, search string, page int) (P
 		return ProjectPage{}, &queryError{Code: "invalid_response"}
 	}
 	return ProjectPage{Projects: projects, NextPage: next}, nil
+}
+
+// GetProject resolves a native project ID through the selected account. Callers
+// compare the returned path with the selected candidate before committing.
+func GetProject(ctx context.Context, read ReadAPI, id int64) (Project, error) {
+	if id <= 0 {
+		return Project{}, &queryError{Code: "invalid_request"}
+	}
+	response, err := read(ctx, "/projects/"+strconv.FormatInt(id, 10), nil, nil, 32<<10)
+	if err != nil {
+		return Project{}, err
+	}
+	var p Project
+	if decodeJSON(response.Data, &p) != nil || p.ID != id || p.Name == "" || len(p.Name) > 1024 || !validEventsProjectPath(p.Path) {
+		return Project{}, &queryError{Code: "invalid_response"}
+	}
+	return p, nil
+}
+
+// ProjectReadErrorCode exposes only a bounded classification, never a remote
+// body or transport error. Empty means the error belongs to another boundary.
+func ProjectReadErrorCode(err error) string {
+	var q *queryError
+	if !errors.As(err, &q) {
+		return ""
+	}
+	switch q.Status {
+	case 401:
+		return "credential"
+	case 403:
+		return "permission_denied"
+	case 404:
+		return "not_found"
+	case 429:
+		return "rate_limited"
+	}
+	return q.Code
 }

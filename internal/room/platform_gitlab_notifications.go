@@ -374,6 +374,10 @@ func (m *roomManager) configureGitLabNotifications(ctx context.Context, owner Ro
 		m.mu.Unlock()
 		return gitlabNotificationView{}, err
 	}
+	if err := m.checkPlatformMemberContextLocked(ctx); err != nil {
+		m.mu.Unlock()
+		return gitlabNotificationView{}, err
+	}
 
 	if m.closing || m.roomBusyLocked(owner) || m.gitlabConfiguring[notificationApplyKey(owner, cfg.PlatformID, cfg.Target)] {
 		m.mu.Unlock()
@@ -468,6 +472,7 @@ func (m *roomManager) configureGitLabNotifications(ctx context.Context, owner Ro
 		}
 	}
 	m.gitlabConfiguring[notificationApplyKey(owner, cfg.PlatformID, cfg.Target)] = true
+	ctx = platformMemberNotificationContext(ctx, saved.Version)
 	var waits []<-chan struct{}
 	for _, state := range m.notifications.StatesLocked(owner) {
 		if state.Metadata().Key.Source.Provider != "gitlab" || state.Metadata().PlatformID != cfg.PlatformID || state.Metadata().Target != cfg.Target {
@@ -490,6 +495,10 @@ func (m *roomManager) configureGitLabNotifications(ctx context.Context, owner Ro
 	} else {
 		for _, channel := range []string{"events", "todos"} {
 			m.mu.Lock()
+			if err := m.checkPlatformMemberContextLocked(ctx); err != nil {
+				m.mu.Unlock()
+				return gitlabNotificationView{}, err
+			}
 			applied := m.gitlabSettingsAppliedLocked(owner, cfg, channel)
 			var key notification.Key
 			var revision uint64
@@ -522,6 +531,9 @@ func (m *roomManager) configureGitLabNotifications(ctx context.Context, owner Ro
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if err := m.checkPlatformMemberContextLocked(ctx); err != nil {
+		return gitlabNotificationView{}, err
+	}
 	if m.closing {
 		return gitlabNotificationView{}, ErrClosing
 	}

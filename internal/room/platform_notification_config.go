@@ -69,6 +69,9 @@ func (m *roomManager) configureEventsSubscription(ctx context.Context, key notif
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if err := m.checkPlatformMemberContextLocked(ctx); err != nil {
+		return gitlab.EventsState{}, err
+	}
 	if m.closing || m.roomBusyLocked(key.Owner) {
 		return gitlab.EventsState{}, ErrBusy
 	}
@@ -143,11 +146,17 @@ func (m *roomManager) configureEventsSubscription(ctx context.Context, key notif
 	} else if current != nil {
 		cfg.PlatformID, cfg.Project = current.Config.PlatformID, current.Config.Project
 	}
+	if a, ok := ctx.Value(platformMemberContextKey{}).(platformMemberAdmission); ok && a.Request.Input.ProjectID != 0 && cfg.Enabled && (binding.ProjectID != a.Request.Input.ProjectID || binding.Project != a.Request.Input.ProjectPath) {
+		return gitlab.EventsState{}, ErrConflict
+	}
 	cfg, err = gitlab.NormalizeEventsConfig(cfg)
 	if err != nil {
 		return gitlab.EventsState{}, notificationRoomError(err)
 	}
 	if err := ctx.Err(); err != nil {
+		return gitlab.EventsState{}, err
+	}
+	if err := m.checkPlatformMemberContextLocked(ctx); err != nil {
 		return gitlab.EventsState{}, err
 	}
 	// Changing project, instance, connection or account starts a fresh identity.
@@ -181,6 +190,9 @@ func (m *roomManager) configureEventsSubscription(ctx context.Context, key notif
 			cfg.BackfillSeconds, cfg.BackfillStart = 0, current.Baseline
 		}
 		current = nil
+	}
+	if err := m.checkPlatformMemberContextLocked(ctx); err != nil {
+		return gitlab.EventsState{}, err
 	}
 	if err := m.validateNotificationTargetLocked(ctx, key.Owner, cfg.Target, cfg.Enabled); err != nil {
 		return gitlab.EventsState{}, err

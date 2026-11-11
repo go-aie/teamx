@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/go-aie/teamx/internal/platform/gitlab"
 	"io"
 	"net/http"
 	"strconv"
@@ -40,7 +41,7 @@ func runPlatformMemberCLI(ctx context.Context, args []string, stdout, stderr io.
 		f.StringVar(&req.OperationID, "operation-id", "", "stable configuration operation ID")
 		f.Uint64Var(&req.SourceSeq, "source-seq", 0, "original human Room message sequence")
 	}
-	if action == "chats" {
+	if action == "chats" || action == "projects" {
 		f.StringVar(&req.Query, "query", "", "group name search (optional)")
 		f.StringVar(&req.PageToken, "page-token", "", "exact continuation token")
 	}
@@ -56,6 +57,57 @@ func runPlatformMemberCLI(ctx context.Context, args []string, stdout, stderr io.
 		})
 	}
 	if action == "notifications" {
+		f.Func("todos-enabled", "GitLab personal todos: true or false; preserves other sources", func(s string) error {
+			if s != "true" && s != "false" {
+				return ErrRequest
+			}
+			v, err := strconv.ParseBool(s)
+			in.TodosEnabled = &v
+			return err
+		})
+		f.Func("events-enabled", "GitLab project activity: true or false", func(s string) error {
+			if s != "true" && s != "false" {
+				return ErrRequest
+			}
+			v, _ := strconv.ParseBool(s)
+			in.EventsEnabled = &v
+			return nil
+		})
+		f.Int64Var(&in.ProjectID, "project-id", 0, "exact native project ID")
+		f.StringVar(&in.ProjectPath, "project-path", "", "exact path_with_namespace")
+		f.Func("event-type", "activity type; repeat; empty clears filter", func(s string) error {
+			if in.EventsFilter == nil {
+				in.EventsFilter = &gitlab.EventsFilter{Types: []string{}}
+			}
+			if s != "" {
+				in.EventsFilter.Types = append(in.EventsFilter.Types, s)
+			}
+			return nil
+		})
+		f.Func("todo-reason", "todo reason; repeat; empty selects none", func(s string) error {
+			if in.TodosFilter == nil {
+				in.TodosFilter = &gitlab.TodosFilter{}
+			}
+			if in.TodosFilter.Reasons == nil {
+				in.TodosFilter.Reasons = []string{}
+			}
+			if s != "" {
+				in.TodosFilter.Reasons = append(in.TodosFilter.Reasons, s)
+			}
+			return nil
+		})
+		f.Func("todo-type", "todo type; repeat; empty selects none", func(s string) error {
+			if in.TodosFilter == nil {
+				in.TodosFilter = &gitlab.TodosFilter{}
+			}
+			if in.TodosFilter.Types == nil {
+				in.TodosFilter.Types = []string{}
+			}
+			if s != "" {
+				in.TodosFilter.Types = append(in.TodosFilter.Types, s)
+			}
+			return nil
+		})
 		f.Uint64Var(&in.NotificationVersion, "notification-version", 0, "observed subscription version (0 if absent)")
 		f.Func("add-chat-id", "exact selected group ID; repeat to add multiple groups", func(id string) error { in.AddChatIDs = append(in.AddChatIDs, id); return nil })
 		f.StringVar(&in.GroupMessageMode, "group-message-mode", "", "all or mentions; omitted preserves existing mode")
@@ -84,8 +136,8 @@ func runPlatformMemberCLI(ctx context.Context, args []string, stdout, stderr io.
 	}
 	req.ServiceInfo, req.Caller = identity.ServiceInfo, identity.Caller
 	path := "/v1/platforms/member/" + action
-	if action == "chats" {
-		path = "/v1/platforms/chats"
+	if action == "chats" || action == "projects" {
+		path = "/v1/platforms/" + action
 	}
 	var result json.RawMessage // Preserve uint64 source sequences and revisions exactly.
 	if err := client.request(ctx, path, req, &result); err != nil {

@@ -64,3 +64,50 @@ test('expired and replaced forms disable input and retain result meaning',async(
  api.op.target_available=false;await ui.refresh();await settle();assert.equal(controls(el)[0].disabled,true);assert.match(el.children[8].textContent,/不会转交/);
  api.op.target_available=true;api.op.status='expired';api.op.version++;api.op.result_version=1;await ui.refresh();await settle();assert.equal(controls(el)[0].hidden,true);assert.match(el.children[1].textContent,/过期/);assert.equal(writes(api).length,0);
 });
+
+function gitlabFixture(kind='projects') {
+ const api=fixture(kind),original=api.request.bind(api);
+ api.op.input=kind==='account' ? {kind,provider:'gitlab',origin:'https://gitlab.example'} : {kind,provider:'gitlab',platform_id:'gitlab-account',platform_version:7,query:'Project'};
+ api.op.draft={};api.messages[0].text='连接 GitLab 并关注项目';
+ api.request=async(path,body,...rest)=>{
+  if(path.endsWith('/selection-interactions/candidates')) {
+   api.calls.push({path,body:structuredClone(body)});
+   if(api.projectError)throw Object.assign(Error('denied'),{code:'permission_denied'});
+   return kind==='account' ? [{id:'account1',name:'工作',version:7,username:'user1',account:{id:{value:'101'}}},{id:'account2',name:'工作',version:9,username:'user2',account:{id:{value:'102'}}}] : {projects:body.page_token ? [{id:8,name:'Project',path_with_namespace:'other/project'}] : [{id:7,name:'Project',path_with_namespace:'team/project'}],next_page:body.page_token ? 0 : 2};
+  }
+  return original(path,body,...rest);
+ };
+ return api;
+}
+test('GitLab account choices keep native identities and versions; no implicit new account',async()=>{
+ const api=gitlabFixture('account'),ui=await launch(api);await settle();const el=card(ui);
+ assert.match(el.children[0].textContent,/GitLab/);assert.equal(candidates(el).children.length,2);
+ assert.match(candidates(el).children[1].textContent || candidates(el).children[1].children[1].textContent,/user2.*102/);
+ const control=candidates(el).children[1].children[0];control.checked=true;await control.emit('change');await controls(el)[0].emit('click');await settle();
+ assert.equal(api.op.draft.platform_id,'account2');assert.equal(api.op.draft.platform_version,9);assert.equal(api.op.draft.name,'工作');
+});
+test('GitLab projects distinguish full path and native ID across pages; fixed filter shared with settings',async()=>{
+ const api=gitlabFixture(),ui=await launch(api);await settle();const el=card(ui);
+ assert.match(el.children[0].textContent,/项目/);assert.match(candidates(el).children[0].children[1].textContent,/team\/project.*#7/);
+ await el.children[5].emit('click');await settle();assert.equal(candidates(el).children.length,2);assert.match(candidates(el).children[1].children[1].textContent,/other\/project.*#8/);
+ assert.equal(api.calls.filter(c=>c.path.endsWith('/candidates')).at(-1).body.page_token,'2');
+ const input=candidates(el).children[1].children[0];assert.equal(input.type,'radio');input.checked=true;await input.emit('change');
+ const mode=el.children[2].children[1].children[1];mode.value='note';await mode.emit('change');
+ api.messages.push({seq:2,author:{kind:'human',id:'tester'},text:'新消息',created_at:'2026-11-11T01:01:00Z'});await ui.refresh();await settle();assert.equal(card(ui),el);assert.equal(input.checked,true);
+ await controls(el)[3].emit('click');await settle();await ui.el('close-settings').emit('click');await settle();assert.equal(api.op.status,'waiting');
+ await Promise.all([controls(el)[0].emit('click'),controls(el)[0].emit('click')]);await settle();
+ assert.equal(api.op.draft.project_id,8);assert.equal(api.op.draft.project_path,'other/project');assert.deepEqual(api.op.draft.events_filter,{types:['note']});assert.equal(api.op.draft.chat_ids,undefined);
+ assert.equal(writes(api).filter(c=>c.path.endsWith('/submit')).length,1);assert.match(el.children[6].textContent,/other\/project.*#8/);
+});
+test('GitLab project permission errors preserve selected target and allow retry',async()=>{
+ const api=gitlabFixture(),ui=await launch(api);await settle();const el=card(ui),input=candidates(el).children[0].children[0];input.checked=true;await input.emit('change');
+ api.projectError=true;await el.children[3].emit('click');await settle();assert.match(el.children[9].textContent,/权限不足/);assert.match(el.children[6].textContent,/team\/project.*#7/);assert.equal(input.checked,true);assert.equal(writes(api).length,0);
+ api.projectError=false;await el.children[3].emit('click');await settle();assert.equal(candidates(el).children[0].children[0].checked,true);
+});
+test('GitLab project local input survives natural-language conflict and explicit reload reconciles exact path',async()=>{
+ const api=gitlabFixture(),ui=await launch(api);await settle();const el=card(ui),input=candidates(el).children[0].children[0];input.checked=true;await input.emit('change');
+ api.op.draft={project_id:8,project_path:'other/project',events_filter:{types:['push','note']}};api.op.version++;await ui.refresh();await settle();
+ assert.match(el.children[6].textContent,/team\/project/);await controls(el)[0].emit('click');await settle();assert.equal(api.op.status,'waiting');assert.equal(writes(api).filter(c=>c.path.endsWith('/submit')).length,0);
+ await controls(el)[2].emit('click');await settle();assert.match(el.children[6].textContent,/other\/project/);assert.match(el.children[6].textContent,/push.*note/);
+ await controls(el)[0].emit('click');await settle();assert.deepEqual(api.op.draft.events_filter,{types:['push','note']});
+});

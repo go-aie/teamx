@@ -22,13 +22,23 @@ type gitlabProjectsRequest struct {
 	PlatformVersion uint64 `json:"platform_version"`
 	Search          string `json:"search,omitempty"`
 	Page            int    `json:"page,omitempty"`
+	member          *toolsRequest
+	verifyID        int64
+	verifyPath      string
 }
 
 func (m *roomManager) checkGitLabProjectsLocked(ctx context.Context, req gitlabProjectsRequest, expected *registry.Account) (registry.Account, platform.Secret, error) {
 	if err := ctx.Err(); err != nil {
 		return registry.Account{}, platform.Secret{}, err
 	}
-	if req.ServiceEpoch != m.epoch || req.Caller.Kind != "human" || !validText(req.Caller.ID) || req.Caller.MembershipID != "" {
+	if req.member != nil {
+		if req.member.RoomIdentity != req.RoomIdentity || req.member.ServiceEpoch != req.ServiceEpoch || req.member.Caller != req.Caller {
+			return registry.Account{}, platform.Secret{}, ErrIdentity
+		}
+		if err := m.checkToolMemberLocked(ctx, *req.member); err != nil {
+			return registry.Account{}, platform.Secret{}, err
+		}
+	} else if req.ServiceEpoch != m.epoch || req.Caller.Kind != "human" || !validText(req.Caller.ID) || req.Caller.MembershipID != "" {
 		return registry.Account{}, platform.Secret{}, ErrIdentity
 	}
 	if m.busy || m.roomBusyLocked(req.RoomIdentity) {
@@ -60,13 +70,28 @@ func (m *roomManager) listGitLabProjects(ctx context.Context, req gitlabProjects
 	}
 	callCtx, cancel := context.WithTimeout(ctx, 40*time.Second)
 	call := &platformCall{owner: req.RoomIdentity, platformID: a.PlatformID, cancel: cancel, done: make(chan struct{})}
+	if req.member != nil {
+		call.agentID, call.membershipID = req.Caller.ID, req.Caller.MembershipID
+	}
 	if m.platformCalls == nil {
 		m.platformCalls = map[*platformCall]bool{}
 	}
 	m.platformCalls[call] = true
 	m.mu.Unlock()
 	defer m.finishPlatformCall(call)
-	page, err := gitlab.ListProjects(callCtx, m.gitlabAccountRead(req.RoomIdentity, a, secret), req.Search, req.Page)
+	var page gitlab.ProjectPage
+	if req.verifyID != 0 {
+		var p gitlab.Project
+		p, err = gitlab.GetProject(callCtx, m.gitlabAccountRead(req.RoomIdentity, a, secret), req.verifyID)
+		if err == nil && p.Path != req.verifyPath {
+			err = ErrConflict
+		}
+		if err == nil {
+			page.Projects = []gitlab.Project{p}
+		}
+	} else {
+		page, err = gitlab.ListProjects(callCtx, m.gitlabAccountRead(req.RoomIdentity, a, secret), req.Search, req.Page)
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, _, checkErr := m.checkGitLabProjectsLocked(callCtx, req, &a); checkErr != nil {
@@ -100,4 +125,28 @@ func (m *roomManager) serveGitLabProjects(w http.ResponseWriter, r *http.Request
 		return
 	}
 	_ = json.NewEncoder(w).Encode(page)
+}
+
+func writePlatformSetupReadError(w http.ResponseWriter, err error) {
+	if code := gitlab.ProjectReadErrorCode(err); code != "" {
+		status := http.StatusBadGateway
+		switch code {
+		case "permission_denied":
+			status = http.StatusForbidden
+		case "credential":
+			status = http.StatusUnauthorized
+		case "not_found":
+			status = http.StatusNotFound
+		case "invalid_request":
+			status = http.StatusBadRequest
+		case "rate_limited":
+			status = http.StatusTooManyRequests
+		}
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(struct {
+			Code string `json:"code"`
+		}{code})
+		return
+	}
+	writeLarkReadError(w, err)
 }

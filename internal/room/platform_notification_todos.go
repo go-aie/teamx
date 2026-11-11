@@ -115,6 +115,10 @@ func (m *roomManager) configureTodosSubscription(ctx context.Context, key notifi
 		return gitlab.TodosState{}, ErrRequest
 	}
 	m.mu.Lock()
+	if err := m.checkPlatformMemberContextLocked(ctx); err != nil {
+		m.mu.Unlock()
+		return gitlab.TodosState{}, err
+	}
 	var target gitlab.TodosQueryScope
 	if cfg.Enabled && cfg.PlatformID != "" {
 		var targetErr error
@@ -144,6 +148,10 @@ func (m *roomManager) configureTodosSubscription(ctx context.Context, key notifi
 	// old work settles may the replacement be saved. Failures preserve retirement.
 	if next.Retired {
 		m.mu.Lock()
+		if err := m.checkPlatformMemberContextLocked(ctx); err != nil {
+			m.mu.Unlock()
+			return next, err
+		}
 		latest, ok := m.todosSubscriptionLocked(next.Metadata().Key)
 		if !ok || latest.SubscriptionVersion != next.SubscriptionVersion {
 			m.mu.Unlock()

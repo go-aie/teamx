@@ -21,6 +21,9 @@ type platformConnectInput struct {
 	Name            string `json:"name"`
 	PlatformID      string `json:"platform_id,omitempty"`
 	PlatformVersion uint64 `json:"platform_version,omitempty"`
+	Origin          string `json:"origin,omitempty"`
+	ApplicationID   string `json:"application_id,omitempty"`
+	AccountUsername string `json:"account_username,omitempty"`
 }
 type platformConnectRequest struct {
 	ServiceInfo
@@ -42,25 +45,29 @@ type platformConnectOperation struct {
 	Schema int    `json:"schema"`
 	ID     string `json:"operation_id"`
 	MemberIdentity
-	Caller          Caller                         `json:"caller"`
-	Source          RoomMessage                    `json:"source"`
-	Input           platformConnectInput           `json:"input"`
-	Version         uint64                         `json:"version"`
-	ResultVersion   uint64                         `json:"result_version"`
-	Status          string                         `json:"status"`
-	CancelRequested bool                           `json:"cancel_requested,omitempty"`
-	Stage           string                         `json:"stage"`
-	ErrorCode       string                         `json:"error_code,omitempty"`
-	PlatformID      string                         `json:"platform_id"`
-	Account         platform.AccountIdentity       `json:"account"`
-	Profile         *platform.CLIProfile           `json:"cli_profile,omitempty"`
-	Application     onboardingStep                 `json:"application"`
-	Authorization   onboardingStep                 `json:"authorization"`
-	Connection      onboardingStep                 `json:"connection"`
-	Interaction     platformConnectInteraction     `json:"interaction"`
-	CreatedAt       time.Time                      `json:"created_at"`
-	UpdatedAt       time.Time                      `json:"updated_at"`
-	Continuation    *platformOperationContinuation `json:"continuation,omitempty"` // live projection only
+	Caller                 Caller                         `json:"caller"`
+	Source                 RoomMessage                    `json:"source"`
+	Input                  platformConnectInput           `json:"input"`
+	Version                uint64                         `json:"version"`
+	ResultVersion          uint64                         `json:"result_version"`
+	Status                 string                         `json:"status"`
+	CancelRequested        bool                           `json:"cancel_requested,omitempty"`
+	Stage                  string                         `json:"stage"`
+	ErrorCode              string                         `json:"error_code,omitempty"`
+	PlatformID             string                         `json:"platform_id"`
+	Account                platform.AccountIdentity       `json:"account"`
+	BoundApplicationID     string                         `json:"bound_application_id,omitempty"`
+	ApplicationImport      bool                           `json:"application_import,omitempty"`
+	Setup                  *gitlabConnectSetup            `json:"setup,omitempty"` // live projection only
+	ApplicationFingerprint string                         `json:"application_fingerprint,omitempty"`
+	Profile                *platform.CLIProfile           `json:"cli_profile,omitempty"`
+	Application            onboardingStep                 `json:"application"`
+	Authorization          onboardingStep                 `json:"authorization"`
+	Connection             onboardingStep                 `json:"connection"`
+	Interaction            platformConnectInteraction     `json:"interaction"`
+	CreatedAt              time.Time                      `json:"created_at"`
+	UpdatedAt              time.Time                      `json:"updated_at"`
+	Continuation           *platformOperationContinuation `json:"continuation,omitempty"` // live projection only
 }
 
 func connectTerminal(status string) bool {
@@ -74,16 +81,19 @@ func (m *roomManager) connectPath(id string) string {
 	return filepath.Join(m.store.dir, "platform-connect", id+".json")
 }
 func validPlatformConnect(op platformConnectOperation) bool {
-	if op.Continuation != nil {
+	if op.Continuation != nil || op.Setup != nil {
 		return false
 	}
-	if op.Schema != 1 || !tool.OpaqueID(op.ID) || !tool.OpaqueID(op.PlatformID) || !tool.OpaqueID(op.RoomInstance) || !safeMembershipID(op.MembershipID) || !validText(op.RoomID) || !validText(op.AgentID) || op.Caller != agentCallerIdentity(op.MemberIdentity) || !validHumanEvidence(op.Source) || op.Input.Provider != "lark" || !validText(op.Input.Name) || len(op.Input.Name) > 128 || op.Version == 0 || op.CreatedAt.IsZero() || op.UpdatedAt.Before(op.CreatedAt) || op.Interaction.ID != op.ID || op.Interaction.Kind != "lark_authorization" || op.Interaction.URL != "" || op.Interaction.QRCodeURL != "" {
+	if op.Schema != 1 || !tool.OpaqueID(op.ID) || !tool.OpaqueID(op.PlatformID) || !tool.OpaqueID(op.RoomInstance) || !safeMembershipID(op.MembershipID) || !validText(op.RoomID) || !validText(op.AgentID) || op.Caller != agentCallerIdentity(op.MemberIdentity) || !validHumanEvidence(op.Source) || !validText(op.Input.Name) || len(op.Input.Name) > 128 || op.Version == 0 || op.CreatedAt.IsZero() || op.UpdatedAt.Before(op.CreatedAt) || op.Interaction.ID != op.ID || op.Interaction.URL != "" || op.Interaction.QRCodeURL != "" {
+		return false
+	}
+	if !validConnectProvider(op) {
 		return false
 	}
 	if op.Profile != nil && (!lark.ValidProfile(*op.Profile) || op.Profile.Brand != "feishu") {
 		return false
 	}
-	if op.Account != (platform.AccountIdentity{}) && (!op.Account.Valid() || op.Account.Provider != "lark" || op.Account.Instance != lark.Origin("feishu")) {
+	if op.Account != (platform.AccountIdentity{}) && (!op.Account.Valid() || op.Account.Provider != op.Input.Provider || op.Account.Instance != connectOrigin(op.Input)) {
 		return false
 	}
 	if op.Input.PlatformID != "" && (!tool.OpaqueID(op.Input.PlatformID) || op.Input.PlatformID != op.PlatformID || op.Input.PlatformVersion == 0) || op.Input.PlatformID == "" && op.Input.PlatformVersion != 0 {
@@ -202,7 +212,7 @@ func (m *roomManager) recoverPlatformConnectLocked() error {
 		return err
 	}
 	for _, op := range ops {
-		if connectTerminal(op.Status) {
+		if connectTerminal(op.Status) || op.Input.Provider == "gitlab" && op.ApplicationFingerprint == "" && op.Status == "waiting" {
 			continue
 		}
 		op.Status, op.ErrorCode, op.ResultVersion = "unknown", "service_restarted", 1
@@ -211,6 +221,9 @@ func (m *roomManager) recoverPlatformConnectLocked() error {
 		}
 		for _, c := range file.Platforms {
 			if op.CancelRequested || c.ID != op.PlatformID || c.Provider != op.Input.Provider || c.Name != op.Input.Name {
+				continue
+			}
+			if op.Input.Provider == "gitlab" && !gitlabConnectRecordMatches(file, c, op) {
 				continue
 			}
 			if op.Profile != nil && !reflect.DeepEqual(c.CLIProfile, op.Profile) {

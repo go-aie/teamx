@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -41,5 +42,44 @@ func TestListProjectsRejectsMalformedPages(t *testing.T) {
 				t.Fatal("malformed project page accepted")
 			}
 		})
+	}
+}
+
+func TestGetProjectUsesNativeIDAndRejectsChangedIdentity(t *testing.T) {
+	for _, tc := range []struct {
+		body  string
+		valid bool
+	}{
+		{`{"id":7,"name":"Project","path_with_namespace":"team/project","description":"private"}`, true},
+		{`{"id":8,"name":"Project","path_with_namespace":"team/project"}`, false},
+		{`{"id":7,"name":"","path_with_namespace":"team/project"}`, false},
+		{`{"id":7,"name":"Project","path_with_namespace":"team/../project"}`, false},
+	} {
+		t.Run(tc.body, func(t *testing.T) {
+			read := func(_ context.Context, path string, q url.Values, _ http.Header, limit int64) (APIResponse, error) {
+				if path != "/projects/7" || len(q) != 0 || limit > 32<<10 {
+					t.Fatal(path, q, limit)
+				}
+				return APIResponse{Data: []byte(tc.body)}, nil
+			}
+			p, err := GetProject(t.Context(), read, 7)
+			if (err == nil) != tc.valid {
+				t.Fatal(p, err)
+			}
+			if tc.valid {
+				raw, _ := json.Marshal(p)
+				if strings.Contains(string(raw), "private") {
+					t.Fatal("private metadata leaked")
+				}
+			}
+		})
+	}
+	for _, tc := range []struct {
+		status int
+		code   string
+	}{{401, "credential"}, {403, "permission_denied"}, {404, "not_found"}, {429, "rate_limited"}, {500, "query_failed"}} {
+		if code := ProjectReadErrorCode(&queryError{Status: tc.status, Code: "query_failed"}); code != tc.code {
+			t.Fatal(tc, code)
+		}
 	}
 }

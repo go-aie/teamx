@@ -12,11 +12,11 @@ func (m *roomManager) servePlatforms(w http.ResponseWriter, r *http.Request) {
 		m.servePlatformSelection(w, r)
 		return
 	}
-	if strings.HasPrefix(r.URL.Path, "/v1/platforms/interactions/") {
+	if strings.HasPrefix(r.URL.Path, "/v1/platforms/interactions/") || r.URL.Path == gitlabCookiePath+"connect" {
 		m.servePlatformConnectInteraction(w, r)
 		return
 	}
-	if strings.HasPrefix(r.URL.Path, "/v1/platforms/member/") || r.URL.Path == "/v1/platforms/chats" {
+	if strings.HasPrefix(r.URL.Path, "/v1/platforms/member/") || (r.URL.Path == "/v1/platforms/chats" || r.URL.Path == "/v1/platforms/projects") {
 		m.servePlatformMember(w, r)
 		return
 	}

@@ -1,7 +1,7 @@
-# Connect Feishu to TeamX
+# Connect Feishu or GitLab to TeamX
 
-Use this workflow only for a real human Room request to connect Feishu or configure
-the current member's Feishu notifications/tools. It is
+Use this workflow only for a real human Room request to connect Feishu/GitLab or configure
+the current member's Feishu/GitLab notifications/tools. It is
 available before any platform connection or member tool binding exists.
 
 ## Scope and discovery
@@ -11,8 +11,13 @@ Read this embedded workflow with `"$TEAMX_CLI" platforms skill`, independently o
 the executable and member identity are supplied by TeamX. Consult `platforms
 --help` and the relevant subcommand help for the installed contract.
 
-This conversation workflow supports Feishu (`lark`) only. Other providers use
-Settings → Platforms where supported; do not invent a connect command for them.
+This workflow supports Feishu (`lark`) connection/member configuration and GitLab
+(`gitlab`) connection, account/project forms, personal to-do and single-project
+activity notifications, existing filters and independent member tools. GitLab first
+application setup returns to the original operation through secure Settings → Platforms;
+credentials are entered only in that existing protected form.
+Read the GitLab connection section below before starting a GitLab operation. Other
+providers use Settings → Platforms where supported.
 A missing command, dependency error or unavailable capability must be reported
 as returned, with the unfinished step and the full management/recovery entry.
 Do not bypass the service with native login commands or credential access. An
@@ -30,7 +35,8 @@ anything. Neither timers nor cross-conversation delegation are provided here.
 ## Connect or recover a connection
 
 For an already connected account and a request that only changes member settings,
-go directly to "Follow selected groups and configure the current member" below.
+go directly to the matching provider member section below: "Configure GitLab personal
+to-do notifications for the current member" or the Feishu selected-group section.
 
 1. Read the human Room message; retain its real `seq`. First query
    `teamx platforms connect status --source-seq SEQ` to recover any prior operation.
@@ -96,6 +102,172 @@ go directly to "Follow selected groups and configure the current member" below.
 
 If the request only adds a platform, stop after verifying the connection. Do not
 enable notifications or tools as a side effect.
+
+## GitLab connection and first application setup
+
+Use the same recover/start/wait/notify/status/acknowledge lifecycle above. First
+query `connect status --source-seq SEQ`; only `operation_not_found` establishes
+absence. Run `platforms list` for existing connections and public
+`gitlab_applications` references, instance origins and compatibility reasons.
+Match the user's exact GitLab instance and account username. For ambiguous verified accounts on an exact instance, use the GitLab fixed
+account selector below. Ask for a missing instance or a real application choice;
+do not guess among candidates or send Feishu chats/groups commands to GitLab.
+
+- Reuse an explicitly selected connected account at its exact ID/version/name:
+  `teamx platforms connect start --provider gitlab --origin https://gitlab.example
+  --name NAME --platform-id ID --platform-version V --account-username USER
+  --operation-id OP_ID --source-seq SEQ --notify inbox`.
+- For a new connection with an explicitly selected compatible verified application:
+  `teamx platforms connect start --provider gitlab --origin https://gitlab.example
+  --name NAME --application-id APP_ID --account-username USER
+  --operation-id OP_ID --source-seq SEQ --notify inbox`.
+  Use the canonical instance origin without a trailing slash. Application references
+  are distinct from connection IDs and credentials. A unique compatible application
+  on the exact requested instance can be used without a redundant confirmation.
+- If there is no compatible application, or the human must choose among applications,
+  start the same GitLab operation **without** `--application-id` (keep origin, name,
+  expected username, operation ID and original source-seq). The operation waits at
+  `application` and returns `setup` with the official applications URL, actual service
+  callback, required `api` scope and compatibility reasons. Tell the human to use
+  **Configure GitLab application** on the original message: it opens full settings
+  for that exact instance, imports/selects the app, then verifies native ownership
+  through the existing OAuth callback. Never collect Secret/Token in chat. A changed
+  or incompatible explicitly bound application cannot be replaced through this flow.
+  Closing/reopening settings retains the operation; do not create a replacement ID.
+  After configuration, use the same status/wait/Inbox continuation and member steps.
+- The fixed GitLab button on the original human message creates the OAuth browser
+  session. Tell the user to click it and authorize the expected account. Agent
+  commands receive no OAuth URL, cookies, state, code or PKCE material; do not
+  impersonate a human, call the browser endpoint or read credential files.
+  Tabs in the original browser reuse the session; another browser cannot take it
+  over. First application setup uses the linked full settings form; only public
+  setup requirements appear in the conversation component.
+- Confirm Inbox subscription and end the turn during human authorization. No new
+  chat is needed after callback completion if the current member is eligible.
+  Synchronous wait and user continuation query the very same receipt. Callback
+  verifies the instance/application/account and saves the connection once; account
+  mismatch or already-connected conflict never silently changes targets.
+- Verify `completed`, exact account and `connection.status=connected`, acknowledge
+  the result version, then report the connection. Keep failures, cancellation,
+  expiration and `unknown` explicit. After restart inspect the original receipt;
+  never replay an authorization code or start another ID for an unknown result.
+  Cancellation preserves already saved effects and never revokes another account.
+
+GitLab connection alone does not enable notifications or tools. For explicit
+personal to-do notification/tool requests, continue with the member steps below.
+GitLab account/project selection and single-project activity use the commands below.
+First application setup still uses Settings → Platforms. Never run Feishu `chats`
+or `selection --kind groups` against GitLab.
+
+## Configure GitLab personal to-do notifications for the current member
+
+1. After connection completion, recover `teamx platforms member status --source-seq SEQ`.
+   Skip completed steps. Only `operation_not_found` proves absence; unknown or failed
+   reads never justify a new operation ID. Use the original human request retained
+   in the connection, check newer intent, and reconcile late events before acting.
+2. Select the exact verified GitLab connection from `platforms list` or the connection
+   receipt. Read `teamx platforms member get --platform-id ID --platform-version V`.
+   Check account, full Room/Agent/Membership, `notification_version`, `tool_revision`
+   and `gitlab_notifications` (desired config, per-source pending/errors, applying).
+   Version 0 with no events/todos subscription IDs is an unsaved first-use draft,
+   even when its default switches are true; it is not an existing subscription.
+   Multiple ambiguous accounts require the fixed GitLab account selector; never guess.
+3. For an explicit personal to-do request, submit once:
+   `teamx platforms member notifications --platform-id ID --platform-version V
+   --notification-version N --operation-id STEP_ID --source-seq SEQ --todos-enabled true`.
+   Use `false` to disable only personal todos. New subscriptions cover all accessible
+   projects for that personal account, receive from save time, and leave project
+   activity disabled. Existing project settings, filters, intervals and original
+   reception start are preserved. No project selector or Workspace change is needed.
+   GitLab rejects Feishu group flags and notification `--enabled`; it only changes
+   the requested todos source. If enabling the shared switch would also enable dormant
+   project activity, collect the user's explicit source choice before submitting both
+   source switches in the same request. Do not disable/rewrite activity to bypass it.
+4. Enable or disable GitLab tools only on a separate explicit request:
+   `teamx platforms member tool --platform-id ID --platform-version V --tool-revision N
+   --operation-id OTHER_STEP_ID --source-seq SEQ --enabled true|false`.
+   The operation is independent of notifications. Repeated enable preserves existing
+   grants; a new binding grants no external writes, replies or todo completion.
+5. Check each step's completed receipt, then read `member get` again to verify exact
+   account/member, actual config/version and absence of pending/errors. Notification
+   and tool outcomes are separate: report partial success honestly. On a version
+   conflict refresh and reassess; on an unknown submission inspect the same receipt
+   and current settings, then use full settings for explicit recovery. Never resubmit
+   unknown work under a new ID or replay configuration on a late connection event.
+6. When there is a connection operation, acknowledge its handled result only after
+   reconciling these steps. Direct use of an already verified account needs no new
+   connection operation, authorization or connection-result acknowledgment.
+   Saved notifications do not prove a real todo arrived or a reminder was delivered.
+   Only connection requests stop after connection verification. For lasting reminder
+   behavior, reconcile natural-language rules as described below, using the original
+   human source; a subscription starts reception, while a rule describes when to act.
+
+## GitLab account/project choice and scoped activity
+
+Use `selection status --source-seq SEQ` first. Reuse existing steps and their
+result versions; all selection lifecycle, draft conflict, notification, bounded
+wait and acknowledgment rules below also apply to GitLab. Keep the original real
+human source across selection events; a selection never applies configuration.
+
+- For an actual choice among verified accounts on one known instance:
+  `teamx platforms selection start --provider gitlab --kind account
+  --origin https://gitlab.example --operation-id PICK_ID --source-seq SEQ --notify inbox`.
+  Candidates show username, native user ID and connection ID/version on that
+  instance. A submitted receipt freezes `draft.platform_id/platform_version/name`
+  and `account`. No matching verified account means connect using a compatible
+  application; a selector does not create an application or another account.
+- Search accessible projects with `teamx platforms projects --platform-id ID
+  --platform-version V --query NAME [--page-token PAGE]`. Read `projects` and
+  numeric `next_page`; continue until 0, including empty pages. Compare full
+  `path_with_namespace` and native `id`, not just a display name. Permission
+  failures/partial reads are not absence and do not authorize switching accounts.
+  Project visibility never grants business write permission.
+- For an ambiguous project or an explicit request to choose a project, publish
+  `teamx platforms selection start --provider gitlab --kind projects
+  --platform-id ID --platform-version V --query NAME --operation-id PICK_ID
+  --source-seq SEQ --notify inbox`.
+  The fixed form selects one project and optionally activity type. Natural-language
+  draft updates replace the full draft with `selection update --operation-id PICK_ID
+  --version V --project-id N --project-path namespace/project [--event-type TYPE]`.
+  Retain other draft fields, including every filter type. Only the original human
+  submits; stale edits/renamed projects/account changes conflict. Do not guess a
+  replacement or edit a completed target. Human settings and chat use the same draft.
+- On completion read `draft.project_id/project_path`, verified `project` and
+  optional `draft.events_filter`. Refresh member get and reconcile latest intent
+  before applying. For an explicit activity subscription submit:
+  `teamx platforms member notifications --platform-id ID --platform-version V
+  --notification-version N --operation-id STEP_ID --source-seq SEQ
+  --events-enabled true --project-id PROJECT_ID --project-path namespace/project`.
+  Add repeated `--event-type` only if explicitly chosen; empty clears to all activity.
+  The service rechecks the native ID and exact path under the same account, then
+  uses the existing single-project subscription service. This replaces the current
+  activity project for this member/account; explain that limitation if multiple
+  projects are requested, do not claim additive multi-project support. Disabling
+  activity uses `--events-enabled false` and preserves todos.
+- Collect account/project choices before applying one combined notifications step
+  for this request and account. Add `--todos-enabled true|false` for explicitly
+  requested todos changes. Omitted sources remain as saved; enabling a shared
+  switch cannot silently activate another dormant source. On conflict request the
+  source choice; do not bypass it by changing operation IDs or inventing source-seq.
+  Filters use repeated `--todo-reason mentioned|assigned|review_requested|other`,
+  `--todo-type merge_request|work_item` and `--event-type note|push|merge_request.opened|
+  merge_request.merged|merge_request.closed`. Omitted dimensions preserve existing
+  filters; empty personal dimension selects none, empty event types selects all.
+- Verify completed member receipts, then current member get, exact project binding,
+  per-source pending/errors, baseline, untouched sources and tool state. Handle
+  unknown work under the same ID. A full-settings change can satisfy a step only
+  after verifying its exact account/member/project/filter. Acknowledge handled
+  selection results after reconciling configuration; consume late events normally.
+  Do not repeat configuration or completion reports. No additional human message
+  is needed after selection submission when ordinary Inbox admission permits it.
+
+Personal todos currently cover all projects accessible to the selected personal
+account. There is no separate current-Workspace todo scope in this implementation.
+If a request requires unsupported Workspace scope or missing prerequisites, explain
+it and direct the user to Settings for supported configuration; do not clone a
+repository, change Workspace or silently claim an all-project subscription is scoped.
+Connection-only requests still stop after connection verification. A saved activity
+subscription proves neither a real event arrival nor a Room reminder.
 
 ## Follow selected groups and configure the current member
 

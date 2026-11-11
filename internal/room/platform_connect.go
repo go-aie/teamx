@@ -27,6 +27,13 @@ func (m *roomManager) connectSessionLocked(id string) *larkAuthSession {
 	return nil
 }
 func (m *roomManager) publicPlatformConnectLocked(op platformConnectOperation) (platformConnectOperation, error) {
+	if op.Input.Provider == "gitlab" && op.ApplicationFingerprint == "" && !connectTerminal(op.Status) {
+		var err error
+		op.Setup, err = m.gitlabConnectSetupLocked(op)
+		if err != nil {
+			return op, err
+		}
+	}
 	v, err := m.connectContinuationLocked(op)
 	if err != nil {
 		return op, err
@@ -39,6 +46,9 @@ func (m *roomManager) publicPlatformConnectLocked(op platformConnectOperation) (
 		op.Continuation = &v
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return op, err
+	}
+	if s := m.gitlabConnectSessionLocked(op.ID); s != nil && s.connectErr != nil {
+		return op, s.connectErr
 	}
 	if s := m.connectSessionLocked(op.ID); s != nil {
 		if s.connectErr != nil {
@@ -190,11 +200,11 @@ func (m *roomManager) commitPlatformConnectLocked(op *platformConnectOperation, 
 }
 func (m *roomManager) startPlatformConnectLocked(ctx context.Context, req platformConnectRequest) (platformConnectOperation, error) {
 	var op platformConnectOperation
-	if req.Input == nil || !tool.OpaqueID(req.OperationID) || req.SourceSeq == 0 || req.Input.Provider != "lark" || !validText(req.Input.Name) || len(req.Input.Name) > 256 {
+	if req.Input == nil || !tool.OpaqueID(req.OperationID) || req.SourceSeq == 0 || (req.Input.Provider != "lark" && req.Input.Provider != "gitlab") || !validText(req.Input.Name) || len(req.Input.Name) > 128 {
 		return op, ErrRequest
 	}
-	name, _, normalizeErr := registry.Normalize(req.Input.Name, lark.Origin("feishu"))
-	if normalizeErr != nil || name != req.Input.Name {
+	name, _, normalizeErr := registry.Normalize(req.Input.Name, connectOrigin(*req.Input))
+	if normalizeErr != nil || name != req.Input.Name || !validConnectInput(*req.Input) {
 		return op, ErrRequest
 	}
 	prior, err := m.readPlatformConnectLocked(req.OperationID)
@@ -247,6 +257,9 @@ func (m *roomManager) startPlatformConnectLocked(ctx context.Context, req platfo
 		return op, err
 	}
 	op = platformConnectOperation{Schema: 1, ID: req.OperationID, MemberIdentity: MemberIdentity{RoomIdentity: req.RoomIdentity, AgentID: req.Caller.ID, MembershipID: req.Caller.MembershipID}, Caller: req.Caller, Source: source, Input: *req.Input, Status: "running", Stage: "application", PlatformID: id, Application: onboardingStep{Status: "pending"}, Authorization: onboardingStep{Status: "pending"}, Connection: onboardingStep{Status: "pending"}, Interaction: platformConnectInteraction{ID: req.OperationID, Kind: "lark_authorization"}, CreatedAt: time.Now().UTC()}
+	if req.Input.Provider == "gitlab" {
+		return m.startGitLabConnectLocked(op)
+	}
 	if req.Input.PlatformID != "" {
 		file, e := m.platforms.Load()
 		if e != nil {
@@ -343,6 +356,8 @@ func (m *roomManager) servePlatformConnect(w http.ResponseWriter, r *http.Reques
 			Version   uint64                   `json:"version"`
 			Account   platform.AccountIdentity `json:"account"`
 			Connected bool                     `json:"connected"`
+			Origin    string                   `json:"origin"`
+			Username  string                   `json:"username,omitempty"`
 		}
 		file, err := m.platforms.Load()
 		if err != nil {
@@ -351,18 +366,19 @@ func (m *roomManager) servePlatformConnect(w http.ResponseWriter, r *http.Reques
 		}
 		list := []connection{}
 		for _, c := range file.Platforms {
-			if c.Provider != "lark" {
+			if c.Provider != "lark" && c.Provider != "gitlab" {
 				continue
 			}
-			v := connection{ID: c.ID, Name: c.Name, Provider: c.Provider, Version: c.Version}
+			v := connection{ID: c.ID, Name: c.Name, Provider: c.Provider, Version: c.Version, Origin: c.URL, Username: c.Validation.Username}
 			if a, _, e := registry.ResolveAccessAccount(file, c); e == nil {
 				v.Account, v.Connected = a.Identity, true
 			}
 			list = append(list, v)
 		}
 		_ = json.NewEncoder(w).Encode(struct {
-			Platforms []connection `json:"platforms"`
-		}{list})
+			Platforms    []connection               `json:"platforms"`
+			Applications []gitlabConnectApplication `json:"gitlab_applications"`
+		}{list, m.gitlabConnectApplicationsLocked(file)})
 		return
 	}
 	var op platformConnectOperation
@@ -438,6 +454,18 @@ func (m *roomManager) cancelPlatformConnectLocked(ctx context.Context, op platfo
 		if err := m.savePlatformConnectLocked(&op); err != nil {
 			return op, err
 		}
+	}
+	if op.Input.Provider == "gitlab" {
+		if s := m.gitlabConnectSessionLocked(op.ID); s != nil {
+			m.cancelGitLabAuthLocked(s)
+		} else {
+			op.Status, op.ErrorCode, op.ResultVersion = "cancelled", "cancelled", 1
+			if err := m.savePlatformConnectLocked(&op); err != nil {
+				return op, err
+			}
+			m.wakeConnectNotificationsLocked()
+		}
+		return m.readPlatformConnectLocked(op.ID)
 	}
 	if s := m.connectSessionLocked(op.ID); s != nil {
 		s.cancel()

@@ -12,8 +12,12 @@ import (
 // association. Views never copy live authorization material into Room history.
 type platformConnectInteractionView struct {
 	MemberIdentity
+	Setup           *gitlabConnectSetup           `json:"setup,omitempty"`
 	OperationID     string                        `json:"operation_id"`
 	SourceSeq       uint64                        `json:"source_seq"`
+	Provider        string                        `json:"provider"`
+	Origin          string                        `json:"origin,omitempty"`
+	AccountUsername string                        `json:"account_username,omitempty"`
 	Name            string                        `json:"name"`
 	Version         uint64                        `json:"version"`
 	ResultVersion   uint64                        `json:"result_version"`
@@ -31,9 +35,11 @@ type platformConnectInteractionView struct {
 
 type platformConnectInteractionRequest struct {
 	ServiceInfo
-	Caller      Caller `json:"caller"`
-	OperationID string `json:"operation_id,omitempty"`
-	Version     uint64 `json:"version,omitempty"`
+	Caller         Caller `json:"caller"`
+	OperationID    string `json:"operation_id,omitempty"`
+	ApplicationID  string `json:"application_id,omitempty"`
+	ClientImportID string `json:"client_import_id,omitempty"`
+	Version        uint64 `json:"version,omitempty"`
 }
 
 func (m *roomManager) platformConnectInteractionLocked(op platformConnectOperation, available bool) (platformConnectInteractionView, error) {
@@ -49,8 +55,8 @@ func (m *roomManager) platformConnectInteractionLocked(op platformConnectOperati
 		}
 	}
 	return platformConnectInteractionView{
-		MemberIdentity: op.MemberIdentity, OperationID: op.ID, SourceSeq: op.Source.Seq,
-		Name: op.Input.Name, Version: op.Version, ResultVersion: op.ResultVersion,
+		MemberIdentity: op.MemberIdentity, Setup: op.Setup, OperationID: op.ID, SourceSeq: op.Source.Seq,
+		Provider: op.Input.Provider, Origin: connectOrigin(op.Input), AccountUsername: op.Input.AccountUsername, Name: op.Input.Name, Version: op.Version, ResultVersion: op.ResultVersion,
 		Status: op.Status, Stage: op.Stage, ErrorCode: op.ErrorCode, TargetAvailable: available,
 		AccountID: op.Account.ID.Value, Application: op.Application, Authorization: op.Authorization,
 		Connection: op.Connection, Interaction: op.Interaction, Continuation: continuation,
@@ -58,8 +64,9 @@ func (m *roomManager) platformConnectInteractionLocked(op platformConnectOperati
 }
 
 // Separate operator boundary; the Agent-only endpoints retain their checks.
-// These controls only observe or explicitly cancel an existing operation. The
-// server owns authorization, account verification and the single connection save.
+// These controls observe, bind a missing application, authorize or explicitly
+// cancel an existing operation. The server owns account verification and the
+// single connection save.
 func (m *roomManager) servePlatformConnectInteraction(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if r.Method != http.MethodPost {
@@ -85,7 +92,7 @@ func (m *roomManager) servePlatformConnectInteraction(w http.ResponseWriter, r *
 	}
 	svc, rt := m.runtimeServiceLocked(req.RoomIdentity)
 	if svc == nil || req.ServiceInfo != svc.info {
-		writeAPIError(w, ErrIdentity)
+		writeAPIError(w, &requestDiagnostic{cause: ErrIdentity, Field: "service_epoch", Message: "Connection page belongs to an earlier service or Room", Hint: "Refresh the page to load the current Room service before retrying."})
 		return
 	}
 	if m.busy || rt.busy || rt.status != "ready" {
@@ -106,8 +113,14 @@ func (m *roomManager) servePlatformConnectInteraction(w http.ResponseWriter, r *
 		return false
 	}
 	action := strings.TrimPrefix(r.URL.Path, "/v1/platforms/interactions/")
+	if r.URL.Path == gitlabCookiePath+"connect" {
+		action = "authorize"
+	} else if action == "authorize" {
+		writeAPIError(w, ErrRequest)
+		return
+	}
 	if action == "list" {
-		if req.OperationID != "" || req.Version != 0 {
+		if req.OperationID != "" || req.Version != 0 || req.ApplicationID != "" || req.ClientImportID != "" {
 			writeAPIError(w, ErrRequest)
 			return
 		}
@@ -157,7 +170,7 @@ func (m *roomManager) servePlatformConnectInteraction(w http.ResponseWriter, r *
 		}{views, selectionViews})
 		return
 	}
-	if action != "cancel" || req.Version == 0 {
+	if (action != "cancel" && action != "authorize") || req.Version == 0 {
 		writeAPIError(w, ErrRequest)
 		return
 	}
@@ -174,8 +187,18 @@ func (m *roomManager) servePlatformConnectInteraction(w http.ResponseWriter, r *
 	// leaves. No authorization material or effects transfer to a replacement,
 	// and the shared native authorization reservation can still be released.
 	// A repeated cancellation returns its receipt even after version advancement.
-	if op.Version != req.Version && !op.CancelRequested {
+	if op.Version != req.Version && !(action == "cancel" && op.CancelRequested) {
 		writeAPIError(w, ErrConflict)
+		return
+	}
+	if action == "cancel" && (req.ApplicationID != "" || req.ClientImportID != "") {
+		writeAPIError(w, ErrRequest)
+		return
+	}
+	if action == "authorize" {
+		if err := m.authorizeGitLabConnectLocked(w, r, op, req); err != nil {
+			writeAPIError(w, err)
+		}
 		return
 	}
 	op, err = m.cancelPlatformConnectLocked(r.Context(), op)

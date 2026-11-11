@@ -12,6 +12,7 @@ export async function request(path, payload, fetcher = globalThis.fetch, timeout
     if (!response.ok) {
       const error = new Error(result.error || `请求失败 (${response.status})`);
       error.code = result.code;
+      error.field = result.field;
       throw error;
     }
     return result;

@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/go-aie/teamx/internal/platform/gitlab"
 	"io"
 	"net/http"
 	"strings"
@@ -11,9 +12,9 @@ import (
 )
 
 const platformSelectionHelp = `Usage:
-  teamx platforms selection start --kind account|groups --operation-id ID --source-seq SEQ [--platform-id ID --platform-version V --query NAME] [--name NAME] [--notify inbox|none]
+  teamx platforms selection start --kind account|groups|projects [--provider lark|gitlab --origin URL] --operation-id ID --source-seq SEQ [--platform-id ID --platform-version V --query NAME] [--name NAME] [--notify inbox|none]
   teamx platforms selection status --operation-id ID | --source-seq SEQ
-  teamx platforms selection update --operation-id ID --version V [--selected-platform-id ID --selected-platform-version V --name NAME] [--chat-id CHAT_ID] [--group-message-mode all|mentions]
+  teamx platforms selection update --operation-id ID --version V [--selected-platform-id ID --selected-platform-version V --name NAME] [--chat-id CHAT_ID] [--group-message-mode all|mentions] [--project-id N --project-path PATH --event-type TYPE]
   teamx platforms selection wait --operation-id ID [--timeout 20s]
   teamx platforms selection cancel --operation-id ID --version V
   teamx platforms selection notify --operation-id ID --mode inbox|none
@@ -31,6 +32,14 @@ that account by the service with search/pagination, then checked again on submit
 Only choose explicit stable IDs. Account forms may select a verified account or
 name a new connection. Fields expire after 24h; cancellation applies no settings.
 notify/acknowledge and bounded wait share the connection continuation semantics.
+GitLab account forms require --provider gitlab --kind account --origin URL and
+select only existing verified accounts on that exact instance. A missing account
+uses connect start with an existing compatible application, not a fabricated choice.
+GitLab project forms require --provider gitlab --kind projects --platform-id ID
+--platform-version V [--query NAME]. They select one native project ID and exact
+path_with_namespace; submit rechecks both under the original account. update accepts
+--project-id/--project-path and repeated --event-type (empty clears). Candidate pages,
+permission failures, stale versions and manual edits never change the submitted target.
 Source-seq status returns all selection steps for that original human request.
 `
 
@@ -52,7 +61,9 @@ func runPlatformSelectionCLI(ctx context.Context, args []string, stdout, stderr 
 	switch action {
 	case "start":
 		f.Uint64Var(&req.SourceSeq, "source-seq", 0, "real human request seq")
-		f.StringVar(&in.Kind, "kind", "", "account or groups")
+		f.StringVar(&in.Provider, "provider", "", "lark (default) or gitlab")
+		f.StringVar(&in.Origin, "origin", "", "canonical GitLab instance for account choice")
+		f.StringVar(&in.Kind, "kind", "", "account, groups or projects")
 		f.StringVar(&in.PlatformID, "platform-id", "", "verified account for group search")
 		f.Uint64Var(&in.PlatformVersion, "platform-version", 0, "account version")
 		f.StringVar(&in.Query, "query", "", "initial group search")
@@ -68,6 +79,17 @@ func runPlatformSelectionCLI(ctx context.Context, args []string, stdout, stderr 
 		f.Uint64Var(&draft.PlatformVersion, "selected-platform-version", 0, "selected connection version")
 		f.StringVar(&draft.Name, "name", "", "new connection name")
 		f.Func("chat-id", "selected group ID; repeat for multiple", func(v string) error { draft.ChatIDs = append(draft.ChatIDs, v); return nil })
+		f.Int64Var(&draft.ProjectID, "project-id", 0, "native project ID")
+		f.StringVar(&draft.ProjectPath, "project-path", "", "exact project path")
+		f.Func("event-type", "activity type; repeat; empty clears", func(s string) error {
+			if draft.EventsFilter == nil {
+				draft.EventsFilter = &gitlab.EventsFilter{Types: []string{}}
+			}
+			if s != "" {
+				draft.EventsFilter.Types = append(draft.EventsFilter.Types, s)
+			}
+			return nil
+		})
 		f.StringVar(&draft.GroupMessageMode, "group-message-mode", "", "all or mentions")
 		req.Draft = &draft
 	case "wait":

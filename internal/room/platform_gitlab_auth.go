@@ -67,6 +67,8 @@ type gitlabAuthSession struct {
 	ctx                             context.Context
 	cancel                          context.CancelFunc
 	done                            chan struct{}
+	operationID                     string
+	connectErr                      error
 }
 
 func (s *gitlabAuthSession) expectedUserID() int64 {
@@ -105,6 +107,7 @@ func (m *roomManager) finishGitLabAuthLocked(s *gitlabAuthSession, status, code 
 		s.RequestedScopes = slices.Clone(s.app.Scopes)
 	}
 	s.cancel()
+	m.finishGitLabConnectLocked(s)
 	select {
 	case <-s.done:
 	default:
@@ -163,6 +166,9 @@ func (m *roomManager) gitlabAuthReferencesLocked(records []registry.Record) ([]g
 func (m *roomManager) checkGitLabAuthLocked(s *gitlabAuthSession) error {
 	if m.closing {
 		return ErrClosing
+	}
+	if err := m.checkGitLabConnectLocked(s); err != nil {
+		return err
 	}
 	if m.busy {
 		return ErrBusy
@@ -630,6 +636,12 @@ func (m *roomManager) serveGitLabCallback(w http.ResponseWriter, r *http.Request
 		exchangeErr = e
 		if e == nil && registry.GitLabAccountConnected(file, s.targetID, s.app.Origin, identity.UserID) {
 			exchangeErr = registry.ErrAccountConnected
+		}
+	}
+	if exchangeErr == nil {
+		exchangeErr = m.checkpointGitLabConnectLocked(s, identity)
+		if exchangeErr != nil {
+			code = "account_mismatch"
 		}
 	}
 	if exchangeErr == nil {
