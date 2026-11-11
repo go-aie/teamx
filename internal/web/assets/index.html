@@ -72,7 +72,11 @@
           <button type="button" id="cancel-reply" class="reply-cancel" aria-label="取消引用" title="取消引用"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
         </div>
         <label id="message-input-label" class="sr-only" for="message-input">发送到房间</label>
-        <textarea id="message-input" rows="3" placeholder="发送到房间，开始一段协作…" aria-describedby="message-shortcuts" required disabled></textarea>
+        <div class="compose-input">
+          <div id="message-mirror" class="compose-mirror" aria-hidden="true" hidden></div>
+          <div id="mention-options" class="mention-options menu-surface" role="listbox" aria-label="提及成员" hidden></div>
+          <textarea id="message-input" rows="3" placeholder="发送到房间，开始一段协作…" aria-describedby="message-shortcuts" aria-autocomplete="list" aria-controls="mention-options" aria-expanded="false" required disabled></textarea>
+        </div>
         <div class="compose-footer">
           <div class="workspace-control" id="workspace-control" hidden>
             <details id="workspace-picker" class="workspace-picker">

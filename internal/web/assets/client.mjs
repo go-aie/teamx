@@ -85,6 +85,15 @@ export function unseenMentions(messages, operator, seen, seenThrough = 0) {
     mentionRanges(message.text, operator).length > 0).sort((a, b) => a.seq - b.seq);
 }
 
+// Complete known names only; prefer the longest name where identities overlap.
+export function memberMentionRanges(text, names) {
+  const ranges = [...new Set(names.filter(Boolean))].flatMap(name => mentionRanges(text, name)
+    .filter(at => !/[\p{L}\p{N}_@.+-]/u.test(text.charAt(at.end)))
+    .map(at => ({ ...at, name }))).sort((a, b) => a.start - b.start || b.end - a.end);
+  let end = 0;
+  return ranges.filter(at => { if (at.start < end) return false; end = at.end; return true; });
+}
+
 // All continuation pages belong to the first page's fixed snapshot. Neither
 // history previews nor live refreshes ever confirm a member's unread receipt.
 export async function readPages(read, params) {

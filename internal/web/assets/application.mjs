@@ -216,7 +216,9 @@ export async function createApp(overrides = {}) {
       const read = await conversationUI.readPages(initial ? { mode: "latest", latest: 50 } : { mode: "range", after: state.lastSeq }, info);
       if (!currentView(version) || read.clearedThrough < state.clearedThrough) return;
       const cleared = conversationUI.applyClear(read.clearedThrough);
-      if (read.messages.length || changedRoom || cleared) {
+      const membersChanged = JSON.stringify(state.members.map(m => m.agent_id)) !== JSON.stringify(members.members.map(m => m.agent_id));
+      state.members = members.members;
+      if (read.messages.length || changedRoom || cleared || membersChanged) {
         for (const message of read.messages) state.messages.set(message.seq, message);
         conversationUI.renderMessages();
         if (stick) conversationUI.bottom();
@@ -224,7 +226,6 @@ export async function createApp(overrides = {}) {
       }
       state.lastSeq = read.snapshot;
       conversationUI.renderMentionNotice();
-      state.members = members.members;
       state.connected = true;
       void interactionsUI.refreshPlatformInteractions();
       membersUI.renderMembers(); void membersUI.activity.refresh();void policyUI.refreshMemberPolicy();void inboxUI.refreshMemberInbox();

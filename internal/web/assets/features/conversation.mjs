@@ -1,6 +1,7 @@
 import { readPages as collectPages, createRoomDrafts, mentionRanges, unseenMentions } from "../client.mjs";
 import { notificationOptions } from "../markdown.mjs";
 import { createAssistantIcon } from "../icons.mjs";
+import { createMentionPicker } from "../mention-picker.mjs";
 
 // Messages, drafts, mentions and the send/restart lifecycle.
 export function createConversation({ env, runtime, roomsUI, notificationsUI, membersUI, settingsUI, interactionsUI, workspaceUI, layoutUI }) {
@@ -10,6 +11,9 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
   let historyLoading = false;
 
   const drafts = createRoomDrafts(storage);
+  const mentionPicker = createMentionPicker({ document, input: $("message-input"), list: $("mention-options"), mirror: $("message-mirror"),
+    members: () => state.members, operator: () => state.operator, enabled: () => !!state.info && !state.draft.pending && !discussionBusy(),
+    changed: () => { saveDraft(); composerState(); } });
 
   let restartNoticeID = "", restartNoticeExpires = 0;
 
@@ -180,7 +184,8 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     el.querySelector(".author-kind").textContent = integration ? "通知" : agent ? "AGENT" : message.author.id === state.operator ? "你 · HUMAN" : "HUMAN";
     const text = el.querySelector(".message-text");
     const ranges = mentionRanges(message.text, state.operator);
-    renderMessageBody(text, message.text, state.operator, integration ? notificationOptions(state.info, state.operator, message.source, { seq: message.seq }) : undefined);
+    renderMessageBody(text, message.text, state.operator, integration ? notificationOptions(state.info, state.operator, message.source, { seq: message.seq }) :
+      { memberNames: state.members.map(m => m.agent_id) });
     el.classList.toggle("mentioned", message.seq > mentionSeenThrough && !mentionSeen.has(message.seq) && ranges.length > 0 && !(message.author.kind === "human" && message.author.id === state.operator));
     const time = el.querySelector("time");
     time.textContent = settingsUI.formatDate(message.created_at, {hour:"2-digit",minute:"2-digit"});
@@ -202,6 +207,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
   function renderMessages() {
     const nodes = [];
     const messages = [...state.messages.values()].sort((a, b) => a.seq - b.seq);
+    const memberNames = state.members.map(m => m.agent_id), memberNamesKey = JSON.stringify(memberNames);
     let day = "";
     for (const message of messages) {
       const date = new Date(message.created_at);
@@ -214,8 +220,14 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
         nodes.push(divider);
       }
       let cached=messageNodes.get(message.seq);
-      if(!cached){cached={element:messageElement(message)};messageNodes.set(message.seq,cached);}
+      if(!cached){cached={element:messageElement(message),memberNames:memberNamesKey};messageNodes.set(message.seq,cached);}
       const el=cached.element;
+      if (message.author.kind !== "integration") {
+        if (cached.memberNames !== memberNamesKey) {
+          renderMessageBody(el.querySelector(".message-text"), message.text, state.operator, { memberNames });
+          cached.memberNames = memberNamesKey;
+        }
+      }
       const mentioned=mentionRanges(message.text,state.operator).length>0;
       el.classList.toggle("mentioned",message.seq>mentionSeenThrough && !mentionSeen.has(message.seq) && mentioned && !(message.author.kind==="human" && message.author.id===state.operator));
       el.querySelector("time").textContent=settingsUI.formatDate(message.created_at,{hour:"2-digit",minute:"2-digit"});
@@ -276,7 +288,9 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
   }
 
   function showDraft() {
+    mentionPicker.close();
     $("message-input").value = state.draft.text || "";
+    mentionPicker.renderText();
     renderReply();
     notice("send-error", state.draft.pending ? "有一条尚未确认的消息，重试保留原会话和服务身份。请先核对历史。" : "");
   }
@@ -340,6 +354,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     membersUI.renderExecutionHint();
     $("message-input").disabled = !state.info;
     $("message-input").readOnly = !!state.draft.pending || discussionBusy();
+    mentionPicker.refresh();
     $("send").disabled = !state.connected || state.draft.sending || discussionBusy() || (!state.draft.pending && !$("message-input").value.trim());
     $("send").textContent = state.draft.sending ? "发送中…" : state.draft.pending ? "重试发送 ↗" : "发送 ↗";
     $("cancel-reply").disabled=!!state.draft.pending;
@@ -462,9 +477,12 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
       notice("send-error", "已放弃重试。原消息可能已提交，请先查看消息记录，再决定是否重新发送。");
     });
 
+    mentionPicker.mount();
+    if (typeof ResizeObserver !== "undefined") new ResizeObserver(mentionPicker.renderText).observe($("message-input"));
     $("message-input").addEventListener("input", () => { saveDraft(); composerState(); });
 
     $("message-input").addEventListener("keydown", (event) => {
+      if (mentionPicker.keydown(event)) return;
       // IME confirmation (including browsers reporting keyCode 229) never sends.
       if (event.key !== "Enter" || event.isComposing || event.keyCode === 229 || event.altKey) return;
       if (event.ctrlKey || event.metaKey) {

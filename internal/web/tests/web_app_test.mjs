@@ -1773,6 +1773,124 @@ test("private activity rejects unordered diagnostics instead of displaying legac
 
 
 
+test("Room mentions filter members and select by keyboard without sending or changing delivery", async () => {
+  const api = server([makeRoom("A")]);
+  const members = ["reviewer", "developer", "开发助理"].map(agent_id => ({agent_id, membership_id:`member-${agent_id}`, status:"idle", runner:{profile:"runtime"}}));
+  api.hook = path => path === "/v1/member/list" ? {members} : undefined;
+  const ui = await launch(api), input = ui.el("message-input"), list = ui.el("mention-options");
+  const type = async text => { input.value=text; input.selectionStart=input.selectionEnd=text.length; await input.emit("input"); };
+  await type("请 @");
+  assert.deepEqual(list.children.map(el => el.textContent), ["@reviewer", "@developer", "@开发助理"]);
+  await input.emit("keydown", {key:"ArrowDown"});
+  assert.equal(list.children[1].getAttribute("aria-selected"), "true");
+  await input.emit("keydown", {key:"Enter",repeat:true});
+  assert.equal(input.value,"请 @");
+  await input.emit("keydown", {key:"Enter"});
+  assert.equal(input.value,"请 @developer ");assert.equal(list.hidden,true);
+  assert.equal(api.calls.filter(c => c.path === "/v1/send").length,0);
+  const reload = await launch(api,ui.saved);assert.equal(reload.el("message-input").value,"请 @developer ");
+  await type("请 @ReV");assert.deepEqual(list.children.map(el => el.textContent),["@reviewer"]);
+  await input.emit("keydown",{key:"Tab"});assert.equal(input.value,"请 @reviewer ");
+  await type("请 @开");await list.children[0].emit("click");assert.equal(input.value,"请 @开发助理 ");
+  await input.emit("keydown",{key:"Enter"});await settle();
+  const send=api.calls.find(c=>c.path==="/v1/send");
+  assert.equal(send.data.text,"请 @开发助理 ");assert.equal(send.data.room_id,"A");
+  assert.equal(Object.hasOwn(send.data,"recipient"),false);
+});
+
+test("mention editing preserves suffixes, ignores emails and IME confirmation, and allows dismissal", async () => {
+  const api=server([makeRoom("A")]);
+  api.hook=path=>path==="/v1/member/list" ? {members:[{agent_id:"开发助理",membership_id:"member-dev",status:"idle",runner:{profile:"runtime"}}]} : undefined;
+  const ui=await launch(api),input=ui.el("message-input"),list=ui.el("mention-options");
+  const type=async(text,caret=text.length)=>{input.value=text;input.selectionStart=input.selectionEnd=caret;await input.emit("input");};
+  for(const text of ["mail@example.com","@不存在","@@","plain text"]){await type(text);assert.equal(list.hidden,true);}
+  await type("@开 关闭你的通知",2);await input.emit("keydown",{key:"Enter"});
+  assert.equal(input.value,"@开发助理 关闭你的通知");
+  await type("@");await input.emit("compositionstart");await type("@开");
+  assert.equal(list.hidden,true);await input.emit("keydown",{key:"Enter",isComposing:true});
+  assert.equal(api.calls.filter(c=>c.path==="/v1/send").length,0);
+  await input.emit("compositionend");assert.equal(list.hidden,false);
+  await input.emit("keydown",{key:"Enter",keyCode:229});assert.equal(input.value,"@开");
+  await input.emit("keydown",{key:"Escape"});assert.equal(list.hidden,true);
+  await ui.refresh();assert.equal(list.hidden,true);
+  await input.emit("click");assert.equal(list.hidden,false);
+  await input.emit("blur");assert.equal(list.hidden,true);
+});
+
+test("complete member mentions delete as a unit at their boundaries while ordinary editing stays native", async () => {
+  const api=server([makeRoom("A")]);
+  api.hook=path=>path==="/v1/member/list" ? {members:["reviewer","开发助理"].map(agent_id=>({agent_id,membership_id:`member-${agent_id}`,status:"idle",runner:{profile:"runtime"}}))} : undefined;
+  const ui=await launch(api),input=ui.el("message-input");
+  const erase=async(text,caret,key,keys={})=>{
+    input.value=text;input.selectionStart=input.selectionEnd=caret;await input.emit("input");
+    let prevented=false;await input.emit("keydown",{key,...keys,preventDefault(){prevented=true;}});return prevented;
+  };
+  for(const [text,caret,key,expected] of [
+    ["@reviewer ",10,"Backspace",""],
+    ["请 @reviewer 关闭通知",12,"Backspace","请 关闭通知"],
+    ["@开发助理",5,"Backspace",""],
+    ["@reviewer，好的",9,"Backspace","，好的"],
+    ["请 @reviewer 关闭通知",2,"Delete","请 关闭通知"],
+    ["@reviewer @开发助理 ",16,"Backspace","@reviewer "],
+  ]){
+    assert.equal(await erase(text,caret,key),true,`${text}: ${key}`);assert.equal(input.value,expected);
+    assert.equal(ui.el("mention-options").hidden,true);
+  }
+  for(const [text,caret,key,keys] of [
+    ["@reviewer",4,"Backspace",{}],
+    ["@reviewer2",10,"Backspace",{}],
+    ["@开发助理甲",5,"Backspace",{}],
+    ["x@reviewer",10,"Backspace",{}],
+    ["@reviewer  ",11,"Backspace",{}],
+    ["普通文本",4,"Backspace",{}],
+    ["@reviewer ",10,"Backspace",{isComposing:true}],
+    ["@reviewer ",10,"Backspace",{ctrlKey:true}],
+  ]){
+    assert.equal(await erase(text,caret,key,keys),false,`${text}: native edit`);assert.equal(input.value,text);
+  }
+  input.value="@reviewer";input.selectionStart=2;input.selectionEnd=5;
+  let prevented=false;await input.emit("keydown",{key:"Backspace",preventDefault(){prevented=true;}});assert.equal(prevented,false);
+  await erase("@reviewer ",10,"Backspace");
+  const reload=await launch(api,ui.saved);assert.equal(reload.el("message-input").value,"");
+  assert.equal(api.calls.filter(c=>c.path==="/v1/send").length,0);
+});
+
+test("composer and message highlights follow member names while preserving text, scrolling and Room drafts", async () => {
+  const api=server([makeRoom("A"),makeRoom("B")]);
+  let members=[{agent_id:"reviewer",membership_id:"member-reviewer",status:"idle",runner:{profile:"runtime"}}];
+  api.history.set("A",[message(1,"@reviewer 请确认；@tester 请看")]);
+  api.hook=path=>path==="/v1/member/list" ? {members} : undefined;
+  const ui=await launch(api),input=ui.el("message-input"),mirror=ui.el("message-mirror");
+  const text="@reviewer 请看 <script>text</script>\n普通文字 @unknown mail@reviewer.com";
+  await ui.draft(text);
+  assert.equal(mirror.hidden,false);
+  assert.equal(input.classList.contains("has-mentions"),true);
+  assert.equal(mirror.children.map(el=>el.textContent).join(""),text);
+  assert.deepEqual(mirror.children.filter(el=>el.className==="mention-member").map(el=>el.textContent),["@reviewer"]);
+  input.scrollTop=44;await input.emit("scroll");assert.equal(mirror.scrollTop,44);
+  assert.deepEqual(ui.document.getElementById("message-1").querySelector(".message-text").markdownOptions.memberNames,["reviewer"]);
+  members=[];await ui.refresh();assert.equal(mirror.hidden,true);assert.equal(input.classList.contains("has-mentions"),false);
+  assert.deepEqual(ui.document.getElementById("message-1").querySelector(".message-text").markdownOptions.memberNames,[]);
+  await ui.select("B");assert.equal(mirror.hidden,true);assert.equal(input.value,"");
+  members=[{agent_id:"reviewer",membership_id:"member-reviewer",status:"idle",runner:{profile:"runtime"}}];
+  await ui.select("A");assert.equal(input.value,text);assert.equal(mirror.hidden,false);
+});
+
+test("mention candidates follow current members and close when switching Rooms", async () => {
+  const api=server([makeRoom("A"),makeRoom("B")]);
+  let members=[{agent_id:"reviewer",membership_id:"member-reviewer",status:"idle",runner:{profile:"runtime"}}];
+  api.hook=path=>path==="/v1/member/list" ? {members} : undefined;
+  const ui=await launch(api),input=ui.el("message-input"),list=ui.el("mention-options");
+  input.value="@";input.selectionStart=input.selectionEnd=1;await input.emit("input");
+  const old=list.children[0];members=[];await ui.refresh();await old.emit("click");
+  assert.equal(input.value,"@");assert.equal(list.hidden,true);
+  await ui.refresh();await input.emit("click");assert.equal(list.hidden,true);
+  members=[{agent_id:"developer",membership_id:"member-developer",status:"paused",runner:{profile:"runtime"}}];
+  await ui.refresh();await input.emit("click");assert.equal(list.children[0].textContent,"@developer");
+  await ui.select("B");assert.equal(list.hidden,true);assert.equal(input.getAttribute("aria-expanded"),"false");
+  await ui.select("A");assert.equal(input.value,"@");assert.equal(list.hidden,true);
+});
+
 test("Enter sends once while composing, modified Enter and held keys never submit messages", async () => {
   const api = server([makeRoom("A")]), ui = await launch(api), input = ui.el("message-input");
   const sends = () => api.calls.filter(call => call.path === "/v1/send");
@@ -2150,7 +2268,10 @@ test("Room attachment rendering binds the saved integration message and excludes
   assert.equal(query.get("room_instance"), "instance-A");
   assert.equal(query.get("service_epoch"), "epoch-A");
   assert.equal(query.has("membership_id"), false);
-  assert.equal(ui.el("messages").children.find(el => el.id === "message-2").querySelector(".message-text").markdownOptions, undefined);
+  const ordinary = ui.el("messages").children.find(el => el.id === "message-2").querySelector(".message-text").markdownOptions;
+  assert.equal(ordinary.attachmentURL, undefined);
+  assert.equal(ordinary.quotedMarkdown, undefined);
+  assert.deepEqual(ordinary.memberNames, []);
 });
 
 test("Lark Inbox preview binds image requests to the saved membership and sequence", async () => {

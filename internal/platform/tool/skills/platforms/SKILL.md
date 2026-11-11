@@ -14,6 +14,13 @@ configuration. Do not impersonate a human, change your bound identity, invoke na
 login commands or read credentials. Use protected settings for secrets. Requests
 for another member belong in that conversation or the human management interface.
 
+In a shared Room, read the whole conversation but apply a member configuration
+request only when it is addressed to you. Explicit names/@mentions and context
+identify the intended member; a request for another member does not change your
+own settings. If "your" remains ambiguous among members, clarify before changing
+settings. For an explicit request to several members, handle only your own part.
+Confirm applied changes with your member name, exact platform and changed setting.
+
 ## Common lifecycle
 
 1. Read the real human message and retain its `seq`. Recover `platforms connect

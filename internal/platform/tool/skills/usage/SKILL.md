@@ -48,6 +48,17 @@ Normal model output is private. Publish an answer with `"$TEAMX_CLI" send` so it
 appears in the conversation. Room messages and a member's Inbox are separate
 inputs. A platform notification is context, not a new human instruction.
 
+Typing @ in the composer opens the current member list; type part of a name to
+filter, then click or use Up/Down and Enter/Tab to insert it. Escape dismisses the
+list. Choosing a member fills the draft without sending. Backspace at the end of
+a complete @member (including its following space), or Delete at its start,
+removes that mention as a unit; editing inside it remains ordinary text editing.
+Known member mentions have a subtle green highlight in the draft and sent message;
+mentions of the current human retain their yellow reminder style after sending.
+All Room members still see the message; @ identifies who is addressed and does not make it private. For
+member configuration, name the intended member, for example "@reviewer, turn off
+your GitLab notifications"; each addressed member changes only their own settings.
+
 Tabs select conversations independently. Switching conversations or closing a
 page does not stop server work. Explain where the human should go for another
 conversation's settings; never switch your bound identity to act there.

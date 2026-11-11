@@ -1,6 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { request, readPages, createActivityReader, teamOpeningDraft, mentionRanges, unseenMentions } from "../assets/client.mjs";
+import { request, readPages, createActivityReader, teamOpeningDraft, mentionRanges, memberMentionRanges, unseenMentions } from "../assets/client.mjs";
+
+test("member mentions recognize complete known names and prefer longer identities", () => {
+  const text="@开发助理 @reviewer，@开发助理甲 @reviewer2 mail@reviewer.com @@reviewer @first.last";
+  const names=["开发", "开发助理", "reviewer", "first.last", "reviewer"];
+  assert.deepEqual(memberMentionRanges(text,names).map(at=>text.slice(at.start,at.end)),["@开发助理","@reviewer","@first.last"]);
+  assert.deepEqual(memberMentionRanges("@开发助理",["开发"]),[]);
+  assert.deepEqual(memberMentionRanges("@unknown",names),[]);
+});
 
 test("human mentions match exact names with punctuation without matching emails or longer names", () => {
   const text = "请 @ann，确认一下；(@ann). 再问@ann：可以吗？";

@@ -1,5 +1,5 @@
 import { Marked, Renderer } from "./vendor/marked.mjs";
-import { mentionRanges } from "./client.mjs";
+import { mentionRanges, memberMentionRanges } from "./client.mjs";
 
 function escapeHTML(text, preserveEntities = false) {
   return text.replace(preserveEntities ? /&(?!(?:#\d+|#x[\da-f]+|\w+);)/gi : /&/g, "&amp;")
@@ -188,14 +188,16 @@ export function renderMessageBody(container, text, operator, options) {
     if (!node.parentElement.closest("a, code, pre")) nodes.push(node);
   }
   for (const node of nodes) {
-    const ranges = mentionRanges(node.data, operator);
+    const ranges = [...mentionRanges(node.data, operator).map(at => ({...at, name:operator})),
+      ...memberMentionRanges(node.data, options?.memberNames || [])].sort((a,b) => a.start-b.start || b.end-a.end);
     if (!ranges.length) continue;
     const fragment = doc.createDocumentFragment();
     let end = 0;
     for (const range of ranges) {
+      if (range.start < end) continue;
       fragment.append(doc.createTextNode(node.data.slice(end, range.start)));
       const mark = doc.createElement("mark");
-      mark.className = "mention";
+      mark.className = range.name === operator ? "mention" : "mention-member";
       mark.textContent = node.data.slice(range.start, range.end);
       fragment.append(mark);
       end = range.end;
