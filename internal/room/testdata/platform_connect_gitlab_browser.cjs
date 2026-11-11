@@ -16,7 +16,7 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),{mkd
   const card=page.locator(`#messages [data-interaction-id="${id}"]`),link=card.locator('a').first();
   await card.waitFor();await link.waitFor({state:'visible'});assert.match(await card.textContent(),/GitLab/);assert.equal(await card.locator('img').isVisible(),false);
   await card.evaluate(el=>{window.originalGitlabCard=el;});
-  await page.locator('#open-settings').click();await page.locator('#settings-tab-platforms').click();await page.locator(`#conversation-connections [data-interaction-id="${id}"]`).waitFor();await page.locator('#close-settings').click();
+  await page.locator('#open-settings').click();await page.locator('#settings-tab-platforms').click();await page.locator("#platforms-list-view").waitFor({state:"visible"});assert.equal(await page.locator("#settings-dialog [data-interaction-id]").count(),0);await page.locator('#close-settings').click();
   assert.equal(await card.evaluate(el=>el===window.originalGitlabCard),true);
   if(firstApplication==='true') {
    assert.match(await card.textContent(),/所需 scopes：api/);

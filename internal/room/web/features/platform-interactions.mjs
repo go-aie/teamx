@@ -1,20 +1,19 @@
 // Durable connection and selection cards rendered inside conversations.
 export function createPlatformInteractions({ env, runtime, conversationUI, settingsUI, connectionsUI, gitlabUI }) {
   const { document, window, request } = env;
-  const { state, $, notice, reconcileChildren } = runtime;
+  const { state, $, notice } = runtime;
 
   // Connection interactions are projections of durable operations, never generated
   // HTML or temporary OAuth URLs saved in chat history. Each view owns stable nodes.
-  const platformInteractionState = {views:new Map(), settings:new Map(), operations:[], busy:new Set(), errors:new Map(), loading:false, generation:0};
+  const platformInteractionState = {views:new Map(), operations:[], busy:new Set(), errors:new Map(), loading:false, generation:0};
 
   function resetPlatformInteractions() {
-    const s=platformInteractionState;s.generation++;s.loading=false;s.operations=[];s.views.clear();s.settings.clear();s.busy.clear();s.errors.clear();
-    $("conversation-connections").replaceChildren();$("conversation-connections-section").hidden=true;
+    const s=platformInteractionState;s.generation++;s.loading=false;s.operations=[];s.views.clear();s.busy.clear();s.errors.clear();
     notice("platform-interaction-error", "");conversationUI.resetMessageNodes();
   }
 
-  function connectionInteractionCard(op, inSettings=false) {
-    if(!["lark_authorization","gitlab_authorization"].includes(op.interaction.kind))return selectionInteractionCard(op,inSettings);
+  function connectionInteractionCard(op) {
+    if(!["lark_authorization","gitlab_authorization"].includes(op.interaction.kind))return selectionInteractionCard(op);
     const el=document.createElement("section");el.className="platform-connect-interaction";el.dataset.interactionId=op.interaction.id;
     el.setAttribute("aria-label", op.interaction.kind==="gitlab_authorization" ? "GitLab 连接" : "飞书连接");
     const heading=document.createElement("strong"), status=document.createElement("p"), steps=document.createElement("p"), account=document.createElement("p"), hint=document.createElement("p"), feedback=document.createElement("p");
@@ -24,7 +23,7 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
     const qr=document.createElement("img");qr.className="platform-connect-qr";qr.alt="飞书授权二维码";
     qr.addEventListener("error",()=>{qr.hidden=true;});
     const cancel=document.createElement("button");cancel.type="button";cancel.className="text-button";cancel.textContent="取消连接";
-    const settings=document.createElement("button");settings.type="button";settings.className="text-button";settings.textContent="完整设置";settings.hidden=inSettings;
+    const settings=document.createElement("button");settings.type="button";settings.className="text-button";settings.textContent="完整设置";
     settings.addEventListener("click",()=>card.op.setup ? openGitLabInteractionSettings(card) : settingsUI.openSettings("platforms"));
     const applicationLink=op.interaction.kind==="gitlab_authorization" ? document.createElement("a") : null;
     if(applicationLink){applicationLink.target="_blank";applicationLink.rel="noopener noreferrer";applicationLink.referrerPolicy="no-referrer";applicationLink.textContent="前往 GitLab 管理应用 ↗";applicationLink.hidden=true;}
@@ -120,20 +119,15 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
   }
 
   function renderPlatformInteractions() {
-    const s=platformInteractionState, visible=new Set(), settingCards=[];
+    const s=platformInteractionState, visible=new Set();
     for(const op of s.operations) {
       const message=state.messages.get(op.source_seq), host=conversationUI.interactionHost(op.source_seq);
       if(host && message?.author.kind==="human" && message.author.id===state.operator) {
         let card=s.views.get(op.operation_id);if(!card){card=connectionInteractionCard(op);s.views.set(op.operation_id,card);}
         updatePlatformInteraction(card,op);if(card.el.parentElement!==host)host.append(card.el);visible.add(op.operation_id);
       }
-      let setting=s.settings.get(op.operation_id);if(!setting){setting=connectionInteractionCard(op,true);s.settings.set(op.operation_id,setting);}
-      updatePlatformInteraction(setting,op);settingCards.push(setting.el);
     }
     for(const [id,card] of s.views) if(!visible.has(id)){card.el.remove();s.views.delete(id);}
-    for(const [id,card] of s.settings) if(!s.operations.some(op=>op.operation_id===id)){card.el.remove();s.settings.delete(id);}
-    reconcileChildren($("conversation-connections"),settingCards);
-    $("conversation-connections-section").hidden=settingCards.length===0;
   }
 
   async function refreshPlatformInteractions() {
@@ -169,7 +163,7 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
 
   // Fixed account/group forms share the durable selection draft. Local dirty
   // input retains its base version until submission or an explicit conflict reload.
-  function selectionInteractionCard(op,inSettings=false) {
+  function selectionInteractionCard(op) {
     const el=document.createElement("section");el.className="platform-connect-interaction platform-selection";el.dataset.interactionId=op.operation_id;
     const heading=document.createElement("strong"),status=document.createElement("p"),fields=document.createElement("div"),candidates=document.createElement("div"),feedback=document.createElement("p"),actions=document.createElement("div"),hint=document.createElement("p");
     fields.className="platform-selection-fields";candidates.className="platform-selection-candidates";actions.className="platform-connect-actions";status.setAttribute("role","status");feedback.setAttribute("role","status");hint.className="quiet";
@@ -184,7 +178,7 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
     const submit=document.createElement("button");submit.type="button";submit.textContent="提交选择";submit.className="primary";
     const cancel=document.createElement("button");cancel.type="button";cancel.className="text-button";cancel.textContent="取消选择";
     const reload=document.createElement("button");reload.type="button";reload.className="text-button";reload.textContent="载入最新草稿";reload.hidden=true;
-    const settings=document.createElement("button");settings.type="button";settings.className="text-button";settings.textContent="完整设置";settings.hidden=inSettings;settings.addEventListener("click",()=>settingsUI.openSettings("platforms"));
+    const settings=document.createElement("button");settings.type="button";settings.className="text-button";settings.textContent="完整设置";settings.addEventListener("click",()=>settingsUI.openSettings("platforms"));
     actions.append(submit,cancel,reload,settings);el.append(heading,status,fields,search,candidates,more,selected,actions,hint,feedback);
     const card={el,op,heading,status,fields,candidates,feedback,actions,hint,name,query,search,more,mode,selected,submit,cancel,reload,dirty:false,editVersion:0,draft:null,rows:new Map(),searchGeneration:0,searchBusy:false,queryValue:"",pageToken:"",loaded:false};
     const dirty=()=>{card.dirty=true;};
@@ -237,7 +231,7 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
       const account=card.op.input.kind==="account",project=card.op.input.kind==="projects",gitlab=card.op.input.provider==="gitlab",rows=account ? (gitlab ? result : [...result,{id:"",name:"连接另一个飞书账号",version:0}]) : project ? result.projects : result.chats;
       if(project && (!Array.isArray(rows) || rows.some(p=>!Number.isSafeInteger(p.id) || p.id<=0 || typeof p.path_with_namespace!=="string")))throw Error("invalid projects");
       for(const item of rows){const id=account || project ? item.id : item.chat_id;if(card.rows.has(id))continue;
-        const row=document.createElement("label"),control=document.createElement("input"),text=document.createElement("span");control.type=account || project ? "radio" : "checkbox";control.name=`selection-${card.op.operation_id}-${card.el===s.views.get(card.op.operation_id)?.el ? "chat" : "settings"}`;
+        const row=document.createElement("label"),control=document.createElement("input"),text=document.createElement("span");control.type=account || project ? "radio" : "checkbox";control.name=`selection-${card.op.operation_id}`;
         text.textContent=account ? `${item.name}${item.username ? ` · ${item.username}` : ""}${item.id ? ` · ${item.account?.id?.value || item.id}` : ""}` : project ? `${item.name} · ${item.path_with_namespace} · #${item.id}` : `${item.name || id} · ${id}${item.chat_mode==="topic" ? " · 话题群" : ""}`;
         row.append(control,text);card.candidates.append(row);card.rows.set(id,{control,chatName:item.name});
         control.addEventListener("change",()=>{

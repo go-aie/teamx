@@ -8,11 +8,10 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict');
   const card=page.locator(`#messages [data-interaction-id="${id}"]`);await card.waitFor();await card.getByText('Project · team/project · #7',{exact:true}).waitFor();
   await card.evaluate(el=>window.originalProjectCard=el);await card.getByRole('button',{name:'加载更多',exact:true}).click();
   const row=card.locator('.platform-selection-candidates label').filter({hasText:'other/project'});await row.locator('input').check();await card.locator('select').selectOption('note');
-  await page.locator('#open-settings').click();await page.locator('#settings-tab-platforms').click();await page.locator(`#conversation-connections [data-interaction-id="${id}"]`).waitFor();await page.locator('#close-settings').click();
+  await page.locator('#open-settings').click();await page.locator('#settings-tab-platforms').click();await page.locator("#platforms-list-view").waitFor({state:"visible"});assert.equal(await page.locator("#settings-dialog [data-interaction-id]").count(),0);await page.locator('#close-settings').click();
   assert.equal(await card.evaluate(el=>el===window.originalProjectCard),true);assert.match(await card.textContent(),/other\/project.*#8/);
-  // Closing full settings refreshes candidate metadata from page one while the
-  // local selection survives. Reload page two and check the exact selected ID.
-  await card.getByRole('button',{name:'加载更多',exact:true}).click();assert.equal(await row.locator('input').isChecked(),true);
+  // Global settings leave loaded pages and the local selection in the conversation.
+  assert.equal(await card.locator(".platform-selection-candidates label").count(),2);assert.equal(await row.locator("input").isChecked(),true);
   await page.setViewportSize({width:390,height:844});await page.waitForFunction(()=>document.documentElement.scrollWidth<=innerWidth);
   await card.getByRole('button',{name:'提交选择',exact:true}).click();await card.getByText('选择已保存',{exact:true}).waitFor();
   await page.reload();await card.getByText('选择已保存',{exact:true}).waitFor();assert.match(await card.textContent(),/other\/project.*#8/);assert.deepEqual(errors,[]);

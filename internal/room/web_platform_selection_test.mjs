@@ -47,12 +47,17 @@ test('multiple account candidates distinguish stable account IDs and selected ve
  const control=candidates(el).children[1].children[0];control.checked=true;await control.emit('change');await controls(el)[0].emit('click');await settle();
  assert.equal(api.op.draft.platform_id,'account2');assert.equal(api.op.draft.platform_version,9);assert.equal(api.op.draft.name,'工作');
 });
-test('settings share the draft and keep selection active when closed; refresh candidates on return',async()=>{
+test('global settings leave the selection and loaded candidates in the conversation',async()=>{
  const api=fixture(),ui=await launch(api);await settle();const el=card(ui);
- await controls(el)[3].emit('click');await settle();const settings=ui.el('conversation-connections').children[0];assert.equal(settings.dataset.interactionId,el.dataset.interactionId);
- const control=candidates(settings).children[0].children[0];control.checked=true;await control.emit('change');
+ await el.children[5].emit('click');await settle();
+ const control=candidates(el).children[2].children[0];control.checked=true;await control.emit('change');
+ const reads=api.calls.filter(c=>c.path.endsWith('/candidates')).length;
+ await controls(el)[3].emit('click');await settle();
+ assert.equal(ui.el('settings-dialog').open,true);assert.equal(ui.el('platforms-list-view').hidden,false);
+ assert.equal(ui.el('conversation-connections'),undefined);assert.equal(card(ui),el);
  await ui.el('close-settings').emit('click');await settle();assert.equal(api.op.status,'waiting');assert.equal(writes(api).length,0);assert.equal(control.checked,true);
- await controls(settings)[0].emit('click');await settle();assert.equal(api.op.status,'completed');assert.deepEqual(api.op.draft.chat_ids,['oc_one']);assert.match(el.children[1].textContent,/已保存/);
+ assert.equal(candidates(el).children.length,3);assert.equal(api.calls.filter(c=>c.path.endsWith('/candidates')).length,reads);
+ await controls(el)[0].emit('click');await settle();assert.equal(api.op.status,'completed');assert.deepEqual(api.op.draft.chat_ids,['oc_three']);assert.match(el.children[1].textContent,/已保存/);
 });
 test('unknown submit response recovers the receipt without resubmitting',async()=>{
  const api=fixture('account'),ui=await launch(api);await settle();const el=card(ui);
@@ -86,7 +91,7 @@ test('GitLab account choices keep native identities and versions; no implicit ne
  const control=candidates(el).children[1].children[0];control.checked=true;await control.emit('change');await controls(el)[0].emit('click');await settle();
  assert.equal(api.op.draft.platform_id,'account2');assert.equal(api.op.draft.platform_version,9);assert.equal(api.op.draft.name,'工作');
 });
-test('GitLab projects distinguish full path and native ID across pages; fixed filter shared with settings',async()=>{
+test('GitLab projects distinguish full path and native ID across pages; settings preserve the conversation filter',async()=>{
  const api=gitlabFixture(),ui=await launch(api);await settle();const el=card(ui);
  assert.match(el.children[0].textContent,/项目/);assert.match(candidates(el).children[0].children[1].textContent,/team\/project.*#7/);
  await el.children[5].emit('click');await settle();assert.equal(candidates(el).children.length,2);assert.match(candidates(el).children[1].children[1].textContent,/other\/project.*#8/);

@@ -26,7 +26,7 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),{wri
   await page.locator('#messages').getByText('我正在授权',{exact:true}).waitFor();
   assert.equal(await card.evaluate(el=>el===window.originalConnectCard && el.querySelector('a')===window.originalConnectLink && document.activeElement===window.originalConnectLink),true);
   // Close full settings: observing this operation must not cancel its process.
-  await page.locator('#open-settings').click();await page.locator('#settings-tab-platforms').click();await page.locator(`#conversation-connections [data-interaction-id="${id}"]`).waitFor();await capture(page,'settings');await page.locator('#close-settings').click();
+  await page.locator('#open-settings').click();await page.locator('#settings-tab-platforms').click();await page.locator("#platforms-list-view").waitFor({state:"visible"});assert.equal(await page.locator("#settings-dialog [data-interaction-id]").count(),0);await capture(page,'settings');await page.locator('#close-settings').click();
   await link.waitFor({state:'visible'});
   let popupWait=page.waitForEvent('popup');await link.click();let popup=await popupWait;await popup.waitForLoadState('domcontentloaded');await popup.close();
   const accountQR=page.waitForResponse(response=>response.url().includes('/v1/platforms/lark/qrcode?') && new URL(response.url()).searchParams.get('stage')==='authorization');

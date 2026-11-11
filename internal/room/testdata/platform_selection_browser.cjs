@@ -32,8 +32,8 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),{mkd
   assert.equal(await group.evaluate(el=>el===window.originalSelectionCard && el.querySelector('.platform-selection-fields input')===window.originalSelectionInput && document.activeElement===window.originalSelectionInput),true);
   assert.equal(await query.inputValue(),'本地输入');
   await group.locator('.platform-selection-candidates label').filter({hasText:'oc_group_one'}).locator('input').check();
-  // Full Settings projects the same operation. Closing does not cancel either form.
-  await group.getByRole('button',{name:'完整设置',exact:true}).click();await page.locator(`#conversation-connections [data-interaction-id="${groupID}"]`).waitFor();await page.locator('#close-settings').click();
+  // Global settings show shared platforms and leave the conversation selection intact.
+  await group.getByRole('button',{name:'完整设置',exact:true}).click();await page.locator("#platforms-list-view").waitFor({state:"visible"});assert.equal(await page.locator("#settings-dialog [data-interaction-id]").count(),0);await page.locator('#close-settings').click();
   if(current.is_direct){
    assert.equal(await page.locator('#member-list-view').isVisible(),false);
    assert.equal(await page.locator('#agent-tab-platforms').getAttribute('aria-selected'),'true');

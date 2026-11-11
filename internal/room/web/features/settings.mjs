@@ -1,7 +1,7 @@
 import { createSystemTime, createTimeInput } from "../time.mjs";
 
 // Service time zone, settings navigation and dialog lifecycle.
-export function createSettings({ env, runtime, connectionsUI, conversationUI, roomsUI, workspaceUI, policyUI, notificationsUI, interactionsUI, onboardingUI, membersUI }) {
+export function createSettings({ env, runtime, connectionsUI, conversationUI, roomsUI, workspaceUI, policyUI, notificationsUI, onboardingUI, membersUI }) {
   const { document, window, request } = env;
   const { state, $, notice, dismissOnBackdrop } = runtime;
 
@@ -135,7 +135,7 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
     notificationsUI.invalidateNavigation();
     if (state.managed ? !state.catalog : !state.info) return;
     connectionsUI.showPlatformList(); settingsTab = state.managed ? tab : "general";
-    timezonePicker.open = false; renderTimeZone(); $("settings-dialog").showModal(); if(state.managed) {void interactionsUI.refreshPlatformInteractions();await connectionsUI.loadPlatforms();await onboardingUI.restoreOnboarding();}
+    timezonePicker.open = false; renderTimeZone(); $("settings-dialog").showModal(); if(state.managed) {await connectionsUI.loadPlatforms();await onboardingUI.restoreOnboarding();}
   }
 
   async function closeSettings() {
@@ -223,7 +223,7 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
 
     $("settings-dialog").addEventListener("cancel", event => { if (connectionsUI.platforms.sending) event.preventDefault(); });
 
-    $("settings-dialog").addEventListener("close", () => { for(const card of [...interactionsUI.platformInteractionState.views.values(),...interactionsUI.platformInteractionState.settings.values()])if(!["lark_authorization","gitlab_authorization"].includes(card.op.interaction.kind) && card.op.status==="waiting"){card.loaded=false;}interactionsUI.renderPlatformInteractions(); timezonePicker.open = false; renderTimeZoneOptions(); void connectionsUI.cancelPlatformAuth(); $("gitlab-client-secret").value = ""; connectionsUI.platforms.formVersion++; connectionsUI.platforms.generation++;
+    $("settings-dialog").addEventListener("close", () => { timezonePicker.open = false; renderTimeZoneOptions(); void connectionsUI.cancelPlatformAuth(); $("gitlab-client-secret").value = ""; connectionsUI.platforms.formVersion++; connectionsUI.platforms.generation++;
       if ($("notification-detail").open) { $(workspaceUI.workspaceView?.notificationChannel === "messages" ? "lark-manage-platforms" : "gitlab-manage-platforms").focus(); void workspaceUI.loadWorkspacePlatforms(); }
       else if($("activity-dialog").open){$("member-notification-add-toggle").focus({preventScroll:true});void workspaceUI.loadWorkspacePlatforms();if(membersUI.memberToolsView && membersUI.toolsCurrent(membersUI.memberToolsView))void membersUI.loadCLITools(membersUI.memberToolsView);}
       else $(state.managed ? "open-settings" : "open-general-settings").focus(); });

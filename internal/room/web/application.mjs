@@ -280,7 +280,7 @@ export async function createApp(overrides = {}) {
   };
 
   install(settingsUI, createSettings({
-    env, runtime, connectionsUI, conversationUI, roomsUI, workspaceUI, policyUI, notificationsUI, interactionsUI, onboardingUI, membersUI
+    env, runtime, connectionsUI, conversationUI, roomsUI, workspaceUI, policyUI, notificationsUI, onboardingUI, membersUI
   }));
   install(roomsUI, createRooms({
     env, runtime, layoutUI, workspaceUI, conversationUI, settingsUI, membersUI

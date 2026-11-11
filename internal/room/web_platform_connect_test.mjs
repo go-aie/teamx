@@ -24,6 +24,21 @@ const link=card=>card.children[5].children[0];
 const cancel=card=>card.children[5].children[1];
 const writes=api=>api.calls.filter(c=>c.path==='/v1/platforms/interactions/cancel');
 
+test('sidebar settings list and add shared platforms without a Room',async()=>{
+ const api=baseFixture();api.hook=path=>path==='/v1/rooms' ? {service_epoch:api.epoch,operator:'tester',rooms:[],teams:[]} : undefined;
+ const ui=await launch(api);await settle();
+ assert.equal(ui.el('open-settings').disabled,false);
+ const start=api.calls.length;
+ await ui.el('open-settings').emit('click');await ui.el('settings-tab-platforms').emit('click');
+ assert.equal(ui.el('settings-dialog').open,true);assert.equal(ui.el('platforms-list').children.length,api.platforms.length);
+ const list=api.calls.slice(start).find(c=>c.path.startsWith('/v1/platforms?'));
+ const query=new URL(list.path,'http://fixture').searchParams;
+ assert.deepEqual([...query.keys()].sort(),['caller_id','service_epoch']);assert.equal(query.get('service_epoch'),api.epoch);
+ await ui.el('connection-new').emit('click');assert.equal(ui.el('connection-form').hidden,false);assert.equal(ui.el('onboarding-only').checked,true);assert.equal(ui.el('onboarding-options').hidden,true);
+ await ui.el('close-settings').emit('click');await settle();
+ assert.equal(api.calls.slice(start).some(c=>c.body?.room_id || c.body?.room_instance || c.path.includes('/interactions/')),false);
+});
+
 test('subscribed completion distinguishes pending delivery, scheduler blocks, consumption and handled results',async()=>{
  const api=fixture(),ui=await launch(api);await settle();
  api.op.continuation={mode:'inbox',state:'waiting_result'};
@@ -50,10 +65,12 @@ test('connection is available immediately, progress and new messages retain comp
  assert.equal([...saved.values()].some(v=>v.includes('temporary')||v.includes('second')),false);
 });
 
-test('full settings shares the operation and closing settings or the page does not cancel it',async()=>{
+test('global settings exclude conversation operations and closing settings or the page does not cancel them',async()=>{
  const api=fixture(),ui=await launch(api);await settle();
+ const original=card(ui),reads=api.calls.filter(c=>c.path.endsWith('/interactions/list')).length;
  await ui.el('open-settings').emit('click');await ui.el('settings-tab-platforms').emit('click');
- assert.equal(ui.el('conversation-connections-section').hidden,false);assert.equal(ui.el('conversation-connections').children[0].dataset.interactionId,card(ui).dataset.interactionId);
+ assert.equal(ui.el('conversation-connections-section'),undefined);assert.equal(ui.el('conversation-connections'),undefined);
+ assert.equal(ui.el('platforms-list-view').hidden,false);assert.equal(api.calls.filter(c=>c.path.endsWith('/interactions/list')).length,reads);assert.equal(card(ui),original);
  await ui.el('close-settings').emit('click');await ui.window.emit('pagehide');assert.equal(writes(api).length,0);assert.equal(api.op.status,'waiting');
  await cancel(card(ui)).emit('click');await settle();assert.equal(writes(api).length,1);assert.equal(writes(api)[0].body.room_instance,'instance-R');assert.equal(writes(api)[0].body.version,1);assert.equal(cancel(card(ui)).hidden,true);
 });
@@ -82,13 +99,14 @@ test('a late cancel or list response cannot mount the old Room interaction in a 
  const ui=await launch(api);await settle();let resolve;
  api.interactionHook=path=>path.endsWith('/cancel') ? new Promise(r=>resolve=r) : undefined;
  const pending=cancel(card(ui)).emit('click');await settle();await ui.select('Other');await ui.refresh();await settle();
- assert.equal(ui.el('conversation-connections-section').hidden,true);resolve({...structuredClone(api.op),status:'cancelled',version:2,result_version:1});await pending;await settle();
- assert.equal(ui.el('conversation-connections').children.length,0);assert.equal(ui.el('messages').children.length,0);assert.equal(writes(api).length,1);assert.equal(writes(api)[0].body.room_instance,'instance-R');
+ resolve({...structuredClone(api.op),status:'cancelled',version:2,result_version:1});await pending;await settle();
+ assert.equal(ui.el('messages').children.length,0);assert.equal(writes(api).length,1);assert.equal(writes(api)[0].body.room_instance,'instance-R');
+ await ui.el('open-settings').emit('click');await ui.el('settings-tab-platforms').emit('click');assert.equal(ui.el('platforms-list-view').hidden,false);assert.equal(ui.el('platforms-list').children.length,api.platforms.length);await ui.el('close-settings').emit('click');
  await ui.select('Review');await ui.refresh();await settle();assert.equal(card(ui).dataset.interactionId,api.op.operation_id);
  const pendingReads=[];api.interactionHook=(path,body)=>path.endsWith('/list') ? new Promise(resolve=>pendingReads.push({resolve,body})) : undefined;
  await ui.refresh();await settle();await ui.select('Other');await ui.refresh();await settle();
  pendingReads.find(r=>r.body.room_instance==='instance-R').resolve({interactions:[structuredClone(api.op)]});await settle();
- assert.equal(ui.el('conversation-connections-section').hidden,true);assert.equal(ui.el('messages').children.length,0);
+ assert.equal(ui.el('messages').children.length,0);
  pendingReads.find(r=>r.body.room_instance==='instance-B').resolve({interactions:[]});await settle();
 });
 
