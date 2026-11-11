@@ -173,7 +173,7 @@ test("Scion logout confirms inline, acknowledges all shared platforms, and does 
  await ui.el("connection-scion-logout").emit("click");
  assert.equal(ui.el("connection-auth-confirmation").hidden,false);
  assert.match(ui.el("connection-auth-confirmation-title").textContent,/alice/);
- assert.equal(ui.el("connection-references-title").textContent,"引用房间 · 1");
+ assert.equal(ui.el("connection-references-title").textContent,"使用此连接的会话 · 1");
  assert.equal(ui.el("connection-references").dataset.impact,"true");
  assert.equal(ui.el("connection-reference-list").children.length,2);
  assert.equal(ui.el("connection-reference-list").children[0].children.at(-1).children[0].children[0].textContent,"开发房间");
@@ -220,7 +220,7 @@ test("an in-flight Scion logout blocks duplicate clicks and connection edits",as
  await ui.el("connection-scion-logout").emit("click");
  const pending=ui.el("connection-auth-confirm").emit("click");await settle();
  assert.equal(ui.el("connection-references").dataset.impact,"true");
- assert.equal(ui.el("connection-references-title").textContent,"引用房间 · 0");
+ assert.equal(ui.el("connection-references-title").textContent,"使用此连接的会话 · 0");
  assert.equal(ui.el("connection-auth-confirmation").hidden,true);
  assert.match(ui.el("connection-scion-account").textContent,/正在退出登录/);
  assert.equal(ui.el("connection-scion-logout").disabled,true);assert.equal(ui.el("connection-fields").disabled,true);

@@ -108,6 +108,7 @@ export async function launch(api, saved = new Map(), environment = {}) {
   } };
   const appEnvironment = {
     document, window, sessionStorage: storage,
+    confirmAction: ({title,message}) => window.confirm(`${title}\n${message}`),
     Option: function(text, value) { const el = new Element("option"); el.textContent = text; el.value = value; return el; },
     setInterval: () => {}, requestAnimationFrame: fn => fn(),
     renderMessageBody: (el, text, operator, options) => { el.textContent = text; el.markdownOptions = options; },

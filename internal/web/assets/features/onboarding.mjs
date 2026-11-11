@@ -58,7 +58,7 @@ export function createOnboarding({ env, runtime, connectionsUI, larkUI, settings
     $("onboarding-backfill-start-label").textContent=`起始时间（${settingsUI.systemTime.zone || "系统时区异常"}）`;
     const member=onboardingMember(), room=onboardingRoom();
     const content=provider==="gitlab" ? "我的待办（项目互动未开启）" : "全部人员私聊（群聊未开启）";
-    $("onboarding-summary").textContent=only ? "仅连接并核验账号；不创建通知或成员工具设置。" : `为「${member?.agent_id || "所选成员"}」接入后，${provider==="scion" ? "此平台没有通知能力，" : $("onboarding-notifications").checked ? `接收${content} → ${room?.name || "所选 Room"} 的成员 Inbox；` : "通知关闭；"}${$("onboarding-tool").checked ? "启用对应平台工具。" : "工具关闭。"}已有设置保留，范围可在通知详情中调整。`;
+    $("onboarding-summary").textContent=only ? "仅连接并核验账号；不创建通知或成员工具设置。" : `为「${member?.agent_id || "所选成员"}」接入后，${provider==="scion" ? "此平台没有通知能力，" : $("onboarding-notifications").checked ? `接收${content} → ${room?.name || "所选会话"} 的成员 Inbox；` : "通知关闭；"}${$("onboarding-tool").checked ? "启用对应平台工具。" : "工具关闭。"}已有设置保留，范围可在通知详情中调整。`;
     if(active && fixed){$("connection-provider").disabled=true;$("connection-url").readOnly=true;}
     const op=onboarding.operation;
     const done=onboardingDone(op);
@@ -73,7 +73,7 @@ export function createOnboarding({ env, runtime, connectionsUI, larkUI, settings
     $("onboarding-result-summary").textContent=onboarding.busy ? `正在确认 ${name} 接入状态…` : onboarding.error || !op ? `${name} 接入结果待确认。` : op.connection.status!=="connected" ? `${name} 接入尚未完成。` : `${name} 已连接，${unfinished.join("、")}尚未完成。`;
     $("onboarding-result-account").textContent=op ? `${item?.name || "平台"}${item?.validation?.username ? ` · @${item.validation.username}` : ""}` : "";
     const status={waiting:"等待账号核验",connected:"账号已连接",pending:"等待应用",applied:"已保存",preserved:"保留原设置",skipped:"本次不修改",failed:"未完成"};
-    const errors={account_unavailable:"请先完成登录或核验账号，再读取进度。",account_changed:"账号已变化，请停止本次接入并核对平台。",target_changed:"原 Room 或成员已变化，请重新选择目标发起接入。",settings_changed:"设置已被修改；请核对当前选择，再发起新的接入。",executable_unavailable:"程序缺失，启用意图已保存；安装后会重新检查。",legacy_tool_choice_unknown:"原工具选择未确认，已保留。请在成员工具设置中明确启用。",cancelled:"剩余步骤已停止，已保存的设置保留。",busy:"正在处理，请稍后读取进度。",binding_changed:"绑定已变化，请核对当前平台与成员。"};
+    const errors={account_unavailable:"请先完成登录或核验账号，再读取进度。",account_changed:"账号已变化，请停止本次接入并核对平台。",target_changed:"原会话或成员已变化，请重新选择目标发起接入。",settings_changed:"设置已被修改；请核对当前选择，再发起新的接入。",executable_unavailable:"程序缺失，启用意图已保存；安装后会重新检查。",legacy_tool_choice_unknown:"原工具选择未确认，已保留。请在成员工具设置中明确启用。",cancelled:"剩余步骤已停止，已保存的设置保留。",busy:"正在处理，请稍后读取进度。",binding_changed:"绑定已变化，请核对当前平台与成员。"};
     $("onboarding-steps").replaceChildren(...(op ? [["账号",op.connection],["通知",op.notifications],["工具",op.tool]].map(([title,step])=>{
       const row=document.createElement("div"),dt=document.createElement("dt"),dd=document.createElement("dd");dt.textContent=title;
       dd.textContent=`${status[step.status] || step.status}${step.error_code ? ` · ${errors[step.error_code] || "暂不可用，请核对平台、权限及当前设置后重试。"}` : ""}`;row.append(dt,dd);return row;
@@ -92,7 +92,7 @@ export function createOnboarding({ env, runtime, connectionsUI, larkUI, settings
     const version=connectionsUI.platforms.formVersion, identity=onboardingIdentity(), room=onboardingRoom();
     onboarding.members=[];setSelectOptions("onboarding-member",[new Option("正在读取成员…","")],"");
     notice("onboarding-target-error","");$("onboarding-target-retry").hidden=true;
-    if (!room) { setSelectOptions("onboarding-member",[new Option("先选择 Room","")],"");renderOnboarding();return; }
+    if (!room) { setSelectOptions("onboarding-member",[new Option("先选择会话","")],"");renderOnboarding();return; }
     try {
       const q=new URLSearchParams({service_epoch:identity.epoch,caller_id:identity.operator,room_id:room.room_id,room_instance:room.room_instance});
       const data=await request(`/v1/platforms/onboarding/targets?${q}`);
@@ -100,7 +100,7 @@ export function createOnboarding({ env, runtime, connectionsUI, larkUI, settings
       onboarding.members=data.members;
       const options=data.members.map(m=>new Option(room.members?.find(r=>r.id===m.agent_id)?.name || m.agent_id,m.membership_id));
       const selected=data.members.some(m=>m.membership_id===preferred) ? preferred : data.members.length===1 && !preferred ? data.members[0].membership_id : "";
-      if (!selected) options.unshift(new Option(data.members.length ? "选择一次使用成员" : "此 Room 没有适用的 Agent",""));
+      if (!selected) options.unshift(new Option(data.members.length ? "选择 Agent" : "此会话没有适用的 Agent",""));
       setSelectOptions("onboarding-member",options,selected);
       if (preferred && !selected) notice("onboarding-target-error","原成员已变化，请重新打开成员详情。");
     } catch { if (!onboardingCurrent(version,identity) || room.room_instance!==onboardingRoom()?.room_instance) return;
@@ -114,7 +114,7 @@ export function createOnboarding({ env, runtime, connectionsUI, larkUI, settings
     const rooms=(state.catalog?.rooms || []).filter(r=>r.status==="ready" && !r.busy);
     const preferred=fixed?.room_instance || roomsUI.selectedRoom?.room_instance;
     const selected=rooms.find(r=>r.room_instance===preferred)?.room_instance || (!fixed && rooms.length===1 ? rooms[0].room_instance : "");
-    const options=rooms.map(r=>new Option(r.name,r.room_instance));if (!selected) options.unshift(new Option("选择使用的 Room",""));
+    const options=rooms.map(r=>new Option(r.name,r.room_instance));if (!selected) options.unshift(new Option("选择会话",""));
     setSelectOptions("onboarding-room",options,selected);
     $("onboarding-only").checked=!fixed;$("onboarding-details").open=false;
     $("onboarding-notifications").checked=true;$("onboarding-tool").checked=true;$("onboarding-backfill").value="0";settingsUI.fillTimeInput("onboarding-backfill-start","");
@@ -130,7 +130,7 @@ export function createOnboarding({ env, runtime, connectionsUI, larkUI, settings
     }
     const only=$("onboarding-only").checked, member=onboardingMember(), room=onboardingRoom();
     if (!only && (!member || !room || onboarding.fixed && (onboarding.fixed.membership_id && member.membership_id!==onboarding.fixed.membership_id || room.room_instance!==onboarding.fixed.room_instance))) {
-      notice("onboarding-target-error","请选择有效的 Room 和使用成员，再连接并启用。");throw Error("请选择使用成员。");
+      notice("onboarding-target-error","请选择有效的会话和使用成员，再连接并启用。");throw Error("请选择 Agent。");
     }
     let spec={provider:onboardingProvider(),origin:onboardingOrigin(),...(connectionsUI.platforms.selected ? {platform_id:connectionsUI.platforms.selected.id} : {}),...(only ? {only_platform:true} : {room_id:room.room_id,room_instance:room.room_instance,agent_id:member.agent_id,membership_id:member.membership_id})};
     if (!only) {
@@ -338,7 +338,7 @@ export function createOnboarding({ env, runtime, connectionsUI, larkUI, settings
 
     $("onboarding-notification-settings").addEventListener("click",async()=>{
       const op=onboarding.operation,room=state.catalog?.rooms.find(r=>r.room_id===op?.input.room_id && r.room_instance===op?.input.room_instance);
-      if(!room || op.schema!==2 || op.input.only_platform){onboarding.error="接入结果缺少有效的成员定位，请检查原 Room 和成员。";renderOnboarding();return;}
+      if(!room || op.schema!==2 || op.input.only_platform){onboarding.error="接入结果缺少有效的成员定位，请检查原会话和成员。";renderOnboarding();return;}
       await settingsUI.closeSettings();
       if(state.info?.room_id!==room.room_id || state.info?.room_instance!==room.room_instance){roomsUI.selectRoom(room);await refresh();}
       if(state.info?.room_instance!==room.room_instance)return;

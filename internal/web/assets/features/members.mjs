@@ -93,7 +93,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     } finally {
       ws.memberToolBusy=false;v.cliPending=null;
       // A read resolves unknown local writes; no bind request is replayed.
-      if(toolsCurrent(v)){await loadCLITools(v);if(!v.cliConnected)message+=" 当前状态暂不可读，请重新读取。";v.cliResult={tool:key,message,error:!v.cliConnected || /失败|未确认/.test(message)};renderMemberTools(v);}
+      if(toolsCurrent(v)){await loadCLITools(v);if(!v.cliConnected)message+=" 当前状态暂不可读，请刷新。";v.cliResult={tool:key,message,error:!v.cliConnected || /失败|未确认/.test(message)};renderMemberTools(v);}
       else if(memberToolsView?.cli && toolsCurrent(memberToolsView))await loadCLITools(memberToolsView);
     }
   }
@@ -167,7 +167,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     $("member-platform-issues").replaceChildren(...issues.map(item=>{
       const button=document.createElement("button");button.type="button";button.className="text-button";button.textContent=`${item.name}：查看异常`;button.addEventListener("click",()=>openMemberPlatform(button,item,target));return button;
     }));
-    notice("member-notification-list-error",!ws.notificationsConnected || !v?.cliConnected ? "部分设置暂不可读，请重新读取。" : "");$("member-notification-list-reload").hidden=!!ws.notificationsConnected && !!v?.cliConnected;
+    notice("member-notification-list-error",!ws.notificationsConnected || !v?.cliConnected ? "部分设置暂不可读，请刷新。" : "");$("member-notification-list-reload").hidden=!!ws.notificationsConnected && !!v?.cliConnected;
     const q=$("member-notification-add-search").value.trim().toLowerCase();
     $("member-notification-add-options").replaceChildren(...items.filter(item=>!configured.includes(item) && [item.name,item.validation?.username,item.url].join(" ").toLowerCase().includes(q)).map(item=>{
       const row=document.createElement("div"),info=document.createElement("div"),title=document.createElement("strong"),account=document.createElement("small"),actions=document.createElement("div");
@@ -324,7 +324,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     if (!execution) return;
     const enable = execution.paused || execution.session_reset_required || member.status === "backend_blocked" || member.status === "budget_exhausted";
     const add = (label, action, cancel) => {
-      const button = document.createElement("button"); button.type = "button"; button.textContent = label;
+      const button = document.createElement("button"); button.type = "button"; button.className = "secondary-button button-compact"; button.textContent = label;
       button.setAttribute("aria-label", `${label} ${member.agent_id}`);
       button.disabled = memberBusy.has(member.membership_id) || !state.connected || discussionBusy() || member.status === "checkpoint_failed" || member.status === "rotating" && action !== "pause";
       button.addEventListener("click", () => controlMember(member, action, cancel)); actions.append(button);

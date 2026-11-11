@@ -11,7 +11,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
 
   const workspaceStages = { waiting: "正在结清旧执行", preparing: "正在初始化目录与绑定", committing: "正在保存配置", sessions: "正在更新成员 Session", completed: "设置已生效" };
 
-  const workspaceErrors = { interrupted: "服务曾中断，请核查后显式重试。", cleanup_failed: "旧执行未能结清，请先检查服务状态。", preparation_failed: "初始化失败，原配置和目录现场已保留，请检查仓库、认证或目标目录。", commit_unknown: "配置提交结果待核查，请重新打开服务后查看状态。", session_failed: "成员 Session 更新未完成，请核查后显式重试。", credential_missing: "凭据缺失，请检查服务端凭据或指定的环境变量。" };
+  const workspaceErrors = { interrupted: "服务曾中断，请核查后重试。", cleanup_failed: "旧执行未能结清，请先检查服务状态。", preparation_failed: "初始化失败，原配置和目录现场已保留，请检查仓库、认证或目标目录。", commit_unknown: "配置提交结果待核查，请重新打开服务后查看状态。", session_failed: "成员 Session 更新未完成，请核查后重试。", credential_missing: "凭据缺失，请检查服务端凭据或指定的环境变量。" };
 
   function workspaceBusy() {
     return !!workspaceView && (workspaceView.sending || !!workspaceView.pending ||
@@ -100,11 +100,11 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
       }
     } catch {
       if (ws !== workspaceView) return;
-      ws.queryFailed = true; ws.connected = false; ws.error = "暂时无法查询 Workspace，正在重连；不会自动重发操作。";
+      ws.queryFailed = true; ws.connected = false; ws.error = "暂时无法查询工作目录，正在重连；不会自动重发操作。";
     }
     await notificationsUI.syncGitLabNotifications(catalog, ws);
     if (ws !== workspaceView) return;
-    if (!ws.platforms) await loadWorkspacePlatforms();
+    if (!ws.platforms || roomsUI.isDirect() && state.messages.size === 0) await loadWorkspacePlatforms();
     if (ws !== workspaceView) return;
     renderWorkspace();
     if (completed) {
@@ -143,7 +143,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
       ws.larkPlatforms = data.platforms.filter(item => item.provider === "lark");
       ws.platformsError = ws.platforms.length ? "" : "尚无平台，请先管理平台。";
       renderWorkspacePlatforms();
-    } catch { if (ws === workspaceView && state.catalog?.service_epoch === epoch && read === ws.platformsRead) { ws.platformsError = "平台加载失败，请重新打开通知源重试。"; ws.repositoryPlatformsError = "平台加载失败，请重新打开 Workspace 设置重试。"; } }
+    } catch { if (ws === workspaceView && state.catalog?.service_epoch === epoch && read === ws.platformsRead) { ws.platformsError = "平台加载失败，请重新打开通知源重试。"; ws.repositoryPlatformsError = "平台加载失败，请重新打开工作目录设置重试。"; } }
     if (ws === workspaceView) { ws.platformsLoading = false; renderWorkspace(); }
   }
 

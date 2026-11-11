@@ -5,7 +5,7 @@ import { createAssistantIcon } from "../icons.mjs";
 // Messages, drafts, mentions and the send/restart lifecycle.
 export function createConversation({ env, runtime, roomsUI, notificationsUI, membersUI, settingsUI, interactionsUI, workspaceUI, layoutUI }) {
   const { document, window, requestAnimationFrame, performance, setTimeout, clearTimeout, ResizeObserver, renderMessageBody } = env;
-  const { state, $, notice, rpc, currentView, refresh, discussionBusy, reconcileChildren, storage } = runtime;
+  const { state, $, notice, rpc, currentView, refresh, discussionBusy, reconcileChildren, storage, confirmAction } = runtime;
 
   let historyLoading = false;
 
@@ -290,7 +290,6 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
       if (direct) $(id).replaceChildren(createAssistantIcon(document));
       else $(id).textContent = "#";
     }
-    $("conversation-footer").textContent = `仅显式发言进入${direct ? "私信" : "房间"}，Agent 的普通输出保持私有。`;
     $("policy-empty").textContent = `可以在${direct ? "私信" : "房间"}中告诉 Agent 今后应如何处理。`;
     $("message-input").placeholder = direct ? `给${name || "个人助理"}发消息…` : "发送到房间，开始一段协作…";
     $("message-input-label").textContent = direct ? `给${name || "个人助理"}发消息` : "发送到房间";
@@ -314,7 +313,18 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     $("direct-suggestions").hidden = !direct || !state.info || state.messages.size > 0;
     if (direct && state.info) {
       $("empty").querySelector("h2").textContent = `与${name || "个人助理"}聊聊`;
-      $("empty").querySelector("p").textContent = "梳理需求、连接飞书、关注指定群并调整当前助理设置。直接发送消息即可，无需 @ 助理。";
+      $("empty").querySelector("p").textContent = "梳理待办、总结信息、起草内容，也可以连接飞书，关注群消息。";
+      const hasLark = workspaceUI.workspaceView?.allPlatforms?.some(item => item.provider === "lark" && item.validation?.status === "valid");
+      const suggestions = [
+        ["整理待办", "帮我整理一下待办事项"],
+        hasLark ? ["总结内容", "帮我总结以下内容：\n"] : ["你能做什么", "介绍一下你能帮我做什么"],
+        hasLark ? ["起草回复", "帮我起草一段回复：\n"] : ["连接飞书", "帮我连接飞书"],
+      ];
+      Array.from($("direct-suggestions").children).forEach((button, index) => {
+        const [label, prompt] = suggestions[index];
+        button.textContent = label;
+        button.dataset.suggestion = prompt;
+      });
     }
   }
 
@@ -391,8 +401,11 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
 
     $("restart-discussion").addEventListener("click", async () => {
       if ($("restart-discussion").disabled) return;
-      if (!state.draft.restartRequest && !window.confirm(roomsUI.isDirect() ? "重新开始私信将取消并结清助理当前回合，清空消息并重置助理的私有会话。工作区文件保留。是否继续？" : "重新开始讨论将取消并结清所有成员当前的回合，清空公共消息，并重置所有成员的私有会话。成员、角色和工作区文件保留，回合预算不重置。是否继续？")) return;
+      $("room-menu").open = false;
+      $("room-menu-label").focus();
       const info = state.info, operator = state.operator, draft = state.draft, version = runtime.viewVersion;
+      if (!draft.restartRequest && !await confirmAction({ title:roomsUI.isDirect() ? "重新开始私信？" : "重新开始房间讨论？", message:roomsUI.isDirect() ? "将停止助理当前的执行，清空消息并重置助理上下文。工作目录中的文件保留。" : "将停止所有 Agent 当前的执行，清空消息并重置 Agent 上下文。成员、角色和工作目录中的文件保留，回合预算不重置。", confirmLabel:"重新开始" })) return;
+      if (!currentView(version) || state.draft !== draft || state.operator !== operator || $("restart-discussion").disabled) return;
       draft.restartRequest ||= { id: crypto.randomUUID().replaceAll("-", ""), info, previous_id: state.restart?.id || "" };
       restartNoticeID = draft.restartRequest.id; restartNoticeExpires = 0;
       draft.restartStarting = true; draft.restartError = ""; saveDraft();

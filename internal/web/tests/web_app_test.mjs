@@ -1349,7 +1349,7 @@ test("Workspace lost response observes original ID across reload, blocks duplica
   reject(new Error("response lost")); await task;
   assert.equal(ui.el("workspace-dialog").open, true);
   assert.equal(ui.el("message-input").readOnly, true); assert.match(ui.el("workspace-summary").textContent, /正在初始化/);
-  assert.match(ui.el("management-notice").textContent, /Workspace/);
+  assert.match(ui.el("management-notice").textContent, /工作目录/);
   const reload = await launch(api, ui.saved); await reload.el("open-workspace").emit("click");
 
   assert.equal(api.calls.filter(c => c.path === "/v1/workspace/apply").length, 1);
@@ -2221,7 +2221,7 @@ test("long-term rule editing preserves expiry and separates source from interpre
  const ui=await launch(api);await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();await ui.el("agent-tab-policy").emit("click");await settle();
  const card=ui.el("policy-entries").children[0];
  assert.match(elementText(card),/有效期至/);
- assert.match(elementText(card.children[3]),/Room 消息 #18.*来源用户 tester/s);
+ assert.match(elementText(card.children[3]),/会话消息 #18.*来源用户 tester/s);
  assert.match(elementText(card.children[3]),/原始来源.*记住这类报错.*Agent 理解：上下文明确/s);
  await card.children[0].children[1].children[0].emit("click");
  assert.equal(ui.el("policy-editor-title").textContent,"修改规则");

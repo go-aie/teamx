@@ -3,7 +3,7 @@ import { createAssistantIcon } from "../icons.mjs";
 // Room catalog, selection, creation, deletion and default assistant recovery.
 export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationUI, settingsUI, membersUI }) {
   const { document, window, Option, request } = env;
-  const { state, $, notice, currentView, refresh, discussionBusy, dismissOnBackdrop, storage } = runtime;
+  const { state, $, notice, currentView, refresh, discussionBusy, dismissOnBackdrop, storage, confirmAction } = runtime;
 
   let defaultAssistantRetrying = false, defaultAssistantError = "";
 
@@ -49,7 +49,7 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
   }
 
   function roomName() {
-    return state.catalog?.rooms.find(room => room.room_instance === state.info?.room_instance)?.name || state.info?.room_id || "Room";
+    return state.catalog?.rooms.find(room => room.room_instance === state.info?.room_instance)?.name || state.info?.room_id || "会话";
   }
 
   function renderTeams(teams) {
@@ -84,7 +84,7 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
     $("new-room-name").disabled = disabled;
     $("create-room").disabled = disabled || (createDirect ? !state.catalog?.agent_roles?.some(role => role.id === "assistant") : !team);
     $("create-room").textContent = state.managementSending ? "正在创建…" : "创建并进入";
-    $("team-hint").textContent = createDirect ? "新助理默认暂停；进入详情后可启用。创建不会自动发送消息或连接平台。" : "成员与会话独立创建。开场消息仅填入草稿，由你发送。";
+    $("team-hint").textContent = createDirect ? "创建后，在助理详情中启用即可。" : "每个房间独立运行。开场消息会填入草稿，由你发送。";
   }
 
   function saveManagement() {
@@ -231,7 +231,7 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
       $("room-group-title").textContent = `房间 · ${catalog.rooms.filter(room => !room.is_direct).length}`;
     }
     let text = state.managementError || catalog.write_error || "";
-    if (workspaceUI.workspaceView?.data?.operation?.status === "running") text = `Workspace · ${workspaceUI.workspaceStages[workspaceUI.workspaceView.data.operation.phase] || "正在应用"}`;
+    if (workspaceUI.workspaceView?.data?.operation?.status === "running") text = `工作目录 · ${workspaceUI.workspaceStages[workspaceUI.workspaceView.data.operation.phase] || "正在应用"}`;
     else if (state.management?.kind === "delete" && selectedEntry()?.busy) text = `正在停止${conversationType()}、结清会话并删除数据…`;
     else if (catalog.busy) text = "共享资源操作进行中…";
     else if (state.managementSending) text = "正在提交会话操作…";
@@ -293,10 +293,13 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
     saveManagement(); void runManagement();
   }
 
-  function startDeletion(room) {
+  async function startDeletion(room) {
     if (isDefaultAssistant(room) && room.status !== "deleting") return;
     if (state.management || room.busy || !state.catalogConnected || state.catalog.busy || state.catalog.write_error) return;
-    if (!window.confirm(`永久删除${conversationType(room)}「${room.name}」？\n将停止该会话并删除消息、所有 Agent 私有会话（含历史会话）、诊断和工作区文件。此操作无法撤销。`)) return;
+    const epoch = state.catalog.service_epoch, operator = state.operator;
+    if (!await confirmAction({ title:`删除${conversationType(room)}「${room.name}」？`, message:"将停止该会话并删除消息、所有 Agent 私有会话（含历史会话）、诊断和工作区文件。此操作无法撤销。", confirmLabel:"永久删除" })) return;
+    const current = state.catalog?.rooms.find(item => item.room_id === room.room_id && item.room_instance === room.room_instance);
+    if (state.catalog?.service_epoch !== epoch || state.operator !== operator || !state.catalogConnected || state.management || state.managementSending || state.catalog.busy || state.catalog.write_error || !current || current.busy || isDefaultAssistant(current) && current.status !== "deleting") return;
     state.management = { kind: "delete", operator: state.operator, payload: {
       room_id: room.room_id, room_instance: room.room_instance } };
     saveManagement(); void runManagement();

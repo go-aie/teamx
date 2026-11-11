@@ -237,3 +237,19 @@ test("settings navigation blocks changes during a save and adapts to narrow or s
   const single=await launch(fixture(false));await single.el("open-general-settings").emit("click");
   assert.equal(single.el("settings-tab-platforms").hidden,true);assert.equal(single.el("general-settings").hidden,false);
 });
+
+test("Escape dismisses the time-zone picker from its toggle before closing settings", async () => {
+  const api=fixture(),ui=await launch(api);
+  await ui.el("open-settings").emit("click");
+  await ui.el("timezone-picker-toggle").emit("click");
+  let prevented=false,stopped=false;
+  await ui.el("timezone-picker").emit("keydown",{key:"Escape",preventDefault(){prevented=true;},stopPropagation(){stopped=true;}});
+  assert.equal(prevented,true);assert.equal(stopped,true);
+  assert.equal(ui.el("timezone-options").hidden,true);assert.equal(ui.el("settings-dialog").open,true);
+  assert.equal(ui.document.activeElement,ui.el("timezone-picker-toggle"));
+  await ui.el("timezone-picker-toggle").emit("click");
+  prevented=false;
+  await ui.el("settings-dialog").emit("cancel",{preventDefault(){prevented=true;}});
+  assert.equal(prevented,true);assert.equal(ui.el("timezone-options").hidden,true);
+  assert.equal(api.calls.some(c=>c.path==="/v1/settings/save"),false);
+});

@@ -249,7 +249,7 @@ test("logout explicitly acknowledges all platforms sharing the profile and its a
  const ui=await connectionDraft(api);await ui.el("connection-logout").emit("click");
  assert.equal(ui.el("connection-auth-confirmation").hidden,false);
  assert.match(ui.el("connection-auth-confirmation-description").textContent,/不等于取消应用/);
- assert.equal(ui.el("connection-references-title").textContent,"引用房间 · 1");
+ assert.equal(ui.el("connection-references-title").textContent,"使用此连接的会话 · 1");
  assert.equal(ui.el("connection-reference-list").children[0].children.at(-1).children[0].children[0].textContent,"个人助手");
  assert.equal(api.calls.some(c=>c.path.endsWith("/lark/logout")),false);
  await ui.el("connection-auth-confirm").emit("click");
@@ -266,7 +266,7 @@ test("Lark shares the grouped impact panel through confirmation and active autho
  await ui.el("connection-login").emit("click");
  assert.equal(ui.el("connection-auth-confirmation").hidden,false);
  assert.equal(ui.el("connection-references").dataset.impact,"true");
- assert.equal(ui.el("connection-references-title").textContent,"引用房间 · 2");
+ assert.equal(ui.el("connection-references-title").textContent,"使用此连接的会话 · 2");
  assert.equal(ui.el("connection-reference-list").children.length,2);
  assert.equal(ui.el("connection-reference-list").children[1].children[0].textContent,"共享应用");
  assert.equal(ui.el("connection-reference-list").children[0].children.at(-1).children[0].children[1].textContent,"待完成绑定");
@@ -275,7 +275,7 @@ test("Lark shares the grouped impact panel through confirmation and active autho
  await ui.el("connection-auth-confirm").emit("click");
  assert.equal(ui.el("connection-auth-confirmation").hidden,true);
  assert.equal(ui.el("connection-references").dataset.impact,"true");
- assert.equal(ui.el("connection-references-title").textContent,"引用房间 · 2");
+ assert.equal(ui.el("connection-references-title").textContent,"使用此连接的会话 · 2");
  assert.equal(ui.el("connection-login-panel").hidden,false);
  assert.equal(ui.el("connection-login-cancel").hidden,false);
  assert.equal(ui.el("connection-login").disabled,true);
@@ -289,7 +289,7 @@ test("Lark shows an empty impact panel while processing and clears stale confirm
   const api=fixture();api.platforms[0].cli_profile={version:1,executable:"/fixture/lark-cli",profile:"explicit",brand:"feishu",cli_version:"1.0.99"};
   api.platforms[0].references=[];api.authView={session_id:"auth-session",status:"starting"};
   const ui=await connectionDraft(api);await ui.el("connection-login").emit("click");
-  assert.equal(ui.el("connection-references-title").textContent,"引用房间 · 0");
+  assert.equal(ui.el("connection-references-title").textContent,"使用此连接的会话 · 0");
   assert.equal(ui.el("connection-reference-list").children[0].children.at(-1).children[0].textContent,"暂无房间引用");
   if(action==="cancel"){
    await ui.el("connection-auth-dismiss").emit("click");

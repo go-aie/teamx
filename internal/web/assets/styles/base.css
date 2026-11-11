@@ -1,12 +1,49 @@
 :root {
   font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
-  color:#252b29;
-  background:#f7f8f6;
+  color:var(--text);
+  background:var(--surface-muted);
+  font-size:13px;
   font-synthesis:none;
-  --muted:#838a85;
-  --line:#e7eae5;
+  --text:#29332d;
+  --muted:#68756c;
+  --line:#dfe5df;
   --accent:#315f4b;
-  --soft:#eef3ee;
+  --accent-hover:#254e3b;
+  --soft:#e7eee7;
+  --surface:#fff;
+  --surface-muted:#f7f8f6;
+  --surface-hover:#f0f4ee;
+  --danger:#a3463c;
+  --danger-hover:#88392f;
+  --danger-soft:#fcf0ee;
+  --warning:#85601e;
+  --warning-soft:#faf3e5;
+  --field-border:#cfd9cf;
+  --focus:#588d6e;
+  --focus-ring:0 0 0 3px #e8f0e9;
+  --font-body:13px;
+  --font-small:12px;
+  --font-heading:16px;
+  --font-title:20px;
+  --weight-medium:500;
+  --weight-strong:600;
+  --radius-control:6px;
+  --radius-menu:8px;
+  --radius-dialog:12px;
+  --shadow-menu:0 6px 22px #17251b1a,0 1px 4px #17251b0a;
+  --shadow-dialog:0 20px 64px #17251b26;
+  --backdrop:#17251b55;
+  --control-height:36px;
+  --control-compact:32px;
+  --icon-size:32px;
+  --space-1:4px;
+  --space-2:8px;
+  --space-3:12px;
+  --space-4:16px;
+  --space-5:20px;
+  --space-6:24px;
+  --panel-space:20px;
+  --motion-fast:.15s;
   --workspace-header-height:72px;
 }
 * {
@@ -35,8 +72,8 @@ button:active:not(:disabled) {
   transform:translateY(1px);
 }
 button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,summary:focus-visible,[tabindex]:focus-visible {
-  outline:2px solid #588d6e;
-  outline-offset:3px;
+  outline:2px solid var(--focus);
+  outline-offset:2px;
 }
 button {
   border:0;
@@ -49,7 +86,7 @@ a {
   display:none!important;
 }
 .quiet {
-  font-size:12px;
+  font-size:var(--font-small);
   color:var(--muted);
 }
 .brand {
@@ -80,7 +117,7 @@ a {
   display:flex;
   gap:7px;
   align-items:center;
-  font-size:12px;
+  font-size:var(--font-small);
   color:#6e7a70;
 }
 .connection:before,.small-dot {
@@ -137,7 +174,7 @@ a {
   border-bottom:1px solid var(--line);
 }
 .eyebrow {
-  font-size:10px;
+  font-size:var(--font-small);
   font-weight:600;
   color:#8a938a;
   letter-spacing:2px;
@@ -181,14 +218,14 @@ h1 {
 .room-rename { display:flex; align-items:center; flex-wrap:wrap; gap:10px; max-width:560px; }
 .room-rename .hash { font-size:22px; }
 .room-rename input { flex:1; min-width:80px; width:0; padding:3px 6px; border:1px solid var(--line); border-radius:5px; background:white; color:inherit; font-size:22px; font-weight:600; line-height:1.3; }
-.room-rename button { flex-shrink:0; font-size:12px; }
-.room-rename .form-error { flex-basis:100%; padding:0; margin:0; font-size:12px; }
+.room-rename button { flex-shrink:0; font-size:var(--font-small); }
+.room-rename .form-error { flex-basis:100%; padding:0; margin:0; font-size:var(--font-small); }
 .room-panel-toggle {
   display:inline-flex;
   align-items:center;
   justify-content:center;
-  width:32px;
-  height:32px;
+  width:var(--icon-size);
+  height:var(--icon-size);
   padding:0;
   border:1px solid var(--line);
   border-radius:6px;

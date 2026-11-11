@@ -1,5 +1,6 @@
 /* Keep this order: later feature rules refine the shared layout. */
 @import url("./styles/base.css");
+@import url("./styles/controls.css");
 @import url("./styles/conversation.css");
 @import url("./styles/members.css");
 @import url("./styles/responsive.css");

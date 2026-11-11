@@ -19,7 +19,7 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
     const heading=document.createElement("strong"), status=document.createElement("p"), steps=document.createElement("p"), account=document.createElement("p"), hint=document.createElement("p"), feedback=document.createElement("p");
     status.setAttribute("role","status");steps.className="quiet";account.className="quiet";hint.className="quiet";feedback.setAttribute("role","status");
     const actions=document.createElement("div");actions.className="platform-connect-actions";
-    const link=document.createElement("a");link.className="platform-connect-authorize";link.target="_blank";link.rel="noopener noreferrer";link.referrerPolicy="no-referrer";
+    const link=document.createElement("a");link.className="primary platform-connect-authorize";link.target="_blank";link.rel="noopener noreferrer";link.referrerPolicy="no-referrer";
     const qr=document.createElement("img");qr.className="platform-connect-qr";qr.alt="飞书授权二维码";
     qr.addEventListener("error",()=>{qr.hidden=true;});
     const cancel=document.createElement("button");cancel.type="button";cancel.className="text-button";cancel.textContent="取消连接";
@@ -167,11 +167,11 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
     const el=document.createElement("section");el.className="platform-connect-interaction platform-selection";el.dataset.interactionId=op.operation_id;
     const heading=document.createElement("strong"),status=document.createElement("p"),fields=document.createElement("div"),candidates=document.createElement("div"),feedback=document.createElement("p"),actions=document.createElement("div"),hint=document.createElement("p");
     fields.className="platform-selection-fields";candidates.className="platform-selection-candidates";actions.className="platform-connect-actions";status.setAttribute("role","status");feedback.setAttribute("role","status");hint.className="quiet";
-    const input=(label,type="text")=>{const host=document.createElement("label"),title=document.createElement("span"),field=document.createElement("input");title.textContent=label;field.type=type;host.append(title,field);fields.append(host);return field;};
+    const input=(label,type="text")=>{const host=document.createElement("label"),title=document.createElement("span"),field=document.createElement("input");title.textContent=label;field.type=type;field.className="field-control";host.append(title,field);fields.append(host);return field;};
     const account=op.input.kind==="account",gitlab=op.input.provider==="gitlab",project=op.input.kind==="projects",name=account && !gitlab ? input("新连接名称") : null,query=account ? null : input(project ? "搜索项目" : "搜索群聊");
     const search=document.createElement("button");search.type="button";search.textContent="搜索";search.className="text-button";search.hidden=account;
     const more=document.createElement("button");more.type="button";more.textContent="加载更多";more.className="text-button";more.hidden=true;
-    const mode=document.createElement("select");mode.setAttribute("aria-label",project ? "项目活动筛选" : "群消息范围");
+    const mode=document.createElement("select");mode.className="field-control";mode.setAttribute("aria-label",project ? "项目活动筛选" : "群消息范围");
     for(const [value,label] of (project ? [["","保留现有筛选"],["all","全部活动"],["note","评论"],["merge_request.opened","合并请求创建"],["merge_request.merged","合并请求合并"],["merge_request.closed","合并请求关闭"],["push","推送"]] : [["","保留现有消息范围"],["all","全部群消息"],["mentions","仅提及我的消息"]])){const item=document.createElement("option");item.value=value;item.textContent=label;mode.append(item);}
     if(!account){const label=document.createElement("label"),text=document.createElement("span");text.textContent=project ? "项目活动筛选" : "群消息范围";label.append(text,mode);fields.append(label);}
     const selected=document.createElement("p");selected.className="quiet";

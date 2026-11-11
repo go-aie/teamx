@@ -56,7 +56,7 @@ export function createPolicy({ env, membersUI, runtime, settingsUI, conversation
       const metadata = document.createElement("p"); metadata.className = "policy-revision-meta";
       const time = document.createElement("time"); time.dateTime = v.updated_at; settingsUI.bindSystemTime(time, () => { time.title = settingsUI.formatDate(v.updated_at); time.textContent = policyDateText(v.updated_at); });
       const origin = document.createElement("span");
-      origin.textContent = ` · 操作者 ${v.changed_by.id}\n${v.source.seq ? "Room 消息 #"+v.source.seq : "成员设置"} · 来源用户 ${v.source.user}`;
+      origin.textContent = ` · 操作者 ${v.changed_by.id}\n${v.source.seq ? "会话消息 #"+v.source.seq : "成员设置"} · 来源用户 ${v.source.user}`;
       metadata.append(time, origin);
       const content = document.createElement("p"); content.className = "inbox-text policy-revision-body"; content.textContent = v.text;
       const raw = document.createElement("details"), rawTitle = document.createElement("summary"); raw.className = "policy-source"; rawTitle.textContent = "原始来源";
@@ -71,11 +71,11 @@ export function createPolicy({ env, membersUI, runtime, settingsUI, conversation
       source.append(revision);
     }
     const actions = document.createElement("div"); actions.className = "member-actions";
-    const edit = document.createElement("button"); edit.type = "button"; edit.textContent = r.status === "suggested" ? "审核并编辑" : "编辑";
+    const edit = document.createElement("button"); edit.type = "button"; edit.className = "text-button button-compact"; edit.textContent = r.status === "suggested" ? "审核并编辑" : "编辑";
     edit.setAttribute("aria-label", `${r.status === "suggested" ? "审核并编辑" : "编辑"}规则：${r.text}`);
     edit.addEventListener("click",()=> { if (policyCurrent(view)) editPolicy(r); }); actions.append(edit);
     if (r.status !== "revoked") {
-      const revoke = document.createElement("button"); revoke.type = "button"; revoke.className = "policy-revoke"; revoke.textContent = "撤销";
+      const revoke = document.createElement("button"); revoke.type = "button"; revoke.className = "text-button button-compact danger-button"; revoke.textContent = "撤销";
       revoke.title = "撤销后不再生效，历史记录仍会保留";
       revoke.setAttribute("aria-label", `撤销规则：${r.text}`);
       revoke.addEventListener("click",()=> { if (policyCurrent(view)) void savePolicyChange(view,{...policyChange(r),status:"revoked",source_text:`撤销规则 ${r.id} v${r.version}：${r.text}`}); }); actions.append(revoke);
@@ -126,7 +126,7 @@ export function createPolicy({ env, membersUI, runtime, settingsUI, conversation
       for(const question of unit.questions || []) {
         followupParagraph(progress,`${question.answers?.length ? "已答问题" : "待你答复"}：${question.text}`);
         for(const answer of question.answers || []) followupParagraph(progress,`用户 ${answer.message.author.id} #${answer.message.seq}：${answer.message.text}`);
-        if(question.room_seq && !question.answers?.length) { const reply=document.createElement("button");reply.type="button";reply.textContent="在 Room 回答";reply.addEventListener("click",()=>{ if(!followupsCurrent(view,request))return; const message=state.messages.get(question.room_seq); if(message) { conversationUI.beginReply(message); $("activity-dialog").close(); } else { followupParagraph(progress,`请在 Room 加载消息 #${question.room_seq} 并就地回复。`); } });progress.append(reply); }
+        if(question.room_seq && !question.answers?.length) { const reply=document.createElement("button");reply.type="button";reply.className="text-button";reply.textContent="在会话中回复";reply.addEventListener("click",()=>{ if(!followupsCurrent(view,request))return; const message=state.messages.get(question.room_seq); if(message) { conversationUI.beginReply(message); $("activity-dialog").close(); } else { followupParagraph(progress,`请在会话中加载消息 #${question.room_seq} 并就地回复。`); } });progress.append(reply); }
       }
       const instructionStates={active:"有效",fulfilled:"已落实",revoked:"已撤销",expired:"已过期"};
       for(const instruction of unit.instructions || []) followupParagraph(progress,`单次指令 · ${instructionStates[instruction.status] || instruction.status} · ${instruction.intent.body || instruction.intent.constraints} · 用户 #${instruction.source.seq}：${instruction.source.text}`);
@@ -178,7 +178,7 @@ export function createPolicy({ env, membersUI, runtime, settingsUI, conversation
         finally {detail.loading=false;}
       });
     }
-    if(!page.complete) { const more=document.createElement("button");more.type="button";more.textContent="更多通知";more.addEventListener("click",async()=>{more.disabled=true;try{await loadFollowupSources(view,objectRef,panel,page.next_after,request);more.hidden=true;}catch(error){more.disabled=false;if(followupsCurrent(view,request))followupParagraph(panel,error.message);}});panel.append(more); }
+    if(!page.complete) { const more=document.createElement("button");more.type="button";more.className="text-button";more.textContent="更多通知";more.addEventListener("click",async()=>{more.disabled=true;try{await loadFollowupSources(view,objectRef,panel,page.next_after,request);more.hidden=true;}catch(error){more.disabled=false;if(followupsCurrent(view,request))followupParagraph(panel,error.message);}});panel.append(more); }
   }
 
   function policyChange(record) {

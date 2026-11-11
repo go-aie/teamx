@@ -2,49 +2,11 @@
   flex:1;
   min-height:0;
   padding:0 24px 24px;
-  background:#f7f8f5;
+  background:var(--surface-muted);
   overflow-y:auto;
   scrollbar-width:thin;
 }
-.icon-button {
-  width:27px;
-  height:27px;
-  border:1px solid #e0e5da;
-  background:transparent;
-  border-radius:6px;
-  color:#7b8c70;
-  font-size:17px;
-}
-.icon-button:hover {
-  background:#e9eee3;
-}
-.add-button {
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  flex-shrink:0;
-  width:28px;
-  height:28px;
-  padding:5px;
-  border:1px solid var(--accent);
-  border-radius:6px;
-  background:var(--accent);
-  color:#fff;
-}
-.add-button:hover:not(:disabled) {
-  background:#254e3b;
-  border-color:#254e3b;
-}
-.add-button svg {
-  width:16px;
-  height:16px;
-  fill:none;
-  stroke:currentColor;
-  stroke-width:1.6;
-  stroke-linecap:round;
-  stroke-linejoin:round;
-  flex-shrink:0;
-}
+
 .member {
   padding:12px 0 20px;
   border-bottom:1px solid #e2e7dc;
@@ -57,9 +19,9 @@
   background:transparent;
   color:inherit;
   text-align:left;
-  border-radius:6px;
+  border-radius:var(--radius-control);
 }
-.member-summary:hover:not(:disabled) { background:#edf1e9; }
+.member-summary:hover:not(:disabled) { background:var(--surface-hover); }
 .member-top {
   display:flex;
   align-items:center;
@@ -71,19 +33,19 @@
 }
 .member-name {
   display:block;
-  font-size:12px;
+  font-size:var(--font-small);
   font-weight:600;
   overflow-wrap:anywhere;
   margin:0 0 3px;
 }
 .member-profile {
   display:block;
-  font-size:10px;
+  font-size:var(--font-small);
   overflow-wrap:anywhere;
 }
 .member-status {
-  font-size:10px;
-  color:#77856b;
+  font-size:var(--font-small);
+  color:var(--muted);
   white-space:nowrap;
   display:flex;
   align-items:center;
@@ -101,16 +63,16 @@
   animation:breathe 1.8s ease-in-out infinite;
 }
 .member-status.failed {
-  color:#a15840;
+  color:var(--danger);
 }
 .member-status.failed:before {
-  background:#aa674c;
+  background:var(--danger);
 }
 .member-details {
   display:block;
   white-space:pre-line;
-  font-size:10px;
-  color:#8b9680;
+  font-size:var(--font-small);
+  color:var(--muted);
   line-height:1.9;
   margin:13px 0 9px 42px;
   font-variant-numeric:tabular-nums;
@@ -121,17 +83,7 @@
   gap:7px;
   margin-left:42px;
 }
-.member-actions button:not(.add-button) {
-  border:1px solid #dce4d4;
-  background:none;
-  color:#677b57;
-  font-size:10px;
-  padding:5px 10px;
-  border-radius:5px;
-}
-.member-actions button:not(.add-button):hover:not(:disabled) {
-  background:#eaf0e4;
-}
+
 .member-error {
   display:block;
   margin:9px 0 9px 42px;
@@ -139,18 +91,18 @@
 .member-empty {
   text-align:center;
   padding:34px 6px;
-  color:#929e87;
+  color:var(--muted);
 }
 .member-empty-icon {
   font-size:29px;
   color:#b2bfaa;
 }
 .member-empty p {
-  font-size:12px;
+  font-size:var(--font-small);
   margin:14px 0 7px;
 }
 .member-empty span:last-child {
-  font-size:10px;
+  font-size:var(--font-small);
   line-height:1.8;
 }
 .add-form {
@@ -160,22 +112,16 @@
 }
 .add-form label {
   display:block;
-  font-size:11px;
-  color:#7a876e;
+  font-size:var(--font-small);
+  color:var(--muted);
   margin:10px 0 7px;
 }
 .add-form input,.add-form select {
   width:100%;
-  border:1px solid #dce3d4;
-  border-radius:6px;
-  background:#fff;
-  color:#46513e;
-  padding:9px 10px;
-  font-size:12px;
 }
 .add-form p {
   line-height:1.8;
-  font-size:10px;
+  font-size:var(--font-small);
 }
 .add-form .primary {
   width:100%;
@@ -188,8 +134,8 @@
   list-style:none;
   padding:0;
   margin:12px 0;
-  color:#677b57;
-  font-size:11px;
+  color:var(--muted);
+  font-size:var(--font-small);
   line-height:2;
 }
 .sr-only {
@@ -216,7 +162,7 @@
   margin:0;
   padding:0;
   border:0;
-  background:#fbfcf9;
+  background:var(--surface-muted);
   color:inherit;
   overflow:hidden;
 }
@@ -224,8 +170,8 @@
   display:flex;
   flex-direction:column;
 }
-.activity-dialog .activity-header { height:var(--workspace-header-height); min-height:var(--workspace-header-height); padding:0 18px; gap:12px; }
-.activity-dialog .activity-header h2 { flex-shrink:0; font-size:12px; white-space:nowrap; }
+.activity-dialog .activity-header { height:var(--workspace-header-height); min-height:var(--workspace-header-height); padding:0 var(--panel-space); gap:12px; }
+.activity-dialog .activity-header h2 { flex-shrink:0; font-size:var(--font-small); white-space:nowrap; }
 .activity-header {
   display:flex;
   flex-shrink:0;
@@ -237,17 +183,14 @@
 }
 .activity-header h2 {
   margin:0;
-  font-size:23px;
   font-weight:600;
   overflow-wrap:anywhere;
 }
 .activity-header .eyebrow {
-  font-size:10px;
+  font-size:var(--font-small);
   letter-spacing:1px;
 }
-.activity-header .icon-button {
-  flex-shrink:0;
-}
+
 .activity-body {
   flex:1;
   min-height:0;
@@ -259,13 +202,13 @@
   padding-top:25px;
 }
 .activity-section h3 {
-  font-size:12px;
+  font-size:var(--font-small);
   font-weight:600;
   margin:0 0 14px;
 }
 .activity-stats {
   margin:0;
-  font-size:12px;
+  font-size:var(--font-small);
   line-height:1.8;
 }
 .activity-stats>div {
@@ -303,7 +246,7 @@
   align-items:center;
   gap:10px;
   padding:16px 0;
-  font-size:12px;
+  font-size:var(--font-small);
   font-weight:600;
   list-style:none;
   cursor:pointer;
@@ -327,7 +270,7 @@
   color:var(--accent);
 }
 .activity-group>summary:focus-visible {
-  outline:2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset:2px;
 }
 .activity-group-content {
@@ -340,7 +283,7 @@
   margin-left:auto;
   flex-shrink:0;
   color:var(--muted);
-  font-size:10px;
+  font-size:var(--font-small);
   font-weight:400;
 }
 .activity-group>summary>span:first-of-type {
@@ -353,15 +296,15 @@
   overflow-wrap:anywhere;
   max-height:260px;
   overflow:auto;
-  font-size:11px;
+  font-size:var(--font-small);
 }
 .activity-stop {
-  font-size:10px;
+  font-size:var(--font-small);
   color:var(--accent);
 }
 .activity-caption,.activity-notice {
   color:var(--muted);
-  font-size:11px;
+  font-size:var(--font-small);
   line-height:1.9;
 }
 .activity-notice {
@@ -371,7 +314,7 @@
   white-space:pre-wrap;
   overflow-wrap:anywhere;
   line-height:1.95;
-  font-size:13px;
+  font-size:var(--font-body);
   margin:20px 0;
 }
 .activity-section .form-error {
@@ -385,11 +328,11 @@
   flex-shrink:0;
   padding:17px 28px;
   border-top:1px solid var(--line);
-  font-size:10px;
+  font-size:var(--font-small);
   line-height:1.8;
   color:var(--muted);
 }
 .activity-footer .text-button {
   flex-shrink:0;
-  font-size:11px;
+  font-size:var(--font-small);
 }

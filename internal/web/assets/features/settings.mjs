@@ -177,6 +177,13 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
 
     $("timezone-picker-toggle").addEventListener("click", () => { timezonePicker.open = !timezonePicker.open; timezonePicker.query = ""; timezonePicker.active = -1; renderTimeZoneOptions(); });
 
+    $("timezone-picker").addEventListener("keydown", event => {
+      if (event.key !== "Escape" || !timezonePicker.open) return;
+      event.preventDefault(); event.stopPropagation();
+      timezonePicker.open = false; renderTimeZoneOptions();
+      $("timezone-picker-toggle").focus();
+    });
+
     $("system-timezone").addEventListener("keydown", event => {
       const picker = timezonePicker;
       if (event.key === "Escape" && picker.open) { event.preventDefault(); event.stopPropagation?.(); picker.open = false; renderTimeZoneOptions(); }
@@ -203,7 +210,7 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
         if (epoch !== systemTime.epoch) return;
         applyTimeZone({...data, service_epoch:epoch});
         timezoneForm.dirty = false;
-        timezoneForm.message = `已保存；当前生效：${systemTime.zone}。影响全部 Room 和 Agent；页面立即生效，Agent 从下一回合生效，无需重启。`;
+        timezoneForm.message = `已保存，当前生效：${systemTime.zone}。适用于所有会话；Agent 从下一回合生效。`;
       } catch (error) {
         if (epoch !== systemTime.epoch) return;
         timezoneForm.message = `保存失败，草稿已保留：${error.message}`;
@@ -221,7 +228,11 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
 
     dismissOnBackdrop($("settings-dialog"), closeSettings);
 
-    $("settings-dialog").addEventListener("cancel", event => { if (connectionsUI.platforms.sending) event.preventDefault(); });
+    $("settings-dialog").addEventListener("cancel", event => {
+      if (timezonePicker.open) {
+        event.preventDefault(); timezonePicker.open = false; renderTimeZoneOptions(); $("timezone-picker-toggle").focus();
+      } else if (connectionsUI.platforms.sending) event.preventDefault();
+    });
 
     $("settings-dialog").addEventListener("close", () => { timezonePicker.open = false; renderTimeZoneOptions(); void connectionsUI.cancelPlatformAuth(); $("gitlab-client-secret").value = ""; connectionsUI.platforms.formVersion++; connectionsUI.platforms.generation++;
       if ($("notification-detail").open) { $(workspaceUI.workspaceView?.notificationChannel === "messages" ? "lark-manage-platforms" : "gitlab-manage-platforms").focus(); void workspaceUI.loadWorkspacePlatforms(); }

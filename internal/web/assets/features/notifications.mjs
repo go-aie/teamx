@@ -303,7 +303,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
       if(dir.hasMore && (dir.chats.size>=10000 || dir.pages>=100))dir.error="已达会话列表加载上限，请输入更完整的名称搜索。";
     }catch(e){
       if(ws===workspaceUI.workspaceView && ws.larkChatDirectories?.[kind]===dir && !dir.controller.signal.aborted){
-        const errors={conflict:"连接已变化，请重新读取通知设置并核对连接。",identity_mismatch:"飞书登录账号已变化，请重新验证连接后刷新会话列表。",permission_denied:"读取会话的权限不足，请检查授权并重新验证连接。",credential:"飞书连接未验证或登录已失效，请重新验证连接。",cursor_expired:"会话列表已变化，请刷新会话列表后继续选择。"};
+        const errors={conflict:"连接已变化，请刷新通知设置并核对连接。",identity_mismatch:"飞书登录账号已变化，请重新验证连接后刷新会话列表。",permission_denied:"读取会话的权限不足，请检查授权并重新验证连接。",credential:"飞书连接未验证或登录已失效，请重新验证连接。",cursor_expired:"会话列表已变化，请刷新会话列表后继续选择。"};
         dir.error=errors[e.code] || "会话列表读取失败，已选会话保留；可刷新列表重试。";
       }
     }finally{
@@ -421,7 +421,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     try{
       const data=await request(`/v1/platform/notifications/${action}`,payload);
       if(!current())return;if(data.config.platform_id!==ws.notificationPlatformID || !sameNotificationTarget(data.config.target,activeNotificationTarget(ws)))throw Error("Notification scope mismatch");const replaced=ws.messages.subscription_id && ws.messages.subscription_id!==data.subscription_id;ws.messages=data;ws.larkSources=[...(ws.larkSources || []).filter(s=>s.config.platform_id!==data.config.platform_id || !sameNotificationTarget(s.config.target,data.config.target)),data];ws.messagesConnected=true;ws.larkDirty=false;ws.larkFilled=null;ws.messagesFeedback=action==="sync" ? "已发起同步，结果将自动更新。" : replaced ? "已为新连接开启订阅，旧订阅已暂停。" : "设置已保存。";
-    }catch(e){if(current())ws.messagesError=e.code==="conflict"?"设置或账号已变化，请重新读取后核对。":"结果未确认，请重新读取状态；不会自动重发。";}
+    }catch(e){if(current())ws.messagesError=e.code==="conflict"?"设置或账号已变化，请刷新后核对。":"结果未确认，请刷新状态；不会自动重发。";}
     finally{ws.notificationWrites?.delete(scope);if(current()){ws.messagesRevision++;ws.messagesSending=false;renderGitLabEvents();}else if(ws===workspaceUI.workspaceView)renderGitLabEvents();}
   }
 
@@ -481,7 +481,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
       dir.loaded=true;dir.nextPage=page.next_page;
     }catch(e){
       if(ws===workspaceUI.workspaceView && gitlabProjectDirectory(ws)===dir){
-        dir.error=e.code==="conflict" ? "连接已变化，请重新读取通知设置后重试。" : e.code==="credential" ? "连接已失效，请重新验证后重试。" : "项目列表读取失败，可刷新列表重试；已选项目保留。";
+        dir.error=e.code==="conflict" ? "连接已变化，请刷新通知设置后重试。" : e.code==="credential" ? "连接已失效，请重新验证后重试。" : "项目列表读取失败，可刷新列表重试；已选项目保留。";
       }
     }finally{
       dir.loading=false;
@@ -540,7 +540,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     $(`${prefix}empty`).hidden=!!configured.length;
     $(`${prefix}empty`).textContent=ws?.platformsLoading ? "正在读取平台…" : target.mode==="inbox" ? "尚未配置来源，添加通知来源后开始接收。" : roomsUI.isDirect() ? "将平台通知发送到当前会话。" : "将平台通知发送到当前房间。";
     const unavailable=!!ws && (!ws.notificationsConnected || !!ws.repositoryPlatformsError);
-    notice(`${prefix}list-error`,unavailable ? ws.repositoryPlatformsError || "通知状态暂不可读，请重新读取。" : "");
+    notice(`${prefix}list-error`,unavailable ? ws.repositoryPlatformsError || "通知状态暂不可读，请刷新。" : "");
     $(`${prefix}list-reload`).hidden=!unavailable;
     const query=$(`${prefix}add-search`).value.trim().toLowerCase();
     $(`${prefix}add-options`).replaceChildren(...items.filter(item=>!configured.includes(item) && [item.name,item.validation?.username,item.url].join(" ").toLowerCase().includes(query)).map(item=>{
@@ -599,7 +599,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
         if(ws.messages?.config.platform_id===item.id && sameNotificationTarget(activeNotificationTarget(ws),target)){ws.messages=next;$("lark-enabled").checked=!!next.config.enabled;}
       }
     }catch(error){
-      if(current())ws.notificationToggleError={key,message:error.code==="request" ? "请先在详情完善接收设置" : error.code==="conflict" ? "设置已变化，请核对后重试" : "结果未确认，请重新读取"};
+      if(current())ws.notificationToggleError={key,message:error.code==="request" ? "请先在详情完善接收设置" : error.code==="conflict" ? "设置已变化，请核对后重试" : "结果未确认，请刷新"};
     }finally{
       ws.notificationWrites?.delete(key);
       if(current()){ws[revisionKey]++;ws.notificationToggle=null;await syncGitLabNotifications(state.catalog,ws);renderGitLabEvents();}
@@ -746,7 +746,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
       const problem = gitlabApplyNotice(ws, channel) || notificationTargetErrors[data?.delivery_error_code] ||
         errors[data?.delivery_error_code] || errors[data?.error_code] || data?.delivery_error_code || data?.error_code || "";
       const status = $(`gitlab-${channel}-status`);
-      status.textContent = !ws?.gitlabConnected || !data ? "状态暂不可读，请重新读取。" :
+      status.textContent = !ws?.gitlabConnected || !data ? "状态暂不可读，请刷新。" :
         [notificationSyncSummary(data), problem].filter(Boolean).join(" · ");
       status.setAttribute("data-error", String(!!problem || !ws?.gitlabConnected));
     }
@@ -831,7 +831,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
       ws.gitlabFeedback = action === "sync" ? "已发起同步，结果将自动更新。" : "设置已保存。";
     } catch (error) {
       if (!current()) return;
-      ws.gitlabError = error.code === "conflict" ? action === "sync" ? "配置或账号已变化，请核对最新状态。" : "设置版本已变化，请核对最新状态后重新保存。" : error.code === "request" ? "设置无效，请检查连接、项目和筛选。" : "结果未确认，请核对最新状态后显式重试；不会自动重发。";
+      ws.gitlabError = error.code === "conflict" ? action === "sync" ? "配置或账号已变化，请核对最新状态。" : "设置版本已变化，请核对最新状态后重新保存。" : error.code === "request" ? "设置无效，请检查连接、项目和筛选。" : "结果未确认，请核对最新状态后重试；不会自动重发。";
       ws.gitlabSending = false; await syncGitLabNotifications(state.catalog, ws);
     } finally {
       ws.notificationWrites?.delete(scope);
@@ -866,7 +866,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     const matches=!!id && (messages ? ws?.messages?.config.platform_id : ws?.gitlabDraft?.platform_id)===id && sameNotificationTarget(messages ? ws?.messages?.config.target : ws?.gitlabDraft?.target,target);
     const connected=matches && (messages ? ws?.messagesConnected : ws?.gitlabConnected) && !ws?.notificationHistory;
     $("notification-panel-messages").hidden=!messages || !connected;$("notification-panel-gitlab").hidden=messages || !connected;
-    notice("notification-notice",ws?.notificationHistory || (!connected ? "通知状态暂不可读，请重新读取。" : item && item.validation?.status!=="valid" ? "账号需要核验，请在管理平台中处理。" : ""));
+    notice("notification-notice",ws?.notificationHistory || (!connected ? "通知状态暂不可读，请刷新。" : item && item.validation?.status!=="valid" ? "账号需要核验，请在管理平台中处理。" : ""));
     $("notification-reload").hidden=!!connected || !!ws?.notificationHistory;
     const configured=item && notificationConfigured(item,view),enabled=configured ? !!view.config.enabled : messages ? !!ws?.messages?.config.enabled : !!ws?.gitlabDraft?.enabled;
     const toolsOnly=ws?.notificationChannel==="tools",history=!!ws?.notificationHistory;
@@ -927,7 +927,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
         if(cached){ws.gitlabDraft=structuredClone(cached.config);ws.gitlabDraft.enabled=view.config.enabled;ws.eventsEmptyTypes=cached.emptyTypes;ws.gitlabDirty=!!cached.emptyTypes || gitlabConfigKey(ws.gitlabDraft)!==gitlabConfigKey(view.config);fillBackfill("gitlab",ws.gitlabDraft);}
       }catch{
         if(!notificationContextCurrent(ws,key,epoch) || revision!==ws.gitlabRevision || navigation!==notificationNavigation)return;
-        ws.gitlabConnected=false;ws.gitlabError="平台通知设置暂不可读，请重新读取。";
+        ws.gitlabConnected=false;ws.gitlabError="平台通知设置暂不可读，请刷新。";
       }finally{if(notificationContextCurrent(ws,key,epoch) && revision===ws.gitlabRevision){ws.gitlabSending=false;ws.gitlabRevision++;}}
     }
     if(!notificationContextCurrent(ws,key,epoch) || opening!==ws.notificationOpen || navigation!==notificationNavigation)return;

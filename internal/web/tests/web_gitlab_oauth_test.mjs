@@ -230,7 +230,7 @@ test("GitLab shared authorization groups every affected room and preserves pendi
  api.items.push(other);
  api.prepared.affected=api.items.map(item=>({id:item.id,version:item.version,referenced_rooms:item.references.map(({room_id,room_instance})=>({room_id,room_instance}))}));
  const ui=await edit(api);assert.equal(referenceNames(ui).length,27);
- await ui.el("gitlab-login").emit("click");assert.equal(ui.el("connection-references-title").textContent,"引用房间 · 27");
+ await ui.el("gitlab-login").emit("click");assert.equal(ui.el("connection-references-title").textContent,"使用此连接的会话 · 27");
  assert.equal(ui.el("connection-reference-list").children.length,2);assert.equal(ui.el("connection-reference-list").children[1].children[0].textContent,"Shared GitLab");
  assert.equal(referenceNames(ui).length,27);assert.equal(referenceNames(ui).at(-1),"Room 24");
  assert.equal(ui.el("connection-reference-list").children[0].children.at(-1).children[1].children[1].textContent,"待完成绑定");
@@ -386,7 +386,7 @@ test("GitLab application update shows shared impact before the action and opens 
  api.editPrepared={...api.prepared,status:"configuration_required",application_id:undefined,scopes:["api"],client_id:"saved-client",affected:api.items.map(item=>({id:item.id,version:item.version,referenced_rooms:item.references.map(({room_id,room_instance})=>({room_id,room_instance}))}))};
  const ui=await edit(api);await openApplication(ui);
  assert.equal(ui.el("connection-references").hidden,false);
- assert.match(ui.el("connection-references-title").textContent,/引用房间 · 2/);
+ assert.match(ui.el("connection-references-title").textContent,/使用此连接的会话 · 2/);
  assert.deepEqual(referenceNames(ui),["Review","Other room"]);
  assert.equal(ui.el("connection-reference-list").children[1].children[0].textContent,"Shared GitLab");
  assert.equal(api.calls.some(c=>c.path.endsWith("/gitlab/initialize")),false);

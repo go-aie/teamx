@@ -1,7 +1,7 @@
 // Shared platform connection forms, validation and account selection.
 export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI, larkUI, onboardingUI, workspaceUI, notificationsUI }) {
   const { document, window, Option, setTimeout, clearTimeout, request } = env;
-  const { state, $, setSelectOptions } = runtime;
+  const { state, $, setSelectOptions, confirmAction } = runtime;
 
   // Application secrets live only in memory and are never retried automatically.
   const platforms = { items: [], selected: null, sending: false, generation: 0, formVersion: 0, discovery: null, detecting: false, auth: null, authTimer: null, larkPending:null, larkStarting:null, gitlabAuth: null, gitlabTimer: null, gitlabPending: null, gitlabSetup:null, gitlabSetupVersion:0, gitlabEditingImportID:null, scionDiscovery:null, scionAuth:null, scionTimer:null, scionPending:null, scionLogout:null };
@@ -82,12 +82,12 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
     $("connection-auth-confirmation-description").textContent = pending?.description || "";
     $("connection-auth-confirmation-description").hidden = !pending?.description;
     $("connection-auth-confirm").textContent = pending?.confirmLabel || "继续登录";
-    $("connection-auth-confirm").classList.toggle("settings-danger-button",pending?.action === "logout");
+    $("connection-auth-confirm").classList.toggle("danger-button",pending?.action === "logout");
     for (const id of ["connection-auth-confirm","connection-auth-dismiss"]) $(id).disabled = platforms.sending;
     const count = new Set(groups.flatMap(group => group.references.map(ref => JSON.stringify([ref.room_id, ref.room_instance])))).size;
     $("connection-references").hidden = !groups.length;
     $("connection-references").dataset.impact = String(!!flow);
-    $("connection-references-title").textContent = `引用房间 · ${count}`;
+    $("connection-references-title").textContent = `使用此连接的会话 · ${count}`;
     $("connection-reference-list").replaceChildren(...groups.map(group => {
       const section = document.createElement("div"); section.className = "connection-reference-group";
       if (groups.length > 1) { const title = document.createElement("h5"); title.textContent = group.name; section.append(title); }
@@ -247,7 +247,11 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
     if (action === "save" && !connectionIsLark() && !connectionIsScion() && !item) return gitlabUI.startGitLabAuth("login");
     if (action !== "save" && !item) return;
     if (action === "verify" && connectionDirty()) { connectionFeedback("请先保存更改，再验证连接。", "error"); return; }
-    if (action === "delete" && !window.confirm(`删除「${item.name}」连接？`)) return;
+    const version = platforms.formVersion, epoch = state.catalog.service_epoch, operator = state.operator;
+    const stillCurrent = () => platforms.formVersion === version && state.catalog?.service_epoch === epoch && state.operator === operator && platforms.selected?.id === item?.id && platforms.selected?.version === item?.version && !platforms.sending;
+    if (action === "delete") {
+      if (!await confirmAction({title:`删除「${item.name}」连接？`,message:"删除后将无法通过此连接访问平台。",confirmLabel:"删除连接"}) || !stillCurrent()) return;
+    }
     let payload = { id: item?.id || crypto.randomUUID().replaceAll("-", ""), version: item?.version || 0 };
     if (action === "save") {
       clearPlatformErrors();
@@ -273,7 +277,7 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
       }
     }
     if (payload.cli_profile && item?.references?.length) {
-      if (!window.confirm(`替换「${item.name}」账号配置？影响房间：${item.references.map(ref=>ref.name).join("、")}。在途工具将结清，请重新验证连接并核对绑定。`)) return;
+      if (!await confirmAction({title:`替换「${item.name}」账号配置？`,message:`影响会话：${item.references.map(ref=>ref.name).join("、")}。\n将等待正在执行的工具结束，替换后需重新验证连接并核对绑定。`,confirmLabel:"替换配置"}) || !stillCurrent()) return;
       payload.referenced_rooms=item.references.map(({room_id,room_instance})=>({room_id,room_instance}));
     }
     platforms.sending = true; $("connection-fields").disabled = true;

@@ -69,7 +69,7 @@ export function createInbox({ env, settingsUI, notificationsUI, runtime, members
     if (item.context_only) add("用途","进展上下文，不触发新的自动回复或待办");
     if (entry.automatic_admission) {
       const admission = entry.automatic_admission;
-      const reasons = {self_excluded:"本人自聊历史，已排除；需要办理时请在 Room 提出",relationship_pending:"会话关系待核验，暂不作为 Agent 输入"};
+      const reasons = {self_excluded:"本人自聊历史，已排除；需要办理时请在会话中提出",relationship_pending:"会话关系待核验，暂不作为 Agent 输入"};
       add("自动处理",reasons[admission.reason_code] || (!admission.verified ? "来源证据待核验，暂不作为 Agent 输入" : admission.decision === "excluded" ? "已排除自动处理，历史记录保留" : "可自动处理"));
     }
     id("发送者 ID",item.sender?.id); id("接收账号 ID",item.receiver?.id);

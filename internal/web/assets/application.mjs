@@ -15,6 +15,7 @@ import { createOnboarding } from "./features/onboarding.mjs";
 import { createGitLabConnection } from "./features/gitlab-connection.mjs";
 import { createLarkConnection } from "./features/lark-connection.mjs";
 import { createScionConnection } from "./features/scion-connection.mjs";
+import { createConfirmation } from "./confirmation.mjs";
 
 // Browser services can be replaced per instance; feature state never lives in
 // module globals. Tests import this same module graph and supply a bounded DOM.
@@ -55,6 +56,7 @@ export async function createApp(overrides = {}) {
   const scionUI = {};
 
   const $ = (id) => document.getElementById(id);
+  const confirmAction = env.confirmAction || createConfirmation(document);
 
   const state = { info: null, operator: "operator", messages: new Map(), lastSeq: 0, oldest: 0,
     clearedThrough: 0,
@@ -69,7 +71,7 @@ export async function createApp(overrides = {}) {
   function setSelectOptions(id, options, value) {
     const select = $(id), selectedValue = value ?? select.value;
     const signature = JSON.stringify(options.map(option => [option.value, option.textContent, !!option.disabled]));
-    const customizable = globalThis.CSS?.supports?.("appearance", "base-select") && select.closest?.(".notification-settings,.settings-dialog");
+    const customizable = globalThis.CSS?.supports?.("appearance", "base-select") && select.classList.contains("field-control");
     if (select.dataset.options !== signature) {
       const content = [];
       // Keep long selected labels inside the text area of customizable native selects.
@@ -276,7 +278,8 @@ export async function createApp(overrides = {}) {
     reconcileChildren,
     get viewVersion() { return viewVersion; },
     currentView,
-    dismissOnBackdrop
+    dismissOnBackdrop,
+    confirmAction
   };
 
   install(settingsUI, createSettings({
