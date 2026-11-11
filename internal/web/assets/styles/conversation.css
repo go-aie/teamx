@@ -116,14 +116,24 @@
   font-variant-numeric:tabular-nums;
 }
 .reply-button {
-  font-size:10px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  flex-shrink:0;
+  gap:4px;
+  min-height:32px;
+  border-radius:6px;
+  white-space:nowrap;
+  font-size:11px;
   background:none;
   color:#778872;
-  padding:2px 0 2px 7px;
-  opacity:0;
+  padding:4px 8px;
 }
-.message:hover .reply-button,.reply-button:focus-visible {
-  opacity:1;
+.reply-button svg { width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+.reply-button:hover,.reply-button:focus-visible { background:var(--soft); color:var(--accent); }
+@media(hover:hover) and (pointer:fine) {
+  .reply-button { opacity:0; }
+  .message:hover .reply-button,.message:focus-within .reply-button { opacity:1; }
 }
 .message-text {
   font-size:13px;
@@ -511,19 +521,43 @@ textarea::placeholder {
   background:#aab6a1;
 }
 .reply-context {
-  font-size:11px;
   display:flex;
-  align-items:center;
-  justify-content:space-between;
-  padding:8px 15px 3px;
-  color:#66825b;
-  gap:10px;
+  align-items:flex-start;
+  min-width:0;
+  gap:8px;
+  margin:10px 12px 0;
+  padding:6px;
+  border-left:2px solid #a4b89d;
+  border-radius:5px;
+  background:#f1f5ee;
+  color:#52664d;
 }
-.reply-context span {
+.reply-preview {
+  flex:1;
+  min-width:0;
+  padding:4px 6px;
+  border-radius:4px;
+  background:transparent;
+  color:inherit;
+  text-align:left;
+}
+.reply-preview:hover { background:#e6eee1; }
+.reply-heading { display:flex; align-items:baseline; gap:8px; min-width:0; line-height:1.5; }
+#reply-author { min-width:0; font-size:11px; font-weight:550; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.reply-sequence { flex-shrink:0; font-size:10px; color:#7b8776; font-variant-numeric:tabular-nums; }
+.reply-excerpt {
+  display:block;
+  margin-top:3px;
+  font-size:12px;
+  line-height:1.5;
+  color:#69766d;
   overflow:hidden;
   white-space:nowrap;
   text-overflow:ellipsis;
 }
+.reply-cancel { display:flex; align-items:center; justify-content:center; flex-shrink:0; width:32px; height:32px; padding:7px; border-radius:5px; background:transparent; color:#69766d; }
+.reply-cancel:hover:not(:disabled) { background:#e1eadd; color:var(--accent); }
+.reply-cancel svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; }
 .form-error,.member-error {
   font-size:11px;
   color:#a15840;

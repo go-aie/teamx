@@ -1,5 +1,6 @@
 import { readPages as collectPages, createRoomDrafts, mentionRanges, unseenMentions } from "../client.mjs";
 import { notificationOptions } from "../markdown.mjs";
+import { createAssistantIcon } from "../icons.mjs";
 
 // Messages, drafts, mentions and the send/restart lifecycle.
 export function createConversation({ env, runtime, roomsUI, notificationsUI, membersUI, settingsUI, interactionsUI, workspaceUI, layoutUI }) {
@@ -140,6 +141,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     el.classList.toggle("integration", integration);
     const avatar = el.querySelector(".avatar");
     avatar.textContent = integration ? "GL" : message.author.id.slice(0, 2).toUpperCase();
+    if (agent && roomsUI.isDirect()) avatar.replaceChildren(createAssistantIcon(document));
     avatar.classList.toggle("integration-avatar", integration);
     avatar.classList.toggle("agent-avatar", agent);
     const channel = message.source?.provider === "gitlab" && ["events", "todos"].includes(message.source?.channel) ? message.source.channel : null;
@@ -185,27 +187,14 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     time.dateTime = message.created_at;
     time.title = settingsUI.formatDate(message.created_at);
     el.querySelector(".sequence").textContent = `#${message.seq}`;
-    el.querySelector(".reply-button").addEventListener("click", () => {
-      if (state.draft.pending || !state.connected || discussionBusy()) return;
-      state.draft.replyTo = message.seq;
-      $("reply-label").textContent = `引用 #${message.seq} · ${message.author.id}：${message.text}`;
-      $("reply-context").hidden = false;
-      saveDraft();
-      $("message-input").focus();
-    });
+    el.querySelector(".reply-button").addEventListener("click", () => beginReply(message));
     if (message.reply_to) {
       const ref = el.querySelector(".message-reference");
       const target = state.messages.get(message.reply_to);
       ref.hidden = false;
       ref.textContent = target ? `↳ #${target.seq} ${target.author.id}：${target.text}` : message.reply_to <= state.clearedThrough
         ? `↳ 引用消息 #${message.reply_to} · 已清空` : `↳ 引用消息 #${message.reply_to} · 加载更早消息可查看`;
-      ref.addEventListener("click", () => {
-        const target = $(`message-${message.reply_to}`);
-        if (!target) { $("load-history").focus(); return; }
-        target.scrollIntoView({ block: "center" });
-        target.classList.remove("flash");
-        requestAnimationFrame(() => target.classList.add("flash"));
-      });
+      ref.addEventListener("click", () => revealMessage(message.reply_to));
     }
     return el;
   }
@@ -240,7 +229,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     state.oldest = messages[0]?.seq || 0;
     $("empty").hidden = messages.length !== 0;
     $("load-history").hidden = state.oldest <= state.clearedThrough + 1;
-    renderMentionNotice();
+    renderReply(); renderMentionNotice();
   }
 
   function applyClear(through) {
@@ -254,8 +243,29 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
   function beginReply(message) {
     if(state.draft.pending || !state.connected || discussionBusy()) return;
     state.draft.replyTo=message.seq;
-    $("reply-label").textContent=`引用 #${message.seq} · ${message.author.id}：${message.text}`;
-    $("reply-context").hidden=false;saveDraft();$("message-input").focus();
+    state.draft.replyAuthor=message.author.id;
+    state.draft.replyLabel=message.text;
+    renderReply();saveDraft();$("message-input").focus();
+  }
+
+  function renderReply() {
+    const seq=state.draft.replyTo, message=state.messages.get(seq);
+    const author=message?.author.id || state.draft.replyAuthor;
+    $("reply-context").hidden=!seq;
+    $("reply-author").textContent=author ? `引用 ${author === state.operator ? "你" : author} 的消息` : "引用消息";
+    $("reply-sequence").textContent=seq ? `#${seq}` : "";
+    $("reply-label").textContent=seq ? (message?.text || state.draft.replyLabel || "原消息未载入").replace(/\s+/g," ").trim() : "";
+    $("reply-preview").title=message ? "定位原消息" : "加载更早消息后可定位原文";
+    $("reply-preview").setAttribute("aria-label",`定位引用的消息 #${seq}`);
+  }
+
+  function revealMessage(seq) {
+    const target=messageNodes.get(seq)?.element;
+    if (!target) { $("load-history").focus(); return; }
+    target.scrollIntoView({block:"center"});
+    target.tabIndex=-1; target.focus({preventScroll:true});
+    target.classList.remove("flash");
+    requestAnimationFrame(()=>target.classList.add("flash"));
   }
 
   function saveDraft() {
@@ -267,8 +277,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
 
   function showDraft() {
     $("message-input").value = state.draft.text || "";
-    $("reply-label").textContent = state.draft.replyLabel || `引用 #${state.draft.replyTo}`;
-    $("reply-context").hidden = !state.draft.replyTo;
+    renderReply();
     notice("send-error", state.draft.pending ? "有一条尚未确认的消息，重试保留原会话和服务身份。请先核对历史。" : "");
   }
 
@@ -277,8 +286,10 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     $("conversation").setAttribute("aria-label", `${type}消息`);
     $("member-rail").setAttribute("aria-label", direct ? "助理详情与会话通知" : "团队成员、通知源与详情");
     $("member-sidebar").setAttribute("aria-label", direct ? "会话通知" : "成员与房间通知");
-    $("conversation-icon").textContent = direct ? "◎" : "#";
-    $("empty-conversation-icon").textContent = direct ? "◎" : "#";
+    for (const id of ["conversation-icon", "empty-conversation-icon"]) {
+      if (direct) $(id).replaceChildren(createAssistantIcon(document));
+      else $(id).textContent = "#";
+    }
     $("conversation-footer").textContent = `仅显式发言进入${direct ? "私信" : "房间"}，Agent 的普通输出保持私有。`;
     $("policy-empty").textContent = `可以在${direct ? "私信" : "房间"}中告诉 Agent 今后应如何处理。`;
     $("message-input").placeholder = direct ? `给${name || "个人助理"}发消息…` : "发送到房间，开始一段协作…";
@@ -321,6 +332,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     $("message-input").readOnly = !!state.draft.pending || discussionBusy();
     $("send").disabled = !state.connected || state.draft.sending || discussionBusy() || (!state.draft.pending && !$("message-input").value.trim());
     $("send").textContent = state.draft.sending ? "发送中…" : state.draft.pending ? "重试发送 ↗" : "发送 ↗";
+    $("cancel-reply").disabled=!!state.draft.pending;
     $("discard-send").hidden = !state.draft.pending || state.draft.sending;
     $("restart-discussion").disabled = !state.connected || workspaceUI.workspaceBusy() || roomsUI.managementBusy() || state.draft.restartStarting || state.restart?.status === "running" || !!state.draft.pending || state.draft.sending;
     $("restart-discussion").textContent = state.draft.restartStarting || state.restart?.status === "running" ? "重新开始中…" : state.draft.restartRequest ? "核对并重试" : "重新开始";
@@ -331,7 +343,9 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
 
   function clearReply() {
     state.draft.replyTo = 0;
-    $("reply-context").hidden = true;
+    state.draft.replyAuthor = "";
+    state.draft.replyLabel = "";
+    renderReply();
     saveDraft();
   }
 
@@ -413,7 +427,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
         const pending = draft.pending;
         const receipt = await rpc("/v1/send", { text: pending.text, client_message_id: pending.client_message_id,
           reply_to: pending.reply_to, caller: { kind: "human", id: pending.operator } }, pending.info);
-        draft.pending = null; draft.text = ""; draft.replyTo = 0; draft.replyLabel = "";
+        draft.pending = null; draft.text = ""; draft.replyTo = 0; draft.replyLabel = ""; draft.replyAuthor = "";
         drafts.save(info, operator, draft);
         if (state.draft === draft) showDraft();
         if (currentView(version)) {
@@ -452,7 +466,8 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
       }
     });
 
-    $("cancel-reply").addEventListener("click", () => { if (!state.draft.pending) clearReply(); });
+    $("cancel-reply").addEventListener("click", () => { if (!state.draft.pending) { clearReply(); $("message-input").focus(); } });
+    $("reply-preview").addEventListener("click", () => revealMessage(state.draft.replyTo));
 
     $("jump-latest").addEventListener("click", bottom);
 

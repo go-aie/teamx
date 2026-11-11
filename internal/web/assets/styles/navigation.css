@@ -11,7 +11,7 @@
 .room-nav {
   flex:1;
   min-height:0;
-  padding:24px 16px;
+  padding:20px 16px;
   overflow-y:auto;
   scrollbar-width:thin;
   background:#f7f8f5;
@@ -20,11 +20,11 @@
   display:flex;
   align-items:center;
   justify-content:space-between;
-  margin:0 8px 24px;
+  margin:0 8px 16px;
 }
 .room-nav h2 {
   margin:0;
-  font-size:13px;
+  font-size:14px;
   font-weight:600;
 }
 .room-entry {
@@ -33,19 +33,26 @@
   align-items:center;
   gap:4px;
   margin-bottom:4px;
-  padding-right:6px;
   border-radius:7px;
 }
 .room-choice {
   flex:1;
   min-width:0;
-  padding:12px;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto auto;
+  align-items:center;
+  column-gap:6px;
+  padding:10px 12px;
+  min-height:44px;
   border-radius:7px;
   text-align:left;
   background:none;
-  color:#535f52;
+  color:#3f4d43;
 }
 .room-delete {
+  position:absolute;
+  right:6px;
+  top:6px;
   display:flex;
   align-items:center;
   justify-content:center;
@@ -86,14 +93,29 @@
   white-space:nowrap;
 }
 .room-choice strong {
-  font-size:12px;
+  grid-column:1;
+  grid-row:1;
+  min-width:0;
+  font-size:14px;
   font-weight:550;
-  line-height:1.8;
+  line-height:1.5;
 }
-.room-choice span {
+.room-choice .room-status,.room-choice .room-preview {
+  grid-column:1 / -1;
+  grid-row:2;
   margin-top:4px;
-  font-size:10px;
-  color:var(--muted);
+  font-size:12px;
+  line-height:1.5;
+  color:#69766d;
+}
+.room-time {
+  grid-column:3;
+  grid-row:1;
+  white-space:nowrap;
+  color:#69766d;
+  font-size:11px;
+  font-weight:400;
+  font-variant-numeric:tabular-nums;
 }
 #rooms-empty {
   padding:0 8px;
@@ -339,5 +361,9 @@
 }
 @media(hover:hover) and (pointer:fine) {
   .room-delete { opacity:0; }
-  .room-entry:hover .room-delete,.room-entry:focus-within .room-delete { opacity:1; }
+  .room-entry:hover .room-delete,.room-delete:focus-visible { opacity:1; }
+  .room-entry:has(.room-delete):hover .room-time,.room-entry:has(.room-delete:focus-visible) .room-time { visibility:hidden; }
+}
+@media(hover:none),(pointer:coarse) {
+  .room-entry:has(.room-delete) .room-choice { padding-right:44px; }
 }

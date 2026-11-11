@@ -59,11 +59,25 @@ type roomSummary struct {
 // Runtime observations belong only to the HTTP catalog, never rooms.json.
 type roomRuntimeSummary struct {
 	roomSummary
-	Busy          bool                `json:"busy"`
-	Members       []teamMemberSummary `json:"members,omitempty"`
-	RuntimeStatus string              `json:"runtime_status"`
-	Service       *ServiceInfo        `json:"service,omitempty"`
-	RuntimeError  string              `json:"runtime_error,omitempty"`
+	LastMessagePreview *roomMessagePreview `json:"last_message_preview,omitempty"`
+	Busy               bool                `json:"busy"`
+	Members            []teamMemberSummary `json:"members,omitempty"`
+	RuntimeStatus      string              `json:"runtime_status"`
+	Service            *ServiceInfo        `json:"service,omitempty"`
+	RuntimeError       string              `json:"runtime_error,omitempty"`
+}
+
+type roomMessagePreview struct {
+	Author Author `json:"author"`
+	Text   string `json:"text"`
+}
+
+func summarizeRoomMessage(message RoomMessage) *roomMessagePreview {
+	text := []rune(strings.Join(strings.Fields(message.Text), " "))
+	if len(text) > 160 {
+		text = append(text[:160], '…')
+	}
+	return &roomMessagePreview{Author: message.Author, Text: string(text)}
 }
 
 type roomSelection struct {
@@ -729,8 +743,9 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			var snapshot RoomSnapshot
 			if err := readSnapshot(filepath.Join(m.roomDir(e.RoomID), "room.json"), &snapshot, maxRoomFileBytes); err == nil &&
 				snapshot.RoomIdentity == e.RoomIdentity && len(snapshot.Messages) > 0 {
-				last := snapshot.Messages[len(snapshot.Messages)-1].CreatedAt
-				summary.LastMessageAt = &last
+				last := snapshot.Messages[len(snapshot.Messages)-1]
+				summary.LastMessageAt = &last.CreatedAt
+				summary.LastMessagePreview = summarizeRoomMessage(last)
 			}
 			var saved managedRoomConfig
 			if err := readSnapshot(filepath.Join(m.roomDir(e.RoomID), "room-config.json"), &saved, maxPrivateFileBytes); err == nil && saved.RoomIdentity == e.RoomIdentity {

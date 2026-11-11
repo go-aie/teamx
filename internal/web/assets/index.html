@@ -17,8 +17,9 @@
         <button id="toggle-rooms" class="panel-toggle" type="button" aria-label="收起会话侧栏" title="收起会话侧栏" aria-controls="room-nav" aria-expanded="true" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><rect class="panel-fill" x="3.8" y="4.8" width="4.4" height="14.4"/><path d="M9 4v16"/></svg></button>
       </header>
       <nav id="room-nav" class="room-nav" aria-label="会话列表" hidden>
-        <div class="room-nav-heading"><h2>会话</h2><button id="new-room" class="add-button" type="button" aria-label="新建会话" title="新建会话" aria-expanded="false" aria-controls="create-menu" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
-        <div id="create-menu" class="create-menu" hidden><button id="new-direct" class="text-button" type="button">新建私信</button><button id="new-team-room" class="text-button" type="button">新建房间</button></div>
+        <div class="room-nav-heading">
+          <h2>会话</h2><button id="new-room" class="add-button" type="button" aria-label="新建会话" title="新建会话" aria-haspopup="menu" aria-expanded="false" aria-controls="create-menu" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+        </div>
         <div id="default-assistant-notice" class="management-notice" role="status" hidden></div><button id="retry-default-assistant" class="text-button" type="button" hidden>重试初始化助理</button>
         <p id="rooms-empty" class="quiet" hidden>还没有会话。点击右上角 ＋，新建私信或房间。</p>
         <h3 id="direct-group-title" class="conversation-group-title">私信</h3><div id="direct-list"></div>
@@ -66,7 +67,10 @@
         </div>
       </div>
       <form id="compose" class="compose">
-        <div id="reply-context" class="reply-context" hidden><span id="reply-label"></span><button type="button" id="cancel-reply" class="text-button">取消引用</button></div>
+        <div id="reply-context" class="reply-context" role="group" aria-label="当前引用" hidden>
+          <button id="reply-preview" class="reply-preview" type="button" aria-describedby="reply-label"><span class="reply-heading"><span id="reply-author"></span><span id="reply-sequence" class="reply-sequence"></span></span><span id="reply-label" class="reply-excerpt"></span></button>
+          <button type="button" id="cancel-reply" class="reply-cancel" aria-label="取消引用" title="取消引用"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+        </div>
         <label id="message-input-label" class="sr-only" for="message-input">发送到房间</label>
         <textarea id="message-input" rows="3" placeholder="发送到房间，开始一段协作…" aria-describedby="message-shortcuts" required disabled></textarea>
         <div class="compose-footer">
@@ -706,7 +710,11 @@
       </div>
     </div>
   </dialog>
-  <template id="message-template"><article class="message"><div class="avatar"></div><div class="message-main"><div class="message-meta"><button class="author" type="button" disabled></button><span class="author-kind"></span><time></time><span class="sequence"></span><button class="reply-button" type="button">引用</button></div><button class="message-reference text-button" type="button" hidden></button><div class="message-text"></div><div class="message-interactions"></div></div></article></template>
+  <div id="create-menu" class="create-menu" role="menu" aria-labelledby="new-room" hidden>
+    <button id="new-direct" type="button" role="menuitem" tabindex="-1" aria-labelledby="new-direct-label" aria-describedby="new-direct-hint"><span id="new-direct-label" class="create-menu-label">新建私信</span><span id="new-direct-hint" class="create-menu-hint">与一个助理单独交流</span></button>
+    <button id="new-team-room" type="button" role="menuitem" tabindex="-1" aria-labelledby="new-team-room-label" aria-describedby="new-team-room-hint"><span id="new-team-room-label" class="create-menu-label">新建房间</span><span id="new-team-room-hint" class="create-menu-hint">让多个成员共同协作</span></button>
+  </div>
+  <template id="message-template"><article class="message"><div class="avatar"></div><div class="message-main"><div class="message-meta"><button class="author" type="button" disabled></button><span class="author-kind"></span><time></time><span class="sequence"></span><button class="reply-button" type="button" title="引用此消息"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5-6 6 6 6M3 11h11a6 6 0 0 1 6 6v2"/></svg><span>引用</span></button></div><button class="message-reference text-button" type="button" hidden></button><div class="message-text"></div><div class="message-interactions"></div></div></article></template>
   <template id="member-template"><section class="member"><button class="member-summary" type="button" aria-controls="activity-dialog"><span class="member-top"><span class="avatar agent-avatar" aria-hidden="true"></span><span class="member-title"><span class="member-name"></span><span class="member-profile quiet"></span></span><span class="member-status"></span><span aria-hidden="true">›</span></span><span class="member-details"></span><span class="member-error" hidden></span></button></section></template>
 </body>
 </html>

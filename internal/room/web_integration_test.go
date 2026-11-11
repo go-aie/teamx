@@ -123,6 +123,17 @@ func TestManagedWebCatalogUsesLastPublicMessageTime(t *testing.T) {
 		if (got == nil) != (want == nil) || (got != nil && !got.Equal(*want)) {
 			t.Fatalf("last message time = %v, want %v", got, want)
 		}
+		preview := catalog.Rooms[0].LastMessagePreview
+		if len(state.Messages) == 0 {
+			if preview != nil {
+				t.Fatalf("cleared conversation retains message preview: %+v", preview)
+			}
+		} else {
+			last := state.Messages[len(state.Messages)-1]
+			if preview == nil || preview.Author != last.Author || preview.Text != last.Text {
+				t.Fatalf("last public message preview = %+v, want %v: %q", preview, last.Author, last.Text)
+			}
+		}
 		if m.index.Rooms[0].LastMessageAt != nil || !m.index.Rooms[0].UpdatedAt.Equal(room.UpdatedAt) {
 			t.Fatal("listing must not mutate the catalog")
 		}

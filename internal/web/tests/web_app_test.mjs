@@ -294,7 +294,8 @@ test("team member header toggle collapses the whole panel and retains the choice
   assert.equal(reload.el("toggle-rooms").attributes["aria-expanded"], "true");
 });
 
-test("room list displays and sorts by last message time, with creation time for empty rooms", async () => {
+test("room list displays and sorts by last message time, with creation time for empty rooms", async t => {
+  t.mock.method(Date, "now", () => Date.parse("2026-11-01T12:00:00Z"));
   const a = { ...makeRoom("A"), last_message_at: "2026-11-01T09:02:46Z", updated_at: "2026-11-01T09:05:00Z" };
   const b = { ...makeRoom("B"), last_message_at: "2026-11-01T09:03:00Z", updated_at: "2026-11-01T09:04:00Z" };
   const empty = { ...makeRoom("Empty"), created_at: "2026-11-01T09:01:00Z", updated_at: "2026-11-01T09:06:00Z" };
@@ -302,11 +303,13 @@ test("room list displays and sorts by last message time, with creation time for 
   api.history.set("A", [{ ...message(1, "MR closed"), created_at: a.last_message_at }]);
   api.history.set("Empty", []);
   const ui = await launch(api);
-  const format = value => "运行中 · 11/01 " + new Date(value).toLocaleTimeString("en-GB", { timeZone: "Asia/Shanghai", hour: "2-digit", minute: "2-digit", hour12: false });
+  const format = value => new Date(value).toLocaleTimeString("en-GB", { timeZone: "Asia/Shanghai", hour: "2-digit", minute: "2-digit", hour12: false });
   const list = () => ui.el("room-list").children.map(row => row.children[0]);
   assert.deepEqual(list().map(button => button.children[0].textContent), ["B", "A", "Empty"]);
   assert.equal(list()[1].children[1].textContent, format(a.last_message_at));
   assert.equal(list()[2].children[1].textContent, format(empty.created_at));
+  assert.match(list()[1].children[1].title, /^最后消息：2026年11月1日.*17:02:46/);
+  assert.match(list()[2].children[1].title, /^创建于：2026年11月1日.*17:01:00/);
   // Session/cursor writes do not change either the displayed date or ordering.
   a.updated_at = "2026-11-01T09:10:00Z";
   await ui.refresh();
@@ -317,6 +320,61 @@ test("room list displays and sorts by last message time, with creation time for 
   await ui.refresh();
   assert.deepEqual(list().map(button => button.children[0].textContent), ["A", "B", "Empty"]);
   assert.equal(list()[0].children[1].textContent, format(a.last_message_at));
+});
+
+test("conversation list refreshes yesterday and year labels at system midnight without catalog changes", async t => {
+  let now=Date.parse("2026-12-31T15:59:00Z");
+  t.mock.method(Date,"now",()=>now);
+  const recent={...makeRoom("Recent"),last_message_at:"2026-12-31T14:30:00Z"};
+  const empty={...makeRoom("Empty"),created_at:"2026-12-30T10:00:00Z"};
+  const older={...makeRoom("Older"),last_message_at:"2026-12-29T10:00:00Z"};
+  const api=server([older,empty,recent]),ui=await launch(api);
+  const labels=()=>ui.el("room-list").children.map(row=>row.children[0].children[1].textContent);
+  assert.deepEqual(labels(),["22:30","昨天","12月29日"]);
+  now=Date.parse("2026-12-31T16:01:00Z");await ui.refresh();
+  assert.deepEqual(labels(),["昨天","2026年12月30日","2026年12月29日"]);
+});
+
+test("conversation timestamps remain separate from exceptional runtime and management states", async () => {
+  const room=makeRoom("A"),api=server([room]),ui=await launch(api);
+  const choice=()=>ui.el("room-list").children[0].children[0];
+  assert.equal(choice().children[2].textContent,"房间已创建");
+  room.runtime_status="closed";await ui.refresh();
+  assert.equal(choice().children[2].textContent,"房间已创建");
+  for(const [state,label] of [
+    [{runtime_status:"opening"},"正在打开…"],
+    [{runtime_status:"failed",runtime_error:"backend unavailable"},"运行受阻 · backend unavailable"],
+    [{runtime_status:"ready",runtime_error:"",busy:true},"会话操作进行中…"],
+    [{busy:false,status:"creating"},"创建待完成 · 可重试原创建请求"],
+    [{status:"deleting",busy:true},"正在删除…"],
+  ]) {
+    Object.assign(room,state);await ui.refresh();
+    assert.match(choice().children[1].title,/^创建于：/);
+    assert.equal(choice().children[2].textContent,label);
+  }
+});
+
+test("conversation previews show latest text and author, creation hints and priority operation states", async () => {
+  const team={...makeRoom("Team"),members:[{id:"reviewer",name:"审阅者"}],last_message_at:"2026-11-01T09:00:00Z",
+    last_message_preview:{author:{kind:"agent",id:"reviewer"},text:"完成审阅\n\t请确认下一步"}};
+  const direct={...makeRoom("Direct"),is_direct:true,last_message_at:team.last_message_at,
+    last_message_preview:{author:{kind:"human",id:"tester"},text:"检查一下"}};
+  const empty=makeRoom("Empty"),emptyDirect={...makeRoom("Empty direct"),is_direct:true};
+  const api=server([team,direct,empty,emptyDirect]),ui=await launch(api);
+  const choice=name=>[...ui.el("direct-list").children,...ui.el("room-list").children].find(row=>row.children[0].children[0].textContent===name).children[0];
+  assert.equal(choice("Team").children[2].textContent,"审阅者：完成审阅 请确认下一步");
+  assert.equal(choice("Direct").children[2].textContent,"你：检查一下");
+  assert.equal(choice("Empty").children[2].textContent,"房间已创建");
+  assert.equal(choice("Empty direct").children[2].textContent,"私信已创建");
+  direct.last_message_preview={author:{kind:"agent",id:"chief-of-staff"},text:"<img src=x> 已完成"};
+  await ui.refresh();assert.equal(choice("Direct").children[2].textContent,"助理：<img src=x> 已完成");
+  team.runtime_status="opening";await ui.refresh();
+  assert.equal(choice("Team").children[2].textContent,"正在打开…");
+  team.runtime_status="ready";team.last_message_preview.text="等待反馈";await ui.refresh();
+  assert.equal(choice("Team").children[2].textContent,"审阅者：等待反馈");
+  delete team.last_message_at;delete team.last_message_preview;await ui.refresh();
+  assert.equal(choice("Team").children[2].textContent,"房间已创建");
+  assert.match(choice("Team").children[1].title,/^创建于：/);
 });
 
 test("settings and room creation dismiss only when the pointer starts and clicks outside the dialog", async () => {
@@ -383,11 +441,36 @@ test("a late A send response cannot clear B's draft or post with B's identity", 
   await ui.select("A"); assert.equal(ui.el("message-input").value, "");
 });
 
+test("quote preview separates author and text, locates its source and cancels without losing the draft", async () => {
+  const api=server([makeRoom("A")]);api.history.set("A",[message(1,"原消息\n\t第二行")]);
+  const ui=await launch(api);await ui.draft("保留正文");
+  const source=ui.el("messages").children.find(el=>el.id==="message-1");
+  await source.querySelector(".reply-button").emit("click");
+  assert.equal(ui.el("reply-author").textContent,"引用 reviewer 的消息");
+  assert.equal(ui.el("reply-sequence").textContent,"#1");
+  assert.equal(ui.el("reply-label").textContent,"原消息 第二行");
+  assert.equal(ui.document.activeElement,ui.el("message-input"));
+  await ui.el("reply-preview").emit("click");
+  assert.equal(source.scrollIntoViewCount,1);assert.equal(source.classList.contains("flash"),true);
+  const restored=await launch(api,ui.saved);
+  assert.equal(restored.el("reply-author").textContent,"引用 reviewer 的消息");
+  assert.equal(restored.el("reply-label").textContent,"原消息 第二行");
+  await restored.el("cancel-reply").emit("click");
+  assert.equal(restored.el("reply-context").hidden,true);
+  assert.equal(restored.el("message-input").value,"保留正文");
+  assert.equal(restored.document.activeElement,restored.el("message-input"));
+  const cancelled=await launch(api,restored.saved);
+  assert.equal(cancelled.el("reply-context").hidden,true);assert.equal(cancelled.el("message-input").value,"保留正文");
+});
+
 test("lost send is isolated and explicit retry retains the original epoch after A/B/A", async () => {
   const api = server([makeRoom("A"), makeRoom("B")]), ui = await launch(api);
+  await ui.el("messages").children.find(el=>el.id==="message-1").querySelector(".reply-button").emit("click");
   api.hook = path => path === "/v1/send" ? Promise.reject(new Error("response lost")) : undefined;
   await ui.draft("uncertain-A"); await ui.el("compose").emit("submit");
   const original = api.calls.find(call => call.path === "/v1/send").data;
+  assert.equal(original.reply_to,1);assert.equal(ui.el("cancel-reply").disabled,true);
+  await ui.el("cancel-reply").emit("click");assert.equal(ui.el("reply-context").hidden,false);
   await ui.select("B"); await ui.draft("B stays editable");
   assert.equal(ui.el("message-input").readOnly, false);
   await ui.select("A");
@@ -1787,7 +1870,7 @@ test("another room's lifecycle operation and runtime failure leave this tab usab
   api.catalog.rooms[0].runtime_error = "A cleanup incomplete"; delete api.catalog.rooms[0].service;
   await b.refresh();
   assert.equal(b.el("send").disabled, false);
-  assert.match(b.el("room-list").children.find(row => row.children[0].children[0].textContent === "A").children[0].children[1].textContent, /A cleanup incomplete/);
+  assert.match(b.el("room-list").children.find(row => row.children[0].children[0].textContent === "A").children[0].children[2].textContent, /A cleanup incomplete/);
 });
 
 test("duplicate open clicks still enter the completed room, and a reload preserves a newer selection", async () => {

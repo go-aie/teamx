@@ -41,7 +41,14 @@ export function createSystemTime() {
     if (error) return unavailable;
     return Temporal.Instant.from(new Date(value).toISOString()).toZonedDateTimeISO(zone).toPlainDate().toString();
   }
-  return { update, format, local, parse, day, get zone() { return zone; }, get version() { return version; }, get epoch() { return epoch; }, get error() { return error; } };
+  function recent(value, now = Date.now()) {
+    if (error || !Number.isFinite(new Date(value).getTime())) return format(value);
+    const date = Temporal.PlainDate.from(day(value)), today = Temporal.PlainDate.from(day(now));
+    if (date.equals(today)) return format(value, {hour:"2-digit",minute:"2-digit"});
+    if (date.equals(today.subtract({days:1}))) return "昨天";
+    return `${date.year === today.year ? "" : `${date.year}年`}${date.month}月${date.day}日`;
+  }
+  return { update, format, local, parse, day, recent, get zone() { return zone; }, get version() { return version; }, get epoch() { return epoch; }, get error() { return error; } };
 }
 
 // Keep a resolved instant even when the displayed wall clock repeats at DST end.

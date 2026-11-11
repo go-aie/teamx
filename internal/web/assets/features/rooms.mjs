@@ -1,3 +1,5 @@
+import { createAssistantIcon } from "../icons.mjs";
+
 // Room catalog, selection, creation, deletion and default assistant recovery.
 export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationUI, settingsUI, membersUI }) {
   const { document, window, Option, request } = env;
@@ -153,8 +155,16 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
     return room.last_message_at || room.created_at;
   }
 
-  function roomListDate(room) {
-    return settingsUI.formatDate(roomListTime(room), {month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"});
+  function roomListPreview(room) {
+    const preview = room.last_message_preview;
+    if (!preview) return room.last_message_at ? "已有消息" : room.is_direct ? "私信已创建" : "房间已创建";
+    const author = preview.author;
+    const sender = author?.kind === "human" && author.id === state.catalog.operator ? "你"
+      : author?.kind === "agent" && room.is_direct ? "助理"
+      : author?.kind === "agent" ? room.members?.find(member => member.id === author.id)?.name || author.id
+      : author?.id || "";
+    const text = preview.text?.replace(/\s+/g, " ").trim() || "[消息]";
+    return sender ? `${sender}：${text}` : text;
   }
 
   function renderRooms() {
@@ -170,7 +180,8 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
     renderDefaultAssistant();
     $("rooms-empty").hidden = catalog.rooms.length > 0;
     $("new-room").disabled = !state.catalogConnected || discussionBusy() || !!state.management || state.managementSending || !!catalog.write_error;
-    const signature = JSON.stringify({ rooms: catalog.rooms, selected: selectedRoom, timeZone:settingsUI.systemTime.zone, timeError:settingsUI.systemTime.error,
+    const now = Date.now();
+    const signature = JSON.stringify({ rooms: catalog.rooms, selected: selectedRoom, timeZone:settingsUI.systemTime.zone, timeError:settingsUI.systemTime.error, day:settingsUI.systemTime.day(now),
       defaultAssistant: catalog.default_assistant, busy: discussionBusy(), management: !!state.management, sending: state.managementSending, connected: state.catalogConnected });
     if ($("room-list").dataset.signature !== signature) {
       $("room-list").dataset.signature = signature;
@@ -178,18 +189,24 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
         const row = document.createElement("div"); row.className = "room-entry"; row.dataset.direct = String(!!room.is_direct);
         const button = document.createElement("button"); button.type = "button"; button.className = "room-choice";
         button.setAttribute("aria-current", String(room.room_instance === selectedRoom?.room_instance));
-        const name = document.createElement("strong"), updated = document.createElement("span");
+        const name = document.createElement("strong"), updated = document.createElement("time");
         name.textContent = room.name;
-        button.setAttribute("aria-label", `${conversationType(room)}：${room.name}${isDefaultAssistant(room) ? "，默认助理" : ""}`);
+        if (room.is_direct) name.insertBefore(createAssistantIcon(document), name.firstChild);
         row.dataset.defaultAssistant = String(isDefaultAssistant(room));
-        updated.textContent = room.status === "deleting" ? (room.busy ? "正在删除…" : `删除待重试${room.error ? ` · ${room.error}` : ""}`)
+        const statusText = room.status === "deleting" ? (room.busy ? "正在删除…" : `删除待重试${room.error ? ` · ${room.error}` : ""}`)
           : room.status === "creating" ? `创建待完成${room.error ? ` · ${room.error}` : " · 可重试原创建请求"}` : room.runtime_status === "opening" ? "正在打开…"
           : room.runtime_error ? `运行受阻 · ${room.runtime_error}`
-          : room.busy ? "会话操作进行中…"
-          : `${room.runtime_status === "ready" ? "运行中 · " : "未打开 · "}${roomListDate(room)}`;
-        name.title = room.name; updated.title = updated.textContent;
-        button.title = `${room.name}\n${updated.textContent}`;
+          : room.busy ? "会话操作进行中…" : "";
+        updated.className = "room-time";
+        updated.textContent = settingsUI.systemTime.recent(roomListTime(room), now);
+        updated.dateTime = roomListTime(room);
+        updated.title = `${room.last_message_at ? "最后消息" : "创建于"}：${settingsUI.formatDate(roomListTime(room), {year:"numeric",month:"long",day:"numeric",hour:"2-digit",minute:"2-digit",second:"2-digit"})}`;
+        name.title = room.name;
+        const detailText = statusText || roomListPreview(room);
+        button.title = [room.name, updated.title, detailText].join("\n");
+        button.setAttribute("aria-label", `${conversationType(room)}：${room.name}${isDefaultAssistant(room) ? "，默认助理" : ""}，${updated.title}，${detailText}`);
         button.append(name, updated);
+        const detail = document.createElement("span"); detail.className = statusText ? "room-status" : "room-preview"; detail.textContent = detailText; detail.title = detailText; button.append(detail);
         if (isDefaultAssistant(room)) { const badge = document.createElement("small"); badge.className = "default-assistant-badge"; badge.textContent = "默认"; button.append(badge); }
         button.disabled = room.status !== "ready" || !state.catalogConnected || !!catalog.busy;
         button.addEventListener("click", () => startSelection(room));
@@ -394,11 +411,36 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
       }
     });
 
+    const closeCreateMenu = () => {
+      $("create-menu").hidden = true;
+      $("new-room").setAttribute("aria-expanded", "false");
+    };
+    const showCreateMenu = (last = false) => {
+      if ($("new-room").disabled) return;
+      const menu = $("create-menu");
+      menu.hidden = false;
+      // The menu lives outside the scrolling rail so it can open over the workspace.
+      const anchor = $("new-room").getBoundingClientRect();
+      const bounds = menu.getBoundingClientRect(), inset = 12, gap = 8;
+      const beside = anchor.right + gap + bounds.width <= window.innerWidth - inset;
+      const left = beside ? anchor.right + gap : anchor.right - bounds.width;
+      const top = beside ? anchor.top : anchor.bottom + 6;
+      menu.style.setProperty("--create-menu-left", `${Math.max(inset, Math.min(left, window.innerWidth - bounds.width - inset))}px`);
+      menu.style.setProperty("--create-menu-top", `${Math.max(inset, Math.min(top, window.innerHeight - bounds.height - inset))}px`);
+      $("new-room").setAttribute("aria-expanded", "true");
+      $(last ? "new-team-room" : "new-direct").focus();
+    };
+    window.addEventListener("resize", closeCreateMenu);
+    window.addEventListener("scroll", closeCreateMenu);
+    $("room-nav").addEventListener("scroll", closeCreateMenu);
     $("new-room").addEventListener("click", () => {
       if ($("new-room").disabled) return;
-      $("create-menu").hidden = !$("create-menu").hidden;
-      $("new-room").setAttribute("aria-expanded", String(!$("create-menu").hidden));
-      if (!$("create-menu").hidden) $("new-direct").focus();
+      if ($("create-menu").hidden) showCreateMenu();
+      else closeCreateMenu();
+    });
+    $("new-room").addEventListener("keydown", event => {
+      if (!["ArrowDown", "ArrowUp"].includes(event.key)) return;
+      event.preventDefault(); showCreateMenu(event.key === "ArrowUp");
     });
 
     $("new-direct").addEventListener("click", () => openCreate(true));
@@ -406,12 +448,17 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
     $("new-team-room").addEventListener("click", () => openCreate(false));
 
     $("create-menu").addEventListener("keydown", event => {
-      if (event.key === "Escape") { event.preventDefault(); $("create-menu").hidden = true; $("new-room").setAttribute("aria-expanded", "false"); $("new-room").focus(); }
+      if (event.key === "Escape") { event.preventDefault(); closeCreateMenu(); $("new-room").focus(); }
+      if (event.key === "Tab") { closeCreateMenu(); $("new-room").focus(); }
       if (["ArrowDown", "ArrowUp"].includes(event.key)) { event.preventDefault(); $(document.activeElement === $("new-direct") ? "new-team-room" : "new-direct").focus(); }
+      if (["Home", "End"].includes(event.key)) { event.preventDefault(); $(event.key === "Home" ? "new-direct" : "new-team-room").focus(); }
     });
 
     document.addEventListener("pointerdown", event => {
-      if (!$("create-menu").hidden && !event.target.closest?.("#create-menu, #new-room")) { $("create-menu").hidden = true; $("new-room").setAttribute("aria-expanded", "false"); }
+      if (!$("create-menu").hidden && !event.target.closest?.("#create-menu, #new-room")) closeCreateMenu();
+    });
+    document.addEventListener("focusin", event => {
+      if (!$("create-menu").hidden && !event.target.closest?.("#create-menu, #new-room")) closeCreateMenu();
     });
 
     $("close-create").addEventListener("click", () => $("create-dialog").close());

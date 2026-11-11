@@ -157,12 +157,13 @@ test("room drafts survive reload independently, while uncertain sends keep the o
   const saved = new Map(), storage = { getItem: key => saved.get(key), setItem: (key, value) => saved.set(key, value) };
   const a = { room_id: "a", room_instance: "A", service_epoch: "old" }, b = { room_id: "b", room_instance: "B", service_epoch: "new" };
   const drafts = createRoomDrafts(storage), da = drafts.get(a, "operator");
-  Object.assign(da, { text: "draft A", replyTo: 7, replyLabel: "quote A", pending: { info: a,
+  Object.assign(da, { text: "draft A", replyTo: 7, replyLabel: "quote A", replyAuthor:"reviewer", pending: { info: a,
     operator: "operator", text: "draft A", client_message_id: "original" } });
   drafts.save(a, "operator", da); drafts.seed(b, "operator", "opening B");
   const restored = createRoomDrafts(storage), newA = { ...a, service_epoch: "another-activation" };
   const back = restored.get(newA, "operator");
   assert.equal(back.text, "draft A"); assert.equal(back.replyTo, 7); assert.equal(back.replyLabel, "quote A");
+  assert.equal(back.replyAuthor,"reviewer");
   assert.deepEqual(back.pending.info, a); assert.equal(sameService(back.pending.info, newA), false);
   assert.equal(restored.get(b, "operator").text, "opening B");
   assert.equal(restored.get(a, "different-human").text, "");

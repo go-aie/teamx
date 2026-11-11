@@ -51,8 +51,8 @@ export function createRoomDrafts(storage) {
   }
   function save(info, operator, draft) {
     if (removed.has(key(info, operator))) return;
-    const { text, replyTo, replyLabel, pending, restartRequest, openingSeeded } = draft;
-    try { storage?.setItem(key(info, operator), JSON.stringify({ text, replyTo, replyLabel, pending, restartRequest, openingSeeded })); }
+    const { text, replyTo, replyLabel, replyAuthor, pending, restartRequest, openingSeeded } = draft;
+    try { storage?.setItem(key(info, operator), JSON.stringify({ text, replyTo, replyLabel, replyAuthor, pending, restartRequest, openingSeeded })); }
     catch { /* Retain the draft in memory if storage is unavailable or full. */ }
   }
   function seed(info, operator, opening) {

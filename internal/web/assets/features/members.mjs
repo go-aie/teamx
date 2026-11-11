@@ -1,4 +1,5 @@
 import { createActivityReader, sameService } from "../client.mjs";
+import { createAssistantIcon } from "../icons.mjs";
 
 // Member inspection, private activity, CLI tools and platform summaries.
 export function createMembers({ env, runtime, notificationsUI, workspaceUI, onboardingUI, inboxUI, roomsUI, layoutUI, policyUI, conversationUI }) {
@@ -405,6 +406,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       summary.disabled = !state.connected;
       summary.addEventListener("click", () => openMemberActivity(member, summary));
       el.querySelector(".avatar").textContent = member.agent_id.slice(0, 2).toUpperCase();
+      if (roomsUI.isDirect()) el.querySelector(".avatar").replaceChildren(createAssistantIcon(document));
       el.querySelector(".member-profile").textContent = role ? member.agent_id : member.runner.profile;
       const status = el.querySelector(".member-status");
       status.textContent = label;

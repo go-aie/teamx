@@ -4,6 +4,23 @@ import {createSystemTime, createTimeInput} from "../assets/time.mjs";
 import {launch, settle} from "./web_app_harness.mjs";
 
 const snapshot = (time_zone="Asia/Shanghai", settings_version=1, service_epoch="manager") => ({time_zone,settings_version,service_epoch});
+test("recent timestamps use system-zone calendar days across midnight, years and DST", () => {
+  const clock=createSystemTime();clock.update(snapshot());
+  const now="2027-01-01T00:30:00+08:00";
+  for (const [value,label] of [
+    ["2026-12-31T16:05:00Z","00:05"],
+    ["2026-12-31T15:59:00Z","昨天"],
+    ["2026-12-30T15:59:00Z","2026年12月30日"],
+    ["2027-01-03T00:00:00Z","1月3日"],
+  ]) assert.equal(clock.recent(value,now),label);
+  assert.equal(clock.recent("2026-11-08T00:00:00Z","2026-11-11T00:00:00Z"),"11月8日");
+  clock.update(snapshot("America/New_York",2));
+  // Yesterday is a calendar date, even when the elapsed interval exceeds 24 hours.
+  assert.equal(clock.recent("2026-11-01T04:30:00Z","2026-11-02T05:15:00Z"),"昨天");
+  assert.equal(clock.recent("2026-03-08T05:30:00Z","2026-03-09T04:15:00Z"),"昨天");
+  assert.equal(clock.recent("invalid",now),"时间未获取");
+  clock.update(snapshot(null,3));assert.equal(clock.recent(now,now),"系统时区异常");
+});
 test("system zone controls midnight grouping, explicit offsets and inputs independently of host TZ", () => {
   const clock=createSystemTime();clock.update(snapshot());
   const instant="2026-11-08T17:04:13.09Z";
@@ -97,7 +114,7 @@ test("saving changes old message labels, grouping and Room list immediately; oth
   const save=api.calls.find(c=>c.path==="/v1/settings/save").body;
   assert.deepEqual(save,{service_epoch:"manager",caller:{kind:"human",id:"tester"},expected_version:1,time_zone:"UTC"});
   assert.equal(ui.el("messages").children.length,3);assert.equal(times(ui)[1].textContent,"17:04");
-  assert.match(textOf(ui.el("room-list")),/11\/08 17:04/);
+  assert.match(ui.el("room-list").children[0].children[0].children[1].title,/11月8日.*17:04/);
   assert.match(ui.el("timezone-feedback").textContent,/当前生效：UTC.*下一回合/);
   assert.deepEqual(api.messages,original);
   other.el("system-timezone").value="UTC";await other.el("system-timezone").emit("input");
