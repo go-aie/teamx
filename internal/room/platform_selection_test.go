@@ -239,6 +239,22 @@ func TestPlatformSelectionVerifiedAccountVersionAndMemberReplacement(t *testing.
 
 func TestPlatformSelectionAutomaticallyContinuesThroughInbox(t *testing.T) {
 	m, svc, req := selectionFixture(t)
+	platformSelectionAutomaticContinuation(t, m, svc, req)
+}
+
+func TestDefaultAssistantSelectionAutomaticContinuation(t *testing.T) {
+	m, svc, _, connect := assistantConnectFixture(t)
+	id, err := newOpaqueID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := platformSelectionRequest{ServiceInfo: svc.info, Caller: connect.Caller, OperationID: id, SourceSeq: connect.SourceSeq,
+		Input: &platformSelectionInput{Kind: "account"}, Draft: &platformSelectionDraft{Name: "工作飞书"}}
+	platformSelectionAutomaticContinuation(t, m, svc, req)
+}
+
+func platformSelectionAutomaticContinuation(t *testing.T, m *roomManager, svc *service, req platformSelectionRequest) {
+	t.Helper()
 	mode := "inbox"
 	req.Notify = &mode
 	v := selectionCall(t, m, "start", req, false)

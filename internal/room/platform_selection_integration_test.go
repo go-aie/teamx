@@ -18,8 +18,58 @@ import (
 
 // Real TeamX CLI/HTTP and optional Chromium; official Feishu CLI is synthetic.
 func TestPlatformSelectionConversationAndMemberConfiguration(t *testing.T) {
-	t.Setenv("USER", humanCaller.ID)
 	h, member := platformMemberHarness(t)
+	platformSelectionConversation(t, h, member, "inbox")
+}
+
+func TestDefaultAssistantPlatformOnboarding(t *testing.T) {
+	for _, mode := range []string{"wait", "inbox", "human"} {
+		t.Run(mode, func(t *testing.T) { defaultAssistantPlatformOnboarding(t, mode) })
+	}
+}
+
+func defaultAssistantPlatformOnboarding(t *testing.T, mode string) {
+	t.Helper()
+	h, member := platformMemberHarness(t)
+	// Reuse the verified global account, but start the default DM with no
+	// member settings or inherited authority from the fixture's ordinary Room.
+	h.m.defaultRuntime = testTeamDefinition(t).Runtime
+	ensureAssistant(t, h.m)
+	h.room = assistantSummary(t, h.m)
+	_, snapshot := readManagedRoom(t, h.m, h.room)
+	h.members = snapshot.Members
+	h.svc = eventLiveService(t, &eventHarness{m: h.m, room: h.room})
+	source, err := h.svc.room.Call[PostReceipt](t.Context(), PostMessage{
+		RoomIdentity: h.room.RoomIdentity, Caller: humanCaller, ClientMessageID: "assistant-onboarding",
+		Text: "连接飞书，关注产品讨论群，需要我处理时在这里提醒我",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	member.ServiceInfo, member.Caller, member.SourceSeq = h.svc.info, agentCaller(h.members[0].AgentID, h.members[0].MembershipID), source.Seq
+	platformSelectionConversation(t, h, member, mode)
+	// Another DM can reuse the global account without inheriting settings,
+	// receipts or the source message of the default assistant.
+	other := createDirectConversation(t, h.m, directSelection("other-onboarding-assistant"))
+	_, state := readManagedRoom(t, h.m, other)
+	svc := eventLiveService(t, &eventHarness{m: h.m, room: other})
+	foreign := member
+	foreign.ServiceInfo, foreign.Caller = svc.info, agentCaller(state.Members[0].AgentID, state.Members[0].MembershipID)
+	foreign.OperationID, foreign.SourceSeq = "", 0
+	foreign.Input = &platformMemberInput{PlatformID: h.c.ID, PlatformVersion: h.c.Version}
+	w := managerHTTP(h.m, "/v1/platforms/member/get", foreign)
+	var current platformMemberView
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &current) != nil || current.Config != nil || current.ToolEnabled {
+		t.Fatal("independent DM inherited member settings", w.Code, w.Body.String())
+	}
+	if w := managerHTTP(h.m, "/v1/platforms/member/status", platformMemberRequest{ServiceInfo: svc.info, Caller: foreign.Caller, OperationID: member.OperationID}); w.Code == 200 {
+		t.Fatal("independent DM inherited operation receipt")
+	}
+}
+
+func platformSelectionConversation(t *testing.T, h *larkHarness, member platformMemberRequest, mode string) {
+	t.Helper()
+	t.Setenv("USER", humanCaller.ID)
 	server := httptest.NewServer(h.m)
 	defer server.Close()
 	h.m.config.endpoint = server.URL
@@ -52,7 +102,7 @@ func TestPlatformSelectionConversationAndMemberConfiguration(t *testing.T) {
 	if !pending.Pending {
 		t.Fatal("wait cancelled selection")
 	}
-	if os.Getenv("TEAMX_SELECTION_BROWSER") == "1" {
+	if os.Getenv("TEAMX_SELECTION_BROWSER") == "1" && mode == "inbox" {
 		ctx, cancel := context.WithTimeout(context.Background(), 70*time.Second)
 		defer cancel()
 		browser := exec.CommandContext(ctx, "node", "testdata/platform_selection_browser.cjs", server.URL, accountID, groupID, h.c.ID, h.room.RoomInstance)
@@ -70,10 +120,32 @@ func TestPlatformSelectionConversationAndMemberConfiguration(t *testing.T) {
 		human.Version = group.Version
 		group = selectionCall(t, h.m, "submit", human, true)
 	}
+	if mode == "human" {
+		if _, err := h.svc.room.Call[PostReceipt](t.Context(), PostMessage{
+			RoomIdentity: h.room.RoomIdentity, Caller: humanCaller, ClientMessageID: "continue-onboarding", Text: "继续刚才的飞书群配置",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if mode == "wait" {
+		var result struct {
+			Pending   bool                  `json:"pending"`
+			Selection platformSelectionView `json:"selection"`
+		}
+		run([]string{"selection", "wait", "--operation-id", groupID, "--timeout", "1s"}, &result)
+		if result.Pending || result.Selection.Status != "completed" {
+			t.Fatal("completed choice not observed in same-turn wait", result)
+		}
+	}
 	run([]string{"selection", "status", "--operation-id", accountID}, &account)
 	run([]string{"selection", "status", "--operation-id", groupID}, &group)
 	if account.Status != "completed" || account.Draft.PlatformID != h.c.ID || account.Account != group.Account || group.Status != "completed" || !reflect.DeepEqual(group.Draft.ChatIDs, []string{"oc_group_two"}) {
 		t.Fatal(account, group)
+	}
+	h.m.deliverConnectNotifications(t.Context())
+	run([]string{"selection", "status", "--operation-id", groupID}, &group)
+	if group.Continuation.Mode != "inbox" || group.Continuation.InboxSeq == 0 || group.Source.Seq != member.SourceSeq || group.MemberIdentity != member.member() {
+		t.Fatal("selection result lost original source, target or Inbox handoff", group)
 	}
 	// Selection receipts alone have not enabled reception or tools.
 	var current platformMemberView
@@ -93,7 +165,7 @@ func TestPlatformSelectionConversationAndMemberConfiguration(t *testing.T) {
 		t.Fatal(applied)
 	}
 	run(append([]string{"member", "get"}, base...), &current)
-	if current.Config == nil || !reflect.DeepEqual(current.Config.Groups.ChatIDs, group.Draft.ChatIDs) || current.Config.Private.Enabled || current.ToolEnabled || current.Baseline.IsZero() {
+	if current.MemberIdentity != member.member() || current.Config == nil || current.Config.Target != platformMemberTarget(member.member()) || !reflect.DeepEqual(current.Config.Groups.ChatIDs, group.Draft.ChatIDs) || current.Config.Private.Enabled || current.ToolEnabled || current.Baseline.IsZero() {
 		t.Fatal(current)
 	}
 	for _, id := range []string{accountID, groupID} {

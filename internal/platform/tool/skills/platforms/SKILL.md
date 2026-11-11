@@ -153,6 +153,20 @@ returns its own receipts synchronously. A connection or
 tool binding alone does not grant sending capability or external-write permission.
 Use Settings → Platforms for full management and exceptional recovery.
 
+If the human explicitly requests lasting behavior, such as "when this group
+needs my attention, remind me here", reconcile the current member's existing
+long-term rules using the public guide and `policy read/update`. Preserve the
+exact group, condition and current-conversation destination in natural language;
+use the real human source and current turn. Reuse matching rules, retain unrelated
+rules and verify the saved receipt before reporting a rule saved. A one-time
+connection or group-follow request does not establish a standing rule. A
+subscription only enables Inbox reception: it neither saves this behavior nor
+proves that any reminder has been delivered. Future relevant Inbox input follows
+the ordinary member scheduler and rules; publish a necessary reminder with
+`send` in the current conversation. This needs no extra platform tool or external
+send grant. Report connection, reception, rule save and any runtime block
+separately; do not promise reminders while paused, blocked or budget exhausted.
+
 Read `teamx platforms connect --help` for the exact CLI contract. Human management
 endpoints remain human-only; never impersonate an operator to call them.
 

@@ -6,7 +6,7 @@ const $ = (id) => document.getElementById(id);
 const state = { info: null, operator: "operator", messages: new Map(), lastSeq: 0, oldest: 0,
   clearedThrough: 0,
   members: [], profiles: [], teams: [], connected: false, managed: false, catalog: null, catalogConnected: false,
-  management: null, managementSending: false, managementError: "", draft: {}, restart: null };
+  isDirect: false, management: null, managementSending: false, managementError: "", draft: {}, restart: null };
 let refreshTask = null;
 let historyLoading = false;
 const systemTime = createSystemTime();
@@ -177,14 +177,24 @@ try { storage = sessionStorage; } catch { /* The UI also works without storage. 
 const drafts = createRoomDrafts(storage);
 const managementKey = "teamx.room-management";
 const selectionKey = "teamx.selected-room";
-let selectedRoom = null, selectionVersion = 0, selectionLoaded = false;
+let selectedRoom = null, selectionVersion = 0, selectionLoaded = false, awaitDefaultSelection = false;
 try { selectedRoom = JSON.parse(storage?.getItem(selectionKey)); } catch { /* Tab storage is optional. */ }
 function selectedEntry(catalog = state.catalog) {
   return catalog?.rooms.find(room => room.room_id === selectedRoom?.room_id && room.room_instance === selectedRoom?.room_instance);
 }
+function isDirect() { return state.managed ? selectedEntry()?.is_direct === true : state.isDirect; }
+function conversationType(room = selectedEntry()) { return room?.is_direct || !state.managed && state.isDirect ? "私信" : "房间"; }
+function isDefaultAssistant(room, catalog = state.catalog) {
+  const ref = catalog?.default_assistant;
+  return !!room && ref?.status !== "deleted" && room.room_id === ref?.room_id && room.room_instance === ref?.room_instance;
+}
+let directMobileDetails = false, directMobileRooms = false, directNotificationsOpen = false, defaultAssistantRetrying = false, defaultAssistantError = "";
+function roomsPanelOpen() { return isDirect() && window.innerWidth <= 640 ? directMobileRooms : panels.rooms; }
+function membersPanelOpen() { return isDirect() && window.innerWidth <= 640 ? directMobileDetails : panels.members; }
 function selectRoom(room) {
   selectedRoom = room ? { room_id: room.room_id, room_instance: room.room_instance } : null;
-  selectionVersion++;
+  selectionVersion++; awaitDefaultSelection = false;
+  directMobileDetails = false; directMobileRooms = false; directNotificationsOpen = false;
   try {
     if (selectedRoom) storage?.setItem(selectionKey, JSON.stringify(selectedRoom));
     else storage?.removeItem(selectionKey);
@@ -619,7 +629,7 @@ function renderBackfill(prefix, locked, baseline, busy=false) {
   let conversionError=""; try { readTimeInput(`${prefix}-backfill-start`); } catch(error) { conversionError=error.message; }
   const error=systemTime.error || (mode==="custom" && conversionError) || (mode==="custom" && !Number.isFinite(start) ? "请选择要开始接收消息的日期和时间。" : mode==="custom" && start<=0 ? "请选择 1970 年之后的有效时间。" : mode==="custom" && start>Date.now() ? "起始时间不能晚于当前时间。" : "");
   $(`${prefix}-backfill-start-label`).textContent=`起始时间（${systemTime.zone || "系统时区异常"}）`;
-  $(`${prefix}-backfill-help`).textContent=locked ? "更早消息需新建房间。" : "首次开启后固定接收起点。";
+  $(`${prefix}-backfill-help`).textContent=locked ? `更早消息需新建${conversationType()}。` : "首次开启后固定接收起点。";
   notice(`${prefix}-backfill-error`,error);$(`${prefix}-backfill-start`).setAttribute("aria-invalid",String(!!error));
   return error;
 }
@@ -992,7 +1002,7 @@ function renderNotificationList(prefix, target) {
   $(`${prefix}platforms`).replaceChildren(...configured.map(item=>notificationRow(ws,item,target)));
   $(`${prefix}source-count`).textContent=String(configured.length);
   $(`${prefix}empty`).hidden=!!configured.length;
-  $(`${prefix}empty`).textContent=ws?.platformsLoading ? "正在读取平台…" : target.mode==="inbox" ? "尚未配置来源，添加通知来源后开始接收。" : "将平台通知发送到当前房间。";
+  $(`${prefix}empty`).textContent=ws?.platformsLoading ? "正在读取平台…" : target.mode==="inbox" ? "尚未配置来源，添加通知来源后开始接收。" : isDirect() ? "将平台通知发送到当前会话。" : "将平台通知发送到当前房间。";
   const unavailable=!!ws && (!ws.notificationsConnected || !!ws.repositoryPlatformsError);
   notice(`${prefix}list-error`,unavailable ? ws.repositoryPlatformsError || "通知状态暂不可读，请重新读取。" : "");
   $(`${prefix}list-reload`).hidden=!unavailable;
@@ -1326,23 +1336,24 @@ $("gitlab-save").addEventListener("click", () => changeGitLabSettings("configure
 $("gitlab-sync").addEventListener("click", () => changeGitLabSettings("sync"));
 let notificationFocus = null;
 function renderContextViews() {
-  const detail = $("activity-dialog").open || $("notification-detail").open;
-  $("member-list-view").hidden = detail;
-  $("member-list-view").inert = detail || !panels.members;
-  $("member-list-view").setAttribute("aria-hidden", String(detail || !panels.members));
+  const detail = $("activity-dialog").open || $("notification-detail").open || isDirect() && !directNotificationsOpen;
+  $("close-conversation-notifications").hidden = !isDirect() || !directNotificationsOpen;
+  $("member-list-view").hidden = isDirect() && directNotificationsOpen ? $("notification-detail").open : detail;
+  $("member-list-view").inert = $("member-list-view").hidden || !membersPanelOpen();
+  $("member-list-view").setAttribute("aria-hidden", String($("member-list-view").inert));
 }
 function renderNotificationSource() {
   const ws = workspaceView, messages = ws?.notificationChannel === "messages";
   const id = ws?.notificationPlatformID || (messages ? ws?.messages?.config.platform_id : ws?.gitlabDraft?.platform_id);
   const item = memberPlatformItems(ws).find(p => p.id === id), view = item && notificationView(ws, item);
   const target=activeNotificationTarget(ws),member=state.members.find(m=>sameNotificationTarget(memberNotificationTarget(m),target));
-  const name=target.mode==="inbox" ? memberRole(member || {})?.name || target.agent_id : "房间";
+  const name=target.mode==="inbox" ? memberRole(member || {})?.name || target.agent_id : isDirect() ? "会话" : "房间";
   $("notification-title").textContent=`${name} · ${item?.name || memberPlatformItems(ws).find(p=>p.id===id)?.name || (messages ? "飞书" : "GitLab")} ${target.mode==="inbox" ? "设置" : "通知"}`;
   let instance="";try{instance=item?.provider==="gitlab" ? new URL(item.url).host : "";}catch{instance=item?.url || "";}
   $("notification-account").textContent=item ? [item.validation?.username ? `@${item.validation.username}` : "账号待核验",instance].filter(Boolean).join(" · ") : "";
   $("notification-account").title=item?.url || "";
   const coexist=target.mode==="inbox" && notificationView(ws,item || {},{})?.config.enabled || target.mode!=="inbox" && ws?.gitlabPlatforms?.some(v=>v.platform_id===id && v.config.target?.mode==="inbox" && v.config.enabled);
-  $("notification-destination").textContent=(target.mode==="inbox" ? `发送到 ${name} 的收件箱${member ? "" : "（原成员已移除）"}` : "发送到当前房间，成员可见") + (coexist ? "。成员和房间分别订阅时，可能同时看到同一通知。" : "");
+  $("notification-destination").textContent=(target.mode==="inbox" ? `发送到 ${name} 的收件箱${member ? "" : "（原成员已移除）"}` : isDirect() ? "发送到当前会话消息流" : "发送到当前房间，成员可见") + (coexist ? "。成员和房间分别订阅时，可能同时看到同一通知。" : "");
   $("notification-sources").hidden=!ws;
   const matches=!!id && (messages ? ws?.messages?.config.platform_id : ws?.gitlabDraft?.platform_id)===id && sameNotificationTarget(messages ? ws?.messages?.config.target : ws?.gitlabDraft?.target,target);
   const connected=matches && (messages ? ws?.messagesConnected : ws?.gitlabConnected) && !ws?.notificationHistory;
@@ -1356,7 +1367,7 @@ function renderNotificationSource() {
   const status=!connected || toolsOnly || history ? "" : configured && !enabled ? "通知已暂停" : !configured ? "尚未开启通知" : "";
   notice("notification-enabled-state",status);
   notice("notification-toggle-error",ws?.notificationToggleError?.key===notificationScopeKey(target,id) ? ws.notificationToggleError.message : "");
-  const backLabel=ws?.notificationReturn ? "返回成员详情" : "返回房间通知";
+  const backLabel=ws?.notificationReturn ? (isDirect() ? "返回助理详情" : "返回成员详情") : isDirect() ? "返回会话通知" : "返回房间通知";
   $("close-notification").setAttribute("aria-label",backLabel);$("close-notification").title=backLabel;
   if(history){$("notification-title").textContent="通知来源诊断";$("notification-account").textContent="";$("notification-destination").textContent="";}
   if(toolsOnly){$("notification-panel-messages").hidden=true;$("notification-panel-gitlab").hidden=true;notice("notification-notice","此平台暂无可调整的配置，工具启停请返回平台列表。");$("notification-reload").hidden=true;}
@@ -1449,7 +1460,7 @@ $("notification-detail").addEventListener("close",()=>{
     ws.larkFilled=null;ws.larkRestore=null;
   }else rememberNotificationDraft(ws);
   stopLarkChatSearch();
-  $("activity-dialog").hidden=false;
+  $("activity-dialog").hidden=isDirect() && directNotificationsOpen;
   if(ws){ws.notificationReturn=null;ws.notificationAddition=null;}
   if(back && sameService(state.info,back.info) && selectedAgent()?.membership_id===back.member.membership_id && $("activity-dialog").open){
     (notificationFocus?.isConnected ? notificationFocus : $(`agent-tab-${agentTab}`)).focus({preventScroll:true});
@@ -1773,36 +1784,44 @@ function setSidebarWidth(side, width) {
 
 function renderPanels() {
   const workspace = document.querySelector(".workspace");
-  workspace.classList.toggle("rooms-collapsed", !panels.rooms);
-  workspace.classList.toggle("members-collapsed", !panels.members);
+  const membersOpen = membersPanelOpen(), roomsOpen = roomsPanelOpen();
+  workspace.classList.toggle("direct-conversation", isDirect());
+  workspace.classList.toggle("direct-notifications-open", isDirect() && directNotificationsOpen);
+  workspace.classList.toggle("rooms-collapsed", !roomsOpen);
+  workspace.classList.toggle("members-collapsed", !membersOpen);
   $("room-rail").hidden = !state.managed;
   $("room-nav").hidden = !state.managed;
-  $("room-brand").inert = !panels.rooms;
-  $("room-brand").setAttribute("aria-hidden", String(!panels.rooms));
+  $("room-brand").inert = !roomsOpen;
+  $("room-brand").setAttribute("aria-hidden", String(!roomsOpen));
   for (const [side, id] of [["rooms", "room-nav"], ["members", "member-sidebar"]]) {
     // Keep content mounted for the slide, while removing collapsed controls from keyboard/AT access.
-    $(id).inert = !panels[side];
-    $(id).setAttribute("aria-hidden", String(!panels[side]));
+    const open = side === "members" ? membersOpen : roomsOpen;
+    $(id).inert = !open;
+    $(id).setAttribute("aria-hidden", String(!open));
   }
   $("toggle-rooms").hidden = !state.managed;
-  $("member-rail").inert = !panels.members;
-  $("member-rail").setAttribute("aria-hidden", String(!panels.members));
-  if (!panels.members && $("activity-dialog").open) $("activity-dialog").close();
-  if (!panels.members && $("notification-detail").open) $("notification-detail").close();
+  $("member-rail").inert = !membersOpen;
+  $("member-rail").setAttribute("aria-hidden", String(!membersOpen));
+  if (!membersOpen && $("activity-dialog").open) $("activity-dialog").close();
+  if (!membersOpen && $("notification-detail").open) $("notification-detail").close();
   renderContextViews();
   applySidebarWidths();
-  for (const [side, name] of [["rooms", "房间侧栏"], ["members", "团队成员"]]) {
+  for (const [side, name] of [["rooms", "会话侧栏"], ["members", isDirect() ? "助理详情" : "团队成员"]]) {
     const button = $("toggle-" + side);
-    const label = `${panels[side] ? "收起" : "展开"}${name}`;
-    button.setAttribute("aria-expanded", String(panels[side]));
+    const open = side === "members" ? membersOpen : roomsOpen;
+    const label = `${open ? "收起" : "展开"}${name}`;
+    button.setAttribute("aria-expanded", String(open));
     button.setAttribute("aria-label", label);
     button.setAttribute("title", label);
   }
 }
 for (const side of ["rooms", "members"]) $("toggle-" + side).addEventListener("click", () => {
-  panels[side] = !panels[side];
+  if (side === "members" && isDirect() && window.innerWidth <= 640) directMobileDetails = !directMobileDetails;
+  else if (side === "rooms" && isDirect() && window.innerWidth <= 640) directMobileRooms = !directMobileRooms;
+  else panels[side] = !panels[side];
   savePanels();
   renderPanels();
+  syncDirectDetail();
 });
 for (const [side, config] of Object.entries(sidebarConfig)) {
   const handle = $(config.handle), direction = side === "rooms" ? 1 : -1;
@@ -1834,7 +1853,7 @@ for (const [side, config] of Object.entries(sidebarConfig)) {
     event.preventDefault(); setSidebarWidth(side, next); savePanels();
   });
 }
-window.addEventListener("resize", () => { applySidebarWidths(); renderSettingsNavigation(); });
+window.addEventListener("resize", () => { renderPanels(); syncDirectDetail(); renderSettingsNavigation(); });
 renderPanels();
 let viewVersion = 0;
 const currentView = (version) => version === viewVersion;
@@ -2320,20 +2339,27 @@ function openMemberActivity(member, opener, tab = state.managed ? "platforms" : 
   $("notification-detail").close();
   $("activity-dialog").hidden=false;
   activityMember = { agent_id: current.agent_id, membership_id: current.membership_id };
-  panels.members = true; savePanels(); renderPanels();
+  panels.members = true; if (isDirect() && window.innerWidth <= 640) directMobileDetails = true;
+  directNotificationsOpen = false; savePanels(); renderPanels();
   if (!$("activity-dialog").open) $("activity-dialog").show();
   memberToolsView = null;
   renderActivityControls();
   renderNotificationPlatforms();
   if(state.managed){void openMemberTools(current);void loadWorkspacePlatforms();void restoreOnboarding()?.then(()=>renderMemberPlatforms());}
   void selectAgentTab(tab);
-  if (window.innerWidth <= 640) $("activity-dialog").scrollIntoView({ block: "start" });
+  if (window.innerWidth <= 640) {
+    $("activity-dialog").scrollIntoView({ block: "start" });
+    $("close-activity").focus({preventScroll:true});
+  }
 }
 
 function renderActivityControls() {
   const panel = $("activity-dialog");
   if (panel.open && !state.members.some(member => member.membership_id === activityMember?.membership_id)) panel.close();
   renderContextViews();
+  $("close-activity").hidden = isDirect() && window.innerWidth > 640;
+  $("close-activity").setAttribute("aria-label", isDirect() ? "返回私信" : "返回团队成员");
+  $("close-activity").title = isDirect() ? "返回私信" : "返回团队成员";
   const selected=selectedAgent();
   $("activity-title").textContent=selected ? memberRole(selected)?.name || selected.agent_id : "Agent 详情";
   $("agent-tabs").hidden = false;
@@ -3054,7 +3080,13 @@ function renderExecutionHint() {
   if (follow) $("timeline").scrollTop = $("timeline").scrollHeight;
 }
 
+function syncDirectDetail() {
+  if (!isDirect() || !state.connected || !membersPanelOpen() || directNotificationsOpen || $("notification-detail").open || state.members.length !== 1) return;
+  if ($("activity-dialog").open && selectedAgent()?.membership_id === state.members[0].membership_id) return;
+  openMemberActivity(state.members[0], $("toggle-members"));
+}
 function renderMembers() {
+  syncDirectDetail();
   renderActivityControls();
   renderExecutionHint();
   $("member-count").textContent = state.members.length;
@@ -3131,18 +3163,26 @@ function renderTeams(teams) {
   renderCreateSelection();
 }
 
+let createDirect = false;
 function renderCreateSelection() {
   const team = selectedTeam();
+  $("create-title").textContent = createDirect ? "新建私信" : "新建房间";
+  $("close-create").setAttribute("aria-label", createDirect ? "关闭新建私信" : "关闭新建房间");
+  $("create-team-fields").hidden = createDirect;
+  $("create-direct-description").hidden = !createDirect;
+  $("team").required = !createDirect;
+  $("create-name-label").textContent = createDirect ? "私信名称" : "房间名称";
+  $("new-room-name").placeholder = createDirect ? "个人助理" : "默认使用团队名";
   $("team-description").textContent = team?.description || "暂无可用团队。请在团队目录添加 team.json，并重启服务。";
   $("team-members").replaceChildren(...(team?.members || []).map(member => {
     const item = document.createElement("li"); item.textContent = `${member.name} · ${member.id}`; return item;
   }));
   const disabled = !state.catalogConnected || discussionBusy() || !!state.management || state.managementSending;
-  $("team").disabled = disabled || !state.teams.length;
+  $("team").disabled = createDirect || disabled || !state.teams.length;
   $("new-room-name").disabled = disabled;
-  $("create-room").disabled = disabled || !team;
+  $("create-room").disabled = disabled || (createDirect ? !state.catalog?.agent_roles?.some(role => role.id === "chief-of-staff") : !team);
   $("create-room").textContent = state.managementSending ? "正在创建…" : "创建并进入";
-  $("team-hint").textContent = "成员与会话独立创建。开场消息仅填入草稿，由你发送。";
+  $("team-hint").textContent = createDirect ? "新助理默认暂停；进入详情后可启用。创建不会自动发送消息或连接平台。" : "成员与会话独立创建。开场消息仅填入草稿，由你发送。";
 }
 
 function saveDraft() {
@@ -3156,7 +3196,7 @@ function showDraft() {
   $("message-input").value = state.draft.text || "";
   $("reply-label").textContent = state.draft.replyLabel || `引用 #${state.draft.replyTo}`;
   $("reply-context").hidden = !state.draft.replyTo;
-  notice("send-error", state.draft.pending ? "有一条尚未确认的消息，重试保留原房间和服务身份。请先核对历史。" : "");
+  notice("send-error", state.draft.pending ? "有一条尚未确认的消息，重试保留原会话和服务身份。请先核对历史。" : "");
 }
 
 function selectView(info, operator) {
@@ -3167,7 +3207,7 @@ function selectView(info, operator) {
   viewVersion++;
   resetPlatformInteractions();
   activity.close(); $("activity-dialog").close(); activitySignature = "";
-  activityMember = null;
+  activityMember = null; directNotificationsOpen = false;
   $("room-menu").open = false;
   state.info = info; state.operator = operator; state.connected = false;
   notice("notification-next-step", "");
@@ -3207,9 +3247,11 @@ async function reconcileManagement(catalog) {
   if (!op) return;
   if (op.kind === "delete") {
     const room = catalog.rooms.find(room => room.room_instance === op.payload.room_instance);
-    if (!room) {
+    if (room && isDefaultAssistant(room, catalog) && room.status !== "deleting") {
+      state.management = null; state.managementError = "默认个人助理不可删除，可暂停或重新开始。"; saveManagement();
+    } else if (!room) {
       forgetRoom(op.payload);
-      state.management = null; state.managementError = "房间及其 Agent 私有会话数据已删除。"; saveManagement();
+      state.management = null; state.managementError = "会话及其 Agent 私有会话数据已删除。"; saveManagement();
     } else if (!room.busy && room.status === "deleting") {
       state.managementError = `删除尚未完成，请核查后明确重试。${room.error || ""}`;
     }
@@ -3257,57 +3299,67 @@ function renderRooms() {
   $("open-general-settings").hidden = state.managed;
   $("open-general-settings").disabled = !state.connected;
   $("open-settings").disabled = state.managed ? !state.catalogConnected : !state.connected;
-  $("toggle-add").hidden = state.managed;
+  $("toggle-add").hidden = state.managed || isDirect();
   if (state.managed) $("add-form").hidden = true;
   if (!state.managed || !state.catalog) return;
   const catalog = state.catalog;
+  renderDefaultAssistant();
   $("rooms-empty").hidden = catalog.rooms.length > 0;
   $("new-room").disabled = !state.catalogConnected || discussionBusy() || !!state.management || state.managementSending || !!catalog.write_error;
   const signature = JSON.stringify({ rooms: catalog.rooms, selected: selectedRoom, timeZone:systemTime.zone, timeError:systemTime.error,
-    busy: discussionBusy(), management: !!state.management, sending: state.managementSending, connected: state.catalogConnected });
+    defaultAssistant: catalog.default_assistant, busy: discussionBusy(), management: !!state.management, sending: state.managementSending, connected: state.catalogConnected });
   if ($("room-list").dataset.signature !== signature) {
     $("room-list").dataset.signature = signature;
-    $("room-list").replaceChildren(...[...catalog.rooms].sort((a,b) => new Date(roomListTime(b)) - new Date(roomListTime(a))).map(room => {
-      const row = document.createElement("div"); row.className = "room-entry";
+    const rows = [...catalog.rooms].sort((a,b) => Number(isDefaultAssistant(b)) - Number(isDefaultAssistant(a)) || new Date(roomListTime(b)) - new Date(roomListTime(a))).map(room => {
+      const row = document.createElement("div"); row.className = "room-entry"; row.dataset.direct = String(!!room.is_direct);
       const button = document.createElement("button"); button.type = "button"; button.className = "room-choice";
       button.setAttribute("aria-current", String(room.room_instance === selectedRoom?.room_instance));
       const name = document.createElement("strong"), updated = document.createElement("span");
       name.textContent = room.name;
+      button.setAttribute("aria-label", `${conversationType(room)}：${room.name}${isDefaultAssistant(room) ? "，默认助理" : ""}`);
+      row.dataset.defaultAssistant = String(isDefaultAssistant(room));
       updated.textContent = room.status === "deleting" ? (room.busy ? "正在删除…" : `删除待重试${room.error ? ` · ${room.error}` : ""}`)
         : room.status === "creating" ? `创建待完成${room.error ? ` · ${room.error}` : " · 可重试原创建请求"}` : room.runtime_status === "opening" ? "正在打开…"
         : room.runtime_error ? `运行受阻 · ${room.runtime_error}`
-        : room.busy ? "房间操作进行中…"
+        : room.busy ? "会话操作进行中…"
         : `${room.runtime_status === "ready" ? "运行中 · " : "未打开 · "}${roomListDate(room)}`;
       name.title = room.name; updated.title = updated.textContent;
       button.title = `${room.name}\n${updated.textContent}`;
       button.append(name, updated);
+      if (isDefaultAssistant(room)) { const badge = document.createElement("small"); badge.className = "default-assistant-badge"; badge.textContent = "默认"; button.append(badge); }
       button.disabled = room.status !== "ready" || !state.catalogConnected || !!catalog.busy;
       button.addEventListener("click", () => startSelection(room));
+      row.append(button);
+      if (isDefaultAssistant(room) && room.status !== "deleting") return row;
       const remove = document.createElement("button"); remove.type = "button"; remove.className = "room-delete";
       const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
       icon.setAttribute("viewBox", "0 0 24 24"); icon.setAttribute("aria-hidden", "true");
       const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
       path.setAttribute("d", "M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6m4-6v6");
       icon.append(path); remove.append(icon);
-      remove.title = `${room.status === "deleting" ? "重试删除" : "删除"}房间「${room.name}」`;
+      remove.title = `${room.status === "deleting" ? "重试删除" : "删除"}${conversationType(room)}「${room.name}」`;
       remove.setAttribute("aria-label", remove.title);
       remove.disabled = !state.catalogConnected || !!catalog.busy || !!room.busy || !!state.management || !!catalog.write_error;
       remove.addEventListener("click", () => startDeletion(room));
-      row.append(button, remove);
+      row.append(remove);
       return row;
-    }));
+    });
+    $("direct-list").replaceChildren(...rows.filter(row => row.dataset.direct === "true"));
+    $("room-list").replaceChildren(...rows.filter(row => row.dataset.direct !== "true"));
+    $("direct-group-title").textContent = `私信 · ${catalog.rooms.filter(room => room.is_direct).length}`;
+    $("room-group-title").textContent = `房间 · ${catalog.rooms.filter(room => !room.is_direct).length}`;
   }
   let text = state.managementError || catalog.write_error || "";
   if (workspaceView?.data?.operation?.status === "running") text = `Workspace · ${workspaceStages[workspaceView.data.operation.phase] || "正在应用"}`;
-  else if (state.management?.kind === "delete" && selectedEntry()?.busy) text = "正在停止房间、结清会话并删除数据…";
+  else if (state.management?.kind === "delete" && selectedEntry()?.busy) text = `正在停止${conversationType()}、结清会话并删除数据…`;
   else if (catalog.busy) text = "共享资源操作进行中…";
-  else if (state.managementSending) text = "正在提交房间操作…";
+  else if (state.managementSending) text = "正在提交会话操作…";
   else if (state.management) text = [text, state.management.room && state.management.kind === "create"
-    ? "房间已创建，点击进入。开场草稿已保留。" : "操作结果尚未确认。可核对列表后用原请求重试；不会自动续跑。"].filter(Boolean).join(" ");
+    ? "会话已创建，点击进入。" : "操作结果尚未确认。可核对列表后用原请求重试；不会自动续跑。"].filter(Boolean).join(" ");
   notice("management-notice", text);
   $("retry-management").hidden = !state.management || catalog.busy || state.managementSending;
   $("retry-management").disabled = !state.catalogConnected;
-  $("retry-management").textContent = state.management?.kind === "create" && state.management.room ? "进入已创建房间" : "核对并重试原请求";
+  $("retry-management").textContent = state.management?.kind === "create" && state.management.room ? `进入已创建${conversationType(state.management.room)}` : "核对并重试原请求";
   $("dismiss-management").hidden = !state.management || catalog.busy || state.managementSending;
 }
 
@@ -3321,7 +3373,7 @@ async function runManagement() {
       caller: { kind: "human", id: op.operator }, ...payload });
     if (op.kind === "create") {
       const room = op.room || await manage("/v1/rooms/create", op.payload);
-      if (room.status !== "ready") throw new Error("房间创建尚未完成，请核查后重试。");
+      if (room.status !== "ready") throw new Error("会话创建尚未完成，请核查后重试。");
       seedCreated(op, room);
       op.kind = "open"; op.selectionVersion ??= selectionVersion; op.payload = { open_id: crypto.randomUUID(), room_id: room.room_id, room_instance: room.room_instance };
       saveManagement();
@@ -3331,7 +3383,7 @@ async function runManagement() {
     $("create-dialog").close();
   } catch (error) {
     if (state.management === op) {
-      state.managementError = op.kind === "delete" ? `删除结果尚未确认，请核对房间列表。${error.message}` : `操作未确认，房间和历史已保留。${error.message}`;
+      state.managementError = op.kind === "delete" ? `删除结果尚未确认，请核对会话列表。${error.message}` : `操作未确认，会话和历史已保留。${error.message}`;
       // A definitive rejection has no execution to recover. Other failures keep
       // the original ID, including a create interrupted after index publication.
       if (["request", "identity", "conflict", "capacity"].includes(error.code)) {
@@ -3354,24 +3406,103 @@ function startSelection(room) {
     selectRoom(room); void refresh(); return;
   }
   if (state.management || state.managementSending || room.busy) return;
-  selectionVersion++;
+  selectionVersion++; awaitDefaultSelection = false;
   state.management = { kind: "open", selectOnComplete: true, selectionVersion, operator: state.operator, payload: {
     open_id: crypto.randomUUID(), room_id: room.room_id, room_instance: room.room_instance } };
   saveManagement(); void runManagement();
 }
 
 function startDeletion(room) {
+  if (isDefaultAssistant(room) && room.status !== "deleting") return;
   if (state.management || room.busy || !state.catalogConnected || state.catalog.busy || state.catalog.write_error) return;
-  if (!window.confirm(`永久删除房间「${room.name}」？\n将停止该房间并删除公共消息、所有 Agent 私有会话（含历史会话）、诊断和房间工作区文件。此操作无法撤销。`)) return;
+  if (!window.confirm(`永久删除${conversationType(room)}「${room.name}」？\n将停止该会话并删除消息、所有 Agent 私有会话（含历史会话）、诊断和工作区文件。此操作无法撤销。`)) return;
   state.management = { kind: "delete", operator: state.operator, payload: {
     room_id: room.room_id, room_instance: room.room_instance } };
   saveManagement(); void runManagement();
 }
 
+function renderDefaultAssistant() {
+  const record = state.catalog?.default_assistant, pending = record?.status === "pending", deleted = record?.status === "deleted";
+  const text = pending ? record.error_code === "configuration_required"
+    ? `个人助理初始化受阻：${record.error}。请运行 ${record.next_step || "teamx start init"} 完成配置并重启服务，再核对原初始化操作。`
+    : record.error ? `个人助理初始化失败：${record.error}` : "个人助理正在初始化…"
+    : deleted ? "默认助理此前已删除。恢复会创建新的独立会话，原消息、规则和订阅不会恢复。"
+    : record?.status === "deleting" ? "默认助理的历史删除操作尚未完成，请在列表重试结清后再恢复。" : "";
+  notice("default-assistant-notice", [text, pending || deleted ? defaultAssistantError : ""].filter(Boolean).join(" "));
+  $("retry-default-assistant").hidden = !pending && !deleted;
+  $("retry-default-assistant").disabled = defaultAssistantRetrying || !state.catalogConnected || !!state.catalog?.busy || !!state.catalog?.write_error;
+  $("retry-default-assistant").textContent = deleted
+    ? defaultAssistantRetrying ? "正在恢复助理…" : "恢复默认助理（新建会话）"
+    : defaultAssistantRetrying ? "正在核对初始化…" : "核对并重试助理初始化";
+}
+$("retry-default-assistant").addEventListener("click", async () => {
+  if ($("retry-default-assistant").disabled) return;
+  const epoch = state.catalog.service_epoch, record = state.catalog.default_assistant, restoring = record?.status === "deleted";
+  if (restoring && !selectedEntry()) awaitDefaultSelection = true;
+  defaultAssistantRetrying = true; defaultAssistantError = ""; renderDefaultAssistant();
+  try {
+    await request(`/v1/rooms/default-assistant/${restoring ? "restore" : "retry"}`, {service_epoch:epoch, caller:{kind:"human",id:state.operator},
+      ...(restoring ? {room_id:record.room_id, room_instance:record.room_instance} : {})});
+  } catch (error) {
+    if (state.catalog?.service_epoch === epoch) defaultAssistantError = `${restoring ? "恢复" : "重试"}未确认，请核对默认助理状态。${error.message}`;
+  } finally { defaultAssistantRetrying = false; await refresh(); renderDefaultAssistant(); }
+});
+function renderConversation() {
+  const direct = isDirect(), type = conversationType(), name = roomName();
+  $("conversation").setAttribute("aria-label", `${type}消息`);
+  $("member-rail").setAttribute("aria-label", direct ? "助理详情与会话通知" : "团队成员、通知源与详情");
+  $("member-sidebar").setAttribute("aria-label", direct ? "会话通知" : "成员与房间通知");
+  $("conversation-icon").textContent = direct ? "◎" : "#";
+  $("empty-conversation-icon").textContent = direct ? "◎" : "#";
+  $("conversation-footer").textContent = `仅显式发言进入${direct ? "私信" : "房间"}，Agent 的普通输出保持私有。`;
+  $("policy-empty").textContent = `可以在${direct ? "私信" : "房间"}中告诉 Agent 今后应如何处理。`;
+  $("message-input").placeholder = direct ? `给${name || "个人助理"}发消息…` : "发送到房间，开始一段协作…";
+  $("message-input-label").textContent = direct ? `给${name || "个人助理"}发消息` : "发送到房间";
+  $("rename-room").title = `修改${type}名称`;
+  $("rename-form").setAttribute("aria-label", `修改${type}名称`);
+  $("rename-room-name").setAttribute("aria-label", `${type}名称`);
+  $("room-menu-label").setAttribute("aria-label", `${type}操作`);
+  $("restart-discussion").title = direct ? "重新开始私信，清空消息并重置助理会话" : "重新开始房间讨论";
+  $("direct-notifications").hidden = !direct || !state.managed;
+  $("direct-notifications").disabled = !state.connected || !workspaceView;
+  $("toggle-add").hidden = state.managed || direct;
+  if (direct) $("add-form").hidden = true;
+  $("notification-sources-label").textContent = direct ? "会话通知" : "房间通知";
+  $("notification-empty").textContent = `将平台通知发送到当前${direct ? "会话" : "房间"}。`;
+  $("notification-platforms").setAttribute("aria-label", `发送到当前${direct ? "会话" : "房间"}的通知`);
+  $("notification-add-toggle").setAttribute("aria-label", `添加${direct ? "会话" : "房间"}通知`);
+  $("notification-add-toggle").title = `添加${direct ? "会话" : "房间"}通知`;
+  const member = direct && state.members.length === 1 ? state.members[0] : null;
+  $("direct-status").hidden = !member;
+  $("direct-status").textContent = member ? member.execution?.active ? "运行中" : statusNames[member.status] || member.status : "";
+  $("direct-suggestions").hidden = !direct || !state.info || state.messages.size > 0;
+  if (direct && state.info) {
+    $("empty").querySelector("h2").textContent = `与${name || "个人助理"}聊聊`;
+    $("empty").querySelector("p").textContent = "梳理需求、连接飞书、关注指定群并调整当前助理设置。直接发送消息即可，无需 @ 助理。";
+  }
+}
+$("direct-suggestions").addEventListener("click", event => {
+  const suggestion = event.target.closest?.("[data-suggestion]");
+  if (!suggestion || !isDirect() || !state.info || $("message-input").readOnly || state.draft.pending) return;
+  $("message-input").value = suggestion.dataset.suggestion; saveDraft(); composerState(); $("message-input").focus();
+});
+$("direct-notifications").addEventListener("click", () => {
+  if ($("direct-notifications").disabled) return;
+  directNotificationsOpen = true; $("room-menu").open = false;
+  $("activity-dialog").hidden = true;
+  panels.members = true; if (window.innerWidth <= 640) directMobileDetails = true;
+  renderPanels(); renderNotificationPlatforms(); $("close-conversation-notifications").focus();
+});
+$("close-conversation-notifications").addEventListener("click", () => {
+  directNotificationsOpen = false; $("activity-dialog").hidden = false;
+  renderPanels(); syncDirectDetail(); $("toggle-members").focus();
+});
+
 function composerState() {
+  renderConversation();
   renderSettingsNavigation();
   const namedRoom = state.catalog?.rooms.find(room => room.room_instance === state.info?.room_instance);
-  $("rename-room").setAttribute("aria-label", namedRoom ? `${namedRoom.name}，修改房间名称` : $("room-name").textContent);
+  $("rename-room").setAttribute("aria-label", namedRoom ? `${namedRoom.name}，修改${conversationType()}名称` : $("room-name").textContent);
   $("rename-room").disabled = !state.managed || !state.catalogConnected || discussionBusy() || !!state.catalog?.write_error || namedRoom?.status !== "ready" || renameSending;
   $("save-room-name").disabled = $("rename-room").disabled || !renameTarget;
   $("rename-room-name").disabled = renameSending;
@@ -3395,20 +3526,25 @@ async function sync() {
     let config = await request("/v1/ui");
     if (!currentView(version)) return;
     state.managed = !!config.managed;
+    state.isDirect = config.is_direct === true;
     applyTimeZone(config);
     if (state.managed) {
       const catalog = await request("/v1/rooms");
       if (!currentView(version)) return;
       state.catalog = catalog; state.catalogConnected = true;
       applyTimeZone(catalog);
-      if (!selectionLoaded) {
-        selectionLoaded = true;
-        if (!selectedRoom) {
-          const initial = catalog.rooms[0];
-          if (initial) selectRoom(initial);
-        }
-      }
       await reconcileManagement(catalog);
+      if (!selectionLoaded && !selectedEntry(catalog)) {
+        const initial = catalog.rooms.find(room => room.status === "ready" && isDefaultAssistant(room, catalog)) || catalog.rooms.find(room => room.status === "ready");
+        if (initial) selectRoom(initial);
+        else if (selectedRoom) selectRoom(null);
+      }
+      if (!selectionLoaded) awaitDefaultSelection = !selectedRoom && catalog.default_assistant?.status === "pending";
+      selectionLoaded = true;
+      if (awaitDefaultSelection && !selectedRoom && !state.management && !$("create-dialog").open && catalog.default_assistant?.status === "completed") {
+        const assistant = catalog.rooms.find(room => room.status === "ready" && isDefaultAssistant(room, catalog));
+        if (assistant) selectRoom(assistant);
+      }
       version = viewVersion;
       const room = selectedEntry(catalog);
       config = { ...room?.service, operator: catalog.operator };
@@ -3440,15 +3576,16 @@ async function sync() {
         // Keep the old discussion visible but invalidate every in-flight view.
         state.connected = false; viewVersion++;
         activity.close(); $("activity-dialog").close();
-        $("connection").textContent = "房间操作进行中";
+        $("connection").textContent = "会话操作进行中";
         renderMembers(); return;
       }
       if (!room?.service) {
         selectView(null, catalog.operator);
-        $("room-name").textContent = room?.name || "选择或新建房间";
+        $("room-name").textContent = room?.name || "选择或新建会话";
+        document.title = `${$("room-name").textContent} · TeamX`;
         $("empty").querySelector("h2").textContent = "开始一个新任务";
-        $("empty").querySelector("p").textContent = state.teams.length ? "从左侧新建房间，选择团队开始协作。" : "暂无可用团队。请在团队目录添加 team.json，并重启服务。";
-        $("connection").textContent = room ? (room.runtime_error ? `运行受阻 · ${room.runtime_error}` : "点击房间打开") : "已连接 · 尚未选择房间";
+        $("empty").querySelector("p").textContent = "从左侧新建私信与助理交流，或新建房间与团队协作。";
+        $("connection").textContent = room ? (room.runtime_error ? `运行受阻 · ${room.runtime_error}` : `点击${conversationType(room)}打开`) : "已连接 · 尚未选择会话";
         notice("sync-error", ""); return;
       }
     }
@@ -3487,7 +3624,7 @@ async function sync() {
     renderMembers(); void activity.refresh();void refreshMemberPolicy();void refreshMemberInbox();
     $("connection").textContent = "已连接 · 自动刷新";
     $("connection").classList.remove("offline");
-    notice("sync-error", members.write_error ? `房间写入暂停：${members.write_error}` : "");
+    notice("sync-error", members.write_error ? `${conversationType()}写入暂停：${members.write_error}` : "");
   } catch (error) {
     if (!currentView(version)) return;
     state.connected = false; state.catalogConnected = false;
@@ -3624,8 +3761,16 @@ function renderActivityTimeline(result, context) {
   }
 }
 
-$("close-activity").addEventListener("click", () => $("activity-dialog").close());
+function closeAgentDetail() {
+  if (isDirect()) {
+    if (window.innerWidth <= 640) directMobileDetails = false;
+    else panels.members = false;
+  }
+  $("activity-dialog").close(); renderPanels();
+}
+$("close-activity").addEventListener("click", closeAgentDetail);
 $("activity-dialog").addEventListener("close", () => {
+  if ($("activity-dialog").open) return;
   activity.close(); memberToolsView = null; activityMember = null; agentTab = "activity"; activitySignature = "";
   inboxView = null; $("inbox-entries").replaceChildren();
   activityScrollMember = ""; activityFollowing = true; activityScrollTop = 0; $("activity-jump-latest").hidden = true;
@@ -3637,7 +3782,7 @@ $("activity-dialog").addEventListener("close", () => {
   activityFocus = null;
 });
 $("activity-dialog").addEventListener("keydown", (event) => {
-  if (event.key === "Escape") { event.preventDefault(); $("activity-dialog").close(); }
+  if (event.key === "Escape") { event.preventDefault(); closeAgentDetail(); }
 });
 
 function refresh() {
@@ -3665,7 +3810,7 @@ $("view-mention").addEventListener("click", () => {
 
 $("restart-discussion").addEventListener("click", async () => {
   if ($("restart-discussion").disabled) return;
-  if (!state.draft.restartRequest && !window.confirm("重新开始讨论将取消并结清所有成员当前的回合，清空公共消息，并重置所有成员的私有会话。成员、角色和工作区文件保留，回合预算不重置。是否继续？")) return;
+  if (!state.draft.restartRequest && !window.confirm(isDirect() ? "重新开始私信将取消并结清助理当前回合，清空消息并重置助理的私有会话。工作区文件保留。是否继续？" : "重新开始讨论将取消并结清所有成员当前的回合，清空公共消息，并重置所有成员的私有会话。成员、角色和工作区文件保留，回合预算不重置。是否继续？")) return;
   const info = state.info, operator = state.operator, draft = state.draft, version = viewVersion;
   draft.restartRequest ||= { id: crypto.randomUUID().replaceAll("-", ""), info, previous_id: state.restart?.id || "" };
   restartNoticeID = draft.restartRequest.id; restartNoticeExpires = 0;
@@ -3710,8 +3855,8 @@ $("compose").addEventListener("submit", async (event) => {
     }
   } catch (error) {
     if (currentView(version)) notice("send-error", error.code === "identity"
-      ? "原发送身份已失效。请先核对本房间历史，再放弃重试；不会自动换用新身份发送。"
-      : `未确认发送成功，重试保留原房间身份与消息 ID。${error.message}`);
+      ? "原发送身份已失效。请先核对本会话历史，再放弃重试；不会自动换用新身份发送。"
+      : `未确认发送成功，重试保留原会话身份与消息 ID。${error.message}`);
   } finally {
     draft.sending = false;
     if (currentView(version)) { composerState(); $("message-input").focus(); }
@@ -3825,8 +3970,8 @@ $("rename-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!renameTarget || $("save-room-name").disabled) return;
   const name = $("rename-room-name").value.trim();
-  if (!name) { notice("rename-error", "请输入房间名称。"); return; }
-  if (new TextEncoder().encode(name).length > 256) { notice("rename-error", "房间名称请控制在 256 字节内。"); return; }
+  if (!name) { notice("rename-error", `请输入${conversationType()}名称。`); return; }
+  if (new TextEncoder().encode(name).length > 256) { notice("rename-error", `${conversationType()}名称请控制在 256 字节内。`); return; }
   const target = renameTarget, version = viewVersion;
   renameSending = true; notice("rename-error", ""); composerState();
   try {
@@ -3835,7 +3980,7 @@ $("rename-form").addEventListener("submit", async (event) => {
   } catch (error) {
     if (currentView(version) && renameTarget === target) notice("rename-error", error.code === "conflict"
       ? "名称已在其他页面修改，请取消后重新编辑。"
-      : "保存未确认，请取消并核对房间名称后再修改。");
+      : "保存未确认，请取消并核对会话名称后再修改。");
   } finally {
     renameSending = false; await refresh(); composerState();
     if (currentView(version) && !renameTarget) $("rename-room").focus();
@@ -3863,8 +4008,24 @@ function dismissOnBackdrop(dialog, close) {
 
 $("new-room").addEventListener("click", () => {
   if ($("new-room").disabled) return;
+  $("create-menu").hidden = !$("create-menu").hidden;
+  $("new-room").setAttribute("aria-expanded", String(!$("create-menu").hidden));
+  if (!$("create-menu").hidden) $("new-direct").focus();
+});
+function openCreate(direct) {
+  if ($("new-room").disabled) return;
+  createDirect = direct; $("create-menu").hidden = true; $("new-room").setAttribute("aria-expanded", "false");
   notice("create-error", ""); $("new-room-name").value = "";
-  renderCreateSelection(); $("create-dialog").showModal(); $("team").focus();
+  renderCreateSelection(); $("create-dialog").showModal(); $(direct ? "new-room-name" : "team").focus();
+}
+$("new-direct").addEventListener("click", () => openCreate(true));
+$("new-team-room").addEventListener("click", () => openCreate(false));
+$("create-menu").addEventListener("keydown", event => {
+  if (event.key === "Escape") { event.preventDefault(); $("create-menu").hidden = true; $("new-room").setAttribute("aria-expanded", "false"); $("new-room").focus(); }
+  if (["ArrowDown", "ArrowUp"].includes(event.key)) { event.preventDefault(); $(document.activeElement === $("new-direct") ? "new-team-room" : "new-direct").focus(); }
+});
+document.addEventListener("pointerdown", event => {
+  if (!$("create-menu").hidden && !event.target.closest?.("#create-menu, #new-room")) { $("create-menu").hidden = true; $("new-room").setAttribute("aria-expanded", "false"); }
 });
 $("close-create").addEventListener("click", () => $("create-dialog").close());
 dismissOnBackdrop($("create-dialog"), () => $("create-dialog").close());
@@ -3873,11 +4034,11 @@ $("team").addEventListener("change", renderCreateSelection);
 $("create-form").addEventListener("submit", (event) => {
   event.preventDefault();
   const team = selectedTeam();
-  if (!team || $("create-room").disabled) return;
+  if ((!createDirect && !team) || $("create-room").disabled) return;
   const name = $("new-room-name").value.trim();
-  if (new TextEncoder().encode(name).length > 256) { notice("create-error", "房间名称请控制在 256 字节内。"); return; }
-  state.management = { kind: "create", selectOnComplete: true, selectionVersion, operator: state.operator, opening: team.opening_message,
-    payload: { create_id: crypto.randomUUID(), name, team_id: team.id } };
+  if (new TextEncoder().encode(name).length > 256) { notice("create-error", `${createDirect ? "私信" : "房间"}名称请控制在 256 字节内。`); return; }
+  state.management = { kind: "create", selectOnComplete: true, selectionVersion, operator: state.operator, opening: createDirect ? "" : team.opening_message,
+    payload: { create_id: crypto.randomUUID(), name, ...(createDirect ? {is_direct:true, agent_role_id:"chief-of-staff"} : {team_id:team.id}) } };
   saveManagement(); void runManagement();
 });
 $("retry-management").addEventListener("click", () => { void runManagement(); });

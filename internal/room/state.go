@@ -93,6 +93,7 @@ type MemberState struct {
 type RoomSnapshot struct {
 	Version int `json:"version"`
 	RoomIdentity
+	IsDirect               bool                             `json:"is_direct"`
 	LatestSeq              uint64                           `json:"latest_seq"`
 	ClearedThrough         uint64                           `json:"cleared_through,omitempty"`
 	Revision               uint64                           `json:"revision"`
@@ -113,6 +114,9 @@ func (s RoomSnapshot) validate() error {
 	}
 	if s.Messages == nil || s.Members == nil {
 		return fmt.Errorf("missing messages or members array")
+	}
+	if s.IsDirect && len(s.Members) != 1 {
+		return fmt.Errorf("direct conversation requires exactly one agent")
 	}
 	if s.ClearedThrough > s.LatestSeq || s.LatestSeq-s.ClearedThrough != uint64(len(s.Messages)) || s.Revision < s.LatestSeq {
 		return fmt.Errorf("inconsistent sequence or revision")

@@ -51,6 +51,7 @@ type MemberInfo struct {
 
 type MemberList struct {
 	RoomIdentity
+	IsDirect   bool         `json:"is_direct"`
 	LatestSeq  uint64       `json:"latest_seq"`
 	Revision   uint64       `json:"revision"`
 	Committing bool         `json:"committing"`

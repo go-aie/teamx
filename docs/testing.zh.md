@@ -55,6 +55,32 @@ go test -json -count=1 -timeout=8m -tags=integration ./internal/room > /tmp/team
 
 JSON 中测试的 `pass` / `fail` 事件包含 `Elapsed`。串行父测试通常已包含串行子测试耗时；并行父、子测试的计时还会受暂停、等待和资源竞争影响，不能简单累加。整个套件应看包级结果及从开始到结束的墙钟时间。
 
+## 私信与默认助理
+
+模型与生命周期回归覆盖私信固定单成员、创建去重、冻结配置、旧单成员 Room 不改型、跨文件一致性、默认一次性创建、无输入不启动模型、暂停和失败恢复、默认删除保护，以及旧删除记录的显式恢复与提交中断。
+
+```sh
+go test ./internal/room -run 'TestDefaultAssistant|TestDirectConversation|TestRoomWithoutDirectFields' -count=1 -timeout=3m
+go test -race -tags=integration ./internal/room \
+  -run 'TestDefaultAssistant|TestDirectConversation|TestRoomWithoutDirectFields|TestPlatform(Connect|Selection|Member)' \
+  -count=1 -timeout=4m
+```
+
+可选 Chromium 场景需要本机 Playwright 和 Chromium，使用实际 HTTP／CLI 及临时数据，飞书 CLI／成员 backend 为本地夹具：
+
+```sh
+TEAMX_DM_BROWSER=1 go test ./internal/room \
+  -run '^(TestDirectConversationBrowser|TestDefaultAssistantRestorationBrowser)$' -count=1 -timeout=3m
+TEAMX_CONNECT_BROWSER=1 go test -tags=integration ./internal/room \
+  -run '^(TestDefaultAssistantPlatformConnectionBrowser|TestPlatformConnectConversationBrowser)$' -count=1 -timeout=3m
+TEAMX_SELECTION_BROWSER=1 go test -tags=integration ./internal/room \
+  -run '^(TestDefaultAssistantPlatformOnboarding|TestPlatformSelectionConversationAndMemberConfiguration)$' -count=1 -timeout=3m
+```
+
+浏览器覆盖分组和选择恢复、默认删除保护、旧实例显式恢复、普通私信删除、独立草稿、详情 Tab／焦点、窄屏，以及账号／群选择和完整设置返回。接续测试核对原请求、完整成员身份、Inbox 结果与单次配置；受控 backend 的自动回合与 CLI 驱动的等待／主动继续分别验证，不称为真实模型。
+
+已有单账号真实 DSH／模型、飞书与浏览器验证，覆盖默认 DM 的新 OAuth 连接和自动接续，以及复用已核验账号后的群关注、持续规则保存、暂停后恢复接续。用户主动继续的原操作查询由本地 CLI 回归覆盖；第二真实账号、新群消息触发实际业务提醒、真实远端故障和并发自然语言反馈去重仍未实测。连接、订阅保存与实际提醒不能互相代替，复验范围见[飞书真实验收](lark.zh.md#真实验收)。
+
 ## 本机验证记录
 
 2026-11-08，macOS ARM64、Go 1.27.1，构建缓存可用，以下执行均使用 `-count=1`：
@@ -82,6 +108,6 @@ make test-e2e-check
 go test -tags=e2e ./internal/room -run '^TestRealDSHRoom$' -count=1 -timeout=25m -v
 ```
 
-该命令仍需场景的显式启用参数，否则会跳过。具体方式见 [Agent 运行时](agent-runtime.zh.md#真实验收)、[Workspace](workspace.zh.md#真实验收)、[通知](notifications.zh.md#真实验收)与 [GitLab 工具](../tools/gitlab/README.zh.md#真实验收)。不要把全部 e2e 加进日常核心或 integration 入口。
+该命令仍需场景的显式启用参数，否则会跳过。具体方式见 [Agent 运行时](agent-runtime.zh.md#真实验收)、[Workspace](workspace.zh.md#真实验收)、[通知](notifications.zh.md#接口与验证)与 [GitLab 工具](../tools/gitlab/README.zh.md#真实验收)。不要把全部 e2e 加进日常核心或 integration 入口。
 
 阶段验收结束后，将仍需维护的复跑方法与未完成项收进对应模块说明，删除重复的阶段记录；不要求每次实施新增一份永久验收文档。私有回执、防重记录和必要失败证据独立保留。

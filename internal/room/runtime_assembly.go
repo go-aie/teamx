@@ -12,6 +12,10 @@ import (
 
 func (m *roomManager) copyIndex() roomsIndex {
 	next := m.index
+	if next.DefaultAssistant != nil {
+		record := *next.DefaultAssistant
+		next.DefaultAssistant = &record
+	}
 	next.OwnedRooms = append([]RoomIdentity{}, next.OwnedRooms...)
 	next.Opens = append([]roomOpen{}, next.Opens...)
 	next.Shutdowns = append([]roomShutdown{}, next.Shutdowns...)
@@ -145,27 +149,16 @@ func (m *roomManager) workspaceActivationConfig(id RoomIdentity, applying string
 	if err := validateInitialization(entry, roomInitialization{Config: saved}); err != nil {
 		return serviceConfig{}, err
 	}
+	if err := m.validateRoomSnapshot(saved); err != nil {
+		return serviceConfig{}, err
+	}
 	// Only a completed application (or its committed executor) authorizes a bound configuration.
 	if saved.Workspace != nil && (saved.WorkspaceVersion > 1 || saved.Workspace.Repository != nil || saved.Workspace.Binding != nil) && !authorized {
 		return serviceConfig{}, fmt.Errorf("%w: workspace configuration has no completed management operation", ErrRequest)
 	}
 	base := saved.Runtime.profile()
-	if err := base.checkCredentials(); err != nil {
+	if err := checkManagedRuntimeAvailability(base); err != nil {
 		return serviceConfig{}, err
-	}
-	info, err := os.Stat(base.BinaryPath)
-	if err != nil {
-		return serviceConfig{}, err
-	}
-	if !info.Mode().IsRegular() || info.Mode()&0111 == 0 {
-		return serviceConfig{}, fmt.Errorf("%w: invalid DSH executable", ErrRequest)
-	}
-	for _, arg := range base.BinaryArgs {
-		if filepath.IsAbs(arg) {
-			if _, err := os.Stat(arg); err != nil {
-				return serviceConfig{}, fmt.Errorf("DSH artifact argument: %w", err)
-			}
-		}
 	}
 	if m.config.endpoint == "" || !filepath.IsAbs(m.config.cliPath) {
 		return serviceConfig{}, fmt.Errorf("%w: member CLI environment unavailable", ErrRequest)
@@ -200,4 +193,26 @@ func (m *roomManager) workspaceActivationConfig(id RoomIdentity, applying string
 	config.maxTurns, config.dshProfiles = saved.SessionMaxTurns, profiles
 	config.persistentScheduling = true
 	return config, nil
+}
+
+// Check local prerequisites without contacting the model or opening DSH.
+func checkManagedRuntimeAvailability(profile dshProfile) error {
+	if err := profile.checkCredentials(); err != nil {
+		return err
+	}
+	info, err := os.Stat(profile.BinaryPath)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() || info.Mode()&0111 == 0 {
+		return fmt.Errorf("%w: invalid DSH executable", ErrRequest)
+	}
+	for _, arg := range profile.BinaryArgs {
+		if filepath.IsAbs(arg) {
+			if _, err := os.Stat(arg); err != nil {
+				return fmt.Errorf("DSH artifact argument: %w", err)
+			}
+		}
+	}
+	return nil
 }

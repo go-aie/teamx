@@ -133,15 +133,15 @@ export async function launch(api, saved = new Map()) {
   return { el: id => elements.get(id), saved, document, window, clock, refresh: entrypoint.refresh, openNotificationSource:entrypoint.openNotificationSource, selectedAgent:entrypoint.selectedAgent, notificationToggle:entrypoint.notificationToggle,
     async draft(text) { elements.get("message-input").value = text; await elements.get("message-input").emit("input"); },
     async select(name) {
-      const choice = elements.get("room-list").children.map(row => row.children[0]).find(button => button.children[0].textContent === name);
+      const choice = [...elements.get("direct-list").children,...elements.get("room-list").children].map(row => row.children[0]).find(button => button.children[0].textContent === name);
       assert.ok(choice, `room ${name} is listed`); await choice.emit("click"); await settle();
     },
     async delete(name) {
-      const row = elements.get("room-list").children.find(row => row.children[0].children[0].textContent === name);
+      const row = [...elements.get("direct-list").children,...elements.get("room-list").children].find(row => row.children[0].children[0].textContent === name);
       assert.ok(row, `room ${name} is listed`); await row.children[1].emit("click"); await settle();
     },
     async create(name) {
-      await elements.get("new-room").emit("click"); elements.get("new-room-name").value = name;
+      await elements.get("new-room").emit("click"); await elements.get("new-team-room").emit("click"); elements.get("new-room-name").value = name;
       await elements.get("create-form").emit("submit"); await settle();
     } };
 }

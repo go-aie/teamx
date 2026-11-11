@@ -59,10 +59,21 @@ func waitConnectDelivery(t *testing.T, m *roomManager, id string) platformOperat
 	return platformOperationNotification{}
 }
 
+type platformConnectionFixture func(*testing.T) (*roomManager, *service, MemberState, platformConnectRequest)
+
 func TestPlatformConnectNotificationSubscriptionHandoffAndLateCompletion(t *testing.T) {
+	platformConnectSubscriptionHandoff(t, connectFixture)
+}
+
+func TestDefaultAssistantConnectionPauseAndLateCompletion(t *testing.T) {
+	platformConnectSubscriptionHandoff(t, assistantConnectFixture)
+}
+
+func platformConnectSubscriptionHandoff(t *testing.T, fixture platformConnectionFixture) {
+	t.Helper()
 	for _, timing := range []string{"before", "concurrent", "after"} {
 		t.Run(timing, func(t *testing.T) {
-			m, svc, member, req := connectFixture(t)
+			m, svc, member, req := fixture(t)
 			_, session := connectPending(t, m, svc, req)
 			query := connectObservation(req)
 			mode := "inbox"
@@ -351,7 +362,16 @@ func TestPlatformConnectNotificationTerminalFailuresAndRestartResult(t *testing.
 }
 
 func TestPlatformConnectNotificationAutomaticallyContinuesWithoutChatAndDoesNotRetryFailure(t *testing.T) {
-	m, svc, _, req := connectFixture(t)
+	platformConnectAutomaticContinuation(t, connectFixture)
+}
+
+func TestDefaultAssistantConnectionAutomaticContinuationAndFailure(t *testing.T) {
+	platformConnectAutomaticContinuation(t, assistantConnectFixture)
+}
+
+func platformConnectAutomaticContinuation(t *testing.T, fixture platformConnectionFixture) {
+	t.Helper()
+	m, svc, _, req := fixture(t)
 	op, session := connectPending(t, m, svc, req)
 	b := newControlledBackend()
 	id := op.MemberIdentity
@@ -483,7 +503,16 @@ func TestPlatformConnectNotificationCapacityRetainsPendingAndRetriesAfterReclama
 }
 
 func TestPlatformConnectNotificationCannotBypassAdmissionOrMemberRemoval(t *testing.T) {
-	m, svc, _, req := connectFixture(t)
+	platformConnectAdmission(t, connectFixture, true)
+}
+
+func TestDefaultAssistantConnectionCannotBypassAdmission(t *testing.T) {
+	platformConnectAdmission(t, assistantConnectFixture, false)
+}
+
+func platformConnectAdmission(t *testing.T, fixture platformConnectionFixture, remove bool) {
+	t.Helper()
+	m, svc, _, req := fixture(t)
 	op, session := connectPending(t, m, svc, req)
 	id := op.MemberIdentity
 	svc.store.notificationAdapters = contractNotificationCapabilities
@@ -512,6 +541,9 @@ func TestPlatformConnectNotificationCannotBypassAdmissionOrMemberRemoval(t *test
 	status := connectHTTP(t, m, "status", connectObservation(req))
 	if status.Continuation.State != "delivered" || status.Continuation.BlockedReason != "inbox_admission_blocked" || b.opens.Load() != 0 {
 		t.Fatal("event bypassed admission", status)
+	}
+	if !remove {
+		return
 	}
 	// A separate result for the removed identity stays pending and never routes
 	// by the Agent's name. The successful connection receipt remains available.

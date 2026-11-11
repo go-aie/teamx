@@ -286,7 +286,7 @@ test("room list displays and sorts by last message time, with creation time for 
 
 test("settings and room creation dismiss only when the pointer starts and clicks outside the dialog", async () => {
   const api = server(), ui = await launch(api);
-  for (const [opener, id] of [["open-settings", "settings-dialog"], ["new-room", "create-dialog"]]) {
+  for (const [opener, id] of [["open-settings", "settings-dialog"], ["new-team-room", "create-dialog"]]) {
     await ui.el(opener).emit("click");
     const dialog = ui.el(id);
     dialog.rect = { left: 100, top: 100, right: 500, bottom: 500 };
@@ -954,7 +954,7 @@ test("deletion requires confirmation and removes the active view and draft while
   api.confirm = () => true;
   await ui.delete("A");
   assert.deepEqual(api.catalog.rooms.map(room => room.name), ["B"]);
-  assert.equal(ui.el("room-name").textContent, "选择或新建房间");
+  assert.equal(ui.el("room-name").textContent, "选择或新建会话");
   assert.equal(ui.el("message-input").value, "");
   assert.equal(ui.el("send").disabled, true);
   assert.equal(ui.saved.has(JSON.stringify(["teamx.draft", "instance-A", "tester"])), false);
@@ -2871,4 +2871,128 @@ test("a late automatic rule response cannot replace a new tab context",async()=>
   api.readRules=()=>new Promise(resolve=>finish=resolve);await ui.refresh();await settle();
   api.readRules=()=>structuredClone(api.rules);await ui.el("agent-tab-inbox").emit("click");await ui.el("agent-tab-policy").emit("click");await settle();
   const card=ui.el("policy-entries").children[0];finish({revision:99,current:[],history:[],effective:[]});await settle();assert.equal(ui.el("policy-entries").children[0],card);
+});
+
+test("direct conversations prefer the exact default, keep the inspector stable, and isolate Room drafts", async () => {
+  const room=makeRoom("Team"),dm={...makeRoom("个人助理","dm"),is_direct:true,team_id:"",agent_role_id:"chief-of-staff"};
+  const api=server([room,dm]);api.catalog.default_assistant={status:"completed",room_id:dm.room_id,room_instance:dm.room_instance};
+  const member={agent_id:"chief-of-staff",membership_id:"dm-member",status:"paused",runner:{profile:"runtime"},execution:{paused:true}};
+  api.hook=(path,data)=>{
+    if(path==="/v1/member/list")return {members:[{...member,membership_id:data.room_id==="dm" ? "dm-member" : "team-member"}]};
+    if(path.startsWith("/v1/tools/bindings?"))return {catalog:[],bindings:[]};
+    if(path==="/v1/member/activity")return {member};
+  };
+  const ui=await launch(api);await settle();
+  assert.equal(ui.el("room-name").textContent,"个人助理");
+  assert.equal(ui.el("direct-list").children.length,1);assert.equal(ui.el("room-list").children.length,1);
+  assert.equal(ui.el("direct-list").children[0].children.length,1);
+  assert.equal(ui.el("room-list").children[0].children.length,2);
+  assert.equal(ui.el("activity-dialog").open,true);assert.equal(ui.el("close-activity").hidden,true);
+  assert.equal(ui.el("agent-tab-platforms").getAttribute("aria-selected"),"true");
+  ui.el("platforms-member-view").scrollTop=123;
+  const reads=api.calls.filter(call=>call.path.startsWith("/v1/tools/bindings?")).length;
+  await ui.refresh();await settle();
+  assert.equal(ui.el("platforms-member-view").scrollTop,123);
+  assert.equal(api.calls.filter(call=>call.path.startsWith("/v1/tools/bindings?")).length,reads);
+  await ui.draft("DM draft");await ui.select("Team");assert.equal(ui.el("activity-dialog").open,false);
+  assert.equal(ui.el("member-list-view").hidden,false);await ui.draft("Room draft");
+  await ui.select("个人助理");assert.equal(ui.el("message-input").value,"DM draft");
+  await ui.el("direct-notifications").emit("click");assert.equal(ui.el("member-list-view").hidden,false);
+  assert.equal(ui.el("activity-dialog").hidden,true);await ui.el("close-conversation-notifications").emit("click");
+  assert.equal(ui.el("activity-dialog").hidden,false);assert.equal(ui.el("member-list-view").hidden,true);
+  ui.window.innerWidth=390;await ui.window.emit("resize");assert.equal(ui.el("member-rail").inert,true);
+  await ui.el("toggle-members").emit("click");assert.equal(ui.el("activity-dialog").open,true);
+  await ui.el("close-activity").emit("click");await ui.refresh();assert.equal(ui.el("member-rail").inert,true);
+  const saved=new Map([["teamx.selected-room",JSON.stringify(room)]]),reloaded=await launch(api,saved);
+  assert.equal(reloaded.el("room-name").textContent,"Team");assert.equal(reloaded.el("activity-dialog").open,false);
+});
+
+test("default delete protection follows identity after rename and clears old unaccepted deletion requests", async()=>{
+  const fixed={...makeRoom("已改名的助理","fixed"),is_direct:true},manual={...makeRoom("个人助理","manual"),is_direct:true};
+  const api=server([fixed,manual]);api.catalog.default_assistant={status:"completed",room_id:fixed.room_id,room_instance:fixed.room_instance};
+  const saved=new Map([["teamx.room-management",JSON.stringify({kind:"delete",operator:"tester",payload:{room_id:fixed.room_id,room_instance:fixed.room_instance}})]]);
+  const ui=await launch(api,saved);await settle();
+  assert.equal(ui.el("direct-list").children[0].children.length,1);assert.equal(ui.el("direct-list").children[1].children.length,2);
+  assert.equal(saved.has("teamx.room-management"),false);assert.equal(api.calls.some(call=>call.path==="/v1/rooms/delete"),false);
+  assert.match(ui.el("management-notice").textContent,/不可删除/);
+  await ui.delete("个人助理");await settle();assert.equal(api.catalog.rooms.length,1);assert.equal(api.catalog.rooms[0].room_id,fixed.room_id);
+});
+
+test("default initialization retry and explicit restoration preserve the current selection", async()=>{
+  const api=server([makeRoom("Existing")]);api.catalog.default_assistant={status:"pending",error_code:"configuration_required",error:"模型未配置",next_step:"teamx start init"};
+  api.hook=(path,data)=>{
+    if(path==="/v1/rooms/default-assistant/retry"){
+      assert.deepEqual(data,{service_epoch:"manager",caller:{kind:"human",id:"tester"}});
+      api.catalog.default_assistant={status:"deleted",room_id:"old-assistant",room_instance:"old-instance"};return {};
+    }
+    if(path==="/v1/rooms/default-assistant/restore"){
+      assert.deepEqual(data,{service_epoch:"manager",caller:{kind:"human",id:"tester"},room_id:"old-assistant",room_instance:"old-instance"});
+      const room={...makeRoom("恢复的助理","restored"),is_direct:true};room.service=identity(room);room.runtime_status="ready";
+      api.catalog.rooms.push(room);api.history.set(room.room_id,[]);
+      api.catalog.default_assistant={status:"completed",room_id:room.room_id,room_instance:room.room_instance};return {};
+    }
+  };
+  const ui=await launch(api);
+  assert.match(ui.el("default-assistant-notice").textContent,/teamx start init.*重启/);
+  assert.equal(ui.el("room-name").textContent,"Existing");
+  await ui.el("retry-default-assistant").emit("click");await settle();
+  assert.equal(ui.el("retry-default-assistant").hidden,false);assert.match(ui.el("retry-default-assistant").textContent,/恢复默认助理/);
+  assert.match(ui.el("default-assistant-notice").textContent,/原消息、规则和订阅不会恢复/);
+  assert.equal(ui.el("direct-list").children.length,0);
+  await ui.refresh();assert.equal(api.calls.some(call=>call.path.endsWith("/restore")),false);
+  await ui.el("retry-default-assistant").emit("click");await settle();
+  assert.equal(ui.el("retry-default-assistant").hidden,true);assert.equal(ui.el("default-assistant-notice").hidden,true);
+  assert.equal(ui.el("direct-list").children.length,1);assert.equal(ui.el("room-name").textContent,"Existing");
+  assert.equal(api.calls.some(call=>call.path==="/v1/rooms/create"),false);
+});
+
+test("deleted default restoration stays explicit, reports uncertainty and selects only without valid history", async()=>{
+  const api=server();api.catalog.default_assistant={status:"deleted",room_id:"old-assistant",room_instance:"old-instance"};
+  let fail=true;
+  api.hook=(path)=>{
+    if(path==="/v1/rooms/default-assistant/restore"){
+      if(fail)throw Error("offline");
+      const room={...makeRoom("新个人助理","restored"),is_direct:true};room.service=identity(room);room.runtime_status="ready";
+      api.catalog.rooms.push(room);api.history.set(room.room_id,[]);
+      api.catalog.default_assistant={status:"completed",room_id:room.room_id,room_instance:room.room_instance};return {};
+    }
+  };
+  const ui=await launch(api);assert.equal(api.calls.some(call=>call.path.endsWith("/restore")),false);
+  await ui.el("retry-default-assistant").emit("click");await settle();assert.match(ui.el("default-assistant-notice").textContent,/恢复未确认/);
+  await ui.refresh();assert.equal(api.calls.filter(call=>call.path.endsWith("/restore")).length,1);
+  fail=false;await ui.el("retry-default-assistant").emit("click");await settle();assert.equal(ui.el("room-name").textContent,"新个人助理");
+  assert.equal(ui.el("direct-list").children[0].children.length,1);
+});
+
+test("new direct creation uses a role without a team or seeded human task",async()=>{
+  const api=server();api.catalog.teams=[];api.catalog.agent_roles=[{id:"chief-of-staff",name:"个人助理"}];
+  const ui=await launch(api);await ui.el("new-room").emit("click");await ui.el("new-direct").emit("click");
+  assert.equal(ui.el("create-team-fields").hidden,true);assert.equal(ui.el("team").required,false);
+  assert.equal(ui.el("create-room").disabled,false);ui.el("new-room-name").value="独立助理";
+  await ui.el("create-form").emit("submit");await settle();
+  const request=api.calls.find(call=>call.path==="/v1/rooms/create").data;
+  assert.equal(request.is_direct,true);assert.equal(request.agent_role_id,"chief-of-staff");assert.equal(request.team_id,undefined);
+  assert.equal(ui.el("message-input").value,"");assert.equal(api.calls.some(call=>call.path==="/v1/send"),false);
+});
+
+test("a pending default selects once when ready, while late DM Inbox reads cannot populate a Room",async()=>{
+  const dm={...makeRoom("助理","pending-dm"),is_direct:true},room=makeRoom("团队");
+  const api=server();api.catalog.default_assistant={status:"pending"};const ui=await launch(api);
+  api.catalog.rooms.push(dm);dm.service=identity(dm);dm.runtime_status="ready";api.history.set(dm.room_id,[]);
+  api.catalog.default_assistant={status:"completed",room_id:dm.room_id,room_instance:dm.room_instance};
+  const member={agent_id:"chief-of-staff",membership_id:"unique-dm-member",status:"paused",runner:{profile:"runtime"}};
+  let resolveInbox;
+  api.hook=(path)=>{
+    if(path==="/v1/member/list")return {members:[member]};
+    if(path.startsWith("/v1/tools/bindings?"))return {catalog:[],bindings:[]};
+    if(path==="/v1/member/inbox/status")return new Promise(resolve=>{resolveInbox=resolve;});
+  };
+  await ui.refresh();await settle();assert.equal(ui.el("room-name").textContent,"助理");
+  const opening=ui.el("agent-tab-inbox").emit("click");await settle();assert.ok(resolveInbox);
+  room.service=identity(room);room.runtime_status="ready";api.catalog.rooms.push(room);api.history.set(room.room_id,[]);
+  await ui.refresh();await ui.select("团队");
+  resolveInbox({latest_seq:900,expired_through:0,limits:{entries:1000,bytes:100000}});await opening;await settle();
+  assert.equal(ui.el("room-name").textContent,"团队");assert.equal(ui.el("activity-dialog").open,false);
+  assert.equal(ui.el("inbox-entries").children.length,0);
+  await ui.refresh();assert.equal(ui.el("room-name").textContent,"团队");
 });

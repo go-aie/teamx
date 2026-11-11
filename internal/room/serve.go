@@ -217,6 +217,17 @@ func serveRoomManager(listener net.Listener, dir, teamsDir string, config servic
 	defer server.Close()
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(listener) }()
+	// Default creation is local and independent of the browser selection. A
+	// blocked assistant must not prevent existing Rooms from being served.
+	manager.mu.Lock()
+	assistant, assistantErr := manager.ensureDefaultAssistantLocked()
+	manager.mu.Unlock()
+	if assistantErr != nil {
+		fmt.Fprintf(stderr, "Default assistant initialization: %v\n", assistantErr)
+		if assistant != nil && assistant.NextStep != "" {
+			fmt.Fprintf(stderr, "Configure the default assistant with `%s`, then restart TeamX to retry the original creation.\n", assistant.NextStep)
+		}
+	}
 	if err := manager.restoreRuntimes(); err != nil {
 		return err
 	}

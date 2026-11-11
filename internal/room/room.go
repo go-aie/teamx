@@ -100,6 +100,9 @@ func (r *Room) Add(ctx actorx.Context, msg AddMember, reply actorx.Reply[MemberI
 			return ErrConflict
 		}
 	}
+	if r.state.IsDirect {
+		return fmt.Errorf("%w: direct conversation membership is fixed", ErrConflict)
+	}
 	if len(r.state.Members) >= maxMembers {
 		return ErrCapacity
 	}
@@ -120,6 +123,9 @@ func (r *Room) Remove(ctx actorx.Context, msg RemoveMember, reply actorx.Reply[M
 	i, err := r.member(msg.AgentID, msg.MembershipID)
 	if err != nil {
 		return err
+	}
+	if r.state.IsDirect {
+		return fmt.Errorf("%w: delete the direct conversation instead of removing its agent", ErrConflict)
 	}
 	m := r.state.Members[i]
 	result := r.memberInfo(m)
@@ -159,7 +165,7 @@ func (r *Room) List(_ actorx.Context, msg ListMembers) (MemberList, error) {
 		return MemberList{}, err
 	}
 	result := MemberList{
-		RoomIdentity: r.state.RoomIdentity, LatestSeq: r.state.LatestSeq,
+		RoomIdentity: r.state.RoomIdentity, IsDirect: r.state.IsDirect, LatestSeq: r.state.LatestSeq,
 		Revision: r.state.Revision, Committing: r.committing,
 		Members: make([]MemberInfo, 0, len(r.state.Members)),
 	}

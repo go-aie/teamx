@@ -16,12 +16,30 @@ import (
 // Real Chromium, actual TeamX HTTP/CLI, synthetic official CLI. This does not
 // stand in for authorization against Feishu or a real model/Agent turn.
 func TestPlatformConnectConversationBrowser(t *testing.T) {
+	platformConnectionBrowser(t, false)
+}
+
+func TestDefaultAssistantPlatformConnectionBrowser(t *testing.T) {
+	platformConnectionBrowser(t, true)
+}
+
+func platformConnectionBrowser(t *testing.T, assistant bool) {
+	t.Helper()
 	if os.Getenv("TEAMX_CONNECT_BROWSER") != "1" {
 		t.Skip("optional local Chromium acceptance")
 	}
 	t.Setenv("USER", humanCaller.ID)
-	m, svc, member, req := connectFixture(t)
-	other := managerCreate(t, m, "connect-other")
+	fixture := connectFixture
+	if assistant {
+		fixture = assistantConnectFixture
+	}
+	m, svc, member, req := fixture(t)
+	var other roomSummary
+	if assistant {
+		other = createDirectConversation(t, m, directSelection("connect-other"))
+	} else {
+		other = managerCreate(t, m, "connect-other")
+	}
 	m.mu.Lock()
 	for i := range m.index.Rooms {
 		if m.index.Rooms[i].RoomInstance == req.RoomInstance {
@@ -43,6 +61,13 @@ func TestPlatformConnectConversationBrowser(t *testing.T) {
 	cliEnv := os.Environ()
 	for _, key := range []string{"TEAMX_ENDPOINT", "TEAMX_ROOM_ID", "TEAMX_ROOM_INSTANCE", "TEAMX_SERVICE_EPOCH", "TEAMX_AGENT_ID", "TEAMX_MEMBERSHIP_ID"} {
 		cliEnv = append(cliEnv, key+"="+env(key))
+	}
+	// The standalone binary serves its embedded workflow with no source checkout,
+	// saved connection or tool binding in this temporary data directory.
+	skill := exec.Command(binary, "platforms", "skill")
+	skill.Dir, skill.Env = t.TempDir(), cliEnv
+	if out, err := skill.CombinedOutput(); err != nil || !strings.Contains(string(out), "Connect Feishu") {
+		t.Fatal("standalone Skill discovery", err)
 	}
 	start := exec.Command(binary, "platforms", "connect", "start", "--provider", "lark", "--name", req.Input.Name, "--operation-id", req.OperationID, "--source-seq", "1")
 	start.Env = cliEnv
@@ -74,5 +99,11 @@ func TestPlatformConnectConversationBrowser(t *testing.T) {
 	calls, _ := os.ReadFile(filepath.Join(dir, "calls"))
 	if strings.Count(string(calls), `"init", "--new"`) != 1 {
 		t.Fatal("repeated application setup")
+	}
+	m.mu.Lock()
+	bindings, err := m.readToolBindingsLocked(req.RoomIdentity)
+	m.mu.Unlock()
+	if err != nil || len(bindings.Bindings) != 0 {
+		t.Fatal("connection enabled platform tools", err)
 	}
 }

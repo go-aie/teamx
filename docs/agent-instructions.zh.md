@@ -7,12 +7,14 @@ TeamX 将稳定指引组成一份 Session Instructions，由 DSH 写入 Session 
 | 内容 | 来源 | 用途 |
 | --- | --- | --- |
 | 公共指引 | [`agent-guide.md`](../internal/room/prompts/agent-guide.md)，通过 `go:embed` 编入 TeamX | 所有成员通用的参与、阅读、授权、规则维护、动作与工具协议 |
-| 角色指令 | 团队成员的 `instructions` 或 `instructions_file`，创建房间时保存展开后的文本 | 角色职责、介入条件、业务流程及交付要求 |
+| 角色指令 | 团队成员的 `instructions`／`instructions_file` 或二进制内置角色，创建会话时保存文本 | 角色职责、介入条件、业务流程及交付要求 |
 | Session 身份 | Go 根据当前 Room、Agent、Membership 和操作者生成 | 明确执行身份及提问时应提及谁 |
 | 轮换状态 | Go 根据当前 Session 目录代际生成 | 标明私有上下文已重置；如何恢复共享上下文由公共指引说明 |
 | 本轮上下文 | 当前轮次、长期规则上下文、未读数量、Inbox 状态和可用图片材料 | 本轮需要处理的状态与事实 |
 
 公共指引说明“如何使用 TeamX”，角色指令说明“这个成员负责什么”。角色的权限和任务条件仍须满足，拥有工具能力不等于获得业务授权。按需读取的 CLI `--help` 和 `tools skill` 负责字段、平台细节与原生工作流程，不另行拼入固定指令。
+
+内置 `chief-of-staff` 使用嵌入的[个人助理指令](../internal/room/prompts/chief-of-staff.md)，创建私信时冻结，更新程序不会覆盖已有会话的角色文本。平台接入统一按需读取 `"$TEAMX_CLI" platforms skill`，该入口随二进制嵌入且独立于工具绑定；已有会话可通过公共指南读取当前 Skill。角色职责不改变服务端身份或授权边界，接入流程不复制进固定指令。
 
 ## 角色模板的职责边界
 

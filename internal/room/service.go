@@ -78,6 +78,7 @@ type serviceMember struct {
 
 type serviceMembers struct {
 	ServiceInfo
+	IsDirect   bool               `json:"is_direct"`
 	LatestSeq  uint64             `json:"latest_seq"`
 	Revision   uint64             `json:"revision"`
 	Committing bool               `json:"committing"`
@@ -115,6 +116,7 @@ type service struct {
 	beginPlatformMemberChange func(context.Context, MemberIdentity) (func(), error)
 	workspaceOperationID      string
 	info                      ServiceInfo
+	isDirect                  bool // Immutable Room property; excluded from caller identity.
 	store                     *Store
 	rt                        *actorx.Runtime
 	room                      actorx.Addr
@@ -227,7 +229,7 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 	s := &service{
 		settings:             config.settings,
 		workspaceOperationID: config.workspaceOperationID,
-		info:                 ServiceInfo{RoomIdentity: state.RoomIdentity, ServiceEpoch: epoch}, store: store,
+		info:                 ServiceInfo{RoomIdentity: state.RoomIdentity, ServiceEpoch: epoch}, isDirect: state.IsDirect, store: store,
 		rt: rt, room: addr, scheduler: scheduler, ctx: ctx, cancel: cancel,
 		inboxes: make(map[string]actorx.Addr), targets: make(map[string]actorx.Addr), requests: make(chan struct{}, 32),
 		endpoint: config.endpoint, cliPath: config.cliPath, mergeWindow: config.mergeWindow,
@@ -394,7 +396,7 @@ func (s *service) members(ctx context.Context) (serviceMembers, error) {
 	if err != nil {
 		return serviceMembers{}, err
 	}
-	result := serviceMembers{ServiceInfo: s.info, LatestSeq: list.LatestSeq, Revision: list.Revision,
+	result := serviceMembers{ServiceInfo: s.info, IsDirect: list.IsDirect, LatestSeq: list.LatestSeq, Revision: list.Revision,
 		Committing: list.Committing, WriteError: list.WriteError, Members: make([]serviceMember, 0, len(list.Members))}
 	result.Restart = s.discussionRestartStatus()
 	for _, m := range list.Members {
@@ -452,6 +454,9 @@ func (s *service) addLocked(req apiRequest) (MemberInfo, error) {
 			}
 			return MemberInfo{}, ErrConflict
 		}
+	}
+	if list.IsDirect {
+		return MemberInfo{}, fmt.Errorf("%w: direct conversation membership is fixed", ErrConflict)
 	}
 	if len(list.Members) >= maxMembers {
 		return MemberInfo{}, ErrCapacity
@@ -595,6 +600,9 @@ func (s *service) removeLocked(req apiRequest) (MemberInfo, error) {
 	if s.closing.Load() {
 		return MemberInfo{}, ErrClosing
 	}
+	if s.isDirect {
+		return MemberInfo{}, fmt.Errorf("%w: delete the direct conversation instead of removing its agent", ErrConflict)
+	}
 	id := MemberIdentity{RoomIdentity: s.info.RoomIdentity, AgentID: req.AgentID, MembershipID: req.MembershipID}
 
 	if s.beginPlatformMemberChange != nil {
@@ -662,7 +670,8 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(struct {
 			ServiceInfo
 			settingsView
-		}{s.info, s.settings.snapshot().settingsView})
+			IsDirect bool `json:"is_direct"`
+		}{s.info, s.settings.snapshot().settingsView, s.isDirect})
 		return
 	}
 	if r.URL.Path == "/v1/settings" || r.URL.Path == "/v1/settings/save" {

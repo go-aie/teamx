@@ -10,6 +10,12 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),{mkd
   const catalog=await (await fetch(endpoint+'/v1/rooms')).json(),current=catalog.rooms.find(r=>r.room_instance===room);
   await context.addInitScript(selection=>sessionStorage.setItem('teamx.selected-room',JSON.stringify(selection)),{room_id:current.room_id,room_instance:room});
   await page.goto(endpoint);
+  if(current.is_direct){
+   await page.locator('#direct-list .room-choice[aria-current="true"]').waitFor();
+   assert.equal(catalog.default_assistant.room_instance,room);
+   assert.equal(await page.locator('#member-list-view').isVisible(),false);
+   await page.locator('#agent-tab-platforms').waitFor();
+  }
   const account=page.locator(`#messages [data-interaction-id="${accountID}"]`),group=page.locator(`#messages [data-interaction-id="${groupID}"]`);
   await account.waitFor();await account.locator('.platform-selection-candidates label').first().waitFor();
   if(artifacts)await page.screenshot({path:join(artifacts,'forms.png'),fullPage:true,animations:'disabled'});
@@ -28,6 +34,10 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),{mkd
   await group.locator('.platform-selection-candidates label').filter({hasText:'oc_group_one'}).locator('input').check();
   // Full Settings projects the same operation. Closing does not cancel either form.
   await group.getByRole('button',{name:'完整设置',exact:true}).click();await page.locator(`#conversation-connections [data-interaction-id="${groupID}"]`).waitFor();await page.locator('#close-settings').click();
+  if(current.is_direct){
+   assert.equal(await page.locator('#member-list-view').isVisible(),false);
+   assert.equal(await page.locator('#agent-tab-platforms').getAttribute('aria-selected'),'true');
+  }
   const second=await context.newPage();await second.goto(endpoint);
   const other=second.locator(`#messages [data-interaction-id="${groupID}"]`);
   await other.locator('.platform-selection-candidates label').filter({hasText:'oc_group_two'}).locator('input').check();

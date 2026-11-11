@@ -94,6 +94,14 @@ func (m *roomManager) upgradeSessionThresholds() error {
 		if !safeMembershipID(e.RoomID) || !validText(e.RoomInstance) {
 			return ErrIdentity
 		}
+		// A current-format default creation may be blocked on partial Room
+		// files. Its frozen receipt is validated below by validateIndex; let
+		// initialization inspect those files without blocking other Rooms.
+		if record := next.DefaultAssistant; record != nil && record.Status == "pending" &&
+			record.RoomIdentity == e.RoomIdentity && e.CreateID == defaultAssistantCreateID && e.Status == "creating" &&
+			e.Initialization != nil && e.Initialization.Config.Version == managedConfigVersion {
+			continue
+		}
 		if e.Initialization != nil {
 			init := *e.Initialization
 			if err := upgrade(&init.Config); err != nil {

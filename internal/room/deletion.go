@@ -18,6 +18,9 @@ func (m *roomManager) startDeletion(target RoomIdentity) (roomSummary, error) {
 	if err := m.store.check(true); err != nil {
 		return roomSummary{}, err
 	}
+	if record := m.index.DefaultAssistant; record != nil && record.RoomIdentity == target && record.Status != "deleting" {
+		return roomSummary{}, fmt.Errorf("%w: the default assistant cannot be deleted; pause it or restart the conversation instead", ErrConflict)
+	}
 	if m.roomBusyLocked(target) {
 		return roomSummary{}, ErrBusy
 	}
@@ -44,6 +47,10 @@ func (m *roomManager) startDeletion(target RoomIdentity) (roomSummary, error) {
 		e.Status, e.DeletionPhase, e.Initialization = "deleting", phase, nil
 	}
 	e.Error, e.UpdatedAt = "", time.Now().UTC()
+	if next.DefaultAssistant != nil && next.DefaultAssistant.RoomIdentity == target {
+		next.DefaultAssistant.Status = "deleting"
+		next.DefaultAssistant.ErrorCode, next.DefaultAssistant.Error, next.DefaultAssistant.NextStep = "", "", ""
+	}
 	if err := m.saveIndex(next); err != nil {
 		return roomSummary{}, err
 	}
@@ -169,6 +176,9 @@ func (m *roomManager) runDeletion(target roomSummary, rt *roomRuntime) {
 		if op.RoomIdentity != target.RoomIdentity {
 			next.Opens = append(next.Opens, op)
 		}
+	}
+	if next.DefaultAssistant != nil && next.DefaultAssistant.RoomIdentity == target.RoomIdentity {
+		next.DefaultAssistant.Status = "deleted"
 	}
 	runErr = m.saveIndex(next)
 	if runErr == nil {

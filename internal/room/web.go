@@ -105,7 +105,8 @@ func (s *service) serveWeb(w http.ResponseWriter, r *http.Request) bool {
 			settingsView
 			Operator string   `json:"operator"`
 			Profiles []string `json:"profiles"`
-		}{s.info, s.settings.snapshot().settingsView, operator, s.uiProfiles})
+			IsDirect bool     `json:"is_direct"`
+		}{s.info, s.settings.snapshot().settingsView, operator, s.uiProfiles, s.isDirect})
 		return true
 	}
 	file, contentType := "", ""

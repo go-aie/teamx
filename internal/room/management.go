@@ -30,16 +30,20 @@ const maxRoomsFileBytes int64 = 64 << 20
 // their full identity; they cannot target this catalog.
 type roomsResponse struct {
 	settingsView
-	Busy         bool                 `json:"busy"`
-	ServiceEpoch string               `json:"service_epoch"`
-	WriteError   string               `json:"write_error,omitempty"`
-	Rooms        []roomRuntimeSummary `json:"rooms"`
-	Operator     string               `json:"operator"`
-	Teams        []teamSummary        `json:"teams"`
+	Busy             bool                    `json:"busy"`
+	ServiceEpoch     string                  `json:"service_epoch"`
+	WriteError       string                  `json:"write_error,omitempty"`
+	Rooms            []roomRuntimeSummary    `json:"rooms"`
+	Operator         string                  `json:"operator"`
+	Teams            []teamSummary           `json:"teams"`
+	AgentRoles       []agentRoleSummary      `json:"agent_roles"`
+	DefaultAssistant *defaultAssistantRecord `json:"default_assistant,omitempty"`
 }
 
 type roomSummary struct {
-	TeamID string `json:"team_id,omitempty"`
+	TeamID      string `json:"team_id,omitempty"`
+	AgentRoleID string `json:"agent_role_id,omitempty"`
+	IsDirect    bool   `json:"is_direct"`
 	RoomIdentity
 	Name          string     `json:"name"`
 	CreateID      string     `json:"create_id"`
@@ -62,9 +66,11 @@ type roomRuntimeSummary struct {
 }
 
 type roomSelection struct {
-	TeamID   string `json:"team_id,omitempty"`
-	CreateID string `json:"create_id"`
-	Name     string `json:"name,omitempty"`
+	IsDirect    bool   `json:"is_direct"`
+	AgentRoleID string `json:"agent_role_id,omitempty"`
+	TeamID      string `json:"team_id,omitempty"`
+	CreateID    string `json:"create_id"`
+	Name        string `json:"name,omitempty"`
 }
 
 type roomCreateRequest struct {
@@ -89,6 +95,8 @@ type managedRoomConfig struct {
 	Workspace            *workspaceConfig `json:"workspace"`
 	WorkspaceVersion     uint64           `json:"workspace_version"`
 	TeamID               string           `json:"team_id,omitempty"`
+	AgentRoleID          string           `json:"agent_role_id,omitempty"`
+	IsDirect             bool             `json:"is_direct"`
 	Runtime              *teamRuntime     `json:"runtime"`
 	Version              int              `json:"version"`
 	RoomIdentity
@@ -117,12 +125,13 @@ type roomIndexEntry struct {
 }
 
 type roomsIndex struct {
-	OwnedRooms          []RoomIdentity       `json:"owned_rooms,omitempty"`
-	Opens               []roomOpen           `json:"opens,omitempty"`
-	Shutdowns           []roomShutdown       `json:"shutdowns,omitempty"`
-	Version             int                  `json:"version"`
-	Rooms               []roomIndexEntry     `json:"rooms"`
-	WorkspaceOperations []workspaceOperation `json:"workspace_operations,omitempty"`
+	DefaultAssistant    *defaultAssistantRecord `json:"default_assistant,omitempty"`
+	OwnedRooms          []RoomIdentity          `json:"owned_rooms,omitempty"`
+	Opens               []roomOpen              `json:"opens,omitempty"`
+	Shutdowns           []roomShutdown          `json:"shutdowns,omitempty"`
+	Version             int                     `json:"version"`
+	Rooms               []roomIndexEntry        `json:"rooms"`
+	WorkspaceOperations []workspaceOperation    `json:"workspace_operations,omitempty"`
 }
 
 // The root lock owns the catalog and its live services. Durable
@@ -155,6 +164,7 @@ type roomManager struct {
 	platformHTTP             http.RoundTripper // offline built-in HTTP seam; never used by agent tools
 	workspaceRun             platform.Execute  // offline subprocess seam; no public configuration hook
 	teams                    map[string]teamDefinition
+	defaultRuntime           *teamRuntime // Used only to create new direct conversations.
 	teamsDir                 string
 	mu                       sync.Mutex
 	shutdownGate             sync.Mutex
@@ -320,6 +330,9 @@ func (m *roomManager) validateIndex() error {
 			if err := validateInitialization(e, roomInitialization{Config: c}); err != nil {
 				return err
 			}
+			if err := m.validateRoomSnapshot(c); err != nil {
+				return err
+			}
 		case "deleting":
 			// Removal can be partial. Never read the Room config or replay a
 			// deletion on startup; the operator must explicitly retry it.
@@ -331,6 +344,9 @@ func (m *roomManager) validateIndex() error {
 		}
 	}
 	if err := m.validateRuntimesIndex(); err != nil {
+		return err
+	}
+	if err := m.validateDefaultAssistant(); err != nil {
 		return err
 	}
 	return m.validateWorkspaceOperations()
@@ -346,6 +362,7 @@ func validateInitialization(e roomIndexEntry, init roomInitialization) error {
 	// configs retain the original name so creation receipts remain idempotent.
 	if !((c.Version == formatVersion && c.MaxTurns > 0 && c.SessionMaxTurns == 0) || (c.Version == managedConfigVersion && c.SessionMaxTurns > 0 && c.MaxTurns == 0)) || c.RoomIdentity != e.RoomIdentity || (e.Status == "creating" && c.Name != e.Name) ||
 		(e.Selection.Name != "" && c.Name != e.Selection.Name) || c.TeamID != e.TeamID ||
+		c.IsDirect != e.IsDirect || c.AgentRoleID != e.AgentRoleID || !validRoomSource(e) ||
 		!validText(c.Name) || len(c.Name) > 256 || !validText(c.OpeningMessage) || len(c.OpeningMessage) > maxTextBytes ||
 		len(c.Members) == 0 || len(c.Members) > maxMembers {
 		return ErrInvalid
@@ -359,10 +376,10 @@ func validateInitialization(e roomIndexEntry, init roomInitialization) error {
 	if err := validateTeamRuntime(*c.Runtime); err != nil {
 		return err
 	}
-	snapshot := RoomSnapshot{Version: formatVersion, RoomIdentity: c.RoomIdentity, Messages: []RoomMessage{}, Members: []MemberState{}}
+	snapshot := RoomSnapshot{Version: formatVersion, RoomIdentity: c.RoomIdentity, IsDirect: c.IsDirect, Messages: []RoomMessage{}, Members: []MemberState{}}
 	for _, member := range c.Members {
 		if !validText(member.Name) || !validText(member.Instructions) || member.ReadThrough != 0 ||
-			member.Runner != managedRunner(c, member.AgentID) {
+			member.Runner != managedRunner(c, member.AgentID) || c.IsDirect && member.AgentID != c.AgentRoleID {
 			return ErrInvalid
 		}
 		if err := dsh.CheckToolEnv(member.ToolEnv, c.Runtime.Model.APIKeyEnv); err != nil {
@@ -396,6 +413,13 @@ func validateInitialization(e roomIndexEntry, init roomInitialization) error {
 // A repeated create_id must retain the same selection, even if the selected
 // team was later removed. Ready Rooms never reload their template.
 func (m *roomManager) create(selection roomSelection) (roomSummary, error) {
+	if selection.CreateID == defaultAssistantCreateID {
+		return roomSummary{}, fmt.Errorf("%w: reserved system create_id", ErrRequest)
+	}
+	return m.createRoom(selection)
+}
+
+func (m *roomManager) createRoom(selection roomSelection) (roomSummary, error) {
 	selection.Name = strings.TrimSpace(selection.Name)
 	if !safeMembershipID(selection.CreateID) || !validSelection(selection) || len(selection.Name) > 256 ||
 		(selection.Name != "" && !validText(selection.Name)) {
@@ -443,10 +467,18 @@ func (m *roomManager) create(selection roomSelection) (roomSummary, error) {
 		next.Rooms[at].Error, next.Rooms[at].UpdatedAt = err.Error(), time.Now().UTC()
 		return e.roomSummary, errors.Join(err, m.saveIndex(next))
 	}
+	if err := m.initializeDefaultAssistantScheduling(e); err != nil {
+		return e.roomSummary, err
+	}
 	next := m.index
 	next.Rooms = append([]roomIndexEntry{}, next.Rooms...)
 	e.Status, e.Error, e.UpdatedAt, e.Initialization = "ready", "", time.Now().UTC(), nil
 	next.Rooms[at] = e
+	if e.CreateID == defaultAssistantCreateID {
+		record := *m.index.DefaultAssistant
+		record.Status, record.ErrorCode, record.Error, record.NextStep = "completed", "", "", ""
+		next.DefaultAssistant = &record
+	}
 	if err := m.saveIndex(next); err != nil {
 		return roomSummary{}, err
 	}
@@ -473,8 +505,10 @@ func (m *roomManager) initialize(e roomIndexEntry) error {
 	if loadErr != nil && !errors.Is(loadErr, os.ErrNotExist) {
 		return loadErr
 	}
-	if loadErr == nil && state.RoomIdentity != e.RoomIdentity {
-		return ErrIdentity
+	if loadErr == nil {
+		if err := validateManagedSnapshot(init.Config, state); err != nil {
+			return err
+		}
 	}
 	configPath := filepath.Join(dir, "room-config.json")
 	// Check existing identity/configuration before touching any Room data.
@@ -520,7 +554,7 @@ func (m *roomManager) initialize(e roomIndexEntry) error {
 		}
 	}
 	if errors.Is(loadErr, os.ErrNotExist) {
-		state = RoomSnapshot{Version: formatVersion, RoomIdentity: e.RoomIdentity, Messages: []RoomMessage{}, Members: []MemberState{}}
+		state = RoomSnapshot{Version: formatVersion, RoomIdentity: e.RoomIdentity, IsDirect: e.IsDirect, Messages: []RoomMessage{}, Members: []MemberState{}}
 		for _, member := range init.Config.Members {
 			state.Members = append(state.Members, member.MemberState)
 		}
@@ -640,6 +674,14 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m.serveRoomRename(w, r)
 		return
 	}
+	if r.URL.Path == "/v1/rooms/default-assistant/retry" {
+		m.serveDefaultAssistantRetry(w, r)
+		return
+	}
+	if r.URL.Path == "/v1/rooms/default-assistant/restore" {
+		m.serveDefaultAssistantRestore(w, r)
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, "/v1/rooms/") && r.URL.Path != "/v1/rooms/create" && r.URL.Path != "/v1/rooms/delete" {
 		http.NotFound(w, r)
 		return
@@ -694,7 +736,7 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			rooms = append(rooms, summary)
 		}
 		response := roomsResponse{settingsView: m.settings.snapshot().settingsView, ServiceEpoch: m.epoch, Rooms: rooms,
-			Operator: humanOperator(), Busy: m.busy, Teams: m.teamSummaries()}
+			Operator: humanOperator(), Busy: m.busy, Teams: m.teamSummaries(), AgentRoles: builtinAgentRoleSummaries(), DefaultAssistant: m.index.DefaultAssistant}
 		if m.store.uncertain {
 			response.WriteError = ErrCommitUnknown.Error()
 		}

@@ -227,9 +227,31 @@ func collectResources(source fs.FS, root string, excluded map[string]bool) ([]ro
 }
 
 func (m *roomManager) prepare(selection roomSelection) (roomIndexEntry, error) {
-	team, ok := m.teams[selection.TeamID]
-	if !ok {
-		return roomIndexEntry{}, fmt.Errorf("%w: team %q unavailable; configure --teams-dir", ErrRequest, selection.TeamID)
+	var defaultName, openingMessage string
+	var sourceRuntime *teamRuntime
+	var members []teamMember
+	var resources []roomResource
+	w := workspaceConfig{Root: "workspaces"}
+	if selection.IsDirect {
+		role, ok := builtinAgentRole(selection.AgentRoleID)
+		if !ok {
+			return roomIndexEntry{}, fmt.Errorf("%w: agent role unavailable", ErrRequest)
+		}
+		if m.defaultRuntime == nil {
+			return roomIndexEntry{}, fmt.Errorf("%w: direct conversations require runtime in config.toml", ErrRequest)
+		}
+		defaultName, openingMessage, sourceRuntime = role.Name, role.OpeningMessage, m.defaultRuntime
+		members = []teamMember{{ID: role.ID, Name: role.Name, Instructions: role.Instructions}}
+	} else {
+		team, ok := m.teams[selection.TeamID]
+		if !ok {
+			return roomIndexEntry{}, fmt.Errorf("%w: team %q unavailable; configure --teams-dir", ErrRequest, selection.TeamID)
+		}
+		defaultName, openingMessage, sourceRuntime = team.Name, team.OpeningMessage, team.Runtime
+		members, resources = team.Members, team.resources
+		if team.Workspace != nil {
+			w.Root = team.Workspace.Root // Repository/binding are suggestions only.
+		}
 	}
 	// Reuse identity allocation and durable initialization, with no runtime lookup.
 	id, err := newOpaqueID()
@@ -242,43 +264,44 @@ func (m *roomManager) prepare(selection roomSelection) (roomIndexEntry, error) {
 	}
 	name := selection.Name
 	if name == "" {
-		name = team.Name
+		name = defaultName
 	}
-	e := newTeamEntry(selection, id, instance, name)
-	w := workspaceConfig{Root: "workspaces"}
-	if team.Workspace != nil {
-		w.Root = team.Workspace.Root // Repository/binding are suggestions only.
-	}
-	runtime := *team.Runtime
-	runtime.DSH.BinaryArgs = slices.Clone(team.Runtime.DSH.BinaryArgs)
-	runtime.Model = team.Runtime.Model.Clone()
-	init := &roomInitialization{Config: managedRoomConfig{PlatformToolsVersion: 1, Version: managedConfigVersion, RoomIdentity: e.RoomIdentity, Name: name, TeamID: team.ID,
-		Runtime: &runtime, OpeningMessage: team.OpeningMessage, SessionMaxTurns: m.maxTurns, Workspace: &w, WorkspaceVersion: 1}, Resources: team.resources}
-	for _, member := range team.Members {
+	e := newRoomEntry(selection, id, instance, name)
+	runtime := *sourceRuntime
+	runtime.DSH.BinaryArgs = slices.Clone(sourceRuntime.DSH.BinaryArgs)
+	runtime.Model = sourceRuntime.Model.Clone()
+	init := &roomInitialization{Config: managedRoomConfig{PlatformToolsVersion: 1, Version: managedConfigVersion, RoomIdentity: e.RoomIdentity, Name: name, TeamID: selection.TeamID,
+		IsDirect: selection.IsDirect, AgentRoleID: selection.AgentRoleID,
+		Runtime: &runtime, OpeningMessage: openingMessage, SessionMaxTurns: m.maxTurns, Workspace: &w, WorkspaceVersion: 1}, Resources: resources}
+	for _, member := range members {
 		membership, err := newOpaqueID()
 		if err != nil {
 			return e, err
 		}
 		init.Config.Members = append(init.Config.Members, managedMember{MemberState: MemberState{AgentID: member.ID, MembershipID: membership,
-			Runner: RunnerConfig{Kind: "dsh", Profile: "team/" + team.ID + "/" + member.ID}}, Name: member.Name, Instructions: member.Instructions,
+			Runner: managedRunner(init.Config, member.ID)}, Name: member.Name, Instructions: member.Instructions,
 			ToolEnv: member.ToolEnv, Workspace: workspaceMemberPath(w, membership)})
 	}
 	e.Initialization = init
 	return e, validateInitialization(e, *init)
 }
 
-func newTeamEntry(selection roomSelection, id, instance, name string) roomIndexEntry {
+func newRoomEntry(selection roomSelection, id, instance, name string) roomIndexEntry {
 	now := time.Now().UTC()
-	return roomIndexEntry{roomSummary: roomSummary{RoomIdentity: RoomIdentity{RoomID: id, RoomInstance: instance}, TeamID: selection.TeamID, Name: name, CreateID: selection.CreateID, Status: "creating", CreatedAt: now, UpdatedAt: now}, Selection: selection}
+	return roomIndexEntry{roomSummary: roomSummary{RoomIdentity: RoomIdentity{RoomID: id, RoomInstance: instance}, TeamID: selection.TeamID,
+		IsDirect: selection.IsDirect, AgentRoleID: selection.AgentRoleID, Name: name, CreateID: selection.CreateID, Status: "creating", CreatedAt: now, UpdatedAt: now}, Selection: selection}
 }
 
 func validSelection(s roomSelection) bool {
-	return teamIdentifier(s.TeamID)
-}
-func validRoomSource(e roomIndexEntry) bool {
-	return teamIdentifier(e.TeamID)
+	if s.IsDirect {
+		return s.TeamID == "" && teamIdentifier(s.AgentRoleID)
+	}
+	return s.AgentRoleID == "" && teamIdentifier(s.TeamID)
 }
 func managedRunner(c managedRoomConfig, agent string) RunnerConfig {
+	if c.IsDirect {
+		return RunnerConfig{Kind: "dsh", Profile: "agent/" + c.AgentRoleID}
+	}
 	return RunnerConfig{Kind: "dsh", Profile: "team/" + c.TeamID + "/" + agent}
 }
 func newTeamRoomManager(dir, teamsDir string, maxTurns uint64, defaults *teamRuntime) (*roomManager, error) {
@@ -295,6 +318,12 @@ func newTeamRoomManager(dir, teamsDir string, maxTurns uint64, defaults *teamRun
 		return nil, err
 	}
 	m.teams, m.teamsDir = teams, abs
+	if defaults != nil {
+		runtime := *defaults
+		runtime.DSH.BinaryArgs = slices.Clone(defaults.DSH.BinaryArgs)
+		runtime.Model = defaults.Model.Clone()
+		m.defaultRuntime = &runtime
+	}
 	return m, nil
 }
 func (m *roomManager) teamSummaries() []teamSummary {

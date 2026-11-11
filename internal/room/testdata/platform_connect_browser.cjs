@@ -15,7 +15,7 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),{wri
   await page.goto(endpoint);
   const card=page.locator(`#messages [data-interaction-id="${id}"]`),link=card.locator('a'),qr=card.locator('img');
   // Room order is activity based. Select by stable room entry metadata if needed.
-  if(!(await card.count())){const buttons=page.locator('#room-list .room-choice');if(await buttons.count())await buttons.filter({hasText:current.name}).first().click();}
+  if(!(await card.count())){const buttons=page.locator('#room-list .room-choice, #direct-list .room-choice');if(await buttons.count())await buttons.filter({hasText:current.name}).first().click();}
   await card.waitFor();await link.waitFor({state:'visible'});await qr.waitFor({state:'visible'});
   await qr.evaluate(img=>img.complete && img.naturalWidth>0 ? true : new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=reject;}));
   assert.match(await link.getAttribute('href'),/^https:\/\/open\.feishu\.cn\/page\/cli\?/);
@@ -34,9 +34,9 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),{wri
   await card.getByText('等待你完成授权飞书账号',{exact:true}).waitFor();assert.equal((await accountQR).ok(),true);
   await capture(page,'account-authorization');
   await page.reload();await link.waitFor({state:'visible'});assert.match(await link.getAttribute('href'),/feishu/);
-  await page.locator('#room-list .room-choice').filter({hasText:second.name}).click();
+  await page.locator('#room-list .room-choice, #direct-list .room-choice').filter({hasText:second.name}).click();
   await page.waitForFunction(id=>!document.querySelector(`#messages [data-interaction-id="${id}"]`),id);
-  await page.locator('#room-list .room-choice').filter({hasText:current.name}).click();await link.waitFor({state:'visible'});
+  await page.locator('#room-list .room-choice, #direct-list .room-choice').filter({hasText:current.name}).click();await link.waitFor({state:'visible'});
   popupWait=page.waitForEvent('popup');await link.click();popup=await popupWait;await popup.waitForLoadState('domcontentloaded');await popup.close();
   await writeFile(join(fixture,'auth-release'),'yes');
   await card.getByText('已连接',{exact:true}).waitFor();assert.equal(await link.isVisible(),false);assert.equal(await qr.isVisible(),false);

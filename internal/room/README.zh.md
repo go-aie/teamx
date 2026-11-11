@@ -43,7 +43,7 @@ teamx serve --config .teamx/config.toml
 teamx serve --config /绝对路径/config.toml
 ```
 
-默认管理入口不接受 `--dsh-config`。左侧「＋」仅选择团队及可选房间名；团队默认采用 `config.toml` 的 runtime，也可完整覆盖模型和 DSH 参数，成员声明职责与可选工具环境。创建时保存 runtime、展开后的角色指令及资源副本，仅记录密钥环境变量名称。已有房间恢复不读取团队模板；修改模板后重启服务只影响后续新建。外部产物、凭据、项目依赖和原有恢复证据仍须可用。
+默认管理入口不接受 `--dsh-config`。左侧「＋」可新建私信，或选择团队及可选名称新建房间；团队默认采用 `config.toml` 的 runtime，也可完整覆盖模型和 DSH 参数，成员声明职责与可选工具环境。创建时保存 runtime、展开后的角色指令及资源副本，仅记录密钥环境变量名称。已有房间恢复不读取团队模板；修改模板后重启服务只影响后续新建。外部产物、凭据、项目依赖和原有恢复证据仍须可用。
 
 新房间公共消息为空，成员、Session、工作区、游标和预算独立，开场消息仅填入草稿。已有房间切回不补填或覆盖草稿。受管房间必须保存完整 runtime 和 Workspace 配置；旧运行时和 Workspace 离线迁移命令已移除。
 
@@ -57,13 +57,19 @@ teamx serve --config /绝对路径/config.toml
 
 点击顶部房间名或旁边的编辑图标可就地修改名称，Enter 保存、Esc 取消，也可点击旁边的保存/取消按钮；保存后同步更新标题和左侧列表。`POST /v1/rooms/rename` 携带目录 `service_epoch`、human `caller`、精确 `room_id` / `room_instance`、`name` 和原名称 `expected_name`；名称去除首尾空白后须非空且不超过 256 字节。原名称不匹配时返回冲突，避免覆盖其他页面的修改。当前显示名仅原子更新 `rooms.json`，创建收据和冻结配置保留原名称；消息、草稿、成员、工作区和 Session 身份不变，不重启执行。响应丢失后核对目录，不自动重发。
 
-管理接口：`GET /v1/rooms` 返回每项的 `status`（目录）、`runtime_status`（`closed / opening / ready / failed`）、`busy`、`runtime_error`、可用 `service` 和安全成员名称。顶层 `busy` 仅表示共享资源操作；房间查看选择保存在浏览器本地，首次进入选择目录第一项。
+管理接口：`GET /v1/rooms` 返回每项的 `status`（目录）、`runtime_status`（`closed / opening / ready / failed`）、`busy`、`runtime_error`、可用 `service` 和安全成员名称。顶层 `busy` 仅表示共享资源操作；会话查看选择保存在浏览器本地，无有效历史选择时优先进入默认助理。
 
 `POST /v1/rooms/open` 要求管理器 `service_epoch`、human `caller`、`room_id`、`room_instance` 和稳定 `open_id`，返回 `running / completed / failed`，完成时附 `service`。`GET /v1/rooms/open?service_epoch=…&caller_id=…&open_id=…` 只查询原回执。相同 ID 不重放，失败后检查并用新 ID 显式打开。旧 `/v1/rooms/activate` 已移除。普通 Room API 携带实例的完整身份；`GET /v1/info` 也须带 `room_id`、`room_instance`、实例 `service_epoch` 和 `caller_id`。
 
 `rooms.json` 仅支持版本 3，以完整身份的 `owned_rooms` 记录运行归属，并保存 `opens` 和逐房间 `shutdowns`；旧全局选择、单房间归属及激活回执不再读取或迁移。正常启动逐房间恢复既有启用意图；异常回合不自动重放，暂停且已结清的房间按需打开。退出冻结全部房间后并行结清，任何资源未结清均保留归属和根目录锁。
 
 未查看的操作者 @ 提及会将整条消息背景标黄。页面处于前台且获得焦点时，消息至少一半进入可视区并连续停留 1 秒后，自动标记该条已查看；超过视口高度的长消息以半个视口为可见门槛。快速划过或后台页面不计入查看。顶部提醒跳转到最早的未查看提及，仍按可见停留规则消除提醒。已查看消息背景恢复常规颜色，未查看的消息继续标黄，计数逐条减少，不会连带清除更早未查看的消息。@ 用户名本身始终保留黄色标记，表示这里存在提及，与是否已查看无关。查看进度在切换房间和标签页刷新后保留，不推进 Agent 未读游标。
+
+### 单 Agent 会话 API
+
+私信使用 `is_direct=true` 和内置 `agent_role_id` 创建，复用既有 Room 的打开、身份与恢复机制。默认个人助理作为固定入口不可删除，手动新建私信仍可删除。创建请求示例、初始化重试及历史已删除默认实例的显式恢复见[会话与默认助理](../../docs/conversations.zh.md#管理接口)。
+
+直接对助理说明连接飞书、关注群和持续提醒的需求即可；只连接不附带启用通知或工具。对话授权、账号／群选择、接续策略和完整设置入口见[飞书使用说明](../../docs/lark.zh.md#通过对话接入)。
 
 以下协作流程使用显式参数保留的单房间模式。
 
@@ -202,7 +208,7 @@ make test-e2e-check
 
 修改 Actor handler 后运行 `go generate ./internal/room`。本地检查需要 Go 和 Node；最后一条命令只检查验收测试能否编译，不执行真实模型或平台操作。普通测试通过不代表真实链路已验证。
 
-真实验收需显式启用，运行方式见 [DSH](../../docs/agent-runtime.zh.md#真实验收)、[Workspace](../../docs/workspace.zh.md#真实验收)、[通知](../../docs/notifications.zh.md#真实验收)和 [GitLab 工具](../../tools/gitlab/README.zh.md#真实验收)。验收目录应与日常数据隔离；写入结果不确定时先核对状态，再决定后续操作。
+真实验收需显式启用，运行方式见 [DSH](../../docs/agent-runtime.zh.md#真实验收)、[Workspace](../../docs/workspace.zh.md#真实验收)、[通知](../../docs/notifications.zh.md#接口与验证)和 [GitLab 工具](../../tools/gitlab/README.zh.md#真实验收)。验收目录应与日常数据隔离；写入结果不确定时先核对状态，再决定后续操作。
 
 消息、调度、身份与持久化设计见 [Room 架构](../../docs/room-architecture.zh.md)。
 
