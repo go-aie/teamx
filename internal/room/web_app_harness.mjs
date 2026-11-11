@@ -1,13 +1,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import * as client from "./web/client.mjs";
-import { notificationOptions } from "./web/markdown.mjs";
-import * as time from "./web/time.mjs";
+import { createApp } from "./web/application.mjs";
 
 // Exercise the actual entry point and its events without a browser dependency.
 // This DOM implements events and content only; it is not visual acceptance.
 const html = await readFile(new URL("./web/index.html", import.meta.url), "utf8");
-const app = (await readFile(new URL("./web/app.js", import.meta.url), "utf8")).replace(/^import .*;\n/gm, "");
 class Element {
   constructor(tag = "div") {
     this.tag = tag; this.children = []; this.listeners = {}; this.dataset = {}; this.attributes = {};
@@ -62,7 +59,7 @@ class Element {
   close() { if (this.open) { this.open = false; void this.emit("close"); } }
 }
 export const settle = async () => { for (let i=0; i<15; i++) await new Promise(resolve => setImmediate(resolve)); };
-export async function launch(api, saved = new Map()) {
+export async function launch(api, saved = new Map(), environment = {}) {
   const elements = new Map([...html.matchAll(/id="([^"]+)"/g)].map(match => [match[1], new Element()]));
   for (const id of ["lark-group-mode", "lark-connection", "lark-target", "lark-backfill", "connection-provider", "connection-profile", "connection-scion-profile", "team", "profile", "workspace-connection", "gitlab-connection", "gitlab-target", "onboarding-room", "onboarding-member", "onboarding-backfill", "gitlab-application"]) elements.get(id).tag = "select";
   for (const id of ["message-template", "member-template"]) elements.get(id).content = { firstElementChild: new Element() };
@@ -109,28 +106,32 @@ export async function launch(api, saved = new Map()) {
     }
     now = end; await settle();
   } };
-  const names = ["document", "window", "sessionStorage", "Option", "setInterval", "requestAnimationFrame", "renderMessageBody", "notificationOptions", "performance", "setTimeout", "clearTimeout", ...Object.keys(time), ...Object.keys(client).map(name => name === "readPages" ? "collectPages" : name)];
-  const values = [document, window, storage,
-    function(text, value) { const el = new Element("option"); el.textContent = text; el.value = value; return el; },
-    () => {}, fn => fn(), (el, text, operator, options) => { el.textContent = text; el.markdownOptions = options; }, notificationOptions, { now: () => now },
-    (fn, delay) => { const id = ++timerID; timers.set(id, { fn, at: now + delay }); return id; },
-    id => timers.delete(id), ...Object.values(time), ...Object.values(client)];
-  values[names.indexOf("request")] = async (path, body, ...args) => {
-    const data = await api.request(path, body, ...args);
-    // Existing fixtures predate service-wide settings. New tests can supply
-    // null explicitly to exercise invalid/missing settings without a fallback.
-    if (path === "/v1/ui" || path === "/v1/rooms") return {time_zone:"Asia/Shanghai",settings_version:1,...(data.managed ? {service_epoch:"manager"} : {}),...data};
-    return data;
+  const appEnvironment = {
+    document, window, sessionStorage: storage,
+    Option: function(text, value) { const el = new Element("option"); el.textContent = text; el.value = value; return el; },
+    setInterval: () => {}, requestAnimationFrame: fn => fn(),
+    renderMessageBody: (el, text, operator, options) => { el.textContent = text; el.markdownOptions = options; },
+    performance: { now: () => now },
+    setTimeout: (fn, delay) => { const id = ++timerID; timers.set(id, { fn, at: now + delay }); return id; },
+    clearTimeout: id => timers.delete(id),
+    request: async (path, body, ...args) => {
+      const data = await api.request(path, body, ...args);
+      // Existing fixtures predate service-wide settings. Explicit null values
+      // still exercise invalid/missing settings without a fallback.
+      if (path === "/v1/ui" || path === "/v1/rooms") return {time_zone:"Asia/Shanghai",settings_version:1,...(data.managed ? {service_epoch:"manager"} : {}),...data};
+      return data;
+    },
   };
-  const AsyncFunction = Object.getPrototypeOf(async function() {}).constructor;
-  const entry = new AsyncFunction(...names, app + `\nreturn { refresh, openNotificationSource, selectedAgent, notificationToggle: () => {
-    const target=activeNotificationTarget(),list=target.mode!=="inbox" ? $("notification-platforms") : state.members.some(m=>m.membership_id===target.membership_id) ? $("member-notification-platforms") : $("notification-orphan-items");
-    const row=[...list.children].find(row=>row.dataset.platformId===workspaceView.notificationPlatformID);
+  Object.defineProperties(appEnvironment, Object.getOwnPropertyDescriptors(environment));
+  const entrypoint = await createApp(appEnvironment);
+  const notificationToggle = () => {
+    const {target, platformID, memberAvailable} = entrypoint.notificationSource();
+    const list = target.mode !== "inbox" ? elements.get("notification-platforms") : memberAvailable ? elements.get("member-notification-platforms") : elements.get("notification-orphan-items");
+    const row = [...list.children].find(row => row.dataset.platformId === platformID);
     return row?.className.includes("member-platform-row") ? row.children[1].children[1] : row?.children[1];
-  } };\n`);
-  const entrypoint = await entry(...values);
+  };
   assert.ok(!elements.get("sync-error").textContent, elements.get("sync-error").textContent);
-  return { el: id => elements.get(id), saved, document, window, clock, refresh: entrypoint.refresh, openNotificationSource:entrypoint.openNotificationSource, selectedAgent:entrypoint.selectedAgent, notificationToggle:entrypoint.notificationToggle,
+  return { el: id => elements.get(id), saved, document, window, clock, refresh: entrypoint.refresh, openNotificationSource:entrypoint.openNotificationSource, selectedAgent:entrypoint.selectedAgent, notificationToggle,
     async draft(text) { elements.get("message-input").value = text; await elements.get("message-input").emit("input"); },
     async select(name) {
       const choice = [...elements.get("direct-list").children,...elements.get("room-list").children].map(row => row.children[0]).find(button => button.children[0].textContent === name);

@@ -1,0 +1,55 @@
+
+/* Fixed, service-backed connection interaction in chat and full settings. */
+.platform-connect-interaction { margin: 12px 0; padding: 16px; border: 1px solid var(--line, #ddd); border-radius: 12px; max-width: 520px; background: var(--surface, #fff); }
+.platform-connect-interaction p { margin: 8px 0; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.platform-connect-interaction[data-status="completed"] { border-color: #61977c; }
+.platform-connect-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 12px; }
+.platform-connect-authorize { display: inline-flex; align-items: center; min-height: 36px; padding: 8px 12px; border-radius: 8px; background: var(--accent); color: #fff; font-size: 13px; font-weight: 550; text-decoration: none; }
+.platform-connect-qr { display: block; width: 160px; height: 160px; object-fit: contain; margin: 12px 0; background: white; }
+.platform-connect-qr[hidden], .platform-connect-actions [hidden] { display: none; }
+.platform-selection-fields { display: grid; gap: 10px; margin: 12px 0; }
+.platform-selection-fields label { display: grid; gap: 5px; font-size: 13px; }
+.platform-selection-fields input, .platform-selection-fields select { width: 100%; min-width: 0; min-height: 36px; border: 1px solid #d9dfd7; border-radius: 6px; padding: 8px 10px; background: #fff; color: inherit; font-size: 13px; }
+.platform-selection-candidates { display: grid; gap: 8px; max-height: 240px; overflow-y: auto; margin: 12px 0; }
+.platform-selection-candidates label { display: flex; align-items: start; gap: 8px; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; cursor: pointer; }
+.platform-selection-candidates input { flex: none; margin-top: 4px; }
+
+/* Direct conversations share the inspector and notification settings. */
+.conversation-group-title { margin:20px 12px 6px; color:var(--muted); font-size:11px; font-weight:600; }
+.room-nav-heading { position:relative; }
+.create-menu { padding:8px; border:1px solid var(--line); border-radius:8px; background:#fff; }
+.create-menu button { display:block; width:100%; text-align:left; min-height:40px; }
+.room-entry[data-direct="true"] .room-choice strong::before { content:"◎ "; color:var(--muted); }
+.room-entry[data-direct="false"] .room-choice strong::before { content:"# "; color:var(--muted); }
+.default-assistant-badge { color:var(--muted); font-size:10px; }
+.direct-suggestions { display:flex; flex-wrap:wrap; justify-content:center; gap:8px; margin:0 20px 24px; }
+.direct-suggestions button { border:1px solid var(--line); border-radius:8px; padding:8px 12px; background:#fff; }
+.direct-conversation #member-list-view > .member-rail-header,
+.direct-conversation #member-empty, .direct-conversation #members { display:none; }
+.direct-conversation:not(.direct-notifications-open) #member-list-view { display:none; }
+.direct-notifications-open #activity-dialog { display:none; }
+#close-conversation-notifications { min-height:56px; text-align:left; padding-inline:18px; }
+.direct-conversation #direct-status { font-size:11px; white-space:nowrap; }
+@media(max-width:640px) {
+  .direct-conversation .member-rail { position:fixed; z-index:20; inset:0; width:100%; background:#fbfcf9; overflow:auto; }
+  .direct-conversation .member-rail .activity-dialog,
+  .direct-conversation .member-rail .notification-detail { height:100dvh; }
+  .direct-conversation .member-rail > .member-list-view { flex:1; }
+  .direct-conversation .member-rail #member-sidebar { overflow:auto; }
+}
+.empty .direct-suggestions { margin:20px 0 0; }
+@media(max-width:640px) {
+  .workspace.direct-conversation { height:100dvh; min-height:0; overflow:hidden; }
+  .direct-conversation .conversation { flex:1; min-height:0; height:auto; }
+  .direct-conversation .room-rail .rail-settings { position:absolute; top:0; right:4px; margin:0; border:0; padding:12px 4px; }
+  .direct-conversation .room-rail .rail-settings button { width:38px; padding:8px; }
+  .direct-conversation .room-rail .settings-label { display:none; }
+  .direct-conversation .room-rail-header { padding-right:54px; }
+}
+
+.direct-member-icon { display:none; }
+.direct-conversation .team-members-icon { display:none; }
+.direct-conversation .direct-member-icon { display:block; }
+
+.platform-selection .primary { min-height: 36px; padding: 8px 14px; font-size: 13px; }
+.platform-selection-candidates input { accent-color: var(--accent); }

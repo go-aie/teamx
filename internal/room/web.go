@@ -6,9 +6,12 @@ import (
 	"embed"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
+	"path"
+	"strings"
 	"time"
 
 	"github.com/go-aie/teamx/internal/agent/dsh"
@@ -17,7 +20,7 @@ import (
 // The operator UI ships in the same binary and uses the existing Room API.
 // Static/bootstrap routes expose no private output or backend configuration.
 //
-//go:embed web/index.html web/style.css web/app.js web/client.mjs web/markdown.mjs web/vendor/marked.mjs web/time.mjs web/vendor/temporal.mjs web/vendor/jsbi.mjs
+//go:embed web/index.html web/*.css web/*.js web/*.mjs web/features/*.mjs web/styles/*.css web/vendor/*.mjs
 var webFiles embed.FS
 
 type memberActivity struct {
@@ -113,23 +116,26 @@ func (s *service) serveWeb(w http.ResponseWriter, r *http.Request) bool {
 	switch r.URL.Path {
 	case "/":
 		file, contentType = "web/index.html", "text/html; charset=utf-8"
-	case "/ui/style.css":
-		file, contentType = "web/style.css", "text/css; charset=utf-8"
-	case "/ui/app.js":
-		file, contentType = "web/app.js", "text/javascript; charset=utf-8"
-	case "/ui/client.mjs":
-		file, contentType = "web/client.mjs", "text/javascript; charset=utf-8"
-	case "/ui/markdown.mjs":
-		file, contentType = "web/markdown.mjs", "text/javascript; charset=utf-8"
-	case "/ui/time.mjs":
-		file, contentType = "web/time.mjs", "text/javascript; charset=utf-8"
-	case "/ui/vendor/temporal.mjs":
-		file, contentType = "web/vendor/temporal.mjs", "text/javascript; charset=utf-8"
-	case "/ui/vendor/jsbi.mjs":
-		file, contentType = "web/vendor/jsbi.mjs", "text/javascript; charset=utf-8"
-	case "/ui/vendor/marked.mjs":
-		file, contentType = "web/vendor/marked.mjs", "text/javascript; charset=utf-8"
 	default:
+		if !strings.HasPrefix(r.URL.Path, "/ui/") {
+			return false
+		}
+		name := strings.TrimPrefix(r.URL.Path, "/ui/")
+		if !fs.ValidPath(name) {
+			return false
+		}
+		switch path.Ext(name) {
+		case ".css":
+			contentType = "text/css; charset=utf-8"
+		case ".js", ".mjs":
+			contentType = "text/javascript; charset=utf-8"
+		default:
+			return false
+		}
+		file = "web/" + name
+	}
+	data, err := webFiles.ReadFile(file)
+	if err != nil {
 		return false
 	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -141,7 +147,6 @@ func (s *service) serveWeb(w http.ResponseWriter, r *http.Request) bool {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
-	data, _ := webFiles.ReadFile(file)
 	http.ServeContent(w, r, file, time.Time{}, bytes.NewReader(data))
 	return true
 }

@@ -70,6 +70,41 @@ const identity = (room, epoch = `epoch-${room.room_id}`) => ({ room_id: room.roo
 const makeRoom = (name, id = name) => ({ room_id: id, room_instance: `instance-${id}`, name,
   status: "ready", team_id: "sample", create_id: `create-${id}`, created_at: "2026-11-01T01:00:00Z", updated_at: "2026-11-01T01:00:00Z" });
 const message = (seq, text) => ({ seq, text, author: { kind: "agent", id: "reviewer" }, created_at: "2026-11-01T01:00:00Z" });
+
+test("apps sharing the native module graph retain independent selection, drafts and settings", async () => {
+  const [first, second] = await Promise.all([
+    launch(server([makeRoom("A"), makeRoom("B")])),
+    launch(server([makeRoom("A"), makeRoom("B")])),
+  ]);
+  await first.draft("first tab");
+  await second.draft("second tab");
+  await first.select("B");
+  await first.el("open-settings").emit("click");
+  first.el("system-timezone").value = "UTC";
+  await first.el("system-timezone").emit("input");
+  await second.refresh();
+  assert.equal(first.el("room-name").textContent, "B");
+  assert.equal(second.el("room-name").textContent, "A");
+  assert.equal(second.el("message-input").value, "second tab");
+  await second.el("open-settings").emit("click");
+  assert.equal(second.el("system-timezone").value, "Asia/Shanghai");
+  assert.equal(first.el("system-timezone").value, "UTC");
+  await first.select("A");
+  assert.equal(first.el("message-input").value, "first tab");
+});
+
+test("unavailable browser storage preserves in-memory drafts across Room switches", async () => {
+  const ui = await launch(server([makeRoom("A"), makeRoom("B")]), new Map(), {
+    get sessionStorage() { throw new Error("Storage is unavailable"); },
+  });
+  await ui.draft("memory-only draft");
+  await ui.select("B");
+  await ui.draft("other draft");
+  await ui.select("A");
+  assert.equal(ui.el("message-input").value, "memory-only draft");
+  assert.equal(ui.el("sync-error").textContent, "");
+});
+
 function server(rooms = []) {
   for (const room of rooms) { room.runtime_status = "ready"; room.service = identity(room); }
   const catalog = { service_epoch: "manager", operator: "tester", busy: false, rooms,

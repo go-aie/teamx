@@ -1,0 +1,116 @@
+@keyframes arrive {
+  from {
+    opacity:0;
+    transform:translateY(5px);
+  }
+  to {
+    opacity:1;
+    transform:translateY(0);
+  }
+}
+@keyframes breathe {
+  50% {
+    opacity:.35;
+  }
+}
+@keyframes flash {
+  from {
+    background:#e8f2df;
+  }
+  to {
+    background:transparent;
+  }
+}
+@media(max-width:900px) {
+  .workspace {
+    --members-default-width:300px;
+  }
+  .sidebar {
+    padding:0 18px 24px;
+  }
+  .room-header {
+    padding:0 25px;
+  }
+  .message {
+    padding:18px 25px;
+  }
+  .day-divider {
+    padding-left:25px;
+    padding-right:25px;
+  }
+  .compose {
+    margin-left:18px;
+    margin-right:18px;
+  }
+  .shortcut {
+    display:none;
+  }
+}
+@media(max-width:640px) {
+  .brand {
+    font-size:18px;
+  }
+  .workspace {
+    height:auto;
+    min-height:100dvh;
+    display:flex;
+    flex-direction:column;
+  }
+  .conversation {
+    height:calc(100dvh - 104px);
+    flex-shrink:0;
+    border:0;
+  }
+  .room-header {
+    padding:0 20px;
+  }
+  .room-header h1 {
+    font-size:18px;
+  }
+  h1 {
+    font-size:21px;
+  }
+  .message {
+    padding:16px 19px;
+    gap:11px;
+  }
+  .message-text {
+    font-size:13px;
+  }
+  .message-meta {
+    gap:7px;
+  }
+  .reply-button {
+    opacity:1;
+  }
+  .compose {
+    margin:10px 14px 0;
+  }
+  .room-footer {
+    font-size:9px;
+    padding-bottom:14px;
+  }
+  .sidebar {
+    padding:0 22px 24px;
+  }
+  .member {
+    padding:19px 0;
+  }
+  .day-divider {
+    padding-left:20px;
+    padding-right:20px;
+  }
+  .notice {
+    padding:10px 20px;
+  }
+  .empty p {
+    max-width:220px;
+  }
+}
+@media(prefers-reduced-motion:reduce) {
+  *,*:before,*:after {
+    animation:none!important;
+    transition:none!important;
+    scroll-behavior:auto!important;
+  }
+}

@@ -1,0 +1,300 @@
+
+/* Notification sources use the existing context rail and its width controls. */
+.message .author { padding:0; background:transparent; color:inherit; text-align:left; line-height:inherit; cursor:default; }
+.message .author:not(:disabled),.message .avatar[role="button"] { cursor:pointer; }
+.message .author:not(:disabled):hover { color:var(--accent); text-decoration:underline; text-underline-offset:3px; }
+.message .avatar[role="button"]:hover { box-shadow:0 0 0 2px #dce4d4; }
+.notification-sources { margin-top:12px; padding-top:12px; border-top:1px solid var(--line); }
+.notification-sources h2 { display:flex; align-items:baseline; gap:8px; margin:0 0 12px; font-size:12px; font-weight:600; }
+.notification-sources h2 span { color:var(--muted); font-size:11px; font-weight:400; }
+.notification-source { display:flex; align-items:center; gap:10px; width:100%; min-height:56px; padding:8px 0; background:transparent; color:inherit; text-align:left; border-radius:6px; cursor:pointer; }
+.notification-source:hover { background:#edf1e9; }
+.notification-source-name { flex:1; min-width:0; font-size:13px; font-weight:550; }
+.notification-source-name small { display:block; margin-top:4px; color:var(--muted); font-size:10px; font-weight:400; }
+.notification-source > .quiet { font-size:11px; }
+.notification-detail .activity-header h2 { font-size:13px; }
+.notification-body { flex:1; min-height:0; overflow-y:auto; overflow-wrap:anywhere; scrollbar-width:thin; padding:18px; }
+.notification-tabs { display:flex; gap:20px; border-bottom:1px solid var(--line); margin:16px 0 20px; }
+.notification-tabs button { padding:0 0 10px; border-radius:0; border-bottom:2px solid transparent; background:transparent; color:var(--muted); font-size:12px; cursor:pointer; }
+.notification-tabs button[aria-selected="true"] { border-bottom-color:var(--accent); color:var(--accent); font-weight:600; }
+.notification-settings .notification-channel { border-top:1px solid var(--line); margin:0; }
+.notification-settings .notification-settings-row + .notification-channel { margin-top:14px; }
+.notification-channel > summary { display:flex; align-items:center; gap:12px; padding:8px 0; list-style:none; color:inherit; font-size:13px; cursor:pointer; }
+.notification-channel > summary::-webkit-details-marker { display:none; }
+.notification-channel-disclosure { display:flex; align-items:center; gap:12px; flex:1; min-width:0; }
+.notification-channel-disclosure::after { content:""; width:6px; height:6px; flex:none; border-right:1.5px solid var(--muted); border-bottom:1.5px solid var(--muted); transform:rotate(-45deg); transition:transform .14s; margin:0 3px; }
+.notification-channel[open] > summary > .notification-channel-disclosure::after { transform:rotate(45deg); }
+.notification-channel > summary > .workspace-check { cursor:pointer; }
+.notification-channel-title { flex:1; min-width:0; font-weight:600; }
+.notification-settings .notification-channel-disclosure > .quiet { flex-shrink:0; margin:0 0 0 auto; }
+.notification-channel > summary[data-error="true"] > .notification-channel-disclosure > .quiet { color:#9a493d; }
+.notification-channel > summary:focus-visible { outline:2px solid #a9c6b2; outline-offset:2px; }
+.notification-channel-body { container:notification-content / inline-size; min-width:0; margin:12px 0 16px; padding:0; }
+.notification-channel-body > :first-child,.notification-channel-body > fieldset > :first-child { margin-top:0; }
+.notification-channel-body .gitlab-events-types .workspace-check { min-height:30px; font-weight:400; }
+.notification-channel-body > .gitlab-events-actions:has(.gitlab-events-feedback:empty) { display:none; }
+.gitlab-project-picker { border:1px solid #d9dfd7; border-radius:6px; padding:10px; background:#fff; }
+.workspace-form .gitlab-project-picker > summary { color:inherit; font-size:14px; overflow-wrap:anywhere; }
+.gitlab-project-picker:has(> summary[aria-disabled="true"]) { background:#f3f5f1; }
+.gitlab-project-picker > summary[aria-disabled="true"] { color:var(--muted); cursor:not-allowed; }
+#gitlab-project-hint { margin:6px 0 0; font-size:12px; }
+.gitlab-project-picker > input { margin-top:12px; }
+.gitlab-project-options { max-height:240px; overflow-y:auto; overscroll-behavior:contain; }
+.workspace-form .gitlab-project-option { display:flex; align-items:center; gap:10px; margin:0; padding:9px 6px; border-radius:4px; font-weight:400; cursor:pointer; }
+.gitlab-project-option:hover { background:#f3f6f1; }
+.gitlab-project-option input { width:15px; height:15px; flex:none; accent-color:var(--accent); }
+.gitlab-project-option span { min-width:0; overflow-wrap:anywhere; }
+.gitlab-project-option small { display:block; margin-top:3px; font-size:11px; color:var(--muted); }
+.gitlab-project-actions { display:flex; justify-content:space-between; gap:8px; margin-top:8px; }
+@media(prefers-reduced-motion:reduce) { .notification-channel-disclosure::after { transition:none; } }
+.notification-sync-list { margin:8px 0 0; }
+.notification-sync-list > div { display:grid; grid-template-columns:64px minmax(0,1fr); gap:12px; padding:8px 0; line-height:1.6; }
+.notification-sync-list dt { font-size:12px; font-weight:550; }
+.notification-settings .notification-sync-list dd { min-width:0; margin:0; }
+.notification-sync-list dd[data-error="true"] { color:#9a493d; }
+.notification-body .gitlab-events-type-heading { justify-content:flex-start; flex-wrap:wrap; gap:8px 12px; }
+.notification-body .gitlab-events-types { column-gap:8px; }
+@media(max-width:640px) { .member-rail .notification-detail { height:85dvh; } }
+
+/* Agent details share the context rail gutters and settings controls. */
+#activity-dialog > .activity-header { flex-wrap:nowrap; }
+.agent-overview {
+  display:flex;
+  flex-shrink:0;
+  flex-wrap:wrap;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px 16px;
+  padding:14px 18px;
+}
+.agent-overview .member-status { font-size:11px; }
+.agent-overview .member-actions { margin:0; }
+.agent-enable-hint { flex-shrink:0; margin:0 18px 12px; font-size:12px; line-height:1.6; }
+.agent-overview .member-actions button { min-height:28px; font-size:11px; padding:5px 10px; }
+.agent-error { flex-shrink:0; margin:0; padding:0 18px 14px; white-space:pre-wrap; }
+.agent-tabs { flex-shrink:0; min-width:0; gap:20px; margin:0; padding:0 18px; }
+.agent-tabs button { min-height:38px; padding:8px 0 10px; }
+.agent-tabs button:hover { color:var(--accent); }
+.member-platform-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px; }
+.member-platform-toolbar > .quiet { margin:0; font-size:11px; font-weight:400; }
+#activity-dialog > #inbox-member-view { padding-top:0; }
+#activity-dialog > .activity-body { padding:0 18px 20px; overscroll-behavior:contain; }
+#activity-dialog > .activity-footer { padding:12px 18px; }
+#activity-dialog .activity-section { padding-top:20px; }
+#activity-dialog .activity-notice { margin:0; }
+#activity-dialog > .agent-tools-panel { padding-top:18px; }
+.tool-member-hint { margin:0 0 4px; font-size:12px; line-height:1.8; }
+.cli-tool-row {
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  align-items:end;
+  gap:12px 10px;
+  min-width:0;
+  padding:20px 0;
+  border-bottom:1px solid var(--line);
+}
+.cli-tool-row > strong {
+  grid-column:1 / -1;
+  display:flex;
+  flex-wrap:wrap;
+  align-items:baseline;
+  gap:4px 8px;
+  font-size:13px;
+  font-weight:600;
+  line-height:1.6;
+  overflow-wrap:anywhere;
+}
+.cli-tool-row > strong small { color:var(--muted); font-size:11px; font-weight:400; }
+.cli-tool-row > label { display:grid; gap:7px; min-width:0; font-size:11px; line-height:1.6; color:#657268; }
+.cli-tool-row select { width:100%; }
+.cli-tool-row button { min-height:36px; padding:8px 12px; line-height:18px; }
+.cli-tool-row select {
+  min-width:0;
+  min-height:32px;
+  max-width:100%;
+  padding:6px 28px 6px 10px;
+  border:1px solid #d9dfd7;
+  border-radius:6px;
+  appearance:none;
+  background-color:#fff;
+  background-image:linear-gradient(45deg,transparent 50%,#838a85 50%),linear-gradient(135deg,#838a85 50%,transparent 50%);
+  background-position:right 14px center,right 10px center;
+  background-size:4px 4px;
+  background-repeat:no-repeat;
+  color:inherit;
+  font-size:12px;
+  line-height:20px;
+  text-overflow:ellipsis;
+}
+.cli-tool-row select { min-height:36px; }
+.cli-tool-row select:hover:not(:disabled) { border-color:#bbcabb; }
+.cli-tool-row select:disabled { background-color:#f3f5f1; color:#727c75; cursor:default; }
+.cli-tool-row select:focus-visible { outline:2px solid #a9c6b2; outline-offset:1px; }
+.cli-tool-feedback { grid-column:1 / -1; margin:0; font-size:12px; line-height:1.8; overflow-wrap:anywhere; }
+.cli-tool-feedback[data-kind="success"] { color:var(--accent); }
+.cli-tool-feedback[data-kind="pending"] { color:var(--muted); }
+.cli-tool-feedback:empty { display:none; }
+.cli-tool-actions { grid-column:1 / -1; display:grid; gap:4px; min-width:0; }
+.cli-action-row { display:flex; align-items:center; gap:8px; min-height:30px; margin:0; font-size:12px; line-height:1.6; }
+.cli-action-row input[type="checkbox"] { width:15px; height:15px; flex:none; margin:0; accent-color:var(--accent); }
+.cli-action-row > span { min-width:0; overflow-wrap:anywhere; }
+.cli-tool-row > .cli-action-row { grid-column:1 / -1; display:flex; align-items:center; font-size:12px; }
+.cli-action-status { margin-left:auto; flex:none; color:var(--muted); font-size:11px; }
+.cli-action-help { color:var(--muted); font-size:11px; line-height:1.8; }
+.cli-action-help > summary { width:fit-content; padding:4px 0; cursor:pointer; }
+.cli-action-help > p { margin:4px 0; overflow-wrap:anywhere; }
+
+.inbox-toolbar { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 -18px; padding: 10px 18px; background: var(--soft); border-bottom: 1px solid #d5dfd5; }
+.inbox-toolbar button,.inbox-pagination-bottom button { min-height: 32px; padding: 5px 8px; border: 1px solid #cbd6cb; border-radius: 6px; background: #fbfcf9; color: var(--accent); font-size: 12px; line-height: 20px; white-space: nowrap; }
+.inbox-toolbar button:hover:not(:disabled),.inbox-pagination-bottom button:hover:not(:disabled) { background: #e2ebe1; border-color: #a8bca9; }
+.inbox-summary { display: flex; flex-wrap:wrap; align-items: center; gap: 8px; min-width: 0; }
+#inbox-notice:empty,#inbox-runtime:empty,#inbox-backlog:empty { display:none; }
+#inbox-notice,#inbox-runtime,#inbox-backlog { margin:10px 0; font-size:12px; line-height:1.7; overflow-wrap:anywhere; }
+#inbox-followups { margin:0 0 14px; font-size:12px; }
+.inbox-toolbar #inbox-reload { display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; width:32px; height:32px; padding:7px; background:transparent; border-color:transparent; }
+.inbox-toolbar #inbox-reload svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+.inbox-toolbar #inbox-latest { min-width:56px; }
+.inbox-toolbar #inbox-reload:hover:not(:disabled) { background:#e2ebe1; }
+#inbox-status { min-width: 0; margin: 0; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.inbox-toolbar > .inbox-pagination { flex-shrink: 0; margin-left: auto; }
+.inbox-pagination { display: flex; align-items: center; gap: 8px; }
+.inbox-page { color: #59675d; font-size: 12px; line-height: 1.7; text-align: center; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.inbox-pagination-bottom { justify-content: flex-end; padding-top: 16px; }
+#inbox-entries > .activity-section { padding-bottom: 20px; border-bottom: 1px solid var(--line); }
+.inbox-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.inbox-entry-header { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; color: var(--muted); font-size: 12px; }
+.inbox-entry-seq { font-variant-numeric: tabular-nums; }
+.inbox-channel { padding: 2px 7px; border: 1px solid var(--line); border-radius: 5px; background: #f3f5f1; color: #59675d; line-height: 1.5; }
+.inbox-entry-header time { margin-left: auto; font-variant-numeric: tabular-nums; }
+.activity-section .inbox-sender { margin: 0 0 10px; font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+.inbox-message-heading { display:flex; align-items:baseline; flex-wrap:wrap; gap:4px 12px; margin:0 0 10px; }
+.activity-section .inbox-message-heading .inbox-sender { margin:0; }
+.inbox-message-heading .inbox-chat { margin:0; }
+.inbox-chat { margin: 14px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.inbox-change { margin: 0 0 10px; font-size: 12px; }
+.inbox-source-details { margin-top: 12px; color: var(--muted); font-size: 12px; }
+.inbox-source-details summary { cursor: pointer; }
+.inbox-source-details pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.inbox-source-fields { display: grid; grid-template-columns: max-content minmax(0,1fr); gap: 8px 14px; margin: 12px 0 0; line-height: 1.7; }
+.inbox-source-fields dt { color: var(--muted); }
+.inbox-source-fields dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: #59675d; }
+
+.policy-form { display: grid; gap: 16px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
+.policy-form[hidden] { display: none; }
+#policy-entries:empty + .policy-form { margin-top: 0; border-top: 0; }
+.policy-form label { display: grid; gap: 6px; min-width: 0; color: #454e47; font-weight: 550; }
+.policy-form input, .policy-form textarea { box-sizing: border-box; width: 100%; min-width: 0; min-height: 34px; border: 1px solid #d9dfd7; border-radius: 6px; padding: 7px 10px; background: #fff; color: #303a2d; font: inherit; font-weight: 400; line-height: 1.6; transition: border-color .15s, box-shadow .15s; }
+.policy-form textarea { min-height: 84px; max-height: 240px; resize: vertical; }
+.policy-form textarea[rows="2"] { min-height: 64px; }
+.policy-form input::placeholder, .policy-form textarea::placeholder { color: #929a92; }
+.policy-form input:hover:not(:disabled), .policy-form textarea:hover:not(:disabled) { border-color: #bbcabb; }
+.policy-form input:focus-visible, .policy-form textarea:focus-visible { outline: 2px solid #a9c6b2 !important; outline-offset: 1px; border-color: #8daa96; }
+#policy-form .policy-field-hint, #policy-form .policy-form-note { margin: 0; color: #727c75; font-size: 11px; font-weight: 400; line-height: 1.7; }
+#policy-form .policy-form-actions { margin: 0; gap: 8px; padding-top: 2px; }
+#policy-form .policy-form-actions button { min-height: 32px; padding: 6px 10px; font-size: 12px; }
+#policy-save { background: var(--accent); border-color: var(--accent); color: #fff; }
+#policy-save:hover:not(:disabled) { background: #274e3d; border-color: #274e3d; }
+#policy-cancel { margin-left: auto; border-color: transparent; color: var(--muted); }
+#policy-member-view #policy-editor-title { margin: 0; font-size: 13px; font-weight: 600; }
+#policy-entries p, #policy-matters p { overflow-wrap: anywhere; }
+#activity-dialog > #policy-member-view { padding-top: 0; font-size: 12px; line-height: 1.6; }
+#policy-member-view h3 { margin: 0; font-size: 13px; font-weight: 600; }
+#policy-member-view h4 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0; font-size: 12px; font-weight: 600; }
+#policy-member-view .member-actions { align-items: center; gap: 8px; margin: 0; }
+#policy-member-view .member-actions button:not(.add-button) { min-height: 32px; padding: 5px 10px; font-size: 11px; line-height: 20px; white-space: nowrap; }
+.policy-toolbar, .policy-followups-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
+.policy-toolbar { position: sticky; top: 0; z-index: 1; margin: 0 -18px; padding: 10px 18px; background: var(--soft); border-bottom: 1px solid #d5dfd5; }
+.policy-summary { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
+#policy-status { margin: 0; color: #657068; font-size: 12px; overflow-wrap: anywhere; }
+#policy-retry { flex-shrink:0; min-height:32px; padding:5px 8px; border-radius:6px; background:transparent; color:var(--accent); font-size:12px; }
+#policy-retry:hover:not(:disabled) { background:#e2ebe1; }
+#policy-member-view .policy-toolbar > .member-actions, #policy-member-view .policy-followups-toolbar > .member-actions { margin-left: auto; }
+.policy-empty { margin: 16px 0 0; line-height: 1.7; }
+#activity-dialog .policy-entry { padding-top: 18px; }
+#policy-member-view .policy-entry + .policy-entry { border-top: 1px solid var(--line); margin-top: 18px; }
+.policy-entry-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+#policy-member-view .policy-entry-header > .member-actions { margin-left: auto; }
+#policy-member-view .policy-entry-header .member-actions button { min-height: 28px; padding: 3px 6px; border-color: transparent; background: transparent; font-size: 12px; }
+#policy-member-view .policy-entry-header .member-actions button:hover:not(:disabled) { background: var(--soft); }
+.policy-entry-state { display: inline-block; padding: 1px 6px; border-radius: 4px; background: #f0f2ee; color: #677269; font-size: 10px; font-weight: 400; }
+.policy-entry-state[data-status="active"] { background: #eaf1e9; color: #315f4b; }
+#policy-member-view .member-actions .policy-revoke { border-color: transparent; color: #747b75; }
+#policy-member-view .member-actions .policy-revoke:hover:not(:disabled) { background: #fcf3f1; color: #a75b52; }
+#policy-member-view .policy-entry-body { margin: 10px 0 12px; color: #252b29; font-size: 12px; line-height: 1.7; }
+.policy-entry-meta { margin: 0 0 12px; color: #657068; font-size: 11px; line-height: 1.7; }
+.policy-entry-meta:empty { display: none; }
+#policy-member-view .policy-entry-meta p { margin: 2px 0 0; color: #657068; }
+#policy-member-view details { color: var(--muted); }
+#policy-member-view details p { color: #454e47; }
+.policy-history { margin-top: 10px; font-size: 11px; }
+.policy-history > summary, .policy-source > summary { width: fit-content; max-width: 100%; cursor: pointer; color: #68736b; overflow-wrap: anywhere; }
+.policy-history > summary:hover, .policy-source > summary:hover { color: var(--accent); }
+.policy-revision { margin: 12px 0 0 5px; padding: 2px 0 2px 12px; border-left: 2px solid var(--line); }
+.policy-revision h5 { margin: 0; color: #454e47; font-size: 11px; font-weight: 600; }
+#policy-member-view .policy-revision-meta { margin: 4px 0 10px; color: #707a73; font-size: 10px; line-height: 1.7; white-space: pre-line; }
+.policy-revision-body { margin: 0 0 10px; line-height: 1.7; }
+.policy-source { margin-top: 10px; font-size: 10px; }
+.policy-source p { margin: 8px 0 0; }
+.policy-followups { margin-top: 24px; border-top: 1px solid var(--line); padding-top: 16px; }
+.policy-followups > summary { color: #252b29; font-weight: 600; cursor: pointer; }
+#policy-member-view .policy-followups > .quiet { margin: 10px 0 14px; color: #707a73; font-size: 11px; line-height: 1.7; }
+.policy-followups-toolbar { margin-bottom: 12px; }
+#followups-status { flex: 1 1 90px; margin: 0; font-size: 11px; overflow-wrap: anywhere; }
+.policy-followups-toolbar label { display: inline-flex; align-items: center; gap: 6px; color: #657068; font-size: 11px; cursor: pointer; }
+.policy-followups-toolbar input[type="checkbox"] { width: 14px; height: 14px; margin: 0; accent-color: var(--accent); }
+.followup-record { border-top: 1px solid var(--line); padding: 12px 0; }
+.followup-record > summary { color: #252b29; overflow-wrap: anywhere; }
+.followup-state { display: inline-block; margin-left: 10px; font-weight: 400; color: var(--muted); }
+.followup-state[data-attention="true"], #policy-member-view .followup-attention { color: var(--accent); font-weight: 600; }
+.followup-detail { margin: 12px 0 0 16px; padding-left: 12px; border-left: 2px solid var(--line); }
+.followup-progress, .followup-sources { margin-bottom: 16px; }
+.followup-sources > summary { color: #454e47; font-weight: 600; }
+.followup-source { margin: 12px 0 0 12px; }
+.followup-source > div { padding: 8px 0 0 12px; }
+.followup-technical { margin-top: 12px; font-size: 11px; }
+#policy-member-view .followup-technical p { color: var(--muted); }
+
+.gitlab-setup { margin-top:12px; }
+#gitlab-advanced { margin:0; padding:0; border:0; }
+.gitlab-setup-heading { display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
+.gitlab-setup-heading h4 { margin:0; font-size:13px; font-weight:600; }
+.gitlab-setup-heading a { flex:none; font-size:12px; color:var(--accent); }
+.gitlab-setup > .quiet { margin:6px 0 0; }
+.gitlab-client-fields { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px; }
+.settings-dialog .gitlab-setup label { margin-top:12px; }
+.gitlab-setup input:not([type="checkbox"]) { min-height:34px; padding:7px 10px; }
+.gitlab-setup input[readonly] { color:var(--muted); font-size:12px; }
+.settings-dialog .gitlab-scopes { display:flex; flex-wrap:wrap; align-items:center; gap:8px 20px; min-width:0; margin:12px 0 0; padding:0; border:0; }
+.gitlab-scopes legend { padding:0; font-size:12px; font-weight:600; }
+.settings-dialog .gitlab-setup .gitlab-scope-option { display:flex; gap:6px; align-items:center; margin:4px 0 0; min-height:28px; font-weight:400; cursor:pointer; }
+.gitlab-scope-option input { flex:none; width:auto; margin:0; accent-color:var(--accent); }
+.gitlab-scope-option code { font-size:12px; overflow-wrap:anywhere; }
+.gitlab-setup-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px 12px; margin-top:16px; }
+.gitlab-setup-actions > .quiet { margin:0; }
+.gitlab-setup-feedback { flex-basis:100%; margin:0; color:var(--muted); }
+.gitlab-setup-feedback[data-kind="error"] { color:#9c4b43; }
+.gitlab-setup-feedback[data-kind="success"] { color:var(--accent); }
+@media (max-width:540px) {
+  .gitlab-client-fields { grid-template-columns:minmax(0,1fr); gap:0; }
+  .gitlab-setup-actions > .quiet { flex-basis:100%; }
+}
+
+/* Platform settings keep the ordinary path compact; deeper controls stay in disclosures. */
+.onboarding-options { border-block:1px solid var(--line); padding-block:16px; }
+.onboarding-options select { width:100%; }
+.onboarding-options .workspace-check { margin-block:10px; }
+.onboarding-result { margin:0 24px 16px; padding-top:12px; border-top:1px solid var(--line); font-size:13px; }
+.onboarding-status { display:flex; align-items:center; flex-wrap:wrap; gap:4px 12px; }
+#onboarding-result-summary { flex:1 1 200px; margin:0; line-height:1.7; overflow-wrap:anywhere; }
+.onboarding-status .connection-account-actions { flex:none; margin:0; }
+.onboarding-status .text-button { min-height:36px; padding:4px 0; font-size:12px; }
+#onboarding-result-details { margin-top:4px; }
+#onboarding-result-details > summary { width:fit-content; padding:6px 0; color:var(--muted); cursor:pointer; font-size:12px; }
+#onboarding-result-details > p { margin:8px 0; }
+#onboarding-result-details .activity-stats { margin:12px 0; }
+.onboarding-result dd { overflow-wrap:anywhere; }
+.onboarding-result .connection-account-actions { flex-wrap:wrap; }
+@media(max-width:640px) { .onboarding-result { margin-inline:18px; } .onboarding-status .text-button { min-height:44px; } }
+#gitlab-reuse-summary, #gitlab-application-issues { font-size:13px; line-height:1.7; overflow-wrap:anywhere; }
+#gitlab-compatibility-details { margin-top:10px; }
+#gitlab-application { width:100%; }
