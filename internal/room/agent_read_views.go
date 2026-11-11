@@ -107,6 +107,13 @@ func projectAgentInboxRead(id MemberIdentity, page referenceInboxPage) (agentRef
 		if e.Version != formatVersion {
 			return agentReferenceInboxPage{}, ErrVersion
 		}
+		if !e.validPayload() {
+			return agentReferenceInboxPage{}, ErrInvalid
+		}
+		if e.payloadType() == InboxTaskEventType {
+			entries = append(entries, projectInboxEntry(e, followupSourceSummary{}))
+			continue
+		}
 		var source *followupSourceSummary
 		for j := range page.Sources {
 			if page.Sources[j].Seq == e.Seq {

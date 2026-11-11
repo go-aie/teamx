@@ -127,6 +127,9 @@ func (m *roomManager) configureLarkSubscription(ctx context.Context, key notific
 	if err := m.checkOnboardingContextLocked(ctx); err != nil {
 		return lark.State{}, err
 	}
+	if err := m.checkPlatformMemberContextLocked(ctx); err != nil {
+		return lark.State{}, err
+	}
 
 	if key.Source != lark.MessagesSourceID {
 		return lark.State{}, ErrRequest
@@ -207,6 +210,9 @@ func (m *roomManager) configureLarkSubscription(ctx context.Context, key notific
 	next, err := m.configureLarkState(key.Owner, current, b, cfg)
 	if err != nil {
 		return next, notificationRoomError(err)
+	}
+	if err := m.checkPlatformMemberContextLocked(ctx); err != nil {
+		return lark.State{}, err
 	}
 	if err = m.notifications.SaveLocked(next); err != nil {
 		return next, notificationRoomError(err)

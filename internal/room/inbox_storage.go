@@ -30,6 +30,7 @@ type inboxIndex struct {
 	seq       uint64
 	digest    [32]byte
 	createdAt time.Time
+	kind      InboxEntryType
 }
 
 func inboxEntryName(seq uint64) string { return fmt.Sprintf("%020d.json", seq) }
@@ -70,7 +71,7 @@ func (e InboxEntry) validate(id MemberIdentity) error {
 	if e.MemberIdentity != id {
 		return ErrIdentity
 	}
-	if e.Seq == 0 || e.ReceivedAt.IsZero() || !validInboxItem(e.Item) {
+	if e.Seq == 0 || e.ReceivedAt.IsZero() || !e.validPayload() {
 		return ErrInvalid
 	}
 	return nil
@@ -156,16 +157,21 @@ func (s *Store) loadInbox(a *AgentInbox, requested InboxLimits) error {
 			if file.Name() != inboxEntryName(entry.Seq) {
 				return ErrInvalid
 			}
-			if _, exists := a.receipts[entry.Item.DeliveryID]; exists {
+			if _, exists := a.receipts[entry.metadata().deliveryID]; exists {
 				return ErrInvalid
 			}
 			size, err := inboxEntrySize(entry)
 			if err != nil {
 				return fmt.Errorf("%w: encode inbox entry: %w", ErrInvalid, err)
 			}
+			if entry.payloadType() == InboxTaskEventType {
+				if err := s.saveTaskDeliveryLocked(entry); err != nil {
+					return err
+				}
+			}
 			a.bytes += size
 			a.latest = max(a.latest, entry.Seq)
-			a.receipts[entry.Item.DeliveryID] = inboxIndex{entry.Seq, inboxDigest(entry.Item), entry.Item.CreatedAt}
+			a.receipts[entry.metadata().deliveryID] = entry.index()
 			if len(a.receipts) > a.limits.Entries || a.bytes > a.limits.Bytes {
 				return ErrCapacity
 			}
@@ -196,6 +202,11 @@ func (s *Store) saveInboxEntry(a *AgentInbox, entry InboxEntry) error {
 	if _, _, err := s.memberPath(a.id, "agent.json", true); err != nil {
 		return err
 	}
+	if entry.payloadType() == InboxTaskEventType {
+		if err := s.loadTaskEventLocked(a.id, *entry.TaskEvent); err != nil {
+			return err
+		}
+	}
 	path := filepath.Join(a.dir, inboxEntryName(entry.Seq))
 	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
 		if err != nil {
@@ -205,6 +216,12 @@ func (s *Store) saveInboxEntry(a *AgentInbox, entry InboxEntry) error {
 	}
 	if err := s.save(path, entry, a.limits.EntryBytes); err != nil {
 		return err
+	}
+	if entry.payloadType() == InboxTaskEventType {
+		if err := s.saveTaskDeliveryLocked(entry); err != nil {
+			s.uncertain = true
+			return fmt.Errorf("%w: task event delivery receipt: %w", ErrCommitUnknown, err)
+		}
 	}
 	header := inboxHeader{Version: 1, MemberIdentity: a.id, Limits: a.limits, LatestSeq: entry.Seq, ExpiredThrough: a.expiredThrough}
 	if err := s.save(filepath.Join(a.dir, "inbox.json"), header, maxPrivateFileBytes); err != nil {

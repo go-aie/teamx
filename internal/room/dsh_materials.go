@@ -218,7 +218,7 @@ func (s *service) prepareDSHMaterials(ctx context.Context, input UnreadChanged, 
 			continue
 		}
 		entry := page.Entries[0]
-		if entry.Item.Source.Provider != "gitlab" && entry.Item.Source.Provider != "lark" {
+		if entry.payloadType() != InboxPlatformNotification || (entry.Item.Source.Provider != "gitlab" && entry.Item.Source.Provider != "lark") {
 			continue
 		}
 		found := findNotificationImages(entry.Item.Text, entry.Item.Source)

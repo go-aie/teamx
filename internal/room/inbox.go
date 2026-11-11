@@ -20,6 +20,7 @@ type AgentInbox struct {
 	store          *Store
 	limits         InboxLimits
 	receipts       map[string]inboxIndex
+	taskReceipts   map[string]inboxIndex // Includes reclaimed internal deliveries.
 	latest         uint64
 	expiredThrough uint64
 	bytes          int64
@@ -43,7 +44,7 @@ func SpawnAgentInbox(rt *actorx.Runtime, store *Store, id MemberIdentity, limits
 	if limits != (InboxLimits{}) && !limits.valid() {
 		return actorx.Addr{}, ErrRequest
 	}
-	a := &AgentInbox{id: id, store: store, receipts: make(map[string]inboxIndex)}
+	a := &AgentInbox{id: id, store: store, receipts: make(map[string]inboxIndex), taskReceipts: make(map[string]inboxIndex)}
 	if _, loaded := store.activeInboxes.LoadOrStore(id.MembershipID, a); loaded {
 		return actorx.Addr{}, ErrBusy
 	}
@@ -92,22 +93,37 @@ func (a *AgentInbox) Receive(ctx actorx.Context, msg ReceiveInbox, reply actorx.
 	if a.committing {
 		return ErrBusy
 	}
-	if !validInboxItem(msg.Item) {
+	entry := InboxEntry{Version: 1, MemberIdentity: a.id, Type: msg.Type, Seq: a.latest + 1, Item: msg.Item, ReceivedAt: time.Now().UTC()}
+	if msg.TaskEvent != nil {
+		event := *msg.TaskEvent
+		event.CreatedAt = event.CreatedAt.UTC()
+		entry.TaskEvent = &event
+	}
+	entry.Item.CreatedAt = entry.Item.CreatedAt.UTC()
+	if !entry.validPayload() {
 		return ErrRequest
 	}
-	digest := inboxDigest(msg.Item)
-	if previous, ok := a.receipts[msg.Item.DeliveryID]; ok {
-		if previous.digest != digest {
+	entry.Type = entry.payloadType()
+	meta := entry.metadata()
+	if previous, ok := a.receipts[meta.deliveryID]; ok {
+		if previous.digest != meta.digest {
 			return ErrConflict
 		}
-		reply.Complete(InboxReceipt{MemberIdentity: a.id, Seq: previous.seq, DeliveryID: msg.Item.DeliveryID}, nil)
+		reply.Complete(InboxReceipt{MemberIdentity: a.id, Seq: previous.seq, DeliveryID: meta.deliveryID}, nil)
+		return nil
+	}
+	// Internal dedup survives body reclamation. Like retained receipts it is
+	// loaded before Spawn; actor callbacks never wait for disk or Store locks.
+	if previous, ok := a.taskReceipts[meta.deliveryID]; ok {
+		if previous.digest != meta.digest {
+			return ErrConflict
+		}
+		reply.Complete(InboxReceipt{MemberIdentity: a.id, Seq: previous.seq, DeliveryID: meta.deliveryID}, nil)
 		return nil
 	}
 	if a.latest == math.MaxUint64 {
 		return ErrCapacity
 	}
-	entry := InboxEntry{Version: 1, MemberIdentity: a.id, Seq: a.latest + 1, Item: msg.Item, ReceivedAt: time.Now().UTC()}
-	entry.Item.CreatedAt = entry.Item.CreatedAt.UTC()
 	size, err := inboxEntrySize(entry)
 	if err != nil {
 		return ErrRequest
@@ -131,8 +147,11 @@ func (a *AgentInbox) Receive(ctx actorx.Context, msg ReceiveInbox, reply actorx.
 			return true
 		}
 		a.latest, a.bytes = entry.Seq, a.bytes+size
-		a.receipts[entry.Item.DeliveryID] = inboxIndex{entry.Seq, digest, entry.Item.CreatedAt}
-		reply.Complete(InboxReceipt{MemberIdentity: a.id, Seq: entry.Seq, DeliveryID: entry.Item.DeliveryID}, nil)
+		a.receipts[meta.deliveryID] = entry.index()
+		if entry.payloadType() == InboxTaskEventType {
+			a.taskReceipts[meta.deliveryID] = entry.index()
+		}
+		reply.Complete(InboxReceipt{MemberIdentity: a.id, Seq: entry.Seq, DeliveryID: meta.deliveryID}, nil)
 		return true
 	}, nil)
 	if err != nil {

@@ -204,6 +204,9 @@ func (m *roomManager) selectionsLocked(f toolBindingsFile, caller Caller) ([]too
 }
 func (m *roomManager) changeToolBindingLocked(ctx context.Context, req toolBindingChange) (toolBindingsFile, []<-chan struct{}, error) {
 	var empty toolBindingsFile
+	if err := m.checkPlatformMemberContextLocked(ctx); err != nil {
+		return empty, nil, err
+	}
 	if req.ServiceEpoch != m.epoch || req.Caller.Kind != "human" || !validText(req.Caller.ID) || req.Caller.MembershipID != "" {
 		return empty, nil, ErrIdentity
 	}

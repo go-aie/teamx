@@ -280,6 +280,9 @@ func (s *Store) eventPath(id MemberIdentity, seq uint64) string {
 
 func (s *Store) loadFollowupEventLocked(e InboxEntry) (followupEvent, error) {
 	var r followupEvent
+	if e.payloadType() != InboxPlatformNotification {
+		return r, ErrRequest
+	}
 	if err := readSnapshot(s.eventPath(e.MemberIdentity, e.Seq), &r, followupBytes); err != nil {
 		return r, err
 	}
@@ -415,6 +418,9 @@ func (s *Store) recordFollowupResolution(id MemberIdentity, seq, turn, expected 
 	e, err := s.inboxEntryLocked(id, seq)
 	if err != nil {
 		return followupEvent{}, err
+	}
+	if e.payloadType() != InboxPlatformNotification {
+		return followupEvent{}, ErrRequest
 	}
 	if err := validateFollowupResolution(e, r, access); err != nil {
 		return followupEvent{}, err

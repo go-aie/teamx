@@ -1979,6 +1979,210 @@ function readPages(params, info) {
   return collectPages((page) => rpc("/v1/read", page, info), params);
 }
 
+// Connection interactions are projections of durable operations, never generated
+// HTML or temporary OAuth URLs saved in chat history. Each view owns stable nodes.
+const platformInteractionState = {views:new Map(), settings:new Map(), operations:[], busy:new Set(), errors:new Map(), loading:false, generation:0};
+const messageNodes = new Map(), dayNodes = new Map();
+function reconcileChildren(parent, children) {
+  for (let i=0; i<children.length; i++) if (parent.children[i] !== children[i]) parent.insertBefore(children[i], parent.children[i] || null);
+  const retained=new Set(children);
+  for (const child of [...parent.children]) if (!retained.has(child)) child.remove();
+}
+function resetPlatformInteractions() {
+  const s=platformInteractionState;s.generation++;s.loading=false;s.operations=[];s.views.clear();s.settings.clear();s.busy.clear();s.errors.clear();
+  $("conversation-connections").replaceChildren();$("conversation-connections-section").hidden=true;
+  notice("platform-interaction-error", "");messageNodes.clear();dayNodes.clear();
+}
+function connectionInteractionCard(op, inSettings=false) {
+  if(op.interaction.kind!=="lark_authorization")return selectionInteractionCard(op,inSettings);
+  const el=document.createElement("section");el.className="platform-connect-interaction";el.dataset.interactionId=op.interaction.id;
+  el.setAttribute("aria-label", "飞书连接");
+  const heading=document.createElement("strong"), status=document.createElement("p"), steps=document.createElement("p"), account=document.createElement("p"), hint=document.createElement("p"), feedback=document.createElement("p");
+  status.setAttribute("role","status");steps.className="quiet";account.className="quiet";hint.className="quiet";feedback.setAttribute("role","status");
+  const actions=document.createElement("div");actions.className="platform-connect-actions";
+  const link=document.createElement("a");link.className="platform-connect-authorize";link.target="_blank";link.rel="noopener noreferrer";link.referrerPolicy="no-referrer";
+  const qr=document.createElement("img");qr.className="platform-connect-qr";qr.alt="飞书授权二维码";
+  qr.addEventListener("error",()=>{qr.hidden=true;});
+  const cancel=document.createElement("button");cancel.type="button";cancel.className="text-button";cancel.textContent="取消连接";
+  const settings=document.createElement("button");settings.type="button";settings.className="text-button";settings.textContent="完整设置";settings.hidden=inSettings;
+  settings.addEventListener("click",()=>openSettings("platforms"));
+  actions.append(link,cancel,settings);el.append(heading,status,steps,account,qr,actions,hint,feedback);
+  const card={el,op,heading,status,steps,account,hint,feedback,link,qr,cancel};
+  cancel.addEventListener("click",()=>cancelPlatformInteraction(card));
+  return card;
+}
+function updatePlatformInteraction(card, op) {
+  if(op.interaction.kind!=="lark_authorization"){updateSelectionInteraction(card,op);return;}
+  card.op=op;
+  const terminal=["completed","cancelled","expired","failed","unknown"].includes(op.status);
+  const success=op.status==="completed" && op.connection.status==="connected";
+  const stages={application:"配置飞书应用",authorization:"授权飞书账号",connection:"核验并保存连接",complete:"连接已保存"};
+  const statuses={running:"正在",waiting:"等待你完成",cancelling:"正在取消",completed:"已连接",cancelled:"已取消",expired:"授权已过期",failed:"连接失败",unknown:"结果未确认"};
+  card.heading.textContent=`${op.name} · 飞书`;
+  card.status.textContent=terminal || op.status==="cancelling" ? statuses[op.status] : `${statuses[op.status] || "正在"}${stages[op.stage] || "处理连接"}`;
+  card.el.dataset.status=success ? "completed" : op.status;
+  const stepName=step=>({pending:"待完成",applied:"已完成",reused:"已复用",connected:"已保存",failed:"失败",unknown:"未确认"}[step.status] || "未确认");
+  card.steps.textContent=`应用${stepName(op.application)} · 账号授权${stepName(op.authorization)} · 连接${stepName(op.connection)}`;
+  card.account.hidden=!op.account_id;card.account.textContent=op.account_id ? `已核验账号：${op.account_id}` : "";
+  card.hint.textContent=!op.target_available ? "原 Agent 已移除或替换。可取消剩余操作，或通过完整设置查看连接。" : success ? "连接已保存。可发消息请 Agent 继续。" : terminal ? (op.error_code==="service_restarted" ? "服务已重启，请在完整设置中核对已发生的配置和授权。" : "已完成的应用配置和授权会保留，可请 Agent 核对进度，或进入完整设置处理。") : "请完成应用配置和账号授权；可能需要分两次操作。完成后可发消息请 Agent 继续。";
+  const continuation=op.continuation;
+  if(op.target_available && continuation && (continuation.mode==="inbox" || continuation.state==="handled")) {
+    const reasons={member_paused:"Agent 已暂停",member_failed:"上次回合失败，需恢复处理",inbox_admission_blocked:"前方通知的来源核验受阻",budget_exhausted:"Agent 执行预算已用完",backend_blocked:"Agent Session 需要恢复",checkpoint_failed:"Agent 检查点需要恢复",session_rotating:"Agent 正在轮换 Session",target_unavailable:"Agent 暂不可用",target_changed:"原 Agent 已移除或替换",inbox_capacity:"Inbox 容量不足",inbox_busy:"Inbox 正忙",inbox_delivery_unconfirmed:"交付结果待核实"};
+    if(continuation.state==="handled") card.hint.textContent="Agent 已核对此操作结果；后续需求以对话中的处理结果为准。";
+    else if(terminal) card.hint.textContent=`${success ? "连接已保存" : "操作结果已保存"}，${continuation.state==="consumed" ? "Agent 已读取，等待接续处理" : "等待 Agent 接续"}。${continuation.blocked_reason ? `${reasons[continuation.blocked_reason] || "接续暂受阻"}。` : ""}可发消息请 Agent 继续。`;
+    else card.hint.textContent="请完成应用配置和账号授权；可能需要分两次操作。结果已订阅，将经 Inbox 等待 Agent 接续；也可发消息主动继续。";
+  }
+  // Only fixed official authorization links and this service's image proxy.
+  let url="";try{const u=new URL(op.interaction.authorization_url);if(u.protocol==="https:" && ["open.feishu.cn","accounts.feishu.cn","passport.feishu.cn"].includes(u.hostname))url=u.href;}catch{}
+  const active=!terminal && op.status!=="cancelling" && op.target_available;
+  card.link.hidden=!active || !url;card.link.textContent=op.stage==="application" ? "配置飞书应用 ↗" : "授权飞书账号 ↗";
+  if(active && url) {if(card.link.href!==url)card.link.href=url;}else card.link.removeAttribute("href");
+  const qr=op.interaction.qrcode_url || "";
+  const showQR=active && qr.startsWith("/v1/platforms/lark/qrcode?");
+  // One session spans app setup and user authorization. A different image URL
+  // forces a fresh read when its QR changes, even if polling skipped the gap.
+  const imageURL=`${qr}&stage=${encodeURIComponent(op.stage)}`;
+  if(showQR){if(card.qr.getAttribute("src")!==imageURL){card.qr.src=imageURL;card.qr.hidden=false;}}else{card.qr.hidden=true;card.qr.removeAttribute("src");}
+  card.cancel.hidden=terminal;
+  card.cancel.disabled=platformInteractionState.busy.has(op.operation_id) || op.status==="cancelling";
+  card.feedback.textContent=platformInteractionState.errors.get(op.operation_id) || "";
+}
+function renderPlatformInteractions() {
+  const s=platformInteractionState, visible=new Set(), settingCards=[];
+  for(const op of s.operations) {
+    const message=state.messages.get(op.source_seq), host=messageNodes.get(op.source_seq)?.element.querySelector(".message-interactions");
+    if(host && message?.author.kind==="human" && message.author.id===state.operator) {
+      let card=s.views.get(op.operation_id);if(!card){card=connectionInteractionCard(op);s.views.set(op.operation_id,card);}
+      updatePlatformInteraction(card,op);if(card.el.parentElement!==host)host.append(card.el);visible.add(op.operation_id);
+    }
+    let setting=s.settings.get(op.operation_id);if(!setting){setting=connectionInteractionCard(op,true);s.settings.set(op.operation_id,setting);}
+    updatePlatformInteraction(setting,op);settingCards.push(setting.el);
+  }
+  for(const [id,card] of s.views) if(!visible.has(id)){card.el.remove();s.views.delete(id);}
+  for(const [id,card] of s.settings) if(!s.operations.some(op=>op.operation_id===id)){card.el.remove();s.settings.delete(id);}
+  reconcileChildren($("conversation-connections"),settingCards);
+  $("conversation-connections-section").hidden=settingCards.length===0;
+}
+async function refreshPlatformInteractions() {
+  const s=platformInteractionState;if(!state.managed || !state.info || s.loading)return;
+  const generation=s.generation,info=state.info,operator=state.operator;
+  s.loading=true;
+  try{
+    const data=await request("/v1/platforms/interactions/list",{...info,caller:{kind:"human",id:operator}},undefined,5000);
+    if(generation!==s.generation)return;
+    // Do not let a list read begun before cancellation replace its newer receipt.
+    s.operations=[...data.interactions,...(data.selections || [])].map(op=>{const old=s.operations.find(old=>old.operation_id===op.operation_id);return old && old.version>op.version ? old : op;});
+    notice("platform-interaction-error","");renderPlatformInteractions();
+  }catch{
+    if(generation!==s.generation)return;
+    // Invalidate live links on a failed observation; retain the last receipt.
+    for(const op of s.operations)op.interaction={id:op.interaction.id,kind:op.interaction.kind};
+    renderPlatformInteractions();notice("platform-interaction-error","连接进度暂时无法读取，正在重试。可发消息请 Agent 查询原操作。");
+  }finally{if(generation===s.generation)s.loading=false;}
+}
+async function cancelPlatformInteraction(card) {
+  const s=platformInteractionState,op=card.op,id=op.operation_id;
+  if(s.busy.has(id) || card.cancel.disabled)return;
+  const generation=s.generation,payload={...state.info,caller:{kind:"human",id:state.operator},operation_id:id,version:op.version};
+  s.busy.add(id);s.errors.delete(id);renderPlatformInteractions();
+  try{
+    const receipt=await request("/v1/platforms/interactions/cancel",payload,undefined,5000);
+    if(generation!==s.generation)return;
+    s.operations=s.operations.map(old=>old.operation_id===id && old.version<=receipt.version ? receipt : old);
+  }catch(error){if(generation===s.generation)s.errors.set(id,error.code==="conflict" ? "进度已变化，请核对最新状态后再操作。" : "取消结果未确认，正在读取原操作；已发生的配置与授权不会撤销。");}
+  finally{if(generation===s.generation){s.busy.delete(id);renderPlatformInteractions();void refreshPlatformInteractions();}}
+}
+
+// Fixed account/group forms share the durable selection draft. Local dirty
+// input retains its base version until submission or an explicit conflict reload.
+function selectionInteractionCard(op,inSettings=false) {
+  const el=document.createElement("section");el.className="platform-connect-interaction platform-selection";el.dataset.interactionId=op.operation_id;
+  const heading=document.createElement("strong"),status=document.createElement("p"),fields=document.createElement("div"),candidates=document.createElement("div"),feedback=document.createElement("p"),actions=document.createElement("div"),hint=document.createElement("p");
+  fields.className="platform-selection-fields";candidates.className="platform-selection-candidates";actions.className="platform-connect-actions";status.setAttribute("role","status");feedback.setAttribute("role","status");hint.className="quiet";
+  const input=(label,type="text")=>{const host=document.createElement("label"),title=document.createElement("span"),field=document.createElement("input");title.textContent=label;field.type=type;host.append(title,field);fields.append(host);return field;};
+  const account=op.input.kind==="account",name=account ? input("新连接名称") : null,query=account ? null : input("搜索群聊");
+  const search=document.createElement("button");search.type="button";search.textContent="搜索";search.className="text-button";search.hidden=account;
+  const more=document.createElement("button");more.type="button";more.textContent="加载更多";more.className="text-button";more.hidden=true;
+  const mode=document.createElement("select");mode.setAttribute("aria-label","群消息范围");
+  for(const [value,label] of [["","保留现有消息范围"],["all","全部群消息"],["mentions","仅提及我的消息"]]){const item=document.createElement("option");item.value=value;item.textContent=label;mode.append(item);}
+  if(!account){const label=document.createElement("label"),text=document.createElement("span");text.textContent="群消息范围";label.append(text,mode);fields.append(label);}
+  const selected=document.createElement("p");selected.className="quiet";
+  const submit=document.createElement("button");submit.type="button";submit.textContent="提交选择";submit.className="primary";
+  const cancel=document.createElement("button");cancel.type="button";cancel.className="text-button";cancel.textContent="取消选择";
+  const reload=document.createElement("button");reload.type="button";reload.className="text-button";reload.textContent="载入最新草稿";reload.hidden=true;
+  const settings=document.createElement("button");settings.type="button";settings.className="text-button";settings.textContent="完整设置";settings.hidden=inSettings;settings.addEventListener("click",()=>openSettings("platforms"));
+  actions.append(submit,cancel,reload,settings);el.append(heading,status,fields,search,candidates,more,selected,actions,hint,feedback);
+  const card={el,op,heading,status,fields,candidates,feedback,actions,hint,name,query,search,more,mode,selected,submit,cancel,reload,dirty:false,editVersion:0,draft:null,rows:new Map(),searchGeneration:0,searchBusy:false,queryValue:"",pageToken:"",loaded:false};
+  const dirty=()=>{card.dirty=true;};
+  name?.addEventListener("input",()=>{card.draft.name=name.value;card.draft.platform_id="";card.draft.platform_version=0;dirty();updateSelectionInteraction(card,card.op);});
+  mode.addEventListener("change",()=>{card.draft.group_message_mode=mode.value;dirty();});
+  search.addEventListener("click",()=>loadSelectionCandidates(card,false));more.addEventListener("click",()=>loadSelectionCandidates(card,true));
+  query?.addEventListener("keydown",event=>{if(event.key==="Enter"){event.preventDefault();void loadSelectionCandidates(card,false);}});
+  reload.addEventListener("click",()=>{card.dirty=false;card.editVersion=0;updateSelectionInteraction(card,card.op);void loadSelectionCandidates(card,false);});
+  submit.addEventListener("click",()=>submitSelectionInteraction(card));cancel.addEventListener("click",()=>submitSelectionInteraction(card,true));
+  return card;
+}
+function updateSelectionInteraction(card,op) {
+  card.op=op;const waiting=op.status==="waiting",account=op.input.kind==="account",busy=platformInteractionState.busy.has(op.operation_id);
+  if(!card.editVersion || (!card.dirty && card.editVersion!==op.version)) {
+    card.draft=structuredClone(op.draft);card.editVersion=op.version;
+    if(card.name && card.name.value!==(op.draft.name || ""))card.name.value=op.draft.name || "";
+    if(!card.loaded && card.query)card.query.value=op.input.query || "";
+    card.mode.value=op.draft.group_message_mode || "";
+  }
+  card.heading.textContent=account ? "选择飞书账号" : "选择关注的群聊";
+  card.status.textContent=({waiting:"请选择后提交",completed:"选择已保存",cancelled:"选择已取消",expired:"表单已过期"})[op.status] || "结果待核实";
+  card.el.dataset.status=op.status;
+  card.selected.textContent=account ? (card.draft.platform_id ? `已选连接：${card.draft.name || card.draft.platform_id}` : "使用新连接，请填写名称") : `已选 ${card.draft.chat_ids?.length || 0} 个群：${(card.draft.chat_ids || []).map(id=>`${op.chats?.find(c=>c.chat_id===id)?.name || card.rows.get(id)?.chatName || "群聊"} (${id})`).join("、")}`;
+  const active=waiting && op.target_available;
+  for(const field of [card.name,card.query,card.mode,card.search,card.more,card.submit,card.cancel])if(field)field.disabled=!active || busy;
+  for(const [id,row] of card.rows){row.control.disabled=!active || busy;row.control.checked=account ? card.draft.platform_id===id : (card.draft.chat_ids || []).includes(id);}
+  card.fields.hidden=!waiting;card.candidates.hidden=!waiting;card.search.hidden=account || !waiting;card.more.hidden=!waiting || !card.pageToken;
+  card.submit.hidden=!waiting;card.cancel.hidden=!waiting;card.reload.hidden=!active || !(card.dirty && card.editVersion!==op.version);
+  const continuation=op.continuation,reasons={member_paused:"Agent 已暂停",member_failed:"上次回合失败，需恢复处理",inbox_admission_blocked:"前方通知来源核验受阻",budget_exhausted:"执行预算已用完",backend_blocked:"Session 需要恢复",checkpoint_failed:"检查点需要恢复",session_rotating:"Session 正在轮换",target_unavailable:"Agent 暂不可用",target_changed:"原 Agent 已替换",inbox_capacity:"Inbox 容量不足",inbox_busy:"Inbox 正忙",inbox_delivery_unconfirmed:"交付结果待核实"};
+  card.hint.textContent=!op.target_available ? "原 Agent 已移除或替换，选择不会转交新成员。" : waiting ? "提交后由 Agent 核验并继续处理。可打开完整设置；关闭设置不会取消此选择。" : continuation?.state==="handled" ? "Agent 已核对选择；实际连接和关注结果以对话反馈为准。" : `选择结果已保存，${continuation?.mode==="inbox" ? "等待 Agent 接续" : "可发消息请 Agent 继续"}。${continuation?.blocked_reason ? `${reasons[continuation.blocked_reason] || "接续暂受阻"}。可发消息主动继续。` : ""}`;
+  card.feedback.textContent=platformInteractionState.errors.get(op.operation_id) || (card.dirty && card.editVersion!==op.version ? "草稿已在其他位置更新。你的输入仍保留，请核对后载入最新草稿。" : card.candidateFeedback || "");
+  if(!card.loaded && active && !busy){card.loaded=true;void loadSelectionCandidates(card,false);}
+}
+async function loadSelectionCandidates(card,append) {
+  if(card.searchBusy)return;
+  const s=platformInteractionState,generation=s.generation,requestVersion=++card.searchGeneration,query=append ? card.queryValue : (card.query?.value || "");
+  card.searchBusy=true;card.search.disabled=true;card.more.disabled=true;
+  try {
+    const result=await request("/v1/platforms/selection-interactions/candidates",{...state.info,caller:{kind:"human",id:state.operator},operation_id:card.op.operation_id,query,page_token:append ? card.pageToken : ""},undefined,35000);
+    if(generation!==s.generation || requestVersion!==card.searchGeneration)return;
+    card.queryValue=query;card.pageToken=result.has_more ? result.page_token : "";
+    if(!append){card.rows.clear();card.candidates.replaceChildren();}
+    const account=card.op.input.kind==="account",rows=account ? [...result,{id:"",name:"连接另一个飞书账号",version:0}] : result.chats;
+    for(const item of rows){const id=account ? item.id : item.chat_id;if(card.rows.has(id))continue;
+      const row=document.createElement("label"),control=document.createElement("input"),text=document.createElement("span");control.type=account ? "radio" : "checkbox";control.name=`selection-${card.op.operation_id}-${card.el===s.views.get(card.op.operation_id)?.el ? "chat" : "settings"}`;
+      text.textContent=account ? `${item.name}${item.username ? ` · ${item.username}` : ""}${item.id ? ` · ${item.account?.id?.value || item.id}` : ""}` : `${item.name || id} · ${id}${item.chat_mode==="topic" ? " · 话题群" : ""}`;
+      row.append(control,text);card.candidates.append(row);card.rows.set(id,{control,chatName:item.name});
+      control.addEventListener("change",()=>{
+        card.dirty=true;
+        if(account){card.draft.platform_id=id;card.draft.platform_version=item.version;card.draft.name=id ? item.name : (card.name.value || "");if(id)card.name.value=item.name;}
+        else {const selected=new Set(card.draft.chat_ids || []);if(control.checked)selected.add(id);else selected.delete(id);card.draft.chat_ids=[...selected];}
+        updateSelectionInteraction(card,card.op);
+      });
+    }
+    card.candidateFeedback=(result.search_warnings || []).map(w=>w.code==="permission_denied" ? "部分搜索权限不足，可补充授权或清空关键词浏览" : w.code==="refine_query" ? "结果较多，请输入更完整的群名" : "部分搜索暂不可用，请重试").join("；") || (!rows.length ? "暂无候选；可调整搜索，结果不代表所有群。" : "");
+  }catch(error){if(generation===s.generation){card.candidateFeedback=error.code==="conflict" ? "账号或表单已变化，请 Agent 查询原选择，或在完整设置中核对。" : "候选读取失败，请重试搜索或进入完整设置。";}}
+  finally{if(generation===s.generation){card.searchBusy=false;updateSelectionInteraction(card,card.op);}}
+}
+async function submitSelectionInteraction(card,cancel=false) {
+  const s=platformInteractionState,id=card.op.operation_id;if(s.busy.has(id))return;
+  const generation=s.generation,identity={...state.info,caller:{kind:"human",id:state.operator},operation_id:id};
+  let version=card.editVersion;
+  s.busy.add(id);s.errors.delete(id);renderPlatformInteractions();
+  try {
+    if(!cancel && card.dirty){const updated=await request("/v1/platforms/selection-interactions/update",{...identity,version,draft:structuredClone(card.draft)},undefined,5000);version=updated.version;card.editVersion=version;card.dirty=false;}
+    const receipt=await request(`/v1/platforms/selection-interactions/${cancel ? "cancel" : "submit"}`,{...identity,version},undefined,40000);
+    if(generation!==s.generation)return;
+    card.dirty=false;s.operations=s.operations.map(op=>op.operation_id===id && op.version<=receipt.version ? receipt : op);
+  }catch(error){if(generation===s.generation)s.errors.set(id,error.code==="conflict" ? "草稿、账号或成员已变化；请核对最新草稿或请 Agent 查询原选择。" : "提交结果未确认，正在查询原选择。请核对结果后继续。");}
+  finally{if(generation===s.generation){s.busy.delete(id);renderPlatformInteractions();void refreshPlatformInteractions();}}
+}
+
 function messageElement(message) {
   const el = $("message-template").content.firstElementChild.cloneNode(true);
   el.id = `message-${message.seq}`;
@@ -2057,7 +2261,7 @@ function messageElement(message) {
 }
 
 function renderMessages() {
-  const fragment = document.createDocumentFragment();
+  const nodes = [];
   const messages = [...state.messages.values()].sort((a, b) => a.seq - b.seq);
   let day = "";
   for (const message of messages) {
@@ -2065,14 +2269,24 @@ function renderMessages() {
     const nextDay = systemTime.day(date);
     if (nextDay !== day) {
       day = nextDay;
-      const divider = document.createElement("div");
-      divider.className = "day-divider";
+      let divider=dayNodes.get(day);
+      if(!divider){divider=document.createElement("div");divider.className="day-divider";dayNodes.set(day,divider);}
       divider.textContent = systemTime.error ? formatDate(date) : `${formatDate(date, {month:"long",day:"numeric"})} ${formatDate(date, {weekday:"short"})}`;
-      fragment.append(divider);
+      nodes.push(divider);
     }
-    fragment.append(messageElement(message));
+    let cached=messageNodes.get(message.seq);
+    if(!cached){cached={element:messageElement(message)};messageNodes.set(message.seq,cached);}
+    const el=cached.element;
+    const mentioned=mentionRanges(message.text,state.operator).length>0;
+    el.classList.toggle("mentioned",message.seq>mentionSeenThrough && !mentionSeen.has(message.seq) && mentioned && !(message.author.kind==="human" && message.author.id===state.operator));
+    el.querySelector("time").textContent=formatDate(message.created_at,{hour:"2-digit",minute:"2-digit"});
+    el.querySelector("time").title=formatDate(message.created_at);
+    if(message.reply_to){const target=state.messages.get(message.reply_to);el.querySelector(".message-reference").textContent=target ? `↳ #${target.seq} ${target.author.id}：${target.text}` : message.reply_to<=state.clearedThrough ? `↳ 引用消息 #${message.reply_to} · 已清空` : `↳ 引用消息 #${message.reply_to} · 加载更早消息可查看`;}
+    nodes.push(el);
   }
-  $("messages").replaceChildren(fragment);
+  for(const seq of messageNodes.keys())if(!state.messages.has(seq))messageNodes.delete(seq);
+  reconcileChildren($("messages"),nodes);
+  renderPlatformInteractions();
   state.oldest = messages[0]?.seq || 0;
   $("empty").hidden = messages.length !== 0;
   $("load-history").hidden = state.oldest <= state.clearedThrough + 1;
@@ -2479,6 +2693,36 @@ function notificationParticipant(person) {
   if (person.is_receiver && name !== "我") name += "（我）";
   return name;
 }
+function renderInboxTaskEvent(entry) {
+  const section = document.createElement("section"); section.className = "activity-section";
+  section.dataset.inboxSeq = String(entry.seq);
+  const heading = document.createElement("header"); heading.className = "inbox-entry-header";
+  const seq = document.createElement("span"); seq.className = "inbox-entry-seq"; seq.textContent = `#${entry.seq}`;
+  const kind = document.createElement("span"); kind.className = "inbox-channel"; kind.textContent = "内部事件";
+  const event = entry.task_event;
+  const time = document.createElement("time"), date = new Date(event?.created_at || entry.received_at);
+  if (Number.isFinite(date.getTime())) {
+    time.dateTime = date.toISOString();
+    bindSystemTime(time, () => { time.textContent = formatDate(date, {month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}); time.title = formatDate(date); });
+  }
+  heading.append(seq, kind, time); section.append(heading);
+  const title = document.createElement("h3");
+  title.textContent = {operation_completed:"操作结果已保存", operation_failed:"操作失败", user_selection:"用户选择已保存"}[event?.event_type] || "无法识别的事件";
+  section.append(title);
+  const body = document.createElement("p"); body.className = "quiet";
+  body.textContent = "供 Agent 接续处理；收到或消费此事件不代表原需求已完成。"; section.append(body);
+  if (event) {
+    const details = document.createElement("details"); details.className = "inbox-source-details";
+    const summary = document.createElement("summary"); summary.textContent = "事件详情";
+    const fields = document.createElement("dl"); fields.className = "inbox-source-fields";
+    for (const [label, value] of [["操作", event.operation_id], ["结果版本", event.result_version], ["原请求", event.source_seq && `#${event.source_seq}`], ["结果引用", event.result_ref], ["事件", event.event_id]]) {
+      const key = document.createElement("dt"), text = document.createElement("dd");
+      key.textContent = label; text.textContent = value == null ? "" : String(value); fields.append(key, text);
+    }
+    details.append(summary, fields); section.append(details);
+  }
+  return section;
+}
 function inboxSourceDetails(entry) {
   const item = entry.item, source = entry.source || {};
   const details = document.createElement("details"); details.className = "inbox-source-details";
@@ -2645,6 +2889,15 @@ async function loadMemberInbox(action = "latest", knownStatus) {
     const nodes = data.entries.map(entry => {
       const old = previous.get(entry.seq);
       if (old?.node && JSON.stringify(old.entry) === JSON.stringify(entry)) return old.node;
+      if (entry.type === "task_event") {
+        const section = renderInboxTaskEvent(entry);
+        if (old?.node?.querySelector("details")?.open) section.querySelector("details").open = true;
+        return section;
+      }
+      if (entry.type && entry.type !== "platform_notification") {
+        const section = document.createElement("section"); section.dataset.inboxSeq = String(entry.seq);
+        section.textContent = `#${entry.seq} · 无法识别的 Inbox 条目类型`; return section;
+      }
       const section = document.createElement("section"); section.className = "activity-section";
       const item = entry.item;
       const source = item;
@@ -2912,6 +3165,7 @@ function selectView(info, operator) {
   closeRename(false);
   $("notification-detail").close();
   viewVersion++;
+  resetPlatformInteractions();
   activity.close(); $("activity-dialog").close(); activitySignature = "";
   activityMember = null;
   $("room-menu").open = false;
@@ -3229,6 +3483,7 @@ async function sync() {
     renderMentionNotice();
     state.members = members.members;
     state.connected = true;
+    void refreshPlatformInteractions();
     renderMembers(); void activity.refresh();void refreshMemberPolicy();void refreshMemberInbox();
     $("connection").textContent = "已连接 · 自动刷新";
     $("connection").classList.remove("offline");
@@ -5113,7 +5368,7 @@ async function openSettings(tab = settingsTab) {
   notificationNavigation++;
   if (state.managed ? !state.catalog : !state.info) return;
   showPlatformList(); settingsTab = state.managed ? tab : "general";
-  timezonePicker.open = false; renderTimeZone(); $("settings-dialog").showModal(); if(state.managed) {await loadPlatforms();await restoreOnboarding();}
+  timezonePicker.open = false; renderTimeZone(); $("settings-dialog").showModal(); if(state.managed) {void refreshPlatformInteractions();await loadPlatforms();await restoreOnboarding();}
 }
 $("open-settings").addEventListener("click", () => openSettings());
 $("open-general-settings").addEventListener("click", () => openSettings());
@@ -5124,7 +5379,7 @@ async function closeSettings() {
 $("close-settings").addEventListener("click", closeSettings);
 dismissOnBackdrop($("settings-dialog"), closeSettings);
 $("settings-dialog").addEventListener("cancel", event => { if (platforms.sending) event.preventDefault(); });
-$("settings-dialog").addEventListener("close", () => { timezonePicker.open = false; renderTimeZoneOptions(); void cancelPlatformAuth(); $("gitlab-client-secret").value = ""; platforms.formVersion++; platforms.generation++;
+$("settings-dialog").addEventListener("close", () => { for(const card of [...platformInteractionState.views.values(),...platformInteractionState.settings.values()])if(card.op.interaction.kind!=="lark_authorization" && card.op.status==="waiting"){card.loaded=false;}renderPlatformInteractions(); timezonePicker.open = false; renderTimeZoneOptions(); void cancelPlatformAuth(); $("gitlab-client-secret").value = ""; platforms.formVersion++; platforms.generation++;
   if ($("notification-detail").open) { $(workspaceView?.notificationChannel === "messages" ? "lark-manage-platforms" : "gitlab-manage-platforms").focus(); void loadWorkspacePlatforms(); }
   else if($("activity-dialog").open){$("member-notification-add-toggle").focus({preventScroll:true});void loadWorkspacePlatforms();if(memberToolsView && toolsCurrent(memberToolsView))void loadCLITools(memberToolsView);}
   else $(state.managed ? "open-settings" : "open-general-settings").focus(); });

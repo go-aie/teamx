@@ -50,15 +50,19 @@ type larkAuthView struct {
 }
 
 // Sessions are service-local, bounded and owned by the initiating operator.
-// Nothing here (including links) is persisted or exposed to Agent tools.
+// Authorization links remain service-local; connection status can expose them
+// to the initiating member without persisting temporary authorization material.
 type larkAuthSession struct {
 	larkAuthView
-	owner   string
-	profile platform.CLIProfile
-	cancel  context.CancelFunc
-	done    chan struct{}
-	expires time.Time
-	setup   bool
+	owner       string
+	profile     platform.CLIProfile
+	cancel      context.CancelFunc
+	done        chan struct{}
+	expires     time.Time
+	setup       bool
+	operationID string
+	validation  platform.Validation
+	connectErr  error
 }
 
 func (m *roomManager) larkAuthBusyLocked(p *platform.CLIProfile) bool {
@@ -114,7 +118,7 @@ func (m *roomManager) serveLarkAuth(w http.ResponseWriter, r *http.Request) {
 	}
 	if action == "status" || action == "cancel" {
 		s := m.larkAuthSessions[req.SessionID]
-		if s == nil || s.owner != req.Caller.ID || time.Now().After(s.expires) || req.Profile != nil || req.Executable != "" || req.Brand != "" || len(req.Affected) != 0 {
+		if s == nil || s.operationID != "" || s.owner != req.Caller.ID || time.Now().After(s.expires) || req.Profile != nil || req.Executable != "" || req.Brand != "" || len(req.Affected) != 0 {
 			m.mu.Unlock()
 			writeAPIError(w, ErrConflict)
 			return
@@ -265,6 +269,14 @@ func (m *roomManager) serveLarkAuthQRCode(w http.ResponseWriter, r *http.Request
 		writeAPIError(w, ErrIdentity)
 		return
 	}
+	if s.operationID != "" {
+		op, err := m.readPlatformConnectLocked(s.operationID)
+		if err != nil || connectTerminal(op.Status) || op.CancelRequested || m.checkOnboardingTargetLocked(r.Context(), platformOnboardingSpec{MemberIdentity: op.MemberIdentity}) != nil {
+			m.mu.Unlock()
+			writeAPIError(w, ErrIdentity)
+			return
+		}
+	}
 	qr := s.QRCode
 	m.mu.Unlock()
 	data, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(qr, "data:image/png;base64,"))
@@ -360,6 +372,7 @@ func (m *roomManager) runLarkAuth(ctx context.Context, s *larkAuthSession, actio
 			defer m.mu.Unlock()
 			if ctx.Err() == nil {
 				s.Status, s.URL, s.QRCode = "waiting", link, qr
+				m.checkpointPlatformConnectLocked(s)
 			}
 		})
 	}
@@ -378,11 +391,13 @@ func (m *roomManager) runLarkAuth(ctx context.Context, s *larkAuthSession, actio
 		if ctx.Err() == context.Canceled {
 			s.Status = "cancelled"
 		}
-		if s.setup && ctx.Err() == context.DeadlineExceeded {
+		if s.setup && lark.ErrorCode(err) == "timeout" {
 			s.Status = "expired"
 		}
 	} else if s.setup {
 		s.Stage = "complete"
 	}
+	s.validation = login.Validation
 	close(s.done)
+	m.finishPlatformConnectLocked(s)
 }

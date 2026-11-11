@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 
 	"github.com/go-aie/actorx"
-	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
 const inboxBatchSize uint64 = 25
@@ -47,12 +46,15 @@ type InboxBatchPage struct {
 func (s *Store) loadInboxConsumption(a *AgentInbox) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if a.taskReceipts == nil {
+		a.taskReceipts = make(map[string]inboxIndex)
+	}
 	c := inboxConsumption{Version: 1, MemberIdentity: a.id}
 	err := readSnapshot(filepath.Join(a.dir, "consumption.json"), &c, maxPrivateFileBytes)
 	if errors.Is(err, os.ErrNotExist) {
 		// Followup events can only be linked after a durable batch is issued. A missing
 		// cursor alongside business records is corruption, never a fresh inbox.
-		for _, name := range []string{filepath.Join("followups", "events")} {
+		for _, name := range []string{filepath.Join("followups", "events"), filepath.Join("task-events", "links")} {
 			entries, e := os.ReadDir(filepath.Join(s.dir, "agents", a.id.MembershipID, name))
 			if e != nil && !errors.Is(e, os.ErrNotExist) {
 				return e
@@ -72,6 +74,15 @@ func (s *Store) loadInboxConsumption(a *AgentInbox) error {
 	for i, seq := range c.Skipped {
 		if seq == 0 || seq > a.latest || i > 0 && seq <= c.Skipped[i-1] {
 			return ErrInvalid
+		}
+		if seq > a.expiredThrough {
+			e, err := s.inboxEntryLocked(a.id, seq)
+			if err != nil {
+				return err
+			}
+			if e.payloadType() != InboxPlatformNotification {
+				return ErrInvalid
+			}
 		}
 	}
 	if b := c.Batch; b != nil {
@@ -101,6 +112,9 @@ func (s *Store) loadInboxConsumption(a *AgentInbox) error {
 		if err := s.visitFollowupEventsLocked(a.id, func(followupEvent) error { return nil }); err != nil {
 			return err
 		}
+	}
+	if err := s.validateTaskEventsLocked(a.id, a.expiredThrough, a.latest, c.Through, a.taskReceipts); err != nil {
+		return err
 	}
 	a.consumption = c
 	return nil
@@ -141,18 +155,6 @@ func (s *Store) saveInboxConsumption(c inboxConsumption, confirm bool) error {
 		}
 	}
 	return s.save(filepath.Join(s.dir, "inboxes", c.MembershipID, "consumption.json"), c, maxPrivateFileBytes)
-}
-
-func (s *Store) checkInboxBusinessLinkLocked(e InboxEntry) error {
-	admission, err := s.inboxAdmissionLocked(e)
-	if err != nil {
-		return err
-	}
-	if admission.Verified && admission.Decision == notification.AdmissionExcluded {
-		return nil
-	}
-	_, err = s.loadFollowupEventLocked(e)
-	return err
 }
 
 func (a *AgentInbox) ReadBatch(ctx actorx.Context, msg ReadInboxBatch, reply actorx.Reply[InboxBatchPage]) error {

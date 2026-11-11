@@ -7,9 +7,64 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/go-aie/actorx"
+	"github.com/go-aie/teamx/internal/platform/notification"
 )
+
+// Expiry and reclamation use the same closed dispatch as reads/confirmation.
+// Internal events never inherit platform expiry or depend on long-lived work.
+func (s *Store) inboxReclaimEligibleLocked(e InboxEntry, c inboxConsumption, msg MaintainInbox, cutoff time.Time) (bool, error) {
+	switch e.payloadType() {
+	case InboxPlatformNotification:
+		return notification.Expired(e.Item.CreatedAt, cutoff) && !msg.Pending[e.Item.DeliveryID] && (e.Seq <= c.Through || c.skipped(e.Seq)), nil
+	case InboxTaskEventType:
+		if e.Seq > c.Through || c.skipped(e.Seq) {
+			return false, nil
+		}
+		if err := s.checkTaskEventLinkLocked(e); err != nil {
+			return false, err
+		}
+		var link inboxTaskLink
+		if err := readSnapshot(s.taskEventPath(e.MemberIdentity, "links", taskLinkKey(e.Seq)), &link, maxPrivateFileBytes); err != nil {
+			return false, err
+		}
+		return !msg.Now.Before(link.LinkedAt.Add(inboxTaskRetention)), nil
+	}
+	return false, ErrInvalid
+}
+
+func (s *Store) prepareInboxReclaimLocked(e InboxEntry, c inboxConsumption) error {
+	if !e.validPayload() {
+		return ErrInvalid
+	}
+	if e.payloadType() == InboxTaskEventType {
+		if e.Seq > c.Through || c.skipped(e.Seq) {
+			return ErrBusy
+		}
+		return s.checkTaskEventLinkLocked(e)
+	}
+	if e.Seq <= c.Through && !c.skipped(e.Seq) {
+		if err := s.checkInboxBusinessLinkLocked(e); err != nil {
+			return err
+		}
+	}
+	// Context-only platform messages can link existing work without opening it.
+	if _, err := os.Stat(s.eventPath(e.MemberIdentity, e.Seq)); err == nil {
+		link, err := s.loadFollowupEventLocked(e)
+		if err != nil {
+			return err
+		}
+		if inboxContextOnly(e) && !link.ContextOnly {
+			link.ContextOnly = true
+			return s.save(s.eventPath(e.MemberIdentity, e.Seq), link, followupBytes)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
 
 // Reclaim serializes with the Inbox writer and previews. Store.mu then excludes
 // checkpoint/turn writes and all other readers for the entire commit and sweep.
@@ -85,26 +140,7 @@ func (s *Store) reclaimInbox(a *AgentInbox, through uint64) (int64, error) {
 		if err != nil {
 			return 0, err
 		}
-		if seq <= a.consumption.Through && !a.consumption.skipped(seq) {
-			if err := s.checkInboxBusinessLinkLocked(e); err != nil {
-				return 0, err
-			}
-		}
-		// Context-only entries may have no business unit. Preserve this one
-		// validation fact in existing resolution evidence, including legacy
-		// events; no notification body is copied into the followup store.
-		if _, err := os.Stat(s.eventPath(a.id, seq)); err == nil {
-			link, err := s.loadFollowupEventLocked(e)
-			if err != nil {
-				return 0, err
-			}
-			if inboxContextOnly(e) && !link.ContextOnly {
-				link.ContextOnly = true
-				if err := s.save(s.eventPath(a.id, seq), link, followupBytes); err != nil {
-					return 0, err
-				}
-			}
-		} else if !errors.Is(err, os.ErrNotExist) {
+		if err := s.prepareInboxReclaimLocked(e, a.consumption); err != nil {
 			return 0, err
 		}
 		size, err := inboxEntrySize(e)

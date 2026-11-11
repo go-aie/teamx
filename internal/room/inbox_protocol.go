@@ -30,8 +30,10 @@ func (l InboxLimits) valid() bool {
 type InboxEntry struct {
 	Version int `json:"version"`
 	MemberIdentity
+	Type       InboxEntryType    `json:"type,omitempty"`
 	Seq        uint64            `json:"seq"`
-	Item       notification.Item `json:"item"`
+	Item       notification.Item `json:"item,omitzero"`
+	TaskEvent  *InboxTaskEvent   `json:"task_event,omitempty"`
 	ReceivedAt time.Time         `json:"received_at"`
 }
 
@@ -39,7 +41,9 @@ type InboxEntry struct {
 // Call[InboxReceipt] success (not Send success) is the durable handoff boundary.
 type ReceiveInbox struct {
 	MemberIdentity
-	Item notification.Item
+	Type      InboxEntryType
+	Item      notification.Item
+	TaskEvent *InboxTaskEvent
 }
 
 type InboxReceipt struct {

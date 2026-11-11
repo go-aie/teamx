@@ -42,6 +42,19 @@ func admissionPath(s *Store, cap *notification.AdmissionCapability, source platf
 // Raw Inbox evidence remains immutable. Only the adapter interprets its
 // separate native proof; the common Store knows verification and admission.
 func (s *Store) inboxAdmissionLocked(e InboxEntry) (notification.Admission, error) {
+	if !e.validPayload() {
+		return notification.Admission{}, ErrInvalid
+	}
+	switch e.payloadType() {
+	case InboxTaskEventType:
+		if err := s.loadTaskEventLocked(e.MemberIdentity, *e.TaskEvent); err != nil {
+			return notification.Admission{}, err
+		}
+		return notification.Admission{Verified: true, Decision: notification.AdmissionAllow}, nil
+	case InboxPlatformNotification:
+	default:
+		return notification.Admission{}, ErrInvalid
+	}
 	cap := s.notificationCapabilities(e.Item.Source.Provider).Admission
 	if cap == nil {
 		return notification.Admission{Verified: true, Decision: notification.AdmissionAllow}, nil

@@ -207,6 +207,9 @@ func serveRoomManager(listener net.Listener, dir, teamsDir string, config servic
 	if err := manager.notifications.Start(); err != nil {
 		return err
 	}
+	manager.mu.Lock()
+	manager.startConnectNotificationsLocked()
+	manager.mu.Unlock()
 	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	server := &http.Server{Handler: manager, ReadHeaderTimeout: 3 * time.Second, ReadTimeout: 5 * time.Second,

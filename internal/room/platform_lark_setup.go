@@ -12,20 +12,29 @@ import (
 // Called with mu held; all returns release it. Setup never accepts a profile
 // or an impact acknowledgement: it creates a fresh CLI profile, not a connection.
 func (m *roomManager) startLarkSetupLocked(w http.ResponseWriter, req larkAuthRequest) {
-	if req.Profile != nil || req.SessionID != "" || len(req.Affected) != 0 || lark.Origin(req.Brand) == "" {
+	s, ctx, err := m.prepareLarkSetupLocked(req)
+	if err != nil {
 		m.mu.Unlock()
-		writeAPIError(w, ErrRequest)
+		writeLarkReadError(w, err)
 		return
+	}
+	view := s.larkAuthView
+	go m.runLarkSetup(ctx, s, req.Executable, req.Brand)
+	m.mu.Unlock()
+	_ = json.NewEncoder(w).Encode(view)
+}
+
+// Shared admission and reservation for settings and conversation connections.
+// Caller holds mu; this helper never releases it or starts external work.
+func (m *roomManager) prepareLarkSetupLocked(req larkAuthRequest) (*larkAuthSession, context.Context, error) {
+	if req.Profile != nil || req.SessionID != "" || len(req.Affected) != 0 || lark.Origin(req.Brand) == "" {
+		return nil, nil, ErrRequest
 	}
 	if req.Brand != "feishu" {
-		m.mu.Unlock()
-		writeLarkReadError(w, &lark.Error{Code: "setup_brand_unverified"})
-		return
+		return nil, nil, &lark.Error{Code: "setup_brand_unverified"}
 	}
 	if m.busy {
-		m.mu.Unlock()
-		writeAPIError(w, ErrBusy)
-		return
+		return nil, nil, ErrBusy
 	}
 	for id, s := range m.larkAuthSessions {
 		select {
@@ -36,21 +45,15 @@ func (m *roomManager) startLarkSetupLocked(w http.ResponseWriter, req larkAuthRe
 		default:
 			// Init and auth both rewrite the shared CLI config. Do not overlap
 			// them, including when the same operator clicks setup twice.
-			m.mu.Unlock()
-			writeAPIError(w, ErrBusy)
-			return
+			return nil, nil, ErrBusy
 		}
 	}
 	if len(m.larkAuthSessions) >= 32 {
-		m.mu.Unlock()
-		writeAPIError(w, ErrCapacity)
-		return
+		return nil, nil, ErrCapacity
 	}
 	id, err := newOpaqueID()
 	if err != nil {
-		m.mu.Unlock()
-		writeAPIError(w, err)
-		return
+		return nil, nil, err
 	}
 	// Each stage has its own ten-minute budget; both share cancellation and
 	// ownership. A long app configuration must not consume the OAuth budget.
@@ -64,10 +67,7 @@ func (m *roomManager) startLarkSetupLocked(w http.ResponseWriter, req larkAuthRe
 		m.larkAuthSessions = map[string]*larkAuthSession{}
 	}
 	m.larkAuthSessions[id] = s
-	view := s.larkAuthView
-	go m.runLarkSetup(ctx, s, req.Executable, req.Brand)
-	m.mu.Unlock()
-	_ = json.NewEncoder(w).Encode(view)
+	return s, ctx, nil
 }
 
 func (m *roomManager) runLarkSetup(ctx context.Context, s *larkAuthSession, executable, brand string) {
@@ -82,6 +82,7 @@ func (m *roomManager) runLarkSetup(ctx context.Context, s *larkAuthSession, exec
 		if progress.URL != "" {
 			s.Status, s.URL, s.QRCode = "waiting", progress.URL, progress.QRCode
 		}
+		m.checkpointPlatformConnectLocked(s)
 	})
 	m.mu.Lock()
 	s.URL, s.QRCode = "", ""
@@ -113,10 +114,12 @@ func (m *roomManager) runLarkSetup(ctx context.Context, s *larkAuthSession, exec
 			s.Status = "expired"
 		}
 		close(s.done)
+		m.finishPlatformConnectLocked(s)
 		m.mu.Unlock()
 		return
 	}
 	s.Status, s.Stage = "starting", "authorization"
+	m.checkpointPlatformConnectLocked(s)
 	m.mu.Unlock()
 	loginCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()

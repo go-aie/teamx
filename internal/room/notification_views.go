@@ -18,17 +18,26 @@ type notificationSourceLocation struct {
 
 // Both endpoints share this entry. Preview never resolves or consumes sources.
 type inboxEntryView struct {
+	Type               InboxEntryType              `json:"type"`
+	TaskEvent          *InboxTaskEvent             `json:"task_event,omitempty"`
 	NotificationSource *notificationSourceLocation `json:"notification_source,omitempty"`
 	Seq                uint64                      `json:"seq"`
-	Item               notification.View           `json:"item"`
+	Item               notification.View           `json:"item,omitzero"`
 	ReceivedAt         time.Time                   `json:"received_at"`
-	Source             followupSourceSummary       `json:"source"`
+	Source             followupSourceSummary       `json:"source,omitzero"`
 	Origin             *inboxMessageOrigin         `json:"origin,omitempty"`
 	AutomaticAdmission *notification.Admission     `json:"automatic_admission,omitempty"`
 }
 
 func projectInboxEntry(e InboxEntry, source followupSourceSummary) inboxEntryView {
-	return inboxEntryView{Seq: e.Seq, Item: projectNotification(e.Item), ReceivedAt: e.ReceivedAt, Source: source}
+	v := inboxEntryView{Type: e.payloadType(), Seq: e.Seq, ReceivedAt: e.ReceivedAt}
+	switch e.payloadType() {
+	case InboxPlatformNotification:
+		v.Item, v.Source = projectNotification(e.Item), source
+	case InboxTaskEventType:
+		v.TaskEvent = e.TaskEvent
+	}
+	return v
 }
 
 func inboxContextOnly(e InboxEntry) bool {
@@ -56,6 +65,16 @@ func (s *Store) projectInboxPreview(page InboxPage, status InboxStatus) (inboxPr
 		return v, err
 	}
 	for _, e := range page.Entries {
+		if err := e.validate(page.MemberIdentity); err != nil {
+			return v, err
+		}
+		if e.payloadType() == InboxTaskEventType {
+			if err := s.loadTaskEventLocked(e.MemberIdentity, *e.TaskEvent); err != nil {
+				return v, err
+			}
+			v.Entries = append(v.Entries, projectInboxEntry(e, followupSourceSummary{}))
+			continue
+		}
 		source := followupSourceSummary{Seq: e.Seq, SourceRef: referenceDigest("src_", e.MemberIdentity, e.Seq, e.Item.DeliveryID), Status: "not_checked"}
 		if _, err := os.Stat(s.eventPath(e.MemberIdentity, e.Seq)); err == nil {
 			link, err := s.loadFollowupEventLocked(e)

@@ -8,6 +8,22 @@ import (
 )
 
 func (m *roomManager) servePlatforms(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, "/v1/platforms/selection/") || strings.HasPrefix(r.URL.Path, "/v1/platforms/selection-interactions/") {
+		m.servePlatformSelection(w, r)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/v1/platforms/interactions/") {
+		m.servePlatformConnectInteraction(w, r)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/v1/platforms/member/") || r.URL.Path == "/v1/platforms/chats" {
+		m.servePlatformMember(w, r)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/v1/platforms/connect/") || r.URL.Path == "/v1/platforms/skill" || r.URL.Path == "/v1/platforms/list" {
+		m.servePlatformConnect(w, r)
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, "/v1/platforms/onboarding/") {
 		m.servePlatformOnboarding(w, r)
 		return

@@ -138,7 +138,7 @@ func (s *Store) planInboxMaintenance(a *AgentInbox, msg MaintainInbox) (inboxCon
 	var added []uint64
 	if msg.Policy.SkipExpired {
 		for _, index := range a.receipts {
-			if index.seq <= c.Through || c.skipped(index.seq) || !notification.Expired(index.createdAt, cutoff) {
+			if index.kind != InboxPlatformNotification || index.seq <= c.Through || c.skipped(index.seq) || !notification.Expired(index.createdAt, cutoff) {
 				continue
 			}
 			if _, err := s.inboxEntryLocked(a.id, index.seq); err != nil {
@@ -160,7 +160,11 @@ func (s *Store) planInboxMaintenance(a *AgentInbox, msg MaintainInbox) (inboxCon
 		if err != nil {
 			return c, 0, err
 		}
-		if !notification.Expired(e.Item.CreatedAt, cutoff) || msg.Pending[e.Item.DeliveryID] || (seq > c.Through && !c.skipped(seq)) {
+		eligible, err := s.inboxReclaimEligibleLocked(e, c, msg, cutoff)
+		if err != nil {
+			return c, 0, err
+		}
+		if !eligible {
 			break
 		}
 		through = seq

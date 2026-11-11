@@ -208,6 +208,9 @@ func (m *roomManager) attachmentSourceLocked(req attachmentRequest) (platform.So
 		if err != nil {
 			return platform.SourceRef{}, "", ErrIdentity
 		}
+		if entry.payloadType() != InboxPlatformNotification {
+			return platform.SourceRef{}, "", ErrRequest
+		}
 		return entry.Item.Source, entry.Item.Text, nil
 	}
 	if req.AgentID != "" || req.MembershipID != "" {

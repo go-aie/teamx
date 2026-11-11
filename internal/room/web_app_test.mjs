@@ -1824,6 +1824,32 @@ async function openInboxFixture(api) {
 }
 const inboxSequences = ui => ui.el("inbox-entries").children.map(row=>Number(row.dataset.inboxSeq));
 
+test("Inbox renders mixed internal events without platform controls and retains rows on refresh", async () => {
+  const api = inboxFixture(3), original = api.inboxPage;
+  api.inboxPage = data => {
+    const page = original(data);
+    page.entries = page.entries.map(entry => entry.seq === 2 ? {
+      type:"task_event", seq:2, task_event:{event_id:"event-safe", operation_id:"connect-original", result_version:2, source_seq:1,
+        event_type:"operation_completed", result_ref:"connect/original/2", created_at:"2026-11-11T01:00:00Z"},
+    } : entry.seq === 3 ? {type:"unknown",seq:3} : {...entry,type:"platform_notification"});
+    return page;
+  };
+  const ui = await openInboxFixture(api), rows = ui.el("inbox-entries").children;
+  assert.deepEqual(inboxSequences(ui), [1,2,3]);
+  assert.match(elementText(rows[0]), /GitLab/);
+  assert.match(elementText(rows[1]), /内部事件/);
+  assert.match(elementText(rows[1]), /操作结果已保存/);
+  assert.match(elementText(rows[1]), /不代表原需求已完成/);
+  assert.match(elementText(rows[1]), /connect-original/);
+  assert.doesNotMatch(elementText(rows[1]), /通知来源设置|尚未解析|undefined/);
+  assert.match(elementText(rows[2]), /无法识别的 Inbox 条目类型/);
+  const row = rows[1]; row.children.at(-1).open = true;
+  await ui.el("inbox-reload").emit("click");
+  assert.equal(ui.el("inbox-entries").children[1], row);
+  assert.equal(row.children.at(-1).open, true);
+  assert.equal(api.calls.some(call => /confirm|resolve/.test(call.path)), false);
+});
+
 test("Inbox opens the latest page, fills short byte-limited reads, and browses a fixed snapshot",async()=>{
   const api=inboxFixture();api.chunk=7;const ui=await openInboxFixture(api);
   assert.deepEqual(inboxSequences(ui),Array.from({length:25},(_,i)=>i+36));

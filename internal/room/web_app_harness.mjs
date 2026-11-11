@@ -23,11 +23,13 @@ class Element {
     this.parts = new Map();
   }
   get options() { return this.children; }
-  append(...children) { this.children.push(...children.flatMap(child => child.tag === "fragment" ? child.children : [child])); }
+  append(...children) { for(const child of children.flatMap(child => child.tag === "fragment" ? [...child.children] : [child])) { child.remove();this.children.push(child);child.parentElement=this; } }
   insertBefore(child, before) { child.remove(); const i=this.children.indexOf(before); this.children.splice(i<0?this.children.length:i,0,child); child.parentElement=this; }
   remove() { if(this.parentElement){const list=this.parentElement.children;list.splice(list.indexOf(this),1);this.parentElement=null;} }
-  replaceChildren(...children) { this.children = []; this.append(...children); if (this.tag === "select") this.value = this.children[0]?.value || ""; }
+  replaceChildren(...children) { for(const child of [...this.children])child.remove();this.children = []; this.append(...children); if (this.tag === "select") this.value = this.children[0]?.value || ""; }
   setAttribute(key, value) { this.attributes[key] = value; }
+  getAttribute(key) { return this.attributes[key] ?? this[key] ?? null; }
+  removeAttribute(key) { delete this.attributes[key];delete this[key]; }
   querySelector(selector) {
     if (!this.parts.has(selector)) this.parts.set(selector, new Element());
     return this.parts.get(selector);

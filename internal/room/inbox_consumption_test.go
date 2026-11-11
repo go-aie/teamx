@@ -82,6 +82,12 @@ func linkInboxPage(t *testing.T, h *inboxHarness, page InboxBatchPage) []followu
 	var links []followupEvent
 	svc := referenceTestService(h)
 	for _, e := range page.Entries {
+		if e.payloadType() == InboxTaskEventType {
+			if err := h.store.linkTaskEvent(h.id, e, page.Batch.TurnNumber); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
 		link, err := svc.resolveFollowupEvent(h.ctx, h.id, e.Seq, page.Batch.TurnNumber, false, referenceTestResolver)
 		if err != nil {
 			t.Fatal(err)
@@ -368,6 +374,12 @@ func TestInboxConsumptionUnknownCommitAndMissingCursor(t *testing.T) {
 }
 
 func TestInboxSchedulingIndependentPauseBudgetAndFairness(t *testing.T) {
+	for _, mixed := range []bool{false, true} {
+		t.Run(fmt.Sprintf("mixed=%v", mixed), func(t *testing.T) { testInboxSchedulingIndependentPauseBudgetAndFairness(t, mixed) })
+	}
+}
+
+func testInboxSchedulingIndependentPauseBudgetAndFairness(t *testing.T, mixed bool) {
 	h := newInboxHarness(t, InboxLimits{})
 	backend := newControlledBackend()
 	member := &MemberAgent{Options: SessionOptions{MemberIdentity: h.id}, Backend: backend, Store: h.store, Room: h.roomHarness.addr, MaxTurns: 2,
@@ -379,6 +391,10 @@ func TestInboxSchedulingIndependentPauseBudgetAndFairness(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := 1; i <= 26; i++ {
+		if mixed && (i == 2 || i == 26) {
+			receiveTestTaskEvent(t, h, taskEventFixture(fmt.Sprint(i)))
+			continue
+		}
 		inboxCall[InboxReceipt](t, h, h.receive(fmt.Sprint(i)))
 	}
 	// No Room notification exists; reconciliation independently discovers input.

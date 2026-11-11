@@ -135,7 +135,7 @@ func runCLIWithInput(ctx context.Context, args []string, stdin io.Reader, stdout
 		return runNotificationsUpgrade(args, stdout, stderr)
 	}
 	if command == "platforms" {
-		return runPlatformsUpgrade(args, stdout, stderr)
+		return runPlatformsCLI(ctx, args, stdout, stderr, env)
 	}
 	if command == "inbox" || command == "matters" || command == "actions" || command == "policy" {
 		return runReferenceCLI(ctx, command, args, stdin, stdout, stderr, env)

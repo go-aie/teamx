@@ -15,7 +15,9 @@ import (
 // A human can browse conversation metadata before enabling a subscription or
 // binding a member. This endpoint never reads messages or changes selection.
 type larkChatsRequest struct {
-	ServiceEpoch string `json:"service_epoch"`
+	member       *toolsRequest // Internal admission only; human HTTP cannot populate it.
+	verifyIDs    []string      // Exact selected IDs, re-read through the same guarded client.
+	ServiceEpoch string        `json:"service_epoch"`
 	RoomIdentity
 	Caller          Caller `json:"caller"`
 	PlatformID      string `json:"platform_id"`
@@ -29,8 +31,17 @@ func (m *roomManager) checkLarkChatsLocked(ctx context.Context, req larkChatsReq
 	if err := ctx.Err(); err != nil {
 		return registry.Account{}, err
 	}
-	if req.ServiceEpoch != m.epoch || req.Caller.Kind != "human" || !validText(req.Caller.ID) || req.Caller.MembershipID != "" {
-		return registry.Account{}, ErrIdentity
+	if req.member != nil {
+		if req.member.RoomIdentity != req.RoomIdentity || req.member.ServiceEpoch != req.ServiceEpoch || req.member.Caller != req.Caller {
+			return registry.Account{}, ErrIdentity
+		}
+		if err := m.checkToolMemberLocked(ctx, *req.member); err != nil {
+			return registry.Account{}, err
+		}
+	} else {
+		if req.ServiceEpoch != m.epoch || req.Caller.Kind != "human" || !validText(req.Caller.ID) || req.Caller.MembershipID != "" {
+			return registry.Account{}, ErrIdentity
+		}
 	}
 	if m.busy || m.roomBusyLocked(req.RoomIdentity) {
 		return registry.Account{}, ErrBusy
@@ -64,6 +75,9 @@ func (m *roomManager) listLarkChats(ctx context.Context, req larkChatsRequest) (
 	}
 	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	call := &platformCall{owner: req.RoomIdentity, platformID: a.PlatformID, cancel: cancel, done: make(chan struct{})}
+	if req.member != nil {
+		call.agentID, call.membershipID = req.Caller.ID, req.Caller.MembershipID
+	}
 	if m.platformCalls == nil {
 		m.platformCalls = map[*platformCall]bool{}
 	}
@@ -75,7 +89,21 @@ func (m *roomManager) listLarkChats(ctx context.Context, req larkChatsRequest) (
 		return lark.ChatPage{}, err
 	}
 	var page lark.ChatPage
-	if req.Query != "" {
+	if len(req.verifyIDs) > 0 {
+		page.Chats = []lark.Chat{}
+		for _, id := range req.verifyIDs {
+			var chat lark.Chat
+			chat, err = client.Chat(callCtx, a.Identity, id)
+			if err != nil {
+				break
+			}
+			if chat.Mode != "group" && chat.Mode != "topic" {
+				err = ErrRequest
+				break
+			}
+			page.Chats = append(page.Chats, chat)
+		}
+	} else if req.Query != "" {
 		page, err = client.SearchChats(callCtx, a.Identity, search)
 	} else {
 		page, err = client.Chats(callCtx, a.Identity, lark.ChatsRequest{PageSize: 100, PageToken: req.PageToken})

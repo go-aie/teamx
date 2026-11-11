@@ -169,6 +169,9 @@ type roomManager struct {
 	closing                  bool
 	operationDone            chan struct{}
 	recoveryStarted          bool
+	connectNotifyCancel      context.CancelFunc
+	connectNotifyDone        chan struct{}
+	connectNotifyWake        chan struct{}
 }
 
 func newRoomManager(dir string, maxTurns uint64) (_ *roomManager, err error) {
@@ -253,6 +256,9 @@ func newRoomManager(dir string, maxTurns uint64) (_ *roomManager, err error) {
 				return nil, err
 			}
 		}
+	}
+	if err := m.recoverPlatformConnectLocked(); err != nil {
+		return nil, err
 	}
 	if err := m.loadPlatformNotificationsLocked(); err != nil {
 		return nil, err

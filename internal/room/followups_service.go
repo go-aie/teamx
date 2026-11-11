@@ -72,6 +72,12 @@ func (s *service) readReferenceInbox(ctx context.Context, id MemberIdentity, tur
 		if err := ctx.Err(); err != nil {
 			return view, err
 		}
+		if entry.payloadType() == InboxTaskEventType {
+			if err := s.store.linkTaskEvent(id, entry, turn); err != nil {
+				return view, err
+			}
+			continue
+		}
 		link, err := s.resolveFollowupEvent(ctx, id, entry.Seq, turn, false, resolve)
 		if err != nil {
 			return view, err
@@ -117,6 +123,9 @@ func (s *service) resolveFollowupEvent(ctx context.Context, id MemberIdentity, s
 	}
 	if err == nil {
 		entry, err = s.store.inboxEntryLocked(id, seq)
+	}
+	if err == nil && entry.payloadType() != InboxPlatformNotification {
+		err = ErrRequest
 	}
 	if err == nil {
 		admission, e := s.store.inboxAdmissionLocked(entry)

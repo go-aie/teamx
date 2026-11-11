@@ -44,6 +44,7 @@
         </div>
       </header>
       <div id="timezone-error" class="notice" role="alert" hidden></div>
+      <div id="platform-interaction-error" class="notice" role="status" hidden></div>
       <div id="sync-error" class="notice" role="status" hidden></div>
       <div id="restart-notice" class="notice" role="status" hidden></div>
       <div class="mention-notice" role="status" hidden id="mention-notice"><button id="view-mention" type="button"></button></div>
@@ -492,6 +493,10 @@
       </form>
     </section>
     <section id="platform-settings" role="tabpanel" aria-labelledby="settings-tab-platforms" hidden>
+    <section id="conversation-connections-section" class="platforms-content" hidden>
+      <h3>当前对话的连接操作</h3>
+      <div id="conversation-connections"></div>
+    </section>
     <section id="platforms-list-view" class="platforms-content">
       <div class="platforms-heading">
         <h3>已接入的平台</h3>
@@ -699,7 +704,7 @@
       </div>
     </div>
   </dialog>
-  <template id="message-template"><article class="message"><div class="avatar"></div><div class="message-main"><div class="message-meta"><button class="author" type="button" disabled></button><span class="author-kind"></span><time></time><span class="sequence"></span><button class="reply-button" type="button">引用</button></div><button class="message-reference text-button" type="button" hidden></button><div class="message-text"></div></div></article></template>
+  <template id="message-template"><article class="message"><div class="avatar"></div><div class="message-main"><div class="message-meta"><button class="author" type="button" disabled></button><span class="author-kind"></span><time></time><span class="sequence"></span><button class="reply-button" type="button">引用</button></div><button class="message-reference text-button" type="button" hidden></button><div class="message-text"></div><div class="message-interactions"></div></div></article></template>
   <template id="member-template"><section class="member"><button class="member-summary" type="button" aria-controls="activity-dialog"><span class="member-top"><span class="avatar agent-avatar" aria-hidden="true"></span><span class="member-title"><span class="member-name"></span><span class="member-profile quiet"></span></span><span class="member-status"></span><span aria-hidden="true">›</span></span><span class="member-details"></span><span class="member-error" hidden></span></button></section></template>
 </body>
 </html>
