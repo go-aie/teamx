@@ -52,7 +52,11 @@ func TestExplicitToolBindingPreservesRolesAndReadsSkillWithoutCredentials(t *tes
 		t.Fatal(err)
 	}
 	out.Reset()
-	if err := runToolsWithClient(context.Background(), []string{"skill", c.ToolEntryID}, nil, &out, &stderr, env, client); err != nil || !strings.Contains(out.String(), "准确版本评审") || !strings.Contains(out.String(), "--auto-merge=false") {
+	wantSkill, err := entrySkill(m.toolCatalog[0], c.ToolEntryID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runToolsWithClient(context.Background(), []string{"skill", c.ToolEntryID}, nil, &out, &stderr, env, client); err != nil || !bytes.Equal(out.Bytes(), wantSkill) {
 		t.Fatal(err, out.String())
 	}
 	if strings.Contains(out.String(), "test-platform-secret") {

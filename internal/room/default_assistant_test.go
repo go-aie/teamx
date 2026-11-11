@@ -112,6 +112,56 @@ func TestDefaultAssistantOnceForNewAndExistingCatalogs(t *testing.T) {
 	}
 }
 
+func TestDefaultAssistantRestoresFrozenRoleAfterBuiltinRename(t *testing.T) {
+	root := t.TempDir()
+	m := directTestManager(t, root, testTeamDefinition(t).Runtime)
+	record := ensureAssistant(t, m)
+	summary := assistantSummary(t, m)
+	if summary.AgentRoleID != "assistant" {
+		t.Fatal("new default did not use the assistant role", summary)
+	}
+	if err := m.close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate an earlier builtin name in the complete persisted identity,
+	// including the frozen runtime profile. Renaming must not migrate it.
+	const previousRole = "previous-assistant-role"
+	preserved := map[string][]byte{}
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || filepath.Ext(path) != ".json" {
+			return err
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		data = bytes.ReplaceAll(data, []byte(`"assistant"`), []byte(`"`+previousRole+`"`))
+		data = bytes.ReplaceAll(data, []byte(`"agent/assistant"`), []byte(`"agent/`+previousRole+`"`))
+		preserved[path] = data
+		return os.WriteFile(path, data, 0600)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	restored := directTestManager(t, root, nil)
+	if got := ensureAssistant(t, restored); got != record {
+		t.Fatal("rename replaced the default assistant", got, record)
+	}
+	config, state := readManagedRoom(t, restored, assistantSummary(t, restored))
+	if config.AgentRoleID != previousRole || config.Members[0].AgentID != previousRole ||
+		state.Members[0].AgentID != previousRole || config.Members[0].Runner.Profile != "agent/"+previousRole {
+		t.Fatal("rename rewrote the frozen role or runner", config, state)
+	}
+	for path, before := range preserved {
+		after, err := os.ReadFile(path)
+		if err != nil || !bytes.Equal(before, after) {
+			t.Fatal("restoring a frozen role changed persisted data", path, err)
+		}
+	}
+}
+
 func TestDefaultAssistantCreationCommitRecovery(t *testing.T) {
 	for _, boundary := range []string{"after-reservation", "before-ready", "after-ready"} {
 		t.Run(boundary, func(t *testing.T) {
@@ -422,7 +472,7 @@ func TestDefaultAssistantReservedIDAndRetryAuthorization(t *testing.T) {
 	}
 	for _, req := range []map[string]any{
 		{"service_epoch": "stale", "caller": humanCaller},
-		{"service_epoch": m.epoch, "caller": Caller{Kind: "agent", ID: chiefOfStaffRoleID, MembershipID: "member"}},
+		{"service_epoch": m.epoch, "caller": Caller{Kind: "agent", ID: assistantRoleID, MembershipID: "member"}},
 		{"service_epoch": m.epoch, "caller": humanCaller, "room_id": "other-room"},
 	} {
 		w := managerHTTP(m, "/v1/rooms/default-assistant/retry", req)
@@ -461,7 +511,7 @@ func TestDefaultAssistantExplicitRestoreCreatesIndependentInstance(t *testing.T)
 	for _, mutate := range []func(*deletionRequest){
 		func(r *deletionRequest) { r.ServiceEpoch = "stale" },
 		func(r *deletionRequest) {
-			r.Caller = Caller{Kind: "agent", ID: chiefOfStaffRoleID, MembershipID: config.Members[0].MembershipID}
+			r.Caller = Caller{Kind: "agent", ID: assistantRoleID, MembershipID: config.Members[0].MembershipID}
 		},
 		func(r *deletionRequest) { r.RoomInstance = "stale-instance" },
 		func(r *deletionRequest) { r.RoomIdentity = RoomIdentity{} },

@@ -80,7 +80,7 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
     const disabled = !state.catalogConnected || discussionBusy() || !!state.management || state.managementSending;
     $("team").disabled = createDirect || disabled || !state.teams.length;
     $("new-room-name").disabled = disabled;
-    $("create-room").disabled = disabled || (createDirect ? !state.catalog?.agent_roles?.some(role => role.id === "chief-of-staff") : !team);
+    $("create-room").disabled = disabled || (createDirect ? !state.catalog?.agent_roles?.some(role => role.id === "assistant") : !team);
     $("create-room").textContent = state.managementSending ? "正在创建…" : "创建并进入";
     $("team-hint").textContent = createDirect ? "新助理默认暂停；进入详情后可启用。创建不会自动发送消息或连接平台。" : "成员与会话独立创建。开场消息仅填入草稿，由你发送。";
   }
@@ -429,7 +429,7 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
       const name = $("new-room-name").value.trim();
       if (new TextEncoder().encode(name).length > 256) { notice("create-error", `${createDirect ? "私信" : "房间"}名称请控制在 256 字节内。`); return; }
       state.management = { kind: "create", selectOnComplete: true, selectionVersion, operator: state.operator, opening: createDirect ? "" : team.opening_message,
-        payload: { create_id: crypto.randomUUID(), name, ...(createDirect ? {is_direct:true, agent_role_id:"chief-of-staff"} : {team_id:team.id}) } };
+        payload: { create_id: crypto.randomUUID(), name, ...(createDirect ? {is_direct:true, agent_role_id:"assistant"} : {team_id:team.id}) } };
       saveManagement(); void runManagement();
     });
 

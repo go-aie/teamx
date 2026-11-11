@@ -28,6 +28,8 @@ Explicit lasting human instructions can establish, amend or revoke rules through
 
 ## Actions and tools
 
+For TeamX interface, setup prerequisites and execution controls, read `"$TEAMX_CLI" skill usage`. This read-only guidance needs no platform connection or tool binding and grants no management authority. Explain it in the user's language; route human-only controls to the appropriate interface.
+
 Before a managed external write, use `actions resolve` to verify the exact target and available action, then `actions execute` under its current schema and authority contract. Preserve the original target/message scope and business association. Do not substitute another operation or account when an action is unavailable.
 
 Before platform changes, verify the current object, state and applicable native revision/base/head. Merge/close require explicit human consent and your role permissions; a review conclusion is not consent.

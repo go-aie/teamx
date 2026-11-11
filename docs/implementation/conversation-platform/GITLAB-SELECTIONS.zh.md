@@ -69,7 +69,7 @@ git diff --check
 已核对的结果：
 
 - 账号原生 ID `13`，连接 `8d09ed31e88d888088a60b35e14ed57d`，版本 1；未创建新连接或发起 OAuth。
-- Room `8d26b51b7016ce0f4389935e39a71d3b`／instance `8acfa4c698e2b669106ac259bddbd176`／Agent `chief-of-staff`／Membership `955d774d8e9f6af501338deeef074ff9`。
+- Room `8d26b51b7016ce0f4389935e39a71d3b`／instance `8acfa4c698e2b669106ac259bddbd176`／个人助理 Agent（历史身份以原回执为准）／Membership `955d774d8e9f6af501338deeef074ff9`。
 - 选择 `4d6e316be7606ebc10405f1ae152de5d` 为 `completed/result_version=1`；原生项目 ID `482`、完整路径 `product/agentichub/teamx-demo`。稳定事件已投递至 Inbox 序号 1，消费关联落盘、`consumed_through=1`、`handled_version=1`。
 - 成员配置 `fb652b2d518484edcf9ae1b20c8e202a` 为 `completed/result.status=applied`；通知版本 1，活动订阅 `5e0cb45909aa526fa77f88dfde6d25a7` 的目标、项目 ID／路径与回执一致，筛选为全部活动，无 pending/errors；接收起点为 `2026-11-11 13:26:13 +08:00`。
 - human 消息始终只有一条，模型第 2 回合完成；个人待办关闭、工具未绑定／修订 0，Workspace 无仓库或项目绑定。没有 GitLab 业务写入。

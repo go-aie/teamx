@@ -2909,9 +2909,9 @@ test("a late automatic rule response cannot replace a new tab context",async()=>
 });
 
 test("direct conversations prefer the exact default, keep the inspector stable, and isolate Room drafts", async () => {
-  const room=makeRoom("Team"),dm={...makeRoom("个人助理","dm"),is_direct:true,team_id:"",agent_role_id:"chief-of-staff"};
+  const room=makeRoom("Team"),dm={...makeRoom("个人助理","dm"),is_direct:true,team_id:"",agent_role_id:"assistant"};
   const api=server([room,dm]);api.catalog.default_assistant={status:"completed",room_id:dm.room_id,room_instance:dm.room_instance};
-  const member={agent_id:"chief-of-staff",membership_id:"dm-member",status:"paused",runner:{profile:"runtime"},execution:{paused:true}};
+  const member={agent_id:"assistant",membership_id:"dm-member",status:"paused",runner:{profile:"runtime"},execution:{paused:true}};
   api.hook=(path,data)=>{
     if(path==="/v1/member/list")return {members:[{...member,membership_id:data.room_id==="dm" ? "dm-member" : "team-member"}]};
     if(path.startsWith("/v1/tools/bindings?"))return {catalog:[],bindings:[]};
@@ -3000,13 +3000,13 @@ test("deleted default restoration stays explicit, reports uncertainty and select
 });
 
 test("new direct creation uses a role without a team or seeded human task",async()=>{
-  const api=server();api.catalog.teams=[];api.catalog.agent_roles=[{id:"chief-of-staff",name:"个人助理"}];
+  const api=server();api.catalog.teams=[];api.catalog.agent_roles=[{id:"assistant",name:"个人助理"}];
   const ui=await launch(api);await ui.el("new-room").emit("click");await ui.el("new-direct").emit("click");
   assert.equal(ui.el("create-team-fields").hidden,true);assert.equal(ui.el("team").required,false);
   assert.equal(ui.el("create-room").disabled,false);ui.el("new-room-name").value="独立助理";
   await ui.el("create-form").emit("submit");await settle();
   const request=api.calls.find(call=>call.path==="/v1/rooms/create").data;
-  assert.equal(request.is_direct,true);assert.equal(request.agent_role_id,"chief-of-staff");assert.equal(request.team_id,undefined);
+  assert.equal(request.is_direct,true);assert.equal(request.agent_role_id,"assistant");assert.equal(request.team_id,undefined);
   assert.equal(ui.el("message-input").value,"");assert.equal(api.calls.some(call=>call.path==="/v1/send"),false);
 });
 
@@ -3015,7 +3015,7 @@ test("a pending default selects once when ready, while late DM Inbox reads canno
   const api=server();api.catalog.default_assistant={status:"pending"};const ui=await launch(api);
   api.catalog.rooms.push(dm);dm.service=identity(dm);dm.runtime_status="ready";api.history.set(dm.room_id,[]);
   api.catalog.default_assistant={status:"completed",room_id:dm.room_id,room_instance:dm.room_instance};
-  const member={agent_id:"chief-of-staff",membership_id:"unique-dm-member",status:"paused",runner:{profile:"runtime"}};
+  const member={agent_id:"assistant",membership_id:"unique-dm-member",status:"paused",runner:{profile:"runtime"}};
   let resolveInbox;
   api.hook=(path)=>{
     if(path==="/v1/member/list")return {members:[member]};

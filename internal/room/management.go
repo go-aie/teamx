@@ -629,6 +629,10 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m.serveTools(w, r)
 		return
 	}
+	if r.URL.Path == "/v1/skills/usage" {
+		m.serveUsageSkill(w, r)
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, "/v1/platforms") {
 		m.servePlatforms(w, r)
 		return

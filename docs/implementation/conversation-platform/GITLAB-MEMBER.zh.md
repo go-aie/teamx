@@ -58,7 +58,7 @@ git diff --check
 
 通过事实：
 
-- 账号 `RussellLuo`、原生用户 ID `13`，复用连接 `8d09ed31e88d888088a60b35e14ed57d`；当前 Room `e7532ccdbaafb6d3180b7ae342f107fe`、Agent `chief-of-staff`、Membership `ed09a54d52f7d2cc681da14dafd164ec`。
+- 账号 `RussellLuo`、原生用户 ID `13`，复用连接 `8d09ed31e88d888088a60b35e14ed57d`；当前 Room `e7532ccdbaafb6d3180b7ae342f107fe`、个人助理 Agent（历史身份以原回执为准）、Membership `ed09a54d52f7d2cc681da14dafd164ec`。
 - 成员配置操作 `a98a25f9fb3741c49aed3892077cbf38` 为 `completed/result_version=1/result.status=applied`；统一配置版本 1，个人待办订阅 `3eec6034822516a3787cb96afb11a1eb`，接收起点为 `2026-11-11 12:58:20 +08:00`。配置和来源快照的完整目标一致；筛选覆盖当前支持的全部个人待办类型／原因，无项目限制。
 - 模型再次读取 `member get` 并核对回执；待办来源已开始真实只读扫描，配置无 pending/errors。human 消息只有一条，模型第一回合完成；这条同步复用链路不产生连接结果事件或消费回执，不能将它当作新 OAuth 自动接续的证据。
 - 项目活动关闭，工具未绑定、工具修订 0，Workspace 没有 repository/binding。真实 Chromium 核对通知开启／工具关闭、刷新、完整设置、390px 窄屏和脚本错误检查通过。

@@ -29,7 +29,7 @@ func directTestManager(t *testing.T, root string, defaults *teamRuntime) *roomMa
 }
 
 func directSelection(id string) roomSelection {
-	return roomSelection{IsDirect: true, AgentRoleID: chiefOfStaffRoleID, CreateID: id}
+	return roomSelection{IsDirect: true, AgentRoleID: assistantRoleID, CreateID: id}
 }
 
 func createDirectConversation(t *testing.T, m *roomManager, selection roomSelection) roomSummary {
@@ -39,7 +39,7 @@ func createDirectConversation(t *testing.T, m *roomManager, selection roomSelect
 	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &summary) != nil {
 		t.Fatal(w.Code, w.Body.String())
 	}
-	if !summary.IsDirect || summary.AgentRoleID != chiefOfStaffRoleID || summary.TeamID != "" || summary.Status != "ready" {
+	if !summary.IsDirect || summary.AgentRoleID != assistantRoleID || summary.TeamID != "" || summary.Status != "ready" {
 		t.Fatal("wrong direct conversation receipt", summary)
 	}
 	return summary
@@ -62,7 +62,7 @@ func TestDirectConversationCreationIsolationAndFrozenRecovery(t *testing.T) {
 		t.Fatal("incomplete direct conversation", ca, sa)
 	}
 	member := ca.Members[0]
-	if member.AgentID != chiefOfStaffRoleID || member.Instructions != chiefOfStaffInstructions ||
+	if member.AgentID != assistantRoleID || member.Instructions != assistantInstructions ||
 		!reflect.DeepEqual(ca.Runtime, defaults) || sa.Members[0] != member.MemberState {
 		t.Fatal("role or runtime not frozen", ca, sa)
 	}
@@ -81,7 +81,7 @@ func TestDirectConversationCreationIsolationAndFrozenRecovery(t *testing.T) {
 		t.Fatal("create retry changed receipt or duplicated a room", repeated)
 	}
 	for _, changed := range []roomSelection{
-		{IsDirect: true, AgentRoleID: chiefOfStaffRoleID, CreateID: selection.CreateID, Name: "different"},
+		{IsDirect: true, AgentRoleID: assistantRoleID, CreateID: selection.CreateID, Name: "different"},
 		{TeamID: "sample", CreateID: selection.CreateID},
 		{IsDirect: true, AgentRoleID: "other-role", CreateID: selection.CreateID},
 	} {
@@ -93,7 +93,7 @@ func TestDirectConversationCreationIsolationAndFrozenRecovery(t *testing.T) {
 	w := managerHTTP(m, "/v1/rooms", nil)
 	var catalog roomsResponse
 	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &catalog) != nil || len(catalog.AgentRoles) != 1 ||
-		!catalog.Rooms[0].IsDirect || catalog.AgentRoles[0].ID != chiefOfStaffRoleID {
+		!catalog.Rooms[0].IsDirect || catalog.AgentRoles[0].ID != assistantRoleID {
 		t.Fatal(w.Code, w.Body.String())
 	}
 	for _, private := range []string{"instructions", "api_key_env", "binary_path", "offline-test-only"} {
@@ -133,11 +133,11 @@ func TestDirectConversationCreationIsolationAndFrozenRecovery(t *testing.T) {
 func TestDirectConversationRejectsInvalidCreationSources(t *testing.T) {
 	m := directTestManager(t, t.TempDir(), testTeamDefinition(t).Runtime)
 	for _, selection := range []roomSelection{
-		{IsDirect: true, TeamID: "sample", AgentRoleID: chiefOfStaffRoleID, CreateID: "both-sources"},
+		{IsDirect: true, TeamID: "sample", AgentRoleID: assistantRoleID, CreateID: "both-sources"},
 		{IsDirect: true, TeamID: "sample", CreateID: "direct-team"},
 		{IsDirect: true, CreateID: "missing-role"},
-		{AgentRoleID: chiefOfStaffRoleID, CreateID: "role-without-direct"},
-		{TeamID: "sample", AgentRoleID: chiefOfStaffRoleID, CreateID: "room-with-role"},
+		{AgentRoleID: assistantRoleID, CreateID: "role-without-direct"},
+		{TeamID: "sample", AgentRoleID: assistantRoleID, CreateID: "room-with-role"},
 		{IsDirect: true, AgentRoleID: "unknown", CreateID: "unknown-role"},
 	} {
 		w := managerHTTP(m, "/v1/rooms/create", roomCreateRequest{ServiceEpoch: m.epoch, Caller: humanCaller, roomSelection: selection})

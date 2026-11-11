@@ -14,7 +14,17 @@ TeamX 将稳定指引组成一份 Session Instructions，由 DSH 写入 Session 
 
 公共指引说明“如何使用 TeamX”，角色指令说明“这个成员负责什么”。角色的权限和任务条件仍须满足，拥有工具能力不等于获得业务授权。按需读取的 CLI `--help` 和 `tools skill` 负责字段、平台细节与原生工作流程，不另行拼入固定指令。
 
-内置 `chief-of-staff` 使用嵌入的[个人助理指令](../internal/room/prompts/chief-of-staff.md)，创建私信时冻结，更新程序不会覆盖已有会话的角色文本。平台接入统一按需读取 `"$TEAMX_CLI" platforms skill`，该入口随二进制嵌入且独立于工具绑定；已有会话可通过公共指南读取当前 Skill。角色职责不改变服务端身份或授权边界，接入流程不复制进固定指令。
+内置 `assistant` 使用嵌入的[个人助理指令](../internal/room/prompts/assistant.md)，创建私信时冻结，更新程序不会覆盖已有会话的角色文本。平台接入统一按需读取 `"$TEAMX_CLI" platforms skill`，该入口随二进制嵌入且独立于工具绑定；已有会话可通过公共指南读取当前 Skill。角色职责不改变服务端身份或授权边界，接入流程不复制进固定指令。
+
+按需指引统一使用英文，由 Agent 按用户语言解释。入口按任务区分：
+
+| 需求 | 入口 | 前置条件 |
+| --- | --- | --- |
+| TeamX 界面、配置前提与执行控制 | `"$TEAMX_CLI" skill usage` | 当前绑定的 Agent 身份；无需平台或工具绑定 |
+| 飞书／GitLab 接入、自身通知与工具配置 | `"$TEAMX_CLI" platforms skill` | 当前成员及真实用户指令；读取本身不发起接入 |
+| GitLab、飞书或 Scion 的实际平台工作 | `"$TEAMX_CLI" tools skill ENTRY` | 当前成员已绑定的准确平台入口；命令与可执行能力另行核对 |
+
+使用指南只负责产品说明；接入 Skill 保留公共操作生命周期、各平台配置与固定表单；平台 Skill 负责日常处理和专业工作。GitLab 的 OAuth Workspace 网络操作使用 `workspace-git`，本地 diff／commit 仍使用 Git。读取任一 Skill 不启用工具、不更改配置、不产生定时任务，也不扩展跨会话或成员管理权限。所有资源随二进制嵌入，无需运行时访问源码目录，具体参数仍以当前 CLI 帮助和返回能力为准。
 
 ## 角色模板的职责边界
 

@@ -2,10 +2,10 @@ package room
 
 import _ "embed"
 
-const chiefOfStaffRoleID = "chief-of-staff"
+const assistantRoleID = "assistant"
 
-//go:embed prompts/chief-of-staff.md
-var chiefOfStaffInstructions string
+//go:embed prompts/assistant.md
+var assistantInstructions string
 
 type agentRoleSummary struct {
 	ID          string `json:"id"`
@@ -20,16 +20,16 @@ type agentRoleDefinition struct {
 }
 
 func builtinAgentRole(id string) (agentRoleDefinition, bool) {
-	if id != chiefOfStaffRoleID {
+	if id != assistantRoleID {
 		return agentRoleDefinition{}, false
 	}
 	return agentRoleDefinition{
-		agentRoleSummary: agentRoleSummary{ID: chiefOfStaffRoleID, Name: "个人助理", Description: "Chief of Staff：梳理需求、协助设置、汇总进展"},
-		Instructions:     chiefOfStaffInstructions, OpeningMessage: "帮我梳理当前需要处理的事情。",
+		agentRoleSummary: agentRoleSummary{ID: assistantRoleID, Name: "个人助理", Description: "Assistant：梳理需求、协助设置、汇总进展"},
+		Instructions:     assistantInstructions, OpeningMessage: "帮我梳理当前需要处理的事情。",
 	}, true
 }
 
 func builtinAgentRoleSummaries() []agentRoleSummary {
-	role, _ := builtinAgentRole(chiefOfStaffRoleID)
+	role, _ := builtinAgentRole(assistantRoleID)
 	return []agentRoleSummary{role.agentRoleSummary}
 }

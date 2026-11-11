@@ -59,6 +59,14 @@ JSON 中测试的 `pass` / `fail` 事件包含 `Elapsed`。串行父测试通常
 
 模型与生命周期回归覆盖私信固定单成员、创建去重、冻结配置、旧单成员 Room 不改型、跨文件一致性、默认一次性创建、无输入不启动模型、暂停和失败恢复、默认删除保护，以及旧删除记录的显式恢复与提交中断。
 
+按需 Skill 的核心检查覆盖当前成员身份、服务代次、浏览器边界和固定资源请求。独立二进制在源码目录外读取使用指南、无平台绑定读取接入 Skill，以及平台 Skill 的准确账号入口替换，可按下列本地集成入口验证；这些检查不代替真实模型遵循工作流程的验收：
+
+```sh
+go test -tags=integration ./internal/room \
+  -run 'TestUsageSkill|TestDefaultAssistantSkill|TestExplicitToolBindingPreservesRolesAndReadsSkillWithoutCredentials' \
+  -count=1 -timeout=2m
+```
+
 ```sh
 go test ./internal/room -run 'TestDefaultAssistant|TestDirectConversation|TestRoomWithoutDirectFields' -count=1 -timeout=3m
 go test -race -tags=integration ./internal/room \

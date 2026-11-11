@@ -23,7 +23,7 @@ type defaultAssistantRecord struct {
 }
 
 func defaultAssistantSelection() roomSelection {
-	return roomSelection{CreateID: defaultAssistantCreateID, IsDirect: true, AgentRoleID: chiefOfStaffRoleID}
+	return roomSelection{CreateID: defaultAssistantCreateID, IsDirect: true, AgentRoleID: assistantRoleID}
 }
 
 func (m *roomManager) validateDefaultAssistant() error {
@@ -80,7 +80,14 @@ func (m *roomManager) validateDefaultAssistant() error {
 		}
 		return nil
 	}
-	if entry == nil || entry.RoomIdentity != record.RoomIdentity || entry.Selection != defaultAssistantSelection() {
+	if entry == nil || entry.RoomIdentity != record.RoomIdentity || !validRoomSource(*entry) {
+		return ErrIdentity
+	}
+	// Existing defaults retain their frozen role and membership when the builtin
+	// role is renamed. New reservations use the current role definition.
+	selection := defaultAssistantSelection()
+	selection.AgentRoleID = entry.AgentRoleID
+	if entry.Selection != selection {
 		return ErrIdentity
 	}
 	if !(record.Status == "pending" && entry.Status == "creating" ||

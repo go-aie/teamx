@@ -5,6 +5,7 @@ import "strings"
 const rootCLIHelp = `Usage: teamx COMMAND [--help]
   init | doctor                 Initialize or diagnose a distribution (--bundle-root, --home; init: --non-interactive)
   serve                         Start the service
+  skill usage                   Read TeamX interface and execution guidance
   platforms skill/list/connect/selection/chats/projects/member  Connect/configure Feishu/GitLab for current member
   platforms upgrade           Upgrade platform model and references offline (--rooms-dir ROOT)
   member add/list/remove/run/pause/session rotate/status

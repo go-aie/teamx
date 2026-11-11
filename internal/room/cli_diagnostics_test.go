@@ -41,7 +41,7 @@ func TestAgentCommandHelpIsScopedAndOffline(t *testing.T) {
 			})
 		}
 	}
-	for _, args := range [][]string{{"--help"}, {"matters", "--help"}, {"policy", "--help"}, {"actions", "--help"}, {"inbox", "--help"}, {"read", "--help"}, {"send", "--help"}} {
+	for _, args := range [][]string{{"--help"}, {"matters", "--help"}, {"policy", "--help"}, {"actions", "--help"}, {"inbox", "--help"}, {"read", "--help"}, {"send", "--help"}, {"skill", "--help"}, {"skill", "usage", "--help"}} {
 		var stdout bytes.Buffer
 		err := runCLI(context.Background(), args, &stdout, io.Discard, func(string) string { return "" })
 		// read/send retain their pre-existing flag.ErrHelp exit contract.
@@ -266,9 +266,15 @@ func TestAgentCLIRejectsIrrelevantFlags(t *testing.T) {
 	}))
 	defer server.Close()
 	env := map[string]string{"TEAMX_ENDPOINT": server.URL, "TEAMX_ROOM_ID": "room", "TEAMX_ROOM_INSTANCE": "instance", "TEAMX_SERVICE_EPOCH": "epoch", "TEAMX_AGENT_ID": "agent", "TEAMX_MEMBERSHIP_ID": "membership"}
-	err := runCLI(context.Background(), []string{"matters", "list", "--target", "ignored", "--version", "7", "--peek"}, io.Discard, io.Discard, func(k string) string { return env[k] })
-	if !errors.Is(err, ErrRequest) || calls.Load() != 0 {
-		t.Fatal("irrelevant flags reached HTTP", got, err)
+	for _, args := range [][]string{
+		{"matters", "list", "--target", "ignored", "--version", "7", "--peek"},
+		{"skill", "usage", "--path", "../gitlab/SKILL.md"},
+		{"skill", "gitlab"},
+	} {
+		err := runCLI(context.Background(), args, io.Discard, io.Discard, func(k string) string { return env[k] })
+		if !errors.Is(err, ErrRequest) || calls.Load() != 0 {
+			t.Fatal("irrelevant input reached HTTP", args, got, err)
+		}
 	}
 }
 
