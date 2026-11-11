@@ -19,7 +19,7 @@ go test ./... -count=1 -timeout=8m
 go test -race -tags=integration ./internal/room \
   -run '^Test(GitLabConnect|GitLabAuth|GitLabSetup|PlatformConnect|PlatformSelection|PlatformMember|LarkSetup|LarkAuth)' \
   -count=1 -timeout=4m
-node --test --test-reporter=dot internal/room/web_*test.mjs
+node --test --test-reporter=dot internal/web/tests/web_*test.mjs
 TEAMX_CONNECT_BROWSER=1 go test -tags=integration ./internal/room \
   -run '^TestGitLabConnectConversationBrowser$' -count=1 -v -timeout=90s
 git diff --check

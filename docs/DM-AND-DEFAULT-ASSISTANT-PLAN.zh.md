@@ -180,7 +180,7 @@ D1 → D2 → D3 构成可独立交付的 DM 与默认助理基础，不以平�
 | `internal/room/{serve,runtimes,deletion,recovery}.go` 及现有启用状态持久化 | 默认创建、删除保护、历史删除记录及显式恢复，打开恢复和首次启用，保留现有结清与 Session 语义 |
 | 内置角色资源、`prompts/agent-guide.md`、`dsh.go` | 角色定义及 Skill 发现；公共指南只保留共性规则，不注入所有 Agent 的 Chief 职责 |
 | `internal/platform/tool/skills/platforms/SKILL.md`、`platform_connect*.go` 及原 C2–C6 落点 | 复用接入能力；按实际阶段更新 Skill 和引导，不复制服务 |
-| `internal/room/web/{app.js,index.html,style.css}` | 分组导航、DM 默认详情、选择恢复、动态文案及会话通知入口 |
+| `internal/web/assets/{app.js,index.html,style.css}` | 分组导航、DM 默认详情、选择恢复、动态文案及会话通知入口 |
 | `bundle.go`、`bundle_init.go` 与打包校验脚本 | 确保内置角色／Skill 随独立二进制和发行包可用，模型初始化仍走既有入口 |
 
 验证聚焦行为：

@@ -10,7 +10,7 @@ const row=(ui,id)=>ui.el("member-notification-platforms").children.find(r=>r.dat
 const toolToggle=(ui,id)=>row(ui,id).children[1].children[2].children[0];
 
 test("M4.5 platforms are the default Tab followed by policy, Inbox and activity",async()=>{
- const html=await readFile(new URL("./web/index.html",import.meta.url),"utf8");
+ const html=await readFile(new URL("../assets/index.html",import.meta.url),"utf8");
  const tabs=html.slice(html.indexOf('id="agent-tabs"'),html.indexOf('id="platforms-member-view"'));
  assert.deepEqual([...tabs.matchAll(/id="agent-tab-([^"]+)"/g)].map(m=>m[1]),["platforms","policy","inbox","activity"]);
  assert.ok(html.indexOf('id="platforms-member-view"')<html.indexOf('id="member-notification-sources"'));

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { launch, settle } from "./web_app_harness.mjs";
-import { request } from "./web/client.mjs";
+import { request } from "../assets/client.mjs";
 
 const endpoint = process.env.TEAMX_WEB_ENDPOINT;
 const call = (path, payload) => request(endpoint + path, payload);

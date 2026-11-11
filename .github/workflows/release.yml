@@ -62,7 +62,7 @@ jobs:
           node --test scripts/*.test.mjs
           make test
           go vet ./...
-          node --test internal/room/web*_test.mjs
+          node --test internal/web/tests/web*_test.mjs
 
   candidate:
     needs: checks

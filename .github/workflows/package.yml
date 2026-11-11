@@ -60,7 +60,7 @@ jobs:
         run: |
           make test
           go vet ./...
-          node --test internal/room/web*_test.mjs
+          node --test internal/web/tests/web*_test.mjs
 
   package:
     needs: checks

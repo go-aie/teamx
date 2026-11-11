@@ -16,7 +16,7 @@ import (
 func TestTodosAppHandler(t *testing.T) {
 	parallelFixtureTest(t)
 	m, room := todosAppManager(t)
-	runAppHandler(t, m, "web_todos_http.mjs")
+	runAppHandler(t, m, "../web/tests/web_todos_http.mjs")
 	checkTodosAppResult(t, m, room)
 }
 
@@ -36,7 +36,7 @@ func TestTodosAppHTTP(t *testing.T) {
 	defer server.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, node, "web_todos_http.mjs")
+	cmd := exec.CommandContext(ctx, node, "../web/tests/web_todos_http.mjs")
 	cmd.Env = append(os.Environ(), "TEAMX_WEB_ENDPOINT="+server.URL)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("app/HTTP: %v\n%s", err, output)

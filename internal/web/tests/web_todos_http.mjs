@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { launch, settle, openNotification } from "./web_app_harness.mjs";
-import { request } from "./web/client.mjs";
+import { request } from "../assets/client.mjs";
 let call = (path, body) => request(process.env.TEAMX_WEB_ENDPOINT + path, body);
 if (process.env.TEAMX_WEB_TRANSPORT === "stdio") {
   const { createInterface } = await import("node:readline");

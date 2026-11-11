@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { markdownHTML, notificationOptions, openImagePreview, renderMessageBody } from "./web/markdown.mjs";
+import { markdownHTML, notificationOptions, openImagePreview, renderMessageBody } from "../assets/markdown.mjs";
 
 test("messages render Markdown structure and preserve ordinary line breaks", () => {
   const html = markdownHTML("## 方案\n\n**粗体**、*强调*、~~删除~~、`todo.py`\n下一行\n\n> 引用\n\n1. 添加\n2. 完成\n\n- [x] 已完成\n- [ ] 待处理\n\n---");

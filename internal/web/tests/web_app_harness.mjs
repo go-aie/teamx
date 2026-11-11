@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { createApp } from "./web/application.mjs";
+import { createApp } from "../assets/application.mjs";
 
 // Exercise the actual entry point and its events without a browser dependency.
 // This DOM implements events and content only; it is not visual acceptance.
-const html = await readFile(new URL("./web/index.html", import.meta.url), "utf8");
+const html = await readFile(new URL("../assets/index.html", import.meta.url), "utf8");
 class Element {
   constructor(tag = "div") {
     this.tag = tag; this.children = []; this.listeners = {}; this.dataset = {}; this.attributes = {};

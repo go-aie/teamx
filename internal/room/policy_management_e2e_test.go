@@ -26,7 +26,7 @@ func TestPolicyManagementHTTP(t *testing.T) {
 	defer server.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, node, "web_policy_http.mjs")
+	cmd := exec.CommandContext(ctx, node, "../web/tests/web_policy_http.mjs")
 	cmd.Env = append(os.Environ(), "TEAMX_WEB_ENDPOINT="+server.URL)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("policy management HTTP: %v\n%s", err, output)

@@ -38,7 +38,7 @@ go test -race ./internal/room \
 go test -race ./internal/room -run '^TestPlatformConnectNotification' -count=1 -timeout=2m
 go test -tags=integration ./internal/room \
   -run '^TestPlatformConnectNativeSetupAndCLIProcessLifetime$' -count=1 -timeout=2m
-node --test --test-reporter=dot internal/room/web_*test.mjs
+node --test --test-reporter=dot internal/web/tests/web_*test.mjs
 git diff --check
 ```
 

@@ -168,7 +168,7 @@ DSH 成员默认每会话受理 16 回合，达到阈值后在下一批正常输
 ```sh
 make test
 go vet ./...
-node --test internal/room/web*_test.mjs
+node --test internal/web/tests/web*_test.mjs
 ```
 
 涉及 CLI、平台或完整业务流程时，按修改范围执行常用 integration，例如：

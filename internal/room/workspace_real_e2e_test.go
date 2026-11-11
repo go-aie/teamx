@@ -101,7 +101,7 @@ func TestRealWorkspaceGitLabDSH(t *testing.T) {
 	// Browser mode uses the same production HTTP server and waits for externally
 	// observed UI actions. The test does not claim browser evidence on its own.
 	uiPhase := func(phase string) error {
-		cmd := exec.CommandContext(ctx, "node", "web_workspace_http.mjs")
+		cmd := exec.CommandContext(ctx, "node", "../web/tests/web_workspace_http.mjs")
 		cmd.Env = append(operatorEnv(""), "TEAMX_WEB_ENDPOINT="+d.endpoint, "TEAMX_WORKSPACE_UI_PHASE="+phase, "TEAMX_WORKSPACE_REPOSITORY="+w.Repository.URL, "TEAMX_WORKSPACE_GITLAB_URL="+platform, "TEAMX_WORKSPACE_PROJECT="+project, "TEAMX_WORKSPACE_CONNECTION_ID="+oauthPlatform.ID)
 		output, err := cmd.CombinedOutput()
 		if err != nil {

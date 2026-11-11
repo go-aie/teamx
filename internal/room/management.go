@@ -21,6 +21,7 @@ import (
 	"github.com/go-aie/teamx/internal/platform/notification"
 	"github.com/go-aie/teamx/internal/platform/registry"
 	"github.com/go-aie/teamx/internal/platform/tool"
+	"github.com/go-aie/teamx/internal/web"
 )
 
 const maxRooms = 1000
@@ -663,7 +664,7 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if m.workspaceHistory(w, r) {
 		return
 	}
-	if r.URL.Path != "/v1/ui" && new(service).serveWeb(w, r) {
+	if web.Serve(w, r) {
 		return
 	}
 	if r.URL.Path == "/v1/rooms/open" {

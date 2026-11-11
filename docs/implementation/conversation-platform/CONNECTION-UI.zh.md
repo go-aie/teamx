@@ -16,7 +16,7 @@
 
 ```sh
 go test ./... -timeout=3m
-node --test internal/room/web*test.mjs
+node --test internal/web/tests/web*test.mjs
 go test -race -tags=integration ./internal/room \
   -run '^TestPlatformConnect|^TestLark(Setup|Auth|Login|Logout)|^TestPlatformsUpgrade|^TestManagedWeb(Bootstrap|Catalog)|^TestWebRoom' \
   -count=1 -timeout=180s

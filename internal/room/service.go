@@ -16,6 +16,7 @@ import (
 	"github.com/go-aie/teamx/internal/agent/dsh"
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/notification"
+	"github.com/go-aie/teamx/internal/web"
 )
 
 type ServiceInfo struct {
@@ -663,7 +664,7 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, ErrBusy)
 		return
 	}
-	if s.serveWeb(w, r) {
+	if s.serveUI(w, r) || web.Serve(w, r) {
 		return
 	}
 	if r.URL.Path == "/v1/info" && r.Method == http.MethodGet {

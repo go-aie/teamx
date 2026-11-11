@@ -103,7 +103,7 @@ TEAMX_SCN_BIN=/absolute/path/to/verified/scn \
 
 前两项为组件验证；最后一项额外使用固定官方二进制验证离线帮助、版本、原生用法错误、相对 `-C`、JSON 和配置隔离。组件测试覆盖 argv/stdin/输出/退出码保留、二进制解析、错误版本、取消探测与业务进程、后代结清及无控制终端。未提供 `TEAMX_SCN_BIN` 时，官方二进制测试明确跳过。当前验证范围见 [Scion 验证与待验项](../../docs/scion.zh.md#验证与待验项)。
 
-连接与页面回归由 `go test -race ./internal/platform/scion ./internal/room -run '^TestScion|^TestProfile'` 和 `node --test internal/room/web*_test.mjs` 验证。`TestScionRealLoginDiscovery` 通过 `TEAMX_SCION_AUTH_REAL=1` 显式启用，需提供 `TEAMX_SCION_TEST_CREDENTIALS` 私有原生 PAT 凭据源、`TEAMX_SCN_BIN` 与 `TEAMX_SCION_BIN` 绝对路径。
+连接与页面回归由 `go test -race ./internal/platform/scion ./internal/room -run '^TestScion|^TestProfile'` 和 `node --test internal/web/tests/web*_test.mjs` 验证。`TestScionRealLoginDiscovery` 通过 `TEAMX_SCION_AUTH_REAL=1` 显式启用，需提供 `TEAMX_SCION_TEST_CREDENTIALS` 私有原生 PAT 凭据源、`TEAMX_SCN_BIN` 与 `TEAMX_SCION_BIN` 绝对路径。
 
 2026-11-07 已在隔离服务根实测两种 CLI 路径的 PAT 登录、自动发现、连接保存/验证及成员仓库读取，实际 subject 为 csgship；原生 scn 路径的三份 Workspace clone 与重开回归也通过，没有仓库远端写入。实际浏览器控制仍超时，页面事件测试不能代替浏览器操作验收。
 

@@ -1,10 +1,12 @@
-# Room 前端模块
+# TeamX 前端模块
 
-Room 前端继续使用浏览器原生 ES Modules，由 Go 嵌入并提供静态资源，不需要前端构建步骤。
+TeamX 前端使用浏览器原生 ES Modules，由 Go 嵌入并提供静态资源，不需要前端构建步骤。
+
+`internal/web` 与 `internal/room` 平级：`assets/` 存放前端资源，`tests/` 存放前端测试与辅助脚本，`embed.go` 和 `handler.go` 负责嵌入及静态响应。该包不依赖 Room；Room 服务挂载静态响应，并继续负责 `/v1/ui` 动态数据、成员活动和身份校验。
 
 ## 入口与模块职责
 
-`internal/room/web/app.js` 只启动应用。`application.mjs` 负责模块组装、当前 Room 身份、会话切换和全局刷新协调。
+`internal/web/assets/app.js` 只启动应用。`application.mjs` 负责模块组装、当前 Room 身份、会话切换和全局刷新协调。
 
 `features/` 中的模块按功能组织：
 
@@ -38,13 +40,13 @@ Room 前端继续使用浏览器原生 ES Modules，由 Go 嵌入并提供静态
 
 首次拆分保留全部 CSS 规则及原有顺序，包括跨功能覆盖和媒体查询。后续合并重复选择器或调整规则顺序时，需要单独验证桌面、窄屏以及私信/团队房间布局。
 
-`web.go` 嵌入入口、功能模块和样式文件，只提供嵌入文件中的公开脚本与样式。新增功能文件应放在对应目录；新增更深目录时需要更新嵌入模式。前端修改后仍需重新编译并重启 Go 服务。
+`internal/web/embed.go` 嵌入入口、功能模块和样式文件，`handler.go` 只提供嵌入文件中的公开页面、脚本与样式。新增功能文件应放在对应目录；新增更深目录时需要更新嵌入模式。前端修改后仍需重新编译并重启 Go 服务。
 
 ## 验证
 
 ```sh
-node --test internal/room/web*_test.mjs
-go test ./internal/room
+node --test internal/web/tests/web*_test.mjs
+go test ./internal/web ./internal/room
 ```
 
 DOM 测试直接导入 `application.mjs` 及真实模块依赖，通过实例参数替换 DOM、网络和计时器，不再删除 import 或动态拼接执行源码。Go 资源测试检查嵌入文件、静态路由和资源引用。

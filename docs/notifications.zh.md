@@ -237,6 +237,6 @@ ETag 仅用于已验证支持条件请求的快速页，缓存与页面同次落
 | `/v1/policy/read`、`/update`、`/publish` | Agent update 的 conversation_policy 使用 type 分支合同；human update 使用 policy 管理合同；publish 使用 followup.id／version 与外层 turn_number |
 | `/v1/actions/execute` | action_request 使用引用动作合同，账号、目标与结果由服务端核验 |
 
-旧事项图和 decisions 生产接口已移除。业务响应禁止缓存，所有修改检查成员归属、回合和预期版本。Store 继续原子保存和结果未知写入冻结。定向验证：`go test -race ./internal/room -run '^TestReferenceEntry|^TestReferenceConversation|^TestReferenceAction' -count=1 -timeout=3m`；前端使用 `node --test internal/room/web*_test.mjs`。
+旧事项图和 decisions 生产接口已移除。业务响应禁止缓存，所有修改检查成员归属、回合和预期版本。Store 继续原子保存和结果未知写入冻结。定向验证：`go test -race ./internal/room -run '^TestReferenceEntry|^TestReferenceConversation|^TestReferenceAction' -count=1 -timeout=3m`；前端使用 `node --test internal/web/tests/web*_test.mjs`。
 
 组件和协议证据见[实施记录](PLATFORM-REFERENCE-AND-FOLLOWUP-REFACTOR-PLAN.zh.md)。R6 已新增非 GitLab 贯通及新协议的独立真实验收夹具；MR 普通评论通过并发生一次已授权写入，真实讨论、DSH 全闭环和实际浏览器仍未通过，详见[验收手册](reference-followups-acceptance.zh.md)。此前 AN 阶段真实 GitLab／DSH 记录保留在[原计划](implementation/legacy-agent-inbox/ASSISTANT-NOTIFICATION-INBOX-PLAN.zh.md)，它们验证旧合同，不能用旧命令补发或当作新合同通过。

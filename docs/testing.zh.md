@@ -8,7 +8,7 @@
 make test                     # 核心回归，等价于 go test ./... 并附带超时
 make test-integration         # 核心 + 本地集成，不访问真实平台或模型
 make test-race                # 核心 + 本地集成的 race 检查
-node --test internal/room/web*_test.mjs
+node --test internal/web/tests/web*_test.mjs
 ```
 
 本地集成夹具还需要 Python 3、Git 和支持 `env -S` 的环境（macOS 或 GNU env）。

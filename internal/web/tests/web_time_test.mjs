@@ -1,6 +1,6 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
-import {createSystemTime, createTimeInput} from "./web/time.mjs";
+import {createSystemTime, createTimeInput} from "../assets/time.mjs";
 import {launch, settle} from "./web_app_harness.mjs";
 
 const snapshot = (time_zone="Asia/Shanghai", settings_version=1, service_epoch="manager") => ({time_zone,settings_version,service_epoch});

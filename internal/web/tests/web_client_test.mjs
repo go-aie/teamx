@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { request, readPages, createActivityReader, teamOpeningDraft, mentionRanges, unseenMentions } from "./web/client.mjs";
+import { request, readPages, createActivityReader, teamOpeningDraft, mentionRanges, unseenMentions } from "../assets/client.mjs";
 
 test("human mentions match exact names with punctuation without matching emails or longer names", () => {
   const text = "请 @ann，确认一下；(@ann). 再问@ann：可以吗？";
@@ -153,7 +153,7 @@ test("drawer polling shares a request and clears stale data when a read fails", 
 });
 
 test("room drafts survive reload independently, while uncertain sends keep the original route", async () => {
-  const { createRoomDrafts, sameService } = await import("./web/client.mjs");
+  const { createRoomDrafts, sameService } = await import("../assets/client.mjs");
   const saved = new Map(), storage = { getItem: key => saved.get(key), setItem: (key, value) => saved.set(key, value) };
   const a = { room_id: "a", room_instance: "A", service_epoch: "old" }, b = { room_id: "b", room_instance: "B", service_epoch: "new" };
   const drafts = createRoomDrafts(storage), da = drafts.get(a, "operator");
@@ -173,7 +173,7 @@ test("room drafts survive reload independently, while uncertain sends keep the o
 });
 
 test("drafts work without storage and a new-room opening never overwrites an existing draft", async () => {
-  const { createRoomDrafts } = await import("./web/client.mjs");
+  const { createRoomDrafts } = await import("../assets/client.mjs");
   const drafts = createRoomDrafts({ getItem() { throw new Error("storage denied"); }, setItem() { throw new Error("full"); } });
   const room = { room_instance: "A" }, draft = drafts.get(room, "operator");
   draft.text = "keep me"; drafts.seed(room, "operator", "opening");

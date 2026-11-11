@@ -28,7 +28,7 @@ func TestIndependentEventsAppHandler(t *testing.T) {
 		}
 		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`[{"id":7,"name":"Project","path_with_namespace":"remote/project"},{"id":8,"name":"Other","path_with_namespace":"remote/other"}]`))}, nil
 	})
-	runAppHandler(t, h.m, "web_events_independent_handler.mjs")
+	runAppHandler(t, h.m, "../web/tests/web_events_independent_handler.mjs")
 	if h.state().Config.Enabled || h.state().Binding.ProjectID != 8 {
 		t.Fatal("app did not persist independent settings")
 	}

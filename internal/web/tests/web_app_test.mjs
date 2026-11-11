@@ -20,7 +20,7 @@ function fixtureGitLabView(sources, record) {
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import * as client from "./web/client.mjs";
+import * as client from "../assets/client.mjs";
 import { launch, settle, withOnboarding, openNotification } from "./web_app_harness.mjs";
 
 test("Scion connection discovers a managed account and saves its profile without manual IDs", async () => {
@@ -2382,7 +2382,7 @@ async function selectGitLabProject(ui, path) {
 async function toggleGitLab(ui, id, checked) { ui.el(id).checked = checked; await ui.el(id).emit("change"); }
 
 test("notification account status stays separate from connection management",async()=>{
-  const html=await readFile(new URL("./web/index.html",import.meta.url),"utf8"),ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(match=>match[1]);
+  const html=await readFile(new URL("../assets/index.html",import.meta.url),"utf8"),ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(match=>match[1]);
   assert.equal(new Set(ids).size,ids.length,"HTML IDs must be unique across notification and connection dialogs");
   const {api}=todosServer(),ui=await launch(api);await openGitLab(ui);
   await editGitLab(ui,"gitlab-connection","a".repeat(32));

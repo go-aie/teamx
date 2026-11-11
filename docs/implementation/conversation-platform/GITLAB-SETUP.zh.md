@@ -15,7 +15,7 @@
 ## 本地验证
 
 - `go test ./... -count=1 -timeout=8m` 通过。
-- `node --test --test-reporter=dot internal/room/web_*test.mjs` 通过。
+- `node --test --test-reporter=dot internal/web/tests/web_*test.mjs` 通过。
 - `go test -race -tags=integration ./internal/room -run '^Test(GitLabConnect|GitLabAuth|GitLabSetup|GitLabMember|GitLabSelection|GitLabReuse|GitLabSharedApplication|PlatformConnect|PlatformSelection|PlatformMember|LarkAuth|LarkSetup)' -count=1 -timeout=5m` 通过。一次前序组合运行在既有 Session 轮换测试的消费确认处遇到 `ErrBusy`；原失败测试与新增组合测试的 race 单独复验通过，随后上述完整专项复跑通过，未改动调度或 Inbox 生产代码。
 - `TEAMX_CONNECT_BROWSER=1 go test -tags=integration ./internal/room -run '^Test(GitLabConnectConversationBrowser|DefaultAssistantGitLabConnectConversationBrowser|GitLabConnectFirstApplicationConversationBrowser)$' -count=1 -v -timeout=90s` 通过。浏览器与 TeamX HTTP／独立 CLI 真实运行；远端 GitLab 使用模拟适配器。
 

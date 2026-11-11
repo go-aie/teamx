@@ -200,7 +200,7 @@ make test
 make test-integration
 make test-race
 go vet ./...
-node --test internal/room/web*_test.mjs
+node --test internal/web/tests/web*_test.mjs
 make test-e2e-check
 ```
 

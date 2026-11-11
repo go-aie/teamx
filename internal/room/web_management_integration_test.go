@@ -27,7 +27,7 @@ func TestManagedWebUIEndToEnd(t *testing.T) {
 	defer server.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, node, "web_management_e2e.mjs")
+	cmd := exec.CommandContext(ctx, node, "../web/tests/web_management_e2e.mjs")
 	cmd.Env = append(os.Environ(), "TEAMX_WEB_ENDPOINT="+server.URL)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -60,7 +60,7 @@ func TestWorkspaceAppHTTPBinding(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	for _, phase := range []string{"create", "bind"} {
-		cmd := exec.CommandContext(ctx, node, "web_workspace_http.mjs")
+		cmd := exec.CommandContext(ctx, node, "../web/tests/web_workspace_http.mjs")
 		cmd.Env = append(os.Environ(), "TEAMX_WEB_ENDPOINT="+server.URL, "TEAMX_WORKSPACE_UI_PHASE="+phase, "TEAMX_WORKSPACE_REPOSITORY="+strings.TrimSuffix(f.config.Workspace.Repository.URL, ".git")+"/", "TEAMX_WORKSPACE_GITLAB_URL=https://gitlab.invalid", "TEAMX_WORKSPACE_PROJECT=group/project", "TEAMX_WORKSPACE_CONNECTION_ID="+c.ID)
 		output, err := cmd.CombinedOutput()
 		if err != nil {

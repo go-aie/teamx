@@ -144,7 +144,7 @@ Limits: 32 members, 10,000 messages, 16 KiB per body and 64 MiB of total bodies;
 ```sh
 go test -race -timeout 15m ./...
 go vet ./...
-node --test internal/room/web*_test.mjs
+node --test internal/web/tests/web*_test.mjs
 go test -tags=e2e ./... -run '^$'
 ```
 

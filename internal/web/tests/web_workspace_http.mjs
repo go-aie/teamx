@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { request } from "./web/client.mjs";
+import { request } from "../assets/client.mjs";
 import { launch } from "./web_app_harness.mjs";
 
 // Real HTTP + actual app events, with a DOM substitute. Browser evidence is

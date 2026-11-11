@@ -38,7 +38,7 @@ go test ./... -count=1 -timeout=8m
 go test -race -tags=integration ./internal/room \
   -run '^Test(GitLabMember|DefaultAssistantGitLabConnect|PlatformMember|GitLabUnified|GitLabConnect|GitLabAuth|GitLabSetup|PlatformConnect|PlatformSelection|LarkSetup|LarkAuth)' \
   -count=1 -timeout=4m
-node --test --test-reporter=dot internal/room/web_*test.mjs
+node --test --test-reporter=dot internal/web/tests/web_*test.mjs
 git diff --check
 ```
 

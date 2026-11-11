@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { request } from "./web/client.mjs";
+import { request } from "../assets/client.mjs";
 import { launch, settle } from "./web_app_harness.mjs";
 
 // Launched by the Go test against the real HTTP manager. Only the subprocess /

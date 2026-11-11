@@ -1,5 +1,5 @@
 // Browser-only API substitute for isolated UI acceptance. No Git, credentials,
-// DSH, or remote platform is accessed. Never shipped by web.go.
+// DSH, or remote platform is accessed. Never embedded in the application.
 const key = "teamx.workspace-preview-server";
 let server;
 try { server = JSON.parse(sessionStorage.getItem(key)); } catch { /* Empty preview. */ }

@@ -47,7 +47,7 @@ go test ./... -count=1 -timeout=8m
 go test -race -tags=integration ./internal/room \
   -run '^Test(GitLabProject|GitLabAccountSelection|GitLabMember|DefaultAssistantGitLabConnect|PlatformMember|GitLabUnified|GitLabConnect|GitLabAuth|GitLabSetup|PlatformConnect|PlatformSelection|LarkSetup|LarkAuth)' \
   -count=1 -timeout=4m
-node --test --test-reporter=dot internal/room/web_*test.mjs
+node --test --test-reporter=dot internal/web/tests/web_*test.mjs
 TEAMX_CONNECT_BROWSER=1 go test -tags=integration ./internal/room \
   -run '^Test(GitLabProjectSelectionConversationBrowser|GitLabConnectConversationBrowser|DefaultAssistantGitLabConnectConversationBrowser|PlatformConnectConversationBrowser)' \
   -count=1 -timeout=3m

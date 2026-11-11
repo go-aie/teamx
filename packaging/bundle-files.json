@@ -25,7 +25,7 @@
       "destination": "LICENSE"
     },
     {
-      "source": "internal/room/web/vendor/marked-LICENSE.md",
+      "source": "internal/web/assets/vendor/marked-LICENSE.md",
       "destination": "THIRD_PARTY_NOTICES/marked-LICENSE.md"
     },
     {
@@ -176,7 +176,7 @@
     "takeout-dinner"
   ],
   "embedded_resources": [
-    "internal/room/web.go",
+    "internal/web/embed.go",
     "internal/platform/tool/skills.go",
     "internal/platform/gitlab/tools/git-askpass.sh"
   ],

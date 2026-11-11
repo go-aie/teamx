@@ -481,7 +481,7 @@ S1–S4 为接入主线，第一期取第 9.0 节定义的最小范围；S0 的�
 | `internal/platform/connection/*`（按需） | profile 引用版本、代际切换和非整数账号；保持现有 GitLab/Lark 合同 |
 | `internal/workspace/`、`internal/workspace/git/`（S3a 已新增）、`internal/workspace/scion/`（S3b 已新增） | 仓库适配接口、Git/Scion 实现；不反向依赖 Room 或承担 MR/Review 业务 |
 | `internal/room/workspace_config.go`、`workspace.go`、`workspace_connections.go`、`workspace_management.go`、`workspace_records.go` | 显式仓库类型、适配器装配、平台访问桥接与原操作恢复；共用管理不直接执行 Git/scn |
-| `internal/room/web/app.js`、`index.html` | Scion 连接、成员工具和 Workspace 类型选择；不强制新增登录授权页 |
+| `internal/web/assets/app.js`、`index.html` | Scion 连接、成员工具和 Workspace 类型选择；不强制新增登录授权页 |
 | `.teamx/teams/software-development/` | 协议中立的角色职责和两种工具使用说明 |
 | `docs/workspace.zh.md`、`platform-architecture.zh.md` | 记录实际接口、认证路径与验收边界 |
 

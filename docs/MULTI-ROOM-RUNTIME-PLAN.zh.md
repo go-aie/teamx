@@ -19,7 +19,7 @@
 | `internal/room/tools.go` | 成员工具鉴权依赖 `m.active` 和全局 `busy` | 校验调用所属实例及该房间状态 |
 | `internal/room/platform_notifications.go` | 仅活动房间可直接接收入房投递 | 向订阅所属且可接收的实例投递 |
 | `internal/room/workspace_management.go`、`deletion.go` | 生命周期操作依赖唯一活动实例和全局操作槽 | 操作只占用、停止和重建目标房间 |
-| `internal/room/web/app.js` | 查看对象跟随服务级 `active_room_id` | 每个标签页独立保存查看对象 |
+| `internal/web/assets/app.js` | 查看对象跟随服务级 `active_room_id` | 每个标签页独立保存查看对象 |
 
 因此不能仅删除切房时的 `old.close()`，否则后台房间的请求和工具仍会被拒绝或路由错误。
 

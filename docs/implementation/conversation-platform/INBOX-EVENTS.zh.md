@@ -42,7 +42,7 @@ go test -race ./internal/room \
 go test -race -tags=integration ./internal/room \
   -run '^Test(AgentInbox|Inbox|AgentInboxReadProjection|ReferenceFollowups)' \
   -count=1 -timeout=4m
-node --test --test-reporter=dot internal/room/web_*test.mjs
+node --test --test-reporter=dot internal/web/tests/web_*test.mjs
 git diff --check
 ```
 
