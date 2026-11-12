@@ -27,6 +27,7 @@ type startupConfig struct {
 		TrustedProxies       []string            `toml:"trusted_proxies"`
 		Listen               *string             `toml:"listen"`
 		RemoteEnabled        *bool               `toml:"remote_enabled"`
+		AccessMode           string              `toml:"access_mode"`
 		DataDir              *string             `toml:"data_dir"`
 		TeamsDir             *string             `toml:"teams_dir"`
 		MaxTurns             *uint64             `toml:"max_turns"` // Retired; decoded only to report the replacement.

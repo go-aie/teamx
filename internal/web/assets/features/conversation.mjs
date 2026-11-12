@@ -1,3 +1,4 @@
+import { randomUUID } from "../random-id.mjs";
 import { readPages as collectPages, createRoomDrafts, mentionRanges, unseenMentions } from "../client.mjs";
 import { notificationOptions } from "../markdown.mjs";
 import { createAssistantIcon, createUserIcon } from "../icons.mjs";
@@ -421,7 +422,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
       const info = state.info, operator = state.operator, draft = state.draft, version = runtime.viewVersion;
       if (!draft.restartRequest && !await confirmAction({ title:roomsUI.isDirect() ? "重新开始私信？" : "重新开始房间讨论？", message:roomsUI.isDirect() ? "将停止助理当前的执行，清空消息并重置助理上下文。工作目录中的文件保留。" : "将停止所有 Agent 当前的执行，清空消息并重置 Agent 上下文。成员、角色和工作目录中的文件保留，回合预算不重置。", confirmLabel:"重新开始" })) return;
       if (!currentView(version) || state.draft !== draft || state.operator !== operator || $("restart-discussion").disabled) return;
-      draft.restartRequest ||= { id: crypto.randomUUID().replaceAll("-", ""), info, previous_id: state.restart?.id || "" };
+      draft.restartRequest ||= { id: randomUUID().replaceAll("-", ""), info, previous_id: state.restart?.id || "" };
       restartNoticeID = draft.restartRequest.id; restartNoticeExpires = 0;
       draft.restartStarting = true; draft.restartError = ""; saveDraft();
       composerState(); membersUI.renderMembers(); roomsUI.renderCreateSelection(); roomsUI.renderRooms();
@@ -448,7 +449,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
         notice("send-error", "消息过长，请控制在 16 KiB 内。"); return;
       }
       const info = state.info, operator = state.operator, draft = state.draft, version = runtime.viewVersion;
-      draft.pending ||= { text, client_message_id: crypto.randomUUID(), reply_to: draft.replyTo, info, operator };
+      draft.pending ||= { text, client_message_id: randomUUID(), reply_to: draft.replyTo, info, operator };
       saveDraft(); draft.sending = true;
       composerState(); notice("send-error", "");
       try {

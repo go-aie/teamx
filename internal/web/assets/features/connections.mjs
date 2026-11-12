@@ -1,3 +1,4 @@
+import { randomUUID } from "../random-id.mjs";
 // Shared platform connection forms, validation and account selection.
 export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI, larkUI, onboardingUI, workspaceUI, notificationsUI }) {
   const { document, window, Option, setTimeout, clearTimeout, request } = env;
@@ -255,7 +256,7 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
     if (action === "delete") {
       if (!await confirmAction({title:`删除「${item.name}」连接？`,message:"删除后将无法通过此连接访问平台。",confirmLabel:"删除连接"}) || !stillCurrent()) return;
     }
-    let payload = { id: item?.id || crypto.randomUUID().replaceAll("-", ""), version: item?.version || 0 };
+    let payload = { id: item?.id || randomUUID().replaceAll("-", ""), version: item?.version || 0 };
     if (action === "save") {
       clearPlatformErrors();
       payload = { ...payload, name: $("connection-name").value.trim(), provider: connectionIsLark() ? "lark" : connectionIsScion() ? "scion" : "gitlab", url: connectionIsLark() ? larkUI.connectionOrigin() : $("connection-url").value.trim() };

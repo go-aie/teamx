@@ -4,10 +4,11 @@
 <body><main>
 <a class="brand" href="/" aria-label="TeamX 首页"><img class="brand-mark" src="/ui/brand-mark.svg" width="48" height="50" alt=""><span>TeamX</span></a>
 <section id="login" aria-label="登录 TeamX">
-<form id="login-form">
+<form id="login-form" method="post" action="/v1/access/login" autocomplete="on">
+<input id="login-username" class="password-username" name="username" type="text" value="TeamX" autocomplete="username" readonly tabindex="-1" aria-hidden="true">
 <label for="token">访问令牌</label>
 <div class="token-field">
-<input id="token" type="password" placeholder="粘贴访问令牌" autocomplete="off" autocapitalize="none" required spellcheck="false" aria-describedby="token-help login-feedback">
+<input id="token" name="password" type="password" placeholder="输入或粘贴访问令牌" autocomplete="current-password" autocapitalize="none" required spellcheck="false" aria-describedby="token-help login-feedback">
 <button id="toggle-token" type="button" aria-label="显示访问令牌" aria-pressed="false" title="显示访问令牌"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path class="eye-slash" d="m3 3 18 18"/></svg></button>
 </div>
 <p id="token-help" class="field-hint">由部署管理员提供。</p>

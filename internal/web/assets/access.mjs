@@ -1,3 +1,4 @@
+import { randomUUID } from "./random-id.mjs";
 import { fillModelParameters, readModelParameters, syncModelProtocol, modelDraftFields, snapshotModelFields, restoreModelFields } from "./model-form.mjs";
 const $ = id => document.getElementById(id);
 let version = 0, requestID, polling = false, configuredKey = false, active = true;
@@ -124,7 +125,7 @@ $("login-form").addEventListener("submit", async event => {
 });
 $("model-form").addEventListener("submit", async event => {
   event.preventDefault();
-  const data = {request_id:requestID ||= crypto.randomUUID(), expected_version:version, ...readModelParameters($)};
+  const data = {request_id:requestID ||= randomUUID(), expected_version:version, ...readModelParameters($)};
   saveDraft();
   if (!configuredKey || $("replace-key").checked) data.api_key = $("api-key").value;
   $("api-key").value = ""; busy(true);

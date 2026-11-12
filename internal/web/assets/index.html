@@ -545,24 +545,38 @@
     </section>
     <section id="access-settings" class="platforms-content access-settings" role="tabpanel" aria-labelledby="settings-tab-security" hidden>
       <h3 id="access-settings-title">访问与安全</h3>
-      <form id="access-settings-form" autocomplete="off" hidden>
+      <form id="access-settings-form" method="post" action="/v1/access/settings" autocomplete="on" hidden>
+        <input id="access-username" class="sr-only" name="username" type="text" value="TeamX" autocomplete="username" readonly tabindex="-1" aria-hidden="true">
+        <fieldset class="access-section access-modes">
+          <legend>访问方式</legend>
+          <label class="access-mode"><input id="access-mode-local" name="access-mode" type="radio" value="local" checked><span><span class="access-mode-name">仅本机</span><span class="quiet">只允许当前设备访问</span></span></label>
+          <label class="access-mode"><input id="access-mode-lan" name="access-mode" type="radio" value="lan"><span><span class="access-mode-name">局域网</span><span class="quiet">同一网络内通过 IP 和端口访问</span></span></label>
+          <label class="access-mode"><input id="access-mode-proxy" name="access-mode" type="radio" value="proxy"><span><span class="access-mode-name">HTTPS 代理</span><span class="quiet">通过 HTTPS 反向代理访问</span></span></label>
+        </fieldset>
         <div class="access-section">
           <label class="access-check"><input id="access-login-enabled" type="checkbox">启用登录验证</label>
           <p id="access-login-hint" class="quiet">打开 TeamX 时需要输入令牌。</p>
           <div id="access-token-summary" class="access-token-summary access-fields" hidden><span class="quiet">令牌已设置</span><button id="access-token-change" class="text-button" type="button">更换令牌</button></div>
           <div id="access-token-fields" class="access-fields" hidden>
             <div class="access-field-heading"><label for="access-new-token">新令牌</label><div class="access-token-actions"><button id="access-token-edit-cancel" class="text-button" type="button" hidden>取消更换</button><button id="access-token-generate" class="text-button" type="button">重新生成</button></div></div>
-            <div class="access-token-input"><input id="access-new-token" class="field-control" type="password" autocomplete="off" minlength="16" maxlength="256" placeholder="填写至少 16 个英文字符" aria-describedby="access-token-hint"><button id="access-token-toggle" class="text-button access-token-icon" type="button" title="显示令牌" aria-label="显示令牌" aria-pressed="false" aria-controls="access-new-token"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path class="access-eye-slash" d="m3 3 18 18"/></svg></button><button id="access-token-copy" class="text-button access-token-icon" type="button" title="复制令牌" aria-label="复制令牌"><svg viewBox="0 0 24 24" aria-hidden="true"><g class="access-copy-symbol"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M5 16H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h11a1 1 0 0 1 1 1v1"/></g><path class="access-copy-check" d="m5 12 4 4L19 6"/></svg></button></div>
-            <p id="access-token-hint" class="quiet">至少 16 个英文字符，修改后需重新登录。</p>
+            <div class="access-token-input"><input id="access-new-token" name="new-password" class="field-control" type="password" autocomplete="new-password" autocapitalize="none" spellcheck="false" minlength="12" maxlength="256" placeholder="填写至少 12 个字符" aria-describedby="access-token-hint"><button id="access-token-toggle" class="text-button access-token-icon" type="button" title="显示令牌" aria-label="显示令牌" aria-pressed="false" aria-controls="access-new-token"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path class="access-eye-slash" d="m3 3 18 18"/></svg></button><button id="access-token-copy" class="text-button access-token-icon" type="button" title="复制令牌" aria-label="复制令牌"><svg viewBox="0 0 24 24" aria-hidden="true"><g class="access-copy-symbol"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M5 16H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h11a1 1 0 0 1 1 1v1"/></g><path class="access-copy-check" d="m5 12 4 4L19 6"/></svg></button></div>
+            <p id="access-token-hint" class="quiet" aria-live="polite">至少 12 个字符，修改后需重新登录。</p>
           </div>
         </div>
-        <div class="access-section">
-          <label class="access-check"><input id="access-remote-enabled" type="checkbox">允许远程访问</label>
-          <p class="quiet">需登录验证，重启后生效。</p>
-          <div id="access-remote-fields" class="access-fields" hidden>
+        <div id="access-connection-fields" class="access-section" hidden>
+          <h4>连接设置</h4>
+          <div id="access-lan-fields" hidden>
+            <label for="access-port">端口</label>
+            <input id="access-port" class="field-control access-port" type="number" min="1" max="65535" step="1" inputmode="numeric" value="8088">
+            <div class="access-field-heading access-fields"><label id="access-lan-address-label" for="access-lan-addresses">访问地址（待生效）</label><button id="access-lan-copy" class="text-button" type="button">复制地址</button></div>
+            <textarea id="access-lan-addresses" class="field-control access-lan-addresses" readonly rows="1" aria-describedby="access-lan-status"></textarea>
+            <p id="access-lan-status" class="quiet"></p>
+            <p class="quiet">HTTP 连接未加密，请仅在可信的局域网中使用。</p>
+          </div>
+          <div id="access-proxy-fields" hidden>
             <label for="access-public-url">HTTPS 地址</label>
             <input id="access-public-url" class="field-control" type="url" placeholder="https://assistant.example.com" autocomplete="off">
-            <details id="access-proxy-help"><summary>反向代理配置</summary><p class="quiet">先将 HTTPS 地址代理到 TeamX，保留 Host 并传递 X-Forwarded-Proto: https。默认仅信任本机代理；开启远程访问后监听所有 IPv4 接口。</p></details>
+            <details id="access-proxy-help"><summary>代理配置说明</summary><p class="quiet">先将 HTTPS 地址代理到 TeamX，保留 Host 并传递 X-Forwarded-Proto: https。默认仅信任本机代理。访问方式和地址在重启后生效。</p></details>
           </div>
         </div>
       </form>
@@ -818,10 +832,10 @@
   </dialog>
   <dialog id="access-confirm-dialog" class="confirmation-dialog dialog-surface" aria-labelledby="access-confirm-title" aria-describedby="access-confirm-message">
     <header class="dialog-header"><h2 id="access-confirm-title">验证更改</h2><button id="access-confirm-close" class="icon-button" type="button" aria-label="关闭验证"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></header>
-    <form id="access-confirm-form" class="confirmation-body access-confirm-form" autocomplete="off">
+    <form id="access-confirm-form" class="confirmation-body access-confirm-form" method="post" action="/v1/access/settings" autocomplete="on">
       <p id="access-confirm-message"></p>
       <label for="access-current-token">当前令牌</label>
-      <input id="access-current-token" class="field-control" type="password" autocomplete="off" maxlength="256" required placeholder="输入当前令牌">
+      <input id="access-current-token" name="password" class="field-control" type="password" autocomplete="current-password" maxlength="256" required placeholder="输入当前令牌">
       <p id="access-confirm-feedback" class="quiet" role="status" aria-live="polite"></p>
       <div class="form-actions"><button id="access-confirm-cancel" class="secondary-button" type="button">取消</button><button id="access-confirm-submit" class="primary" type="submit">确认保存</button></div>
     </form>

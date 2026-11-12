@@ -1,3 +1,4 @@
+import { randomUUID } from "../random-id.mjs";
 import { createAssistantIcon } from "../icons.mjs";
 
 // Room catalog, selection, creation, deletion and default assistant recovery.
@@ -256,7 +257,7 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
         const room = op.room || await manage("/v1/rooms/create", op.payload);
         if (room.status !== "ready") throw new Error("会话创建尚未完成，请核查后重试。");
         seedCreated(op, room);
-        op.kind = "open"; op.selectionVersion ??= selectionVersion; op.payload = { open_id: crypto.randomUUID(), room_id: room.room_id, room_instance: room.room_instance };
+        op.kind = "open"; op.selectionVersion ??= selectionVersion; op.payload = { open_id: randomUUID(), room_id: room.room_id, room_instance: room.room_instance };
         saveManagement();
       }
       const result = await manage(op.kind === "delete" ? "/v1/rooms/delete" : "/v1/rooms/open", op.payload);
@@ -289,7 +290,7 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
     if (state.management || state.managementSending || room.busy) return;
     selectionVersion++; awaitDefaultSelection = false;
     state.management = { kind: "open", selectOnComplete: true, selectionVersion, operator: state.operator, payload: {
-      open_id: crypto.randomUUID(), room_id: room.room_id, room_instance: room.room_instance } };
+      open_id: randomUUID(), room_id: room.room_id, room_instance: room.room_instance } };
     saveManagement(); void runManagement();
   }
 
@@ -479,7 +480,7 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
       const name = $("new-room-name").value.trim();
       if (new TextEncoder().encode(name).length > 256) { notice("create-error", `${createDirect ? "私信" : "房间"}名称请控制在 256 字节内。`); return; }
       state.management = { kind: "create", selectOnComplete: true, selectionVersion, operator: state.operator, opening: createDirect ? "" : team.opening_message,
-        payload: { create_id: crypto.randomUUID(), name, ...(createDirect ? {is_direct:true, agent_role_id:"assistant"} : {team_id:team.id}) } };
+        payload: { create_id: randomUUID(), name, ...(createDirect ? {is_direct:true, agent_role_id:"assistant"} : {team_id:team.id}) } };
       saveManagement(); void runManagement();
     });
 

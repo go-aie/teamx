@@ -1,3 +1,4 @@
+import { randomUUID } from "../random-id.mjs";
 // Durable platform onboarding and member platform additions.
 export function createOnboarding({ env, runtime, connectionsUI, larkUI, settingsUI, roomsUI, workspaceUI, notificationsUI, membersUI, gitlabUI, scionUI }) {
   const { document, Option, request } = env;
@@ -143,7 +144,7 @@ export function createOnboarding({ env, runtime, connectionsUI, larkUI, settings
         spec.backfill={seconds:backfill.backfill_seconds,...(backfill.backfill_start ? {start:backfill.backfill_start} : {})};
       }
     }
-    const pending=onboarding.pending || {operation_id:crypto.randomUUID().replaceAll("-",""),prepare:spec};
+    const pending=onboarding.pending || {operation_id:randomUUID().replaceAll("-",""),prepare:spec};
     onboarding.owner=state.operator;onboarding.pending=pending;saveOnboarding();renderOnboarding();
     const version=connectionsUI.platforms.formVersion,identity=onboardingIdentity();
     let op;
@@ -251,7 +252,7 @@ export function createOnboarding({ env, runtime, connectionsUI, larkUI, settings
     if(onboarding.pending && !onboardingDone()){onboarding.error="请先读取并完成上次接入，或在全局设置停止剩余步骤。";renderMemberPlatformAddition();return;}
     clearOnboarding();
     const identity=onboardingIdentity(),ws=workspaceUI.workspaceView;
-    onboarding.pending={operation_id:crypto.randomUUID().replaceAll("-",""),prepare:spec};onboarding.owner=state.operator;saveOnboarding();onboarding.busy=true;membersUI.renderMemberPlatforms();
+    onboarding.pending={operation_id:randomUUID().replaceAll("-",""),prepare:spec};onboarding.owner=state.operator;saveOnboarding();onboarding.busy=true;membersUI.renderMemberPlatforms();
     const id=onboarding.pending.operation_id;let preparing=true;
     const current=()=>identity.epoch===state.catalog?.service_epoch && identity.operator===state.operator && onboarding.pending?.operation_id===id;
     try {

@@ -3,9 +3,10 @@
 # Relative paths below resolve from this file's directory; no shell expansion.
 [server]
 listen = "127.0.0.1:8088"
-# 全新安装默认仅本机访问。可在「设置 → 安全」开启登录和远程访问。
-# remote_enabled = false
-# Remote access requires login and one canonical HTTPS origin.
+# 在「设置 → 安全」选择仅本机、局域网或 HTTPS 代理；修改后重启生效。
+# access_mode = "local" # local | lan | proxy
+# LAN 模式要求登录，使用 0.0.0.0:<端口>，只接受本机私有 IP 和私有来源直连。
+# HTTPS proxy mode requires login and one canonical HTTPS origin.
 # public_base_url = "https://assistant.example.com"
 # trusted_proxies = ["127.0.0.1"]
 # Shared by all Rooms and page time displays. Settings can save this without restart.

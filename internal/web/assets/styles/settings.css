@@ -118,6 +118,16 @@
 .access-settings .access-check { display:flex; align-items:center; gap:8px; font-size:var(--font-body); }
 .access-settings .quiet { margin:6px 0 0; font-size:var(--font-small); line-height:1.6; }
 .access-section + .access-section { border-top:1px solid var(--line); padding-top:20px; }
+.settings-dialog .access-modes { display:block; min-width:0; margin:0; padding:0; border:0; }
+.access-modes legend,.access-section h4 { margin:0 0 14px; padding:0; font-size:var(--font-small); font-weight:var(--weight-medium); }
+.access-settings .access-mode { display:flex; align-items:flex-start; gap:10px; padding:8px 0; cursor:pointer; }
+.access-mode input { flex:none; margin:3px 0 0; accent-color:var(--accent); }
+.access-mode > span { min-width:0; }
+.access-mode-name { display:block; font-size:var(--font-body); }
+.access-settings .access-mode .quiet { display:block; margin:2px 0 0; font-weight:400; }
+.access-settings .access-port { display:block; max-width:160px; }
+.access-lan-addresses { display:block; resize:none; line-height:1.6; overflow-wrap:anywhere; }
+#access-lan-copy { padding:0; font-size:var(--font-small); }
 .access-fields { margin-top:18px; }
 .access-settings .field-control { width:100%; min-width:0; margin-top:8px; }
 .access-field-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; }
@@ -142,6 +152,8 @@
 .access-token-summary { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .access-token-summary .quiet { margin:0; }
 .access-token-summary button { padding:0; font-size:var(--font-small); }
+#access-token-hint[data-strength="weak"] { color:var(--danger); }
+#access-token-hint[data-strength="strong"] { color:var(--accent); }
 #access-draft-hint { white-space:nowrap; }
 .access-confirm-form label { display:block; margin:18px 0 8px; font-size:var(--font-small); font-weight:var(--weight-medium); }
 .access-confirm-form .field-control { width:100%; }

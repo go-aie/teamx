@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -50,6 +51,8 @@ type serverAccess struct {
 	document                   *configDocument
 	version                    uint64
 	activeListen               string
+	activeMode                 string
+	lanHosts                   []string
 	activeProxies              []string
 	proxies                    map[netip.Addr]bool
 	mu                         sync.Mutex
@@ -72,7 +75,7 @@ func validAccessToken(value string) bool {
 	return err == nil && len(b) == 32 && base64.RawURLEncoding.EncodeToString(b) == value
 }
 func validAdminToken(value string) bool {
-	if len(value) < 16 || len(value) > 256 || strings.TrimSpace(value) != value {
+	if len(value) < accessPasswordPolicy.MinLength || len(value) > accessPasswordPolicy.MaxLength || strings.TrimSpace(value) != value {
 		return false
 	}
 	for _, c := range value {
@@ -109,7 +112,7 @@ func readAdminToken(path string) (string, error) {
 	}
 	token := strings.TrimSuffix(string(b), "\n")
 	if !validAdminToken(token) {
-		return "", errors.New("invalid admin token; expected 16 to 256 printable ASCII characters without surrounding whitespace")
+		return "", errors.New("invalid admin token; expected 12 to 256 printable ASCII characters without surrounding whitespace")
 	}
 	return token, nil
 }
@@ -139,6 +142,8 @@ func newServerAccess(c startupConfig, endpoint string) (*serverAccess, error) {
 	}
 	a := &serverAccess{operator: c.Access.OperatorID, internal: endpoint, public: endpoint, admin: sha256.Sum256([]byte(token)), proxies: map[netip.Addr]bool{}, sessions: map[[32]byte]accessSession{}, executions: map[[32]byte]executionBinding{}, now: time.Now}
 	a.disabled, a.config, a.version = disabled, c, 1
+	a.activeMode = configuredAccessMode(c)
+	a.lanHosts = localLANHosts()
 	a.activeListen = strings.TrimPrefix(endpoint, "http://")
 	if c.Server.Listen != nil {
 		a.activeListen = *c.Server.Listen
@@ -202,6 +207,9 @@ func (a *serverAccess) cookieName() string {
 	if strings.HasPrefix(a.public, "https:") {
 		return "__Host-teamx-session"
 	}
+	if a.activeMode == accessLAN {
+		return "teamx-lan-session"
+	}
 	return "teamx-local-session"
 }
 func (a *serverAccess) cookie(value string, age int) *http.Cookie {
@@ -237,10 +245,17 @@ func (a *serverAccess) requestOrigin(r *http.Request) (string, bool) {
 		}
 		return origin, true
 	}
-	if a.public == a.internal && addr.IsLoopback() && len(forwarded) == 0 && a.localOrigin(origin) {
+	if a.activeMode != accessProxy && addr.IsLoopback() && len(forwarded) == 0 && a.localOrigin(origin) {
 		return origin, true
 	}
-	if origin == a.public {
+	if a.activeMode == accessLAN && len(forwarded) == 0 && scheme == "http" && (addr.IsPrivate() || addr.IsLoopback()) {
+		host, port, err := net.SplitHostPort(r.Host)
+		ip, parseErr := netip.ParseAddr(host)
+		if err == nil && parseErr == nil && port == portFromAddress(strings.TrimPrefix(a.internal, "http://")) && slices.Contains(a.lanHosts, ip.Unmap().String()) && r.Host == net.JoinHostPort(ip.Unmap().String(), port) {
+			return origin, true
+		}
+	}
+	if origin == a.public && (a.activeMode == accessProxy || addr.IsLoopback()) {
 		return origin, true
 	}
 	if origin == a.internal && addr.IsLoopback() && len(forwarded) == 0 && r.Header.Get("Origin") == "" && (strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") || r.URL.Path == "/healthz" && r.Method == http.MethodGet) {
@@ -286,7 +301,7 @@ func (a *serverAccess) wrap(next http.Handler) http.Handler {
 			_ = json.NewEncoder(w).Encode(status)
 			return
 		}
-		if r.URL.Path == "/access" || r.URL.Path == "/ui/access.mjs" || r.URL.Path == "/ui/access.css" || r.URL.Path == "/ui/model-form.mjs" || r.URL.Path == "/ui/brand-mark.svg" {
+		if r.URL.Path == "/access" || r.URL.Path == "/ui/access.mjs" || r.URL.Path == "/ui/access.css" || r.URL.Path == "/ui/model-form.mjs" || r.URL.Path == "/ui/random-id.mjs" || r.URL.Path == "/ui/brand-mark.svg" {
 			web.Serve(w, r)
 			return
 		}

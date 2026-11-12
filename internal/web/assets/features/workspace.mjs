@@ -1,3 +1,4 @@
+import { randomUUID } from "../random-id.mjs";
 // Workspace configuration, platform choices and durable operation recovery.
 export function createWorkspace({ env, runtime, notificationsUI, membersUI, roomsUI, conversationUI, settingsUI }) {
   const { document, Option, request } = env;
@@ -285,7 +286,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     let payload;
     try {
       payload = { ...ws.room, service_epoch: state.catalog.service_epoch, caller: { kind: "human", id: ws.operator },
-        operation_id: retry ? ws.data.operation.operation_id : crypto.randomUUID().replaceAll("-", "") };
+        operation_id: retry ? ws.data.operation.operation_id : randomUUID().replaceAll("-", "") };
       if (!retry) {
         payload.expected_version = ws.data.workspace_version; payload.target = workspaceTarget();
         if (workspaceCanRevise()) payload.replaces_operation_id = ws.data.operation.operation_id;

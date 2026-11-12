@@ -1,3 +1,4 @@
+import { randomUUID } from "../random-id.mjs";
 import { fillModelParameters, readModelParameters, syncModelProtocol, modelDraftFields, snapshotModelFields, restoreModelFields } from "../model-form.mjs";
 
 export function createModels({env, runtime, openSettings}) {
@@ -61,7 +62,7 @@ export function createModels({env, runtime, openSettings}) {
     if (saving || !data) return;
     if (lastOperation?.unconfirmed && !draft) {feedback("请先读取原操作进度，再决定是否开始新的编辑。");return;}
     lastOperation = undefined; clearReview(); feedback("");
-    editor = {entry, version:draft?.expected_version ?? data.catalog.version, id:draft?.id || entry?.id || `model-${crypto.randomUUID().replaceAll("-", "").slice(0,16)}`};
+    editor = {entry, version:draft?.expected_version ?? data.catalog.version, id:draft?.id || entry?.id || `model-${randomUUID(crypto).replaceAll("-", "").slice(0,16)}`};
     $("model-edit-title").textContent = entry ? "编辑模型" : "添加模型";
     $("model-entry-name").value = entry && modelName(entry) !== entry.model_id ? modelName(entry) : "";
     fillModelParameters(field, entry); field("api-key").value = ""; field("replace-key").checked = data.entry_states?.[entry?.id]?.credential_configured === false;
@@ -208,7 +209,7 @@ export function createModels({env, runtime, openSettings}) {
     if (lastOperation?.unconfirmed) { feedback("请先读取原操作进度，再决定是否保存。"); return; }
     saving = true;
     lastOperation = undefined;
-    const epoch = state.catalog.service_epoch, requestID = crypto.randomUUID();
+    const epoch = state.catalog.service_epoch, requestID = randomUUID(crypto);
     lastOperation={id:requestID,epoch,unconfirmed:true}; persist();
     let accepted;
     $("model-save").disabled = true; $("model-new").disabled = true;

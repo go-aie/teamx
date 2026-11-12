@@ -8,31 +8,61 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/pelletier/go-toml/v2"
 )
 
-func remoteAccessEnabled(c startupConfig) bool {
-	if c.Server.RemoteEnabled != nil {
-		return *c.Server.RemoteEnabled
+const (
+	accessLocal = "local"
+	accessLAN   = "lan"
+	accessProxy = "proxy"
+)
+
+func configuredAccessMode(c startupConfig) string {
+	if c.Server.AccessMode != "" {
+		return c.Server.AccessMode
 	}
-	return c.Server.PublicBaseURL != "" // Preserve existing HTTPS deployments.
+	if c.Server.RemoteEnabled != nil {
+		if *c.Server.RemoteEnabled {
+			return accessProxy
+		}
+		return accessLocal
+	}
+	if c.Server.PublicBaseURL != "" {
+		return accessProxy // Preserve existing HTTPS deployments.
+	}
+	return accessLocal
+}
+
+func remoteAccessEnabled(c startupConfig) bool {
+	return configuredAccessMode(c) != accessLocal
 }
 
 func validateRemoteAccess(c startupConfig, login bool) error {
-	if !remoteAccessEnabled(c) {
+	mode := configuredAccessMode(c)
+	if mode != accessLocal && mode != accessLAN && mode != accessProxy {
+		return errors.New("server.access_mode must be local, lan or proxy")
+	}
+	if mode != accessProxy {
 		if c.Server.PublicBaseURL != "" || len(c.Server.TrustedProxies) > 0 {
-			return errors.New("remote access must be enabled before configuring an external origin or proxy")
+			return errors.New("an external HTTPS origin and trusted proxies require HTTPS proxy mode")
 		}
-		return nil
+		if mode == accessLocal {
+			return nil
+		}
 	}
 	if !login {
 		return errors.New("remote access requires login verification")
+	}
+	if mode == accessLAN {
+		return nil
 	}
 	u, err := url.Parse(c.Server.PublicBaseURL)
 	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.Opaque != "" || strings.Contains(c.Server.PublicBaseURL, "#") {
@@ -44,7 +74,8 @@ func validateRemoteAccess(c startupConfig, login bool) error {
 func validateAccessListen(c startupConfig, address string) error {
 	host, _, err := net.SplitHostPort(address)
 	ip := net.ParseIP(host)
-	if err != nil || ip == nil {
+	n, portErr := strconv.Atoi(portFromAddress(address))
+	if err != nil || ip == nil || portErr != nil || n < 0 || n > 65535 {
 		return errors.New("listen must use an IP and port")
 	}
 	if !ip.IsLoopback() && !remoteAccessEnabled(c) {
@@ -53,7 +84,37 @@ func validateAccessListen(c startupConfig, address string) error {
 	if !ip.IsLoopback() && !ip.IsUnspecified() {
 		return errors.New("remote listen must use 0.0.0.0 or :: so local Agent connections remain available")
 	}
+	if configuredAccessMode(c) == accessLAN && !ip.IsUnspecified() {
+		return errors.New("LAN access requires an all-interface listener")
+	}
 	return validateRemoteAccess(c, c.Access.LoginEnabled == nil || *c.Access.LoginEnabled)
+}
+
+func portFromAddress(address string) string {
+	_, port, _ := net.SplitHostPort(address)
+	return port
+}
+
+// Only actual private addresses of this server are advertised and accepted as
+// LAN Hosts. Never trust an arbitrary Host or a forwarded client address.
+func localLANHosts() []string {
+	addresses, err := net.InterfaceAddrs()
+	if err != nil {
+		return nil
+	}
+	var hosts []string
+	for _, address := range addresses {
+		prefix, err := netip.ParsePrefix(address.String())
+		if err != nil {
+			continue
+		}
+		ip := prefix.Addr().Unmap()
+		if ip.IsPrivate() && !slices.Contains(hosts, ip.String()) {
+			hosts = append(hosts, ip.String())
+		}
+	}
+	slices.Sort(hosts)
+	return hosts
 }
 
 func (a *serverAccess) localOrigin(origin string) bool {
@@ -83,26 +144,35 @@ func (a *serverAccess) writeSession(w http.ResponseWriter) {
 }
 
 type accessSettingsView struct {
-	Version         uint64 `json:"version"`
-	LoginEnabled    bool   `json:"login_enabled"`
-	RemoteEnabled   bool   `json:"remote_enabled"`
-	PublicBaseURL   string `json:"public_base_url"`
-	RestartRequired bool   `json:"restart_required"`
-	RemoteActive    bool   `json:"remote_active"`
-	Writable        bool   `json:"writable"`
+	Version         uint64              `json:"version"`
+	LoginEnabled    bool                `json:"login_enabled"`
+	RemoteEnabled   bool                `json:"remote_enabled"`
+	PublicBaseURL   string              `json:"public_base_url"`
+	RestartRequired bool                `json:"restart_required"`
+	RemoteActive    bool                `json:"remote_active"`
+	Writable        bool                `json:"writable"`
+	AccessMode      string              `json:"access_mode"`
+	ActiveMode      string              `json:"active_mode"`
+	Port            string              `json:"port"`
+	LANHosts        []string            `json:"lan_hosts"`
+	PasswordPolicy  adminPasswordPolicy `json:"password_policy"`
 }
 
 // Caller holds a.mu. Listener/origin changes are persisted for the next start;
 // authentication changes take effect immediately and revoke browser sessions.
 func (a *serverAccess) settingsView() accessSettingsView {
-	restart := a.public != a.config.Server.PublicBaseURL && (a.public != a.internal || a.config.Server.PublicBaseURL != "")
+	restart := a.activeMode != configuredAccessMode(a.config) || a.public != a.config.Server.PublicBaseURL && (a.public != a.internal || a.config.Server.PublicBaseURL != "")
 	restart = restart || !slices.Equal(a.activeProxies, a.config.Server.TrustedProxies)
 	if a.config.Server.Listen != nil {
 		restart = restart || a.activeListen != *a.config.Server.Listen
 	}
-	return accessSettingsView{a.version, !a.disabled, remoteAccessEnabled(a.config), a.config.Server.PublicBaseURL,
-		restart,
-		a.public != a.internal, a.document != nil}
+	port := portFromAddress(a.activeListen)
+	if a.config.Server.Listen != nil {
+		port = portFromAddress(*a.config.Server.Listen)
+	}
+	return accessSettingsView{Version: a.version, LoginEnabled: !a.disabled, RemoteEnabled: remoteAccessEnabled(a.config), PublicBaseURL: a.config.Server.PublicBaseURL,
+		RestartRequired: restart, RemoteActive: a.activeMode != accessLocal, Writable: a.document != nil,
+		AccessMode: configuredAccessMode(a.config), ActiveMode: a.activeMode, Port: port, LANHosts: append([]string{}, a.lanHosts...), PasswordPolicy: accessPasswordPolicy}
 }
 
 type accessSettingsInput struct {
@@ -113,6 +183,8 @@ type accessSettingsInput struct {
 	PublicBaseURL   string `json:"public_base_url"`
 	Token           string `json:"token"`
 	CurrentToken    string `json:"current_token"`
+	AccessMode      string `json:"access_mode"`
+	Port            string `json:"port"`
 }
 
 func (a *serverAccess) confirmToken(token string) bool {
@@ -185,26 +257,43 @@ func (a *serverAccess) serveSettings(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, ErrRequest)
 		return
 	}
-	if !input.LoginEnabled && a.public != a.internal {
-		writeAPIError(w, invalidField("login_enabled", "远程入口仍在运行。请先关闭远程访问并重启，再关闭登录验证。"))
+	if !input.LoginEnabled && a.activeMode != accessLocal {
+		writeAPIError(w, invalidField("login_enabled", "非本机入口仍在运行。请先切换为仅本机并重启，再关闭登录验证。"))
 		return
 	}
 	next := a.config
 	next.Access.SettingsVersion = a.version + 1
 	next.Access.LoginEnabled = &input.LoginEnabled
 	next.Server.RemoteEnabled = &input.RemoteEnabled
+	next.Server.AccessMode = input.AccessMode
 	next.Server.PublicBaseURL = strings.TrimSpace(input.PublicBaseURL)
-	if !input.RemoteEnabled {
+	mode := configuredAccessMode(next)
+	input.RemoteEnabled = mode != accessLocal
+	if mode != accessProxy {
 		next.Server.PublicBaseURL = ""
 		next.Server.TrustedProxies = nil
 	}
 	if err := validateRemoteAccess(next, input.LoginEnabled); err != nil {
-		writeAPIError(w, invalidField("remote_enabled", err.Error()))
+		writeAPIError(w, invalidField("access_mode", err.Error()))
 		return
 	}
-	if input.Token != "" && !validAdminToken(input.Token) {
-		writeAPIError(w, invalidField("token", "访问令牌需为 16–256 个可打印的英文字符，不含首尾空白；可以使用多个英文单词组成的长口令。"))
-		return
+	port := portFromAddress(a.activeListen)
+	if a.config.Server.Listen != nil {
+		port = portFromAddress(*a.config.Server.Listen)
+	}
+	if input.Port != "" {
+		n, err := strconv.Atoi(input.Port)
+		if err != nil || n < 1 || n > 65535 {
+			writeAPIError(w, invalidField("port", "端口需为 1–65535。"))
+			return
+		}
+		port = strconv.Itoa(n)
+	}
+	if input.Token != "" {
+		if message := newAdminPasswordError(input.Token); message != "" {
+			writeAPIError(w, invalidField("token", message))
+			return
+		}
 	}
 	token := input.Token
 	if input.LoginEnabled && token == "" {
@@ -247,8 +336,9 @@ func (a *serverAccess) serveSettings(w http.ResponseWriter, r *http.Request) {
 		if server == nil {
 			server = map[string]any{}
 		}
-		server["remote_enabled"], server["public_base_url"] = input.RemoteEnabled, next.Server.PublicBaseURL
-		if input.RemoteEnabled {
+		next.Server.AccessMode = mode
+		server["access_mode"], server["remote_enabled"], server["public_base_url"] = mode, input.RemoteEnabled, next.Server.PublicBaseURL
+		if mode == accessProxy {
 			if len(next.Server.TrustedProxies) == 0 {
 				next.Server.TrustedProxies = []string{"127.0.0.1", "::1"}
 			}
@@ -261,17 +351,17 @@ func (a *serverAccess) serveSettings(w http.ResponseWriter, r *http.Request) {
 		if address == "" {
 			address = strings.TrimPrefix(a.internal, "http://")
 		}
-		_, port, err := net.SplitHostPort(address)
+		host, _, err := net.SplitHostPort(address)
 		if err != nil {
 			return nil, nil, err
 		}
-		if input.RemoteEnabled != remoteAccessEnabled(a.config) {
-			host := "127.0.0.1"
-			if input.RemoteEnabled {
-				host = "0.0.0.0"
-			}
-			address = net.JoinHostPort(host, port)
+		if mode != configuredAccessMode(a.config) {
+			host = "127.0.0.1"
 		}
+		if mode == accessLAN {
+			host = "0.0.0.0"
+		}
+		address = net.JoinHostPort(host, port)
 		server["listen"] = address
 		next.Server.Listen = &address
 		section, err := toml.Marshal(struct {

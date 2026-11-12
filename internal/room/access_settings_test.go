@@ -169,8 +169,8 @@ func TestAccessRemoteRequiresLoginHTTPSAndRestartBeforeDisable(t *testing.T) {
 		t.Fatal(w.Code, w.Body.String())
 	}
 	c := freshAccessConfig(t, filepath.Dir(a.config.path))
-	if *c.Server.Listen != "0.0.0.0:8088" {
-		t.Fatal("remote listen not persisted", *c.Server.Listen)
+	if *c.Server.Listen != "127.0.0.1:8088" {
+		t.Fatal("proxy listener must stay local", *c.Server.Listen)
 	}
 	if err := validateAccessListen(c, *c.Server.Listen); err != nil {
 		t.Fatal(err)
@@ -341,5 +341,149 @@ func TestAccessWildcardServerKeepsInternalEndpoint(t *testing.T) {
 	var health map[string]any
 	if err := client.request(context.Background(), "/healthz", nil, &health); err != nil {
 		t.Fatal("local access through wildcard failed", err)
+	}
+}
+
+func modeSettingsBody(a *serverAccess, mode, port, token, current string, login bool) string {
+	b, _ := json.Marshal(accessSettingsInput{Caller: Caller{Author: Author{Kind: "human", ID: a.operator}}, ExpectedVersion: a.version, LoginEnabled: login, AccessMode: mode, Port: port, Token: token, CurrentToken: current})
+	return string(b)
+}
+
+func TestLANSettingsPersistPortAndRequireRestartBeforeDisablingLogin(t *testing.T) {
+	a, h := anonymousAccessFixture(t)
+	const token = "memorable-local-network-token"
+	for _, input := range []struct {
+		mode, port string
+		login      bool
+	}{{accessLAN, "8088", false}, {"unknown", "8088", true}, {accessLAN, "65536", true}, {accessLAN, "0", true}, {accessLAN, "oops", true}} {
+		w := accessRequest(h, "POST", "/v1/access/settings", "", a.internal, modeSettingsBody(a, input.mode, input.port, token, "", input.login), nil)
+		if w.Code != 400 {
+			t.Fatal("invalid LAN settings accepted", input, w.Code, w.Body.String())
+		}
+	}
+	w := accessRequest(h, "POST", "/v1/access/settings", "", a.internal, modeSettingsBody(a, accessLAN, "8090", token, "", true), nil)
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	var view accessSettingsView
+	if err := json.Unmarshal(w.Body.Bytes(), &view); err != nil || view.AccessMode != accessLAN || view.ActiveMode != accessLocal || !view.RestartRequired || view.RemoteActive || view.Port != "8090" {
+		t.Fatal("pending state incorrect", view, err)
+	}
+	c := freshAccessConfig(t, filepath.Dir(a.config.path))
+	if *c.Server.Listen != "0.0.0.0:8090" || c.Server.PublicBaseURL != "" || len(c.Server.TrustedProxies) != 0 || !remoteAccessEnabled(c) {
+		t.Fatal("LAN configuration lost", c.Server)
+	}
+	if err := validateAccessListen(c, *c.Server.Listen); err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := newServerAccess(c, "http://127.0.0.1:8090")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh.document = newSystemSettings(c).configDocument
+	if view = fresh.settingsView(); view.RestartRequired || !view.RemoteActive || view.ActiveMode != accessLAN {
+		t.Fatal("restart did not activate LAN", view)
+	}
+	h = fresh.wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) }))
+	post := func(body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("POST", fresh.internal+"/v1/access/settings", strings.NewReader(body))
+		r.RemoteAddr = "127.0.0.1:4000"
+		r.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	for _, mode := range []string{accessLAN, accessLocal} {
+		w = post(modeSettingsBody(fresh, mode, "", "", token, false))
+		if w.Code != 400 {
+			t.Fatal("active LAN lost login", w.Code, w.Body.String())
+		}
+	}
+	w = post(modeSettingsBody(fresh, accessLocal, "", "", token, true))
+	if w.Code != 200 || !fresh.settingsView().RemoteActive || !fresh.settingsView().RestartRequired {
+		t.Fatal("LAN shutdown state incorrect", w.Code, w.Body.String())
+	}
+	w = post(modeSettingsBody(fresh, accessLocal, "", "", token, false))
+	if w.Code != 400 {
+		t.Fatal("pending shutdown disabled login", w.Code)
+	}
+	c = freshAccessConfig(t, filepath.Dir(c.path))
+	if *c.Server.Listen != "127.0.0.1:8090" {
+		t.Fatal("local listener not restored", *c.Server.Listen)
+	}
+	restarted, err := newServerAccess(c, "http://127.0.0.1:8090")
+	if err != nil || restarted.settingsView().RemoteActive || restarted.settingsView().RestartRequired {
+		t.Fatal("local restart state incorrect", err)
+	}
+}
+
+func TestLANOriginRequiresPrivatePeerServerIPAndSameOrigin(t *testing.T) {
+	c, token := testAccessConfig(t, t.TempDir())
+	c.Server.AccessMode = accessLAN
+	listen := "0.0.0.0:8088"
+	c.Server.Listen = &listen
+	a, err := newServerAccess(c, "http://127.0.0.1:8088")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.lanHosts = []string{"192.168.1.10", "fd00::10"}
+	h := a.wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) }))
+	request := func(method, route, host, peer, origin, body string, cookie *http.Cookie, headers map[string]string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, "http://"+host+route, strings.NewReader(body))
+		r.RemoteAddr = peer
+		if origin != "" {
+			r.Header.Set("Origin", origin)
+		}
+		if cookie != nil {
+			r.AddCookie(cookie)
+		}
+		for k, v := range headers {
+			r.Header.Set(k, v)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	const host, peer, origin = "192.168.1.10:8088", "192.168.1.2:4000", "http://192.168.1.10:8088"
+	if w := request("GET", "/v1/ui", host, peer, "", "", nil, nil); w.Code != 401 {
+		t.Fatal("LAN private API exposed", w.Code)
+	}
+	w := request("POST", "/v1/access/login", host, peer, origin, `{"token":"`+token+`"}`, nil, nil)
+	if w.Code != 200 || len(w.Result().Cookies()) != 1 {
+		t.Fatal("LAN login rejected", w.Code, w.Body.String())
+	}
+	cookie := w.Result().Cookies()[0]
+	if cookie.Name != "teamx-lan-session" || !cookie.HttpOnly || cookie.Secure || cookie.SameSite != http.SameSiteLaxMode {
+		t.Fatal("wrong LAN cookie", cookie)
+	}
+	body := `{"caller":{"kind":"human","id":"` + a.operator + `"}}`
+	if w = request("POST", "/v1/send", host, peer, origin, body, cookie, nil); w.Code != 200 {
+		t.Fatal("same-origin LAN write rejected", w.Code, w.Body.String())
+	}
+	for _, input := range []struct {
+		host, peer, origin string
+		headers            map[string]string
+	}{
+		{"evil.invalid:8088", peer, origin, nil},
+		{"192.168.1.99:8088", peer, origin, nil},
+		{"192.168.1.10:8090", peer, origin, nil},
+		{host, "8.8.8.8:4000", origin, nil},
+		{"127.0.0.1:8088", "8.8.8.8:4000", "http://127.0.0.1:8088", nil},
+		{host, peer, "https://evil.invalid", nil},
+		{host, peer, "", nil},
+		{host, peer, origin, map[string]string{"X-Forwarded-Proto": "https"}},
+		{host, peer, origin, map[string]string{"Forwarded": "proto=https"}},
+		{host, peer, origin, map[string]string{"X-Forwarded-Host": host}},
+	} {
+		w = request("POST", "/v1/send", input.host, input.peer, input.origin, body, cookie, input.headers)
+		if w.Code != 403 {
+			t.Fatal("invalid LAN request accepted", input, w.Code, w.Body.String())
+		}
+	}
+	if w = request("GET", "/v1/ui", "[fd00::10]:8088", "[fd00::2]:4000", "", "", nil, map[string]string{"Authorization": "Bearer " + token}); w.Code != 200 {
+		t.Fatal("private IPv6 rejected", w.Code)
+	}
+	if w = accessRequest(h, "GET", "/v1/ui", token, "", "", nil); w.Code != 200 {
+		t.Fatal("LAN broke internal CLI endpoint", w.Code)
 	}
 }

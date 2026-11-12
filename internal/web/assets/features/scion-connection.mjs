@@ -1,3 +1,4 @@
+import { randomUUID } from "../random-id.mjs";
 // Scion account discovery, PAT login and logout lifecycle.
 export function createScionConnection({ env, runtime, connectionsUI, settingsUI, onboardingUI }) {
   const { Option, setTimeout, clearTimeout, request } = env;
@@ -100,7 +101,7 @@ export function createScionConnection({ env, runtime, connectionsUI, settingsUI,
     if (!pat || !$("connection-url").value.trim()) { connectionsUI.connectionFeedback("请填写实例地址和 PAT。", "error"); return; }
     try {if(onboardingUI.onboarding.active)await onboardingUI.prepareOnboarding();}
     catch(error){connectionsUI.connectionFeedback(error.code ? "接入目标未确认，请读取接入进度。" : error.message,"error");return;}
-    const auth = {session_id:crypto.randomUUID().replaceAll("-", ""), version:connectionsUI.platforms.formVersion, origin:$("connection-url").value.trim()};
+    const auth = {session_id:randomUUID().replaceAll("-", ""), version:connectionsUI.platforms.formVersion, origin:$("connection-url").value.trim()};
     connectionsUI.platforms.scionAuth = auth; renderScionAccount();
     connectionsUI.connectionFeedback("正在通过 Scion CLI 登录…");
     try {
