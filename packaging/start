@@ -21,7 +21,7 @@ if [ "$(/usr/bin/uname -s)" = Darwin ]; then
     done
     if [ ! -t 0 ] || [ "$interactive" = false ]; then
       printf '%s\n' '此 TeamX 包带有 macOS 下载隔离标记，尚未获得解除确认。' \
-        '请先核对下载来源与归档 SHA-256，再在终端执行 /bin/sh ./start init 并确认。' >&2
+        '请先核对下载来源与归档 SHA-256，再在终端执行 /bin/sh ./start 并确认。' >&2
       exit 1
     fi
     printf '%s\n' \

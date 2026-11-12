@@ -279,7 +279,7 @@ func (m *roomManager) saveWorkspaceOperationLocked(op workspaceOperation) error 
 		if err != nil {
 			return err
 		}
-		if config.Workspace == nil || config.WorkspaceVersion != op.TargetVersion || !equalWorkspace(*config.Workspace, op.Target) || op.PreparedConfig != nil && !reflect.DeepEqual(config, *op.PreparedConfig) {
+		if config.Workspace == nil || config.WorkspaceVersion != op.TargetVersion || !equalWorkspace(*config.Workspace, op.Target) || op.PreparedConfig != nil && !equalWorkspaceRoomConfig(config, *op.PreparedConfig) {
 			return ErrConflict
 		}
 	}

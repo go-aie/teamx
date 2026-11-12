@@ -14,6 +14,7 @@ import {
   extract
 } from './package-lib.mjs';
 import { checkBinaries } from './package-platform.mjs';
+import {seedOfflineModels} from './fixtures/models.mjs';
 import { checkManifestProfile, hasDependency } from './package-profiles.mjs';
 const scriptRoot = p.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2),
@@ -105,7 +106,7 @@ try {
     PATH: system,
     LANG: 'en_US.UTF-8',
     TMPDIR: temp,
-    OPENAI_API_KEY: 'packaging-fixture-key',
+    OPENAI_API_KEY: '',
     TEAMX_PACKAGING_FIXTURE_LOG: p.join(temp, 'fixture.jsonl')
   };
   const exec = (name, argv = [], options = {}) =>
@@ -185,57 +186,9 @@ try {
     'bundled runtime versions and CLI help without host Go/Node/platform CLIs'
   );
   const start = p.join(bundle, 'start');
-  exec('start', ['init', '--non-interactive']);
-  const portable = p.join(bundle, '.teamx'),
-    config = p.join(portable, 'config.toml');
-  const initialized = fs.readFileSync(config, 'utf8');
-  let failed = false;
-  try {
-    exec('start', [], { stdio: ['ignore', 'pipe', 'pipe'] });
-  } catch (e) {
-    failed = true;
-    const output = String(e.stdout) + String(e.stderr);
-    for (const field of ['runtime.model.base_url', 'runtime.model.model_id'])
-      must(output.includes(field), `Missing exact diagnostic ${field}`);
-  }
-  must(failed, 'Unconfigured start must fail');
-  exec('start', ['init', '--non-interactive']);
-  must(fs.readFileSync(config, 'utf8') === initialized, 'init replaced config');
-  // Validate all distributed teams, and run ordinary manager HTTP against the real DSH
-  // configuration without ever opening a DSH session or sending a prompt.
-  const configure = (file, binary) => {
-    let s = fs
-      .readFileSync(file, 'utf8')
-      .replace("base_url = ''", "base_url = 'http://127.0.0.1:1/v1'")
-      .replace("model_id = ''", "model_id = 'packaging-fixture'");
-    s = s.replace(/listen = [^\n]+/, "listen = '127.0.0.1:0'");
-    if (binary)
-      s = s.replace(
-        /binary_path = [^\n]+/,
-        `binary_path = ${JSON.stringify(binary)}`
-      );
-    fs.writeFileSync(file, s, { mode: 0o600 });
-  };
-  configure(config);
-  const doctor = JSON.parse(exec('start', ['doctor']));
-  must(doctor.ready, 'Configured bundle must be ready');
-  must(
-    doctor.checks.find((c) => c.name === 'git').status === (hasDependency(manifest.profile, 'git') ? 'ok' : 'missing'),
-    'Git capability differs from archive profile'
-  );
-  for (const name of ['glab', 'lark-cli', 'git']) {
-    const check = doctor.checks.find(c => c.name === name);
-    must(check.required === hasDependency(manifest.profile, name) &&
-      check.status === (hasDependency(manifest.profile, name) ? 'ok' : 'missing'), `Doctor capability differs: ${name}`);
-  }
-  const template = p.join(portable, 'teams/bookstore-night/prompts/alan.md');
-  fs.appendFileSync(template, '\nuser change\n');
-  const changed = fs.readFileSync(template, 'utf8');
-  exec('start', ['init', '--non-interactive']);
-  must(fs.readFileSync(template, 'utf8') === changed, 'init replaced template');
-  pass('portable init, exact model diagnostics, optional Git and preservation');
+  const portable = p.join(bundle, '.teamx'), config = p.join(portable, 'config.toml');
   async function launch(homeArg = []) {
-    const child = spawn(start, homeArg, {
+    const child = spawn(start, [...homeArg, '--listen', '127.0.0.1:0'], {
       cwd,
       env,
       stdio: ['ignore', 'pipe', 'pipe']
@@ -255,7 +208,13 @@ try {
       }
       if (child.exitCode !== null) throw Error(`Service exited: ${errors}\n${output}`);
     }, 'service readiness');
-    return { child, info, exited, errors: () => errors };
+    const homeIndex = homeArg.indexOf('--home');
+    const accessHome = homeIndex < 0 ? portable : homeArg[homeIndex + 1];
+    const token = fs.readFileSync(p.join(accessHome, 'auth/admin-token'), 'utf8').trim();
+    const session = await fetch(info.endpoint + '/v1/access/session', {headers: {Authorization: `Bearer ${token}`}});
+    must(session.ok, 'Authenticated session unavailable');
+    const {operator} = await session.json();
+    return { child, info, exited, token, operator, errors: () => errors };
   }
   async function stop(service, signal = 'SIGTERM') {
     service.child.kill(signal);
@@ -283,21 +242,58 @@ try {
     }, 'port release');
   }
   const request = async (service, path, body) => {
-    const response = await fetch(service.info.endpoint + path, {
-      method: body ? 'POST' : 'GET',
-      ...(body
-        ? {
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
-          }
-        : {}),
-      signal: AbortSignal.timeout(3000)
-    });
-    const text = await response.text();
-    must(response.ok, `HTTP ${path}: ${response.status}: ${text}`);
-    return path === '/' ? text : JSON.parse(text);
+    const deadline = Date.now() + 30000;
+    for (;;) {
+      const response = await fetch(service.info.endpoint + path, {
+        method: body ? 'POST' : 'GET',
+        headers: {'Content-Type': 'application/json', Authorization: `Bearer ${service.token}`},
+        ...(body
+          ? {
+              body: JSON.stringify(body)
+            }
+          : {}),
+        signal: AbortSignal.timeout(3000)
+      });
+      const text = await response.text();
+      // Catalog recovery reports busy before mutation. Keep the same operation
+      // ID on create/open; never retry transport failures or unknown outcomes.
+      const catalogOperation = !body && path === '/v1/rooms' ||
+        path === '/v1/rooms/create' && body?.create_id ||
+        path === '/v1/rooms/open' && body?.open_id;
+      if (catalogOperation && response.status === 409 &&
+          JSON.parse(text).code === 'busy' && Date.now() < deadline) {
+        await pause();
+        continue;
+      }
+      must(response.ok, `HTTP ${path}: ${response.status}: ${text}`);
+      return path === '/' ? text : JSON.parse(text);
+    }
   };
   let service = await launch();
+  must(service.info.status === 'setup_required', 'Fresh direct start must offer web setup');
+  must((await request(service, '/v1/setup')).writable, 'Fresh web setup unavailable');
+  let locked = false;
+  try {exec('start', ['--listen','127.0.0.1:0'], {stdio:['ignore','pipe','pipe']});}
+  catch(e) {locked = String(e.stderr).includes('state directory already in use');}
+  must(locked, 'Concurrent first start was not refused');
+  await stop(service);
+  const initialized = fs.readFileSync(config,'utf8'), tokenBefore = fs.readFileSync(p.join(portable,'auth/admin-token'),'utf8');
+  const template = p.join(portable,'teams/bookstore-night/prompts/alan.md');
+  fs.appendFileSync(template,'\nuser change\n'); const changed = fs.readFileSync(template,'utf8');
+  exec('start',['init']); exec('start',['init','--non-interactive']);
+  must(fs.readFileSync(config,'utf8')===initialized && fs.readFileSync(template,'utf8')===changed && fs.readFileSync(p.join(portable,'auth/admin-token'),'utf8')===tokenBefore,'Repeated init replaced user files or identity');
+  const tokenFile = p.join(portable,'auth/admin-token');
+  fs.renameSync(tokenFile,tokenFile+'.retained');
+  let lostTokenBlocked=false;
+  try{exec('start',['--listen','127.0.0.1:0'],{stdio:['ignore','pipe','pipe']});}catch{lostTokenBlocked=!fs.existsSync(tokenFile);}
+  fs.renameSync(tokenFile+'.retained',tokenFile);
+  must(lostTokenBlocked,'Lost historical token was silently reissued');
+  seedOfflineModels(portable,p.join(bundle,'bin/dsh'),manifest.dependencies.dsh.version);
+  const doctor = JSON.parse(exec('start',['doctor']));
+  must(doctor.ready,'Configured offline smoke home must pass local diagnostics');
+  for(const name of ['glab','lark-cli','git']) {const check=doctor.checks.find(c=>c.name===name);must(check.required===hasDependency(manifest.profile,name)&&check.status===(hasDependency(manifest.profile,name)?'ok':'missing'),`Doctor capability differs: ${name}`);}
+  pass('direct first start, optional init, concurrent ownership, lost token and file/identity preservation');
+  service = await launch();
   const catalog = await request(service, '/v1/rooms');
   must(
     catalog.teams
@@ -308,7 +304,7 @@ try {
   );
   must((await request(service, '/')).includes('<html'), 'Homepage unavailable');
   // Same home cannot serve through a second launcher, even before port binding.
-  let locked = false;
+  locked = false;
   try {
     exec('start', [], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 30000 });
   } catch (e) {
@@ -317,7 +313,7 @@ try {
   must(locked, 'Second home owner was not refused');
   const room = await request(service, '/v1/rooms/create', {
     service_epoch: catalog.service_epoch,
-    caller: { kind: 'human', id: 'packaging-smoke' },
+    caller: { kind: 'human', id: service.operator },
     team_id: 'takeout-dinner',
     create_id: 'packaging-smoke'
   });
@@ -350,7 +346,7 @@ try {
     `#!/bin/sh\nif [ "\${1:-}" = --version ]; then echo ${manifest.dependencies.dsh.version}; exit 0; fi\nexec ${quote(p.join(bundle, 'runtime/node/bin/node'))} ${quote(p.join(fixture, 'acp.mjs'))} "$@"\n`,
     { mode: 0o755 }
   );
-  configure(p.join(external, 'config.toml'), fixtureBin);
+  seedOfflineModels(external, fixtureBin, manifest.dependencies.dsh.version);
   // Explicit home must run with a read-only bundle, including first init.
   fs.rmSync(external, { recursive: true });
   const modes = inventory(bundle)
@@ -368,8 +364,10 @@ try {
     modes.push([dir, fs.statSync(dir).mode & 0o777]);
   for (const [file, mode] of modes) fs.chmodSync(file, mode & ~0o222);
   try {
-    exec('start', ['init', '--non-interactive', '--home', external]);
-    configure(p.join(external, 'config.toml'), fixtureBin);
+    service = await launch(['--home',external]);
+    must(service.info.status === 'setup_required','Read-only bundle first start did not reach web setup');
+    await stop(service);
+    seedOfflineModels(external, fixtureBin, manifest.dependencies.dsh.version);
     const externalConfig = p.join(external, 'config.toml');
     fs.writeFileSync(
       externalConfig,
@@ -381,13 +379,13 @@ try {
     const cat = await request(service, '/v1/rooms');
     const created = await request(service, '/v1/rooms/create', {
       service_epoch: cat.service_epoch,
-      caller: { kind: 'human', id: 'packaging-smoke' },
+      caller: { kind: 'human', id: service.operator },
       team_id: 'takeout-dinner',
       create_id: 'fixture'
     });
     await request(service, '/v1/rooms/open', {
       service_epoch: cat.service_epoch,
-      caller: { kind: 'human', id: 'packaging-smoke' },
+      caller: { kind: 'human', id: service.operator },
       room_id: created.room_id,
       room_instance: created.room_instance,
       open_id: 'fixture'
@@ -401,6 +399,7 @@ try {
     exec('bin/teamx', [
       'send',
       created.room_id,
+      '--token-file', p.join(external,'auth/admin-token'),
       '--endpoint',
       service.info.endpoint,
       '--id',

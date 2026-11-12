@@ -33,7 +33,7 @@ func TestProductionCLIOnlyExposesDSHMembers(t *testing.T) {
 	if err := os.WriteFile(config, []byte(data), 0600); err != nil {
 		t.Fatal(err)
 	}
-	p := startRecoveryCLI(t, ctx, binary, t.TempDir(), "--dsh-config", config)
+	p := startRecoveryProcess(t, ctx, binary, t.TempDir(), true, "--dsh-config", config)
 	var member MemberInfo
 	if err := json.Unmarshal(p.run(t, "member", "add", "--agent", "A", "--profile", "reviewer", "--json"), &member); err != nil {
 		t.Fatal(err)

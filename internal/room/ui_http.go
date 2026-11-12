@@ -89,16 +89,17 @@ func humanOperator() string {
 
 func (s *service) serveUI(w http.ResponseWriter, r *http.Request) bool {
 	if r.URL.Path == "/v1/ui" && r.Method == http.MethodGet {
-		operator := humanOperator()
+		operator := requestOperator(r)
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
 		_ = json.NewEncoder(w).Encode(struct {
 			ServiceInfo
 			settingsView
-			Operator string   `json:"operator"`
-			Profiles []string `json:"profiles"`
-			IsDirect bool     `json:"is_direct"`
-		}{s.info, s.settings.snapshot().settingsView, operator, s.uiProfiles, s.isDirect})
+			InstallationID string   `json:"installation_id,omitempty"`
+			Operator       string   `json:"operator"`
+			Profiles       []string `json:"profiles"`
+			IsDirect       bool     `json:"is_direct"`
+		}{s.info, s.settings.snapshot().settingsView, requestInstallationID(r), operator, s.uiProfiles, s.isDirect})
 		return true
 	}
 	return false
@@ -106,6 +107,10 @@ func (s *service) serveUI(w http.ResponseWriter, r *http.Request) bool {
 
 // Browser requests stay on this local service. CLI requests have no Origin.
 func sameOrigin(r *http.Request) bool {
+	if a, ok := r.Context().Value(accessContextKey{}).(*serverAccess); ok {
+		origin, valid := a.requestOrigin(r)
+		return valid && (r.Header.Get("Origin") == "" || r.Header.Get("Origin") == origin)
+	}
 	origin := r.Header.Get("Origin")
 	if origin == "" {
 		return true

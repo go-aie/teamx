@@ -208,6 +208,9 @@ type TurnBudget struct {
 }
 
 type ControlMember struct {
+	// Internal lifecycle controls; never decoded from Agent requests.
+	modelGate      *string
+	modelTarget    *modelSessionSnapshot
 	ExecutionID    uint64
 	automatic      bool
 	recovering     bool

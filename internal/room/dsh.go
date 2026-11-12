@@ -22,6 +22,8 @@ var errDSHDisabled = errors.New("DSH backend disabled; replacement execution is 
 // requests. Single-room membership persists a profile name; managed creation
 // freezes the team runtime and roles in its Room configuration.
 type dshProfile struct {
+	modelError   string
+	managedModel bool
 	BinaryPath   string            `json:"binary_path"`
 	BinaryArgs   []string          `json:"binary_args,omitempty"`
 	Artifact     dsh.Artifact      `json:"artifact,omitzero"`
@@ -32,7 +34,10 @@ type dshProfile struct {
 }
 
 func (p dshProfile) checkCredentials() error {
-	if os.Getenv(p.Model.APIKeyEnv) == "" {
+	if p.modelError != "" {
+		return errors.New(p.modelError)
+	}
+	if !p.managedModel && os.Getenv(p.Model.APIKeyEnv) == "" {
 		return fmt.Errorf("DSH credential environment %q is empty; export it before starting TeamX or set it in config.toml [env] (serve does not load .env)", p.Model.APIKeyEnv)
 	}
 	return nil
@@ -85,6 +90,10 @@ type dshComponent interface {
 }
 
 type dshBackend struct {
+	models          *modelExecution
+	model           *modelSessionSnapshot
+	credentials     *modelCredentials
+	access          *serverAccess
 	store           *Store
 	settings        *systemSettings
 	prepare         func(context.Context, UnreadChanged, uint64, bool) (*dshMaterials, error)
@@ -99,6 +108,10 @@ type dshBackend struct {
 // Reject missing credentials before admitting a turn or publishing a Session
 // reference. A validation failure must not become ambiguous execution state.
 func (b dshBackend) CheckRun() error {
+	if b.model != nil {
+		_, err := b.credentials.get(b.model.CredentialRef)
+		return err
+	}
 	if b.open != nil { // Offline adapters supply their own component.
 		return nil
 	}
@@ -110,8 +123,9 @@ func (b dshBackend) CheckRun() error {
 type dshReference struct {
 	Version int `json:"version"`
 	MemberIdentity
-	Directory string `json:"directory"`
-	Pending   bool   `json:"pending,omitempty"` // Authorized fresh generation, not yet opened.
+	Directory    string `json:"directory"`
+	Pending      bool   `json:"pending,omitempty"` // Authorized fresh generation, not yet opened.
+	ManagedModel bool   `json:"managed_model,omitempty"`
 }
 
 func dshStateDir(path string) string { return path + ".dsh" }
@@ -187,8 +201,18 @@ func (b dshBackend) OpenSession(ctx context.Context, opts SessionOptions) (Sessi
 	if b.recover && !exists {
 		return nil, dshFailure(dsh.ErrRecoveryUnsupported)
 	}
-	if ref.Directory == "" {
+	if ref.Directory != "" {
+		frozen, loadErr := b.restoreModelSnapshot(opts, ref)
+		if loadErr == nil {
+			b = frozen
+		} else if b.model != nil || ref.ManagedModel || !errors.Is(loadErr, os.ErrNotExist) {
+			return nil, dshFailure(loadErr)
+		}
+	} else {
 		ref = dshReference{Version: formatVersion, MemberIdentity: opts.MemberIdentity, Directory: filepath.Base(dshStateDir(opts.StatePath))}
+	}
+	if b.model != nil && b.model.Legacy && (!b.recover || !exists) {
+		return nil, dshFailure(dsh.ErrRecoveryUnsupported)
 	}
 	if !filepath.IsAbs(opts.CLIPath) {
 		return nil, errors.Join(errDSHPaused, errors.New("absolute TeamX CLI path required"))
@@ -196,6 +220,14 @@ func (b dshBackend) OpenSession(ctx context.Context, opts SessionOptions) (Sessi
 	componentOpts, err := b.componentOptions(opts, ref)
 	if err != nil {
 		return nil, err
+	}
+	if err := b.checkModelRuntime(ctx, componentOpts); err != nil {
+		return nil, dshFailure(err)
+	}
+	if !b.recover {
+		if err := b.saveModelSnapshot(opts, ref); err != nil {
+			return nil, dshFailure(err)
+		}
 	}
 
 	// Publish the adapter reference before new execution. This also guards a crash
@@ -206,6 +238,7 @@ func (b dshBackend) OpenSession(ctx context.Context, opts SessionOptions) (Sessi
 		path, err = b.store.dshPath(opts.MemberIdentity, "session.json", true)
 		if err == nil {
 			ref.Pending = false // Consume fresh-generation authority before launch.
+			ref.ManagedModel = b.model != nil
 			err = b.store.save(path, ref, maxPrivateFileBytes)
 		}
 		b.store.mu.Unlock()
@@ -227,16 +260,41 @@ func (b dshBackend) OpenSession(ctx context.Context, opts SessionOptions) (Sessi
 			return session, err
 		}
 	}
+	var revoke func()
+	if b.access != nil {
+		binding := executionBinding{ServiceInfo: ServiceInfo{RoomIdentity: opts.RoomIdentity}, Caller: Caller{Author: Author{Kind: "agent", ID: opts.AgentID}, MembershipID: opts.MembershipID}}
+		for _, entry := range opts.CLIEnv {
+			if strings.HasPrefix(entry, "TEAMX_SERVICE_EPOCH=") {
+				binding.ServiceEpoch = strings.TrimPrefix(entry, "TEAMX_SERVICE_EPOCH=")
+			}
+		}
+		token, release, issueErr := b.access.issueExecution(binding)
+		if issueErr != nil {
+			return nil, issueErr
+		}
+		revoke = release
+		componentOpts.ExecutionToken = token
+	}
 	component, err := open(ctx, componentOpts)
 	if component == nil {
+		if revoke != nil {
+			revoke()
+		}
 		if b.recover {
 			err = errors.Join(errDSHDisabled, err)
 		}
 		return nil, dshFailure(errors.Join(err, errors.New("DSH did not open a session")))
 	}
+	// Legacy resumes already verify the recorded ACP identity in dsh.Resume;
+	// imports have no probe receipt and must not be compared with an empty one.
+	if b.model != nil && !b.model.Legacy && err == nil {
+		if actual, ok := component.(interface{ RuntimeAgent() dsh.Artifact }); ok && actual.RuntimeAgent() != b.model.Runtime.Agent {
+			err = errors.New("DSH ACP identity changed after model validation")
+		}
+	}
 	// Deliver ownership even on an error, so Room's failed-open/discard path
 	// closes any resource that was returned by the backend.
-	return &dshSession{component: component, backend: b, opts: opts}, dshFailure(err)
+	return &dshSession{component: component, backend: b, opts: opts, revoke: revoke}, dshFailure(err)
 }
 
 // Materialize the effective member instructions for the live backend.
@@ -251,7 +309,7 @@ func (b dshBackend) componentOptions(opts SessionOptions, ref dshReference) (dsh
 	bindings := 0
 	for _, entry := range opts.CLIEnv {
 		key, value, _ := strings.Cut(entry, "=")
-		if isRoomToolEnv(entry) {
+		if isRoomToolEnv(entry) && !privateRoomAccessEnv(key) {
 			toolEnv[key] = value
 		}
 	}
@@ -266,6 +324,9 @@ func (b dshBackend) componentOptions(opts SessionOptions, ref dshReference) (dsh
 	}
 	toolEnv["TEAMX_CLI"] = opts.CLIPath
 	operator := humanOperator()
+	if b.access != nil {
+		operator = b.access.operator
+	}
 	instructions := strings.Join([]string{
 		strings.TrimSpace(dshAgentGuide),
 		fmt.Sprintf("## Session identity\n\nYou are member %q in Room %q (instance %q, membership %q).\nThe human operator is %q (mention %q).",
@@ -276,8 +337,19 @@ func (b dshBackend) componentOptions(opts SessionOptions, ref dshReference) (dsh
 		instructions += "\n\nSession context: explicitly rotated; private context has been reset."
 	}
 
-	return dsh.Options{BinaryPath: p.BinaryPath, BinaryArgs: p.BinaryArgs, Artifact: p.Artifact, Workspace: p.Workspace,
-		StateDir: filepath.Join(filepath.Dir(opts.StatePath), ref.Directory), Instructions: instructions, Model: p.Model.Clone(), ToolEnv: toolEnv, Limits: dsh.Limits{TextBytes: 64 << 10, TurnTimeout: b.turnTimeout}}, nil
+	component := dsh.Options{BinaryPath: p.BinaryPath, BinaryArgs: p.BinaryArgs, Artifact: p.Artifact, Workspace: p.Workspace,
+		StateDir: filepath.Join(filepath.Dir(opts.StatePath), ref.Directory), Instructions: instructions, Model: p.Model.Clone(), ToolEnv: toolEnv, Limits: dsh.Limits{TextBytes: 64 << 10, TurnTimeout: b.turnTimeout}}
+	if b.model != nil {
+		var err error
+		component.Credential, err = b.credentials.get(b.model.CredentialRef)
+		if err != nil {
+			return dsh.Options{}, err
+		}
+		if b.model.Legacy {
+			component.Credential.Ref = ""
+		} // Original config fingerprint predates managed refs.
+	}
+	return component, nil
 }
 
 func dshFailure(err error) error {
@@ -335,6 +407,7 @@ func dshNotification(input UnreadChanged) string {
 }
 
 type dshSession struct {
+	revoke    func()
 	component dshComponent
 	backend   dshBackend
 	opts      SessionOptions
@@ -466,7 +539,13 @@ func saveDSHDiagnostic(path string, value any) error {
 	return os.Rename(f.Name(), path)
 }
 
-func (s *dshSession) Close(ctx context.Context) error { return s.component.Close(ctx) }
+func (s *dshSession) Close(ctx context.Context) error {
+	err := s.component.Close(ctx)
+	if s.revoke != nil {
+		s.revoke()
+	}
+	return err
+}
 
 func (s *dshSession) closeOwned() error {
 	for {

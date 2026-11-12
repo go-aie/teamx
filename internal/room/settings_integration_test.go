@@ -5,7 +5,7 @@ package room
 import (
 	"context"
 	"encoding/json"
-	"net/http"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,6 +30,22 @@ func TestSystemSettingsServePersistsToStartupPath(t *testing.T) {
 				}
 				writeStartupConfig(t, filepath.Dir(configPath), "# preserve this comment\n[server]\nsession_max_turns = 2 # allowance\n")
 				args = append(args, "--config", "custom/config.toml")
+			}
+			if err := runAccessInit([]string{"--config", configPath}, io.Discard, io.Discard); err != nil {
+				t.Fatal(err)
+			}
+			// Access initialization serializes config. Capture preserved-comment input
+			// after initialization so the setting save still proves byte preservation.
+			if strings.HasSuffix(mode, "relative") {
+				data, err := os.ReadFile(configPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				data = append([]byte("# preserve this comment\n"), data...)
+				data = []byte(strings.Replace(string(data), "session_max_turns = 2", "session_max_turns = 2 # allowance", 1))
+				if err = os.WriteFile(configPath, data, 0600); err != nil {
+					t.Fatal(err)
+				}
 			}
 			if strings.HasPrefix(mode, "single") {
 				args = append(args, "--room", "settings")
@@ -64,7 +80,7 @@ func TestSystemSettingsServePersistsToStartupPath(t *testing.T) {
 				return p
 			}
 			p := start()
-			client := cliClient{endpoint: p.Endpoint, http: &http.Client{Timeout: 5 * time.Second}}
+			client := serverTestCLI(t, filepath.Dir(configPath), p.Endpoint)
 			var initial struct {
 				ServiceInfo
 				settingsView
@@ -73,12 +89,12 @@ func TestSystemSettingsServePersistsToStartupPath(t *testing.T) {
 				t.Fatal(initial, err)
 			}
 			var saved settingsView
-			request := settingsRequest{initial.ServiceInfo, humanCaller, initial.SettingsVersion, "America/New_York"}
+			request := settingsRequest{initial.ServiceInfo, serverTestCaller(t, filepath.Dir(configPath)), initial.SettingsVersion, "America/New_York"}
 			if err := client.request(ctx, "/v1/settings/save", request, &saved); err != nil || saved != (settingsView{"America/New_York", 2}) {
 				t.Fatal(saved, err)
 			}
 			// A second client sees the live update with the same service epoch.
-			other := cliClient{endpoint: p.Endpoint, http: &http.Client{Timeout: 5 * time.Second}}
+			other := serverTestCLI(t, filepath.Dir(configPath), p.Endpoint)
 			var live struct {
 				ServiceInfo
 				settingsView

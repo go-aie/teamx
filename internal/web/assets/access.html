@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>TeamX · 连接助理</title><link rel="stylesheet" href="/ui/access.css"><script type="module" src="/ui/access.mjs"></script></head>
+<body><main>
+<a class="brand" href="/">TeamX</a>
+<section id="login"><h1>连接你的助理</h1><p>输入部署时生成的管理 token。</p>
+<form id="login-form"><label for="token">管理 token</label><input id="token" type="password" autocomplete="off" required spellcheck="false"><button type="submit">登录</button></form></section>
+<section id="model" hidden><h1>设置模型</h1><p>验证通过后保存为默认模型，并为你准备助理。验证包含一次简短文本请求和无副作用的工具往返。</p>
+<form id="model-form"><label for="protocol">协议</label><select id="protocol"><option value="openai-completions">OpenAI 兼容</option><option value="deepseek-messages">DeepSeek Messages</option></select>
+<label for="base-url">Base URL</label><input id="base-url" type="url" placeholder="https://api.example.com/v1" autocomplete="off">
+<label for="model-id">模型 ID</label><input id="model-id" required autocomplete="off" spellcheck="false">
+<label for="api-key">API Key</label><input id="api-key" type="password" autocomplete="off"><p id="key-state">请输入 API Key，密钥将保存在部署机的私有目录。</p><label id="replace-key-label" hidden><input id="replace-key" type="checkbox">更换密钥</label>
+<details><summary>高级设置</summary>
+<label for="input-modalities">输入类型</label><select id="input-modalities"><option value="">使用适配器默认值</option><option value="text">文本</option><option value="text,image">文本和图片（按适配器声明）</option></select>
+<label for="context-window">上下文窗口</label><input id="context-window" type="number" min="1" step="1" placeholder="使用适配器默认值">
+<label for="max-tokens">最大输出 tokens</label><input id="max-tokens" type="number" min="1" step="1" placeholder="使用适配器默认值">
+<label for="reasoning-effort">推理强度</label><select id="reasoning-effort"><option value="">使用适配器默认值</option><option value="off">off</option><option value="minimal">minimal</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option><option value="xhigh">xhigh</option><option value="max">max</option></select>
+<div id="developer-compat"><label for="developer-role">接口兼容性 · developer 指令角色</label><select id="developer-role"><option value="">使用适配器默认值</option><option value="false">不支持 developer（使用 system）</option><option value="true">支持 developer</option></select><p>部分网关仅接受 system。此项不改变 Agent 身份、权限或推理设置。</p></div><p id="protocol-note" hidden>此协议不支持 developer 兼容设置；切换协议会清除此项。</p>
+</details>
+<button id="save-model" type="submit">验证并开始使用</button></form></section>
+<p id="feedback" role="status" aria-live="polite"></p><button id="retry-migration" type="button" hidden>重试迁移</button><button id="logout" type="button" hidden>退出登录</button>
+</main></body></html>

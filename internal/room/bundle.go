@@ -24,12 +24,16 @@ func runBundle(command string, args []string, stdout, stderr io.Writer) error {
 	root := flags.String("bundle-root", "", "distribution directory")
 	home := flags.String("home", "", "private configuration, teams and data directory")
 	config := flags.String("config", "", "configuration to diagnose")
-	nonInteractive := flags.Bool("non-interactive", false, "initialize defaults without terminal prompts (init only)")
+	listen := flags.String("listen", "", "loopback address override (start only)")
+	nonInteractive := flags.Bool("non-interactive", false, "prepare files and authentication (compatibility flag; init only)")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if flags.NArg() != 0 {
 		return ErrRequest
+	}
+	if *listen != "" && command != "launch" {
+		return fmt.Errorf("--listen is only supported by start")
 	}
 	if *nonInteractive && command != "init" {
 		return fmt.Errorf("--non-interactive is only supported by init")
@@ -43,6 +47,10 @@ func runBundle(command string, args []string, stdout, stderr io.Writer) error {
 	}
 	var err error
 	*root, err = filepath.Abs(*root)
+	if err != nil {
+		return err
+	}
+	*root, err = filepath.EvalSymlinks(*root)
 	if err != nil {
 		return err
 	}
@@ -69,67 +77,63 @@ func runBundle(command string, args []string, stdout, stderr io.Writer) error {
 	if err = os.MkdirAll(*home, 0700); err != nil {
 		return err
 	}
+	*home, err = filepath.EvalSymlinks(*home)
+	if err != nil {
+		return err
+	}
+	*config = filepath.Join(*home, "config.toml")
 	lock, err := lockBundleHome(*home)
 	if err != nil {
 		return err
 	}
-	defer unlockDirectory(lock)
-	var setup *bundleModelSetup
-	if command == "init" && !*nonInteractive {
-		if _, e := os.Lstat(*config); errors.Is(e, os.ErrNotExist) {
-			prompt, e := newBundlePrompt(os.Stdin, stderr)
-			if e != nil {
-				return e
-			}
-			if prompt != nil {
-				setup, err = promptBundleModel(prompt)
-				if err != nil {
-					return err
-				}
-			}
-		} else if e != nil {
-			return e
+	defer func() {
+		if lock != nil {
+			_ = unlockDirectory(lock)
 		}
+	}()
+	if err = initializeBundle(*root, *home); err != nil {
+		return err
 	}
-	if err = initializeBundleWithModel(*root, *home, setup); err != nil {
+	startup, err := readStartupConfig(*config, true, false)
+	if err != nil {
+		return err
+	}
+	if err = prepareFirstAccess(startup); err != nil {
 		return err
 	}
 	if command == "init" {
-		if setup != nil {
-			_, err = fmt.Fprintf(stdout, "Configuration saved: %s\nRun ./start doctor, then ./start.\n", *config)
-			return err
-		}
-		_, err = fmt.Fprintf(stdout, "Configuration: %s\nSet runtime.model.base_url, runtime.model.model_id and the credential environment before starting.\n", *config)
+		_, err = fmt.Fprintf(stdout, "基础文件已准备。管理 token 文件：%s\n运行 ./start，在网页中配置模型。\n", adminTokenPath(startup))
 		return err
 	}
-	if err = bundleDoctor(*root, *config, stdout); err != nil {
+	// The service takes the same home lock before reading configuration and
+	// keeps it through shutdown. Init and launch cannot write it concurrently.
+	if err := unlockDirectory(lock); err != nil {
 		return err
 	}
-	return serve([]string{"--config", *config}, stdout, stderr)
+	lock = nil
+	args = []string{"--home", *home}
+	if *listen != "" {
+		args = append(args, "--listen", *listen)
+	}
+	return serve(args, stdout, stderr)
 }
 
 func initializeBundle(root, home string) error {
-	return initializeBundleWithModel(root, home, nil)
+	return initializeBundleRuntime(root, home, "")
 }
 
-func initializeBundleWithModel(root, home string, setup *bundleModelSetup) error {
-	// TOML is serialized by Go, including arbitrary spaces, quotes and backslashes.
+func initializeBundleRuntime(root, home, managedBinary string) error {
 	config := map[string]any{
 		"server":  map[string]any{"listen": "127.0.0.1:8088", "data_dir": "./data", "teams_dir": "./teams", "session_max_turns": 16, "dsh_turn_timeout": "15m"},
-		"runtime": map[string]any{"dsh": map[string]any{"binary_path": filepath.Join(root, "bin", "dsh")}, "model": map[string]any{"protocol": "openai-completions", "base_url": "", "model_id": "", "api_key_env": "OPENAI_API_KEY"}},
-	}
-	if setup != nil {
-		config["runtime"].(map[string]any)["model"] = map[string]any{
-			"protocol": setup.Model.Protocol, "base_url": setup.Model.BaseURL,
-			"model_id": setup.Model.ModelID, "api_key_env": setup.Model.APIKeyEnv,
-		}
-		if len(setup.Env) > 0 {
-			config["env"] = setup.Env
-		}
+		"runtime": map[string]any{"dsh": map[string]any{"binary_path": filepath.Join(root, "bin", "dsh")}},
+		"models":  modelCatalog{SchemaVersion: 1},
 	}
 	// Portable homes use a config-relative path; explicit external homes bind this bundle.
 	if home == filepath.Join(root, ".teamx") {
 		config["runtime"].(map[string]any)["dsh"].(map[string]any)["binary_path"] = "../bin/dsh"
+	}
+	if managedBinary != "" {
+		config["runtime"].(map[string]any)["dsh"].(map[string]any)["binary_path"] = managedBinary
 	}
 	data, err := toml.Marshal(config)
 	if err != nil {
@@ -224,7 +228,25 @@ func bundleDoctor(root, config string, out io.Writer) error {
 		return fmt.Errorf("invalid configuration %s; check TOML syntax", config)
 	}
 	missing := []string{}
-	if c.Runtime == nil {
+	if c.Models != nil {
+		if c.Models.validate() != nil || len(c.Models.Entries) == 0 {
+			missing = append(missing, "模型：请在网页完成验证并保存")
+		} else {
+			credentials, err := newModelCredentials(filepath.Dir(config))
+			if err != nil {
+				missing = append(missing, "私有密钥目录不可用")
+			} else {
+				for _, entry := range c.Models.Entries {
+					if _, err := credentials.get(entry.CredentialRef); err != nil {
+						missing = append(missing, "模型密钥缺失，请修复托管密钥")
+					}
+				}
+			}
+		}
+		if c.Runtime == nil || c.Runtime.DSH.BinaryPath == "" {
+			missing = append(missing, "runtime.dsh.binary_path")
+		}
+	} else if c.Runtime == nil {
 		missing = append(missing, "runtime")
 	} else {
 		m := c.Runtime.Model
@@ -255,6 +277,9 @@ func bundleDoctor(root, config string, out io.Writer) error {
 		if e != nil {
 			add("configuration validation", config, "invalid", e.Error(), true)
 		} else {
+			if loaded.Models != nil && loaded.Runtime != nil {
+				loaded.Runtime.ManagedModels = true
+			}
 			teams, e := loadTeams(*loaded.Server.TeamsDir, loaded.Runtime)
 			if e != nil {
 				add("teams", *loaded.Server.TeamsDir, "invalid", e.Error(), true)
@@ -367,7 +392,7 @@ func bundleEntry(args []string, stdout, stderr io.Writer) error {
 			continue
 		}
 		filtered = append(filtered, arg)
-		if arg == "--bundle-root" || arg == "--home" || arg == "--config" {
+		if arg == "--bundle-root" || arg == "--home" || arg == "--config" || arg == "--listen" {
 			if i+1 >= len(args) {
 				return ErrRequest
 			}

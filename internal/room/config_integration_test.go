@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -42,6 +41,7 @@ func TestServeConfigCLIOverridesAndSecretIsolation(t *testing.T) {
 			writeTestTeam(t, filepath.Join(configDir, "teams"), team)
 		}
 		path := writeStartupConfig(t, configDir, configText)
+		testAccessConfig(t, configDir)
 		if mode == "project-relative" {
 			path = filepath.Join(".teamx", "config.toml")
 		}
@@ -66,10 +66,10 @@ func TestServeConfigCLIOverridesAndSecretIsolation(t *testing.T) {
 			p.waited = true
 			t.Fatal("readiness", err, strings.ReplaceAll(p.logs.String(), secret, "[REDACTED]"))
 		}
-		client := cliClient{endpoint: p.Endpoint, http: &http.Client{Timeout: 5 * time.Second}}
+		client := serverTestCLI(t, configDir, p.Endpoint)
 		var room roomSummary
-		req := roomCreateRequest{ServiceEpoch: p.ServiceEpoch, Caller: humanCaller, roomSelection: roomSelection{TeamID: "sample", CreateID: mode}}
-		if err := client.request(ctx, "/v1/rooms/create", req, &room); err != nil {
+		req := roomCreateRequest{ServiceEpoch: p.ServiceEpoch, Caller: serverTestCaller(t, configDir), roomSelection: roomSelection{TeamID: "sample", CreateID: mode}}
+		if err := serverTestRequest(ctx, client, "/v1/rooms/create", req, &room); err != nil {
 			t.Fatal(err)
 		}
 		p.stop(t)

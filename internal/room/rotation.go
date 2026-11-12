@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"time"
 
@@ -51,6 +52,29 @@ func (b dshBackend) switchSession(opts SessionOptions, from, to string) (Backend
 	if !validSessionGeneration(from) || !validSessionGeneration(to) || from == to {
 		return nil, ErrRequest
 	}
+	if b.model != nil && (b.model.Legacy || b.models != nil) {
+		if b.models == nil {
+			return nil, ErrInvalid
+		}
+		var saved managedRoomConfig
+		if err := readSnapshot(filepath.Join(b.store.dir, "room-config.json"), &saved, maxPrivateFileBytes); err != nil {
+			return nil, err
+		}
+		found := false
+		for _, member := range saved.Members {
+			if saved.RoomIdentity == opts.RoomIdentity && member.AgentID == opts.AgentID && member.MembershipID == opts.MembershipID && member.ModelSelection != nil {
+				target, err := b.models.target(opts.MemberIdentity, *member.ModelSelection, member.ModelSelectionVersion, b.profile)
+				if err != nil {
+					return nil, err
+				}
+				b.model, b.profile, found = &target, target.Profile, true
+				break
+			}
+		}
+		if !found {
+			return nil, ErrIdentity
+		}
+	}
 	ref, _, err := b.reference(opts)
 	if err != nil {
 		return nil, err
@@ -69,7 +93,15 @@ func (b dshBackend) switchSession(opts SessionOptions, from, to string) (Backend
 	if current != from {
 		return nil, ErrConflict
 	}
-	ref = dshReference{Version: formatVersion, MemberIdentity: opts.MemberIdentity, Directory: to, Pending: true}
+	if b.model != nil {
+		snapshot := b.model.clone()
+		snapshot.Generation = to
+		b.model = &snapshot
+		if err := b.saveModelSnapshot(opts, dshReference{Directory: to}); err != nil {
+			return nil, err
+		}
+	}
+	ref = dshReference{Version: formatVersion, MemberIdentity: opts.MemberIdentity, Directory: to, Pending: true, ManagedModel: b.model != nil}
 	b.store.mu.Lock()
 	path, err := b.store.dshPath(opts.MemberIdentity, "session.json", true)
 	if err == nil {
@@ -166,9 +198,20 @@ func (m *MemberAgent) rotationStatus(status string) {
 	m.rotation = &SessionRotation{Cancel: r.Cancel, Resume: r.Resume, Replenish: r.Replenish, Status: status, OperationID: r.OperationID, Reason: r.Reason, FromGeneration: r.From, ToGeneration: r.To, BaseUsed: r.BaseUsed, Phase: r.Phase, Error: r.Error, FailedStep: r.FailedStep, ContextReset: r.Phase == "completed"}
 }
 func (m *MemberAgent) prepareRotation(msg ControlMember) error {
+	if m.ModelGate != "" && msg.modelTarget == nil {
+		return ErrBusy
+	}
 	backend, ok := m.Backend.(rotatingBackend)
 	if !ok {
 		return fmt.Errorf("%w: session rotation requires a capable backend", ErrRequest)
+	}
+	if msg.modelTarget != nil {
+		if _, ok := m.Backend.(dshBackend); !ok || msg.Cancel || msg.Resume || msg.Replenish || msg.automatic {
+			return ErrRequest
+		}
+		if err := msg.modelTarget.validate(m.Options.MemberIdentity); err != nil {
+			return err
+		}
 	}
 
 	if msg.automatic {
@@ -222,6 +265,15 @@ func (m *MemberAgent) prepareRotation(msg ControlMember) error {
 		from = current
 	}
 	if r := m.rotationRecord; r != nil && r.OperationID == operationID {
+		var retryTarget *modelSessionSnapshot
+		if msg.modelTarget != nil {
+			snapshot := msg.modelTarget.clone()
+			snapshot.Generation = r.To
+			retryTarget = &snapshot
+		}
+		if !reflect.DeepEqual(r.ModelTarget, retryTarget) {
+			return ErrConflict
+		}
 		if r.From != from || r.Reason != reason || r.Cancel != msg.Cancel || r.Resume != msg.Resume || r.Replenish != msg.Replenish {
 			return ErrConflict
 		}
@@ -238,7 +290,9 @@ func (m *MemberAgent) prepareRotation(msg ControlMember) error {
 		m.rotationLease = msg.lease
 		r.Error, r.FailedStep = "", ""
 		m.rotationStatus("waiting")
-		m.rotationLease.start(m.owner)
+		if r.ModelTarget == nil {
+			m.rotationLease.start(m.owner)
+		}
 		m.rotate()
 		return nil
 	}
@@ -270,6 +324,11 @@ func (m *MemberAgent) prepareRotation(msg ControlMember) error {
 		return err
 	}
 	r := &rotationRecord{Version: rotationVersion, MemberIdentity: m.Options.MemberIdentity, OperationID: operationID, Reason: reason, From: from, To: "session.json.dsh-" + target, BaseUsed: m.turnsUsed, Phase: "prepared", Cancel: msg.Cancel, Resume: msg.Resume, Replenish: msg.Replenish}
+	if msg.modelTarget != nil {
+		snapshot := msg.modelTarget.clone()
+		snapshot.Generation = r.To
+		r.ModelTarget = &snapshot
+	}
 	r.Recovery = msg.recovering
 	if msg.recovering {
 		// Commit a bounded recovery allowance before any lifecycle operation.
@@ -288,7 +347,7 @@ func (m *MemberAgent) prepareRotation(msg ControlMember) error {
 	// Default manual pause must already be durable if prepared commits and the
 	// process stops before the next write. A later explicit run intent is saved
 	// only after prepared has durably frozen this operation.
-	if !msg.automatic && !msg.Resume {
+	if !msg.automatic && msg.modelTarget == nil && !msg.Resume {
 		if err := m.persistScheduling(false, m.turnsUsed); err != nil {
 			m.rotationFailure("intent_before_prepare", err)
 			return err
@@ -305,7 +364,7 @@ func (m *MemberAgent) prepareRotation(msg ControlMember) error {
 			return err
 		}
 	}
-	if !msg.automatic {
+	if !msg.automatic && msg.modelTarget == nil {
 		m.paused, m.retry = !msg.Resume, false
 		m.RecoveryPending, m.recoveryArmed = false, false
 	}
@@ -314,7 +373,9 @@ func (m *MemberAgent) prepareRotation(msg ControlMember) error {
 	if msg.Cancel && m.cancel != nil {
 		m.cancel()
 	}
-	m.rotationLease.start(m.owner)
+	if r.ModelTarget == nil {
+		m.rotationLease.start(m.owner)
+	}
 	m.rotate()
 	return nil
 }
@@ -375,7 +436,13 @@ func (m *MemberAgent) rotate() {
 			r.record = closed
 		}
 		r.step = "session_reference"
-		next, err := backend.switchSession(opts, record.From, record.To)
+		var next Backend
+		var err error
+		if record.ModelTarget != nil {
+			next, err = backend.(dshBackend).switchModel(opts, record.From, record.To, *record.ModelTarget)
+		} else {
+			next, err = backend.switchSession(opts, record.From, record.To)
+		}
 		r.backend = next
 		return r, err
 	}, func(r result, err error) bool {
@@ -413,6 +480,9 @@ func (m *MemberAgent) rotate() {
 		}
 		m.rotationRecord = &completed
 		m.rotationStatus("completed")
+		if record.ModelTarget != nil {
+			m.ModelGate = ""
+		}
 		m.BackendBlocked, m.lastError = "", ""
 		lease.close()
 		m.rotationLease = nil

@@ -66,7 +66,7 @@ func runToolsWithClient(ctx context.Context, args []string, stdin io.Reader, std
 			return err
 		}
 		request.Header.Set("Content-Type", "application/json")
-		response, err := client.http.Do(request)
+		response, err := client.do(request)
 		if err != nil {
 			return err
 		}
@@ -96,7 +96,7 @@ func runToolsWithClient(ctx context.Context, args []string, stdin io.Reader, std
 		return err
 	}
 	request.Header.Set("Content-Type", "application/octet-stream")
-	response, err := client.http.Do(request)
+	response, err := client.do(request)
 	if err != nil {
 		return toolTransportError(ctx, stderr, "tool transport interrupted; remote result unconfirmed; query before retry")
 	}

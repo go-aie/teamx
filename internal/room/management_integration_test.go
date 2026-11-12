@@ -33,6 +33,8 @@ func TestProductionRoomCatalogAcrossWorkingDirectories(t *testing.T) {
 		TeamsDir     string `json:"teams_dir"`
 		ServiceEpoch string `json:"service_epoch"`
 	}
+	var token string
+	var owner Caller
 	start := func(cwd, dataDir, teamsDir string) (readyInfo, func()) {
 		settings := map[string]string{}
 		if dataDir != "" {
@@ -45,6 +47,18 @@ func TestProductionRoomCatalogAcrossWorkingDirectories(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		if err = runAccessInit([]string{"--config", path}, io.Discard, io.Discard); err != nil {
+			t.Fatal(err)
+		}
+		config, err := readStartupConfig(path, true, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		token, err = readAdminToken(adminTokenPath(config))
+		if err != nil {
+			t.Fatal(err)
+		}
+		owner = Caller{Author: Author{Kind: "human", ID: config.Access.OperatorID}}
 		cmd := exec.CommandContext(ctx, binary, "serve", "--config", path, "--listen", "127.0.0.1:0")
 		cmd.Dir, cmd.Env = cwd, cleanRoomEnv()
 		var stderr bytes.Buffer
@@ -92,6 +106,7 @@ func TestProductionRoomCatalogAcrossWorkingDirectories(t *testing.T) {
 				t.Fatal(err)
 			}
 			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Bearer "+token)
 			r, err := client.Do(req)
 			if err != nil {
 				t.Fatal(err)
@@ -131,7 +146,7 @@ func TestProductionRoomCatalogAcrossWorkingDirectories(t *testing.T) {
 	}
 	stop()
 	info, stop = start(t.TempDir(), info.DataDir, teamsDir)
-	req := roomCreateRequest{ServiceEpoch: info.ServiceEpoch, Caller: humanCaller, roomSelection: roomSelection{CreateID: "external-cwd", TeamID: "sample"}}
+	req := roomCreateRequest{ServiceEpoch: info.ServiceEpoch, Caller: owner, roomSelection: roomSelection{CreateID: "external-cwd", TeamID: "sample"}}
 	var data []byte
 	data, _ = json.Marshal(req)
 	request(http.MethodPost, info.Endpoint+"/v1/rooms/create", data)

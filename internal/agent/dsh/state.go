@@ -106,10 +106,15 @@ func recoveryReference(dir string) (reference, error) {
 }
 
 func configDigest(opts Options) string {
+	ref := ""
+	if opts.Credential != nil {
+		ref = opts.Credential.Ref
+	}
 	data, _ := json.Marshal(struct {
-		Instructions string
-		Model        ModelConfig
-	}{opts.Instructions, opts.Model})
+		Instructions  string
+		Model         ModelConfig
+		CredentialRef string `json:",omitempty"`
+	}{opts.Instructions, opts.Model, ref})
 	hash := sha256.Sum256(data)
 	return hex.EncodeToString(hash[:])
 }
@@ -240,6 +245,11 @@ func prepare(opts *Options, resume bool) (*os.File, reference, error) {
 	if err := os.WriteFile(filepath.Join(dir, "home", "AGENTS.md"), []byte(opts.Instructions), 0600); err != nil {
 		return nil, ref, err
 	}
+	if opts.probe != nil {
+		if err := os.WriteFile(filepath.Join(dir, "probe.mjs"), probeTool, 0600); err != nil {
+			return nil, ref, err
+		}
+	}
 	if err := atomicJSON(filepath.Join(dir, "home"), "cordis.patch.yml", profile(*opts)); err != nil {
 		return nil, ref, err
 	}
@@ -252,6 +262,12 @@ func profile(opts Options) []map[string]any {
 		{"id": "acp", "config": map[string]any{"provider": provider(opts.Model), "model": opts.Model.ModelID}},
 		{"id": "approval", "config": map[string]any{"policy": "ask"}},
 		{"id": "sandbox-policy", "config": map[string]any{"mode": "workspace-write"}},
+	}
+	if opts.probe != nil {
+		patches = append(patches,
+			map[string]any{"id": "acp", "inject": []string{"acpAppStartup", "teamxProbeReady"}, "config": map[string]any{"provider": provider(opts.Model), "model": opts.Model.ModelID}},
+			map[string]any{"insert": []map[string]any{{"id": "teamx-probe", "name": filepath.Join(opts.StateDir, "probe.mjs"), "config": map[string]any{"receipt": opts.probe.receipt}}}},
+		)
 	}
 	if opts.Model.Protocol == "deepseek-messages" {
 		config := map[string]any{"apiKeyEnv": opts.Model.APIKeyEnv}

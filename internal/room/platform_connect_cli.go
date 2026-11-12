@@ -324,7 +324,7 @@ func platformSkillRequest(ctx context.Context, c cliClient, req platformConnectR
 		return nil, err
 	}
 	r.Header.Set("Content-Type", "application/json")
-	response, err := c.http.Do(r)
+	response, err := c.do(r)
 	if err != nil {
 		return nil, err
 	}

@@ -18,6 +18,7 @@ const defaultMaxTurns uint64 = 16
 //
 //actorx:actor
 type MemberAgent struct {
+	ModelGate            string
 	Options              SessionOptions
 	Backend              Backend
 	Store                *Store
@@ -122,6 +123,9 @@ func (m *MemberAgent) Started(ctx actorx.Context, _ actorx.Started) error {
 		}
 	}
 
+	if m.ModelGate != "" {
+		m.paused = !m.enabled
+	}
 	return m.maintain()
 }
 
@@ -208,6 +212,15 @@ func (m *MemberAgent) Control(ctx actorx.Context, msg ControlMember) (MemberStat
 	if msg.MemberIdentity != m.Options.MemberIdentity {
 		return MemberStatus{}, ErrIdentity
 	}
+	if msg.modelGate != nil {
+		if *msg.modelGate != "" && m.ModelGate != "" && m.ModelGate != *msg.modelGate {
+			return m.status(), ErrBusy
+		}
+		m.ModelGate = *msg.modelGate
+		m.withdrawTurn()
+		m.schedule()
+		return m.status(), nil
+	}
 	// Shutdown cancels retained work without changing durable collaboration intent.
 	if msg.Action == "settle" {
 		m.withdrawTurn()
@@ -265,7 +278,7 @@ func (m *MemberAgent) Control(ctx actorx.Context, msg ControlMember) (MemberStat
 		if msg.expectedPause != nil && *msg.expectedPause != m.pauseRevision {
 			return m.status(), nil
 		}
-		if m.rotationWork != nil || (m.rotationRecord != nil && m.rotationRecord.Phase != "completed") {
+		if m.ModelGate != "" || m.rotationWork != nil || (m.rotationRecord != nil && m.rotationRecord.Phase != "completed") {
 			return MemberStatus{}, ErrBusy
 		}
 		if msg.State.MemberIdentity != m.Options.MemberIdentity {
@@ -369,7 +382,7 @@ func (m *MemberAgent) BindScheduler(_ actorx.Context, msg bindTurnScheduler) (st
 }
 
 func (m *MemberAgent) ready() bool {
-	return (m.ExecutionFrozen == nil || !m.ExecutionFrozen.Load()) && !m.active && !m.paused && !m.fault && m.BackendBlocked == "" &&
+	return m.ModelGate == "" && (m.ExecutionFrozen == nil || !m.ExecutionFrozen.Load()) && !m.active && !m.paused && !m.fault && m.BackendBlocked == "" &&
 		m.rotationWork == nil && (m.rotation == nil || (m.rotation.Status != "waiting" && m.rotation.Status != "closing")) &&
 		(m.rotationRecord == nil || m.rotationRecord.Phase == "completed") && (m.automaticRotation() || m.turnsUsed < m.turnLimit) && (m.roomReady() || m.inboxReady()) && !m.now().Before(m.due)
 }
@@ -458,6 +471,10 @@ func (m *MemberAgent) schedule() {
 	if m.rotation != nil && (m.rotation.Status == "waiting" || m.rotation.Status == "closing") {
 		m.withdrawTurn()
 		m.rotate()
+		return
+	}
+	if m.ModelGate != "" {
+		m.withdrawTurn()
 		return
 	}
 	if m.recoveryArmed && m.canRecoverSession() {

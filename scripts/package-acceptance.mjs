@@ -35,7 +35,7 @@ const report = {
   checks: {},
   verifier_inputs: ['scripts/package-acceptance.mjs', 'scripts/package-acceptance-lib.mjs',
     'scripts/package-browser.mjs', 'scripts/package-lib.mjs', 'scripts/package-platform.mjs',
-    'scripts/package-smoke.mjs', 'scripts/check-dsh-native.mjs', 'scripts/fixtures/acp.mjs',
+    'scripts/package-smoke.mjs', 'scripts/check-dsh-native.mjs', 'scripts/fixtures/acp.mjs', 'scripts/fixtures/models.mjs',
     'internal/room/bundle_real_e2e_test.go', 'internal/room/dsh_real_test.go',
     'internal/room/demo_test.go', 'packaging/verifier/package.json',
     'packaging/verifier/package-lock.json', 'scripts/package-profiles.mjs'].map(path => ({ path, sha256: hash(fs.readFileSync(p.join(root, path))) }))

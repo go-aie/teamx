@@ -3,6 +3,9 @@
 # Relative paths below resolve from this file's directory; no shell expansion.
 [server]
 listen = "127.0.0.1:8088"
+# Remote browsers use one canonical HTTPS origin, with a proxy to loopback.
+# public_base_url = "https://assistant.example.com"
+# trusted_proxies = ["127.0.0.1"]
 # Shared by all Rooms and page time displays. Settings can save this without restart.
 time_zone = "Asia/Shanghai"
 data_dir = "./data"
@@ -24,34 +27,24 @@ dsh_turn_timeout = "15m"
 # max_pixels = 16777216
 # timeout = "30s" # At most 2m; individual failures retain missing-image status.
 
-# Default runtime for teams that omit their own complete runtime.
+# teamx serve --home <directory> 首次准备管理认证；随后在网页登录并设置模型。
+# 已有实例的 token 丢失时，才使用 access init 显式修复；操作者 ID 保持不变。
+
+# DSH 安装入口；模型参数和 API Key 在启动后的网页中配置。
 [runtime.dsh]
 binary_path = "/absolute/path/to/dsh"
-# Development with Node: use its path above and set binary_args to the CLI JS.
+# 开发模式可改为 Node 路径，并指定完整 DSH 的 JS 入口。
 # binary_args = ["/absolute/path/to/dsh/lib/bin.js"]
 
-[runtime.model]
-protocol = "openai-completions"
-base_url = "https://model.example/v1"
-model_id = "your-model"
-api_key_env = "OPENAI_API_KEY"
-# Optional: match these values to the actual model and gateway.
-# reasoning_effort = "low"
-# context_window = 1048576
-# max_tokens = 32768
-# Optional, only when this exact Completions model and gateway support images.
-# ACP initialize must also advertise image input; otherwise the session fails.
-# input_modalities = ["text", "image"]
+# 空列表表示首次设置；网页验证成功后保存列表及默认引用。
+# 请勿手写 credential_ref，或将 API Key 放入此文件。
+[models]
+schema_version = 1
+version = 0
+default = ""
+entries = []
 
-# Optional Completions wire dialect for this exact model. Omit to keep defaults.
-# Set false if the gateway accepts system but rejects developer message roles.
-# [runtime.model.compat]
-# supports_developer_role = false
-
-# Existing service environment variables (even empty ones) take precedence.
-# These values stay outside Room snapshots. Do not commit actual credentials.
+# 非模型的服务环境配置。已有环境变量（包括空值）优先。
 [env]
-OPENAI_API_KEY = ""
-# Optional: otherwise resolve beside the TeamX executable, then on the server PATH.
 # TEAMX_GITLAB_BIN = "/absolute/path/to/teamx-gitlab"
 # TEAMX_GLAB_BIN = "/absolute/path/to/glab"

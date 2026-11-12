@@ -191,6 +191,8 @@ test("settings categories isolate panels and preserve both time-zone and connect
   assert.equal(ui.el("general-settings").hidden,false);assert.equal(ui.el("platform-settings").hidden,true);
   ui.el("system-timezone").value="America/New_York";await ui.el("system-timezone").emit("input");
   await ui.el("settings-tab-general").emit("keydown",{key:"ArrowDown"});
+  assert.equal(ui.el("settings-tab-models").attributes["aria-selected"],"true");
+  await ui.el("settings-tab-models").emit("keydown",{key:"ArrowDown"});
   assert.equal(ui.el("settings-tab-platforms").attributes["aria-selected"],"true");
   assert.equal(ui.el("general-settings").hidden,true);assert.equal(ui.el("platform-settings").hidden,false);
   await ui.el("connection-new").emit("click");ui.el("connection-name").value="未保存的连接";

@@ -101,6 +101,9 @@ type apiError struct {
 }
 
 type service struct {
+	models                    *modelExecution
+	modelTargets              map[string]modelSessionSnapshot
+	access                    *serverAccess
 	settings                  *systemSettings
 	imageMaterials            imageMaterialConfig
 	inboxExpiry               notification.ExpiryPolicy
@@ -230,6 +233,7 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 		return nil, err
 	}
 	s := &service{
+		access:               config.access,
 		settings:             config.settings,
 		workspaceOperationID: config.workspaceOperationID,
 		info:                 ServiceInfo{RoomIdentity: state.RoomIdentity, ServiceEpoch: epoch}, isDirect: state.IsDirect, store: store,
@@ -243,7 +247,8 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 		persistentScheduling: config.persistentScheduling,
 		grantsFrozen:         grantsFrozen,
 		dshProfiles:          config.dshProfiles,
-		uiProfiles:           config.uiProfiles,
+		models:               config.models, modelTargets: config.modelTargets,
+		uiProfiles: config.uiProfiles,
 	}
 	if s.uiProfiles == nil {
 		s.uiProfiles = profileNames(s.dshProfiles)
@@ -652,6 +657,11 @@ func (s *service) settleMemberRemoval(membershipID string) error {
 }
 
 func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/v1/setup" && r.Method == "GET" {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"setup_required":false}`)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	if s.closing.Load() {

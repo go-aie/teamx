@@ -3,8 +3,9 @@ package room
 import "strings"
 
 const rootCLIHelp = `Usage: teamx COMMAND [--help]
-  init | doctor                 Initialize or diagnose a distribution (--bundle-root, --home; init: --non-interactive)
-  serve                         Start the service
+  init | doctor                 Prepare files/auth or diagnose a distribution (--bundle-root, --home; model setup is in the browser)
+  access init --config FILE     Initialize the fixed operator and private admin-token file
+  serve                         Start the authenticated service
   skill usage                   Read TeamX interface and execution guidance
   platforms skill/list/connect/selection/chats/projects/member  Connect/configure Feishu/GitLab for current member
   platforms upgrade           Upgrade platform model and references offline (--rooms-dir ROOT)
@@ -16,6 +17,7 @@ const rootCLIHelp = `Usage: teamx COMMAND [--help]
   policy read/update/publish     Member long-term rules
   lark read                     Read verified Lark message/context (no replies)
   tools list/run/skill           Enabled platform and standalone tools
+Human CLI: --token-file FILE or TEAMX_ADMIN_TOKEN_FILE; token values are never command-line arguments.
 Use teamx COMMAND SUBCOMMAND --help for parameters and constraints.
 `
 

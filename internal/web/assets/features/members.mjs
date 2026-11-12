@@ -265,7 +265,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     memberToolsView = null;
     renderActivityControls();
     notificationsUI.renderNotificationPlatforms();
-    if(state.managed){void openMemberTools(current);void workspaceUI.loadWorkspacePlatforms();void onboardingUI.restoreOnboarding()?.then(()=>renderMemberPlatforms());}
+    if(state.managed){void settingsUI.openMemberModel?.(current);void openMemberTools(current);void workspaceUI.loadWorkspacePlatforms();void onboardingUI.restoreOnboarding()?.then(()=>renderMemberPlatforms());}
     void selectAgentTab(tab);
     if (window.innerWidth <= 640) {
       $("activity-dialog").scrollIntoView({ block: "start" });

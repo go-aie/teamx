@@ -52,7 +52,7 @@ func runUsageSkillCLI(ctx context.Context, args []string, stdout io.Writer, env 
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	response, err := client.http.Do(req)
+	response, err := client.do(req)
 	if err != nil {
 		return err
 	}

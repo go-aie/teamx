@@ -17,11 +17,14 @@ import (
 
 // Startup settings stay outside Room snapshots. Only the resolved runtime is frozen.
 type startupConfig struct {
-	path   string
-	source []byte
-	file   os.FileInfo
-	Server struct {
+	installationID string // Deployment identity; never part of user configuration.
+	path           string
+	source         []byte
+	file           os.FileInfo
+	Server         struct {
 		TimeZone             *string             `toml:"time_zone"`
+		PublicBaseURL        string              `toml:"public_base_url"`
+		TrustedProxies       []string            `toml:"trusted_proxies"`
 		Listen               *string             `toml:"listen"`
 		DataDir              *string             `toml:"data_dir"`
 		TeamsDir             *string             `toml:"teams_dir"`
@@ -33,7 +36,9 @@ type startupConfig struct {
 		InboxSkipExpired     *bool               `toml:"inbox_skip_expired"`
 		ImageMaterials       imageMaterialConfig `toml:"image_materials"`
 	} `toml:"server"`
+	Access  accessConfig      `toml:"access"`
 	Runtime *teamRuntime      `toml:"runtime"`
+	Models  *modelCatalog     `toml:"models"`
 	Env     map[string]string `toml:"env"`
 }
 
@@ -48,6 +53,10 @@ func defaultStartupConfigPath() (string, error) {
 }
 
 func loadStartupConfig(name string, required bool) (startupConfig, error) {
+	return readStartupConfig(name, required, true)
+}
+
+func readStartupConfig(name string, required, validateRuntime bool) (startupConfig, error) {
 	var config startupConfig
 	path, err := filepath.Abs(name)
 	if err != nil {
@@ -93,6 +102,14 @@ func loadStartupConfig(name string, required bool) (startupConfig, error) {
 		return startupConfig{}, err
 	}
 	base := filepath.Dir(path)
+	if config.Models != nil {
+		if err := config.Models.validate(); err != nil {
+			return startupConfig{}, err
+		}
+		if config.Runtime != nil && config.Runtime.Model.ModelID != "" {
+			return startupConfig{}, errors.New("models and legacy runtime.model cannot both be active; migration is required")
+		}
+	}
 	if config.Server.DataDir == nil {
 		value := "./data"
 		config.Server.DataDir = &value
@@ -116,7 +133,11 @@ func loadStartupConfig(name string, required bool) (startupConfig, error) {
 				r.DSH.BinaryArgs[i] = configPath(base, arg)
 			}
 		}
-		if err := validateTeamRuntime(*r); err != nil {
+		check := *r
+		if config.Models != nil {
+			check.Model = (ModelParameters{Protocol: "openai-completions", BaseURL: "https://example.invalid/v1", ModelID: "launcher-check"}).materialize()
+		}
+		if err := validateTeamRuntime(check); validateRuntime && err != nil {
 			return startupConfig{}, fmt.Errorf("config runtime: %w", err)
 		}
 	}

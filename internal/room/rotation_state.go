@@ -12,7 +12,8 @@ const rotationVersion = 1
 // The last confirmed phase is retained on failure. Directory names are the
 // generation identities; neither a retry nor recovery allocates another target.
 type rotationRecord struct {
-	Version int `json:"version"`
+	ModelTarget *modelSessionSnapshot `json:"model_target,omitempty"`
+	Version     int                   `json:"version"`
 	MemberIdentity
 	OperationID string `json:"operation_id"`
 	Reason      string `json:"reason"`
@@ -34,6 +35,14 @@ func validSessionGeneration(g string) bool {
 }
 
 func (r rotationRecord) validate(id MemberIdentity) error {
+	if r.ModelTarget != nil {
+		if err := r.ModelTarget.validate(id); err != nil {
+			return err
+		}
+		if r.ModelTarget.Generation != r.To || r.Cancel || r.Resume || r.Replenish || r.Recovery {
+			return ErrInvalid
+		}
+	}
 	if r.Version != rotationVersion || r.MemberIdentity != id || !validRestartID(r.OperationID) || !validText(r.Reason) || len(r.Reason) > 256 || !validSessionGeneration(r.From) || !validSessionGeneration(r.To) || r.From == r.To {
 		return fmt.Errorf("%w: rotation identity or target", ErrInvalid)
 	}
@@ -80,6 +89,22 @@ func (s *Store) saveRotation(r rotationRecord) error {
 	defer s.mu.Unlock()
 	path, _, err := s.memberPath(r.MemberIdentity, "rotation.json", true)
 	if err != nil {
+		return err
+	}
+	// Preserve the completion fact before the next operation replaces the latest
+	// record. Partial model operations may be retried after other members move on.
+	var previous rotationRecord
+	if err := readSnapshot(path, &previous, maxPrivateFileBytes); err == nil {
+		if previous.OperationID != r.OperationID && previous.Phase == "completed" {
+			if err := previous.validate(r.MemberIdentity); err != nil {
+				return err
+			}
+			archive := filepath.Join(filepath.Dir(path), "rotation-"+previous.OperationID+".json")
+			if err := s.save(archive, previous, maxPrivateFileBytes); err != nil {
+				return err
+			}
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	return s.save(path, r, maxPrivateFileBytes)
@@ -134,6 +159,11 @@ func reconcileRotation(store *Store, opts SessionOptions, r *rotationRecord, sta
 	}
 	if state.SessionGeneration == r.To && (state.SessionStartUsed != r.BaseUsed || generation != r.To) {
 		return fmt.Errorf("%w: rotation baseline changed", ErrConflict)
+	}
+	if r.ModelTarget != nil {
+		snapshot := r.ModelTarget.clone()
+		b.model = &snapshot
+		b.profile = snapshot.Profile
 	}
 	if _, err := b.switchSession(opts, r.From, r.To); err != nil {
 		return err

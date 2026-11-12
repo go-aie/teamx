@@ -18,15 +18,17 @@ import (
 
 // Runtime is frozen with the Room; credential values are never read into it.
 type teamRuntime struct {
-	DSH struct {
+	ManagedModels bool `json:"managed_models,omitempty" toml:"-"`
+	DSH           struct {
 		BinaryPath string       `json:"binary_path" toml:"binary_path"`
 		BinaryArgs []string     `json:"binary_args,omitempty" toml:"binary_args"`
 		Artifact   dsh.Artifact `json:"artifact,omitzero" toml:"artifact"`
 	} `json:"dsh" toml:"dsh"`
-	Model dsh.ModelConfig `json:"model" toml:"model"`
+	Model dsh.ModelConfig `json:"model,omitzero" toml:"model"`
 }
 
 type teamMember struct {
+	ModelSelection   *modelSelection   `json:"model_selection,omitempty"`
 	ID               string            `json:"id"`
 	Name             string            `json:"name"`
 	Instructions     string            `json:"instructions,omitempty"`
@@ -59,11 +61,14 @@ type teamMemberSummary struct {
 }
 
 func (r teamRuntime) profile() dshProfile {
-	return dshProfile{BinaryPath: r.DSH.BinaryPath, BinaryArgs: slices.Clone(r.DSH.BinaryArgs), Artifact: r.DSH.Artifact, Model: r.Model.Clone()}
+	return dshProfile{managedModel: r.ManagedModels, BinaryPath: r.DSH.BinaryPath, BinaryArgs: slices.Clone(r.DSH.BinaryArgs), Artifact: r.DSH.Artifact, Model: r.Model.Clone()}
 }
 
 func validateTeamRuntime(r teamRuntime) error {
 	p := r.profile()
+	if r.ManagedModels {
+		p.Model = launcherCheckModel()
+	}
 	return dsh.CheckConfig(dsh.Options{BinaryPath: p.BinaryPath, BinaryArgs: p.BinaryArgs, Artifact: p.Artifact, Model: p.Model})
 }
 
@@ -89,6 +94,14 @@ func loadTeams(dir string, defaults *teamRuntime) (map[string]teamDefinition, er
 				continue
 			}
 			return nil, fmt.Errorf("%s/team.json: %w", root, err)
+		}
+		if defaults != nil && defaults.ManagedModels && team.Runtime != nil && !team.Runtime.ManagedModels {
+			return nil, fmt.Errorf("%w: template runtime overrides require migration", ErrRequest)
+		}
+		for _, member := range team.Members {
+			if member.ModelSelection != nil && (defaults == nil || !defaults.ManagedModels) {
+				return nil, fmt.Errorf("%w: template model selection requires model catalog execution", ErrRequest)
+			}
 		}
 		if team.Runtime == nil && defaults != nil {
 			resolved := *defaults
@@ -140,6 +153,11 @@ func validateTeam(team *teamDefinition, source fs.FS) error {
 			return fmt.Errorf("%w: invalid or duplicate member id %q", ErrRequest, member.ID)
 		}
 		seen[member.ID] = true
+		if member.ModelSelection != nil {
+			if err := member.ModelSelection.validate(); err != nil {
+				return err
+			}
+		}
 		if (member.Instructions == "") == (member.InstructionsFile == "") {
 			return fmt.Errorf("%w: member %s requires exactly one of instructions and instructions_file", ErrRequest, member.ID)
 		}
@@ -157,7 +175,11 @@ func validateTeam(team *teamDefinition, source fs.FS) error {
 		if !validText(member.Instructions) || len(member.Instructions) > 1<<20 {
 			return fmt.Errorf("%w: member %s instructions", ErrRequest, member.ID)
 		}
-		if err := dsh.CheckToolEnv(member.ToolEnv, team.Runtime.Model.APIKeyEnv); err != nil {
+		keyEnv := team.Runtime.Model.APIKeyEnv
+		if team.Runtime.ManagedModels {
+			keyEnv = "OPENAI_API_KEY"
+		}
+		if err := dsh.CheckToolEnv(member.ToolEnv, keyEnv); err != nil {
 			return fmt.Errorf("member %s: %w", member.ID, err)
 		}
 		for k, v := range member.ToolEnv {
@@ -281,6 +303,14 @@ func (m *roomManager) prepare(selection roomSelection) (roomIndexEntry, error) {
 		init.Config.Members = append(init.Config.Members, managedMember{MemberState: MemberState{AgentID: member.ID, MembershipID: membership,
 			Runner: managedRunner(init.Config, member.ID)}, Name: member.Name, Instructions: member.Instructions,
 			ToolEnv: member.ToolEnv, Workspace: workspaceMemberPath(w, membership)})
+		if member.ModelSelection != nil || runtime.ManagedModels {
+			selection := modelSelection{Mode: "default"}
+			if member.ModelSelection != nil {
+				selection = *member.ModelSelection
+			}
+			init.Config.Members[len(init.Config.Members)-1].ModelSelection = &selection
+			init.Config.Members[len(init.Config.Members)-1].ModelSelectionVersion = 1
+		}
 	}
 	e.Initialization = init
 	return e, validateInitialization(e, *init)
@@ -372,4 +402,8 @@ func readTeamFile(source fs.FS, name string, out any) error {
 		return ErrInvalid
 	}
 	return nil
+}
+
+func launcherCheckModel() dsh.ModelConfig {
+	return (ModelParameters{Protocol: "openai-completions", BaseURL: "https://example.invalid/v1", ModelID: "launcher-check"}).materialize()
 }

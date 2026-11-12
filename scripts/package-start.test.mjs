@@ -47,7 +47,9 @@ function terminal(f, answer, beforeAnswer = () => {}) {
       if (!answered && output.includes('[默认取消] ')) {
         answered = true;
         try { beforeAnswer(); } catch (error) { child.stdin.end('no\n'); reject(error); return; }
-        child.stdin.end(answer);
+        // script(1) can inject EOF before queued input when the pipe is closed
+        // in the same tick. Let the terminal consume the answer first.
+        if (answer) child.stdin.write(answer, () => setTimeout(() => child.stdin.end(), 100)); else child.stdin.end();
       }
     });
     child.stderr.on('data', data => { output += data; });

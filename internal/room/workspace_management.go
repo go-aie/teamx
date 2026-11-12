@@ -77,7 +77,7 @@ func (m *roomManager) workspaceStatus(id RoomIdentity, operationID string) (work
 			// Internal recovery material is not a public runtime/configuration export.
 			copy.PreparedConfig, copy.PreviousConfig, copy.RequestTarget = nil, nil, nil
 			result.Operation = &copy
-			result.CanRevise = op.revisable() && !m.roomBusyLocked(id) && reflect.DeepEqual(saved, *op.PreviousConfig)
+			result.CanRevise = op.revisable() && !m.roomBusyLocked(id) && equalWorkspaceRoomConfig(saved, *op.PreviousConfig)
 			if !copy.finished() && copy.SourceEpoch != "" {
 				result.Observation = &ServiceInfo{RoomIdentity: id, ServiceEpoch: copy.SourceEpoch}
 			}
@@ -201,7 +201,7 @@ func (m *roomManager) startWorkspaceApply(req workspaceApplyRequest) (workspaceO
 	if err := m.store.check(true); err != nil {
 		return workspaceOperation{}, err
 	}
-	if m.roomBusyLocked(req.RoomIdentity) {
+	if m.roomBusyLocked(req.RoomIdentity) || m.pendingModelChangeLocked(req.RoomIdentity) {
 		return workspaceOperation{}, ErrBusy
 	}
 	if len(m.index.WorkspaceOperations) >= maxWorkspaceOperations {
@@ -242,7 +242,7 @@ func (m *roomManager) startWorkspaceApply(req workspaceApplyRequest) (workspaceO
 	if saved.WorkspaceVersion != req.ExpectedVersion || req.ExpectedVersion == ^uint64(0) {
 		return workspaceOperation{}, ErrConflict
 	}
-	if replacement != nil && (replacement.PreviousVersion != saved.WorkspaceVersion || !reflect.DeepEqual(saved, *replacement.PreviousConfig)) {
+	if replacement != nil && (replacement.PreviousVersion != saved.WorkspaceVersion || !equalWorkspaceRoomConfig(saved, *replacement.PreviousConfig)) {
 		return workspaceOperation{}, ErrConflict
 	}
 	target, err := m.workspacePlatformTargetLocked(canonical, req.connection)
@@ -341,10 +341,10 @@ func (m *roomManager) retryWorkspace(id RoomIdentity, operationID string) (works
 			return workspaceOperation{}, err
 		}
 		if saved.WorkspaceVersion == op.TargetVersion {
-			if op.PreparedConfig == nil || !reflect.DeepEqual(saved, *op.PreparedConfig) {
+			if op.PreparedConfig == nil || !equalWorkspaceRoomConfig(saved, *op.PreparedConfig) {
 				return workspaceOperation{}, ErrConflict
 			}
-		} else if saved.WorkspaceVersion != op.PreviousVersion || op.ConfigCommitted || op.PreviousConfig == nil || !reflect.DeepEqual(saved, *op.PreviousConfig) {
+		} else if saved.WorkspaceVersion != op.PreviousVersion || op.ConfigCommitted || op.PreviousConfig == nil || !equalWorkspaceRoomConfig(saved, *op.PreviousConfig) {
 			return workspaceOperation{}, ErrConflict
 		}
 		op.Status, op.ErrorCode, op.UpdatedAt = "running", "", time.Now().UTC()
@@ -464,7 +464,7 @@ func (m *roomManager) runWorkspace(op workspaceOperation, rt *roomRuntime) {
 		runErr = err
 		return
 	}
-	if saved.WorkspaceVersion == op.PreviousVersion && (op.PreviousConfig == nil || !reflect.DeepEqual(saved, *op.PreviousConfig)) {
+	if saved.WorkspaceVersion == op.PreviousVersion && (op.PreviousConfig == nil || !equalWorkspaceRoomConfig(saved, *op.PreviousConfig)) {
 		runErr = ErrConflict
 		return
 	}
@@ -528,7 +528,7 @@ func (m *roomManager) runWorkspace(op workspaceOperation, rt *roomRuntime) {
 		runErr = ErrInvalid
 		return
 	}
-	if saved.WorkspaceVersion != op.PreviousVersion && !reflect.DeepEqual(saved, *op.PreparedConfig) {
+	if saved.WorkspaceVersion != op.PreviousVersion && !equalWorkspaceRoomConfig(saved, *op.PreparedConfig) {
 		runErr = ErrConflict
 		return
 	}

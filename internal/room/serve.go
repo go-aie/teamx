@@ -27,9 +27,83 @@ func serve(args []string, stdout, stderr io.Writer) error {
 }
 
 func serveWithFactory(args []string, stdout, stderr io.Writer, create func(string, string, serviceConfig) (*service, error)) (runErr error) {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return runServer(ctx, args, stdout, stderr, serverOptions{create: create})
+}
+
+// Process signals belong to the foreground adapter. The core can also be owned
+// by a supervisor or a test without signalling the host process.
+type serverOptions struct {
+	create         func(string, string, serviceConfig) (*service, error)
+	listen         func(string, string) (net.Listener, error)
+	ready          func(any) error
+	setupCompleted bool
+	probe          func(context.Context, dsh.Options) (dsh.ProbeResult, error)
+	access         func(startupConfig, string) (*serverAccess, error) // Internal test seam; production always uses newServerAccess.
+}
+
+func runServer(ctx context.Context, args []string, stdout, stderr io.Writer, options serverOptions) error {
+	originalListen := options.listen
+	if originalListen == nil {
+		originalListen = net.Listen
+	}
+	accessFactory := options.access
+	if accessFactory == nil {
+		accessFactory = newServerAccess
+	}
+	var sharedAccess *serverAccess
+	options.access = func(c startupConfig, endpoint string) (*serverAccess, error) {
+		if sharedAccess != nil {
+			sharedAccess.setupRequired = false
+			return sharedAccess, nil
+		}
+		var err error
+		sharedAccess, err = accessFactory(c, endpoint)
+		return sharedAccess, err
+	}
+	selected := ""
+	options.listen = func(network, address string) (net.Listener, error) {
+		if selected != "" {
+			address = selected
+		}
+		listener, err := originalListen(network, address)
+		if err == nil {
+			selected = listener.Addr().String()
+		}
+		return listener, err
+	}
+	for {
+		err := runServerOnce(ctx, args, stdout, stderr, options)
+		if !errors.Is(err, errModelSetupSaved) {
+			return err
+		}
+		options.setupCompleted = true
+	}
+}
+
+func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer, options serverOptions) (runErr error) {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	create := options.create
+	if create == nil {
+		create = newService
+	}
+	listenTCP := options.listen
+	if listenTCP == nil {
+		listenTCP = net.Listen
+	}
+	ready := options.ready
+	if ready == nil {
+		ready = func(value any) error { return writeJSON(stdout, value) }
+	}
 	flags := flag.NewFlagSet("serve", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	configFile := flags.String("config", "", "startup TOML file (default: ~/.teamx/config.toml; optional unless explicitly specified)")
+	home := flags.String("home", "", "private server home; enables protected first-run setup")
+	setupModel := flags.Bool("setup-model", false, "enter authenticated model repair before normal startup; requires --home or --server-root")
+	serverRoot := flags.String("server-root", "", "versioned server installation root; uses current release and platform home by default")
 	roomID := flags.String("room", "design-review", "Room name")
 	dir := flags.String("state-dir", "", "single-room directory (default: <config-dir>/data/design-review)")
 	listen := flags.String("listen", "127.0.0.1:8088", "loopback address")
@@ -53,18 +127,97 @@ func serveWithFactory(args []string, stdout, stderr io.Writer, create func(strin
 	if explicit["config"] && *configFile == "" {
 		return fmt.Errorf("%w: --config requires a file", ErrRequest)
 	}
-	if !explicit["config"] {
+	if explicit["home"] && *home == "" || explicit["server-root"] && *serverRoot == "" {
+		return ErrRequest
+	}
+	if *setupModel && *home == "" && *serverRoot == "" {
+		return fmt.Errorf("--setup-model requires --home or --server-root")
+	}
+	var layout serverLayout
+	if *home != "" || *serverRoot != "" {
+		if explicit["config"] || explicit["room"] || explicit["state-dir"] || explicit["dsh-config"] {
+			return fmt.Errorf("%w: --home/--server-root cannot be combined with --config or single-room flags", ErrRequest)
+		}
+		var err error
+		layout, err = resolveServerLayout(*serverRoot, *home)
+		if err != nil {
+			return err
+		}
+		lock, err := lockBundleHome(layout.Home)
+		if err != nil {
+			return err
+		}
+		defer func() { runErr = errors.Join(runErr, unlockDirectory(lock)) }()
+		if layout.Root != "" {
+			if err := registerServerInstallation(layout); err != nil {
+				return err
+			}
+			if err := initializeBundleRuntime(layout.Release, layout.Home, filepath.Join(layout.Root, "current", "bin", "dsh")); err != nil {
+				return err
+			}
+		}
+		*configFile = filepath.Join(layout.Home, "config.toml")
+	} else if !explicit["config"] {
 		path, err := defaultStartupConfigPath()
 		if err != nil {
 			return err
 		}
 		*configFile = path
 	}
-	startup, err := loadStartupConfig(*configFile, explicit["config"])
+	startup, err := readStartupConfig(*configFile, explicit["config"], layout.Home == "")
 	if err != nil {
 		return err
 	}
+	if layout.Home != "" {
+		if err := prepareFirstAccess(startup); err != nil {
+			return err
+		}
+		startup, err = readStartupConfig(*configFile, false, false)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(stderr, "管理 token 文件：%s\n", adminTokenPath(startup))
+	}
+	if layout.Root != "" {
+		var installation serverInstallation
+		if err := readSnapshot(filepath.Join(layout.Root, "installation.json"), &installation, 16<<10); err != nil {
+			return err
+		}
+		startup.installationID = installation.InstanceID
+	}
+	var migrationErr error
+	if !explicit["room"] && !explicit["state-dir"] {
+		installationID := startup.installationID
+		startup, migrationErr = migrateModelConfiguration(startup, nil)
+		startup.installationID = installationID
+	}
+	if err := pinBundledRuntime(&startup, layout); err != nil {
+		return err
+	}
 	dataDir, teamsDir := startup.Server.DataDir, startup.Server.TeamsDir
+	if layout.Root != "" {
+		resolved, err := resolveFutureDirectory(*dataDir)
+		if err != nil {
+			return err
+		}
+		if pathWithin(layout.Root, resolved) {
+			return fmt.Errorf("server data_dir must be outside the installation root")
+		}
+		*dataDir = resolved
+		// Direct foreground serve gets the same packaged tool discovery as
+		// start, pinned to the selected release rather than its current alias.
+		previous, existed := os.LookupEnv("PATH")
+		if err := os.Setenv("PATH", filepath.Join(layout.Release, "bin")+string(os.PathListSeparator)+filepath.Join(layout.Release, "runtime/node/bin")+string(os.PathListSeparator)+previous); err != nil {
+			return err
+		}
+		defer func() {
+			if existed {
+				_ = os.Setenv("PATH", previous)
+			} else {
+				_ = os.Unsetenv("PATH")
+			}
+		}()
+	}
 	settings := newSystemSettings(startup)
 	if err := applyStartupSettings(flags, explicit, startup); err != nil {
 		return err
@@ -105,21 +258,61 @@ func serveWithFactory(args []string, stdout, stderr io.Writer, create func(strin
 		return err
 	}
 	defer restoreEnv()
-	listener, err := net.Listen("tcp", *listen)
+	listener, err := listenTCP("tcp", *listen)
+	if err != nil {
+		return fmt.Errorf("listen %s: %w", *listen, err)
+	}
+	defer listener.Close()
+	accessFactory := options.access
+	if accessFactory == nil {
+		accessFactory = newServerAccess
+	}
+	access, err := accessFactory(startup, "http://"+listener.Addr().String())
 	if err != nil {
 		return err
 	}
-	defer listener.Close()
+	if migrationErr != nil {
+		return serveModelMigrationBlocked(ctx, listener, startup, access, ready)
+	}
+	if layout.Home != "" && ((*setupModel && !options.setupCompleted) || modelSetupRequired(startup)) {
+		access.setupRequired = true
+		err := serveSetupRequired(ctx, listener, startup, settings, access, ready, stderr, options.probe)
+		if !errors.Is(err, errModelSetupSaved) {
+			return err
+		}
+		// The setup listener and data lock are settled before normal startup.
+		_ = listener.Close()
+		// Re-enter after releasing the home lock through the outer restart loop.
+		return errModelSetupSaved
+	}
+	var models *modelExecution
+	if startup.Models != nil && len(startup.Models.Entries) > 0 {
+		models, err = loadModelExecution(startup)
+		if err != nil {
+			return err
+		}
+		if startup.Runtime == nil {
+			return errors.New("managed model launcher missing")
+		}
+		runtime := *startup.Runtime
+		runtime.ManagedModels = true
+		runtime.Model = dsh.ModelConfig{}
+		startup.Runtime = &runtime
+	}
 	if !singleRoom {
-		return serveRoomManager(listener, *dataDir, *teamsDir, serviceConfig{settings: settings, endpoint: "http://" + listener.Addr().String(), mergeWindow: *mergeWindow, maxTurns: *maxTurns, dshTurnTimeout: *dshTurnTimeout, inboxExpiry: inboxExpiry, imageMaterials: startup.Server.ImageMaterials}, startup.Runtime, create, stdout, stderr)
+		return serveRoomManager(ctx, listener, *dataDir, *teamsDir, serviceConfig{modelStartup: &startup, modelProbe: options.probe, models: models, access: access, settings: settings, endpoint: "http://" + listener.Addr().String(), mergeWindow: *mergeWindow, maxTurns: *maxTurns, dshTurnTimeout: *dshTurnTimeout, inboxExpiry: inboxExpiry, imageMaterials: startup.Server.ImageMaterials}, startup.Runtime, create, ready, stderr)
 	}
 	uiProfiles := profileNames(profiles)
 	cliPath, err := os.Executable()
 	if err != nil {
 		return err
 	}
+	cliPath, err = filepath.EvalSymlinks(cliPath)
+	if err != nil {
+		return err
+	}
 	svc, err := create(*dir, *roomID, serviceConfig{
-		settings: settings,
+		access: access, settings: settings,
 		endpoint: "http://" + listener.Addr().String(), cliPath: cliPath, mergeWindow: *mergeWindow, maxTurns: *maxTurns,
 		dshProfiles: profiles, uiProfiles: uiProfiles, dshTurnTimeout: *dshTurnTimeout, inboxExpiry: inboxExpiry, imageMaterials: startup.Server.ImageMaterials,
 	})
@@ -132,25 +325,23 @@ func serveWithFactory(args []string, stdout, stderr io.Writer, create func(strin
 		defer cancel()
 		runErr = errors.Join(runErr, svc.close(ctx))
 	}()
-	signalCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stopSignals()
-	server := &http.Server{Handler: svc, ReadHeaderTimeout: 3 * time.Second, ReadTimeout: 5 * time.Second,
+	server := &http.Server{Handler: access.wrap(svc), ReadHeaderTimeout: 3 * time.Second, ReadTimeout: 5 * time.Second,
 		WriteTimeout: 15 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10}
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(listener) }()
-	if err := svc.resumeMembers(signalCtx); err != nil {
+	if err := svc.resumeMembers(ctx); err != nil {
 		_ = server.Close()
 		return err
 	}
-	ready := struct {
+	info := struct {
 		ServiceInfo
 		Endpoint string `json:"endpoint"`
 	}{svc.info, "http://" + listener.Addr().String()}
-	if err := writeJSON(stdout, ready); err != nil {
+	if err := ready(info); err != nil {
 		_ = server.Close()
 		return err
 	}
-	fmt.Fprintf(stderr, "Room UI: %s/\n", ready.Endpoint)
+	fmt.Fprintf(stderr, "Room UI: %s/\n", info.Endpoint)
 	fmt.Fprintln(stderr, "new members start paused; saved enable/pause intent survives restart; settled recoverable faults receive one automatic recovery attempt")
 	for _, member := range svc.recovered {
 		if member.notice != "" {
@@ -166,7 +357,7 @@ func serveWithFactory(args []string, stdout, stderr io.Writer, create func(strin
 		roomExit <- err
 	}()
 	select {
-	case <-signalCtx.Done():
+	case <-ctx.Done():
 	case err = <-roomExit:
 		if err == nil {
 			err = fmt.Errorf("Room exited")
@@ -190,7 +381,7 @@ func serveWithFactory(args []string, stdout, stderr io.Writer, create func(strin
 }
 
 // The manager owns all opened services and every admitted lifecycle operation.
-func serveRoomManager(listener net.Listener, dir, teamsDir string, config serviceConfig, defaults *teamRuntime, create func(string, string, serviceConfig) (*service, error), stdout, stderr io.Writer) (runErr error) {
+func serveRoomManager(ctx context.Context, listener net.Listener, dir, teamsDir string, config serviceConfig, defaults *teamRuntime, create func(string, string, serviceConfig) (*service, error), ready func(any) error, stderr io.Writer) (runErr error) {
 	manager, err := newTeamRoomManager(dir, teamsDir, config.maxTurns, defaults)
 	if err != nil {
 		return err
@@ -200,9 +391,19 @@ func serveRoomManager(listener net.Listener, dir, teamsDir string, config servic
 	if err != nil {
 		return err
 	}
+	config.cliPath, err = filepath.EvalSymlinks(config.cliPath)
+	if err != nil {
+		return err
+	}
 	manager.config, manager.factory = config, create
 	if config.settings != nil {
 		manager.settings = config.settings
+	}
+	if config.models != nil && config.modelStartup != nil {
+		manager.modelControl, err = newModelController(ctx, manager, *config.modelStartup, config.modelProbe)
+		if err != nil {
+			return err
+		}
 	}
 	if err := manager.notifications.Start(); err != nil {
 		return err
@@ -210,9 +411,7 @@ func serveRoomManager(listener net.Listener, dir, teamsDir string, config servic
 	manager.mu.Lock()
 	manager.startConnectNotificationsLocked()
 	manager.mu.Unlock()
-	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	server := &http.Server{Handler: manager, ReadHeaderTimeout: 3 * time.Second, ReadTimeout: 5 * time.Second,
+	server := &http.Server{Handler: config.access.wrap(manager), ReadHeaderTimeout: 3 * time.Second, ReadTimeout: 5 * time.Second,
 		WriteTimeout: 15 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10}
 	defer server.Close()
 	done := make(chan error, 1)
@@ -231,24 +430,29 @@ func serveRoomManager(listener net.Listener, dir, teamsDir string, config servic
 	if err := manager.restoreRuntimes(); err != nil {
 		return err
 	}
-	ready := struct {
+	info := struct {
 		ServiceEpoch string `json:"service_epoch"`
 		Endpoint     string `json:"endpoint"`
 		DataDir      string `json:"data_dir"`
 		TeamsDir     string `json:"teams_dir"`
 	}{manager.epoch, "http://" + listener.Addr().String(), filepath.Clean(manager.store.dir), manager.teamsDir}
-	if err := writeJSON(stdout, ready); err != nil {
+	if err := ready(info); err != nil {
 		return err
 	}
-	fmt.Fprintf(stderr, "Room UI: %s/\nRoom catalog: %s/v1/rooms\nData directory: %s\nTeams directory: %s\n", ready.Endpoint, ready.Endpoint, ready.DataDir, ready.TeamsDir)
+	fmt.Fprintf(stderr, "Room UI: %s/\nRoom catalog: %s/v1/rooms\nData directory: %s\nTeams directory: %s\n", info.Endpoint, info.Endpoint, info.DataDir, info.TeamsDir)
 	select {
-	case <-signalCtx.Done():
+	case <-ctx.Done():
 	case err = <-done:
 		if errors.Is(err, http.ErrServerClosed) {
 			err = nil
 		}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
 	defer cancel()
-	return errors.Join(err, manager.shutdown(ctx), server.Shutdown(ctx))
+	cleanupErr := manager.shutdown(shutdownCtx)
+	if shutdownErr := server.Shutdown(shutdownCtx); shutdownErr != nil {
+		_ = server.Close()
+		return errors.Join(err, cleanupErr, fmt.Errorf("HTTP cleanup incomplete: %w", shutdownErr))
+	}
+	return errors.Join(err, cleanupErr)
 }

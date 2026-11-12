@@ -4,16 +4,22 @@
 
 ## 服务配置
 
-项目内运行使用 `teamx serve --config .teamx/config.toml`。不指定 `--config` 时只读取 `~/.teamx/config.toml`，不自动查找当前目录或项目祖先目录。显式指定的文件缺失、或已有配置内容错误时会阻止启动；两份配置不会合并。
+首次运行直接使用 `teamx serve --home .teamx`，会准备缺失的首次管理认证。`--home` 缺少模型或模型无效时，登录后可在浏览器设置并启动；`--config` 保留已配置开发环境的直接启动方式。不指定 `--config` 时只读取 `~/.teamx/config.toml`，不自动查找当前目录或项目祖先目录。显式指定的文件缺失或 TOML 结构错误时会阻止启动；两份配置不会合并。
 
-数据目录与团队目录通过 `server.data_dir`、`server.teams_dir` 设置，默认是配置文件旁的 `data/`、`teams/`。项目配置对应 `.teamx/data/` 和 `.teamx/teams/`，用户配置对应 `~/.teamx/data/` 和 `~/.teamx/teams/`。缺少默认配置时仍保持用户目录范围，可在配置的团队目录中使用自带完整 runtime 的团队。
+数据目录与团队目录通过 `server.data_dir`、`server.teams_dir` 设置，默认是配置文件旁的 `data/`、`teams/`。项目配置对应 `.teamx/data/` 和 `.teamx/teams/`，用户配置对应 `~/.teamx/data/` 和 `~/.teamx/teams/`。已有实例缺少管理凭据时拒绝启动，需在部署机用 `access init` 显式修复。
+
+浏览器使用管理 token 换取 HttpOnly Cookie；会话默认 24 小时，最多 16 个，仅保存在服务内存，退出、到期和 Server 重启后失效。全部私有 API 均要求管理 Bearer、浏览器会话或绑定成员的执行凭据。人工 CLI 使用 `--token-file FILE` 或 `TEAMX_ADMIN_TOKEN_FILE`，不用在命令行中传 token 值。管理 token 文件必须由部署账号拥有、权限为 0600 的普通文件；初始化不覆盖已有文件。替换该文件并正常重启即可轮换，固定 `access.operator_id` 保持不变。
+
+模型和密钥在「设置 → 模型」验证并维护，无需重启。成员按默认／固定条目选择；执行配置变化等待当前回合结束后轮换，暂停意图保留。删除模型可选择替代条目并查看逐成员进度。旧模型配置在业务恢复前一次迁移，私有备份与固定进度保留；导入条目不伪造验证，旧 Session 使用原快照恢复。迁移冲突时只开放认证后的进度查询与重试。
+
+远程访问设置 `server.public_base_url = "https://assistant.example.com"` 和明确的 `server.trusted_proxies` IP 列表，HTTPS 代理保留规范 Host、向 loopback 转发单值 `X-Forwarded-Proto: https`；不支持子路径、别名 origin 或转发 Host。浏览器必须从规范地址访问；内部 Agent 仍使用实际 loopback endpoint。部署、证书和系统服务配置另见[Server 访问记录](../../docs/implementation/server-access.zh.md)。
 
 加载规则：
 
 - 配置文件中的相对目录、DSH 入口和两个工具路径变量，以配置文件所在目录为基准；命令行文件路径以当前工作目录为基准。不展开 `~`、变量或 shell 命令，其他环境变量值按字面量传递。
 - `[env]` 仅补充未设置的服务环境变量；外部已设置的空值也优先。服务不自动加载 `.env`。
 - 监听地址、回合预算、通知合并窗口和 DSH 单回合超时按“显式命令行参数 → 配置文件 → 默认值”取值；数据目录与团队目录只通过配置文件指定。
-- 配置在启动时加载，修改后需重启。新房间保存解析后的 runtime 和角色；已有房间继续使用原快照。
+- 非在线设置在启动时加载，手工修改需重启。模型列表与时区通过设置页保存后立即发布；Session 保存自己的实际执行快照。
 
 示例及字段见 [config.example.toml](../../.teamx/config.example.toml)和[团队配置](../../.teamx/teams/README.md)。仓库提交配置示例和团队模板，忽略真实的 `.teamx/config.toml` 与 `.teamx/data/`；凭据不写入团队 JSON。
 
@@ -31,7 +37,7 @@ cp .teamx/config.example.toml "$HOME/.teamx/config.toml"
 cp -R .teamx/teams "$HOME/.teamx/"
 ```
 
-编辑 `~/.teamx/config.toml` 中的 DSH 路径、模型和密钥。TeamX 可执行程序在 PATH 中时直接运行 `teamx serve`；从源码运行也可使用 `./bin/teamx serve`。
+填写 `~/.teamx/config.toml` 中的 DSH 路径，再运行 `teamx serve --home "$HOME/.teamx"`，在网页登录并配置模型。
 
 ## 多房间服务
 
@@ -43,7 +49,7 @@ teamx serve --config .teamx/config.toml
 teamx serve --config /绝对路径/config.toml
 ```
 
-默认管理入口不接受 `--dsh-config`。左侧「＋」可新建私信，或选择团队及可选名称新建房间；团队默认采用 `config.toml` 的 runtime，也可完整覆盖模型和 DSH 参数，成员声明职责与可选工具环境。创建时保存 runtime、展开后的角色指令及资源副本，仅记录密钥环境变量名称。已有房间恢复不读取团队模板；修改模板后重启服务只影响后续新建。外部产物、凭据、项目依赖和原有恢复证据仍须可用。
+默认管理入口不接受 `--dsh-config`。左侧「＋」可新建私信，或选择团队及可选名称新建房间；团队成员初始化为默认模型，也可用 `model_selection` 固定引用全局条目；成员声明职责与可选工具环境。创建时保存 DSH、选择方式、展开后的角色指令及资源副本，密钥使用私有托管引用。已有房间恢复不读取团队模板；修改模板后重启服务只影响后续新建。外部产物、凭据、项目依赖和原有恢复证据仍须可用。
 
 新房间公共消息为空，成员、Session、工作区、游标和预算独立，开场消息仅填入草稿。已有房间切回不补填或覆盖草稿。受管房间必须保存完整 runtime 和 Workspace 配置；旧运行时和 Workspace 离线迁移命令已移除。
 
@@ -109,6 +115,7 @@ HTTP 的 `/`、`/ui/*` 提供嵌入静态资源，`GET /v1/ui` 在管理模式�
 
 ```sh
 export TEAMX_ENDPOINT=http://127.0.0.1:8088
+export TEAMX_ADMIN_TOKEN_FILE="$PWD/.teamx/auth/admin-token"
 /tmp/teamx member add --agent reviewer --profile reviewer
 /tmp/teamx member add --agent observer --profile observer
 /tmp/teamx send --text '请检查退出顺序' --id task-1
@@ -165,7 +172,7 @@ CLI 自动生成操作 ID 并读取来源目录，也可显式传入 `--operatio
 
 ## CLI 工具与读取语义
 
-适配器向真实 Session 绑定六项环境：`TEAMX_ENDPOINT`、`TEAMX_ROOM_ID`、`TEAMX_ROOM_INSTANCE`、`TEAMX_SERVICE_EPOCH`、`TEAMX_AGENT_ID`、`TEAMX_MEMBERSHIP_ID`；另提供绝对路径 `TEAMX_CLI`。工具不得自行切换身份，也无成员管理权限。受管模式下操作者须指定端点及已打开的 `--room ROOM_ID`（或命令的 ROOM 位置参数），CLI 从目录取得完整实例身份，查询不会隐式打开；这是可信本机协议，不是多用户认证系统。
+适配器向真实 Session 绑定六项环境：`TEAMX_ENDPOINT`、`TEAMX_ROOM_ID`、`TEAMX_ROOM_INSTANCE`、`TEAMX_SERVICE_EPOCH`、`TEAMX_AGENT_ID`、`TEAMX_MEMBERSHIP_ID`；另提供绝对路径 `TEAMX_CLI`。工具不得自行切换身份，也无成员管理权限。受管模式下操作者须指定端点及已打开的 `--room ROOM_ID`（或命令的 ROOM 位置参数），CLI 从目录取得完整实例身份，查询不会隐式打开；认证后的固定 human 与正文／查询身份须一致。Agent 另带随 DSH 会话签发／撤销的临时执行凭据，不能冒充 human；DSH 子工具通过临时 `TEAMX_EXECUTION_AUTH` 传递同一凭据，避免 DSH 对 `TOKEN` 名称的默认过滤。凭据不进入冻结 ToolEnv 或恢复材料。
 
 Agent 用 `read --unread --limit 20 --json` 按序消费，成功交付一页后 CLI 确认游标，再继续下一页。每页最多 100 条消息及 1 MiB 正文。一个成员同时只有一张有效未确认页，30 秒过期；并发消费返回 busy，历史预览不受影响。stdout 失败、确认失败或结果不确定不会越过未交付页；已提交游标不回退。重启使旧收据失效。
 

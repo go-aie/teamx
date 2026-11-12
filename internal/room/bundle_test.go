@@ -22,7 +22,11 @@ func bundleTestRoot(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(dir, "role.md"), []byte("original role"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	return root
+	real, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return real
 }
 
 func TestBundleInitPreservesUserFilesAndSerializesPaths(t *testing.T) {
@@ -54,8 +58,8 @@ func TestBundleInitPreservesUserFilesAndSerializesPaths(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		if err := runBundle("init", args, &output, &output); err != nil {
-			t.Fatal(err)
+		if err := runBundle("init", args, &output, &output); err == nil {
+			t.Fatal("invalid user config must be reported without replacement")
 		}
 		for _, p := range []string{path, template} {
 			b, _ := os.ReadFile(p)
@@ -106,7 +110,7 @@ func TestBundleDoctorListsExactMissingFieldsWithoutSecrets(t *testing.T) {
 	if err := bundleDoctor(root, filepath.Join(home, "config.toml"), &output); err == nil {
 		t.Fatal("unconfigured model was accepted")
 	}
-	for _, field := range []string{"runtime.model.base_url", "runtime.model.model_id", "node", "dsh", "git", "scion"} {
+	for _, field := range []string{"网页完成验证", "node", "dsh", "git", "scion"} {
 		if !strings.Contains(output.String(), field) {
 			t.Fatalf("missing %s", field)
 		}
@@ -221,4 +225,19 @@ func TestBundleHomeLockAllowsDataInHome(t *testing.T) {
 		t.Fatal("home lock conflicts with valid data_dir home", err)
 	}
 	defer unlockDirectory(data)
+}
+
+func unsetBundleCredential(t *testing.T, name string) {
+	t.Helper()
+	old, exists := os.LookupEnv(name)
+	if err := os.Unsetenv(name); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if exists {
+			_ = os.Setenv(name, old)
+		} else {
+			_ = os.Unsetenv(name)
+		}
+	})
 }

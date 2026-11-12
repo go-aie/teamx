@@ -8,16 +8,16 @@
 
 用户先完整安装经验证版本的 DSH，再将其可执行程序路径填入 TeamX；DSH 的 Node、依赖包、profile 模板和运行时资源须完整保留，无需安装 DSH 源码仓库。还需模型网络和凭据，以及受支持的进程观察能力。当前进程治理支持 macOS/Linux。组件不安装或升级 DSH，调用方负责选择并验证实际安装版本。
 
-在服务配置（默认 `~/.teamx/config.toml`，项目内使用 `.teamx/config.toml`）中配置默认 runtime，格式见[示例](../.teamx/config.example.toml)；团队也可在 [team.json](../.teamx/teams/README.md) 中提供完整覆盖：
+在服务配置（默认 `~/.teamx/config.toml`，项目内使用 `.teamx/config.toml`）中配置 DSH 安装，格式见[示例](../.teamx/config.example.toml)。模型在「设置 → 模型」维护，团队成员仅保存默认／固定选择，见[团队配置](../.teamx/teams/README.md)：
 
 | 字段 | 含义 |
 | --- | --- |
 | `runtime.dsh.binary_path` | 已安装的 `dsh` 可执行程序绝对路径，可用 `command -v dsh` 查找 |
 | `runtime.dsh.binary_args` | 可选；普通 DSH 安装省略。开发时用 Node 启动才需要填写 CLI JS 的绝对路径 |
 | `runtime.dsh.artifact` | 可省略；高级用法可标注构建来源和版本，显式提供时两个字段均须填写 |
-| `runtime.model` | 协议、模型、地址和密钥环境变量名 |
+| `models` | 网页验证后保存的集中列表和默认引用；不包含密钥值 |
 
-组件追加 ACP profile 参数，启动不经过 shell，不展开 `~`、变量或命令。工作目录需存在；配置中的路径须指向本机安装。服务环境优先，`config.toml` 的 `[env]` 补充未设置变量；不自动加载 `.env`，团队及房间 JSON 只保存密钥环境变量名。
+组件追加 ACP profile 参数，启动不经过 shell，不展开 `~`、变量或命令。工作目录需存在；配置中的路径须指向本机安装。非模型服务环境仍由 `config.toml` 的 `[env]` 补充未设置变量，不自动加载 `.env`。模型密钥存入私有托管目录，按 Session 绑定注入，无需用户填写变量名或 export。旧自定义变量仅由一次迁移与旧 Session 恢复解释。
 
 本地基于源码构建也可以模拟用户安装，但构建后还需将完整运行时部署到独立目录。仅指向仓库内的 `lib/bin.js`、使用 `pnpm link`，或复制一个 JS 文件，都不能验证脱离仓库运行。联网环境可在 DSH 仓库构建后部署 CLI：
 
@@ -39,20 +39,13 @@ pnpm --filter @deepseek-ai/dsh deploy --legacy --prod \
 }
 ```
 
-省略 `artifact` 时，TeamX 用相同启动入口执行 `--version` 自动读取安装版本，并从 ACP `initialize.agentInfo` 读取运行时身份。当前 DSH 的 ACP 版本属于适配层，与 CLI 安装版本不同，因此两者分别核对。这些信息与可执行文件摘要、启动参数及配置一起记录在私有 Session 的 `backend.json`。恢复时先核对本地配置和正常关闭证据，再于发送 `session/resume` 前核对安装版本及 ACP 运行时身份；不匹配即停止，不自动新建或重放。显式 `artifact` 标注仍可用于固定构建，由调用方保证实际产物匹配，TeamX 继续核对标注、可执行文件摘要及 ACP 身份。已有房间保留原 runtime 快照，编辑模板后重启服务并新建房间生效。
+省略 `artifact` 时，TeamX 用相同启动入口执行 `--version` 自动读取安装版本，并从 ACP `initialize.agentInfo` 读取运行时身份。当前 DSH 的 ACP 版本属于适配层，与 CLI 安装版本不同，因此两者分别核对。这些信息与可执行文件摘要、启动参数及配置一起记录在私有 Session 的 `backend.json`。恢复时先核对本地配置和正常关闭证据，再于发送 `session/resume` 前核对安装版本及 ACP 运行时身份；不匹配即停止，不自动新建或重放。显式 `artifact` 标注仍可用于固定构建，由调用方保证实际产物匹配，TeamX 继续核对标注、可执行文件摘要及 ACP 身份。DSH 安装和角色继续沿用既有归属；模型通过集中列表在线应用，当前执行结束后才切换 Backend，Session 保留自己的实际快照。
 
 `deepseek-messages` 使用 DSH 的 DeepSeek Messages 适配；`openai-completions` 需要模型基础地址。模型选择核对 ACP 实际提供的配置及回执，不静默换模型。API 和字段定义见 [options.go](../internal/agent/dsh/options.go)，用户配置统一参照[团队模板](../.teamx/teams/README.md)。
 
-兼容网关拒绝 `developer` 消息角色时，可显式设置当前模型的兼容开关：
+兼容网关拒绝 `developer` 消息角色时，在模型表单的「高级设置 → 接口兼容性」选择「不支持 developer（使用 system）」。三态分别为适配器默认、显式 false、显式 true，仅适用于 `openai-completions`。它独立于推理强度，不关闭推理，也不清除 DeepSeek 的 `thinkingFormat`。验证使用所选值，通过后相关成员在当前回合结束后切换；不直接修改旧 Session 的配置或指纹。
 
-```toml
-[runtime.model.compat]
-supports_developer_role = false
-```
-
-该开关仅支持 `openai-completions`，写入 DSH 精确模型的 `compat.supportsDeveloperRole`，让系统提示保持 `system` 角色，独立于 `reasoning_effort`；不关闭推理，也不按 Qwen 名称写死。省略保留原有适配器行为；显式 `true`／`false` 优先于现有 DeepSeek 默认兼容值，同时保留其 `thinkingFormat`。JSON 团队／profile 配置使用 `model.compat.supports_developer_role`。配置随全局默认、团队及 Room 快照独立复制，未设置时不改变旧恢复指纹；新增或更改该值要求新配置下的 Session，不修改旧恢复证据。全局配置仍需重启服务并新建 Room，已有房间的冻结 runtime 不随全局设置改变。
-
-`runtime.model.input_modalities` 可选，缺省保持文本流程。显式值只接受不重复的 `text`、`image`，且须包含 `text`；图片仅支持 `openai-completions`。例如已确认部署支持图片的模型可设 `input_modalities = ["text", "image"]`。该字段沿全局默认、团队完整覆盖和 Room 冻结快照传递，生成配置仅在精确模型条目声明 `input`，不扩大整个网关的能力。TeamX 在 ACP `initialize` 前写入模型配置；显式启用图片而握手未返回 `promptCapabilities.image = true` 时，建会话失败，不降级为文本。未设置该字段的原有配置与恢复指纹不变；改变模型或模态仍须使用受控 Session 生命周期，不修改旧恢复证据强行续接。
+模型条目的 `input_modalities` 可选，缺省保持文本流程。显式值只接受不重复的 `text`、`image`，且须包含 `text`；图片仅支持 `openai-completions`。例如已确认部署支持图片的模型可设 `input_modalities = ["text", "image"]`。该字段由成员的默认／固定引用解析到各自的 Session 运行快照，生成配置仅在精确模型条目声明 `input`，不扩大整个网关的能力。TeamX 在 ACP `initialize` 前写入模型配置；显式启用图片而握手未返回 `promptCapabilities.image = true` 时，建会话失败，不降级为文本。未设置该字段的原有配置与恢复指纹不变；改变模型或模态仍须使用受控 Session 生命周期，不修改旧恢复证据强行续接。
 
 图片能力已完成 I1–I3：Room／Inbox 的 GitLab 通知会在固定当前回合范围内只读准备已保存文字和图片，按来源成组提交。默认合计扫描 25 条记录、传 4 张图片，单图 2 MiB、累计 4 MiB、单图 16777216 像素、准备时间 30 秒；可通过服务级 `[server.image_materials]` 调整，见[配置示例](../.teamx/config.example.toml)。只识别已保存文字中的完整图片引用，不补读全文；纯文本 Session 不下载图片，预算、格式、权限或超时导致的未覆盖材料会明确告知模型。准备材料不推进 Room 已读、Inbox 消费或 matters 状态，也不授予操作权限。TeamX 只在有界内存中准备图片，DSH 会通过其既有附件机制持久保存到私有 Session 存储；不能将此理解为图片全程不落盘。真实 GitLab 的 Room／Inbox 读图已在 I4 得到验证；独立短码、恢复、浏览器等结果分别记录，不能据此声称一期全部验收通过，见[图片验收手册](gitlab-image-acceptance.zh.md)和[当前实施记录](GITLAB-IMAGE-UNDERSTANDING-PLAN.zh.md#84-i4-实施与验证记录2026-11-05)。
 

@@ -60,11 +60,15 @@ type gitlabSetupView struct {
 }
 
 func (m *roomManager) gitlabRedirectLocked() (string, error) {
-	u, err := url.Parse(m.config.endpoint)
+	endpoint := m.config.endpoint
+	if m.config.access != nil {
+		endpoint = m.config.access.public
+	}
+	u, err := url.Parse(endpoint)
 	if err != nil || u.User != nil || u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.Opaque != "" {
 		return "", ErrRequest
 	}
-	value := m.config.endpoint + gitlabCallbackPath
+	value := endpoint + gitlabCallbackPath
 	if !registry.ValidOAuthRedirect(value) {
 		return "", ErrRequest
 	}

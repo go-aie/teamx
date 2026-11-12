@@ -97,23 +97,26 @@ type roomCreateRequest struct {
 // Freeze member roles and runtime configuration. Inherited credentials stay outside room data.
 type managedMember struct {
 	MemberState
-	Name         string            `json:"name"`
-	Instructions string            `json:"instructions"`
-	ToolEnv      map[string]string `json:"tool_env,omitempty"`
-	Workspace    string            `json:"workspace"` // relative to this Room
+	ModelSelection        *modelSelection   `json:"model_selection,omitempty"`
+	ModelSelectionVersion uint64            `json:"model_selection_version,omitempty"`
+	Name                  string            `json:"name"`
+	Instructions          string            `json:"instructions"`
+	ToolEnv               map[string]string `json:"tool_env,omitempty"`
+	Workspace             string            `json:"workspace"` // relative to this Room
 }
 
 const managedConfigVersion = 2
 
 type managedRoomConfig struct {
-	PlatformToolsVersion int              `json:"platform_tools_version,omitempty"`
-	Workspace            *workspaceConfig `json:"workspace"`
-	WorkspaceVersion     uint64           `json:"workspace_version"`
-	TeamID               string           `json:"team_id,omitempty"`
-	AgentRoleID          string           `json:"agent_role_id,omitempty"`
-	IsDirect             bool             `json:"is_direct"`
-	Runtime              *teamRuntime     `json:"runtime"`
-	Version              int              `json:"version"`
+	ModelMigrationRuntimeDigest string           `json:"model_migration_runtime_digest,omitempty"`
+	PlatformToolsVersion        int              `json:"platform_tools_version,omitempty"`
+	Workspace                   *workspaceConfig `json:"workspace"`
+	WorkspaceVersion            uint64           `json:"workspace_version"`
+	TeamID                      string           `json:"team_id,omitempty"`
+	AgentRoleID                 string           `json:"agent_role_id,omitempty"`
+	IsDirect                    bool             `json:"is_direct"`
+	Runtime                     *teamRuntime     `json:"runtime"`
+	Version                     int              `json:"version"`
 	RoomIdentity
 	Name            string          `json:"name"`
 	OpeningMessage  string          `json:"opening_message"`
@@ -152,6 +155,7 @@ type roomsIndex struct {
 // The root lock owns the catalog and its live services. Durable
 // operations retain an owner independently of an HTTP caller.
 type roomManager struct {
+	modelControl             *modelController
 	onboardingRunning        map[string]bool
 	settings                 *systemSettings
 	toolCatalog              []tool.Definition
@@ -296,6 +300,9 @@ func newRoomManager(dir string, maxTurns uint64) (_ *roomManager, err error) {
 func (m *roomManager) indexPath() string        { return filepath.Join(m.store.dir, "rooms.json") }
 func (m *roomManager) roomDir(id string) string { return filepath.Join(m.store.dir, "rooms", id) }
 func (m *roomManager) close() error {
+	if m.modelControl != nil {
+		m.modelControl.stop()
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
 	defer cancel()
 	return m.shutdown(ctx)
@@ -395,11 +402,22 @@ func validateInitialization(e roomIndexEntry, init roomInitialization) error {
 	}
 	snapshot := RoomSnapshot{Version: formatVersion, RoomIdentity: c.RoomIdentity, IsDirect: c.IsDirect, Messages: []RoomMessage{}, Members: []MemberState{}}
 	for _, member := range c.Members {
+		if member.ModelSelection != nil {
+			if member.ModelSelectionVersion == 0 || member.ModelSelection.validate() != nil {
+				return ErrInvalid
+			}
+		} else if member.ModelSelectionVersion != 0 {
+			return ErrInvalid
+		}
 		if !validText(member.Name) || !validText(member.Instructions) || member.ReadThrough != 0 ||
 			member.Runner != managedRunner(c, member.AgentID) || c.IsDirect && member.AgentID != c.AgentRoleID {
 			return ErrInvalid
 		}
-		if err := dsh.CheckToolEnv(member.ToolEnv, c.Runtime.Model.APIKeyEnv); err != nil {
+		keyEnv := c.Runtime.Model.APIKeyEnv
+		if c.Runtime.ManagedModels {
+			keyEnv = "OPENAI_API_KEY"
+		}
+		if err := dsh.CheckToolEnv(member.ToolEnv, keyEnv); err != nil {
 			return err
 		}
 		for key := range member.ToolEnv {
@@ -608,6 +626,15 @@ func writeRoomResource(path string, data []byte, mode os.FileMode) error {
 }
 
 func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/v1/setup/model" && r.Method == "POST" {
+		m.serveCompletedModelSetup(w, r)
+		return
+	}
+	if r.URL.Path == "/v1/setup" && r.Method == "GET" {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"setup_required":false}`)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	if r.URL.Path == gitlabCallbackPath || r.URL.Path == gitlabCompletePath {
@@ -621,10 +648,11 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/v1/ui" && r.Method == http.MethodGet {
 		// Bootstrap remains available with an empty catalog and during switching.
 		_ = json.NewEncoder(w).Encode(struct {
-			Managed      bool   `json:"managed"`
-			ServiceEpoch string `json:"service_epoch"`
+			Managed        bool   `json:"managed"`
+			InstallationID string `json:"installation_id,omitempty"`
+			ServiceEpoch   string `json:"service_epoch"`
 			settingsView
-		}{true, m.epoch, m.settings.snapshot().settingsView})
+		}{true, requestInstallationID(r), m.epoch, m.settings.snapshot().settingsView})
 		return
 	}
 	if r.URL.Path == "/v1/settings" || r.URL.Path == "/v1/settings/save" {
@@ -635,6 +663,10 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		serveSystemSettings(w, r, m.settings, ServiceInfo{ServiceEpoch: m.epoch})
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/v1/models") {
+		m.serveModels(w, r)
 		return
 	}
 	if strings.HasPrefix(r.URL.Path, "/v1/actions/") {
@@ -758,7 +790,7 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			rooms = append(rooms, summary)
 		}
 		response := roomsResponse{settingsView: m.settings.snapshot().settingsView, ServiceEpoch: m.epoch, Rooms: rooms,
-			Operator: humanOperator(), Busy: m.busy, Teams: m.teamSummaries(), AgentRoles: builtinAgentRoleSummaries(), DefaultAssistant: m.index.DefaultAssistant}
+			Operator: requestOperator(r), Busy: m.busy, Teams: m.teamSummaries(), AgentRoles: builtinAgentRoleSummaries(), DefaultAssistant: m.index.DefaultAssistant}
 		if m.store.uncertain {
 			response.WriteError = ErrCommitUnknown.Error()
 		}

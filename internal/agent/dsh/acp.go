@@ -66,6 +66,21 @@ func (e *rpcError) Unwrap() error {
 			return &HTTPStatusError{StatusCode: status}
 		}
 	}
+	for _, group := range []struct {
+		tokens []string
+		err    error
+	}{
+		{[]string{"enotfound", "eai_again", "getaddrinfo"}, ErrDNS},
+		{[]string{"cert_has_expired", "unable_to_verify_leaf_signature", "self_signed_cert_in_chain", "err_tls_cert_altname_invalid", "unable_to_get_issuer_cert_locally"}, ErrTLS},
+		{[]string{"etimedout", "und_err_connect_timeout", "und_err_headers_timeout"}, ErrUpstreamTimeout},
+		{[]string{"econnrefused", "econnreset", "enetunreach", "ehostunreach", "und_err_socket"}, ErrConnection},
+	} {
+		for _, token := range group.tokens {
+			if strings.Contains(detail, token) {
+				return group.err
+			}
+		}
+	}
 	return nil
 }
 

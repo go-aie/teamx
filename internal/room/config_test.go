@@ -81,12 +81,6 @@ func TestStartupConfigExampleAndPaths(t *testing.T) {
 	text := strings.Replace(string(data), "/absolute/path/to/dsh", "./runtime/dsh", 1)
 	text = strings.Replace(text, "# binary_args =", "binary_args =", 1)
 	text = strings.Replace(text, "/absolute/path/to/dsh/lib/bin.js", "./runtime/cli.mjs", 1)
-	text = strings.ReplaceAll(text, "# reasoning_effort", "reasoning_effort")
-	text = strings.ReplaceAll(text, "# context_window", "context_window")
-	text = strings.ReplaceAll(text, "# max_tokens", "max_tokens")
-	text = strings.ReplaceAll(text, "# input_modalities", "input_modalities")
-	text = strings.ReplaceAll(text, "# [runtime.model.compat]", "[runtime.model.compat]")
-	text = strings.ReplaceAll(text, "# supports_developer_role", "supports_developer_role")
 	text += "\nTEAMX_GLAB_BIN = './bin/glab'\nTEAMX_GITLAB_BIN = './bin/teamx-gitlab'\n"
 	c, err := loadStartupConfig(writeStartupConfig(t, dir, text), true)
 	if err != nil {
@@ -95,9 +89,7 @@ func TestStartupConfigExampleAndPaths(t *testing.T) {
 	if *c.Server.DataDir != filepath.Join(dir, "data") || *c.Server.TeamsDir != filepath.Join(dir, "teams") ||
 		c.Runtime.DSH.BinaryPath != filepath.Join(dir, "runtime/dsh") || c.Runtime.DSH.BinaryArgs[0] != filepath.Join(dir, "runtime/cli.mjs") ||
 		c.Env["TEAMX_GLAB_BIN"] != filepath.Join(dir, "bin/glab") || c.Env["TEAMX_GITLAB_BIN"] != filepath.Join(dir, "bin/teamx-gitlab") ||
-		c.Runtime.Model.APIKeyEnv != "OPENAI_API_KEY" || c.Runtime.Model.ContextWindow != 1048576 || c.Runtime.Model.MaxTokens != 32768 || c.Runtime.Model.ReasoningEffort != "low" ||
-		!reflect.DeepEqual(c.Runtime.Model.InputModalities, []string{"text", "image"}) ||
-		c.Runtime.Model.Compat.SupportsDeveloperRole == nil || *c.Runtime.Model.Compat.SupportsDeveloperRole {
+		c.Models == nil || c.Models.SchemaVersion != 1 || len(c.Models.Entries) != 0 || c.Models.Default != "" || c.Runtime.Model.ModelID != "" || c.Runtime.Model.APIKeyEnv != "" {
 		t.Fatal("startup values or config-relative paths lost")
 	}
 	if _, err := loadStartupConfig(filepath.Join(dir, "absent.toml"), false); err != nil {

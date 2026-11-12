@@ -14,6 +14,11 @@ import (
 )
 
 type serviceConfig struct {
+	modelStartup         *startupConfig
+	modelProbe           func(context.Context, dsh.Options) (dsh.ProbeResult, error)
+	models               *modelExecution
+	modelTargets         map[string]modelSessionSnapshot
+	access               *serverAccess
 	settings             *systemSettings
 	imageMaterials       imageMaterialConfig
 	inboxExpiry          notification.ExpiryPolicy
@@ -129,7 +134,14 @@ func (s *service) loadMembers(state RoomSnapshot) error {
 
 func (s *service) newMember(id MemberIdentity, runner RunnerConfig, restored *AgentSnapshot) actorx.Actor {
 	opts := SessionOptions{MemberIdentity: id, StatePath: filepath.Join(s.store.dir, "agents", id.MembershipID, "session.json"), CLIPath: s.cliPath, CLIEnv: s.toolEnv(id)}
-	backend := dshBackend{store: s.store, settings: s.settings, profile: s.dshProfiles[runner.Profile], turnTimeout: s.dshTurnTimeout, prepare: s.prepareDSHMaterials, recoveryContext: s.prepareDSHRecoveryContext}
+	backend := dshBackend{access: s.access, store: s.store, settings: s.settings, profile: s.dshProfiles[runner.Profile], turnTimeout: s.dshTurnTimeout, prepare: s.prepareDSHMaterials, recoveryContext: s.prepareDSHRecoveryContext}
+	if s.models != nil {
+		backend.models = s.models
+		backend.credentials = s.models.Credentials
+		if target, ok := s.modelTargets[runner.Profile]; ok {
+			backend.model = &target
+		}
+	}
 	blocked := ""
 	recovery := false
 	var used, limit uint64
@@ -142,7 +154,11 @@ func (s *service) newMember(id MemberIdentity, runner RunnerConfig, restored *Ag
 			backend.recover = recovered.backendResume
 		}
 	}
-	return &MemberAgent{Options: opts, Store: s.store, Room: s.room, Restored: restored,
+	gate := ""
+	if s.models != nil {
+		gate = s.models.gate(id)
+	}
+	return &MemberAgent{ModelGate: gate, Options: opts, Store: s.store, Room: s.room, Restored: restored,
 		Inbox:   func(ctx context.Context) (InboxStatus, error) { return s.memberInboxStatus(ctx, id) },
 		Backend: backend, MergeWindow: s.mergeWindow, MaxTurns: s.maxTurns, SessionMaxTurns: s.maxTurns, RequestRotation: s.requestMemberRotation, RequestRecovery: s.requestMemberRecovery, RecoveryPending: recovery, BackendBlocked: blocked, PersistentScheduling: true, RestoredTurnsUsed: used, RestoredTurnLimit: limit, ExecutionFrozen: s.grantsFrozen}
 }
@@ -176,6 +192,9 @@ func (s *service) resumeMembers(ctx context.Context) error {
 		return nil
 	}
 	for _, member := range s.recovered {
+		if s.models != nil && s.models.gate(member.id) != "" {
+			continue
+		}
 		if member.recovery {
 			if _, err := s.control(ctx, apiRequest{AgentID: member.id.AgentID, MembershipID: member.id.MembershipID, automatic: true}, "recover"); err != nil {
 				return fmt.Errorf("recover %s: %w", member.id.AgentID, err)

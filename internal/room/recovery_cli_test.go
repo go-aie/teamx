@@ -6,24 +6,34 @@ import (
 	"encoding/json"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 )
 
 type recoveryCLI struct {
 	ServiceInfo
-	Endpoint string `json:"endpoint"`
-	cmd      *exec.Cmd
-	logs     bytes.Buffer
-	waited   bool
-	binary   string
-	ctx      context.Context
+	Endpoint  string `json:"endpoint"`
+	cmd       *exec.Cmd
+	logs      bytes.Buffer
+	waited    bool
+	binary    string
+	ctx       context.Context
+	tokenFile string
 }
 
 func startRecoveryCLI(t *testing.T, ctx context.Context, binary, dir string, options ...string) *recoveryCLI {
+	return startRecoveryProcess(t, ctx, binary, dir, false, options...)
+}
+func startRecoveryProcess(t *testing.T, ctx context.Context, binary, dir string, authenticated bool, options ...string) *recoveryCLI {
 	t.Helper()
 	p := &recoveryCLI{binary: binary, ctx: ctx}
-	p.cmd = exec.CommandContext(ctx, binary, append([]string{"serve", "--config", writeStartupConfig(t, t.TempDir(), ""), "--listen", "127.0.0.1:0", "--state-dir", dir, "--merge-window", "0s"}, options...)...)
+	configPath := writeStartupConfig(t, t.TempDir(), "")
+	if authenticated {
+		testAccessConfig(t, filepath.Dir(configPath))
+		p.tokenFile = filepath.Join(filepath.Dir(configPath), "auth", "admin-token")
+	}
+	p.cmd = exec.CommandContext(ctx, binary, append([]string{"serve", "--config", configPath, "--listen", "127.0.0.1:0", "--state-dir", dir, "--merge-window", "0s"}, options...)...)
 	p.cmd.Env = cleanRoomEnv()
 	pipe, err := p.cmd.StdoutPipe()
 	if err != nil {
@@ -61,6 +71,9 @@ func (p *recoveryCLI) run(t *testing.T, args ...string) []byte {
 	t.Helper()
 	cmd := exec.CommandContext(p.ctx, p.binary, args...)
 	cmd.Env = append(cleanRoomEnv(), "TEAMX_ENDPOINT="+p.Endpoint)
+	if p.tokenFile != "" {
+		cmd.Env = append(cmd.Env, "TEAMX_ADMIN_TOKEN_FILE="+p.tokenFile)
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {

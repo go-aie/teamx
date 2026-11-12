@@ -1,3 +1,4 @@
+import { createModels } from "./models.mjs";
 import { createSystemTime, createTimeInput } from "../time.mjs";
 
 // Service time zone, settings navigation and dialog lifecycle.
@@ -5,6 +6,8 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
   const { document, window, request } = env;
   const { state, $, notice, dismissOnBackdrop } = runtime;
 
+  const models = createModels({env, runtime, openSettings:() => openSettings("models")});
+  const settingsTabs = ["general", "models", "platforms"];
   const systemTime = createSystemTime();
 
   const timeInputs = new Map(["lark-backfill-start", "gitlab-backfill-start", "onboarding-backfill-start", "policy-expires"].map(id => [id, createTimeInput(systemTime)]));
@@ -97,10 +100,12 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
   function renderSettingsNavigation() {
     if (!state.managed) settingsTab = "general";
     $("general-settings").hidden = settingsTab !== "general";
+    $("model-settings").hidden = settingsTab !== "models";
     $("platform-settings").hidden = settingsTab !== "platforms";
+    $("settings-tab-models").hidden = !state.managed;
     $("settings-tab-platforms").hidden = !state.managed;
     $("settings-navigation").setAttribute("aria-orientation", window.innerWidth <= 640 ? "horizontal" : "vertical");
-    for (const tab of ["general", "platforms"]) {
+    for (const tab of settingsTabs) {
       const button = $(`settings-tab-${tab}`), selected = settingsTab === tab;
       button.setAttribute("aria-selected", String(selected)); button.setAttribute("tabindex", selected ? "0" : "-1");
       button.disabled = settingsNavigationBusy();
@@ -108,8 +113,10 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
   }
 
   function selectSettingsTab(tab) {
-    if (settingsNavigationBusy() || tab === "platforms" && !state.managed) return;
-    settingsTab = tab; timezonePicker.open = false; renderTimeZoneOptions(); renderSettingsNavigation();
+    if (settingsNavigationBusy() || tab !== "general" && !state.managed) return;
+    models.clearKey(); settingsTab = tab; timezonePicker.open = false; renderTimeZoneOptions(); renderSettingsNavigation();
+    $("settings-panels").scrollTop = 0;
+    if (tab === "models") void models.load();
   }
 
   function applyTimeZone(data) {
@@ -135,7 +142,7 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
     notificationsUI.invalidateNavigation();
     if (state.managed ? !state.catalog : !state.info) return;
     connectionsUI.showPlatformList(); settingsTab = state.managed ? tab : "general";
-    timezonePicker.open = false; renderTimeZone(); $("settings-dialog").showModal(); if(state.managed) {await connectionsUI.loadPlatforms();await onboardingUI.restoreOnboarding();}
+    timezonePicker.open = false; renderTimeZone(); $("settings-dialog").showModal(); void models.load(); if(state.managed) {await connectionsUI.loadPlatforms();await onboardingUI.restoreOnboarding();}
   }
 
   async function closeSettings() {
@@ -146,6 +153,7 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
   function showPlatforms() { settingsTab = "platforms"; renderSettingsNavigation(); }
 
   function mount() {
+    models.mount();
     try { browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch { /* Detection is optional. */ }
 
     for (const [id, input] of timeInputs) {
@@ -154,12 +162,14 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
       $(id).addEventListener("change", edit);
     }
 
-    for (const tab of ["general", "platforms"]) {
+    for (const tab of settingsTabs) {
       $(`settings-tab-${tab}`).addEventListener("click", () => selectSettingsTab(tab));
       $(`settings-tab-${tab}`).addEventListener("keydown", event => {
         if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) || settingsNavigationBusy()) return;
         event.preventDefault();
-        const next = event.key === "Home" || !state.managed ? "general" : event.key === "End" ? "platforms" : tab === "general" ? "platforms" : "general";
+        const tabs = state.managed ? settingsTabs : ["general"];
+        const direction = ["ArrowUp", "ArrowLeft"].includes(event.key) ? -1 : 1;
+        const next = event.key === "Home" ? tabs[0] : event.key === "End" ? tabs.at(-1) : tabs[(tabs.indexOf(tab) + direction + tabs.length) % tabs.length];
         selectSettingsTab(next); $(`settings-tab-${next}`).focus();
       });
     }
@@ -234,7 +244,7 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
       } else if (connectionsUI.platforms.sending) event.preventDefault();
     });
 
-    $("settings-dialog").addEventListener("close", () => { timezonePicker.open = false; renderTimeZoneOptions(); void connectionsUI.cancelPlatformAuth(); $("gitlab-client-secret").value = ""; connectionsUI.platforms.formVersion++; connectionsUI.platforms.generation++;
+    $("settings-dialog").addEventListener("close", () => { models.clearKey(); timezonePicker.open = false; renderTimeZoneOptions(); void connectionsUI.cancelPlatformAuth(); $("gitlab-client-secret").value = ""; connectionsUI.platforms.formVersion++; connectionsUI.platforms.generation++;
       if ($("notification-detail").open) { $(workspaceUI.workspaceView?.notificationChannel === "messages" ? "lark-manage-platforms" : "gitlab-manage-platforms").focus(); void workspaceUI.loadWorkspacePlatforms(); }
       else if($("activity-dialog").open){$("member-notification-add-toggle").focus({preventScroll:true});void workspaceUI.loadWorkspacePlatforms();if(membersUI.memberToolsView && membersUI.toolsCurrent(membersUI.memberToolsView))void membersUI.loadCLITools(membersUI.memberToolsView);}
       else $(state.managed ? "open-settings" : "open-general-settings").focus(); });
@@ -242,6 +252,7 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
 
   return {
     mount,
+    openMemberModel: models.openMember,
     showPlatforms,
     systemTime,
     readTimeInput,

@@ -90,6 +90,10 @@ func oauthRandom() (string, error) {
 }
 func gitlabCookieName(id string) string { return "teamx_gitlab_" + id }
 func (m *roomManager) canonicalGitLabRequestLocked(r *http.Request) bool {
+	if m.config.access != nil {
+		origin, ok := m.config.access.requestOrigin(r)
+		return ok && origin == m.config.access.public
+	}
 	redirect, err := m.gitlabRedirectLocked()
 	if err != nil {
 		return false

@@ -29,6 +29,10 @@ var (
 	ErrModelNotFound       = errors.New("configured model not found (HTTP 404, model_not_found); check model ID and endpoint")
 	ErrModelUnavailable    = errors.New("configured model unavailable (HTTP 503, model_unavailable); no upstream endpoint available; check model availability or retry later")
 	ErrAuthentication      = errors.New("model service authentication failed (HTTP 401); check API key and endpoint")
+	ErrDNS                 = errors.New("model service DNS lookup failed")
+	ErrConnection          = errors.New("model service connection failed")
+	ErrTLS                 = errors.New("model service TLS verification failed")
+	ErrUpstreamTimeout     = errors.New("model service request timed out")
 )
 
 // HTTPStatusError retains an upstream HTTP failure when no known provider
@@ -69,13 +73,31 @@ type Options struct {
 	StateDir     string
 	Instructions string
 	Model        ModelConfig
-	ToolEnv      map[string]string
-	Permission   PermissionHandler
-	Limits       Limits
+	// Credential is an immutable per-process binding. Nil retains the legacy
+	// environment path; an explicitly empty binding never falls back to it.
+	Credential *Credential `json:"-"`
+	ToolEnv    map[string]string
+	// ExecutionToken is ephemeral and never materialized or included in recovery identity.
+	ExecutionToken string `json:"-"`
+	Permission     PermissionHandler
+	Limits         Limits
 	// Tests can supply an observer for their own explicitly created PIDs when
 	// the host sandbox prohibits process-table access. Never exported as a
 	// production option: real sessions must pass the platform observer gate.
 	inspect func() (map[int]processIdentity, error)
+	probe   *probeOptions
+}
+
+type Credential struct {
+	Ref   string `json:"-"`
+	Value string `json:"-"`
+}
+
+func (o Options) credential() string {
+	if o.Credential != nil {
+		return o.Credential.Value
+	}
+	return os.Getenv(o.Model.APIKeyEnv)
 }
 
 type ModelConfig struct {
@@ -283,7 +305,7 @@ func (e *StopError) Error() string { return "DSH stopped: " + e.Reason }
 var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 func managedEnv(name, key string) bool {
-	return name == key || strings.HasPrefix(name, "DSH_") || name == "DEEPSEEK_API_KEY" || name == "DEEPSEEK_BASE_URL"
+	return privateAccessEnv(name) || name == key || strings.HasPrefix(name, "DSH_") || name == "DEEPSEEK_API_KEY" || name == "DEEPSEEK_BASE_URL"
 }
 
 // CheckConfig validates a team runtime without requiring installed artifacts or secrets.
@@ -386,7 +408,10 @@ func validate(opts Options) (Options, error) {
 	case "PATH", "HOME", "PWD", "SHELL", "NODE_OPTIONS", "DEEPSEEK_BASE_URL":
 		return opts, errors.New("reserved DSH credential environment name")
 	}
-	if os.Getenv(opts.Model.APIKeyEnv) == "" {
+	if opts.credential() == "" || strings.ContainsRune(opts.credential(), 0) {
+		if opts.Credential != nil {
+			return opts, errors.New("managed model credential is empty or invalid; enter the API key again")
+		}
 		return opts, errors.New("DSH credential environment is empty")
 	}
 	if opts.Model.BaseURL != "" {
@@ -410,6 +435,10 @@ func validate(opts Options) (Options, error) {
 	// Retain our own copies; callers may reuse their configuration after Open.
 	opts.BinaryArgs = append([]string(nil), opts.BinaryArgs...)
 	opts.Model = opts.Model.Clone()
+	if opts.Credential != nil {
+		value := *opts.Credential
+		opts.Credential = &value
+	}
 	toolEnv := make(map[string]string, len(opts.ToolEnv))
 	for k, v := range opts.ToolEnv {
 		toolEnv[k] = v
@@ -422,9 +451,19 @@ func environment(opts Options) []string {
 	env := map[string]string{}
 	for _, item := range os.Environ() {
 		name, value, _ := strings.Cut(item, "=")
-		if !strings.HasPrefix(name, "DSH_") && name != "DEEPSEEK_BASE_URL" {
+		if opts.probe != nil && !probeAmbientEnv(name) {
+			continue
+		}
+		if !strings.HasPrefix(name, "DSH_") && name != "DEEPSEEK_BASE_URL" && !privateAccessEnv(name) {
 			env[name] = value
 		}
+	}
+	if opts.Credential != nil {
+		env[opts.Model.APIKeyEnv] = opts.Credential.Value
+	}
+	if opts.probe != nil {
+		env["HOME"] = filepath.Join(opts.StateDir, "home")
+		env["TMPDIR"] = opts.Workspace
 	}
 	for name, value := range opts.ToolEnv {
 		if name == "PATH" {
@@ -435,6 +474,13 @@ func environment(opts Options) []string {
 			}
 		}
 		env[name] = value
+	}
+	if opts.ExecutionToken != "" {
+		env["TEAMX_EXECUTION_TOKEN"] = opts.ExecutionToken
+		// DSH deliberately scrubs credential-shaped ambient names for shell children.
+		// This explicit delegated transport survives that scrub; the CLI consumes it
+		// as the same execution token. Never use this path for management credentials.
+		env["TEAMX_EXECUTION_AUTH"] = opts.ExecutionToken
 	}
 	env["DSH_HOME"] = filepath.Join(opts.StateDir, "home")
 	env["DSH_AGENTS_HOME"] = filepath.Join(opts.StateDir, "agents")
@@ -450,4 +496,12 @@ func environment(opts Options) []string {
 		result = append(result, name+"="+env[name])
 	}
 	return result
+}
+
+func privateAccessEnv(name string) bool {
+	switch name {
+	case "TEAMX_ADMIN_TOKEN", "TEAMX_ADMIN_TOKEN_FILE", "TEAMX_EXECUTION_TOKEN", "TEAMX_EXECUTION_AUTH", "TEAMX_SESSION", "TEAMX_SESSION_COOKIE":
+		return true
+	}
+	return false
 }

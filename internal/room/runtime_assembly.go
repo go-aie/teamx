@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 
 	"github.com/go-aie/teamx/internal/agent/dsh"
 )
@@ -133,7 +132,7 @@ func (m *roomManager) workspaceActivationConfig(id RoomIdentity, applying string
 	authorized := false
 	authorizedOperationID := ""
 	for _, op := range m.index.WorkspaceOperations {
-		if op.RoomIdentity == id && (op.Status == "completed" || op.OperationID == applying && op.ConfigCommitted && len(op.SessionsUpdated) == len(op.Members)) && op.PreparedConfig != nil && reflect.DeepEqual(saved, *op.PreparedConfig) {
+		if op.RoomIdentity == id && (op.Status == "completed" || op.OperationID == applying && op.ConfigCommitted && len(op.SessionsUpdated) == len(op.Members)) && op.PreparedConfig != nil && equalWorkspaceRoomConfig(saved, *op.PreparedConfig) {
 			authorized = true
 			authorizedOperationID = op.OperationID
 		}
@@ -164,6 +163,7 @@ func (m *roomManager) workspaceActivationConfig(id RoomIdentity, applying string
 		return serviceConfig{}, fmt.Errorf("%w: member CLI environment unavailable", ErrRequest)
 	}
 	profiles := make(map[string]dshProfile, len(saved.Members))
+	targets := make(map[string]modelSessionSnapshot)
 	for _, member := range saved.Members {
 		p := base
 		p.Instructions = member.Instructions
@@ -185,10 +185,37 @@ func (m *roomManager) workspaceActivationConfig(id RoomIdentity, applying string
 		for k, v := range member.ToolEnv {
 			p.ToolEnv[k] = resolveTeamResource(dir, v)
 		}
+		if saved.Runtime.ManagedModels {
+			if m.config.models == nil || member.ModelSelection == nil {
+				return serviceConfig{}, ErrInvalid
+			}
+			target, err := m.config.models.target(MemberIdentity{RoomIdentity: id, AgentID: member.AgentID, MembershipID: member.MembershipID}, *member.ModelSelection, member.ModelSelectionVersion, p)
+			// Existing generations always resume from their original execution fact,
+			// including unverified imports and entries pending deletion.
+			memberID := MemberIdentity{id, member.AgentID, member.MembershipID}
+			opts := SessionOptions{MemberIdentity: memberID, StatePath: filepath.Join(dir, "agents", member.MembershipID, "session.json")}
+			if ref, _, refErr := readDSHReference(opts.StatePath, memberID); refErr == nil && ref.Directory != "" {
+				if frozen, loadErr := readModelSessionSnapshot(filepath.Join(filepath.Dir(opts.StatePath), ref.Directory+".model.json"), memberID, ref.Directory); loadErr == nil && (!ref.Pending || !frozen.Legacy) {
+					target, err = frozen, nil
+				}
+			}
+			if err != nil {
+				p.Model = launcherCheckModel()
+				if entry, resolveErr := m.config.models.catalog().resolve(*member.ModelSelection); resolveErr == nil {
+					p.Model = entry.materialize()
+				}
+				p.modelError = "模型尚未验证或凭据不可用；请在设置中验证并修复。"
+				profiles[member.Runner.Profile] = p
+				continue
+			}
+			targets[member.Runner.Profile] = target
+			p = target.Profile
+		}
 		profiles[member.Runner.Profile] = p
 	}
 	config := m.config
 	config.settings = m.settings
+	config.modelTargets = targets
 	config.workspaceOperationID = authorizedOperationID
 	config.maxTurns, config.dshProfiles = saved.SessionMaxTurns, profiles
 	config.persistentScheduling = true

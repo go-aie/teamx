@@ -14,6 +14,8 @@ import (
 func Serve(w http.ResponseWriter, r *http.Request) bool {
 	file, contentType := "", ""
 	switch r.URL.Path {
+	case "/access":
+		file, contentType = "assets/access.html", "text/html; charset=utf-8"
 	case "/":
 		file, contentType = "assets/index.html", "text/html; charset=utf-8"
 	default:

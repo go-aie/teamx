@@ -60,7 +60,7 @@ try {
     ...['package.mjs', 'package-lib.mjs', 'package-platform.mjs', 'package-profiles.mjs',
       'package-smoke.mjs', 'check-packaging.mjs', 'check-dsh-native.mjs',
       'package-release-source.mjs', 'package-signing.mjs',
-      'fixtures/acp.mjs'].map(f => `scripts/${f}`),
+      'fixtures/acp.mjs', 'fixtures/models.mjs'].map(f => `scripts/${f}`),
     'packaging/node-entitlements.plist'
   ])].sort().map(path => ({ path, sha256: hash(fs.readFileSync(p.join(root, path))) }));
   must(['dev', 'release'].includes(opts.channel), 'Unknown channel');

@@ -56,7 +56,7 @@ func Resume(ctx context.Context, opts Options) (*Session, error) {
 	return open(ctx, opts, true)
 }
 
-func open(ctx context.Context, opts Options, resume bool) (_ *Session, openErr error) {
+func open(ctx context.Context, opts Options, resume bool) (openedSession *Session, openErr error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -75,7 +75,7 @@ func open(ctx context.Context, opts Options, resume bool) (_ *Session, openErr e
 	if err != nil {
 		return nil, err
 	}
-	s := &Session{opts: opts, lock: lock, cleanupDone: make(chan struct{}), openDone: make(chan struct{}), secret: os.Getenv(opts.Model.APIKeyEnv), reverseSlots: make(chan struct{}, 4), reverseIDs: map[string]bool{}}
+	s := &Session{opts: opts, lock: lock, cleanupDone: make(chan struct{}), openDone: make(chan struct{}), secret: opts.credential(), reverseSlots: make(chan struct{}, 4), reverseIDs: map[string]bool{}}
 	defer func() {
 		if openErr != nil {
 			s.startCleanup()
@@ -83,6 +83,9 @@ func open(ctx context.Context, opts Options, resume bool) (_ *Session, openErr e
 			defer cancel()
 			if err := s.awaitCleanup(cleanupCtx); err != nil {
 				openErr = errors.Join(openErr, err)
+				if !CleanupSettled(err) {
+					openedSession = s
+				}
 			}
 		}
 	}()
@@ -216,6 +219,13 @@ func (s *Session) Run(ctx context.Context, text string) (TurnResult, error) {
 
 // SupportsImages requires both explicit model configuration and ACP capability.
 func (s *Session) SupportsImages() bool { return s.opts.Model.imageInput() && s.supportsImage }
+
+// RuntimeAgent returns only the validated runtime name/version, never arbitrary
+// agentInfo extensions supplied over ACP.
+func (s *Session) RuntimeAgent() Artifact {
+	identity, _ := runtimeArtifact(s.reference.AgentInfo)
+	return identity
+}
 
 // RunPrompt submits ordered text/image blocks with the same execution and
 // cancellation contract as Run. Invalid input is rejected before dispatch.

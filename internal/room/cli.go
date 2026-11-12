@@ -19,6 +19,7 @@ import (
 type cliClient struct {
 	endpoint string
 	http     *http.Client
+	token    string
 }
 
 // Only connection and member identity values are replaced for Room tools.
@@ -26,7 +27,7 @@ type cliClient struct {
 func isRoomToolEnv(entry string) bool {
 	name, _, _ := strings.Cut(entry, "=")
 	switch name {
-	case "TEAMX_ENDPOINT", "TEAMX_ROOM_ID", "TEAMX_ROOM_INSTANCE", "TEAMX_SERVICE_EPOCH", "TEAMX_AGENT_ID", "TEAMX_MEMBERSHIP_ID":
+	case "TEAMX_ADMIN_TOKEN", "TEAMX_ADMIN_TOKEN_FILE", "TEAMX_EXECUTION_TOKEN", "TEAMX_EXECUTION_AUTH", "TEAMX_SESSION", "TEAMX_SESSION_COOKIE", "TEAMX_ENDPOINT", "TEAMX_ROOM_ID", "TEAMX_ROOM_INSTANCE", "TEAMX_SERVICE_EPOCH", "TEAMX_AGENT_ID", "TEAMX_MEMBERSHIP_ID":
 		return true
 	default:
 		return false
@@ -48,7 +49,7 @@ func (c cliClient) request(ctx context.Context, path string, req any, out any) e
 		return err
 	}
 	request.Header.Set("Content-Type", "application/json")
-	response, err := c.http.Do(request)
+	response, err := c.do(request)
 	if err != nil {
 		return err
 	}
@@ -60,7 +61,7 @@ func (c cliClient) request(ctx context.Context, path string, req any, out any) e
 	if len(data) > 8<<20 {
 		return fmt.Errorf("HTTP response too large")
 	}
-	if response.StatusCode != http.StatusOK {
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		var failure apiError
 		if json.Unmarshal(data, &failure) == nil && failure.Error != "" {
 			return failure.cliError()
@@ -70,7 +71,10 @@ func (c cliClient) request(ctx context.Context, path string, req any, out any) e
 	return json.Unmarshal(data, out)
 }
 
-func (c cliClient) identity(ctx context.Context, roomID string, env func(string) string) (apiRequest, error) {
+func (c *cliClient) identity(ctx context.Context, roomID string, env func(string) string) (apiRequest, error) {
+	if err := c.loadCredential(env); err != nil {
+		return apiRequest{}, err
+	}
 	agent, membership := env("TEAMX_AGENT_ID"), env("TEAMX_MEMBERSHIP_ID")
 	if agent != "" || membership != "" {
 		info := ServiceInfo{RoomIdentity: RoomIdentity{RoomID: env("TEAMX_ROOM_ID"), RoomInstance: env("TEAMX_ROOM_INSTANCE")}, ServiceEpoch: env("TEAMX_SERVICE_EPOCH")}
@@ -105,6 +109,15 @@ func (c cliClient) identity(ctx context.Context, roomID string, env func(string)
 		return apiRequest{}, ErrIdentity
 	}
 	user := env("USER")
+	if c.token != "" {
+		var session struct {
+			Operator string `json:"operator"`
+		}
+		if err := c.request(ctx, "/v1/access/session", nil, &session); err != nil {
+			return apiRequest{}, err
+		}
+		user = session.Operator
+	}
 	if user == "" {
 		user = "operator"
 	}
@@ -118,6 +131,11 @@ func runCLI(ctx context.Context, args []string, stdout, stderr io.Writer, env fu
 }
 
 func runCLIWithInput(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer, env func(string) string) error {
+	var err error
+	args, env, err = cliTokenFile(args, env)
+	if err != nil {
+		return err
+	}
 	// Git invokes GIT_ASKPASS with only a prompt. Keep the executable path free
 	// of embedded flags, so spaces and quotes in paths work without a shell.
 	if len(args) == 1 && env("TEAMX_GITLAB_TOOLS") != "" && (strings.HasPrefix(args[0], "Username for '") || strings.HasPrefix(args[0], "Password for '")) {
@@ -479,6 +497,11 @@ func Run(args []string, stdout, stderr io.Writer) error {
 	}
 	if len(args) > 0 {
 		switch args[0] {
+		case "access":
+			if len(args) > 1 && args[1] == "init" {
+				return runAccessInit(args[2:], stdout, stderr)
+			}
+			return ErrRequest
 		case "init", "doctor":
 			return runBundle(args[0], args[1:], stdout, stderr)
 		case "bundle":

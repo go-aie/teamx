@@ -33,7 +33,7 @@ Web 界面已嵌入程序，无需单独启动前端。
 
 ### 2. 配置运行环境
 
-项目内使用时，复制[配置示例](.teamx/config.example.toml)，按本机安装与模型服务填写：
+项目内使用时，复制[配置示例](.teamx/config.example.toml)，填写本机 DSH 安装路径：
 
 ```sh
 cp .teamx/config.example.toml .teamx/config.toml
@@ -42,19 +42,18 @@ cp .teamx/config.example.toml .teamx/config.toml
 | 配置 | 内容 |
 | --- | --- |
 | `runtime.dsh.binary_path` | 已安装的 `dsh` 可执行程序的绝对路径 |
-| `runtime.model` | 模型协议、地址、名称及密钥环境变量名 |
+| `models` | 网页维护的模型列表与默认引用；初次为空 |
 | `server.dsh_turn_timeout` | DSH 单回合总时长，默认 `"15m"`；大型任务可设 `"30m"` |
-| `env.OPENAI_API_KEY` | 模型密钥；也可通过服务环境提供，已有环境变量优先 |
 
-可用 `command -v dsh` 查找 DSH 路径。模型密钥可填写在本地配置的 `[env]` 中，也可通过环境变量提供；服务不会自动加载 `.env`。
+可用 `command -v dsh` 查找 DSH 路径。模型协议、地址、模型 ID 和 API Key 在网页填写，无需配置密钥变量名或执行 export。
 
 ### 3. 启动服务
 
 ```sh
-./bin/teamx serve --config .teamx/config.toml
+./bin/teamx serve --home .teamx
 ```
 
-打开 **http://127.0.0.1:8088/**。此配置默认将运行数据保存在 `.teamx/data/`。
+打开 **http://127.0.0.1:8088/**，使用 `.teamx/auth/admin-token` 中的管理 token 登录。首次启动自动准备管理认证，后续不覆盖已有 token；服务重启后需重新登录。全新 home 在网页填写或复用预填模型，真实验证通过后保存并初始化默认助理。API Key 保存在私有目录，后续无需 export。此类托管实例可在「设置 → 模型」集中维护列表和默认模型，在成员详情选择跟随默认或固定模型；实际模型变化时，各成员等待当前回合结束后切换，私有上下文将重置。删除被引用模型时选择替代条目，等待或失败的成员可在进度中重试。已有旧模型配置会在恢复业务前一次迁移并保留私有备份；导入条目标为待验证，缺失密钥可在设置中补填。此配置默认将运行数据保存在 `.teamx/data/`。
 
 ### 4. 开始协作
 

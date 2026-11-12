@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/go-aie/actorx"
@@ -74,7 +76,12 @@ func TestFixtureProcess(t *testing.T) {
 	var err error
 	switch {
 	case len(args) > 0 && args[0] == "serve":
-		err = serveWithFactory(args[1:], os.Stdout, os.Stderr, newFixtureService)
+		// Synthetic backends model business behavior without a real DSH session.
+		// This test-only binary injects its trusted HTTP boundary; the production
+		// executable has no flag or environment switch to disable access control.
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		err = runServer(ctx, args[1:], os.Stdout, os.Stderr, serverOptions{create: newFixtureService, access: func(startupConfig, string) (*serverAccess, error) { return nil, nil }})
 	case len(args) > 0 && args[0] == "demo":
 		err = demo(args[1:], os.Stdout, os.Stderr)
 	default:

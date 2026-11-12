@@ -435,11 +435,20 @@ func platformConnectAutomaticContinuation(t *testing.T, fixture platformConnecti
 
 func consumeConnectTestInbox(t *testing.T, svc *service, id MemberIdentity, turn uint64) referenceInboxPage {
 	t.Helper()
-	if err := svc.store.initReferenceFollowups(id); err != nil {
-		t.Fatal(err)
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	// Initialization shares the commit admission boundary with the warmup
+	// checkpoint, just like the subsequent read. Retry its explicit busy result.
+	for {
+		err := svc.store.initReferenceFollowups(id)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, ErrBusy) || ctx.Err() != nil {
+			t.Fatal(err, ctx.Err())
+		}
+		time.Sleep(time.Millisecond)
+	}
 	var page referenceInboxPage
 	for {
 		var err error

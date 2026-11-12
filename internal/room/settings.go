@@ -4,15 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 	_ "time/tzdata" // Standalone binaries must not depend on host zoneinfo files.
 
@@ -34,19 +30,9 @@ type settingsSnapshot struct {
 	location *time.Location
 }
 
-type settingsCommit struct {
-	snapshot settingsSnapshot
-	source   []byte
-}
-
 type systemSettings struct {
-	mu      sync.Mutex
+	*configDocument
 	current settingsSnapshot
-	path    string
-	source  []byte
-	file    os.FileInfo
-	pending *settingsCommit
-	ops     snapshotOps
 }
 
 func loadTimeZone(name string) (*time.Location, error) {
@@ -63,7 +49,7 @@ func loadTimeZone(name string) (*time.Location, error) {
 
 func defaultSystemSettings() *systemSettings {
 	location, _ := loadTimeZone(defaultTimeZone)
-	return &systemSettings{current: settingsSnapshot{settingsView{defaultTimeZone, 1}, location}, ops: defaultSnapshotOps()}
+	return &systemSettings{current: settingsSnapshot{settingsView{defaultTimeZone, 1}, location}, configDocument: &configDocument{ops: defaultSnapshotOps()}}
 }
 
 func newSystemSettings(config startupConfig) *systemSettings {
@@ -84,48 +70,6 @@ func (s *systemSettings) snapshot() settingsSnapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.current
-}
-
-// Re-read both identity and bytes, including after preparing the temporary
-// file. An editor's replacement or in-place edit invalidates this save.
-func (s *systemSettings) unchanged() error {
-	data, file, err := readSettingsFile(s.path)
-	if err != nil {
-		return err
-	}
-	if !bytes.Equal(data, s.source) || (file == nil) != (s.file == nil) ||
-		(file != nil && (!os.SameFile(file, s.file) || !file.ModTime().Equal(s.file.ModTime()))) {
-		return &requestDiagnostic{cause: ErrConflict, Field: "time_zone", Message: "startup config changed outside this service; restart to load it before saving"}
-	}
-	return nil
-}
-
-func readSettingsFile(path string) ([]byte, os.FileInfo, error) {
-	file, err := os.Lstat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil, nil
-	}
-	if err != nil {
-		return nil, nil, err
-	}
-	// Do not replace a symlink with a regular file or follow a newly changed link.
-	if !file.Mode().IsRegular() || file.Size() > 1<<20 {
-		return nil, nil, fmt.Errorf("config must be a regular file of at most 1 MiB")
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer f.Close()
-	opened, err := f.Stat()
-	if err != nil || !os.SameFile(file, opened) {
-		return nil, nil, ErrConflict
-	}
-	data, err := io.ReadAll(io.LimitReader(f, (1<<20)+1))
-	if err != nil || len(data) > 1<<20 {
-		return nil, nil, fmt.Errorf("cannot read config (maximum 1 MiB)")
-	}
-	return data, opened, nil
 }
 
 func (s *systemSettings) save(name string, expected uint64) (settingsView, error) {
@@ -153,107 +97,18 @@ func (s *systemSettings) save(name string, expected uint64) (settingsView, error
 	if s.path == "" {
 		return s.current.settingsView, errors.New("startup config path unavailable")
 	}
-	dir := filepath.Dir(s.path)
-	if err := s.ops.makeDir(dir); err != nil {
-		return s.current.settingsView, err
-	}
-	// Serialize services sharing this config even when they use different data
-	// directories. Keep the lock file in place so concurrent writers share an inode.
-	lock, err := lockDirectoryFile(dir, "."+filepath.Base(s.path)+".lock")
-	if err != nil {
-		return s.current.settingsView, err
-	}
-	defer unlockDirectory(lock)
-	if s.pending != nil {
-		if err := s.reconcile(); err != nil {
-			return s.current.settingsView, err
+	err = s.commitLocked(func(source []byte) ([]byte, func(), error) {
+		if err := checkVersion(); err != nil {
+			return nil, nil, err
 		}
-	}
-	if err := checkVersion(); err != nil {
-		return s.current.settingsView, err
-	}
-	if name == s.current.TimeZone {
-		return s.current.settingsView, nil
-	}
-	if err := s.unchanged(); err != nil {
-		return s.current.settingsView, err
-	}
-	next, err := patchTimeZone(s.source, name)
-	if err != nil {
-		return s.current.settingsView, err
-	}
-	f, err := s.ops.createTemp(dir, ".config-*")
-	if err != nil {
-		return s.current.settingsView, err
-	}
-	defer os.Remove(f.Name())
-	defer f.Close()
-	mode := os.FileMode(0600)
-	if s.file != nil {
-		mode = s.file.Mode().Perm()
-	}
-	if err := os.Chmod(f.Name(), mode); err != nil {
-		return s.current.settingsView, err
-	}
-	if _, err := io.Copy(f, bytes.NewReader(next)); err != nil {
-		return s.current.settingsView, err
-	}
-	if err := f.Sync(); err != nil {
-		return s.current.settingsView, err
-	}
-	if err := f.Close(); err != nil {
-		return s.current.settingsView, err
-	}
-	if err := s.unchanged(); err != nil {
-		return s.current.settingsView, err
-	}
-	s.pending = &settingsCommit{settingsSnapshot{settingsView{name, s.current.SettingsVersion + 1}, location}, next}
-	// Even an error may mean rename happened. Always inspect the file before
-	// deciding whether to publish; reconcile also retries durability barriers.
-	replaceErr := s.ops.rename(f.Name(), s.path)
-	err = s.reconcile()
-	if err != nil {
-		return s.current.settingsView, err
-	}
-	if s.current.TimeZone != name {
-		if replaceErr == nil {
-			replaceErr = ErrConflict
+		if name == s.current.TimeZone {
+			return nil, nil, nil
 		}
-		return s.current.settingsView, replaceErr
-	}
-	return s.current.settingsView, nil
-}
-
-func (s *systemSettings) reconcile() error {
-	data, file, err := readSettingsFile(s.path)
-	if err != nil {
-		return fmt.Errorf("%w: inspect config", ErrCommitUnknown)
-	}
-	if bytes.Equal(data, s.pending.source) && file != nil {
-		// A previous rename/sync error is not success until file and directory
-		// durability have both been established on the observed file.
-		f, err := os.Open(s.path)
-		if err != nil {
-			return ErrCommitUnknown
-		}
-		err = f.Sync()
-		err = errors.Join(err, f.Close())
-		if err != nil || s.ops.syncDir(filepath.Dir(s.path)) != nil {
-			return ErrCommitUnknown
-		}
-		verified, current, err := readSettingsFile(s.path)
-		if err != nil || current == nil || !os.SameFile(file, current) || !bytes.Equal(data, verified) {
-			return ErrCommitUnknown
-		}
-		s.current, s.source, s.file = s.pending.snapshot, data, current
-		s.pending = nil
-		return nil
-	}
-	if s.unchanged() == nil {
-		s.pending = nil // Replacement demonstrably did not happen.
-		return nil
-	}
-	return ErrCommitUnknown // Preserve evidence and block writes until reconciled.
+		next, err := patchTimeZone(source, name)
+		target := settingsSnapshot{settingsView{name, s.current.SettingsVersion + 1}, location}
+		return next, func() { s.current = target }, err
+	})
+	return s.current.settingsView, err
 }
 
 // Patch just the string token, retaining every other byte, including comments.

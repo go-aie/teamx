@@ -740,10 +740,6 @@ func TestDefaultAssistantRejectsInconsistentReceipt(t *testing.T) {
 	}
 }
 
-type assistantReadyWriter struct{ err error }
-
-func (w assistantReadyWriter) Write([]byte) (int, error) { return 0, w.err }
-
 func TestDefaultAssistantManagedStartup(t *testing.T) {
 	for _, configured := range []bool{false, true} {
 		t.Run(map[bool]string{false: "configuration-blocked", true: "configured"}[configured], func(t *testing.T) {
@@ -759,9 +755,9 @@ func TestDefaultAssistantManagedStartup(t *testing.T) {
 			}
 			stop := errors.New("stop after readiness")
 			var stderr bytes.Buffer
-			err = serveRoomManager(listener, root, filepath.Join(root, "missing-teams"),
+			err = serveRoomManager(context.Background(), listener, root, filepath.Join(root, "missing-teams"),
 				serviceConfig{endpoint: "http://" + listener.Addr().String(), maxTurns: 7}, defaults,
-				controlledActivationFactory(nil, nil), assistantReadyWriter{stop}, &stderr)
+				controlledActivationFactory(nil, nil), func(any) error { return stop }, &stderr)
 			if !errors.Is(err, stop) {
 				t.Fatal("startup did not reach readiness", err, stderr.String())
 			}

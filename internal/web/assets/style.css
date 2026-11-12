@@ -10,3 +10,26 @@
 @import url("./styles/member-details.css");
 @import url("./styles/notifications.css");
 @import url("./styles/interactions.css");
+
+.model-settings .quiet { font-size:var(--font-small); line-height:1.7; }
+.model-row { padding: 1rem 0; border-bottom: 1px solid var(--border, #ddd); }
+.model-row p, .model-operation p { margin: .4rem 0; overflow-wrap: anywhere; }
+.model-row > button { margin-right: 1rem; }
+.model-edit-form { margin-top: 1rem; }
+.model-edit-form label { display: block; margin-top: .85rem; }
+.model-edit-form input, .model-edit-form select { width: 100%; margin-top: .4rem; }
+.model-edit-form input[type="checkbox"] { width: auto; }
+.model-edit-form details { margin: 1rem 0; }
+.model-operation { padding: .7rem 0; }
+.member-model { display:flex; align-items:center; gap:4px; min-width:0; flex-shrink:1; }
+.member-model select { width:130px; min-width:0; max-width:130px; min-height:30px; padding:4px 4px 4px 8px; border:1px solid transparent; border-radius:var(--radius-control); background-color:transparent; color:var(--muted); font-size:var(--font-small); text-overflow:ellipsis; }
+.member-model select[data-mode="default"] { width:72px; }
+.member-model select:hover:not(:disabled) { border-color:var(--line); background-color:var(--surface-hover); }
+.member-model-progress { width:28px; min-width:28px; height:28px; color:var(--muted); }
+.member-model-progress svg { width:15px; height:15px; }
+.member-model-progress[data-state="busy"] { color:var(--accent); }
+.member-model-progress[data-state="error"] { color:var(--danger); }
+#member-model-busy { animation:model-progress-spin 1s linear infinite; }
+@keyframes model-progress-spin { to { transform:rotate(360deg); } }
+@media(prefers-reduced-motion:reduce) { #member-model-busy { animation:none; } }
+@media(max-width:480px) { .member-model select { max-width:120px; } #activity-dialog > .activity-header { gap:8px; } }
