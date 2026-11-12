@@ -947,6 +947,100 @@ test("execution hints open the matching member activity without sending or chang
 });
 
 
+test("stop icon cancels only the current execution and reports stopped after settlement", async () => {
+  const api = server([makeRoom("A")]);
+  const member = { agent_id:"reviewer", membership_id:"generation-reviewer", status:"running", runner:{profile:"runtime"},
+    execution:{active:true, paused:false, execution_id:7, agent:{turn_number:6}} };
+  let accept;
+  api.hook = (path, data) => {
+    if (path === "/v1/member/list") return {members:[structuredClone(member)]};
+    if (path === "/v1/member/activity") return {member:structuredClone(member)};
+    if (path === "/v1/member/cancel") {
+      assert.equal(data.agent_id, member.agent_id); assert.equal(data.membership_id, member.membership_id);
+      assert.equal(data.execution_id, 7); assert.equal(data.room_instance,"instance-A");
+      return new Promise(resolve => accept = () => {member.execution.stopping=true;resolve(structuredClone(member.execution));});
+    }
+  };
+  const ui = await launch(api);
+  const stop = () => ui.el("execution-text").children.find(child => child.dataset.stopMember);
+  const detail = () => ui.el("execution-text").children.find(child => child.dataset.activityMember);
+  const original = stop();
+  assert.equal(original.getAttribute("aria-label"), "停止 reviewer");
+  await detail().emit("click"); await settle();
+  assert.deepEqual(ui.el("agent-actions").children.map(button => button.textContent), ["暂停"]);
+  const pending = original.emit("click"); await settle();
+  assert.equal(stop().disabled,true); assert.match(detail().textContent,/正在停止/);
+  await original.emit("click"); await settle();
+  assert.equal(api.calls.filter(call => call.path === "/v1/member/cancel").length,1);
+  accept(); await pending;
+  assert.match(detail().textContent,/正在停止/);
+  assert.doesNotMatch(elementText(ui.el("execution-text")),/已停止/);
+  member.status="idle";member.execution.active=false;member.execution.stopping=false;delete member.execution.execution_id;
+  await ui.refresh();
+  assert.equal(ui.el("execution-text").children[0].textContent,"已停止");
+  assert.equal(ui.el("execution-hint").hidden,false);
+  assert.equal(ui.el("execution-hint").dataset.phase,"stopped");
+  assert.equal(member.execution.paused,false);
+  await ui.draft("纠正：只检查，不要修改"); await ui.el("compose").emit("submit");
+  member.status="waiting";await ui.refresh();
+  assert.match(detail().textContent,/正在等待执行/);
+  assert.doesNotMatch(elementText(ui.el("execution-text")),/已停止/);
+  member.status="running";member.execution.active=true;member.execution.execution_id=8;
+  await ui.refresh();
+  assert.match(detail().textContent,/正在处理/);assert.equal(stop().disabled,false);
+  await original.emit("click");
+  assert.equal(api.calls.filter(call => call.path === "/v1/member/cancel").length,1);
+  assert.equal(api.calls.some(call => /^\/v1\/member\/(pause|run)$/.test(call.path)),false);
+});
+
+test("stop icons isolate members and unconfirmed requests never replay on refresh", async () => {
+  const api = server([makeRoom("A")]);
+  const members = ["reviewer","developer"].map((id,index) => ({agent_id:id, membership_id:`member-${id}`, status:"running",
+    runner:{profile:"runtime"},execution:{active:true,paused:false,execution_id:index+1,agent:{turn_number:0}}}));
+  let fail = true;
+  api.hook = (path,data) => {
+    if (path === "/v1/member/list") return {members:structuredClone(members)};
+    if (path === "/v1/member/cancel") {
+      assert.equal(data.membership_id,"member-developer"); assert.equal(data.execution_id,2);
+      if (fail) throw new Error("response lost");
+      members[1].execution.stopping=true;
+      return structuredClone(members[1].execution);
+    }
+  };
+  const ui = await launch(api);
+  const stop = id => ui.el("execution-text").children.find(child => child.dataset.stopMember===`member-${id}`);
+  await stop("developer").emit("click");
+  assert.match(elementText(ui.el("execution-text")),/停止未确认/);
+  assert.equal(stop("reviewer").disabled,false);assert.equal(stop("developer").disabled,false);
+  await ui.refresh();await ui.refresh();
+  assert.equal(api.calls.filter(call => call.path === "/v1/member/cancel").length,1);
+  fail=false;await stop("developer").emit("click");
+  assert.equal(stop("developer").disabled,true);assert.equal(stop("reviewer").disabled,false);
+  members[1].status="idle";members[1].execution.active=false;members[1].execution.stopping=false;
+  await ui.refresh();
+  assert.match(elementText(ui.el("execution-text")),/developer 已停止/);
+  assert.equal(stop("reviewer").disabled,false);
+});
+
+test("late stop responses cannot change another Room or a replacement member", async () => {
+  const api = server([makeRoom("A"),makeRoom("B")]);
+  const member = {agent_id:"reviewer",membership_id:"member-reviewer",status:"running",runner:{profile:"runtime"},
+    execution:{active:true,paused:false,execution_id:1,agent:{turn_number:0}}};
+  let accept;
+  api.hook = (path,data) => {
+    if (path === "/v1/member/list") return {members:[structuredClone(member)]};
+    if (path === "/v1/member/cancel") return new Promise(resolve => accept=()=>resolve({active:false,paused:false}));
+  };
+  const ui = await launch(api);
+  const stop = () => ui.el("execution-text").children.find(child => child.dataset.stopMember);
+  const original = stop(), pending = original.emit("click");await settle();
+  await ui.select("B");accept();await pending;
+  await original.emit("click");
+  assert.doesNotMatch(elementText(ui.el("execution-text")),/已停止|正在停止/);
+  const old = stop();member.membership_id="replacement";await ui.refresh();await old.emit("click");
+  assert.equal(api.calls.filter(call => call.path === "/v1/member/cancel").length,1);
+});
+
 test("activity flow keeps interleaved order, row identity and disclosure choices through completion and retention", async () => {
   const api = server([makeRoom("A")]);
   const member = { agent_id: "reviewer", membership_id: "generation-1", status: "running", read_through: 0,
@@ -987,7 +1081,7 @@ test("activity flow keeps interleaved order, row identity and disclosure choices
   output = { member, last_output: { result } };
   await ui.refresh(); await settle();
   assert.equal(rows()[0], thought); assert.equal(rows()[3].open, false);
-  assert.equal(ui.el("activity-output-title").textContent, "最近完成的回合");
+  assert.equal(ui.el("activity-output-title").textContent, "最近回合 · 已完成");
   result.events = result.events.slice(2); result.eventsTruncated = true;
   await ui.refresh(); await settle();
   assert.equal(rows().length, 4); assert.equal(rows()[0], laterThought); assert.equal(rows()[1], reply);
@@ -1002,6 +1096,65 @@ test("activity flow keeps interleaved order, row identity and disclosure choices
   assert.equal(rows().length, 1); assert.notEqual(rows()[0], thought); assert.equal(rows()[0].open, true);
   await ui.el("close-activity").emit("click"); await settle();
   assert.equal(rows().length, 0);
+});
+
+test("activity distinguishes running, stopping and stopped while preserving real failures", async () => {
+  const api = server([makeRoom("A")]);
+  const member = {agent_id:"reviewer",membership_id:"generation-reviewer",status:"running",read_through:0,unread_count:1,
+    runner:{profile:"runtime"},execution:{active:true,stopping:false,error:"",agent:{turn_number:1,turn:{status:"running"}}}};
+  const result = {events:[{seq:1,kind:"thought",text:"检查配置"}]};
+  let output = {member,current_output:{result}};
+  api.hook = path => path === "/v1/member/list" ? {members:[structuredClone(member)]}
+    : path === "/v1/member/activity" ? structuredClone(output) : undefined;
+  const ui = await launch(api);
+  await ui.el("members").children[0].querySelector(".member-summary").emit("click");
+  await ui.el("agent-tab-activity").emit("click");await settle();
+  assert.equal(ui.el("activity-output-title").textContent,"当前回合 · 运行中");
+  const thought = ui.el("activity-timeline").children[0];thought.open=true;
+  member.execution.stopping=true;await ui.refresh();await settle();
+  assert.equal(ui.el("activity-output-title").textContent,"当前回合 · 正在停止");
+  assert.equal(ui.el("activity-status").textContent,"正在停止");
+  result.events=[];await ui.refresh();await settle();
+  assert.equal(ui.el("activity-timeline-empty").textContent,"等待当前执行结束…");
+  output={member};await ui.refresh();await settle();
+  assert.equal(ui.el("activity-notice").textContent,"等待当前执行结束…");
+
+  result.events=[{seq:1,kind:"thought",text:"检查配置"}];result.stopReason="cancelled";
+  const raw = "context canceled\nDSH turn cancelled";
+  member.status="idle";member.execution.active=false;member.execution.stopping=false;
+  member.execution.agent.turn.status="interrupted";
+  output={member,last_output:{result,error:raw}};
+  await ui.refresh();await settle();
+  assert.equal(ui.el("activity-output-title").textContent,"最近回合 · 已停止");
+  assert.equal(ui.el("activity-turn").textContent,"1 · 已停止");
+  assert.equal(ui.el("activity-stop").hidden,true);
+  assert.equal(ui.el("activity-output-error").hidden,true);
+  assert.equal(ui.el("activity-execution-error").hidden,true);
+  assert.equal(ui.el("activity-timeline").children[0].children[1].children[0].textContent,"检查配置");
+  assert.equal(output.last_output.error,raw); // Presentation does not rewrite diagnostics.
+
+  for (const failure of ["context deadline exceeded",`${raw}\nbackend cleanup failed`]) {
+    member.execution.error=failure;output.last_output.error=failure;
+    member.execution.session_reset_required=failure.includes("cleanup");
+    await ui.refresh();await settle();
+    assert.equal(ui.el("activity-output-title").textContent,"最近回合 · 执行失败");
+    assert.equal(ui.el("activity-output-error").hidden,false);
+    assert.equal(ui.el("activity-output-error").textContent,failure);
+    assert.equal(ui.el("activity-execution-error").textContent,failure);
+  }
+  member.execution.error="";member.execution.session_reset_required=false;
+  member.execution.agent.turn.status="failed";
+  await ui.refresh();await settle();
+  assert.equal(ui.el("activity-output-error").hidden,false);
+  assert.equal(ui.el("activity-output-title").textContent,"最近回合 · 执行失败");
+  output.last_output.error="";await ui.refresh();await settle();
+  assert.equal(ui.el("activity-output-title").textContent,"最近回合 · 执行失败");
+
+  member.execution.agent.turn.status="completed";
+  output.last_output.error="";result.stopReason="end_turn";
+  await ui.refresh();await settle();
+  assert.equal(ui.el("activity-output-title").textContent,"最近回合 · 已完成");
+  assert.equal(ui.el("activity-output-error").hidden,true);
 });
 
 test("activity follows appended spans and growing replies, pauses while reading earlier activity and resumes at the bottom", async () => {

@@ -187,6 +187,8 @@ func (m *MemberAgent) status() MemberStatus {
 		result.Inbox = &copy
 	}
 	if m.work != nil {
+		result.ExecutionID = m.turnsUsed
+		result.Stopping = m.work.stopRequested
 		if reason := m.work.cleanupReason.Load(); reason != nil {
 			result.Error = *reason
 		}
@@ -229,6 +231,20 @@ func (m *MemberAgent) Control(ctx actorx.Context, msg ControlMember) (MemberStat
 	case "rotate":
 		if err := m.prepareRotation(msg); err != nil {
 			return m.status(), err
+		}
+
+	case "cancel":
+		// Bind the request to one admitted attempt. A delayed click must never
+		// cancel a later turn, including one in a replacement Session.
+		if msg.ExecutionID == 0 {
+			return MemberStatus{}, ErrRequest
+		}
+		if msg.ExecutionID != m.turnsUsed {
+			return m.status(), ErrConflict
+		}
+		if m.active && m.work != nil && m.cancel != nil {
+			m.work.stopRequested = true
+			m.cancel()
 		}
 
 	case "pause":
@@ -334,10 +350,11 @@ func (m *MemberAgent) maintain() error {
 }
 
 type memberTurn struct {
-	session *ownedSession
-	state   AgentSnapshot
-	started bool
-	ended   bool
+	stopRequested bool // Actor-owned; inspected only after the worker has settled.
+	session       *ownedSession
+	state         AgentSnapshot
+	started       bool
+	ended         bool
 	// The worker publishes only an immutable diagnostic while joining cleanup;
 	// all scheduling fields remain owned by the actor.
 	cleanupReason atomic.Pointer[string]
@@ -681,7 +698,7 @@ func (m *MemberAgent) startTurn(input UnreadChanged, snapshotSeq, readThrough ui
 		m.state = work.state
 		m.fault = !work.started || !work.ended || errors.Is(err, ErrCommitUnknown)
 		m.lastError = ""
-		if err != nil {
+		if err != nil && !(work.stopRequested && settledTurnCancellation(err)) {
 			m.lastError = err.Error()
 			if errors.Is(err, errDSHPaused) {
 				m.paused, m.retry = true, false

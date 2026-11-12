@@ -40,6 +40,7 @@ type apiRequest struct {
 	ServiceInfo
 	Caller             Caller                        `json:"caller"`
 	TurnNumber         uint64                        `json:"turn_number,omitempty"`
+	ExecutionID        uint64                        `json:"execution_id,omitempty"`
 	Policy             *PolicyChange                 `json:"policy,omitempty"`
 	ActionResolve      *actionResolveRequest         `json:"action_resolve,omitempty"`
 	Tool               string                        `json:"tool,omitempty"` // optional exact platform entry for managed actions
@@ -582,7 +583,8 @@ func (s *service) control(ctx context.Context, req apiRequest, action string) (M
 				callCtx = s.ctx
 			}
 			result, err := s.target(member.MembershipID).Call[MemberStatus](callCtx, ControlMember{MemberIdentity: id, Action: action,
-				automatic: req.automatic, recovering: req.recovering, automaticInbox: req.automaticInbox, Retry: req.Retry, Cancel: req.Cancel, Resume: req.Resume, State: state, OperationID: req.OperationID, FromGeneration: req.FromGeneration, Reason: req.RotationReason, ContinueRotation: req.ContinueRotation, Replenish: rotationReplenish, lease: lease, internalPause: req.internalPause, expectedPause: req.expectedPause})
+				ExecutionID: req.ExecutionID,
+				automatic:   req.automatic, recovering: req.recovering, automaticInbox: req.automaticInbox, Retry: req.Retry, Cancel: req.Cancel, Resume: req.Resume, State: state, OperationID: req.OperationID, FromGeneration: req.FromGeneration, Reason: req.RotationReason, ContinueRotation: req.ContinueRotation, Replenish: rotationReplenish, lease: lease, internalPause: req.internalPause, expectedPause: req.expectedPause})
 			if err != nil {
 				lease.close()
 			}
@@ -785,6 +787,8 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		result, err = s.control(r.Context(), req, "enable")
 	case "/v1/member/pause":
 		result, err = s.control(r.Context(), req, "pause")
+	case "/v1/member/cancel":
+		result, err = s.control(r.Context(), req, "cancel")
 	case "/v1/member/session/status":
 		id := MemberIdentity{RoomIdentity: s.info.RoomIdentity, AgentID: req.AgentID, MembershipID: req.MembershipID}
 		result, err = s.target(req.MembershipID).Call[MemberStatus](r.Context(), InspectMember{id})

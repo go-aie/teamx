@@ -7,6 +7,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
   const { state, $, notice, rpc, currentView, refresh, discussionBusy } = runtime;
 
   const memberBusy = new Set();
+  const stopRequests = new Map();
 
   let memberToolsView = null;
 
@@ -344,51 +345,92 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     actions.replaceChildren();
     if (!execution) return;
     const enable = execution.paused || execution.session_reset_required || member.status === "backend_blocked" || member.status === "budget_exhausted";
-    const add = (label, action, cancel) => {
+    const add = (label, action) => {
       const button = document.createElement("button"); button.type = "button"; button.className = "secondary-button button-compact"; button.textContent = label;
       button.setAttribute("aria-label", `${label} ${member.agent_id}`);
       button.disabled = memberBusy.has(member.membership_id) || !state.connected || discussionBusy() || member.status === "checkpoint_failed" || member.status === "rotating" && action !== "pause";
-      button.addEventListener("click", () => controlMember(member, action, cancel)); actions.append(button);
+      button.addEventListener("click", () => controlMember(member, action)); actions.append(button);
     };
-    add(enable ? "启用协作" : "暂停", enable ? "run" : "pause", false);
-    if (execution.active) add("取消回合", "pause", true);
+    add(enable ? "启用协作" : "暂停", enable ? "run" : "pause");
   }
 
   function renderExecutionHint() {
     const available = state.connected && state.info && !discussionBusy();
+    for (const [id, request] of stopRequests) {
+      const member = state.members.find(member => member.membership_id === id);
+      if (!member || member.execution?.active && member.execution.execution_id !== request.executionID) {
+        stopRequests.delete(id);
+      } else if (available && member.execution?.stopping) {
+        request.phase = "settling";
+      } else if (available && request.phase === "settling" && !member.execution?.active) {
+        request.phase = member.execution?.error || /failed|blocked|unavailable/.test(member.status) ? "error" : "stopped";
+      }
+    }
     const running = available ? state.members.filter(member => member.execution?.active || member.status === "running") : [];
     const waiting = available ? state.members.filter(member => member.status === "waiting" && !member.execution?.active && !member.execution?.paused) : [];
     const names = members => members.map(member => memberRole(member)?.name || member.agent_id).join("、");
     // Active covers Session opening, model work and tools; it does not identify a thinking phase.
-    const text = running.length ? `${names(running)} 正在处理…` : waiting.length ? `${names(waiting)} 正在等待执行…` : "";
+    const feedback = available ? [...stopRequests].filter(([id, request]) =>
+      ["stopped", "error"].includes(request.phase) && ![...running, ...waiting].some(member => member.membership_id === id)) : [];
+    const feedbackText = feedback.some(([, request]) => request.phase === "error") ? "停止未确认" : feedback.length ? "已停止" : "";
+    const text = running.length ? `${names(running)} 正在处理…` : waiting.length ? `${names(waiting)} 正在等待执行…` : feedbackText;
     const queue = running.length && waiting.length ? `${names(waiting)} 等待执行` : "";
     const hint = $("execution-hint");
     const primary = running.length ? running : waiting;
     const phaseText = running.length ? "正在处理…" : "正在等待执行…";
-    const signature = JSON.stringify([text, queue, primary.map(member => member.membership_id)]);
+    const signature = JSON.stringify([runtime.viewVersion, text, queue, primary.map(member => [member.membership_id, member.execution?.execution_id,
+      member.execution?.stopping]), [...stopRequests]]);
     if (hint.dataset.signature === signature) return;
     const follow = conversationUI.nearBottom();
     hint.dataset.signature = signature;
     hint.hidden = !text;
-    hint.dataset.phase = running.length ? "running" : "waiting";
+    hint.dataset.phase = running.length ? "running" : waiting.length ? "waiting" : "stopped";
     const content = $("execution-text");
     content.replaceChildren();
+    const mixedPhases = primary.some(member => member.execution?.stopping ||
+      ["requesting", "settling"].includes(stopRequests.get(member.membership_id)?.phase));
     for (const [index, member] of primary.entries()) {
       if (index) {
         const separator = document.createElement("span"); separator.textContent = "、"; content.append(separator);
       }
       const button = document.createElement("button");
       const name = memberRole(member)?.name || member.agent_id;
+      const request = stopRequests.get(member.membership_id);
+      const stopping = member.execution?.stopping || ["requesting", "settling"].includes(request?.phase);
       button.type = "button"; button.className = "execution-member";
-      button.textContent = primary.length === 1 ? `${name} ${phaseText}` : name;
+      button.textContent = stopping ? `${name} 正在停止…` : primary.length === 1 || mixedPhases ? `${name} ${phaseText}` : name;
       button.dataset.activityMember = member.membership_id;
       button.setAttribute("aria-label", `查看详情 ${name}`);
       button.title = `查看 ${name} 的详情`;
       button.addEventListener("click", () => openMemberActivity(member, button, "activity"));
       content.append(button);
+      if (member.execution?.active && member.execution.execution_id) {
+        const stop = document.createElement("button");
+        stop.type = "button"; stop.className = "execution-stop";
+        stop.dataset.stopMember = member.membership_id;
+        stop.setAttribute("aria-label", `停止 ${name}`); stop.title = `停止 ${name} 当前回合`;
+        stop.disabled = stopping;
+        const icon = document.createElement("span"); icon.setAttribute("aria-hidden", "true"); stop.append(icon);
+        const version = runtime.viewVersion;
+        stop.addEventListener("click", () => { if (currentView(version)) return stopMember(member); });
+        content.append(stop);
+      }
+      if (request?.phase === "error") {
+        const error = document.createElement("span"); error.className = "execution-feedback";
+        error.textContent = "停止未确认"; error.title = request.error || member.execution?.error || "请查看成员状态";
+        content.append(error);
+      }
     }
-    if (primary.length > 1) {
+    if (primary.length > 1 && !mixedPhases) {
       const phase = document.createElement("span"); phase.textContent = ` ${phaseText}`; content.append(phase);
+    }
+    for (const [id, request] of feedback) {
+      const status = document.createElement("span"); status.className = "execution-feedback";
+      const member = state.members.find(member => member.membership_id === id);
+      const name = memberRole(member)?.name || member.agent_id;
+      status.textContent = `${primary.length || feedback.length > 1 ? `${name} ` : ""}${request.phase === "stopped" ? "已停止" : "停止未确认"}`;
+      status.title = request.error || member.execution?.error || "";
+      content.append(status);
     }
     $("execution-queue").textContent = queue;
     $("execution-queue").hidden = !queue;
@@ -479,7 +521,8 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       return;
     }
     const member = data.member, execution = member.execution;
-    $("activity-status").textContent = execution?.active ? "运行中" : statusNames[member.status] || member.status;
+    const stopping = !!execution?.stopping;
+    $("activity-status").textContent = stopping ? "正在停止" : execution?.active ? "运行中" : statusNames[member.status] || member.status;
     $("activity-progress").textContent = `已读至 #${member.read_through} · ${member.unread_count} 条未读`;
     const budget = execution?.turn_budget;
     const session = execution?.session_turns;
@@ -495,16 +538,26 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     if (!output) {
       $("activity-output").hidden = true;
       $("activity-jump-latest").hidden = true;
-      notice("activity-notice", data.output_error || (execution?.active ? "回合已启动，等待模型或工具活动…" : "暂无私有活动。"));
+      notice("activity-notice", data.output_error || (stopping ? "等待当前执行结束…" : execution?.active ? "回合已启动，等待模型或工具活动…" : "暂无私有活动。"));
       return;
     }
     notice("activity-notice", "");
     $("activity-output").hidden = false;
     const result = output.result;
-    $("activity-output-title").textContent = live ? "当前回合 · 运行中" : "最近完成的回合";
-    const reasons = { end_turn: "正常结束", cancelled: "已取消", max_tokens: "达到 token 上限", refusal: "拒绝执行" };
-    $("activity-stop").textContent = live ? (result.stopReason ? "正在结清" : "运行中") : reasons[result.stopReason] || result.stopReason || "结束原因未记录";
-    notice("activity-output-error", output.error || "");
+    // The scheduler clears its error only after a requested cancellation has
+    // settled cleanly. The saved diagnostic still retains the raw error.
+    const stopped = !live && !execution?.active && turn?.status === "interrupted" &&
+      !execution?.error && !execution?.session_reset_required && !/failed|blocked|unavailable/.test(member.status);
+    const outputError = stopped ? "" : output.error || "";
+    const reasons = { end_turn: "已完成", cancelled: "已停止", max_tokens: "达到 token 上限", refusal: "拒绝执行" };
+    const failed = !!(execution?.error || outputError || turn?.status === "failed");
+    const outcome = stopped ? "已停止" : failed ? "执行失败" : reasons[result.stopReason] || "已结束";
+    $("activity-output-title").textContent = live ? `当前回合 · ${stopping ? "正在停止" : "运行中"}` : `最近回合 · ${outcome}`;
+    const settling = live && !stopping && !!result.stopReason;
+    $("activity-stop").textContent = settling ? "正在结清" : "";
+    $("activity-stop").hidden = !settling;
+    if (stopped) $("activity-turn").textContent = `${execution.agent.turn_number} · 已停止`;
+    notice("activity-output-error", outputError);
     if (!Array.isArray(result.events)) {
       $("activity-output").hidden = true;
       $("activity-jump-latest").hidden = true;
@@ -513,7 +566,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     }
     renderActivityTimeline(result, JSON.stringify([selected.info, selected.membership_id, execution?.agent?.turn_number]));
     $("activity-timeline").hidden = false;
-    notice("activity-timeline-empty", result.events.length ? "" : live ? "等待模型或工具活动…" : "该回合没有活动记录。");
+    notice("activity-timeline-empty", result.events.length ? "" : live ? stopping ? "等待当前执行结束…" : "等待模型或工具活动…" : "该回合没有活动记录。");
     $("activity-timeline-truncated").hidden = !result.eventsTruncated;
     restoreActivityScroll(follow, scrollTop);
   }
@@ -580,21 +633,41 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     $("activity-dialog").close(); layoutUI.renderPanels();
   }
 
-  async function controlMember(member, action, cancel) {
+  async function controlMember(member, action) {
     const info = state.info, version = runtime.viewVersion;
     memberBusy.add(member.membership_id); renderMembers();
     try {
       const identity = { agent_id: member.agent_id, membership_id: member.membership_id };
       const failedUnread = member.unread_count > 0 && ["failed", "interrupted"].includes(member.execution?.agent?.turn?.status);
-      await rpc(`/v1/member/${action}`, { ...identity, cancel, retry: action === "run" && failedUnread }, info);
+      await rpc(`/v1/member/${action}`, { ...identity, retry: action === "run" && failedUnread }, info);
       await refresh();
     } catch (error) { if (currentView(version)) notice("sync-error", `${member.agent_id} 操作未确认，请查看成员状态。${error.message}`); }
     finally { memberBusy.delete(member.membership_id); renderMembers(); }
   }
 
+  async function stopMember(member) {
+    const current = state.members.find(item => item.agent_id === member.agent_id && item.membership_id === member.membership_id);
+    const previous = stopRequests.get(member.membership_id);
+    if (!state.connected || discussionBusy() || !current?.execution?.active || !member.execution?.execution_id ||
+      current.execution.execution_id !== member.execution.execution_id || current.execution.stopping ||
+      ["requesting", "settling"].includes(previous?.phase)) return;
+    const info = state.info, version = runtime.viewVersion;
+    const request = { executionID: member.execution.execution_id, phase: "requesting" };
+    stopRequests.set(member.membership_id, request); renderExecutionHint();
+    try {
+      await rpc("/v1/member/cancel", { agent_id: member.agent_id, membership_id: member.membership_id,
+        execution_id: request.executionID }, info);
+      request.phase = "settling";
+    } catch (error) {
+      request.phase = "error"; request.error = error.message;
+    }
+    if (currentView(version)) { await refresh(); renderExecutionHint(); }
+  }
+
   function resetTools() { memberToolsView = null; }
 
   function resetActivity() {
+    stopRequests.clear();
     activity.close(); $("activity-dialog").close();
     activitySignature = ""; activityMember = null;
   }

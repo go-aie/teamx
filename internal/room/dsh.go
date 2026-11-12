@@ -290,6 +290,34 @@ func dshFailure(err error) error {
 	return errors.Join(errDSHPaused, err)
 }
 
+// Only a fully settled, expected cancellation may leave scheduling enabled.
+// Joined cleanup/protocol/checkpoint errors must retain their normal handling.
+func settledTurnCancellation(err error) bool {
+	if !errors.Is(err, context.Canceled) {
+		return false
+	}
+	var cancellationOnly func(error) bool
+	cancellationOnly = func(err error) bool {
+		switch err {
+		case context.Canceled, dsh.ErrCancelled, errDSHPaused:
+			return true
+		}
+		switch wrapped := err.(type) {
+		case interface{ Unwrap() []error }:
+			for _, child := range wrapped.Unwrap() {
+				if !cancellationOnly(child) {
+					return false
+				}
+			}
+			return true
+		case interface{ Unwrap() error }:
+			return cancellationOnly(wrapped.Unwrap())
+		}
+		return false
+	}
+	return cancellationOnly(err)
+}
+
 // Common instructions are embedded into the Session configuration, never
 // appended to individual turns. Changes participate in the recovery fingerprint.
 //

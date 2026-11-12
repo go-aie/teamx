@@ -408,6 +408,34 @@
   border-color:#ccddc5;
   color:#1f4534;
 }
+.execution-stop {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  vertical-align:middle;
+  width:28px;
+  height:28px;
+  margin-left:4px;
+  padding:0;
+  border:1px solid var(--surface-hover);
+  border-radius:var(--radius-control);
+  background:#f7f9f4;
+  color:var(--muted);
+  pointer-events:auto;
+}
+.execution-stop span {
+  width:9px;
+  height:9px;
+  border-radius:2px;
+  background:currentColor;
+}
+.execution-stop:hover:enabled {
+  background:#edf4e9;
+  color:var(--accent);
+}
+.execution-stop:disabled { opacity:.45; }
+.execution-feedback { margin-right:6px; }
+.execution-hint[data-phase="stopped"] .execution-dots { display:none; }
 .execution-queue {
   max-width:45%;
   color:#8a918b;

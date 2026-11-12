@@ -158,6 +158,8 @@ type InboxInput struct {
 
 type InspectMember struct{ MemberIdentity }
 type MemberStatus struct {
+	ExecutionID          uint64           `json:"execution_id,omitempty"` // Cumulative admitted attempt; never reused by Session rotation.
+	Stopping             bool             `json:"stopping,omitempty"`
 	CurrentGeneration    string           `json:"current_generation,omitempty"`
 	PauseRevision        uint64           `json:"-"`
 	SessionGeneration    string           `json:"session_generation,omitempty"`
@@ -206,6 +208,7 @@ type TurnBudget struct {
 }
 
 type ControlMember struct {
+	ExecutionID    uint64
 	automatic      bool
 	recovering     bool
 	automaticInbox *InboxStatus
