@@ -76,6 +76,7 @@ export async function createApp(overrides = {}) {
     if (compactViewport(window)) {
       if (layoutUI.roomsPanelOpen?.()) layers.push({ id:"rooms", close:layoutUI.closeMobilePanels });
       if (layoutUI.membersPanelOpen?.()) layers.push({ id:"members", close:layoutUI.closeMobilePanels });
+      if ($("workspace-picker").open) layers.push({ id:"workspace-picker", close:workspaceUI.closeWorkspacePicker });
     }
     for (const [id, button] of [["activity-dialog","close-activity"], ["notification-detail","close-notification"],
       ["workspace-dialog","close-workspace"], ["create-dialog","close-create"], ["settings-dialog","close-settings"], ["access-confirm-dialog","access-confirm-cancel"]]) {

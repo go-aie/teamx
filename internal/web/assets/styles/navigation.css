@@ -141,6 +141,7 @@
 .room-menu summary::-webkit-details-marker {
   display:none;
 }
+.room-menu summary svg { display:block; width:18px; height:18px; fill:currentColor; }
 .room-menu[open] summary {
   background:var(--soft);
 }

@@ -504,6 +504,7 @@ textarea::placeholder {
   color:#a0a799;
 }
 .compose-input { position:relative; }
+.compose-more { display:none; }
 .compose-mirror {
   position:absolute;
   inset:0;

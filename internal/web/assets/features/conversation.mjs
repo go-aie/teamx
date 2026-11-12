@@ -1,5 +1,5 @@
 import { randomUUID } from "../random-id.mjs";
-import { readPages as collectPages, createRoomDrafts, mentionRanges, unseenMentions } from "../client.mjs";
+import { readPages as collectPages, createRoomDrafts, mentionRanges, unseenMentions, compactViewport } from "../client.mjs";
 import { notificationOptions } from "../markdown.mjs";
 import { createAssistantIcon, createUserIcon } from "../icons.mjs";
 import { createMentionPicker } from "../mention-picker.mjs";
@@ -12,6 +12,12 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
   let historyLoading = false, composing = false, compositionEnded = -Infinity;
 
   const drafts = createRoomDrafts(storage, () => state.installationID);
+  const sendIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  sendIcon.setAttribute("viewBox", "0 0 24 24");
+  sendIcon.setAttribute("aria-hidden", "true");
+  sendIcon.setAttribute("focusable", "false");
+  const sendIconPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  sendIcon.append(sendIconPath);
   const mentionPicker = createMentionPicker({ document, input: $("message-input"), list: $("mention-options"), mirror: $("message-mirror"),
     members: () => state.members, operator: () => state.operator, enabled: () => !!state.info && !state.draft.pending && !discussionBusy(),
     changed: () => { saveDraft(); composerState(); } });
@@ -357,14 +363,40 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     $("message-input").readOnly = !!state.draft.pending || discussionBusy();
     mentionPicker.refresh();
     $("send").disabled = !state.connected || state.draft.sending || discussionBusy() || (!state.draft.pending && !$("message-input").value.trim());
-    $("send").textContent = state.draft.sending ? "发送中…" : state.draft.pending ? "重试发送 ↗" : "发送 ↗";
     $("cancel-reply").disabled=!!state.draft.pending;
     $("discard-send").hidden = !state.draft.pending || state.draft.sending;
     $("restart-discussion").disabled = !state.connected || workspaceUI.workspaceBusy() || roomsUI.managementBusy() || state.draft.restartStarting || state.restart?.status === "running" || !!state.draft.pending || state.draft.sending;
     $("restart-discussion").textContent = state.draft.restartStarting || state.restart?.status === "running" ? "重新开始中…" : state.draft.restartRequest ? "核对并重试" : "重新开始";
     $("toggle-add").disabled = !state.connected || discussionBusy();
     $("add-member").disabled = !state.connected || !state.profiles.length || discussionBusy();
-    renderRestart(); workspaceUI.renderWorkspace();
+    renderRestart(); workspaceUI.renderWorkspace(); syncComposerLayout();
+  }
+
+  function syncComposerLayout() {
+    const input = $("message-input"), mobile = compactViewport(window);
+    const hasMessage = !!input.value.trim() || !!state.draft.pending || !!state.draft.sending;
+    $("compose").classList.toggle("has-message", hasMessage);
+    const sendLabel = state.draft.sending ? "发送中…" : state.draft.pending ? "重试发送" : "发送";
+    $("send").setAttribute("aria-label", sendLabel);
+    $("send").setAttribute("aria-busy", String(!!state.draft.sending));
+    $("send").title = sendLabel;
+    if (mobile) {
+      sendIconPath.setAttribute("d", state.draft.sending ? "M20 12a8 8 0 1 1-5-7.4"
+        : state.draft.pending ? "M20 11a8 8 0 1 0-2.3 6.7M20 4v7h-7" : "M6 18 18 6M7 6h11v11");
+      $("send").replaceChildren(sendIcon);
+    } else $("send").textContent = sendLabel + (state.draft.sending ? "" : " ↗");
+    if (mobile && hasMessage) workspaceUI.closeWorkspacePicker();
+    const atBottom = mobile && nearBottom(), previousHeight = input.getBoundingClientRect().height;
+    if (mobile) {
+      input.rows = 1;
+      input.style.setProperty("height", "auto");
+      input.style.setProperty("height", `${input.scrollHeight}px`);
+    } else if (input.rows === 1) {
+      input.rows = 3;
+      input.style.setProperty("height", "");
+    }
+    if (atBottom && input.getBoundingClientRect().height !== previousHeight) bottom();
+    mentionPicker.renderText();
   }
 
   function clearReply() {
@@ -481,6 +513,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     mentionPicker.mount();
     if (typeof ResizeObserver !== "undefined") new ResizeObserver(mentionPicker.renderText).observe($("message-input"));
     $("message-input").addEventListener("input", () => { saveDraft(); composerState(); });
+    window.addEventListener("resize", syncComposerLayout);
 
     $("message-input").addEventListener("compositionstart", () => { composing = true; });
     $("message-input").addEventListener("compositionend", () => { composing = false; compositionEnded = performance.now(); saveDraft(); });

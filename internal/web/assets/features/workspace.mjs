@@ -1,7 +1,8 @@
 import { randomUUID } from "../random-id.mjs";
+import { compactViewport } from "../client.mjs";
 // Workspace configuration, platform choices and durable operation recovery.
 export function createWorkspace({ env, runtime, notificationsUI, membersUI, roomsUI, conversationUI, settingsUI }) {
-  const { document, Option, request } = env;
+  const { document, window, Option, request, requestAnimationFrame } = env;
   const { state, $, notice, refresh, storage } = runtime;
 
   // Scoped to a Room instance and operator. Durable operation IDs can survive
@@ -173,6 +174,8 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     notificationsUI.renderGitLabEvents();
     const ws = workspaceView, data = ws?.data, current = data?.workspace, op = data?.operation;
     $("workspace-control").hidden = !state.managed || !ws;
+    $("compose-more").disabled = !state.managed || !ws;
+    if ($("compose-more").disabled) closeWorkspacePicker();
     $("open-workspace").disabled = !ws;
     const label = current?.repository ? current.repository.url.split("/").pop().replace(/\.git$/, "")
       : !current || current.root === "workspaces" ? "默认目录" : current.root;
@@ -315,7 +318,20 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
 
   function closeWorkspacePicker() {
     $("workspace-picker").open = false;
-    $("workspace-trigger").setAttribute("aria-expanded", "false");
+    syncWorkspacePicker();
+  }
+
+  function syncWorkspacePicker() {
+    const open = $("workspace-picker").open;
+    $("workspace-trigger").setAttribute("aria-expanded", String(open));
+    $("compose-more").setAttribute("aria-expanded", String(open));
+    $("compose-more").setAttribute("aria-label", open ? "收起工作目录" : "展开工作目录");
+    runtime.navigationChanged();
+  }
+
+  function focusWorkspaceTrigger() {
+    const mobileTarget = $("compose").classList.contains("has-message") ? "message-input" : "compose-more";
+    $(compactViewport(window) ? mobileTarget : "workspace-trigger").focus();
   }
 
   async function openWorkspace() {
@@ -325,22 +341,30 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
   }
 
   function mount() {
+    $("compose-more").addEventListener("click", () => {
+      const atBottom = conversationUI.nearBottom();
+      $("workspace-picker").open = !$("workspace-picker").open;
+      syncWorkspacePicker();
+      if (atBottom) requestAnimationFrame(conversationUI.bottom);
+    });
     $("workspace-picker").addEventListener("toggle", () => {
-      $("workspace-trigger").setAttribute("aria-expanded", String($("workspace-picker").open));
+      syncWorkspacePicker();
     });
 
-    $("workspace-picker").addEventListener("keydown", event => {
+    const dismissPicker = event => {
       if (event.key === "Escape" && $("workspace-picker").open) {
-        event.preventDefault(); closeWorkspacePicker(); $("workspace-trigger").focus();
+        event.preventDefault(); closeWorkspacePicker(); focusWorkspaceTrigger();
       }
-    });
+    };
+    $("workspace-picker").addEventListener("keydown", dismissPicker);
+    $("compose-more").addEventListener("keydown", dismissPicker);
 
     document.addEventListener("click", event => {
-      if ($("workspace-picker").open && !$("workspace-picker").contains(event.target)) closeWorkspacePicker();
+      if ($("workspace-picker").open && event.target !== $("compose-more") && !$("compose-more").contains(event.target) && !$("workspace-picker").contains(event.target)) closeWorkspacePicker();
     });
 
     $("workspace-picker").addEventListener("focusout", event => {
-      if (event.relatedTarget && !$("workspace-picker").contains(event.relatedTarget)) closeWorkspacePicker();
+      if (event.relatedTarget && event.relatedTarget !== $("compose-more") && !$("workspace-picker").contains(event.relatedTarget)) closeWorkspacePicker();
     });
 
     $("open-workspace").addEventListener("click", openWorkspace);
@@ -348,7 +372,8 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     $("close-workspace").addEventListener("click", () => $("workspace-dialog").close());
 
     $("workspace-dialog").addEventListener("close", () => {
-      ($("notification-detail").open ? $("gitlab-project-summary") : $("workspace-trigger")).focus();
+      if ($("notification-detail").open) $("gitlab-project-summary").focus();
+      else focusWorkspaceTrigger();
     });
 
     $("workspace-kind").addEventListener("change", () => { if (workspaceView) workspaceView.selectedPlatform = ""; renderWorkspacePlatforms(); renderWorkspace(); });
@@ -377,6 +402,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
 
   return {
     mount,
+    closeWorkspacePicker,
     renderWorkspace,
     selectWorkspace,
     get workspaceView() { return workspaceView; },

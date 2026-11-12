@@ -120,6 +120,61 @@ test("IME confirmation including compositionend before Enter never sends", async
   assert.equal(api.calls.filter(c => c.path === "/v1/send").length, 1);
 });
 
+test("phone composer switches between directory tools and sending, retains drafts and restores the compact input", async () => {
+  const api = fixture(), ui = await launch(api);
+  ui.window.innerWidth = 390; await ui.window.emit("resize");
+  const input = ui.el("message-input"), picker = ui.el("workspace-picker"), more = ui.el("compose-more");
+  assert.equal(input.rows, 1);
+  assert.equal(more.disabled, false);
+  assert.equal(ui.el("compose").classList.contains("has-message"), false);
+  await more.emit("click");
+  assert.equal(picker.open, true);
+  assert.equal(more.getAttribute("aria-expanded"), "true");
+  await more.emit("click");
+  assert.equal(picker.open, false);
+  await more.emit("click"); await more.emit("keydown", {key:"Escape"});
+  assert.equal(picker.open, false);
+  assert.equal(ui.document.activeElement, more);
+  await more.emit("click"); await ui.el("open-workspace").emit("click");
+  assert.equal(picker.open, false);
+  assert.equal(ui.el("workspace-dialog").open, true);
+  await ui.el("close-workspace").emit("click");
+  assert.equal(ui.document.activeElement, more);
+  await more.emit("click"); await ui.draft("手机草稿\n第二行");
+  assert.equal(picker.open, false);
+  assert.equal(more.getAttribute("aria-expanded"), "false");
+  assert.equal(ui.el("compose").classList.contains("has-message"), true);
+  assert.equal(ui.el("send").getAttribute("aria-label"), "发送");
+  assert.equal(ui.el("send").children[0].tag, "svg");
+  const reloaded = await launch(api, ui.saved);
+  reloaded.window.innerWidth = 390; await reloaded.window.emit("resize");
+  assert.equal(reloaded.el("message-input").value, input.value);
+  assert.equal(reloaded.el("compose").classList.contains("has-message"), true);
+  await ui.draft("   ");
+  assert.equal(ui.el("compose").classList.contains("has-message"), false);
+  assert.equal(ui.el("send").disabled, true);
+  ui.window.innerWidth = 1440; await ui.window.emit("resize");
+  assert.equal(input.rows, 3);
+  assert.equal(input.style.getPropertyValue("height"), "");
+  assert.equal(api.calls.filter(c => /\/send|\/workspace\/apply/.test(c.path)).length, 0);
+});
+
+test("phone composer keeps explicit retry available after a lost send and returns to tools after confirmation", async () => {
+  const api = fixture(), ui = await launch(api);
+  ui.window.innerWidth = 320; await ui.window.emit("resize");
+  api.hook = path => { if (path === "/v1/send") throw Error("lost response"); };
+  await ui.draft("待确认消息"); await ui.el("compose").emit("submit");
+  assert.equal(ui.el("compose").classList.contains("has-message"), true);
+  assert.equal(ui.el("send").getAttribute("aria-label"), "重试发送");
+  assert.equal(ui.el("send").disabled, false);
+  api.hook = path => path === "/v1/send" ? {seq:1} : undefined;
+  await ui.el("compose").emit("submit");
+  assert.equal(ui.el("message-input").value, "");
+  assert.equal(ui.el("compose").classList.contains("has-message"), false);
+  assert.equal(ui.el("compose-more").disabled, false);
+  assert.equal(api.calls.filter(c => c.path === "/v1/send").length, 2);
+});
+
 test("browser Back closes a transient surface; Forward never recreates a write or form", async () => {
   let layer = null, pop, state = null, backs = 0, pushes = 0;
   const window = { history:{ get state(){return state;}, replaceState(value){state=value;},
