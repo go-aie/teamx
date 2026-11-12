@@ -25,8 +25,9 @@ type toolBindingsFile struct {
 	Bindings []tool.Binding `json:"bindings"`
 }
 type toolSelection struct {
-	ActionAuthorization  *tool.ActionAuthorization `json:"action_authorization,omitempty"`
-	ActionDisabledReason string                    `json:"action_disabled_reason,omitempty"`
+	Availability         *larkMemberCapabilityResult `json:"availability,omitempty"`
+	ActionAuthorization  *tool.ActionAuthorization   `json:"action_authorization,omitempty"`
+	ActionDisabledReason string                      `json:"action_disabled_reason,omitempty"`
 	tool.Definition
 	PlatformID        string   `json:"platform_id,omitempty"`
 	Instance          string   `json:"instance,omitempty"`
@@ -49,11 +50,13 @@ type toolsRequest struct {
 type toolBindingChange struct {
 	ServiceEpoch string `json:"service_epoch"`
 	RoomIdentity
-	Caller          Caller       `json:"caller"`
-	Revision        uint64       `json:"revision"`
-	Binding         tool.Binding `json:"binding"`
-	Enabled         bool         `json:"enabled"`
-	PlatformVersion uint64       `json:"platform_version,omitempty"`
+	Caller           Caller       `json:"caller"`
+	Revision         uint64       `json:"revision"`
+	Binding          tool.Binding `json:"binding"`
+	Enabled          bool         `json:"enabled"`
+	PlatformVersion  uint64       `json:"platform_version,omitempty"`
+	requestedActions []string
+	prepared         *preparedLarkToolChange
 }
 
 func (m *roomManager) toolDefinitions() []tool.Definition {
@@ -186,6 +189,12 @@ func (m *roomManager) selectionsLocked(f toolBindingsFile, caller Caller) ([]too
 					s.Instance, s.Username, s.Status = public.URL, public.Validation.Username, public.Validation.Status
 					s.Name, s.PlatformName = c.ToolEntryID, c.Name
 					m.toolAvailability(*platforms, c, b, d, &s)
+					if d.Provider == "lark" {
+						if a, _, e := registry.ResolveAccessAccount(*platforms, c); e == nil {
+							p := m.larkMemberCapabilitiesLocked(MemberIdentity{RoomIdentity: f.RoomIdentity, AgentID: b.AgentID, MembershipID: b.MembershipID}, "", a, f)
+							s.Availability = &p
+						}
+					}
 				}
 			}
 			if s.Name == d.Name {
@@ -204,6 +213,14 @@ func (m *roomManager) selectionsLocked(f toolBindingsFile, caller Caller) ([]too
 }
 func (m *roomManager) changeToolBindingLocked(ctx context.Context, req toolBindingChange) (toolBindingsFile, []<-chan struct{}, error) {
 	var empty toolBindingsFile
+	if req.prepared != nil {
+		if err := m.recheckLarkToolChangeLocked(ctx, req); err != nil {
+			return empty, nil, err
+		}
+		if req.prepared.Preserved {
+			return req.prepared.Before, nil, nil
+		}
+	}
 	if err := m.checkPlatformMemberContextLocked(ctx); err != nil {
 		return empty, nil, err
 	}
@@ -427,6 +444,16 @@ func (m *roomManager) prepareToolLocked(ctx context.Context, req toolsRequest) (
 
 // Called at every execution guard for adapters requiring an explicit new grant.
 // Legacy capabilities retain their existing admission contract.
+type actionAuthorizationUnavailable struct {
+	cause      error
+	ReasonCode string
+	NextAction string
+	Message    string
+}
+
+func (e *actionAuthorizationUnavailable) Error() string { return e.Message }
+func (e *actionAuthorizationUnavailable) Unwrap() error { return e.cause }
+
 func (m *roomManager) checkActionAuthorizationLocked(req toolsRequest, access platform.AccessContext, spec platform.ActionSpec, target platform.TargetIdentity) error {
 	f, err := m.readToolBindingsLocked(req.RoomIdentity)
 	if err != nil {
@@ -435,17 +462,17 @@ func (m *roomManager) checkActionAuthorizationLocked(req toolsRequest, access pl
 	for _, b := range f.Bindings {
 		if b.AgentID == req.Caller.ID && b.MembershipID == req.Caller.MembershipID && b.PlatformID == access.PlatformID && b.PlatformGeneration == access.Generation && b.ActionAuthorization != nil {
 			if access.ActionAuthorizationVersion != b.ActionAuthorization.Revision {
-				return ErrConflict
+				return &actionAuthorizationUnavailable{cause: ErrConflict, ReasonCode: "action_revision_changed", NextAction: "retry_check", Message: "Member action settings changed; resolve the current target again."}
 			}
 			for _, g := range b.ActionAuthorization.Grants {
 				if g.Operation == string(spec.Operation) && g.TargetKind == spec.TargetKind && g.ObjectType == target.Object.Type {
 					if spec.BindingEvidence != "" && !currentCapabilityEvidence(b.Evidence(spec.BindingEvidence), spec, access, target) {
-						return ErrIdentity
+						return &actionAuthorizationUnavailable{cause: ErrIdentity, ReasonCode: "binding_evidence_missing_or_stale", NextAction: "enable_member_tool", Message: "The configured action needs current member evidence. Explicitly repair this member's granted capability."}
 					}
 					return nil
 				}
 			}
 		}
 	}
-	return conflictReason("action_authorization", "member action capability is disabled", "The operator must explicitly enable this action on the selected binding.")
+	return &actionAuthorizationUnavailable{cause: ErrConflict, ReasonCode: "member_action_not_configured", NextAction: "enable_member_tool", Message: "Member action is not configured. Explicitly enable the requested action for this member and exact platform."}
 }

@@ -636,16 +636,13 @@
             <p id="connection-cli-hint" class="quiet">使用 TeamX 服务所在机器及运行用户的 lark-cli 1.0.99。登录凭据由 CLI 管理。</p>
             <button id="connection-detect" class="secondary-button" type="button">重新检测</button>
           </details>
-          <details id="connection-sending" class="connection-advanced" hidden>
-            <summary>消息发送（可选）</summary>
-            <p class="quiet">需要助手回复或发送消息时，再检查并授权相关权限。</p>
-            <div class="connection-account-actions">
-              <button id="connection-send-check" class="secondary-button" type="button" hidden>检查发送条件</button>
-              <button id="connection-target-authorize" class="secondary-button" type="button" hidden>授权目标核验</button>
-              <button id="connection-send-authorize" class="secondary-button" type="button" hidden>授权发送权限</button>
-            </div>
-            <p id="connection-send-status" class="settings-hint" hidden>请先检查账号与发送权限。</p>
-          </details>
+          <section id="connection-capabilities" class="connection-advanced" aria-label="账号能力" hidden>
+            <p class="quiet">连接后可供助理读取、回复和发送消息；实际使用取决于成员工具与具体指令。</p>
+            <p id="connection-capability-status" class="settings-hint" role="status" aria-live="polite"></p>
+            <a id="connection-application-permissions" target="_blank" rel="noopener noreferrer" hidden>请应用管理员补充权限 ↗</a>
+            <button id="connection-authorize" class="secondary-button" type="button" hidden>补全授权</button>
+            <button id="connection-capability-check" class="text-button" type="button" hidden>重新检查</button>
+          </section>
         </div>
         <div id="gitlab-account-row" class="connection-field connection-field-wide">
           <p id="gitlab-account" class="connection-account" role="status" aria-live="polite">未连接</p>

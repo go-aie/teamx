@@ -159,7 +159,7 @@ func TestOnboardingLarkDefaultsAndRestart(t *testing.T) {
 		t.Fatal(op.Notifications, op.Tool)
 	}
 	before := larkStateFor(t, h.m, h.room.RoomIdentity, h.c.ID)
-	if !before.Config.DiscoverPrivate() || before.Config.Groups.Enabled || !before.Config.Groups.AtMe || before.Config.Target.MembershipID != h.members[0].MembershipID {
+	if !before.Config.DiscoverPrivate() || !before.Config.Groups.Enabled || before.Config.Groups.Scope != "all" || before.Config.Groups.MessageMode != "mentions" || !before.Config.Groups.AtMe || !before.Config.Groups.AtAll || before.Config.Target.MembershipID != h.members[0].MembershipID {
 		t.Fatal("wrong Lark defaults")
 	}
 	// New manager, new epoch; only the new epoch authorizes resuming local work.

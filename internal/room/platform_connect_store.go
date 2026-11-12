@@ -17,6 +17,7 @@ import (
 // Fixed business input is distinct from observation and result delivery policy.
 // Existing connections can only be reused at the explicitly observed version.
 type platformConnectInput struct {
+	Intent          string `json:"intent,omitempty"`
 	Provider        string `json:"provider"`
 	Name            string `json:"name"`
 	PlatformID      string `json:"platform_id,omitempty"`
@@ -33,6 +34,8 @@ type platformConnectRequest struct {
 	Input         *platformConnectInput `json:"input,omitempty"`
 	Notify        *string               `json:"notify,omitempty"`
 	ResultVersion uint64                `json:"result_version,omitempty"`
+	Intent        string                `json:"intent,omitempty"`
+	PlatformID    string                `json:"platform_id,omitempty"`
 }
 type platformConnectInteraction struct {
 	ID   string `json:"id"`
@@ -68,6 +71,16 @@ type platformConnectOperation struct {
 	CreatedAt              time.Time                      `json:"created_at"`
 	UpdatedAt              time.Time                      `json:"updated_at"`
 	Continuation           *platformOperationContinuation `json:"continuation,omitempty"` // live projection only
+	AuthorizationImpact    []larkAuthPlatform             `json:"authorization_impact,omitempty"`
+	AuthorizationTargets   []larkAuthorizationTarget      `json:"authorization_targets,omitempty"`
+	Permissions            *lark.PermissionCheck          `json:"permissions,omitempty"`
+}
+
+func connectIntent(in platformConnectInput) string {
+	if in.Intent == "" {
+		return "connect"
+	}
+	return in.Intent
 }
 
 func connectTerminal(status string) bool {
@@ -84,7 +97,13 @@ func validPlatformConnect(op platformConnectOperation) bool {
 	if op.Continuation != nil || op.Setup != nil {
 		return false
 	}
-	if op.Schema != 1 || !tool.OpaqueID(op.ID) || !tool.OpaqueID(op.PlatformID) || !tool.OpaqueID(op.RoomInstance) || !safeMembershipID(op.MembershipID) || !validText(op.RoomID) || !validText(op.AgentID) || op.Caller != agentCallerIdentity(op.MemberIdentity) || !validHumanEvidence(op.Source) || !validText(op.Input.Name) || len(op.Input.Name) > 128 || op.Version == 0 || op.CreatedAt.IsZero() || op.UpdatedAt.Before(op.CreatedAt) || op.Interaction.ID != op.ID || op.Interaction.URL != "" || op.Interaction.QRCodeURL != "" {
+	if (op.Schema != 1 && op.Schema != 2) || !tool.OpaqueID(op.ID) || !tool.OpaqueID(op.PlatformID) || !tool.OpaqueID(op.RoomInstance) || !safeMembershipID(op.MembershipID) || !validText(op.RoomID) || !validText(op.AgentID) || op.Caller != agentCallerIdentity(op.MemberIdentity) || !validHumanEvidence(op.Source) || !validText(op.Input.Name) || len(op.Input.Name) > 128 || op.Version == 0 || op.CreatedAt.IsZero() || op.UpdatedAt.Before(op.CreatedAt) || op.Interaction.ID != op.ID || op.Interaction.URL != "" || op.Interaction.QRCodeURL != "" {
+		return false
+	}
+	if op.Schema == 1 && (op.Input.Intent != "" || len(op.AuthorizationTargets) != 0 || len(op.AuthorizationImpact) != 0 || op.Permissions != nil) {
+		return false
+	}
+	if !validLarkAuthorizationTargets(op) {
 		return false
 	}
 	if !validConnectProvider(op) {
@@ -220,6 +239,10 @@ func (m *roomManager) recoverPlatformConnectLocked() error {
 			op.Status, op.ErrorCode = "cancelled", "cancelled"
 		}
 		for _, c := range file.Platforms {
+			// An old verified connection is not evidence that an interrupted OAuth committed.
+			if connectIntent(op.Input) == "authorize" {
+				continue
+			}
 			if op.CancelRequested || c.ID != op.PlatformID || c.Provider != op.Input.Provider || c.Name != op.Input.Name {
 				continue
 			}

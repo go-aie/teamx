@@ -158,6 +158,7 @@ type roomManager struct {
 	platformCalls            map[*platformCall]bool
 	platformMemberChanges    map[MemberIdentity]bool
 	larkClients              *lark.ClientFactory // nil uses the shared production request queues
+	larkPermissionChecks     map[string]larkPlatformCapabilityResult
 	platforms                *registry.Manager
 	oauthFlights             map[string]*oauthRefreshFlight
 	oauthLeases              map[string]map[*gitlabTokenLease]bool
@@ -171,6 +172,7 @@ type roomManager struct {
 	actionResolvers          map[string]actionTargetResolver
 	inboxAdmissionResolvers  map[string]inboxAdmissionResolver
 	bindingEvidencePreparers map[string]bindingEvidencePreparer
+	toolBindingPreparers     map[string]bindingEvidencePreparer
 	platformProject          func(context.Context, string, string, workspaceSecret) (int64, error)
 	notifications            *notification.Manager
 	notificationAdapters     map[notification.SourceID]notificationAdapter

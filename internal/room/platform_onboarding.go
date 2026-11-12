@@ -49,11 +49,15 @@ type platformOnboardingRequest struct {
 	OperationID  string `json:"operation_id"`
 }
 type onboardingStep struct {
-	Status    string `json:"status"`
-	Version   uint64 `json:"version,omitempty"`
-	ErrorCode string `json:"error_code,omitempty"`
+	RequestedActions []tool.ActionGrant          `json:"requested_actions,omitempty"`
+	Authorization    *tool.ActionAuthorization   `json:"action_authorization,omitempty"`
+	Capabilities     *larkMemberCapabilityResult `json:"capabilities,omitempty"`
+	Status           string                      `json:"status"`
+	Version          uint64                      `json:"version,omitempty"`
+	ErrorCode        string                      `json:"error_code,omitempty"`
 }
 type platformOnboarding struct {
+	LarkActions               []tool.ActionGrant         `json:"lark_actions,omitempty"`
 	Cancelled                 bool                       `json:"cancelled,omitempty"`
 	Schema                    int                        `json:"schema"`
 	ID                        string                     `json:"operation_id"`
@@ -71,7 +75,7 @@ type platformOnboarding struct {
 	Lark                      *lark.Config               `json:"lark,omitempty"`
 }
 
-const platformOnboardingSchema = 2
+const platformOnboardingSchema = 3
 
 // This target is fixed before login and is also the notification settings
 // locator: Input supplies the complete Room/member identity, PlatformID the
@@ -227,10 +231,25 @@ func (m *roomManager) prepareOnboardingLocked(ctx context.Context, req platformO
 		op.BeforeToolRevision = f.Revision
 		for i, b := range append(append([]tool.Binding(nil), f.Bindings...), f.Disabled...) {
 			if b.AgentID == spec.AgentID && b.MembershipID == spec.MembershipID && b.PlatformID == id && b.Tool == def.ToolType && op.Tool.Status != "skipped" && (spec.PreserveExisting || spec.Tool == nil || *spec.Tool == (i < len(f.Bindings))) {
-				op.Tool.Status = "preserved"
+				if spec.Provider != "lark" || spec.PreserveExisting || spec.Tool == nil || !*spec.Tool {
+					op.Tool.Status = "preserved"
+				}
 			}
 		}
 
+		if spec.Provider == "lark" && op.Tool.Status == "pending" && onboardingEnabled(spec.Tool) {
+			caps, e := m.referenceCapabilities("lark")
+			if e != nil {
+				return op, e
+			}
+			op.LarkActions = defaultLarkActionGrants(caps)
+			for _, b := range f.Bindings {
+				if b.AgentID == spec.AgentID && b.MembershipID == spec.MembershipID && b.PlatformID == id && b.Tool == "lark" && b.ActionAuthorization != nil {
+					op.LarkActions = append(op.LarkActions, b.ActionAuthorization.Grants...)
+				}
+			}
+			op.LarkActions = normalizeActionGrants(op.LarkActions)
+		}
 		// Historical disable removed the binding entirely. Absence in such a
 		// snapshot cannot authorize reopening a possibly disabled account.
 		if op.Tool.Status == "pending" && (spec.PreserveExisting || spec.Tool == nil) && f.Revision > 0 && (f.LegacyUnknown || f.Disabled == nil) {
@@ -384,7 +403,7 @@ func (m *roomManager) applyOnboarding(ctx context.Context, id, owner string) (pl
 	// Completed pre-member-subscription operations are history only. Their
 	// preserved notification may belong to a different member or the Room.
 	// Never reinterpret or replay them under the new target contract.
-	if op.Schema != platformOnboardingSchema {
+	if op.Schema == 1 {
 		m.mu.Unlock()
 		if op.Cancelled || !onboardingFinished(op.Notifications) || !onboardingFinished(op.Tool) {
 			return op, ErrConflict
@@ -536,7 +555,7 @@ func (m *roomManager) applyOnboarding(ctx context.Context, id, owner string) (pl
 			return op, err
 		}
 	}
-	if !onboardingFinished(op.Tool) {
+	if !onboardingFinished(op.Tool) && op.Tool.Status != "unknown" {
 		m.mu.Lock()
 		op.Tool = m.applyOnboardingToolLocked(ctx, op)
 		err = m.saveOnboardingLocked(op)
@@ -605,6 +624,10 @@ func (m *roomManager) applyOnboardingNotifications(ctx context.Context, op platf
 	return result
 }
 func (m *roomManager) applyOnboardingToolLocked(ctx context.Context, op platformOnboarding) onboardingStep {
+	if op.Schema >= 3 && op.Input.Provider == "lark" && onboardingEnabled(op.Input.Tool) {
+		return m.applyOnboardingLarkToolLocked(ctx, op)
+	}
+
 	failure := func(err error) onboardingStep {
 		return onboardingStep{Status: "failed", ErrorCode: onboardingFailure(err)}
 	}
@@ -831,7 +854,7 @@ func (m *roomManager) onboardingOperationsLocked() ([]platformOnboarding, error)
 }
 
 func validOnboarding(op platformOnboarding) bool {
-	if (op.Schema != 1 && op.Schema != platformOnboardingSchema) || !tool.OpaqueID(op.ID) || !tool.OpaqueID(op.PlatformID) || !validText(op.Owner) || op.Generation != "" && !tool.OpaqueID(op.Generation) || op.Account != (platform.AccountIdentity{}) && !op.Account.Valid() {
+	if (op.Schema != 1 && op.Schema != 2 && op.Schema != platformOnboardingSchema) || !tool.OpaqueID(op.ID) || !tool.OpaqueID(op.PlatformID) || !validText(op.Owner) || op.Generation != "" && !tool.OpaqueID(op.Generation) || op.Account != (platform.AccountIdentity{}) && !op.Account.Valid() {
 		return false
 	}
 	if _, ok := platform.LookupType(op.Input.Provider); !ok {
@@ -861,7 +884,28 @@ func validOnboarding(op platformOnboarding) bool {
 	if op.GitLab != nil && (op.Input.Provider != "gitlab" || op.GitLab.PlatformID != op.PlatformID) || op.Lark != nil && (op.Input.Provider != "lark" || op.Lark.PlatformID != op.PlatformID) {
 		return false
 	}
-	if op.Schema == platformOnboardingSchema {
+	if op.Schema < 3 && (len(op.LarkActions) > 0 || op.Tool.Authorization != nil || op.Tool.Capabilities != nil || len(op.Tool.RequestedActions) > 0) {
+		return false
+	}
+	if op.Schema >= 3 && len(op.LarkActions) > 0 {
+		auth := &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: op.LarkActions}
+		if !auth.Valid() || op.Input.Provider != "lark" || !onboardingEnabled(op.Input.Tool) || op.Input.SkipTool || op.Input.OnlyPlatform {
+			return false
+		}
+	}
+	if op.Tool.Capabilities != nil {
+		c := op.Tool.Capabilities
+		if op.Schema < 3 || !validLarkConfigurationReceipt(op.Input.MemberIdentity, op.PlatformID, op.Account, op.Tool.RequestedActions, op.Tool.Authorization, c) {
+			return false
+		}
+		if (onboardingFinished(op.Tool) || op.Tool.Status == "unknown") && c.ActionRevision != op.Tool.Authorization.Revision {
+			return false
+		}
+		if onboardingFinished(op.Tool) && (c.ToolRevision != op.Tool.Version || c.ActionRevision != op.Tool.Authorization.Revision) {
+			return false
+		}
+	}
+	if op.Schema >= 2 {
 		if op.Input.OnlyPlatform {
 			if op.Input.MemberIdentity != (MemberIdentity{}) || op.Input.Backfill != nil || op.Input.PreserveExisting || op.Input.SkipNotifications || op.Input.SkipTool || op.Input.GitLab != nil || op.Input.Lark != nil || op.GitLab != nil || op.Lark != nil || op.Notifications.Status != "skipped" || op.Tool.Status != "skipped" {
 				return false
@@ -889,7 +933,7 @@ func validOnboarding(op platformOnboarding) bool {
 		return false
 	}
 	for _, step := range []onboardingStep{op.Notifications, op.Tool} {
-		if step.Status != "pending" && step.Status != "applied" && step.Status != "preserved" && step.Status != "skipped" && step.Status != "failed" {
+		if step.Status != "pending" && step.Status != "applied" && step.Status != "preserved" && step.Status != "skipped" && step.Status != "failed" && !(op.Schema >= 3 && (step.Status == "unknown" || step.Status == "not_applied")) {
 			return false
 		}
 	}

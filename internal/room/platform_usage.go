@@ -79,14 +79,19 @@ func (m *roomManager) publicPlatformLocked(c platform.Platform) (managedPlatform
 	if err != nil {
 		return managedPlatform{}, managedPlatformError(err)
 	}
+	var capabilities *larkPlatformCapabilityResult
 	for _, record := range file.Platforms {
 		if record.ID == c.ID {
+			if record.Provider == "lark" {
+				p := m.larkPlatformCapabilitiesLocked(record)
+				capabilities = &p
+			}
 			c = registry.Public(file, record)
 			break
 		}
 	}
 	refs, err := m.managedPlatformReferencesLocked(c.ID)
-	return managedPlatform{Platform: c, References: refs}, err
+	return managedPlatform{Platform: c, References: refs, Capabilities: capabilities}, err
 }
 func samePlatformReferences(refs []managedPlatformReference, acknowledged []RoomIdentity) bool {
 	want := make([]RoomIdentity, 0, len(refs))

@@ -224,7 +224,16 @@ func (m *roomManager) serveTools(w http.ResponseWriter, r *http.Request) {
 			writeAPIError(w, err)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(f)
+		if req.prepared != nil {
+			_ = json.NewEncoder(w).Encode(struct {
+				toolBindingsFile
+				RequestedActions []tool.ActionGrant         `json:"requested_actions"`
+				Capabilities     larkMemberCapabilityResult `json:"capabilities"`
+				Status           string                     `json:"status"`
+			}{f, req.prepared.RequestedActions, req.prepared.Capabilities, map[bool]string{true: "preserved", false: "applied"}[req.prepared.Preserved]})
+		} else {
+			_ = json.NewEncoder(w).Encode(f)
+		}
 		return
 	default:
 		http.NotFound(w, r)

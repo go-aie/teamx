@@ -6,7 +6,7 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
   // Application secrets live only in memory and are never retried automatically.
   const platforms = { items: [], selected: null, sending: false, generation: 0, formVersion: 0, discovery: null, detecting: false, auth: null, authTimer: null, larkPending:null, larkStarting:null, gitlabAuth: null, gitlabTimer: null, gitlabPending: null, gitlabSetup:null, gitlabSetupVersion:0, gitlabEditingImportID:null, scionDiscovery:null, scionAuth:null, scionTimer:null, scionPending:null, scionLogout:null };
 
-  const connectionValidationErrors = { login_failed:"PAT 登录失败，请核对实例、令牌及权限。", timeout:"操作超时，请刷新账号核对结果；不会自动重新登录。", cancelled:"操作已取消，请刷新账号核对状态。", credential_unavailable: "登录凭据不可用，请核对账号授权或服务凭据配置。", credential_rejected: "认证失败，请核对当前账号登录和权限。", identity_mismatch: "profile 账号或应用已变化，请核对后重新验证。", permission_denied: "当前用户缺少读取权限，请检查授权。", cli_version_mismatch: "CLI 版本不匹配，请使用对应工具已验收的固定版本。", cli_unavailable: "CLI 无法执行，请核对路径与后台运行权限。", query_failed: "连接失败，请检查地址或网络后重试验证。", invalid_response: "实例返回了无效的身份信息。" };
+  const connectionValidationErrors = { login_failed:"PAT 登录失败，请核对实例、令牌及权限。", timeout:"操作超时，请刷新账号核对结果；不会自动重新登录。", cancelled:"操作已取消，请刷新账号核对状态。", credential_unavailable: "登录凭据不可用，请核对账号授权或服务凭据配置。", credential_rejected: "认证失败，请核对当前账号登录和权限。", identity_mismatch: "profile 账号或应用已变化，请核对后重新验证。", permission_denied: "当前用户权限不足，请检查授权。", application_scopes_unchecked:"应用权限暂未确认，请检查网络后重新检测。", identity_or_version_changed:"账号或连接版本已变化，请核对原账号后重试。", cli_version_mismatch: "CLI 版本不匹配，请使用对应工具已验收的固定版本。", cli_unavailable: "CLI 无法执行，请核对路径与后台运行权限。", query_failed: "连接失败，请检查地址或网络后重试验证。", invalid_response: "实例返回了无效的身份信息。" };
 
   let connectionFeedbackTimer=null;
 
@@ -201,7 +201,7 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
     $("connection-scion-executable").value = item?.provider === "scion" ? item.cli_profile.executable : "";
     setSelectOptions("connection-scion-profile",[new Option("", item?.provider === "scion" ? item.cli_profile.profile : "")],item?.provider === "scion" ? item.cli_profile.profile : "");
     $("connection-advanced").open = false;
-    $("connection-sending").open = false;
+    $("connection-capabilities").hidden = true;
     $("connection-setup-new").checked = true;
     $("connection-setup-existing").checked = false;
     $("connection-setup-copy").textContent = "复制命令";

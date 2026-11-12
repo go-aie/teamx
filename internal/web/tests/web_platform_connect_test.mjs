@@ -163,3 +163,14 @@ test('GitLab first application settings return to the original operation and clo
  await ui.el('close-settings').emit('click');await settle();
  assert.equal(api.calls.some(c=>c.path.endsWith('/gitlab/login') || c.path.endsWith('/gitlab/cancel') || c.path.endsWith('/onboarding/prepare')),false);
 });
+
+test('existing Feishu authorization shows shared impact and exact app repair in the original message',async()=>{
+ const api=fixture();api.op.intent='authorize';api.op.stage='authorization';api.op.affected=[{id:'original',referenced_rooms:[{room_id:'R',room_instance:'instance-R'}]},{id:'shared',referenced_rooms:[]}];
+ api.op.permissions={account:{id:{namespace:'lark:open_id:cli_fixture'}},capabilities:[{name:'message.send',state:'blocked',next_action:'configure_application'}]};
+ const ui=await launch(api);await settle();
+ assert.match(card(ui).children[0].textContent,/补全授权/);assert.equal(link(card(ui)).textContent,'补全授权 ↗');
+ assert.match(card(ui).children[6].textContent,/2 个共享连接、1 个会话/);
+ const app=card(ui).children.find(c=>c.textContent==='前往飞书应用权限管理 ↗');assert.equal(app.href,'https://open.feishu.cn/app/cli_fixture/auth');
+ await card(ui).children[5].children[2].emit('click');await settle();await ui.el('close-settings').emit('click');
+ assert.equal(writes(api).length,0);assert.equal(ui.document.getElementById('message-1').querySelector('.message-interactions').children[0],card(ui));
+});

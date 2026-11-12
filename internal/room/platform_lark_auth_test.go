@@ -14,7 +14,13 @@ import (
 
 const roomAuthCommands = `
 if a==['config','show']:
- print(json.dumps({'profile':'fixture','brand':'feishu'}));sys.exit()
+ print(json.dumps({'profile':'fixture','appId':'cli_fixture','brand':'feishu'}));sys.exit()
+if a==['auth','scopes','--json']:
+ print(json.dumps({'appId':'cli_fixture','tokenType':'user','userScopes':'im:chat:read im:message:readonly im:message.p2p_msg:get_as_user im:message.group_msg:get_as_user contact:user.basic_profile:readonly im:message.send_as_user im:message im:chat.members:read contact:user:search'.split()}));sys.exit()
+if a[:2]==['auth','check']:
+ print(json.dumps({'ok':True,'granted':a[a.index('--scope')+1].split(),'missing':[]}));sys.exit()
+if a==['auth','status','--json']:
+ print(json.dumps({'appId':'cli_fixture','identities':{'user':{'openId':'ou_reader','tokenStatus':'valid','refreshExpiresAt':'2027-12-01T00:00:00Z'}}}));sys.exit()
 if a[:2]==['auth','login'] and '--no-wait' in a:
  open(base+'/auth-started','w').write('yes')
  print(json.dumps({'verification_url':'https://accounts.feishu.cn/oauth?code=fixture','device_code':'private-device-code','expires_in':600}));sys.exit()

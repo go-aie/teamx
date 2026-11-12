@@ -398,6 +398,7 @@ func TestLarkSelfSendRevocationRaces(t *testing.T) {
 				req := toolBindingChange{ServiceEpoch: h.m.epoch, RoomIdentity: id.RoomIdentity, Caller: humanCaller, Revision: bindings.Revision, Enabled: mode == "disable", Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "lark", PlatformID: h.c.ID}}
 				if req.Enabled {
 					req.Binding.PlatformID, req.PlatformVersion = h.c.ID, h.c.Version
+					req.Binding.ActionAuthorization = &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: []tool.ActionGrant{}}
 				}
 				r := managerHTTP(h.m, "/v1/tools/bind", req)
 				if r.Code != 200 {

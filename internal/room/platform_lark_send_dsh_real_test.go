@@ -58,7 +58,7 @@ elif b[:2]==['api','GET']:
   if mid:allowed.append('/open-apis/im/v1/messages/'+mid)
  assert path in allowed, 'read outside authorized acceptance target'
  assert b[-4:]==['--as','user','--format','json']
-elif b in [['--version'],['config','show'],['whoami','--as','user'],['auth','scopes','--json']]:pass
+elif b in [['--version'],['config','show'],['whoami','--as','user'],['auth','scopes','--json'],['auth','status','--json']]:pass
 elif b[:2]==['auth','check']:pass
 else:raise Exception('operation outside bounded acceptance')
 r=subprocess.run(['/opt/homebrew/bin/lark-cli']+a,capture_output=True)
@@ -262,8 +262,9 @@ func TestRealLarkGroupDSHSendAndRecovery(t *testing.T) {
 		}
 	}
 	candidate, _ := json.Marshal(target)
+	exactBody, _ := json.Marshal(q.Body)
 	report["phase"] = "real-agent-send"
-	first := post("authorized-group-send", fmt.Sprintf("本轮用户已明确授权以当前绑定的罗彭用户身份，向指定单群 %s 发送一次测试消息。准确正文：%s。动作 ID 固定为 %s。使用 actions resolve，provider=lark，locator.candidate=%s。核验准确账号、群和 schema 后执行 message.send，仅一次；本条真实 Room 消息为直接授权依据。没有 Inbox 或跟进，也不要创建。结果不确定就停止，不换 ID 补发。", q.GroupName, q.Body, actionID, candidate))
+	first := post("authorized-group-send", fmt.Sprintf("本轮用户已明确授权以当前绑定的罗彭用户身份，向指定单群 %s 发送一次测试消息。\n准确正文是以下 JSON 字符串的解码值，不添加标点或改写：\n%s\n动作 ID 固定为 %s。使用 actions resolve，provider=lark，locator.candidate=%s。核验准确账号、群和 schema 后执行 message.send，仅一次；本条真实 Room 消息为直接授权依据。没有 Inbox 或跟进，也不要创建。结果不确定就停止，不换 ID 补发。", q.GroupName, exactBody, actionID, candidate))
 	if _, err = svc.control(ctx, apiRequest{AgentID: id.AgentID, MembershipID: id.MembershipID}, "run"); err != nil {
 		t.Fatal(err)
 	}

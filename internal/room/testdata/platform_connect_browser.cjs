@@ -13,7 +13,7 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),{wri
   // Keep both rooms live; navigation uses the actual room sidebar.
   await context.addInitScript(selection=>sessionStorage.setItem('teamx.selected-room',JSON.stringify(selection)),{room_id:current.room_id,room_instance:room});
   await page.goto(endpoint);
-  const card=page.locator(`#messages [data-interaction-id="${id}"]`),link=card.locator('a'),qr=card.locator('img');
+  const card=page.locator(`#messages [data-interaction-id="${id}"]`),link=card.locator('.platform-connect-authorize'),qr=card.locator('img');
   // Room order is activity based. Select by stable room entry metadata if needed.
   if(!(await card.count())){const buttons=page.locator('#room-list .room-choice, #direct-list .room-choice');if(await buttons.count())await buttons.filter({hasText:current.name}).first().click();}
   await card.waitFor();await link.waitFor({state:'visible'});await qr.waitFor({state:'visible'});

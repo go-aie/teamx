@@ -2,7 +2,7 @@ import { createActivityReader, sameService } from "../client.mjs";
 import { createAssistantIcon } from "../icons.mjs";
 
 // Member inspection, private activity, CLI tools and platform summaries.
-export function createMembers({ env, runtime, notificationsUI, workspaceUI, onboardingUI, inboxUI, roomsUI, layoutUI, policyUI, conversationUI }) {
+export function createMembers({ env, runtime, notificationsUI, workspaceUI, onboardingUI, inboxUI, roomsUI, layoutUI, policyUI, conversationUI, connectionsUI, settingsUI }) {
   const { document, window, Option, ResizeObserver, request } = env;
   const { state, $, notice, rpc, currentView, refresh, discussionBusy } = runtime;
 
@@ -59,7 +59,9 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
   function toolIssue(v,item) {
     const selection=v?.cli?.selections?.find(s=>s.agent_id===v.member.agent_id && s.membership_id===v.member.membership_id && s.platform_id===item.id);
     const unavailable=toolBinding(v,item) && selection?.unavailable_reason ? ({executable_unavailable:"程序缺失，已保留启用设置；修复后会重新检查。",account_unavailable:"账号暂不可用，已保留启用设置，请重新核验。",platform_changed:"平台已变化，需重新启用。"}[selection.unavailable_reason] || "工具暂不可用，已保留启用设置。") : "";
-    return [v?.cliResult?.tool===item.id ? v.cliResult.message : "",unavailable].filter(Boolean).join(" ");
+    const gaps=selection?.availability?.capabilities?.filter(c=>c.configured && c.state!=="ready") || [];
+    const capabilityIssue=gaps.length ? gaps.map(c=>`${({"message.reply":"回复","message.send":"群发送","message.send_self":"本人投递"})[c.name] || c.name}：${c.state === "unsupported" ? "当前服务不支持发送" : ({member_action_not_configured:"尚未配置",self_evidence_missing:"待核验",self_evidence_stale:"需重新核验",user_scopes_missing:"需补全授权",application_scopes_missing:"需管理员补权",account_pinning_unavailable:"账号固定暂未确认，请重新核验"})[c.reason_code] || "暂未确认"}`).join("；") : "";
+    return [v?.cliResult?.tool===item.id ? v.cliResult.message : "",unavailable,capabilityIssue].filter(Boolean).join(" ");
   }
 
   function toolSwitch(v,item) {
@@ -74,26 +76,26 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     input.addEventListener("change",()=>changeMemberTool(v,item,input.checked));return label;
   }
 
-  async function changeMemberTool(v,item,enabled) {
+  async function changeMemberTool(v,item,enabled,repair=false) {
     const ws=workspaceUI.workspaceView;if(!toolsCurrent(v) || !v.cliConnected || ws.memberToolBusy || onboardingUI.onboarding.busy)return;
     const d=typeof item==="string" ? v.cli.catalog.find(d=>d.name===item) : v.cli.catalog.find(d=>d.provider===item.provider);
     if(!d || enabled && typeof item!=="string" && item.validation?.status!=="valid")return;
     const key=typeof item==="string" ? item : item.id,b=toolBinding(v,item);
     const binding={agent_id:v.member.agent_id,membership_id:v.member.membership_id,tool:d.name,...(typeof item!=="string" ? {platform_id:item.id} : {})};
-    if(enabled && d.provider==="lark")binding.action_authorization={version:1,revision:b?.action_authorization?.revision || 1,grants:(d.actions || []).filter(s=>!s.disabled_reason).flatMap(s=>(s.object_types || []).map(object_type=>({operation:s.operation,target_kind:s.target_kind,object_type})))};
-    else if(enabled && b?.action_authorization)binding.action_authorization=structuredClone(b.action_authorization);
+    if(enabled && (d.provider!=="lark" || repair) && b?.action_authorization)binding.action_authorization=structuredClone(b.action_authorization);
     ws.memberToolBusy=true;v.cliPending={tool:key,enabled};v.cliResult=null;v.cliRead=(v.cliRead || 0)+1;renderMemberTools(v);
     let message="";
     try {
-      const next=await request("/v1/tools/bind",{...v.identity,revision:v.cli.revision,binding,enabled,platform_version:enabled && typeof item!=="string" ? item.version : 0},undefined,binding.action_authorization?.grants.some(g=>d.actions?.some(s=>s.operation===g.operation && s.binding_evidence)) ? 40000 : 10000);
+      const next=await request("/v1/tools/bind",{...v.identity,revision:v.cli.revision,binding,enabled,platform_version:enabled && typeof item!=="string" ? item.version : 0},undefined,enabled && d.provider==="lark" ? 70000 : 10000);
       if(toolsCurrent(v))v.cli={...v.cli,...next};
       message=`${typeof item==="string" ? item : item.name} 工具${enabled ? "已启用" : "已停用"}。`;
+      if(enabled && next.capabilities?.capabilities?.some(c=>c.configured && c.state!=="ready"))message+=" 部分动作暂不可用，请核对平台权限或本人投递核验状态。";
     } catch(error) {
-      message=["conflict","identity","request","capacity"].includes(error.code) ? "保存失败，请核对当前成员、平台与权限后重试。" : "保存结果未确认，请核对读回状态；不会自动重发。";
+      message=error.code==="user_authorization_required" ? "尚未保存，请先补全当前飞书连接的用户授权。" : ["conflict","identity","request","capacity"].includes(error.code) ? "保存失败，请核对当前成员、平台与权限后重试。" : "保存结果未确认，请核对读回状态；不会自动重发。";
     } finally {
       ws.memberToolBusy=false;v.cliPending=null;
       // A read resolves unknown local writes; no bind request is replayed.
-      if(toolsCurrent(v)){await loadCLITools(v);if(!v.cliConnected)message+=" 当前状态暂不可读，请刷新。";v.cliResult={tool:key,message,error:!v.cliConnected || /失败|未确认/.test(message)};renderMemberTools(v);}
+      if(toolsCurrent(v)){await loadCLITools(v);if(!v.cliConnected)message+=" 当前状态暂不可读，请刷新。";v.cliResult={tool:key,message,error:!v.cliConnected || /失败|未确认|尚未保存/.test(message)};renderMemberTools(v);}
       else if(memberToolsView?.cli && toolsCurrent(memberToolsView))await loadCLITools(memberToolsView);
     }
   }
@@ -153,7 +155,18 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       input.hidden=!hasNotifications;if(!notificationsUI.notificationConfigured(item,view) && onboardingUI.onboarding.busy)input.disabled=true;label.hidden=!hasNotifications;
       row.children[2].textContent=[notificationsUI.notificationConfigured(item,view) ? notificationsUI.notificationIssue(ws,item,view) : "",toolIssue(v,item)].filter(Boolean).join(" ");row.children[2].hidden=!row.children[2].textContent;row.children[2].dataset.kind=v?.cliResult?.tool===item.id && !v.cliResult.error ? "success" : "error";
       const info=row.children[0],issue=row.children[2],controls=document.createElement("div");controls.className="member-platform-controls";
-      controls.append(label,input,toolSwitch(v,item));row.replaceChildren(info,controls,issue);return row;
+      controls.append(label,input,toolSwitch(v,item));
+      if(item.provider === "lark" && toolBinding(v,item)) {
+        const selection=v?.cli?.selections?.find(s=>s.platform_id===item.id), gaps=selection?.availability?.capabilities?.filter(c=>c.configured!==false && c.state!=="ready") || [];
+        const configured=selection?.action_authorization?.grants?.length;
+        const needsAuthorization=v?.cliResult?.tool===item.id && /补全/.test(v.cliResult.message) || gaps.some(c=>["authorize_user","configure_application","revalidate_account","retry_check"].includes(c.next_action));
+        if(needsAuthorization || !configured || gaps.some(c=>["verify_self","enable_member_tool"].includes(c.next_action))) {
+          const repair=document.createElement("button");repair.type="button";repair.className="text-button";repair.textContent=needsAuthorization ? "核对账号授权" : "修复能力";
+          repair.disabled=!!ws.memberToolBusy || !v?.cliConnected;
+          repair.addEventListener("click",async()=>{if(!needsAuthorization){await changeMemberTool(v,item,true,true);return;}settingsUI.openSettings("platforms");await connectionsUI.loadPlatforms();const current=connectionsUI.platforms.items.find(p=>p.id===item.id);if(current)connectionsUI.editPlatform(current);});controls.append(repair);
+        }
+      }
+      row.replaceChildren(info,controls,issue);return row;
     }));
     layoutMemberPlatforms();
     $("member-notification-source-count").textContent=String(configured.length);

@@ -35,9 +35,7 @@ if (process.env.TEAMX_WORKSPACE_UI_PHASE === "create") {
   ui.el("workspace-connection").value=connection.id;
   await ui.el("workspace-connection").emit("change");
   await ui.el("workspace-form").emit("submit");
-  await ready();
-  await ui.refresh();
-  const catalog=await api.request("/v1/rooms");
+  const catalog=await ready();
   const room=catalog.rooms.find(room=>room.name==="Workspace-A");
   const q=new URLSearchParams({ service_epoch:catalog.service_epoch,caller_id:catalog.operator,room_id:room.room_id,room_instance:room.room_instance });
   const ws=await api.request(`/v1/workspace?${q}`);

@@ -121,15 +121,7 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
     $("connection-detect").textContent = connectionsUI.platforms.detecting ? "正在检测…" : "重新检测";
     renderLarkSetupCommand();
 
-    const sendProfile = JSON.stringify(larkProfileDraft());
-    if (connectionsUI.platforms.sendProfile !== sendProfile) {
-      connectionsUI.platforms.sendProfile = sendProfile;
-      $("connection-send-status").textContent = "请先检查账号与发送权限。";
-      $("connection-sending").open = false;
-    }
-    const sendAvailable = !!option?.user && !expired && !changedUser && !incomplete && !active && !pending && !connectionsUI.platforms.detecting;
-    $("connection-sending").hidden = !sendAvailable;
-    for (const id of ["connection-send-check", "connection-send-authorize", "connection-target-authorize", "connection-send-status"]) $(id).hidden = !sendAvailable;
+    renderLarkCapabilities(!!option?.user && !expired && !changedUser && !incomplete && !active && !pending && !connectionsUI.platforms.detecting);
     connectionsUI.renderPlatformReferences();
 
     const account = $("connection-account"), status = $("connection-account-state");
@@ -148,6 +140,42 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
         status.dataset.kind = verified ? "success" : expired || changedUser || v?.status === "failed" ? "error" : "status";
       }
     }
+  }
+
+  const capabilityNames = {"chat.read":"会话读取","message.read":"消息读取","notification.private":"私聊通知","notification.group":"群通知","token.renew":"自动续期","sender.name":"发送者姓名","people.search":"人员搜索","message.reply":"普通回复","message.send":"指定群发送","message.send_self":"本人投递"};
+  const capabilityReasons = {application_scopes_missing:"需要应用管理员补充权限",user_scopes_missing:"需要补全授权",account_pinning_unavailable:"账号固定暂未确认，请重新核验",refresh_token_missing:"无法自动续期",refresh_token_expired:"续期已过期",check_missing:"暂未确认",check_expired:"检查已过期"};
+  let capabilityView = null;
+
+  function capabilityKey() {return JSON.stringify([connectionsUI.platforms.formVersion,connectionsUI.platforms.selected?.id,connectionsUI.platforms.selected?.version,larkProfileDraft()]);}
+
+  function renderLarkCapabilities(available) {
+    $("connection-capabilities").hidden = !available;
+    if (!available) return;
+    const key = capabilityKey();
+    if (capabilityView?.key !== key) {
+      capabilityView = {key,loading:true};
+      void checkLarkCapabilities(key);
+    }
+    const view = capabilityView, check = view.check;
+    $("connection-capability-status").textContent = view.loading ? "正在核验账号能力…" : check ? check.capabilities.map(c=>`${capabilityNames[c.name] || c.name}：${c.state === "ready" ? c.name === "message.send_self" ? "账号条件已齐，成员仍需本人核验" : "账号条件已齐" : c.state === "unsupported" ? "当前服务不支持发送" : capabilityReasons[c.reason_code] || "暂未确认"}`).join("；") : "能力暂未确认，请重新检查。";
+    $("connection-authorize").hidden = !check?.capabilities?.some(c=>c.next_action === "authorize_user");
+    $("connection-capability-check").hidden = view.loading;
+    const app = $("connection-application-permissions"), namespace = check?.account?.id?.namespace || "";
+    const appID = namespace.startsWith("lark:open_id:") ? namespace.slice("lark:open_id:".length) : "";
+    app.hidden = !check?.capabilities?.some(c=>c.next_action === "configure_application") || !/^cli_[a-zA-Z0-9_]+$/.test(appID);
+    if (!app.hidden) app.href = `${connectionOrigin()}/app/${encodeURIComponent(appID)}/auth`;
+    else app.removeAttribute("href");
+  }
+
+  async function checkLarkCapabilities(key = capabilityKey()) {
+    const view = capabilityView = {key,loading:true};
+    try {
+      const check = await request("/v1/platforms/lark/permissions",connectionsUI.connectionPayload({cli_profile:larkProfileDraft()}),undefined,65000);
+      if (capabilityView !== view || key !== capabilityKey()) return;
+      view.check = check;
+      setTimeout(()=>{if(capabilityView === view && key === capabilityKey()){view.check=null;renderLarkAccount();}},60000);
+    } catch { if (capabilityView !== view || key !== capabilityKey()) return; view.check = null; }
+    finally { if (capabilityView === view && key === capabilityKey()) { view.loading=false;renderLarkAccount(); } }
   }
 
   async function detectLarkPlatform({profile, exact = false, preserveSetup = false} = {}) {
@@ -201,7 +229,7 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
     return result;
   }
 
-  function larkAuthButton(action) {return action === "logout" ? "connection-logout" : action === "authorize-targets" ? "connection-target-authorize" : action === "authorize-sending" ? "connection-send-authorize" : "connection-login";}
+  function larkAuthButton(action) {return action === "logout" ? "connection-logout" : "connection-login";}
 
   function clearLarkConfirmation() {
     const pending = connectionsUI.platforms.larkPending;
@@ -218,8 +246,8 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
       affected:affected.map(c => ({id:c.id,version:c.version,referenced_rooms:(c.references || []).map(({room_id,room_instance}) => ({room_id,room_instance}))})),
       title:action === "logout" ? "退出登录将暂停以上房间的通知。" : "授权会暂停相关通知，原账号验证后自动恢复。",
       confirmLabel:action === "logout" ? "确认退出" : "继续授权",
-      description:`${action === "authorize-targets" ? "仅申请目标核验权限，不启用发送。" : action === "authorize-sending" ? "申请发送权限，具体发送仍需授权。" : ""}共用此应用配置的 CLI 和其他工具也会受影响。${action === "logout" ? "退出登录不等于取消应用的全部授权。" : ""}`};
-    if (action === "logout" || action === "authorize-sending" || action === "authorize-targets" || affected.length) {
+      description:`申请当前功能所需的完整权限，具体发送仍需成员许可与指令。共用此应用配置的 CLI 和其他工具也会受影响。${action === "logout" ? "退出登录不等于取消应用的全部授权。" : ""}`};
+    if (action === "logout" || affected.length) {
       connectionsUI.platforms.larkPending = pending;
       connectionsUI.connectionFeedback();renderLarkAccount();$("connection-auth-confirm").focus();
       return;
@@ -298,6 +326,7 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
         return;
       }
       clearLarkAuthView(); connectionsUI.platforms.auth = null; finished = true;
+      for (const item of result.platforms || []) connectionsUI.updatePlatformItem(item);
       const setup = auth.action === "setup";
       const detecting = detectLarkPlatform(setup ? {profile:result.cli_profile?.profile || "",exact:true,preserveSetup:true} : {preserveSetup:!!connectionsUI.platforms.larkSetupResult}); version = connectionsUI.platforms.formVersion;
       await detecting;
@@ -316,17 +345,10 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
         if (auth.action === "login" && connectionsUI.platforms.discovery?.profiles.find(p => p.name === auth.profile.profile)?.user === result.username) {
           connectionsUI.platforms.larkAccountVerified = {profile:auth.profile,username:result.username};renderLarkAccount();
         }
-        if (auth.action === "login" && connectionsUI.platforms.selected && JSON.stringify(auth.profile) === JSON.stringify(connectionsUI.platforms.selected.cli_profile)) {
-          const item = connectionsUI.platforms.selected;
-          const verified = await request("/v1/platforms/verify", connectionsUI.connectionPayload({ id: item.id, version: item.version }), undefined, 40000);
-          if (version !== connectionsUI.platforms.formVersion) return;
-          connectionsUI.updatePlatformItem(verified); renderLarkAccount();
-          if (verified.validation.status !== "valid") { connectionsUI.connectionFeedback(`登录已完成，连接验证失败：${connectionsUI.connectionValidationErrors[verified.validation.error_code] || "请重试验证。"}`, "error"); return; }
-        }
         const savedProfile = connectionsUI.platforms.selected && JSON.stringify(auth.profile) === JSON.stringify(connectionsUI.platforms.selected.cli_profile);
         const sharedCount = (auth.affected || []).filter(c => c.id !== connectionsUI.platforms.selected?.id).length;
-        const message = auth.action === "logout" ? "已退出登录。" : auth.action === "authorize-sending" ? "发送权限已授权。" : auth.action === "authorize-targets" ? "目标核验权限已授权。" : savedProfile ? "账号已验证。" : "账号已验证，请保存连接。";
-        const shared = auth.action !== "logout" && sharedCount ? `另有 ${sharedCount} 个共享连接需重新验证。` : "";
+        const message = auth.action === "logout" ? "已退出登录。" : savedProfile ? "账号已验证。" : "账号已验证，请保存连接。";
+        const shared = auth.action !== "logout" && sharedCount ? `已核对 ${sharedCount} 个共享连接；本人投递需在对应成员中重新核验。` : "";
         const renewal = result.renewal_unavailable ? "登录无法自动续期，请联系应用管理员。" : "";
         const detail = auth.action === "logout" ? "退出登录不等于取消应用的全部授权。如需完全取消，请前往飞书 / Lark 授权管理页。" : result.renewal_unavailable ? () => `登录将于 ${settingsUI.formatDate(result.expires_at)} 到期。请应用管理员在开发者后台开启「刷新 user_access_token」并发布新版本，再重新授权。` : "";
         connectionsUI.connectionFeedback(message + shared + renewal, result.renewal_unavailable ? "status" : "success", detail);
@@ -398,23 +420,8 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
 
     $("connection-login").addEventListener("click", () => startLarkAuth("login"));
 
-    $("connection-target-authorize").addEventListener("click",()=>startLarkAuth("authorize-targets"));
-
-    $("connection-send-authorize").addEventListener("click",()=>startLarkAuth("authorize-sending"));
-
-    $("connection-send-check").addEventListener("click",async()=>{
-      const version=connectionsUI.platforms.formVersion;
-      $("connection-send-check").disabled=true;
-      $("connection-send-status").textContent="正在检查发送权限…";
-      try {
-        const state=await request("/v1/platforms/lark/sending-status",connectionsUI.connectionPayload({cli_profile:larkProfileDraft()}),undefined,65000);
-        if(version!==connectionsUI.platforms.formVersion)return;
-        const available = [state.reply_enabled && "普通回复", state.group_send_enabled && "群消息", state.self_send_enabled && "本人自聊", state.user_send_enabled && "主动私信"].filter(Boolean);
-        const missing = [!state.account_fixed && "重新验证账号", state.application_scopes !== "granted" && "开通应用发送权限", state.user_scopes !== "granted" && "完成用户发送授权"].filter(Boolean);
-        $("connection-send-status").textContent = missing.length ? `发送条件未齐备，请${missing.join("、")}。` : available.length ? `可用：${available.join("、")}。具体可用能力以成员平台设置为准。${state.group_send_enabled && !state.user_send_enabled ? "主动私信暂未开放。" : ""}` : "发送暂不可用，请检查账号与权限。";
-      }catch(error){if(version===connectionsUI.platforms.formVersion)$("connection-send-status").textContent="发送条件检查失败，请检查账号与权限。";}
-      finally{$("connection-send-check").disabled=false;}
-    });
+    $("connection-authorize").addEventListener("click",()=>startLarkAuth("login"));
+    $("connection-capability-check").addEventListener("click",()=>{void checkLarkCapabilities();renderLarkAccount();});
 
     $("connection-logout").addEventListener("click", () => startLarkAuth("logout"));
 

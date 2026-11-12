@@ -106,7 +106,7 @@ func TestLarkSetupHTTPStagesOwnershipAndLoginHandoff(t *testing.T) {
 		t.Fatal("completed OAuth image remains readable")
 	}
 	data, _ = os.ReadFile(filepath.Join(dir, "requested-scopes"))
-	if strings.Contains(string(data), "send_as_user") || !strings.Contains(string(data), "offline_access") {
+	if !strings.Contains(string(data), "send_as_user") || !strings.Contains(string(data), "offline_access") {
 		t.Fatal("setup requested unexpected scopes")
 	}
 }

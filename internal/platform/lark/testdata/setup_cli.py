@@ -97,10 +97,16 @@ elif args[:2] == ["auth", "qrcode"]:
 elif args[:3] == ["api", "GET", "/open-apis/bot/v3/info"]:
     assert args[-4:] == ["--as", "bot", "--format", "json"]
     print(json.dumps({"ok": True, "identity": "bot", "data": {"app_name": "Selected app"}}))
+elif args == ["auth", "scopes", "--json"]:
+    print(json.dumps({"appId":"cli_selected","tokenType":"user","userScopes":"im:chat:read im:message:readonly im:message.p2p_msg:get_as_user im:message.group_msg:get_as_user contact:user.basic_profile:readonly im:message.send_as_user im:message im:chat.members:read contact:user:search".split()}))
+elif args[:2] == ["auth", "check"]:
+    print(json.dumps({"ok":True,"granted":args[args.index("--scope")+1].split(),"missing":[]}))
+elif args == ["auth", "status", "--json"]:
+    print(json.dumps({"appId":"cli_selected","identities":{"user":{"openId":"ou_reader","tokenStatus":"valid","refreshExpiresAt":"2027-12-01T00:00:00Z"}}}))
 elif args[:2] == ["auth", "login"] and "--no-wait" in args:
     assert profile.startswith("teamx-feishu-")
     scopes = args[args.index("--scope") + 1]
-    assert "im:message.send_as_user" not in scopes and "--domain" not in args
+    assert "im:message.send_as_user" in scopes and "im:chat.members:read" in scopes and "contact:user:search" in scopes and "--domain" not in args
     open(base + "/requested-scopes", "w").write(scopes)
     mark("auth-started")
     if mode == "login-fail":

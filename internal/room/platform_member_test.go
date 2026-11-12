@@ -12,8 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/tool"
+	"github.com/go-aie/teamx/internal/platform/registry"
 )
 
 func TestPlatformMemberNotificationPatchPreservesRangeAndStart(t *testing.T) {
@@ -53,27 +52,30 @@ func TestPlatformMemberNotificationPatchPreservesRangeAndStart(t *testing.T) {
 
 func memberToolFixture(t *testing.T) (*roomManager, *service, MemberState, platformMemberRequest) {
 	t.Helper()
-	m, svc, member, connect := connectFixture(t)
-	_, session := connectPending(t, m, svc, connect)
-	connectSucceed(t, m, session)
-	op := connectHTTP(t, m, "status", platformConnectRequest{ServiceInfo: connect.ServiceInfo, Caller: connect.Caller, OperationID: connect.OperationID})
-	validation := connectValidation()
-	validation.Account.ID.Namespace = "lark:open_id:cli_fixture"
-	validation.Account.Tenant.Namespace = "lark:tenant_key"
-	m.mu.Lock()
-	ticket, err := m.platforms.BeginVerification(op.PlatformID, op.Connection.Version)
+	h := larkToolConfigurationHarness(t)
+	// Keep the original single-connection fixture contract for account pickers.
+	h.m.mu.Lock()
+	file, err := h.m.platforms.Load()
 	if err == nil {
-		var c platform.Platform
-		c, err = m.platforms.CompleteVerification(ticket, validation)
-		op.Connection.Version = c.Version
+		for _, c := range file.Platforms {
+			if c.ID != h.c.ID {
+				plan, e := h.m.platforms.Plan(registry.Request{ID: c.ID, Version: c.Version}, true)
+				if e == nil {
+					_, e = h.m.platforms.Commit(plan)
+				}
+				if e != nil {
+					err = e
+					break
+				}
+			}
+		}
 	}
-	m.mu.Unlock()
+	h.m.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, _ := newOpaqueID()
-	enabled := true
-	return m, svc, member, platformMemberRequest{ServiceInfo: connect.ServiceInfo, Caller: connect.Caller, OperationID: id, SourceSeq: connect.SourceSeq, Input: &platformMemberInput{PlatformID: op.PlatformID, PlatformVersion: op.Connection.Version, Enabled: &enabled}}
+	req := larkMemberToolRequest(t, h, 0)
+	return h.m, h.svc, h.members[0], req
 }
 
 func TestPlatformMemberToolReceiptsIdentityAndIndependentVersions(t *testing.T) {
@@ -82,17 +84,6 @@ func TestPlatformMemberToolReceiptsIdentityAndIndependentVersions(t *testing.T) 
 	var op platformMemberOperation
 	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &op) != nil || op.Status != "completed" || op.Result.Version != 1 {
 		t.Fatal(w.Code, w.Body.String())
-	}
-	// Seed an existing operator grant to verify repeated enable keeps it exactly.
-	m.mu.Lock()
-	f, err := m.readToolBindingsLocked(req.RoomIdentity)
-	if err == nil {
-		f.Bindings[0].ActionAuthorization = &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: []tool.ActionGrant{{Operation: "reply", TargetKind: "message", ObjectType: "lark.message"}}}
-		err = m.store.save(m.toolBindingsPath(req.RoomIdentity), f, 1<<20)
-	}
-	m.mu.Unlock()
-	if err != nil {
-		t.Fatal(err)
 	}
 	before, _ := os.ReadFile(m.toolBindingsPath(req.RoomIdentity))
 	// Both successful retries and pure status preserve the exact saved receipt.

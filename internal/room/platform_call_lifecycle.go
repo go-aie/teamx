@@ -12,6 +12,7 @@ import (
 )
 
 type platformCall struct {
+	operationID           string
 	agentID, membershipID string
 	owner                 RoomIdentity
 	tool, platformID      string

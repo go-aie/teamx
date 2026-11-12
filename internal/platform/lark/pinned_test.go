@@ -24,9 +24,10 @@ if a==['whoami','--as','user']:
 if a[:3]==['api','GET','/open-apis/authen/v1/user_info']:
  print(json.dumps({'ok':True,'identity':'user','data':{'open_id':user,'tenant_key':'tenant','name':'fixed user'}}));sys.exit()
 if a==['auth','scopes','--json']:
- print(json.dumps({'appId':'cli_fixture','scopes':['im:message.send_as_user','im:message']}));sys.exit()
+ print(json.dumps({'appId':'cli_fixture','scopes':['im:message.send_as_user','im:message','im:chat.members:read','contact:user:search']}));sys.exit()
 if a[:2]==['auth','check']:
- if mode=='missing':print(json.dumps({'ok':False,'granted':['im:message'],'missing':['im:message.send_as_user']}));sys.exit(1)
- print(json.dumps({'ok':True,'granted':['im:message.send_as_user','im:message'],'missing':[]}));sys.exit()
+ requested=a[a.index('--scope')+1].split()
+ missing={'missing':'im:message.send_as_user','target-missing':'im:chat.members:read','search-missing':'contact:user:search'}.get(mode)
+ print(json.dumps({'ok':not missing,'granted':[s for s in requested if s!=missing],'missing':[missing] if missing else []}));sys.exit(1 if missing else 0)
 raise Exception('unexpected operation')
 `

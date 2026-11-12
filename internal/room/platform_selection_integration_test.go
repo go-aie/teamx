@@ -156,7 +156,15 @@ func platformSelectionConversation(t *testing.T, h *larkHarness, member platform
 	connectionID, _ := newOpaqueID()
 	var connection platformConnectOperation
 	run(append([]string{"connect", "start", "--provider", "lark", "--name", account.Draft.Name, "--operation-id", connectionID, "--source-seq", source}, base...), &connection)
-	if connection.Status != "completed" {
+	// Reuse now performs a managed capability check before completing. Observe
+	// the production waiter instead of assuming start is a synchronous commit.
+	var connected struct {
+		Pending   bool                     `json:"pending"`
+		Operation platformConnectOperation `json:"operation"`
+	}
+	run([]string{"connect", "wait", "--operation-id", connectionID, "--timeout", "1m"}, &connected)
+	connection = connected.Operation
+	if connected.Pending || connection.Status != "completed" {
 		t.Fatal(connection)
 	}
 	var applied platformMemberOperation

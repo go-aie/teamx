@@ -339,7 +339,7 @@ func TestPlatformConnectRestartReconcilesSavedConnectionWithoutWritingAgain(t *t
 func TestPlatformConnectReuseRequiresExactVerifiedVersion(t *testing.T) {
 	m, svc, _, req := connectFixture(t)
 	_, s := connectPending(t, m, svc, req)
-	connectSucceed(t, m, s)
+	connectSucceedWithNativeProfile(t, m, s)
 	query := req
 	query.Input = nil
 	query.SourceSeq = 0
@@ -355,7 +355,8 @@ func TestPlatformConnectReuseRequiresExactVerifiedVersion(t *testing.T) {
 		t.Fatal("stale account version reused", w.Code)
 	}
 	req.Input.PlatformVersion = original.Connection.Version
-	reused := connectHTTP(t, m, "start", req)
+	_ = connectHTTP(t, m, "start", req)
+	reused := waitConnectionResult(t, m, req)
 	if reused.Status != "completed" || reused.PlatformID != original.PlatformID || reused.Authorization.Status != "reused" {
 		t.Fatal(reused)
 	}

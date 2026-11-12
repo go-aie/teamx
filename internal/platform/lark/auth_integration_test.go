@@ -60,7 +60,7 @@ func TestLoginSplitFlowVerifiesIdentityAndReportsRenewal(t *testing.T) {
 }
 
 func TestLoginRejectsWrongPlatformUnsafeLinksAndMissingScopes(t *testing.T) {
-	for _, tc := range []struct{ mode, code string }{{"brand", "identity_mismatch"}, {"url", "invalid_response"}, {"scopes", "permission_denied"}, {"version", "cli_version_mismatch"}} {
+	for _, tc := range []struct{ mode, code string }{{"brand", "identity_mismatch"}, {"url", "invalid_response"}, {"version", "cli_version_mismatch"}} {
 		t.Run(tc.mode, func(t *testing.T) {
 			p, dir := authTestProfile(t)
 			setMode(t, dir, tc.mode)
@@ -120,34 +120,42 @@ func TestLogoutReportsCLIErrorWithoutLeakingCredentials(t *testing.T) {
 	}
 }
 
-func TestLarkLoginKeepsTargetAndSendScopesOptIn(t *testing.T) {
-	for _, mode := range []string{"read", "send", "targets"} {
+func TestLoginRequestsSupportedCompleteScopeSet(t *testing.T) {
+	for _, mode := range []string{"ok", "app-missing", "scopes", "app-unknown"} {
 		t.Run(mode, func(t *testing.T) {
 			p, dir := authTestProfile(t)
+			setMode(t, dir, mode)
 			script := strings.Replace(authFixture, "assert 'offline_access' in scopes and 'im:message:readonly' in scopes", "assert 'offline_access' in scopes and 'im:message:readonly' in scopes\n open(base+'/requested-scopes','w').write(' '.join(scopes))", 1)
 			if err := os.WriteFile(p.Executable, []byte(script), 0700); err != nil {
 				t.Fatal(err)
 			}
-			login := Login
-			if mode == "send" {
-				login = LoginSending
+			result, err := Login(context.Background(), p, func(string, string) {})
+			if mode == "app-unknown" {
+				if ErrorCode(err) != "application_scopes_unchecked" {
+					t.Fatal(err)
+				}
+				if _, err = os.Stat(dir + "/requested-scopes"); !os.IsNotExist(err) {
+					t.Fatal("unknown app started login")
+				}
+				return
 			}
-			if mode == "targets" {
-				login = LoginSendTargets
-			}
-			if _, err := login(context.Background(), p, func(string, string) {}); err != nil {
-				t.Fatal(err)
+			if err != nil || result.Permissions == nil || result.ExpiresAt.IsZero() {
+				t.Fatal(result, err)
 			}
 			raw, err := os.ReadFile(dir + "/requested-scopes")
 			if err != nil {
 				t.Fatal(err)
 			}
-			scopes := string(raw)
-			if strings.Contains(scopes, "contact:user:search") || strings.Contains(scopes, "--domain") {
-				t.Fatal("unrequested directory scope", scopes)
+			for _, scope := range DefaultScopes() {
+				if strings.Contains(string(raw), scope) != (mode != "app-missing" || scope != "im:chat.members:read") {
+					t.Fatal(mode, string(raw))
+				}
 			}
-			if strings.Contains(scopes, "im:message.send_as_user") != (mode == "send") || strings.Contains(scopes, "im:chat.members:read") != (mode == "targets") || strings.Contains(scopes, "im:chat.moderation:read") {
-				t.Fatal(mode, scopes)
+			if mode == "scopes" && result.Permissions.User.State != "missing" {
+				t.Fatal("partial token was not rechecked", result)
+			}
+			if mode == "app-missing" && result.Permissions.Application.State != "missing" {
+				t.Fatal("application gap was hidden")
 			}
 		})
 	}

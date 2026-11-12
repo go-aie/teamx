@@ -14,6 +14,7 @@ function fixture(){
   if(path.startsWith("/v1/platforms?"))return {platforms:api.platforms};
   if(path==="/v1/platforms/lark/discover")return {executable:"/fixture/lark-cli",profiles:api.profiles};
   if(path==="/v1/platforms/lark/login" || path==="/v1/platforms/lark/logout" || path==="/v1/platforms/lark/authorize-targets" || path==="/v1/platforms/lark/authorize-sending")return {session_id:"auth-session",status:"starting",platforms:[]};
+  if(path==="/v1/platforms/lark/permissions")return api.permissions || {capabilities:[]};
   if(path==="/v1/platforms/lark/status")return api.authView;
   if(path==="/v1/platforms/lark/cancel")return {session_id:"auth-session",status:"cancelled"};
   if(path==="/v1/platforms/save"){
@@ -183,7 +184,7 @@ test("missing application configuration shows setup guidance and preserves the c
  for(const brand of ["feishu","lark"]){
  const api=fixture();api.profiles=[];const ui=await connectionDraft(api,brand);ui.el("connection-name").value="我的连接";
  assert.equal(ui.el("connection-setup").hidden,false);assert.match(ui.el("connection-setup-command").textContent,new RegExp(`config init --new --brand ${brand} --name teamx-${brand}`));
- assert.equal(ui.el("connection-sending").hidden,true);assert.equal(ui.el("connection-send-status").hidden,true);
+ assert.equal(ui.el("connection-capabilities").hidden,true);
  assert.equal(ui.el("connection-save").hidden,true);assert.equal(ui.el("connection-actions").hidden,true);
  let copied;
  ui.window.navigator={clipboard:{async writeText(text){copied=text;}}};
@@ -199,10 +200,10 @@ test("missing application configuration shows setup guidance and preserves the c
  api.profiles=[{name:"new-app",brand}];await ui.el("connection-detect").emit("click");
  assert.equal(ui.el("connection-profile").value,"new-app");assert.equal(ui.el("connection-login").hidden,false);
  assert.equal(ui.el("connection-advanced").open,false);assert.equal(ui.el("connection-application-name").textContent,"new-app");assert.equal(ui.el("connection-account").textContent,"尚未登录");
- assert.equal(ui.el("connection-save").hidden,true);assert.equal(ui.el("connection-sending").hidden,true);
+ assert.equal(ui.el("connection-save").hidden,true);assert.equal(ui.el("connection-capabilities").hidden,true);
  api.profiles[0].user="测试用户";await ui.el("connection-detect").emit("click");
  assert.equal(ui.el("connection-save").hidden,false);assert.equal(ui.el("connection-actions").hidden,false);
- assert.equal(ui.el("connection-sending").hidden,false);assert.equal(ui.el("connection-sending").open,false);
+ assert.equal(ui.el("connection-capabilities").hidden,false);
  assert.equal(ui.el("connection-account").textContent,"测试用户");assert.match(ui.el("connection-account-state").textContent,/已登录/);
  }
 });
@@ -536,34 +537,55 @@ test("Lark locked history start does not block other settings or rewrite the sav
  assert.equal(ui.el("lark-backfill-start").disabled,true);
 });
 
-test("L4-A sending checks report both permission layers and keep writes disabled",async()=>{
- const api=fixture(),original=api.request;
- api.request=(path,body)=>path==="/v1/platforms/lark/sending-status"?Promise.resolve({account_fixed:true,application_scopes:"missing",user_scopes:"missing",adapter_implemented:false}):original(path,body);
- const ui=await connectionDraft(api);
- assert.equal(ui.el("connection-send-check").hidden,false);
- await ui.el("connection-send-check").emit("click");
- assert.match(ui.el("connection-send-status").textContent,/发送条件未齐备.*开通应用发送权限.*用户发送授权/);
+test("Lark capabilities check automatically and offer exact application repair",async()=>{
+ const api=fixture();api.permissions={account:{id:{namespace:"lark:open_id:cli_fixture"}},capabilities:[{name:"message.reply",state:"blocked",reason_code:"application_scopes_missing",next_action:"configure_application"}]};
+ const ui=await connectionDraft(api);await settle();
+ assert.match(ui.el("connection-capability-status").textContent,/回复：需要应用管理员/);
+ assert.equal(ui.el("connection-application-permissions").href,"https://open.feishu.cn/app/cli_fixture/auth");
+ assert.equal(ui.el("connection-authorize").hidden,true);
  assert.equal(api.calls.some(c=>c.path==="/v1/platforms/lark/login"),false);
 });
 
-test("Lark sending status reports accepted modes and keeps direct user sends distinct",async()=>{
- const api=fixture(),original=api.request;
- api.request=(path,body)=>path==="/v1/platforms/lark/sending-status"?Promise.resolve({account_fixed:true,application_scopes:"granted",user_scopes:"granted",adapter_implemented:true,reply_enabled:true,group_send_enabled:true,self_send_enabled:true,user_send_enabled:false}):original(path,body);
- const ui=await connectionDraft(api);
- await ui.el("connection-send-check").emit("click");
- assert.match(ui.el("connection-send-status").textContent,/可用：普通回复、群消息、本人自聊.*成员平台设置.*主动私信暂未开放/);
+test("Lark user scope repair uses unified login with shared impact confirmation",async()=>{
+ const api=fixture();api.permissions={capabilities:[{name:"message.send",state:"blocked",reason_code:"user_scopes_missing",next_action:"authorize_user"}]};
+ const ui=await connectionDraft(api);await settle();
+ assert.equal(ui.el("connection-authorize").hidden,false);
+ await ui.el("connection-authorize").emit("click");
+ await ui.el("connection-auth-confirm").emit("click");
+ const call=api.calls.find(c=>c.path==="/v1/platforms/lark/login");assert.ok(call);assert.equal(call.body.cli_profile.profile,"explicit");
+ assert.equal(api.calls.some(c=>c.path.includes("authorize-targets") || c.path.includes("authorize-sending")),false);
+});
+
+test("Lark capability expiry becomes unchecked without repeat probing or sending",async()=>{
+ const api=fixture();api.permissions={capabilities:[{name:"message.reply",state:"unsupported",reason_code:"account_pinning_unavailable"}]};
+ const ui=await connectionDraft(api);await settle();
+ assert.match(ui.el("connection-capability-status").textContent,/当前服务不支持发送/);
+ assert.equal(ui.el("connection-authorize").hidden,true);
+ const checks=api.calls.filter(c=>c.path==="/v1/platforms/lark/permissions").length;
+ await ui.clock.advance(60000);
+ assert.match(ui.el("connection-capability-status").textContent,/暂未确认/);
+ assert.equal(api.calls.filter(c=>c.path==="/v1/platforms/lark/permissions").length,checks);
  assert.equal(api.calls.some(c=>c.path.includes("/actions/execute")),false);
 });
 
-test("L4-C target authorization is explicit and separate from sending and directory search",async()=>{
- const api=fixture(),ui=await connectionDraft(api);
- assert.equal(ui.el("connection-target-authorize").hidden,false);
- await ui.el("connection-target-authorize").emit("click");
- assert.equal(api.calls.some(c=>c.path.endsWith("/authorize-targets")),false);
- await ui.el("connection-auth-confirm").emit("click");
- const call=api.calls.find(c=>c.path==="/v1/platforms/lark/authorize-targets");
- assert.ok(call);assert.equal(call.body.cli_profile.profile,"explicit");
- assert.equal(api.calls.some(c=>c.path==="/v1/platforms/lark/authorize-sending"),false);
+test("Lark account pin failure stays unchecked instead of claiming unsupported sending",async()=>{
+ const api=fixture();api.permissions={capabilities:[{name:"message.reply",state:"unchecked",reason_code:"account_pinning_unavailable",next_action:"revalidate_account"}]};
+ const ui=await connectionDraft(api);await settle();
+ assert.match(ui.el("connection-capability-status").textContent,/账号固定暂未确认.*重新核验/);
+ assert.doesNotMatch(ui.el("connection-capability-status").textContent,/不支持/);
+ assert.equal(ui.el("connection-authorize").hidden,true);
+ assert.equal(api.calls.some(c=>c.path==="/v1/platforms/lark/login"),false);
+});
+
+test("late Lark permission checks cannot reappear in a different platform draft",async()=>{
+ const api=fixture(),original=api.request;let release;
+ api.request=(path,body)=>path==="/v1/platforms/lark/permissions" ? new Promise(resolve=>{release=resolve;}) : original(path,body);
+ const ui=await connectionDraft(api);
+ ui.el("connection-provider").value="gitlab";await ui.el("connection-provider").emit("change");
+ release({capabilities:[{name:"message.reply",state:"ready"}]});await settle();
+ assert.equal(ui.el("connection-profile-row").hidden,true);
+ assert.doesNotMatch(ui.el("connection-capability-status").textContent,/账号条件已齐/);
+ assert.equal(api.calls.some(c=>c.path==="/v1/platforms/lark/login"),false);
 });
 
 test("Lark searches remote matches with debounce and preserves selected labels across queries",async()=>{
@@ -666,7 +688,7 @@ test("guided setup changes stages, clears old QR, pins the returned profile and 
  assert.deepEqual(start,{service_epoch:"manager",caller:{kind:"human",id:"tester"},executable:"/fixture/lark-cli",brand:"feishu"});
  assert.equal(ui.el("connection-login-link").textContent,"打开配置页面 ↗");assert.match(ui.el("connection-account").textContent,/等待你完成应用配置/);
  assert.equal(ui.el("connection-save").hidden,true);assert.equal(ui.el("connection-login-cancel").hidden,false);
- assert.equal(ui.el("connection-sending").hidden,true);await ui.el("connection-setup-start").emit("click");
+ assert.equal(ui.el("connection-capabilities").hidden,true);await ui.el("connection-setup-start").emit("click");
  assert.equal(api.calls.filter(c=>c.path.endsWith("/lark/setup")).length,1);
  api.profiles=[{name:"other",brand:"feishu",user:"其他账号"},{name:setupProfile.profile,brand:"feishu"}];
  api.authView=configuredView("starting");await ui.clock.advance(1500);
@@ -677,7 +699,7 @@ test("guided setup changes stages, clears old QR, pins the returned profile and 
  api.profiles[1].user="本次用户";api.authView=configuredView("succeeded","complete",{username:"本次用户"});await ui.clock.advance(1500);
  assert.equal(ui.el("connection-profile").value,setupProfile.profile);assert.equal(ui.el("connection-profile-choice").hidden,false);
  assert.equal(ui.el("connection-name").value,"我的飞书草稿");assert.equal(ui.el("connection-save").hidden,false);assert.equal(ui.el("connection-save").disabled,false);
- assert.equal(ui.el("connection-guided").hidden,true);assert.equal(ui.el("connection-advanced").open,false);assert.equal(ui.el("connection-sending").open,false);
+ assert.equal(ui.el("connection-guided").hidden,true);assert.equal(ui.el("connection-advanced").open,false);
  assert.equal(api.calls.some(c=>c.path.endsWith("/platforms/save")),false);
  assert.match(ui.el("platforms-feedback").textContent,/账号已验证.*请保存连接/);
  assert.doesNotMatch(JSON.stringify([...ui.saved]),/setup-session|user_code|accounts.feishu.cn/);
@@ -711,7 +733,7 @@ test("failed application results and missing returned profiles never select anot
 test("mismatched application remains blocked until explicit detection or selection",async()=>{
  const api=guidedFixture(),ui=await connectionDraft(api);await ui.el("connection-setup-start").emit("click");
  api.profiles=[{name:setupProfile.profile,brand:"feishu",user:"已有用户"}];api.authView=configuredView("failed","application",{error_code:"configuration_unconfirmed"});await ui.clock.advance(1500);
- assert.equal(ui.el("connection-login").hidden,true);assert.equal(ui.el("connection-save").hidden,true);assert.equal(ui.el("connection-sending").hidden,true);
+ assert.equal(ui.el("connection-login").hidden,true);assert.equal(ui.el("connection-save").hidden,true);assert.equal(ui.el("connection-capabilities").hidden,true);
  assert.match(ui.el("platforms-feedback").textContent,/已发现本机配置.*结果未确认.*重新检测/);
  await ui.el("connection-recheck").emit("click");assert.equal(ui.el("connection-account-manage").hidden,false);
  assert.equal(api.calls.some(c=>c.path.endsWith("/lark/login")),false);
@@ -846,7 +868,7 @@ test("saved-profile authorization only mentions other platforms when they exist"
   if(shared)api.platforms.push({...api.platforms[0],id:"shared-connection",name:"另一个连接"});
   const ui=await launch(api);await ui.el("open-settings").emit("click");await ui.el("platforms-list").children[0].emit("click");
   await ui.el("connection-reauthorize").emit("click");api.authView={session_id:"auth-session",status:"succeeded",username:"测试用户"};await ui.el("connection-auth-confirm").emit("click");
-  assert.equal(ui.el("platforms-feedback").textContent,shared?"账号已验证。另有 1 个共享连接需重新验证。":"账号已验证。");
+  assert.equal(ui.el("platforms-feedback").textContent,shared?"账号已验证。已核对 1 个共享连接；本人投递需在对应成员中重新核验。":"账号已验证。");
   assert.equal(ui.el("platforms-feedback-details").hidden,true);assert.equal(ui.el("connection-account-state").textContent,"已验证");
  }
 });

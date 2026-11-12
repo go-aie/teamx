@@ -202,7 +202,7 @@ func TestNotificationsUpgradeFailureBoundaries(t *testing.T) {
 				if err := ops.rename(from, to); err != nil {
 					return err
 				}
-				if filepath.Base(to) == memberNotificationsJournal {
+				if filepath.Base(to) == offline.notificationUpgradeJournal() {
 					journalWritten = true
 				}
 				if to == backup {

@@ -12,7 +12,8 @@ import (
 )
 
 type managedPlatform struct {
-	Onboarding *platformOnboarding `json:"onboarding,omitempty"`
+	Onboarding   *platformOnboarding           `json:"onboarding,omitempty"`
+	Capabilities *larkPlatformCapabilityResult `json:"capabilities,omitempty"`
 	platform.Platform
 	References []managedPlatformReference `json:"references,omitempty"`
 }

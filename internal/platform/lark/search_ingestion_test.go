@@ -657,3 +657,32 @@ func TestSearchSnapshotByteCapacityKeepsIDPage(t *testing.T) {
 		t.Fatal("byte capacity did not recover")
 	}
 }
+
+func TestSearchCredentialRotationKeepsPendingScanWithoutReplayingHistory(t *testing.T) {
+	h, _, source := ingestionHarness(t, Config{Private: PrivateConfig{Enabled: true, Scope: "all"}})
+	ingestionSteps(t, h, source, 2)
+	before := h.s.Clone()
+	if before.Search.Branches[0].Scan == nil {
+		t.Fatal("fixture has no pending page")
+	}
+	binding := before.Binding
+	binding.CredentialVersion++
+	next, err := ConfigureSearch(before.RoomIdentity, &before, binding, before.Config, h.now)
+	if err != nil || !reflect.DeepEqual(next.Search.Branches[0].Scan, before.Search.Branches[0].Scan) || next.Search.Branches[0].Completed != before.Search.Branches[0].Completed || next.Baseline != before.Baseline || next.Search.Branches[0].Fingerprint == before.Search.Branches[0].Fingerprint {
+		t.Fatal("same-account credentials rewound the pending scan", err)
+	}
+	raw, _ := json.Marshal(next)
+	if _, err := source.Decode(raw, next.RoomIdentity); err != nil {
+		t.Fatal("rebound cursor does not survive strict reload", err)
+	}
+	changed := before.Config
+	changed.Private.Scope, changed.Private.ChatIDs = "specified", []string{"oc_other"}
+	other, err := ConfigureSearch(before.RoomIdentity, &before, binding, changed, h.now)
+	if err != nil || other.Search.Branches[0].Scan != nil || other.Search.Branches[0].Completed != 0 {
+		t.Fatal("different query inherited the old token", err)
+	}
+	binding.Account.ID.Value = "ou_other"
+	if _, err := ConfigureSearch(before.RoomIdentity, &before, binding, before.Config, h.now); !errors.Is(err, notification.ErrConflict) {
+		t.Fatal("credential repair crossed native account boundary", err)
+	}
+}

@@ -136,7 +136,7 @@ func TestLarkSelfSendManagedCapability(t *testing.T) {
 	}
 	// Disabling the capability stops new sends; original receipts remain readable.
 	grant.Revision = bindings.Revision
-	grant.Binding.ActionAuthorization = nil
+	grant.Binding.ActionAuthorization = &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: []tool.ActionGrant{}}
 	r = managerHTTP(h.m, "/v1/tools/bind", grant)
 	if r.Code != 200 {
 		t.Fatal(r.Code, r.Body.String())

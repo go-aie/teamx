@@ -2,6 +2,7 @@ package room
 
 import (
 	"encoding/json"
+	"github.com/go-aie/teamx/internal/platform/lark"
 	"io"
 	"net/http"
 	"sort"
@@ -11,6 +12,9 @@ import (
 // The operation owns the durable interaction reference and original message
 // association. Views never copy live authorization material into Room history.
 type platformConnectInteractionView struct {
+	Intent      string                `json:"intent,omitempty"`
+	Affected    []larkAuthPlatform    `json:"affected,omitempty"`
+	Permissions *lark.PermissionCheck `json:"permissions,omitempty"`
 	MemberIdentity
 	Setup           *gitlabConnectSetup           `json:"setup,omitempty"`
 	OperationID     string                        `json:"operation_id"`
@@ -55,7 +59,7 @@ func (m *roomManager) platformConnectInteractionLocked(op platformConnectOperati
 		}
 	}
 	return platformConnectInteractionView{
-		MemberIdentity: op.MemberIdentity, Setup: op.Setup, OperationID: op.ID, SourceSeq: op.Source.Seq,
+		Intent: op.Input.Intent, Affected: op.AuthorizationImpact, Permissions: op.Permissions, MemberIdentity: op.MemberIdentity, Setup: op.Setup, OperationID: op.ID, SourceSeq: op.Source.Seq,
 		Provider: op.Input.Provider, Origin: connectOrigin(op.Input), AccountUsername: op.Input.AccountUsername, Name: op.Input.Name, Version: op.Version, ResultVersion: op.ResultVersion,
 		Status: op.Status, Stage: op.Stage, ErrorCode: op.ErrorCode, TargetAvailable: available,
 		AccountID: op.Account.ID.Value, Application: op.Application, Authorization: op.Authorization,

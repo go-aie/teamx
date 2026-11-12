@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -48,14 +49,14 @@ func TestPinnedAccountIsolatesExternalProfileAndFailsOnRevocation(t *testing.T) 
 	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"apps":[{"appId":"cli_other","users":[{"userOpenId":"ou_other"}]}]}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	for _, mode := range []string{"ok", "refresh", "missing"} {
+	for _, mode := range []string{"ok", "refresh", "missing", "target-missing", "search-missing"} {
 		setMode(t, dir, mode)
 		v, err := pin.Verify(context.Background())
 		if err != nil || v.Account != account {
 			t.Fatal(mode, v, err)
 		}
 		permission, err := pin.SendPermission(context.Background())
-		if err != nil || !permission.AccountFixed || !permission.AdapterImplemented || permission.ReplyEnabled != (mode != "missing") || permission.GroupSendEnabled != permission.ReplyEnabled || permission.SelfSendEnabled != permission.ReplyEnabled || permission.UserSendEnabled || (mode == "missing" && permission.UserScopes != "missing") {
+		if err != nil || !permission.AccountFixed || !permission.AdapterImplemented || permission.ReplyEnabled != (mode != "missing") || permission.GroupSendEnabled != (permission.ReplyEnabled && mode != "target-missing") || permission.SelfSendEnabled != permission.GroupSendEnabled || permission.PeopleSearchEnabled != (mode != "search-missing") || permission.UserSendEnabled || (mode == "missing" && permission.UserScopes != "missing") {
 			t.Fatal(permission, err)
 		}
 	}
@@ -140,9 +141,9 @@ raise Exception('unexpected operation')`, 1)
 	}
 }
 
-func TestIncrementalLoginNeverChangesReaderDefaults(t *testing.T) {
+func TestLoginIncludesCurrentReaderAndSendDependencies(t *testing.T) {
 	p, dir := authTestProfile(t)
-	if _, err := LoginSending(context.Background(), p, func(string, string) {}); err != nil {
+	if _, err := Login(context.Background(), p, func(string, string) {}); err != nil {
 		t.Fatal(err)
 	}
 	calls, _ := os.ReadFile(filepath.Join(dir, "calls"))
@@ -152,13 +153,55 @@ func TestIncrementalLoginNeverChangesReaderDefaults(t *testing.T) {
 		for i, a := range argv {
 			if a == "--scope" {
 				scope := argv[i+1]
-				if !strings.Contains(scope, SendScopes) || !strings.Contains(scope, readerScopes) {
-					t.Fatal(scope)
+				for _, required := range DefaultScopes() {
+					if !slices.Contains(strings.Fields(scope), required) {
+						t.Fatal(scope)
+					}
 				}
 			}
 		}
 	}
 	if strings.Contains(readerScopes, "send_as_user") {
-		t.Fatal("read login enlarged")
+		t.Fatal("reader dependency includes write scopes")
+	}
+}
+
+func TestPinnedSendDependencyFailurePreventsDispatchWithoutBlockingReply(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS pinning contract")
+	}
+	profile, dir := authTestProfile(t)
+	script := strings.Replace(pinnedFixture, "raise Exception('unexpected operation')", `if a[:2]==['api','POST']:
+ assert a[2] in ['/open-apis/im/v1/messages','/open-apis/im/v1/messages/om_original/reply']
+ with open(base+'/posts','a') as f:f.write(a[2]+'\n')
+ print(json.dumps({'ok':True,'identity':'user','data':{'message_id':'om_receipt'}}));sys.exit()
+raise Exception('unexpected operation')`, 1)
+	if err := os.WriteFile(profile.Executable, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	pin, err := NewClientFactory(0, 0, 0).Pin(t.Context(), profile, permissionAccount())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pin.Close()
+	target := platform.TargetIdentity{IdentityScope: pin.Account.IdentityScope, Object: platform.NativeIdentity{Type: "chat", ID: platform.ExternalID{Namespace: "lark:chat_id:cli_fixture", Value: "oc_group"}}}
+	guard := func(context.Context) error { return nil }
+	setMode(t, dir, "target-missing")
+	if _, err := pin.SendText(t.Context(), target, "blocked", strings.Repeat("a", 32), guard); !errors.Is(err, ErrSendNotSent) {
+		t.Fatal("target scope failure reached dispatch", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "posts")); !os.IsNotExist(err) {
+		t.Fatal("unexpected POST", err)
+	}
+	if id, err := pin.ReplyText(t.Context(), "om_original", "reply", strings.Repeat("b", 32), guard); err != nil || id != "om_receipt" {
+		t.Fatal("target scope failure blocked reply", id, err)
+	}
+	setMode(t, dir, "search-missing")
+	if id, err := pin.SendText(t.Context(), target, "send", strings.Repeat("c", 32), guard); err != nil || id != "om_receipt" {
+		t.Fatal("optional search scope failure blocked send", id, err)
+	}
+	posts, err := os.ReadFile(filepath.Join(dir, "posts"))
+	if err != nil || strings.Count(string(posts), "\n") != 2 {
+		t.Fatal("unexpected dispatch count", string(posts), err)
 	}
 }

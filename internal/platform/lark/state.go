@@ -364,6 +364,21 @@ func configure(owner platform.RoomIdentity, current *State, b Binding, c Config,
 		c.PlatformID = b.PlatformID
 	}
 	n.SubscriptionVersion++
+	// Credential renewal under the exact same account/generation changes query
+	// admission evidence, not the business query. Rebind retained fingerprints
+	// before reconfiguration so unchanged branches keep their cursor and scan.
+	// This happens only on an explicit configuration write, never during decode.
+	if current != nil && n.Search != nil && n.Binding != b {
+		requests := n.searchRequests()
+		n.Binding = b
+		for i := range n.Search.Branches {
+			for _, request := range requests {
+				if request.kind == n.Search.Branches[i].Kind {
+					n.Search.Branches[i].Fingerprint = n.searchFingerprint(request.kind, request.q)
+				}
+			}
+		}
+	}
 	n.Binding = b
 	n.Config = c
 	if c.Enabled && c.DiscoverPrivate() && n.Directory == nil {

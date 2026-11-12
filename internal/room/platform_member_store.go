@@ -17,19 +17,23 @@ import (
 // Each setting change has its own stable ID and frozen input. Configuration
 // remains authoritative in the existing subscription and tool stores.
 type platformMemberInput struct {
-	PlatformID          string               `json:"platform_id"`
-	PlatformVersion     uint64               `json:"platform_version"`
-	NotificationVersion uint64               `json:"notification_version,omitempty"`
-	ToolRevision        uint64               `json:"tool_revision,omitempty"`
-	Enabled             *bool                `json:"enabled,omitempty"`
-	EventsEnabled       *bool                `json:"events_enabled,omitempty"`
-	ProjectID           int64                `json:"project_id,omitempty"`
-	ProjectPath         string               `json:"project_path,omitempty"`
-	EventsFilter        *gitlab.EventsFilter `json:"events_filter,omitempty"`
-	TodosFilter         *gitlab.TodosFilter  `json:"todos_filter,omitempty"`
-	TodosEnabled        *bool                `json:"todos_enabled,omitempty"`
-	AddChatIDs          []string             `json:"add_chat_ids,omitempty"`
-	GroupMessageMode    string               `json:"group_message_mode,omitempty"`
+	PlatformID          string                      `json:"platform_id"`
+	PlatformVersion     uint64                      `json:"platform_version"`
+	NotificationVersion uint64                      `json:"notification_version,omitempty"`
+	ToolRevision        uint64                      `json:"tool_revision,omitempty"`
+	Actions             []string                    `json:"actions,omitempty"`
+	Enabled             *bool                       `json:"enabled,omitempty"`
+	EventsEnabled       *bool                       `json:"events_enabled,omitempty"`
+	ProjectID           int64                       `json:"project_id,omitempty"`
+	ProjectPath         string                      `json:"project_path,omitempty"`
+	EventsFilter        *gitlab.EventsFilter        `json:"events_filter,omitempty"`
+	TodosFilter         *gitlab.TodosFilter         `json:"todos_filter,omitempty"`
+	TodosEnabled        *bool                       `json:"todos_enabled,omitempty"`
+	AddChatIDs          []string                    `json:"add_chat_ids,omitempty"`
+	RemoveChatIDs       []string                    `json:"remove_chat_ids,omitempty"`
+	GroupMessageMode    string                      `json:"group_message_mode,omitempty"`
+	Groups              *platformMemberGroupPatch   `json:"groups,omitempty"`
+	Private             *platformMemberPrivatePatch `json:"private,omitempty"`
 }
 
 type platformMemberRequest struct {
@@ -45,19 +49,22 @@ type platformMemberRequest struct {
 type platformMemberOperation struct {
 	Schema int `json:"schema"`
 	MemberIdentity
-	ID            string                     `json:"operation_id"`
-	Kind          string                     `json:"kind"`
-	Source        RoomMessage                `json:"source"`
-	Input         platformMemberInput        `json:"input"`
-	Account       platform.AccountIdentity   `json:"account"`
-	Status        string                     `json:"status"`
-	ResultVersion uint64                     `json:"result_version"`
-	Result        onboardingStep             `json:"result"`
-	Config        *lark.Config               `json:"notification_config,omitempty"`
-	GitLabConfig  *gitlab.NotificationConfig `json:"gitlab_notification_config,omitempty"`
-	Project       *gitlab.Project            `json:"project,omitempty"`
-	Chats         []lark.Chat                `json:"chats,omitempty"`
-	CreatedAt     time.Time                  `json:"created_at"`
+	ID               string                      `json:"operation_id"`
+	Kind             string                      `json:"kind"`
+	Source           RoomMessage                 `json:"source"`
+	Input            platformMemberInput         `json:"input"`
+	Account          platform.AccountIdentity    `json:"account"`
+	Status           string                      `json:"status"`
+	ResultVersion    uint64                      `json:"result_version"`
+	Result           onboardingStep              `json:"result"`
+	Config           *lark.Config                `json:"notification_config,omitempty"`
+	GitLabConfig     *gitlab.NotificationConfig  `json:"gitlab_notification_config,omitempty"`
+	Project          *gitlab.Project             `json:"project,omitempty"`
+	Chats            []lark.Chat                 `json:"chats,omitempty"`
+	RequestedActions []tool.ActionGrant          `json:"requested_actions,omitempty"`
+	Authorization    *tool.ActionAuthorization   `json:"action_authorization,omitempty"`
+	Capabilities     *larkMemberCapabilityResult `json:"capabilities,omitempty"`
+	CreatedAt        time.Time                   `json:"created_at"`
 }
 
 func (m *roomManager) platformMemberPath(id string) string {
@@ -70,10 +77,13 @@ func validPlatformMemberInput(kind string, in platformMemberInput) bool {
 	}
 	gitlabFields := in.EventsEnabled != nil || in.ProjectID != 0 || in.ProjectPath != "" || in.EventsFilter != nil || in.TodosFilter != nil
 	if kind == "tool" {
-		if gitlabFields {
+		if gitlabFields || len(in.Actions) > 32 || len(in.Actions) > 0 && (in.Enabled == nil || !*in.Enabled) {
 			return false
 		}
-		return in.Enabled != nil && in.TodosEnabled == nil && in.NotificationVersion == 0 && len(in.AddChatIDs) == 0 && in.GroupMessageMode == ""
+		return in.Enabled != nil && in.TodosEnabled == nil && in.NotificationVersion == 0 && !in.hasLarkNotificationFields()
+	}
+	if len(in.Actions) > 0 {
+		return false
 	}
 	if kind == "notifications" && (in.TodosEnabled != nil || gitlabFields) {
 		if (in.ProjectID == 0) != (in.ProjectPath == "") || in.ProjectID < 0 || in.ProjectPath != "" && !workspaceProjectPath(in.ProjectPath) {
@@ -89,26 +99,16 @@ func validPlatformMemberInput(kind string, in platformMemberInput) bool {
 				return false
 			}
 		}
-		return in.Enabled == nil && in.ToolRevision == 0 && len(in.AddChatIDs) == 0 && in.GroupMessageMode == ""
+		return in.Enabled == nil && in.ToolRevision == 0 && !in.hasLarkNotificationFields()
 	}
-	if kind != "notifications" || in.ToolRevision != 0 || len(in.AddChatIDs) > 32 || in.Enabled == nil && len(in.AddChatIDs) == 0 && in.GroupMessageMode == "" || in.GroupMessageMode != "" && in.GroupMessageMode != "all" && in.GroupMessageMode != "mentions" {
-		return false
-	}
-	seen := map[string]bool{}
-	for _, id := range in.AddChatIDs {
-		if !(lark.Chat{ID: id, Mode: "group"}).Valid() || seen[id] {
-			return false
-		}
-		seen[id] = true
-	}
-	return true
+	return kind == "notifications" && in.ToolRevision == 0 && (in.Enabled != nil || in.hasLarkNotificationFields()) && validMemberLarkPatch(in)
 }
 
 func validPlatformMemberOperation(op platformMemberOperation) bool {
-	if op.Schema != 1 || !tool.OpaqueID(op.ID) || !tool.OpaqueID(op.RoomInstance) || !validText(op.RoomID) || !validText(op.AgentID) || !safeMembershipID(op.MembershipID) || !validHumanEvidence(op.Source) || !validPlatformMemberInput(op.Kind, op.Input) || !op.Account.Valid() || op.CreatedAt.IsZero() {
+	if (op.Schema != 1 && op.Schema != 2) || !tool.OpaqueID(op.ID) || !tool.OpaqueID(op.RoomInstance) || !validText(op.RoomID) || !validText(op.AgentID) || !safeMembershipID(op.MembershipID) || !validHumanEvidence(op.Source) || !validPlatformMemberInput(op.Kind, op.Input) || !op.Account.Valid() || op.CreatedAt.IsZero() {
 		return false
 	}
-	if !validPlatformMemberProviderInput(op.Account.Provider, op.Kind, op.Input) || len(op.Chats) != len(op.Input.AddChatIDs) {
+	if !validPlatformMemberProviderInput(op.Account.Provider, op.Kind, op.Input) || len(op.Chats) != len(op.Input.verifiedGroupIDs()) {
 		return false
 	}
 	if (op.Project != nil) != (op.Input.ProjectID != 0) || op.Project != nil && (op.Project.ID != op.Input.ProjectID || op.Project.Path != op.Input.ProjectPath || op.Project.Name == "") {
@@ -118,7 +118,7 @@ func validPlatformMemberOperation(op platformMemberOperation) bool {
 		return false
 	}
 	for i, c := range op.Chats {
-		if !c.Valid() || c.Mode == "p2p" || c.ID != op.Input.AddChatIDs[i] {
+		if !c.Valid() || c.Mode == "p2p" || c.ID != op.Input.verifiedGroupIDs()[i] {
 			return false
 		}
 	}
@@ -131,6 +131,20 @@ func validPlatformMemberOperation(op platformMemberOperation) bool {
 	if op.GitLabConfig != nil {
 		cfg, err := gitlab.NormalizeNotificationConfig(*op.GitLabConfig)
 		if err != nil || !reflect.DeepEqual(cfg, *op.GitLabConfig) || cfg.PlatformID != op.Input.PlatformID || cfg.Target != platformMemberTarget(op.MemberIdentity) {
+			return false
+		}
+	}
+	if op.Schema == 1 && (len(op.Input.Actions) > 0 || len(op.RequestedActions) > 0 || op.Authorization != nil || op.Capabilities != nil) {
+		return false
+	}
+	if op.Schema == 2 {
+		if op.Kind != "tool" || op.Account.Provider != "lark" || op.Input.Enabled == nil || !*op.Input.Enabled || !validLarkConfigurationReceipt(op.MemberIdentity, op.Input.PlatformID, op.Account, op.RequestedActions, op.Authorization, op.Capabilities) {
+			return false
+		}
+		if op.Capabilities.PlatformVersion != op.Input.PlatformVersion || op.Capabilities.ActionRevision != op.Authorization.Revision {
+			return false
+		}
+		if op.Status == "completed" && (op.Capabilities.ToolRevision != op.Result.Version || op.Capabilities.ActionRevision != op.Authorization.Revision) {
 			return false
 		}
 	}
@@ -148,9 +162,14 @@ func validPlatformMemberOperation(op platformMemberOperation) bool {
 func validPlatformMemberProviderInput(provider, kind string, in platformMemberInput) bool {
 	switch provider {
 	case "lark":
+		for _, op := range in.Actions {
+			if op != "message.reply" && op != "message.send" && op != "message.send_self" {
+				return false
+			}
+		}
 		return in.TodosEnabled == nil && in.EventsEnabled == nil && in.ProjectID == 0 && in.ProjectPath == "" && in.EventsFilter == nil && in.TodosFilter == nil
 	case "gitlab":
-		return kind == "tool" || (in.TodosEnabled != nil || in.EventsEnabled != nil || in.ProjectID != 0 || in.EventsFilter != nil || in.TodosFilter != nil) && in.Enabled == nil && len(in.AddChatIDs) == 0 && in.GroupMessageMode == ""
+		return len(in.Actions) == 0 && !in.hasLarkNotificationFields() && (kind == "tool" || (in.TodosEnabled != nil || in.EventsEnabled != nil || in.ProjectID != 0 || in.EventsFilter != nil || in.TodosFilter != nil) && in.Enabled == nil)
 	}
 	return false
 }

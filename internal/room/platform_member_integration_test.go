@@ -25,6 +25,9 @@ func platformMemberHarness(t *testing.T) (*larkHarness, platformMemberRequest) {
 	bin := filepath.Join(h.dir, "lark-cli")
 	script, _ := os.ReadFile(bin)
 	text := strings.Replace(string(script), "'chat_mode':'p2p','name':'脱敏会话'", "'chat_mode':('p2p' if path.endswith('oc_private') else 'group'),'name':'产品讨论群'", 1)
+	// The search fixture already specializes its private chat. Keep this harness's
+	// exact-ID type contract when that newer fixture form is used as well.
+	text = strings.Replace(text, "'chat_mode':'p2p' if path.endswith('/oc_chat') else 'group'", "'chat_mode':('p2p' if path.endswith('oc_private') else 'group')", 1)
 	search := `if a[:2]==['im','+chat-search']:
  assert a[a.index('--query')+1]=='产品'
  assert a[a.index('--chat-modes')+1]=='group,topic'
@@ -77,6 +80,9 @@ func TestPlatformMemberCLISelectedGroupAndSeparateTool(t *testing.T) {
 	var reused platformConnectOperation
 	id, _ := newOpaqueID()
 	run(append([]string{"connect", "start", "--provider", "lark", "--name", h.c.Name, "--operation-id", id, "--source-seq", strconv.FormatUint(req.SourceSeq, 10)}, base...), &reused)
+	if !connectTerminal(reused.Status) {
+		reused = waitConnectionResult(t, h.m, platformConnectRequest{ServiceInfo: h.svc.info, Caller: agentCaller(h.members[0].AgentID, h.members[0].MembershipID), OperationID: id})
+	}
 	if reused.Status != "completed" {
 		t.Fatal(reused)
 	}
@@ -123,7 +129,7 @@ func TestPlatformMemberCLISelectedGroupAndSeparateTool(t *testing.T) {
 	}
 	baseline := view.Baseline
 	run(append([]string{"member", "get"}, base...), &view)
-	if !view.ToolEnabled || view.ToolRevision != 2 || view.NotificationVersion != 1 || view.Baseline != baseline || view.Tool == nil || view.Tool.ActionAuthorization != nil {
+	if !view.ToolEnabled || view.ToolRevision != 2 || view.NotificationVersion != 1 || view.Baseline != baseline || view.Tool == nil || (view.Tool.ActionAuthorization == nil || len(view.Tool.ActionAuthorization.Grants) != 3) {
 		t.Fatal(view)
 	}
 	var status struct {

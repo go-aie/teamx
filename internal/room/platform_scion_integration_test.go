@@ -41,7 +41,7 @@ func TestScionMemberToolsIdentityAndHelp(t *testing.T) {
 	if err := run("list"); err != nil || !strings.Contains(out.String(), "scion") || strings.Contains(out.String(), "credentials") || strings.Contains(out.String(), "action_disabled_reason") {
 		t.Fatal(err, out.String())
 	}
-	if err := run("skill", c.ToolEntryID); err != nil || !strings.Contains(out.String(), "两种 land") {
+	if err := run("skill", c.ToolEntryID); err != nil || !strings.Contains(out.String(), "scn land publishes") || !strings.Contains(out.String(), "scn review land N merges") {
 		t.Fatal(err, out.String())
 	}
 	err := run("run", c.ToolEntryID, "--json", "--repo", "Owner/Repo", "review", "ls")

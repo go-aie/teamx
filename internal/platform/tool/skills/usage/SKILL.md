@@ -116,3 +116,12 @@ completed part, actual blocker and next user step. Use Settings → General for
 system settings such as the service time zone; model/runtime setup belongs to
 the operator's startup configuration. Do not invent an Agent command for a
 human-only interface or promise that a frozen existing role updates on restart.
+
+Feishu connections request the supported current permission set in one flow.
+OAuth does not enable a member's tools or authorize a business write. For explicit
+same-account repair, read platforms skill and use `platforms connect authorize`;
+never ask for a tool off/on cycle. Use structured capability reasons: app permission
+gaps require the original application's official settings, user gaps require its
+"补全授权" component, missing self evidence requires that member's explicit repair,
+and unsupported hosts cannot send. `tools list` availability expires after 60s;
+configured grants and historical receipts alone do not establish current readiness.

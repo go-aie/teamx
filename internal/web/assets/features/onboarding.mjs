@@ -72,8 +72,8 @@ export function createOnboarding({ env, runtime, connectionsUI, larkUI, settings
     const unfinished=op ? [["通知设置",op.notifications],["工具设置",op.tool]].filter(([,step])=>!["applied","preserved","skipped"].includes(step.status)).map(([label])=>label) : [];
     $("onboarding-result-summary").textContent=onboarding.busy ? `正在确认 ${name} 接入状态…` : onboarding.error || !op ? `${name} 接入结果待确认。` : op.connection.status!=="connected" ? `${name} 接入尚未完成。` : `${name} 已连接，${unfinished.join("、")}尚未完成。`;
     $("onboarding-result-account").textContent=op ? `${item?.name || "平台"}${item?.validation?.username ? ` · @${item.validation.username}` : ""}` : "";
-    const status={waiting:"等待账号核验",connected:"账号已连接",pending:"等待应用",applied:"已保存",preserved:"保留原设置",skipped:"本次不修改",failed:"未完成"};
-    const errors={account_unavailable:"请先完成登录或核验账号，再读取进度。",account_changed:"账号已变化，请停止本次接入并核对平台。",target_changed:"原会话或成员已变化，请重新选择目标发起接入。",settings_changed:"设置已被修改；请核对当前选择，再发起新的接入。",executable_unavailable:"程序缺失，启用意图已保存；安装后会重新检查。",legacy_tool_choice_unknown:"原工具选择未确认，已保留。请在成员工具设置中明确启用。",cancelled:"剩余步骤已停止，已保存的设置保留。",busy:"正在处理，请稍后读取进度。",binding_changed:"绑定已变化，请核对当前平台与成员。"};
+    const status={waiting:"等待账号核验",connected:"账号已连接",pending:"等待应用",applied:"已保存",preserved:"保留原设置",skipped:"本次不修改",failed:"未完成",unknown:"保存结果待核对",not_applied:"尚未保存"};
+    const errors={user_authorization_required:"请补全当前飞书连接的用户授权，再继续尚未提交的工具设置。",submission_unconfirmed:"请核对当前成员工具设置；不会重放本次保存。",account_unavailable:"请先完成登录或核验账号，再读取进度。",account_changed:"账号已变化，请停止本次接入并核对平台。",target_changed:"原会话或成员已变化，请重新选择目标发起接入。",settings_changed:"设置已被修改；请核对当前选择，再发起新的接入。",executable_unavailable:"程序缺失，启用意图已保存；安装后会重新检查。",legacy_tool_choice_unknown:"原工具选择未确认，已保留。请在成员工具设置中明确启用。",cancelled:"剩余步骤已停止，已保存的设置保留。",busy:"正在处理，请稍后读取进度。",binding_changed:"绑定已变化，请核对当前平台与成员。"};
     $("onboarding-steps").replaceChildren(...(op ? [["账号",op.connection],["通知",op.notifications],["工具",op.tool]].map(([title,step])=>{
       const row=document.createElement("div"),dt=document.createElement("dt"),dd=document.createElement("dd");dt.textContent=title;
       dd.textContent=`${status[step.status] || step.status}${step.error_code ? ` · ${errors[step.error_code] || "暂不可用，请核对平台、权限及当前设置后重试。"}` : ""}`;row.append(dt,dd);return row;
@@ -82,9 +82,9 @@ export function createOnboarding({ env, runtime, connectionsUI, larkUI, settings
     $("onboarding-resume").hidden=done && !onboarding.error || !!op && !onboarding.error;
     $("onboarding-prepare-retry").hidden=!onboarding.pending?.prepare || !!op;
     $("onboarding-continue-login").hidden=!op || done || !!onboarding.error || op.connection.status==="connected";
-    $("onboarding-apply").hidden=!op || done || !!onboarding.error || op.connection.status!=="connected";
+    $("onboarding-apply").hidden=!op || done || !!onboarding.error || op.connection.status!=="connected" || op.tool.status==="unknown" && ["applied","preserved","skipped"].includes(op.notifications.status);
     $("onboarding-cancel").hidden=!onboarding.pending || done;
-    $("onboarding-notification-settings").hidden=!op || done || op.connection.status!=="connected" || op.input.only_platform || op.schema!==2 || !["gitlab","lark"].includes(op.input.provider);
+    $("onboarding-notification-settings").hidden=!op || done || op.connection.status!=="connected" || op.input.only_platform || ![2,3].includes(op.schema) || !["gitlab","lark"].includes(op.input.provider);
     for (const id of ["onboarding-prepare-retry","onboarding-resume","onboarding-continue-login","onboarding-apply","onboarding-cancel","onboarding-notification-settings"]) $(id).disabled=onboarding.busy || connectionsUI.platforms.sending || !!connectionsUI.platforms.gitlabAuth || !!connectionsUI.platforms.auth || !!connectionsUI.platforms.scionAuth;
   }
 
@@ -238,10 +238,10 @@ export function createOnboarding({ env, runtime, connectionsUI, larkUI, settings
       const invalid=a.notifications && (a.item.provider==="lark" ? $("lark-save").disabled : $("gitlab-save").disabled);
       $("member-platform-add-submit").disabled=memberPlatformAdditionBusy(v,a.item) || !!invalid;
     }
-    const status={applied:"已保存",preserved:"保留原设置",skipped:"本次不修改",pending:"等待应用",failed:"未完成"};
-    $("member-platform-add-result").textContent=own ? `通知：${status[op.notifications.status]}；工具：${status[op.tool.status]}。${onboarding.error || (op.notifications.status==="failed" || op.tool.status==="failed" ? "已成功部分保留，请读取进度后继续未完成步骤。" : "")}` : onboarding.pending && !onboardingDone() ? `有未完成的接入，请读取进度后继续。${onboarding.error}` : onboarding.error;
+    const status={applied:"已保存",preserved:"保留原设置",skipped:"本次不修改",pending:"等待应用",failed:"未完成",unknown:"保存结果待核对",not_applied:"尚未保存"};
+    $("member-platform-add-result").textContent=own ? `通知：${status[op.notifications.status]}；工具：${status[op.tool.status]}。${onboarding.error || (op.tool.error_code==="user_authorization_required" ? "请补全当前飞书连接的用户授权，再继续工具设置。" : op.tool.status==="unknown" ? "请核对当前成员工具设置；不会重放本次保存。" : op.notifications.status==="failed" || op.tool.status==="failed" ? "已成功部分保留，请读取进度后继续未完成步骤。" : "")}` : onboarding.pending && !onboardingDone() ? `有未完成的接入，请读取进度后继续。${onboarding.error}` : onboarding.error;
     $("member-platform-add-resume").hidden=!onboarding.pending || onboardingDone();
-    const canApply=own && (op.connection.status==="connected" || op.connection.status==="waiting" && membersUI.memberPlatformItems().some(p=>p.id===op.platform_id && p.validation?.status==="valid"));
+    const canApply=own && !(op.tool.status==="unknown" && ["applied","preserved","skipped"].includes(op.notifications.status)) && (op.connection.status==="connected" || op.connection.status==="waiting" && membersUI.memberPlatformItems().some(p=>p.id===op.platform_id && p.validation?.status==="valid"));
     $("member-platform-add-retry").hidden=!onboarding.pending || onboardingDone() || !!op && !canApply;
     $("member-platform-add-resume").disabled=$("member-platform-add-retry").disabled=onboarding.busy;
   }

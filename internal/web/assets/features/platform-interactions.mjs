@@ -25,8 +25,8 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
     const cancel=document.createElement("button");cancel.type="button";cancel.className="text-button";cancel.textContent="取消连接";
     const settings=document.createElement("button");settings.type="button";settings.className="text-button";settings.textContent="完整设置";
     settings.addEventListener("click",()=>card.op.setup ? openGitLabInteractionSettings(card) : settingsUI.openSettings("platforms"));
-    const applicationLink=op.interaction.kind==="gitlab_authorization" ? document.createElement("a") : null;
-    if(applicationLink){applicationLink.target="_blank";applicationLink.rel="noopener noreferrer";applicationLink.referrerPolicy="no-referrer";applicationLink.textContent="前往 GitLab 管理应用 ↗";applicationLink.hidden=true;}
+    const applicationLink=document.createElement("a");
+    if(applicationLink){applicationLink.target="_blank";applicationLink.rel="noopener noreferrer";applicationLink.referrerPolicy="no-referrer";applicationLink.textContent=op.interaction.kind==="gitlab_authorization" ? "前往 GitLab 管理应用 ↗" : "前往飞书应用权限管理 ↗";applicationLink.hidden=true;}
     actions.append(link,cancel,settings);el.append(heading,status,steps,account,qr,actions,hint,feedback);if(applicationLink)el.append(applicationLink);
     const card={el,op,heading,status,steps,account,hint,feedback,link,qr,cancel,applicationLink};
     cancel.addEventListener("click",()=>cancelPlatformInteraction(card));
@@ -42,7 +42,7 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
     const success=op.status==="completed" && op.connection.status==="connected";
     const stages={application:gitlab ? "检查 GitLab 应用" : "配置飞书应用",authorization:gitlab ? "授权 GitLab 账号" : "授权飞书账号",connection:"核验并保存连接",complete:"连接已保存"};
     const statuses={running:"正在",waiting:"等待你完成",cancelling:"正在取消",completed:"已连接",cancelled:"已取消",expired:"授权已过期",failed:"连接失败",unknown:"结果未确认"};
-    card.heading.textContent=`${op.name} · ${gitlab ? "GitLab" : "飞书"}`;
+    card.heading.textContent=`${op.name} · ${gitlab ? "GitLab" : "飞书"}${op.intent === "authorize" ? " · 补全授权" : ""}`;
     card.status.textContent=terminal || op.status==="cancelling" ? statuses[op.status] : `${statuses[op.status] || "正在"}${stages[op.stage] || "处理连接"}`;
     card.el.dataset.status=success ? "completed" : op.status;
     const stepName=step=>({pending:"待完成",applied:"已完成",reused:"已复用",connected:"已保存",failed:"失败",unknown:"未确认"}[step.status] || "未确认");
@@ -54,7 +54,7 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
       const reasons={member_paused:"Agent 已暂停",member_failed:"上次回合失败，需恢复处理",inbox_admission_blocked:"前方通知的来源核验受阻",budget_exhausted:"Agent 执行预算已用完",backend_blocked:"Agent Session 需要恢复",checkpoint_failed:"Agent 检查点需要恢复",session_rotating:"Agent 正在轮换 Session",target_unavailable:"Agent 暂不可用",target_changed:"原 Agent 已移除或替换",inbox_capacity:"Inbox 容量不足",inbox_busy:"Inbox 正忙",inbox_delivery_unconfirmed:"交付结果待核实"};
       if(continuation.state==="handled") card.hint.textContent="Agent 已核对此操作结果；后续需求以对话中的处理结果为准。";
       else if(terminal) card.hint.textContent=`${success ? "连接已保存" : "操作结果已保存"}，${continuation.state==="consumed" ? "Agent 已读取，等待接续处理" : "等待 Agent 接续"}。${continuation.blocked_reason ? `${reasons[continuation.blocked_reason] || "接续暂受阻"}。` : ""}可发消息请 Agent 继续。`;
-      else card.hint.textContent="请完成应用配置和账号授权；可能需要分两次操作。结果已订阅，将经 Inbox 等待 Agent 接续；也可发消息主动继续。";
+      else card.hint.textContent="请完成应用配置和账号授权；可能需要分两次操作。结果已订阅，完成后将经 Inbox 自动接续。";
     }
     if(gitlab && activeGitLabHint(op))card.hint.textContent=`请在 ${op.origin} 授权${op.account_username ? `账号 ${op.account_username}` : "指定账号"}。${continuation?.mode==="inbox" ? "结果已订阅，将经 Inbox 等待 Agent 接续。" : "完成后可发消息请 Agent 继续。"}`;
     if(card.applicationLink){card.applicationLink.hidden=true;card.applicationLink.removeAttribute("href");}
@@ -63,10 +63,22 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
       try{const u=new URL(setup.applications_url);if(u.protocol==="https:" && u.origin===new URL(op.origin).origin && u.pathname==="/-/user_settings/applications"){card.applicationLink.href=u.href;card.applicationLink.hidden=false;}}catch{}
       card.hint.textContent=`实例：${setup.origin}。官方应用管理：${setup.applications_url}。回调地址：${setup.redirect_uri || "请先配置服务地址"}。所需 scopes：${setup.scopes.join("、")}。请在完整设置填写应用凭据并授权；关闭设置后仍可继续原操作。${setup.applications.some(a=>!a.compatible) ? "已有应用不兼容，请在完整设置核对回调和权限。" : ""}${continuation?.mode==="inbox" ? "结果已订阅，将经 Inbox 接续。" : "完成后可主动继续。"}`;
     }
+    if (!gitlab && op.intent === "authorize") {
+      const rooms=new Set((op.affected || []).flatMap(a=>(a.referenced_rooms || []).map(r=>`${r.room_id}:${r.room_instance}`)));
+      card.hint.textContent += ` 本次影响 ${(op.affected || []).length} 个共享连接、${rooms.size} 个会话；只恢复原账号，不修改成员许可。`;
+      card.link.textContent="补全授权 ↗";
+    }
+    if (!gitlab && op.permissions) {
+      const labels={"chat.read":"会话读取","message.read":"消息读取","notification.private":"私聊通知","notification.group":"群通知","token.renew":"自动续期","sender.name":"发送者姓名","people.search":"人员搜索","message.reply":"普通回复","message.send":"指定群发送","message.send_self":"本人投递"};
+      const gaps=op.permissions.capabilities.filter(c=>c.state!=="ready");
+      card.hint.textContent += gaps.length ? ` 本次检查尚未就绪：${gaps.map(c=>`${labels[c.name] || c.name}（${c.state==="unsupported" ? "当前服务不支持" : c.next_action==="configure_application" ? "需管理员补权" : c.next_action==="authorize_user" ? "需补全授权" : "暂未确认"}）`).join("、")}。` : " 本次账号条件已核验；成员动作与本人证据仍按各自设置检查。";
+      const namespace=op.permissions.account?.id?.namespace || "",appID=namespace.startsWith("lark:open_id:") ? namespace.slice("lark:open_id:".length) : "";
+      if(gaps.some(c=>c.next_action==="configure_application") && /^cli_[a-zA-Z0-9_]+$/.test(appID)){card.applicationLink.href=`https://open.feishu.cn/app/${encodeURIComponent(appID)}/auth`;card.applicationLink.hidden=false;}
+    }
     // Only fixed official authorization links and this service's image proxy.
     let url="";try{const u=new URL(op.interaction.authorization_url);if(u.protocol==="https:" && ["open.feishu.cn","accounts.feishu.cn","passport.feishu.cn"].includes(u.hostname))url=u.href;}catch{}
     const active=!terminal && op.status!=="cancelling" && op.target_available;
-    card.link.hidden=!active || (!gitlab && !url);card.link.textContent=gitlab ? op.setup ? "配置 GitLab 应用" : "授权 GitLab 账号 ↗" : op.stage==="application" ? "配置飞书应用 ↗" : "授权飞书账号 ↗";
+    card.link.hidden=!active || (!gitlab && !url);card.link.textContent=gitlab ? op.setup ? "配置 GitLab 应用" : "授权 GitLab 账号 ↗" : op.stage==="application" ? "配置飞书应用 ↗" : op.intent === "authorize" ? "补全授权 ↗" : "授权飞书账号 ↗";
     if(active && gitlab)card.link.href="#";else if(active && url) {if(card.link.href!==url)card.link.href=url;}else card.link.removeAttribute("href");
     card.link.setAttribute("aria-disabled",platformInteractionState.busy.has(op.operation_id) ? "true" : "false");
     const qr=op.interaction.qrcode_url || "";

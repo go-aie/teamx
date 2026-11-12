@@ -24,10 +24,19 @@ func connectOrigin(in platformConnectInput) string {
 	return in.Origin
 }
 func validConnectInput(in platformConnectInput) bool {
+	if connectIntent(in) != "connect" && connectIntent(in) != "authorize" {
+		return false
+	}
+	if connectIntent(in) == "authorize" && (in.Provider != "lark" || !tool.OpaqueID(in.PlatformID) || in.PlatformVersion == 0) {
+		return false
+	}
 	switch in.Provider {
 	case "lark":
 		return in.Origin == "" && in.ApplicationID == "" && in.AccountUsername == ""
 	case "gitlab":
+		if in.Intent != "" {
+			return false
+		}
 		_, origin, err := registry.Normalize(in.Name, in.Origin)
 		return err == nil && origin == in.Origin && (in.ApplicationID == "" || tool.OpaqueID(in.ApplicationID)) &&
 			(in.AccountUsername == "" || validText(in.AccountUsername) && len(in.AccountUsername) <= 255 && !strings.ContainsAny(in.AccountUsername, " /\\\t\n"))

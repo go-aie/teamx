@@ -63,7 +63,7 @@ elif b[:2]==['api','GET']:
   if mid:allowed.append('/open-apis/im/v1/messages/'+mid)
  assert path in allowed, 'read outside authorized acceptance target'
  assert b[-4:]==['--as','user','--format','json']
-elif b in [['--version'],['config','show'],['whoami','--as','user'],['auth','scopes','--json']]:pass
+elif b in [['--version'],['config','show'],['whoami','--as','user'],['auth','scopes','--json'],['auth','status','--json']]:pass
 elif b[:2]==['auth','check']:pass
 else:raise Exception('operation outside bounded acceptance')
 r=subprocess.run(['/opt/homebrew/bin/lark-cli']+a,capture_output=True)

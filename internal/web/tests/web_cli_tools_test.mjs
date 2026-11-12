@@ -112,7 +112,7 @@ test("late retry reads cannot replace a different member's platforms",async()=>{
  assert.equal(ui.el("member-notification-platforms").children,rows);assert.equal(rows.length,1);
  await change(ui,"connection",true);assert.equal(binds(api).at(-1).body.binding.membership_id,"member-b");
 });
-for(const self of [false,true])test(`Lark switch retains accepted capabilities, excludes unavailable actions and sends no client evidence (self=${self})`,async()=>{
+for(const self of [false,true])test(`Lark switch delegates action defaults to the server and sends no client evidence (self=${self})`,async()=>{
  const api=fixture();api.data.catalog.push({name:"lark",provider:"lark",actions:[
   {operation:"message.reply",target_kind:"message",object_types:["message"]},
   {operation:"message.send",target_kind:"object",object_types:["user","chat"],disabled_reason:"unavailable: private detail"},
@@ -124,7 +124,7 @@ for(const self of [false,true])test(`Lark switch retains accepted capabilities, 
  const ui=await launch(api);await open(ui);assert.equal(binds(api).length,0);assert.equal(api.data.bindings[0].action_authorization,undefined);
  await change(ui,"one",false);await change(ui,"one",true);await change(ui,"two",true);
  const sent=binds(api).at(-1).body.binding;assert.equal(sent.platform_id,"two");assert.equal(sent.capability_evidence,undefined);
- assert.deepEqual(sent.action_authorization.grants,[{operation:"message.reply",target_kind:"message",object_type:"message"},...(self ? [{operation:"message.send_self",target_kind:"object",object_type:"user"}] : [])]);
+ assert.equal(sent.action_authorization,undefined);
  await row(ui,"one").children[0].emit("click");assert.equal(ui.el("member-platform-tool-control"),undefined);
  await change(ui,"one",false);assert.equal(toggle(ui,"two").checked,true);
 });
@@ -144,4 +144,13 @@ test("failed automatic tool readback exposes only the existing failure retry",as
  assert.equal(ui.el("member-notification-list-reload").hidden,false);assert.match(ui.el("member-notification-list-error").textContent,/暂不可读/);
  api.hook=null;await ui.el("member-notification-list-reload").emit("click");assert.equal(toggle(ui).disabled,false);assert.equal(toggle(ui).checked,true);
  assert.equal(ui.el("member-notification-list-reload").hidden,true);assert.equal(binds(api).length,1);
+});
+test("Lark user authorization gap leaves tools disabled and is never replayed",async()=>{
+ const api=fixture();api.data.catalog.push({name:"lark",provider:"lark"});
+ api.hook=path=>{
+  if(path.startsWith("/v1/platforms?"))return {platforms:[{id:"lark",name:"飞书",provider:"lark",version:1,validation:{status:"valid"}}]};
+  if(path==="/v1/tools/bind")return Promise.reject(Object.assign(new Error("authorization required"),{code:"user_authorization_required"}));
+ };
+ const ui=await launch(api);await open(ui);await change(ui,"lark",true);
+ assert.equal(toggle(ui,"lark").checked,false);assert.match(feedback(ui,"lark"),/尚未保存.*补全.*用户授权/);assert.equal(binds(api).length,1);
 });

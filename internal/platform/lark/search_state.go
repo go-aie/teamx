@@ -157,6 +157,17 @@ func (s *State) reconfigureSearch() {
 		}
 		next.Branches = append(next.Branches, b)
 	}
+	if len(next.Branches) == len(old.Branches) {
+		same := true
+		for i, b := range next.Branches {
+			if b.Kind != old.Branches[i].Kind || b.Fingerprint != old.Branches[i].Fingerprint {
+				same = false
+			}
+		}
+		if same {
+			next.Next = old.Next
+		}
+	}
 	s.Search = next
 	s.Directory = nil
 }

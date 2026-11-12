@@ -217,7 +217,7 @@ path=a[2]`, 1)
 	q := actionResolveRequest{Provider: "lark", TurnNumber: 1, Locator: platform.TargetLocator{TargetRef: inbox.Entries[0].Source.TargetRef}}
 	b, _ := json.Marshal(q)
 	var v actionTargetView
-	if err := cli([]string{"actions", "resolve", "--request", string(b)}, &v); err != nil || v.TargetRef != q.Locator.TargetRef || len(v.Actions) != 1 || v.Actions[0].Executable || v.Actions[0].DisabledReason != "Member action capability is disabled on the current binding." {
+	if err := cli([]string{"actions", "resolve", "--request", string(b)}, &v); err != nil || v.TargetRef != q.Locator.TargetRef || len(v.Actions) != 1 || v.Actions[0].Executable || v.Actions[0].ReasonCode != "member_action_not_configured" || v.Actions[0].NextAction != "enable_member_tool" {
 		t.Fatal(v, err)
 	}
 	h.m.mu.Lock()

@@ -116,6 +116,17 @@ func (m *roomManager) toolAvailability(file registry.Snapshot, p registry.Record
 						continue
 					}
 				}
+				if d.Provider == "lark" {
+					ready := false
+					for _, checked := range m.larkPlatformCapabilitiesLocked(p).Capabilities {
+						if checked.Name == string(cap.Spec.Operation) && checked.State == "ready" {
+							ready = true
+						}
+					}
+					if !ready {
+						continue
+					}
+				}
 				s.Capabilities = append(s.Capabilities, string(cap.Spec.Operation))
 			}
 		}

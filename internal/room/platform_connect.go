@@ -80,7 +80,9 @@ func (m *roomManager) checkpointPlatformConnectLocked(s *larkAuthSession) {
 		op.Status = "waiting"
 	}
 	if s.ConfigurationFound {
-		op.Application = onboardingStep{Status: "applied"}
+		if connectIntent(op.Input) != "authorize" {
+			op.Application = onboardingStep{Status: "applied"}
+		}
 		p := s.profile
 		op.Profile = &p
 	}
@@ -105,7 +107,9 @@ func (m *roomManager) finishPlatformConnectLocked(s *larkAuthSession) {
 		return
 	}
 	if s.ConfigurationFound {
-		op.Application = onboardingStep{Status: "applied"}
+		if connectIntent(op.Input) != "authorize" {
+			op.Application = onboardingStep{Status: "applied"}
+		}
 		p := s.profile
 		op.Profile = &p
 	}
@@ -123,9 +127,14 @@ func (m *roomManager) finishPlatformConnectLocked(s *larkAuthSession) {
 			op.Status = "unknown"
 		}
 	}
-	if s.validation.Status == "valid" {
+	if s.validation.Status == "valid" && (connectIntent(op.Input) != "authorize" || s.validation.Account == op.Account) {
 		op.Authorization = onboardingStep{Status: "applied"}
-		op.Account = s.validation.Account
+		if connectIntent(op.Input) != "authorize" {
+			op.Account = s.validation.Account
+		}
+	}
+	if op.Schema == 2 && s.Permissions != nil && s.Permissions.Account == op.Account {
+		op.Permissions = s.Permissions
 	}
 	if op.Status == "running" {
 		// Check the original membership again after the long authorization wait.
@@ -142,7 +151,11 @@ func (m *roomManager) finishPlatformConnectLocked(s *larkAuthSession) {
 			// Persist exact account/profile evidence before touching connection state.
 			err = m.savePlatformConnectLocked(&op)
 			if err == nil {
-				err = m.commitPlatformConnectLocked(&op, s.validation)
+				if connectIntent(op.Input) == "authorize" {
+					err = m.commitLarkAuthorizeLocked(&op, s.validation)
+				} else {
+					err = m.commitPlatformConnectLocked(&op, s.validation)
+				}
 			}
 			if err != nil {
 				op.Status, op.ErrorCode = "unknown", "connection_unconfirmed"
@@ -196,21 +209,28 @@ func (m *roomManager) commitPlatformConnectLocked(op *platformConnectOperation, 
 		return err
 	}
 	op.Connection = onboardingStep{Status: "connected", Version: c.Version}
+	if op.Permissions != nil && op.Profile != nil {
+		m.cacheLarkProfilePermissionsLocked(*op.Profile, *op.Permissions)
+	}
 	return nil
 }
 func (m *roomManager) startPlatformConnectLocked(ctx context.Context, req platformConnectRequest) (platformConnectOperation, error) {
 	var op platformConnectOperation
-	if req.Input == nil || !tool.OpaqueID(req.OperationID) || req.SourceSeq == 0 || (req.Input.Provider != "lark" && req.Input.Provider != "gitlab") || !validText(req.Input.Name) || len(req.Input.Name) > 128 {
+	if req.Input == nil || !tool.OpaqueID(req.OperationID) || req.SourceSeq == 0 || (req.Input.Provider != "lark" && req.Input.Provider != "gitlab") || (connectIntent(*req.Input) != "authorize" && !validText(req.Input.Name)) || len(req.Input.Name) > 128 {
 		return op, ErrRequest
 	}
-	name, _, normalizeErr := registry.Normalize(req.Input.Name, connectOrigin(*req.Input))
-	if normalizeErr != nil || name != req.Input.Name || !validConnectInput(*req.Input) {
+	if connectIntent(*req.Input) == "authorize" && !validConnectInput(*req.Input) {
 		return op, ErrRequest
 	}
 	prior, err := m.readPlatformConnectLocked(req.OperationID)
 	if err == nil {
 		if prior.MemberIdentity != (MemberIdentity{RoomIdentity: req.RoomIdentity, AgentID: req.Caller.ID, MembershipID: req.Caller.MembershipID}) || prior.Caller != req.Caller {
 			return op, ErrIdentity
+		}
+		if connectIntent(*req.Input) == "authorize" && req.Input.Name == "" {
+			input := *req.Input
+			input.Name = prior.Input.Name
+			req.Input = &input
 		}
 		if prior.Source.Seq != req.SourceSeq || prior.Input != *req.Input {
 			return op, ErrConflict
@@ -220,6 +240,27 @@ func (m *roomManager) startPlatformConnectLocked(ctx context.Context, req platfo
 	if !errors.Is(err, os.ErrNotExist) {
 		return op, err
 	}
+	if connectIntent(*req.Input) == "authorize" && req.Input.Name == "" {
+		file, err := m.platforms.Load()
+		if err != nil {
+			return op, err
+		}
+		input := *req.Input
+		for _, c := range file.Platforms {
+			if c.ID == input.PlatformID {
+				input.Name = c.Name
+			}
+		}
+		if input.Name == "" {
+			return op, ErrConflict
+		}
+		req.Input = &input
+	}
+	name, _, normalizeErr := registry.Normalize(req.Input.Name, connectOrigin(*req.Input))
+	if normalizeErr != nil || name != req.Input.Name || !validConnectInput(*req.Input) {
+		return op, ErrRequest
+	}
+
 	if _, e := m.readPlatformSelectionLocked(req.OperationID); !errors.Is(e, os.ErrNotExist) {
 		if e == nil {
 			return op, ErrConflict
@@ -248,7 +289,7 @@ func (m *roomManager) startPlatformConnectLocked(ctx context.Context, req platfo
 	// One original request has one connection operation. Lost responses recover by
 	// source_seq; changing the operation ID never starts another authorization.
 	for _, p := range ops {
-		if p.MemberIdentity == (MemberIdentity{RoomIdentity: req.RoomIdentity, AgentID: req.Caller.ID, MembershipID: req.Caller.MembershipID}) && p.Source.Seq == req.SourceSeq {
+		if p.MemberIdentity == (MemberIdentity{RoomIdentity: req.RoomIdentity, AgentID: req.Caller.ID, MembershipID: req.Caller.MembershipID}) && p.Source.Seq == req.SourceSeq && connectIntent(p.Input) == connectIntent(*req.Input) && (connectIntent(p.Input) != "authorize" || p.Input.PlatformID == req.Input.PlatformID) {
 			return op, conflictReason("source_seq", "connection operation already exists", "Query status with the original source_seq.")
 		}
 	}
@@ -259,6 +300,10 @@ func (m *roomManager) startPlatformConnectLocked(ctx context.Context, req platfo
 	op = platformConnectOperation{Schema: 1, ID: req.OperationID, MemberIdentity: MemberIdentity{RoomIdentity: req.RoomIdentity, AgentID: req.Caller.ID, MembershipID: req.Caller.MembershipID}, Caller: req.Caller, Source: source, Input: *req.Input, Status: "running", Stage: "application", PlatformID: id, Application: onboardingStep{Status: "pending"}, Authorization: onboardingStep{Status: "pending"}, Connection: onboardingStep{Status: "pending"}, Interaction: platformConnectInteraction{ID: req.OperationID, Kind: "lark_authorization"}, CreatedAt: time.Now().UTC()}
 	if req.Input.Provider == "gitlab" {
 		return m.startGitLabConnectLocked(op)
+	}
+	op.Schema = 2
+	if connectIntent(op.Input) == "authorize" {
+		return m.startLarkAuthorizeLocked(ctx, op)
 	}
 	if req.Input.PlatformID != "" {
 		file, e := m.platforms.Load()
@@ -273,10 +318,20 @@ func (m *roomManager) startPlatformConnectLocked(ctx context.Context, req platfo
 				}
 				op.PlatformID = c.ID
 				op.Account = a.Identity
-				op.Status, op.Stage, op.ResultVersion = "completed", "complete", 1
+				op.Stage = "authorization"
 				op.Application.Status, op.Authorization.Status = "reused", "reused"
 				op.Connection = onboardingStep{Status: "connected", Version: c.Version}
-				return op, m.savePlatformConnectLocked(&op)
+				if err := m.savePlatformConnectLocked(&op); err != nil {
+					return op, err
+				}
+				checkCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+				call := &platformCall{operationID: op.ID, owner: op.RoomIdentity, platformID: c.ID, agentID: op.AgentID, membershipID: op.MembershipID, tool: "lark", cancel: cancel, done: make(chan struct{})}
+				if m.platformCalls == nil {
+					m.platformCalls = map[*platformCall]bool{}
+				}
+				m.platformCalls[call] = true
+				go m.checkReusedLarkConnection(checkCtx, op, c, call)
+				return op, nil
 			}
 		}
 		return op, ErrConflict
@@ -330,7 +385,7 @@ func (m *roomManager) servePlatformConnect(w http.ResponseWriter, r *http.Reques
 		writeAPIError(w, err)
 		return
 	}
-	if req.Notify != nil && (action != "start" && action != "notify" || *req.Notify != "inbox" && *req.Notify != "none") || req.ResultVersion != 0 && action != "acknowledge" {
+	if req.Notify != nil && (action != "start" && action != "authorize" && action != "notify" || *req.Notify != "inbox" && *req.Notify != "none") || req.ResultVersion != 0 && action != "acknowledge" {
 		writeAPIError(w, ErrRequest)
 		return
 	}
@@ -350,14 +405,15 @@ func (m *roomManager) servePlatformConnect(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		type connection struct {
-			ID        string                   `json:"id"`
-			Name      string                   `json:"name"`
-			Provider  string                   `json:"provider"`
-			Version   uint64                   `json:"version"`
-			Account   platform.AccountIdentity `json:"account"`
-			Connected bool                     `json:"connected"`
-			Origin    string                   `json:"origin"`
-			Username  string                   `json:"username,omitempty"`
+			ID           string                        `json:"id"`
+			Name         string                        `json:"name"`
+			Provider     string                        `json:"provider"`
+			Version      uint64                        `json:"version"`
+			Account      platform.AccountIdentity      `json:"account"`
+			Connected    bool                          `json:"connected"`
+			Origin       string                        `json:"origin"`
+			Username     string                        `json:"username,omitempty"`
+			Capabilities *larkPlatformCapabilityResult `json:"capabilities,omitempty"`
 		}
 		file, err := m.platforms.Load()
 		if err != nil {
@@ -370,6 +426,10 @@ func (m *roomManager) servePlatformConnect(w http.ResponseWriter, r *http.Reques
 				continue
 			}
 			v := connection{ID: c.ID, Name: c.Name, Provider: c.Provider, Version: c.Version, Origin: c.URL, Username: c.Validation.Username}
+			if c.Provider == "lark" {
+				p := m.larkPlatformCapabilitiesLocked(c)
+				v.Capabilities = &p
+			}
 			if a, _, e := registry.ResolveAccessAccount(file, c); e == nil {
 				v.Account, v.Connected = a.Identity, true
 			}
@@ -381,10 +441,24 @@ func (m *roomManager) servePlatformConnect(w http.ResponseWriter, r *http.Reques
 		}{list, m.gitlabConnectApplicationsLocked(file)})
 		return
 	}
+	if (req.Intent != "" || req.PlatformID != "") && (action != "status" || req.SourceSeq == 0 || req.OperationID != "" || req.Intent != "authorize" || !tool.OpaqueID(req.PlatformID)) {
+		writeAPIError(w, ErrRequest)
+		return
+	}
 	var op platformConnectOperation
 	var err error
 	switch action {
+	case "authorize":
+		if req.Input == nil || req.Input.Intent != "authorize" {
+			err = ErrRequest
+			break
+		}
+		op, err = m.startPlatformConnectLocked(r.Context(), req)
 	case "start":
+		if req.Input != nil && connectIntent(*req.Input) != "connect" {
+			err = ErrRequest
+			break
+		}
 		op, err = m.startPlatformConnectLocked(r.Context(), req)
 	case "status", "cancel", "notify", "acknowledge":
 		if req.Input != nil || req.OperationID != "" && req.SourceSeq != 0 || req.OperationID == "" && req.SourceSeq == 0 {
@@ -399,7 +473,7 @@ func (m *roomManager) servePlatformConnect(w http.ResponseWriter, r *http.Reques
 			if err == nil {
 				err = errPlatformConnectNotFound
 				for _, p := range ops {
-					if p.RoomIdentity == req.RoomIdentity && p.Caller == req.Caller && p.Source.Seq == req.SourceSeq {
+					if p.RoomIdentity == req.RoomIdentity && p.Caller == req.Caller && p.Source.Seq == req.SourceSeq && connectIntent(p.Input) == connectIntent(platformConnectInput{Intent: req.Intent}) && (req.Intent != "authorize" || p.Input.PlatformID == req.PlatformID) {
 						op, err = p, nil
 						break
 					}
@@ -480,5 +554,14 @@ func (m *roomManager) cancelPlatformConnectLocked(ctx context.Context, op platfo
 		m.mu.Lock()
 		return m.readPlatformConnectLocked(op.ID)
 	}
+	pending := m.cancelPlatformCallsLocked(func(c *platformCall) bool { return c.operationID == op.ID })
+	if err := m.settlePlatformCallsLocked(pending); err != nil {
+		return op, err
+	}
+	op.Status, op.ErrorCode, op.ResultVersion = "cancelled", "cancelled", 1
+	if err := m.savePlatformConnectLocked(&op); err != nil {
+		return op, err
+	}
+	m.wakeConnectNotificationsLocked()
 	return op, nil
 }

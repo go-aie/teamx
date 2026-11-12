@@ -168,7 +168,7 @@ func TestPlatformConnectNotificationStartPolicyIsIndependentOfBusinessInput(t *t
 func TestPlatformConnectNotificationReusedConnectionPublishesSavedResult(t *testing.T) {
 	m, svc, _, req := connectFixture(t)
 	_, session := connectPending(t, m, svc, req)
-	connectSucceed(t, m, session)
+	connectSucceedWithNativeProfile(t, m, session)
 	connected := connectHTTP(t, m, "status", connectObservation(req))
 	source, err := svc.room.Call[PostReceipt](context.Background(), PostMessage{RoomIdentity: req.RoomIdentity, Caller: humanCaller,
 		ClientMessageID: "reuse-and-continue", Text: "使用已有工作飞书连接"})
@@ -180,7 +180,8 @@ func TestPlatformConnectNotificationReusedConnectionPublishesSavedResult(t *test
 	req.Input = &platformConnectInput{Provider: "lark", Name: connected.Input.Name, PlatformID: connected.PlatformID, PlatformVersion: connected.Connection.Version}
 	mode := "inbox"
 	req.Notify = &mode
-	started := connectHTTP(t, m, "start", req)
+	_ = connectHTTP(t, m, "start", req)
+	started := waitConnectionResult(t, m, req)
 	n := waitConnectDelivery(t, m, req.OperationID)
 	if started.Status != "completed" || started.UpdatedAt.IsZero() || n.Event.CreatedAt != started.UpdatedAt || n.Event.SourceSeq != source.Seq {
 		t.Fatal("reused connection published an unsaved result", started, n)

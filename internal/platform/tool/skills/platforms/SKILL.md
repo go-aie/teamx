@@ -85,6 +85,40 @@ observe a live `interaction.authorization_url` without persisting it. Report a
 connection only after the common lifecycle checks. A connection-only request ends
 there; do not add groups, notifications or tools.
 
+New login requests the complete current TeamX permission set supported by the
+selected application, including search and sending dependencies. OAuth permission
+is separate from member action grants and business write authority. Reuse performs
+a bounded capability check; it may briefly remain running before completion.
+
+For an explicitly requested repair of an existing Feishu account, use:
+
+```sh
+teamx platforms connect authorize --platform-id ID --platform-version V --operation-id AUTH_ID --source-seq SEQ --notify inbox
+```
+
+This freezes the original account/application/profile and changes no connection
+name, tool entry, notification scope or member grants. It shares status/wait/cancel,
+Inbox result and acknowledge with connect. Source recovery is
+`connect status --source-seq SEQ --intent authorize --platform-id ID`; the plain
+source lookup means connect. The same source can have one connect and one authorize
+per exact existing platform, never two operations for the same intent/target.
+Do not change IDs to bypass an unknown submission. Use the original message's
+"补全授权" component; no extra human chat is needed for subscribed continuation.
+
+Use `member get` / `tools list` availability: configured grants describe intent;
+capabilities are recent observations (60 seconds), not perpetual execution rights.
+Unchecked is not ready. `authorize_user` uses the operation above;
+`configure_application` uses the exact official application settings link;
+`verify_self` requires a new explicit repair of that member's already granted
+self action (`member tool --enabled true --action message.send_self`);
+`enable_member_tool` uses explicit member enable; `revalidate_account` checks the
+original account in settings; `retry_check` refreshes the original connection.
+An unsupported host cannot send; repeating login or the tool switch cannot fix it.
+Same-account OAuth restores only enabled credential-paused subscriptions and keeps
+progress/backlog. Other members' grants are untouched; old self evidence becomes
+stale and requires their own explicit repair. Completed partial configurations
+need a new human repair request, not automatic replay of the old operation.
+
 For explicitly selected groups:
 
 1. Recover prior member steps, then read `platforms member get --platform-id ID
@@ -107,11 +141,78 @@ settings, groups, mode and reception start are preserved. Change
 `--group-message-mode all|mentions` only when requested; mentions enables @me if
 neither mention filter was enabled. `--enabled true|false` changes the subscription
 switch; adding groups without it enables reception. An existing group scope of
-all requires an explicit scope adjustment in settings, not silent replacement.
+all requires an explicit specified scope and complete replacement list, not silent
+replacement by an add command. See notification changes below.
 
 Verify each completed receipt and `result.status=applied|preserved`, then current
 member get. Unknown work is not replayed by status or resubmission. Keep unrelated
 settings and the reception baseline intact.
+
+## Feishu notification changes
+
+For an unambiguous real human settings request, recover original member steps and
+read member get, then directly submit one notification operation with all requested
+fields. Do not reconnect, enable tools, create an editing draft or ask for redundant
+confirmation. Preserve exact member/account, notification version, original source
+and stable operation ID. Unspecified fields, tool grants and reception start stay
+unchanged. An existing selection card does not turn a request about saved settings
+into a draft edit; reconcile newer human intent before applying a late old selection.
+
+| Requested change | Flags on `platforms member notifications` |
+| --- | --- |
+| Add / remove followed groups | Repeat `--add-chat-id ID` / `--remove-chat-id ID` |
+| Replace the group range | `--group-scope specified` and repeat `--group-chat-id ID` |
+| Clear the specified group list | A single `--group-chat-id ''` |
+| All groups | `--group-scope all` |
+| Group reception switch | `--group-enabled true\|false` |
+| Only @me | `--group-message-mode mentions --group-at-me true --group-at-all false` |
+| Only @all | `--group-message-mode mentions --group-at-me false --group-at-all true` |
+| All messages in the selected groups | `--group-message-mode all` |
+| Private reception switch | `--private-enabled true\|false` |
+| All accessible person-to-person chats | `--private-scope all` and `--private-enabled true` when enabling is requested |
+
+All changes also need the usual exact platform ID/version, notification version,
+operation ID and real human source sequence. Add/remove and complete replacement
+are mutually exclusive; never add and remove the same ID. A replacement list must
+include every intended group, including choices not on the current candidate page.
+Scope and condition flags alone do not enable reception. Explicit branch enable
+resumes the total switch unless the human explicitly keeps `--enabled false`.
+To replace and enable a group range, also use `--group-enabled true`. When resuming
+would activate another dormant branch, obtain the human's source choice and include
+both branch switches; do not silently disable or enable the other source.
+
+For removal, match against saved group IDs first; use available names/search only
+to disambiguate those IDs. A followed group can be removed even if it is no longer
+remotely accessible. If its name cannot be mapped reliably, clarify rather than
+guessing or treating failed access as absence. All-group reception has no exclusion
+list: "all groups except A" requires clarification, not enumeration of visible groups.
+Switching all to specified requires both the explicit scope and complete list.
+
+Clearing/removing the last specified group disables that branch; if no branch
+remains enabled, total reception closes. Report these consequences. Disabling a
+branch retains its selection. Enabling private reception preserves an existing
+specified private range; a new specified private range, private ID list or polling
+interval change still uses full settings. Do not use group search to select people
+or send a message to create a private conversation. No Workspace is required.
+
+Mentions mode requires at least one selected mention condition when explicitly
+editing those conditions. Do not silently turn @me back on after the human asked
+for both to be off. All-message mode retains mention preferences without filtering.
+The simple mentions-mode command still defaults to @me if neither was selected.
+
+Use existing account/group/project cards only for choices they already represent;
+unchecking an existing group-selection card does not remove a saved subscription.
+Complete replacements may require query/clarification; do not reinterpret the old
+card's unchecked items as removals. Browser changes are local until submission;
+never claim to read those unsaved inputs or invent a natural-language draft-save
+command. Full settings remains the entry for visual bulk editing and recovery.
+
+Check completed/preserved receipts and current member get before reporting saved
+changes. Preserved on an absent subscription leaves version 0 and creates no
+collector. An unknown result is reconciled under its original ID, not replayed.
+Configuration saved, platform event received and visible reminder delivered are
+separate outcomes. Do not infer reception changes from vague requests about timing
+or interruptions; clarify collection versus lasting reminder rules as needed.
 
 ## GitLab connection and first application
 
@@ -195,9 +296,22 @@ Enable or disable tools only on an explicit request, independently of notificati
 teamx platforms member tool --platform-id ID --platform-version V --tool-revision N --operation-id TOOL_STEP_ID --source-seq SEQ --enabled true
 ```
 
-Use false to disable. Repeated enable preserves grants. A saved binding grants no
-business write authority; member get distinguishes saved intent from dependency
-and capability availability. Report notification and tool outcomes separately.
+Use false to disable. Explicit Feishu enable configures the fixed current reply,
+group-send and self-delivery actions and prepares available proof. Repeated enable
+adds missing defaults; preserved means the saved intent and proof are unchanged.
+For a request limited to sending/replying, repeat `--action message.send` and/or
+`--action message.reply` with `--enabled true`; only those actions are added, other
+grants remain, and self delivery is not added. `--action message.send_self` explicitly
+adds self delivery. These flags apply only to Feishu tools.
+
+Read requested_actions, action_authorization, capabilities and result revision in
+the receipt. Applied means settings were saved; a missing self relationship or app
+permission can leave individual actions unavailable. A saved binding grants no
+business write authority. `not_applied / user_authorization_required` is returned
+before a configuration operation is reserved or a binding is written: complete
+OAuth for this exact connection before retrying. Never replay an unknown submission
+with a new operation ID. Member get reads saved settings; receipt capabilities are
+observations at preparation time. Report notification and tool outcomes separately.
 
 For a lasting request such as "remind me here when this needs my attention", use
 the common guide's `policy read/update` workflow with real human evidence. Preserve

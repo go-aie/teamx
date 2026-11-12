@@ -19,9 +19,9 @@ func selfSendHarness(t *testing.T) *larkHarness {
 	script := strings.Replace(larkFixtureScript(), "path=a[2]", `if a==['config','show']:
  print(json.dumps({'profile':'fixture','appId':'cli_fixture','brand':'feishu','dpopMode':'required'}));sys.exit()
 if a==['auth','scopes','--json']:
- print(json.dumps({'appId':'cli_fixture','userScopes':['im:message.send_as_user','im:message'],'tokenType':'user'}));sys.exit()
+ print(json.dumps({'appId':'cli_fixture','userScopes':['im:message.send_as_user','im:message','im:chat.members:read','contact:user:search'],'tokenType':'user'}));sys.exit()
 if a[:2]==['auth','check']:
- print(json.dumps({'ok':True,'granted':['im:message.send_as_user','im:message'],'missing':[]}));sys.exit()
+ print(json.dumps({'ok':True,'granted':a[a.index('--scope')+1].split(),'missing':[]}));sys.exit()
 if a[:3]==['api','POST','/open-apis/im/v1/messages']:
  assert os.environ.get('LARKSUITE_CLI_CONFIG_DIR')
  assert json.loads(a[4])=={'receive_id_type':'open_id'}

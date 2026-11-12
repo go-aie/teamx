@@ -189,3 +189,37 @@ for(const provider of ["lark","scion"])test(`first ${provider} settings enable o
  assert.equal(sent.notifications,provider==="lark");assert.equal(sent.tool,true);
  if(provider==="lark"){assert.equal(sent.lark.enabled,true);assert.equal(sent.lark.private.scope,"all");assert.equal(sent.lark.groups.enabled,false);}
 });
+for(const status of ["not_applied","unknown"])test(`member onboarding renders schema 3 tool ${status} without replaying an unknown save`,async()=>{
+ const api=fixture({empty:true});
+ api.hook=(path,body)=>{
+  if(path==="/v1/platforms/onboarding/apply"){
+   const op=api.operations.get(body.operation_id);op.schema=3;op.connection.status="connected";op.notifications={status:"applied",version:1};op.tool={status,error_code:status==="not_applied"?"user_authorization_required":"submission_unconfirmed"};return structuredClone(op);
+  }
+ };
+ const ui=await launch(api);await openMemberInbox(ui,"member-a");await choose(ui,"lark");await ui.el("member-platform-add-submit").emit("click");
+ assert.doesNotMatch(ui.el("member-platform-add-result").textContent,/undefined/);
+ assert.match(ui.el("member-platform-add-result").textContent,status==="not_applied"?/尚未保存.*用户授权/:/保存结果待核对.*不会重放/);
+ assert.equal(ui.el("member-platform-add-retry").hidden,status==="unknown");assert.equal(calls(api,"/v1/platforms/onboarding/apply").length,1);
+});
+
+test("member capability repair keeps existing action intent and exact member",async()=>{
+ const api=fixture(),auth={version:1,revision:4,grants:[{operation:"message.send_self",target_kind:"object",object_type:"user"}]};
+ api.tools.bindings.push({agent_id:"a",membership_id:"member-a",tool:"lark",platform_id:"lark",action_authorization:auth});
+ api.tools.selections=[{agent_id:"a",membership_id:"member-a",platform_id:"lark",action_authorization:auth,availability:{capabilities:[{name:"message.send_self",configured:true,state:"blocked",reason_code:"self_evidence_stale",next_action:"verify_self"}]}}];
+ const ui=await launch(api);await openMemberInbox(ui,"member-a");
+ const repair=row(ui,"lark").children[1].children.find(c=>c.textContent==="修复能力");assert.ok(repair);
+ await repair.emit("click");
+ const sent=calls(api,"/v1/tools/bind").at(-1).body;
+ assert.equal(sent.enabled,true);assert.equal(sent.binding.membership_id,"member-a");assert.equal(sent.binding.platform_id,"lark");assert.deepEqual(sent.binding.action_authorization,auth);assert.equal(sent.binding.capability_evidence,undefined);
+});
+
+for(const state of ["unchecked","unsupported"])test(`member pinning availability distinguishes ${state}`,async()=>{
+ const api=fixture(),auth={version:1,revision:1,grants:[{operation:"message.reply",target_kind:"message",object_type:"message"}]};
+ api.tools.bindings.push({agent_id:"a",membership_id:"member-a",tool:"lark",platform_id:"lark",action_authorization:auth});
+ api.tools.selections=[{agent_id:"a",membership_id:"member-a",platform_id:"lark",action_authorization:auth,availability:{capabilities:[{name:"message.reply",configured:true,state,reason_code:"account_pinning_unavailable",next_action:state==="unchecked"?"revalidate_account":undefined}]}}];
+ const ui=await launch(api);await openMemberInbox(ui,"member-a");
+ const issue=row(ui,"lark").children[2].textContent;
+ if(state==="unchecked") {assert.match(issue,/账号固定暂未确认.*重新核验/);assert.doesNotMatch(issue,/不支持/);}
+ else assert.match(issue,/当前服务不支持发送/);
+ assert.equal(calls(api,"/v1/tools/bind").length,0);
+});

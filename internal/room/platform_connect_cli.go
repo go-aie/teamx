@@ -16,7 +16,8 @@ const platformConnectHelp = `Usage:
   teamx platforms list
   teamx platforms selection --help
   teamx platforms connect start --provider lark|gitlab --name NAME [--origin URL --application-id ID --account-username USER] --operation-id ID --source-seq SEQ [--platform-id ID --platform-version VERSION] [--notify inbox|none]
-  teamx platforms connect status --operation-id ID | --source-seq SEQ
+  teamx platforms connect authorize --platform-id ID --platform-version V --operation-id ID --source-seq SEQ [--notify inbox|none]
+  teamx platforms connect status --operation-id ID | --source-seq SEQ [--intent authorize --platform-id ID]
   teamx platforms connect wait --operation-id ID [--timeout 20s]
   teamx platforms connect cancel --operation-id ID
   teamx platforms connect notify --operation-id ID --mode inbox|none
@@ -25,9 +26,10 @@ const platformConnectHelp = `Usage:
   teamx platforms projects --platform-id ID --platform-version V [--query NAME --page-token PAGE]
   teamx platforms member get --platform-id ID --platform-version V
   teamx platforms member notifications --platform-id ID --platform-version V --notification-version N --operation-id ID --source-seq SEQ [--add-chat-id CHAT_ID] [--enabled true|false] [--group-message-mode all|mentions]
+  teamx platforms member notifications --platform-id ID --platform-version V --notification-version N --operation-id ID --source-seq SEQ [--remove-chat-id CHAT_ID] [--group-enabled true|false --group-scope all|specified --group-chat-id CHAT_ID] [--group-at-me true|false --group-at-all true|false] [--private-enabled true|false --private-scope all]
   teamx platforms member notifications --platform-id ID --platform-version V --notification-version N --operation-id ID --source-seq SEQ --todos-enabled true|false
   teamx platforms member notifications --platform-id ID --platform-version V --notification-version N --operation-id ID --source-seq SEQ [--events-enabled true|false --project-id N --project-path PATH] [--event-type TYPE] [--todo-reason REASON --todo-type TYPE]
-  teamx platforms member tool --platform-id ID --platform-version V --tool-revision N --operation-id ID --source-seq SEQ --enabled true|false
+  teamx platforms member tool --platform-id ID --platform-version V --tool-revision N --operation-id ID --source-seq SEQ --enabled true|false [--action OP ...]
   teamx platforms member status --operation-id ID | --source-seq SEQ
   teamx platforms upgrade --rooms-dir ROOT
 
@@ -51,7 +53,13 @@ The browser authorization component establishes its own session; Agent commands
 never receive cookies, state or PKCE material. Missing/incompatible applications
 use the operation's Configure application button to open secure Settings → Platforms.
 Closing settings does not cancel conversation work. selection supports GitLab account/project forms; chats is Feishu-only.
-A connect command alone does not enable group reception, tools or sending.
+Feishu login requests the complete current permission set supported by its app.
+authorize repairs an exact existing Feishu account/application/profile and keeps
+connection identity, tool entries, member grants and notification progress. It
+shares status/wait/cancel/notify/acknowledge. Source lookup defaults to connect;
+use --intent authorize --platform-id ID for authorization recovery. One source
+can connect and authorize; the same intent/target cannot start twice under new IDs.
+A connect command alone does not enable group reception, tools or member actions.
 notify changes only result delivery policy. Subscribing after completion delivers
 the same stable result event; none cannot retract an already queued event. Inbox
 delivery, consumption, result acknowledgment and business completion are separate.
@@ -72,13 +80,37 @@ and application state. GitLab notifications changes explicit --todos-enabled,
 new subscriptions cover all projects accessible to that personal account from save
 time, with project activity disabled. Existing source settings, filters and reception
 start remain intact. Enabling todos conflicts if it would also enable dormant project
-activity; explicitly choose both sources to resolve that conflict. --enabled and group
+activity; explicitly choose both sources to resolve that conflict. --enabled, private and group
 flags apply only to Feishu notifications. Tool enable/disable supports both providers.
-Feishu notifications adds exact selected groups, rechecking their metadata and account.
-Existing settings and reception baseline are preserved; new subscriptions receive
-only selected groups from save time. Existing scope=all requires explicit adjustment
-in platform settings before adding selected groups. Tool changes are separate and
-do not grant external-write authority. Repeated enable preserves existing grants.
+Feishu notifications adds or replaces exact groups, rechecking their metadata and
+account. --remove-chat-id repeats followed IDs and needs no remote read; removing
+the last specified group closes group reception, and no remaining source closes
+the total switch. Closing an absent subscription preserves version 0 without
+creating one. --group-chat-id repeats a complete replacement list; a single empty
+value clears it. Do not mix replacement with add/remove, or empty with nonempty IDs.
+Switching all groups to specified requires explicit --group-scope specified and a
+complete --group-chat-id list. All groups has no exclusion list. --group-enabled
+and --private-enabled independently enable/disable reception branches, preserving
+their ranges; enabling resumes total reception unless --enabled false is explicit.
+Resuming both dormant branches requires explicit choices for both, not an incidental
+activation of the other source. Range/condition edits alone do not enable reception.
+--private-scope all is explicit all-person reception; enabling an existing specified
+private range retains it. New specified private ranges and private ID lists require
+full settings. --group-at-me/--group-at-all set independent mention conditions;
+use mentions mode and true/false for only @me. Both false conflicts in mentions mode;
+all-message mode retains those values without filtering. Existing settings and
+reception baseline are preserved; new explicitly enabled subscriptions start at
+save time. Legacy add alone enables only selected groups on new subscriptions.
+No notification editing card or mixed conversation/browser draft is introduced.
+Tool changes are separate and
+do not grant external-write authority. Explicit Feishu enable adds the fixed current
+reply, group-send and self-delivery grants; repeated enable repairs missing intent
+and evidence, and is preserved only when unchanged. --action OP adds only selected
+Feishu actions (message.reply, message.send, message.send_self); it requires enabled
+true and never removes other grants. Partial capability readiness is reported in
+the receipt. user_authorization_required / not_applied means no binding was saved;
+complete authorization on the same account before retrying. unknown submissions
+must be inspected with their original operation ID and never replayed.
 projects searches the exact GitLab account with numeric --page-token pagination;
 permission errors do not establish absence. Project activity supports one project
 per member/account: supply its native --project-id and exact --project-path.
@@ -122,7 +154,7 @@ func runPlatformConnectWithClient(ctx context.Context, args []string, stdout, st
 			return writeOutput(stdout, []byte(platformConnectHelp))
 		}
 		action, args = args[0], args[1:]
-		if action != "start" && action != "status" && action != "wait" && action != "cancel" && action != "notify" && action != "acknowledge" {
+		if action != "start" && action != "authorize" && action != "status" && action != "wait" && action != "cancel" && action != "notify" && action != "acknowledge" {
 			return ErrRequest
 		}
 	} else if action != "skill" && action != "list" {
@@ -136,11 +168,22 @@ func runPlatformConnectWithClient(ctx context.Context, args []string, stdout, st
 	notify := ""
 	timeout := 20 * time.Second
 	// Register only fields supported by this operation so none can be ignored.
-	if action == "start" || action == "status" || action == "wait" || action == "cancel" || action == "notify" || action == "acknowledge" {
+	if action == "start" || action == "authorize" || action == "status" || action == "wait" || action == "cancel" || action == "notify" || action == "acknowledge" {
 		f.StringVar(&req.OperationID, "operation-id", "", "stable operation ID")
 	}
-	if action == "start" || action == "status" {
+	if action == "start" || action == "authorize" || action == "status" {
 		f.Uint64Var(&req.SourceSeq, "source-seq", 0, "original human Room message sequence")
+	}
+	if action == "authorize" {
+		input.Intent, input.Provider = "authorize", "lark"
+		f.StringVar(&notify, "notify", "", "result notification: inbox or none")
+		f.StringVar(&input.PlatformID, "platform-id", "", "exact existing connection")
+		f.Uint64Var(&input.PlatformVersion, "platform-version", 0, "observed connection version")
+		req.Input = &input
+	}
+	if action == "status" {
+		f.StringVar(&req.Intent, "intent", "", "source lookup intent: authorize")
+		f.StringVar(&req.PlatformID, "platform-id", "", "source lookup authorization target")
 	}
 	if action == "start" {
 		f.StringVar(&notify, "notify", "", "result notification: inbox or none")

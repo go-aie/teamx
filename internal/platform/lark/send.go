@@ -157,7 +157,7 @@ func (p *Pinned) SendText(ctx context.Context, target platform.TargetIdentity, b
 		defer release()
 	}
 	permission, err := p.SendPermission(ctx)
-	if err != nil || permission.UserScopes != "granted" || permission.ApplicationScopes != "granted" {
+	if err != nil || target.Object.Type == "chat" && !permission.GroupSendEnabled || target.Object.Type == "user" && !permission.SelfSendEnabled {
 		return "", ErrSendNotSent
 	}
 	c := p.client

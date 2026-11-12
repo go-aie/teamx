@@ -114,7 +114,7 @@ func ResolveSendTarget(ctx context.Context, l platform.TargetLocator, a platform
 		r.Status = platform.ResolutionUnavailable
 		r.ReasonCode = ErrorCode(err)
 		if r.ReasonCode == "permission_denied" {
-			r.Reason = "无法核验目标访问；私聊对端／群成员核验需 im:chat.members:read，普通群发言范围通过群信息 moderation_permission 核验；仍需原生访问权限。可在连接设置中使用授权目标核验；读取或发送授权不代替目标核验。"
+			r.Reason = "无法核验目标访问；私聊对端／群成员核验需 im:chat.members:read，普通群发言范围通过群信息 moderation_permission 核验；仍需原生访问权限。请按连接能力提示核对应用权限或使用「补全授权」；具体目标仍需原生访问及发言条件。"
 		}
 		if r.ReasonCode == "self_send_unavailable" {
 			r.Reason = "无法完整核验当前用户账号的本人自聊关系；请核对目标核验权限，不会改用其他收件人或机器人。"

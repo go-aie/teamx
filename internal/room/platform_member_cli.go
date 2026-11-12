@@ -110,9 +110,64 @@ func runPlatformMemberCLI(ctx context.Context, args []string, stdout, stderr io.
 		})
 		f.Uint64Var(&in.NotificationVersion, "notification-version", 0, "observed subscription version (0 if absent)")
 		f.Func("add-chat-id", "exact selected group ID; repeat to add multiple groups", func(id string) error { in.AddChatIDs = append(in.AddChatIDs, id); return nil })
+		f.Func("remove-chat-id", "exact followed group ID; repeat to remove groups without a remote read", func(id string) error { in.RemoveChatIDs = append(in.RemoveChatIDs, id); return nil })
 		f.StringVar(&in.GroupMessageMode, "group-message-mode", "", "all or mentions; omitted preserves existing mode")
+		groupPatch := func() *platformMemberGroupPatch {
+			if in.Groups == nil {
+				in.Groups = &platformMemberGroupPatch{}
+			}
+			return in.Groups
+		}
+		privatePatch := func() *platformMemberPrivatePatch {
+			if in.Private == nil {
+				in.Private = &platformMemberPrivatePatch{}
+			}
+			return in.Private
+		}
+		boolFlag := func(name string, field func() **bool) {
+			f.Func(name, "Feishu: true or false; omitted preserves current value", func(s string) error {
+				if s != "true" && s != "false" {
+					return ErrRequest
+				}
+				v := s == "true"
+				*field() = &v
+				return nil
+			})
+		}
+		boolFlag("group-enabled", func() **bool { return &groupPatch().Enabled })
+		boolFlag("group-at-me", func() **bool { return &groupPatch().AtMe })
+		boolFlag("group-at-all", func() **bool { return &groupPatch().AtAll })
+		boolFlag("private-enabled", func() **bool { return &privatePatch().Enabled })
+		f.Func("group-scope", "Feishu: all or specified; changing all to specified also needs a complete list", func(s string) error {
+			if s != "all" && s != "specified" {
+				return ErrRequest
+			}
+			groupPatch().Scope = s
+			return nil
+		})
+		f.Func("private-scope", "Feishu: all; specified private ranges use full settings", func(s string) error {
+			if s != "all" {
+				return ErrRequest
+			}
+			privatePatch().Scope = s
+			return nil
+		})
+		f.Func("group-chat-id", "Feishu: complete replacement list; repeat for multiple IDs; a single empty value clears it", func(id string) error {
+			p := groupPatch()
+			if p.ChatIDs == nil {
+				p.ChatIDs = new([]string)
+				*p.ChatIDs = []string{}
+			} else if id == "" || len(*p.ChatIDs) == 0 {
+				return ErrRequest // Do not mix an explicit clear with selected IDs.
+			}
+			if id != "" {
+				*p.ChatIDs = append(*p.ChatIDs, id)
+			}
+			return nil
+		})
 	}
 	if action == "tool" {
+		f.Func("action", "Lark action to add; repeat; omitted enables current defaults", func(op string) error { in.Actions = append(in.Actions, op); return nil })
 		f.Uint64Var(&in.ToolRevision, "tool-revision", 0, "observed Room tool revision")
 	}
 	_ = f.Bool("json", true, "JSON output")

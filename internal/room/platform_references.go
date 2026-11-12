@@ -22,6 +22,9 @@ type referenceResolutionScopeKey struct{}
 type referenceAdapterFactory func() platform.ReferenceCapabilities
 
 func (m *roomManager) initPlatformReferences() {
+	if m.toolBindingPreparers == nil {
+		m.toolBindingPreparers = map[string]bindingEvidencePreparer{"lark": m.prepareLarkToolChange}
+	}
 	if m.bindingEvidencePreparers == nil {
 		m.bindingEvidencePreparers = map[string]bindingEvidencePreparer{"lark": m.prepareLarkBindingEvidence}
 	}

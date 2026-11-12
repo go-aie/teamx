@@ -181,6 +181,10 @@ type TargetActionInspection struct {
 type InspectTargetAction func(context.Context, TargetActionRequest, AccessContext) (TargetActionInspection, error)
 
 type ActionCapability struct {
+	// AllowPendingEvidence permits storing intent before native proof is ready.
+	// Execution always requires current evidence independently of this flag.
+	AllowPendingEvidence    bool
+	ValidateBindingEvidence func(CapabilityEvidence) bool
 	// AppliesTo supplements native object-type matching when a capability has
 	// account-relative restrictions. It does not replace Inspect or Execute.
 	AppliesTo func(TargetIdentity, AccountIdentity) bool

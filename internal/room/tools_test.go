@@ -39,6 +39,17 @@ func bindCLITool(t *testing.T, m *roomManager, owner RoomIdentity, member Member
 		b.PlatformID = c.ID
 		version = c.Version
 	}
+	// These fixtures model pre-existing read-only Lark bindings. New enablement
+	// defaults are tested through HTTP/member/onboarding in configuration tests.
+	if name == "lark" {
+		m.mu.Lock()
+		f, _, err := m.changeToolBindingLocked(t.Context(), toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: owner, Caller: humanCaller, Revision: revision, Binding: b, Enabled: true, PlatformVersion: version})
+		m.mu.Unlock()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return f
+	}
 	r := managerHTTP(m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: owner, Caller: humanCaller, Revision: revision, Binding: b, Enabled: true, PlatformVersion: version})
 	var f toolBindingsFile
 	if r.Code != 200 || json.Unmarshal(r.Body.Bytes(), &f) != nil {

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -93,12 +94,9 @@ func Discover(ctx context.Context, executable, brand string) (Discovery, error) 
 	return result, nil
 }
 
-// Authentication requests only the scopes used by TeamX's existing reader.
-// Login never silently grants the CLI's default (all business domains).
-const readerScopes = "offline_access im:chat:read im:message:readonly im:message.p2p_msg:get_as_user im:message.group_msg:get_as_user contact:user.basic_profile:readonly"
-
 type LoginResult struct {
 	Validation         platform.Validation
+	Permissions        *PermissionCheck
 	RenewalUnavailable bool
 	ExpiresAt          time.Time
 }
@@ -107,23 +105,6 @@ type LoginResult struct {
 // lifetime independently of an HTTP request and publishes only the ready link
 // and QR image; device codes and token output never leave this function.
 func Login(ctx context.Context, p platform.CLIProfile, ready func(string, string)) (LoginResult, error) {
-	return loginWithScopes(ctx, p, readerScopes, ready)
-}
-
-// LoginSending is an explicit incremental operator flow. It grants no member action capability.
-func LoginSending(ctx context.Context, p platform.CLIProfile, ready func(string, string)) (LoginResult, error) {
-	return loginWithScopes(ctx, p, readerScopes+" "+SendScopes, ready)
-}
-
-// Proactive target checks are an independent opt-in. Reply-only authorization
-// does not require member scopes or broad contact-directory access.
-// Ordinary group speaking policy is available from the existing chat GET.
-const SendTargetScopes = "im:chat.members:read"
-
-func LoginSendTargets(ctx context.Context, p platform.CLIProfile, ready func(string, string)) (LoginResult, error) {
-	return loginWithScopes(ctx, p, readerScopes+" "+SendTargetScopes, ready)
-}
-func loginWithScopes(ctx context.Context, p platform.CLIProfile, scopes string, ready func(string, string)) (LoginResult, error) {
 	writeUnlock, err := lockConfiguration(ctx)
 	if err != nil {
 		return LoginResult{}, err
@@ -141,7 +122,29 @@ func loginWithScopes(ctx context.Context, p platform.CLIProfile, scopes string, 
 	if err := c.authConfig(ctx); err != nil {
 		return LoginResult{}, err
 	}
-	data, err := c.run(ctx, "auth", "login", "--scope", scopes, "--no-wait", "--json")
+	// Read the application's actual business permissions before asking the user.
+	// OAuth controls are independent; unknown application state is not absence.
+	data, err := c.run(ctx, "auth", "scopes", "--json")
+	if err != nil {
+		return LoginResult{}, failure("application_scopes_unchecked")
+	}
+	var app struct {
+		AppID string `json:"appId"`
+	}
+	if decode(data, &app) != nil || !validAppID(app.AppID) {
+		return LoginResult{}, failure("invalid_response")
+	}
+	application, err := parseApplicationScopes(data, platform.AccountIdentity{ID: platform.ExternalID{Namespace: "lark:open_id:" + app.AppID}}, DefaultScopes())
+	if err != nil {
+		return LoginResult{}, err
+	}
+	requested, err := (PermissionCheck{Application: application}).RequestScopes()
+	if err != nil {
+		return LoginResult{}, err
+	}
+	requestedAppID := app.AppID
+	scopes := strings.Join(requested, " ")
+	data, err = c.run(ctx, "auth", "login", "--scope", scopes, "--no-wait", "--json")
 	if err != nil {
 		return LoginResult{}, err
 	}
@@ -159,7 +162,7 @@ func loginWithScopes(ctx context.Context, p platform.CLIProfile, scopes string, 
 	}
 	ready(start.URL, qr)
 	data, err = c.runCommand(ctx, "", time.Duration(start.ExpiresIn)*time.Second, "auth", "login", "--device-code", start.Code, "--json")
-	if err != nil {
+	if err != nil && ErrorCode(err) != "permission_denied" {
 		return LoginResult{}, err
 	}
 	var done struct {
@@ -170,7 +173,7 @@ func loginWithScopes(ctx context.Context, p platform.CLIProfile, scopes string, 
 		ExpiresAt     time.Time `json:"expires_at"`
 	}
 	// Auth completion is a CLI event (not an OpenAPI ok/data envelope).
-	if decode(data, &done) != nil || done.Event != "authorization_complete" || !strings.HasPrefix(done.UserOpenID, "ou_") || len(done.Missing) != 0 || done.RefreshIssued == nil || done.ExpiresAt.IsZero() {
+	if decode(data, &done) != nil || done.Event != "authorization_complete" || !strings.HasPrefix(done.UserOpenID, "ou_") || done.RefreshIssued == nil || done.ExpiresAt.IsZero() {
 		return LoginResult{}, failure("invalid_response")
 	}
 	// The CLI's success response alone is not verified TeamX account evidence.
@@ -178,10 +181,20 @@ func loginWithScopes(ctx context.Context, p platform.CLIProfile, scopes string, 
 	if err != nil {
 		return LoginResult{}, err
 	}
+	if requestedAppID != "" && validation.Account.ID.Namespace != "lark:open_id:"+requestedAppID {
+		return LoginResult{}, failure("identity_mismatch")
+	}
 	if validation.Account.ID.Value != done.UserOpenID {
 		return LoginResult{}, failure("identity_mismatch")
 	}
-	return LoginResult{Validation: validation, RenewalUnavailable: !*done.RefreshIssued, ExpiresAt: done.ExpiresAt}, nil
+	application, user := c.inspectScopes(ctx, validation.Account, DefaultScopes())
+	renewal := c.inspectRenewal(ctx, validation.Account)
+	if application.ReasonCode == "identity_mismatch" || renewal.ReasonCode == "identity_mismatch" {
+		return LoginResult{}, failure("identity_mismatch")
+	}
+	check := PermissionCheck{Account: validation.Account, CheckedAt: time.Now().UTC(), Application: application, User: user, Renewal: renewal}
+	check.Capabilities = permissionCapabilities(check, runtime.GOOS, "check_missing")
+	return LoginResult{Validation: validation, Permissions: &check, RenewalUnavailable: renewal.State != "granted", ExpiresAt: done.ExpiresAt}, nil
 }
 
 func Logout(ctx context.Context, p platform.CLIProfile) error {

@@ -34,7 +34,11 @@ func (m *roomManager) prepareBindingEvidence(ctx context.Context, req *toolBindi
 		caps, _ = m.referenceCapabilities(d.Provider)
 	}
 	prepare := m.bindingEvidencePreparers[d.Provider]
+	configure := m.toolBindingPreparers[d.Provider]
 	m.mu.Unlock()
+	if err == nil && configure != nil {
+		return configure(ctx, req)
+	}
 	if err != nil || !bindingNeedsEvidence(req.Binding, caps) {
 		return err
 	}
@@ -73,7 +77,10 @@ func validateBindingEvidence(b tool.Binding, caps platform.ReferenceCapabilities
 				continue
 			}
 			e := b.Evidence(cap.Spec.BindingEvidence)
-			if e == nil || e.Operator != operator || !e.Current(cap.Spec.BindingEvidence, platform.AccessContext{Account: e.Account, CredentialVersion: e.CredentialVersion}, e.Target) || !applicableActionSpec(cap.Spec, e.Target) || (cap.AppliesTo != nil && !cap.AppliesTo(e.Target, e.Account)) {
+			if e == nil && cap.AllowPendingEvidence {
+				continue // saved intent is not executable proof; execution still checks Current
+			}
+			if e == nil || cap.ValidateBindingEvidence != nil && !cap.ValidateBindingEvidence(*e) || e.Operator != operator || !e.Current(cap.Spec.BindingEvidence, platform.AccessContext{Account: e.Account, CredentialVersion: e.CredentialVersion}, e.Target) || !applicableActionSpec(cap.Spec, e.Target) || (cap.AppliesTo != nil && !cap.AppliesTo(e.Target, e.Account)) {
 				return ErrIdentity
 			}
 			used[e.Kind] = true

@@ -8,7 +8,15 @@ const endpoint = process.env.TEAMX_WEB_ENDPOINT;
 assert.ok(endpoint, "TEAMX_WEB_ENDPOINT is required");
 const api = { request: (path, payload) => request(path, payload, (url, options) => fetch(endpoint + url, options)) };
 const ui = await launch(api);
-const catalog = () => api.request("/v1/rooms");
+const messageCount = () => ui.el("messages").children.filter(el => /^message-\d+$/.test(el.id)).length;
+async function catalog() {
+  for (let i=0; i<300; i++) {
+    try { return await api.request("/v1/rooms"); }
+    catch (error) { if (error.code !== "busy") throw error; }
+    await new Promise(resolve => setTimeout(resolve,10));
+  }
+  throw new Error("Room catalog did not settle");
+}
 async function ready(name) {
   for (let i=0; i<300; i++) {
     await ui.refresh();
@@ -26,13 +34,13 @@ assert.equal((await catalog()).rooms.length, 0);
 await ui.create("HTTP-A"); const a = await ready("HTTP-A");
 assert.ok(ui.el("message-input").value);
 const opening = ui.el("message-input").value;
-assert.equal(ui.el("message-count").textContent, "0 条消息");
+assert.equal(messageCount(), 0);
 // Keep the scenario deterministic and do not consume model turns.
 const members = await api.request("/v1/member/list", { ...a.selected, caller: { kind: "human", id: a.operator } });
 for (const member of members.members) await api.request("/v1/member/pause", { ...a.selected,
   caller: { kind: "human", id: a.operator }, agent_id: member.agent_id, membership_id: member.membership_id });
 await ui.draft("HTTP A preserved message"); await ui.el("compose").emit("submit"); await settle();
-assert.equal(ui.el("message-count").textContent, "1 条消息");
+assert.equal(messageCount(), 1);
 await ui.draft("HTTP draft A");
 const beforeRename = structuredClone(a.selected);
 await ui.el("rename-room").emit("click");
@@ -40,17 +48,18 @@ ui.el("rename-room-name").value = "HTTP-A-renamed";
 await ui.el("rename-form").emit("submit");
 assert.equal(ui.el("room-name").textContent, "HTTP-A-renamed");
 assert.deepEqual((await catalog()).rooms.find(r => r.name === "HTTP-A-renamed").service, beforeRename);
-assert.equal(ui.el("message-count").textContent, "1 条消息");
+assert.equal(messageCount(), 1);
 assert.equal(ui.el("message-input").value, "HTTP draft A");
 await ui.el("rename-room").emit("click");
 ui.el("rename-room-name").value = "HTTP-A";
 await ui.el("rename-form").emit("submit");
+await ready("HTTP-A");
 await ui.create("HTTP-B"); const b = await ready("HTTP-B");
-assert.equal(ui.el("message-count").textContent, "0 条消息");
+assert.equal(messageCount(), 0);
 assert.equal(ui.el("message-input").value, opening);
 assert.notEqual(a.selected.room_instance, b.selected.room_instance);
 await ui.draft("HTTP draft B"); await ui.select("HTTP-A"); await ready("HTTP-A");
-assert.equal(ui.el("message-count").textContent, "1 条消息");
+assert.equal(messageCount(), 1);
 assert.equal(ui.el("message-input").value, "HTTP draft A");
 await ui.select("HTTP-B"); await ready("HTTP-B");
 assert.equal(ui.el("message-input").value, "HTTP draft B");

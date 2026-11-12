@@ -816,6 +816,17 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeAPIError(w http.ResponseWriter, err error) {
+	var required *userAuthorizationRequired
+	if errors.As(err, &required) {
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(struct {
+			Code         string                     `json:"code"`
+			Error        string                     `json:"error"`
+			Status       string                     `json:"status"`
+			Capabilities larkMemberCapabilityResult `json:"capabilities"`
+		}{"user_authorization_required", "Complete authorization for this connection before enabling tools.", "not_applied", required.Capabilities})
+		return
+	}
 	code, status := "failed", http.StatusInternalServerError
 	switch {
 	case errors.Is(err, ErrVersion):

@@ -154,7 +154,16 @@ func TestMemberPlatformLarkChoicesAndToolOnly(t *testing.T) {
 	f, err := h.m.readToolBindingsLocked(h.room.RoomIdentity)
 	h.m.mu.Unlock()
 	expected := tool.Binding{AgentID: req.AgentID, MembershipID: req.MembershipID, Tool: "lark", PlatformID: h.c.ID, PlatformGeneration: op.Generation}
-	if err != nil || len(f.Bindings) != 1 || !reflect.DeepEqual(f.Bindings[0], expected) {
+	if err != nil || len(f.Bindings) != 1 {
 		t.Fatal(f, err)
+	}
+	authorization := f.Bindings[0].ActionAuthorization
+	if authorization == nil || len(authorization.Grants) != 3 {
+		t.Fatal("explicit tool enable did not save default actions", f)
+	}
+	expected.ActionAuthorization = authorization
+	expected.CapabilityEvidence = f.Bindings[0].CapabilityEvidence
+	if !reflect.DeepEqual(f.Bindings[0], expected) {
+		t.Fatal("tool enable changed the exact binding identity", f)
 	}
 }

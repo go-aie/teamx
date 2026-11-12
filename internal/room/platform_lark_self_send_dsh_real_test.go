@@ -94,11 +94,31 @@ func TestRealLarkSelfDSHSend(t *testing.T) {
 	script := strings.ReplaceAll(larkGroupRealCLI, "{'receive_id_type':'chat_id'}", "{'receive_id_type':'open_id'}")
 	script = strings.ReplaceAll(script, "'receive_id':cfg['group_id']", "'receive_id':cfg['user_id']")
 	script = strings.ReplaceAll(script, "payload['receive_id']==cfg['group_id']", "payload['receive_id']==cfg['user_id']")
+	script = strings.Replace(script, "b=a[2:];is_post=False", "b=a[2:];is_post=False;is_search=False", 1)
 	script = strings.Replace(script, "elif b[:2]==['api','GET']:", `elif b[:3]==['api','POST','/open-apis/im/v1/chat_p2p/batch_query']:
  assert b[-4:]==['--as','user','--format','json']
  assert json.loads(b[b.index('--params')+1])=={'chatter_id_type':'open_id'}
  assert json.loads(b[b.index('--data')+1])=={'chatter_ids':[cfg['user_id']]}
+elif b[:3]==['api','POST','/open-apis/im/v1/messages/search']:
+ assert b[-4:]==['--as','user','--format','json']
+ payload=json.loads(b[b.index('--data')+1])
+ assert payload['query']=='' and payload['filter']['chat_ids']==[cfg['group_id']] and payload['filter']['chat_type']=='p2p'
+ is_search=True
+elif b[:3]==['api','GET','/open-apis/im/v1/messages/mget']:
+ assert b[-4:]==['--as','user','--format','json']
+ ids=json.loads(b[b.index('--params')+1])['message_ids']
+ known=json.load(open(cfg['dispatch_record']+'.search-ids.json'))
+ assert ids and set(ids).issubset(set(known)), 'detail outside self-search results'
 elif b[:2]==['api','GET']:`, 1)
+	script = strings.Replace(script, "if is_post:\n summary=", `if is_search and r.returncode==0:
+ response=json.loads(r.stdout)
+ assert response.get('ok') is True and response.get('identity')=='user'
+ ids=[item['id'] for item in response['data']['items']]
+ cache=cfg['dispatch_record']+'.search-ids.json'
+ if os.path.exists(cache):ids+=json.load(open(cache))
+ with open(cache,'w') as f:json.dump(sorted(set(ids)),f)
+if is_post:
+ summary=`, 1)
 	wrapper := filepath.Join(output, "bounded-lark-cli")
 	if err = os.WriteFile(wrapper, []byte(fmt.Sprintf(script, string(quoted))), 0700); err != nil {
 		t.Fatal(err)
@@ -131,6 +151,12 @@ elif b[:2]==['api','GET']:`, 1)
 	}
 	checkNoInbox := func() {
 		t.Helper()
+		self, e := pin.SendReader().(interface {
+			SelfChat(context.Context, platform.AccountIdentity) (lark.Chat, error)
+		}).SelfChat(ctx, c.Validation.Account)
+		if e != nil || self.ID != q.ChatID || !self.Relation.ValidFor(c.Validation.Account, q.ChatID) || self.Relation.Kind != "self" {
+			t.Fatal("native self relationship not proven", e)
+		}
 		clock.add(2 * time.Minute)
 		m.mu.Lock()
 		runner := m.notifications.NewRunnerLocked(state.Metadata().Key)
@@ -141,8 +167,12 @@ elif b[:2]==['api','GET']:`, 1)
 		m.mu.Lock()
 		current, e := m.currentLarkLocked(room.RoomIdentity)
 		m.mu.Unlock()
-		if e != nil || current == nil || current.Chats[q.ChatID].Chat.Relation.Kind != "self" {
-			t.Fatal("native self exclusion not proven", e)
+		if e != nil || current == nil || current.ErrorCode != "" {
+			t.Fatal("native self notification scan failed", e)
+		}
+		if current.Search != nil {
+			report["self_notification_search_hits"] = current.Search.Metrics.Hits
+			report["self_notification_excluded"] = current.Search.Metrics.Excluded
 		}
 		if e = m.notifications.Deliver(ctx, current.Metadata().Key, current.SubscriptionVersion); e != nil {
 			t.Fatal(e)

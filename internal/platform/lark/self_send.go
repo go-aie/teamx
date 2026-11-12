@@ -13,6 +13,8 @@ func SelfSendAction(reader SendReader, write SendWriter) platform.ActionCapabili
 	cap := SendActions(reader, write, "")[platform.OperationMessageSend]
 	cap.Spec.Operation = platform.OperationMessageSendSelf
 	cap.Spec.BindingEvidence = "self_delivery"
+	cap.AllowPendingEvidence = true
+	cap.ValidateBindingEvidence = func(e platform.CapabilityEvidence) bool { return e.AccountOwnerConfirmed }
 	cap.Spec.ObjectTypes = []string{"user"}
 	cap.Spec.DirectRoomInstructionOnly = false
 	cap.Spec.InputSchema = json.RawMessage(`{"type":"object","additionalProperties":false,"required":["body"],"properties":{"body":{"type":"string","minLength":1,"maxLength":4096,"description":"发送到当前绑定用户的本人自聊；只保存明确选择的 UTF-8 纯文本，最多 4096 字节"}}}`)

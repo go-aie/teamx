@@ -22,6 +22,17 @@ if a==['profile','list']:
  print(json.dumps([{'name':'fixture','brand':'feishu','appId':'unsafe' if mode=='discovery-app-id' else 'cli_fixture','user':'测试用户','tokenStatus':'valid','private':'not projected'},{'name':'teamx-feishu','brand':'lark'}]));sys.exit()
 if a==['config','show']:
  print(json.dumps({'profile':'fixture','brand':'lark' if mode=='brand' else 'feishu','appSecret':'****'}));sys.exit()
+required='offline_access im:chat:read im:message:readonly im:message.p2p_msg:get_as_user im:message.group_msg:get_as_user contact:user.basic_profile:readonly im:message.send_as_user im:message im:chat.members:read contact:user:search'.split()
+if a==['auth','scopes','--json']:
+ if mode=='app-unknown':sys.exit(1)
+ print(json.dumps({'appId':'cli_fixture','tokenType':'user','userScopes':[s for s in required if s!='offline_access' and not (mode=='app-missing' and s=='im:chat.members:read')]}));sys.exit()
+if a[:2]==['auth','check']:
+ missing=['im:chat:read'] if mode=='scopes' else []
+ print(json.dumps({'ok':not missing,'granted':[s for s in a[a.index('--scope')+1].split() if s not in missing],'missing':missing}));sys.exit(1 if missing else 0)
+if a==['auth','status','--json']:
+ user={'openId':'ou_reader','tokenStatus':'valid'}
+ if mode!='no-refresh':user['refreshExpiresAt']='2027-12-01T00:00:00Z'
+ print(json.dumps({'appId':'cli_fixture','identities':{'user':user}}));sys.exit()
 if a[:2]==['auth','login'] and '--no-wait' in a:
  assert '--scope' in a and '--recommend' not in a and '--domain' not in a
  scopes=a[a.index('--scope')+1].split()

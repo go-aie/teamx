@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -32,21 +33,22 @@ type larkAuthRequest struct {
 }
 
 type larkAuthView struct {
-	SessionID          string               `json:"session_id"`
-	Status             string               `json:"status"`
-	URL                string               `json:"verification_url,omitempty"`
-	QRCode             string               `json:"-"`
-	QRCodeURL          string               `json:"qrcode_url,omitempty"`
-	Username           string               `json:"username,omitempty"`
-	RenewalUnavailable bool                 `json:"renewal_unavailable,omitempty"`
-	ExpiresAt          time.Time            `json:"expires_at,omitempty"`
-	ErrorCode          string               `json:"error_code,omitempty"`
-	Platforms          []managedPlatform    `json:"platforms,omitempty"`
-	Stage              string               `json:"stage,omitempty"`
-	Profile            *platform.CLIProfile `json:"cli_profile,omitempty"`
-	AppID              string               `json:"app_id,omitempty"`
-	AppName            string               `json:"app_name,omitempty"`
-	ConfigurationFound bool                 `json:"configuration_found,omitempty"`
+	SessionID          string                `json:"session_id"`
+	Status             string                `json:"status"`
+	URL                string                `json:"verification_url,omitempty"`
+	QRCode             string                `json:"-"`
+	QRCodeURL          string                `json:"qrcode_url,omitempty"`
+	Username           string                `json:"username,omitempty"`
+	RenewalUnavailable bool                  `json:"renewal_unavailable,omitempty"`
+	ExpiresAt          time.Time             `json:"expires_at,omitempty"`
+	ErrorCode          string                `json:"error_code,omitempty"`
+	Platforms          []managedPlatform     `json:"platforms,omitempty"`
+	Stage              string                `json:"stage,omitempty"`
+	Profile            *platform.CLIProfile  `json:"cli_profile,omitempty"`
+	AppID              string                `json:"app_id,omitempty"`
+	AppName            string                `json:"app_name,omitempty"`
+	Permissions        *lark.PermissionCheck `json:"permissions,omitempty"`
+	ConfigurationFound bool                  `json:"configuration_found,omitempty"`
 }
 
 // Sessions are service-local, bounded and owned by the initiating operator.
@@ -63,6 +65,7 @@ type larkAuthSession struct {
 	operationID string
 	validation  platform.Validation
 	connectErr  error
+	targets     []larkAuthorizationTarget
 }
 
 func (m *roomManager) larkAuthBusyLocked(p *platform.CLIProfile) bool {
@@ -84,7 +87,7 @@ func (m *roomManager) larkAuthBusyLocked(p *platform.CLIProfile) bool {
 func (m *roomManager) serveLarkAuth(w http.ResponseWriter, r *http.Request) {
 	action := strings.TrimPrefix(r.URL.Path, "/v1/platforms/lark/")
 	switch action {
-	case "discover", "setup", "login", "authorize-sending", "authorize-targets", "sending-status", "logout", "status", "cancel", "qrcode":
+	case "discover", "setup", "login", "permissions", "logout", "status", "cancel", "qrcode":
 	default:
 		http.NotFound(w, r)
 		return
@@ -172,7 +175,18 @@ func (m *roomManager) serveLarkAuth(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, ErrBusy)
 		return
 	}
-	if action == "sending-status" {
+	if action == "permissions" {
+		if len(req.Affected) != 0 {
+			m.mu.Unlock()
+			writeAPIError(w, ErrRequest)
+			return
+		}
+		before, loadErr := m.platforms.Load()
+		if loadErr != nil {
+			m.mu.Unlock()
+			writeAPIError(w, loadErr)
+			return
+		}
 		m.mu.Unlock()
 		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 		defer cancel()
@@ -186,29 +200,31 @@ func (m *roomManager) serveLarkAuth(w http.ResponseWriter, r *http.Request) {
 			writeLarkReadError(w, err)
 			return
 		}
-		pinned, err := m.larkClients.Pin(ctx, *req.Profile, validation.Account)
+		for _, c := range before.Platforms {
+			if c.Provider == "lark" && c.CLIProfile != nil && c.CLIProfile.Profile == req.Profile.Profile && c.Validation.Account.Valid() && c.Validation.Account != validation.Account {
+				writeLarkReadError(w, &lark.Error{Code: "identity_mismatch"})
+				return
+			}
+		}
+		check, err := m.larkClients.CheckPermissions(ctx, *req.Profile, validation.Account)
 		if err != nil {
 			writeLarkReadError(w, err)
 			return
 		}
-		defer pinned.Close()
-		permission, err := pinned.SendPermission(ctx)
-		if err != nil {
-			writeLarkReadError(w, err)
+		m.mu.Lock()
+		current, loadErr := m.platforms.Load()
+		if loadErr != nil || !sameLarkProfileRevisions(before, current, *req.Profile) || m.larkAuthBusyLocked(req.Profile) {
+			m.mu.Unlock()
+			writeAPIError(w, ErrConflict)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(permission)
+		m.cacheLarkProfilePermissionsLocked(*req.Profile, check)
+		m.mu.Unlock()
+		_ = json.NewEncoder(w).Encode(check)
 		return
 	}
-	for id, s := range m.larkAuthSessions {
-		select {
-		case <-s.done:
-			if time.Now().After(s.expires) {
-				delete(m.larkAuthSessions, id)
-			}
-		default:
-		}
-	}
+
+	m.pruneLarkAuthSessionsLocked()
 	if len(m.larkAuthSessions) >= 32 {
 		m.mu.Unlock()
 		writeAPIError(w, ErrCapacity)
@@ -227,7 +243,8 @@ func (m *roomManager) serveLarkAuth(w http.ResponseWriter, r *http.Request) {
 		m.larkAuthSessions = map[string]*larkAuthSession{}
 	}
 	m.larkAuthSessions[id] = s
-	affected, err := m.invalidateLarkAuthLocked(req)
+	affected, targets, err := m.invalidateLarkAuthLocked(req)
+	s.targets = targets
 	if err != nil || m.closing {
 		cancel()
 		close(s.done)
@@ -244,6 +261,18 @@ func (m *roomManager) serveLarkAuth(w http.ResponseWriter, r *http.Request) {
 	go m.runLarkAuth(ctx, s, action)
 	m.mu.Unlock()
 	_ = json.NewEncoder(w).Encode(view)
+}
+
+func (m *roomManager) pruneLarkAuthSessionsLocked() {
+	for id, s := range m.larkAuthSessions {
+		select {
+		case <-s.done:
+			if time.Now().After(s.expires) {
+				delete(m.larkAuthSessions, id)
+			}
+		default:
+		}
+	}
 }
 
 func (m *roomManager) publicLarkAuthView(s *larkAuthSession) larkAuthView {
@@ -290,10 +319,10 @@ func (m *roomManager) serveLarkAuthQRCode(w http.ResponseWriter, r *http.Request
 	_, _ = w.Write(data)
 }
 
-func (m *roomManager) invalidateLarkAuthLocked(req larkAuthRequest) ([]managedPlatform, error) {
+func (m *roomManager) invalidateLarkAuthLocked(req larkAuthRequest) ([]managedPlatform, []larkAuthorizationTarget, error) {
 	file, err := m.readPlatforms()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var matching []managedPlatformRecord
 	for _, c := range file.Platforms {
@@ -304,12 +333,12 @@ func (m *roomManager) invalidateLarkAuthLocked(req larkAuthRequest) ([]managedPl
 		}
 	}
 	if len(matching) != len(req.Affected) {
-		return nil, ErrConflict
+		return nil, nil, ErrConflict
 	}
 	for _, c := range matching {
 		refs, err := m.managedPlatformReferencesLocked(c.ID)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		found := false
 		for _, ack := range req.Affected {
@@ -319,38 +348,57 @@ func (m *roomManager) invalidateLarkAuthLocked(req larkAuthRequest) ([]managedPl
 			}
 		}
 		if !found {
-			return nil, ErrConflict
+			return nil, nil, ErrConflict
 		}
 	}
 	// Validate the complete impact snapshot before pausing anything or touching
 	// CLI credentials. A failure never starts the external authentication action.
 	for _, c := range matching {
 		if err := m.invalidatePlatformQueriesLocked(c.ID); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	for _, c := range matching {
 		if err := m.settlePlatformQueriesLocked(c.ID); err != nil {
-			return nil, err
+			return nil, nil, err
+		}
+	}
+	// Settlement yields the manager gate. Recheck the acknowledged room impact
+	// before native credential changes, alongside registry revision preflight.
+	for _, c := range matching {
+		refs, err := m.managedPlatformReferencesLocked(c.ID)
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, ack := range req.Affected {
+			if ack.ID == c.ID && !samePlatformReferences(refs, ack.ReferencedRooms) {
+				return nil, nil, ErrConflict
+			}
 		}
 	}
 	var result []managedPlatform
-	for _, c := range matching {
-		ticket, err := m.platforms.BeginVerification(c.ID, c.Version)
-		if err != nil {
-			return nil, managedPlatformError(err)
+	targets := []larkAuthorizationTarget{}
+	if len(matching) == 0 {
+		return result, targets, nil
+	}
+	updated, err := m.platforms.InvalidateCLIProfile(matching)
+	if err != nil {
+		return nil, nil, managedPlatformError(err)
+	}
+	for _, c := range updated {
+		for _, before := range matching {
+			if before.ID == c.ID {
+				targets = append(targets, larkAuthorizationTarget{ID: c.ID, Version: c.Version, Generation: c.Generation, CredentialVersion: c.CredentialVersion, Profile: *c.CLIProfile, Account: before.Validation.Account})
+			}
 		}
-		updated, err := m.platforms.CompleteVerification(ticket, platform.Validation{Status: "failed", CheckedAt: time.Now().UTC(), ErrorCode: "credential_unavailable"})
+		delete(m.larkPermissionChecks, c.ID)
+		item, err := m.publicPlatformLocked(c.Platform)
 		if err != nil {
-			return nil, managedPlatformError(err)
-		}
-		item, err := m.publicPlatformLocked(updated)
-		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		result = append(result, item)
 	}
-	return result, nil
+	return result, targets, nil
 }
 
 func (m *roomManager) runLarkAuth(ctx context.Context, s *larkAuthSession, action string) {
@@ -361,12 +409,6 @@ func (m *roomManager) runLarkAuth(ctx context.Context, s *larkAuthSession, actio
 		err = lark.Logout(ctx, s.profile)
 	} else {
 		loginFn := lark.Login
-		if action == "authorize-sending" {
-			loginFn = lark.LoginSending
-		}
-		if action == "authorize-targets" {
-			loginFn = lark.LoginSendTargets
-		}
 		login, err = loginFn(ctx, s.profile, func(link, qr string) {
 			m.mu.Lock()
 			defer m.mu.Unlock()
@@ -376,13 +418,37 @@ func (m *roomManager) runLarkAuth(ctx context.Context, s *larkAuthSession, actio
 			}
 		})
 	}
+	if err == nil && action != "logout" {
+		check, checkErr := m.larkClients.CheckPermissions(ctx, s.profile, login.Validation.Account)
+		if checkErr == nil {
+			login.Permissions = &check
+		} else if lark.ErrorCode(checkErr) == "identity_mismatch" {
+			err = checkErr
+		}
+	}
+	if err != nil && action != "logout" {
+		// The native split flow may save a token before returning cancellation or
+		// a failure. Observe the settled profile; never assume rollback or turn
+		// this observation into a successful operation or a member mutation.
+		observeCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
+		if client, e := m.larkClients.New(s.profile); e == nil {
+			if v, e := client.Verify(observeCtx); e == nil {
+				if check, e := m.larkClients.CheckPermissions(observeCtx, s.profile, v.Account); e == nil {
+					login.Permissions = &check
+				}
+			}
+		}
+		stop()
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	s.URL, s.QRCode = "", ""
 	s.Status, s.Username = "succeeded", login.Validation.Username
 	s.RenewalUnavailable, s.ExpiresAt = login.RenewalUnavailable, login.ExpiresAt
+	s.Permissions = login.Permissions
 	// A late success must never revive an explicitly cancelled setup session.
-	if s.setup && ctx.Err() != nil {
+	if ctx.Err() != nil {
 		err = ctx.Err()
 	}
 	if err != nil {
@@ -398,6 +464,30 @@ func (m *roomManager) runLarkAuth(ctx context.Context, s *larkAuthSession, actio
 		s.Stage = "complete"
 	}
 	s.validation = login.Validation
+	if err == nil && action != "logout" && len(s.targets) > 0 {
+		if commitErr := m.completeLarkAuthorizationLocked(s); commitErr != nil {
+			s.Status, s.ErrorCode = "failed", "identity_or_version_changed"
+			if errors.Is(commitErr, ErrIdentity) {
+				s.ErrorCode = "identity_mismatch"
+			}
+			if errors.Is(commitErr, ErrCommitUnknown) {
+				s.Status, s.Stage, s.ErrorCode = "unknown", "connection", "connection_unconfirmed"
+			}
+		}
+	}
+	for _, target := range s.targets {
+		file, loadErr := m.platforms.Load()
+		if loadErr != nil {
+			break
+		}
+		for _, c := range file.Platforms {
+			if c.ID == target.ID {
+				if item, e := m.publicPlatformLocked(c.Platform); e == nil {
+					s.Platforms = append(s.Platforms, item)
+				}
+			}
+		}
+	}
 	close(s.done)
 	m.finishPlatformConnectLocked(s)
 }

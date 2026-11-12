@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 
@@ -99,21 +100,22 @@ func (p *Pinned) Verify(ctx context.Context) (platform.Validation, error) {
 	return v, err
 }
 
-const SendScopes = "im:message.send_as_user im:message"
-
 type SendPermission struct {
-	SelfSendEnabled    bool     `json:"self_send_enabled"`
-	UserSendEnabled    bool     `json:"user_send_enabled"`
-	GroupSendEnabled   bool     `json:"group_send_enabled"`
-	SendReason         string   `json:"send_reason"`
-	ReplyEnabled       bool     `json:"reply_enabled"`
-	AccountFixed       bool     `json:"account_fixed"`
-	UserScopes         string   `json:"user_scopes"` // granted, missing, unchecked
-	ApplicationScopes  string   `json:"application_scopes"`
-	MissingUser        []string `json:"missing_user,omitempty"`
-	MissingApplication []string `json:"missing_application,omitempty"`
-	AdapterImplemented bool     `json:"adapter_implemented"`
-	Reason             string   `json:"reason"`
+	SelfSendEnabled           bool         `json:"self_send_enabled"`
+	UserSendEnabled           bool         `json:"user_send_enabled"`
+	GroupSendEnabled          bool         `json:"group_send_enabled"`
+	SendReason                string       `json:"send_reason"`
+	ReplyEnabled              bool         `json:"reply_enabled"`
+	AccountFixed              bool         `json:"account_fixed"`
+	UserScopes                string       `json:"user_scopes"` // granted, missing, unchecked
+	ApplicationScopes         string       `json:"application_scopes"`
+	MissingUser               []string     `json:"missing_user,omitempty"`
+	MissingApplication        []string     `json:"missing_application,omitempty"`
+	AdapterImplemented        bool         `json:"adapter_implemented"`
+	Reason                    string       `json:"reason"`
+	TargetVerificationEnabled bool         `json:"target_verification_enabled"`
+	PeopleSearchEnabled       bool         `json:"people_search_enabled"`
+	Capabilities              []Capability `json:"capabilities"`
 }
 
 func (p *Pinned) SendPermission(ctx context.Context) (SendPermission, error) {
@@ -127,62 +129,51 @@ func (p *Pinned) SendPermission(ctx context.Context) (SendPermission, error) {
 		return result, err
 	}
 	defer unlock()
-	// auth check exits 1 for missing scopes, so use the public whoami-independent
-	// CLI check result, preserving stdout only for this fixed read contract.
-	data, err := c.run(ctx, "auth", "scopes", "--json")
-	if err != nil {
-		return result, err
+	required := strings.Fields(SendScopes + " " + SendTargetScopes + " " + PeopleSearchScopes)
+	app, user := c.inspectScopes(ctx, p.Account, required)
+	if app.ReasonCode == "identity_mismatch" {
+		return result, failure("identity_mismatch")
 	}
-	var app struct {
-		AppID      string   `json:"appId"`
-		TokenType  string   `json:"tokenType"`
-		Scopes     []string `json:"scopes"`
-		UserScopes []string `json:"userScopes"`
-	}
-	if decode(data, &app) != nil || "lark:open_id:"+app.AppID != p.Account.ID.Namespace {
-		return result, failure("invalid_response")
-	}
-	scopes := app.UserScopes
-	if app.TokenType == "" {
-		scopes = app.Scopes
-	}
-	for _, required := range strings.Fields(SendScopes) {
-		found := false
-		for _, scope := range scopes {
-			if scope == required {
-				found = true
-			}
+	// The legacy aggregate fields continue to describe reply scopes only.
+	// Optional search/target dependencies cannot disable ordinary replies.
+	result.ApplicationScopes, result.UserScopes = app.State, user.State
+	for _, scope := range strings.Fields(SendScopes) {
+		if slices.Contains(app.Missing, scope) {
+			result.MissingApplication = append(result.MissingApplication, scope)
 		}
-		if !found {
-			result.MissingApplication = append(result.MissingApplication, required)
+		if slices.Contains(user.Missing, scope) {
+			result.MissingUser = append(result.MissingUser, scope)
 		}
 	}
-	result.ApplicationScopes = "granted"
-	if len(result.MissingApplication) > 0 {
-		result.ApplicationScopes = "missing"
+	if app.State != "unchecked" {
+		result.ApplicationScopes = "granted"
+		if len(result.MissingApplication) > 0 {
+			result.ApplicationScopes = "missing"
+		}
 	}
-	data, err = c.runCheck(ctx, "auth", "check", "--scope", SendScopes, "--json")
-	if err != nil {
-		return result, err
+	if user.State != "unchecked" {
+		result.UserScopes = "granted"
+		if len(result.MissingUser) > 0 {
+			result.UserScopes = "missing"
+		}
 	}
-	var user struct {
-		OK      bool     `json:"ok"`
-		Granted []string `json:"granted"`
-		Missing []string `json:"missing"`
-	}
-	if decode(data, &user) != nil || (user.OK && len(user.Missing) != 0) || len(user.Granted)+len(user.Missing) != 2 {
-		return result, failure("invalid_response")
-	}
-	result.MissingUser = user.Missing
-	result.UserScopes = "granted"
-	if !user.OK {
-		result.UserScopes = "missing"
+	if app.State == "unchecked" {
+		result.Reason = app.ReasonCode
+	} else if user.State == "unchecked" {
+		result.Reason = user.ReasonCode
 	}
 	// These flags describe adapter readiness under the current scopes, not any
 	// particular member's saved grants or permission to perform a business action.
 	result.ReplyEnabled = result.UserScopes == "granted" && result.ApplicationScopes == "granted"
-	result.GroupSendEnabled = result.ReplyEnabled
-	result.SelfSendEnabled = result.ReplyEnabled
+	result.TargetVerificationEnabled = app.State != "unchecked" && user.State != "unchecked" && !slices.Contains(app.Missing, SendTargetScopes) && !slices.Contains(user.Missing, SendTargetScopes)
+	result.PeopleSearchEnabled = app.State != "unchecked" && user.State != "unchecked" && !slices.Contains(app.Missing, PeopleSearchScopes) && !slices.Contains(user.Missing, PeopleSearchScopes)
+	result.GroupSendEnabled = result.ReplyEnabled && result.TargetVerificationEnabled
+	result.SelfSendEnabled = result.GroupSendEnabled
+	for _, v := range permissionCapabilities(PermissionCheck{Application: app, User: user, AccountFixed: true}, "darwin", "") {
+		if v.Name == "people.search" || strings.HasPrefix(v.Name, "message.") && v.Name != "message.read" {
+			result.Capabilities = append(result.Capabilities, v)
+		}
+	}
 	return result, nil
 }
 

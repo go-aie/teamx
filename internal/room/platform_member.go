@@ -36,6 +36,7 @@ func (req platformMemberRequest) projectsRequest() gitlabProjectsRequest {
 }
 
 type platformMemberView struct {
+	Capabilities *larkMemberCapabilityResult `json:"capabilities,omitempty"`
 	MemberIdentity
 	PlatformID          string                   `json:"platform_id"`
 	PlatformVersion     uint64                   `json:"platform_version"`
@@ -90,6 +91,10 @@ func (m *roomManager) platformMemberViewLocked(ctx context.Context, req platform
 			break
 		}
 	}
+	if a.Identity.Provider == "lark" {
+		p := m.larkMemberCapabilitiesLocked(req.member(), "", a, f)
+		v.Capabilities = &p
+	}
 	return v, nil
 }
 
@@ -116,51 +121,6 @@ func (m *roomManager) checkPlatformMemberContextLocked(ctx context.Context) erro
 		return ErrConflict
 	}
 	return nil
-}
-
-func memberNotificationConfig(m *roomManager, v platformMemberView, in platformMemberInput) (lark.Config, error) {
-	var cfg lark.Config
-	if v.Config != nil {
-		cfg = *v.Config
-		cfg.Groups.ChatIDs = slices.Clone(cfg.Groups.ChatIDs)
-	} else {
-		// A request to follow selected groups must not opt into private chats,
-		// all groups or independent mention/own-message branches by default.
-		cfg = m.defaultLarkConfig(in.PlatformID)
-		cfg.Enabled = false
-		cfg.Private.Enabled = false
-		cfg.Groups = lark.GroupConfig{Scope: "specified", MessageMode: "all"}
-		cfg.Target = platformMemberTarget(v.MemberIdentity)
-	}
-	if len(in.AddChatIDs) > 0 {
-		if cfg.Groups.Scope == "all" {
-			return cfg, conflictReason("groups.scope", "existing subscription covers all groups", "Use platform settings to explicitly change the existing group scope.")
-		}
-		for _, id := range in.AddChatIDs {
-			if !slices.Contains(cfg.Groups.ChatIDs, id) {
-				cfg.Groups.ChatIDs = append(cfg.Groups.ChatIDs, id)
-			}
-		}
-		cfg.Groups.Scope, cfg.Groups.Enabled, cfg.Enabled = "specified", true, true
-	}
-	if in.GroupMessageMode != "" {
-		cfg.Groups.MessageMode = in.GroupMessageMode
-		if in.GroupMessageMode == "mentions" && !cfg.Groups.AtMe && !cfg.Groups.AtAll {
-			cfg.Groups.AtMe = true
-		}
-	}
-	if in.Enabled != nil {
-		cfg.Enabled = *in.Enabled
-	}
-	if v.Config == nil && cfg.Enabled {
-		baseline, err := notification.BackfillBaseline(cfg.BackfillSeconds, cfg.BackfillStart, m.notifications.Now())
-		if err != nil {
-			return cfg, err
-		}
-		cfg.BackfillSeconds, cfg.BackfillStart = 0, baseline.UTC().Truncate(time.Second)
-	}
-	cfg, err := lark.NormalizeConfig(cfg)
-	return cfg, notificationRoomError(err)
 }
 
 // A persisted unknown record is an at-most-once submission fence. Neither status
@@ -217,10 +177,22 @@ func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, 
 		return op, err
 	}
 	m.mu.Unlock()
+	var preparedChange *toolBindingChange
+	if kind == "tool" && v.Account.Provider == "lark" && *req.Input.Enabled {
+		change := toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: req.RoomIdentity, Caller: Caller{Kind: "human", ID: source.Author.ID}, Revision: req.Input.ToolRevision, PlatformVersion: req.Input.PlatformVersion, Enabled: true, Binding: tool.Binding{AgentID: req.Caller.ID, MembershipID: req.Caller.MembershipID, PlatformID: req.Input.PlatformID, Tool: "lark"}, requestedActions: req.Input.Actions}
+		if e := m.prepareBindingEvidence(ctx, &change); e != nil {
+			var required *userAuthorizationRequired
+			if errors.As(e, &required) {
+				return platformMemberOperation{Schema: 2, MemberIdentity: req.member(), ID: req.OperationID, Kind: kind, Source: source, Input: *req.Input, Account: v.Account, Status: "not_applied", Result: onboardingStep{Status: "not_applied", ErrorCode: "user_authorization_required"}, Capabilities: &required.Capabilities}, nil
+			}
+			return op, e
+		}
+		preparedChange = &change
+	}
 	var chats []lark.Chat
-	if len(req.Input.AddChatIDs) > 0 {
+	if ids := req.Input.verifiedGroupIDs(); len(ids) > 0 {
 		q := req.chatsRequest()
-		q.verifyIDs = req.Input.AddChatIDs
+		q.verifyIDs = ids
 		page, err := m.listLarkChats(ctx, q)
 		if err != nil {
 			return op, err
@@ -263,6 +235,13 @@ func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, 
 		return op, err
 	}
 	op = platformMemberOperation{Schema: 1, MemberIdentity: req.member(), ID: req.OperationID, Kind: kind, Source: source, Input: *req.Input, Account: v.Account, Status: "unknown", Result: onboardingStep{Status: "unknown", ErrorCode: "submission_unconfirmed"}, Chats: chats, Project: project, CreatedAt: time.Now().UTC()}
+	if preparedChange != nil {
+		p := preparedChange.prepared
+		op.Schema = 2
+		op.RequestedActions = p.RequestedActions
+		op.Authorization = preparedChange.Binding.ActionAuthorization
+		op.Capabilities = &p.Capabilities
+	}
 	if kind == "notifications" {
 		if v.Account.Provider == "gitlab" {
 			var cfg gitlab.NotificationConfig
@@ -278,12 +257,38 @@ func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, 
 			return op, err
 		}
 	}
+	if op.Config != nil && memberLarkNotificationUnchanged(v, *req.Input, *op.Config) {
+		op.Status, op.ResultVersion = "completed", 1
+		op.Result = onboardingStep{Status: "preserved", Version: v.NotificationVersion}
+		err = m.savePlatformMemberLocked(op)
+		m.mu.Unlock()
+		return op, err
+	}
+	if preparedChange != nil {
+		if err = m.recheckLarkToolChangeLocked(ctx, *preparedChange); err != nil {
+			m.mu.Unlock()
+			return platformMemberOperation{}, err
+		}
+	}
 	if err = m.savePlatformMemberLocked(op); err != nil {
 		m.mu.Unlock()
 		return op, err
 	}
 	if kind == "tool" {
-		op.Result, err = m.applyPlatformMemberToolLocked(ctx, op)
+		if preparedChange != nil {
+			var next toolBindingsFile
+			var waits []<-chan struct{}
+			next, waits, err = m.changeToolBindingLocked(ctx, *preparedChange)
+			op.Result = onboardingStep{Status: "applied", Version: next.Revision}
+			if preparedChange.prepared.Preserved {
+				op.Result.Status = "preserved"
+			}
+			if err == nil {
+				err = m.waitOnboardingToolLocked(ctx, waits)
+			}
+		} else {
+			op.Result, err = m.applyPlatformMemberToolLocked(ctx, op)
+		}
 		m.mu.Unlock()
 	} else if op.GitLabConfig != nil {
 		m.mu.Unlock()

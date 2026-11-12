@@ -171,13 +171,16 @@ func (c *Client) runProcess(ctx context.Context, dir string, timeout time.Durati
 			return nil, failure("cli_unavailable")
 		}
 		err := classify(stderr.Bytes())
-		if ErrorCode(err) == "query_failed" {
+		if len(args) == 5 && args[0] == "auth" && args[1] == "login" && args[2] == "--device-code" && args[4] == "--json" {
 			var completion struct {
 				Event   string   `json:"event"`
 				Missing []string `json:"missing"`
 			}
 			if decode(out.Bytes(), &completion) == nil && completion.Event == "authorization_complete" && len(completion.Missing) > 0 {
-				err = failure("permission_denied")
+				// The documented completion event is needed to verify the actual
+				// user and expiry after a partially saved token. Login alone reads
+				// it; raw stdout is never an API response or a diagnostic.
+				return out.Bytes(), failure("permission_denied")
 			}
 		}
 		if ErrorCode(err) == "rate_limited" {

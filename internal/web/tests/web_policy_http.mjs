@@ -19,7 +19,13 @@ for (let i = 0; i < 100; i++) {
   if (ui.el("members").children.length) break;
   await new Promise(resolve => setTimeout(resolve, 10));
 }
-const catalog = await call("/v1/rooms");
+let catalog;
+for (let i = 0; i < 300; i++) {
+  try { catalog = await call("/v1/rooms"); break; }
+  catch (error) { if (error.code !== "busy") throw error; }
+  await new Promise(resolve => setTimeout(resolve, 10));
+}
+assert.ok(catalog, "Room catalog did not settle");
 const room = catalog.rooms[0];
 const caller = { kind: "human", id: catalog.operator };
 assert.ok(room.service);
@@ -77,7 +83,7 @@ assert.equal(view.current[2].version, 2);
 assert.match(view.current[2].text, /保留限制/);
 await card().children[0].children[1].children[1].emit("click");
 await waitFor(() => card()?.children[0].children[0].children[0].textContent === "已撤销");
-await ui.el("policy-reload").emit("click");
+await ui.el("policy-retry").emit("click");
 await waitFor(() => card()?.children[0].children[0].children[0].textContent === "已撤销");
 view = await read();
 assert.equal(view.current[2].status, "revoked");

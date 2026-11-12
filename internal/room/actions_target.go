@@ -28,6 +28,8 @@ type actionTarget struct {
 }
 type actionTargetCapability struct {
 	platform.ActionSpec
+	ReasonCode     string `json:"reason_code,omitempty"`
+	NextAction     string `json:"next_action,omitempty"`
 	Executable     bool   `json:"executable"`
 	DisabledReason string `json:"disabled_reason,omitempty"`
 }
@@ -320,7 +322,11 @@ func (m *roomManager) resolveActionTarget(ctx context.Context, req apiRequest, q
 				m.mu.Unlock()
 				if err != nil {
 					availability.Executable = false
-					availability.DisabledReason = "Member action capability is disabled on the current binding."
+					availability.DisabledReason = "Current member action availability could not be confirmed; inspect this exact member and platform."
+					var issue *actionAuthorizationUnavailable
+					if errors.As(err, &issue) {
+						availability.DisabledReason, availability.ReasonCode, availability.NextAction = issue.Message, issue.ReasonCode, issue.NextAction
+					}
 				}
 			}
 			view.Actions = append(view.Actions, availability)
