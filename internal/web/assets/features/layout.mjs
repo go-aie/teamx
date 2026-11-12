@@ -92,6 +92,11 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
       $(id).setAttribute("aria-hidden", String(!open));
     }
     $("toggle-rooms").hidden = !state.managed;
+    $("toggle-members").hidden = roomsUI.isDirect();
+    $("direct-details").hidden = !roomsUI.isDirect();
+    $("direct-details").disabled = !state.info;
+    $("direct-details").textContent = membersOpen ? "收起助理详情" : "助理详情";
+    $("direct-details").setAttribute("aria-expanded", String(membersOpen));
     $("member-rail").inert = !membersOpen;
     $("member-rail").setAttribute("aria-hidden", String(!membersOpen));
     if (!membersOpen && $("activity-dialog").open) $("activity-dialog").close();
@@ -136,7 +141,7 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
   function closeMobilePanels() {
     const rooms = directMobileRooms;
     directMobileDetails = false; directMobileRooms = false;
-    renderPanels(); membersUI.syncDirectDetail(); $(rooms ? "toggle-rooms" : "toggle-members").focus();
+    renderPanels(); membersUI.syncDirectDetail(); $(rooms ? "toggle-rooms" : roomsUI.isDirect() ? "room-menu-label" : "toggle-members").focus();
   }
 
   function updateViewport() {
@@ -155,18 +160,27 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
       for (const key of ["roomWidth", "memberWidth"]) if (Number.isFinite(saved?.[key]) && saved[key] > 0) panels[key] = saved[key];
     } catch { /* Sidebars remain usable when tab storage is unavailable. */ }
 
-    for (const side of ["rooms", "members"]) $("toggle-" + side).addEventListener("click", () => {
-      if (side === "members" && compactViewport(window)) directMobileDetails = !directMobileDetails;
-      else if (side === "rooms" && compactViewport(window)) directMobileRooms = !directMobileRooms;
-      else panels[side] = !panels[side];
-      if (compactViewport(window)) {
-        if (side === "rooms" && directMobileRooms) directMobileDetails = false;
-        if (side === "members" && directMobileDetails) directMobileRooms = false;
-      }
-      savePanels();
-      renderPanels();
-      membersUI.syncDirectDetail();
-    });
+    for (const side of ["rooms", "members"]) {
+      const toggle = () => {
+        if (side === "members" && compactViewport(window)) directMobileDetails = !directMobileDetails;
+        else if (side === "rooms" && compactViewport(window)) directMobileRooms = !directMobileRooms;
+        else panels[side] = !panels[side];
+        if (compactViewport(window)) {
+          if (side === "rooms" && directMobileRooms) directMobileDetails = false;
+          if (side === "members" && directMobileDetails) directMobileRooms = false;
+        }
+        savePanels();
+        renderPanels();
+        membersUI.syncDirectDetail();
+      };
+      $("toggle-" + side).addEventListener("click", toggle);
+      if (side === "members") $("direct-details").addEventListener("click", () => {
+        $("room-menu").open = false;
+        toggle();
+        if (!membersPanelOpen()) $("room-menu-label").focus();
+        else $(directNotificationsOpen ? "close-conversation-notifications" : "agent-tab-platforms").focus();
+      });
+    }
 
     for (const [side, config] of Object.entries(sidebarConfig)) {
       const handle = $(config.handle), direction = side === "rooms" ? 1 : -1;

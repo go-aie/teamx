@@ -71,6 +71,40 @@ const makeRoom = (name, id = name) => ({ room_id: id, room_instance: `instance-$
   status: "ready", team_id: "sample", create_id: `create-${id}`, created_at: "2026-11-01T01:00:00Z", updated_at: "2026-11-01T01:00:00Z" });
 const message = (seq, text) => ({ seq, text, author: { kind: "agent", id: "reviewer" }, created_at: "2026-11-01T01:00:00Z" });
 
+test("busy display reads preserve messages, draft and send availability until contention persists", async () => {
+  const api=server([makeRoom("A")]),ui=await launch(api);
+  await ui.draft("保留这条草稿");
+  const node=ui.el("messages").children.find(el=>el.id==="message-1");
+  ui.el("timeline").scrollTop=37;
+  let busy=true;
+  api.hook=path=>{if(busy && path==="/v1/rooms")throw Object.assign(Error("room commit or unread page already pending"),{code:"busy"});};
+  await ui.refresh();
+  assert.equal(ui.el("sync-error").hidden,true);assert.equal(ui.el("send").disabled,false);
+  assert.equal(ui.el("messages").children.find(el=>el.id==="message-1"),node);
+  assert.equal(ui.el("timeline").scrollTop,37);assert.equal(ui.el("message-input").value,"保留这条草稿");
+  await ui.clock.advance(4500);await ui.refresh();
+  assert.equal(ui.el("sync-error").hidden,false);assert.match(ui.el("sync-error").textContent,/服务繁忙/);
+  assert.doesNotMatch(ui.el("sync-error").textContent,/room commit|unread page/);
+  assert.equal(ui.el("send").disabled,true);
+  busy=false;await ui.refresh();
+  assert.equal(ui.el("sync-error").hidden,true);assert.equal(ui.el("send").disabled,false);
+  assert.equal(ui.el("timeline").scrollTop,37);assert.equal(ui.el("message-input").value,"保留这条草稿");
+  assert.equal(api.calls.filter(c=>c.path==="/v1/send").length,0);
+});
+
+test("operator display names restore mention reminders and remain marked after viewing",async()=>{
+  const api=server([makeRoom("A")]),owner="owner_"+"a".repeat(32);
+  api.catalog.operator=owner;api.history.set("A",[message(1,"@russellluo 请确认")]);
+  api.hook=path=>path==="/v1/ui" ? {managed:true,operator_display_name:"russellluo"} : undefined;
+  const ui=await launch(api);
+  assert.equal(mentionHighlighted(ui,1),true);
+  assert.deepEqual(mentionElement(ui,1).querySelector(".message-text").markdownOptions.operatorNames,[owner,"russellluo"]);
+  await visibleMessages(ui,[1]);await ui.clock.advance(1000);
+  assert.equal(mentionHighlighted(ui,1),false);assert.equal(ui.el("mention-notice").hidden,true);
+  assert.deepEqual(mentionElement(ui,1).querySelector(".message-text").markdownOptions.operatorNames,[owner,"russellluo"]);
+  assert.equal(ui.el("operator"),undefined);
+});
+
 test("apps sharing the native module graph retain independent selection, drafts and settings", async () => {
   const [first, second] = await Promise.all([
     launch(server([makeRoom("A"), makeRoom("B")])),
@@ -3280,6 +3314,12 @@ test("direct conversations prefer the exact default, keep the inspector stable, 
   assert.equal(ui.el("direct-list").children[0].children.length,1);
   assert.equal(ui.el("room-list").children[0].children.length,2);
   assert.equal(ui.el("activity-dialog").open,true);assert.equal(ui.el("close-activity").hidden,true);
+  assert.equal(ui.el("direct-status"),undefined);assert.equal(ui.el("toggle-members").hidden,true);
+  assert.equal(ui.el("direct-details").hidden,false);assert.equal(ui.el("direct-details").textContent,"收起助理详情");
+  ui.el("room-menu").open=true;await ui.el("direct-details").emit("click");
+  assert.equal(ui.el("activity-dialog").open,false);assert.equal(ui.el("room-menu").open,false);
+  assert.equal(ui.el("direct-details").textContent,"助理详情");
+  await ui.el("direct-details").emit("click");assert.equal(ui.el("activity-dialog").open,true);
   assert.equal(ui.el("agent-tab-platforms").getAttribute("aria-selected"),"true");
   ui.el("platforms-member-view").scrollTop=123;
   const reads=api.calls.filter(call=>call.path.startsWith("/v1/tools/bindings?")).length;
@@ -3287,14 +3327,16 @@ test("direct conversations prefer the exact default, keep the inspector stable, 
   assert.equal(ui.el("platforms-member-view").scrollTop,123);
   assert.equal(api.calls.filter(call=>call.path.startsWith("/v1/tools/bindings?")).length,reads);
   await ui.draft("DM draft");await ui.select("Team");assert.equal(ui.el("activity-dialog").open,false);
+  assert.equal(ui.el("toggle-members").hidden,false);assert.equal(ui.el("direct-details").hidden,true);
   assert.equal(ui.el("member-list-view").hidden,false);await ui.draft("Room draft");
   await ui.select("个人助理");assert.equal(ui.el("message-input").value,"DM draft");
   await ui.el("direct-notifications").emit("click");assert.equal(ui.el("member-list-view").hidden,false);
   assert.equal(ui.el("activity-dialog").hidden,true);await ui.el("close-conversation-notifications").emit("click");
   assert.equal(ui.el("activity-dialog").hidden,false);assert.equal(ui.el("member-list-view").hidden,true);
   ui.window.innerWidth=390;await ui.window.emit("resize");assert.equal(ui.el("member-rail").inert,true);
-  await ui.el("toggle-members").emit("click");assert.equal(ui.el("activity-dialog").open,true);
+  await ui.el("direct-details").emit("click");assert.equal(ui.el("activity-dialog").open,true);
   await ui.el("close-activity").emit("click");await ui.refresh();assert.equal(ui.el("member-rail").inert,true);
+  assert.equal(ui.document.activeElement,ui.el("room-menu-label"));
   const saved=new Map([["teamx.selected-room",JSON.stringify(room)]]),reloaded=await launch(api,saved);
   assert.equal(reloaded.el("room-name").textContent,"Team");assert.equal(reloaded.el("activity-dialog").open,false);
 });

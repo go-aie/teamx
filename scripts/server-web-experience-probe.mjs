@@ -91,7 +91,7 @@ try {
       await page.locator("#toggle-rooms").click();
       await page.getByRole("button",{name:/^私信：个人助理/}).click();
       await page.waitForFunction(()=>document.querySelector("#room-name").textContent==="个人助理");
-      await page.locator("#toggle-members").click(); await page.locator("#agent-tab-inbox").click();
+      await page.locator("#room-menu-label").click(); await page.locator("#direct-details").click(); await page.locator("#agent-tab-inbox").click();
       await page.locator("#inbox-entries .activity-section").first().waitFor();
       check(`${name}: assistant Inbox reachable`,await page.locator("#inbox-entries").isVisible());
       await page.locator("#close-mobile-members").click();
@@ -172,7 +172,7 @@ try {
     check(`${name}: cancelling deletion returns to editor`,await page.locator("#model-edit-form").isVisible() && !(await page.locator("#model-list-view").isVisible()));
     await page.locator("#close-settings").click();
     if(name === "phone") {
-      await page.locator("#toggle-members").click();await page.locator("#member-model-selection").waitFor();
+      await page.locator("#room-menu-label").click(); await page.locator("#direct-details").click();await page.locator("#member-model-selection").waitFor();
       await page.locator("#member-model-selection").selectOption("model-b");
       await page.waitForFunction(()=>document.querySelector("#member-model-feedback").textContent.includes("等待当前回合结束"));
       check("member selection shows waiting and actual Session model",(await page.locator("#member-model-progress").getAttribute("title")).includes("upstream-a"));

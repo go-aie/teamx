@@ -188,7 +188,7 @@ export function renderMessageBody(container, text, operator, options) {
     if (!node.parentElement.closest("a, code, pre")) nodes.push(node);
   }
   for (const node of nodes) {
-    const ranges = [...mentionRanges(node.data, operator).map(at => ({...at, name:operator})),
+    const ranges = [...mentionRanges(node.data, options?.operatorNames || operator).map(at => ({...at, self:true})),
       ...memberMentionRanges(node.data, options?.memberNames || [])].sort((a,b) => a.start-b.start || b.end-a.end);
     if (!ranges.length) continue;
     const fragment = doc.createDocumentFragment();
@@ -197,7 +197,7 @@ export function renderMessageBody(container, text, operator, options) {
       if (range.start < end) continue;
       fragment.append(doc.createTextNode(node.data.slice(end, range.start)));
       const mark = doc.createElement("mark");
-      mark.className = range.name === operator ? "mention" : "mention-member";
+      mark.className = range.self ? "mention" : "mention-member";
       mark.textContent = node.data.slice(range.start, range.end);
       fragment.append(mark);
       end = range.end;

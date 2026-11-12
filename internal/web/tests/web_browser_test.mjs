@@ -36,6 +36,8 @@ test("hidden, offline and bfcache pages retain drafts, suspend reads and reconci
   ui.window.navigator = { onLine:false };
   await ui.window.emit("offline");
   assert.match(ui.el("connection").textContent, /网络已断开/);
+  assert.equal(ui.el("sync-error").hidden,false);
+  assert.match(ui.el("sync-error").textContent,/网络已断开/);
   const offline = api.calls.length;
   poll(); await settle(); assert.equal(api.calls.length, offline);
   ui.window.navigator.onLine = true;
@@ -45,6 +47,7 @@ test("hidden, offline and bfcache pages retain drafts, suspend reads and reconci
   assert.equal(ui.el("send").disabled, true);
   release(); api.hook = null; await settle();
   assert.equal(ui.el("send").disabled, false);
+  assert.equal(ui.el("sync-error").hidden,true);
   await ui.window.emit("pagehide");
   const hidden = api.calls.length; poll(); await settle(); assert.equal(api.calls.length, hidden);
   await ui.window.emit("pageshow"); await settle();

@@ -36,6 +36,15 @@ test("mention reminders follow viewing progress independently of replies and age
   assert.deepEqual(unseenMentions(messages, "other", new Set()).map(m => m.seq), [6]);
 });
 
+test("operator aliases highlight names while self-message exclusion uses the fixed identity", () => {
+  const owner = "owner_" + "a".repeat(32), names = [owner,"russellluo","russellluo"];
+  const text = `@russellluo，@${owner} @russellluo2 mail@russellluo.com`;
+  assert.deepEqual(mentionRanges(text,names).map(at=>text.slice(at.start,at.end)),["@russellluo",`@${owner}`]);
+  const messages = [{seq:1,text,author:{kind:"agent",id:"assistant"}}, {seq:2,text,author:{kind:"human",id:owner}}];
+  assert.deepEqual(unseenMentions(messages,owner,new Set(),0,names).map(m=>m.seq),[1]);
+  assert.deepEqual(unseenMentions(messages,owner,new Set([1]),0,names),[]);
+});
+
 test("seeding a team opening preserves existing drafts and uncertain sends", () => {
   assert.equal(teamOpeningDraft("", null, "opening"), "opening");
   assert.equal(teamOpeningDraft("   ", null, "opening"), "opening");

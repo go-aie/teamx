@@ -72,7 +72,6 @@
 .direct-conversation:not(.direct-notifications-open) #member-list-view { display:none; }
 .direct-notifications-open #activity-dialog { display:none; }
 #close-conversation-notifications { min-height:56px; text-align:left; padding-inline:18px; }
-.direct-conversation #direct-status { font-size:var(--font-small); white-space:nowrap; }
 @media(max-width:640px) {
   .direct-conversation .member-rail { position:fixed; z-index:20; inset:0; width:100%; background:var(--surface-muted); overflow:auto; }
   .direct-conversation .member-rail .activity-dialog,

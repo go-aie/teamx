@@ -84,11 +84,7 @@
     opacity:1;
   }
   .compose {
-    margin:10px 14px 0;
-  }
-  .room-footer {
-    font-size:var(--font-small);
-    padding-bottom:14px;
+    margin:10px 14px 14px;
   }
   .sidebar {
     padding:0 22px 24px;

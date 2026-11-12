@@ -24,7 +24,7 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict');
   assert.match(await page.locator('#direct-group-title').textContent(),/私信 · 1/);
   await page.locator('#activity-dialog[open]').waitFor();
   // Escape dismisses a nested picker before its parent settings dialog.
-  await page.locator('#open-settings').click();await page.locator('#settings-tab-general').click();
+  await page.locator('#user-menu-toggle').click();await page.locator('#open-settings').click();await page.locator('#settings-tab-general').click();
   await page.locator('#timezone-picker-toggle').click();await page.keyboard.press('Escape');
   assert.equal(await page.locator('#settings-dialog').evaluate(el=>el.open),true);
   assert.equal(await page.locator('#timezone-options').isVisible(),false);
@@ -59,17 +59,19 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict');
   await page.locator('#direct-list .room-choice').first().click();
   await page.locator('#activity-dialog[open]').waitFor();
   assert.equal(await page.locator('#message-input').inputValue(),'DM draft');
-  // Narrow view starts with chat; a single toggle opens full-height details.
+  // Narrow view starts with chat; the conversation menu opens full-height details.
   await page.setViewportSize({width:390,height:844});
   await page.locator('#member-rail').waitFor({state:'hidden'});
   assert.equal(await page.locator('#member-rail').isVisible(),false);
   assert.equal(await page.locator('#compose').evaluate(el=>el.getBoundingClientRect().bottom<=innerHeight),true);
-  await page.getByRole('button',{name:'展开助理详情',exact:true}).click();
+  await page.locator('#room-menu-label').click();await page.locator('#direct-details').click();
   await page.getByRole('button',{name:'返回私信',exact:true}).click();
   assert.equal(await page.locator('#member-rail').isVisible(),false);
-  await page.getByRole('button',{name:'展开助理详情',exact:true}).focus();await page.keyboard.press('Enter');
-  assert.equal(await page.evaluate(()=>document.activeElement.id),'close-activity');await page.keyboard.press('Escape');
-  assert.equal(await page.evaluate(()=>document.activeElement.id),'toggle-members');
+  await page.locator('#room-menu-label').click();await page.locator('#direct-details').focus();await page.keyboard.press('Enter');
+  assert.equal(await page.evaluate(()=>document.activeElement.id),'agent-tab-platforms');await page.keyboard.press('Escape');
+  await page.locator('#member-rail').waitFor({state:'hidden'});
+  await page.waitForFunction(()=>document.activeElement.id==='room-menu-label');
+  assert.equal(await page.evaluate(()=>document.activeElement.id),'room-menu-label');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   await page.setViewportSize({width:1440,height:1000});
   // Explicit DM creation has no team picker and does not post a fake task.

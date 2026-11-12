@@ -26,6 +26,10 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
   let mentionTimer = null, mentionFramePending = false;
 
   const mentionDwell = 1000;
+  const operatorNames = () => [state.operator, state.operatorDisplayName].filter(Boolean);
+  const messageOptions = message => ({ ...(message.author.kind === "integration"
+    ? notificationOptions(state.info, state.operator, message.source, { seq: message.seq })
+    : { memberNames: state.members.map(m => m.agent_id) }), operatorNames: operatorNames() });
 
   function renderRestart() {
     const restart = state.restart;
@@ -67,7 +71,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
   }
 
   function unreadMentions() {
-    return unseenMentions(state.messages.values(), state.operator, mentionSeen, mentionSeenThrough);
+    return unseenMentions(state.messages.values(), state.operator, mentionSeen, mentionSeenThrough, operatorNames());
   }
 
   function resetMentionViewing() {
@@ -185,9 +189,8 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     }
     el.querySelector(".author-kind").textContent = integration ? "通知" : agent ? "AGENT" : message.author.id === state.operator ? "你 · HUMAN" : "HUMAN";
     const text = el.querySelector(".message-text");
-    const ranges = mentionRanges(message.text, state.operator);
-    renderMessageBody(text, message.text, state.operator, integration ? notificationOptions(state.info, state.operator, message.source, { seq: message.seq }) :
-      { memberNames: state.members.map(m => m.agent_id) });
+    const ranges = mentionRanges(message.text, operatorNames());
+    renderMessageBody(text, message.text, state.operator, messageOptions(message));
     el.classList.toggle("mentioned", message.seq > mentionSeenThrough && !mentionSeen.has(message.seq) && ranges.length > 0 && !(message.author.kind === "human" && message.author.id === state.operator));
     const time = el.querySelector("time");
     time.textContent = settingsUI.formatDate(message.created_at, {hour:"2-digit",minute:"2-digit"});
@@ -209,7 +212,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
   function renderMessages() {
     const nodes = [];
     const messages = [...state.messages.values()].sort((a, b) => a.seq - b.seq);
-    const memberNames = state.members.map(m => m.agent_id), memberNamesKey = JSON.stringify(memberNames);
+    const memberNamesKey = JSON.stringify([state.members.map(m => m.agent_id), operatorNames()]);
     let day = "";
     for (const message of messages) {
       const date = new Date(message.created_at);
@@ -224,13 +227,11 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
       let cached=messageNodes.get(message.seq);
       if(!cached){cached={element:messageElement(message),memberNames:memberNamesKey};messageNodes.set(message.seq,cached);}
       const el=cached.element;
-      if (message.author.kind !== "integration") {
-        if (cached.memberNames !== memberNamesKey) {
-          renderMessageBody(el.querySelector(".message-text"), message.text, state.operator, { memberNames });
-          cached.memberNames = memberNamesKey;
-        }
+      if (cached.memberNames !== memberNamesKey) {
+        renderMessageBody(el.querySelector(".message-text"), message.text, state.operator, messageOptions(message));
+        cached.memberNames = memberNamesKey;
       }
-      const mentioned=mentionRanges(message.text,state.operator).length>0;
+      const mentioned=mentionRanges(message.text,operatorNames()).length>0;
       el.classList.toggle("mentioned",message.seq>mentionSeenThrough && !mentionSeen.has(message.seq) && mentioned && !(message.author.kind==="human" && message.author.id===state.operator));
       el.querySelector("time").textContent=settingsUI.formatDate(message.created_at,{hour:"2-digit",minute:"2-digit"});
       el.querySelector("time").title=settingsUI.formatDate(message.created_at);
@@ -323,9 +324,6 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     $("notification-platforms").setAttribute("aria-label", `发送到当前${direct ? "会话" : "房间"}的通知`);
     $("notification-add-toggle").setAttribute("aria-label", `添加${direct ? "会话" : "房间"}通知`);
     $("notification-add-toggle").title = `添加${direct ? "会话" : "房间"}通知`;
-    const member = direct && state.members.length === 1 ? state.members[0] : null;
-    $("direct-status").hidden = !member;
-    $("direct-status").textContent = member ? member.execution?.active ? "运行中" : membersUI.statusNames[member.status] || member.status : "";
     $("direct-suggestions").hidden = !direct || !state.info || state.messages.size > 0;
     if (direct && state.info) {
       $("empty").querySelector("h2").textContent = `与${name || "个人助理"}聊聊`;
@@ -401,7 +399,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
 
     $("close-conversation-notifications").addEventListener("click", () => {
       layoutUI.hideConversationNotifications(); $("activity-dialog").hidden = false;
-      layoutUI.renderPanels(); membersUI.syncDirectDetail(); $("toggle-members").focus();
+      layoutUI.renderPanels(); membersUI.syncDirectDetail(); $("agent-tab-platforms").focus();
     });
 
     $("view-mention").addEventListener("click", () => {

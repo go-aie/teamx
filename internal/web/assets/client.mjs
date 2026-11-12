@@ -76,16 +76,22 @@ export function createRoomDrafts(storage, installation = () => "") {
 // Match the exact display identity, with common Chinese/English punctuation.
 // Avoid email addresses and longer names such as @ann2 or @ann.smith.
 export function mentionRanges(text, operator) {
+  if (Array.isArray(operator)) {
+    const ranges = [...new Set(operator.filter(Boolean))].flatMap(name => mentionRanges(text, name))
+      .sort((a, b) => a.start - b.start || b.end - a.end);
+    let end = 0;
+    return ranges.filter(at => { if (at.start < end) return false; end = at.end; return true; });
+  }
   if (!operator) return [];
   const name = operator.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const pattern = new RegExp(`(?<![A-Za-z0-9_@.+-])@${name}(?![A-Za-z0-9_@+-]|\\.[A-Za-z0-9_])`, "gu");
   return [...text.matchAll(pattern)].map(match => ({ start: match.index, end: match.index + match[0].length }));
 }
 
-export function unseenMentions(messages, operator, seen, seenThrough = 0) {
+export function unseenMentions(messages, operator, seen, seenThrough = 0, names = operator) {
   return [...messages].filter(message => message.seq > seenThrough && !seen.has(message.seq) &&
     !(message.author.kind === "human" && message.author.id === operator) &&
-    mentionRanges(message.text, operator).length > 0).sort((a, b) => a.seq - b.seq);
+    mentionRanges(message.text, names).length > 0).sort((a, b) => a.seq - b.seq);
 }
 
 // Complete known names only; prefer the longest name where identities overlap.

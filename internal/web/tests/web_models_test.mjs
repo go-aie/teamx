@@ -30,6 +30,16 @@ function fixture() {
 async function openSettings(ui) {await ui.el("open-settings").emit("click");await ui.el("settings-tab-models").emit("click");await settle();}
 async function openMember(ui) {await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();}
 
+test("member model picker names its default and distinguishes applied, pending and unstarted sessions",async()=>{
+ const api=fixture(),ui=await launch(api);await openMember(ui);
+ assert.equal(ui.el("member-model-selection").children[0].textContent,"跟随默认 · 日常");
+ assert.equal(ui.el("member-model-status").textContent,"已生效");assert.equal(ui.el("member-model-ok").hidden,false);
+ api.models.members[0].actual.pending=true;await ui.clock.advance(2000);
+ assert.equal(ui.el("member-model-status").textContent,"待启动");assert.equal(ui.el("member-model-ok").hidden,true);
+ delete api.models.members[0].actual;await ui.clock.advance(2000);
+ assert.equal(ui.el("member-model-status").textContent,"未启动");assert.equal(ui.el("member-model-ok").hidden,true);
+});
+
 test("model drafts survive reload with original version and compatibility while excluding keys",async()=>{
  const api=fixture(),saved=new Map(),ui=await launch(api,saved);await openSettings(ui);
  await ui.el("model-list").children[0].children[0].emit("click");
@@ -115,7 +125,10 @@ test("member picker restores the published choice and exposes validation failure
  await ui.clock.advance(800);
  assert.equal(selector.value,"default");assert.equal(selector.disabled,false);
  assert.equal(ui.el("member-model-progress").dataset.state,"error");assert.match(ui.el("member-model-progress").title,/模型验证失败/);assert.equal(ui.el("member-model-error-icon").hidden,false);
- await ui.el("member-model-progress").emit("click");await settle();assert.equal(ui.el("model-settings").hidden,false);
+ await ui.el("member-model-progress").emit("click");assert.equal(ui.el("member-model-details").hidden,false);
+ assert.match(ui.el("member-model-feedback").textContent,/模型验证失败/);
+ assert.match(ui.el("member-model-actual").textContent,/model-A/);
+ await ui.el("member-model-settings").emit("click");await settle();assert.equal(ui.el("model-settings").hidden,false);
 });
 
 test("shared model form preserves compat omission, false and true and clears it on protocol change",()=>{
@@ -182,8 +195,24 @@ test("models have an independent settings tab that remains hidden during backgro
  assert.equal(ui.el("platform-settings").hidden,false);assert.equal(ui.el("model-settings").hidden,true);
  await ui.clock.advance(2000);assert.equal(ui.el("model-settings").hidden,true);
  await ui.el("settings-tab-platforms").emit("keydown",{key:"Home"});assert.equal(ui.el("general-settings").hidden,false);
- await openMember(ui);await ui.el("member-model-progress").emit("click");await settle();
+ await openMember(ui);await ui.el("member-model-progress").emit("click");await ui.el("member-model-settings").emit("click");await settle();
  assert.equal(ui.el("model-settings").hidden,false);assert.equal(ui.el("settings-tab-models").getAttribute("aria-selected"),"true");
+});
+
+test("touch member details expose target, actual model and a retry bound to the failed operation",async()=>{
+ const api=fixture(),member=api.models.members[0];
+ member.target_entry_id="B";member.selection={mode:"explicit",entry_id:"B"};member.operation_id="failed-selection";
+ api.models.operations=[{id:"failed-selection",status:"failed",committed:true,message:"切换未完成，请重试",members:[{...member,status:"failed",error:"应用失败"}],completed:0,waiting:0,failed:1}];
+ api.hook=(path,body)=>path==="/v1/models/operation" ? (assert.equal(body.id,"failed-selection"),api.models.operations[0]) : undefined;
+ const ui=await launch(api);await openMember(ui);
+ assert.equal(ui.el("member-model-details").hidden,true);
+ await ui.el("member-model-progress").emit("click");
+ assert.equal(ui.el("member-model-progress").getAttribute("aria-expanded"),"true");
+ assert.match(ui.el("member-model-target").textContent,/model-B/);assert.match(ui.el("member-model-actual").textContent,/model-A/);
+ assert.match(ui.el("member-model-feedback").textContent,/切换未完成/);assert.equal(ui.el("member-model-retry").hidden,false);
+ await ui.el("member-model-retry").emit("click");assert.equal(api.calls.find(c=>c.path==="/v1/models/operation").body.action,"retry");
+ await ui.el("member-model-progress").emit("click");assert.equal(ui.el("member-model-details").hidden,true);
+ assert.equal(api.calls.filter(c=>c.path==="/v1/models/change").length,0);
 });
 
 test("model list opens one editor and returning discards its secret without submitting",async()=>{

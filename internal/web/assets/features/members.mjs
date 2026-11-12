@@ -157,16 +157,21 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       const info=row.children[0],issue=row.children[2],controls=document.createElement("div");controls.className="member-platform-controls";
       controls.append(label,input,toolSwitch(v,item));
       const accountActions=document.createElement("div");accountActions.className="member-platform-account-actions";
-      if(item.provider === "lark") {
-        const settings=document.createElement("button");settings.type="button";settings.className="text-button button-compact";settings.textContent="账号设置 ↗";
+      const selection=v?.cli?.selections?.find(s=>s.agent_id===target.agent_id && s.membership_id===target.membership_id && s.platform_id===item.id), gaps=selection?.availability?.capabilities?.filter(c=>c.configured!==false && c.state!=="ready") || [];
+      const notificationErrors=[view?.error_code,...Object.values(view?.errors || {}),view?.events?.error_code,view?.todos?.error_code];
+      const needsAuthorization = item.validation?.status !== "valid" || item.authorization_status && item.authorization_status !== "active"
+        || notificationErrors.some(code=>["credential_unavailable","credential_rejected","permission_denied","identity_mismatch"].includes(code))
+        || selection?.unavailable_reason === "account_unavailable"
+        || v?.cliResult?.tool===item.id && /补全/.test(v.cliResult.message)
+        || gaps.some(c=>["authorize_user","configure_application","revalidate_account","retry_check"].includes(c.next_action));
+      if(needsAuthorization) {
+        const settings=document.createElement("button");settings.type="button";settings.className="text-button button-compact";settings.textContent="检查账号";
         settings.setAttribute("aria-label",`打开 ${item.name} 的账号设置`);
         settings.addEventListener("click",async()=>{settingsUI.openSettings("platforms");await connectionsUI.loadPlatforms();const current=connectionsUI.platforms.items.find(p=>p.id===item.id);if(current)connectionsUI.editPlatform(current);});
         accountActions.append(settings);
       }
       if(item.provider === "lark" && toolBinding(v,item)) {
-        const selection=v?.cli?.selections?.find(s=>s.agent_id===target.agent_id && s.membership_id===target.membership_id && s.platform_id===item.id), gaps=selection?.availability?.capabilities?.filter(c=>c.configured!==false && c.state!=="ready") || [];
         const configured=selection?.action_authorization?.grants?.length;
-        const needsAuthorization=v?.cliResult?.tool===item.id && /补全/.test(v.cliResult.message) || gaps.some(c=>["authorize_user","configure_application","revalidate_account","retry_check"].includes(c.next_action));
         // Account settings owns OAuth diagnostics; member grants and self
         // evidence still require their existing member-scoped repair action.
         if(!needsAuthorization && (!configured || gaps.some(c=>["verify_self","enable_member_tool"].includes(c.next_action)))) {
@@ -443,7 +448,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
   function syncDirectDetail() {
     if (!roomsUI.isDirect() || !state.connected || !layoutUI.membersPanelOpen() || layoutUI.directNotificationsOpen || $("notification-detail").open || state.members.length !== 1) return;
     if ($("activity-dialog").open && selectedAgent()?.membership_id === state.members[0].membership_id) return;
-    openMemberActivity(state.members[0], $("toggle-members"));
+    openMemberActivity(state.members[0], $("room-menu-label"));
   }
 
   function renderMembers() {
@@ -712,7 +717,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       renderActivityControls();
       const opener = !layoutUI.membersExpanded ? null : activityFocus?.element?.isConnected ? activityFocus.element
         : [...document.querySelectorAll("[data-activity-member]")].find(button => button.dataset.activityMember === activityFocus?.membership);
-      if (!$("notification-detail").open) (opener || $("toggle-members")).focus();
+      if (!$("notification-detail").open) (opener || $(roomsUI.isDirect() ? "room-menu-label" : "toggle-members")).focus();
       activityFocus = null;
     });
 

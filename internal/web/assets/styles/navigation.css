@@ -318,8 +318,6 @@
 }
 .rooms-collapsed .room-rail-header { gap:0; }
 .rooms-collapsed .room-rail-header { padding:0 4px; justify-content:center; }
-.room-footer { flex-wrap:wrap; gap:6px 12px; }
-.room-footer .connection { font-size:var(--font-small); }
 @media(max-width:640px) {
   .workspace { --workspace-header-height:64px; }
   .room-rail,.member-rail { flex-shrink:0; }

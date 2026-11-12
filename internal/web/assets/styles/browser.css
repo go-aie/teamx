@@ -52,9 +52,7 @@
   .room-title { flex:1; overflow:hidden; }
   .room-header h1 { font-size:17px; gap:6px; }
   .room-actions { flex:none; gap:4px; }
-  .room-footer { padding:6px 14px calc(8px + env(safe-area-inset-bottom)); }
-  .room-footer .connection { overflow-wrap:anywhere; }
-  .compose { margin:6px 10px 0; }
+  .compose { margin:6px 10px calc(10px + env(safe-area-inset-bottom)); }
   .compose textarea { min-height:48px; max-height:24dvh; font-size:16px; }
   .compose-hint { min-width:0; overflow:hidden; text-overflow:ellipsis; }
   .message { padding:14px 12px; gap:8px; }

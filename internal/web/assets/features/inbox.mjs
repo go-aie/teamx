@@ -269,7 +269,7 @@ export function createInbox({ env, settingsUI, notificationsUI, runtime, members
         }
         const body = document.createElement("div"); body.className = "message-text";
         const options = notificationOptions(view.info, state.operator, source, { seq: entry.seq, agent_id: member.agent_id, membership_id: member.membership_id });
-        renderMessageBody(body, item.text, state.operator, lark ? {...options, compactLarkMentions:true} : options);
+        renderMessageBody(body, item.text, state.operator, {...options, operatorNames:[state.operator,state.operatorDisplayName].filter(Boolean), ...(lark ? {compactLarkMentions:true} : {})});
         section.append(body);
         if(!lark && chat)section.append(chat);
         if (item.truncated || item.metadata_truncated) {

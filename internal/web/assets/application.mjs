@@ -67,7 +67,7 @@ export async function createApp(overrides = {}) {
     members: [], profiles: [], teams: [], connected: false, managed: false, catalog: null, catalogConnected: false,
     isDirect: false, management: null, managementSending: false, managementError: "", draft: {}, restart: null };
 
-  let refreshTask = null, recoveryTask = null;
+  let refreshTask = null, recoveryTask = null, syncFailureSince = null;
   state.suspended = document.hidden || window.navigator?.onLine === false;
   state.recovering = false;
   let serverIdentity = null;
@@ -88,6 +88,7 @@ export async function createApp(overrides = {}) {
     state.suspended = true; state.connected = false; state.catalogConnected = false;
     $("connection").textContent = window.navigator?.onLine === false ? "网络已断开 · 草稿已保留" : "页面已暂停刷新";
     $("connection").classList.add("offline");
+    if (window.navigator?.onLine === false) notice("sync-error", "网络已断开，草稿已保留。");
     conversationUI.composerState();
   }
   function resume(recover = true) {
@@ -165,6 +166,7 @@ export async function createApp(overrides = {}) {
     membersUI.resetActivity(); layoutUI.hideConversationNotifications();
     $("room-menu").open = false;
     state.info = info; state.operator = operator; state.connected = false;
+    syncFailureSince = null; notice("sync-error", "");
     notice("notification-next-step", "");
     conversationUI.resetMentionViewing();
     if (info) conversationUI.restoreMentionProgress();
@@ -189,6 +191,7 @@ export async function createApp(overrides = {}) {
       }
       if (serverIdentity && serverIdentity[0] !== identity[0]) { selectView(null, state.operator); version = viewVersion; }
       state.installationID = config.installation_id || "";
+      const mentionIdentityChanged = state.operatorDisplayName !== (config.operator_display_name || "");
       state.operatorDisplayName = config.operator_display_name || "";
       serverIdentity = identity;
       state.managed = !!config.managed;
@@ -224,6 +227,7 @@ export async function createApp(overrides = {}) {
             if (stick) conversationUI.bottom(); else $("timeline").scrollTop = scrollTop;
           }
           state.lastSeq = read.snapshot;
+          syncFailureSince = null;
           state.connected = false;
           $("connection").textContent = "Workspace 设置待完成 · 可查看历史";
           membersUI.activity.close(); $("activity-dialog").close(); membersUI.renderMembers(); return;
@@ -236,6 +240,7 @@ export async function createApp(overrides = {}) {
           membersUI.renderMembers(); return;
         }
         if (!room?.service) {
+          syncFailureSince = null;
           selectView(null, catalog.operator);
           $("room-name").textContent = room?.name || "选择或新建会话";
           document.title = `${$("room-name").textContent} · TeamX`;
@@ -250,7 +255,6 @@ export async function createApp(overrides = {}) {
       version = viewVersion;
       conversationUI.restoreMentionProgress();
       if (!state.managed) { membersUI.renderProfiles(config.profiles || []); roomsUI.renderRooms(); }
-      $("operator").textContent = config.operator;
       $("room-name").textContent = roomsUI.roomName();
       $("empty").querySelector("h2").textContent = "从一条消息开始";
       $("empty").querySelector("p").textContent = "发送任务或想法，让房间里的 Agent 一起参与。";
@@ -268,7 +272,7 @@ export async function createApp(overrides = {}) {
       const cleared = conversationUI.applyClear(read.clearedThrough);
       const membersChanged = JSON.stringify(state.members.map(m => m.agent_id)) !== JSON.stringify(members.members.map(m => m.agent_id));
       state.members = members.members;
-      if (read.messages.length || changedRoom || cleared || membersChanged) {
+      if (read.messages.length || changedRoom || cleared || membersChanged || mentionIdentityChanged) {
         for (const message of read.messages) state.messages.set(message.seq, message);
         conversationUI.renderMessages();
         if (stick) conversationUI.bottom();
@@ -279,15 +283,24 @@ export async function createApp(overrides = {}) {
       state.connected = true;
       void interactionsUI.refreshPlatformInteractions();
       membersUI.renderMembers(); void membersUI.activity.refresh();void policyUI.refreshMemberPolicy();void inboxUI.refreshMemberInbox();
-      $("connection").textContent = "已连接 · 自动刷新";
+      syncFailureSince = null;
+      $("connection").textContent = "服务已连接";
       $("connection").classList.remove("offline");
       notice("sync-error", members.write_error ? `${roomsUI.conversationType()}写入暂停：${members.write_error}` : "");
     } catch (error) {
       if (!currentView(version)) return;
+      syncFailureSince ??= env.performance.now();
+      // A normal poll will read again. Busy reads do not invalidate the last
+      // successful view or replay mutations; surface only sustained contention.
+      if (error.code === "busy" && env.performance.now() - syncFailureSince < 4500) return;
       state.connected = false; state.catalogConnected = false;
-      $("connection").textContent = window.navigator?.onLine === false ? "网络已断开 · 草稿已保留" : "服务暂不可达 · 正在重连";
+      const message = error.code === "busy" ? "服务繁忙，正在重试同步；已有消息和草稿已保留。"
+        : window.navigator?.onLine === false ? "网络已断开，草稿已保留。"
+        : error.code === "identity" ? "会话身份已变化，正在重新核对；已有消息和草稿已保留。"
+        : "暂时无法同步，正在重连；已有消息和草稿已保留。";
+      $("connection").textContent = message;
       $("connection").classList.add("offline");
-      notice("sync-error", `暂时无法同步，已有消息保留。${error.message}`);
+      notice("sync-error", message);
       $("members").dataset.signature = ""; membersUI.renderMembers();
     } finally { userMenuUI.render(); conversationUI.composerState(); roomsUI.renderCreateSelection(); roomsUI.renderRooms(); }
   }

@@ -3,7 +3,7 @@ import { fillModelParameters, readModelParameters, syncModelProtocol, modelDraft
 export function createModels({env, runtime, openSettings}) {
   const {document, window, request, Option, setTimeout, clearTimeout} = env;
   const crypto = window.crypto || globalThis.crypto;
-  const {state, $} = runtime;
+  const {state, $, setSelectOptions} = runtime;
   const field = id => $(`catalog-${id}`);
   let data, editor, saving = false, read = 0, timer, memberView, memberSaving = false, defaultReview;
   let lastOperation, operationRenderKey, listRenderKey, restoredKey;
@@ -233,6 +233,7 @@ export function createModels({env, runtime, openSettings}) {
   async function openMember(member) {
     memberView = {room_id:state.info.room_id,room_instance:state.info.room_instance,agent_id:member.agent_id,membership_id:member.membership_id,epoch:state.catalog?.service_epoch};
     $("member-model-feedback").textContent = ""; $("member-model").hidden = true;
+    $("member-model-details").hidden = true; $("member-model-progress").setAttribute("aria-expanded", "false");
     await load();
   }
   function renderMember() {
@@ -245,25 +246,29 @@ export function createModels({env, runtime, openSettings}) {
     $("member-model").hidden = false;
     const select = $("member-model-selection");
     const entries = data.catalog.entries.filter(e=>!e.pending_deletion);
-    const optionsKey = JSON.stringify([data.catalog.default, entries.map(e=>[e.id,modelName(e)])]);
-    if (select.dataset.optionsKey !== optionsKey) {
-      select.replaceChildren(new Option("默认","default"), ...entries.map(e => new Option(modelName(e),e.id)));
-      select.dataset.optionsKey = optionsKey;
-    }
+    const defaultEntry = entries.find(e=>e.id===data.catalog.default);
     const operation = data.operations.find(op=>op.id === (member.operation_id || v.operationID));
     const pending = memberSaving || !!member.operation_id || operation && ["validating","prepared","applying"].includes(operation.status);
     if (!pending) v.pendingSelection = undefined;
-    select.value = v.pendingSelection ?? (member.selection.mode === "default" ? "default" : member.selection.entry_id);
+    setSelectOptions("member-model-selection", [new Option(`跟随默认 · ${defaultEntry ? modelName(defaultEntry) : "未设置"}`,"default"), ...entries.map(e => new Option(modelName(e),e.id))],
+      v.pendingSelection ?? (member.selection.mode === "default" ? "default" : member.selection.entry_id));
     select.dataset.mode = select.value === "default" ? "default" : "explicit";
     select.title = `${select.value === "default" ? `默认模型：${modelName(entries.find(e=>e.id===data.catalog.default) || {model_id:""})}。` : ""}切换模型；当前回合结束后应用，私有上下文将重置。`;
     select.disabled = !!pending || saving;
     const actual = member.actual;
     const error = v.error || (operation?.status === "failed" ? operation.message || "模型应用失败" : "");
     const status = error ? `模型切换失败：${error}` : pending ? operation?.status === "validating" ? "正在验证模型" : "正在应用模型，等待当前回合结束" : actual?.pending ? "模型已应用，待下一次工作启动" : actual ? "模型已生效" : "模型尚未启动";
-    const detail = `${status}${actual ? `；当前 Session：${actual.model_id}` : ""}。点击查看模型设置。`;
-    const progress = $("member-model-progress"); progress.dataset.state = error ? "error" : pending ? "busy" : "ready"; progress.title = detail; progress.setAttribute("aria-label", detail);
-    $("member-model-ok").hidden = !!error || !!pending; $("member-model-busy").hidden = !!error || !pending; $("member-model-error-icon").hidden = !error;
+    const detail = `${status}${actual ? `；当前 Session：${actual.model_id}` : ""}。点击查看模型详情。`;
+    const progress = $("member-model-progress"); progress.dataset.state = error ? "error" : pending ? "busy" : actual && !actual.pending ? "ready" : "idle"; progress.title = detail; progress.setAttribute("aria-label", detail);
+    $("member-model-status").textContent = error ? "切换失败" : pending ? operation?.status === "validating" ? "验证中" : "应用中" : actual?.pending ? "待启动" : actual ? "已生效" : "未启动";
+    $("member-model-ok").hidden = !!error || !!pending || !actual || !!actual.pending; $("member-model-busy").hidden = !!error || !pending; $("member-model-error-icon").hidden = !error;
     $("member-model-feedback").textContent = status;
+    const targetID = v.pendingSelection && v.pendingSelection !== "default" ? v.pendingSelection : v.pendingSelection === "default" ? data.catalog.default : member.target_entry_id;
+    const target = data.catalog.entries.find(entry => entry.id === targetID);
+    $("member-model-target").textContent = `目标模型：${target ? `${modelName(target)}${modelName(target) !== target.model_id ? `（${target.model_id}）` : ""}` : targetID || "尚未选择"}`;
+    $("member-model-actual").textContent = actual ? `当前 Session：${actual.model_id}${actual.pending ? "（待启动）" : ""}` : "当前 Session：尚未启动";
+    $("member-model-retry").hidden = !(operation?.status === "failed" && operation.committed);
+    v.operation = operation;
     if (pending) schedule();
   }
   function mount() {
@@ -288,7 +293,18 @@ export function createModels({env, runtime, openSettings}) {
       if (!editor.entry || field("replace-key").checked) input.api_key = field("api-key").value;
       field("api-key").value = ""; void submit(input);
     });
-    $("member-model-progress").addEventListener("click",() => openSettings());
+    $("member-model-progress").addEventListener("click",() => {
+      const details = $("member-model-details"); details.hidden = !details.hidden;
+      $("member-model-progress").setAttribute("aria-expanded", String(!details.hidden));
+    });
+    $("member-model-settings").addEventListener("click",() => openSettings());
+    $("member-model-retry").addEventListener("click",async () => {
+      const v = memberView;
+      if (!v || !currentMemberView(v) || v.operation?.status !== "failed" || !v.operation.committed || $("member-model-retry").disabled) return;
+      $("member-model-retry").disabled = true;
+      try { await action(v.operation.id,"retry"); }
+      finally { $("member-model-retry").disabled = false; }
+    });
     $("member-model-selection").addEventListener("change",async () => {
       const v = memberView;if (!v || !currentMemberView(v) || !v.member || memberSaving || saving || v.member.operation_id) return;
       const value = $("member-model-selection").value;

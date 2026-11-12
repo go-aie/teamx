@@ -9,6 +9,25 @@ const calls=(api,path)=>api.calls.filter(c=>c.path===path);
 const row=(ui,id)=>ui.el("member-notification-platforms").children.find(r=>r.dataset.platformId===id);
 const toolToggle=(ui,id)=>row(ui,id).children[1].children[2].children[0];
 
+for(const id of ["gl","lark"])test(`platform ${id} shows account recovery only when its account needs attention`,async()=>{
+ const api=fixture(),ui=await launch(api);await openMemberInbox(ui,"member-a");
+ assert.equal(row(ui,id).children[3].hidden,true);
+ api.platforms.find(p=>p.id===id).validation.status="failed";
+ await ui.el("close-activity").emit("click");await ui.refresh();await openMemberInbox(ui,"member-a");
+ const action=row(ui,id).children[3].children.find(b=>b.textContent==="检查账号");assert.ok(action);
+ await action.emit("click");await settle();
+ assert.equal(ui.el("settings-dialog").open,true);
+ assert.equal(ui.el("connection-name").value,api.platforms.find(p=>p.id===id).name);
+ assert.equal(calls(api,"/v1/tools/bind").length,0);
+});
+
+for(const id of ["gl","lark"])test(`platform ${id} exposes expired notification credentials even with an earlier valid account check`,async()=>{
+ const api=fixture(),record=api.records.get(key(id,target("a")));
+ if(id==="gl")record.todos.error_code="credential_rejected";else record.error_code="credential_rejected";
+ const ui=await launch(api);await openMemberInbox(ui,"member-a");
+ assert.ok(row(ui,id).children[3].children.some(b=>b.textContent==="检查账号"));
+});
+
 test("M4.5 platforms are the default Tab followed by policy, Inbox and activity",async()=>{
  const html=await readFile(new URL("../assets/index.html",import.meta.url),"utf8");
  const tabs=html.slice(html.indexOf('id="agent-tabs"'),html.indexOf('id="platforms-member-view"'));
@@ -218,8 +237,13 @@ for(const state of ["unchecked","unsupported"])test(`member platform links to ac
  api.tools.bindings.push({agent_id:"a",membership_id:"member-a",tool:"lark",platform_id:"lark",action_authorization:auth});
  api.tools.selections=[{agent_id:"a",membership_id:"member-a",platform_id:"lark",action_authorization:auth,availability:{capabilities:[{name:"message.reply",configured:true,state,reason_code:"account_pinning_unavailable",next_action:state==="unchecked"?"revalidate_account":undefined}]}}];
  const ui=await launch(api);await openMemberInbox(ui,"member-a");
+ if(state==="unsupported") {
+   assert.equal(row(ui,"lark").children[3].hidden,true);
+   assert.equal(row(ui,"lark").children[3].children.length,0);
+   return;
+ }
  const settings=row(ui,"lark").children[3].children[0];
- assert.equal(settings.textContent,"账号设置 ↗");assert.equal(settings.attributes["aria-label"],"打开 公司飞书 的账号设置");
+ assert.equal(settings.textContent,"检查账号");assert.equal(settings.attributes["aria-label"],"打开 公司飞书 的账号设置");
  assert.equal(row(ui,"lark").children[3].children.length,1);
  assert.equal(row(ui,"lark").children[2].hidden,true);
  await settings.emit("click");await settle();
