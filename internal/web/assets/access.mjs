@@ -1,7 +1,7 @@
 import { fillModelParameters, readModelParameters, syncModelProtocol, modelDraftFields, snapshotModelFields, restoreModelFields } from "./model-form.mjs";
 const $ = id => document.getElementById(id);
 let version = 0, requestID, polling = false, configuredKey = false, active = true;
-let operator, draftKey, draftReady=false;
+let operator, draftKey, draftReady=false, loginEnabled=true;
 let storage; try { storage=sessionStorage; } catch {}
 function saveDraft() {
   if (!draftKey || !draftReady) return;
@@ -34,8 +34,8 @@ function busy(value) {
 }
 async function showSession() {
   draftReady=false;
-  try { const session=await request("/v1/access/session"); operator=session.operator; draftKey=JSON.stringify(["teamx.setup-draft",session.installation_id || location.origin,operator]); } catch { $("login").hidden=false; $("logout").hidden=true; $("model").hidden=true; $("api-key").value=""; return; }
-  $("login").hidden = true; $("logout").hidden = false;
+  try { const session=await request("/v1/access/session"); operator=session.operator; loginEnabled=session.login_enabled !== false; draftKey=JSON.stringify(["teamx.setup-draft",session.installation_id || location.origin,operator]); } catch { $("login").hidden=false; $("logout").hidden=true; $("model").hidden=true; $("api-key").value=""; return; }
+  $("login").hidden = true; $("logout").hidden = !loginEnabled;
   const state = await request("/v1/setup");
   if (!state.setup_required) { location.replace("/"); return; }
   if (state.migration) {$("model").hidden=true;$("retry-migration").hidden=false;$("retry-migration").disabled=state.migration.running;feedback(`${state.message} 已处理 ${state.migration.completed} / ${state.migration.total}。`);return;}

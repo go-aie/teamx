@@ -29,8 +29,10 @@ import (
 )
 
 type accessConfig struct {
-	OperatorID     string `toml:"operator_id"`
-	AdminTokenFile string `toml:"admin_token_file"`
+	LoginEnabled    *bool  `toml:"login_enabled"`
+	SettingsVersion uint64 `toml:"settings_version,omitempty"`
+	OperatorID      string `toml:"operator_id"`
+	AdminTokenFile  string `toml:"admin_token_file"`
 }
 type accessSession struct{ expires time.Time }
 type executionBinding struct {
@@ -43,6 +45,12 @@ type serverAccess struct {
 	installationID             string
 	setupRequired              bool
 	admin                      [32]byte
+	disabled                   bool // Only anonymous human access; Agent credentials remain mandatory.
+	config                     startupConfig
+	document                   *configDocument
+	version                    uint64
+	activeListen               string
+	activeProxies              []string
 	proxies                    map[netip.Addr]bool
 	mu                         sync.Mutex
 	sessions                   map[[32]byte]accessSession
@@ -62,6 +70,17 @@ func randomAccessToken() (string, error) {
 func validAccessToken(value string) bool {
 	b, err := base64.RawURLEncoding.DecodeString(value)
 	return err == nil && len(b) == 32 && base64.RawURLEncoding.EncodeToString(b) == value
+}
+func validAdminToken(value string) bool {
+	if len(value) < 16 || len(value) > 256 || strings.TrimSpace(value) != value {
+		return false
+	}
+	for _, c := range value {
+		if c < 32 || c > 126 {
+			return false
+		}
+	}
+	return true
 }
 func readAdminToken(path string) (string, error) {
 	info, err := os.Lstat(path)
@@ -84,13 +103,13 @@ func readAdminToken(path string) (string, error) {
 	if err != nil || !os.SameFile(info, opened) {
 		return "", ErrConflict
 	}
-	b, err := io.ReadAll(io.LimitReader(f, 46))
+	b, err := io.ReadAll(io.LimitReader(f, 258))
 	if err != nil {
 		return "", err
 	}
 	token := strings.TrimSuffix(string(b), "\n")
-	if !validAccessToken(token) {
-		return "", errors.New("invalid admin token; expected 32 random bytes encoded as base64url")
+	if !validAdminToken(token) {
+		return "", errors.New("invalid admin token; expected 16 to 256 printable ASCII characters without surrounding whitespace")
 	}
 	return token, nil
 }
@@ -106,11 +125,28 @@ func newServerAccess(c startupConfig, endpoint string) (*serverAccess, error) {
 		return nil, errors.New("access.operator_id missing or invalid; run teamx access init --config <config.toml>")
 	}
 
-	token, err := readAdminToken(adminTokenPath(c))
-	if err != nil {
+	disabled := c.Access.LoginEnabled != nil && !*c.Access.LoginEnabled
+	if err := validateRemoteAccess(c, !disabled); err != nil {
 		return nil, err
 	}
+	var token string
+	if !disabled {
+		var err error
+		token, err = readAdminToken(adminTokenPath(c))
+		if err != nil {
+			return nil, err
+		}
+	}
 	a := &serverAccess{operator: c.Access.OperatorID, internal: endpoint, public: endpoint, admin: sha256.Sum256([]byte(token)), proxies: map[netip.Addr]bool{}, sessions: map[[32]byte]accessSession{}, executions: map[[32]byte]executionBinding{}, now: time.Now}
+	a.disabled, a.config, a.version = disabled, c, 1
+	a.activeListen = strings.TrimPrefix(endpoint, "http://")
+	if c.Server.Listen != nil {
+		a.activeListen = *c.Server.Listen
+	}
+	a.activeProxies = append([]string(nil), c.Server.TrustedProxies...)
+	if c.Access.SettingsVersion > 0 {
+		a.version = c.Access.SettingsVersion
+	}
 	if c.Server.PublicBaseURL != "" {
 		u, err := url.Parse(c.Server.PublicBaseURL)
 		if err != nil || strings.Contains(c.Server.PublicBaseURL, "#") || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.Opaque != "" {
@@ -174,6 +210,8 @@ func (a *serverAccess) cookie(value string, age int) *http.Cookie {
 
 // Internal Agent requests remain loopback; browsers use exactly the configured origin.
 func (a *serverAccess) requestOrigin(r *http.Request) (string, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	peer, _, err := net.SplitHostPort(r.RemoteAddr)
 	addr, e := netip.ParseAddr(peer)
 	if err != nil || e != nil {
@@ -193,6 +231,15 @@ func (a *serverAccess) requestOrigin(r *http.Request) (string, bool) {
 		scheme = "https"
 	}
 	origin := scheme + "://" + r.Host
+	if a.disabled {
+		if !addr.IsLoopback() || len(forwarded) != 0 || !a.localOrigin(origin) {
+			return "", false
+		}
+		return origin, true
+	}
+	if a.public == a.internal && addr.IsLoopback() && len(forwarded) == 0 && a.localOrigin(origin) {
+		return origin, true
+	}
 	if origin == a.public {
 		return origin, true
 	}
@@ -254,6 +301,10 @@ func (a *serverAccess) wrap(next http.Handler) http.Handler {
 			}
 			a.mu.Lock()
 			defer a.mu.Unlock()
+			if a.disabled {
+				accessError(w, 400, "login_disabled")
+				return
+			}
 			now := a.now()
 			if now.Before(a.retryAfter) {
 				accessError(w, 429, "login_rate_limited")
@@ -302,7 +353,7 @@ func (a *serverAccess) wrap(next http.Handler) http.Handler {
 			}
 			a.sessions[sha256.Sum256([]byte(token))] = accessSession{now.Add(24 * time.Hour)}
 			http.SetCookie(w, a.cookie(token, 86400))
-			writeAccessSession(w, a.operator, a.installationID)
+			a.writeSession(w)
 			return
 		}
 		header := r.Header.Get("Authorization")
@@ -311,18 +362,21 @@ func (a *serverAccess) wrap(next http.Handler) http.Handler {
 		cookieAuth := header == ""
 		if header != "" {
 			token, found := strings.CutPrefix(header, "Bearer ")
-			if found && validAccessToken(token) {
+			if found && validAdminToken(token) {
 				hash := sha256.Sum256([]byte(token))
+				a.mu.Lock()
 				authenticated = subtle.ConstantTimeCompare(hash[:], a.admin[:]) == 1
+				if a.disabled {
+					authenticated = false
+				}
 				if !authenticated {
-					a.mu.Lock()
 					b, exists := a.executions[hash]
-					a.mu.Unlock()
 					if exists {
 						binding = &b
 						authenticated = true
 					}
 				}
+				a.mu.Unlock()
 			}
 		} else if c, err := r.Cookie(a.cookieName()); err == nil {
 			hash := sha256.Sum256([]byte(c.Value))
@@ -334,6 +388,11 @@ func (a *serverAccess) wrap(next http.Handler) http.Handler {
 			}
 			a.mu.Unlock()
 		}
+		a.mu.Lock()
+		if a.disabled && header == "" {
+			authenticated = true
+		}
+		a.mu.Unlock()
 		if !authenticated {
 			if r.URL.Path == "/" && r.Method == "GET" {
 				http.Redirect(w, r, "/access", http.StatusSeeOther)
@@ -351,7 +410,13 @@ func (a *serverAccess) wrap(next http.Handler) http.Handler {
 			return
 		}
 		if r.URL.Path == "/v1/access/session" && r.Method == "GET" && binding == nil {
-			writeAccessSession(w, a.operator, a.installationID)
+			a.mu.Lock()
+			a.writeSession(w)
+			a.mu.Unlock()
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/v1/access/settings") && binding == nil {
+			a.serveSettings(w, r)
 			return
 		}
 		if r.URL.Path == "/v1/access/logout" && r.Method == "POST" && binding == nil {
@@ -481,6 +546,7 @@ func runAccessInit(args []string, stdout, stderr io.Writer) error {
 		section = map[string]any{}
 		values["access"] = section
 	}
+	section["login_enabled"] = true
 	operator, _ := section["operator_id"].(string)
 	if operator == "" {
 		id, err := newOpaqueID()

@@ -509,6 +509,7 @@
         <button id="settings-tab-general" type="button" role="tab" aria-selected="true" aria-controls="general-settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.998 3.099Q10.168 2.576 10.718 2.576L13.282 2.576Q13.832 2.576 14.002 3.099L14.481 4.569Q14.652 5.092 15.128 5.367L16.181 5.974Q16.657 6.249 17.195 6.135L18.707 5.816Q19.245 5.702 19.520 6.178L20.802 8.398Q21.077 8.875 20.709 9.284L19.676 10.433Q19.309 10.842 19.309 11.392L19.309 12.608Q19.309 13.158 19.676 13.567L20.709 14.716Q21.077 15.125 20.802 15.602L19.520 17.822Q19.245 18.298 18.707 18.184L17.195 17.865Q16.657 17.751 16.181 18.026L15.128 18.633Q14.652 18.908 14.481 19.431L14.002 20.901Q13.832 21.424 13.282 21.424L10.718 21.424Q10.168 21.424 9.998 20.901L9.519 19.431Q9.348 18.908 8.872 18.633L7.819 18.026Q7.343 17.751 6.805 17.865L5.293 18.184Q4.755 18.298 4.480 17.822L3.198 15.602Q2.923 15.125 3.291 14.716L4.324 13.567Q4.691 13.158 4.691 12.608L4.691 11.392Q4.691 10.842 4.324 10.433L3.291 9.284Q2.923 8.875 3.198 8.398L4.480 6.178Q4.755 5.702 5.293 5.816L6.805 6.135Q7.343 6.249 7.819 5.974L8.872 5.367Q9.348 5.092 9.519 4.569Z"/><circle cx="12" cy="12" r="3.25"/></svg><span>通用</span></button>
         <button id="settings-tab-models" type="button" role="tab" aria-selected="false" aria-controls="model-settings" tabindex="-1"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="3"/><path d="M9 9h6v6H9zM9 2v3m6-3v3M9 19v3m6-3v3M2 9h3m-3 6h3m14-6h3m-3 6h3"/></svg><span>模型</span></button>
         <button id="settings-tab-platforms" type="button" role="tab" aria-selected="false" aria-controls="platform-settings" tabindex="-1"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 13 4-4M8 15l-1 1a3.5 3.5 0 0 1-5-5l4-4a3.5 3.5 0 0 1 5 0M16 9l1-1a3.5 3.5 0 0 1 5 5l-4 4a3.5 3.5 0 0 1-5 0"/></svg><span>平台</span></button>
+        <button id="settings-tab-security" type="button" role="tab" aria-selected="false" aria-controls="access-settings" tabindex="-1"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4.5 6v5.5c0 4.6 3 7.5 7.5 9.5 4.5-2 7.5-4.9 7.5-9.5V6L12 3Z"/><path d="m8.5 12 2.3 2.3 4.7-4.7"/></svg><span>安全</span></button>
       </nav>
       <div id="settings-panels" class="settings-panels">
     <section id="general-settings" class="platforms-content general-settings" role="tabpanel" aria-labelledby="settings-tab-general">
@@ -536,6 +537,34 @@
         <p id="timezone-feedback" class="quiet" role="status" aria-live="polite"></p>
       </form>
 
+    </section>
+    <section id="access-settings" class="platforms-content access-settings" role="tabpanel" aria-labelledby="settings-tab-security" hidden>
+      <h3 id="access-settings-title">访问与安全</h3>
+      <form id="access-settings-form" autocomplete="off" hidden>
+        <div class="access-section">
+          <label class="access-check"><input id="access-login-enabled" type="checkbox">启用登录验证</label>
+          <p id="access-login-hint" class="quiet">打开 TeamX 时需要输入令牌。</p>
+          <div id="access-token-summary" class="access-token-summary access-fields" hidden><span class="quiet">令牌已设置</span><button id="access-token-change" class="text-button" type="button">更换令牌</button></div>
+          <div id="access-token-fields" class="access-fields" hidden>
+            <div class="access-field-heading"><label for="access-new-token">新令牌</label><div class="access-token-actions"><button id="access-token-edit-cancel" class="text-button" type="button" hidden>取消更换</button><button id="access-token-generate" class="text-button" type="button">重新生成</button></div></div>
+            <div class="access-token-input"><input id="access-new-token" class="field-control" type="password" autocomplete="off" minlength="16" maxlength="256" placeholder="填写至少 16 个英文字符" aria-describedby="access-token-hint"><button id="access-token-toggle" class="text-button access-token-icon" type="button" title="显示令牌" aria-label="显示令牌" aria-pressed="false" aria-controls="access-new-token"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path class="access-eye-slash" d="m3 3 18 18"/></svg></button><button id="access-token-copy" class="text-button access-token-icon" type="button" title="复制令牌" aria-label="复制令牌"><svg viewBox="0 0 24 24" aria-hidden="true"><g class="access-copy-symbol"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M5 16H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h11a1 1 0 0 1 1 1v1"/></g><path class="access-copy-check" d="m5 12 4 4L19 6"/></svg></button></div>
+            <p id="access-token-hint" class="quiet">至少 16 个英文字符，修改后需重新登录。</p>
+          </div>
+        </div>
+        <div class="access-section">
+          <label class="access-check"><input id="access-remote-enabled" type="checkbox">允许远程访问</label>
+          <p class="quiet">需登录验证，重启后生效。</p>
+          <div id="access-remote-fields" class="access-fields" hidden>
+            <label for="access-public-url">HTTPS 地址</label>
+            <input id="access-public-url" class="field-control" type="url" placeholder="https://assistant.example.com" autocomplete="off">
+            <details id="access-proxy-help"><summary>反向代理配置</summary><p class="quiet">先将 HTTPS 地址代理到 TeamX，保留 Host 并传递 X-Forwarded-Proto: https。默认仅信任本机代理；开启远程访问后监听所有 IPv4 接口。</p></details>
+          </div>
+        </div>
+      </form>
+      <footer class="access-settings-footer">
+        <p id="access-settings-feedback" class="quiet" role="status" aria-live="polite"></p>
+        <div class="access-save-actions"><span id="access-draft-hint" class="quiet" hidden>有未保存的更改</span><button id="access-settings-login" class="text-button" type="button" hidden>前往登录</button><button id="access-settings-save" class="primary" type="submit" form="access-settings-form" disabled>保存更改</button></div>
+      </footer>
     </section>
       <section id="model-settings" class="platforms-content model-settings" role="tabpanel" aria-labelledby="settings-tab-models" hidden>
         <div id="model-list-view">
@@ -781,6 +810,16 @@
     </section>
       </div>
     </div>
+  </dialog>
+  <dialog id="access-confirm-dialog" class="confirmation-dialog dialog-surface" aria-labelledby="access-confirm-title" aria-describedby="access-confirm-message">
+    <header class="dialog-header"><h2 id="access-confirm-title">验证更改</h2><button id="access-confirm-close" class="icon-button" type="button" aria-label="关闭验证"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></header>
+    <form id="access-confirm-form" class="confirmation-body access-confirm-form" autocomplete="off">
+      <p id="access-confirm-message"></p>
+      <label for="access-current-token">当前令牌</label>
+      <input id="access-current-token" class="field-control" type="password" autocomplete="off" maxlength="256" required placeholder="输入当前令牌">
+      <p id="access-confirm-feedback" class="quiet" role="status" aria-live="polite"></p>
+      <div class="form-actions"><button id="access-confirm-cancel" class="secondary-button" type="button">取消</button><button id="access-confirm-submit" class="primary" type="submit">确认保存</button></div>
+    </form>
   </dialog>
   <dialog id="confirmation-dialog" class="confirmation-dialog dialog-surface" aria-labelledby="confirmation-title" aria-describedby="confirmation-message">
     <header class="dialog-header"><h2 id="confirmation-title">确认操作</h2><button id="confirmation-close" class="icon-button" type="button" aria-label="关闭确认"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></header>

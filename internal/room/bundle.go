@@ -102,7 +102,7 @@ func runBundle(command string, args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	if command == "init" {
-		_, err = fmt.Fprintf(stdout, "基础文件已准备。管理 token 文件：%s\n运行 ./start，在网页中配置模型。\n", adminTokenPath(startup))
+		_, err = fmt.Fprintln(stdout, "基础文件已准备。运行 ./start，在网页中配置模型；访问与安全设置位于设置 → 安全。")
 		return err
 	}
 	// The service takes the same home lock before reading configuration and

@@ -3,7 +3,9 @@
 # Relative paths below resolve from this file's directory; no shell expansion.
 [server]
 listen = "127.0.0.1:8088"
-# Remote browsers use one canonical HTTPS origin, with a proxy to loopback.
+# 全新安装默认仅本机访问。可在「设置 → 安全」开启登录和远程访问。
+# remote_enabled = false
+# Remote access requires login and one canonical HTTPS origin.
 # public_base_url = "https://assistant.example.com"
 # trusted_proxies = ["127.0.0.1"]
 # Shared by all Rooms and page time displays. Settings can save this without restart.
@@ -27,7 +29,8 @@ dsh_turn_timeout = "15m"
 # max_pixels = 16777216
 # timeout = "30s" # At most 2m; individual failures retain missing-image status.
 
-# teamx serve --home <directory> 首次准备管理认证；随后在网页登录并设置模型。
+# teamx serve --home <directory> 首次准备固定操作者；默认本机免登录，随后在网页设置模型。
+# access.login_enabled 由设置页面保存；旧安装省略时保持认证开启。
 # 已有实例的 token 丢失时，才使用 access init 显式修复；操作者 ID 保持不变。
 
 # DSH 安装入口；模型参数和 API Key 在启动后的网页中配置。

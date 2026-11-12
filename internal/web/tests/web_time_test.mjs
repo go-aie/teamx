@@ -188,13 +188,17 @@ test("a late save response cannot overwrite a restarted service's settings", asy
 
 test("settings categories isolate panels and preserve both time-zone and connection drafts", async () => {
   const api=fixture(),ui=await launch(api);await ui.el("open-settings").emit("click");
-  assert.equal(ui.el("general-settings").hidden,false);assert.equal(ui.el("platform-settings").hidden,true);
+  assert.equal(ui.el("general-settings").hidden,false);assert.equal(ui.el("platform-settings").hidden,true);assert.equal(ui.el("access-settings").hidden,true);
   ui.el("system-timezone").value="America/New_York";await ui.el("system-timezone").emit("input");
   await ui.el("settings-tab-general").emit("keydown",{key:"ArrowDown"});
   assert.equal(ui.el("settings-tab-models").attributes["aria-selected"],"true");
   await ui.el("settings-tab-models").emit("keydown",{key:"ArrowDown"});
   assert.equal(ui.el("settings-tab-platforms").attributes["aria-selected"],"true");
   assert.equal(ui.el("general-settings").hidden,true);assert.equal(ui.el("platform-settings").hidden,false);
+  await ui.el("settings-tab-platforms").emit("keydown",{key:"ArrowDown"});
+  assert.equal(ui.el("settings-tab-security").attributes["aria-selected"],"true");
+  assert.equal(ui.el("access-settings").hidden,false);assert.equal(ui.el("general-settings").hidden,true);
+  await ui.el("settings-tab-platforms").emit("click");
   await ui.el("connection-new").emit("click");ui.el("connection-name").value="未保存的连接";
   await ui.el("settings-tab-general").emit("click");assert.equal(ui.el("system-timezone").value,"America/New_York");
   await ui.el("settings-tab-platforms").emit("click");assert.equal(ui.el("connection-form").hidden,false);
@@ -238,6 +242,8 @@ test("settings navigation blocks changes during a save and adapts to narrow or s
   assert.equal(ui.el("platform-settings").hidden,false);
   const single=await launch(fixture(false));await single.el("open-general-settings").emit("click");
   assert.equal(single.el("settings-tab-platforms").hidden,true);assert.equal(single.el("general-settings").hidden,false);
+  await single.el("settings-tab-general").emit("keydown",{key:"End"});
+  assert.equal(single.el("access-settings").hidden,false);assert.equal(single.el("settings-tab-security").attributes["aria-selected"],"true");
 });
 
 test("Escape dismisses the time-zone picker from its toggle before closing settings", async () => {

@@ -52,8 +52,10 @@ export function createUserMenu({ env, runtime }) {
     // This probe must not redirect installations that have no access gate.
     try {
       const response = await fetch("/v1/access/session", { cache: "no-store" });
-      $("access-logout").hidden = !response.ok;
-      $("user-menu-divider").hidden = !response.ok;
+      const session = response.ok ? await response.json() : null;
+      const enabled = response.ok && session?.login_enabled !== false;
+      $("access-logout").hidden = !enabled;
+      $("user-menu-divider").hidden = !enabled;
     } catch { /* Keep settings available when the session probe fails. */ }
   }
 

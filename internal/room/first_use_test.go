@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,6 +27,8 @@ func freshAccessConfig(t *testing.T, home string) startupConfig {
 func TestFirstAccessResumesAndNeverReissuesLostToken(t *testing.T) {
 	home := t.TempDir()
 	c := freshAccessConfig(t, home)
+	enabled := true
+	c.Access.LoginEnabled = &enabled
 	if err := prepareFirstAccess(c); err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +223,7 @@ func TestConfigSubtreeRemovalPreservesInlineSibling(t *testing.T) {
 	}
 }
 
-func TestFirstUseStartupCreatesAuthenticationWithoutInit(t *testing.T) {
+func TestFirstUseStartupCreatesLocalAccessWithoutLogin(t *testing.T) {
 	home := t.TempDir()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -229,8 +232,15 @@ func TestFirstUseStartupCreatesAuthenticationWithoutInit(t *testing.T) {
 	go func() {
 		done <- runServer(ctx, []string{"--home", home, "--listen", "127.0.0.1:0"}, os.Stderr, os.Stderr, serverOptions{ready: func(info any) error { ready <- info; return nil }})
 	}()
+	var endpoint string
 	select {
-	case <-ready:
+	case value := <-ready:
+		data, _ := json.Marshal(value)
+		var info serverTestReady
+		if err := json.Unmarshal(data, &info); err != nil {
+			t.Fatal(err)
+		}
+		endpoint = info.Endpoint
 	case err := <-done:
 		t.Fatal(err)
 	case <-time.After(10 * time.Second):
@@ -239,6 +249,22 @@ func TestFirstUseStartupCreatesAuthenticationWithoutInit(t *testing.T) {
 	c := freshAccessConfig(t, home)
 	if !validOperatorID(c.Access.OperatorID) {
 		t.Fatal("access not initialized")
+	}
+	if c.Access.LoginEnabled == nil || *c.Access.LoginEnabled {
+		t.Fatal("first use requires login")
+	}
+	response, err := http.Get(endpoint + "/v1/access/session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var session struct {
+		Operator     string `json:"operator"`
+		LoginEnabled bool   `json:"login_enabled"`
+	}
+	err = json.NewDecoder(response.Body).Decode(&session)
+	response.Body.Close()
+	if err != nil || response.StatusCode != 200 || session.LoginEnabled || session.Operator != c.Access.OperatorID {
+		t.Fatal("first-use session unavailable", session, err)
 	}
 	cancel()
 	if err := <-done; err != nil {

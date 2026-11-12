@@ -334,10 +334,14 @@ func serveSetupRequired(ctx context.Context, listener net.Listener, config start
 		Endpoint string `json:"endpoint"`
 		Status   string `json:"status"`
 		Ready    bool   `json:"ready"`
-	}{"http://" + listener.Addr().String(), "setup_required", false}); err != nil {
+	}{internalAccessEndpoint(listener.Addr().String()), "setup_required", false}); err != nil {
 		return err
 	}
-	fmt.Fprintf(stderr, "打开 http://%s/access 登录并验证模型。管理 token 文件：%s\n", listener.Addr().String(), adminTokenPath(config))
+	if access != nil && access.disabled {
+		fmt.Fprintf(stderr, "打开 %s/access 配置并验证模型；当前仅本机访问，无需登录。\n", internalAccessEndpoint(listener.Addr().String()))
+	} else {
+		fmt.Fprintf(stderr, "打开 %s/access 登录并验证模型。管理 token 文件：%s\n", internalAccessEndpoint(listener.Addr().String()), adminTokenPath(config))
+	}
 	select {
 	case <-ctx.Done():
 	case <-setup.saved:

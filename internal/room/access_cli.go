@@ -76,6 +76,9 @@ func privateRoomAccessEnv(name string) bool {
 // Never forward access credentials through redirects or cleartext remote URLs.
 func (c cliClient) do(request *http.Request) (*http.Response, error) {
 	if c.token == "" {
+		if c.anonymousHuman {
+			request.Header.Set("Origin", c.endpoint)
+		}
 		return c.http.Do(request)
 	}
 	if err := validateAccessEndpoint(c.endpoint); err != nil {

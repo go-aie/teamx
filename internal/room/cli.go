@@ -17,9 +17,10 @@ import (
 )
 
 type cliClient struct {
-	endpoint string
-	http     *http.Client
-	token    string
+	endpoint       string
+	http           *http.Client
+	token          string
+	anonymousHuman bool
 }
 
 // Only connection and member identity values are replaced for Room tools.
@@ -72,6 +73,7 @@ func (c cliClient) request(ctx context.Context, path string, req any, out any) e
 }
 
 func (c *cliClient) identity(ctx context.Context, roomID string, env func(string) string) (apiRequest, error) {
+	c.anonymousHuman = false
 	if err := c.loadCredential(env); err != nil {
 		return apiRequest{}, err
 	}
@@ -109,14 +111,19 @@ func (c *cliClient) identity(ctx context.Context, roomID string, env func(string
 		return apiRequest{}, ErrIdentity
 	}
 	user := env("USER")
-	if c.token != "" {
+	{
 		var session struct {
-			Operator string `json:"operator"`
+			Operator     string `json:"operator"`
+			LoginEnabled *bool  `json:"login_enabled"`
 		}
 		if err := c.request(ctx, "/v1/access/session", nil, &session); err != nil {
-			return apiRequest{}, err
+			if c.token != "" {
+				return apiRequest{}, err
+			}
+		} else if session.Operator != "" {
+			user = session.Operator
+			c.anonymousHuman = session.LoginEnabled != nil && !*session.LoginEnabled
 		}
-		user = session.Operator
 	}
 	if user == "" {
 		user = "operator"

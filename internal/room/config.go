@@ -26,6 +26,7 @@ type startupConfig struct {
 		PublicBaseURL        string              `toml:"public_base_url"`
 		TrustedProxies       []string            `toml:"trusted_proxies"`
 		Listen               *string             `toml:"listen"`
+		RemoteEnabled        *bool               `toml:"remote_enabled"`
 		DataDir              *string             `toml:"data_dir"`
 		TeamsDir             *string             `toml:"teams_dir"`
 		MaxTurns             *uint64             `toml:"max_turns"` // Retired; decoded only to report the replacement.

@@ -106,7 +106,7 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 	serverRoot := flags.String("server-root", "", "versioned server installation root; uses current release and platform home by default")
 	roomID := flags.String("room", "design-review", "Room name")
 	dir := flags.String("state-dir", "", "single-room directory (default: <config-dir>/data/design-review)")
-	listen := flags.String("listen", "127.0.0.1:8088", "loopback address")
+	listen := flags.String("listen", "127.0.0.1:8088", "listen IP and port; non-loopback requires remote access and login")
 	mergeWindow := flags.Duration("merge-window", 100*time.Millisecond, "member notification merge window")
 	flags.Func("max-turns", "removed; use --session-max-turns", func(string) error {
 		return fmt.Errorf("--max-turns was removed; use --session-max-turns: cumulative hard stop is now per-session rotation")
@@ -176,7 +176,9 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(stderr, "管理 token 文件：%s\n", adminTokenPath(startup))
+		if startup.Access.LoginEnabled == nil || *startup.Access.LoginEnabled {
+			fmt.Fprintf(stderr, "管理 token 文件：%s\n", adminTokenPath(startup))
+		}
 	}
 	if layout.Root != "" {
 		var installation serverInstallation
@@ -250,15 +252,22 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 		return err
 	}
 	host, _, err := net.SplitHostPort(*listen)
-	if err != nil || net.ParseIP(host) == nil || !net.ParseIP(host).IsLoopback() {
-		return fmt.Errorf("listen must use a loopback IP and port")
+	if err != nil || net.ParseIP(host) == nil {
+		return fmt.Errorf("listen must use an IP and port")
+	}
+	if err := validateAccessListen(startup, *listen); err != nil {
+		return err
 	}
 	restoreEnv, err := applyStartupEnv(startup.Env)
 	if err != nil {
 		return err
 	}
 	defer restoreEnv()
-	listener, err := listenTCP("tcp", *listen)
+	network := "tcp4"
+	if net.ParseIP(host).To4() == nil {
+		network = "tcp6"
+	}
+	listener, err := listenTCP(network, *listen)
 	if err != nil {
 		return fmt.Errorf("listen %s: %w", *listen, err)
 	}
@@ -267,12 +276,15 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 	if accessFactory == nil {
 		accessFactory = newServerAccess
 	}
-	access, err := accessFactory(startup, "http://"+listener.Addr().String())
+	access, err := accessFactory(startup, internalAccessEndpoint(listener.Addr().String()))
 	if err != nil {
 		return err
 	}
 	if migrationErr != nil {
 		return serveModelMigrationBlocked(ctx, listener, startup, access, ready)
+	}
+	if access != nil {
+		access.document = settings.configDocument
 	}
 	if layout.Home != "" && ((*setupModel && !options.setupCompleted) || modelSetupRequired(startup)) {
 		access.setupRequired = true
@@ -300,7 +312,7 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 		startup.Runtime = &runtime
 	}
 	if !singleRoom {
-		return serveRoomManager(ctx, listener, *dataDir, *teamsDir, serviceConfig{modelStartup: &startup, modelProbe: options.probe, models: models, access: access, settings: settings, endpoint: "http://" + listener.Addr().String(), mergeWindow: *mergeWindow, maxTurns: *maxTurns, dshTurnTimeout: *dshTurnTimeout, inboxExpiry: inboxExpiry, imageMaterials: startup.Server.ImageMaterials}, startup.Runtime, create, ready, stderr)
+		return serveRoomManager(ctx, listener, *dataDir, *teamsDir, serviceConfig{modelStartup: &startup, modelProbe: options.probe, models: models, access: access, settings: settings, endpoint: internalAccessEndpoint(listener.Addr().String()), mergeWindow: *mergeWindow, maxTurns: *maxTurns, dshTurnTimeout: *dshTurnTimeout, inboxExpiry: inboxExpiry, imageMaterials: startup.Server.ImageMaterials}, startup.Runtime, create, ready, stderr)
 	}
 	uiProfiles := profileNames(profiles)
 	cliPath, err := os.Executable()
@@ -313,7 +325,7 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 	}
 	svc, err := create(*dir, *roomID, serviceConfig{
 		access: access, settings: settings,
-		endpoint: "http://" + listener.Addr().String(), cliPath: cliPath, mergeWindow: *mergeWindow, maxTurns: *maxTurns,
+		endpoint: internalAccessEndpoint(listener.Addr().String()), cliPath: cliPath, mergeWindow: *mergeWindow, maxTurns: *maxTurns,
 		dshProfiles: profiles, uiProfiles: uiProfiles, dshTurnTimeout: *dshTurnTimeout, inboxExpiry: inboxExpiry, imageMaterials: startup.Server.ImageMaterials,
 	})
 	if err != nil {
@@ -336,7 +348,7 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 	info := struct {
 		ServiceInfo
 		Endpoint string `json:"endpoint"`
-	}{svc.info, "http://" + listener.Addr().String()}
+	}{svc.info, internalAccessEndpoint(listener.Addr().String())}
 	if err := ready(info); err != nil {
 		_ = server.Close()
 		return err
@@ -435,7 +447,7 @@ func serveRoomManager(ctx context.Context, listener net.Listener, dir, teamsDir 
 		Endpoint     string `json:"endpoint"`
 		DataDir      string `json:"data_dir"`
 		TeamsDir     string `json:"teams_dir"`
-	}{manager.epoch, "http://" + listener.Addr().String(), filepath.Clean(manager.store.dir), manager.teamsDir}
+	}{manager.epoch, internalAccessEndpoint(listener.Addr().String()), filepath.Clean(manager.store.dir), manager.teamsDir}
 	if err := ready(info); err != nil {
 		return err
 	}

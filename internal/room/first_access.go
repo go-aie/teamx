@@ -10,16 +10,20 @@ import (
 )
 
 type firstAccessRecord struct {
-	Version   int    `json:"version"`
-	Operator  string `json:"operator"`
-	TokenPath string `json:"token_path"`
-	Completed bool   `json:"completed"`
+	Version      int    `json:"version"`
+	Operator     string `json:"operator"`
+	TokenPath    string `json:"token_path"`
+	Completed    bool   `json:"completed"`
+	LoginEnabled *bool  `json:"login_enabled,omitempty"`
 }
 
 // Caller owns the home lock. Persist the identity reservation before creating
 // credentials, so an interrupted first start always resumes the same identity.
 func prepareFirstAccess(c startupConfig) error {
 	if c.Access.OperatorID != "" {
+		if c.Access.LoginEnabled != nil && !*c.Access.LoginEnabled {
+			return validateRemoteAccess(c, false)
+		}
 		_, err := readAdminToken(adminTokenPath(c))
 		return err
 	}
@@ -40,7 +44,8 @@ func prepareFirstAccess(c startupConfig) error {
 		if err != nil {
 			return err
 		}
-		record = firstAccessRecord{Version: 1, Operator: "owner_" + id, TokenPath: adminTokenPath(c)}
+		enabled := c.Access.LoginEnabled != nil && *c.Access.LoginEnabled || remoteAccessEnabled(c)
+		record = firstAccessRecord{Version: 1, Operator: "owner_" + id, TokenPath: adminTokenPath(c), LoginEnabled: &enabled}
 		if err := (&Store{ops: defaultSnapshotOps()}).save(path, record, 16<<10); err != nil {
 			return err
 		}
@@ -50,24 +55,26 @@ func prepareFirstAccess(c startupConfig) error {
 	if record.Version != 1 || !validOperatorID(record.Operator) || record.TokenPath != adminTokenPath(c) || record.Completed {
 		return errors.New("first-start identity is inconsistent; use access init to repair")
 	}
-	if err := makeDurableDir(filepath.Dir(record.TokenPath)); err != nil {
-		return err
-	}
-	if _, err := os.Lstat(record.TokenPath); errors.Is(err, os.ErrNotExist) {
-		token, err := randomAccessToken()
-		if err != nil {
+	if record.LoginEnabled == nil || *record.LoginEnabled {
+		if err := makeDurableDir(filepath.Dir(record.TokenPath)); err != nil {
 			return err
 		}
-		if err := installMissing(record.TokenPath, []byte(token+"\n")); err != nil {
+		if _, err := os.Lstat(record.TokenPath); errors.Is(err, os.ErrNotExist) {
+			token, err := randomAccessToken()
+			if err != nil {
+				return err
+			}
+			if err := installMissing(record.TokenPath, []byte(token+"\n")); err != nil {
+				return err
+			}
+		}
+		if _, err := readAdminToken(record.TokenPath); err != nil {
 			return err
 		}
-	}
-	if _, err := readAdminToken(record.TokenPath); err != nil {
-		return err
 	}
 	section, err := toml.Marshal(struct {
 		Access accessConfig `toml:"access"`
-	}{accessConfig{OperatorID: record.Operator, AdminTokenFile: c.Access.AdminTokenFile}})
+	}{accessConfig{OperatorID: record.Operator, AdminTokenFile: c.Access.AdminTokenFile, LoginEnabled: record.LoginEnabled}})
 	if err != nil {
 		return err
 	}

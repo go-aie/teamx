@@ -11,7 +11,7 @@ export async function request(path, payload, fetcher = globalThis.fetch, timeout
     const result = await response.json();
     if (!response.ok) {
       if (response.status === 401 && globalThis.location?.pathname !== "/access") globalThis.location?.assign("/access");
-      const error = new Error(result.error || `请求失败 (${response.status})`);
+      const error = new Error(result.message || result.error || `请求失败 (${response.status})`);
       error.code = result.code;
       error.field = result.field;
       throw error;

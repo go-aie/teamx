@@ -4,15 +4,15 @@
 
 ## 服务配置
 
-首次运行直接使用 `teamx serve --home .teamx`，会准备缺失的首次管理认证。`--home` 缺少模型或模型无效时，登录后可在浏览器设置并启动；`--config` 保留已配置开发环境的直接启动方式。不指定 `--config` 时只读取 `~/.teamx/config.toml`，不自动查找当前目录或项目祖先目录。显式指定的文件缺失或 TOML 结构错误时会阻止启动；两份配置不会合并。
+首次运行直接使用 `teamx serve --home .teamx`，会准备固定操作者；全新安装默认仅本机访问，无需登录。`--home` 缺少模型或模型无效时，可在浏览器设置并启动；`--config` 保留已配置开发环境的直接启动方式。不指定 `--config` 时只读取 `~/.teamx/config.toml`，不自动查找当前目录或项目祖先目录。显式指定的文件缺失或 TOML 结构错误时会阻止启动；两份配置不会合并。
 
 数据目录与团队目录通过 `server.data_dir`、`server.teams_dir` 设置，默认是配置文件旁的 `data/`、`teams/`。项目配置对应 `.teamx/data/` 和 `.teamx/teams/`，用户配置对应 `~/.teamx/data/` 和 `~/.teamx/teams/`。已有实例缺少管理凭据时拒绝启动，需在部署机用 `access init` 显式修复。
 
-浏览器使用管理 token 换取 HttpOnly Cookie；会话默认 24 小时，最多 16 个，仅保存在服务内存，退出、到期和 Server 重启后失效。全部私有 API 均要求管理 Bearer、浏览器会话或绑定成员的执行凭据。人工 CLI 使用 `--token-file FILE` 或 `TEAMX_ADMIN_TOKEN_FILE`，不用在命令行中传 token 值。管理 token 文件必须由部署账号拥有、权限为 0600 的普通文件；初始化不覆盖已有文件。替换该文件并正常重启即可轮换，固定 `access.operator_id` 保持不变。
+在「设置 → 安全」可开启登录验证、生成或自定义访问令牌。已有安装保持原认证状态。开启验证后，浏览器使用管理 token 换取 HttpOnly Cookie；会话默认 24 小时，最多 16 个，仅保存在服务内存，退出、到期和 Server 重启后失效。本机免登录仍校验请求来源与固定 human 身份；Agent 始终需要独立执行凭据。启用登录后，全部私有 API 均要求管理 Bearer、浏览器会话或绑定成员的执行凭据。人工 CLI 使用 `--token-file FILE` 或 `TEAMX_ADMIN_TOKEN_FILE`，不用在命令行中传 token 值。管理 token 文件必须由部署账号拥有、权限为 0600 的普通文件；初始化不覆盖已有文件。网页轮换后旧 token 和浏览器会话立即失效；活跃文件由 `access.admin_token_file` 指定。也可在停服后替换该文件并重启，固定 `access.operator_id` 保持不变。
 
 模型和密钥在「设置 → 模型」验证并维护，无需重启。成员按默认／固定条目选择；执行配置变化等待当前回合结束后轮换，暂停意图保留。删除模型可选择替代条目并查看逐成员进度。旧模型配置在业务恢复前一次迁移，私有备份与固定进度保留；导入条目不伪造验证，旧 Session 使用原快照恢复。迁移冲突时只开放认证后的进度查询与重试。
 
-远程访问设置 `server.public_base_url = "https://assistant.example.com"` 和明确的 `server.trusted_proxies` IP 列表，HTTPS 代理保留规范 Host、向 loopback 转发单值 `X-Forwarded-Proto: https`；不支持子路径、别名 origin 或转发 Host。浏览器必须从规范地址访问；内部 Agent 仍使用实际 loopback endpoint。部署、证书和系统服务配置另见[Server 访问记录](../../docs/implementation/server-access.zh.md)。
+远程访问必须开启登录验证。在安全设置启用后，会保存 `server.remote_enabled = true`、扩大监听到 `0.0.0.0`，重启后生效。也可手动保留 loopback 监听供本机代理使用，并设置 `server.public_base_url = "https://assistant.example.com"` 和明确的 `server.trusted_proxies` IP 列表，HTTPS 代理保留规范 Host、向 loopback 转发单值 `X-Forwarded-Proto: https`；不支持子路径、别名 origin 或转发 Host。浏览器必须从规范地址访问；内部 Agent 仍使用实际 loopback endpoint。部署、证书和系统服务配置另见[Server 访问记录](../../docs/implementation/server-access.zh.md)。
 
 加载规则：
 
@@ -37,7 +37,7 @@ cp .teamx/config.example.toml "$HOME/.teamx/config.toml"
 cp -R .teamx/teams "$HOME/.teamx/"
 ```
 
-填写 `~/.teamx/config.toml` 中的 DSH 路径，再运行 `teamx serve --home "$HOME/.teamx"`，在网页登录并配置模型。
+填写 `~/.teamx/config.toml` 中的 DSH 路径，再运行 `teamx serve --home "$HOME/.teamx"`，在网页配置模型。
 
 ## 多房间服务
 
