@@ -21,3 +21,18 @@ export function readModelParameters($) {
   if (model.protocol === "openai-completions" && $("developer-role").value) model.compat = {supports_developer_role:$("developer-role").value === "true"};
   return model;
 }
+
+// Explicit allowlist: API keys and arbitrary form fields never enter a draft.
+export const modelDraftFields = ["protocol", "base-url", "model-id", "input-modalities", "context-window", "max-tokens", "reasoning-effort", "developer-role"];
+export function snapshotModelFields($) {
+  const fields = Object.fromEntries(modelDraftFields.map(id => [id, $(id).value]));
+  try {
+    const url = new URL(fields["base-url"]);
+    if (url.username || url.password || url.search || url.hash) fields["base-url"] = "";
+  } catch { if (/[?#@]/.test(fields["base-url"])) fields["base-url"] = ""; }
+  return fields;
+}
+export function restoreModelFields($, fields) {
+  for (const id of modelDraftFields) if (typeof fields?.[id] === "string") $(id).value = fields[id];
+  syncModelProtocol($);
+}

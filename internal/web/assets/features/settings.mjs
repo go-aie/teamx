@@ -1,4 +1,5 @@
 import { createModels } from "./models.mjs";
+import { compactViewport } from "../client.mjs";
 import { createSystemTime, createTimeInput } from "../time.mjs";
 
 // Service time zone, settings navigation and dialog lifecycle.
@@ -104,7 +105,7 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
     $("platform-settings").hidden = settingsTab !== "platforms";
     $("settings-tab-models").hidden = !state.managed;
     $("settings-tab-platforms").hidden = !state.managed;
-    $("settings-navigation").setAttribute("aria-orientation", window.innerWidth <= 640 ? "horizontal" : "vertical");
+    $("settings-navigation").setAttribute("aria-orientation", compactViewport(window) ? "horizontal" : "vertical");
     for (const tab of settingsTabs) {
       const button = $(`settings-tab-${tab}`), selected = settingsTab === tab;
       button.setAttribute("aria-selected", String(selected)); button.setAttribute("tabindex", selected ? "0" : "-1");
@@ -142,7 +143,7 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
     notificationsUI.invalidateNavigation();
     if (state.managed ? !state.catalog : !state.info) return;
     connectionsUI.showPlatformList(); settingsTab = state.managed ? tab : "general";
-    timezonePicker.open = false; renderTimeZone(); $("settings-dialog").showModal(); void models.load(); if(state.managed) {await connectionsUI.loadPlatforms();await onboardingUI.restoreOnboarding();}
+    timezonePicker.open = false; renderTimeZone(); $("settings-dialog").showModal(); void models.load(); runtime.navigationChanged(); if(state.managed) {await connectionsUI.loadPlatforms();await onboardingUI.restoreOnboarding();}
   }
 
   async function closeSettings() {
@@ -223,7 +224,7 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
         timezoneForm.message = `已保存，当前生效：${systemTime.zone}。适用于所有会话；Agent 从下一回合生效。`;
       } catch (error) {
         if (epoch !== systemTime.epoch) return;
-        timezoneForm.message = `保存失败，草稿已保留：${error.message}`;
+        timezoneForm.message = `${error.code === "conflict" ? "设置已在其他页面或设备更改，草稿已保留，请核对当前值后重新保存。" : "保存失败，草稿已保留："}${error.message}`;
         if (error.code === "conflict") {
           try { const current = await request("/v1/settings"); if (current.service_epoch === epoch && systemTime.epoch === epoch) applyTimeZone(current); } catch { /* Keep the draft for explicit retry. */ }
         }
@@ -247,7 +248,7 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
     $("settings-dialog").addEventListener("close", () => { models.clearKey(); timezonePicker.open = false; renderTimeZoneOptions(); void connectionsUI.cancelPlatformAuth(); $("gitlab-client-secret").value = ""; connectionsUI.platforms.formVersion++; connectionsUI.platforms.generation++;
       if ($("notification-detail").open) { $(workspaceUI.workspaceView?.notificationChannel === "messages" ? "lark-manage-platforms" : "gitlab-manage-platforms").focus(); void workspaceUI.loadWorkspacePlatforms(); }
       else if($("activity-dialog").open){$("member-notification-add-toggle").focus({preventScroll:true});void workspaceUI.loadWorkspacePlatforms();if(membersUI.memberToolsView && membersUI.toolsCurrent(membersUI.memberToolsView))void membersUI.loadCLITools(membersUI.memberToolsView);}
-      else $(state.managed ? "open-settings" : "open-general-settings").focus(); });
+      else $(state.managed ? "user-menu-toggle" : "open-general-settings").focus(); });
   }
 
   return {

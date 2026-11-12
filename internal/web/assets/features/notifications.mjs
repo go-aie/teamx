@@ -1,3 +1,4 @@
+import { compactViewport } from "../client.mjs";
 import { sameService } from "../client.mjs";
 
 // Room/member notification subscriptions, targets and configuration views.
@@ -933,7 +934,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     if(!notificationContextCurrent(ws,key,epoch) || opening!==ws.notificationOpen || navigation!==notificationNavigation)return;
     if(channel==="events" || channel==="todos")$(`gitlab-${channel}-settings`).open=true;
     renderGitLabEvents();$("notification-title").focus();
-    if(window.innerWidth<=640)$("notification-detail").scrollIntoView({block:"start"});
+    if(compactViewport(window))$("notification-detail").scrollIntoView({block:"start"});
   }
 
   async function openNotificationMessage(opener, source) {

@@ -384,7 +384,8 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
 
     $("connection-url").addEventListener("change", () => { platforms.gitlabApplicationID="";scionUI.renderScionPATLink(); if(connectionIsScion()) return scionUI.detectScionPlatform(); return gitlabUI.discoverGitLabSetup(); });
 
-    window.addEventListener("pagehide", () => { $("gitlab-client-secret").value = ""; void gitlabUI.cancelGitLabAuth(true); void larkUI.cancelLarkAuth(true); });
+    // Leaving or freezing a browser page is not cancellation of Server work.
+    window.addEventListener("pagehide", () => { $("gitlab-client-secret").value = ""; $("connection-scion-pat").value = ""; });
 
     $("connection-form").addEventListener("submit", event => {
       event.preventDefault();

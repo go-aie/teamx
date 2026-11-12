@@ -218,7 +218,7 @@ func (f *firstModelSetup) submit(input setupModelInput) (setupOperation, error) 
 	if err != nil {
 		return setupOperation{}, err
 	}
-	op := &savedSetupOperation{Operation: setupOperation{ID: input.RequestID, Digest: fingerprint, Status: "validating"}, Digest: fingerprint, Entry: modelEntry{ID: "daily", Name: "默认模型", ModelParameters: input.ModelParameters.clone()}, Credential: ref, ExpectedVersion: input.ExpectedVersion}
+	op := &savedSetupOperation{Operation: setupOperation{ID: input.RequestID, Digest: fingerprint, Status: "validating"}, Digest: fingerprint, Entry: modelEntry{ID: "daily", Name: input.ModelID, ModelParameters: input.ModelParameters.clone()}, Credential: ref, ExpectedVersion: input.ExpectedVersion}
 	if err := f.persist(op); err != nil {
 		_ = os.Remove(filepath.Join(f.service.credentials.dir, ref))
 		return setupOperation{}, err

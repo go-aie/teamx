@@ -98,20 +98,19 @@ a {
   letter-spacing:-.6px;
 }
 .brand-mark {
-  display:flex;
-  align-items:center;
-  justify-content:center;
+  display:block;
+  flex:none;
   width:28px;
   height:29px;
-  border-radius:7px;
-  background:#315f4b;
-  color:white;
-  font:600 22px Georgia,serif;
-  letter-spacing:-2px;
-  padding-right:3px;
 }
-.brand-mark span {
-  font-size:18px;
+.user-icon {
+  width:20px;
+  height:20px;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:1.7;
+  stroke-linecap:round;
+  stroke-linejoin:round;
 }
 .connection {
   display:flex;

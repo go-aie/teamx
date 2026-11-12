@@ -28,6 +28,8 @@ func TestAssets(t *testing.T) {
 			contentType = "text/css"
 		case ".js", ".mjs":
 			contentType = "text/javascript"
+		case ".svg":
+			contentType = "image/svg+xml"
 		default:
 			t.Fatalf("unexpected embedded asset: %s", name)
 		}

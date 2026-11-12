@@ -178,10 +178,9 @@ func planModelMigration(c startupConfig) (modelMigration, error) {
 			}
 		}
 		entry.ID = "daily"
-		entry.Name = "原默认模型"
+		entry.Name = entry.ModelID
 		if len(result.Catalog.Entries) > 0 {
 			entry.ID = fmt.Sprintf("imported-%d", len(result.Catalog.Entries))
-			entry.Name = fmt.Sprintf("导入模型 %d", len(result.Catalog.Entries))
 		}
 		result.Catalog.Entries = append(result.Catalog.Entries, entry)
 		if entry.ID == "daily" {

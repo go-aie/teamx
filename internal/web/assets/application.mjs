@@ -1,4 +1,6 @@
-import { request, sameService } from "./client.mjs";
+import { createBrowserLifecycle } from "./features/browser-lifecycle.mjs";
+import { createBrowserNavigation } from "./features/browser-navigation.mjs";
+import { request, sameService, compactViewport } from "./client.mjs";
 import { renderMessageBody } from "./markdown.mjs";
 import { createSettings } from "./features/settings.mjs";
 import { createRooms } from "./features/rooms.mjs";
@@ -16,13 +18,14 @@ import { createGitLabConnection } from "./features/gitlab-connection.mjs";
 import { createLarkConnection } from "./features/lark-connection.mjs";
 import { createScionConnection } from "./features/scion-connection.mjs";
 import { createConfirmation } from "./confirmation.mjs";
+import { createUserMenu } from "./features/user-menu.mjs";
 
 // Browser services can be replaced per instance; feature state never lives in
 // module globals. Tests import this same module graph and supply a bounded DOM.
 function browserEnvironment(overrides) {
   const env = { request, renderMessageBody };
   Object.defineProperties(env, Object.getOwnPropertyDescriptors(overrides));
-  for (const key of ["document", "window", "sessionStorage", "Option", "setInterval", "requestAnimationFrame", "performance", "setTimeout", "clearTimeout", "ResizeObserver"]) {
+  for (const key of ["document", "window", "sessionStorage", "localStorage", "fetch", "Option", "setInterval", "requestAnimationFrame", "performance", "setTimeout", "clearTimeout", "ResizeObserver", "MutationObserver"]) {
     if (!(key in env)) Object.defineProperty(env, key, { get: () => globalThis[key] });
   }
   return env;
@@ -54,6 +57,7 @@ export async function createApp(overrides = {}) {
   const gitlabUI = {};
   const larkUI = {};
   const scionUI = {};
+  const userMenuUI = {};
 
   const $ = (id) => document.getElementById(id);
   const confirmAction = env.confirmAction || createConfirmation(document);
@@ -63,7 +67,44 @@ export async function createApp(overrides = {}) {
     members: [], profiles: [], teams: [], connected: false, managed: false, catalog: null, catalogConnected: false,
     isDirect: false, management: null, managementSending: false, managementError: "", draft: {}, restart: null };
 
-  let refreshTask = null;
+  let refreshTask = null, recoveryTask = null;
+  state.suspended = document.hidden || window.navigator?.onLine === false;
+  state.recovering = false;
+  let serverIdentity = null;
+  const navigation = createBrowserNavigation({ env, layers: () => {
+    const layers = [];
+    if (compactViewport(window)) {
+      if (layoutUI.roomsPanelOpen?.()) layers.push({ id:"rooms", close:layoutUI.closeMobilePanels });
+      if (layoutUI.membersPanelOpen?.()) layers.push({ id:"members", close:layoutUI.closeMobilePanels });
+    }
+    for (const [id, button] of [["activity-dialog","close-activity"], ["notification-detail","close-notification"],
+      ["workspace-dialog","close-workspace"], ["create-dialog","close-create"], ["settings-dialog","close-settings"]]) {
+      if ($(id)?.open && !$(id).hidden) layers.push({id, close:() => id === "settings-dialog" ? settingsUI.closeSettings() : $(button)?.click?.()});
+    }
+    return layers;
+  }});
+  function suspend() {
+    if (!state.suspended) viewVersion++;
+    state.suspended = true; state.connected = false; state.catalogConnected = false;
+    $("connection").textContent = window.navigator?.onLine === false ? "网络已断开 · 草稿已保留" : "页面已暂停刷新";
+    $("connection").classList.add("offline");
+    conversationUI.composerState();
+  }
+  function resume(recover = true) {
+    if (!recover) return refresh();
+    if (recoveryTask) return recoveryTask;
+    state.suspended = false; state.recovering = true;
+    state.connected = false; state.catalogConnected = false;
+    $("connection").textContent = "正在核对连接与会话…";
+    conversationUI.composerState();
+    // An old read may still finish after a mobile page freeze. Settle it before
+    // reading the authenticated service identity and current operations again.
+    recoveryTask = Promise.resolve(refreshTask).then(() => refresh()).finally(() => {
+      state.recovering = false; recoveryTask = null;
+    });
+    return recoveryTask;
+  }
+  const lifecycle = createBrowserLifecycle({ env, suspend, resume, save:() => conversationUI.saveDraft() });
 
   let storage;
   try { storage = env.sessionStorage; } catch { /* The UI also works without storage. */ }
@@ -93,7 +134,7 @@ export async function createApp(overrides = {}) {
 
   let viewVersion = 0;
 
-  const currentView = (version) => version === viewVersion;
+  const currentView = (version) => version === viewVersion && !state.suspended;
 
   function rpc(path, data = {}, info = state.info) {
     return request(path, { ...info, caller: { kind: "human", id: state.operator }, ...data });
@@ -141,6 +182,15 @@ export async function createApp(overrides = {}) {
     try {
       let config = await request("/v1/ui");
       if (!currentView(version)) return;
+      const identity = [config.installation_id || "", config.service_epoch];
+      if (serverIdentity && identity.some((part, i) => part !== serverIdentity[i])) {
+        conversationUI.saveDraft();
+        notice("service-change", "服务已重新启动或切换，已重新读取状态；草稿保留，未确认请求不会自动重发。");
+      }
+      if (serverIdentity && serverIdentity[0] !== identity[0]) { selectView(null, state.operator); version = viewVersion; }
+      state.installationID = config.installation_id || "";
+      state.operatorDisplayName = config.operator_display_name || "";
+      serverIdentity = identity;
       state.managed = !!config.managed;
       state.isDirect = config.is_direct === true;
       settingsUI.applyTimeZone(config);
@@ -235,14 +285,15 @@ export async function createApp(overrides = {}) {
     } catch (error) {
       if (!currentView(version)) return;
       state.connected = false; state.catalogConnected = false;
-      $("connection").textContent = "连接中断 · 正在重连";
+      $("connection").textContent = window.navigator?.onLine === false ? "网络已断开 · 草稿已保留" : "服务暂不可达 · 正在重连";
       $("connection").classList.add("offline");
       notice("sync-error", `暂时无法同步，已有消息保留。${error.message}`);
       $("members").dataset.signature = ""; membersUI.renderMembers();
-    } finally { conversationUI.composerState(); roomsUI.renderCreateSelection(); roomsUI.renderRooms(); }
+    } finally { userMenuUI.render(); conversationUI.composerState(); roomsUI.renderCreateSelection(); roomsUI.renderRooms(); }
   }
 
   function refresh() {
+    if (state.suspended || document.hidden || window.navigator?.onLine === false) return Promise.resolve();
     if (!refreshTask) refreshTask = sync().finally(() => { refreshTask = null; });
     return refreshTask;
   }
@@ -272,6 +323,8 @@ export async function createApp(overrides = {}) {
     state,
     storage,
     selectView,
+    navigationChanged: navigation.sync,
+    canPoll: () => lifecycle.active() && !state.recovering && (state.managed ? state.catalogConnected : state.connected),
     discussionBusy,
     setSelectOptions,
     refresh,
@@ -283,6 +336,7 @@ export async function createApp(overrides = {}) {
     confirmAction
   };
 
+  install(userMenuUI, createUserMenu({ env, runtime }));
   install(settingsUI, createSettings({
     env, runtime, connectionsUI, conversationUI, roomsUI, workspaceUI, policyUI, notificationsUI, onboardingUI, membersUI
   }));
@@ -344,14 +398,16 @@ export async function createApp(overrides = {}) {
   gitlabUI.mount();
   larkUI.mount();
   scionUI.mount();
+  userMenuUI.mount();
 
   roomsUI.restoreManagement();
 
   await refresh();
 
-  setInterval(() => { void refresh(); }, 1500);
+  navigation.mount();
+  lifecycle.mount();
 
-  document.addEventListener("visibilitychange", () => { conversationUI.updateMentionViewing(); if (!document.hidden) void refresh(); });
+  document.addEventListener("visibilitychange", conversationUI.updateMentionViewing);
 
   document.addEventListener("toggle", conversationUI.scheduleMentionViewing, true);
 

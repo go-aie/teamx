@@ -116,6 +116,11 @@ export function createScionConnection({ env, runtime, connectionsUI, settingsUI,
   }
 
   async function pollScionAuth() {
+    if (!runtime.canPoll()) {
+      clearTimeout(connectionsUI.platforms.scionTimer);
+      connectionsUI.platforms.scionTimer = setTimeout(() => { void pollScionAuth(); }, 1000);
+      return;
+    }
     const auth = connectionsUI.platforms.scionAuth;
     if (!auth) return;
     try {
@@ -137,8 +142,8 @@ export function createScionConnection({ env, runtime, connectionsUI, settingsUI,
       }
     } catch {
       if (connectionsUI.platforms.scionAuth !== auth) return;
-      await cancelScionAuth();
-      connectionsUI.connectionFeedback("登录结果未确认，请刷新账号核对。", "error");
+      connectionsUI.connectionFeedback("登录结果暂不可读，正在核对原操作。", "error");
+      connectionsUI.platforms.scionTimer = setTimeout(() => { void pollScionAuth(); }, 3000);
     }
   }
 

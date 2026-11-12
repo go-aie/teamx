@@ -239,7 +239,7 @@ func (a *serverAccess) wrap(next http.Handler) http.Handler {
 			_ = json.NewEncoder(w).Encode(status)
 			return
 		}
-		if r.URL.Path == "/access" || r.URL.Path == "/ui/access.mjs" || r.URL.Path == "/ui/access.css" || r.URL.Path == "/ui/model-form.mjs" {
+		if r.URL.Path == "/access" || r.URL.Path == "/ui/access.mjs" || r.URL.Path == "/ui/access.css" || r.URL.Path == "/ui/model-form.mjs" || r.URL.Path == "/ui/brand-mark.svg" {
 			web.Serve(w, r)
 			return
 		}
@@ -302,7 +302,7 @@ func (a *serverAccess) wrap(next http.Handler) http.Handler {
 			}
 			a.sessions[sha256.Sum256([]byte(token))] = accessSession{now.Add(24 * time.Hour)}
 			http.SetCookie(w, a.cookie(token, 86400))
-			writeAccessSession(w, a.operator)
+			writeAccessSession(w, a.operator, a.installationID)
 			return
 		}
 		header := r.Header.Get("Authorization")
@@ -351,7 +351,7 @@ func (a *serverAccess) wrap(next http.Handler) http.Handler {
 			return
 		}
 		if r.URL.Path == "/v1/access/session" && r.Method == "GET" && binding == nil {
-			writeAccessSession(w, a.operator)
+			writeAccessSession(w, a.operator, a.installationID)
 			return
 		}
 		if r.URL.Path == "/v1/access/logout" && r.Method == "POST" && binding == nil {
@@ -427,9 +427,13 @@ func accessError(w http.ResponseWriter, status int, code string) {
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": code, "code": code})
 }
-func writeAccessSession(w http.ResponseWriter, operator string) {
+func writeAccessSession(w http.ResponseWriter, operator string, installation ...string) {
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{"operator": operator})
+	result := map[string]string{"operator": operator}
+	if len(installation) > 0 {
+		result["installation_id"] = installation[0]
+	}
+	_ = json.NewEncoder(w).Encode(result)
 }
 func requestOperator(r *http.Request) string {
 	if a, ok := r.Context().Value(accessContextKey{}).(*serverAccess); ok {

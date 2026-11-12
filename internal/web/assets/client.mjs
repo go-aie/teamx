@@ -10,6 +10,7 @@ export async function request(path, payload, fetcher = globalThis.fetch, timeout
       body: payload ? JSON.stringify(payload) : undefined, signal: controller.signal });
     const result = await response.json();
     if (!response.ok) {
+      if (response.status === 401 && globalThis.location?.pathname !== "/access") globalThis.location?.assign("/access");
       const error = new Error(result.error || `请求失败 (${response.status})`);
       error.code = result.code;
       error.field = result.field;
@@ -30,10 +31,11 @@ export function sameService(a, b) {
 
 // A draft belongs to a Room instance and operator, across activation epochs.
 // Pending sends retain the exact identity that first submitted the message.
-export function createRoomDrafts(storage) {
+export function createRoomDrafts(storage, installation = () => "") {
   const drafts = new Map();
+  const owners = new WeakMap();
   const removed = new Set();
-  const key = (info, operator) => JSON.stringify(["teamx.draft", info.room_instance, operator]);
+  const key = (info, operator) => JSON.stringify(["teamx.draft", ...(installation() ? [installation()] : []), info.room_instance, operator]);
   function get(info, operator) {
     const id = key(info, operator);
     if (!drafts.has(id)) {
@@ -45,14 +47,15 @@ export function createRoomDrafts(storage) {
       // Storage is optional, but malformed or foreign requests cannot gain a route.
       if (draft.pending && (draft.pending.info?.room_instance !== info.room_instance || draft.pending.operator !== operator ||
         typeof draft.pending.text !== "string" || !draft.pending.client_message_id || !draft.pending.info?.service_epoch)) draft.pending = null;
-      drafts.set(id, draft);
+      drafts.set(id, draft); owners.set(draft, id);
     }
     return drafts.get(id);
   }
   function save(info, operator, draft) {
-    if (removed.has(key(info, operator))) return;
+    const id = owners.get(draft) || key(info, operator);
+    if (removed.has(id)) return;
     const { text, replyTo, replyLabel, replyAuthor, pending, restartRequest, openingSeeded } = draft;
-    try { storage?.setItem(key(info, operator), JSON.stringify({ text, replyTo, replyLabel, replyAuthor, pending, restartRequest, openingSeeded })); }
+    try { storage?.setItem(id, JSON.stringify({ text, replyTo, replyLabel, replyAuthor, pending, restartRequest, openingSeeded })); }
     catch { /* Retain the draft in memory if storage is unavailable or full. */ }
   }
   function seed(info, operator, opening) {
@@ -140,4 +143,9 @@ export function createActivityReader(read, render) {
     close() { generation++; selected = null; pending = null; },
     refresh,
   };
+}
+
+// A rotated touch phone still needs the single-conversation layout.
+export function compactViewport(window) {
+  return window.innerWidth <= 640 || !!window.matchMedia?.("(max-height:500px) and (pointer:coarse)").matches;
 }

@@ -648,11 +648,12 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/v1/ui" && r.Method == http.MethodGet {
 		// Bootstrap remains available with an empty catalog and during switching.
 		_ = json.NewEncoder(w).Encode(struct {
-			Managed        bool   `json:"managed"`
-			InstallationID string `json:"installation_id,omitempty"`
-			ServiceEpoch   string `json:"service_epoch"`
+			Managed             bool   `json:"managed"`
+			InstallationID      string `json:"installation_id,omitempty"`
+			ServiceEpoch        string `json:"service_epoch"`
+			OperatorDisplayName string `json:"operator_display_name"`
 			settingsView
-		}{true, requestInstallationID(r), m.epoch, m.settings.snapshot().settingsView})
+		}{true, requestInstallationID(r), m.epoch, humanOperator(), m.settings.snapshot().settingsView})
 		return
 	}
 	if r.URL.Path == "/v1/settings" || r.URL.Path == "/v1/settings/save" {

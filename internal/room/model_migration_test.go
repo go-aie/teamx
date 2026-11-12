@@ -101,6 +101,9 @@ func TestModelMigrationInterruptedFixedTargetsAndLegacySnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i, entry := range migrated.Models.Entries {
+		if entry.Name != entry.ModelID {
+			t.Fatal("imported model name differs from model ID", entry.Name, entry.ModelID)
+		}
 		if !entry.Unverified {
 			t.Fatal("import fabricated validation")
 		}

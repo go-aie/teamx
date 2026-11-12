@@ -85,8 +85,7 @@
   .workspace.direct-conversation { height:100dvh; min-height:0; overflow:hidden; }
   .direct-conversation .conversation { flex:1; min-height:0; height:auto; }
   .direct-conversation .room-rail .rail-settings { position:absolute; top:0; right:4px; margin:0; border:0; padding:12px 4px; }
-  .direct-conversation .room-rail .rail-settings button { width:38px; padding:8px; }
-  .direct-conversation .room-rail .settings-label { display:none; }
+  .direct-conversation .room-rail .user-menu-toggle { width:44px; padding:6px; }
   .direct-conversation .room-rail-header { padding-right:54px; }
 }
 

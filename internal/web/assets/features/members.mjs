@@ -1,3 +1,4 @@
+import { compactViewport } from "../client.mjs";
 import { createActivityReader, sameService } from "../client.mjs";
 import { createAssistantIcon } from "../icons.mjs";
 
@@ -267,7 +268,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     notificationsUI.renderNotificationPlatforms();
     if(state.managed){void settingsUI.openMemberModel?.(current);void openMemberTools(current);void workspaceUI.loadWorkspacePlatforms();void onboardingUI.restoreOnboarding()?.then(()=>renderMemberPlatforms());}
     void selectAgentTab(tab);
-    if (window.innerWidth <= 640) {
+    if (compactViewport(window)) {
       $("activity-dialog").scrollIntoView({ block: "start" });
       $("close-activity").focus({preventScroll:true});
     }
@@ -277,7 +278,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     const panel = $("activity-dialog");
     if (panel.open && !state.members.some(member => member.membership_id === activityMember?.membership_id)) panel.close();
     notificationsUI.renderContextViews();
-    $("close-activity").hidden = roomsUI.isDirect() && window.innerWidth > 640;
+    $("close-activity").hidden = roomsUI.isDirect() && !compactViewport(window);
     $("close-activity").setAttribute("aria-label", roomsUI.isDirect() ? "返回私信" : "返回团队成员");
     $("close-activity").title = roomsUI.isDirect() ? "返回私信" : "返回团队成员";
     const selected=selectedAgent();
@@ -528,8 +529,8 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     const session = execution?.session_turns;
     $("activity-budget").textContent = session ? `${session.baseline_known ? `${session.used} / ${session.limit}` : "待接入轮换"} · 累计 ${session.total}` : budget ? `${budget.used} / ${budget.limit}` : "暂不可用";
     const rotation = execution?.rotation;
-    const rotationReasons = { session_max_turns: "达到会话回合阈值", manual: "手动轮换" };
-    notice("activity-rotation", rotation ? `${rotationReasons[rotation.reason] || rotation.reason} · ${rotation.phase}${rotation.error ? ` · ${rotation.error}` : ""}` : "");
+    const rotationReasons = { session_max_turns: "达到会话回合阈值", manual: "手动轮换", model_change: "模型切换" };
+    notice("activity-rotation", rotation ? `${rotationReasons[rotation.reason] || rotation.reason} · ${rotation.reason === "model_change" ? ({prepared:"等待当前回合结束",old_closed:"正在安装新模型",completed:"已完成"}[rotation.phase] || "等待处理") : rotation.phase}${rotation.error ? ` · ${rotation.error}` : ""}` : "");
     const turn = execution?.agent?.turn;
     $("activity-turn").textContent = execution?.agent ? `${execution.agent.turn_number}` +
       (turn ? ` · ${statusNames[turn.status] || turn.status}` : " · 尚未运行") : "暂不可用";

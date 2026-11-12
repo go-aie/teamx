@@ -1,3 +1,15 @@
+// Shared human avatar for the user menu and conversation messages.
+export function createUserIcon(document) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  for (const [name, value] of Object.entries({ viewBox: "0 0 24 24", class: "user-icon", "aria-hidden": "true", focusable: "false" })) svg.setAttribute(name, value);
+  const head = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  for (const [name, value] of Object.entries({ cx: "12", cy: "8", r: "4" })) head.setAttribute(name, value);
+  const body = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  body.setAttribute("d", "M5 21v-2a7 7 0 0 1 14 0v2");
+  svg.append(head, body);
+  return svg;
+}
+
 // Shared assistant mark for navigation, messages and member details.
 export function createAssistantIcon(document) {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");

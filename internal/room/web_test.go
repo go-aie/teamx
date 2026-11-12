@@ -19,10 +19,11 @@ func TestWebRoomAssetsAndBrowserOrigin(t *testing.T) {
 	svc, client := testService(t)
 	var config struct {
 		ServiceInfo
-		Operator string   `json:"operator"`
-		Profiles []string `json:"profiles"`
+		Operator            string   `json:"operator"`
+		OperatorDisplayName string   `json:"operator_display_name"`
+		Profiles            []string `json:"profiles"`
 	}
-	if err := client.request(context.Background(), "/v1/ui", nil, &config); err != nil || config.ServiceInfo != svc.info || config.Operator == "" || len(config.Profiles) == 0 {
+	if err := client.request(context.Background(), "/v1/ui", nil, &config); err != nil || config.ServiceInfo != svc.info || config.Operator == "" || config.OperatorDisplayName != humanOperator() || len(config.Profiles) == 0 {
 		t.Fatal(config, err)
 	}
 	for _, origin := range []string{client.endpoint, "https://unrelated.example", "null"} {

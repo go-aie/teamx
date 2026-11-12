@@ -785,19 +785,19 @@ test("closing setup cancels waiting, ignores an outstanding status and rediscove
  assert.equal(ui.el("connection-profile").value,setupProfile.profile);assert.equal(ui.el("connection-login").hidden,false);
  assert.equal(api.calls.filter(c=>c.path.endsWith("/lark/setup")).length,1);
 });
-test("pagehide uses keepalive cancellation and a late start response is cancelled with its owner",async()=>{
+test("pagehide preserves server authorization, and a late start is queried after return",async()=>{
  const api=guidedFixture(),ui=await connectionDraft(api);await ui.el("connection-setup-start").emit("click");
- const originalFetch=globalThis.fetch,requests=[];
- try {
-  globalThis.fetch=async(path,options)=>{requests.push({path,...options});return {};};await ui.window.emit("pagehide");
- } finally {globalThis.fetch=originalFetch;}
- assert.equal(requests.length,1);assert.equal(requests[0].keepalive,true);assert.equal(requests[0].credentials,"same-origin");
- assert.equal(JSON.parse(requests[0].body).session_id,"setup-session");assert.equal(ui.el("connection-login-qr").src,"");
+ const before=api.calls.length;await ui.window.emit("pagehide");await ui.clock.advance(5000);
+ assert.equal(api.calls.length,before);assert.equal(api.calls.filter(c=>c.path.endsWith("/lark/cancel")).length,0);
+ await ui.window.emit("pageshow");await ui.clock.advance(1500);
+ assert.equal(api.calls.filter(c=>c.path.endsWith("/lark/setup")).length,1);
  const late=guidedFixture(),original=late.request;let release;
  late.request=async(path,body,...args)=>{if(path.endsWith("/lark/setup")){const result=await original(path,body,...args);await new Promise(r=>release=r);return result;}return original(path,body,...args);};
  const reopened=await connectionDraft(late),starting=reopened.el("connection-setup-start").emit("click");await settle();
  await reopened.window.emit("pagehide");release();await starting;await settle();
- assert.equal(late.calls.filter(c=>c.path.endsWith("/lark/cancel")).length,1);assert.equal(reopened.el("connection-login-panel").hidden,true);
+ assert.equal(late.calls.filter(c=>c.path.endsWith("/lark/cancel")).length,0);
+ await reopened.window.emit("pageshow");await reopened.clock.advance(1500);
+ assert.equal(late.calls.filter(c=>c.path.endsWith("/lark/setup")).length,1);
 });
 
 test("a changed user after guided verification cannot be saved as the verified account",async()=>{
@@ -807,15 +807,15 @@ test("a changed user after guided verification cannot be saved as the verified a
  assert.match(ui.el("platforms-feedback").textContent,/账号与核验结果不符.*连接未保存/);
  await ui.el("connection-form").emit("submit");assert.equal(api.calls.some(c=>c.path.endsWith("/platforms/save")),false);
 });
-test("status read failure cancels setup before recovery and never retries creation",async()=>{
+test("status read failure retains the original setup and never retries creation",async()=>{
  const api=guidedFixture(),ui=await connectionDraft(api),original=api.request;await ui.el("connection-setup-start").emit("click");
  api.request=async(path,body,...args)=>{if(path.endsWith("/lark/status"))throw Error("network");return original(path,body,...args);};
- api.cancelView=configuredView("cancelled","authorization",{error_code:"cancelled"});api.profiles=[{name:setupProfile.profile,brand:"feishu"}];
  await ui.clock.advance(1500);
- assert.equal(api.calls.filter(c=>c.path.endsWith("/lark/cancel")).length,1);assert.equal(ui.el("connection-login-qr").src,"");
- assert.match(ui.el("platforms-feedback").textContent,/结果未确认.*重新检测/);
- await ui.el("connection-recheck").emit("click");assert.equal(ui.el("connection-profile").value,setupProfile.profile);
+ assert.equal(api.calls.filter(c=>c.path.endsWith("/lark/cancel")).length,0);
+ assert.match(ui.el("platforms-feedback").textContent,/正在核对原操作/);
+ api.request=original;await ui.clock.advance(3000);
  assert.equal(api.calls.filter(c=>c.path.endsWith("/lark/setup")).length,1);
+ assert.ok(api.calls.filter(c=>c.path.endsWith("/lark/status")).length>=2);
 });
 
 test("cancellation that settles a completed setup reports success and later logout clears its state",async()=>{

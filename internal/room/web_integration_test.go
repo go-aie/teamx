@@ -30,12 +30,13 @@ func TestManagedWebBootstrapAssetsAndOrigin(t *testing.T) {
 			}
 			if path == "/v1/ui" {
 				var bootstrap struct {
-					Managed         bool   `json:"managed"`
-					ServiceEpoch    string `json:"service_epoch"`
-					TimeZone        string `json:"time_zone"`
-					SettingsVersion uint64 `json:"settings_version"`
+					Managed             bool   `json:"managed"`
+					ServiceEpoch        string `json:"service_epoch"`
+					TimeZone            string `json:"time_zone"`
+					SettingsVersion     uint64 `json:"settings_version"`
+					OperatorDisplayName string `json:"operator_display_name"`
 				}
-				if json.Unmarshal(res.Body.Bytes(), &bootstrap) != nil || !bootstrap.Managed || bootstrap.ServiceEpoch != m.epoch || bootstrap.TimeZone == "" || bootstrap.SettingsVersion == 0 || res.Header().Get("Cache-Control") != "no-store" {
+				if json.Unmarshal(res.Body.Bytes(), &bootstrap) != nil || !bootstrap.Managed || bootstrap.ServiceEpoch != m.epoch || bootstrap.OperatorDisplayName != humanOperator() || bootstrap.TimeZone == "" || bootstrap.SettingsVersion == 0 || res.Header().Get("Cache-Control") != "no-store" {
 					t.Fatal(res.Body.String(), res.Header())
 				}
 			} else if res.Header().Get("Content-Security-Policy") == "" {

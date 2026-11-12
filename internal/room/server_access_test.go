@@ -362,7 +362,7 @@ func TestAccessBrowserModelSetupStartsNormalServer(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	c, err := readStartupConfig(filepath.Join(home, "config.toml"), true, true)
-	if err != nil || *c.Server.TimeZone != "UTC" || c.Models == nil || c.Models.Entries[0].ModelID != "fixture" || c.Runtime.Model.ModelID != "" || len(c.Env) != 0 {
+	if err != nil || *c.Server.TimeZone != "UTC" || c.Models == nil || c.Models.Entries[0].ModelID != "fixture" || c.Models.Entries[0].Name != "fixture" || c.Runtime.Model.ModelID != "" || len(c.Env) != 0 {
 		t.Fatal("setup lost saved configuration", err)
 	}
 	file, err := os.Stat(c.path)
@@ -557,11 +557,43 @@ func TestAccessRestartRotatesTokenWithoutChangingOwner(t *testing.T) {
 	}
 }
 
+func TestAccessUserDisplayNamePreservesCaller(t *testing.T) {
+	t.Setenv("USER", "desktop-user")
+	c, token := testAccessConfig(t, t.TempDir())
+	access, err := newServerAccess(c, "http://127.0.0.1:8088")
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc, _ := testService(t)
+	manager := testManager(t, t.TempDir(), nil)
+	for name, next := range map[string]http.Handler{"room": svc, "managed": manager} {
+		t.Run(name, func(t *testing.T) {
+			handler := access.wrap(next)
+			response := accessRequest(handler, http.MethodGet, "/v1/ui", token, "", "", nil)
+			var bootstrap map[string]any
+			if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &bootstrap) != nil || bootstrap["operator_display_name"] != "desktop-user" {
+				t.Fatal(response.Code, response.Body.String())
+			}
+			if name == "managed" {
+				response = accessRequest(handler, http.MethodGet, "/v1/rooms", token, "", "", nil)
+				if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &bootstrap) != nil {
+					t.Fatal(response.Code, response.Body.String())
+				}
+			}
+			if bootstrap["operator"] != c.Access.OperatorID {
+				t.Fatal("display name changed authenticated identity", bootstrap)
+			}
+		})
+	}
+}
+
 func TestAccessModelFormModuleLoadsBeforeLogin(t *testing.T) {
 	_, _, handler := accessFixture(t)
-	for _, path := range []string{"/ui/access.mjs", "/ui/model-form.mjs"} {
+	for path, contentType := range map[string]string{
+		"/ui/access.mjs": "javascript", "/ui/model-form.mjs": "javascript", "/ui/brand-mark.svg": "image/svg+xml",
+	} {
 		response := accessRequest(handler, http.MethodGet, path, "", "", "", nil)
-		if response.Code != http.StatusOK || !strings.Contains(response.Header().Get("Content-Type"), "javascript") {
+		if response.Code != http.StatusOK || !strings.Contains(response.Header().Get("Content-Type"), contentType) {
 			t.Fatal(path, response.Code)
 		}
 	}

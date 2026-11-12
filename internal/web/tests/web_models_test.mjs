@@ -4,6 +4,7 @@ import {launch, settle} from "./web_app_harness.mjs";
 import {fillModelParameters, readModelParameters} from "../assets/model-form.mjs";
 
 const textOf = el => [el.textContent, ...el.children.map(textOf)].join("\n");
+const descendants = el => [el, ...el.children.flatMap(descendants)];
 function fixture() {
  const info = {room_id:"A",room_instance:"instance-A",service_epoch:"runtime"};
  const identity = {room_id:"A",room_instance:"instance-A",agent_id:"assistant",membership_id:"member-A"};
@@ -29,9 +30,54 @@ function fixture() {
 async function openSettings(ui) {await ui.el("open-settings").emit("click");await ui.el("settings-tab-models").emit("click");await settle();}
 async function openMember(ui) {await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();}
 
+test("model drafts survive reload with original version and compatibility while excluding keys",async()=>{
+ const api=fixture(),saved=new Map(),ui=await launch(api,saved);await openSettings(ui);
+ await ui.el("model-list").children[0].children[0].emit("click");
+ ui.el("model-entry-name").value="我的模型草稿";await ui.el("model-entry-name").emit("input");
+ ui.el("catalog-api-key").value="private-model-key";
+ ui.el("catalog-developer-role").value="false";await ui.el("catalog-developer-role").emit("change");
+ ui.el("catalog-context-window").value="128000";await ui.el("catalog-context-window").emit("input");
+ await ui.window.emit("pagehide");assert.equal(ui.el("catalog-api-key").value,"");
+ assert.doesNotMatch(JSON.stringify([...saved]),/private-model-key/);
+ api.models.catalog.version=2;
+ const reopened=await launch(api,saved);await openSettings(reopened);
+ assert.equal(reopened.el("model-entry-name").value,"我的模型草稿");
+ assert.equal(reopened.el("catalog-developer-role").value,"false");
+ assert.equal(reopened.el("catalog-context-window").value,"128000");
+ assert.match(reopened.el("model-feedback").textContent,/原预期版本保留/);
+ await reopened.el("model-edit-form").emit("submit");await settle();
+ assert.equal(api.calls.find(c=>c.path==="/v1/models/change").body.expected_version,1);
+});
+
+test("model recovery reads the original uncertain operation after reload without resubmitting",async()=>{
+ const api=fixture(),saved=new Map();let operation,online=false;
+ api.hook=(path,body)=>{
+  if(path==="/v1/models/change") {operation={id:body.request_id,status:"applying",members:[],completed:0,waiting:1,failed:0};throw Error("lost receipt");}
+  if(path.startsWith("/v1/models/operation?")) {if(!online)throw Error("offline");assert.equal(new URL(path,"http://fixture").searchParams.get("id"),operation.id);return operation;}
+ };
+ const ui=await launch(api,saved);await openSettings(ui);await ui.el("model-new").emit("click");
+ ui.el("model-entry-name").value="草稿";await ui.el("model-entry-name").emit("input");
+ ui.el("catalog-model-id").value="candidate";ui.el("catalog-api-key").value="do-not-save";
+ await ui.el("model-edit-form").emit("submit");await settle();await ui.window.emit("pagehide");
+ assert.doesNotMatch(JSON.stringify([...saved]),/do-not-save/);
+ online=true;const reopened=await launch(api,saved);await openSettings(reopened);
+ assert.match(textOf(reopened.el("model-operations")),/正在应用/);
+ assert.equal(reopened.el("model-edit-form").hidden,true);
+ assert.equal(api.calls.filter(c=>c.path==="/v1/models/change").length,1);
+ assert.ok(api.calls.filter(c=>c.path.includes("operation?id=")).length>=2);
+});
+
+test("model list polls retain button focus and stop display reads while hidden",async()=>{
+ const api=fixture(),ui=await launch(api);await openSettings(ui);
+ const row=ui.el("model-list").children[0],edit=row.children[0];edit.focus();
+ await ui.clock.advance(2000);assert.equal(ui.el("model-list").children[0],row);assert.equal(ui.document.activeElement,edit);
+ ui.document.hidden=true;await ui.document.emit("visibilitychange");const calls=api.calls.length;
+ await ui.clock.advance(5000);assert.equal(api.calls.length,calls);
+});
+
 test("online editor reuses credentials and shared three-state parameters without replacing an external draft",async()=>{
  const api=fixture(),ui=await launch(api);
- await openSettings(ui);const row=ui.el("model-list").children[0];await row.children.find(el=>el.textContent==="编辑").emit("click");
+ await openSettings(ui);const row=ui.el("model-list").children[0];await row.children[0].emit("click");
  assert.equal(ui.el("catalog-api-key").hidden,true);assert.equal(ui.el("catalog-developer-role").value,"false");
  ui.el("model-entry-name").value="我的名称";
  // Another tab publishes a catalog revision; the editor retains its original
@@ -80,43 +126,46 @@ test("shared model form preserves compat omission, false and true and clears it 
 
 test("deletion previews default and fixed references, keeps the expected version, and excludes pending targets",async()=>{
  const api=fixture(),ui=await launch(api);await openSettings(ui);
- const row=ui.el("model-list").children[0];await row.children.find(el=>el.textContent==="删除").emit("click");
- const review=row.children.find(el=>el.id==="model-delete-confirm");assert.match(textOf(review),/使用默认者保持默认/);assert.match(textOf(review),/含未打开/);
+ const row=ui.el("model-list").children[0];await row.children[0].emit("click");await ui.el("model-delete").emit("click");
+ const review=ui.el("model-action-review").children.find(el=>el.id==="model-delete-confirm");assert.match(textOf(review),/使用默认者保持默认/);assert.match(textOf(review),/含未打开/);
+ assert.equal(ui.el("model-save-actions").hidden,true);
+ await ui.el("model-edit-form").emit("submit");assert.equal(api.calls.filter(c=>c.path==="/v1/models/change").length,0);
  const selector=review.children.find(el=>el.id==="model-delete-replacement");assert.equal(selector.children.length,1);assert.equal(selector.value,"B");
  api.models.catalog.version=2;
  await review.children.find(el=>el.textContent==="验证并删除、替换引用").emit("click");await settle();
  const sent=api.calls.find(c=>c.path==="/v1/models/change").body;
  assert.equal(sent.kind,"delete");assert.equal(sent.entry_id,"A");assert.equal(sent.replacement_id,"B");assert.equal(sent.expected_version,1);
  api.models.catalog.entries[0].pending_deletion=true;await openSettings(ui);
- assert.match(textOf(ui.el("model-list").children[0]),/待删除/);assert(!ui.el("model-list").children[0].children.some(el=>el.textContent==="编辑"));
+ assert.match(textOf(ui.el("model-list").children[0]),/待删除/);assert.equal(ui.el("model-list").children[0].children[0].disabled,true);
  await openMember(ui);assert(!ui.el("member-model-selection").children.some(el=>el.value==="A"));
 });
 
 test("unverified missing-key imports request only the key and template references block deletion",async()=>{
  const api=fixture();api.models.catalog.entries[0].unverified=true;api.models.entry_states={A:{validated:false,credential_configured:false,templates:["team / worker"]}};
- const ui=await launch(api);await openSettings(ui);let row=ui.el("model-list").children[0];assert.match(textOf(row),/待验证/);assert.match(textOf(row),/请补填 API Key/);
- await row.children.find(el=>el.textContent==="编辑").emit("click");assert.equal(ui.el("catalog-api-key").hidden,false);assert.equal(ui.el("catalog-replace-key").checked,true);
- await row.children.find(el=>el.textContent==="删除").emit("click");const review=row.children.find(el=>el.id==="model-delete-confirm");assert.match(textOf(review),/请先修正模板引用/);assert(!review.children.some(el=>el.textContent==="验证并删除、替换引用"));
+ const ui=await launch(api);await openSettings(ui);let row=ui.el("model-list").children[0];assert.match(textOf(row),/请补填 API Key/);
+ await row.children[0].emit("click");assert.equal(ui.el("catalog-api-key").hidden,false);assert.equal(ui.el("catalog-replace-key").checked,true);
+ await ui.el("model-delete").emit("click");const review=ui.el("model-action-review").children.find(el=>el.id==="model-delete-confirm");assert.match(textOf(review),/请先修正模板引用/);assert(!review.children.some(el=>el.textContent==="验证并删除、替换引用"));
 });
 
-test("model results show only the latest operation and unchanged polls retain its DOM",async()=>{
+test("completed model operations stay out of the list and failures remain actionable",async()=>{
  const api=fixture();
  const completed={id:"latest",status:"completed",committed:true,message:"模型配置已保存，相关成员已完成应用。",members:[],completed:2,waiting:0,failed:0};
  api.models.operations=[completed,{id:"old",status:"failed",committed:false,message:"unsupported_installation",members:[],completed:0,waiting:0,failed:0}];
  const ui=await launch(api);await openSettings(ui);
  const list=ui.el("model-operations"),row=list.children[0];
- assert.equal(list.children.length,1);assert.match(textOf(row),/已完成/);assert.doesNotMatch(textOf(list),/unsupported_installation|需处理|历史记录/);
+ assert.equal(list.children.length,0);assert.doesNotMatch(textOf(list),/已完成|unsupported_installation|需处理|历史记录/);
  await ui.clock.advance(2000);assert.equal(list.children[0],row);
  api.models.operations.unshift({id:"new",status:"failed",committed:true,message:"部分成员未完成",members:[{agent_id:"assistant",status:"failed",error:"应用失败"}],completed:0,waiting:0,failed:1});
  await ui.clock.advance(2000);
  assert.equal(list.children.length,1);assert.match(textOf(list),/部分成员未完成/);assert(list.children[0].children.some(el=>el.textContent==="重试未完成成员"));
+ const failed=list.children[0];await ui.clock.advance(2000);assert.equal(list.children[0],failed);
 });
 
 test("submission feedback clears when validation finishes and a new failure stays visible",async()=>{
  const api=fixture(),ui=await launch(api);await openSettings(ui);
- await ui.el("model-list").children[0].children.find(el=>el.textContent==="编辑").emit("click");
+ await ui.el("model-list").children[0].children[0].emit("click");
  await ui.el("model-edit-form").emit("submit");await settle();
- assert.match(ui.el("model-feedback").textContent,/已受理/);
+ assert.equal(ui.el("model-feedback").textContent,"");assert.match(textOf(ui.el("model-operations")),/正在验证/);
  api.models.operations[0].status="failed";api.models.operations[0].message="验证失败，请检查模型地址。";
  await ui.clock.advance(800);
  assert.equal(ui.el("model-feedback").textContent,"");assert.match(textOf(ui.el("model-operations")),/验证失败，请检查模型地址/);
@@ -135,4 +184,72 @@ test("models have an independent settings tab that remains hidden during backgro
  await ui.el("settings-tab-platforms").emit("keydown",{key:"Home"});assert.equal(ui.el("general-settings").hidden,false);
  await openMember(ui);await ui.el("member-model-progress").emit("click");await settle();
  assert.equal(ui.el("model-settings").hidden,false);assert.equal(ui.el("settings-tab-models").getAttribute("aria-selected"),"true");
+});
+
+test("model list opens one editor and returning discards its secret without submitting",async()=>{
+ const api=fixture(),ui=await launch(api);await openSettings(ui);
+ const row=ui.el("model-list").children[0];
+ assert.doesNotMatch(textOf(row),/revision|已验证/);
+ await row.children[0].emit("click");
+ assert.equal(ui.el("model-list-view").hidden,true);assert.equal(ui.el("model-edit-form").hidden,false);
+ ui.el("catalog-api-key").value="discard-this-key";
+ await ui.el("model-edit-back").emit("click");
+ assert.equal(ui.el("catalog-api-key").value,"");assert.equal(ui.el("model-list-view").hidden,false);
+ assert.equal(ui.el("model-edit-form").hidden,true);assert.equal(ui.document.activeElement,ui.el("model-new"));
+ assert.equal(api.calls.filter(c=>c.path==="/v1/models/change").length,0);
+ await ui.el("model-new").emit("click");
+ assert.equal(ui.el("model-list-view").hidden,true);assert.equal(ui.el("model-entry-name").value,"");
+ assert.equal(ui.el("model-impact").textContent,"");
+});
+
+test("model rows use readable conversation names and keep usage separate from editing",async()=>{
+ const api=fixture();
+ api.hook=path=>path==="/v1/rooms" ? {service_epoch:"manager",operator:"tester",rooms:[{room_id:"A",room_instance:"instance-A",name:"软件开发",members:[{id:"assistant",name:"开发助理"}],status:"ready",runtime_status:"ready",service:{room_id:"A",room_instance:"instance-A",service_epoch:"runtime"}}],teams:[]} : undefined;
+ api.models.members.push({...api.models.members[0],room_instance:"previous-instance"});
+ const ui=await launch(api);await openSettings(ui);
+ const row=ui.el("model-list").children[0],usage=row.children.find(el=>el.className==="model-users");
+ assert.equal(descendants(row).filter(el=>el.tag==="button").length,1);
+ assert.match(textOf(usage),/软件开发 \/ 开发助理 · 跟随默认/);
+ assert.match(textOf(usage),/未命名会话 \/ assistant/);
+ assert.doesNotMatch(textOf(usage),/instance-A|previous-instance/);
+ await usage.emit("click");assert.equal(ui.el("model-edit-form").hidden,true);
+ await row.children[0].emit("click");
+ assert.equal(ui.el("model-management-actions").hidden,false);
+ assert.equal(ui.el("model-default-state").hidden,false);assert.equal(ui.el("model-set-default").hidden,true);
+ await ui.el("model-edit-back").emit("click");await ui.el("model-new").emit("click");
+ assert.equal(ui.el("model-management-actions").hidden,true);
+});
+
+test("automatic model names use the model ID without duplicating it or changing stored aliases",async()=>{
+ const api=fixture(),entry=api.models.catalog.entries[0];
+ entry.id="daily";entry.name="原默认模型";entry.model_id="deepseek-flash";
+ api.models.catalog.default="daily";api.models.members[0].target_entry_id="daily";
+ const ui=await launch(api);await openSettings(ui);
+ let row=ui.el("model-list").children[0];
+ assert.equal(textOf(row).match(/deepseek-flash/g).length,1);assert.doesNotMatch(textOf(row),/原默认模型/);
+ assert.equal(entry.name,"原默认模型");
+ await row.children[0].emit("click");assert.equal(ui.el("model-entry-name").value,"");
+ assert.equal(ui.el("model-entry-name").placeholder,"deepseek-flash");
+ await ui.el("model-edit-back").emit("click");entry.name="快速模型";await ui.clock.advance(2000);
+ row=ui.el("model-list").children[0];assert.match(textOf(row),/快速模型/);assert.match(textOf(row),/deepseek-flash/);
+});
+
+test("blank model display names save the model ID and custom names remain editable",async()=>{
+ const api=fixture(),ui=await launch(api);await openSettings(ui);await ui.el("model-new").emit("click");
+ ui.el("catalog-model-id").value="deepseek-flash";await ui.el("catalog-model-id").emit("input");
+ assert.equal(ui.el("model-entry-name").placeholder,"deepseek-flash");
+ ui.el("catalog-api-key").value="private-key";await ui.el("model-edit-form").emit("submit");await settle();
+ assert.equal(api.calls.find(c=>c.path==="/v1/models/change").body.entry.name,"deepseek-flash");
+});
+
+test("default model changes stay in the editor and keep its captured catalog version",async()=>{
+ const api=fixture(),ui=await launch(api);await openSettings(ui);await ui.el("model-list").children[1].children[0].emit("click");
+ assert.equal(ui.el("model-default-state").hidden,true);assert.equal(ui.el("model-set-default").hidden,false);
+ api.models.catalog.version=2;await ui.clock.advance(2000);
+ await ui.el("model-set-default").emit("click");
+ const review=ui.el("model-action-review").children.find(el=>el.id==="model-default-confirm");
+ assert.equal(ui.el("model-list-view").hidden,true);
+ await review.children.find(el=>el.textContent==="验证并设为默认").emit("click");await settle();
+ const sent=api.calls.find(c=>c.path==="/v1/models/change").body;
+ assert.equal(sent.kind,"default");assert.equal(sent.entry_id,"B");assert.equal(sent.expected_version,1);assert.equal("api_key" in sent,false);
 });

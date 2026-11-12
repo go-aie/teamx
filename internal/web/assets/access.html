@@ -1,11 +1,21 @@
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>TeamX · 连接助理</title><link rel="stylesheet" href="/ui/access.css"><script type="module" src="/ui/access.mjs"></script></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>TeamX · 登录</title><link rel="stylesheet" href="/ui/access.css"><script type="module" src="/ui/access.mjs"></script></head>
 <body><main>
-<a class="brand" href="/">TeamX</a>
-<section id="login"><h1>连接你的助理</h1><p>输入部署时生成的管理 token。</p>
-<form id="login-form"><label for="token">管理 token</label><input id="token" type="password" autocomplete="off" required spellcheck="false"><button type="submit">登录</button></form></section>
+<a class="brand" href="/" aria-label="TeamX 首页"><img class="brand-mark" src="/ui/brand-mark.svg" width="48" height="50" alt=""><span>TeamX</span></a>
+<section id="login" aria-label="登录 TeamX">
+<form id="login-form">
+<label for="token">访问令牌</label>
+<div class="token-field">
+<input id="token" type="password" placeholder="粘贴访问令牌" autocomplete="off" autocapitalize="none" required spellcheck="false" aria-describedby="token-help login-feedback">
+<button id="toggle-token" type="button" aria-label="显示访问令牌" aria-pressed="false" title="显示访问令牌"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path class="eye-slash" d="m3 3 18 18"/></svg></button>
+</div>
+<p id="token-help" class="field-hint">由部署管理员提供。</p>
+<p id="login-feedback" class="login-error" role="alert" aria-live="polite" hidden></p>
+<button id="login-submit" type="submit">登录</button>
+</form></section>
 <section id="model" hidden><h1>设置模型</h1><p>验证通过后保存为默认模型，并为你准备助理。验证包含一次简短文本请求和无副作用的工具往返。</p>
+<button id="reload-model-draft" type="button" hidden>放弃旧草稿，按当前配置重新填写</button>
 <form id="model-form"><label for="protocol">协议</label><select id="protocol"><option value="openai-completions">OpenAI 兼容</option><option value="deepseek-messages">DeepSeek Messages</option></select>
 <label for="base-url">Base URL</label><input id="base-url" type="url" placeholder="https://api.example.com/v1" autocomplete="off">
 <label for="model-id">模型 ID</label><input id="model-id" required autocomplete="off" spellcheck="false">

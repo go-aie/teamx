@@ -1,0 +1,81 @@
+/* Shared phone viewport: navigation and context overlay the conversation instead
+   of pushing its composer below the screen. Desktop column rules stay intact. */
+.mobile-panel-back { display:none; }
+.room-title,.room-name-button,#room-name { min-width:0; }
+.room-name-button #room-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.platform-connect-interaction,.platform-selection-interaction { max-width:100%; min-width:0; overflow-wrap:anywhere; }
+@media(max-width:640px), (max-height:500px) and (pointer:coarse) {
+  :root { --control-height:44px; --icon-size:44px; }
+  html,body { height:100%; overflow:hidden; }
+  .workspace,.workspace.managed,.workspace.direct-conversation {
+    display:flex; flex-direction:column;
+    position:fixed; top:var(--app-top,0px); left:0; width:100%;
+    height:var(--app-height,100dvh); min-height:0; overflow:hidden;
+    padding-top:env(safe-area-inset-top); padding-inline:env(safe-area-inset-left) env(safe-area-inset-right);
+    --workspace-header-height:56px;
+  }
+  .workspace .conversation,.workspace.managed .conversation,.workspace.direct-conversation .conversation {
+    flex:1; height:auto; min-height:0; overflow:hidden;
+  }
+  .room-rail { flex:none; height:56px; z-index:12; }
+  .room-rail-header,.direct-conversation .room-rail-header,.rooms-collapsed .room-rail-header {
+    justify-content:flex-start; gap:8px; padding:0 120px 0 12px;
+  }
+  .rooms-collapsed .room-rail .brand { max-width:120px; opacity:1; visibility:visible; }
+  .workspace .room-rail .rail-settings {
+    position:absolute; top:0; right:8px; margin:0; padding:6px 0; border:0;
+    display:flex; align-items:center; gap:4px;
+  }
+  .workspace .rail-settings .user-menu-toggle { width:44px; min-height:44px; padding:6px; justify-content:center; }
+  .workspace .rail-settings .user-name,.workspace .rail-settings .user-menu-chevron { display:none; }
+  .workspace .rail-settings .user-menu { left:auto; right:0; top:calc(100% + 4px); bottom:auto; width:220px; }
+  .workspace .room-nav {
+    position:absolute; top:56px; left:0; right:0;
+    height:calc(var(--app-height,100dvh) - 56px - env(safe-area-inset-top));
+    max-height:none; padding:16px 16px calc(16px + env(safe-area-inset-bottom));
+    border:0; background:var(--surface-muted); overflow:auto;
+  }
+  .sidebar-resizer { display:none; }
+  .room-nav,.sidebar { min-width:0; }
+  .members-collapsed .member-rail { display:none; }
+  .rooms-collapsed #room-nav { height:0; padding:0; }
+  .workspace .member-rail,.workspace.direct-conversation .member-rail {
+    position:absolute; z-index:15; inset:0; width:100%; height:100%;
+    background:var(--surface-muted); overflow:hidden; padding-bottom:env(safe-area-inset-bottom);
+  }
+  .mobile-panel-back { display:block; text-align:left; min-height:48px; flex:none; padding:12px 20px; border-bottom:1px solid var(--line); }
+  .workspace .member-rail .activity-dialog,.workspace .member-rail .notification-detail {
+    height:auto; max-height:none; flex:1; min-height:0;
+  }
+  .workspace .member-rail .sidebar { flex:1; min-height:0; overflow:auto; }
+  .room-header { padding:0 12px; gap:8px; }
+  .room-title { flex:1; overflow:hidden; }
+  .room-header h1 { font-size:17px; gap:6px; }
+  .room-actions { flex:none; gap:4px; }
+  .room-footer { padding:6px 14px calc(8px + env(safe-area-inset-bottom)); }
+  .room-footer .connection { overflow-wrap:anywhere; }
+  .compose { margin:6px 10px 0; }
+  .compose textarea { min-height:48px; max-height:24dvh; font-size:16px; }
+  .compose-hint { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+  .message { padding:14px 12px; gap:8px; }
+  .message-content { min-width:0; }
+  input:not([type="checkbox"]):not([type="radio"]),textarea,select { font-size:16px; }
+  button,summary { touch-action:manipulation; }
+  .text-button,.icon-button,.reply-cancel,.room-panel-toggle,.reply-button,.room-menu summary { min-height:44px; min-width:44px; }
+  .platform-connect-actions { flex-wrap:wrap; }
+  .platform-connect-actions > * { min-height:44px; }
+  .dialog-surface {
+    max-height:calc(var(--app-height,100dvh) - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    top:var(--app-top,0px); overflow:auto;
+  }
+  .settings-dialog { overflow:hidden; }
+  .settings-layout { grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); height:calc(var(--app-height,100dvh) - 112px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+  .settings-navigation { flex-direction:row; padding:8px 16px; border-right:0; border-bottom:1px solid var(--line); }
+  .settings-navigation button { flex:1; justify-content:center; }
+  .settings-dialog fieldset { grid-template-columns:minmax(0,1fr); }
+  .model-settings .field-control { width:100%; min-width:0; }
+  .member-model { min-width:0; flex-wrap:wrap; }
+  .member-model select { min-width:0; max-width:100%; }
+  .settings-picker-options { max-height:min(224px,30dvh); }
+  .workspace-form footer { flex-wrap:wrap; }
+}

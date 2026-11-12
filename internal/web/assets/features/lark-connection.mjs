@@ -312,6 +312,11 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
   }
 
   async function pollLarkAuth() {
+    if (!runtime.canPoll()) {
+      clearTimeout(connectionsUI.platforms.authTimer);
+      connectionsUI.platforms.authTimer = setTimeout(() => { void pollLarkAuth(); }, 1500);
+      return;
+    }
     const auth = connectionsUI.platforms.auth;
     if (!auth) return;
     let finished = false, version = connectionsUI.platforms.formVersion;
@@ -368,11 +373,8 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
     } catch (error) {
       if (finished) { if (version === connectionsUI.platforms.formVersion) connectionsUI.connectionFeedback("授权已完成，验证结果未确认。请重新验证。", "error"); return; }
       if (connectionsUI.platforms.auth !== auth) return;
-      // Ensure an unobserved flow cannot keep changing credentials later.
-      const cancelVersion = connectionsUI.platforms.formVersion + 1;
-      await cancelLarkAuth();
-      if (cancelVersion !== connectionsUI.platforms.formVersion) return;
-      connectionsUI.connectionFeedback(auth.action === "setup" ? "配置或授权结果未确认，请重新检测。" : "授权结果未确认，请重新检测。", "error");
+      connectionsUI.connectionFeedback("授权状态暂不可读，正在核对原操作；不会重新发起或取消授权。", "error");
+      connectionsUI.platforms.authTimer = setTimeout(() => { void pollLarkAuth(); }, 3000);
     }
   }
 

@@ -31,6 +31,8 @@ func Serve(w http.ResponseWriter, r *http.Request) bool {
 			contentType = "text/css; charset=utf-8"
 		case ".js", ".mjs":
 			contentType = "text/javascript; charset=utf-8"
+		case ".svg":
+			contentType = "image/svg+xml"
 		default:
 			return false
 		}

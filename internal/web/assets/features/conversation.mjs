@@ -1,6 +1,6 @@
 import { readPages as collectPages, createRoomDrafts, mentionRanges, unseenMentions } from "../client.mjs";
 import { notificationOptions } from "../markdown.mjs";
-import { createAssistantIcon } from "../icons.mjs";
+import { createAssistantIcon, createUserIcon } from "../icons.mjs";
 import { createMentionPicker } from "../mention-picker.mjs";
 
 // Messages, drafts, mentions and the send/restart lifecycle.
@@ -8,9 +8,9 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
   const { document, window, requestAnimationFrame, performance, setTimeout, clearTimeout, ResizeObserver, renderMessageBody } = env;
   const { state, $, notice, rpc, currentView, refresh, discussionBusy, reconcileChildren, storage, confirmAction } = runtime;
 
-  let historyLoading = false;
+  let historyLoading = false, composing = false, compositionEnded = -Infinity;
 
-  const drafts = createRoomDrafts(storage);
+  const drafts = createRoomDrafts(storage, () => state.installationID);
   const mentionPicker = createMentionPicker({ document, input: $("message-input"), list: $("mention-options"), mirror: $("message-mirror"),
     members: () => state.members, operator: () => state.operator, enabled: () => !!state.info && !state.draft.pending && !discussionBusy(),
     changed: () => { saveDraft(); composerState(); } });
@@ -145,9 +145,11 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     el.classList.toggle("integration", integration);
     const avatar = el.querySelector(".avatar");
     avatar.textContent = integration ? "GL" : message.author.id.slice(0, 2).toUpperCase();
+    if (message.author.kind === "human") avatar.replaceChildren(createUserIcon(document));
     if (agent && roomsUI.isDirect()) avatar.replaceChildren(createAssistantIcon(document));
     avatar.classList.toggle("integration-avatar", integration);
     avatar.classList.toggle("agent-avatar", agent);
+    avatar.classList.toggle("user-avatar", message.author.kind === "human");
     const channel = message.source?.provider === "gitlab" && ["events", "todos"].includes(message.source?.channel) ? message.source.channel : null;
     el.querySelector(".author").textContent = integration ? channel ? `GitLab · ${channel === "todos" ? "我的待办" : "项目活动"}` : `${message.author.id} · 通知` : message.author.id;
     if (integration && channel) {
@@ -441,7 +443,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
 
     $("compose").addEventListener("submit", async (event) => {
       event.preventDefault();
-      if (state.draft.sending || discussionBusy() || !state.connected) return;
+      if (composing || state.draft.sending || discussionBusy() || !state.connected) return;
       const text = $("message-input").value;
       if (!state.draft.pending && !text.trim()) return;
       if (!state.draft.pending && new TextEncoder().encode(text).length > 16384) {
@@ -481,7 +483,10 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     if (typeof ResizeObserver !== "undefined") new ResizeObserver(mentionPicker.renderText).observe($("message-input"));
     $("message-input").addEventListener("input", () => { saveDraft(); composerState(); });
 
+    $("message-input").addEventListener("compositionstart", () => { composing = true; });
+    $("message-input").addEventListener("compositionend", () => { composing = false; compositionEnded = performance.now(); saveDraft(); });
     $("message-input").addEventListener("keydown", (event) => {
+      if (composing || event.isComposing || event.keyCode === 229 || event.key === "Enter" && performance.now() - compositionEnded < 50) return;
       if (mentionPicker.keydown(event)) return;
       // IME confirmation (including browsers reporting keyCode 229) never sends.
       if (event.key !== "Enter" || event.isComposing || event.keyCode === 229 || event.altKey) return;

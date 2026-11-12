@@ -1,3 +1,4 @@
+import { compactViewport } from "../client.mjs";
 // Room/member sidebars, responsive visibility and width persistence.
 export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI, settingsUI }) {
   const { document, window } = env;
@@ -5,9 +6,9 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
 
   let directMobileDetails = false, directMobileRooms = false, directNotificationsOpen = false;
 
-  function roomsPanelOpen() { return roomsUI.isDirect() && window.innerWidth <= 640 ? directMobileRooms : panels.rooms; }
+  function roomsPanelOpen() { return compactViewport(window) ? directMobileRooms : panels.rooms; }
 
-  function membersPanelOpen() { return roomsUI.isDirect() && window.innerWidth <= 640 ? directMobileDetails : panels.members; }
+  function membersPanelOpen() { return compactViewport(window) ? directMobileDetails : panels.members; }
 
   const panelsKey = "teamx.room-panels";
 
@@ -40,7 +41,7 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
   }
 
   function applySidebarWidths(priority = "rooms") {
-    if (window.innerWidth <= 640) return;
+    if (compactViewport(window)) return;
     const workspace = $("workspace"), styles = window.getComputedStyle(workspace);
     const widths = {};
     for (const [side, config] of Object.entries(sidebarConfig)) {
@@ -82,8 +83,8 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
     workspace.classList.toggle("members-collapsed", !membersOpen);
     $("room-rail").hidden = !state.managed;
     $("room-nav").hidden = !state.managed;
-    $("room-brand").inert = !roomsOpen;
-    $("room-brand").setAttribute("aria-hidden", String(!roomsOpen));
+    $("room-brand").inert = !roomsOpen && !compactViewport(window);
+    $("room-brand").setAttribute("aria-hidden", String(!roomsOpen && !compactViewport(window)));
     for (const [side, id] of [["rooms", "room-nav"], ["members", "member-sidebar"]]) {
       // Keep content mounted for the slide, while removing collapsed controls from keyboard/AT access.
       const open = side === "members" ? membersOpen : roomsOpen;
@@ -95,8 +96,12 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
     $("member-rail").setAttribute("aria-hidden", String(!membersOpen));
     if (!membersOpen && $("activity-dialog").open) $("activity-dialog").close();
     if (!membersOpen && $("notification-detail").open) $("notification-detail").close();
+    if (compactViewport(window)) {
+      $("conversation").inert = roomsOpen || membersOpen;
+    } else $("conversation").inert = false;
     notificationsUI.renderContextViews();
     applySidebarWidths();
+    runtime.navigationChanged();
     for (const [side, name] of [["rooms", "会话侧栏"], ["members", roomsUI.isDirect() ? "助理详情" : "团队成员"]]) {
       const button = $("toggle-" + side);
       const open = side === "members" ? membersOpen : roomsOpen;
@@ -113,11 +118,11 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
 
   function expandMembers() {
     panels.members = true;
-    if (roomsUI.isDirect() && window.innerWidth <= 640) directMobileDetails = true;
+    if (compactViewport(window)) { directMobileDetails = true; directMobileRooms = false; }
   }
 
   function collapseMembers() {
-    if (window.innerWidth <= 640) directMobileDetails = false;
+    if (compactViewport(window)) directMobileDetails = false;
     else panels.members = false;
   }
 
@@ -125,7 +130,22 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
   function hideConversationNotifications() { directNotificationsOpen = false; }
 
   function showNotificationDetail() {
-    panels.members = true; savePanels(); renderPanels();
+    expandMembers(); savePanels(); renderPanels();
+  }
+
+  function closeMobilePanels() {
+    const rooms = directMobileRooms;
+    directMobileDetails = false; directMobileRooms = false;
+    renderPanels(); membersUI.syncDirectDetail(); $(rooms ? "toggle-rooms" : "toggle-members").focus();
+  }
+
+  function updateViewport() {
+    const viewport = window.visualViewport;
+    const height = viewport?.scale === 1 ? viewport.height : window.innerHeight;
+    if (height) document.documentElement?.style.setProperty("--app-height", `${Math.round(height)}px`);
+    document.documentElement?.style.setProperty("--app-top", `${viewport?.scale === 1 ? Math.round(viewport.offsetTop) : 0}px`);
+    if (height) $("workspace").style.setProperty("--app-height", `${Math.round(height)}px`);
+    $("workspace").style.setProperty("--app-top", `${viewport?.scale === 1 ? Math.round(viewport.offsetTop) : 0}px`);
   }
 
   function mount() {
@@ -136,9 +156,13 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
     } catch { /* Sidebars remain usable when tab storage is unavailable. */ }
 
     for (const side of ["rooms", "members"]) $("toggle-" + side).addEventListener("click", () => {
-      if (side === "members" && roomsUI.isDirect() && window.innerWidth <= 640) directMobileDetails = !directMobileDetails;
-      else if (side === "rooms" && roomsUI.isDirect() && window.innerWidth <= 640) directMobileRooms = !directMobileRooms;
+      if (side === "members" && compactViewport(window)) directMobileDetails = !directMobileDetails;
+      else if (side === "rooms" && compactViewport(window)) directMobileRooms = !directMobileRooms;
       else panels[side] = !panels[side];
+      if (compactViewport(window)) {
+        if (side === "rooms" && directMobileRooms) directMobileDetails = false;
+        if (side === "members" && directMobileDetails) directMobileRooms = false;
+      }
       savePanels();
       renderPanels();
       membersUI.syncDirectDetail();
@@ -146,7 +170,7 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
 
     for (const [side, config] of Object.entries(sidebarConfig)) {
       const handle = $(config.handle), direction = side === "rooms" ? 1 : -1;
-      const enabled = () => panels[side] && (side !== "rooms" || state.managed) && window.innerWidth > 640;
+      const enabled = () => panels[side] && (side !== "rooms" || state.managed) && !compactViewport(window);
       handle.addEventListener("pointerdown", event => {
         if (event.button !== 0 || event.isPrimary === false || !enabled() || sidebarResize) return;
         event.preventDefault();
@@ -175,13 +199,18 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
       });
     }
 
-    window.addEventListener("resize", () => { renderPanels(); membersUI.syncDirectDetail(); settingsUI.renderSettingsNavigation(); });
+    $("close-mobile-members").addEventListener("click", closeMobilePanels);
+    window.visualViewport?.addEventListener("resize", updateViewport);
+    window.visualViewport?.addEventListener("scroll", updateViewport);
+    window.addEventListener("resize", () => { updateViewport(); renderPanels(); membersUI.syncDirectDetail(); settingsUI.renderSettingsNavigation(); });
 
-    renderPanels();
+    updateViewport(); renderPanels();
   }
 
   return {
     mount,
+    roomsPanelOpen,
+    closeMobilePanels,
     resetDirectNavigation,
     expandMembers,
     collapseMembers,

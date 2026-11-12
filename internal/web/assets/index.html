@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <meta name="color-scheme" content="light">
   <title>TeamX · 会话</title>
   <link rel="stylesheet" href="/ui/style.css">
@@ -13,7 +13,7 @@
     <aside id="room-rail" class="room-rail" aria-label="会话导航" hidden>
       <div id="room-resizer" class="sidebar-resizer room-resizer" role="separator" tabindex="0" aria-label="调整左侧栏宽度" aria-orientation="vertical" aria-controls="room-rail" title="左右拖动调整宽度"></div>
       <header class="rail-header room-rail-header">
-        <a id="room-brand" class="brand" href="/" aria-label="TeamX 首页"><span class="brand-mark">t<span>×</span></span>TeamX</a>
+        <a id="room-brand" class="brand" href="/" aria-label="TeamX 首页"><img class="brand-mark" src="/ui/brand-mark.svg" width="28" height="29" alt="">TeamX</a>
         <button id="toggle-rooms" class="panel-toggle" type="button" aria-label="收起会话侧栏" title="收起会话侧栏" aria-controls="room-nav" aria-expanded="true" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><rect class="panel-fill" x="3.8" y="4.8" width="4.4" height="14.4"/><path d="M9 4v16"/></svg></button>
       </header>
       <nav id="room-nav" class="room-nav" aria-label="会话列表" hidden>
@@ -28,7 +28,19 @@
         <button id="retry-management" class="text-button" type="button" hidden>核对并重试</button>
         <button id="dismiss-management" class="text-button" type="button" hidden>保留会话，结束本次操作</button>
       </nav>
-      <footer class="rail-settings"><button id="access-logout" type="button" hidden>退出登录</button><button id="open-settings" type="button" aria-label="设置 · 通用与平台" title="设置 · 通用与平台" aria-haspopup="dialog" aria-controls="settings-dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37a1.724 1.724 0 0 0 2.572-1.065Z"/><circle cx="12" cy="12" r="3"/></svg><span class="settings-label">设置</span></button></footer>
+      <footer class="rail-settings">
+        <button id="user-menu-toggle" class="user-menu-toggle" type="button" aria-label="用户菜单" title="用户菜单" aria-haspopup="menu" aria-expanded="false" aria-controls="user-menu">
+          <span id="user-avatar" class="user-avatar" aria-hidden="true"></span>
+          <span id="user-name" class="user-name">用户</span>
+          <svg class="user-menu-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 14 4-4 4 4"/></svg>
+        </button>
+        <div id="user-menu" class="user-menu menu-surface" role="menu" aria-label="用户菜单" hidden>
+          <button id="open-settings" class="user-menu-item" role="menuitem" tabindex="-1" type="button" aria-label="设置" aria-haspopup="dialog" aria-controls="settings-dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.998 3.099Q10.168 2.576 10.718 2.576L13.282 2.576Q13.832 2.576 14.002 3.099L14.481 4.569Q14.652 5.092 15.128 5.367L16.181 5.974Q16.657 6.249 17.195 6.135L18.707 5.816Q19.245 5.702 19.520 6.178L20.802 8.398Q21.077 8.875 20.709 9.284L19.676 10.433Q19.309 10.842 19.309 11.392L19.309 12.608Q19.309 13.158 19.676 13.567L20.709 14.716Q21.077 15.125 20.802 15.602L19.520 17.822Q19.245 18.298 18.707 18.184L17.195 17.865Q16.657 17.751 16.181 18.026L15.128 18.633Q14.652 18.908 14.481 19.431L14.002 20.901Q13.832 21.424 13.282 21.424L10.718 21.424Q10.168 21.424 9.998 20.901L9.519 19.431Q9.348 18.908 8.872 18.633L7.819 18.026Q7.343 17.751 6.805 17.865L5.293 18.184Q4.755 18.298 4.480 17.822L3.198 15.602Q2.923 15.125 3.291 14.716L4.324 13.567Q4.691 13.158 4.691 12.608L4.691 11.392Q4.691 10.842 4.324 10.433L3.291 9.284Q2.923 8.875 3.198 8.398L4.480 6.178Q4.755 5.702 5.293 5.816L6.805 6.135Q7.343 6.249 7.819 5.974L8.872 5.367Q9.348 5.092 9.519 4.569Z"/><circle cx="12" cy="12" r="3.25"/></svg><span class="settings-label">设置</span></button>
+          <div id="user-menu-divider" class="user-menu-divider" role="separator" hidden></div>
+          <button id="access-logout" class="user-menu-item" type="button" role="menuitem" tabindex="-1" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4M14 7l5 5-5 5M8 12h11"/></svg><span>退出登录</span></button>
+          <p id="user-menu-feedback" role="status" aria-live="polite" hidden></p>
+        </div>
+      </footer>
     </aside>
     <section id="conversation" class="conversation" aria-label="房间消息">
       <header id="room-header" class="room-header">
@@ -49,6 +61,7 @@
       </header>
       <div id="timezone-error" class="notice" role="alert" hidden></div>
       <div id="platform-interaction-error" class="notice" role="status" hidden></div>
+      <div id="service-change" class="notice" role="status" hidden></div>
       <div id="sync-error" class="notice" role="status" hidden></div>
       <div id="restart-notice" class="notice" role="status" hidden></div>
       <div class="mention-notice" role="status" hidden id="mention-notice"><button id="view-mention" type="button"></button></div>
@@ -107,6 +120,7 @@
       <footer class="room-footer"><span id="connection" class="connection" role="status">正在连接</span></footer>
     </section>
     <aside id="member-rail" class="member-rail" aria-label="团队成员、通知源与详情">
+      <button id="close-mobile-members" class="text-button mobile-panel-back" type="button">← 返回对话</button>
       <div id="member-resizer" class="sidebar-resizer member-resizer" role="separator" tabindex="0" aria-label="调整右侧栏宽度" aria-orientation="vertical" aria-controls="member-rail" title="左右拖动调整宽度"></div>
       <div id="member-list-view" class="member-list-view">
         <header class="rail-header member-rail-header">
@@ -492,13 +506,19 @@
     </header>
     <div class="settings-layout">
       <nav id="settings-navigation" class="settings-navigation" role="tablist" aria-label="设置分类" aria-orientation="vertical">
-        <button id="settings-tab-general" type="button" role="tab" aria-selected="true" aria-controls="general-settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1M5.6 18.4l2.1-2.1m8.6-8.6 2.1-2.1"/><circle cx="12" cy="12" r="5"/></svg><span>通用</span></button>
+        <button id="settings-tab-general" type="button" role="tab" aria-selected="true" aria-controls="general-settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.998 3.099Q10.168 2.576 10.718 2.576L13.282 2.576Q13.832 2.576 14.002 3.099L14.481 4.569Q14.652 5.092 15.128 5.367L16.181 5.974Q16.657 6.249 17.195 6.135L18.707 5.816Q19.245 5.702 19.520 6.178L20.802 8.398Q21.077 8.875 20.709 9.284L19.676 10.433Q19.309 10.842 19.309 11.392L19.309 12.608Q19.309 13.158 19.676 13.567L20.709 14.716Q21.077 15.125 20.802 15.602L19.520 17.822Q19.245 18.298 18.707 18.184L17.195 17.865Q16.657 17.751 16.181 18.026L15.128 18.633Q14.652 18.908 14.481 19.431L14.002 20.901Q13.832 21.424 13.282 21.424L10.718 21.424Q10.168 21.424 9.998 20.901L9.519 19.431Q9.348 18.908 8.872 18.633L7.819 18.026Q7.343 17.751 6.805 17.865L5.293 18.184Q4.755 18.298 4.480 17.822L3.198 15.602Q2.923 15.125 3.291 14.716L4.324 13.567Q4.691 13.158 4.691 12.608L4.691 11.392Q4.691 10.842 4.324 10.433L3.291 9.284Q2.923 8.875 3.198 8.398L4.480 6.178Q4.755 5.702 5.293 5.816L6.805 6.135Q7.343 6.249 7.819 5.974L8.872 5.367Q9.348 5.092 9.519 4.569Z"/><circle cx="12" cy="12" r="3.25"/></svg><span>通用</span></button>
         <button id="settings-tab-models" type="button" role="tab" aria-selected="false" aria-controls="model-settings" tabindex="-1"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="3"/><path d="M9 9h6v6H9zM9 2v3m6-3v3M9 19v3m6-3v3M2 9h3m-3 6h3m14-6h3m-3 6h3"/></svg><span>模型</span></button>
         <button id="settings-tab-platforms" type="button" role="tab" aria-selected="false" aria-controls="platform-settings" tabindex="-1"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 13 4-4M8 15l-1 1a3.5 3.5 0 0 1-5-5l4-4a3.5 3.5 0 0 1 5 0M16 9l1-1a3.5 3.5 0 0 1 5 5l-4 4a3.5 3.5 0 0 1-5 0"/></svg><span>平台</span></button>
       </nav>
       <div id="settings-panels" class="settings-panels">
     <section id="general-settings" class="platforms-content general-settings" role="tabpanel" aria-labelledby="settings-tab-general">
       <h3 id="general-title">通用</h3>
+      <form id="user-name-form" class="user-name-form">
+        <label for="user-display-name">显示名称</label>
+        <input id="user-display-name" class="field-control" maxlength="40" placeholder="用户" autocomplete="nickname" aria-describedby="user-name-hint user-name-feedback">
+        <p id="user-name-hint" class="quiet">留空使用默认用户名。自定义名称仅保存在此浏览器。</p>
+        <div class="user-name-actions"><span id="user-name-feedback" class="quiet" role="status" aria-live="polite"></span><button id="user-name-save" class="primary" type="submit">保存名称</button></div>
+      </form>
       <form id="timezone-form">
         <label for="system-timezone">系统时区</label>
         <p id="timezone-current" class="quiet" role="status"></p>
@@ -518,16 +538,20 @@
 
     </section>
       <section id="model-settings" class="platforms-content model-settings" role="tabpanel" aria-labelledby="settings-tab-models" hidden>
-        <div class="platforms-heading"><h3>模型</h3><button id="model-new" type="button" class="secondary-button">新增模型</button></div>
-        <p class="quiet">集中维护模型，Agent 可跟随默认或固定使用一个模型。切换会重置私有上下文，公共消息和 Workspace 保留。</p>
-        <div id="model-list"></div>
+        <div id="model-list-view">
+        <div class="platforms-heading"><h3>已配置的模型</h3><button id="model-new" type="button" class="add-button" aria-label="添加模型" title="添加模型"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
+        <div id="model-list" aria-label="模型列表"></div>
+        <div id="models-empty" class="platforms-empty" hidden><h3>还没有模型</h3><p>点击右上角 ＋ 添加模型。</p></div>
+        </div>
         <form id="model-edit-form" class="model-edit-form" hidden autocomplete="off">
-          <h4 id="model-edit-title">新增模型</h4>
-          <label for="model-entry-name">名称</label><input id="model-entry-name" class="field-control" required maxlength="256">
-<label for="catalog-protocol">协议</label><select class="field-control" id="catalog-protocol"><option value="openai-completions">OpenAI 兼容</option><option value="deepseek-messages">DeepSeek Messages</option></select>
-<label for="catalog-base-url">Base URL</label><input class="field-control" id="catalog-base-url" type="url" placeholder="https://api.example.com/v1" autocomplete="off">
-<label for="catalog-model-id">模型 ID</label><input class="field-control" id="catalog-model-id" required autocomplete="off" spellcheck="false">
-<label for="catalog-api-key">API Key</label><input class="field-control" id="catalog-api-key" type="password" autocomplete="off"><p id="catalog-key-state">请输入 API Key，密钥将保存在部署机的私有目录。</p><label id="catalog-replace-key-label" hidden><input class="field-control" id="catalog-replace-key" type="checkbox">更换密钥</label>
+          <div class="connection-form-heading"><button id="model-edit-back" class="back-button" type="button" aria-label="返回模型列表"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg><span>返回</span></button><h3 id="model-edit-title">添加模型</h3></div>
+          <div class="model-fields">
+            <div class="connection-field"><label for="model-entry-name">显示名称（可选）</label><input id="model-entry-name" class="field-control" placeholder="留空使用模型 ID" maxlength="256"></div>
+            <div class="connection-field"><label for="catalog-protocol">协议</label><select class="field-control" id="catalog-protocol"><option value="openai-completions">OpenAI 兼容</option><option value="deepseek-messages">DeepSeek Messages</option></select></div>
+            <div class="connection-field connection-field-wide"><label for="catalog-base-url">Base URL</label><input class="field-control" id="catalog-base-url" type="url" placeholder="https://api.example.com/v1" autocomplete="off"></div>
+            <div class="connection-field"><label for="catalog-model-id">模型 ID</label><input class="field-control" id="catalog-model-id" required autocomplete="off" spellcheck="false"></div>
+            <div class="connection-field"><label for="catalog-api-key">API Key</label><input class="field-control" id="catalog-api-key" type="password" autocomplete="off"><p id="catalog-key-state" class="quiet"></p><label id="catalog-replace-key-label" class="model-replace-key" hidden><input id="catalog-replace-key" type="checkbox">更换密钥</label></div>
+          </div>
 <details><summary>高级设置</summary>
 <label for="catalog-input-modalities">输入类型</label><select class="field-control" id="catalog-input-modalities"><option value="">使用适配器默认值</option><option value="text">文本</option><option value="text,image">文本和图片（按适配器声明）</option></select>
 <label for="catalog-context-window">上下文窗口</label><input class="field-control" id="catalog-context-window" type="number" min="1" step="1" placeholder="使用适配器默认值">
@@ -537,9 +561,12 @@
 </details>
 
           <p id="model-impact" class="quiet"></p>
-          <div class="connection-account-actions"><button id="model-save" class="primary" type="submit">验证并保存</button><button id="model-edit-cancel" class="text-button" type="button">取消编辑</button></div>
+          <div id="model-save-actions" class="connection-account-actions"><button id="model-save" class="primary" type="submit">验证并保存</button><button id="model-edit-cancel" class="text-button" type="button">取消</button></div>
+          <div id="model-management-actions" class="model-management-actions" hidden><span id="model-default-state" class="model-default-badge" hidden>当前默认模型</span><button id="model-set-default" class="secondary-button" type="button" hidden>设为默认</button><button id="model-delete" class="text-button danger-button" type="button">删除模型</button></div>
+          <div id="model-action-review"></div>
         </form>
         <p id="model-feedback" class="quiet" role="status" aria-live="polite"></p>
+        <button id="model-check-operation" class="text-button" type="button" hidden>读取原操作进度</button>
         <div id="model-operations" aria-label="模型应用进度"></div>
       </section>
     <section id="platform-settings" role="tabpanel" aria-labelledby="settings-tab-platforms" hidden>

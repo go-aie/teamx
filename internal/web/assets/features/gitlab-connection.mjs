@@ -269,6 +269,11 @@ export function createGitLabConnection({ env, connectionsUI, runtime, settingsUI
   }
 
   async function pollGitLabAuth() {
+    if (!runtime.canPoll()) {
+      clearTimeout(connectionsUI.platforms.gitlabTimer);
+      connectionsUI.platforms.gitlabTimer = setTimeout(() => { void pollGitLabAuth(); }, 1500);
+      return;
+    }
     const auth = connectionsUI.platforms.gitlabAuth, version = connectionsUI.platforms.formVersion;
     if (!auth) return;
     try {
@@ -304,7 +309,7 @@ export function createGitLabConnection({ env, connectionsUI, runtime, settingsUI
         renderGitLabAccount();
       } else connectionsUI.connectionFeedback(message,["succeeded","logged_out"].includes(result.status)?"success":"error",duplicateAccount ? result.cleanup_status==="manual_required" ? "本次未使用的授权尚未自动撤销，已有平台的授权保持不变。" : cleanupMessage : "");
     } catch {
-      if (connectionsUI.platforms.gitlabAuth===auth && version===connectionsUI.platforms.formVersion) {connectionsUI.connectionFeedback("授权状态读取失败，请重新检查连接。", "error");clearGitLabAuthView();renderGitLabAccount();}
+      if (connectionsUI.platforms.gitlabAuth===auth && version===connectionsUI.platforms.formVersion) {connectionsUI.connectionFeedback("授权状态读取失败，正在核对原操作。", "error"); connectionsUI.platforms.gitlabTimer=setTimeout(()=>{void pollGitLabAuth();},3000);}
     }
   }
 
