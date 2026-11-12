@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -63,12 +64,19 @@ func (m *roomManager) listLarkChats(ctx context.Context, req larkChatsRequest) (
 	if req.Type == "" {
 		req.Type = "all"
 	}
-	search := lark.ChatSearchRequest{Query: req.Query, Type: req.Type, PageToken: req.PageToken}
+	personnel := req.member != nil && req.Type == "p2p"
+	search := lark.ChatSearchRequest{Query: req.Query, Type: req.Type, PageToken: req.PageToken, PersonnelOnly: personnel}
+	if req.member != nil && req.Type != "group" && req.Type != "p2p" {
+		return lark.ChatPage{}, ErrRequest
+	}
 	if req.Type != "all" && req.Type != "group" && req.Type != "p2p" || req.Query != "" && !search.Valid() {
 		return lark.ChatPage{}, ErrRequest
 	}
 	m.mu.Lock()
 	a, err := m.checkLarkChatsLocked(ctx, req, nil)
+	if err == nil {
+		err = m.checkPlatformMemberContextLocked(ctx)
+	}
 	if err != nil {
 		m.mu.Unlock()
 		return lark.ChatPage{}, err
@@ -93,11 +101,19 @@ func (m *roomManager) listLarkChats(ctx context.Context, req larkChatsRequest) (
 		page.Chats = []lark.Chat{}
 		for _, id := range req.verifyIDs {
 			var chat lark.Chat
-			chat, err = client.Chat(callCtx, a.Identity, id)
+			if personnel {
+				chat, err = client.NotificationChat(callCtx, a.Identity, id)
+			} else {
+				chat, err = client.Chat(callCtx, a.Identity, id)
+			}
 			if err != nil {
 				break
 			}
-			if chat.Mode != "group" && chat.Mode != "topic" {
+			if personnel && !validMemberPrivateChat(chat, a.Identity, id) {
+				err = conflictReason("private.chat_ids", "not a verified personnel conversation", "Use an existing personnel p2p chat_id from this account; groups, bots, self chats and user open_id values are not supported.")
+				break
+			}
+			if !personnel && chat.Mode != "group" && chat.Mode != "topic" {
 				err = ErrRequest
 				break
 			}
@@ -106,11 +122,54 @@ func (m *roomManager) listLarkChats(ctx context.Context, req larkChatsRequest) (
 	} else if req.Query != "" {
 		page, err = client.SearchChats(callCtx, a.Identity, search)
 	} else {
-		page, err = client.Chats(callCtx, a.Identity, lark.ChatsRequest{PageSize: 100, PageToken: req.PageToken})
+		pageSize := 100
+		if personnel {
+			// Personnel candidates need independent native relationship reads.
+			// Bound that work per directory page like the name-search page.
+			pageSize = 20
+		}
+		page, err = client.Chats(callCtx, a.Identity, lark.ChatsRequest{PageSize: pageSize, PageToken: req.PageToken})
+	}
+	if err == nil && req.member != nil && len(req.verifyIDs) == 0 {
+		if !personnel {
+			page.Chats = slices.DeleteFunc(page.Chats, func(c lark.Chat) bool { return c.Mode == "p2p" })
+		} else {
+			candidates := page.Chats
+			page.Chats = []lark.Chat{}
+			for _, candidate := range candidates {
+				if candidate.Mode != "p2p" {
+					continue
+				}
+				chat, readErr := client.NotificationChat(callCtx, a.Identity, candidate.ID)
+				if readErr != nil {
+					code := lark.ErrorCode(readErr)
+					if code != "conversation_unverified" && code != "permission_denied" && code != "query_failed" {
+						err = readErr
+						break
+					}
+					warning := lark.ChatSearchWarning{Source: "user", Code: code}
+					if !slices.Contains(page.SearchWarnings, warning) {
+						page.SearchWarnings = append(page.SearchWarnings, warning)
+					}
+					continue
+				}
+				if validMemberPrivateChat(chat, a.Identity, candidate.ID) {
+					// Search may carry the person's localized name rather than a
+					// blank P2P metadata title. IDs and relationship come from re-read.
+					if candidate.Name != "" {
+						chat.Name = candidate.Name
+					}
+					page.Chats = append(page.Chats, chat)
+				}
+			}
+		}
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, checkErr := m.checkLarkChatsLocked(callCtx, req, &a); checkErr != nil {
+		return lark.ChatPage{}, checkErr
+	}
+	if checkErr := m.checkPlatformMemberContextLocked(callCtx); checkErr != nil {
 		return lark.ChatPage{}, checkErr
 	}
 	if err != nil {

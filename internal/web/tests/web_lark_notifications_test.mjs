@@ -540,7 +540,9 @@ test("Lark locked history start does not block other settings or rewrite the sav
 test("Lark capabilities check automatically and offer exact application repair",async()=>{
  const api=fixture();api.permissions={account:{id:{namespace:"lark:open_id:cli_fixture"}},capabilities:[{name:"message.reply",state:"blocked",reason_code:"application_scopes_missing",next_action:"configure_application"}]};
  const ui=await connectionDraft(api);await settle();
- assert.match(ui.el("connection-capability-status").textContent,/回复：需要应用管理员/);
+ assert.equal(ui.el("connection-capability-status").textContent,"1 项权限待处理");
+ assert.equal(ui.el("connection-capability-details").open,false);
+ assert.deepEqual(ui.el("connection-capability-list").children[0].children.map(c=>c.textContent),["普通回复","需管理员补权"]);
  assert.equal(ui.el("connection-application-permissions").href,"https://open.feishu.cn/app/cli_fixture/auth");
  assert.equal(ui.el("connection-authorize").hidden,true);
  assert.equal(api.calls.some(c=>c.path==="/v1/platforms/lark/login"),false);
@@ -559,7 +561,8 @@ test("Lark user scope repair uses unified login with shared impact confirmation"
 test("Lark capability expiry becomes unchecked without repeat probing or sending",async()=>{
  const api=fixture();api.permissions={capabilities:[{name:"message.reply",state:"unsupported",reason_code:"account_pinning_unavailable"}]};
  const ui=await connectionDraft(api);await settle();
- assert.match(ui.el("connection-capability-status").textContent,/当前服务不支持发送/);
+ assert.equal(ui.el("connection-capability-status").textContent,"部分能力当前不可用");
+ assert.equal(ui.el("connection-capability-list").children[0].children[1].textContent,"当前服务不支持");
  assert.equal(ui.el("connection-authorize").hidden,true);
  const checks=api.calls.filter(c=>c.path==="/v1/platforms/lark/permissions").length;
  await ui.clock.advance(60000);
@@ -571,8 +574,9 @@ test("Lark capability expiry becomes unchecked without repeat probing or sending
 test("Lark account pin failure stays unchecked instead of claiming unsupported sending",async()=>{
  const api=fixture();api.permissions={capabilities:[{name:"message.reply",state:"unchecked",reason_code:"account_pinning_unavailable",next_action:"revalidate_account"}]};
  const ui=await connectionDraft(api);await settle();
- assert.match(ui.el("connection-capability-status").textContent,/账号固定暂未确认.*重新核验/);
- assert.doesNotMatch(ui.el("connection-capability-status").textContent,/不支持/);
+ assert.equal(ui.el("connection-capability-status").textContent,"部分权限待核验");
+ assert.equal(ui.el("connection-capability-list").children[0].children[1].textContent,"需重新核验账号");
+ assert.equal(ui.el("connection-capability-status").dataset.kind,"status");
  assert.equal(ui.el("connection-authorize").hidden,true);
  assert.equal(api.calls.some(c=>c.path==="/v1/platforms/lark/login"),false);
 });

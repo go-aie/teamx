@@ -59,9 +59,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
   function toolIssue(v,item) {
     const selection=v?.cli?.selections?.find(s=>s.agent_id===v.member.agent_id && s.membership_id===v.member.membership_id && s.platform_id===item.id);
     const unavailable=toolBinding(v,item) && selection?.unavailable_reason ? ({executable_unavailable:"程序缺失，已保留启用设置；修复后会重新检查。",account_unavailable:"账号暂不可用，已保留启用设置，请重新核验。",platform_changed:"平台已变化，需重新启用。"}[selection.unavailable_reason] || "工具暂不可用，已保留启用设置。") : "";
-    const gaps=selection?.availability?.capabilities?.filter(c=>c.configured && c.state!=="ready") || [];
-    const capabilityIssue=gaps.length ? gaps.map(c=>`${({"message.reply":"回复","message.send":"群发送","message.send_self":"本人投递"})[c.name] || c.name}：${c.state === "unsupported" ? "当前服务不支持发送" : ({member_action_not_configured:"尚未配置",self_evidence_missing:"待核验",self_evidence_stale:"需重新核验",user_scopes_missing:"需补全授权",application_scopes_missing:"需管理员补权",account_pinning_unavailable:"账号固定暂未确认，请重新核验"})[c.reason_code] || "暂未确认"}`).join("；") : "";
-    return [v?.cliResult?.tool===item.id ? v.cliResult.message : "",unavailable,capabilityIssue].filter(Boolean).join(" ");
+    return [v?.cliResult?.tool===item.id ? v.cliResult.message : "",unavailable].filter(Boolean).join(" ");
   }
 
   function toolSwitch(v,item) {
@@ -156,17 +154,27 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       row.children[2].textContent=[notificationsUI.notificationConfigured(item,view) ? notificationsUI.notificationIssue(ws,item,view) : "",toolIssue(v,item)].filter(Boolean).join(" ");row.children[2].hidden=!row.children[2].textContent;row.children[2].dataset.kind=v?.cliResult?.tool===item.id && !v.cliResult.error ? "success" : "error";
       const info=row.children[0],issue=row.children[2],controls=document.createElement("div");controls.className="member-platform-controls";
       controls.append(label,input,toolSwitch(v,item));
+      const accountActions=document.createElement("div");accountActions.className="member-platform-account-actions";
+      if(item.provider === "lark") {
+        const settings=document.createElement("button");settings.type="button";settings.className="text-button button-compact";settings.textContent="账号设置 ↗";
+        settings.setAttribute("aria-label",`打开 ${item.name} 的账号设置`);
+        settings.addEventListener("click",async()=>{settingsUI.openSettings("platforms");await connectionsUI.loadPlatforms();const current=connectionsUI.platforms.items.find(p=>p.id===item.id);if(current)connectionsUI.editPlatform(current);});
+        accountActions.append(settings);
+      }
       if(item.provider === "lark" && toolBinding(v,item)) {
-        const selection=v?.cli?.selections?.find(s=>s.platform_id===item.id), gaps=selection?.availability?.capabilities?.filter(c=>c.configured!==false && c.state!=="ready") || [];
+        const selection=v?.cli?.selections?.find(s=>s.agent_id===target.agent_id && s.membership_id===target.membership_id && s.platform_id===item.id), gaps=selection?.availability?.capabilities?.filter(c=>c.configured!==false && c.state!=="ready") || [];
         const configured=selection?.action_authorization?.grants?.length;
         const needsAuthorization=v?.cliResult?.tool===item.id && /补全/.test(v.cliResult.message) || gaps.some(c=>["authorize_user","configure_application","revalidate_account","retry_check"].includes(c.next_action));
-        if(needsAuthorization || !configured || gaps.some(c=>["verify_self","enable_member_tool"].includes(c.next_action))) {
-          const repair=document.createElement("button");repair.type="button";repair.className="text-button";repair.textContent=needsAuthorization ? "核对账号授权" : "修复能力";
+        // Account settings owns OAuth diagnostics; member grants and self
+        // evidence still require their existing member-scoped repair action.
+        if(!needsAuthorization && (!configured || gaps.some(c=>["verify_self","enable_member_tool"].includes(c.next_action)))) {
+          const repair=document.createElement("button");repair.type="button";repair.className="text-button button-compact";repair.textContent="修复能力";
           repair.disabled=!!ws.memberToolBusy || !v?.cliConnected;
-          repair.addEventListener("click",async()=>{if(!needsAuthorization){await changeMemberTool(v,item,true,true);return;}settingsUI.openSettings("platforms");await connectionsUI.loadPlatforms();const current=connectionsUI.platforms.items.find(p=>p.id===item.id);if(current)connectionsUI.editPlatform(current);});controls.append(repair);
+          repair.addEventListener("click",()=>changeMemberTool(v,item,true,true));accountActions.append(repair);
         }
       }
-      row.replaceChildren(info,controls,issue);return row;
+      accountActions.hidden=!accountActions.children.length;
+      row.replaceChildren(info,controls,issue,accountActions);return row;
     }));
     layoutMemberPlatforms();
     $("member-notification-source-count").textContent=String(configured.length);

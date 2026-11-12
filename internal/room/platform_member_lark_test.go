@@ -48,6 +48,12 @@ func TestPlatformMemberLarkRangeAndConditionChanges(t *testing.T) {
 		{"private disable retains specified range", nil, platformMemberInput{Private: &platformMemberPrivatePatch{Enabled: memberPatchBool(false)}}, func(c *lark.Config) { c.Private.Enabled = false }},
 		{"private resume keeps specified range", func(c *lark.Config) { c.Private.Enabled = false }, platformMemberInput{Private: &platformMemberPrivatePatch{Enabled: memberPatchBool(true)}}, func(c *lark.Config) { c.Private.Enabled = true }},
 		{"explicit all private preserves saved selection", nil, platformMemberInput{Private: &platformMemberPrivatePatch{Scope: "all"}}, func(c *lark.Config) { c.Private.Scope = "all" }},
+		{"replace private preserves groups", nil, platformMemberInput{Private: &platformMemberPrivatePatch{ChatIDs: memberPatchIDs("oc_peer")}}, func(c *lark.Config) { c.Private.ChatIDs = []string{"oc_peer"} }},
+		{"private all to specified complete list", func(c *lark.Config) { c.Private.Scope = "all" }, platformMemberInput{Private: &platformMemberPrivatePatch{Scope: "specified", ChatIDs: memberPatchIDs("oc_peer")}}, func(c *lark.Config) { c.Private.Scope, c.Private.ChatIDs = "specified", []string{"oc_peer"} }},
+		{"replace private does not enable dormant source", func(c *lark.Config) { c.Private.Enabled = false }, platformMemberInput{Private: &platformMemberPrivatePatch{ChatIDs: memberPatchIDs("oc_peer")}}, func(c *lark.Config) { c.Private.ChatIDs = []string{"oc_peer"} }},
+		{"clear specified private keeps groups", nil, platformMemberInput{Private: &platformMemberPrivatePatch{ChatIDs: memberPatchIDs()}}, func(c *lark.Config) { c.Private.ChatIDs, c.Private.Enabled = []string{}, false }},
+		{"clear last private closes total", func(c *lark.Config) { c.Groups.Enabled = false }, platformMemberInput{Private: &platformMemberPrivatePatch{ChatIDs: memberPatchIDs()}}, func(c *lark.Config) { c.Private.ChatIDs, c.Private.Enabled, c.Enabled = []string{}, false, false }},
+		{"clear dormant selection under all preserves reception", func(c *lark.Config) { c.Private.Scope = "all" }, platformMemberInput{Private: &platformMemberPrivatePatch{ChatIDs: memberPatchIDs()}}, func(c *lark.Config) { c.Private.ChatIDs = []string{} }},
 		{"resume one source with other explicitly off", func(c *lark.Config) { c.Enabled = false }, platformMemberInput{Private: &platformMemberPrivatePatch{Enabled: memberPatchBool(true)}, Groups: &platformMemberGroupPatch{Enabled: memberPatchBool(false)}}, func(c *lark.Config) { c.Enabled, c.Groups.Enabled = true, false }},
 		{"resume both sources explicitly", func(c *lark.Config) { c.Enabled = false }, platformMemberInput{Private: &platformMemberPrivatePatch{Enabled: memberPatchBool(true)}, Groups: &platformMemberGroupPatch{Enabled: memberPatchBool(true)}}, func(c *lark.Config) { c.Enabled = true }},
 		{"explicit total off overrides branch enable", func(c *lark.Config) { c.Enabled = false }, platformMemberInput{Enabled: memberPatchBool(false), Groups: &platformMemberGroupPatch{Enabled: memberPatchBool(true)}}, func(c *lark.Config) {}},
@@ -85,10 +91,16 @@ func TestPlatformMemberLarkConflictingIntent(t *testing.T) {
 		{Private: &platformMemberPrivatePatch{Enabled: memberPatchBool(true)}},
 		{Enabled: memberPatchBool(true)},
 		{Groups: &platformMemberGroupPatch{Scope: "specified", Enabled: memberPatchBool(true), ChatIDs: memberPatchIDs()}},
+		{Private: &platformMemberPrivatePatch{Enabled: memberPatchBool(true), ChatIDs: memberPatchIDs()}},
 	} {
 		if _, err := memberNotificationConfig(m, platformMemberView{Config: &base}, in); err == nil {
 			t.Fatalf("accepted ambiguous or contradictory intent: %#v", in)
 		}
+	}
+	allPrivate := base
+	allPrivate.Private.Scope = "all"
+	if _, err := memberNotificationConfig(m, platformMemberView{Config: &allPrivate}, platformMemberInput{Private: &platformMemberPrivatePatch{Scope: "specified"}}); err == nil {
+		t.Fatal("switched all private to specified without a complete list")
 	}
 	empty := base
 	empty.Private.Enabled, empty.Groups.Enabled = false, false
@@ -110,6 +122,8 @@ func TestPlatformMemberLarkInputAndEmptyListPersistence(t *testing.T) {
 		`{"groups":{"enabled":false}}`,
 		`{"groups":{"scope":"all"}}`,
 		`{"private":{"enabled":true,"scope":"all"}}`,
+		`{"private":{"scope":"specified","chat_ids":["oc_peer"]}}`,
+		`{"private":{"chat_ids":[]}}`,
 		`{"remove_chat_ids":["oc_old"]}`,
 	} {
 		in := base
@@ -128,7 +142,9 @@ func TestPlatformMemberLarkInputAndEmptyListPersistence(t *testing.T) {
 	for _, raw := range []string{
 		`{"groups":{}}`,
 		`{"private":{}}`,
-		`{"private":{"scope":"specified"}}`,
+		`{"private":{"scope":"exclude"}}`,
+		`{"private":{"chat_ids":["ou_person"]}}`,
+		`{"private":{"chat_ids":["oc_peer","oc_peer"]}}`,
 		`{"add_chat_ids":["oc_a"],"remove_chat_ids":["oc_a"]}`,
 		`{"remove_chat_ids":["oc_a","oc_a"]}`,
 		`{"add_chat_ids":["oc_a"],"groups":{"chat_ids":[]}}`,
@@ -156,8 +172,10 @@ func TestPlatformMemberLarkCLIRejectsAmbiguousAndUnsupportedFields(t *testing.T)
 		{"--private-enabled", "yes"},
 		{"--group-at-me", "False"},
 		{"--group-scope", "exclude"},
-		{"--private-scope", "specified"},
-		{"--private-chat-id", "oc_private"},
+		{"--private-scope", "exclude"},
+		{"--private-chat-id", "ou_person"},
+		{"--private-chat-id", "", "--private-chat-id", "oc_peer"},
+		{"--private-chat-id", "oc_peer", "--private-chat-id", ""},
 		{"--interval-seconds", "20"},
 		{"--group-chat-id", "", "--group-chat-id", "oc_a"},
 		{"--group-chat-id", "oc_a", "--group-chat-id", ""},
@@ -170,9 +188,9 @@ func TestPlatformMemberLarkCLIRejectsAmbiguousAndUnsupportedFields(t *testing.T)
 			t.Fatal("unsupported or contradictory CLI flags accepted", flags, out.String())
 		}
 	}
-	// Unknown nested input must fail HTTP decoding, rather than silently accepting
-	// future specified-private fields or an unrestricted provider config.
-	for _, raw := range []string{`{"scope":"specified"}`, `{"enabled":false,"chat_ids":[]}`} {
+	// Unknown nested input must fail HTTP decoding, rather than accepting an
+	// unrestricted provider config or silently ignoring fields.
+	for _, raw := range []string{`{"user_ids":["ou_peer"]}`, `{"enabled":false,"interval_seconds":20}`} {
 		in := *req.Input
 		in.Enabled, in.ToolRevision, in.Actions = nil, 0, nil
 		body, _ := json.Marshal(platformMemberRequest{ServiceInfo: req.ServiceInfo, Caller: req.Caller, OperationID: req.OperationID, SourceSeq: req.SourceSeq, Input: &in})
@@ -182,7 +200,7 @@ func TestPlatformMemberLarkCLIRejectsAmbiguousAndUnsupportedFields(t *testing.T)
 		_ = json.Unmarshal([]byte(raw), &private)
 		wire["input"].(map[string]any)["private"] = private
 		if r := managerHTTP(m, "/v1/platforms/member/notifications", wire); r.Code != 400 {
-			t.Fatal("specified-private input accepted before query support", r.Code, r.Body.String())
+			t.Fatal("unknown private input accepted", r.Code, r.Body.String())
 		}
 	}
 	if _, err := os.Stat(m.platformMemberPath(req.OperationID)); !os.IsNotExist(err) {
@@ -200,6 +218,7 @@ func TestPlatformMemberLarkAbsentDisableDoesNotCreateSubscription(t *testing.T) 
 		{"--private-enabled", "false", "--group-enabled", "false"},
 		{"--remove-chat-id", "oc_inaccessible"},
 		{"--group-chat-id", ""},
+		{"--private-chat-id", ""},
 	} {
 		source, err := svc.room.Call[PostReceipt](context.Background(), PostMessage{RoomIdentity: req.RoomIdentity, Caller: humanCaller, ClientMessageID: "absent-disable-" + strconv.Itoa(i), Text: "取消不存在的关注或关闭通知"})
 		if err != nil {
@@ -234,5 +253,38 @@ func TestPlatformMemberLarkAbsentDisableDoesNotCreateSubscription(t *testing.T) 
 	}
 	if _, err := os.Stat(m.toolBindingsPath(req.RoomIdentity)); !os.IsNotExist(err) {
 		t.Fatal("notification changes created tool bindings", err)
+	}
+}
+
+func TestPlatformMemberChatTypeBoundary(t *testing.T) {
+	m, svc, member, req := memberToolFixture(t)
+	client, endpoint := toolPipeServer(t, m)
+	env := cliToolEnv(endpoint, svc, member)
+	base := []string{"--platform-id", req.Input.PlatformID, "--platform-version", strconv.FormatUint(req.Input.PlatformVersion, 10)}
+	for _, args := range [][]string{
+		append([]string{"chats", "--type", "all"}, base...),
+		append([]string{"chats", "--type", "bot"}, base...),
+		append([]string{"chats", "--type", "p2p", "--query", "同事", "--page-token", "next"}, base...),
+		append([]string{"projects", "--type", "p2p"}, base...),
+		append([]string{"member", "get", "--type", "p2p"}, base...),
+	} {
+		var out bytes.Buffer
+		if err := runPlatformConnectWithClient(context.Background(), args, &out, &out, env, client); err == nil {
+			t.Fatal("invalid or misplaced chat type accepted", args, out.String())
+		}
+	}
+	for _, action := range []string{"get", "status", "notifications", "tool", "projects"} {
+		bad := req
+		bad.Type = "p2p"
+		if action == "get" || action == "projects" {
+			bad.Input = &platformMemberInput{PlatformID: req.Input.PlatformID, PlatformVersion: req.Input.PlatformVersion}
+			bad.SourceSeq, bad.OperationID = 0, ""
+		}
+		if action == "status" {
+			bad.Input, bad.SourceSeq = nil, 0
+		}
+		if r := managerHTTP(m, "/v1/platforms/member/"+action, bad); r.Code != 400 {
+			t.Fatal("non-chat endpoint accepted chat type", action, r.Code, r.Body.String())
+		}
 	}
 }

@@ -44,6 +44,7 @@ type platformMemberRequest struct {
 	Input       *platformMemberInput `json:"input,omitempty"`
 	Query       string               `json:"query,omitempty"`
 	PageToken   string               `json:"page_token,omitempty"`
+	Type        string               `json:"type,omitempty"` // chats only: group (default) or p2p personnel
 }
 
 type platformMemberOperation struct {
@@ -108,7 +109,8 @@ func validPlatformMemberOperation(op platformMemberOperation) bool {
 	if (op.Schema != 1 && op.Schema != 2) || !tool.OpaqueID(op.ID) || !tool.OpaqueID(op.RoomInstance) || !validText(op.RoomID) || !validText(op.AgentID) || !safeMembershipID(op.MembershipID) || !validHumanEvidence(op.Source) || !validPlatformMemberInput(op.Kind, op.Input) || !op.Account.Valid() || op.CreatedAt.IsZero() {
 		return false
 	}
-	if !validPlatformMemberProviderInput(op.Account.Provider, op.Kind, op.Input) || len(op.Chats) != len(op.Input.verifiedGroupIDs()) {
+	groupIDs, privateIDs := op.Input.verifiedGroupIDs(), op.Input.verifiedPrivateIDs()
+	if !validPlatformMemberProviderInput(op.Account.Provider, op.Kind, op.Input) || len(op.Chats) != len(groupIDs)+len(privateIDs) {
 		return false
 	}
 	if (op.Project != nil) != (op.Input.ProjectID != 0) || op.Project != nil && (op.Project.ID != op.Input.ProjectID || op.Project.Path != op.Input.ProjectPath || op.Project.Name == "") {
@@ -118,7 +120,11 @@ func validPlatformMemberOperation(op platformMemberOperation) bool {
 		return false
 	}
 	for i, c := range op.Chats {
-		if !c.Valid() || c.Mode == "p2p" || c.ID != op.Input.verifiedGroupIDs()[i] {
+		if i < len(groupIDs) {
+			if !c.Valid() || c.Mode == "p2p" || c.ID != groupIDs[i] {
+				return false
+			}
+		} else if !validMemberPrivateChat(c, op.Account, privateIDs[i-len(groupIDs)]) {
 			return false
 		}
 	}

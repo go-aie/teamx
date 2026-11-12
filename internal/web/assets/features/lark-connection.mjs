@@ -143,7 +143,7 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
   }
 
   const capabilityNames = {"chat.read":"会话读取","message.read":"消息读取","notification.private":"私聊通知","notification.group":"群通知","token.renew":"自动续期","sender.name":"发送者姓名","people.search":"人员搜索","message.reply":"普通回复","message.send":"指定群发送","message.send_self":"本人投递"};
-  const capabilityReasons = {application_scopes_missing:"需要应用管理员补充权限",user_scopes_missing:"需要补全授权",account_pinning_unavailable:"账号固定暂未确认，请重新核验",refresh_token_missing:"无法自动续期",refresh_token_expired:"续期已过期",check_missing:"暂未确认",check_expired:"检查已过期"};
+  const capabilityReasons = {application_scopes_missing:"需管理员补权",user_scopes_missing:"需补全授权",account_pinning_unavailable:"需重新核验账号",refresh_token_missing:"无法自动续期",refresh_token_expired:"续期已过期",check_missing:"待核验",check_expired:"检查已过期"};
   let capabilityView = null;
 
   function capabilityKey() {return JSON.stringify([connectionsUI.platforms.formVersion,connectionsUI.platforms.selected?.id,connectionsUI.platforms.selected?.version,larkProfileDraft()]);}
@@ -157,7 +157,19 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
       void checkLarkCapabilities(key);
     }
     const view = capabilityView, check = view.check;
-    $("connection-capability-status").textContent = view.loading ? "正在核验账号能力…" : check ? check.capabilities.map(c=>`${capabilityNames[c.name] || c.name}：${c.state === "ready" ? c.name === "message.send_self" ? "账号条件已齐，成员仍需本人核验" : "账号条件已齐" : c.state === "unsupported" ? "当前服务不支持发送" : capabilityReasons[c.reason_code] || "暂未确认"}`).join("；") : "能力暂未确认，请重新检查。";
+    const capabilities = check?.capabilities || [], gaps = capabilities.filter(c=>c.state!=="ready");
+    const blocked = gaps.filter(c=>c.state==="blocked"), unsupported = gaps.some(c=>c.state==="unsupported");
+    const status = $("connection-capability-status");
+    status.textContent = view.loading ? "正在检查账号权限…" : !capabilities.length ? "账号权限暂未确认" : !gaps.length ? "账号权限已就绪" : blocked.length ? `${blocked.length} 项权限待处理` : unsupported ? "部分能力当前不可用" : "部分权限待核验";
+    status.dataset.kind = !view.loading && capabilities.length && !gaps.length ? "success" : !view.loading && blocked.length ? "error" : "status";
+    $("connection-capability-list").replaceChildren(...capabilities.map(c=>{
+      const row=document.createElement("li"),name=document.createElement("span"),value=document.createElement("span");
+      name.textContent=capabilityNames[c.name] || c.name;
+      value.textContent=c.state==="ready" ? "已就绪" : c.state==="unsupported" ? "当前服务不支持" : capabilityReasons[c.reason_code] || "待核验";
+      value.dataset.kind=c.state==="ready" ? "success" : c.state==="blocked" ? "error" : "status";
+      row.append(name,value);return row;
+    }));
+    $("connection-capability-details").hidden = view.loading || !capabilities.length;
     $("connection-authorize").hidden = !check?.capabilities?.some(c=>c.next_action === "authorize_user");
     $("connection-capability-check").hidden = view.loading;
     const app = $("connection-application-permissions"), namespace = check?.account?.id?.namespace || "";

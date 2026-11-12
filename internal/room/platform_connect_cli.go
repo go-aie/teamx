@@ -22,11 +22,11 @@ const platformConnectHelp = `Usage:
   teamx platforms connect cancel --operation-id ID
   teamx platforms connect notify --operation-id ID --mode inbox|none
   teamx platforms connect acknowledge --operation-id ID --result-version V
-  teamx platforms chats --platform-id ID --platform-version V [--query NAME --page-token TOKEN]
+  teamx platforms chats --platform-id ID --platform-version V [--type group|p2p] [--query NAME --page-token TOKEN]
   teamx platforms projects --platform-id ID --platform-version V [--query NAME --page-token PAGE]
   teamx platforms member get --platform-id ID --platform-version V
   teamx platforms member notifications --platform-id ID --platform-version V --notification-version N --operation-id ID --source-seq SEQ [--add-chat-id CHAT_ID] [--enabled true|false] [--group-message-mode all|mentions]
-  teamx platforms member notifications --platform-id ID --platform-version V --notification-version N --operation-id ID --source-seq SEQ [--remove-chat-id CHAT_ID] [--group-enabled true|false --group-scope all|specified --group-chat-id CHAT_ID] [--group-at-me true|false --group-at-all true|false] [--private-enabled true|false --private-scope all]
+  teamx platforms member notifications --platform-id ID --platform-version V --notification-version N --operation-id ID --source-seq SEQ [--remove-chat-id CHAT_ID] [--group-enabled true|false --group-scope all|specified --group-chat-id CHAT_ID] [--group-at-me true|false --group-at-all true|false] [--private-enabled true|false --private-scope all|specified --private-chat-id CHAT_ID]
   teamx platforms member notifications --platform-id ID --platform-version V --notification-version N --operation-id ID --source-seq SEQ --todos-enabled true|false
   teamx platforms member notifications --platform-id ID --platform-version V --notification-version N --operation-id ID --source-seq SEQ [--events-enabled true|false --project-id N --project-path PATH] [--event-type TYPE] [--todo-reason REASON --todo-type TYPE]
   teamx platforms member tool --platform-id ID --platform-version V --tool-revision N --operation-id ID --source-seq SEQ --enabled true|false [--action OP ...]
@@ -71,8 +71,13 @@ Paused/blocked members wait under ordinary scheduling. Notification errors do no
 invalidate a saved connection; users can continue by speaking and querying status.
 
 Member configuration requires a verified connection and current member identity;
-it needs no prior tool binding. chats lists/searches groups (including topic groups)
-with exact IDs, connection version and continuation; same names are not selections.
+it needs no prior tool binding. chats defaults to groups (including topic groups);
+--type p2p lists/searches verified personnel conversations, excluding bots and self.
+Results carry exact chat_ids, connection version and continuation; same names are
+not selections. Follow returned directory tokens even on empty filtered pages.
+Personnel name search cannot paginate: refine the query on refine_query warnings.
+Keep search_warnings; permission_denied or conversation_unverified and partial/empty
+pages do not prove absence. No message is sent to create a conversation.
 get reads current notification configuration, baseline, tool revision and availability.
 GitLab get includes gitlab_notifications with desired config, per-source pending/errors
 and application state. GitLab notifications changes explicit --todos-enabled,
@@ -95,8 +100,14 @@ their ranges; enabling resumes total reception unless --enabled false is explici
 Resuming both dormant branches requires explicit choices for both, not an incidental
 activation of the other source. Range/condition edits alone do not enable reception.
 --private-scope all is explicit all-person reception; enabling an existing specified
-private range retains it. New specified private ranges and private ID lists require
-full settings. --group-at-me/--group-at-all set independent mention conditions;
+private range retains it. --private-scope specified with repeated --private-chat-id
+replaces the complete personnel list, verifying native chat_id and same-account
+relationship before saving; open_id, groups, bots and self chats are rejected.
+Switching all to specified needs a complete list. A single empty private-chat-id
+clears it; do not mix empty/nonempty values. Clearing the last specified private
+chat closes that branch and total reception if no branch remains enabled. Explicit
+enable with an empty specified list conflicts. Range edits alone do not enable it.
+--group-at-me/--group-at-all set independent mention conditions;
 use mentions mode and true/false for only @me. Both false conflicts in mentions mode;
 all-message mode retains those values without filtering. Existing settings and
 reception baseline are preserved; new explicitly enabled subscriptions start at

@@ -207,19 +207,22 @@ test("member capability repair keeps existing action intent and exact member",as
  api.tools.bindings.push({agent_id:"a",membership_id:"member-a",tool:"lark",platform_id:"lark",action_authorization:auth});
  api.tools.selections=[{agent_id:"a",membership_id:"member-a",platform_id:"lark",action_authorization:auth,availability:{capabilities:[{name:"message.send_self",configured:true,state:"blocked",reason_code:"self_evidence_stale",next_action:"verify_self"}]}}];
  const ui=await launch(api);await openMemberInbox(ui,"member-a");
- const repair=row(ui,"lark").children[1].children.find(c=>c.textContent==="修复能力");assert.ok(repair);
+ const repair=row(ui,"lark").children[3].children.find(c=>c.textContent==="修复能力");assert.ok(repair);
  await repair.emit("click");
  const sent=calls(api,"/v1/tools/bind").at(-1).body;
  assert.equal(sent.enabled,true);assert.equal(sent.binding.membership_id,"member-a");assert.equal(sent.binding.platform_id,"lark");assert.deepEqual(sent.binding.action_authorization,auth);assert.equal(sent.binding.capability_evidence,undefined);
 });
 
-for(const state of ["unchecked","unsupported"])test(`member pinning availability distinguishes ${state}`,async()=>{
+for(const state of ["unchecked","unsupported"])test(`member platform links to account settings without duplicating ${state} capability details`,async()=>{
  const api=fixture(),auth={version:1,revision:1,grants:[{operation:"message.reply",target_kind:"message",object_type:"message"}]};
  api.tools.bindings.push({agent_id:"a",membership_id:"member-a",tool:"lark",platform_id:"lark",action_authorization:auth});
  api.tools.selections=[{agent_id:"a",membership_id:"member-a",platform_id:"lark",action_authorization:auth,availability:{capabilities:[{name:"message.reply",configured:true,state,reason_code:"account_pinning_unavailable",next_action:state==="unchecked"?"revalidate_account":undefined}]}}];
  const ui=await launch(api);await openMemberInbox(ui,"member-a");
- const issue=row(ui,"lark").children[2].textContent;
- if(state==="unchecked") {assert.match(issue,/账号固定暂未确认.*重新核验/);assert.doesNotMatch(issue,/不支持/);}
- else assert.match(issue,/当前服务不支持发送/);
+ const settings=row(ui,"lark").children[3].children[0];
+ assert.equal(settings.textContent,"账号设置 ↗");assert.equal(settings.attributes["aria-label"],"打开 公司飞书 的账号设置");
+ assert.equal(row(ui,"lark").children[3].children.length,1);
+ assert.equal(row(ui,"lark").children[2].hidden,true);
+ await settings.emit("click");await settle();
+ assert.equal(ui.el("settings-dialog").open,true);assert.equal(ui.el("connection-name").value,"公司飞书");
  assert.equal(calls(api,"/v1/tools/bind").length,0);
 });

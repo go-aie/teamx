@@ -42,8 +42,17 @@ func runPlatformMemberCLI(ctx context.Context, args []string, stdout, stderr io.
 		f.Uint64Var(&req.SourceSeq, "source-seq", 0, "original human Room message sequence")
 	}
 	if action == "chats" || action == "projects" {
-		f.StringVar(&req.Query, "query", "", "group name search (optional)")
+		f.StringVar(&req.Query, "query", "", "name search (optional)")
 		f.StringVar(&req.PageToken, "page-token", "", "exact continuation token")
+	}
+	if action == "chats" {
+		f.Func("type", "group (default) or p2p (verified personnel conversations)", func(s string) error {
+			if s != "group" && s != "p2p" {
+				return ErrRequest
+			}
+			req.Type = s
+			return nil
+		})
 	}
 	if action == "notifications" || action == "tool" {
 		// A value is required so omitted and explicit false remain distinct.
@@ -145,11 +154,24 @@ func runPlatformMemberCLI(ctx context.Context, args []string, stdout, stderr io.
 			groupPatch().Scope = s
 			return nil
 		})
-		f.Func("private-scope", "Feishu: all; specified private ranges use full settings", func(s string) error {
-			if s != "all" {
+		f.Func("private-scope", "Feishu: all or specified; changing all to specified needs a complete list", func(s string) error {
+			if s != "all" && s != "specified" {
 				return ErrRequest
 			}
 			privatePatch().Scope = s
+			return nil
+		})
+		f.Func("private-chat-id", "Feishu: complete personnel p2p chat_id list; repeat; a single empty value clears it", func(id string) error {
+			p := privatePatch()
+			if p.ChatIDs == nil {
+				p.ChatIDs = new([]string)
+				*p.ChatIDs = []string{}
+			} else if id == "" || len(*p.ChatIDs) == 0 {
+				return ErrRequest
+			}
+			if id != "" {
+				*p.ChatIDs = append(*p.ChatIDs, id)
+			}
 			return nil
 		})
 		f.Func("group-chat-id", "Feishu: complete replacement list; repeat for multiple IDs; a single empty value clears it", func(id string) error {

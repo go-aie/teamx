@@ -170,6 +170,8 @@ into a draft edit; reconcile newer human intent before applying a late old selec
 | All messages in the selected groups | `--group-message-mode all` |
 | Private reception switch | `--private-enabled true\|false` |
 | All accessible person-to-person chats | `--private-scope all` and `--private-enabled true` when enabling is requested |
+| Replace specified personnel chats | `--private-scope specified` and repeat `--private-chat-id CHAT_ID` |
+| Clear the specified private list | A single `--private-chat-id ''` |
 
 All changes also need the usual exact platform ID/version, notification version,
 operation ID and real human source sequence. Add/remove and complete replacement
@@ -191,9 +193,27 @@ Switching all to specified requires both the explicit scope and complete list.
 Clearing/removing the last specified group disables that branch; if no branch
 remains enabled, total reception closes. Report these consequences. Disabling a
 branch retains its selection. Enabling private reception preserves an existing
-specified private range; a new specified private range, private ID list or polling
-interval change still uses full settings. Do not use group search to select people
-or send a message to create a private conversation. No Workspace is required.
+specified private range. Clearing the last specified private chat also disables that
+branch and, if no branch remains enabled, total reception. Explicitly enabling an
+empty specified list conflicts. Switching all private chats to specified requires
+the explicit scope and complete list. Polling interval changes still use full settings.
+No Workspace is required.
+
+For specified people, use `platforms chats --platform-id ID --platform-version V
+--type p2p --query NAME`; omit query to browse the private directory. Only proven
+personnel conversations are returned; bots, groups and self chats are unsupported.
+Compare names and exact native `chat_id` values. For same-name candidates, show the
+distinct IDs and clarify before submitting; never pick the first result or use a
+person's `open_id` as a conversation ID. Do not add a personnel selection card.
+Follow directory `has_more`/`page_token` even when the filtered page is empty.
+Name search cannot paginate and returns `refine_query` when more matches exist;
+ask for a more precise name or browse the directory. Preserve `search_warnings`:
+permission failures, unverified relationships or partial results do not establish
+absence. Explain missing access or the need for an existing verifiable personnel
+conversation; never send a message to create one. Exact IDs are re-read and their
+same-account peer relationship verified again at save time. Include the complete
+intended list, not just the current page, and `--private-enabled true` only when
+enabling is requested. Combine all requested group/private changes in one operation.
 
 Mentions mode requires at least one selected mention condition when explicitly
 editing those conditions. Do not silently turn @me back on after the human asked

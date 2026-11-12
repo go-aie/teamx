@@ -39,6 +39,8 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
 
   function connectionAuthFields() {
     const isLark = connectionIsLark(), isScion = connectionIsScion();
+    $("connection-provider-field").hidden = isLark && !!platforms.selected;
+    $("connection-name-field").classList.toggle("connection-field-wide",isLark && !!platforms.selected);
     for (const id of ["connection-executable", "connection-profile"]) $(id).setAttribute("aria-required", String(isLark));
     clearPlatformErrors();
     connectionFeedback();
@@ -85,7 +87,7 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
     $("connection-auth-confirm").classList.toggle("danger-button",pending?.action === "logout");
     for (const id of ["connection-auth-confirm","connection-auth-dismiss"]) $(id).disabled = platforms.sending;
     const count = new Set(groups.flatMap(group => group.references.map(ref => JSON.stringify([ref.room_id, ref.room_instance])))).size;
-    $("connection-references").hidden = !groups.length;
+    $("connection-references").hidden = !groups.length || connectionIsLark() && !flow && count===0;
     $("connection-references").dataset.impact = String(!!flow);
     $("connection-references-title").textContent = `使用此连接的会话 · ${count}`;
     $("connection-reference-list").replaceChildren(...groups.map(group => {
@@ -191,7 +193,7 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
     $("gitlab-advanced").open=!item?.authorization_status;
     gitlabUI.setGitLabScopes(); $("gitlab-setup").hidden = true; $("gitlab-client-id").value = ""; $("gitlab-client-secret").value = "";
     $("connection-form").hidden = false; $("platforms-list-view").hidden = true;
-    $("connection-title").textContent = item ? "平台详情" : "添加平台";
+    $("connection-title").textContent = item?.provider === "lark" ? `${item.cli_profile?.brand === "lark" ? "Lark" : "飞书"}设置` : item ? "平台详情" : "添加平台";
     $("connection-name").value = item?.name || "";
     setSelectOptions("connection-provider",[new Option("GitLab","gitlab"),new Option("Scion","scion"),new Option("飞书","feishu"),new Option("Lark","lark")],item?.provider === "lark" ? item.cli_profile?.brand || "feishu" : item?.provider || "gitlab");
     $("connection-provider").disabled = !!item;
@@ -202,6 +204,7 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
     setSelectOptions("connection-scion-profile",[new Option("", item?.provider === "scion" ? item.cli_profile.profile : "")],item?.provider === "scion" ? item.cli_profile.profile : "");
     $("connection-advanced").open = false;
     $("connection-capabilities").hidden = true;
+    $("connection-capability-details").open = false;
     $("connection-setup-new").checked = true;
     $("connection-setup-existing").checked = false;
     $("connection-setup-copy").textContent = "复制命令";

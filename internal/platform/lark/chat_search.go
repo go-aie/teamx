@@ -11,14 +11,15 @@ import (
 // Search is separate from directory discovery: results are display metadata,
 // never proof of membership, message access or sending authority.
 type ChatSearchRequest struct {
-	Query     string
-	Type      string // all, group, p2p
-	PageToken string // group search only; user/bot shortcuts cannot paginate
+	Query         string
+	Type          string // all, group, p2p
+	PageToken     string // group search only; user/bot shortcuts cannot paginate
+	PersonnelOnly bool   // p2p personnel candidates; never search bots
 }
 
 func (q ChatSearchRequest) Valid() bool {
 	return utf8.ValidString(q.Query) && strings.TrimSpace(q.Query) != "" && len([]rune(q.Query)) <= 50 && !strings.ContainsAny(q.Query, "\x00\r\n") &&
-		(q.Type == "all" || q.Type == "group" || q.Type == "p2p") && len(q.PageToken) <= 8192 && !strings.ContainsAny(q.PageToken, "\x00\r\n") && (q.Type != "p2p" || q.PageToken == "")
+		(q.Type == "all" || q.Type == "group" || q.Type == "p2p") && (!q.PersonnelOnly || q.Type == "p2p") && len(q.PageToken) <= 8192 && !strings.ContainsAny(q.PageToken, "\x00\r\n") && (q.Type != "p2p" || q.PageToken == "")
 }
 
 type ChatSearchWarning struct {
@@ -120,6 +121,9 @@ func (c *Client) SearchChats(ctx context.Context, a platform.AccountIdentity, q 
 			if *users.More {
 				page.SearchWarnings = append(page.SearchWarnings, ChatSearchWarning{"user", "refine_query"})
 			}
+		}
+		if q.PersonnelOnly {
+			return nil
 		}
 		var bots struct {
 			Bots []struct {

@@ -526,8 +526,8 @@
     <form id="connection-form" class="workspace-form" autocomplete="off" hidden>
       <div class="connection-form-heading detail-header"><button id="connection-back" class="text-button back-button" type="button" aria-label="返回平台列表" title="返回平台列表"><span aria-hidden="true">←</span> 返回</button><h3 id="connection-title">添加平台</h3></div>
       <fieldset id="connection-fields">
-        <div class="connection-field"><label for="connection-name">连接名称</label><input id="connection-name" maxlength="128" required placeholder="公司 GitLab" class="field-control"></div>
-        <div class="connection-field"><label for="connection-provider">平台类型</label><select id="connection-provider" class="field-control"><option value="gitlab">GitLab</option><option value="scion">Scion</option><option value="feishu">飞书</option><option value="lark">Lark</option></select></div>
+        <div id="connection-name-field" class="connection-field"><label for="connection-name">连接名称</label><input id="connection-name" maxlength="128" required placeholder="公司 GitLab" class="field-control"></div>
+        <div id="connection-provider-field" class="connection-field"><label for="connection-provider">平台类型</label><select id="connection-provider" class="field-control"><option value="gitlab">GitLab</option><option value="scion">Scion</option><option value="feishu">飞书</option><option value="lark">Lark</option></select></div>
         <div id="connection-url-row" class="connection-field connection-field-wide"><label for="connection-url">实例地址</label><input id="connection-url" type="url" required placeholder="https://gitlab.example.com" class="field-control"></div>
         <section id="onboarding-options" class="connection-field-wide onboarding-options" aria-label="接入后使用方式">
           <div id="onboarding-targets" class="notification-settings-row">
@@ -636,12 +636,20 @@
             <p id="connection-cli-hint" class="quiet">使用 TeamX 服务所在机器及运行用户的 lark-cli 1.0.99。登录凭据由 CLI 管理。</p>
             <button id="connection-detect" class="secondary-button" type="button">重新检测</button>
           </details>
-          <section id="connection-capabilities" class="connection-advanced" aria-label="账号能力" hidden>
-            <p class="quiet">连接后可供助理读取、回复和发送消息；实际使用取决于成员工具与具体指令。</p>
-            <p id="connection-capability-status" class="settings-hint" role="status" aria-live="polite"></p>
-            <a id="connection-application-permissions" target="_blank" rel="noopener noreferrer" hidden>请应用管理员补充权限 ↗</a>
-            <button id="connection-authorize" class="secondary-button" type="button" hidden>补全授权</button>
-            <button id="connection-capability-check" class="text-button" type="button" hidden>重新检查</button>
+          <section id="connection-capabilities" class="connection-capabilities" aria-label="账号权限" hidden>
+            <div class="connection-capability-heading">
+              <p id="connection-capability-status" role="status" aria-live="polite"></p>
+              <button id="connection-capability-check" class="text-button button-compact" type="button" hidden>重新检查</button>
+            </div>
+            <div class="connection-capability-actions">
+              <a id="connection-application-permissions" target="_blank" rel="noopener noreferrer" hidden>请管理员补充权限 ↗</a>
+              <button id="connection-authorize" class="secondary-button button-compact" type="button" hidden>补全授权</button>
+            </div>
+            <details id="connection-capability-details" class="connection-capability-details">
+              <summary>权限明细</summary>
+              <ul id="connection-capability-list" aria-label="账号权限明细"></ul>
+              <p class="quiet">使用工具需在成员中启用；本人投递另需身份核验。</p>
+            </details>
           </section>
         </div>
         <div id="gitlab-account-row" class="connection-field connection-field-wide">

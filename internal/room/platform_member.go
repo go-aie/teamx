@@ -27,7 +27,11 @@ func platformMemberTarget(id MemberIdentity) notification.Target {
 	return notification.Target{Mode: "inbox", AgentID: id.AgentID, MembershipID: id.MembershipID}
 }
 func (req platformMemberRequest) chatsRequest() larkChatsRequest {
-	return larkChatsRequest{member: &toolsRequest{ServiceInfo: req.ServiceInfo, Caller: req.Caller}, ServiceEpoch: req.ServiceEpoch, RoomIdentity: req.RoomIdentity, Caller: req.Caller, PlatformID: req.Input.PlatformID, PlatformVersion: req.Input.PlatformVersion, Query: req.Query, PageToken: req.PageToken, Type: "group"}
+	typ := req.Type
+	if typ == "" {
+		typ = "group"
+	}
+	return larkChatsRequest{member: &toolsRequest{ServiceInfo: req.ServiceInfo, Caller: req.Caller}, ServiceEpoch: req.ServiceEpoch, RoomIdentity: req.RoomIdentity, Caller: req.Caller, PlatformID: req.Input.PlatformID, PlatformVersion: req.Input.PlatformVersion, Query: req.Query, PageToken: req.PageToken, Type: typ}
 }
 
 func (req platformMemberRequest) projectsRequest() gitlabProjectsRequest {
@@ -127,7 +131,7 @@ func (m *roomManager) checkPlatformMemberContextLocked(ctx context.Context) erro
 // nor repeated configure calls execute it again, even after a service restart.
 func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, req platformMemberRequest) (platformMemberOperation, error) {
 	var op platformMemberOperation
-	if req.Input == nil || !validPlatformMemberInput(kind, *req.Input) || !tool.OpaqueID(req.OperationID) || req.SourceSeq == 0 {
+	if req.Input == nil || !validPlatformMemberInput(kind, *req.Input) || !tool.OpaqueID(req.OperationID) || req.SourceSeq == 0 || req.Type != "" || req.Query != "" || req.PageToken != "" {
 		return op, ErrRequest
 	}
 	m.mu.Lock()
@@ -192,12 +196,22 @@ func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, 
 	var chats []lark.Chat
 	if ids := req.Input.verifiedGroupIDs(); len(ids) > 0 {
 		q := req.chatsRequest()
+		q.Type = "group"
 		q.verifyIDs = ids
 		page, err := m.listLarkChats(ctx, q)
 		if err != nil {
 			return op, err
 		}
 		chats = page.Chats
+	}
+	if ids := req.Input.verifiedPrivateIDs(); len(ids) > 0 {
+		q := req.chatsRequest()
+		q.Type, q.verifyIDs = "p2p", ids
+		page, err := m.listLarkChats(ctx, q)
+		if err != nil {
+			return op, err
+		}
+		chats = append(chats, page.Chats...)
 	}
 	var project *gitlab.Project
 	if req.Input.ProjectID != 0 {
@@ -414,7 +428,7 @@ func (m *roomManager) servePlatformMember(w http.ResponseWriter, r *http.Request
 	var result any
 	var err error
 	if action == "notifications" || action == "tool" {
-		if req.Query != "" || req.PageToken != "" {
+		if req.Query != "" || req.PageToken != "" || req.Type != "" {
 			err = ErrRequest
 		} else {
 			ctx, cancel := context.WithTimeout(r.Context(), 40*time.Second)
@@ -427,7 +441,7 @@ func (m *roomManager) servePlatformMember(w http.ResponseWriter, r *http.Request
 		if err == nil {
 			switch action {
 			case "status":
-				if req.Input != nil || (req.OperationID == "") == (req.SourceSeq == 0) || req.Query != "" || req.PageToken != "" {
+				if req.Input != nil || (req.OperationID == "") == (req.SourceSeq == 0) || req.Query != "" || req.PageToken != "" || req.Type != "" {
 					err = ErrRequest
 				} else {
 					var ops []platformMemberOperation
@@ -441,7 +455,7 @@ func (m *roomManager) servePlatformMember(w http.ResponseWriter, r *http.Request
 					err = ErrRequest
 				} else {
 					minimal := platformMemberInput{PlatformID: req.Input.PlatformID, PlatformVersion: req.Input.PlatformVersion}
-					if !reflect.DeepEqual(minimal, *req.Input) || !tool.OpaqueID(minimal.PlatformID) || minimal.PlatformVersion == 0 || action == "get" && (req.Query != "" || req.PageToken != "") {
+					if !reflect.DeepEqual(minimal, *req.Input) || !tool.OpaqueID(minimal.PlatformID) || minimal.PlatformVersion == 0 || action == "get" && (req.Query != "" || req.PageToken != "") || action != "chats" && req.Type != "" || action == "chats" && req.Type != "" && req.Type != "group" && req.Type != "p2p" {
 						err = ErrRequest
 					} else if action == "get" {
 						result, err = m.platformMemberViewLocked(r.Context(), req)
@@ -489,7 +503,6 @@ func (m *roomManager) servePlatformMember(w http.ResponseWriter, r *http.Request
 					writeLarkReadError(w, checkErr)
 					return
 				}
-				page.Chats = slices.DeleteFunc(page.Chats, func(c lark.Chat) bool { return c.Mode == "p2p" })
 				result = struct {
 					PlatformID      string                   `json:"platform_id"`
 					PlatformVersion uint64                   `json:"platform_version"`

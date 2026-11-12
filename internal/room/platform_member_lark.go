@@ -5,6 +5,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/lark"
 	"github.com/go-aie/teamx/internal/platform/notification"
 )
@@ -19,11 +20,10 @@ type platformMemberGroupPatch struct {
 	AtAll   *bool     `json:"at_all,omitempty"`
 }
 
-// Specified private ranges are preserved but cannot be selected or replaced
-// here until the member query can prove exact person-to-person conversations.
 type platformMemberPrivatePatch struct {
-	Enabled *bool  `json:"enabled,omitempty"`
-	Scope   string `json:"scope,omitempty"`
+	Enabled *bool     `json:"enabled,omitempty"`
+	Scope   string    `json:"scope,omitempty"`
+	ChatIDs *[]string `json:"chat_ids,omitempty"`
 }
 
 func (in platformMemberInput) hasLarkNotificationFields() bool {
@@ -37,7 +37,18 @@ func (in platformMemberInput) verifiedGroupIDs() []string {
 	return in.AddChatIDs
 }
 
-func validMemberGroupIDs(ids []string) bool {
+func (in platformMemberInput) verifiedPrivateIDs() []string {
+	if in.Private != nil && in.Private.ChatIDs != nil {
+		return *in.Private.ChatIDs
+	}
+	return nil
+}
+
+func validMemberPrivateChat(c lark.Chat, account platform.AccountIdentity, id string) bool {
+	return c.Valid() && c.ID == id && c.Mode == "p2p" && c.Relation.Kind == "peer" && c.Relation.ValidFor(account, id)
+}
+
+func validMemberChatIDs(ids []string) bool {
 	if len(ids) > 32 {
 		return false
 	}
@@ -52,7 +63,7 @@ func validMemberGroupIDs(ids []string) bool {
 }
 
 func validMemberLarkPatch(in platformMemberInput) bool {
-	if !validMemberGroupIDs(in.AddChatIDs) || !validMemberGroupIDs(in.RemoveChatIDs) || in.GroupMessageMode != "" && in.GroupMessageMode != "all" && in.GroupMessageMode != "mentions" {
+	if !validMemberChatIDs(in.AddChatIDs) || !validMemberChatIDs(in.RemoveChatIDs) || in.GroupMessageMode != "" && in.GroupMessageMode != "all" && in.GroupMessageMode != "mentions" {
 		return false
 	}
 	for _, id := range in.AddChatIDs {
@@ -64,7 +75,7 @@ func validMemberLarkPatch(in platformMemberInput) bool {
 		if p.Enabled == nil && p.Scope == "" && p.ChatIDs == nil && p.AtMe == nil && p.AtAll == nil || p.Scope != "" && p.Scope != "all" && p.Scope != "specified" {
 			return false
 		}
-		if p.ChatIDs != nil && (*p.ChatIDs == nil || !validMemberGroupIDs(*p.ChatIDs) || len(in.AddChatIDs)+len(in.RemoveChatIDs) > 0) {
+		if p.ChatIDs != nil && (*p.ChatIDs == nil || !validMemberChatIDs(*p.ChatIDs) || len(in.AddChatIDs)+len(in.RemoveChatIDs) > 0) {
 			return false
 		}
 		if len(in.AddChatIDs) > 0 && p.Enabled != nil && !*p.Enabled || len(in.AddChatIDs)+len(in.RemoveChatIDs) > 0 && p.Scope == "all" {
@@ -72,7 +83,10 @@ func validMemberLarkPatch(in platformMemberInput) bool {
 		}
 	}
 	if p := in.Private; p != nil {
-		if p.Enabled == nil && p.Scope == "" || p.Scope != "" && p.Scope != "all" {
+		if p.Enabled == nil && p.Scope == "" && p.ChatIDs == nil || p.Scope != "" && p.Scope != "all" && p.Scope != "specified" {
+			return false
+		}
+		if p.ChatIDs != nil && (*p.ChatIDs == nil || !validMemberChatIDs(*p.ChatIDs)) {
 			return false
 		}
 	}
@@ -140,8 +154,14 @@ func memberNotificationConfig(m *roomManager, v platformMemberView, in platformM
 		}
 	}
 	if p := in.Private; p != nil {
+		if p.Scope == "specified" && cfg.Private.Scope == "all" && p.ChatIDs == nil {
+			return cfg, conflictReason("private.chat_ids", "switching from all private conversations needs a complete list", "Supply private-scope specified and the complete verified private-chat-id list, or an explicit empty list to clear it.")
+		}
 		if p.Scope != "" {
 			cfg.Private.Scope = p.Scope
+		}
+		if p.ChatIDs != nil {
+			cfg.Private.ChatIDs = slices.Clone(*p.ChatIDs)
 		}
 		if p.Enabled != nil {
 			cfg.Private.Enabled = *p.Enabled
@@ -153,8 +173,11 @@ func memberNotificationConfig(m *roomManager, v platformMemberView, in platformM
 		}
 		cfg.Groups.Enabled = false
 	}
-	if cfg.Private.Enabled && cfg.Private.Scope == "specified" && len(cfg.Private.ChatIDs) == 0 {
-		return cfg, conflictReason("private.chat_ids", "specified private range is empty", "Configure verified private conversations in full settings, explicitly choose all private conversations, or disable private reception.")
+	if cfg.Private.Scope == "specified" && len(cfg.Private.ChatIDs) == 0 {
+		if in.Private != nil && in.Private.Enabled != nil && *in.Private.Enabled {
+			return cfg, conflictReason("private.chat_ids", "specified private range is empty", "Choose at least one verified personnel conversation, choose all private conversations explicitly, or disable private reception.")
+		}
+		cfg.Private.Enabled = false
 	}
 	groupEnable := len(in.AddChatIDs) > 0 || in.Groups != nil && in.Groups.Enabled != nil && *in.Groups.Enabled
 	privateEnable := in.Private != nil && in.Private.Enabled != nil && *in.Private.Enabled
@@ -198,7 +221,7 @@ func memberLarkNotificationUnchanged(v platformMemberView, in platformMemberInpu
 	if p := in.Groups; p != nil && (p.Enabled != nil && *p.Enabled || p.Scope != "" || p.ChatIDs != nil && len(*p.ChatIDs) > 0 || p.AtMe != nil || p.AtAll != nil) {
 		return false
 	}
-	if p := in.Private; p != nil && (p.Enabled != nil && *p.Enabled || p.Scope != "") {
+	if p := in.Private; p != nil && (p.Enabled != nil && *p.Enabled || p.Scope != "" || p.ChatIDs != nil && len(*p.ChatIDs) > 0) {
 		return false
 	}
 	return true
