@@ -76,9 +76,8 @@ func (d *realRoomDriver) newRoot(exclude realProcessIdentity) (realProcessIdenti
 	}
 	var found []realProcessIdentity
 	for _, row := range rows {
-		// Owned DSH roots lead their own process group. The service also
-		// briefly owns ps observers, which inherit its group and are not DSH.
-		if row.Parent == d.process.Process.Pid && row.Group == row.PID && row != exclude {
+		// DSH roots and signal-isolated ps observers both lead process groups.
+		if row.Parent == d.process.Process.Pid && row.Group == row.PID && row.Name != "ps" && row != exclude {
 			found = append(found, row)
 		}
 	}

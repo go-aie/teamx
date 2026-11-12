@@ -281,7 +281,7 @@ func TestManagedRecoveryPreservesUnsafePauseAndConvertsLegacyCounts(t *testing.T
 			}
 			for _, member := range list.Members {
 				status := member.Execution
-				if status.Active || status.Paused != (kind != "healthy" && kind != "budget") {
+				if status.Active || status.Paused != (kind != "healthy" && kind != "budget" && kind != "interrupted" && kind != "running") {
 					t.Fatal(kind, status)
 				}
 				if kind == "budget" && (status.Status != "idle" || status.SessionGeneration != "" || status.SessionTurns.Total != 7 || status.SessionTurns.BaselineKnown) {

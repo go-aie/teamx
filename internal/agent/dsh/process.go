@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"maps"
 	"os"
@@ -114,15 +115,23 @@ func (w stderrSink) Write(data []byte) (int, error) {
 func processTable() (map[int]processIdentity, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "/bin/ps", "-axo", "pid=,ppid=,pgid=,lstart=")
-	cmd.Env = []string{"LC_ALL=C", "PATH=/usr/bin:/bin"}
-	cmd.WaitDelay = time.Second
+	cmd := processTableCommand(ctx)
 	var output bytes.Buffer
 	cmd.Stdout = &cappedBuffer{buffer: &output, limit: 8 << 20}
 	if err := cmd.Run(); err != nil {
-		return nil, errors.New("cannot inspect owned DSH processes")
+		return nil, fmt.Errorf("cannot inspect owned DSH processes: %w", errors.Join(err, ctx.Err()))
 	}
 	return parseProcessTable(output.String())
+}
+
+func processTableCommand(ctx context.Context) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, "/bin/ps", "-axo", "pid=,ppid=,pgid=,lstart=")
+	// Terminal Ctrl-C belongs to serve. Its ownership observer must survive
+	// that signal long enough to verify the graceful shutdown.
+	ownProcess(cmd)
+	cmd.Env = []string{"LC_ALL=C", "PATH=/usr/bin:/bin"}
+	cmd.WaitDelay = time.Second
+	return cmd
 }
 
 func parseProcessTable(output string) (map[int]processIdentity, error) {

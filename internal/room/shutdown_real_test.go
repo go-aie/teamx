@@ -151,7 +151,7 @@ observing:
 	if err := jsonFile(filepath.Join(d.dir, "room.json"), &before); err != nil {
 		return err
 	}
-	d.phase("same-directory-restart-paused-and-lazy")
+	d.phase("same-directory-restart-enabled-and-lazy")
 	if err := d.startReal(2); err != nil {
 		return err
 	}
@@ -168,25 +168,22 @@ observing:
 		return err
 	}
 	if !reflect.DeepEqual(before, after) || d.info.RoomIdentity != previous.RoomIdentity || d.info.ServiceEpoch == previous.ServiceEpoch ||
-		m.MembershipID != member.MembershipID || !m.Execution.Paused || m.Execution.Active || m.Execution.Error != "" || m.Execution.Agent.TurnNumber != 2 {
-		return errors.New("restart changed durable state or failed to pause the interrupted member safely")
+		m.MembershipID != member.MembershipID || m.Execution.Paused || m.Execution.Active || m.Execution.Error != "" || m.Execution.Agent.TurnNumber != 2 {
+		return errors.New("restart changed durable state or failed to restore enabled intent without replay")
 	}
 	rows, err = realProcesses(d.ctx)
 	if err != nil {
 		return err
 	}
 	for _, row := range rows {
-		if row.Parent == d.process.Process.Pid && row.Group == row.PID {
-			return errors.New("paused recovery eagerly launched a DSH process")
+		if row.Parent == d.process.Process.Pid && row.Group == row.PID && row.Name != "ps" {
+			return errors.New("idle recovery eagerly launched a DSH process")
 		}
 	}
-	d.report["restartPausedAndLazy"], d.report["afterRestart"] = true, list
-	d.phase("explicit-resume-private-memory-and-current-cli")
+	d.report["restartEnabledAndLazy"], d.report["afterRestart"] = true, list
+	d.phase("automatic-resume-private-memory-and-current-cli")
 	text = "Read this NEW message through the configured TeamX CLI. Remain silent in the Room. In private output recall the FIRST token from conversation memory, plus your private role marker. Do not reread old Room history or inspect files to find the token. Do not repeat the earlier shell command."
 	if err := d.command(nil, "send", "--text", text, "--id", "recall"); err != nil {
-		return err
-	}
-	if err := d.command(nil, "member", "run", "--agent", "reviewer"); err != nil {
 		return err
 	}
 	m, err = d.waitAgent("reviewer", 3, "completed")

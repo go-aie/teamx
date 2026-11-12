@@ -40,7 +40,7 @@ func (e *HTTPStatusError) Error() string {
 }
 
 // ClosedError retains a shutdown/recovery failure after every owned process,
-// reader and worker has stopped. It permits an explicit fresh-session reset,
+// reader and worker has stopped. It permits an authorized fresh-session reset,
 // but never authorizes resuming or retrying the failed original Session.
 type ClosedError struct{ Err error }
 

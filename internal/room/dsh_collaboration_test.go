@@ -152,7 +152,7 @@ func TestDSHRecoveryAdmitsOnlyStoppedOriginalSession(t *testing.T) {
 			}
 			defer closeService(t, svc)
 			r := svc.recovered[0]
-			if r.blocked != "" || !r.backendResume || r.resume != (turn == "completed") {
+			if r.blocked != "" || !r.backendResume || r.resume != (turn != "failed") {
 				t.Fatal(r)
 			}
 			status := inspectMember(t, context.Background(), svc.target(id.MembershipID), id)

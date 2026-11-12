@@ -39,6 +39,7 @@ type realProcessIdentity struct {
 	Parent  int    `json:"parent"`
 	Group   int    `json:"group"`
 	Started string `json:"started"`
+	Name    string `json:"name"`
 }
 
 // Observe identities only: command lines and process environments can contain
@@ -46,7 +47,7 @@ type realProcessIdentity struct {
 func realProcesses(ctx context.Context) ([]realProcessIdentity, error) {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "/bin/ps", "-axo", "pid=,ppid=,pgid=,lstart=")
+	cmd := exec.CommandContext(ctx, "/bin/ps", "-axo", "pid=,ppid=,pgid=,lstart=,comm=")
 	cmd.Env = []string{"LC_ALL=C", "PATH=/usr/bin:/bin"}
 	data, err := cmd.Output()
 	if err != nil {
@@ -58,7 +59,7 @@ func realProcesses(ctx context.Context) ([]realProcessIdentity, error) {
 		if len(fields) == 0 {
 			continue
 		}
-		if len(fields) != 8 {
+		if len(fields) < 9 {
 			return nil, errors.New("invalid process identity observation")
 		}
 		pid, e1 := strconv.Atoi(fields[0])
@@ -67,7 +68,7 @@ func realProcesses(ctx context.Context) ([]realProcessIdentity, error) {
 		if e1 != nil || e2 != nil || e3 != nil {
 			return nil, errors.New("invalid observed PID")
 		}
-		rows = append(rows, realProcessIdentity{pid, parent, group, strings.Join(fields[3:], " ")})
+		rows = append(rows, realProcessIdentity{pid, parent, group, strings.Join(fields[3:8], " "), filepath.Base(strings.Join(fields[8:], " "))})
 	}
 	return rows, nil
 }
@@ -440,7 +441,7 @@ func (d *realRoomDriver) accept() error {
 	}
 	children := 0
 	for _, row := range rows {
-		if row.Parent == d.process.Process.Pid && row.Group == row.PID {
+		if row.Parent == d.process.Process.Pid && row.Group == row.PID && row.Name != "ps" {
 			children++
 			d.dshProcess = row
 		}

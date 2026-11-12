@@ -27,6 +27,11 @@ type MemberAgent struct {
 	MaxTurns             uint64         // Cumulative limit for backends without automatic rotation.
 	SessionMaxTurns      uint64
 	RequestRotation      func(context.Context, MemberIdentity, string) error
+	RequestRecovery      func(context.Context, MemberIdentity, string) error
+	RecoveryPending      bool // Startup candidate; armed only after HTTP is serving.
+	recoveryArmed        bool
+	recoveryAttempted    bool
+	enabled              bool // Durable user intent, independent of fault pause.
 	rotationRequest      bool
 	rotationNext         time.Time
 	BackendBlocked       string // Restored backend cannot safely open a new session.
@@ -215,6 +220,12 @@ func (m *MemberAgent) Control(ctx actorx.Context, msg ControlMember) (MemberStat
 		}
 	}
 	switch msg.Action {
+	case "recover":
+		if !msg.automatic {
+			return MemberStatus{}, ErrRequest
+		}
+		m.recoveryArmed = true
+		m.schedule()
 	case "rotate":
 		if err := m.prepareRotation(msg); err != nil {
 			return m.status(), err
@@ -249,6 +260,10 @@ func (m *MemberAgent) Control(ctx actorx.Context, msg ControlMember) (MemberStat
 		}
 		if msg.Action == "enable" && m.active {
 			return MemberStatus{}, ErrBusy
+		}
+		if msg.Action == "enable" {
+			m.recoveryAttempted = false
+			m.RecoveryPending, m.recoveryArmed = false, false
 		}
 		if m.active && msg.Retry {
 			return MemberStatus{}, ErrBusy
@@ -428,6 +443,11 @@ func (m *MemberAgent) schedule() {
 		m.rotate()
 		return
 	}
+	if m.recoveryArmed && m.canRecoverSession() {
+		m.withdrawTurn()
+		m.requestSessionChange(m.RequestRecovery, true)
+		return
+	}
 	if !m.automaticRotation() && !m.active && m.turnsUsed >= m.turnLimit {
 		m.paused, m.retry = true, false
 	}
@@ -589,7 +609,7 @@ func (m *MemberAgent) startTurn(input UnreadChanged, snapshotSeq, readThrough ui
 	}
 	// Reserve budget before execution. A crash or failed task admission may
 	// conservatively consume one attempt, but can never renew the allowance.
-	if err := m.persistScheduling(!m.paused, m.turnsUsed+1); err != nil {
+	if err := m.persistScheduling(m.enabled, m.turnsUsed+1); err != nil {
 		m.releaseTurn()
 		return
 	}
@@ -669,6 +689,16 @@ func (m *MemberAgent) startTurn(input UnreadChanged, snapshotSeq, readThrough ui
 			if errors.Is(err, errDSHDisabled) {
 				m.BackendBlocked = m.lastError
 			}
+			if errors.Is(err, errDSHPaused) && work.session != nil && recoverableDSHFailure(err) {
+				m.RecoveryPending, m.recoveryArmed = true, true
+				m.rotationNext = m.now().Add(time.Second)
+			}
+		} else {
+			m.RecoveryPending = false
+			if m.recoveryAttempted {
+				m.recoveryAttempted = false
+				_ = m.persistScheduling(m.enabled, m.turnsUsed)
+			}
 		}
 		m.releaseTurn()
 		m.schedule()
@@ -680,7 +710,7 @@ func (m *MemberAgent) startTurn(input UnreadChanged, snapshotSeq, readThrough ui
 	})
 	if err != nil {
 		m.lastError = err.Error() // Pending state is retained for maintenance.
-		_ = m.persistScheduling(!m.paused, m.turnsUsed)
+		_ = m.persistScheduling(m.enabled, m.turnsUsed)
 		m.releaseTurn()
 		return
 	}

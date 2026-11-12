@@ -52,7 +52,8 @@ func CheckResume(dir string) error {
 }
 
 // CheckReset verifies that the old execution has stopped. Unlike CheckResume,
-// it allows discarding an unhealthy Session after an explicit operator reset.
+// it allows discarding an unhealthy Session after an operator reset or a bounded
+// service recovery that preserves enabled intent and verifies action outcomes.
 func CheckReset(dir string) error {
 	lock, err := lockDirectory(dir)
 	if err != nil {

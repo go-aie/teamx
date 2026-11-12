@@ -21,15 +21,22 @@ func (m *MemberAgent) needsRotation() bool {
 	return m.automaticRotation() && (m.sessionGeneration == "" || m.turnsUsed-m.sessionStartUsed >= m.SessionMaxTurns)
 }
 func (m *MemberAgent) requestRotation() {
+	m.requestSessionChange(m.RequestRotation, false)
+}
+
+func (m *MemberAgent) requestSessionChange(request func(context.Context, MemberIdentity, string) error, recovering bool) {
 	if m.rotationRequest || m.now().Before(m.rotationNext) {
 		return
 	}
-	if m.RequestRotation == nil {
+	if request == nil {
 		m.BackendBlocked = "automatic Session rotation coordinator unavailable"
 		m.lastError = m.BackendBlocked
+		if recovering {
+			m.RecoveryPending = false
+		}
 		return
 	}
-	id, from, request := m.Options.MemberIdentity, m.currentGeneration, m.RequestRotation
+	id, from := m.Options.MemberIdentity, m.currentGeneration
 	_, err := actorx.StartTask(m.owner, func(ctx context.Context) (struct{}, error) {
 		return struct{}{}, request(ctx, id, from)
 	}, func(_ struct{}, err error) bool {
@@ -40,6 +47,9 @@ func (m *MemberAgent) requestRotation() {
 		if err != nil && !errors.Is(err, ErrBusy) && !errors.Is(err, ErrConflict) && !errors.Is(err, ErrClosing) {
 			m.lastError = "automatic rotation admission: " + err.Error()
 			m.BackendBlocked = m.lastError
+			if recovering {
+				m.RecoveryPending = false
+			}
 		}
 		m.schedule()
 		return true

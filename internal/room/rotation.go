@@ -187,7 +187,11 @@ func (m *MemberAgent) prepareRotation(msg ControlMember) error {
 			status := *msg.automaticInbox
 			m.inbox = &status
 		}
-		if !m.automaticRotation() || !m.ready() || !m.needsRotation() || m.active || msg.FromGeneration != m.currentGeneration {
+		eligible := m.automaticRotation() && m.ready() && m.needsRotation()
+		if msg.recovering {
+			eligible = m.canRecoverSession()
+		}
+		if !eligible || m.active || msg.FromGeneration != m.currentGeneration {
 			return ErrConflict
 		}
 	}
@@ -266,6 +270,15 @@ func (m *MemberAgent) prepareRotation(msg ControlMember) error {
 		return err
 	}
 	r := &rotationRecord{Version: rotationVersion, MemberIdentity: m.Options.MemberIdentity, OperationID: operationID, Reason: reason, From: from, To: "session.json.dsh-" + target, BaseUsed: m.turnsUsed, Phase: "prepared", Cancel: msg.Cancel, Resume: msg.Resume, Replenish: msg.Replenish}
+	r.Recovery = msg.recovering
+	if msg.recovering {
+		// Commit a bounded recovery allowance before any lifecycle operation.
+		// A restart must not turn a persistent failure into an endless loop.
+		m.recoveryAttempted = true
+		if err := m.persistScheduling(m.enabled, m.turnsUsed); err != nil {
+			return err
+		}
+	}
 	// Freeze first, including already admitted attempts in BaseUsed. Even an
 	// uncertain prepared write leaves this member blocked until reconciliation.
 	m.withdrawTurn()
@@ -294,6 +307,7 @@ func (m *MemberAgent) prepareRotation(msg ControlMember) error {
 	}
 	if !msg.automatic {
 		m.paused, m.retry = !msg.Resume, false
+		m.RecoveryPending, m.recoveryArmed = false, false
 	}
 	m.rotationEnable = msg.Replenish
 	m.rotationLease = msg.lease
@@ -381,7 +395,13 @@ func (m *MemberAgent) rotate() {
 		m.currentGeneration = record.To
 		m.Backend = r.backend
 		m.schedulingVersion, m.sessionGeneration, m.sessionStartUsed = schedulingVersion, record.To, record.BaseUsed
-		if err := m.persistScheduling(!m.paused, m.turnsUsed); err != nil {
+		if record.Recovery {
+			// A newer explicit pause always wins over asynchronous cleanup.
+			m.paused = !m.enabled
+			m.retry = m.enabled
+			m.RecoveryPending = false
+		}
+		if err := m.persistScheduling(m.enabled, m.turnsUsed); err != nil {
 			m.rotationFailure("collaboration_baseline", err)
 			return true
 		}

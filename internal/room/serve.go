@@ -151,7 +151,7 @@ func serveWithFactory(args []string, stdout, stderr io.Writer, create func(strin
 		return err
 	}
 	fmt.Fprintf(stderr, "Room UI: %s/\n", ready.Endpoint)
-	fmt.Fprintln(stderr, "new members start paused; normally stopped completed sessions resume lazily; interrupted or unsafe sessions remain paused")
+	fmt.Fprintln(stderr, "new members start paused; saved enable/pause intent survives restart; settled recoverable faults receive one automatic recovery attempt")
 	for _, member := range svc.recovered {
 		if member.notice != "" {
 			fmt.Fprintf(stderr, "restore %s: %s\n", member.id.AgentID, member.notice)

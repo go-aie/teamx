@@ -16,6 +16,7 @@ type memberScheduling struct {
 	Version int `json:"version"`
 	MemberIdentity
 	Enabled           bool   `json:"enabled"`
+	RecoveryAttempted bool   `json:"recovery_attempted,omitempty"`
 	Used              uint64 `json:"used"`
 	SessionGeneration string `json:"session_generation"`
 	SessionStartUsed  uint64 `json:"session_start_used"`
@@ -69,6 +70,7 @@ func (m *MemberAgent) persistScheduling(enabled bool, used uint64) error {
 
 func (m *MemberAgent) persistSchedulingLimit(enabled bool, used, limit uint64) error {
 	if !m.PersistentScheduling {
+		m.enabled = enabled
 		return nil
 	}
 	version := m.schedulingVersion
@@ -78,10 +80,12 @@ func (m *MemberAgent) persistSchedulingLimit(enabled bool, used, limit uint64) e
 	if m.automaticRotation() {
 		limit = 0
 	}
-	err := m.Store.saveScheduling(memberScheduling{Version: version, MemberIdentity: m.Options.MemberIdentity, Enabled: enabled, Used: used, Limit: limit, SessionGeneration: m.sessionGeneration, SessionStartUsed: m.sessionStartUsed})
+	err := m.Store.saveScheduling(memberScheduling{Version: version, MemberIdentity: m.Options.MemberIdentity, Enabled: enabled, RecoveryAttempted: m.recoveryAttempted, Used: used, Limit: limit, SessionGeneration: m.sessionGeneration, SessionStartUsed: m.sessionStartUsed})
 	if err != nil {
 		m.fault, m.paused = true, true
 		m.lastError = "collaboration checkpoint failed: " + err.Error()
+	} else {
+		m.enabled = enabled
 	}
 	return err
 }
@@ -142,8 +146,9 @@ func (s *service) restoreScheduling(member *recoveredMember, agent AgentSnapshot
 	}
 	member.used = state.Used
 	member.limit = max(s.maxTurns, state.Limit)
-	safe := agent.Turn == nil || (agent.Turn.Status == "completed" && (member.backendResume || member.contextReset))
+	safe := agent.Turn == nil || member.contextReset || ((agent.Turn.Status == "completed" || agent.Turn.Status == "interrupted") && member.backendResume)
 	member.resume = state.Enabled && safe && member.blocked == "" && (member.automatic || state.Used < member.limit)
+	member.recovery = member.recovery && state.Enabled && !state.RecoveryAttempted
 	return nil
 }
 
@@ -199,6 +204,7 @@ func (m *MemberAgent) initializeScheduling() error {
 		}
 	}
 	m.schedulingVersion, m.sessionGeneration, m.sessionStartUsed = state.Version, state.SessionGeneration, state.SessionStartUsed
+	m.enabled, m.recoveryAttempted = state.Enabled, state.RecoveryAttempted
 	m.turnsUsed, m.turnLimit = state.Used, max(m.turnLimit, state.Limit)
 	m.schedulingReady = true
 	generation, err := m.Backend.(rotatingBackend).sessionGeneration(m.Options)

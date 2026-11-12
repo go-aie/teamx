@@ -207,6 +207,7 @@ type TurnBudget struct {
 
 type ControlMember struct {
 	automatic      bool
+	recovering     bool
 	automaticInbox *InboxStatus
 	internalPause  bool
 	expectedPause  *uint64

@@ -27,6 +27,7 @@ type ServiceInfo struct {
 // Only these explicit DTOs cross HTTP. Actor addresses remain in the service.
 type apiRequest struct {
 	automatic        bool
+	recovering       bool
 	automaticInbox   *InboxStatus
 	internalPause    bool
 	expectedPause    *uint64
@@ -563,11 +564,13 @@ func (s *service) control(ctx context.Context, req apiRequest, action string) (M
 					if s.closing.Load() {
 						return ErrClosing
 					}
-					if s.beginPlatformMemberChange == nil {
-						return nil
-					}
 					var err error
-					releasePlatform, err = s.beginPlatformMemberChange(taskCtx, id)
+					if s.beginPlatformMemberChange != nil {
+						releasePlatform, err = s.beginPlatformMemberChange(taskCtx, id)
+					}
+					if err == nil && req.recovering {
+						err = s.checkSessionRecovery(id)
+					}
 					return err
 				}
 			}
@@ -579,7 +582,7 @@ func (s *service) control(ctx context.Context, req apiRequest, action string) (M
 				callCtx = s.ctx
 			}
 			result, err := s.target(member.MembershipID).Call[MemberStatus](callCtx, ControlMember{MemberIdentity: id, Action: action,
-				automatic: req.automatic, automaticInbox: req.automaticInbox, Retry: req.Retry, Cancel: req.Cancel, Resume: req.Resume, State: state, OperationID: req.OperationID, FromGeneration: req.FromGeneration, Reason: req.RotationReason, ContinueRotation: req.ContinueRotation, Replenish: rotationReplenish, lease: lease, internalPause: req.internalPause, expectedPause: req.expectedPause})
+				automatic: req.automatic, recovering: req.recovering, automaticInbox: req.automaticInbox, Retry: req.Retry, Cancel: req.Cancel, Resume: req.Resume, State: state, OperationID: req.OperationID, FromGeneration: req.FromGeneration, Reason: req.RotationReason, ContinueRotation: req.ContinueRotation, Replenish: rotationReplenish, lease: lease, internalPause: req.internalPause, expectedPause: req.expectedPause})
 			if err != nil {
 				lease.close()
 			}
