@@ -1,6 +1,7 @@
 import { compactViewport } from "../client.mjs";
 import { createActivityReader, sameService } from "../client.mjs";
 import { createAssistantIcon } from "../icons.mjs";
+import { captureReturnView } from "../view-return.mjs";
 
 // Member inspection, private activity, CLI tools and platform summaries.
 export function createMembers({ env, runtime, notificationsUI, workspaceUI, onboardingUI, inboxUI, roomsUI, layoutUI, policyUI, conversationUI, connectionsUI, settingsUI }) {
@@ -203,7 +204,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
         const reason=document.createElement("span");reason.className="member-platform-account-reason";reason.textContent=recovery.reason;reason.dataset.kind=recovery.kind || "error";
         const settings=document.createElement("button");settings.type="button";settings.className="text-button button-compact";settings.textContent=recovery.action;
         settings.setAttribute("aria-label",`${recovery.action}：${item.name}`);
-        settings.addEventListener("click",async()=>{settingsUI.openSettings("platforms");await connectionsUI.loadPlatforms();const current=connectionsUI.platforms.items.find(p=>p.id===item.id);if(current)connectionsUI.editPlatform(current);});
+        settings.addEventListener("click",async()=>{await settingsUI.openSettings("platforms",settings);const current=connectionsUI.platforms.items.find(p=>p.id===item.id);if(current)await connectionsUI.editPlatform(current,{fromSource:true});});
         accountActions.append(reason,settings);
         issue.hidden = true;
       }
@@ -274,6 +275,8 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
   const activityTimelineRows = new Map();
 
   let activityFocus = null;
+  let activityReturn = null, returningActivity = null;
+  let activityNavigation = 0;
 
   let activityMember = null;
 
@@ -292,12 +295,20 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     return roomsUI.selectedEntry()?.members?.find(role => role.id === member.agent_id);
   }
 
-  function openMemberActivity(member, opener, tab = state.managed ? "platforms" : "activity") {
+  function openMemberActivity(member, opener, tab = state.managed ? "platforms" : "activity", { readingView = null, fromConversation = false } = {}) {
     notice("notification-next-step", "");
     notificationsUI.invalidateNavigation();
     if (!state.connected || !state.info) return;
     const current = state.members.find(item => item.agent_id === member.agent_id && item.membership_id === member.membership_id);
     if (!current) return;
+    if (fromConversation && $("activity-dialog").open && !$("activity-dialog").hidden &&
+      activityMember?.membership_id === current.membership_id && agentTab === tab) return Promise.resolve();
+    activityNavigation++;
+    if (fromConversation || !$("activity-dialog").open || activityMember?.membership_id !== current.membership_id) {
+      const previous = $("activity-dialog").open && !$("activity-dialog").hidden && selectedAgent();
+      activityReturn = { view: captureReturnView(env, runtime, { opener }), panel: layoutUI.captureMemberPanel(), fromConversation,
+        previous: previous ? { member: previous, tab: agentTab, back: activityReturn, inbox: inboxUI.captureReadingView() } : null };
+    }
     activityFocus = { element: opener, membership: current.membership_id };
     $("notification-detail").close();
     $("activity-dialog").hidden=false;
@@ -310,20 +321,22 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     renderActivityControls();
     notificationsUI.renderNotificationPlatforms();
     if(state.managed){void settingsUI.openMemberModel?.(current);void openMemberTools(current);void workspaceUI.loadWorkspacePlatforms();void onboardingUI.restoreOnboarding()?.then(()=>renderMemberPlatforms());}
-    void selectAgentTab(tab);
+    readingView?.();
+    const selected = selectAgentTab(tab);
     if (compactViewport(window)) {
       $("activity-dialog").scrollIntoView({ block: "start" });
       $("close-activity").focus({preventScroll:true});
     }
+    return selected;
   }
 
   function renderActivityControls() {
     const panel = $("activity-dialog");
     if (panel.open && !state.members.some(member => member.membership_id === activityMember?.membership_id)) panel.close();
     notificationsUI.renderContextViews();
-    $("close-activity").hidden = roomsUI.isDirect() && !compactViewport(window);
-    $("close-activity").setAttribute("aria-label", roomsUI.isDirect() ? "返回私信" : "返回团队成员");
-    $("close-activity").title = roomsUI.isDirect() ? "返回私信" : "返回团队成员";
+    $("close-activity").hidden = roomsUI.isDirect() && !compactViewport(window) && !activityReturn?.fromConversation && !activityReturn?.previous;
+    $("close-activity").setAttribute("aria-label", "返回");
+    $("close-activity").title = "返回";
     const selected=selectedAgent();
     $("activity-title").textContent=selected ? memberRole(selected)?.name || selected.agent_id : "Agent 详情";
     $("agent-tabs").hidden = false;
@@ -450,7 +463,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       button.dataset.activityMember = member.membership_id;
       button.setAttribute("aria-label", `查看详情 ${name}`);
       button.title = `查看 ${name} 的详情`;
-      button.addEventListener("click", () => openMemberActivity(member, button, "activity"));
+      button.addEventListener("click", () => openMemberActivity(member, button, "activity", {fromConversation:true}));
       content.append(button);
       if (member.execution?.active && member.execution.execution_id) {
         const stop = document.createElement("button");
@@ -675,10 +688,8 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
   }
 
   function closeAgentDetail() {
-    if (roomsUI.isDirect()) {
-      layoutUI.collapseMembers();
-    }
-    $("activity-dialog").close(); layoutUI.renderPanels();
+    returningActivity = activityReturn;
+    $("activity-dialog").close();
   }
 
   async function controlMember(member, action) {
@@ -759,11 +770,29 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
 
     $("activity-dialog").addEventListener("close", () => {
       if ($("activity-dialog").open) return;
+      const back = returningActivity; returningActivity = null; activityReturn = null;
+      activityNavigation++;
       activity.close(); memberToolsView = null; activityMember = null; agentTab = "activity"; activitySignature = "";
       inboxUI.reset();
       activityScrollMember = ""; activityFollowing = true; activityScrollTop = 0; $("activity-jump-latest").hidden = true;
       activityTimelineContext = ""; activityTimelineRows.clear(); $("activity-timeline").replaceChildren();
       renderActivityControls();
+      if (back?.view.current()) {
+        if (roomsUI.isDirect() && !back.previous) { layoutUI.collapseMembers(); layoutUI.renderPanels(); }
+        else back.panel();
+        if (back.previous && state.members.some(member => member.membership_id === back.previous.member.membership_id)) {
+          const selected = openMemberActivity(back.previous.member, activityFocus?.element, back.previous.tab, {readingView:back.previous.inbox});
+          activityReturn = back.previous.back;
+          renderActivityControls();
+          const navigation = activityNavigation;
+          void selected?.then(() => {
+            if (navigation === activityNavigation && $("activity-dialog").open && selectedAgent()?.membership_id === back.previous.member.membership_id && agentTab === back.previous.tab) back.view.restore();
+          });
+        }
+        back.view.restore($(roomsUI.isDirect() ? "room-menu-label" : "toggle-members"));
+        activityFocus = null;
+        return;
+      }
       const opener = !layoutUI.membersExpanded ? null : activityFocus?.element?.isConnected ? activityFocus.element
         : [...document.querySelectorAll("[data-activity-member]")].find(button => button.dataset.activityMember === activityFocus?.membership);
       if (!$("notification-detail").open) (opener || $(roomsUI.isDirect() ? "room-menu-label" : "toggle-members")).focus();

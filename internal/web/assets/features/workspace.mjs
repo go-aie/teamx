@@ -1,4 +1,5 @@
 import { randomUUID } from "../random-id.mjs";
+import { captureReturnView } from "../view-return.mjs";
 // Workspace configuration, platform choices and durable operation recovery.
 export function createWorkspace({ env, runtime, notificationsUI, membersUI, roomsUI, conversationUI, settingsUI }) {
   const { document, window, Option, request, requestAnimationFrame } = env;
@@ -7,6 +8,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
   // Scoped to a Room instance and operator. Durable operation IDs can survive
   // service epochs; notification drafts are invalidated when the epoch changes.
   let workspaceView = null;
+  let workspaceReturn = null;
 
   const workspaceKey = (room, operator) => JSON.stringify(["teamx.workspace", room.room_instance, operator]);
 
@@ -335,6 +337,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
   async function openWorkspace() {
     if (!workspaceView) return;
     closeWorkspacePicker();
+    workspaceReturn = captureReturnView(env, runtime, { opener: $($("compose").classList.contains("has-message") ? "message-input" : "compose-more") });
     $("workspace-dialog").showModal(); renderWorkspace(); $("close-workspace").focus(); await loadWorkspacePlatforms();
   }
 
@@ -372,6 +375,8 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     $("workspace-dialog").addEventListener("close", () => {
       if ($("notification-detail").open) $("gitlab-project-summary").focus();
       else focusWorkspaceTrigger();
+      const back = workspaceReturn; workspaceReturn = null;
+      back?.restore();
     });
 
     $("workspace-kind").addEventListener("change", () => { if (workspaceView) workspaceView.selectedPlatform = ""; renderWorkspacePlatforms(); renderWorkspace(); });
@@ -381,7 +386,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     $("workspace-connection").addEventListener("change", () => { if (workspaceView) workspaceView.selectedPlatform = $("workspace-connection").value; });
 
     $("workspace-manage-platforms").addEventListener("click", async () => {
-      $("workspace-dialog").close(); await settingsUI.openSettings("platforms");
+      await settingsUI.openSettings("platforms", $("workspace-manage-platforms"));
     });
 
     $("workspace-form").addEventListener("submit", event => { event.preventDefault(); return submitWorkspace(); });

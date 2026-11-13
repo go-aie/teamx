@@ -172,6 +172,7 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
   }
 
   function showPlatformList() {
+    platforms.returnToSource = false;
     platforms.connectOperation=null;$("connection-name").readOnly=false;
     larkUI.clearLarkConfirmation();
     scionUI.clearScionConfirmation();
@@ -186,7 +187,8 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
     connectionFeedback();onboardingUI.renderOnboarding();
   }
 
-  function editPlatform(item = null) {
+  function editPlatform(item = null, { fromSource = false } = {}) {
+    if ($("connection-form").hidden || fromSource) platforms.returnToSource = fromSource;
     platforms.connectOperation=null;$("connection-name").readOnly=false;
     if(!$("platforms-list-view").hidden){platforms.listReturn={scroll:$("settings-panels").scrollTop,id:item?.id};$("settings-panels").scrollTop=0;}
     settingsUI.showPlatforms();
@@ -244,6 +246,20 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
   function connectionDirty() {
    const item=platforms.selected;
    return !item || $("connection-name").value.trim()!==item.name || (item.provider==="lark" && JSON.stringify(larkUI.larkProfileDraft())!==JSON.stringify(item.cli_profile)) || (item?.provider==="scion" && JSON.stringify(scionUI.scionProfileDraft())!==JSON.stringify(item.cli_profile));
+  }
+
+  async function returnFromPlatform() {
+    if (platforms.sending || $("connection-back").disabled) return;
+    if (platforms.returnToSource) { await settingsUI.closeSettings(); return; }
+    if (platforms.auth || platforms.gitlabAuth || platforms.scionAuth) await cancelPlatformAuth();
+    if (onboardingUI.onboarding.pending) await onboardingUI.onboardingAction("status",{discardUnconnected:true});
+    showPlatformList(); await loadPlatforms();
+    if(platforms.listReturn && $("settings-dialog").open && settingsUI.settingsTab==="platforms" && $("connection-form").hidden){
+      const back=platforms.listReturn;
+      ([...$("platforms-list").children].find(row=>row.dataset.platformId===back.id) || $("connection-new")).focus({preventScroll:true});
+      $("settings-panels").scrollTop=back.scroll;
+    }
+    runtime.navigationChanged();
   }
 
   async function connectionAction(action) {
@@ -366,9 +382,7 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
 
     $("connection-name").addEventListener("input",()=>{if (connectionIsLark()) larkUI.renderLarkAccount();else if (!connectionIsScion()) gitlabUI.renderGitLabSave();});
 
-    $("connection-back").addEventListener("click", async () => { if (platforms.auth || platforms.gitlabAuth || platforms.scionAuth) await cancelPlatformAuth(); if (onboardingUI.onboarding.pending) await onboardingUI.onboardingAction("status",{discardUnconnected:true}); showPlatformList(); await loadPlatforms();
-      if(platforms.listReturn && $("settings-dialog").open && settingsUI.settingsTab==="platforms" && $("connection-form").hidden){const back=platforms.listReturn;([...$("platforms-list").children].find(row=>row.dataset.platformId===back.id) || $("connection-new")).focus({preventScroll:true});$("settings-panels").scrollTop=back.scroll;}
-    });
+    $("connection-back").addEventListener("click", returnFromPlatform);
 
     $("platforms-retry").addEventListener("click", loadPlatforms);
 
@@ -418,6 +432,7 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
     platforms,
     connectionValidationErrors,
     editPlatform,
+    returnFromPlatform,
     connectionIsLark,
     connectionIsScion,
     connectionPayload,

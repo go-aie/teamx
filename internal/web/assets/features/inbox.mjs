@@ -310,6 +310,19 @@ export function createInbox({ env, settingsUI, notificationsUI, runtime, members
 
   function reset() { inboxView = null; $("inbox-entries").replaceChildren(); }
 
+  function captureReadingView() {
+    if (!inboxCurrent(inboxView) || !inboxView.page || inboxView.loading) return null;
+    const saved = {...inboxView, refreshing: false, scrollTop: $("inbox-member-view").scrollTop};
+    const nodes = [...$("inbox-entries").children];
+    return () => {
+      const member = membersUI.selectedAgent();
+      if (state.info?.room_instance !== saved.info.room_instance || state.info?.room_id !== saved.info.room_id ||
+        state.info?.service_epoch !== saved.info.service_epoch || member?.membership_id !== saved.member.membership_id) return;
+      inboxView = saved; $("inbox-entries").replaceChildren(...nodes);
+      renderInboxStatus(saved); renderInboxPagination(saved);
+    };
+  }
+
   function mount() {
     $("inbox-reload").addEventListener("click", () => loadMemberInbox("refresh"));
 
@@ -331,6 +344,7 @@ export function createInbox({ env, settingsUI, notificationsUI, runtime, members
   return {
     mount,
     reset,
+    captureReadingView,
     get inboxView() { return inboxView; },
     inboxCurrent,
     loadMemberInbox,

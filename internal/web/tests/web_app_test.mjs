@@ -1834,10 +1834,10 @@ test("Workspace connection manager preserves selection, draft and project withou
   await editWorkspace(ui, true);
   ui.el("workspace-branch").value = "feature/setup";
   await ui.el("workspace-manage-platforms").emit("click");
-  assert.equal(ui.el("workspace-dialog").open, false);
+  assert.equal(ui.el("workspace-dialog").open, true);
   assert.equal(ui.el("settings-dialog").open, true);
   await ui.el("close-settings").emit("click");
-  await ui.el("open-workspace").emit("click");
+  assert.equal(ui.el("workspace-dialog").open, true);
   assert.equal(ui.el("workspace-repo-url").value, "https://gitlab.invalid/group/project.git");
   assert.equal(ui.el("workspace-connection").value, "a".repeat(32));
   assert.equal(ui.el("workspace-branch").value, "feature/setup");

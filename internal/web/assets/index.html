@@ -113,7 +113,7 @@
             </details>
           </div>
           <span class="compose-hint"><span id="message-shortcuts" class="shortcut" title="Enter 发送；Shift + Enter、Ctrl + Enter 或 ⌘ + Enter 换行">Enter 发送 · Shift + Enter 换行</span></span>
-          <button id="send" class="primary" type="submit" disabled>发送 <span aria-hidden="true">↗</span></button>
+          <button id="send" class="primary" type="submit" disabled>发送 <span aria-hidden="true">↑</span></button>
         </div>
         <span id="workspace-summary" class="workspace-summary quiet" role="status" hidden></span>
         <div id="send-error" class="form-error" role="alert" hidden></div>
@@ -122,14 +122,14 @@
       </form>
     </section>
     <aside id="member-rail" class="member-rail" aria-label="团队成员、通知源与详情">
-      <button id="close-mobile-members" class="text-button mobile-panel-back" type="button">← 返回对话</button>
+      <button id="close-mobile-members" class="text-button mobile-panel-back" type="button">← 返回</button>
       <div id="member-resizer" class="sidebar-resizer member-resizer" role="separator" tabindex="0" aria-label="调整右侧栏宽度" aria-orientation="vertical" aria-controls="member-rail" title="左右拖动调整宽度"></div>
       <div id="member-list-view" class="member-list-view">
         <header class="rail-header member-rail-header">
           <h2>团队成员 <span id="member-count">0</span></h2>
           <div class="member-rail-actions"><button id="toggle-add" class="add-button" type="button" aria-label="添加成员" title="添加成员" aria-expanded="false" aria-controls="add-form"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
         </header>
-        <button id="close-conversation-notifications" class="text-button" type="button" hidden>← 返回助理详情</button>
+        <button id="close-conversation-notifications" class="text-button" type="button" hidden>← 返回</button>
         <div id="member-sidebar" class="sidebar" aria-label="成员与房间通知">
           <form id="add-form" class="add-form" hidden>
             <label for="agent-name">成员名称</label><input id="agent-name" placeholder="例如 reviewer" required maxlength="128" autocomplete="off" class="field-control">
@@ -157,7 +157,7 @@
         </div>
       </div>
       <dialog id="notification-detail" class="activity-dialog notification-detail" aria-labelledby="notification-title">
-        <header class="activity-header detail-header"><button id="close-notification" class="text-button back-button" type="button" aria-label="返回上一页" title="返回上一页"><span aria-hidden="true">←</span> 返回</button><h2 id="notification-title" tabindex="-1">平台通知</h2></header>
+        <header class="activity-header detail-header"><button id="close-notification" class="text-button back-button" type="button" aria-label="返回" title="返回"><span aria-hidden="true">←</span> 返回</button><h2 id="notification-title" tabindex="-1">平台通知</h2></header>
         <div class="notification-body">
           <p id="notification-account" class="notification-account quiet"></p>
           <p id="notification-destination" class="quiet"></p>
@@ -339,7 +339,7 @@
       </dialog>
       <dialog id="activity-dialog" class="activity-dialog" aria-labelledby="activity-title">
         <header class="activity-header detail-header">
-          <button id="close-activity" type="button" class="text-button back-button" aria-label="返回团队成员" title="返回团队成员" autofocus><span aria-hidden="true">←</span> 返回</button>
+          <button id="close-activity" type="button" class="text-button back-button" aria-label="返回" title="返回" autofocus><span aria-hidden="true">←</span> 返回</button>
           <div class="agent-heading"><h2 id="activity-title">Agent 详情</h2><span id="agent-status" class="member-status"></span></div>
           <div id="agent-quick-actions" class="member-actions" hidden></div>
           <button id="toggle-agent-controls" class="text-button agent-controls-toggle" type="button" aria-label="展开成员设置" title="展开成员设置" aria-controls="agent-controls" aria-expanded="false"><span id="agent-model-alert" role="status" aria-live="polite" hidden></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
@@ -601,7 +601,7 @@
         <div id="models-empty" class="platforms-empty" hidden><h3>还没有模型</h3><p>点击右上角 ＋ 添加模型。</p></div>
         </div>
         <form id="model-edit-form" class="model-edit-form" hidden autocomplete="off">
-          <div class="connection-form-heading"><button id="model-edit-back" class="back-button" type="button" aria-label="返回模型列表"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg><span>返回</span></button><h3 id="model-edit-title">添加模型</h3></div>
+          <div class="connection-form-heading"><button id="model-edit-back" class="back-button" type="button" aria-label="返回" title="返回"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg><span>返回</span></button><h3 id="model-edit-title">添加模型</h3></div>
           <div class="model-fields">
             <div class="connection-field"><label for="model-entry-name">显示名称（可选）</label><input id="model-entry-name" class="field-control" placeholder="留空使用模型 ID" maxlength="256"></div>
             <div class="connection-field"><label for="catalog-protocol">协议</label><select class="field-control" id="catalog-protocol"><option value="openai-completions">OpenAI 兼容</option><option value="deepseek-messages">DeepSeek Messages</option></select></div>
@@ -644,7 +644,7 @@
       </div>
     </section>
     <form id="connection-form" class="workspace-form" autocomplete="off" hidden>
-      <div class="connection-form-heading detail-header"><button id="connection-back" class="text-button back-button" type="button" aria-label="返回平台列表" title="返回平台列表"><span aria-hidden="true">←</span> 返回</button><h3 id="connection-title">添加平台</h3></div>
+      <div class="connection-form-heading detail-header"><button id="connection-back" class="text-button back-button" type="button" aria-label="返回" title="返回"><span aria-hidden="true">←</span> 返回</button><h3 id="connection-title">添加平台</h3></div>
       <fieldset id="connection-fields">
         <div id="connection-name-field" class="connection-field"><label for="connection-name">连接名称</label><input id="connection-name" maxlength="128" required placeholder="公司 GitLab" class="field-control"></div>
         <div id="connection-provider-field" class="connection-field"><label for="connection-provider">平台类型</label><select id="connection-provider" class="field-control"><option value="gitlab">GitLab</option><option value="scion">Scion</option><option value="feishu">飞书</option><option value="lark">Lark</option></select></div>

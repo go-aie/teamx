@@ -184,7 +184,7 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
     try {
       await settingsUI.openSettings("platforms");
       if(generation!==s.generation)return;
-      await connectionsUI.editPlatform();
+      await connectionsUI.editPlatform(null,{fromSource:true});
       if(generation!==s.generation)return;
       connectionsUI.platforms.connectOperation={...op,service:structuredClone(state.info)};
       $("connection-name").value=op.name;$("connection-url").value=op.origin;

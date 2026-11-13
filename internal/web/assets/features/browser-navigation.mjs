@@ -7,7 +7,12 @@ export function createBrowserNavigation({ env, layers }) {
     if (!window.history?.pushState || !window.history?.back || settling) return;
     const next = layers().at(-1);
     if (next?.id === current?.id) return;
-    if (current) {
+    if (current && next) {
+      // One transient history entry follows the visible surface. Back closes
+      // that surface and installs its actual parent, without replaying forms.
+      current = next;
+      window.history.replaceState({ teamxOverlay: next.id }, "");
+    } else if (current) {
       settling = true;
       window.history.back();
     } else if (next) {

@@ -1,5 +1,6 @@
 import { compactViewport } from "../client.mjs";
 import { sameService } from "../client.mjs";
+import { captureReturnView } from "../view-return.mjs";
 
 // Room/member notification subscriptions, targets and configuration views.
 export function createNotifications({ env, membersUI, workspaceUI, runtime, roomsUI, settingsUI, connectionsUI, onboardingUI, layoutUI }) {
@@ -7,6 +8,16 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
   const { state, $, notice, setSelectOptions } = runtime;
 
   let notificationNavigation = 0;
+  let notificationOrigin = null;
+
+  function rememberNotificationOrigin(opener) {
+    if ($("notification-detail").open) return;
+    notificationOrigin = { view: captureReturnView(env, runtime, { opener }), panel: layoutUI.captureMemberPanel(),
+      activityHidden: $("activity-dialog").hidden };
+    const ws=workspaceUI.workspaceView;
+    if(ws && $("activity-dialog").open && !$("activity-dialog").hidden && !ws.notificationReturn)
+      ws.notificationReturn={info:{...state.info},member:{...membersUI.activityMember},tab:membersUI.agentTab,platformScroll:$("platforms-member-view").scrollTop,activityScroll:$("activity-dialog").scrollTop,bodyScroll:$("activity-body").scrollTop,policyScroll:$("policy-member-view").scrollTop,scroll:$("inbox-member-view").scrollTop,windowScroll:{left:window.scrollX,top:window.scrollY}};
+  }
 
   const gitlabEventStatuses = { disabled: "已关闭", initializing: "初始化中", running: "运行中", backoff: "退避中", credentials_invalid: "凭据失效", capacity: "接收容量已满", binding_changed: "绑定已变化" };
 
@@ -876,8 +887,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     const status=!connected || toolsOnly || history ? "" : configured && !enabled ? "通知已暂停" : !configured ? "尚未开启通知" : "";
     notice("notification-enabled-state",status);
     notice("notification-toggle-error",ws?.notificationToggleError?.key===notificationScopeKey(target,id) ? ws.notificationToggleError.message : "");
-    const backLabel=ws?.notificationReturn ? (roomsUI.isDirect() ? "返回助理详情" : "返回成员详情") : roomsUI.isDirect() ? "返回会话通知" : "返回房间通知";
-    $("close-notification").setAttribute("aria-label",backLabel);$("close-notification").title=backLabel;
+    $("close-notification").setAttribute("aria-label","返回");$("close-notification").title="返回";
     if(history){$("notification-title").textContent="通知来源诊断";$("notification-account").textContent="";$("notification-destination").textContent="";}
     if(toolsOnly){$("notification-panel-messages").hidden=true;$("notification-panel-gitlab").hidden=true;notice("notification-notice","此平台暂无可调整的配置，工具启停请返回平台列表。");$("notification-reload").hidden=true;}
     $("gitlab-manage-platforms").disabled = !ws;
@@ -886,12 +896,12 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
 
   async function openNotificationSource(opener, channel, platformID, target = {}) {
     const ws=workspaceUI.workspaceView;if(!ws || !platformID || channel==="messages" && target.mode!=="inbox")return;
+    rememberNotificationOrigin(opener);
     const navigation=++notificationNavigation;
     const epoch=state.catalog?.service_epoch,opening=ws.notificationOpen=(ws.notificationOpen || 0)+1;
     rememberNotificationDraft(ws);
     const key=notificationScopeKey(target,platformID),same=ws.notificationScope===key;
     notificationFocus=opener;
-    if($("activity-dialog").open && !ws.notificationReturn)ws.notificationReturn={info:{...state.info},member:{...membersUI.activityMember},tab:membersUI.agentTab,platformScroll:$("platforms-member-view").scrollTop,activityScroll:$("activity-dialog").scrollTop,bodyScroll:$("activity-body").scrollTop,policyScroll:$("policy-member-view").scrollTop,scroll:$("inbox-member-view").scrollTop,windowScroll:{left:window.scrollX,top:window.scrollY}};
     ws.notificationTarget=structuredClone(target);ws.notificationScope=key;ws.notificationChannel=channel==="messages" ? "messages" : channel==="tools" ? "tools" : "gitlab";ws.notificationPlatformID=platformID;ws.notificationHistory="";
     if(!same){
       stopLarkChatSearch();ws.gitlabRevision=(ws.gitlabRevision || 0)+1;ws.messagesRevision=(ws.messagesRevision || 0)+1;
@@ -941,7 +951,9 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     const ws=workspaceUI.workspaceView,epoch=state.catalog?.service_epoch,navigation=++notificationNavigation;if(!ws)return;
     const showHistory=message=>{
       if(ws!==workspaceUI.workspaceView || state.catalog?.service_epoch!==epoch || navigation!==notificationNavigation)return;
+      rememberNotificationOrigin(opener);
       ws.notificationHistory=message;ws.notificationPlatformID=source?.platform_id || "";notificationFocus=opener;
+      $("activity-dialog").hidden=true;membersUI.activity.close();layoutUI.showNotificationDetail();
       $("notification-detail").show();renderNotificationSource();$("notification-title").focus();
     };
     if(!source?.subscription_id || !source?.provider || !source?.channel){showHistory("此历史消息缺少完整来源身份，无法唯一定位原配置。");return;}
@@ -1078,6 +1090,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
 
     $("notification-detail").addEventListener("close",()=>{
       if($("notification-detail").open)return;
+      const origin=notificationOrigin;notificationOrigin=null;
       notificationNavigation++;
       const ws=workspaceUI.workspaceView,back=ws?.notificationReturn;
       if(ws){ws.notificationOpen=(ws.notificationOpen || 0)+1;if(ws.gitlabSending==="select"){ws.gitlabRevision++;ws.gitlabSending=false;}}
@@ -1099,6 +1112,10 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
         window.scrollTo?.(back.windowScroll);
       }else if(!$("activity-dialog").open && !$("workspace-dialog").open)(notificationFocus?.isConnected ? notificationFocus : $("notification-add-toggle")).focus();
       notificationFocus=null;onboardingUI.renderMemberPlatformAddition();renderContextViews();
+      if(origin?.view.current()) {
+        $("activity-dialog").hidden=origin.activityHidden;
+        origin.panel();origin.view.restore($("toggle-members"));
+      }
     });
 
     $("notification-detail").addEventListener("keydown", event => {

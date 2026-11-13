@@ -1,4 +1,5 @@
 import { randomUUID } from "../random-id.mjs";
+import { captureReturnView } from "../view-return.mjs";
 import { fillModelParameters, readModelParameters, syncModelProtocol, modelDraftFields, snapshotModelFields, restoreModelFields } from "../model-form.mjs";
 
 export function createModels({env, runtime, openSettings, onMemberStatus}) {
@@ -8,6 +9,7 @@ export function createModels({env, runtime, openSettings, onMemberStatus}) {
   const field = id => $(`catalog-${id}`);
   let data, editor, saving = false, read = 0, timer, memberView, memberSaving = false, defaultReview;
   let lastOperation, operationRenderKey, listRenderKey, restoredKey;
+  let editorReturn;
   const operationRows = new Map();
   const draftKey = () => JSON.stringify(["teamx.model-draft",state.installationID || "",state.operator]);
   function persist() {
@@ -59,9 +61,17 @@ export function createModels({env, runtime, openSettings, onMemberStatus}) {
     field("key-state").textContent = reuse ? "已配置密钥，本次验证将复用。" : "密钥将安全保存在部署机。";
   }
   function closeEditor() { clearReview(); field("api-key").value = ""; editor = undefined; $("model-edit-form").hidden = true; $("model-list-view").hidden = false; persist(); }
+  function returnFromEditor() {
+    if (saving) return;
+    const back = editorReturn; editorReturn = undefined;
+    closeEditor();
+    if (!back?.restore($("model-new"))) $("model-new").focus({preventScroll:true});
+    runtime.navigationChanged();
+  }
   function openEditor(entry, draft) {
     if (saving || !data) return;
     if (lastOperation?.unconfirmed && !draft) {feedback("请先读取原操作进度，再决定是否开始新的编辑。");return;}
+    if (!editor) editorReturn = captureReturnView(env, runtime);
     lastOperation = undefined; clearReview(); feedback("");
     editor = {entry, version:draft?.expected_version ?? data.catalog.version, id:draft?.id || entry?.id || `model-${randomUUID(crypto).replaceAll("-", "").slice(0,16)}`};
     $("model-edit-title").textContent = entry ? "编辑模型" : "添加模型";
@@ -303,7 +313,7 @@ export function createModels({env, runtime, openSettings, onMemberStatus}) {
     $("model-delete").addEventListener("click",reviewDeletion);
     $("model-set-default").addEventListener("click",reviewDefault);
     field("model-id").addEventListener("input",()=>{$("model-entry-name").placeholder=field("model-id").value || "留空使用模型 ID";});
-    for (const id of ["model-edit-cancel", "model-edit-back"]) $(id).addEventListener("click", () => {closeEditor(); $("model-new").focus();});
+    for (const id of ["model-edit-cancel", "model-edit-back"]) $(id).addEventListener("click", returnFromEditor);
     field("replace-key").addEventListener("change",keyState);
     field("protocol").addEventListener("change",() => syncModelProtocol(field));
     $("model-edit-form").addEventListener("submit",event => {
@@ -340,5 +350,5 @@ export function createModels({env, runtime, openSettings, onMemberStatus}) {
     });
     window.addEventListener("pagehide",() => {persist();field("api-key").value="";});
   }
-  return {mount,load,openMember,showMemberDetails,clearKey:() => {field("api-key").value="";clearReview();}};
+  return {mount,load,openMember,showMemberDetails,returnFromEditor,clearKey:() => {field("api-key").value="";clearReview();}};
 }

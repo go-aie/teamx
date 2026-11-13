@@ -140,6 +140,15 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
   function showConversationNotifications() { directNotificationsOpen = true; }
   function hideConversationNotifications() { directNotificationsOpen = false; }
 
+  function captureMemberPanel() {
+    const saved = { members: panels.members, mobile: directMobileDetails, rooms: directMobileRooms, notifications: directNotificationsOpen };
+    return () => {
+      panels.members = saved.members; directMobileDetails = saved.mobile;
+      directMobileRooms = saved.rooms; directNotificationsOpen = saved.notifications;
+      savePanels(); renderPanels();
+    };
+  }
+
   function showNotificationDetail() {
     expandMembers(); savePanels(); renderPanels();
   }
@@ -246,6 +255,7 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
     collapseMembers,
     showConversationNotifications,
     hideConversationNotifications,
+    captureMemberPanel,
     showNotificationDetail,
     get membersExpanded() { return panels.members; },
     get directNotificationsOpen() { return directNotificationsOpen; },

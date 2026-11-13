@@ -77,11 +77,18 @@ export async function createApp(overrides = {}) {
       if (state.managed && !layoutUI.roomsPanelOpen?.()) layers.push({ id:"mobile-conversation", close:layoutUI.showMobileRooms });
       if (layoutUI.membersPanelOpen?.()) layers.push({ id:"members", close:layoutUI.closeMobilePanels });
     }
+    if (layoutUI.directNotificationsOpen && layoutUI.membersPanelOpen()) layers.push({ id:"conversation-notifications", close:conversationUI.returnConversationNotifications });
     if ($("workspace-picker").open) layers.push({ id:"workspace-picker", close:workspaceUI.closeWorkspacePicker });
     for (const [id, button] of [["activity-dialog","close-activity"], ["notification-detail","close-notification"],
       ["workspace-dialog","close-workspace"], ["create-dialog","close-create"], ["settings-dialog","close-settings"], ["access-confirm-dialog","access-confirm-cancel"]]) {
-      if ($(id)?.open && !$(id).hidden) layers.push({id, close:() => id === "settings-dialog" ? settingsUI.closeSettings() : $(button)?.click?.()});
+      if ($(id)?.open && !$(id).hidden) layers.push({id, close:() => id === "settings-dialog" ? settingsUI.backSettings() : $(button)?.click?.()});
+      if (id === "settings-dialog" && $(id).open) {
+        if (settingsUI.settingsTab === "platforms" && !$("connection-form").hidden) layers.push({id:"connection-form",close:connectionsUI.returnFromPlatform});
+        if (settingsUI.settingsTab === "models" && !$("model-edit-form").hidden) layers.push({id:"model-editor",close:settingsUI.returnFromModelEditor});
+        if (settingsUI.settingsTab === "general" && !$("timezone-options").hidden) layers.push({id:"timezone-picker",close:settingsUI.backSettings});
+      }
     }
+    if ($("confirmation-dialog").open) layers.push({id:"confirmation",close:() => $("confirmation-dialog").close()});
     return layers;
   }});
   function suspend() {

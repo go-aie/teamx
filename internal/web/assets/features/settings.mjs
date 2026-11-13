@@ -2,6 +2,7 @@ import { createModels } from "./models.mjs";
 import { createAccessSettings } from "./access-settings.mjs";
 import { compactViewport } from "../client.mjs";
 import { createSystemTime, createTimeInput } from "../time.mjs";
+import { captureReturnView } from "../view-return.mjs";
 
 // Service time zone, settings navigation and dialog lifecycle.
 export function createSettings({ env, runtime, connectionsUI, conversationUI, roomsUI, workspaceUI, policyUI, notificationsUI, onboardingUI, membersUI }) {
@@ -19,6 +20,7 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
   const timezoneForm = {dirty:false, saving:false, message:""};
 
   let settingsTab = "general";
+  let settingsReturn = null;
 
   const timezonePicker = {open:false, query:"", active:-1, candidates:[], shown:[]};
 
@@ -144,9 +146,14 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
     }
   }
 
-  async function openSettings(tab = settingsTab) {
+  async function openSettings(tab = settingsTab, opener = document.activeElement) {
     notificationsUI.invalidateNavigation();
     if (state.managed ? !state.catalog : !state.info) return;
+    if (!$("settings-dialog").open) {
+      const member = opener?.closest?.("#activity-dialog") ? membersUI.selectedAgent() : null;
+      settingsReturn = captureReturnView(env, runtime, { opener,
+        valid: () => !member || state.members.some(current => current.membership_id === member.membership_id) });
+    }
     connectionsUI.showPlatformList(); settingsTab = availableSettingsTabs().includes(tab) ? tab : "general";
     if (settingsTab === "security") void access.load();
     timezonePicker.open = false; renderTimeZone(); $("settings-dialog").showModal(); void models.load(); runtime.navigationChanged(); if(state.managed) {await connectionsUI.loadPlatforms();await onboardingUI.restoreOnboarding();}
@@ -157,6 +164,14 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
     if ($("close-settings").disabled) return;
     access.clear();
     await connectionsUI.cancelPlatformAuth(); await onboardingUI.onboardingAction("status",{discardUnconnected:true}); $("settings-dialog").close();
+  }
+
+  async function backSettings() {
+    if (timezonePicker.open) {
+      timezonePicker.open = false; renderTimeZoneOptions(); $("timezone-picker-toggle").focus();
+    } else if (settingsTab === "platforms" && !$("connection-form").hidden) await connectionsUI.returnFromPlatform();
+    else if (settingsTab === "models" && !$("model-edit-form").hidden) models.returnFromEditor();
+    else await closeSettings();
   }
 
   function showPlatforms() { settingsTab = "platforms"; renderSettingsNavigation(); }
@@ -249,15 +264,17 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
     dismissOnBackdrop($("settings-dialog"), closeSettings);
 
     $("settings-dialog").addEventListener("cancel", event => {
-      if (timezonePicker.open) {
-        event.preventDefault(); timezonePicker.open = false; renderTimeZoneOptions(); $("timezone-picker-toggle").focus();
-      } else if (connectionsUI.platforms.sending || access.saving) event.preventDefault();
+      event.preventDefault(); void backSettings();
     });
 
     $("settings-dialog").addEventListener("close", () => { access.clear(); models.clearKey(); timezonePicker.open = false; renderTimeZoneOptions(); void connectionsUI.cancelPlatformAuth(); $("gitlab-client-secret").value = ""; connectionsUI.platforms.formVersion++; connectionsUI.platforms.generation++;
-      if ($("notification-detail").open) { $(workspaceUI.workspaceView?.notificationChannel === "messages" ? "lark-manage-platforms" : "gitlab-manage-platforms").focus(); void connectionsUI.refreshPlatformState(); }
-      else if($("activity-dialog").open){$("member-notification-add-toggle").focus({preventScroll:true});void connectionsUI.refreshPlatformState();}
-      else $(state.managed ? "user-menu-toggle" : "open-general-settings").focus(); });
+      let fallback = $(state.managed ? "user-menu-toggle" : "open-general-settings");
+      if ($("notification-detail").open) { fallback = $(workspaceUI.workspaceView?.notificationChannel === "messages" ? "lark-manage-platforms" : "gitlab-manage-platforms"); void connectionsUI.refreshPlatformState(); }
+      else if($("activity-dialog").open){fallback=$("member-notification-add-toggle");void connectionsUI.refreshPlatformState();}
+      else if($("workspace-dialog").open)fallback=$("workspace-manage-platforms");
+      const back = settingsReturn; settingsReturn = null;
+      if (!back?.restore(fallback)) fallback.focus({preventScroll:true});
+    });
   }
 
   return {
@@ -274,6 +291,8 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
     bindSystemTime,
     applyTimeZone,
     closeSettings,
+    backSettings,
+    returnFromModelEditor: models.returnFromEditor,
     get settingsTab() { return settingsTab; },
   };
 }

@@ -3,6 +3,7 @@ import { readPages as collectPages, createRoomDrafts, mentionRanges, unseenMenti
 import { notificationOptions } from "../markdown.mjs";
 import { createAssistantIcon, createUserIcon } from "../icons.mjs";
 import { createMentionPicker } from "../mention-picker.mjs";
+import { captureReturnView } from "../view-return.mjs";
 
 // Messages, drafts, mentions and the send/restart lifecycle.
 export function createConversation({ env, runtime, roomsUI, notificationsUI, membersUI, settingsUI, interactionsUI, workspaceUI, layoutUI, userMenuUI }) {
@@ -10,6 +11,16 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
   const { state, $, notice, rpc, currentView, refresh, discussionBusy, reconcileChildren, storage, confirmAction } = runtime;
 
   let historyLoading = false, composing = false, compositionEnded = -Infinity;
+  let notificationsReturn = null;
+
+  function returnConversationNotifications() {
+    const back = notificationsReturn; notificationsReturn = null;
+    layoutUI.hideConversationNotifications();
+    if (back?.view.current()) back.panel();
+    else { layoutUI.collapseMembers(); layoutUI.renderPanels(); }
+    $("activity-dialog").hidden = false;
+    back?.view.restore($("room-menu-label"));
+  }
 
   const drafts = createRoomDrafts(storage, () => state.installationID);
   const sendIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -181,7 +192,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
       const author = el.querySelector(".author");
       const open = opener => {
         const member = state.members.find(item => item.agent_id === message.author.id);
-        if (member) membersUI.openMemberActivity(member, opener);
+        if (member) membersUI.openMemberActivity(member, opener, undefined, {fromConversation:true});
       };
       author.disabled = false;
       author.setAttribute("aria-label", `查看 ${message.author.id} 的详情`);
@@ -384,7 +395,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     $("send").setAttribute("aria-busy", String(!!state.draft.sending));
     $("send").title = sendLabel;
     sendIconPath.setAttribute("d", state.draft.sending ? "M20 12a8 8 0 1 1-5-7.4"
-      : state.draft.pending ? "M20 11a8 8 0 1 0-2.3 6.7M20 4v7h-7" : "M6 18 18 6M7 6h11v11");
+      : state.draft.pending ? "M20 11a8 8 0 1 0-2.3 6.7M20 4v7h-7" : "M12 19V5M5 12l7-7 7 7");
     $("send").replaceChildren(sendIcon);
     if (hasMessage) workspaceUI.closeWorkspacePicker();
     const atBottom = nearBottom(), previousHeight = input.getBoundingClientRect().height;
@@ -420,15 +431,18 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
 
     $("direct-notifications").addEventListener("click", () => {
       if ($("direct-notifications").disabled) return;
+      notificationsReturn = { view: captureReturnView(env, runtime, { opener: $("room-menu-label") }), panel: layoutUI.captureMemberPanel() };
       layoutUI.showConversationNotifications(); $("room-menu").open = false;
       $("activity-dialog").hidden = true;
       layoutUI.expandMembers();
       layoutUI.renderPanels(); notificationsUI.renderNotificationPlatforms(); $("close-conversation-notifications").focus();
     });
 
-    $("close-conversation-notifications").addEventListener("click", () => {
-      layoutUI.hideConversationNotifications(); $("activity-dialog").hidden = false;
-      layoutUI.renderPanels(); membersUI.syncDirectDetail(); $("agent-tab-platforms").focus();
+    $("close-conversation-notifications").addEventListener("click", returnConversationNotifications);
+    $("member-list-view").addEventListener("keydown", event => {
+      if (event.key !== "Escape" || event.defaultPrevented || !layoutUI.directNotificationsOpen ||
+        $("notification-detail").open || document.querySelector("dialog:modal")) return;
+      event.preventDefault(); returnConversationNotifications();
     });
 
     $("view-mention").addEventListener("click", () => {
@@ -575,6 +589,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
 
   return {
     mount,
+    returnConversationNotifications,
     resetRestartNotice,
     resetMessageNodes,
     interactionHost,

@@ -189,7 +189,7 @@ export function createOnboarding({ env, runtime, connectionsUI, larkUI, settings
   async function addPlatformForMember(fixed = null) {
     await settingsUI.openSettings("platforms");
     if (onboarding.pending && !onboardingDone()) {onboarding.error="请先继续上次接入，或停止其剩余步骤后重新添加。";renderOnboarding();return;}
-    clearOnboarding();await connectionsUI.editPlatform();await startOnboardingOptions(fixed);
+    clearOnboarding();await connectionsUI.editPlatform(null,{fromSource:true});await startOnboardingOptions(fixed);
   }
 
   function memberPlatformAddition(v,item) {
