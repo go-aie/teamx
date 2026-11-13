@@ -1,21 +1,14 @@
-name: Release candidates
+name: Release
 
 on:
   push:
     tags: ['v*']
-  workflow_dispatch:
-    inputs:
-      profile:
-        description: Candidate scope (release builds core/standard; full is experimental)
-        type: choice
-        options: [release, core, standard, full]
-        default: release
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-candidate-${{ github.ref }}
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 defaults:
@@ -37,17 +30,15 @@ jobs:
       go_version: ${{ steps.plan.outputs.go_version }}
       node_version: ${{ steps.plan.outputs.node_version }}
       dependency_key: ${{ steps.plan.outputs.dependency_key }}
+      context: ${{ steps.plan.outputs.context }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Require clean version tag and all included targets/profiles
+      - name: Require exact tag push, clean source and complete release matrix
         id: plan
-        env:
-          CANDIDATE_VERSION: ${{ github.ref_name }}
-          CANDIDATE_SCOPE: ${{ inputs.profile || 'release' }}
-        run: node scripts/package-release.mjs plan "$CANDIDATE_VERSION" "$CANDIDATE_SCOPE"
+        run: node scripts/package-publish.mjs plan "$RUNNER_TEMP/release-source.json"
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: ${{ steps.plan.outputs.node_version }}
@@ -64,15 +55,23 @@ jobs:
           go vet ./...
           node --test internal/web/tests/web*_test.mjs
 
-  candidate:
+  build:
     needs: checks
-    name: Candidate ${{ matrix.target }} ${{ matrix.profile }}
+    name: Build ${{ matrix.target }} ${{ matrix.profile }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.checks.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     steps:
+      - name: Require a complete build attempt
+        env:
+          RELEASE_ATTEMPT: ${{ fromJSON(needs.checks.outputs.context).run_attempt }}
+        run: |
+          if [[ "$GITHUB_RUN_ATTEMPT" != "$RELEASE_ATTEMPT" ]]; then
+            echo 'Build, verify and assemble must run together. Re-run all jobs to create a complete new batch.' >&2
+            exit 1
+          fi
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.checks.outputs.commit }}
@@ -115,7 +114,7 @@ jobs:
           MACOS_SIGNING: ${{ startsWith(matrix.target, 'darwin-') && vars.TEAMX_MACOS_SIGNING || 'unsigned' }}
           TEAMX_SIGN_IDENTITY: ${{ vars.TEAMX_SIGN_IDENTITY }}
         run: |
-          ./scripts/package.sh --channel release --candidate --version "$CANDIDATE_VERSION" --profile "$CANDIDATE_PROFILE" --target "$CANDIDATE_TARGET" --macos-signing "${MACOS_SIGNING:-unsigned}" --output-dir "$RUNNER_TEMP/candidate"
+          ./scripts/package.sh --channel release --version "$CANDIDATE_VERSION" --profile "$CANDIDATE_PROFILE" --target "$CANDIDATE_TARGET" --macos-signing "${MACOS_SIGNING:-unsigned}" --output-dir "$RUNNER_TEMP/candidate"
           node scripts/package-release.mjs record "$RUNNER_TEMP/candidate" "$CANDIDATE_TARGET" "$CANDIDATE_PROFILE" "$CANDIDATE_COMMIT" "$CANDIDATE_VERSION"
       - name: Delete temporary keychain and credential material
         if: ${{ always() && startsWith(matrix.target, 'darwin-') && vars.TEAMX_MACOS_SIGNING == 'developer-id' }}
@@ -134,8 +133,7 @@ jobs:
           retention-days: 30
 
   verify:
-    needs: [checks, candidate]
-    if: ${{ !cancelled() && needs.checks.result == 'success' }}
+    needs: [checks, build]
     name: Verify candidate ${{ matrix.target }} ${{ matrix.profile }}
     strategy:
       fail-fast: false
@@ -143,6 +141,14 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 25
     steps:
+      - name: Require a complete build attempt
+        env:
+          RELEASE_ATTEMPT: ${{ fromJSON(needs.checks.outputs.context).run_attempt }}
+        run: |
+          if [[ "$GITHUB_RUN_ATTEMPT" != "$RELEASE_ATTEMPT" ]]; then
+            echo 'Build, verify and assemble must run together. Re-run all jobs to create a complete new batch.' >&2
+            exit 1
+          fi
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.checks.outputs.commit }}
@@ -166,28 +172,93 @@ jobs:
         run: >-
           node scripts/package-release.mjs verify "$RUNNER_TEMP/downloaded"
           "$CANDIDATE_TARGET" "$CANDIDATE_PROFILE" "$CANDIDATE_COMMIT" "$CANDIDATE_VERSION"
-          "$RUNNER_TEMP/download-report.json"
-      - name: Record candidate qualification gaps (publication runs separately)
-        env:
-          CANDIDATE_TARGET: ${{ matrix.target }}
-          CANDIDATE_PROFILE: ${{ matrix.profile }}
-          CANDIDATE_COMMIT: ${{ needs.checks.outputs.commit }}
-          CANDIDATE_VERSION: ${{ needs.checks.outputs.version }}
-        run: |
-          assessment_status=0
-          node scripts/package-release.mjs assess "$RUNNER_TEMP/downloaded" "$CANDIDATE_TARGET" "$CANDIDATE_PROFILE" "$CANDIDATE_COMMIT" "$CANDIDATE_VERSION" "$RUNNER_TEMP/candidate-assessment.json" || assessment_status=$?
-          # Incomplete is a valid candidate result; malformed evidence remains
-          # an error. Only release-publish.yml can qualify and publish assets.
-          if [ "$assessment_status" -ne 0 ] && [ "$assessment_status" -ne 2 ]; then exit "$assessment_status"; fi
+          "$RUNNER_TEMP/verification.json"
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        if: ${{ !cancelled() && steps.verify.outcome == 'success' }}
         with:
           name: candidate-verification-${{ needs.checks.outputs.version }}-${{ matrix.target }}-${{ matrix.profile }}-${{ github.run_attempt }}
-          path: |
-            ${{ runner.temp }}/download-report.json
-            ${{ runner.temp }}/candidate-assessment.json
+          path: ${{ runner.temp }}/verification.json
           if-no-files-found: error
           retention-days: 30
 
-# Candidates are not releases. Archive-specific qualification and the only
-# contents:write job live in release-publish.yml; gaps still block publication.
+  assemble:
+    needs: [checks, build, verify]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      context: ${{ needs.checks.outputs.context }}
+      checksums_sha256: ${{ steps.seal.outputs.checksums_sha256 }}
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - name: Require a complete build attempt
+        env:
+          RELEASE_ATTEMPT: ${{ fromJSON(needs.checks.outputs.context).run_attempt }}
+        run: |
+          if [[ "$GITHUB_RUN_ATTEMPT" != "$RELEASE_ATTEMPT" ]]; then
+            echo 'Build, verify and assemble must run together. Re-run all jobs to create a complete new batch.' >&2
+            exit 1
+          fi
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.checks.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ needs.checks.outputs.node_version }}
+          package-manager-cache: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          pattern: candidate-${{ needs.checks.outputs.version }}-*-*-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/candidates
+          merge-multiple: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          pattern: candidate-verification-${{ needs.checks.outputs.version }}-*-*-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/verifications
+          merge-multiple: false
+      - name: Aggregate the complete matrix, installer, licenses and checksums
+        id: seal
+        env:
+          RELEASE_CONTEXT: ${{ needs.checks.outputs.context }}
+        run: |
+          node --input-type=module -e 'import fs from "node:fs"; fs.writeFileSync(process.env.RUNNER_TEMP + "/release-source.json", process.env.RELEASE_CONTEXT, {flag: "wx"});'
+          node scripts/package-publish.mjs assemble "$RUNNER_TEMP/candidates" "$RUNNER_TEMP/verifications" "$RUNNER_TEMP/release-source.json" "$RUNNER_TEMP/release"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        id: upload
+        with:
+          name: release-${{ needs.checks.outputs.version }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+  publish:
+    needs: [checks, assemble]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.checks.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ needs.checks.outputs.node_version }}
+          package-manager-cache: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          # Preserve the exact assemble output when only publish is rerun.
+          artifact-ids: ${{ needs.assemble.outputs.artifact_id }}
+          path: ${{ runner.temp }}/release
+          merge-multiple: true
+      - name: Create draft, upload original bytes, verify downloads and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_CONTEXT: ${{ needs.assemble.outputs.context }}
+          RELEASE_SEAL: ${{ needs.assemble.outputs.checksums_sha256 }}
+        run: |
+          node --input-type=module -e 'import fs from "node:fs"; fs.writeFileSync(process.env.RUNNER_TEMP + "/release-source.json", process.env.RELEASE_CONTEXT, {flag: "wx"});'
+          node scripts/package-publish.mjs publish "$RUNNER_TEMP/release" "$RUNNER_TEMP/release-source.json" "$RELEASE_SEAL"

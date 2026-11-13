@@ -30,13 +30,11 @@ const https = (value) => {
 try {
   let target;
   let profile = 'standard';
-  let requireReady = false;
   const args = process.argv.slice(2);
   while (args.length) {
     const arg = args.shift();
     if (arg === '--target') target = args.shift();
     else if (arg === '--profile') profile = args.shift();
-    else if (arg === '--require-ready') requireReady = true;
     else throw new Error(`Unknown argument: ${arg}`);
     if ((arg === '--target' && !target) || (arg === '--profile' && !profile)) throw new Error(`Missing value: ${arg}`);
   }
@@ -176,21 +174,12 @@ try {
     check(!policy.required_dependencies.includes('scn'), 'Scion must remain deferred');
     for (const name of policy.required_dependencies) check(dependencies[name], `Unknown profile dependency: ${name}`);
   }
-  console.log(`P0 inventory valid: ${targets.length} targets, ${assets.teams.length} teams, ${deployment.package_count} locked npm packages.`);
-  if (requireReady) {
-    const blockers = new Set();
-    for (const name of lock.profiles[profile].required_dependencies) for (const b of dependencies[name].blockers) blockers.add(b);
-    for (const t of target ? [target] : targets) {
-      for (const b of lock.targets[t].blockers) {
-        if (!['git_redistribution_materials', 'git_tls_runtime'].includes(b) || hasDependency(profile, 'git', lock)) blockers.add(b);
-      }
-      if (lock.targets[t].support !== 'accepted') blockers.add('native_runtime_acceptance');
-    }
-    if (blockers.size) {
-      console.error(`NOT READY (${target || 'all targets'}/${profile}):\n` + [...blockers].map((b) => `- ${b}: ${lock.blockers[b]}`).join('\n'));
-      process.exitCode = 2;
-    }
+  // Enforce actual runtime closure, independently of historical acceptance.
+  if (hasDependency(profile, 'git', lock)) {
+    for (const t of target ? [target] : targets)
+      check(!lock.targets[t].blockers.includes('git_tls_runtime'), `full blocked for ${t}: git_tls_runtime; ${lock.blockers.git_tls_runtime}`);
   }
+  console.log(`P0 inventory valid: ${targets.length} targets, ${assets.teams.length} teams, ${deployment.package_count} locked npm packages.`);
 } catch (error) {
   console.error(`Invalid packaging inventory: ${error.message}`);
   process.exitCode = 1;

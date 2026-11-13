@@ -1,5 +1,12 @@
 import { must } from './package-lib.mjs';
 
+export const acceptanceInputs = ['scripts/package-acceptance.mjs', 'scripts/package-acceptance-lib.mjs',
+  'scripts/package-browser.mjs', 'scripts/package-lib.mjs', 'scripts/package-platform.mjs',
+  'scripts/package-smoke.mjs', 'scripts/check-dsh-native.mjs', 'scripts/fixtures/acp.mjs', 'scripts/fixtures/models.mjs',
+  'internal/room/bundle_real_e2e_test.go',
+  'internal/room/dsh_real_test.go', 'internal/room/demo_test.go',
+  'packaging/verifier/package.json', 'packaging/verifier/package-lock.json', 'scripts/package-profiles.mjs'];
+
 export function checkSmoke(report, digest, manifest) {
   must(report.status === 'passed', 'Archive smoke did not pass');
   must(report.archive_sha256 === digest, 'Smoke belongs to another archive');
@@ -7,7 +14,7 @@ export function checkSmoke(report, digest, manifest) {
     'Smoke target/profile differs');
 }
 
-// Passing this deliberately narrower local scope never qualifies a release.
+// Results cover only this local scope.
 // A skipped model/browser, missing cleanup or a lazy restart without a real
 // resumed prompt must not turn into a passing acceptance.
 export function resultForScope(checks) {

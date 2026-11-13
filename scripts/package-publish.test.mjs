@@ -4,36 +4,32 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as p from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 import { extract, hash, inventory, json, run, writeJSON } from './package-lib.mjs';
-import { acceptanceInputs, assessCandidate, checkAssessment, inspectCandidate, releasePlan } from './package-release.mjs';
-import { checkQualification, qualificationFor, qualificationTemplate, residentServerTarget, residentServerFields } from './package-qualification.mjs';
-import { browserNames, browserFields, modelFields, platformFields, webDeliveryTemplate } from './server-release-policy.mjs';
+import { inspectCandidate, releasePlan, verificationReport } from './package-release.mjs';
 import { signingPolicy } from './package-signing.mjs';
-import { hasDependency, profileDependencies } from './package-profiles.mjs';
-import { assembleRelease, assessmentName, candidateName, checkReleaseDirectory, publishRelease, validateCandidateRun } from './package-publish.mjs';
+import { profileDependencies } from './package-profiles.mjs';
+import { assembleRelease, verificationName, candidateName, checkReleaseDirectory, publishRelease, releaseContext, githubRequest } from './package-publish.mjs';
 
 const root = p.resolve(p.dirname(fileURLToPath(import.meta.url)), '..');
 const version = 'v0.0.0';
 const digest = file => hash(fs.readFileSync(file));
-const native = { 'darwin-arm64': ['darwin', 'arm64', 'arm64'], 'darwin-amd64': ['darwin', 'x64', 'x86_64'],
-  'linux-arm64': ['linux', 'arm64', 'aarch64'], 'linux-amd64': ['linux', 'x64', 'x86_64'] };
-
 // Tiny synthetic archives exercise the release protocol. They contain no
 // runtime and do not establish real platform, model, browser or Git acceptance.
-function fixture(t, includeFull = false) {
+function fixture(t) {
   const temp = fs.mkdtempSync(p.join(os.tmpdir(), 'teamx-publish-test-'));
   t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
-  const source = p.join(temp, 'source'), candidates = p.join(temp, 'candidates'), assessments = p.join(temp, 'assessments');
-  fs.mkdirSync(candidates); fs.mkdirSync(assessments);
-  for (const file of new Set([...acceptanceInputs, 'scripts/package-release.mjs', 'scripts/package-qualification.mjs',
-    'scripts/package-ci.mjs', 'scripts/package-release-source.mjs', 'scripts/package-signing.mjs', 'scripts/server-release-policy.mjs',
+  const source = p.join(temp, 'source'), candidates = p.join(temp, 'candidates'), verifications = p.join(temp, 'verifications');
+  fs.mkdirSync(candidates); fs.mkdirSync(verifications);
+  for (const file of new Set(['scripts/package-release.mjs', 'scripts/package-ci.mjs', 'scripts/package-lib.mjs',
+    'scripts/package-publish.mjs', 'scripts/package-release-source.mjs', 'scripts/package-profiles.mjs', 'scripts/package-signing.mjs', 'scripts/package-platform.mjs', 'scripts/fixtures/models.mjs',
+    'scripts/package-smoke.mjs', 'scripts/check-dsh-native.mjs', 'scripts/fixtures/acp.mjs',
     'packaging/dependencies.lock.json', 'packaging/dsh/package.json', 'packaging/dsh/package-lock.json',
     'tools/gitlab/glab.lock.json', 'docs/installation.zh.md', 'packaging/install.sh', 'LICENSE'])) {
     fs.mkdirSync(p.dirname(p.join(source, file)), { recursive: true });
     fs.copyFileSync(p.join(root, file), p.join(source, file));
   }
   const lock = json(p.join(source, 'packaging/dependencies.lock.json'));
-  if (includeFull) lock.release.profiles.push('full');
   writeJSON(p.join(source, 'packaging/dependencies.lock.json'), lock);
   const git = (...args) => run('git', args, { cwd: source, stdio: ['ignore', 'pipe', 'pipe'], env: {
     ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1',
@@ -41,8 +37,7 @@ function fixture(t, includeFull = false) {
   } }).trim();
   git('init', '-q'); git('add', '.'); git('commit', '-qm', 'synthetic release source'); git('tag', version);
   const { commit, matrix: { include: matrix } } = releasePlan(source, version);
-  const context = { repository: 'example/teamx', version, commit, candidate_run_id: 101, candidate_run_attempt: 2,
-    publish_run_id: 202, publish_run_attempt: 1 };
+  const context = { repository: 'example/teamx', version, commit, workflow: '.github/workflows/release.yml', run_id: 101, run_attempt: 2 };
   const rows = [];
   for (const row of matrix) {
     const name = `teamx-${version}-${row.target}-${row.profile}`, bundle = p.join(temp, name);
@@ -50,17 +45,12 @@ function fixture(t, includeFull = false) {
     fs.copyFileSync(p.join(source, 'LICENSE'), p.join(bundle, 'LICENSE'));
     fs.copyFileSync(p.join(source, 'docs/installation.zh.md'), p.join(bundle, 'README.zh.md'));
     fs.writeFileSync(p.join(bundle, 'THIRD_PARTY_NOTICES/NOTICE'), 'Synthetic dependency notice');
-    if (row.profile === 'full') {
-      fs.mkdirSync(p.join(bundle, 'THIRD_PARTY_NOTICES/git-source'));
-      fs.writeFileSync(p.join(bundle, 'THIRD_PARTY_NOTICES/git-source/COPYING'), 'Synthetic corresponding source remains in bundle');
-    }
     const signing = signingPolicy(row.target), input = { path: 'packaging/dsh/package.json', sha256: digest(p.join(source, 'packaging/dsh/package.json')) };
     const manifest = { version, channel: 'release', target: row.target, profile: row.profile,
       source: { commit, dirty: false, build_inputs: [input], packaging_inputs: [input] },
-      distribution: { kind: 'release_candidate', release_ready: false, signing },
+      distribution: { schema_version: 2, kind: 'release_archive', signing, build: { run_id: 101, run_attempt: 2 } },
       dependency_lock_sha256: digest(p.join(source, 'packaging/dependencies.lock.json')),
       qualification_baseline: lock.targets[row.target].qualification_baseline,
-      ...(residentServerTarget(row) ? { server_deployment: { model_delivery_sha256: hash('synthetic model delivery') } } : {}),
       dependencies: Object.fromEntries(profileDependencies(row.profile, lock).map(name => [name, {}])) };
     writeJSON(p.join(bundle, 'manifest.json'), manifest);
     writeJSON(p.join(bundle, 'checksums.txt'), inventory(bundle));
@@ -69,7 +59,10 @@ function fixture(t, includeFull = false) {
     run('tar', ['-czf', p.join(directory, archive), '-C', temp, name]);
     const archiveHash = digest(p.join(directory, archive));
     fs.writeFileSync(p.join(directory, archive + '.sha256'), `${archiveHash}  ${archive}\n`);
-    const smoke = { status: 'passed', target: row.target, profile: row.profile, archive_sha256: archiveHash,
+    const native = { 'darwin-arm64': ['darwin', 'arm64', 'arm64'], 'darwin-amd64': ['darwin', 'x64', 'x86_64'],
+      'linux-arm64': ['linux', 'arm64', 'aarch64'], 'linux-amd64': ['linux', 'x64', 'x86_64'] }[row.target];
+    const smoke = { schema_version: 1, status: 'passed',
+      environment: { platform: native[0], process_arch: native[1], machine: native[2] }, checks: ['synthetic protocol test'], target: row.target, profile: row.profile, archive_sha256: archiveHash,
       ...Object.fromEntries(Object.entries({ smoke_sha256: 'scripts/package-smoke.mjs',
         native_check_sha256: 'scripts/check-dsh-native.mjs', fixture_sha256: 'scripts/fixtures/acp.mjs' }).map(([k, path]) => [k, digest(p.join(source, path))])) };
     writeJSON(p.join(directory, name + '-report.json'), smoke);
@@ -77,110 +70,81 @@ function fixture(t, includeFull = false) {
       profile: row.profile, signing, notarization: { status: row.target.startsWith('darwin-') ? 'not_run' : 'not_applicable' } });
     const receipt = inspectCandidate(directory, row.target, row.profile, commit, version, source);
     writeJSON(p.join(directory, 'candidate.json'), receipt);
-    const privateDir = p.join(temp, 'private-' + row.target + '-' + row.profile); fs.mkdirSync(privateDir);
-    const [platform, process_arch, machine] = native[row.target], environment = { platform, process_arch, machine };
-    const evidence = { status: 'passed', archive_sha256: archiveHash, target: row.target, profile: row.profile,
-      manifest_sha256: hash(JSON.stringify(manifest, null, 2) + '\n'), source: manifest.source, dependencies: manifest.dependencies,
-      environment, verifier_inputs: acceptanceInputs.map(path => ({ path, sha256: digest(p.join(source, path)) })), checks: {} };
-    for (const [key, file, value] of [ ['archive_smoke', 'smoke.json', smoke],
-      ['real_dsh_acp', 'real-dsh/report.json', { status: 'passed', fixture: false, cancelToolStopped: true, dshProcessStopped: true,
-        resumedOriginalSession: true, sessionId: 'PRIVATE-MODEL-SESSION', afterRestart: { result: { stop_reason: 'end_turn' } } }],
-      ['browser', 'browser/report.json', { status: 'passed', fixture: false }] ]) {
-      fs.mkdirSync(p.dirname(p.join(privateDir, file)), { recursive: true });
-      writeJSON(p.join(privateDir, file), value);
-      evidence.checks[key] = { status: 'passed', evidence: file, sha256: digest(p.join(privateDir, file)) };
-    }
-    writeJSON(p.join(privateDir, 'report.json'), evidence);
-    const checks = {
-      clean_machine: ['fresh_extraction', 'independent_home', 'host_go_absent', 'host_node_absent', 'host_platform_clis_absent',
-        'system_dependencies_within_baseline', ...(hasDependency(row.profile, 'git') ? ['host_git_absent'] : [])],
-      downloaded_system_security: row.target.startsWith('darwin-') ?
-        ['quarantine_present', 'quarantine_preserved', 'launched_after_resolution', 'user_approved'] :
-        ['baseline_runtime_verified', 'dynamic_libraries_within_baseline'],
-      ...(hasDependency(row.profile, 'git') ? {
-        git_tls_clone: ['bundled_git', 'host_git_absent', 'helper_executed', 'tls_verified', 'https_clone', 'local_commit'] } : {}),
-      ...(hasDependency(row.profile, 'glab') ? {
-        platform_login_read_bind: ['isolated_accounts', 'gitlab_login', 'gitlab_read', 'gitlab_bind', 'lark_login', 'lark_read', 'lark_bind']
-      } : {})
-    };
-    if (residentServerTarget(manifest)) {
-      checks.resident_server = residentServerFields(manifest);
-      checks.web_delivery = [];
-    }
-    const manual = { archive_sha256: archiveHash, target: row.target, profile: row.profile,
-      environment: { ...environment, baseline: manifest.qualification_baseline }, checks: Object.fromEntries(Object.entries(checks).map(([key, fields]) =>
-        [key, { status: 'passed', fixture: false, method: 'maintainer_manual', tested_at: '2026-01-02T00:00:00Z',
-          evidence_sha256: hash('synthetic evidence for ' + key), observations: { ...Object.fromEntries(fields.map(f => [f, true])),
-            ...(key === 'web_delivery' ? passingWebDelivery(manifest) : {}),
-            ...(key === 'downloaded_system_security' && platform === 'darwin' ? { first_launch: 'blocked' } : {}),
-            ...(key === 'platform_login_read_bind' ? { remote_writes: 0 } : {}),
-            ...(key === 'resident_server' ? { model_delivery_sha256: manifest.server_deployment.model_delivery_sha256,
-              migration: 'not_applicable' } : {}) } }])) };
-    const assessment = assessCandidate(receipt, privateDir, source, manual);
-    const assessmentDir = p.join(assessments, assessmentName(row, 1)); fs.mkdirSync(assessmentDir);
-    const assessmentFile = p.join(assessmentDir, 'assessment.json'); writeJSON(assessmentFile, assessment);
-    rows.push({ row, directory, receipt, privateDir, manual, assessment, assessmentFile });
+    const verification = verificationReport(receipt, smoke, { run_id: 101, run_attempt: 2 }, source);
+    const verificationDir = p.join(verifications, verificationName(version, row, 2)); fs.mkdirSync(verificationDir);
+    const verificationFile = p.join(verificationDir, 'verification.json'); writeJSON(verificationFile, verification);
+    rows.push({ row, directory, receipt, verification, verificationDir, verificationFile });
   }
   const output = p.join(temp, 'release');
-  return { temp, source, candidates, assessments, matrix, context, rows, output,
-    assemble: () => assembleRelease(candidates, assessments, context, output, source) };
-}
-
-// Synthetic attestations test release policy only; never real acceptance.
-function passingWebDelivery(manifest) {
-  const o = webDeliveryTemplate(manifest);
-  Object.assign(o.models, Object.fromEntries(modelFields.map(f => [f, true])), {
-    upstream_scope: 'same_upstream_multiple_entries', dsh_identity_sha256: hash('synthetic DSH') });
-  for (const name of browserNames) Object.assign(o.browsers[name], { status: 'passed', physical_device: true,
-    browser_version: 'test', os_version: 'test', evidence_sha256: hash(name),
-    observations: Object.fromEntries(browserFields.map(f => [f, true])) });
-  Object.assign(o.platforms, Object.fromEntries(platformFields.map(f => [f, true])), {
-    authorization_sha256: hash('synthetic authorization'), evidence_sha256: hash('synthetic platform') });
-  Object.assign(o.observation, { started_at: '2026-01-01T00:00:00Z', finished_at: '2026-01-02T00:00:00Z',
-    duration_seconds: 86400, samples: 1441, max_gap_seconds: 60, evidence_sha256: hash('synthetic observation'),
-    same_archive_and_installation: true, collection_backlog_reviewed: true,
-    rate_limit_recovery_reviewed: true, failures_reviewed: true });
-  o.download_upgrade_restore_network_verified = o.authentication_context_reset_and_limits_documented = true;
-  return o;
+  return { temp, source, candidates, verifications, matrix, context, rows, output, git,
+    assemble: () => assembleRelease(candidates, verifications, context, output, source) };
 }
 
 function remote(f) {
-  const state = { release: undefined, assets: [], calls: [], uploads: [] };
+  const state = { release: undefined, otherReleases: [], assets: [], calls: [], uploads: [], downloads: [], bytes: new Map() };
   const api = async (repo, endpoint, options = {}) => {
+    assert.equal(repo, f.context.repository);
     state.calls.push({ repo, endpoint, ...options });
     if (endpoint.startsWith('git/ref/tags/')) return { object: { type: 'commit', sha: f.context.commit } };
-    if (endpoint.startsWith('releases/tags/')) return state.release;
+    // The tag endpoint exposes published releases; drafts require a listing.
+    if (endpoint.startsWith('releases/tags/')) return state.release?.draft === false ? state.release : undefined;
+    if (endpoint.startsWith('releases?')) {
+      const query = new URLSearchParams(endpoint.split('?')[1]);
+      const page = Number(query.get('page')), size = Number(query.get('per_page'));
+      assert.equal(size, 100); assert.ok(page >= 1);
+      const releases = [...state.otherReleases, ...(state.release ? [state.release] : [])];
+      return releases.slice((page - 1) * size, page * size);
+    }
     if (endpoint === 'releases' && options.method === 'POST') return state.release = { id: 42, ...options.body };
     if (endpoint.startsWith('releases/42/assets?')) return state.assets;
     if (endpoint === 'releases/42' && options.method === 'PATCH') return state.release = { ...state.release, ...options.body };
     throw Error('Unexpected fake API call');
   };
-  const upload = async (_version, paths) => {
+  const upload = async (tag, paths, repository) => {
+    assert.equal(tag, f.context.version);
+    assert.equal(repository, f.context.repository);
     state.uploads.push(paths.map(path => p.basename(path)));
-    for (const path of paths) state.assets.push({ id: state.assets.length + 1, name: p.basename(path),
-      state: 'uploaded', size: fs.statSync(path).size, digest: 'sha256:' + digest(path), sha: digest(path) });
+    for (const path of paths) {
+      const id = state.assets.length + 1, bytes = fs.readFileSync(path);
+      state.bytes.set(id, bytes);
+      state.assets.push({ id, name: p.basename(path), state: 'uploaded', size: bytes.length, digest: 'sha256:' + hash(bytes) });
+    }
   };
-  return { state, options: { sourceRoot: f.source, api, upload, downloadHash: async (_repo, asset) => asset.sha } };
+  const downloadHash = async (repository, asset) => {
+    assert.equal(repository, f.context.repository);
+    state.downloads.push(asset.name);
+    return hash(state.bytes.get(asset.id));
+  };
+  return { state, options: { sourceRoot: f.source, api, upload, downloadHash } };
 }
 
-test('full matrix assembles original bytes, notice archive and sanitized archive-specific qualifications', t => {
-  const f = fixture(t);
-  f.rows[0].assessment.private_extra = 'PRIVATE-ACCOUNT'; writeJSON(f.rows[0].assessmentFile, f.rows[0].assessment);
-  const seal = f.assemble();
+test('full matrix assembles original bytes, installer, notices and CI reports without private acceptance', t => {
+  const f = fixture(t), seal = f.assemble();
   assert.equal(seal.bundles, 8);
+  assert.deepEqual(fs.readdirSync(f.output).sort(), ['install.sh', 'README.zh.md', 'LICENSES.tar.gz',
+    'release-notes.md', 'release.json', 'SHA256SUMS', ...f.rows.flatMap(({ receipt }) =>
+      [receipt.archive, receipt.archive + '.sha256', receipt.archive.replace('.tar.gz', '-verification.json')])].sort());
   const installer = fs.readFileSync(p.join(f.output, 'install.sh'), 'utf8');
   assert.ok(installer.includes("release_version='v0.0.0'"));
   assert.ok(installer.includes("release_repository='example/teamx'"));
-  assert.equal(json(p.join(f.output, 'release.json')).installer.sha256, digest(p.join(f.output, 'install.sh')));
+  const index = json(p.join(f.output, 'release.json'));
+  assert.equal(index.kind, 'github_release');
+  assert.equal(index.schema_version, 2);
+  assert.equal(index.installer.sha256, digest(p.join(f.output, 'install.sh')));
   checkReleaseDirectory(f.output, f.context, seal.checksums_sha256, f.source);
   for (const item of f.rows) {
     assert.equal(digest(p.join(f.output, item.receipt.archive)), item.receipt.archive_sha256);
-    assert.equal(item.receipt.manifest.distribution.release_ready, false);
+    const report = json(p.join(f.output, item.receipt.archive.replace('.tar.gz', '-verification.json')));
+    assert.equal(report.kind, 'archive_verification');
+    assert.equal(report.status, 'passed');
+    assert.deepEqual(report.batch, { run_id: f.context.run_id, run_attempt: f.context.run_attempt });
+    assert.deepEqual(Object.keys(report.checks), ['archive_identity', 'build_smoke', 'download_smoke']);
+    assert.ok(!/release_ready|qualified_release|manual_qualification/.test(JSON.stringify(report)));
   }
-  const report = json(p.join(f.output, f.rows[0].receipt.archive.replace('.tar.gz', '-assessment.json')));
-  assert.equal(report.release_ready, true);
-  assert.equal(report.checks.code_signing, 'not_required');
-  assert.ok(!JSON.stringify(report).includes('PRIVATE-'));
+  assert.ok(!/release_ready|qualified_release/.test(JSON.stringify(index)));
+  const notes = fs.readFileSync(p.join(f.output, 'release-notes.md'), 'utf8');
+  assert.ok(notes.includes('*-verification.json'));
+  assert.ok(!notes.includes('真实 DSH/ACP、浏览器及各自用户环境验收'));
   const notices = run('tar', ['-tf', p.join(f.output, 'LICENSES.tar.gz')]);
   assert.ok(notices.includes('linux-arm64-standard/THIRD_PARTY_NOTICES/NOTICE'));
   assert.ok(!notices.includes('git-source'));
@@ -207,124 +171,26 @@ test('bundle and Release export one installation guide with navigation valid out
   }
 });
 
-test('missing or extra target/profile/attempt and incomplete standard platform acceptance prevent release', t => {
-  const f = fixture(t), missing = f.rows.find(r => r.row.target === 'linux-arm64' && r.row.profile === 'standard');
-  fs.renameSync(missing.directory, missing.directory + '-other-attempt');
+test('missing package, report, wrong attempt or failed smoke prevents aggregation', t => {
+  const f = fixture(t), row = f.rows.find(r => r.row.target === 'linux-arm64' && r.row.profile === 'standard');
+  fs.renameSync(row.directory, row.directory + '-other-attempt');
   assert.throws(f.assemble, /Candidate matrix/); assert.equal(fs.existsSync(f.output), false);
-  fs.renameSync(missing.directory + '-other-attempt', missing.directory);
-  missing.assessment.checks.platform_login_read_bind = 'not_run'; writeJSON(missing.assessmentFile, missing.assessment);
-  assert.throws(f.assemble, /missing or unexpected checks/); assert.equal(fs.existsSync(f.output), false);
-  writeJSON(missing.assessmentFile, assessCandidate(missing.receipt, missing.privateDir, f.source, missing.manual));
-  fs.unlinkSync(missing.assessmentFile);
-  assert.throws(f.assemble); assert.equal(fs.existsSync(f.output), false);
-});
-
-test('known Linux full TLS blocker cannot be erased by synthetic passing acceptance', t => {
-  const f = fixture(t, true);
-  assert.throws(f.assemble, /TLS runtime remains blocked/);
+  fs.renameSync(row.directory + '-other-attempt', row.directory);
+  for (const change of [{ status: 'incomplete' }, { batch: { run_id: 101, run_attempt: 1 } },
+    { archive_sha256: '0'.repeat(64) }, { checks: { archive_identity: 'passed' } },
+    { version: 'v0.0.1' }, { commit: 'b'.repeat(40) }, { target: 'darwin-arm64' }, { profile: 'core' },
+    { build_report_sha256: '0'.repeat(64) }, { security_report_sha256: '0'.repeat(64) }, { verifier_inputs: [] }]) {
+    writeJSON(row.verificationFile, { ...row.verification, ...change });
+    assert.throws(f.assemble, /mismatched archive verification/);
+    assert.equal(fs.existsSync(f.output), false);
+  }
+  writeJSON(row.verificationFile, row.verification);
+  fs.renameSync(row.verificationDir, row.verificationDir + '-other-attempt');
+  assert.throws(f.assemble, /Verification matrix/);
+  fs.renameSync(row.verificationDir + '-other-attempt', row.verificationDir);
+  fs.unlinkSync(row.verificationFile);
+  assert.throws(f.assemble, /CI verification files/);
   assert.equal(fs.existsSync(f.output), false);
-});
-
-test('standard requires platform login/read/bind evidence while omitting Git-only gates', t => {
-  const f = fixture(t), r = f.rows.find(r => r.row.target === 'linux-arm64' && r.row.profile === 'standard');
-  assert.ok(json(p.join(f.source, 'packaging/dependencies.lock.json')).targets['linux-arm64'].blockers.includes('git_tls_runtime'));
-  assert.equal(r.assessment.release_ready, true);
-  assert.equal(r.assessment.checks.platform_login_read_bind, 'passed');
-  assert.equal(Object.hasOwn(r.assessment.checks, 'git_tls_clone'), false);
-  delete r.manual.checks.platform_login_read_bind;
-  const partial = assessCandidate(r.receipt, r.privateDir, f.source, r.manual);
-  assert.equal(partial.release_ready, false);
-  assert.deepEqual(partial.remaining, ['platform_login_read_bind']);
-});
-
-test('resident Server qualification binds model delivery and refuses incomplete deployment or Linux sending evidence', t => {
-  const f = fixture(t);
-  for (const r of f.rows.filter(r => residentServerTarget(r.row))) {
-    assert.equal(r.assessment.checks.resident_server, 'passed');
-    const missing = structuredClone(r.manual);
-    delete missing.checks.resident_server;
-    assert.ok(assessCandidate(r.receipt, r.privateDir, f.source, missing).remaining.includes('resident_server'));
-    for (const mutate of [
-      o => o.consistent_backup_restore = false,
-      o => o.no_completed_member_repeated = false,
-      o => o.model_delivery_sha256 = '0'.repeat(64),
-      o => o.migration = 'not_run',
-      ...(r.row.target === 'linux-amd64' ? [o => o.lark_account_pinned_send = false] : [])
-    ]) {
-      const invalid = structuredClone(r.manual);
-      mutate(invalid.checks.resident_server.observations);
-      assert.throws(() => checkQualification(r.receipt, invalid), /Resident|migration/);
-    }
-  }
-});
-
-test('Web delivery requires real device/model/action and 24 hour evidence for the same candidate', t => {
-  const f = fixture(t), r = f.rows.find(r => residentServerTarget(r.row));
-  const missing = structuredClone(r.manual); delete missing.checks.web_delivery;
-  assert.deepEqual(assessCandidate(r.receipt, r.privateDir, f.source, missing).remaining, ['web_delivery']);
-  assert.equal(qualificationTemplate(r.receipt).checks.web_delivery.status, 'not_run');
-  for (const mutate of [
-    o => o.model_delivery_sha256 = '0'.repeat(64),
-    o => o.models.key_rotation = false,
-    o => o.models.request_and_execution_snapshot_verified = false,
-    o => o.platforms.authorization_sha256 = null,
-    o => o.browsers.ios_safari.physical_device = false,
-    o => o.browsers.android_chrome.observations.model_settings = false,
-    o => o.observation.duration_seconds = 60,
-    o => o.observation.finished_at = '2026-01-01T00:01:00Z',
-    o => o.observation.samples = 2,
-    o => o.observation.max_gap_seconds = 3600,
-    o => o.observation.collection_backlog_reviewed = false
-  ]) {
-    const invalid = structuredClone(r.manual); mutate(invalid.checks.web_delivery.observations);
-    assert.throws(() => checkQualification(r.receipt, invalid), /Web delivery|Physical browser/);
-  }
-  const limited = structuredClone(r.manual);
-  for (const name of ['ios_safari', 'android_chrome']) limited.checks.web_delivery.observations.browsers[name] = { status: 'not_run' };
-  limited.checks.web_delivery.observations.private_notes = 'PRIVATE-ACCOUNT';
-  const assessment = assessCandidate(r.receipt, r.privateDir, f.source, limited);
-  assert.equal(assessment.release_ready, true);
-  const result = checkAssessment(r.receipt, assessment, f.source).manual_qualification.checks.web_delivery.observations;
-  assert.deepEqual(result.supported_browsers, ['desktop_chromium', 'desktop_safari']);
-  assert.deepEqual(result.pending_browsers, ['ios_safari', 'android_chrome']);
-  assert.ok(!JSON.stringify(result).includes('PRIVATE-ACCOUNT'));
-  limited.checks.web_delivery.tested_at = '2026-01-01T00:00:00Z';
-  assert.throws(() => checkQualification(r.receipt, limited), /predates observation/);
-});
-
-test('manual checks require native baseline, exact bytes and detailed observations; unsigned needs no certificate', t => {
-  const f = fixture(t), r = f.rows[0];
-  assert.throws(() => checkQualification(r.receipt, qualificationTemplate(r.receipt)), /maintainer evidence/);
-  assert.equal(checkAssessment(r.receipt, r.assessment, f.source).release_ready, true);
-  const document = { schema_version: 1, version, commit: f.context.commit, records: [r.manual] };
-  assert.equal(qualificationFor(document, r.receipt), r.manual);
-  assert.throws(() => qualificationFor({ ...document, records: [r.manual, r.manual] }, r.receipt), /Duplicate/);
-  assert.throws(() => qualificationFor({ ...document, commit: '0'.repeat(40) }, r.receipt), /source\/version/);
-  for (const mutate of [
-    q => q.archive_sha256 = '0'.repeat(64), q => q.environment.machine = 'emulated',
-    q => delete q.environment.baseline, q => q.checks.clean_machine.fixture = true,
-    q => q.checks.clean_machine.observations.host_node_absent = false,
-    q => q.checks.downloaded_system_security.observations.user_approved = false
-  ]) {
-    const copy = structuredClone(r.manual); mutate(copy);
-    assert.throws(() => checkQualification(r.receipt, copy));
-  }
-  const limited = assessCandidate(r.receipt, r.privateDir, f.source);
-  assert.equal(limited.checks.code_signing, 'not_required');
-  assert.equal(limited.release_ready, false);
-  assert.deepEqual(limited.remaining, ['clean_machine', 'downloaded_system_security']);
-});
-
-test('corrupt archives, stale verifier and fabricated ready flags are rejected at aggregation', t => {
-  const f = fixture(t), r = f.rows[0], original = fs.readFileSync(p.join(r.directory, r.receipt.archive));
-  fs.appendFileSync(p.join(r.directory, r.receipt.archive), 'changed');
-  assert.throws(f.assemble, /checksum/);
-  fs.writeFileSync(p.join(r.directory, r.receipt.archive), original);
-  const assessment = structuredClone(r.assessment); assessment.assessment_verifiers[0].sha256 = '0'.repeat(64);
-  assert.throws(() => checkAssessment(r.receipt, assessment, f.source), /policy\/verifier/);
-  const partial = assessCandidate(r.receipt, undefined, f.source, r.manual);
-  Object.assign(partial, { status: 'passed', release_ready: true, remaining: [] });
-  assert.throws(() => checkAssessment(r.receipt, partial, f.source), /real acceptance/);
 });
 
 test('sealed release rejects changed assets, changed seal and extra private files', t => {
@@ -345,7 +211,12 @@ test('publication creates a draft, uploads unchanged accepted bytes, verifies do
   assert.equal(r.state.calls.at(-1).method, 'PATCH');
   assert.equal(r.state.release.draft, false);
   assert.equal(r.state.assets.length, fs.readdirSync(f.output).length);
+  assert.deepEqual(r.state.downloads.slice().sort(), fs.readdirSync(f.output).sort());
+  for (const asset of r.state.assets) assert.deepEqual(r.state.bytes.get(asset.id), fs.readFileSync(p.join(f.output, asset.name)));
+  const writes = r.state.calls.filter(call => call.method).length, uploads = r.state.uploads.length;
   await assert.rejects(() => publishRelease(f.output, f.context, seal.checksums_sha256, r.options), /published or belongs/);
+  assert.equal(r.state.calls.filter(call => call.method).length, writes);
+  assert.equal(r.state.uploads.length, uploads);
 });
 
 test('interrupted draft resumes only identical assets and never overwrites an existing remote file', async t => {
@@ -360,13 +231,62 @@ test('interrupted draft resumes only identical assets and never overwrites an ex
   assert.equal(r.state.calls.filter(c => c.method === 'POST').length, 1);
 });
 
+test('draft recovery finds the exact tag beyond the first page without creating another release', async t => {
+  const f = fixture(t), seal = f.assemble(), r = await interrupted(f, seal);
+  r.state.otherReleases = Array.from({ length: 100 }, (_, index) => ({
+    id: 1000 + index, tag_name: `${version}-rc.${index}`, draft: index % 2 === 0, body: 'another release'
+  }));
+  const calls = r.state.calls.length;
+  await publishRelease(f.output, f.context, seal.checksums_sha256, r.options);
+  assert.deepEqual(r.state.calls.slice(calls).filter(call => call.endpoint.startsWith('releases?')).map(call => call.endpoint),
+    ['releases?per_page=100&page=1', 'releases?per_page=100&page=2']);
+  assert.equal(r.state.calls.filter(call => call.method === 'POST').length, 1);
+  assert.equal(r.state.release.id, 42);
+  assert.equal(r.state.release.draft, false);
+  assert.ok(!r.state.uploads[1].includes(r.state.uploads[0][0]));
+});
+
+test('multiple releases for the same tag block recovery before any remote write', async t => {
+  const f = fixture(t), seal = f.assemble();
+  for (const draft of [true, false]) {
+    const r = await interrupted(f, seal);
+    r.state.otherReleases = [{ ...r.state.release, id: 43, draft }];
+    const writes = r.state.calls.filter(call => call.method).length;
+    await assert.rejects(() => publishRelease(f.output, f.context, seal.checksums_sha256, r.options), /Multiple releases/);
+    assert.equal(r.state.calls.filter(call => call.method).length, writes);
+    assert.equal(r.state.uploads.length, 1);
+    assert.equal(r.state.release.draft, true);
+  }
+});
+
+test('release listing failures and malformed pages never count as an absent release', async t => {
+  const f = fixture(t), seal = f.assemble();
+  for (const failure of [401, 403, 404, 429, 500, 'malformed', 'later-page']) {
+    const r = remote(f), baseAPI = r.options.api;
+    r.options.api = async (repo, endpoint, options) => {
+      if (endpoint.startsWith('releases?')) {
+        if (failure === 'malformed') return { releases: [] };
+        if (failure === 'later-page' && endpoint.endsWith('page=1'))
+          return Array.from({ length: 100 }, (_, id) => ({ id, tag_name: 'another-version', draft: false }));
+        throw Error(`HTTP ${failure === 'later-page' ? 403 : failure}`);
+      }
+      return baseAPI(repo, endpoint, options);
+    };
+    await assert.rejects(() => publishRelease(f.output, f.context, seal.checksums_sha256, r.options),
+      failure === 'malformed' ? /Invalid GitHub listing/ : /HTTP/);
+    assert.ok(!r.state.calls.some(call => call.method));
+    assert.equal(r.state.uploads.length, 0);
+    assert.equal(r.state.release, undefined);
+  }
+});
+
 test('remote corruption, moved tag and read errors leave drafts unpublished', async t => {
   const f = fixture(t), seal = f.assemble();
   for (const failure of ['corrupt', 'tag', 'permission']) {
     const r = remote(f), baseAPI = r.options.api;
     if (failure === 'corrupt') r.options.downloadHash = async () => '0'.repeat(64);
     r.options.api = async (repo, endpoint, opts) => {
-      if (failure === 'permission' && endpoint.startsWith('releases/tags/')) throw Error('HTTP 403');
+      if (failure === 'permission' && endpoint.startsWith('releases?')) throw Error('HTTP 403');
       if (failure === 'tag' && endpoint.startsWith('git/ref/') && r.state.assets.length)
         return { object: { type: 'commit', sha: '0'.repeat(40) } };
       return baseAPI(repo, endpoint, opts);
@@ -377,37 +297,221 @@ test('remote corruption, moved tag and read errors leave drafts unpublished', as
   }
 });
 
-test('candidate provenance rejects foreign workflows, stale attempts and incomplete artifact matrix', t => {
-  const f = fixture(t), info = { id: 101, run_attempt: 2, repository: { full_name: f.context.repository },
-    head_repository: { full_name: f.context.repository }, event: 'push', path: '.github/workflows/release.yml',
-    head_sha: f.context.commit, head_branch: version, status: 'completed', conclusion: 'success' };
-  const artifacts = f.matrix.flatMap(row => [candidateName(version, row, 2), `candidate-verification-${version}-${row.target}-${row.profile}-2`])
-    .map((name, index) => ({ id: index + 1, name, expired: false }));
-  validateCandidateRun(info, artifacts, f.context, f.matrix);
-  for (const change of [{ event: 'pull_request' }, { run_attempt: 3 }, { conclusion: 'failure' },
-    { path: '.github/workflows/other.yml' }, { head_sha: '0'.repeat(40) }, { head_repository: { full_name: 'foreign/repo' } }])
-    assert.throws(() => validateCandidateRun({ ...info, ...change }, artifacts, f.context, f.matrix), /successful tag workflow/);
-  assert.throws(() => validateCandidateRun(info, artifacts.slice(1), f.context, f.matrix), /Missing/);
-  assert.throws(() => validateCandidateRun(info, [...artifacts, artifacts[0]], f.context, f.matrix), /ambiguous/);
+test('release context comes from the current tag run without completed-run API queries', t => {
+  const f = fixture(t), env = { GITHUB_REPOSITORY: f.context.repository, GITHUB_EVENT_NAME: 'push',
+    GITHUB_REF: `refs/tags/${version}`, GITHUB_SHA: f.context.commit,
+    GITHUB_WORKFLOW_REF: `${f.context.repository}/.github/workflows/release.yml@refs/tags/${version}`,
+    GITHUB_RUN_ID: '101', GITHUB_RUN_ATTEMPT: '2' };
+  assert.deepEqual(releaseContext(f.source, env).context, f.context);
+  for (const change of [{ GITHUB_EVENT_NAME: 'workflow_dispatch' }, { GITHUB_REF: `refs/heads/${version}` },
+    { GITHUB_SHA: '0'.repeat(40) }, { GITHUB_RUN_ID: '' }, { GITHUB_RUN_ATTEMPT: '0' },
+    { GITHUB_WORKFLOW_REF: `${f.context.repository}/.github/workflows/other.yml@refs/tags/${version}` }])
+    assert.throws(() => releaseContext(f.source, { ...env, ...change }));
 });
 
-test('standalone qualification CLI distinguishes ready, incomplete and invalid evidence', t => {
-  const f = fixture(t), r = f.rows[0], script = p.join(f.source, 'scripts/package-release.mjs');
-  const qualifications = p.join(f.temp, 'qualifications.json');
-  const document = { schema_version: 1, version, commit: f.context.commit, records: [r.manual] };
-  writeJSON(qualifications, document);
-  const args = [r.directory, r.row.target, r.row.profile, f.context.commit, version];
-  const call = (command, suffix) => run(process.execPath, [script, command, ...args, ...suffix], { stdio: ['ignore', 'pipe', 'pipe'] });
-  const ready = p.join(f.temp, 'ready.json');
-  call('assess', [ready, r.privateDir, qualifications]);
-  assert.equal(json(ready).release_ready, true);
-  const incomplete = p.join(f.temp, 'incomplete.json');
-  assert.throws(() => call('assess', [incomplete, '-', qualifications]), error => error.status === 2);
-  assert.equal(json(incomplete).release_ready, false);
-  const template = p.join(f.temp, 'template.json');
-  call('qualification-template', [template]);
-  assert.equal(json(template).records[0].checks.clean_machine.status, 'not_run');
-  const invalid = p.join(f.temp, 'invalid.json');
-  assert.throws(() => call('assess', [invalid, r.privateDir, template]), error => error.status === 1);
-  assert.equal(fs.existsSync(invalid), false);
+async function interrupted(f, seal, count = 1) {
+  const r = remote(f), normalUpload = r.options.upload;
+  r.options.upload = async (tag, paths, repository) => {
+    await normalUpload(tag, paths.slice(0, count), repository);
+    throw Error('upload response lost');
+  };
+  await assert.rejects(() => publishRelease(f.output, f.context, seal.checksums_sha256, r.options), /upload response lost/);
+  r.options.upload = normalUpload;
+  return r;
+}
+
+test('publish retry uses downloaded sealed assets and original context despite a new run attempt', async t => {
+  const f = fixture(t), seal = f.assemble(), r = await interrupted(f, seal);
+  const artifact = p.join(f.temp, 'sealed-artifact'), downloaded = p.join(f.temp, 'retry-download');
+  fs.cpSync(f.output, artifact, { recursive: true });
+  const contextFile = p.join(f.temp, 'release-source.json'); writeJSON(contextFile, f.context);
+  // A publish retry has no build/verification directories and cannot reassemble.
+  for (const directory of [f.output, f.candidates, f.verifications]) fs.rmSync(directory, { recursive: true });
+  fs.cpSync(artifact, downloaded, { recursive: true });
+  const savedAttempt = process.env.GITHUB_RUN_ATTEMPT;
+  process.env.GITHUB_RUN_ATTEMPT = String(f.context.run_attempt + 1);
+  try {
+    const result = await publishRelease(downloaded, json(contextFile), seal.checksums_sha256, r.options);
+    assert.equal(result.status, 'published');
+  } finally {
+    if (savedAttempt === undefined) delete process.env.GITHUB_RUN_ATTEMPT;
+    else process.env.GITHUB_RUN_ATTEMPT = savedAttempt;
+  }
+  assert.deepEqual(json(p.join(downloaded, 'release.json')).context, f.context);
+  assert.equal(r.state.calls.filter(call => call.method === 'POST').length, 1);
+  assert.ok(!r.state.uploads[1].includes(r.state.uploads[0][0]));
+  for (const asset of r.state.assets) assert.deepEqual(r.state.bytes.get(asset.id), fs.readFileSync(p.join(artifact, asset.name)));
+});
+
+test('lost response after uploading every asset resumes without uploading any asset twice', async t => {
+  const f = fixture(t), seal = f.assemble(), r = await interrupted(f, seal, Infinity);
+  assert.equal(r.state.assets.length, fs.readdirSync(f.output).length);
+  await publishRelease(f.output, f.context, seal.checksums_sha256, r.options);
+  assert.equal(r.state.uploads.length, 1);
+  assert.equal(r.state.calls.filter(call => call.method === 'POST').length, 1);
+  assert.equal(r.state.release.draft, false);
+});
+
+test('foreign batch contexts and modified local assets stop before any remote request', async t => {
+  const f = fixture(t), seal = f.assemble();
+  for (const change of [{ run_id: 202 }, { run_attempt: 3 }, { repository: 'foreign/teamx' }, { commit: 'b'.repeat(40) }]) {
+    const r = remote(f);
+    await assert.rejects(() => publishRelease(f.output, { ...f.context, ...change }, seal.checksums_sha256, r.options));
+    assert.equal(r.state.calls.length, 0);
+    assert.equal(r.state.uploads.length, 0);
+  }
+  const r = remote(f);
+  fs.appendFileSync(p.join(f.output, 'install.sh'), '\nchanged');
+  await assert.rejects(() => publishRelease(f.output, f.context, seal.checksums_sha256, r.options), /asset changed/);
+  assert.equal(r.state.calls.length, 0);
+});
+
+test('a draft from a different seal is never edited, replaced or uploaded into', async t => {
+  const f = fixture(t), seal = f.assemble(), r = await interrupted(f, seal);
+  r.state.release.body += 'different sealed batch';
+  const writes = r.state.calls.filter(call => call.method).length;
+  await assert.rejects(() => publishRelease(f.output, f.context, seal.checksums_sha256, r.options), /different accepted assets/);
+  assert.equal(r.state.calls.filter(call => call.method).length, writes);
+  assert.equal(r.state.uploads.length, 1);
+});
+
+test('corrupt, duplicate, unexpected and incomplete remote assets block draft recovery', async t => {
+  const f = fixture(t), seal = f.assemble();
+  for (const mode of ['bytes', 'digest', 'size', 'state', 'duplicate', 'unexpected', 'download']) {
+    await t.test(mode, async () => {
+      const r = await interrupted(f, seal), asset = r.state.assets[0];
+      if (mode === 'bytes') r.state.bytes.set(asset.id, Buffer.from('different remote bytes'));
+      if (mode === 'digest') asset.digest = 'sha256:' + '0'.repeat(64);
+      if (mode === 'size') asset.size++;
+      if (mode === 'state') asset.state = 'new';
+      if (mode === 'duplicate') r.state.assets.push({ ...asset, id: 999 });
+      if (mode === 'unexpected') r.state.assets.push({ ...asset, id: 999, name: 'unexpected.env' });
+      if (mode === 'download') r.options.downloadHash = async () => { throw Error('HTTP 403'); };
+      await assert.rejects(() => publishRelease(f.output, f.context, seal.checksums_sha256, r.options));
+      assert.equal(r.state.uploads.length, 1);
+      assert.ok(!r.state.calls.some(call => call.method === 'PATCH'));
+      assert.equal(r.state.release.draft, true);
+    });
+  }
+});
+
+test('an incomplete successful upload and local changes during upload leave the release draft', async t => {
+  const f = fixture(t), seal = f.assemble();
+  for (const mode of ['missing', 'local-change']) {
+    const r = remote(f), normalUpload = r.options.upload;
+    r.options.upload = async (tag, paths, repository) => {
+      await normalUpload(tag, mode === 'missing' ? paths.slice(1) : paths, repository);
+      if (mode === 'local-change') fs.appendFileSync(p.join(f.output, 'README.zh.md'), 'changed during upload');
+    };
+    await assert.rejects(() => publishRelease(f.output, f.context, seal.checksums_sha256, r.options),
+      mode === 'missing' ? /matrix\/assets incomplete/ : /asset changed/);
+    assert.ok(!r.state.calls.some(call => call.method === 'PATCH'));
+    assert.equal(r.state.release.draft, true);
+  }
+});
+
+test('remote annotated tags resolve to the exact commit before creation and again before publication', async t => {
+  const f = fixture(t), seal = f.assemble(), r = remote(f), baseAPI = r.options.api;
+  const tag = 'c'.repeat(40), nested = 'd'.repeat(40);
+  r.options.api = async (repository, endpoint, options) => {
+    if (endpoint.startsWith('git/ref/tags/')) return { object: { type: 'tag', sha: tag } };
+    if (endpoint === `git/tags/${tag}`) return { object: { type: 'tag', sha: nested } };
+    if (endpoint === `git/tags/${nested}`) return { object: { type: 'commit', sha: f.context.commit } };
+    return baseAPI(repository, endpoint, options);
+  };
+  await publishRelease(f.output, f.context, seal.checksums_sha256, r.options);
+  assert.equal(r.state.release.draft, false);
+});
+
+test('a moved, cyclic or non-commit remote tag never creates a draft', async t => {
+  const f = fixture(t), seal = f.assemble();
+  for (const mode of ['moved', 'cycle', 'blob']) {
+    const r = remote(f), baseAPI = r.options.api;
+    r.options.api = async (repository, endpoint, options) => {
+      if (endpoint.startsWith('git/ref/') || endpoint.startsWith('git/tags/'))
+        return { object: mode === 'cycle' ? { type: 'tag', sha: 'c'.repeat(40) } :
+          { type: mode === 'blob' ? 'blob' : 'commit', sha: '0'.repeat(40) } };
+      return baseAPI(repository, endpoint, options);
+    };
+    await assert.rejects(() => publishRelease(f.output, f.context, seal.checksums_sha256, r.options), /Remote tag moved/);
+    assert.ok(!r.state.calls.some(call => call.method));
+    assert.equal(r.state.uploads.length, 0);
+  }
+});
+
+test('a lost final publication response cannot turn a published version into a resumable draft', async t => {
+  const f = fixture(t), seal = f.assemble(), r = remote(f), baseAPI = r.options.api;
+  r.options.api = async (repository, endpoint, options) => {
+    const result = await baseAPI(repository, endpoint, options);
+    if (options?.method === 'PATCH') throw Error('publication response lost');
+    return result;
+  };
+  await assert.rejects(() => publishRelease(f.output, f.context, seal.checksums_sha256, r.options), /publication response lost/);
+  assert.equal(r.state.release.draft, false);
+  const writes = r.state.calls.filter(call => call.method).length;
+  await assert.rejects(() => publishRelease(f.output, f.context, seal.checksums_sha256, r.options), /published or belongs/);
+  assert.equal(r.state.calls.filter(call => call.method).length, writes);
+  assert.equal(r.state.uploads.length, 1);
+});
+
+test('every package and CI report is mandatory and additional artifact directories are refused', t => {
+  const f = fixture(t);
+  for (const row of f.rows) {
+    for (const directory of [row.directory, row.verificationDir]) {
+      const moved = p.join(f.temp, 'temporarily-absent');
+      fs.renameSync(directory, moved);
+      assert.throws(f.assemble, /matrix incomplete or unexpected/);
+      assert.equal(fs.existsSync(f.output), false);
+      fs.renameSync(moved, directory);
+    }
+  }
+  for (const parent of [f.candidates, f.verifications]) {
+    const extra = p.join(parent, 'different-build-batch'); fs.mkdirSync(extra);
+    assert.throws(f.assemble, /matrix incomplete or unexpected/);
+    assert.equal(fs.existsSync(f.output), false);
+    fs.rmdirSync(extra);
+  }
+});
+
+test('the standalone plan CLI exports the exact annotated-tag source and batch for workflow outputs', t => {
+  const f = fixture(t), output = p.join(f.temp, 'context.json'), githubOutput = p.join(f.temp, 'github-output');
+  f.git('tag', '-d', version); f.git('tag', '-am', 'annotated source fixture', version);
+  const result = spawnSync(process.execPath, [p.join(f.source, 'scripts/package-publish.mjs'), 'plan', output], {
+    cwd: f.source, encoding: 'utf8', env: { ...process.env,
+      GITHUB_REPOSITORY: f.context.repository, GITHUB_EVENT_NAME: 'push', GITHUB_REF: `refs/tags/${version}`,
+      GITHUB_SHA: f.context.commit, GITHUB_WORKFLOW_REF: `${f.context.repository}/.github/workflows/release.yml@refs/tags/${version}`,
+      GITHUB_RUN_ID: String(f.context.run_id), GITHUB_RUN_ATTEMPT: String(f.context.run_attempt), GITHUB_OUTPUT: githubOutput
+    }
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(json(output), f.context);
+  const values = Object.fromEntries(fs.readFileSync(githubOutput, 'utf8').trimEnd().split('\n').map(line => {
+    const equals = line.indexOf('='); return [line.slice(0, equals), line.slice(equals + 1)];
+  }));
+  assert.equal(values.version, version);
+  assert.equal(values.commit, f.context.commit);
+  assert.deepEqual(JSON.parse(values.context), f.context);
+  assert.deepEqual(JSON.parse(values.matrix).include, f.matrix);
+  assert.ok(values.node_version && values.go_version && values.dependency_key);
+});
+
+test('GitHub HTTP failures never count as a missing release except an explicitly allowed 404', async t => {
+  const previous = process.env.GH_TOKEN;
+  process.env.GH_TOKEN = 'fixture-only';
+  t.after(() => { if (previous === undefined) delete process.env.GH_TOKEN; else process.env.GH_TOKEN = previous; });
+  let status = 404;
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    assert.equal(url, 'https://api.github.com/repos/example/teamx/releases/tags/v0.0.0');
+    assert.equal(options.method, 'GET');
+    return new Response(JSON.stringify({ message: 'private transport detail' }), { status });
+  });
+  assert.equal(await githubRequest('example/teamx', 'releases/tags/v0.0.0', { missing: true }), undefined);
+  await assert.rejects(() => githubRequest('example/teamx', 'releases/tags/v0.0.0'), /HTTP 404/);
+  for (status of [401, 403, 429, 500]) {
+    await assert.rejects(() => githubRequest('example/teamx', 'releases/tags/v0.0.0', { missing: true }), error => {
+      assert.ok(error.message.includes(`HTTP ${status}`));
+      assert.ok(!error.message.includes('private transport detail'));
+      return true;
+    });
+  }
 });

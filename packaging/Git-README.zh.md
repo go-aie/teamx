@@ -22,6 +22,6 @@ TeamX 直接验证并消费上游固定归档，不声称本地重建结果与�
 `bin/git` 按自身位置设置 exec-path、模板、system config 和 Linux CA 路径。
 macOS 使用系统 curl、expat、zlib、iconv 与系统框架；Linux 动态库依赖
 须在目标系统验收，不能把开发机库或 Homebrew 路径复制进包。
-使用与升级方法见发行包根目录的 `README.zh.md`。归档的适用系统、
-Git/TLS 和平台能力验收结果见下载页面及对应的 `*-assessment.json`；
-开发快照不代表已经通过这些真实验收。
+使用与升级方法见归档根目录的 `README.zh.md`，适用系统见 manifest。
+full 当前仅用于开发／实验，Linux full 仍受 Git/TLS 运行库缺项阻断；
+真实 Git/TLS 与平台能力需独立验证，开发快照和固定协议 smoke 不代表已通过这些测试。

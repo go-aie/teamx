@@ -12,7 +12,7 @@
 | 查日志、启停或卸载 | [日常维护](#日常维护) |
 | 备份、升级或恢复 | [备份与升级](#备份与升级) |
 
-当前为开发预览，完整平台矩阵和正式发行验收尚未完成。支持范围以对应归档的发行评估为准；代码或局部测试通过不等于该目标已正式支持。
+当前为开发预览，完整平台与设备的真实环境验证尚未完成。运行条件及实际测试范围以对应版本说明为准；CI 归档检查通过不等于该目标的真实模型、平台账号或设备已全部验证。
 
 ## 一键安装
 
@@ -153,7 +153,7 @@ teamx service uninstall
 
 Linux 日志使用 `sudo journalctl -u teamx.service -n 100`，保留策略沿用主机 journald；包内 `share/teamx/service/journald.conf.example` 是主机级容量参考，安装不会修改日志策略。macOS 日志在 `~/Library/Logs/TeamX/server.log`，10 MiB 轮换，保留 5 份历史。故障重试有界，耗尽后排查并显式 start；模型／平台降级不是重启理由。留意磁盘余量。
 
-关闭浏览器不会停止 Agent 或后台采集；平台授权成功、通知入 Inbox、助理处理和外部提醒送达分别确认。断线或响应未知时，先查询原操作，不用新 ID 重发。当前没有离线发送队列、Web Push 或原生 App；浏览器实际支持项见该归档外部评估的 `supported_browsers`／`pending_browsers`，手机视口模拟不等于真机验收。
+关闭浏览器不会停止 Agent 或后台采集；平台授权成功、通知入 Inbox、助理处理和外部提醒送达分别确认。断线或响应未知时，先查询原操作，不用新 ID 重发。当前没有离线发送队列、Web Push 或原生 App；浏览器与手机的实际测试范围见对应版本说明，手机视口模拟不等于真机验收。
 
 ## 备份与升级
 
@@ -196,4 +196,8 @@ teamx service restore \
 
 归档保留 `manifest.json`、`checksums.txt`、`LICENSE`、`THIRD_PARTY_NOTICES/` 与运行时许可。`checksums.txt` 是包内不可变文件的 JSON 清单，包含权限和链接目标。full 的 Git 对应源码与构建材料在 `THIRD_PARTY_NOTICES/git-source/dugite/`。
 
-正式 Release 另有固定到该版本的 `install.sh`、`release.json`、逐包 `*-assessment.json`、全局 `SHA256SUMS` 和 `LICENSES.tar.gz`。安装脚本也纳入全局摘要，`release.json` 记录其摘要；资格绑定同一归档摘要，包内 manifest 保留构建时状态，不为更新资格重打包；开发快照不能沿用其他归档的报告。
+正式 Release 提供四个平台的 core／standard 共 8 个归档及同名 `.sha256`，另有固定到该版本的 `install.sh`、逐包 `*-verification.json`、`release.json`、全局 `SHA256SUMS`、`LICENSES.tar.gz`、本指南的 `README.zh.md` 和 `release-notes.md`。
+
+`*-verification.json` 记录对应归档已完成的 CI 身份、摘要与原生 smoke 检查。检查使用固定协议 fixture，不代表真实模型、浏览器、平台账号或用户设备测试通过。
+
+`release.json` 记录版本、源码、构建批次、完整矩阵、签名模式和资产摘要。安装脚本也纳入 `SHA256SUMS`，索引另记录其摘要；汇总与发布保持原始归档字节不变。开发快照的报告仅对应自身归档。

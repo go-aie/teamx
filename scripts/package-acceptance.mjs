@@ -5,9 +5,8 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { hash, json, writeJSON, must, run, extract, inventory } from './package-lib.mjs';
 import { checkBinaries } from './package-platform.mjs';
-import { checkSmoke, checkRealDSH, resultForScope } from './package-acceptance-lib.mjs';
+import { acceptanceInputs, checkSmoke, checkRealDSH, resultForScope } from './package-acceptance-lib.mjs';
 import { acceptBrowser } from './package-browser.mjs';
-import { acceptanceInputs } from './package-release.mjs';
 
 const root = p.resolve(p.dirname(fileURLToPath(import.meta.url)), '..');
 const usage = 'package-acceptance.sh ARCHIVE --output-dir NEW_PRIVATE_DIR [--model-config TOML] [--env-file FILE]';
@@ -29,7 +28,6 @@ process.umask(0o077);
 const report = {
   schema_version: 1, status: 'incomplete', recorded_at: new Date().toISOString(),
   scope: 'local archive smoke + real DSH/ACP + production browser; physical devices, resident deployment and platform qualification are separate',
-  release_ready: false,
   deferred: ['Git/TLS/clone', 'Scion', 'GitLab/Lark account login/read/bind',
     'other delivery targets', 'download quarantine/signing and clean-machine qualification'],
   environment: { platform: process.platform, process_arch: process.arch, machine: os.machine(), os_release: os.release() },

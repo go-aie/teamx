@@ -27,7 +27,7 @@
 | 自己安装 Server | [安装与运行](docs/installation.zh.md)：一条安装命令完成下载和常驻部署，之后统一使用 `teamx` 管理；无需安装 Go 或 Node |
 | 从源码开发运行 | [源码运行](internal/room/README.zh.md#从源码运行)：构建 Go 程序并配置本机 DSH |
 
-当前为开发预览，完整平台矩阵和正式发行验收尚未完成。模型和 API Key 均可在 Server 启动后的网页填写，不要求提前 export。
+当前为开发预览，平台与浏览器的实际测试范围见对应版本说明。模型和 API Key 均可在 Server 启动后的网页填写，不要求提前 export。
 
 包含安装器的正式 Release 发布后，在服务机器执行：
 
@@ -122,7 +122,7 @@ DSH 成员默认每会话受理 16 回合，达到阈值后在下一批正常输
 | 理解 Client／Server、身份、存储和生命周期 | [Server 架构](docs/server.zh.md) |
 | 从源码启动、排查配置或恢复成员 | [开发运行参考](internal/room/README.zh.md) |
 | 从源码构建本地或 CI 分发包 | [打包指南](packaging/README.zh.md) |
-| 验收候选、签名公证并发布版本 | [正式发行指南](packaging/releasing.zh.md) |
+| 推送版本 tag 自动发布、可选签名公证 | [正式发行指南](packaging/releasing.zh.md) |
 
 其他功能与内部设计：
 

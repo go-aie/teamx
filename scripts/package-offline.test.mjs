@@ -15,7 +15,9 @@ function fixture(t, profile = 'standard') {
   t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
   const name = `teamx-v1.2.3-linux-amd64-${profile}`, bundle = p.join(temp, name);
   fs.mkdirSync(p.join(bundle, 'bin'), { recursive: true });
-  const manifest = { schema_version: 1, version: 'v1.2.3', target: 'linux-amd64', profile };
+  const manifest = { schema_version: 1, version: 'v1.2.3', channel: 'release', target: 'linux-amd64', profile,
+    distribution: { schema_version: 2, kind: 'release_archive', build: { run_id: 101, run_attempt: 2 },
+      signing: { mode: 'not_applicable', status: 'not_applicable' } } };
   writeJSON(p.join(bundle, 'manifest.json'), manifest);
   // Record wrapper forwarding without running a real deployment or networking.
   const installer = '#!/bin/bash\nset -eu\nprintf "%s\\n" "$@" > "$OFFLINE_TEST_RECORD"\n';

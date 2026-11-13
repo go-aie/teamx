@@ -67,14 +67,17 @@ test('standard transport requires its platform CLIs, rejects bundled Git, and re
   assert.throws(() => releaseProfiles(lock), /Incomplete/);
 });
 
-test('Linux readiness reports Git TLS and source blockers only for profiles bundling Git', () => {
+test('inventory ignores historical acceptance and enforces actual full Git runtime limits', () => {
   for (const profile of ['core', 'standard', 'full']) {
-    const result = spawnSync(process.execPath, [p.join(root, 'scripts/check-packaging.mjs'), '--require-ready',
+    const result = spawnSync(process.execPath, [p.join(root, 'scripts/check-packaging.mjs'),
       '--target', 'linux-amd64', '--profile', profile], { encoding: 'utf8' });
-    assert.equal(result.status, 2);
+    assert.equal(result.status, profile === 'full' ? 1 : 0, result.stderr);
     assert.equal(result.stderr.includes('git_tls_runtime'), profile === 'full');
-    assert.equal(result.stderr.includes('git_redistribution_materials'), profile === 'full');
+    assert.equal(result.stderr.includes('native_runtime_acceptance'), false);
   }
+  const oldFlag = spawnSync(process.execPath, [p.join(root, 'scripts/check-packaging.mjs'), '--require-ready'], { encoding: 'utf8' });
+  assert.equal(oldFlag.status, 1);
+  assert.match(oldFlag.stderr, /Unknown argument/);
 });
 
 test('snapshot matrix includes every locked target and does not hide full blockers', (t) => {
@@ -105,7 +108,7 @@ test('snapshot cache fingerprint changes with any locked dependency input', (t) 
 
 test('transport inspection binds source, capability, archive and smoke without claiming release readiness', (t) => {
   const f = fixture(t), receipt = f.inspect();
-  assert.equal(receipt.release_ready, false);
+  assert.equal(Object.hasOwn(receipt, 'release_ready'), false);
   assert.equal(receipt.manifest.source.commit, commit);
   assert.equal(receipt.kind, 'development_snapshot');
   assert.throws(() => f.inspect('linux-invalid'), /report does not match/);
@@ -155,7 +158,7 @@ test('native runner check accepts this host and rejects a different architecture
 test('download verification rejects an altered receipt and never reuses a success report', (t) => {
   const f = fixture(t), receipt = f.inspect();
   const output = p.join(f.directory, '..', 'download-report.json');
-  writeJSON(p.join(f.directory, 'snapshot.json'), { ...receipt, release_ready: true });
+  writeJSON(p.join(f.directory, 'snapshot.json'), { ...receipt, archive_sha256: '0'.repeat(64) });
   assert.throws(() => verifySnapshot(f.directory, target, 'core', commit, output), /receipt differs/);
   assert.equal(fs.existsSync(output), false);
   writeJSON(output, { status: 'passed' });

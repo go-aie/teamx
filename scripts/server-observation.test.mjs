@@ -68,7 +68,7 @@ test('short installed archive observation writes private reports and remains inc
   const output = path.join(temp, 'observation');
   const opts = { archive, root, token, output, endpoint: `http://127.0.0.1:${server.address().port}`, duration: 1, interval: 1 };
   const report = await observe(opts);
-  assert.equal(report.status, 'incomplete'); assert.equal(report.release_ready, false);
+  assert.equal(report.status, 'incomplete'); assert.equal(Object.hasOwn(report, 'release_ready'), false);
   assert.ok(report.summary.successful_samples >= 2); assert.ok(requests.every(m => m === 'GET'));
   const samples = fs.readFileSync(path.join(output, 'samples.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
   assert.equal(report.started_at, samples[0].at);

@@ -15,3 +15,11 @@ export function assertReleaseSource(root, version, expectedCommit) {
   if (expectedCommit) must(commit === expectedCommit, 'Release source commit mismatch');
   return commit;
 }
+
+// Local release builds need no CI context; CI archives bind the exact build run.
+export function releaseBatch(env = process.env) {
+  if (!env.GITHUB_RUN_ID && !env.GITHUB_RUN_ATTEMPT) return undefined;
+  for (const name of ['GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT'])
+    must(/^[1-9]\d*$/.test(env[name] || '') && Number.isSafeInteger(Number(env[name])), 'Invalid CI build batch');
+  return { run_id: Number(env.GITHUB_RUN_ID), run_attempt: Number(env.GITHUB_RUN_ATTEMPT) };
+}

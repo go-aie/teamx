@@ -1,24 +1,24 @@
 # 打包指南
 
-本文供维护者从源码构建分发包，包含固定依赖、平台矩阵、本地与 CI 打包。下载、安装和运行见[安装与运行](../docs/installation.zh.md)；候选验收、签名公证和发布见[正式发行指南](releasing.zh.md)；组件原理见 [Server 架构](../docs/server.zh.md)。
+本文供维护者从源码构建分发包，包含固定依赖、平台矩阵、本地与 CI 打包。下载、安装和运行见[安装与运行](../docs/installation.zh.md)；自动发布、可选签名公证和独立本地验收见[正式发行指南](releasing.zh.md)；组件原理见 [Server 架构](../docs/server.zh.md)。
 
 | 目的 | 入口 | 产物位置 |
 | --- | --- | --- |
 | 用 GitHub Actions 构建开发快照 | [Package snapshots](../.github/workflows/package.yml) | 对应 Actions 运行的 Artifacts |
 | 在本机打包 | [scripts/package.sh](../scripts/package.sh) | 默认 `dist/` |
-| 构建版本候选并正式发行 | [正式发行操作指南](releasing.zh.md) | 候选 Artifacts，验收后发布到 GitHub Release |
+| 推送版本 tag 自动发行 | [正式发行操作指南](releasing.zh.md) | CI 检查、8 包构建与下载复验后自动发布到 GitHub Release |
 
 ## 包型与构建目标
 
-| 包型 | 归档内容 | 构建与验收边界 |
+| 包型 | 归档内容 | 使用与构建边界 |
 | --- | --- | --- |
 | `core` | TeamX、Node/DSH、公开团队模板 | 不包含 Git 或平台 CLI 运行时 |
-| `standard`（默认） | core 的内容，加 glab、lark-cli 及配套资源 | 增加平台工具依赖与登录／只读／绑定验收，不包含 Git |
-| `full` | standard 的内容，加完整 Git 运行时 | 增加 Git／TLS 与对应源码材料门槛；不在默认正式发行范围 |
+| `standard`（默认） | core 的内容，加 glab、lark-cli 及配套资源 | 平台账号由用户连接；不包含 Git |
+| `full` | standard 的内容，加完整 Git 运行时 | 保留 Git／TLS 运行库和对应源码材料约束；仅用于开发／实验 |
 
 各包均按统一 lock 组装，不从开发机复制运行时或私有状态。Scion 运行能力暂不随包提供。DSH 固定为 `0.2.2-rc.1` 预发布版本，精确依赖见 [dependencies.lock.json](dependencies.lock.json)。
 
-构建矩阵包括以下目标；列入矩阵不代表已经通过完整发行验收。
+正式矩阵为以下四个目标 × core／standard，共 8 包。列入矩阵不代表已完成该系统、设备或真实平台的全部测试。
 
 | 目标参数 | 系统与架构 | 验证基线 |
 | --- | --- | --- |
@@ -84,11 +84,15 @@ Pull request 也会自动构建快照，默认使用 standard。快照流程不�
 ./scripts/package-smoke.sh /absolute/teamx-archive.tar.gz --report /absolute/new-report.json
 ```
 
-归档检查覆盖内容、权限、依赖、初始化、服务启停与固定 ACP fixture，不会调用真实模型或登录平台。正式发行还需要真实 DSH、浏览器及用户环境验收。
+归档检查覆盖内容、权限、依赖、初始化、服务启停与固定 ACP fixture，不会调用真实模型或登录平台。真实 DSH、浏览器及用户环境测试由维护者在打 tag 前按需独立安排，CI 不消费这些报告。
 
 ## 正式发行与维护
 
-正式发行的包型由 lock 中的 `release.profiles` 决定，当前为 core 和 standard。流程先从干净的 `vX.Y.Z` tag 构建候选，再对同一批归档验收和发布；发布时不重新构建。配置测试模型、准备人工验收记录及处理失败的方法见[正式发行操作指南](releasing.zh.md)。默认允许未签名、未公证的 macOS 包，下载后的系统行为仍需验证。
+正式发行的包型由 lock 中的 `release.profiles` 固定为 core 和 standard。维护者完成本地检查后推送干净源码对应的 `vX.Y.Z` tag，CI 在同一次运行中自动完成检查、原生构建、独立下载复验、汇总和发布，无需模型凭据、人工 JSON 或环境审批。发布时使用已检查的原始归档，不重新构建。
+
+本地版本构建统一使用 `./scripts/package.sh --channel release --version vX.Y.Z --profile standard`；要求精确 tag、干净源码与原生目标，使用新输出目录防止覆盖。完整操作、可选 Apple 签名与失败重跑见[正式发行操作指南](releasing.zh.md)。默认允许未签名、未公证的 macOS 包，实际下载后的系统行为仍需验证。
+
+正式资产使用逐包 `*-verification.json` 记录 CI 检查，`release.json` 记录源码、批次、矩阵与资产摘要；报告不包含人工验收结论。安装器、许可和校验和的说明见[发行材料与许可](../docs/installation.zh.md#发行材料与许可)。
 
 升级依赖时显式更新统一 lock、对应 npm lock、许可证及相关版本契约，重新验证受影响目标。公开模板与随包文件由 [bundle-files.json](bundle-files.json) 明确列出；本机配置、`.env`、Room 数据和平台登录资料不属于分发内容。
 
@@ -112,7 +116,7 @@ bash ./install-offline.sh
 
 无需填写归档名或解压内层 `.tar.gz`；之后使用 `teamx service` 管理。自定义 home／命令目录等参数可追加到这条命令后。底层安装器仍负责本机平台、完整包、权限、系统服务及访问认证的校验。
 
-直接调用脚本的等价入口是 `node scripts/package-offline.mjs --archive FILE`，支持 `--output FILE.zip`；只有原始归档时，可用 `--sha256 HEX` 提供事先核对的摘要。该入口是按需转交辅助，不改变正式发行资格或默认 Release 资产清单。
+直接调用脚本的等价入口是 `node scripts/package-offline.mjs --archive FILE`，支持 `--output FILE.zip`；只有原始归档时，可用 `--sha256 HEX` 提供事先核对的摘要。该入口是按需转交辅助，不修改原始归档或默认 Release 资产清单。
 
 ## 随包文档
 

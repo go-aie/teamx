@@ -13,7 +13,7 @@ import {
 } from './package-lib.mjs';
 import { assemblePlatformDependencies, checkBinaries } from './package-platform.mjs';
 import { hasDependency } from './package-profiles.mjs';
-import { assertReleaseSource } from './package-release-source.mjs';
+import { assertReleaseSource, releaseBatch } from './package-release-source.mjs';
 import { signingPolicy, signBundle, notarizeBundle } from './package-signing.mjs';
 const root = p.resolve(p.dirname(fileURLToPath(import.meta.url)), '..');
 const opts = {
@@ -28,7 +28,6 @@ try {
   while (args.length) {
     const arg = args.shift();
     if (arg === '--offline') opts.offline = true;
-    else if (arg === '--candidate') opts.candidate = true;
     else if (
       [
         '--channel',
@@ -44,7 +43,7 @@ try {
       opts[arg.slice(2)] = args.shift();
     } else if (arg === '--help') {
       console.log(
-        'package.sh [--channel dev|release] [--candidate] [--profile core|standard|full] [--target OS-ARCH] [--offline] [--cache-dir DIR] [--output-dir DIR] [--version vX.Y.Z] [--macos-signing unsigned|developer-id]'
+        'package.sh [--channel dev|release] [--profile core|standard|full] [--target OS-ARCH] [--offline] [--cache-dir DIR] [--output-dir DIR] [--version vX.Y.Z] [--macos-signing unsigned|developer-id]'
       );
       process.exit(0);
     } else throw Error(`Unknown argument: ${arg}`);
@@ -65,7 +64,6 @@ try {
     'packaging/node-entitlements.plist'
   ])].sort().map(path => ({ path, sha256: hash(fs.readFileSync(p.join(root, path))) }));
   must(['dev', 'release'].includes(opts.channel), 'Unknown channel');
-  must(!opts.candidate || opts.channel === 'release', '--candidate requires --channel release');
   must(!opts['macos-signing'] || opts.channel === 'release', '--macos-signing requires --channel release');
   signingPolicy(opts.target, opts['macos-signing']);
   must(Object.hasOwn(lock.profiles, opts.profile), 'Unknown profile');
@@ -98,19 +96,8 @@ try {
     status = git('status', '--porcelain', '--untracked-files=all');
   const dirty = Boolean(status),
     diff = run('git', ['diff', '--binary', 'HEAD'], { cwd: root });
-  if (opts.channel === 'release') {
-    assertReleaseSource(root, opts.version, commit);
-    // Candidates need archive-specific acceptance after construction. This flag
-    // never makes them publishable; normal releases retain the readiness gate.
-    if (!opts.candidate) run(process.execPath, [
-      p.join(root, 'scripts/check-packaging.mjs'),
-      '--require-ready',
-      '--target',
-      opts.target,
-      '--profile',
-      opts.profile
-    ]);
-  }
+  const batch = opts.channel === 'release' ? releaseBatch() : undefined;
+  if (opts.channel === 'release') assertReleaseSource(root, opts.version, commit);
   const buildEnv = {
     ...process.env,
     CGO_ENABLED: '0',
@@ -377,7 +364,8 @@ try {
     schema_version: 1,
     version,
     channel: opts.channel,
-    ...(opts.candidate ? { distribution: { kind: 'release_candidate', release_ready: false, signing } } : {}),
+    ...(opts.channel === 'release' ? { distribution: { schema_version: 2, kind: 'release_archive', signing,
+      ...(batch ? { build: batch } : {}) } } : {}),
     profile: opts.profile,
     target: opts.target,
     source: {
@@ -399,14 +387,8 @@ try {
     ...(opts.profile === 'standard' && ['linux-amd64', 'darwin-arm64'].includes(opts.target) ? {
       server_deployment: { contract: 1,
         model_delivery_sha256: hash(fs.readFileSync(p.join(root, 'docs/implementation/model-deletion-migration-delivery.zh.md'))),
-        acceptance: 'not_run' }
+      }
     } : {}),
-    acceptance: {
-      archive_smoke: 'see external report',
-      real_dsh_acp: 'not_run',
-      real_platforms: 'not_run',
-      browser: 'not_run'
-    },
     scion: 'deferred'
   };
   writeJSON(p.join(bundle, 'manifest.json'), manifest);
@@ -451,7 +433,7 @@ try {
     const failed = p.join(root, '.packaging/last-failed.tar.gz');
     fs.renameSync(pending, failed);
     pending = undefined;
-    console.error(`Unaccepted candidate retained for diagnostics: ${failed}`);
+    console.error(`Failed archive retained for diagnostics: ${failed}`);
   }
   process.exitCode = 1;
 } finally {

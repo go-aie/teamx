@@ -14,7 +14,7 @@ must(!maintenance||maintenance==='--model-maintenance','Optional argument: --mod
 const archive=path.resolve(archiveArg),source=path.resolve(sourceArg),output=path.resolve(outputArg);
 fs.mkdirSync(output,{mode:0o700});
 process.umask(0o077);
-const report={status:'failed',scope:'native standard archive smoke reference + browser + real first-use/restart',checks:{},release_ready:false,remote_platform_writes:0};
+const report={status:'failed',scope:'native standard archive smoke reference + browser + real first-use/restart',checks:{},remote_platform_writes:0};
 report.verifier_inputs=['model-package-probe.mjs','model-first-use-probe.mjs','model-live-apply-probe.mjs',
  'model-migration-probe.mjs','package-browser.mjs','package-lib.mjs'].map(name=>({path:'scripts/'+name,
  sha256:hash(fs.readFileSync(fileURLToPath(new URL('./'+name,import.meta.url))))}));

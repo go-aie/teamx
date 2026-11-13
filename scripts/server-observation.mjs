@@ -69,7 +69,7 @@ export async function observe(options) {
   process.umask(0o077);
   fs.mkdirSync(options.output, { mode: 0o700 });
   const reportFile = path.join(options.output, 'report.json'), samples = [];
-  const report = { schema_version: 1, status: 'incomplete', release_ready: false,
+  const report = { schema_version: 1, status: 'incomplete',
     scope: 'authenticated read-only resident observation; review collection/backlog/rate-limit/recovery separately',
     archive_sha256: hash(fs.readFileSync(options.archive)), environment: { platform: process.platform,
       arch: process.arch, machine: os.machine(), release: os.release() },
@@ -146,7 +146,7 @@ if (process.argv[1] && fs.realpathSync(process.argv[1]) === fileURLToPath(import
       while (args.length) { const key = args.shift(); must(names[key] && args.length && !opts[names[key]], usage); opts[names[key]] = args.shift(); }
       must(['archive', 'root', 'endpoint', 'token', 'output'].every(k => opts[k]), usage);
       const report = await observe(opts);
-      console.log(`Observation: ${report.status}; release_ready=false`);
+      console.log(`Observation: ${report.status}`);
       process.exitCode = report.status === 'completed_pending_review' ? 0 : 2;
     }
   } catch { console.error('Observation failed; inspect private report and command arguments.'); process.exitCode = 1; }

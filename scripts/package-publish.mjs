@@ -4,8 +4,9 @@ import * as p from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { extract, hash, json, must, run, writeJSON } from './package-lib.mjs';
-import { checkAssessment, inspectCandidate, releasePlan } from './package-release.mjs';
+import { checkVerification, inspectCandidate, releasePlan } from './package-release.mjs';
 import { hasDependency } from './package-profiles.mjs';
+import { releaseBatch } from './package-release-source.mjs';
 
 const root = p.resolve(p.dirname(fileURLToPath(import.meta.url)), '..');
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -18,22 +19,7 @@ function releaseInstaller(sourceRoot, context) {
     .replace('@TEAMX_VERSION@', context.version).replace('@TEAMX_REPOSITORY@', context.repository);
 }
 export const candidateName = (version, row, attempt) => `candidate-${version}-${row.target}-${row.profile}-${attempt}`;
-export const assessmentName = (row, attempt) => `release-assessment-${row.target}-${row.profile}-${attempt}`;
-
-export function validateCandidateRun(info, artifacts, context, matrix) {
-  must(ownerRepo(context.repository) && positive(context.candidate_run_id) && positive(context.candidate_run_attempt), 'Invalid candidate run identity');
-  must(info.id === Number(context.candidate_run_id) && info.run_attempt === Number(context.candidate_run_attempt) &&
-    info.repository?.full_name === context.repository && info.head_repository?.full_name === context.repository &&
-    info.event === 'push' && info.path === '.github/workflows/release.yml' && info.head_sha === context.commit &&
-    info.head_branch === context.version && info.status === 'completed' && info.conclusion === 'success',
-    'Candidate run must be the successful tag workflow at this exact commit/attempt');
-  const required = matrix.flatMap(row => [candidateName(context.version, row, context.candidate_run_attempt),
-    `candidate-verification-${context.version}-${row.target}-${row.profile}-${context.candidate_run_attempt}`]);
-  for (const name of required) {
-    const found = artifacts.filter(a => a.name === name);
-    must(found.length === 1 && found[0].expired === false && positive(found[0].id), `Missing, expired or ambiguous candidate artifact: ${name}`);
-  }
-}
+export const verificationName = (version, row, attempt) => `candidate-verification-${version}-${row.target}-${row.profile}-${attempt}`;
 
 // A non-404 failure is never evidence that a release or tag does not exist.
 export async function githubRequest(repository, endpoint, { method = 'GET', body, missing = false } = {}) {
@@ -60,38 +46,38 @@ async function list(repository, endpoint, field, api = githubRequest) {
   }
 }
 
-export async function candidateContext(version, runID, attempt, sourceRoot = root, env = process.env, api = githubRequest) {
+// Use the active tag run. Upstream job success is enforced by workflow needs;
+// this running workflow cannot yet have a completed-success API result.
+export function releaseContext(sourceRoot = root, env = process.env) {
+  const version = env.GITHUB_REF?.replace(/^refs\/tags\//, '');
   const plan = releasePlan(sourceRoot, version);
-  must(env.GITHUB_REF === `refs/tags/${version}` && env.GITHUB_SHA === plan.commit,
-    'Dispatch publication on the exact candidate tag');
-  const context = { repository: env.GITHUB_REPOSITORY, version, commit: plan.commit,
-    candidate_run_id: Number(runID), candidate_run_attempt: Number(attempt) };
-  must(positive(runID) && positive(attempt) && ownerRepo(context.repository), 'Invalid candidate run/repository');
-  const info = await api(context.repository, `actions/runs/${context.candidate_run_id}`);
-  const artifacts = await list(context.repository, `actions/runs/${context.candidate_run_id}/artifacts`, 'artifacts', api);
-  validateCandidateRun(info, artifacts, context, plan.matrix.include);
-  return { ...plan, context };
+  const batch = releaseBatch(env);
+  must(batch && ownerRepo(env.GITHUB_REPOSITORY) && env.GITHUB_EVENT_NAME === 'push' &&
+    env.GITHUB_REF === `refs/tags/${version}` && env.GITHUB_SHA === plan.commit &&
+    env.GITHUB_WORKFLOW_REF === `${env.GITHUB_REPOSITORY}/.github/workflows/release.yml@${env.GITHUB_REF}`,
+    'Publication requires the current release tag workflow at the exact source commit');
+  return { ...plan, context: { repository: env.GITHUB_REPOSITORY, version, commit: plan.commit, workflow: '.github/workflows/release.yml', ...batch } };
 }
 
 function checkContext(context, sourceRoot) {
-  must(ownerRepo(context.repository) && positive(context.candidate_run_id) && positive(context.candidate_run_attempt) &&
-    positive(context.publish_run_id) && positive(context.publish_run_attempt), 'Invalid release context');
+  must(ownerRepo(context.repository) && context.workflow === '.github/workflows/release.yml' && Number.isSafeInteger(context.run_id) && positive(context.run_id) &&
+    Number.isSafeInteger(context.run_attempt) && positive(context.run_attempt), 'Invalid release context');
   const plan = releasePlan(sourceRoot, context.version);
   must(plan.commit === context.commit, 'Release context commit differs');
   return plan.matrix.include;
 }
 
 // No target code is executed here. Each target has already run its native
-// acceptance; the release host rechecks all bytes, identities and qualifications.
-export function assembleRelease(candidates, assessments, context, output, sourceRoot = root) {
+// smoke checks; the release host rechecks all bytes, identities and CI reports.
+export function assembleRelease(candidates, verifications, context, output, sourceRoot = root) {
   const matrix = checkContext(context, sourceRoot);
   const lock = json(p.join(sourceRoot, 'packaging/dependencies.lock.json'));
   must(matrix.every(row => !hasDependency(row.profile, 'git', lock) || !lock.targets[row.target].blockers.includes('git_tls_runtime')),
     'Linux full Git TLS runtime remains blocked');
-  const expectedCandidates = matrix.map(row => candidateName(context.version, row, context.candidate_run_attempt)).sort();
-  const expectedAssessments = matrix.map(row => assessmentName(row, context.publish_run_attempt)).sort();
+  const expectedCandidates = matrix.map(row => candidateName(context.version, row, context.run_attempt)).sort();
+  const expectedVerifications = matrix.map(row => verificationName(context.version, row, context.run_attempt)).sort();
   must(same(fs.readdirSync(candidates).sort(), expectedCandidates), 'Candidate matrix incomplete or unexpected');
-  must(same(fs.readdirSync(assessments).sort(), expectedAssessments), 'Acceptance matrix incomplete or unexpected');
+  must(same(fs.readdirSync(verifications).sort(), expectedVerifications), 'Verification matrix incomplete or unexpected');
   must(!fs.existsSync(output), 'Release output already exists');
   const temporary = fs.mkdtempSync(p.join(os.tmpdir(), 'teamx-release-stage-'));
   const stage = p.join(temporary, 'assets'), notices = p.join(temporary, 'licenses');
@@ -99,14 +85,15 @@ export function assembleRelease(candidates, assessments, context, output, source
   const records = [];
   try {
     for (const row of matrix) {
-      const dir = p.join(candidates, candidateName(context.version, row, context.candidate_run_attempt));
+      const dir = p.join(candidates, candidateName(context.version, row, context.run_attempt));
       const receipt = inspectCandidate(dir, row.target, row.profile, context.commit, context.version, sourceRoot);
       must(same(json(p.join(dir, 'candidate.json')), receipt), 'Candidate receipt differs at aggregation');
-      const evidenceDir = p.join(assessments, assessmentName(row, context.publish_run_attempt));
-      must(same(fs.readdirSync(evidenceDir), ['assessment.json']), 'Unexpected public acceptance files');
-      const assessment = checkAssessment(receipt, json(p.join(evidenceDir, 'assessment.json')), sourceRoot);
-      const assessmentFile = receipt.archive.replace('.tar.gz', '-assessment.json');
-      writeJSON(p.join(stage, assessmentFile), assessment);
+      const reportDir = p.join(verifications, verificationName(context.version, row, context.run_attempt));
+      must(same(fs.readdirSync(reportDir), ['verification.json']), 'Unexpected CI verification files');
+      const verification = checkVerification(receipt, json(p.join(reportDir, 'verification.json')),
+        { run_id: context.run_id, run_attempt: context.run_attempt }, sourceRoot);
+      const verificationFile = receipt.archive.replace('.tar.gz', '-verification.json');
+      writeJSON(p.join(stage, verificationFile), verification);
       fs.copyFileSync(p.join(dir, receipt.archive), p.join(stage, receipt.archive));
       fs.copyFileSync(p.join(dir, receipt.archive + '.sha256'), p.join(stage, receipt.archive + '.sha256'));
       const extracted = p.join(temporary, 'extracted');
@@ -124,23 +111,23 @@ export function assembleRelease(candidates, assessments, context, output, source
         recursive: true, filter: path => path !== p.join(thirdParty, 'git-source')
       });
       records.push({ target: row.target, profile: row.profile, archive: receipt.archive,
-        archive_sha256: receipt.archive_sha256, manifest_sha256: assessment.manifest_sha256,
-        assessment: assessmentFile, assessment_sha256: digest(p.join(stage, assessmentFile)),
+        archive_sha256: receipt.archive_sha256, manifest_sha256: verification.manifest_sha256,
+        verification: verificationFile, verification_sha256: digest(p.join(stage, verificationFile)),
         signing: row.target.startsWith('darwin-') ? receipt.security.signing.mode : 'not_applicable',
-        licenses: `${row.target}-${row.profile}/`, release_ready: true });
+        licenses: `${row.target}-${row.profile}/` });
       fs.rmSync(extracted, { recursive: true, force: true });
     }
     fs.writeFileSync(p.join(notices, 'README.zh.md'), '各目标的许可文本与部署材料见对应目录。full 的完整 Git 对应源码与构建材料保留在原发行归档的 THIRD_PARTY_NOTICES/git-source/ 中；其他依赖的许可也保留在各归档运行时目录。\n');
     run('tar', ['-czf', p.join(stage, 'LICENSES.tar.gz'), '-C', temporary, 'licenses'], { env: { ...process.env, COPYFILE_DISABLE: '1' } });
     fs.copyFileSync(p.join(sourceRoot, 'docs/installation.zh.md'), p.join(stage, 'README.zh.md'));
     fs.writeFileSync(p.join(stage, 'install.sh'), releaseInstaller(sourceRoot, context), { mode: 0o755 });
-    writeJSON(p.join(stage, 'release.json'), { schema_version: 1, kind: 'qualified_release',
-      release_ready: true, context, policy: { macos_signing: 'optional_unsigned_allowed' },
-      installer: { file: 'install.sh', sha256: digest(p.join(stage, 'install.sh')) },
-      dependency_lock_sha256: digest(p.join(sourceRoot, 'packaging/dependencies.lock.json')), bundles: records });
     const rows = records.map(r => `| ${r.target} | ${r.profile} | ${r.archive} |`).join('\n');
     const profiles = [...new Set(records.map(r => r.profile))].join('/');
-    fs.writeFileSync(p.join(stage, 'release-notes.md'), `TeamX ${context.version}\n\n安装并启动常驻服务：\n\n    curl -fsSL https://github.com/${context.repository}/releases/download/${context.version}/install.sh | bash\n\n安装后在网页配置模型，后续用 teamx service status/stop/start/restart 管理；Linux 管理命令前加 sudo，无需再次 install 或 init。离线安装见 README.zh.md。\n\n四个平台的 ${profiles} 发行包已完成归档身份、真实 DSH/ACP、浏览器及各自用户环境验收。包含平台 CLI 的包另有登录、只读与绑定验收，包含 Git 的包另有 Git/TLS 验收；人工验收与自动检查分别记录。推荐 standard，Git Workspace 及需要本地 Git 的命令需自行安装 Git。\n\nmacOS 当前允许未签名、未公证发行，下载后的系统提示及首次使用、升级方法见 README.zh.md。DSH 0.2.2-rc.1 为预发布依赖；Scion 暂缓。\n\n| 平台 | 能力 | 下载文件 |\n| --- | --- | --- |\n${rows}\n\n校验和见 SHA256SUMS，逐包验收见 *-assessment.json，许可汇总见 LICENSES.tar.gz。包内 manifest 保留候选构建时的状态，正式资格由外部 release.json 和绑定同一归档摘要的验收报告说明；没有重新构建或修改候选包。\n\n源码 commit：${context.commit}\n\n<!-- teamx-release:${context.commit} -->\n`);
+    fs.writeFileSync(p.join(stage, 'release-notes.md'), `TeamX ${context.version}\n\n安装并启动常驻服务：\n\n    curl -fsSL https://github.com/${context.repository}/releases/download/${context.version}/install.sh | bash\n\n安装后在网页配置模型，后续用 teamx service status/stop/start/restart 管理；Linux 管理命令前加 sudo，无需再次 install 或 init。离线安装见 README.zh.md。\n\n四个平台的 ${profiles} 发行包已完成 CI 归档身份、摘要、依赖及原生 smoke 检查，并在独立 job 下载复验。检查使用固定协议 fixture；真实模型、浏览器、平台账号及用户设备测试由维护者在发布前按需安排。推荐 standard，Git Workspace 及需要本地 Git 的命令需自行安装 Git。\n\nmacOS 当前允许未签名、未公证发行，下载后的系统提示及首次使用、升级方法见 README.zh.md。DSH 0.2.2-rc.1 为预发布依赖；Scion 暂缓。\n\n| 平台 | 能力 | 下载文件 |\n| --- | --- | --- |\n${rows}\n\n校验和见 SHA256SUMS，逐包 CI 检查见 *-verification.json，许可汇总见 LICENSES.tar.gz。release.json 记录源码、构建批次和资产摘要；汇总直接使用已检查的原始归档。\n\n源码 commit：${context.commit}\n\n<!-- teamx-release:${context.commit} -->\n`);
+    writeJSON(p.join(stage, 'release.json'), { schema_version: 2, kind: 'github_release', context,
+      installer: { file: 'install.sh', sha256: digest(p.join(stage, 'install.sh')) },
+      dependency_lock_sha256: digest(p.join(sourceRoot, 'packaging/dependencies.lock.json')), bundles: records,
+      assets: fs.readdirSync(stage).sort().map(file => ({ file, sha256: digest(p.join(stage, file)) })) });
     const files = fs.readdirSync(stage).sort();
     fs.writeFileSync(p.join(stage, 'SHA256SUMS'), files.map(name => `${digest(p.join(stage, name))}  ${name}\n`).join(''));
     fs.mkdirSync(p.dirname(output), { recursive: true });
@@ -166,10 +153,21 @@ export function checkReleaseDirectory(directory, context, expectedSeal, sourceRo
   must(fs.readFileSync(p.join(directory, 'install.sh'), 'utf8') === releaseInstaller(sourceRoot, context) &&
     report.installer?.file === 'install.sh' && report.installer.sha256 === digest(p.join(directory, 'install.sh')),
     'Release installer differs from accepted source/version/repository');
-  must(report.kind === 'qualified_release' && report.release_ready === true && same(report.context, context) &&
+  must(report.schema_version === 2 && report.kind === 'github_release' && same(report.context, context) &&
     report.dependency_lock_sha256 === digest(p.join(sourceRoot, 'packaging/dependencies.lock.json')) &&
-    same(report.bundles.map(r => `${r.target}/${r.profile}`).sort(), matrix.map(r => `${r.target}/${r.profile}`).sort()) &&
-    report.bundles.every(r => r.release_ready === true), 'Qualified release identity/matrix differs');
+    same(report.bundles.map(r => `${r.target}/${r.profile}`).sort(), matrix.map(r => `${r.target}/${r.profile}`).sort()),
+    'Release identity/matrix differs');
+  const expectedNames = ['install.sh', 'README.zh.md', 'LICENSES.tar.gz', 'release-notes.md', 'release.json',
+    ...report.bundles.flatMap(r => [r.archive, r.archive + '.sha256', r.verification])].sort();
+  must(same(names.slice().sort(), expectedNames), 'Release asset matrix differs');
+  must(same(report.assets, entries.filter(e => e.name !== 'release.json').map(e => ({ file: e.name, sha256: e.sha256 }))),
+    'Release asset index differs');
+  for (const record of report.bundles) {
+    const stem = `teamx-${context.version}-${record.target}-${record.profile}`;
+    must(record.archive === stem + '.tar.gz' && record.verification === stem + '-verification.json' &&
+      record.archive_sha256 === digest(p.join(directory, record.archive)) &&
+      record.verification_sha256 === digest(p.join(directory, record.verification)), 'Release bundle index differs');
+  }
   return [...entries, { name: 'SHA256SUMS', sha256: expectedSeal }];
 }
 
@@ -200,7 +198,12 @@ export async function publishRelease(directory, context, seal, { sourceRoot = ro
   await remoteTag(context, api);
   const marker = `<!-- teamx-assets:${seal} -->`;
   const body = fs.readFileSync(p.join(directory, 'release-notes.md'), 'utf8') + '\n' + marker + '\n';
-  let release = await api(context.repository, `releases/tags/${context.version}`, { missing: true });
+  // The tag endpoint only finds published releases. Listing with the publish
+  // token includes drafts too; exhaust every page before deciding to create.
+  const matches = (await list(context.repository, 'releases', undefined, api))
+    .filter(release => release.tag_name === context.version);
+  must(matches.length <= 1, 'Multiple releases exist for this tag; refusing ambiguous recovery');
+  let release = matches[0];
   if (release) must(release.draft === true && release.tag_name === context.version && release.body === body,
     'Existing release is published or belongs to different accepted assets; refusing overwrite');
   else release = await api(context.repository, 'releases', { method: 'POST', body: {
@@ -233,21 +236,18 @@ export async function publishRelease(directory, context, seal, { sourceRoot = ro
 if (process.argv[1] && fs.existsSync(process.argv[1]) && fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const [command, ...args] = process.argv.slice(2);
-    if (command === 'plan' && args.length === 4) {
-      const [version, runID, attempt, output] = args;
-      const plan = await candidateContext(version, runID, attempt);
-      const context = { ...plan.context, publish_run_id: Number(process.env.GITHUB_RUN_ID), publish_run_attempt: Number(process.env.GITHUB_RUN_ATTEMPT) };
-      must(positive(context.publish_run_id) && positive(context.publish_run_attempt), 'Invalid publication run identity');
-      must(!fs.existsSync(output), 'Publication context already exists');
-      writeJSON(output, context);
+    if (command === 'plan' && args.length === 1) {
+      const plan = releaseContext();
+      must(!fs.existsSync(args[0]), 'Publication context already exists');
+      writeJSON(args[0], plan.context);
       if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT,
-        Object.entries({ ...plan, context }).map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : v}\n`).join(''));
+        Object.entries(plan).map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : v}\n`).join(''));
     } else if (command === 'assemble' && args.length === 4) {
       const result = assembleRelease(args[0], args[1], json(args[2]), args[3]);
       if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `checksums_sha256=${result.checksums_sha256}\n`);
       console.log(JSON.stringify(result));
     } else if (command === 'publish' && args.length === 3) {
       console.log(JSON.stringify(await publishRelease(args[0], json(args[1]), args[2])));
-    } else throw Error('Usage: package-publish.mjs plan VERSION CANDIDATE_RUN_ID ATTEMPT CONTEXT | assemble CANDIDATES ASSESSMENTS CONTEXT OUTPUT | publish ASSETS CONTEXT CHECKSUMS_SHA256');
+    } else throw Error('Usage: package-publish.mjs plan CONTEXT | assemble CANDIDATES VERIFICATIONS CONTEXT OUTPUT | publish ASSETS CONTEXT CHECKSUMS_SHA256');
   } catch (error) { console.error(`Publication failed: ${error.message}`); process.exitCode = 1; }
 }

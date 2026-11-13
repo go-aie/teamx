@@ -49,7 +49,7 @@ export function assertNative(target) {
 
 // Verify transport identity before executing anything from the downloaded bundle.
 // The original build report and receipt are preserved; a download check writes a
-// separate report and never changes the archive or promotes its qualification.
+// separate report and never changes the archive.
 export function inspectSnapshot(directory, target, profile, commit, sourceRoot = root) {
   must(/^[a-f0-9]{40}$/.test(commit), 'Expected a full source commit');
   must(profileNames.includes(profile), 'Unknown snapshot profile');
@@ -95,7 +95,6 @@ export function inspectSnapshot(directory, target, profile, commit, sourceRoot =
     return {
       schema_version: 1,
       kind: 'development_snapshot',
-      release_ready: false,
       archive: archiveName,
       archive_sha256: digest,
       build_report_sha256: hash(fs.readFileSync(p.join(directory, reportName))),

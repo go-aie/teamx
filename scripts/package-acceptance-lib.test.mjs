@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkSmoke, checkRealDSH, resultForScope } from './package-acceptance-lib.mjs';
+import * as fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { acceptanceInputs, checkSmoke, checkRealDSH, resultForScope } from './package-acceptance-lib.mjs';
 
 test('smoke evidence must belong to the exact archive and capability profile', () => {
   const manifest = { target: 'darwin-arm64', profile: 'core' };
@@ -28,4 +30,15 @@ test('omitted, skipped and failed checks keep local acceptance incomplete', () =
   for (const status of ['not_run', 'failed', undefined])
     assert.equal(resultForScope({ ...checks, browser: { status } }), 'incomplete');
   assert.equal(resultForScope({}), 'incomplete');
+});
+
+test('local acceptance fingerprints are complete regular files and independent of release policy', () => {
+  assert.equal(new Set(acceptanceInputs).size, acceptanceInputs.length);
+  for (const path of acceptanceInputs) {
+    assert.ok(fs.statSync(fileURLToPath(new URL('../' + path, import.meta.url))).isFile(), path);
+    assert.ok(!/package-release|qualification|server-release-policy/.test(path), path);
+  }
+  assert.ok(acceptanceInputs.includes('scripts/package-acceptance-lib.mjs'));
+  const tool = fs.readFileSync(new URL('./package-acceptance.mjs', import.meta.url), 'utf8');
+  assert.ok(!tool.includes("from './package-release.mjs'"));
 });
