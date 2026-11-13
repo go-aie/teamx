@@ -171,7 +171,7 @@ func TestAccessLoginOriginAndRateLimit(t *testing.T) {
 }
 func TestAccessExecutionScopeLifecycleAndNoFixedTTL(t *testing.T) {
 	a, _, h := accessFixture(t)
-	binding := executionBinding{ServiceInfo: ServiceInfo{RoomIdentity: RoomIdentity{"room", "instance"}, ServiceEpoch: "epoch"}, Caller: Caller{Author: Author{Kind: "agent", ID: "agent"}, MembershipID: "member"}}
+	binding := executionBinding{ServiceInfo: ServiceInfo{RoomIdentity: RoomIdentity{RoomID: "room", RoomInstance: "instance"}, ServiceEpoch: "epoch"}, Caller: Caller{Author: Author{Kind: "agent", ID: "agent"}, MembershipID: "member"}}
 	token, revoke, err := a.issueExecution(binding)
 	if err != nil {
 		t.Fatal(err)
@@ -292,7 +292,7 @@ func TestAccessCLIUsesFixedHumanAndBearer(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		a.wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path == "/v1/info" {
-				writeJSON(w, ServiceInfo{RoomIdentity: RoomIdentity{"room", "instance"}, ServiceEpoch: "epoch"})
+				writeJSON(w, ServiceInfo{RoomIdentity: RoomIdentity{RoomID: "room", RoomInstance: "instance"}, ServiceEpoch: "epoch"})
 			}
 		})).ServeHTTP(w, r)
 	}))
@@ -407,7 +407,7 @@ func TestAccessRejectsMissingInitializationAndToken(t *testing.T) {
 }
 func TestAccessStreamingHeaderIsPreservedBeforeStdinArrives(t *testing.T) {
 	a, _, _ := accessFixture(t)
-	binding := executionBinding{ServiceInfo: ServiceInfo{RoomIdentity: RoomIdentity{"room", "instance"}, ServiceEpoch: "epoch"}, Caller: Caller{Author: Author{Kind: "agent", ID: "agent"}, MembershipID: "member"}}
+	binding := executionBinding{ServiceInfo: ServiceInfo{RoomIdentity: RoomIdentity{RoomID: "room", RoomInstance: "instance"}, ServiceEpoch: "epoch"}, Caller: Caller{Author: Author{Kind: "agent", ID: "agent"}, MembershipID: "member"}}
 	token, revoke, err := a.issueExecution(binding)
 	if err != nil {
 		t.Fatal(err)

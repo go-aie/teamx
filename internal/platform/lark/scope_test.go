@@ -85,7 +85,7 @@ func TestPrivateDiscoveryCombinesSelectedGroupsWithoutReadingOtherGroups(t *test
 	for range 25 {
 		stepOK(t, h, runner)
 	}
-	if h.s.Chats["oc_new"].Completed == 0 || h.s.Baseline != baseline {
+	if h.s.Chats["oc_new"].Completed == 0 || !h.s.Baseline.Equal(baseline) {
 		t.Fatal("new private conversation not discovered or baseline changed")
 	}
 }
@@ -114,7 +114,7 @@ func TestCategoryPreferencesSurviveMasterSwitchAndRestart(t *testing.T) {
 	cfg.Enabled = true
 	cfg.Private.Scope = "specified"
 	n, err = Configure(n.RoomIdentity, &n, n.Binding, cfg, time.Unix(4000, 0))
-	if err != nil || n.Baseline != s.Baseline || !reflect.DeepEqual(n.Config.Private.ChatIDs, s.Config.Private.ChatIDs) || !reflect.DeepEqual(n.Config.Groups, cfg.Groups) {
+	if err != nil || !n.Baseline.Equal(s.Baseline) || !reflect.DeepEqual(n.Config.Private.ChatIDs, s.Config.Private.ChatIDs) || !reflect.DeepEqual(n.Config.Groups, cfg.Groups) {
 		t.Fatal("preferences reset", err)
 	}
 	cfg.Private.Enabled = false

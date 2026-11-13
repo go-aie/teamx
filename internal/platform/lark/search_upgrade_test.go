@@ -31,7 +31,7 @@ func TestSearchUpgradePreservesIdentityProgressAndFrozenDeliveries(t *testing.T)
 		t.Fatal(err)
 	}
 	after := decoded.(State)
-	if after.Baseline != before.Baseline || after.SubscriptionID != before.SubscriptionID || after.SubscriptionVersion != before.SubscriptionVersion || after.Binding != before.Binding || !reflect.DeepEqual(after.Inbox, before.Inbox) || !reflect.DeepEqual(after.Observed, before.Observed) || !reflect.DeepEqual(after.Accepted, before.Accepted) || after.Config.Groups.Scope != "specified" || after.Config.Groups.AtMe || after.Config.Groups.AtAll || after.Chats["oc_chat"].Scan.Token != "old_history_token" {
+	if !after.Baseline.Equal(before.Baseline) || after.SubscriptionID != before.SubscriptionID || after.SubscriptionVersion != before.SubscriptionVersion || after.Binding != before.Binding || !reflect.DeepEqual(after.Inbox, before.Inbox) || !reflect.DeepEqual(after.Observed, before.Observed) || !reflect.DeepEqual(after.Accepted, before.Accepted) || after.Config.Groups.Scope != "specified" || after.Config.Groups.AtMe || after.Config.Groups.AtAll || after.Chats["oc_chat"].Scan.Token != "old_history_token" {
 		t.Fatal("conversion changed saved evidence")
 	}
 	if len(after.Search.Branches) != 2 || after.Search.Branches[0].Kind != "private" || after.Search.Branches[1].Kind != "own" {
@@ -79,7 +79,7 @@ func TestSearchUpgradePrunedEvidenceDoesNotReplayKnownChats(t *testing.T) {
 		return p, nil
 	}
 	ingestionSteps(t, h, source, 90)
-	if len(h.s.Inbox) != 1 || h.s.Inbox[RevisionKey(h.s.Binding, newPeer)].Message.ID != newPeer.ID || h.s.Baseline != before.Baseline || !f.requests[0].Start.Equal(before.Baseline) {
+	if len(h.s.Inbox) != 1 || h.s.Inbox[RevisionKey(h.s.Binding, newPeer)].Message.ID != newPeer.ID || !h.s.Baseline.Equal(before.Baseline) || !f.requests[0].Start.Equal(before.Baseline) {
 		t.Fatal("unsafe legacy progress conversion", h.s.Inbox)
 	}
 	// A new selected chat also starts at baseline; narrowing back to known peers

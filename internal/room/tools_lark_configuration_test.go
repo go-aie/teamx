@@ -201,30 +201,48 @@ func TestLarkToolConfigurationExplicitActionsAndPreservedIntent(t *testing.T) {
 		t.Fatal(op, err)
 	}
 }
-func TestLarkToolConfigurationMissingUserScopesDoNotReserveOrWrite(t *testing.T) {
-	h := larkToolConfigurationHarness(t)
-	writeJSONFixture(t, filepath.Join(h.dir, "missing-scopes.json"), []string{"im:message"})
-	req := larkMemberToolRequest(t, h, 0)
-	op, err := h.m.configurePlatformMember(t.Context(), "tool", req)
-	if err != nil || op.Status != "not_applied" || op.Result.ErrorCode != "user_authorization_required" || op.Capabilities == nil {
-		t.Fatal(op, err)
-	}
-	if f := configurationBindings(t, h); f.Revision != 0 {
-		t.Fatal("OAuth gap wrote binding", f)
-	}
-	if _, err = os.Stat(h.m.platformMemberPath(req.OperationID)); !os.IsNotExist(err) {
-		t.Fatal("OAuth gap reserved config operation", err)
-	}
-	r := managerHTTP(h.m, "/v1/tools/bind", larkConfigurationChange(h))
-	if r.Code != 409 || !strings.Contains(r.Body.String(), "user_authorization_required") {
-		t.Fatal(r.Code, r.Body.String())
-	}
-	// App gaps cannot be repaired by OAuth and are saved as partial intent.
-	scopes := slices.DeleteFunc(lark.DefaultScopes(), func(s string) bool { return s == "im:message" })
-	writeJSONFixture(t, filepath.Join(h.dir, "application-scopes.json"), scopes)
-	op, err = h.m.configurePlatformMember(t.Context(), "tool", req)
-	if err != nil || op.Status != "completed" || memberCapability(t, *op.Capabilities, "message.reply").ReasonCode != "application_scopes_missing" {
-		t.Fatal(op, err)
+func TestLarkToolConfigurationUserScopeGapsRespectPlatformSupport(t *testing.T) {
+	for _, tc := range []struct{ name, scope, capability string }{
+		{"read", "im:message:readonly", "message.read"},
+		{"send", "im:message", "message.reply"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := larkToolConfigurationHarness(t)
+			writeJSONFixture(t, filepath.Join(h.dir, "missing-scopes.json"), []string{tc.scope})
+			req := larkMemberToolRequest(t, h, 0)
+			op, err := h.m.configurePlatformMember(t.Context(), "tool", req)
+			if err != nil || op.Capabilities == nil {
+				t.Fatal(op, err)
+			}
+			if tc.name == "send" && runtime.GOOS != "darwin" {
+				// OAuth cannot repair an unsupported account-pinning backend.
+				cap := memberCapability(t, *op.Capabilities, tc.capability)
+				if op.Status != "completed" || op.Result.Status != "applied" || cap.State != "unsupported" || cap.ReasonCode != "account_pinning_unavailable" || cap.NextAction != "" {
+					t.Fatal(op, cap)
+				}
+				return
+			}
+			if op.Status != "not_applied" || op.Result.ErrorCode != "user_authorization_required" {
+				t.Fatal(op)
+			}
+			if f := configurationBindings(t, h); f.Revision != 0 {
+				t.Fatal("OAuth gap wrote binding", f)
+			}
+			if _, err = os.Stat(h.m.platformMemberPath(req.OperationID)); !os.IsNotExist(err) {
+				t.Fatal("OAuth gap reserved config operation", err)
+			}
+			r := managerHTTP(h.m, "/v1/tools/bind", larkConfigurationChange(h))
+			if r.Code != 409 || !strings.Contains(r.Body.String(), "user_authorization_required") {
+				t.Fatal(r.Code, r.Body.String())
+			}
+			// App gaps cannot be repaired by OAuth and are saved as partial intent.
+			scopes := slices.DeleteFunc(lark.DefaultScopes(), func(s string) bool { return s == tc.scope })
+			writeJSONFixture(t, filepath.Join(h.dir, "application-scopes.json"), scopes)
+			op, err = h.m.configurePlatformMember(t.Context(), "tool", req)
+			if err != nil || op.Status != "completed" || op.Capabilities == nil || memberCapability(t, *op.Capabilities, tc.capability).ReasonCode != "application_scopes_missing" {
+				t.Fatal(op, err)
+			}
+		})
 	}
 }
 func TestLarkToolConfigurationRechecksAfterRemotePreparation(t *testing.T) {

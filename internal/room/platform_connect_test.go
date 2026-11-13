@@ -94,7 +94,9 @@ func connectSucceed(t *testing.T, m *roomManager, s *larkAuthSession) {
 	}
 	m.finishPlatformConnectLocked(s)
 	if s.connectErr != nil {
-		t.Fatal(s.connectErr)
+		// Cancellation callbacks also call this helper from a goroutine.
+		// Error records the failure without calling FailNow outside the test.
+		t.Error(s.connectErr)
 	}
 }
 func TestPlatformConnectSavedReceiptIdempotenceAndReadOnlyStatus(t *testing.T) {

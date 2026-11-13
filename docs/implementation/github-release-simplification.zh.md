@@ -102,3 +102,14 @@ node scripts/package-publish.mjs publish ASSETS CONTEXT CHECKSUMS_SHA256
 第 1–4 步的本地改动已完成；历史报告保持原样。全量 Go 检查中的既有问题仍需解决，工作流继续保留这些必要检查。
 
 未修改仓库远端配置，未构建真实多平台发行归档，未消耗真实模型额度，也未验证 GitHub 自动发布闭环。
+
+## 首次 CI 失败与本地修复
+
+2026-11-13：`v0.0.1` 在 `make test` 阶段有 3 个普通 Go 回归断言失败，尚未进入构建或发布；该次运行没有执行真实模型或浏览器验收。
+
+- 两个 Lark 接收偏好／搜索升级测试直接比较 `time.Time`，UTC 环境中的 JSON 往返会改变时区表示。改用 `Time.Equal` 比较时间点，同步调整同文件中的基线断言，仍检查接收范围、历史进度及不重复投递。
+- 权限配置测试分别覆盖跨平台读取权限和发送权限。支持的能力缺少用户授权时，仍要求不写入绑定或操作记录；Linux 发送能力则保持 `unsupported/account_pinning_unavailable`，不要求 OAuth 修复不受支持的后端。生产权限逻辑未修改。
+- 4 处 `RoomIdentity` 初始化改用命名字段；连接成功测试辅助函数改用可在 goroutine 中调用的 `t.Error` 记录错误，消除 7 处 vet 诊断。失败仍会使测试失败。
+- 修复前，在本地 Linux ARM64 容器的 UTC 环境复现全部 3 个 CI 失败；修复后针对性测试通过。该容器使用缓存的 Go 1.27.1、Debian 12、`CGO_ENABLED=0`（与发行构建一致），网络关闭；全量 `make test` 通过，Room 套件为 114.889 秒，`go vet ./...` 通过。它不等于 GitHub Ubuntu amd64 runner 的实际重跑结果。
+- macOS ARM64 的 UTC 与 Asia/Shanghai 针对性测试、`go vet ./...` 通过。原 3 分钟限制下的全量 Room 测试仍超时（约 182.715 秒），未观察到断言失败；不记为全量通过，也未修改 Makefile 时限。
+- `git diff --check` 通过；本次修复未修改工作流、生产业务代码、已推送的 `v0.0.1` tag，也未启动真实模型、浏览器或远端发布。

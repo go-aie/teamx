@@ -213,7 +213,7 @@ func TestAnonymousCLIUsesFixedOperator(t *testing.T) {
 	a, _ := anonymousAccessFixture(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		a.wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			_ = json.NewEncoder(w).Encode(ServiceInfo{RoomIdentity: RoomIdentity{"room", "instance"}, ServiceEpoch: "epoch"})
+			_ = json.NewEncoder(w).Encode(ServiceInfo{RoomIdentity: RoomIdentity{RoomID: "room", RoomInstance: "instance"}, ServiceEpoch: "epoch"})
 		})).ServeHTTP(w, r)
 	}))
 	defer server.Close()
