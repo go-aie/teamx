@@ -41,7 +41,7 @@ API Key 从模型服务商控制台创建，直接保存到 GitHub Secrets。测
 
 ## 2. 完成用户环境与平台验收
 
-下载候选 Artifact，先解开外层压缩包，保留其原始五个文件。在对应版本源码中为每个候选生成一个待填写模板；以下大写参数替换为实际值，输出文件必须不存在：
+下载候选 Artifact，先解开外层压缩包，保留其原始五个文件。standard 的常驻安装使用归档内 `bash ./install.sh --archive FILE`，无需先 `start init` 或再次手工执行 `teamx service install`；core 的开发运行仍按开发说明检查。在对应版本源码中为每个候选生成一个待填写模板；以下大写参数替换为实际值，输出文件必须不存在：
 
 ```sh
 node scripts/package-release.mjs qualification-template \
@@ -53,7 +53,7 @@ node scripts/package-release.mjs qualification-template \
 | 检查 | 必须确认的行为 |
 | --- | --- |
 | `clean_machine` | 全新解压、独立 home、没有宿主 Go／Node／平台 CLI，系统依赖满足基线；full 还需没有宿主 Git |
-| `downloaded_system_security`：macOS | 实际下载并保留 quarantine 至启动前，用 `/bin/sh ./start init` 运行；确认拒绝时不执行包内程序，同意后附带工具可运行，再次启动不重复询问；另记录系统是否拦截，必要时按系统提示允许运行 |
+| `downloaded_system_security`：macOS | 实际下载并保留 quarantine 至安装／启动前；standard 用系统 Bash 执行 `install.sh --archive FILE`，核对归档校验后部署、命令入口和附带工具运行；开发用 `start` 另核对拒绝不执行、同意后可运行及不重复询问。记录系统是否拦截，必要时按实际提示处理 |
 | `downloaded_system_security`：Linux | 在声明系统中检查实际动态库和运行能力均在基线内 |
 | `git_tls_clone`：full | 包内 Git 的 helper、证书验证、HTTPS clone 与本地 commit 均可用，未借用宿主 Git |
 | `platform_login_read_bind`：standard／full | 用隔离账号完成 GitLab／飞书登录、只读查询和 TeamX 连接绑定，远端写入为 0 |
@@ -112,7 +112,11 @@ Workflow 下载原候选，在匹配平台重新检查身份和归档，再执�
 
 可以先省略人工 JSON 检查自动验收，但缺项会使发行停止；重跑真实验收会再次消费模型额度。
 
-发布 job 创建 draft，上传原候选，下载远端资产重新计算摘要，完整匹配后公开。发布时不重新构建，也不改动已验收归档。正式 Release 包含各包的归档、摘要和验收报告，以及 `release.json`、`SHA256SUMS`、`LICENSES.tar.gz`、使用说明和发行说明。
+发布 job 创建 draft，上传原候选，下载远端资产重新计算摘要，完整匹配后公开。发布时不重新构建，也不改动已验收归档。正式 Release 包含各包的归档、摘要和验收报告，以及 `install.sh`、`release.json`、`SHA256SUMS`、`LICENSES.tar.gz`、使用说明和发行说明。
+
+汇总时从同一 tag 的 `packaging/install.sh` 生成独立安装器，固定版本与仓库，纳入 `SHA256SUMS` 并在 `release.json` 记录摘要。发布前重新核对脚本与受验源码，版本下载使用固定 tag，避免安装期间 latest 移动而混用归档和摘要。发布完成后 `https://github.com/OWNER/REPO/releases/latest/download/install.sh` 即为一条命令的安装入口；脚本内部下载本机 standard 并完成常驻安装。文档中的默认仓库为 `go-aie/teamx`。
+
+安装器自动测试包含本机 Bash／tar／摘要和文件操作，Linux 账号与 sudo／管理器用 fixture 模拟；不能代替真实 macOS 下载与 LaunchAgent、原生 Linux systemd 的安装和启停验收。除原部署资格外，还应在真实发布后核对管道安装、PATH 生效和安装后 `teamx service status/stop/start`，再确认公开入口可用。
 
 ## 失败后的处理
 

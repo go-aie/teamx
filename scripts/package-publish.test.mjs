@@ -28,7 +28,7 @@ function fixture(t, includeFull = false) {
   for (const file of new Set([...acceptanceInputs, 'scripts/package-release.mjs', 'scripts/package-qualification.mjs',
     'scripts/package-ci.mjs', 'scripts/package-release-source.mjs', 'scripts/package-signing.mjs', 'scripts/server-release-policy.mjs',
     'packaging/dependencies.lock.json', 'packaging/dsh/package.json', 'packaging/dsh/package-lock.json',
-    'tools/gitlab/glab.lock.json', 'docs/installation.zh.md', 'LICENSE'])) {
+    'tools/gitlab/glab.lock.json', 'docs/installation.zh.md', 'packaging/install.sh', 'LICENSE'])) {
     fs.mkdirSync(p.dirname(p.join(source, file)), { recursive: true });
     fs.copyFileSync(p.join(root, file), p.join(source, file));
   }
@@ -168,6 +168,10 @@ test('full matrix assembles original bytes, notice archive and sanitized archive
   f.rows[0].assessment.private_extra = 'PRIVATE-ACCOUNT'; writeJSON(f.rows[0].assessmentFile, f.rows[0].assessment);
   const seal = f.assemble();
   assert.equal(seal.bundles, 8);
+  const installer = fs.readFileSync(p.join(f.output, 'install.sh'), 'utf8');
+  assert.ok(installer.includes("release_version='v0.0.0'"));
+  assert.ok(installer.includes("release_repository='example/teamx'"));
+  assert.equal(json(p.join(f.output, 'release.json')).installer.sha256, digest(p.join(f.output, 'install.sh')));
   checkReleaseDirectory(f.output, f.context, seal.checksums_sha256, f.source);
   for (const item of f.rows) {
     assert.equal(digest(p.join(f.output, item.receipt.archive)), item.receipt.archive_sha256);

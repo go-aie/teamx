@@ -2,6 +2,8 @@
 
 本文保留设计、阶段定义及实施进度，供维护时追溯。当前操作方法见[打包指南](../packaging/README.zh.md)和[正式发行操作指南](../packaging/releasing.zh.md)。
 
+2026-11-13 安装入口调整：普通用户通过正式 Release 的 `install.sh` 一次完成下载、校验、常驻部署、启动和 `teamx` 命令入口配置，之后统一使用 `teamx service`。下文早期 `start init`／前台体验流程仅作为开发与历史设计保留，不再是安装准备步骤。当前用户流程见[安装指南](installation.zh.md)，实现与验证见[安装器记录](implementation/server-installer.zh.md)。
+
 状态：P0 已实施依赖与平台核查，见 [P0 交付与核查记录](implementation/packaging/P0.zh.md)。P1 公共启动/初始化/诊断、core 开发包组装与归档 smoke 已实施，见 [P1 记录](implementation/packaging/P1.zh.md)。P2 已实施目标产物组装、full 启动器、Git 源码材料及扩展 smoke，但完整矩阵出口尚未达到，具体证据和阻塞见 [P2 记录](implementation/packaging/P2.zh.md)。P3 已按用户调整实施 macOS arm64 本地验收入口，执行结果见 [P3 记录](implementation/packaging/P3.zh.md)，Linux arm64 结果见 [P3 Linux 记录](implementation/packaging/P3-linux.zh.md)。P4.1 快照 Workflow 与下载复验已实施，GitHub 四平台真实执行仍待完成，见 [P4.1 记录](implementation/packaging/P4.1.zh.md)。P4.2 候选 Workflow 及 P4.3 完整矩阵汇总、GitHub 验收与发行流程已实施；真实矩阵和远端正式发行仍待完成，见 [P4.2](implementation/packaging/P4.2.zh.md) 与 [P4.3](implementation/packaging/P4.3.zh.md)。
 
 2026-11-08 实施范围调整：按用户要求暂缓 Scion。当前 core/full 均不承诺 Scion 功能，`scn` 不作为依赖收敛或 full 交付的门槛；保留已有 `teamx-scion` 封装构建入口。下文原方案中涉及 Scion 的收集、许可及真实验收要求留待恢复该能力时执行。P0 已将四个平台全部纳入本期交付矩阵；纳入不表示已通过运行验收。

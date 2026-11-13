@@ -4,6 +4,8 @@
 
 ## 实现
 
+2026-11-13 后续调整：用户安装入口已统一为 `install.sh`，内部复用本文的 `teamx service install`，并自动建立 PATH 中的稳定 `teamx` 入口。无需先在临时包执行 `start init`，不再要求用户手工创建 Linux 服务账号。开发用前台入口保留。安装器改动及独立验收边界见[安装器记录](server-installer.zh.md)；本文原生服务与长期观察的既有证据不自动覆盖新安装入口。
+
 - 新增部署机 `teamx service install/inspect/start/status/stop/restart/enable/disable/backup/restore/upgrade/uninstall`。Linux 是 root 管理、专用普通账号执行的 systemd 系统服务；macOS 是当前普通用户的 LaunchAgent。固定服务名，同名的其他登记或修改过的 unit 拒绝控制；命令不作为 Agent 工具暴露。
 - Go 内置安全解包和现有 `checksums.txt` inventory 校验，无需部署机预装 Node。要求本机架构 standard、可信渠道取得的归档摘要、唯一根、完整摘要／模式／内部链接和许可材料，拒绝越界路径、特殊文件、hardlink、重复项及私有状态。完整临时目录校验后原子发布；build-id 包含版本／平台／profile 和摘要前 12 位，同 ID 的不同内容拒绝。
 - 安装串行锁独立于运行 home／data 锁。复用 W1 的安装登记与真实版本目录、共享 `init`／首启认证；`init --server-root` 仅固定受管默认 DSH 选择器，已有配置、身份和模板不覆盖。Linux 初始化按部署 UID 执行，不以 root 创建模型凭据，不重定向系统 HOME。已有非空的其他 home 不自动导入。

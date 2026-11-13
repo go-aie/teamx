@@ -3,6 +3,7 @@ package room
 import "strings"
 
 const rootCLIHelp = `Usage: teamx COMMAND [--help]
+  service                       Manage the background service (teamx service --help)
   init | doctor                 Prepare files/auth or diagnose a distribution (--bundle-root, --home; model setup is in the browser)
   access init --config FILE     Initialize the fixed operator and private admin-token file
   serve                         Start the authenticated service
@@ -19,6 +20,22 @@ const rootCLIHelp = `Usage: teamx COMMAND [--help]
   tools list/run/skill           Enabled platform and standalone tools
 Human CLI: --token-file FILE or TEAMX_ADMIN_TOKEN_FILE; token values are never command-line arguments.
 Use teamx COMMAND SUBCOMMAND --help for parameters and constraints.
+`
+
+const serviceCLIHelp = `Usage: teamx service COMMAND [OPTIONS]
+  status | inspect              Inspect service health or installation registration
+  stop | start | restart        Stop or resume the installed service
+  disable | enable              Disable or enable login/boot startup (disable does not stop it)
+  uninstall                     Stop and unregister; preserve data, releases and the teamx command
+  backup --backup-dir DIR       Stop and make a consistent backup
+  upgrade --archive FILE --backup-dir DIR
+  restore --from DIR --backup-dir DIR
+  install --archive FILE        Deploy a native standard archive (called by install.sh)
+Options: --server-root DIR (automatically found from the installed teamx command).
+Install: --home DIR, --user NAME (Linux); install/upgrade: --sha256 HEX or FILE.sha256.
+Linux service management requires sudo; macOS uses the logged-in user without sudo.
+First installation: run the official install.sh once; it also starts the service.
+Model configuration is completed in the browser. See the release's README.zh.md for installation and maintenance.
 `
 
 type referenceCommandHelp struct {

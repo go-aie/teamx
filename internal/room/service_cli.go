@@ -21,7 +21,12 @@ import (
 
 func runService(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("usage: teamx service install|inspect|start|status|stop|restart|enable|disable|backup|restore|upgrade|uninstall --server-root DIR")
+		_, err := io.WriteString(stdout, serviceCLIHelp)
+		return err
+	}
+	if args[0] == "--help" || args[0] == "-h" {
+		_, err := io.WriteString(stdout, serviceCLIHelp)
+		return err
 	}
 	action := args[0]
 	if action == "__run" {
@@ -42,6 +47,9 @@ func runService(args []string, stdout, stderr io.Writer) error {
 	backup := flags.String("backup-dir", "", "new private backup directory (backup/upgrade/restore)")
 	source := flags.String("from", "", "consistent backup directory (restore only)")
 	if err := flags.Parse(args[1:]); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
 		return err
 	}
 	if flags.NArg() != 0 || (*archive != "" || *digest != "") && action != "install" && action != "upgrade" || (*home != "" || *account != "") && action != "install" || *source != "" && action != "restore" || *backup != "" && action != "backup" && action != "upgrade" && action != "restore" {
@@ -66,6 +74,11 @@ func runService(args []string, stdout, stderr io.Writer) error {
 	}
 	if *root == "" {
 		*root = defaultRoot
+		if executable, err := os.Executable(); err == nil {
+			if installed := installedServiceRoot(executable); installed != "" {
+				*root = installed
+			}
+		}
 	}
 	*root, err = resolveFutureDirectory(*root)
 	if err != nil {
@@ -166,7 +179,7 @@ func runService(args []string, stdout, stderr io.Writer) error {
 			// Attach only after checking the exact registered unit and identity.
 			if checkServiceUnit(r) == nil {
 				if status, statusErr := authenticatedServiceStatus(ctx, r); statusErr == nil {
-					return writeJSON(stdout, status)
+					return writeServiceInstallResult(r, status, stdout, stderr)
 				}
 			}
 			return err
@@ -211,8 +224,7 @@ func runService(args []string, stdout, stderr io.Writer) error {
 			_ = serviceManager(context.Background(), nil, r, "stop")
 			return err
 		}
-		fmt.Fprintf(stderr, "管理 token 文件（不会打印内容）：%s\n", filepath.Join(r.Home, "auth/admin-token"))
-		return writeJSON(stdout, status)
+		return writeServiceInstallResult(r, status, stdout, stderr)
 	}
 	r, err := loadServiceRegistration(*root)
 	if err != nil {

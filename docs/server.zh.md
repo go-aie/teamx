@@ -51,7 +51,7 @@ flowchart TB
   data/                   # Room、Session、Inbox、Workspace 等
 ```
 
-home 与安装根互不重叠，受管 data 也不能放进安装根。home／data 锁防止两个 Server 同时写入，部署命令另有安装锁。具体默认路径与账号要求见[安装指南](installation.zh.md#常驻安装standard)。
+home 与安装根互不重叠，受管 data 也不能放进安装根。home／data 锁防止两个 Server 同时写入，部署命令另有安装锁。具体默认路径与账号要求见[安装指南](installation.zh.md#一键安装)。
 
 TeamX home 不等于操作系统账号的 `HOME`。服务保留部署账号真实 HOME；官方 CLI 配置、加密后端或 Keychain 属于该账号环境，不能认为备份 TeamX home 已覆盖平台凭据。服务使用固定最小环境，不加载 shell 配置，不继承终端中 export 的模型 Key 或代理；平台授权应由实际部署账号执行。
 
@@ -79,7 +79,9 @@ Server 生命周期接受 context 取消，前台入口适配终端信号，常�
 
 ## 分发与当前边界
 
-源码构建、归档前台运行与系统服务安装复用同一服务核心。安装命令消费匹配本机的 standard 归档，部署材料随版本闭包交付；Web 由同一 Server 提供，没有单独的浏览器客户端安装包。正式发行使用已验收的同一归档，外部资格绑定归档摘要，包内 manifest 保留构建时状态。
+普通用户统一通过 `install.sh` 安装常驻服务，安装后使用 `teamx service` 管理。脚本识别原生平台、下载并校验 standard 归档，内部调用现有 `teamx service install`，再建立指向 `current/bin/teamx` 的 PATH 命令入口；安装后的 CLI 可从真实程序路径找到所属安装根。脚本不实现第二套部署或生命周期逻辑，也不要求用户再次 install 或 init。
+
+源码构建、开发用的归档前台运行与系统服务安装复用同一服务核心。部署材料随版本闭包交付；Web 由同一 Server 提供，没有单独的浏览器客户端安装包。正式发行另附固定版本与仓库的安装脚本，纳入同一资产摘要；使用已验收的同一归档，外部资格绑定归档摘要，包内 manifest 保留构建时状态。
 
 当前仍是开发预览，真实设备、平台与持续观察等正式出口以[发行验收记录](implementation/server-release-acceptance.zh.md)为准。Electron 轻量客户端、桌面一体安装、手机 App 和原生通知保留在[后续 W7–W10](DESKTOP-APPLICATION-ANALYSIS-AND-PLAN.zh.md#14-保留的后续阶段w7w10)，不作为当前 Web 实现的依赖。
 
@@ -93,5 +95,6 @@ Server 生命周期接受 context 取消，前台入口适配终端信号，常�
 | [service_cli.go](../internal/room/service_cli.go)／[service_manager.go](../internal/room/service_manager.go) | 部署命令、系统服务、最小账号环境与状态核对 |
 | [service_archive.go](../internal/room/service_archive.go)／[service_backup.go](../internal/room/service_backup.go) | 归档校验、版本发布和一致备份恢复 |
 | [package.mjs](../scripts/package.mjs) | 固定依赖、随包白名单与归档构建 |
+| [install.sh](../packaging/install.sh)／[package-publish.mjs](../scripts/package-publish.mjs) | 单次安装引导、稳定命令入口与固定版本的正式安装器发布 |
 
 设计演进见[原方案](DESKTOP-APPLICATION-ANALYSIS-AND-PLAN.zh.md)，最终验证与待验项见[发行验收记录](implementation/server-release-acceptance.zh.md)；日常操作统一使用[安装与运行](installation.zh.md)。

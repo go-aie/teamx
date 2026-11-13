@@ -41,6 +41,46 @@ type serviceRegistration struct {
 	LogRoot        string `json:"log_root"`
 }
 
+// A PATH symlink follows current through upgrades. Resolve it before finding
+// the installation, so custom roots work without repeating --server-root.
+func installedServiceRoot(executable string) string {
+	resolved, err := filepath.EvalSymlinks(executable)
+	if err != nil {
+		return ""
+	}
+	release := filepath.Dir(filepath.Dir(resolved))
+	if filepath.Base(filepath.Dir(resolved)) != "bin" || filepath.Base(filepath.Dir(release)) != "releases" {
+		return ""
+	}
+	root := filepath.Dir(filepath.Dir(release))
+	if info, err := os.Lstat(filepath.Join(root, "service.json")); err == nil && info.Mode().IsRegular() {
+		return root
+	}
+	return ""
+}
+
+func writeServiceInstallResult(r serviceRegistration, status map[string]any, stdout, stderr io.Writer) error {
+	c, err := readStartupConfig(filepath.Join(r.Home, "config.toml"), true, false)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(stderr, "服务已启动。浏览器地址：%s\n管理 token 文件（不会打印内容）：%s\n登录后在网页配置模型，无需终端 init。\n", serviceBrowserURL(c), adminTokenPath(c))
+	return writeJSON(stdout, status)
+}
+
+func serviceBrowserURL(c startupConfig) string {
+	if configuredAccessMode(c) == accessProxy {
+		return c.Server.PublicBaseURL
+	}
+	listen := "127.0.0.1:8088"
+	if c.Server.Listen != nil {
+		listen = *c.Server.Listen
+	}
+	// A wildcard bind address is not a browser destination. Local access also
+	// works for LAN services; their reachable private addresses are shown in UI.
+	return internalAccessEndpoint(listen)
+}
+
 // All external commands use fixed binaries, argument arrays and a clean
 // deployment environment; shell rc files and model Key exports are irrelevant.
 type serviceRunner func(context.Context, string, ...string) ([]byte, error)

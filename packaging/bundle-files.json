@@ -149,6 +149,10 @@
       "destination": "start"
     },
     {
+      "source": "packaging/install.sh",
+      "destination": "install.sh"
+    },
+    {
       "source": "packaging/dsh-launcher",
       "destination": "bin/dsh"
     },

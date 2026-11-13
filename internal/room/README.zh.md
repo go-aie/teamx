@@ -21,6 +21,18 @@ cp .teamx/config.example.toml .teamx/config.toml
 
 Web 界面已嵌入程序，无需单独启动前端。打开 `http://127.0.0.1:8088`，在网页配置并验证模型，无需 export API Key；默认数据在 `.teamx/data/`。`server.dsh_turn_timeout` 默认为 `"15m"`，大型任务可设 `"30m"`。Ctrl-C 正常停止并等待清理完成，同一配置再次启动可继续已有房间。
 
+## 归档调试运行
+
+普通用户通过安装器部署常驻服务，见[安装指南](../../docs/installation.zh.md)。开发者需要在终端观察服务、验证 core 包或隔离 home 时，可在解压目录运行：
+
+```sh
+/bin/sh ./start --home /absolute/private-debug-home --listen 127.0.0.1:8090
+```
+
+该命令准备缺失基础文件并启动 Server，需保持终端打开；Ctrl-C 后等待清理完成。省略 `--home` 时使用包内 `.teamx/`。模型仍在网页配置，无需先 init。`/bin/sh ./start init` 只准备文件和访问身份后退出；`/bin/sh ./start doctor` 诊断依赖，不发送模型请求。相同 home 只允许一个服务实例。
+
+macOS 手工解压后通过 `start` 调试时，脚本会检查下载隔离标记，只有终端明确输入 `yes` 才解除该包的隔离；取消不执行包内程序，非交互不自动同意。这是开发入口的行为，不是安装器的前置步骤。
+
 ## 服务配置
 
 首次运行直接使用 `teamx serve --home .teamx`，会准备固定操作者；全新安装默认仅本机访问，无需登录。`--home` 缺少模型或模型无效时，可在浏览器设置并启动；`--config` 保留已配置开发环境的直接启动方式。不指定 `--config` 时只读取 `~/.teamx/config.toml`，不自动查找当前目录或项目祖先目录。显式指定的文件缺失或 TOML 结构错误时会阻止启动；两份配置不会合并。

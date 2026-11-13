@@ -23,6 +23,72 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
+func TestInstalledServiceCommandFollowsCurrentAndCustomRoot(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "server with spaces")
+	command := filepath.Join(t.TempDir(), "teamx")
+	serviceTestFile(t, filepath.Join(root, "service.json"), `{}`, 0600)
+	for _, version := range []string{"first", "second"} {
+		serviceTestFile(t, filepath.Join(root, "releases", version, "bin", "teamx"), "fixture", 0755)
+	}
+	current := filepath.Join(root, "current")
+	if err := os.Symlink("releases/first", current); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(current, "bin", "teamx"), command); err != nil {
+		t.Fatal(err)
+	}
+	want, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := installedServiceRoot(command); got != want {
+		t.Fatalf("installed root = %q, want %q", got, want)
+	}
+	if err := os.Remove(current); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("releases/second", current); err != nil {
+		t.Fatal(err)
+	}
+	if got := installedServiceRoot(command); got != want {
+		t.Fatalf("upgraded root = %q, want %q", got, want)
+	}
+	portable := filepath.Join(t.TempDir(), "bin", "teamx")
+	serviceTestFile(t, portable, "fixture", 0755)
+	if got := installedServiceRoot(portable); got != "" {
+		t.Fatalf("portable command inferred an installation: %q", got)
+	}
+}
+
+func TestServiceHelpAndInstallResultGuideBrowserSetup(t *testing.T) {
+	for _, args := range [][]string{{"service"}, {"service", "--help"}, {"service", "stop", "--help"}} {
+		var stdout, stderr bytes.Buffer
+		if err := Run(args, &stdout, &stderr); err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+		if stdout.Len()+stderr.Len() == 0 {
+			t.Fatalf("%v returned no help", args)
+		}
+	}
+	home := t.TempDir()
+	serviceTestFile(t, filepath.Join(home, "config.toml"), "[server]\nlisten = '0.0.0.0:8091'\naccess_mode = 'lan'\n[access]\nlogin_enabled = true\nadmin_token_file = 'auth/custom-token'\n", 0600)
+	var stdout, stderr bytes.Buffer
+	if err := writeServiceInstallResult(serviceRegistration{Home: home}, map[string]any{"authenticated": true}, &stdout, &stderr); err != nil {
+		t.Fatal(err)
+	}
+	for _, text := range []string{"http://127.0.0.1:8091", filepath.Join(home, "auth/custom-token"), "网页配置模型"} {
+		if !strings.Contains(stderr.String(), text) {
+			t.Fatalf("missing %q in install result: %s", text, stderr.String())
+		}
+	}
+	var c startupConfig
+	c.Server.AccessMode = accessProxy
+	c.Server.PublicBaseURL = "https://teamx.example"
+	if got := serviceBrowserURL(c); got != c.Server.PublicBaseURL {
+		t.Fatalf("browser URL = %q", got)
+	}
+}
+
 func serviceTestFile(t *testing.T, name, value string, mode os.FileMode) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(name), 0755); err != nil {

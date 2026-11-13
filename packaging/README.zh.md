@@ -46,7 +46,7 @@
 gh workflow run package.yml --repo OWNER/REPO --ref BRANCH -f profile=standard
 ```
 
-Artifact 内含 `.tar.gz`、同名 `.sha256`、构建检查报告和 `snapshot.json`。先解开 Artifact 的外层压缩包，再按[使用说明](../docs/installation.zh.md)校验、解压其中的 `.tar.gz`。名称中的 attempt 区分同一次 Workflow 的不同执行轮次。
+Artifact 内含 `.tar.gz`、同名 `.sha256`、构建检查报告和 `snapshot.json`。先解开 Artifact 的外层压缩包，再按[使用说明](../docs/installation.zh.md#下载与校验)用安装器消费原始 standard 归档。名称中的 attempt 区分同一次 Workflow 的不同执行轮次。
 
 Pull request 也会自动构建快照，默认使用 standard。快照流程不需要模型或平台账号，不执行真实模型回合，也不发布 GitHub Release。它会在匹配架构的 runner 上组装并检查最终归档，再下载同一归档重新检查；结果用于开发预览。快照 Artifact 保留 7 天。
 
@@ -93,6 +93,10 @@ Pull request 也会自动构建快照，默认使用 standard。快照流程不�
 升级依赖时显式更新统一 lock、对应 npm lock、许可证及相关版本契约，重新验证受影响目标。公开模板与随包文件由 [bundle-files.json](bundle-files.json) 明确列出；本机配置、`.env`、Room 数据和平台登录资料不属于分发内容。
 
 ## 随包文档
+
+普通用户统一安装常驻服务。归档白名单包含 [install.sh](install.sh)，支持离线 `bash install.sh --archive FILE`；正式发行另外导出固定到该版本和仓库的 `install.sh`，用户可以通过 `curl …/releases/latest/download/install.sh | bash` 一次完成下载、校验、部署、启动和命令入口配置。安装器内部调用 `teamx service install`，不会要求用户再执行 install 或 init。macOS 的 `~/.local/bin/teamx`、Linux 的 `/usr/local/bin/teamx` 指向受管 `current/bin/teamx`，后续管理统一使用 `teamx service`。
+
+`start`／`init` 保留为开发诊断入口，终端前台运行方法见[Room 开发说明](../internal/room/README.zh.md#归档调试运行)。它们不再作为普通安装的准备步骤；开发快照和旧归档不获得额外正式支持声明。
 
 安装、运行和维护只维护 [docs/installation.zh.md](../docs/installation.zh.md) 这一份指南。[bundle-files.json](bundle-files.json) 将它原样复制为包内 `README.zh.md`；正式发布脚本也将同一来源复制为 Release 的 `README.zh.md`。指南使用文档内锚点导航，独立下载后可完整阅读，不依赖仓库中的其他文件。不再分别维护 bundle、Release 或 Server 使用说明模板。
 

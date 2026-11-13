@@ -24,11 +24,18 @@
 | 你的情况 | 从这里开始 |
 | --- | --- |
 | 已有运行中的 Server | 直接在桌面或手机浏览器打开服务地址并登录，无需下载安装 |
-| 自己安装 Server | [安装与运行](docs/installation.zh.md)：下载 standard，安装后台服务，再到网页配置模型；无需安装 Go 或 Node |
-| 只想前台体验 | [前台运行](docs/installation.zh.md#前台运行)：解压后运行 `start`，保持服务进程运行 |
+| 自己安装 Server | [安装与运行](docs/installation.zh.md)：一条安装命令完成下载和常驻部署，之后统一使用 `teamx` 管理；无需安装 Go 或 Node |
 | 从源码开发运行 | [源码运行](internal/room/README.zh.md#从源码运行)：构建 Go 程序并配置本机 DSH |
 
 当前为开发预览，完整平台矩阵和正式发行验收尚未完成。模型和 API Key 均可在 Server 启动后的网页填写，不要求提前 export。
+
+包含安装器的正式 Release 发布后，在服务机器执行：
+
+```sh
+curl -fsSL https://github.com/go-aie/teamx/releases/latest/download/install.sh | bash
+```
+
+脚本安装并启动服务，无需再次执行 install 或 init；按输出打开网页登录、配置模型即可。后续用 `teamx service status/stop/start/restart` 管理；Linux 管理命令前加 sudo。尚无对应正式 Release 时，使用[离线安装与开发快照](docs/installation.zh.md#下载与校验)。
 
 ### 开始协作
 

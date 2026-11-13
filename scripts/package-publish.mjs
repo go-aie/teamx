@@ -12,6 +12,11 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const digest = path => hash(fs.readFileSync(path));
 const positive = n => /^[1-9]\d*$/.test(String(n)) && Number.isSafeInteger(Number(n));
 const ownerRepo = repo => /^[\w.-]+\/[\w.-]+$/.test(repo || '');
+function releaseInstaller(sourceRoot, context) {
+  must(ownerRepo(context.repository) && /^v\d+\.\d+\.\d+$/.test(context.version), 'Invalid installer release identity');
+  return fs.readFileSync(p.join(sourceRoot, 'packaging/install.sh'), 'utf8')
+    .replace('@TEAMX_VERSION@', context.version).replace('@TEAMX_REPOSITORY@', context.repository);
+}
 export const candidateName = (version, row, attempt) => `candidate-${version}-${row.target}-${row.profile}-${attempt}`;
 export const assessmentName = (row, attempt) => `release-assessment-${row.target}-${row.profile}-${attempt}`;
 
@@ -128,12 +133,14 @@ export function assembleRelease(candidates, assessments, context, output, source
     fs.writeFileSync(p.join(notices, 'README.zh.md'), '各目标的许可文本与部署材料见对应目录。full 的完整 Git 对应源码与构建材料保留在原发行归档的 THIRD_PARTY_NOTICES/git-source/ 中；其他依赖的许可也保留在各归档运行时目录。\n');
     run('tar', ['-czf', p.join(stage, 'LICENSES.tar.gz'), '-C', temporary, 'licenses'], { env: { ...process.env, COPYFILE_DISABLE: '1' } });
     fs.copyFileSync(p.join(sourceRoot, 'docs/installation.zh.md'), p.join(stage, 'README.zh.md'));
+    fs.writeFileSync(p.join(stage, 'install.sh'), releaseInstaller(sourceRoot, context), { mode: 0o755 });
     writeJSON(p.join(stage, 'release.json'), { schema_version: 1, kind: 'qualified_release',
       release_ready: true, context, policy: { macos_signing: 'optional_unsigned_allowed' },
+      installer: { file: 'install.sh', sha256: digest(p.join(stage, 'install.sh')) },
       dependency_lock_sha256: digest(p.join(sourceRoot, 'packaging/dependencies.lock.json')), bundles: records });
     const rows = records.map(r => `| ${r.target} | ${r.profile} | ${r.archive} |`).join('\n');
     const profiles = [...new Set(records.map(r => r.profile))].join('/');
-    fs.writeFileSync(p.join(stage, 'release-notes.md'), `TeamX ${context.version}\n\n四个平台的 ${profiles} 发行包已完成归档身份、真实 DSH/ACP、浏览器及各自用户环境验收。包含平台 CLI 的包另有登录、只读与绑定验收，包含 Git 的包另有 Git/TLS 验收；人工验收与自动检查分别记录。推荐 standard，Git Workspace 及需要本地 Git 的命令需自行安装 Git。\n\nmacOS 当前允许未签名、未公证发行，下载后的系统提示及首次使用、升级方法见 README.zh.md。DSH 0.2.2-rc.1 为预发布依赖；Scion 暂缓。\n\n| 平台 | 能力 | 下载文件 |\n| --- | --- | --- |\n${rows}\n\n校验和见 SHA256SUMS，逐包验收见 *-assessment.json，许可汇总见 LICENSES.tar.gz。包内 manifest 保留候选构建时的状态，正式资格由外部 release.json 和绑定同一归档摘要的验收报告说明；没有重新构建或修改候选包。\n\n源码 commit：${context.commit}\n\n<!-- teamx-release:${context.commit} -->\n`);
+    fs.writeFileSync(p.join(stage, 'release-notes.md'), `TeamX ${context.version}\n\n安装并启动常驻服务：\n\n    curl -fsSL https://github.com/${context.repository}/releases/download/${context.version}/install.sh | bash\n\n安装后在网页配置模型，后续用 teamx service status/stop/start/restart 管理；Linux 管理命令前加 sudo，无需再次 install 或 init。离线安装见 README.zh.md。\n\n四个平台的 ${profiles} 发行包已完成归档身份、真实 DSH/ACP、浏览器及各自用户环境验收。包含平台 CLI 的包另有登录、只读与绑定验收，包含 Git 的包另有 Git/TLS 验收；人工验收与自动检查分别记录。推荐 standard，Git Workspace 及需要本地 Git 的命令需自行安装 Git。\n\nmacOS 当前允许未签名、未公证发行，下载后的系统提示及首次使用、升级方法见 README.zh.md。DSH 0.2.2-rc.1 为预发布依赖；Scion 暂缓。\n\n| 平台 | 能力 | 下载文件 |\n| --- | --- | --- |\n${rows}\n\n校验和见 SHA256SUMS，逐包验收见 *-assessment.json，许可汇总见 LICENSES.tar.gz。包内 manifest 保留候选构建时的状态，正式资格由外部 release.json 和绑定同一归档摘要的验收报告说明；没有重新构建或修改候选包。\n\n源码 commit：${context.commit}\n\n<!-- teamx-release:${context.commit} -->\n`);
     const files = fs.readdirSync(stage).sort();
     fs.writeFileSync(p.join(stage, 'SHA256SUMS'), files.map(name => `${digest(p.join(stage, name))}  ${name}\n`).join(''));
     fs.mkdirSync(p.dirname(output), { recursive: true });
@@ -156,6 +163,9 @@ export function checkReleaseDirectory(directory, context, expectedSeal, sourceRo
   for (const name of [...names, 'SHA256SUMS']) must(fs.lstatSync(p.join(directory, name)).isFile(), 'Release asset is not a regular file');
   for (const entry of entries) must(digest(p.join(directory, entry.name)) === entry.sha256, `Release asset changed: ${entry.name}`);
   const report = json(p.join(directory, 'release.json'));
+  must(fs.readFileSync(p.join(directory, 'install.sh'), 'utf8') === releaseInstaller(sourceRoot, context) &&
+    report.installer?.file === 'install.sh' && report.installer.sha256 === digest(p.join(directory, 'install.sh')),
+    'Release installer differs from accepted source/version/repository');
   must(report.kind === 'qualified_release' && report.release_ready === true && same(report.context, context) &&
     report.dependency_lock_sha256 === digest(p.join(sourceRoot, 'packaging/dependencies.lock.json')) &&
     same(report.bundles.map(r => `${r.target}/${r.profile}`).sort(), matrix.map(r => `${r.target}/${r.profile}`).sort()) &&

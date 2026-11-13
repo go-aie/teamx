@@ -292,7 +292,7 @@ try {
     fs.mkdirSync(p.dirname(dest), { recursive: true });
     fs.copyFileSync(p.join(root, asset.source), dest);
   }
-  for (const dest of ['start', 'bin/dsh'])
+  for (const dest of ['start', 'install.sh', 'bin/dsh'])
     fs.chmodSync(p.join(bundle, dest), 0o755);
   await assemblePlatformDependencies({
     root, bundle, target: opts.target, profile: opts.profile, lock,
