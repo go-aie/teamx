@@ -122,5 +122,5 @@ export function createUserMenu({ env, runtime, conversationUI }) {
     });
   }
 
-  return { mount, render, displayName };
+  return { mount, render, displayName, close };
 }

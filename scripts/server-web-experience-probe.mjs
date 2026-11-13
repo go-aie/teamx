@@ -98,7 +98,7 @@ try {
     await page.locator("#send").click(); await page.waitForFunction(()=>document.querySelector("#message-input").value==="");
     check(`${name}: explicit send accepted`,sends.size===before+1);
     if (mobile) {
-      await page.locator("#toggle-rooms").click();
+      await page.locator("#mobile-back-to-rooms").click();
       await page.getByRole("button",{name:/^私信：个人助理/}).click();
       await page.waitForFunction(()=>document.querySelector("#room-name").textContent==="个人助理");
       await page.locator("#room-menu-label").click(); await page.locator("#direct-details").click(); await page.locator("#agent-tab-inbox").click();

@@ -1,10 +1,10 @@
-// A transient history entry keeps browser Back inside the current conversation
-// while a dialog or a phone sidebar is open. No form data enters history.
+// History entries keep browser Back inside the app for phone conversations,
+// member panels and dialogs. No form data enters history.
 export function createBrowserNavigation({ env, layers }) {
   const { window } = env;
   let current = null, settling = false;
   function sync() {
-    if (!window.history || settling) return;
+    if (!window.history?.pushState || !window.history?.back || settling) return;
     const next = layers().at(-1);
     if (next?.id === current?.id) return;
     if (current) {

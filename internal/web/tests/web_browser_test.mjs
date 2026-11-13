@@ -86,22 +86,36 @@ test("foreground recovery settles and ignores a read begun before the page was h
   assert.match(ui.el("connection").textContent, /已连接/);
 });
 
-test("phone Room sidebars overlay independently of desktop preferences and retain the composer", async () => {
-  const ui = await launch(fixture());
+test("phone conversation navigation retains the composer and restores desktop sidebar preferences", async () => {
+  const api=fixture(),request=api.request.bind(api);
+  api.request=async(path,...args)=>{const response=await request(path,...args);if(path==="/v1/rooms")for(const room of response.rooms)room.runtime_status="ready";return response;};
+  const ui = await launch(api);
   await ui.draft("旋转后继续编辑");
   ui.window.innerWidth = 390; ui.window.innerHeight = 720;
   ui.window.visualViewport = { height:380, offsetTop:0, scale:1 };
   await ui.window.emit("resize");
   assert.equal(ui.el("toggle-rooms").getAttribute("aria-expanded"), "false");
+  assert.equal(ui.el("toggle-rooms").hidden, true);
+  assert.equal(ui.el("mobile-back-to-rooms").hidden, false);
+  assert.equal(ui.el("user-menu-container").parentElement, ui.el("conversation-user-menu"));
   assert.equal(ui.el("toggle-members").getAttribute("aria-expanded"), "false");
   assert.equal(ui.el("workspace").style.getPropertyValue("--app-height"), "380px");
-  await ui.el("toggle-rooms").emit("click"); assert.equal(ui.el("conversation").inert, true);
+  ui.el("timeline").scrollTop=37;
+  await ui.el("mobile-back-to-rooms").emit("click"); assert.equal(ui.el("conversation").inert, true);
+  assert.equal(ui.el("user-menu-container").parentElement, ui.el("list-user-menu"));
+  ui.el("room-nav").scrollTop=80;
+  await ui.select("Review");
+  assert.equal(ui.el("conversation").inert,false);
+  assert.equal(ui.el("user-menu-container").parentElement,ui.el("conversation-user-menu"));
+  assert.equal(ui.el("room-nav").scrollTop,80);assert.equal(ui.el("timeline").scrollTop,37);
   await ui.el("toggle-members").emit("click");
   assert.equal(ui.el("toggle-rooms").getAttribute("aria-expanded"), "false");
   await ui.el("close-mobile-members").emit("click");
   assert.equal(ui.el("conversation").inert, false);
   ui.window.innerWidth = 1440; await ui.window.emit("resize");
   assert.equal(ui.el("toggle-members").getAttribute("aria-expanded"), "true");
+  assert.equal(ui.el("toggle-rooms").hidden,false);assert.equal(ui.el("mobile-back-to-rooms").hidden,true);
+  assert.equal(ui.el("user-menu-container").parentElement,ui.el("room-rail"));
   assert.equal(ui.el("message-input").value, "旋转后继续编辑");
 });
 

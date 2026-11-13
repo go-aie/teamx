@@ -74,7 +74,7 @@ export async function createApp(overrides = {}) {
   const navigation = createBrowserNavigation({ env, layers: () => {
     const layers = [];
     if (compactViewport(window)) {
-      if (layoutUI.roomsPanelOpen?.()) layers.push({ id:"rooms", close:layoutUI.closeMobilePanels });
+      if (state.managed && !layoutUI.roomsPanelOpen?.()) layers.push({ id:"mobile-conversation", close:layoutUI.showMobileRooms });
       if (layoutUI.membersPanelOpen?.()) layers.push({ id:"members", close:layoutUI.closeMobilePanels });
       if ($("workspace-picker").open) layers.push({ id:"workspace-picker", close:workspaceUI.closeWorkspacePicker });
     }
@@ -359,7 +359,7 @@ export async function createApp(overrides = {}) {
     env, runtime, layoutUI, workspaceUI, conversationUI, settingsUI, membersUI
   }));
   install(layoutUI, createLayout({
-    env, roomsUI, runtime, notificationsUI, membersUI, settingsUI
+    env, roomsUI, runtime, notificationsUI, membersUI, settingsUI, userMenuUI
   }));
   install(workspaceUI, createWorkspace({
     env, runtime, notificationsUI, membersUI, roomsUI, conversationUI, settingsUI

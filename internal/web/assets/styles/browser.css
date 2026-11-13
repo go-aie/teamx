@@ -1,6 +1,8 @@
 /* Shared phone viewport: navigation and context overlay the conversation instead
    of pushing its composer below the screen. Desktop column rules stay intact. */
 .mobile-panel-back { display:none; }
+.mobile-user-menu,.mobile-conversation-back { display:none; }
+.room-list-actions { display:flex; align-items:center; gap:8px; }
 .room-title,.room-name-button,#room-name { min-width:0; }
 .room-name-button #room-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .platform-connect-interaction,.platform-selection-interaction { max-width:100%; min-width:0; overflow-wrap:anywhere; }
@@ -28,28 +30,33 @@
   .workspace .conversation,.workspace.managed .conversation,.workspace.direct-conversation .conversation {
     flex:1; height:auto; min-height:0; overflow:hidden;
   }
-  .room-rail { flex:none; height:44px; z-index:12; }
-  .room-rail-header,.direct-conversation .room-rail-header,.rooms-collapsed .room-rail-header {
-    justify-content:flex-start; gap:8px; padding:0 120px 0 12px; height:44px; min-height:44px;
+  .workspace .room-rail {
+    position:absolute; top:env(safe-area-inset-top); bottom:env(safe-area-inset-bottom); left:env(safe-area-inset-left); right:env(safe-area-inset-right);
+    height:auto; z-index:12;
   }
-  .rooms-collapsed .room-rail .brand { max-width:120px; opacity:1; visibility:visible; }
-  .workspace .room-rail .rail-settings {
-    position:absolute; top:0; right:8px; margin:0; padding:0; border:0;
-    display:flex; align-items:center; gap:4px;
+  .workspace.rooms-collapsed .room-rail { visibility:hidden; pointer-events:none; }
+  .workspace .room-rail-header { display:none; }
+  .mobile-user-menu { display:flex; align-items:center; flex:none; }
+  .mobile-conversation-back { display:inline-flex; gap:2px; padding-inline:2px; font-size:var(--font-small); }
+  .mobile-conversation-back svg { width:16px; height:16px; flex:none; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+  .workspace .mobile-user-menu .rail-settings {
+    position:relative; inset:auto; margin:0; padding:0; border:0;
+    display:flex; align-items:center;
   }
   .workspace .rail-settings .user-menu-toggle { width:44px; min-height:44px; padding:6px; justify-content:center; }
   .workspace .rail-settings .user-name,.workspace .rail-settings .user-menu-chevron { display:none; }
   .workspace .rail-settings .user-menu { left:auto; right:0; top:calc(100% + 4px); bottom:auto; width:220px; }
-  .workspace .room-nav {
-    position:absolute; top:calc(44px + env(safe-area-inset-top)); left:0; right:0;
-    height:calc(var(--app-height,100dvh) - 44px - env(safe-area-inset-top));
-    max-height:none; padding:16px 16px calc(16px + env(safe-area-inset-bottom));
-    border:0; background:var(--surface-muted); overflow:auto;
+  .workspace #room-nav,.workspace.rooms-collapsed #room-nav {
+    position:relative; top:auto; left:auto; right:auto; height:100%; max-height:none;
+    padding:0 12px 16px; border:0; background:var(--surface-muted); overflow:auto; transform:none; transition:none;
+  }
+  .workspace .room-nav-heading {
+    position:sticky; top:0; z-index:1; height:45px; min-height:45px; margin:0 -12px 12px; padding:0 12px;
+    border-bottom:1px solid var(--line); background:var(--surface-muted);
   }
   .sidebar-resizer { display:none; }
   .room-nav,.sidebar { min-width:0; }
   .members-collapsed .member-rail { display:none; }
-  .rooms-collapsed #room-nav { height:0; padding:0; }
   .workspace .member-rail,.workspace.direct-conversation .member-rail {
     position:absolute; z-index:15; inset:0; width:100%; height:100%;
     background:var(--surface-muted); overflow:hidden; padding-bottom:env(safe-area-inset-bottom);
@@ -60,9 +67,10 @@
     height:auto; max-height:none; flex:1; min-height:0;
   }
   .workspace .member-rail .sidebar { flex:1; min-height:0; overflow:auto; }
-  .room-header { padding:0 12px; gap:8px; }
+  .room-header { padding:0 12px; gap:4px; }
   .room-title { flex:1; overflow:hidden; }
   .room-header h1 { font-size:17px; gap:6px; }
+  .room-header .room-name-button { flex:1; min-width:0; max-width:100%; gap:6px; }
   .room-actions { flex:none; gap:8px; }
   .room-menu summary { display:flex; align-items:center; justify-content:center; width:36px; height:36px; padding:0; }
   .workspace .activity-dialog > .activity-header,.workspace .notification-detail > .activity-header { height:44px; min-height:44px; padding:0 12px; gap:8px; }

@@ -1,12 +1,12 @@
 import { compactViewport } from "../client.mjs";
 // Room/member sidebars, responsive visibility and width persistence.
-export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI, settingsUI }) {
+export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI, settingsUI, userMenuUI }) {
   const { document, window } = env;
   const { state, $, storage } = runtime;
 
   let directMobileDetails = false, directMobileRooms = false, directNotificationsOpen = false;
 
-  function roomsPanelOpen() { return compactViewport(window) ? directMobileRooms : panels.rooms; }
+  function roomsPanelOpen() { return compactViewport(window) ? directMobileRooms || !!(state.managed && state.catalog && !roomsUI.selectedEntry()) : panels.rooms; }
 
   function membersPanelOpen() { return compactViewport(window) ? directMobileDetails : panels.members; }
 
@@ -76,6 +76,7 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
 
   function renderPanels() {
     const workspace = document.querySelector(".workspace");
+    const mobile = compactViewport(window);
     const membersOpen = membersPanelOpen(), roomsOpen = roomsPanelOpen();
     workspace.classList.toggle("direct-conversation", roomsUI.isDirect());
     workspace.classList.toggle("direct-notifications-open", roomsUI.isDirect() && directNotificationsOpen);
@@ -91,7 +92,12 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
       $(id).inert = !open;
       $(id).setAttribute("aria-hidden", String(!open));
     }
-    $("toggle-rooms").hidden = !state.managed;
+    $("toggle-rooms").hidden = !state.managed || mobile;
+    $("mobile-back-to-rooms").hidden = !state.managed || !mobile;
+    const menuParent = mobile && state.managed ? $(roomsOpen ? "list-user-menu" : "conversation-user-menu") : $("room-rail");
+    if ($("user-menu-container").parentElement !== menuParent) {
+      userMenuUI.close(); menuParent.append($("user-menu-container"));
+    }
     $("toggle-members").hidden = roomsUI.isDirect();
     $("direct-details").hidden = !roomsUI.isDirect();
     $("direct-details").disabled = !state.info;
@@ -141,7 +147,15 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
   function closeMobilePanels() {
     const rooms = directMobileRooms;
     directMobileDetails = false; directMobileRooms = false;
-    renderPanels(); membersUI.syncDirectDetail(); $(rooms ? "toggle-rooms" : roomsUI.isDirect() ? "room-menu-label" : "toggle-members").focus();
+    renderPanels(); membersUI.syncDirectDetail(); $(rooms ? "mobile-back-to-rooms" : roomsUI.isDirect() ? "room-menu-label" : "toggle-members").focus();
+  }
+
+  function showMobileRooms() {
+    if (!compactViewport(window) || !state.managed) return;
+    directMobileRooms = true; directMobileDetails = false; directNotificationsOpen = false;
+    $("room-menu").open = false;
+    renderPanels();
+    $("room-nav").focus({preventScroll:true});
   }
 
   function updateViewport() {
@@ -214,6 +228,7 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
     }
 
     $("close-mobile-members").addEventListener("click", closeMobilePanels);
+    $("mobile-back-to-rooms").addEventListener("click", showMobileRooms);
     window.visualViewport?.addEventListener("resize", updateViewport);
     window.visualViewport?.addEventListener("scroll", updateViewport);
     window.addEventListener("resize", () => { updateViewport(); renderPanels(); membersUI.syncDirectDetail(); settingsUI.renderSettingsNavigation(); });
@@ -224,6 +239,7 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
   return {
     mount,
     roomsPanelOpen,
+    showMobileRooms,
     closeMobilePanels,
     resetDirectNavigation,
     expandMembers,
