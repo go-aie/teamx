@@ -1,6 +1,6 @@
 import { randomUUID } from "../random-id.mjs";
 // Shared platform connection forms, validation and account selection.
-export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI, larkUI, onboardingUI, workspaceUI, notificationsUI }) {
+export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI, larkUI, onboardingUI, workspaceUI, notificationsUI, membersUI }) {
   const { document, window, Option, setTimeout, clearTimeout, request } = env;
   const { state, $, setSelectOptions, confirmAction } = runtime;
 
@@ -113,6 +113,19 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
     const index = platforms.items.findIndex(c => c.id === item.id);
     if (index < 0) platforms.items.push(item); else platforms.items[index] = item;
     if (platforms.selected?.id === item.id) platforms.selected = item;
+  }
+
+  // Every account check/mutation refreshes all projections from the server.
+  // The readers retain their Room, member and revision guards; a late result
+  // cannot clear an error in another inspector or overwrite a settings draft.
+  async function refreshPlatformState() {
+    const ws = workspaceUI.workspaceView, catalog = state.catalog, member = membersUI.memberToolsView;
+    await Promise.all([
+      workspaceUI.loadWorkspacePlatforms(),
+      ws && catalog ? notificationsUI.loadNotificationSubscriptions(catalog, ws) : undefined,
+      member && membersUI.toolsCurrent(member) ? membersUI.loadCLITools(member) : undefined,
+    ]);
+    if (ws === workspaceUI.workspaceView && catalog?.service_epoch === state.catalog?.service_epoch) notificationsUI.renderNotificationPlatforms();
   }
 
   function connectionPayload(extra) {
@@ -241,7 +254,7 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
       try {
         const version=platforms.formVersion,identity=onboardingUI.onboardingIdentity(),op=await onboardingUI.prepareOnboarding();
         const applied=await request("/v1/platforms/onboarding/apply",connectionPayload({operation_id:op.operation_id}),undefined,50000);
-        if(onboardingUI.onboardingCurrent(version,identity)){onboardingUI.acceptOnboarding(applied);await loadPlatforms();if(workspaceUI.workspaceView)await notificationsUI.syncGitLabNotifications(state.catalog,workspaceUI.workspaceView);}
+        if(onboardingUI.onboardingCurrent(version,identity)){onboardingUI.acceptOnboarding(applied);await loadPlatforms();if(workspaceUI.workspaceView)await notificationsUI.loadNotificationSubscriptions(state.catalog,workspaceUI.workspaceView);}
       }
       catch(error) {onboardingUI.onboarding.error=error.code ? "启用结果未确认，请读取进度。" : error.message;onboardingUI.renderOnboarding();}
       finally {onboardingUI.onboarding.busy=false;platforms.sending=false;$("connection-fields").disabled=false;$("close-settings").disabled=false;$("connection-back").disabled=false;onboardingUI.renderOnboarding();}return;
@@ -327,6 +340,7 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
 
       platforms.sending = false; settingsUI.renderSettingsNavigation(); if (!connectionIsLark() && !connectionIsScion()) gitlabUI.renderGitLabSave(); $("connection-fields").disabled = false;
       $("connection-back").disabled = false; $("close-settings").disabled = false;
+      void refreshPlatformState();
     }
   }
 
@@ -412,6 +426,7 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
     connectionAuthFields,
     renderPlatformReferences,
     updatePlatformItem,
+    refreshPlatformState,
     connectionDirty,
     showPlatformList,
     connectionInputError,

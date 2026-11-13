@@ -63,7 +63,7 @@ test("unknown sends survive refresh and recovery without any automatic replay", 
   const pending = api.calls.find(c => c.path === "/v1/send").body;
   await ui.window.emit("pagehide"); await ui.window.emit("pageshow"); await settle();
   const reopened = await launch(api, saved);
-  assert.match(reopened.el("send").textContent, /重试发送/);
+  assert.equal(reopened.el("send").getAttribute("aria-label"), "重试发送");
   assert.equal(api.calls.filter(c => c.path === "/v1/send").length, 1);
   await reopened.el("compose").emit("submit");
   assert.deepEqual(api.calls.filter(c => c.path === "/v1/send").at(-1).body, pending);
@@ -134,9 +134,9 @@ test("IME confirmation including compositionend before Enter never sends", async
   assert.equal(api.calls.filter(c => c.path === "/v1/send").length, 1);
 });
 
-test("phone composer switches between directory tools and sending, retains drafts and restores the compact input", async () => {
+for (const width of [1440,390]) test(`compact composer switches between tools and sending and retains drafts at ${width}px`, async () => {
   const api = fixture(), ui = await launch(api);
-  ui.window.innerWidth = 390; await ui.window.emit("resize");
+  ui.window.innerWidth = width; await ui.window.emit("resize");
   const input = ui.el("message-input"), picker = ui.el("workspace-picker"), more = ui.el("compose-more");
   assert.equal(input.rows, 1);
   assert.equal(more.disabled, false);
@@ -161,21 +161,21 @@ test("phone composer switches between directory tools and sending, retains draft
   assert.equal(ui.el("send").getAttribute("aria-label"), "发送");
   assert.equal(ui.el("send").children[0].tag, "svg");
   const reloaded = await launch(api, ui.saved);
-  reloaded.window.innerWidth = 390; await reloaded.window.emit("resize");
+  reloaded.window.innerWidth = width; await reloaded.window.emit("resize");
   assert.equal(reloaded.el("message-input").value, input.value);
   assert.equal(reloaded.el("compose").classList.contains("has-message"), true);
   await ui.draft("   ");
   assert.equal(ui.el("compose").classList.contains("has-message"), false);
   assert.equal(ui.el("send").disabled, true);
   ui.window.innerWidth = 1440; await ui.window.emit("resize");
-  assert.equal(input.rows, 3);
-  assert.equal(input.style.getPropertyValue("height"), "");
+  assert.equal(input.rows, 1);
+  assert.equal(input.style.getPropertyValue("height"), `${input.scrollHeight}px`);
   assert.equal(api.calls.filter(c => /\/send|\/workspace\/apply/.test(c.path)).length, 0);
 });
 
-test("phone composer keeps explicit retry available after a lost send and returns to tools after confirmation", async () => {
+for (const width of [1440,320]) test(`compact composer keeps retry available after a lost send at ${width}px`, async () => {
   const api = fixture(), ui = await launch(api);
-  ui.window.innerWidth = 320; await ui.window.emit("resize");
+  ui.window.innerWidth = width; await ui.window.emit("resize");
   api.hook = path => { if (path === "/v1/send") throw Error("lost response"); };
   await ui.draft("待确认消息"); await ui.el("compose").emit("submit");
   assert.equal(ui.el("compose").classList.contains("has-message"), true);

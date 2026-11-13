@@ -1,5 +1,4 @@
 import { randomUUID } from "../random-id.mjs";
-import { compactViewport } from "../client.mjs";
 // Workspace configuration, platform choices and durable operation recovery.
 export function createWorkspace({ env, runtime, notificationsUI, membersUI, roomsUI, conversationUI, settingsUI }) {
   const { document, window, Option, request, requestAnimationFrame } = env;
@@ -104,7 +103,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
       if (ws !== workspaceView) return;
       ws.queryFailed = true; ws.connected = false; ws.error = "暂时无法查询工作目录，正在重连；不会自动重发操作。";
     }
-    await notificationsUI.syncGitLabNotifications(catalog, ws);
+    await notificationsUI.loadNotificationSubscriptions(catalog, ws);
     if (ws !== workspaceView) return;
     if (!ws.platforms || roomsUI.isDirect() && state.messages.size === 0) await loadWorkspacePlatforms();
     if (ws !== workspaceView) return;
@@ -330,8 +329,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
   }
 
   function focusWorkspaceTrigger() {
-    const mobileTarget = $("compose").classList.contains("has-message") ? "message-input" : "compose-more";
-    $(compactViewport(window) ? mobileTarget : "workspace-trigger").focus();
+    $($("compose").classList.contains("has-message") ? "message-input" : "compose-more").focus();
   }
 
   async function openWorkspace() {

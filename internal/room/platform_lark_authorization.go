@@ -193,7 +193,6 @@ func (m *roomManager) completeLarkAuthorizationLocked(s *larkAuthSession) error 
 		}
 	}
 	tickets := []registry.Verification{}
-	ids := []string{}
 	for _, t := range s.targets {
 		found := false
 		for _, c := range file.Platforms {
@@ -218,20 +217,14 @@ func (m *roomManager) completeLarkAuthorizationLocked(s *larkAuthSession) error 
 		if err != nil {
 			return managedPlatformError(err)
 		}
-		tickets, ids = append(tickets, ticket), append(ids, t.ID)
+		tickets = append(tickets, ticket)
 	}
-	for i, ticket := range tickets {
+	for _, ticket := range tickets {
 		if _, err := m.platforms.CompleteVerification(ticket, s.validation); err != nil {
 			return err
 		}
-		if err := m.resumeLarkSubscriptionsLocked(ids[i]); err != nil {
-			return err
-		}
 	}
-	if s.Permissions != nil {
-		m.cacheLarkProfilePermissionsLocked(s.profile, *s.Permissions)
-	}
-	return nil
+	return m.applyLarkAccountCheckLocked(s.profile, s.validation.Account, s.Permissions)
 }
 
 func (m *roomManager) commitLarkAuthorizeLocked(op *platformConnectOperation, validation platform.Validation) error {

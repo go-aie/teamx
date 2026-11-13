@@ -89,7 +89,8 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     const errors = [view?.error_code, ...Object.values(view?.errors || {}), view?.events?.error_code, view?.todos?.error_code];
     const next = action => gaps.some(c => c.next_action === action);
     if (errors.includes("identity_mismatch")) return {reason:"账号与连接不一致",action:"核验账号"};
-    if (errors.includes("credential_rejected") || ["expired","revoked"].includes(item.authorization_status)) return {reason:"授权已失效",action:"重新授权"};
+    if (["expired","revoked"].includes(item.authorization_status)) return {reason:"授权已失效",action:"重新授权"};
+    if (errors.includes("credential_rejected")) return {reason:"通知因认证失败暂停",action:"检查账号"};
     if (errors.includes("permission_denied")) return {reason:"缺少所需权限",action:"查看权限"};
     if (next("configure_application")) return {reason:"应用配置待完成",action:"配置应用"};
     if (next("authorize_user") || result?.tool === item.id && /补全/.test(result.message)
@@ -97,7 +98,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     if (errors.includes("credential_unavailable")) return {reason:"登录凭据不可用",action:"重新授权"};
     if (item.validation?.status !== "valid") return {reason:item.validation?.status === "failed" ? "账号核验未通过" : "账号待核验",action:"核验账号"};
     if (selection?.unavailable_reason === "account_unavailable" || next("revalidate_account")) return {reason:"账号需重新核验",action:"核验账号"};
-    if (next("retry_check")) return {reason:"账号状态待检查",action:"核验账号"};
+    if (next("retry_check")) return {reason:"权限状态待刷新",action:"检查权限",kind:"status"};
     return null;
   }
 
@@ -199,7 +200,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       const recovery = accountRecovery(item,view,selection,gaps,v?.cliResult);
       if(recovery) {
         inlineAccountIssues.add(item.id);
-        const reason=document.createElement("span");reason.className="member-platform-account-reason";reason.textContent=recovery.reason;
+        const reason=document.createElement("span");reason.className="member-platform-account-reason";reason.textContent=recovery.reason;reason.dataset.kind=recovery.kind || "error";
         const settings=document.createElement("button");settings.type="button";settings.className="text-button button-compact";settings.textContent=recovery.action;
         settings.setAttribute("aria-label",`${recovery.action}：${item.name}`);
         settings.addEventListener("click",async()=>{settingsUI.openSettings("platforms");await connectionsUI.loadPlatforms();const current=connectionsUI.platforms.items.find(p=>p.id===item.id);if(current)connectionsUI.editPlatform(current);});

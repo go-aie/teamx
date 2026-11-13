@@ -105,43 +105,16 @@
   #inbox-entries > .activity-section { padding-block:12px; }
   .inbox-entry-header { margin-bottom:10px; }
   .compose {
-    display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:end; gap:0 8px;
-    margin:6px 10px calc(10px + env(safe-area-inset-bottom)); padding:6px;
-    border-radius:var(--radius-control); flex-shrink:0;
+    margin:6px 10px calc(10px + env(safe-area-inset-bottom));
   }
-  .compose-input { grid-column:1; grid-row:2; min-width:0; }
-  .compose textarea,.compose-mirror { padding:9px 10px; font-size:16px; line-height:26px; }
-  .compose textarea { min-height:44px; max-height:min(144px,24dvh); resize:none; }
-  .compose-footer { display:contents; }
-  .compose-hint { display:none; }
-  .compose-more,.compose #send { grid-column:2; grid-row:2; min-height:44px; }
-  .compose-more {
-    display:flex; align-items:center; justify-content:center; width:44px; padding:6px;
-    background:transparent; color:var(--muted); border-radius:var(--radius-control);
-  }
-  .compose-more svg { width:30px; height:30px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; }
-  .compose-more:hover:not(:disabled) { background:var(--surface-hover); }
-  .compose-more[aria-expanded="true"] { color:var(--accent); background:var(--soft); }
-  .compose-more[aria-expanded="true"] svg { transform:rotate(45deg); }
-  .compose-more svg { transition:transform .15s; }
-  .compose #send { display:none; align-items:center; justify-content:center; width:44px; min-width:44px; height:44px; margin:0; padding:4px; border:0; border-radius:10px; color:#fff; background:var(--accent); background-clip:content-box; }
-  .compose #send:hover:not(:disabled) { background-color:var(--accent-hover); }
-  .compose #send svg { display:block; width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
-  .compose #send[aria-busy="true"] svg { animation:compose-send-spin 1s linear infinite; }
-  .compose.has-message .compose-more { display:none; }
-  .compose.has-message #send { display:flex; }
-  .compose .workspace-control { display:none; grid-column:1 / -1; grid-row:3; max-width:none; min-width:0; }
-  .compose .workspace-control:has(.workspace-picker[open]) { display:block; }
-  .compose .workspace-button { display:none; }
+  .compose textarea,.compose-mirror { font-size:16px; }
+  .compose textarea { max-height:min(144px,24dvh); }
+  .compose .workspace-control { position:static; grid-column:1 / -1; grid-row:3; width:auto; max-width:none; }
   .compose .workspace-popover {
-    position:static; width:auto; max-width:none; max-height:min(220px,calc(var(--app-height,100dvh) * .3)); overflow:auto;
+    max-height:min(220px,calc(var(--app-height,100dvh) * .3));
     margin-top:6px; padding:12px 4px 4px; border:0; border-top:1px solid var(--line);
-    border-radius:0; box-shadow:none; animation:workspace-appear .15s ease-out;
+    border-radius:0; box-shadow:none;
   }
-  .compose .workspace-popover-actions button { min-height:44px; }
-  .compose .reply-context { grid-column:1 / -1; grid-row:1; margin:0 0 4px; }
-  .compose > :is(.workspace-summary,.form-error,.text-button,.sr-only) { grid-column:1 / -1; }
-  .compose .workspace-summary { padding:6px 10px; }
   .message { padding:14px 12px; gap:8px; }
   .message > .avatar { margin-top:2px; }
   .message-meta { align-items:center; flex-wrap:nowrap; gap:8px; min-height:36px; margin-bottom:4px; }
@@ -192,6 +165,3 @@
   .settings-picker-options { max-height:min(224px,30dvh); }
   .workspace-form footer { flex-wrap:wrap; }
 }
-
-@keyframes compose-send-spin { to { transform:rotate(360deg); } }
-@media(prefers-reduced-motion:reduce) { .compose-more svg { transition:none; } .compose #send svg { animation:none; } }

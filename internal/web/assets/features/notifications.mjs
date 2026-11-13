@@ -105,7 +105,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
       invalid: targetInvalid || config.enabled && count === 0 };
   }
 
-  async function syncGitLabNotifications(catalog, ws) {
+  async function loadNotificationSubscriptions(catalog, ws) {
     if (ws !== workspaceUI.workspaceView) return;
     const revisions = {messages:ws.messagesRevision,gitlab:ws.gitlabRevision};
     const read = ws.notificationsRead = (ws.notificationsRead || 0) + 1;
@@ -603,7 +603,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
       if(current())ws.notificationToggleError={key,message:error.code==="request" ? "请先在详情完善接收设置" : error.code==="conflict" ? "设置已变化，请核对后重试" : "结果未确认，请刷新"};
     }finally{
       ws.notificationWrites?.delete(key);
-      if(current()){ws[revisionKey]++;ws.notificationToggle=null;await syncGitLabNotifications(state.catalog,ws);renderGitLabEvents();}
+      if(current()){ws[revisionKey]++;ws.notificationToggle=null;await loadNotificationSubscriptions(state.catalog,ws);renderGitLabEvents();}
       else if(ws===workspaceUI.workspaceView)renderGitLabEvents();
     }
   }
@@ -833,7 +833,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     } catch (error) {
       if (!current()) return;
       ws.gitlabError = error.code === "conflict" ? action === "sync" ? "配置或账号已变化，请核对最新状态。" : "设置版本已变化，请核对最新状态后重新保存。" : error.code === "request" ? "设置无效，请检查连接、项目和筛选。" : "结果未确认，请核对最新状态后重试；不会自动重发。";
-      ws.gitlabSending = false; await syncGitLabNotifications(state.catalog, ws);
+      ws.gitlabSending = false; await loadNotificationSubscriptions(state.catalog, ws);
     } finally {
       ws.notificationWrites?.delete(scope);
       if (current()) { ws.gitlabRevision++; ws.gitlabSending = false; renderGitLabEvents(); }
@@ -963,7 +963,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     const ws=workspaceUI.workspaceView,id=ws?.notificationPlatformID,channel=ws?.notificationChannel,target=structuredClone(activeNotificationTarget(ws)),scope=ws?.notificationScope;
     await workspaceUI.loadWorkspacePlatforms();
     if(ws!==workspaceUI.workspaceView)return;
-    await syncGitLabNotifications(state.catalog,ws);
+    await loadNotificationSubscriptions(state.catalog,ws);
     if(ws!==workspaceUI.workspaceView || ws.notificationScope!==scope)return;
     if(ws.notificationsConnected)ws.notificationToggleError=null;
     if($("notification-detail").open && id)await openNotificationSource(notificationFocus,channel,id,target);
@@ -1122,7 +1122,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     invalidateNavigation,
     currentSource,
     stopLarkChatSearch,
-    syncGitLabNotifications,
+    loadNotificationSubscriptions,
     renderNotificationPlatforms,
     notificationPlatforms,
     notificationConfigured,

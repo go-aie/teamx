@@ -213,13 +213,17 @@ func (m *roomManager) serveLarkAuth(w http.ResponseWriter, r *http.Request) {
 		}
 		m.mu.Lock()
 		current, loadErr := m.platforms.Load()
-		if loadErr != nil || !sameLarkProfileRevisions(before, current, *req.Profile) || m.larkAuthBusyLocked(req.Profile) {
+		if loadErr != nil || m.closing || m.busy || r.Context().Err() != nil || !sameLarkProfileRevisions(before, current, *req.Profile) || m.larkAuthBusyLocked(req.Profile) {
 			m.mu.Unlock()
 			writeAPIError(w, ErrConflict)
 			return
 		}
-		m.cacheLarkProfilePermissionsLocked(*req.Profile, check)
+		err = m.applyLarkAccountCheckLocked(*req.Profile, validation.Account, &check)
 		m.mu.Unlock()
+		if err != nil {
+			writeAPIError(w, err)
+			return
+		}
 		_ = json.NewEncoder(w).Encode(check)
 		return
 	}

@@ -1,5 +1,5 @@
 import { randomUUID } from "../random-id.mjs";
-import { readPages as collectPages, createRoomDrafts, mentionRanges, unseenMentions, compactViewport } from "../client.mjs";
+import { readPages as collectPages, createRoomDrafts, mentionRanges, unseenMentions } from "../client.mjs";
 import { notificationOptions } from "../markdown.mjs";
 import { createAssistantIcon, createUserIcon } from "../icons.mjs";
 import { createMentionPicker } from "../mention-picker.mjs";
@@ -317,8 +317,9 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
       else $(id).textContent = "#";
     }
     $("policy-empty").textContent = `可以在${direct ? "私信" : "房间"}中告诉 Agent 今后应如何处理。`;
-    $("message-input").placeholder = direct ? `给${name || "个人助理"}发消息…` : "发送到房间，开始一段协作…";
-    $("message-input-label").textContent = direct ? `给${name || "个人助理"}发消息` : "发送到房间";
+    const recipient = `发送给 ${name || (direct ? "个人助理" : "会话")}`;
+    $("message-input").placeholder = recipient;
+    $("message-input-label").textContent = recipient;
     $("rename-room").title = `修改${type}名称`;
     $("rename-form").setAttribute("aria-label", `修改${type}名称`);
     $("rename-room-name").setAttribute("aria-label", `${type}名称`);
@@ -375,28 +376,21 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
   }
 
   function syncComposerLayout() {
-    const input = $("message-input"), mobile = compactViewport(window);
+    const input = $("message-input");
     const hasMessage = !!input.value.trim() || !!state.draft.pending || !!state.draft.sending;
     $("compose").classList.toggle("has-message", hasMessage);
     const sendLabel = state.draft.sending ? "发送中…" : state.draft.pending ? "重试发送" : "发送";
     $("send").setAttribute("aria-label", sendLabel);
     $("send").setAttribute("aria-busy", String(!!state.draft.sending));
     $("send").title = sendLabel;
-    if (mobile) {
-      sendIconPath.setAttribute("d", state.draft.sending ? "M20 12a8 8 0 1 1-5-7.4"
-        : state.draft.pending ? "M20 11a8 8 0 1 0-2.3 6.7M20 4v7h-7" : "M6 18 18 6M7 6h11v11");
-      $("send").replaceChildren(sendIcon);
-    } else $("send").textContent = sendLabel + (state.draft.sending ? "" : " ↗");
-    if (mobile && hasMessage) workspaceUI.closeWorkspacePicker();
-    const atBottom = mobile && nearBottom(), previousHeight = input.getBoundingClientRect().height;
-    if (mobile) {
-      input.rows = 1;
-      input.style.setProperty("height", "auto");
-      input.style.setProperty("height", `${input.scrollHeight}px`);
-    } else if (input.rows === 1) {
-      input.rows = 3;
-      input.style.setProperty("height", "");
-    }
+    sendIconPath.setAttribute("d", state.draft.sending ? "M20 12a8 8 0 1 1-5-7.4"
+      : state.draft.pending ? "M20 11a8 8 0 1 0-2.3 6.7M20 4v7h-7" : "M6 18 18 6M7 6h11v11");
+    $("send").replaceChildren(sendIcon);
+    if (hasMessage) workspaceUI.closeWorkspacePicker();
+    const atBottom = nearBottom(), previousHeight = input.getBoundingClientRect().height;
+    input.rows = 1;
+    input.style.setProperty("height", "auto");
+    input.style.setProperty("height", `${input.scrollHeight}px`);
     if (atBottom && input.getBoundingClientRect().height !== previousHeight) bottom();
     mentionPicker.renderText();
   }

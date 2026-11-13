@@ -21,6 +21,14 @@
 .workspace-popover-actions button { display:flex; align-items:center; gap:10px; width:100%; min-height:40px; padding:9px 11px; border-radius:var(--radius-menu); background:transparent; color:var(--accent); text-align:left; font-size:var(--font-small); }
 .workspace-popover-actions button:hover { background:var(--surface-hover); }
 .workspace-popover-actions button > span:last-child { margin-left:auto; color:var(--muted); }
+.compose .workspace-control { display:none; position:absolute; right:6px; bottom:calc(100% + 8px); z-index:8; width:300px; max-width:calc(100% - 12px); min-width:0; }
+.compose .workspace-control:has(.workspace-picker[open]) { display:block; }
+.compose .workspace-button { display:none; }
+.compose .workspace-popover {
+  position:static; width:auto; max-width:none; max-height:min(320px,calc(var(--app-height,100dvh) * .6)); overflow:auto;
+  animation:workspace-appear .15s ease-out;
+}
+.compose .workspace-popover-actions button { min-height:44px; }
 .workspace-summary { display:block; padding:0 16px 10px; font-size:var(--font-small); }
 .workspace-dialog { width:min(560px,calc(100vw - 32px)); }
 

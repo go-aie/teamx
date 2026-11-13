@@ -76,8 +76,8 @@ export async function createApp(overrides = {}) {
     if (compactViewport(window)) {
       if (state.managed && !layoutUI.roomsPanelOpen?.()) layers.push({ id:"mobile-conversation", close:layoutUI.showMobileRooms });
       if (layoutUI.membersPanelOpen?.()) layers.push({ id:"members", close:layoutUI.closeMobilePanels });
-      if ($("workspace-picker").open) layers.push({ id:"workspace-picker", close:workspaceUI.closeWorkspacePicker });
     }
+    if ($("workspace-picker").open) layers.push({ id:"workspace-picker", close:workspaceUI.closeWorkspacePicker });
     for (const [id, button] of [["activity-dialog","close-activity"], ["notification-detail","close-notification"],
       ["workspace-dialog","close-workspace"], ["create-dialog","close-create"], ["settings-dialog","close-settings"], ["access-confirm-dialog","access-confirm-cancel"]]) {
       if ($(id)?.open && !$(id).hidden) layers.push({id, close:() => id === "settings-dialog" ? settingsUI.closeSettings() : $(button)?.click?.()});
@@ -383,7 +383,7 @@ export async function createApp(overrides = {}) {
     env, runtime, conversationUI, settingsUI, connectionsUI, gitlabUI, roomsUI
   }));
   install(connectionsUI, createConnections({
-    env, settingsUI, runtime, scionUI, gitlabUI, larkUI, onboardingUI, workspaceUI, notificationsUI
+    env, settingsUI, runtime, scionUI, gitlabUI, larkUI, onboardingUI, workspaceUI, notificationsUI, membersUI
   }));
   install(onboardingUI, createOnboarding({
     env, runtime, connectionsUI, larkUI, settingsUI, roomsUI, workspaceUI, notificationsUI, membersUI, gitlabUI, scionUI

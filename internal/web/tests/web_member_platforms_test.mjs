@@ -22,14 +22,23 @@ for(const id of ["gl","lark"])test(`platform ${id} shows account recovery only w
  assert.equal(calls(api,"/v1/tools/bind").length,0);
 });
 
-for(const id of ["gl","lark"])test(`platform ${id} exposes expired notification credentials even with an earlier valid account check`,async()=>{
+for(const id of ["gl","lark"])test(`platform ${id} reports a notification authentication failure without declaring current authorization expired`,async()=>{
  const api=fixture(),record=api.records.get(key(id,target("a")));
  if(id==="gl")record.todos.error_code="credential_rejected";else record.error_code="credential_rejected";
  const ui=await launch(api);await openMemberInbox(ui,"member-a");
- assert.equal(row(ui,id).children[3].children[0].textContent,"授权已失效");
- assert.ok(row(ui,id).children[3].children.some(b=>b.textContent==="重新授权"));
+ assert.equal(row(ui,id).children[3].children[0].textContent,"通知因认证失败暂停");
+ assert.ok(row(ui,id).children[3].children.some(b=>b.textContent==="检查账号"));
  assert.equal(row(ui,id).children[2].hidden,true);
  assert.equal(ui.el("member-platform-issues").children.length,0);
+});
+
+test("confirmed expired OAuth authorization still requires reauthorization",async()=>{
+ const api=fixture(),account=api.platforms.find(p=>p.id==="gl");
+ account.credential_kind="oauth";account.authorization_status="expired";
+ const ui=await launch(api);await openMemberInbox(ui,"member-a");
+ const recovery=row(ui,"gl").children[3];
+ assert.equal(recovery.children[0].textContent,"授权已失效");assert.equal(recovery.children[0].dataset.kind,"error");
+ assert.equal(recovery.children[1].textContent,"重新授权");
 });
 
 for(const [code,reason,action] of [["permission_denied","缺少所需权限","查看权限"],["identity_mismatch","账号与连接不一致","核验账号"],["credential_unavailable","登录凭据不可用","重新授权"]])test(`account recovery explains ${code} without a generic account button`,async()=>{
@@ -37,9 +46,114 @@ for(const [code,reason,action] of [["permission_denied","缺少所需权限","�
  const ui=await launch(api);await openMemberInbox(ui,"member-a");
  const recovery=row(ui,"lark").children[3];
  assert.equal(recovery.children[0].textContent,reason);assert.equal(recovery.children[1].textContent,action);
+ assert.equal(recovery.children[0].dataset.kind,"error");
  assert.equal(row(ui,"lark").children[2].hidden,true);
  await recovery.children[1].emit("click");await settle();
  assert.equal(ui.el("connection-name").value,"公司飞书");assert.equal(calls(api,"/v1/tools/bind").length,0);
+});
+
+function pendingLarkPermissions(reason="check_expired") {
+ const api=fixture(),auth={version:1,revision:1,grants:[{operation:"message.reply",target_kind:"message",object_type:"message"}]};
+ api.platforms.find(p=>p.id==="lark").cli_profile={version:1,executable:"/fixture/lark-cli",profile:"explicit",brand:"feishu",cli_version:"1.0.99"};
+ api.tools.bindings.push({agent_id:"a",membership_id:"member-a",tool:"lark",platform_id:"lark",action_authorization:auth});
+ api.tools.selections=[{agent_id:"a",membership_id:"member-a",platform_id:"lark",action_authorization:auth,availability:{capabilities:[{name:"message.read",state:"unchecked",reason_code:reason,next_action:"retry_check"}]}}];
+ return api;
+}
+
+for(const reason of ["check_expired","check_missing"])test(`Lark ${reason} is a neutral permission refresh prompt`,async()=>{
+ const api=pendingLarkPermissions(reason),ui=await launch(api);await openMemberInbox(ui,"member-a");
+ const recovery=row(ui,"lark").children[3];
+ assert.equal(recovery.children[0].textContent,"权限状态待刷新");assert.equal(recovery.children[0].dataset.kind,"status");
+ assert.equal(recovery.children[1].textContent,"检查权限");
+ assert.equal(calls(api,"/v1/platforms/lark/permissions").length,0);
+ assert.equal(calls(api,"/v1/tools/bind").length,0);
+});
+
+for(const paused of [false,true])for(const blocked of [false,true])test(`Lark checks synchronize account and notification state (${paused ? "paused" : "unchecked"}/${blocked ? "blocked" : "ready"})`,async()=>{
+ const api=pendingLarkPermissions();let finish;
+ const source=api.records.get(key("lark",target("a")));
+ if(paused){source.status="credentials_invalid";source.error_code="credential_rejected";}
+ api.hook=path=>{
+  if(path==="/v1/platforms/lark/discover")return {executable:"/fixture/lark-cli",profiles:[{name:"explicit",brand:"feishu",user:"Alice",tokenStatus:"valid"}]};
+  if(path==="/v1/platforms/lark/permissions")return new Promise(resolve=>{finish=()=>{
+   const capabilities=[blocked ? {name:"message.read",state:"blocked",reason_code:"user_scopes_missing",next_action:"authorize_user"} : {name:"message.read",state:"ready"}];
+   source.status="running";delete source.error_code;
+   api.tools.selections[0].availability.capabilities=capabilities;resolve({capabilities});
+  };});
+ };
+ const ui=await launch(api);await openMemberInbox(ui,"member-a");
+ await row(ui,"lark").children[3].children[1].emit("click");await settle();
+ assert.ok(finish);const reads=api.calls.filter(c=>c.path.startsWith("/v1/tools/bindings?")).length;
+ assert.equal(row(ui,"lark").children[3].children[0].dataset.kind,paused ? "error" : "status");
+ finish();await settle();
+ assert.equal(ui.el("settings-dialog").open,true);
+ assert.equal(api.calls.filter(c=>c.path.startsWith("/v1/tools/bindings?")).length,reads+1);
+ const recovery=row(ui,"lark").children[3];
+ if(blocked){
+  assert.equal(ui.el("connection-capability-status").textContent,"1 项权限待处理");
+  assert.equal(recovery.hidden,false);assert.equal(recovery.children[0].textContent,"用户授权未完成");
+  assert.equal(recovery.children[0].dataset.kind,"error");assert.equal(recovery.children[1].textContent,"完成授权");
+ }else{
+  assert.equal(ui.el("connection-capability-status").textContent,"账号权限已就绪");assert.equal(recovery.hidden,true);
+ }
+ assert.equal(calls(api,"/v1/tools/bind").length,0);
+ assert.equal(calls(api,"/v1/platforms/lark/login").length,0);
+});
+
+test("Lark account success does not conceal a subscription that is still paused",async()=>{
+ const api=pendingLarkPermissions(),source=api.records.get(key("lark",target("a")));
+ source.status="credentials_invalid";source.error_code="credential_rejected";
+ api.hook=path=>{
+  if(path==="/v1/platforms/lark/discover")return {executable:"/fixture/lark-cli",profiles:[{name:"explicit",brand:"feishu",user:"Alice",tokenStatus:"valid"}]};
+  if(path==="/v1/platforms/lark/permissions"){
+   api.tools.selections[0].availability.capabilities=[{name:"message.read",state:"ready"}];
+   return {capabilities:[{name:"message.read",state:"ready"}]};
+  }
+ };
+ const ui=await launch(api);await openMemberInbox(ui,"member-a");
+ await row(ui,"lark").children[3].children[1].emit("click");await settle();
+ assert.equal(ui.el("connection-capability-status").textContent,"账号权限已就绪");
+ const recovery=row(ui,"lark").children[3];
+ assert.equal(recovery.hidden,false);assert.equal(recovery.children[0].textContent,"通知因认证失败暂停");
+ assert.equal(calls(api,"/v1/tools/bind").length,0);
+});
+
+test("Lark verification refreshes subscriptions even while permission checks are pending",async()=>{
+ const api=pendingLarkPermissions(),source=api.records.get(key("lark",target("a")));let finish;
+ source.status="credentials_invalid";source.error_code="credential_rejected";
+ api.hook=path=>{
+  if(path==="/v1/platforms/lark/discover")return {executable:"/fixture/lark-cli",profiles:[{name:"explicit",brand:"feishu",user:"Alice",tokenStatus:"valid"}]};
+  if(path==="/v1/platforms/lark/permissions")return new Promise(resolve=>{finish=()=>resolve({capabilities:[]});});
+  if(path==="/v1/platforms/verify"){
+   const account=api.platforms.find(p=>p.id==="lark");account.version++;
+   source.status="running";delete source.error_code;
+   return structuredClone(account);
+  }
+ };
+ const ui=await launch(api);await openMemberInbox(ui,"member-a");
+ await row(ui,"lark").children[3].children[1].emit("click");await settle();
+ await ui.el("connection-account-reverify").emit("click");await settle();
+ assert.equal(source.status,"running");
+ assert.equal(row(ui,"lark").children[3].children[0].textContent,"权限状态待刷新");
+ assert.equal(row(ui,"lark").children[3].children[0].dataset.kind,"status");
+ assert.equal(calls(api,"/v1/platforms/verify").length,1);assert.equal(calls(api,"/v1/tools/bind").length,0);
+ finish();await settle();
+});
+
+test("a rejected Lark account check keeps the paused warning and offers explicit reauthorization",async()=>{
+ const api=pendingLarkPermissions(),source=api.records.get(key("lark",target("a")));
+ source.status="credentials_invalid";source.error_code="credential_rejected";
+ api.hook=path=>{
+  if(path==="/v1/platforms/lark/discover")return {executable:"/fixture/lark-cli",profiles:[{name:"explicit",brand:"feishu",user:"Alice",tokenStatus:"valid"}]};
+  if(path==="/v1/platforms/lark/permissions")throw Object.assign(Error("rejected"),{code:"credential_rejected"});
+ };
+ const ui=await launch(api);await openMemberInbox(ui,"member-a");
+ await row(ui,"lark").children[3].children[1].emit("click");await settle();
+ assert.match(ui.el("connection-capability-status").textContent,/认证失败/);
+ assert.equal(ui.el("connection-capability-status").dataset.kind,"error");assert.equal(ui.el("connection-authorize").hidden,false);
+ assert.equal(ui.el("connection-account-state").textContent,"检查未通过");assert.equal(ui.el("connection-account-state").dataset.kind,"error");
+ assert.equal(row(ui,"lark").children[3].children[0].textContent,"通知因认证失败暂停");
+ assert.equal(calls(api,"/v1/platforms/lark/login").length,0);assert.equal(calls(api,"/v1/tools/bind").length,0);
 });
 
 test("M4.5 platforms are the default Tab followed by policy, Inbox and activity",async()=>{

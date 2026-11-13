@@ -10,12 +10,19 @@ import (
 	"github.com/go-aie/teamx/internal/platform/tool"
 )
 
-func (m *roomManager) cacheLarkProfilePermissionsLocked(profile platform.CLIProfile, check lark.PermissionCheck) {
+// Apply a successful, revision-checked native account observation. Permission
+// gaps remain visible in the cached result; restoring a credential-paused
+// subscription only resumes its existing collector, not its member actions.
+// Callers must verify the account outside the manager lock before entering here.
+func (m *roomManager) applyLarkAccountCheckLocked(profile platform.CLIProfile, account platform.AccountIdentity, check *lark.PermissionCheck) error {
+	if !account.Valid() || account.Provider != "lark" || check != nil && check.Account != account {
+		return ErrIdentity
+	}
 	file, err := m.platforms.Load()
 	if err != nil {
-		return
+		return err
 	}
-	if m.larkPermissionChecks == nil {
+	if check != nil && m.larkPermissionChecks == nil {
 		m.larkPermissionChecks = map[string]larkPlatformCapabilityResult{}
 	}
 	for _, c := range file.Platforms {
@@ -23,11 +30,17 @@ func (m *roomManager) cacheLarkProfilePermissionsLocked(profile platform.CLIProf
 			continue
 		}
 		a, _, err := registry.ResolveAccessAccount(file, c)
-		if err != nil || a.Identity != check.Account {
+		if err != nil || a.Identity != account {
 			continue
 		}
-		m.larkPermissionChecks[c.ID] = larkPlatformCapabilityResult{PlatformID: c.ID, PlatformVersion: c.Version, Generation: c.Generation, CredentialVersion: c.CredentialVersion, PermissionCheck: check}
+		if check != nil {
+			m.larkPermissionChecks[c.ID] = larkPlatformCapabilityResult{PlatformID: c.ID, PlatformVersion: c.Version, Generation: c.Generation, CredentialVersion: c.CredentialVersion, PermissionCheck: *check}
+		}
+		if err := m.resumeLarkSubscriptionsLocked(c.ID); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // A list/get never probes a provider or repairs intent. Expired observations
@@ -92,7 +105,9 @@ func (m *roomManager) checkReusedLarkConnection(ctx context.Context, op platform
 		op.Status, op.Stage = "completed", "complete"
 		if checkErr == nil {
 			op.Permissions = &check
-			m.cacheLarkProfilePermissionsLocked(*c.CLIProfile, check)
+			if err := m.applyLarkAccountCheckLocked(*c.CLIProfile, check.Account, &check); err != nil {
+				op.Status, op.ErrorCode = "failed", onboardingFailure(err)
+			}
 		}
 	}
 	op.ResultVersion++

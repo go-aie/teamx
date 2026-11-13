@@ -141,7 +141,7 @@ func (m *roomManager) verifyPlatform(ctx context.Context, req managedPlatformReq
 		return managedPlatform{}, managedPlatformError(err)
 	}
 	if c.Provider == "lark" && c.Validation.Status == "valid" {
-		if err := m.resumeLarkSubscriptionsLocked(c.ID); err != nil {
+		if err := m.applyLarkAccountCheckLocked(*c.CLIProfile, c.Validation.Account, nil); err != nil {
 			return managedPlatform{}, err
 		}
 	}

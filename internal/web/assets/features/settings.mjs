@@ -255,8 +255,8 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
     });
 
     $("settings-dialog").addEventListener("close", () => { access.clear(); models.clearKey(); timezonePicker.open = false; renderTimeZoneOptions(); void connectionsUI.cancelPlatformAuth(); $("gitlab-client-secret").value = ""; connectionsUI.platforms.formVersion++; connectionsUI.platforms.generation++;
-      if ($("notification-detail").open) { $(workspaceUI.workspaceView?.notificationChannel === "messages" ? "lark-manage-platforms" : "gitlab-manage-platforms").focus(); void workspaceUI.loadWorkspacePlatforms(); }
-      else if($("activity-dialog").open){$("member-notification-add-toggle").focus({preventScroll:true});void workspaceUI.loadWorkspacePlatforms();if(membersUI.memberToolsView && membersUI.toolsCurrent(membersUI.memberToolsView))void membersUI.loadCLITools(membersUI.memberToolsView);}
+      if ($("notification-detail").open) { $(workspaceUI.workspaceView?.notificationChannel === "messages" ? "lark-manage-platforms" : "gitlab-manage-platforms").focus(); void connectionsUI.refreshPlatformState(); }
+      else if($("activity-dialog").open){$("member-notification-add-toggle").focus({preventScroll:true});void connectionsUI.refreshPlatformState();}
       else $(state.managed ? "user-menu-toggle" : "open-general-settings").focus(); });
   }
 

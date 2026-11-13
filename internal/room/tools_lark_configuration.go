@@ -263,7 +263,7 @@ func (m *roomManager) prepareLarkToolChange(ctx context.Context, req *toolBindin
 			recheckErr = ErrConflict
 		}
 		if recheckErr == nil {
-			m.cacheLarkProfilePermissionsLocked(*a.CLIProfile, check)
+			recheckErr = m.applyLarkAccountCheckLocked(*a.CLIProfile, check.Account, &check)
 		}
 		m.mu.Unlock()
 		if recheckErr != nil {
@@ -293,7 +293,7 @@ func (m *roomManager) prepareLarkToolChange(ctx context.Context, req *toolBindin
 	m.mu.Lock()
 	err = m.recheckLarkToolChangeLocked(callCtx, *req)
 	if err == nil {
-		m.cacheLarkProfilePermissionsLocked(*a.CLIProfile, check)
+		err = m.applyLarkAccountCheckLocked(*a.CLIProfile, check.Account, &check)
 	}
 	m.mu.Unlock()
 	return err

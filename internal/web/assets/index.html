@@ -86,11 +86,11 @@
           <button id="reply-preview" class="reply-preview" type="button" aria-describedby="reply-label"><span class="reply-heading"><span id="reply-author"></span><span id="reply-sequence" class="reply-sequence"></span></span><span id="reply-label" class="reply-excerpt"></span></button>
           <button type="button" id="cancel-reply" class="reply-cancel" aria-label="取消引用" title="取消引用"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
         </div>
-        <label id="message-input-label" class="sr-only" for="message-input">发送到房间</label>
+        <label id="message-input-label" class="sr-only" for="message-input">发送给 会话</label>
         <div class="compose-input">
           <div id="message-mirror" class="compose-mirror" aria-hidden="true" hidden></div>
           <div id="mention-options" class="mention-options menu-surface" role="listbox" aria-label="提及成员" hidden></div>
-          <textarea id="message-input" rows="3" placeholder="发送到房间，开始一段协作…" aria-describedby="message-shortcuts" aria-autocomplete="list" aria-controls="mention-options" aria-expanded="false" required disabled></textarea>
+          <textarea id="message-input" rows="1" placeholder="发送给 会话" title="Enter 发送；Shift + Enter、Ctrl + Enter 或 ⌘ + Enter 换行" aria-describedby="message-shortcuts" aria-autocomplete="list" aria-controls="mention-options" aria-expanded="false" required disabled></textarea>
         </div>
         <button id="compose-more" class="compose-more" type="button" aria-label="展开工作目录" aria-expanded="false" aria-controls="workspace-popover" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M7 12h10"/></svg></button>
         <div class="compose-footer">

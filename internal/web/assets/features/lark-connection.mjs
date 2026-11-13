@@ -124,6 +124,7 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
     renderLarkCapabilities(!!option?.user && !expired && !changedUser && !incomplete && !active && !pending && !connectionsUI.platforms.detecting);
     connectionsUI.renderPlatformReferences();
 
+    const checkFailed = capabilityView?.key === capabilityKey() && !!capabilityView.errorCode;
     const account = $("connection-account"), status = $("connection-account-state");
     status.hidden = true; status.textContent = ""; status.dataset.kind = "status";
     if (active) {
@@ -136,8 +137,8 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
       account.textContent = option?.user || "尚未登录";
       if (option?.user) {
         status.hidden = false;
-        status.textContent = expired ? "需要重新授权" : changedUser ? "账号已变化" : verified ? "已验证" : same && v?.status === "failed" ? "验证失败" : "已登录，待验证";
-        status.dataset.kind = verified ? "success" : expired || changedUser || v?.status === "failed" ? "error" : "status";
+        status.textContent = expired ? "需要重新授权" : changedUser ? "账号已变化" : checkFailed ? "检查未通过" : verified ? "已验证" : same && v?.status === "failed" ? "验证失败" : "已登录，待验证";
+        status.dataset.kind = expired || changedUser || checkFailed || v?.status === "failed" ? "error" : verified ? "success" : "status";
       }
     }
   }
@@ -160,8 +161,8 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
     const capabilities = check?.capabilities || [], gaps = capabilities.filter(c=>c.state!=="ready");
     const blocked = gaps.filter(c=>c.state==="blocked"), unsupported = gaps.some(c=>c.state==="unsupported");
     const status = $("connection-capability-status");
-    status.textContent = view.loading ? "正在检查账号权限…" : !capabilities.length ? "账号权限暂未确认" : !gaps.length ? "账号权限已就绪" : blocked.length ? `${blocked.length} 项权限待处理` : unsupported ? "部分能力当前不可用" : "部分权限待核验";
-    status.dataset.kind = !view.loading && capabilities.length && !gaps.length ? "success" : !view.loading && blocked.length ? "error" : "status";
+    status.textContent = view.loading ? "正在检查账号权限…" : view.errorCode ? connectionsUI.connectionValidationErrors[view.errorCode] || "账号权限检查失败，请重新检查。" : !capabilities.length ? "账号权限暂未确认" : !gaps.length ? "账号权限已就绪" : blocked.length ? `${blocked.length} 项权限待处理` : unsupported ? "部分能力当前不可用" : "部分权限待核验";
+    status.dataset.kind = !view.loading && (view.errorCode || blocked.length) ? "error" : !view.loading && capabilities.length && !gaps.length ? "success" : "status";
     $("connection-capability-list").replaceChildren(...capabilities.map(c=>{
       const row=document.createElement("li"),name=document.createElement("span"),value=document.createElement("span");
       name.textContent=capabilityNames[c.name] || c.name;
@@ -170,7 +171,7 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
       row.append(name,value);return row;
     }));
     $("connection-capability-details").hidden = view.loading || !capabilities.length;
-    $("connection-authorize").hidden = !check?.capabilities?.some(c=>c.next_action === "authorize_user");
+    $("connection-authorize").hidden = view.errorCode !== "credential_rejected" && !check?.capabilities?.some(c=>c.next_action === "authorize_user");
     $("connection-capability-check").hidden = view.loading;
     const app = $("connection-application-permissions"), namespace = check?.account?.id?.namespace || "";
     const appID = namespace.startsWith("lark:open_id:") ? namespace.slice("lark:open_id:".length) : "";
@@ -186,7 +187,8 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
       if (capabilityView !== view || key !== capabilityKey()) return;
       view.check = check;
       setTimeout(()=>{if(capabilityView === view && key === capabilityKey()){view.check=null;renderLarkAccount();}},60000);
-    } catch { if (capabilityView !== view || key !== capabilityKey()) return; view.check = null; }
+      void connectionsUI.refreshPlatformState();
+    } catch (error) { if (capabilityView !== view || key !== capabilityKey()) return; view.check = null; view.errorCode = error.code || "query_failed"; }
     finally { if (capabilityView === view && key === capabilityKey()) { view.loading=false;renderLarkAccount(); } }
   }
 
@@ -344,6 +346,7 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
       }
       clearLarkAuthView(); connectionsUI.platforms.auth = null; finished = true;
       for (const item of result.platforms || []) connectionsUI.updatePlatformItem(item);
+      void connectionsUI.refreshPlatformState();
       const setup = auth.action === "setup";
       const detecting = detectLarkPlatform(setup ? {profile:result.cli_profile?.profile || "",exact:true,preserveSetup:true} : {preserveSetup:!!connectionsUI.platforms.larkSetupResult}); version = connectionsUI.platforms.formVersion;
       await detecting;

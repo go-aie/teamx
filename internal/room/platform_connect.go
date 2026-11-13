@@ -209,10 +209,7 @@ func (m *roomManager) commitPlatformConnectLocked(op *platformConnectOperation, 
 		return err
 	}
 	op.Connection = onboardingStep{Status: "connected", Version: c.Version}
-	if op.Permissions != nil && op.Profile != nil {
-		m.cacheLarkProfilePermissionsLocked(*op.Profile, *op.Permissions)
-	}
-	return nil
+	return m.applyLarkAccountCheckLocked(*op.Profile, validation.Account, op.Permissions)
 }
 func (m *roomManager) startPlatformConnectLocked(ctx context.Context, req platformConnectRequest) (platformConnectOperation, error) {
 	var op platformConnectOperation

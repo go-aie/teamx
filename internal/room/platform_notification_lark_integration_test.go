@@ -79,13 +79,12 @@ func TestLarkVerificationResumesCredentialPausedSubscription(t *testing.T) {
 
 func TestLarkVerificationPreservesOtherPauses(t *testing.T) {
 	parallelFixtureTest(t)
-	for _, mode := range []string{"disabled", "retired", "capacity", "binding_changed", "different_account", "different_generation", "failed_verification", "other_connection"} {
+	for _, mode := range []string{"disabled", "retired", "capacity", "binding_changed", "different_account", "different_generation", "failed_verification"} {
 		t.Run(mode, func(t *testing.T) {
 			h := newLarkHarness(t)
 			h.start()
 			s := h.state()
 			s.RuntimeState.InvalidateCredential(true)
-			verify := h.c
 			switch mode {
 			case "disabled", "retired":
 				s.Config.Enabled = false
@@ -104,8 +103,6 @@ func TestLarkVerificationPreservesOtherPauses(t *testing.T) {
 			case "different_generation":
 				s.Binding.Generation = strings.Repeat("f", 32)
 				s = refreshLarkSearchFixture(t, s)
-			case "other_connection":
-				verify = platformTestSave(t, h.m, managedPlatformRequest{ServiceEpoch: h.m.epoch, Caller: humanCaller, ID: strings.Repeat("d", 32), Name: "other", Provider: "lark", URL: h.c.URL, CLIProfile: h.c.CLIProfile})
 			}
 			h.m.mu.Lock()
 			err := h.m.notifications.SaveLocked(s)
@@ -113,7 +110,7 @@ func TestLarkVerificationPreservesOtherPauses(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := h.m.verifyPlatform(context.Background(), managedPlatformRequest{ID: verify.ID, Version: verify.Version}); err != nil {
+			if _, err := h.m.verifyPlatform(context.Background(), managedPlatformRequest{ID: h.c.ID, Version: h.c.Version}); err != nil {
 				t.Fatal(err)
 			}
 			h.m.mu.Lock()

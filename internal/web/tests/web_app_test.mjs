@@ -285,6 +285,8 @@ test("rename updates title, navigation and reload while preserving identity, his
   await ui.el("rename-form").emit("submit");
   assert.equal(ui.el("rename-form").hidden, true);
   assert.equal(ui.el("room-name").textContent, "新名称");
+  assert.equal(ui.el("message-input").placeholder, "发送给 新名称");
+  assert.equal(ui.el("message-input-label").textContent, "发送给 新名称");
   assert.equal(ui.el("rename-room").attributes["aria-label"], "新名称，修改房间名称");
   assert.equal(ui.el("room-list").children[0].children[0].children[0].textContent, "新名称");
   assert.equal(ui.document.title, "新名称 · TeamX");
@@ -523,7 +525,7 @@ test("a late A send response cannot clear B's draft or post with B's identity", 
   await settle(); await ui.select("B"); await ui.draft("draft-B");
   resolveSend({ seq: 2 }); await sending;
   assert.equal(ui.el("message-input").value, "draft-B");
-  assert.equal(ui.el("send").textContent, "发送 ↗");
+  assert.equal(ui.el("send").getAttribute("aria-label"), "发送");
   const sent = api.calls.filter(call => call.path === "/v1/send");
   assert.equal(sent.length, 1); assert.equal(sent[0].data.room_instance, "instance-A");
   await ui.select("A"); assert.equal(ui.el("message-input").value, "");
@@ -3364,6 +3366,8 @@ test("direct conversations prefer the exact default, keep the inspector stable, 
   };
   const ui=await launch(api);await settle();
   assert.equal(ui.el("room-name").textContent,"个人助理");
+  assert.equal(ui.el("message-input").placeholder,"发送给 个人助理");
+  assert.equal(ui.el("message-input-label").textContent,"发送给 个人助理");
   assert.equal(ui.el("direct-list").children.length,1);assert.equal(ui.el("room-list").children.length,1);
   assert.equal(ui.el("direct-list").children[0].children.length,1);
   assert.equal(ui.el("room-list").children[0].children.length,2);
@@ -3381,6 +3385,8 @@ test("direct conversations prefer the exact default, keep the inspector stable, 
   assert.equal(ui.el("platforms-member-view").scrollTop,123);
   assert.equal(api.calls.filter(call=>call.path.startsWith("/v1/tools/bindings?")).length,reads);
   await ui.draft("DM draft");await ui.select("Team");assert.equal(ui.el("activity-dialog").open,false);
+  assert.equal(ui.el("message-input").placeholder,"发送给 Team");
+  assert.equal(ui.el("message-input-label").textContent,"发送给 Team");
   assert.equal(ui.el("toggle-members").hidden,false);assert.equal(ui.el("direct-details").hidden,true);
   assert.equal(ui.el("member-list-view").hidden,false);await ui.draft("Room draft");
   await ui.select("个人助理");assert.equal(ui.el("message-input").value,"DM draft");
