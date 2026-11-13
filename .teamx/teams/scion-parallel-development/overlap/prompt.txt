@@ -1,0 +1,22 @@
+进行同文件并行修改实验 $run_id，公共 base 已由脚本准备，不需要再开发或发布 SEED。
+
+实例：$endpoint
+仓库：$repo
+公共分支：$branch
+唯一开发基线 S：$head
+base 代码：$code_url
+
+四位成员先各自通过正常工具核对实例、实际账号 $subject、独立 Workspace 和准确 S。architect 按本消息发布简短 design.md／任务表及准确版本，不再准备业务 base。三位 developer 取得设计并核实 S 后并行开始，不等待其他增强完成。
+
+各成员使用自己的 Workspace。允许发布的分支为 teamx/<当前完整 Room ID>/<本人完整 membership ID>/$run_id-<任务>；architect 只用 DESIGN 并只提交 design.md，developer-a 只用 A、INTEGRATION，developer-b 只用 B，developer-c 只用 C。显式提供自己的 --author；只提交实验文件。不得修改公共 base 分支或 main，不创建／评论／合入 Review，不 approve、部署、删分支、force push 或 reset/clean。
+
+三人都从准确 S 建立任务分支，都允许修改 overlap_todo.py、test_overlap_todo.py、OVERLAP-TODO.md，不拆模块、不划分专属文件，不以文件归属互斥或轮流开工避免冲突。
+A / developer-a：add 增加 --priority low|normal|high，默认 normal；文本列表显示优先级；旧记录缺少 priority 时按 normal 解释，保留其他字段。
+B / developer-b：list 增加 --status all|open|done，默认 all；增加 stats 命令，统计全库总数、未完成数、已完成数。
+C / developer-c：list 增加 --json，输出 {"tasks":[完整任务对象...],"counts":{"total":整数,"open":整数,"done":整数}}，保留已有字段、支持中文、按 id 排序，counts 始终统计全库。
+每人只需依赖 S，独立补测试，运行 python3 -m unittest -v test_overlap_todo，然后发布并回读准确完整 head，在 Room 交付任务、base、head、修改文件与实际测试。保留基础测试，不靠 sleep 或轮询制造重叠。Scion 命令先查帮助；列分支使用 branch 或 branch ls。
+
+三项交付后，由 developer-a 从 S 建立独立 INTEGRATION，冻结三个完整 head，按 A→B→C 合并各任务从 S 到交付 head 的完整变更。用原生 Scion 的准确版本操作；多提交不能只摘最后一个提交，不能把后一个分支的整份同名文件直接覆盖到集成目录。记录实际冲突文件／版本、首次组合检查或测试失败、修正及最终结果，不盲选 ours/theirs。工具不支持或语义矛盾时报告准确阻塞。
+集成必须测试 list --status open|done|all --json 的组合：tasks 符合过滤条件，counts 为全库计数，priority 与旧字段不丢失；添加／完成／重开、中文、空数据、旧记录兼容和非法参数均覆盖。补真实 CLI 子进程端到端测试，将最终设计和测试所需文件一并纳入集成分支，运行全部基础和新增测试，发布后从远端准确 head 回读并重测。
+
+最后在 Room 给出三项[任务完成]、[集成完成]或[集成阻塞]、architect 的[实验结论]，包含代码／提交链接、完整版本、实际冲突与测试结果。没有文本冲突就如实报告；同时列明是否有至少两名开发者真实编码时间区间重叠的证据。成员同时显示运行中或三条完成消息不能代替并发证明。

@@ -167,6 +167,10 @@ func newService(dir, roomID string, config serviceConfig) (*service, error) {
 // startService establishes resource ownership before assembling members. The
 // assembly callback also lets in-package tests inject deterministic Backends.
 func startService(dir, roomID string, config serviceConfig, assemble func(*service, RoomSnapshot) error) (_ *service, err error) {
+	mode, err := config.scheduling.effective()
+	if err != nil {
+		return nil, err
+	}
 	if config.settings == nil {
 		config.settings = defaultSystemSettings()
 	}
@@ -228,7 +232,7 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 		return nil, err
 	}
 	grantsFrozen := &atomic.Bool{}
-	scheduler, err := rt.Spawn(&turnScheduler{RoomIdentity: state.RoomIdentity, frozen: grantsFrozen})
+	scheduler, err := rt.Spawn(&turnScheduler{RoomIdentity: state.RoomIdentity, mode: mode, frozen: grantsFrozen})
 	if err != nil {
 		return nil, err
 	}
@@ -809,7 +813,7 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			result, err = s.rotateSession(r.Context(), req)
 		}
 	case "/v1/send":
-		result, err = s.room.Call[PostReceipt](r.Context(), PostMessage{RoomIdentity: req.RoomIdentity, Caller: req.Caller,
+		result, err = callRoomWrite[PostReceipt](r.Context(), s.room, PostMessage{RoomIdentity: req.RoomIdentity, Caller: req.Caller,
 			ClientMessageID: req.ClientMessageID, Text: req.Text, ReplyTo: req.ReplyTo})
 	case "/v1/read":
 		result, err = s.room.Call[ReadPage](r.Context(), ReadMessages{RoomIdentity: req.RoomIdentity, Caller: req.Caller,
@@ -819,7 +823,7 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			err = ErrIdentity
 			break
 		}
-		result, err = s.room.Call[ReadConfirmation](r.Context(), ConfirmRead{MemberIdentity: MemberIdentity{
+		result, err = callRoomWrite[ReadConfirmation](r.Context(), s.room, ConfirmRead{MemberIdentity: MemberIdentity{
 			RoomIdentity: req.RoomIdentity, AgentID: req.Caller.ID, MembershipID: req.Caller.MembershipID}, ReadReceipt: req.ReadReceipt})
 	default:
 		http.NotFound(w, r)

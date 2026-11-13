@@ -7,6 +7,7 @@
 [个人助手](personal-assistant/README.md)提供单个 `assistant` 成员，用于识别 GitLab 个人待办、在实际工具能力内代办常规事务，以及在需要本人介入时在房间里 @ 用户。个人待办可独立配置，无需 Workspace；跨项目回复等能力边界见该团队说明。
 
 - `runtime.dsh`：普通安装只需 `binary_path`，填写完整安装的 `dsh` 可执行程序绝对路径（可用 `command -v dsh` 查找）。TeamX 通过 `--version` 读取安装版本，自动追加 `--profile acp` 启动会话，并将实际身份记录在私有 Session 中；恢复前核对版本及 ACP 运行时身份。开发时也可用 Node 加 `binary_args` 中的 JS 参数启动，JS 路径必须为绝对路径，且需保留完整依赖。`artifact` 为可选的构建来源标注，显式提供时必须同时包含 `source`、`version`，并参与恢复核对；普通用户无需填写。
+- `scheduling`：可选，省略或空字符串为 `serial`，整个 Room 最多一个成员执行；`parallel` 允许不同成员同时执行，每个成员仍最多一个回合。创建时保存有效模式，已有 Room 沿用快照，运行中不能切换。[Scion 并行开发](scion-parallel-development/README.md)提供四成员并发编码示例；原软件开发团队保持串行。
 - `members[]`：`id`、`name`，且必须只指定 `instructions` 或 `instructions_file` 之一。文件相对于 `team.json` 所在目录解析。角色文件只需描述职责、参与条件和业务流程；公共 TeamX 指引由程序统一组装，见 [Agent Instructions 的组装](../../docs/agent-instructions.zh.md)。
 - `tool_env` 为成员可选的字符串映射。以 `./` 开头的值表示团队内的资源路径，如 `"HELPER": "./tools/helper.py"`；创建时检查资源存在，打开时解析到房间内的资源副本。其他值按字面量传递，不展开环境变量或 shell 表达式。模型凭据由服务按 Session 的不可变引用注入。不能覆盖 TeamX 身份、`TEAMX_CLI`、DSH 保留环境或模型密钥绑定。
 - `workspace`：可选，`root` 默认为 `./workspaces`，只接受房间内相对路径；各成员使用 `<root>/<membership_id>/`，不是共享目录。`repository`、`binding` 作为设置入口的建议值预填，但创建时只采用根路径，不初始化仓库或 GitLab。模板不能保存 PAT 或房间凭据引用。[Workspace](../../docs/workspace.zh.md)通过输入框下方 Workspace 设置入口显式应用；建议值只预填文本，不自动勾选或执行绑定。

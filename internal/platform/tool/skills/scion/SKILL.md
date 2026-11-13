@@ -35,6 +35,10 @@ They are not 40-character Git SHAs. Review JSON omits a web URL; after verifying
 instance/canonical repo/number, the normal route is
 INSTANCE/OWNER/REPO/reviews/NUMBER. A missing returned URL is not creation failure.
 
+List branches with `branch` or `branch ls`. Do not guess `branch list`: in this
+version it CREATES a branch named `list` at the current revision. Check the exact
+native help before unfamiliar commands, including commands intended as reads.
+
 ## Workspace and development
 
 Verify the work copy, target branch, baseline and test entry first. Scion uses

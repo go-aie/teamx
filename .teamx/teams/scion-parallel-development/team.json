@@ -1,0 +1,33 @@
+{
+  "id": "scion-parallel-development",
+  "name": "Scion 并行开发",
+  "description": "Architect 拆分并分配任务，三个 Developer 在独立 Scion 工作副本中并行编码，Developer A 最终集成验证；本团队用于并发编码测试。",
+  "opening_message": "请先根据我的需求拆分可并行的任务，明确接口、负责人、依赖和验收标准。仓库、基线与允许发布的任务分支范围确认后，再开始编码。",
+  "scheduling": "parallel",
+  "members": [
+    {
+      "id": "architect",
+      "name": "architect",
+      "instructions_file": "prompts/architect.md",
+      "tool_env": {"TEAMX_ROLE": "architect"}
+    },
+    {
+      "id": "developer-a",
+      "name": "developer-a",
+      "instructions_file": "prompts/developer.md",
+      "tool_env": {"TEAMX_ROLE": "developer-a"}
+    },
+    {
+      "id": "developer-b",
+      "name": "developer-b",
+      "instructions_file": "prompts/developer.md",
+      "tool_env": {"TEAMX_ROLE": "developer-b"}
+    },
+    {
+      "id": "developer-c",
+      "name": "developer-c",
+      "instructions_file": "prompts/developer.md",
+      "tool_env": {"TEAMX_ROLE": "developer-c"}
+    }
+  ]
+}

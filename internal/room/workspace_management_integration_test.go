@@ -388,8 +388,16 @@ func TestWorkspaceApplyUntouchedMembersAndIdentity(t *testing.T) {
 }
 
 func TestWorkspaceApplyJoinsRunningSessionsBeforePreparation(t *testing.T) {
+	testWorkspaceApplyJoinsRunningSessions(t, schedulingSerial)
+}
+
+func testWorkspaceApplyJoinsRunningSessions(t *testing.T, mode schedulingMode) {
 	parallelFixtureTest(t)
 	m := activationTestManager(t)
+	team := m.teams["takeout-dinner"]
+	team.Scheduling = mode
+	m.teams[team.ID] = team
+	allStarted := make(chan struct{}, len(team.Members))
 	closing, release, started := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	var releaseOnce, startedOnce sync.Once
 	t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
@@ -397,6 +405,7 @@ func TestWorkspaceApplyJoinsRunningSessionsBeforePreparation(t *testing.T) {
 	var runs atomic.Int32
 	m.factory = controlledActivationFactory(func(_ MemberIdentity, ctx context.Context) error {
 		runs.Add(1)
+		allStarted <- struct{}{}
 		startedOnce.Do(func() { close(started) })
 		<-ctx.Done()
 		return ctx.Err()
@@ -412,6 +421,15 @@ func TestWorkspaceApplyJoinsRunningSessionsBeforePreparation(t *testing.T) {
 	case <-started:
 	case <-ctx.Done():
 		t.Fatal("no active turn")
+	}
+	if mode == schedulingParallel {
+		for range saved.Members {
+			select {
+			case <-allStarted:
+			case <-ctx.Done():
+				t.Fatal("not all members entered before Workspace application")
+			}
+		}
 	}
 	beforeRuns := runs.Load()
 	req := workspaceRequest(t, m, room, workspaceConfig{Root: "settled-target"})

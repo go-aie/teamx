@@ -12,9 +12,10 @@ import (
 )
 
 type schedulerSnapshot struct {
-	Holder turnGranted
-	Queue  []turnGranted
-	Closed bool
+	Holder  turnGranted
+	Holders map[MemberIdentity]turnGranted
+	Queue   []turnGranted
+	Closed  bool
 }
 
 type inspectScheduler struct{}
@@ -22,9 +23,10 @@ type schedulerProbe struct{ *turnScheduler }
 
 func (p schedulerProbe) Bindings() []actorx.Binding {
 	return append(p.turnScheduler.Bindings(), actorx.Handle(func(actorx.Context, inspectScheduler) (schedulerSnapshot, error) {
-		snapshot := schedulerSnapshot{Closed: p.closing}
-		if p.holder != nil {
-			snapshot.Holder = turnGranted{p.holder.MemberIdentity, p.holder.ID}
+		snapshot := schedulerSnapshot{Closed: p.closing, Holders: make(map[MemberIdentity]turnGranted)}
+		for id, a := range p.holders {
+			snapshot.Holder = turnGranted{a.MemberIdentity, a.ID}
+			snapshot.Holders[id] = snapshot.Holder
 		}
 		for _, a := range p.queue {
 			snapshot.Queue = append(snapshot.Queue, turnGranted{a.MemberIdentity, a.ID})
@@ -190,12 +192,24 @@ func TestTurnSchedulerRetriesFailedGrantAndJoinsStoppedHolder(t *testing.T) {
 
 func serialMembers(t *testing.T, count int, options ...actorx.Option) (*roomHarness, []actorx.Addr, []MemberIdentity, []*controlledBackend) {
 	t.Helper()
+	return scheduledMembers(t, schedulingSerial, count, options...)
+}
+
+func scheduledMembers(t *testing.T, mode schedulingMode, count int, options ...actorx.Option) (*roomHarness, []actorx.Addr, []MemberIdentity, []*controlledBackend) {
+	t.Helper()
 	state := historyRoom(1, "body")
 	for i := 1; i < count; i++ {
 		name := string(rune('A' + i))
 		state.Members = append(state.Members, MemberState{AgentID: name, MembershipID: "generation-" + name, Runner: state.Members[0].Runner})
 	}
 	h := newRoomHarness(t, state, nil, options...)
+	_ = h.scheduler.Stop(nil)
+	_, _ = h.scheduler.Wait(h.ctx)
+	var err error
+	h.scheduler, err = h.rt.Spawn(schedulerProbe{&turnScheduler{RoomIdentity: h.id, mode: mode}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	var targets []actorx.Addr
 	var ids []MemberIdentity
 	var backends []*controlledBackend

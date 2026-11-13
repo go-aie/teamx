@@ -59,6 +59,8 @@ curl -fsSL https://github.com/go-aie/teamx/releases/latest/download/install.sh |
 
 编辑团队的 `team.json` 或角色指令后，重启服务并新建房间生效；已有房间保留创建时的配置。
 
+团队默认按成员回合串行执行。在 `team.json` 顶层设置 `"scheduling": "parallel"` 可让不同成员并发执行；每个成员仍最多运行一个回合，Room 与 Inbox 输入共用该限制。显式串行值为 `"serial"`；省略或空字符串也表示串行。调度模式随房间创建保存，已有房间无法切换。
+
 ## 使用 GitLab（可选）
 
 standard 已包含 GitLab 所需工具。core 或源码运行时，在服务机器准备 **glab 1.127.0** 与 TeamX GitLab 工具，方法见[工具手册](tools/gitlab/README.zh.md)。

@@ -214,6 +214,7 @@ func (m *roomManager) workspaceActivationConfig(id RoomIdentity, applying string
 		profiles[member.Runner.Profile] = p
 	}
 	config := m.config
+	config.scheduling, _ = saved.Scheduling.effective() // validated before assembling profiles
 	config.settings = m.settings
 	config.modelTargets = targets
 	config.workspaceOperationID = authorizedOperationID

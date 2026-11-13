@@ -351,6 +351,9 @@ func equalWorkspaceRoomConfig(a, b managedRoomConfig) bool {
 		a.ModelMigrationRuntimeDigest = b.ModelMigrationRuntimeDigest
 	}
 	scrub := func(v managedRoomConfig) managedRoomConfig {
+		if mode, err := v.Scheduling.effective(); err == nil {
+			v.Scheduling = mode
+		}
 		v.Members = append([]managedMember(nil), v.Members...)
 		for i := range v.Members {
 			v.Members[i].ModelSelection = nil

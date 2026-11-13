@@ -69,6 +69,50 @@
       "destination": "share/teamx/teams/personal-assistant/team.json"
     },
     {
+      "source": ".teamx/teams/scion-parallel-development/README.md",
+      "destination": "share/teamx/teams/scion-parallel-development/README.md"
+    },
+    {
+      "source": ".teamx/teams/scion-parallel-development/OVERLAPPING-FILES.zh.md",
+      "destination": "share/teamx/teams/scion-parallel-development/OVERLAPPING-FILES.zh.md"
+    },
+    {
+      "source": ".teamx/teams/scion-parallel-development/TESTING.zh.md",
+      "destination": "share/teamx/teams/scion-parallel-development/TESTING.zh.md"
+    },
+    {
+      "source": ".teamx/teams/scion-parallel-development/overlap/base/OVERLAP-TODO.md",
+      "destination": "share/teamx/teams/scion-parallel-development/overlap/base/OVERLAP-TODO.md"
+    },
+    {
+      "source": ".teamx/teams/scion-parallel-development/overlap/base/overlap_todo.py",
+      "destination": "share/teamx/teams/scion-parallel-development/overlap/base/overlap_todo.py"
+    },
+    {
+      "source": ".teamx/teams/scion-parallel-development/overlap/base/test_overlap_todo.py",
+      "destination": "share/teamx/teams/scion-parallel-development/overlap/base/test_overlap_todo.py"
+    },
+    {
+      "source": ".teamx/teams/scion-parallel-development/overlap/prepare.py",
+      "destination": "share/teamx/teams/scion-parallel-development/overlap/prepare.py"
+    },
+    {
+      "source": ".teamx/teams/scion-parallel-development/overlap/prompt.txt",
+      "destination": "share/teamx/teams/scion-parallel-development/overlap/prompt.txt"
+    },
+    {
+      "source": ".teamx/teams/scion-parallel-development/prompts/architect.md",
+      "destination": "share/teamx/teams/scion-parallel-development/prompts/architect.md"
+    },
+    {
+      "source": ".teamx/teams/scion-parallel-development/prompts/developer.md",
+      "destination": "share/teamx/teams/scion-parallel-development/prompts/developer.md"
+    },
+    {
+      "source": ".teamx/teams/scion-parallel-development/team.json",
+      "destination": "share/teamx/teams/scion-parallel-development/team.json"
+    },
+    {
       "source": ".teamx/teams/software-development/README.md",
       "destination": "share/teamx/teams/software-development/README.md"
     },
@@ -192,6 +236,7 @@
   "teams": [
     "bookstore-night",
     "personal-assistant",
+    "scion-parallel-development",
     "software-development",
     "takeout-dinner"
   ],

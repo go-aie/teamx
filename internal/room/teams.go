@@ -37,6 +37,7 @@ type teamMember struct {
 }
 
 type teamDefinition struct {
+	Scheduling     schedulingMode   `json:"scheduling,omitempty"`
 	ID             string           `json:"id"`
 	Name           string           `json:"name"`
 	Description    string           `json:"description"`
@@ -129,6 +130,9 @@ func loadTeams(dir string, defaults *teamRuntime) (map[string]teamDefinition, er
 }
 
 func validateTeam(team *teamDefinition, source fs.FS) error {
+	if _, err := team.Scheduling.effective(); err != nil {
+		return err
+	}
 	if !teamIdentifier(team.ID) || !validText(team.Name) || len(team.Name) > 256 || !validText(team.Description) ||
 		!validText(team.OpeningMessage) || len(team.OpeningMessage) > maxTextBytes || len(team.Members) == 0 || len(team.Members) > maxMembers {
 		return fmt.Errorf("%w: id, name, description, opening_message and 1..%d members required", ErrRequest, maxMembers)
@@ -253,6 +257,7 @@ func (m *roomManager) prepare(selection roomSelection) (roomIndexEntry, error) {
 	var sourceRuntime *teamRuntime
 	var members []teamMember
 	var resources []roomResource
+	mode := schedulingSerial
 	w := workspaceConfig{Root: "workspaces"}
 	if selection.IsDirect {
 		role, ok := builtinAgentRole(selection.AgentRoleID)
@@ -271,6 +276,11 @@ func (m *roomManager) prepare(selection roomSelection) (roomIndexEntry, error) {
 		}
 		defaultName, openingMessage, sourceRuntime = team.Name, team.OpeningMessage, team.Runtime
 		members, resources = team.Members, team.resources
+		var err error
+		mode, err = team.Scheduling.effective()
+		if err != nil {
+			return roomIndexEntry{}, err
+		}
 		if team.Workspace != nil {
 			w.Root = team.Workspace.Root // Repository/binding are suggestions only.
 		}
@@ -292,7 +302,7 @@ func (m *roomManager) prepare(selection roomSelection) (roomIndexEntry, error) {
 	runtime := *sourceRuntime
 	runtime.DSH.BinaryArgs = slices.Clone(sourceRuntime.DSH.BinaryArgs)
 	runtime.Model = sourceRuntime.Model.Clone()
-	init := &roomInitialization{Config: managedRoomConfig{PlatformToolsVersion: 1, Version: managedConfigVersion, RoomIdentity: e.RoomIdentity, Name: name, TeamID: selection.TeamID,
+	init := &roomInitialization{Config: managedRoomConfig{Scheduling: mode, PlatformToolsVersion: 1, Version: managedConfigVersion, RoomIdentity: e.RoomIdentity, Name: name, TeamID: selection.TeamID,
 		IsDirect: selection.IsDirect, AgentRoleID: selection.AgentRoleID,
 		Runtime: &runtime, OpeningMessage: openingMessage, SessionMaxTurns: m.maxTurns, Workspace: &w, WorkspaceVersion: 1}, Resources: resources}
 	for _, member := range members {

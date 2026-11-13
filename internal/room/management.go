@@ -108,6 +108,7 @@ type managedMember struct {
 const managedConfigVersion = 2
 
 type managedRoomConfig struct {
+	Scheduling                  schedulingMode   `json:"scheduling,omitempty"`
 	ModelMigrationRuntimeDigest string           `json:"model_migration_runtime_digest,omitempty"`
 	PlatformToolsVersion        int              `json:"platform_tools_version,omitempty"`
 	Workspace                   *workspaceConfig `json:"workspace"`
@@ -378,6 +379,9 @@ func (m *roomManager) validateIndex() error {
 
 func validateInitialization(e roomIndexEntry, init roomInitialization) error {
 	c := init.Config
+	if _, err := c.Scheduling.effective(); err != nil {
+		return err
+	}
 	encoded, err := json.Marshal(c)
 	if err != nil || int64(len(encoded)+1) > maxPrivateFileBytes {
 		return ErrCapacity

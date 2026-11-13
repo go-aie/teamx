@@ -186,7 +186,7 @@ func TestTeamCatalogValidation(t *testing.T) {
 		})
 	}
 	teams, err := loadTeams("../../.teamx/teams", testTeamDefinition(t).Runtime)
-	if err != nil || len(teams) != 4 {
+	if err != nil || len(teams) != 5 {
 		t.Fatal(len(teams), err)
 	}
 	software := teams["software-development"]
@@ -194,6 +194,63 @@ func TestTeamCatalogValidation(t *testing.T) {
 		if strings.HasSuffix(resource.Path, ".py") || strings.HasSuffix(resource.Path, ".sh") {
 			t.Fatal("team still owns platform tools", resource.Path)
 		}
+	}
+}
+
+func TestTeamScionParallelRoomSnapshots(t *testing.T) {
+	m, err := newTeamRoomManager(t.TempDir(), "../../.teamx/teams", 4, testTeamDefinition(t).Runtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.close()
+	m.config = serviceConfig{endpoint: "http://127.0.0.1:1", cliPath: os.Args[0]}
+	team := m.teams["scion-parallel-development"]
+	wantIDs := []string{"architect", "developer-a", "developer-b", "developer-c"}
+	if team.Scheduling != schedulingParallel || len(team.Members) != len(wantIDs) {
+		t.Fatal("invalid parallel team", team.ID, team.Scheduling, len(team.Members))
+	}
+	serial, err := m.teams["software-development"].Scheduling.effective()
+	if err != nil || serial != schedulingSerial {
+		t.Fatal("original software team changed", serial, err)
+	}
+	var rooms []roomSummary
+	for _, createID := range []string{"parallel-one", "parallel-two"} {
+		w := managerHTTP(m, "/v1/rooms/create", roomCreateRequest{ServiceEpoch: m.epoch, Caller: humanCaller, roomSelection: roomSelection{TeamID: team.ID, CreateID: createID}})
+		var room roomSummary
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &room) != nil {
+			t.Fatal(w.Code, w.Body.String())
+		}
+		rooms = append(rooms, room)
+	}
+	seenMemberships, seenPaths := map[string]bool{}, map[string]bool{}
+	for _, room := range rooms {
+		saved, state := readManagedRoom(t, m, room)
+		if saved.Scheduling != schedulingParallel || len(saved.Members) != len(wantIDs) || len(state.Members) != len(wantIDs) {
+			t.Fatal("invalid creation snapshot", saved.Scheduling, len(saved.Members))
+		}
+		cfg, err := m.activationConfig(room.RoomIdentity)
+		if err != nil || cfg.scheduling != schedulingParallel {
+			t.Fatal("parallel activation", cfg.scheduling, err)
+		}
+		for i, member := range saved.Members {
+			if member.AgentID != wantIDs[i] || member.ToolEnv["TEAMX_ROLE"] != member.AgentID || member.Instructions != team.Members[i].Instructions {
+				t.Fatal("role identity or instructions not frozen", member.AgentID)
+			}
+			profile := cfg.dshProfiles[member.Runner.Profile]
+			if seenMemberships[member.MembershipID] || seenPaths[profile.Workspace] || !strings.HasPrefix(profile.Workspace, m.roomDir(room.RoomID)+string(filepath.Separator)) {
+				t.Fatal("members share identity or workspace", member.AgentID, profile.Workspace)
+			}
+			seenMemberships[member.MembershipID], seenPaths[profile.Workspace] = true, true
+			bindings, err := m.readToolBindingsLocked(room.RoomIdentity)
+			if err != nil || len(bindings.Bindings) != 0 {
+				t.Fatal("template unexpectedly grants a platform binding", err)
+			}
+		}
+	}
+	// Opening a saved Room must not depend on mutable source instructions.
+	m.teams = nil
+	if cfg, err := m.activationConfig(rooms[0].RoomIdentity); err != nil || cfg.scheduling != schedulingParallel {
+		t.Fatal("snapshot depends on source team", err)
 	}
 }
 

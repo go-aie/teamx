@@ -14,6 +14,7 @@ import (
 )
 
 type serviceConfig struct {
+	scheduling           schedulingMode
 	modelStartup         *startupConfig
 	modelProbe           func(context.Context, dsh.Options) (dsh.ProbeResult, error)
 	models               *modelExecution

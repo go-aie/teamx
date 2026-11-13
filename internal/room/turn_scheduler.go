@@ -44,12 +44,19 @@ type turnScheduler struct {
 	owner   actorx.Context
 	members map[MemberIdentity]*turnApplicant
 	queue   []*turnApplicant
-	holder  *turnApplicant
+	holders map[MemberIdentity]*turnApplicant
+	mode    schedulingMode
 	closing bool
 	frozen  *atomic.Bool // service admission boundary; nil in isolated actor tests
 }
 
 func (s *turnScheduler) Started(ctx actorx.Context, _ actorx.Started) error {
+	mode, err := s.mode.effective()
+	if err != nil {
+		return err
+	}
+	s.mode = mode
+	s.holders = make(map[MemberIdentity]*turnApplicant)
 	s.owner = ctx.WithContext(context.WithoutCancel(ctx))
 	s.members = make(map[MemberIdentity]*turnApplicant)
 	return s.maintain()
@@ -69,7 +76,7 @@ func (s *turnScheduler) Request(_ actorx.Context, msg requestTurn) error {
 		}
 		a = &turnApplicant{}
 		s.members[msg.MemberIdentity] = a
-	} else if msg.Target != a.Target || msg.ID <= a.ID || a == s.holder {
+	} else if msg.Target != a.Target || msg.ID <= a.ID || s.holders[msg.MemberIdentity] == a {
 		// Completed/canceled request numbers remain retired until actor exit.
 		return nil
 	}
@@ -91,9 +98,7 @@ func (s *turnScheduler) Cancel(_ actorx.Context, msg cancelTurnRequest) error {
 func (s *turnScheduler) Release(_ actorx.Context, msg releaseTurn) error {
 	if a := s.members[msg.MemberIdentity]; a != nil && a.ID == msg.ID {
 		s.removeQueued(a)
-		if s.holder == a {
-			s.holder = nil
-		}
+		delete(s.holders, msg.MemberIdentity)
 		s.grant()
 	}
 	return nil
@@ -119,14 +124,15 @@ func (s *turnScheduler) grant() {
 	if s.closing || s.frozen != nil && s.frozen.Load() {
 		return
 	}
-	if s.holder == nil && len(s.queue) > 0 {
-		s.holder = s.queue[0]
+	for len(s.queue) > 0 && (s.mode == schedulingParallel || len(s.holders) == 0) {
+		a := s.queue[0]
 		s.queue = s.queue[1:]
-		s.holder.pending = false
+		a.pending = false
+		s.holders[a.MemberIdentity] = a
 	}
-	if a := s.holder; a != nil {
-		// Admission failure and admission without handling both retain this
-		// holder. The maintenance tick reconciles and retries the same grant.
+	for _, a := range s.holders {
+		// Admission failure retains this holder. One member's full mailbox
+		// must not prevent other parallel members from receiving their grants.
 		_ = a.Target.Send(s.owner, turnGranted{a.MemberIdentity, a.ID})
 	}
 }
@@ -161,9 +167,7 @@ func (s *turnScheduler) maintain() error {
 			for _, id := range dead {
 				a := s.members[id]
 				s.removeQueued(a)
-				if s.holder == a {
-					s.holder = nil
-				}
+				delete(s.holders, id)
 				delete(s.members, id)
 			}
 			s.grant()
