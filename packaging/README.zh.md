@@ -1,22 +1,22 @@
-# 构建与发行指南
+# 打包指南
 
-TeamX 使用按系统、架构分开的目录归档，包内包含程序、固定版本的 Node/DSH 和团队模板。使用归档无需安装 Go 或 Node；首次启动和升级方法见[发行包使用说明](release-README.zh.md)。
+本文供维护者从源码构建分发包，包含固定依赖、平台矩阵、本地与 CI 打包。下载、安装和运行见[安装与运行](../docs/installation.zh.md)；候选验收、签名公证和发布见[正式发行指南](releasing.zh.md)；组件原理见 [Server 架构](../docs/server.zh.md)。
 
 | 目的 | 入口 | 产物位置 |
 | --- | --- | --- |
-| 在 GitHub 获取开发快照 | [Package snapshots](../.github/workflows/package.yml) | 对应 Actions 运行的 Artifacts |
+| 用 GitHub Actions 构建开发快照 | [Package snapshots](../.github/workflows/package.yml) | 对应 Actions 运行的 Artifacts |
 | 在本机打包 | [scripts/package.sh](../scripts/package.sh) | 默认 `dist/` |
 | 构建版本候选并正式发行 | [正式发行操作指南](releasing.zh.md) | 候选 Artifacts，验收后发布到 GitHub Release |
 
-## 包的选择与系统要求
+## 包型与构建目标
 
-| 包 | 包含内容 | 使用条件 |
+| 包型 | 归档内容 | 构建与验收边界 |
 | --- | --- | --- |
-| `core` | TeamX、Node/DSH、公开团队模板 | 普通对话协作无需 Git；Git Workspace 和 GitLab／飞书能力所需工具另行安装 |
-| `standard`（默认） | core 的内容，加 glab、lark-cli 及配套资源 | GitLab／飞书账号需登录和绑定；Git Workspace 需要自行安装 Git |
-| `full` | standard 的内容，加完整 Git 运行时 | 无需另装 Git；当前不在默认正式发行范围内 |
+| `core` | TeamX、Node/DSH、公开团队模板 | 不包含 Git 或平台 CLI 运行时 |
+| `standard`（默认） | core 的内容，加 glab、lark-cli 及配套资源 | 增加平台工具依赖与登录／只读／绑定验收，不包含 Git |
+| `full` | standard 的内容，加完整 Git 运行时 | 增加 Git／TLS 与对应源码材料门槛；不在默认正式发行范围 |
 
-所有包都需要使用者配置模型服务与凭据，软件开发任务自己的工具链由项目决定。Scion 当前暂不随包提供运行能力。DSH 固定为 `0.2.2-rc.1` 预发布版本，精确依赖见 [dependencies.lock.json](dependencies.lock.json)。
+各包均按统一 lock 组装，不从开发机复制运行时或私有状态。Scion 运行能力暂不随包提供。DSH 固定为 `0.2.2-rc.1` 预发布版本，精确依赖见 [dependencies.lock.json](dependencies.lock.json)。
 
 构建矩阵包括以下目标；列入矩阵不代表已经通过完整发行验收。
 
@@ -27,11 +27,11 @@ TeamX 使用按系统、架构分开的目录归档，包内包含程序、固�
 | `linux-amd64` | Linux x86-64 | Ubuntu 24.04／glibc 2.39 |
 | `linux-arm64` | Linux ARM64 | Ubuntu 24.04／glibc 2.39 |
 
-运行环境需具备系统 shell、常用命令、证书、进程观察权限及可写的私有目录。macOS 的 DSH 命令工具还需要 `/usr/bin/sandbox-exec`；Linux 需要可用的 DSH 沙箱后端和声明的动态库。不支持 Windows 或 Alpine/musl。
+目标包的运行条件见[安装指南](../docs/installation.zh.md#下载与校验)及 manifest 的 `qualification_baseline`；构建通过不替代该目标的用户环境验收。
 
 **当前仍为开发预览，完整矩阵和正式发行闭环尚未验收完成。** Linux full 存在 `git_tls_runtime` 阻塞：固定 Git 归档没有携带 HTTPS helper 所需的完整 TLS 动态库。脚本会拒绝组装该包；构建机恰好安装了这些库也不能消除缺项。standard 不携带 Git，不受这一组包阻塞影响。
 
-## 在 GitHub 获取开发快照
+## 用 GitHub Actions 构建开发快照
 
 先将打包代码及 Workflow 文件提交到 GitHub 仓库。手动入口需要 Workflow 已进入默认分支，所选构建分支也应包含完整打包代码；只推送到其他 Git 托管服务不会触发 GitHub Actions。入口条件见 [GitHub 手动运行说明](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow)。
 
@@ -46,7 +46,7 @@ TeamX 使用按系统、架构分开的目录归档，包内包含程序、固�
 gh workflow run package.yml --repo OWNER/REPO --ref BRANCH -f profile=standard
 ```
 
-Artifact 内含 `.tar.gz`、同名 `.sha256`、构建检查报告和 `snapshot.json`。先解开 Artifact 的外层压缩包，再按[使用说明](release-README.zh.md)校验、解压其中的 `.tar.gz`。名称中的 attempt 区分同一次 Workflow 的不同执行轮次。
+Artifact 内含 `.tar.gz`、同名 `.sha256`、构建检查报告和 `snapshot.json`。先解开 Artifact 的外层压缩包，再按[使用说明](../docs/installation.zh.md)校验、解压其中的 `.tar.gz`。名称中的 attempt 区分同一次 Workflow 的不同执行轮次。
 
 Pull request 也会自动构建快照，默认使用 standard。快照流程不需要模型或平台账号，不执行真实模型回合，也不发布 GitHub Release。它会在匹配架构的 runner 上组装并检查最终归档，再下载同一归档重新检查；结果用于开发预览。快照 Artifact 保留 7 天。
 
@@ -88,8 +88,12 @@ Pull request 也会自动构建快照，默认使用 standard。快照流程不�
 
 ## 正式发行与维护
 
-正式发行的包型由 lock 中的 `release.profiles` 决定，当前为 core 和 standard，推荐下载 standard。流程先从干净的 `vX.Y.Z` tag 构建候选，再对同一批归档验收和发布；发布时不重新构建。配置测试模型、准备人工验收记录及处理失败的方法见[正式发行操作指南](releasing.zh.md)。默认允许未签名、未公证的 macOS 包，下载后的系统行为仍需验证。
+正式发行的包型由 lock 中的 `release.profiles` 决定，当前为 core 和 standard。流程先从干净的 `vX.Y.Z` tag 构建候选，再对同一批归档验收和发布；发布时不重新构建。配置测试模型、准备人工验收记录及处理失败的方法见[正式发行操作指南](releasing.zh.md)。默认允许未签名、未公证的 macOS 包，下载后的系统行为仍需验证。
 
 升级依赖时显式更新统一 lock、对应 npm lock、许可证及相关版本契约，重新验证受影响目标。公开模板与随包文件由 [bundle-files.json](bundle-files.json) 明确列出；本机配置、`.env`、Room 数据和平台登录资料不属于分发内容。
+
+## 随包文档
+
+安装、运行和维护只维护 [docs/installation.zh.md](../docs/installation.zh.md) 这一份指南。[bundle-files.json](bundle-files.json) 将它原样复制为包内 `README.zh.md`；正式发布脚本也将同一来源复制为 Release 的 `README.zh.md`。指南使用文档内锚点导航，独立下载后可完整阅读，不依赖仓库中的其他文件。不再分别维护 bundle、Release 或 Server 使用说明模板。
 
 需要追溯设计、历史归档摘要或当时的验收范围时，查阅[实施记录](../docs/implementation/packaging/README.zh.md)。这些记录不作为当前操作入口。

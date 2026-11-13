@@ -2,6 +2,25 @@
 
 正式成员由 `MemberAgent` 调度，只支持 DSH Backend。Room 保存共享历史、成员身份与读取进度；成员拥有私有 Session。模型通过同一个 TeamX CLI 读写 Room，普通输出不会自动发言。测试中的观察成员、虚拟 Session 和演示驱动均位于 `*_test.go`，不进入正式二进制。
 
+新用户安装、网页首启及常驻维护见[安装与运行](../../docs/installation.zh.md)。本文面向源码开发与配置排查。
+
+## 从源码运行
+
+需要 Go **1.27+** 和完整 DSH 安装，DSH 的 Node 与依赖须保留，准备方法见[Agent 运行时](../../docs/agent-runtime.zh.md#准备-dsh-与配置)。在仓库根目录执行：
+
+```sh
+go build -o bin/teamx ./cmd/teamx
+cp .teamx/config.example.toml .teamx/config.toml
+```
+
+已有配置时跳过复制，避免覆盖。将 `.teamx/config.toml` 的 `runtime.dsh.binary_path` 填为本机 DSH 的绝对路径（可用 `command -v dsh` 查找），然后运行：
+
+```sh
+./bin/teamx serve --home .teamx
+```
+
+Web 界面已嵌入程序，无需单独启动前端。打开 `http://127.0.0.1:8088`，在网页配置并验证模型，无需 export API Key；默认数据在 `.teamx/data/`。`server.dsh_turn_timeout` 默认为 `"15m"`，大型任务可设 `"30m"`。Ctrl-C 正常停止并等待清理完成，同一配置再次启动可继续已有房间。
+
 ## 服务配置
 
 首次运行直接使用 `teamx serve --home .teamx`，会准备固定操作者；全新安装默认仅本机访问，无需登录。`--home` 缺少模型或模型无效时，可在浏览器设置并启动；`--config` 保留已配置开发环境的直接启动方式。不指定 `--config` 时只读取 `~/.teamx/config.toml`，不自动查找当前目录或项目祖先目录。显式指定的文件缺失或 TOML 结构错误时会阻止启动；两份配置不会合并。
@@ -12,7 +31,7 @@
 
 模型和密钥在「设置 → 模型」验证并维护，无需重启。成员按默认／固定条目选择；执行配置变化等待当前回合结束后轮换，暂停意图保留。删除模型可选择替代条目并查看逐成员进度。旧模型配置在业务恢复前一次迁移，私有备份与固定进度保留；导入条目不伪造验证，旧 Session 使用原快照恢复。迁移冲突时只开放认证后的进度查询与重试。
 
-远程访问必须开启登录验证。在安全设置启用后，会保存 `server.remote_enabled = true`、扩大监听到 `0.0.0.0`，重启后生效。也可手动保留 loopback 监听供本机代理使用，并设置 `server.public_base_url = "https://assistant.example.com"` 和明确的 `server.trusted_proxies` IP 列表，HTTPS 代理保留规范 Host、向 loopback 转发单值 `X-Forwarded-Proto: https`；不支持子路径、别名 origin 或转发 Host。浏览器必须从规范地址访问；内部 Agent 仍使用实际 loopback endpoint。部署、证书和系统服务配置另见[Server 访问记录](../../docs/implementation/server-access.zh.md)。
+在「设置 → 安全」选择仅本机、局域网或 HTTPS 代理，对应 `server.access_mode = "local" | "lan" | "proxy"`。局域网模式要求登录、全接口监听，通过面板列出的本机私有 IP 和端口访问，HTTP 未加密。HTTPS 代理模式要求登录、唯一的 `server.public_base_url = "https://assistant.example.com"` 和明确的 `server.trusted_proxies` IP 列表；受管服务保持 loopback 监听。代理保留规范 Host、向 loopback 转发单值 `X-Forwarded-Proto: https`，不支持子路径、别名 origin 或转发 Host。访问模式、端口和入口地址重启后生效；内部 Agent 始终使用实际 loopback endpoint。常驻安装始终要求登录，目录和生命周期见 [Server 架构](../../docs/server.zh.md)，安装、证书与系统服务配置见[安装与运行](../../docs/installation.zh.md)。
 
 加载规则：
 

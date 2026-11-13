@@ -105,6 +105,60 @@ test("operator display names restore mention reminders and remain marked after v
   assert.equal(ui.el("operator"),undefined);
 });
 
+test("message authors and references use the operator display name without changing identity", async () => {
+  const api = server([makeRoom("A")]), owner = "owner_" + "a".repeat(32);
+  let displayName = "russellluo";
+  api.catalog.operator = owner;
+  const ownMessage = {...message(1, "已处理"), author:{kind:"human",id:owner}};
+  api.history.set("A", [ownMessage, {...message(2, "收到"), reply_to:1},
+    {...message(3, "其他人的消息"), author:{kind:"human",id:"bob"}}]);
+  api.hook = path => path === "/v1/ui" ? {managed:true,operator_display_name:displayName} : undefined;
+  const ui = await launch(api);
+  const own = ui.el("messages").children.find(el => el.id === "message-1");
+  const reply = ui.el("messages").children.find(el => el.id === "message-2");
+  assert.equal(own.querySelector(".author").textContent, "russellluo");
+  assert.equal(own.querySelector(".author-kind").textContent, "你 · HUMAN");
+  assert.equal(reply.querySelector(".message-reference").textContent, "↳ #1 russellluo：已处理");
+  assert.equal(reply.querySelector(".author").textContent, "reviewer");
+  assert.equal(ui.el("messages").children.find(el => el.id === "message-3").querySelector(".author").textContent, "bob");
+  displayName = ""; await ui.refresh();
+  assert.equal(ui.el("messages").children.find(el => el.id === "message-1"), own);
+  assert.equal(own.querySelector(".author").textContent, "用户");
+  assert.equal(reply.querySelector(".message-reference").textContent, "↳ #1 用户：已处理");
+  await ui.draft("继续处理"); await ui.el("compose").emit("submit");
+  assert.deepEqual(api.calls.find(c => c.path === "/v1/send").data.caller, {kind:"human",id:owner});
+  assert.equal(ownMessage.author.id, owner);
+});
+
+test("browser display name edits update cached message authors and references and survive reload", async () => {
+  const api = server([makeRoom("A")]), owner = "owner_" + "b".repeat(32), names = new Map();
+  const localStorage = {getItem:key=>names.get(key),setItem:(key,value)=>names.set(key,value),removeItem:key=>names.delete(key)};
+  const profileKey = JSON.stringify(["teamx.user-name", "installation-a", owner]);
+  names.set(profileKey, "本地昵称");
+  let installation = "installation-a";
+  api.catalog.operator = owner;
+  api.history.set("A", [{...message(1, "已处理"),author:{kind:"human",id:owner}}, {...message(2, "收到"),reply_to:1}]);
+  api.hook = path => path === "/v1/ui" ? {managed:true,installation_id:installation,operator_display_name:"russellluo"} : undefined;
+  const ui = await launch(api, new Map(), {localStorage});
+  const own = ui.el("messages").children.find(el => el.id === "message-1");
+  const reply = ui.el("messages").children.find(el => el.id === "message-2");
+  assert.equal(own.querySelector(".author").textContent, "本地昵称");
+  ui.el("user-display-name").value = "阿罗"; await ui.el("user-name-form").emit("submit");
+  assert.equal(own.querySelector(".author").textContent, "阿罗");
+  assert.equal(reply.querySelector(".message-reference").textContent, "↳ #1 阿罗：已处理");
+  assert.equal(ui.el("user-name").textContent, "阿罗");
+  const reopened = await launch(api, new Map(), {localStorage});
+  assert.equal(reopened.el("messages").children.find(el => el.id === "message-1").querySelector(".author").textContent, "阿罗");
+  names.set(profileKey, "另一个标签页的昵称"); await ui.window.emit("storage", {key:profileKey});
+  assert.equal(own.querySelector(".author").textContent, "另一个标签页的昵称");
+  ui.el("user-display-name").value = ""; await ui.el("user-name-form").emit("submit");
+  assert.equal(own.querySelector(".author").textContent, "russellluo");
+  ui.el("user-display-name").value = "当前服务的昵称"; await ui.el("user-name-form").emit("submit");
+  installation = "installation-b"; await ui.refresh();
+  assert.equal(ui.el("messages").children.find(el => el.id === "message-1").querySelector(".author").textContent, "russellluo");
+  assert.equal(api.history.get("A")[0].author.id, owner);
+});
+
 test("apps sharing the native module graph retain independent selection, drafts and settings", async () => {
   const [first, second] = await Promise.all([
     launch(server([makeRoom("A"), makeRoom("B")])),

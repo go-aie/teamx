@@ -127,7 +127,7 @@ export function assembleRelease(candidates, assessments, context, output, source
     }
     fs.writeFileSync(p.join(notices, 'README.zh.md'), '各目标的许可文本与部署材料见对应目录。full 的完整 Git 对应源码与构建材料保留在原发行归档的 THIRD_PARTY_NOTICES/git-source/ 中；其他依赖的许可也保留在各归档运行时目录。\n');
     run('tar', ['-czf', p.join(stage, 'LICENSES.tar.gz'), '-C', temporary, 'licenses'], { env: { ...process.env, COPYFILE_DISABLE: '1' } });
-    fs.copyFileSync(p.join(sourceRoot, 'packaging/release-README.zh.md'), p.join(stage, 'README.zh.md'));
+    fs.copyFileSync(p.join(sourceRoot, 'docs/installation.zh.md'), p.join(stage, 'README.zh.md'));
     writeJSON(p.join(stage, 'release.json'), { schema_version: 1, kind: 'qualified_release',
       release_ready: true, context, policy: { macos_signing: 'optional_unsigned_allowed' },
       dependency_lock_sha256: digest(p.join(sourceRoot, 'packaging/dependencies.lock.json')), bundles: records });

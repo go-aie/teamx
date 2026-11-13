@@ -27,9 +27,19 @@ export async function acceptBrowser({ bundle, output, env }) {
   let before;
   let service, browser;
   const errors = [];
+  const login = async (page, endpoint) => {
+    await page.goto(endpoint);
+    await page.locator('#token:visible, #model-form:visible, #new-room:visible').first().waitFor();
+    if (await page.locator('#token').isVisible()) {
+      await page.locator('#token').fill(fs.readFileSync(p.join(home,'auth/admin-token'),'utf8').trim());
+      await page.locator('#login-submit').click();
+    }
+  };
   let catalogBusyRetries = 0;
   const readCatalog = endpoint => until(async () => {
-    const response = await fetch(endpoint + '/v1/rooms', { headers:{Authorization:`Bearer ${fs.readFileSync(p.join(home,'auth/admin-token'),'utf8').trim()}`}, signal: AbortSignal.timeout(3000) });
+    const file = p.join(home,'auth/admin-token');
+    const response = await fetch(endpoint + '/v1/rooms', { headers:fs.existsSync(file)?
+      {Authorization:`Bearer ${fs.readFileSync(file,'utf8').trim()}`}:{}, signal: AbortSignal.timeout(3000) });
     const catalog = await response.json();
     if (response.status === 409 && catalog.code === 'busy') {
       catalogBusyRetries++;
@@ -78,8 +88,7 @@ export async function acceptBrowser({ bundle, output, env }) {
     browser = await chromium.launch({ headless: true });
     const page = await browser.newPage({ viewport: { width: 1360, height: 960 } });
     page.on('pageerror', error => errors.push(error.message));
-    const login = async () => {await page.goto(endpoint);await page.locator('#token').fill(fs.readFileSync(p.join(home,'auth/admin-token'),'utf8').trim());await page.locator('#login-form button').click();};
-    await login();
+    await login(page, endpoint);
     await page.locator('#save-model').waitFor();
     must(await page.locator('#api-key').isVisible(),'Fresh browser must offer API Key input');
     await page.screenshot({path:p.join(output,'first-start.png'),fullPage:true});
@@ -89,7 +98,7 @@ export async function acceptBrowser({ bundle, output, env }) {
     const manifest=JSON.parse(fs.readFileSync(p.join(bundle,'manifest.json'),'utf8'));
     seedOfflineModels(home,p.join(bundle,'bin/dsh'),manifest.dependencies.dsh.version);
     before=[config,template].map(file=>hash(fs.readFileSync(file)));
-    endpoint=await launch();await login();
+    endpoint=await launch();await login(page, endpoint);
     await page.locator('#new-room').waitFor({ state: 'visible' });
     await page.locator('#new-room').click();
     await page.locator('#new-team-room').click();
@@ -112,9 +121,7 @@ export async function acceptBrowser({ bundle, output, env }) {
     must(after.rooms.some(r => r.room_id === room.room_id && r.room_instance === room.room_instance), 'Browser Room lost across restart');
     const reopened = await browser.newPage();
     reopened.on('pageerror', error => errors.push(error.message));
-    await reopened.goto(restarted);
-    await reopened.locator('#token').fill(fs.readFileSync(p.join(home,'auth/admin-token'),'utf8').trim());
-    await reopened.locator('#login-form button').click();
+    await login(reopened, restarted);
     await reopened.locator('.room-choice').filter({ hasText: 'P3 归档浏览器验收' }).waitFor();
     await reopened.close();
     await stop('SIGTERM');

@@ -7,6 +7,7 @@ import { hash, json, writeJSON, must, run, extract, inventory } from './package-
 import { checkBinaries } from './package-platform.mjs';
 import { checkSmoke, checkRealDSH, resultForScope } from './package-acceptance-lib.mjs';
 import { acceptBrowser } from './package-browser.mjs';
+import { acceptanceInputs } from './package-release.mjs';
 
 const root = p.resolve(p.dirname(fileURLToPath(import.meta.url)), '..');
 const usage = 'package-acceptance.sh ARCHIVE --output-dir NEW_PRIVATE_DIR [--model-config TOML] [--env-file FILE]';
@@ -27,18 +28,13 @@ fs.mkdirSync(output, { mode: 0o700 });
 process.umask(0o077);
 const report = {
   schema_version: 1, status: 'incomplete', recorded_at: new Date().toISOString(),
-  scope: 'local archive smoke + real DSH/ACP + production browser; Git/Scion/platform accounts excluded by user',
+  scope: 'local archive smoke + real DSH/ACP + production browser; physical devices, resident deployment and platform qualification are separate',
   release_ready: false,
   deferred: ['Git/TLS/clone', 'Scion', 'GitLab/Lark account login/read/bind',
     'other delivery targets', 'download quarantine/signing and clean-machine qualification'],
   environment: { platform: process.platform, process_arch: process.arch, machine: os.machine(), os_release: os.release() },
   checks: {},
-  verifier_inputs: ['scripts/package-acceptance.mjs', 'scripts/package-acceptance-lib.mjs',
-    'scripts/package-browser.mjs', 'scripts/package-lib.mjs', 'scripts/package-platform.mjs',
-    'scripts/package-smoke.mjs', 'scripts/check-dsh-native.mjs', 'scripts/fixtures/acp.mjs', 'scripts/fixtures/models.mjs',
-    'internal/room/bundle_real_e2e_test.go', 'internal/room/dsh_real_test.go',
-    'internal/room/demo_test.go', 'packaging/verifier/package.json',
-    'packaging/verifier/package-lock.json', 'scripts/package-profiles.mjs'].map(path => ({ path, sha256: hash(fs.readFileSync(p.join(root, path))) }))
+  verifier_inputs: acceptanceInputs.map(path => ({ path, sha256: hash(fs.readFileSync(p.join(root, path))) }))
 };
 const save = () => writeJSON(p.join(output, 'report.json'), report);
 async function step(name, work) {

@@ -1,7 +1,12 @@
 import { randomUUID } from "./random-id.mjs";
 import { fillModelParameters, readModelParameters, syncModelProtocol, modelDraftFields, snapshotModelFields, restoreModelFields } from "./model-form.mjs";
 const $ = id => document.getElementById(id);
+function returnToApp() {
+  const hash=location.hash || "";
+  location.replace("/" + (hash.startsWith("#platform-connection=") || hash==="#platform-settings" ? hash : ""));
+}
 let version = 0, requestID, polling = false, configuredKey = false, active = true;
+let setupRead = 0, submitting = false;
 let operator, draftKey, draftReady=false, loginEnabled=true;
 let storage; try { storage=sessionStorage; } catch {}
 function saveDraft() {
@@ -31,14 +36,40 @@ function keyState() {
 function protocolState() { syncModelProtocol($); }
 function busy(value) {
   for (const el of $("model-form").elements) el.disabled = value;
+  $("reload-model-draft").disabled = value;
   $("save-model").textContent = value ? "正在验证…" : "验证并开始使用";
 }
+function reconcileSetup(state) {
+  if (!state.setup_required) { returnToApp(); return true; }
+  const operation = state.operation;
+  const pending = operation && ["validating", "saved"].includes(operation.status);
+  // Only an authenticated read can settle an uncertain submission. The setup
+  // endpoint holds one operation and rejects another while it is running.
+  requestID = pending ? operation.operation_id || requestID : undefined;
+  saveDraft(); busy(!!pending); $("check-setup-operation").hidden = !pending;
+  if (operation) feedback(operation.message || "正在验证模型，稍后将自动进入对话。");
+  else feedback("尚未保存模型，请核对表单后明确提交。");
+  return !pending;
+}
 async function showSession() {
-  draftReady=false;
-  try { const session=await request("/v1/access/session"); operator=session.operator; loginEnabled=session.login_enabled !== false; draftKey=JSON.stringify(["teamx.setup-draft",session.installation_id || location.origin,operator]); } catch { $("login").hidden=false; $("logout").hidden=true; $("model").hidden=true; $("api-key").value=""; return; }
+  if (submitting) return;
+  const generation = ++setupRead;
+  try {
+    const session=await request("/v1/access/session");
+    if (generation !== setupRead) return;
+    operator=session.operator;
+    loginEnabled=session.login_enabled !== false;
+    const nextKey=JSON.stringify(["teamx.setup-draft",session.installation_id || location.origin,operator]);
+    if (draftKey !== nextKey) { requestID=undefined; draftReady=false; }
+    draftKey=nextKey;
+  } catch {
+    if (generation !== setupRead) return;
+    $("login").hidden=false; $("logout").hidden=true; $("model").hidden=true; $("api-key").value=""; return;
+  }
   $("login").hidden = true; $("logout").hidden = !loginEnabled;
   const state = await request("/v1/setup");
-  if (!state.setup_required) { location.replace("/"); return; }
+  if (generation !== setupRead) return;
+  if (!state.setup_required) { returnToApp(); return; }
   if (state.migration) {$("model").hidden=true;$("retry-migration").hidden=false;$("retry-migration").disabled=state.migration.running;feedback(`${state.message} 已处理 ${state.migration.completed} / ${state.migration.total}。`);return;}
   $("model").hidden = false;
   version = state.version;
@@ -47,39 +78,39 @@ async function showSession() {
   configuredKey = state.credential_configured; $("replace-key-label").hidden = !configuredKey;
   restoreDraft(); draftReady=true; keyState(); protocolState();
   if (state.writable === false) {busy(true); $("save-model").textContent = "需要迁移或部署机修复"; feedback(state.message); return;}
-  if (state.operation?.status === "failed") {requestID=undefined;saveDraft();busy(false);}
-  if (state.operation) {
-    feedback(state.operation.message || "正在验证模型，稍后将自动进入对话。验证最多约 90 秒。");
-    if (["validating", "saved"].includes(state.operation.status)) {busy(true); poll();}
-  }
+  const draftFeedback = $("feedback").textContent;
+  if (!reconcileSetup(state)) void poll();
+  else if (!state.operation && !$("reload-model-draft").hidden) feedback(draftFeedback);
 }
 async function poll() {
   if (polling) return;
   polling = true;
-  while (active) {
-    await new Promise(resolve => setTimeout(resolve, 700));
-    if (!active) break;
-    if (document.hidden || navigator.onLine === false) continue;
-    try {
-      const state = await request("/v1/setup");
-      if (!state.setup_required) { location.replace("/"); return; }
-      if (state.operation) {
-        feedback(state.operation.message || "正在验证模型…");
-        if (state.operation.status === "failed") {requestID = undefined; saveDraft(); busy(false); polling = false; return;}
+  try {
+    while (active) {
+      await new Promise(resolve => setTimeout(resolve, 700));
+      if (!active) break;
+      if (document.hidden || navigator.onLine === false) continue;
+      const generation = setupRead;
+      try {
+        const state = await request("/v1/setup");
+        if (generation !== setupRead) continue;
+        if (reconcileSetup(state)) return;
+      } catch (error) {
+        if (generation !== setupRead) continue;
+        if (error.status === 401) {location.replace("/access"); return;}
+        feedback("提交结果尚未确认，正在查询原操作；不会重新提交。也可点击读取进度。");
       }
-    } catch (error) {
-      if (error.status === 401) {location.replace("/access"); return;}
-      feedback("正在重新连接；服务会保留验证任务。刷新页面可查看结果。");
     }
-  }
-  polling = false;
+  } finally { polling = false; }
 }
 for (const id of modelDraftFields) { $(id).addEventListener("input",saveDraft); $(id).addEventListener("change",saveDraft); }
 $("reload-model-draft").addEventListener("click",async()=>{
+  if (requestID || $("reload-model-draft").disabled) return;
   try {storage?.removeItem(draftKey);} catch {}
   requestID=undefined;$("reload-model-draft").hidden=true;$("api-key").value="";
   feedback("已放弃旧草稿，请按当前配置重新填写。");await showSession();
 });
+$("check-setup-operation").addEventListener("click",()=>showSession().catch(()=>feedback("暂时无法读取原操作，恢复连接后将继续查询。")));
 $("replace-key").addEventListener("change", keyState);
 $("retry-migration").addEventListener("click", async()=>{ $("retry-migration").disabled=true;try{await request("/v1/models/migration/retry",{caller:{kind:"human",id:operator}});feedback("迁移正在继续，完成后可刷新进入对话。");}catch(error){feedback(error.message);}finally{$("retry-migration").disabled=false;} });
 $("protocol").addEventListener("change", protocolState);
@@ -125,21 +156,24 @@ $("login-form").addEventListener("submit", async event => {
 });
 $("model-form").addEventListener("submit", async event => {
   event.preventDefault();
+  if (requestID || $("save-model").disabled) return;
+  ++setupRead; submitting=true; $("check-setup-operation").disabled=true;
   const data = {request_id:requestID ||= randomUUID(), expected_version:version, ...readModelParameters($)};
   saveDraft();
   if (!configuredKey || $("replace-key").checked) data.api_key = $("api-key").value;
   $("api-key").value = ""; busy(true);
+  $("check-setup-operation").hidden = false;
   try {
     const operation = await request("/v1/setup/model", data);
     feedback(operation.message || "正在验证文本和工具往返，最多约 90 秒。关闭页面后任务仍会继续。");
     poll();
   } catch (error) {
-    requestID = undefined;
     // A lost HTTP response may still have admitted the operation. Reconcile
     // before accepting a fresh submission, without retaining the key.
-    try { const state = await request("/v1/setup"); if (state.operation?.status === "validating") {poll(); return;} } catch {}
-    feedback(error.message); busy(false);
-  } finally { data.api_key = ""; }
+    try { if (reconcileSetup(await request("/v1/setup"))) {feedback(error.message); return;} }
+    catch { feedback("提交结果尚未确认，正在查询原操作；不会重新提交。也可点击读取进度。"); }
+    void poll();
+  } finally { data.api_key = ""; submitting=false; $("check-setup-operation").disabled=false; }
 });
 $("logout").addEventListener("click", async () => {$("api-key").value = ""; try {await request("/v1/access/logout", {}); location.replace("/access");} catch(error) {feedback(error.message);} });
 addEventListener("pagehide", () => {saveDraft();active = false; $("api-key").value = ""; $("token").value = ""; hideToken();});

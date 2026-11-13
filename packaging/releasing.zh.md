@@ -1,6 +1,6 @@
 # 正式发行操作指南
 
-本指南供维护者将同一批版本候选验收并发布到 GitHub Release。只需要开发快照时，使用[构建与发行指南](README.zh.md)中的 Package snapshots。
+本指南供维护者将同一批版本候选验收并发布到 GitHub Release。构建开发快照见[打包指南](README.zh.md)；下载、安装和维护现有版本见[安装与运行](../docs/installation.zh.md)。
 
 正式发行的包型以统一 lock 的 `release.profiles` 为准，当前是四个平台的 core/standard 共 8 个包，推荐 standard；它们都必须具备发行资格。full 不在默认正式发行范围内，Linux full 的 `git_tls_runtime` 缺项仍保留。已有的单目标开发包通过结果不能代替新候选验收。
 
@@ -57,6 +57,29 @@ node scripts/package-release.mjs qualification-template \
 | `downloaded_system_security`：Linux | 在声明系统中检查实际动态库和运行能力均在基线内 |
 | `git_tls_clone`：full | 包内 Git 的 helper、证书验证、HTTPS clone 与本地 commit 均可用，未借用宿主 Git |
 | `platform_login_read_bind`：standard／full | 用隔离账号完成 GitLab／飞书登录、只读查询和 TeamX 连接绑定，远端写入为 0 |
+| `resident_server`：Linux amd64／macOS arm64 standard | 同一归档完成常驻安装、无 export Key 首启／重启、停止／启用、子进程清理、浏览器关闭后采集投递执行、一致备份升级恢复、保留旧 Runtime、已提交模型操作中断后的查询／重试；Linux 另验退出 SSH、机器重启和固定账号发送 |
+| `web_delivery`：上述两个 standard 目标 | 同一归档的真实模型后续请求与执行快照、真实浏览器声明、平台读取／通知／授权及获授权动作、至少 24 小时部署观察；见下述记录要求 |
+
+`resident_server.observations.model_delivery_sha256` 必须等于归档 `manifest.server_deployment.model_delivery_sha256`，绑定模型阶段 4 交付记录。`migration` 仅接受经核对的 `not_applicable` 或 `resume_verified`；其余字段须来自真实部署证据。Linux 固定账号发送仍受保护时不能填写 `lark_account_pinned_send=true`，该目标保持发行阻断。macOS 登录／休眠限制也须记录。沿用四目标和 core／standard 矩阵，不因局部部署通过改变发布清单。
+
+`web_delivery` 也绑定该模型交付摘要。`models` 必须完成无 export Key 首启、默认／固定引用、条目更新、换 Key、删除替换、等待／部分失败、刷新原操作、重启后真实调用，并核对请求和执行快照；填写 DSH 身份材料摘要及上游范围。同一上游多条目与不同上游分别声明，其他上游及旧 DSH 可明确为 `not_run`。保存成功或 generation 文件不能单独证明后续调用生效。
+
+`browsers` 固定列出桌面 Chromium、桌面 Safari、iOS Safari、Android Chrome；每项默认 `not_run`。真实设备完成登录、模型首启／维护／成员选择、对话、平台授权返回、草稿刷新、断网恢复和后台返回后才填 `passed`、版本、OS 与证据摘要。手机还须实际软键盘／触控／旋转；桌面检查对应键盘／窗口操作。无真实设备时保持 `not_run`，不能用 Playwright 手机视口或 WebKit 代替 Safari。至少一个桌面浏览器通过；公开评估只将通过项列入 `supported_browsers`，其余列入 `pending_browsers`，不会据此宣称完整手机支持。
+
+`platforms` 包含真实读取、通知采集／投递、授权返回及已获授权测试目标的动作和远端结果核对。动作授权与结果材料分别计算摘要；此项不改变只读 `platform_login_read_bind` 的零远端写入要求。不要为填写记录而自行选择真实写入目标。
+
+部署观察使用只读工具（部署账号运行，使用归档内 `current/runtime/node/bin/node` 或兼容的 Node）：
+
+```sh
+node scripts/server-observation.mjs \
+  --archive /absolute/candidate-standard.tar.gz \
+  --server-root /absolute/server-root \
+  --endpoint https://assistant.example.com \
+  --token-file /absolute/home/auth/admin-token \
+  --output-dir /absolute/new-private-observation
+```
+
+默认观察 86400 秒、每 60 秒采样；每次认证读取实例、Room、模型操作和各 Room 已存订阅，记录采集积压、错误／限流及恢复。开始／结束核对已安装文件与归档；采样中校验 current、实例及代际，换归档须另开观察。进程中断、短跑、长时间休眠或无订阅都不能证明后台采集通过；失败样本完整保留。工具的 `completed_pending_review` 仅表示计时与采样连续性，始终 `release_ready=false`。至少 24 小时、最大间隔不超过 180 秒的证据还须人工核对平台积压／限流恢复、失败、同一实例／归档，再将私有报告摘要与时间／样本写入 `observation`。`--duration-seconds` 可供短探针使用，短探针始终不满足 24 小时资格。
 
 保留每项操作的私有证据，计算其 SHA-256 后填写 `evidence_sha256`、实际 UTC 时间 `tested_at`、`status=passed` 和观察结果。`fixture` 必须为 false，`method` 为 `maintainer_manual`。人工记录表示维护者对实际操作的确认，不会被当作自动测试结果。
 

@@ -8,7 +8,7 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
   const { document, window, request } = env;
   const { state, $, notice, dismissOnBackdrop } = runtime;
 
-  const models = createModels({env, runtime, openSettings:() => openSettings("models")});
+  const models = createModels({env, runtime, openSettings:() => openSettings("models"), onMemberStatus:status => membersUI.renderMemberModelStatus(status)});
   const access = createAccessSettings({env, runtime});
   const settingsTabs = ["general", "models", "platforms", "security"];
   const availableSettingsTabs = () => state.managed ? settingsTabs : ["general", "security"];
@@ -263,6 +263,7 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
   return {
     mount,
     openMemberModel: models.openMember,
+    showMemberModelDetails: models.showMemberDetails,
     showPlatforms,
     systemTime,
     readTimeInput,

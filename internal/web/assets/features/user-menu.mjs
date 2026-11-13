@@ -1,7 +1,7 @@
 import { createUserIcon } from "../icons.mjs";
 
 // A browser-local display name never changes the authenticated operator.
-export function createUserMenu({ env, runtime }) {
+export function createUserMenu({ env, runtime, conversationUI }) {
   const { document, window, request, fetch } = env;
   const { $, state } = runtime;
   let storage;
@@ -15,7 +15,7 @@ export function createUserMenu({ env, runtime }) {
     return name && name !== "operator" && !/^owner_[0-9a-f]{32}$/i.test(name) ? name : "用户";
   }
 
-  function render() {
+  function displayName() {
     const key = JSON.stringify(["teamx.user-name", state.installationID || "", state.operator]);
     if (key !== profileKey) {
       profileKey = key;
@@ -25,11 +25,15 @@ export function createUserMenu({ env, runtime }) {
       $("user-display-name").value = customName || defaultName();
       $("user-name-feedback").textContent = "";
     }
-    const displayName = customName || defaultName();
+    return customName || defaultName();
+  }
+
+  function render() {
+    const name = displayName();
     $("user-display-name").placeholder = defaultName();
-    $("user-name").textContent = displayName;
-    $("user-menu-toggle").title = `${displayName} · 用户菜单`;
-    $("user-menu-toggle").setAttribute("aria-label", `${displayName} · 用户菜单`);
+    $("user-name").textContent = name;
+    $("user-menu-toggle").title = `${name} · 用户菜单`;
+    $("user-menu-toggle").setAttribute("aria-label", `${name} · 用户菜单`);
   }
 
   function close(restoreFocus = false) {
@@ -88,6 +92,7 @@ export function createUserMenu({ env, runtime }) {
     window.addEventListener("storage", event => {
       if (event.key !== profileKey && event.key !== null) return;
       names.delete(profileKey); profileKey = undefined; render();
+      conversationUI.renderMessages();
     });
     $("user-name-form").addEventListener("submit", event => {
       event.preventDefault();
@@ -101,6 +106,7 @@ export function createUserMenu({ env, runtime }) {
         persisted = !!storage;
       } catch { /* Retain the name in memory. */ }
       render(); $("user-display-name").value = customName || defaultName();
+      conversationUI.renderMessages();
       $("user-name-feedback").textContent = persisted ? "名称已保存" : "本次已更新，浏览器未能保存";
     });
     $("access-logout").addEventListener("click", async () => {
@@ -116,5 +122,5 @@ export function createUserMenu({ env, runtime }) {
     });
   }
 
-  return { mount, render };
+  return { mount, render, displayName };
 }

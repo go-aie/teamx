@@ -44,6 +44,7 @@ type accessContextKey struct{}
 type serverAccess struct {
 	operator, internal, public string
 	installationID             string
+	managed                    bool // Versioned system-service deployment; HTTP boundary only.
 	setupRequired              bool
 	admin                      [32]byte
 	disabled                   bool // Only anonymous human access; Agent credentials remain mandatory.
@@ -86,6 +87,10 @@ func validAdminToken(value string) bool {
 	return true
 }
 func readAdminToken(path string) (string, error) {
+	return readAdminTokenForUID(path, uint32(os.Geteuid()))
+}
+
+func readAdminTokenForUID(path string, uid uint32) (string, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
 		return "", fmt.Errorf("admin token unavailable; run teamx access init --config <config.toml>: %w", err)
@@ -94,7 +99,7 @@ func readAdminToken(path string) (string, error) {
 		return "", errors.New("admin token must be a regular, non-symlink 0600 file")
 	}
 	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok || stat.Uid != uint32(os.Geteuid()) {
+	if !ok || stat.Uid != uid {
 		return "", errors.New("admin token must belong to the deployment account")
 	}
 	f, err := os.Open(path)
@@ -144,6 +149,7 @@ func newServerAccess(c startupConfig, endpoint string) (*serverAccess, error) {
 	a.disabled, a.config, a.version = disabled, c, 1
 	a.activeMode = configuredAccessMode(c)
 	a.lanHosts = localLANHosts()
+	a.managed = c.installationID != ""
 	a.activeListen = strings.TrimPrefix(endpoint, "http://")
 	if c.Server.Listen != nil {
 		a.activeListen = *c.Server.Listen

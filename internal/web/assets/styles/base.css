@@ -199,6 +199,7 @@ h1 {
   text-overflow:ellipsis;
   white-space:nowrap;
 }
+#room-heading:has(#room-name:empty) { visibility:hidden; }
 .room-actions {
   display:flex;
   margin-left:auto;

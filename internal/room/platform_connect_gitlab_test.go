@@ -514,3 +514,39 @@ func TestGitLabConnectBridgeIdentifiesStalePageAndNoncanonicalOrigin(t *testing.
 		})
 	}
 }
+
+func TestGitLabCompletionReturnsOnlyBoundOriginalOperation(t *testing.T) {
+	g, _, _, req := gitlabConnectFixture(t)
+	op := connectHTTP(t, g.h.m, "start", req)
+	auth, cookie := authorizeGitlabConnect(t, g, req, op)
+	callback := g.callback(auth, cookie, nil)
+	location := callback.Header().Get("Location")
+	if location != gitlabCompletePath+"?operation_id="+op.ID {
+		t.Fatal(location)
+	}
+	for _, bound := range []bool{false, true} {
+		r := httptest.NewRequest("GET", g.h.m.config.endpoint+location+"&return_url=https://attacker.invalid", nil)
+		if bound {
+			r.AddCookie(cookie)
+		}
+		w := httptest.NewRecorder()
+		g.h.m.ServeHTTP(w, r)
+		body := w.Body.String()
+		if w.Code != 200 || !strings.Contains(body, `name="viewport"`) || !strings.Contains(body, "返回 TeamX 查看结果") || w.Header().Get("Cache-Control") != "no-store" {
+			t.Fatal(w.Code, body)
+		}
+		if strings.Contains(body, "attacker.invalid") || strings.Contains(body, auth.SessionID) || strings.Contains(body, "candidate-access") || strings.Contains(body, "code_verifier") {
+			t.Fatal("unsafe completion", body)
+		}
+		if bound {
+			if !strings.Contains(body, "/#platform-connection=") || !strings.Contains(body, op.ID) {
+				t.Fatal("missing original operation", body)
+			}
+		} else if strings.Contains(body, op.ID) || strings.Contains(body, "/#platform-connection=") {
+			t.Fatal("completion exposed browser binding", body)
+		}
+	}
+	if g.posts.Load() != 1 {
+		t.Fatal("completion replayed exchange")
+	}
+}

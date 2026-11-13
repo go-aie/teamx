@@ -461,8 +461,17 @@ func consumeConnectTestInbox(t *testing.T, svc *service, id MemberIdentity, turn
 		}
 		time.Sleep(time.Millisecond)
 	}
-	if _, err := svc.inboxes[id.MembershipID].Call[InboxStatus](ctx, ConfirmInboxBatch{MemberIdentity: id, TurnNumber: turn, Receipt: page.Batch.Receipt}); err != nil {
-		t.Fatal(err)
+	// Confirm shares the checkpoint admission boundary too. Retry only an
+	// explicit rejection, using the same batch receipt throughout.
+	for {
+		_, err := svc.inboxes[id.MembershipID].Call[InboxStatus](ctx, ConfirmInboxBatch{MemberIdentity: id, TurnNumber: turn, Receipt: page.Batch.Receipt})
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, ErrBusy) || ctx.Err() != nil {
+			t.Fatal(err, ctx.Err())
+		}
+		time.Sleep(time.Millisecond)
 	}
 	return page
 }

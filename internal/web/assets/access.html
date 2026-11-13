@@ -28,6 +28,6 @@
 <label for="reasoning-effort">推理强度</label><select id="reasoning-effort"><option value="">使用适配器默认值</option><option value="off">off</option><option value="minimal">minimal</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option><option value="xhigh">xhigh</option><option value="max">max</option></select>
 <div id="developer-compat"><label for="developer-role">接口兼容性 · developer 指令角色</label><select id="developer-role"><option value="">使用适配器默认值</option><option value="false">不支持 developer（使用 system）</option><option value="true">支持 developer</option></select><p>部分网关仅接受 system。此项不改变 Agent 身份、权限或推理设置。</p></div><p id="protocol-note" hidden>此协议不支持 developer 兼容设置；切换协议会清除此项。</p>
 </details>
-<button id="save-model" type="submit">验证并开始使用</button></form></section>
+<button id="save-model" type="submit">验证并开始使用</button></form><button id="check-setup-operation" type="button" hidden>读取原操作进度</button></section>
 <p id="feedback" role="status" aria-live="polite"></p><button id="retry-migration" type="button" hidden>重试迁移</button><button id="logout" type="button" hidden>退出登录</button>
 </main></body></html>

@@ -151,6 +151,7 @@ type accessSettingsView struct {
 	RestartRequired bool                `json:"restart_required"`
 	RemoteActive    bool                `json:"remote_active"`
 	Writable        bool                `json:"writable"`
+	LoginRequired   bool                `json:"login_required"`
 	AccessMode      string              `json:"access_mode"`
 	ActiveMode      string              `json:"active_mode"`
 	Port            string              `json:"port"`
@@ -171,7 +172,7 @@ func (a *serverAccess) settingsView() accessSettingsView {
 		port = portFromAddress(*a.config.Server.Listen)
 	}
 	return accessSettingsView{Version: a.version, LoginEnabled: !a.disabled, RemoteEnabled: remoteAccessEnabled(a.config), PublicBaseURL: a.config.Server.PublicBaseURL,
-		RestartRequired: restart, RemoteActive: a.activeMode != accessLocal, Writable: a.document != nil,
+		RestartRequired: restart, RemoteActive: a.activeMode != accessLocal, Writable: a.document != nil, LoginRequired: a.managed,
 		AccessMode: configuredAccessMode(a.config), ActiveMode: a.activeMode, Port: port, LANHosts: append([]string{}, a.lanHosts...), PasswordPolicy: accessPasswordPolicy}
 }
 
@@ -255,6 +256,10 @@ func (a *serverAccess) serveSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if a.document == nil {
 		writeAPIError(w, ErrRequest)
+		return
+	}
+	if a.managed && !input.LoginEnabled {
+		writeAPIError(w, invalidField("login_enabled", "后台服务需要登录验证。"))
 		return
 	}
 	if !input.LoginEnabled && a.activeMode != accessLocal {

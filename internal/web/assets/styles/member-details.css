@@ -54,6 +54,17 @@
 
 /* Agent details share the context rail gutters and settings controls. */
 #activity-dialog > .activity-header { flex-wrap:nowrap; }
+.agent-heading { flex:1; min-width:0; }
+.agent-heading h2 { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.agent-heading .member-status { margin-top:2px; font-size:11px; line-height:16px; }
+#agent-quick-actions { flex:none; margin:0; }
+.agent-controls-toggle { flex:none; gap:4px; min-width:44px; min-height:44px; padding:8px; }
+.agent-controls-toggle svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+.agent-controls-toggle[aria-expanded="true"] svg { transform:rotate(180deg); }
+.agent-controls-toggle[data-state="error"],.agent-controls-toggle[data-state="error"]:hover:not(:disabled) { color:var(--danger); }
+.agent-controls-toggle[data-state="busy"] { color:var(--accent); }
+#agent-model-alert { font-size:var(--font-small); white-space:nowrap; }
+.agent-controls { flex:none; min-width:0; max-height:50dvh; overflow:auto; border-bottom:1px solid var(--line); }
 .agent-overview {
   display:flex;
   flex-shrink:0;

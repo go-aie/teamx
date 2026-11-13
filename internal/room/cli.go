@@ -504,6 +504,8 @@ func Run(args []string, stdout, stderr io.Writer) error {
 	}
 	if len(args) > 0 {
 		switch args[0] {
+		case "service":
+			return runService(args[1:], stdout, stderr)
 		case "access":
 			if len(args) > 1 && args[1] == "init" {
 				return runAccessInit(args[2:], stdout, stderr)

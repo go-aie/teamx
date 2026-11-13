@@ -153,7 +153,7 @@
       "destination": "bin/dsh"
     },
     {
-      "source": "packaging/bundle-README.zh.md",
+      "source": "docs/installation.zh.md",
       "destination": "README.zh.md"
     },
     {
@@ -167,6 +167,22 @@
     {
       "source": "packaging/Git-README.zh.md",
       "destination": "THIRD_PARTY_NOTICES/Git-README.zh.md"
+    },
+    {
+      "source": "internal/room/service_templates/teamx.service.tmpl",
+      "destination": "share/teamx/service/teamx.service.tmpl"
+    },
+    {
+      "source": "internal/room/service_templates/com.teamx.server.plist.tmpl",
+      "destination": "share/teamx/service/com.teamx.server.plist.tmpl"
+    },
+    {
+      "source": "internal/room/service_templates/Caddyfile.example",
+      "destination": "share/teamx/service/Caddyfile.example"
+    },
+    {
+      "source": "internal/room/service_templates/journald.conf.example",
+      "destination": "share/teamx/service/journald.conf.example"
     }
   ],
   "teams": [

@@ -4,9 +4,10 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as p from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { hash, inventory, json, run, writeJSON } from './package-lib.mjs';
+import { extract, hash, inventory, json, run, writeJSON } from './package-lib.mjs';
 import { acceptanceInputs, assessCandidate, checkAssessment, inspectCandidate, releasePlan } from './package-release.mjs';
-import { checkQualification, qualificationFor, qualificationTemplate } from './package-qualification.mjs';
+import { checkQualification, qualificationFor, qualificationTemplate, residentServerTarget, residentServerFields } from './package-qualification.mjs';
+import { browserNames, browserFields, modelFields, platformFields, webDeliveryTemplate } from './server-release-policy.mjs';
 import { signingPolicy } from './package-signing.mjs';
 import { hasDependency, profileDependencies } from './package-profiles.mjs';
 import { assembleRelease, assessmentName, candidateName, checkReleaseDirectory, publishRelease, validateCandidateRun } from './package-publish.mjs';
@@ -25,9 +26,9 @@ function fixture(t, includeFull = false) {
   const source = p.join(temp, 'source'), candidates = p.join(temp, 'candidates'), assessments = p.join(temp, 'assessments');
   fs.mkdirSync(candidates); fs.mkdirSync(assessments);
   for (const file of new Set([...acceptanceInputs, 'scripts/package-release.mjs', 'scripts/package-qualification.mjs',
-    'scripts/package-ci.mjs', 'scripts/package-release-source.mjs', 'scripts/package-signing.mjs',
+    'scripts/package-ci.mjs', 'scripts/package-release-source.mjs', 'scripts/package-signing.mjs', 'scripts/server-release-policy.mjs',
     'packaging/dependencies.lock.json', 'packaging/dsh/package.json', 'packaging/dsh/package-lock.json',
-    'tools/gitlab/glab.lock.json', 'packaging/release-README.zh.md', 'LICENSE'])) {
+    'tools/gitlab/glab.lock.json', 'docs/installation.zh.md', 'LICENSE'])) {
     fs.mkdirSync(p.dirname(p.join(source, file)), { recursive: true });
     fs.copyFileSync(p.join(root, file), p.join(source, file));
   }
@@ -47,7 +48,7 @@ function fixture(t, includeFull = false) {
     const name = `teamx-${version}-${row.target}-${row.profile}`, bundle = p.join(temp, name);
     fs.mkdirSync(p.join(bundle, 'THIRD_PARTY_NOTICES'), { recursive: true });
     fs.copyFileSync(p.join(source, 'LICENSE'), p.join(bundle, 'LICENSE'));
-    fs.writeFileSync(p.join(bundle, 'README.zh.md'), 'Synthetic fixture');
+    fs.copyFileSync(p.join(source, 'docs/installation.zh.md'), p.join(bundle, 'README.zh.md'));
     fs.writeFileSync(p.join(bundle, 'THIRD_PARTY_NOTICES/NOTICE'), 'Synthetic dependency notice');
     if (row.profile === 'full') {
       fs.mkdirSync(p.join(bundle, 'THIRD_PARTY_NOTICES/git-source'));
@@ -59,6 +60,7 @@ function fixture(t, includeFull = false) {
       distribution: { kind: 'release_candidate', release_ready: false, signing },
       dependency_lock_sha256: digest(p.join(source, 'packaging/dependencies.lock.json')),
       qualification_baseline: lock.targets[row.target].qualification_baseline,
+      ...(residentServerTarget(row) ? { server_deployment: { model_delivery_sha256: hash('synthetic model delivery') } } : {}),
       dependencies: Object.fromEntries(profileDependencies(row.profile, lock).map(name => [name, {}])) };
     writeJSON(p.join(bundle, 'manifest.json'), manifest);
     writeJSON(p.join(bundle, 'checksums.txt'), inventory(bundle));
@@ -101,12 +103,19 @@ function fixture(t, includeFull = false) {
         platform_login_read_bind: ['isolated_accounts', 'gitlab_login', 'gitlab_read', 'gitlab_bind', 'lark_login', 'lark_read', 'lark_bind']
       } : {})
     };
+    if (residentServerTarget(manifest)) {
+      checks.resident_server = residentServerFields(manifest);
+      checks.web_delivery = [];
+    }
     const manual = { archive_sha256: archiveHash, target: row.target, profile: row.profile,
       environment: { ...environment, baseline: manifest.qualification_baseline }, checks: Object.fromEntries(Object.entries(checks).map(([key, fields]) =>
-        [key, { status: 'passed', fixture: false, method: 'maintainer_manual', tested_at: '2026-01-01T00:00:00Z',
+        [key, { status: 'passed', fixture: false, method: 'maintainer_manual', tested_at: '2026-01-02T00:00:00Z',
           evidence_sha256: hash('synthetic evidence for ' + key), observations: { ...Object.fromEntries(fields.map(f => [f, true])),
+            ...(key === 'web_delivery' ? passingWebDelivery(manifest) : {}),
             ...(key === 'downloaded_system_security' && platform === 'darwin' ? { first_launch: 'blocked' } : {}),
-            ...(key === 'platform_login_read_bind' ? { remote_writes: 0 } : {}) } }])) };
+            ...(key === 'platform_login_read_bind' ? { remote_writes: 0 } : {}),
+            ...(key === 'resident_server' ? { model_delivery_sha256: manifest.server_deployment.model_delivery_sha256,
+              migration: 'not_applicable' } : {}) } }])) };
     const assessment = assessCandidate(receipt, privateDir, source, manual);
     const assessmentDir = p.join(assessments, assessmentName(row, 1)); fs.mkdirSync(assessmentDir);
     const assessmentFile = p.join(assessmentDir, 'assessment.json'); writeJSON(assessmentFile, assessment);
@@ -115,6 +124,24 @@ function fixture(t, includeFull = false) {
   const output = p.join(temp, 'release');
   return { temp, source, candidates, assessments, matrix, context, rows, output,
     assemble: () => assembleRelease(candidates, assessments, context, output, source) };
+}
+
+// Synthetic attestations test release policy only; never real acceptance.
+function passingWebDelivery(manifest) {
+  const o = webDeliveryTemplate(manifest);
+  Object.assign(o.models, Object.fromEntries(modelFields.map(f => [f, true])), {
+    upstream_scope: 'same_upstream_multiple_entries', dsh_identity_sha256: hash('synthetic DSH') });
+  for (const name of browserNames) Object.assign(o.browsers[name], { status: 'passed', physical_device: true,
+    browser_version: 'test', os_version: 'test', evidence_sha256: hash(name),
+    observations: Object.fromEntries(browserFields.map(f => [f, true])) });
+  Object.assign(o.platforms, Object.fromEntries(platformFields.map(f => [f, true])), {
+    authorization_sha256: hash('synthetic authorization'), evidence_sha256: hash('synthetic platform') });
+  Object.assign(o.observation, { started_at: '2026-01-01T00:00:00Z', finished_at: '2026-01-02T00:00:00Z',
+    duration_seconds: 86400, samples: 1441, max_gap_seconds: 60, evidence_sha256: hash('synthetic observation'),
+    same_archive_and_installation: true, collection_backlog_reviewed: true,
+    rate_limit_recovery_reviewed: true, failures_reviewed: true });
+  o.download_upgrade_restore_network_verified = o.authentication_context_reset_and_limits_documented = true;
+  return o;
 }
 
 function remote(f) {
@@ -155,6 +182,27 @@ test('full matrix assembles original bytes, notice archive and sanitized archive
   assert.ok(!notices.includes('git-source'));
 });
 
+test('bundle and Release export one installation guide with navigation valid outside the repository', t => {
+  const f = fixture(t);
+  f.assemble();
+  const guide = fs.readFileSync(p.join(root, 'docs/installation.zh.md'), 'utf8');
+  const mapping = json(p.join(root, 'packaging/bundle-files.json')).files;
+  const readme = mapping.find(file => file.destination === 'README.zh.md');
+  assert.equal(readme.source, 'docs/installation.zh.md');
+  assert.equal(fs.readFileSync(p.join(f.output, 'README.zh.md'), 'utf8'), guide);
+  const extracted = p.join(f.temp, 'guide-extracted');
+  extract(p.join(f.output, f.rows[0].receipt.archive), extracted);
+  const bundle = p.join(extracted, f.rows[0].receipt.archive.slice(0, -7));
+  assert.equal(fs.readFileSync(p.join(bundle, 'README.zh.md'), 'utf8'), guide);
+  const slug = heading => heading.toLowerCase().replace(/[^\p{L}\p{N}_ -]/gu, '').replace(/ /g, '-');
+  const headings = new Set([...guide.matchAll(/^#{1,6} (.+)$/gm)].map(match => slug(match[1])));
+  for (const [, target] of guide.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)) {
+    if (/^https?:\/\//.test(target)) continue;
+    assert.ok(target.startsWith('#'), `Guide depends on a repository file: ${target}`);
+    assert.ok(headings.has(decodeURIComponent(target.slice(1))), `Missing guide section: ${target}`);
+  }
+});
+
 test('missing or extra target/profile/attempt and incomplete standard platform acceptance prevent release', t => {
   const f = fixture(t), missing = f.rows.find(r => r.row.target === 'linux-arm64' && r.row.profile === 'standard');
   fs.renameSync(missing.directory, missing.directory + '-other-attempt');
@@ -183,6 +231,61 @@ test('standard requires platform login/read/bind evidence while omitting Git-onl
   const partial = assessCandidate(r.receipt, r.privateDir, f.source, r.manual);
   assert.equal(partial.release_ready, false);
   assert.deepEqual(partial.remaining, ['platform_login_read_bind']);
+});
+
+test('resident Server qualification binds model delivery and refuses incomplete deployment or Linux sending evidence', t => {
+  const f = fixture(t);
+  for (const r of f.rows.filter(r => residentServerTarget(r.row))) {
+    assert.equal(r.assessment.checks.resident_server, 'passed');
+    const missing = structuredClone(r.manual);
+    delete missing.checks.resident_server;
+    assert.ok(assessCandidate(r.receipt, r.privateDir, f.source, missing).remaining.includes('resident_server'));
+    for (const mutate of [
+      o => o.consistent_backup_restore = false,
+      o => o.no_completed_member_repeated = false,
+      o => o.model_delivery_sha256 = '0'.repeat(64),
+      o => o.migration = 'not_run',
+      ...(r.row.target === 'linux-amd64' ? [o => o.lark_account_pinned_send = false] : [])
+    ]) {
+      const invalid = structuredClone(r.manual);
+      mutate(invalid.checks.resident_server.observations);
+      assert.throws(() => checkQualification(r.receipt, invalid), /Resident|migration/);
+    }
+  }
+});
+
+test('Web delivery requires real device/model/action and 24 hour evidence for the same candidate', t => {
+  const f = fixture(t), r = f.rows.find(r => residentServerTarget(r.row));
+  const missing = structuredClone(r.manual); delete missing.checks.web_delivery;
+  assert.deepEqual(assessCandidate(r.receipt, r.privateDir, f.source, missing).remaining, ['web_delivery']);
+  assert.equal(qualificationTemplate(r.receipt).checks.web_delivery.status, 'not_run');
+  for (const mutate of [
+    o => o.model_delivery_sha256 = '0'.repeat(64),
+    o => o.models.key_rotation = false,
+    o => o.models.request_and_execution_snapshot_verified = false,
+    o => o.platforms.authorization_sha256 = null,
+    o => o.browsers.ios_safari.physical_device = false,
+    o => o.browsers.android_chrome.observations.model_settings = false,
+    o => o.observation.duration_seconds = 60,
+    o => o.observation.finished_at = '2026-01-01T00:01:00Z',
+    o => o.observation.samples = 2,
+    o => o.observation.max_gap_seconds = 3600,
+    o => o.observation.collection_backlog_reviewed = false
+  ]) {
+    const invalid = structuredClone(r.manual); mutate(invalid.checks.web_delivery.observations);
+    assert.throws(() => checkQualification(r.receipt, invalid), /Web delivery|Physical browser/);
+  }
+  const limited = structuredClone(r.manual);
+  for (const name of ['ios_safari', 'android_chrome']) limited.checks.web_delivery.observations.browsers[name] = { status: 'not_run' };
+  limited.checks.web_delivery.observations.private_notes = 'PRIVATE-ACCOUNT';
+  const assessment = assessCandidate(r.receipt, r.privateDir, f.source, limited);
+  assert.equal(assessment.release_ready, true);
+  const result = checkAssessment(r.receipt, assessment, f.source).manual_qualification.checks.web_delivery.observations;
+  assert.deepEqual(result.supported_browsers, ['desktop_chromium', 'desktop_safari']);
+  assert.deepEqual(result.pending_browsers, ['ios_safari', 'android_chrome']);
+  assert.ok(!JSON.stringify(result).includes('PRIVATE-ACCOUNT'));
+  limited.checks.web_delivery.tested_at = '2026-01-01T00:00:00Z';
+  assert.throws(() => checkQualification(r.receipt, limited), /predates observation/);
 });
 
 test('manual checks require native baseline, exact bytes and detailed observations; unsigned needs no certificate', t => {

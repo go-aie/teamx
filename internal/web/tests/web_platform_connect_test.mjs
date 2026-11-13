@@ -174,3 +174,55 @@ test('existing Feishu authorization shows shared impact and exact app repair in 
  await card(ui).children[5].children[2].emit('click');await settle();await ui.el('close-settings').emit('click');
  assert.equal(writes(api).length,0);assert.equal(ui.document.getElementById('message-1').querySelector('.message-interactions').children[0],card(ui));
 });
+
+test('blocked GitLab popup navigates in the same browser and persists only the exact nonsecret reference',async()=>{
+ const api=fixture(),saved=new Map();api.op.interaction={id:api.op.operation_id,kind:'gitlab_authorization'};api.op.origin='https://gitlab.example';api.op.stage='authorization';
+ const navigated=[],ui=await launch(api,saved);await settle();ui.window.location={assign:url=>navigated.push(url)};
+ api.interactionHook=path=>path.endsWith('/gitlab/connect') ? {authorization_url:'https://gitlab.example/oauth/authorize?state=temporary'} : undefined;
+ await link(card(ui)).emit('click');await settle();
+ assert.deepEqual(navigated,['https://gitlab.example/oauth/authorize?state=temporary']);
+ assert.equal(api.calls.filter(c=>c.path.endsWith('/gitlab/connect')).length,1);
+ assert.equal([...saved.values()].some(v=>v.includes('temporary') || v.includes('authorization_url')),false);
+});
+
+test('Feishu blocked popup uses the official link without issuing another connection or exposing device codes',async()=>{
+ const api=fixture(),saved=new Map(),ui=await launch(api,saved);await settle();const navigated=[];ui.window.location={assign:url=>navigated.push(url)};
+ await link(card(ui)).emit('click');await settle();
+ assert.deepEqual(navigated,[api.op.interaction.authorization_url]);assert.equal(writes(api).length,0);
+ const ref=JSON.parse(saved.get('teamx.platform-return'));assert.equal(ref.operation_id,api.op.operation_id);assert.equal(ref.membership_id,api.op.membership_id);
+ assert.equal([...saved.values()].some(v=>v.includes('temporary') || v.includes('device_code')),false);
+});
+
+test('completion reference selects and reveals only the original authenticated operation, never authorizes again',async()=>{
+ const api=fixture(),ref={...Object.fromEntries(['room_id','room_instance','agent_id','membership_id','operation_id','source_seq'].map(k=>[k,api.op[k]])),installation_id:'',operator:'tester'};
+ const navigated=[],location={hash:'#platform-connection='+encodeURIComponent(JSON.stringify(ref)),pathname:'/',search:''};
+ const history={replaceState:(_s,_t,path)=>{navigated.push(path);location.hash='';}};
+ const ui=await launch(api,new Map(),{get window(){return this.testWindow;},testWindow:{innerWidth:390,innerHeight:844,location,history,addEventListener(){},navigator:{onLine:true},getComputedStyle(){return {getPropertyValue:()=>''};}}});await settle();
+ assert.equal(card(ui).scrollIntoViewCount,1);assert.equal(location.hash,'');assert.deepEqual(navigated,['/']);assert.equal(writes(api).length,0);
+});
+
+test('an authorization return cannot attach an old membership to a replacement or a different installation',async()=>{
+ for(const change of [{membership_id:'replacement'},{installation_id:'another-installation'}]){
+  const api=fixture(),ref={...Object.fromEntries(['room_id','room_instance','agent_id','membership_id','operation_id','source_seq'].map(k=>[k,api.op[k]])),installation_id:'',operator:'tester',...change};
+  const saved=new Map([['teamx.platform-return',JSON.stringify(ref)]]),ui=await launch(api,saved);await settle();
+  assert.equal(card(ui).scrollIntoViewCount,undefined);assert.equal(saved.has('teamx.platform-return'),false);assert.equal(writes(api).length,0);
+ }
+});
+
+test('authorization return restores its Room from another selection and fetches an older original message without replay',async()=>{
+ const api=fixture(),original=api.request.bind(api),other={room_id:'B',room_instance:'instance-B',name:'Other',status:'ready',service:{room_id:'B',room_instance:'instance-B',service_epoch:'runtime-B'}};
+ let originalReads=0;
+ api.request=async(path,body,...args)=>{
+  if(path==='/v1/rooms'){const catalog=await original(path,body,...args);return {...catalog,rooms:[...catalog.rooms,other]};}
+  if(path==='/v1/read'){
+   if(body.room_instance==='instance-B')return {messages:[],snapshot_seq:0,has_more:false,cleared_through:0};
+   if(body.snapshot_seq===69){originalReads++;return {messages:[...api.messages,...Array.from({length:68},(_,i)=>({seq:i+2,author:{kind:'agent',id:'a'},text:'history',created_at:'2026-11-11T01:30:00Z'}))],snapshot_seq:69,has_more:false,cleared_through:0};}
+   return {messages:[{seq:70,author:{kind:'agent',id:'a'},text:'later message',created_at:'2026-11-11T02:00:00Z'}],snapshot_seq:70,has_more:false,cleared_through:0};
+  }
+  return original(path,body,...args);
+ };
+ const ref={...Object.fromEntries(['room_id','room_instance','agent_id','membership_id','operation_id','source_seq'].map(k=>[k,api.op[k]])),installation_id:'',operator:'tester'};
+ const saved=new Map([['teamx.platform-return',JSON.stringify(ref)],['teamx.selected-room',JSON.stringify(other)]]),ui=await launch(api,saved);await settle();
+ assert.equal(originalReads,1);assert.ok(ui.document.getElementById('message-69'));assert.equal(card(ui).dataset.interactionId,api.op.operation_id);assert.equal(card(ui).scrollIntoViewCount,1);
+ assert.equal(JSON.parse(saved.get('teamx.selected-room')).room_instance,'instance-R');assert.equal(writes(api).length,0);
+});

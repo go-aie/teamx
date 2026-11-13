@@ -53,6 +53,7 @@ try {
     assets = json(p.join(root, 'packaging/bundle-files.json'));
   const packagingInputs = [...new Set([
     'go.mod', 'go.sum', 'packaging/dependencies.lock.json',
+    'docs/implementation/model-deletion-migration-delivery.zh.md',
     'packaging/bundle-files.json', 'packaging/git-launcher', 'packaging/glab-launcher',
     'packaging/dsh/package.json', 'packaging/dsh/package-lock.json',
     lock.dependencies.glab.contract,
@@ -395,6 +396,11 @@ try {
     teams: assets.teams,
     system_requirements: lock.system_requirements,
     qualification_baseline: lock.targets[opts.target].qualification_baseline,
+    ...(opts.profile === 'standard' && ['linux-amd64', 'darwin-arm64'].includes(opts.target) ? {
+      server_deployment: { contract: 1,
+        model_delivery_sha256: hash(fs.readFileSync(p.join(root, 'docs/implementation/model-deletion-migration-delivery.zh.md'))),
+        acceptance: 'not_run' }
+    } : {}),
     acceptance: {
       archive_smoke: 'see external report',
       real_dsh_acp: 'not_run',

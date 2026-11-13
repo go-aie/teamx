@@ -1,14 +1,14 @@
 // Real browser against an isolated TeamX service, synthetic Feishu CLI only.
 const {chromium}=require('playwright'),assert=require('node:assert/strict'),{writeFile,mkdir}=require('node:fs/promises'),{join}=require('node:path');
 (async()=>{
- const [endpoint,fixture,id,room,other]=process.argv.slice(2),browser=await chromium.launch({headless:true});
+ const [endpoint,fixture,id,room,other,samePage]=process.argv.slice(2),browser=await chromium.launch({headless:true});
  const artifacts=process.env.TEAMX_CONNECT_BROWSER_ARTIFACTS;
  if(artifacts)await mkdir(artifacts,{recursive:true});
  const capture=(page,name)=>artifacts ? page.screenshot({path:join(artifacts,name+'.png'),fullPage:true,animations:'disabled'}) : undefined;
  try{
   const context=await browser.newContext({viewport:{width:1440,height:1000}}),page=await context.newPage(),errors=[];
   page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(12000);
-  await context.route('https://open.feishu.cn/**',route=>route.fulfill({contentType:'text/html',body:'<!doctype html><title>Simulated Feishu authorization</title><p>CLI fixture authorization only.</p>'}));
+  await context.route(/^https:\/\/(?:open|accounts|passport)\.feishu\.cn\//,route=>route.fulfill({contentType:'text/html',body:'<!doctype html><title>Simulated Feishu authorization</title><p>CLI fixture authorization only.</p>'}));
   const catalog=await (await fetch(endpoint+'/v1/rooms')).json(),current=catalog.rooms.find(r=>r.room_instance===room),second=catalog.rooms.find(r=>r.room_instance===other);
   // Keep both rooms live; navigation uses the actual room sidebar.
   await context.addInitScript(selection=>sessionStorage.setItem('teamx.selected-room',JSON.stringify(selection)),{room_id:current.room_id,room_instance:room});
@@ -26,7 +26,7 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),{wri
   await page.locator('#messages').getByText('我正在授权',{exact:true}).waitFor();
   assert.equal(await card.evaluate(el=>el===window.originalConnectCard && el.querySelector('a')===window.originalConnectLink && document.activeElement===window.originalConnectLink),true);
   // Close full settings: observing this operation must not cancel its process.
-  await page.locator('#open-settings').click();await page.locator('#settings-tab-platforms').click();await page.locator("#platforms-list-view").waitFor({state:"visible"});assert.equal(await page.locator("#settings-dialog [data-interaction-id]").count(),0);await capture(page,'settings');await page.locator('#close-settings').click();
+  await page.locator('#user-menu-toggle').click();await page.locator('#open-settings').click();await page.locator('#settings-tab-platforms').click();await page.locator("#platforms-list-view").waitFor({state:"visible"});assert.equal(await page.locator("#settings-dialog [data-interaction-id]").count(),0);await capture(page,'settings');await page.locator('#close-settings').click();
   await link.waitFor({state:'visible'});
   let popupWait=page.waitForEvent('popup');await link.click();let popup=await popupWait;await popup.waitForLoadState('domcontentloaded');await popup.close();
   const accountQR=page.waitForResponse(response=>response.url().includes('/v1/platforms/lark/qrcode?') && new URL(response.url()).searchParams.get('stage')==='authorization');
@@ -37,8 +37,16 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),{wri
   await page.locator('#room-list .room-choice, #direct-list .room-choice').filter({hasText:second.name}).click();
   await page.waitForFunction(id=>!document.querySelector(`#messages [data-interaction-id="${id}"]`),id);
   await page.locator('#room-list .room-choice, #direct-list .room-choice').filter({hasText:current.name}).click();await link.waitFor({state:'visible'});
-  popupWait=page.waitForEvent('popup');await link.click();popup=await popupWait;await popup.waitForLoadState('domcontentloaded');await popup.close();
-  await writeFile(join(fixture,'auth-release'),'yes');
+  if(samePage==='true') {
+   await page.setViewportSize({width:390,height:844});
+   await page.evaluate(()=>{window.open=()=>null;});
+   await link.click();await page.waitForURL('https://accounts.feishu.cn/**');
+   await writeFile(join(fixture,'auth-release'),'yes');
+   await page.goBack();
+  }else{
+   popupWait=page.waitForEvent('popup');await link.click();popup=await popupWait;await popup.waitForLoadState('domcontentloaded');await popup.close();
+   await writeFile(join(fixture,'auth-release'),'yes');
+  }
   await card.getByText('已连接',{exact:true}).waitFor();assert.equal(await link.isVisible(),false);assert.equal(await qr.isVisible(),false);
   await page.reload();await card.getByText('已连接',{exact:true}).waitFor();
   await capture(page,'connected');

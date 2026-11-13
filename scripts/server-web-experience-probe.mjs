@@ -12,7 +12,8 @@ const out = path.resolve(process.argv[2] || ".local/server-web-experience-check"
 await fs.mkdir(out, {recursive:true});
 const api = fixture(), errors = [], checks = [], messages = [], sends = new Map();
 let loseResponse = false, epoch = "manager", reads = 0, logged = true, setup = false, setupVersion = 1, setupOperation;
-const setupSubmissions=[], modelOperations=[];
+let loseSetupResponse=false, setupUnavailable=false;
+const setupSubmissions=[], modelOperations=[], modelActions=[];
 const modelCatalog={version:1,default:"daily",entries:[{id:"daily",name:"原默认模型",model_id:"upstream-a",protocol:"openai-completions",revision:1},{id:"model-b",name:"备用模型",model_id:"upstream-b",protocol:"openai-completions",revision:1}]};
 const modelMembers=["R","DM"].map(room_id=>({room_id,room_instance:`instance-${room_id}`,agent_id:"a",membership_id:"member-a",version:1,selection:{mode:"default"},target_entry_id:"daily",actual:{model_id:"upstream-a",pending:false}}));
 const settings = {time_zone:"Asia/Shanghai",settings_version:1};
@@ -25,8 +26,14 @@ const server = http.createServer(async (req, res) => {
       let data;
       if (url.pathname === "/v1/access/session") {res.writeHead(logged?200:401,{"content-type":"application/json"});res.end(JSON.stringify({operator:"tester",installation_id:"browser-fixture"}));return;}
       if (url.pathname === "/v1/access/login") {logged=true;data={operator:"tester"};}
-      else if (url.pathname === "/v1/setup") data={setup_required:setup,version:setupVersion,writable:true,model:{protocol:"openai-completions",model_id:"initial"},operation:setupOperation};
-      else if (url.pathname === "/v1/setup/model") {setupSubmissions.push(body);setupOperation={id:body.request_id,status:"validating",message:"正在验证模型"};data=setupOperation;}
+      else if (url.pathname === "/v1/setup") {
+        if(setupUnavailable){res.writeHead(503,{"content-type":"application/json"});res.end(JSON.stringify({message:"fixture unavailable"}));return;}
+        data={setup_required:setup,version:setupVersion,writable:true,model:{protocol:"openai-completions",model_id:"initial"},operation:setupOperation};
+      }
+      else if (url.pathname === "/v1/setup/model") {
+        setupSubmissions.push(body);setupOperation={operation_id:body.request_id,status:"validating",message:"正在验证模型"};data=setupOperation;
+        if(loseSetupResponse){loseSetupResponse=false;setupUnavailable=true;res.writeHead(504,{"content-type":"application/json"});res.end(JSON.stringify({message:"fixture lost receipt"}));return;}
+      }
       else
       if (url.pathname === "/v1/ui") { reads++; data = {managed:true,installation_id:"browser-fixture",service_epoch:epoch,...settings}; }
       else if (url.pathname === "/v1/rooms") {
@@ -38,11 +45,14 @@ const server = http.createServer(async (req, res) => {
       } else if (url.pathname === "/v1/member/list" && body.room_id === "DM") data={members:[api.members[0]]};
       else if (url.pathname === "/v1/models") data={service_epoch:epoch,catalog:modelCatalog,members:modelMembers,operations:modelOperations};
       else if (url.pathname === "/v1/models/change") {
-        const operation={id:body.request_id,status:"applying",members:[{agent_id:body.agent_id,status:"waiting"}],completed:0,waiting:1,failed:0};modelOperations.unshift(operation);
+        const operation={id:body.request_id,status:"applying",committed:true,members:[{room_id:body.room_id,room_instance:body.room_instance,agent_id:body.agent_id,status:"waiting"}],completed:0,waiting:1,failed:0};modelOperations.unshift(operation);
         const member=modelMembers.find(m=>m.room_id===body.room_id);if(member){member.operation_id=operation.id;member.selection=body.selection;}
         data=operation;
       }
-      else if (url.pathname === "/v1/models/operation") data=modelOperations.find(op=>op.id===url.searchParams.get("id"));
+      else if (url.pathname === "/v1/models/operation") {
+        data=modelOperations.find(op=>op.id===(body?.id || url.searchParams.get("id")));
+        if(body){modelActions.push(body);data.status="applying";data.message="正在重试原操作";}
+      }
       else if (url.pathname === "/v1/platforms/gitlab/prepare") data={status:"ready",application_id:"app",redirect_uri:"http://127.0.0.1:8088/v1/platforms/gitlab/callback",applications_url:"https://gitlab.invalid/-/user_settings/applications",affected:[]};
       else if (url.pathname === "/v1/read") data={messages:messages.filter(m=>m.seq>(body.after||0)),snapshot_seq:messages.length,has_more:false};
       else if (url.pathname === "/v1/send") {
@@ -94,7 +104,7 @@ try {
       await page.locator("#room-menu-label").click(); await page.locator("#direct-details").click(); await page.locator("#agent-tab-inbox").click();
       await page.locator("#inbox-entries .activity-section").first().waitFor();
       check(`${name}: assistant Inbox reachable`,await page.locator("#inbox-entries").isVisible());
-      await page.locator("#close-mobile-members").click();
+      await page.locator("#close-activity").click();
       check(`${name}: returns to composer`,await fits());
     }
     await page.locator("#user-menu-toggle").click();
@@ -172,11 +182,25 @@ try {
     check(`${name}: cancelling deletion returns to editor`,await page.locator("#model-edit-form").isVisible() && !(await page.locator("#model-list-view").isVisible()));
     await page.locator("#close-settings").click();
     if(name === "phone") {
-      await page.locator("#room-menu-label").click(); await page.locator("#direct-details").click();await page.locator("#member-model-selection").waitFor();
+      await page.locator("#room-menu-label").click(); await page.locator("#direct-details").click();
+      check("member settings start collapsed with status visible",!(await page.locator("#agent-controls").isVisible()) && await page.locator("#agent-status").isVisible());
+      await page.locator("#toggle-agent-controls").click();await page.locator("#member-model-selection").waitFor();
       await page.locator("#member-model-selection").selectOption("model-b");
       await page.waitForFunction(()=>document.querySelector("#member-model-feedback").textContent.includes("等待当前回合结束"));
-      check("member selection shows waiting and actual Session model",(await page.locator("#member-model-progress").getAttribute("title")).includes("upstream-a"));
-      await page.locator("#close-mobile-members").click();
+      await page.locator("#member-model-progress").click();
+      check("touch member details visibly show waiting, target and actual model",await page.locator("#member-model-feedback").isVisible() && (await page.locator("#member-model-target").textContent()).includes("upstream-b") && (await page.locator("#member-model-actual").textContent()).includes("upstream-a"));
+      const failedOperation=modelOperations[0];failedOperation.status="failed";failedOperation.message="旧操作需要重试";failedOperation.failed=1;failedOperation.members[0].status="failed";
+      modelOperations.unshift({id:"newer-completed",status:"completed",committed:true,members:[],completed:1,waiting:0,failed:0});
+      await page.locator("#member-model-retry").waitFor();
+      await page.locator("#member-model-settings").click();
+      await page.locator("#model-operations").getByRole("button",{name:"重试未完成成员"}).waitFor();
+      check("newer completed operation does not hide an older failed operation",(await page.locator("#model-operations").textContent()).includes("旧操作需要重试"));
+      await page.locator("#close-settings").click();await page.locator("#member-model-retry").click();
+      await page.waitForFunction(()=>document.querySelector("#member-model-feedback").textContent.includes("等待当前回合结束"));
+      check("touch retry keeps original operation ID",modelActions.length===1 && modelActions[0].id===failedOperation.id && modelActions[0].action==="retry");
+      check("member model details fit phone width",await page.locator("#member-model-details").evaluate(el=>{const r=el.getBoundingClientRect();return r.left>=0 && r.right<=innerWidth;}));
+      await page.screenshot({path:path.join(out,"phone-member-model-details.png")});
+      await page.locator("#close-activity").click();
       modelOperations.length=0;for(const member of modelMembers)delete member.operation_id;
     }
     if (name === "phone") {
@@ -224,6 +248,21 @@ try {
   await firstUse.locator("#token").fill("fixture-access");await firstUse.locator("#login-submit").click();await firstUse.locator("#model-form").waitFor();
   check("relogin queries existing setup operation without resubmitting",setupSubmissions.length===1 && await firstUse.locator("#save-model").isDisabled());
   await setupContext.close();
+  setupOperation=undefined;setupSubmissions.length=0;logged=true;loseSetupResponse=true;
+  const uncertainContext=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
+  const uncertain=await uncertainContext.newPage();uncertain.on("pageerror",error=>errors.push(error.message));
+  await uncertain.goto(`${origin}/access`);await uncertain.locator("#model-form").waitFor();
+  await uncertain.locator("#api-key").fill("never-store-uncertain-key");await uncertain.locator("#save-model").click();
+  await uncertain.waitForFunction(()=>document.querySelector("#feedback").textContent.includes("尚未确认"));
+  await uncertain.evaluate(()=>document.querySelector("#model-form").requestSubmit());
+  check("uncertain first-use submission blocks new writes and draft reset",setupSubmissions.length===1 && await uncertain.locator("#save-model").isDisabled() && await uncertain.locator("#reload-model-draft").isDisabled());
+  check("uncertain first-use retains original ID without Key",await uncertain.evaluate(id=>{const stored=JSON.stringify({...sessionStorage,...localStorage});return stored.includes(id) && !stored.includes("never-store-uncertain-key");},setupSubmissions[0].request_id));
+  await uncertain.reload();setupUnavailable=false;await uncertain.reload();await uncertain.locator("#model-form").waitFor();
+  check("uncertain first-use reload queries admitted operation without resubmitting",setupSubmissions.length===1 && await uncertain.locator("#save-model").isDisabled());
+  setupOperation.status="failed";setupOperation.message="验证被重启中断，请重新验证";
+  await uncertain.locator("#save-model:not([disabled])").waitFor();
+  check("authoritative first-use failure permits an explicit retry",(await uncertain.locator("#feedback").textContent()).includes("重启中断"));
+  await uncertainContext.close();
   checks.push("no browser or fixture errors");
   await fs.writeFile(path.join(out,"report.json"),JSON.stringify({browser:browser.version(),synthetic_apis:true,physical_device:false,checks,errors},null,2));
   assert.deepEqual(errors,[],"browser or fixture errors");

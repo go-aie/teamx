@@ -38,18 +38,28 @@ if (prefilled) {
 
 const report={status:'failed',scope:'fresh start, browser validation/save/default assistant/real dialogue/restart',checks:[],remote_platform_writes:0};
 let service, browser;
+async function login(page, endpoint, token) {
+ await page.goto(endpoint);
+ await page.locator('#token:visible, #model-form:visible, #message-input:visible').first().waitFor();
+ if(await page.locator('#token').isVisible()) {await page.locator('#token').fill(token);await page.locator('#login-submit').click();}
+}
 async function until(fn, label, timeout=120000) {
  const deadline=Date.now()+timeout;
  while(Date.now()<deadline){const value=await fn();if(value)return value;await new Promise(r=>setTimeout(r,200));}
  throw Error(`Timed out: ${label}`);
 }
 async function start(){
+ const began=performance.now();
  let stdout='',stderr='';
  const child=spawn('/bin/sh',[path.join(bundle,'start'),'--home',home,'--listen','127.0.0.1:0'],{env,stdio:['ignore','pipe','pipe']});
  const exit=new Promise(resolve=>child.once('exit',(code,signal)=>resolve({code,signal})));
  service={child,exit,logs:()=>({stdout,stderr})};
  child.stdout.on('data',b=>{stdout+=b;});child.stderr.on('data',b=>{stderr+=b;});
  service.endpoint=await until(()=>{assert(child.exitCode===null,`service exited: ${stderr}`);for(const line of stdout.split('\n')){try{const item=JSON.parse(line);if(item.endpoint)return item.endpoint;}catch{}}},'startup',30000);
+ const memory=spawnSync('ps',['-o','rss=','-p',String(child.pid)],{encoding:'utf8'});
+ (report.startup_measurements??=[]).push({ready_ms:Math.round(performance.now()-began),
+  go_process_rss_kib:memory.status===0?Number(memory.stdout.trim()):null,
+  scope:'single sample at listener readiness; excludes later DSH children'});
  service.logs=()=>({stdout,stderr});return service.endpoint;
 }
 async function stop(){if(!service)return;service.child.kill('SIGTERM');const result=await service.exit;fs.writeFileSync(path.join(output,'server-last.log'),JSON.stringify(service.logs()),{mode:0o600});service=undefined;if(report.status==='passed'||result.code===0)assert.equal(result.code,0,'server shutdown');}
@@ -68,12 +78,14 @@ async function waitAssistantTurnCompleted() {
 
 try{
  const endpoint=await start();checked('direct start without init/access init');
- const token=fs.readFileSync(path.join(home,'auth/admin-token'),'utf8').trim();
+ const tokenFile=path.join(home,'auth/admin-token');
+ const token=fs.existsSync(tokenFile)?fs.readFileSync(tokenFile,'utf8').trim():null;
+ report.access_mode=token?'token':'local_default_without_login';
  const accessBefore=fs.readFileSync(path.join(home,'first-access.json'),'utf8');
  browser=await chromium.launch({headless:true});report.browser=browser.version();
  const page=await browser.newPage({viewport:{width:1280,height:960}});
  const errors=[];page.on('pageerror',error=>errors.push(error.message));
- await page.goto(endpoint);await page.locator('#token').fill(token);await page.locator('#login-form button').click();
+ await login(page,endpoint,token);
  await page.locator('#model-form').waitFor({state:'visible'});
  if (!prefilled) {
  await page.locator('#base-url').fill('http://127.0.0.1:1/v1');await page.locator('#model-id').fill(get('model_id'));await page.locator('#api-key').fill(key);
@@ -88,7 +100,7 @@ try{
  await page.screenshot({path:path.join(output,'setup.png'),fullPage:true});
  await page.locator('#save-model').click();await page.reload();
  await page.locator('#message-input').waitFor({state:'visible',timeout:150000});
- checked('reload retains accepted validation and same login across setup transition');
+ checked('reload retains accepted validation and access mode across setup transition');
  const text='请在房间中回复 TEAMX_FIRST_USE_OK。这是模型首次启动验收，无需访问任何外部平台。';
  await page.locator('#message-input').fill(text);await page.locator('#send').click();
 
@@ -100,8 +112,8 @@ try{
  const assistant=catalog.rooms.find(r=>r.is_direct);assert(assistant);report.room_id=assistant.room_id;
  const saved=JSON.parse(fs.readFileSync(path.join(home,'data/rooms',assistant.room_id,'room-config.json'),'utf8'));
  assert.equal(saved.members[0].model_selection.mode,'default');assert.equal(saved.runtime.model,undefined);checked('default reference, compat false and private credential persisted');
- await stop();const restarted=await start();await page.goto(restarted);await page.locator('#token').fill(token);await page.locator('#login-form button').click();
- await page.locator('#message-input').waitFor({state:'visible',timeout:30000});assert.equal(fs.readFileSync(path.join(home,'first-access.json'),'utf8'),accessBefore);assert.equal(fs.readFileSync(path.join(home,'auth/admin-token'),'utf8').trim(),token);checked('restart keeps authentication and skips setup');
+ await stop();const restarted=await start();await login(page,restarted,token);
+ await page.locator('#message-input').waitFor({state:'visible',timeout:30000});assert.equal(fs.readFileSync(path.join(home,'first-access.json'),'utf8'),accessBefore);assert.equal(fs.existsSync(tokenFile)?fs.readFileSync(tokenFile,'utf8').trim():null,token);checked('restart keeps access mode and identity and skips setup');
  await page.locator('#message-input').fill('请在房间中回复 TEAMX_FIRST_USE_RESTART_OK，无需访问任何外部平台。');await page.locator('#send').click();
  await until(async()=>{const body=await page.locator('#messages').innerText();return body.split('TEAMX_FIRST_USE_RESTART_OK').length>=3;},'real reply after restart');await waitAssistantTurnCompleted();checked('real reply after restart without exported key, turn completed');
  assert.deepEqual(errors,[]);report.status='passed';

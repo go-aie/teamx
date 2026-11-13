@@ -22,6 +22,7 @@ func runBundle(command string, args []string, stdout, stderr io.Writer) error {
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	root := flags.String("bundle-root", "", "distribution directory")
+	serverRoot := flags.String("server-root", "", "managed installation root (init only)")
 	home := flags.String("home", "", "private configuration, teams and data directory")
 	config := flags.String("config", "", "configuration to diagnose")
 	listen := flags.String("listen", "", "loopback address override (start only)")
@@ -31,6 +32,9 @@ func runBundle(command string, args []string, stdout, stderr io.Writer) error {
 	}
 	if flags.NArg() != 0 {
 		return ErrRequest
+	}
+	if *serverRoot != "" && command != "init" {
+		return fmt.Errorf("--server-root is only supported by init")
 	}
 	if *listen != "" && command != "launch" {
 		return fmt.Errorf("--listen is only supported by start")
@@ -91,7 +95,18 @@ func runBundle(command string, args []string, stdout, stderr io.Writer) error {
 			_ = unlockDirectory(lock)
 		}
 	}()
-	if err = initializeBundle(*root, *home); err != nil {
+	managedBinary := ""
+	if *serverRoot != "" {
+		layout, err := resolveServerLayout(*serverRoot, *home)
+		if err != nil {
+			return err
+		}
+		if layout.Release != *root {
+			return fmt.Errorf("bundle-root must match server-root/current")
+		}
+		managedBinary = filepath.Join(layout.Root, "current", "bin", "dsh")
+	}
+	if err = initializeBundleRuntime(*root, *home, managedBinary); err != nil {
 		return err
 	}
 	startup, err := readStartupConfig(*config, true, false)
@@ -134,6 +149,7 @@ func initializeBundleRuntime(root, home, managedBinary string) error {
 	}
 	if managedBinary != "" {
 		config["runtime"].(map[string]any)["dsh"].(map[string]any)["binary_path"] = managedBinary
+		config["access"] = map[string]any{"login_enabled": true}
 	}
 	data, err := toml.Marshal(config)
 	if err != nil {

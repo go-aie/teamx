@@ -30,6 +30,38 @@ function fixture() {
 async function openSettings(ui) {await ui.el("open-settings").emit("click");await ui.el("settings-tab-models").emit("click");await settle();}
 async function openMember(ui) {await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();}
 
+test("member settings start collapsed, retain their state while polling and reset on reopening",async()=>{
+ const api=fixture(),ui=await launch(api);await openMember(ui);
+ assert.equal(ui.el("agent-controls").hidden,true);assert.equal(ui.el("toggle-agent-controls").getAttribute("aria-expanded"),"false");
+ assert.equal(ui.el("agent-status").textContent,"等待消息");assert.equal(ui.el("agent-model-alert").hidden,true);
+ await ui.el("toggle-agent-controls").emit("click");assert.equal(ui.el("agent-controls").hidden,false);
+ assert.equal(ui.el("toggle-agent-controls").getAttribute("aria-expanded"),"true");
+ await ui.refresh();assert.equal(ui.el("agent-controls").hidden,false);
+ await ui.el("close-activity").emit("click");await openMember(ui);assert.equal(ui.el("agent-controls").hidden,true);
+ assert.equal(api.calls.some(c=>c.path==="/v1/models/change"),false);
+});
+
+test("running members can pause from the collapsed header and runtime failures remain visible",async()=>{
+ const api=fixture(),member={agent_id:"assistant",membership_id:"member-A",status:"running",runner:{profile:"runtime"},execution:{active:true,paused:false}};
+ api.hook=(path,body)=>{
+  if(path==="/v1/member/list")return {members:[structuredClone(member)]};
+  if(path==="/v1/member/pause"){
+   assert.equal(body.agent_id,"assistant");assert.equal(body.membership_id,"member-A");
+   member.execution.active=false;member.execution.paused=true;member.status="paused";return {};
+  }
+ };
+ const ui=await launch(api);await openMember(ui);
+ assert.equal(ui.el("agent-controls").hidden,true);assert.equal(ui.el("agent-quick-actions").hidden,false);
+ assert.equal(ui.el("agent-quick-actions").children[0].textContent,"暂停");
+ await ui.el("agent-quick-actions").children[0].emit("click");await settle();
+ assert.equal(api.calls.filter(c=>c.path==="/v1/member/pause").length,1);
+ assert.equal(ui.el("agent-controls").hidden,true);assert.equal(ui.el("agent-quick-actions").hidden,true);
+ member.execution.error="服务暂不可用";member.status="backend_blocked";await ui.refresh();
+ assert.equal(ui.el("agent-model-alert").textContent,"运行异常");assert.equal(ui.el("toggle-agent-controls").dataset.state,"error");
+ await ui.el("toggle-agent-controls").emit("click");assert.equal(ui.el("agent-controls").hidden,false);
+ assert.equal(ui.el("agent-error").textContent,"服务暂不可用");
+});
+
 test("member model picker names its default and distinguishes applied, pending and unstarted sessions",async()=>{
  const api=fixture(),ui=await launch(api);await openMember(ui);
  assert.equal(ui.el("member-model-selection").children[0].textContent,"跟随默认 · 日常");
@@ -199,19 +231,37 @@ test("models have an independent settings tab that remains hidden during backgro
  assert.equal(ui.el("model-settings").hidden,false);assert.equal(ui.el("settings-tab-models").getAttribute("aria-selected"),"true");
 });
 
+test("newer completed operations cannot hide older failed or applying changes and retries keep the original ID",async()=>{
+ const api=fixture();
+ const failed={id:"old-failed",status:"failed",committed:true,message:"旧成员切换失败",members:[{agent_id:"assistant",status:"failed",error:"应用失败"}],completed:0,waiting:0,failed:1};
+ api.models.operations=[{id:"latest",status:"completed",members:[]},failed,{id:"waiting",status:"applying",committed:true,members:[],completed:0,waiting:1,failed:0}];
+ api.hook=(path,body)=>path==="/v1/models/operation" ? (assert.equal(body.id,failed.id),{...failed,status:"applying"}) : undefined;
+ const ui=await launch(api);await openSettings(ui);
+ const list=ui.el("model-operations"),row=list.children[0],retry=row.children.find(el=>el.textContent==="重试未完成成员");
+ assert.equal(list.children.length,2);assert.match(textOf(row),/旧成员切换失败/);
+ retry.focus();api.models.operations[2].waiting=2;await ui.clock.advance(800);
+ assert.equal(list.children[0],row);assert.equal(ui.document.activeElement,retry);
+ await retry.emit("click");await settle();
+ assert.equal(api.calls.filter(c=>c.path==="/v1/models/change").length,0);
+ assert.deepEqual(api.calls.find(c=>c.path==="/v1/models/operation").body.action,"retry");
+});
+
 test("touch member details expose target, actual model and a retry bound to the failed operation",async()=>{
  const api=fixture(),member=api.models.members[0];
  member.target_entry_id="B";member.selection={mode:"explicit",entry_id:"B"};member.operation_id="failed-selection";
  api.models.operations=[{id:"failed-selection",status:"failed",committed:true,message:"切换未完成，请重试",members:[{...member,status:"failed",error:"应用失败"}],completed:0,waiting:0,failed:1}];
  api.hook=(path,body)=>path==="/v1/models/operation" ? (assert.equal(body.id,"failed-selection"),api.models.operations[0]) : undefined;
  const ui=await launch(api);await openMember(ui);
+ assert.equal(ui.el("agent-controls").hidden,true);assert.equal(ui.el("agent-model-alert").textContent,"模型异常");
  assert.equal(ui.el("member-model-details").hidden,true);
- await ui.el("member-model-progress").emit("click");
+ await ui.el("toggle-agent-controls").emit("click");assert.equal(ui.el("agent-controls").hidden,false);
  assert.equal(ui.el("member-model-progress").getAttribute("aria-expanded"),"true");
  assert.match(ui.el("member-model-target").textContent,/model-B/);assert.match(ui.el("member-model-actual").textContent,/model-A/);
  assert.match(ui.el("member-model-feedback").textContent,/切换未完成/);assert.equal(ui.el("member-model-retry").hidden,false);
  await ui.el("member-model-retry").emit("click");assert.equal(api.calls.find(c=>c.path==="/v1/models/operation").body.action,"retry");
  await ui.el("member-model-progress").emit("click");assert.equal(ui.el("member-model-details").hidden,true);
+ await ui.el("toggle-agent-controls").emit("click");assert.equal(ui.el("agent-controls").hidden,true);
+ assert.equal(ui.el("toggle-agent-controls").getAttribute("aria-expanded"),"false");
  assert.equal(api.calls.filter(c=>c.path==="/v1/models/change").length,0);
 });
 

@@ -1,0 +1,29 @@
+[Unit]
+Description=TeamX personal assistant ({{.InstallationID}})
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User={{.UID}}
+Group={{.GID}}
+WorkingDirectory={{raw .Home}}
+Environment={{q (printf "HOME=%s" .UserHome)}}
+Environment={{q (printf "USER=%s" .User)}}
+Environment={{q (printf "LOGNAME=%s" .User)}}
+Environment=PATH=/usr/bin:/bin:/usr/sbin:/sbin
+Environment=LANG=C.UTF-8
+ExecStart={{execq (printf "%s/current/bin/teamx" .Root)}} serve --server-root {{execq .Root}} --home {{execq .Home}}
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=45
+KillMode=mixed
+UMask=0077
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=teamx
+
+[Install]
+WantedBy=multi-user.target

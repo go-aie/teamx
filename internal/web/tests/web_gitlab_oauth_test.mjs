@@ -565,3 +565,26 @@ test("GitLab first authorization failure can correct and authorize the same pend
  assert.equal(correction.client_import_id,"first-import");assert.equal(correction.client.client_id,"correct-client");
  assert.equal(ui.el("gitlab-setup").hidden,false);
 });
+
+test('GitLab same-page authorization reload queries its original session without replaying login or persisting OAuth URLs',async()=>{
+ const api=fixture(),saved=new Map(),ui=await launch(api,saved);await ui.el('open-settings').emit('click');await ui.el('platforms-list').children[0].emit('click');
+ const navigated=[];ui.window.location={assign:url=>navigated.push(url)};
+ await authorize(ui);assert.equal(navigated.length,1);
+ const ref=JSON.parse(saved.get('teamx.gitlab-authorization'));assert.equal(ref.session_id,'session');
+ assert.equal([...saved.values()].some(v=>/fixture-state|authorization_url|client_secret/.test(v)),false);
+ await ui.window.emit('pagehide');assert.equal(api.calls.filter(c=>c.path.endsWith('/gitlab/cancel')).length,0);
+ const logins=api.calls.filter(c=>c.path.endsWith('/gitlab/login')).length;
+ api.status={status:'succeeded',platforms:[{...api.items[0],version:3}]};
+ const reloaded=await launch(api,saved);await settle();
+ assert.equal(api.calls.filter(c=>c.path.endsWith('/gitlab/login')).length,logins);
+ assert.equal(api.calls.filter(c=>c.path.endsWith('/gitlab/status')).at(-1).body.session_id,'session');
+ assert.equal(saved.has('teamx.gitlab-authorization'),false);assert.match(reloaded.el('platforms-feedback').textContent,/授权已更新/);
+});
+
+test('GitLab returning with an expired browser binding never retries authorization',async()=>{
+ const api=fixture(),saved=new Map([['teamx.gitlab-authorization',JSON.stringify({installation_id:'',operator:'tester',service_epoch:'manager',session_id:'expired',platform_id:'original'})]]);
+ api.status=()=>{throw Object.assign(new Error('expired binding'),{code:'identity'});};
+ const ui=await launch(api,saved);await settle();
+ assert.equal(api.calls.filter(c=>c.path.endsWith('/gitlab/login')).length,0);assert.equal(saved.has('teamx.gitlab-authorization'),false);
+ assert.match(ui.el('platforms-feedback').textContent,/原授权会话已失效/);
+});

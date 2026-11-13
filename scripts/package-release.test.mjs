@@ -15,7 +15,7 @@ const target = `${process.platform}-${process.arch === 'x64' ? 'amd64' : process
 const smokeFiles = { smoke_sha256: 'scripts/package-smoke.mjs',
   native_check_sha256: 'scripts/check-dsh-native.mjs', fixture_sha256: 'scripts/fixtures/acp.mjs' };
 const acceptanceFiles = ['scripts/package-acceptance.mjs', 'scripts/package-acceptance-lib.mjs',
-  'scripts/package-browser.mjs', 'scripts/package-lib.mjs', 'scripts/package-platform.mjs', ...Object.values(smokeFiles),
+  'scripts/package-browser.mjs', 'scripts/package-lib.mjs', 'scripts/package-platform.mjs', ...Object.values(smokeFiles), 'scripts/fixtures/models.mjs',
   'internal/room/bundle_real_e2e_test.go', 'internal/room/dsh_real_test.go', 'internal/room/demo_test.go',
   'packaging/verifier/package.json', 'packaging/verifier/package-lock.json', 'scripts/package-profiles.mjs'];
 
@@ -26,7 +26,7 @@ function fixture(t) {
   fs.mkdirSync(directory);
   for (const file of ['packaging/dependencies.lock.json', 'packaging/dsh/package-lock.json',
     'packaging/dsh/package.json', 'tools/gitlab/glab.lock.json', ...acceptanceFiles,
-    'scripts/package-release.mjs', 'scripts/package-qualification.mjs']) {
+    'scripts/package-release.mjs', 'scripts/package-qualification.mjs', 'scripts/server-release-policy.mjs']) {
     fs.mkdirSync(p.dirname(p.join(source, file)), { recursive: true });
     fs.copyFileSync(p.join(root, file), p.join(source, file));
   }

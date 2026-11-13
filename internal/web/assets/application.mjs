@@ -204,6 +204,7 @@ export async function createApp(overrides = {}) {
         state.catalog = catalog; state.catalogConnected = true;
         settingsUI.applyTimeZone(catalog);
         await roomsUI.reconcileManagement(catalog);
+        interactionsUI.restoreAuthorizationSelection(catalog);
         roomsUI.initializeSelection(catalog);
         version = viewVersion;
         const room = roomsUI.selectedEntry(catalog);
@@ -350,7 +351,7 @@ export async function createApp(overrides = {}) {
     confirmAction
   };
 
-  install(userMenuUI, createUserMenu({ env, runtime }));
+  install(userMenuUI, createUserMenu({ env, runtime, conversationUI }));
   install(settingsUI, createSettings({
     env, runtime, connectionsUI, conversationUI, roomsUI, workspaceUI, policyUI, notificationsUI, onboardingUI, membersUI
   }));
@@ -376,10 +377,10 @@ export async function createApp(overrides = {}) {
     env, settingsUI, notificationsUI, runtime, membersUI, policyUI
   }));
   install(conversationUI, createConversation({
-    env, runtime, roomsUI, notificationsUI, membersUI, settingsUI, interactionsUI, workspaceUI, layoutUI
+    env, runtime, roomsUI, notificationsUI, membersUI, settingsUI, interactionsUI, workspaceUI, layoutUI, userMenuUI
   }));
   install(interactionsUI, createPlatformInteractions({
-    env, runtime, conversationUI, settingsUI, connectionsUI, gitlabUI
+    env, runtime, conversationUI, settingsUI, connectionsUI, gitlabUI, roomsUI
   }));
   install(connectionsUI, createConnections({
     env, settingsUI, runtime, scionUI, gitlabUI, larkUI, onboardingUI, workspaceUI, notificationsUI
@@ -417,6 +418,13 @@ export async function createApp(overrides = {}) {
   roomsUI.restoreManagement();
 
   await refresh();
+
+  if (window.location?.hash === "#platform-settings" && state.catalogConnected) {
+    window.history?.replaceState(null,"",window.location.pathname+window.location.search);
+    await settingsUI.openSettings("platforms");
+  }
+
+  if (state.catalogConnected) await gitlabUI.restoreAuthorization();
 
   navigation.mount();
   lifecycle.mount();

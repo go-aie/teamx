@@ -4,3 +4,12 @@
 
 details{display:grid;gap:12px}details[open]>:not(summary){margin-top:12px}summary{cursor:pointer}details p,#key-state{font-size:14px;margin:0}input[type=checkbox]{width:auto;min-height:0;margin-right:8px}#replace-key-label{font-size:14px}
 .password-username{position:absolute;width:1px;height:1px;min-height:0;padding:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+
+@media(max-width:640px), (max-height:500px) and (pointer:coarse) {
+  input:not([type=checkbox]):not(.password-username),select { min-height:44px; padding-block:7px; font-size:16px; }
+  button { position:relative; min-height:40px; padding:7px 12px; margin-block:2px; font-size:13px; }
+  button::after { content:""; position:absolute; top:50%; left:50%; width:100%; height:100%; min-width:44px; min-height:44px; transform:translate(-50%,-50%); }
+  #login-submit { margin-top:16px; }
+  #logout { min-height:36px; margin-block:4px; }
+  .token-field button { width:36px; height:36px; min-height:36px; margin:0; padding:8px; }
+}

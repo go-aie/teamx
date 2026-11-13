@@ -3,6 +3,24 @@ export function createGitLabConnection({ env, connectionsUI, runtime, settingsUI
   const { document, window, Option, setTimeout, clearTimeout, request } = env;
   const { state, $, setSelectOptions } = runtime;
 
+  const returnKey="teamx.gitlab-authorization";
+  function clearSavedAuthorization() {try{runtime.storage?.removeItem(returnKey);}catch{}}
+  function saveAuthorization(auth) {
+    const reference={installation_id:state.installationID || "",operator:state.operator,service_epoch:state.catalog?.service_epoch,
+      session_id:auth.session_id,platform_id:auth.platform_id || "",onboarding_id:auth.onboarding_id || ""};
+    try{runtime.storage?.setItem(returnKey,JSON.stringify(reference));}catch{}
+  }
+  async function restoreAuthorization() {
+    let ref;try{ref=JSON.parse(runtime.storage?.getItem(returnKey) || "null");}catch{}
+    if(!ref)return;
+    if(ref.installation_id!==(state.installationID || "") || ref.operator!==state.operator || ref.service_epoch!==state.catalog?.service_epoch || typeof ref.session_id!=="string") {clearSavedAuthorization();return;}
+    await settingsUI.openSettings("platforms");
+    const item=connectionsUI.platforms.items.find(item=>item.id===ref.platform_id);
+    await connectionsUI.editPlatform(item);
+    connectionsUI.platforms.gitlabAuth={session_id:ref.session_id,platform_id:ref.platform_id,onboarding_id:ref.onboarding_id,affected:[],requestedScopes:["api"]};
+    renderGitLabAccount();await pollGitLabAuth();
+  }
+
   const gitlabScopeOptions = [
     {id:"gitlab-scope-api",scope:"api",required:true,defaultSelected:true},
     {id:"gitlab-scope-write-repository",scope:"write_repository",required:false,defaultSelected:true},
@@ -259,8 +277,13 @@ export function createGitLabConnection({ env, connectionsUI, runtime, settingsUI
       const op=action==="login" && onboardingUI.onboarding.active ? await onboardingUI.prepareOnboarding() : null;
       const auth = await request(`/v1/platforms/gitlab/${action}`,connectionsUI.connectionPayload({...target,application_id:prepared.application_id,client_import_id:prepared.client_import_id,scopes:prepared.scopes,...(op ? {onboarding_id:op.operation_id} : {}),affected}));
       if (version !== connectionsUI.platforms.formVersion) return;
+      saveAuthorization(auth);
       connectionsUI.platforms.gitlabAuth = {...auth, affected, updatingApplication, creatingPlatform, requestedScopes:prepared.scopes || ["api"], clientImportID:prepared.client_import_id || ""}; renderGitLabAccount();
-      if (auth.authorization_url) {$("gitlab-login-link").href = auth.authorization_url; $("gitlab-login-link").hidden = false; if (popup && !popup.closed) popup.location.replace(auth.authorization_url);}
+      if (auth.authorization_url) {
+        const targetURL=new URL(auth.authorization_url);
+        const origin=target.origin || connectionsUI.platforms.selected?.url || $("connection-url").value;
+        if(targetURL.origin!==new URL(origin).origin || targetURL.protocol!=="https:" || targetURL.pathname!=="/oauth/authorize" || targetURL.username || targetURL.password)throw new Error("授权地址校验失败，请核对原操作。");
+        $("gitlab-login-link").href = auth.authorization_url; $("gitlab-login-link").hidden = false; if (popup && !popup.closed) popup.location.replace(auth.authorization_url); else window.location?.assign(auth.authorization_url);}
       connectionsUI.connectionFeedback(action === "logout" ? "正在退出并核对撤销结果…" : "等待 GitLab 授权…");
       await pollGitLabAuth();
     } catch (error) {
@@ -283,7 +306,7 @@ export function createGitLabConnection({ env, connectionsUI, runtime, settingsUI
         auth.status=result.status;renderGitLabAccount();
         connectionsUI.platforms.gitlabTimer=setTimeout(()=>{void pollGitLabAuth();},1500);return;
       }
-      clearGitLabAuthView();connectionsUI.platforms.gitlabAuth=null;
+      clearSavedAuthorization();clearGitLabAuthView();connectionsUI.platforms.gitlabAuth=null;
       for (const item of result.platforms || []) connectionsUI.updatePlatformItem(item);
       const saved=(result.platforms || []).find(c=>c.id===connectionsUI.platforms.selected?.id) || (result.platforms || []).find(c=>c.id===auth.platform_id) || result.platforms?.[0];
       if (saved) await connectionsUI.editPlatform(saved);else renderGitLabAccount();
@@ -308,7 +331,11 @@ export function createGitLabConnection({ env, connectionsUI, runtime, settingsUI
         connectionsUI.connectionFeedback();gitlabSetupFeedback(message,"error");
         renderGitLabAccount();
       } else connectionsUI.connectionFeedback(message,["succeeded","logged_out"].includes(result.status)?"success":"error",duplicateAccount ? result.cleanup_status==="manual_required" ? "本次未使用的授权尚未自动撤销，已有平台的授权保持不变。" : cleanupMessage : "");
-    } catch {
+    } catch(error) {
+      if(connectionsUI.platforms.gitlabAuth===auth && version===connectionsUI.platforms.formVersion && error.code==="identity") {
+        clearSavedAuthorization();clearGitLabAuthView();connectionsUI.platforms.gitlabAuth=null;renderGitLabAccount();
+        connectionsUI.connectionFeedback("原授权会话已失效或不属于当前浏览器，请核对连接列表；未重新发起授权。","error");return;
+      }
       if (connectionsUI.platforms.gitlabAuth===auth && version===connectionsUI.platforms.formVersion) {connectionsUI.connectionFeedback("授权状态读取失败，正在核对原操作。", "error"); connectionsUI.platforms.gitlabTimer=setTimeout(()=>{void pollGitLabAuth();},3000);}
     }
   }
@@ -316,6 +343,7 @@ export function createGitLabConnection({ env, connectionsUI, runtime, settingsUI
   function clearGitLabAuthView() {clearTimeout(connectionsUI.platforms.gitlabTimer);connectionsUI.platforms.gitlabTimer=null;$("gitlab-login-link").hidden=true;$("gitlab-login-link").href="";}
 
   async function cancelGitLabAuth(keepalive = false) {
+    clearSavedAuthorization();
     clearGitLabConfirmation();
     const auth=connectionsUI.platforms.gitlabAuth;clearGitLabAuthView();connectionsUI.platforms.gitlabAuth=null;connectionsUI.platforms.formVersion++;
     if (auth) {try {const body=connectionsUI.connectionPayload({session_id:auth.session_id}); if (keepalive) await globalThis.fetch("/v1/platforms/gitlab/cancel",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),credentials:"same-origin",keepalive:true}); else await request("/v1/platforms/gitlab/cancel",body);} catch { /* Explicit list refresh reconciles a late commit. */ }}
@@ -385,6 +413,7 @@ export function createGitLabConnection({ env, connectionsUI, runtime, settingsUI
 
   return {
     mount,
+    restoreAuthorization,
     resetApplicationEditor,
     setGitLabScopes,
     discoverGitLabSetup,

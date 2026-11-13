@@ -11,6 +11,27 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
   const stopRequests = new Map();
 
   let memberToolsView = null;
+  let memberModelStatus = {};
+
+  function renderControlsToggle() {
+    const expanded = !$("agent-controls").hidden, button = $("toggle-agent-controls");
+    const modelError = memberModelStatus.state === "error", pending = memberModelStatus.state === "busy";
+    const runtimeError = !!selectedAgent()?.execution?.error;
+    const label = `${expanded ? "收起" : "展开"}成员设置${modelError ? "，查看模型异常" : runtimeError ? "，查看运行异常" : ""}`;
+    button.setAttribute("aria-expanded", String(expanded)); button.setAttribute("aria-label", label);
+    button.title = `${label}${(modelError || pending) && memberModelStatus.detail ? `；${memberModelStatus.detail}` : ""}`;
+    button.dataset.state = modelError || runtimeError ? "error" : pending ? "busy" : "ready";
+    $("agent-model-alert").textContent = modelError ? "模型异常" : runtimeError ? "运行异常" : pending ? "切换中" : "";
+    $("agent-model-alert").hidden = !$("agent-model-alert").textContent;
+  }
+
+  function setControlsExpanded(expanded) {
+    $("agent-controls").hidden = !expanded; renderControlsToggle();
+  }
+
+  function renderMemberModelStatus(status) {
+    memberModelStatus = status; renderControlsToggle();
+  }
 
   // Tool views are scoped to their Room/operator/epoch and member generation.
   // Late reads and mutations cannot populate another Room or Agent's settings.
@@ -62,6 +83,22 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     const selection=v?.cli?.selections?.find(s=>s.agent_id===v.member.agent_id && s.membership_id===v.member.membership_id && s.platform_id===item.id);
     const unavailable=toolBinding(v,item) && selection?.unavailable_reason ? ({executable_unavailable:"程序缺失，已保留启用设置；修复后会重新检查。",account_unavailable:"账号暂不可用，已保留启用设置，请重新核验。",platform_changed:"平台已变化，需重新启用。"}[selection.unavailable_reason] || "工具暂不可用，已保留启用设置。") : "";
     return [v?.cliResult?.tool===item.id ? v.cliResult.message : "",unavailable].filter(Boolean).join(" ");
+  }
+
+  function accountRecovery(item, view, selection, gaps, result) {
+    const errors = [view?.error_code, ...Object.values(view?.errors || {}), view?.events?.error_code, view?.todos?.error_code];
+    const next = action => gaps.some(c => c.next_action === action);
+    if (errors.includes("identity_mismatch")) return {reason:"账号与连接不一致",action:"核验账号"};
+    if (errors.includes("credential_rejected") || ["expired","revoked"].includes(item.authorization_status)) return {reason:"授权已失效",action:"重新授权"};
+    if (errors.includes("permission_denied")) return {reason:"缺少所需权限",action:"查看权限"};
+    if (next("configure_application")) return {reason:"应用配置待完成",action:"配置应用"};
+    if (next("authorize_user") || result?.tool === item.id && /补全/.test(result.message)
+      || item.authorization_status && item.authorization_status !== "active") return {reason:"用户授权未完成",action:"完成授权"};
+    if (errors.includes("credential_unavailable")) return {reason:"登录凭据不可用",action:"重新授权"};
+    if (item.validation?.status !== "valid") return {reason:item.validation?.status === "failed" ? "账号核验未通过" : "账号待核验",action:"核验账号"};
+    if (selection?.unavailable_reason === "account_unavailable" || next("revalidate_account")) return {reason:"账号需重新核验",action:"核验账号"};
+    if (next("retry_check")) return {reason:"账号状态待检查",action:"核验账号"};
+    return null;
   }
 
   function toolSwitch(v,item) {
@@ -140,6 +177,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     $("member-notification-sources").hidden=!state.managed || !ws || !target;
     if(!ws || !target)return;
     const items=memberPlatformItems(ws,v),configured=items.filter(item=>memberHasPlatform(item,target,v));
+    const inlineAccountIssues = new Set();
     $("member-notification-platforms").replaceChildren(...configured.map(item=>{
       const view=notificationsUI.notificationView(ws,item,target),hasNotifications=["gitlab","lark"].includes(item.provider);
       const row=notificationsUI.notificationRow(ws,item,target,true);
@@ -158,23 +196,21 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       controls.append(label,input,toolSwitch(v,item));
       const accountActions=document.createElement("div");accountActions.className="member-platform-account-actions";
       const selection=v?.cli?.selections?.find(s=>s.agent_id===target.agent_id && s.membership_id===target.membership_id && s.platform_id===item.id), gaps=selection?.availability?.capabilities?.filter(c=>c.configured!==false && c.state!=="ready") || [];
-      const notificationErrors=[view?.error_code,...Object.values(view?.errors || {}),view?.events?.error_code,view?.todos?.error_code];
-      const needsAuthorization = item.validation?.status !== "valid" || item.authorization_status && item.authorization_status !== "active"
-        || notificationErrors.some(code=>["credential_unavailable","credential_rejected","permission_denied","identity_mismatch"].includes(code))
-        || selection?.unavailable_reason === "account_unavailable"
-        || v?.cliResult?.tool===item.id && /补全/.test(v.cliResult.message)
-        || gaps.some(c=>["authorize_user","configure_application","revalidate_account","retry_check"].includes(c.next_action));
-      if(needsAuthorization) {
-        const settings=document.createElement("button");settings.type="button";settings.className="text-button button-compact";settings.textContent="检查账号";
-        settings.setAttribute("aria-label",`打开 ${item.name} 的账号设置`);
+      const recovery = accountRecovery(item,view,selection,gaps,v?.cliResult);
+      if(recovery) {
+        inlineAccountIssues.add(item.id);
+        const reason=document.createElement("span");reason.className="member-platform-account-reason";reason.textContent=recovery.reason;
+        const settings=document.createElement("button");settings.type="button";settings.className="text-button button-compact";settings.textContent=recovery.action;
+        settings.setAttribute("aria-label",`${recovery.action}：${item.name}`);
         settings.addEventListener("click",async()=>{settingsUI.openSettings("platforms");await connectionsUI.loadPlatforms();const current=connectionsUI.platforms.items.find(p=>p.id===item.id);if(current)connectionsUI.editPlatform(current);});
-        accountActions.append(settings);
+        accountActions.append(reason,settings);
+        issue.hidden = true;
       }
       if(item.provider === "lark" && toolBinding(v,item)) {
         const configured=selection?.action_authorization?.grants?.length;
         // Account settings owns OAuth diagnostics; member grants and self
         // evidence still require their existing member-scoped repair action.
-        if(!needsAuthorization && (!configured || gaps.some(c=>["verify_self","enable_member_tool"].includes(c.next_action)))) {
+        if(!recovery && (!configured || gaps.some(c=>["verify_self","enable_member_tool"].includes(c.next_action)))) {
           const repair=document.createElement("button");repair.type="button";repair.className="text-button button-compact";repair.textContent="修复能力";
           repair.disabled=!!ws.memberToolBusy || !v?.cliConnected;
           repair.addEventListener("click",()=>changeMemberTool(v,item,true,true));accountActions.append(repair);
@@ -192,7 +228,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       const availability=v?.cli?.selections?.find(s=>s.agent_id===target.agent_id && s.membership_id===target.membership_id && s.platform_id===item.id);
       return notificationsUI.notificationConfigured(item,view) && notificationsUI.notificationIssue(ws,item,view) || !!availability?.unavailable_reason || v?.cliResult?.tool===item.id && v.cliResult.error;
     });
-    $("member-platform-issues").replaceChildren(...issues.map(item=>{
+    $("member-platform-issues").replaceChildren(...issues.filter(item=>!inlineAccountIssues.has(item.id)).map(item=>{
       const button=document.createElement("button");button.type="button";button.className="text-button";button.textContent=`${item.name}：查看异常`;button.addEventListener("click",()=>openMemberPlatform(button,item,target));return button;
     }));
     notice("member-notification-list-error",!ws.notificationsConnected || !v?.cliConnected ? "部分设置暂不可读，请刷新。" : "");$("member-notification-list-reload").hidden=!!ws.notificationsConnected && !!v?.cliConnected;
@@ -265,6 +301,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     $("notification-detail").close();
     $("activity-dialog").hidden=false;
     activityMember = { agent_id: current.agent_id, membership_id: current.membership_id };
+    memberModelStatus = {}; setControlsExpanded(false);
     layoutUI.expandMembers();
     layoutUI.hideConversationNotifications(); layoutUI.savePanels(); layoutUI.renderPanels();
     if (!$("activity-dialog").open) $("activity-dialog").show();
@@ -296,6 +333,10 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     $("agent-status").classList.toggle("running", !!member.execution?.active);
     $("agent-status").classList.toggle("failed", /failed|blocked|unavailable|interrupted/.test(member.status));
     renderMemberActions(member, $("agent-actions"));
+    const quickActions = $("agent-quick-actions");
+    quickActions.hidden = !member.execution || !(member.execution.active || member.status === "running") || !!member.execution.paused;
+    if (!quickActions.hidden) renderMemberActions(member, quickActions, true);
+    renderControlsToggle();
     const execution = member.execution;
     const reset = execution?.session_reset_required || member.status === "backend_blocked";
     const budget = execution?.turn_budget;
@@ -342,15 +383,15 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     else if (agentTab === "policy") { activity.close(); await policyUI.loadMemberPolicy(true); }
   }
 
-  function renderMemberActions(member, actions) {
+  function renderMemberActions(member, actions, pauseOnly = false) {
     const execution = member.execution;
     const signature = JSON.stringify([member.agent_id, member.membership_id, member.status, execution?.paused, execution?.active,
-      execution?.session_reset_required, state.connected, discussionBusy(), memberBusy.has(member.membership_id), member.unread_count, execution?.agent?.turn?.status]);
+      execution?.session_reset_required, state.connected, discussionBusy(), memberBusy.has(member.membership_id), member.unread_count, execution?.agent?.turn?.status, pauseOnly]);
     if (actions.dataset.signature === signature) return;
     actions.dataset.signature = signature;
     actions.replaceChildren();
     if (!execution) return;
-    const enable = execution.paused || execution.session_reset_required || member.status === "backend_blocked" || member.status === "budget_exhausted";
+    const enable = !pauseOnly && (execution.paused || execution.session_reset_required || member.status === "backend_blocked" || member.status === "budget_exhausted");
     const add = (label, action) => {
       const button = document.createElement("button"); button.type = "button"; button.className = "secondary-button button-compact"; button.textContent = label;
       button.setAttribute("aria-label", `${label} ${member.agent_id}`);
@@ -676,12 +717,19 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     stopRequests.clear();
     activity.close(); $("activity-dialog").close();
     activitySignature = ""; activityMember = null;
+    memberModelStatus = {}; setControlsExpanded(false);
   }
 
   function mount() {
     if(typeof ResizeObserver!=="undefined")new ResizeObserver(layoutMemberPlatforms).observe($("member-notification-platforms"));
 
     document.fonts?.ready.then(layoutMemberPlatforms);
+
+    $("toggle-agent-controls").addEventListener("click", () => {
+      const expanded = $("agent-controls").hidden;
+      setControlsExpanded(expanded);
+      if (expanded && memberModelStatus.state === "error") settingsUI.showMemberModelDetails();
+    });
 
     for (const key of ["platforms", "policy", "inbox", "activity"]) {
       const button = $(`agent-tab-${key}`);
@@ -757,6 +805,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     openMemberTools,
     openMemberPlatform,
     renderMemberPlatforms,
+    renderMemberModelStatus,
     memberPlatformItems,
     memberRole,
     get activityMember() { return activityMember; },

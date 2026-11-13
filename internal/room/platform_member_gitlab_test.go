@@ -366,15 +366,9 @@ func TestDefaultAssistantGitLabConnectAutomaticallyConfiguresPersonalTodos(t *te
 	if actual.MemberIdentity != id || !actual.GitLab.Config.Todos.Enabled || actual.GitLab.Config.Events.Enabled || actual.ToolEnabled {
 		t.Fatal(actual)
 	}
-	if err := svc.store.initReferenceFollowups(id); err != nil {
-		t.Fatal(err)
-	}
-	page, err := svc.readReferenceInbox(ctx, id, 1, 25, nil)
-	if err != nil || len(page.Entries) != 1 || page.Entries[0].TaskEvent.OperationID != op.ID {
-		t.Fatal(page, err)
-	}
-	if _, err := svc.inboxes[id.MembershipID].Call[InboxStatus](ctx, ConfirmInboxBatch{MemberIdentity: id, TurnNumber: 1, Receipt: page.Batch.Receipt}); err != nil {
-		t.Fatal(err)
+	page := consumeConnectTestInbox(t, svc, id, 1)
+	if len(page.Entries) != 1 || page.Entries[0].TaskEvent.OperationID != op.ID {
+		t.Fatal(page)
 	}
 	b.finish <- nil
 	waitMember(t, ctx, member, id, func(s MemberStatus) bool { return !s.Active && s.Inbox != nil && s.Inbox.ConsumedThrough == 1 })

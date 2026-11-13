@@ -512,7 +512,7 @@
       },
       "system_requirements": {
         "darwin": "system Keychain/Security.framework",
-        "linux": "D-Bus/Secret Service for OS keyring; verify supported headless credential storage separately"
+        "linux": "Pinned v1.0.99 uses CLI-owned AES-256-GCM files under ~/.local/share/lark-cli (or LARKSUITE_CLI_DATA_DIR/lark-cli), with a private master.key; no D-Bus/Secret Service requirement. Synthetic cross-process storage probe is not real login, refresh, DPoP or TeamX account-pinning acceptance."
       },
       "verify_argv": [
         "bin/lark-cli",

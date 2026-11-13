@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
@@ -14,6 +16,23 @@ import (
 // Archive validation and publication belong to the deployment command.
 type serverLayout struct {
 	Root, Release, Home string
+}
+
+func validateManagedListen(address string) error {
+	host, port, err := net.SplitHostPort(address)
+	ip := net.ParseIP(host)
+	n, numberErr := strconv.Atoi(port)
+	if err != nil || ip == nil || !ip.IsLoopback() || numberErr != nil || n < 0 || n > 65535 {
+		return errors.New("managed service requires a loopback IP and port; use an HTTPS reverse proxy for remote access")
+	}
+	return nil
+}
+
+func validateManagedAccess(c startupConfig, address string) error {
+	if configuredAccessMode(c) == accessLAN {
+		return validateAccessListen(c, address)
+	}
+	return validateManagedListen(address)
 }
 
 func defaultServerDirectories(goos, userHome string) (root, home string, err error) {

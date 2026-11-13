@@ -7,7 +7,7 @@ import { assertNative, snapshotPlan } from './package-ci.mjs';
 import { assertReleaseSource } from './package-release-source.mjs';
 import { checkRealDSH } from './package-acceptance-lib.mjs';
 import { machOFiles } from './package-signing.mjs';
-import { checkQualification, qualificationFor, qualificationTemplate } from './package-qualification.mjs';
+import { checkQualification, qualificationFor, qualificationTemplate, residentServerTarget } from './package-qualification.mjs';
 import { checkManifestProfile, hasDependency, profileNames, releaseProfiles } from './package-profiles.mjs';
 
 const root = p.resolve(p.dirname(fileURLToPath(import.meta.url)), '..');
@@ -15,7 +15,7 @@ const smokeInputs = { smoke_sha256: 'scripts/package-smoke.mjs',
   native_check_sha256: 'scripts/check-dsh-native.mjs', fixture_sha256: 'scripts/fixtures/acp.mjs' };
 export const acceptanceInputs = ['scripts/package-acceptance.mjs', 'scripts/package-acceptance-lib.mjs',
   'scripts/package-browser.mjs', 'scripts/package-lib.mjs', 'scripts/package-platform.mjs',
-  ...Object.values(smokeInputs), 'internal/room/bundle_real_e2e_test.go',
+  ...Object.values(smokeInputs), 'scripts/fixtures/models.mjs', 'internal/room/bundle_real_e2e_test.go',
   'internal/room/dsh_real_test.go', 'internal/room/demo_test.go',
   'packaging/verifier/package.json', 'packaging/verifier/package-lock.json', 'scripts/package-profiles.mjs'];
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -130,7 +130,8 @@ export function assessCandidate(receipt, evidenceDirectory, sourceRoot = root, q
     } : {}),
     ...(hasDependency(receipt.manifest.profile, 'git') ? { git_tls_clone: 'not_run' } : {}),
     ...(hasDependency(receipt.manifest.profile, 'glab') || hasDependency(receipt.manifest.profile, 'lark-cli') ?
-      { platform_login_read_bind: 'not_run' } : {}) };
+      { platform_login_read_bind: 'not_run' } : {}),
+    ...(residentServerTarget(receipt.manifest) ? { resident_server: 'not_run', web_delivery: 'not_run' } : {}) };
   let acceptance;
   if (evidenceDirectory) {
     const file = p.join(evidenceDirectory, 'report.json'), report = json(file), manifest = receipt.manifest;
@@ -166,7 +167,8 @@ export function assessCandidate(receipt, evidenceDirectory, sourceRoot = root, q
     profile: receipt.manifest.profile, commit: receipt.manifest.source.commit,
     manifest_sha256: hash(JSON.stringify(receipt.manifest, null, 2) + '\n'),
     policy: { macos_signing: 'optional_unsigned_allowed' },
-    assessment_verifiers: ['scripts/package-release.mjs', 'scripts/package-qualification.mjs', 'scripts/package-profiles.mjs'].map(path =>
+    assessment_verifiers: ['scripts/package-release.mjs', 'scripts/package-qualification.mjs', 'scripts/package-profiles.mjs',
+      'scripts/server-release-policy.mjs'].map(path =>
       ({ path, sha256: digest(p.join(sourceRoot, path)) })),
     release_ready: remaining.length === 0, status: remaining.length ? 'incomplete' : 'passed', checks,
     ...(acceptance ? { acceptance } : {}),

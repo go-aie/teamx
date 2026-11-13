@@ -6,6 +6,7 @@ TeamX 让多个有独立角色和私有上下文的 Agent，通过同一个 Room
 
 | 对象 | 拥有的内容 | 生效边界 |
 | --- | --- | --- |
+| Server 实例 | 固定所有者、私有 home、模型与平台配置、多个 Room | 独立于浏览器运行；常驻安装由系统服务管理，实例身份跨重启保留 |
 | 团队模板 | 成员角色、模型及 DSH 配置、资源和 Workspace 建议值 | 新建房间时冻结；修改模板不更新已有房间 |
 | Room | 公共历史、成员关系、读取进度、协作状态 | 一个任务的持久边界，与显示名称无关 |
 | 成员 | Agent ID、MembershipID、执行状态、预算 | 移除后重加会产生新 MembershipID |
@@ -58,6 +59,7 @@ RoomID 标识目录，RoomInstance 防止同名或重建房间混用；Membershi
 
 ## 阅读路径
 
+- [Server 架构](server.zh.md)：服务与浏览器职责、目录、身份和生命周期。
 - [Room 架构](room-architecture.zh.md)：身份、消息、调度、房间生命周期与存储。
 - [Agent 运行时](agent-runtime.zh.md)：DSH 配置、ACP、取消、恢复与轮换。
 - [Workspace](workspace.zh.md)：目录、Git、配置应用与失败恢复。

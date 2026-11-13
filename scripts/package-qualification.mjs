@@ -3,6 +3,7 @@
 // evidence stays with the tester; only fixed observations and its digest travel.
 import { must } from './package-lib.mjs';
 import { hasDependency, profileNames } from './package-profiles.mjs';
+import { webDeliveryTemplate, checkWebDelivery } from './server-release-policy.mjs';
 
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const sha = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
@@ -16,6 +17,16 @@ const git = ['bundled_git', 'host_git_absent', 'helper_executed', 'tls_verified'
 const platform = ['isolated_accounts', 'gitlab_login', 'gitlab_read', 'gitlab_bind',
   'lark_login', 'lark_read', 'lark_bind'];
 
+export const residentServerTarget = m => m.profile === 'standard' && ['linux-amd64', 'darwin-arm64'].includes(m.target);
+export const residentServerFields = m => [
+  'system_manager_install', 'login_or_boot_start', 'explicit_stop_stays_stopped',
+  'bounded_restart', 'child_process_cleanup', 'no_export_key_first_setup',
+  'existing_identity_models_preserved', 'consistent_backup_restore', 'old_runtime_retained',
+  'committed_model_operation_recovery', 'no_completed_member_repeated', 'no_unknown_action_replayed',
+  'platform_unattended_credentials', 'browser_closed_collect_deliver_execute',
+  ...(m.target === 'linux-amd64' ? ['ssh_logout_survives', 'host_reboot_survives', 'lark_account_pinned_send'] : ['logout_sleep_limits_documented'])
+];
+
 export function qualificationTemplate(receipt) {
   const m = receipt.manifest, [platformName, process_arch, machine] = native[m.target];
   const fields = {
@@ -24,15 +35,19 @@ export function qualificationTemplate(receipt) {
       ['quarantine_present', 'quarantine_preserved', 'user_approved', 'launched_after_resolution'] :
       ['baseline_runtime_verified', 'dynamic_libraries_within_baseline'],
     ...(hasDependency(m.profile, 'git') ? { git_tls_clone: git } : {}),
-    ...(hasDependency(m.profile, 'glab') || hasDependency(m.profile, 'lark-cli') ? { platform_login_read_bind: platform } : {})
+    ...(hasDependency(m.profile, 'glab') || hasDependency(m.profile, 'lark-cli') ? { platform_login_read_bind: platform } : {}),
+    ...(residentServerTarget(m) ? { resident_server: residentServerFields(m), web_delivery: [] } : {})
   };
   return { target: m.target, profile: m.profile, archive_sha256: receipt.archive_sha256,
     environment: { platform: platformName, process_arch, machine, baseline: m.qualification_baseline },
     checks: Object.fromEntries(Object.entries(fields).map(([key, names]) => [key, {
       status: 'not_run', fixture: false, method: 'maintainer_manual', tested_at: null, evidence_sha256: null,
       observations: { ...Object.fromEntries(names.map(name => [name, false])),
+        ...(key === 'web_delivery' ? webDeliveryTemplate(m) : {}),
         ...(key === 'downloaded_system_security' && m.target.startsWith('darwin-') ? { first_launch: null } : {}),
-        ...(key === 'platform_login_read_bind' ? { remote_writes: 0 } : {}) }
+        ...(key === 'platform_login_read_bind' ? { remote_writes: 0 } : {}),
+        ...(key === 'resident_server' ? { model_delivery_sha256: m.server_deployment?.model_delivery_sha256 ?? null,
+          migration: 'not_run' } : {}) }
     }])) };
 }
 
@@ -56,7 +71,8 @@ export function checkQualification(receipt, record) {
     same(record.environment?.baseline, m.qualification_baseline), 'Qualification native environment/baseline mismatch');
   const required = ['clean_machine', 'downloaded_system_security',
     ...(hasDependency(m.profile, 'git') ? ['git_tls_clone'] : []),
-    ...(hasDependency(m.profile, 'glab') || hasDependency(m.profile, 'lark-cli') ? ['platform_login_read_bind'] : [])];
+    ...(hasDependency(m.profile, 'glab') || hasDependency(m.profile, 'lark-cli') ? ['platform_login_read_bind'] : []),
+    ...(residentServerTarget(m) ? ['resident_server', 'web_delivery'] : [])];
   must(record.checks && Object.keys(record.checks).every(k => required.includes(k)), 'Unexpected qualification check');
   const accepted = {};
   for (const key of required) {
@@ -81,6 +97,17 @@ export function checkQualification(receipt, record) {
       must(o?.baseline_runtime_verified === true && o.dynamic_libraries_within_baseline === true,
         'Linux system-baseline observations incomplete');
       observations = { baseline_runtime_verified: true, dynamic_libraries_within_baseline: true };
+    } else if (key === 'web_delivery') {
+      observations = checkWebDelivery(o, m);
+      must(Date.parse(c.tested_at) >= Date.parse(observations.observation.finished_at),
+        'Web delivery attestation predates observation');
+    } else if (key === 'resident_server') {
+      must(residentServerFields(m).every(f => o?.[f] === true), 'Resident Server observations incomplete');
+      must(sha(m.server_deployment?.model_delivery_sha256) && o.model_delivery_sha256 === m.server_deployment.model_delivery_sha256,
+        'Resident Server model delivery baseline mismatch');
+      must(['not_applicable', 'resume_verified'].includes(o.migration), 'Finite model migration applicability/resume evidence missing');
+      observations = { ...Object.fromEntries(residentServerFields(m).map(f => [f, true])),
+        model_delivery_sha256: o.model_delivery_sha256, migration: o.migration };
     } else {
       const fields = key === 'git_tls_clone' ? git : platform;
       must(fields.every(f => o?.[f] === true), `Qualification observations incomplete: ${key}`);

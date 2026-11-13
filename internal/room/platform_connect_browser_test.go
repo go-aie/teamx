@@ -4,6 +4,7 @@ package room
 
 import (
 	"context"
+	"fmt"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -23,7 +24,10 @@ func TestDefaultAssistantPlatformConnectionBrowser(t *testing.T) {
 	platformConnectionBrowser(t, true)
 }
 
-func platformConnectionBrowser(t *testing.T, assistant bool) {
+func TestPlatformConnectSamePageConversationBrowser(t *testing.T) {
+	platformConnectionBrowser(t, false, true)
+}
+func platformConnectionBrowser(t *testing.T, assistant bool, samePage ...bool) {
 	t.Helper()
 	if os.Getenv("TEAMX_CONNECT_BROWSER") != "1" {
 		t.Skip("optional local Chromium acceptance")
@@ -85,7 +89,7 @@ func platformConnectionBrowser(t *testing.T, assistant bool) {
 	defer func() { stopWait(); _ = wait.Wait() }()
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	browser := exec.CommandContext(ctx, "node", "testdata/platform_connect_browser.cjs", server.URL, dir, req.OperationID, req.RoomInstance, other.RoomInstance)
+	browser := exec.CommandContext(ctx, "node", "testdata/platform_connect_browser.cjs", server.URL, dir, req.OperationID, req.RoomInstance, other.RoomInstance, fmt.Sprint(len(samePage) > 0 && samePage[0]))
 	browser.Env = os.Environ()
 	out, err := browser.CombinedOutput()
 	if err != nil {

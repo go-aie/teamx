@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/url"
@@ -243,14 +244,7 @@ func (m *roomManager) serveGitLabAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if action == "complete" {
-		if r.Method != http.MethodGet {
-			w.WriteHeader(405)
-			return
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
-		_, _ = io.WriteString(w, "<!doctype html><html lang=zh-CN><meta charset=utf-8><title>GitLab 授权已处理</title><p>授权回调已处理。请返回 TeamX 的平台连接页面核对结果，此窗口可以关闭。</p></html>")
+		m.serveGitLabComplete(w, r)
 		return
 	}
 	if action != "login" && action != "logout" && action != "status" && action != "cancel" {
@@ -585,7 +579,7 @@ func (m *roomManager) serveGitLabCallback(w http.ResponseWriter, r *http.Request
 	if err = m.checkGitLabAuthLocked(s); err != nil {
 		m.finishGitLabAuthLocked(s, "failed", "source_changed")
 		m.mu.Unlock()
-		http.Redirect(w, r, gitlabCompletePath, 303)
+		http.Redirect(w, r, gitlabCompletionLocation(s), 303)
 		return
 	}
 	s.state = ""
@@ -601,7 +595,7 @@ func (m *roomManager) serveGitLabCallback(w http.ResponseWriter, r *http.Request
 		}
 		m.finishGitLabAuthLocked(s, status, code)
 		m.mu.Unlock()
-		http.Redirect(w, r, gitlabCompletePath, 303)
+		http.Redirect(w, r, gitlabCompletionLocation(s), 303)
 		return
 	}
 	s.Status = "exchanging"
@@ -713,7 +707,7 @@ func (m *roomManager) serveGitLabCallback(w http.ResponseWriter, r *http.Request
 		m.finishGitLabAuthLocked(s, "failed", code)
 		m.mu.Unlock()
 	}
-	http.Redirect(w, r, gitlabCompletePath, 303)
+	http.Redirect(w, r, gitlabCompletionLocation(s), 303)
 }
 func (m *roomManager) settleGitLabAuthLocked(s *gitlabAuthSession) error {
 	var pending []<-chan struct{}
@@ -890,4 +884,43 @@ func gitlabApplicationMissingScopes(available, requested []string) []string {
 func gitlabAuthReferencesFingerprint(refs []managedPlatformReference) string {
 	data, _ := json.Marshal(refs)
 	return fmt.Sprintf("%x", sha256.Sum256(data))
+}
+
+// Only a fixed same-origin destination is emitted. The reference contains no
+// OAuth material and grants no authority; the UI rechecks the authenticated
+// installation, room and exact membership before reading the original receipt.
+func gitlabCompletionLocation(s *gitlabAuthSession) string {
+	if s.operationID != "" {
+		return gitlabCompletePath + "?operation_id=" + url.QueryEscape(s.operationID)
+	}
+	return gitlabCompletePath
+}
+func (m *roomManager) serveGitLabComplete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(405)
+		return
+	}
+	destination := "/#platform-settings"
+	m.mu.Lock()
+	if m.canonicalGitLabRequestLocked(r) {
+		s := m.gitlabConnectSessionLocked(r.URL.Query().Get("operation_id"))
+		if s != nil && s.operationID != "" && !time.Now().After(s.ExpiresAt.Add(time.Minute)) {
+			cookie, err := r.Cookie(gitlabCookieName(s.SessionID))
+			if err == nil && cookie.Value == s.browser {
+				if op, err := m.readPlatformConnectLocked(s.operationID); err == nil {
+					ref := map[string]any{"installation_id": requestInstallationID(r), "operator": s.owner,
+						"room_id": op.RoomID, "room_instance": op.RoomInstance, "agent_id": op.AgentID,
+						"membership_id": op.MembershipID, "operation_id": op.ID, "source_seq": op.Source.Seq}
+					raw, _ := json.Marshal(ref)
+					destination = "/#platform-connection=" + url.PathEscape(string(raw))
+				}
+			}
+		}
+	}
+	m.mu.Unlock()
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'")
+	_, _ = fmt.Fprintf(w, `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>GitLab 授权已处理</title><p>授权回调已处理。返回 TeamX 查询原操作的账号核验、连接保存和接续结果。</p><p><a href="%s">返回 TeamX 查看结果</a></p><p>也可以关闭此页，回到原标签页。</p></html>`, html.EscapeString(destination))
 }

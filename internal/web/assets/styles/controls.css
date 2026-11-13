@@ -4,7 +4,7 @@
   align-items:center;
   justify-content:center;
   gap:var(--space-2);
-  min-height:var(--control-height);
+  min-height:var(--button-height,var(--control-height));
   padding:7px 12px;
   border:1px solid transparent;
   border-radius:var(--radius-control);
@@ -15,7 +15,7 @@
   text-decoration:none;
   transition:background var(--motion-fast),color var(--motion-fast),border-color var(--motion-fast);
 }
-.primary { color:#fff; background:var(--accent); }
+.primary { min-height:var(--primary-height,var(--control-height)); color:#fff; background:var(--accent); }
 .primary:hover:not(:disabled) { color:#fff; background:var(--accent-hover); text-decoration:none; }
 .secondary-button { color:var(--accent); border-color:var(--line); background:var(--surface); }
 .secondary-button:hover:not(:disabled) { background:var(--soft); border-color:var(--field-border); }

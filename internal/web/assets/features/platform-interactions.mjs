@@ -1,11 +1,59 @@
 // Durable connection and selection cards rendered inside conversations.
-export function createPlatformInteractions({ env, runtime, conversationUI, settingsUI, connectionsUI, gitlabUI }) {
+export function createPlatformInteractions({ env, runtime, conversationUI, settingsUI, connectionsUI, gitlabUI, roomsUI }) {
   const { document, window, request } = env;
   const { state, $, notice } = runtime;
 
   // Connection interactions are projections of durable operations, never generated
   // HTML or temporary OAuth URLs saved in chat history. Each view owns stable nodes.
   const platformInteractionState = {views:new Map(), operations:[], busy:new Set(), errors:new Map(), loading:false, generation:0};
+
+  const returnKey="teamx.platform-return";
+  const identityFields=["room_id","room_instance","agent_id","membership_id","operation_id","source_seq"];
+  let returning=null, returnSelected=false;
+  function rememberAuthorization(op) {
+    const ref={...Object.fromEntries(identityFields.map(key=>[key,op[key]])),installation_id:state.installationID || "",operator:state.operator};
+    returning=null;returnSelected=true;
+    try{runtime.storage?.setItem(returnKey,JSON.stringify(ref));}catch{}
+    conversationUI.saveDraft();
+  }
+  function restoreAuthorizationSelection(catalog) {
+    if(returnSelected)return;
+    if(!returning) {
+      try {
+        const hash=window.location?.hash || "";
+        returning=JSON.parse(hash.startsWith("#platform-connection=") ? decodeURIComponent(hash.slice(21)) : runtime.storage?.getItem(returnKey) || "null");
+      }catch{returning=null;}
+    }
+    if(!returning)return;
+    if(identityFields.some(key=>!returning[key]) || returning.installation_id!==(state.installationID || "") || returning.operator!==catalog.operator) {clearAuthorizationReturn();return;}
+    const room=catalog.rooms.find(r=>r.room_id===returning.room_id && r.room_instance===returning.room_instance);
+    if(!room){clearAuthorizationReturn();return;}
+    returnSelected=true;roomsUI.selectRoom(room);
+  }
+  function clearAuthorizationReturn() {
+    returning=null;returnSelected=true;
+    try{runtime.storage?.removeItem(returnKey);}catch{}
+    if(window.location?.hash?.startsWith("#platform-connection="))window.history?.replaceState(null,"",window.location.pathname+window.location.search);
+  }
+  async function revealAuthorizationReturn(generation) {
+    if(!returning || !returnSelected)return;
+    const ref=returning;
+    const op=platformInteractionState.operations.find(op=>identityFields.every(key=>op[key]===ref[key]));
+    if(!op){clearAuthorizationReturn();notice("platform-interaction-error","原授权操作或成员已变化，请核对原会话；未重新发起连接。");return;}
+    if(!state.messages.has(op.source_seq)) {
+      // Keep history contiguous: adding just the old source would hide the
+      // gap from the normal "load earlier" cursor.
+      const before=Math.max(op.source_seq,(state.oldest || op.source_seq+1)-1);
+      const read=await conversationUI.readPages({mode:"range",after:op.source_seq-1,snapshot_seq:before},state.info);
+      if(generation!==platformInteractionState.generation || returning!==ref)return;
+      for(const message of read.messages)state.messages.set(message.seq,message);
+      conversationUI.renderMessages();renderPlatformInteractions();
+    }
+    if(generation!==platformInteractionState.generation || returning!==ref)return;
+    const card=platformInteractionState.views.get(op.operation_id);
+    card?.el.scrollIntoView?.({block:"center"});card?.status?.focus?.();
+    clearAuthorizationReturn();
+  }
 
   function resetPlatformInteractions() {
     const s=platformInteractionState;s.generation++;s.loading=false;s.operations=[];s.views.clear();s.busy.clear();s.errors.clear();
@@ -17,7 +65,7 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
     const el=document.createElement("section");el.className="platform-connect-interaction";el.dataset.interactionId=op.interaction.id;
     el.setAttribute("aria-label", op.interaction.kind==="gitlab_authorization" ? "GitLab 连接" : "飞书连接");
     const heading=document.createElement("strong"), status=document.createElement("p"), steps=document.createElement("p"), account=document.createElement("p"), hint=document.createElement("p"), feedback=document.createElement("p");
-    status.setAttribute("role","status");steps.className="quiet";account.className="quiet";hint.className="quiet";feedback.setAttribute("role","status");
+    status.setAttribute("role","status");status.tabIndex=-1;steps.className="quiet";account.className="quiet";hint.className="quiet";feedback.setAttribute("role","status");
     const actions=document.createElement("div");actions.className="platform-connect-actions";
     const link=document.createElement("a");link.className="primary platform-connect-authorize";link.target="_blank";link.rel="noopener noreferrer";link.referrerPolicy="no-referrer";
     const qr=document.createElement("img");qr.className="platform-connect-qr";qr.alt="飞书授权二维码";
@@ -30,7 +78,11 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
     actions.append(link,cancel,settings);el.append(heading,status,steps,account,qr,actions,hint,feedback);if(applicationLink)el.append(applicationLink);
     const card={el,op,heading,status,steps,account,hint,feedback,link,qr,cancel,applicationLink};
     cancel.addEventListener("click",()=>cancelPlatformInteraction(card));
-    link.addEventListener("click",event=>{if(card.op.interaction.kind==="gitlab_authorization"){event.preventDefault();void (card.op.setup ? openGitLabInteractionSettings(card) : authorizeGitLabInteraction(card));}});
+    link.addEventListener("click",event=>{
+      event.preventDefault();
+      if(card.op.interaction.kind==="gitlab_authorization")void (card.op.setup ? openGitLabInteractionSettings(card) : authorizeGitLabInteraction(card));
+      else openLarkAuthorization(card);
+    });
     return card;
   }
 
@@ -92,21 +144,33 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
     card.feedback.textContent=platformInteractionState.errors.get(op.operation_id) || "";
   }
 
+  function openLarkAuthorization(card) {
+    if(platformInteractionState.busy.has(card.op.operation_id) || card.link.hidden)return;
+    rememberAuthorization(card.op);
+    let popup;
+    try {
+      popup=window.open?.("about:blank","_blank");
+      if(popup && !popup.closed){popup.opener=null;popup.location.replace(card.link.href);return;}
+    }catch{popup?.close();}
+    window.location?.assign(card.link.href);
+  }
+
   function activeGitLabHint(op) {return op.target_available && ["waiting","running"].includes(op.status);}
 
   async function authorizeGitLabInteraction(card, application={}, preparedPopup) {
     const s=platformInteractionState,op=card.op,id=op.operation_id;
     if(s.busy.has(id) || !activeGitLabHint(op))return;
     const generation=s.generation,info=state.info,operator=state.operator;
-    const popup=preparedPopup === undefined ? window.open("about:blank","_blank") : preparedPopup;if(popup)popup.opener=null;
+    let popup=preparedPopup;try{if(popup===undefined)popup=window.open?.("about:blank","_blank");}catch{popup=null;}if(popup)popup.opener=null;
+    rememberAuthorization(op);
     s.busy.add(id);s.errors.delete(id);renderPlatformInteractions();
     try {
       const receipt=await request("/v1/platforms/gitlab/connect",{...info,caller:{kind:"human",id:operator},operation_id:id,version:op.version,...application},undefined,5000);
       if(generation!==s.generation){popup?.close();return;}
       const target=new URL(receipt.authorization_url);
-      if(target.origin!==new URL(op.origin).origin || target.pathname!=="/oauth/authorize" || target.protocol!=="https:")throw new Error("invalid authorization target");
-      if(popup)popup.location.replace(target.href);
-      else s.errors.set(id,"浏览器阻止了授权窗口，请允许弹窗后再次点击授权。");
+      if(target.origin!==new URL(op.origin).origin || target.pathname!=="/oauth/authorize" || target.protocol!=="https:" || target.username || target.password)throw new Error("invalid authorization target");
+      if(popup && !popup.closed)popup.location.replace(target.href);
+      else window.location?.assign(target.href);
     } catch(error) {
       popup?.close();
       if(generation===s.generation)s.errors.set(id,error.code==="identity" ? error.field==="browser_session" ? "请使用最初发起授权的浏览器继续，或取消后从新请求重新连接。" : "页面或请求身份校验未通过，请刷新当前服务页面后重试；仍失败时通过完整设置核对原操作。" : "授权入口暂不可用，请核对最新进度或进入完整设置。");
@@ -152,6 +216,7 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
       // Do not let a list read begun before cancellation replace its newer receipt.
       s.operations=[...data.interactions,...(data.selections || [])].map(op=>{const old=s.operations.find(old=>old.operation_id===op.operation_id);return old && old.version>op.version ? old : op;});
       notice("platform-interaction-error","");renderPlatformInteractions();
+      await revealAuthorizationReturn(generation);
     }catch{
       if(generation!==s.generation)return;
       // Invalidate live links on a failed observation; retain the last receipt.
@@ -279,6 +344,7 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
 
   return {
     mount,
+    restoreAuthorizationSelection,
     renderPlatformInteractions,
     resetPlatformInteractions,
     refreshPlatformInteractions,

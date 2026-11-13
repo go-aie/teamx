@@ -1,0 +1,6 @@
+# /etc/systemd/journald.conf.d/teamx-capacity.conf
+# These settings bound the host journal, not just TeamX. Review host policy.
+[Journal]
+SystemMaxUse=256M
+RuntimeMaxUse=64M
+MaxRetentionSec=14day

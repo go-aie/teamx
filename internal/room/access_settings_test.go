@@ -487,3 +487,21 @@ func TestLANOriginRequiresPrivatePeerServerIPAndSameOrigin(t *testing.T) {
 		t.Fatal("LAN broke internal CLI endpoint", w.Code)
 	}
 }
+
+func TestManagedLANAccessKeepsInternalControlEndpoint(t *testing.T) {
+	c, _ := testAccessConfig(t, t.TempDir())
+	c.Server.AccessMode = accessLAN
+	if err := validateManagedAccess(c, "0.0.0.0:8088"); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateManagedAccess(c, "127.0.0.1:8088"); err == nil {
+		t.Fatal("LAN mode accepted loopback-only listener")
+	}
+	c.Server.AccessMode = accessProxy
+	if err := validateManagedAccess(c, "0.0.0.0:8088"); err == nil {
+		t.Fatal("managed proxy mode exposed backend")
+	}
+	if got := internalAccessEndpoint("0.0.0.0:8088"); got != "http://127.0.0.1:8088" {
+		t.Fatal(got)
+	}
+}

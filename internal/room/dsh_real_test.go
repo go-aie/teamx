@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -196,7 +197,7 @@ func (d *realRoomDriver) setup() error {
 	profile := dshProfile{
 		BinaryPath: installation.BinaryPath, BinaryArgs: installation.BinaryArgs,
 		Workspace: d.workspace,
-		Instructions: "You are a single TeamX acceptance reviewer. Read new messages with the configured TeamX CLI and follow their requests. " +
+		Instructions: "You are a single TeamX acceptance reviewer. Before answering new Room input, explicitly run \"$TEAMX_CLI\" read --unread --json with the Bash tool as your own agent identity, then follow its requests. A supplied preview does not acknowledge the read cursor. " +
 			"Keep the private token from the first message in your conversation memory. Include it and this private role marker in ordinary private answers: " + private + ". " +
 			"Never send the private role marker to the Room. Only send when a message explicitly requests a public acknowledgement. " +
 			"For later memory checks, use conversation memory rather than rereading old Room messages or instructions files. Never delegate or manage members.",
@@ -230,10 +231,29 @@ func (d *realRoomDriver) startReal(number int) error {
 }
 
 func (d *realRoomDriver) startRealRoom(number int, roomID string) error {
-	configPath, err := isolatedStartupConfig(d.output, nil)
-	if err != nil {
+	configPath := filepath.Join(d.output, "startup.config.toml")
+	if _, err := os.Stat(configPath); errors.Is(err, os.ErrNotExist) {
+		if _, err := isolatedStartupConfig(d.output, nil); err != nil {
+			return err
+		}
+	} else if err != nil {
 		return err
 	}
+	// Keep the same owner and token across restarts. Human verification uses
+	// the private file; normal server filtering keeps it out of Agent tools.
+	access := exec.CommandContext(d.ctx, d.binary, "access", "init", "--config", configPath)
+	access.Env = d.operatorEnv("")
+	if err := access.Run(); err != nil {
+		return fmt.Errorf("initialize acceptance access: %w", err)
+	}
+	if d.env == nil {
+		d.env = operatorEnv("")
+	}
+	tokenEnv := "TEAMX_ADMIN_TOKEN_FILE=" + filepath.Join(d.output, "auth", "admin-token")
+	if !slices.Contains(d.env, tokenEnv) {
+		d.env = append(d.env, tokenEnv)
+	}
+	d.report["operatorAuthentication"] = "private_token_file"
 	d.phase(fmt.Sprintf("serve-%d-readiness", number))
 	log, err := os.OpenFile(filepath.Join(d.output, fmt.Sprintf("serve-%d.log", number)), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
@@ -429,7 +449,7 @@ func (d *realRoomDriver) accept() error {
 		return err
 	}
 	if list.LatestSeq != 1 || list.Members[0].ReadThrough != 1 || list.Members[0].UnreadCount != 0 {
-		return errors.New("read-only turn did not read silently")
+		return fmt.Errorf("read-only turn did not read silently: latest_seq=%d read_through=%d unread=%d", list.LatestSeq, list.Members[0].ReadThrough, list.Members[0].UnreadCount)
 	}
 	if err := d.privateResult("readOnly", "end_turn", memory, private); err != nil {
 		return err

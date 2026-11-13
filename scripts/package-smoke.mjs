@@ -210,8 +210,9 @@ try {
     }, 'service readiness');
     const homeIndex = homeArg.indexOf('--home');
     const accessHome = homeIndex < 0 ? portable : homeArg[homeIndex + 1];
-    const token = fs.readFileSync(p.join(accessHome, 'auth/admin-token'), 'utf8').trim();
-    const session = await fetch(info.endpoint + '/v1/access/session', {headers: {Authorization: `Bearer ${token}`}});
+    const tokenFile = p.join(accessHome, 'auth/admin-token');
+    const token = fs.existsSync(tokenFile) ? fs.readFileSync(tokenFile, 'utf8').trim() : '';
+    const session = await fetch(info.endpoint + '/v1/access/session', {headers: token ? {Authorization: `Bearer ${token}`} : {Origin: info.endpoint}});
     must(session.ok, 'Authenticated session unavailable');
     const {operator} = await session.json();
     return { child, info, exited, token, operator, errors: () => errors };
@@ -246,7 +247,7 @@ try {
     for (;;) {
       const response = await fetch(service.info.endpoint + path, {
         method: body ? 'POST' : 'GET',
-        headers: {'Content-Type': 'application/json', Authorization: `Bearer ${service.token}`},
+        headers: {'Content-Type': 'application/json', ...(service.token ? {Authorization: `Bearer ${service.token}`} : {Origin: service.info.endpoint})},
         ...(body
           ? {
               body: JSON.stringify(body)
@@ -277,6 +278,9 @@ try {
   catch(e) {locked = String(e.stderr).includes('state directory already in use');}
   must(locked, 'Concurrent first start was not refused');
   await stop(service);
+  // Portable local homes may deliberately default to login disabled. Exercise
+  // that first-use path above, then explicitly opt in for the token checks.
+  if (!service.token) exec('bin/teamx', ['access', 'init', '--config', config]);
   const initialized = fs.readFileSync(config,'utf8'), tokenBefore = fs.readFileSync(p.join(portable,'auth/admin-token'),'utf8');
   const template = p.join(portable,'teams/bookstore-night/prompts/alan.md');
   fs.appendFileSync(template,'\nuser change\n'); const changed = fs.readFileSync(template,'utf8');
@@ -367,6 +371,7 @@ try {
     service = await launch(['--home',external]);
     must(service.info.status === 'setup_required','Read-only bundle first start did not reach web setup');
     await stop(service);
+    if (!service.token) exec('bin/teamx', ['access', 'init', '--config', p.join(external, 'config.toml')]);
     seedOfflineModels(external, fixtureBin, manifest.dependencies.dsh.version);
     const externalConfig = p.join(external, 'config.toml');
     fs.writeFileSync(

@@ -1,0 +1,9 @@
+# Replace this hostname. Caddy obtains and renews the public TLS certificate.
+# Install/configure the proxy separately; TeamX does not open firewall ports.
+assistant.example.com {
+    reverse_proxy 127.0.0.1:8088
+}
+# In TeamX Settings > General, enable remote access and set:
+# server.public_base_url = "https://assistant.example.com"
+# server.trusted_proxies = ["127.0.0.1"]
+# Keep the server listen address on loopback. Restart after changing access.

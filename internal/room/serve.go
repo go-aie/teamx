@@ -224,6 +224,14 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 	if err := applyStartupSettings(flags, explicit, startup); err != nil {
 		return err
 	}
+	if layout.Root != "" {
+		if startup.Access.LoginEnabled != nil && !*startup.Access.LoginEnabled {
+			return errors.New("managed service requires login verification")
+		}
+		if err := validateManagedAccess(startup, *listen); err != nil {
+			return err
+		}
+	}
 	if *mergeWindow < 0 || *maxTurns == 0 {
 		return fmt.Errorf("%w: session-max-turns must be positive and merge-window nonnegative", ErrRequest)
 	}

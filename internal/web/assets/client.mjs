@@ -10,7 +10,10 @@ export async function request(path, payload, fetcher = globalThis.fetch, timeout
       body: payload ? JSON.stringify(payload) : undefined, signal: controller.signal });
     const result = await response.json();
     if (!response.ok) {
-      if (response.status === 401 && globalThis.location?.pathname !== "/access") globalThis.location?.assign("/access");
+      if (response.status === 401 && globalThis.location?.pathname !== "/access") {
+        const hash=globalThis.location?.hash || "";
+        globalThis.location?.assign("/access"+(hash.startsWith("#platform-connection=") || hash==="#platform-settings" ? hash : ""));
+      }
       const error = new Error(result.message || result.error || `请求失败 (${response.status})`);
       error.code = result.code;
       error.field = result.field;

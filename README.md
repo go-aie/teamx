@@ -19,43 +19,18 @@
 
 ## 快速开始
 
-### 1. 准备环境并构建
+先按使用场景选择入口：
 
-需要 Go **1.27+**、已安装的 DSH，以及可用的模型 API Key。DSH 的 Node 和依赖需完整保留，安装说明见[Agent 运行时](docs/agent-runtime.zh.md#准备-dsh-与配置)。
-
-在 TeamX 根目录执行：
-
-```sh
-go build -o bin/teamx ./cmd/teamx
-```
-
-Web 界面已嵌入程序，无需单独启动前端。
-
-### 2. 配置运行环境
-
-项目内使用时，复制[配置示例](.teamx/config.example.toml)，填写本机 DSH 安装路径：
-
-```sh
-cp .teamx/config.example.toml .teamx/config.toml
-```
-
-| 配置 | 内容 |
+| 你的情况 | 从这里开始 |
 | --- | --- |
-| `runtime.dsh.binary_path` | 已安装的 `dsh` 可执行程序的绝对路径 |
-| `models` | 网页维护的模型列表与默认引用；初次为空 |
-| `server.dsh_turn_timeout` | DSH 单回合总时长，默认 `"15m"`；大型任务可设 `"30m"` |
+| 已有运行中的 Server | 直接在桌面或手机浏览器打开服务地址并登录，无需下载安装 |
+| 自己安装 Server | [安装与运行](docs/installation.zh.md)：下载 standard，安装后台服务，再到网页配置模型；无需安装 Go 或 Node |
+| 只想前台体验 | [前台运行](docs/installation.zh.md#前台运行)：解压后运行 `start`，保持服务进程运行 |
+| 从源码开发运行 | [源码运行](internal/room/README.zh.md#从源码运行)：构建 Go 程序并配置本机 DSH |
 
-可用 `command -v dsh` 查找 DSH 路径。模型协议、地址、模型 ID 和 API Key 在网页填写，无需配置密钥变量名或执行 export。
+当前为开发预览，完整平台矩阵和正式发行验收尚未完成。模型和 API Key 均可在 Server 启动后的网页填写，不要求提前 export。
 
-### 3. 启动服务
-
-```sh
-./bin/teamx serve --home .teamx
-```
-
-打开 **http://127.0.0.1:8088/**。全新安装默认仅本机访问，无需登录；可在「设置 → 安全」开启登录验证，自动生成或自定义访问令牌。已有安装保留原认证状态；开启认证后，服务重启需要重新登录。在「设置 → 安全」选择仅本机、局域网或 HTTPS 代理；后两种强制登录。局域网通过 IP 和端口访问，HTTP 未加密，仅用于可信网络；HTTPS 代理需另行配置代理和证书。访问方式、端口和入口地址的更改需重启后生效。全新 home 在网页填写或复用预填模型，真实验证通过后保存并初始化默认助理。API Key 保存在私有目录，后续无需 export。此类托管实例可在「设置 → 模型」集中维护列表和默认模型，在成员详情选择跟随默认或固定模型；实际模型变化时，各成员等待当前回合结束后切换，私有上下文将重置。删除被引用模型时选择替代条目，等待或失败的成员可在进度中重试。已有旧模型配置会在恢复业务前一次迁移并保留私有备份；导入条目标为待验证，缺失密钥可在设置中补填。此配置默认将运行数据保存在 `.teamx/data/`。
-
-### 4. 开始协作
+### 开始协作
 
 首次进入会自动创建默认「个人助理」私信，可以直接发送需求。需要团队协作时：
 
@@ -64,13 +39,7 @@ cp .teamx/config.example.toml .teamx/config.toml
 3. 查看成员讨论，补充需求；点击成员查看活动记录，按需暂停或启用协作。
 4. 新任务创建新房间，点击已有房间可继续之前的讨论。
 
-退出时在服务终端按 **Ctrl-C**，等待清理完成。再次使用相同配置启动可继续已有房间。
-
-配置加载规则、用户目录用法及恢复说明见[运行手册](internal/room/README.zh.md#服务配置)。
-
-## 发行包与自行构建
-
-发行包包含固定 Node/DSH，使用者无需安装 Go 或 Node；首次启动与升级见[发行包使用说明](packaging/release-README.zh.md)。通过 GitHub Actions 获取开发快照、本地打包及正式发行的方法见[构建与发行指南](packaging/README.zh.md)。当前为开发预览，完整平台矩阵和正式发行尚未验收完成。
+关闭页面不停止协作。启停服务、远程访问、日志、备份和升级统一见[安装与运行](docs/installation.zh.md)；理解浏览器与后台服务如何协作，见 [Server 架构](docs/server.zh.md)。
 
 ## 团队模板
 
@@ -85,12 +54,7 @@ cp .teamx/config.example.toml .teamx/config.toml
 
 ## 使用 GitLab（可选）
 
-需要 GitLab 功能时，在服务机器上安装 **glab 1.127.0** 到 `bin/glab`，再构建 GitLab 工具并重启 TeamX。安装及路径配置见[工具手册](tools/gitlab/README.zh.md)。
-
-```sh
-go build -o bin/teamx-gitlab ./tools/gitlab
-./bin/teamx serve --config .teamx/config.toml
-```
+standard 已包含 GitLab 所需工具。core 或源码运行时，在服务机器准备 **glab 1.127.0** 与 TeamX GitLab 工具，方法见[工具手册](tools/gitlab/README.zh.md)。
 
 服务启动后：
 
@@ -129,7 +93,7 @@ GitLab 仅支持 OAuth。旧版本数据需先停止服务，再运行 `teamx pl
 
 在个人助理中直接说「连接飞书，关注产品讨论群，以后需要我处理时在这里提醒我」，按对话组件完成授权和必要选择。此入口只配置明确请求的内容，详见[通过对话接入](docs/lark.zh.md#通过对话接入)。
 
-在服务机器上安装官方 **lark-cli 1.0.99**，在「成员详情 → 平台 → 添加平台 → 连接新平台」选择飞书或 Lark。界面自动检测本机应用和账号；飞书缺少应用时提供官方网页引导，Lark 可复用已有配置或使用页面中的 CLI 配置说明。完成账号核验并保存后，默认接收全部可访问的人员私聊到所选成员 Inbox，并启用对应平台工具。群聊默认关闭，可在「成员详情 → 平台 → 对应平台设置」搜索并选择群，默认只接收 @我。
+standard 已包含官方 **lark-cli 1.0.99**；core 或源码运行时需在服务机器另行安装。在「成员详情 → 平台 → 添加平台 → 连接新平台」选择飞书或 Lark。界面自动检测本机应用和账号；飞书缺少应用时提供官方网页引导，Lark 可复用已有配置或使用页面中的 CLI 配置说明。完成账号核验并保存后，默认接收全部可访问的人员私聊到所选成员 Inbox，并启用对应平台工具。群聊默认关闭，可在「成员详情 → 平台 → 对应平台设置」搜索并选择群，默认只接收 @我。
 
 查看成员收件箱；启用协作后，助手在有效回合读取和跟进，需要决定时在 Room 提问。只接收和理解已保存通知不要求成员工具可用；补读最新内容与回复仍需对应工具、账号权限和具体业务授权。当前开放的动作及配置、测试和恢复步骤见 [飞书使用说明](docs/lark.zh.md)。
 
@@ -143,12 +107,21 @@ GitLab 仅支持 OAuth。旧版本数据需先停止服务，再运行 `teamx pl
 
 DSH 成员默认每会话受理 16 回合，达到阈值后在下一批正常输入前自动轮换，无需人工续额。可用 `server.session_max_turns` 调整新房间的阈值。成员控制、轮换与恢复说明见[运行手册](internal/room/README.zh.md)。
 
-## 进一步阅读
+## 文档导航
+
+| 你要做什么 | 文档 |
+| --- | --- |
+| 下载、安装、网页首启、远程访问、日志及备份升级 | [安装与运行](docs/installation.zh.md) |
+| 理解 Client／Server、身份、存储和生命周期 | [Server 架构](docs/server.zh.md) |
+| 从源码启动、排查配置或恢复成员 | [开发运行参考](internal/room/README.zh.md) |
+| 从源码构建本地或 CI 分发包 | [打包指南](packaging/README.zh.md) |
+| 验收候选、签名公证并发布版本 | [正式发行指南](packaging/releasing.zh.md) |
+
+其他功能与内部设计：
 
 | 文档 | 内容 |
 | --- | --- |
 | [团队配置](.teamx/teams/README.md) | 自定义角色、模型、DSH 和工作区建议值 |
-| [运行手册](internal/room/README.zh.md) | 服务配置、用户目录、成员控制与恢复 |
 | [GitLab 工具](tools/gitlab/README.zh.md) | 安装、命令帮助、WorkItem 扩展与凭据配置 |
 | [Scion 使用说明](docs/scion.zh.md) | 页面 PAT 登录、账号自动检测、成员绑定与开发评审流程 |
 | [飞书使用说明](docs/lark.zh.md) | CLI profile、成员绑定、消息通知、收件测试与诊断恢复 |

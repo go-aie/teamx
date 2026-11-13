@@ -130,8 +130,14 @@ func (m *roomManager) checkToolMemberLocked(ctx context.Context, req toolsReques
 		if err != nil {
 			return ErrIdentity
 		}
-		if status.Rotation != nil && status.Rotation.Status != "completed" {
-			return ErrBusy
+		if rotation := status.Rotation; rotation != nil && rotation.Status != "completed" {
+			// A published model target waits for the admitted turn to settle.
+			// That turn still needs its original CLI/platform calls. Once it
+			// stops, the ordinary rotation and platform lifecycle gates apply.
+			currentModelTurn := status.Active && rotation.Status == "waiting" && rotation.Reason == "model_change" && !rotation.Cancel && m.config.models != nil && m.config.models.gate(id) != ""
+			if !currentModelTurn {
+				return ErrBusy
+			}
 		}
 	}
 	if err := m.store.check(true); err != nil {

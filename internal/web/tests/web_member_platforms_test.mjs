@@ -14,7 +14,8 @@ for(const id of ["gl","lark"])test(`platform ${id} shows account recovery only w
  assert.equal(row(ui,id).children[3].hidden,true);
  api.platforms.find(p=>p.id===id).validation.status="failed";
  await ui.el("close-activity").emit("click");await ui.refresh();await openMemberInbox(ui,"member-a");
- const action=row(ui,id).children[3].children.find(b=>b.textContent==="检查账号");assert.ok(action);
+ const recovery=row(ui,id).children[3];assert.equal(recovery.children[0].textContent,"账号核验未通过");
+ const action=recovery.children.find(b=>b.textContent==="核验账号");assert.ok(action);
  await action.emit("click");await settle();
  assert.equal(ui.el("settings-dialog").open,true);
  assert.equal(ui.el("connection-name").value,api.platforms.find(p=>p.id===id).name);
@@ -25,7 +26,20 @@ for(const id of ["gl","lark"])test(`platform ${id} exposes expired notification 
  const api=fixture(),record=api.records.get(key(id,target("a")));
  if(id==="gl")record.todos.error_code="credential_rejected";else record.error_code="credential_rejected";
  const ui=await launch(api);await openMemberInbox(ui,"member-a");
- assert.ok(row(ui,id).children[3].children.some(b=>b.textContent==="检查账号"));
+ assert.equal(row(ui,id).children[3].children[0].textContent,"授权已失效");
+ assert.ok(row(ui,id).children[3].children.some(b=>b.textContent==="重新授权"));
+ assert.equal(row(ui,id).children[2].hidden,true);
+ assert.equal(ui.el("member-platform-issues").children.length,0);
+});
+
+for(const [code,reason,action] of [["permission_denied","缺少所需权限","查看权限"],["identity_mismatch","账号与连接不一致","核验账号"],["credential_unavailable","登录凭据不可用","重新授权"]])test(`account recovery explains ${code} without a generic account button`,async()=>{
+ const api=fixture();api.records.get(key("lark",target("a"))).error_code=code;
+ const ui=await launch(api);await openMemberInbox(ui,"member-a");
+ const recovery=row(ui,"lark").children[3];
+ assert.equal(recovery.children[0].textContent,reason);assert.equal(recovery.children[1].textContent,action);
+ assert.equal(row(ui,"lark").children[2].hidden,true);
+ await recovery.children[1].emit("click");await settle();
+ assert.equal(ui.el("connection-name").value,"公司飞书");assert.equal(calls(api,"/v1/tools/bind").length,0);
 });
 
 test("M4.5 platforms are the default Tab followed by policy, Inbox and activity",async()=>{
@@ -242,9 +256,10 @@ for(const state of ["unchecked","unsupported"])test(`member platform links to ac
    assert.equal(row(ui,"lark").children[3].children.length,0);
    return;
  }
- const settings=row(ui,"lark").children[3].children[0];
- assert.equal(settings.textContent,"检查账号");assert.equal(settings.attributes["aria-label"],"打开 公司飞书 的账号设置");
- assert.equal(row(ui,"lark").children[3].children.length,1);
+ const settings=row(ui,"lark").children[3].children[1];
+ assert.equal(row(ui,"lark").children[3].children[0].textContent,"账号需重新核验");
+ assert.equal(settings.textContent,"核验账号");assert.equal(settings.attributes["aria-label"],"核验账号：公司飞书");
+ assert.equal(row(ui,"lark").children[3].children.length,2);
  assert.equal(row(ui,"lark").children[2].hidden,true);
  await settings.emit("click");await settle();
  assert.equal(ui.el("settings-dialog").open,true);assert.equal(ui.el("connection-name").value,"公司飞书");

@@ -26,7 +26,10 @@ func TestDefaultAssistantGitLabConnectConversationBrowser(t *testing.T) {
 func TestGitLabConnectFirstApplicationConversationBrowser(t *testing.T) {
 	gitlabConnectConversationBrowser(t, assistantConnectFixture, true)
 }
-func gitlabConnectConversationBrowser(t *testing.T, fixture platformConnectionFixture, firstApplication bool) {
+func TestGitLabConnectSamePageConversationBrowser(t *testing.T) {
+	gitlabConnectConversationBrowser(t, connectFixture, false, true)
+}
+func gitlabConnectConversationBrowser(t *testing.T, fixture platformConnectionFixture, firstApplication bool, samePage ...bool) {
 	if os.Getenv("TEAMX_CONNECT_BROWSER") != "1" {
 		t.Skip("optional local Chromium acceptance")
 	}
@@ -69,7 +72,7 @@ func gitlabConnectConversationBrowser(t *testing.T, fixture platformConnectionFi
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	browser := exec.CommandContext(ctx, "node", "testdata/platform_connect_gitlab_browser.cjs", server.URL, req.OperationID, req.RoomInstance, req.Input.Origin, fmt.Sprint(firstApplication))
+	browser := exec.CommandContext(ctx, "node", "testdata/platform_connect_gitlab_browser.cjs", server.URL, req.OperationID, req.RoomInstance, req.Input.Origin, fmt.Sprint(firstApplication), fmt.Sprint(len(samePage) > 0 && samePage[0]))
 	browser.Env = os.Environ()
 	if out, err := browser.CombinedOutput(); err != nil {
 		t.Fatal(err, string(out))

@@ -5,7 +5,7 @@ import { createAssistantIcon, createUserIcon } from "../icons.mjs";
 import { createMentionPicker } from "../mention-picker.mjs";
 
 // Messages, drafts, mentions and the send/restart lifecycle.
-export function createConversation({ env, runtime, roomsUI, notificationsUI, membersUI, settingsUI, interactionsUI, workspaceUI, layoutUI }) {
+export function createConversation({ env, runtime, roomsUI, notificationsUI, membersUI, settingsUI, interactionsUI, workspaceUI, layoutUI, userMenuUI }) {
   const { document, window, requestAnimationFrame, performance, setTimeout, clearTimeout, ResizeObserver, renderMessageBody } = env;
   const { state, $, notice, rpc, currentView, refresh, discussionBusy, reconcileChildren, storage, confirmAction } = runtime;
 
@@ -34,6 +34,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
 
   const mentionDwell = 1000;
   const operatorNames = () => [state.operator, state.operatorDisplayName].filter(Boolean);
+  const authorName = author => author.kind === "human" && author.id === state.operator ? userMenuUI.displayName() : author.id;
   const messageOptions = message => ({ ...(message.author.kind === "integration"
     ? notificationOptions(state.info, state.operator, message.source, { seq: message.seq })
     : { memberNames: state.members.map(m => m.agent_id) }), operatorNames: operatorNames() });
@@ -162,7 +163,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     avatar.classList.toggle("agent-avatar", agent);
     avatar.classList.toggle("user-avatar", message.author.kind === "human");
     const channel = message.source?.provider === "gitlab" && ["events", "todos"].includes(message.source?.channel) ? message.source.channel : null;
-    el.querySelector(".author").textContent = integration ? channel ? `GitLab · ${channel === "todos" ? "我的待办" : "项目活动"}` : `${message.author.id} · 通知` : message.author.id;
+    el.querySelector(".author").textContent = integration ? channel ? `GitLab · ${channel === "todos" ? "我的待办" : "项目活动"}` : `${message.author.id} · 通知` : authorName(message.author);
     if (integration && channel) {
       const author = el.querySelector(".author");
       author.disabled = false;
@@ -209,7 +210,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
       const ref = el.querySelector(".message-reference");
       const target = state.messages.get(message.reply_to);
       ref.hidden = false;
-      ref.textContent = target ? `↳ #${target.seq} ${target.author.id}：${target.text}` : message.reply_to <= state.clearedThrough
+      ref.textContent = target ? `↳ #${target.seq} ${authorName(target.author)}：${target.text}` : message.reply_to <= state.clearedThrough
         ? `↳ 引用消息 #${message.reply_to} · 已清空` : `↳ 引用消息 #${message.reply_to} · 加载更早消息可查看`;
       ref.addEventListener("click", () => revealMessage(message.reply_to));
     }
@@ -234,6 +235,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
       let cached=messageNodes.get(message.seq);
       if(!cached){cached={element:messageElement(message),memberNames:memberNamesKey};messageNodes.set(message.seq,cached);}
       const el=cached.element;
+      if (message.author.kind === "human") el.querySelector(".author").textContent = authorName(message.author);
       if (cached.memberNames !== memberNamesKey) {
         renderMessageBody(el.querySelector(".message-text"), message.text, state.operator, messageOptions(message));
         cached.memberNames = memberNamesKey;
@@ -242,7 +244,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
       el.classList.toggle("mentioned",message.seq>mentionSeenThrough && !mentionSeen.has(message.seq) && mentioned && !(message.author.kind==="human" && message.author.id===state.operator));
       el.querySelector("time").textContent=settingsUI.formatDate(message.created_at,{hour:"2-digit",minute:"2-digit"});
       el.querySelector("time").title=settingsUI.formatDate(message.created_at);
-      if(message.reply_to){const target=state.messages.get(message.reply_to);el.querySelector(".message-reference").textContent=target ? `↳ #${target.seq} ${target.author.id}：${target.text}` : message.reply_to<=state.clearedThrough ? `↳ 引用消息 #${message.reply_to} · 已清空` : `↳ 引用消息 #${message.reply_to} · 加载更早消息可查看`;}
+      if(message.reply_to){const target=state.messages.get(message.reply_to);el.querySelector(".message-reference").textContent=target ? `↳ #${target.seq} ${authorName(target.author)}：${target.text}` : message.reply_to<=state.clearedThrough ? `↳ 引用消息 #${message.reply_to} · 已清空` : `↳ 引用消息 #${message.reply_to} · 加载更早消息可查看`;}
       nodes.push(el);
     }
     for(const seq of messageNodes.keys())if(!state.messages.has(seq))messageNodes.delete(seq);

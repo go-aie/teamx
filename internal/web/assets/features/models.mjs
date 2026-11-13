@@ -1,13 +1,14 @@
 import { randomUUID } from "../random-id.mjs";
 import { fillModelParameters, readModelParameters, syncModelProtocol, modelDraftFields, snapshotModelFields, restoreModelFields } from "../model-form.mjs";
 
-export function createModels({env, runtime, openSettings}) {
+export function createModels({env, runtime, openSettings, onMemberStatus}) {
   const {document, window, request, Option, setTimeout, clearTimeout} = env;
   const crypto = window.crypto || globalThis.crypto;
   const {state, $, setSelectOptions} = runtime;
   const field = id => $(`catalog-${id}`);
   let data, editor, saving = false, read = 0, timer, memberView, memberSaving = false, defaultReview;
   let lastOperation, operationRenderKey, listRenderKey, restoredKey;
+  const operationRows = new Map();
   const draftKey = () => JSON.stringify(["teamx.model-draft",state.installationID || "",state.operator]);
   function persist() {
     const draft = editor ? {id:editor.id,entry_id:editor.entry?.id,expected_version:editor.version,
@@ -146,13 +147,18 @@ export function createModels({env, runtime, openSettings}) {
     $("model-check-operation").hidden=!lastOperation?.unconfirmed;
   }
   function renderOperations() {
-    // The API orders operations by creation time, newest first.
-    const op = data.operations[0];
-    const key = JSON.stringify([state.catalog.service_epoch, op]);
+    // Keep the latest feedback concise, but never hide work that still needs
+    // attention just because another device or member finished a newer change.
+    const operations = data.operations.filter((op, index) => !["completed", "cancelled"].includes(op.status) &&
+      (index === 0 || op.id === lastOperation?.id || op.committed || ["validating", "prepared", "applying"].includes(op.status)));
+    const key = JSON.stringify([state.catalog.service_epoch, operations]);
     if (key === operationRenderKey) return;
     operationRenderKey = key;
     const labels = {validating:"正在验证",prepared:"准备应用",applying:"正在应用",completed:"已完成",failed:"需处理",cancelled:"已取消"};
-    if (op && !["completed", "cancelled"].includes(op.status)) {
+    const rows = operations.map(op => {
+      const signature = JSON.stringify([state.catalog.service_epoch, op]);
+      const existing = operationRows.get(op.id);
+      if (existing?.signature === signature) return existing.section;
       const section = document.createElement("div"); section.className = "model-operation"; section.dataset.state = op.status;
       const label = labels[op.status] || op.status;
       const progress = op.waiting ? ` · ${op.waiting} 个 Agent 待应用` : op.failed ? ` · ${op.failed} 个 Agent` : "";
@@ -161,13 +167,20 @@ export function createModels({env, runtime, openSettings}) {
       const pending = op.members.filter(m => m.status !== "completed");
       if (pending.length) {
         const details = document.createElement("details"); details.append(text("summary", "查看 Agent 进度"));
-        for (const member of pending) details.append(text("p", `${member.agent_id} · ${member.status === "failed" ? member.error : "等待当前回合结束"}`, "quiet"));
+        for (const member of pending) details.append(text("p", `${userName(member)} · ${member.status === "failed" ? member.error : "等待当前回合结束"}`, "quiet"));
         section.append(details);
       }
       if (op.status === "failed" && op.committed) section.append(button("重试未完成成员", () => action(op.id,"retry")));
       if (op.status === "validating") section.append(button("取消", () => action(op.id,"cancel")));
-      $("model-operations").replaceChildren(section);
-    } else $("model-operations").replaceChildren();
+      operationRows.set(op.id, {signature, section});
+      return section;
+    });
+    const list = $("model-operations");
+    for (const [id, row] of operationRows) if (!rows.includes(row.section)) { row.section.remove(); operationRows.delete(id); }
+    // Reuse unchanged rows so another operation's progress cannot steal focus
+    // or close an expanded member list.
+    for (let index = 0; index < rows.length; index++) if (list.children[index] !== rows[index]) list.insertBefore(rows[index], list.children[index] || null);
+    for (const child of [...list.children]) if (!rows.includes(child)) child.remove();
   }
   function reviewDefault() {
     if (!editor?.entry || saving || defaultReview?.parentElement) return;
@@ -235,13 +248,14 @@ export function createModels({env, runtime, openSettings}) {
     memberView = {room_id:state.info.room_id,room_instance:state.info.room_instance,agent_id:member.agent_id,membership_id:member.membership_id,epoch:state.catalog?.service_epoch};
     $("member-model-feedback").textContent = ""; $("member-model").hidden = true;
     $("member-model-details").hidden = true; $("member-model-progress").setAttribute("aria-expanded", "false");
+    onMemberStatus({});
     await load();
   }
   function renderMember() {
     const v = memberView;
     if (!v || !currentMemberView(v) || !data) return;
     const member = data.members.find(m => m.room_id === v.room_id && m.room_instance === v.room_instance && m.agent_id === v.agent_id && m.membership_id === v.membership_id);
-    if (!member) {$("member-model").hidden = true; return;}
+    if (!member) {$("member-model").hidden = true; onMemberStatus({}); return;}
     v.member = member;
     v.expectedVersion = member.version; v.catalogVersion = data.catalog.version;
     $("member-model").hidden = false;
@@ -261,6 +275,7 @@ export function createModels({env, runtime, openSettings}) {
     const status = error ? `模型切换失败：${error}` : pending ? operation?.status === "validating" ? "正在验证模型" : "正在应用模型，等待当前回合结束" : actual?.pending ? "模型已应用，待下一次工作启动" : actual ? "模型已生效" : "模型尚未启动";
     const detail = `${status}${actual ? `；当前 Session：${actual.model_id}` : ""}。点击查看模型详情。`;
     const progress = $("member-model-progress"); progress.dataset.state = error ? "error" : pending ? "busy" : actual && !actual.pending ? "ready" : "idle"; progress.title = detail; progress.setAttribute("aria-label", detail);
+    onMemberStatus({state:progress.dataset.state,detail});
     $("member-model-status").textContent = error ? "切换失败" : pending ? operation?.status === "validating" ? "验证中" : "应用中" : actual?.pending ? "待启动" : actual ? "已生效" : "未启动";
     $("member-model-ok").hidden = !!error || !!pending || !actual || !!actual.pending; $("member-model-busy").hidden = !!error || !pending; $("member-model-error-icon").hidden = !error;
     $("member-model-feedback").textContent = status;
@@ -272,6 +287,11 @@ export function createModels({env, runtime, openSettings}) {
     v.operation = operation;
     if (pending) schedule();
   }
+  function showMemberDetails() {
+    $("member-model-details").hidden = false;
+    $("member-model-progress").setAttribute("aria-expanded", "true");
+  }
+
   function mount() {
     for (const id of modelDraftFields) {
       field(id).addEventListener("input",persist); field(id).addEventListener("change",persist);
@@ -320,5 +340,5 @@ export function createModels({env, runtime, openSettings}) {
     });
     window.addEventListener("pagehide",() => {persist();field("api-key").value="";});
   }
-  return {mount,load,openMember,clearKey:() => {field("api-key").value="";clearReview();}};
+  return {mount,load,openMember,showMemberDetails,clearKey:() => {field("api-key").value="";clearReview();}};
 }

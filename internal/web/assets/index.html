@@ -45,7 +45,7 @@
     <section id="conversation" class="conversation" aria-label="房间消息">
       <header id="room-header" class="room-header">
         <div class="room-title">
-          <h1 id="room-heading"><span id="conversation-icon" class="hash" aria-hidden="true">#</span> <button id="rename-room" class="room-name-button" type="button" aria-label="修改房间名称" title="修改房间名称" aria-controls="rename-form" disabled><span id="room-name">Room</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15Z"/></svg></button></h1>
+          <h1 id="room-heading"><span id="conversation-icon" class="hash" aria-hidden="true">#</span> <button id="rename-room" class="room-name-button" type="button" aria-label="修改房间名称" title="修改房间名称" aria-controls="rename-form" disabled><span id="room-name"></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15Z"/></svg></button></h1>
           <form id="rename-form" class="room-rename" aria-label="修改房间名称" hidden>
             <span class="hash" aria-hidden="true">#</span>
             <label class="sr-only" for="rename-room-name">房间名称</label><input id="rename-room-name" maxlength="256" required autocomplete="off" aria-describedby="rename-error">
@@ -338,8 +338,11 @@
       <dialog id="activity-dialog" class="activity-dialog" aria-labelledby="activity-title">
         <header class="activity-header detail-header">
           <button id="close-activity" type="button" class="text-button back-button" aria-label="返回团队成员" title="返回团队成员" autofocus><span aria-hidden="true">←</span> 返回</button>
-          <h2 id="activity-title">Agent 详情</h2>
+          <div class="agent-heading"><h2 id="activity-title">Agent 详情</h2><span id="agent-status" class="member-status"></span></div>
+          <div id="agent-quick-actions" class="member-actions" hidden></div>
+          <button id="toggle-agent-controls" class="text-button agent-controls-toggle" type="button" aria-label="展开成员设置" title="展开成员设置" aria-controls="agent-controls" aria-expanded="false"><span id="agent-model-alert" role="status" aria-live="polite" hidden></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
         </header>
+        <section id="agent-controls" class="agent-controls" aria-label="成员设置与运行控制" hidden>
           <div id="member-model" class="member-model" hidden>
             <label for="member-model-selection">模型</label>
             <select id="member-model-selection" class="field-control" aria-label="切换成员模型" title="切换模型；当前回合结束后应用，私有上下文将重置。"></select>
@@ -355,9 +358,10 @@
           <p id="member-model-feedback" role="status" aria-live="polite"></p>
           <div class="form-actions"><button id="member-model-retry" class="text-button" type="button" hidden>重试未完成成员</button><button id="member-model-settings" class="text-button" type="button">模型设置</button></div>
         </section>
-        <div class="agent-overview"><span id="agent-status" class="member-status"></span><div id="agent-actions" class="member-actions"></div></div>
+        <div class="agent-overview"><span class="quiet">协作状态</span><div id="agent-actions" class="member-actions"></div></div>
         <p id="agent-enable-hint" class="agent-enable-hint quiet" role="status" hidden></p>
         <p id="agent-error" class="agent-error form-error" role="status" hidden></p>
+        </section>
         <div id="agent-tabs" class="notification-tabs agent-tabs" role="tablist" aria-label="Agent 详情">
           <button id="agent-tab-platforms" type="button" role="tab" aria-selected="true" aria-controls="platforms-member-view">平台</button>
           <button id="agent-tab-policy" type="button" role="tab" aria-selected="false" aria-controls="policy-member-view" tabindex="-1">规则</button>
@@ -851,7 +855,7 @@
     <button id="new-direct" type="button" role="menuitem" tabindex="-1" aria-labelledby="new-direct-label" aria-describedby="new-direct-hint"><span id="new-direct-label" class="create-menu-label">新建私信</span><span id="new-direct-hint" class="create-menu-hint">与一个 Agent 单独交流</span></button>
     <button id="new-team-room" type="button" role="menuitem" tabindex="-1" aria-labelledby="new-team-room-label" aria-describedby="new-team-room-hint"><span id="new-team-room-label" class="create-menu-label">新建房间</span><span id="new-team-room-hint" class="create-menu-hint">让多个 Agent 共同协作</span></button>
   </div>
-  <template id="message-template"><article class="message"><div class="avatar"></div><div class="message-main"><div class="message-meta"><button class="author" type="button" disabled></button><span class="author-kind"></span><time></time><span class="sequence"></span><button class="reply-button" type="button" title="引用此消息"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5-6 6 6 6M3 11h11a6 6 0 0 1 6 6v2"/></svg><span>引用</span></button></div><button class="message-reference text-button" type="button" hidden></button><div class="message-text"></div><div class="message-interactions"></div></div></article></template>
+  <template id="message-template"><article class="message"><div class="avatar"></div><div class="message-main"><div class="message-meta"><button class="author" type="button" disabled></button><span class="author-kind"></span><time></time><span class="sequence"></span><button class="reply-button" type="button" title="引用此消息" aria-label="引用此消息"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5-6 6 6 6M3 11h11a6 6 0 0 1 6 6v2"/></svg><span>引用</span></button></div><button class="message-reference text-button" type="button" hidden></button><div class="message-text"></div><div class="message-interactions"></div></div></article></template>
   <template id="member-template"><section class="member"><button class="member-summary" type="button" aria-controls="activity-dialog"><span class="member-top"><span class="avatar agent-avatar" aria-hidden="true"></span><span class="member-title"><span class="member-name"></span><span class="member-profile quiet"></span></span><span class="member-status"></span><span aria-hidden="true">›</span></span><span class="member-details"></span><span class="member-error" hidden></span></button></section></template>
 </body>
 </html>
