@@ -49,6 +49,14 @@ curl -fsSL https://github.com/go-aie/teamx/releases/download/vX.Y.Z/install.sh |
 
 ## 下载与校验
 
+无法访问 GitHub 时，可以让维护者提供与你的系统和架构匹配的 `*-standard-offline.zip`。解压 ZIP，在其中的目录打开终端，执行：
+
+```sh
+bash ./install-offline.sh
+```
+
+这个离线包已包含原始应用归档、摘要和安装器；不需要再解压内层 `.tar.gz`、填写归档名或访问 GitHub。安装后按输出打开网页登录，之后统一使用 `teamx service` 管理。macOS 不加 sudo；Linux 安装器按需申请权限。离线安装包由维护者按需生成，不保证每个 Release 都附带；模型和平台服务仍需要各自的网络。
+
 离线部署、开发快照或需要预先审阅脚本时，从项目 GitHub Releases 下载对应归档、同名 `.sha256` 和 `install.sh`。开发快照从 **Actions → Package snapshots → 对应运行 → Artifacts** 下载；Artifact 外层压缩包内才是应用 `.tar.gz`、摘要和检查报告，先解开外层。
 
 | 包 | 包含内容与选择建议 |

@@ -92,6 +92,28 @@ Pull request 也会自动构建快照，默认使用 standard。快照流程不�
 
 升级依赖时显式更新统一 lock、对应 npm lock、许可证及相关版本契约，重新验证受影响目标。公开模板与随包文件由 [bundle-files.json](bundle-files.json) 明确列出；本机配置、`.env`、Room 数据和平台登录资料不属于分发内容。
 
+## 按需生成单文件离线包
+
+用户无法访问 GitHub、需要直接转交一个压缩包时，在维护者机器上准备已有的 **standard** `.tar.gz` 和同名 `.sha256`，运行：
+
+```sh
+make package-offline ARCHIVE=/absolute/teamx-vX.Y.Z-darwin-arm64-standard.tar.gz
+```
+
+文件名替换为实际归档。默认生成 `dist/offline/<原归档名去掉.tar.gz>-offline.zip`；也可用 `OUTPUT=/absolute/delivery.zip` 指定新的输出文件。生成需要 Node、tar 和 zip；测试还需要 unzip。已有输出不会覆盖。
+
+脚本校验原归档 SHA-256、standard 包型及 manifest 中的版本／平台，从该归档提取对应安装器，封装原始归档、摘要、安装器、`install-offline.sh` 和简短使用说明。可在维护者机器上处理其他目标的归档，不执行包内程序，不重新构建或修改原始应用包。输出单独放在 `dist/offline/`，保留候选／快照目录原有内容。
+
+只把生成的 ZIP 发给用户。用户解压 ZIP、在其中的目录打开终端，执行：
+
+```sh
+bash ./install-offline.sh
+```
+
+无需填写归档名或解压内层 `.tar.gz`；之后使用 `teamx service` 管理。自定义 home／命令目录等参数可追加到这条命令后。底层安装器仍负责本机平台、完整包、权限、系统服务及访问认证的校验。
+
+直接调用脚本的等价入口是 `node scripts/package-offline.mjs --archive FILE`，支持 `--output FILE.zip`；只有原始归档时，可用 `--sha256 HEX` 提供事先核对的摘要。该入口是按需转交辅助，不改变正式发行资格或默认 Release 资产清单。
+
 ## 随包文档
 
 普通用户统一安装常驻服务。归档白名单包含 [install.sh](install.sh)，支持离线 `bash install.sh --archive FILE`；正式发行另外导出固定到该版本和仓库的 `install.sh`，用户可以通过 `curl …/releases/latest/download/install.sh | bash` 一次完成下载、校验、部署、启动和命令入口配置。安装器内部调用 `teamx service install`，不会要求用户再执行 install 或 init。macOS 的 `~/.local/bin/teamx`、Linux 的 `/usr/local/bin/teamx` 指向受管 `current/bin/teamx`，后续管理统一使用 `teamx service`。

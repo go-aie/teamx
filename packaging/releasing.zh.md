@@ -118,6 +118,10 @@ Workflow 下载原候选，在匹配平台重新检查身份和归档，再执�
 
 安装器自动测试包含本机 Bash／tar／摘要和文件操作，Linux 账号与 sudo／管理器用 fixture 模拟；不能代替真实 macOS 下载与 LaunchAgent、原生 Linux systemd 的安装和启停验收。除原部署资格外，还应在真实发布后核对管道安装、PATH 生效和安装后 `teamx service status/stop/start`，再确认公开入口可用。
 
+## 按需生成离线包
+
+需要向无法访问 GitHub 的用户转交一个文件时，可在正式发布完成后，用原始 standard 归档运行 `make package-offline ARCHIVE=/absolute/teamx-standard.tar.gz`（文件名使用实际值）。辅助脚本验证原摘要并生成单独的 `dist/offline/*-offline.zip`，收件人解压后运行 `bash ./install-offline.sh`。可传 `OUTPUT` 指定新路径；不要把补充 ZIP 直接放入已封存的发行资产目录，以免改变资产集合。原归档不变，补充包不扩大验收资格。具体选项见[按需生成单文件离线包](README.zh.md#按需生成单文件离线包)。
+
 ## 失败后的处理
 
 - **构建、下载复验或验收失败**：检查对应 job 和资格报告，解决缺项；候选字节变化时重新验收。验收或汇总失败，应完整重跑发行 Workflow。

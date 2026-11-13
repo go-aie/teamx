@@ -20,6 +20,14 @@
 - macOS 隔离属性检查使用带 quarantine 的本地 fixture 归档；确认原下载文件标记保持不变，部署后的 fixture 可执行文件未继承该标记。
 - `go test ./internal/room -run 'Test.*(CLI|Help|Service|Bundle)' -count=1`：当前工作区通过。覆盖服务／归档既有回归，以及命令链接随 current 切换、自定义根发现、帮助入口、实际地址和自定义 token 路径提示。验证期间曾被并行飞书改动的缺失方法阻断，隔离副本先通过；该阻塞消除后已在当前工作区通过同组回归，未修改其他工作。
 
+## 单文件离线转交补充
+
+新增 `scripts/package-offline.mjs` 和 `make package-offline ARCHIVE=FILE [OUTPUT=FILE.zip]`，从现有 standard 归档及可信摘要生成单一 ZIP。默认输出到 `dist/offline/`；不重新构建、修改归档或把补充资产写入原候选目录。安装器从对应归档提取，ZIP 仅包含原归档、规范化摘要、安装器、固定指向本地归档的 `install-offline.sh` 和简短说明。接收者执行 `bash ./install-offline.sh` 即可，不需要指定归档名。
+
+生成前核对摘要、包型、版本／平台和归档路径，拒绝缺失安装器、错误身份及已有输出。通过同目录临时文件和硬链接发布完整 ZIP；生成失败清理临时目录。新增测试覆盖原始归档和安装器字节保留、文件白名单、跨目录／空格路径调用及参数转交、错误输入、重复输出、CLI 默认路径和真实 Make 入口，不安装系统服务。
+
+补充验证：`node --test scripts/package-offline.test.mjs` 的 4 项测试通过；`node --test scripts/*.test.mjs` 全部 64 项通过。脚本语法、打包清单和 `git diff --check` 均通过。
+
 ## 验收边界
 
 安装器测试使用真实 Bash、tar、摘要、文件和符号链接操作；下载、系统身份、Linux sudo／账号准备和部署动作使用 fixture。Go 回归不等于本次已重新安装真实 LaunchAgent 或 systemd 服务。带 quarantine 的脚本 fixture 也不等于真实 Mach-O／Gatekeeper 验收。
