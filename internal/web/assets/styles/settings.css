@@ -216,6 +216,10 @@
 .model-edit-form details summary { color:var(--muted); font-size:var(--font-small); cursor:pointer; }
 .model-edit-form details p { margin:6px 0 0; color:var(--muted); font-size:var(--font-small); line-height:1.7; }
 .model-edit-form #catalog-key-state { margin:6px 0 0; }
+.model-fields .connection-field > p { margin:6px 0 0; }
+.model-key-input { position:relative; min-width:0; }
+.model-key-input > input { padding-right:58px; }
+.model-key-input > button { position:absolute; top:0; right:0; min-height:var(--control-height); padding:7px 10px; font-size:var(--font-small); }
 .model-edit-form .connection-account-actions { margin-top:20px; }
 #model-impact { margin:16px 0 0; }
 #model-feedback { margin:16px 0 0; }

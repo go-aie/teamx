@@ -92,6 +92,7 @@ select.field-control {
   select.field-control::picker(select) { width:anchor-size(width); margin-block:4px; padding:4px; max-width:calc(100vw - 24px); max-height:min(280px,60dvh); overflow-y:auto; overscroll-behavior:contain; border:1px solid var(--line); border-radius:var(--radius-menu); background:var(--surface); color:var(--text); box-shadow:var(--shadow-menu); font:inherit; }
   select.field-control option { min-height:var(--control-height); padding:8px 10px; border-radius:4px; color:inherit; font-size:var(--font-body); line-height:20px; white-space:normal; overflow-wrap:anywhere; }
   select.field-control option:enabled:hover { background:var(--surface-hover); }
+  select.field-control option:disabled { color:var(--muted); opacity:.55; }
   select.field-control option:checked { background:var(--soft); color:var(--accent); font-weight:var(--weight-strong); }
   select.field-control option:focus-visible { outline:2px solid var(--focus); outline-offset:-2px; }
 }

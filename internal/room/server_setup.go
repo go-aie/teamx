@@ -48,6 +48,7 @@ type setupOperation struct {
 	Status  string `json:"status"`
 	Code    string `json:"code,omitempty"`
 	Message string `json:"message,omitempty"`
+	Field   string `json:"field,omitempty"`
 }
 
 // Candidate keys are private immutable references, never API response fields.
@@ -195,7 +196,7 @@ func (f *firstModelSetup) submit(input setupModelInput) (setupOperation, error) 
 		return setupOperation{}, &requestDiagnostic{cause: ErrRequest, Message: "部署机缺少 DSH，请从完整发行目录运行 ./start。"}
 	}
 	if err := dsh.CheckConfig(dsh.Options{BinaryPath: f.service.launcher.BinaryPath, Model: input.ModelParameters.materialize()}); err != nil {
-		return setupOperation{}, invalidField("model", "请检查协议、地址、模型 ID 与高级设置。")
+		return setupOperation{}, modelConfigDiagnostic(err)
 	}
 	data, _ := json.Marshal(input)
 	digest := sha256.Sum256(data)
@@ -244,7 +245,7 @@ func (f *firstModelSetup) validate(op *savedSetupOperation) {
 		var diagnostic *dsh.ProbeError
 		if errors.As(err, &diagnostic) {
 			op.Operation.Code = diagnostic.Stage + ":" + diagnostic.Code
-			op.Operation.Message = "模型未保存：" + op.Operation.Code + "。请检查模型服务或设置后重试。"
+			op.Operation.Field, op.Operation.Message = setupProbeDiagnostic(diagnostic)
 		}
 		if errors.Is(err, ErrConflict) {
 			op.Operation.Code, op.Operation.Message = "conflict", "配置已被其他程序修改，请重启服务后重试。"

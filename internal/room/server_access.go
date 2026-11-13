@@ -307,7 +307,7 @@ func (a *serverAccess) wrap(next http.Handler) http.Handler {
 			_ = json.NewEncoder(w).Encode(status)
 			return
 		}
-		if r.URL.Path == "/access" || r.URL.Path == "/ui/access.mjs" || r.URL.Path == "/ui/access.css" || r.URL.Path == "/ui/model-form.mjs" || r.URL.Path == "/ui/random-id.mjs" || r.URL.Path == "/ui/brand-mark.svg" {
+		if r.URL.Path == "/access" || r.URL.Path == "/ui/access.mjs" || r.URL.Path == "/ui/access.css" || r.URL.Path == "/ui/styles/controls.css" || r.URL.Path == "/ui/model-form.mjs" || r.URL.Path == "/ui/random-id.mjs" || r.URL.Path == "/ui/brand-mark.svg" {
 			web.Serve(w, r)
 			return
 		}

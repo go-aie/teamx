@@ -77,9 +77,11 @@ test("model drafts survive reload with original version and compatibility while 
  await ui.el("model-list").children[0].children[0].emit("click");
  ui.el("model-entry-name").value="我的模型草稿";await ui.el("model-entry-name").emit("input");
  ui.el("catalog-api-key").value="private-model-key";
+ await ui.el("catalog-toggle-key").emit("click");assert.equal(ui.el("catalog-api-key").type,"text");
  ui.el("catalog-developer-role").value="false";await ui.el("catalog-developer-role").emit("change");
  ui.el("catalog-context-window").value="128000";await ui.el("catalog-context-window").emit("input");
  await ui.window.emit("pagehide");assert.equal(ui.el("catalog-api-key").value,"");
+ assert.equal(ui.el("catalog-api-key").type,"password");
  assert.doesNotMatch(JSON.stringify([...saved]),/private-model-key/);
  api.models.catalog.version=2;
  const reopened=await launch(api,saved);await openSettings(reopened);
@@ -121,6 +123,7 @@ test("online editor reuses credentials and shared three-state parameters without
  const api=fixture(),ui=await launch(api);
  await openSettings(ui);const row=ui.el("model-list").children[0];await row.children[0].emit("click");
  assert.equal(ui.el("catalog-api-key").hidden,true);assert.equal(ui.el("catalog-developer-role").value,"false");
+ assert.equal(ui.el("catalog-key-input").hidden,true);
  ui.el("model-entry-name").value="我的名称";
  // Another tab publishes a catalog revision; the editor retains its original
  // expected version so saving a stale draft produces a server conflict.

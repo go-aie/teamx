@@ -174,9 +174,9 @@ if [[ $platform == Darwin ]]; then
       ;;
   esac
 fi
-printf '\nTeamX 已安装并启动，无需再次执行 install。\n命令入口：%s\n' "$command_path"
 if [[ $platform == Linux ]]; then
-  printf '在本机浏览器打开安装输出中的地址；远程机器可用 SSH 隧道。\n后续管理：sudo teamx service status / stop / start / restart / uninstall\n'
+  printf '\n查看服务状态：sudo teamx service status\n'
 else
-  printf '在浏览器打开安装输出中的地址，登录后配置模型。\n后续管理：teamx service status / stop / start / restart / uninstall\n'
+  printf '\n查看服务状态：teamx service status\n'
 fi
+printf '命令位置：%s\n' "$command_path"

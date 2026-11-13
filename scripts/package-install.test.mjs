@@ -52,7 +52,7 @@ const root = get('--server-root'), bin = p.join(root, 'releases', 'fixture', 'bi
 fs.mkdirSync(bin, {recursive:true});
 fs.copyFileSync(process.argv[1].replace('bootstrap.mjs', 'teamx-fixture'), p.join(bin, 'teamx'));
 try { fs.symlinkSync('releases/fixture', p.join(root, 'current')); } catch (e) { if (e.code !== 'EEXIST') throw e; }
-console.error('服务已启动。浏览器地址：http://127.0.0.1:8088');
+console.error('TeamX 已安装并启动。\\n1. 打开：http://127.0.0.1:8088');
 `);
   const executable = p.join(temp, 'teamx-fixture');
   fs.writeFileSync(executable, `#!/bin/sh\nexec ${quote(process.execPath)} "$INSTALL_TEST_PROGRAM" "$@"\n`, { mode: 0o755 });
@@ -91,7 +91,9 @@ test('a piped release installer selects the native standard, pins downloads and 
     const script = source.replace('@TEAMX_VERSION@', 'v1.2.3').replace('@TEAMX_REPOSITORY@', 'go-aie/teamx');
     const result = f.run([], {}, script);
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /无需再次执行 install/, result.stderr);
+    assert.equal((result.stdout + result.stderr).match(/TeamX 已安装并启动/g)?.length, 1);
+    assert.ok(result.stdout.includes(`查看服务状态：${platform === 'Linux' ? 'sudo ' : ''}teamx service status`));
+    assert.ok(result.stdout.includes(`命令位置：${p.join(f.bin, 'teamx')}`));
     assert.match(result.stderr, /http:\/\/127.0.0.1:8088/);
     assert.equal(fs.statSync(f.bin).mode & 0o777, 0o755);
     const [args] = f.calls();

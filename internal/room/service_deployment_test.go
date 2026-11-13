@@ -73,10 +73,10 @@ func TestServiceHelpAndInstallResultGuideBrowserSetup(t *testing.T) {
 	home := t.TempDir()
 	serviceTestFile(t, filepath.Join(home, "config.toml"), "[server]\nlisten = '0.0.0.0:8091'\naccess_mode = 'lan'\n[access]\nlogin_enabled = true\nadmin_token_file = 'auth/custom-token'\n", 0600)
 	var stdout, stderr bytes.Buffer
-	if err := writeServiceInstallResult(serviceRegistration{Home: home}, map[string]any{"authenticated": true}, &stdout, &stderr); err != nil {
+	if err := writeServiceInstallResult(serviceRegistration{Home: home, Platform: runtime.GOOS}, map[string]any{"authenticated": true}, &stdout, &stderr); err != nil {
 		t.Fatal(err)
 	}
-	for _, text := range []string{"http://127.0.0.1:8091", filepath.Join(home, "auth/custom-token"), "网页配置模型"} {
+	for _, text := range []string{"TeamX 已安装并启动。", "1. 打开：http://127.0.0.1:8091", filepath.Join(home, "auth/custom-token"), "管理令牌填入网页登录框", "3. 登录后按页面提示配置模型", "cat '"} {
 		if !strings.Contains(stderr.String(), text) {
 			t.Fatalf("missing %q in install result: %s", text, stderr.String())
 		}

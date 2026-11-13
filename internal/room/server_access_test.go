@@ -587,14 +587,18 @@ func TestAccessUserDisplayNamePreservesCaller(t *testing.T) {
 	}
 }
 
-func TestAccessModelFormModuleLoadsBeforeLogin(t *testing.T) {
+func TestAccessModelFormAssetsLoadBeforeLogin(t *testing.T) {
 	_, _, handler := accessFixture(t)
 	for path, contentType := range map[string]string{
 		"/ui/access.mjs": "javascript", "/ui/model-form.mjs": "javascript", "/ui/brand-mark.svg": "image/svg+xml",
+		"/ui/access.css": "text/css", "/ui/styles/controls.css": "text/css",
 	} {
 		response := accessRequest(handler, http.MethodGet, path, "", "", "", nil)
 		if response.Code != http.StatusOK || !strings.Contains(response.Header().Get("Content-Type"), contentType) {
 			t.Fatal(path, response.Code)
 		}
+	}
+	if response := accessRequest(handler, http.MethodGet, "/ui/styles/settings.css", "", "", "", nil); response.Code != http.StatusUnauthorized {
+		t.Fatal("unrelated UI asset became public", response.Code)
 	}
 }

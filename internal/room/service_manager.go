@@ -64,7 +64,14 @@ func writeServiceInstallResult(r serviceRegistration, status map[string]any, std
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(stderr, "服务已启动。浏览器地址：%s\n管理 token 文件（不会打印内容）：%s\n登录后在网页配置模型，无需终端 init。\n", serviceBrowserURL(c), adminTokenPath(c))
+	tokenCommand := "cat '" + strings.ReplaceAll(adminTokenPath(c), "'", "'\\''") + "'"
+	if r.Platform == "linux" {
+		tokenCommand = "sudo " + tokenCommand
+	}
+	fmt.Fprintf(stderr, "\nTeamX 已安装并启动。\n\n1. 打开：%s\n2. 执行以下命令，将输出的管理令牌填入网页登录框：\n   %s\n3. 登录后按页面提示配置模型，即可开始使用。\n", serviceBrowserURL(c), tokenCommand)
+	if r.Platform == "linux" {
+		fmt.Fprintln(stderr, "远程机器可通过 SSH 隧道访问上述地址。")
+	}
 	return writeJSON(stdout, status)
 }
 

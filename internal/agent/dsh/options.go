@@ -136,42 +136,57 @@ func (m ModelConfig) Clone() ModelConfig {
 
 func (m ModelConfig) imageInput() bool { return slices.Contains(m.InputModalities, "image") }
 
+// ModelConfigError identifies a local field constraint without including input
+// values. Callers can present authored guidance instead of parsing error text.
+type ModelConfigError struct {
+	Field, Reason string
+	message       string
+}
+
+func (e *ModelConfigError) Error() string { return e.message }
+func modelConfigError(field, reason, message string) error {
+	return &ModelConfigError{Field: field, Reason: reason, message: message}
+}
+
 func (m ModelConfig) checkConfig() error {
 	if m.Compat.SupportsDeveloperRole != nil && m.Protocol != "openai-completions" {
-		return errors.New("model compat.supports_developer_role requires openai-completions")
+		return modelConfigError("compat.supports_developer_role", "protocol", "model compat.supports_developer_role requires openai-completions")
 	}
 	seen := map[string]bool{}
 	for _, modality := range m.InputModalities {
 		if (modality != "text" && modality != "image") || seen[modality] {
-			return errors.New("model input_modalities accepts unique text and image values only")
+			return modelConfigError("input_modalities", "invalid", "model input_modalities accepts unique text and image values only")
 		}
 		seen[modality] = true
 	}
 	if len(m.InputModalities) > 0 && !seen["text"] {
-		return errors.New("model input_modalities must include text")
+		return modelConfigError("input_modalities", "text_required", "model input_modalities must include text")
 	}
 	if seen["image"] && m.Protocol != "openai-completions" {
-		return errors.New("model image input requires openai-completions")
+		return modelConfigError("input_modalities", "protocol", "model image input requires openai-completions")
 	}
 	switch m.ReasoningEffort {
 	case "", "off", "low", "high", "max":
 	case "minimal", "medium", "xhigh":
 		if m.deepseek() {
-			return errors.New("DeepSeek model reasoning_effort must be off, low, high or max")
+			return modelConfigError("reasoning_effort", "deepseek", "DeepSeek model reasoning_effort must be off, low, high or max")
 		}
 	default:
-		return errors.New("model reasoning_effort must be off, minimal, low, medium, high, xhigh or max")
+		return modelConfigError("reasoning_effort", "invalid", "model reasoning_effort must be off, minimal, low, medium, high, xhigh or max")
 	}
-	if m.ContextWindow < 0 || m.MaxTokens < 0 {
-		return errors.New("model context_window and max_tokens must be positive when set")
+	if m.ContextWindow < 0 {
+		return modelConfigError("context_window", "positive", "model context_window and max_tokens must be positive when set")
+	}
+	if m.MaxTokens < 0 {
+		return modelConfigError("max_tokens", "positive", "model context_window and max_tokens must be positive when set")
 	}
 	if m.Protocol == "openai-completions" {
 		contextWindow, maxTokens := m.tokenLimits()
 		if maxTokens > contextWindow {
-			return errors.New("model max_tokens must not exceed context_window")
+			return modelConfigError("max_tokens", "context_window", "model max_tokens must not exceed context_window")
 		}
 	} else if m.ContextWindow != 0 {
-		return errors.New("model context_window requires openai-completions")
+		return modelConfigError("context_window", "protocol", "model context_window requires openai-completions")
 	}
 	return nil
 }
@@ -320,9 +335,12 @@ func CheckConfig(opts Options) error {
 		return errors.New("artifact source and version must be supplied together or omitted")
 	}
 	if opts.Model.Protocol != "deepseek-messages" && opts.Model.Protocol != "openai-completions" {
-		return errors.New("unsupported DSH model protocol")
+		return modelConfigError("protocol", "unsupported", "unsupported DSH model protocol")
 	}
-	if strings.TrimSpace(opts.Model.ModelID) == "" || len(opts.Model.ModelID) > 1024 || !envName.MatchString(opts.Model.APIKeyEnv) || strings.HasPrefix(opts.Model.APIKeyEnv, "DSH_") {
+	if strings.TrimSpace(opts.Model.ModelID) == "" || len(opts.Model.ModelID) > 1024 {
+		return modelConfigError("model_id", "invalid", "invalid model or api_key_env")
+	}
+	if !envName.MatchString(opts.Model.APIKeyEnv) || strings.HasPrefix(opts.Model.APIKeyEnv, "DSH_") {
 		return errors.New("invalid model or api_key_env")
 	}
 	switch opts.Model.APIKeyEnv {
@@ -332,10 +350,10 @@ func CheckConfig(opts Options) error {
 	if opts.Model.BaseURL != "" {
 		u, err := url.Parse(opts.Model.BaseURL)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-			return errors.New("invalid model base_url")
+			return modelConfigError("base_url", "invalid", "invalid model base_url")
 		}
 	} else if opts.Model.Protocol == "openai-completions" {
-		return errors.New("openai-completions requires base_url")
+		return modelConfigError("base_url", "required", "openai-completions requires base_url")
 	}
 	for _, arg := range opts.BinaryArgs {
 		if strings.ContainsRune(arg, 0) || arg == "--profile" || strings.HasPrefix(arg, "--profile=") || arg == "--patch" || strings.HasPrefix(arg, "--patch=") {

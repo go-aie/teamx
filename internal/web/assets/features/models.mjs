@@ -1,6 +1,6 @@
 import { randomUUID } from "../random-id.mjs";
 import { captureReturnView } from "../view-return.mjs";
-import { fillModelParameters, readModelParameters, syncModelProtocol, modelDraftFields, snapshotModelFields, restoreModelFields } from "../model-form.mjs";
+import { fillModelParameters, readModelParameters, syncModelProtocol, modelDraftFields, snapshotModelFields, restoreModelFields, setModelKeyVisible } from "../model-form.mjs";
 
 export function createModels({env, runtime, openSettings, onMemberStatus}) {
   const {document, window, request, Option, setTimeout, clearTimeout} = env;
@@ -57,10 +57,11 @@ export function createModels({env, runtime, openSettings, onMemberStatus}) {
   function keyState() {
     const reuse = editor?.entry && data?.entry_states?.[editor.entry.id]?.credential_configured !== false && !field("replace-key").checked;
     field("api-key").hidden = !!reuse; field("api-key").required = !reuse;
+    field("key-input").hidden = !!reuse; setModelKeyVisible(field, false);
     if (reuse) field("api-key").value = "";
-    field("key-state").textContent = reuse ? "已配置密钥，本次验证将复用。" : "密钥将安全保存在部署机。";
+    field("key-state").textContent = reuse ? "密钥已配置，本次验证将复用。" : "密钥保存在运行 TeamX 的设备上。";
   }
-  function closeEditor() { clearReview(); field("api-key").value = ""; editor = undefined; $("model-edit-form").hidden = true; $("model-list-view").hidden = false; persist(); }
+  function closeEditor() { clearReview(); field("api-key").value = ""; setModelKeyVisible(field, false); editor = undefined; $("model-edit-form").hidden = true; $("model-list-view").hidden = false; persist(); }
   function returnFromEditor() {
     if (saving) return;
     const back = editorReturn; editorReturn = undefined;
@@ -312,9 +313,10 @@ export function createModels({env, runtime, openSettings, onMemberStatus}) {
     $("model-new").addEventListener("click", () => openEditor());
     $("model-delete").addEventListener("click",reviewDeletion);
     $("model-set-default").addEventListener("click",reviewDefault);
-    field("model-id").addEventListener("input",()=>{$("model-entry-name").placeholder=field("model-id").value || "留空使用模型 ID";});
+    field("model-id").addEventListener("input",()=>{$("model-entry-name").placeholder=field("model-id").value || "留空使用模型 ID";syncModelProtocol(field);});
     for (const id of ["model-edit-cancel", "model-edit-back"]) $(id).addEventListener("click", returnFromEditor);
     field("replace-key").addEventListener("change",keyState);
+    field("toggle-key").addEventListener("click",() => setModelKeyVisible(field, field("api-key").type !== "text"));
     field("protocol").addEventListener("change",() => syncModelProtocol(field));
     $("model-edit-form").addEventListener("submit",event => {
       event.preventDefault();if (!editor || saving || defaultReview?.parentElement) return;
@@ -322,7 +324,7 @@ export function createModels({env, runtime, openSettings, onMemberStatus}) {
       const entry = {id:editor.id,name:$("model-entry-name").value.trim() || parameters.model_id,...parameters};
       const input = {kind:"save",entry,expected_version:editor.version};
       if (!editor.entry || field("replace-key").checked) input.api_key = field("api-key").value;
-      field("api-key").value = ""; void submit(input);
+      field("api-key").value = ""; setModelKeyVisible(field, false); void submit(input);
     });
     $("member-model-progress").addEventListener("click",() => {
       const details = $("member-model-details"); details.hidden = !details.hidden;
@@ -348,7 +350,7 @@ export function createModels({env, runtime, openSettings, onMemberStatus}) {
       memberSaving=false;
       if (currentMemberView(v)) {v.operationID=accepted?.id;if (!accepted) v.error=$("model-feedback").textContent || "提交未确认，请查看模型设置。";renderMember();}
     });
-    window.addEventListener("pagehide",() => {persist();field("api-key").value="";});
+    window.addEventListener("pagehide",() => {persist();field("api-key").value="";setModelKeyVisible(field,false);});
   }
-  return {mount,load,openMember,showMemberDetails,returnFromEditor,clearKey:() => {field("api-key").value="";clearReview();}};
+  return {mount,load,openMember,showMemberDetails,returnFromEditor,clearKey:() => {field("api-key").value="";setModelKeyVisible(field,false);clearReview();}};
 }

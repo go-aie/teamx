@@ -15,19 +15,90 @@
 <p id="login-feedback" class="login-error" role="alert" aria-live="polite" hidden></p>
 <button id="login-submit" type="submit">登录</button>
 </form></section>
-<section id="model" hidden><h1>设置模型</h1><p>验证通过后保存为默认模型，并为你准备助理。验证包含一次简短文本请求和无副作用的工具往返。</p>
-<button id="reload-model-draft" type="button" hidden>放弃旧草稿，按当前配置重新填写</button>
-<form id="model-form"><label for="protocol">协议</label><select id="protocol"><option value="openai-completions">OpenAI 兼容</option><option value="deepseek-messages">DeepSeek Messages</option></select>
-<label for="base-url">Base URL</label><input id="base-url" type="url" placeholder="https://api.example.com/v1" autocomplete="off">
-<label for="model-id">模型 ID</label><input id="model-id" required autocomplete="off" spellcheck="false">
-<label for="api-key">API Key</label><input id="api-key" type="password" autocomplete="off"><p id="key-state">请输入 API Key，密钥将保存在部署机的私有目录。</p><label id="replace-key-label" hidden><input id="replace-key" type="checkbox">更换密钥</label>
-<details><summary>高级设置</summary>
-<label for="input-modalities">输入类型</label><select id="input-modalities"><option value="">使用适配器默认值</option><option value="text">文本</option><option value="text,image">文本和图片（按适配器声明）</option></select>
-<label for="context-window">上下文窗口</label><input id="context-window" type="number" min="1" step="1" placeholder="使用适配器默认值">
-<label for="max-tokens">最大输出 tokens</label><input id="max-tokens" type="number" min="1" step="1" placeholder="使用适配器默认值">
-<label for="reasoning-effort">推理强度</label><select id="reasoning-effort"><option value="">使用适配器默认值</option><option value="off">off</option><option value="minimal">minimal</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option><option value="xhigh">xhigh</option><option value="max">max</option></select>
-<div id="developer-compat"><label for="developer-role">接口兼容性 · developer 指令角色</label><select id="developer-role"><option value="">使用适配器默认值</option><option value="false">不支持 developer（使用 system）</option><option value="true">支持 developer</option></select><p>部分网关仅接受 system。此项不改变 Agent 身份、权限或推理设置。</p></div><p id="protocol-note" hidden>此协议不支持 developer 兼容设置；切换协议会清除此项。</p>
-</details>
-<button id="save-model" type="submit">验证并开始使用</button></form><button id="check-setup-operation" type="button" hidden>读取原操作进度</button></section>
-<p id="feedback" role="status" aria-live="polite"></p><button id="retry-migration" type="button" hidden>重试迁移</button><button id="logout" type="button" hidden>退出登录</button>
+<section id="model" aria-labelledby="setup-title" hidden>
+  <h1 id="setup-title">设置模型</h1>
+  <div id="setup-editor">
+  <p class="setup-intro">填写模型服务的连接信息，验证后即可开始对话。</p>
+  <button id="reload-model-draft" class="text-button" type="button" hidden>放弃旧草稿，重新填写</button>
+  <form id="model-form" autocomplete="off">
+    <div class="setup-field">
+      <label for="protocol">接口协议</label>
+      <select id="protocol" class="field-control" aria-describedby="protocol-help protocol-error"><option value="openai-completions">OpenAI 兼容</option><option value="deepseek-messages">DeepSeek Messages</option></select>
+      <p id="protocol-error" class="field-error" hidden></p>
+      <p id="protocol-help" class="field-hint">按服务商文档选择，OpenAI 兼容接口使用默认选项。</p>
+    </div>
+    <div class="setup-field">
+      <label for="base-url">接口地址 <span class="label-detail">Base URL</span></label>
+      <input id="base-url" class="field-control" type="url" placeholder="填写服务商提供的 API 地址" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="base-url-error">
+      <p id="base-url-error" class="field-error" hidden></p>
+    </div>
+    <div class="setup-field">
+      <label for="model-id">模型 ID</label>
+      <input id="model-id" class="field-control" placeholder="填写服务商提供的模型标识" required maxlength="1024" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="model-id-error">
+      <p id="model-id-error" class="field-error" hidden></p>
+    </div>
+    <div class="setup-field">
+      <label for="api-key">API Key</label>
+      <div id="key-input" class="model-key-input">
+        <input id="api-key" class="field-control" type="password" placeholder="输入 API Key" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="key-state api-key-error">
+        <button id="toggle-key" class="text-button" type="button" aria-label="显示 API Key" aria-controls="api-key" aria-pressed="false">显示</button>
+      </div>
+      <p id="api-key-error" class="field-error" hidden></p>
+      <p id="key-state" class="field-hint">密钥保存在运行 TeamX 的设备上。</p>
+      <label id="replace-key-label" class="replace-key" hidden><input id="replace-key" type="checkbox">更换密钥</label>
+    </div>
+    <details id="model-advanced" class="setup-advanced">
+      <summary>高级设置 <span class="field-hint">通常无需修改</span></summary>
+      <div class="advanced-fields">
+        <div class="setup-field">
+          <label for="input-modalities">输入类型</label>
+          <select id="input-modalities" class="field-control" aria-describedby="modalities-help input-modalities-error"><option value="">默认</option><option value="text">文本</option><option value="text,image">文本和图片</option></select>
+          <p id="input-modalities-error" class="field-error" hidden></p>
+          <p id="modalities-help" class="field-hint">仅在模型支持图片输入时选择“文本和图片”。</p>
+        </div>
+        <div class="setup-field">
+          <label for="context-window">上下文窗口 <span class="label-detail">tokens</span></label>
+          <input id="context-window" class="field-control" type="number" min="1" step="1" placeholder="默认" aria-describedby="context-window-error">
+          <p id="context-window-error" class="field-error" hidden></p>
+        </div>
+        <div class="setup-field">
+          <label for="max-tokens">输出长度上限 <span class="label-detail">tokens</span></label>
+          <input id="max-tokens" class="field-control" type="number" min="1" step="1" placeholder="默认" aria-describedby="max-tokens-error">
+          <p id="max-tokens-error" class="field-error" hidden></p>
+        </div>
+        <div class="setup-field">
+          <label for="reasoning-effort">推理强度</label>
+          <select id="reasoning-effort" class="field-control" aria-describedby="reasoning-help reasoning-effort-error"><option value="">默认</option><option value="off">关闭（off）</option><option value="minimal">最低（minimal）</option><option value="low">低（low）</option><option value="medium">中（medium）</option><option value="high">高（high）</option><option value="xhigh">很高（xhigh）</option><option value="max">最高（max）</option></select>
+          <p id="reasoning-effort-error" class="field-error" hidden></p>
+          <p id="reasoning-help" class="field-hint" hidden></p>
+        </div>
+        <div id="developer-compat" class="setup-field">
+          <label for="developer-role">developer 指令兼容性</label>
+          <select id="developer-role" class="field-control" aria-describedby="developer-help developer-role-error"><option value="">默认</option><option value="false">不支持（使用 system）</option><option value="true">支持 developer</option></select>
+          <p id="developer-role-error" class="field-error" hidden></p>
+          <p id="developer-help" class="field-hint">若接口提示不支持 developer，选择“不支持（使用 system）”。</p>
+        </div>
+        <p id="protocol-note" class="field-hint" hidden>当前接口协议无需配置 developer 兼容性。</p>
+      </div>
+    </details>
+    <button id="save-model" class="primary" type="submit">验证并开始使用</button>
+  </form>
+  </div>
+  <section id="setup-progress" class="setup-progress" aria-labelledby="setup-progress-title" tabindex="-1" hidden>
+    <dl class="setup-summary">
+      <div><dt>模型</dt><dd id="setup-summary-model"></dd></div>
+      <div><dt>接口地址</dt><dd id="setup-summary-address"></dd></div>
+    </dl>
+    <div class="setup-progress-status" role="status" aria-live="polite">
+      <div class="setup-progress-heading"><span class="setup-spinner" aria-hidden="true"></span><h2 id="setup-progress-title"></h2></div>
+      <p id="setup-progress-hint"></p>
+    </div>
+    <div class="setup-recovery"><button id="check-setup-operation" class="text-button" type="button" hidden>重新检查状态</button></div>
+  </section>
+</section>
+<p id="feedback" role="status" aria-live="polite" tabindex="-1"></p>
+<div class="access-actions">
+  <button id="retry-migration" class="text-button" type="button" hidden>重试迁移</button>
+  <button id="logout" class="text-button" type="button" hidden>退出登录</button>
+</div>
 </main></body></html>

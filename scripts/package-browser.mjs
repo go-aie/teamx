@@ -29,7 +29,7 @@ export async function acceptBrowser({ bundle, output, env }) {
   const errors = [];
   const login = async (page, endpoint) => {
     await page.goto(endpoint);
-    await page.locator('#token:visible, #model-form:visible, #new-room:visible').first().waitFor();
+    await page.locator('#token:visible, #model-form:visible, #setup-progress:visible, #new-room:visible').first().waitFor();
     if (await page.locator('#token').isVisible()) {
       await page.locator('#token').fill(fs.readFileSync(p.join(home,'auth/admin-token'),'utf8').trim());
       await page.locator('#login-submit').click();

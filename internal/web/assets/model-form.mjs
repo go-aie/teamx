@@ -1,4 +1,11 @@
-// Shared by first use and online editing. Preserve omission versus explicit false.
+// Shared by first use and online editing.
+export function setModelKeyVisible($, visible) {
+  $("api-key").type = visible ? "text" : "password";
+  $("toggle-key").textContent = visible ? "隐藏" : "显示";
+  $("toggle-key").setAttribute("aria-label", visible ? "隐藏 API Key" : "显示 API Key");
+  $("toggle-key").setAttribute("aria-pressed", String(visible));
+}
+// Preserve omission versus explicit false in optional model parameters.
 export function fillModelParameters($, model = {}) {
   $("protocol").value = model.protocol || "openai-completions";
   for (const [id, key] of [["base-url","base_url"],["model-id","model_id"],["context-window","context_window"],["max-tokens","max_tokens"],["reasoning-effort","reasoning_effort"]]) $(id).value = model[key] || "";
@@ -11,6 +18,10 @@ export function syncModelProtocol($) {
   $("developer-compat").hidden = !completions;
   $("protocol-note").hidden = completions;
   if (!completions) $("developer-role").value = "";
+  const deepseek = $("protocol").value === "deepseek-messages" || $("model-id").value.trim().toLowerCase().startsWith("deepseek-");
+  for (const option of $("reasoning-effort").options || []) option.disabled = deepseek && ["minimal", "medium", "xhigh"].includes(option.value);
+  $("reasoning-help").hidden = !deepseek;
+  $("reasoning-help").textContent = deepseek ? "DeepSeek 模型支持默认、off、low、high 和 max；不支持 minimal、medium 或 xhigh。" : "";
 }
 export function readModelParameters($) {
   const model = {protocol:$("protocol").value, base_url:$("base-url").value.trim(), model_id:$("model-id").value.trim()};

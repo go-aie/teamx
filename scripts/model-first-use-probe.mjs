@@ -40,7 +40,7 @@ const report={status:'failed',scope:'fresh start, browser validation/save/defaul
 let service, browser;
 async function login(page, endpoint, token) {
  await page.goto(endpoint);
- await page.locator('#token:visible, #model-form:visible, #message-input:visible').first().waitFor();
+ await page.locator('#token:visible, #model-form:visible, #setup-progress:visible, #message-input:visible').first().waitFor();
  if(await page.locator('#token').isVisible()) {await page.locator('#token').fill(token);await page.locator('#login-submit').click();}
 }
 async function until(fn, label, timeout=120000) {

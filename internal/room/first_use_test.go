@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -145,6 +146,9 @@ func TestFirstModelValidationIsDurableAsyncAndPrivate(t *testing.T) {
 	if f.operation.Operation.Status != "failed" {
 		t.Fatal(f.operation)
 	}
+	if op := f.operation.Operation; op.Field != "api_key" || op.Code != "text:authentication" || !strings.Contains(op.Message, "API Key") {
+		t.Fatal("authentication failure lost actionable guidance", op)
+	}
 	untouched, _ := os.ReadFile(c.path)
 	if string(untouched) != string(append([]byte("# keep comment\n"), source...)) {
 		t.Fatal("failed validation published")
@@ -187,6 +191,54 @@ func TestFirstModelValidationIsDurableAsyncAndPrivate(t *testing.T) {
 	}
 	if restarted.operation.Operation.Code != "interrupted" {
 		t.Fatal("validation auto-replayed")
+	}
+}
+
+func TestFirstModelInvalidParametersIdentifyFieldWithoutStartingValidation(t *testing.T) {
+	for _, test := range []struct {
+		name, field, message string
+		change               func(*ModelParameters)
+	}{
+		{"deepseek completions reasoning", "reasoning_effort", "minimal", func(p *ModelParameters) { p.ModelID = "deepseek-v4.1-flash-1017"; p.ReasoningEffort = "minimal" }},
+		{"deepseek messages reasoning", "reasoning_effort", "DeepSeek", func(p *ModelParameters) { p.Protocol = "deepseek-messages"; p.ReasoningEffort = "medium" }},
+		{"missing URL", "base_url", "需要填写", func(p *ModelParameters) { p.BaseURL = "" }},
+		{"private URL", "base_url", "接口地址", func(p *ModelParameters) { p.BaseURL = "https://model.invalid/v1?key=private-url-secret" }},
+		{"missing model", "model_id", "模型 ID", func(p *ModelParameters) { p.ModelID = "" }},
+		{"protocol", "protocol", "接口协议", func(p *ModelParameters) { p.Protocol = "invalid" }},
+		{"token limits", "max_tokens", "不能超过", func(p *ModelParameters) { p.ContextWindow = 1024 }},
+		{"negative context", "context_window", "正整数", func(p *ModelParameters) { p.ContextWindow = -1 }},
+		{"messages context", "context_window", "请留空", func(p *ModelParameters) { p.Protocol = "deepseek-messages"; p.ContextWindow = 65536 }},
+		{"messages image", "input_modalities", "不支持图片", func(p *ModelParameters) {
+			p.Protocol = "deepseek-messages"
+			p.InputModalities = []string{"text", "image"}
+		}},
+		{"messages compat", "compat.supports_developer_role", "仅适用于", func(p *ModelParameters) {
+			p.Protocol = "deepseek-messages"
+			value := false
+			p.Compat.SupportsDeveloperRole = &value
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := &firstModelSetup{service: &modelService{launcher: dsh.Options{BinaryPath: "/fixture/dsh"}}}
+			input := setupModelInput{RequestID: "field-check", APIKey: "private-fixture-key", ModelParameters: ModelParameters{Protocol: "openai-completions", BaseURL: "https://model.invalid/v1", ModelID: "fixture-model"}}
+			test.change(&input.ModelParameters)
+			_, err := f.submit(input)
+			if !errors.Is(err, ErrRequest) || f.operation != nil {
+				t.Fatal("invalid fields admitted validation", err)
+			}
+			response := httptest.NewRecorder()
+			writeAPIError(response, err)
+			var diagnostic apiError
+			if err := json.Unmarshal(response.Body.Bytes(), &diagnostic); err != nil {
+				t.Fatal(err)
+			}
+			if response.Code != http.StatusBadRequest || diagnostic.Field != test.field || diagnostic.Code != "request" || !strings.Contains(diagnostic.Message, test.message) {
+				t.Fatal("missing field guidance", response.Code, diagnostic)
+			}
+			if strings.Contains(response.Body.String(), input.APIKey) || strings.Contains(response.Body.String(), "private-url-secret") {
+				t.Fatal("diagnostic echoed private input")
+			}
+		})
 	}
 }
 func TestFirstModelCannotWriteExistingData(t *testing.T) {
