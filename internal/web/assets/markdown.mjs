@@ -1,4 +1,5 @@
 import { Marked, Renderer } from "./vendor/marked.mjs";
+import { createNavigationIcon } from "./icons.mjs";
 import { mentionRanges, memberMentionRanges } from "./client.mjs";
 
 function escapeHTML(text, preserveEntities = false) {
@@ -75,8 +76,9 @@ export function openImagePreview(doc, src, alt) {
     dialog.setAttribute("aria-label", "图片预览");
     const toolbar = doc.createElement("div"); toolbar.className = "message-image-toolbar";
     const title = doc.createElement("span");
-    const close = doc.createElement("button"); close.type = "button"; close.textContent = "关闭";
+    const close = doc.createElement("button"); close.type = "button"; close.className = "icon-button"; close.append(createNavigationIcon(doc, "close"));
     close.setAttribute("aria-label", "关闭图片预览");
+    close.title = "关闭图片预览";
     toolbar.append(title, close);
     const stage = doc.createElement("div"); stage.className = "message-image-stage";
     const image = doc.createElement("img"); image.referrerPolicy = "no-referrer";
@@ -169,13 +171,14 @@ export function renderMessageBody(container, text, operator, options) {
       const preview = img.closest("button.attachment-preview");
       if (preview) preview.addEventListener("click", event => {
         event.preventDefault(); event.stopPropagation();
-        openImagePreview(doc, img.src, img.alt);
+        // Template-cloned messages acquire the live document when inserted.
+        openImagePreview(container.ownerDocument, img.src, img.alt);
       });
       img.addEventListener("error", () => {
-        const fallback = doc.createElement("button"); fallback.type = "button";
+        const fallback = container.ownerDocument.createElement("button"); fallback.type = "button";
         fallback.textContent = "图片加载失败，点击重试";
         fallback.className = "attachment-error";
-        fallback.addEventListener("click", () => openImagePreview(doc, img.src, img.alt));
+        fallback.addEventListener("click", () => openImagePreview(container.ownerDocument, img.src, img.alt));
         if (preview) preview.replaceWith(fallback);
         else img.replaceWith(fallback);
       }, { once: true });

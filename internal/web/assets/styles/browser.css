@@ -37,8 +37,7 @@
   .workspace.rooms-collapsed .room-rail { visibility:hidden; pointer-events:none; }
   .workspace .room-rail-header { display:none; }
   .mobile-user-menu { display:flex; align-items:center; flex:none; }
-  .mobile-conversation-back { display:inline-flex; gap:2px; padding-inline:2px; font-size:var(--font-small); }
-  .mobile-conversation-back svg { width:16px; height:16px; flex:none; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+  .mobile-conversation-back { display:inline-flex; padding:0; }
   .workspace .mobile-user-menu .rail-settings {
     position:relative; inset:auto; margin:0; padding:0; border:0;
     display:flex; align-items:center;
@@ -61,19 +60,19 @@
     position:absolute; z-index:15; inset:0; width:100%; height:100%;
     background:var(--surface-muted); overflow:hidden; padding-bottom:env(safe-area-inset-bottom);
   }
-  .mobile-panel-back { display:block; text-align:left; min-height:var(--button-height); flex:none; padding:7px 12px; border-bottom:1px solid var(--line); }
-  .member-rail:has(> .activity-dialog[open], > .notification-detail[open]) > .mobile-panel-back { display:none; }
+  .mobile-panel-back { display:inline-flex; }
+  .member-rail-header:has(#close-conversation-notifications:not([hidden])) .mobile-panel-back { display:none; }
   .workspace .member-rail .activity-dialog,.workspace .member-rail .notification-detail {
     height:auto; max-height:none; flex:1; min-height:0;
   }
   .workspace .member-rail .sidebar { flex:1; min-height:0; overflow:auto; }
-  .room-header { padding:0 12px; gap:4px; }
+  .room-header { padding:0 12px; gap:var(--space-1); }
   .room-title { flex:1; overflow:hidden; }
   .room-header h1 { font-size:17px; gap:6px; }
   .room-header .room-name-button { flex:1; min-width:0; max-width:100%; gap:6px; }
   .room-actions { flex:none; gap:8px; }
   .room-menu summary { display:flex; align-items:center; justify-content:center; width:36px; height:36px; padding:0; }
-  .workspace .activity-dialog > .activity-header,.workspace .notification-detail > .activity-header { height:44px; min-height:44px; padding:0 12px; gap:8px; }
+  .workspace .activity-dialog > .activity-header,.workspace .notification-detail > .activity-header { height:44px; min-height:44px; padding:0 12px; gap:var(--space-1); }
   .workspace .activity-dialog > .activity-header { height:45px; min-height:45px; }
   .workspace .activity-header.detail-header h2 { font-size:16px; }
   .workspace .member-model { gap:6px; padding:0 12px; min-height:44px; }
@@ -120,10 +119,11 @@
   .message-meta { align-items:center; flex-wrap:nowrap; gap:8px; min-height:36px; margin-bottom:4px; }
   .message .author { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; line-height:20px; }
   .message-meta time { flex:none; font-size:11px; line-height:20px; }
-  .message-meta .author-kind,.message-meta .sequence,.message-meta .reply-button span { display:none; }
-  .message-meta .reply-button { width:36px; height:36px; min-width:36px; margin:0; padding:8px; opacity:1; }
+  .message-meta .reply-button span { display:none; }
+  .message-meta .reply-button { width:36px; height:36px; min-width:36px; margin:0; padding:8px; }
   .message-meta .reply-button svg { width:18px; height:18px; }
-  .message-content { min-width:0; }
+  .message-content { min-width:0; padding:10px 12px; }
+  .message-content .message-reference { min-height:36px; margin-block:4px 10px; }
   input:not([type="checkbox"]):not([type="radio"]),textarea,select { font-size:16px; }
   .field-control { min-height:var(--control-height); font-size:16px; }
   button,summary { touch-action:manipulation; }

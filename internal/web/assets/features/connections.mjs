@@ -1,4 +1,5 @@
 import { randomUUID } from "../random-id.mjs";
+import { createNavigationIcon } from "../icons.mjs";
 // Shared platform connection forms, validation and account selection.
 export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI, larkUI, onboardingUI, workspaceUI, notificationsUI, membersUI }) {
   const { document, window, Option, setTimeout, clearTimeout, request } = env;
@@ -138,7 +139,9 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
       const button = document.createElement("button"); button.type = "button"; button.className = "connection-row";button.dataset.platformId=item.id;
       const label = document.createElement("span"), name = document.createElement("strong"), detail = document.createElement("small"), status = document.createElement("span");
       name.textContent = item.name; detail.textContent = item.provider === "lark" ? `${item.cli_profile?.brand === "lark" ? "Lark" : "飞书"}${item.validation.username ? ` · ${item.validation.username}` : ""}` : `${item.provider === "scion" ? "Scion" : "GitLab"} · ${item.url}`;
-      status.textContent = item.credential_kind === "oauth" && item.authorization_status !== "active" ? (item.authorization_status === "logged_out" ? "已退出 ›" : "需要重新授权 ›") : item.validation.status === "valid" ? "已验证 ›" : item.validation.status === "failed" ? "验证失败 ›" : "未验证 ›";
+      status.className = "connection-state";
+      status.textContent = item.credential_kind === "oauth" && item.authorization_status !== "active" ? (item.authorization_status === "logged_out" ? "已退出" : "需要重新授权") : item.validation.status === "valid" ? "已验证" : item.validation.status === "failed" ? "验证失败" : "未验证";
+      status.append(createNavigationIcon(document));
       label.append(name, detail); button.append(label, status);
       button.addEventListener("click", () => editPlatform(item)); return button;
     }));

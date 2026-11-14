@@ -14,7 +14,7 @@
 .platform-selection-candidates input { flex: none; margin-top: 4px; }
 
 /* Direct conversations share the inspector and notification settings. */
-.conversation-group-title { margin:18px 12px 6px; color:var(--muted); font-size:var(--font-small); font-weight:500; }
+.conversation-group-title { margin:20px 12px 8px; color:var(--muted); font-size:var(--font-small); font-weight:600; }
 #direct-group-title { margin-top:0; }
 .room-nav-heading { position:relative; }
 
@@ -61,7 +61,7 @@
   grid-row:1;
   padding:1px 5px;
   border-radius:4px;
-  color:#53664f;
+  color:var(--text-secondary);
   background:var(--soft);
   font-size:var(--font-small);
   line-height:1.5;
@@ -71,7 +71,8 @@
 .direct-conversation #member-empty, .direct-conversation #members { display:none; }
 .direct-conversation:not(.direct-notifications-open) #member-list-view { display:none; }
 .direct-notifications-open #activity-dialog { display:none; }
-#close-conversation-notifications { min-height:56px; text-align:left; padding-inline:18px; }
+.direct-conversation.direct-notifications-open #member-list-view > .member-rail-header { display:flex; }
+.direct-notifications-open .member-rail-actions { display:none; }
 @media(max-width:640px) {
   .direct-conversation .member-rail { position:fixed; z-index:20; inset:0; width:100%; background:var(--surface-muted); overflow:auto; }
   .direct-conversation .member-rail .activity-dialog,

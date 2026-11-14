@@ -1,9 +1,9 @@
 
 /* Navigation, discussion and member context share the existing quiet surface. */
 .workspace.managed {
-  --rooms-default-width:240px;
+  --rooms-default-width:264px;
   --rooms-open-width:var(--rooms-default-width);
-  --members-default-width:340px;
+  --members-default-width:320px;
   --rooms-width:var(--rooms-open-width);
   --members-width:var(--members-open-width);
   grid-template-columns:var(--rooms-width) minmax(0,1fr) var(--members-width);
@@ -11,7 +11,7 @@
 .room-nav {
   flex:1;
   min-height:0;
-  padding:20px 16px;
+  padding:16px 12px;
   overflow-y:auto;
   scrollbar-width:thin;
   background:var(--surface-muted);
@@ -32,7 +32,7 @@
   display:flex;
   align-items:center;
   gap:4px;
-  margin-bottom:4px;
+  margin-bottom:2px;
   border-radius:var(--radius-control);
 }
 .room-choice {
@@ -43,7 +43,7 @@
   align-items:center;
   column-gap:6px;
   padding:10px 12px;
-  min-height:44px;
+  min-height:60px;
   border-radius:var(--radius-control);
   text-align:left;
   background:none;
@@ -81,10 +81,13 @@
   background:var(--surface-hover);
 }
 .room-entry:has(.room-choice[aria-current="true"]) {
-  background:var(--soft);
+  background:var(--conversation-selected);
 }
 .room-choice[aria-current="true"] {
-  color:var(--accent);
+  color:var(--text);
+}
+.room-choice[aria-current="true"] strong {
+  font-weight:var(--weight-strong);
 }
 .room-choice strong,.room-choice span {
   display:block;
@@ -205,7 +208,7 @@
 }
 .room-rail { position:relative; overflow:visible; grid-column:1; }
 .member-rail { grid-column:2; }
-.member-rail { position:relative; overflow:visible; }
+.member-rail { position:relative; overflow:visible; background:var(--surface-subtle); }
 .member-list-view {
   display:flex;
   flex-direction:column;
@@ -233,7 +236,7 @@
   transition:background .15s;
 }
 .sidebar-resizer:hover::after,.sidebar-resizer:focus-visible::after,.resizing-members .member-resizer::after,.resizing-rooms .room-resizer::after {
-  background:#9bb297;
+  background:var(--focus);
 }
 .workspace.resizing-members,.workspace.resizing-rooms { transition:none; user-select:none; cursor:col-resize; }
 .resizing-members *,.resizing-rooms * { cursor:col-resize!important; }
@@ -244,8 +247,9 @@
   height:var(--workspace-header-height);
   min-height:var(--workspace-header-height);
   flex-shrink:0;
-  padding:0 10px;
-  border-bottom:1px solid var(--line);
+  padding:0 16px;
+  border-bottom:1px solid var(--divider);
+  background:var(--surface);
 }
 .rail-header .brand {
   font-size:18px;
@@ -271,9 +275,9 @@
 }
 .rooms-collapsed #room-nav { transform:translateX(-16px); }
 .members-collapsed #member-sidebar { transform:translateX(16px); }
-.member-rail-header { padding:0 var(--panel-space); justify-content:space-between; }
-.member-rail-header h2 { margin:0; font-size:var(--font-small); font-weight:600; white-space:nowrap; }
-.member-rail-header h2 span { margin-left:8px; color:var(--muted); font-size:var(--font-small); font-weight:var(--weight-medium); }
+.member-rail-header { padding:0 var(--panel-space); justify-content:space-between; gap:var(--space-1); }
+.member-rail-header h2 { flex:1; min-width:0; margin:0; font-size:var(--font-body); font-weight:600; white-space:nowrap; }
+.member-rail-header #member-count { margin-left:8px; color:var(--muted); font-size:var(--font-small); font-weight:var(--weight-medium); }
 .member-rail-actions { display:flex; align-items:center; gap:8px; }
 .panel-toggle {
   display:inline-flex;
@@ -288,12 +292,7 @@
   color:var(--muted);
   background:transparent;
 }
-.panel-toggle {
-  color:var(--accent);
-  border:1px solid var(--field-border);
-  background:var(--soft);
-}
-.panel-toggle:hover { background:#dfe9da; }
+.panel-toggle:hover { color:var(--accent); background:var(--soft); }
 .panel-toggle svg {
   width:20px;
   height:20px;

@@ -1,4 +1,5 @@
 import { randomUUID } from "../random-id.mjs";
+import { createNavigationIcon } from "../icons.mjs";
 import { captureReturnView } from "../view-return.mjs";
 import { fillModelParameters, readModelParameters, syncModelProtocol, modelDraftFields, snapshotModelFields, restoreModelFields, setModelKeyVisible } from "../model-form.mjs";
 
@@ -139,7 +140,8 @@ export function createModels({env, runtime, openSettings, onMemberStatus}) {
       if (entry.pending_deletion) title.append(text("span", "待删除", "model-state"));
       content.append(title);
       if (name !== entry.model_id) content.append(text("span", entry.model_id, "model-id"));
-      main.append(content, text("span", "›", "model-row-chevron")); main.disabled=!!entry.pending_deletion;
+      const chevron = createNavigationIcon(document); chevron.classList.add("model-row-chevron");
+      main.append(content, chevron); main.disabled=!!entry.pending_deletion;
       row.append(main);
       if (status?.credential_configured === false || status?.validated === false || status?.validated !== true && entry.unverified) row.append(text("p", status?.credential_configured === false ? "请补填 API Key" : "待验证", "model-state"));
       const users = data.members.filter(m => m.target_entry_id === entry.id || m.selection.mode === "explicit" && m.selection.entry_id === entry.id);

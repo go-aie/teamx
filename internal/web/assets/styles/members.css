@@ -1,15 +1,15 @@
 .sidebar {
   flex:1;
   min-height:0;
-  padding:0 24px 24px;
-  background:var(--surface-muted);
+  padding:0 var(--panel-space) 24px;
+  background:var(--surface-subtle);
   overflow-y:auto;
   scrollbar-width:thin;
 }
 
 .member {
-  padding:12px 0 20px;
-  border-bottom:1px solid #e2e7dc;
+  padding:12px 0 16px;
+  border-bottom:1px solid var(--line);
 }
 #members > .member:last-child { border-bottom:0; padding-bottom:12px; }
 .member-summary {
@@ -33,7 +33,7 @@
 }
 .member-name {
   display:block;
-  font-size:var(--font-small);
+  font-size:var(--font-body);
   font-weight:600;
   overflow-wrap:anywhere;
   margin:0 0 3px;
@@ -55,11 +55,11 @@
   content:"";
   width:5px;
   height:5px;
-  background:#b1bba6;
+  background:var(--line-strong);
   border-radius:50%;
 }
 .member-status.running:before {
-  background:#527949;
+  background:var(--accent);
   animation:breathe 1.8s ease-in-out infinite;
 }
 .member-status.failed {
@@ -162,7 +162,7 @@
   margin:0;
   padding:0;
   border:0;
-  background:var(--surface-muted);
+  background:var(--surface-subtle);
   color:inherit;
   overflow:hidden;
 }
@@ -171,7 +171,7 @@
   flex-direction:column;
 }
 .activity-dialog .activity-header { height:var(--workspace-header-height); min-height:var(--workspace-header-height); padding:0 var(--panel-space); gap:12px; }
-.activity-dialog .activity-header h2 { flex-shrink:0; font-size:var(--font-small); white-space:nowrap; }
+.activity-dialog .activity-header h2 { flex-shrink:0; font-size:var(--font-body); white-space:nowrap; }
 .activity-header {
   display:flex;
   flex-shrink:0;
@@ -179,7 +179,8 @@
   justify-content:space-between;
   gap:16px;
   padding:28px;
-  border-bottom:1px solid var(--line);
+  border-bottom:1px solid var(--divider);
+  background:var(--surface);
 }
 .activity-header h2 {
   margin:0;
@@ -256,15 +257,15 @@
 }
 .activity-group>summary::before {
   content:"";
-  width:5px;
-  height:5px;
-  border-right:1.5px solid var(--muted);
-  border-bottom:1.5px solid var(--muted);
-  transform:rotate(-45deg);
+  width:6px;
+  height:6px;
+  border-right:1.6px solid var(--muted);
+  border-bottom:1.6px solid var(--muted);
+  transform:rotate(45deg);
   flex-shrink:0;
 }
 .activity-group[open]>summary::before {
-  transform:rotate(45deg);
+  transform:rotate(225deg);
 }
 .activity-group>summary:hover {
   color:var(--accent);

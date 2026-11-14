@@ -19,10 +19,12 @@
 .member-model-progress svg { width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
 .member-model-progress[data-state="busy"] { color:var(--accent); }
 .member-model-progress[data-state="error"] { color:var(--danger); }
+.member-model-progress > .navigation-icon { width:18px; height:18px; transition:transform var(--motion-fast); }
+.member-model-progress[aria-expanded="true"] > .navigation-icon { transform:rotate(180deg); }
 .member-model-details { flex:none; padding:8px 20px; border-bottom:1px solid var(--line); color:var(--muted); font-size:var(--font-small); overflow-wrap:anywhere; max-height:40dvh; overflow:auto; }
 .member-model-details p { margin:4px 0; }
 .member-model-details .form-actions { flex-wrap:wrap; }
 #member-model-busy { animation:model-progress-spin 1s linear infinite; }
 @keyframes model-progress-spin { to { transform:rotate(360deg); } }
 @media(prefers-reduced-motion:reduce) { #member-model-busy { animation:none; } }
-@media(max-width:480px) { .member-model { padding-inline:16px; flex-wrap:nowrap; } #activity-dialog > .activity-header { gap:8px; } }
+@media(max-width:480px) { .member-model { padding-inline:16px; flex-wrap:nowrap; } }

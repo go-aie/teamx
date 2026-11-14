@@ -152,7 +152,7 @@ test("Lark images and legacy keys render same-origin previews bound to the exact
   assert.equal(notificationOptions(imageInfo,"operator",{...source,channel:"other"},{seq:1}),undefined);
 });
 
-test("image preview reuses a modal, keeps the bound URL, and clears it on every close path", () => {
+test("image preview follows adopted messages, reuses a modal, and clears it on every close path", () => {
   class Element {
     constructor(tag) { this.tag = tag; this.children = []; this.attributes = {}; this.listeners = {}; this.open = false; }
     append(...children) { this.children.push(...children); }
@@ -163,14 +163,16 @@ test("image preview reuses a modal, keeps the bound URL, and clears it on every 
     showModal() { this.open = true; this.modal = true; }
     close() { this.open = false; this.emit("close"); }
   }
-  const doc = {body:new Element("body"),createElement:tag => new Element(tag),createTreeWalker:() => ({nextNode:() => false})};
+  const doc = {body:new Element("body"),createElement:tag => new Element(tag),createElementNS:(_,tag) => new Element(tag),createTreeWalker:() => ({nextNode:() => false})};
   const src = "/v1/platform/attachments?room_id=room-a&membership_id=member-a&seq=35&path=lark-image%3Aimg_saved";
   const button = new Element("button"), thumbnail = new Element("img");
   thumbnail.src = src; thumbnail.alt = "截图 <img src=x>";
   thumbnail.closest = selector => selector === "button.attachment-preview" ? button : null;
-  const container = {ownerDocument:doc,querySelectorAll:() => [thumbnail]};
+  const templateDoc = {...doc,body:null};
+  const container = {ownerDocument:templateDoc,querySelectorAll:() => [thumbnail]};
   renderMessageBody(container, "![截图](lark-image:img_saved)", "operator", {larkImages:true,attachmentURL:() => src});
   assert.ok(container.innerHTML.includes('<button class="attachment-preview"'));
+  container.ownerDocument = doc;
   button.emit("click");
   const dialog = doc.body.children[0], [toolbar, stage] = dialog.children, [title, close] = toolbar.children, [image, error] = stage.children;
   assert.equal(dialog.open, true); assert.equal(dialog.modal, true);
@@ -187,6 +189,13 @@ test("image preview reuses a modal, keeps the bound URL, and clears it on every 
     dialog.emit(action);
     assert.equal(dialog.open, false); assert.equal(image.src, undefined);
   }
+  button.replaceWith = fallback => { button.replacement = fallback; };
+  thumbnail.emit("error");
+  assert.equal(button.replacement.textContent, "图片加载失败，点击重试");
+  button.replacement.emit("click");
+  assert.equal(dialog.open, true); assert.equal(image.src, src);
+  assert.equal(doc.body.children.length, 1);
+  close.emit("click");
 });
 
 test("compact Lark mentions show names and keep identity in tooltips without rewriting code or link destinations", () => {

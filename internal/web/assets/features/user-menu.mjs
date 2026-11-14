@@ -1,4 +1,4 @@
-import { createUserIcon } from "../icons.mjs";
+import { renderAvatar } from "../avatars.mjs";
 
 // A browser-local display name never changes the authenticated operator.
 export function createUserMenu({ env, runtime, conversationUI }) {
@@ -64,7 +64,7 @@ export function createUserMenu({ env, runtime, conversationUI }) {
   }
 
   function mount() {
-    $("user-avatar").replaceChildren(createUserIcon(document));
+    renderAvatar(document, $("user-avatar"), {kind:"human", id:state.operator});
     render(); void loadSession();
     $("user-menu-toggle").addEventListener("click", () => $("user-menu").hidden ? open() : close(true));
     $("user-menu-toggle").addEventListener("keydown", event => {

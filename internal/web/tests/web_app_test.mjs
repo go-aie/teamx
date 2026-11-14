@@ -117,10 +117,12 @@ test("message authors and references use the operator display name without chang
   const own = ui.el("messages").children.find(el => el.id === "message-1");
   const reply = ui.el("messages").children.find(el => el.id === "message-2");
   assert.equal(own.querySelector(".author").textContent, "russellluo");
-  assert.equal(own.querySelector(".author-kind").textContent, "你 · HUMAN");
+  assert.equal(own.classList.contains("own"), true);
+  assert.equal(reply.classList.contains("own"), false);
   assert.equal(reply.querySelector(".message-reference").textContent, "↳ #1 russellluo：已处理");
   assert.equal(reply.querySelector(".author").textContent, "reviewer");
   assert.equal(ui.el("messages").children.find(el => el.id === "message-3").querySelector(".author").textContent, "bob");
+  assert.equal(ui.el("messages").children.find(el => el.id === "message-3").classList.contains("own"), false);
   displayName = ""; await ui.refresh();
   assert.equal(ui.el("messages").children.find(el => el.id === "message-1"), own);
   assert.equal(own.querySelector(".author").textContent, "用户");
@@ -990,7 +992,7 @@ test("left sidebar resizing persists, shares the message-space budget, and prese
 });
 
 test("execution hints open the matching member activity without sending or changing execution", async () => {
-  const api = server([makeRoom("A")]);
+  const api = server([{...makeRoom("A"),members:[{id:"reviewer",name:"审查员"},{id:"developer",name:"开发者"}]}]);
   const members = ["reviewer", "developer"].map((id, index) => ({ agent_id: id, membership_id: `generation-${id}`,
     status: index ? "waiting" : "running", read_through: 0, unread_count: 1, runner: { profile: "runtime" },
     execution: { active: !index, agent: { turn_number: 1 } } }));
@@ -1004,6 +1006,9 @@ test("execution hints open the matching member activity without sending or chang
     }
   };
   const ui = await launch(api);
+  assert.equal(ui.el("members").children[0].querySelector(".member-name").textContent, "reviewer");
+  assert.equal(ui.el("members").children[0].querySelector(".member-profile").textContent, "审查员");
+  assert.equal(ui.el("execution-queue").textContent, "developer 等待执行");
   const buttons = () => ui.el("execution-text").children.filter(child => child.tag === "button");
   const reads = () => api.calls.filter(call => call.path === "/v1/member/activity");
   const open = async button => {
@@ -1013,6 +1018,7 @@ test("execution hints open the matching member activity without sending or chang
   const close = async () => { await ui.el("close-activity").emit("click"); await settle(); };
   assert.equal(buttons()[0].textContent, "reviewer 正在处理…");
   await open(buttons()[0]);
+  assert.equal(ui.el("activity-title").textContent, "reviewer");
   assert.equal(ui.selectedAgent()?.membership_id, "generation-reviewer");
   assert.equal(reads().at(-1).data.membership_id, members[0].membership_id);
   assert.equal(ui.el("activity-timeline").children[0].children[1].children[0].textContent, "activity-reviewer");
@@ -1721,7 +1727,7 @@ test("integration messages display GitLab author without becoming members", asyn
   const ui = await launch(api);
   const el = ui.document.getElementById("message-1");
   assert.equal(el.querySelector(".author").textContent, "GitLab · 项目活动");
-  assert.equal(el.querySelector(".author-kind").textContent, "通知");
+  assert.equal(el.classList.contains("own"), false);
   assert.equal(el.classList.contains("integration"), true);
   assert.equal(String(ui.el("member-count").textContent), "0");
 });
@@ -3356,7 +3362,7 @@ test("a late automatic rule response cannot replace a new tab context",async()=>
 });
 
 test("direct conversations prefer the exact default, keep the inspector stable, and isolate Room drafts", async () => {
-  const room=makeRoom("Team"),dm={...makeRoom("个人助理","dm"),is_direct:true,team_id:"",agent_role_id:"assistant"};
+  const room=makeRoom("Team"),dm={...makeRoom("个人助理","dm"),is_direct:true,team_id:"",agent_role_id:"assistant",members:[{id:"assistant",name:"个人助理"}]};
   const api=server([room,dm]);api.catalog.default_assistant={status:"completed",room_id:dm.room_id,room_instance:dm.room_instance};
   const member={agent_id:"assistant",membership_id:"dm-member",status:"paused",runner:{profile:"runtime"},execution:{paused:true}};
   api.hook=(path,data)=>{
@@ -3372,6 +3378,8 @@ test("direct conversations prefer the exact default, keep the inspector stable, 
   assert.equal(ui.el("direct-list").children[0].children.length,1);
   assert.equal(ui.el("room-list").children[0].children.length,2);
   assert.equal(ui.el("activity-dialog").open,true);assert.equal(ui.el("close-activity").hidden,true);
+  assert.equal(ui.el("activity-title").textContent,"assistant");
+  assert.equal(ui.el("members").children[0].querySelector(".avatar").children[0].getAttribute("class"),"assistant-icon");
   assert.equal(ui.el("direct-status"),undefined);assert.equal(ui.el("toggle-members").hidden,true);
   assert.equal(ui.el("direct-details").hidden,false);assert.equal(ui.el("direct-details").textContent,"收起助理详情");
   ui.el("room-menu").open=true;await ui.el("direct-details").emit("click");

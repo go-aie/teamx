@@ -1,7 +1,8 @@
 import { randomUUID } from "../random-id.mjs";
 import { readPages as collectPages, createRoomDrafts, mentionRanges, unseenMentions } from "../client.mjs";
 import { notificationOptions } from "../markdown.mjs";
-import { createAssistantIcon, createUserIcon } from "../icons.mjs";
+import { createAssistantIcon } from "../icons.mjs";
+import { renderAvatar } from "../avatars.mjs";
 import { createMentionPicker } from "../mention-picker.mjs";
 import { captureReturnView } from "../view-return.mjs";
 
@@ -167,12 +168,8 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     const agent = message.author.kind === "agent", integration = message.author.kind === "integration";
     el.classList.toggle("integration", integration);
     const avatar = el.querySelector(".avatar");
-    avatar.textContent = integration ? "GL" : message.author.id.slice(0, 2).toUpperCase();
-    if (message.author.kind === "human") avatar.replaceChildren(createUserIcon(document));
-    if (agent && roomsUI.isDirect()) avatar.replaceChildren(createAssistantIcon(document));
-    avatar.classList.toggle("integration-avatar", integration);
-    avatar.classList.toggle("agent-avatar", agent);
-    avatar.classList.toggle("user-avatar", message.author.kind === "human");
+    renderAvatar(document, avatar, {kind:message.author.kind, id:message.author.id,
+      provider:message.source?.provider || message.author.id, direct:roomsUI.isDirect()});
     const channel = message.source?.provider === "gitlab" && ["events", "todos"].includes(message.source?.channel) ? message.source.channel : null;
     el.querySelector(".author").textContent = integration ? channel ? `GitLab · ${channel === "todos" ? "我的待办" : "项目活动"}` : `${message.author.id} · 通知` : authorName(message.author);
     if (integration && channel) {
@@ -206,7 +203,6 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
         if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(avatar); }
       });
     }
-    el.querySelector(".author-kind").textContent = integration ? "通知" : agent ? "AGENT" : message.author.id === state.operator ? "你 · HUMAN" : "HUMAN";
     const text = el.querySelector(".message-text");
     const ranges = mentionRanges(message.text, operatorNames());
     renderMessageBody(text, message.text, state.operator, messageOptions(message));
@@ -215,7 +211,6 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     time.textContent = settingsUI.formatDate(message.created_at, {hour:"2-digit",minute:"2-digit"});
     time.dateTime = message.created_at;
     time.title = settingsUI.formatDate(message.created_at);
-    el.querySelector(".sequence").textContent = `#${message.seq}`;
     el.querySelector(".reply-button").addEventListener("click", () => beginReply(message));
     if (message.reply_to) {
       const ref = el.querySelector(".message-reference");
@@ -246,6 +241,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
       let cached=messageNodes.get(message.seq);
       if(!cached){cached={element:messageElement(message),memberNames:memberNamesKey};messageNodes.set(message.seq,cached);}
       const el=cached.element;
+      el.classList.toggle("own", message.author.kind === "human" && message.author.id === state.operator);
       if (message.author.kind === "human") el.querySelector(".author").textContent = authorName(message.author);
       if (cached.memberNames !== memberNamesKey) {
         renderMessageBody(el.querySelector(".message-text"), message.text, state.operator, messageOptions(message));

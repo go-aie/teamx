@@ -24,3 +24,13 @@ export function createAssistantIcon(document) {
   svg.append(head, details);
   return svg;
 }
+
+// Shared geometry for directional navigation and closing a surface.
+export function createNavigationIcon(document, direction = "right") {
+  const paths = {left:"m15 6-6 6 6 6", right:"m9 6 6 6-6 6", down:"m6 9 6 6 6-6", close:"m6 6 12 12M6 18 18 6"};
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  for (const [key, value] of Object.entries({viewBox:"0 0 24 24", class:"navigation-icon", "aria-hidden":"true", focusable:"false"})) svg.setAttribute(key, value);
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", paths[direction]); svg.append(path);
+  return svg;
+}

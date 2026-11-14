@@ -1,6 +1,8 @@
 import { compactViewport } from "../client.mjs";
 import { sameService } from "../client.mjs";
 import { captureReturnView } from "../view-return.mjs";
+import { renderAvatar } from "../avatars.mjs";
+import { createNavigationIcon } from "../icons.mjs";
 
 // Room/member notification subscriptions, targets and configuration views.
 export function createNotifications({ env, membersUI, workspaceUI, runtime, roomsUI, settingsUI, connectionsUI, onboardingUI, layoutUI }) {
@@ -530,9 +532,9 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     detail.type="button";detail.className="notification-source";detail.dataset.provider=item.provider;
     detail.setAttribute("aria-controls","notification-detail");detail.setAttribute("aria-label",`${item.name} 通知详情`);
     const avatar=document.createElement("span"),label=document.createElement("span"),title=document.createElement("strong"),summary=document.createElement("small"),arrow=editable ? null : document.createElement("button");
-    avatar.className="avatar integration-avatar";avatar.textContent=item.provider==="gitlab" ? "GL" : item.provider==="scion" ? "SC" : "飞";avatar.setAttribute("aria-hidden","true");
+    renderAvatar(document,avatar,{kind:"integration",id:item.id,provider:item.provider});avatar.setAttribute("aria-hidden","true");
     label.className="notification-source-name";title.textContent=item.name;summary.textContent=notificationDescription(view.config);label.append(title,summary);detail.append(avatar,label);
-    if(arrow){arrow.type="button";arrow.className="notification-source-arrow";arrow.textContent="›";arrow.setAttribute("aria-label",`${item.name} 通知详情`);}
+    if(arrow){arrow.type="button";arrow.className="notification-source-arrow";arrow.append(createNavigationIcon(document));arrow.setAttribute("aria-label",`${item.name} 通知详情`);arrow.title=`${item.name} 通知详情`;}
     const open=opener=>target.mode==="inbox" ? membersUI.openMemberPlatform(opener,item,target) : openNotificationSource(opener,"gitlab",item.id,target);
     detail.addEventListener("click",()=>open(detail));if(arrow)arrow.addEventListener("click",()=>open(arrow));
     const toggle=document.createElement("input");toggle.type="checkbox";toggle.className="notification-switch";
@@ -557,7 +559,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     const query=$(`${prefix}add-search`).value.trim().toLowerCase();
     $(`${prefix}add-options`).replaceChildren(...items.filter(item=>!configured.includes(item) && [item.name,item.validation?.username,item.url].join(" ").toLowerCase().includes(query)).map(item=>{
       const button=document.createElement("button");button.type="button";button.className="notification-add-option";button.dataset.provider=item.provider;button.dataset.platformId=item.id;
-      const name=document.createElement("strong"),account=document.createElement("small");name.textContent=item.name;account.textContent=`${item.validation?.username ? `@${item.validation.username} · ` : ""}设置接收 ›`;button.append(name,account);
+      const name=document.createElement("strong"),account=document.createElement("small");name.textContent=item.name;account.textContent=`${item.validation?.username ? `@${item.validation.username} · ` : ""}设置接收`;button.append(name,account,createNavigationIcon(document));
       button.disabled=!ws.notificationsConnected || roomsUI.managementBusy();
       button.addEventListener("click",()=>{ setNotificationPicker(prefix,false);return openNotificationSource(button,item.provider==="lark" ? "messages" : "gitlab",item.id,target); });return button;
     }));
@@ -856,6 +858,9 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
 
   function renderContextViews() {
     const detail = $("activity-dialog").open || $("notification-detail").open || roomsUI.isDirect() && !layoutUI.directNotificationsOpen;
+    const notifications = roomsUI.isDirect() && layoutUI.directNotificationsOpen;
+    $("member-list-title").textContent = notifications ? "会话通知" : "团队成员";
+    $("member-count").hidden = notifications;
     $("close-conversation-notifications").hidden = !roomsUI.isDirect() || !layoutUI.directNotificationsOpen;
     $("member-list-view").hidden = roomsUI.isDirect() && layoutUI.directNotificationsOpen ? $("notification-detail").open : detail;
     $("member-list-view").inert = $("member-list-view").hidden || !layoutUI.membersPanelOpen();
@@ -867,7 +872,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     const id = ws?.notificationPlatformID || (messages ? ws?.messages?.config.platform_id : ws?.gitlabDraft?.platform_id);
     const item = membersUI.memberPlatformItems(ws).find(p => p.id === id), view = item && notificationView(ws, item);
     const target=activeNotificationTarget(ws),member=state.members.find(m=>sameNotificationTarget(memberNotificationTarget(m),target));
-    const name=target.mode==="inbox" ? membersUI.memberRole(member || {})?.name || target.agent_id : roomsUI.isDirect() ? "会话" : "房间";
+    const name=target.mode==="inbox" ? target.agent_id : roomsUI.isDirect() ? "会话" : "房间";
     $("notification-title").textContent=`${name} · ${item?.name || membersUI.memberPlatformItems(ws).find(p=>p.id===id)?.name || (messages ? "飞书" : "GitLab")} ${target.mode==="inbox" ? "设置" : "通知"}`;
     let instance="";try{instance=item?.provider==="gitlab" ? new URL(item.url).host : "";}catch{instance=item?.url || "";}
     $("notification-account").textContent=item ? [item.validation?.username ? `@${item.validation.username}` : "账号待核验",instance].filter(Boolean).join(" · ") : "";

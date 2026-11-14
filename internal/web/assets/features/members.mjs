@@ -1,6 +1,7 @@
 import { compactViewport } from "../client.mjs";
 import { createActivityReader, sameService } from "../client.mjs";
-import { createAssistantIcon } from "../icons.mjs";
+import { renderAvatar } from "../avatars.mjs";
+import { createNavigationIcon } from "../icons.mjs";
 import { captureReturnView } from "../view-return.mjs";
 
 // Member inspection, private activity, CLI tools and platform summaries.
@@ -338,7 +339,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     $("close-activity").setAttribute("aria-label", "返回");
     $("close-activity").title = "返回";
     const selected=selectedAgent();
-    $("activity-title").textContent=selected ? memberRole(selected)?.name || selected.agent_id : "Agent 详情";
+    $("activity-title").textContent=selected ? selected.agent_id : "Agent 详情";
     $("agent-tabs").hidden = false;
     $("agent-tab-platforms").hidden = !state.managed;
     const member = selectedAgent();
@@ -429,7 +430,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     }
     const running = available ? state.members.filter(member => member.execution?.active || member.status === "running") : [];
     const waiting = available ? state.members.filter(member => member.status === "waiting" && !member.execution?.active && !member.execution?.paused) : [];
-    const names = members => members.map(member => memberRole(member)?.name || member.agent_id).join("、");
+    const names = members => members.map(member => member.agent_id).join("、");
     // Active covers Session opening, model work and tools; it does not identify a thinking phase.
     const feedback = available ? [...stopRequests].filter(([id, request]) =>
       ["stopped", "error"].includes(request.phase) && ![...running, ...waiting].some(member => member.membership_id === id)) : [];
@@ -455,11 +456,12 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
         const separator = document.createElement("span"); separator.textContent = "、"; content.append(separator);
       }
       const button = document.createElement("button");
-      const name = memberRole(member)?.name || member.agent_id;
+      const name = member.agent_id;
       const request = stopRequests.get(member.membership_id);
       const stopping = member.execution?.stopping || ["requesting", "settling"].includes(request?.phase);
       button.type = "button"; button.className = "execution-member";
       button.textContent = stopping ? `${name} 正在停止…` : primary.length === 1 || mixedPhases ? `${name} ${phaseText}` : name;
+      button.append(createNavigationIcon(document));
       button.dataset.activityMember = member.membership_id;
       button.setAttribute("aria-label", `查看详情 ${name}`);
       button.title = `查看 ${name} 的详情`;
@@ -488,7 +490,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     for (const [id, request] of feedback) {
       const status = document.createElement("span"); status.className = "execution-feedback";
       const member = state.members.find(member => member.membership_id === id);
-      const name = memberRole(member)?.name || member.agent_id;
+      const name = member.agent_id;
       status.textContent = `${primary.length || feedback.length > 1 ? `${name} ` : ""}${request.phase === "stopped" ? "已停止" : "停止未确认"}`;
       status.title = request.error || member.execution?.error || "";
       content.append(status);
@@ -523,15 +525,14 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       const running = execution?.active;
       const label = running ? "运行中" : statusNames[member.status] || member.status;
       const role = memberRole(member);
-      el.querySelector(".member-name").textContent = role?.name || member.agent_id;
+      el.querySelector(".member-name").textContent = member.agent_id;
       const summary = el.querySelector(".member-summary");
       summary.dataset.activityMember = member.membership_id;
-      summary.setAttribute("aria-label", `查看 ${role?.name || member.agent_id} 的详情`);
+      summary.setAttribute("aria-label", `查看 ${member.agent_id} 的详情`);
       summary.disabled = !state.connected;
       summary.addEventListener("click", () => openMemberActivity(member, summary));
-      el.querySelector(".avatar").textContent = member.agent_id.slice(0, 2).toUpperCase();
-      if (roomsUI.isDirect()) el.querySelector(".avatar").replaceChildren(createAssistantIcon(document));
-      el.querySelector(".member-profile").textContent = role ? member.agent_id : member.runner.profile;
+      renderAvatar(document, el.querySelector(".avatar"), {kind:"agent", id:member.agent_id, direct:roomsUI.isDirect()});
+      el.querySelector(".member-profile").textContent = role?.name || member.runner.profile;
       const status = el.querySelector(".member-status");
       status.textContent = label;
       status.classList.toggle("running", !!running);

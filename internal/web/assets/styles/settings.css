@@ -6,7 +6,7 @@
 .gitlab-events-actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:20px; }
 
 .gitlab-events-sync { display:inline-flex; align-items:center; gap:6px; padding:8px 12px; border:1px solid var(--field-border); border-radius:var(--radius-control); background:transparent; color:var(--accent); font-size:var(--font-small); }
-.gitlab-events-sync:hover:not(:disabled) { background:var(--surface-hover); border-color:#a9bda9; }
+.gitlab-events-sync:hover:not(:disabled) { background:var(--surface-hover); border-color:var(--focus); }
 .gitlab-events-sync svg { width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
 .gitlab-events-feedback { color:var(--muted); font-size:var(--font-small); }
 .gitlab-events-feedback[data-pending="true"] { color:var(--warning); }
@@ -21,7 +21,7 @@
 .lark-chat-option span { min-width:0; overflow-wrap:anywhere; }
 .lark-chat-option small { display:block; margin-top:3px; font-size:var(--font-small); color:var(--muted); }
 .lark-chat-selected { display:flex; gap:6px; flex-wrap:wrap; }
-.lark-chat-selected button { display:flex; align-items:center; gap:8px; max-width:100%; padding:6px 9px; border-radius:var(--radius-control); background:var(--soft); color:#354d38; font-size:var(--font-small); text-align:left; overflow-wrap:anywhere; }
+.lark-chat-selected button { display:flex; align-items:center; gap:8px; max-width:100%; padding:6px 9px; border-radius:var(--radius-control); background:var(--soft); color:var(--text-secondary); font-size:var(--font-small); text-align:left; overflow-wrap:anywhere; }
 .lark-chat-actions { display:flex; justify-content:space-between; gap:8px; margin-top:8px; }
 .notification-settings-row { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
 .notification-settings-row > div { min-width:0; }
@@ -65,7 +65,6 @@
   .lark-chat-controls { grid-template-columns:minmax(0,1fr); }
 }
 @media(max-width:400px) { .gitlab-events-types { grid-template-columns:1fr; } .gitlab-events-feedback { flex-basis:100%; } }
-.integration-avatar { background: #f8eadf; color: #925020; }
 .message.integration .message-text { font-size:var(--font-body); }
 .message.integration .message-text:has(> blockquote) > p:first-child { color:var(--muted); font-size:var(--font-small); }
 .message.integration .message-text > blockquote { margin:8px 0 10px; padding:0; border:0; color:var(--text); line-height:1.85; }
@@ -80,7 +79,6 @@
 .rail-settings button:hover { color:var(--accent); background:var(--soft); }
 .rail-settings svg { width:20px; height:20px; flex-shrink:0; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
 .rail-settings .user-menu-toggle { min-height:48px; padding:6px 8px; color:var(--text); }
-.user-avatar { display:grid; place-items:center; flex:none; width:32px; height:32px; border:0; border-radius:50%; color:var(--accent); background:#e2ebe4; }
 .user-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .rail-settings .user-menu-chevron { width:16px; height:16px; color:var(--muted); transition:transform .15s; }
 .user-menu-toggle[aria-expanded="true"] { background:var(--soft); }
@@ -100,9 +98,9 @@
 
 .settings-description { margin:8px 0 0; line-height:1.7; }
 .settings-layout { display:grid; grid-template-columns:156px minmax(0,1fr); height:min(520px,calc(100dvh - 160px)); }
-.settings-navigation { display:flex; flex-direction:column; gap:6px; padding:16px 12px; border-right:1px solid var(--line); background:#f7f8f6; }
+.settings-navigation { display:flex; flex-direction:column; gap:6px; padding:16px 12px; border-right:1px solid var(--line); background:var(--surface-muted); }
 .settings-navigation button { display:flex; align-items:center; gap:10px; min-height:var(--control-height); padding:10px 12px; border-radius:var(--radius-control); background:transparent; color:var(--muted); text-align:left; font-size:var(--font-body); line-height:1.5; }
-.settings-navigation button:hover:not(:disabled) { color:var(--accent); background:#edf1eb; }
+.settings-navigation button:hover:not(:disabled) { color:var(--accent); background:var(--surface-hover); }
 .settings-navigation button[aria-selected="true"] { color:var(--accent); background:var(--soft); font-weight:var(--weight-medium); }
 .settings-navigation svg { width:17px; height:17px; }
 .settings-panels { min-width:0; overflow:auto; overscroll-behavior:contain; scrollbar-width:thin; }
@@ -243,7 +241,7 @@
 .platforms-load-error p { margin:0; line-height:1.7; }
 #platforms-retry { flex-shrink:0; min-width:76px; }
 .platforms-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:210px; padding:32px 12px; text-align:center; }
-.platforms-empty-icon { display:grid; place-items:center; width:44px; height:44px; margin-bottom:16px; border-radius:var(--radius-dialog); background:var(--soft); color:#62816e; }
+.platforms-empty-icon { display:grid; place-items:center; width:44px; height:44px; margin-bottom:16px; border-radius:var(--radius-dialog); background:var(--soft); color:var(--accent); }
 .platforms-empty-icon svg { width:24px; height:24px; }
 .platforms-empty h3 { margin:0; font-size:14px; font-weight:var(--weight-medium); line-height:1.6; }
 .platforms-empty p { margin:6px 0 0; font-size:var(--font-small); line-height:1.8; color:var(--muted); text-wrap:balance; }
@@ -254,6 +252,7 @@
 .connection-row small { color:var(--muted); font-size:var(--font-small); margin-top:5px; }
 .connection-row > span:first-child { min-width:0; }
 .connection-row > span:last-child { flex-shrink:0; font-size:var(--font-small); color:var(--muted); }
+.connection-state { display:inline-flex; align-items:center; gap:8px; }
 .settings-dialog .workspace-form { padding:0 24px 24px; }
 .connection-form-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:16px 0; }
 .connection-form-heading h3 { margin:0; font-size:14px; font-weight:var(--weight-medium); }

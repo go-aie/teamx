@@ -1,10 +1,10 @@
 
 .workspace-control { min-width:0; max-width:55%; }
 .workspace-picker { position:relative; min-width:0; }
-.workspace-button { display:flex; align-items:center; gap:8px; min-height:var(--control-height); padding:6px 11px; border:1px solid var(--field-border); border-radius:999px; background:#fff; color:#667569; font-size:var(--font-small); line-height:20px; cursor:pointer; list-style:none; transition:background .15s,border-color .15s,box-shadow .15s; }
+.workspace-button { display:flex; align-items:center; gap:8px; min-height:var(--control-height); padding:6px 11px; border:1px solid var(--field-border); border-radius:999px; background:#fff; color:var(--muted); font-size:var(--font-small); line-height:20px; cursor:pointer; list-style:none; transition:background .15s,border-color .15s,box-shadow .15s; }
 .workspace-button::-webkit-details-marker { display:none; }
-.workspace-button:hover { background:var(--surface-hover); border-color:#bbcabb; }
-.workspace-button:focus-visible,.workspace-picker[open] .workspace-button { outline:none; border-color:#9bb6a3; box-shadow:var(--focus-ring); }
+.workspace-button:hover { background:var(--surface-hover); border-color:var(--line-strong); }
+.workspace-button:focus-visible,.workspace-picker[open] .workspace-button { outline:none; border-color:var(--focus); box-shadow:var(--focus-ring); }
 #workspace-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .workspace-control svg { width:18px; height:18px; flex-shrink:0; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
 .workspace-button .workspace-chevron { width:14px; height:14px; margin-left:2px; transition:transform .15s; }
