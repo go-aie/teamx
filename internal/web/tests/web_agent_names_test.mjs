@@ -31,10 +31,15 @@ for(const direct of [false,true])test(`Agent names stay coherent after ${direct 
  assert.equal(ui.document.getElementById("message-1").querySelector(".author").textContent,"编程助手");
  await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();
  await ui.el("toggle-agent-controls").emit("click");
+ assert.equal(ui.el("agent-name-form").hidden,true);
+ assert.equal(ui.el("agent-name-summary").textContent,"编程助手");
+ await ui.el("edit-agent-name").emit("click");
  assert.equal(ui.el("agent-display-name").value,"编程助手");
  ui.el("agent-display-name").value="新的 称呼";await ui.el("agent-name-form").emit("submit");await settle();
  assert.equal(api.calls.filter(c=>c.path==="/v1/member/name").length,1,ui.el("agent-name-feedback").textContent);
  assert.equal(api.members[0].agent_name,"新的 称呼",ui.el("agent-name-feedback").textContent);
+ assert.equal(ui.el("agent-name-form").hidden,true);
+ assert.equal(ui.el("agent-name-summary").textContent,"新的 称呼");
  assert.equal(ui.el("activity-title").textContent,"新的 称呼");
  assert.equal(ui.document.getElementById("message-1").querySelector(".author").textContent,"新的 称呼");
  const options=ui.document.getElementById("message-2").querySelector(".message-text").markdownOptions;
@@ -43,6 +48,23 @@ for(const direct of [false,true])test(`Agent names stay coherent after ${direct 
  assert.equal(api.members[0].agent_id,"a");assert.equal(api.members[0].membership_id,"member-a");
  assert.equal(ui.el("members").children[0].querySelector(".member-profile").textContent,"角色说明");
  const choices=await mention(ui,"@新的 称");assert.equal(choices[0].textContent,"@新的 称呼");
+});
+
+test("name editing is explicit, preserves a polled draft and cancels without saving",async()=>{
+ const api=namesFixture({direct:true}),ui=await launch(api);await settle();
+ await ui.el("toggle-agent-controls").emit("click");
+ assert.equal(ui.el("agent-name-row").hidden,false);assert.equal(ui.el("agent-name-form").hidden,true);
+ await ui.el("edit-agent-name").emit("click");ui.el("agent-display-name").value="尚未保存";
+ await ui.refresh();assert.equal(ui.el("agent-display-name").value,"尚未保存");
+ await ui.el("agent-name-form").emit("keydown",{key:"Escape",isComposing:true});
+ assert.equal(ui.el("agent-name-form").hidden,false);
+ await ui.el("agent-name-form").emit("keydown",{key:"Escape"});
+ assert.equal(ui.el("agent-name-row").hidden,false);assert.equal(ui.el("agent-name-form").hidden,true);
+ assert.equal(ui.el("activity-dialog").open,true);
+ await ui.el("edit-agent-name").emit("click");assert.equal(ui.el("agent-display-name").value,"编程助手");
+ ui.el("agent-display-name").value="另一个草稿";await ui.el("agent-name-cancel").emit("click");
+ assert.equal(ui.el("agent-name-form").hidden,true);
+ assert.equal(api.calls.filter(c=>c.path==="/v1/member/name").length,0);
 });
 
 test("same-name mention choices preserve exact targets through edits, draft reload and renaming",async()=>{

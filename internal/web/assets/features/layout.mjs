@@ -94,15 +94,13 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
     }
     $("toggle-rooms").hidden = !state.managed || mobile;
     $("mobile-back-to-rooms").hidden = !state.managed || !mobile;
-    const menuParent = mobile && state.managed ? $(roomsOpen ? "list-user-menu" : "conversation-user-menu") : $("room-rail");
+    const menuParent = mobile && state.managed ? $("list-user-menu") : $("room-rail");
     if ($("user-menu-container").parentElement !== menuParent) {
       userMenuUI.close(); menuParent.append($("user-menu-container"));
     }
-    $("toggle-members").hidden = roomsUI.isDirect();
-    $("direct-details").hidden = !roomsUI.isDirect();
-    $("direct-details").disabled = !state.info;
-    $("direct-details").textContent = membersOpen ? "收起助理详情" : "助理详情";
-    $("direct-details").setAttribute("aria-expanded", String(membersOpen));
+    $("room-menu-label").disabled = !state.info;
+    const settingsParent = $(roomsUI.isDirect() ? state.managed ? "platforms-member-view" : "activity-body" : "member-sidebar");
+    if ($("conversation-settings").parentElement !== settingsParent) settingsParent.append($("conversation-settings"));
     $("member-rail").inert = !membersOpen;
     $("member-rail").setAttribute("aria-hidden", String(!membersOpen));
     if (!membersOpen && $("activity-dialog").open) $("activity-dialog").close();
@@ -114,10 +112,10 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
     applySidebarWidths();
     runtime.navigationChanged();
     runtime.conversationVisibilityChanged?.();
-    for (const [side, name] of [["rooms", "会话侧栏"], ["members", roomsUI.isDirect() ? "助理详情" : "团队成员"]]) {
-      const button = $("toggle-" + side);
+    for (const [side, name] of [["rooms", "会话侧栏"], ["members", roomsUI.isDirect() ? "助理详情" : "房间详情"]]) {
+      const button = $(side === "members" ? "room-menu-label" : "toggle-rooms");
       const open = side === "members" ? membersOpen : roomsOpen;
-      const label = `${open ? "收起" : "展开"}${name}`;
+      const label = side === "members" ? name : `${open ? "收起" : "展开"}${name}`;
       button.setAttribute("aria-expanded", String(open));
       button.setAttribute("aria-label", label);
       button.setAttribute("title", label);
@@ -157,13 +155,12 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
   function closeMobilePanels() {
     const rooms = directMobileRooms;
     directMobileDetails = false; directMobileRooms = false;
-    renderPanels(); membersUI.syncDirectDetail(); $(rooms ? "mobile-back-to-rooms" : roomsUI.isDirect() ? "room-menu-label" : "toggle-members").focus();
+    renderPanels(); membersUI.syncDirectDetail(); $(rooms ? "mobile-back-to-rooms" : "room-menu-label").focus();
   }
 
   function showMobileRooms() {
     if (!compactViewport(window) || !state.managed) return;
     directMobileRooms = true; directMobileDetails = false; directNotificationsOpen = false;
-    $("room-menu").open = false;
     renderPanels();
     $("room-nav").focus({preventScroll:true});
   }
@@ -197,12 +194,11 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
         renderPanels();
         membersUI.syncDirectDetail();
       };
-      $("toggle-" + side).addEventListener("click", toggle);
-      if (side === "members") $("direct-details").addEventListener("click", () => {
-        $("room-menu").open = false;
+      $(side === "members" ? "room-menu-label" : "toggle-rooms").addEventListener("click", () => {
         toggle();
+        if (side !== "members") return;
         if (!membersPanelOpen()) $("room-menu-label").focus();
-        else $(directNotificationsOpen ? "close-conversation-notifications" : "agent-tab-platforms").focus();
+        else $(roomsUI.isDirect() ? directNotificationsOpen ? "close-conversation-notifications" : "close-activity" : "member-list-title").focus();
       });
     }
 
@@ -238,12 +234,23 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
     }
 
     $("close-mobile-members").addEventListener("click", closeMobilePanels);
+    $("close-room-details").addEventListener("click", () => {
+      collapseMembers(); savePanels(); renderPanels(); $("room-menu-label").focus();
+    });
+    $("member-list-view").addEventListener("keydown", event => {
+      if (event.key !== "Escape" || event.defaultPrevented || contextDetailOpen()) return;
+      event.preventDefault(); collapseMembers(); savePanels(); renderPanels(); $("room-menu-label").focus();
+    });
     $("mobile-back-to-rooms").addEventListener("click", showMobileRooms);
     window.visualViewport?.addEventListener("resize", updateViewport);
     window.visualViewport?.addEventListener("scroll", updateViewport);
     window.addEventListener("resize", () => { updateViewport(); renderPanels(); membersUI.syncDirectDetail(); settingsUI.renderSettingsNavigation(); });
 
     updateViewport(); renderPanels();
+  }
+
+  function contextDetailOpen() {
+    return directNotificationsOpen || $("activity-dialog").open || $("notification-detail").open || document.querySelector("dialog:modal");
   }
 
   return {

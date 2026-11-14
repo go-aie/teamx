@@ -860,7 +860,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
   function renderContextViews() {
     const detail = $("activity-dialog").open || $("notification-detail").open || roomsUI.isDirect() && !layoutUI.directNotificationsOpen;
     const notifications = roomsUI.isDirect() && layoutUI.directNotificationsOpen;
-    $("member-list-title").textContent = notifications ? "会话通知" : "团队成员";
+    $("member-list-title").textContent = notifications ? "会话通知" : "房间详情";
     $("member-count").hidden = notifications;
     $("close-conversation-notifications").hidden = !roomsUI.isDirect() || !layoutUI.directNotificationsOpen;
     $("member-list-view").hidden = roomsUI.isDirect() && layoutUI.directNotificationsOpen ? $("notification-detail").open : detail;
@@ -1120,7 +1120,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
       notificationFocus=null;onboardingUI.renderMemberPlatformAddition();renderContextViews();
       if(origin?.view.current()) {
         $("activity-dialog").hidden=origin.activityHidden;
-        origin.panel();origin.view.restore($("toggle-members"));
+        origin.panel();origin.view.restore($("room-menu-label"));
       }
     });
 

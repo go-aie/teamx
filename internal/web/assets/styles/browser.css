@@ -3,16 +3,15 @@
 .mobile-panel-back { display:none; }
 .mobile-user-menu,.mobile-conversation-back { display:none; }
 .room-list-actions { display:flex; align-items:center; gap:8px; }
-.room-title,.room-name-button,#room-name { min-width:0; }
-.room-name-button #room-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.room-title,#room-name { min-width:0; }
 .platform-connect-interaction,.platform-selection-interaction { max-width:100%; min-width:0; overflow-wrap:anywhere; }
 @media(max-width:640px), (max-height:500px) and (pointer:coarse) {
   :root { --control-height:44px; --button-height:36px; --primary-height:40px; --control-compact:36px; --icon-size:36px; }
   /* Visible controls use two sizes; their centered hit areas remain at least 44px. */
-  :is(.primary,.secondary-button,.text-button,.back-button,.icon-button,.add-button,.panel-toggle,.room-panel-toggle,.reply-button,.reply-cancel),.settings-navigation button,.agent-tabs button,.room-menu summary {
+  :is(.primary,.secondary-button,.text-button,.back-button,.icon-button,.add-button,.panel-toggle,.room-panel-toggle,.reply-button,.reply-cancel),.settings-navigation button,.agent-tabs button {
     position:relative; margin-block:4px;
   }
-  :is(.primary,.secondary-button,.text-button,.back-button,.icon-button,.add-button,.panel-toggle,.room-panel-toggle,.reply-button,.reply-cancel)::after,.settings-navigation button::after,.agent-tabs button::after,.room-menu summary::after {
+  :is(.primary,.secondary-button,.text-button,.back-button,.icon-button,.add-button,.panel-toggle,.room-panel-toggle,.reply-button,.reply-cancel)::after,.settings-navigation button::after,.agent-tabs button::after {
     content:""; position:absolute; top:50%; left:50%; width:100%; height:100%; min-width:44px; min-height:44px; transform:translate(-50%,-50%);
   }
   button.primary,a.primary { min-height:var(--primary-height); margin-block:2px; }
@@ -66,19 +65,13 @@
     height:auto; max-height:none; flex:1; min-height:0;
   }
   .workspace .member-rail .sidebar { flex:1; min-height:0; overflow:auto; }
-  .room-header { padding:0 12px; gap:var(--space-1); }
-  .room-title { flex:1; overflow:hidden; }
-  .room-header:has(.room-rename:not([hidden])) .room-actions { display:none; }
-  .room-header:has(.room-rename:not([hidden])) .room-title { overflow:visible; }
-  .room-rename { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:6px; max-width:none; }
-  .room-rename .hash { display:none; }
-  .room-rename input { width:100%; min-width:0; min-height:36px; padding:6px; font-size:16px; }
-  .room-rename button { min-height:36px; margin-block:0; padding:6px 8px; }
-  .room-rename .form-error { grid-column:1 / -1; }
-  .room-header h1 { font-size:17px; gap:6px; }
-  .room-header .room-name-button { flex:1; min-width:0; max-width:100%; gap:6px; }
-  .room-actions { flex:none; gap:8px; }
-  .room-menu summary { display:flex; align-items:center; justify-content:center; width:36px; height:36px; padding:0; }
+  .room-header { display:grid; grid-template-columns:44px minmax(0,1fr) 44px; padding:0 8px; gap:4px; }
+  .mobile-conversation-back { grid-column:1; grid-row:1; justify-self:center; }
+  .room-title { grid-column:2; grid-row:1; min-width:0; overflow:hidden; }
+  .room-header h1 { justify-content:center; margin:0; font-size:17px; gap:0; }
+  .room-actions { grid-column:3; grid-row:1; margin:0; justify-self:center; }
+  .desktop-panel-close { display:none; }
+  .room-rename input { min-height:44px; }
   .workspace .activity-dialog > .activity-header,.workspace .notification-detail > .activity-header { height:44px; min-height:44px; padding:0 12px; gap:var(--space-1); }
   .workspace .activity-dialog > .activity-header { height:45px; min-height:45px; }
   .workspace .activity-header.detail-header h2 { font-size:16px; }
@@ -90,7 +83,7 @@
   .workspace .agent-overview button { min-height:36px; padding:5px 10px; }
   .workspace #agent-quick-actions button { min-height:36px; padding:5px 10px; }
   .member-platform-account-actions > button { min-height:var(--button-height); }
-  .workspace .agent-controls-toggle { min-height:var(--button-height); min-width:36px; }
+  .workspace .agent-controls-toggle { min-height:44px; min-width:0; padding:8px 0; margin:0; }
   .workspace .agent-tabs { gap:0; justify-content:space-between; padding:0 12px; }
   .workspace .agent-tabs button { min-height:var(--button-height); padding:6px 4px; }
   .member-platform-toolbar { margin-bottom:0; }

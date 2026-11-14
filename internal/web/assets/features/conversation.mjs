@@ -343,12 +343,10 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
   function renderConversation() {
     const direct = roomsUI.isDirect(), type = roomsUI.conversationType(), name = roomsUI.roomName();
     $("conversation").setAttribute("aria-label", `${type}消息`);
-    $("member-rail").setAttribute("aria-label", direct ? "助理详情与会话通知" : "团队成员、通知源与详情");
+    $("member-rail").setAttribute("aria-label", direct ? "助理详情与会话通知" : "房间详情");
     $("member-sidebar").setAttribute("aria-label", direct ? "会话通知" : "成员与房间通知");
-    for (const id of ["conversation-icon", "empty-conversation-icon"]) {
-      if (direct) $(id).replaceChildren(createAssistantIcon(document));
-      else $(id).textContent = "#";
-    }
+    if (direct) $("empty-conversation-icon").replaceChildren(createAssistantIcon(document));
+    else $("empty-conversation-icon").textContent = "#";
     $("policy-empty").textContent = `可以在${direct ? "私信" : "房间"}中告诉 Agent 今后应如何处理。`;
     const recipient = `发送给 ${name || (direct ? "个人助理" : "会话")}`;
     $("message-input").placeholder = recipient;
@@ -356,7 +354,12 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     $("rename-room").title = `修改${type}名称`;
     $("rename-form").setAttribute("aria-label", `修改${type}名称`);
     $("rename-room-name").setAttribute("aria-label", `${type}名称`);
-    $("room-menu-label").setAttribute("aria-label", `${type}操作`);
+    $("room-menu-label").setAttribute("aria-label", direct ? "助理详情" : "房间详情");
+    $("room-detail-name").textContent = name;
+    $("room-title-count").textContent = `（${state.members.length}）`;
+    $("room-title-count").hidden = direct || !state.info;
+    $("room-details").hidden = direct;
+    $("room-members-heading").hidden = direct;
     $("restart-discussion").title = direct ? "重新开始私信，清空消息并重置助理会话" : "重新开始房间讨论";
     $("direct-notifications").hidden = !direct || !state.managed;
     $("direct-notifications").disabled = !state.connected || !workspaceUI.workspaceView;
@@ -390,7 +393,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     settingsUI.renderSettingsNavigation();
     const namedRoom = state.catalog?.rooms.find(room => room.room_instance === state.info?.room_instance);
     $("rename-room").setAttribute("aria-label", namedRoom ? `${namedRoom.name}，修改${roomsUI.conversationType()}名称` : $("room-name").textContent);
-    $("rename-room").disabled = !state.managed || !state.catalogConnected || discussionBusy() || !!state.catalog?.write_error || namedRoom?.status !== "ready" || roomsUI.renameSending;
+    $("rename-room").disabled = roomsUI.isDirect() || !state.managed || !state.catalogConnected || discussionBusy() || !!state.catalog?.write_error || namedRoom?.status !== "ready" || roomsUI.renameSending;
     $("save-room-name").disabled = $("rename-room").disabled || !roomsUI.renameTarget;
     $("rename-room-name").disabled = roomsUI.renameSending;
     $("save-room-name").textContent = roomsUI.renameSending ? "保存中…" : "保存";
@@ -453,8 +456,8 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
 
     $("direct-notifications").addEventListener("click", () => {
       if ($("direct-notifications").disabled) return;
-      notificationsReturn = { view: captureReturnView(env, runtime, { opener: $("room-menu-label") }), panel: layoutUI.captureMemberPanel() };
-      layoutUI.showConversationNotifications(); $("room-menu").open = false;
+      notificationsReturn = { view: captureReturnView(env, runtime, { opener: $("direct-notifications") }), panel: layoutUI.captureMemberPanel() };
+      layoutUI.showConversationNotifications();
       $("activity-dialog").hidden = true;
       layoutUI.expandMembers();
       layoutUI.renderPanels(); notificationsUI.renderNotificationPlatforms(); $("close-conversation-notifications").focus();
@@ -481,8 +484,6 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
 
     $("restart-discussion").addEventListener("click", async () => {
       if ($("restart-discussion").disabled) return;
-      $("room-menu").open = false;
-      $("room-menu-label").focus();
       const info = state.info, operator = state.operator, draft = state.draft, version = runtime.viewVersion;
       if (!draft.restartRequest && !await confirmAction({ title:roomsUI.isDirect() ? "重新开始私信？" : "重新开始房间讨论？", message:roomsUI.isDirect() ? "将停止助理当前的执行，清空消息并重置助理上下文。工作目录中的文件保留。" : "将停止所有 Agent 当前的执行，清空消息并重置 Agent 上下文。成员、角色和工作目录中的文件保留，回合预算不重置。", confirmLabel:"重新开始" })) return;
       if (!currentView(version) || state.draft !== draft || state.operator !== operator || $("restart-discussion").disabled) return;

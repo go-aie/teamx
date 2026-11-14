@@ -41,7 +41,7 @@ test("member settings start collapsed, retain their state while polling and rese
  assert.equal(api.calls.some(c=>c.path==="/v1/models/change"),false);
 });
 
-test("running members can pause from the collapsed header and runtime failures remain visible",async()=>{
+test("running members can pause beside collapsed settings and runtime failures remain visible",async()=>{
  const api=fixture(),member={agent_id:"assistant",membership_id:"member-A",status:"running",runner:{profile:"runtime"},execution:{active:true,paused:false}};
  api.hook=(path,body)=>{
   if(path==="/v1/member/list")return {members:[structuredClone(member)]};
@@ -53,6 +53,8 @@ test("running members can pause from the collapsed header and runtime failures r
  const ui=await launch(api);await openMember(ui);
  assert.equal(ui.el("agent-controls").hidden,true);assert.equal(ui.el("agent-quick-actions").hidden,false);
  assert.equal(ui.el("agent-quick-actions").children[0].textContent,"暂停");
+ await ui.el("toggle-agent-controls").emit("click");assert.equal(ui.el("agent-quick-actions").hidden,true);
+ await ui.el("toggle-agent-controls").emit("click");assert.equal(ui.el("agent-quick-actions").hidden,false);
  await ui.el("agent-quick-actions").children[0].emit("click");await settle();
  assert.equal(api.calls.filter(c=>c.path==="/v1/member/pause").length,1);
  assert.equal(ui.el("agent-controls").hidden,true);assert.equal(ui.el("agent-quick-actions").hidden,true);

@@ -175,28 +175,6 @@
   overflow-wrap:anywhere;
   color:var(--warning);
 }
-.room-menu {
-  position:relative;
-}
-.room-menu summary {
-  cursor:pointer;
-  list-style:none;
-  padding:3px 8px;
-  border-radius:var(--radius-control);
-  color:var(--muted);
-}
-.room-menu summary::-webkit-details-marker {
-  display:none;
-}
-.room-menu summary svg { display:block; width:18px; height:18px; fill:currentColor; }
-.room-menu[open] summary {
-  background:var(--soft);
-}
-.room-menu-options {
-  position:absolute; z-index:10; right:0; top:calc(100% + 8px); min-width:160px;
-}
-.room-menu-options button { display:block; width:100%; padding:12px 16px; text-align:left; }
-
 .create-dialog {
   width:min(480px,calc(100vw - 32px));
 }

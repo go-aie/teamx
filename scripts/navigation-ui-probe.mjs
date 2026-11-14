@@ -49,7 +49,7 @@ try {
     const context=await browser.newContext({viewport:{width,height},isMobile:width<500,hasTouch:width<500});
     const page=await context.newPage();page.setDefaultTimeout(10000);page.on("pageerror",e=>errors.push(e.message));
     await page.goto(origin);await page.locator("#message-32").waitFor();
-    if(await page.locator("#toggle-members").getAttribute("aria-expanded")==="true")await page.locator("#toggle-members").click();
+    if(await page.locator("#room-menu-label").getAttribute("aria-expanded")==="true")await page.locator("#room-menu-label").click();
     await page.locator("#message-input").fill("返回后继续编辑");
     for(const method of ["button","browser","escape"]) {
       await page.locator("#message-30 .avatar").click();
@@ -61,10 +61,10 @@ try {
       check(`${name}: avatar ${method} returns in one step`,!(await page.locator("#conversation").evaluate(el=>el.inert)));
       check(`${name}: draft survives ${method}`,await page.locator("#message-input").inputValue()==="返回后继续编辑");
     }
-    await page.locator("#toggle-members").click();await page.locator("#members .member-summary").first().click();
+    await page.locator("#room-menu-label").click();await page.locator("#members .member-summary").first().click();
     await page.locator("#close-activity").click();await page.waitForFunction(()=>!document.querySelector("#activity-dialog").open && !document.querySelector("#member-list-view").hidden);
     check(`${name}: list entry returns to the list`,!(await page.locator("#member-rail").evaluate(el=>el.inert)));
-    if(width<500)await page.locator("#close-mobile-members").click();else await page.locator("#toggle-members").click();
+    if(width<500)await page.locator("#close-mobile-members").click();else await page.locator("#room-menu-label").click();
     await page.locator("#message-31 .avatar").click();await page.locator("#notification-title").filter({hasText:"通知来源诊断"}).waitFor();
     await page.locator("#close-notification").click();await page.waitForFunction(()=>document.querySelector("#member-rail").inert);
     check(`${name}: history diagnostic returns to conversation`,true);
@@ -90,15 +90,16 @@ try {
     const context=await browser.newContext({viewport:{width,height:844},isMobile:width<500,hasTouch:width<500});
     const page=await context.newPage();page.setDefaultTimeout(10000);page.on("pageerror",e=>errors.push(e.message));
     await page.goto(origin);await page.locator("#message-32").waitFor();
-    if(!(await page.locator("#member-rail").evaluate(el=>el.inert))){await page.locator("#room-menu-label").click();await page.locator("#direct-details").click();}
+    if(!(await page.locator("#member-rail").evaluate(el=>el.inert))){await page.locator("#room-menu-label").click();}
     for(const method of ["button","browser","escape"]) {
-      await page.locator("#room-menu-label").click();await page.locator("#direct-notifications").click();
+      await page.locator("#room-menu-label").click();await page.locator("#toggle-agent-controls").click();await page.locator("#direct-notifications").click();
       await page.locator("#close-conversation-notifications").waitFor();
       if(method==="button")await page.locator("#close-conversation-notifications").click();
       else if(method==="escape")await page.keyboard.press("Escape");
       else await page.evaluate(()=>history.back());
-      await page.waitForFunction(()=>document.querySelector("#member-rail").inert);
-      check(`direct ${width}px: notifications ${method} returns to conversation`,!(await page.locator("#activity-dialog").evaluate(el=>el.open)));
+      await page.locator("#direct-notifications").waitFor({state:"visible"});
+      check(`direct ${width}px: notifications ${method} returns to assistant settings`,await page.locator("#activity-dialog").evaluate(el=>el.open));
+      await page.locator("#close-activity").click();await page.waitForFunction(()=>document.querySelector("#member-rail").inert);
     }
     await context.close();
   }

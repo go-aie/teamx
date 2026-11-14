@@ -616,7 +616,6 @@ textarea::placeholder {
 .compose .reply-context { grid-column:1 / -1; grid-row:1; margin:0 0 4px; }
 .compose > :is(.workspace-summary,.form-error,.text-button,.sr-only) { grid-column:1 / -1; }
 .compose .workspace-summary { padding:6px 10px; }
-.room-menu-options .connection { margin:0 6px 4px; padding:8px 4px; border-bottom:1px solid var(--line); font-size:var(--font-small); line-height:1.6; }
 /* Sync status overlays the timeline, so retries never resize or scroll it. */
 #sync-error { position:absolute; z-index:6; top:calc(var(--workspace-header-height,72px) + 8px); left:16px; right:16px; margin:0; border:1px solid var(--line); border-radius:var(--radius-control); box-shadow:var(--shadow-menu); }
 .small-dot {

@@ -51,6 +51,7 @@
 #activity-dialog > #platforms-member-view { padding-top:12px; }
 #platforms-member-view > .member-notification-sources { margin:0; padding:0; border-bottom:0; background:transparent; }
 .member-notification-sources .member-platform-row { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:6px 12px; padding:12px 0; border-bottom:1px solid var(--line); }
+.direct-conversation #member-notification-platforms > .member-platform-row:last-child { border-bottom:0; }
 .member-platform-row .notification-source { flex:1; width:0; max-width:100%; padding:0; min-height:44px; }
 #member-notification-platforms[data-stacked="true"] .notification-source { flex-basis:100%; }
 /* Use the widest platform title to choose one layout; summaries may truncate. */

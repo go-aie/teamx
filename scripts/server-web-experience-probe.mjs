@@ -81,6 +81,13 @@ try {
   for (const [name,width,height,mobile] of [["desktop",1440,900,false],["phone",390,844,true],["small-phone",320,640,true],["landscape",844,390,true]]) {
     const context=await browser.newContext({viewport:{width,height},isMobile:mobile,hasTouch:mobile});
     const page=await context.newPage(); page.on("pageerror",error=>errors.push(error.message));
+    const openUserMenu = async () => {
+      if (mobile && !(await page.locator("#user-menu-toggle").isVisible())) await page.locator("#mobile-back-to-rooms").click();
+      await page.locator("#user-menu-toggle").click();
+    };
+    const returnToConversation = async () => {
+      if (mobile && await page.locator("#room-nav").isVisible()) await page.getByRole("button",{name:/^私信：个人助理/}).click();
+    };
     await page.goto(origin); await page.waitForFunction(()=>document.querySelector("#connection").textContent.includes("已连接"));
     const fits = () => page.evaluate(() => {
       const send=document.querySelector("#send").getBoundingClientRect();
@@ -101,13 +108,13 @@ try {
       await page.locator("#mobile-back-to-rooms").click();
       await page.getByRole("button",{name:/^私信：个人助理/}).click();
       await page.waitForFunction(()=>document.querySelector("#room-name").textContent==="个人助理");
-      await page.locator("#room-menu-label").click(); await page.locator("#direct-details").click(); await page.locator("#agent-tab-inbox").click();
+      await page.locator("#room-menu-label").click(); await page.locator("#agent-tab-inbox").click();
       await page.locator("#inbox-entries .activity-section").first().waitFor();
       check(`${name}: assistant Inbox reachable`,await page.locator("#inbox-entries").isVisible());
       await page.locator("#close-activity").click();
       check(`${name}: returns to composer`,await fits());
     }
-    await page.locator("#user-menu-toggle").click();
+    await openUserMenu();
     await page.locator("#open-settings").click();
     await page.locator("#settings-tab-platforms").click(); await page.locator("#connection-new").click();
     await page.locator("#connection-name").fill("手机连接表单");
@@ -115,10 +122,10 @@ try {
     check(`${name}: platform form stays within screen`,await page.locator("#connection-url").evaluate(el=>{
       const r=el.getBoundingClientRect();return r.left>=0 && r.right<=innerWidth;
     }));
-    await page.goBack(); await page.locator("#settings-dialog").waitFor({state:"hidden"});
+    await page.goBack(); await page.locator("#settings-dialog").waitFor({state:"hidden"}); await returnToConversation();
     check(`${name}: browser Back returns to conversation`,await page.locator("#compose").isVisible());
     await page.screenshot({path:path.join(out,`${name}.png`)});
-    await page.locator("#user-menu-toggle").click(); await page.locator("#open-settings").click(); await page.locator("#settings-tab-models").click();
+    await openUserMenu(); await page.locator("#open-settings").click(); await page.locator("#settings-tab-models").click();
     await page.locator(".model-row-main").first().waitFor();
     check(`${name}: models use the platform heading and add control`,await page.evaluate(()=>{
       const model=document.querySelector("#model-list-view .platforms-heading h3"),platform=document.querySelector("#platforms-list-view .platforms-heading h3");
@@ -166,7 +173,7 @@ try {
     await page.locator("#catalog-model-id").fill("edited-model");await page.locator("#catalog-api-key").fill("never-store-model-key");
     await page.locator("#model-edit-form summary").click();await page.locator("#catalog-developer-role").selectOption("false");
     await page.locator("#catalog-context-window").fill("128000");
-    await page.reload();await page.locator("#user-menu-toggle").click();await page.locator("#open-settings").click();await page.locator("#settings-tab-models").click();
+    await page.reload();await openUserMenu();await page.locator("#open-settings").click();await page.locator("#settings-tab-models").click();
     await page.locator("#model-edit-form").waitFor();
     check(`${name}: model draft and tri-state restored without Key`,await page.locator("#catalog-model-id").inputValue()==="edited-model" && await page.locator("#catalog-developer-role").inputValue()==="false" && await page.locator("#catalog-api-key").inputValue()==="");
     check(`${name}: model Key absent from browser storage`,await page.evaluate(()=>!JSON.stringify({...sessionStorage,...localStorage}).includes("never-store-model-key")));
@@ -180,9 +187,9 @@ try {
     check(`${name}: deletion replacement remains reachable`,await page.locator("#model-delete-replacement").evaluate(el=>{const r=el.getBoundingClientRect();return r.left>=0 && r.right<=innerWidth;}));
     await page.locator("#model-delete-confirm").getByRole("button",{name:"取消",exact:true}).click();
     check(`${name}: cancelling deletion returns to editor`,await page.locator("#model-edit-form").isVisible() && !(await page.locator("#model-list-view").isVisible()));
-    await page.locator("#close-settings").click();
+    await page.locator("#close-settings").click(); await returnToConversation();
     if(name === "phone") {
-      await page.locator("#room-menu-label").click(); await page.locator("#direct-details").click();
+      await page.locator("#room-menu-label").click();
       check("member settings start collapsed with status visible",!(await page.locator("#agent-controls").isVisible()) && await page.locator("#agent-status").isVisible());
       await page.locator("#toggle-agent-controls").click();await page.locator("#member-model-selection").waitFor();
       await page.locator("#member-model-selection").selectOption("model-b");

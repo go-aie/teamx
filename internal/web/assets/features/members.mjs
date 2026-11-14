@@ -8,25 +8,40 @@ import { captureReturnView } from "../view-return.mjs";
 // Member inspection, private activity, CLI tools and platform summaries.
 export function createMembers({ env, runtime, notificationsUI, workspaceUI, onboardingUI, inboxUI, roomsUI, layoutUI, policyUI, conversationUI, connectionsUI, settingsUI }) {
   const { document, window, Option, ResizeObserver, request } = env;
-  const { state, $, notice, rpc, currentView, refresh, discussionBusy } = runtime;
+  const { state, $, notice, rpc, currentView, refresh, discussionBusy, storage } = runtime;
 
   const memberBusy = new Set();
   const stopRequests = new Map();
+  const memberListKey = "teamx.member-list-expanded";
+  let memberListExpanded = false;
+  try { memberListExpanded = JSON.parse(storage?.getItem(memberListKey)) === true; } catch { /* Start with compact avatars. */ }
 
-  let nameEditor=null,nameSaving=false;
+  function renderMemberListToggle() {
+    const button = $("toggle-member-list"), label = `${memberListExpanded ? "收起" : "展开"}成员列表`;
+    button.setAttribute("aria-expanded", String(memberListExpanded));
+    button.setAttribute("aria-label", label); button.title = label;
+    $("members").classList.toggle("members-compact", !memberListExpanded);
+  }
+
+  let nameEditor=null,nameSaving=false,nameEditing=false;
   let memberToolsView = null;
   let memberModelStatus = {};
 
   function renderControlsToggle() {
     const expanded = !$("agent-controls").hidden, button = $("toggle-agent-controls");
     const modelError = memberModelStatus.state === "error", pending = memberModelStatus.state === "busy";
-    const runtimeError = !!selectedAgent()?.execution?.error;
-    const label = `${expanded ? "收起" : "展开"}成员设置${modelError ? "，查看模型异常" : runtimeError ? "，查看运行异常" : ""}`;
+    const member = selectedAgent(), runtimeError = !!member?.execution?.error;
+    const name = roomsUI.isDirect() ? "助理设置" : "成员设置";
+    $("agent-settings-label").textContent = name;
+    const label = `${expanded ? "收起" : "展开"}${name}${modelError ? "，查看模型异常" : runtimeError ? "，查看运行异常" : ""}`;
     button.setAttribute("aria-expanded", String(expanded)); button.setAttribute("aria-label", label);
     button.title = `${label}${(modelError || pending) && memberModelStatus.detail ? `；${memberModelStatus.detail}` : ""}`;
     button.dataset.state = modelError || runtimeError ? "error" : pending ? "busy" : "ready";
     $("agent-model-alert").textContent = modelError ? "模型异常" : runtimeError ? "运行异常" : pending ? "切换中" : "";
     $("agent-model-alert").hidden = !$("agent-model-alert").textContent;
+    const quickActions = $("agent-quick-actions");
+    quickActions.hidden = expanded || !member?.execution || !(member.execution.active || member.status === "running") || !!member.execution.paused;
+    if (!quickActions.hidden) renderMemberActions(member, quickActions, true);
   }
 
   function setControlsExpanded(expanded) {
@@ -337,7 +352,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     const panel = $("activity-dialog");
     if (panel.open && !state.members.some(member => member.membership_id === activityMember?.membership_id)) panel.close();
     notificationsUI.renderContextViews();
-    $("close-activity").hidden = roomsUI.isDirect() && !compactViewport(window) && !activityReturn?.fromConversation && !activityReturn?.previous;
+    $("close-activity").hidden = false;
     $("close-activity").setAttribute("aria-label", "返回");
     $("close-activity").title = "返回";
     const selected=selectedAgent();
@@ -345,20 +360,24 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     $("agent-tabs").hidden = false;
     $("agent-tab-platforms").hidden = !state.managed;
     const member = selectedAgent();
-    $("agent-name-form").hidden=!state.managed || !member;
-    if (!member || !panel.open) return;
+    if (!member || !panel.open) { $("agent-name-row").hidden=true;$("agent-name-form").hidden=true;return; }
     const nameKey=JSON.stringify([state.info,member.agent_id,member.membership_id]);
-    if(!nameEditor || nameEditor.key!==nameKey){nameEditor={key:nameKey,expected:agentName(member)};$("agent-display-name").value=agentName(member);notice("agent-name-feedback","");}
+    if(!nameEditor || nameEditor.key!==nameKey){nameEditor={key:nameKey,expected:agentName(member)};nameEditing=false;$("agent-display-name").value=agentName(member);notice("agent-name-feedback","");}
     else if(!nameSaving && $("agent-display-name").value===nameEditor.expected){nameEditor.expected=agentName(member);$("agent-display-name").value=agentName(member);}
-    $("agent-name-save").disabled=nameSaving;
+    $("agent-name-row").hidden=!state.managed || nameEditing;
+    $("agent-name-form").hidden=!state.managed || !nameEditing;
+    $("agent-name-label").textContent=roomsUI.isDirect() ? "私信名称" : "成员名称";
+    $("agent-name-summary").textContent=agentName(member);
+    $("edit-agent-name").setAttribute("aria-label",`修改${roomsUI.isDirect() ? "私信" : "成员"}名称`);
+    $("edit-agent-name").setAttribute("aria-expanded",String(nameEditing));
+    $("edit-agent-name").disabled=nameSaving;
+    $("agent-name-save").disabled=nameSaving || !nameEditing;
+    $("agent-name-cancel").disabled=nameSaving;
     $("agent-display-name").disabled=nameSaving;
     $("agent-status").textContent = member.execution?.active ? "运行中" : statusNames[member.status] || member.status;
     $("agent-status").classList.toggle("running", !!member.execution?.active);
     $("agent-status").classList.toggle("failed", /failed|blocked|unavailable|interrupted/.test(member.status));
     renderMemberActions(member, $("agent-actions"));
-    const quickActions = $("agent-quick-actions");
-    quickActions.hidden = !member.execution || !(member.execution.active || member.status === "running") || !!member.execution.paused;
-    if (!quickActions.hidden) renderMemberActions(member, quickActions, true);
     renderControlsToggle();
     const execution = member.execution;
     const reset = execution?.session_reset_required || member.status === "backend_blocked";
@@ -517,10 +536,12 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
   }
 
   function renderMembers() {
+    renderMemberListToggle();
     syncDirectDetail();
     renderActivityControls();
     renderExecutionHint();
     $("member-count").textContent = state.members.length;
+    $("room-title-count").textContent = `（${state.members.length}）`;
     $("member-empty").hidden = state.members.length > 0;
     // Keep focus and controls stable when polling reports no visible changes.
     const signature = JSON.stringify(state.members) + [...memberBusy].join(",") + state.connected + discussionBusy();
@@ -536,7 +557,9 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       el.querySelector(".member-name").textContent = agentName(member);
       const summary = el.querySelector(".member-summary");
       summary.dataset.activityMember = member.membership_id;
-      summary.setAttribute("aria-label", `查看 ${agentName(member)} 的详情`);
+      summary.setAttribute("aria-label", `查看 ${agentName(member)} 的详情，${label}${execution?.error ? "，运行异常" : ""}`);
+      summary.title = `${agentName(member)} · ${label}`;
+      summary.dataset.state = execution?.error || /failed|blocked|unavailable|interrupted/.test(member.status) ? "error" : running ? "running" : "idle";
       summary.disabled = !state.connected;
       summary.addEventListener("click", () => openMemberActivity(member, summary));
       renderAvatar(document, el.querySelector(".avatar"), {kind:"agent", id:member.agent_id, name:agentName(member), direct:roomsUI.isDirect(), defaultAssistant:roomsUI.isDefaultAssistant()});
@@ -742,16 +765,38 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
   }
 
   function mount() {
+    renderMemberListToggle();
+    $("toggle-member-list").addEventListener("click", () => {
+      memberListExpanded = !memberListExpanded;
+      try { storage?.setItem(memberListKey, JSON.stringify(memberListExpanded)); } catch { /* Keep this page's choice in memory. */ }
+      renderMemberListToggle();
+    });
+    $("edit-agent-name").addEventListener("click",()=>{
+      const member=selectedAgent();if(!state.managed || !member || nameSaving)return;
+      nameEditor={key:JSON.stringify([state.info,member.agent_id,member.membership_id]),expected:agentName(member)};
+      nameEditing=true;$("agent-display-name").value=agentName(member);notice("agent-name-feedback","");
+      renderActivityControls();$("agent-display-name").focus();
+    });
+    const cancelNameEdit=()=>{
+      if(nameSaving)return;
+      nameEditing=false;nameEditor=null;renderActivityControls();$("edit-agent-name").focus();
+    };
+    $("agent-name-cancel").addEventListener("click",cancelNameEdit);
+    $("agent-name-form").addEventListener("keydown",event=>{
+      if(event.key!=="Escape")return;
+      event.stopPropagation?.();if(event.isComposing)return;
+      event.preventDefault();cancelNameEdit();
+    });
     $("agent-name-form").addEventListener("submit",async event=>{
-      event.preventDefault();const member=selectedAgent();if(!member || nameSaving || !nameEditor)return;
+      event.preventDefault();const member=selectedAgent();if(!member || nameSaving || !nameEditor || !nameEditing)return;
       const editor=nameEditor,info={...state.info},name=$("agent-display-name").value.trim();
       if(!name || /[\r\n\t]/.test(name) || new TextEncoder().encode(name).length>256){notice("agent-name-feedback","名称不能为空，且不能超过 256 字节或包含换行。");return;}
       nameSaving=true;renderActivityControls();notice("agent-name-feedback","");
       try{
         await request("/v1/member/name",{service_epoch:state.catalog.service_epoch,room_id:info.room_id,room_instance:info.room_instance,agent_id:member.agent_id,membership_id:member.membership_id,agent_name:name,expected_name:editor.expected,caller:{kind:"human",id:state.operator}});
-        if(nameEditor===editor){editor.expected=name;notice("agent-name-feedback","已保存");}
+        if(nameEditor===editor){editor.expected=name;nameEditing=false;notice("agent-name-feedback","");}
       }catch(error){if(nameEditor===editor)notice("agent-name-feedback",error.code==="conflict" ? "名称已在其他页面修改，请关闭详情后重新打开。" : `保存未确认，请核对当前名称后再修改。${error.message}`);}
-      finally{nameSaving=false;await refresh();renderActivityControls();}
+      finally{nameSaving=false;await refresh();renderActivityControls();if(nameEditor===editor && !nameEditing && $("activity-dialog").open)$("edit-agent-name").focus();}
     });
     if(typeof ResizeObserver!=="undefined")new ResizeObserver(layoutMemberPlatforms).observe($("member-notification-platforms"));
 
@@ -810,13 +855,13 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
             if (navigation === activityNavigation && $("activity-dialog").open && selectedAgent()?.membership_id === back.previous.member.membership_id && agentTab === back.previous.tab) back.view.restore();
           });
         }
-        back.view.restore($(roomsUI.isDirect() ? "room-menu-label" : "toggle-members"));
+        back.view.restore($("room-menu-label"));
         activityFocus = null;
         return;
       }
       const opener = !layoutUI.membersExpanded ? null : activityFocus?.element?.isConnected ? activityFocus.element
         : [...document.querySelectorAll("[data-activity-member]")].find(button => button.dataset.activityMember === activityFocus?.membership);
-      if (!$("notification-detail").open) (opener || $(roomsUI.isDirect() ? "room-menu-label" : "toggle-members")).focus();
+      if (!$("notification-detail").open) (opener || $("room-menu-label")).focus();
       activityFocus = null;
     });
 

@@ -57,11 +57,14 @@
 #activity-dialog > .activity-header { flex-wrap:nowrap; }
 .agent-heading { flex:1; min-width:0; }
 .agent-heading h2 { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.agent-heading .member-status { margin-top:2px; font-size:11px; line-height:16px; }
-#agent-quick-actions { flex:none; margin:0; }
-.agent-controls-toggle { flex:none; gap:4px; min-width:44px; min-height:44px; padding:8px; }
-.agent-controls-toggle svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
-.agent-controls-toggle[aria-expanded="true"] svg { transform:rotate(180deg); }
+.agent-settings-heading { display:flex; flex:none; flex-wrap:wrap; align-items:center; gap:0 8px; padding:0 var(--panel-space); border-bottom:1px solid var(--line); }
+#agent-quick-actions { flex:none; margin:0 0 0 auto; padding-block:4px; }
+.agent-controls-toggle { flex:1 1 180px; justify-content:space-between; gap:12px; min-width:0; min-height:52px; padding:10px 0; margin:0; }
+#agent-settings-label { flex:none; color:var(--text); }
+.agent-settings-summary { display:flex; flex:1; min-width:0; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:4px 8px; }
+.agent-controls-toggle > svg { width:18px; height:18px; transition:transform var(--motion-fast); }
+.agent-controls-toggle[aria-expanded="true"] > svg { transform:rotate(180deg); }
+@media(prefers-reduced-motion:reduce) { .agent-controls-toggle > svg { transition:none; } }
 .agent-controls-toggle[data-state="error"],.agent-controls-toggle[data-state="error"]:hover:not(:disabled) { color:var(--danger); }
 .agent-controls-toggle[data-state="busy"] { color:var(--accent); }
 #agent-model-alert { font-size:var(--font-small); white-space:nowrap; }
@@ -276,3 +279,5 @@
 .agent-name-form label { display:block; margin-bottom:6px; color:var(--muted); font-size:var(--font-small); }
 .agent-name-form .quiet { font-size:var(--font-small); line-height:1.6; }
 .agent-name-form .form-actions { margin-top:8px; }
+.agent-name-row { padding:8px var(--panel-space); border-bottom:1px solid var(--line); }
+#agent-name-summary { min-width:0; overflow-wrap:anywhere; text-align:right; }

@@ -465,7 +465,7 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
   let renameTarget = null, renameSending = false;
 
   function closeRename(focus = true) {
-    renameTarget = null; $("rename-form").hidden = true; $("room-heading").hidden = false;
+    renameTarget = null; $("rename-form").hidden = true; $("room-name-row").hidden = false;
     if (focus) $("rename-room").focus();
   }
 
@@ -551,7 +551,7 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
       renameTarget = { room_id: room.room_id, room_instance: room.room_instance, expected_name: room.name,
         service_epoch: state.catalog.service_epoch, caller: { kind: "human", id: state.operator } };
       $("rename-room-name").value = room.name; notice("rename-error", "");
-      $("room-heading").hidden = true; $("rename-form").hidden = false;
+      $("room-name-row").hidden = true; $("rename-form").hidden = false;
       conversationUI.composerState(); $("rename-room-name").focus();
     });
 

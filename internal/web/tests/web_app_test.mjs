@@ -304,12 +304,14 @@ test("rename updates title, navigation and reload while preserving identity, his
   await ui.draft("Keep this draft");
   await ui.el("rename-room").emit("click");
   assert.equal(ui.el("rename-form").hidden, false);
-  assert.equal(ui.el("room-heading").hidden, true);
+  assert.equal(ui.el("room-name-row").hidden, true);
+  assert.equal(ui.el("room-heading").hidden, false);
   assert.equal(ui.el("rename-room-name").value, "A");
   ui.el("rename-room-name").value = "  新名称  ";
   await ui.el("rename-form").emit("submit");
   assert.equal(ui.el("rename-form").hidden, true);
   assert.equal(ui.el("room-name").textContent, "新名称");
+  assert.equal(ui.el("room-detail-name").textContent, "新名称");
   assert.equal(ui.el("message-input").placeholder, "发送给 新名称");
   assert.equal(ui.el("message-input-label").textContent, "发送给 新名称");
   assert.equal(ui.el("rename-room").attributes["aria-label"], "新名称，修改房间名称");
@@ -323,7 +325,7 @@ test("rename updates title, navigation and reload while preserving identity, his
   assert.equal(api.calls.filter(c => c.path === "/v1/rooms/rename").length, 1);
 });
 
-test("inline rename cancels with Escape or the cancel button without saving", async () => {
+test("room detail rename cancels with Escape or the cancel button without saving", async () => {
   const api = server([makeRoom("A")]), ui = await launch(api);
   await ui.el("rename-room").emit("click");
   ui.el("rename-room-name").value = "Unsaved";
@@ -331,7 +333,7 @@ test("inline rename cancels with Escape or the cancel button without saving", as
   assert.equal(ui.el("rename-form").hidden, false);
   await ui.el("rename-form").emit("keydown", { key: "Escape" });
   assert.equal(ui.el("rename-form").hidden, true);
-  assert.equal(ui.el("room-heading").hidden, false);
+  assert.equal(ui.el("room-name-row").hidden, false);
   assert.equal(ui.el("room-name").textContent, "A");
   await ui.el("rename-room").emit("click");
   assert.equal(ui.el("rename-room-name").value, "A");
@@ -390,21 +392,21 @@ test("lost rename response is read back without replay and late completion canno
   assert.equal(ui.el("rename-form").hidden, true);
 });
 
-test("team member header toggle collapses the whole panel and retains the choice across reloads", async () => {
+test("conversation details toggle collapses the whole panel and retains the choice across reloads", async () => {
   const api = server([makeRoom("A")]), ui = await launch(api);
-  const toggle = ui.el("toggle-members"), rail = ui.el("member-rail");
+  const toggle = ui.el("room-menu-label"), rail = ui.el("member-rail");
   assert.equal(toggle.attributes["aria-expanded"], "true"); assert.equal(rail.inert, false);
   const calls = api.calls.length;
   await toggle.emit("click");
   assert.equal(toggle.attributes["aria-expanded"], "false");
-  assert.equal(toggle.attributes["aria-label"], "展开团队成员"); assert.equal(rail.inert, true);
+  assert.equal(toggle.attributes["aria-label"], "房间详情"); assert.equal(rail.inert, true);
   assert.equal(rail.attributes["aria-hidden"], "true");
   assert.equal(api.calls.length, calls);
   const reload = await launch(api, ui.saved);
-  assert.equal(reload.el("toggle-members").attributes["aria-expanded"], "false");
+  assert.equal(reload.el("room-menu-label").attributes["aria-expanded"], "false");
   assert.equal(reload.el("member-rail").inert, true);
-  await reload.el("toggle-members").emit("click");
-  assert.equal(reload.el("toggle-members").attributes["aria-expanded"], "true");
+  await reload.el("room-menu-label").emit("click");
+  assert.equal(reload.el("room-menu-label").attributes["aria-expanded"], "true");
   assert.equal(reload.el("member-rail").inert, false);
   assert.equal(reload.el("toggle-rooms").attributes["aria-expanded"], "true");
 });
@@ -953,7 +955,7 @@ test("mobile list, details and notifications reset dwell immediately; visual vie
   await ui.el("mobile-back-to-rooms").emit("click");await ui.clock.advance(1000);
   assert.equal(mentionHighlighted(ui,1),true);
   await ui.select("A");await visibleMessages(ui,[1]);await ui.clock.advance(600);
-  await ui.el("toggle-members").emit("click");await ui.clock.advance(1000);
+  await ui.el("room-menu-label").emit("click");await ui.clock.advance(1000);
   assert.equal(mentionHighlighted(ui,1),true);
   await ui.el("close-mobile-members").emit("click");await ui.clock.advance(600);
   await ui.el("direct-notifications").emit("click");await ui.clock.advance(1000);
@@ -1065,7 +1067,7 @@ test("member list and activity details share the right sidebar, with back, colla
       return structuredClone({ member, current_output: { result: { events: [{ seq: 1, kind: "text", text: member.agent_id }] } } });
     }
   };
-  const ui = await launch(api), toggle = ui.el("toggle-members"), panel = ui.el("activity-dialog");
+  const ui = await launch(api), toggle = ui.el("room-menu-label"), panel = ui.el("activity-dialog");
   const list = ui.el("member-list-view");
   const reads = () => api.calls.filter(call => call.path === "/v1/member/activity");
   const open = async () => {
@@ -2141,7 +2143,7 @@ test("GitLab message author and keyboard avatar open notification details and cl
   const reads = api.calls.filter(c => c.path === "/v1/member/activity").length;
   await ui.refresh(); assert.equal(api.calls.filter(c => c.path === "/v1/member/activity").length, reads);
   await ui.el("close-notification").emit("click");
-  await ui.el("toggle-members").emit("click");
+  await ui.el("room-menu-label").emit("click");
   await msg.querySelector(".avatar").emit("keydown", { key: "Enter" });
   assert.equal(ui.el("notification-detail").open, true); assert.equal(ui.el("member-rail").inert, false);
   await ui.el("close-notification").emit("click");
@@ -3623,15 +3625,16 @@ test("direct conversations prefer the exact default, keep the inspector stable, 
   assert.equal(directRows(ui).length,1);assert.equal(ui.el("room-list").children.length,2);
   assert.equal(directRows(ui)[0].children.length,1);
   assert.equal(ui.el("room-list").children[1].children.length,2);
-  assert.equal(ui.el("activity-dialog").open,true);assert.equal(ui.el("close-activity").hidden,true);
+  assert.equal(ui.el("activity-dialog").open,true);assert.equal(ui.el("close-activity").hidden,false);
   assert.equal(ui.el("activity-title").textContent,"个人助理");
   assert.equal(ui.el("members").children[0].querySelector(".avatar").children[0].getAttribute("class"),"assistant-icon");
-  assert.equal(ui.el("direct-status"),undefined);assert.equal(ui.el("toggle-members").hidden,true);
-  assert.equal(ui.el("direct-details").hidden,false);assert.equal(ui.el("direct-details").textContent,"收起助理详情");
-  ui.el("room-menu").open=true;await ui.el("direct-details").emit("click");
-  assert.equal(ui.el("activity-dialog").open,false);assert.equal(ui.el("room-menu").open,false);
-  assert.equal(ui.el("direct-details").textContent,"助理详情");
-  await ui.el("direct-details").emit("click");assert.equal(ui.el("activity-dialog").open,true);
+  assert.equal(ui.el("direct-status"),undefined);assert.equal(ui.el("room-menu-label").hidden,false);
+  assert.equal(ui.el("room-menu-label").getAttribute("aria-label"),"助理详情");assert.equal(ui.el("room-title-count").hidden,true);
+  assert.equal(ui.el("conversation-settings").parentElement,ui.el("platforms-member-view"));
+  await ui.el("room-menu-label").emit("click");
+  assert.equal(ui.el("activity-dialog").open,false);assert.equal(ui.el("room-menu-label").getAttribute("aria-expanded"),"false");
+  assert.equal(ui.el("room-menu-label").getAttribute("aria-label"),"助理详情");
+  await ui.el("room-menu-label").emit("click");assert.equal(ui.el("activity-dialog").open,true);
   assert.equal(ui.el("agent-tab-platforms").getAttribute("aria-selected"),"true");
   ui.el("platforms-member-view").scrollTop=123;
   const reads=api.calls.filter(call=>call.path.startsWith("/v1/tools/bindings?")).length;
@@ -3641,14 +3644,15 @@ test("direct conversations prefer the exact default, keep the inspector stable, 
   await ui.draft("DM draft");await ui.select("Team");assert.equal(ui.el("activity-dialog").open,false);
   assert.equal(ui.el("message-input").placeholder,"发送给 Team");
   assert.equal(ui.el("message-input-label").textContent,"发送给 Team");
-  assert.equal(ui.el("toggle-members").hidden,false);assert.equal(ui.el("direct-details").hidden,true);
+  assert.equal(ui.el("room-menu-label").getAttribute("aria-label"),"房间详情");assert.equal(ui.el("room-title-count").hidden,false);
+  assert.equal(ui.el("conversation-settings").parentElement,ui.el("member-sidebar"));
   assert.equal(ui.el("member-list-view").hidden,false);await ui.draft("Room draft");
   await ui.select("个人助理");assert.equal(ui.el("message-input").value,"DM draft");
   await ui.el("direct-notifications").emit("click");assert.equal(ui.el("member-list-view").hidden,false);
   assert.equal(ui.el("activity-dialog").hidden,true);await ui.el("close-conversation-notifications").emit("click");
   assert.equal(ui.el("activity-dialog").hidden,false);assert.equal(ui.el("member-list-view").hidden,true);
   ui.window.innerWidth=390;await ui.window.emit("resize");assert.equal(ui.el("member-rail").inert,true);
-  await ui.el("direct-details").emit("click");assert.equal(ui.el("activity-dialog").open,true);
+  await ui.el("room-menu-label").emit("click");assert.equal(ui.el("activity-dialog").open,true);
   await ui.el("close-activity").emit("click");await ui.refresh();assert.equal(ui.el("member-rail").inert,true);
   assert.equal(ui.document.activeElement,ui.el("room-menu-label"));
   const saved=new Map([["teamx.selected-room",JSON.stringify(room)]]),reloaded=await launch(api,saved);

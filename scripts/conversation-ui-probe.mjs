@@ -62,10 +62,11 @@ try {
     await page.locator("#message-input").fill("保留草稿");
     check(`${name}: internal owner is absent from composer`,!(await page.locator("#compose").textContent()).includes("owner_"));
     check(`${name}: no separate connection footer`,await page.locator(".room-footer").count()===0);
-    await page.locator("#room-menu-label").click();
+    if(await page.locator("#room-menu-label").getAttribute("aria-expanded")==="false")await page.locator("#room-menu-label").click();
+    await page.locator("#toggle-agent-controls").click();
     await page.screenshot({path:path.join(out,`${name}-conversation.png`)});
-    check(`${name}: connection status available in menu`,await page.locator("#connection").isVisible());
-    await page.locator("#room-menu-label").click();
+    check(`${name}: healthy connection status stays out of details`,!await page.locator("#connection").isVisible());
+    await page.locator("#close-activity").click();await page.waitForFunction(()=>document.querySelector("#member-rail").inert);
     const geometry=()=>page.locator("#timeline").evaluate(el=>({top:el.getBoundingClientRect().top,height:el.clientHeight,scroll:el.scrollTop}));
     const before=await geometry(), beforeBusy=busyReads;
     busy=true;
@@ -91,8 +92,8 @@ try {
     await context.setOffline(false);await page.locator("#send:not([disabled])").waitFor();
     check(`${name}: online recovery clears the warning`,!await page.locator("#sync-error").isVisible());
     check(`${name}: no horizontal overflow`,await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
-    check(`${name}: direct header has no detail icon or repeated member status`,!await page.locator("#toggle-members").isVisible() && await page.locator("#direct-status").count()===0);
-    if(mobile){await page.locator("#room-menu-label").click();await page.locator("#direct-details").click();}
+    check(`${name}: direct header uses one details entry without repeated member status`,await page.locator(".room-actions button:visible").count()===1 && await page.locator("#direct-status").count()===0);
+    await page.locator("#room-menu-label").click();await page.locator("#toggle-agent-controls").click();
     await page.locator("#member-model-selection").waitFor();
     check(`${name}: default model has a readable label`,(await page.locator("#member-model-selection option").first().textContent())==="跟随默认 · 日常");
     check(`${name}: model uses shared select appearance`,await page.locator("#member-model-selection").evaluate(el=>el.classList.contains("field-control") && getComputedStyle(el).backgroundImage!=="none"));

@@ -174,7 +174,6 @@ export async function createApp(overrides = {}) {
     viewVersion++;
     interactionsUI.resetPlatformInteractions();
     membersUI.resetActivity(); layoutUI.hideConversationNotifications();
-    $("room-menu").open = false;
     state.info = info; state.operator = operator; state.connected = false;
     syncFailureSince = null; notice("sync-error", "");
     notice("notification-next-step", "");
