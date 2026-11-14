@@ -65,6 +65,7 @@ type roomRuntimeSummary struct {
 	RuntimeStatus      string              `json:"runtime_status"`
 	Service            *ServiceInfo        `json:"service,omitempty"`
 	RuntimeError       string              `json:"runtime_error,omitempty"`
+	HumanRead          humanReadSummary    `json:"human_read"`
 }
 
 type roomMessagePreview struct {
@@ -793,8 +794,9 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			// Public message time is separate from snapshot writes such as read
 			// cursor updates. Derive it for inactive rooms and existing data too.
-			var snapshot RoomSnapshot
-			if err := readSnapshot(filepath.Join(m.roomDir(e.RoomID), "room.json"), &snapshot, maxRoomFileBytes); err == nil &&
+			snapshot, snapshotErr, reading := readHumanReadCatalog(m.roomDir(e.RoomID), e.RoomIdentity, requestOperator(r), humanOperator())
+			summary.HumanRead = reading
+			if snapshotErr == nil &&
 				snapshot.RoomIdentity == e.RoomIdentity && len(snapshot.Messages) > 0 {
 				last := snapshot.Messages[len(snapshot.Messages)-1]
 				summary.LastMessageAt = &last.CreatedAt

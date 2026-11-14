@@ -1,0 +1,256 @@
+[
+  {
+    "text": "请 @ann，确认一下；(@ann). 再问@ann：可以吗？",
+    "names": [
+      "ann"
+    ],
+    "matches": true
+  },
+  {
+    "text": "mail@ann.com",
+    "names": [
+      "ann"
+    ],
+    "matches": false
+  },
+  {
+    "text": "@anna",
+    "names": [
+      "ann"
+    ],
+    "matches": false
+  },
+  {
+    "text": "@ann2",
+    "names": [
+      "ann"
+    ],
+    "matches": false
+  },
+  {
+    "text": "@ann_smith",
+    "names": [
+      "ann"
+    ],
+    "matches": false
+  },
+  {
+    "text": "@ann-smith",
+    "names": [
+      "ann"
+    ],
+    "matches": false
+  },
+  {
+    "text": "@ann.smith",
+    "names": [
+      "ann"
+    ],
+    "matches": false
+  },
+  {
+    "text": "@@ann",
+    "names": [
+      "ann"
+    ],
+    "matches": false
+  },
+  {
+    "text": "@Ann",
+    "names": [
+      "ann"
+    ],
+    "matches": false
+  },
+  {
+    "text": "x@ann",
+    "names": [
+      "ann"
+    ],
+    "matches": false
+  },
+  {
+    "text": "+@ann",
+    "names": [
+      "ann"
+    ],
+    "matches": false
+  },
+  {
+    "text": ".@ann",
+    "names": [
+      "ann"
+    ],
+    "matches": false
+  },
+  {
+    "text": "-@ann",
+    "names": [
+      "ann"
+    ],
+    "matches": false
+  },
+  {
+    "text": "_@ann",
+    "names": [
+      "ann"
+    ],
+    "matches": false
+  },
+  {
+    "text": "@ann.",
+    "names": [
+      "ann"
+    ],
+    "matches": true
+  },
+  {
+    "text": "@ann._",
+    "names": [
+      "ann"
+    ],
+    "matches": false
+  },
+  {
+    "text": "@ann.+",
+    "names": [
+      "ann"
+    ],
+    "matches": true
+  },
+  {
+    "text": "@ann。",
+    "names": [
+      "ann"
+    ],
+    "matches": true
+  },
+  {
+    "text": "店长@ann好",
+    "names": [
+      "ann"
+    ],
+    "matches": true
+  },
+  {
+    "text": "😀@ann！",
+    "names": [
+      "ann"
+    ],
+    "matches": true
+  },
+  {
+    "text": "请 @first.last 确认 @first.last。",
+    "names": [
+      "first.last"
+    ],
+    "matches": true
+  },
+  {
+    "text": "请 @a+b 确认 @a+b。",
+    "names": [
+      "a+b"
+    ],
+    "matches": true
+  },
+  {
+    "text": "请 @店长 确认 @店长。",
+    "names": [
+      "店长"
+    ],
+    "matches": true
+  },
+  {
+    "text": "请 @[owner] 确认 @[owner]。",
+    "names": [
+      "[owner]"
+    ],
+    "matches": true
+  },
+  {
+    "text": "请 @a(b) 确认 @a(b)。",
+    "names": [
+      "a(b)"
+    ],
+    "matches": true
+  },
+  {
+    "text": "请 @a*b 确认 @a*b。",
+    "names": [
+      "a*b"
+    ],
+    "matches": true
+  },
+  {
+    "text": "请 @a?b 确认 @a?b。",
+    "names": [
+      "a?b"
+    ],
+    "matches": true
+  },
+  {
+    "text": "请 @a^b 确认 @a^b。",
+    "names": [
+      "a^b"
+    ],
+    "matches": true
+  },
+  {
+    "text": "请 @a$b 确认 @a$b。",
+    "names": [
+      "a$b"
+    ],
+    "matches": true
+  },
+  {
+    "text": "请 @a|b 确认 @a|b。",
+    "names": [
+      "a|b"
+    ],
+    "matches": true
+  },
+  {
+    "text": "请 @a\\b 确认 @a\\b。",
+    "names": [
+      "a\\b"
+    ],
+    "matches": true
+  },
+  {
+    "text": "请 @emoji😀 确认 @emoji😀。",
+    "names": [
+      "emoji😀"
+    ],
+    "matches": true
+  },
+  {
+    "text": "@russellluo，@owner_abc @russellluo2 mail@russellluo.com",
+    "names": [
+      "owner_abc",
+      "russellluo",
+      "russellluo"
+    ],
+    "matches": true
+  },
+  {
+    "text": "@anyone",
+    "names": [
+      ""
+    ],
+    "matches": false
+  },
+  {
+    "text": "@店长甲",
+    "names": [
+      "店长"
+    ],
+    "matches": true
+  },
+  {
+    "text": "@所有人",
+    "names": [
+      "owner"
+    ],
+    "matches": false
+  }
+]

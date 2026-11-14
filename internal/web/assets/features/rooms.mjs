@@ -8,6 +8,29 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
   const { state, $, notice, currentView, refresh, discussionBusy, dismissOnBackdrop, storage, confirmAction } = runtime;
 
   let defaultAssistantRetrying = false, defaultAssistantError = "";
+  let readingScope = "";
+  const readingSummaries = new Map();
+
+  function acceptCatalog(catalog) {
+    const scope = JSON.stringify([state.installationID, catalog.operator, catalog.service_epoch]);
+    if (scope !== readingScope) { readingScope = scope; readingSummaries.clear(); }
+    const keys = new Set();
+    for (const room of catalog.rooms) {
+      const key = JSON.stringify([room.room_id, room.room_instance]); keys.add(key);
+      const previous = readingSummaries.get(key), next = room.human_read;
+      const current = catalog.operator === state.operator && room.room_id === state.info?.room_id && room.room_instance === state.info?.room_instance;
+      const boundary = current ? conversationUI.humanReadSummary?.() : null;
+      const valid = next?.status === "ready" &&
+        ["revision", "snapshot_seq", "cleared_through", "unread_count", "mention_count"].every(field => Number.isSafeInteger(next[field]) && next[field] >= 0) &&
+        next.cleared_through <= next.snapshot_seq && next.mention_count <= next.unread_count &&
+        next.revision >= Math.max(previous?.revision || 0, boundary?.revision || 0) &&
+        next.snapshot_seq >= Math.max(previous?.snapshot_seq || 0, boundary?.snapshot_seq || 0, current ? state.lastSeq : 0) &&
+        next.cleared_through >= Math.max(previous?.cleared_through || 0, boundary?.cleared_through || 0, current ? state.clearedThrough : 0);
+      if (valid) readingSummaries.set(key, { ...next });
+      else if (next || previous) room.human_read = { ...previous, status: "unavailable" };
+    }
+    for (const key of readingSummaries.keys()) if (!keys.has(key)) readingSummaries.delete(key);
+  }
 
   const managementKey = "teamx.room-management";
 
@@ -246,6 +269,30 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
         button.append(name, updated);
         const detail = document.createElement("span"); detail.className = statusText ? "room-status" : "room-preview"; detail.textContent = detailText; detail.title = detailText; button.append(detail);
         button.append(kind);
+        const reading = room.human_read, labels = [];
+        if (reading) {
+          const attention = document.createElement("span"); attention.className = "room-attention";
+          if (reading.unread_count > 0) {
+            const count = document.createElement("span"); count.className = "room-unread";
+            count.textContent = reading.unread_count > 99 ? "99+" : String(reading.unread_count);
+            count.setAttribute("aria-label", `${reading.unread_count} 条未读消息`);
+            attention.append(count); labels.push(`${reading.unread_count} 条未读消息`);
+          }
+          if (!room.is_direct && reading.mention_count > 0) {
+            const mention = document.createElement("span"); mention.className = "room-mention"; mention.textContent = "有人 @你";
+            mention.setAttribute("aria-label", `${reading.mention_count} 条未读消息提及你`);
+            attention.append(mention); labels.push(`${reading.mention_count} 条未读消息提及你`);
+          }
+          if (reading.status === "unavailable") {
+            const sync = document.createElement("span"); sync.className = "room-read-unavailable"; sync.textContent = "暂未同步";
+            sync.title = "阅读状态暂未同步，保留上次计数"; attention.append(sync); labels.push(sync.title);
+          }
+          if (attention.children.length) button.append(attention);
+        }
+        if (labels.length) {
+          button.title += "\n" + labels.join("，");
+          button.setAttribute("aria-label", button.getAttribute("aria-label") + "，" + labels.join("，"));
+        }
         button.disabled = room.status !== "ready" || !state.catalogConnected || !!catalog.busy;
         button.addEventListener("click", () => startSelection(room));
         row.append(button);
@@ -572,6 +619,7 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
 
   return {
     mount,
+    acceptCatalog,
     initializeSelection,
     restoreManagement,
     renderRooms,

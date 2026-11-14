@@ -66,10 +66,11 @@
       <div id="platform-interaction-error" class="notice" role="status" hidden></div>
       <div id="service-change" class="notice" role="status" hidden></div>
       <div id="sync-error" class="notice" role="status" hidden></div>
+      <div id="human-read-notice" class="notice" role="status" hidden></div>
       <div id="restart-notice" class="notice" role="status" hidden></div>
       <div id="timeline-wrap" class="timeline-wrap">
         <div id="timeline" class="timeline" tabindex="0" aria-label="消息记录">
-          <div class="history-control"><button id="load-history" class="text-button" hidden>加载更早消息</button></div>
+          <div class="history-control"><span id="earlier-mentions" role="status" hidden></span><button id="load-history" class="text-button" hidden>加载更早消息</button></div>
           <div id="empty" class="empty"><span id="empty-conversation-icon" class="empty-mark" aria-hidden="true">#</span><h2>从一条消息开始</h2><p>发送任务或想法，让房间里的 Agent 一起参与。</p><div id="direct-suggestions" class="direct-suggestions" hidden><button type="button" class="secondary-button" data-suggestion="帮我整理一下待办事项">整理待办</button><button type="button" class="secondary-button" data-suggestion="介绍一下你能帮我做什么">你能做什么</button><button type="button" class="secondary-button" data-suggestion="帮我连接飞书">连接飞书</button></div></div>
 
           <div id="messages" role="log" aria-label="公共消息" aria-live="polite" aria-relevant="additions"></div>

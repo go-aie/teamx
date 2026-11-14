@@ -102,9 +102,9 @@ func OpenStore(dir, roomID string) (*Store, error) {
 		// Orphaned private state is evidence of an existing Room, not a new
 		// directory that may silently be initialized with an empty history.
 		err = nil
-		for _, name := range []string{"agents", "inboxes"} {
+		for _, name := range []string{"agents", "inboxes", "human-read.json"} {
 			if _, statErr := os.Stat(filepath.Join(abs, name)); !errors.Is(statErr, os.ErrNotExist) {
-				err = fmt.Errorf("%w: missing room.json with existing or inaccessible %s directory", ErrInvalid, name)
+				err = fmt.Errorf("%w: missing room.json with existing or inaccessible %s", ErrInvalid, name)
 				break
 			}
 		}

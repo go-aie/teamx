@@ -104,6 +104,25 @@ TEAMX_SELECTION_BROWSER=1 go test -tags=integration ./internal/room \
 
 ## 少量按需 e2e
 
+会话共享阅读的核心检查覆盖集合、存储故障、提及匹配和只读目录统计；integration 覆盖独立 HTTP 客户端、重启、生命周期及实时阅读锁隔离。前端 DOM 用例检查目录角标、旧版本丢弃、单项失败保留计数、历史范围与草稿，不能代替视觉检查：
+
+```sh
+node --test internal/web/tests/web*_test.mjs
+make test-integration TEST_PACKAGES=./internal/room TEST_RUN='HumanRead|ConversationUnread|ConversationMention'
+make test-race TEST_PACKAGES=./internal/room TEST_RUN='HumanRead|ConversationUnread|ConversationMention'
+```
+
+已安装 Node、Playwright 和 Chromium 时，可用临时服务、真实文件和两个独立浏览器上下文复验，不需要真实模型或平台。可选的 `TEAMX_HUMAN_READ_ARTIFACTS` 保存截图：
+
+```sh
+TEAMX_HUMAN_READ_BROWSER=1 go test -tags=e2e ./internal/room \
+  -run '^TestHumanRead(Browser|CatalogBrowser)$' -count=1 -v -timeout=5m
+TEAMX_HUMAN_READ_PERF=1 go test -tags=e2e ./internal/room \
+  -run '^TestHumanReadCatalogPerformance$' -count=1 -v -timeout=3m
+```
+
+浏览器覆盖未打开会话计数、两端列表同步、较早提及与单批历史加载、单项目录故障、长名称与 `99+`、1440／390／320px 布局和连续滚动。长历史检查含 10,000 条短消息全量 DOM，以及接近 64 MiB 历史保留默认 50 条 DOM；前者另以同数据仅提及候选作为原有阅读检查的对照。目录测量交替运行旧目录文件投影与新目录接口，报告单 Room 10,000 条、10 个 Room 各 1,000 条、接近 64 MiB 样本的 p50／p95、busy 延迟、state 大小与正常读取次数。这些是本机有界测量，不覆盖 1,000 Room 上限，也不是 CI 的性能门槛；小屏模拟不代表实际手机 focus、键盘和页面恢复验收。
+
 日常只检查 e2e 是否能够编译：
 
 ```sh

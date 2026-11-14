@@ -93,6 +93,7 @@ export async function createApp(overrides = {}) {
     return layers;
   }});
   function suspend() {
+    conversationUI.resetMessageViewing();
     if (!state.suspended) viewVersion++;
     state.suspended = true; state.connected = false; state.catalogConnected = false;
     $("connection").textContent = window.navigator?.onLine === false ? "网络已断开 · 草稿已保留" : "页面已暂停刷新";
@@ -177,8 +178,8 @@ export async function createApp(overrides = {}) {
     state.info = info; state.operator = operator; state.connected = false;
     syncFailureSince = null; notice("sync-error", "");
     notice("notification-next-step", "");
-    conversationUI.resetMentionViewing();
-    if (info) conversationUI.restoreMentionProgress();
+    conversationUI.resetMessageViewing();
+    conversationUI.resetReadingContext();
     state.draft = info ? conversationUI.drafts.get(info, operator) : {};
     state.messages.clear(); state.lastSeq = 0; state.clearedThrough = 0; state.restart = null; state.members = [];
     conversationUI.resetRestartNotice();
@@ -209,6 +210,7 @@ export async function createApp(overrides = {}) {
       if (state.managed) {
         const catalog = await request("/v1/rooms");
         if (!currentView(version)) return;
+        roomsUI.acceptCatalog(catalog);
         state.catalog = catalog; state.catalogConnected = true;
         settingsUI.applyTimeZone(catalog);
         await roomsUI.reconcileManagement(catalog);
@@ -263,7 +265,8 @@ export async function createApp(overrides = {}) {
       const info = { room_id: config.room_id, room_instance: config.room_instance, service_epoch: config.service_epoch };
       const changedRoom = selectView(info, config.operator);
       version = viewVersion;
-      conversationUI.restoreMentionProgress();
+      conversationUI.resetReadingContext();
+      conversationUI.pollHumanRead();
       if (!state.managed) { membersUI.renderProfiles(config.profiles || []); roomsUI.renderRooms(); }
       $("room-name").textContent = roomsUI.roomName();
       $("empty").querySelector("h2").textContent = "从一条消息开始";
@@ -349,6 +352,10 @@ export async function createApp(overrides = {}) {
     storage,
     selectView,
     navigationChanged: navigation.sync,
+    conversationVisibilityChanged: () => {
+      if (!layoutUI.conversationVisible()) conversationUI.resetMessageViewing();
+      else conversationUI.scheduleMessageViewing();
+    },
     canPoll: () => lifecycle.active() && !state.recovering && (state.managed ? state.catalogConnected : state.connected),
     discussionBusy,
     setSelectOptions,
@@ -439,13 +446,13 @@ export async function createApp(overrides = {}) {
   navigation.mount();
   lifecycle.mount();
 
-  document.addEventListener("visibilitychange", conversationUI.updateMentionViewing);
+  document.addEventListener("visibilitychange", conversationUI.updateMessageViewing);
 
-  document.addEventListener("toggle", conversationUI.scheduleMentionViewing, true);
+  document.addEventListener("toggle", conversationUI.scheduleMessageViewing, true);
 
-  document.addEventListener("close", conversationUI.scheduleMentionViewing, true);
+  document.addEventListener("close", conversationUI.scheduleMessageViewing, true);
 
-  window.addEventListener("pagehide", conversationUI.resetMentionViewing);
+  window.addEventListener("pagehide", conversationUI.resetMessageViewing);
 
   window.addEventListener("pagehide", conversationUI.saveDraft);
 

@@ -113,6 +113,7 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
     notificationsUI.renderContextViews();
     applySidebarWidths();
     runtime.navigationChanged();
+    runtime.conversationVisibilityChanged?.();
     for (const [side, name] of [["rooms", "会话侧栏"], ["members", roomsUI.isDirect() ? "助理详情" : "团队成员"]]) {
       const button = $("toggle-" + side);
       const open = side === "members" ? membersOpen : roomsOpen;
@@ -260,6 +261,7 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
     get membersExpanded() { return panels.members; },
     get directNotificationsOpen() { return directNotificationsOpen; },
     membersPanelOpen,
+    conversationVisible: () => !$("conversation").inert && !$("conversation").hidden,
     savePanels,
     renderPanels,
   };

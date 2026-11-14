@@ -127,6 +127,7 @@ type service struct {
 	info                      ServiceInfo
 	isDirect                  bool // Immutable Room property; excluded from caller identity.
 	store                     *Store
+	humanRead                 *humanReadStore
 	rt                        *actorx.Runtime
 	room                      actorx.Addr
 	scheduler                 actorx.Addr
@@ -262,6 +263,11 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 		s.uiProfiles = profileNames(s.dshProfiles)
 	}
 	s.memberFactory = s.newMember
+	operator := humanOperator()
+	if s.access != nil {
+		operator = s.access.operator
+	}
+	s.humanRead = newHumanReadStore(store.dir, state, operator)
 	if err := s.loadDiscussionRestart(); err != nil {
 		return nil, err
 	}
@@ -704,6 +710,10 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	if r.URL.Path == "/v1/human-read/state" || r.URL.Path == "/v1/human-read/confirm" {
+		s.serveHumanRead(w, r)
 		return
 	}
 	var req apiRequest

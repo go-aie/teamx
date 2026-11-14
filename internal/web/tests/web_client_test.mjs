@@ -1,6 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { request, readPages, createActivityReader, teamOpeningDraft, mentionRanges, memberMentionRanges, unseenMentions } from "../assets/client.mjs";
+
+test("human mentions share the server boundary cases", () => {
+  const cases = JSON.parse(readFileSync(new URL("../../room/testdata/human_mentions.json", import.meta.url), "utf8"));
+  for (const { text, names, matches } of cases) {
+    assert.equal(mentionRanges(text, names).length > 0, matches, text);
+  }
+});
 
 test("member mentions recognize complete known names and prefer longer identities", () => {
   const text="@开发助理 @reviewer，@开发助理甲 @reviewer2 mail@reviewer.com @@reviewer @first.last";

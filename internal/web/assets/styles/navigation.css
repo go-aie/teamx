@@ -140,6 +140,10 @@
   font-weight:400;
   font-variant-numeric:tabular-nums;
 }
+.room-choice .room-attention { grid-column:2 / -1; grid-row:3; display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:5px; }
+.room-choice .room-unread { min-width:22px; padding:1px 6px; border-radius:12px; background:var(--accent); color:#fff; text-align:center; font-size:var(--font-small); font-variant-numeric:tabular-nums; }
+.room-choice .room-mention { color:var(--warning); font-size:var(--font-small); font-weight:var(--weight-strong); }
+.room-choice .room-read-unavailable { color:var(--muted); font-size:var(--font-small); }
 #rooms-empty {
   padding:0 8px;
   line-height:1.9;

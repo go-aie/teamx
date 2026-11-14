@@ -681,3 +681,4 @@ textarea::placeholder {
 .notice a {
   text-decoration:underline;
 }
+.history-control #earlier-mentions { display:block; margin:4px 0; color:var(--warning); font-size:var(--font-small); }
