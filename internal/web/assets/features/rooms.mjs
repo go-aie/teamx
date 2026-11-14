@@ -1,10 +1,10 @@
 import { randomUUID } from "../random-id.mjs";
 import { agentName } from "../agent-names.mjs";
-import { createAssistantIcon } from "../icons.mjs";
+import { renderAvatar } from "../avatars.mjs";
 
 // Room catalog, selection, creation, deletion and default assistant recovery.
 export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationUI, settingsUI, membersUI }) {
-  const { document, window, Option, request } = env;
+  const { document, window, Option, request, setTimeout, clearTimeout } = env;
   const { state, $, notice, currentView, refresh, discussionBusy, dismissOnBackdrop, storage, confirmAction } = runtime;
 
   let defaultAssistantRetrying = false, defaultAssistantError = "";
@@ -37,6 +37,53 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
   const selectionKey = "teamx.selected-room";
 
   let selectedRoom = null, selectionVersion = 0, selectionLoaded = false, awaitDefaultSelection = false;
+  let revealedRoom = "", suppressedRoomClick = "", roomPress = null;
+  const roomKey = room => JSON.stringify([room.room_id, room.room_instance]);
+
+  function cancelRoomPress() {
+    if (roomPress) clearTimeout(roomPress.timer);
+    roomPress = null;
+  }
+
+  function closeRoomActions() {
+    cancelRoomPress(); revealedRoom = "";
+    for (const row of $("room-list").children) row.classList.remove("delete-revealed");
+  }
+
+  function showRoomActions(key) {
+    const row = Array.from($("room-list").children).find(row => row.dataset.roomKey === key);
+    if (!row?.children[1] || row.children[1].disabled || document.hidden || state.suspended) return false;
+    revealedRoom = key;
+    for (const item of $("room-list").children) item.classList.toggle("delete-revealed", item === row);
+    return true;
+  }
+
+  const pressActions = event => event.pointerType === "touch" || event.pointerType === "pen" || window.innerWidth <= 640 ||
+    window.matchMedia?.("(hover: none), (pointer: coarse)").matches;
+
+  function bindRoomActions(button, remove, key) {
+    button.setAttribute("aria-keyshortcuts", "Shift+F10");
+    button.addEventListener("pointerdown", event => {
+      cancelRoomPress();
+      if (!pressActions(event) || event.isPrimary === false || event.button !== 0 || remove.disabled) return;
+      const press = {key, pointerId:event.pointerId, x:event.clientX, y:event.clientY};
+      press.timer = setTimeout(() => {
+        if (roomPress === press && showRoomActions(key)) suppressedRoomClick = key;
+      }, 500);
+      roomPress = press;
+    });
+    button.addEventListener("contextmenu", event => {
+      if (!pressActions(event)) return;
+      event.preventDefault(); cancelRoomPress();
+      if (showRoomActions(key)) suppressedRoomClick = key;
+    });
+    button.addEventListener("keydown", event => {
+      if (event.key !== "ContextMenu" && !(event.key === "F10" && event.shiftKey)) return;
+      event.preventDefault(); suppressedRoomClick = "";
+      if (showRoomActions(key)) remove.focus();
+    });
+  }
+
   let conversationFilter = "all";
   const filterLabels = {all:"全部会话", direct:"私信", room:"房间"};
   const matchesFilter = room => conversationFilter === "all" || !!room.is_direct === (conversationFilter === "direct");
@@ -48,6 +95,7 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
   }
 
   function setConversationFilter(filter) {
+    closeRoomActions();
     conversationFilter = filter;
     closeFilterMenu();
     $("room-nav").scrollTop = 0;
@@ -210,6 +258,20 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
     return sender ? `${sender}：${text}` : text;
   }
 
+  function roomListAvatar(room) {
+    const wrapper = document.createElement("span"); wrapper.className = "room-avatar";
+    const image = document.createElement("span"); image.className = "room-avatar-image";
+    image.setAttribute("aria-hidden", "true");
+    renderAvatar(document, image, {kind:"agent", id:room.is_direct ? room.members?.[0]?.id || room.room_id : room.room_id,
+      name:room.name, direct:!!room.is_direct, defaultAssistant:isDefaultAssistant(room)});
+    if (!room.is_direct) {
+      const label = document.createElement("span"); label.className = "room-avatar-name"; label.textContent = room.name;
+      image.replaceChildren(label);
+    }
+    wrapper.append(image);
+    return wrapper;
+  }
+
   function renderRooms() {
     document.querySelector(".workspace").classList.toggle("managed", state.managed);
     layoutUI.renderPanels();
@@ -239,20 +301,13 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
       $("room-list").dataset.signature = signature;
       const rows = visibleRooms.sort((a,b) => Number(isDefaultAssistant(b)) - Number(isDefaultAssistant(a)) || new Date(roomListTime(b)) - new Date(roomListTime(a))).map(room => {
         const row = document.createElement("div"); row.className = "room-entry"; row.dataset.direct = String(!!room.is_direct);
+        const key = roomKey(room); row.dataset.roomKey = key;
+        row.classList.toggle("delete-revealed", key === revealedRoom);
         const button = document.createElement("button"); button.type = "button"; button.className = "room-choice";
         button.setAttribute("aria-current", String(room.room_instance === selectedRoom?.room_instance));
         const name = document.createElement("strong"), updated = document.createElement("time");
         name.textContent = room.name;
-        const kind = room.is_direct ? createAssistantIcon(document) : document.createElementNS("http://www.w3.org/2000/svg", "svg");
-        if (!room.is_direct) {
-          kind.setAttribute("viewBox", "0 0 24 24"); kind.setAttribute("aria-hidden", "true");
-          const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-          path.setAttribute("d", "M16 21v-2a5 5 0 0 0-10 0v2M21 21v-2a5 5 0 0 0-3-4.6M16 3.4a4 4 0 0 1 0 7.2");
-          const head = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-          for (const [key,value] of Object.entries({cx:11,cy:7,r:4})) head.setAttribute(key,String(value));
-          kind.append(path,head);
-        }
-        kind.classList.add("room-kind-icon");
+        const avatar = roomListAvatar(room);
         row.dataset.defaultAssistant = String(isDefaultAssistant(room));
         const statusText = room.status === "deleting" ? (room.busy ? "正在删除…" : `删除待重试${room.error ? ` · ${room.error}` : ""}`)
           : room.status === "creating" ? `创建待完成${room.error ? ` · ${room.error}` : " · 可重试原创建请求"}` : room.runtime_status === "opening" ? "正在打开…"
@@ -267,34 +322,37 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
         button.title = [room.name, updated.title, detailText].join("\n");
         button.setAttribute("aria-label", `${conversationType(room)}：${room.name}${isDefaultAssistant(room) ? "，默认助理" : ""}，${updated.title}，${detailText}`);
         button.append(name, updated);
-        const detail = document.createElement("span"); detail.className = statusText ? "room-status" : "room-preview"; detail.textContent = detailText; detail.title = detailText; button.append(detail);
-        button.append(kind);
+        const detail = document.createElement("span"); detail.className = "room-detail"; detail.title = detailText;
+        const preview = document.createElement("span"); preview.className = statusText ? "room-status" : "room-preview"; preview.textContent = detailText;
+        button.append(detail, avatar);
         const reading = room.human_read, labels = [];
         if (reading) {
-          const attention = document.createElement("span"); attention.className = "room-attention";
           if (reading.unread_count > 0) {
             const count = document.createElement("span"); count.className = "room-unread";
             count.textContent = reading.unread_count > 99 ? "99+" : String(reading.unread_count);
             count.setAttribute("aria-label", `${reading.unread_count} 条未读消息`);
-            attention.append(count); labels.push(`${reading.unread_count} 条未读消息`);
+            avatar.append(count); labels.push(`${reading.unread_count} 条未读消息`);
           }
           if (!room.is_direct && reading.mention_count > 0) {
-            const mention = document.createElement("span"); mention.className = "room-mention"; mention.textContent = "有人 @你";
+            const mention = document.createElement("span"); mention.className = "room-mention"; mention.textContent = "[有人@我]";
             mention.setAttribute("aria-label", `${reading.mention_count} 条未读消息提及你`);
-            attention.append(mention); labels.push(`${reading.mention_count} 条未读消息提及你`);
+            detail.append(mention); labels.push(`${reading.mention_count} 条未读消息提及你`);
           }
           if (reading.status === "unavailable") {
             const sync = document.createElement("span"); sync.className = "room-read-unavailable"; sync.textContent = "暂未同步";
-            sync.title = "阅读状态暂未同步，保留上次计数"; attention.append(sync); labels.push(sync.title);
+            sync.title = "阅读状态暂未同步，保留上次计数"; detail.append(sync); labels.push(sync.title);
           }
-          if (attention.children.length) button.append(attention);
         }
+        detail.append(preview);
         if (labels.length) {
           button.title += "\n" + labels.join("，");
           button.setAttribute("aria-label", button.getAttribute("aria-label") + "，" + labels.join("，"));
         }
         button.disabled = room.status !== "ready" || !state.catalogConnected || !!catalog.busy;
-        button.addEventListener("click", () => startSelection(room));
+        button.addEventListener("click", event => {
+          if (suppressedRoomClick === key) { event.preventDefault(); suppressedRoomClick = ""; return; }
+          closeRoomActions(); startSelection(room);
+        });
         row.append(button);
         if (isDefaultAssistant(room) && room.status !== "deleting") return row;
         const remove = document.createElement("button"); remove.type = "button"; remove.className = "room-delete";
@@ -306,11 +364,13 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
         remove.title = `${room.status === "deleting" ? "重试删除" : "删除"}${conversationType(room)}「${room.name}」`;
         remove.setAttribute("aria-label", remove.title);
         remove.disabled = !state.catalogConnected || !!catalog.busy || !!room.busy || !!state.management || !!catalog.write_error;
-        remove.addEventListener("click", () => startDeletion(room));
+        remove.addEventListener("click", () => { closeRoomActions(); startDeletion(room); });
+        bindRoomActions(button, remove, key);
         row.append(remove);
         return row;
       });
       $("room-list").replaceChildren(...rows);
+      if (revealedRoom && !rows.some(row => row.dataset.roomKey === revealedRoom && row.children.length > 1)) closeRoomActions();
     }
     let text = state.managementError || catalog.write_error || "";
     if (workspaceUI.workspaceView?.data?.operation?.status === "running") text = `工作目录 · ${workspaceUI.workspaceStages[workspaceUI.workspaceView.data.operation.phase] || "正在应用"}`;
@@ -444,6 +504,32 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
   }
 
   function mount() {
+    document.addEventListener("pointerdown", event => {
+      cancelRoomPress(); suppressedRoomClick = "";
+      if (event.target.closest?.(".room-entry")?.dataset.roomKey !== revealedRoom) closeRoomActions();
+    }, true);
+    document.addEventListener("pointermove", event => {
+      if (!roomPress || roomPress.pointerId !== event.pointerId) return;
+      if (Math.hypot(event.clientX - roomPress.x, event.clientY - roomPress.y) > 10) {
+        suppressedRoomClick = roomPress.key; closeRoomActions();
+      }
+    }, {passive:true});
+    for (const type of ["pointerup", "pointercancel"]) document.addEventListener(type, event => {
+      if (roomPress?.pointerId === event.pointerId) cancelRoomPress();
+    });
+    document.addEventListener("keydown", event => {
+      if (event.key !== "Escape" || !revealedRoom) return;
+      const row = Array.from($("room-list").children).find(row => row.dataset.roomKey === revealedRoom);
+      event.preventDefault(); event.stopPropagation?.(); closeRoomActions(); row?.children[0].focus();
+    });
+    document.addEventListener("focusin", event => {
+      const key = event.target.closest?.(".room-entry")?.dataset.roomKey;
+      if (revealedRoom && key !== revealedRoom || roomPress && key !== roomPress.key) closeRoomActions();
+    });
+    document.addEventListener("visibilitychange", () => { if (document.hidden) closeRoomActions(); });
+    for (const type of ["blur", "pagehide", "resize", "popstate"]) window.addEventListener(type, closeRoomActions);
+    $("room-nav").addEventListener("scroll", closeRoomActions, {passive:true});
+
     try { selectedRoom = JSON.parse(storage?.getItem(selectionKey)); } catch { /* Tab storage is optional. */ }
 
     $("retry-default-assistant").addEventListener("click", async () => {

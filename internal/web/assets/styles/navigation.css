@@ -58,11 +58,14 @@
   flex:1;
   min-width:0;
   display:grid;
-  grid-template-columns:18px minmax(0,1fr) auto;
+  grid-template-columns:44px minmax(0,1fr) auto;
+  grid-template-rows:21px 18px;
   align-items:center;
+  align-content:center;
   column-gap:10px;
+  row-gap:4px;
   padding:10px 12px;
-  min-height:60px;
+  min-height:68px;
   border-radius:var(--radius-control);
   text-align:left;
   background:none;
@@ -106,9 +109,9 @@
   color:var(--text);
 }
 .room-choice[aria-current="true"] strong {
-  font-weight:var(--weight-strong);
+  font-weight:var(--weight-medium);
 }
-.room-choice strong,.room-choice span {
+.room-choice strong,.room-choice .room-preview,.room-choice .room-status {
   display:block;
   overflow:hidden;
   text-overflow:ellipsis;
@@ -119,18 +122,36 @@
   grid-row:1;
   min-width:0;
   font-size:14px;
-  font-weight:var(--weight-medium);
+  font-weight:400;
   line-height:1.5;
 }
-.room-choice .room-status,.room-choice .room-preview {
+.room-choice .room-detail {
   grid-column:2 / -1;
   grid-row:2;
-  margin-top:4px;
+  display:flex;
+  align-items:center;
+  gap:4px;
+  min-width:0;
+  overflow:hidden;
+  white-space:nowrap;
   font-size:var(--font-small);
   line-height:1.5;
   color:var(--muted);
 }
-.room-choice .room-kind-icon { grid-column:1; grid-row:1; width:18px; height:18px; align-self:center; fill:none; stroke:var(--muted); stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+.room-detail .room-preview,.room-detail .room-status { min-width:0; }
+.room-choice .room-avatar { position:relative; grid-column:1; grid-row:1 / 3; width:44px; height:44px; }
+.room-avatar-image { width:44px; height:44px; border:0; border-radius:50%; }
+.room-avatar .room-avatar-image .assistant-icon { width:28px; height:28px; }
+.room-avatar-name {
+  max-width:32px;
+  max-height:28px;
+  font-size:11px;
+  line-height:14px;
+  text-align:center;
+  white-space:normal;
+  overflow-wrap:anywhere;
+  overflow:hidden;
+}
 .room-time {
   grid-column:3;
   grid-row:1;
@@ -140,10 +161,9 @@
   font-weight:400;
   font-variant-numeric:tabular-nums;
 }
-.room-choice .room-attention { grid-column:2 / -1; grid-row:3; display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:5px; }
-.room-choice .room-unread { min-width:22px; padding:1px 6px; border-radius:12px; background:var(--accent); color:#fff; text-align:center; font-size:var(--font-small); font-variant-numeric:tabular-nums; }
-.room-choice .room-mention { color:var(--warning); font-size:var(--font-small); font-weight:var(--weight-strong); }
-.room-choice .room-read-unavailable { color:var(--muted); font-size:var(--font-small); }
+.room-choice .room-unread { position:absolute; top:-5px; right:-6px; min-width:18px; padding:0 5px; border-radius:10px; background:var(--notification); color:#fff; text-align:center; font-size:11px; line-height:18px; font-variant-numeric:tabular-nums; }
+.room-choice .room-mention { flex:none; color:var(--notification); font-weight:var(--weight-medium); }
+.room-choice .room-read-unavailable { flex:none; color:var(--muted); }
 #rooms-empty {
   padding:0 8px;
   line-height:1.9;
@@ -358,9 +378,13 @@
 }
 @media(hover:hover) and (pointer:fine) {
   .room-delete { opacity:0; }
-  .room-entry:hover .room-delete,.room-delete:focus-visible { opacity:1; }
+  .room-entry:hover .room-delete,.room-delete:focus-visible,.room-entry.delete-revealed .room-delete { opacity:1; }
   .room-entry:has(.room-delete):hover .room-time,.room-entry:has(.room-delete:focus-visible) .room-time { visibility:hidden; }
 }
-@media(hover:none),(pointer:coarse) {
-  .room-entry:has(.room-delete) .room-choice { padding-right:44px; }
+@media(max-width:640px),(hover:none),(pointer:coarse) {
+  .room-choice { -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
+  .room-delete { visibility:hidden; opacity:0; pointer-events:none; top:50%; transform:translateY(-50%); width:44px; height:44px; }
+  .room-entry.delete-revealed .room-delete { visibility:visible; opacity:1; pointer-events:auto; }
+  .room-entry.delete-revealed .room-choice { padding-right:56px; }
+  .room-entry:has(.room-delete):hover .room-time,.room-entry:has(.room-delete:focus-visible) .room-time { visibility:visible; }
 }

@@ -511,9 +511,9 @@ test("conversation list refreshes yesterday and year labels at system midnight w
 test("conversation timestamps remain separate from exceptional runtime and management states", async () => {
   const room=makeRoom("A"),api=server([room]),ui=await launch(api);
   const choice=()=>ui.el("room-list").children[0].children[0];
-  assert.equal(choice().children[2].textContent,"房间已创建");
+  assert.equal(choice().children[2].children[0].textContent,"房间已创建");
   room.runtime_status="closed";await ui.refresh();
-  assert.equal(choice().children[2].textContent,"房间已创建");
+  assert.equal(choice().children[2].children[0].textContent,"房间已创建");
   for(const [state,label] of [
     [{runtime_status:"opening"},"正在打开…"],
     [{runtime_status:"failed",runtime_error:"backend unavailable"},"运行受阻 · backend unavailable"],
@@ -523,7 +523,7 @@ test("conversation timestamps remain separate from exceptional runtime and manag
   ]) {
     Object.assign(room,state);await ui.refresh();
     assert.match(choice().children[1].title,/^创建于：/);
-    assert.equal(choice().children[2].textContent,label);
+    assert.equal(choice().children[2].children[0].textContent,label);
   }
 });
 
@@ -535,18 +535,18 @@ test("conversation previews show latest text and author, creation hints and prio
   const empty=makeRoom("Empty"),emptyDirect={...makeRoom("Empty direct"),is_direct:true};
   const api=server([team,direct,empty,emptyDirect]),ui=await launch(api);
   const choice=name=>ui.el("room-list").children.find(row=>row.children[0].children[0].textContent===name).children[0];
-  assert.equal(choice("Team").children[2].textContent,"审阅者：完成审阅 请确认下一步");
-  assert.equal(choice("Direct").children[2].textContent,"你：检查一下");
-  assert.equal(choice("Empty").children[2].textContent,"房间已创建");
-  assert.equal(choice("Empty direct").children[2].textContent,"私信已创建");
+  assert.equal(choice("Team").children[2].children[0].textContent,"审阅者：完成审阅 请确认下一步");
+  assert.equal(choice("Direct").children[2].children[0].textContent,"你：检查一下");
+  assert.equal(choice("Empty").children[2].children[0].textContent,"房间已创建");
+  assert.equal(choice("Empty direct").children[2].children[0].textContent,"私信已创建");
   direct.last_message_preview={author:{kind:"agent",id:"chief-of-staff"},text:"<img src=x> 已完成"};
-  await ui.refresh();assert.equal(choice("Direct").children[2].textContent,"<img src=x> 已完成");
+  await ui.refresh();assert.equal(choice("Direct").children[2].children[0].textContent,"<img src=x> 已完成");
   team.runtime_status="opening";await ui.refresh();
-  assert.equal(choice("Team").children[2].textContent,"正在打开…");
+  assert.equal(choice("Team").children[2].children[0].textContent,"正在打开…");
   team.runtime_status="ready";team.last_message_preview.text="等待反馈";await ui.refresh();
-  assert.equal(choice("Team").children[2].textContent,"审阅者：等待反馈");
+  assert.equal(choice("Team").children[2].children[0].textContent,"审阅者：等待反馈");
   delete team.last_message_at;delete team.last_message_preview;await ui.refresh();
-  assert.equal(choice("Team").children[2].textContent,"房间已创建");
+  assert.equal(choice("Team").children[2].children[0].textContent,"房间已创建");
   assert.match(choice("Team").children[1].title,/^创建于：/);
 });
 
@@ -1494,6 +1494,56 @@ test("activity follows appended spans and growing replies, pauses while reading 
   await open(); atBottom(); assert.equal(jump.hidden, true);
 });
 
+test("holding a conversation reveals only its delete action across polling without opening or deleting it", async () => {
+  const a=makeRoom("A"),b=makeRoom("B"),api=server([a,b]);
+  api.catalog.default_assistant={status:"completed",room_id:a.room_id,room_instance:a.room_instance};
+  const ui=await launch(api),row=name=>ui.el("room-list").children.find(row=>row.children[0].children[0].textContent===name);
+  const pointer={pointerType:"touch",pointerId:1,button:0,isPrimary:true,clientX:100,clientY:100};
+  const down=async name=>{
+    const current=row(name),target={closest:()=>current};
+    await ui.document.emit("pointerdown",{...pointer,target});await current.children[0].emit("pointerdown",pointer);
+    await ui.document.emit("focusin",{target});
+  };
+  await down("B");await ui.clock.advance(250);
+  b.last_message_preview={author:{kind:"agent",id:"reviewer"},text:"更新摘要"};await ui.refresh();
+  await ui.clock.advance(249);assert.equal(row("B").classList.contains("delete-revealed"),false);
+  await ui.clock.advance(1);assert.equal(row("B").classList.contains("delete-revealed"),true);
+  await ui.document.emit("pointerup",pointer);await row("B").children[0].emit("click");await settle();
+  assert.equal(ui.el("room-name").textContent,"A");
+  assert.equal(api.calls.some(call=>call.path==="/v1/rooms/delete"),false);
+  b.last_message_preview.text="再次更新";await ui.refresh();assert.equal(row("B").classList.contains("delete-revealed"),true);
+  let confirmations=0;api.confirm=()=>{confirmations++;return false;};await ui.delete("B");
+  assert.equal(confirmations,1);assert.equal(row("B").classList.contains("delete-revealed"),false);
+  assert.equal(api.calls.some(call=>call.path==="/v1/rooms/delete"),false);
+  await down("A");await ui.clock.advance(600);assert.equal(row("A").classList.contains("delete-revealed"),false);
+  assert.equal(row("A").children.length,1,"default assistant has no delete action");
+  // A subsequent ordinary tap retains normal navigation.
+  await down("B");await ui.document.emit("pointerup",pointer);await row("B").children[0].emit("click");await settle();
+  assert.equal(ui.el("room-name").textContent,"B");
+});
+
+test("conversation presses cancel on scrolling and pointer cancellation, dismiss outside, and support keyboard actions", async () => {
+  const ui=await launch(server([makeRoom("A"),makeRoom("B")]));
+  const row=()=>ui.el("room-list").children[1],button=()=>row().children[0];
+  const pointer={pointerType:"touch",pointerId:7,button:0,isPrimary:true,clientX:100,clientY:100};
+  const down=async()=>{
+    await ui.document.emit("pointerdown",{...pointer,target:{closest:()=>row()}});await button().emit("pointerdown",pointer);
+  };
+  const visible=()=>row().classList.contains("delete-revealed");
+  for(const cancel of [()=>ui.document.emit("pointermove",{...pointer,clientY:115}),
+    ()=>ui.document.emit("pointercancel",pointer),()=>ui.el("room-nav").emit("scroll"),
+    ()=>ui.document.emit("pointerdown"),()=>ui.window.emit("blur")]){
+    await down();await ui.clock.advance(200);await cancel();await ui.clock.advance(400);assert.equal(visible(),false);
+  }
+  await down();await ui.clock.advance(500);assert.equal(visible(),true);
+  await ui.document.emit("pointerup",pointer);await ui.el("room-nav").emit("scroll");assert.equal(visible(),false);
+  await button().emit("keydown",{key:"F10",shiftKey:true});assert.equal(visible(),true);
+  assert.equal(ui.document.activeElement,row().children[1]);
+  await ui.document.emit("keydown",{key:"Escape"});assert.equal(visible(),false);assert.equal(ui.document.activeElement,button());
+  await button().emit("contextmenu",{pointerType:"touch"});assert.equal(visible(),true);
+  await ui.document.emit("pointerdown");assert.equal(visible(),false);
+});
+
 test("deletion requires confirmation and removes the active view and draft while preserving another Room", async () => {
   const api = server([makeRoom("A"), makeRoom("B")]), ui = await launch(api);
   const remove = ui.el("room-list").children[0].children[1];
@@ -2433,7 +2483,7 @@ test("another room's lifecycle operation and runtime failure leave this tab usab
   api.catalog.rooms[0].runtime_error = "A cleanup incomplete"; delete api.catalog.rooms[0].service;
   await b.refresh();
   assert.equal(b.el("send").disabled, false);
-  assert.match(b.el("room-list").children.find(row => row.children[0].children[0].textContent === "A").children[0].children[2].textContent, /A cleanup incomplete/);
+  assert.match(elementText(b.el("room-list").children.find(row => row.children[0].children[0].textContent === "A").children[0].children[2]), /A cleanup incomplete/);
 });
 
 test("duplicate open clicks still enter the completed room, and a reload preserves a newer selection", async () => {
@@ -3698,6 +3748,26 @@ test("a pending default selects once when ready, while late DM Inbox reads canno
   await ui.refresh();assert.equal(ui.el("room-name").textContent,"团队");
 });
 
+test("catalog room avatars retain full names and stable colors across member changes and renames", async () => {
+  const members=Array.from({length:10},(_,i)=>({id:`agent-${i}`,agent_name:String.fromCharCode(65+i)}));
+  const direct={...makeRoom("助理"),is_direct:true,members:[members[0]]};
+  const room={...makeRoom("协作房间"),members:members.slice(0,2)};
+  const api=server([direct,room]),ui=await launch(api);
+  const image=target=>ui.el("room-list").children.find(row=>row.dataset.roomKey===JSON.stringify([target.room_id,target.room_instance])).children[0].children.find(el=>el.className==="room-avatar").children[0];
+  assert.equal(image(direct).children[0].getAttribute("class"),"assistant-icon");
+  assert.equal(image(room).children[0].className,"room-avatar-name");
+  assert.equal(image(room).children[0].textContent,"协作房间");
+  const tone=image(room).dataset.avatarTone;
+  for(const roster of [members,members.slice(0,1),[]]){
+    room.members=roster;await ui.refresh();
+    assert.equal(image(room).children.length,1);assert.equal(image(room).children[0].textContent,"协作房间");
+    assert.equal(image(room).dataset.avatarTone,tone);
+  }
+  room.name="CSGScion";await ui.refresh();
+  assert.equal(image(room).children[0].textContent,"CSGScion","case and longer labels are preserved for wrapping");
+  assert.equal(image(room).dataset.avatarTone,tone,"renaming retains the room identity color");
+});
+
 test("catalog unread badges include unopened direct replies and room mentions without changing order or drafts", async () => {
   const reading = (unread, mentions = 0) => ({status:"ready",revision:0,snapshot_seq:200,cleared_through:0,unread_count:unread,mention_count:mentions});
   const direct = {...makeRoom("Direct"),is_direct:true,human_read:reading(120,3)};
@@ -3710,7 +3780,7 @@ test("catalog unread badges include unopened direct replies and room mentions wi
   assert.equal(badge(0,"room-unread").textContent,"99+");
   assert.equal(badge(0,"room-mention"),undefined);
   assert.equal(badge(1,"room-unread").textContent,"9");
-  assert.equal(badge(1,"room-mention").textContent,"有人 @你");
+  assert.equal(badge(1,"room-mention").textContent,"[有人@我]");
   assert.match(rows()[0].children[0].getAttribute("aria-label"),/默认助理.*120 条未读/);
   assert.equal(rows()[0].children.length,1,"default assistant retains deletion protection");
   assert.match(rows()[1].children[0].getAttribute("aria-label"),/2 条未读消息提及你/);
@@ -3736,7 +3806,7 @@ test("catalog reading faults and old boundaries preserve last counts, isolate ro
   a.human_read={...ready,revision:4,cleared_through:50,unread_count:2,mention_count:1};await ui.refresh();assert.doesNotMatch(text(0),/暂未同步/);
   a.human_read={...ready,revision:5,unread_count:11};await ui.refresh();assert.match(text(0),/暂未同步/);assert.match(text(0),/2/);
   a.room_instance="replacement-instance";a.service=identity(a);a.human_read={status:"unavailable"};await ui.refresh();
-  assert.doesNotMatch(text(0),/有人 @你/);assert.match(text(0),/暂未同步/);
+  assert.doesNotMatch(text(0),/\[有人@我\]/);assert.match(text(0),/暂未同步/);
 });
 
 test("earlier mentions use full-history catalog counts while loaded buttons retain their own range",async()=>{
@@ -3764,7 +3834,7 @@ test("catalog responses overtaken by a shared receipt keep the last list value u
   room.human_read={...reading,revision:7,unread_count:8,mention_count:2};await ui.refresh();
   assert.doesNotMatch(text(),/暂未同步/);assert.match(text(),/8/);
   api.catalog.operator="new-owner";room.human_read={status:"unavailable"};await ui.refresh();
-  assert.doesNotMatch(text(),/有人 @你/);assert.match(text(),/暂未同步/);
+  assert.doesNotMatch(text(),/\[有人@我\]/);assert.match(text(),/暂未同步/);
 });
 
 test("optimistic viewing does not invent earlier mentions while the catalog awaits confirmation",async()=>{

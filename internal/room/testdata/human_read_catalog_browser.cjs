@@ -7,9 +7,16 @@ if(artifacts)mkdirSync(artifacts,{recursive:true});
  const browser=await chromium.launch({headless:true}),errors=[];
  try {
   const context=await browser.newContext({viewport:{width:1440,height:1000}}),desktop=await context.newPage();
-  const phoneContext=await browser.newContext({viewport:{width:390,height:844}}),phone=await phoneContext.newPage();
+  const phoneContext=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true}),phone=await phoneContext.newPage();
   for(const page of [desktop,phone]){page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(12000);}
-  const catalog=async()=>{const response=await fetch(endpoint+'/v1/rooms');assert.equal(response.status,200);return response.json();};
+  // Independent contexts can contend on the catalog mutex, as normal clients do.
+  const catalog=async()=>{
+   for(let attempt=0;;attempt++){
+    const response=await fetch(endpoint+'/v1/rooms'),body=await response.json();
+    if(response.status===409 && body.code==='busy' && attempt<20){await new Promise(r=>setTimeout(r,50));continue;}
+    assert.equal(response.status,200,JSON.stringify(body));return body;
+   }
+  };
   let data=await catalog();
   const room=id=>data.rooms.find(r=>r.room_id===id);
   const names={direct:room(directID).name,group:room(groupID).name,broken:room(brokenID).name};
@@ -21,9 +28,11 @@ if(artifacts)mkdirSync(artifacts,{recursive:true});
   await desktop.goto(endpoint);await choice(desktop,groupID).waitFor();
   await desktop.locator('#settings-dialog').evaluate(el=>el.showModal());
   assert.equal(await choice(desktop,groupID).locator('.room-unread').textContent(),'99+');
-  assert.equal(await choice(desktop,groupID).locator('.room-mention').textContent(),'有人 @你');
+  assert.equal(await choice(desktop,groupID).locator('.room-mention').textContent(),'[有人@我]');
   assert.equal(await choice(desktop,brokenID).locator('.room-read-unavailable').textContent(),'暂未同步');
   assert.equal(await choice(desktop,directID).locator('.room-mention').count(),0);
+  assert.equal(await choice(desktop,directID).locator('.room-avatar .assistant-icon').count(),1);
+  assert.equal(await choice(desktop,groupID).locator('.room-avatar-name').textContent(),names.group);
   const before=await read(groupID);
   await phone.goto(endpoint);await phone.locator('#mobile-back-to-rooms').click();
   await choice(phone,groupID).click();await phone.locator('#message-120').waitFor();
@@ -88,15 +97,33 @@ if(artifacts)mkdirSync(artifacts,{recursive:true});
   for(const page of [desktop,phone]){
    await page.route('**/v1/rooms',async route=>{
     const response=await route.fetch(),body=await response.json();
-    for(const r of body.rooms){r.name='很长的会话名称 · '+r.name+' · 用来检查默认助理时间摘要和角标布局';if(r.human_read.status==='ready')r.human_read.unread_count=123;}
+    for(const r of body.rooms){
+     r.name=(r.room_id===brokenID?'CSGScion · ':'')+r.name+' · 很长的会话名称 · 用来检查默认助理时间摘要和角标布局';
+     if(r.human_read.status==='ready')r.human_read.unread_count=123;
+    }
     await route.fulfill({response,json:body});
    });
   }
   for(const width of [1440,390,320]){
    const page=width===1440?desktop:phone;
    if(width!==1440){await page.setViewportSize({width,height:844});await page.locator('#mobile-back-to-rooms').click();}
-   await waitFor(async()=> (await page.locator('.room-choice strong').first().textContent()).startsWith('很长'));
+   await waitFor(async()=> (await page.locator('.room-choice strong').first().textContent()).includes('很长的会话名称'));
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+   for(const item of await page.locator('.room-choice').all()){
+    const layout=await item.evaluate(el=>{
+     const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom};};
+     const image=el.querySelector('.room-avatar-image'),label=el.querySelector('.room-avatar-name');
+     return {radius:getComputedStyle(image).borderRadius,label:label&&rect(label),rows:getComputedStyle(el).gridTemplateRows.split(' ').length,box:rect(el),avatar:rect(el.querySelector('.room-avatar')),detail:rect(el.querySelector('.room-detail')),name:rect(el.querySelector('strong')),time:rect(el.querySelector('time')),
+      mention:el.querySelector('.room-mention')&&rect(el.querySelector('.room-mention')),badge:el.querySelector('.room-unread')&&rect(el.querySelector('.room-unread'))};
+    });
+    assert.equal(layout.rows,2,'conversation stays on two rows');assert.ok(layout.box.height<=72);
+    assert.equal(layout.radius,'50%');
+    if(layout.label)assert.ok(layout.label.width<=32 && layout.label.height<=28,'name fits two lines inside the circle');
+    assert.ok(layout.name.width>0 && layout.name.right<=layout.time.x);
+    assert.ok(layout.detail.x>layout.avatar.right && layout.detail.bottom<=layout.box.bottom);
+    if(layout.mention)assert.equal(layout.mention.y,layout.detail.y);
+    if(layout.badge)assert.ok(layout.badge.y<layout.avatar.y && layout.badge.right>layout.avatar.right && layout.badge.y>=layout.box.y);
+   }
    for(const row of await page.locator('.room-entry').all()){
     const count=row.locator('.room-unread'),remove=row.locator('.room-delete');
     if(await count.count() && await remove.count()){
@@ -108,7 +135,42 @@ if(artifacts)mkdirSync(artifacts,{recursive:true});
    if(artifacts)await page.screenshot({path:join(artifacts,`catalog-${width}.png`)});
    if(width!==1440)await choice(page,groupID).click();
   }
-  assert.deepEqual(errors,[]);
-  console.log(JSON.stringify({independentContexts:2,catalogSyncMs:syncMs,unopenedCounts:true,earlierMentions:true,oneBatchHistory:true,catalogFailureIsolated:true,directAndRoomJumps:true,activityAvoided:true,shortViewportSimulated:true,viewports:[1440,390,320]}));
+  // Use Chromium touch input to exercise long presses, scrolling cancellation
+  // and the native release/click sequence, rather than dispatching a fake click.
+  const touch=await phoneContext.newCDPSession(phone);
+  const touchStart=async locator=>{
+   const b=await locator.boundingBox(),point={x:b.x+b.width/2,y:b.y+b.height/2};
+   await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[point]});return point;
+  };
+  const touchEnd=()=>touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  let deleteWrites=0;phone.on('request',req=>{if(new URL(req.url()).pathname==='/v1/rooms/delete')deleteWrites++;});
+  await phone.bringToFront();
+  for(const width of [390,320]){
+   await phone.setViewportSize({width,height:844});
+   if(await phone.locator('#workspace').evaluate(el=>el.classList.contains('rooms-collapsed')))await phone.locator('#mobile-back-to-rooms').tap();
+   const item=choice(phone,groupID),remove=item.locator('..').locator('.room-delete');
+   assert.equal(await remove.isVisible(),false);
+   assert.equal(await item.evaluate(el=>getComputedStyle(el).paddingRight),'12px','hidden action reserves no space');
+   if(artifacts)await phone.screenshot({path:join(artifacts,`delete-hidden-${width}.png`)});
+   const point=await touchStart(item);
+   await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{...point,y:point.y+24}]});
+   await touchEnd();await new Promise(r=>setTimeout(r,600));assert.equal(await remove.isVisible(),false,'drag cancels hold');
+   await choice(phone,directID).tap();
+   await waitFor(async()=>await phone.locator('#workspace').evaluate(el=>el.classList.contains('rooms-collapsed')));
+   await phone.locator('#mobile-back-to-rooms').tap();const originalName=await phone.locator('#room-name').textContent();
+   await touchStart(item);await remove.waitFor({state:'visible'});await touchEnd();
+   assert.equal(await phone.locator('#workspace').evaluate(el=>el.classList.contains('rooms-collapsed')),false,'long press release does not open conversation');
+   assert.equal(await phone.locator('#room-name').textContent(),originalName);
+   const action=await remove.boundingBox(),summary=await item.locator('.room-detail').boundingBox();
+   assert.ok(action.width>=44 && action.height>=44 && summary.x+summary.width<=action.x,'revealed action has its own touch area');
+   if(artifacts)await phone.screenshot({path:join(artifacts,`delete-revealed-${width}.png`)});
+   await remove.tap();await phone.locator('#confirmation-dialog').waitFor({state:'visible'});
+   assert.equal(deleteWrites,0);await phone.locator('#confirmation-cancel').tap();assert.equal(await remove.isVisible(),false);
+   await touchStart(item);await remove.waitFor({state:'visible'});await touchEnd();
+   await phone.touchscreen.tap(8,350);assert.equal(await remove.isVisible(),false,'outside tap dismisses action');
+   assert.equal(await choice(phone,directID).locator('..').locator('.room-delete').count(),0,'default assistant stays protected');
+  }
+  assert.equal(deleteWrites,0);assert.deepEqual(errors,[]);
+  console.log(JSON.stringify({independentContexts:2,catalogSyncMs:syncMs,unopenedCounts:true,earlierMentions:true,oneBatchHistory:true,catalogFailureIsolated:true,directAndRoomJumps:true,activityAvoided:true,shortViewportSimulated:true,twoRowCatalog:true,roomNameAvatars:true,touchLongPress:true,deleteRequiresConfirmation:true,viewports:[1440,390,320]}));
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});
