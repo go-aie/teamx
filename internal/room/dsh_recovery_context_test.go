@@ -74,6 +74,45 @@ func TestDSHRecoveryFixedRecentSnapshot(t *testing.T) {
 	}
 }
 
+func TestDSHRecoveryPreviewUsesCurrentNamesAndSimplifiedMessages(t *testing.T) {
+	state := historyRoom(0, "")
+	h := newRoomHarness(t, state, nil)
+	id := h.memberID("A", "generation-A")
+	registry := &agentNameRegistry{}
+	names := map[RoomIdentity]roomAgentNames{h.id: {Members: map[string]agentDisplayName{
+		"generation-A": {AgentID: "A", AgentName: "当前 助手"},
+	}}}
+	registry.value.Store(&names)
+	svc := &service{store: h.store, room: h.addr, info: ServiceInfo{RoomIdentity: h.id}, agentNames: registry}
+	roomCall[PostReceipt](t, h, PostMessage{RoomIdentity: h.id, Caller: agentCaller("A", "generation-A"), ClientMessageID: "author-name", Text: "收到"})
+	roomCall[PostReceipt](t, h, PostMessage{RoomIdentity: h.id, Caller: humanCaller, ClientMessageID: "mention-name", Text: "🙂 @旧名 请处理", Mentions: []MessageMention{
+		{Start: 3, End: 6, Kind: "agent", ID: "A", MembershipID: "generation-A"},
+	}})
+	saveMaterialTurn(t, svc, id, 2, 0)
+	before := recoveryFiles(t, h.store.dir)
+	recovery, err := svc.prepareDSHRecoveryContext(h.ctx, materialInput(id, 2, 0), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := roomCall[ReadPage](t, h, ReadMessages{RoomIdentity: h.id, Caller: agentCaller("A", "generation-A"), Mode: ReadLatest, Latest: dshRecoveryRoomMessages})
+	expected := projectRoomRead(svc.labelMessage(page))
+	if recovery.room == nil || !reflect.DeepEqual(*recovery.room, expected) || recovery.room.Messages[0].AgentName != "当前 助手" || recovery.room.Messages[1].Text != "🙂 @当前 助手 请处理" {
+		t.Fatal("recovery and normal reads disagree", recovery.room, expected)
+	}
+	encoded := string(mustContractJSON(recovery.room))
+	for _, field := range []string{`"mentions"`, `"author_membership_id"`, `"display_text"`} {
+		if strings.Contains(encoded, field) {
+			t.Fatal("recovery leaked internal or duplicate message fields", encoded)
+		}
+	}
+	if !reflect.DeepEqual(before, recoveryFiles(t, h.store.dir)) {
+		t.Fatal("recovery preview changed saved state")
+	}
+	if page.Messages[1].Text != "🙂 @旧名 请处理" || page.Messages[1].Mentions[0].AgentName != "当前 助手" {
+		t.Fatal("read labels unexpectedly rewrote source text", page)
+	}
+}
+
 func TestDSHRecoveryPrioritizesOnlySavedMappingsBeforePageLimit(t *testing.T) {
 	h := newInboxHarness(t, InboxLimits{})
 	initReferenceTest(t, h)

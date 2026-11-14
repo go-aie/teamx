@@ -26,6 +26,7 @@ type ServiceInfo struct {
 
 // Only these explicit DTOs cross HTTP. Actor addresses remain in the service.
 type apiRequest struct {
+	Mentions         []MessageMention `json:"mentions,omitempty"`
 	automatic        bool
 	recovering       bool
 	automaticInbox   *InboxStatus
@@ -73,6 +74,7 @@ type apiRequest struct {
 }
 
 type serviceMember struct {
+	AgentName string `json:"agent_name"`
 	MemberInfo
 	Status       string         `json:"status"`
 	Notification *UnreadChanged `json:"notification"`
@@ -101,6 +103,7 @@ type apiError struct {
 }
 
 type service struct {
+	agentNames                *agentNameRegistry
 	models                    *modelExecution
 	modelTargets              map[string]modelSessionSnapshot
 	access                    *serverAccess
@@ -237,6 +240,7 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 		return nil, err
 	}
 	s := &service{
+		agentNames:           config.agentNames,
 		access:               config.access,
 		settings:             config.settings,
 		workspaceOperationID: config.workspaceOperationID,
@@ -412,7 +416,7 @@ func (s *service) members(ctx context.Context) (serviceMembers, error) {
 		Committing: list.Committing, WriteError: list.WriteError, Members: make([]serviceMember, 0, len(list.Members))}
 	result.Restart = s.discussionRestartStatus()
 	for _, m := range list.Members {
-		item := serviceMember{MemberInfo: m, Status: "detached"}
+		item := serviceMember{MemberInfo: m, Status: "detached", AgentName: s.agentName(m.AgentID, m.MembershipID)}
 		target := s.target(m.MembershipID)
 		if !target.IsZero() {
 			id := MemberIdentity{RoomIdentity: s.info.RoomIdentity, AgentID: m.AgentID, MembershipID: m.MembershipID}
@@ -813,11 +817,21 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			result, err = s.rotateSession(r.Context(), req)
 		}
 	case "/v1/send":
+		inferred := len(req.Mentions) == 0
+		if inferred {
+			req.Mentions, err = s.inferMessageMentions(r.Context(), req.Text)
+			if err != nil {
+				break
+			}
+		}
 		result, err = callRoomWrite[PostReceipt](r.Context(), s.room, PostMessage{RoomIdentity: req.RoomIdentity, Caller: req.Caller,
-			ClientMessageID: req.ClientMessageID, Text: req.Text, ReplyTo: req.ReplyTo})
+			ClientMessageID: req.ClientMessageID, Text: req.Text, ReplyTo: req.ReplyTo, Mentions: req.Mentions, inferMentions: inferred})
 	case "/v1/read":
 		result, err = s.room.Call[ReadPage](r.Context(), ReadMessages{RoomIdentity: req.RoomIdentity, Caller: req.Caller,
 			Mode: req.Mode, Latest: req.Latest, After: req.After, SnapshotSeq: req.SnapshotSeq, Limit: req.Limit, Peek: req.Peek})
+		if err == nil {
+			result = s.labelMessage(result.(ReadPage))
+		}
 	case "/v1/read/confirm":
 		if req.Caller.Kind != "agent" {
 			err = ErrIdentity

@@ -112,7 +112,7 @@ func (s *service) prepareDSHRecoveryContext(ctx context.Context, input UnreadCha
 		if page.RoomIdentity != input.RoomIdentity || page.MembershipID != input.MembershipID || page.SnapshotSeq != turn.SnapshotSeq {
 			return nil, ErrIdentity
 		}
-		view := projectRoomRead(page)
+		view := projectRoomRead(s.labelMessage(page))
 		r.room = &view
 	}
 	if err := ctx.Err(); err != nil {

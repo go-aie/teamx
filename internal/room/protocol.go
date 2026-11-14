@@ -60,6 +60,8 @@ type MemberList struct {
 }
 
 type PostMessage struct {
+	Mentions      []MessageMention
+	inferMentions bool
 	RoomIdentity
 	Caller          Caller
 	ClientMessageID string

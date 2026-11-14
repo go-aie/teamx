@@ -68,8 +68,9 @@ type roomRuntimeSummary struct {
 }
 
 type roomMessagePreview struct {
-	Author Author `json:"author"`
-	Text   string `json:"text"`
+	AgentName string `json:"agent_name,omitempty"`
+	Author    Author `json:"author"`
+	Text      string `json:"text"`
 }
 
 func summarizeRoomMessage(message RoomMessage) *roomMessagePreview {
@@ -99,7 +100,7 @@ type managedMember struct {
 	MemberState
 	ModelSelection        *modelSelection   `json:"model_selection,omitempty"`
 	ModelSelectionVersion uint64            `json:"model_selection_version,omitempty"`
-	Name                  string            `json:"name"`
+	Name                  string            `json:"name"` // Frozen role label; mutable Agent names belong to the catalog.
 	Instructions          string            `json:"instructions"`
 	ToolEnv               map[string]string `json:"tool_env,omitempty"`
 	Workspace             string            `json:"workspace"` // relative to this Room
@@ -138,6 +139,7 @@ type roomInitialization struct {
 }
 
 type roomIndexEntry struct {
+	AgentNames map[string]agentDisplayName `json:"agent_names,omitempty"`
 	roomSummary
 	Selection      roomSelection       `json:"selection"`
 	Initialization *roomInitialization `json:"initialization,omitempty"`
@@ -156,6 +158,7 @@ type roomsIndex struct {
 // The root lock owns the catalog and its live services. Durable
 // operations retain an owner independently of an HTTP caller.
 type roomManager struct {
+	agentNames               *agentNameRegistry
 	modelControl             *modelController
 	onboardingRunning        map[string]bool
 	settings                 *systemSettings
@@ -253,6 +256,7 @@ func newRoomManager(dir string, maxTurns uint64) (_ *roomManager, err error) {
 	if err := m.upgradeSessionThresholds(); err != nil {
 		return nil, err
 	}
+	m.publishAgentNames()
 	if err := m.validateIndex(); err != nil {
 		return nil, fmt.Errorf("%w: rooms.json: %w", ErrInvalid, err)
 	}
@@ -317,6 +321,7 @@ func (m *roomManager) saveIndex(next roomsIndex) error {
 		return err
 	}
 	m.index = next
+	m.publishAgentNames()
 	return nil
 }
 
@@ -329,6 +334,11 @@ func (m *roomManager) validateIndex() error {
 	}
 	ids, instances, requests := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	for _, e := range m.index.Rooms {
+		for membership, n := range e.AgentNames {
+			if !safeMembershipID(membership) || !validText(n.AgentID) || !validAgentName(n.AgentName) {
+				return ErrInvalid
+			}
+		}
 		if !safeMembershipID(e.RoomID) || !validText(e.RoomInstance) || ids[e.RoomID] || instances[e.RoomInstance] || requests[e.CreateID] ||
 			!safeMembershipID(e.CreateID) || e.Selection.CreateID != e.CreateID || e.Selection.TeamID != e.TeamID ||
 			!validText(e.Name) || len(e.Name) > 256 || !validRoomSource(e) ||
@@ -728,6 +738,10 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m.serveRoomOpen(w, r)
 		return
 	}
+	if r.URL.Path == "/v1/member/name" {
+		m.serveAgentName(w, r)
+		return
+	}
 	if r.URL.Path == "/v1/rooms/rename" {
 		m.serveRoomRename(w, r)
 		return
@@ -785,11 +799,18 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				last := snapshot.Messages[len(snapshot.Messages)-1]
 				summary.LastMessageAt = &last.CreatedAt
 				summary.LastMessagePreview = summarizeRoomMessage(last)
+				if last.Author.Kind == "agent" {
+					summary.LastMessagePreview.AgentName = m.agentNames.name(MemberIdentity{RoomIdentity: e.RoomIdentity, AgentID: last.Author.ID, MembershipID: last.AuthorMembershipID})
+				}
+				if len(last.Mentions) > 0 {
+					last.Text = m.displayMentionText(e.RoomIdentity, last)
+					summary.LastMessagePreview.Text = summarizeRoomMessage(last).Text
+				}
 			}
 			var saved managedRoomConfig
 			if err := readSnapshot(filepath.Join(m.roomDir(e.RoomID), "room-config.json"), &saved, maxPrivateFileBytes); err == nil && saved.RoomIdentity == e.RoomIdentity {
 				for _, member := range saved.Members {
-					summary.Members = append(summary.Members, teamMemberSummary{ID: member.AgentID, Name: member.Name})
+					summary.Members = append(summary.Members, teamMemberSummary{ID: member.AgentID, Name: member.Name, AgentName: m.agentNames.name(MemberIdentity{RoomIdentity: e.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID})})
 				}
 			}
 			rooms = append(rooms, summary)

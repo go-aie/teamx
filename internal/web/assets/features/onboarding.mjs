@@ -1,3 +1,4 @@
+import { agentName } from "../agent-names.mjs";
 import { randomUUID } from "../random-id.mjs";
 // Durable platform onboarding and member platform additions.
 export function createOnboarding({ env, runtime, connectionsUI, larkUI, settingsUI, roomsUI, workspaceUI, notificationsUI, membersUI, gitlabUI, scionUI }) {
@@ -7,6 +8,10 @@ export function createOnboarding({ env, runtime, connectionsUI, larkUI, settings
   // Authentication and settings use the same durable P5 operation. Only its ID
   // and non-secret prepare request are kept in this tab, never OAuth URLs/tokens.
   const onboarding = {active:false, operation:null, pending:null, members:[], fixed:null, busy:false, error:"", notices:new Set(),owner:null};
+
+  function memberName(room, member) {
+    return member?.agent_name || agentName(room?.members?.find(m=>m.id===member?.agent_id)) || agentName(member);
+  }
 
   function onboardingStorageKey() { return `teamx.platform-onboarding:${state.operator}`; }
 
@@ -59,14 +64,14 @@ export function createOnboarding({ env, runtime, connectionsUI, larkUI, settings
     $("onboarding-backfill-start-label").textContent=`起始时间（${settingsUI.systemTime.zone || "系统时区异常"}）`;
     const member=onboardingMember(), room=onboardingRoom();
     const content=provider==="gitlab" ? "我的待办（项目互动未开启）" : "全部人员私聊（群聊未开启）";
-    $("onboarding-summary").textContent=only ? "仅连接并核验账号；不创建通知或成员工具设置。" : `为「${member?.agent_id || "所选成员"}」接入后，${provider==="scion" ? "此平台没有通知能力，" : $("onboarding-notifications").checked ? `接收${content} → ${room?.name || "所选会话"} 的成员 Inbox；` : "通知关闭；"}${$("onboarding-tool").checked ? "启用对应平台工具。" : "工具关闭。"}已有设置保留，范围可在通知详情中调整。`;
+    $("onboarding-summary").textContent=only ? "仅连接并核验账号；不创建通知或成员工具设置。" : `为「${memberName(room,member) || "所选成员"}」接入后，${provider==="scion" ? "此平台没有通知能力，" : $("onboarding-notifications").checked ? `接收${content} → ${room?.name || "所选会话"} 的成员 Inbox；` : "通知关闭；"}${$("onboarding-tool").checked ? "启用对应平台工具。" : "工具关闭。"}已有设置保留，范围可在通知详情中调整。`;
     if(active && fixed){$("connection-provider").disabled=true;$("connection-url").readOnly=true;}
     const op=onboarding.operation;
     const done=onboardingDone(op);
     const waitingForAccount=active && op?.connection.status==="waiting" && !op.cancelled && !onboarding.error && [op.notifications,op.tool].every(step=>["pending","skipped"].includes(step.status));
     const samePlatform=$("connection-form").hidden || (connectionsUI.platforms.selected ? connectionsUI.platforms.selected.id===op?.platform_id : active);
     $("onboarding-result").hidden=(!onboarding.pending && !op) || done && !onboarding.error || waitingForAccount || !samePlatform;
-    $("onboarding-result-target").textContent=op ? op.input.only_platform ? "仅添加平台" : `${state.catalog?.rooms.find(r=>r.room_instance===op.input.room_instance)?.name || op.input.room_id} · ${op.input.agent_id}` : "正在恢复上次接入记录…";
+    $("onboarding-result-target").textContent=op ? op.input.only_platform ? "仅添加平台" : `${state.catalog?.rooms.find(r=>r.room_instance===op.input.room_instance)?.name || op.input.room_id} · ${memberName(state.catalog?.rooms.find(r=>r.room_instance===op.input.room_instance),op.input)}` : "正在恢复上次接入记录…";
     const item=connectionsUI.platforms.items.find(p=>p.id===op?.platform_id);
     const providerName={gitlab:"GitLab",lark:"飞书",scion:"Scion"}[op?.input.provider || onboarding.pending?.prepare?.provider] || "平台";
     const name=item?.name || providerName;
@@ -99,7 +104,7 @@ export function createOnboarding({ env, runtime, connectionsUI, larkUI, settings
       const data=await request(`/v1/platforms/onboarding/targets?${q}`);
       if (!onboardingCurrent(version,identity) || room.room_instance!==onboardingRoom()?.room_instance) return;
       onboarding.members=data.members;
-      const options=data.members.map(m=>new Option(room.members?.find(r=>r.id===m.agent_id)?.name || m.agent_id,m.membership_id));
+      const options=data.members.map(m=>new Option(memberName(room,m),m.membership_id));
       const selected=data.members.some(m=>m.membership_id===preferred) ? preferred : data.members.length===1 && !preferred ? data.members[0].membership_id : "";
       if (!selected) options.unshift(new Option(data.members.length ? "选择 Agent" : "此会话没有适用的 Agent",""));
       setSelectOptions("onboarding-member",options,selected);
@@ -324,7 +329,7 @@ export function createOnboarding({ env, runtime, connectionsUI, larkUI, settings
       if(!item){$("connection-provider").value=op.input.provider==="lark" ? op.input.origin.includes("larksuite") ? "lark" : "feishu" : op.input.provider;$("connection-url").value=op.input.origin;connectionsUI.connectionAuthFields();}
       onboarding.active=true;onboarding.fixed=op.input;
       setSelectOptions("onboarding-room",[new Option(state.catalog?.rooms.find(r=>r.room_instance===op.input.room_instance)?.name || op.input.room_id || "仅添加平台",op.input.room_instance || "")],op.input.room_instance || "");
-      onboarding.members=op.input.only_platform ? [] : [op.input];setSelectOptions("onboarding-member",[new Option(op.input.agent_id || "",op.input.membership_id || "")],op.input.membership_id || "");
+      onboarding.members=op.input.only_platform ? [] : [op.input];setSelectOptions("onboarding-member",[new Option(memberName(onboardingRoom(),op.input) || "",op.input.membership_id || "")],op.input.membership_id || "");
       $("onboarding-only").checked=!!op.input.only_platform;$("onboarding-notifications").checked=op.input.notifications!==false;$("onboarding-tool").checked=op.input.tool!==false;
       renderOnboarding();
       if(connectionsUI.connectionIsLark())await larkUI.detectLarkPlatform();else if(connectionsUI.connectionIsScion())await scionUI.detectScionPlatform();else await gitlabUI.discoverGitLabSetup();

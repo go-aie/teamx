@@ -53,13 +53,16 @@ type Author struct {
 }
 
 type RoomMessage struct {
-	Seq             uint64             `json:"seq"`
-	ClientMessageID string             `json:"client_message_id"`
-	Author          Author             `json:"author"`
-	Text            string             `json:"text"`
-	Source          *IntegrationSource `json:"source,omitempty"`
-	ReplyTo         uint64             `json:"reply_to,omitempty"`
-	CreatedAt       time.Time          `json:"created_at"`
+	AuthorMembershipID string             `json:"author_membership_id,omitempty"`
+	AgentName          string             `json:"agent_name,omitempty"`
+	Mentions           []MessageMention   `json:"mentions,omitempty"`
+	Seq                uint64             `json:"seq"`
+	ClientMessageID    string             `json:"client_message_id"`
+	Author             Author             `json:"author"`
+	Text               string             `json:"text"`
+	Source             *IntegrationSource `json:"source,omitempty"`
+	ReplyTo            uint64             `json:"reply_to,omitempty"`
+	CreatedAt          time.Time          `json:"created_at"`
 }
 
 // RunnerConfig selects the service-side profile for the supported DSH backend.
@@ -141,6 +144,12 @@ func (s RoomSnapshot) validate() error {
 			}
 		} else if m.Source != nil {
 			return fmt.Errorf("unexpected integration source")
+		}
+		if m.AuthorMembershipID != "" && (m.Author.Kind != "agent" || !safeMembershipID(m.AuthorMembershipID)) {
+			return fmt.Errorf("message %d: invalid author membership", i+1)
+		}
+		if !validMentions(m.Text, m.Mentions) {
+			return fmt.Errorf("message %d: invalid mentions", i+1)
 		}
 		if !validText(m.Text) || len(m.Text) > maxTextBytes {
 			return fmt.Errorf("message %d: invalid text", i+1)

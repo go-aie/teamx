@@ -345,6 +345,11 @@
           <button id="toggle-agent-controls" class="text-button agent-controls-toggle" type="button" aria-label="展开成员设置" title="展开成员设置" aria-controls="agent-controls" aria-expanded="false"><span id="agent-model-alert" role="status" aria-live="polite" hidden></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
         </header>
         <section id="agent-controls" class="agent-controls" aria-label="成员设置与运行控制" hidden>
+          <form id="agent-name-form" class="agent-name-form" hidden>
+            <label for="agent-display-name">显示名称</label><input id="agent-display-name" class="field-control" maxlength="256" autocomplete="off" required aria-describedby="agent-name-hint">
+            <p id="agent-name-hint" class="quiet">用于消息署名和 @；私信标题使用同一名称。</p>
+            <div class="form-actions"><span id="agent-name-feedback" class="quiet" role="status"></span><button id="agent-name-save" class="primary" type="submit">保存名称</button></div>
+          </form>
           <div id="member-model" class="member-model" hidden>
             <label for="member-model-selection">模型</label>
             <select id="member-model-selection" class="field-control" aria-label="切换成员模型" title="切换模型；当前回合结束后应用，私有上下文将重置。"></select>

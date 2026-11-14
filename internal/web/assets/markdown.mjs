@@ -114,7 +114,8 @@ function makeMarkdown(options = {}) {
           const suffix = raw.match(/[。，！？、；：）》】”’]+$/u)?.[0] || "";
           if (suffix) return webLink(href.slice(0, -suffix.length), escapeHTML(raw.slice(0, -suffix.length), true), title) + escapeHTML(suffix);
         }
-        return webLink(href, this.parser.parseInline(tokens), title);
+        const literal = list => list.map(token=>token.type==="roomMention" ? {type:"text",raw:token.raw,text:options.roomMentionTokens[token.index].raw} : token.tokens ? {...token,tokens:literal(token.tokens)} : token);
+        return webLink(href, this.parser.parseInline(options.roomMentionTokens ? literal(tokens) : tokens), title);
       },
       image({ href, text, title }) {
         return imageHTML({ href, text, title }, options);
@@ -123,7 +124,15 @@ function makeMarkdown(options = {}) {
         return `<div class="table-wrap">${Renderer.prototype.table.call(this, token)}</div>`;
       },
     },
-    extensions: [...(options.compactLarkMentions ? [{
+    extensions: [...(options.roomMentionTokens ? [{
+      name:"roomMention",level:"inline",start:src=>src.indexOf(options.roomMentionPrefix),
+      tokenizer(src){
+        if(!src.startsWith(options.roomMentionPrefix))return;
+        const match=/^(\d+)\uE001/.exec(src.slice(options.roomMentionPrefix.length));
+        if(match && options.roomMentionTokens[Number(match[1])])return {type:"roomMention",raw:options.roomMentionPrefix+match[0],index:Number(match[1])};
+      },
+      renderer(token){const item=options.roomMentionTokens[token.index];return `<mark class="${item.self ? "mention" : "mention-member"}">${escapeHTML("@"+item.label)}</mark>`;}
+    }] : []), ...(options.compactLarkMentions ? [{
       name: "larkMention", level: "inline",
       start(src) { return src.indexOf("@"); },
       tokenizer(src) {
@@ -158,12 +167,29 @@ const markdown = makeMarkdown();
 export function markdownHTML(text, options) {
   if (!options) return markdown.parse(text);
   if (options.larkImages && !text.includes("](lark-image:")) text = text.replace(/^image_key: (img_[A-Za-z0-9_-]{1,252})\r?$/gm, "![飞书图片](lark-image:$1)");
-  return makeMarkdown(options).parse(options.quotedMarkdown ? notificationMarkdown(text) : text);
+  let prefix="\uE000TEAMX_MENTION_";
+  while(text.includes(prefix))prefix+="x";
+  const tokens=[], parts=[];let end=0;
+  for(const at of options.mentions || []){
+    if(!Number.isSafeInteger(at.start)||!Number.isSafeInteger(at.end)||at.start<end||at.end<=at.start+1||at.end>text.length||text[at.start]!=="@"||!at.id)continue;
+    const raw=text.slice(at.start,at.end),label=options.mentionLabel?.(at) || at.agent_name || raw.slice(1);
+    parts.push(text.slice(end,at.start),`${prefix}${tokens.length}\uE001`);
+    tokens.push({raw,label,self:at.kind==="human" && at.id===options.operatorID});end=at.end;
+  }
+  parts.push(text.slice(end));
+  const source=parts.join("");
+  let html=makeMarkdown({...options,roomMentionPrefix:prefix,roomMentionTokens:tokens.length ? tokens : undefined}).parse(options.quotedMarkdown ? notificationMarkdown(source) : source);
+  for(const [index,item] of tokens.entries()){
+    const token=`${prefix}${index}\uE001`;
+    html=html.replaceAll(token,escapeHTML(item.raw)).replaceAll(encodeURIComponent(token),escapeHTML(encodeURIComponent(item.raw)));
+  }
+  return html;
 }
 
 export function renderMessageBody(container, text, operator, options) {
   // HTML comes solely from the configured renderer, with escaped message HTML
   // and protocol-checked links. Mentions are added to text nodes afterwards.
+  options={...options,operatorID:operator};
   container.innerHTML = markdownHTML(text, options);
   const doc = container.ownerDocument;
   if (options) {
@@ -188,7 +214,7 @@ export function renderMessageBody(container, text, operator, options) {
   const nodes = [];
   while (walker.nextNode()) {
     const node = walker.currentNode;
-    if (!node.parentElement.closest("a, code, pre")) nodes.push(node);
+    if (!node.parentElement.closest("a, code, pre, mark")) nodes.push(node);
   }
   for (const node of nodes) {
     const ranges = [...mentionRanges(node.data, options?.operatorNames || operator).map(at => ({...at, self:true})),

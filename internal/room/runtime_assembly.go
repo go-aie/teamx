@@ -3,6 +3,7 @@ package room
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 
@@ -19,6 +20,9 @@ func (m *roomManager) copyIndex() roomsIndex {
 	next.Opens = append([]roomOpen{}, next.Opens...)
 	next.Shutdowns = append([]roomShutdown{}, next.Shutdowns...)
 	next.Rooms = append([]roomIndexEntry{}, next.Rooms...)
+	for i := range next.Rooms {
+		next.Rooms[i].AgentNames = maps.Clone(next.Rooms[i].AgentNames)
+	}
 	next.WorkspaceOperations = make([]workspaceOperation, len(m.index.WorkspaceOperations))
 	for i, op := range m.index.WorkspaceOperations {
 		next.WorkspaceOperations[i] = cloneWorkspaceOperation(op)
@@ -214,6 +218,7 @@ func (m *roomManager) workspaceActivationConfig(id RoomIdentity, applying string
 		profiles[member.Runner.Profile] = p
 	}
 	config := m.config
+	config.agentNames = m.agentNames
 	config.scheduling, _ = saved.Scheduling.effective() // validated before assembling profiles
 	config.settings = m.settings
 	config.modelTargets = targets

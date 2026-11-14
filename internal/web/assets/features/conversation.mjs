@@ -1,3 +1,4 @@
+import { agentName, resolveAgentName, messageDisplayText } from "../agent-names.mjs";
 import { randomUUID } from "../random-id.mjs";
 import { readPages as collectPages, createRoomDrafts, mentionRanges, unseenMentions } from "../client.mjs";
 import { notificationOptions } from "../markdown.mjs";
@@ -32,7 +33,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
   sendIcon.append(sendIconPath);
   const mentionPicker = createMentionPicker({ document, input: $("message-input"), list: $("mention-options"), mirror: $("message-mirror"),
     members: () => state.members, operator: () => state.operator, enabled: () => !!state.info && !state.draft.pending && !discussionBusy(),
-    changed: () => { saveDraft(); composerState(); } });
+    draft: () => state.draft, changed: () => { saveDraft(); composerState(); } });
 
   let restartNoticeID = "", restartNoticeExpires = 0;
 
@@ -46,8 +47,11 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
 
   const mentionDwell = 1000;
   const operatorNames = () => [state.operator, state.operatorDisplayName].filter(Boolean);
-  const authorName = author => author.kind === "human" && author.id === state.operator ? userMenuUI.displayName() : author.id;
-  const messageOptions = message => ({ ...(message.author.kind === "integration"
+  const authorName = (author, message) => author.kind === "human" && author.id === state.operator ? userMenuUI.displayName()
+    : author.kind === "agent" ? resolveAgentName(state.members,author.id,message?.author_membership_id,message?.agent_name || author.id) : author.id;
+  const mentionLabel = at=>at.kind==="agent" ? resolveAgentName(state.members,at.id,at.membership_id,at.agent_name || at.id) : at.id===state.operator ? userMenuUI.displayName() : at.id;
+  const displayText = message => messageDisplayText(message, mentionLabel);
+  const messageOptions = message => ({ mentions:message.mentions, mentionLabel, ...(message.author.kind === "integration"
     ? notificationOptions(state.info, state.operator, message.source, { seq: message.seq })
     : { memberNames: state.members.map(m => m.agent_id) }), operatorNames: operatorNames() });
 
@@ -169,9 +173,9 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     el.classList.toggle("integration", integration);
     const avatar = el.querySelector(".avatar");
     renderAvatar(document, avatar, {kind:message.author.kind, id:message.author.id,
-      provider:message.source?.provider || message.author.id, direct:roomsUI.isDirect()});
+      provider:message.source?.provider || message.author.id, direct:roomsUI.isDirect(), name:authorName(message.author,message)});
     const channel = message.source?.provider === "gitlab" && ["events", "todos"].includes(message.source?.channel) ? message.source.channel : null;
-    el.querySelector(".author").textContent = integration ? channel ? `GitLab · ${channel === "todos" ? "我的待办" : "项目活动"}` : `${message.author.id} · 通知` : authorName(message.author);
+    el.querySelector(".author").textContent = integration ? channel ? `GitLab · ${channel === "todos" ? "我的待办" : "项目活动"}` : `${message.author.id} · 通知` : authorName(message.author,message);
     if (integration && channel) {
       const author = el.querySelector(".author");
       author.disabled = false;
@@ -188,15 +192,15 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     } else if (agent) {
       const author = el.querySelector(".author");
       const open = opener => {
-        const member = state.members.find(item => item.agent_id === message.author.id);
+        const member = state.members.find(item => item.agent_id === message.author.id && (!message.author_membership_id || item.membership_id === message.author_membership_id));
         if (member) membersUI.openMemberActivity(member, opener, undefined, {fromConversation:true});
       };
       author.disabled = false;
-      author.setAttribute("aria-label", `查看 ${message.author.id} 的详情`);
+      author.setAttribute("aria-label", `查看 ${authorName(message.author,message)} 的详情`);
       author.setAttribute("aria-controls", "activity-dialog");
       author.addEventListener("click", () => open(author));
       avatar.setAttribute("role", "button"); avatar.setAttribute("tabindex", "0");
-      avatar.setAttribute("aria-label", `查看 ${message.author.id} 的详情`);
+      avatar.setAttribute("aria-label", `查看 ${authorName(message.author,message)} 的详情`);
       avatar.setAttribute("aria-controls", "activity-dialog");
       avatar.addEventListener("click", () => open(avatar));
       avatar.addEventListener("keydown", event => {
@@ -216,7 +220,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
       const ref = el.querySelector(".message-reference");
       const target = state.messages.get(message.reply_to);
       ref.hidden = false;
-      ref.textContent = target ? `↳ #${target.seq} ${authorName(target.author)}：${target.text}` : message.reply_to <= state.clearedThrough
+      ref.textContent = target ? `↳ #${target.seq} ${authorName(target.author,target)}：${displayText(target)}` : message.reply_to <= state.clearedThrough
         ? `↳ 引用消息 #${message.reply_to} · 已清空` : `↳ 引用消息 #${message.reply_to} · 加载更早消息可查看`;
       ref.addEventListener("click", () => revealMessage(message.reply_to));
     }
@@ -226,7 +230,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
   function renderMessages() {
     const nodes = [];
     const messages = [...state.messages.values()].sort((a, b) => a.seq - b.seq);
-    const memberNamesKey = JSON.stringify([state.members.map(m => m.agent_id), operatorNames()]);
+    const memberNamesKey = JSON.stringify([state.members.map(m => [m.agent_id,m.membership_id,agentName(m)]), operatorNames()]);
     let day = "";
     for (const message of messages) {
       const date = new Date(message.created_at);
@@ -242,7 +246,9 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
       if(!cached){cached={element:messageElement(message),memberNames:memberNamesKey};messageNodes.set(message.seq,cached);}
       const el=cached.element;
       el.classList.toggle("own", message.author.kind === "human" && message.author.id === state.operator);
-      if (message.author.kind === "human") el.querySelector(".author").textContent = authorName(message.author);
+      if (message.author.kind !== "integration") el.querySelector(".author").textContent = authorName(message.author,message);
+      if(message.author.kind==="agent")for(const selector of [".avatar",".author"])el.querySelector(selector).setAttribute("aria-label",`查看 ${authorName(message.author,message)} 的详情`);
+      if(message.author.kind==="agent" && cached.memberNames!==memberNamesKey)renderAvatar(document,el.querySelector(".avatar"),{kind:"agent",id:message.author.id,name:authorName(message.author,message),direct:roomsUI.isDirect()});
       if (cached.memberNames !== memberNamesKey) {
         renderMessageBody(el.querySelector(".message-text"), message.text, state.operator, messageOptions(message));
         cached.memberNames = memberNamesKey;
@@ -251,7 +257,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
       el.classList.toggle("mentioned",message.seq>mentionSeenThrough && !mentionSeen.has(message.seq) && mentioned && !(message.author.kind==="human" && message.author.id===state.operator));
       el.querySelector("time").textContent=settingsUI.formatDate(message.created_at,{hour:"2-digit",minute:"2-digit"});
       el.querySelector("time").title=settingsUI.formatDate(message.created_at);
-      if(message.reply_to){const target=state.messages.get(message.reply_to);el.querySelector(".message-reference").textContent=target ? `↳ #${target.seq} ${authorName(target.author)}：${target.text}` : message.reply_to<=state.clearedThrough ? `↳ 引用消息 #${message.reply_to} · 已清空` : `↳ 引用消息 #${message.reply_to} · 加载更早消息可查看`;}
+      if(message.reply_to){const target=state.messages.get(message.reply_to);el.querySelector(".message-reference").textContent=target ? `↳ #${target.seq} ${authorName(target.author,target)}：${displayText(target)}` : message.reply_to<=state.clearedThrough ? `↳ 引用消息 #${message.reply_to} · 已清空` : `↳ 引用消息 #${message.reply_to} · 加载更早消息可查看`;}
       nodes.push(el);
     }
     for(const seq of messageNodes.keys())if(!state.messages.has(seq))messageNodes.delete(seq);
@@ -275,7 +281,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     if(state.draft.pending || !state.connected || discussionBusy()) return;
     state.draft.replyTo=message.seq;
     state.draft.replyAuthor=message.author.id;
-    state.draft.replyLabel=message.text;
+    state.draft.replyLabel=displayText(message);
     renderReply();saveDraft();$("message-input").focus();
   }
 
@@ -283,9 +289,9 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     const seq=state.draft.replyTo, message=state.messages.get(seq);
     const author=message?.author.id || state.draft.replyAuthor;
     $("reply-context").hidden=!seq;
-    $("reply-author").textContent=author ? `引用 ${author === state.operator ? "你" : author} 的消息` : "引用消息";
+    $("reply-author").textContent=author ? `引用 ${author === state.operator ? "你" : message ? authorName(message.author,message) : author} 的消息` : "引用消息";
     $("reply-sequence").textContent=seq ? `#${seq}` : "";
-    $("reply-label").textContent=seq ? (message?.text || state.draft.replyLabel || "原消息未载入").replace(/\s+/g," ").trim() : "";
+    $("reply-label").textContent=seq ? (message ? displayText(message) : state.draft.replyLabel || "原消息未载入").replace(/\s+/g," ").trim() : "";
     $("reply-preview").title=message ? "定位原消息" : "加载更早消息后可定位原文";
     $("reply-preview").setAttribute("aria-label",`定位引用的消息 #${seq}`);
   }
@@ -302,6 +308,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
   function saveDraft() {
     if (!state.info) return;
     state.draft.text = $("message-input").value;
+    state.draft.mentions = mentionPicker.boundMentions();
     state.draft.replyLabel = $("reply-label").textContent;
     drafts.save(state.info, state.operator, state.draft);
   }
@@ -487,14 +494,14 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
         notice("send-error", "消息过长，请控制在 16 KiB 内。"); return;
       }
       const info = state.info, operator = state.operator, draft = state.draft, version = runtime.viewVersion;
-      draft.pending ||= { text, client_message_id: randomUUID(), reply_to: draft.replyTo, info, operator };
+      draft.pending ||= { text, mentions:mentionPicker.boundMentions(), client_message_id: randomUUID(), reply_to: draft.replyTo, info, operator };
       saveDraft(); draft.sending = true;
       composerState(); notice("send-error", "");
       try {
         const pending = draft.pending;
         const receipt = await rpc("/v1/send", { text: pending.text, client_message_id: pending.client_message_id,
-          reply_to: pending.reply_to, caller: { kind: "human", id: pending.operator } }, pending.info);
-        draft.pending = null; draft.text = ""; draft.replyTo = 0; draft.replyLabel = ""; draft.replyAuthor = "";
+          reply_to: pending.reply_to, mentions:pending.mentions || [], caller: { kind: "human", id: pending.operator } }, pending.info);
+        draft.pending = null; draft.text = ""; draft.mentions=[]; draft.replyTo = 0; draft.replyLabel = ""; draft.replyAuthor = "";
         drafts.save(info, operator, draft);
         if (state.draft === draft) showDraft();
         if (currentView(version)) {

@@ -185,6 +185,9 @@ func (r *Room) Post(ctx actorx.Context, msg PostMessage, reply actorx.Reply[Post
 	if _, err := r.caller(msg.Caller); err != nil {
 		return err
 	}
+	if !validMentions(msg.Text, msg.Mentions) {
+		return ErrRequest
+	}
 	if !validText(msg.ClientMessageID) || !validText(msg.Text) || len(msg.Text) > maxTextBytes || msg.ReplyTo > r.state.LatestSeq {
 		return ErrRequest
 	}
@@ -205,11 +208,18 @@ func (r *Room) Post(ctx actorx.Context, msg PostMessage, reply actorx.Reply[Post
 	for _, m := range r.state.Messages {
 		bytes += len(m.Text)
 		if m.Author == msg.Caller.Author && m.ClientMessageID == msg.ClientMessageID {
-			if m.Text != msg.Text || m.ReplyTo != msg.ReplyTo || msg.FollowupNotice {
+			if m.Text != msg.Text || m.ReplyTo != msg.ReplyTo || msg.FollowupNotice || !msg.inferMentions && !slices.Equal(m.Mentions, msg.Mentions) {
 				return ErrConflict
 			}
 			reply.Complete(PostReceipt{RoomIdentity: r.state.RoomIdentity, Seq: m.Seq, ClientMessageID: m.ClientMessageID}, nil)
 			return nil
+		}
+	}
+	for _, mention := range msg.Mentions {
+		if mention.Kind == "agent" {
+			if _, err := r.member(mention.ID, mention.MembershipID); err != nil {
+				return err
+			}
 		}
 	}
 	if msg.ReplyTo != 0 && msg.ReplyTo <= r.state.ClearedThrough {
@@ -222,7 +232,7 @@ func (r *Room) Post(ctx actorx.Context, msg PostMessage, reply actorx.Reply[Post
 	next.LatestSeq++
 	next.Messages = append(next.Messages, RoomMessage{
 		Seq: next.LatestSeq, ClientMessageID: msg.ClientMessageID, Author: msg.Caller.Author,
-		Text: msg.Text, ReplyTo: msg.ReplyTo, CreatedAt: r.now().UTC(),
+		Text: msg.Text, ReplyTo: msg.ReplyTo, CreatedAt: r.now().UTC(), AuthorMembershipID: msg.Caller.MembershipID, Mentions: slices.Clone(msg.Mentions),
 	})
 	if msg.FollowupNotice {
 		if next.FollowupNoticeReceipts == nil {

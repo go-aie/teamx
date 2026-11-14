@@ -286,7 +286,7 @@ test("model list opens one editor and returning discards its secret without subm
 
 test("model rows use readable conversation names and keep usage separate from editing",async()=>{
  const api=fixture();
- api.hook=path=>path==="/v1/rooms" ? {service_epoch:"manager",operator:"tester",rooms:[{room_id:"A",room_instance:"instance-A",name:"软件开发",members:[{id:"assistant",name:"开发助理"}],status:"ready",runtime_status:"ready",service:{room_id:"A",room_instance:"instance-A",service_epoch:"runtime"}}],teams:[]} : undefined;
+ api.hook=path=>path==="/v1/rooms" ? {service_epoch:"manager",operator:"tester",rooms:[{room_id:"A",room_instance:"instance-A",name:"软件开发",members:[{id:"assistant",name:"角色说明",agent_name:"开发助理"}],status:"ready",runtime_status:"ready",service:{room_id:"A",room_instance:"instance-A",service_epoch:"runtime"}}],teams:[]} : undefined;
  api.models.members.push({...api.models.members[0],room_instance:"previous-instance"});
  const ui=await launch(api);await openSettings(ui);
  const row=ui.el("model-list").children[0],usage=row.children.find(el=>el.className==="model-users");

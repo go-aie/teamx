@@ -374,20 +374,46 @@ func projectFollowupPage(p followupPage) agentFollowupPage {
 
 // Room storage revision and confirmation protocol are not decision inputs.
 // Keep the fixed snapshot and all coverage/clearing markers and message bodies.
+// Mention bindings stay internal; Agent text uses the current display names.
+type agentRoomMessage struct {
+	Seq             uint64             `json:"seq"`
+	ClientMessageID string             `json:"client_message_id"`
+	Author          Author             `json:"author"`
+	AgentName       string             `json:"agent_name,omitempty"`
+	Text            string             `json:"text"`
+	Source          *IntegrationSource `json:"source,omitempty"`
+	ReplyTo         uint64             `json:"reply_to,omitempty"`
+	CreatedAt       time.Time          `json:"created_at"`
+}
+
+func projectRoomMessage(m RoomMessage) agentRoomMessage {
+	return agentRoomMessage{Seq: m.Seq, ClientMessageID: m.ClientMessageID, Author: m.Author, AgentName: m.AgentName,
+		Text: renderMentionText(m, func(at MessageMention) string {
+			if at.AgentName != "" {
+				return at.AgentName
+			}
+			return at.ID
+		}), Source: m.Source, ReplyTo: m.ReplyTo, CreatedAt: m.CreatedAt}
+}
+
 type agentRoomReadPage struct {
 	RoomIdentity
-	MembershipID   string        `json:"membership_id,omitempty"`
-	SnapshotSeq    uint64        `json:"snapshot_seq"`
-	ClearedThrough uint64        `json:"cleared_through"`
-	Messages       []RoomMessage `json:"messages"`
-	FromExclusive  uint64        `json:"from_exclusive"`
-	ScannedThrough uint64        `json:"scanned_through"`
-	NextAfter      uint64        `json:"next_after"`
-	HasMore        bool          `json:"has_more"`
-	Remaining      int           `json:"remaining,omitempty"`
-	UnreadCount    int           `json:"unread_count"`
+	MembershipID   string             `json:"membership_id,omitempty"`
+	SnapshotSeq    uint64             `json:"snapshot_seq"`
+	ClearedThrough uint64             `json:"cleared_through"`
+	Messages       []agentRoomMessage `json:"messages"`
+	FromExclusive  uint64             `json:"from_exclusive"`
+	ScannedThrough uint64             `json:"scanned_through"`
+	NextAfter      uint64             `json:"next_after"`
+	HasMore        bool               `json:"has_more"`
+	Remaining      int                `json:"remaining,omitempty"`
+	UnreadCount    int                `json:"unread_count"`
 }
 
 func projectRoomRead(p ReadPage) agentRoomReadPage {
-	return agentRoomReadPage{p.RoomIdentity, p.MembershipID, p.SnapshotSeq, p.ClearedThrough, p.Messages, p.FromExclusive, p.ScannedThrough, p.NextAfter, p.HasMore, p.Remaining, p.UnreadCount}
+	messages := make([]agentRoomMessage, 0, len(p.Messages))
+	for _, message := range p.Messages {
+		messages = append(messages, projectRoomMessage(message))
+	}
+	return agentRoomReadPage{p.RoomIdentity, p.MembershipID, p.SnapshotSeq, p.ClearedThrough, messages, p.FromExclusive, p.ScannedThrough, p.NextAfter, p.HasMore, p.Remaining, p.UnreadCount}
 }

@@ -28,6 +28,7 @@ type teamRuntime struct {
 }
 
 type teamMember struct {
+	AgentName        string            `json:"agent_name,omitempty"`
 	ModelSelection   *modelSelection   `json:"model_selection,omitempty"`
 	ID               string            `json:"id"`
 	Name             string            `json:"name"`
@@ -57,8 +58,9 @@ type teamSummary struct {
 }
 
 type teamMemberSummary struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	AgentName string `json:"agent_name,omitempty"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
 }
 
 func (r teamRuntime) profile() dshProfile {
@@ -153,7 +155,7 @@ func validateTeam(team *teamDefinition, source fs.FS) error {
 	seen := map[string]bool{}
 	for i := range team.Members {
 		member := &team.Members[i]
-		if !teamIdentifier(member.ID) || !validText(member.Name) || seen[member.ID] {
+		if !teamIdentifier(member.ID) || !validText(member.Name) || seen[member.ID] || member.AgentName != "" && !validAgentName(member.AgentName) {
 			return fmt.Errorf("%w: invalid or duplicate member id %q", ErrRequest, member.ID)
 		}
 		seen[member.ID] = true
@@ -309,6 +311,12 @@ func (m *roomManager) prepare(selection roomSelection) (roomIndexEntry, error) {
 		membership, err := newOpaqueID()
 		if err != nil {
 			return e, err
+		}
+		if !selection.IsDirect && member.AgentName != "" {
+			if e.AgentNames == nil {
+				e.AgentNames = map[string]agentDisplayName{}
+			}
+			e.AgentNames[membership] = agentDisplayName{AgentID: member.ID, AgentName: member.AgentName}
 		}
 		init.Config.Members = append(init.Config.Members, managedMember{MemberState: MemberState{AgentID: member.ID, MembershipID: membership,
 			Runner: managedRunner(init.Config, member.ID)}, Name: member.Name, Instructions: member.Instructions,

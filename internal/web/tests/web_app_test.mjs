@@ -447,7 +447,7 @@ test("conversation timestamps remain separate from exceptional runtime and manag
 });
 
 test("conversation previews show latest text and author, creation hints and priority operation states", async () => {
-  const team={...makeRoom("Team"),members:[{id:"reviewer",name:"审阅者"}],last_message_at:"2026-11-01T09:00:00Z",
+  const team={...makeRoom("Team"),members:[{id:"reviewer",name:"审阅者",agent_name:"审阅者"}],last_message_at:"2026-11-01T09:00:00Z",
     last_message_preview:{author:{kind:"agent",id:"reviewer"},text:"完成审阅\n\t请确认下一步"}};
   const direct={...makeRoom("Direct"),is_direct:true,last_message_at:team.last_message_at,
     last_message_preview:{author:{kind:"human",id:"tester"},text:"检查一下"}};
@@ -459,7 +459,7 @@ test("conversation previews show latest text and author, creation hints and prio
   assert.equal(choice("Empty").children[2].textContent,"房间已创建");
   assert.equal(choice("Empty direct").children[2].textContent,"私信已创建");
   direct.last_message_preview={author:{kind:"agent",id:"chief-of-staff"},text:"<img src=x> 已完成"};
-  await ui.refresh();assert.equal(choice("Direct").children[2].textContent,"助理：<img src=x> 已完成");
+  await ui.refresh();assert.equal(choice("Direct").children[2].textContent,"Direct：<img src=x> 已完成");
   team.runtime_status="opening";await ui.refresh();
   assert.equal(choice("Team").children[2].textContent,"正在打开…");
   team.runtime_status="ready";team.last_message_preview.text="等待反馈";await ui.refresh();
@@ -3378,7 +3378,7 @@ test("direct conversations prefer the exact default, keep the inspector stable, 
   assert.equal(ui.el("direct-list").children[0].children.length,1);
   assert.equal(ui.el("room-list").children[0].children.length,2);
   assert.equal(ui.el("activity-dialog").open,true);assert.equal(ui.el("close-activity").hidden,true);
-  assert.equal(ui.el("activity-title").textContent,"assistant");
+  assert.equal(ui.el("activity-title").textContent,"个人助理");
   assert.equal(ui.el("members").children[0].querySelector(".avatar").children[0].getAttribute("class"),"assistant-icon");
   assert.equal(ui.el("direct-status"),undefined);assert.equal(ui.el("toggle-members").hidden,true);
   assert.equal(ui.el("direct-details").hidden,false);assert.equal(ui.el("direct-details").textContent,"收起助理详情");

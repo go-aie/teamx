@@ -1,3 +1,4 @@
+import { resolveAgentName } from "../agent-names.mjs";
 import { randomUUID } from "../random-id.mjs";
 import { captureReturnView } from "../view-return.mjs";
 // Workspace configuration, platform choices and durable operation recovery.
@@ -194,7 +195,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     fillWorkspaceForm();
     $("workspace-current").textContent = current ? `当前目录：${current.root} · 配置版本 ${data.workspace_version}` : "沿用原成员目录";
     $("workspace-paths").replaceChildren(...(data?.members || []).map(member => {
-      const item = document.createElement("li"); item.textContent = `${member.agent_id} · ${member.workspace}`; return item;
+      const item = document.createElement("li"); item.textContent = `${resolveAgentName(state.members, member.agent_id, member.membership_id)} · ${member.workspace}`; return item;
     }));
     const repo = !!current?.repository, binding = !!current?.binding;
     const scion = $("workspace-kind").value === "scion";

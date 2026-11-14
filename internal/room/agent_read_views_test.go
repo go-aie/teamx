@@ -308,10 +308,16 @@ func TestAgentInboxCLIOutputAndConfirmation(t *testing.T) {
 	}
 }
 
-func TestAgentRoomReadHidesOnlyCLIReceipt(t *testing.T) {
+func TestAgentRoomReadUsesNamesWithoutInternalMentionBindings(t *testing.T) {
 	page := ReadPage{RoomIdentity: RoomIdentity{RoomID: "room", RoomInstance: "instance"}, MembershipID: "membership",
 		Revision: 7, SnapshotSeq: 19, FromExclusive: 17, ScannedThrough: 19, NextAfter: 19, Remaining: 2, UnreadCount: 2,
-		ReadReceipt: "private-receipt", ExpiresAt: time.Now().UTC(), Messages: []RoomMessage{{Seq: 19, Author: Author{Kind: "human", ID: "operator"}, Text: "正文", ReplyTo: 18}}}
+		ReadReceipt: "private-receipt", ExpiresAt: time.Now().UTC(), Messages: []RoomMessage{
+			{Seq: 18, Author: Author{Kind: "agent", ID: "A"}, AuthorMembershipID: "member-A", AgentName: "研发 助手", Text: "收到"},
+			{Seq: 19, Author: Author{Kind: "human", ID: "operator"}, Text: "🙂 @旧名 / @B", ReplyTo: 18, Mentions: []MessageMention{
+				{Start: 3, End: 6, Kind: "agent", ID: "A", MembershipID: "member-A", AgentName: "研发 助手"},
+				{Start: 9, End: 11, Kind: "agent", ID: "B", MembershipID: "member-B", AgentName: "产品助手"},
+			}},
+		}}
 	for _, agent := range []bool{false, true} {
 		t.Run(fmt.Sprint(agent), func(t *testing.T) {
 			confirms := 0
@@ -345,11 +351,40 @@ func TestAgentRoomReadHidesOnlyCLIReceipt(t *testing.T) {
 				delete(want, "revision")
 				delete(want, "read_receipt")
 				delete(want, "expires_at")
+				messages := want["messages"].([]any)
+				delete(messages[0].(map[string]any), "author_membership_id")
+				delete(messages[1].(map[string]any), "mentions")
+				messages[1].(map[string]any)["text"] = "🙂 @研发 助手 / @产品助手"
 			}
 			assertReadViewEqual(t, page, want, got)
 			if confirms != 1 {
 				t.Fatal("confirmation skipped", confirms)
 			}
 		})
+	}
+	if page.Messages[1].Text != "🙂 @旧名 / @B" || len(page.Messages[1].Mentions) != 2 || page.Messages[0].AuthorMembershipID != "member-A" {
+		t.Fatal("Agent projection changed the original message", page.Messages)
+	}
+}
+
+func TestAgentRoomPlainReadUsesCurrentMentionNames(t *testing.T) {
+	page := ReadPage{Messages: []RoomMessage{{Seq: 1, Author: humanCaller.Author, Text: "@旧名 请处理", Mentions: []MessageMention{
+		{Start: 0, End: 3, Kind: "agent", ID: "A", MembershipID: "member-A", AgentName: "新名称"},
+	}}}}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _ = json.NewEncoder(w).Encode(page) }))
+	defer server.Close()
+	for _, agent := range []bool{false, true} {
+		req := apiRequest{Caller: humanCaller}
+		want := "@旧名 请处理"
+		if agent {
+			req.Caller, want = agentCaller("A", "member-A"), "@新名称 请处理"
+		}
+		var output bytes.Buffer
+		if err := readCLI(context.Background(), cliClient{endpoint: server.URL, http: server.Client()}, req, &output, false); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(output.String(), want) {
+			t.Fatal("wrong mention name in plain output", output.String())
+		}
 	}
 }

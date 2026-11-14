@@ -1,3 +1,4 @@
+import { agentName } from "../agent-names.mjs";
 import { randomUUID } from "../random-id.mjs";
 import { createNavigationIcon } from "../icons.mjs";
 import { captureReturnView } from "../view-return.mjs";
@@ -44,7 +45,7 @@ export function createModels({env, runtime, openSettings, onMemberStatus}) {
   function userName(user) {
     const room = state.catalog?.rooms?.find(room => room.room_id === user.room_id && room.room_instance === user.room_instance);
     const member = room?.members?.find(member => member.id === user.agent_id);
-    return `${room?.name || "未命名会话"} / ${member?.name || user.agent_id}`;
+    return `${room?.name || "未命名会话"} / ${agentName(member) || user.agent_id}`;
   }
   function clearReview() { defaultReview?.remove(); defaultReview=undefined; }
   function renderEditorActions() {

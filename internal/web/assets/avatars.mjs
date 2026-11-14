@@ -4,7 +4,7 @@ const tones = ["sage", "blue", "violet", "amber", "cyan"];
 const platformLabels = { gitlab:"GL", lark:"飞", scion:"SC" };
 
 // Identity colors are stable across Rooms, lists and message history.
-export function renderAvatar(document, avatar, { kind, id = "", provider = "", direct = false }) {
+export function renderAvatar(document, avatar, { kind, id = "", provider = "", direct = false, name = id }) {
   avatar.classList.add("avatar");
   for (const [name, match] of [["user-avatar", "human"], ["agent-avatar", "agent"], ["integration-avatar", "integration"]]) {
     avatar.classList.toggle(name, kind === match);
@@ -17,5 +17,5 @@ export function renderAvatar(document, avatar, { kind, id = "", provider = "", d
   if (kind === "human") avatar.append(createUserIcon(document));
   else if (kind === "agent" && direct) avatar.append(createAssistantIcon(document));
   else avatar.textContent = kind === "integration" ? platformLabels[provider] || Array.from(provider || id).slice(0, 2).join("").toUpperCase()
-    : Array.from(id).slice(0, 2).join("").toUpperCase();
+    : Array.from(name).slice(0, 2).join("").toUpperCase();
 }

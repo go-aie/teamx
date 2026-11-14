@@ -1,8 +1,32 @@
+import { agentName } from "./agent-names.mjs";
 import { memberMentionRanges } from "./client.mjs";
 
 // Mentions remain ordinary Room text; choosing a member never changes delivery.
-export function createMentionPicker({ document, input, list, mirror, members, operator, enabled, changed }) {
+export function createMentionPicker({ document, input, list, mirror, members, operator, enabled, changed, draft = () => null }) {
   let context = null, choices = [], selected = 0, composing = false;
+  let previousText = input.value, previousDraft = draft();
+  function reconcile() {
+    const value = input.value, currentDraft = draft();
+    if (!currentDraft) return;
+    if (currentDraft !== previousDraft) { previousDraft = currentDraft; previousText = value; return; }
+    if (value === previousText) return;
+    let start=0, oldEnd=previousText.length, newEnd=value.length;
+    while(start<oldEnd && start<newEnd && previousText[start]===value[start])start++;
+    while(oldEnd>start && newEnd>start && previousText[oldEnd-1]===value[newEnd-1]){oldEnd--;newEnd--;}
+    const delta=newEnd-oldEnd;
+    currentDraft.mentions=(currentDraft.mentions || []).flatMap(at=>at.end<=start ? [at] : at.start>=oldEnd ? [{...at,start:at.start+delta,end:at.end+delta}] : []);
+    previousText=value;
+  }
+  const names=()=>[...members().flatMap(m=>[agentName(m),m.agent_id]),operator()];
+  function boundMentions(){
+    reconcile();const bound=(draft()?.mentions || []).map(at=>({...at}));
+    for(const at of memberMentionRanges(input.value,names())){
+      if(bound.some(b=>at.start<b.end && at.end>b.start))continue;
+      const choices=members().filter(m=>m.agent_id===at.name || agentName(m)===at.name);
+      if(choices.length===1)bound.push({start:at.start,end:at.end,kind:"agent",id:choices[0].agent_id,membership_id:choices[0].membership_id});
+    }
+    return bound.sort((a,b)=>a.start-b.start);
+  }
 
   function syncScroll() {
     mirror.style.setProperty("width", `${input.clientWidth}px`);
@@ -10,8 +34,9 @@ export function createMentionPicker({ document, input, list, mirror, members, op
   }
 
   function renderText() {
+    reconcile();
     const text = input.value;
-    const ranges = memberMentionRanges(text, [...members().map(m => m.agent_id), operator()]);
+    const ranges = memberMentionRanges(text, names());
     input.classList.toggle("has-mentions", ranges.length > 0);
     mirror.hidden = !ranges.length;
     const parts = [];
@@ -36,7 +61,7 @@ export function createMentionPicker({ document, input, list, mirror, members, op
     if (!enabled() || input.disabled || input.readOnly || composing || input.selectionStart !== input.selectionEnd) return null;
     const end = input.selectionStart;
     if (!Number.isInteger(end)) return null;
-    const match = /(^|[^A-Za-z0-9_@.+-])@([^\s@，。！？：；、（）【】「」“”‘’,!?;:()\[\]{}<>]*)$/u.exec(input.value.slice(0, end));
+    const match = /(^|[^A-Za-z0-9_@.+-])@([^\n@，。！？：；、（）【】「」“”‘’,!?;:()\[\]{}<>]*)$/u.exec(input.value.slice(0, end));
     if (!match || /[\p{L}\p{N}_@.+-]/u.test(input.value.charAt(end))) return null;
     return { start: end - match[2].length - 1, end, query: match[2] };
   }
@@ -46,7 +71,10 @@ export function createMentionPicker({ document, input, list, mirror, members, op
     if (!at || !context || at.start !== context.start || at.end !== context.end || at.query !== context.query ||
       !members().some(m => m.agent_id === member.agent_id && m.membership_id === member.membership_id)) { close(); return; }
     const separator = /^\s/u.test(input.value.slice(at.end)) ? "" : " ";
-    input.setRangeText(`@${member.agent_id}${separator}`, at.start, at.end, "end");
+    const label=`@${agentName(member)}`;
+    input.setRangeText(`${label}${separator}`, at.start, at.end, "end");
+    reconcile();
+    if(draft())draft().mentions=[...(draft().mentions || []),{start:at.start,end:at.start+label.length,kind:"agent",id:member.agent_id,membership_id:member.membership_id}].sort((a,b)=>a.start-b.start);
     close(); input.focus(); changed();
   }
 
@@ -58,18 +86,19 @@ export function createMentionPicker({ document, input, list, mirror, members, op
   }
 
   function update() {
+    reconcile();
     const at = current();
     if (!at) { close(); return; }
     const previous = context?.start === at.start && context.query === at.query ? choices[selected] : null;
     context = at;
-    choices = members().filter(m => m.agent_id.toLocaleLowerCase().includes(at.query.toLocaleLowerCase()));
+    choices = members().filter(m => [m.agent_id,agentName(m)].some(name=>name.toLocaleLowerCase().includes(at.query.toLocaleLowerCase())));
     if (!choices.length) { close(); return; }
     selected = Math.max(0, choices.findIndex(m => m.membership_id === previous?.membership_id && m.agent_id === previous?.agent_id));
     list.replaceChildren(...choices.map((member, index) => {
       const option = document.createElement("button");
       option.type = "button"; option.tabIndex = -1; option.id = `mention-option-${index}`;
       option.className = "mention-option"; option.setAttribute("role", "option");
-      option.textContent = `@${member.agent_id}`;
+      option.textContent = `@${agentName(member)}${members().filter(m=>agentName(m)===agentName(member)).length>1 ? ` · ${member.agent_id}` : ""}`;
       option.addEventListener("pointerdown", event => { event.preventDefault(); });
       option.addEventListener("click", () => choose(member));
       return option;
@@ -82,7 +111,7 @@ export function createMentionPicker({ document, input, list, mirror, members, op
     if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return false;
     if ((event.key === "Backspace" || event.key === "Delete") && enabled() && !input.disabled && !input.readOnly && input.selectionStart === input.selectionEnd) {
       const caret = input.selectionStart;
-      const range = memberMentionRanges(input.value, members().map(m => m.agent_id)).find(at => event.key === "Delete" ? caret === at.start :
+      const range = memberMentionRanges(input.value, names()).find(at => event.key === "Delete" ? caret === at.start :
         caret === at.end || caret === at.end + 1 && input.value[at.end] === " ");
       if (range) {
         event.preventDefault();
@@ -113,5 +142,5 @@ export function createMentionPicker({ document, input, list, mirror, members, op
     input.addEventListener("compositionstart", () => { composing = true; close(); });
     input.addEventListener("compositionend", () => { composing = false; update(); });
   }
-  return { close, mount, keydown, renderText, refresh: () => { renderText(); if (context) update(); } };
+  return { boundMentions, close, mount, keydown, renderText, refresh: () => { renderText(); if (context) update(); } };
 }

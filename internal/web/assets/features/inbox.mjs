@@ -1,3 +1,4 @@
+import { resolveAgentName } from "../agent-names.mjs";
 import { notificationOptions } from "../markdown.mjs";
 
 // Member Inbox snapshots, pagination and retained reading position.
@@ -64,7 +65,7 @@ export function createInbox({ env, settingsUI, notificationsUI, runtime, members
     add("项目",item.project); add("项目 ID",item.project_id && String(item.project_id));
     add("会话",item.conversation?.name); id("会话 ID",item.conversation?.id);
     if (item.sender) add("发送者",notificationParticipant(item.sender));
-    if (entry.origin?.kind === "agent") add("代发",`Agent ${entry.origin.agent_id} · ${entry.origin.status}`);
+    if (entry.origin?.kind === "agent") add("代发",`Agent ${resolveAgentName(state.members,entry.origin.agent_id)} · ${entry.origin.status}`);
     if (entry.origin?.uncertain_send) add("发送状态","该会话有结果未确定的代发动作；仅作进展上下文");
     if (item.context_only) add("用途","进展上下文，不触发新的自动回复或待办");
     if (entry.automatic_admission) {

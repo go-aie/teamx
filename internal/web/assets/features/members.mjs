@@ -1,3 +1,4 @@
+import { agentName } from "../agent-names.mjs";
 import { compactViewport } from "../client.mjs";
 import { createActivityReader, sameService } from "../client.mjs";
 import { renderAvatar } from "../avatars.mjs";
@@ -12,6 +13,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
   const memberBusy = new Set();
   const stopRequests = new Map();
 
+  let nameEditor=null,nameSaving=false;
   let memberToolsView = null;
   let memberModelStatus = {};
 
@@ -339,11 +341,17 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     $("close-activity").setAttribute("aria-label", "返回");
     $("close-activity").title = "返回";
     const selected=selectedAgent();
-    $("activity-title").textContent=selected ? selected.agent_id : "Agent 详情";
+    $("activity-title").textContent=selected ? agentName(selected) : "Agent 详情";
     $("agent-tabs").hidden = false;
     $("agent-tab-platforms").hidden = !state.managed;
     const member = selectedAgent();
+    $("agent-name-form").hidden=!state.managed || !member;
     if (!member || !panel.open) return;
+    const nameKey=JSON.stringify([state.info,member.agent_id,member.membership_id]);
+    if(!nameEditor || nameEditor.key!==nameKey){nameEditor={key:nameKey,expected:agentName(member)};$("agent-display-name").value=agentName(member);notice("agent-name-feedback","");}
+    else if(!nameSaving && $("agent-display-name").value===nameEditor.expected){nameEditor.expected=agentName(member);$("agent-display-name").value=agentName(member);}
+    $("agent-name-save").disabled=nameSaving;
+    $("agent-display-name").disabled=nameSaving;
     $("agent-status").textContent = member.execution?.active ? "运行中" : statusNames[member.status] || member.status;
     $("agent-status").classList.toggle("running", !!member.execution?.active);
     $("agent-status").classList.toggle("failed", /failed|blocked|unavailable|interrupted/.test(member.status));
@@ -400,7 +408,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
 
   function renderMemberActions(member, actions, pauseOnly = false) {
     const execution = member.execution;
-    const signature = JSON.stringify([member.agent_id, member.membership_id, member.status, execution?.paused, execution?.active,
+    const signature = JSON.stringify([member.agent_id, agentName(member), member.membership_id, member.status, execution?.paused, execution?.active,
       execution?.session_reset_required, state.connected, discussionBusy(), memberBusy.has(member.membership_id), member.unread_count, execution?.agent?.turn?.status, pauseOnly]);
     if (actions.dataset.signature === signature) return;
     actions.dataset.signature = signature;
@@ -409,7 +417,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     const enable = !pauseOnly && (execution.paused || execution.session_reset_required || member.status === "backend_blocked" || member.status === "budget_exhausted");
     const add = (label, action) => {
       const button = document.createElement("button"); button.type = "button"; button.className = "secondary-button button-compact"; button.textContent = label;
-      button.setAttribute("aria-label", `${label} ${member.agent_id}`);
+      button.setAttribute("aria-label", `${label} ${agentName(member)}`);
       button.disabled = memberBusy.has(member.membership_id) || !state.connected || discussionBusy() || member.status === "checkpoint_failed" || member.status === "rotating" && action !== "pause";
       button.addEventListener("click", () => controlMember(member, action)); actions.append(button);
     };
@@ -430,7 +438,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     }
     const running = available ? state.members.filter(member => member.execution?.active || member.status === "running") : [];
     const waiting = available ? state.members.filter(member => member.status === "waiting" && !member.execution?.active && !member.execution?.paused) : [];
-    const names = members => members.map(member => member.agent_id).join("、");
+    const names = members => members.map(agentName).join("、");
     // Active covers Session opening, model work and tools; it does not identify a thinking phase.
     const feedback = available ? [...stopRequests].filter(([id, request]) =>
       ["stopped", "error"].includes(request.phase) && ![...running, ...waiting].some(member => member.membership_id === id)) : [];
@@ -456,7 +464,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
         const separator = document.createElement("span"); separator.textContent = "、"; content.append(separator);
       }
       const button = document.createElement("button");
-      const name = member.agent_id;
+      const name = agentName(member);
       const request = stopRequests.get(member.membership_id);
       const stopping = member.execution?.stopping || ["requesting", "settling"].includes(request?.phase);
       button.type = "button"; button.className = "execution-member";
@@ -490,7 +498,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     for (const [id, request] of feedback) {
       const status = document.createElement("span"); status.className = "execution-feedback";
       const member = state.members.find(member => member.membership_id === id);
-      const name = member.agent_id;
+      const name = agentName(member);
       status.textContent = `${primary.length || feedback.length > 1 ? `${name} ` : ""}${request.phase === "stopped" ? "已停止" : "停止未确认"}`;
       status.title = request.error || member.execution?.error || "";
       content.append(status);
@@ -525,13 +533,13 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       const running = execution?.active;
       const label = running ? "运行中" : statusNames[member.status] || member.status;
       const role = memberRole(member);
-      el.querySelector(".member-name").textContent = member.agent_id;
+      el.querySelector(".member-name").textContent = agentName(member);
       const summary = el.querySelector(".member-summary");
       summary.dataset.activityMember = member.membership_id;
-      summary.setAttribute("aria-label", `查看 ${member.agent_id} 的详情`);
+      summary.setAttribute("aria-label", `查看 ${agentName(member)} 的详情`);
       summary.disabled = !state.connected;
       summary.addEventListener("click", () => openMemberActivity(member, summary));
-      renderAvatar(document, el.querySelector(".avatar"), {kind:"agent", id:member.agent_id, direct:roomsUI.isDirect()});
+      renderAvatar(document, el.querySelector(".avatar"), {kind:"agent", id:member.agent_id, name:agentName(member), direct:roomsUI.isDirect()});
       el.querySelector(".member-profile").textContent = role?.name || member.runner.profile;
       const status = el.querySelector(".member-status");
       status.textContent = label;
@@ -701,7 +709,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       const failedUnread = member.unread_count > 0 && ["failed", "interrupted"].includes(member.execution?.agent?.turn?.status);
       await rpc(`/v1/member/${action}`, { ...identity, retry: action === "run" && failedUnread }, info);
       await refresh();
-    } catch (error) { if (currentView(version)) notice("sync-error", `${member.agent_id} 操作未确认，请查看成员状态。${error.message}`); }
+    } catch (error) { if (currentView(version)) notice("sync-error", `${agentName(member)} 操作未确认，请查看成员状态。${error.message}`); }
     finally { memberBusy.delete(member.membership_id); renderMembers(); }
   }
 
@@ -734,6 +742,17 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
   }
 
   function mount() {
+    $("agent-name-form").addEventListener("submit",async event=>{
+      event.preventDefault();const member=selectedAgent();if(!member || nameSaving || !nameEditor)return;
+      const editor=nameEditor,info={...state.info},name=$("agent-display-name").value.trim();
+      if(!name || /[\r\n\t]/.test(name) || new TextEncoder().encode(name).length>256){notice("agent-name-feedback","名称不能为空，且不能超过 256 字节或包含换行。");return;}
+      nameSaving=true;renderActivityControls();notice("agent-name-feedback","");
+      try{
+        await request("/v1/member/name",{service_epoch:state.catalog.service_epoch,room_id:info.room_id,room_instance:info.room_instance,agent_id:member.agent_id,membership_id:member.membership_id,agent_name:name,expected_name:editor.expected,caller:{kind:"human",id:state.operator}});
+        if(nameEditor===editor){editor.expected=name;notice("agent-name-feedback","已保存");}
+      }catch(error){if(nameEditor===editor)notice("agent-name-feedback",error.code==="conflict" ? "名称已在其他页面修改，请关闭详情后重新打开。" : `保存未确认，请核对当前名称后再修改。${error.message}`);}
+      finally{nameSaving=false;await refresh();renderActivityControls();}
+    });
     if(typeof ResizeObserver!=="undefined")new ResizeObserver(layoutMemberPlatforms).observe($("member-notification-platforms"));
 
     document.fonts?.ready.then(layoutMemberPlatforms);
@@ -770,6 +789,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     $("close-activity").addEventListener("click", closeAgentDetail);
 
     $("activity-dialog").addEventListener("close", () => {
+      if(!nameSaving)nameEditor=null;
       if ($("activity-dialog").open) return;
       const back = returningActivity; returningActivity = null; activityReturn = null;
       activityNavigation++;

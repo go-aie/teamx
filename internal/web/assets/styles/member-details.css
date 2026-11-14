@@ -271,3 +271,8 @@
 #gitlab-reuse-summary, #gitlab-application-issues { font-size:var(--font-body); line-height:1.7; overflow-wrap:anywhere; }
 #gitlab-compatibility-details { margin-top:10px; }
 #gitlab-application { width:100%; }
+
+.agent-name-form { margin:0; padding:12px var(--panel-space); border-bottom:1px solid var(--line); }
+.agent-name-form label { display:block; margin-bottom:6px; color:var(--muted); font-size:var(--font-small); }
+.agent-name-form .quiet { font-size:var(--font-small); line-height:1.6; }
+.agent-name-form .form-actions { margin-top:8px; }

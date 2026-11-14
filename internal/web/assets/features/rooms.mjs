@@ -1,4 +1,5 @@
 import { randomUUID } from "../random-id.mjs";
+import { agentName } from "../agent-names.mjs";
 import { createAssistantIcon } from "../icons.mjs";
 
 // Room catalog, selection, creation, deletion and default assistant recovery.
@@ -161,8 +162,7 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
     if (!preview) return room.last_message_at ? "已有消息" : room.is_direct ? "私信已创建" : "房间已创建";
     const author = preview.author;
     const sender = author?.kind === "human" && author.id === state.catalog.operator ? "你"
-      : author?.kind === "agent" && room.is_direct ? "助理"
-      : author?.kind === "agent" ? room.members?.find(member => member.id === author.id)?.name || author.id
+      : author?.kind === "agent" ? preview.agent_name || (room.is_direct ? room.name : agentName(room.members?.find(member => member.id === author.id)) || author.id)
       : author?.id || "";
     const text = preview.text?.replace(/\s+/g, " ").trim() || "[消息]";
     return sender ? `${sender}：${text}` : text;

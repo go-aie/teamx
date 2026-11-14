@@ -57,8 +57,8 @@ export function createRoomDrafts(storage, installation = () => "") {
   function save(info, operator, draft) {
     const id = owners.get(draft) || key(info, operator);
     if (removed.has(id)) return;
-    const { text, replyTo, replyLabel, replyAuthor, pending, restartRequest, openingSeeded } = draft;
-    try { storage?.setItem(id, JSON.stringify({ text, replyTo, replyLabel, replyAuthor, pending, restartRequest, openingSeeded })); }
+    const { text, replyTo, replyLabel, replyAuthor, pending, restartRequest, openingSeeded, mentions } = draft;
+    try { storage?.setItem(id, JSON.stringify({ text, replyTo, replyLabel, replyAuthor, pending, restartRequest, openingSeeded, mentions })); }
     catch { /* Retain the draft in memory if storage is unavailable or full. */ }
   }
   function seed(info, operator, opening) {

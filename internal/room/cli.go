@@ -450,7 +450,11 @@ func readCLI(ctx context.Context, client cliClient, req apiRequest, stdout io.Wr
 		} else {
 			fmt.Fprintf(&output, "Room %s instance=%s snapshot=%d from=%d through=%d has_more=%t unread=%d\n", page.RoomID, page.RoomInstance, page.SnapshotSeq, page.FromExclusive, page.ScannedThrough, page.HasMore, page.UnreadCount)
 			for _, m := range page.Messages {
-				fmt.Fprintf(&output, "[%d] %s/%s: %s\n", m.Seq, m.Author.Kind, m.Author.ID, m.Text)
+				text := m.Text
+				if req.Caller.Kind == "agent" {
+					text = projectRoomMessage(m).Text
+				}
+				fmt.Fprintf(&output, "[%d] %s/%s: %s\n", m.Seq, m.Author.Kind, m.Author.ID, text)
 			}
 		}
 		if err := writeOutput(stdout, output.Bytes()); err != nil {

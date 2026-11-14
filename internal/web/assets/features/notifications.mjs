@@ -1,3 +1,4 @@
+import { agentName } from "../agent-names.mjs";
 import { compactViewport } from "../client.mjs";
 import { sameService } from "../client.mjs";
 import { captureReturnView } from "../view-return.mjs";
@@ -872,7 +873,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     const id = ws?.notificationPlatformID || (messages ? ws?.messages?.config.platform_id : ws?.gitlabDraft?.platform_id);
     const item = membersUI.memberPlatformItems(ws).find(p => p.id === id), view = item && notificationView(ws, item);
     const target=activeNotificationTarget(ws),member=state.members.find(m=>sameNotificationTarget(memberNotificationTarget(m),target));
-    const name=target.mode==="inbox" ? target.agent_id : roomsUI.isDirect() ? "会话" : "房间";
+    const name=target.mode==="inbox" ? member ? agentName(member) : target.agent_id : roomsUI.isDirect() ? "会话" : "房间";
     $("notification-title").textContent=`${name} · ${item?.name || membersUI.memberPlatformItems(ws).find(p=>p.id===id)?.name || (messages ? "飞书" : "GitLab")} ${target.mode==="inbox" ? "设置" : "通知"}`;
     let instance="";try{instance=item?.provider==="gitlab" ? new URL(item.url).host : "";}catch{instance=item?.url || "";}
     $("notification-account").textContent=item ? [item.validation?.username ? `@${item.validation.username}` : "账号待核验",instance].filter(Boolean).join(" · ") : "";
