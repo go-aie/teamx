@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"encoding/pem"
 	"io"
 	"net/http"
@@ -21,16 +22,31 @@ func TestOAuthPinnedGlab(t *testing.T) {
 	if bin == "" {
 		t.Skip("set TEAMX_G4_GLAB_BIN to glab 1.127.0")
 	}
+	// TeamX's process allowlist excludes coding-agent detection variables.
+	// Clear them here too: otherwise running this test from Codex suppresses
+	// glab's release banner and hides the production JSON parsing failure.
+	for _, key := range []string{"AI_AGENT", "CLAUDECODE", "CODEX_THREAD_ID", "COPILOT_CLI", "CURSOR_AGENT", "GEMINI_CLI", "OPENCODE", "ROO_CLI_RUNTIME", "TERM_PROGRAM"} {
+		t.Setenv(key, "")
+	}
 	var calls atomic.Int32
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
-		if r.URL.Path != "/api/v4/user" {
-			t.Errorf("unexpected route %s", r.URL.Path)
-		}
 		if r.Header.Get("Authorization") != "Bearer pinned-fixture-token" || r.Header.Get("PRIVATE-TOKEN") != "" {
 			t.Error("real glab did not use OAuth Bearer")
 		}
-		io.WriteString(w, `{"id":101,"username":"fixture"}`)
+		switch r.URL.Path {
+		case "/api/v4/user":
+			io.WriteString(w, `{"id":101,"username":"fixture"}`)
+		case "/api/v4/projects/group/project/issues":
+			q := r.URL.Query()
+			if q.Get("search") != "browser" || q.Get("milestone") != "0.11.0" {
+				t.Errorf("unexpected issue search %s", r.URL.RawQuery)
+			}
+			io.WriteString(w, `[{"iid":4244,"title":"Browser use","state":"opened"}]`)
+		default:
+			t.Errorf("unexpected route %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
 	}))
 	defer server.Close()
 	ca := filepath.Join(t.TempDir(), "ca.pem")
@@ -50,13 +66,32 @@ func TestOAuthPinnedGlab(t *testing.T) {
 		}
 		return ""
 	}
-	if code := a.run(context.Background(), []string{"api", "user"}); code != 0 {
-		t.Fatalf("real glab exit %d: %s", code, stderr)
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"api", []string{"api", "user"}, `"username":"fixture"`},
+		{"issue-search", []string{"issue", "list", "--repo", "group/project", "--search", "browser", "--milestone", "0.11.0", "--all", "--output", "json"}, `"iid":4244`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Each invocation gets a fresh glab config. Even consumers that merge
+			// stderr into stdout must receive a single JSON document, without a
+			// first-run release banner appended to a successful response.
+			out.Reset()
+			stderr.Reset()
+			if code := a.run(context.Background(), tc.args); code != 0 {
+				t.Fatalf("real glab exit %d: %s", code, stderr)
+			}
+			if !strings.Contains(out.String(), tc.want) {
+				t.Fatal("missing real response", out.String())
+			}
+			if combined := out.String() + stderr.String(); !json.Valid([]byte(combined)) {
+				t.Fatalf("successful JSON output contains non-JSON text: %q", combined)
+			}
+		})
 	}
-	if !strings.Contains(out.String(), `"username":"fixture"`) {
-		t.Fatal("missing real response", out.String())
-	}
-	if calls.Load() != 1 {
+	if calls.Load() != 2 {
 		t.Fatal("unexpected requests", calls.Load())
 	}
 }
