@@ -68,6 +68,13 @@
   .workspace .member-rail .sidebar { flex:1; min-height:0; overflow:auto; }
   .room-header { padding:0 12px; gap:var(--space-1); }
   .room-title { flex:1; overflow:hidden; }
+  .room-header:has(.room-rename:not([hidden])) .room-actions { display:none; }
+  .room-header:has(.room-rename:not([hidden])) .room-title { overflow:visible; }
+  .room-rename { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:6px; max-width:none; }
+  .room-rename .hash { display:none; }
+  .room-rename input { width:100%; min-width:0; min-height:36px; padding:6px; font-size:16px; }
+  .room-rename button { min-height:36px; margin-block:0; padding:6px 8px; }
+  .room-rename .form-error { grid-column:1 / -1; }
   .room-header h1 { font-size:17px; gap:6px; }
   .room-header .room-name-button { flex:1; min-width:0; max-width:100%; gap:6px; }
   .room-actions { flex:none; gap:8px; }

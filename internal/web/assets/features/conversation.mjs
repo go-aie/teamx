@@ -89,7 +89,10 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
   function renderMentionNotice() {
     const mentions = unreadMentions();
     $("mention-notice").hidden = mentions.length === 0;
-    $("view-mention").textContent = mentions.length ? `有人 @你 · ${mentions.length} 条消息 · 查看 ${mentions[0].author.id} 的消息 ↗` : "";
+    $("view-mention").textContent = mentions.length ? `@你 · ${mentions.length} 条` : "";
+    const description = mentions.length ? `查看最早未查看的提及：${authorName(mentions[0].author)} 的消息` : "";
+    $("view-mention").setAttribute("aria-label", mentions.length ? `${mentions.length} 条消息提及你，${description}` : "查看提及你的消息");
+    $("view-mention").title = description;
     document.title = `${mentions.length ? `(${mentions.length} 条 @你) ` : ""}${roomsUI.roomName()} · TeamX`;
     scheduleMentionViewing();
   }
@@ -173,7 +176,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     el.classList.toggle("integration", integration);
     const avatar = el.querySelector(".avatar");
     renderAvatar(document, avatar, {kind:message.author.kind, id:message.author.id,
-      provider:message.source?.provider || message.author.id, direct:roomsUI.isDirect(), name:authorName(message.author,message)});
+      provider:message.source?.provider || message.author.id, direct:roomsUI.isDirect(), defaultAssistant:roomsUI.isDefaultAssistant(), name:authorName(message.author,message)});
     const channel = message.source?.provider === "gitlab" && ["events", "todos"].includes(message.source?.channel) ? message.source.channel : null;
     el.querySelector(".author").textContent = integration ? channel ? `GitLab · ${channel === "todos" ? "我的待办" : "项目活动"}` : `${message.author.id} · 通知` : authorName(message.author,message);
     if (integration && channel) {
@@ -230,7 +233,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
   function renderMessages() {
     const nodes = [];
     const messages = [...state.messages.values()].sort((a, b) => a.seq - b.seq);
-    const memberNamesKey = JSON.stringify([state.members.map(m => [m.agent_id,m.membership_id,agentName(m)]), operatorNames()]);
+    const memberNamesKey = JSON.stringify([state.members.map(m => [m.agent_id,m.membership_id,agentName(m)]), operatorNames(), roomsUI.isDefaultAssistant()]);
     let day = "";
     for (const message of messages) {
       const date = new Date(message.created_at);
@@ -248,7 +251,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
       el.classList.toggle("own", message.author.kind === "human" && message.author.id === state.operator);
       if (message.author.kind !== "integration") el.querySelector(".author").textContent = authorName(message.author,message);
       if(message.author.kind==="agent")for(const selector of [".avatar",".author"])el.querySelector(selector).setAttribute("aria-label",`查看 ${authorName(message.author,message)} 的详情`);
-      if(message.author.kind==="agent" && cached.memberNames!==memberNamesKey)renderAvatar(document,el.querySelector(".avatar"),{kind:"agent",id:message.author.id,name:authorName(message.author,message),direct:roomsUI.isDirect()});
+      if(message.author.kind==="agent" && cached.memberNames!==memberNamesKey)renderAvatar(document,el.querySelector(".avatar"),{kind:"agent",id:message.author.id,name:authorName(message.author,message),direct:roomsUI.isDirect(),defaultAssistant:roomsUI.isDefaultAssistant()});
       if (cached.memberNames !== memberNamesKey) {
         renderMessageBody(el.querySelector(".message-text"), message.text, state.operator, messageOptions(message));
         cached.memberNames = memberNamesKey;

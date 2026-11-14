@@ -18,12 +18,13 @@
       </header>
       <nav id="room-nav" class="room-nav" aria-label="会话列表" tabindex="-1" hidden>
         <div class="room-nav-heading">
-          <h2>会话</h2><div class="room-list-actions"><button id="new-room" class="add-button" type="button" aria-label="新建会话" title="新建会话" aria-haspopup="menu" aria-expanded="false" aria-controls="create-menu" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button><div id="list-user-menu" class="mobile-user-menu"></div></div>
+          <h2><button id="conversation-filter" class="conversation-filter" type="button" aria-label="筛选会话：全部会话" aria-haspopup="menu" aria-expanded="false" aria-controls="conversation-filter-menu"><span id="conversation-filter-label">会话</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></h2>
+          <div class="room-list-actions"><button id="new-room" class="add-button" type="button" aria-label="新建会话" title="新建会话" aria-haspopup="menu" aria-expanded="false" aria-controls="create-menu" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button><div id="list-user-menu" class="mobile-user-menu"></div></div>
+
         </div>
         <div id="default-assistant-notice" class="management-notice" role="status" hidden></div><button id="retry-default-assistant" class="text-button" type="button" hidden>重试初始化助理</button>
         <p id="rooms-empty" class="quiet" hidden>还没有会话。点击右上角 ＋，新建私信或房间。</p>
-        <h3 id="direct-group-title" class="conversation-group-title">私信</h3><div id="direct-list"></div>
-        <h3 id="room-group-title" class="conversation-group-title">房间</h3><div id="room-list"></div>
+        <div id="room-list"></div>
         <div id="management-notice" class="management-notice" role="status" hidden></div>
         <button id="retry-management" class="text-button" type="button" hidden>核对并重试</button>
         <button id="dismiss-management" class="text-button" type="button" hidden>保留会话，结束本次操作</button>
@@ -66,7 +67,6 @@
       <div id="service-change" class="notice" role="status" hidden></div>
       <div id="sync-error" class="notice" role="status" hidden></div>
       <div id="restart-notice" class="notice" role="status" hidden></div>
-      <div class="mention-notice" role="status" hidden id="mention-notice"><button id="view-mention" type="button"></button></div>
       <div id="timeline-wrap" class="timeline-wrap">
         <div id="timeline" class="timeline" tabindex="0" aria-label="消息记录">
           <div class="history-control"><button id="load-history" class="text-button" hidden>加载更早消息</button></div>
@@ -74,7 +74,10 @@
 
           <div id="messages" role="log" aria-label="公共消息" aria-live="polite" aria-relevant="additions"></div>
         </div>
-        <button id="jump-latest" class="jump-latest" hidden>↓ 查看新消息</button>
+        <div class="timeline-jumps" role="group" aria-label="消息跳转">
+          <div class="mention-notice" role="status" hidden id="mention-notice"><button id="view-mention" class="timeline-jump" type="button"></button></div>
+          <button id="jump-latest" class="timeline-jump" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 6 6 6-6M6 12l6 6 6-6"/></svg><span>查看新消息</span></button>
+        </div>
         <div id="execution-hint" class="execution-hint" role="status" aria-live="polite" aria-atomic="true" hidden>
           <span class="execution-dots" aria-hidden="true"><i></i><i></i><i></i></span>
           <span id="execution-text" class="execution-text"></span>
@@ -858,6 +861,11 @@
     <header class="dialog-header"><h2 id="confirmation-title">确认操作</h2><button id="confirmation-close" class="icon-button" type="button" aria-label="关闭确认" title="关闭确认"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></header>
     <div class="confirmation-body"><p id="confirmation-message"></p><div class="form-actions"><button id="confirmation-cancel" class="secondary-button" type="button" autofocus>取消</button><button id="confirmation-accept" class="primary danger-button" type="button">确认</button></div></div>
   </dialog>
+  <div id="conversation-filter-menu" class="conversation-filter-menu menu-surface" role="menu" aria-label="筛选会话" hidden>
+    <button id="conversation-filter-all" type="button" role="menuitemradio" aria-checked="true" tabindex="-1"><span>全部会话</span><span id="conversation-count-all" class="filter-count"></span></button>
+    <button id="conversation-filter-direct" type="button" role="menuitemradio" aria-checked="false" tabindex="-1"><span>私信</span><span id="conversation-count-direct" class="filter-count"></span></button>
+    <button id="conversation-filter-room" type="button" role="menuitemradio" aria-checked="false" tabindex="-1"><span>房间</span><span id="conversation-count-room" class="filter-count"></span></button>
+  </div>
   <div id="create-menu" class="create-menu menu-surface" role="menu" aria-labelledby="new-room" hidden>
     <button id="new-direct" type="button" role="menuitem" tabindex="-1" aria-labelledby="new-direct-label" aria-describedby="new-direct-hint"><span id="new-direct-label" class="create-menu-label">新建私信</span><span id="new-direct-hint" class="create-menu-hint">与一个 Agent 单独交流</span></button>
     <button id="new-team-room" type="button" role="menuitem" tabindex="-1" aria-labelledby="new-team-room-label" aria-describedby="new-team-room-hint"><span id="new-team-room-label" class="create-menu-label">新建房间</span><span id="new-team-room-hint" class="create-menu-hint">让多个 Agent 共同协作</span></button>

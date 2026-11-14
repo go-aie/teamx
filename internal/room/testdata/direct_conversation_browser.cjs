@@ -9,19 +9,19 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict');
    const before=await(await fetch(endpoint+'/v1/rooms')).json();assert.equal(before.default_assistant.status,'deleted');
    await page.getByRole('button',{name:'恢复默认助理（新建会话）',exact:true}).waitFor();
    assert.match(await page.locator('#default-assistant-notice').textContent(),/原消息、规则和订阅不会恢复/);
-   await page.reload();assert.equal(await page.locator('#direct-list .room-choice').count(),0);
+   await page.reload();assert.equal(await page.locator('#room-list [data-direct="true"] .room-choice').count(),0);
    await page.getByRole('button',{name:'恢复默认助理（新建会话）',exact:true}).click();
-   await page.locator('#direct-list [data-default-assistant="true"] .room-choice[aria-current="true"]').waitFor();
+   await page.locator('#room-list [data-default-assistant="true"] .room-choice[aria-current="true"]').waitFor();
    await page.locator('#activity-dialog[open]').waitFor();
    const after=await(await fetch(endpoint+'/v1/rooms')).json();assert.equal(after.default_assistant.status,'completed');assert.notEqual(after.default_assistant.room_instance,before.default_assistant.room_instance);
    assert.equal(after.rooms.length,1);assert.equal(await page.locator('#messages .message').count(),0);
-   assert.equal(await page.locator('#direct-list [data-default-assistant="true"] .room-delete').count(),0);
-   await page.reload();await page.locator('#direct-list [data-default-assistant="true"]').waitFor();
+   assert.equal(await page.locator('#room-list [data-default-assistant="true"] .room-delete').count(),0);
+   await page.reload();await page.locator('#room-list [data-default-assistant="true"]').waitFor();
    const final=await(await fetch(endpoint+'/v1/rooms')).json();assert.equal(final.default_assistant.room_instance,after.default_assistant.room_instance);
    assert.deepEqual(errors,[]);console.log('Chromium passed: legacy deletion stays absent until explicit restore, fresh default selected once, no fake task or delete affordance.');return;
   }
-  await page.locator('#direct-list .room-choice[aria-current="true"]').waitFor();
-  assert.match(await page.locator('#direct-group-title').textContent(),/私信 · 1/);
+  await page.locator('#room-list [data-direct="true"] .room-choice[aria-current="true"]').waitFor();
+  assert.equal(await page.locator('#room-list [data-direct="true"]').count(),1);
   await page.locator('#activity-dialog[open]').waitFor();
   // Escape dismisses a nested picker before its parent settings dialog.
   await page.locator('#user-menu-toggle').click();await page.locator('#open-settings').click();await page.locator('#settings-tab-general').click();
@@ -49,14 +49,14 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict');
   assert.equal(await page.locator('#members').isVisible(),false);
   await page.locator('#close-conversation-notifications').click();
   assert.equal(await page.locator('#agent-tab-inbox').getAttribute('aria-selected'),'true');
-  await page.locator('#room-list .room-choice').first().click();
+  await page.locator('#room-list [data-direct="false"] .room-choice').first().click();
   await page.waitForFunction(()=>document.querySelector('#message-input').placeholder.includes('发送到房间'));
   await page.locator('#member-list-view').waitFor();
   assert.match(await page.locator('#message-input').getAttribute('placeholder'),/发送到房间/);
   await page.locator('#message-input').fill('Room draft');await page.reload();
   await page.locator('#room-list .room-choice[aria-current="true"]').waitFor();
   assert.equal(await page.locator('#message-input').inputValue(),'Room draft');
-  await page.locator('#direct-list .room-choice').first().click();
+  await page.locator('#room-list [data-direct="true"] .room-choice').first().click();
   await page.locator('#activity-dialog[open]').waitFor();
   assert.equal(await page.locator('#message-input').inputValue(),'DM draft');
   // Narrow view starts with chat; the conversation menu opens full-height details.
@@ -110,25 +110,25 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict');
   await page.unroute('**/v1/platforms?*');
   // A second tab sees the same single default, while this tab keeps its choice.
   const second=await context.newPage();await second.goto(endpoint);
-  await second.locator('#direct-list [data-default-assistant="true"]').waitFor();
-  assert.equal(await second.locator('#direct-list [data-default-assistant="true"]').count(),1);
+  await second.locator('#room-list [data-default-assistant="true"]').waitFor();
+  assert.equal(await second.locator('#room-list [data-default-assistant="true"]').count(),1);
   await page.reload();await page.locator('#room-name').getByText('另一位助理',{exact:true}).waitFor();
   // The default has no delete affordance and the server also rejects bypasses.
-  assert.equal(await second.locator('#direct-list [data-default-assistant="true"] .room-delete').count(),0);
+  assert.equal(await second.locator('#room-list [data-default-assistant="true"] .room-delete').count(),0);
   const forbidden=await second.evaluate(async()=>{
    const catalog=await(await fetch('/v1/rooms')).json(),ref=catalog.default_assistant;
    const response=await fetch('/v1/rooms/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({service_epoch:catalog.service_epoch,caller:{kind:'human',id:catalog.operator},room_id:ref.room_id,room_instance:ref.room_instance})});return response.status;
   });assert.equal(forbidden,409);
   // A manually created DM remains deletable from another tab.
-  const manual=second.locator('#direct-list [data-default-assistant="false"]').filter({hasText:'另一位助理'});
+  const manual=second.locator('#room-list [data-default-assistant="false"]').filter({hasText:'另一位助理'});
   await manual.locator('.room-delete').click();
   assert.equal(await second.evaluate(()=>document.activeElement.id),'confirmation-cancel');
   await second.keyboard.press('Escape');assert.equal(await manual.isVisible(),true);
   await manual.locator('.room-delete').click();await second.locator('#confirmation-accept').click();await manual.waitFor({state:'detached'});
-  await second.reload();await second.locator('#direct-list [data-default-assistant="true"]').waitFor();
-  assert.equal(await second.locator('#direct-list [data-default-assistant="true"]').count(),1);
+  await second.reload();await second.locator('#room-list [data-default-assistant="true"]').waitFor();
+  assert.equal(await second.locator('#room-list [data-default-assistant="true"]').count(),1);
   if(process.env.TEAMX_DM_BROWSER_ARTIFACTS){const fs=require('node:fs/promises'),path=require('node:path');await fs.mkdir(process.env.TEAMX_DM_BROWSER_ARTIFACTS,{recursive:true});await page.screenshot({path:path.join(process.env.TEAMX_DM_BROWSER_ARTIFACTS,'desktop.png'),fullPage:true});await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(process.env.TEAMX_DM_BROWSER_ARTIFACTS,'mobile.png'),fullPage:true});}
   assert.deepEqual(errors,[]);
-  console.log('Chromium passed: DM/Room groups, protected default and HTTP rejection, manual DM deletion, direct inspector, polling focus/tab, notifications return, mobile and second tab.');
+  console.log('Chromium passed: unified conversations, protected default and HTTP rejection, manual DM deletion, direct inspector, polling focus/tab, notifications return, mobile and second tab.');
  } finally {await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1});

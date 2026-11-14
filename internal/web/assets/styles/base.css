@@ -22,8 +22,7 @@
   --canvas:#fcfcfd;
   --conversation-selected:#e4eee7;
   --message-surface:#f0f1f3;
-  --message-own-surface:#f4f7f5;
-  --mention-surface:#edf5f0;
+  --message-own-surface:#e1efe4;
   --code-surface:var(--surface-muted);
   --danger:#a3463c;
   --danger-hover:#88392f;
@@ -228,6 +227,7 @@ h1 {
 .room-name-button:disabled { opacity:1; cursor:default; }
 .room-name-button:disabled svg { display:none; }
 .room-title { flex:1; min-width:0; }
+.room-header:has(.room-rename:not([hidden])) { height:auto; padding-block:4px; }
 .room-rename { display:flex; align-items:center; flex-wrap:wrap; gap:10px; max-width:560px; }
 .room-rename .hash { font-size:var(--font-title); }
 .room-rename input { flex:1; min-width:80px; width:0; padding:3px 6px; border:1px solid var(--line); border-radius:var(--radius-control); background:var(--surface); color:inherit; font-size:var(--font-title); font-weight:600; line-height:1.3; }

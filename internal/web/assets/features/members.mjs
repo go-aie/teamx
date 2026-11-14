@@ -539,7 +539,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       summary.setAttribute("aria-label", `查看 ${agentName(member)} 的详情`);
       summary.disabled = !state.connected;
       summary.addEventListener("click", () => openMemberActivity(member, summary));
-      renderAvatar(document, el.querySelector(".avatar"), {kind:"agent", id:member.agent_id, name:agentName(member), direct:roomsUI.isDirect()});
+      renderAvatar(document, el.querySelector(".avatar"), {kind:"agent", id:member.agent_id, name:agentName(member), direct:roomsUI.isDirect(), defaultAssistant:roomsUI.isDefaultAssistant()});
       el.querySelector(".member-profile").textContent = role?.name || member.runner.profile;
       const status = el.querySelector(".member-status");
       status.textContent = label;

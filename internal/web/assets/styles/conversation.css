@@ -86,6 +86,7 @@
 .agent-avatar[data-avatar-tone="violet"] { --avatar-background:#644394; }
 .agent-avatar[data-avatar-tone="amber"] { --avatar-background:#875219; }
 .agent-avatar[data-avatar-tone="cyan"] { --avatar-background:#266279; }
+.agent-avatar[data-avatar-tone="assistant"] { --avatar-background:#4f6fa8; }
 .integration-avatar { --avatar-background:#e5eaf1; --avatar-border:#c9d1dc; --avatar-color:#4e5d73; }
 .integration-avatar[data-avatar-provider="gitlab"] { --avatar-background:#fbe1cf; --avatar-border:#edbc99; --avatar-color:#9d4717; }
 .integration-avatar[data-avatar-provider="lark"] { --avatar-background:#dae6ff; --avatar-border:#b0c7ef; --avatar-color:#2457bd; }
@@ -338,7 +339,6 @@
 .message.mentioned {
   box-shadow:inset 3px 0 var(--accent);
 }
-.message.mentioned .message-content { background:var(--mention-surface); }
 .mention {
   color:#fff;
   background:var(--accent);
@@ -352,20 +352,6 @@
   border-radius:3px;
   padding:0;
   font:inherit;
-}
-.mention-notice {
-  padding:10px 20px;
-  background:var(--mention-surface);
-  border-bottom:1px solid var(--soft);
-}
-.mention-notice button {
-  width:100%;
-  background:none;
-  color:var(--accent);
-  text-align:left;
-  font-size:var(--font-small);
-  line-height:1.7;
-  overflow-wrap:anywhere;
 }
 .message-reference {
   display:block;
@@ -392,19 +378,37 @@
   background:var(--line);
   flex:1;
 }
-.jump-latest {
+.timeline-jumps {
   position:absolute;
   bottom:14px;
-  left:50%;
-  transform:translateX(-50%);
+  right:24px;
+  z-index:2;
+  display:flex;
+  flex-direction:column;
+  align-items:flex-end;
+  gap:8px;
+  max-width:calc(100% - 48px);
+  pointer-events:none;
+}
+.timeline-jump {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  min-height:44px;
   border:1px solid var(--line);
   background:var(--surface);
-  border-radius:20px;
+  border-radius:999px;
   padding:8px 16px;
   font-size:var(--font-small);
   color:var(--accent);
-  box-shadow:0 2px 8px #263d1510;
+  line-height:1.5;
+  white-space:nowrap;
+  box-shadow:0 4px 16px #263d1510;
+  pointer-events:auto;
 }
+.timeline-jump svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+.timeline-jump:hover { background:var(--soft); border-color:var(--focus); }
 .execution-hint {
   position:absolute;
   left:46px;
@@ -506,14 +510,11 @@
 }
 /* Keep the activity buttons clear of messages and the jump-to-latest control. */
 .timeline-wrap.has-activity .timeline { bottom:40px; }
-.timeline-wrap.has-activity .jump-latest { bottom:52px; }
+.timeline-wrap.has-activity .timeline-jumps { bottom:52px; }
 .timeline-wrap.has-activity + .compose { margin-top:6px; }
 @keyframes activity-dot {
   0%,70%,100% { opacity:.3; }
   35% { opacity:.75; }
-}
-.jump-latest:active:not(:disabled) {
-  transform:translateX(-50%);
 }
 .compose {
   position:relative;

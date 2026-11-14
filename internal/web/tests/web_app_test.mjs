@@ -64,6 +64,7 @@ test("Scion connection discovers a managed account and saves its profile without
 async function expandDisclosure(element) {
   element.open=true;await element.emit("toggle");await settle();
 }
+const directRows = ui => ui.el("room-list").children.filter(row => row.dataset.direct === "true");
 const elementText = element => [element.textContent,...element.children.map(elementText)].join("\n");
 
 const identity = (room, epoch = `epoch-${room.room_id}`) => ({ room_id: room.room_id, room_instance: room.room_instance, service_epoch: epoch });
@@ -230,7 +231,8 @@ function server(rooms = []) {
         assert.equal(data.caller.id, "tester");
         let room = catalog.rooms.find(room => room.create_id === data.create_id);
         if (!room) {
-          room = { ...makeRoom(data.name || "Sample", `new-${++next}`), create_id: data.create_id, team_id: data.team_id };
+          room = { ...makeRoom(data.name || "Sample", `new-${++next}`), create_id: data.create_id, team_id: data.team_id,
+            is_direct:!!data.is_direct, agent_role_id:data.agent_role_id };
           catalog.rooms.push(room); history.set(room.room_id, []);
         }
         return structuredClone(room);
@@ -386,6 +388,64 @@ test("team member header toggle collapses the whole panel and retains the choice
   assert.equal(reload.el("toggle-rooms").attributes["aria-expanded"], "true");
 });
 
+test("conversation filters keep the current chat and draft while preserving mixed recency order", async () => {
+  const fixed={...makeRoom("个人助理","fixed"),is_direct:true,last_message_at:"2026-11-01T01:00:00Z"};
+  const direct={...makeRoom("临时助理","direct"),is_direct:true,last_message_at:"2026-11-01T03:00:00Z"};
+  const room={...makeRoom("开发房间","room"),last_message_at:"2026-11-01T04:00:00Z"};
+  const older={...makeRoom("旧房间","older"),last_message_at:"2026-11-01T02:00:00Z"};
+  const api=server([room,direct,older,fixed]);
+  api.catalog.default_assistant={status:"completed",room_id:fixed.room_id,room_instance:fixed.room_instance};
+  const ui=await launch(api), names=()=>ui.el("room-list").children.map(row=>row.children[0].children[0].textContent);
+  assert.deepEqual(names(),["个人助理","开发房间","临时助理","旧房间"]);
+  assert.equal(ui.el("direct-group-title"),undefined);
+  assert.equal(ui.el("room-group-title"),undefined);
+  assert.equal(ui.el("conversation-count-all").textContent,"4");
+  assert.equal(ui.el("conversation-count-direct").textContent,"2");
+  assert.equal(ui.el("conversation-count-room").textContent,"2");
+  await ui.select("开发房间");await ui.draft("保留这个房间的草稿");
+  const calls=api.calls.length;
+  await ui.el("conversation-filter").emit("click");
+  assert.equal(ui.el("conversation-filter-menu").hidden,false);
+  await ui.el("conversation-filter-direct").emit("click");
+  assert.deepEqual(names(),["个人助理","临时助理"]);
+  assert.equal(api.calls.length,calls,"filtering never opens or writes to a conversation");
+  assert.equal(ui.el("room-name").textContent,"开发房间");
+  assert.equal(ui.el("message-input").value,"保留这个房间的草稿");
+  assert.equal(ui.el("conversation-filter-label").textContent,"私信");
+  assert.equal(ui.el("conversation-filter-direct").getAttribute("aria-checked"),"true");
+  assert.equal(ui.el("conversation-filter-menu").hidden,true);
+  assert.equal(ui.document.activeElement,ui.el("conversation-filter"));
+  await ui.refresh();assert.deepEqual(names(),["个人助理","临时助理"]);
+  await ui.el("conversation-filter-room").emit("click");
+  assert.deepEqual(names(),["开发房间","旧房间"]);
+  await ui.el("conversation-filter-all").emit("click");
+  assert.deepEqual(names(),["个人助理","开发房间","临时助理","旧房间"]);
+  assert.equal(ui.el("room-list").children[1].children[0].getAttribute("aria-current"),"true");
+});
+
+test("conversation filtering handles empty types and keyboard dismissal without hiding other conversations", async () => {
+  const api=server([makeRoom("Team")]),ui=await launch(api);
+  await ui.el("conversation-filter").emit("keydown",{key:"ArrowDown"});
+  assert.equal(ui.document.activeElement,ui.el("conversation-filter-all"));
+  await ui.el("conversation-filter-menu").emit("keydown",{key:"End"});
+  assert.equal(ui.document.activeElement,ui.el("conversation-filter-room"));
+  await ui.el("conversation-filter-menu").emit("keydown",{key:"ArrowDown"});
+  assert.equal(ui.document.activeElement,ui.el("conversation-filter-all"));
+  await ui.el("conversation-filter-menu").emit("keydown",{key:"Escape"});
+  assert.equal(ui.el("conversation-filter-menu").hidden,true);
+  assert.equal(ui.document.activeElement,ui.el("conversation-filter"));
+  await ui.el("conversation-filter-direct").emit("click");
+  assert.equal(ui.el("room-list").children.length,0);
+  assert.equal(ui.el("rooms-empty").hidden,false);assert.match(ui.el("rooms-empty").textContent,/暂无私信/);
+  assert.equal(ui.el("room-name").textContent,"Team");
+  await ui.el("conversation-filter").emit("click");
+  await ui.el("new-room").emit("click");
+  assert.equal(ui.el("conversation-filter-menu").hidden,true);
+  assert.equal(ui.el("create-menu").hidden,false);
+  await ui.el("conversation-filter-all").emit("click");
+  assert.equal(ui.el("room-list").children.length,1);assert.equal(ui.el("rooms-empty").hidden,true);
+});
+
 test("room list displays and sorts by last message time, with creation time for empty rooms", async t => {
   t.mock.method(Date, "now", () => Date.parse("2026-11-01T12:00:00Z"));
   const a = { ...makeRoom("A"), last_message_at: "2026-11-01T09:02:46Z", updated_at: "2026-11-01T09:05:00Z" };
@@ -453,13 +513,13 @@ test("conversation previews show latest text and author, creation hints and prio
     last_message_preview:{author:{kind:"human",id:"tester"},text:"检查一下"}};
   const empty=makeRoom("Empty"),emptyDirect={...makeRoom("Empty direct"),is_direct:true};
   const api=server([team,direct,empty,emptyDirect]),ui=await launch(api);
-  const choice=name=>[...ui.el("direct-list").children,...ui.el("room-list").children].find(row=>row.children[0].children[0].textContent===name).children[0];
+  const choice=name=>ui.el("room-list").children.find(row=>row.children[0].children[0].textContent===name).children[0];
   assert.equal(choice("Team").children[2].textContent,"审阅者：完成审阅 请确认下一步");
   assert.equal(choice("Direct").children[2].textContent,"你：检查一下");
   assert.equal(choice("Empty").children[2].textContent,"房间已创建");
   assert.equal(choice("Empty direct").children[2].textContent,"私信已创建");
   direct.last_message_preview={author:{kind:"agent",id:"chief-of-staff"},text:"<img src=x> 已完成"};
-  await ui.refresh();assert.equal(choice("Direct").children[2].textContent,"Direct：<img src=x> 已完成");
+  await ui.refresh();assert.equal(choice("Direct").children[2].textContent,"<img src=x> 已完成");
   team.runtime_status="opening";await ui.refresh();
   assert.equal(choice("Team").children[2].textContent,"正在打开…");
   team.runtime_status="ready";team.last_message_preview.text="等待反馈";await ui.refresh();
@@ -723,7 +783,7 @@ async function visibleMessages(ui, seqs) {
   await ui.el("timeline").emit("scroll");
 }
 
-test("only viewed mentions lose their background; navigation waits for dwell, with room-specific progress retained on reload", async () => {
+test("only viewed mentions lose their emphasis; navigation waits for dwell, with room-specific progress retained on reload", async () => {
   const api = server([makeRoom("A"), makeRoom("B")]);
   api.history.set("A", [message(1, "@tester A question"), message(2, "ordinary message"), message(3, "@tester another question"),
     { ...message(4, "@tester self mention"), author: { kind: "human", id: "tester" } }]);
@@ -776,15 +836,15 @@ test("viewing two of five mentions out of order leaves exactly three, including 
   const calls = api.calls.length;
   await ui.clock.advance(1000);
   assert.equal(api.calls.length, calls, "human viewing never changes Agent cursors");
-  assert.match(ui.el("view-mention").textContent, /3 条消息/);
+  assert.equal(ui.el("view-mention").textContent, "@你 · 3 条");
   assert.match(ui.document.title, /3 条 @你/);
   for (const seq of [1, 2, 3]) assert.equal(mentionHighlighted(ui, seq), true);
   for (const seq of [4, 5]) assert.equal(mentionHighlighted(ui, seq), false);
   await ui.el("view-mention").emit("click");
   assert.equal(mentionElement(ui, 1).scrollIntoViewCount, 1);
-  assert.match(ui.el("view-mention").textContent, /3 条消息/);
+  assert.equal(ui.el("view-mention").textContent, "@你 · 3 条");
   const reload = await launch(api, ui.saved);
-  assert.match(reload.el("view-mention").textContent, /3 条消息/);
+  assert.equal(reload.el("view-mention").textContent, "@你 · 3 条");
   for (const seq of [1, 2, 3]) assert.equal(mentionHighlighted(reload, seq), true);
   for (const seq of [4, 5]) assert.equal(mentionHighlighted(reload, seq), false);
   await visibleMessages(reload, [1, 2, 3]); await reload.clock.advance(1000);
@@ -1506,9 +1566,15 @@ test("Workspace waits for asynchronous completion before closing and can be reop
   api.catalog.rooms[0].busy = false; api.catalog.rooms[0].service = identity(api.catalog.rooms[0], "workspace-completed");
   await ui.refresh();
   assert.equal(ui.el("workspace-dialog").open, false);
-  assert.equal(ui.el("workspace-summary").textContent, "设置已生效");
+  assert.equal(ui.el("workspace-summary").hidden, true);
+  assert.equal(ui.el("workspace-summary").textContent, "");
   await ui.el("open-workspace").emit("click"); await ui.refresh();
   assert.equal(ui.el("workspace-dialog").open, true);
+  assert.equal(ui.el("workspace-status").textContent, "设置已生效");
+  assert.equal(ui.el("workspace-summary").hidden, true);
+  const reload = await launch(api, ui.saved);
+  assert.equal(reload.el("workspace-summary").hidden, true);
+  assert.equal(reload.el("workspace-summary").textContent, "");
 });
 
 test("GitLab binding derives its origin and nested project only from the final repository URL", async () => {
@@ -3374,9 +3440,9 @@ test("direct conversations prefer the exact default, keep the inspector stable, 
   assert.equal(ui.el("room-name").textContent,"个人助理");
   assert.equal(ui.el("message-input").placeholder,"发送给 个人助理");
   assert.equal(ui.el("message-input-label").textContent,"发送给 个人助理");
-  assert.equal(ui.el("direct-list").children.length,1);assert.equal(ui.el("room-list").children.length,1);
-  assert.equal(ui.el("direct-list").children[0].children.length,1);
-  assert.equal(ui.el("room-list").children[0].children.length,2);
+  assert.equal(directRows(ui).length,1);assert.equal(ui.el("room-list").children.length,2);
+  assert.equal(directRows(ui)[0].children.length,1);
+  assert.equal(ui.el("room-list").children[1].children.length,2);
   assert.equal(ui.el("activity-dialog").open,true);assert.equal(ui.el("close-activity").hidden,true);
   assert.equal(ui.el("activity-title").textContent,"个人助理");
   assert.equal(ui.el("members").children[0].querySelector(".avatar").children[0].getAttribute("class"),"assistant-icon");
@@ -3414,7 +3480,7 @@ test("default delete protection follows identity after rename and clears old una
   const api=server([fixed,manual]);api.catalog.default_assistant={status:"completed",room_id:fixed.room_id,room_instance:fixed.room_instance};
   const saved=new Map([["teamx.room-management",JSON.stringify({kind:"delete",operator:"tester",payload:{room_id:fixed.room_id,room_instance:fixed.room_instance}})]]);
   const ui=await launch(api,saved);await settle();
-  assert.equal(ui.el("direct-list").children[0].children.length,1);assert.equal(ui.el("direct-list").children[1].children.length,2);
+  assert.equal(directRows(ui)[0].children.length,1);assert.equal(directRows(ui)[1].children.length,2);
   assert.equal(saved.has("teamx.room-management"),false);assert.equal(api.calls.some(call=>call.path==="/v1/rooms/delete"),false);
   assert.match(ui.el("management-notice").textContent,/不可删除/);
   await ui.delete("个人助理");await settle();assert.equal(api.catalog.rooms.length,1);assert.equal(api.catalog.rooms[0].room_id,fixed.room_id);
@@ -3440,11 +3506,11 @@ test("default initialization retry and explicit restoration preserve the current
   await ui.el("retry-default-assistant").emit("click");await settle();
   assert.equal(ui.el("retry-default-assistant").hidden,false);assert.match(ui.el("retry-default-assistant").textContent,/恢复默认助理/);
   assert.match(ui.el("default-assistant-notice").textContent,/原消息、规则和订阅不会恢复/);
-  assert.equal(ui.el("direct-list").children.length,0);
+  assert.equal(directRows(ui).length,0);
   await ui.refresh();assert.equal(api.calls.some(call=>call.path.endsWith("/restore")),false);
   await ui.el("retry-default-assistant").emit("click");await settle();
   assert.equal(ui.el("retry-default-assistant").hidden,true);assert.equal(ui.el("default-assistant-notice").hidden,true);
-  assert.equal(ui.el("direct-list").children.length,1);assert.equal(ui.el("room-name").textContent,"Existing");
+  assert.equal(directRows(ui).length,1);assert.equal(ui.el("room-name").textContent,"Existing");
   assert.equal(api.calls.some(call=>call.path==="/v1/rooms/create"),false);
 });
 
@@ -3463,18 +3529,21 @@ test("deleted default restoration stays explicit, reports uncertainty and select
   await ui.el("retry-default-assistant").emit("click");await settle();assert.match(ui.el("default-assistant-notice").textContent,/恢复未确认/);
   await ui.refresh();assert.equal(api.calls.filter(call=>call.path.endsWith("/restore")).length,1);
   fail=false;await ui.el("retry-default-assistant").emit("click");await settle();assert.equal(ui.el("room-name").textContent,"新个人助理");
-  assert.equal(ui.el("direct-list").children[0].children.length,1);
+  assert.equal(directRows(ui)[0].children.length,1);
 });
 
 test("new direct creation uses a role without a team or seeded human task",async()=>{
   const api=server();api.catalog.teams=[];api.catalog.agent_roles=[{id:"assistant",name:"个人助理"}];
-  const ui=await launch(api);await ui.el("new-room").emit("click");await ui.el("new-direct").emit("click");
+  const ui=await launch(api);await ui.el("conversation-filter-room").emit("click");
+  await ui.el("new-room").emit("click");await ui.el("new-direct").emit("click");
   assert.equal(ui.el("create-team-fields").hidden,true);assert.equal(ui.el("team").required,false);
   assert.equal(ui.el("create-room").disabled,false);ui.el("new-room-name").value="独立助理";
   await ui.el("create-form").emit("submit");await settle();
   const request=api.calls.find(call=>call.path==="/v1/rooms/create").data;
   assert.equal(request.is_direct,true);assert.equal(request.agent_role_id,"assistant");assert.equal(request.team_id,undefined);
   assert.equal(ui.el("message-input").value,"");assert.equal(api.calls.some(call=>call.path==="/v1/send"),false);
+  assert.equal(ui.el("conversation-filter-label").textContent,"会话");
+  assert.equal(directRows(ui).length,1);
 });
 
 test("a pending default selects once when ready, while late DM Inbox reads cannot populate a Room",async()=>{

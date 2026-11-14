@@ -79,6 +79,7 @@ export async function createApp(overrides = {}) {
     }
     if (layoutUI.directNotificationsOpen && layoutUI.membersPanelOpen()) layers.push({ id:"conversation-notifications", close:conversationUI.returnConversationNotifications });
     if ($("workspace-picker").open) layers.push({ id:"workspace-picker", close:workspaceUI.closeWorkspacePicker });
+    if (!$("conversation-filter-menu").hidden) layers.push({ id:"conversation-filter", close:roomsUI.closeFilterMenu });
     for (const [id, button] of [["activity-dialog","close-activity"], ["notification-detail","close-notification"],
       ["workspace-dialog","close-workspace"], ["create-dialog","close-create"], ["settings-dialog","close-settings"], ["access-confirm-dialog","access-confirm-cancel"]]) {
       if ($(id)?.open && !$(id).hidden) layers.push({id, close:() => id === "settings-dialog" ? settingsUI.backSettings() : $(button)?.click?.()});

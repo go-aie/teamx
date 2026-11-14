@@ -11,7 +11,7 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),{mkd
   await context.addInitScript(selection=>sessionStorage.setItem('teamx.selected-room',JSON.stringify(selection)),{room_id:current.room_id,room_instance:room});
   await page.goto(endpoint);
   if(current.is_direct){
-   await page.locator('#direct-list .room-choice[aria-current="true"]').waitFor();
+   await page.locator('#room-list [data-direct="true"] .room-choice[aria-current="true"]').waitFor();
    assert.equal(catalog.default_assistant.room_instance,room);
    assert.equal(await page.locator('#member-list-view').isVisible(),false);
    await page.locator('#agent-tab-platforms').waitFor();

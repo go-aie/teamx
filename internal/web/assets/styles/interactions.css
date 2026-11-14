@@ -14,8 +14,6 @@
 .platform-selection-candidates input { flex: none; margin-top: 4px; }
 
 /* Direct conversations share the inspector and notification settings. */
-.conversation-group-title { margin:20px 12px 8px; color:var(--muted); font-size:var(--font-small); font-weight:600; }
-#direct-group-title { margin-top:0; }
 .room-nav-heading { position:relative; }
 
 .create-menu {
@@ -42,7 +40,6 @@
 .create-menu button:focus-visible { outline-offset:-2px; }
 .create-menu-label { display:block; font-size:var(--font-body); font-weight:500; line-height:1.5; }
 .create-menu-hint { display:block; margin-top:2px; color:var(--muted); font-size:var(--font-small); line-height:1.5; }
-.room-entry[data-direct="false"] .room-choice strong::before { content:"# "; color:var(--muted); }
 .assistant-icon {
   width:1em;
   height:1em;
@@ -54,18 +51,7 @@
   vertical-align:-.15em;
   flex-shrink:0;
 }
-.room-choice .assistant-icon { width:16px; height:16px; margin-right:6px; }
 .avatar .assistant-icon { width:20px; height:20px; }
-.default-assistant-badge {
-  grid-column:2;
-  grid-row:1;
-  padding:1px 5px;
-  border-radius:4px;
-  color:var(--text-secondary);
-  background:var(--soft);
-  font-size:var(--font-small);
-  line-height:1.5;
-}
 .direct-suggestions { display:flex; flex-wrap:wrap; justify-content:center; gap:8px; margin:0 20px 24px; }
 .direct-conversation #member-list-view > .member-rail-header,
 .direct-conversation #member-empty, .direct-conversation #members { display:none; }

@@ -27,6 +27,25 @@
   font-size:14px;
   font-weight:600;
 }
+.conversation-filter {
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  min-height:36px;
+  margin-left:-8px;
+  padding:6px 8px;
+  border-radius:var(--radius-control);
+  background:transparent;
+  color:var(--text);
+  font-weight:var(--weight-strong);
+}
+.conversation-filter svg { width:14px; height:14px; fill:none; stroke:var(--muted); stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+.conversation-filter:hover,.conversation-filter[aria-expanded="true"] { background:var(--surface-hover); }
+.conversation-filter-menu { position:fixed; z-index:30; top:var(--filter-menu-top,0px); left:var(--filter-menu-left,0px); width:200px; max-width:calc(100vw - 24px); max-height:calc(100dvh - 24px); overflow-y:auto; }
+.conversation-filter-menu button { display:flex; align-items:center; justify-content:space-between; gap:20px; width:100%; min-height:44px; padding:10px 12px; border-radius:var(--radius-control); background:transparent; color:var(--text); text-align:left; }
+.conversation-filter-menu button:hover,.conversation-filter-menu button:focus-visible { background:var(--surface-hover); }
+.conversation-filter-menu button[aria-checked="true"] { background:var(--soft); color:var(--accent); font-weight:var(--weight-medium); }
+.conversation-filter-menu .filter-count { color:var(--muted); font-size:var(--font-small); font-variant-numeric:tabular-nums; }
 .room-entry {
   position:relative;
   display:flex;
@@ -39,9 +58,9 @@
   flex:1;
   min-width:0;
   display:grid;
-  grid-template-columns:minmax(0,1fr) auto auto;
+  grid-template-columns:18px minmax(0,1fr) auto;
   align-items:center;
-  column-gap:6px;
+  column-gap:10px;
   padding:10px 12px;
   min-height:60px;
   border-radius:var(--radius-control);
@@ -96,7 +115,7 @@
   white-space:nowrap;
 }
 .room-choice strong {
-  grid-column:1;
+  grid-column:2;
   grid-row:1;
   min-width:0;
   font-size:14px;
@@ -104,13 +123,14 @@
   line-height:1.5;
 }
 .room-choice .room-status,.room-choice .room-preview {
-  grid-column:1 / -1;
+  grid-column:2 / -1;
   grid-row:2;
   margin-top:4px;
   font-size:var(--font-small);
   line-height:1.5;
   color:var(--muted);
 }
+.room-choice .room-kind-icon { grid-column:1; grid-row:1; width:18px; height:18px; align-self:center; fill:none; stroke:var(--muted); stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
 .room-time {
   grid-column:3;
   grid-row:1;

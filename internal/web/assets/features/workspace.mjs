@@ -186,11 +186,12 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     $("workspace-selected-label").textContent = label;
     $("workspace-selected-description").textContent = current?.repository ? "各成员使用独立的仓库目录"
       : current && current.root !== "workspaces" ? `房间内目录 · ${current.root}` : "沿用各成员自己的工作目录";
-    let status = ws?.pending ? "提交结果待确认" : op?.status === "running" ? workspaceStages[op.phase] || "正在应用"
+    const status = ws?.pending ? "提交结果待确认" : op?.status === "running" ? workspaceStages[op.phase] || "正在应用"
       : op?.status === "failed" ? workspaceCanRevise() ? "初始化失败 · 可修改后重新应用" : "设置未完成 · 请核查后重试"
       : op?.status === "completed" ? "设置已生效" : "";
-    $("workspace-summary").textContent = status;
-    $("workspace-summary").hidden = !status || !state.managed || !ws;
+    const summary = !ws?.pending && op?.status === "completed" ? "" : status;
+    $("workspace-summary").textContent = summary;
+    $("workspace-summary").hidden = !summary || !state.managed || !ws;
     if (!$("workspace-dialog").open) return;
     fillWorkspaceForm();
     $("workspace-current").textContent = current ? `当前目录：${current.root} · 配置版本 ${data.workspace_version}` : "沿用原成员目录";

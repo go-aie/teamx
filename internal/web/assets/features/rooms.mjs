@@ -14,6 +14,23 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
   const selectionKey = "teamx.selected-room";
 
   let selectedRoom = null, selectionVersion = 0, selectionLoaded = false, awaitDefaultSelection = false;
+  let conversationFilter = "all";
+  const filterLabels = {all:"全部会话", direct:"私信", room:"房间"};
+  const matchesFilter = room => conversationFilter === "all" || !!room.is_direct === (conversationFilter === "direct");
+
+  function closeFilterMenu() {
+    $("conversation-filter-menu").hidden = true;
+    $("conversation-filter").setAttribute("aria-expanded", "false");
+    runtime.navigationChanged();
+  }
+
+  function setConversationFilter(filter) {
+    conversationFilter = filter;
+    closeFilterMenu();
+    $("room-nav").scrollTop = 0;
+    renderRooms();
+    $("conversation-filter").focus();
+  }
 
   function selectedEntry(catalog = state.catalog) {
     return catalog?.rooms.find(room => room.room_id === selectedRoom?.room_id && room.room_instance === selectedRoom?.room_instance);
@@ -23,12 +40,14 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
 
   function conversationType(room = selectedEntry()) { return room?.is_direct || !state.managed && state.isDirect ? "私信" : "房间"; }
 
-  function isDefaultAssistant(room, catalog = state.catalog) {
+  function isDefaultAssistant(room = selectedEntry(), catalog = state.catalog) {
     const ref = catalog?.default_assistant;
     return !!room && ref?.status !== "deleted" && room.room_id === ref?.room_id && room.room_instance === ref?.room_instance;
   }
 
   function selectRoom(room) {
+    const entry = room && (state.catalog?.rooms.find(entry => entry.room_id === room.room_id && entry.room_instance === room.room_instance) || room);
+    if (entry && !matchesFilter(entry)) conversationFilter = "all";
     selectedRoom = room ? { room_id: room.room_id, room_instance: room.room_instance } : null;
     selectionVersion++; awaitDefaultSelection = false;
     layoutUI.resetDirectNavigation();
@@ -140,7 +159,7 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
     if (state.management !== op || receipt.status === "running") return;
     state.managementError = receipt.status === "failed" ? `打开失败，历史已保留。${receipt.error}` : "";
     if (receipt.status === "completed" && receipt.service && op.selectOnComplete !== false && op.selectionVersion === selectionVersion) {
-      selectRoom({ ...receipt, service: receipt.service });
+      selectRoom({ ...op.room, ...receipt, service: receipt.service });
     }
     state.management = null; saveManagement();
   }
@@ -162,7 +181,7 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
     if (!preview) return room.last_message_at ? "已有消息" : room.is_direct ? "私信已创建" : "房间已创建";
     const author = preview.author;
     const sender = author?.kind === "human" && author.id === state.catalog.operator ? "你"
-      : author?.kind === "agent" ? preview.agent_name || (room.is_direct ? room.name : agentName(room.members?.find(member => member.id === author.id)) || author.id)
+      : author?.kind === "agent" ? room.is_direct ? "" : preview.agent_name || agentName(room.members?.find(member => member.id === author.id)) || author.id
       : author?.id || "";
     const text = preview.text?.replace(/\s+/g, " ").trim() || "[消息]";
     return sender ? `${sender}：${text}` : text;
@@ -179,20 +198,38 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
     if (!state.managed || !state.catalog) return;
     const catalog = state.catalog;
     renderDefaultAssistant();
-    $("rooms-empty").hidden = catalog.rooms.length > 0;
+    const visibleRooms = catalog.rooms.filter(matchesFilter);
+    $("rooms-empty").hidden = visibleRooms.length > 0;
+    $("rooms-empty").textContent = !catalog.rooms.length ? "还没有会话。点击右上角 ＋，新建私信或房间。"
+      : `暂无${filterLabels[conversationFilter]}。点击右上角 ＋ 新建，或切换筛选查看其他会话。`;
+    $("conversation-filter-label").textContent = conversationFilter === "all" ? "会话" : filterLabels[conversationFilter];
+    $("conversation-filter").setAttribute("aria-label", `筛选会话：${filterLabels[conversationFilter]}`);
+    for (const filter of Object.keys(filterLabels)) {
+      $("conversation-filter-" + filter).setAttribute("aria-checked", String(conversationFilter === filter));
+      $("conversation-count-" + filter).textContent = String(catalog.rooms.filter(room => filter === "all" || !!room.is_direct === (filter === "direct")).length);
+    }
     $("new-room").disabled = !state.catalogConnected || discussionBusy() || !!state.management || state.managementSending || !!catalog.write_error;
     const now = Date.now();
     const signature = JSON.stringify({ rooms: catalog.rooms, selected: selectedRoom, timeZone:settingsUI.systemTime.zone, timeError:settingsUI.systemTime.error, day:settingsUI.systemTime.day(now),
-      defaultAssistant: catalog.default_assistant, busy: discussionBusy(), management: !!state.management, sending: state.managementSending, connected: state.catalogConnected });
+      defaultAssistant: catalog.default_assistant, filter:conversationFilter, busy: discussionBusy(), management: !!state.management, sending: state.managementSending, connected: state.catalogConnected });
     if ($("room-list").dataset.signature !== signature) {
       $("room-list").dataset.signature = signature;
-      const rows = [...catalog.rooms].sort((a,b) => Number(isDefaultAssistant(b)) - Number(isDefaultAssistant(a)) || new Date(roomListTime(b)) - new Date(roomListTime(a))).map(room => {
+      const rows = visibleRooms.sort((a,b) => Number(isDefaultAssistant(b)) - Number(isDefaultAssistant(a)) || new Date(roomListTime(b)) - new Date(roomListTime(a))).map(room => {
         const row = document.createElement("div"); row.className = "room-entry"; row.dataset.direct = String(!!room.is_direct);
         const button = document.createElement("button"); button.type = "button"; button.className = "room-choice";
         button.setAttribute("aria-current", String(room.room_instance === selectedRoom?.room_instance));
         const name = document.createElement("strong"), updated = document.createElement("time");
         name.textContent = room.name;
-        if (room.is_direct) name.insertBefore(createAssistantIcon(document), name.firstChild);
+        const kind = room.is_direct ? createAssistantIcon(document) : document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        if (!room.is_direct) {
+          kind.setAttribute("viewBox", "0 0 24 24"); kind.setAttribute("aria-hidden", "true");
+          const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          path.setAttribute("d", "M16 21v-2a5 5 0 0 0-10 0v2M21 21v-2a5 5 0 0 0-3-4.6M16 3.4a4 4 0 0 1 0 7.2");
+          const head = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+          for (const [key,value] of Object.entries({cx:11,cy:7,r:4})) head.setAttribute(key,String(value));
+          kind.append(path,head);
+        }
+        kind.classList.add("room-kind-icon");
         row.dataset.defaultAssistant = String(isDefaultAssistant(room));
         const statusText = room.status === "deleting" ? (room.busy ? "正在删除…" : `删除待重试${room.error ? ` · ${room.error}` : ""}`)
           : room.status === "creating" ? `创建待完成${room.error ? ` · ${room.error}` : " · 可重试原创建请求"}` : room.runtime_status === "opening" ? "正在打开…"
@@ -208,7 +245,7 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
         button.setAttribute("aria-label", `${conversationType(room)}：${room.name}${isDefaultAssistant(room) ? "，默认助理" : ""}，${updated.title}，${detailText}`);
         button.append(name, updated);
         const detail = document.createElement("span"); detail.className = statusText ? "room-status" : "room-preview"; detail.textContent = detailText; detail.title = detailText; button.append(detail);
-        if (isDefaultAssistant(room)) { const badge = document.createElement("small"); badge.className = "default-assistant-badge"; badge.textContent = "默认"; button.append(badge); }
+        button.append(kind);
         button.disabled = room.status !== "ready" || !state.catalogConnected || !!catalog.busy;
         button.addEventListener("click", () => startSelection(room));
         row.append(button);
@@ -226,10 +263,7 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
         row.append(remove);
         return row;
       });
-      $("direct-list").replaceChildren(...rows.filter(row => row.dataset.direct === "true"));
-      $("room-list").replaceChildren(...rows.filter(row => row.dataset.direct !== "true"));
-      $("direct-group-title").textContent = `私信 · ${catalog.rooms.filter(room => room.is_direct).length}`;
-      $("room-group-title").textContent = `房间 · ${catalog.rooms.filter(room => !room.is_direct).length}`;
+      $("room-list").replaceChildren(...rows);
     }
     let text = state.managementError || catalog.write_error || "";
     if (workspaceUI.workspaceView?.data?.operation?.status === "running") text = `工作目录 · ${workspaceUI.workspaceStages[workspaceUI.workspaceView.data.operation.phase] || "正在应用"}`;
@@ -419,8 +453,52 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
       $("create-menu").hidden = true;
       $("new-room").setAttribute("aria-expanded", "false");
     };
+    closeFilterMenu();
+    const filterOptions = Object.keys(filterLabels).map(filter => $("conversation-filter-" + filter));
+    const showFilterMenu = (last = false) => {
+      closeCreateMenu();
+      const menu = $("conversation-filter-menu");
+      menu.hidden = false;
+      const anchor = $("conversation-filter").getBoundingClientRect(), bounds = menu.getBoundingClientRect(), inset = 12;
+      menu.style.setProperty("--filter-menu-left", `${Math.max(inset, Math.min(anchor.left, window.innerWidth - bounds.width - inset))}px`);
+      menu.style.setProperty("--filter-menu-top", `${Math.max(inset, Math.min(anchor.bottom + 6, window.innerHeight - bounds.height - inset))}px`);
+      $("conversation-filter").setAttribute("aria-expanded", "true");
+      (last ? filterOptions.at(-1) : $("conversation-filter-" + conversationFilter)).focus();
+      runtime.navigationChanged();
+    };
+    $("conversation-filter").addEventListener("click", () => {
+      if ($("conversation-filter-menu").hidden) showFilterMenu();
+      else closeFilterMenu();
+    });
+    $("conversation-filter").addEventListener("keydown", event => {
+      if (!["ArrowDown", "ArrowUp"].includes(event.key)) return;
+      event.preventDefault(); showFilterMenu(event.key === "ArrowUp");
+    });
+    for (const filter of Object.keys(filterLabels)) {
+      $("conversation-filter-" + filter).addEventListener("click", () => setConversationFilter(filter));
+    }
+    $("conversation-filter-menu").addEventListener("keydown", event => {
+      if (["Escape", "Tab"].includes(event.key)) {
+        if (event.key === "Escape") { event.preventDefault(); event.stopPropagation?.(); }
+        closeFilterMenu(); $("conversation-filter").focus();
+      }
+      if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+        event.preventDefault();
+        const current = filterOptions.indexOf(document.activeElement);
+        const index = event.key === "Home" ? 0 : event.key === "End" ? filterOptions.length - 1
+          : (current + (event.key === "ArrowDown" ? 1 : -1) + filterOptions.length) % filterOptions.length;
+        filterOptions[index].focus();
+      }
+    });
+    for (const eventType of ["pointerdown", "focusin"]) document.addEventListener(eventType, event => {
+      if (!$("conversation-filter-menu").hidden && !event.target.closest?.("#conversation-filter-menu, #conversation-filter")) closeFilterMenu();
+    });
+    window.addEventListener("resize", closeFilterMenu);
+    window.addEventListener("scroll", closeFilterMenu);
+    $("room-nav").addEventListener("scroll", closeFilterMenu);
     const showCreateMenu = (last = false) => {
       if ($("new-room").disabled) return;
+      closeFilterMenu();
       const menu = $("create-menu");
       menu.hidden = false;
       // The menu lives outside the scrolling rail so it can open over the workspace.
@@ -498,6 +576,8 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
     restoreManagement,
     renderRooms,
     isDirect,
+    isDefaultAssistant,
+    closeFilterMenu,
     selectedEntry,
     managementBusy,
     conversationType,
