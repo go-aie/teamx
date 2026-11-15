@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/netip"
@@ -380,14 +381,28 @@ func (a *serverAccess) serveSettings(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return nil, nil, err
 		}
+		changed := a.disabled == input.LoginEnabled || token != "" && sha256.Sum256([]byte(token)) != a.admin
+		sessions := maps.Clone(a.sessions)
+		if changed {
+			clear(sessions)
+		}
+		if cookie, err := r.Cookie(a.cookieName()); err == nil {
+			delete(sessions, sha256.Sum256([]byte(cookie.Value)))
+		}
+		// Revoke durably before activating settings. A later config failure
+		// can require re-login, but cannot resurrect an acknowledged logout.
+		if !maps.Equal(sessions, a.sessions) {
+			if err := a.replaceSessions(sessions); err != nil {
+				return nil, nil, err
+			}
+		}
 		return append(append(base, '\n'), section...), func() {
-			changed := a.disabled == input.LoginEnabled || token != "" && sha256.Sum256([]byte(token)) != a.admin
 			a.config, a.disabled = next, !input.LoginEnabled
 			if input.LoginEnabled {
 				a.admin = sha256.Sum256([]byte(token))
 			}
 			if changed {
-				a.sessions = map[[32]byte]accessSession{}
+				clear(a.sessions)
 			}
 			a.version++
 		}, nil

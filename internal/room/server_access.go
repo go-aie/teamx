@@ -13,6 +13,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/netip"
@@ -58,6 +59,7 @@ type serverAccess struct {
 	proxies                    map[netip.Addr]bool
 	mu                         sync.Mutex
 	sessions                   map[[32]byte]accessSession
+	sessionStore               Store
 	executions                 map[[32]byte]executionBinding
 	attempts                   int
 	retryAfter                 time.Time
@@ -147,6 +149,7 @@ func newServerAccess(c startupConfig, endpoint string) (*serverAccess, error) {
 	}
 	a := &serverAccess{operator: c.Access.OperatorID, internal: endpoint, public: endpoint, admin: sha256.Sum256([]byte(token)), proxies: map[netip.Addr]bool{}, sessions: map[[32]byte]accessSession{}, executions: map[[32]byte]executionBinding{}, now: time.Now}
 	a.disabled, a.config, a.version = disabled, c, 1
+	a.sessionStore.ops = defaultSnapshotOps()
 	a.activeMode = configuredAccessMode(c)
 	a.lanHosts = localLANHosts()
 	a.managed = c.installationID != ""
@@ -200,6 +203,9 @@ func newServerAccess(c startupConfig, endpoint string) (*serverAccess, error) {
 			return nil, errors.New("invalid installation identity")
 		}
 		a.installationID = string(saved)
+	}
+	if err := a.restoreSessions(); err != nil {
+		return nil, fmt.Errorf("restore browser sessions: %w", err)
 	}
 	return a, nil
 }
@@ -352,28 +358,33 @@ func (a *serverAccess) wrap(next http.Handler) http.Handler {
 				return
 			}
 			a.attempts = 0
-			for key, s := range a.sessions {
+			sessions := maps.Clone(a.sessions)
+			for key, s := range sessions {
 				if !now.Before(s.expires) {
-					delete(a.sessions, key)
+					delete(sessions, key)
 				}
 			}
-			if len(a.sessions) >= 16 {
+			if len(sessions) >= maxAccessSessions {
 				var oldest [32]byte
 				var expiry time.Time
-				for key, s := range a.sessions {
+				for key, s := range sessions {
 					if expiry.IsZero() || s.expires.Before(expiry) {
 						oldest, expiry = key, s.expires
 					}
 				}
-				delete(a.sessions, oldest)
+				delete(sessions, oldest)
 			}
 			token, err := randomAccessToken()
 			if err != nil {
 				accessError(w, 500, "unavailable")
 				return
 			}
-			a.sessions[sha256.Sum256([]byte(token))] = accessSession{now.Add(24 * time.Hour)}
-			http.SetCookie(w, a.cookie(token, 86400))
+			sessions[sha256.Sum256([]byte(token))] = accessSession{now.Add(accessSessionLifetime)}
+			if err := a.replaceSessions(sessions); err != nil {
+				accessError(w, 500, "session_unavailable")
+				return
+			}
+			http.SetCookie(w, a.cookie(token, int(accessSessionLifetime/time.Second)))
 			a.writeSession(w)
 			return
 		}
@@ -443,8 +454,14 @@ func (a *serverAccess) wrap(next http.Handler) http.Handler {
 		if r.URL.Path == "/v1/access/logout" && r.Method == "POST" && binding == nil {
 			if c, err := r.Cookie(a.cookieName()); err == nil {
 				a.mu.Lock()
-				delete(a.sessions, sha256.Sum256([]byte(c.Value)))
+				sessions := maps.Clone(a.sessions)
+				delete(sessions, sha256.Sum256([]byte(c.Value)))
+				err := a.replaceSessions(sessions)
 				a.mu.Unlock()
+				if err != nil {
+					accessError(w, 500, "session_unavailable")
+					return
+				}
 			}
 			http.SetCookie(w, a.cookie("", -1))
 			writeAccessSession(w, "")

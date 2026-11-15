@@ -19,11 +19,21 @@ test("password-manager fields cannot fall back to putting credentials in the URL
   }
 });
 
+test("login focuses the password field and preserves focus when returning to the page",async()=>{
+  const ui=await launch(async()=>({status:401,data:{}}));
+  assert.equal(ui.el("token").focused,true);
+  assert.match(html,/<input id="token"[^>]*autofocus/);
+  const focused = ui.el("token").focusCount;
+  ui.el("toggle-token").focus();
+  await ui.foreground();
+  assert.equal(ui.el("token").focusCount,focused);
+});
+
 async function launch(api, saved = new Map(), hash = "") {
   const elements = new Map([...html.matchAll(/id="([^"]+)"/g)].map(([,id])=>[id, {
     value:"",hidden:false,disabled:false,listeners:{},attributes:{},
     addEventListener(name,fn){(this.listeners[name] ||= []).push(fn);},
-    setAttribute(name,value){this.attributes[name]=value;},removeAttribute(name){delete this.attributes[name];},focus(){this.focused=true;},scrollIntoView(){this.scrolled=true;},
+    setAttribute(name,value){this.attributes[name]=value;},removeAttribute(name){delete this.attributes[name];},focus(){this.focused=true;this.focusCount=(this.focusCount || 0)+1;document.activeElement=this;},scrollIntoView(){this.scrolled=true;},
     async emit(name){for(const fn of this.listeners[name] || []) await fn({preventDefault(){}});}
   }]));
   const el = id=>elements.get(id);
@@ -32,8 +42,9 @@ async function launch(api, saved = new Map(), hash = "") {
   el("setup-progress").hidden=true;
   el("model-form").elements=[...html.matchAll(/<(?:input|select|button) id="([^"]+)"/g)].map(([,id])=>el(id)).filter(field=>![el("login-submit"),el("logout"),el("retry-migration"),el("check-setup-operation"),el("reload-model-draft"),el("toggle-token"),el("token")].includes(field));
   const timers=[],navigation=[],documentEvents=new Map();
+  const document={hidden:false,body:{},activeElement:null,getElementById:el,addEventListener:(name,fn)=>documentEvents.set(name,fn)};
   vm.runInNewContext(source, {...modelForm,randomUUID,URL,crypto:webcrypto,
-    document:{hidden:false,getElementById:el,addEventListener:(name,fn)=>documentEvents.set(name,fn)},navigator:{onLine:true},
+    document,navigator:{onLine:true},
     location:{origin:"http://fixture",hash,replace:path=>navigation.push(path)},addEventListener(){},
     sessionStorage:{getItem:key=>saved.get(key),setItem:(key,value)=>saved.set(key,value),removeItem:key=>saved.delete(key)},
     setTimeout:fn=>timers.push(fn),

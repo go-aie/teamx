@@ -30,7 +30,7 @@ teamx serve --home '/absolute/home'
 
 管理 token 保存在配置旁的 `auth/admin-token`，也可通过 `access.admin_token_file` 指定相对于配置的路径。初始化只在缺少时生成 32 随机字节的无填充 base64url 值，不输出 token 本身、不覆盖已有文件。文件必须由部署账号拥有、权限为 0600 的普通文件，拒绝符号链接。`access.operator_id` 同时初始化并保持固定，不再依赖宿主 USER。
 
-浏览器输入该 token 后取得随机 Cookie 会话；页面不把 token 写入 URL、localStorage 或 sessionStorage。会话默认 24 小时、最多 16 个，仅存摘要于 Server 内存；退出只撤销当前会话，重启会使全部浏览器会话失效。轮换时在部署机替换私有 token 文件并正常重启，保留 `operator_id` 和业务目录。
+浏览器输入该 token 后取得随机 Cookie 会话；页面不把 token 写入 URL、localStorage 或 sessionStorage。会话自登录起有效 30 天、最多 16 个，摘要与到期时间保存到配置旁 `auth/browser-sessions.json`（部署账号拥有的 0600 私有文件）；服务重启恢复尚未过期的会话，不延长有效期。退出只撤销当前设备会话，修改 token 或关闭登录验证撤销全部会话；部署机替换 token 后重启也会使旧会话失效。文件绑定实例、固定操作者与当前凭据，不保存密码明文或原始 Cookie。轮换时在部署机替换私有 token 文件并正常重启，保留 `operator_id` 和业务目录。
 
 人工 CLI 从文件读取 Bearer：
 
@@ -50,7 +50,7 @@ teamx read --endpoint http://127.0.0.1:8088 --room ROOM_ID --latest 20
 - HTTPS Cookie 为 `__Host-teamx-session`，Secure、HttpOnly、SameSite=Lax、Path=/、无 Domain。本机 HTTP 使用独立的 `teamx-local-session`。
 - Agent 凭据在 DSH 会话打开时随机签发，绑定 RoomID、RoomInstance、AgentID、MembershipID、ServiceEpoch 和明确的工具路由集合。原业务处理器继续检查实际成员和权限。会话关闭／打开失败后撤销；服务换代重新签发，无固定小时 TTL。
 - 管理凭据、管理文件路径和浏览器会话变量从服务与 DSH 的继承环境过滤，禁止配置为 ToolEnv。执行凭据只放在独立的临时 Options 字段，不进入 Runtime、ToolEnv、prompt、恢复摘要或材料文件；不改写请求 JSON、Room 调度或 Inbox 消费语义。
-- `GET /v1/setup` 和 `POST /v1/setup/model` 与正常业务使用同一认证。设置状态不创建 Room manager／平台 worker／DSH；保存时复用模型结构校验，以 0600 临时文件、同步和原子替换保留其他配置，拒绝覆盖外部变更。模型的兼容性与可选参数保留。保存后先结清设置 HTTP／锁，再在相同端口按正常入口启动；没有热重配 Room manager。原内存登录会话失效，浏览器重新登录。
+- `GET /v1/setup` 和 `POST /v1/setup/model` 与正常业务使用同一认证。设置状态不创建 Room manager／平台 worker／DSH；保存时复用模型结构校验，以 0600 临时文件、同步和原子替换保留其他配置，拒绝覆盖外部变更。模型的兼容性与可选参数保留。保存后先结清设置 HTTP／锁，再在相同端口按正常入口启动；没有热重配 Room manager。登录会话通过私有文件恢复，无需因切换到正常服务重新登录。
 - 设置成功仅表示结构校验与持久保存，不伪称模型已连通；正常对话另验模型，不在每次启动时自动消耗模型调用来验证凭据。无效表单可直接修正，文件写入失败不进入业务状态。
 
 ### DSH 临时传递契约补充
@@ -131,3 +131,9 @@ trusted_proxies = ['127.0.0.1']
 登录与保存确认使用 current-password，新密码使用 new-password，并提供固定账号元数据供密码管理器识别，不增加账号输入步骤。网页仍不自行保存明文凭据；是否由设备密码管理器保存由用户及浏览器控制。
 
 验证：Go 全量测试通过，访问控制相关 race 测试与 Web 资源检查通过；492 项 Web 单元测试通过。共用测试样例检查前后端规则一致性，API 测试覆盖绕过前端的弱密码拒绝、无配置／凭据文件副作用、12 字符 Bearer 与重启读取、已有弱密码登录和保留。隔离真实 Go Server 与 Chromium 完成 20 项检查，包括新密码提示、单次保存、重启后登录、390px 无横向溢出、自动填充标记和无新增可见账号字段。截图与报告在 `.local/password-policy-check/`；没有调用真实模型，也未实测操作系统／手机的密码管理器。
+
+## 跨重启保持登录
+
+登录有效期调整为 30 天；正常重启保留各设备会话，退出、到期、数量上限淘汰及修改密码的撤销结果会持久保存。会话文件写入失败时不确认登录或退出成功。保存安全设置仍退出当前浏览器，未更改密码或登录开关时保留其他设备登录。`/access` 登录输入框自动聚焦；重新显示登录表单时恢复焦点，前后台切换保留已有操作焦点。旧版本只存在内存中的会话无法恢复，升级后需重新登录一次。
+
+验证：`go test ./... -timeout=8m` 全量通过；认证相关 Go race 测试通过，覆盖重启恢复、30 天到期、16 会话上限、单设备退出、密码／登录开关变更、身份绑定、私有文件校验和写入失败；601 项 Web 单元测试通过。隔离真实 Go Server 与 Chromium 完成 17 项检查，包括桌面及 390px 视口自动聚焦、独立设备登录、服务重启、浏览器状态恢复、退出后的重启及部署机改密码。报告及截图位于 `.local/access-sessions-check/`。未调用模型或真实平台；手机视口检查不代表真实手机软键盘已验收。

@@ -126,7 +126,7 @@ func TestAccessSessionLogoutExpiryRestartRotationAndLimit(t *testing.T) {
 	}
 	cookie = accessLogin(t, h, token)
 	now := time.Now()
-	a.now = func() time.Time { return now.Add(25 * time.Hour) }
+	a.now = func() time.Time { return now.Add(accessSessionLifetime + time.Hour) }
 	if w := accessRequest(h, "GET", "/v1/ui", "", "", "", cookie); w.Code != 401 {
 		t.Fatal("expired session accepted")
 	}

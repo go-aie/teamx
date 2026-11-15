@@ -131,7 +131,10 @@ async function showSession() {
     if (generation !== setupRead) return;
     if (error.status !== 401 && requestID) { showSetupProgress("unknown"); void poll(); return; }
     document.title = "TeamX · 登录";
-    $("login").hidden=false; $("logout").hidden=true; $("model").hidden=true; $("api-key").value=""; return;
+    const entering = $("login").hidden;
+    $("login").hidden=false; $("logout").hidden=true; $("model").hidden=true; $("api-key").value="";
+    if (entering || !document.activeElement || document.activeElement === document.body) $("token").focus({preventScroll:true});
+    return;
   }
   $("login").hidden = true; $("logout").hidden = !loginEnabled;
   let state;
