@@ -348,13 +348,27 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     return selected;
   }
 
+  function renderActivityNavigation() {
+    const button = $("close-activity");
+    const close = roomsUI.isDirect() && !activityReturn?.previous && !compactViewport(window);
+    const direction = close ? "close" : "left", label = close ? "关闭详情" : roomsUI.isDirect() && !activityReturn?.previous ? "返回对话" : "返回";
+    button.hidden = false;
+    button.setAttribute("aria-label", label); button.title = label;
+    button.classList.toggle("icon-button", close);
+    button.classList.toggle("agent-detail-close", close);
+    button.classList.toggle("text-button", !close);
+    button.classList.toggle("back-button", !close);
+    if (button.dataset.direction !== direction) {
+      button.replaceChildren(createNavigationIcon(document, direction));
+      button.dataset.direction = direction;
+    }
+  }
+
   function renderActivityControls() {
     const panel = $("activity-dialog");
     if (panel.open && !state.members.some(member => member.membership_id === activityMember?.membership_id)) panel.close();
     notificationsUI.renderContextViews();
-    $("close-activity").hidden = false;
-    $("close-activity").setAttribute("aria-label", "返回");
-    $("close-activity").title = "返回";
+    renderActivityNavigation();
     const selected=selectedAgent();
     $("activity-title").textContent=selected ? agentName(selected) : "Agent 详情";
     $("agent-tabs").hidden = false;
@@ -530,6 +544,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
   }
 
   function syncDirectDetail() {
+    renderActivityNavigation();
     if (!roomsUI.isDirect() || !state.connected || !layoutUI.membersPanelOpen() || layoutUI.directNotificationsOpen || $("notification-detail").open || state.members.length !== 1) return;
     if ($("activity-dialog").open && selectedAgent()?.membership_id === state.members[0].membership_id) return;
     openMemberActivity(state.members[0], $("room-menu-label"));
@@ -844,7 +859,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       activityTimelineContext = ""; activityTimelineRows.clear(); $("activity-timeline").replaceChildren();
       renderActivityControls();
       if (back?.view.current()) {
-        if (roomsUI.isDirect() && !back.previous) { layoutUI.collapseMembers(); layoutUI.renderPanels(); }
+        if (roomsUI.isDirect() && !back.previous) { layoutUI.collapseMembers(); layoutUI.savePanels(); layoutUI.renderPanels(); }
         else back.panel();
         if (back.previous && state.members.some(member => member.membership_id === back.previous.member.membership_id)) {
           const selected = openMemberActivity(back.previous.member, activityFocus?.element, back.previous.tab, {readingView:back.previous.inbox});

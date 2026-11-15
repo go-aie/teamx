@@ -55,6 +55,7 @@
 
 /* Agent details share the context rail gutters and settings controls. */
 #activity-dialog > .activity-header { flex-wrap:nowrap; }
+.activity-header > .agent-detail-close { order:1; }
 .agent-heading { flex:1; min-width:0; }
 .agent-heading h2 { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .agent-settings-heading { display:flex; flex:none; flex-wrap:wrap; align-items:center; gap:0 8px; padding:0 var(--panel-space); border-bottom:1px solid var(--line); }
