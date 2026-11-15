@@ -697,13 +697,48 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     notice("send-error", state.draft.pending ? "有一条尚未确认的消息，重试保留原会话和服务身份。请先核对历史。" : "");
   }
 
+  let emptyConversationKey = "";
+
+  // Keep welcome content stable across polling and composer updates. In
+  // particular, never show temporary room copy while a direct read is pending.
+  function renderEmptyConversation(direct, name) {
+    const suggestions = $("direct-suggestions");
+    const hidden = !direct || !state.info || state.messages.size > 0;
+    if (suggestions.hidden !== hidden) suggestions.hidden = hidden;
+    const hasLark = !!workspaceUI.workspaceView?.allPlatforms?.some(item => item.provider === "lark" && item.validation?.status === "valid");
+    const key = JSON.stringify([direct, !!state.info, name, hasLark]);
+    if (key === emptyConversationKey) return;
+    emptyConversationKey = key;
+    const icon = $("empty-conversation-icon"), kind = direct ? "assistant" : "room";
+    if (icon.dataset.kind !== kind) {
+      if (direct) icon.replaceChildren(createAssistantIcon(document));
+      else icon.textContent = "#";
+      icon.dataset.kind = kind;
+    }
+    $("empty").querySelector("h2").textContent = !state.info ? "开始一个新任务"
+      : direct ? `与${name || "个人助理"}聊聊` : "从一条消息开始";
+    $("empty").querySelector("p").textContent = !state.info ? "从左侧新建私信与助理交流，或新建房间与团队协作。"
+      : direct ? "梳理待办、总结信息、起草内容，也可以连接飞书，关注群消息。" : "发送任务或想法，让房间里的 Agent 一起参与。";
+    if (direct && state.info) {
+      const prompts = [
+        ["整理待办", "帮我整理一下待办事项"],
+        hasLark ? ["总结内容", "帮我总结以下内容：\n"] : ["你能做什么", "介绍一下你能帮我做什么"],
+        hasLark ? ["起草回复", "帮我起草一段回复：\n"] : ["连接飞书", "帮我连接飞书"],
+      ];
+      Array.from(suggestions.children).forEach((button, index) => {
+        const [label, prompt] = prompts[index];
+        button.textContent = label;
+        button.dataset.suggestion = prompt;
+      });
+    }
+  }
+
   function renderConversation() {
     const direct = roomsUI.isDirect(), type = roomsUI.conversationType(), name = roomsUI.roomName();
+    renderEmptyConversation(direct, name);
     $("conversation").setAttribute("aria-label", `${type}消息`);
     $("member-rail").setAttribute("aria-label", direct ? "助理详情与会话通知" : "房间详情");
     $("member-sidebar").setAttribute("aria-label", direct ? "会话通知" : "成员与房间通知");
-    if (direct) $("empty-conversation-icon").replaceChildren(createAssistantIcon(document));
-    else $("empty-conversation-icon").textContent = "#";
     $("policy-empty").textContent = `可以在${direct ? "私信" : "房间"}中告诉 Agent 今后应如何处理。`;
     const recipient = `发送给 ${name || (direct ? "个人助理" : "会话")}`;
     $("message-input").placeholder = recipient;
@@ -727,22 +762,6 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     $("notification-platforms").setAttribute("aria-label", `发送到当前${direct ? "会话" : "房间"}的通知`);
     $("notification-add-toggle").setAttribute("aria-label", `添加${direct ? "会话" : "房间"}通知`);
     $("notification-add-toggle").title = `添加${direct ? "会话" : "房间"}通知`;
-    $("direct-suggestions").hidden = !direct || !state.info || state.messages.size > 0;
-    if (direct && state.info) {
-      $("empty").querySelector("h2").textContent = `与${name || "个人助理"}聊聊`;
-      $("empty").querySelector("p").textContent = "梳理待办、总结信息、起草内容，也可以连接飞书，关注群消息。";
-      const hasLark = workspaceUI.workspaceView?.allPlatforms?.some(item => item.provider === "lark" && item.validation?.status === "valid");
-      const suggestions = [
-        ["整理待办", "帮我整理一下待办事项"],
-        hasLark ? ["总结内容", "帮我总结以下内容：\n"] : ["你能做什么", "介绍一下你能帮我做什么"],
-        hasLark ? ["起草回复", "帮我起草一段回复：\n"] : ["连接飞书", "帮我连接飞书"],
-      ];
-      Array.from($("direct-suggestions").children).forEach((button, index) => {
-        const [label, prompt] = suggestions[index];
-        button.textContent = label;
-        button.dataset.suggestion = prompt;
-      });
-    }
   }
 
   function composerState() {

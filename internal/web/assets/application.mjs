@@ -254,8 +254,6 @@ export async function createApp(overrides = {}) {
           selectView(null, catalog.operator);
           $("room-name").textContent = room?.name || "选择或新建会话";
           document.title = `${$("room-name").textContent} · TeamX`;
-          $("empty").querySelector("h2").textContent = "开始一个新任务";
-          $("empty").querySelector("p").textContent = "从左侧新建私信与助理交流，或新建房间与团队协作。";
           $("connection").textContent = room ? (room.runtime_error ? `运行受阻 · ${room.runtime_error}` : `点击${roomsUI.conversationType(room)}打开`) : "已连接 · 尚未选择会话";
           notice("sync-error", ""); return;
         }
@@ -267,8 +265,6 @@ export async function createApp(overrides = {}) {
       conversationUI.pollHumanRead();
       if (!state.managed) { membersUI.renderProfiles(config.profiles || []); roomsUI.renderRooms(); }
       $("room-name").textContent = roomsUI.roomName();
-      $("empty").querySelector("h2").textContent = "从一条消息开始";
-      $("empty").querySelector("p").textContent = "发送任务或想法，让房间里的 Agent 一起参与。";
       const members = await rpc("/v1/member/list", {}, info);
       if (!currentView(version)) return;
       state.restart = members.discussion_restart || null;
