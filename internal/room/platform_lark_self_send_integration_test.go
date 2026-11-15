@@ -43,7 +43,7 @@ func TestLarkSelfSendManagedCapability(t *testing.T) {
 	if len(v.Actions) != 1 || v.Actions[0].Executable {
 		t.Fatal("read binding acquired self send", v)
 	}
-	grant := toolBindingChange{ServiceEpoch: h.m.epoch, RoomIdentity: id.RoomIdentity, Caller: humanCaller, Revision: bindings.Revision, Enabled: true, PlatformVersion: h.c.Version, Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "lark", PlatformID: h.c.ID, ActionAuthorization: &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: []tool.ActionGrant{{Operation: "message.send_self", TargetKind: "object", ObjectType: "user"}}}}}
+	grant := toolBindingChange{ServiceEpoch: h.m.epoch, RoomIdentity: id.RoomIdentity, Caller: humanCaller, ExpectedBindingRevision: new(uint64(bindings.Revision)), Enabled: true, PlatformVersion: h.c.Version, Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "lark", PlatformID: h.c.ID, ActionAuthorization: &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: []tool.ActionGrant{{Operation: "message.send_self", TargetKind: "object", ObjectType: "user"}}}}}
 	r := managerHTTP(h.m, "/v1/tools/bind", grant)
 	if r.Code != 200 {
 		t.Fatal(r.Code, r.Body.String())
@@ -135,7 +135,7 @@ func TestLarkSelfSendManagedCapability(t *testing.T) {
 		t.Fatal("unknown self content escaped through another operation", e)
 	}
 	// Disabling the capability stops new sends; original receipts remain readable.
-	grant.Revision = bindings.Revision
+	grant.ExpectedBindingRevision = new(bindings.TargetRevisions[toolBindingKey(grant.Binding)])
 	grant.Binding.ActionAuthorization = &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: []tool.ActionGrant{}}
 	r = managerHTTP(h.m, "/v1/tools/bind", grant)
 	if r.Code != 200 {

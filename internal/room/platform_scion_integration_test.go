@@ -21,7 +21,7 @@ func TestScionMemberToolsIdentityAndHelp(t *testing.T) {
 	t.Setenv("SCION_TOKEN", "operator-token-must-not-leak")
 	t.Setenv("MODEL_API_KEY", "model-secret-must-not-leak")
 	m, room, svc, c, members, dir := scionRoomFixture(t)
-	bind := toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, Enabled: true, Binding: tool.Binding{AgentID: members[0].AgentID, MembershipID: members[0].MembershipID, Tool: "scion", PlatformID: c.ID}, PlatformVersion: c.Version}
+	bind := toolBindingChange{ExpectedBindingRevision: new(uint64(0)), ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, Enabled: true, Binding: tool.Binding{AgentID: members[0].AgentID, MembershipID: members[0].MembershipID, Tool: "scion", PlatformID: c.ID}, PlatformVersion: c.Version}
 	if r := managerHTTP(m, "/v1/tools/bind", bind); r.Code == 200 {
 		t.Fatal("unverified connection bound")
 	}
@@ -129,7 +129,7 @@ func TestScionCallLifecycle(t *testing.T) {
 				case "cancel":
 					cancel()
 				case "disable":
-					r := managerHTTP(m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, Revision: binding.Revision, Binding: tool.Binding{AgentID: members[0].AgentID, MembershipID: members[0].MembershipID, Tool: "scion", PlatformID: c.ID}})
+					r := managerHTTP(m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, ExpectedBindingRevision: new(uint64(binding.Revision)), Binding: tool.Binding{AgentID: members[0].AgentID, MembershipID: members[0].MembershipID, Tool: "scion", PlatformID: c.ID}})
 					if r.Code != 200 {
 						t.Fatal(r.Code, r.Body.String())
 					}

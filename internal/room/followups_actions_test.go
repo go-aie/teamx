@@ -491,7 +491,7 @@ func TestReferenceActionRechecksAuthorityBeforeRetry(t *testing.T) {
 				switch mode {
 				case "rule":
 					msg := postConversationReply(t, f.h, "revoke", "撤销自动回复规则", 0)
-					rule.Version, rule.Revision, rule.SourceSeq, rule.Status = 1, 1, msg.Seq, "revoked"
+					rule.Version, rule.SourceSeq, rule.Status = 1, msg.Seq, "revoked"
 					_, err := f.svc.referencePolicyChange(f.h.ctx, f.h.id, agentCallerIdentity(f.h.id), conversationPolicyChange{Change: rule, Mode: "explicit_long_term", Basis: "明确撤销"})
 					if err != nil {
 						t.Fatal(err)
@@ -597,7 +597,7 @@ func TestReferenceActionRuleLifecycleAdmission(t *testing.T) {
 				t.Fatal(err)
 			}
 			if mode == "revoked" || mode == "old-version" || mode == "old-token" {
-				c.Version, c.Revision, c.Text = 1, 1, "改为核实文档后回复；排期先问我"
+				c.Version, c.Text = 1, "改为核实文档后回复；排期先问我"
 				if mode == "revoked" {
 					c.Status = "revoked"
 				}
@@ -648,7 +648,7 @@ func TestReferenceActionRuleUnknownSnapshotRecovery(t *testing.T) {
 		t.Fatal(got, err)
 	}
 	before := f.unit(t).Actions[0]
-	c.Version, c.Revision, c.Status = 1, 1, "revoked"
+	c.Version, c.Status = 1, "revoked"
 	if _, err := f.h.store.changePolicy(f.h.id, humanCaller, c); err != nil {
 		t.Fatal(err)
 	}

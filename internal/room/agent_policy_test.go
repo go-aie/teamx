@@ -41,7 +41,7 @@ func TestAgentPolicyRulesCoexistAndRecover(t *testing.T) {
 	h, id, _ := policyTestService(t)
 	for i, text := range []string{"AgenticHub 产品负责人是 huayi", "AgenticHub 的这类报错优先建议找 hongwei 和 luojun"} {
 		source := roomCall[PostReceipt](t, h, h.post(humanCaller, text, "记住："+text))
-		q := agentPolicyChange{Type: "save", ID: []string{"owner", "contacts"}[i], Revision: uint64(i), SourceSeq: source.Seq, TurnNumber: 1, Basis: "用户明确长期要求", Body: &agentPolicyBody{Text: text}}
+		q := agentPolicyChange{Type: "save", ID: []string{"owner", "contacts"}[i], SourceSeq: source.Seq, TurnNumber: 1, Basis: "用户明确长期要求", Body: &agentPolicyBody{Text: text}}
 		result, err := h.store.changeAgentPolicy(id, agentCallerIdentity(id), q)
 		if err != nil || result.Record.Text != text || result.Record.Source.Text != "记住："+text || len(result.Effective) != i+1 {
 			t.Fatal(result, err)
@@ -85,7 +85,7 @@ func TestAgentPolicySuggestionCannotReplaceActiveRule(t *testing.T) {
 		t.Fatal(err)
 	}
 	source = roomCall[PostReceipt](t, h, h.post(humanCaller, "habit", "这次也简短"))
-	q.Type, q.Version, q.Revision, q.SourceSeq = "suggest", 1, 1, source.Seq
+	q.Type, q.Version, q.SourceSeq = "suggest", 1, source.Seq
 	_, err = h.store.changeAgentPolicy(id, agentCallerIdentity(id), q)
 	var diagnostic *requestDiagnostic
 	if !errors.Is(err, ErrRequest) || !errors.As(err, &diagnostic) || diagnostic.Field != "mode" ||
@@ -101,7 +101,7 @@ func TestAgentPolicySaveCorrectRevokePreservesEvidence(t *testing.T) {
 	var priorToken string
 	for i, human := range []string{"记住，AgenticHub 这类报错优先找 hongwei 和 luojun", "改一下，这类报错先建议找 hongwei，联系前问我", "撤销这条报错处理约定"} {
 		q.SourceSeq = roomCall[PostReceipt](t, h, h.post(humanCaller, fmt.Sprintf("rule-maintenance-%d", i), human)).Seq
-		q.Version, q.Revision = uint64(i), uint64(i)
+		q.Version = uint64(i)
 		if i == 1 {
 			q.Body = &agentPolicyBody{Text: "AgenticHub 的这类报错先建议找 hongwei，联系前问我"}
 			q.Basis = "用户明确纠正原处理约定并增加联系前询问的限制"

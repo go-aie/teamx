@@ -93,13 +93,16 @@ type serviceMembers struct {
 }
 
 type apiError struct {
-	Error           string  `json:"error"` // retained for existing HTTP clients
-	Code            string  `json:"code"`
-	Message         string  `json:"message"`
-	Field           string  `json:"field,omitempty"`
-	ExpectedVersion *uint64 `json:"expected_version,omitempty"`
-	ActualVersion   *uint64 `json:"actual_version,omitempty"`
-	Hint            string  `json:"hint,omitempty"`
+	Record          *agentPolicyRecord `json:"record,omitempty"`
+	Outcome         string             `json:"outcome,omitempty"`
+	OperationID     string             `json:"operation_id,omitempty"`
+	Error           string             `json:"error"` // retained for existing HTTP clients
+	Code            string             `json:"code"`
+	Message         string             `json:"message"`
+	Field           string             `json:"field,omitempty"`
+	ExpectedVersion *uint64            `json:"expected_version,omitempty"`
+	ActualVersion   *uint64            `json:"actual_version,omitempty"`
+	Hint            string             `json:"hint,omitempty"`
 }
 
 type service struct {
@@ -917,6 +920,7 @@ func writeAPIError(w http.ResponseWriter, err error) {
 	failure := apiError{Error: message, Code: code, Message: message, Hint: hint}
 	var diagnostic *requestDiagnostic
 	if errors.As(err, &diagnostic) {
+		failure.Outcome, failure.OperationID, failure.Record = diagnostic.Outcome, diagnostic.OperationID, diagnostic.Record
 		failure.Error, failure.Message = diagnostic.Error(), diagnostic.Message
 		failure.Field, failure.ExpectedVersion, failure.ActualVersion, failure.Hint = diagnostic.Field, diagnostic.ExpectedVersion, diagnostic.ActualVersion, diagnostic.Hint
 	}

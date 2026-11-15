@@ -2,6 +2,7 @@ package room
 
 import (
 	"context"
+	"time"
 )
 
 func (s *service) memberPolicy(ctx context.Context, req apiRequest, operation string) (any, error) {
@@ -64,7 +65,14 @@ func (s *service) memberPolicy(ctx context.Context, req apiRequest, operation st
 			return nil, ErrRequest
 		}
 		view, err := s.store.changePolicy(id, req.Caller, *req.Policy)
-		return view, err
+		if err != nil {
+			return nil, err
+		}
+		return struct {
+			PolicyView
+			Record      PolicyRevision `json:"record"`
+			PolicyToken string         `json:"policy_token"`
+		}{view, view.History[len(view.History)-1], agentPolicy(view.PolicySnapshot, 0, time.Now()).PolicyToken}, nil
 	case "publish":
 		if req.Caller.Kind != "agent" || req.Followup == nil {
 			return nil, ErrIdentity

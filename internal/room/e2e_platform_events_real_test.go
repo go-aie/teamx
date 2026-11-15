@@ -189,7 +189,7 @@ func TestRealGitLabEventsDSH(t *testing.T) {
 	var saved managedRoomConfig
 	fail(jsonFile(filepath.Join(d.dir, "rooms", room.RoomID, "room-config.json"), &saved))
 	var bindings toolBindingsFile
-	fail(d.managementRequest("/v1/tools/bind", toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller,
+	fail(d.managementRequest("/v1/tools/bind", toolBindingChange{ExpectedBindingRevision: new(uint64(0)), ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller,
 		Binding: tool.Binding{AgentID: saved.Members[0].AgentID, MembershipID: saved.Members[0].MembershipID, Tool: "gitlab", PlatformID: conn.ID},
 		Enabled: true, PlatformVersion: conn.Version}, &bindings))
 	var view gitlabNotificationView

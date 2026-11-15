@@ -149,7 +149,11 @@ func (m *roomManager) configureLarkSubscription(ctx context.Context, key notific
 		return lark.State{}, err
 	}
 	if key.SubscriptionID == "" && (version != 0 || current != nil) || key.SubscriptionID != "" && (current == nil || current.SubscriptionID != key.SubscriptionID || current.SubscriptionVersion != version) {
-		return lark.State{}, ErrConflict
+		actual := uint64(0)
+		if current != nil {
+			actual = current.SubscriptionVersion
+		}
+		return lark.State{}, versionConflict("subscription_version", version, actual, "Read the exact subscription ID/version and reconcile; do not replace the observation automatically.")
 	}
 	if current != nil && cfg.PlatformID != current.Binding.PlatformID {
 		return lark.State{}, ErrConflict

@@ -11,7 +11,7 @@ teamx platforms member get --platform-id ID --platform-version V
 teamx platforms member notifications --platform-id ID --platform-version V \
   --notification-version N --operation-id STEP_ID --source-seq SEQ --todos-enabled true
 teamx platforms member tool --platform-id ID --platform-version V \
-  --tool-revision N --operation-id OTHER_STEP_ID --source-seq SEQ --enabled true
+  --operation-id OTHER_STEP_ID --source-seq SEQ --enabled true
 teamx platforms member status --operation-id STEP_ID
 teamx platforms member status --source-seq SEQ
 ```
@@ -66,3 +66,5 @@ git diff --check
 `real-reuse/verification.json` 为 `passed=true` 的无凭据核对报告；截图为同目录 `completed.png`、`settings.png`、`mobile.png`。新 OAuth 与已有连接复用的证据分别记录，不以复用通过替代人工授权后的自动接续验收。复用验收结束后已停止 18090 服务；18089 保留运行，供完成人工授权。
 
 保存订阅不等于收到真实待办或触发提醒；本阶段不据此宣称真实待办提醒链路已验收。
+
+工具命令已切换为准确绑定合同：普通启停可省略观察前提；依赖已读绑定时使用 `member get` 返回的 `binding_revision` 和 `--binding-revision N`，显式 0 与省略不同。旧 `--tool-revision` 已拒绝。

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"os"
 	"reflect"
@@ -17,6 +16,7 @@ import (
 	"github.com/go-aie/teamx/internal/platform/gitlab"
 	"github.com/go-aie/teamx/internal/platform/lark"
 	"github.com/go-aie/teamx/internal/platform/notification"
+	"github.com/go-aie/teamx/internal/platform/registry"
 	"github.com/go-aie/teamx/internal/platform/tool"
 )
 
@@ -40,16 +40,18 @@ func (req platformMemberRequest) projectsRequest() gitlabProjectsRequest {
 }
 
 type platformMemberView struct {
+	account      registry.Account
 	Capabilities *larkMemberCapabilityResult `json:"capabilities,omitempty"`
 	MemberIdentity
 	PlatformID          string                   `json:"platform_id"`
 	PlatformVersion     uint64                   `json:"platform_version"`
 	Account             platform.AccountIdentity `json:"account"`
+	SubscriptionID      string                   `json:"subscription_id,omitempty"`
 	NotificationVersion uint64                   `json:"notification_version"`
 	Config              *lark.Config             `json:"notification_config,omitempty"`
 	GitLab              *gitlabNotificationView  `json:"gitlab_notifications,omitempty"`
 	Baseline            time.Time                `json:"baseline,omitzero"`
-	ToolRevision        uint64                   `json:"tool_revision"`
+	BindingRevision     uint64                   `json:"binding_revision"`
 	ToolEnabled         bool                     `json:"tool_enabled"`
 	Tool                *toolSelection           `json:"tool,omitempty"`
 }
@@ -60,7 +62,7 @@ func (m *roomManager) platformMemberViewLocked(ctx context.Context, req platform
 	if err != nil {
 		return v, err
 	}
-	v.PlatformID, v.PlatformVersion, v.Account = a.PlatformID, a.PlatformVersion, a.Identity
+	v.PlatformID, v.PlatformVersion, v.Account, v.account = a.PlatformID, a.PlatformVersion, a.Identity, a
 	if a.Identity.Provider == "gitlab" {
 		n, err := m.gitlabNotificationViewForTargetLocked(req.RoomIdentity, a.PlatformID, platformMemberTarget(v.MemberIdentity))
 		if err != nil {
@@ -77,14 +79,14 @@ func (m *roomManager) platformMemberViewLocked(ctx context.Context, req platform
 			return v, err
 		}
 		if s != nil {
-			v.NotificationVersion, v.Config, v.Baseline = s.SubscriptionVersion, &s.Config, s.Baseline
+			v.NotificationVersion, v.Config, v.Baseline, v.SubscriptionID = s.SubscriptionVersion, &s.Config, s.Baseline, s.SubscriptionID
 		}
 	}
 	f, err := m.readToolBindingsLocked(req.RoomIdentity)
 	if err != nil {
 		return v, err
 	}
-	v.ToolRevision = f.Revision
+	v.BindingRevision = f.TargetRevisions[toolBindingKey(tool.Binding{AgentID: req.Caller.ID, MembershipID: req.Caller.MembershipID, Tool: a.Identity.Provider, PlatformID: a.PlatformID})]
 	selections, err := m.selectionsLocked(f, req.Caller)
 	if err != nil {
 		return v, err
@@ -104,9 +106,12 @@ func (m *roomManager) platformMemberViewLocked(ctx context.Context, req platform
 
 type platformMemberContextKey struct{}
 type platformMemberAdmission struct {
-	Request platformMemberRequest
-	Account platform.AccountIdentity
-	Kind    string
+	AccountSnapshot registry.Account
+	SubscriptionID  string
+	Request         platformMemberRequest
+	Account         platform.AccountIdentity
+	Kind            string
+	BindingRevision uint64
 }
 
 // This guard runs inside the existing configuration lock, including after
@@ -121,16 +126,43 @@ func (m *roomManager) checkPlatformMemberContextLocked(ctx context.Context) erro
 	if err != nil {
 		return err
 	}
-	if v.Account != a.Account || a.Kind == "notifications" && v.NotificationVersion != a.Request.Input.NotificationVersion || a.Kind == "tool" && v.ToolRevision != a.Request.Input.ToolRevision {
-		return ErrConflict
+	if v.Account != a.Account || larkBinding(v.account) != larkBinding(a.AccountSnapshot) || !reflect.DeepEqual(v.account.CLIProfile, a.AccountSnapshot.CLIProfile) {
+		return conflictReason("account", "the exact platform account or credentials changed", "Inspect member get and the account; no authorization history can be inferred from this conflict.")
+	}
+	if a.Kind == "notifications" && v.NotificationVersion != a.Request.Input.NotificationVersion {
+		return versionConflict("notification_version", a.Request.Input.NotificationVersion, v.NotificationVersion, "Read the exact member subscription and reconcile the original intent; never refresh the observed version automatically.")
+	}
+	if a.Kind == "notifications" && v.SubscriptionID != a.SubscriptionID {
+		return conflictReason("subscription_id", "the observed subscription was retired or replaced", "Read the exact member subscription and reconcile the original intent; no replacement was authorized.")
+	}
+	if a.Kind == "tool" && v.BindingRevision != a.BindingRevision {
+		return versionConflict("expected_binding_revision", a.BindingRevision, v.BindingRevision, "Read the exact member binding and reconcile; no configuration was saved.")
 	}
 	return nil
 }
 
 // A persisted unknown record is an at-most-once submission fence. Neither status
 // nor repeated configure calls execute it again, even after a service restart.
-func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, req platformMemberRequest) (platformMemberOperation, error) {
+func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, req platformMemberRequest) (returned platformMemberOperation, returnedErr error) {
+	defer func() {
+		if returnedErr != nil && returned.Status == "" {
+			returnedErr = configurationNotApplied(returnedErr)
+		}
+	}()
 	var op platformMemberOperation
+	if req.Input != nil {
+		copy := *req.Input
+		copy.Actions = slices.Clone(copy.Actions)
+		slices.Sort(copy.Actions)
+		copy.Actions = slices.Compact(copy.Actions)
+		if len(copy.Actions) == 0 {
+			copy.Actions = nil
+		}
+		req.Input = &copy
+	}
+	if req.Input != nil && req.Input.ToolRevision != 0 {
+		return op, invalidField("tool_revision", "Room tool revisions are retired; use optional expected_binding_revision")
+	}
 	if req.Input == nil || !validPlatformMemberInput(kind, *req.Input) || !tool.OpaqueID(req.OperationID) || req.SourceSeq == 0 || req.Type != "" || req.Query != "" || req.PageToken != "" {
 		return op, ErrRequest
 	}
@@ -146,11 +178,15 @@ func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, 
 			return op, ErrIdentity
 		}
 		if prior.Source.Seq != req.SourceSeq || prior.Kind != kind || !reflect.DeepEqual(prior.Input, *req.Input) {
-			return op, ErrConflict
+			return op, operationConflict("operation_id", prior.ID, "operation ID has different business input")
 		}
 		return prior, nil
 	}
 	if !errors.Is(err, os.ErrNotExist) {
+		m.mu.Unlock()
+		return op, err
+	}
+	if err := m.checkPlatformMemberSourceLocked(req, kind); err != nil {
 		m.mu.Unlock()
 		return op, err
 	}
@@ -174,7 +210,11 @@ func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, 
 		m.mu.Unlock()
 		return op, ErrRequest
 	}
-	admission := platformMemberAdmission{Request: req, Account: v.Account, Kind: kind}
+	if kind == "tool" && req.Input.ExpectedBindingRevision != nil && *req.Input.ExpectedBindingRevision != v.BindingRevision {
+		m.mu.Unlock()
+		return op, versionConflict("expected_binding_revision", *req.Input.ExpectedBindingRevision, v.BindingRevision, "Read the exact binding and reconcile; no configuration was saved.")
+	}
+	admission := platformMemberAdmission{Request: req, Account: v.Account, AccountSnapshot: v.account, SubscriptionID: v.SubscriptionID, Kind: kind, BindingRevision: v.BindingRevision}
 	ctx = context.WithValue(ctx, platformMemberContextKey{}, admission)
 	if err = m.checkPlatformMemberContextLocked(ctx); err != nil {
 		m.mu.Unlock()
@@ -183,11 +223,11 @@ func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, 
 	m.mu.Unlock()
 	var preparedChange *toolBindingChange
 	if kind == "tool" && v.Account.Provider == "lark" && *req.Input.Enabled {
-		change := toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: req.RoomIdentity, Caller: Caller{Kind: "human", ID: source.Author.ID}, Revision: req.Input.ToolRevision, PlatformVersion: req.Input.PlatformVersion, Enabled: true, Binding: tool.Binding{AgentID: req.Caller.ID, MembershipID: req.Caller.MembershipID, PlatformID: req.Input.PlatformID, Tool: "lark"}, requestedActions: req.Input.Actions}
+		change := toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: req.RoomIdentity, Caller: Caller{Kind: "human", ID: source.Author.ID}, ExpectedBindingRevision: &admission.BindingRevision, PlatformVersion: req.Input.PlatformVersion, Enabled: true, Binding: tool.Binding{AgentID: req.Caller.ID, MembershipID: req.Caller.MembershipID, PlatformID: req.Input.PlatformID, Tool: "lark"}, requestedActions: req.Input.Actions}
 		if e := m.prepareBindingEvidence(ctx, &change); e != nil {
 			var required *userAuthorizationRequired
 			if errors.As(e, &required) {
-				return platformMemberOperation{Schema: 2, MemberIdentity: req.member(), ID: req.OperationID, Kind: kind, Source: source, Input: *req.Input, Account: v.Account, Status: "not_applied", Result: onboardingStep{Status: "not_applied", ErrorCode: "user_authorization_required"}, Capabilities: &required.Capabilities}, nil
+				return platformMemberOperation{Schema: 3, MemberIdentity: req.member(), ID: req.OperationID, Kind: kind, Source: source, Input: *req.Input, Account: v.Account, Status: "not_applied", Result: onboardingStep{Status: "not_applied", ErrorCode: "user_authorization_required"}, Capabilities: &required.Capabilities}, nil
 			}
 			return op, e
 		}
@@ -232,15 +272,7 @@ func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, 
 		}
 		return op, err
 	}
-	ops, err := m.platformMemberOperationsLocked()
-	if err == nil && len(ops) >= 1000 {
-		err = ErrCapacity
-	}
-	for _, p := range ops {
-		if p.MemberIdentity == req.member() && p.Source.Seq == req.SourceSeq && p.Kind == kind && p.Input.PlatformID == req.Input.PlatformID {
-			err = conflictReason("source_seq", "configuration operation already exists", "Query member status with the original source_seq; do not resubmit with a new ID.")
-		}
-	}
+	err = m.checkPlatformMemberSourceLocked(req, kind)
 	if err == nil {
 		err = m.checkPlatformMemberContextLocked(ctx)
 	}
@@ -249,9 +281,12 @@ func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, 
 		return op, err
 	}
 	op = platformMemberOperation{Schema: 1, MemberIdentity: req.member(), ID: req.OperationID, Kind: kind, Source: source, Input: *req.Input, Account: v.Account, Status: "unknown", Result: onboardingStep{Status: "unknown", ErrorCode: "submission_unconfirmed"}, Chats: chats, Project: project, CreatedAt: time.Now().UTC()}
+	if kind == "tool" {
+		op.Schema = 3
+	}
 	if preparedChange != nil {
 		p := preparedChange.prepared
-		op.Schema = 2
+		op.Schema = 3
 		op.RequestedActions = p.RequestedActions
 		op.Authorization = preparedChange.Binding.ActionAuthorization
 		op.Capabilities = &p.Capabilities
@@ -268,7 +303,7 @@ func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, 
 		}
 		if err != nil {
 			m.mu.Unlock()
-			return op, err
+			return platformMemberOperation{}, err
 		}
 	}
 	if op.Config != nil && memberLarkNotificationUnchanged(v, *req.Input, *op.Config) {
@@ -298,6 +333,8 @@ func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, 
 				op.Result.Status = "preserved"
 			}
 			if err == nil {
+				op.Authorization = preparedChange.prepared.Binding.ActionAuthorization
+				op.Capabilities = &preparedChange.prepared.Capabilities
 				err = m.waitOnboardingToolLocked(ctx, waits)
 			}
 		} else {
@@ -312,7 +349,9 @@ func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, 
 		if next.Version != 0 {
 			op.GitLabConfig = &next.Config
 		}
+
 		if err == nil && (next.Applying || len(next.Errors) != 0 || next.Pending["events"] || next.Pending["todos"]) {
+			op.Result.ErrorCode = "source_apply_pending"
 			err = ErrConflict
 		}
 	} else {
@@ -333,7 +372,16 @@ func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, 
 	if err != nil {
 		// A failure after admission may follow a durable write or failed join.
 		// Keep it unknown and inspect the authoritative settings before recovery.
-		op.Result = onboardingStep{Status: "unknown", ErrorCode: onboardingFailure(err)}
+		var notApplied *toolChangeNotApplied
+		if kind == "tool" && errors.As(err, &notApplied) {
+			op.Status, op.ResultVersion = "failed", 1
+			op.Result = onboardingStep{Status: "failed", ErrorCode: onboardingFailure(err)}
+		} else {
+			op.Result.Status = "unknown"
+			if op.Result.ErrorCode == "" {
+				op.Result.ErrorCode = onboardingFailure(err)
+			}
+		}
 	} else {
 		op.Status, op.ResultVersion = "completed", 1
 	}
@@ -370,7 +418,7 @@ func (m *roomManager) applyPlatformMemberToolLocked(ctx context.Context, op plat
 	if !enabled {
 		version = 0
 	}
-	next, waits, err := m.changeToolBindingLocked(ctx, toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: op.RoomIdentity, Caller: Caller{Kind: "human", ID: op.Source.Author.ID}, Revision: op.Input.ToolRevision, PlatformVersion: version, Binding: tool.Binding{AgentID: op.AgentID, MembershipID: op.MembershipID, PlatformID: op.Input.PlatformID, Tool: op.Account.Provider}, Enabled: enabled})
+	next, waits, err := m.changeToolBindingLocked(ctx, toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: op.RoomIdentity, Caller: Caller{Kind: "human", ID: op.Source.Author.ID}, ExpectedBindingRevision: &admission.BindingRevision, PlatformVersion: version, Binding: tool.Binding{AgentID: op.AgentID, MembershipID: op.MembershipID, PlatformID: op.Input.PlatformID, Tool: op.Account.Provider}, Enabled: enabled})
 	if err == nil {
 		err = m.waitOnboardingToolLocked(ctx, waits)
 	}
@@ -415,10 +463,7 @@ func (m *roomManager) servePlatformMember(w http.ResponseWriter, r *http.Request
 		return
 	}
 	var req platformMemberRequest
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 32<<10))
-	dec.DisallowUnknownFields()
-	if dec.Decode(&req) != nil || dec.Decode(new(any)) != io.EOF {
-		writeAPIError(w, ErrRequest)
+	if !decodeToolRequest(w, r, &req) {
 		return
 	}
 	action := strings.TrimPrefix(r.URL.Path, "/v1/platforms/member/")
@@ -522,4 +567,22 @@ func (m *roomManager) servePlatformMember(w http.ResponseWriter, r *http.Request
 		return
 	}
 	_ = json.NewEncoder(w).Encode(result)
+}
+
+// Original-ID recovery precedes this fence. A different ID cannot reuse the
+// same source or execute an older source after a newer target intent is recorded.
+func (m *roomManager) checkPlatformMemberSourceLocked(req platformMemberRequest, kind string) error {
+	ops, err := m.platformMemberOperationsLocked()
+	if err != nil {
+		return err
+	}
+	if len(ops) >= 1000 {
+		return ErrCapacity
+	}
+	for _, p := range ops {
+		if p.MemberIdentity == req.member() && p.Kind == kind && p.Input.PlatformID == req.Input.PlatformID && p.Source.Seq >= req.SourceSeq {
+			return operationConflict("source_seq", p.ID, "configuration operation already exists for this source or a newer source")
+		}
+	}
+	return nil
 }

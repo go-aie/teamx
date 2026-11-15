@@ -38,7 +38,7 @@ func TestReferenceConversationPolicyExplicitAmendRevokeAndTokens(t *testing.T) {
 		t.Fatal(retry, err)
 	}
 	change := postConversationReply(t, h, "amend", "改为仅回复文档安装咨询；交付时间仍先问我", 0)
-	q.Change.Version, q.Change.Revision, q.Change.SourceSeq = 1, 1, change.Seq
+	q.Change.Version, q.Change.SourceSeq = 1, change.Seq
 	q.Change.Text = "只回复有文档依据的安装咨询"
 	q.Change.Text += "；核实当前安装文档及账号，交付时间仍先询问"
 	q.Basis = "用户明确收窄原规则"
@@ -48,7 +48,7 @@ func TestReferenceConversationPolicyExplicitAmendRevokeAndTokens(t *testing.T) {
 	}
 	secondToken := v.PolicyToken
 	revoke := postConversationReply(t, h, "revoke", "撤销刚才的自动回复规则", 0)
-	q.Change.Version, q.Change.Revision, q.Change.SourceSeq, q.Change.Status = 2, 2, revoke.Seq, "revoked"
+	q.Change.Version, q.Change.SourceSeq, q.Change.Status = 2, revoke.Seq, "revoked"
 	q.Basis = "明确撤销该条规则"
 	v, err = svc.referencePolicyChange(h.ctx, h.id, agentCallerIdentity(h.id), q)
 	if err != nil || len(v.Effective) != 0 || v.PolicyToken == secondToken || v.Revision != 3 {
@@ -85,7 +85,7 @@ func TestReferenceConversationPolicyInferredSuggestionConfirmation(t *testing.T)
 	before := view.PolicyToken
 	bad := q
 	bad.Change.Status = "active"
-	bad.Change.Version, bad.Change.Revision = 1, 1
+	bad.Change.Version = 1
 	bad.Change.SourceSeq = postConversationReply(t, h, "another-habit", "本次继续简短中文回复", 0).Seq
 	if _, err := svc.referencePolicyChange(h.ctx, h.id, agentCallerIdentity(h.id), bad); !errors.Is(err, ErrRequest) {
 		t.Fatal("inference activated", err)
@@ -104,7 +104,7 @@ func TestReferenceConversationPolicyInferredSuggestionConfirmation(t *testing.T)
 	confirm := q
 	confirm.Mode = "confirm_suggestion"
 	confirm.Change.Status = "active"
-	confirm.Change.Version, confirm.Change.Revision, confirm.Change.SourceSeq = 1, 1, once.Seq
+	confirm.Change.Version, confirm.Change.SourceSeq = 1, once.Seq
 	confirm.ProposalSeq = receipt.Seq
 	confirm.Basis = "尝试将本次任务同意解释为长期同意"
 	if _, err := svc.referencePolicyChange(h.ctx, h.id, agentCallerIdentity(h.id), confirm); !errors.Is(err, ErrRequest) {
@@ -171,7 +171,7 @@ func TestReferenceConversationPolicyStaleSuggestionAndContextConfirmation(t *tes
 	// Saving a revised suggestion invalidates confirmation of the previous one.
 	source2 := postConversationReply(t, h, "habit2", "本次仅安装问题", 0)
 	q.Change.TurnNumber = 2
-	q.Change.Version, q.Change.Revision, q.Change.SourceSeq = 1, 1, source2.Seq
+	q.Change.Version, q.Change.SourceSeq = 1, source2.Seq
 	q.Change.Text = "仅安装咨询自动回复"
 	if _, err := svc.referencePolicyChange(h.ctx, h.id, agentCallerIdentity(h.id), q); err != nil {
 		t.Fatal(err)
@@ -181,7 +181,7 @@ func TestReferenceConversationPolicyStaleSuggestionAndContextConfirmation(t *tes
 	stale.Mode = "confirm_suggestion"
 	stale.Change.Status = "active"
 	stale.Change.SourceSeq = oldReply.Seq
-	stale.Change.Revision = 2
+
 	stale.ProposalSeq = proposal.Seq
 	if _, err := svc.referencePolicyChange(h.ctx, h.id, agentCallerIdentity(h.id), stale); !errors.Is(err, ErrConflict) {
 		t.Fatal(stale, err)
@@ -194,7 +194,7 @@ func TestReferenceConversationPolicyStaleSuggestionAndContextConfirmation(t *tes
 	confirm := q
 	confirm.Mode = "confirm_suggestion"
 	confirm.Change.Status = "active"
-	confirm.Change.Version, confirm.Change.Revision, confirm.Change.SourceSeq = 2, 2, answer.Seq
+	confirm.Change.Version, confirm.Change.SourceSeq = 2, answer.Seq
 	confirm.ProposalSeq = proposal2.Seq
 	confirm.Basis = "无回复引用，但用户明确指出刚才的安装咨询建议"
 	v, err := svc.referencePolicyChange(h.ctx, h.id, agentCallerIdentity(h.id), confirm)

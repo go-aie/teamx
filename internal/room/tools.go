@@ -2,9 +2,11 @@ package room
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -20,9 +22,10 @@ type toolBindingsFile struct {
 	LegacyUnknown bool           `json:"legacy_unknown,omitempty"`
 	Disabled      []tool.Binding `json:"disabled"` // nil is historical unknown intent; new writes use an array
 	RoomIdentity
-	Version  int            `json:"version"`
-	Revision uint64         `json:"revision"`
-	Bindings []tool.Binding `json:"bindings"`
+	TargetRevisions map[string]uint64 `json:"target_revisions"`
+	Version         int               `json:"version"`
+	Revision        uint64            `json:"revision"`
+	Bindings        []tool.Binding    `json:"bindings"`
 }
 type toolSelection struct {
 	Availability         *larkMemberCapabilityResult `json:"availability,omitempty"`
@@ -50,13 +53,13 @@ type toolsRequest struct {
 type toolBindingChange struct {
 	ServiceEpoch string `json:"service_epoch"`
 	RoomIdentity
-	Caller           Caller       `json:"caller"`
-	Revision         uint64       `json:"revision"`
-	Binding          tool.Binding `json:"binding"`
-	Enabled          bool         `json:"enabled"`
-	PlatformVersion  uint64       `json:"platform_version,omitempty"`
-	requestedActions []string
-	prepared         *preparedLarkToolChange
+	Caller                  Caller       `json:"caller"`
+	ExpectedBindingRevision *uint64      `json:"expected_binding_revision,omitempty"`
+	Binding                 tool.Binding `json:"binding"`
+	Enabled                 bool         `json:"enabled"`
+	PlatformVersion         uint64       `json:"platform_version,omitempty"`
+	requestedActions        []string
+	prepared                *preparedLarkToolChange
 }
 
 func (m *roomManager) toolDefinitions() []tool.Definition {
@@ -77,7 +80,7 @@ func (m *roomManager) toolBindingsPath(owner RoomIdentity) string {
 	return filepath.Join(m.roomDir(owner.RoomID), "tool-bindings.json")
 }
 func (m *roomManager) readToolBindingsLocked(owner RoomIdentity) (toolBindingsFile, error) {
-	f := toolBindingsFile{RoomIdentity: owner, Version: 1, Bindings: []tool.Binding{}}
+	f := toolBindingsFile{RoomIdentity: owner, Version: 2, TargetRevisions: map[string]uint64{}, Bindings: []tool.Binding{}}
 	entry, err := m.workspaceRoom(owner)
 	if err != nil || entry.Status != "ready" && entry.Status != "deleting" {
 		return f, ErrIdentity
@@ -87,12 +90,12 @@ func (m *roomManager) readToolBindingsLocked(owner RoomIdentity) (toolBindingsFi
 	}
 	err = readSnapshot(m.toolBindingsPath(owner), &f, 1<<20)
 	if errors.Is(err, os.ErrNotExist) {
-		return toolBindingsFile{RoomIdentity: owner, Version: 1, Bindings: []tool.Binding{}}, nil
+		return toolBindingsFile{RoomIdentity: owner, Version: 2, TargetRevisions: map[string]uint64{}, Bindings: []tool.Binding{}}, nil
 	}
 	if err != nil {
 		return f, err
 	}
-	if f.RoomIdentity != owner || f.Version != 1 || f.Revision == 0 || f.Bindings == nil || len(f.Bindings)+len(f.Disabled) > 3200 {
+	if f.RoomIdentity != owner || (f.Version != 1 && f.Version != 2) || f.Revision == 0 || f.Bindings == nil || len(f.Bindings)+len(f.Disabled) > 3200 {
 		return f, ErrInvalid
 	}
 	seen := map[[4]string]bool{}
@@ -103,6 +106,27 @@ func (m *roomManager) readToolBindingsLocked(owner RoomIdentity) (toolBindingsFi
 			return f, ErrInvalid
 		}
 		seen[key] = true
+	}
+	if f.Version == 1 {
+		f.TargetRevisions = map[string]uint64{}
+		for _, b := range append(slices.Clone(f.Bindings), f.Disabled...) {
+			f.TargetRevisions[toolBindingKey(b)] = f.Revision
+		}
+	} else {
+		if f.TargetRevisions == nil || len(f.TargetRevisions) > 3200 {
+			return f, ErrInvalid
+		}
+		for key, revision := range f.TargetRevisions {
+			var parts [4]string
+			if json.Unmarshal([]byte(key), &parts) != nil || toolBindingKey(tool.Binding{AgentID: parts[0], MembershipID: parts[1], Tool: parts[2], PlatformID: parts[3]}) != key || !validText(parts[0]) || !safeMembershipID(parts[1]) || !tool.ValidName(parts[2]) || parts[3] != "" && !tool.OpaqueID(parts[3]) || revision == 0 || revision > f.Revision {
+				return f, ErrInvalid
+			}
+		}
+		for _, b := range append(slices.Clone(f.Bindings), f.Disabled...) {
+			if f.TargetRevisions[toolBindingKey(b)] == 0 {
+				return f, ErrInvalid
+			}
+		}
 	}
 	if f.Disabled == nil {
 		f.LegacyUnknown = true
@@ -217,14 +241,23 @@ func (m *roomManager) selectionsLocked(f toolBindingsFile, caller Caller) ([]too
 	}
 	return selections, nil
 }
-func (m *roomManager) changeToolBindingLocked(ctx context.Context, req toolBindingChange) (toolBindingsFile, []<-chan struct{}, error) {
+func (m *roomManager) changeToolBindingLocked(ctx context.Context, req toolBindingChange) (resultFile toolBindingsFile, resultWaits []<-chan struct{}, resultErr error) {
+	saveAttempted := false
+	defer func() {
+		if resultErr != nil && !saveAttempted {
+			resultErr = &toolChangeNotApplied{resultErr}
+		}
+	}()
 	var empty toolBindingsFile
+	if err := ctx.Err(); err != nil {
+		return empty, nil, err
+	}
 	if req.prepared != nil {
 		if err := m.recheckLarkToolChangeLocked(ctx, req); err != nil {
 			return empty, nil, err
 		}
 		if req.prepared.Preserved {
-			return req.prepared.Before, nil, nil
+			return m.currentPreparedToolBindingsLocked(req)
 		}
 	}
 	if err := m.checkPlatformMemberContextLocked(ctx); err != nil {
@@ -247,8 +280,8 @@ func (m *roomManager) changeToolBindingLocked(ctx context.Context, req toolBindi
 	if err != nil {
 		return f, nil, err
 	}
-	if req.Revision != f.Revision {
-		return f, nil, ErrConflict
+	if err := checkBindingRevision(f, req.Binding, req.ExpectedBindingRevision); err != nil {
+		return f, nil, err
 	}
 	b := req.Binding
 	if !b.ActionAuthorization.Valid() {
@@ -303,7 +336,7 @@ func (m *roomManager) changeToolBindingLocked(ctx context.Context, req toolBindi
 						return f, nil, invalidField("tool", "platform type has no registered tool entry")
 					}
 					if c.Version != req.PlatformVersion {
-						return f, nil, ErrConflict
+						return f, nil, versionConflict("platform_version", req.PlatformVersion, c.Version, "Check the exact connection and account; this does not establish prior authorization.")
 					}
 					if _, _, err := registry.ResolveAccessAccount(file, c); err != nil {
 						return f, nil, ErrConflict
@@ -334,6 +367,16 @@ func (m *roomManager) changeToolBindingLocked(ctx context.Context, req toolBindi
 			return f, nil, ErrRequest
 		}
 	}
+	// An identical saved choice preserves its revision and active calls.
+	for i, old := range append(slices.Clone(f.Bindings), f.Disabled...) {
+		candidate := b
+		if old.ActionAuthorization != nil && candidate.ActionAuthorization != nil && slices.Equal(old.ActionAuthorization.Grants, candidate.ActionAuthorization.Grants) {
+			candidate.ActionAuthorization = old.ActionAuthorization
+		}
+		if req.Enabled == (i < len(f.Bindings)) && reflect.DeepEqual(old, candidate) {
+			return f, nil, nil
+		}
+	}
 	if f.Disabled == nil {
 		f.Disabled = []tool.Binding{}
 	}
@@ -349,12 +392,18 @@ func (m *roomManager) changeToolBindingLocked(ctx context.Context, req toolBindi
 	if req.Enabled {
 		f.Bindings = append(f.Bindings, b)
 	}
-	if len(f.Bindings)+len(f.Disabled) > 3200 || f.Revision == ^uint64(0) {
+	if len(f.Bindings)+len(f.Disabled) > 3200 || len(f.TargetRevisions) >= 3200 && f.TargetRevisions[toolBindingKey(b)] == 0 || f.Revision == ^uint64(0) {
 		return f, nil, ErrCapacity
 	}
 	f.Revision++
+	f.Version = 2
+	f.TargetRevisions[toolBindingKey(b)] = f.Revision
+	saveAttempted = true
 	if err = m.store.save(m.toolBindingsPath(f.RoomIdentity), f, 1<<20); err != nil {
 		return f, nil, err
+	}
+	if req.prepared != nil {
+		projectCommittedLarkToolChange(req.prepared, f)
 	}
 	pending := m.cancelPlatformCallsLocked(func(c *platformCall) bool {
 		return c.owner == req.RoomIdentity && c.tool == b.Tool && c.platformID == b.PlatformID && c.agentID == b.AgentID && c.membershipID == b.MembershipID
@@ -482,3 +531,40 @@ func (m *roomManager) checkActionAuthorizationLocked(req toolsRequest, access pl
 	}
 	return &actionAuthorizationUnavailable{cause: ErrConflict, ReasonCode: "member_action_not_configured", NextAction: "enable_member_tool", Message: "Member action is not configured. Explicitly enable the requested action for this member and exact platform."}
 }
+
+// Canonical JSON tuples avoid delimiter collisions and retain tombstones for ABA checks.
+func toolBindingKey(b tool.Binding) string {
+	data, _ := json.Marshal([4]string{b.AgentID, b.MembershipID, b.Tool, b.PlatformID})
+	return string(data)
+}
+func checkBindingRevision(f toolBindingsFile, b tool.Binding, expected *uint64) error {
+	actual := f.TargetRevisions[toolBindingKey(b)]
+	if expected != nil && *expected != actual {
+		return versionConflict("expected_binding_revision", *expected, actual, "Read this exact binding and reconcile the requested change; no configuration was saved.")
+	}
+	return nil
+}
+func (m *roomManager) currentPreparedToolBindingsLocked(req toolBindingChange) (toolBindingsFile, []<-chan struct{}, error) {
+	f, err := m.readToolBindingsLocked(req.RoomIdentity)
+	if err == nil {
+		projectCommittedLarkToolChange(req.prepared, f)
+	}
+	return f, nil, err
+}
+func projectCommittedLarkToolChange(p *preparedLarkToolChange, f toolBindingsFile) {
+	p.Capabilities.ToolRevision = f.Revision
+	for _, b := range f.Bindings {
+		if toolBindingKey(b) == toolBindingKey(p.Binding) {
+			p.Binding = b
+			if b.ActionAuthorization != nil {
+				p.Capabilities.ActionRevision = b.ActionAuthorization.Revision
+			}
+		}
+	}
+}
+
+// This proof is local to the authoritative save boundary. Every error after
+// entering Store.save remains uncertain, including failures before rename.
+type toolChangeNotApplied struct{ error }
+
+func (e *toolChangeNotApplied) Unwrap() error { return e.error }

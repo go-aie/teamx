@@ -29,7 +29,7 @@ const platformConnectHelp = `Usage:
   teamx platforms member notifications --platform-id ID --platform-version V --notification-version N --operation-id ID --source-seq SEQ [--remove-chat-id CHAT_ID] [--group-enabled true|false --group-scope all|specified --group-chat-id CHAT_ID] [--group-at-me true|false --group-at-all true|false] [--private-enabled true|false --private-scope all|specified --private-chat-id CHAT_ID]
   teamx platforms member notifications --platform-id ID --platform-version V --notification-version N --operation-id ID --source-seq SEQ --todos-enabled true|false
   teamx platforms member notifications --platform-id ID --platform-version V --notification-version N --operation-id ID --source-seq SEQ [--events-enabled true|false --project-id N --project-path PATH] [--event-type TYPE] [--todo-reason REASON --todo-type TYPE]
-  teamx platforms member tool --platform-id ID --platform-version V --tool-revision N --operation-id ID --source-seq SEQ --enabled true|false [--action OP ...]
+  teamx platforms member tool --platform-id ID --platform-version V --operation-id ID --source-seq SEQ --enabled true|false [--action OP ...] [--binding-revision N]
   teamx platforms member status --operation-id ID | --source-seq SEQ
   teamx platforms upgrade --rooms-dir ROOT
 
@@ -131,7 +131,8 @@ repeat personal filters (empty selects none). Omitted filter dimensions are pres
 Personal todos retain all-accessible-project semantics; no Workspace is changed.
 Collect all requested notification fields into one operation for the same source-seq
 and account. Separate later requests use their own source; do not invent a new source
-or operation ID to bypass unknown work. Each configuration step uses its own stable ID and observed config version. status
+or operation ID to bypass unknown work. Each configuration step uses its own stable ID and observed config version.
+All notification edits require explicit --notification-version N (0 means absent); omission is rejected. Never refresh a stale observation automatically. A saved desired version with pending/errors must be inspected through member get and repaired through the existing settings retry-apply entry, not by resubmitting the member intent. status
 is pure read; source-seq returns all member configuration steps for that request.
 Completed receipts describe historical results; use get to verify current settings.
 Unknown submissions never replay, even with the same ID: inspect status/get and

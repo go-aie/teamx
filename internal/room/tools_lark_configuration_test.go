@@ -60,7 +60,7 @@ func writeJSONFixture(t *testing.T, path string, v any) {
 	}
 }
 func larkConfigurationChange(h *larkHarness) toolBindingChange {
-	return toolBindingChange{ServiceEpoch: h.m.epoch, RoomIdentity: h.room.RoomIdentity, Caller: humanCaller, PlatformVersion: h.c.Version, Enabled: true, Binding: tool.Binding{AgentID: h.members[0].AgentID, MembershipID: h.members[0].MembershipID, PlatformID: h.c.ID, Tool: "lark"}}
+	return toolBindingChange{ExpectedBindingRevision: new(uint64(0)), ServiceEpoch: h.m.epoch, RoomIdentity: h.room.RoomIdentity, Caller: humanCaller, PlatformVersion: h.c.Version, Enabled: true, Binding: tool.Binding{AgentID: h.members[0].AgentID, MembershipID: h.members[0].MembershipID, PlatformID: h.c.ID, Tool: "lark"}}
 }
 func larkMemberToolRequest(t *testing.T, h *larkHarness, revision uint64) platformMemberRequest {
 	t.Helper()
@@ -70,7 +70,7 @@ func larkMemberToolRequest(t *testing.T, h *larkHarness, revision uint64) platfo
 		t.Fatal(err)
 	}
 	enabled := true
-	return platformMemberRequest{ServiceInfo: h.svc.info, Caller: agentCaller(h.members[0].AgentID, h.members[0].MembershipID), OperationID: id, SourceSeq: post.Seq, Input: &platformMemberInput{PlatformID: h.c.ID, PlatformVersion: h.c.Version, ToolRevision: revision, Enabled: &enabled}}
+	return platformMemberRequest{ServiceInfo: h.svc.info, Caller: agentCaller(h.members[0].AgentID, h.members[0].MembershipID), OperationID: id, SourceSeq: post.Seq, Input: &platformMemberInput{PlatformID: h.c.ID, PlatformVersion: h.c.Version, ExpectedBindingRevision: &revision, Enabled: &enabled}}
 }
 func larkOnboardingToolRequest(t *testing.T, h *larkHarness) platformOnboardingRequest {
 	t.Helper()
@@ -109,7 +109,7 @@ func TestLarkToolConfigurationEntrypointsAgreeAndSelfProofIsRequired(t *testing.
 			case "member":
 				req := larkMemberToolRequest(t, h, 0)
 				op, err := h.m.configurePlatformMember(t.Context(), "tool", req)
-				if err != nil || op.Status != "completed" || op.Schema != 2 {
+				if err != nil || op.Status != "completed" || op.Schema != 3 {
 					t.Fatal(op, err)
 				}
 				result = op.Capabilities
@@ -343,7 +343,7 @@ func TestLarkToolConfigurationNativeSelfEvidenceRefreshAndForgery(t *testing.T) 
 		bad.CapabilityEvidence = slices.Clone(b.CapabilityEvidence)
 		mutate(&bad.CapabilityEvidence[0])
 		change := larkConfigurationChange(h)
-		change.Revision = 1
+		change.ExpectedBindingRevision = new(uint64(1))
 		change.Binding = bad
 		if r := managerHTTP(h.m, "/v1/tools/bind", change); r.Code != 400 {
 			t.Fatal("client evidence was accepted", r.Code, r.Body.String())
@@ -458,7 +458,7 @@ func TestLarkToolConfigurationCLIAddsOnlyRequestedActions(t *testing.T) {
 	h := larkToolConfigurationHarness(t)
 	req := larkMemberToolRequest(t, h, 0)
 	client, endpoint := toolPipeServer(t, h.m)
-	args := []string{"member", "tool", "--platform-id", h.c.ID, "--platform-version", strconv.FormatUint(h.c.Version, 10), "--tool-revision", "0", "--operation-id", req.OperationID, "--source-seq", strconv.FormatUint(req.SourceSeq, 10), "--enabled", "true", "--action", "message.reply", "--action", "message.send", "--action", "message.reply"}
+	args := []string{"member", "tool", "--platform-id", h.c.ID, "--platform-version", strconv.FormatUint(h.c.Version, 10), "--binding-revision", "0", "--operation-id", req.OperationID, "--source-seq", strconv.FormatUint(req.SourceSeq, 10), "--enabled", "true", "--action", "message.reply", "--action", "message.send", "--action", "message.reply"}
 	var out, stderr bytes.Buffer
 	if err := runPlatformConnectWithClient(t.Context(), args, &out, &stderr, cliToolEnv(endpoint, h.svc, h.members[0]), client); err != nil {
 		t.Fatal(err, stderr.String())

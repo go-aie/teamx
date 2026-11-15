@@ -82,7 +82,7 @@ func TestOnboardingGitLabDefaultsAndRetryPreserveProgress(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.mu.Lock()
-	_, _, err = m.changeToolBindingLocked(t.Context(), toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, Revision: f.Revision, Binding: tool.Binding{AgentID: members[0].AgentID, MembershipID: members[0].MembershipID, Tool: "gitlab", PlatformID: c.ID}, Enabled: false})
+	_, _, err = m.changeToolBindingLocked(t.Context(), toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, ExpectedBindingRevision: new(uint64(f.Revision)), Binding: tool.Binding{AgentID: members[0].AgentID, MembershipID: members[0].MembershipID, Tool: "gitlab", PlatformID: c.ID}, Enabled: false})
 	m.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)
@@ -194,10 +194,10 @@ func TestOnboardingFrozenSettingsAndIdentity(t *testing.T) {
 	if w := managerHTTP(m, "/v1/platforms/onboarding/prepare", changed); w.Code != http.StatusForbidden {
 		t.Fatal("operation owner ignored", w.Code)
 	}
-	// An explicit opt-out during authentication must stop an old default intent.
+	// A different member does not invalidate the frozen target observation.
 	bindCLITool(t, m, room.RoomIdentity, members[1], c, "gitlab", 0)
 	op := onboardingApply(t, m, req)
-	if op.Tool.ErrorCode != "settings_changed" || op.Notifications.Status != "applied" {
+	if op.Tool.Status != "applied" || op.Tool.Version != 2 || op.Notifications.Status != "applied" {
 		t.Fatal(op.Notifications, op.Tool)
 	}
 	// A changed platform generation cannot inherit an unfinished operation.

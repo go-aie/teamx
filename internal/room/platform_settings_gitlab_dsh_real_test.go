@@ -156,7 +156,7 @@ func TestConversationGitLabSettingsRealDSH(t *testing.T) {
 		if e != nil || se != nil || len(ops) != 1 || ops[0].Status != "completed" || ops[0].Result.Status != "applied" || ops[0].MemberIdentity != id || ops[0].Account != after.Account || ops[0].Source.Seq != source.Seq || ops[0].Result.Version != before.NotificationVersion+1 || after.NotificationVersion != ops[0].Result.Version || !reflect.DeepEqual(ops[0].GitLabConfig, &after.GitLab.Config) {
 			t.Fatal("GitLab request/receipt/authoritative configuration mismatch", e, se)
 		}
-		if !check(before.GitLab.Config, after.GitLab.Config) || after.Baseline != initial.Config.BackfillStart || after.GitLab.Config.IntervalSeconds != 61 || after.ToolRevision != before.ToolRevision || after.ToolEnabled != before.ToolEnabled || len(selections) != 0 || len(after.GitLab.Errors) != 0 || after.GitLab.Pending["events"] || after.GitLab.Pending["todos"] {
+		if !check(before.GitLab.Config, after.GitLab.Config) || after.Baseline != initial.Config.BackfillStart || after.GitLab.Config.IntervalSeconds != 61 || after.BindingRevision != before.BindingRevision || after.ToolEnabled != before.ToolEnabled || len(selections) != 0 || len(after.GitLab.Errors) != 0 || after.GitLab.Pending["events"] || after.GitLab.Pending["todos"] {
 			t.Fatal("GitLab change violated requested fields or source application boundary")
 		}
 		op := ops[0]

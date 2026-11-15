@@ -135,7 +135,7 @@ func TestBindingEvidencePreparationIsOptionalAndProviderRegistered(t *testing.T)
 	spec := platform.ActionSpec{Operation: operation, BindingEvidence: "private_storage", RequiresAuthorization: true, TargetKind: "object", ObjectTypes: []string{"Mailbox"}, InputSchema: json.RawMessage(`{"type":"object"}`), Retry: platform.RetryPolicy{MaxAttempts: 1}}
 	caps := platform.ReferenceCapabilities{Actions: map[platform.Operation]platform.ActionCapability{operation: {Spec: spec}}}
 	m := &roomManager{toolCatalog: []tool.Definition{{Name: "memo", Provider: "contract"}}, referenceAdapters: map[string]referenceAdapterFactory{"contract": func() platform.ReferenceCapabilities { return caps }}}
-	request := toolBindingChange{Caller: humanCaller, Enabled: true, Binding: tool.Binding{Tool: "memo", ActionAuthorization: &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: []tool.ActionGrant{{Operation: string(operation), TargetKind: "object", ObjectType: "Mailbox"}}}}}
+	request := toolBindingChange{ExpectedBindingRevision: new(uint64(0)), Caller: humanCaller, Enabled: true, Binding: tool.Binding{Tool: "memo", ActionAuthorization: &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: []tool.ActionGrant{{Operation: string(operation), TargetKind: "object", ObjectType: "Mailbox"}}}}}
 	if err := m.prepareBindingEvidence(t.Context(), &request); err == nil {
 		t.Fatal("declared proof requirement silently passed without an adapter")
 	}

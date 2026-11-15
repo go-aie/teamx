@@ -216,14 +216,14 @@ func TestReferenceInternalRevocationSettlesHTTPAndRejectsLateResults(t *testing.
 					case "reauthorize":
 						_, err = testReauthorizePlatform(m, managedPlatformRequest{ID: c.ID, Version: c.Version, ReferencedRooms: []RoomIdentity{room.RoomIdentity}})
 					case "disable", "switch-binding":
-						change := toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, Revision: 1, Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "gitlab", PlatformID: c.ID}}
+						change := toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, ExpectedBindingRevision: new(uint64(1)), Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "gitlab", PlatformID: c.ID}}
 						if action == "switch-binding" {
 							revoked := managerHTTP(m, "/v1/tools/bind", change)
 							if revoked.Code != 200 {
 								err = errors.New(revoked.Body.String())
 								break
 							}
-							change.Revision++
+							change.ExpectedBindingRevision = new(uint64(0))
 							change.Enabled = true
 							change.Binding.PlatformID = nextPlatform.ID
 							change.PlatformVersion = nextPlatform.Version

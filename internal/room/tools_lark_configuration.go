@@ -19,7 +19,7 @@ import (
 // Only server memory can carry this admission across remote preparation.
 // Receipts freeze observations; they never authorize a later commit.
 type preparedLarkToolChange struct {
-	Before           toolBindingsFile
+	BindingRevision  uint64
 	Account          registry.Account
 	Binding          tool.Binding
 	RequestedActions []tool.ActionGrant
@@ -77,16 +77,19 @@ func (m *roomManager) admitLarkToolChangeLocked(ctx context.Context, req toolBin
 		return toolBindingsFile{}, a, err
 	}
 	if !memberExists(members, req.Binding.AgentID, req.Binding.MembershipID) {
-		return toolBindingsFile{}, a, ErrIdentity
+		return toolBindingsFile{}, a, &requestDiagnostic{cause: ErrIdentity, Field: "membership_id", Message: "the exact member is no longer current", Hint: "Check the original Room/member identity; do not transfer this preparation."}
 	}
 	f, err := m.readToolBindingsLocked(req.RoomIdentity)
 	if err != nil {
 		return f, a, err
 	}
-	if f.Revision != req.Revision {
-		return f, a, ErrConflict
+	if err := checkBindingRevision(f, req.Binding, req.ExpectedBindingRevision); err != nil {
+		return f, a, err
 	}
 	a, err = m.checkLarkChatsLocked(ctx, larkChatsRequest{ServiceEpoch: req.ServiceEpoch, RoomIdentity: req.RoomIdentity, Caller: req.Caller, PlatformID: req.Binding.PlatformID, PlatformVersion: req.PlatformVersion}, nil)
+	if errors.Is(err, ErrConflict) || errors.Is(err, ErrIdentity) {
+		err = &requestDiagnostic{cause: err, Field: "account", Message: "the selected account or credential is unavailable or changed", Hint: "Check this exact connection; configuration conflict is not evidence of prior authorization."}
+	}
 	return f, a, err
 }
 
@@ -96,12 +99,18 @@ func (m *roomManager) recheckLarkToolChangeLocked(ctx context.Context, req toolB
 		return err
 	}
 	p := req.prepared
-	if !reflect.DeepEqual(f, p.Before) || !reflect.DeepEqual(a, p.Account) || !reflect.DeepEqual(req.Binding, p.Binding) {
-		return ErrConflict
+	if err := checkBindingRevision(f, req.Binding, &p.BindingRevision); err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(a, p.Account) {
+		return conflictReason("account", "account or credential changed during preparation", "Check the exact connection; this does not establish prior authorization.")
+	}
+	if !reflect.DeepEqual(req.Binding, p.Binding) {
+		return conflictReason("binding", "prepared action plan changed", "Reconcile the original operation.")
 	}
 	access := larkReferenceAccess(MemberIdentity{RoomIdentity: req.RoomIdentity, AgentID: req.Binding.AgentID, MembershipID: req.Binding.MembershipID}, a, platform.SourceRef{})
 	if !p.Capabilities.larkPlatformCapabilityResult.current(access, time.Now()) {
-		return ErrConflict
+		return conflictReason("capabilities", "capability evidence expired or changed", "Check the exact account and evidence before configuring again.")
 	}
 	return nil
 }
@@ -164,12 +173,12 @@ func (m *roomManager) prepareLarkToolChange(ctx context.Context, req *toolBindin
 			return ErrRequest
 		}
 	}
-	req.Binding.ActionAuthorization = &tool.ActionAuthorization{Version: 1, Revision: f.Revision + 1, Grants: grants}
+	req.Binding.ActionAuthorization = &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: grants}
 	if !req.Binding.ActionAuthorization.Valid() {
 		m.mu.Unlock()
 		return ErrRequest
 	}
-	p := &preparedLarkToolChange{Before: f, Account: a, RequestedActions: requested}
+	p := &preparedLarkToolChange{BindingRevision: f.TargetRevisions[toolBindingKey(req.Binding)], Account: a, RequestedActions: requested}
 	// A strict reduction cannot acquire new capability and must promptly cancel
 	// active calls. It needs no CLI queue/remote read that could wait on those calls.
 	if explicitAuthorization && old != nil && old.ActionAuthorization != nil && len(grants) < len(old.ActionAuthorization.Grants) && !slices.ContainsFunc(grants, func(g tool.ActionGrant) bool { return !slices.Contains(old.ActionAuthorization.Grants, g) }) {
@@ -190,7 +199,7 @@ func (m *roomManager) prepareLarkToolChange(ctx context.Context, req *toolBindin
 			}
 			snap.Capabilities = append(snap.Capabilities, c)
 		}
-		p.Capabilities = projectLarkMemberCapabilities(access, req.Caller.ID, &projected, f.Revision+1, snap, caps, time.Now())
+		p.Capabilities = projectLarkMemberCapabilities(access, req.Caller.ID, &projected, f.Revision, snap, caps, time.Now())
 		p.Binding = req.Binding
 		req.prepared = p
 		m.mu.Unlock()
@@ -255,11 +264,11 @@ func (m *roomManager) prepareLarkToolChange(ctx context.Context, req *toolBindin
 	}
 	projected := req.Binding
 	projected.PlatformGeneration = a.Generation
-	p.Capabilities = projectLarkMemberCapabilities(access, req.Caller.ID, &projected, f.Revision+1, snap, caps, time.Now())
+	p.Capabilities = projectLarkMemberCapabilities(access, req.Caller.ID, &projected, f.Revision, snap, caps, time.Now())
 	if authRequired {
 		m.mu.Lock()
 		latest, bound, recheckErr := m.admitLarkToolChangeLocked(callCtx, *req)
-		if recheckErr == nil && (!reflect.DeepEqual(latest, f) || !reflect.DeepEqual(bound, a)) {
+		if recheckErr == nil && (latest.TargetRevisions[toolBindingKey(req.Binding)] != p.BindingRevision || !reflect.DeepEqual(bound, a)) {
 			recheckErr = ErrConflict
 		}
 		if recheckErr == nil {
@@ -269,7 +278,7 @@ func (m *roomManager) prepareLarkToolChange(ctx context.Context, req *toolBindin
 		if recheckErr != nil {
 			return recheckErr
 		}
-		current := projectLarkMemberCapabilities(access, req.Caller.ID, old, f.Revision, snap, caps, time.Now())
+		current := projectLarkMemberCapabilities(access, req.Caller.ID, old, latest.Revision, snap, caps, time.Now())
 		return &userAuthorizationRequired{Capabilities: current}
 	}
 	if old != nil {
@@ -318,7 +327,7 @@ func (m *roomManager) applyOnboardingLarkToolLocked(ctx context.Context, op plat
 			version = c.Version
 		}
 	}
-	change := toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: op.Input.RoomIdentity, Caller: Caller{Kind: "human", ID: op.Owner}, Revision: op.BeforeToolRevision, PlatformVersion: version, Enabled: true, Binding: tool.Binding{AgentID: op.Input.AgentID, MembershipID: op.Input.MembershipID, PlatformID: op.PlatformID, Tool: "lark", ActionAuthorization: &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: slices.Clone(op.LarkActions)}}}
+	change := toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: op.Input.RoomIdentity, Caller: Caller{Kind: "human", ID: op.Owner}, ExpectedBindingRevision: op.BeforeBindingRevision, PlatformVersion: version, Enabled: true, Binding: tool.Binding{AgentID: op.Input.AgentID, MembershipID: op.Input.MembershipID, PlatformID: op.PlatformID, Tool: "lark", ActionAuthorization: &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: slices.Clone(op.LarkActions)}}}
 	m.mu.Unlock()
 	err = m.prepareBindingEvidence(ctx, &change)
 	m.mu.Lock()
@@ -340,11 +349,14 @@ func (m *roomManager) applyOnboardingLarkToolLocked(ctx context.Context, op plat
 	}
 	next, waits, err := m.changeToolBindingLocked(ctx, change)
 	if err == nil {
+		step.Authorization = p.Binding.ActionAuthorization
 		err = m.waitOnboardingToolLocked(ctx, waits)
 	}
 	if err != nil {
 		return step
 	}
+	step.Authorization = p.Binding.ActionAuthorization
+	step.Capabilities = &p.Capabilities
 	step.Status, step.Version, step.ErrorCode = "applied", next.Revision, ""
 	if p.Preserved {
 		step.Status = "preserved"

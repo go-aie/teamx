@@ -85,13 +85,12 @@ func agentPolicy(p PolicySnapshot, turn uint64, now time.Time) agentPolicyView {
 		PolicyToken: hex.EncodeToString(digest[:]), Revision: p.Revision, CurrentTurn: turn}, Effective: effective}
 }
 
-// Version is the expected record version; Revision is the expected file revision.
+// Version is the expected exact record version; the file revision is read-only.
 // Human management supplies source text; Agent changes use the conversation
 // service with real human Room evidence.
 type PolicyChange struct {
 	ID         string     `json:"id"`
 	Version    uint64     `json:"version"`
-	Revision   uint64     `json:"revision"`
 	Status     string     `json:"status"`
 	Text       string     `json:"text"`
 	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
@@ -214,7 +213,7 @@ func (s *Store) policyRevisionLocked(id MemberIdentity, caller Caller, c PolicyC
 		}
 	}
 	if old.Version != c.Version {
-		return r, ErrConflict
+		return r, versionConflict("version", c.Version, old.Version, "Read the exact rule and reconcile the observed record; no rule was saved.")
 	}
 	if len(history) >= maxPolicyRevisions {
 		return r, ErrCapacity
@@ -249,7 +248,13 @@ func (s *Store) policyRevisionLocked(id MemberIdentity, caller Caller, c PolicyC
 	return r, nil
 }
 
-func (s *Store) changePolicy(id MemberIdentity, caller Caller, c PolicyChange) (PolicyView, error) {
+func (s *Store) changePolicy(id MemberIdentity, caller Caller, c PolicyChange) (result PolicyView, returnedErr error) {
+	saveAttempted := false
+	defer func() {
+		if returnedErr != nil && !saveAttempted {
+			returnedErr = configurationNotApplied(returnedErr)
+		}
+	}()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p, path, err := s.loadPolicyLocked(id, true)
@@ -259,15 +264,13 @@ func (s *Store) changePolicy(id MemberIdentity, caller Caller, c PolicyChange) (
 	if !validPolicyChange(c) {
 		return PolicyView{}, ErrRequest
 	}
-	if p.Revision != c.Revision {
-		return PolicyView{}, ErrConflict
-	}
 	r, err := s.policyRevisionLocked(id, caller, c, p.History)
 	if err != nil {
 		return PolicyView{}, err
 	}
 	p.History = append(p.History, r)
 	p.Revision++
+	saveAttempted = true
 	if err := s.save(path, p, maxPrivateFileBytes); err != nil {
 		return PolicyView{}, err
 	}

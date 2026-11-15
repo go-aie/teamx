@@ -57,7 +57,7 @@ printf '%s' "$1"
 	if err != nil || len(bindings.Bindings) != 0 || len(m.notifications.StatesLocked(room.RoomIdentity)) != 0 {
 		t.Fatal("connection registration implicitly enabled another capability", err)
 	}
-	wrong := toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, Enabled: true,
+	wrong := toolBindingChange{ExpectedBindingRevision: new(uint64(0)), ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, Enabled: true,
 		Binding: tool.Binding{AgentID: members[0].AgentID, MembershipID: members[0].MembershipID, Tool: d.Name, PlatformID: gitlabAccount.ID}, PlatformVersion: gitlabAccount.Version}
 	if r := managerHTTP(m, "/v1/tools/bind", wrong); r.Code != 400 {
 		t.Fatal("tool accepted another provider's account", r.Code)
@@ -305,7 +305,7 @@ func TestToolDisablePreservesNotificationsWorkspaceAndSession(t *testing.T) {
 			c := platformTestList(t, m)[0]
 			m.toolCatalog = []tool.Definition{{Name: "fixture-tool", Provider: "gitlab", Executable: "/unused"}}
 			f := bindCLITool(t, m, room.RoomIdentity, member, c, "fixture-tool", 0)
-			r := managerHTTP(m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, Revision: f.Revision,
+			r := managerHTTP(m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, ExpectedBindingRevision: new(uint64(f.Revision)),
 				Binding: tool.Binding{AgentID: member.AgentID, MembershipID: member.MembershipID, Tool: "fixture-tool", PlatformID: c.ID}})
 			if r.Code != 200 {
 				t.Fatal(r.Code, r.Body.String())

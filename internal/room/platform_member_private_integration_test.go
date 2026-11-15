@@ -150,7 +150,7 @@ func TestPlatformMemberPrivateCLIQueriesAndReplacesVerifiedPersonnel(t *testing.
 		version = op.Result.Version
 		var view platformMemberView
 		run(append([]string{"member", "get"}, base...), &view)
-		if view.Config == nil || !reflect.DeepEqual(view.Config, op.Config) || view.Baseline != initial.Baseline || view.Config.BackfillStart != initial.Config.BackfillStart || view.Config.IntervalSeconds != 61 || view.ToolEnabled || view.ToolRevision != 0 {
+		if view.Config == nil || !reflect.DeepEqual(view.Config, op.Config) || view.Baseline != initial.Baseline || view.Config.BackfillStart != initial.Config.BackfillStart || view.Config.IntervalSeconds != 61 || view.ToolEnabled || view.BindingRevision != 0 {
 			t.Fatal("private replacement changed baseline, tools or authoritative result", view, op)
 		}
 		return op

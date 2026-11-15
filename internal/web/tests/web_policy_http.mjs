@@ -37,21 +37,24 @@ const read = () => call("/v1/policy/read", context);
 let view = await read();
 assert.equal(view.version, 1);
 assert.deepEqual(view.effective, []);
-const owner = { id: "owner", version: 0, revision: 0, status: "active", text: "AgenticHub 产品负责人是 huayi", source_text: "记住，产品负责人是 huayi" };
+const owner = { id: "owner", version: 0, status: "active", text: "AgenticHub 产品负责人是 huayi", source_text: "记住，产品负责人是 huayi" };
 view = await update(owner);
+assert.equal(view.record.id, owner.id);
+assert.equal(view.record.version, 1);
+assert.match(view.policy_token, /^[a-f0-9]{64}$/);
 assert.equal(view.effective.length, 1);
-const contacts = { id: "contacts", version: 0, revision: 1, status: "active", text: "AgenticHub 的这类报错，优先建议找 hongwei 和 luojun", source_text: "记住，这类报错优先找 hongwei 和 luojun" };
+const contacts = { id: "contacts", version: 0, status: "active", text: "AgenticHub 的这类报错，优先建议找 hongwei 和 luojun", source_text: "记住，这类报错优先找 hongwei 和 luojun" };
 view = await update(contacts);
 assert.equal(view.effective.length, 2);
 for (const key of ["kind", "scope", "scope_from", "actions", "conditions", "exceptions"]) {
-  await assert.rejects(update({ ...contacts, version: 1, revision: 2, [key]: null }), /unknown JSON field/);
+  await assert.rejects(update({ ...contacts, version: 1, [key]: null }), /unknown JSON field/);
 }
-view = await update({ ...contacts, version: 1, revision: 2, text: "这类报错先建议找 hongwei；未明确授权时先询问是否联系", source_text: "修改处理约定" });
+view = await update({ ...contacts, version: 1, text: "这类报错先建议找 hongwei；未明确授权时先询问是否联系", source_text: "修改处理约定" });
 assert.equal(view.current[1].version, 2);
 view = await read();
 assert.equal(view.revision, 3);
 assert.match(view.current[1].text, /未明确授权/);
-view = await update({ ...contacts, version: 2, revision: 3, status: "revoked", text: view.current[1].text, source_text: "撤销处理约定" });
+view = await update({ ...contacts, version: 2, status: "revoked", text: view.current[1].text, source_text: "撤销处理约定" });
 assert.equal(view.revision, 4);
 assert.equal(view.effective.length, 1);
 assert.equal(view.current[1].status, "revoked");
@@ -95,3 +98,28 @@ for (const record of view.history) {
   for (const key of ["kind", "scope", "scope_from", "actions", "conditions", "exceptions"]) assert.equal(Object.hasOwn(record, key), false);
 }
 console.log("Policy management HTTP: page save/edit/revoke/refresh/history; natural rules coexist; removed fields rejected; version remains 1.");
+
+// A draft based on a record version survives another rule's save.
+await card().children[0].children[1].children[0].emit("click");
+ui.el("policy-text").value = "独立编辑：中文简明并保留限制";
+await update({ ...owner, version: 1, text: "AgenticHub 产品负责人是 huayi；核对最新职责", source_text: "补充负责人知识" });
+await ui.el("policy-form").emit("submit");
+await waitFor(() => card()?.children[1].textContent.includes("独立编辑"));
+view = await read();
+const independent = view.current.find(r => r.id === saved.id);
+assert.equal(independent.version, 4);
+assert.equal(independent.status, "active");
+assert.equal(view.current.find(r => r.id === owner.id).version, 2);
+
+// Same-record concurrency rejects the old form and preserves its local input.
+await card().children[0].children[1].children[0].emit("click");
+ui.el("policy-text").value = "尚未保存的本地规则草稿";
+await update({ id: saved.id, version: 4, status: "active", text: "另一入口保存的最新规则", source_text: "新的人类修改" });
+await ui.el("policy-form").emit("submit");
+await waitFor(() => ui.el("policy-status").textContent.includes("保存失败"));
+assert.equal(ui.el("policy-form").hidden, false);
+assert.equal(ui.el("policy-text").value, "尚未保存的本地规则草稿");
+view = await read();
+assert.equal(view.current.find(r => r.id === saved.id).version, 5);
+assert.equal(view.current.find(r => r.id === saved.id).text, "另一入口保存的最新规则");
+console.log("Policy observation HTTP: unrelated rule edits merge; same-rule conflict preserves the draft.");

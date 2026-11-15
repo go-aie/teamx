@@ -128,7 +128,7 @@ func TestScionParallelDevelopmentEnvironment(t *testing.T) {
 	var bindings toolBindingsFile
 	request(fmt.Sprintf("/v1/tools/bindings?service_epoch=%s&caller_id=%s&room_id=%s&room_instance=%s", m.epoch, human.ID, room.RoomID, room.RoomInstance), nil, &bindings)
 	for _, member := range saved.Members {
-		request("/v1/tools/bind", toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: human, Revision: bindings.Revision, Enabled: true, PlatformVersion: platform.Version, Binding: tool.Binding{AgentID: member.AgentID, MembershipID: member.MembershipID, Tool: "scion", PlatformID: platform.ID}}, &bindings)
+		request("/v1/tools/bind", toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: human, ExpectedBindingRevision: new(bindings.TargetRevisions[toolBindingKey(tool.Binding{AgentID: member.AgentID, MembershipID: member.MembershipID, Tool: "scion", PlatformID: platform.ID})]), Enabled: true, PlatformVersion: platform.Version, Binding: tool.Binding{AgentID: member.AgentID, MembershipID: member.MembershipID, Tool: "scion", PlatformID: platform.ID}}, &bindings)
 	}
 	var workspace workspaceResponse
 	if saved.WorkspaceVersion == 1 {

@@ -18,6 +18,7 @@ type conversationPolicyChange struct {
 type policyConversationEvidence struct {
 	Mode          string                        `json:"mode"`
 	Basis         string                        `json:"basis"`
+	DigestVersion int                           `json:"digest_version,omitempty"`
 	RequestDigest string                        `json:"request_digest"`
 	Message       RoomMessage                   `json:"message"`
 	Proposal      *policySuggestionConfirmation `json:"proposal,omitempty"`
@@ -43,9 +44,40 @@ type agentPolicyUpdateResult struct {
 	Record PolicyRevision `json:"record"`
 }
 
+// Version 2 hashes only business intent. Storage order and runtime turns are
+// execution context; exact record version and human/proposal evidence remain.
 func policyConversationDigest(q conversationPolicyChange) string {
-	q.Change.TurnNumber = 0 // a new Session/turn does not create a new business change
+	q.Change.TurnNumber = 0
+	if q.Change.ExpiresAt != nil {
+		expiry := q.Change.ExpiresAt.UTC()
+		q.Change.ExpiresAt = &expiry
+	}
 	b, _ := json.Marshal(q)
+	return noticeDigest(string(b))
+}
+
+// Old writers required the file revision at the history position of the save.
+// Reconstruct their exact wire input only to prove a replay; never rewrite old
+// evidence or use a newer target version to submit it again.
+func legacyPolicyConversationDigest(q conversationPolicyChange, revision uint64) string {
+	type legacyChange struct {
+		ID         string     `json:"id"`
+		Version    uint64     `json:"version"`
+		Revision   uint64     `json:"revision"`
+		Status     string     `json:"status"`
+		Text       string     `json:"text"`
+		ExpiresAt  *time.Time `json:"expires_at,omitempty"`
+		SourceSeq  uint64     `json:"source_seq,omitempty"`
+		SourceText string     `json:"source_text,omitempty"`
+		TurnNumber uint64     `json:"turn_number,omitempty"`
+	}
+	c := q.Change
+	b, _ := json.Marshal(struct {
+		Change      legacyChange `json:"change"`
+		Mode        string       `json:"mode"`
+		Basis       string       `json:"basis"`
+		ProposalSeq uint64       `json:"proposal_seq,omitempty"`
+	}{legacyChange{c.ID, c.Version, revision, c.Status, c.Text, c.ExpiresAt, c.SourceSeq, c.SourceText, 0}, q.Mode, q.Basis, q.ProposalSeq})
 	return noticeDigest(string(b))
 }
 
@@ -68,7 +100,7 @@ func policySuggestionNoticeID(id MemberIdentity, r PolicyRevision) string {
 func validatePolicyConversation(r, old PolicyRevision) error {
 	e := r.Conversation
 	if e == nil || r.ChangedBy.Kind != "agent" || !validHumanEvidence(e.Message) || !handlingText(e.Basis) ||
-		!validOpaqueRef(e.RequestDigest, "") || r.Source != (PolicySource{User: e.Message.Author.ID, Seq: e.Message.Seq, Text: e.Message.Text}) {
+		(e.DigestVersion != 0 && e.DigestVersion != 2) || !validOpaqueRef(e.RequestDigest, "") || r.Source != (PolicySource{User: e.Message.Author.ID, Seq: e.Message.Seq, Text: e.Message.Text}) {
 		return ErrInvalid
 	}
 	if old.Version != 0 && old.Source.Seq != 0 && e.Message.Seq <= old.Source.Seq {
@@ -101,7 +133,13 @@ func (s *Store) changeConversationPolicy(id MemberIdentity, caller Caller, q con
 	return s.changeConversationPolicyLocked(id, caller, q)
 }
 
-func (s *Store) changeConversationPolicyLocked(id MemberIdentity, caller Caller, q conversationPolicyChange) (conversationPolicyResult, error) {
+func (s *Store) changeConversationPolicyLocked(id MemberIdentity, caller Caller, q conversationPolicyChange) (result conversationPolicyResult, returnedErr error) {
+	saveAttempted := false
+	defer func() {
+		if returnedErr != nil && !saveAttempted {
+			returnedErr = configurationNotApplied(returnedErr)
+		}
+	}()
 	if caller != agentCallerIdentity(id) {
 		return conversationPolicyResult{}, ErrIdentity
 	}
@@ -132,13 +170,20 @@ func (s *Store) changeConversationPolicyLocked(id MemberIdentity, caller Caller,
 		return conversationPolicyResult{}, err
 	}
 	digest := policyConversationDigest(q)
-	for _, r := range p.History {
-		if r.Conversation != nil && r.Conversation.RequestDigest == digest {
+	var priorSource *agentPolicyRecord
+	for i, r := range p.History {
+		e := r.Conversation
+		if e == nil {
+			continue
+		}
+		match := e.DigestVersion == 2 && e.RequestDigest == digest || e.DigestVersion == 0 && e.RequestDigest == legacyPolicyConversationDigest(q, uint64(i))
+		if match {
 			return conversationPolicyResult{PolicyView: policyView(p), Record: r}, nil
 		}
-	}
-	if p.Revision != c.Revision {
-		return conversationPolicyResult{}, versionConflict("change.revision", c.Revision, p.Revision, "Read policy read and reassess; do not silently replace the observed revision.")
+		if r.ID == c.ID && r.Source.Seq == c.SourceSeq {
+			record := projectPolicyRecord(r)
+			priorSource = &record
+		}
 	}
 	var old PolicyRevision
 	for _, r := range policyCurrent(p.History) {
@@ -146,9 +191,18 @@ func (s *Store) changeConversationPolicyLocked(id MemberIdentity, caller Caller,
 			old = r
 		}
 	}
+	if priorSource != nil {
+		d := &requestDiagnostic{cause: ErrConflict, Field: "change.source_seq", Record: priorSource, Message: "this rule already has a saved request from the same human source", Hint: "Original record returned for inspection; request equivalence was not proven, so no rule was appended. Read policy read --id ID --detail and reconcile."}
+		if old.Version != c.Version {
+			d.Field = "change.version"
+			d.ExpectedVersion, d.ActualVersion = &c.Version, &old.Version
+		}
+		return conversationPolicyResult{}, d
+	}
 	if old.Version != c.Version {
 		return conversationPolicyResult{}, versionConflict("change.version", c.Version, old.Version, "Read policy read --id ID and reassess the exact record.")
 	}
+
 	if len(p.History) >= maxPolicyRevisions {
 		return conversationPolicyResult{}, ErrCapacity
 	}
@@ -168,7 +222,7 @@ func (s *Store) changeConversationPolicyLocked(id MemberIdentity, caller Caller,
 	}
 	r := PolicyRevision{ID: c.ID, Version: c.Version + 1, Status: c.Status, Text: c.Text, ExpiresAt: c.ExpiresAt,
 		Source: PolicySource{User: message.Author.ID, Seq: message.Seq, Text: message.Text}, ChangedBy: caller.Author, UpdatedAt: time.Now().UTC(),
-		Conversation: &policyConversationEvidence{Mode: q.Mode, Basis: q.Basis, RequestDigest: digest, Message: message}}
+		Conversation: &policyConversationEvidence{Mode: q.Mode, Basis: q.Basis, DigestVersion: 2, RequestDigest: digest, Message: message}}
 	if q.Mode == "confirm_suggestion" {
 		receipt, ok := room.FollowupNoticeReceipts[policySuggestionNoticeID(id, old)]
 		if !ok || receipt.Seq != q.ProposalSeq || receipt.MembershipID != id.MembershipID || receipt.Author != caller.Author || receipt.Digest != noticeDigest(policySuggestionText(old)) {
@@ -196,6 +250,7 @@ func (s *Store) changeConversationPolicyLocked(id MemberIdentity, caller Caller,
 	if int64(len(encoded)+1) > maxPrivateFileBytes {
 		return conversationPolicyResult{}, ErrCapacity
 	}
+	saveAttempted = true
 	if err := s.save(path, p, maxPrivateFileBytes); err != nil {
 		return conversationPolicyResult{}, err
 	}

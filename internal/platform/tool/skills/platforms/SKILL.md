@@ -123,7 +123,7 @@ For explicitly selected groups:
 
 1. Recover prior member steps, then read `platforms member get --platform-id ID
    --platform-version V`. Retain the independent `notification_version` and
-   `tool_revision`; verify the account and full member identity.
+   `binding_revision`; verify the account and full member identity.
 2. Search with `platforms chats --platform-id ID --platform-version V --query NAME`.
    Continue the same query with returned `--page-token` while `has_more=true`,
    including empty pages. Preserve `search_warnings`; incomplete permissions do
@@ -173,6 +173,7 @@ into a draft edit; reconcile newer human intent before applying a late old selec
 | Replace specified personnel chats | `--private-scope specified` and repeat `--private-chat-id CHAT_ID` |
 | Clear the specified private list | A single `--private-chat-id ''` |
 
+All notification changes require the explicit observed `--notification-version N`: 0 means absent; omission is rejected. Never refresh it automatically after a conflict, including complete range replacements.
 All changes also need the usual exact platform ID/version, notification version,
 operation ID and real human source sequence. Add/remove and complete replacement
 are mutually exclusive; never add and remove the same ID. A replacement list must
@@ -271,7 +272,7 @@ Read member status for original steps, then `platforms member get --platform-id 
 --platform-version V`. Check account/member, notification/tool versions and
 `gitlab_notifications`: desired config, pending sources, errors and applying state.
 Version 0 with no collector subscription IDs is an unsaved draft, even if its
-default switches are true. Resolve pending/errors through settings first.
+default switches are true. A saved desired version with pending/errors is a partial application; retain its original receipt and inspect per-source state through member get. Use the existing explicit settings retry-apply entry to apply pending sources; never resubmit the original intent to repair them.
 
 ```sh
 # Personal to-dos only; false disables this source only.
@@ -313,8 +314,21 @@ on unknown results, reconcile the same receipt and use settings for recovery.
 Enable or disable tools only on an explicit request, independently of notifications:
 
 ```sh
-teamx platforms member tool --platform-id ID --platform-version V --tool-revision N --operation-id TOOL_STEP_ID --source-seq SEQ --enabled true
+teamx platforms member tool --platform-id ID --platform-version V --operation-id TOOL_STEP_ID --source-seq SEQ --enabled true
 ```
+
+Ordinary enable/disable is an absolute intent for this exact binding and needs no
+Room tool revision. Independent tools/members can be configured from the same
+human request. To protect an earlier observation, pass `--binding-revision N`
+from member get's `binding_revision`; explicit 0 means never configured, while
+omission lets the server freeze the current binding at admission. Never refresh
+that observation automatically after a conflict. `--tool-revision` is retired.
+The operation ID fixes business input (including the optional observation), not
+the server's internal snapshot. Repeat the same ID only with identical input;
+status reads never apply or repair settings. Unknown results remain fenced after
+restart. A timeout plus one missing status record does not prove non-application:
+wait for settlement and inspect authoritative state before recovery. A conflict
+is not evidence of past authorization. Check later human instructions yourself.
 
 Use false to disable. Explicit Feishu enable configures the fixed current reply,
 group-send and self-delivery actions and prepares available proof. Repeated enable
@@ -371,8 +385,7 @@ manual edits. Submitted targets are immutable. Forms expire after 24 hours.
 On completion, verify the account's `draft.platform_id/platform_version/name` and
 account, the group's `draft.chat_ids` and verified chats, or the project's
 `draft.project_id/project_path`, verified project and optional events_filter.
-Refresh current account/config versions, check latest intent and apply the requested
-member change under its own stable ID. Selection alone applies no configuration.
+Check latest human intent and inspect current account/configuration. Preserve any notification version observed for the original edit; if it changed, reconcile the changed scope before constructing a new request. Apply the requested member change under its own stable ID. Selection alone applies no configuration.
 Full settings may already satisfy a step: verify exact account/member/scope before
 skipping it. Then acknowledge the selection result as in the common lifecycle.
 When a handled connection opens a group/project form, acknowledge that connection

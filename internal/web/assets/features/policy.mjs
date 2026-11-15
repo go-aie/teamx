@@ -183,7 +183,7 @@ export function createPolicy({ env, membersUI, runtime, settingsUI, conversation
 
   function policyChange(record) {
     const {id,version,status,text,expires_at} = record;
-    return {id,version,status,text,...(expires_at ? {expires_at} : {}),revision:policyView.data.revision};
+    return {id,version,status,text,...(expires_at ? {expires_at} : {})};
   }
 
   function renderPolicy(view) {
@@ -289,7 +289,7 @@ export function createPolicy({ env, membersUI, runtime, settingsUI, conversation
 
   async function savePolicyForm(status) {
     const editor=policyEditor; if(!editor || !policyCurrent(editor.view)) return;
-    const c={id:editor.id,version:editor.record?.version || 0,revision:editor.view.data.revision,status,text:$("policy-text").value};
+    const c={id:editor.id,version:editor.record?.version || 0,status,text:$("policy-text").value};
     try { const expires=settingsUI.readTimeInput("policy-expires"); if(expires)c.expires_at=expires; }
     catch(error) { $("policy-status").textContent=error.message; return; }
     c.source_text=`成员设置：${status === "active" ? "保存并生效" : "保存为建议"} · 规则\n${c.text}` + (c.expires_at ? `\n有效期至：${c.expires_at}` : "");

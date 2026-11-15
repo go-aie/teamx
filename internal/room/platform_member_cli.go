@@ -117,7 +117,7 @@ func runPlatformMemberCLI(ctx context.Context, args []string, stdout, stderr io.
 			}
 			return nil
 		})
-		f.Uint64Var(&in.NotificationVersion, "notification-version", 0, "observed subscription version (0 if absent)")
+		f.Uint64Var(&in.NotificationVersion, "notification-version", 0, "required observed exact subscription version (explicit 0 if absent)")
 		f.Func("add-chat-id", "exact selected group ID; repeat to add multiple groups", func(id string) error { in.AddChatIDs = append(in.AddChatIDs, id); return nil })
 		f.Func("remove-chat-id", "exact followed group ID; repeat to remove groups without a remote read", func(id string) error { in.RemoveChatIDs = append(in.RemoveChatIDs, id); return nil })
 		f.StringVar(&in.GroupMessageMode, "group-message-mode", "", "all or mentions; omitted preserves existing mode")
@@ -190,7 +190,13 @@ func runPlatformMemberCLI(ctx context.Context, args []string, stdout, stderr io.
 	}
 	if action == "tool" {
 		f.Func("action", "Lark action to add; repeat; omitted enables current defaults", func(op string) error { in.Actions = append(in.Actions, op); return nil })
-		f.Uint64Var(&in.ToolRevision, "tool-revision", 0, "observed Room tool revision")
+		f.Func("binding-revision", "optional observed exact binding revision; explicit 0 means never configured", func(s string) error {
+			v, err := strconv.ParseUint(s, 10, 64)
+			if err == nil {
+				in.ExpectedBindingRevision = &v
+			}
+			return err
+		})
 	}
 	_ = f.Bool("json", true, "JSON output")
 	if err := f.Parse(args); err != nil {
@@ -198,6 +204,17 @@ func runPlatformMemberCLI(ctx context.Context, args []string, stdout, stderr io.
 	}
 	if f.NArg() != 0 {
 		return ErrRequest
+	}
+	if action == "notifications" {
+		observed := false
+		f.Visit(func(flag *flag.Flag) {
+			if flag.Name == "notification-version" {
+				observed = true
+			}
+		})
+		if !observed {
+			return invalidField("notification_version", "required --notification-version; explicit 0 means no subscription was observed")
+		}
 	}
 	endpoint := strings.TrimRight(env("TEAMX_ENDPOINT"), "/")
 	if endpoint == "" {

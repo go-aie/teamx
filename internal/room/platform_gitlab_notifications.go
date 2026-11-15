@@ -352,7 +352,15 @@ func gitlabConfigApplied(cfg gitlab.NotificationConfig, state notification.State
 	return false
 }
 
-func (m *roomManager) configureGitLabNotifications(ctx context.Context, owner RoomIdentity, version uint64, cfg gitlab.NotificationConfig) (gitlabNotificationView, error) {
+func (m *roomManager) configureGitLabNotifications(ctx context.Context, owner RoomIdentity, version uint64, cfg gitlab.NotificationConfig) (result gitlabNotificationView, returnedErr error) {
+	// Once desired settings are confirmed saved, retain that exact effect even
+	// if admission is subsequently revoked or collector settlement is interrupted.
+	var accepted gitlabNotificationView
+	defer func() {
+		if returnedErr != nil && result.Version == 0 && accepted.Version != 0 {
+			result = accepted
+		}
+	}()
 	var normalizeErr error
 	cfg.Target, normalizeErr = cfg.Target.Normalize()
 	if normalizeErr != nil {
@@ -395,9 +403,9 @@ func (m *roomManager) configureGitLabNotifications(ctx context.Context, owner Ro
 		m.mu.Unlock()
 		return gitlabNotificationView{}, ErrIdentity
 	}
-	if m.gitlabNotifications[owner][notificationScopeFor(cfg.PlatformID, cfg.Target)].Version != version {
+	if actual := m.gitlabNotifications[owner][notificationScopeFor(cfg.PlatformID, cfg.Target)].Version; actual != version {
 		m.mu.Unlock()
-		return gitlabNotificationView{}, ErrConflict
+		return gitlabNotificationView{}, versionConflict("version", version, actual, "Read the exact account/recipient desired configuration and reconcile; no configuration was saved.")
 	}
 	file, loadErr := m.platforms.Load()
 	validPlatform := false
@@ -472,6 +480,7 @@ func (m *roomManager) configureGitLabNotifications(ctx context.Context, owner Ro
 		}
 	}
 	m.gitlabConfiguring[notificationApplyKey(owner, cfg.PlatformID, cfg.Target)] = true
+	accepted = gitlabNotificationView{PlatformID: cfg.PlatformID, Version: saved.Version, Config: saved.Config, Applying: true}
 	ctx = platformMemberNotificationContext(ctx, saved.Version)
 	var waits []<-chan struct{}
 	for _, state := range m.notifications.StatesLocked(owner) {
@@ -697,7 +706,7 @@ func (m *roomManager) serveGitLabNotifications(w http.ResponseWriter, r *http.Re
 		ServiceEpoch string               `json:"service_epoch"`
 		PlatformID   string               `json:"platform_id,omitempty"`
 		Caller       Caller               `json:"caller"`
-		Version      uint64               `json:"version"`
+		Version      *uint64              `json:"version"`
 		Config       json.RawMessage      `json:"config,omitempty"`
 		Target       *notification.Target `json:"target,omitempty"`
 	}
@@ -711,7 +720,11 @@ func (m *roomManager) serveGitLabNotifications(w http.ResponseWriter, r *http.Re
 		writeAPIError(w, ErrIdentity)
 		return
 	}
-	owner, version = req.RoomIdentity, req.Version
+	if req.Version == nil {
+		writeAPIError(w, configurationNotApplied(invalidField("version", "required observed desired configuration version; explicit 0 means absent")))
+		return
+	}
+	owner, version = req.RoomIdentity, *req.Version
 	var v gitlabNotificationView
 	var err error
 	if r.URL.Path == "/v1/platform/gitlab/notifications/configure" {

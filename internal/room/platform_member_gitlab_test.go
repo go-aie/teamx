@@ -67,7 +67,7 @@ func gitlabMemberApply(t *testing.T, m *roomManager, kind string, req platformMe
 func TestGitLabMemberPersonalTodosWithoutToolsOrWorkspace(t *testing.T) {
 	m, svc, member, req := gitlabMemberFixture(t)
 	before := gitlabMemberGet(t, m, req)
-	if before.ToolEnabled || before.ToolRevision != 0 || before.NotificationVersion != 0 || before.GitLab == nil {
+	if before.ToolEnabled || before.BindingRevision != 0 || before.NotificationVersion != 0 || before.GitLab == nil {
 		t.Fatal(before)
 	}
 	client, endpoint := toolPipeServer(t, m)
@@ -83,7 +83,7 @@ func TestGitLabMemberPersonalTodosWithoutToolsOrWorkspace(t *testing.T) {
 	}
 	v := gitlabMemberGet(t, m, req)
 	cfg := v.GitLab.Config
-	if v.MemberIdentity != req.member() || cfg.Target != platformMemberTarget(req.member()) || !cfg.Enabled || !cfg.Todos.Enabled || cfg.Events.Enabled || cfg.Events.Project != "" || v.ToolEnabled || v.ToolRevision != 0 || v.NotificationVersion != 1 || v.Baseline.IsZero() || !reflect.DeepEqual(cfg, *op.GitLabConfig) || len(v.GitLab.Errors) != 0 || v.GitLab.Pending["todos"] || v.GitLab.Pending["events"] {
+	if v.MemberIdentity != req.member() || cfg.Target != platformMemberTarget(req.member()) || !cfg.Enabled || !cfg.Todos.Enabled || cfg.Events.Enabled || cfg.Events.Project != "" || v.ToolEnabled || v.BindingRevision != 0 || v.NotificationVersion != 1 || v.Baseline.IsZero() || !reflect.DeepEqual(cfg, *op.GitLabConfig) || len(v.GitLab.Errors) != 0 || v.GitLab.Pending["todos"] || v.GitLab.Pending["events"] {
 		t.Fatal("wrong opt-in/target", v)
 	}
 	// Synchronous returns, active observations and late result handling reuse the
@@ -214,7 +214,7 @@ func TestGitLabMemberVersionsAndReplacementAreRejected(t *testing.T) {
 				req.Input.NotificationVersion++
 			case "tool":
 				action = "tool"
-				req.Input.TodosEnabled, req.Input.Enabled, req.Input.ToolRevision = nil, boolPointer(true), 1
+				req.Input.TodosEnabled, req.Input.Enabled, req.Input.ExpectedBindingRevision = nil, boolPointer(true), new(uint64(1))
 			case "member":
 				if _, err := svc.remove(apiRequest{AgentID: member.AgentID, MembershipID: member.MembershipID}); err != nil {
 					t.Fatal(err)
@@ -284,7 +284,7 @@ func TestGitLabMemberPartialNotificationsAndIndependentTool(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	toolReq.SourceSeq, toolReq.OperationID, in.ToolRevision = source.Seq, strings.Repeat("b", 32), v.ToolRevision
+	toolReq.SourceSeq, toolReq.OperationID, in.ExpectedBindingRevision = source.Seq, strings.Repeat("b", 32), &v.BindingRevision
 	if again := gitlabMemberApply(t, m, "tool", toolReq); again.Status != "completed" || again.Result.Status != "preserved" {
 		t.Fatal(again)
 	}
@@ -427,7 +427,7 @@ func TestGitLabMemberAccountChangeAfterDesiredSaveStopsCollectorWrite(t *testing
 	m.store.ops = real
 	todos, err := m.currentTodosForTargetLocked(req.RoomIdentity, req.Input.PlatformID, platformMemberTarget(req.member()))
 	m.mu.Unlock()
-	if op.Status != "unknown" || todos != nil || err != nil {
+	if op.Status != "unknown" || op.Result.Version != 1 || todos != nil || err != nil {
 		t.Fatal("wrote collector after changed account", op, err)
 	}
 	if replay := gitlabMemberApply(t, m, "notifications", req); !reflect.DeepEqual(replay, op) {

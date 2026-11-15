@@ -981,3 +981,35 @@ test("Lark search diagnostics show branch failures and page progress independent
  assert.match(ui.el("lark-branch-status").children[0].textContent,/群聊消息.*当前页 2\/5.*读取受阻.*读取权限不足.*重试/);
  assert.match(ui.el("lark-branch-status").children[1].textContent,/群内本人上下文.*首个时间窗/);
 });
+
+test("Lark stale range form keeps its observation and draft after another entry adds a group",async()=>{
+ const api=fixture();
+ api.data={...api.data,subscription_id:"saved-range",subscription_version:3,config:{...api.data.config,enabled:true,private:{enabled:false,scope:"all",chat_ids:[]},groups:{enabled:true,scope:"specified",chat_ids:["oc_fixture"],message_mode:"mentions",at_me:true,at_all:false}}};
+ const original=api.request;
+ let writes=0;
+ api.request=async(path,body,...rest)=>{
+  if(path==="/v1/platform/notifications/configure"){
+   writes++;
+   assert.equal(body.subscription_version,3);
+   assert.deepEqual(body.config.groups.chat_ids,["oc_fixture"]);
+   assert.equal(api.data.subscription_version,4);
+   throw Object.assign(Error("observed subscription changed"),{code:"conflict",field:"subscription_version",expected_version:3,actual_version:4});
+  }
+  return original(path,body,...rest);
+ };
+ const ui=await launch(api);await openNotification(ui,"lark");await settle();
+ ui.el("lark-group-mode").value="all";await ui.el("lark-group-mode").emit("change");
+ api.data.subscription_version=4;api.data.config.groups.chat_ids=["oc_fixture","oc_new_group"];
+ await ui.el("lark-save").emit("click");await ui.refresh();await settle();
+ assert.equal(writes,1);
+ await ui.el("close-notification").emit("click");await openNotification(ui,"lark");await settle();
+ await ui.el("lark-save").emit("click");
+ assert.equal(writes,2);
+ assert.equal(ui.el("lark-group-mode").value,"all");
+ assert.match(ui.el("lark-error").textContent,/变化.*核对/);
+ assert.deepEqual(api.data.config.groups.chat_ids,["oc_fixture","oc_new_group"]);
+ await ui.el("notification-reload").emit("click");await settle();
+ assert.equal(ui.el("lark-group-mode").value,"mentions");
+ assert.equal(ui.el("lark-save").disabled,true);
+ assert.equal(writes,2);
+});

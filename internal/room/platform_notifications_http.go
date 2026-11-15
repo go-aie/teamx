@@ -272,7 +272,7 @@ func (m *roomManager) servePlatformNotifications(w http.ResponseWriter, r *http.
 		notification.SourceID
 		SubscriptionID string               `json:"subscription_id"`
 		Caller         Caller               `json:"caller"`
-		Version        uint64               `json:"subscription_version"`
+		Version        *uint64              `json:"subscription_version"`
 		Target         *notification.Target `json:"target,omitempty"`
 		Config         json.RawMessage      `json:"config,omitempty"`
 	}
@@ -284,6 +284,10 @@ func (m *roomManager) servePlatformNotifications(w http.ResponseWriter, r *http.
 	}
 	if req.ServiceEpoch != m.epoch || req.Caller.Kind != "human" || !validText(req.Caller.ID) || req.Caller.MembershipID != "" {
 		writeAPIError(w, ErrIdentity)
+		return
+	}
+	if req.Version == nil {
+		writeAPIError(w, configurationNotApplied(invalidField("subscription_version", "required observed subscription version; explicit 0 means absent")))
 		return
 	}
 	// GitLab configuration and sync have one provider-level authority, including
@@ -307,7 +311,7 @@ func (m *roomManager) servePlatformNotifications(w http.ResponseWriter, r *http.
 			return
 		}
 		var next lark.State
-		next, err = m.configureLarkSubscription(r.Context(), key, req.Version, cfg)
+		next, err = m.configureLarkSubscription(r.Context(), key, *req.Version, cfg)
 		if err == nil {
 			key = next.Metadata().Key
 		}
@@ -320,7 +324,7 @@ func (m *roomManager) servePlatformNotifications(w http.ResponseWriter, r *http.
 			writeAPIError(w, ErrRequest)
 			return
 		}
-		err = m.syncLarkSubscription(r.Context(), key, req.Version, *req.Target)
+		err = m.syncLarkSubscription(r.Context(), key, *req.Version, *req.Target)
 	}
 	if err != nil {
 		writeAPIError(w, err)

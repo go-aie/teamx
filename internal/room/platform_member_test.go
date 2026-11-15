@@ -113,7 +113,7 @@ func TestPlatformMemberToolReceiptsIdentityAndIndependentVersions(t *testing.T) 
 		t.Fatal(err)
 	}
 	bad.SourceSeq, in = source.Seq, *req.Input
-	in.ToolRevision = op.Result.Version
+	in.ExpectedBindingRevision = &op.Result.Version
 	bad.Input = &in
 	if r := managerHTTP(m, "/v1/platforms/member/tool", bad); r.Code != 200 || !strings.Contains(r.Body.String(), "preserved") {
 		t.Fatal(r.Code, r.Body.String())
@@ -197,7 +197,7 @@ func TestPlatformMemberUnknownSubmissionNeverReplays(t *testing.T) {
 		t.Fatal("unknown operation replayed after restart")
 	}
 	req.OperationID, _ = newOpaqueID()
-	req.Input.ToolRevision = 1
+	req.Input.ExpectedBindingRevision = new(uint64(1))
 	if r := managerHTTP(reopened, "/v1/platforms/member/tool", req); r.Code != 409 {
 		t.Fatal("unknown submission bypassed with a new ID", r.Code, r.Body.String())
 	}

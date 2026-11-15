@@ -139,7 +139,7 @@ if is_post:
 		t.Fatal("send permission not verified", err)
 	}
 	// No readiness override: the normal production registry and human settings path.
-	r := managerHTTP(m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: id.RoomIdentity, Caller: humanCaller, Enabled: true, PlatformVersion: c.Version, Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "lark", PlatformID: c.ID, ActionAuthorization: &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: []tool.ActionGrant{{Operation: "message.send_self", TargetKind: "object", ObjectType: "user"}}}}})
+	r := managerHTTP(m, "/v1/tools/bind", toolBindingChange{ExpectedBindingRevision: new(uint64(0)), ServiceEpoch: m.epoch, RoomIdentity: id.RoomIdentity, Caller: humanCaller, Enabled: true, PlatformVersion: c.Version, Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "lark", PlatformID: c.ID, ActionAuthorization: &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: []tool.ActionGrant{{Operation: "message.send_self", TargetKind: "object", ObjectType: "user"}}}}})
 	if r.Code != 200 {
 		t.Fatal("self enable failed", r.Code, r.Body.String())
 	}

@@ -14,6 +14,9 @@ import (
 // Diagnostics supplement existing sentinels; HTTP status and errors.Is contracts
 // stay unchanged. Messages and hints are authored here, never remote error text.
 type requestDiagnostic struct {
+	Record          *agentPolicyRecord
+	Outcome         string
+	OperationID     string
 	cause           error
 	Message         string
 	Field           string
@@ -197,6 +200,15 @@ func prefixDiagnostic(err error, prefix string) error {
 // responses containing only code/error. No retries are performed here.
 func (e apiError) cliError() error {
 	message := e.Message
+	if e.Record != nil {
+		message += fmt.Sprintf("; original_rule_id=%s original_rule_version=%d", e.Record.ID, e.Record.Version)
+	}
+	if e.OperationID != "" {
+		message += "; original_operation_id=" + e.OperationID
+	}
+	if e.Outcome != "" {
+		message += "; outcome=" + e.Outcome
+	}
 	if message == "" {
 		return fmt.Errorf("%s: %s", e.Code, e.Error)
 	}
@@ -210,4 +222,22 @@ func (e apiError) cliError() error {
 		message += "; " + e.Hint
 	}
 	return fmt.Errorf("%s: %s", e.Code, message)
+}
+
+func operationConflict(field, id, message string) error {
+	return &requestDiagnostic{cause: ErrConflict, Field: field, OperationID: id, Message: message, Hint: "Query the original operation; do not bypass it with a new ID.", Outcome: "not_applied"}
+}
+
+// Only used at an admission/preparation boundary where no target save was attempted.
+func configurationNotApplied(err error) error {
+	if errors.Is(err, ErrCommitUnknown) {
+		return err
+	}
+	var d *requestDiagnostic
+	if errors.As(err, &d) {
+		copy := *d
+		copy.Outcome = "not_applied"
+		return &copy
+	}
+	return &requestDiagnostic{cause: err, Message: err.Error(), Outcome: "not_applied", Hint: "Inspect the exact target and account before reconciling the request."}
 }

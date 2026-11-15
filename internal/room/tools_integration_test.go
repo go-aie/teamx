@@ -115,7 +115,7 @@ func TestHelpSkipsCredentialAndDisableJoins(t *testing.T) {
 		}
 		exitResult <- frame
 	}()
-	changed := managerHTTP(m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, Revision: f.Revision, Binding: tool.Binding{AgentID: members[0].AgentID, MembershipID: members[0].MembershipID, Tool: "gitlab", PlatformID: c.ID}})
+	changed := managerHTTP(m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, ExpectedBindingRevision: new(uint64(f.Revision)), Binding: tool.Binding{AgentID: members[0].AgentID, MembershipID: members[0].MembershipID, Tool: "gitlab", PlatformID: c.ID}})
 	if changed.Code != 200 {
 		t.Fatal(changed.Code, changed.Body.String())
 	}
@@ -141,11 +141,11 @@ func TestBindingCASAndAccountlessTool(t *testing.T) {
 	if err := runToolsWithClient(context.Background(), []string{"run", "local"}, bytes.NewReader(nil), &out, &errOut, cliToolEnv(endpoint, svc, members[0]), client); err != nil || out.String() != "local" {
 		t.Fatal(err, out.String())
 	}
-	req := toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, Revision: 0, Binding: tool.Binding{AgentID: members[0].AgentID, MembershipID: members[0].MembershipID, Tool: "gitlab", PlatformID: c.ID}, Enabled: true, PlatformVersion: c.Version}
+	req := toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, ExpectedBindingRevision: new(uint64(1)), Binding: tool.Binding{AgentID: members[0].AgentID, MembershipID: members[0].MembershipID, Tool: "gitlab", PlatformID: c.ID}, Enabled: true, PlatformVersion: c.Version}
 	if r := managerHTTP(m, "/v1/tools/bind", req); r.Code == 200 {
 		t.Fatal("stale revision accepted")
 	}
-	req.Revision = f.Revision
+	req.ExpectedBindingRevision = new(uint64(0))
 	req.Binding.MembershipID = "stale"
 	if r := managerHTTP(m, "/v1/tools/bind", req); r.Code == 200 {
 		t.Fatal("stale member accepted")

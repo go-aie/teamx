@@ -2892,7 +2892,7 @@ test("natural-language policy settings distinguish suggestions and never run mem
   if(path==="/v1/policy/read") {const current=[...new Map(history.map(r=>[r.id,r])).values()];return {revision,history:structuredClone(history),current:structuredClone(current),effective:current.filter(r=>r.status==="active")};}
   if(path==="/v1/matters/list")return {items:[],total:0,complete:true};
   if(path==="/v1/policy/update"){
-   assert.equal(data.caller.kind,"human");assert.equal(data.membership_id,member.membership_id);assert.equal(data.policy.revision,revision);assert.equal(data.policy.conversation,undefined);
+   assert.equal(data.caller.kind,"human");assert.equal(data.membership_id,member.membership_id);assert.equal(Object.hasOwn(data.policy,"revision"),false);assert.equal(data.policy.conversation,undefined);
    history.push({...structuredClone(data.policy),conversation:{mode:"explicit_long_term",basis:"真实对话来源"},version:data.policy.version+1,source:{user:"tester",text:data.policy.source_text},changed_by:{kind:"human",id:"tester"},updated_at:"2026-11-04T01:00:00Z"});revision++;return {};
   }
  };
@@ -3407,14 +3407,18 @@ test("GitLab same connection reverified as a new account requires explicit apply
   await ui.el("gitlab-save").emit("click");assert.equal(gitlabWrites(api).length,1);
 });
 
-test("GitLab reflects a provider operation started in another tab and keeps this tab's draft",async()=>{
+test("GitLab reflects another tab applying and keeps the draft with its original observation",async()=>{
   const {api,events,todos}=todosServer({enabled:true}),ui=await launch(api);await openGitLab(ui);
   await editGitLab(ui,"gitlab-interval","66","input");
   api.gitlabRecords.set("A",{version:1,config:fixtureGitLabView([eventView(events.get("A")),todoView(todos.get("A"))]).config,applying:true});
   await ui.refresh();assert.equal(ui.el("gitlab-shared-fields").disabled,true);assert.equal(ui.el("gitlab-save").disabled,true);
   assert.match(ui.el("gitlab-feedback").textContent,/正在应用/);assert.equal(String(ui.el("gitlab-interval").value),"66");
   api.gitlabRecords.get("A").applying=false;await ui.refresh();assert.equal(ui.el("gitlab-save").disabled,false);
-  await ui.el("gitlab-save").emit("click");assert.equal(gitlabWrites(api)[0].data.version,1);assert.equal(gitlabWrites(api)[0].data.config.interval_seconds,66);
+  await ui.el("gitlab-save").emit("click");assert.equal(gitlabWrites(api)[0].data.version,0);assert.equal(gitlabWrites(api)[0].data.config.interval_seconds,66);
+  assert.match(ui.el("gitlab-feedback").textContent,/版本已变化/);
+  assert.equal(gitlabWrites(api).length,1);
+  await ui.el("notification-reload").emit("click");await editGitLab(ui,"gitlab-interval","66","input");
+  await ui.el("gitlab-save").emit("click");assert.equal(gitlabWrites(api)[1].data.version,1);
 });
 
 test("Scion Workspace chooses its type and verified connection without Git suffixes or numeric project identity", async () => {

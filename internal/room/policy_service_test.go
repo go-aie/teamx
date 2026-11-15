@@ -114,14 +114,14 @@ func TestPolicyServiceReplayReturnsHistoricalRecordWithCurrentContext(t *testing
 	}
 	answer := roomCall[PostReceipt](t, h, PostMessage{RoomIdentity: h.id, Caller: humanCaller, ClientMessageID: "confirm", Text: "以后就这样", ReplyTo: receipt.Seq})
 	confirm := q
-	confirm.Version, confirm.Revision, confirm.SourceSeq = 1, 1, answer.Seq
+	confirm.Version, confirm.SourceSeq = 1, answer.Seq
 	confirm.Type, confirm.Body, confirm.ProposalSeq, confirm.Basis = "confirm", nil, receipt.Seq, "确认准确的已发布建议"
 	active := update(confirm)
 	if active.Record.Status != "active" || active.Record.Version != 2 || len(active.Effective) != 1 {
 		t.Fatal(active)
 	}
 	revoke := confirm
-	revoke.Version, revoke.Revision = 2, 2
+	revoke.Version = 2
 	revoke.Type, revoke.ProposalSeq, revoke.Basis = "revoke", 0, "明确撤销"
 	revoke.SourceSeq = roomCall[PostReceipt](t, h, h.post(humanCaller, "revoke", "撤销这条偏好")).Seq
 	revoked := update(revoke)

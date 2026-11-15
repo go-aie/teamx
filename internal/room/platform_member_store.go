@@ -17,23 +17,24 @@ import (
 // Each setting change has its own stable ID and frozen input. Configuration
 // remains authoritative in the existing subscription and tool stores.
 type platformMemberInput struct {
-	PlatformID          string                      `json:"platform_id"`
-	PlatformVersion     uint64                      `json:"platform_version"`
-	NotificationVersion uint64                      `json:"notification_version,omitempty"`
-	ToolRevision        uint64                      `json:"tool_revision,omitempty"`
-	Actions             []string                    `json:"actions,omitempty"`
-	Enabled             *bool                       `json:"enabled,omitempty"`
-	EventsEnabled       *bool                       `json:"events_enabled,omitempty"`
-	ProjectID           int64                       `json:"project_id,omitempty"`
-	ProjectPath         string                      `json:"project_path,omitempty"`
-	EventsFilter        *gitlab.EventsFilter        `json:"events_filter,omitempty"`
-	TodosFilter         *gitlab.TodosFilter         `json:"todos_filter,omitempty"`
-	TodosEnabled        *bool                       `json:"todos_enabled,omitempty"`
-	AddChatIDs          []string                    `json:"add_chat_ids,omitempty"`
-	RemoveChatIDs       []string                    `json:"remove_chat_ids,omitempty"`
-	GroupMessageMode    string                      `json:"group_message_mode,omitempty"`
-	Groups              *platformMemberGroupPatch   `json:"groups,omitempty"`
-	Private             *platformMemberPrivatePatch `json:"private,omitempty"`
+	PlatformID              string                      `json:"platform_id"`
+	PlatformVersion         uint64                      `json:"platform_version"`
+	NotificationVersion     uint64                      `json:"notification_version"`
+	ExpectedBindingRevision *uint64                     `json:"expected_binding_revision,omitempty"`
+	ToolRevision            uint64                      `json:"tool_revision,omitempty"`
+	Actions                 []string                    `json:"actions,omitempty"`
+	Enabled                 *bool                       `json:"enabled,omitempty"`
+	EventsEnabled           *bool                       `json:"events_enabled,omitempty"`
+	ProjectID               int64                       `json:"project_id,omitempty"`
+	ProjectPath             string                      `json:"project_path,omitempty"`
+	EventsFilter            *gitlab.EventsFilter        `json:"events_filter,omitempty"`
+	TodosFilter             *gitlab.TodosFilter         `json:"todos_filter,omitempty"`
+	TodosEnabled            *bool                       `json:"todos_enabled,omitempty"`
+	AddChatIDs              []string                    `json:"add_chat_ids,omitempty"`
+	RemoveChatIDs           []string                    `json:"remove_chat_ids,omitempty"`
+	GroupMessageMode        string                      `json:"group_message_mode,omitempty"`
+	Groups                  *platformMemberGroupPatch   `json:"groups,omitempty"`
+	Private                 *platformMemberPrivatePatch `json:"private,omitempty"`
 }
 
 type platformMemberRequest struct {
@@ -100,13 +101,13 @@ func validPlatformMemberInput(kind string, in platformMemberInput) bool {
 				return false
 			}
 		}
-		return in.Enabled == nil && in.ToolRevision == 0 && !in.hasLarkNotificationFields()
+		return in.Enabled == nil && in.ExpectedBindingRevision == nil && in.ToolRevision == 0 && !in.hasLarkNotificationFields()
 	}
-	return kind == "notifications" && in.ToolRevision == 0 && (in.Enabled != nil || in.hasLarkNotificationFields()) && validMemberLarkPatch(in)
+	return kind == "notifications" && in.ExpectedBindingRevision == nil && in.ToolRevision == 0 && (in.Enabled != nil || in.hasLarkNotificationFields()) && validMemberLarkPatch(in)
 }
 
 func validPlatformMemberOperation(op platformMemberOperation) bool {
-	if (op.Schema != 1 && op.Schema != 2) || !tool.OpaqueID(op.ID) || !tool.OpaqueID(op.RoomInstance) || !validText(op.RoomID) || !validText(op.AgentID) || !safeMembershipID(op.MembershipID) || !validHumanEvidence(op.Source) || !validPlatformMemberInput(op.Kind, op.Input) || !op.Account.Valid() || op.CreatedAt.IsZero() {
+	if (op.Schema != 1 && op.Schema != 2 && op.Schema != 3) || !tool.OpaqueID(op.ID) || !tool.OpaqueID(op.RoomInstance) || !validText(op.RoomID) || !validText(op.AgentID) || !safeMembershipID(op.MembershipID) || !validHumanEvidence(op.Source) || !validPlatformMemberInput(op.Kind, op.Input) || !op.Account.Valid() || op.CreatedAt.IsZero() {
 		return false
 	}
 	groupIDs, privateIDs := op.Input.verifiedGroupIDs(), op.Input.verifiedPrivateIDs()
@@ -143,7 +144,7 @@ func validPlatformMemberOperation(op platformMemberOperation) bool {
 	if op.Schema == 1 && (len(op.Input.Actions) > 0 || len(op.RequestedActions) > 0 || op.Authorization != nil || op.Capabilities != nil) {
 		return false
 	}
-	if op.Schema == 2 {
+	if op.Schema == 2 || op.Schema == 3 && op.Capabilities != nil {
 		if op.Kind != "tool" || op.Account.Provider != "lark" || op.Input.Enabled == nil || !*op.Input.Enabled || !validLarkConfigurationReceipt(op.MemberIdentity, op.Input.PlatformID, op.Account, op.RequestedActions, op.Authorization, op.Capabilities) {
 			return false
 		}
@@ -153,6 +154,12 @@ func validPlatformMemberOperation(op platformMemberOperation) bool {
 		if op.Status == "completed" && (op.Capabilities.ToolRevision != op.Result.Version || op.Capabilities.ActionRevision != op.Authorization.Revision) {
 			return false
 		}
+	}
+	if op.Schema == 3 && op.Account.Provider == "lark" && op.Input.Enabled != nil && *op.Input.Enabled && op.Capabilities == nil {
+		return false
+	}
+	if op.Schema == 3 && (op.Kind != "tool" || op.Input.ToolRevision != 0) {
+		return false
 	}
 	switch op.Status {
 	case "unknown":

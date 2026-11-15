@@ -37,7 +37,7 @@ func TestAgentPolicyCLISaveReceiptAndRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	q.ID, q.Revision, q.SourceSeq = "missing-source", 1, 999
+	q.ID, q.SourceSeq = "missing-source", 999
 	if err := cli(entryChange(t, "policy", "update", q), nil); err == nil ||
 		!strings.Contains(err.Error(), "source_seq:") || strings.Contains(err.Error(), "snapshot identity mismatch") {
 		t.Fatal("CLI lost the actionable source diagnostic", err)
@@ -59,12 +59,12 @@ func TestAgentPolicyBranchesAndDetailRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	confirmSeq := roomCall[PostReceipt](t, h, PostMessage{RoomIdentity: h.id, Caller: humanCaller, ClientMessageID: "confirm-style", Text: "以后就按这个建议处理", ReplyTo: sent.Seq}).Seq
-	confirm := agentPolicyChange{Type: "confirm", ID: "style", Version: 1, Revision: 1, SourceSeq: confirmSeq, TurnNumber: 1, Basis: "明确确认已公开的原建议", ProposalSeq: sent.Seq}
+	confirm := agentPolicyChange{Type: "confirm", ID: "style", Version: 1, SourceSeq: confirmSeq, TurnNumber: 1, Basis: "明确确认已公开的原建议", ProposalSeq: sent.Seq}
 	var active agentPolicyUpdateWireTest
 	if err := cli(entryChange(t, "policy", "update", confirm), &active); err != nil || len(active.Effective) != 1 || active.Record.Text != suggestion.Record.Text || active.Record.Conversation.Proposal.Seq != sent.Seq {
 		t.Fatal(active, err)
 	}
-	revoke := agentPolicyChange{Type: "revoke", ID: "style", Version: 2, Revision: 2, SourceSeq: roomCall[PostReceipt](t, h, h.post(humanCaller, "revoke-style", "撤销这条长期偏好")).Seq, TurnNumber: 1, Basis: "准确撤销用户长期偏好"}
+	revoke := agentPolicyChange{Type: "revoke", ID: "style", Version: 2, SourceSeq: roomCall[PostReceipt](t, h, h.post(humanCaller, "revoke-style", "撤销这条长期偏好")).Seq, TurnNumber: 1, Basis: "准确撤销用户长期偏好"}
 	var revoked agentPolicyUpdateWireTest
 	if err := cli(entryChange(t, "policy", "update", revoke), &revoked); err != nil || revoked.Record.Text != active.Record.Text || revoked.Record.Status != "revoked" || len(revoked.Effective) != 0 {
 		t.Fatal(revoked, err)
@@ -76,7 +76,7 @@ func TestAgentPolicyBranchesAndDetailRecovery(t *testing.T) {
 		t.Fatal(replay, err)
 	}
 	stale := confirm
-	stale.Revision = 3
+
 	stale.SourceSeq = roomCall[PostReceipt](t, h, PostMessage{RoomIdentity: h.id, Caller: humanCaller, ClientMessageID: "new-confirm", Text: "再次确认", ReplyTo: sent.Seq}).Seq
 	if err := cli(entryChange(t, "policy", "update", stale), nil); err == nil || !strings.Contains(err.Error(), "version") {
 		t.Fatal("stale suggestion activated", err)

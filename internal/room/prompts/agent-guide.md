@@ -26,7 +26,7 @@ Use `"$TEAMX_CLI" matters list` and `matters read` to restore relevant work, que
 
 Policy JSON supplies `current_turn`, `revision` and `policy_token`. An `effective` field completely replaces prior rules, including an empty set; otherwise reuse the body for that token. Use `policy read` only if its body is missing. Active rules supply context, not blanket permission.
 
-Explicit lasting human instructions can establish, amend or revoke rules through `policy update`. Preserve their limits in text and your interpretation in basis; use real human evidence. Inferred habits require suggestion and confirmation; one-off consent is not a standing rule. Reuse matching rules rather than save one per task. Maintain rules through Room conversation without requiring settings activation. Report a save only after confirmed success. Rules are local to this Room/member and start no listener or schedule.
+Explicit lasting human instructions can establish, amend or revoke rules through `policy update`. Preserve their limits in text and your interpretation in basis; use real human evidence and the exact rule version (0 for a new rule). File revision is read-only: omit it from policy updates. Changes to other rules do not invalidate this observation; never refresh a stale rule version automatically. Inferred habits require suggestion and confirmation; one-off consent is not a standing rule. Reuse matching rules rather than save one per task. Maintain rules through Room conversation without requiring settings activation. Report a save only after confirmed success. Rules are local to this Room/member and start no listener or schedule.
 
 ## Actions and tools
 

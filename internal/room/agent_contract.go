@@ -119,7 +119,6 @@ type agentPolicyChange struct {
 	Type        string           `json:"type"` // save, suggest, confirm, revoke
 	ID          string           `json:"id"`
 	Version     uint64           `json:"version"`
-	Revision    uint64           `json:"revision"`
 	TurnNumber  uint64           `json:"turn_number"`
 	SourceSeq   uint64           `json:"source_seq"`
 	Basis       string           `json:"basis"`
@@ -175,7 +174,7 @@ func (s *Store) changeAgentPolicy(id MemberIdentity, caller Caller, q agentPolic
 	if err := s.checkFollowupsLocked(id, true); err != nil {
 		return conversationPolicyResult{}, err
 	}
-	c := PolicyChange{ID: q.ID, Version: q.Version, Revision: q.Revision, TurnNumber: q.TurnNumber, SourceSeq: q.SourceSeq}
+	c := PolicyChange{ID: q.ID, Version: q.Version, TurnNumber: q.TurnNumber, SourceSeq: q.SourceSeq}
 	body := q.Body
 	if body == nil {
 		p, _, err := s.loadPolicyLocked(id, false)

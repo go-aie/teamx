@@ -257,3 +257,31 @@ test("Inbox shows source capacity/backlog separately from retained input and use
   assert.equal(ui.el("policy-matters").children[0].children.at(-1).textContent,"待你答复：请确认范围");
   assert.equal(api.calls.some(c=>/member\/run|inbox\/confirm|actions\/execute/.test(c.path)),false);
 });
+
+for(const quickToggle of [false,true])test(`GitLab drafts retain the original observation through refresh and navigation${quickToggle ? " plus a later quick toggle" : ""}`,async()=>{
+ const api=fixture(),ui=await launch(api);await openNotification(ui,"gitlab","gl","member-a");
+ ui.el("gitlab-interval").value="72";await ui.el("gitlab-interval").emit("input");
+ const remote=recordsValue(api,"gl","a");remote.version=3;remote.config.todos.filter.reasons.push("mentioned");
+ await ui.refresh();
+ if(quickToggle){ui.notificationToggle().checked=false;await ui.notificationToggle().emit("change");assert.equal(recordsValue(api,"gl","a").version,4);}
+ let attempts=0;
+ api.hook=(path,body)=>{
+  if(path.endsWith("notifications/configure")){
+   attempts++;
+   assert.equal(body.version,2,"old draft must never acquire a newer observation");
+   assert.equal(body.config.interval_seconds,72);
+   assert.deepEqual(body.config.todos.filter.reasons,["assigned"]);
+   throw Object.assign(Error("observed target changed"),{code:"conflict"});
+  }
+ };
+ await ui.el("gitlab-save").emit("click");await ui.refresh();
+ assert.equal(attempts,1);assert.equal(Number(ui.el("gitlab-interval").value),72);
+ await switchMember(ui,"b");await openNotification(ui,"gitlab","gl",true);
+ await switchMember(ui,"a");await openNotification(ui,"gitlab","gl",true);
+ assert.equal(Number(ui.el("gitlab-interval").value),72);
+ await ui.el("gitlab-save").emit("click");assert.equal(attempts,2);
+ assert.deepEqual(recordsValue(api,"gl","a").config.todos.filter.reasons,["assigned","mentioned"]);
+ await ui.el("notification-reload").emit("click");await settle();
+ assert.equal(Number(ui.el("gitlab-interval").value),30);
+ assert.equal(attempts,2);
+});

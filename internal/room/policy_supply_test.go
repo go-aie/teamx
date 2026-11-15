@@ -86,7 +86,7 @@ func TestPolicySessionSupplyFirstUnchangedChangesAndRebuild(t *testing.T) {
 	fullBytes, _ := json.Marshal(full)
 	metadataBytes, _ := json.Marshal(metadata)
 	t.Logf("policy supply: complete context %d bytes; unchanged context %d bytes; runtime requires no policy CLI query", len(fullBytes), len(metadataBytes))
-	suggestion := PolicyChange{ID: "style", Revision: 1, Status: "suggested", Text: "short", SourceText: "suggest short replies"}
+	suggestion := PolicyChange{ID: "style", Status: "suggested", Text: "short", SourceText: "suggest short replies"}
 	if _, err := h.store.changePolicy(h.id, humanCaller, suggestion); err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestPolicySessionSupplyFirstUnchangedChangesAndRebuild(t *testing.T) {
 	if _, ok := metadata["effective"]; ok || string(metadata["revision"]) != "2" || string(metadata["policy_token"]) != string(full["policy_token"]) {
 		t.Fatal("suggestion caused body redelivery", metadata)
 	}
-	c.Version, c.Revision, c.Text = 1, 2, "changed restriction"
+	c.Version, c.Text = 1, "changed restriction"
 	if _, err := h.store.changePolicy(h.id, humanCaller, c); err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestPolicySessionSupplyFirstUnchangedChangesAndRebuild(t *testing.T) {
 	if !bytes.Contains(changed["effective"], []byte(c.Text)) || bytes.Equal(changed["policy_token"], full["policy_token"]) {
 		t.Fatal("changed effective policy was not replaced", changed)
 	}
-	c.Version, c.Revision, c.Status = 2, 3, "revoked"
+	c.Version, c.Status = 2, "revoked"
 	if _, err := h.store.changePolicy(h.id, humanCaller, c); err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +196,7 @@ func TestPolicyAgentRecoveryReadAndManagementHistory(t *testing.T) {
 	if _, err := h.store.changePolicy(h.id, humanCaller, c); err != nil {
 		t.Fatal(err)
 	}
-	c.Version, c.Revision, c.Text = 1, 1, strings.Repeat("完整限制", 300)
+	c.Version, c.Text = 1, strings.Repeat("完整限制", 300)
 	if _, err := h.store.changePolicy(h.id, humanCaller, c); err != nil {
 		t.Fatal(err)
 	}

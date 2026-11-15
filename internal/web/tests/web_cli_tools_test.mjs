@@ -4,7 +4,7 @@ import { launch, settle } from "./web_app_harness.mjs";
 
 function fixture() {
   const members = ["a", "b"].map(id => ({agent_id:`agent-${id}`,membership_id:`member-${id}`,status:"idle",runner:{profile:"p"},unread_count:0,read_through:0}));
-  const data = { revision:0, bindings:[],disabled:[], catalog:[{name:"gitlab",provider:"gitlab",version:"glab 1.127.0"},{name:"local",version:"fixture"}] };
+  const data = { revision:0, target_revisions:{}, bindings:[],disabled:[], catalog:[{name:"gitlab",provider:"gitlab",version:"glab 1.127.0"},{name:"local",version:"fixture"}] };
   const connection = {id:"connection",name:"Personal",provider:"gitlab",url:"https://gitlab.invalid",version:3,validation:{status:"valid",username:"me"}};
   const api = {members,data,calls:[],hook:null,async request(path,body) {
     api.calls.push({path,body:structuredClone(body)});
@@ -23,13 +23,13 @@ function fixture() {
       return structuredClone(data);
     }
     if(path==="/v1/tools/bind") {
-      assert.equal(body.revision,data.revision);assert.equal(body.service_epoch,"manager");
+      assert.equal("revision" in body,false); assert.equal(body.expected_binding_revision,data.target_revisions[JSON.stringify([body.binding.agent_id,body.binding.membership_id,body.binding.tool,body.binding.platform_id || ""])] ?? 0);assert.equal(body.service_epoch,"manager");
       const b=body.binding;assert.ok(!("operations" in b));assert.ok(!("scope" in b));
       data.bindings=data.bindings.filter(old=>old.tool!==b.tool||old.membership_id!==b.membership_id||old.platform_id!==b.platform_id);
       data.disabled=data.disabled.filter(old=>old.tool!==b.tool||old.membership_id!==b.membership_id||old.platform_id!==b.platform_id);
       if(!body.enabled)data.disabled.push(structuredClone(b));
       if(body.enabled)data.bindings.push({...b,platform_generation:b.platform_id?"generation":undefined});
-      data.revision++;return structuredClone(data);
+      data.revision++;data.target_revisions[JSON.stringify([b.agent_id,b.membership_id,b.tool,b.platform_id || ""])]=data.revision;return structuredClone(data);
     }
     if(path==="/v1/member/list")return {members:structuredClone(members),latest_seq:0};
     if(path==="/v1/member/activity")return {member:structuredClone(members.find(m=>m.membership_id===body.membership_id))};
@@ -96,7 +96,7 @@ test("rejected tool writes roll back confirmed intent",async()=>{
  const api=fixture(),ui=await launch(api);await open(ui);
  for(const code of ["conflict","identity","request","capacity","busy"]){
   api.hook=path=>path==="/v1/tools/bind"?Promise.reject(Object.assign(Error(code),{code})):undefined;
-  await change(ui,"connection",true);assert.equal(toggle(ui).checked,false);assert.match(feedback(ui),code==="busy" ? /未确认/ : /保存失败/);
+  await change(ui,"connection",true);assert.equal(toggle(ui).checked,code==="conflict");assert.match(feedback(ui),code==="busy" ? /未确认/ : code==="conflict" ? /设置已变化.*未保存/ : /保存失败/);
  }
  assert.equal(binds(api).length,5);
 });
@@ -154,3 +154,30 @@ test("Lark user authorization gap leaves tools disabled and is never replayed",a
  const ui=await launch(api);await open(ui);await change(ui,"lark",true);
  assert.equal(toggle(ui,"lark").checked,false);assert.match(feedback(ui,"lark"),/尚未保存.*补全.*用户授权/);assert.equal(binds(api).length,1);
 });
+
+ test("tool writes freeze the exact binding observation and keep a conflicting draft",async()=>{
+ const api=fixture(); const key=JSON.stringify(["agent-a","member-a","gitlab","connection"]);
+ api.data.revision=90;api.data.target_revisions[key]=7;
+ api.data.selections=[{agent_id:"agent-a",membership_id:"member-a",platform_id:"connection",availability:{capabilities:[{configured:true,state:"unchecked",next_action:"retry_check"}]}}];
+ const ui=await launch(api);await open(ui);
+ api.hook=(path,body)=>{if(path==="/v1/tools/bind"){
+  assert.equal(body.expected_binding_revision,7); assert.equal("revision" in body,false);
+  api.data.revision=91;api.data.target_revisions[key]=91;
+  return Promise.reject(Object.assign(Error("binding changed"),{code:"conflict"}));
+ }};
+ await change(ui,"connection",true);
+ assert.equal(toggle(ui).checked,true);assert.match(feedback(ui),/设置已变化.*未保存/);assert.equal(row(ui).children[2].hidden,false);
+ assert.equal(binds(api).length,1);await ui.refresh();assert.equal(binds(api).length,1);
+ assert.equal(toggle(ui).checked,true);assert.equal(api.data.bindings.length,0);
+ });
+
+ test("binding tuple encoding matches Go JSON for special agent names",async()=>{
+ const api=fixture();api.members[0].agent_id="agent<&>\u2028\u2029";
+ api.data.disabled.push({agent_id:api.members[0].agent_id,membership_id:"member-a",tool:"gitlab",platform_id:"connection"});
+ const tuple=[api.members[0].agent_id,"member-a","gitlab","connection"];
+ const key=JSON.stringify(tuple).replace(/[<>&\u2028\u2029]/g,c=>"\\u"+c.charCodeAt(0).toString(16).padStart(4,"0"));
+ api.data.target_revisions[key]=8;
+ const ui=await launch(api);await open(ui);
+ api.hook=(path,body)=>{if(path==="/v1/tools/bind"){assert.equal(body.expected_binding_revision,8);return structuredClone(api.data);}};
+ await change(ui,"connection",true);assert.equal(binds(api).length,1);
+ });

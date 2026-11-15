@@ -267,7 +267,7 @@ func agentActionFixture(q referenceActionRequest) agentActionRequest {
 }
 func agentPolicyFixture(q conversationPolicyChange) agentPolicyChange {
 	c := q.Change
-	v := agentPolicyChange{Type: "save", ID: c.ID, Version: c.Version, Revision: c.Revision, TurnNumber: c.TurnNumber, SourceSeq: c.SourceSeq, Basis: q.Basis, ProposalSeq: q.ProposalSeq}
+	v := agentPolicyChange{Type: "save", ID: c.ID, Version: c.Version, TurnNumber: c.TurnNumber, SourceSeq: c.SourceSeq, Basis: q.Basis, ProposalSeq: q.ProposalSeq}
 	switch {
 	case q.Mode == "inferred_habit":
 		v.Type = "suggest"

@@ -2,12 +2,15 @@ package room
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -206,8 +209,12 @@ func (m *roomManager) serveTools(w http.ResponseWriter, r *http.Request) {
 		if !decodeToolRequest(w, r, &req) {
 			return
 		}
+		if req.ExpectedBindingRevision == nil {
+			writeAPIError(w, invalidField("expected_binding_revision", "required exact binding observation; explicit 0 means never configured"))
+			return
+		}
 		if err := m.prepareBindingEvidence(r.Context(), &req); err != nil {
-			writeAPIError(w, err)
+			writeAPIError(w, configurationNotApplied(err))
 			return
 		}
 		m.mu.Lock()
@@ -221,6 +228,10 @@ func (m *roomManager) serveTools(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if err != nil {
+			var notApplied *toolChangeNotApplied
+			if errors.As(err, &notApplied) {
+				err = configurationNotApplied(err)
+			}
 			writeAPIError(w, err)
 			return
 		}
@@ -245,6 +256,56 @@ func decodeToolRequest(w http.ResponseWriter, r *http.Request, out any) bool {
 	if err != nil || len(data) > 64<<10 {
 		writeAPIError(w, invalidField("", "request body exceeds limit or could not be read"))
 		return false
+	}
+	// Reject retired contracts by field presence, including explicit zero/null.
+	var object map[string]json.RawMessage
+	if json.Unmarshal(data, &object) == nil {
+		field := ""
+		switch out.(type) {
+		case *toolBindingChange:
+			for key := range object {
+				if strings.EqualFold(key, "revision") {
+					field = "revision"
+				}
+			}
+		case *platformMemberRequest:
+			for key, value := range object {
+				if strings.EqualFold(key, "input") {
+					var input map[string]json.RawMessage
+					_ = json.Unmarshal(value, &input)
+					for name := range input {
+						if strings.EqualFold(name, "tool_revision") {
+							field = "input.tool_revision"
+						}
+					}
+				}
+			}
+		}
+		if field != "" {
+			writeAPIError(w, invalidField(field, "Room tool revisions are retired; use expected_binding_revision (optional for Agent absolute intent)"))
+			return false
+		}
+	}
+	// Notification patches are edits of an observed subscription, including 0.
+	// Keep this boundary check out of persisted operation decoding so old receipts
+	// retain their original evidence.
+	if r.URL.Path == "/v1/platforms/member/notifications" {
+		var input map[string]json.RawMessage
+		for name, value := range object {
+			if strings.EqualFold(name, "input") {
+				_ = json.Unmarshal(value, &input)
+			}
+		}
+		present := false
+		for name, value := range input {
+			if strings.EqualFold(name, "notification_version") && string(bytes.TrimSpace(value)) != "null" {
+				present = true
+			}
+		}
+		if !present {
+			writeAPIError(w, configurationNotApplied(invalidField("input.notification_version", "required observed subscription version; explicit 0 means absent")))
+			return false
+		}
 	}
 	if err := decodeRequestJSON(string(data), out); err != nil {
 		writeAPIError(w, err)

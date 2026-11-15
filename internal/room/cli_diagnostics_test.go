@@ -198,9 +198,6 @@ func TestAgentPolicyAndActionDiagnosticRecovery(t *testing.T) {
 	}
 	q.Change.Text += " new change"
 	_, err := svc.referencePolicyChange(h.ctx, h.id, agentCallerIdentity(h.id), q)
-	assertVersionDiagnostic(t, err, "change.revision", 0, 1)
-	q.Change.Revision = 1
-	_, err = svc.referencePolicyChange(h.ctx, h.id, agentCallerIdentity(h.id), q)
 	assertVersionDiagnostic(t, err, "change.version", 0, 1)
 
 	f := referenceExecuteTest(t, "object")

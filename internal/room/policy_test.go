@@ -63,7 +63,7 @@ func TestPolicyNaturalBodyLifecycle(t *testing.T) {
 	}
 	c := policyRule()
 	for version := uint64(1); version <= 3; version++ {
-		c.Version, c.Revision = version-1, version-1
+		c.Version = version - 1
 		if version == 2 {
 			c.Text = "核实现行安装文档；交付时间仍先问我"
 		}
@@ -130,7 +130,7 @@ func TestPolicyProvenanceRestrictionsAndClear(t *testing.T) {
 	agent := agentCaller(id.AgentID, id.MembershipID)
 	// Neither a real source nor a vague new reply lets a model replace restrictions.
 	roomCall[PostReceipt](t, h, h.post(humanCaller, "vague", "好"))
-	c.Version, c.Revision, c.SourceSeq, c.TurnNumber = 1, 1, posted.Seq+1, 1
+	c.Version, c.SourceSeq, c.TurnNumber = 1, posted.Seq+1, 1
 	c.Text = "不再询问"
 	c.Status = "active"
 	if _, err := h.store.changePolicy(id, agent, c); !errors.Is(err, ErrIdentity) {
@@ -142,7 +142,7 @@ func TestPolicyProvenanceRestrictionsAndClear(t *testing.T) {
 	}
 	// Revocation is immediately visible without replacing the Session.
 	c = policyRule()
-	c.Version, c.Revision, c.Status, c.SourceText = 1, 1, "revoked", "撤回此规则，以后先问我"
+	c.Version, c.Status, c.SourceText = 1, "revoked", "撤回此规则，以后先问我"
 	view, err = h.store.changePolicy(id, humanCaller, c)
 	if err != nil {
 		t.Fatal(err)
@@ -160,7 +160,7 @@ func TestPolicyProvenanceRestrictionsAndClear(t *testing.T) {
 		t.Fatal("policy/evidence changed after clear and reload")
 	}
 	// Ownership remains attached to the user who supplied the instruction.
-	c.Version, c.Revision = 2, 2
+	c.Version = 2
 	if _, err := h.store.changePolicy(id, Caller{Author: Author{Kind: "human", ID: "other"}}, c); !errors.Is(err, ErrIdentity) {
 		t.Fatal(err)
 	}
@@ -194,7 +194,7 @@ func TestPolicyConcurrentVersionsCapacityAndUncertainCommit(t *testing.T) {
 		t.Fatal(successes, conflicts)
 	}
 	c := policyRule()
-	c.Version, c.Revision = 1, 1
+	c.Version = 1
 	original := h.store.ops.syncDir
 	h.store.ops.syncDir = func(string) error { return errors.New("fsync failed") }
 	if _, err := h.store.changePolicy(id, humanCaller, c); !errors.Is(err, ErrCommitUnknown) {
@@ -210,7 +210,7 @@ func TestPolicyConcurrentVersionsCapacityAndUncertainCommit(t *testing.T) {
 		t.Fatal(view, err)
 	}
 	// Bounded evidence is rejected rather than evicting prior revisions.
-	c.Version, c.Revision, c.SourceText = 2, 2, strings.Repeat("x", maxPolicyTextBytes+1)
+	c.Version, c.SourceText = 2, strings.Repeat("x", maxPolicyTextBytes+1)
 	if _, err := h.store.changePolicy(id, humanCaller, c); !errors.Is(err, ErrRequest) {
 		t.Fatal(err)
 	}
@@ -232,7 +232,7 @@ func TestPolicyConcurrentVersionsCapacityAndUncertainCommit(t *testing.T) {
 		t.Fatal(err)
 	}
 	c = policyRule()
-	c.Revision = saved.Revision
+
 	c.Version = saved.History[len(saved.History)-1].Version
 	if _, err := h.store.changePolicy(id, humanCaller, c); !errors.Is(err, ErrCapacity) {
 		t.Fatal(err)

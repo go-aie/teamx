@@ -122,7 +122,7 @@ func TestPlatformEntriesSharedGitLabAccountsRoutingAndDependencies(t *testing.T)
 	}()
 	done := make(chan int, 1)
 	go func() {
-		done <- managerHTTP(m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, Revision: 2, Binding: tool.Binding{AgentID: members[0].AgentID, MembershipID: members[0].MembershipID, Tool: "gitlab", PlatformID: a.ID}}).Code
+		done <- managerHTTP(m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, ExpectedBindingRevision: new(uint64(1)), Binding: tool.Binding{AgentID: members[0].AgentID, MembershipID: members[0].MembershipID, Tool: "gitlab", PlatformID: a.ID}}).Code
 	}()
 	select {
 	case <-xa.Done():
@@ -367,7 +367,7 @@ func TestPlatformEntryBuiltinSlowReaderRevocationSettles(t *testing.T) {
 	// Deliberately leave the response body unread while its large frame blocks.
 	done := make(chan int, 1)
 	go func() {
-		done <- managerHTTP(h.m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: h.m.epoch, RoomIdentity: id.RoomIdentity, Caller: humanCaller, Revision: 1, Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "lark", PlatformID: h.c.ID}}).Code
+		done <- managerHTTP(h.m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: h.m.epoch, RoomIdentity: id.RoomIdentity, Caller: humanCaller, ExpectedBindingRevision: new(uint64(1)), Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "lark", PlatformID: h.c.ID}}).Code
 	}()
 	select {
 	case code := <-done:

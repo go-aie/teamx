@@ -30,7 +30,7 @@ func TestLarkPlatformAndMembershipReadBoundary(t *testing.T) {
 	}
 	q := managedPlatformRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("b", 32), Name: "飞书", Provider: "lark", URL: lark.Origin("feishu"), CLIProfile: &platform.CLIProfile{Version: 1, Executable: bin, Profile: "fixture", Brand: "feishu", CLIVersion: lark.CLIVersion}}
 	c := platformTestSave(t, m, q)
-	bind := toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, Enabled: true, Binding: tool.Binding{AgentID: members[0].AgentID, MembershipID: members[0].MembershipID, Tool: "lark", PlatformID: c.ID}, PlatformVersion: c.Version}
+	bind := toolBindingChange{ExpectedBindingRevision: new(uint64(0)), ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, Enabled: true, Binding: tool.Binding{AgentID: members[0].AgentID, MembershipID: members[0].MembershipID, Tool: "lark", PlatformID: c.ID}, PlatformVersion: c.Version}
 	if r := managerHTTP(m, "/v1/tools/bind", bind); r.Code == 200 {
 		t.Fatal("unverified profile bound")
 	}
@@ -112,7 +112,7 @@ func TestLarkPlatformAndMembershipReadBoundary(t *testing.T) {
 		case <-time.After(10 * time.Millisecond):
 		}
 	}
-	response = managerHTTP(m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, Revision: 1, Binding: tool.Binding{AgentID: members[0].AgentID, MembershipID: members[0].MembershipID, Tool: "lark", PlatformID: c.ID}})
+	response = managerHTTP(m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, ExpectedBindingRevision: new(uint64(1)), Binding: tool.Binding{AgentID: members[0].AgentID, MembershipID: members[0].MembershipID, Tool: "lark", PlatformID: c.ID}})
 	if response.Code != 200 {
 		t.Fatal("revoke did not settle", response.Code, response.Body.String())
 	}

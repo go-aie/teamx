@@ -69,13 +69,14 @@ type platformOnboarding struct {
 	Connection                onboardingStep             `json:"connection"`
 	Notifications             onboardingStep             `json:"notifications"`
 	Tool                      onboardingStep             `json:"tool"`
-	BeforeToolRevision        uint64                     `json:"before_tool_revision"`
+	BeforeBindingRevision     *uint64                    `json:"before_binding_revision,omitempty"`
+	BeforeToolRevision        uint64                     `json:"before_tool_revision,omitempty"`
 	BeforeNotificationVersion uint64                     `json:"before_notification_version"`
 	GitLab                    *gitlab.NotificationConfig `json:"gitlab,omitempty"`
 	Lark                      *lark.Config               `json:"lark,omitempty"`
 }
 
-const platformOnboardingSchema = 3
+const platformOnboardingSchema = 4
 
 // This target is fixed before login and is also the notification settings
 // locator: Input supplies the complete Room/member identity, PlatformID the
@@ -228,7 +229,8 @@ func (m *roomManager) prepareOnboardingLocked(ctx context.Context, req platformO
 		if err != nil {
 			return op, err
 		}
-		op.BeforeToolRevision = f.Revision
+		revision := f.TargetRevisions[toolBindingKey(tool.Binding{AgentID: spec.AgentID, MembershipID: spec.MembershipID, Tool: def.ToolType, PlatformID: id})]
+		op.BeforeBindingRevision = &revision
 		for i, b := range append(append([]tool.Binding(nil), f.Bindings...), f.Disabled...) {
 			if b.AgentID == spec.AgentID && b.MembershipID == spec.MembershipID && b.PlatformID == id && b.Tool == def.ToolType && op.Tool.Status != "skipped" && (spec.PreserveExisting || spec.Tool == nil || *spec.Tool == (i < len(f.Bindings))) {
 				if spec.Provider != "lark" || spec.PreserveExisting || spec.Tool == nil || !*spec.Tool {
@@ -624,6 +626,10 @@ func (m *roomManager) applyOnboardingNotifications(ctx context.Context, op platf
 	return result
 }
 func (m *roomManager) applyOnboardingToolLocked(ctx context.Context, op platformOnboarding) onboardingStep {
+	if op.Schema < 4 || op.BeforeBindingRevision == nil {
+		return onboardingStep{Status: "failed", ErrorCode: "binding_observation_required"}
+	}
+
 	if op.Schema >= 3 && op.Input.Provider == "lark" && onboardingEnabled(op.Input.Tool) {
 		return m.applyOnboardingLarkToolLocked(ctx, op)
 	}
@@ -644,27 +650,8 @@ func (m *roomManager) applyOnboardingToolLocked(ctx context.Context, op platform
 	if !enabled {
 		binding.PlatformGeneration = ""
 	}
-	if f.Revision == op.BeforeToolRevision+1 {
-		candidates := f.Bindings
-		if !enabled {
-			candidates = f.Disabled
-		}
-		for _, b := range candidates {
-			if reflect.DeepEqual(b, binding) {
-				if !enabled {
-					waits := m.cancelPlatformCallsLocked(func(call *platformCall) bool {
-						return call.owner == op.Input.RoomIdentity && call.agentID == binding.AgentID && call.membershipID == binding.MembershipID && call.tool == binding.Tool && call.platformID == binding.PlatformID
-					})
-					if err := m.waitOnboardingToolLocked(ctx, waits); err != nil {
-						return failure(err)
-					}
-				}
-				return onboardingStep{Status: "applied", Version: f.Revision}
-			}
-		}
-	}
-	if f.Revision != op.BeforeToolRevision {
-		return failure(ErrConflict)
+	if err := checkBindingRevision(f, binding, op.BeforeBindingRevision); err != nil {
+		return failure(err)
 	}
 	file, err := m.platforms.Load()
 	if err != nil {
@@ -680,12 +667,18 @@ func (m *roomManager) applyOnboardingToolLocked(ctx context.Context, op platform
 	if !enabled {
 		version = 0
 	}
-	next, waits, err := m.changeToolBindingLocked(ctx, toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: op.Input.RoomIdentity, Caller: Caller{Kind: "human", ID: op.Owner}, Revision: f.Revision, Binding: binding, Enabled: enabled, PlatformVersion: version})
+	// Fence the attempt before the authoritative save. Content equality never
+	// proves whether an interrupted attempt committed.
+	op.Tool = onboardingStep{Status: "unknown", ErrorCode: "submission_unconfirmed"}
+	if err := m.saveOnboardingLocked(op); err != nil {
+		return failure(err)
+	}
+	next, waits, err := m.changeToolBindingLocked(ctx, toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: op.Input.RoomIdentity, Caller: Caller{Kind: "human", ID: op.Owner}, ExpectedBindingRevision: op.BeforeBindingRevision, Binding: binding, Enabled: enabled, PlatformVersion: version})
 	if err == nil {
 		err = m.waitOnboardingToolLocked(ctx, waits)
 	}
 	if err != nil {
-		return failure(err)
+		return onboardingStep{Status: "unknown", ErrorCode: onboardingFailure(err)}
 	}
 	result := onboardingStep{Status: "applied", Version: next.Revision}
 	// Installation dependencies change availability, never the saved intent.
@@ -854,7 +847,7 @@ func (m *roomManager) onboardingOperationsLocked() ([]platformOnboarding, error)
 }
 
 func validOnboarding(op platformOnboarding) bool {
-	if (op.Schema != 1 && op.Schema != 2 && op.Schema != platformOnboardingSchema) || !tool.OpaqueID(op.ID) || !tool.OpaqueID(op.PlatformID) || !validText(op.Owner) || op.Generation != "" && !tool.OpaqueID(op.Generation) || op.Account != (platform.AccountIdentity{}) && !op.Account.Valid() {
+	if (op.Schema != 1 && op.Schema != 2 && op.Schema != 3 && op.Schema != platformOnboardingSchema) || !tool.OpaqueID(op.ID) || !tool.OpaqueID(op.PlatformID) || !validText(op.Owner) || op.Generation != "" && !tool.OpaqueID(op.Generation) || op.Account != (platform.AccountIdentity{}) && !op.Account.Valid() {
 		return false
 	}
 	if _, ok := platform.LookupType(op.Input.Provider); !ok {
@@ -867,6 +860,9 @@ func validOnboarding(op platformOnboarding) bool {
 		if _, err := notification.NormalizeBackfill(op.Input.Backfill.Seconds, op.Input.Backfill.Start); err != nil {
 			return false
 		}
+	}
+	if op.Schema == 4 && !op.Input.OnlyPlatform && op.BeforeBindingRevision == nil {
+		return false
 	}
 	if op.Input.SkipTool && op.Tool.Status != "skipped" || op.Input.SkipNotifications && op.Notifications.Status != "skipped" {
 		return false

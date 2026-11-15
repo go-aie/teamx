@@ -215,7 +215,7 @@ func TestRealLarkGroupDSHSendAndRecovery(t *testing.T) {
 		r, e := session.Capabilities.Resolve(ctx, l, session.Access)
 		return r, session, e
 	}
-	r := managerHTTP(m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: id.RoomIdentity, Caller: humanCaller, Enabled: true, PlatformVersion: c.Version, Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "lark", PlatformID: c.ID, ActionAuthorization: &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: []tool.ActionGrant{{Operation: "message.send", TargetKind: "object", ObjectType: "chat"}}}}})
+	r := managerHTTP(m, "/v1/tools/bind", toolBindingChange{ExpectedBindingRevision: new(uint64(0)), ServiceEpoch: m.epoch, RoomIdentity: id.RoomIdentity, Caller: humanCaller, Enabled: true, PlatformVersion: c.Version, Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "lark", PlatformID: c.ID, ActionAuthorization: &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: []tool.ActionGrant{{Operation: "message.send", TargetKind: "object", ObjectType: "chat"}}}}})
 	if r.Code != 200 {
 		t.Fatal("explicit member group-send grant failed", r.Code, r.Body.String())
 	}

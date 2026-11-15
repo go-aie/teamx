@@ -88,7 +88,7 @@ func TestPlatformMemberCLISelectedGroupAndSeparateTool(t *testing.T) {
 	}
 	var view platformMemberView
 	run(append([]string{"member", "get"}, base...), &view)
-	if view.ToolEnabled || view.NotificationVersion != 0 || view.ToolRevision != 1 {
+	if view.ToolEnabled || view.NotificationVersion != 0 || view.BindingRevision != 0 {
 		t.Fatal(view)
 	}
 	var page struct {
@@ -119,17 +119,17 @@ func TestPlatformMemberCLISelectedGroupAndSeparateTool(t *testing.T) {
 		t.Fatal("duplicate CLI submission changed receipt")
 	}
 	run(append([]string{"member", "get"}, base...), &view)
-	if view.NotificationVersion != 1 || view.Baseline.IsZero() || view.ToolEnabled || view.ToolRevision != 1 {
+	if view.NotificationVersion != 1 || view.Baseline.IsZero() || view.ToolEnabled || view.BindingRevision != 0 {
 		t.Fatal(view)
 	}
 	toolID, _ := newOpaqueID()
-	run(append([]string{"member", "tool", "--tool-revision", "1", "--enabled", "true", "--operation-id", toolID, "--source-seq", strconv.FormatUint(req.SourceSeq, 10)}, base...), &configured)
+	run(append([]string{"member", "tool", "--binding-revision", "0", "--enabled", "true", "--operation-id", toolID, "--source-seq", strconv.FormatUint(req.SourceSeq, 10)}, base...), &configured)
 	if configured.Status != "completed" || configured.Kind != "tool" {
 		t.Fatal(configured)
 	}
 	baseline := view.Baseline
 	run(append([]string{"member", "get"}, base...), &view)
-	if !view.ToolEnabled || view.ToolRevision != 2 || view.NotificationVersion != 1 || view.Baseline != baseline || view.Tool == nil || (view.Tool.ActionAuthorization == nil || len(view.Tool.ActionAuthorization.Grants) != 3) {
+	if !view.ToolEnabled || view.BindingRevision != 2 || view.NotificationVersion != 1 || view.Baseline != baseline || view.Tool == nil || (view.Tool.ActionAuthorization == nil || len(view.Tool.ActionAuthorization.Grants) != 3) {
 		t.Fatal(view)
 	}
 	var status struct {
@@ -152,9 +152,9 @@ func TestPlatformMemberCLISelectedGroupAndSeparateTool(t *testing.T) {
 	notificationID, _ := newOpaqueID()
 	run(append([]string{"member", "notifications", "--notification-version", "1", "--enabled", "false", "--operation-id", notificationID, "--source-seq", strconv.FormatUint(source.Seq, 10)}, base...), &configured)
 	toolID, _ = newOpaqueID()
-	run(append([]string{"member", "tool", "--tool-revision", "2", "--enabled", "false", "--operation-id", toolID, "--source-seq", strconv.FormatUint(source.Seq, 10)}, base...), &configured)
+	run(append([]string{"member", "tool", "--binding-revision", "2", "--enabled", "false", "--operation-id", toolID, "--source-seq", strconv.FormatUint(source.Seq, 10)}, base...), &configured)
 	run(append([]string{"member", "get"}, base...), &view)
-	if view.ToolEnabled || view.Config.Enabled || view.Baseline != baseline || view.NotificationVersion != 2 || view.ToolRevision != 3 || !reflect.DeepEqual(view.Config.Groups.ChatIDs, []string{"oc_group_two"}) {
+	if view.ToolEnabled || view.Config.Enabled || view.Baseline != baseline || view.NotificationVersion != 2 || view.BindingRevision != 3 || !reflect.DeepEqual(view.Config.Groups.ChatIDs, []string{"oc_group_two"}) {
 		t.Fatal("disable lost selections/baseline", view)
 	}
 }

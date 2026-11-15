@@ -127,7 +127,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     const key=typeof item==="string" ? item : item.id,b=toolBinding(v,item);
     label.className="member-platform-tool workspace-check";input.type="checkbox";input.className="notification-switch";input.setAttribute("role","switch");
     input.setAttribute("aria-label",`${typeof item==="string" ? item : item.name} 使用工具`);
-    input.checked=v?.cliPending?.tool===key ? v.cliPending.enabled : !!b;
+    input.checked=v?.cliPending?.tool===key ? v.cliPending.enabled : v?.cliConflict?.tool===key ? v.cliConflict.enabled : !!b;
     input.disabled=!v?.cli || !v.cliConnected || !d || !!workspaceUI.workspaceView?.memberToolBusy || onboardingUI.onboarding.busy || !state.connected || !state.catalogConnected || discussionBusy() || (!b && typeof item!=="string" && item.validation?.status!=="valid");
     text.textContent="工具";label.append(input,text);
     input.addEventListener("change",()=>changeMemberTool(v,item,input.checked));return label;
@@ -139,20 +139,23 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     if(!d || enabled && typeof item!=="string" && item.validation?.status!=="valid")return;
     const key=typeof item==="string" ? item : item.id,b=toolBinding(v,item);
     const binding={agent_id:v.member.agent_id,membership_id:v.member.membership_id,tool:d.name,...(typeof item!=="string" ? {platform_id:item.id} : {})};
+    const bindingKey=JSON.stringify([binding.agent_id,binding.membership_id,binding.tool,binding.platform_id || ""]).replace(/[<>&\u2028\u2029]/g,c=>"\\u"+c.charCodeAt(0).toString(16).padStart(4,"0"));
     if(enabled && (d.provider!=="lark" || repair) && b?.action_authorization)binding.action_authorization=structuredClone(b.action_authorization);
+    if(v.cliConflict?.tool===key)v.cliConflict=null;
     ws.memberToolBusy=true;v.cliPending={tool:key,enabled};v.cliResult=null;v.cliRead=(v.cliRead || 0)+1;renderMemberTools(v);
     let message="";
     try {
-      const next=await request("/v1/tools/bind",{...v.identity,revision:v.cli.revision,binding,enabled,platform_version:enabled && typeof item!=="string" ? item.version : 0},undefined,enabled && d.provider==="lark" ? 70000 : 10000);
+      const next=await request("/v1/tools/bind",{...v.identity,expected_binding_revision:v.cli.target_revisions?.[bindingKey] ?? 0,binding,enabled,platform_version:enabled && typeof item!=="string" ? item.version : 0},undefined,enabled && d.provider==="lark" ? 70000 : 10000);
       if(toolsCurrent(v))v.cli={...v.cli,...next};
       message=`${typeof item==="string" ? item : item.name} 工具${enabled ? "已启用" : "已停用"}。`;
       if(enabled && next.capabilities?.capabilities?.some(c=>c.configured && c.state!=="ready"))message+=" 部分动作暂不可用，请核对平台权限或本人投递核验状态。";
     } catch(error) {
-      message=error.code==="user_authorization_required" ? "尚未保存，请先补全当前飞书连接的用户授权。" : ["conflict","identity","request","capacity"].includes(error.code) ? "保存失败，请核对当前成员、平台与权限后重试。" : "保存结果未确认，请核对读回状态；不会自动重发。";
+      if(error.code==="conflict")v.cliConflict={tool:key,enabled};
+      message=error.code==="conflict" ? "该成员的工具设置已变化，本次未保存。请核对当前设置后重试。" : error.code==="user_authorization_required" ? "尚未保存，请先补全当前飞书连接的用户授权。" : ["conflict","identity","request","capacity"].includes(error.code) ? "保存失败，请核对当前成员、平台与权限后重试。" : "保存结果未确认，请核对读回状态；不会自动重发。";
     } finally {
       ws.memberToolBusy=false;v.cliPending=null;
       // A read resolves unknown local writes; no bind request is replayed.
-      if(toolsCurrent(v)){await loadCLITools(v);if(!v.cliConnected)message+=" 当前状态暂不可读，请刷新。";v.cliResult={tool:key,message,error:!v.cliConnected || /失败|未确认|尚未保存/.test(message)};renderMemberTools(v);}
+      if(toolsCurrent(v)){await loadCLITools(v);if(!v.cliConnected)message+=" 当前状态暂不可读，请刷新。";v.cliResult={tool:key,message,error:!v.cliConnected || /失败|未确认|尚未保存|未保存/.test(message)};renderMemberTools(v);}
       else if(memberToolsView?.cli && toolsCurrent(memberToolsView))await loadCLITools(memberToolsView);
     }
   }
@@ -224,7 +227,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
         settings.setAttribute("aria-label",`${recovery.action}：${item.name}`);
         settings.addEventListener("click",async()=>{await settingsUI.openSettings("platforms",settings);const current=connectionsUI.platforms.items.find(p=>p.id===item.id);if(current)await connectionsUI.editPlatform(current,{fromSource:true});});
         accountActions.append(reason,settings);
-        issue.hidden = true;
+        issue.hidden = !(v?.cliResult?.tool===item.id && v.cliResult.message);
       }
       if(item.provider === "lark" && toolBinding(v,item)) {
         const configured=selection?.action_authorization?.grants?.length;

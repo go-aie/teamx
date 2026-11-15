@@ -124,7 +124,7 @@ func TestLarkSendStandaloneCommonContract(t *testing.T) {
 				opposite = "user"
 			}
 			grant := func(objectType string, revision uint64) {
-				r := managerHTTP(h.m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: h.m.epoch, RoomIdentity: id.RoomIdentity, Caller: humanCaller, Revision: revision, Enabled: true, PlatformVersion: h.c.Version, Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "lark", PlatformID: h.c.ID, ActionAuthorization: &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: []tool.ActionGrant{{Operation: "message.send", TargetKind: "object", ObjectType: objectType}}}}})
+				r := managerHTTP(h.m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: h.m.epoch, RoomIdentity: id.RoomIdentity, Caller: humanCaller, ExpectedBindingRevision: new(uint64(revision)), Enabled: true, PlatformVersion: h.c.Version, Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "lark", PlatformID: h.c.ID, ActionAuthorization: &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: []tool.ActionGrant{{Operation: "message.send", TargetKind: "object", ObjectType: objectType}}}}})
 				if r.Code != 200 {
 					t.Fatal(r.Code, r.Body.String())
 				}
@@ -271,7 +271,7 @@ func TestLarkSendProductionGateAndCatalog(t *testing.T) {
 		t.Fatal(caps, err)
 	}
 	for _, kind := range []string{"user", "chat"} {
-		r := managerHTTP(h.m, "/v1/tools/bind", toolBindingChange{ServiceEpoch: h.m.epoch, RoomIdentity: h.room.RoomIdentity, Caller: humanCaller, Enabled: true, PlatformVersion: h.c.Version, Binding: tool.Binding{AgentID: h.members[0].AgentID, MembershipID: h.members[0].MembershipID, Tool: "lark", PlatformID: h.c.ID, ActionAuthorization: &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: []tool.ActionGrant{{Operation: "message.send", TargetKind: "object", ObjectType: kind}}}}})
+		r := managerHTTP(h.m, "/v1/tools/bind", toolBindingChange{ExpectedBindingRevision: new(uint64(0)), ServiceEpoch: h.m.epoch, RoomIdentity: h.room.RoomIdentity, Caller: humanCaller, Enabled: true, PlatformVersion: h.c.Version, Binding: tool.Binding{AgentID: h.members[0].AgentID, MembershipID: h.members[0].MembershipID, Tool: "lark", PlatformID: h.c.ID, ActionAuthorization: &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: []tool.ActionGrant{{Operation: "message.send", TargetKind: "object", ObjectType: kind}}}}})
 		if (kind == "chat") != (r.Code == 200) {
 			t.Fatal("only accepted group sends may be granted", kind, r.Code, r.Body.String())
 		}

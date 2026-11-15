@@ -395,7 +395,7 @@ func TestLarkSelfSendRevocationRaces(t *testing.T) {
 			}
 			switch mode {
 			case "disable", "unbind":
-				req := toolBindingChange{ServiceEpoch: h.m.epoch, RoomIdentity: id.RoomIdentity, Caller: humanCaller, Revision: bindings.Revision, Enabled: mode == "disable", Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "lark", PlatformID: h.c.ID}}
+				req := toolBindingChange{ServiceEpoch: h.m.epoch, RoomIdentity: id.RoomIdentity, Caller: humanCaller, ExpectedBindingRevision: new(uint64(bindings.Revision)), Enabled: mode == "disable", Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "lark", PlatformID: h.c.ID}}
 				if req.Enabled {
 					req.Binding.PlatformID, req.PlatformVersion = h.c.ID, h.c.Version
 					req.Binding.ActionAuthorization = &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: []tool.ActionGrant{}}

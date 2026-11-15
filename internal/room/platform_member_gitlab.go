@@ -27,11 +27,15 @@ func (m *roomManager) platformMemberAccountLocked(ctx context.Context, req platf
 		}
 		switch p.Provider {
 		case "lark":
-			return m.checkLarkChatsLocked(ctx, req.chatsRequest(), nil)
+			a, err := m.checkLarkChatsLocked(ctx, req.chatsRequest(), nil)
+			if err != nil && a.PlatformVersion != 0 && a.PlatformVersion != req.Input.PlatformVersion {
+				err = versionConflict("platform_version", req.Input.PlatformVersion, a.PlatformVersion, "The platform account/verification changed; inspect the exact connection before reconciling.")
+			}
+			return a, err
 		case "gitlab":
 			a, _, err := m.resolvePlatformAccountLocked(req.RoomIdentity, p.ID, "gitlab")
 			if err == nil && a.PlatformVersion != req.Input.PlatformVersion {
-				err = ErrConflict
+				err = versionConflict("platform_version", req.Input.PlatformVersion, a.PlatformVersion, "The platform account/verification changed; inspect the exact connection before reconciling.")
 			}
 			return a, err
 		}

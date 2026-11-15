@@ -52,8 +52,8 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     if (!ws?.notificationScope) return;
     ws.notificationDrafts ||= new Map();
     const messages = ws.notificationChannel === "messages";
-    if (messages && ws.messages && ws.larkDirty) ws.notificationDrafts.set(ws.notificationScope, {config:larkMessagesDraft(),directories:ws.larkChatDirectories});
-    else if (!messages && ws.gitlabDirty) ws.notificationDrafts.set(ws.notificationScope, {config:structuredClone(ws.gitlabDraft),emptyTypes:ws.eventsEmptyTypes});
+    if (messages && ws.messages && ws.larkDirty) ws.notificationDrafts.set(ws.notificationScope, {config:larkMessagesDraft(),view:structuredClone(ws.messages),conflict:ws.notificationObservationConflict===ws.notificationScope,directories:ws.larkChatDirectories});
+    else if (!messages && ws.gitlabDirty) ws.notificationDrafts.set(ws.notificationScope, {config:structuredClone(ws.gitlabDraft),view:structuredClone(ws.gitlab),conflict:ws.notificationObservationConflict===ws.notificationScope,emptyTypes:ws.eventsEmptyTypes});
     else ws.notificationDrafts.delete(ws.notificationScope);
   }
 
@@ -76,13 +76,16 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
 
   function acceptGitLabView(ws, view, saved = false) {
     if(!notificationConfigured({provider:"gitlab"},view))view={...view,config:{...view.config,enabled:false}};
-    ws.gitlab = view; ws.gitlabConnected = true;
-    ws.events = view.events; ws.todos = view.todos; ws.eventsConnected = ws.todosConnected = true;
-    if (saved || !ws.gitlabDirty || !ws.eventsEmptyTypes && gitlabConfigKey(ws.gitlabDraft) === gitlabConfigKey(view.config)) { ws.gitlabDraft = gitlabConfig(view.config); ws.gitlabDirty = false; ws.eventsEmptyTypes = false; ws.gitlabBackfillEditing = false; }
-    else if (view.version && ws.gitlabDraft.platform_id===view.config.platform_id) {
-      ws.gitlabDraft.enabled=view.config.enabled;
-      ws.gitlabDirty=!!ws.eventsEmptyTypes || gitlabConfigKey(ws.gitlabDraft)!==gitlabConfigKey(view.config);
+    ws.gitlabConnected = true;
+    // A full-form draft retains the exact view it was based on. Background
+    // reads and quick toggles cannot grant it a newer observation.
+    if (!saved && ws.gitlabDirty && (ws.eventsEmptyTypes || gitlabConfigKey(ws.gitlabDraft)!==gitlabConfigKey(view.config))) {
+      ws.gitlab={...ws.gitlab,applying:view.applying,pending:view.pending,errors:view.errors};
+      return;
     }
+    ws.gitlab = view;
+    ws.events = view.events; ws.todos = view.todos; ws.eventsConnected = ws.todosConnected = true;
+    ws.gitlabDraft = gitlabConfig(view.config); ws.gitlabDirty = false; ws.eventsEmptyTypes = false; ws.gitlabBackfillEditing = false;
   }
 
   function editGitLabConfig() {
@@ -138,7 +141,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
       const target = activeNotificationTarget(ws), id = ws.notificationPlatformID;
       if (!ws.notificationToggle && !ws.messagesSending && revisions.messages === ws.messagesRevision) {
         const next=ws.larkSources.find(v=>v.config.platform_id===id && sameNotificationTarget(v.config.target,target));
-        if (next) { ws.messages=next; ws.messagesConnected=true; if(ws.larkDirty && next.subscription_id)$("lark-enabled").checked=!!next.config.enabled; }
+        if (next) { if(!ws.larkDirty)ws.messages=next; ws.messagesConnected=true; }
       }
       if (!ws.notificationToggle && !ws.gitlabSending && revisions.gitlab === ws.gitlabRevision) {
         const next=ws.gitlabPlatforms.find(v=>v.platform_id===id && sameNotificationTarget(v.config.target,target));
@@ -435,8 +438,8 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     renderLarkMessages();
     try{
       const data=await request(`/v1/platform/notifications/${action}`,payload);
-      if(!current())return;if(data.config.platform_id!==ws.notificationPlatformID || !sameNotificationTarget(data.config.target,activeNotificationTarget(ws)))throw Error("Notification scope mismatch");const replaced=ws.messages.subscription_id && ws.messages.subscription_id!==data.subscription_id;ws.messages=data;ws.larkSources=[...(ws.larkSources || []).filter(s=>s.config.platform_id!==data.config.platform_id || !sameNotificationTarget(s.config.target,data.config.target)),data];ws.messagesConnected=true;ws.larkDirty=false;ws.larkFilled=null;ws.messagesFeedback=action==="sync" ? "已发起同步，结果将自动更新。" : replaced ? "已为新连接开启订阅，旧订阅已暂停。" : "设置已保存。";
-    }catch(e){if(current())ws.messagesError=e.code==="conflict"?"设置或账号已变化，请刷新后核对。":"结果未确认，请刷新状态；不会自动重发。";}
+      if(!current())return;ws.notificationObservationConflict=null;if(data.config.platform_id!==ws.notificationPlatformID || !sameNotificationTarget(data.config.target,activeNotificationTarget(ws)))throw Error("Notification scope mismatch");const replaced=ws.messages.subscription_id && ws.messages.subscription_id!==data.subscription_id;ws.messages=data;ws.larkSources=[...(ws.larkSources || []).filter(s=>s.config.platform_id!==data.config.platform_id || !sameNotificationTarget(s.config.target,data.config.target)),data];ws.messagesConnected=true;ws.larkDirty=false;ws.larkFilled=null;ws.messagesFeedback=action==="sync" ? "已发起同步，结果将自动更新。" : replaced ? "已为新连接开启订阅，旧订阅已暂停。" : "设置已保存。";
+    }catch(e){if(current()){if(e.code==="conflict" && action==="configure")ws.notificationObservationConflict=scope;ws.messagesError=e.code==="conflict"?"设置或账号已变化，草稿已保留；点击刷新读取最新配置并核对后重新编辑。":"结果未确认，请刷新状态；不会自动重发。";}}
     finally{ws.notificationWrites?.delete(scope);if(current()){ws.messagesRevision++;ws.messagesSending=false;renderGitLabEvents();}else if(ws===workspaceUI.workspaceView)renderGitLabEvents();}
   }
 
@@ -597,6 +600,11 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     beginNotificationWrite(ws,key);
     const revisionKey=gitlab ? "gitlabRevision" : "messagesRevision";ws[revisionKey]=(ws[revisionKey] || 0)+1;
     const revision=ws[revisionKey];
+    // A confirmed local total-switch change can advance this draft only when
+    // its submitted view exactly matches the draft's original observation.
+    const ownDraftObservation=gitlab
+      ? ws.gitlab?.version===view.version && gitlabConfigKey(ws.gitlab.config)===gitlabConfigKey(view.config)
+      : ws.messages?.subscription_id===view.subscription_id && ws.messages?.subscription_version===view.subscription_version && larkConfigKey(ws.messages.config)===larkConfigKey(view.config);
     const current=()=>notificationContextCurrent(ws,scope,epoch) && ws[revisionKey]===revision;
     ws.notificationToggle=item.id;ws.notificationToggleTarget=target;ws.notificationToggleEnabled=enabled;ws.notificationToggleError=null;renderGitLabEvents();
     try {
@@ -608,10 +616,13 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
       if(!sameNotificationTarget(next.config.target,target) || next.config.platform_id!==item.id)throw Error("Notification scope mismatch");
       if(gitlab){
         ws.gitlabPlatforms=[...(ws.gitlabPlatforms || []).filter(v=>notificationScopeKey(v.config.target,v.platform_id)!==key),next];
-        if(ws.gitlab?.config.platform_id===item.id && sameNotificationTarget(activeNotificationTarget(ws),target))acceptGitLabView(ws,next);
+        if(ws.gitlab?.config.platform_id===item.id && sameNotificationTarget(activeNotificationTarget(ws),target)){
+          if(ws.gitlabDirty && ownDraftObservation){ws.gitlab=next;ws.gitlabDraft.enabled=next.config.enabled;}
+          acceptGitLabView(ws,next);
+        }
       } else {
         ws.larkSources=[...(ws.larkSources || []).filter(v=>notificationScopeKey(v.config.target,v.config.platform_id)!==key),next];
-        if(ws.messages?.config.platform_id===item.id && sameNotificationTarget(activeNotificationTarget(ws),target)){ws.messages=next;$("lark-enabled").checked=!!next.config.enabled;}
+        if(ws.messages?.config.platform_id===item.id && sameNotificationTarget(activeNotificationTarget(ws),target) && (!ws.larkDirty || ownDraftObservation)){ws.messages=next;$("lark-enabled").checked=!!next.config.enabled;}
       }
     }catch(error){
       if(current())ws.notificationToggleError={key,message:error.code==="request" ? "请先在详情完善接收设置" : error.code==="conflict" ? "设置已变化，请核对后重试" : "结果未确认，请刷新"};
@@ -841,12 +852,14 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
       const view = await request(`/v1/platform/gitlab/notifications/${action}`, payload);
       if (!current()) return;
       if(view.config.platform_id!==payload.platform_id || !sameNotificationTarget(view.config.target,activeNotificationTarget(ws)))throw Error("Notification scope mismatch");
+      ws.notificationObservationConflict=null;
       acceptGitLabView(ws, view, true);
       ws.gitlabPlatforms = [...(ws.gitlabPlatforms || []).filter(v => v.platform_id !== view.config.platform_id || !sameNotificationTarget(v.config.target,view.config.target)), {...view, platform_id:view.config.platform_id}];
       ws.gitlabFeedback = action === "sync" ? "已发起同步，结果将自动更新。" : "设置已保存。";
     } catch (error) {
       if (!current()) return;
-      ws.gitlabError = error.code === "conflict" ? action === "sync" ? "配置或账号已变化，请核对最新状态。" : "设置版本已变化，请核对最新状态后重新保存。" : error.code === "request" ? "设置无效，请检查连接、项目和筛选。" : "结果未确认，请核对最新状态后重试；不会自动重发。";
+      if(error.code==="conflict" && action==="configure")ws.notificationObservationConflict=scope;
+      ws.gitlabError = error.code === "conflict" ? action === "sync" ? "配置或账号已变化，请核对最新状态。" : "设置版本已变化，草稿已保留；点击刷新读取最新配置后重新编辑。" : error.code === "request" ? "设置无效，请检查连接、项目和筛选。" : "结果未确认，请核对最新状态后重试；不会自动重发。";
       ws.gitlabSending = false; await loadNotificationSubscriptions(state.catalog, ws);
     } finally {
       ws.notificationWrites?.delete(scope);
@@ -911,7 +924,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     ws.notificationTarget=structuredClone(target);ws.notificationScope=key;ws.notificationChannel=channel==="messages" ? "messages" : channel==="tools" ? "tools" : "gitlab";ws.notificationPlatformID=platformID;ws.notificationHistory="";
     if(!same){
       stopLarkChatSearch();ws.gitlabRevision=(ws.gitlabRevision || 0)+1;ws.messagesRevision=(ws.messagesRevision || 0)+1;
-      ws.gitlabSending=false;ws.messagesSending=false;ws.notificationToggle=null;ws.notificationToggleError=null;
+      ws.gitlabSending=false;ws.messagesSending=false;ws.notificationToggle=null;ws.notificationToggleError=null;ws.notificationObservationConflict=null;
       ws.gitlab=null;ws.gitlabDraft=null;ws.events=null;ws.todos=null;ws.messages=null;ws.gitlabConnected=false;ws.messagesConnected=false;
       ws.gitlabDirty=false;ws.larkDirty=false;ws.eventsEmptyTypes=false;ws.gitlabBackfillEditing=false;ws.gitlabError="";ws.gitlabFeedback="";ws.messagesError="";ws.messagesFeedback="";ws.larkChatDirectories=null;ws.gitlabProjectDirectory=null;
     }
@@ -926,7 +939,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
         selectLarkPlatform(ws,platformID);
         const cached=ws.notificationDrafts?.get(key);
         if(cached){
-          ws.larkRestore={...cached.config,enabled:ws.messages.config.enabled};ws.larkChatDirectories=cached.directories;ws.larkDirty=true;
+          ws.messages=structuredClone(cached.view);ws.larkRestore=structuredClone(cached.config);ws.larkChatDirectories=cached.directories;ws.larkDirty=true;ws.notificationObservationConflict=cached.conflict ? key : null;
           for(const kind of ["private","groups"])larkChatElement(kind,"search").value=cached.directories?.[kind]?.query || "";
         }
       }
@@ -941,7 +954,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
         if(view.config.platform_id!==platformID || !sameNotificationTarget(view.config.target,target))throw Error("Notification scope mismatch");
         acceptGitLabView(ws,view,true);
         const cached=ws.notificationDrafts?.get(key);
-        if(cached){ws.gitlabDraft=structuredClone(cached.config);ws.gitlabDraft.enabled=view.config.enabled;ws.eventsEmptyTypes=cached.emptyTypes;ws.gitlabDirty=!!cached.emptyTypes || gitlabConfigKey(ws.gitlabDraft)!==gitlabConfigKey(view.config);fillBackfill("gitlab",ws.gitlabDraft);}
+        if(cached){acceptGitLabView(ws,structuredClone(cached.view),true);ws.gitlabDraft=structuredClone(cached.config);ws.eventsEmptyTypes=cached.emptyTypes;ws.gitlabDirty=!!cached.emptyTypes || gitlabConfigKey(ws.gitlabDraft)!==gitlabConfigKey(ws.gitlab.config);ws.notificationObservationConflict=cached.conflict ? key : null;fillBackfill("gitlab",ws.gitlabDraft);}
       }catch{
         if(!notificationContextCurrent(ws,key,epoch) || revision!==ws.gitlabRevision || navigation!==notificationNavigation)return;
         ws.gitlabConnected=false;ws.gitlabError="平台通知设置暂不可读，请刷新。";
@@ -979,6 +992,13 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
 
   async function reloadNotifications() {
     const ws=workspaceUI.workspaceView,id=ws?.notificationPlatformID,channel=ws?.notificationChannel,target=structuredClone(activeNotificationTarget(ws)),scope=ws?.notificationScope;
+    // Only this explicit read after a conflict discards the old draft and its
+    // observation. Periodic refresh and scope navigation preserve both.
+    if(ws?.notificationObservationConflict===scope){
+      ws.notificationDrafts?.delete(scope);ws.notificationObservationConflict=null;
+      ws.larkDirty=false;ws.larkFilled=null;ws.larkRestore=null;ws.gitlabDirty=false;ws.eventsEmptyTypes=false;
+      ws.messagesError="";ws.gitlabError="";
+    }
     await workspaceUI.loadWorkspacePlatforms();
     if(ws!==workspaceUI.workspaceView)return;
     await loadNotificationSubscriptions(state.catalog,ws);

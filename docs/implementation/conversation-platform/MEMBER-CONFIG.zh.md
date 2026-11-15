@@ -5,7 +5,7 @@
 ## 已交付
 
 - `platforms chats`：已核验飞书账号的群目录／搜索／分页，返回账号、连接版本、群 ID、名称、类型及查询警告；同名群保留独立候选。仅返回普通群和话题群，过滤后的空页仍保留分页信息。
-- `platforms member get`：读取当前完整 Room／Agent／Membership 身份的订阅配置、订阅版本、接收起点、工具修订及可用状态，不要求已有平台工具绑定。
+- `platforms member get`：读取当前完整 Room／Agent／Membership 身份的订阅配置、订阅版本、接收起点、准确绑定修订及可用状态，不要求已有平台工具绑定。
 - `platforms member notifications`：按明确群 ID 追加关注，或显式开启／关闭通知、修改群消息模式。提交前通过同一账号重新读取每个群的元数据，拒绝私聊 ID；复用现有通知配置服务。
 - `platforms member tool`：独立启用／关闭当前成员的飞书工具，复用现有工具绑定服务和调用结清；不新增外部写入授权。对同一平台 generation 重复启用保留原授权及其他字段；重新绑定已换代的平台时沿用原服务规则，不转移旧授权。
 - `platforms member status`：按操作 ID 查询原回执，或按原用户消息查找全部成员配置步骤。接入 Skill 和 Agent 指南已更新。
@@ -27,13 +27,13 @@ teamx platforms member notifications --platform-id P --platform-version V \
   --notification-version N --operation-id STEP_ID --source-seq SEQ \
   --add-chat-id oc_SELECTED
 teamx platforms member tool --platform-id P --platform-version V \
-  --tool-revision R --operation-id OTHER_STEP_ID --source-seq SEQ --enabled true
+  --operation-id OTHER_STEP_ID --source-seq SEQ --enabled true
 
 teamx platforms member status --operation-id STEP_ID
 teamx platforms member get --platform-id P --platform-version V
 ```
 
-`N`、`R` 分别来自 `member get` 的 `notification_version` 和 `tool_revision`；不存在时为 0。通知版本只约束目标成员的该平台订阅；工具修订沿用现有 Room 级修订，其他成员修改工具后也需要重新读取。
+`N` 来自 `member get` 的 `notification_version`；不存在时为 0，必须显式提供，省略／null 均拒绝；冲突后不能自动换成最新版本重交。通知版本只约束目标成员的该平台订阅。工具可选的观察前提来自 `binding_revision`，只约束该成员的准确平台绑定，其他成员或工具的保存不会造成无关冲突。
 
 `--add-chat-id` 可重复，最多 32 个；追加时默认开启通知。新订阅仅关注选中群，群消息模式为 `all`，私聊及独立提及接收默认关闭，接收起点为首次保存时间。已有订阅保留其他群、私聊、提及选项、消息模式、轮询间隔及既有历史接收起点；仅显式传入 `--group-message-mode all|mentions` 时修改群消息模式。`--enabled true|false` 修改总开关，关闭后保留选择与起点。
 
@@ -68,3 +68,5 @@ go test -race -tags=integration ./internal/room \
 结果：全仓普通测试、上述 race 集成回归，以及最终成员配置 race 测试均通过。`git diff --check` 和新增文件空白检查通过。
 
 未新增对话组件、群选择表单、内部 Inbox 事件、结果通知订阅、自动唤醒或调度分支。上述能力仍按 C3–C6 推进。
+
+工具命令已切换为准确绑定合同：普通启停可省略观察前提；依赖已读绑定时使用 `member get` 返回的 `binding_revision` 和 `--binding-revision N`，显式 0 与省略不同。旧 `--tool-revision` 已拒绝。
