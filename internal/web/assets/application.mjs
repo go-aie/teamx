@@ -363,12 +363,12 @@ export async function createApp(overrides = {}) {
     confirmAction
   };
 
-  install(userMenuUI, createUserMenu({ env, runtime, conversationUI }));
+  install(userMenuUI, createUserMenu({ env, runtime, conversationUI, roomsUI }));
   install(settingsUI, createSettings({
     env, runtime, connectionsUI, conversationUI, roomsUI, workspaceUI, policyUI, notificationsUI, onboardingUI, membersUI
   }));
   install(roomsUI, createRooms({
-    env, runtime, layoutUI, workspaceUI, conversationUI, settingsUI, membersUI
+    env, runtime, layoutUI, workspaceUI, conversationUI, settingsUI, membersUI, userMenuUI
   }));
   install(layoutUI, createLayout({
     env, roomsUI, runtime, notificationsUI, membersUI, settingsUI, userMenuUI

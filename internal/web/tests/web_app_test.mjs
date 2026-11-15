@@ -666,6 +666,40 @@ test("conversation previews show latest text and author, creation hints and prio
   assert.match(choice("Team").children[1].title,/^创建于：/);
 });
 
+test("conversation previews resolve operator mentions consistently through name changes and reload", async () => {
+  const owner = "owner_" + "a".repeat(32);
+  const source = `@${owner} 好，@russellluo 请确认 @reviewer @${owner}2 user@${owner}`;
+  const direct = {...makeRoom("Direct"),is_direct:true,
+    last_message_preview:{author:{kind:"agent",id:"assistant"},text:source}};
+  const group = {...makeRoom("Team"),last_message_preview:{author:{kind:"agent",id:"reviewer"},text:`@${owner} 收到`}};
+  const api = server([direct,group]); api.catalog.operator = owner;
+  let displayName = "russellluo";
+  api.hook = path => path === "/v1/ui" ? {managed:true,installation_id:"installation-a",operator_display_name:displayName} : undefined;
+  const names = new Map(), localStorage = {getItem:key=>names.get(key),setItem:(key,value)=>names.set(key,value),removeItem:key=>names.delete(key)};
+  const ui = await launch(api,new Map(),{localStorage});
+  const choice = (ui,name) => ui.el("room-list").children.find(row=>row.children[0].children[0].textContent===name).children[0];
+  const check = (ui,name) => {
+    const text = `@${name} 好，@${name} 请确认 @reviewer @${owner}2 user@${owner}`;
+    assert.equal(choice(ui,"Direct").children[2].children[0].textContent,text);
+    assert.ok(choice(ui,"Direct").title.includes(text));
+    assert.ok(choice(ui,"Direct").getAttribute("aria-label").includes(text));
+    assert.equal(choice(ui,"Team").children[2].children[0].textContent,`reviewer：@${name} 收到`);
+  };
+  check(ui,"russellluo");
+  ui.el("user-display-name").value = "自定义 <img src=x>";
+  await ui.el("user-name-form").emit("submit"); check(ui,"自定义 <img src=x>");
+  check(await launch(api,new Map(),{localStorage}),"自定义 <img src=x>");
+  const key = JSON.stringify(["teamx.user-name","installation-a",owner]);
+  names.set(key,"另一个标签页");await ui.window.emit("storage",{key});check(ui,"另一个标签页");
+  ui.el("user-display-name").value = "";await ui.el("user-name-form").emit("submit");check(ui,"russellluo");
+  displayName = "";
+  direct.last_message_preview.text = `@${owner} 收到`;
+  await ui.refresh();
+  assert.equal(choice(ui,"Direct").children[2].children[0].textContent,"@用户 收到");
+  assert.equal(group.last_message_preview.text,`@${owner} 收到`);
+  assert.equal(api.catalog.operator,owner);
+});
+
 test("settings and room creation dismiss only when the pointer starts and clicks outside the dialog", async () => {
   const api = server(), ui = await launch(api);
   for (const [opener, id] of [["open-settings", "settings-dialog"], ["new-team-room", "create-dialog"]]) {
@@ -2964,21 +2998,24 @@ test("Room attachment rendering binds the saved integration message and excludes
   assert.deepEqual(ordinary.memberNames, []);
 });
 
-test("Lark Inbox preview binds image requests to the saved membership and sequence", async () => {
+for (const provider of ["lark", "gitlab"]) test(`${provider} Inbox preview binds image requests to the saved membership and sequence`, async () => {
   const api = server([makeRoom("A")]);
   const member = {agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"},execution:{paused:true,agent:{turn_number:0}}};
-  const source = {provider:"lark",channel:"messages",reference:{version:2,target:{type:"message"}}};
+  const source = provider === "lark" ? {provider,channel:"messages",message_id:{value:"om_fixture"}}
+    : {provider,channel:"todos",instance:"https://gitlab.invalid",project_id:312};
+  const href = provider === "lark" ? "lark-image:img_fixture" : "/uploads/524bb5cf042cd0bb3ef9a7a117a744b7/image.png";
+  const text = provider === "lark" ? "image_key: img_fixture\n请分析图片" : `> ![截图](${href})`;
   api.hook = (path) => {
     if (path === "/v1/member/list") return {members:[member]};
     if (path === "/v1/member/activity") return {member};
     if (path === "/v1/member/inbox/status") return {latest_seq:9,expired_through:8,retained_entries:1,bytes:100,limits:{bytes:1000}};
-    if (path === "/v1/member/inbox") return {snapshot_seq:9,next_after:9,has_more:false,status:{latest_seq:9,expired_through:8,retained_entries:1,bytes:100,limits:{bytes:1000}},entries:[{seq:9,item:{provider:"lark",channel:"messages",message_id:{value:"om_fixture"},text:"image_key: img_fixture\n请分析图片"}}]};
+    if (path === "/v1/member/inbox") return {snapshot_seq:9,next_after:9,has_more:false,status:{latest_seq:9,expired_through:8,retained_entries:1,bytes:100,limits:{bytes:1000}},entries:[{seq:9,item:{...source,text}}]};
   };
   const ui = await launch(api);
   await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();
   await ui.el("agent-tab-inbox").emit("click");await settle();
   const options = ui.el("inbox-entries").children[0].children[1].markdownOptions;
-  const query = new URL(options.attachmentURL("lark-image:img_fixture"),"http://fixture").searchParams;
+  const query = new URL(options.attachmentURL(href),"http://fixture").searchParams;
   assert.equal(query.get("seq"),"9");
   assert.equal(query.get("agent_id"),member.agent_id);
   assert.equal(query.get("membership_id"),member.membership_id);

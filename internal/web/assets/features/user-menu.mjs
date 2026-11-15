@@ -1,7 +1,7 @@
 import { renderAvatar } from "../avatars.mjs";
 
 // A browser-local display name never changes the authenticated operator.
-export function createUserMenu({ env, runtime, conversationUI }) {
+export function createUserMenu({ env, runtime, conversationUI, roomsUI }) {
   const { document, window, request, fetch } = env;
   const { $, state } = runtime;
   let storage;
@@ -96,6 +96,7 @@ export function createUserMenu({ env, runtime, conversationUI }) {
       if (event.key !== profileKey && event.key !== null) return;
       names.delete(profileKey); profileKey = undefined; render();
       conversationUI.renderMessages();
+      roomsUI.renderRooms();
     });
     $("user-name-form").addEventListener("submit", event => {
       event.preventDefault();
@@ -110,6 +111,7 @@ export function createUserMenu({ env, runtime, conversationUI }) {
       } catch { /* Retain the name in memory. */ }
       render(); $("user-display-name").value = customName || defaultName();
       conversationUI.renderMessages();
+      roomsUI.renderRooms();
       $("user-name-feedback").textContent = persisted ? "名称已保存" : "本次已更新，浏览器未能保存";
     });
     async function signOut() {

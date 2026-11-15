@@ -1,10 +1,10 @@
 import { randomUUID } from "../random-id.mjs";
 import { agentName } from "../agent-names.mjs";
 import { renderAvatar } from "../avatars.mjs";
-import { compactViewport } from "../client.mjs";
+import { compactViewport, mentionRanges } from "../client.mjs";
 
 // Room catalog, selection, creation, deletion and default assistant recovery.
-export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationUI, settingsUI, membersUI }) {
+export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationUI, settingsUI, membersUI, userMenuUI }) {
   const { document, window, Option, request, setTimeout, clearTimeout } = env;
   const { state, $, notice, currentView, refresh, discussionBusy, dismissOnBackdrop, storage } = runtime;
 
@@ -288,7 +288,13 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
     const sender = author?.kind === "human" && author.id === state.catalog.operator ? "你"
       : author?.kind === "agent" ? room.is_direct ? "" : preview.agent_name || agentName(room.members?.find(member => member.id === author.id)) || author.id
       : author?.id || "";
-    const text = preview.text?.replace(/\s+/g, " ").trim() || "[消息]";
+    let text = preview.text || "";
+    // Catalog previews are plain text; resolve the same operator aliases as the
+    // conversation body without changing stored messages or routing identities.
+    for (const at of mentionRanges(text, [state.catalog.operator, state.operatorDisplayName]).reverse()) {
+      text = text.slice(0, at.start) + "@" + userMenuUI.displayName() + text.slice(at.end);
+    }
+    text = text.replace(/\s+/g, " ").trim() || "[消息]";
     return sender ? `${sender}：${text}` : text;
   }
 
@@ -324,6 +330,7 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
     $("new-room").disabled = !state.catalogConnected || discussionBusy() || !!state.management || state.managementSending || !!catalog.write_error;
     const now = Date.now();
     const signature = JSON.stringify({ rooms: catalog.rooms, selected: selectedRoom, timeZone:settingsUI.systemTime.zone, timeError:settingsUI.systemTime.error, day:settingsUI.systemTime.day(now),
+      operator:catalog.operator, operatorDisplayName:state.operatorDisplayName, displayName:userMenuUI.displayName(),
       defaultAssistant: catalog.default_assistant, filter:conversationFilter, busy: discussionBusy(), management: !!state.management, sending: state.managementSending, connected: state.catalogConnected });
     if ($("room-list").dataset.signature !== signature) {
       $("room-list").dataset.signature = signature;

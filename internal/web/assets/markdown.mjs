@@ -1,5 +1,5 @@
 import { Marked, Renderer } from "./vendor/marked.mjs";
-import { createNavigationIcon } from "./icons.mjs";
+import { createImageToolIcon, createNavigationIcon } from "./icons.mjs";
 import { mentionRanges, memberMentionRanges } from "./client.mjs";
 
 function escapeHTML(text, preserveEntities = false) {
@@ -64,7 +64,7 @@ function imageHTML({ href, text, title, width, height }, options) {
   if (!src) return webLink(href, escapeHTML(text || "图片"), title);
   const size = (width ? ` width="${width}"` : "") + (height ? ` height="${height}"` : "");
   const img = `<img class="message-image" src="${escapeHTML(src)}" alt="${escapeHTML(text || "图片")}"${title ? ` title="${escapeHTML(title)}"` : ""}${size} loading="lazy" decoding="async" referrerpolicy="no-referrer">`;
-  return options.larkImages ? `<button class="attachment-preview" type="button" aria-label="放大查看图片" title="放大查看图片">${img}</button>` : img;
+  return `<button class="attachment-preview" type="button" aria-label="放大查看图片" title="放大查看图片">${img}</button>`;
 }
 
 const imagePreviews = new WeakMap();
@@ -75,27 +75,130 @@ export function openImagePreview(doc, src, alt) {
     const dialog = doc.createElement("dialog"); dialog.className = "message-image-dialog";
     dialog.setAttribute("aria-label", "图片预览");
     const toolbar = doc.createElement("div"); toolbar.className = "message-image-toolbar";
-    const title = doc.createElement("span");
-    const close = doc.createElement("button"); close.type = "button"; close.className = "icon-button"; close.append(createNavigationIcon(doc, "close"));
-    close.setAttribute("aria-label", "关闭图片预览");
-    close.title = "关闭图片预览";
-    toolbar.append(title, close);
+    toolbar.setAttribute("role", "toolbar"); toolbar.setAttribute("aria-label", "图片操作");
+    const controls = doc.createElement("div"); controls.className = "message-image-controls";
+    const tool = (action, label) => {
+      const button = doc.createElement("button"); button.type = "button";
+      button.dataset.imageAction = action;
+      button.setAttribute("aria-label", label); button.title = label;
+      if (action === "original") button.textContent = "1:1";
+      else button.append(createImageToolIcon(doc, action));
+      return button;
+    };
+    const zoomOut = tool("zoomOut", "缩小（−）"), zoomIn = tool("zoomIn", "放大（+）");
+    const scale = doc.createElement("output"); scale.className = "message-image-scale";
+    scale.setAttribute("aria-label", "缩放比例"); scale.setAttribute("aria-live", "polite");
+    const original = tool("original", "原始大小（1）"), fit = tool("fit", "适应窗口（0）"), rotate = tool("rotate", "旋转（R）");
+    const divider = doc.createElement("span"); divider.className = "message-image-divider"; divider.setAttribute("aria-hidden", "true");
+    const download = doc.createElement("a"); download.className = "message-image-download";
+    download.setAttribute("aria-label", "下载图片"); download.title = "下载图片";
+    download.download = "image"; download.referrerPolicy = "no-referrer";
+    download.append(createImageToolIcon(doc, "download"));
+    const close = doc.createElement("button"); close.type = "button";
+    close.setAttribute("aria-label", "关闭图片预览"); close.title = "关闭图片预览";
+    close.append(createNavigationIcon(doc, "close"));
+    controls.append(zoomOut, scale, zoomIn, original, fit, divider, rotate, download);
+    toolbar.append(controls, close);
     const stage = doc.createElement("div"); stage.className = "message-image-stage";
-    const image = doc.createElement("img"); image.referrerPolicy = "no-referrer";
+    const canvas = doc.createElement("div"); canvas.className = "message-image-canvas";
+    const image = doc.createElement("img"); image.referrerPolicy = "no-referrer"; image.draggable = false;
     const error = doc.createElement("p"); error.hidden = true; error.setAttribute("role", "status");
-    error.textContent = "图片加载失败，请关闭后重试。";
-    stage.append(image, error); dialog.append(toolbar, stage); doc.body.append(dialog);
+    canvas.append(image); stage.append(canvas, error); dialog.append(toolbar, stage); doc.body.append(dialog);
+    let zoom = null, angle = 0, ready = false, drag = null, dragged = false;
+    const buttons = [zoomOut, zoomIn, original, fit, rotate];
+    function sizeDialog() {
+      if (!ready) return;
+      const viewportWidth = doc.documentElement.clientWidth, viewportHeight = doc.defaultView.innerHeight;
+      const margin = viewportWidth <= 360 ? 8 : viewportWidth <= 640 ? 24 : 32;
+      const maxWidth = Math.min(1800, viewportWidth - margin), maxHeight = viewportHeight - margin;
+      const rotated = angle % 180 !== 0;
+      const width = rotated ? image.naturalHeight : image.naturalWidth, height = rotated ? image.naturalWidth : image.naturalHeight;
+      const chromeHeight = toolbar.offsetHeight + 34;
+      const fit = Math.min(1, Math.max(1, maxWidth - 34) / width, Math.max(1, maxHeight - chromeHeight) / height);
+      // Size the window from the fitted image, independently of manual zoom.
+      // Give desktop previews a comfortable minimum canvas, while compact
+      // screens retain smaller bounds. Small images still render at most 100%.
+      const minWidth = viewportWidth <= 640 ? 440 : 720, minHeight = viewportWidth <= 640 ? 240 : 480;
+      dialog.style.width = `${Math.min(maxWidth, Math.max(minWidth, width * fit + 34))}px`;
+      dialog.style.height = `${Math.min(maxHeight, Math.max(minHeight, height * fit + chromeHeight))}px`;
+    }
+    function update() {
+      for (const button of buttons) button.disabled = !ready;
+      download.hidden = !ready;
+      if (!ready) { scale.textContent = "—"; return; }
+      const rotated = angle % 180 !== 0;
+      const width = rotated ? image.naturalHeight : image.naturalWidth, height = rotated ? image.naturalWidth : image.naturalHeight;
+      const availableWidth = Math.max(1, stage.clientWidth - 32), availableHeight = Math.max(1, stage.clientHeight - 32);
+      const value = zoom ?? Math.min(1, availableWidth / width, availableHeight / height);
+      scale.textContent = `${Math.round(value * 100)}%`;
+      canvas.style.width = `${width * value}px`; canvas.style.height = `${height * value}px`;
+      image.style.width = `${image.naturalWidth * value}px`;
+      image.style.transform = `translate(-50%, -50%) rotate(${angle}deg)`;
+      stage.classList.toggle("pannable", width * value > availableWidth || height * value > availableHeight);
+      zoomOut.disabled = value <= .05; zoomIn.disabled = value >= 5;
+      fit.setAttribute("aria-pressed", String(zoom === null));
+      original.setAttribute("aria-pressed", String(zoom === 1));
+      return value;
+    }
+    function resize(value) {
+      if (!ready) return;
+      zoom = value === null ? null : Math.max(.05, Math.min(5, value)); update();
+      stage.scrollLeft = Math.max(0, (stage.scrollWidth - stage.clientWidth) / 2);
+      stage.scrollTop = Math.max(0, (stage.scrollHeight - stage.clientHeight) / 2);
+    }
+    zoomOut.addEventListener("click", () => resize(update() / 1.25));
+    zoomIn.addEventListener("click", () => resize(update() * 1.25));
+    original.addEventListener("click", () => resize(1)); fit.addEventListener("click", () => resize(null));
+    rotate.addEventListener("click", () => { if (ready) { angle = (angle + 90) % 360; sizeDialog(); resize(zoom); } });
+    stage.addEventListener("dblclick", () => resize(zoom === 1 ? null : 1));
+    dialog.addEventListener("keydown", event => {
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      const action = {"+":zoomIn, "=":zoomIn, "-":zoomOut, "0":fit, "1":original, r:rotate, R:rotate}[event.key];
+      if (action && ready) { event.preventDefault(); action.click(); }
+    });
+    stage.addEventListener("pointerdown", event => {
+      if (event.pointerType !== "mouse" || event.button !== 0 || !stage.classList.contains("pannable")) return;
+      event.preventDefault(); stage.setPointerCapture(event.pointerId);
+      dragged = false;
+      drag = {id:event.pointerId, x:event.clientX, y:event.clientY, left:stage.scrollLeft, top:stage.scrollTop};
+      stage.classList.add("dragging");
+    });
+    stage.addEventListener("pointermove", event => {
+      if (!drag || event.pointerId !== drag.id) return;
+      if (Math.abs(event.clientX - drag.x) + Math.abs(event.clientY - drag.y) > 3) dragged = true;
+      stage.scrollLeft = drag.left - event.clientX + drag.x; stage.scrollTop = drag.top - event.clientY + drag.y;
+    });
+    const stopDrag = () => { drag = null; stage.classList.remove("dragging"); };
+    stage.addEventListener("pointerup", stopDrag); stage.addEventListener("pointercancel", stopDrag); stage.addEventListener("lostpointercapture", stopDrag);
+    doc.defaultView?.addEventListener("resize", () => { if (dialog.open) { sizeDialog(); update(); } });
     close.addEventListener("click", () => dialog.close());
     dialog.addEventListener("cancel", event => { event.preventDefault(); dialog.close(); });
-    dialog.addEventListener("click", event => { if (event.target === dialog) dialog.close(); });
-    dialog.addEventListener("close", () => { image.removeAttribute("src"); image.alt = ""; error.hidden = true; });
-    image.addEventListener("error", () => { if (dialog.open) error.hidden = false; });
-    preview = {dialog, image, title, error}; imagePreviews.set(doc, preview);
+    dialog.addEventListener("click", event => {
+      if (dragged) { dragged = false; return; }
+      if (event.target === dialog || event.target === stage) dialog.close();
+    });
+    dialog.addEventListener("close", () => {
+      ready = false; dragged = false; stopDrag(); image.removeAttribute("src"); image.alt = "";
+      download.removeAttribute("href"); canvas.hidden = true; error.hidden = true; update();
+    });
+    image.addEventListener("load", () => {
+      if (!dialog.open) return;
+      ready = true; canvas.hidden = false; error.hidden = true; sizeDialog(); resize(zoom);
+    });
+    image.addEventListener("error", () => {
+      if (!dialog.open) return;
+      ready = false; canvas.hidden = true; error.hidden = false;
+      error.textContent = "图片加载失败，请关闭后重试。"; update();
+    });
+    preview = {dialog, show(src, alt) {
+      ready = false; zoom = null; angle = 0;
+      dialog.style.width = ""; dialog.style.height = "";
+      canvas.hidden = true; error.hidden = false; error.textContent = "正在加载图片…";
+      image.alt = alt || "图片"; download.href = src; image.src = src; update();
+      if (!dialog.open) dialog.showModal();
+    }}; imagePreviews.set(doc, preview);
   }
-  preview.title.textContent = alt || "图片预览";
-  preview.image.alt = alt || "图片"; preview.error.hidden = true;
-  preview.image.src = src;
-  if (!preview.dialog.open) preview.dialog.showModal();
+  preview.show(src, alt);
 }
 
 function makeMarkdown(options = {}) {
@@ -103,7 +206,11 @@ function makeMarkdown(options = {}) {
     gfm: true,
     breaks: true,
     renderer: {
-      html({ text }) { return escapeHTML(text); },
+      html({ text }) {
+        // Only attribute-free formatting tags are accepted from message HTML.
+        // Links, images and all other markup still use the guarded renderers.
+        return /^<\/?(?:strong|b|em|i|del|s)>$|^<br\s*\/?>$/i.test(text) ? text : escapeHTML(text);
+      },
       text(token) {
         return token.tokens ? this.parser.parseInline(token.tokens) : escapeHTML(token.text, true);
       },
@@ -124,7 +231,15 @@ function makeMarkdown(options = {}) {
         return `<div class="table-wrap">${Renderer.prototype.table.call(this, token)}</div>`;
       },
     },
-    extensions: [...(options.roomMentionTokens ? [{
+    extensions: [{
+      name: "inlineHTMLCode", level: "inline",
+      start(src) { return src.search(/<code>/i); },
+      tokenizer(src) {
+        const match = /^<code>([\s\S]*?)<\/code>/i.exec(src);
+        if (match) return { type: "inlineHTMLCode", raw: match[0], text: match[1] };
+      },
+      renderer({ text }) { return `<code>${escapeHTML(text, true)}</code>`; },
+    }, ...(options.roomMentionTokens ? [{
       name:"roomMention",level:"inline",start:src=>src.indexOf(options.roomMentionPrefix),
       tokenizer(src){
         if(!src.startsWith(options.roomMentionPrefix))return;
@@ -187,8 +302,8 @@ export function markdownHTML(text, options) {
 }
 
 export function renderMessageBody(container, text, operator, options) {
-  // HTML comes solely from the configured renderer, with escaped message HTML
-  // and protocol-checked links. Mentions are added to text nodes afterwards.
+  // HTML comes solely from the configured renderer, with a small formatting
+  // allowlist and protocol-checked links. Mentions are added to text nodes afterwards.
   options={...options,operatorID:operator};
   container.innerHTML = markdownHTML(text, options);
   const doc = container.ownerDocument;

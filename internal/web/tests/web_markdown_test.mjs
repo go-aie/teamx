@@ -39,6 +39,33 @@ test("messages render Markdown structure and preserve ordinary line breaks", () 
   assert.equal(markdownHTML("a &amp; b & c"), "<p>a &amp; b &amp; c</p>\n");
 });
 
+test("HTML formatting renders alongside Markdown while code and escaped tags stay literal", () => {
+  const html = markdownHTML('1. <strong>通知</strong>：已开启\n2. <strong>工具</strong>：<code>gitlab-552fe1bf</code>\n\n<b>粗体</b> <em>强调</em> <i>斜体</i> <del>删除</del> <s>删除</s><br>换行<br/>继续\n\n<code>x < y &amp; **literal** <strong>literal</strong> @ann</code>\n\n`<strong>literal</strong>`\n\n\\<strong>escaped\\</strong>');
+  for (const part of ['<strong>通知</strong>', '<strong>工具</strong>', '<code>gitlab-552fe1bf</code>',
+    '<b>粗体</b>', '<em>强调</em>', '<i>斜体</i>', '<del>删除</del>', '<s>删除</s>', '<br>换行', '<br/>继续',
+    '<code>x &lt; y &amp; **literal** &lt;strong&gt;literal&lt;/strong&gt; @ann</code>',
+    '<code>&lt;strong&gt;literal&lt;/strong&gt;</code>', '&lt;strong&gt;escaped&lt;/strong&gt;']) assert.ok(html.includes(part), part);
+  const bound = markdownHTML('<strong>@ann</strong> <code>@ann</code>', {
+    mentions:[{start:8,end:12,kind:"human",id:"owner"},{start:28,end:32,kind:"human",id:"owner"}],
+    operatorID:"owner", mentionLabel:() => "用户名",
+  });
+  assert.ok(bound.includes('<strong><mark class="mention">@用户名</mark></strong>'));
+  assert.ok(bound.includes('<code>@ann</code>'));
+});
+
+test("HTML formatting never accepts attributes or enables other HTML elements", () => {
+  const html = markdownHTML([
+    '<strong onclick="alert(1)">通知</strong>', '<b style="color:red">text</b>',
+    '<code onmouseover="alert(1)">tool</code>', '<br onmouseover="alert(1)">',
+    '<a href="javascript:alert(1)">run</a>', '<svg onload="alert(1)"></svg>',
+    '<strong><img src=x onerror=alert(1)></strong>',
+    '<strong><script>alert(1)</script></strong>',
+  ].join('\n\n'));
+  assert.ok(!/<(?:strong|b|code|br)\s+[^>]/i.test(html));
+  assert.ok(!/<(?:a|svg|img|script)\b/i.test(html));
+  for (const tag of ['strong onclick=', 'code onmouseover=', 'br onmouseover=', 'a href=', 'svg onload=', 'img src=']) assert.ok(html.includes('&lt;' + tag), tag);
+});
+
 test("bare and Markdown web links open safely without swallowing sentence punctuation", () => {
   const html = markdownHTML("https://example.com/a?q=1&b=2。 http://example.org/test。\n[合并请求](https://example.com/mr/2 \"查看 MR\")\n<https://example.com/explicit>");
   for (const url of ["https://example.com/a?q=1&amp;b=2", "http://example.org/test", "https://example.com/mr/2", "https://example.com/explicit"]) {
@@ -113,6 +140,7 @@ test("saved GitLab comments restore Markdown and lazy same-origin images with di
   const text = notificationQuote(`**检查图片**\n![image](${upload}){width=900 height=536}\n@reviewer\n\n- [x] 已检查\n\n\`\`\`js\nconst count = 1;\n\`\`\``);
   const html = markdownHTML(text, imageOptions({ seq: 8, agent_id: "assistant", membership_id: "member-a" }));
   assert.ok(html.includes("<strong>检查图片</strong>"));
+  assert.ok(html.includes('<button class="attachment-preview" type="button" aria-label="放大查看图片"'));
   assert.ok(html.includes('<img class="message-image" src="/v1/platform/attachments?'));
   for (const part of ['width="900" height="536"', 'loading="lazy"', 'decoding="async"', 'referrerpolicy="no-referrer"', 'type="checkbox"', '<pre><code class="language-js">', "＠reviewer"]) assert.ok(html.includes(part), part);
   assert.ok(!html.includes("{width="));
@@ -181,40 +209,74 @@ test("Lark images and legacy keys render same-origin previews bound to the exact
   assert.equal(notificationOptions(imageInfo,"operator",{...source,channel:"other"},{seq:1}),undefined);
 });
 
-test("image preview follows adopted messages, reuses a modal, and clears it on every close path", () => {
+for (const provider of ["lark", "gitlab"]) test(`${provider} image preview follows adopted messages, reuses a modal, and clears it on every close path`, () => {
   class Element {
-    constructor(tag) { this.tag = tag; this.children = []; this.attributes = {}; this.listeners = {}; this.open = false; }
+    constructor(tag) {
+      this.tag = tag; this.children = []; this.attributes = {}; this.listeners = {}; this.open = false;
+      this.dataset = {}; this.style = {}; this.clientWidth = 832; this.clientHeight = 632; this.offsetHeight = 56;
+      this.scrollWidth = 832; this.scrollHeight = 632;
+      const classes = new Set();
+      this.classList = {add:name=>classes.add(name),remove:name=>classes.delete(name),contains:name=>classes.has(name),
+        toggle:(name,on)=>on ? classes.add(name) : classes.delete(name)};
+    }
     append(...children) { this.children.push(...children); }
     setAttribute(key, value) { this.attributes[key] = value; }
     removeAttribute(key) { delete this[key]; }
     addEventListener(name, fn) { (this.listeners[name] ||= []).push(fn); }
     emit(name, data = {}) { for (const fn of this.listeners[name] || []) fn({target:this,preventDefault() {},stopPropagation() {},...data}); }
+    click() { if (!this.disabled) this.emit("click"); }
     showModal() { this.open = true; this.modal = true; }
     close() { this.open = false; this.emit("close"); }
   }
-  const doc = {body:new Element("body"),createElement:tag => new Element(tag),createElementNS:(_,tag) => new Element(tag),createTreeWalker:() => ({nextNode:() => false})};
-  const src = "/v1/platform/attachments?room_id=room-a&membership_id=member-a&seq=35&path=lark-image%3Aimg_saved";
+  const doc = {body:new Element("body"),documentElement:{clientWidth:864},defaultView:{innerHeight:724,addEventListener() {}},
+    createElement:tag => new Element(tag),createElementNS:(_,tag) => new Element(tag),createTreeWalker:() => ({nextNode:() => false})};
+  const options = notificationOptions(imageInfo, "operator", provider === "lark"
+    ? {provider:"lark",channel:"messages",reference:{version:2,target:{type:"message"}}} : imageSource,
+    {seq:35,agent_id:"assistant",membership_id:"member-a"});
+  const href = provider === "lark" ? "lark-image:img_saved" : upload;
+  const src = options.attachmentURL(href);
   const button = new Element("button"), thumbnail = new Element("img");
   thumbnail.src = src; thumbnail.alt = "截图 <img src=x>";
   thumbnail.closest = selector => selector === "button.attachment-preview" ? button : null;
   const templateDoc = {...doc,body:null};
   const container = {ownerDocument:templateDoc,querySelectorAll:() => [thumbnail]};
-  renderMessageBody(container, "![截图](lark-image:img_saved)", "operator", {larkImages:true,attachmentURL:() => src});
+  const text = `![截图](${href})`;
+  renderMessageBody(container, provider === "gitlab" ? notificationQuote(text) : text, "operator", options);
   assert.ok(container.innerHTML.includes('<button class="attachment-preview"'));
   container.ownerDocument = doc;
   button.emit("click");
-  const dialog = doc.body.children[0], [toolbar, stage] = dialog.children, [title, close] = toolbar.children, [image, error] = stage.children;
+  const dialog = doc.body.children[0], [toolbar, stage] = dialog.children, [controls, close] = toolbar.children, [canvas, error] = stage.children;
+  const image = canvas.children[0], [zoomOut, scale, zoomIn, original, fit, divider, rotate, download] = controls.children;
   assert.equal(dialog.open, true); assert.equal(dialog.modal, true);
   assert.equal(image.src, src); assert.equal(image.referrerPolicy, "no-referrer");
-  assert.equal(title.textContent, "截图 <img src=x>");
+  assert.equal(image.alt, "截图 <img src=x>");
+  assert.equal(zoomIn.disabled, true); assert.equal(canvas.hidden, true);
+  image.naturalWidth = 1600; image.naturalHeight = 900; image.emit("load");
+  assert.equal(canvas.hidden, false); assert.equal(error.hidden, true);
+  assert.equal(scale.textContent, "50%"); assert.equal(canvas.style.width, "800px");
+  assert.equal(download.href, src); assert.equal(download.hidden, false);
+  assert.equal(zoomIn.disabled, false);
+  const largeSize = {width:dialog.style.width,height:dialog.style.height};
+  original.click(); assert.equal(scale.textContent, "100%");
+  assert.deepEqual({width:dialog.style.width,height:dialog.style.height},largeSize,"manual zoom keeps the window stable");
+  assert.equal(image.style.width, "1600px"); assert.equal(stage.classList.contains("pannable"), true);
+  zoomIn.click(); assert.equal(scale.textContent, "125%");
+  zoomOut.click(); assert.equal(scale.textContent, "100%");
+  fit.click(); assert.equal(scale.textContent, "50%");
+  rotate.click(); assert.equal(image.style.transform, "translate(-50%, -50%) rotate(90deg)");
+  assert.equal(scale.textContent, "38%"); assert.equal(canvas.style.height, "600px");
+  dialog.emit("keydown", {key:"1"}); assert.equal(scale.textContent, "100%");
+  dialog.emit("keydown", {key:"0"}); assert.equal(scale.textContent, "38%");
   dialog.emit("click", {target:image}); assert.equal(dialog.open, true);
   image.emit("error"); assert.equal(error.hidden, false);
+  assert.equal(canvas.hidden, true); assert.equal(zoomIn.disabled, true); assert.equal(download.hidden, true);
   close.emit("click");
   assert.equal(dialog.open, false); assert.equal(image.src, undefined); assert.equal(error.hidden, true);
   for (const action of ["cancel", "click"]) {
     openImagePreview(doc, src, "截图");
     assert.equal(doc.body.children.length, 1);
-    assert.equal(error.hidden, true);
+    image.emit("load"); assert.equal(error.hidden, true);
+    assert.equal(scale.textContent, "50%", "each opening resets rotation and scale");
     dialog.emit(action);
     assert.equal(dialog.open, false); assert.equal(image.src, undefined);
   }
@@ -224,6 +286,12 @@ test("image preview follows adopted messages, reuses a modal, and clears it on e
   button.replacement.emit("click");
   assert.equal(dialog.open, true); assert.equal(image.src, src);
   assert.equal(doc.body.children.length, 1);
+  close.emit("click");
+  openImagePreview(doc, src, "小图");
+  image.naturalWidth = 480; image.naturalHeight = 120; image.emit("load");
+  assert.ok(parseFloat(dialog.style.width) < parseFloat(largeSize.width));
+  assert.ok(parseFloat(dialog.style.height) < parseFloat(largeSize.height));
+  assert.equal(scale.textContent,"100%","small images retain their original size");
   close.emit("click");
 });
 

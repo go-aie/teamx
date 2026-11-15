@@ -34,3 +34,18 @@ export function createNavigationIcon(document, direction = "right") {
   path.setAttribute("d", paths[direction]); svg.append(path);
   return svg;
 }
+
+export function createImageToolIcon(document, action) {
+  const paths = {
+    zoomOut:"M10 17a7 7 0 1 0 0-14 7 7 0 0 0 0 14Zm5-2 6 6M7 10h6",
+    zoomIn:"M10 17a7 7 0 1 0 0-14 7 7 0 0 0 0 14Zm5-2 6 6M7 10h6m-3-3v6",
+    fit:"M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5M8 8h8v8H8Z",
+    rotate:"M5 8a8 8 0 1 1-1 8M5 3v5h5",
+    download:"M12 3v12m-5-5 5 5 5-5M4 17v4h16v-4",
+  };
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  for (const [key, value] of Object.entries({viewBox:"0 0 24 24", "aria-hidden":"true", focusable:"false"})) svg.setAttribute(key, value);
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", paths[action]); svg.append(path);
+  return svg;
+}

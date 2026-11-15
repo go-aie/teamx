@@ -252,48 +252,99 @@
   object-fit:contain;
 }
 .message-image-dialog {
-  width:min(1440px,calc(100vw - 32px));
+  width:720px;
+  height:480px;
   max-width:calc(100vw - 32px);
   max-height:calc(100dvh - 32px);
   padding:0;
-  overflow:auto;
-  border:1px solid #ffffff24;
+  overflow:hidden;
+  border:1px solid var(--line);
   border-radius:var(--radius-dialog);
-  color:#f5f7f5;
-  background:#121714;
-  box-shadow:0 24px 90px #0008;
+  color:var(--text);
+  background:var(--surface-muted);
+  box-shadow:var(--shadow-dialog);
 }
-.message-image-dialog::backdrop { background:#101713c9; }
+.message-image-dialog[open] { display:flex; flex-direction:column; }
+.message-image-dialog::backdrop { background:#1f23294d; }
 .message-image-toolbar {
   display:flex;
+  flex-shrink:0;
   align-items:center;
   justify-content:space-between;
-  gap:16px;
-  padding:12px 16px;
+  gap:8px;
+  min-height:56px;
+  padding:8px 12px;
+  border-bottom:1px solid var(--line);
+  background:var(--surface-subtle);
 }
-.message-image-toolbar span { overflow-wrap:anywhere; }
-.message-image-toolbar button {
+.message-image-controls { display:flex; align-items:center; gap:4px; }
+.message-image-scale { min-width:54px; text-align:center; font-variant-numeric:tabular-nums; font-size:13px; }
+.message-image-divider { width:1px; height:20px; margin:0 8px; background:var(--line); }
+.message-image-toolbar button,.message-image-download {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
   flex-shrink:0;
-  width:var(--icon-size);
-  height:var(--icon-size);
+  width:36px;
+  height:36px;
   padding:0;
-  border:1px solid #ffffff40;
+  border:0;
   border-radius:var(--radius-control);
   color:inherit;
-  background:#ffffff10;
+  background:transparent;
+  text-decoration:none;
+  font-size:12px;
+  font-weight:var(--weight-medium);
+  transition:background var(--motion-fast),color var(--motion-fast);
 }
+.message-image-toolbar button:hover:not(:disabled),.message-image-download:hover { background:var(--surface-hover); }
+.message-image-toolbar button[aria-pressed="true"] { color:var(--accent); background:var(--soft); }
+.message-image-toolbar svg { width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
 .message-image-stage {
   display:flex;
-  justify-content:center;
-  align-items:center;
-  min-height:160px;
-  padding:0 16px 16px;
+  flex:1;
+  min-height:0;
+  overflow:auto;
+  overscroll-behavior:contain;
+  padding:16px;
 }
+.message-image-canvas { position:relative; flex-shrink:0; margin:auto; }
 .message-image-stage img {
+  position:absolute;
+  left:50%;
+  top:50%;
   display:block;
-  max-width:100%;
-  max-height:calc(100dvh - 112px);
-  object-fit:contain;
+  max-width:none;
+  height:auto;
+  user-select:none;
+  -webkit-user-drag:none;
+}
+.message-image-stage p { margin:auto; color:var(--text-secondary); text-align:center; }
+.message-image-stage.pannable { cursor:grab; }
+.message-image-stage.dragging { cursor:grabbing; }
+@media (max-width:640px) {
+  .message-image-dialog {
+    width:480px;
+    height:240px;
+    max-width:calc(100vw - 24px);
+    max-height:calc(100dvh - 24px);
+    border-radius:var(--radius-dialog);
+  }
+  .message-image-toolbar { padding:8px 4px; padding-top:max(8px,env(safe-area-inset-top)); gap:0; }
+  .message-image-controls { gap:0; }
+  .message-image-scale { min-width:46px; }
+  .message-image-divider { margin:0 4px; }
+  .message-image-toolbar button,.message-image-download { width:40px; height:44px; }
+  .message-image-stage { padding-bottom:max(16px,env(safe-area-inset-bottom)); }
+}
+@media (prefers-reduced-motion:reduce) {
+  .message-image-toolbar button,.message-image-download { transition:none; }
+}
+@media (max-width:360px) {
+  .message-image-dialog { max-width:calc(100vw - 8px); max-height:calc(100dvh - 8px); }
+  .message-image-toolbar button,.message-image-download { width:36px; }
+  .message-image-scale { min-width:38px; }
+  .message-image-divider { margin:0 2px; }
 }
 .message-text blockquote {
   padding:2px 12px;
