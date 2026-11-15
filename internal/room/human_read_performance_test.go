@@ -54,7 +54,7 @@ func TestHumanReadCatalogPerformance(t *testing.T) {
 				for seq := uint64(2); seq <= room.LatestSeq; seq += 2 {
 					seen = append(seen, seq)
 				}
-				receipt := humanReadFile{Version: 1, RoomIdentity: identity, OperatorID: humanOperator(), Revision: 1, ObservedLatestSeq: room.LatestSeq, SeenSeqs: seen}
+				receipt := humanReadLegacyFile{Version: 1, RoomIdentity: identity, OperatorID: humanOperator(), Revision: 1, ObservedLatestSeq: room.LatestSeq, SeenSeqs: seen}
 				data, _ = json.Marshal(receipt)
 				if err := os.WriteFile(filepath.Join(dir, "human-read.json"), data, 0600); err != nil {
 					t.Fatal(err)
@@ -145,7 +145,7 @@ func TestHumanReadCatalogPerformance(t *testing.T) {
 				t.Fatal(openErr)
 			}
 			defer store.Close()
-			state, err := h.update(store, nil, nil, humanOperator())
+			state, err := h.update(store, humanReadDelta{}, humanOperator())
 			if err != nil {
 				t.Fatal(err)
 			}

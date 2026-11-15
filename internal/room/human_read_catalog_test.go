@@ -25,7 +25,7 @@ func TestHumanReadCatalogRetainedHistoryAndFileReadBounds(t *testing.T) {
 		return readSnapshot(path, v, limit)
 	}
 	_, err, got := readHumanReadCatalogFiles(store.dir, room.RoomIdentity, "owner", "店长", read)
-	if err != nil || got.Status != "ready" || got.Revision != 1 || got.UnreadCount != 98 || got.MentionCount != 97 || got.SnapshotSeq != 100 {
+	if err != nil || got.Status != "ready" || got.Revision != 1 || got.UnreadCount != 99 || got.MentionCount != 97 || got.SnapshotSeq != 100 {
 		t.Fatal(got, err)
 	}
 	if !reflect.DeepEqual(reads, []string{"human-read.json", "room.json"}) {
@@ -35,6 +35,7 @@ func TestHumanReadCatalogRetainedHistoryAndFileReadBounds(t *testing.T) {
 	if string(before) != string(after) {
 		t.Fatal("catalog wrote receipts")
 	}
+	humanReadOpen(t, h, store, 100)
 	room.ClearedThrough, room.Messages = 99, room.Messages[99:]
 	room.Members[0].ReadThrough = 99
 	if err := store.SaveRoom(room); err != nil {
@@ -71,7 +72,7 @@ func TestHumanReadCatalogUnavailableAndBoundedRetry(t *testing.T) {
 			case "ahead":
 				file.ObservedLatestSeq++
 			case "duplicate":
-				file.SeenSeqs = []uint64{4, 4}
+				file.MentionSeenSeqs = []uint64{4, 4}
 			}
 			data, _ := json.Marshal(file)
 			if kind == "corrupt" {

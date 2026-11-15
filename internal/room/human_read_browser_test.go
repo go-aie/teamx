@@ -19,15 +19,22 @@ func TestHumanReadBrowser(t *testing.T) {
 	if os.Getenv("TEAMX_HUMAN_READ_BROWSER") != "1" {
 		t.Skip("set TEAMX_HUMAN_READ_BROWSER=1 with Node, Playwright and Chromium installed")
 	}
-	for _, mode := range []string{"reading", "history-mentions", "history", "history-large"} {
+	for _, mode := range []string{"combined-1440", "combined-390", "combined-320", "reading", "locating", "history", "history-large"} {
 		t.Run(mode, func(t *testing.T) {
 			n := 120
+			combined := strings.HasPrefix(mode, "combined-")
+			if combined {
+				n = 100
+			}
 			if strings.HasPrefix(mode, "history") {
 				n = 10000
 			}
 			dir := t.TempDir()
 			store := openTestStore(t, dir)
 			text := "普通回复：请逐条查看消息。"
+			if combined {
+				text = strings.Repeat("普通回复：用于核对实际可见范围。\n\n", 8)
+			}
 			if mode == "history-large" {
 				text = strings.Repeat("x", 6600)
 			}
@@ -36,8 +43,25 @@ func TestHumanReadBrowser(t *testing.T) {
 			for i := range room.Messages {
 				room.Messages[i].Author = Author{Kind: "agent", ID: "assistant"}
 			}
-			for _, seq := range []int{1, 100, n - 1, n} {
+			mentions := []int{100, n - 1, n}
+			if combined {
+				mentions = []int{10, 70, 95}
+				for _, seq := range []int{5, 55, 96} {
+					room.Messages[seq-1].Author = Author{Kind: "human", ID: humanOperator()}
+					room.Messages[seq-1].Text = "@" + humanOperator() + " 自己的消息不计数。"
+				}
+			}
+			if strings.HasPrefix(mode, "history") || mode == "locating" {
+				mentions = append(mentions, 1)
+			}
+			if mode == "locating" {
+				mentions = append(mentions, 21)
+			}
+			for _, seq := range mentions {
 				room.Messages[seq-1].Text = "@" + humanOperator() + " 请查看这条消息。"
+				if combined {
+					room.Messages[seq-1].Text += " @" + humanOperator() + " 重复提及只计一条。"
+				}
 			}
 			if err := store.SaveRoom(room); err != nil {
 				t.Fatal(err)

@@ -93,7 +93,6 @@ export async function createApp(overrides = {}) {
     return layers;
   }});
   function suspend() {
-    conversationUI.resetMessageViewing();
     if (!state.suspended) viewVersion++;
     state.suspended = true; state.connected = false; state.catalogConnected = false;
     $("connection").textContent = window.navigator?.onLine === false ? "网络已断开 · 草稿已保留" : "页面已暂停刷新";
@@ -147,8 +146,8 @@ export async function createApp(overrides = {}) {
 
   const currentView = (version) => version === viewVersion && !state.suspended;
 
-  function rpc(path, data = {}, info = state.info) {
-    return request(path, { ...info, caller: { kind: "human", id: state.operator }, ...data });
+  function rpc(path, data = {}, info = state.info, signal) {
+    return request(path, { ...info, caller: { kind: "human", id: state.operator }, ...data }, undefined, 10000, signal);
   }
 
   function notice(id, text) {
@@ -177,7 +176,6 @@ export async function createApp(overrides = {}) {
     state.info = info; state.operator = operator; state.connected = false;
     syncFailureSince = null; notice("sync-error", "");
     notice("notification-next-step", "");
-    conversationUI.resetMessageViewing();
     conversationUI.resetReadingContext();
     state.draft = info ? conversationUI.drafts.get(info, operator) : {};
     state.messages.clear(); state.lastSeq = 0; state.clearedThrough = 0; state.restart = null; state.members = [];
@@ -279,7 +277,8 @@ export async function createApp(overrides = {}) {
       const initial = state.messages.size === 0;
       const stick = initial || conversationUI.nearBottom();
       const scrollTop = $("timeline").scrollTop;
-      const read = await conversationUI.readPages(initial ? { mode: "latest", latest: 50 } : { mode: "range", after: state.lastSeq }, info);
+      const after = state.lastSeq;
+      const read = await conversationUI.readPages(initial ? { mode: "latest", latest: 50 } : { mode: "range", after }, info);
       if (!currentView(version) || read.clearedThrough < state.clearedThrough) return;
       const cleared = conversationUI.applyClear(read.clearedThrough);
       const nextMembers = members.members.map(member=>({...member,agent_name:member.agent_name || (roomsUI.isDirect() ? roomsUI.roomName() : roomsUI.selectedEntry()?.members?.find(m=>m.id===member.agent_id)?.agent_name) || member.agent_id}));
@@ -290,11 +289,12 @@ export async function createApp(overrides = {}) {
         for (const message of read.messages) state.messages.set(message.seq, message);
         conversationUI.renderMessages();
         if (stick) conversationUI.bottom();
-        else { $("timeline").scrollTop = scrollTop; $("jump-latest").hidden = false; }
+        else { $("timeline").scrollTop = scrollTop; if (read.messages.length) $("jump-latest").hidden = false; }
       }
       state.lastSeq = read.snapshot;
       conversationUI.renderMentionNotice();
       state.connected = true;
+      conversationUI.messagesRead(read, { after, stick });
       void interactionsUI.refreshPlatformInteractions();
       membersUI.renderMembers(); void membersUI.activity.refresh();void policyUI.refreshMemberPolicy();void inboxUI.refreshMemberInbox();
       syncFailureSince = null;
@@ -352,8 +352,7 @@ export async function createApp(overrides = {}) {
     selectView,
     navigationChanged: navigation.sync,
     conversationVisibilityChanged: () => {
-      if (!layoutUI.conversationVisible()) conversationUI.resetMessageViewing();
-      else conversationUI.scheduleMessageViewing();
+      conversationUI.conversationVisibilityChanged();
     },
     canPoll: () => lifecycle.active() && !state.recovering && (state.managed ? state.catalogConnected : state.connected),
     discussionBusy,
@@ -451,7 +450,7 @@ export async function createApp(overrides = {}) {
 
   document.addEventListener("close", conversationUI.scheduleMessageViewing, true);
 
-  window.addEventListener("pagehide", conversationUI.resetMessageViewing);
+  window.addEventListener("pagehide", conversationUI.leaveConversation);
 
   window.addEventListener("pagehide", conversationUI.saveDraft);
 

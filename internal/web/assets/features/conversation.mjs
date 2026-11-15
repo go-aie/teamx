@@ -1,6 +1,6 @@
 import { agentName, resolveAgentName, messageDisplayText } from "../agent-names.mjs";
 import { randomUUID } from "../random-id.mjs";
-import { readPages as collectPages, createRoomDrafts, mentionRanges } from "../client.mjs";
+import { readPages as collectPages, createRoomDrafts, mentionRanges, compactViewport } from "../client.mjs";
 import { createHumanRead } from "./human-read.mjs";
 import { notificationOptions } from "../markdown.mjs";
 import { createAssistantIcon } from "../icons.mjs";
@@ -10,10 +10,10 @@ import { captureReturnView } from "../view-return.mjs";
 
 // Messages, drafts, mentions and the send/restart lifecycle.
 export function createConversation({ env, runtime, roomsUI, notificationsUI, membersUI, settingsUI, interactionsUI, workspaceUI, layoutUI, userMenuUI }) {
-  const { document, window, requestAnimationFrame, performance, setTimeout, clearTimeout, ResizeObserver, renderMessageBody } = env;
+  const { document, window, requestAnimationFrame, performance, setTimeout, ResizeObserver, renderMessageBody } = env;
   const { state, $, notice, rpc, currentView, refresh, discussionBusy, reconcileChildren, storage, confirmAction } = runtime;
 
-  let historyLoading = false, composing = false, compositionEnded = -Infinity;
+  let historyTask = null, composing = false, compositionEnded = -Infinity;
   let notificationsReturn = null;
 
   function returnConversationNotifications() {
@@ -40,13 +40,112 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
 
   let mentionMessages = [];
   const unreadCandidates = new Map();
-  const humanRead = createHumanRead({ env, runtime, changed: renderReading });
+  const humanRead = createHumanRead({ env, runtime, changed: renderReading, canConfirm: () => state.connected && !discussionBusy() });
 
-  const messageVisibleSince = new Map();
+  // Only this component owns the current visit. A new visit never restores its bookmark.
+  let visit = null, viewingFramePending = false, viewingPaused = false, positioning = false, positioningID = 0;
+  const newDivider = document.createElement("div");
+  newDivider.className = "new-message-divider";
+  newDivider.textContent = "以下为新消息";
+  const ownMessage = message => message.author.kind === "human" && message.author.id === state.operator;
+  const readingKey = () => state.info ? JSON.stringify([state.installationID, state.info, state.operator]) : "";
 
-  let viewingTimer = null, viewingFramePending = false;
+  function leaveConversation() {
+    cancelHistory();
+    visit = null;
+    viewingPaused = false;
+    positioning = false;
+    positioningID++;
+    humanRead.reset({ force: true });
+    newDivider.remove();
+    notice("review-notice", "");
+    unreadCandidates.clear();
+  }
 
-  const readingDwell = 1000;
+  function conversationVisibilityChanged() {
+    const outside = !state.info || compactViewport(window) && layoutUI.roomsPanelOpen();
+    if (outside) { if (visit) leaveConversation(); return; }
+    if (!visit || visit.key !== readingKey()) {
+      leaveConversation();
+      visit = { key: readingKey(), entrySnapshot: null, dividerSeq: null, remainingSeqs: new Set(),
+        observed: new Set(), loaded: false, opened: false, dividerEstablished: false, task: null, metadata: null };
+    }
+    if (visit.entrySnapshot === null) void initializeVisit(visit);
+    // Details and dialogs pause observation but retain the same visit.
+    scheduleMessageViewing();
+  }
+
+  function pollHumanRead() {
+    conversationVisibilityChanged();
+    if (!visit) return;
+    if (visit.entrySnapshot === null) void initializeVisit(visit);
+    else humanRead.poll();
+  }
+
+  async function initializeVisit(current) {
+    if (current.task) return;
+    current.task = humanRead.entryState();
+    const result = await current.task;
+    current.task = null;
+    if (visit !== current || !result || result.cleared_through < state.clearedThrough) return;
+    const { new_message_seqs, ...metadata } = result;
+    current.metadata = metadata;
+    current.entrySnapshot = result.snapshot_seq;
+    current.dividerSeq = result.new_message_seqs[0] || null;
+    current.dividerEstablished = current.dividerSeq !== null;
+    current.remainingSeqs = new Set(new_message_seqs);
+    // Messages can arrive while the independent entry request is in flight.
+    for (const message of state.messages.values()) if (message.seq > result.snapshot_seq && !ownMessage(message)) {
+      current.remainingSeqs.add(message.seq);
+      if (!current.dividerEstablished) { current.dividerSeq = message.seq; current.dividerEstablished = true; }
+    }
+    for (const seq of current.observed) current.remainingSeqs.delete(seq);
+    current.observed = null;
+    renderReading();
+    renderDivider();
+    scheduleMessageViewing();
+  }
+
+  function readingActive() {
+    if (!visit || state.suspended || document.hidden || !document.hasFocus() ||
+      !layoutUI.conversationVisible() || document.querySelector("dialog:modal")) return false;
+    const root = $("timeline").getBoundingClientRect(), viewport = window.visualViewport;
+    const top = viewport?.offsetTop || 0, left = viewport?.offsetLeft || 0;
+    return Math.min(root.bottom, top + (viewport?.height ?? window.innerHeight)) > Math.max(root.top, top) &&
+      Math.min(root.right, left + (viewport?.width ?? window.innerWidth)) > Math.max(root.left, left);
+  }
+
+  function confirmOpened() {
+    if (!readingActive() || !state.connected || discussionBusy() || !visit.loaded || visit.entrySnapshot === null ||
+      state.lastSeq < visit.entrySnapshot) return;
+    if (!visit.opened) {
+      humanRead.openThrough(visit.entrySnapshot);
+      visit.opened = true;
+    }
+  }
+
+  // Called only for a successful main message read, never for history or reading polls.
+  function messagesRead(read, { after, stick }) {
+    if (!visit) return;
+    visit.loaded = true;
+    if (visit.entrySnapshot !== null) for (const message of read.messages) {
+      if (message.seq <= after || message.seq <= visit.entrySnapshot || ownMessage(message)) continue;
+      visit.remainingSeqs.add(message.seq);
+      if (!visit.dividerEstablished) { visit.dividerSeq = message.seq; visit.dividerEstablished = true; }
+    }
+    const alreadyOpened = visit.opened;
+    confirmOpened();
+    if (alreadyOpened && stick && readingActive() && state.connected && !discussionBusy()) humanRead.openThrough(read.snapshot);
+    renderReading();
+    renderDivider();
+    scheduleMessageViewing();
+  }
+
+  function renderDivider() {
+    const target = visit?.dividerSeq && messageNodes.get(visit.dividerSeq)?.element;
+    if (target?.parentElement) target.parentElement.insertBefore(newDivider, target);
+    else newDivider.remove();
+  }
   const operatorNames = () => [state.operator, state.operatorDisplayName].filter(Boolean);
   const authorName = (author, message) => author.kind === "human" && author.id === state.operator ? userMenuUI.displayName()
     : author.kind === "agent" ? resolveAgentName(state.members,author.id,message?.author_membership_id,message?.agent_name || author.id) : author.id;
@@ -83,42 +182,54 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
   }
 
   function bottom() {
+    const id = ++positioningID;
+    positioning = true;
     $("timeline").scrollTop = $("timeline").scrollHeight;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (id === positioningID) { positioning = false; scheduleMessageViewing(); }
+    }));
     $("jump-latest").hidden = true;
   }
 
-  function renderMentionNotice() {
-    const mentions = unreadMentions();
-    $("mention-notice").hidden = mentions.length === 0;
-    $("view-mention").textContent = mentions.length ? `@你 · ${mentions.length} 条` : "";
-    const description = mentions.length ? `查看最早未查看的提及：${authorName(mentions[0].author)} 的消息` : "";
-    $("view-mention").setAttribute("aria-label", mentions.length ? `${mentions.length} 条消息提及你，${description}` : "查看提及你的消息");
-    $("view-mention").title = description;
-    document.title = `${mentions.length ? `(${mentions.length} 条 @你) ` : ""}${roomsUI.roomName()} · TeamX`;
-    const reading = state.managed ? roomsUI.selectedEntry()?.human_read : humanRead.summary();
-    const confirmed = humanRead.summary();
-    const earlier = reading?.status === "ready" && confirmed && reading.revision === confirmed.revision &&
-      reading.snapshot_seq >= state.lastSeq && reading.cleared_through >= state.clearedThrough
-      ? Math.max(0, reading.mention_count - mentionMessages.filter(message => !humanRead.confirmed(message.seq)).length) : 0;
-    $("earlier-mentions").hidden = !earlier || $("load-history").hidden;
-    $("earlier-mentions").textContent = earlier ? `更早还有 ${earlier} 条提及` : "";
-    scheduleMessageViewing();
+  function unreadMentions() {
+    const summary = humanRead.summary() || visit?.metadata;
+    if (!summary) return null;
+    const seqs = new Set(summary.unseen_mention_seqs);
+    for (const message of mentionMessages) if (message.seq > summary.snapshot_seq) seqs.add(message.seq);
+    return [...seqs].filter(seq => seq > state.clearedThrough && !humanRead.seen(seq)).sort((a,b) => a-b);
   }
 
-  function unreadMentions() {
-    return mentionMessages.filter(message => !humanRead.seen(message.seq));
+  function reviewTarget() {
+    const mentions = unreadMentions();
+    return !mentions ? null : mentions[0] || (visit?.remainingSeqs.size ? Math.min(...visit.remainingSeqs) : null);
+  }
+
+  function renderMentionNotice() {
+    const mentions = unreadMentions(), remaining = visit?.remainingSeqs.size || 0;
+    const count = mentions?.length || 0, target = reviewTarget();
+    const node = target && messageNodes.get(target)?.element;
+    const root = $("timeline").getBoundingClientRect(), rect = node?.getBoundingClientRect();
+    const direction = !rect || rect.top < root.top ? "↑" : rect.bottom > root.bottom ? "↓" : "";
+    $("mention-notice").hidden = !visit || !mentions || !target;
+    $("view-mention").textContent = count ? `${direction} 有人 @我 · ${count} 条`.trim() : `${direction} ${remaining} 条新消息`.trim();
+    const message = state.messages.get(target);
+    const description = count ? `查看最早未查看的提及${message ? `：${authorName(message.author, message)} 的消息` : ""}` : "查看本次尚未查看的新消息";
+    $("view-mention").setAttribute("aria-label", count ? `${count} 条消息提及你，${description}` : `${remaining} 条新消息，${description}`);
+    $("view-mention").title = description;
+    document.title = `${count ? `(${count} 条 @你) ` : ""}${roomsUI.roomName()} · TeamX`;
   }
 
   // Reading-only sync must not rebuild the timeline or change its scroll state.
   function renderReading() {
     for (const message of mentionMessages) messageNodes.get(message.seq)?.element.classList.toggle("mentioned", !humanRead.seen(message.seq));
-    for (const seq of unreadCandidates.keys()) if (humanRead.seen(seq)) unreadCandidates.delete(seq);
+    if (visit) for (const seq of visit.remainingSeqs) if (humanRead.seen(seq) || seq <= state.clearedThrough) visit.remainingSeqs.delete(seq);
+    unreadCandidates.clear();
+    for (const [seq, cached] of messageNodes) if (!ownMessage(state.messages.get(seq)) &&
+      (visit?.entrySnapshot === null || visit?.remainingSeqs.has(seq) || cached.mentioned && !humanRead.seen(seq))) {
+      unreadCandidates.set(seq, cached.element);
+    }
     renderMentionNotice();
-  }
-
-  function resetMessageViewing() {
-    clearTimeout(viewingTimer); viewingTimer = null;
-    messageVisibleSince.clear();
+    scheduleMessageViewing();
   }
 
   function scheduleMessageViewing() {
@@ -128,21 +239,22 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
   }
 
   function updateMessageViewing() {
-    clearTimeout(viewingTimer); viewingTimer = null;
-    if (!state.info || state.suspended || document.hidden || !document.hasFocus() || !layoutUI.conversationVisible() || document.querySelector("dialog:modal")) {
-      messageVisibleSince.clear(); return;
-    }
+    if (viewingPaused || positioning || !readingActive()) return;
     const root = $("timeline").getBoundingClientRect();
     const viewport = window.visualViewport;
     const viewportTop = viewport?.offsetTop || 0, viewportLeft = viewport?.offsetLeft || 0;
     const viewportHeight = viewport?.height ?? window.innerHeight, viewportWidth = viewport?.width ?? window.innerWidth;
     const top = Math.max(viewportTop, root.top), bottom = Math.min(viewportTop + viewportHeight, root.bottom);
     const left = Math.max(viewportLeft, root.left), right = Math.min(viewportLeft + viewportWidth, root.right);
-    if (bottom <= top || right <= left) { messageVisibleSince.clear(); return; }
-    const now = performance.now(), visible = new Set();
-    let remaining = Infinity, changed = false;
-    for (const [seq, el] of unreadCandidates) {
-      if (humanRead.seen(seq)) { unreadCandidates.delete(seq); continue; }
+    if (bottom <= top || right <= left) return;
+    confirmOpened();
+    let changed = false;
+    // Messages form one continuous ordered timeline. Search its visible slice
+    // rather than measuring thousands of off-screen nodes on every scroll.
+    const candidates = messageOrder.length > 200
+      ? visibleMessages(top, bottom).map(seq => [seq, unreadCandidates.get(seq)]).filter(([,el]) => el)
+      : unreadCandidates;
+    for (const [seq, el] of candidates) {
       const rect = el.getBoundingClientRect();
       if (!rect || rect.height <= 0 || rect.width <= 0) continue;
       // Half a message must be visible; tall messages need half the viewport.
@@ -150,37 +262,83 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
       const width = Math.min(right, rect.right) - Math.max(left, rect.left);
       if (height < Math.min(rect.height, root.height, viewportHeight) / 2 ||
         width < Math.min(rect.width, root.width, viewportWidth) / 2) continue;
-      visible.add(seq);
-      const since = messageVisibleSince.get(seq) ?? now;
-      messageVisibleSince.set(seq, since);
-      const wait = readingDwell - (now - since);
-      if (wait > 0) { remaining = Math.min(remaining, wait); continue; }
-      if (humanRead.observe(seq)) {
-        unreadCandidates.delete(seq); messageVisibleSince.delete(seq);
-        el.classList.remove("mentioned"); changed = true;
-      }
+      if (visit.observed) visit.observed.add(seq);
+      visit.remainingSeqs.delete(seq);
+      const message = state.messages.get(seq);
+      if (message && mentionRanges(message.text, operatorNames()).length && state.connected && !discussionBusy()) humanRead.observe(seq);
+      // Keep an unconfirmed mention eligible while the service is read-only/busy.
+      if (!message || !mentionRanges(message.text, operatorNames()).length || humanRead.seen(seq)) unreadCandidates.delete(seq);
+      el.classList.toggle("mentioned", !!message && mentionRanges(message.text, operatorNames()).length > 0 && !humanRead.seen(seq));
+      changed = true;
     }
-    for (const seq of messageVisibleSince.keys()) if (!visible.has(seq)) messageVisibleSince.delete(seq);
-    if (changed) {
-      renderMentionNotice();
-    }
-    if (Number.isFinite(remaining)) viewingTimer = setTimeout(updateMessageViewing, remaining);
+    if (changed) renderMentionNotice();
   }
 
   function resetReadingContext() {
     humanRead.reset();
+    conversationVisibilityChanged();
   }
 
   // Each read fixes a snapshot. All continuation pages keep that exact boundary.
-  function readPages(params, info) {
-    return collectPages((page) => rpc("/v1/read", page, info), params);
+  function readPages(params, info, signal) {
+    return collectPages((page) => rpc("/v1/read", page, info, signal), params, signal);
   }
 
-  const messageNodes = new Map(), dayNodes = new Map();
+  const messageNodes = new Map(), dayNodes = new Map(), references = new Map();
+  let renderedKey = null, messageOrder = [];
+  const renderingKey = () => JSON.stringify([state.members.map(m => [m.agent_id,m.membership_id,agentName(m)]),
+    operatorNames(), userMenuUI.displayName(), roomsUI.isDefaultAssistant(), settingsUI.systemTime.zone, settingsUI.systemTime.error]);
+  const messageDay = message => settingsUI.systemTime.day(new Date(message.created_at));
+  function dayElement(message, day = messageDay(message)) {
+    let divider = dayNodes.get(day);
+    if (!divider) { divider = document.createElement("div"); divider.className = "day-divider"; dayNodes.set(day, divider); }
+    divider.textContent = settingsUI.systemTime.error ? settingsUI.formatDate(message.created_at)
+      : `${settingsUI.formatDate(message.created_at, {month:"long",day:"numeric"})} ${settingsUI.formatDate(message.created_at, {weekday:"short"})}`;
+    return divider;
+  }
+
+  function rememberMessage(message, cached) {
+    messageNodes.set(message.seq, cached);
+    if (message.reply_to) {
+      if (!references.has(message.reply_to)) references.set(message.reply_to, new Set());
+      references.get(message.reply_to).add(message.seq);
+    }
+  }
+
+  function renderReference(message, element) {
+    const target = state.messages.get(message.reply_to);
+    element.querySelector(".message-reference").textContent = target
+      ? `↳ #${target.seq} ${authorName(target.author,target)}：${displayText(target)}`
+      : message.reply_to <= state.clearedThrough ? `↳ 引用消息 #${message.reply_to} · 已清空`
+        : `↳ 引用消息 #${message.reply_to} · 加载更早消息可查看`;
+  }
+
+  function refreshReferences(seq) {
+    for (const referring of references.get(seq) || []) {
+      const cached = messageNodes.get(referring), message = state.messages.get(referring);
+      if (cached && message) renderReference(message,cached.element);
+    }
+  }
+
+  function trackMessage(message, cached) {
+    if (ownMessage(message)) return;
+    if (cached.mentioned) mentionMessages.push(message);
+    if (visit?.entrySnapshot === null || visit?.remainingSeqs.has(message.seq) || cached.mentioned && !humanRead.seen(message.seq)) {
+      unreadCandidates.set(message.seq, cached.element);
+    }
+  }
+
+  function finishMessages() {
+    $("empty").hidden = state.messages.size !== 0;
+    $("load-history").hidden = state.oldest <= state.clearedThrough + 1;
+    renderDivider(); renderReply(); renderMentionNotice();
+    scheduleMessageViewing();
+  }
 
   function messageElement(message) {
     const el = $("message-template").content.firstElementChild.cloneNode(true);
     el.id = `message-${message.seq}`;
+    el.classList.toggle("own", ownMessage(message));
     const agent = message.author.kind === "agent", integration = message.author.kind === "integration";
     el.classList.toggle("integration", integration);
     const avatar = el.querySelector(".avatar");
@@ -230,10 +388,8 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     el.querySelector(".reply-button").addEventListener("click", () => beginReply(message));
     if (message.reply_to) {
       const ref = el.querySelector(".message-reference");
-      const target = state.messages.get(message.reply_to);
       ref.hidden = false;
-      ref.textContent = target ? `↳ #${target.seq} ${authorName(target.author,target)}：${displayText(target)}` : message.reply_to <= state.clearedThrough
-        ? `↳ 引用消息 #${message.reply_to} · 已清空` : `↳ 引用消息 #${message.reply_to} · 加载更早消息可查看`;
+      renderReference(message,el);
       ref.addEventListener("click", () => revealMessage(message.reply_to));
     }
     return el;
@@ -241,10 +397,32 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
 
   function renderMessages() {
     humanRead.prune();
+    // Ordinary polling after a long history load only constructs new messages.
+    // Identity/time-zone changes still use the existing complete reconciliation.
+    const key = renderingKey();
+    if (renderedKey === key && messageNodes.size <= state.messages.size) {
+      const added = [...state.messages.values()].filter(message => !messageNodes.has(message.seq)).sort((a,b) => a.seq-b.seq);
+      const last = messageOrder.at(-1) || 0;
+      if (!added.length || added[0].seq > last) {
+        let day = last ? messageNodes.get(last).day : "";
+        const fragment = document.createDocumentFragment();
+        for (const message of added) {
+          if (messageDay(message) !== day) { day = messageDay(message); fragment.append(dayElement(message)); }
+          const cached = {element:messageElement(message),memberNames:key,mentioned:mentionRanges(message.text,operatorNames()).length>0,day:messageDay(message)};
+          rememberMessage(message,cached); trackMessage(message,cached); fragment.append(cached.element);
+        }
+        $("messages").append(fragment);
+        messageOrder.push(...added.map(message => message.seq));
+        interactionsUI.renderPlatformInteractions();
+        if (!state.oldest) state.oldest = added[0]?.seq || 0;
+        finishMessages();
+        return;
+      }
+    }
     unreadCandidates.clear(); mentionMessages = [];
     const nodes = [];
     const messages = [...state.messages.values()].sort((a, b) => a.seq - b.seq);
-    const memberNamesKey = JSON.stringify([state.members.map(m => [m.agent_id,m.membership_id,agentName(m)]), operatorNames(), roomsUI.isDefaultAssistant()]);
+    const memberNamesKey = renderingKey();
     let day = "";
     for (const message of messages) {
       const date = new Date(message.created_at);
@@ -257,7 +435,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
         nodes.push(divider);
       }
       let cached=messageNodes.get(message.seq);
-      if(!cached){cached={element:messageElement(message),memberNames:memberNamesKey};messageNodes.set(message.seq,cached);}
+      if(!cached){cached={element:messageElement(message),memberNames:memberNamesKey};rememberMessage(message,cached);}
       const el=cached.element;
       el.classList.toggle("own", message.author.kind === "human" && message.author.id === state.operator);
       if (message.author.kind !== "integration") el.querySelector(".author").textContent = authorName(message.author,message);
@@ -268,30 +446,209 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
         cached.memberNames = memberNamesKey;
       }
       const mentioned=mentionRanges(message.text,operatorNames()).length>0;
+      cached.mentioned = mentioned; cached.day = day;
       const own = message.author.kind === "human" && message.author.id === state.operator;
       el.classList.toggle("mentioned", !humanRead.seen(message.seq) && mentioned && !own);
       if (!own) {
         if (mentioned) mentionMessages.push(message);
-        if (!humanRead.seen(message.seq)) unreadCandidates.set(message.seq, el);
+        if (visit?.entrySnapshot === null || visit?.remainingSeqs.has(message.seq) || mentioned && !humanRead.seen(message.seq)) unreadCandidates.set(message.seq, el);
       }
       el.querySelector("time").textContent=settingsUI.formatDate(message.created_at,{hour:"2-digit",minute:"2-digit"});
       el.querySelector("time").title=settingsUI.formatDate(message.created_at);
-      if(message.reply_to){const target=state.messages.get(message.reply_to);el.querySelector(".message-reference").textContent=target ? `↳ #${target.seq} ${authorName(target.author,target)}：${displayText(target)}` : message.reply_to<=state.clearedThrough ? `↳ 引用消息 #${message.reply_to} · 已清空` : `↳ 引用消息 #${message.reply_to} · 加载更早消息可查看`;}
+      if (message.reply_to) renderReference(message,el);
       nodes.push(el);
     }
     for(const seq of messageNodes.keys())if(!state.messages.has(seq))messageNodes.delete(seq);
     reconcileChildren($("messages"),nodes);
     interactionsUI.renderPlatformInteractions();
     state.oldest = messages[0]?.seq || 0;
-    $("empty").hidden = messages.length !== 0;
-    $("load-history").hidden = state.oldest <= state.clearedThrough + 1;
-    renderReply(); renderMentionNotice();
+    messageOrder = messages.map(message => message.seq);
+    renderedKey = memberNamesKey;
+    finishMessages();
+  }
+
+  function firstVisible(top) {
+    let lo = 0, hi = messageOrder.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (messageNodes.get(messageOrder[mid]).element.getBoundingClientRect().bottom <= top) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  }
+
+  function visibleMessages(top, bottom) {
+    const result = [];
+    for (let i = firstVisible(top); i < messageOrder.length; i++) {
+      const seq = messageOrder[i];
+      if (messageNodes.get(seq).element.getBoundingClientRect().top >= bottom) break;
+      result.push(seq);
+    }
+    return result;
+  }
+
+  // One cancellable task owns both manual history and automatic review loading.
+  // A cancelled response can finish in the transport, but can never commit nodes.
+  function cancelHistory(text = "") {
+    if (historyTask) historyTask.controller.abort();
+    historyTask = null;
+    $("history-progress").hidden = true;
+    $("load-history").disabled = false;
+    $("load-history").textContent = "加载更早消息";
+    $("view-mention").disabled = false;
+    if (text) notice("review-notice", text);
+  }
+
+  const yieldHistory = task => new Promise(resolve => {
+    const signal = task.controller.signal;
+    const finish = () => { signal.removeEventListener("abort",finish); resolve(); };
+    signal.addEventListener("abort",finish,{once:true});
+    if (signal.aborted) finish(); else requestAnimationFrame(finish);
+  });
+  const validHistory = task => historyTask === task && !task.controller.signal.aborted && currentView(task.version) &&
+    task.visit === visit && task.key === readingKey() && task.cleared === state.clearedThrough;
+
+  function positionReview(seq) {
+    const target = messageNodes.get(seq)?.element;
+    if (!target || !visit || seq <= state.clearedThrough) return;
+    const current = visit;
+    const id = ++positioningID;
+    positioning = true;
+    target.scrollIntoView({block:"center", behavior:"instant"});
+    target.tabIndex = -1; target.focus({preventScroll:true});
+    target.classList.remove("flash");
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (id !== positioningID) return;
+      positioning = false;
+      if (visit === current && messageNodes.get(seq)?.element === target) {
+        target.classList.add("flash"); scheduleMessageViewing();
+      }
+    }));
+  }
+
+  function locateReview() {
+    const seq = reviewTarget();
+    if (!seq || historyTask) return;
+    notice("review-notice", "");
+    if (messageNodes.has(seq)) { positionReview(seq); return; }
+    return loadHistory(seq);
+  }
+
+  async function insertHistory(task, messages) {
+    const key = renderingKey(), built = new Map();
+    let start = performance.now();
+    for (const message of messages) {
+      if (!validHistory(task)) return false;
+      if (!messageNodes.has(message.seq)) built.set(message.seq, {
+        element:messageElement(message), memberNames:key, mentioned:mentionRanges(message.text,operatorNames()).length>0, day:messageDay(message) });
+      if (performance.now() - start >= 6) {
+        await yieldHistory(task); start = performance.now();
+      }
+    }
+    if (!validHistory(task)) return false;
+    if (key !== renderingKey()) throw new Error("会话显示设置已变化，请重试。");
+    const added = messages.filter(message => !messageNodes.has(message.seq));
+    if (!added.length) throw new Error("历史分页没有前进，请重试。");
+    const timeline = $("timeline"), top = timeline.getBoundingClientRect().top;
+    const anchor = messageNodes.get(messageOrder[firstVisible(top)])?.element;
+    const offset = anchor?.getBoundingClientRect().top;
+    const height = timeline.scrollHeight, scroll = timeline.scrollTop;
+    viewingPaused = true;
+    try {
+      // Reuse the boundary day's existing divider, moving it before the new
+      // prefix only in this short synchronous commit. Never rebuild old nodes.
+      const fragment = document.createDocumentFragment();
+      let day = "";
+      for (const message of added) {
+        const cached = built.get(message.seq);
+        if (cached.day !== day) { day = cached.day; fragment.append(dayElement(message, day)); }
+        state.messages.set(message.seq,message); rememberMessage(message,cached);
+        trackMessage(message,cached); fragment.append(cached.element);
+      }
+      for (const message of added) refreshReferences(message.seq);
+      $("messages").insertBefore(fragment, $("messages").firstChild);
+      messageOrder = [...added.map(message => message.seq), ...messageOrder];
+      state.oldest = messageOrder[0];
+      // Moving the fixed new-message divider can also change height above us.
+      renderDivider();
+      if (anchor) timeline.scrollTop += anchor.getBoundingClientRect().top - offset;
+      else timeline.scrollTop = scroll + timeline.scrollHeight - height;
+      interactionsUI.renderPlatformInteractions();
+      finishMessages();
+    } finally {
+      requestAnimationFrame(() => { viewingPaused = false; scheduleMessageViewing(); });
+    }
+    return true;
+  }
+
+  async function loadHistory(target = null) {
+    if (historyTask || !state.info || state.oldest <= state.clearedThrough + 1) return;
+    const task = {controller:new AbortController(), version:runtime.viewVersion, key:readingKey(), visit,
+      cleared:state.clearedThrough, info:{...state.info}, loaded:0, target};
+    historyTask = task;
+    $("load-history").disabled = true; $("load-history").textContent = "加载中…";
+    $("view-mention").disabled = true;
+    $("history-progress").hidden = false;
+    $("cancel-history").textContent = target ? "取消定位" : "取消加载";
+    notice("review-notice", "");
+    try {
+      do {
+        $("history-status").textContent = `正在加载更早消息 · 已加载 ${task.loaded} 条`;
+        const oldest = state.oldest;
+        // If the target lands at the first node of a batch, fetch just the
+        // missing preceding context without expanding a snapshot beyond 50.
+        const after = Math.max(task.cleared, target && messageNodes.has(target) ? target-6 : oldest-51);
+        const read = await readPages({mode:"range", after, snapshot_seq:oldest-1}, task.info, task.controller.signal);
+        if (!validHistory(task) || read.clearedThrough < state.clearedThrough) return;
+        if (read.clearedThrough > task.cleared) {
+          applyClear(read.clearedThrough);
+          renderMessages();
+          void refresh();
+          return;
+        }
+        if (!await insertHistory(task,read.messages)) return;
+        task.loaded += read.messages.length;
+        // Yield between bounded snapshots so input, cancellation and live polling
+        // can run while the retained timeline remains continuous.
+        await yieldHistory(task);
+        if (!validHistory(task)) return;
+        if (target && reviewTarget() !== target) {
+          target = reviewTarget();
+          if (!target) return;
+        }
+      } while (target && state.oldest > task.cleared+1 &&
+        (!messageNodes.has(target) || state.oldest > Math.max(task.cleared+1,target-5)));
+      if (target && validHistory(task)) {
+        if (!messageNodes.has(target)) throw new Error("目标消息已不可用，请重新选择。");
+        positionReview(target);
+      }
+    } catch (error) {
+      if (validHistory(task)) notice("review-notice", `历史加载失败，再次点击可继续。${error.message}`);
+    } finally {
+      if (historyTask === task) cancelHistory();
+    }
   }
 
   function applyClear(through) {
     if (through <= state.clearedThrough) return false;
     state.clearedThrough = through;
-    for (const seq of state.messages.keys()) if (seq <= through) state.messages.delete(seq);
+    if (historyTask) cancelHistory("历史已清空，请重新选择回看目标。");
+    if (visit) {
+      for (const seq of visit.remainingSeqs) if (seq <= through) visit.remainingSeqs.delete(seq);
+      if (visit.observed) for (const seq of visit.observed) if (seq <= through) visit.observed.delete(seq);
+      if (visit.dividerSeq <= through) { visit.dividerSeq = null; newDivider.remove(); }
+    }
+    for (const seq of state.messages.keys()) if (seq <= through) {
+      const replyTo = state.messages.get(seq).reply_to;
+      if (replyTo) { references.get(replyTo)?.delete(seq); if (!references.get(replyTo)?.size) references.delete(replyTo); }
+      state.messages.delete(seq); messageNodes.get(seq)?.element.remove(); messageNodes.delete(seq); unreadCandidates.delete(seq);
+    }
+    for (const target of references.keys()) if (target <= through) refreshReferences(target);
+    messageOrder = messageOrder.filter(seq => seq > through);
+    mentionMessages = mentionMessages.filter(message => message.seq > through);
+    state.oldest = messageOrder[0] || 0;
+    const firstDay = messageNodes.get(state.oldest)?.day;
+    for (const [day, divider] of dayNodes) if (!firstDay || day < firstDay) { divider.remove(); dayNodes.delete(day); }
     if (state.draft.replyTo && state.draft.replyTo <= through) clearReply();
     return true;
   }
@@ -441,7 +798,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
 
   function resetRestartNotice() { restartNoticeID = ""; restartNoticeExpires = 0; }
 
-  function resetMessageNodes() { messageNodes.clear(); dayNodes.clear(); }
+  function resetMessageNodes() { cancelHistory(); renderedKey = null; messageOrder = []; messageNodes.clear(); dayNodes.clear(); references.clear(); }
 
   function interactionHost(seq) {
     return messageNodes.get(seq)?.element.querySelector(".message-interactions");
@@ -470,17 +827,8 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
       event.preventDefault(); returnConversationNotifications();
     });
 
-    $("view-mention").addEventListener("click", () => {
-      const message = unreadMentions()[0];
-      if (!message) return;
-      const target = $(`message-${message.seq}`);
-      target.scrollIntoView({ block: "center" });
-      target.tabIndex = -1;
-      target.focus({ preventScroll: true });
-      target.classList.remove("flash");
-      requestAnimationFrame(() => target.classList.add("flash"));
-      scheduleMessageViewing();
-    });
+    $("view-mention").addEventListener("click", () => locateReview());
+    $("cancel-history").addEventListener("click", () => cancelHistory("已取消定位；再次点击可继续。"));
 
     $("restart-discussion").addEventListener("click", async () => {
       if ($("restart-discussion").disabled) return;
@@ -570,10 +918,19 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     $("cancel-reply").addEventListener("click", () => { if (!state.draft.pending) { clearReply(); $("message-input").focus(); } });
     $("reply-preview").addEventListener("click", () => revealMessage(state.draft.replyTo));
 
-    $("jump-latest").addEventListener("click", bottom);
+    $("jump-latest").addEventListener("click", () => {
+      bottom();
+      confirmOpened();
+      if (readingActive() && state.connected && !discussionBusy() && visit?.opened) humanRead.openThrough(state.lastSeq);
+      scheduleMessageViewing();
+    });
 
     $("timeline").addEventListener("scroll", () => {
-      if (nearBottom()) $("jump-latest").hidden = true;
+      if (nearBottom()) {
+        $("jump-latest").hidden = true;
+        if (!positioning && visit?.opened && readingActive() && state.connected && !discussionBusy()) humanRead.openThrough(state.lastSeq);
+      }
+      renderMentionNotice();
       scheduleMessageViewing();
     });
 
@@ -588,29 +945,9 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
 
     window.addEventListener("focus", updateMessageViewing);
 
-    window.addEventListener("blur", resetMessageViewing);
-
     if (typeof ResizeObserver !== "undefined") new ResizeObserver(scheduleMessageViewing).observe($("timeline"));
 
-    $("load-history").addEventListener("click", async () => {
-      if (historyLoading || !state.info || state.oldest <= state.clearedThrough + 1) return;
-      historyLoading = true;
-      $("load-history").disabled = true;
-      $("load-history").textContent = "加载中…";
-      const info = state.info, version = runtime.viewVersion;
-      const oldest = state.oldest;
-      try {
-        const read = await readPages({ mode: "range", after: Math.max(0, oldest - 51), snapshot_seq: oldest - 1 }, info);
-        if (!currentView(version)) return;
-        if (read.clearedThrough < state.clearedThrough) return;
-        applyClear(read.clearedThrough);
-        const el = $("timeline"), height = el.scrollHeight, top = el.scrollTop;
-        for (const message of read.messages) state.messages.set(message.seq, message);
-        renderMessages();
-        el.scrollTop = top + el.scrollHeight - height;
-      } catch (error) { if (currentView(version)) notice("sync-error", `历史加载失败，可重试。${error.message}`); }
-      finally { historyLoading = false; $("load-history").disabled = false; $("load-history").textContent = "加载更早消息"; }
-    });
+    $("load-history").addEventListener("click", () => loadHistory());
   }
 
   return {
@@ -624,9 +961,11 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     beginReply,
     nearBottom,
     saveDraft,
-    resetMessageViewing,
     resetReadingContext,
-    pollHumanRead: humanRead.poll,
+    pollHumanRead,
+    conversationVisibilityChanged,
+    leaveConversation,
+    messagesRead,
     humanReadSummary: humanRead.summary,
     drafts,
     showDraft,

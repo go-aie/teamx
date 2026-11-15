@@ -108,13 +108,15 @@ export function memberMentionRanges(text, names) {
 
 // All continuation pages belong to the first page's fixed snapshot. Neither
 // history previews nor live refreshes ever confirm a member's unread receipt.
-export async function readPages(read, params) {
+export async function readPages(read, params, signal) {
   const messages = [];
   let page;
   let snapshot = params.snapshot_seq;
   let clearedThrough;
   do {
+    signal?.throwIfAborted();
     page = await read(params);
+    signal?.throwIfAborted();
     snapshot ??= page.snapshot_seq;
     if (page.snapshot_seq !== snapshot) throw new Error("消息快照已变化，请刷新重试。");
     clearedThrough ??= page.cleared_through || 0;

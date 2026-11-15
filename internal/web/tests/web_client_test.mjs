@@ -97,6 +97,19 @@ test("clearing during pagination discards pages containing removed messages", as
   assert.deepEqual(result, { messages: [], snapshot: 3, clearedThrough: 3 });
 });
 
+test("cancelling pagination discards a late page and never requests its continuation", async () => {
+  const controller = new AbortController();
+  let release, calls = 0;
+  const task = readPages(async () => { calls++; return new Promise(resolve => { release = resolve; }); },
+    {mode:"range",after:0,snapshot_seq:50},controller.signal);
+  controller.abort();
+  release({messages:[{seq:1}],snapshot_seq:50,next_after:1,has_more:true});
+  await assert.rejects(task, {name:"AbortError"});
+  assert.equal(calls,1);
+  await assert.rejects(readPages(async () => { calls++; }, {mode:"latest",latest:50},controller.signal), {name:"AbortError"});
+  assert.equal(calls,1);
+});
+
 test("uncertain sends are never automatically retried by the transport", async () => {
   const payload = { text: "hello", client_message_id: "original-id" };
   const calls = [];

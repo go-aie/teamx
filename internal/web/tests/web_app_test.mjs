@@ -266,23 +266,34 @@ function server(rooms = []) {
       if (!catalog.rooms.some(room => client.sameService(data, room.service)) && !(path === "/v1/read" && client.sameService(data, api.workspaces?.get(data.room_id)?.observation))) throw Object.assign(new Error("stale identity"), { code: "identity" });
       if (path === "/v1/human-read/state" || path === "/v1/human-read/confirm") {
         const key = JSON.stringify([data.room_instance, data.caller.id]);
-        const saved = humanReads.get(key) || {revision:0, seen:new Set()};
+        const saved = humanReads.get(key) || {revision:0, opened:0, seen:new Set()};
         const messages = history.get(data.room_id), latest = messages.at(-1)?.seq || 0;
         const cleared = api.clearedThrough || 0;
+        const other = messages.filter(m=>m.seq>cleared && !(m.author.kind==="human" && m.author.id===data.caller.id));
+        const mentioned = m=>client.mentionRanges(m.text,data.caller.id).length>0;
         if (path.endsWith("/confirm")) {
           assert.ok(data.snapshot_seq <= latest);
-          assert.ok(data.seen_seqs.length <= 100);
-          const before = saved.seen.size;
-          for (const seq of data.seen_seqs) {
-            assert.ok(seq > 0 && seq <= data.snapshot_seq);
-            if (seq > cleared) saved.seen.add(seq);
+          assert.ok(data.opened_through !== undefined || data.mention_seen_seqs !== undefined);
+          assert.ok((data.mention_seen_seqs || []).length <= 100);
+          const before = saved.seen.size, openedBefore=saved.opened;
+          if(data.opened_through!==undefined) {
+            assert.ok(data.opened_through<=data.snapshot_seq);
+            saved.opened=Math.max(saved.opened,data.opened_through);
           }
-          if (saved.seen.size !== before) saved.revision++;
+          for (const seq of data.mention_seen_seqs || []) {
+            assert.ok(seq > 0 && seq <= data.snapshot_seq);
+            if (other.some(m=>m.seq===seq && mentioned(m))) saved.seen.add(seq);
+          }
+          if (saved.seen.size !== before || saved.opened!==openedBefore) saved.revision++;
           humanReads.set(key, saved);
         }
-        return {room_id:data.room_id, room_instance:data.room_instance, operator_id:data.caller.id,
-          revision:saved.revision, snapshot_seq:latest, cleared_through:cleared,
-          seen_seqs:[...saved.seen].filter(seq=>seq>cleared), unread_count:0, mention_count:0};
+        const unseen=other.filter(m=>mentioned(m) && !saved.seen.has(m.seq)), opened=Math.max(saved.opened,cleared);
+        const result={version:2,room_id:data.room_id, room_instance:data.room_instance, operator_id:data.caller.id,
+          revision:saved.revision, snapshot_seq:latest, cleared_through:cleared,opened_through:opened,
+          mention_seen_seqs:[...saved.seen].filter(seq=>seq>cleared).sort((a,b)=>a-b), unseen_mention_seqs:unseen.map(m=>m.seq),
+          unread_count:other.filter(m=>m.seq>opened || unseen.includes(m)).length,mention_count:unseen.length};
+        if(data.include_new_messages)result.new_message_seqs=other.filter(m=>m.seq>opened).map(m=>m.seq);
+        return result;
       }
       if (path === "/v1/member/list") return { members: [], latest_seq: history.get(data.room_id).length };
       if (path === "/v1/read") {
@@ -806,245 +817,233 @@ async function visibleMessages(ui, seqs) {
   await ui.el("timeline").emit("scroll");
 }
 
-test("only viewed mentions lose their emphasis; navigation waits for dwell, with room-specific progress retained on reload", async () => {
-  const api = server([makeRoom("A"), makeRoom("B")]);
-  api.history.set("A", [message(1, "@tester A question"), message(2, "ordinary message"), message(3, "@tester another question"),
-    { ...message(4, "@tester self mention"), author: { kind: "human", id: "tester" } }]);
-  api.history.set("B", [message(1, "@tester B question")]);
-  const ui = await launch(api);
-  const highlighted = mentionHighlighted;
-  await visibleMessages(ui, []);
-  assert.equal(ui.el("mention-notice").hidden, false);
-  assert.equal(highlighted(ui, 1), true); assert.equal(highlighted(ui, 3), true);
-  assert.equal(highlighted(ui, 2), false); assert.equal(highlighted(ui, 4), false);
-  await ui.el("view-mention").emit("click");
-  assert.equal(mentionElement(ui, 1).scrollIntoViewCount, 1);
-  assert.equal(highlighted(ui, 1), true);
-  await visibleMessages(ui, [1]);
-  await ui.clock.advance(999);
-  assert.equal(highlighted(ui, 1), true);
-  await ui.clock.advance(1);
-  assert.equal(highlighted(ui, 1), false); assert.equal(highlighted(ui, 3), true);
-  await ui.clock.advance(300);
-  assert.equal(ui.el("mention-notice").hidden, false);
-  await ui.el("view-mention").emit("click");
-  assert.equal(mentionElement(ui, 3).scrollIntoViewCount, 1);
-  await visibleMessages(ui, [3]);
-  await ui.clock.advance(1300);
-  assert.equal(highlighted(ui, 3), false);
-  assert.equal(ui.el("mention-notice").hidden, true);
-  await ui.select("B"); assert.equal(ui.el("mention-notice").hidden, false);
-  assert.match(ui.document.title, /1 条 @你/);
-  await ui.select("A"); assert.equal(ui.el("mention-notice").hidden, true);
-  assert.equal(highlighted(ui, 1), false); assert.equal(highlighted(ui, 3), false);
-  api.history.get("A").push(message(5, "@tester new question"));
+test("opening clears ordinary persistent unread; the current review count and fixed divider survive rendering", async () => {
+  const api=server([makeRoom("A"),makeRoom("B")]);
+  api.history.set("A",[message(1,"ordinary"),message(2,"@tester question"),message(3,"ordinary"),message(4,"@tester another"),
+    {...message(5,"@tester own"),author:{kind:"human",id:"tester"}},message(6,"ordinary")]);
+  const ui=await launch(api);await settle();
+  assert.match(ui.el("view-mention").textContent,/有人 @我 · 2 条/);
+  const divider=()=>ui.el("messages").children.find(el=>el.className==="new-message-divider");
+  const original=divider();assert.ok(original);
+  assert.equal(ui.el("messages").children[ui.el("messages").children.indexOf(original)+1].id,"message-1");
+  await visibleMessages(ui,[3,4]);assert.equal(mentionHighlighted(ui,4),false);
+  assert.match(ui.el("view-mention").textContent,/有人 @我 · 1 条/);
+  await visibleMessages(ui,[2]);assert.equal(mentionHighlighted(ui,2),false);
+  assert.match(ui.el("view-mention").textContent,/2 条新消息/);
+  await ui.clock.advance(300);await ui.refresh();
+  // Force the ordinary renderer to run again with different display metadata.
+  api.hook=path=>path==="/v1/ui"?{managed:true,operator_display_name:"新的显示名"}:undefined;
   await ui.refresh();
-  assert.equal(highlighted(ui, 1), false); assert.equal(highlighted(ui, 5), true);
-  const unreadReload = await launch(api, ui.saved);
-  assert.equal(highlighted(unreadReload, 1), false); assert.equal(highlighted(unreadReload, 3), false);
-  assert.equal(highlighted(unreadReload, 5), true);
-  await unreadReload.el("view-mention").emit("click");
-  await visibleMessages(unreadReload, [5]);
-  await unreadReload.clock.advance(1300);
-  assert.equal(highlighted(unreadReload, 5), false);
-  const reload = await launch(api, ui.saved);
-  assert.equal(reload.el("mention-notice").hidden, true);
-  assert.equal(highlighted(reload, 1), false); assert.equal(highlighted(reload, 3), false); assert.equal(highlighted(reload, 5), false);
+  assert.match(ui.el("view-mention").textContent,/2 条新消息/);assert.equal(divider(),original);
+  const saved=[...api.humanReads.values()][0];assert.equal(saved.opened,6);assert.deepEqual(saved.seen,new Set([2,4]));
+  await ui.el("view-mention").emit("click");assert.equal(mentionElement(ui,1).scrollIntoViewCount,1);
+  await visibleMessages(ui,[1]);assert.match(ui.el("view-mention").textContent,/1 条新消息/);
+  await ui.refresh();assert.match(ui.el("view-mention").textContent,/1 条新消息/);
+  await ui.select("B");await ui.select("A");
+  assert.equal(ui.el("mention-notice").hidden,true);assert.equal(divider(),undefined);
 });
 
-test("viewing two of five mentions out of order leaves exactly three, including earlier unseen messages", async () => {
-  const api = server([makeRoom("A")]);
-  api.history.set("A", [1, 2, 3, 4, 5].map(seq => message(seq, `@tester question ${seq}`)));
-  const ui = await launch(api);
-  await visibleMessages(ui, [4, 5]);
-  const calls = api.calls.length;
-  await ui.clock.advance(1300);
-  const confirmations = api.calls.slice(calls).filter(call => call.path.includes("confirm"));
-  assert.deepEqual(confirmations.map(call => call.path), ["/v1/human-read/confirm"], "human viewing never changes Agent cursors");
-  assert.deepEqual(confirmations[0].data.seen_seqs, [4, 5]);
-  assert.equal(ui.el("view-mention").textContent, "@你 · 3 条");
-  assert.match(ui.document.title, /3 条 @你/);
-  for (const seq of [1, 2, 3]) assert.equal(mentionHighlighted(ui, seq), true);
-  for (const seq of [4, 5]) assert.equal(mentionHighlighted(ui, seq), false);
-  await ui.el("view-mention").emit("click");
-  assert.equal(mentionElement(ui, 1).scrollIntoViewCount, 1);
-  assert.equal(ui.el("view-mention").textContent, "@你 · 3 条");
-  const reload = await launch(api, ui.saved);
-  assert.equal(reload.el("view-mention").textContent, "@你 · 3 条");
-  for (const seq of [1, 2, 3]) assert.equal(mentionHighlighted(reload, seq), true);
-  for (const seq of [4, 5]) assert.equal(mentionHighlighted(reload, seq), false);
-  await visibleMessages(reload, [1, 2, 3]); await reload.clock.advance(1300);
-  assert.equal(reload.el("mention-notice").hidden, true);
-});
-
-test("ordinary messages share individual read receipts across independent pages without clearing gaps or scrolling", async () => {
-  const api = server([makeRoom("A")]);
-  api.history.set("A", [message(1,"earlier ordinary"),message(2,"ordinary reply"),message(3,"@tester question"),
-    {...message(4,"@tester own"),author:{kind:"human",id:"tester"}}]);
-  const phone = await launch(api), desktop = await launch(api);
-  await visibleMessages(phone,[2,3,4]); await visibleMessages(desktop,[]);
-  const node = mentionElement(desktop,3);
-  desktop.el("timeline").scrollTop=31; desktop.el("jump-latest").hidden=true;
-  await phone.clock.advance(1000);
-  assert.equal(phone.el("mention-notice").hidden,true);
-  assert.equal(desktop.el("mention-notice").hidden,false);
-  assert.equal(api.calls.filter(c=>c.path==="/v1/human-read/confirm").length,0);
-  await phone.clock.advance(300); await desktop.refresh(); await settle();
-  assert.equal(desktop.el("mention-notice").hidden,true); assert.doesNotMatch(desktop.document.title,/@你/);
-  assert.equal(mentionElement(desktop,3),node); assert.equal(node.classList.contains("mentioned"),false);
-  assert.equal(desktop.el("timeline").scrollTop,31); assert.equal(desktop.el("jump-latest").hidden,true);
-  const receipt=api.calls.find(c=>c.path==="/v1/human-read/confirm").data;
-  assert.deepEqual(receipt.seen_seqs,[2,3]); assert.equal(receipt.snapshot_seq,4);
-  await visibleMessages(desktop,[1]); await desktop.clock.advance(1300);
-  assert.deepEqual([...api.humanReads.values()][0].seen,new Set([1,2,3]));
+test("natural viewing confirms mentions without dwell, and unviewed mentions persist across exit and reload", async () => {
+  const api=server([makeRoom("A"),makeRoom("B")]);
+  api.history.set("A",[1,2,3,4,5].map(seq=>message(seq,"@tester question")));
+  const ui=await launch(api);await visibleMessages(ui,[4,5]);
+  assert.equal(mentionHighlighted(ui,4),false);assert.equal(mentionHighlighted(ui,5),false);
+  assert.match(ui.el("view-mention").textContent,/3 条/);
+  await ui.clock.advance(300);
+  const batch=api.calls.find(c=>c.path==="/v1/human-read/confirm").data;
+  assert.deepEqual(batch.mention_seen_seqs,[4,5]);assert.equal(batch.opened_through,5);
+  await ui.select("B");await ui.select("A");
+  assert.match(ui.el("view-mention").textContent,/有人 @我 · 3 条/);
+  const reload=await launch(api,ui.saved);
+  assert.match(reload.el("view-mention").textContent,/3 条/);
+  assert.equal(mentionHighlighted(reload,4),false);
+  await reload.el("view-mention").emit("click");assert.equal(mentionElement(reload,1).scrollIntoViewCount,1);
+  assert.equal(mentionHighlighted(reload,1),true,"clicking without successful display never confirms");
+  await visibleMessages(reload,[1,2,3]);assert.equal(reload.el("mention-notice").hidden,true);
   assert.equal(api.calls.some(c=>c.path==="/v1/read/confirm"),false);
 });
 
-test("failed confirmations keep optimistic progress through old polls and retry the original batch", async () => {
-  const api=server([makeRoom("A")]); api.history.set("A",[message(1,"@tester question")]);
-  const ui=await launch(api); let attempts=0;
+test("a displayed click target confirms immediately and the direction follows its position",async()=>{
+  const api=server([makeRoom("A")]);api.history.set("A",[message(1,"@tester question")]);
+  const ui=await launch(api),node=mentionElement(ui,1);
+  await ui.el("timeline").emit("scroll");assert.match(ui.el("view-mention").textContent,/^↓/);
+  node.scrollIntoView=options=>{assert.equal(options.behavior,"instant");node.rect={top:0,bottom:80,left:0,right:300,width:300,height:80};};
+  await ui.el("view-mention").emit("click");
+  assert.equal(mentionHighlighted(ui,1),false);assert.equal(ui.el("mention-notice").hidden,true);
+});
+
+test("reading receipts synchronize across independent pages without replacing nodes, scrolling or clearing local ordinary review", async () => {
+  const api=server([makeRoom("A")]);api.history.set("A",[message(1,"ordinary"),message(2,"ordinary"),message(3,"@tester question")]);
+  const phone=await launch(api),desktop=await launch(api),node=mentionElement(desktop,3);
+  desktop.el("timeline").scrollTop=31;desktop.el("jump-latest").hidden=true;
+  await visibleMessages(phone,[2,3]);await phone.clock.advance(300);await desktop.refresh();await settle();
+  assert.match(desktop.el("view-mention").textContent,/2 条新消息/);
+  assert.equal(mentionElement(desktop,3),node);assert.equal(mentionHighlighted(desktop,3),false);
+  assert.equal(desktop.el("timeline").scrollTop,31);assert.equal(desktop.el("jump-latest").hidden,true);
+  const receipt=api.calls.find(c=>c.path==="/v1/human-read/confirm").data;
+  assert.deepEqual(receipt.mention_seen_seqs,[3]);assert.equal(receipt.opened_through,3);
+});
+
+test("failed confirmations preserve optimistic review through old polls and retry the original increment", async () => {
+  const api=server([makeRoom("A")]);api.history.set("A",[message(1,"@tester question")]);
+  const ui=await launch(api);let attempts=0;
   api.hook=path=>{if(path==="/v1/human-read/confirm" && ++attempts===1)throw Object.assign(Error("busy"),{code:"busy"});};
-  await visibleMessages(ui,[1]); await ui.clock.advance(1300);
-  assert.equal(ui.el("mention-notice").hidden,true); assert.match(ui.el("human-read-notice").textContent,/暂未同步/);
-  api.history.get("A").push(message(2,"new ordinary reply"));
-  await ui.refresh(); await settle();
-  assert.equal(ui.el("mention-notice").hidden,true); assert.equal(ui.el("connection").textContent,"服务已连接");
-  await ui.draft("still sendable"); assert.equal(ui.el("send").disabled,false);
+  await visibleMessages(ui,[1]);await ui.clock.advance(300);
+  assert.equal(ui.el("mention-notice").hidden,true);assert.match(ui.el("human-read-notice").textContent,/暂未同步/);
+  await ui.refresh();assert.equal(ui.el("mention-notice").hidden,true);
+  await ui.draft("still sendable");assert.equal(ui.el("send").disabled,false);
   await ui.clock.advance(1000);
   const batches=api.calls.filter(c=>c.path==="/v1/human-read/confirm");
-  assert.equal(batches.length,2); assert.deepEqual(batches[1].data,batches[0].data);
+  assert.equal(batches.length,2);assert.deepEqual(batches[1].data,batches[0].data);
   assert.equal(ui.el("human-read-notice").hidden,true);
 });
 
 test("unavailable reading storage pauses writes while messages, members and sending continue", async () => {
-  const api=server([makeRoom("A")]); api.history.set("A",[message(1,"@tester question")]);
+  const api=server([makeRoom("A")]);api.history.set("A",[message(1,"@tester question")]);
   const ui=await launch(api);
   api.hook=path=>{if(path==="/v1/human-read/confirm")throw Object.assign(Error("storage"),{code:"human_read_unavailable"});};
-  await visibleMessages(ui,[1]); await ui.clock.advance(1300);
+  await visibleMessages(ui,[1]);await ui.clock.advance(300);
   for(let i=0;i<4;i++){api.history.get("A").push(message(i+2,"new reply"));await ui.refresh();await ui.clock.advance(1500);}
   assert.equal(api.calls.filter(c=>c.path==="/v1/human-read/confirm").length,1);
   assert.match(ui.el("human-read-notice").textContent,/确认已暂停/);
-  assert.ok(mentionElement(ui,5)); assert.equal(ui.el("sync-error").hidden,true);
+  assert.ok(mentionElement(ui,5));assert.equal(ui.el("sync-error").hidden,true);
   await ui.draft("send during reading failure");await ui.el("compose").emit("submit");
   assert.equal(api.calls.filter(c=>c.path==="/v1/send").length,1);
-  assert.equal(ui.el("connection").textContent,"服务已连接");
 });
 
-test("a stalled reading query times out independently and never blocks main polling or a new query", async () => {
-  const api=server([makeRoom("A")]); api.history.set("A",[message(1,"@tester question")]);
-  let release, blocked=true;
-  api.hook=path=>path==="/v1/human-read/state" && blocked ? new Promise(resolve=>{release=resolve;}) : undefined;
-  const ui=await launch(api);
-  await visibleMessages(ui,[]);
+test("entry metadata timeout is independent of chat, retries once available, and ignores late responses",async()=>{
+  const api=server([makeRoom("A")]);api.history.set("A",[message(1,"@tester question")]);
+  let release,blocked=true;
+  api.hook=(path,data)=>path==="/v1/human-read/state" && blocked ? new Promise(resolve=>{release=resolve;}) : undefined;
+  const ui=await launch(api);await visibleMessages(ui,[]);
   for(let i=0;i<3;i++)await ui.refresh();
   assert.equal(api.calls.filter(c=>c.path==="/v1/human-read/state").length,1);
-  api.history.get("A").push(message(2,"new reply")); await ui.refresh();
-  assert.ok(mentionElement(ui,2)); await ui.draft("ready");assert.equal(ui.el("send").disabled,false);
+  api.history.get("A").push(message(2,"ordinary"));await ui.refresh();
+  assert.ok(mentionElement(ui,2));await ui.draft("ready");assert.equal(ui.el("send").disabled,false);
+  assert.equal(api.calls.some(c=>c.data?.opened_through),false);
   await ui.clock.advance(5000);assert.match(ui.el("human-read-notice").textContent,/暂未同步/);
   blocked=false;await ui.clock.advance(1000);await ui.refresh();await settle();
-  assert.equal(ui.el("human-read-notice").hidden,true);
-  release({room_id:"A",room_instance:"instance-A",operator_id:"tester",revision:10,snapshot_seq:2,cleared_through:0,seen_seqs:[1]});await settle();
-  assert.equal(mentionHighlighted(ui,1),true,"a timed out query cannot install a late result");
+  release({});await settle();assert.equal(mentionHighlighted(ui,1),true);
+  assert.match(ui.el("view-mention").textContent,/有人 @我/);
 });
 
-test("mobile list, details and notifications reset dwell immediately; visual viewport clips keyboard coverage", async () => {
-  const api=server([makeRoom("A")]);api.history.set("A",[message(1,"@tester question")]);
-  const ui=await launch(api);
+test("entry K is fixed while initial observations and K+1 messages survive a delayed metadata response",async()=>{
+  const api=server([makeRoom("A")]);api.history.set("A",[message(1,"ordinary"),message(2,"@tester question")]);
+  let release;
+  api.hook=(path,data)=>path==="/v1/human-read/state" && data.include_new_messages ? new Promise(resolve=>{release=resolve;}) : undefined;
+  const ui=await launch(api);await visibleMessages(ui,[1]);
+  api.history.get("A").push(message(3,"ordinary later"));await ui.refresh();
+  release({version:2,...identity(makeRoom("A")),operator_id:"tester",revision:0,snapshot_seq:2,cleared_through:0,opened_through:0,
+    mention_seen_seqs:[],unseen_mention_seqs:[2],new_message_seqs:[1,2],unread_count:2,mention_count:1});await settle();
+  await ui.clock.advance(300);
+  assert.equal(api.calls.find(c=>c.path==="/v1/human-read/confirm").data.opened_through,2);
+  await visibleMessages(ui,[2]);assert.match(ui.el("view-mention").textContent,/1 条新消息/);
+  await ui.refresh();assert.match(ui.el("view-mention").textContent,/1 条新消息/);
+});
+
+test("mobile list ends a visit, while details and background retain its bookmark and pause observation",async()=>{
+  const api=server([makeRoom("A")]);api.history.set("A",[message(1,"ordinary"),message(2,"@tester question"),message(3,"ordinary")]);
+  const ui=await launch(api);await ui.clock.advance(300);
   ui.window.innerWidth=390;await ui.window.emit("resize");
-  await visibleMessages(ui,[1]);await ui.clock.advance(600);
-  await ui.el("mobile-back-to-rooms").emit("click");await ui.clock.advance(1000);
-  assert.equal(mentionHighlighted(ui,1),true);
-  await ui.select("A");await visibleMessages(ui,[1]);await ui.clock.advance(600);
-  await ui.el("room-menu-label").emit("click");await ui.clock.advance(1000);
-  assert.equal(mentionHighlighted(ui,1),true);
-  await ui.el("close-mobile-members").emit("click");await ui.clock.advance(600);
-  await ui.el("direct-notifications").emit("click");await ui.clock.advance(1000);
-  assert.equal(mentionHighlighted(ui,1),true);
-  await ui.el("close-conversation-notifications").emit("click");
+  await ui.el("room-menu-label").emit("click");await visibleMessages(ui,[2]);
+  assert.equal(mentionHighlighted(ui,2),true);
+  await ui.el("close-mobile-members").emit("click");assert.equal(mentionHighlighted(ui,2),false);
+  assert.match(ui.el("view-mention").textContent,/2 条新消息/);
+  ui.document.hidden=true;await ui.document.emit("visibilitychange");
+  await visibleMessages(ui,[1]);assert.match(ui.el("view-mention").textContent,/2 条新消息/);
+  ui.document.hidden=false;await ui.document.emit("visibilitychange");await settle();
+  assert.match(ui.el("view-mention").textContent,/1 条新消息/);
+  await ui.clock.advance(300);await ui.el("mobile-back-to-rooms").emit("click");await ui.select("A");await settle();
+  assert.equal(ui.el("mention-notice").hidden,true);
+});
+
+test("foreground, focus, half-viewport clipping, keyboard and modal gates apply without a dwell timer",async()=>{
+  const api=server([makeRoom("A")]);api.history.set("A",[message(1,"@tester question")]);
+  const ui=await launch(api),node=mentionElement(ui,1);
+  ui.document.focused=false;await visibleMessages(ui,[1]);assert.equal(mentionHighlighted(ui,1),true);
+  ui.document.focused=true;node.rect={top:99,bottom:179,left:0,right:300,width:300,height:80};
+  await ui.window.emit("focus");assert.equal(mentionHighlighted(ui,1),true,"one pixel is insufficient");
   ui.window.visualViewport={offsetTop:0,offsetLeft:0,width:390,height:60};
-  mentionElement(ui,1).rect={top:50,bottom:130,left:0,right:300,width:300,height:80};
-  await ui.window.emit("resize");await ui.clock.advance(1300);
-  assert.equal(mentionHighlighted(ui,1),true,"only 10px of an 80px message is above the keyboard");
-  ui.window.visualViewport.height=500;await ui.window.emit("resize");await ui.clock.advance(999);
-  assert.equal(mentionHighlighted(ui,1),true);await ui.clock.advance(301);
+  node.rect={top:50,bottom:130,left:0,right:300,width:300,height:80};
+  await ui.window.emit("resize");assert.equal(mentionHighlighted(ui,1),true);
+  ui.el("create-dialog").showModal();ui.window.visualViewport.height=500;
+  await ui.window.emit("resize");assert.equal(mentionHighlighted(ui,1),true);
+  ui.el("create-dialog").close();await ui.document.emit("close");
   assert.equal(mentionHighlighted(ui,1),false);
 });
 
-test("switching away discards unsent receipts and ignores late reading responses on the next Room", async () => {
+test("tall messages need half the available viewport and legacy browser read progress is ignored",async()=>{
+  const api=server([makeRoom("A")]);api.history.set("A",[message(1,"@tester question")]);
+  const saved=new Map([[JSON.stringify(["teamx.mentions","instance-A","tester"]),"2"]]);
+  const ui=await launch(api,saved);assert.equal(mentionHighlighted(ui,1),true);
+  mentionElement(ui,1).rect={top:-450,bottom:550,left:0,right:300,width:300,height:1000};
+  await ui.el("timeline").emit("scroll");assert.equal(mentionHighlighted(ui,1),false);
+});
+
+test("leaving discards unsent increments and late entry metadata cannot initialize another room",async()=>{
   const api=server([makeRoom("A"),makeRoom("B")]);
-  for(const id of ["A","B"])api.history.set(id,[message(1,"@tester question")]);
-  const ui=await launch(api);let release;
-  api.hook=(path,data)=>path==="/v1/human-read/state" && data.room_id==="A" ? new Promise(resolve=>{release=resolve;}) : undefined;
-  await ui.refresh();await visibleMessages(ui,[1]);await ui.clock.advance(1000);
-  await ui.select("B");await visibleMessages(ui,[]);await ui.clock.advance(1000);
-  assert.equal(api.calls.filter(c=>c.path==="/v1/human-read/confirm").length,0);
-  release({room_id:"A",room_instance:"instance-A",operator_id:"tester",revision:1,snapshot_seq:1,cleared_through:0,seen_seqs:[1]});await settle();
-  assert.equal(mentionHighlighted(ui,1),true);await ui.select("A");await settle();
-  assert.equal(mentionHighlighted(ui,1),true,"discarded pending observations are not tab-local read facts");
+  api.history.set("A",[message(1,"@tester question")]);api.history.set("B",[message(1,"ordinary")]);
+  let release;api.hook=(path,data)=>path==="/v1/human-read/state" && data.room_id==="A" ? new Promise(resolve=>{release=resolve;}) : undefined;
+  const ui=await launch(api);await visibleMessages(ui,[1]);await ui.select("B");
+  release({version:2,...identity(makeRoom("A")),operator_id:"tester",revision:0,snapshot_seq:1,cleared_through:0,opened_through:0,
+    mention_seen_seqs:[],unseen_mention_seqs:[1],new_message_seqs:[1],unread_count:1,mention_count:1});
+  await settle();await ui.clock.advance(300);
+  assert.equal(api.calls.filter(c=>c.path==="/v1/human-read/confirm" && c.data.room_id==="A").length,0);
+  api.hook=null;await ui.select("A");assert.equal(mentionHighlighted(ui,1),true);
 });
 
-test("mention dwell must be continuous, sufficiently visible and in a foreground focused page", async () => {
-  const api = server([makeRoom("A")]); api.history.set("A", [message(1, "@tester question")]);
-  const ui = await launch(api);
-  await visibleMessages(ui, [1]); await ui.clock.advance(600);
-  await visibleMessages(ui, []); await ui.clock.advance(1000);
-  assert.equal(mentionHighlighted(ui, 1), true);
-  await visibleMessages(ui, [1]); await ui.clock.advance(600);
-  ui.document.hidden = true; await ui.document.emit("visibilitychange"); await ui.clock.advance(1000);
-  assert.equal(mentionHighlighted(ui, 1), true);
-  ui.document.hidden = false; await ui.document.emit("visibilitychange");
-  await visibleMessages(ui, [1]); await ui.clock.advance(600);
-  ui.document.focused = false; await ui.window.emit("blur"); await ui.clock.advance(1000);
-  assert.equal(mentionHighlighted(ui, 1), true);
-  ui.document.focused = true; await ui.window.emit("focus");
-  await visibleMessages(ui, [1]);
-  mentionElement(ui, 1).rect = { top: 99, bottom: 179, left: 0, right: 300, width: 300, height: 80 };
-  await ui.el("timeline").emit("scroll"); await ui.clock.advance(1000);
-  assert.equal(mentionHighlighted(ui, 1), true, "a one-pixel glimpse does not count");
-  // A message taller than the viewport can still be read, without fitting entirely.
-  mentionElement(ui, 1).rect = { top: -450, bottom: 550, left: 0, right: 300, width: 300, height: 1000 };
-  await ui.el("timeline").emit("scroll"); await ui.clock.advance(999);
-  assert.equal(mentionHighlighted(ui, 1), true);
-  await ui.clock.advance(1); assert.equal(mentionHighlighted(ui, 1), false);
+test("new arrivals preserve history position and advance ordinary position only after returning to latest",async()=>{
+  const api=server([makeRoom("A")]);api.history.set("A",[message(1,"ordinary")]);
+  const ui=await launch(api);await ui.clock.advance(300);
+  ui.el("timeline").scrollHeight=2000;ui.el("timeline").scrollTop=20;
+  const divider=ui.el("messages").children.find(el=>el.className==="new-message-divider");
+  api.history.get("A").push(message(2,"ordinary new"),message(3,"@tester new"));await ui.refresh();
+  assert.equal(ui.el("timeline").scrollTop,20);assert.equal(ui.el("jump-latest").hidden,false);
+  await visibleMessages(ui,[3]);assert.match(ui.el("view-mention").textContent,/2 条新消息/);
+  await ui.clock.advance(300);assert.equal([...api.humanReads.values()][0].opened,1);
+  assert.equal(ui.el("messages").children.find(el=>el.className==="new-message-divider"),divider);
+  await ui.el("jump-latest").emit("click");await ui.clock.advance(300);
+  assert.equal([...api.humanReads.values()][0].opened,3);
+  await ui.refresh();assert.match(ui.el("view-mention").textContent,/2 条新消息/);
 });
 
-test("room switching discards partial dwell and ignores legacy browser read progress", async () => {
-  const api = server([makeRoom("A"), makeRoom("B")]);
-  api.history.set("A", [1, 2, 3, 4].map(seq => message(seq, "@tester question")));
-  api.history.set("B", [message(1, "@tester B question")]);
-  const saved = new Map([[JSON.stringify(["teamx.mentions", "instance-A", "tester"]), "2"]]);
-  const ui = await launch(api, saved);
-  assert.equal(mentionHighlighted(ui, 1), true); assert.equal(mentionHighlighted(ui, 2), true);
-  await visibleMessages(ui, [4]); await ui.clock.advance(600);
-  await ui.select("B"); await visibleMessages(ui, []); await ui.clock.advance(1000);
-  assert.equal(mentionHighlighted(ui, 1), true);
-  await ui.select("A"); await visibleMessages(ui, [4]); await ui.clock.advance(600);
-  assert.equal(mentionHighlighted(ui, 4), true);
-  await ui.clock.advance(700);
-  assert.equal(mentionHighlighted(ui, 3), true); assert.equal(mentionHighlighted(ui, 4), false);
-  const reload = await launch(api, saved);
-  assert.equal(mentionHighlighted(reload, 1), true); assert.equal(mentionHighlighted(reload, 2), true);
-  assert.equal(mentionHighlighted(reload, 3), true); assert.equal(mentionHighlighted(reload, 4), false);
+test("a cleared entry divider disappears permanently and new arrivals never recreate it",async()=>{
+  const api=server([makeRoom("A")]);api.history.set("A",[message(1,"ordinary"),message(2,"@tester question"),message(3,"ordinary")]);
+  const ui=await launch(api);await ui.clock.advance(300);
+  assert.ok(ui.el("messages").children.some(el=>el.className==="new-message-divider"));
+  api.clearedThrough=2;
+  api.hook=(path,data)=>path==="/v1/read" ? {messages:api.history.get("A").filter(m=>m.seq>Math.max(2,data.after||0)),
+    snapshot_seq:api.history.get("A").at(-1).seq,cleared_through:2,has_more:false} : undefined;
+  await ui.refresh();assert.equal(ui.el("messages").children.some(el=>el.className==="new-message-divider"),false);
+  assert.match(ui.el("view-mention").textContent,/1 条新消息/);
+  api.history.get("A").push(message(4,"ordinary later"));await ui.refresh();
+  assert.equal(ui.el("messages").children.some(el=>el.className==="new-message-divider"),false);
+  assert.match(ui.el("view-mention").textContent,/2 条新消息/);
 });
 
-test("viewport clipping and modal dialogs pause mention viewing; polling does not reset continuous dwell", async () => {
-  const api = server([makeRoom("A")]); api.history.set("A", [message(1, "@tester question")]);
-  const ui = await launch(api);
-  await visibleMessages(ui, [1]);
-  ui.el("timeline").rect = { top: 890, bottom: 990, left: 0, right: 300, width: 300, height: 100 };
-  mentionElement(ui, 1).rect = { top: 899, bottom: 979, left: 0, right: 300, width: 300, height: 80 };
-  await ui.window.emit("resize"); await ui.clock.advance(1000);
-  assert.equal(mentionHighlighted(ui, 1), true, "clipped outside the browser viewport");
-  ui.el("timeline").rect = null;
-  mentionElement(ui, 1).rect = { top: 0, bottom: 80, left: 0, right: 300, width: 300, height: 80 };
-  await ui.window.emit("scroll");
-  await ui.clock.advance(600);
-  ui.el("create-dialog").showModal(); await ui.document.emit("toggle"); await ui.clock.advance(1000);
-  assert.equal(mentionHighlighted(ui, 1), true);
-  ui.el("create-dialog").close(); await ui.document.emit("close");
-  await ui.clock.advance(600); await ui.refresh(); await ui.clock.advance(399);
-  assert.equal(mentionHighlighted(ui, 1), true);
-  await ui.clock.advance(1); assert.equal(mentionHighlighted(ui, 1), false);
+test("an initially empty visit establishes its divider once on arrival and follows visible latest messages",async()=>{
+  const api=server([makeRoom("A")]);api.history.set("A",[]);
+  const ui=await launch(api);assert.equal(ui.el("mention-notice").hidden,true);
+  api.history.get("A").push(message(1,"ordinary"));await ui.refresh();
+  const divider=ui.el("messages").children.find(el=>el.className==="new-message-divider");assert.ok(divider);
+  await visibleMessages(ui,[1]);assert.equal(ui.el("mention-notice").hidden,true);
+  await ui.clock.advance(300);assert.equal([...api.humanReads.values()][0].opened,1);
+  api.history.get("A").push(message(2,"ordinary"));await ui.refresh();await visibleMessages(ui,[2]);await ui.clock.advance(300);
+  assert.equal([...api.humanReads.values()][0].opened,2);
+  assert.equal(ui.el("messages").children.find(el=>el.className==="new-message-divider"),divider);
+});
+
+test("returning from the mobile list captures anew but waits for foreground focus before opening",async()=>{
+  const api=server([makeRoom("A")]);api.history.set("A",[message(1,"ordinary"),message(2,"@tester question")]);
+  const ui=await launch(api);await ui.clock.advance(300);
+  ui.window.innerWidth=390;await ui.window.emit("resize");await ui.el("mobile-back-to-rooms").emit("click");
+  api.history.get("A").push(message(3,"ordinary later"));ui.document.focused=false;
+  await ui.select("A");await ui.clock.advance(300);
+  assert.equal([...api.humanReads.values()][0].opened,2);
+  assert.match(ui.el("view-mention").textContent,/有人 @我 · 1 条/);
+  ui.document.focused=true;await ui.window.emit("focus");await ui.clock.advance(300);
+  assert.equal([...api.humanReads.values()][0].opened,3);
+  await visibleMessages(ui,[2]);assert.match(ui.el("view-mention").textContent,/1 条新消息/);
 });
 
 test("explicit single-room bootstrap retains composer and member addition without management navigation", async () => {
@@ -3813,7 +3812,7 @@ test("catalog reading faults and old boundaries preserve last counts, isolate ro
   assert.doesNotMatch(text(0),/\[有人@我\]/);assert.match(text(0),/暂未同步/);
 });
 
-test("earlier mentions use full-history catalog counts while loaded buttons retain their own range",async()=>{
+test("the review entry discovers unloaded mentions, retries without progress and inserts continuous history once",async()=>{
   const room={...makeRoom("A"),human_read:{status:"ready",revision:0,snapshot_seq:100,cleared_through:0,unread_count:100,mention_count:3}};
   const api=server([room]);api.history.set("A",Array.from({length:100},(_,i)=>message(i+1,[1,21,100].includes(i+1)?"@tester 提醒":"普通回复")));
   let oldest=51;
@@ -3821,17 +3820,24 @@ test("earlier mentions use full-history catalog counts while loaded buttons reta
     if(path==="/v1/read")return {messages:api.history.get("A").filter(m=>m.seq>=oldest && m.seq>(data.after||0) && m.seq<=(data.snapshot_seq||100)),snapshot_seq:data.snapshot_seq||100,has_more:false};
   };
   const ui=await launch(api);await settle();
-  assert.equal(ui.el("view-mention").textContent,"@你 · 1 条");
-  assert.equal(ui.el("earlier-mentions").textContent,"更早还有 2 条提及");
-  assert.equal(ui.el("earlier-mentions").hidden,false);
-  oldest=1;await ui.el("load-history").emit("click");
-  assert.equal(ui.el("view-mention").textContent,"@你 · 3 条");assert.equal(ui.el("earlier-mentions").hidden,true);
+  assert.match(ui.el("view-mention").textContent,/3 条/);
+  await ui.el("view-mention").emit("click");
+  assert.match(ui.el("review-notice").textContent,/历史加载失败/);
+  assert.equal(api.calls.some(c=>c.data?.mention_seen_seqs),false);
+  oldest=1;await ui.el("view-mention").emit("click");
+  assert.match(ui.el("view-mention").textContent,/3 条/);
+  assert.equal(mentionElement(ui,1).scrollIntoViewCount,1);
+  assert.equal(ui.el("messages").children.filter(el=>el.id?.startsWith("message-")).length,100);
+  assert.equal(ui.el("messages").children.filter(el=>el.className==="day-divider").length,1);
+  assert.equal(api.calls.some(c=>c.data?.mention_seen_seqs),false,"loading is not a viewing receipt");
+  await visibleMessages(ui,[1]);await ui.clock.advance(300);
+  assert.equal(api.calls.some(c=>c.data?.mention_seen_seqs?.includes(1)),true);
 });
 
 test("catalog responses overtaken by a shared receipt keep the last list value until a current summary arrives",async()=>{
   const reading={status:"ready",revision:3,snapshot_seq:100,cleared_through:0,unread_count:12,mention_count:4};
   const room={...makeRoom("A"),human_read:{...reading}},api=server([room]);
-  api.hook=(path,data)=>path==="/v1/human-read/state"?{...identity(room),operator_id:data.caller.id,revision:7,snapshot_seq:100,cleared_through:0,seen_seqs:[],unread_count:8,mention_count:2}:undefined;
+  api.hook=(path,data)=>path==="/v1/human-read/state"?{...identity(room),operator_id:data.caller.id,revision:7,snapshot_seq:100,cleared_through:0,version:2,opened_through:0,mention_seen_seqs:[],unseen_mention_seqs:[1,2],...(data.include_new_messages?{new_message_seqs:[1,2]}:{}),unread_count:8,mention_count:2}:undefined;
   const ui=await launch(api);await settle();await ui.refresh();
   const text=()=>elementText(ui.el("room-list").children[0]);
   assert.match(text(),/12/);assert.match(text(),/暂未同步/);
@@ -3843,15 +3849,137 @@ test("catalog responses overtaken by a shared receipt keep the last list value u
 
 test("optimistic viewing does not invent earlier mentions while the catalog awaits confirmation",async()=>{
   const room={...makeRoom("A"),human_read:{status:"ready",revision:0,snapshot_seq:100,cleared_through:0,unread_count:3,mention_count:3}};
-  const api=server([room]);api.history.set("A",[message(100,"@tester 已加载提及")]);
+  const api=server([room]);api.history.set("A",Array.from({length:100},(_,i)=>message(i+1,[1,21,100].includes(i+1)?"@tester 提醒":"普通回复")));
   let release;
-  api.hook=(path)=>path==="/v1/human-read/confirm"?new Promise(resolve=>{release=resolve;}):undefined;
+  api.hook=(path,data)=>{
+    if(path==="/v1/human-read/confirm") return new Promise(resolve=>{release=resolve;});
+    if(path==="/v1/read") return {messages:api.history.get("A").filter(m=>m.seq>Math.max(50,data.after||0)),snapshot_seq:100,has_more:false};
+  };
   const ui=await launch(api);await visibleMessages(ui,[100]);await ui.clock.advance(1000);
-  assert.equal(ui.el("mention-notice").hidden,true);
-  assert.equal(ui.el("earlier-mentions").textContent,"更早还有 2 条提及");
+  assert.match(ui.el("view-mention").textContent,/有人 @我 · 2 条/);
   await ui.clock.advance(300);assert.equal(typeof release,"function");
-  assert.equal(ui.el("earlier-mentions").textContent,"更早还有 2 条提及");
-  release({...identity(room),operator_id:"tester",revision:1,snapshot_seq:100,cleared_through:0,seen_seqs:[100],unread_count:2,mention_count:2});await settle();
+  assert.match(ui.el("view-mention").textContent,/有人 @我 · 2 条/);
+  release({...identity(room),version:2,opened_through:100,operator_id:"tester",revision:1,snapshot_seq:100,cleared_through:0,mention_seen_seqs:[100],unseen_mention_seqs:[1,21],unread_count:2,mention_count:2});await settle();
   room.human_read={...room.human_read,revision:1,unread_count:2,mention_count:2};await ui.refresh();await settle();
-  assert.equal(ui.el("earlier-mentions").textContent,"更早还有 2 条提及");
+  assert.match(ui.el("view-mention").textContent,/有人 @我 · 2 条/);
+});
+
+function historyServer(count=240,mentions=[1,70,195]) {
+  const api=server([makeRoom("A"),makeRoom("B")]);
+  api.history.set("A",Array.from({length:count},(_,i)=>message(i+1,mentions.includes(i+1)?"@tester 请看":"普通回复")));
+  api.historyResponse=data=>{
+    const all=api.history.get(data.room_id || "A"),snapshot=data.snapshot_seq??all.at(-1)?.seq??0,cleared=api.clearedThrough||0;
+    const after=data.mode==="latest"?Math.max(cleared,snapshot-50):Math.max(cleared,data.after||0);
+    const messages=all.filter(m=>m.seq>after && m.seq<=snapshot);
+    return {messages,snapshot_seq:snapshot,cleared_through:Math.min(cleared,snapshot),has_more:false};
+  };
+  api.historyHook=null;
+  api.hook=(path,data)=>path==="/v1/read"?(api.historyHook?.(data)??api.historyResponse(data)):undefined;
+  return api;
+}
+const loadedSequences=ui=>ui.el("messages").children.filter(el=>el.id?.startsWith("message-")).map(el=>Number(el.id.slice(8)));
+
+test("automatic locating loads bounded continuous prefixes, shares the manual gate and preserves retained nodes during live append",async()=>{
+  const api=historyServer();let builds=0;
+  api.history.get("A").at(-1).reply_to=1;
+  const ui=await launch(api,new Map(),{renderMessageBody:(el,text)=>{builds++;el.textContent=text;}});
+  assert.deepEqual(loadedSequences(ui),Array.from({length:50},(_,i)=>191+i));
+  const retained=mentionElement(ui,240);let release,first=true;
+  api.historyHook=data=>data.snapshot_seq!==undefined && first?(first=false,new Promise(resolve=>{release=resolve;})):undefined;
+  const job=ui.el("view-mention").emit("click");await settle();
+  assert.equal(ui.el("history-progress").hidden,false);assert.equal(ui.el("load-history").disabled,true);
+  const before=api.calls.length;await ui.el("load-history").emit("click");assert.equal(api.calls.length,before);
+  api.history.get("A").push(message(241,"普通新消息"));await ui.refresh();
+  assert.equal(mentionElement(ui,240),retained);assert.ok(mentionElement(ui,241));
+  release(api.historyResponse({after:140,snapshot_seq:190}));await job;
+  assert.deepEqual(loadedSequences(ui),Array.from({length:241},(_,i)=>i+1));
+  assert.equal(builds,241,"each body is rendered only once, including during the main refresh");
+  assert.equal(mentionElement(ui,240),retained);
+  assert.match(retained.querySelector(".message-reference").textContent,/#1 reviewer/);
+  assert.equal(ui.el("messages").children.filter(el=>el.className==="day-divider").length,1);
+  assert.equal(mentionElement(ui,1).scrollIntoViewCount,1);
+  assert.equal(api.calls.some(c=>c.data?.mention_seen_seqs),false);
+  api.clearedThrough=1;await ui.refresh();
+  assert.equal(mentionElement(ui,240),retained);
+  assert.match(retained.querySelector(".message-reference").textContent,/已清空/);
+  assert.equal(builds,241);
+});
+
+test("cancelling an in-flight prefix discards late results and a new task can continue immediately",async()=>{
+  const api=historyServer();const ui=await launch(api);let release;
+  api.historyHook=data=>data.snapshot_seq!==undefined?new Promise(resolve=>{release=resolve;}):undefined;
+  const job=ui.el("view-mention").emit("click");await settle();
+  await ui.el("cancel-history").emit("click");assert.equal(ui.el("load-history").disabled,false);
+  api.historyHook=null;await ui.el("load-history").emit("click");
+  const saved=loadedSequences(ui);assert.equal(saved[0],141);
+  release(api.historyResponse({after:140,snapshot_seq:190}));await job;
+  assert.deepEqual(loadedSequences(ui),saved);assert.equal(mentionElement(ui,1),undefined);
+  await ui.el("view-mention").emit("click");assert.equal(loadedSequences(ui)[0],1);
+  assert.equal(new Set(loadedSequences(ui)).size,240);
+});
+
+test("a failed continuation retains the last committed prefix and retries from its cursor with fixed page snapshots",async()=>{
+  const api=historyServer();const ui=await launch(api);let calls=0;
+  api.historyHook=data=>{
+    if(data.snapshot_seq===190){
+      const result=api.historyResponse(data),messages=result.messages.slice(0,25);
+      if(data.after===140)return {...result,messages,has_more:true,next_after:165};
+      assert.equal(data.after,165);return {...result,messages:result.messages};
+    }
+    if(data.snapshot_seq!==undefined && ++calls===1)throw Error("lost batch");
+  };
+  await ui.el("view-mention").emit("click");
+  assert.match(ui.el("review-notice").textContent,/历史加载失败/);
+  assert.equal(loadedSequences(ui)[0],141);assert.equal(loadedSequences(ui).length,100);
+  assert.equal(mentionElement(ui,1),undefined);
+  api.historyHook=null;const callIndex=api.calls.length;await ui.el("view-mention").emit("click");
+  assert.equal(api.calls.slice(callIndex).find(c=>c.path==="/v1/read").data.snapshot_seq,140);
+  assert.deepEqual(loadedSequences(ui),Array.from({length:240},(_,i)=>i+1));
+});
+
+for(const change of ["clear","room","operator","installation"])test(`history locating rejects delayed results after a ${change} change`,async()=>{
+  const api=historyServer();const ui=await launch(api);let release;
+  api.historyHook=data=>data.snapshot_seq!==undefined?new Promise(resolve=>{release=resolve;}):undefined;
+  const job=ui.el("view-mention").emit("click");await settle();
+  const old=api.historyResponse({after:140,snapshot_seq:190});
+  if(change==="clear"){api.clearedThrough=200;await ui.refresh();}
+  if(change==="room")await ui.select("B");
+  if(change==="operator"){api.catalog.operator="new-owner";await ui.refresh();}
+  if(change==="installation"){const original=api.hook;api.hook=(path,data)=>path==="/v1/ui"?{managed:true,installation_id:"new-install"}:original(path,data);await ui.refresh();}
+  release(old);await job;
+  assert.equal(mentionElement(ui,141),undefined);assert.equal(ui.el("history-progress").hidden,true);
+  assert.equal(api.calls.some(c=>c.data?.mention_seen_seqs?.includes(1)),false);
+});
+
+test("history prepends merge their boundary date separator and keep different dates ordered",async()=>{
+  const api=historyServer(150,[1]);
+  for(const m of api.history.get("A"))m.created_at=m.seq<=50?"2026-11-01T02:00:00Z":m.seq<=120?"2026-11-02T02:00:00Z":"2026-11-03T02:00:00Z";
+  const ui=await launch(api);await ui.el("view-mention").emit("click");
+  const dividers=ui.el("messages").children.filter(el=>el.className==="day-divider");
+  assert.equal(dividers.length,3);assert.match(dividers[0].textContent,/11月1日/);assert.match(dividers[1].textContent,/11月2日/);assert.match(dividers[2].textContent,/11月3日/);
+  assert.deepEqual(loadedSequences(ui),Array.from({length:150},(_,i)=>i+1));
+});
+
+
+test("ordinary review loads its earliest remaining target and never moves the entry divider",async()=>{
+  const api=historyServer(130,[]),ui=await launch(api);await settle();
+  assert.match(ui.el("view-mention").textContent,/130 条新消息/);
+  await ui.el("view-mention").emit("click");
+  assert.equal(mentionElement(ui,1).scrollIntoViewCount,1);
+  const divider=ui.el("messages").children.find(el=>el.className==="new-message-divider");
+  assert.equal(ui.el("messages").children[ui.el("messages").children.indexOf(divider)+1].id,"message-1");
+  await visibleMessages(ui,[1]);assert.match(ui.el("view-mention").textContent,/129 条新消息/);
+  const count=api.calls.filter(c=>c.path==="/v1/read").length;
+  await ui.el("view-mention").emit("click");assert.equal(mentionElement(ui,2).scrollIntoViewCount,1);
+  assert.equal(api.calls.filter(c=>c.path==="/v1/read").length,count);
+  assert.equal(ui.el("messages").children[ui.el("messages").children.indexOf(divider)+1].id,"message-1");
+});
+
+test("an automatic target on the batch boundary also loads a small preceding context",async()=>{
+  const api=historyServer(200,[101]),ui=await launch(api);await ui.el("view-mention").emit("click");
+  assert.equal(loadedSequences(ui)[0],96);
+  assert.equal(loadedSequences(ui).length,105);
+  assert.equal(mentionElement(ui,101).scrollIntoViewCount,1);
+  const batches=api.calls.filter(c=>c.path==="/v1/read" && c.data.snapshot_seq!==undefined);
+  assert.deepEqual(batches.map(c=>[c.data.after,c.data.snapshot_seq]),[[100,150],[95,100]]);
 });

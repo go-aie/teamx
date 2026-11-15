@@ -20,8 +20,12 @@ class Element {
     this.parts = new Map();
   }
   get options() { return this.children; }
+  get firstChild() { return this.children[0] || null; }
   append(...children) { for(const child of children.flatMap(child => child.tag === "fragment" ? [...child.children] : [child])) { child.remove();this.children.push(child);child.parentElement=this; } }
-  insertBefore(child, before) { child.remove(); const i=this.children.indexOf(before); this.children.splice(i<0?this.children.length:i,0,child); child.parentElement=this; }
+  insertBefore(child, before) {
+    if (child.tag === "fragment") { for (const item of [...child.children]) this.insertBefore(item, before); return; }
+    child.remove(); const i=this.children.indexOf(before); this.children.splice(i<0?this.children.length:i,0,child); child.parentElement=this;
+  }
   remove() { if(this.parentElement){const list=this.parentElement.children;list.splice(list.indexOf(this),1);this.parentElement=null;} }
   replaceChildren(...children) { for(const child of [...this.children])child.remove();this.children = []; this.append(...children); if (this.tag === "select") this.value = this.children[0]?.value || ""; }
   setAttribute(key, value) { this.attributes[key] = value; }
@@ -67,6 +71,13 @@ export async function launch(api, saved = new Map(), environment = {}) {
     elements.get(id).tag = "input"; elements.get(id).value = value; elements.get(id).checked = false;
   }
   for(const id of ["notification-add-picker","member-notification-add-picker"]) elements.get(id).hidden=true;
+  // Messages start outside the measured viewport. Tests explicitly choose visible
+  // nodes; no-dwell reading must not observe every synthetic node at (0, 0).
+  elements.get("message-template").content.firstElementChild.cloneNode = () => {
+    const el = new Element();
+    el.rect = { top:200, bottom:280, left:0, right:300, width:300, height:80 };
+    return el;
+  };
   elements.get("lark-scope").tag = "input";
   const workspace = elements.get("workspace"); workspace.clientWidth = 1440;
   elements.get("room-rail").clientWidth = 240;

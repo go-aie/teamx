@@ -38,6 +38,85 @@ func decodeHumanRead(t *testing.T, w *httptest.ResponseRecorder) humanReadState 
 	return v
 }
 
+func TestHumanReadHTTPEntryMetadataAndDeltaValidation(t *testing.T) {
+	svc, err := newService(t.TempDir(), "read-contract", serviceConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeService(t, svc)
+	caller := Caller{Author: Author{Kind: "human", ID: humanOperator()}}
+	for i, text := range []string{"own message", "ordinary reply", "@" + humanOperator(), "@" + humanOperator()} {
+		author := Caller{Author: Author{Kind: "human", ID: "other"}}
+		if i == 0 {
+			author = caller
+		}
+		w := humanReadHTTP(t, svc, "/v1/send", apiRequest{ServiceInfo: svc.info, Caller: author, ClientMessageID: text + string(rune('a'+i)), Text: text})
+		if w.Code != 200 {
+			t.Fatal(w.Code, w.Body.String())
+		}
+	}
+	base := humanReadRequest{ServiceInfo: svc.info, Caller: caller}
+	entry := base
+	entry.IncludeNewMessages = true
+	v := decodeHumanRead(t, humanReadHTTP(t, svc, "/v1/human-read/state", entry))
+	if v.Version != 2 || v.UnreadCount != 3 || v.MentionCount != 2 ||
+		!reflect.DeepEqual(*v.NewMessageSeqs, []uint64{2, 3, 4}) || !reflect.DeepEqual(v.UnseenMentionSeqs, []uint64{3, 4}) {
+		t.Fatal(v)
+	}
+	plain := humanReadHTTP(t, svc, "/v1/human-read/state", base)
+	if strings.Contains(plain.Body.String(), `"new_message_seqs"`) || strings.Contains(plain.Body.String(), `"seen_seqs"`) {
+		t.Fatal(plain.Body.String())
+	}
+	data, _ := json.Marshal(base)
+	legacy := string(data[:len(data)-1]) + `,"snapshot_seq":4,"seen_seqs":[3]}`
+	w := httptest.NewRecorder()
+	svc.ServeHTTP(w, httptest.NewRequest("POST", "/v1/human-read/confirm", strings.NewReader(legacy)))
+	if w.Code != 400 {
+		t.Fatal("legacy write reinterpreted", w.Code, w.Body.String())
+	}
+	four, five := uint64(4), uint64(5)
+	validMention := []uint64{3}
+	tooMany := make([]uint64, 101)
+	for i := range tooMany {
+		tooMany[i] = 3
+	}
+	for _, delta := range []humanReadRequest{
+		{SnapshotSeq: &four},
+		{SnapshotSeq: &four, OpenedThrough: &five},
+		{SnapshotSeq: &five, OpenedThrough: &four},
+		{SnapshotSeq: &four, OpenedThrough: &four, MentionSeenSeqs: &[]uint64{0}},
+		{SnapshotSeq: &four, OpenedThrough: &four, MentionSeenSeqs: &[]uint64{5}},
+		{SnapshotSeq: &four, OpenedThrough: &four, MentionSeenSeqs: &[]uint64{}, IncludeNewMessages: true},
+		{SnapshotSeq: &four, OpenedThrough: &four, MentionSeenSeqs: &tooMany},
+		{SnapshotSeq: &four, MentionSeenSeqs: &validMention, IncludeNewMessages: true},
+	} {
+		delta.ServiceInfo, delta.Caller = svc.info, caller
+		if w := humanReadHTTP(t, svc, "/v1/human-read/confirm", delta); w.Code != 400 {
+			t.Fatal(delta, w.Code, w.Body.String())
+		}
+	}
+	for _, delta := range []humanReadRequest{{OpenedThrough: &four}, {SnapshotSeq: &four}, {MentionSeenSeqs: &validMention}} {
+		delta.ServiceInfo, delta.Caller = svc.info, caller
+		if w := humanReadHTTP(t, svc, "/v1/human-read/state", delta); w.Code != 400 {
+			t.Fatal(delta, w.Code, w.Body.String())
+		}
+	}
+	v = decodeHumanRead(t, humanReadHTTP(t, svc, "/v1/human-read/state", base))
+	if v.Revision != 0 || v.OpenedThrough != 0 || len(v.MentionSeenSeqs) != 0 {
+		t.Fatal("invalid mixed delta partially committed", v)
+	}
+	w = humanReadHTTP(t, svc, "/v1/send", apiRequest{ServiceInfo: svc.info, Caller: Caller{Author: Author{Kind: "human", ID: "other"}}, ClientMessageID: "next", Text: "K+1"})
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	seqs := []uint64{1, 2, 4, 4}
+	v = decodeHumanRead(t, humanReadHTTP(t, svc, "/v1/human-read/confirm", humanReadRequest{
+		ServiceInfo: svc.info, Caller: caller, SnapshotSeq: &four, OpenedThrough: &four, MentionSeenSeqs: &seqs}))
+	if v.OpenedThrough != 4 || v.SnapshotSeq != 5 || v.UnreadCount != 2 || v.MentionCount != 1 || !reflect.DeepEqual(v.MentionSeenSeqs, []uint64{4}) {
+		t.Fatal("fixed opening, own/non-mention filtering or count union failed", v)
+	}
+}
+
 func TestHumanReadHTTPIndependentClientsRestartAndClear(t *testing.T) {
 	dir := t.TempDir()
 	store := openTestStore(t, dir)
@@ -93,15 +172,16 @@ func TestHumanReadHTTPIndependentClientsRestartAndClear(t *testing.T) {
 	confirm := func(client *http.Client, seqs ...uint64) humanReadState {
 		t.Helper()
 		latest := uint64(4)
-		return request(client, "/v1/human-read/confirm", humanReadRequest{ServiceInfo: svc.info, Caller: caller, SnapshotSeq: &latest, SeenSeqs: &seqs})
+		return request(client, "/v1/human-read/confirm", humanReadRequest{ServiceInfo: svc.info, Caller: caller, SnapshotSeq: &latest, MentionSeenSeqs: &seqs})
 	}
 	confirm(one, 4)
-	v = confirm(two, 2, 2)
-	if !reflect.DeepEqual(v.SeenSeqs, []uint64{2, 4}) || v.UnreadCount != 1 || v.MentionCount != 1 {
+	latest := uint64(4)
+	v = request(two, "/v1/human-read/confirm", humanReadRequest{ServiceInfo: svc.info, Caller: caller, SnapshotSeq: &latest, OpenedThrough: &latest})
+	if !reflect.DeepEqual(v.MentionSeenSeqs, []uint64{4}) || v.OpenedThrough != 4 || v.UnreadCount != 1 || v.MentionCount != 1 {
 		t.Fatal(v)
 	}
 	v = request(one, "/v1/human-read/state", stateReq)
-	if v.Revision != 2 || !reflect.DeepEqual(v.SeenSeqs, []uint64{2, 4}) {
+	if v.Revision != 2 || !reflect.DeepEqual(v.MentionSeenSeqs, []uint64{4}) {
 		t.Fatal(v)
 	}
 	server.Close()
@@ -116,7 +196,7 @@ func TestHumanReadHTTPIndependentClientsRestartAndClear(t *testing.T) {
 	}
 	stateReq.ServiceInfo = svc.info
 	v = request(two, "/v1/human-read/state", stateReq)
-	if v.Revision != 2 || !reflect.DeepEqual(v.SeenSeqs, []uint64{2, 4}) {
+	if v.Revision != 2 || !reflect.DeepEqual(v.MentionSeenSeqs, []uint64{4}) {
 		t.Fatal(v)
 	}
 	through := uint64(3)
@@ -125,7 +205,7 @@ func TestHumanReadHTTPIndependentClientsRestartAndClear(t *testing.T) {
 		t.Fatal(w.Code, w.Body.String())
 	}
 	v = request(one, "/v1/human-read/state", stateReq)
-	if v.ClearedThrough != 3 || !reflect.DeepEqual(v.SeenSeqs, []uint64{4}) || v.UnreadCount != 0 {
+	if v.ClearedThrough != 3 || !reflect.DeepEqual(v.MentionSeenSeqs, []uint64{4}) || v.UnreadCount != 0 {
 		t.Fatal(v)
 	}
 	// A clear racing with a stale observation cannot mark the next arrival.
@@ -134,7 +214,7 @@ func TestHumanReadHTTPIndependentClientsRestartAndClear(t *testing.T) {
 		t.Fatal(w.Code, w.Body.String())
 	}
 	v = confirm(two, 3)
-	if v.SnapshotSeq != 5 || v.UnreadCount != 1 || !reflect.DeepEqual(v.SeenSeqs, []uint64{4}) {
+	if v.SnapshotSeq != 5 || v.UnreadCount != 1 || !reflect.DeepEqual(v.MentionSeenSeqs, []uint64{4}) {
 		t.Fatal(v)
 	}
 }
@@ -188,7 +268,7 @@ func TestHumanReadHTTPIdentityLimitsAndFaultIsolation(t *testing.T) {
 	for _, seqs := range [][]uint64{{0}, {1}, make([]uint64, 101)} {
 		zero := uint64(0)
 		r := base
-		r.SnapshotSeq, r.SeenSeqs = &zero, &seqs
+		r.SnapshotSeq, r.MentionSeenSeqs = &zero, &seqs
 		if w := post("/v1/human-read/confirm", r, admin); w.Code != 400 {
 			t.Fatal(w.Code, w.Body.String())
 		}
@@ -255,10 +335,10 @@ func TestHumanReadCloseWaitsForAcceptedConfirmation(t *testing.T) {
 	defer once.Do(func() { close(release) })
 	ops := svc.humanRead.ops
 	svc.humanRead.ops.syncDir = func(dir string) error { close(entered); <-release; return ops.syncDir(dir) }
-	latest, seqs := uint64(1), []uint64{1}
+	latest := uint64(1)
 	response := make(chan *httptest.ResponseRecorder, 1)
 	go func() {
-		response <- humanReadHTTP(t, svc, "/v1/human-read/confirm", humanReadRequest{ServiceInfo: svc.info, Caller: caller, SnapshotSeq: &latest, SeenSeqs: &seqs})
+		response <- humanReadHTTP(t, svc, "/v1/human-read/confirm", humanReadRequest{ServiceInfo: svc.info, Caller: caller, SnapshotSeq: &latest, OpenedThrough: &latest})
 	}()
 	select {
 	case <-entered:
@@ -308,8 +388,7 @@ func TestHumanReadManagedBusyDeletionAndNewInstance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	seqs := []uint64{room.LatestSeq}
-	confirm := humanReadRequest{ServiceInfo: svc.info, Caller: caller, SnapshotSeq: &room.LatestSeq, SeenSeqs: &seqs}
+	confirm := humanReadRequest{ServiceInfo: svc.info, Caller: caller, SnapshotSeq: &room.LatestSeq, OpenedThrough: &room.LatestSeq}
 	decodeHumanRead(t, managerHTTP(m, "/v1/human-read/confirm", confirm))
 	for _, path := range []string{"/v1/human-read/state", "/v1/human-read/confirm"} {
 		m.mu.Lock()
@@ -342,7 +421,7 @@ func TestHumanReadManagedBusyDeletionAndNewInstance(t *testing.T) {
 		t.Fatal("reused deleted Room identity")
 	}
 	v = decodeHumanRead(t, managerHTTP(m, "/v1/human-read/state", humanReadRequest{ServiceInfo: next.info, Caller: caller}))
-	if v.Revision != 0 || len(v.SeenSeqs) != 0 {
+	if v.Revision != 0 || len(v.MentionSeenSeqs) != 0 {
 		t.Fatal("new instance inherited reads", v)
 	}
 }

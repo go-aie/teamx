@@ -54,24 +54,14 @@ func readHumanReadCatalogFiles(dir string, identity RoomIdentity, operator, disp
 			}
 			return room, nil, unavailable
 		}
-		seen := make(map[uint64]bool, len(file.SeenSeqs))
-		for _, seq := range file.SeenSeqs {
-			seen[seq] = true
-		}
-		counts := &HumanReadCounts{Revision: file.Revision, SnapshotSeq: room.LatestSeq, ClearedThrough: room.ClearedThrough}
-		matcher := newHumanMentionMatcher(operator, displayName)
 		for i, message := range room.Messages {
 			if message.Seq != room.ClearedThrough+uint64(i)+1 {
 				return room, ErrInvalid, unavailable
 			}
-			if message.Author == (Author{Kind: "human", ID: operator}) || seen[message.Seq] {
-				continue
-			}
-			counts.UnreadCount++
-			if matcher.matches(message.Text) {
-				counts.MentionCount++
-			}
 		}
+		state := projectHumanRead(room, file, displayName, false)
+		counts := &HumanReadCounts{Revision: state.Revision, SnapshotSeq: state.SnapshotSeq, ClearedThrough: state.ClearedThrough,
+			UnreadCount: state.UnreadCount, MentionCount: state.MentionCount}
 		return room, nil, humanReadSummary{Status: "ready", HumanReadCounts: counts}
 	}
 }

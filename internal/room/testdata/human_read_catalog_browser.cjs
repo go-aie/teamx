@@ -39,18 +39,49 @@ if(artifacts)mkdirSync(artifacts,{recursive:true});
   await phone.bringToFront();await phone.locator('#message-120').scrollIntoViewIfNeeded();
   await waitFor(async()=> (await read(groupID)).revision>before.revision);
   const changed=await read(groupID),syncStart=Date.now();
+  assert.equal(changed.unread_count,changed.mention_count,"opening clears ordinary unread while retaining unviewed mentions");
   await waitFor(async()=> (await choice(desktop,groupID).getAttribute('aria-label')).includes(`${changed.unread_count} 条未读消息`));
   const syncMs=Date.now()-syncStart;assert.ok(syncMs<3000,`catalog sync ${syncMs}ms`);
   assert.equal(await desktop.locator('#message-120').count(),1,'desktop remains in its original conversation');
+  // Returning to the mobile list ends this visit; opening the same conversation
+  // captures a new bookmark while the unloaded, unviewed mention survives.
+  assert.ok((await read(groupID)).mention_count>0);
+  await phone.locator('#mobile-back-to-rooms').click();await choice(phone,groupID).click();
+  await phone.locator('#view-mention').filter({hasText:'有人 @我'}).waitFor();
+  assert.equal(await phone.locator('.new-message-divider').count(),0,'mobile list discards the previous ordinary bookmark');
+  assert.equal(await phone.locator('#message-1').count(),0,'reopening does not preload the old mention');
   // Open the group on desktop. Reading changes must not create a new latest
   // message, reorder rows or consume unrendered history.
   await desktop.locator('#settings-dialog').evaluate(el=>el.close());await choice(desktop,groupID).click();
-  await desktop.locator('#message-120').waitFor();await desktop.locator('#earlier-mentions').waitFor({state:'visible'});
-  assert.equal(await desktop.locator('#earlier-mentions').textContent(),'更早还有 2 条提及');
+  await desktop.locator('#message-120').waitFor();await desktop.locator('#view-mention').waitFor({state:'visible'});
+  assert.match(await desktop.locator('#view-mention').textContent(),/有人 @我/);
   await desktop.locator('#load-history').click();await desktop.locator('#message-21').waitFor();
   assert.equal(await desktop.locator('#message-1').count(),0,'history loads only one earlier batch');
-  await desktop.locator('#earlier-mentions').waitFor({state:'visible'});
-  assert.equal(await desktop.locator('#earlier-mentions').textContent(),'更早还有 1 条提及');
+  await desktop.locator('#view-mention').waitFor({state:'visible'});
+  assert.match(await desktop.locator('#view-mention').textContent(),/有人 @我/);
+  // A response fetched under the old Room remains invalid even if its network
+  // completion arrives only after navigation has opened a different Room.
+  let releaseHistory,markHeld;
+  const heldHistory=new Promise(resolve=>{markHeld=resolve;});
+  const holdHistory=async route=>{
+   const body=route.request().postDataJSON();
+   if(body.room_id===groupID && body.snapshot_seq!==undefined){
+    const response=await route.fetch();
+    await new Promise(resolve=>{releaseHistory=resolve;markHeld();});
+    await route.fulfill({response});return;
+   }
+   await route.continue();
+  };
+  await desktop.route('**/v1/read',holdHistory);
+  await desktop.locator('#view-mention').click();await heldHistory;
+  assert.equal(await desktop.locator('#load-history').isEnabled(),false);
+  await choice(desktop,directID).click();await desktop.locator('#message-120').waitFor();
+  releaseHistory();await desktop.waitForTimeout(200);
+  assert.equal(await desktop.locator('#message-1').count(),0);
+  assert.equal(await desktop.locator('#message-21').count(),0);
+  assert.equal(await desktop.locator('#history-progress').isVisible(),false);
+  await desktop.unroute('**/v1/read',holdHistory);
+  await choice(desktop,groupID).click();await desktop.locator('#message-120').waitFor();
   // Verify retained last values under a per-row catalog failure; other rows and
   // the normal member/message/composer path continue refreshing.
   const last=await choice(desktop,groupID).locator('.room-unread').textContent();
@@ -64,7 +95,7 @@ if(artifacts)mkdirSync(artifacts,{recursive:true});
   await desktop.locator('#message-input').fill('目录阅读故障期间保留草稿');assert.equal(await desktop.locator('#send').isEnabled(),true);
   assert.equal(await desktop.locator('#connection').textContent(),'服务已连接');
   await desktop.unroute('**/v1/rooms');
-  // Isolate layout checks from the dwell timer, then exercise both conversation
+  // Isolate layout checks from visible confirmation, then exercise both conversation
   // types with real new-message polling and a controlled activity response.
   for(const page of [desktop,phone]){
    await page.evaluate(()=>{document.hasFocus=()=>false;window.dispatchEvent(new Event('blur'));});
@@ -89,7 +120,7 @@ if(artifacts)mkdirSync(artifacts,{recursive:true});
     const mention=await page.locator('#view-mention').boundingBox(),latest=await page.locator('#jump-latest').boundingBox();
     const activity=await page.locator('#execution-hint').boundingBox(),input=await page.locator('#compose').boundingBox();
     assert.ok(mention.height>=44 && latest.height>=44 && mention.y+mention.height<=latest.y && latest.y+latest.height<=activity.y && activity.y+activity.height<=input.y);
-    assert.match(await page.locator('#view-mention').getAttribute('aria-label'),/提及你.*reviewer/);
+    assert.match(await page.locator('#view-mention').getAttribute('aria-label'),/提及你/);
     if(artifacts)await page.screenshot({path:join(artifacts,`jumps-${id===directID?'direct':'room'}-${width}.png`)});
    }
   }
@@ -171,6 +202,6 @@ if(artifacts)mkdirSync(artifacts,{recursive:true});
    assert.equal(await choice(phone,directID).locator('..').locator('.room-delete').count(),0,'default assistant stays protected');
   }
   assert.equal(deleteWrites,0);assert.deepEqual(errors,[]);
-  console.log(JSON.stringify({independentContexts:2,catalogSyncMs:syncMs,unopenedCounts:true,earlierMentions:true,oneBatchHistory:true,catalogFailureIsolated:true,directAndRoomJumps:true,activityAvoided:true,shortViewportSimulated:true,twoRowCatalog:true,roomNameAvatars:true,touchLongPress:true,deleteRequiresConfirmation:true,viewports:[1440,390,320]}));
+  console.log(JSON.stringify({independentContexts:2,catalogSyncMs:syncMs,unopenedCounts:true,mobileListDropsBookmarkKeepsMention:true,fullHistoryMentionEntry:true,oneBatchHistory:true,switchDiscardsLateHistory:true,catalogFailureIsolated:true,directAndRoomJumps:true,activityAvoided:true,shortViewportSimulated:true,twoRowCatalog:true,roomNameAvatars:true,touchLongPress:true,deleteRequiresConfirmation:true,viewports:[1440,390,320]}));
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

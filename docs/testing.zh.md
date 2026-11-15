@@ -104,9 +104,10 @@ TEAMX_SELECTION_BROWSER=1 go test -tags=integration ./internal/room \
 
 ## 少量按需 e2e
 
-会话共享阅读的核心检查覆盖集合、存储故障、提及匹配和只读目录统计；integration 覆盖独立 HTTP 客户端、重启、生命周期及实时阅读锁隔离。前端 DOM 用例检查目录角标、旧版本丢弃、单项失败保留计数、历史范围与草稿，不能代替视觉检查：
+会话共享阅读的核心检查覆盖普通打开位置与逐条提及的独立合并、计数去重、v1 有限转换、存储故障、提及匹配和只读目录统计；integration 覆盖固定进入快照后新到消息、独立 HTTP 客户端、重启、生命周期及实时阅读锁隔离。前端 DOM 用例检查回看集合、固定分隔线、详情／后台暂停与移动列表退出、键盘裁剪、目录角标、旧响应丢弃和失败重试，不能代替视觉检查：
 
 ```sh
+go test ./internal/room -run 'HumanRead|ConversationUnread|ConversationMention' -count=1
 node --test internal/web/tests/web*_test.mjs
 make test-integration TEST_PACKAGES=./internal/room TEST_RUN='HumanRead|ConversationUnread|ConversationMention'
 make test-race TEST_PACKAGES=./internal/room TEST_RUN='HumanRead|ConversationUnread|ConversationMention'
@@ -121,7 +122,27 @@ TEAMX_HUMAN_READ_PERF=1 go test -tags=e2e ./internal/room \
   -run '^TestHumanReadCatalogPerformance$' -count=1 -v -timeout=3m
 ```
 
-浏览器覆盖未打开会话计数、两端列表同步、较早提及与单批历史加载、单项目录故障、长名称与 `99+`、1440／390／320px 布局和连续滚动。长历史检查含 10,000 条短消息全量 DOM，以及接近 64 MiB 历史保留默认 50 条 DOM；前者另以同数据仅提及候选作为原有阅读检查的对照。目录测量交替运行旧目录文件投影与新目录接口，报告单 Room 10,000 条、10 个 Room 各 1,000 条、接近 64 MiB 样本的 p50／p95、busy 延迟、state 大小与正常读取次数。这些是本机有界测量，不覆盖 1,000 Room 上限，也不是 CI 的性能门槛；小屏模拟不代表实际手机 focus、键盘和页面恢复验收。
+浏览器的 `combined-1440`／`combined-390`／`combined-320` 子场景从第 1～100 条、默认最近 50 条开始，提及位于第 10、70、95 条，另含 3 条自己的消息及重复 @。检查普通打开后仅剩提及未读、一次点击自动补载最早提及、自然滚动确认、独立页面刷新保留未查看提及、精确剩余数和固定分隔线，以及退出丢弃普通回看提示；还注入保存成功但响应丢失，检查轮询恢复后计数不复活。可单独复跑：
+
+```sh
+TEAMX_HUMAN_READ_BROWSER=1 go test -tags=e2e ./internal/room \
+  -run '^TestHumanReadBrowser/combined-' -count=1 -v -timeout=2m
+```
+
+其余浏览器场景覆盖未打开会话计数、两个独立上下文的阅读／列表同步、手机列表往返、手动单批与自动连续补载、取消／失败后的接续、清空／切换会话时迟到历史响应失效、单项目录故障、阅读故障期间发送、长名称与 `99+`、1440／390／320px 及短视口布局和触摸长按。仅阅读变化须保持消息节点与滚动位置，不产生「回到最新消息」。
+
+`history` 和 `history-large` 均从默认 50 条出发，实际构建全部 10,000 条 DOM；后者单条普通正文 6,600 字节，总正文约 62.9 MiB。两者包含网络失败、取消、接续定位、连续输入、可见锚点稳定、日期／新消息分隔线去重、全量历史后的真实消息刷新与滚动，输出批次耗时、Long Tasks、输入响应、阅读帧、序号元数据和 CDP 内存采样。批次墙钟包含主动让出主线程的等待；embedder heap 是估计值，不能当作进程 RSS，几项内存峰值不能相加。大正文保留全部节点仍有较高内存成本，不能据此宣称低内存。
+
+目录性能场景交替运行旧目录文件投影与新目录接口，报告单 Room 10,000 条、10 个 Room 各 1,000 条、接近 64 MiB 样本的 p50／p95、busy 延迟、state 大小与正常读取次数。这些是本机有界测量，不覆盖 1,000 Room 上限，也不是 CI 的性能门槛。
+
+实际手机验收仍待完成；Chromium 小屏、触摸输入和 DOM 键盘裁剪模拟不能替代手机浏览器。复验时在实际手机与电脑连接同一服务，记录设备、系统、浏览器版本及以下结果：
+
+1. 前台打开聊天清除普通未读，未查看提及仍保留；点击较早提及自动补载，成功显示后立即确认，另一端同步。
+2. 展开详情／设置、失焦或临时切到后台期间不确认遮挡的提及；恢复后保留本次回看分界和剩余数量。
+3. 唤起和收起软键盘，检查消息可见裁剪、右上角回看／右下角返回最新、执行提示和输入框的避让及点击。
+4. 返回会话列表再进入，旧普通回看提示消失，未查看提及保留；刷新和跨端操作后计数、位置符合相同规则。
+
+这些实际平台检查完成前，不宣称会话阅读调整整体完成或具备独立发布条件。
 
 日常只检查 e2e 是否能够编译：
 

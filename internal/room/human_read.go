@@ -1,6 +1,7 @@
 package room
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"math"
@@ -11,7 +12,7 @@ import (
 	"sync"
 )
 
-const humanReadVersion = 1
+const humanReadVersion = 2
 
 var errHumanReadUnavailable = errors.New("阅读状态暂未同步")
 
@@ -21,18 +22,69 @@ type humanReadFile struct {
 	OperatorID        string   `json:"operator_id"`
 	Revision          uint64   `json:"revision"`
 	ObservedLatestSeq uint64   `json:"observed_latest_seq"`
+	OpenedThrough     uint64   `json:"opened_through"`
+	MentionSeenSeqs   []uint64 `json:"mention_seen_seqs"`
+	// Read only for the one-time projection of validated v1 files.
+	SeenSeqs []uint64 `json:"-"`
+}
+
+type humanReadLegacyFile struct {
+	Version int `json:"version"`
+	RoomIdentity
+	OperatorID        string   `json:"operator_id"`
+	Revision          uint64   `json:"revision"`
+	ObservedLatestSeq uint64   `json:"observed_latest_seq"`
 	SeenSeqs          []uint64 `json:"seen_seqs"`
 }
 
+// Decode each on-disk version against its own strict schema. The legacy
+// schema is only an input to projection; all subsequent saves use v2.
+func (v *humanReadFile) UnmarshalJSON(data []byte) error {
+	var header struct{ Version int }
+	if err := json.Unmarshal(data, &header); err != nil {
+		return err
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if header.Version == 1 {
+		var old humanReadLegacyFile
+		if err := dec.Decode(&old); err != nil {
+			return err
+		}
+		*v = humanReadFile{Version: 1, RoomIdentity: old.RoomIdentity, OperatorID: old.OperatorID,
+			Revision: old.Revision, ObservedLatestSeq: old.ObservedLatestSeq, SeenSeqs: old.SeenSeqs}
+		return nil
+	}
+	type currentFile humanReadFile
+	var current currentFile
+	if err := dec.Decode(&current); err != nil {
+		return err
+	}
+	*v = humanReadFile(current)
+	return nil
+}
+
 type humanReadState struct {
+	Version int `json:"version"`
 	RoomIdentity
-	OperatorID     string   `json:"operator_id"`
-	Revision       uint64   `json:"revision"`
-	SnapshotSeq    uint64   `json:"snapshot_seq"`
-	ClearedThrough uint64   `json:"cleared_through"`
-	SeenSeqs       []uint64 `json:"seen_seqs"`
-	UnreadCount    int      `json:"unread_count"`
-	MentionCount   int      `json:"mention_count"`
+	OperatorID        string   `json:"operator_id"`
+	Revision          uint64   `json:"revision"`
+	SnapshotSeq       uint64   `json:"snapshot_seq"`
+	ClearedThrough    uint64   `json:"cleared_through"`
+	OpenedThrough     uint64   `json:"opened_through"`
+	MentionSeenSeqs   []uint64 `json:"mention_seen_seqs"`
+	UnseenMentionSeqs []uint64 `json:"unseen_mention_seqs"`
+	// A pointer preserves an explicitly requested empty array.
+	NewMessageSeqs *[]uint64 `json:"new_message_seqs,omitempty"`
+	UnreadCount    int       `json:"unread_count"`
+	MentionCount   int       `json:"mention_count"`
+}
+
+type humanReadDelta struct {
+	SnapshotSeq        *uint64
+	OpenedThrough      *uint64
+	MentionSeenSeqs    []uint64
+	IncludeNewMessages bool
 }
 
 // The service owns the Room directory lock. This sidecar has its own commit
@@ -51,7 +103,7 @@ type humanReadStore struct {
 
 func newHumanReadStore(dir string, room RoomSnapshot, operator string) *humanReadStore {
 	h := &humanReadStore{dir: dir, operator: operator, ops: defaultSnapshotOps()}
-	h.file = humanReadFile{Version: humanReadVersion, RoomIdentity: room.RoomIdentity, OperatorID: operator, SeenSeqs: []uint64{}}
+	h.file = humanReadFile{Version: humanReadVersion, RoomIdentity: room.RoomIdentity, OperatorID: operator, OpenedThrough: room.ClearedThrough, MentionSeenSeqs: []uint64{}}
 	v, err := h.load(room)
 	if errors.Is(err, os.ErrNotExist) {
 		return h
@@ -75,13 +127,25 @@ func (h *humanReadStore) load(room RoomSnapshot) (humanReadFile, error) {
 }
 
 func validateHumanReadFile(v humanReadFile, room RoomSnapshot, operator string) error {
-	if v.Version != humanReadVersion || v.RoomIdentity != room.RoomIdentity ||
+	if (v.Version != 1 && v.Version != humanReadVersion) || v.RoomIdentity != room.RoomIdentity ||
 		v.OperatorID != operator || !validText(v.OperatorID) || v.Revision == 0 ||
-		v.ObservedLatestSeq > room.LatestSeq || v.SeenSeqs == nil || len(v.SeenSeqs) > maxMessages {
+		v.ObservedLatestSeq > room.LatestSeq {
+		return ErrInvalid
+	}
+	seqs := v.MentionSeenSeqs
+	if v.Version == 1 {
+		if v.OpenedThrough != 0 || v.MentionSeenSeqs != nil {
+			return ErrInvalid
+		}
+		seqs = v.SeenSeqs
+	} else if v.SeenSeqs != nil || v.OpenedThrough > v.ObservedLatestSeq {
+		return ErrInvalid
+	}
+	if seqs == nil || len(seqs) > maxMessages {
 		return ErrInvalid
 	}
 	var previous uint64
-	for _, seq := range v.SeenSeqs {
+	for _, seq := range seqs {
 		if seq <= previous || seq > v.ObservedLatestSeq {
 			return ErrInvalid
 		}
@@ -90,82 +154,118 @@ func validateHumanReadFile(v humanReadFile, room RoomSnapshot, operator string) 
 	return nil
 }
 
-// state and confirm read the committed public snapshot inside the merge lock,
-// so a later request cannot validate against an older history than its peer.
-// snapshot is nil for a query; no query creates or compacts the file.
-func (h *humanReadStore) update(store *Store, snapshot *uint64, seen []uint64, displayName string) (humanReadState, error) {
+// A single projection supplies state and catalog counts from the same public
+// snapshot. Queries (including v1 projection and clearing) never write a file.
+func projectHumanRead(room RoomSnapshot, file humanReadFile, displayName string, includeNew bool) humanReadState {
+	opened, seqs := file.OpenedThrough, file.MentionSeenSeqs
+	if file.Version == 1 {
+		opened, seqs = room.ClearedThrough, file.SeenSeqs
+	}
+	result := humanReadState{Version: humanReadVersion, RoomIdentity: room.RoomIdentity, OperatorID: file.OperatorID,
+		Revision: file.Revision, SnapshotSeq: room.LatestSeq, ClearedThrough: room.ClearedThrough,
+		OpenedThrough: max(opened, room.ClearedThrough), MentionSeenSeqs: []uint64{}, UnseenMentionSeqs: []uint64{}}
+	seen := make(map[uint64]bool, len(seqs))
+	for _, seq := range seqs {
+		seen[seq] = true
+	}
+	if includeNew {
+		seqs := []uint64{}
+		result.NewMessageSeqs = &seqs
+	}
+	matcher := newHumanMentionMatcher(file.OperatorID, displayName)
+	for _, message := range room.Messages {
+		if message.Author == (Author{Kind: "human", ID: file.OperatorID}) {
+			continue
+		}
+		mentioned := matcher.matches(message.Text)
+		if mentioned && seen[message.Seq] {
+			result.MentionSeenSeqs = append(result.MentionSeenSeqs, message.Seq)
+		}
+		unseenMention := mentioned && !seen[message.Seq]
+		if unseenMention {
+			result.UnseenMentionSeqs = append(result.UnseenMentionSeqs, message.Seq)
+		}
+		newMessage := message.Seq > result.OpenedThrough
+		if newMessage && includeNew {
+			*result.NewMessageSeqs = append(*result.NewMessageSeqs, message.Seq)
+		}
+		if newMessage || unseenMention {
+			result.UnreadCount++
+		}
+	}
+	result.MentionCount = len(result.UnseenMentionSeqs)
+	return result
+}
+
+// Read the committed public snapshot inside the merge lock. Two independent
+// increments merge by max/opened and union/mentions, never by replacement.
+func (h *humanReadStore) update(store *Store, delta humanReadDelta, displayName string) (humanReadState, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.unavailable != nil {
 		return humanReadState{}, errHumanReadUnavailable
 	}
 	room, err := store.LoadRoom()
-	if err != nil {
+	if err != nil || room.RoomIdentity != h.file.RoomIdentity {
 		return humanReadState{}, errHumanReadUnavailable
 	}
-	if room.RoomIdentity != h.file.RoomIdentity {
-		return humanReadState{}, errHumanReadUnavailable
-	}
-	if snapshot != nil {
-		if len(seen) > 100 || *snapshot > room.LatestSeq {
+	if delta.SnapshotSeq != nil {
+		if len(delta.MentionSeenSeqs) > 100 || *delta.SnapshotSeq > room.LatestSeq ||
+			(delta.OpenedThrough != nil && *delta.OpenedThrough > *delta.SnapshotSeq) {
 			return humanReadState{}, ErrRequest
 		}
-		for _, seq := range seen {
-			if seq == 0 || seq > *snapshot {
+		for _, seq := range delta.MentionSeenSeqs {
+			if seq == 0 || seq > *delta.SnapshotSeq {
 				return humanReadState{}, ErrRequest
 			}
 		}
+	} else if delta.OpenedThrough != nil || delta.MentionSeenSeqs != nil {
+		return humanReadState{}, ErrRequest
 	}
 	if h.uncertain {
-		// One attempt per ambiguous replacement. Failure latches only this
-		// service's reading state; reopening the service may try loading again.
+		// Attempt recovery once per ambiguous replacement; business writes remain independent.
 		h.uncertain = false
 		if err := h.recover(room); err != nil {
 			h.unavailable = err
 			return humanReadState{}, errHumanReadUnavailable
 		}
 	}
-	set := make(map[uint64]bool, len(h.file.SeenSeqs)+len(seen))
-	for _, seq := range h.file.SeenSeqs {
-		if readableHumanSeq(room, h.file.OperatorID, seq) {
-			set[seq] = true
-		}
+	result := projectHumanRead(room, h.file, displayName, delta.IncludeNewMessages)
+	if delta.SnapshotSeq == nil {
+		return result, nil
 	}
-	changed := false
-	for _, seq := range seen {
-		if readableHumanSeq(room, h.file.OperatorID, seq) && !set[seq] {
+	opened := result.OpenedThrough
+	if delta.OpenedThrough != nil {
+		opened = max(opened, *delta.OpenedThrough)
+	}
+	set := make(map[uint64]bool, len(result.MentionSeenSeqs)+len(delta.MentionSeenSeqs))
+	for _, seq := range result.MentionSeenSeqs {
+		set[seq] = true
+	}
+	changed := opened > result.OpenedThrough || h.file.Version == 1
+	matcher := newHumanMentionMatcher(h.file.OperatorID, displayName)
+	for _, seq := range delta.MentionSeenSeqs {
+		if readableHumanSeq(room, h.file.OperatorID, seq) && matcher.matches(room.Messages[seq-room.ClearedThrough-1].Text) && !set[seq] {
 			set[seq], changed = true, true
 		}
 	}
-	seqs := make([]uint64, 0, len(set))
-	for seq := range set {
-		seqs = append(seqs, seq)
-	}
-	slices.Sort(seqs)
 	if changed {
 		if h.file.Revision == math.MaxUint64 {
 			return humanReadState{}, errHumanReadUnavailable
 		}
-		candidate := h.file
-		candidate.Revision++
-		candidate.ObservedLatestSeq = max(candidate.ObservedLatestSeq, *snapshot)
-		candidate.SeenSeqs = seqs
+		seqs := make([]uint64, 0, len(set))
+		for seq := range set {
+			seqs = append(seqs, seq)
+		}
+		slices.Sort(seqs)
+		candidate := humanReadFile{Version: humanReadVersion, RoomIdentity: room.RoomIdentity, OperatorID: h.file.OperatorID,
+			Revision: h.file.Revision + 1, ObservedLatestSeq: max(h.file.ObservedLatestSeq, *delta.SnapshotSeq, room.ClearedThrough),
+			OpenedThrough: opened, MentionSeenSeqs: seqs}
 		if err := h.save(candidate); err != nil {
 			return humanReadState{}, errHumanReadUnavailable
 		}
 		h.file, h.hadFile = candidate, true
-	}
-	result := humanReadState{RoomIdentity: room.RoomIdentity, OperatorID: h.file.OperatorID,
-		Revision: h.file.Revision, SnapshotSeq: room.LatestSeq, ClearedThrough: room.ClearedThrough, SeenSeqs: seqs}
-	matcher := newHumanMentionMatcher(h.file.OperatorID, displayName)
-	for _, message := range room.Messages {
-		if message.Author == (Author{Kind: "human", ID: h.file.OperatorID}) || set[message.Seq] {
-			continue
-		}
-		result.UnreadCount++
-		if matcher.matches(message.Text) {
-			result.MentionCount++
-		}
+		result = projectHumanRead(room, candidate, displayName, delta.IncludeNewMessages)
 	}
 	return result, nil
 }

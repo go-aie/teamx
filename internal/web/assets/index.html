@@ -57,18 +57,20 @@
       <div id="platform-interaction-error" class="notice" role="status" hidden></div>
       <div id="service-change" class="notice" role="status" hidden></div>
       <div id="sync-error" class="notice" role="status" hidden></div>
+      <div id="review-notice" class="notice" role="status" hidden></div>
       <div id="human-read-notice" class="notice" role="status" hidden></div>
       <div id="restart-notice" class="notice" role="status" hidden></div>
       <div id="timeline-wrap" class="timeline-wrap">
         <div id="timeline" class="timeline" tabindex="0" aria-label="消息记录">
-          <div class="history-control"><span id="earlier-mentions" role="status" hidden></span><button id="load-history" class="text-button" hidden>加载更早消息</button></div>
+          <div class="history-control"><button id="load-history" class="text-button" hidden>加载更早消息</button></div>
           <div id="empty" class="empty"><span id="empty-conversation-icon" class="empty-mark" aria-hidden="true">#</span><h2>从一条消息开始</h2><p>发送任务或想法，让房间里的 Agent 一起参与。</p><div id="direct-suggestions" class="direct-suggestions" hidden><button type="button" class="secondary-button" data-suggestion="帮我整理一下待办事项">整理待办</button><button type="button" class="secondary-button" data-suggestion="介绍一下你能帮我做什么">你能做什么</button><button type="button" class="secondary-button" data-suggestion="帮我连接飞书">连接飞书</button></div></div>
 
           <div id="messages" role="log" aria-label="公共消息" aria-live="polite" aria-relevant="additions"></div>
         </div>
+        <div class="mention-notice timeline-review" role="status" hidden id="mention-notice"><button id="view-mention" class="timeline-jump" type="button"></button></div>
+        <div id="history-progress" class="history-progress" hidden><span id="history-status" role="status"></span><button id="cancel-history" class="text-button" type="button">取消定位</button></div>
         <div class="timeline-jumps" role="group" aria-label="消息跳转">
-          <div class="mention-notice" role="status" hidden id="mention-notice"><button id="view-mention" class="timeline-jump" type="button"></button></div>
-          <button id="jump-latest" class="timeline-jump" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 6 6 6-6M6 12l6 6 6-6"/></svg><span>查看新消息</span></button>
+          <button id="jump-latest" class="timeline-jump" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 6 6 6-6M6 12l6 6 6-6"/></svg><span>回到最新消息</span></button>
         </div>
         <div id="execution-hint" class="execution-hint" role="status" aria-live="polite" aria-atomic="true" hidden>
           <span class="execution-dots" aria-hidden="true"><i></i><i></i><i></i></span>
