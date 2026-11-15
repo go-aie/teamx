@@ -31,6 +31,15 @@ func TestLarkChatScopeBrowser(t *testing.T) {
 	}
 	h := newLarkHarness(t)
 	prepareLarkBrowserMember(h)
+	bin := filepath.Join(h.dir, "lark-cli")
+	script, err := os.ReadFile(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	script = []byte(strings.Replace(string(script), "elif path.startswith('/open-apis/im/v1/chats/'):data=", "elif path=='/open-apis/im/v1/chats/oc_group':data={'chat_mode':'group','name':'项目群'}\nelif path.startswith('/open-apis/im/v1/chats/'):data=", 1))
+	if err := os.WriteFile(bin, script, 0700); err != nil {
+		t.Fatal(err)
+	}
 	page := lark.ChatPage{Chats: []lark.Chat{{ID: "oc_private", Mode: "p2p", Name: "同事"}, {ID: "oc_group", Mode: "group", Name: "项目群"}}}
 	raw, _ := json.Marshal(page)
 	if err := os.WriteFile(filepath.Join(h.dir, "directory.json"), raw, 0600); err != nil {

@@ -233,7 +233,8 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     if(ws.larkChatDirectories[kind]?.key!==key){
       const previous=ws.larkChatDirectories[kind];
       clearTimeout(previous?.timer);previous?.controller?.abort();
-      ws.larkChatDirectories[kind]={key,query:"",type:kind==="private" ? "p2p" : "group",known:new Map(),chats:new Map(),loaded:false,loading:false,hasMore:false,token:"",error:"",pages:0,warnings:[]};
+      previous?.labels?.controller.abort();
+      ws.larkChatDirectories[kind]={key,query:"",type:kind==="private" ? "p2p" : "group",known:new Map(),chats:new Map(),labels:{requested:new Set(),controller:new AbortController()},loaded:false,loading:false,hasMore:false,token:"",error:"",pages:0,warnings:[]};
       larkChatElement(kind,"search").value="";
     }
     return ws.larkChatDirectories[kind];
@@ -271,6 +272,9 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     }
     const known=new Map((ws.messages?.config.platform_id===connection?.id ? ws.messages?.lark?.chats || [] : []).map(chat=>[chat.chat_id,chat]));
     for(const [id,chat] of dir.known)known.set(id,chat);
+    if(ready && !busy && !hidden && $("notification-detail").open)for(const id of ids){
+      if(!known.get(id)?.name && !dir.labels.requested.has(id))void loadLarkChatLabel(ws,connection,kind,dir,id);
+    }
     larkChatElement(kind,"selected").replaceChildren(...ids.map(id=>{
       const chat=known.get(id),label=larkChatLabel(chat,id),button=document.createElement("button");
       button.type="button";button.textContent=`${label} ×`;button.title=id;button.setAttribute("aria-label",`移除${noun}：${label}`);
@@ -302,6 +306,20 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     larkChatElement(kind,"refresh").disabled=blocked || dir.loading || !!dir.timer;
   }
 
+  async function loadLarkChatLabel(ws,connection,kind,dir,id) {
+    const epoch=state.catalog?.service_epoch;
+    dir.labels.requested.add(id);
+    try{
+      const page=await request("/v1/platform/lark/chats",{service_epoch:epoch,...ws.room,caller:{kind:"human",id:ws.operator},platform_id:connection.id,platform_version:connection.version,chat_id:id},undefined,40000,dir.labels.controller.signal);
+      const current=ws.larkChatDirectories?.[kind];
+      if(ws!==workspaceUI.workspaceView || epoch!==state.catalog?.service_epoch || current?.labels!==dir.labels || $("lark-connection").value!==connection.id || dir.labels.controller.signal.aborted)return;
+      const chat=page.chats?.find(chat=>chat.chat_id===id);
+      if(chat?.name){current.known.set(id,chat);renderLarkMessages();}
+    }catch{
+      // Metadata failure keeps the exact saved selection and its ID fallback.
+    }
+  }
+
   async function loadLarkChats(kind, reset=false) {
     const ws=workspaceUI.workspaceView,epoch=state.catalog?.service_epoch,connection=ws?.larkPlatforms?.find(x=>x.id===$("lark-connection").value);
     if(!ws || !epoch || connection?.validation?.status!=="valid" || $("lark-fields").disabled || !larkChatPickerActive(kind))return;
@@ -318,7 +336,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
       for(const chat of page.chats){
         const mode=chat.chat_mode || chat.mode;
         if(kind==="private" ? mode!=="p2p" : !["group","topic"].includes(mode))continue;
-        dir.chats.set(chat.chat_id,chat);dir.known.set(chat.chat_id,chat);
+        dir.chats.set(chat.chat_id,chat);dir.known.set(chat.chat_id,{...chat,name:chat.name || dir.known.get(chat.chat_id)?.name});
       }
       for(const warning of page.search_warnings || [])if(!dir.warnings.some(w=>w.source===warning.source && w.code===warning.code))dir.warnings.push(warning);
       dir.loaded=true;dir.hasMore=page.has_more;dir.token=page.page_token || "";dir.pages++;
@@ -338,7 +356,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     clearTimeout(dir.timer);dir.controller?.abort();
     // Retain only selected labels across queries; result caches stay bounded.
     const known=new Map([...dir.known].filter(([id])=>larkChatIDs(kind).includes(id)));
-    return ws.larkChatDirectories[kind]={key:dir.key,query,type:dir.type,known,chats:new Map(),loaded:false,loading:false,hasMore:false,token:"",error:"",pages:0,warnings:[]};
+    return ws.larkChatDirectories[kind]={key:dir.key,query,type:dir.type,known,chats:new Map(),labels:dir.labels,loaded:false,loading:false,hasMore:false,token:"",error:"",pages:0,warnings:[]};
   }
 
   function queueLarkChatSearch(kind,composing=false,delay=300) {
@@ -361,7 +379,9 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
       const dir=ws.larkChatDirectories?.[type];if(!dir)continue;
       if(ws.larkChatComposing)ws.larkChatComposing[type]=false;
       clearTimeout(dir.timer);dir.controller?.abort();
-      ws.larkChatDirectories[type]={...dir,loading:false,timer:null,controller:null};
+      const labels=kind ? dir.labels : {requested:new Set(),controller:new AbortController()};
+      if(!kind)dir.labels.controller.abort();
+      ws.larkChatDirectories[type]={...dir,labels,loading:false,timer:null,controller:null};
     }
   }
 

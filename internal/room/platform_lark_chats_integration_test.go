@@ -104,6 +104,48 @@ func TestLarkChatPickerSearchesMetadataWithPartialPermissions(t *testing.T) {
 	}
 }
 
+func TestLarkChatPickerResolvesSelectedMetadataOutsideDirectory(t *testing.T) {
+	parallelFixtureTest(t)
+	h := newLarkHarness(t)
+	bin := filepath.Join(h.dir, "lark-cli")
+	script, err := os.ReadFile(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	script = []byte(strings.Replace(string(script), "elif path.startswith('/open-apis/im/v1/chats/'):data=", "elif path=='/open-apis/im/v1/chats/oc_saved_group':data={'chat_mode':'group','name':'已选项目群'}\nelif path.startswith('/open-apis/im/v1/chats/'):data=", 1))
+	if err := os.WriteFile(bin, script, 0700); err != nil {
+		t.Fatal(err)
+	}
+	req := larkChatsRequest{ServiceEpoch: h.m.epoch, RoomIdentity: h.room.RoomIdentity, Caller: humanCaller, PlatformID: h.c.ID, PlatformVersion: h.c.Version}
+	for _, sample := range []struct{ id, name string }{{"oc_saved_group", "已选项目群"}, {"oc_saved_private", "脱敏会话"}} {
+		req.ChatID = sample.id
+		response := managerHTTP(h.m, "/v1/platform/lark/chats", req)
+		var page lark.ChatPage
+		if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &page) != nil || len(page.Chats) != 1 || page.Chats[0].ID != sample.id || page.Chats[0].Name != sample.name || page.HasMore {
+			t.Fatal(response.Code, response.Body.String())
+		}
+	}
+	for _, mutate := range []func(*larkChatsRequest){
+		func(r *larkChatsRequest) { r.ChatID = "om_message" },
+		func(r *larkChatsRequest) { r.Query = "项目" },
+		func(r *larkChatsRequest) { r.PageToken = "next" },
+		func(r *larkChatsRequest) { r.PlatformVersion++ },
+		func(r *larkChatsRequest) { r.RoomInstance = "stale" },
+		func(r *larkChatsRequest) { r.Caller = agentCaller(h.members[0].AgentID, h.members[0].MembershipID) },
+	} {
+		bad := req
+		mutate(&bad)
+		if response := managerHTTP(h.m, "/v1/platform/lark/chats", bad); response.Code == 200 {
+			t.Fatal("invalid selected metadata request accepted")
+		}
+	}
+	h.m.mu.Lock()
+	defer h.m.mu.Unlock()
+	if len(h.m.notifications.StatesLocked(h.room.RoomIdentity)) != 0 || len(h.m.platformCalls) != 0 {
+		t.Fatal("metadata lookup changed subscription or leaked calls")
+	}
+}
+
 func TestLarkChatPickerRejectsPlatformChangedDuringRead(t *testing.T) {
 	parallelFixtureTest(t)
 	h := newLarkHarness(t)

@@ -257,7 +257,7 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
     const reload=document.createElement("button");reload.type="button";reload.className="text-button";reload.textContent="载入最新草稿";reload.hidden=true;
     const settings=document.createElement("button");settings.type="button";settings.className="text-button";settings.textContent="完整设置";settings.addEventListener("click",()=>settingsUI.openSettings("platforms"));
     actions.append(submit,cancel,reload,settings);el.append(heading,status,fields,search,candidates,more,selected,actions,hint,feedback);
-    const card={el,op,heading,status,fields,candidates,feedback,actions,hint,name,query,search,more,mode,selected,submit,cancel,reload,dirty:false,editVersion:0,draft:null,rows:new Map(),searchGeneration:0,searchBusy:false,queryValue:"",pageToken:"",loaded:false};
+    const card={el,op,heading,status,fields,candidates,feedback,actions,hint,name,query,search,more,mode,selected,submit,cancel,reload,dirty:false,editVersion:0,draft:null,rows:new Map(),chatNames:new Map(),searchGeneration:0,searchBusy:false,queryValue:"",pageToken:"",loaded:false};
     const dirty=()=>{card.dirty=true;};
     name?.addEventListener("input",()=>{card.draft.name=name.value;card.draft.platform_id="";card.draft.platform_version=0;dirty();updateSelectionInteraction(card,card.op);});
     mode.addEventListener("change",()=>{if(project){if(mode.value)card.draft.events_filter={types:mode.value==="all" ? [] : [mode.value]};else delete card.draft.events_filter;}else card.draft.group_message_mode=mode.value;dirty();});
@@ -284,7 +284,9 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
     card.heading.textContent=account ? (gitlab ? "选择 GitLab 账号" : "选择飞书账号") : project ? "选择关注的项目" : "选择关注的群聊";
     card.status.textContent=({waiting:"请选择后提交",completed:"选择已保存",cancelled:"选择已取消",expired:"表单已过期"})[op.status] || "结果待核实";
     card.el.dataset.status=op.status;
-    card.selected.textContent=account ? (card.draft.platform_id ? `已选连接：${card.draft.name || card.draft.platform_id}` : gitlab ? `请选择 ${op.input.origin} 的已核验账号` : "使用新连接，请填写名称") : project ? (card.draft.project_id ? `已选项目：${card.draft.project_path} · #${card.draft.project_id}${card.draft.events_filter ? `；筛选：${card.draft.events_filter.types?.join("、") || "全部活动"}` : ""}` : "请选择一个项目") : `已选 ${card.draft.chat_ids?.length || 0} 个群：${(card.draft.chat_ids || []).map(id=>`${op.chats?.find(c=>c.chat_id===id)?.name || card.rows.get(id)?.chatName || "群聊"} (${id})`).join("、")}`;
+    for(const chat of op.chats || [])if(chat.name)card.chatNames.set(chat.chat_id,chat.name);
+    card.selected.title=account || project ? "" : (card.draft.chat_ids || []).join("、");
+    card.selected.textContent=account ? (card.draft.platform_id ? `已选连接：${card.draft.name || card.draft.platform_id}` : gitlab ? `请选择 ${op.input.origin} 的已核验账号` : "使用新连接，请填写名称") : project ? (card.draft.project_id ? `已选项目：${card.draft.project_path} · #${card.draft.project_id}${card.draft.events_filter ? `；筛选：${card.draft.events_filter.types?.join("、") || "全部活动"}` : ""}` : "请选择一个项目") : `已选 ${card.draft.chat_ids?.length || 0} 个群：${(card.draft.chat_ids || []).map(id=>card.chatNames.get(id) || `群聊 · ${id}`).join("、")}`;
     const active=waiting && op.target_available;
     for(const field of [card.name,card.query,card.mode,card.search,card.more,card.submit,card.cancel])if(field)field.disabled=!active || busy;
     for(const [id,row] of card.rows){row.control.disabled=!active || busy;row.control.checked=account ? card.draft.platform_id===id : project ? card.draft.project_id===id : (card.draft.chat_ids || []).includes(id);}
@@ -304,13 +306,14 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
       const result=await request("/v1/platforms/selection-interactions/candidates",{...state.info,caller:{kind:"human",id:state.operator},operation_id:card.op.operation_id,query,page_token:append ? card.pageToken : ""},undefined,35000);
       if(generation!==s.generation || requestVersion!==card.searchGeneration)return;
       card.queryValue=query;card.pageToken=result.next_page ? String(result.next_page) : result.has_more ? result.page_token : "";
-      if(!append){card.rows.clear();card.candidates.replaceChildren();}
+      if(!append){card.rows.clear();card.candidates.replaceChildren();card.chatNames=new Map([...card.chatNames].filter(([id])=>(card.draft.chat_ids || []).includes(id)));}
       const account=card.op.input.kind==="account",project=card.op.input.kind==="projects",gitlab=card.op.input.provider==="gitlab",rows=account ? (gitlab ? result : [...result,{id:"",name:"连接另一个飞书账号",version:0}]) : project ? result.projects : result.chats;
       if(project && (!Array.isArray(rows) || rows.some(p=>!Number.isSafeInteger(p.id) || p.id<=0 || typeof p.path_with_namespace!=="string")))throw Error("invalid projects");
       for(const item of rows){const id=account || project ? item.id : item.chat_id;if(card.rows.has(id))continue;
-        const row=document.createElement("label"),control=document.createElement("input"),text=document.createElement("span");control.type=account || project ? "radio" : "checkbox";control.name=`selection-${card.op.operation_id}`;
-        text.textContent=account ? `${item.name}${item.username ? ` · ${item.username}` : ""}${item.id ? ` · ${item.account?.id?.value || item.id}` : ""}` : project ? `${item.name} · ${item.path_with_namespace} · #${item.id}` : `${item.name || id} · ${id}${item.chat_mode==="topic" ? " · 话题群" : ""}`;
-        row.append(control,text);card.candidates.append(row);card.rows.set(id,{control,chatName:item.name});
+        const row=document.createElement("label"),control=document.createElement("input"),text=document.createElement("span");control.type=account || project ? "radio" : "checkbox";control.name=`selection-${card.op.operation_id}`;control.value=String(id);
+        text.textContent=account ? `${item.name}${item.username ? ` · ${item.username}` : ""}${item.id ? ` · ${item.account?.id?.value || item.id}` : ""}` : project ? `${item.name} · ${item.path_with_namespace} · #${item.id}` : `${item.name || `群聊 · ${id}`}${item.chat_mode==="topic" ? " · 话题群" : ""}`;
+        if(!account && !project){row.title=id;if(item.name)card.chatNames.set(id,item.name);}
+        row.append(control,text);card.candidates.append(row);card.rows.set(id,{control});
         control.addEventListener("change",()=>{
           card.dirty=true;
           if(account){card.draft.platform_id=id;card.draft.platform_version=item.version;card.draft.name=id ? item.name : (card.name?.value || "");if(id && card.name)card.name.value=item.name;}

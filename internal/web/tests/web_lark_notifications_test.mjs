@@ -6,7 +6,7 @@ function fixture(){
  const connection={id:"lark-connection",name:"飞书",provider:"lark",url:"https://open.feishu.cn",version:1,validation:{status:"valid",username:"测试用户",account:{id:{value:"ou_fixture"}}}};
  const api={calls:[],fail:false,chats:[{chat_id:"oc_fixture",name:"产品讨论群",chat_mode:"group"},{chat_id:"oc_private",name:"张同学",chat_mode:"p2p"}],data:{provider:"lark",channel:"messages",available:true,subscription_id:"",subscription_version:0,status:"disabled",pending:0,config:{enabled:false,platform_id:"lark-connection",target:{mode:"inbox",agent_id:"assistant",membership_id:"member-a"},private:{enabled:true,scope:"all",chat_ids:[]},groups:{enabled:false,chat_ids:[],message_mode:"mentions",at_me:true,at_all:false},interval_seconds:60,backfill_seconds:0},lark:{cli_version:"1.0.99",chats:[]}},async request(path,body){
   api.calls.push({path,body:structuredClone(body)});
-  if(path==="/v1/platform/lark/chats")return {chats:structuredClone(api.chats.filter(c=>!body.query || c.name.includes(body.query))),has_more:false,page_token:""};
+  if(path==="/v1/platform/lark/chats")return {chats:structuredClone(api.chats.filter(c=>body.chat_id ? c.chat_id===body.chat_id : !body.query || c.name.includes(body.query))),has_more:false,page_token:""};
   if(path==="/v1/ui")return {managed:true};
   if(path==="/v1/rooms")return {service_epoch:"manager",operator:"tester",rooms:[{room_id:"A",room_instance:"instance-A",name:"A",status:"ready",runtime_status:"ready",service:{room_id:"A",room_instance:"instance-A",service_epoch:"active-A"}}],teams:[]};
   if(path.startsWith("/v1/workspace?"))return {workspace:{root:"workspaces"},workspace_version:1,members:[],credential_status:"missing"};
@@ -61,6 +61,29 @@ test("Lark failed saves retain draft without automatic retry",async()=>{
  const api=fixture(),ui=await launch(api);await draft(ui);api.fail=true;await ui.el("lark-save").emit("click");await ui.refresh();
  assert.equal(api.calls.filter(x=>x.path==="/v1/platform/notifications/configure").length,1);
  assert.match(ui.el("lark-groups-chat-selected").children[0].textContent,/产品讨论群/);assert.match(ui.el("lark-error").textContent,/变化.*核对/);
+});
+test("Lark saved selections resolve names outside the loaded directory after reload",async()=>{
+ const api=fixture(),ui=await launch(api);await draft(ui);await ui.el("lark-save").emit("click");
+ const original=api.request;
+ api.request=(path,body,...rest)=>path==="/v1/platform/lark/chats" && !body.chat_id
+  ? {chats:[],has_more:false,page_token:""} : original(path,body,...rest);
+ const reloaded=await launch(api);await openNotification(reloaded,"lark");await settle();await openChatPicker(reloaded);
+ const selected=reloaded.el("lark-groups-chat-selected").children[0];
+ assert.equal(selected.textContent,"产品讨论群 ×");assert.equal(selected.title,"oc_fixture");
+ assert.equal(reloaded.el("lark-groups-chat-options").children.length,0);
+ assert.deepEqual(api.calls.find(c=>c.body?.chat_id==="oc_fixture").body.chat_id,"oc_fixture");
+ assert.equal(reloaded.el("lark-save").disabled,true);
+});
+test("Lark late selected-name lookups cannot label a different connection",async()=>{
+ const api=fixture();api.data.config.groups={enabled:true,chat_ids:["oc_fixture"],message_mode:"mentions",at_me:true};
+ const original=api.request;let finish;
+ api.request=(path,body,...rest)=>path==="/v1/platform/lark/chats" && body.chat_id
+  ? new Promise(resolve=>{finish=resolve;}) : original(path,body,...rest);
+ const ui=await launch(api);await openNotification(ui,"lark");await settle();
+ assert.ok(finish);
+ ui.el("lark-connection").value="";await ui.el("lark-connection").emit("change");
+ finish({chats:api.chats});await settle();
+ assert.equal(ui.el("lark-groups-chat-selected").children.length,0);
 });
 test("Lark settings distinguish an unsaved switch from saved state and sync feedback",async()=>{
  const api=fixture(),original=api.request;

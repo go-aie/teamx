@@ -34,6 +34,19 @@ test('groups use exact choices, pagination and fixed fields; repeated click appl
  await Promise.all([controls(el)[0].emit('click'),controls(el)[0].emit('click')]);await settle();
  assert.equal(writes(api).filter(c=>c.path.endsWith('/submit')).length,1);assert.deepEqual(api.op.draft.chat_ids,['oc_two']);assert.equal(api.op.draft.group_message_mode,'mentions');assert.match(el.children[1].textContent,/已保存/);assert.match(el.children[8].textContent,/等待 Agent 接续/);
 });
+test('group summaries show names and retain selected labels across searches; IDs remain in tooltips',async()=>{
+ const api=fixture(),ui=await launch(api);await settle();const el=card(ui);
+ const choice=candidates(el).children[0];
+ assert.equal(choice.children[1].textContent,'产品讨论群');assert.equal(choice.title,'oc_one');
+ choice.children[0].checked=true;await choice.children[0].emit('change');
+ assert.equal(el.children[6].textContent,'已选 1 个群：产品讨论群');assert.equal(el.children[6].title,'oc_one');
+ api.hook=path=>path.endsWith('/candidates') ? {chats:[],has_more:false} : undefined;
+ await el.children[3].emit('click');await settle();
+ assert.equal(candidates(el).children.length,0);assert.equal(el.children[6].textContent,'已选 1 个群：产品讨论群');
+ api.op.status='completed';api.op.version++;api.op.draft={chat_ids:['oc_one']};api.op.chats=[{chat_id:'oc_one',name:'产品讨论群'}];
+ const reloaded=await launch(api);await settle();
+ assert.equal(card(reloaded).children[6].textContent,'已选 1 个群：产品讨论群');
+});
 test('local input and focus survive polling, new messages and natural-language draft conflict',async()=>{
  const api=fixture('account'),ui=await launch(api);await settle();const el=card(ui),name=el.children[2].children[0].children[1];name.value='手动名称';name.focus();await name.emit('input');
  api.messages.push({seq:2,author:{kind:'human',id:'tester'},text:'新消息',created_at:'2026-11-11T01:01:00Z'});api.op.version++;api.op.draft.name='自然语言名称';await ui.refresh();await settle();

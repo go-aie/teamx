@@ -26,6 +26,7 @@ type larkChatsRequest struct {
 	PageToken       string `json:"page_token,omitempty"`
 	Query           string `json:"query,omitempty"`
 	Type            string `json:"type,omitempty"`
+	ChatID          string `json:"chat_id,omitempty"` // Exact metadata lookup, independent of directory pages.
 }
 
 func (m *roomManager) checkLarkChatsLocked(ctx context.Context, req larkChatsRequest, expected *registry.Account) (registry.Account, error) {
@@ -58,6 +59,9 @@ func (m *roomManager) checkLarkChatsLocked(ctx context.Context, req larkChatsReq
 }
 
 func (m *roomManager) listLarkChats(ctx context.Context, req larkChatsRequest) (lark.ChatPage, error) {
+	if req.ChatID != "" && (req.member != nil || req.Query != "" || req.PageToken != "" || !(lark.Chat{ID: req.ChatID, Mode: "group"}).Valid()) {
+		return lark.ChatPage{}, ErrRequest
+	}
 	if len(req.PageToken) > 8192 || strings.ContainsAny(req.PageToken, "\x00\r\n") {
 		return lark.ChatPage{}, ErrRequest
 	}
@@ -97,7 +101,13 @@ func (m *roomManager) listLarkChats(ctx context.Context, req larkChatsRequest) (
 		return lark.ChatPage{}, err
 	}
 	var page lark.ChatPage
-	if len(req.verifyIDs) > 0 {
+	if req.ChatID != "" {
+		var chat lark.Chat
+		chat, err = client.Chat(callCtx, a.Identity, req.ChatID)
+		if err == nil {
+			page.Chats = []lark.Chat{chat}
+		}
+	} else if len(req.verifyIDs) > 0 {
 		page.Chats = []lark.Chat{}
 		for _, id := range req.verifyIDs {
 			var chat lark.Chat
