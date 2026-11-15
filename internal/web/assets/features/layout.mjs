@@ -117,6 +117,7 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
       filterParent.append($("conversation-filter"));
       createParent.append($("new-room"));
     }
+    roomsUI.renderConversationFilter();
     if ($("user-menu-container").parentElement !== $("room-rail")) {
       $("room-rail").insertBefore($("user-menu-container"), $("mobile-primary-navigation"));
     }

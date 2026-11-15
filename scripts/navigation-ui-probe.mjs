@@ -28,6 +28,10 @@ const server=http.createServer(async(req,res)=>{
         data=await api.request(url.pathname,body);for(const room of data.rooms){room.runtime_status="ready";room.is_direct=directMode;room.created_at=new Date().toISOString();room.last_message_at=room.created_at;room.last_message_preview={author:{kind:"agent",id:"a"},agent_name:"助理",text:"已整理好讨论结果，请查看。"};if(directMode)room.members=[{id:"a",name:"助理"}];}
         const sample=data.rooms[0];
         data.rooms.push(...Array.from({length:12},(_,i)=>({...sample,room_id:`sample-${i}`,room_instance:`instance-${i}`,name:["产品讨论","研发协作","代码审查","每周计划"][i%4]+(i>3 ? ` ${i+1}` : ""),created_at:new Date(Date.now()-(i+1)*3600000).toISOString(),last_message_at:new Date(Date.now()-(i+1)*3600000).toISOString()})));
+        for(const [i,room] of data.rooms.entries()) {
+          const saved=reading.get(JSON.stringify([room.room_id,room.room_instance,data.operator]));
+          room.human_read={status:"ready",revision:saved?.revision || 0,snapshot_seq:32,cleared_through:0,unread_count:i ? 9 : 32-(saved?.opened || 0),mention_count:0};
+        }
         Object.assign(data,{time_zone:"Asia/Shanghai",settings_version:1});
       } else if(url.pathname==="/v1/member/list" && directMode)data={members:[api.members[0]]};
       else if(url.pathname==="/v1/read")data={messages:messages.filter(m=>m.seq>(body.after || 0)),snapshot_seq:32,has_more:false};
@@ -60,14 +64,22 @@ try {
     const context=await browser.newContext({viewport:{width,height},isMobile:mobile,hasTouch:mobile});
     const page=await context.newPage();page.setDefaultTimeout(10000);page.on("pageerror",e=>errors.push(e.message));
     await page.goto(origin);await page.locator("#message-32").waitFor();
+    check(`${name}: only desktop shows the global unread count at the top`,await page.locator("#conversation-unread-total").isVisible()===!mobile && await page.locator("#conversation-unread-total").textContent()==="99+");
+    check(`${name}: default entry reflects its navigation role`,await page.locator("#conversation-filter-label").textContent()===(mobile ? "全部" : "消息"));
+    await page.locator("#conversation-filter").click();
+    check(`${name}: filter menu contains only conversation types`,(await page.locator("#conversation-filter-menu button").allTextContents()).join(",")==="全部,私信,房间");
+    await page.screenshot({path:path.join(out,`${name}-message-menu.png`),animations:"disabled"});
+    await page.locator("#conversation-filter").click();
     if(mobile) {
       await page.locator("#mobile-primary-navigation").waitFor();
       check(`${name}: opens the message list with brand and bottom navigation`,await page.locator("#room-brand").isVisible());
-      check(`${name}: default filter uses only its icon`,!await page.locator("#conversation-filter-label").isVisible());
+      check(`${name}: default filter states its scope with a chevron`,await page.locator("#conversation-filter-label").isVisible() && await page.locator(".conversation-filter-chevron").isVisible());
       check(`${name}: only one header precedes the list`,!await page.locator(".room-nav-heading").isVisible());
       await page.screenshot({path:path.join(out,`${name}-messages.png`),animations:"disabled"});
       await page.locator("#conversation-filter").click();await page.locator("#conversation-filter-direct").click();
       check(`${name}: selected filter remains explicit`,await page.locator("#conversation-filter-label").isVisible() && await page.locator("#conversation-filter-label").textContent()==="私信");
+      check(`${name}: filtering retains only the bottom global unread badge`,!await page.locator("#conversation-unread-total").isVisible() && await page.locator("#mobile-messages-unread").isVisible() && await page.locator("#mobile-messages-unread").textContent()==="99+");
+      await page.screenshot({path:path.join(out,`${name}-private-filter.png`),animations:"disabled"});
       await page.locator("#rooms-empty").waitFor();
       await page.locator("#new-room").click();await page.locator("#new-direct").click();
       check(`${name}: plus still opens direct creation`,await page.locator("#create-dialog").evaluate(el=>el.open));
@@ -77,12 +89,15 @@ try {
       const listScroll=await page.locator("#room-nav").evaluate(el=>el.scrollTop);
       await page.locator("#mobile-tab-profile").click();
       check(`${name}: profile is a page without the brand header`,await page.locator("#mobile-profile").isVisible() && !await page.locator("#room-brand").isVisible());
+      check(`${name}: profile retains the messages unread reminder`,await page.locator("#mobile-messages-unread").isVisible() && await page.locator("#mobile-messages-unread").textContent()==="99+");
       await page.screenshot({path:path.join(out,`${name}-profile.png`),animations:"disabled"});
       if(name==="phone") {
         await page.setViewportSize({width:1440,height:900});
         check("rotation to desktop restores sidebar controls",await page.locator("#user-menu-toggle").isVisible() && await page.locator("#conversation-filter").evaluate(el=>el.parentElement.id==="conversation-filter-container"));
+        check("rotation to desktop restores the messages label and global count",await page.locator("#conversation-filter-label").textContent()==="消息" && await page.locator("#conversation-unread-total").isVisible());
         await page.setViewportSize({width,height});
         check("rotation back to phone retains the profile page",await page.locator("#mobile-profile").isVisible() && !await page.locator("#room-brand").isVisible());
+        check("rotation back to phone restores the filter label without a top badge",await page.locator("#conversation-filter-label").textContent()==="全部" && !await page.locator("#conversation-unread-total").isVisible());
       }
       await page.locator("#profile-platforms").click();await page.locator("#settings-dialog").waitFor();
       await page.locator("#settings-dialog").evaluate(async el=>Promise.all(el.getAnimations().map(animation=>animation.finished.catch(()=>{}))));
@@ -100,6 +115,11 @@ try {
       check(`${name}: conversation hides root navigation`,!await page.locator("#mobile-primary-navigation").isVisible() && !await page.locator("#room-brand").isVisible());
     } else {
       check(`${name}: desktop retains its sidebar and user menu`,await page.locator("#user-menu-toggle").isVisible() && !await page.locator("#mobile-primary-navigation").isVisible());
+      for(const [filter,label,visible] of [["direct","私信",false],["room","房间",true],["all","消息",true]]) {
+        await page.locator("#conversation-filter").click();await page.locator(`#conversation-filter-${filter}`).click();
+        check(`${name}: ${label} pairs its label with the selected scope's unread count`,await page.locator("#conversation-filter-label").textContent()===label && await page.locator("#conversation-unread-total").isVisible()===visible);
+        if(filter==="room")await page.screenshot({path:path.join(out,"desktop-room-filter.png"),animations:"disabled"});
+      }
     }
     if(await page.locator("#room-menu-label").getAttribute("aria-expanded")==="true")await page.locator("#room-menu-label").click();
     await page.locator("#message-input").fill("返回后继续编辑");

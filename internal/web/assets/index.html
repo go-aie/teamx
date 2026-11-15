@@ -4,13 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <meta name="color-scheme" content="light">
-  <title>TeamX · 会话</title>
+  <title>TeamX · 消息</title>
   <link rel="stylesheet" href="/ui/style.css">
   <script type="module" src="/ui/app.js"></script>
 </head>
 <body>
   <main id="workspace" class="workspace">
-    <aside id="room-rail" class="room-rail" aria-label="会话导航" hidden>
+    <aside id="room-rail" class="room-rail" aria-label="消息导航" hidden>
       <div id="room-resizer" class="sidebar-resizer room-resizer" role="separator" tabindex="0" aria-label="调整左侧栏宽度" aria-orientation="vertical" aria-controls="room-rail" title="左右拖动调整宽度"></div>
       <header class="rail-header room-rail-header">
         <a id="room-brand" class="brand" href="/" aria-label="TeamX 首页"><img class="brand-mark" src="/ui/brand-mark.svg" width="28" height="29" alt="">TeamX</a>
@@ -19,7 +19,7 @@
       </header>
       <nav id="room-nav" class="room-nav" aria-label="会话列表" tabindex="-1" hidden>
         <div class="room-nav-heading">
-          <h2 id="conversation-filter-container"><button id="conversation-filter" class="conversation-filter" type="button" aria-label="筛选会话：全部会话" title="筛选会话：全部会话" aria-haspopup="menu" aria-expanded="false" aria-controls="conversation-filter-menu"><svg class="conversation-filter-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg><span id="conversation-filter-label">会话</span><svg class="conversation-filter-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></h2>
+          <h2 id="conversation-filter-container"><button id="conversation-filter" class="conversation-filter" type="button" aria-label="筛选消息：全部" title="筛选消息：全部" aria-haspopup="menu" aria-expanded="false" aria-controls="conversation-filter-menu"><span id="conversation-filter-label">消息</span><span id="conversation-unread-total" class="navigation-unread" aria-hidden="true" hidden></span><svg class="conversation-filter-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></h2>
           <div id="room-list-actions" class="room-list-actions"><button id="new-room" class="add-button" type="button" aria-label="新建会话" title="新建会话" aria-haspopup="menu" aria-expanded="false" aria-controls="create-menu" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
 
         </div>
@@ -56,7 +56,7 @@
         </div>
       </footer>
       <nav id="mobile-primary-navigation" class="mobile-primary-navigation" aria-label="主导航" hidden>
-        <button id="mobile-tab-messages" type="button" aria-current="page" aria-controls="room-nav"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5c-5 0-9 3.2-9 7.25 0 2.2 1.2 4.2 3.15 5.55L5.25 20.5l4.4-2.75c.75.17 1.55.25 2.35.25 5 0 9-3.2 9-7.25S17 3.5 12 3.5Z"/></svg><span>消息</span></button>
+        <button id="mobile-tab-messages" type="button" aria-current="page" aria-controls="room-nav"><span class="mobile-tab-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5c-5 0-9 3.2-9 7.25 0 2.2 1.2 4.2 3.15 5.55L5.25 20.5l4.4-2.75c.75.17 1.55.25 2.35.25 5 0 9-3.2 9-7.25S17 3.5 12 3.5Z"/></svg><span id="mobile-messages-unread" class="navigation-unread" aria-hidden="true" hidden></span></span><span>消息</span></button>
         <button id="mobile-tab-profile" type="button" aria-controls="mobile-profile"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M5 21v-2a7 7 0 0 1 14 0v2Z"/></svg><span>我</span></button>
       </nav>
     </aside>
@@ -890,10 +890,10 @@
     <header class="dialog-header"><h2 id="confirmation-title">确认操作</h2><button id="confirmation-close" class="icon-button" type="button" aria-label="关闭确认" title="关闭确认"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></header>
     <div class="confirmation-body"><p id="confirmation-message"></p><div class="form-actions"><button id="confirmation-cancel" class="secondary-button" type="button" autofocus>取消</button><button id="confirmation-accept" class="primary danger-button" type="button">确认</button></div></div>
   </dialog>
-  <div id="conversation-filter-menu" class="conversation-filter-menu menu-surface" role="menu" aria-label="筛选会话" hidden>
-    <button id="conversation-filter-all" type="button" role="menuitemradio" aria-checked="true" tabindex="-1"><span>全部会话</span><span id="conversation-count-all" class="filter-count"></span></button>
-    <button id="conversation-filter-direct" type="button" role="menuitemradio" aria-checked="false" tabindex="-1"><span>私信</span><span id="conversation-count-direct" class="filter-count"></span></button>
-    <button id="conversation-filter-room" type="button" role="menuitemradio" aria-checked="false" tabindex="-1"><span>房间</span><span id="conversation-count-room" class="filter-count"></span></button>
+  <div id="conversation-filter-menu" class="conversation-filter-menu menu-surface" role="menu" aria-label="筛选消息" hidden>
+    <button id="conversation-filter-all" type="button" role="menuitemradio" aria-checked="true" tabindex="-1"><span>全部</span></button>
+    <button id="conversation-filter-direct" type="button" role="menuitemradio" aria-checked="false" tabindex="-1"><span>私信</span></button>
+    <button id="conversation-filter-room" type="button" role="menuitemradio" aria-checked="false" tabindex="-1"><span>房间</span></button>
   </div>
   <div id="create-menu" class="create-menu menu-surface" role="menu" aria-labelledby="new-room" hidden>
     <button id="new-direct" type="button" role="menuitem" tabindex="-1" aria-labelledby="new-direct-label" aria-describedby="new-direct-hint"><span id="new-direct-label" class="create-menu-label">新建私信</span><span id="new-direct-hint" class="create-menu-hint">与一个 Agent 单独交流</span></button>

@@ -86,8 +86,33 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
   }
 
   let conversationFilter = "all";
-  const filterLabels = {all:"全部会话", direct:"私信", room:"房间"};
+  const filterLabels = {all:"全部", direct:"私信", room:"房间"};
   const matchesFilter = room => conversationFilter === "all" || !!room.is_direct === (conversationFilter === "direct");
+
+  function renderConversationFilter() {
+    const mobile = compactViewport(window);
+    let unread = 0, filteredUnread = 0;
+    for (const room of state.catalog?.rooms || []) {
+      const count = room.human_read?.unread_count || 0;
+      unread += count;
+      if (matchesFilter(room)) filteredUnread += count;
+    }
+    const badge = count => count > 99 ? "99+" : count > 0 ? String(count) : "";
+    $("conversation-unread-total").textContent = badge(filteredUnread);
+    $("conversation-unread-total").hidden = mobile || filteredUnread === 0;
+    $("mobile-messages-unread").textContent = badge(unread);
+    $("mobile-messages-unread").hidden = unread === 0;
+    $("mobile-tab-messages").setAttribute("aria-label", `消息，${unread} 条未读消息`);
+    $("conversation-filter-label").textContent = !mobile && conversationFilter === "all" ? "消息" : filterLabels[conversationFilter];
+    const label = `筛选消息：${filterLabels[conversationFilter]}` + (mobile ? "" : `，${filteredUnread} 条未读消息`);
+    $("conversation-filter").setAttribute("aria-label", label);
+    $("conversation-filter").setAttribute("title", label);
+    $("conversation-filter").dataset.filtered = String(conversationFilter !== "all");
+    for (const filter of Object.keys(filterLabels)) {
+      $("conversation-filter-" + filter).setAttribute("aria-checked", String(conversationFilter === filter));
+      $("conversation-filter-" + filter).setAttribute("aria-label", filterLabels[filter]);
+    }
+  }
 
   function closeFilterMenu() {
     $("conversation-filter-menu").hidden = true;
@@ -288,14 +313,6 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
     $("rooms-empty").hidden = visibleRooms.length > 0;
     $("rooms-empty").textContent = !catalog.rooms.length ? "还没有会话。点击右上角 ＋，新建私信或房间。"
       : `暂无${filterLabels[conversationFilter]}。点击右上角 ＋ 新建，或切换筛选查看其他会话。`;
-    $("conversation-filter-label").textContent = conversationFilter === "all" ? "会话" : filterLabels[conversationFilter];
-    $("conversation-filter").setAttribute("aria-label", `筛选会话：${filterLabels[conversationFilter]}`);
-    $("conversation-filter").setAttribute("title", `筛选会话：${filterLabels[conversationFilter]}`);
-    $("conversation-filter").dataset.filtered = String(conversationFilter !== "all");
-    for (const filter of Object.keys(filterLabels)) {
-      $("conversation-filter-" + filter).setAttribute("aria-checked", String(conversationFilter === filter));
-      $("conversation-count-" + filter).textContent = String(catalog.rooms.filter(room => filter === "all" || !!room.is_direct === (filter === "direct")).length);
-    }
     $("new-room").disabled = !state.catalogConnected || discussionBusy() || !!state.management || state.managementSending || !!catalog.write_error;
     const now = Date.now();
     const signature = JSON.stringify({ rooms: catalog.rooms, selected: selectedRoom, timeZone:settingsUI.systemTime.zone, timeError:settingsUI.systemTime.error, day:settingsUI.systemTime.day(now),
@@ -719,6 +736,7 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
     initializeSelection,
     restoreManagement,
     renderRooms,
+    renderConversationFilter,
     isDirect,
     isDefaultAssistant,
     closeFilterMenu,

@@ -433,9 +433,10 @@ test("conversation filters keep the current chat and draft while preserving mixe
   assert.deepEqual(names(),["个人助理","开发房间","临时助理","旧房间"]);
   assert.equal(ui.el("direct-group-title"),undefined);
   assert.equal(ui.el("room-group-title"),undefined);
-  assert.equal(ui.el("conversation-count-all").textContent,"4");
-  assert.equal(ui.el("conversation-count-direct").textContent,"2");
-  assert.equal(ui.el("conversation-count-room").textContent,"2");
+  assert.equal(ui.el("conversation-filter-label").textContent,"消息");
+  for (const filter of ["all", "direct", "room"]) {
+    assert.equal(ui.el("conversation-count-"+filter),undefined,"filter options have no counts");
+  }
   await ui.select("开发房间");await ui.draft("保留这个房间的草稿");
   const calls=api.calls.length;
   await ui.el("conversation-filter").emit("click");
@@ -3725,7 +3726,7 @@ test("new direct creation uses a role without a team or seeded human task",async
   const request=api.calls.find(call=>call.path==="/v1/rooms/create").data;
   assert.equal(request.is_direct,true);assert.equal(request.agent_role_id,"assistant");assert.equal(request.team_id,undefined);
   assert.equal(ui.el("message-input").value,"");assert.equal(api.calls.some(call=>call.path==="/v1/send"),false);
-  assert.equal(ui.el("conversation-filter-label").textContent,"会话");
+  assert.equal(ui.el("conversation-filter-label").textContent,"消息");
   assert.equal(directRows(ui).length,1);
 });
 
@@ -3779,6 +3780,21 @@ test("catalog unread badges include unopened direct replies and room mentions wi
   api.catalog.default_assistant={status:"completed",room_id:direct.room_id,room_instance:direct.room_instance};
   const ui=await launch(api),rows=()=>ui.el("room-list").children;
   const badge=(i,cls)=>rows()[i].children[0].children.flatMap(el=>el.children).find(el=>el.className===cls);
+  assert.equal(ui.el("conversation-filter-all").getAttribute("aria-label"),"全部");
+  for (const width of [1440,390]) {
+    ui.window.innerWidth=width;await ui.window.emit("resize");
+    for (const filter of ["direct", "room", "all"]) {
+      const count={direct:120,room:9,all:129}[filter];
+      await ui.el("conversation-filter-"+filter).emit("click");
+      assert.equal(ui.el("conversation-unread-total").textContent,count>99 ? "99+" : String(count));
+      assert.equal(ui.el("conversation-unread-total").hidden,width===390,"only desktop shows the current filter's unread count at the top");
+      assert.equal(ui.el("conversation-filter-label").textContent,filter==="all" ? width===390 ? "全部" : "消息" : filter==="direct" ? "私信" : "房间");
+      assert.equal(ui.el("mobile-messages-unread").textContent,"99+");
+      assert.equal(ui.el("mobile-tab-messages").getAttribute("aria-label"),"消息，129 条未读消息");
+      if (width===390) assert.doesNotMatch(ui.el("conversation-filter").getAttribute("aria-label"),/未读/);
+      else assert.ok(ui.el("conversation-filter").getAttribute("aria-label").endsWith(`，${count} 条未读消息`));
+    }
+  }
   await ui.draft("保留草稿");
   assert.equal(badge(0,"room-unread").textContent,"99+");
   assert.equal(badge(0,"room-mention"),undefined);
@@ -3793,6 +3809,21 @@ test("catalog unread badges include unopened direct replies and room mentions wi
   assert.equal(badge(1,"room-unread").textContent,"5");assert.equal(badge(1,"room-mention"),undefined);
   assert.equal(ui.el("message-input").value,"保留草稿");
   await ui.select("Room");assert.equal(badge(1,"room-unread").textContent,"5","clicking does not clear unread");
+  direct.human_read={...direct.human_read,revision:1,unread_count:0,mention_count:0};await ui.refresh();
+  assert.equal(ui.el("conversation-unread-total").textContent,"5");
+  assert.equal(ui.el("mobile-messages-unread").textContent,"5");
+  ui.window.innerWidth=1440;await ui.window.emit("resize");
+  await ui.el("conversation-filter-direct").emit("click");
+  assert.equal(ui.el("conversation-unread-total").hidden,true,"a read category hides its count while other categories remain unread");
+  assert.equal(ui.el("mobile-messages-unread").textContent,"5");
+  await ui.el("conversation-filter-room").emit("click");
+  assert.equal(ui.el("conversation-unread-total").hidden,false);
+  assert.equal(ui.el("conversation-unread-total").textContent,"5");
+  room.human_read={...room.human_read,revision:2,unread_count:0,mention_count:0};await ui.refresh();
+  for (const id of ["conversation-unread-total", "mobile-messages-unread"]) {
+    assert.equal(ui.el(id).hidden,true,"zero unread counts hide their badges");
+    assert.equal(ui.el(id).textContent,"");
+  }
 });
 
 test("catalog reading faults and old boundaries preserve last counts, isolate rooms and reset on new identities",async()=>{
@@ -3802,6 +3833,7 @@ test("catalog reading faults and old boundaries preserve last counts, isolate ro
   const text=i=>elementText(row(i));
   a.human_read={status:"unavailable"};b.human_read={...ready,revision:4,unread_count:3,mention_count:0};await ui.refresh();
   assert.match(text(0),/12/);assert.match(text(0),/暂未同步/);assert.match(text(1),/3/);assert.doesNotMatch(text(1),/暂未同步/);
+  assert.equal(ui.el("conversation-unread-total").textContent,"15","unavailable summaries retain the last accepted count");
   await ui.draft("故障期间仍可发送");assert.equal(ui.el("send").disabled,false);assert.equal(ui.el("sync-error").hidden,true);
   for(const old of [{revision:2},{snapshot_seq:99},{cleared_through:0,revision:2}]){
     a.human_read={...ready,unread_count:99,...old};await ui.refresh();assert.match(text(0),/12/);assert.doesNotMatch(text(0),/99/);
@@ -3810,6 +3842,7 @@ test("catalog reading faults and old boundaries preserve last counts, isolate ro
   a.human_read={...ready,revision:5,unread_count:11};await ui.refresh();assert.match(text(0),/暂未同步/);assert.match(text(0),/2/);
   a.room_instance="replacement-instance";a.service=identity(a);a.human_read={status:"unavailable"};await ui.refresh();
   assert.doesNotMatch(text(0),/\[有人@我\]/);assert.match(text(0),/暂未同步/);
+  assert.equal(ui.el("conversation-unread-total").textContent,"3","a replacement room cannot retain the old identity's unread count");
 });
 
 test("the review entry discovers unloaded mentions, retries without progress and inserts continuous history once",async()=>{

@@ -98,6 +98,9 @@ test("phone conversation navigation retains the composer and restores desktop si
   assert.equal(ui.el("toggle-rooms").hidden, true);
   assert.equal(ui.el("mobile-back-to-rooms").hidden, false);
   assert.equal(ui.el("conversation-filter").parentElement, ui.el("mobile-home-actions"));
+  assert.equal(ui.el("conversation-filter-label").textContent,"全部");
+  assert.equal(ui.el("conversation-unread-total").hidden,true);
+  assert.equal(ui.el("conversation-filter").getAttribute("aria-label"),"筛选消息：全部");
   assert.equal(ui.el("mobile-primary-navigation").hidden, true);
   assert.equal(ui.el("room-menu-label").getAttribute("aria-expanded"), "false");
   assert.equal(ui.el("workspace").style.getPropertyValue("--app-height"), "380px");
@@ -118,6 +121,7 @@ test("phone conversation navigation retains the composer and restores desktop si
   assert.equal(ui.el("toggle-rooms").hidden,false);assert.equal(ui.el("mobile-back-to-rooms").hidden,true);
   assert.equal(ui.el("user-menu-container").parentElement,ui.el("room-rail"));
   assert.equal(ui.el("conversation-filter").parentElement,ui.el("conversation-filter-container"));
+  assert.equal(ui.el("conversation-filter-label").textContent,"消息");
   assert.equal(ui.el("new-room").parentElement,ui.el("room-list-actions"));
   assert.equal(ui.el("message-input").value, "旋转后继续编辑");
 });

@@ -1,6 +1,6 @@
 /* Phone roots share one compact header and one bottom navigation. */
 .mobile-home-actions,.mobile-profile,.mobile-primary-navigation { display:none; }
-.conversation-filter .conversation-filter-icon,.settings-back-icon { display:none; }
+.settings-back-icon { display:none; }
 
 @media(max-width:640px), (max-height:500px) and (pointer:coarse) {
   .workspace .room-rail { bottom:0; background:var(--surface); }
@@ -16,8 +16,6 @@
     margin:0; padding:0 8px; min-height:44px; min-width:44px; justify-content:center; font-size:14px;
   }
   .mobile-home-actions .conversation-filter[data-filtered="true"] { color:var(--accent); }
-  .mobile-home-actions .conversation-filter:not([data-filtered="true"]) :is(#conversation-filter-label,.conversation-filter-chevron) { display:none; }
-  .mobile-home-actions .conversation-filter:not([data-filtered="true"]) .conversation-filter-icon { display:block; width:22px; height:22px; stroke:currentColor; }
   .workspace .room-nav-heading,.workspace .room-rail > .rail-settings { display:none; }
   .workspace #room-nav,.workspace.rooms-collapsed #room-nav {
     height:auto; flex:1; min-height:0; padding:8px 8px 12px; background:var(--surface);
@@ -56,6 +54,8 @@
     font-size:12px; line-height:16px; font-weight:500; transition:color var(--motion-fast);
   }
   .mobile-primary-navigation svg { width:26px; height:26px; fill:transparent; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; transition:fill var(--motion-fast); }
+  .mobile-tab-icon { position:relative; display:flex; }
+  .mobile-tab-icon .navigation-unread { position:absolute; top:-4px; left:18px; }
   .mobile-primary-navigation button[aria-current="page"] { color:var(--accent); font-weight:600; }
   .mobile-primary-navigation button[aria-current="page"] svg { fill:currentColor; }
   .settings-dialog {
