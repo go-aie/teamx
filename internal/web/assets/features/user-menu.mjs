@@ -32,6 +32,7 @@ export function createUserMenu({ env, runtime, conversationUI }) {
     const name = displayName();
     $("user-display-name").placeholder = defaultName();
     $("user-name").textContent = name;
+    $("mobile-profile-name").textContent = name;
     $("user-menu-toggle").title = `${name} · 用户菜单`;
     $("user-menu-toggle").setAttribute("aria-label", `${name} · 用户菜单`);
   }
@@ -59,12 +60,14 @@ export function createUserMenu({ env, runtime, conversationUI }) {
       const session = response.ok ? await response.json() : null;
       const enabled = response.ok && session?.login_enabled !== false;
       $("access-logout").hidden = !enabled;
+      $("profile-logout").hidden = !enabled;
       $("user-menu-divider").hidden = !enabled;
     } catch { /* Keep settings available when the session probe fails. */ }
   }
 
   function mount() {
     renderAvatar(document, $("user-avatar"), {kind:"human", id:state.operator});
+    renderAvatar(document, $("mobile-profile-avatar"), {kind:"human", id:state.operator});
     render(); void loadSession();
     $("user-menu-toggle").addEventListener("click", () => $("user-menu").hidden ? open() : close(true));
     $("user-menu-toggle").addEventListener("keydown", event => {
@@ -109,17 +112,22 @@ export function createUserMenu({ env, runtime, conversationUI }) {
       conversationUI.renderMessages();
       $("user-name-feedback").textContent = persisted ? "名称已保存" : "本次已更新，浏览器未能保存";
     });
-    $("access-logout").addEventListener("click", async () => {
+    async function signOut() {
       if (signingOut) return;
       signingOut = true; $("access-logout").disabled = true; $("user-menu-feedback").hidden = true;
+      $("profile-logout").disabled = true; $("profile-feedback").hidden = true;
       try {
         await request("/v1/access/logout", {});
         window.location.assign("/access");
       } catch {
         $("user-menu-feedback").textContent = "退出失败，请重试。";
         $("user-menu-feedback").hidden = false;
-      } finally { signingOut = false; $("access-logout").disabled = false; }
-    });
+        $("profile-feedback").textContent = "退出失败，请重试。";
+        $("profile-feedback").hidden = false;
+      } finally { signingOut = false; $("access-logout").disabled = false; $("profile-logout").disabled = false; }
+    }
+    $("access-logout").addEventListener("click", signOut);
+    $("profile-logout").addEventListener("click", signOut);
   }
 
   return { mount, render, displayName, close };

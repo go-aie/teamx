@@ -5,6 +5,8 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
   const { state, $, storage } = runtime;
 
   let directMobileDetails = false, directMobileRooms = false, directNotificationsOpen = false;
+  let mobileTab = "messages";
+  const mobileScroll = { messages:0, profile:0 };
 
   function roomsPanelOpen() { return compactViewport(window) ? directMobileRooms || !!(state.managed && state.catalog && !roomsUI.selectedEntry()) : panels.rooms; }
 
@@ -78,25 +80,45 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
     const workspace = document.querySelector(".workspace");
     const mobile = compactViewport(window);
     const membersOpen = membersPanelOpen(), roomsOpen = roomsPanelOpen();
+    const mobileHome = mobile && state.managed && roomsOpen && !membersOpen;
+    const profileOpen = mobileHome && mobileTab === "profile";
+    workspace.classList.toggle("mobile-profile-open", profileOpen);
     workspace.classList.toggle("direct-conversation", roomsUI.isDirect());
     workspace.classList.toggle("direct-notifications-open", roomsUI.isDirect() && directNotificationsOpen);
     workspace.classList.toggle("rooms-collapsed", !roomsOpen);
     workspace.classList.toggle("members-collapsed", !membersOpen);
     $("room-rail").hidden = !state.managed;
-    $("room-nav").hidden = !state.managed;
+    $("room-rail").inert = mobile && (!roomsOpen || membersOpen);
+    $("room-nav").hidden = !state.managed || profileOpen;
+    $("mobile-profile").hidden = !profileOpen;
+    $("mobile-primary-navigation").hidden = !mobileHome;
+    for (const tab of ["messages", "profile"]) {
+      const button = $(`mobile-tab-${tab}`);
+      if (mobileTab === tab) button.setAttribute("aria-current", "page");
+      else button.removeAttribute("aria-current");
+    }
+    for (const tab of ["general", "models", "platforms", "security"]) {
+      $(`profile-${tab}`).disabled = !state.catalogConnected;
+    }
     $("room-brand").inert = !roomsOpen && !compactViewport(window);
     $("room-brand").setAttribute("aria-hidden", String(!roomsOpen && !compactViewport(window)));
     for (const [side, id] of [["rooms", "room-nav"], ["members", "member-sidebar"]]) {
       // Keep content mounted for the slide, while removing collapsed controls from keyboard/AT access.
-      const open = side === "members" ? membersOpen : roomsOpen;
+      const open = side === "members" ? membersOpen : roomsOpen && !profileOpen;
       $(id).inert = !open;
       $(id).setAttribute("aria-hidden", String(!open));
     }
     $("toggle-rooms").hidden = !state.managed || mobile;
     $("mobile-back-to-rooms").hidden = !state.managed || !mobile;
-    const menuParent = mobile && state.managed ? $("list-user-menu") : $("room-rail");
-    if ($("user-menu-container").parentElement !== menuParent) {
-      userMenuUI.close(); menuParent.append($("user-menu-container"));
+    const filterParent = $(mobile ? "mobile-home-actions" : "conversation-filter-container");
+    const createParent = $(mobile ? "mobile-home-actions" : "room-list-actions");
+    if ($("conversation-filter").parentElement !== filterParent) {
+      roomsUI.closeFilterMenu(); userMenuUI.close();
+      filterParent.append($("conversation-filter"));
+      createParent.append($("new-room"));
+    }
+    if ($("user-menu-container").parentElement !== $("room-rail")) {
+      $("room-rail").insertBefore($("user-menu-container"), $("mobile-primary-navigation"));
     }
     $("room-menu-label").disabled = !state.info;
     const settingsParent = $(roomsUI.isDirect() ? state.managed ? "platforms-member-view" : "activity-body" : "member-sidebar");
@@ -124,6 +146,7 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
 
   function resetDirectNavigation() {
     directMobileDetails = false; directMobileRooms = false; directNotificationsOpen = false;
+    mobileTab = "messages";
   }
 
   function expandMembers() {
@@ -160,9 +183,25 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
 
   function showMobileRooms() {
     if (!compactViewport(window) || !state.managed) return;
+    const fromProfile = mobileTab === "profile";
+    if (fromProfile) mobileScroll.profile = $("mobile-profile").scrollTop;
+    mobileTab = "messages";
+    roomsUI.closeFilterMenu();
     directMobileRooms = true; directMobileDetails = false; directNotificationsOpen = false;
     renderPanels();
+    if (fromProfile) $("room-nav").scrollTop = mobileScroll.messages;
     $("room-nav").focus({preventScroll:true});
+  }
+
+  function showMobileProfile() {
+    if (!compactViewport(window) || !state.managed) return;
+    if (mobileTab !== "profile") mobileScroll.messages = $("room-nav").scrollTop;
+    roomsUI.closeFilterMenu(); userMenuUI.close();
+    mobileTab = "profile";
+    directMobileRooms = true; directMobileDetails = false; directNotificationsOpen = false;
+    renderPanels();
+    $("mobile-profile").scrollTop = mobileScroll.profile;
+    $("mobile-profile").focus({preventScroll:true});
   }
 
   function updateViewport() {
@@ -242,6 +281,12 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
       event.preventDefault(); collapseMembers(); savePanels(); renderPanels(); $("room-menu-label").focus();
     });
     $("mobile-back-to-rooms").addEventListener("click", showMobileRooms);
+    $("mobile-tab-messages").addEventListener("click", showMobileRooms);
+    $("mobile-tab-profile").addEventListener("click", showMobileProfile);
+    for (const tab of ["general", "models", "platforms", "security"]) {
+      const button = $(`profile-${tab}`);
+      button.addEventListener("click", () => settingsUI.openSettings(tab, button));
+    }
     window.visualViewport?.addEventListener("resize", updateViewport);
     window.visualViewport?.addEventListener("scroll", updateViewport);
     window.addEventListener("resize", () => { updateViewport(); renderPanels(); membersUI.syncDirectDetail(); settingsUI.renderSettingsNavigation(); });
@@ -257,6 +302,7 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
     mount,
     roomsPanelOpen,
     showMobileRooms,
+    get mobileProfileOpen() { return compactViewport(window) && state.managed && roomsPanelOpen() && mobileTab === "profile"; },
     closeMobilePanels,
     resetDirectNavigation,
     expandMembers,

@@ -112,6 +112,9 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
     $("settings-tab-models").hidden = !state.managed;
     $("settings-tab-platforms").hidden = !state.managed;
     $("settings-navigation").setAttribute("aria-orientation", compactViewport(window) ? "horizontal" : "vertical");
+    const closeLabel = compactViewport(window) ? "返回" : "关闭设置";
+    $("close-settings").setAttribute("aria-label", closeLabel);
+    $("close-settings").setAttribute("title", closeLabel);
     for (const tab of settingsTabs) {
       const button = $(`settings-tab-${tab}`), selected = settingsTab === tab;
       button.setAttribute("aria-selected", String(selected)); button.setAttribute("tabindex", selected ? "0" : "-1");
@@ -259,7 +262,7 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
 
     $("open-general-settings").addEventListener("click", () => openSettings());
 
-    $("close-settings").addEventListener("click", closeSettings);
+    $("close-settings").addEventListener("click", () => compactViewport(window) ? backSettings() : closeSettings());
 
     dismissOnBackdrop($("settings-dialog"), closeSettings);
 

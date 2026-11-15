@@ -2,9 +2,9 @@
 // member panels and dialogs. No form data enters history.
 export function createBrowserNavigation({ env, layers }) {
   const { window } = env;
-  let current = null, settling = false;
+  let current = null, settling = false, mounted = false;
   function sync() {
-    if (!window.history?.pushState || !window.history?.back || settling) return;
+    if (!mounted || !window.history?.pushState || !window.history?.back || settling) return;
     const next = layers().at(-1);
     if (next?.id === current?.id) return;
     if (current && next) {
@@ -21,6 +21,7 @@ export function createBrowserNavigation({ env, layers }) {
     }
   }
   function mount() {
+    mounted = true;
     // A reloaded transient entry must not restore a platform operation or form.
     if (window.history?.state?.teamxOverlay) window.history.replaceState(null, "");
     window.addEventListener("popstate", async () => {
@@ -37,6 +38,7 @@ export function createBrowserNavigation({ env, layers }) {
     if (env.MutationObserver) new env.MutationObserver(sync).observe(env.document.body, {
       attributes: true, subtree: true, attributeFilter: ["open", "hidden", "class"]
     });
+    sync();
   }
   return { mount, sync };
 }

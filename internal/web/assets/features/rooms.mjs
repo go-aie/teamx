@@ -1,6 +1,7 @@
 import { randomUUID } from "../random-id.mjs";
 import { agentName } from "../agent-names.mjs";
 import { renderAvatar } from "../avatars.mjs";
+import { compactViewport } from "../client.mjs";
 
 // Room catalog, selection, creation, deletion and default assistant recovery.
 export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationUI, settingsUI, membersUI }) {
@@ -289,6 +290,8 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
       : `暂无${filterLabels[conversationFilter]}。点击右上角 ＋ 新建，或切换筛选查看其他会话。`;
     $("conversation-filter-label").textContent = conversationFilter === "all" ? "会话" : filterLabels[conversationFilter];
     $("conversation-filter").setAttribute("aria-label", `筛选会话：${filterLabels[conversationFilter]}`);
+    $("conversation-filter").setAttribute("title", `筛选会话：${filterLabels[conversationFilter]}`);
+    $("conversation-filter").dataset.filtered = String(conversationFilter !== "all");
     for (const filter of Object.keys(filterLabels)) {
       $("conversation-filter-" + filter).setAttribute("aria-checked", String(conversationFilter === filter));
       $("conversation-count-" + filter).textContent = String(catalog.rooms.filter(room => filter === "all" || !!room.is_direct === (filter === "direct")).length);
@@ -482,11 +485,18 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
       if (initial) selectRoom(initial);
       else if (selectedRoom) selectRoom(null);
     }
-    if (!selectionLoaded) awaitDefaultSelection = !selectedRoom && catalog.default_assistant?.status === "pending";
+    if (!selectionLoaded) {
+      awaitDefaultSelection = !selectedRoom && catalog.default_assistant?.status === "pending";
+      if (compactViewport(window)) layoutUI.showMobileRooms();
+    }
     selectionLoaded = true;
-    if (awaitDefaultSelection && !selectedRoom && !state.management && !$("create-dialog").open && catalog.default_assistant?.status === "completed") {
+    if (awaitDefaultSelection && !selectedRoom && !state.management && !$("create-dialog").open && !layoutUI.mobileProfileOpen && catalog.default_assistant?.status === "completed") {
       const assistant = catalog.rooms.find(room => room.status === "ready" && isDefaultAssistant(room, catalog));
-      if (assistant) selectRoom(assistant);
+      if (assistant) {
+        const homeOpen = compactViewport(window) && layoutUI.roomsPanelOpen();
+        selectRoom(assistant);
+        if (homeOpen) layoutUI.showMobileRooms();
+      }
     }
   }
 

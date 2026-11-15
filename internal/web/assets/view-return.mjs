@@ -6,8 +6,11 @@ export function captureReturnView({ document, window }, runtime, { opener = docu
   const identity = context();
   const positions = [...new Set(["timeline", "room-nav", "member-sidebar", "activity-dialog", "activity-body",
     "platforms-member-view", "policy-member-view", "inbox-member-view", "settings-panels",
-    "notification-detail", "workspace-dialog", "settings-dialog", "member-rail", ...scroll])]
-    .map(id => document.getElementById(id)).filter(Boolean)
+    "notification-detail", "workspace-dialog", "settings-dialog", "member-rail", "mobile-profile", ...scroll])]
+    // Hidden roots report zero scroll positions; restoring those later would
+    // overwrite the list position when switching back from the profile page.
+    .map(id => document.getElementById(id))
+    .filter(element => element && !element.hidden && (!element.getClientRects || element.getClientRects().length > 0))
     .map(element => ({ element, top: element.scrollTop, left: element.scrollLeft }));
   const page = { left: window.scrollX || 0, top: window.scrollY || 0 };
   return {

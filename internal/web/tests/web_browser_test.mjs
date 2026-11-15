@@ -97,16 +97,17 @@ test("phone conversation navigation retains the composer and restores desktop si
   assert.equal(ui.el("toggle-rooms").getAttribute("aria-expanded"), "false");
   assert.equal(ui.el("toggle-rooms").hidden, true);
   assert.equal(ui.el("mobile-back-to-rooms").hidden, false);
-  assert.equal(ui.el("user-menu-container").parentElement, ui.el("list-user-menu"));
+  assert.equal(ui.el("conversation-filter").parentElement, ui.el("mobile-home-actions"));
+  assert.equal(ui.el("mobile-primary-navigation").hidden, true);
   assert.equal(ui.el("room-menu-label").getAttribute("aria-expanded"), "false");
   assert.equal(ui.el("workspace").style.getPropertyValue("--app-height"), "380px");
   ui.el("timeline").scrollTop=37;
   await ui.el("mobile-back-to-rooms").emit("click"); assert.equal(ui.el("conversation").inert, true);
-  assert.equal(ui.el("user-menu-container").parentElement, ui.el("list-user-menu"));
+  assert.equal(ui.el("mobile-primary-navigation").hidden, false);
   ui.el("room-nav").scrollTop=80;
   await ui.select("Review");
   assert.equal(ui.el("conversation").inert,false);
-  assert.equal(ui.el("user-menu-container").parentElement,ui.el("list-user-menu"));
+  assert.equal(ui.el("mobile-primary-navigation").hidden, true);
   assert.equal(ui.el("room-nav").scrollTop,80);assert.equal(ui.el("timeline").scrollTop,37);
   await ui.el("room-menu-label").emit("click");
   assert.equal(ui.el("toggle-rooms").getAttribute("aria-expanded"), "false");
@@ -116,6 +117,8 @@ test("phone conversation navigation retains the composer and restores desktop si
   assert.equal(ui.el("room-menu-label").getAttribute("aria-expanded"), "true");
   assert.equal(ui.el("toggle-rooms").hidden,false);assert.equal(ui.el("mobile-back-to-rooms").hidden,true);
   assert.equal(ui.el("user-menu-container").parentElement,ui.el("room-rail"));
+  assert.equal(ui.el("conversation-filter").parentElement,ui.el("conversation-filter-container"));
+  assert.equal(ui.el("new-room").parentElement,ui.el("room-list-actions"));
   assert.equal(ui.el("message-input").value, "旋转后继续编辑");
 });
 

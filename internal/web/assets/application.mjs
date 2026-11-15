@@ -74,6 +74,7 @@ export async function createApp(overrides = {}) {
   const navigation = createBrowserNavigation({ env, layers: () => {
     const layers = [];
     if (compactViewport(window)) {
+      if (layoutUI.mobileProfileOpen) layers.push({ id:"mobile-profile", close:layoutUI.showMobileRooms });
       if (state.managed && !layoutUI.roomsPanelOpen?.()) layers.push({ id:"mobile-conversation", close:layoutUI.showMobileRooms });
       if (layoutUI.membersPanelOpen?.()) layers.push({ id:"members", close:layoutUI.closeMobilePanels });
     }

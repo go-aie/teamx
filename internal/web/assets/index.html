@@ -14,12 +14,13 @@
       <div id="room-resizer" class="sidebar-resizer room-resizer" role="separator" tabindex="0" aria-label="调整左侧栏宽度" aria-orientation="vertical" aria-controls="room-rail" title="左右拖动调整宽度"></div>
       <header class="rail-header room-rail-header">
         <a id="room-brand" class="brand" href="/" aria-label="TeamX 首页"><img class="brand-mark" src="/ui/brand-mark.svg" width="28" height="29" alt="">TeamX</a>
+        <div id="mobile-home-actions" class="mobile-home-actions"></div>
         <button id="toggle-rooms" class="panel-toggle" type="button" aria-label="收起会话侧栏" title="收起会话侧栏" aria-controls="room-nav" aria-expanded="true" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><rect class="panel-fill" x="3.8" y="4.8" width="4.4" height="14.4"/><path d="M9 4v16"/></svg></button>
       </header>
       <nav id="room-nav" class="room-nav" aria-label="会话列表" tabindex="-1" hidden>
         <div class="room-nav-heading">
-          <h2><button id="conversation-filter" class="conversation-filter" type="button" aria-label="筛选会话：全部会话" aria-haspopup="menu" aria-expanded="false" aria-controls="conversation-filter-menu"><span id="conversation-filter-label">会话</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></h2>
-          <div class="room-list-actions"><button id="new-room" class="add-button" type="button" aria-label="新建会话" title="新建会话" aria-haspopup="menu" aria-expanded="false" aria-controls="create-menu" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button><div id="list-user-menu" class="mobile-user-menu"></div></div>
+          <h2 id="conversation-filter-container"><button id="conversation-filter" class="conversation-filter" type="button" aria-label="筛选会话：全部会话" title="筛选会话：全部会话" aria-haspopup="menu" aria-expanded="false" aria-controls="conversation-filter-menu"><svg class="conversation-filter-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg><span id="conversation-filter-label">会话</span><svg class="conversation-filter-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></h2>
+          <div id="room-list-actions" class="room-list-actions"><button id="new-room" class="add-button" type="button" aria-label="新建会话" title="新建会话" aria-haspopup="menu" aria-expanded="false" aria-controls="create-menu" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
 
         </div>
         <div id="default-assistant-notice" class="management-notice" role="status" hidden></div><button id="retry-default-assistant" class="text-button" type="button" hidden>重试初始化助理</button>
@@ -29,6 +30,18 @@
         <button id="retry-management" class="text-button" type="button" hidden>核对并重试</button>
         <button id="dismiss-management" class="text-button" type="button" hidden>保留会话，结束本次操作</button>
       </nav>
+      <section id="mobile-profile" class="mobile-profile" aria-labelledby="mobile-profile-title" tabindex="-1" hidden>
+        <h1 id="mobile-profile-title" class="sr-only">我</h1>
+        <div class="mobile-profile-identity"><span id="mobile-profile-avatar" class="user-avatar" aria-hidden="true"></span><strong id="mobile-profile-name">用户</strong></div>
+        <nav class="mobile-profile-links" aria-label="个人与设置">
+          <button id="profile-general" type="button" aria-haspopup="dialog" aria-controls="settings-dialog"><span>通用设置</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+          <button id="profile-models" type="button" aria-haspopup="dialog" aria-controls="settings-dialog"><span>模型</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+          <button id="profile-platforms" type="button" aria-haspopup="dialog" aria-controls="settings-dialog"><span>平台连接</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+          <button id="profile-security" type="button" aria-haspopup="dialog" aria-controls="settings-dialog"><span>访问与安全</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+        </nav>
+        <button id="profile-logout" class="mobile-profile-logout" type="button" hidden>退出登录</button>
+        <p id="profile-feedback" class="form-error" role="status" aria-live="polite" hidden></p>
+      </section>
       <footer id="user-menu-container" class="rail-settings">
         <button id="user-menu-toggle" class="user-menu-toggle" type="button" aria-label="用户菜单" title="用户菜单" aria-haspopup="menu" aria-expanded="false" aria-controls="user-menu">
           <span id="user-avatar" class="user-avatar" aria-hidden="true"></span>
@@ -42,6 +55,10 @@
           <p id="user-menu-feedback" role="status" aria-live="polite" hidden></p>
         </div>
       </footer>
+      <nav id="mobile-primary-navigation" class="mobile-primary-navigation" aria-label="主导航" hidden>
+        <button id="mobile-tab-messages" type="button" aria-current="page" aria-controls="room-nav"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5c-5 0-9 3.2-9 7.25 0 2.2 1.2 4.2 3.15 5.55L5.25 20.5l4.4-2.75c.75.17 1.55.25 2.35.25 5 0 9-3.2 9-7.25S17 3.5 12 3.5Z"/></svg><span>消息</span></button>
+        <button id="mobile-tab-profile" type="button" aria-controls="mobile-profile"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M5 21v-2a7 7 0 0 1 14 0v2Z"/></svg><span>我</span></button>
+      </nav>
     </aside>
     <section id="conversation" class="conversation" aria-label="房间消息">
       <header id="room-header" class="room-header">
@@ -536,7 +553,7 @@
   <dialog id="settings-dialog" class="workspace-dialog settings-dialog dialog-surface" aria-labelledby="settings-title">
     <header class="dialog-header settings-header">
       <div><h2 id="settings-title">设置</h2><p class="quiet settings-description">这些设置适用于所有会话。</p></div>
-      <button id="close-settings" class="icon-button" type="button" aria-label="关闭设置" title="关闭设置" autofocus><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button>
+      <button id="close-settings" class="icon-button" type="button" aria-label="关闭设置" title="关闭设置" autofocus><svg class="settings-close-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg><svg class="settings-back-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></button>
     </header>
     <div class="settings-layout">
       <nav id="settings-navigation" class="settings-navigation" role="tablist" aria-label="设置分类" aria-orientation="vertical">
