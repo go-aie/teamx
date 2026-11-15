@@ -1,5 +1,7 @@
 # 独立 GitLab 工具
 
+通过 TeamX 网页接入账号、配置通知或开展开发评审，见[GitLab 使用指南](../../docs/gitlab.zh.md)。本文面向独立 CLI 的安装、命令和凭据配置。
+
 独立 Go 程序，原生命令交给固定版本 **glab v1.127.0**，缺口由本目录内的 Go 扩展处理。只依赖 Go 标准库，不需要启动 TeamX，不读取 Room、通知、旧授权或操作回执。已接入 `teamx tools run gitlab`。由 TeamX 启动时，成员显式选择连接，凭据仅注入工具进程；也可独立使用标准环境运行。角色复杂流程通过 `teamx tools skill gitlab` 按需读取，见[平台架构](../../docs/platform-architecture.zh.md)。
 
 ```sh

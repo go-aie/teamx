@@ -2,164 +2,77 @@
 
 **Teamwork for AI Agents**
 
-让拥有不同职责的 AI Agent 在同一个房间里协作。你提出目标、参与讨论，Agent 通过共享消息、独立工作区和真实 CLI 工具完成任务。
+TeamX 是一个 AI Agent 协作工具。你可以与个人助理对话，也可以创建团队房间，让不同角色的 Agent 分工完成任务。
 
-通过内置 Web 界面参与协作，Agent 由 [DeepSeek Harness（DSH）](https://github.com/deepseek-ai/deepseek-harness) 运行。每位成员保留自己的私有上下文，需要与团队交流时主动向房间发言。
+每位 Agent 拥有独立上下文和工作区，能够使用真实 CLI 工具。你提出目标、参与讨论，随时查看执行过程或暂停协作。Agent 在服务机器上运行，关闭浏览器后继续工作。
 
 ## 能做什么
 
-- **组织团队协作**：定义成员角色，创建多个任务房间，保留各自的消息、会话和工作区。
-- **与个人助理交流**：在默认私信中梳理需求，通过对话连接飞书、关注群和设置提醒规则。
-- **设计、开发与评审代码**：让成员分工设计方案、编写代码和独立评审。
-- **处理个人事务**：助手读取 GitLab 待办、核实上下文，按用户意图回复和处理，需要决定时在房间里 @ 你。
-- **接收平台通知**：接收 GitLab 项目活动和个人待办，将飞书私信和群提及送入助手收件箱。
-- **观察与控制执行**：查看成员状态、思考及工具调用，暂停或取消回合，重置私有会话并恢复协作。
-
-一个服务管理多个独立运行的房间；不同房间可以同时执行，每个房间内的成员回合依次执行。标签页各自选择查看对象，切走或关闭页面不停止协作。
+- **个人助理**：梳理需求、读取 GitLab 待办，通过对话连接飞书、关注群和保存持续提醒规则。
+- **团队协作**：按任务创建房间，让不同角色共同讨论方案、编写代码和独立评审。
+- **平台集成**：接收 GitLab 活动、待办和飞书消息，使用所选账号读取上下文、按你的要求处理事务；支持 Scion 开发与 Review。
+- **执行控制**：查看成员的思考和工具调用，暂停、取消或恢复执行，保留各会话的历史和工作文件。
 
 ## 快速开始
 
-先按使用场景选择入口：
+已有运行中的 TeamX 服务时，直接在电脑或手机浏览器打开服务地址并登录，无需安装。
 
-| 你的情况 | 从这里开始 |
-| --- | --- |
-| 已有运行中的 Server | 直接在桌面或手机浏览器打开服务地址并登录，无需下载安装 |
-| 自己安装 Server | [安装与运行](docs/installation.zh.md)：一条安装命令完成下载和常驻部署，之后统一使用 `teamx` 管理；无需安装 Go 或 Node |
-| 从源码开发运行 | [源码运行](internal/room/README.zh.md#从源码运行)：构建 Go 程序并配置本机 DSH |
+自行部署需要 macOS 或带 systemd 的 Linux，以及模型服务的地址、模型 ID 和 API Key；无需另装 Go 或 Node。系统与架构要求见[安装指南](docs/installation.zh.md#下载与校验)。当前为开发预览，实际验证范围见对应版本说明。
 
-当前为开发预览，平台与浏览器的实际测试范围见对应版本说明。模型和 API Key 均可在 Server 启动后的网页填写，不要求提前 export。
+### 1. 安装并启动
 
-包含安装器的正式 Release 发布后，在服务机器执行：
+在运行 Agent 的服务机器上执行（需有包含安装器的正式 Release）：
 
 ```sh
 curl -fsSL https://github.com/go-aie/teamx/releases/latest/download/install.sh | bash
 ```
 
-脚本安装并启动服务，无需再次执行 install 或 init；按输出打开网页登录、配置模型即可。后续用 `teamx service status/stop/start/restart` 管理；Linux 管理命令前加 sudo。尚无对应正式 Release 时，使用[离线安装与开发快照](docs/installation.zh.md#下载与校验)。
+脚本下载 standard 包并启动常驻服务。macOS 不加 sudo，Linux 按提示获取权限。离线安装、开发快照或尚无对应 Release 时，见[下载与校验](docs/installation.zh.md#下载与校验)；开发者可选择[从源码运行](internal/room/README.zh.md#从源码运行)。
 
-### 开始协作
+### 2. 登录并配置模型
 
-首次进入会自动创建默认「个人助理」私信，可以直接发送需求。需要团队协作时：
+打开安装输出的网址，按提示从服务机器读取管理 token 并登录。在网页填写模型协议、Base URL、模型 ID 和 API Key，点击「验证并开始使用」。无需提前 export 密钥；登录和远程访问详见[首次使用与访问](docs/installation.zh.md#首次使用与访问)。
 
-1. 点击左侧「＋ → 新建房间」，选择「朋友聚餐」，创建并进入房间。
+### 3. 开始一次协作
+
+模型配置完成后，进入默认「个人助理」私信，直接发送需求。想体验团队协作：
+
+1. 点击左侧「＋ → 新建房间」，选择「朋友聚餐」。
 2. 确认或修改输入框中的开场消息，点击「发送」。
-3. 查看成员讨论，补充需求；点击成员查看活动记录，按需暂停或启用协作。
-4. 新任务创建新房间，点击已有房间可继续之前的讨论。
+3. 查看成员讨论，补充人数、预算或口味；点击成员查看活动记录，按需暂停或启用协作。
 
-关闭页面不停止协作。启停服务、远程访问、日志、备份和升级统一见[安装与运行](docs/installation.zh.md)；理解浏览器与后台服务如何协作，见 [Server 架构](docs/server.zh.md)。
+新任务可以创建新房间，已有会话可以继续讨论。首次体验无需连接外部平台。会话操作见[使用指南](docs/conversations.zh.md)，服务启停、日志、备份和升级见[安装与运行](docs/installation.zh.md)。
 
 ## 团队模板
 
 | 团队 | 适合体验 |
 | --- | --- |
-| [朋友聚餐](.teamx/teams/takeout-dinner/README.md) | 三位成员协调选菜、预算份量和口味，无需 GitLab |
-| [书店夜场筹备](.teamx/teams/bookstore-night/README.md) | 四位成员共同策划活动，处理预算、运营和来宾体验 |
+| [朋友聚餐](.teamx/teams/takeout-dinner/README.md) | 协调选菜、预算份量和口味，推荐首次体验 |
+| [书店夜场筹备](.teamx/teams/bookstore-night/README.md) | 共同策划活动，平衡预算、运营和来宾体验 |
 | [软件开发](.teamx/teams/software-development/README.md) | 方案设计、代码开发与独立评审 |
-| [个人助手](.teamx/teams/personal-assistant/README.md) | 接收个人待办，核实并处理常规事务，需要决定时 @ 用户 |
+| [个人助手](.teamx/teams/personal-assistant/README.md) | 接收个人待办，核实上下文，需要决定时 @ 用户 |
 
-编辑团队的 `team.json` 或角色指令后，重启服务并新建房间生效；已有房间保留创建时的配置。
+可以[自定义团队和角色](.teamx/teams/README.md)。默认成员依次执行，也可为新建房间配置并发协作；不同房间可同时运行。
 
-团队默认按成员回合串行执行。在 `team.json` 顶层设置 `"scheduling": "parallel"` 可让不同成员并发执行；每个成员仍最多运行一个回合，Room 与 Inbox 输入共用该限制。显式串行值为 `"serial"`；省略或空字符串也表示串行。调度模式随房间创建保存，已有房间无法切换。
+## 平台集成（可选）
 
-## 使用 GitLab（可选）
+| 平台 | 可以做什么 | 从这里开始 |
+| --- | --- | --- |
+| GitLab | 接收项目活动与个人待办，开发、评审和处理事务 | [GitLab 使用指南](docs/gitlab.zh.md) |
+| 飞书 / Lark | 接收私聊和群消息，按规则跟进，回复或向指定群发送消息 | [飞书使用指南](docs/lark.zh.md) |
+| Scion | 使用原生仓库开发、创建 Review 和独立评审 | [Scion 使用指南](docs/scion.zh.md) |
 
-standard 已包含 GitLab 所需工具。core 或源码运行时，在服务机器准备 **glab 1.127.0** 与 TeamX GitLab 工具，方法见[工具手册](tools/gitlab/README.zh.md)。
-
-服务启动后：
-
-1. 打开成员详情，在「平台」Tab 中点击「添加平台」选择已有账号，或点击「连接新平台」；当前 Room 和成员已确定。已有平台默认勾选「接收通知」「使用工具」，点击「添加并启用」即可。
-2. 填写平台名称、GitLab 实例地址，点击「连接并启用」。同一实例已有唯一兼容应用时直接登录本次账号；没有应用时按页面引导配置 Application ID、Secret 和回调地址。多个兼容应用需明确选择，权限或回调不匹配会显示原因。
-3. 账号核验后默认接收「我的待办」到所选成员 Inbox，并启用该平台工具；项目互动默认关闭。页面分别显示账号、通知、工具的结果，随后可在 Room 提出任务。
-
-全局「设置 → 平台」可单独连接账号，无需选择 Room 和成员；随后从成员详情的「平台」Tab添加已有平台。添加面板可分别选择通知和工具；首次启用前可按需调整通知详情与起点。该成员已有的通知和工具选择保持原样；接入不改变自动协作开关或回合预算。部分步骤失败时读取原接入进度再继续，无需重新登录。
-新配置默认选择 `api` 和 `write_repository`，已有配置恢复保存的选择。`api` 用于 API 读写，是必需权限；`write_repository` 用于 HTTPS 拉取和推送代码，可按需取消。GitLab 应用中需勾选所选权限，修改选择后重新授权。成员用 `teamx workspace-git fetch/push/ls-remote` 执行网络 Git，本地 diff／commit 仍使用 Git；已有 API-only 授权不会自动扩权。本次 OAuth 简化后的真实账号与 Git 网络链路尚未重新验收。
-
-已有平台提供「重新授权」「退出登录」「修改应用配置」。需要更换应用或 Secret 时，点击「修改应用配置」，确认影响范围后填写表单，再点击「更新并授权」；核验成功后才更新原配置。修改和退出使用同一处引用房间列表展示影响范围；取消修改会清空 Secret 并返回账号操作。授权成功后自动保存，名称有改动时才显示「保存名称」。
-
-重新打开表单会带出已保存的 Application ID 和申请权限，并显示当前服务的回调地址；Secret 不回显，更换时重新填写。
-
-GitLab 仅支持 OAuth。旧版本数据需先停止服务，再运行 `teamx platforms upgrade --rooms-dir ROOT`；已有 OAuth 授权保留，旧 PAT 连接保留原 ID 和房间引用并需要重新登录。升级不访问 GitLab，也不撤销远端 PAT。
-
-**后续调整入口**：
-
-| 需要 | 配置入口 |
-| --- | --- |
-| Agent 调用 GitLab API | 成员详情 → 平台 Tab → 使用工具 |
-| 克隆仓库、修改代码或本地评审 | 输入框下方的 Workspace，填写 HTTPS 仓库地址并应用 |
-| 接收项目活动或个人待办 | 成员详情 → 平台 Tab → 接收通知；点击「设置」调整内容和范围，接收成员固定 |
-
-同一平台可由多位成员独立订阅，开关、范围、接收进度和消费互不覆盖。房间消息流另从右侧「房间通知」配置，当前仅支持 GitLab；成员与房间同时订阅可能看到相同通知。
-
-成员详情按「平台｜长期规则｜收件箱｜活动记录」排列，默认打开「平台」。首次接入可同时初始化通知与工具；后续两个开关各自立即保存，已有关闭项不会被再次添加自动重开。收件箱保留消息与来源详情。API 工具和通知无需先克隆仓库。平台改名不改变工具标识或接收进度，同类型的多个平台分别显示账号。
-
-## 使用 Scion（可选）
-
-「软件开发」团队也支持 Scion 原生仓库与 Review。安装固定 **scn 0.1.13**，从成员详情的「平台 → 添加平台」接入，填写实例地址，自动检测账号或使用 PAT 登录；完成接入后启用该成员工具。也可在全局平台设置先连接账号。Scion 显示「无通知能力」，按需应用 Scion Workspace，即可发送需求，进行开发、独立评审、修正与复审。
-
-首次配置、日常使用和常见问题见 [Scion 使用说明](docs/scion.zh.md)。
-
-## 使用飞书（可选）
-
-在个人助理中直接说「连接飞书，关注产品讨论群，以后需要我处理时在这里提醒我」，按对话组件完成授权和必要选择。此入口只配置明确请求的内容，详见[通过对话接入](docs/lark.zh.md#通过对话接入)。
-
-standard 已包含官方 **lark-cli 1.0.99**；core 或源码运行时需在服务机器另行安装。在「成员详情 → 平台 → 添加平台 → 连接新平台」选择飞书或 Lark。界面自动检测本机应用和账号；飞书缺少应用时提供官方网页引导，Lark 可复用已有配置或使用页面中的 CLI 配置说明。完成账号核验并保存后，默认接收全部可访问的人员私聊到所选成员 Inbox，并启用对应平台工具。群聊默认关闭，可在「成员详情 → 平台 → 对应平台设置」搜索并选择群，默认只接收 @我。
-
-查看成员收件箱；启用协作后，助手在有效回合读取和跟进，需要决定时在 Room 提问。只接收和理解已保存通知不要求成员工具可用；补读最新内容与回复仍需对应工具、账号权限和具体业务授权。当前开放的动作及配置、测试和恢复步骤见 [飞书使用说明](docs/lark.zh.md)。
-
-## 常用操作
-
-- **调整端口或数据目录**：编辑 `.teamx/config.toml` 中的 `server.listen`、`server.data_dir` 后重启服务。
-- **调整系统时区**：打开「设置 → 通用」，搜索 IANA 时区并保存。默认 `Asia/Shanghai`，全部 Room 共用；页面时间、日期分组和时间输入立即更新，其他页面自动刷新。「使用浏览器时区」只填入草稿，仍需保存。设置写回服务实际使用的配置文件；手工修改 `server.time_zone` 需重启。Agent 每轮收到当前本地时间，时区变更从下一正常回合生效；原始时间数据保持不变。
-- **查看或暂停成员**：点击成员进入详情，查看活动记录并使用「暂停 / 启用协作」；成员可以阅读后保持沉默。
-- **重新开始讨论**：房间头部「··· → 重新开始」，清空公共消息并重置私有会话，保留工作区和已用预算。
-- **删除房间**：左侧房间的删除操作会永久移除该房间消息、私有会话和工作区文件。
-
-DSH 成员默认每会话受理 16 回合，达到阈值后在下一批正常输入前自动轮换，无需人工续额。可用 `server.session_max_turns` 调整新房间的阈值。成员控制、轮换与恢复说明见[运行手册](internal/room/README.zh.md)。
+例如，在个人助理中说「连接飞书，关注产品讨论群，以后需要我处理时在这里提醒我」，按对话提示完成授权和选择。平台可用动作及限制见对应指南。
 
 ## 文档导航
 
-| 你要做什么 | 文档 |
-| --- | --- |
-| 下载、安装、网页首启、远程访问、日志及备份升级 | [安装与运行](docs/installation.zh.md) |
-| 理解 Client／Server、身份、存储和生命周期 | [Server 架构](docs/server.zh.md) |
-| 从源码启动、排查配置或恢复成员 | [开发运行参考](internal/room/README.zh.md) |
-| 从源码构建本地或 CI 分发包 | [打包指南](packaging/README.zh.md) |
-| 推送版本 tag 自动发布、可选签名公证 | [正式发行指南](packaging/releasing.zh.md) |
-
-其他功能与内部设计：
-
-| 文档 | 内容 |
-| --- | --- |
-| [团队配置](.teamx/teams/README.md) | 自定义角色、模型、DSH 和工作区建议值 |
-| [GitLab 工具](tools/gitlab/README.zh.md) | 安装、命令帮助、WorkItem 扩展与凭据配置 |
-| [Scion 使用说明](docs/scion.zh.md) | 页面 PAT 登录、账号自动检测、成员绑定与开发评审流程 |
-| [飞书使用说明](docs/lark.zh.md) | CLI profile、成员绑定、消息通知、收件测试与诊断恢复 |
-| [核心概念](docs/concepts.zh.md) | 对象、职责、配置边界及架构阅读路径 |
-| [会话与默认助理](docs/conversations.zh.md) | 私信与房间、默认助理、删除保护、恢复和管理接口 |
-| [Room 架构](docs/room-architecture.zh.md) / [Agent 运行时](docs/agent-runtime.zh.md) | 消息、调度、身份、生命周期及 DSH |
-| [Agent Instructions 组装](docs/agent-instructions.zh.md) | 公共指引、角色指令、Session 身份与每轮上下文 |
-| [Workspace](docs/workspace.zh.md) | 目录、仓库、配置应用与恢复 |
-| [平台架构](docs/platform-architecture.zh.md) / [通知](docs/notifications.zh.md) | 连接、独立工具、GitLab 活动／待办与飞书消息 |
-| [后续方向](docs/roadmap.zh.md) | 尚未实现的可选增强 |
+- [安装与运行](docs/installation.zh.md)：安装、模型首配、远程访问和维护。
+- [会话使用](docs/conversations.zh.md)：个人助理、团队房间、提及和执行控制。
+- [核心概念](docs/concepts.zh.md)：团队、成员、上下文、工作区与平台连接。
+- [完整文档目录](docs/README.zh.md)：平台接入、自定义配置、架构和开发参考。
 
 ## 开发
 
-常规检查需要 Go 和 Node。默认流程只执行核心回归；本地 CLI、进程恢复和完整业务链路单独执行 integration：
+从[源码运行](internal/room/README.zh.md#从源码运行)开始；检查方式见[测试说明](docs/testing.zh.md)，分发与发布见[打包指南](packaging/README.zh.md)和[正式发行指南](packaging/releasing.zh.md)。
 
-```sh
-make test
-go vet ./...
-node --test internal/web/tests/web*_test.mjs
-```
-
-涉及 CLI、平台或完整业务流程时，按修改范围执行常用 integration，例如：
-
-```sh
-make test-integration TEST_PACKAGES=./internal/room TEST_RUN=Lark
-```
-
-阶段性执行 `make test-integration` 覆盖全仓本地集成；修改并发、存储或资源持有逻辑时执行 `make test-race`。无需每次修改都串行运行这两套完整检查。
-
-按模块运行、计时及测试分层约定见[测试说明](docs/testing.zh.md)。代码生成、CLI 夹具及真实服务验收入口见[验证说明](internal/room/README.zh.md#验证入口)。
-
-当前 GitLab 工具、Workspace Git、浏览器操作和真实团队协作仍有专项待验项，范围见[当前待验项](internal/room/README.zh.md#当前待验项)。普通测试通过不代表这些真实链路已全部验证。
+Agent 由 [DeepSeek Harness（DSH）](https://github.com/deepseek-ai/deepseek-harness) 运行，内部职责与扩展入口见 [Server 架构](docs/server.zh.md)。

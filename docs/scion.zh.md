@@ -6,20 +6,13 @@
 
 ### 1. 准备程序并启动服务
 
-已安装 Scion、配置好 DSH 和模型时，可直接进入下一步。首次安装按[快速开始](../README.md#快速开始)准备 TeamX，并安装固定 **scn 0.1.13**；下载与校验见 [Scion 工具手册](../tools/scion/README.zh.md#安装)，当前已核实的平台为 macOS arm64。
+先完成 [TeamX 安装与模型配置](installation.zh.md)。Scion CLI 暂不随 standard 包提供，须在服务机器另装固定 **scn 0.1.13**，下载与校验见[工具手册](../tools/scion/README.zh.md#安装)；当前已核实的平台为 macOS arm64。
 
-TeamX 支持填写原生 `scn` 或配套 `teamx-scion` 的路径。源码更新后重新构建并启动（先正常退出旧服务，等待执行结清）：
-
-```sh
-go build -o bin/teamx ./cmd/teamx
-./bin/teamx serve --config .teamx/config.toml
-```
-
-需要薄封装时另运行 `go build -o bin/teamx-scion ./tools/scion`，并将 scn 放在它的同目录，或配置服务环境中的 `TEAMX_SCN_BIN`。服务不自动加载 `.env`。
+TeamX 支持原生 `scn` 或配套 `teamx-scion`，页面自动检测程序路径，无需重新编译 TeamX。薄封装构建及服务环境配置见[工具手册](../tools/scion/README.zh.md)；从源码启动见[开发运行参考](../internal/room/README.zh.md#从源码运行)。
 
 ### 2. 在页面配置 Scion 连接
 
-打开「设置 → 平台连接 → 新增连接」，选择 **Scion**：
+从「成员详情 → 平台 → 添加平台 → 连接新平台」选择 **Scion**，也可先在全局「设置 → 平台」连接账号：
 
 1. 填写连接名称和实例地址，例如 `https://scion.opencsg.com`。
 2. 程序路径会自动检测；如需手工指定，在「高级设置」中填写服务机器上 `scn` 或 `teamx-scion` 的绝对路径。
@@ -84,15 +77,4 @@ go build -o bin/teamx ./cmd/teamx
 
 实际连接、工具绑定与 Workspace 页面操作，多任务／多账号、完整故障矩阵、复杂设计交接和 Review 合入仍待验证；其他发布平台及非 Unix 进程树结清也未验收。组件或模拟页面通过不替代这些结果。
 
-只读入口为 `TestScionRealMemberRead`、`TestScionRealWorkspace`（`internal/room`，`-tags=e2e`），设置 `TEAMX_SCION_REAL=1`、`TEAMX_SCION_TEST_CREDENTIALS`、`TEAMX_SCION_BIN`、`TEAMX_SCN_BIN`，路径均明确指向隔离凭据和实际程序；登录发现另受 `TEAMX_SCION_AUTH_REAL` 控制。新协作验收会真实发布任务分支、提交、Review 及评论，须先指定仓库与写入范围：
-
-```sh
-TEAMX_SCION_S4_REAL=1 TEAMX_SCION_S4_MAX_TOKENS=8192 \
-TEAMX_SCION_CONFIG=/absolute/config.toml TEAMX_DSH_ENV_FILE=/absolute/private/model.env \
-TEAMX_DSH_OUTPUT=/absolute/new-evidence-dir \
-TEAMX_SCION_TEST_CREDENTIALS=/absolute/private/credentials.json \
-TEAMX_SCION_BIN=/absolute/teamx-scion TEAMX_SCN_BIN=/absolute/scn \
-go test -tags=e2e ./internal/room -run '^TestScionRealDSHCollaboration$' -count=1 -timeout=25m -v
-```
-
-失败后先检查原 Room、分支、pending、Review 和评论，不直接重跑新建流程。`TestScionRealDSHReviewContinuation` 只用于已经核实的既有 Review，`TEAMX_SCION_S4_SOURCE` 指向原证据根；从修正阶段续验时设置 `TEAMX_SCION_S4_START=correction` 及 `TEAMX_SCION_S4_PRIOR_EVIDENCE`。保留工作副本和原回执，通过正式恢复门禁继续，不重建 Review 或重放未知写入。
+完整复跑命令及真实写入要求见[测试说明](testing.zh.md#scion-真实验收)。

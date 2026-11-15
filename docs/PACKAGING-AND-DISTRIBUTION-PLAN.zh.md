@@ -34,7 +34,7 @@
 | `teamx-gitlab` | `./tools/gitlab` | Agent 主动使用的 GitLab CLI，代理 glab 并提供 Go 扩展 |
 | `teamx-scion` | `./tools/scion` | 固定版本 scn 的独立封装 |
 
-Web HTML/CSS/JS 已由 [web.go](../internal/room/web.go) 嵌入；平台 skill、GitLab askpass/使用说明等也已有嵌入入口。不需要额外前端服务器、Node 前端构建进程或外部 skill 目录才能运行 TeamX 服务。
+Web HTML/CSS/JS 已由 [embed.go](../internal/web/embed.go) 嵌入；平台 skill、GitLab askpass/使用说明等也已有嵌入入口。不需要额外前端服务器、Node 前端构建进程或外部 skill 目录才能运行 TeamX 服务。
 
 根模块 [go.mod](../go.mod) 当前要求 Go 1.27，无相邻源码目录 `replace`。打包机需要 Go；发行包的使用者不需要 Go。
 

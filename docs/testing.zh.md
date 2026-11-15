@@ -8,6 +8,7 @@
 make test                     # 核心回归，等价于 go test ./... 并附带超时
 make test-integration         # 核心 + 本地集成，不访问真实平台或模型
 make test-race                # 核心 + 本地集成的 race 检查
+go vet ./...
 node --test internal/web/tests/web*_test.mjs
 ```
 
@@ -87,7 +88,7 @@ TEAMX_SELECTION_BROWSER=1 go test -tags=integration ./internal/room \
 
 浏览器覆盖分组和选择恢复、默认删除保护、旧实例显式恢复、普通私信删除、独立草稿、详情 Tab／焦点、窄屏，以及账号／群选择和完整设置返回。接续测试核对原请求、完整成员身份、Inbox 结果与单次配置；受控 backend 的自动回合与 CLI 驱动的等待／主动继续分别验证，不称为真实模型。
 
-已有单账号真实 DSH／模型、飞书与浏览器验证，覆盖默认 DM 的新 OAuth 连接和自动接续，以及复用已核验账号后的群关注、持续规则保存、暂停后恢复接续。用户主动继续的原操作查询由本地 CLI 回归覆盖；第二真实账号、新群消息触发实际业务提醒、真实远端故障和并发自然语言反馈去重仍未实测。连接、订阅保存与实际提醒不能互相代替，复验范围见[飞书真实验收](lark.zh.md#真实验收)。
+已有单账号真实 DSH／模型、飞书与浏览器验证，覆盖默认 DM 的新 OAuth 连接和自动接续，以及复用已核验账号后的群关注、持续规则保存、暂停后恢复接续。用户主动继续的原操作查询由本地 CLI 回归覆盖；第二真实账号、新群消息触发实际业务提醒、真实远端故障和并发自然语言反馈去重仍未实测。连接、订阅保存与实际提醒不能互相代替，复验范围见[飞书真实验收](#飞书真实验收)。
 
 ## 本机验证记录
 
@@ -156,6 +157,62 @@ make test-e2e-check
 go test -tags=e2e ./internal/room -run '^TestRealDSHRoom$' -count=1 -timeout=25m -v
 ```
 
-该命令仍需场景的显式启用参数，否则会跳过。具体方式见 [Agent 运行时](agent-runtime.zh.md#真实验收)、[Workspace](workspace.zh.md#真实验收)、[通知](notifications.zh.md#接口与验证)与 [GitLab 工具](../tools/gitlab/README.zh.md#真实验收)。不要把全部 e2e 加进日常核心或 integration 入口。
+该命令仍需场景的显式启用参数，否则会跳过。具体方式见 [Agent 运行时](agent-runtime.zh.md#真实验收)、[Workspace](reference/workspace.zh.md#真实验收)、[通知](reference/notifications.zh.md#接口与验证)与 [GitLab 工具](../tools/gitlab/README.zh.md#真实验收)。不要把全部 e2e 加进日常核心或 integration 入口。
 
 阶段验收结束后，将仍需维护的复跑方法与未完成项收进对应模块说明，删除重复的阶段记录；不要求每次实施新增一份永久验收文档。私有回执、防重记录和必要失败证据独立保留。
+
+## 飞书真实验收
+
+当前验证范围按能力分别判断：
+
+| 能力 | 已有真实验证 | 仍待验证 |
+| --- | --- | --- |
+| 连接引导 | 飞书已有应用的官方页面回传、profile 与用户 OAuth 核验；默认 DM 的真实 Agent 发起、保存连接及 Inbox 自动接续 | 新应用、Lark 网页路径、实体手机扫码及第二真实账号 |
+| 对话群关注与持续规则 | 单账号的账号／群选择、精确群订阅、长期规则保存、暂停后恢复自动接续及真实浏览器设置返回 | 新群消息触发实际业务提醒、真实远端故障及并发自然语言反馈去重；准入阻塞和晚到竞争由本地测试覆盖 |
+| 收件与模型消费 | 指定历史窗口到 Inbox、稳定引用、DSH 摘要和 Room 提问 | 现场新消息触发、长期覆盖与时延、后台身份／钥匙串及跨令牌到期续期 |
+| 普通回复、指定单群发送 | 指定真实目标的 user 身份 Agent 闭环、独立正文／作者／目标回读及服务重载后不重发 | 话题回复、其他主动私信、正式 bot Agent 链路及真实多平台同时写入 |
+| 本人投递 | 一次真实 Agent 投递且无 Inbox 回流；历史真实回执在独立进程恢复；Chromium 界面检查 | 真实平台写后超时与并发发送故障；已有故障注入使用隔离测试端 |
+
+### 飞书连接验证
+
+`node internal/room/testdata/lark_guided_connection_browser.cjs` 检查生产页面的引导状态及桌面／手机尺寸布局，API 使用隔离模拟数据；不能算作新应用、Lark 或实体手机的真实连接通过。
+
+### 飞书消息与动作验证
+
+历史窗口闭环入口为 `TestRealLarkNotificationInbox`（`internal/room`，`-tags=e2e`），通过 `TEAMX_LARK_TEST_INPUT` 提供私有 JSON：明确的 `profile`、`brand`、两个 `chats` 和不超过 24 小时的 Unix 秒 `start/end`。真实模型另设 `TEAMX_LARK_DSH_REAL=1`、全新绝对 `TEAMX_DSH_OUTPUT` 及[DSH 安装／模型环境](agent-runtime.zh.md#真实验收)。
+
+持续发现仅使用隔离来源状态，不创建生产订阅或更改登录：
+
+```sh
+TEAMX_LARK_ALL_REAL=1 TEAMX_LARK_TEST_PROFILE=EXPLICIT_PROFILE \
+TEAMX_LARK_TEST_BIN=/absolute/lark-cli TEAMX_LARK_TEST_BRAND=feishu \
+TEAMX_LARK_RUN_SECONDS=180 TEAMX_LARK_REPORT=/absolute/private/report.json \
+go test -tags=e2e ./internal/platform/lark -run '^TestRealLarkAllChatsContinuous$' -count=1 -v
+```
+
+允许运行 30～1800 秒，报告只保存聚合数量；前台 CLI 持续运行不替代后台部署及跨到期验证。普通回复、群发送和本人投递的复跑分别使用 `platform_lark_reply_dsh_real_test.go`、`platform_lark_send_dsh_real_test.go` 和 `platform_lark_self_send_dsh_real_test.go` 的显式开关与输入合同。新发送须另行指定准确账号、目标、正文及次数；保留 `.local/lark-l4-c/*native-attempt*`、`.local/lark-self-send-s2/native-attempt*`、原消息 ID 和 unknown 回执，不删除防重记录来重试。`TestRealLarkSelfReadOnlyRecovery` 可通过 `TEAMX_LARK_SELF_RECOVERY_SOURCE` 指向成功投递的 rooms root 只读复验，不新增发送。
+
+### 飞书图片验证
+
+真实下载和模型读图已有通过记录，实际浏览器图片视觉检查尚未通过；服务重启后的新消息闭环、已消费历史消息补图、恢复／轮换后识图及完整权限变化矩阵仍待验证。
+
+复跑入口为 `TestRealLarkImageMaterials`（`internal/room`，`-tags=e2e`）：`TEAMX_LARK_IMAGE_INPUT` 指向包含 `profile`（`platform.CLIProfile`）、已保存通知 `item` 和可选 `model` 的私有 JSON，不含 OAuth 凭据；`TEAMX_DSH_OUTPUT` 使用全新绝对路径。模型验证另设 `TEAMX_LARK_IMAGE_MODEL=1` 及 `TEAMX_LARK_IMAGE_EXPECT`（像素中独有文字的 JSON 数组，不放入提示），安装与凭据沿用 DSH 配置。`TEAMX_LARK_IMAGE_BROWSER=1` 启动隔离页面，实际目视确认后才写输出目录的 `browser-done`。下载、模型结果与页面显示分别判定，不互相替代。
+
+## Scion 真实验收
+
+固定 CLI 的只读成员调用、三份原生 clone、失败后的显式重试和正常重启已有通过记录。真实 DSH 已完成开发、创建 Review、独立评审、修正、更新同一 Review revision 与复审，并在一次评论响应丢失后只读核查作者、正文、版本与唯一性。续验经过模型限流后的结清与正常恢复，不证明连续无干预协作可用。
+
+实际连接、工具绑定与 Workspace 页面操作，多任务／多账号、完整故障矩阵、复杂设计交接和 Review 合入仍待验证；其他发布平台及非 Unix 进程树结清也未验收。组件或模拟页面通过不替代这些结果。
+
+只读入口为 `TestScionRealMemberRead`、`TestScionRealWorkspace`（`internal/room`，`-tags=e2e`），设置 `TEAMX_SCION_REAL=1`、`TEAMX_SCION_TEST_CREDENTIALS`、`TEAMX_SCION_BIN`、`TEAMX_SCN_BIN`，路径均明确指向隔离凭据和实际程序；登录发现另受 `TEAMX_SCION_AUTH_REAL` 控制。新协作验收会真实发布任务分支、提交、Review 及评论，须先指定仓库与写入范围：
+
+```sh
+TEAMX_SCION_S4_REAL=1 TEAMX_SCION_S4_MAX_TOKENS=8192 \
+TEAMX_SCION_CONFIG=/absolute/config.toml TEAMX_DSH_ENV_FILE=/absolute/private/model.env \
+TEAMX_DSH_OUTPUT=/absolute/new-evidence-dir \
+TEAMX_SCION_TEST_CREDENTIALS=/absolute/private/credentials.json \
+TEAMX_SCION_BIN=/absolute/teamx-scion TEAMX_SCN_BIN=/absolute/scn \
+go test -tags=e2e ./internal/room -run '^TestScionRealDSHCollaboration$' -count=1 -timeout=25m -v
+```
+
+失败后先检查原 Room、分支、pending、Review 和评论，不直接重跑新建流程。`TestScionRealDSHReviewContinuation` 只用于已经核实的既有 Review，`TEAMX_SCION_S4_SOURCE` 指向原证据根；从修正阶段续验时设置 `TEAMX_SCION_S4_START=correction` 及 `TEAMX_SCION_S4_PRIOR_EVIDENCE`。保留工作副本和原回执，通过正式恢复门禁继续，不重建 Review 或重放未知写入。

@@ -86,9 +86,9 @@ teamx serve --config /绝对路径/config.toml
 
 [Workspace](../../docs/workspace.zh.md)通过输入框下方入口配置普通目录、可选 HTTPS 仓库和 GitLab 认证。新房间只准备普通成员目录，模板建议不自动生效。应用先结清旧执行，再准备目标、提交配置并更新已有 Session 代际；保留文件和公共历史，不自动重放旧工作。GitLab 只引用全局 OAuth 连接，短期凭据由服务管理，不再接收或保存房间 PAT。已有仓库和项目只读，回访只做本地核对。
 
-应用使用稳定操作 ID 和配置版本，提供 `GET /v1/workspace`、`POST /v1/workspace/apply`、`POST /v1/workspace/retry`。超时先查询，失败显式重试原目标；部分提交和不确定写入阻止执行。管理身份、请求结构与页面凭据处理见 [Workspace 接口](../../docs/workspace.zh.md#管理接口)。旧运行时与 Workspace 迁移命令已移除，受管房间必须具备完整 runtime 和 Workspace 快照。
+应用使用稳定操作 ID 和配置版本，提供 `GET /v1/workspace`、`POST /v1/workspace/apply`、`POST /v1/workspace/retry`。超时先查询，失败显式重试原目标；部分提交和不确定写入阻止执行。管理身份、请求结构与页面凭据处理见 [Workspace 接口](../../docs/reference/workspace.zh.md#管理接口)。旧运行时与 Workspace 迁移命令已移除，受管房间必须具备完整 runtime 和 Workspace 快照。
 
-每个标签页独立保存查看对象，切换或关闭页面不停止后台 Agent、工具和通知投递。不同房间可以并行，每个房间仍只有一个执行名额；重复查看健康实例不重建 Session、不改变成员状态或预算。列表按房间显示目录状态、运行状态、操作进度和错误，同房间冲突操作串行，其他房间仍可查看及执行。草稿、引用、提醒进度及未确认发送分别保存在当前标签页各房间中。未确认发送保留完整原身份和消息 ID，身份过期后须先核对历史，再放弃重试。迟到响应不会修改新房间页面。创建和打开使用持久化去重 ID，响应丢失后可核对列表并显式重试，刷新不会自动续跑；创建成功但打开失败的房间仍留在列表。
+每个标签页独立保存查看对象，切换或关闭页面不停止后台 Agent、工具和通知投递。不同房间可以并行；默认串行房间只有一个执行名额，并发房间允许不同成员同时执行，每位成员仍最多一个回合；重复查看健康实例不重建 Session、不改变成员状态或预算。列表按房间显示目录状态、运行状态、操作进度和错误，同房间冲突操作串行，其他房间仍可查看及执行。草稿、引用、提醒进度及未确认发送分别保存在当前标签页各房间中。未确认发送保留完整原身份和消息 ID，身份过期后须先核对历史，再放弃重试。迟到响应不会修改新房间页面。创建和打开使用持久化去重 ID，响应丢失后可核对列表并显式重试，刷新不会自动续跑；创建成功但打开失败的房间仍留在列表。
 
 房间列表的「删除」经确认后停止目标房间，验证当前及历史私有会话已结清，再永久移除整个房间目录：公共消息、成员状态、所有 Agent 私有会话、诊断、资源副本和工作区文件一并删除。团队模板和其他房间保留；删除当前房间不会自动选择另一个房间。操作者接口 `POST /v1/rooms/delete` 要求目录 `service_epoch`、human `caller` 以及精确的 `room_id` / `room_instance`。后台操作由服务持有，不随 HTTP 断开取消；通过 `GET /v1/rooms` 的房间 `busy`、`status=deleting`、`deletion_phase`（`closing` / `removing`）和 `error` 核对进度，房间从列表消失才表示完成。失败或服务中断后不会自动继续删除或恢复该房间，须核查并明确重试。进入 `removing` 前先持久记录执行已结清，因此即使数据只删掉一部分也能重新打开目录并明确重试。
 
@@ -104,7 +104,7 @@ teamx serve --config /绝对路径/config.toml
 
 ### 单 Agent 会话 API
 
-私信使用 `is_direct=true` 和内置 `agent_role_id` 创建，复用既有 Room 的打开、身份与恢复机制。默认个人助理作为固定入口不可删除，手动新建私信仍可删除。创建请求示例、初始化重试及历史已删除默认实例的显式恢复见[会话与默认助理](../../docs/conversations.zh.md#管理接口)。
+私信使用 `is_direct=true` 和内置 `agent_role_id` 创建，复用既有 Room 的打开、身份与恢复机制。默认个人助理作为固定入口不可删除，手动新建私信仍可删除。创建请求示例、初始化重试及历史已删除默认实例的显式恢复见[会话接口参考](../../docs/reference/conversations.zh.md#管理接口)。
 
 直接对助理说明连接飞书、关注群和持续提醒的需求即可；只连接不附带启用通知或工具。对话授权、账号／群选择、接续策略和完整设置入口见[飞书使用说明](../../docs/lark.zh.md#通过对话接入)。
 
@@ -175,7 +175,7 @@ export TEAMX_ADMIN_TOKEN_FILE="$PWD/.teamx/auth/admin-token"
 /tmp/teamx member remove --agent reviewer
 ```
 
-每个 Room 同时只有一个成员持有执行名额，覆盖按需打开 Session、完整回合及其工具结清。FIFO 按调度 Actor 收到有效申请的顺序排队，不固定角色顺序；等待者显示 `waiting`（页面“等待执行”），`active=false`，不增加回合编号或消耗预算。取得名额后重新核对 Room 的成员资格与最新未读；仍有新输入的原持有者结清后排到队尾。不同 Room 的名额独立，排队不阻止消息读写、用户输入和成员管理。
+串行 Room 同时只有一个成员持有执行名额；并发 Room 允许不同成员同时持有名额，每位成员仍最多一个，Room／Inbox 输入共用该限制。模式在创建时冻结，配置见[团队配置](../../.teamx/teams/README.md)。名额覆盖按需打开 Session、完整回合及其工具结清。串行 FIFO 按调度 Actor 收到有效申请的顺序排队，不固定角色顺序；等待者显示 `waiting`（页面“等待执行”），`active=false`，不增加回合编号或消耗预算。取得名额后重新核对 Room 的成员资格与最新未读；仍有新输入的原持有者结清后排到队尾。不同 Room 的名额独立，排队不阻止消息读写、用户输入和成员管理。
 
 一个成员同时最多一个回合。忙碌时通知合并，结清后处理尚未提示的新输入；不阅读或保持沉默也能正常结束，同一批未读不会反复自激。`run --retry` 明确再次提示现有未读，不重放旧工具调用。取消请求本身不表示执行已停止；未结清时仍为 `active=true` 并持有名额，成员状态保留等待原因。暂停、移除和轮换撤销等待申请，服务关闭先停止新授予。队列不持久化，重启仍受原 Session 恢复规则约束。
 
@@ -248,7 +248,7 @@ make test-e2e-check
 
 修改 Actor handler 后运行 `go generate ./internal/room`。本地检查需要 Go 和 Node；最后一条命令只检查验收测试能否编译，不执行真实模型或平台操作。普通测试通过不代表真实链路已验证。
 
-真实验收需显式启用，运行方式见 [DSH](../../docs/agent-runtime.zh.md#真实验收)、[Workspace](../../docs/workspace.zh.md#真实验收)、[通知](../../docs/notifications.zh.md#接口与验证)和 [GitLab 工具](../../tools/gitlab/README.zh.md#真实验收)。验收目录应与日常数据隔离；写入结果不确定时先核对状态，再决定后续操作。
+真实验收需显式启用，运行方式见 [DSH](../../docs/agent-runtime.zh.md#真实验收)、[Workspace](../../docs/reference/workspace.zh.md#真实验收)、[通知](../../docs/reference/notifications.zh.md#接口与验证)和 [GitLab 工具](../../tools/gitlab/README.zh.md#真实验收)。验收目录应与日常数据隔离；写入结果不确定时先核对状态，再决定后续操作。
 
 消息、调度、身份与持久化设计见 [Room 架构](../../docs/room-architecture.zh.md)。
 
@@ -257,4 +257,4 @@ make test-e2e-check
 - Room / Web：组件、HTTP、前端和真实 DSH 双房间并行／恢复／退出已有通过记录；真实浏览器 A/B/A 切房、双标签页独立选择、刷新／关闭标签页后后台执行及视觉检查仍待验。成员工具设置与生命周期组合也需分别核实。复跑入口及安装、模型和全新输出目录要求见[运行时真实验收](../../docs/agent-runtime.zh.md#真实验收)。
 - 团队协作：串行调度在真实书店任务中的效果。
 
-平台工具和 Git 工作区的具体缺口分别见 [GitLab 工具验收](../../tools/gitlab/README.zh.md#真实验收)与 [Workspace 验收](../../docs/workspace.zh.md#真实验收)。这些是现有链路的验证缺口；旧工具或旧协议的通过结果不能沿用到当前实现。
+平台工具和 Git 工作区的具体缺口分别见 [GitLab 工具验收](../../tools/gitlab/README.zh.md#真实验收)与 [Workspace 验收](../../docs/reference/workspace.zh.md#真实验收)。这些是现有链路的验证缺口；旧工具或旧协议的通过结果不能沿用到当前实现。
