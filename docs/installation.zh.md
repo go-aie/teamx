@@ -106,7 +106,7 @@ bash ./install.sh --archive /absolute/teamx-standard.tar.gz
 
 API Key 保存在服务端私有凭据库，不回显，后续无需 export；已有有效模型不在每次启动时联网重验。在默认「个人助理」私信直接发送需求；团队协作可用左侧「＋ → 新建房间」选择模板。
 
-首次体验可选择「朋友聚餐」，确认开场消息后发送，观察成员讨论并补充需求，无需连接外部平台。会话操作、提及和暂停恢复见[会话使用指南](conversations.zh.md)。
+首次体验可选择「朋友聚餐」，确认开场消息后发送，观察成员讨论并补充需求，无需连接外部平台。会话操作、提及和暂停恢复见[会话使用指南](https://github.com/go-aie/teamx/blob/main/docs/conversations.zh.md)。
 
 ### 访问方式
 
@@ -135,13 +135,13 @@ token 不放 URL 或浏览器持久存储；浏览器只保留 HttpOnly 会话 C
 | 访问方式与端口 | 设置 → 安全；保存后重启服务 |
 | 数据目录及其他启动配置 | 编辑本次服务实际使用的 home 下 `config.toml`，停服修改后重启；路径见下文 |
 
-默认时区为 `Asia/Shanghai`，所有会话共用。「使用浏览器时区」仅填入草稿，仍需保存。时区改变不改写原始时间；手工修改 `server.time_zone` 需重启，详细行为见[配置参考](../internal/room/README.zh.md#服务配置)。
+默认时区为 `Asia/Shanghai`，所有会话共用。「使用浏览器时区」仅填入草稿，仍需保存。时区改变不改写原始时间；手工修改 `server.time_zone` 需重启，详细行为见[配置参考](https://github.com/go-aie/teamx/blob/main/internal/room/README.zh.md#服务配置)。
 
 默认常驻安装的配置分别位于 macOS `~/Library/Application Support/TeamX/home/config.toml`、Linux `/var/lib/teamx/config.toml`；自定义安装以实际 home 为准。仓库内的 `.teamx/config.toml` 仅适用于显式使用该目录的源码运行，不是常驻安装的默认位置。数据目录由 `server.data_dir` 指定；修改路径不会搬迁原数据，已有数据迁移应先一致备份。
 
 「设置 → 模型」维护条目和默认引用，成员可跟随默认或固定模型。执行配置或 Key 变化会等待当前回合结束后分别切换，**私有上下文会重置**；成员身份、Workspace 和暂停意图保留。配置保存与全部成员实际生效分别查看，等待或部分失败按原操作显式重试；删除被引用模型须选择替代条目，模板固定引用须先修正。Key 历史版本需随备份保留，以便旧 Session 恢复。
 
-平台账号、成员工具和通知由使用者显式连接和启用。服务使用固定 `HOME/USER/LOGNAME/PATH/LANG`，不加载 shell 配置，不继承终端中 export 的 Key 或代理。平台登录和 CLI 配置属于**实际部署账号**，优先按 [GitLab](gitlab.zh.md)、[飞书](lark.zh.md)或 [Scion](scion.zh.md)指南在网页接入；GitLab 使用 TeamX 管理的 OAuth 授权，不复用操作者的全局 glab 登录。GitLab 回调地址须匹配当前入口，并在原浏览器完成授权。需要出口代理或额外 CA 时先验证系统与工具支持，不直接修改生成 unit 绕过登记校验。
+平台账号、成员工具和通知由使用者显式连接和启用。服务使用固定 `HOME/USER/LOGNAME/PATH/LANG`，不加载 shell 配置，不继承终端中 export 的 Key 或代理。平台登录和 CLI 配置属于**实际部署账号**，优先按 [GitLab](https://github.com/go-aie/teamx/blob/main/docs/gitlab.zh.md)、[飞书](https://github.com/go-aie/teamx/blob/main/docs/lark.zh.md)或 [Scion](https://github.com/go-aie/teamx/blob/main/docs/scion.zh.md)指南在网页接入；GitLab 使用 TeamX 管理的 OAuth 授权，不复用操作者的全局 glab 登录。GitLab 回调地址须匹配当前入口，并在原浏览器完成授权。需要出口代理或额外 CA 时先验证系统与工具支持，不直接修改生成 unit 绕过登记校验。
 
 Linux `lark-cli 1.0.99` 使用官方加密文件后端和部署账号私有主密钥；macOS 使用官方 Keychain。Linux 固定账号发送仍受 `account_pinning_unavailable` 阻断；凭据保存不代表自动续期或全部平台动作可用。macOS 重启后的 Keychain 解锁和真实账号续期仍需实测。
 
