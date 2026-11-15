@@ -41,6 +41,20 @@ test("confirmed expired OAuth authorization still requires reauthorization",asyn
  assert.equal(recovery.children[1].textContent,"重新授权");
 });
 
+for(const [code,reason] of [["credential_unavailable","通知因凭据问题暂停"],["credential_rejected","通知因认证失败暂停"]])test(`GitLab ${code} preserves the active account and clears after notification recovery`,async()=>{
+ const api=fixture(),account=api.platforms.find(p=>p.id==="gl"),source=api.records.get(key("gl",target("a")));
+ account.credential_kind="oauth";account.authorization_status="active";
+ source.todos.status="credentials_invalid";source.todos.error_code=code;
+ const ui=await launch(api);await openMemberInbox(ui,"member-a");
+ const recovery=row(ui,"gl").children[3];
+ assert.equal(recovery.children[0].textContent,reason);assert.equal(recovery.children[1].textContent,"检查账号");
+ await recovery.children[1].emit("click");await settle();
+ assert.equal(ui.el("settings-dialog").open,true);assert.equal(ui.el("connection-name").value,account.name);
+ assert.equal(calls(api,"/v1/platforms/gitlab/login").length,0);
+ delete source.todos.error_code;source.todos.status="running";await ui.refresh();
+ assert.equal(row(ui,"gl").children[3].hidden,true);
+});
+
 for(const [code,reason,action] of [["permission_denied","缺少所需权限","查看权限"],["identity_mismatch","账号与连接不一致","核验账号"],["credential_unavailable","登录凭据不可用","重新授权"]])test(`account recovery explains ${code} without a generic account button`,async()=>{
  const api=fixture();api.records.get(key("lark",target("a"))).error_code=code;
  const ui=await launch(api);await openMemberInbox(ui,"member-a");
@@ -60,13 +74,38 @@ function pendingLarkPermissions(reason="check_expired") {
  return api;
 }
 
-for(const reason of ["check_expired","check_missing"])test(`Lark ${reason} is a neutral permission refresh prompt`,async()=>{
+async function inspectLarkAccount(ui) {
+ await ui.el("open-settings").emit("click");
+ await ui.el("settings-tab-platforms").emit("click");
+ await ui.el("platforms-list").children.find(b=>b.dataset.platformId==="lark").emit("click");await settle();
+}
+
+for(const reason of ["check_expired","check_missing"])test(`Lark ${reason} does not ask a healthy member to check permissions`,async()=>{
+ const api=pendingLarkPermissions(reason),ui=await launch(api);await openMemberInbox(ui,"member-a");
+ for(let i=0;i<2;i++){
+  assert.equal(row(ui,"lark").children[3].hidden,true);assert.equal(row(ui,"lark").children[2].hidden,true);
+  assert.equal(toolToggle(ui,"lark").checked,true);assert.equal(toolToggle(ui,"lark").disabled,false);
+  assert.equal(ui.el("member-platform-issues").children.length,0);
+  await ui.refresh();
+ }
+ assert.equal(calls(api,"/v1/platforms/lark/permissions").length,0);
+ assert.equal(calls(api,"/v1/platforms/lark/login").length,0);
+ assert.equal(calls(api,"/v1/tools/bind").length,0);
+});
+
+for(const reason of ["query_failed","invalid_response"])test(`Lark ${reason} still offers permission-check recovery`,async()=>{
  const api=pendingLarkPermissions(reason),ui=await launch(api);await openMemberInbox(ui,"member-a");
  const recovery=row(ui,"lark").children[3];
- assert.equal(recovery.children[0].textContent,"权限状态待刷新");assert.equal(recovery.children[0].dataset.kind,"status");
+ assert.equal(recovery.hidden,false);assert.equal(recovery.children[0].textContent,"权限状态待刷新");
  assert.equal(recovery.children[1].textContent,"检查权限");
- assert.equal(calls(api,"/v1/platforms/lark/permissions").length,0);
- assert.equal(calls(api,"/v1/tools/bind").length,0);
+});
+
+for(const [next,reason,action] of [["authorize_user","用户授权未完成","完成授权"],["configure_application","应用配置待完成","配置应用"]])test(`expired Lark snapshots do not hide ${next} gaps`,async()=>{
+ const api=pendingLarkPermissions();
+ api.tools.selections[0].availability.capabilities.push({name:"message.reply",state:"blocked",next_action:next});
+ const ui=await launch(api);await openMemberInbox(ui,"member-a");
+ const recovery=row(ui,"lark").children[3];assert.equal(recovery.hidden,false);
+ assert.equal(recovery.children[0].textContent,reason);assert.equal(recovery.children[1].textContent,action);
 });
 
 for(const paused of [false,true])for(const blocked of [false,true])test(`Lark checks synchronize account and notification state (${paused ? "paused" : "unchecked"}/${blocked ? "blocked" : "ready"})`,async()=>{
@@ -82,9 +121,11 @@ for(const paused of [false,true])for(const blocked of [false,true])test(`Lark ch
   };});
  };
  const ui=await launch(api);await openMemberInbox(ui,"member-a");
- await row(ui,"lark").children[3].children[1].emit("click");await settle();
+ if(paused){await row(ui,"lark").children[3].children[1].emit("click");await settle();}
+ else await inspectLarkAccount(ui);
  assert.ok(finish);const reads=api.calls.filter(c=>c.path.startsWith("/v1/tools/bindings?")).length;
- assert.equal(row(ui,"lark").children[3].children[0].dataset.kind,paused ? "error" : "status");
+ if(paused)assert.equal(row(ui,"lark").children[3].children[0].dataset.kind,"error");
+ else assert.equal(row(ui,"lark").children[3].hidden,true);
  finish();await settle();
  assert.equal(ui.el("settings-dialog").open,true);
  assert.equal(api.calls.filter(c=>c.path.startsWith("/v1/tools/bindings?")).length,reads+1);
@@ -134,8 +175,7 @@ test("Lark verification refreshes subscriptions even while permission checks are
  await row(ui,"lark").children[3].children[1].emit("click");await settle();
  await ui.el("connection-account-reverify").emit("click");await settle();
  assert.equal(source.status,"running");
- assert.equal(row(ui,"lark").children[3].children[0].textContent,"权限状态待刷新");
- assert.equal(row(ui,"lark").children[3].children[0].dataset.kind,"status");
+ assert.equal(row(ui,"lark").children[3].hidden,true);
  assert.equal(calls(api,"/v1/platforms/verify").length,1);assert.equal(calls(api,"/v1/tools/bind").length,0);
  finish();await settle();
 });

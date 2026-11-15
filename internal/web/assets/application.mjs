@@ -374,7 +374,7 @@ export async function createApp(overrides = {}) {
     env, roomsUI, runtime, notificationsUI, membersUI, settingsUI, userMenuUI
   }));
   install(workspaceUI, createWorkspace({
-    env, runtime, notificationsUI, membersUI, roomsUI, conversationUI, settingsUI
+    env, runtime, notificationsUI, membersUI, roomsUI, conversationUI, settingsUI, connectionsUI
   }));
   install(notificationsUI, createNotifications({
     env, membersUI, workspaceUI, runtime, roomsUI, settingsUI, connectionsUI, onboardingUI, layoutUI

@@ -102,8 +102,8 @@ func samePlatformReferences(refs []managedPlatformReference, acknowledged []Room
 }
 
 // Pause BEFORE committing the replacement. A partial failure preserves the
-// previous connection, with already-paused subscriptions requiring explicit
-// sync. Cancellation plus subscription revisions reject all late results.
+// previous connection. Paused subscriptions require verified same-account
+// recovery or explicit sync. Revisions reject all late results.
 func (m *roomManager) invalidatePlatformQueriesLocked(id string) error {
 	m.cancelPlatformCallsLocked(func(c *platformCall) bool { return c.platformID == id })
 	return notificationRoomError(m.notifications.InvalidatePlatformLocked(id))

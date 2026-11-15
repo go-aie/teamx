@@ -677,6 +677,12 @@ func (m *roomManager) serveGitLabCallback(w http.ResponseWriter, r *http.Request
 		}
 	}
 	if exchangeErr == nil {
+		// The OAuth grant is already adopted. Subscription recovery is best
+		// effort: a failed save leaves its pause visible and must never revoke
+		// the adopted token or turn this into another authorization attempt.
+		for _, c := range s.Platforms {
+			_ = m.resumeGitLabSubscriptionsLocked(c.ID, true)
+		}
 		m.finishGitLabAuthLocked(s, "succeeded", "")
 		m.mu.Unlock()
 		if s.OnboardingID != "" {

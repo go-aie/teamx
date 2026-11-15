@@ -680,8 +680,8 @@ func TestGitLabAuthReferenceRecheckAndNotificationProgress(t *testing.T) {
 					t.Fatal("stale reference acknowledgement adopted")
 				}
 			} else {
-				if result.Status != "succeeded" || !after.QueryPaused() {
-					t.Fatal("conversion did not preserve paused notification", result.Status)
+				if result.Status != "succeeded" || after.QueryPaused() || after.ErrorCode != "" || after.SubscriptionVersion != before.SubscriptionVersion+2 {
+					t.Fatal("same-account authorization did not recover the original notification", result.Status)
 				}
 			}
 		})

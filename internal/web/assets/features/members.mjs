@@ -77,20 +77,22 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     if (!state.managed || !state.info || !state.catalogConnected) {
       notificationsUI.renderNotificationPlatforms();return;
     }
-    const v = memberToolsView = { identity: toolsIdentity(), runtimeEpoch:state.info.service_epoch, member, cli: null, cliConnected:false };
-    await loadCLITools(v);
+    memberToolsView = { identity: toolsIdentity(), runtimeEpoch:state.info.service_epoch, member, cli: null, cliConnected:false };
+    await connectionsUI.refreshPlatformState();
   }
 
   // CLI bindings have a separate revision and never inherit legacy grants.
-  async function loadCLITools(v) {
+  async function loadCLITools(v, { background = false } = {}) {
+    // A poll cannot observe an intermediate local write or erase its feedback.
+    if (background && (workspaceUI.workspaceView?.memberToolBusy || onboardingUI.onboarding.busy)) return;
     const read = v.cliRead = (v.cliRead || 0) + 1;
     try {
       const q = new URLSearchParams({ service_epoch: v.identity.service_epoch, caller_id: v.identity.caller.id,
         room_id: v.identity.room_id, room_instance: v.identity.room_instance });
-      const cq = new URLSearchParams({ service_epoch: v.identity.service_epoch, caller_id: v.identity.caller.id });
-      const [data, platforms] = await Promise.all([request(`/v1/tools/bindings?${q}`), request(`/v1/platforms?${cq}`)]);
+      const data = await request(`/v1/tools/bindings?${q}`);
       if (!toolsCurrent(v) || read !== v.cliRead) return;
-      v.cli = data;v.cliConnected=true; v.cliPlatforms = platforms.platforms; if(workspaceUI.workspaceView)workspaceUI.workspaceView.allPlatforms=platforms.platforms; v.cliResult = null;
+      v.cli = data;v.cliConnected=true;
+      if (!background) v.cliResult = null;
       renderMemberTools(v);
     } catch {
       if (!toolsCurrent(v) || read !== v.cliRead) return;
@@ -120,10 +122,15 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     if (next("configure_application")) return {reason:"应用配置待完成",action:"配置应用"};
     if (next("authorize_user") || result?.tool === item.id && /补全/.test(result.message)
       || item.authorization_status && item.authorization_status !== "active") return {reason:"用户授权未完成",action:"完成授权"};
-    if (errors.includes("credential_unavailable")) return {reason:"登录凭据不可用",action:"重新授权"};
+    if (errors.includes("credential_unavailable")) return item.provider === "gitlab"
+      ? {reason:"通知因凭据问题暂停",action:"检查账号"} : {reason:"登录凭据不可用",action:"重新授权"};
     if (item.validation?.status !== "valid") return {reason:item.validation?.status === "failed" ? "账号核验未通过" : "账号待核验",action:"核验账号"};
     if (selection?.unavailable_reason === "account_unavailable" || next("revalidate_account")) return {reason:"账号需重新核验",action:"核验账号"};
-    if (next("retry_check")) return {reason:"权限状态待刷新",action:"检查权限",kind:"status"};
+    // A missing or expired Lark snapshot is ordinary read-time freshness, not
+    // evidence that the connected account needs attention. Actual check errors
+    // and permission gaps retain their recovery actions.
+    if (gaps.some(c => c.next_action === "retry_check" && !(item.provider === "lark" && c.state === "unchecked" &&
+        ["check_expired", "check_missing"].includes(c.reason_code)))) return {reason:"权限状态待刷新",action:"检查权限",kind:"status"};
     return null;
   }
 
@@ -134,7 +141,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     label.className="member-platform-tool workspace-check";input.type="checkbox";input.className="notification-switch";input.setAttribute("role","switch");
     input.setAttribute("aria-label",`${typeof item==="string" ? item : item.name} 使用工具`);
     input.checked=v?.cliPending?.tool===key ? v.cliPending.enabled : v?.cliConflict?.tool===key ? v.cliConflict.enabled : !!b;
-    input.disabled=!v?.cli || !v.cliConnected || !d || !!workspaceUI.workspaceView?.memberToolBusy || onboardingUI.onboarding.busy || !state.connected || !state.catalogConnected || discussionBusy() || (!b && typeof item!=="string" && item.validation?.status!=="valid");
+    input.disabled=!v?.cli || !v.cliConnected || workspaceUI.workspaceView?.platformsConnected===false || !d || !!workspaceUI.workspaceView?.memberToolBusy || onboardingUI.onboarding.busy || !state.connected || !state.catalogConnected || discussionBusy() || (!b && typeof item!=="string" && item.validation?.status!=="valid");
     text.textContent="工具";label.append(input,text);
     input.addEventListener("change",()=>changeMemberTool(v,item,input.checked));return label;
   }
@@ -161,8 +168,8 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     } finally {
       ws.memberToolBusy=false;v.cliPending=null;
       // A read resolves unknown local writes; no bind request is replayed.
-      if(toolsCurrent(v)){await loadCLITools(v);if(!v.cliConnected)message+=" 当前状态暂不可读，请刷新。";v.cliResult={tool:key,message,error:!v.cliConnected || /失败|未确认|尚未保存|未保存/.test(message)};renderMemberTools(v);}
-      else if(memberToolsView?.cli && toolsCurrent(memberToolsView))await loadCLITools(memberToolsView);
+      if(toolsCurrent(v)){await connectionsUI.refreshPlatformState();if(!v.cliConnected)message+=" 当前状态暂不可读，请刷新。";v.cliResult={tool:key,message,error:!v.cliConnected || /失败|未确认|尚未保存|未保存/.test(message)};renderMemberTools(v);}
+      else if(memberToolsView?.cli && toolsCurrent(memberToolsView))await connectionsUI.refreshPlatformState();
     }
   }
 
@@ -260,7 +267,8 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     $("member-platform-issues").replaceChildren(...issues.filter(item=>!inlineAccountIssues.has(item.id)).map(item=>{
       const button=document.createElement("button");button.type="button";button.className="text-button";button.textContent=`${item.name}：查看异常`;button.addEventListener("click",()=>openMemberPlatform(button,item,target));return button;
     }));
-    notice("member-notification-list-error",!ws.notificationsConnected || !v?.cliConnected ? "部分设置暂不可读，请刷新。" : "");$("member-notification-list-reload").hidden=!!ws.notificationsConnected && !!v?.cliConnected;
+    const connected=ws.notificationsConnected && v?.cliConnected && ws.platformsConnected!==false;
+    notice("member-notification-list-error",!connected ? "部分设置暂不可读，请刷新。" : "");$("member-notification-list-reload").hidden=!!connected;
     const q=$("member-notification-add-search").value.trim().toLowerCase();
     $("member-notification-add-options").replaceChildren(...items.filter(item=>!configured.includes(item) && [item.name,item.validation?.username,item.url].join(" ").toLowerCase().includes(q)).map(item=>{
       const row=document.createElement("div"),info=document.createElement("div"),title=document.createElement("strong"),account=document.createElement("small"),actions=document.createElement("div");
@@ -347,7 +355,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     memberToolsView = null;
     renderActivityControls();
     notificationsUI.renderNotificationPlatforms();
-    if(state.managed){void settingsUI.openMemberModel?.(current);void openMemberTools(current);void workspaceUI.loadWorkspacePlatforms();void onboardingUI.restoreOnboarding()?.then(()=>renderMemberPlatforms());}
+    if(state.managed){void settingsUI.openMemberModel?.(current);void openMemberTools(current);void onboardingUI.restoreOnboarding()?.then(()=>renderMemberPlatforms());}
     readingView?.();
     const selected = selectAgentTab(tab);
     if (compactViewport(window)) {
@@ -442,7 +450,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     $("policy-member-view").hidden = agentTab !== "policy";
     if (agentTab === "activity") await activity.select({ ...member, info: state.info });
     else if (agentTab === "inbox") {
-      activity.close();notificationsUI.renderNotificationPlatforms();void workspaceUI.loadWorkspacePlatforms();
+      activity.close();notificationsUI.renderNotificationPlatforms();
       if(inboxUI.inboxView?.page && !inboxUI.inboxView.loading && sameService(inboxUI.inboxView.info,state.info) && inboxUI.inboxView.member.agent_id===member.agent_id && inboxUI.inboxView.member.membership_id===member.membership_id)$("inbox-member-view").scrollTop=inboxUI.inboxView.scrollTop || 0;
       else await inboxUI.loadMemberInbox();
     }

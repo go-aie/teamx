@@ -181,3 +181,37 @@ test("Lark user authorization gap leaves tools disabled and is never replayed",a
  api.hook=(path,body)=>{if(path==="/v1/tools/bind"){assert.equal(body.expected_binding_revision,8);return structuredClone(api.data);}};
  await change(ui,"connection",true);assert.equal(binds(api).length,1);
  });
+
+test("background tool reads preserve success and conflict feedback", async () => {
+ const api=fixture(),ui=await launch(api);await open(ui);
+ await change(ui,"connection",true);
+ const success=feedback(ui);
+ await ui.refresh();assert.equal(feedback(ui),success);assert.equal(toggle(ui).checked,true);
+ api.hook=path=>path==="/v1/tools/bind" ? Promise.reject(Object.assign(Error("changed"),{code:"conflict"})) : undefined;
+ await change(ui,"connection",false);
+ const conflict=feedback(ui);
+ await ui.refresh();assert.equal(feedback(ui),conflict);assert.match(conflict,/未保存/);
+ assert.equal(toggle(ui).checked,false);assert.equal(api.data.bindings.length,1);
+});
+
+test("polling during a tool write preserves pending intent without reading or replaying it", async () => {
+ const api=fixture(),ui=await launch(api);await open(ui);let finish;
+ api.hook=path=>path==="/v1/tools/bind" ? new Promise(resolve=>{finish=resolve;}) : undefined;
+ const saving=change(ui,"connection",true);await settle();
+ const before=api.calls.filter(c=>c.path.startsWith("/v1/tools/bindings?")).length;
+ await ui.refresh();await ui.refresh();
+ assert.equal(api.calls.filter(c=>c.path.startsWith("/v1/tools/bindings?")).length,before);
+ assert.equal(toggle(ui).checked,true);assert.equal(toggle(ui).disabled,true);assert.equal(binds(api).length,1);
+ api.data.bindings.push({agent_id:"agent-a",membership_id:"member-a",tool:"gitlab",platform_id:"connection"});
+ finish(structuredClone(api.data));await saving;
+ assert.equal(toggle(ui).checked,true);assert.equal(toggle(ui).disabled,false);
+});
+
+test("a poll started before a tool write cannot restore its old binding", async () => {
+ const api=fixture(),ui=await launch(api);await open(ui);let finish;
+ api.hook=path=>path.startsWith("/v1/tools/bindings?") ? new Promise(resolve=>{finish=resolve;}) : undefined;
+ const stale=structuredClone(api.data),polling=ui.refresh();await settle();assert.ok(finish);
+ api.hook=null;await change(ui,"connection",true);
+ finish(stale);await polling;
+ assert.equal(toggle(ui).checked,true);assert.match(feedback(ui),/已启用/);assert.equal(binds(api).length,1);
+});

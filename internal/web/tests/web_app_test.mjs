@@ -3837,7 +3837,7 @@ test("direct conversations prefer the exact default, keep the inspector stable, 
   const reads=api.calls.filter(call=>call.path.startsWith("/v1/tools/bindings?")).length;
   await ui.refresh();await settle();
   assert.equal(ui.el("platforms-member-view").scrollTop,123);
-  assert.equal(api.calls.filter(call=>call.path.startsWith("/v1/tools/bindings?")).length,reads);
+  assert.equal(api.calls.filter(call=>call.path.startsWith("/v1/tools/bindings?")).length,reads+1);
   await ui.draft("DM draft");await ui.select("Team");assert.equal(ui.el("activity-dialog").open,false);
   assert.equal(ui.el("message-input").placeholder,"发送给 Team");
   assert.equal(ui.el("message-input-label").textContent,"发送给 Team");

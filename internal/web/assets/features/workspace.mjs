@@ -2,7 +2,7 @@ import { resolveAgentName } from "../agent-names.mjs";
 import { randomUUID } from "../random-id.mjs";
 import { captureReturnView } from "../view-return.mjs";
 // Workspace configuration, platform choices and durable operation recovery.
-export function createWorkspace({ env, runtime, notificationsUI, membersUI, roomsUI, conversationUI, settingsUI }) {
+export function createWorkspace({ env, runtime, notificationsUI, membersUI, roomsUI, conversationUI, settingsUI, connectionsUI }) {
   const { document, window, Option, request, requestAnimationFrame } = env;
   const { state, $, notice, refresh, storage } = runtime;
 
@@ -106,9 +106,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
       if (ws !== workspaceView) return;
       ws.queryFailed = true; ws.connected = false; ws.error = "暂时无法查询工作目录，正在重连；不会自动重发操作。";
     }
-    await notificationsUI.loadNotificationSubscriptions(catalog, ws);
-    if (ws !== workspaceView) return;
-    if (!ws.platforms || roomsUI.isDirect() && state.messages.size === 0) await loadWorkspacePlatforms();
+    await connectionsUI.refreshPlatformState({ background: true });
     if (ws !== workspaceView) return;
     renderWorkspace();
     if (completed) {
@@ -131,23 +129,25 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     $("workspace-connection").value = ws.selectedPlatform || "";
   }
 
-  async function loadWorkspacePlatforms() {
+  async function loadWorkspacePlatforms({ background = false } = {}) {
     const ws = workspaceView, epoch = state.catalog?.service_epoch;
     if (!ws || !epoch) return;
     const read = ws.platformsRead = (ws.platformsRead || 0) + 1;
-    ws.platformsLoading = true; ws.platformsError = "正在加载平台…"; renderWorkspace();
+    if (!background) { ws.platformsLoading = true; ws.platformsError = "正在加载平台…"; renderWorkspace(); }
     try {
       const query = new URLSearchParams({ service_epoch: epoch, caller_id: ws.operator });
       const data = await request(`/v1/platforms?${query}`);
       if (ws !== workspaceView || state.catalog?.service_epoch !== epoch || read !== ws.platformsRead) return;
+      const changed = JSON.stringify(ws.allPlatforms) !== JSON.stringify(data.platforms);
+      ws.platformsConnected = true;
       ws.allPlatforms = data.platforms;
       ws.repositoryPlatforms = data.platforms.filter(item => ["gitlab", "scion"].includes(item.provider));
       ws.repositoryPlatformsError = "";
       ws.platforms = data.platforms.filter(item => item.provider === "gitlab");
       ws.larkPlatforms = data.platforms.filter(item => item.provider === "lark");
       ws.platformsError = ws.platforms.length ? "" : "尚无平台，请先管理平台。";
-      renderWorkspacePlatforms();
-    } catch { if (ws === workspaceView && state.catalog?.service_epoch === epoch && read === ws.platformsRead) { ws.platformsError = "平台加载失败，请重新打开通知源重试。"; ws.repositoryPlatformsError = "平台加载失败，请重新打开工作目录设置重试。"; } }
+      if (!background || changed) renderWorkspacePlatforms();
+    } catch { if (ws === workspaceView && state.catalog?.service_epoch === epoch && read === ws.platformsRead) { ws.platformsConnected = false; ws.platformsError = "平台加载失败，请重新打开通知源重试。"; ws.repositoryPlatformsError = "平台加载失败，请重新打开工作目录设置重试。"; } }
     if (ws === workspaceView) { ws.platformsLoading = false; renderWorkspace(); }
   }
 

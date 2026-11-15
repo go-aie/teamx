@@ -177,7 +177,7 @@ export function createOnboarding({ env, runtime, connectionsUI, larkUI, settings
         acceptOnboarding(cancelled);
         if (cancelled.cancelled && cancelled.connection.status==="waiting") clearOnboarding();
       }
-      if (action==="apply") {await connectionsUI.loadPlatforms();if(workspaceUI.workspaceView)await notificationsUI.loadNotificationSubscriptions(state.catalog,workspaceUI.workspaceView);}
+      if (action==="apply") {await connectionsUI.loadPlatforms();await connectionsUI.refreshPlatformState();}
       if(action!=="status" && onboardingDone(op))connectionsUI.connectionFeedback(op.cancelled ? "已停止接入。" : op.input.only_platform ? "已连接。" : "已完成接入。","success");
     } catch(error) { if (onboardingCurrent(version,identity)) onboarding.error=error.code==="identity" ? "接入记录或操作人不匹配，请核对当前服务与账号。" : "接入结果未确认；请读取进度后再继续，不会重新登录或重放远端动作。"; }
     finally {onboarding.busy=false;renderOnboarding();}
@@ -277,7 +277,7 @@ export function createOnboarding({ env, runtime, connectionsUI, larkUI, settings
     }}
     finally{
       onboarding.busy=false;
-      if(ws===workspaceUI.workspaceView && identity.epoch===state.catalog?.service_epoch){await notificationsUI.loadNotificationSubscriptions(state.catalog,ws);if(membersUI.memberToolsView && membersUI.toolsCurrent(membersUI.memberToolsView))await membersUI.loadCLITools(membersUI.memberToolsView);notificationsUI.renderGitLabEvents();}
+      if(ws===workspaceUI.workspaceView && identity.epoch===state.catalog?.service_epoch)await connectionsUI.refreshPlatformState();
     }
   }
 
@@ -375,7 +375,7 @@ export function createOnboarding({ env, runtime, connectionsUI, larkUI, settings
         const current=()=>onboarding.pending===pending && state.catalog?.service_epoch===identity.epoch && state.operator===identity.operator;
         try{const op=await request("/v1/platforms/onboarding/prepare",connectionsUI.connectionPayload({...pending.prepare,operation_id:pending.operation_id}));if(current())acceptOnboarding(op);}catch{if(current())onboarding.error="准备结果未确认，请读取进度。";}finally{onboarding.busy=false;renderMemberPlatformAddition();}return;
       }
-      await onboardingAction("apply");if(membersUI.memberToolsView && membersUI.toolsCurrent(membersUI.memberToolsView))await membersUI.loadCLITools(membersUI.memberToolsView);if(workspaceUI.workspaceView)await workspaceUI.loadWorkspacePlatforms();renderMemberPlatformAddition();
+      await onboardingAction("apply");renderMemberPlatformAddition();
     });
 
     $("inbox-add-platform").addEventListener("click",async()=>{

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -11,7 +12,104 @@ import (
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
 	"github.com/go-aie/teamx/internal/platform/notification"
+	"github.com/go-aie/teamx/internal/platform/registry"
 )
+
+// Recovery preserves opt-in, account, target and progress. Only a fresh account
+// check may clear an explicit credential rejection; startup can repair an old
+// local credential pause using the currently verified connection.
+func (m *roomManager) resumeGitLabSubscriptionsLocked(platformID string, verified bool) error {
+	for _, room := range m.index.Rooms {
+		if room.Status != "ready" || m.roomBusyLocked(room.RoomIdentity) {
+			continue
+		}
+		for _, state := range m.notifications.StatesLocked(room.RoomIdentity) {
+			meta := state.Metadata()
+			if meta.Key.Source.Provider != "gitlab" || meta.PlatformID != platformID || !meta.Enabled || meta.Retired {
+				continue
+			}
+			var runtime notification.RuntimeState
+			switch s := state.(type) {
+			case gitlab.EventsState:
+				runtime = s.RuntimeState
+			case gitlab.TodosState:
+				runtime = s.RuntimeState
+			default:
+				continue
+			}
+			if runtime.Status != "credentials_invalid" || !verified && runtime.ErrorCode != "credential_unavailable" {
+				continue
+			}
+			a, _, err := m.resolvePlatformAccountLocked(room.RoomIdentity, platformID, "gitlab")
+			if errors.Is(err, platform.ErrCredential) {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			var next notification.State
+			switch s := state.(type) {
+			case gitlab.EventsState:
+				if s.UserID <= 0 || s.UserID != a.UserID || s.Binding.URL != a.URL || s.Binding.PlatformGeneration != a.Generation {
+					continue
+				}
+				next, err = gitlab.ConfigureEvents(room.RoomIdentity, &s, &s.Binding, s.Config, m.notifications.Now())
+			case gitlab.TodosState:
+				if s.Binding.UserID != a.UserID || s.Binding.URL != a.URL || s.Binding.PlatformGeneration != a.Generation {
+					continue
+				}
+				b := gitlab.TodosBinding{PlatformID: a.PlatformID, PlatformGeneration: a.Generation, URL: a.URL, UserID: a.UserID,
+					Username: a.Username, CredentialVersion: a.CredentialVersion, CredentialFingerprint: a.CredentialFingerprint}
+				next, err = gitlab.ConfigureTodos(room.RoomIdentity, &s, b, s.Config, m.notifications.Now())
+			}
+			if err != nil {
+				return notificationRoomError(err)
+			}
+			// Reuse the normal admission boundary, including exact membership and
+			// unapplied user settings, before saving a recoverable candidate.
+			if _, err := m.admitPlatformNotificationLocked(context.Background(), next); err != nil {
+				if errors.Is(err, notification.ErrBusy) || errors.Is(err, notification.ErrIdentity) || errors.Is(err, notification.ErrConflict) || errors.Is(err, platform.ErrCredential) {
+					continue
+				}
+				return notificationRoomError(err)
+			}
+			if err := m.notifications.SaveLocked(next); err != nil {
+				return notificationRoomError(err)
+			}
+			if m.notifications.ChangedLocked(meta.Key) == nil {
+				m.notifications.WakeLocked(meta.Key)
+			}
+		}
+	}
+	return nil
+}
+
+// Only the live service repairs old pauses. Offline loading and list/get remain
+// observations; a worker is started only after all recovery saves succeed.
+func (m *roomManager) startPlatformNotifications() error {
+	m.mu.Lock()
+	file, err := m.platforms.Load()
+	if err == nil {
+		for _, c := range file.Platforms {
+			if c.Provider == "gitlab" && c.Validation.Status == "valid" {
+				if c.CredentialKind == "oauth" {
+					cred, _, credentialErr := registry.OAuthRecord(file, c.CredentialID)
+					if credentialErr != nil || cred.State != "active" {
+						continue
+					}
+				}
+				if err = m.resumeGitLabSubscriptionsLocked(c.ID, false); err != nil {
+					break
+				}
+			}
+		}
+	}
+	m.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	return m.notifications.Start()
+}
 
 // Provider scope assembly belongs beside its configuration and queries. The
 // common admission/delivery path does not inspect concrete provider states.

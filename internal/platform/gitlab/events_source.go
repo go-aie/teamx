@@ -39,7 +39,7 @@ func (s *EventsSource) NewRunner(host notification.StepHost) notification.Runner
 }
 
 // Configure preserves the first opt-in baseline, history and identity, while
-// allowing only an explicit retry to adopt a replacement credential reference.
+// allowing an explicit retry or verified same-account recovery to resume it.
 func ConfigureEvents(owner platform.RoomIdentity, current *EventsState, binding *platform.ProjectBinding, cfg EventsConfig, now time.Time) (EventsState, error) {
 	cfg, err := NormalizeEventsConfig(cfg)
 	if err != nil {

@@ -425,7 +425,7 @@ func serveRoomManager(ctx context.Context, listener net.Listener, dir, teamsDir 
 			return err
 		}
 	}
-	if err := manager.notifications.Start(); err != nil {
+	if err := manager.startPlatformNotifications(); err != nil {
 		return err
 	}
 	manager.mu.Lock()

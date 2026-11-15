@@ -116,17 +116,21 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
     if (platforms.selected?.id === item.id) platforms.selected = item;
   }
 
-  // Every account check/mutation refreshes all projections from the server.
+  // Polls, settings entry and confirmed changes share the same readers.
   // The readers retain their Room, member and revision guards; a late result
   // cannot clear an error in another inspector or overwrite a settings draft.
-  async function refreshPlatformState() {
+  async function refreshPlatformState({ background = false } = {}) {
     const ws = workspaceUI.workspaceView, catalog = state.catalog, member = membersUI.memberToolsView;
+    if (!ws || !catalog) return;
+    const platforms = workspaceUI.loadWorkspacePlatforms({ background });
     await Promise.all([
-      workspaceUI.loadWorkspacePlatforms(),
-      ws && catalog ? notificationsUI.loadNotificationSubscriptions(catalog, ws) : undefined,
-      member && membersUI.toolsCurrent(member) ? membersUI.loadCLITools(member) : undefined,
+      platforms,
+      notificationsUI.loadNotificationSubscriptions(catalog, ws),
+      member && membersUI.toolsCurrent(member) && (!background || !$("activity-dialog").hidden || $("notification-detail").open)
+        ? membersUI.loadCLITools(member, { background }) : undefined,
     ]);
-    if (ws === workspaceUI.workspaceView && catalog?.service_epoch === state.catalog?.service_epoch) notificationsUI.renderNotificationPlatforms();
+    if (ws === workspaceUI.workspaceView && catalog.service_epoch === state.catalog?.service_epoch &&
+        (!member || membersUI.toolsCurrent(member))) notificationsUI.renderNotificationPlatforms();
   }
 
   function connectionPayload(extra) {
@@ -273,7 +277,7 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
       try {
         const version=platforms.formVersion,identity=onboardingUI.onboardingIdentity(),op=await onboardingUI.prepareOnboarding();
         const applied=await request("/v1/platforms/onboarding/apply",connectionPayload({operation_id:op.operation_id}),undefined,50000);
-        if(onboardingUI.onboardingCurrent(version,identity)){onboardingUI.acceptOnboarding(applied);await loadPlatforms();if(workspaceUI.workspaceView)await notificationsUI.loadNotificationSubscriptions(state.catalog,workspaceUI.workspaceView);}
+        if(onboardingUI.onboardingCurrent(version,identity)){onboardingUI.acceptOnboarding(applied);await loadPlatforms();await refreshPlatformState();}
       }
       catch(error) {onboardingUI.onboarding.error=error.code ? "启用结果未确认，请读取进度。" : error.message;onboardingUI.renderOnboarding();}
       finally {onboardingUI.onboarding.busy=false;platforms.sending=false;$("connection-fields").disabled=false;$("close-settings").disabled=false;$("connection-back").disabled=false;onboardingUI.renderOnboarding();}return;

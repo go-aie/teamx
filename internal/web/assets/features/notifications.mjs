@@ -628,7 +628,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
       if(current())ws.notificationToggleError={key,message:error.code==="request" ? "请先在详情完善接收设置" : error.code==="conflict" ? "设置已变化，请核对后重试" : "结果未确认，请刷新"};
     }finally{
       ws.notificationWrites?.delete(key);
-      if(current()){ws[revisionKey]++;ws.notificationToggle=null;await loadNotificationSubscriptions(state.catalog,ws);renderGitLabEvents();}
+      if(current()){ws[revisionKey]++;ws.notificationToggle=null;await connectionsUI.refreshPlatformState();renderGitLabEvents();}
       else if(ws===workspaceUI.workspaceView)renderGitLabEvents();
     }
   }
@@ -991,7 +991,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
   }
 
   async function reloadNotifications() {
-    const ws=workspaceUI.workspaceView,id=ws?.notificationPlatformID,channel=ws?.notificationChannel,target=structuredClone(activeNotificationTarget(ws)),scope=ws?.notificationScope;
+    const ws=workspaceUI.workspaceView,id=ws?.notificationPlatformID,channel=ws?.notificationChannel,target=structuredClone(activeNotificationTarget(ws)),scope=ws?.notificationScope,navigation=notificationNavigation;
     // Only this explicit read after a conflict discards the old draft and its
     // observation. Periodic refresh and scope navigation preserve both.
     if(ws?.notificationObservationConflict===scope){
@@ -999,10 +999,8 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
       ws.larkDirty=false;ws.larkFilled=null;ws.larkRestore=null;ws.gitlabDirty=false;ws.eventsEmptyTypes=false;
       ws.messagesError="";ws.gitlabError="";
     }
-    await workspaceUI.loadWorkspacePlatforms();
-    if(ws!==workspaceUI.workspaceView)return;
-    await loadNotificationSubscriptions(state.catalog,ws);
-    if(ws!==workspaceUI.workspaceView || ws.notificationScope!==scope)return;
+    await connectionsUI.refreshPlatformState();
+    if(ws!==workspaceUI.workspaceView || ws.notificationScope!==scope || navigation!==notificationNavigation)return;
     if(ws.notificationsConnected)ws.notificationToggleError=null;
     if($("notification-detail").open && id)await openNotificationSource(notificationFocus,channel,id,target);
     renderGitLabEvents();
@@ -1155,7 +1153,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
 
     $("notification-list-reload").addEventListener("click",reloadNotifications);
 
-    $("member-notification-list-reload").addEventListener("click",async()=>{await reloadNotifications();if(membersUI.memberToolsView && membersUI.toolsCurrent(membersUI.memberToolsView))await membersUI.loadCLITools(membersUI.memberToolsView);});
+    $("member-notification-list-reload").addEventListener("click",reloadNotifications);
 
     $("gitlab-manage-platforms").addEventListener("click", () => settingsUI.openSettings("platforms"));
   }
