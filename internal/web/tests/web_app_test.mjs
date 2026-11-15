@@ -4213,3 +4213,26 @@ test("an automatic target on the batch boundary also loads a small preceding con
   const batches=api.calls.filter(c=>c.path==="/v1/read" && c.data.snapshot_seq!==undefined);
   assert.deepEqual(batches.map(c=>[c.data.after,c.data.snapshot_seq]),[[100,150],[95,100]]);
 });
+
+test("Inbox stalled range shows its reason and continues through the existing controls", async () => {
+  const api=server([makeRoom("A")]);
+  const member={agent_id:"reviewer",membership_id:"generation-reviewer",status:"inbox_stalled",unread_count:0,runner:{profile:"runtime"},
+    execution:{active:false,paused:false,inbox_recovery:{start:0,snapshot_seq:25,attempts:3,next_at:null},
+      inbox:{latest_seq:61,consumed_through:0},agent:{turn_number:4,turn:{status:"completed"}},
+      notice:{code:"inbox_recovery_exhausted",message:"收件箱 #1–#25 尚未读取，积压 61 条。已停止自动恢复（3/3）；可继续读取收件箱。"}}};
+  api.hook=(path)=>path==="/v1/member/list" ? {members:[structuredClone(member)]}
+    : path==="/v1/member/activity" ? {member:structuredClone(member),last_output:{result:{events:[]}}}
+    : path==="/v1/member/inbox/continue" ? (member.status="inbox_waiting",member.execution.inbox_recovery.attempts=0,
+        member.execution.notice={code:"inbox_recovery_waiting",message:"收件箱 #1–#25 尚未读取，积压 61 条。等待恢复 1/3。"},{}) : undefined;
+  const ui=await launch(api);
+  await ui.el("members").children[0].querySelector(".member-summary").emit("click");
+  assert.equal(ui.el("agent-status").textContent,"收件箱读取已停止");
+  assert.match(ui.el("agent-error").textContent,/#1–#25.*61.*3\/3/);
+  const resume=ui.el("agent-actions").children.find(el=>el.textContent==="继续读取收件箱");
+  assert.ok(resume);await resume.emit("click");await settle();
+  assert.equal(ui.el("agent-status").textContent,"等待读取恢复");
+  assert.equal(api.calls.filter(c=>c.path==="/v1/member/inbox/continue").length,1);
+  assert.equal(api.calls.some(c=>c.path==="/v1/send" || c.path==="/v1/member/run"),false);
+  member.execution.paused=true;member.status="paused";await ui.refresh();await settle();
+  assert.equal(ui.el("agent-actions").children.some(el=>el.textContent==="继续读取收件箱"),false);
+});

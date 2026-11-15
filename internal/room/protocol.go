@@ -154,6 +154,7 @@ type UnreadChanged struct {
 }
 
 type InboxInput struct {
+	Recovery    bool   `json:"recovery,omitempty"`
 	Through     uint64 `json:"through"`
 	SnapshotSeq uint64 `json:"snapshot_seq"`
 }
@@ -168,6 +169,7 @@ type MemberStatus struct {
 	SessionStartUsed     uint64           `json:"session_start_used"`
 	SessionResetRequired bool             `json:"session_reset_required,omitempty"`
 	Inbox                *InboxStatus     `json:"inbox,omitempty"`
+	InboxRecovery        *inboxRecovery   `json:"inbox_recovery,omitempty"`
 	Rotation             *SessionRotation `json:"rotation,omitempty"`
 	Notification         *UnreadChanged   `json:"notification"`
 	Status               string           `json:"status,omitempty"`

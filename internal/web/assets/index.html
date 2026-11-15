@@ -379,6 +379,7 @@
           <button id="toggle-agent-controls" class="text-button agent-controls-toggle" type="button" aria-label="展开成员设置" title="展开成员设置" aria-controls="agent-controls" aria-expanded="false"><span id="agent-settings-label">成员设置</span><span class="agent-settings-summary"><span id="agent-status" class="member-status"></span><span id="agent-model-alert" role="status" aria-live="polite" hidden></span></span><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
           <div id="agent-quick-actions" class="member-actions" hidden></div>
         </div>
+        <p id="agent-error" class="agent-error form-error" role="status" hidden></p>
         <section id="agent-controls" class="agent-controls" aria-label="成员设置与运行控制" hidden>
           <div id="agent-name-row" class="room-name-row agent-name-row" hidden><span id="agent-name-label" class="quiet">成员名称</span><button id="edit-agent-name" class="text-button" type="button" aria-label="修改成员名称" aria-controls="agent-name-form" aria-expanded="false"><span id="agent-name-summary"></span><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div>
           <form id="agent-name-form" class="agent-name-form" hidden>
@@ -403,7 +404,6 @@
         </section>
         <div class="agent-overview"><span class="quiet">协作状态</span><div id="agent-actions" class="member-actions"></div></div>
         <p id="agent-enable-hint" class="agent-enable-hint quiet" role="status" hidden></p>
-        <p id="agent-error" class="agent-error form-error" role="status" hidden></p>
         <details id="agent-diagnostics" class="execution-diagnostics" hidden><summary>诊断详情</summary><pre id="agent-diagnostic-error"></pre></details>
         </section>
         <div id="agent-tabs" class="notification-tabs agent-tabs" role="tablist" aria-label="Agent 详情">

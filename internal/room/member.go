@@ -45,6 +45,11 @@ type MemberAgent struct {
 	inbox                *InboxStatus
 	inboxPolling         bool
 	inboxNext            time.Time
+	inboxRecovery        *inboxRecovery
+	inboxRecoveryBlock   string
+	inboxContinuedAt     time.Time
+	inboxContinueCount   uint64
+	inboxContinuePending bool // Explicit operator request; never restored as automatic retry.
 
 	owner             actorx.Context
 	latest            *UnreadChanged
@@ -169,6 +174,11 @@ func (m *MemberAgent) status() MemberStatus {
 		status = "backend_blocked"
 	case m.paused:
 		status = "paused"
+	case m.inboxRecovery != nil:
+		status = "inbox_waiting"
+		if m.inboxRecovery.Attempts >= 3 || m.inboxRecoveryBlock != "" || m.state.Turn == nil || m.state.Turn.Status != "completed" {
+			status = "inbox_stalled"
+		}
 	}
 	if m.recoveringSession() {
 		status = "recovering"
@@ -193,6 +203,10 @@ func (m *MemberAgent) status() MemberStatus {
 	if m.inbox != nil {
 		copy := *m.inbox
 		result.Inbox = &copy
+	}
+	if m.inboxRecovery != nil {
+		copy := *m.inboxRecovery
+		result.InboxRecovery = &copy
 	}
 	if m.work != nil {
 		result.ExecutionID = m.turnsUsed
@@ -240,6 +254,11 @@ func (m *MemberAgent) Control(ctx actorx.Context, msg ControlMember) (MemberStat
 		}
 	}
 	switch msg.Action {
+	case "inbox_continue":
+		if err := m.continueInbox(); err != nil {
+			return m.status(), err
+		}
+		m.schedule()
 	case "recover":
 		if !msg.automatic {
 			return MemberStatus{}, ErrRequest
@@ -266,6 +285,7 @@ func (m *MemberAgent) Control(ctx actorx.Context, msg ControlMember) (MemberStat
 		}
 
 	case "pause":
+		m.inboxContinuePending = false
 		if !msg.internalPause {
 			m.pauseRevision++
 		}
@@ -398,7 +418,15 @@ func (m *MemberAgent) roomReady() bool {
 }
 
 func (m *MemberAgent) inboxReady() bool {
+	if m.inboxPolling {
+		return false
+	}
 	i := m.inbox
+	if r := m.inboxRecovery; r != nil {
+		return i != nil && i.WriteError == "" && (!i.AutomaticChecked || i.AutomaticReady && !i.AutomaticBlocked) &&
+			i.LatestSeq > i.inputThrough() && m.state.Turn != nil && (m.state.Turn.Status == "completed" || m.inboxContinuePending) &&
+			m.inboxRecoveryBlock == "" && r.Attempts < 3 && !r.NextAt.IsZero() && !m.now().Before(r.NextAt)
+	}
 	return i != nil && i.WriteError == "" && (!i.AutomaticChecked || i.AutomaticReady && !i.AutomaticBlocked) && i.LatestSeq > i.inputThrough() &&
 		(m.retry || m.state.LastOfferedInboxSeq == 0 || i.inputThrough() >= m.state.LastOfferedInboxSeq || i.inputThrough() > m.state.LastOfferedInboxThrough)
 }
@@ -414,6 +442,7 @@ func (m *MemberAgent) pollInbox() {
 		if err == nil {
 			changed := m.inbox == nil || m.inbox.LatestSeq != status.LatestSeq || m.inbox.ConsumedThrough != status.ConsumedThrough || m.inbox.ExpiredThrough != status.ExpiredThrough || m.inbox.SkippedThrough != status.SkippedThrough || m.inbox.AutomaticReady != status.AutomaticReady || m.inbox.AutomaticBlocked != status.AutomaticBlocked
 			m.inbox = &status
+			m.reconcileInboxRecovery(status)
 			if changed && m.due.IsZero() {
 				m.due = m.now().Add(m.MergeWindow)
 			}
@@ -623,6 +652,9 @@ func (m *MemberAgent) StartGranted(_ actorx.Context, msg startGrantedTurn) error
 		if i.Batch != nil && i.Batch.SnapshotSeq > through {
 			end = i.Batch.SnapshotSeq
 		}
+		if m.inboxRecovery != nil && m.inboxRecovery.SnapshotSeq > through {
+			end = m.inboxRecovery.SnapshotSeq
+		}
 		input.Inbox = &InboxInput{Through: through, SnapshotSeq: end}
 	}
 	m.startTurn(input, list.LatestSeq, member.ReadThrough)
@@ -649,6 +681,12 @@ func (m *MemberAgent) startTurn(input UnreadChanged, snapshotSeq, readThrough ui
 	}
 	// Reserve budget before execution. A crash or failed task admission may
 	// conservatively consume one attempt, but can never renew the allowance.
+	if input.Inbox != nil && m.inboxRecovery != nil {
+		m.inboxRecovery.Attempts++
+		m.inboxRecovery.NextAt = time.Time{}
+		input.Inbox.Recovery = true
+		m.inboxContinuePending = false
+	}
 	if err := m.persistScheduling(m.enabled, m.turnsUsed+1); err != nil {
 		m.releaseTurn()
 		return
@@ -672,6 +710,7 @@ func (m *MemberAgent) startTurn(input UnreadChanged, snapshotSeq, readThrough ui
 		// Terminal checkpoint runs on failure and cancellation too. It does not
 		// make external tool effects transactional or safe to replay.
 		defer func() {
+			store.finishMCPTurn(opts.MemberIdentity, work.state.TurnNumber)
 			if v := recover(); v != nil {
 				runErr = fmt.Errorf("backend panic: %v", v)
 				// A backend panic may abandon activity; join cleanup before
@@ -742,6 +781,8 @@ func (m *MemberAgent) startTurn(input UnreadChanged, snapshotSeq, readThrough ui
 			}
 		}
 		m.releaseTurn()
+		m.inboxNext = time.Time{} // Observe formal consumption before reoffering.
+		m.pollInbox()
 		m.schedule()
 		return true
 	}, func(struct{}) {

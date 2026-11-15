@@ -2,6 +2,9 @@
 # For installed use, copy this example and teams/ into ~/.teamx/.
 # Relative paths below resolve from this file's directory; no shell expansion.
 [server]
+# Inbox 默认通过 HTTP MCP 正式读取；显式回退为 cli 需重启并结清、轮换旧 Session。
+inbox_mode = "http"
+
 listen = "127.0.0.1:8088"
 # 在「设置 → 安全」选择仅本机、局域网或 HTTPS 代理；修改后重启生效。
 # access_mode = "local" # local | lan | proxy

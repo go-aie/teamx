@@ -85,7 +85,7 @@ func (m *roomManager) bindPlatformReferences(svc *service) {
 		}
 		return resolve(ctx, svc, source)
 	}
-	svc.materialAttachments = &materialAttachments{download: m.downloadAttachment, check: m.checkMaterialAttachments}
+	svc.materialAttachments = &materialAttachments{download: m.downloadAttachment, check: m.checkMaterialAttachments, checkInbox: m.checkMCPInboxSources}
 	svc.beginPlatformMemberChange = func(ctx context.Context, id MemberIdentity) (func(), error) {
 		return m.beginPlatformMemberChange(ctx, svc, id)
 	}

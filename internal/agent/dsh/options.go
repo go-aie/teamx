@@ -79,8 +79,10 @@ type Options struct {
 	ToolEnv    map[string]string
 	// ExecutionToken is ephemeral and never materialized or included in recovery identity.
 	ExecutionToken string `json:"-"`
-	Permission     PermissionHandler
-	Limits         Limits
+	// MCPServers are ephemeral ACP declarations. Headers never enter backend files.
+	MCPServers []MCPHTTPServer `json:"-"`
+	Permission PermissionHandler
+	Limits     Limits
 	// Tests can supply an observer for their own explicitly created PIDs when
 	// the host sandbox prohibits process-table access. Never exported as a
 	// production option: real sessions must pass the platform observer gate.
@@ -325,6 +327,9 @@ func managedEnv(name, key string) bool {
 
 // CheckConfig validates a team runtime without requiring installed artifacts or secrets.
 func CheckConfig(opts Options) error {
+	if err := checkMCP(opts.MCPServers); err != nil {
+		return err
+	}
 	if err := opts.Model.checkConfig(); err != nil {
 		return err
 	}
@@ -377,6 +382,10 @@ func CheckToolEnv(env map[string]string, credential string) error {
 }
 
 func validate(opts Options) (Options, error) {
+	if err := checkMCP(opts.MCPServers); err != nil {
+		return opts, err
+	}
+	opts.MCPServers = cloneMCP(opts.MCPServers)
 	if err := opts.Limits.defaults(); err != nil {
 		return opts, err
 	}

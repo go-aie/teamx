@@ -118,6 +118,9 @@ func open(ctx context.Context, opts Options, resume bool) (openedSession *Sessio
 		AuthMethods       []json.RawMessage `json:"authMethods"`
 		AgentInfo         json.RawMessage   `json:"agentInfo"`
 		AgentCapabilities struct {
+			MCPCapabilities struct {
+				HTTP bool `json:"http"`
+			} `json:"mcpCapabilities"`
 			SessionCapabilities map[string]json.RawMessage `json:"sessionCapabilities"`
 			PromptCapabilities  struct {
 				Image bool `json:"image"`
@@ -131,6 +134,9 @@ func open(ctx context.Context, opts Options, resume bool) (openedSession *Sessio
 		return nil, errors.New("unsupported ACP version or authentication requirement")
 	}
 	s.supportsImage = init.AgentCapabilities.PromptCapabilities.Image
+	if len(opts.MCPServers) > 0 && !init.AgentCapabilities.MCPCapabilities.HTTP {
+		return nil, errors.New("ACP agent did not advertise mcpCapabilities.http")
+	}
 	if opts.Model.imageInput() && !s.supportsImage {
 		return nil, errors.New("DSH image input configured but ACP initialize did not advertise promptCapabilities.image")
 	}
@@ -153,6 +159,9 @@ func open(ctx context.Context, opts Options, resume bool) (openedSession *Sessio
 	}
 	method := "session/new"
 	params := map[string]any{"cwd": opts.Workspace, "mcpServers": []any{}}
+	if len(opts.MCPServers) > 0 {
+		params["mcpServers"] = opts.MCPServers
+	}
 	if resume {
 		if _, ok := init.AgentCapabilities.SessionCapabilities["resume"]; !ok {
 			return nil, ErrRecoveryUnsupported

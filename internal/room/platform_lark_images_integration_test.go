@@ -51,13 +51,8 @@ func TestLarkInboxImagePreviewAndModelPrompt(t *testing.T) {
 				if err := session.Run(context.Background(), input); err != nil {
 					t.Fatal(err)
 				}
-				if materialImageCount(prompt) != 1 || !bytes.Equal(prompt[4].Data, data) || prompt[4].MIMEType != "image/png" {
-					t.Fatal("Lark image did not reach RunPrompt", prompt)
-				}
-				for _, want := range []string{"Inbox #1", `provider="lark"`, "请分析图中的错误", "image positions [1]", "read: image block supplied"} {
-					if !strings.Contains(materialText(prompt), want) {
-						t.Fatal("missing prompt evidence", want)
-					}
+				if materialImageCount(prompt) != 0 || strings.Contains(materialText(prompt), "Third-party material: Inbox") || strings.Contains(materialText(prompt), "请分析图中的错误") {
+					t.Fatal("Inbox text or images supplied before formal reading", prompt)
 				}
 			}
 			after, _ := h.svc.memberInboxStatus(context.Background(), id)

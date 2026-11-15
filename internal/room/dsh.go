@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-aie/teamx/internal/agent/dsh"
@@ -90,10 +92,12 @@ type dshComponent interface {
 }
 
 type dshBackend struct {
-	models          *modelExecution
-	model           *modelSessionSnapshot
-	credentials     *modelCredentials
-	access          *serverAccess
+	models      *modelExecution
+	model       *modelSessionSnapshot
+	credentials *modelCredentials
+	access      *serverAccess
+	// Nil only for explicit CLI compatibility or isolated adapter tests.
+	inboxMCP        *service
 	store           *Store
 	settings        *systemSettings
 	prepare         func(context.Context, UnreadChanged, uint64, bool) (*dshMaterials, error)
@@ -188,6 +192,11 @@ func readDSHReference(path string, identity MemberIdentity) (dshReference, bool,
 }
 
 func (b dshBackend) OpenSession(ctx context.Context, opts SessionOptions) (Session, error) {
+	if b.inboxMCP != nil {
+		b.prepare = func(ctx context.Context, input UnreadChanged, turn uint64, images bool) (*dshMaterials, error) {
+			return b.inboxMCP.prepareRoomMaterials(ctx, input, turn, images)
+		}
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, errors.Join(errDSHPaused, err)
 	}
@@ -261,6 +270,7 @@ func (b dshBackend) OpenSession(ctx context.Context, opts SessionOptions) (Sessi
 		}
 	}
 	var revoke func()
+	var inbox *mcpInboxSession
 	if b.access != nil {
 		binding := executionBinding{ServiceInfo: ServiceInfo{RoomIdentity: opts.RoomIdentity}, Caller: Caller{Author: Author{Kind: "agent", ID: opts.AgentID}, MembershipID: opts.MembershipID}}
 		for _, entry := range opts.CLIEnv {
@@ -274,6 +284,20 @@ func (b dshBackend) OpenSession(ctx context.Context, opts SessionOptions) (Sessi
 		}
 		revoke = release
 		componentOpts.ExecutionToken = token
+		if b.inboxMCP != nil {
+			token, releaseMCP, issueErr := b.access.issueMCPInbox(binding, b.inboxMCP, ref.Directory, slices.Contains(componentOpts.Model.InputModalities, "image"))
+			if issueErr != nil {
+				revoke()
+				return nil, issueErr
+			}
+			revoke = sync.OnceFunc(func() { releaseMCP(); release() })
+			componentOpts.MCPServers = []dsh.MCPHTTPServer{mcpHTTPConfiguration(componentOpts.ToolEnv["TEAMX_ENDPOINT"], token)}
+			b.store.mcpOperations.mu.Lock()
+			inbox = b.store.mcpOperations.inboxes[opts.MemberIdentity]
+			b.store.mcpOperations.mu.Unlock()
+		}
+	} else if b.inboxMCP != nil {
+		return nil, ErrIdentity
 	}
 	component, err := open(ctx, componentOpts)
 	if component == nil {
@@ -294,7 +318,7 @@ func (b dshBackend) OpenSession(ctx context.Context, opts SessionOptions) (Sessi
 	}
 	// Deliver ownership even on an error, so Room's failed-open/discard path
 	// closes any resource that was returned by the backend.
-	return &dshSession{component: component, backend: b, opts: opts, revoke: revoke}, dshFailure(err)
+	return &dshSession{component: component, backend: b, opts: opts, revoke: revoke, inbox: inbox}, dshFailure(err)
 }
 
 // Materialize the effective member instructions for the live backend.
@@ -333,12 +357,20 @@ func (b dshBackend) componentOptions(opts SessionOptions, ref dshReference) (dsh
 			opts.AgentID, opts.RoomID, opts.RoomInstance, opts.MembershipID, operator, "@"+operator),
 		"## Member role\n\n" + strings.TrimSpace(p.Instructions),
 	}, "\n\n")
+	if b.inboxMCP != nil {
+		instructions = strings.ReplaceAll(instructions, `"$TEAMX_CLI" inbox read`, "the discovered inbox_read MCP tool")
+		instructions = strings.ReplaceAll(instructions, "Complete output is confirmed by the CLI", "Complete Room output is confirmed by the CLI; complete Inbox output is confirmed by the MCP service")
+		instructions += "\n\nInbox entry mode: " + mcpInboxContract + ". Use the discovered inbox_read MCP tool with turn_number=current_turn. Omit cursor to retry the first page; pass next_cursor to continue until has_more=false. Consumption confirms complete server output, independently of business success. Missing images remain unverified. The consumption CLI is disabled for this turn. On an Inbox recovery wake, read first and check existing matters/action receipts before continuing; never repeat confirmed actions or resend unknown outcomes."
+	}
 	if ref.Directory != "" && ref.Directory != filepath.Base(dshStateDir(opts.StatePath)) {
 		instructions += "\n\nSession context: explicitly rotated; private context has been reset."
 	}
 
 	component := dsh.Options{BinaryPath: p.BinaryPath, BinaryArgs: p.BinaryArgs, Artifact: p.Artifact, Workspace: p.Workspace,
 		StateDir: filepath.Join(filepath.Dir(opts.StatePath), ref.Directory), Instructions: instructions, Model: p.Model.Clone(), ToolEnv: toolEnv, Limits: dsh.Limits{TextBytes: 64 << 10, TurnTimeout: b.turnTimeout}}
+	if b.inboxMCP != nil {
+		component.MCPServers = []dsh.MCPHTTPServer{mcpHTTPConfiguration(toolEnv["TEAMX_ENDPOINT"], "")}
+	}
 	if b.model != nil {
 		var err error
 		component.Credential, err = b.credentials.get(b.model.CredentialRef)
@@ -402,12 +434,16 @@ func dshNotification(input UnreadChanged) string {
 	notification := fmt.Sprintf("Room unread=%d.\n", input.UnreadCount)
 	if input.Inbox != nil {
 		notification += "Inbox: a fixed batch is available.\n"
+		if input.Inbox.Recovery {
+			notification += "Inbox recovery: the previous offered range made no reading progress. Read it formally first; check existing matters and action receipts before business work. Do not repeat confirmed actions; verify unknown outcomes.\n"
+		}
 	}
 	return notification
 }
 
 type dshSession struct {
 	revoke    func()
+	inbox     *mcpInboxSession
 	component dshComponent
 	backend   dshBackend
 	opts      SessionOptions
@@ -488,10 +524,18 @@ func (s *dshSession) Run(ctx context.Context, input UnreadChanged) (err error) {
 			return dshFailure(err)
 		}
 	}
+	if s.inbox != nil {
+		for i := range prompt {
+			prompt[i].Text = strings.ReplaceAll(prompt[i].Text, "inbox read", "the discovered inbox_read MCP tool")
+		}
+	}
 	if err := ctx.Err(); err != nil {
 		return dshFailure(err)
 	}
 	result, runErr := s.component.RunPrompt(ctx, prompt)
+	if s.inbox != nil {
+		runErr = errors.Join(runErr, s.inbox.confirmationError())
+	}
 	if runErr == nil {
 		s.recoverySupplied = true
 		s.policyToken = policy.PolicyToken
@@ -540,11 +584,10 @@ func saveDSHDiagnostic(path string, value any) error {
 }
 
 func (s *dshSession) Close(ctx context.Context) error {
-	err := s.component.Close(ctx)
 	if s.revoke != nil {
 		s.revoke()
 	}
-	return err
+	return s.component.Close(ctx)
 }
 
 func (s *dshSession) closeOwned() error {

@@ -147,11 +147,17 @@ func TestDSHProcess(t *testing.T) {
 			if mode == "changed-agent-name" {
 				name = "other-runtime"
 			}
-			respond(f.ID, map[string]any{"protocolVersion": version, "authMethods": auth, "agentCapabilities": map[string]any{"sessionCapabilities": sessionCaps, "promptCapabilities": map[string]bool{"image": os.Getenv("TEAMX_DSH_IMAGE") == "1"}}, "agentInfo": map[string]string{"name": name, "version": runtimeVersion}})
+			respond(f.ID, map[string]any{"protocolVersion": version, "authMethods": auth, "agentCapabilities": map[string]any{"mcpCapabilities": map[string]bool{"http": os.Getenv("TEAMX_DSH_MCP_HTTP") == "1"}, "sessionCapabilities": sessionCaps, "promptCapabilities": map[string]bool{"image": os.Getenv("TEAMX_DSH_IMAGE") == "1"}}, "agentInfo": map[string]string{"name": name, "version": runtimeVersion}})
 		case "session/new":
+			if os.Getenv("TEAMX_DSH_MCP_HTTP") == "1" {
+				_ = os.WriteFile("mcp-new.json", f.Params, 0600)
+			}
 			_ = os.WriteFile("session-new.called", []byte(sessionID), 0600)
 			respond(f.ID, map[string]any{"sessionId": sessionID, "configOptions": config})
 		case "session/resume":
+			if os.Getenv("TEAMX_DSH_MCP_HTTP") == "1" {
+				_ = os.WriteFile("mcp-resume.json", f.Params, 0600)
+			}
 			_ = os.WriteFile("session-resume.called", []byte(sessionID), 0600)
 			var params struct {
 				SessionID string `json:"sessionId"`

@@ -47,7 +47,7 @@ pnpm --filter @deepseek-ai/dsh deploy --legacy --prod \
 
 模型条目的 `input_modalities` 可选，缺省保持文本流程。显式值只接受不重复的 `text`、`image`，且须包含 `text`；图片仅支持 `openai-completions`。例如已确认部署支持图片的模型可设 `input_modalities = ["text", "image"]`。该字段由成员的默认／固定引用解析到各自的 Session 运行快照，生成配置仅在精确模型条目声明 `input`，不扩大整个网关的能力。TeamX 在 ACP `initialize` 前写入模型配置；显式启用图片而握手未返回 `promptCapabilities.image = true` 时，建会话失败，不降级为文本。未设置该字段的原有配置与恢复指纹不变；改变模型或模态仍须使用受控 Session 生命周期，不修改旧恢复证据强行续接。
 
-图片能力已完成 I1–I3：Room／Inbox 的 GitLab 通知会在固定当前回合范围内只读准备已保存文字和图片，按来源成组提交。默认合计扫描 25 条记录、传 4 张图片，单图 2 MiB、累计 4 MiB、单图 16777216 像素、准备时间 30 秒；可通过服务级 `[server.image_materials]` 调整，见[配置示例](../.teamx/config.example.toml)。只识别已保存文字中的完整图片引用，不补读全文；纯文本 Session 不下载图片，预算、格式、权限或超时导致的未覆盖材料会明确告知模型。准备材料不推进 Room 已读、Inbox 消费或 matters 状态，也不授予操作权限。TeamX 只在有界内存中准备图片，DSH 会通过其既有附件机制持久保存到私有 Session 存储；不能将此理解为图片全程不落盘。真实 GitLab 的 Room／Inbox 读图已在 I4 得到验证；独立短码、恢复、浏览器等结果分别记录，不能据此声称一期全部验收通过，见[图片验收手册](gitlab-image-acceptance.zh.md)和[当前实施记录](GITLAB-IMAGE-UNDERSTANDING-PLAN.zh.md#84-i4-实施与验证记录2026-11-05)。
+Room 图片继续在当前固定回合范围内只读准备；Inbox 改由正式 HTTP MCP `inbox_read` 返回保存正文、业务引用与标准图片块，不再通过 prompt 前预览供给。成员自动配置 `teamx` MCP，默认读取带图；纯文本模型及缺图逐项说明。每轮预算仍为扫描 25 条通知、4 张图片、单图 2 MiB、原图累计 4 MiB、单图 16777216 像素、准备时间 30 秒，分页和重试不刷新预算，完整 MCP 响应另限 8 MiB。图片进入 DSH 后通过其既有附件机制保存，不能理解为全程不落盘。MCP 完整输出后确认输入消费，后续业务失败不回退。默认切换、有限停滞恢复与显式 CLI 回退见[收件箱说明](inbox.zh.md)及[实施记录](implementation/teamx-mcp-default.zh.md)。历史 I1–I4 的逐项结果继续保留，不能替代当前 MCP 的真实验收。
 
 真实验收使用实际安装的 DSH，并在私有报告中记录启动路径、参数、CLI 版本及启动程序摘要。Session 的 `backend.json` 另行记录 ACP 运行时身份和恢复所需配置。更换安装产物后需重新验证能力。
 

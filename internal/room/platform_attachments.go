@@ -347,3 +347,39 @@ func (m *roomManager) checkMaterialAttachments(ctx context.Context, info Service
 	}
 	return nil
 }
+
+// Formal Inbox cache replay also rechecks connected sources without images.
+// This performs no network or download, and is deliberately separate from the
+// read-only Room/Inbox preview contract.
+func (m *roomManager) checkMCPInboxSources(ctx context.Context, info ServiceInfo, reader attachmentReader, notices []materialNotice) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	svc, _ := m.runtimeServiceLocked(reader.RoomIdentity)
+	if svc == nil || svc.info != info || m.closing || m.roomBusyLocked(reader.RoomIdentity) {
+		return ErrIdentity
+	}
+	if err := m.checkToolMemberLocked(ctx, toolsRequest{ServiceInfo: info, Caller: agentCallerIdentity(reader.MemberIdentity)}); err != nil {
+		return err
+	}
+	for _, notice := range notices {
+		if err := m.checkAttachmentReaderLocked(ctx, notice.request, &reader); err != nil {
+			return err
+		}
+		if notice.source.Provider == "gitlab" || notice.source.Provider == "lark" {
+			if _, _, err := m.attachmentAccountLocked(info.RoomIdentity, notice.source); err != nil {
+				return err
+			}
+			continue
+		}
+		key := notification.Key{Owner: info.RoomIdentity, Source: notification.SourceID{Provider: notice.source.Provider, Channel: notice.source.Channel}, SubscriptionID: notice.source.SubscriptionID}
+		state, exists := m.notifications.StateLocked(key)
+		if !exists || state.Metadata().Retired {
+			return ErrIdentity
+		}
+		account, _, err := m.resolvePlatformAccountLocked(info.RoomIdentity, state.Metadata().PlatformID, notice.source.Provider)
+		if err != nil || account.Identity.Instance != notice.source.Instance || notice.source.Reference.RecipientID.Valid() && account.Identity.ID != notice.source.Reference.RecipientID {
+			return ErrIdentity
+		}
+	}
+	return ctx.Err()
+}

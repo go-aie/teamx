@@ -37,6 +37,7 @@ type startupConfig struct {
 		InboxExpireAfterDays *int                `toml:"inbox_expire_after_days"`
 		InboxSkipExpired     *bool               `toml:"inbox_skip_expired"`
 		ImageMaterials       imageMaterialConfig `toml:"image_materials"`
+		InboxMode            string              `toml:"inbox_mode"` // Empty/http: MCP; cli: explicit compatibility fallback.
 	} `toml:"server"`
 	Access  accessConfig      `toml:"access"`
 	Runtime *teamRuntime      `toml:"runtime"`
@@ -93,6 +94,9 @@ func readStartupConfig(name string, required, validateRuntime bool) (startupConf
 		return startupConfig{}, fmt.Errorf("%w: server.max_turns was removed; use server.session_max_turns: cumulative hard stop is now per-session rotation", ErrRequest)
 	}
 	config.path = path
+	if config.Server.InboxMode != "" && config.Server.InboxMode != "http" && config.Server.InboxMode != "cli" {
+		return startupConfig{}, fmt.Errorf("%w: server.inbox_mode must be http or cli", ErrRequest)
+	}
 	if config.Server.TimeZone == nil {
 		value := defaultTimeZone
 		config.Server.TimeZone = &value

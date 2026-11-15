@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 const schedulingVersion = 2
@@ -15,12 +16,15 @@ const schedulingVersion = 2
 type memberScheduling struct {
 	Version int `json:"version"`
 	MemberIdentity
-	Enabled           bool   `json:"enabled"`
-	RecoveryAttempted bool   `json:"recovery_attempted,omitempty"`
-	Used              uint64 `json:"used"`
-	SessionGeneration string `json:"session_generation"`
-	SessionStartUsed  uint64 `json:"session_start_used"`
-	Limit             uint64 `json:"limit,omitempty"` // Absent in older snapshots: use the Room's original limit.
+	Enabled            bool           `json:"enabled"`
+	RecoveryAttempted  bool           `json:"recovery_attempted,omitempty"`
+	Used               uint64         `json:"used"`
+	SessionGeneration  string         `json:"session_generation"`
+	SessionStartUsed   uint64         `json:"session_start_used"`
+	Limit              uint64         `json:"limit,omitempty"` // Absent in older snapshots: use the Room's original limit.
+	InboxRecovery      *inboxRecovery `json:"inbox_recovery,omitempty"`
+	InboxContinuedAt   time.Time      `json:"inbox_continued_at,omitempty"`
+	InboxContinueCount uint64         `json:"inbox_continue_count,omitempty"`
 }
 
 func (s *Store) loadScheduling(id MemberIdentity) (memberScheduling, error) {
@@ -36,6 +40,9 @@ func (s *Store) loadScheduling(id MemberIdentity) (memberScheduling, error) {
 	}
 	if (state.Version != formatVersion && state.Version != schedulingVersion) || state.MemberIdentity != id {
 		return state, ErrIdentity
+	}
+	if r := state.InboxRecovery; r != nil && (r.SnapshotSeq <= r.Start || r.SnapshotSeq-r.Start > inboxBatchSize || r.Attempts < 0 || r.Attempts > 3 || r.Since.IsZero() || r.ConsumedThrough > r.Start) {
+		return state, fmt.Errorf("%w: Inbox recovery", ErrInvalid)
 	}
 	if state.Version == schedulingVersion {
 		var fields map[string]json.RawMessage
@@ -80,7 +87,7 @@ func (m *MemberAgent) persistSchedulingLimit(enabled bool, used, limit uint64) e
 	if m.automaticRotation() {
 		limit = 0
 	}
-	err := m.Store.saveScheduling(memberScheduling{Version: version, MemberIdentity: m.Options.MemberIdentity, Enabled: enabled, RecoveryAttempted: m.recoveryAttempted, Used: used, Limit: limit, SessionGeneration: m.sessionGeneration, SessionStartUsed: m.sessionStartUsed})
+	err := m.Store.saveScheduling(memberScheduling{Version: version, MemberIdentity: m.Options.MemberIdentity, Enabled: enabled, RecoveryAttempted: m.recoveryAttempted, Used: used, Limit: limit, SessionGeneration: m.sessionGeneration, SessionStartUsed: m.sessionStartUsed, InboxRecovery: m.inboxRecovery, InboxContinuedAt: m.inboxContinuedAt, InboxContinueCount: m.inboxContinueCount})
 	if err != nil {
 		m.fault, m.paused = true, true
 		m.lastError = "collaboration checkpoint failed: " + err.Error()
@@ -205,6 +212,7 @@ func (m *MemberAgent) initializeScheduling() error {
 	}
 	m.schedulingVersion, m.sessionGeneration, m.sessionStartUsed = state.Version, state.SessionGeneration, state.SessionStartUsed
 	m.enabled, m.recoveryAttempted = state.Enabled, state.RecoveryAttempted
+	m.inboxRecovery, m.inboxContinuedAt, m.inboxContinueCount = state.InboxRecovery, state.InboxContinuedAt, state.InboxContinueCount
 	m.turnsUsed, m.turnLimit = state.Used, max(m.turnLimit, state.Limit)
 	m.schedulingReady = true
 	generation, err := m.Backend.(rotatingBackend).sessionGeneration(m.Options)

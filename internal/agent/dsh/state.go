@@ -113,8 +113,9 @@ func configDigest(opts Options) string {
 	data, _ := json.Marshal(struct {
 		Instructions  string
 		Model         ModelConfig
-		CredentialRef string `json:",omitempty"`
-	}{opts.Instructions, opts.Model, ref})
+		CredentialRef string          `json:",omitempty"`
+		MCPServers    []MCPHTTPServer `json:",omitempty"`
+	}{opts.Instructions, opts.Model, ref, mcpIdentity(opts.MCPServers)})
 	hash := sha256.Sum256(data)
 	return hex.EncodeToString(hash[:])
 }

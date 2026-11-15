@@ -314,32 +314,47 @@ func (s *Session) redact(text string) string {
 }
 
 func (s *Session) redactBounded(text string, truncated bool) string {
-	if s.secret == "" {
-		return text
-	}
-	text = strings.ReplaceAll(text, s.secret, "[REDACTED]")
-	if !truncated {
-		return text
-	}
-	// A retention boundary can cut a credential in half.
-	for n := min(len(s.secret)-1, len(text)); n > 0; n-- {
-		if strings.HasSuffix(text, s.secret[:n]) {
-			return text[:len(text)-n] + "[REDACTED]"
+	for _, secret := range s.diagnosticSecrets() {
+		if secret == "" {
+			continue
+		}
+		text = strings.ReplaceAll(text, secret, "[REDACTED]")
+		if truncated {
+			// A retention boundary can cut a credential in half.
+			for n := min(len(secret)-1, len(text)); n > 0; n-- {
+				if strings.HasSuffix(text, secret[:n]) {
+					text = text[:len(text)-n] + "[REDACTED]"
+					break
+				}
+			}
 		}
 	}
 	return text
 }
 
+func (s *Session) diagnosticSecrets() []string {
+	secrets := []string{s.secret, s.opts.ExecutionToken}
+	for _, server := range s.opts.MCPServers {
+		for _, header := range server.Headers {
+			// Redact the token even when a diagnostic omits its Bearer prefix.
+			secrets = append(secrets, strings.TrimPrefix(header.Value, "Bearer "))
+		}
+	}
+	return secrets
+}
+
 func (s *Session) redactDiagnostic(text string, truncated bool) string {
 	text = s.redactBounded(text, truncated)
-	if s.secret == "" || truncated {
+	if truncated {
 		return text
 	}
 	// Do not turn ordinary word endings into redaction markers just because
 	// they share a single character with the credential.
-	for n := min(len(s.secret)-1, len(text)); n >= 4; n-- {
-		if strings.HasSuffix(text, s.secret[:n]) {
-			return text[:len(text)-n] + "[REDACTED]"
+	for _, secret := range s.diagnosticSecrets() {
+		for n := min(len(secret)-1, len(text)); n >= 4; n-- {
+			if strings.HasSuffix(text, secret[:n]) {
+				return text[:len(text)-n] + "[REDACTED]"
+			}
 		}
 	}
 	return text

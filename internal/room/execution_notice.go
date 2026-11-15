@@ -23,11 +23,18 @@ func executionNotice(s MemberStatus) *ExecutionNotice {
 	if s.Status == "recovering" {
 		return &ExecutionNotice{Code: "session_recovering", Message: "正在恢复助理，恢复后将自动继续。"}
 	}
+	if notice := inboxRecoveryNotice(s); notice != nil {
+		return notice
+	}
 	if s.Error == "" {
 		return nil
 	}
 	code, message := "execution_failed", "助理本次未能完成工作，可重试。对话和任务记录已保留。"
 	switch {
+	case strings.Contains(s.Error, "Inbox output confirmation failed"):
+		code, message = "inbox_confirmation_failed", "收件箱输出确认失败，未确认的输入仍保留。请查看诊断后继续。"
+	case strings.Contains(s.Error, "Inbox read failed"):
+		code, message = "inbox_read_failed", "收件箱正式读取失败，输入仍保留。请查看诊断后继续。"
 	case strings.Contains(s.Error, "action outcomes require inspection"):
 		code, message = "action_outcome_unknown", "有操作的执行结果尚未确认，助理已暂停以避免重复执行。对话和任务记录已保留。"
 	case strings.Contains(s.Error, dsh.ErrAuthentication.Error()):

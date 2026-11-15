@@ -112,6 +112,7 @@ type service struct {
 	access                    *serverAccess
 	settings                  *systemSettings
 	imageMaterials            imageMaterialConfig
+	inboxMode                 string
 	inboxExpiry               notification.ExpiryPolicy
 	maintainInbox             atomic.Pointer[inboxMaintenance]
 	materialAttachments       *materialAttachments
@@ -254,6 +255,7 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 		endpoint: config.endpoint, cliPath: config.cliPath, mergeWindow: config.mergeWindow,
 		dshTurnTimeout:       config.dshTurnTimeout,
 		imageMaterials:       config.imageMaterials,
+		inboxMode:            config.inboxMode,
 		inboxExpiry:          config.inboxExpiry,
 		maxTurns:             config.maxTurns,
 		persistentScheduling: config.persistentScheduling,
@@ -534,6 +536,11 @@ func (s *service) control(ctx context.Context, req apiRequest, action string) (M
 				}
 			}
 			id := MemberIdentity{RoomIdentity: s.info.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
+			if action == "inbox_continue" {
+				if err := s.checkSessionRecovery(id); err != nil {
+					return MemberStatus{}, err
+				}
+			}
 
 			reset := action == "rotate"
 			if action == "enable" {
@@ -816,6 +823,8 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Operator intent: continue, replenishing exhausted turns and safely
 		// rotating a disabled Session when necessary. Internal run stays strict.
 		result, err = s.control(r.Context(), req, "enable")
+	case "/v1/member/inbox/continue":
+		result, err = s.control(r.Context(), req, "inbox_continue")
 	case "/v1/member/pause":
 		result, err = s.control(r.Context(), req, "pause")
 	case "/v1/member/cancel":

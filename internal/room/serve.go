@@ -320,7 +320,7 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 		startup.Runtime = &runtime
 	}
 	if !singleRoom {
-		return serveRoomManager(ctx, listener, *dataDir, *teamsDir, serviceConfig{modelStartup: &startup, modelProbe: options.probe, models: models, access: access, settings: settings, endpoint: internalAccessEndpoint(listener.Addr().String()), mergeWindow: *mergeWindow, maxTurns: *maxTurns, dshTurnTimeout: *dshTurnTimeout, inboxExpiry: inboxExpiry, imageMaterials: startup.Server.ImageMaterials}, startup.Runtime, create, ready, stderr)
+		return serveRoomManager(ctx, listener, *dataDir, *teamsDir, serviceConfig{modelStartup: &startup, modelProbe: options.probe, models: models, access: access, settings: settings, endpoint: internalAccessEndpoint(listener.Addr().String()), mergeWindow: *mergeWindow, maxTurns: *maxTurns, dshTurnTimeout: *dshTurnTimeout, inboxExpiry: inboxExpiry, inboxMode: startup.Server.InboxMode, imageMaterials: startup.Server.ImageMaterials}, startup.Runtime, create, ready, stderr)
 	}
 	uiProfiles := profileNames(profiles)
 	cliPath, err := os.Executable()
@@ -334,7 +334,7 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 	svc, err := create(*dir, *roomID, serviceConfig{
 		access: access, settings: settings,
 		endpoint: internalAccessEndpoint(listener.Addr().String()), cliPath: cliPath, mergeWindow: *mergeWindow, maxTurns: *maxTurns,
-		dshProfiles: profiles, uiProfiles: uiProfiles, dshTurnTimeout: *dshTurnTimeout, inboxExpiry: inboxExpiry, imageMaterials: startup.Server.ImageMaterials,
+		dshProfiles: profiles, uiProfiles: uiProfiles, dshTurnTimeout: *dshTurnTimeout, inboxExpiry: inboxExpiry, inboxMode: startup.Server.InboxMode, imageMaterials: startup.Server.ImageMaterials,
 	})
 	if err != nil {
 		return err

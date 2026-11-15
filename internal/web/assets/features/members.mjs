@@ -5,13 +5,14 @@ import { renderAvatar } from "../avatars.mjs";
 import { createNavigationIcon } from "../icons.mjs";
 import { captureReturnView } from "../view-return.mjs";
 import { beginRead, readState } from "../read-state.mjs";
-import { isSessionRecovering as recovering, memberExecutionFailed as runtimeFailed, memberExecutionMessage as executionMessage } from "../member-execution.mjs";
+import { isSessionRecovering as recovering, memberExecutionFailed as runtimeFailed, memberExecutionMessage } from "../member-execution.mjs";
 
 // Member inspection, private activity, CLI tools and platform summaries.
 export function createMembers({ env, runtime, notificationsUI, workspaceUI, onboardingUI, inboxUI, roomsUI, layoutUI, policyUI, conversationUI, connectionsUI, settingsUI }) {
   const { document, window, Option, ResizeObserver, request } = env;
   const { state, $, notice, rpc, currentView, refresh, discussionBusy, storage } = runtime;
 
+  const executionMessage = member => memberExecutionMessage(member, settingsUI.formatDate);
   const memberBusy = new Set();
   const stopRequests = new Map();
   const memberListKey = "teamx.member-list-expanded";
@@ -47,7 +48,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     $("agent-model-alert").textContent = modelError ? "模型异常" : runtimeError ? "运行异常" : pending ? "切换中" : "";
     $("agent-model-alert").hidden = !$("agent-model-alert").textContent;
     const quickActions = $("agent-quick-actions");
-    quickActions.hidden = expanded || !member?.execution || !(member.execution.active || member.status === "running") || !!member.execution.paused;
+    quickActions.hidden = expanded || !member?.execution || !(member.execution.active || member.status === "running" || member.execution.inbox_recovery) || !!member.execution.paused;
     if (!quickActions.hidden) renderMemberActions(member, quickActions, true);
   }
 
@@ -330,7 +331,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     agent_id: member.agent_id, membership_id: member.membership_id,
   }, member.info), renderActivity);
 
-  const statusNames = { paused: "已暂停", idle: "等待消息", waiting: "等待执行", running: "运行中", completed: "已完成",
+  const statusNames = { inbox_waiting: "等待读取恢复", inbox_stalled: "收件箱读取已停止", paused: "已暂停", idle: "等待消息", waiting: "等待执行", running: "运行中", completed: "已完成",
     failed: "执行失败", interrupted: "已中断", unavailable: "暂不可用", detached: "未连接",
     budget_exhausted: "预算用尽", checkpoint_failed: "检查点失败", backend_blocked: "暂时无法恢复", recovering: "正在恢复",
     rotating: "轮换中", closing: "清理中", merging: "合并通知" };
@@ -428,7 +429,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     if (exhausted) effects.push(`追加 ${budget.grant || 16} 回合`);
     notice("agent-enable-hint", effects.length ? `启用协作将${effects.join("，并")}。` : "");
     notice("agent-error", executionMessage(member));
-    $("agent-error").classList.toggle("form-error", !recovering(member));
+    $("agent-error").classList.toggle("form-error", !recovering(member) && !execution?.inbox_recovery);
     renderDiagnostics("agent", recovering(member) ? "" : execution?.error);
     if (memberToolsView?.cli) {
       const signature = JSON.stringify([state.connected, state.catalogConnected, discussionBusy()]);
@@ -470,7 +471,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
   function renderMemberActions(member, actions, pauseOnly = false) {
     const execution = member.execution;
     const signature = JSON.stringify([member.agent_id, agentName(member), member.membership_id, member.status, execution?.paused, execution?.active,
-      execution?.session_reset_required, state.connected, discussionBusy(), memberBusy.has(member.membership_id), member.unread_count, execution?.agent?.turn?.status, pauseOnly]);
+      execution?.session_reset_required, execution?.inbox_recovery, execution?.inbox?.recovery_blocked, state.connected, discussionBusy(), memberBusy.has(member.membership_id), member.unread_count, execution?.agent?.turn?.status, pauseOnly]);
     if (actions.dataset.signature === signature) return;
     actions.dataset.signature = signature;
     actions.replaceChildren();
@@ -483,6 +484,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       button.addEventListener("click", () => controlMember(member, action)); actions.append(button);
     };
     add(enable ? "启用协作" : "暂停", enable ? "run" : "pause");
+    if (execution.inbox_recovery && !execution.active && !execution.paused && !execution.inbox?.recovery_blocked && ["completed", "failed", "interrupted"].includes(execution.agent?.turn?.status) && ["inbox_waiting", "inbox_stalled"].includes(member.status)) add("继续读取收件箱", "inbox/continue");
   }
 
   function renderExecutionHint() {
@@ -673,7 +675,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     $("activity-turn").textContent = execution?.agent ? `${execution.agent.turn_number}` +
       (turn ? ` · ${statusNames[turn.status] || turn.status}` : " · 尚未运行") : "暂不可用";
     notice("activity-execution-error", executionMessage(member));
-    $("activity-execution-error").classList.toggle("form-error", !recovering(member));
+    $("activity-execution-error").classList.toggle("form-error", !recovering(member) && !execution?.inbox_recovery);
     const live = !!data.current_output, output = data.current_output || data.last_output;
     renderDiagnostics("activity", recovering(member) ? "" : [...new Set([execution?.error, output?.error, rotation?.error].filter(Boolean))].join("\n"));
     if (!output) {

@@ -83,6 +83,7 @@ type ReclaimInbox struct {
 }
 
 type InboxStatus struct {
+	RecoveryBlocked string `json:"recovery_blocked,omitempty"`
 	MemberIdentity
 	AutomaticChecked bool        `json:"automatic_checked,omitempty"`
 	AutomaticReady   bool        `json:"automatic_ready,omitempty"`

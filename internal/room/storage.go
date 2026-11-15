@@ -33,6 +33,7 @@ const (
 // these blocking methods from controlled tasks, never from their state loop.
 // Agent and Session files have separate owners; they are not a transaction.
 type Store struct {
+	mcpOperations        mcpTurnOperations
 	notificationAdapters func(string) notification.Capabilities
 	mu                   sync.Mutex
 	activeDSH            sync.Map                    // MemberIdentity -> *dshSession; observations only, never persisted.

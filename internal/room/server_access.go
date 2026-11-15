@@ -43,6 +43,9 @@ type executionBinding struct {
 }
 type accessContextKey struct{}
 type serverAccess struct {
+	mcp                        *mcpHTTP
+	mcpOnce                    sync.Once
+	mcpExecutions              map[[32]byte]*mcpExecution
 	operator, internal, public string
 	installationID             string
 	managed                    bool // Versioned system-service deployment; HTTP boundary only.
@@ -290,6 +293,11 @@ func (a *serverAccess) wrap(next http.Handler) http.Handler {
 	if a == nil {
 		return next
 	}
+	a.mcpOnce.Do(func() {
+		if a.mcp == nil {
+			a.mcp = newMCPHTTP()
+		}
+	})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Referrer-Policy", "no-referrer")
@@ -303,6 +311,10 @@ func (a *serverAccess) wrap(next http.Handler) http.Handler {
 			return
 		}
 		r = r.WithContext(context.WithValue(r.Context(), accessContextKey{}, a))
+		if r.URL.Path == "/mcp" {
+			a.serveMCP(w, r)
+			return
+		}
 		if r.URL.Path == "/healthz" && r.Method == "GET" {
 			w.Header().Set("Content-Type", "application/json")
 			status := map[string]any{"status": "running"}
