@@ -76,9 +76,14 @@ func TestManagedDeletionInactiveRoomAndHistoricalPrivateData(t *testing.T) {
 	a, b := managerCreate(t, m, "keep-active"), managerCreate(t, m, "delete-inactive")
 	s := openRoomOK(t, m, a, "enter-active")
 	// A retired membership/generation still requires settlement before removal.
-	old := filepath.Join(m.roomDir(b.RoomID), "agents", "retired", "session.json.dsh-old")
+	old := filepath.Join(m.roomDir(b.RoomID), "agents", "retired", "session.json.dsh-"+strings.Repeat("a", 32))
 	if err := os.MkdirAll(old, 0700); err != nil {
 		t.Fatal(err)
+	}
+	for _, generation := range []string{"session.json.dsh", filepath.Base(old)} {
+		if err := os.WriteFile(filepath.Join(filepath.Dir(old), generation+".model.json"), []byte(`{}`), 0600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	outside := t.TempDir()
 	marker := filepath.Join(outside, "keep.txt")
@@ -110,6 +115,40 @@ func TestManagedDeletionInactiveRoomAndHistoricalPrivateData(t *testing.T) {
 		t.Fatal("active Room changed")
 	}
 	managedPost(t, m, s, "still-usable")
+}
+
+func TestManagedDeletionRejectsFilesAndSymlinksInPlaceOfSessionDirectories(t *testing.T) {
+	parallelFixtureTest(t)
+	for _, mode := range []string{"generation-file", "snapshot-symlink", "unknown-file"} {
+		t.Run(mode, func(t *testing.T) {
+			m := activationTestManager(t)
+			room := managerCreate(t, m, "protected-session")
+			memberDir := filepath.Join(m.roomDir(room.RoomID), "agents", "retired")
+			if err := os.MkdirAll(memberDir, 0700); err != nil {
+				t.Fatal(err)
+			}
+			name := "session.json.dsh-" + strings.Repeat("a", 32)
+			var err error
+			switch mode {
+			case "generation-file":
+				err = os.WriteFile(filepath.Join(memberDir, name), []byte(`{}`), 0600)
+			case "snapshot-symlink":
+				err = os.Symlink(t.TempDir(), filepath.Join(memberDir, name+".model.json"))
+			case "unknown-file":
+				err = os.WriteFile(filepath.Join(memberDir, "session.json.dsh-unknown.model.json"), []byte(`{}`), 0600)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			beginDeletion(t, m, room)
+			if failed := awaitDeletion(t, m, room); failed == nil || !strings.Contains(failed.Error, "invalid backend directory") {
+				t.Fatal("deleted unverified Session data", failed)
+			}
+			if _, err := os.Stat(memberDir); err != nil {
+				t.Fatal("private data was removed", err)
+			}
+		})
+	}
 }
 
 func TestManagedDeletionInterruptedRemovalRequiresExplicitRetry(t *testing.T) {

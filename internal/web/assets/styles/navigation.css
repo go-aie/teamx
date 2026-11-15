@@ -176,6 +176,13 @@
   overflow-wrap:anywhere;
   color:var(--warning);
 }
+.management-feedback { margin:16px 8px 0; padding-top:12px; border-top:1px solid var(--line); }
+.management-feedback .management-notice { margin:0; color:var(--text-secondary); line-height:1.6; }
+.management-actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.delete-details { margin-top:12px; color:var(--muted); font-size:var(--font-small); line-height:1.6; }
+.delete-details summary { cursor:pointer; }
+.delete-details p { margin:8px 0 0; overflow-wrap:anywhere; }
+.confirmation-body > .delete-background-hint { margin-top:12px; color:var(--muted); font-size:var(--font-small); line-height:1.6; }
 .create-dialog {
   width:min(480px,calc(100vw - 32px));
 }

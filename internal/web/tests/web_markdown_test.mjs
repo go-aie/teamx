@@ -2,6 +2,35 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { markdownHTML, notificationOptions, openImagePreview, renderMessageBody } from "../assets/markdown.mjs";
 
+test("plain operator mentions display the current username without changing source text or literal contexts", () => {
+  const owner = "owner_" + "a".repeat(32);
+  const source = `🙂 @${owner}、@russellluo 请确认 @reviewer @${owner}2`;
+  const textNode = (data, literal = false) => ({ data, parentElement: { closest: () => literal },
+    replaceWith(fragment) { this.rendered = fragment.children; } });
+  const nodes = [textNode(source), ...["a", "code", "pre", "mark"].map(() => textNode("@" + owner, true))];
+  const doc = {
+    createTreeWalker() { let index = 0; return { nextNode() { this.currentNode = nodes[index++]; return !!this.currentNode; } }; },
+    createTextNode: data => ({ textContent: data }),
+    createElement: tag => ({ tag }),
+    createDocumentFragment: () => ({ children: [], append(...items) { this.children.push(...items); } }),
+  };
+  const container = { ownerDocument: doc, querySelectorAll: () => [] };
+  let username = "russellluo";
+  const options = { operatorNames: [owner, "russellluo"], memberNames: ["reviewer"],
+    mentionLabel: at => { assert.deepEqual(at, { kind: "human", id: owner }); return username; } };
+  renderMessageBody(container, source, owner, options);
+  assert.equal(nodes[0].rendered.map(n => n.textContent).join(""), `🙂 @russellluo、@russellluo 请确认 @reviewer @${owner}2`);
+  assert.deepEqual(nodes[0].rendered.filter(n => n.tag === "mark").map(n => [n.className, n.textContent]),
+    [["mention", "@russellluo"], ["mention", "@russellluo"], ["mention-member", "@reviewer"]]);
+  username = "自定义 <img src=x>";
+  renderMessageBody(container, source, owner, options);
+  assert.equal(nodes[0].rendered[1].textContent, "@自定义 <img src=x>");
+  assert.equal(nodes[0].data, source);
+  assert.ok(nodes.slice(1).every(n => !n.rendered));
+  renderMessageBody(container, source, owner, { operatorNames: [owner] });
+  assert.equal(nodes[0].rendered.map(n => n.textContent).join(""), source);
+});
+
 test("messages render Markdown structure and preserve ordinary line breaks", () => {
   const html = markdownHTML("## 方案\n\n**粗体**、*强调*、~~删除~~、`todo.py`\n下一行\n\n> 引用\n\n1. 添加\n2. 完成\n\n- [x] 已完成\n- [ ] 待处理\n\n---");
   for (const part of ["<h2>方案</h2>", "<strong>粗体</strong>", "<em>强调</em>", "<del>删除</del>", "<code>todo.py</code>", "<br>下一行", "<blockquote>", "<ol>", "<li>添加</li>", "<hr>", 'disabled=""']) {

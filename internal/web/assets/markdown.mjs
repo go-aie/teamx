@@ -227,7 +227,8 @@ export function renderMessageBody(container, text, operator, options) {
       fragment.append(doc.createTextNode(node.data.slice(end, range.start)));
       const mark = doc.createElement("mark");
       mark.className = range.self ? "mention" : "mention-member";
-      mark.textContent = node.data.slice(range.start, range.end);
+      const label = range.self ? options.mentionLabel?.({ kind: "human", id: operator }) : null;
+      mark.textContent = label ? "@" + label : node.data.slice(range.start, range.end);
       fragment.append(mark);
       end = range.end;
     }

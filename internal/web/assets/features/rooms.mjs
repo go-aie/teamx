@@ -6,9 +6,10 @@ import { compactViewport } from "../client.mjs";
 // Room catalog, selection, creation, deletion and default assistant recovery.
 export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationUI, settingsUI, membersUI }) {
   const { document, window, Option, request, setTimeout, clearTimeout } = env;
-  const { state, $, notice, currentView, refresh, discussionBusy, dismissOnBackdrop, storage, confirmAction } = runtime;
+  const { state, $, notice, currentView, refresh, discussionBusy, dismissOnBackdrop, storage } = runtime;
 
   let defaultAssistantRetrying = false, defaultAssistantError = "";
+  let deletion = null;
   let readingScope = "";
   const readingSummaries = new Map();
 
@@ -142,6 +143,12 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
     return !!room && ref?.status !== "deleted" && room.room_id === ref?.room_id && room.room_instance === ref?.room_instance;
   }
 
+  function deletionOperation(room) {
+    return state.management?.kind === "delete" && roomKey(state.management.payload) === roomKey(room) ? state.management : null;
+  }
+
+  const hasDeletion = room => room.status === "deleting" || !!deletionOperation(room);
+
   function selectRoom(room) {
     const entry = room && (state.catalog?.rooms.find(entry => entry.room_id === room.room_id && entry.room_instance === room.room_instance) || room);
     if (entry && !matchesFilter(entry)) conversationFilter = "all";
@@ -234,9 +241,10 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
         state.management = null; state.managementError = "默认个人助理不可删除，可暂停或重新开始。"; saveManagement();
       } else if (!room) {
         forgetRoom(op.payload);
-        state.management = null; state.managementError = "会话及其 Agent 私有会话数据已删除。"; saveManagement();
+        if (deletion && roomKey(deletion.room) === roomKey(op.payload)) closeDeletion();
+        state.management = null; state.managementError = ""; saveManagement();
       } else if (!room.busy && room.status === "deleting") {
-        state.managementError = `删除尚未完成，请核查后明确重试。${room.error || ""}`;
+        state.managementError = "";
       }
     } else if (op.kind === "create") {
       const room = catalog.rooms.find(room => room.create_id === op.payload.create_id);
@@ -329,7 +337,7 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
         name.textContent = room.name;
         const avatar = roomListAvatar(room);
         row.dataset.defaultAssistant = String(isDefaultAssistant(room));
-        const statusText = room.status === "deleting" ? (room.busy ? "正在删除…" : `删除待重试${room.error ? ` · ${room.error}` : ""}`)
+        const statusText = hasDeletion(room) ? (room.busy || state.managementSending ? "正在删除…" : room.status === "deleting" ? "删除未完成" : "删除结果待确认")
           : room.status === "creating" ? `创建待完成${room.error ? ` · ${room.error}` : " · 可重试原创建请求"}` : room.runtime_status === "opening" ? "正在打开…"
           : room.runtime_error ? `运行受阻 · ${room.runtime_error}`
           : room.busy ? "会话操作进行中…" : "";
@@ -368,13 +376,16 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
           button.title += "\n" + labels.join("，");
           button.setAttribute("aria-label", button.getAttribute("aria-label") + "，" + labels.join("，"));
         }
-        button.disabled = room.status !== "ready" || !state.catalogConnected || !!catalog.busy;
+        button.disabled = !state.catalogConnected || !hasDeletion(room) && (room.status !== "ready" || !!catalog.busy);
+        if (hasDeletion(room)) button.setAttribute("aria-haspopup", "dialog");
         button.addEventListener("click", event => {
           if (suppressedRoomClick === key) { event.preventDefault(); suppressedRoomClick = ""; return; }
-          closeRoomActions(); startSelection(room);
+          closeRoomActions();
+          if (hasDeletion(room)) startDeletion(room);
+          else startSelection(room);
         });
         row.append(button);
-        if (isDefaultAssistant(room) && room.status !== "deleting") return row;
+        if (isDefaultAssistant(room) || hasDeletion(room)) return row;
         const remove = document.createElement("button"); remove.type = "button"; remove.className = "room-delete";
         const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
         icon.setAttribute("viewBox", "0 0 24 24"); icon.setAttribute("aria-hidden", "true");
@@ -392,23 +403,29 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
       $("room-list").replaceChildren(...rows);
       if (revealedRoom && !rows.some(row => row.dataset.roomKey === revealedRoom && row.children.length > 1)) closeRoomActions();
     }
+    const operation = state.management;
+    const deleting = operation?.kind === "delete";
+    const pending = catalog.busy || state.managementSending;
     let text = state.managementError || catalog.write_error || "";
     if (workspaceUI.workspaceView?.data?.operation?.status === "running") text = `工作目录 · ${workspaceUI.workspaceStages[workspaceUI.workspaceView.data.operation.phase] || "正在应用"}`;
-    else if (state.management?.kind === "delete" && selectedEntry()?.busy) text = `正在停止${conversationType()}、结清会话并删除数据…`;
     else if (catalog.busy) text = "共享资源操作进行中…";
     else if (state.managementSending) text = "正在提交会话操作…";
-    else if (state.management) text = [text, state.management.room && state.management.kind === "create"
-      ? "会话已创建，点击进入。" : "操作结果尚未确认。可核对列表后用原请求重试；不会自动续跑。"].filter(Boolean).join(" ");
+    else if (operation && !text) text = operation.room && operation.kind === "create"
+      ? "会话已创建，点击进入。" : "操作结果尚未确认，请核对列表后重试。";
+    if (deleting) text = "";
     notice("management-notice", text);
-    $("retry-management").hidden = !state.management || catalog.busy || state.managementSending;
+    $("management-feedback").hidden = deleting || !text && !operation;
+    $("retry-management").hidden = !operation || deleting || !!pending;
     $("retry-management").disabled = !state.catalogConnected;
-    $("retry-management").textContent = state.management?.kind === "create" && state.management.room ? `进入已创建${conversationType(state.management.room)}` : "核对并重试原请求";
-    $("dismiss-management").hidden = !state.management || catalog.busy || state.managementSending;
+    $("retry-management").textContent = operation?.kind === "create" && operation.room ? `进入已创建${conversationType(operation.room)}` : operation?.kind === "delete" ? "重试删除" : "重试";
+    $("dismiss-management").hidden = !operation || deleting || !!pending;
+    renderDeletion();
   }
 
   async function runManagement() {
     const op = state.management;
     if (!op || state.managementSending || !state.catalogConnected || state.catalog.busy) return;
+    if (op.kind === "delete" && state.catalog.rooms.find(room => roomKey(room) === roomKey(op.payload))?.busy) return;
     state.managementSending = true; state.managementError = "";
     renderRooms(); conversationUI.composerState(); membersUI.renderMembers(); renderCreateSelection();
     try {
@@ -426,14 +443,21 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
       $("create-dialog").close();
     } catch (error) {
       if (state.management === op) {
-        state.managementError = op.kind === "delete" ? `删除结果尚未确认，请核对会话列表。${error.message}` : `操作未确认，会话和历史已保留。${error.message}`;
+        state.managementError = op.kind === "delete" ? "" : `操作未确认，会话和历史已保留。${error.message}`;
+        if (op.kind === "delete") {
+          op.error = error.message; saveManagement();
+          if (deletion && roomKey(deletion.room) === roomKey(op.payload)) {
+            deletion.error = error.message;
+            deletion.rejected = ["request", "identity", "conflict", "capacity"].includes(error.code);
+          }
+        }
         // A definitive rejection has no execution to recover. Other failures keep
         // the original ID, including a create interrupted after index publication.
         if (["request", "identity", "conflict", "capacity"].includes(error.code)) {
           state.management = null; saveManagement();
         }
       }
-      notice("create-error", state.managementError);
+      if (op.kind !== "delete") notice("create-error", state.managementError);
     } finally {
       state.managementSending = false;
       await refresh(); renderRooms(); conversationUI.composerState(); renderCreateSelection();
@@ -455,16 +479,72 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
     saveManagement(); void runManagement();
   }
 
-  async function startDeletion(room) {
+  function closeDeletion() {
+    const target = deletion?.room;
+    if (deletion?.submitted && state.management?.kind === "delete" && roomKey(deletion.room) === roomKey(state.management.payload)) {
+      state.management.background = true; saveManagement();
+    }
+    deletion = null;
+    $("delete-dialog").close();
+    const row = target && state.catalog?.rooms.some(room => roomKey(room) === roomKey(target))
+      ? Array.from($("room-list").children).find(row => row.dataset.roomKey === roomKey(target)) : null;
+    (row?.children[0] || $("room-nav")).focus({preventScroll:true});
+  }
+
+  function renderDeletion() {
+    const op = state.management;
+    if (!deletion && op?.kind === "delete" && !op.background && op.operator === state.operator) {
+      const room = state.catalog.rooms.find(room => roomKey(room) === roomKey(op.payload));
+      if (room) startDeletion(room);
+    }
+    if (!deletion) return;
+    const room = state.catalog.rooms.find(room => roomKey(room) === roomKey(deletion.room));
+    if (deletion.submitted && !room && state.catalogConnected) { closeDeletion(); return; }
+    const pending = deletion.submitted && (state.managementSending || room?.busy);
+    const confirm = !deletion.submitted;
+    const stale = deletion.operator !== state.operator || !room || confirm && deletion.epoch !== state.catalog.service_epoch;
+    const error = deletion.error || room?.error || "";
+    const failed = deletion.rejected || room?.status === "deleting" && !!room.error;
+    $("delete-dialog").dataset.phase = confirm ? "confirm" : pending ? "running" : failed ? "failed" : "unknown";
+    $("delete-title").textContent = `${pending ? "正在删除" : "删除"}${conversationType(deletion.room)}「${deletion.room.name}」${confirm ? "？" : ""}`;
+    $("delete-message").textContent = stale ? "会话或服务状态已变化，请关闭弹窗后重新选择会话。"
+      : confirm ? "将停止该会话并删除消息、所有 Agent 私有会话（含历史会话）、诊断和工作区文件。此操作无法撤销。"
+      : pending ? "正在停止 Agent、等待会话结束并删除数据…"
+      : failed ? "删除未完成，修复问题后可重试。" : "删除结果尚未确认，请核对会话状态后重试。";
+    $("delete-background-hint").hidden = !pending;
+    $("delete-details").hidden = !error || confirm || !!pending;
+    $("delete-error-detail").textContent = error;
+    if (!error || confirm || pending) $("delete-details").open = false;
+    $("delete-dismiss").textContent = confirm ? "取消" : pending ? "转到后台" : "稍后处理";
+    $("delete-submit").hidden = !!pending;
+    $("delete-submit").disabled = stale || !state.catalogConnected || !!state.catalog.busy || !!state.catalog.write_error ||
+      !!state.management && (state.management.kind !== "delete" || roomKey(state.management.payload) !== roomKey(deletion.room));
+    $("delete-submit").textContent = confirm ? "永久删除" : failed ? "重试删除" : "核对并重试";
+  }
+
+  function startDeletion(room) {
+    if ($("delete-dialog").open) return;
+    room = state.catalog?.rooms.find(current => roomKey(current) === roomKey(room));
+    if (!room) return;
     if (isDefaultAssistant(room) && room.status !== "deleting") return;
-    if (state.management || room.busy || !state.catalogConnected || state.catalog.busy || state.catalog.write_error) return;
-    const epoch = state.catalog.service_epoch, operator = state.operator;
-    if (!await confirmAction({ title:`删除${conversationType(room)}「${room.name}」？`, message:"将停止该会话并删除消息、所有 Agent 私有会话（含历史会话）、诊断和工作区文件。此操作无法撤销。", confirmLabel:"永久删除" })) return;
-    const current = state.catalog?.rooms.find(item => item.room_id === room.room_id && item.room_instance === room.room_instance);
-    if (state.catalog?.service_epoch !== epoch || state.operator !== operator || !state.catalogConnected || state.management || state.managementSending || state.catalog.busy || state.catalog.write_error || !current || current.busy || isDefaultAssistant(current) && current.status !== "deleting") return;
-    state.management = { kind: "delete", operator: state.operator, payload: {
-      room_id: room.room_id, room_instance: room.room_instance } };
+    const op = deletionOperation(room);
+    if (!state.catalogConnected || !hasDeletion(room) && (state.management || room.busy || state.catalog.busy || state.catalog.write_error)) return;
+    deletion = { room, operator:state.operator, epoch:state.catalog.service_epoch, submitted:room.status === "deleting" || !!op, error:op?.error || "" };
+    if (op) { op.background = false; saveManagement(); }
+    renderDeletion(); $("delete-dialog").showModal(); $("delete-dismiss").focus();
+  }
+
+  function submitDeletion() {
+    if (!deletion || $("delete-submit").disabled || $("delete-submit").hidden) return;
+    const current = state.catalog?.rooms.find(room => roomKey(room) === roomKey(deletion.room));
+    if (!current || deletion.operator !== state.operator || !deletion.submitted && deletion.epoch !== state.catalog.service_epoch ||
+      !state.catalogConnected || current.busy || state.managementSending || state.catalog.busy || state.catalog.write_error ||
+      isDefaultAssistant(current) && current.status !== "deleting") return;
+    if (state.management && (state.management.kind !== "delete" || roomKey(state.management.payload) !== roomKey(current))) return;
+    state.management = { kind:"delete", operator:state.operator, payload:{room_id:current.room_id, room_instance:current.room_instance} };
+    deletion.submitted = true; deletion.error = ""; deletion.rejected = false;
     saveManagement(); void runManagement();
+    $("delete-dismiss").focus();
   }
 
   function renderDefaultAssistant() {
@@ -531,6 +611,12 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
   }
 
   function mount() {
+    $("delete-submit").addEventListener("click", submitDeletion);
+    $("delete-dismiss").addEventListener("click", closeDeletion);
+    $("delete-dialog").addEventListener("cancel", event => { event.preventDefault(); closeDeletion(); });
+    $("delete-dialog").addEventListener("close", () => {
+      if (!$("delete-dialog").open && deletion) closeDeletion();
+    });
     document.addEventListener("pointerdown", event => {
       cancelRoomPress(); suppressedRoomClick = "";
       if (event.target.closest?.(".room-entry")?.dataset.roomKey !== revealedRoom) closeRoomActions();

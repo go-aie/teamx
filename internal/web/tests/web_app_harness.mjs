@@ -151,7 +151,11 @@ export async function launch(api, saved = new Map(), environment = {}) {
     },
     async delete(name) {
       const row = elements.get("room-list").children.find(row => row.children[0].children[0].textContent === name);
-      assert.ok(row, `room ${name} is listed`); await row.children[1].emit("click"); await settle();
+      assert.ok(row, `room ${name} is listed`); await (row.children[1] || row.children[0]).emit("click"); await settle();
+      if (elements.get("delete-dialog").open && elements.get("delete-dialog").dataset.phase === "confirm") {
+        const accepted = api.confirm ? api.confirm(elements.get("delete-title").textContent + "\n" + elements.get("delete-message").textContent) : true;
+        await elements.get(accepted ? "delete-submit" : "delete-dismiss").emit("click"); await settle();
+      }
     },
     async create(name) {
       await elements.get("new-room").emit("click"); await elements.get("new-team-room").emit("click"); elements.get("new-room-name").value = name;

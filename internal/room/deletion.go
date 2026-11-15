@@ -276,11 +276,16 @@ func (m *roomManager) checkDeletionSettled(target RoomIdentity) error {
 			return err
 		}
 		for _, entry := range entries {
+			// Model snapshots live beside their Session generation. They are
+			// ordinary files, not execution directories requiring settlement.
+			if entry.Type().IsRegular() && strings.HasSuffix(entry.Name(), ".model.json") && validSessionGeneration(strings.TrimSuffix(entry.Name(), ".model.json")) {
+				continue
+			}
 			if entry.Name() != "session.json.dsh" && !strings.HasPrefix(entry.Name(), "session.json.dsh-") {
 				continue
 			}
 			if !entry.IsDir() {
-				return fmt.Errorf("%w: invalid backend directory", ErrInvalid)
+				return fmt.Errorf("%w: invalid backend directory %s", ErrInvalid, entry.Name())
 			}
 			if err := dsh.CheckReset(filepath.Join(path, entry.Name())); err != nil {
 				return fmt.Errorf("private Session %s/%s has no verified settlement: %w", agent.Name(), entry.Name(), err)
