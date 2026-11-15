@@ -4,6 +4,7 @@ import { sameService } from "../client.mjs";
 import { captureReturnView } from "../view-return.mjs";
 import { renderAvatar } from "../avatars.mjs";
 import { createNavigationIcon } from "../icons.mjs";
+import { beginRead, readState } from "../read-state.mjs";
 
 // Room/member notification subscriptions, targets and configuration views.
 export function createNotifications({ env, membersUI, workspaceUI, runtime, roomsUI, settingsUI, connectionsUI, onboardingUI, layoutUI }) {
@@ -127,6 +128,9 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     const revisions = {messages:ws.messagesRevision,gitlab:ws.gitlabRevision};
     const read = ws.notificationsRead = (ws.notificationsRead || 0) + 1;
     const scope = ws.notificationScope, context = ws.notificationEpoch;
+    const current = () => ws === workspaceUI.workspaceView && state.catalog?.service_epoch === catalog.service_epoch && read === ws.notificationsRead && context === ws.notificationEpoch;
+    const finish = beginRead(env, ws, "notificationsReadState", () => { if (current()) renderNotificationPlatforms(); });
+    let failed = false;
     try {
       const params = new URLSearchParams({service_epoch:catalog.service_epoch,caller_id:ws.operator,...ws.room});
       const data = await request(`/v1/platform/notifications?${params}`);
@@ -149,9 +153,9 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
       }
     } catch {
       if (ws !== workspaceUI.workspaceView || state.catalog?.service_epoch !== catalog.service_epoch || read !== ws.notificationsRead || context !== ws.notificationEpoch) return;
-      ws.notificationsConnected=false;
+      failed = true; ws.notificationsConnected=false;
       if(scope===ws.notificationScope){ws.gitlabConnected=false;ws.messagesConnected=false;}
-    }
+    } finally { finish(failed); }
   }
 
   function larkConfigKey(c = {}) {return JSON.stringify({enabled:!!c.enabled,platform_id:c.platform_id || "",target:notificationTarget(c),private:{enabled:!!c.private?.enabled,scope:c.private?.scope || "all",chat_ids:[...(c.private?.chat_ids || [])].sort()},groups:{enabled:!!c.groups?.enabled,scope:c.groups?.scope || "specified",chat_ids:[...(c.groups?.chat_ids || [])].sort(),message_mode:c.groups?.message_mode || "mentions",at_me:!!c.groups?.at_me,at_all:!!c.groups?.at_all},interval_seconds:c.interval_seconds || 10,backfill_seconds:c.backfill_seconds || 0,backfill_start:c.backfill_start ? new Date(c.backfill_start).toISOString() : ""});}
@@ -518,7 +522,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
 
   function notificationIssue(ws, item, view) {
     const error = view?.target_error_code || (item.provider === "gitlab" ? Object.values(view?.errors || {}).find(Boolean) || view?.events?.error_code || view?.todos?.error_code || view?.events?.delivery_error_code || view?.todos?.delivery_error_code : view?.error_code || view?.delivery_error_code);
-    return !ws.notificationsConnected ? "通知状态暂不可读" : ws.notificationToggleError?.key === notificationScopeKey(view?.config.target,item.id) ? ws.notificationToggleError.message
+    return ws.notificationsReadState?.failed ? "通知状态暂不可读" : ws.notificationToggleError?.key === notificationScopeKey(view?.config.target,item.id) ? ws.notificationToggleError.message
       : error ? notificationTargetErrors[error] || gitlabEventErrors[error] || "通知需处理，请查看详情"
       : item.validation?.status !== "valid" ? "账号需要核验" : item.provider === "gitlab" && Object.values(view?.pending || {}).some(Boolean) ? "部分通知等待应用" : "";
   }
@@ -552,14 +556,21 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
 
   function renderNotificationList(prefix, target) {
     const ws=workspaceUI.workspaceView,items=notificationPlatforms(ws).filter(item=>target.mode==="inbox" || item.provider==="gitlab");
+    const reading=readState(ws?.platformsReadState,ws?.notificationsReadState);
+    const loaded=!!ws?.allPlatforms && !!ws?.allSubscriptions;
     const configured=items.filter(item=>notificationConfigured(item,notificationView(ws,item,target)));
     $(`${prefix}platforms`).replaceChildren(...configured.map(item=>notificationRow(ws,item,target)));
     $(`${prefix}source-count`).textContent=String(configured.length);
-    $(`${prefix}empty`).hidden=!!configured.length;
-    $(`${prefix}empty`).textContent=ws?.platformsLoading ? "正在读取平台…" : target.mode==="inbox" ? "尚未配置来源，添加通知来源后开始接收。" : roomsUI.isDirect() ? "将平台通知发送到当前会话。" : "将平台通知发送到当前房间。";
-    const unavailable=!!ws && (!ws.notificationsConnected || !!ws.repositoryPlatformsError);
-    notice(`${prefix}list-error`,unavailable ? ws.repositoryPlatformsError || "通知状态暂不可读，请刷新。" : "");
+    $(`${prefix}source-count`).hidden=!loaded;
+    $(`${prefix}platforms`).setAttribute("aria-busy",String(reading.pending));
+    $(`${prefix}empty`).hidden=!!configured.length || !loaded && reading.pending || reading.failed;
+    $(`${prefix}empty`).textContent=target.mode==="inbox" ? "尚未配置来源，添加通知来源后开始接收。" : roomsUI.isDirect() ? "将平台通知发送到当前会话。" : "将平台通知发送到当前房间。";
+    const unavailable=!!ws && reading.failed;
+    $(`${prefix}list-error`).classList.toggle("form-error",!!unavailable);
+    $(`${prefix}list-error`).classList.toggle("quiet",!unavailable);
+    notice(`${prefix}list-error`,unavailable ? ws.platformsReadState?.failed && ws.repositoryPlatformsError || "通知状态暂不可读，请刷新。" : reading.slow ? "正在读取通知设置…" : "");
     $(`${prefix}list-reload`).hidden=!unavailable;
+    $(`${prefix}list-reload`).disabled=reading.pending;
     const query=$(`${prefix}add-search`).value.trim().toLowerCase();
     $(`${prefix}add-options`).replaceChildren(...items.filter(item=>!configured.includes(item) && [item.name,item.validation?.username,item.url].join(" ").toLowerCase().includes(query)).map(item=>{
       const button=document.createElement("button");button.type="button";button.className="notification-add-option";button.dataset.provider=item.provider;button.dataset.platformId=item.id;
@@ -589,7 +600,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
   function setNotificationPicker(prefix, open) {
     $(`${prefix}add-picker`).hidden=!open;
     $(`${prefix}add-toggle`).setAttribute("aria-expanded",String(open));
-    if(prefix==="member-notification-")$("member-notification-empty").hidden=open || Number($("member-notification-source-count").textContent)>0;
+    if(prefix==="member-notification-")membersUI.renderMemberPlatforms();
     if(open)$(`${prefix}add-search`).focus({preventScroll:true});
   }
 
@@ -896,9 +907,12 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     $("notification-sources").hidden=!ws;
     const matches=!!id && (messages ? ws?.messages?.config.platform_id : ws?.gitlabDraft?.platform_id)===id && sameNotificationTarget(messages ? ws?.messages?.config.target : ws?.gitlabDraft?.target,target);
     const connected=matches && (messages ? ws?.messagesConnected : ws?.gitlabConnected) && !ws?.notificationHistory;
+    const reading=ws?.notificationDetailReadState;
+    const unavailable=!reading?.pending && !connected;
+    $("notification-detail").setAttribute("aria-busy",String(!!reading?.pending));
     $("notification-panel-messages").hidden=!messages || !connected;$("notification-panel-gitlab").hidden=messages || !connected;
-    notice("notification-notice",ws?.notificationHistory || (!connected ? "通知状态暂不可读，请刷新。" : item && item.validation?.status!=="valid" ? "账号需要核验，请在管理平台中处理。" : ""));
-    $("notification-reload").hidden=!!connected || !!ws?.notificationHistory;
+    notice("notification-notice",ws?.notificationHistory || (reading?.pending ? reading.slow ? "正在读取通知设置…" : "" : unavailable ? "通知状态暂不可读，请刷新。" : item && item.validation?.status!=="valid" ? "账号需要核验，请在管理平台中处理。" : ""));
+    $("notification-reload").hidden=!unavailable || !!ws?.notificationHistory;
     const configured=item && notificationConfigured(item,view),enabled=configured ? !!view.config.enabled : messages ? !!ws?.messages?.config.enabled : !!ws?.gitlabDraft?.enabled;
     const toolsOnly=ws?.notificationChannel==="tools",history=!!ws?.notificationHistory;
     $("notification-destination").hidden=toolsOnly || history;
@@ -930,40 +944,45 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     }
     $("activity-dialog").hidden=true;membersUI.activity.close();layoutUI.showNotificationDetail();
     if(!$("notification-detail").open)$("notification-detail").show();
-    renderGitLabEvents();
-    await workspaceUI.loadWorkspacePlatforms();
-    if(!notificationContextCurrent(ws,key,epoch) || opening!==ws.notificationOpen || navigation!==notificationNavigation)return;
-    if(channel==="tools"){renderNotificationSource();return;}
-    if(channel==="messages"){
-      if(!same){
-        selectLarkPlatform(ws,platformID);
-        const cached=ws.notificationDrafts?.get(key);
-        if(cached){
-          ws.messages=structuredClone(cached.view);ws.larkRestore=structuredClone(cached.config);ws.larkChatDirectories=cached.directories;ws.larkDirty=true;ws.notificationObservationConflict=cached.conflict ? key : null;
-          for(const kind of ["private","groups"])larkChatElement(kind,"search").value=cached.directories?.[kind]?.query || "";
+    const finish=beginRead(env,ws,"notificationDetailReadState",()=>{
+      if(notificationContextCurrent(ws,key,epoch) && opening===ws.notificationOpen && navigation===notificationNavigation)renderNotificationSource();
+    });
+    try {
+      renderGitLabEvents();
+      await workspaceUI.loadWorkspacePlatforms();
+      if(!notificationContextCurrent(ws,key,epoch) || opening!==ws.notificationOpen || navigation!==notificationNavigation)return;
+      if(channel==="tools"){renderNotificationSource();return;}
+      if(channel==="messages"){
+        if(!same){
+          selectLarkPlatform(ws,platformID);
+          const cached=ws.notificationDrafts?.get(key);
+          if(cached){
+            ws.messages=structuredClone(cached.view);ws.larkRestore=structuredClone(cached.config);ws.larkChatDirectories=cached.directories;ws.larkDirty=true;ws.notificationObservationConflict=cached.conflict ? key : null;
+            for(const kind of ["private","groups"])larkChatElement(kind,"search").value=cached.directories?.[kind]?.query || "";
+          }
         }
+        ws.messagesConnected=!!ws.notificationsConnected;
+      }else if(!same || !ws.gitlabConnected){
+        const revision=ws.gitlabRevision=(ws.gitlabRevision || 0)+1;
+        ws.gitlabSending="select";renderGitLabEvents();
+        try{
+          const params=new URLSearchParams({service_epoch:epoch,caller_id:ws.operator,...ws.room,platform_id:platformID,...notificationTargetQuery(target)});
+          const view=await request(`/v1/platform/gitlab/notifications?${params}`);
+          if(!notificationContextCurrent(ws,key,epoch) || revision!==ws.gitlabRevision || navigation!==notificationNavigation)return;
+          if(view.config.platform_id!==platformID || !sameNotificationTarget(view.config.target,target))throw Error("Notification scope mismatch");
+          acceptGitLabView(ws,view,true);
+          const cached=ws.notificationDrafts?.get(key);
+          if(cached){acceptGitLabView(ws,structuredClone(cached.view),true);ws.gitlabDraft=structuredClone(cached.config);ws.eventsEmptyTypes=cached.emptyTypes;ws.gitlabDirty=!!cached.emptyTypes || gitlabConfigKey(ws.gitlabDraft)!==gitlabConfigKey(ws.gitlab.config);ws.notificationObservationConflict=cached.conflict ? key : null;fillBackfill("gitlab",ws.gitlabDraft);}
+        }catch{
+          if(!notificationContextCurrent(ws,key,epoch) || revision!==ws.gitlabRevision || navigation!==notificationNavigation)return;
+          ws.gitlabConnected=false;ws.gitlabError="平台通知设置暂不可读，请刷新。";
+        }finally{if(notificationContextCurrent(ws,key,epoch) && revision===ws.gitlabRevision){ws.gitlabSending=false;ws.gitlabRevision++;}}
       }
-      ws.messagesConnected=!!ws.notificationsConnected;
-    }else if(!same || !ws.gitlabConnected){
-      const revision=ws.gitlabRevision=(ws.gitlabRevision || 0)+1;
-      ws.gitlabSending="select";renderGitLabEvents();
-      try{
-        const params=new URLSearchParams({service_epoch:epoch,caller_id:ws.operator,...ws.room,platform_id:platformID,...notificationTargetQuery(target)});
-        const view=await request(`/v1/platform/gitlab/notifications?${params}`);
-        if(!notificationContextCurrent(ws,key,epoch) || revision!==ws.gitlabRevision || navigation!==notificationNavigation)return;
-        if(view.config.platform_id!==platformID || !sameNotificationTarget(view.config.target,target))throw Error("Notification scope mismatch");
-        acceptGitLabView(ws,view,true);
-        const cached=ws.notificationDrafts?.get(key);
-        if(cached){acceptGitLabView(ws,structuredClone(cached.view),true);ws.gitlabDraft=structuredClone(cached.config);ws.eventsEmptyTypes=cached.emptyTypes;ws.gitlabDirty=!!cached.emptyTypes || gitlabConfigKey(ws.gitlabDraft)!==gitlabConfigKey(ws.gitlab.config);ws.notificationObservationConflict=cached.conflict ? key : null;fillBackfill("gitlab",ws.gitlabDraft);}
-      }catch{
-        if(!notificationContextCurrent(ws,key,epoch) || revision!==ws.gitlabRevision || navigation!==notificationNavigation)return;
-        ws.gitlabConnected=false;ws.gitlabError="平台通知设置暂不可读，请刷新。";
-      }finally{if(notificationContextCurrent(ws,key,epoch) && revision===ws.gitlabRevision){ws.gitlabSending=false;ws.gitlabRevision++;}}
-    }
-    if(!notificationContextCurrent(ws,key,epoch) || opening!==ws.notificationOpen || navigation!==notificationNavigation)return;
-    if(channel==="events" || channel==="todos")$(`gitlab-${channel}-settings`).open=true;
-    renderGitLabEvents();$("notification-title").focus();
-    if(compactViewport(window))$("notification-detail").scrollIntoView({block:"start"});
+      if(!notificationContextCurrent(ws,key,epoch) || opening!==ws.notificationOpen || navigation!==notificationNavigation)return;
+      if(channel==="events" || channel==="todos")$(`gitlab-${channel}-settings`).open=true;
+      renderGitLabEvents();$("notification-title").focus();
+      if(compactViewport(window))$("notification-detail").scrollIntoView({block:"start"});
+    } finally { finish(channel!=="tools" && !(channel==="messages" ? ws.messagesConnected : ws.gitlabConnected)); }
   }
 
   async function openNotificationMessage(opener, source) {

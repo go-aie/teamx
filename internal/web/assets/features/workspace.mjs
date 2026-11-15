@@ -1,6 +1,7 @@
 import { resolveAgentName } from "../agent-names.mjs";
 import { randomUUID } from "../random-id.mjs";
 import { captureReturnView } from "../view-return.mjs";
+import { beginRead } from "../read-state.mjs";
 // Workspace configuration, platform choices and durable operation recovery.
 export function createWorkspace({ env, runtime, notificationsUI, membersUI, roomsUI, conversationUI, settingsUI, connectionsUI }) {
   const { document, window, Option, request, requestAnimationFrame } = env;
@@ -46,7 +47,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
         notificationsUI.invalidateNavigation();notificationsUI.stopLarkChatSearch();$("notification-detail").close();
         // Workspace operation recovery keeps its durable key; notification forms
         // and requests must start afresh across manager or Room service epochs.
-        for(const field of Object.keys(workspaceView))if(/^(notification|gitlab|lark|events|todos|messages|memberSource|memberPlatform|memberTool)/.test(field))delete workspaceView[field];
+        for(const field of Object.keys(workspaceView))if(field!=="platformsRead" && /^(notification|gitlab|lark|events|todos|messages|memberSource|memberPlatform|memberTool|platforms|repositoryPlatforms)/.test(field))delete workspaceView[field];
         delete workspaceView.allSubscriptions;delete workspaceView.retiredSources;
         delete workspaceView.allPlatforms;membersUI.resetTools();
         workspaceView.notificationEpoch=notificationEpoch;
@@ -130,14 +131,17 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
   }
 
   async function loadWorkspacePlatforms({ background = false } = {}) {
-    const ws = workspaceView, epoch = state.catalog?.service_epoch;
+    const ws = workspaceView, epoch = state.catalog?.service_epoch, context = ws?.notificationEpoch;
     if (!ws || !epoch) return;
     const read = ws.platformsRead = (ws.platformsRead || 0) + 1;
-    if (!background) { ws.platformsLoading = true; ws.platformsError = "正在加载平台…"; renderWorkspace(); }
+    const current = () => ws === workspaceView && state.catalog?.service_epoch === epoch && context === ws.notificationEpoch && read === ws.platformsRead;
+    ws.platformsLoading = true;
+    const finish = beginRead(env, ws, "platformsReadState", () => { if (current()) renderWorkspace(); });
+    let failed = false;
     try {
       const query = new URLSearchParams({ service_epoch: epoch, caller_id: ws.operator });
       const data = await request(`/v1/platforms?${query}`);
-      if (ws !== workspaceView || state.catalog?.service_epoch !== epoch || read !== ws.platformsRead) return;
+      if (!current()) return;
       const changed = JSON.stringify(ws.allPlatforms) !== JSON.stringify(data.platforms);
       ws.platformsConnected = true;
       ws.allPlatforms = data.platforms;
@@ -147,8 +151,8 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
       ws.larkPlatforms = data.platforms.filter(item => item.provider === "lark");
       ws.platformsError = ws.platforms.length ? "" : "尚无平台，请先管理平台。";
       if (!background || changed) renderWorkspacePlatforms();
-    } catch { if (ws === workspaceView && state.catalog?.service_epoch === epoch && read === ws.platformsRead) { ws.platformsConnected = false; ws.platformsError = "平台加载失败，请重新打开通知源重试。"; ws.repositoryPlatformsError = "平台加载失败，请重新打开工作目录设置重试。"; } }
-    if (ws === workspaceView) { ws.platformsLoading = false; renderWorkspace(); }
+    } catch { if (current()) { failed = true; ws.platformsConnected = false; ws.platformsError = "平台加载失败，请重新打开通知源重试。"; ws.repositoryPlatformsError = "平台加载失败，请重新打开工作目录设置重试。"; } }
+    finally { if (current()) ws.platformsLoading = false; finish(failed); }
   }
 
   function fillWorkspaceForm() {
@@ -218,7 +222,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     $("workspace-repo-url").required = git;
     $("workspace-repo-url").disabled = !git;
     $("workspace-connection").disabled = !gitlab;
-    $("workspace-connection-feedback").textContent = ws.repositoryPlatformsError || ($("workspace-connection").children.length <= 1 ? `尚无可选的 ${scion ? "Scion 已验证" : "GitLab"} 连接，请先管理平台。` : "选择同类型连接，应用时核实仓库访问权限；Scion 会核实分支存在。");
+    $("workspace-connection-feedback").textContent = !ws.allPlatforms && !ws.platformsReadState?.failed ? ws.platformsReadState?.slow ? "正在读取平台…" : "" : ws.repositoryPlatformsError || ($("workspace-connection").children.length <= 1 ? `尚无可选的 ${scion ? "Scion 已验证" : "GitLab"} 连接，请先管理平台。` : "选择同类型连接，应用时核实仓库访问权限；Scion 会核实分支存在。");
     $("workspace-credential-status").hidden = !binding;
     $("workspace-credential-status").textContent = binding ? data.credential_status === "configured" ? current.binding.platform_id ? current.binding.provider === "scion" ? `Scion 连接已配置 · ${current.binding.project}` : `共享连接已配置 · 项目 ID ${current.binding.project_id}（绑定时已核实）` : "旧凭据已配置（远端权限未验证）" : "凭据缺失，请检查平台或旧认证。" : "";
     $("workspace-status").textContent = status;

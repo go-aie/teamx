@@ -4,6 +4,7 @@ import { createActivityReader, sameService } from "../client.mjs";
 import { renderAvatar } from "../avatars.mjs";
 import { createNavigationIcon } from "../icons.mjs";
 import { captureReturnView } from "../view-return.mjs";
+import { beginRead, readState } from "../read-state.mjs";
 import { isSessionRecovering as recovering, memberExecutionFailed as runtimeFailed, memberExecutionMessage as executionMessage } from "../member-execution.mjs";
 
 // Member inspection, private activity, CLI tools and platform summaries.
@@ -86,6 +87,8 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     // A poll cannot observe an intermediate local write or erase its feedback.
     if (background && (workspaceUI.workspaceView?.memberToolBusy || onboardingUI.onboarding.busy)) return;
     const read = v.cliRead = (v.cliRead || 0) + 1;
+    const finish = beginRead(env, v, "cliReadState", () => { if (toolsCurrent(v) && read === v.cliRead) renderMemberTools(v); });
+    let failed = false;
     try {
       const q = new URLSearchParams({ service_epoch: v.identity.service_epoch, caller_id: v.identity.caller.id,
         room_id: v.identity.room_id, room_instance: v.identity.room_instance });
@@ -93,12 +96,10 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       if (!toolsCurrent(v) || read !== v.cliRead) return;
       v.cli = data;v.cliConnected=true;
       if (!background) v.cliResult = null;
-      renderMemberTools(v);
     } catch {
       if (!toolsCurrent(v) || read !== v.cliRead) return;
-      v.cliConnected=false;
-      renderMemberTools(v);
-    }
+      failed = true; v.cliConnected=false;
+    } finally { finish(failed); }
   }
 
   function toolBinding(v, item) {
@@ -213,6 +214,10 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     $("member-notification-sources").hidden=!state.managed || !ws || !target;
     if(!ws || !target)return;
     const items=memberPlatformItems(ws,v),configured=items.filter(item=>memberHasPlatform(item,target,v));
+    const reading=readState(ws.platformsReadState,ws.notificationsReadState,v?.cliReadState);
+    const loaded=!!ws.allPlatforms && !!ws.allSubscriptions && !!v?.cli;
+    $("member-notification-platforms").setAttribute("aria-busy",String(reading.pending));
+    $("member-platform-count").hidden=!loaded;
     const inlineAccountIssues = new Set();
     $("member-notification-platforms").replaceChildren(...configured.map(item=>{
       const view=notificationsUI.notificationView(ws,item,target),hasNotifications=["gitlab","lark"].includes(item.provider);
@@ -257,7 +262,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     }));
     layoutMemberPlatforms();
     $("member-notification-source-count").textContent=String(configured.length);
-    $("member-notification-empty").hidden=!!configured.length || !$("member-notification-add-picker").hidden;
+    $("member-notification-empty").hidden=!!configured.length || !loaded && reading.pending || reading.failed || !$("member-notification-add-picker").hidden;
     $("member-notification-empty").textContent="添加平台，接收通知或使用工具。";
     const issues=configured.filter(item=>{
       const view=notificationsUI.notificationView(ws,item,target);
@@ -267,8 +272,10 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     $("member-platform-issues").replaceChildren(...issues.filter(item=>!inlineAccountIssues.has(item.id)).map(item=>{
       const button=document.createElement("button");button.type="button";button.className="text-button";button.textContent=`${item.name}：查看异常`;button.addEventListener("click",()=>openMemberPlatform(button,item,target));return button;
     }));
-    const connected=ws.notificationsConnected && v?.cliConnected && ws.platformsConnected!==false;
-    notice("member-notification-list-error",!connected ? "部分设置暂不可读，请刷新。" : "");$("member-notification-list-reload").hidden=!!connected;
+    $("member-notification-list-error").classList.toggle("form-error",!!reading.failed);
+    $("member-notification-list-error").classList.toggle("quiet",!reading.failed);
+    notice("member-notification-list-error",reading.failed ? "部分设置暂不可读，请刷新。" : reading.slow ? "正在读取平台设置…" : "");$("member-notification-list-reload").hidden=!reading.failed;
+    $("member-notification-list-reload").disabled=reading.pending;
     const q=$("member-notification-add-search").value.trim().toLowerCase();
     $("member-notification-add-options").replaceChildren(...items.filter(item=>!configured.includes(item) && [item.name,item.validation?.username,item.url].join(" ").toLowerCase().includes(q)).map(item=>{
       const row=document.createElement("div"),info=document.createElement("div"),title=document.createElement("strong"),account=document.createElement("small"),actions=document.createElement("div");
@@ -286,13 +293,15 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     }));
     onboardingUI.renderMemberPlatformAddition();
     const subscriptions=configured.filter(item=>notificationsUI.notificationConfigured(item,notificationsUI.notificationView(ws,item,target)));
-    $("inbox-empty-hint").hidden=!inboxUI.inboxView?.page || !!inboxUI.inboxView.page.entries.length;
-    $("inbox-empty-hint").textContent=inboxUI.inboxView?.status?.expired_through && !inboxUI.inboxView?.page?.entries.length ? "当前没有保留的通知，旧通知已过期清理。" : !ws.notificationsConnected ? "通知状态暂不可读，请查看平台设置。" : !subscriptions.length ? "添加平台，开始接收通知。" : issues.length ? "尚未收到通知，请查看平台异常提示。" : subscriptions.some(item=>notificationsUI.notificationView(ws,item,target).config.enabled) ? "暂未收到通知。" : "通知已暂停。";
-    $("inbox-add-platform").hidden=!!subscriptions.length;
+    const sources=readState(ws.platformsReadState,ws.notificationsReadState),sourcesLoaded=!!ws.allPlatforms && !!ws.allSubscriptions;
+    const hint=inboxUI.inboxView?.status?.expired_through ? "当前没有保留的通知，旧通知已过期清理。" : sources.failed ? "通知状态暂不可读，请查看平台设置。" : !sourcesLoaded ? sources.slow ? "正在读取通知来源…" : "" : !subscriptions.length ? "添加平台，开始接收通知。" : issues.length ? "尚未收到通知，请查看平台异常提示。" : subscriptions.some(item=>notificationsUI.notificationView(ws,item,target).config.enabled) ? "暂未收到通知。" : "通知已暂停。";
+    $("inbox-empty-hint").hidden=!hint || !inboxUI.inboxView?.page || !!inboxUI.inboxView.page.entries.length;
+    $("inbox-empty-hint").textContent=hint;
+    $("inbox-add-platform").hidden=!!subscriptions.length || !sourcesLoaded || sources.failed;
     const inboxIssues = configured.filter(item => notificationsUI.notificationConfigured(item,notificationsUI.notificationView(ws,item,target)) && notificationsUI.notificationIssue(ws,item,notificationsUI.notificationView(ws,item,target)));
     $("inbox-platform-issues").replaceChildren(...inboxIssues.map(item=>{const b=document.createElement("button");b.type="button";b.className="text-button";b.textContent=`${item.name}：${notificationsUI.notificationIssue(ws,item,notificationsUI.notificationView(ws,item,target))} 查看设置`;b.addEventListener("click",()=>openMemberPlatform(b,item,target));return b;}));
     const pending = [...(ws.allSubscriptions || []),...(ws.retiredSources || [])].filter(source=>notificationsUI.sameNotificationTarget(source.target || source.config?.target,target)).reduce((n,source)=>n+(source.pending || 0),0);
-    $("inbox-backlog").textContent = !ws.notificationsConnected ? "来源状态暂不可读，可到平台设置重试读取。" : pending ? `来源积压 ${pending} 条等待投递；容量释放后会自动重试，凭据和绑定异常需在平台设置处理。` : "";
+    $("inbox-backlog").textContent = sources.failed ? "来源状态暂不可读，可到平台设置重试读取。" : pending ? `来源积压 ${pending} 条等待投递；容量释放后会自动重试，凭据和绑定异常需在平台设置处理。` : "";
   }
 
   async function openMemberPlatform(opener,item,target=notificationsUI.memberNotificationTarget()) {
