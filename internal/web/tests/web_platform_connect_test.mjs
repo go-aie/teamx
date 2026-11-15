@@ -44,10 +44,12 @@ test('subscribed completion distinguishes pending delivery, scheduler blocks, co
  api.op.continuation={mode:'inbox',state:'waiting_result'};
  await ui.refresh();await settle();assert.match(card(ui).children[6].textContent,/已订阅.*Inbox/);
  api.op.status='completed';api.op.connection.status='connected';api.op.result_version=1;
- for(const [reason,text] of [['inbox_capacity','容量不足'],['member_paused','Agent 已暂停'],['inbox_admission_blocked','来源核验受阻'],['session_rotating','轮换 Session'],['member_failed','上次回合失败']]) {
+ for(const [reason,text] of [['inbox_capacity','容量不足'],['member_paused','Agent 已暂停'],['inbox_admission_blocked','来源核验受阻'],['session_rotating','切换会话'],['member_failed','上次回合失败']]) {
   api.op.continuation={mode:'inbox',state:'delivered',blocked_reason:reason};
   await ui.refresh();await settle();assert.match(card(ui).children[1].textContent,/已连接/);assert.match(card(ui).children[6].textContent,new RegExp(`等待 Agent 接续.*${text}.*发消息`));
  }
+ api.op.continuation={mode:'inbox',state:'delivered',blocked_reason:'session_recovering'};
+ await ui.refresh();await settle();assert.match(card(ui).children[6].textContent,/助理正在恢复.*恢复后将自动接续/);assert.doesNotMatch(card(ui).children[6].textContent,/发消息/);
  api.op.continuation={mode:'inbox',state:'consumed'};await ui.refresh();await settle();assert.match(card(ui).children[6].textContent,/已读取.*等待接续/);
  api.op.continuation={mode:'inbox',state:'handled',handled_version:1};await ui.refresh();await settle();assert.match(card(ui).children[6].textContent,/已核对.*需求以对话/);
  api.op.continuation.mode='none';await ui.refresh();await settle();assert.match(card(ui).children[6].textContent,/已核对.*需求以对话/);

@@ -155,6 +155,8 @@ func (m *roomManager) operationContinuationLocked(id MemberIdentity, terminal bo
 	switch {
 	case status.Inbox != nil && status.Inbox.AutomaticBlocked:
 		v.BlockedReason = "inbox_admission_blocked"
+	case status.Status == "recovering":
+		v.BlockedReason = "session_recovering"
 	case status.Status == "budget_exhausted" || status.Status == "backend_blocked" || status.Status == "checkpoint_failed":
 		v.BlockedReason = status.Status
 	case status.Rotation != nil && status.Rotation.Status != "completed" && status.Rotation.Status != "failed":

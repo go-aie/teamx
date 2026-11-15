@@ -1,5 +1,6 @@
 import { resolveAgentName } from "../agent-names.mjs";
 import { notificationOptions } from "../markdown.mjs";
+import { isSessionRecovering, memberExecutionMessage } from "../member-execution.mjs";
 
 // Member Inbox snapshots, pagination and retained reading position.
 export function createInbox({ env, settingsUI, notificationsUI, runtime, membersUI, policyUI }) {
@@ -113,11 +114,11 @@ export function createInbox({ env, settingsUI, notificationsUI, runtime, members
     $("inbox-latest").setAttribute("aria-label", $("inbox-latest").title);
     $("inbox-notice").textContent = view.error || view.syncError || view.notice || (status?.expired_through ? "旧通知正文已过期清理，跟进和动作记录继续保留。" : "");
     const member = membersUI.selectedAgent(), execution = member?.execution;
-    const paused = execution?.paused ? "自动处理已暂停" : execution?.active ? "Agent 正在处理" : `Agent ${membersUI.statusNames[member?.status] || member?.status || ""}`;
+    const paused = isSessionRecovering(member) ? "" : execution?.paused ? "自动处理已暂停" : execution?.active ? "Agent 正在处理" : `Agent ${membersUI.statusNames[member?.status] || member?.status || ""}`;
     const through = Math.max(status?.consumed_through || 0, status?.expired_through || 0, status?.skipped_through || 0);
     const pending = status && status.latest_seq > through;
     const capacity = status && (status.retained_entries >= status.limits.entries || status.bytes >= status.limits.bytes);
-    $("inbox-runtime").textContent = [paused, execution?.error && `自动处理受阻：${execution.error}`, pending && "有输入等待处理或来源核验", capacity && "容量已满，来源积压等待空间释放后自动重试"].filter(Boolean).join(" · ");
+    $("inbox-runtime").textContent = [paused, memberExecutionMessage(member), pending && "有输入等待处理或来源核验", capacity && "容量已满，来源积压等待空间释放后自动重试"].filter(Boolean).join(" · ");
   }
 
   function renderInboxPagination(view) {

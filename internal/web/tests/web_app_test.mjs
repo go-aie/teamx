@@ -23,6 +23,58 @@ import { readFile } from "node:fs/promises";
 import * as client from "../assets/client.mjs";
 import { launch, settle, withOnboarding, openNotification } from "./web_app_harness.mjs";
 
+test("Session recovery shows progress with pause and keeps internal failures in diagnostic details", async () => {
+  const api = server([makeRoom("A")]);
+  const raw = "DSH member paused; inspect backend failure before continuing\nDSH original session recovery unavailable: backend configuration changed";
+  const member = {agent_id:"reviewer",membership_id:"generation-reviewer",status:"recovering",read_through:0,unread_count:1,
+    runner:{profile:"runtime"},execution:{active:false,paused:true,error:raw,session_reset_required:true,
+      notice:{code:"session_recovering",message:"正在恢复助理，恢复后将自动继续。"},agent:{turn_number:1,turn:{status:"failed"}}}};
+  api.hook = path => path === "/v1/member/list" ? {members:[structuredClone(member)]}
+     : path === "/v1/member/activity" ? {member:structuredClone(member),last_output:{error:raw,result:{events:[]}}}
+    : path === "/v1/member/inbox/status" ? {latest_seq:0,retained_entries:0,bytes:0,limits:{entries:100,bytes:10000}}
+    : path === "/v1/member/inbox" ? {entries:[],snapshot_seq:0,status:{latest_seq:0,retained_entries:0,bytes:0,limits:{entries:100,bytes:10000}}} : undefined;
+  const ui = await launch(api);
+  const summary = ui.el("members").children[0].querySelector(".member-summary");
+  assert.equal(summary.dataset.state,"running");
+  assert.doesNotMatch(summary.getAttribute("aria-label"),/运行异常/);
+  await summary.emit("click");
+  assert.equal(ui.el("agent-model-alert").hidden,true);
+  assert.equal(ui.el("agent-status").textContent,"正在恢复");
+  assert.equal(ui.el("toggle-agent-controls").dataset.state,"busy");
+  assert.equal(ui.el("agent-error").classList.contains("form-error"),false);
+  assert.equal(ui.el("agent-diagnostics").hidden,true);
+  assert.equal(ui.el("agent-enable-hint").hidden,true);
+  assert.equal(ui.el("agent-actions").children[0].textContent,"暂停");
+  assert.equal(ui.el("execution-hint").dataset.phase,"recovering");
+  await ui.el("agent-tab-inbox").emit("click");await settle();
+  assert.match(ui.el("inbox-runtime").textContent,/正在恢复/);
+  assert.doesNotMatch(ui.el("inbox-runtime").textContent,/DSH|暂停/);
+  await ui.el("agent-tab-activity").emit("click");await settle();
+  assert.equal(ui.el("activity-status").textContent,"正在恢复");
+  assert.equal(ui.el("activity-execution-error").classList.contains("form-error"),false);
+  assert.equal(ui.el("activity-output-error").hidden,true);
+  assert.equal(ui.el("activity-diagnostics").hidden,true);
+
+  member.status="backend_blocked";
+  member.execution.notice={code:"session_unavailable",message:"助理暂时无法恢复。对话和任务记录已保留，可查看诊断详情。"};
+  await ui.refresh();await settle();
+  assert.equal(ui.el("agent-model-alert").textContent,"运行异常");
+  assert.equal(ui.el("agent-error").textContent,member.execution.notice.message);
+  assert.equal(ui.el("activity-status").textContent,"暂时无法恢复");
+  assert.equal(ui.el("activity-diagnostic-error").textContent,raw);
+  assert.equal(ui.el("agent-diagnostic-error").textContent,raw);
+  assert.equal(ui.el("agent-diagnostics").hidden,false);
+  assert.equal(ui.el("activity-diagnostics").hidden,false);
+  assert.equal(ui.el("agent-error").classList.contains("form-error"),true);
+
+  member.status="idle";member.execution.error="";member.execution.notice=null;
+  member.execution.paused=false;member.execution.session_reset_required=false;
+  await ui.refresh();await settle();
+  assert.equal(ui.el("agent-error").hidden,true);
+  assert.equal(ui.el("agent-diagnostics").hidden,true);
+  assert.equal(ui.el("agent-model-alert").hidden,true);
+});
+
 test("Scion connection discovers a managed account and saves its profile without manual IDs", async () => {
   const api = server(); let item;
   api.hook = (path, data) => {
@@ -1427,8 +1479,10 @@ test("activity distinguishes running, stopping and stopped while preserving real
     await ui.refresh();await settle();
     assert.equal(ui.el("activity-output-title").textContent,"最近回合 · 执行失败");
     assert.equal(ui.el("activity-output-error").hidden,false);
-    assert.equal(ui.el("activity-output-error").textContent,failure);
-    assert.equal(ui.el("activity-execution-error").textContent,failure);
+    assert.equal(ui.el("activity-output-error").textContent,"该回合未能完成，可查看诊断详情。");
+    assert.match(ui.el("activity-execution-error").textContent,/对话和任务记录已保留/);
+    assert.equal(ui.el("activity-diagnostic-error").textContent,failure);
+    assert.equal(ui.el("activity-diagnostics").hidden,false);
   }
   member.execution.error="";member.execution.session_reset_required=false;
   member.execution.agent.turn.status="failed";
@@ -3597,7 +3651,7 @@ test("DSH threshold shows Session counts and keeps pause available during automa
   const ui=await launch(api);
   await ui.el("members").children[0].querySelector(".member-summary").emit("click"); await ui.el("agent-tab-activity").emit("click");await settle();
   assert.equal(ui.el("activity-budget").textContent,"2 / 2 · 累计 6");
-  assert.match(ui.el("activity-rotation").textContent,/达到会话回合阈值 · old_closed/);
+  assert.match(ui.el("activity-rotation").textContent,/达到会话回合阈值 · 正在准备新会话/);
   assert.equal(ui.el("agent-enable-hint").hidden,true);
   const pause=ui.el("agent-actions").children[0];
   assert.equal(pause.textContent,"暂停");assert.equal(pause.disabled,false);

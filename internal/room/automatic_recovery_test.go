@@ -3,6 +3,7 @@ package room
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -177,7 +178,7 @@ func TestAutomaticRecoveryRejectsUnsettledOwnedSession(t *testing.T) {
 }
 
 func TestAutomaticRecoveryRestoresOnlyEnabledSettledSessions(t *testing.T) {
-	for _, mode := range []string{"enabled", "paused", "unsettled", "already-attempted", "authentication"} {
+	for _, mode := range []string{"enabled", "paused", "unsettled", "already-attempted", "authentication", "incompatible", "corrupt-backend", "corrupt-unsettled"} {
 		t.Run(mode, func(t *testing.T) {
 			h := newRoomHarness(t, historyRoom(1, "pending"), nil)
 			id := h.memberID("A", "generation-A")
@@ -195,12 +196,20 @@ func TestAutomaticRecoveryRestoresOnlyEnabledSettledSessions(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(dir, "backend.json"), []byte(`{"version":1,"sessionId":"old","configSHA256":"test"}`), 0600); err != nil {
 				t.Fatal(err)
 			}
-			if mode != "unsettled" {
+			if mode == "corrupt-backend" || mode == "corrupt-unsettled" {
+				if err := os.WriteFile(filepath.Join(dir, "backend.json"), []byte(`{"version":`), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if mode != "unsettled" && mode != "corrupt-unsettled" {
 				if err := os.WriteFile(filepath.Join(dir, "settled.json"), []byte(`{"version":1}`), 0600); err != nil {
 					t.Fatal(err)
 				}
 			}
 			failure := dsh.ErrUnavailable.Error()
+			if mode == "incompatible" {
+				failure = dsh.ErrRecoveryUnsupported.Error() + ": backend configuration changed"
+			}
 			if mode == "authentication" {
 				failure += "\n" + dsh.ErrAuthentication.Error()
 			}
@@ -236,7 +245,7 @@ func TestAutomaticRecoveryRestoresOnlyEnabledSettledSessions(t *testing.T) {
 			if err := svc.resumeMembers(h.ctx); err != nil {
 				t.Fatal(err)
 			}
-			if mode == "enabled" {
+			if mode == "enabled" || mode == "incompatible" || mode == "corrupt-backend" {
 				s := waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool {
 					return !s.Active && s.Agent.TurnNumber == 2
 				})
@@ -248,6 +257,139 @@ func TestAutomaticRecoveryRestoresOnlyEnabledSettledSessions(t *testing.T) {
 				if !s.Paused || s.Rotation != nil {
 					t.Fatal("paused or permanent fault recovered", s)
 				}
+			}
+		})
+	}
+}
+
+func TestAutomaticRecoveryAfterFailedSessionOpen(t *testing.T) {
+	for _, mode := range []string{"incompatible", "unsettled", "authentication", "cleanup-pending", "persistent", "pause"} {
+		t.Run(mode, func(t *testing.T) {
+			h := newRoomHarness(t, historyRoom(0, ""), nil)
+			id := h.memberID("A", "generation-A")
+			opts := adapterOptions(h.store, id)
+			ref := dshReference{Version: formatVersion, MemberIdentity: id, Directory: "session.json.dsh"}
+			if err := h.store.save(opts.StatePath, ref, maxPrivateFileBytes); err != nil {
+				t.Fatal(err)
+			}
+			dir := dshStateDir(opts.StatePath)
+			if err := os.MkdirAll(dir, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if mode != "unsettled" {
+				if err := os.WriteFile(filepath.Join(dir, "settled.json"), []byte(`{"version":1}`), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			oldHistory := filepath.Join(dir, "retained-private-history")
+			if err := os.WriteFile(oldHistory, []byte("original"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := h.store.saveScheduling(memberScheduling{Version: schedulingVersion, MemberIdentity: id, SessionGeneration: ref.Directory}); err != nil {
+				t.Fatal(err)
+			}
+			room, _ := h.store.LoadRoom()
+			svc := &service{ctx: h.ctx, store: h.store, info: ServiceInfo{RoomIdentity: h.id}, room: h.addr, targets: map[string]actorx.Addr{}, dshProfiles: map[string]dshProfile{room.Members[0].Runner.Profile: {}}}
+			var opens, runs atomic.Int32
+			backend := dshBackend{store: h.store, recover: true, open: func(_ context.Context, options dsh.Options) (dshComponent, error) {
+				attempt := opens.Add(1)
+				if attempt == 1 || mode == "persistent" {
+					failure := fmt.Errorf("%w: backend configuration changed", dsh.ErrRecoveryUnsupported)
+					if mode == "authentication" {
+						failure = errors.Join(failure, dsh.ErrAuthentication)
+					}
+					if mode == "cleanup-pending" {
+						failure = errors.Join(failure, dsh.ErrCleanupPending)
+					}
+					return nil, failure
+				}
+				if options.StateDir == dir || !strings.Contains(options.Instructions, "private context has been reset") {
+					t.Error("replacement did not receive a new generation and reset context")
+				}
+				return &adapterComponent{run: func(context.Context, string) (dsh.TurnResult, error) {
+					runs.Add(1)
+					return dsh.TurnResult{StopReason: "end_turn"}, nil
+				}}, nil
+			}}
+			addr, err := h.spawn(&MemberAgent{Options: opts, Store: h.store, Room: h.addr, Backend: backend, SessionMaxTurns: 16, RequestRecovery: svc.requestMemberRecovery})
+			if err != nil {
+				t.Fatal(err)
+			}
+			svc.setTarget(id.MembershipID, addr)
+			controlMember(t, h, addr, id, "run", UnreadChanged{MemberIdentity: id}, false, false)
+			automaticPost(t, h, addr, id, 1)
+			first := waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool { return !s.Active && s.Agent.TurnNumber == 1 })
+			if mode == "pause" {
+				controlMember(t, h, addr, id, "pause", UnreadChanged{MemberIdentity: id}, false, false)
+				time.Sleep(1200 * time.Millisecond)
+				paused := inspectMember(t, h.ctx, addr, id)
+				if opens.Load() != 1 || !paused.Paused || paused.Status == "recovering" || paused.Rotation != nil {
+					t.Fatal("failed-open recovery ignored explicit pause", paused)
+				}
+			} else if mode == "incompatible" || mode == "persistent" {
+				if first.Status != "recovering" || first.Notice == nil || first.Notice.Code != "session_recovering" {
+					t.Fatal("recoverable open failure was exposed as a terminal error", first)
+				}
+				last := waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool { return !s.Active && s.Agent.TurnNumber == 2 })
+				if opens.Load() != 2 || last.SessionGeneration == ref.Directory {
+					t.Fatal("failed resume did not rotate exactly once", last, opens.Load())
+				}
+				if mode == "incompatible" {
+					if last.Paused || last.Error != "" || last.Notice != nil || runs.Load() != 1 || last.Agent.Turn.Status != "completed" {
+						t.Fatal("replacement did not continue normal input", last, runs.Load())
+					}
+				} else {
+					if !last.Paused || last.Status == "recovering" || last.Notice == nil || runs.Load() != 0 {
+						t.Fatal("persistent failure was not bounded", last)
+					}
+					saved, err := h.store.loadScheduling(id)
+					if err != nil || !saved.RecoveryAttempted {
+						t.Fatal("recovery allowance would reset across restart", saved, err)
+					}
+				}
+			} else if first.Status == "recovering" || !first.Paused || opens.Load() != 1 || runs.Load() != 0 {
+				t.Fatal("unsafe open failure was automatically replaced", first)
+			}
+			if data, err := os.ReadFile(oldHistory); err != nil || string(data) != "original" {
+				t.Fatal("recovery overwrote original evidence", string(data), err)
+			}
+			room, _ = h.store.LoadRoom()
+			if room.LatestSeq != 1 || room.Members[0].ReadThrough != 0 {
+				t.Fatal("recovery changed Room input or cursor", room)
+			}
+		})
+	}
+}
+
+func TestFailedOpenRecoveryRejectsUntrustedSessionReference(t *testing.T) {
+	for _, mode := range []string{"identity", "corrupt", "missing", "absent"} {
+		t.Run(mode, func(t *testing.T) {
+			h := newRoomHarness(t, historyRoom(0, ""), nil)
+			id := h.memberID("A", "generation-A")
+			opts := adapterOptions(h.store, id)
+			dir := dshStateDir(opts.StatePath)
+			if mode != "absent" {
+				if err := os.MkdirAll(dir, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "settled.json"), []byte(`{"version":1}`), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			switch mode {
+			case "identity":
+				other := id
+				other.MembershipID = "another-member"
+				if err := h.store.save(opts.StatePath, dshReference{Version: formatVersion, MemberIdentity: other, Directory: "session.json.dsh"}, maxPrivateFileBytes); err != nil {
+					t.Fatal(err)
+				}
+			case "corrupt":
+				if err := os.WriteFile(opts.StatePath, []byte(`{"directory":`), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if settledSessionOpenFailure(dshBackend{store: h.store}, opts, dsh.ErrRecoveryUnsupported) {
+				t.Fatal("settlement evidence bypassed invalid member/directory reference")
 			}
 		})
 	}

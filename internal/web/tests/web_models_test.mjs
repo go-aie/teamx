@@ -61,7 +61,9 @@ test("running members can pause beside collapsed settings and runtime failures r
  member.execution.error="服务暂不可用";member.status="backend_blocked";await ui.refresh();
  assert.equal(ui.el("agent-model-alert").textContent,"运行异常");assert.equal(ui.el("toggle-agent-controls").dataset.state,"error");
  await ui.el("toggle-agent-controls").emit("click");assert.equal(ui.el("agent-controls").hidden,false);
- assert.equal(ui.el("agent-error").textContent,"服务暂不可用");
+ assert.match(ui.el("agent-error").textContent,/可查看诊断详情/);
+ assert.equal(ui.el("agent-diagnostic-error").textContent,"服务暂不可用");
+ assert.equal(ui.el("agent-diagnostics").hidden,false);
 });
 
 test("member model picker names its default and distinguishes applied, pending and unstarted sessions",async()=>{

@@ -83,6 +83,10 @@
 .agent-overview .member-actions { margin:0; }
 .agent-enable-hint { flex-shrink:0; margin:0 var(--panel-space) 12px; font-size:var(--font-small); line-height:1.6; }
 .agent-error { flex-shrink:0; margin:0; padding:0 var(--panel-space) 14px; white-space:pre-wrap; }
+.execution-diagnostics { margin:0 var(--panel-space) 14px; color:var(--muted); font-size:13px; }
+.execution-diagnostics summary { cursor:pointer; }
+.execution-diagnostics pre { white-space:pre-wrap; overflow-wrap:anywhere; font:inherit; user-select:text; }
+.activity-section .execution-diagnostics { margin:10px 0; }
 .agent-tabs { flex-shrink:0; min-width:0; gap:20px; margin:0; padding:0 var(--panel-space); background:var(--surface); }
 .agent-tabs button { min-height:var(--control-height); padding:8px 0 10px; }
 .agent-tabs button:hover { color:var(--accent); }
@@ -282,3 +286,5 @@
 .agent-name-form .form-actions { margin-top:8px; }
 .agent-name-row { padding:8px var(--panel-space); border-bottom:1px solid var(--line); }
 #agent-name-summary { min-width:0; overflow-wrap:anywhere; text-align:right; }
+
+.member-error.recovering { color:var(--muted); }

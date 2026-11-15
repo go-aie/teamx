@@ -175,8 +175,14 @@ type MemberStatus struct {
 	Active               bool             `json:"active"`
 	Agent                *AgentSnapshot   `json:"agent,omitempty"`
 	Error                string           `json:"error,omitempty"`
+	Notice               *ExecutionNotice `json:"notice,omitempty"` // User-facing message; Error retains operator diagnostics.
 	SessionTurns         *SessionTurns    `json:"session_turns,omitempty"`
 	TurnBudget           *TurnBudget      `json:"turn_budget,omitempty"`
+}
+
+type ExecutionNotice struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 type SessionRotation struct {

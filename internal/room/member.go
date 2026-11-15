@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-aie/actorx"
+	"github.com/go-aie/teamx/internal/agent/dsh"
 )
 
 const defaultMaxTurns uint64 = 16
@@ -169,6 +170,9 @@ func (m *MemberAgent) status() MemberStatus {
 	case m.paused:
 		status = "paused"
 	}
+	if m.recoveringSession() {
+		status = "recovering"
+	}
 	// Turn records the last attempt, which may remain interrupted or failed
 	// after scheduling is explicitly resumed. It is not the current status.
 	state := m.state
@@ -205,6 +209,7 @@ func (m *MemberAgent) status() MemberStatus {
 		copy := *m.latest
 		result.Notification = &copy
 	}
+	result.Notice = executionNotice(result)
 	return result
 }
 
@@ -368,6 +373,7 @@ type memberTurn struct {
 	state         AgentSnapshot
 	started       bool
 	ended         bool
+	openSettled   bool // Worker-verified durable settlement after failed Open.
 	// The worker publishes only an immutable diagnostic while joining cleanup;
 	// all scheduling fields remain owned by the actor.
 	cleanupReason atomic.Pointer[string]
@@ -701,6 +707,7 @@ func (m *MemberAgent) startTurn(input UnreadChanged, snapshotSeq, readThrough ui
 				work.cleanupReason.Store(&reason)
 				closeErr := work.session.close()
 				work.session = nil
+				work.openSettled = dsh.CleanupSettled(closeErr) && settledSessionOpenFailure(backend, opts, errors.Join(err, closeErr))
 				return struct{}{}, errors.Join(err, closeErr)
 			}
 			if work.session == nil {
@@ -723,7 +730,7 @@ func (m *MemberAgent) startTurn(input UnreadChanged, snapshotSeq, readThrough ui
 			if errors.Is(err, errDSHDisabled) {
 				m.BackendBlocked = m.lastError
 			}
-			if errors.Is(err, errDSHPaused) && work.session != nil && recoverableDSHFailure(err) {
+			if errors.Is(err, errDSHPaused) && (work.session != nil || work.openSettled) && recoverableDSHFailure(err) {
 				m.RecoveryPending, m.recoveryArmed = true, true
 				m.rotationNext = m.now().Add(time.Second)
 			}

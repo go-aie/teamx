@@ -86,7 +86,7 @@ func (s *service) loadMembers(state RoomSnapshot) error {
 				}
 			} else {
 				recovered.backendResume = true
-				recovered.recovery = rotationErr == nil && agent.Turn != nil && agent.Turn.Status == "failed" && recoverableDSHHistory(agent)
+				recovered.recovery = rotationErr == nil && agent.Turn != nil && agent.Turn.Status == "failed" && recoverableDSHHistory(agent) && dsh.CheckReset(backendDir) == nil
 				recovered.notice = "DSH original session will resume lazily using current tool identity"
 			}
 		} else if ref.Pending {

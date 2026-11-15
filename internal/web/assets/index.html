@@ -404,6 +404,7 @@
         <div class="agent-overview"><span class="quiet">协作状态</span><div id="agent-actions" class="member-actions"></div></div>
         <p id="agent-enable-hint" class="agent-enable-hint quiet" role="status" hidden></p>
         <p id="agent-error" class="agent-error form-error" role="status" hidden></p>
+        <details id="agent-diagnostics" class="execution-diagnostics" hidden><summary>诊断详情</summary><pre id="agent-diagnostic-error"></pre></details>
         </section>
         <div id="agent-tabs" class="notification-tabs agent-tabs" role="tablist" aria-label="Agent 详情">
           <button id="agent-tab-platforms" type="button" role="tab" aria-selected="true" aria-controls="platforms-member-view">平台</button>
@@ -439,6 +440,7 @@
             <dl class="activity-stats"><div><dt>运行状态</dt><dd id="activity-status"></dd></div><div><dt>读取进度</dt><dd id="activity-progress"></dd></div><div><dt>本会话回合</dt><dd id="activity-budget"></dd></div><div><dt>累计回合</dt><dd id="activity-turn"></dd></div></dl>
             <p id="activity-rotation" class="notice" hidden></p>
             <p id="activity-execution-error" class="form-error" hidden></p>
+            <details id="activity-diagnostics" class="execution-diagnostics" hidden><summary>诊断详情</summary><pre id="activity-diagnostic-error"></pre></details>
           </section>
           <section id="activity-output" class="activity-section" hidden>
             <div class="activity-section-heading"><h3 id="activity-output-title">当前回合</h3><span id="activity-stop" class="activity-stop"></span></div>

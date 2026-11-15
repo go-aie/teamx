@@ -4,6 +4,7 @@ import { createActivityReader, sameService } from "../client.mjs";
 import { renderAvatar } from "../avatars.mjs";
 import { createNavigationIcon } from "../icons.mjs";
 import { captureReturnView } from "../view-return.mjs";
+import { isSessionRecovering as recovering, memberExecutionFailed as runtimeFailed, memberExecutionMessage as executionMessage } from "../member-execution.mjs";
 
 // Member inspection, private activity, CLI tools and platform summaries.
 export function createMembers({ env, runtime, notificationsUI, workspaceUI, onboardingUI, inboxUI, roomsUI, layoutUI, policyUI, conversationUI, connectionsUI, settingsUI }) {
@@ -27,16 +28,21 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
   let memberToolsView = null;
   let memberModelStatus = {};
 
+  function renderDiagnostics(prefix, detail) {
+    $(prefix + "-diagnostics").hidden = !detail;
+    $(prefix + "-diagnostic-error").textContent = detail || "";
+  }
+
   function renderControlsToggle() {
     const expanded = !$("agent-controls").hidden, button = $("toggle-agent-controls");
     const modelError = memberModelStatus.state === "error", pending = memberModelStatus.state === "busy";
-    const member = selectedAgent(), runtimeError = !!member?.execution?.error;
+    const member = selectedAgent(), runtimeError = runtimeFailed(member), recoveringSession = recovering(member);
     const name = roomsUI.isDirect() ? "助理设置" : "成员设置";
     $("agent-settings-label").textContent = name;
     const label = `${expanded ? "收起" : "展开"}${name}${modelError ? "，查看模型异常" : runtimeError ? "，查看运行异常" : ""}`;
     button.setAttribute("aria-expanded", String(expanded)); button.setAttribute("aria-label", label);
     button.title = `${label}${(modelError || pending) && memberModelStatus.detail ? `；${memberModelStatus.detail}` : ""}`;
-    button.dataset.state = modelError || runtimeError ? "error" : pending ? "busy" : "ready";
+    button.dataset.state = modelError || runtimeError ? "error" : pending || recoveringSession ? "busy" : "ready";
     $("agent-model-alert").textContent = modelError ? "模型异常" : runtimeError ? "运行异常" : pending ? "切换中" : "";
     $("agent-model-alert").hidden = !$("agent-model-alert").textContent;
     const quickActions = $("agent-quick-actions");
@@ -309,7 +315,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
 
   const statusNames = { paused: "已暂停", idle: "等待消息", waiting: "等待执行", running: "运行中", completed: "已完成",
     failed: "执行失败", interrupted: "已中断", unavailable: "暂不可用", detached: "未连接",
-    budget_exhausted: "预算用尽", checkpoint_failed: "检查点失败", backend_blocked: "需重置会话",
+    budget_exhausted: "预算用尽", checkpoint_failed: "检查点失败", backend_blocked: "暂时无法恢复", recovering: "正在恢复",
     rotating: "轮换中", closing: "清理中", merging: "合并通知" };
 
   function memberRole(member) {
@@ -392,19 +398,21 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     $("agent-name-cancel").disabled=nameSaving;
     $("agent-display-name").disabled=nameSaving;
     $("agent-status").textContent = member.execution?.active ? "运行中" : statusNames[member.status] || member.status;
-    $("agent-status").classList.toggle("running", !!member.execution?.active);
+    $("agent-status").classList.toggle("running", !!member.execution?.active || recovering(member));
     $("agent-status").classList.toggle("failed", /failed|blocked|unavailable|interrupted/.test(member.status));
     renderMemberActions(member, $("agent-actions"));
     renderControlsToggle();
     const execution = member.execution;
-    const reset = execution?.session_reset_required || member.status === "backend_blocked";
+    const reset = !recovering(member) && (execution?.session_reset_required || member.status === "backend_blocked");
     const budget = execution?.turn_budget;
     const exhausted = !execution?.session_turns && budget && budget.used >= budget.limit;
     const effects = [];
     if (reset) effects.push("重置会话，清除私有上下文");
     if (exhausted) effects.push(`追加 ${budget.grant || 16} 回合`);
     notice("agent-enable-hint", effects.length ? `启用协作将${effects.join("，并")}。` : "");
-    notice("agent-error", member.execution?.error || "");
+    notice("agent-error", executionMessage(member));
+    $("agent-error").classList.toggle("form-error", !recovering(member));
+    renderDiagnostics("agent", recovering(member) ? "" : execution?.error);
     if (memberToolsView?.cli) {
       const signature = JSON.stringify([state.connected, state.catalogConnected, discussionBusy()]);
       if (memberToolsView.availability !== signature) {
@@ -450,7 +458,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     actions.dataset.signature = signature;
     actions.replaceChildren();
     if (!execution) return;
-    const enable = !pauseOnly && (execution.paused || execution.session_reset_required || member.status === "backend_blocked" || member.status === "budget_exhausted");
+    const enable = !pauseOnly && !recovering(member) && (execution.paused || execution.session_reset_required || member.status === "backend_blocked" || member.status === "budget_exhausted");
     const add = (label, action) => {
       const button = document.createElement("button"); button.type = "button"; button.className = "secondary-button button-compact"; button.textContent = label;
       button.setAttribute("aria-label", `${label} ${agentName(member)}`);
@@ -474,23 +482,24 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     }
     const running = available ? state.members.filter(member => member.execution?.active || member.status === "running") : [];
     const waiting = available ? state.members.filter(member => member.status === "waiting" && !member.execution?.active && !member.execution?.paused) : [];
+    const restoring = available ? state.members.filter(recovering) : [];
     const names = members => members.map(agentName).join("、");
     // Active covers Session opening, model work and tools; it does not identify a thinking phase.
     const feedback = available ? [...stopRequests].filter(([id, request]) =>
       ["stopped", "error"].includes(request.phase) && ![...running, ...waiting].some(member => member.membership_id === id)) : [];
     const feedbackText = feedback.some(([, request]) => request.phase === "error") ? "停止未确认" : feedback.length ? "已停止" : "";
-    const text = running.length ? `${names(running)} 正在处理…` : waiting.length ? `${names(waiting)} 正在等待执行…` : feedbackText;
+    const text = running.length ? `${names(running)} 正在处理…` : waiting.length ? `${names(waiting)} 正在等待执行…` : restoring.length ? `${names(restoring)} 正在恢复…` : feedbackText;
     const queue = running.length && waiting.length ? `${names(waiting)} 等待执行` : "";
     const hint = $("execution-hint");
-    const primary = running.length ? running : waiting;
-    const phaseText = running.length ? "正在处理…" : "正在等待执行…";
+    const primary = running.length ? running : waiting.length ? waiting : restoring;
+    const phaseText = running.length ? "正在处理…" : waiting.length ? "正在等待执行…" : "正在恢复…";
     const signature = JSON.stringify([runtime.viewVersion, text, queue, primary.map(member => [member.membership_id, member.execution?.execution_id,
       member.execution?.stopping]), [...stopRequests]]);
     if (hint.dataset.signature === signature) return;
     const follow = conversationUI.nearBottom();
     hint.dataset.signature = signature;
     hint.hidden = !text;
-    hint.dataset.phase = running.length ? "running" : waiting.length ? "waiting" : "stopped";
+    hint.dataset.phase = running.length ? "running" : waiting.length ? "waiting" : restoring.length ? "recovering" : "stopped";
     const content = $("execution-text");
     content.replaceChildren();
     const mixedPhases = primary.some(member => member.execution?.stopping ||
@@ -575,9 +584,9 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       el.querySelector(".member-name").textContent = agentName(member);
       const summary = el.querySelector(".member-summary");
       summary.dataset.activityMember = member.membership_id;
-      summary.setAttribute("aria-label", `查看 ${agentName(member)} 的详情，${label}${execution?.error ? "，运行异常" : ""}`);
+      summary.setAttribute("aria-label", `查看 ${agentName(member)} 的详情，${label}${runtimeFailed(member) ? "，运行异常" : ""}`);
       summary.title = `${agentName(member)} · ${label}`;
-      summary.dataset.state = execution?.error || /failed|blocked|unavailable|interrupted/.test(member.status) ? "error" : running ? "running" : "idle";
+      summary.dataset.state = runtimeFailed(member) || /failed|blocked|unavailable|interrupted/.test(member.status) ? "error" : running || recovering(member) ? "running" : "idle";
       summary.disabled = !state.connected;
       summary.addEventListener("click", () => openMemberActivity(member, summary));
       renderAvatar(document, el.querySelector(".avatar"), {kind:"agent", id:member.agent_id, name:agentName(member), direct:roomsUI.isDirect(), defaultAssistant:roomsUI.isDefaultAssistant()});
@@ -589,10 +598,11 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       const budget = execution?.turn_budget;
       el.querySelector(".member-details").textContent = `${member.unread_count} 条未读 · 已读至 #${member.read_through}` +
         (execution?.session_turns ? `\n${execution.session_turns.baseline_known ? `本会话 ${execution.session_turns.used} / ${execution.session_turns.limit}` : "待接入轮换"} · 累计 ${execution.session_turns.total}` : budget ? `\n回合 ${budget.used} / ${budget.limit}` : "");
-      if (execution?.error) {
+      if (executionMessage(member)) {
         const error = el.querySelector(".member-error");
         error.hidden = false;
-        error.textContent = execution.error;
+        error.textContent = executionMessage(member);
+        error.classList.toggle("recovering", recovering(member));
       }
       fragment.append(el);
     }
@@ -639,13 +649,16 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     const session = execution?.session_turns;
     $("activity-budget").textContent = session ? `${session.baseline_known ? `${session.used} / ${session.limit}` : "待接入轮换"} · 累计 ${session.total}` : budget ? `${budget.used} / ${budget.limit}` : "暂不可用";
     const rotation = execution?.rotation;
-    const rotationReasons = { session_max_turns: "达到会话回合阈值", manual: "手动轮换", model_change: "模型切换" };
-    notice("activity-rotation", rotation ? `${rotationReasons[rotation.reason] || rotation.reason} · ${rotation.reason === "model_change" ? ({prepared:"等待当前回合结束",old_closed:"正在安装新模型",completed:"已完成"}[rotation.phase] || "等待处理") : rotation.phase}${rotation.error ? ` · ${rotation.error}` : ""}` : "");
+    const rotationReasons = { session_max_turns: "达到会话回合阈值", manual: "手动轮换", model_change: "模型切换", backend_recovery: "自动恢复会话" };
+    const phases = {prepared:"等待旧执行结束",old_closed:"正在准备新会话",completed:"已完成"};
+    notice("activity-rotation", rotation ? `${rotationReasons[rotation.reason] || "会话切换"} · ${rotation.status === "failed" ? "暂未完成" : rotation.reason === "model_change" ? ({prepared:"等待当前回合结束",old_closed:"正在安装新模型",completed:"已完成"}[rotation.phase] || "等待处理") : phases[rotation.phase] || "处理中"}` : "");
     const turn = execution?.agent?.turn;
     $("activity-turn").textContent = execution?.agent ? `${execution.agent.turn_number}` +
       (turn ? ` · ${statusNames[turn.status] || turn.status}` : " · 尚未运行") : "暂不可用";
-    notice("activity-execution-error", execution?.error || "");
+    notice("activity-execution-error", executionMessage(member));
+    $("activity-execution-error").classList.toggle("form-error", !recovering(member));
     const live = !!data.current_output, output = data.current_output || data.last_output;
+    renderDiagnostics("activity", recovering(member) ? "" : [...new Set([execution?.error, output?.error, rotation?.error].filter(Boolean))].join("\n"));
     if (!output) {
       $("activity-output").hidden = true;
       $("activity-jump-latest").hidden = true;
@@ -659,16 +672,16 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     // settled cleanly. The saved diagnostic still retains the raw error.
     const stopped = !live && !execution?.active && turn?.status === "interrupted" &&
       !execution?.error && !execution?.session_reset_required && !/failed|blocked|unavailable/.test(member.status);
-    const outputError = stopped ? "" : output.error || "";
+    const outputError = stopped || recovering(member) ? "" : output.error || "";
     const reasons = { end_turn: "已完成", cancelled: "已停止", max_tokens: "达到 token 上限", refusal: "拒绝执行" };
-    const failed = !!(execution?.error || outputError || turn?.status === "failed");
-    const outcome = stopped ? "已停止" : failed ? "执行失败" : reasons[result.stopReason] || "已结束";
+    const failed = !!(runtimeFailed(member) || outputError || turn?.status === "failed");
+    const outcome = recovering(member) ? "正在恢复" : stopped ? "已停止" : failed ? "执行失败" : reasons[result.stopReason] || "已结束";
     $("activity-output-title").textContent = live ? `当前回合 · ${stopping ? "正在停止" : "运行中"}` : `最近回合 · ${outcome}`;
     const settling = live && !stopping && !!result.stopReason;
     $("activity-stop").textContent = settling ? "正在结清" : "";
     $("activity-stop").hidden = !settling;
     if (stopped) $("activity-turn").textContent = `${execution.agent.turn_number} · 已停止`;
-    notice("activity-output-error", outputError);
+    notice("activity-output-error", outputError ? "该回合未能完成，可查看诊断详情。" : "");
     if (!Array.isArray(result.events)) {
       $("activity-output").hidden = true;
       $("activity-jump-latest").hidden = true;
