@@ -8,7 +8,7 @@ import { beginRead, readState } from "../read-state.mjs";
 import { isSessionRecovering as recovering, memberExecutionFailed as runtimeFailed, memberExecutionMessage } from "../member-execution.mjs";
 
 // Member inspection, private activity, CLI tools and platform summaries.
-export function createMembers({ env, runtime, notificationsUI, workspaceUI, onboardingUI, inboxUI, roomsUI, layoutUI, policyUI, conversationUI, connectionsUI, settingsUI }) {
+export function createMembers({ env, runtime, notificationsUI, workspaceUI, onboardingUI, inboxUI, roomsUI, layoutUI, policyUI, conversationUI, connectionsUI, settingsUI, userMenuUI }) {
   const { document, window, Option, ResizeObserver, request } = env;
   const { state, $, notice, rpc, currentView, refresh, discussionBusy, storage } = runtime;
 
@@ -581,16 +581,20 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     openMemberActivity(state.members[0], $("room-menu-label"));
   }
 
+  const showHumanMember = () => !!state.info && !roomsUI.isDirect();
+  const participantCount = () => state.members.length + (showHumanMember() ? 1 : 0);
+
   function renderMembers() {
     renderMemberListToggle();
     syncDirectDetail();
     renderActivityControls();
     renderExecutionHint();
-    $("member-count").textContent = state.members.length;
-    $("room-title-count").textContent = `（${state.members.length}）`;
+    $("member-count").textContent = participantCount();
+    $("room-title-count").textContent = `(${participantCount()})`;
     $("member-empty").hidden = state.members.length > 0;
+    const human = showHumanMember() ? {id:state.operator, name:userMenuUI.displayName()} : null;
     // Keep focus and controls stable when polling reports no visible changes.
-    const signature = JSON.stringify(state.members) + [...memberBusy].join(",") + state.connected + discussionBusy();
+    const signature = JSON.stringify([state.members, human]) + [...memberBusy].join(",") + state.connected + discussionBusy();
     if ($("members").dataset.signature === signature) return;
     $("members").dataset.signature = signature;
     const fragment = document.createDocumentFragment();
@@ -623,6 +627,14 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
         error.textContent = executionMessage(member);
         error.classList.toggle("recovering", recovering(member));
       }
+      fragment.append(el);
+    }
+    if (human) {
+      const el = $("human-member-template").content.firstElementChild.cloneNode(true);
+      el.querySelector(".member-summary").title = `${human.name} (你)`;
+      el.querySelector(".member-summary").setAttribute("aria-label", `${human.name}，你`);
+      el.querySelector(".member-name").textContent = human.name;
+      renderAvatar(document, el.querySelector(".avatar"), {kind:"human", id:human.id});
       fragment.append(el);
     }
     $("members").replaceChildren(fragment);
@@ -960,6 +972,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     toolsCurrent,
     loadCLITools,
     renderMembers,
+    participantCount,
     syncDirectDetail,
     openMemberActivity,
     statusNames,

@@ -748,7 +748,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     $("rename-room-name").setAttribute("aria-label", `${type}名称`);
     $("room-menu-label").setAttribute("aria-label", direct ? "助理详情" : "房间详情");
     $("room-detail-name").textContent = name;
-    $("room-title-count").textContent = `（${state.members.length}）`;
+    $("room-title-count").textContent = `(${membersUI.participantCount()})`;
     $("room-title-count").hidden = direct || !state.info;
     $("room-details").hidden = direct;
     $("room-members-heading").hidden = direct;

@@ -2204,7 +2204,7 @@ test("integration messages display GitLab author without becoming members", asyn
   assert.equal(el.querySelector(".author").textContent, "GitLab · 项目活动");
   assert.equal(el.classList.contains("own"), false);
   assert.equal(el.classList.contains("integration"), true);
-  assert.equal(String(ui.el("member-count").textContent), "0");
+  assert.equal(String(ui.el("member-count").textContent), "1");
 });
 
 
@@ -2379,7 +2379,7 @@ test("GitLab message author and keyboard avatar open notification details and cl
   await ui.el("close-notification").emit("click");
   await ui.el("members").children[0].querySelector(".member-summary").emit("click"); await settle();
   assert.equal(ui.el("notification-detail").open, false); assert.equal(ui.el("activity-dialog").open, true);
-  assert.equal(String(ui.el("member-count").textContent), "1");
+  assert.equal(String(ui.el("member-count").textContent), "2");
 });
 
 

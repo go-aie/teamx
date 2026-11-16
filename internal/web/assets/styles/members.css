@@ -21,7 +21,7 @@
   text-align:left;
   border-radius:var(--radius-control);
 }
-.member-summary:hover:not(:disabled) { background:var(--surface-hover); }
+button.member-summary:hover:not(:disabled) { background:var(--surface-hover); }
 .room-members-heading h2 { flex:1; min-width:0; }
 .member-list-toggle { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; min-height:44px; padding:0; background:transparent; color:inherit; font:inherit; text-align:left; }
 .member-list-toggle svg { color:var(--muted); transition:transform var(--motion-fast); }

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <meta name="color-scheme" content="light">
   <title>TeamX · 消息</title>
+  <link rel="icon" type="image/svg+xml" href="/ui/brand-mark.svg">
   <link rel="stylesheet" href="/ui/style.css">
   <script type="module" src="/ui/app.js"></script>
 </head>
@@ -920,5 +921,6 @@
   </div>
   <template id="message-template"><article class="message"><div class="avatar"></div><div class="message-main"><div class="message-meta"><button class="author" type="button" disabled></button><time></time><button class="reply-button" type="button" title="引用此消息" aria-label="引用此消息"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5-6 6 6 6M3 11h11a6 6 0 0 1 6 6v2"/></svg><span>引用</span></button></div><div class="message-content"><button class="message-reference text-button" type="button" hidden></button><div class="message-text"></div><div class="message-interactions"></div></div></div></article></template>
   <template id="member-template"><section class="member"><button class="member-summary" type="button" aria-controls="activity-dialog"><span class="member-top"><span class="avatar agent-avatar" aria-hidden="true"></span><span class="member-title"><span class="member-name"></span><span class="member-profile quiet"></span></span><span class="member-status"></span><svg class="navigation-icon member-chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m9 6 6 6-6 6"/></svg></span><span class="member-details"></span><span class="member-error" hidden></span></button></section></template>
+  <template id="human-member-template"><section class="member member-human"><div class="member-summary"><span class="member-top"><span class="avatar user-avatar" aria-hidden="true"></span><span class="member-title"><span class="member-name"></span><span class="member-profile quiet">你</span></span></span></div></section></template>
 </body>
 </html>

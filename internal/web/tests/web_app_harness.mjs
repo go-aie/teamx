@@ -66,7 +66,7 @@ export const settle = async () => { for (let i=0; i<15; i++) await new Promise(r
 export async function launch(api, saved = new Map(), environment = {}) {
   const elements = new Map([...html.matchAll(/id="([^"]+)"/g)].map(match => [match[1], new Element()]));
   for (const id of ["lark-group-mode", "lark-connection", "lark-target", "lark-backfill", "connection-provider", "connection-profile", "connection-scion-profile", "team", "profile", "workspace-connection", "gitlab-connection", "gitlab-target", "onboarding-room", "onboarding-member", "onboarding-backfill", "gitlab-application"]) elements.get(id).tag = "select";
-  for (const id of ["message-template", "member-template"]) elements.get(id).content = { firstElementChild: new Element() };
+  for (const [, id] of html.matchAll(/<template id="([^"]+)"/g)) elements.get(id).content = { firstElementChild: new Element() };
   for (const [, id, value] of html.matchAll(/<input id="(gitlab-(?:events-type|todos-reason|todos-type)-[^"]+)" type="checkbox" value="([^"]+)"/g)) {
     elements.get(id).tag = "input"; elements.get(id).value = value; elements.get(id).checked = false;
   }
