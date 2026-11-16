@@ -172,6 +172,13 @@
 
 .policy-form { display: grid; gap: 16px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
 .policy-form[hidden] { display: none; }
+.policy-form-feedback { padding:12px; border:1px solid var(--line); border-radius:var(--radius-control); }
+.policy-form-feedback[hidden] { display:none; }
+.policy-form-feedback[data-error="true"] { border-color:var(--danger); }
+#policy-form-status { margin:0; overflow-wrap:anywhere; }
+.policy-form-feedback[data-error="true"] #policy-form-status { color:var(--danger); }
+#policy-form-retry { margin-top:8px; }
+#policy-save { scroll-margin-block:16px; }
 #policy-entries:empty + .policy-form { margin-top: 0; border-top: 0; }
 .policy-form label { display: grid; gap: 6px; min-width: 0; color: var(--text); font-weight:var(--weight-medium); }
 

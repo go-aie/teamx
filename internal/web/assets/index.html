@@ -483,7 +483,7 @@
           <div class="policy-toolbar">
             <div class="policy-summary">
               <p id="policy-status" role="status" aria-live="polite" title="未确认的建议不生效；具体操作取决于规则内容和可用能力。"></p>
-              <button id="policy-retry" class="text-button" type="button" hidden>重试</button>
+              <button id="policy-retry" class="text-button" type="button" hidden>重新读取</button>
             </div>
             <div class="member-actions"><button id="policy-new" class="add-button" type="button" aria-label="新增规则" title="新增规则"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
           </div>
@@ -494,6 +494,10 @@
             <label>内容<textarea id="policy-text" rows="4" maxlength="32768" placeholder="例如：涉及交付时间，先向我确认。" aria-describedby="policy-save-hint" required class="field-control"></textarea></label>
             <label>有效期（可选）<input id="policy-expires" type="datetime-local" step="1" aria-describedby="policy-expires-hint" / class="field-control"><span id="policy-expires-hint" class="policy-field-hint">留空则不设到期时间。</span></label>
             <p id="policy-save-hint" class="policy-form-note">写清适用情况、处理要求和例外；涉及授权时注明范围。</p>
+            <div id="policy-form-feedback" class="policy-form-feedback" hidden>
+              <p id="policy-form-status" role="status" aria-live="polite" tabindex="-1"></p>
+              <button id="policy-form-retry" class="text-button" type="button" hidden>重新读取，保留草稿</button>
+            </div>
             <div class="policy-form-actions form-actions"><button id="policy-suggest" class="secondary-button" type="button">保存为建议</button><button id="policy-cancel" class="text-button" type="button">取消</button><button id="policy-save" class="primary" type="submit">保存并生效</button></div>
           </form>
           <details id="policy-followups" class="policy-followups">

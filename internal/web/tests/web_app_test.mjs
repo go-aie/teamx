@@ -3121,10 +3121,49 @@ test("AN-02.2 lost saves require a fresh version and late reads cannot cross roo
  const ui=await launch(api);await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();await ui.el("agent-tab-policy").emit("click");await settle();
  await ui.el("policy-new").emit("click");ui.el("policy-text").value="简短回复";
  await ui.el("policy-form").emit("submit");await settle();await ui.el("policy-form").emit("submit");await settle();
- assert.equal(api.calls.filter(c=>c.path==="/v1/policy/update").length,1);assert.match(ui.el("policy-status").textContent,/重试读取.*核对/);
+ assert.equal(api.calls.filter(c=>c.path==="/v1/policy/update").length,1);assert.match(ui.el("policy-form-status").textContent,/重新读取.*核对/);
+ assert.equal(ui.el("policy-form-feedback").hidden,false);assert.equal(ui.el("policy-form-feedback").dataset.error,"true");
+ assert.equal(ui.el("policy-form-retry").hidden,false);assert.equal(ui.document.activeElement,ui.el("policy-form-status"));
+ assert.equal(ui.el("policy-form-feedback").scrollIntoViewCount,1);
  const readsBeforeRetry=api.calls.filter(c=>c.path==="/v1/policy/read").length;await ui.refresh();await settle();assert.equal(api.calls.filter(c=>c.path==="/v1/policy/read").length,readsBeforeRetry);
- delay=true;const pending=ui.el("policy-retry").emit("click");await settle();await ui.select("B");finish();await pending;await settle();
+ delay=true;const pending=ui.el("policy-form-retry").emit("click");await settle();await ui.select("B");finish();await pending;await settle();
  assert.doesNotMatch(ui.el("policy-status").textContent,/99/);
+});
+
+test("policy conflict reload keeps the draft and expiry and saves only after explicit review",async()=>{
+ const api=server([makeRoom("A")]);
+ const member={agent_id:"assistant",membership_id:"1".repeat(32),status:"idle",runner:{profile:"runtime"}};
+ let record={id:"style",version:1,status:"active",text:"原来的规则",source:{user:"tester",text:"原始要求"},changed_by:{kind:"human",id:"tester"},updated_at:"2026-11-06T01:00:00Z"};
+ let updates=0,failRead=false;
+ api.hook=(path,data)=>{
+  if(path==="/v1/member/list")return {members:[member]};
+  if(path==="/v1/member/activity")return {member};
+  if(path==="/v1/policy/read") {
+   if(failRead)throw Error("temporarily unavailable");
+   return {revision:record.version,history:[record],current:[record],effective:[record]};
+  }
+  if(path==="/v1/policy/update"){
+   updates++;
+   if(updates===1){record={...record,version:2,text:"另一入口保存的规则"};throw Object.assign(Error("version conflict"),{code:"conflict",outcome:"not_applied"});}
+   assert.equal(data.policy.version,2);
+   record={...record,...data.policy,version:3};return {};
+  }
+ };
+ const ui=await launch(api);await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();await ui.el("agent-tab-policy").emit("click");await settle();
+ await ui.el("policy-entries").children[0].children[0].children[1].children[0].emit("click");
+ ui.el("policy-text").value="保留排版的草稿\n\n第二段";ui.el("policy-expires").value="2099-01-01T12:30";
+ await ui.el("policy-form").emit("submit");await settle();
+ assert.match(ui.el("policy-form-status").textContent,/本次修改未保存/);
+ assert.equal(ui.el("policy-save").disabled,true);assert.equal(ui.el("policy-new").disabled,true);
+ failRead=true;await ui.el("policy-form-retry").emit("click");await settle();
+ assert.match(ui.el("policy-form-status").textContent,/读取失败/);assert.equal(ui.el("policy-save").disabled,true);
+ failRead=false;await ui.el("policy-form-retry").emit("click");await settle();
+ assert.equal(ui.el("policy-form").hidden,false);assert.equal(ui.el("policy-form-feedback").dataset.error,"false");
+ assert.equal(ui.el("policy-text").value,"保留排版的草稿\n\n第二段");assert.equal(ui.el("policy-expires").value,"2099-01-01T12:30");
+ assert.equal(ui.el("policy-save").disabled,false);assert.equal(updates,1);
+ assert.match(elementText(ui.el("policy-entries")),/另一入口保存的规则/);
+ await ui.el("policy-form").emit("submit");await settle();
+ assert.equal(updates,2);assert.equal(record.version,3);assert.equal(ui.el("policy-form").hidden,true);
 });
 
 test("R5 management navigates native followups, human evidence, receipts and source pages",async()=>{

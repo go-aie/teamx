@@ -13,9 +13,10 @@ export function createPolicy({ env, membersUI, runtime, settingsUI, conversation
 
   function editPolicy(record = null) {
     const view = policyView;
-    if (!view || !policyCurrent(view) || view.saving || view.loading || !view.data) return;
+    if (!view || !policyCurrent(view) || view.saving || view.loading || view.needsRefresh || !view.data) return;
     view.editVersion=(view.editVersion || 0)+1;
     policyEditor = {view, record, id:record?.id || `p-${Date.now()}-${Math.random().toString(36).slice(2,10)}`};
+    $("policy-form-feedback").hidden = true;
     renderPolicyEmptyHint();
     $("policy-form").hidden = false;
     $("policy-editor-title").textContent = record ? "修改规则" : "新增规则";
@@ -197,6 +198,54 @@ export function createPolicy({ env, membersUI, runtime, settingsUI, conversation
     $("policy-empty").hidden = !policyView?.data || !policyCurrent(policyView) || policyView.data.current.length > 0 || !!policyEditor;
   }
 
+  function policySaveFeedback(view, message, {error = false, retry = false} = {}) {
+    if (!policyCurrent(view)) return;
+    if (policyEditor?.view === view) {
+      $("policy-form-feedback").hidden=false;
+      $("policy-form-feedback").dataset.error=String(error);
+      $("policy-form-status").textContent=message;
+      $("policy-form-retry").hidden=!retry;
+      if(error) {
+        $("policy-form-status").focus({preventScroll:true});
+        $("policy-form-feedback").scrollIntoView({block:"nearest"});
+        $("policy-save").scrollIntoView({block:"nearest"});
+      }
+    } else {
+      $("policy-status").textContent=message;
+      $("policy-retry").hidden=!retry;
+    }
+  }
+
+  async function reloadPolicyDraft() {
+    const editor=policyEditor, view=editor?.view;
+    if(!view || !policyCurrent(view) || view.loading || view.saving) return;
+    view.loading=true;
+    for(const id of ["policy-form-retry","policy-save","policy-suggest","policy-new"])$(id).disabled=true;
+    policySaveFeedback(view,"正在重新读取，草稿会保留…");
+    try {
+      const data=await rpc("/v1/policy/read",view.member,view.info);
+      if(!policyCurrent(view) || policyEditor!==editor) return;
+      const record=data.current.find(r=>r.id===editor.id);
+      if(editor.record && !record) throw Error("当前规则已不可用，请保留草稿并重新打开成员设置");
+      view.data=data;view.needsRefresh=false;view.readFailed=false;
+      editor.record=record || null;
+      $("policy-editor-title").textContent=record ? "修改规则" : "新增规则";
+      renderPolicy(view);
+      policySaveFeedback(view,"已重新读取当前版本，草稿已保留。请核对上方规则后再保存。");
+    } catch(error) {
+      if(policyCurrent(view) && policyEditor===editor) {
+        view.needsRefresh=true;
+        policySaveFeedback(view,`读取失败：${error.message}。草稿已保留，请重新读取。`,{error:true,retry:true});
+      }
+    } finally {
+      view.loading=false;
+      if(policyCurrent(view) && policyEditor===editor) {
+        $("policy-form-retry").disabled=false;
+        for(const id of ["policy-save","policy-suggest","policy-new"])$(id).disabled=!!view.needsRefresh;
+      }
+    }
+  }
+
   function renderPolicyFollowups(view) {
     if(!followupsCurrent(view))return;
     $("policy-matters").replaceChildren(...view.matters.items.map(item => {
@@ -241,7 +290,7 @@ export function createPolicy({ env, membersUI, runtime, settingsUI, conversation
     const view={member:{agent_id:member.agent_id,membership_id:member.membership_id},info:{...state.info},objectRef:keepOpen ? policyView.objectRef : "",followupRequest:0,followupsLoaded:false,loading:true};
     $("policy-followups").open=!!keepOpen;
     if(!keepOpen)$("followups-history").checked=false;
-    policyView=view; policyEditor=null; for(const id of ["policy-save","policy-suggest","policy-new","policy-retry","policy-next"]) $(id).disabled=false; $("policy-form").hidden=true; $("policy-entries").replaceChildren(); $("policy-matters").replaceChildren(); $("policy-next").hidden=true; $("policy-status").textContent="正在读取…";
+    policyView=view; policyEditor=null; for(const id of ["policy-save","policy-suggest","policy-new","policy-retry","policy-form-retry","policy-next"]) $(id).disabled=false; $("policy-form").hidden=true; $("policy-form-feedback").hidden=true; $("policy-entries").replaceChildren(); $("policy-matters").replaceChildren(); $("policy-next").hidden=true; $("policy-status").textContent="正在读取…";
     $("policy-retry").hidden=true;$("policy-retry").disabled=true;$("policy-new").disabled=true;
     renderPolicyEmptyHint();
     $("followups-status").textContent="";
@@ -276,22 +325,27 @@ export function createPolicy({ env, membersUI, runtime, settingsUI, conversation
   }
 
   async function savePolicyChange(view,change) {
-    if(!policyCurrent(view) || view.saving || view.needsRefresh || !view.data) return;
+    if(!policyCurrent(view) || view.saving || view.loading || view.needsRefresh || !view.data) return;
     view.saving=true; for(const id of ["policy-save","policy-suggest","policy-new","policy-retry","policy-next"]) $(id).disabled=true;
-    $("policy-retry").hidden=true;$("policy-status").textContent="正在保存…";
+    $("policy-retry").hidden=true;policySaveFeedback(view,"正在保存…");
     try {
       await rpc("/v1/policy/update",{...view.member,policy:change},view.info);
       if(!policyCurrent(view)) return;
       view.saving=false; await loadMemberPolicy();
-    } catch(error) { view.needsRefresh=true; if(policyCurrent(view)){$("policy-retry").hidden=false;$("policy-status").textContent=`保存失败或结果待核实：${error.message}。请重试读取，核对当前版本后再修改。`;} }
-    finally { view.saving=false; if(policyView===view) for(const id of ["policy-save","policy-suggest","policy-new","policy-retry","policy-next"]) $(id).disabled=(policyView===view && view.needsRefresh && ["policy-save","policy-suggest"].includes(id)) || false; }
+    } catch(error) {
+      view.needsRefresh=true;
+      const outcome=error.outcome === "not_applied" ? "保存失败，本次修改未保存" : "保存失败或结果待核实";
+      const reason=error.code === "conflict" ? "规则已在其他入口更新" : error.message;
+      policySaveFeedback(view,`${outcome}：${reason}。${policyEditor?.view === view ? "草稿已保留，" : ""}请重新读取，核对当前版本后再保存。`,{error:true,retry:true});
+    }
+    finally { view.saving=false; if(policyView===view) for(const id of ["policy-save","policy-suggest","policy-new","policy-retry","policy-next"]) $(id).disabled=!!(view.needsRefresh && ["policy-save","policy-suggest","policy-new"].includes(id)); }
   }
 
   async function savePolicyForm(status) {
     const editor=policyEditor; if(!editor || !policyCurrent(editor.view)) return;
     const c={id:editor.id,version:editor.record?.version || 0,status,text:$("policy-text").value};
     try { const expires=settingsUI.readTimeInput("policy-expires"); if(expires)c.expires_at=expires; }
-    catch(error) { $("policy-status").textContent=error.message; return; }
+    catch(error) { policySaveFeedback(editor.view,error.message,{error:true}); return; }
     c.source_text=`成员设置：${status === "active" ? "保存并生效" : "保存为建议"} · 规则\n${c.text}` + (c.expires_at ? `\n有效期至：${c.expires_at}` : "");
     await savePolicyChange(editor.view,c);
   }
@@ -299,9 +353,11 @@ export function createPolicy({ env, membersUI, runtime, settingsUI, conversation
   function mount() {
     $("policy-new").addEventListener("click",()=>editPolicy());
 
-    $("policy-cancel").addEventListener("click",()=>{$("policy-form").hidden=true;policyEditor=null;renderPolicyEmptyHint();void refreshMemberPolicy();});
+    $("policy-cancel").addEventListener("click",()=>{const view=policyView;$("policy-form").hidden=true;policyEditor=null;renderPolicyEmptyHint();if(view?.needsRefresh)void loadMemberPolicy();else void refreshMemberPolicy();});
 
     $("policy-retry").addEventListener("click",()=>loadMemberPolicy());
+
+    $("policy-form-retry").addEventListener("click",()=>reloadPolicyDraft());
 
     $("policy-followups").addEventListener("toggle",()=>{
       const view=policyView;if(!view || !policyCurrent(view))return;

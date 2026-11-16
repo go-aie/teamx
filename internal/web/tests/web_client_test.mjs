@@ -124,13 +124,13 @@ test("uncertain sends are never automatically retried by the transport", async (
   assert.deepEqual(calls, [payload, payload]);
 });
 
-test("timeout aborts a request; API errors retain their code", async () => {
+test("timeout aborts a request; API errors retain their code and write outcome", async () => {
   await assert.rejects(request("/v1/send", {}, async (_, { signal }) => {
     return new Promise((_, reject) => signal.addEventListener("abort", () => reject(new Error("aborted"))));
   }, 5), /aborted/);
   await assert.rejects(request("/v1/send", {}, async () => ({ ok: false,
-    json: async () => ({ code: "busy", error: "Room commit pending" }) })),
-    (error) => error.code === "busy" && error.message === "Room commit pending");
+    json: async () => ({ code: "busy", error: "Room commit pending", outcome: "not_applied" }) })),
+    (error) => error.code === "busy" && error.message === "Room commit pending" && error.outcome === "not_applied");
 });
 
 test("picker cancellation aborts transport, including an already cancelled signal", async () => {

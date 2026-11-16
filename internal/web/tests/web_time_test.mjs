@@ -159,9 +159,9 @@ test("policy time inputs submit system-zone instants, preserve resolved drafts o
   assert.equal(api.calls.find(c=>c.path==="/v1/policy/update").body.policy.expires_at,"2026-11-08T17:04:13.000Z");
   api.settings=snapshot("America/New_York",3);await ui.refresh();await ui.el("policy-new").emit("click");
   ui.el("policy-expires").value="2026-11-01T01:30";await ui.el("policy-expires").emit("input");await ui.el("policy-form").emit("submit");
-  assert.match(ui.el("policy-status").textContent,/夏令时/);
+  assert.match(ui.el("policy-form-status").textContent,/夏令时/);
   api.settings=snapshot("UTC",4);await ui.refresh();await ui.el("policy-form").emit("submit");
-  assert.match(ui.el("policy-status").textContent,/重新确认/);
+  assert.match(ui.el("policy-form-status").textContent,/重新确认/);
   assert.equal(api.calls.filter(c=>c.path==="/v1/policy/update").length,1);
 });
 
