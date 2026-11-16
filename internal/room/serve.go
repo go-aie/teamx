@@ -418,6 +418,7 @@ func serveRoomManager(ctx context.Context, listener net.Listener, dir, teamsDir 
 	manager.config, manager.factory = config, create
 	if config.settings != nil {
 		manager.settings = config.settings
+		manager.settings.observe = func() { manager.updates.mark(uiUpdate{Topic: "settings"}) }
 	}
 	if config.models != nil && config.modelStartup != nil {
 		manager.modelControl, err = newModelController(ctx, manager, *config.modelStartup, config.modelProbe)

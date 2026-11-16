@@ -98,7 +98,7 @@ test("Scion sends PAT once, clears the password immediately, then saves only the
  assert.equal(ui.el("connection-scion-pat").value,"");assert.equal(ui.el("connection-save").disabled,true);
  assert.equal(ui.el("connection-scion-cancel").hidden,false);
  api.view={status:"succeeded",username:"alice",cli_profile:profile("b")};
- await ui.clock.advance(1000);
+ await (ui.invalidate("authorization"), ui.clock.advance(1000));
  assert.equal(ui.el("connection-scion-profile").value,"b".repeat(32));
  assert.match(ui.el("platforms-feedback").textContent,/账号已验证.*请保存连接/);
  await ui.el("connection-form").emit("submit");
@@ -119,7 +119,7 @@ test("closing Scion authentication cancels the owned flow and ignores a late suc
  const api=fixture(),ui=await draft(api);
  ui.el("connection-scion-pat").value="secret-pat";await ui.el("connection-scion-login").emit("click");
  await ui.el("close-settings").emit("click");await settle();
- api.view={status:"succeeded",username:"bob",cli_profile:profile("b")};await ui.clock.advance(2000);
+ api.view={status:"succeeded",username:"bob",cli_profile:profile("b")};await (ui.invalidate("authorization"), ui.clock.advance(2000));
  assert.equal(api.calls.filter(c=>c.path.endsWith("/scion/cancel")).length,1);
  assert.equal(ui.el("connection-scion-pat").value,"");
  assert.notEqual(ui.el("connection-scion-profile").value,"b".repeat(32));

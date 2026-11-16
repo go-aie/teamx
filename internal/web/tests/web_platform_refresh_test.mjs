@@ -8,16 +8,16 @@ const tool = (ui, id) => row(ui, id).children[1].children[2].children[0];
 const notification = (ui, id) => row(ui, id).children[1].children[1];
 const reads = (api, path) => api.calls.filter(c => c.path.startsWith(`${path}?`)).length;
 
-async function pollingUI(api) {
-  let poll;
-  const ui = await launch(api, new Map(), { setInterval: fn => { poll = fn; } });
+async function subscribedUI(api) {
+  const ui = await launch(api);
+  const poll = () => { for (const topic of ["platforms", "notifications", "tools"]) ui.invalidate(topic); };
   await openMemberInbox(ui, "member-a");
   await ui.el("agent-tab-platforms").emit("click");
-  return { ui, poll, tick: async () => { poll(); await ui.refresh(); await settle(); } };
+  return { ui, poll, tick: async () => { poll(); await ui.clock.advance(2000); await settle(); } };
 }
 
-for (const id of ["gl", "lark"]) test(`polling reflects conversational ${id} tool and notification changes together`, async () => {
-  const api = fixture(), { ui, tick } = await pollingUI(api);
+for (const id of ["gl", "lark"]) test(`resource updates reflects conversational ${id} tool and notification changes together`, async () => {
+  const api = fixture(), { ui, tick } = await subscribedUI(api);
   for (const enabled of [true, false]) {
     const binding = { agent_id: "a", membership_id: "member-a", tool: id === "gl" ? "gitlab" : "lark", platform_id: id };
     api.tools.bindings = enabled ? [binding] : [];
@@ -34,8 +34,8 @@ for (const id of ["gl", "lark"]) test(`polling reflects conversational ${id} too
   }
 });
 
-for (const failed of ["tools/bindings", "platform/notifications", "platforms"]) test(`polling updates the other setting when ${failed} fails and recovers without writes`, async () => {
-  const api = fixture(), { ui, tick } = await pollingUI(api);
+for (const failed of ["tools/bindings", "platform/notifications", "platforms"]) test(`resource updates updates the other setting when ${failed} fails and recovers without writes`, async () => {
+  const api = fixture(), { ui, tick } = await subscribedUI(api);
   api.tools.bindings = [{ agent_id: "a", membership_id: "member-a", tool: "gitlab", platform_id: "gl" }];
   api.records.get(key("gl", target())).config.enabled = false;
   api.hook = path => path.startsWith(`/v1/${failed}?`) ? Promise.reject(Error("offline")) : undefined;
@@ -57,8 +57,8 @@ for (const failed of ["tools/bindings", "platform/notifications", "platforms"]) 
   assert.equal(api.calls.some(c => c.path === "/v1/tools/bind"), false);
 });
 
-test("polling skips closed member settings and keeps reading notification summaries", async () => {
-  const api = fixture(), { ui, tick } = await pollingUI(api);
+test("resource updates skips closed member settings and keeps reading notification summaries", async () => {
+  const api = fixture(), { ui, tick } = await subscribedUI(api);
   await ui.el("close-activity").emit("click");
   api.calls.length = 0;
   await tick();
@@ -66,11 +66,11 @@ test("polling skips closed member settings and keeps reading notification summar
   assert.equal(reads(api, "/v1/platform/notifications"), 1);
 });
 
-test("a late polling read cannot replace another member's tool settings", async () => {
-  const api = fixture(), { ui, poll } = await pollingUI(api);
+test("a late resource updates read cannot replace another member's tool settings", async () => {
+  const api = fixture(), { ui, poll } = await subscribedUI(api);
   let finish;
   api.hook = path => path.startsWith("/v1/tools/bindings?") ? new Promise(resolve => { finish = resolve; }) : undefined;
-  poll(); await settle(); assert.ok(finish);
+  poll(); await ui.clock.advance(1000); await settle(); assert.ok(finish);
   api.hook = null;
   await openMemberInbox(ui, "member-b");
   finish({ ...structuredClone(api.tools), bindings: [{ agent_id: "b", membership_id: "member-b", tool: "gitlab", platform_id: "gl" }] });
@@ -80,19 +80,19 @@ test("a late polling read cannot replace another member's tool settings", async 
   assert.ok(ui.el("member-notification-platforms").children.every(r => r.dataset.membershipId === "member-b"));
 });
 
-test("polling shares an in-flight sync and preserves notification drafts", async () => {
-  const api = fixture(), { ui, poll } = await pollingUI(api);
+test("resource updates shares an in-flight sync and preserves notification drafts", async () => {
+  const api = fixture(), { ui, poll } = await subscribedUI(api);
   await openNotification(ui, "gitlab", "gl", true);
   ui.el("gitlab-interval").value = "72";
   await ui.el("gitlab-interval").emit("input");
   let finish;
   api.hook = path => path.startsWith("/v1/tools/bindings?") ? new Promise(resolve => { finish = resolve; }) : undefined;
   api.calls.length = 0;
-  poll(); await settle(); assert.ok(finish);
+  poll(); await ui.clock.advance(1000); await settle(); assert.ok(finish);
   poll(); poll(); await settle();
   assert.equal(reads(api, "/v1/tools/bindings"), 1);
   assert.equal(reads(api, "/v1/platforms"), 1);
-  finish(structuredClone(api.tools));
+  api.hook = null; finish(structuredClone(api.tools));
   await ui.refresh(); await settle();
   assert.equal(Number(ui.el("gitlab-interval").value), 72);
 });

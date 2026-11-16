@@ -3,14 +3,17 @@ TEST_RUN ?= .
 
 .PHONY: test test-integration test-race test-e2e-check package-offline
 
+test: TEST_TIMEOUT ?= 3m
 test:
-	go test -timeout=3m $(TEST_PACKAGES) -run '$(TEST_RUN)'
+	go test -timeout=$(TEST_TIMEOUT) $(TEST_PACKAGES) -run '$(TEST_RUN)'
 
+test-integration: TEST_TIMEOUT ?= 8m
 test-integration:
-	go test -tags=integration -timeout=8m $(TEST_PACKAGES) -run '$(TEST_RUN)'
+	go test -tags=integration -timeout=$(TEST_TIMEOUT) $(TEST_PACKAGES) -run '$(TEST_RUN)'
 
+test-race: TEST_TIMEOUT ?= 8m
 test-race:
-	go test -race -tags=integration -timeout=8m $(TEST_PACKAGES) -run '$(TEST_RUN)'
+	go test -race -tags=integration -timeout=$(TEST_TIMEOUT) $(TEST_PACKAGES) -run '$(TEST_RUN)'
 
 test-e2e-check:
 	go test -tags=e2e $(TEST_PACKAGES) -run '^$$'

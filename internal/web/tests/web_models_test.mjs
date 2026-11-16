@@ -70,9 +70,9 @@ test("member model picker names its default and distinguishes applied, pending a
  const api=fixture(),ui=await launch(api);await openMember(ui);
  assert.equal(ui.el("member-model-selection").children[0].textContent,"跟随默认 · 日常");
  assert.equal(ui.el("member-model-status").textContent,"已生效");assert.equal(ui.el("member-model-ok").hidden,false);
- api.models.members[0].actual.pending=true;await ui.clock.advance(2000);
+ api.models.members[0].actual.pending=true;await (ui.invalidate("models"), ui.clock.advance(2000));
  assert.equal(ui.el("member-model-status").textContent,"待启动");assert.equal(ui.el("member-model-ok").hidden,true);
- delete api.models.members[0].actual;await ui.clock.advance(2000);
+ delete api.models.members[0].actual;await (ui.invalidate("models"), ui.clock.advance(2000));
  assert.equal(ui.el("member-model-status").textContent,"未启动");assert.equal(ui.el("member-model-ok").hidden,true);
 });
 
@@ -118,7 +118,7 @@ test("model recovery reads the original uncertain operation after reload without
 test("model list polls retain button focus and stop display reads while hidden",async()=>{
  const api=fixture(),ui=await launch(api);await openSettings(ui);
  const row=ui.el("model-list").children[0],edit=row.children[0];edit.focus();
- await ui.clock.advance(2000);assert.equal(ui.el("model-list").children[0],row);assert.equal(ui.document.activeElement,edit);
+ await (ui.invalidate("models"), ui.clock.advance(2000));assert.equal(ui.el("model-list").children[0],row);assert.equal(ui.document.activeElement,edit);
  ui.document.hidden=true;await ui.document.emit("visibilitychange");const calls=api.calls.length;
  await ui.clock.advance(5000);assert.equal(api.calls.length,calls);
 });
@@ -154,14 +154,14 @@ test("compact member picker applies immediately with the captured versions and r
  assert.equal(selector.disabled,true);assert.equal(ui.el("member-model-progress").dataset.state,"busy");
  assert.equal(ui.el("member-model-save"),undefined);
  api.models.operations[0].status="completed";api.models.members[0].selection={mode:"explicit",entry_id:"A"};
- await ui.clock.advance(800);assert.equal(selector.disabled,false);assert.equal(selector.value,"A");assert.equal(ui.el("member-model-progress").dataset.state,"ready");
+ await (ui.invalidate("models"), ui.clock.advance(1000));assert.equal(selector.disabled,false);assert.equal(selector.value,"A");assert.equal(ui.el("member-model-progress").dataset.state,"ready");
 });
 
 test("member picker restores the published choice and exposes validation failures through its status icon",async()=>{
  const api=fixture(),ui=await launch(api);await openMember(ui);
  const selector=ui.el("member-model-selection");selector.value="B";await selector.emit("change");
  api.models.operations[0].status="failed";api.models.operations[0].message="模型验证失败";
- await ui.clock.advance(800);
+ await (ui.invalidate("models"), ui.clock.advance(1000));
  assert.equal(selector.value,"default");assert.equal(selector.disabled,false);
  assert.equal(ui.el("member-model-progress").dataset.state,"error");assert.match(ui.el("member-model-progress").title,/模型验证失败/);assert.equal(ui.el("member-model-error-icon").hidden,false);
  await ui.el("member-model-progress").emit("click");assert.equal(ui.el("member-model-details").hidden,false);
@@ -206,11 +206,11 @@ test("completed model operations stay out of the list and failures remain action
  const ui=await launch(api);await openSettings(ui);
  const list=ui.el("model-operations"),row=list.children[0];
  assert.equal(list.children.length,0);assert.doesNotMatch(textOf(list),/已完成|unsupported_installation|需处理|历史记录/);
- await ui.clock.advance(2000);assert.equal(list.children[0],row);
+ await (ui.invalidate("models"), ui.clock.advance(2000));assert.equal(list.children[0],row);
  api.models.operations.unshift({id:"new",status:"failed",committed:true,message:"部分成员未完成",members:[{agent_id:"assistant",status:"failed",error:"应用失败"}],completed:0,waiting:0,failed:1});
- await ui.clock.advance(2000);
+ await (ui.invalidate("models"), ui.clock.advance(2000));
  assert.equal(list.children.length,1);assert.match(textOf(list),/部分成员未完成/);assert(list.children[0].children.some(el=>el.textContent==="重试未完成成员"));
- const failed=list.children[0];await ui.clock.advance(2000);assert.equal(list.children[0],failed);
+ const failed=list.children[0];await (ui.invalidate("models"), ui.clock.advance(2000));assert.equal(list.children[0],failed);
 });
 
 test("submission feedback clears when validation finishes and a new failure stays visible",async()=>{
@@ -219,7 +219,7 @@ test("submission feedback clears when validation finishes and a new failure stay
  await ui.el("model-edit-form").emit("submit");await settle();
  assert.equal(ui.el("model-feedback").textContent,"");assert.match(textOf(ui.el("model-operations")),/正在验证/);
  api.models.operations[0].status="failed";api.models.operations[0].message="验证失败，请检查模型地址。";
- await ui.clock.advance(800);
+ await (ui.invalidate("models"), ui.clock.advance(1000));
  assert.equal(ui.el("model-feedback").textContent,"");assert.match(textOf(ui.el("model-operations")),/验证失败，请检查模型地址/);
  assert.doesNotMatch(textOf(ui.el("model-operations")),/完成 0 \/ 等待 0 \/ 失败 0/);
 });
@@ -232,7 +232,7 @@ test("models have an independent settings tab that remains hidden during backgro
  assert.equal(ui.el("settings-tab-models").getAttribute("aria-selected"),"true");assert.equal(ui.el("model-settings").hidden,false);assert.equal(ui.el("general-settings").hidden,true);
  await ui.el("settings-tab-models").emit("keydown",{key:"ArrowDown"});await settle();
  assert.equal(ui.el("platform-settings").hidden,false);assert.equal(ui.el("model-settings").hidden,true);
- await ui.clock.advance(2000);assert.equal(ui.el("model-settings").hidden,true);
+ await (ui.invalidate("models"), ui.clock.advance(2000));assert.equal(ui.el("model-settings").hidden,true);
  await ui.el("settings-tab-platforms").emit("keydown",{key:"Home"});assert.equal(ui.el("general-settings").hidden,false);
  await openMember(ui);await ui.el("member-model-progress").emit("click");await ui.el("member-model-settings").emit("click");await settle();
  assert.equal(ui.el("model-settings").hidden,false);assert.equal(ui.el("settings-tab-models").getAttribute("aria-selected"),"true");
@@ -246,7 +246,7 @@ test("newer completed operations cannot hide older failed or applying changes an
  const ui=await launch(api);await openSettings(ui);
  const list=ui.el("model-operations"),row=list.children[0],retry=row.children.find(el=>el.textContent==="重试未完成成员");
  assert.equal(list.children.length,2);assert.match(textOf(row),/旧成员切换失败/);
- retry.focus();api.models.operations[2].waiting=2;await ui.clock.advance(800);
+ retry.focus();api.models.operations[2].waiting=2;await (ui.invalidate("models"), ui.clock.advance(1000));
  assert.equal(list.children[0],row);assert.equal(ui.document.activeElement,retry);
  await retry.emit("click");await settle();
  assert.equal(api.calls.filter(c=>c.path==="/v1/models/change").length,0);
@@ -316,7 +316,7 @@ test("automatic model names use the model ID without duplicating it or changing 
  assert.equal(entry.name,"原默认模型");
  await row.children[0].emit("click");assert.equal(ui.el("model-entry-name").value,"");
  assert.equal(ui.el("model-entry-name").placeholder,"deepseek-flash");
- await ui.el("model-edit-back").emit("click");entry.name="快速模型";await ui.clock.advance(2000);
+ await ui.el("model-edit-back").emit("click");entry.name="快速模型";await (ui.invalidate("models"), ui.clock.advance(2000));
  row=ui.el("model-list").children[0];assert.match(textOf(row),/快速模型/);assert.match(textOf(row),/deepseek-flash/);
 });
 
@@ -331,11 +331,23 @@ test("blank model display names save the model ID and custom names remain editab
 test("default model changes stay in the editor and keep its captured catalog version",async()=>{
  const api=fixture(),ui=await launch(api);await openSettings(ui);await ui.el("model-list").children[1].children[0].emit("click");
  assert.equal(ui.el("model-default-state").hidden,true);assert.equal(ui.el("model-set-default").hidden,false);
- api.models.catalog.version=2;await ui.clock.advance(2000);
+ api.models.catalog.version=2;await (ui.invalidate("models"), ui.clock.advance(2000));
  await ui.el("model-set-default").emit("click");
  const review=ui.el("model-action-review").children.find(el=>el.id==="model-default-confirm");
  assert.equal(ui.el("model-list-view").hidden,true);
  await review.children.find(el=>el.textContent==="验证并设为默认").emit("click");await settle();
  const sent=api.calls.find(c=>c.path==="/v1/models/change").body;
  assert.equal(sent.kind,"default");assert.equal(sent.entry_id,"B");assert.equal(sent.expected_version,1);assert.equal("api_key" in sent,false);
+});
+
+test("a visible model operation only observes invalidations and recovery, with no display poll",async()=>{
+ const api=fixture(),ui=await launch(api);await openSettings(ui);
+ api.models.operations=[{id:"original",status:"validating",members:[],waiting:0,failed:0,completed:0}];
+ ui.invalidate("models");await ui.clock.advance(1000);
+ const before=api.calls.filter(c=>c.path==="/v1/models").length;
+ for(let i=0;i<4;i++){ui.sources.at(-1).emit("heartbeat");await ui.clock.advance(15000);}
+ assert.equal(api.calls.filter(c=>c.path==="/v1/models").length,before);
+ assert.equal(api.calls.filter(c=>c.path==="/v1/models/change").length,0);
+ api.models.operations[0].status="completed";ui.invalidate("models");await ui.clock.advance(1000);
+ assert.equal(ui.el("model-operations").children.length,0);
 });

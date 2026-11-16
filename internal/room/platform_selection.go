@@ -180,7 +180,9 @@ func (m *roomManager) savePlatformSelectionLocked(s platformSelection) error {
 	if err := m.store.check(true); err != nil {
 		return err
 	}
-	return m.store.save(m.selectionPath(s.ID), s, 128<<10)
+	err := m.store.save(m.selectionPath(s.ID), s, 128<<10)
+	m.invalidateRoomLocked("interactions", s.MemberIdentity)
+	return err
 }
 func (m *roomManager) platformSelectionsLocked() ([]platformSelection, error) {
 	dir := filepath.Dir(m.selectionPath("unused"))
@@ -218,6 +220,10 @@ func (s platformSelection) memberRequest(info ServiceInfo) platformMemberRequest
 	return platformMemberRequest{ServiceInfo: info, Caller: agentCallerIdentity(s.MemberIdentity), Input: &platformMemberInput{PlatformID: s.Input.PlatformID, PlatformVersion: s.Input.PlatformVersion}}
 }
 func (m *roomManager) selectionViewLocked(s platformSelection) (platformSelectionView, error) {
+	if svc, _ := m.runtimeServiceLocked(s.RoomIdentity); svc != nil && s.Status == "waiting" && s.ExpiresAt.After(time.Now()) {
+		u := roomUIUpdate("interactions", svc.info)
+		m.updates.atEarliest(u, s.ExpiresAt)
+	}
 	svc, _ := m.runtimeServiceLocked(s.RoomIdentity)
 	available := false
 	if svc != nil {
@@ -719,7 +725,9 @@ func (m *roomManager) saveSelectionNotificationLocked(n platformOperationNotific
 	if err := m.store.check(true); err != nil {
 		return err
 	}
-	return m.store.save(m.selectionNotificationPath(n.OperationID), n, maxPrivateFileBytes)
+	err := m.store.save(m.selectionNotificationPath(n.OperationID), n, maxPrivateFileBytes)
+	m.invalidateRoomLocked("interactions", n.MemberIdentity)
+	return err
 }
 func (m *roomManager) deliverPlatformSelectionLocked(ctx context.Context, id string) {
 	s, err := m.readPlatformSelectionLocked(id)

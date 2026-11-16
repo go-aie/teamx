@@ -4,7 +4,6 @@ package room
 
 import (
 	"context"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -49,7 +48,7 @@ func TestConfigurationObservationBrowser(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			server := httptest.NewServer(h.m)
+			server := browserTestServer(t, h.m)
 			defer server.Close()
 			h.m.config.endpoint = server.URL
 			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)

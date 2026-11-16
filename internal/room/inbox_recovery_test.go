@@ -29,7 +29,8 @@ func stalledInboxAgent(t *testing.T, h *inboxHarness, b Backend, clock *atomic.I
 }
 
 func TestInboxRecoveryHistoricalStallDrainsPagesWithoutChat(t *testing.T) {
-	h, _, access, token := mcpInboxFixture(t)
+	// The deadline also covers 61 durable seed writes before recovery starts.
+	h, _, access, token := mcpInboxFixtureWithTimeout(t, 30*time.Second)
 	for n := 1; n <= 61; n++ {
 		receiveReference(t, h, fmt.Sprint(n), referenceTestSource(fmt.Sprint(n)))
 	}

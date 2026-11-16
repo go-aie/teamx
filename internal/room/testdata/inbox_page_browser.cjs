@@ -9,13 +9,19 @@ const assert=require('node:assert/strict');
  const page=await browser.newPage({viewport:{width:1440,height:1000}});
  page.setDefaultTimeout(12000);page.on('pageerror',e=>errors.push(e.message));
  const first=ready.targets[0].members[0],second=ready.targets[0].members[1];
- const command=async input=>{const response=await page.request.post(ready.endpoint+'/__inbox_fixture',{data:{room:0,member:0,...input}});assert.equal(response.status(),200,await response.text());};
+ const command=async input=>{const response=await page.request.post(ready.endpoint+'/__inbox_fixture',{headers:{Origin:ready.endpoint},data:{room:0,member:0,...input}});assert.equal(response.status(),200,await response.text());};
  const seqs=()=>page.locator('#inbox-entries > section').evaluateAll(rows=>rows.map(row=>Number(row.dataset.inboxSeq)));
  const waitLast=seq=>page.waitForFunction(seq=>document.querySelector('#inbox-entries > section:last-child')?.dataset.inboxSeq===String(seq),seq);
  const waitFirst=seq=>page.waitForFunction(seq=>document.querySelector('#inbox-entries > section')?.dataset.inboxSeq===String(seq),seq);
  const click=id=>page.locator('#'+id).click();
  const snapshot=()=>page.evaluate(()=>({scroll:document.querySelector('#inbox-member-view').scrollTop,open:document.querySelector('#inbox-entries details')?.open,focus:document.activeElement?.outerHTML}));
- const openRoom=async label=>{await page.getByRole('button',{name:new RegExp('^'+label+' 运行中')}).click();await page.locator('#members .member-summary').first().click();await click('agent-tab-inbox');};
+ const openRoom=async label=>{
+  await page.locator('#room-list .room-choice').filter({hasText:label}).click();
+  await page.waitForFunction(label=>document.querySelector('#room-name').textContent===label && !document.querySelector('#message-input').readOnly,label);
+  if(page.viewportSize().width<640 && !await page.locator('#members .member-summary').first().isVisible())await click('room-menu-label');
+  await page.locator('#members .member-summary').first().click();await click('agent-tab-inbox');
+ };
+
  try {
   await page.goto(ready.endpoint);await openRoom('inbox-browser-A');await waitLast(60);
   assert.deepEqual(await seqs(),Array.from({length:25},(_,i)=>i+36));
@@ -55,7 +61,7 @@ const assert=require('node:assert/strict');
    else await route.continue();
   });
   await page.locator('#inbox-reload').evaluate(el=>el.click());await page.waitForFunction(()=>document.querySelector('#inbox-entries').getAttribute('aria-busy')==='true');
-  while(!release)await new Promise(r=>setTimeout(r,20));
+  const heldAt=Date.now();while(!release){assert.ok(Date.now()-heldAt<12000,"page response was never held: "+checks.join(","));await new Promise(r=>setTimeout(r,20));}
   await click('close-activity');await page.locator(`#members .member-summary[data-activity-member="${second.membership_id}"]`).click();await click('agent-tab-inbox');await waitLast(2);release();
   await page.waitForTimeout(200);assert.deepEqual(await seqs(),[1,2]);checks.push('late_membership_response');
   await page.unroute('**/v1/member/inbox');
@@ -66,15 +72,19 @@ const assert=require('node:assert/strict');
    if(!statusRelease){const result=await route.fetch();await new Promise(r=>statusRelease=r);await route.fulfill({response:result});}
    else await route.continue();
   });
-  while(!statusRelease)await new Promise(r=>setTimeout(r,50));
+  await page.locator("#inbox-reload").evaluate(el=>el.click());
+  const heldStatusAt=Date.now();while(!statusRelease){assert.ok(Date.now()-heldStatusAt<12000,"status response was never held: "+checks.join(","));await new Promise(r=>setTimeout(r,50));}
   await click('close-activity');await openRoom('inbox-browser-B');await waitLast(2);statusRelease();
   await page.waitForTimeout(200);assert.deepEqual(await seqs(),[1,2]);checks.push('late_room_status');
   await page.unroute('**/v1/member/inbox/status');
+  await click('close-activity');
   await page.setViewportSize({width:390,height:844});
+  if(await page.locator('#workspace').evaluate(el=>el.classList.contains('rooms-collapsed')))await click('mobile-back-to-rooms');
+  await openRoom('inbox-browser-B');await waitLast(2);
   assert.equal(await page.locator('#inbox-member-view').evaluate(el=>el.scrollWidth>el.clientWidth),false);
   await page.locator('#inbox-member-view').screenshot({path:path.join(output,'mobile.png')});checks.push('mobile_layout');
   // Restore A and remove all retained records, including the currently visible page.
-  await click('close-activity');await openRoom('inbox-browser-A');await waitLast(63);
+  await page.setViewportSize({width:1440,height:1000});await click('close-activity');await openRoom('inbox-browser-A');await waitLast(63);
   await command({through:63});
   await page.waitForFunction(()=>document.querySelectorAll('#inbox-entries > section').length===0);
   await page.locator('#inbox-status').filter({hasText:'保留 0 条'}).waitFor();checks.push('empty_after_cleanup');

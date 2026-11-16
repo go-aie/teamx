@@ -91,6 +91,7 @@ type humanReadDelta struct {
 // and failure state: a read receipt must never freeze business Store writes.
 // Lock order is humanReadStore.mu then Store.mu (only to load public history).
 type humanReadStore struct {
+	observe     func()
 	mu          sync.Mutex
 	dir         string
 	operator    string // Immutable, also used by HTTP identity checks.
@@ -202,6 +203,12 @@ func projectHumanRead(room RoomSnapshot, file humanReadFile, displayName string,
 func (h *humanReadStore) update(store *Store, delta humanReadDelta, displayName string) (humanReadState, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	wasUncertain, wasUnavailable := h.uncertain, h.unavailable != nil
+	defer func() {
+		if h.observe != nil && (h.uncertain != wasUncertain || (h.unavailable != nil) != wasUnavailable) {
+			h.observe()
+		}
+	}()
 	if h.unavailable != nil {
 		return humanReadState{}, errHumanReadUnavailable
 	}
@@ -265,6 +272,9 @@ func (h *humanReadStore) update(store *Store, delta humanReadDelta, displayName 
 			return humanReadState{}, errHumanReadUnavailable
 		}
 		h.file, h.hadFile = candidate, true
+		if h.observe != nil {
+			h.observe()
+		}
 		result = projectHumanRead(room, candidate, displayName, delta.IncludeNewMessages)
 	}
 	return result, nil
@@ -332,6 +342,9 @@ func (h *humanReadStore) recover(room RoomSnapshot) error {
 		return err
 	}
 	h.file, h.hadFile = v, true
+	if h.observe != nil {
+		h.observe()
+	}
 	return nil
 }
 

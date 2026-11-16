@@ -402,6 +402,7 @@ func (m *roomManager) changeToolBindingLocked(ctx context.Context, req toolBindi
 	if err = m.store.save(m.toolBindingsPath(f.RoomIdentity), f, 1<<20); err != nil {
 		return f, nil, err
 	}
+	m.invalidateRoomLocked("tools", MemberIdentity{RoomIdentity: f.RoomIdentity, AgentID: b.AgentID, MembershipID: b.MembershipID})
 	if req.prepared != nil {
 		projectCommittedLarkToolChange(req.prepared, f)
 	}

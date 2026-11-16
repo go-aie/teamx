@@ -16,7 +16,7 @@ for await (const line of createInterface({ input: process.stdin })) {
     case 'initialize':
       result = { protocolVersion: 1, authMethods: [],
         agentInfo: { name: 'background-fixture', version: '1' },
-        agentCapabilities: { sessionCapabilities: { close: {}, resume: {} } } };
+        agentCapabilities: { mcpCapabilities: { http: true }, sessionCapabilities: { close: {}, resume: {} } } };
       break;
     case 'session/new': result = { sessionId, configOptions }; break;
     case 'session/resume': sessionId = frame.params.sessionId; result = { configOptions }; break;

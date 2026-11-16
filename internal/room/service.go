@@ -106,6 +106,10 @@ type apiError struct {
 }
 
 type service struct {
+	updates                   *uiUpdateHub
+	updatesDone               chan struct{}
+	updatesStop               sync.Once
+	ownUpdates                bool
 	agentNames                *agentNameRegistry
 	models                    *modelExecution
 	modelTargets              map[string]modelSessionSnapshot
@@ -235,6 +239,19 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 	if err != nil {
 		return nil, err
 	}
+	updates := config.updates
+	if updates == nil {
+		updates = newUIUpdateHub()
+	}
+	info := ServiceInfo{RoomIdentity: state.RoomIdentity, ServiceEpoch: epoch}
+	room.observeMessages = func() {
+		updates.mark(roomUIUpdate("messages", info))
+		updates.mark(roomUIUpdate("members", info))
+		updates.mark(roomUIUpdate("human_read", info))
+		updates.mark(uiUpdate{Topic: "catalog"})
+	}
+	room.observeCatalog = func() { updates.mark(uiUpdate{Topic: "catalog"}) }
+	room.observeMembers = func() { updates.mark(roomUIUpdate("members", info)) }
 	addr, err := rt.Spawn(room)
 	if err != nil {
 		return nil, err
@@ -245,6 +262,7 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 		return nil, err
 	}
 	s := &service{
+		updates: updates, updatesDone: make(chan struct{}), ownUpdates: config.updates == nil,
 		agentNames:           config.agentNames,
 		access:               config.access,
 		settings:             config.settings,
@@ -267,12 +285,27 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 	if s.uiProfiles == nil {
 		s.uiProfiles = profileNames(s.dshProfiles)
 	}
+	s.store.observe = s.invalidate
+	s.store.observeExpiry = func(topic string, id MemberIdentity, deadline time.Time) {
+		u := roomUIUpdate(topic, s.info)
+		u.AgentID, u.MembershipID = id.AgentID, id.MembershipID
+		s.updates.at(u, deadline)
+	}
+	if s.settings != nil && s.ownUpdates {
+		s.settings.observe = func() { s.updates.mark(uiUpdate{Topic: "settings"}) }
+	}
 	s.memberFactory = s.newMember
 	operator := humanOperator()
 	if s.access != nil {
 		operator = s.access.operator
 	}
 	s.humanRead = newHumanReadStore(store.dir, state, operator)
+	s.humanRead.observe = func() {
+		u := roomUIUpdate("human_read", s.info)
+		u.Operator = operator
+		s.updates.mark(u)
+		s.updates.mark(uiUpdate{Topic: "catalog", Operator: operator})
+	}
 	if err := s.loadDiscussionRestart(); err != nil {
 		return nil, err
 	}
@@ -282,10 +315,24 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 	return s, nil
 }
 
+// Closing admission also invalidates streams, before any lifecycle owner waits
+// for tools or member settlement. Repeated cleanup cannot close a channel twice.
+func (s *service) beginClosing() {
+	s.closing.Store(true)
+	s.updatesStop.Do(func() {
+		if s.updatesDone != nil {
+			close(s.updatesDone)
+		}
+		if s.ownUpdates {
+			s.updates.close()
+		}
+	})
+}
+
 // Freeze is nonblocking, so a manager can freeze every Room before joining any
 // worker. The scheduler checks the same flag before handing off a queued turn.
 func (s *service) freeze() {
-	s.closing.Store(true)
+	s.beginClosing()
 	if s.grantsFrozen != nil {
 		s.grantsFrozen.Store(true)
 	}
@@ -416,6 +463,7 @@ func (s *service) setTarget(id string, addr actorx.Addr) {
 	} else {
 		s.targets[id] = addr
 	}
+	s.invalidate("members", MemberIdentity{RoomIdentity: s.info.RoomIdentity})
 }
 
 func (s *service) members(ctx context.Context) (serviceMembers, error) {
@@ -694,6 +742,10 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if !sameOrigin(r) {
 		writeAPIError(w, ErrIdentity)
+		return
+	}
+	if r.URL.Path == "/v1/updates" {
+		s.serveUIUpdates(w, r)
 		return
 	}
 	select {

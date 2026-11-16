@@ -70,6 +70,7 @@ func (s *service) saveDiscussionRestart(record discussionRestart) error {
 		s.mu.Lock()
 		s.restart = &record
 		s.mu.Unlock()
+		s.invalidate("members", MemberIdentity{RoomIdentity: s.info.RoomIdentity})
 	}
 	return err
 }
@@ -127,6 +128,7 @@ func (s *service) startDiscussionRestart(req apiRequest) (*discussionRestart, er
 		return nil, err
 	}
 	s.restarting.Store(true)
+	s.invalidate("members", MemberIdentity{RoomIdentity: s.info.RoomIdentity})
 	owned = true
 	go s.runDiscussionRestart(record, list.Members, req.Caller)
 	return &record, nil
@@ -134,7 +136,10 @@ func (s *service) startDiscussionRestart(req apiRequest) (*discussionRestart, er
 
 func (s *service) runDiscussionRestart(record discussionRestart, members []MemberInfo, caller Caller) {
 	defer s.management.Unlock()
-	defer s.restarting.Store(false)
+	defer func() {
+		s.restarting.Store(false)
+		s.invalidate("members", MemberIdentity{RoomIdentity: s.info.RoomIdentity})
+	}()
 	memberRequest := func(member MemberInfo) apiRequest {
 		return apiRequest{AgentID: member.AgentID, MembershipID: member.MembershipID, Cancel: true, rotationLocked: true, RotationReason: "discussion_restart"}
 	}

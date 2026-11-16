@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/go-aie/teamx/internal/platform/notification"
 )
@@ -33,6 +34,8 @@ const (
 // these blocking methods from controlled tasks, never from their state loop.
 // Agent and Session files have separate owners; they are not a transaction.
 type Store struct {
+	observe              func(string, MemberIdentity)
+	observeExpiry        func(string, MemberIdentity, time.Time)
 	mcpOperations        mcpTurnOperations
 	notificationAdapters func(string) notification.Capabilities
 	mu                   sync.Mutex

@@ -25,7 +25,7 @@ async function ready(name) {
     catch (error) { if (error.code !== "busy") throw error; }
     if (!list) { await new Promise(resolve => setTimeout(resolve, 10)); continue; }
     if (!list.busy && list.rooms.find(r => r.name === name)?.service &&
-      ui.el("room-name").textContent === name && !ui.el("new-room").disabled) return { ...list, selected: list.rooms.find(r => r.name === name).service };
+      ui.el("room-name").textContent === name && !ui.el("new-room").disabled && !ui.el("toggle-add").disabled) return { ...list, selected: list.rooms.find(r => r.name === name).service };
     await new Promise(resolve => setTimeout(resolve, 10));
   }
   throw new Error(`Room ${name} never ready: ${ui.el("management-notice").textContent} ${ui.el("sync-error").textContent}`);
@@ -39,6 +39,7 @@ assert.equal(messageCount(), 0);
 const members = await api.request("/v1/member/list", { ...a.selected, caller: { kind: "human", id: a.operator } });
 for (const member of members.members) await api.request("/v1/member/pause", { ...a.selected,
   caller: { kind: "human", id: a.operator }, agent_id: member.agent_id, membership_id: member.membership_id });
+await ready("HTTP-A");
 await ui.draft("HTTP A preserved message"); await ui.el("compose").emit("submit"); await settle();
 assert.equal(messageCount(), 1);
 await ui.draft("HTTP draft A");
@@ -82,7 +83,7 @@ await removed("HTTP-A", reloaded);
 assert.equal(reloaded.el("room-name").textContent, "HTTP-B");
 await reloaded.delete("HTTP-B");
 assert.equal((await removed("HTTP-B", reloaded)).rooms.length, 0);
-assert.equal(reloaded.el("room-name").textContent, "选择或新建房间");
+assert.equal(reloaded.el("room-name").textContent, "选择或新建会话");
 assert.equal(reloaded.el("message-input").value, "");
 console.log(JSON.stringify({ scenario: "RM-04 team HTTP + app entry point", status: "passed", rooms: 2,
   messagePreserved: true, independentDrafts: true, openingDraftOnly: true, reloadPreservesDraft: true,

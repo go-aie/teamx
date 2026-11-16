@@ -229,6 +229,7 @@ func TestManagedRecoveryPreservesUnsafePauseAndConvertsLegacyCounts(t *testing.T
 	for _, kind := range []string{"healthy", "manual-pause", "failed", "interrupted", "running", "budget", "blocked"} {
 		t.Run(kind, func(t *testing.T) {
 			m := activationTestManager(t)
+			m.factory = controlledActivationFactory(nil, nil)
 			room := managerCreate(t, m, "seeded")
 			store, err := OpenStore(m.roomDir(room.RoomID), room.RoomID)
 			if err != nil {

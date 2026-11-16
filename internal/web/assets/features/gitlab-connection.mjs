@@ -1,6 +1,6 @@
 // GitLab application setup and OAuth authorization lifecycle.
 export function createGitLabConnection({ env, connectionsUI, runtime, settingsUI, onboardingUI, interactionsUI }) {
-  const { document, window, Option, setTimeout, clearTimeout, request } = env;
+  const { document, window, Option, request } = env;
   const { state, $, setSelectOptions } = runtime;
 
   const returnKey="teamx.gitlab-authorization";
@@ -18,7 +18,7 @@ export function createGitLabConnection({ env, connectionsUI, runtime, settingsUI
     const item=connectionsUI.platforms.items.find(item=>item.id===ref.platform_id);
     await connectionsUI.editPlatform(item);
     connectionsUI.platforms.gitlabAuth={session_id:ref.session_id,platform_id:ref.platform_id,onboarding_id:ref.onboarding_id,affected:[],requestedScopes:["api"]};
-    renderGitLabAccount();await pollGitLabAuth();
+    renderGitLabAccount();await refreshAuthorization();
   }
 
   const gitlabScopeOptions = [
@@ -285,31 +285,27 @@ export function createGitLabConnection({ env, connectionsUI, runtime, settingsUI
         if(targetURL.origin!==new URL(origin).origin || targetURL.protocol!=="https:" || targetURL.pathname!=="/oauth/authorize" || targetURL.username || targetURL.password)throw new Error("授权地址校验失败，请核对原操作。");
         $("gitlab-login-link").href = auth.authorization_url; $("gitlab-login-link").hidden = false; if (popup && !popup.closed) popup.location.replace(auth.authorization_url); else window.location?.assign(auth.authorization_url);}
       connectionsUI.connectionFeedback(action === "logout" ? "正在退出并核对撤销结果…" : "等待 GitLab 授权…");
-      await pollGitLabAuth();
+      await refreshAuthorization();
     } catch (error) {
       connectionsUI.connectionFeedback(!error.code && error.message ? error.message : error.code === "identity" ? "登录需要从服务配置的规范地址打开 TeamX；请核对应用回调地址，并刷新页面。" : "授权结果未确认，请返回列表核对。", "error");
     } finally {if (popup && !connectionsUI.platforms.gitlabAuth && !popup.closed) popup.close(); connectionsUI.platforms.sending=false;settingsUI.renderSettingsNavigation();$("connection-fields").disabled=false;$("connection-back").disabled=false;$("close-settings").disabled=false;renderGitLabAccount();}
   }
 
-  async function pollGitLabAuth() {
-    if (!runtime.canPoll()) {
-      clearTimeout(connectionsUI.platforms.gitlabTimer);
-      connectionsUI.platforms.gitlabTimer = setTimeout(() => { void pollGitLabAuth(); }, 1500);
-      return;
-    }
+  const refreshAuthorization = () => runtime.observe("authorization:gitlab");
+  async function readAuthorization({ current = () => true, onFailure = () => {} } = {}) {
     const auth = connectionsUI.platforms.gitlabAuth, version = connectionsUI.platforms.formVersion;
     if (!auth) return;
     try {
       const result = await request("/v1/platforms/gitlab/status",connectionsUI.connectionPayload({session_id:auth.session_id}));
-      if (connectionsUI.platforms.gitlabAuth !== auth || version !== connectionsUI.platforms.formVersion) return;
+      if (!current() || connectionsUI.platforms.gitlabAuth !== auth || version !== connectionsUI.platforms.formVersion) return;
       if (["waiting", "exchanging", "settling", "committing", "cleaning", "disconnecting"].includes(result.status)) {
         auth.status=result.status;renderGitLabAccount();
-        connectionsUI.platforms.gitlabTimer=setTimeout(()=>{void pollGitLabAuth();},1500);return;
+        return;
       }
       clearSavedAuthorization();clearGitLabAuthView();connectionsUI.platforms.gitlabAuth=null;
       for (const item of result.platforms || []) connectionsUI.updatePlatformItem(item);
       const saved=(result.platforms || []).find(c=>c.id===connectionsUI.platforms.selected?.id) || (result.platforms || []).find(c=>c.id===auth.platform_id) || result.platforms?.[0];
-      if (saved) await connectionsUI.editPlatform(saved);else renderGitLabAccount();
+      if (saved) await connectionsUI.editPlatform(saved, { discover: false });else renderGitLabAccount();
       if (auth.onboarding_id && onboardingUI.onboarding.pending?.operation_id===auth.onboarding_id) {
         const resultVersion=connectionsUI.platforms.formVersion,resultIdentity=onboardingUI.onboardingIdentity();
         try {const op=await request("/v1/platforms/onboarding/status",connectionsUI.connectionPayload({operation_id:auth.onboarding_id}));
@@ -336,11 +332,11 @@ export function createGitLabConnection({ env, connectionsUI, runtime, settingsUI
         clearSavedAuthorization();clearGitLabAuthView();connectionsUI.platforms.gitlabAuth=null;renderGitLabAccount();
         connectionsUI.connectionFeedback("原授权会话已失效或不属于当前浏览器，请核对连接列表；未重新发起授权。","error");return;
       }
-      if (connectionsUI.platforms.gitlabAuth===auth && version===connectionsUI.platforms.formVersion) {connectionsUI.connectionFeedback("授权状态读取失败，正在核对原操作。", "error"); connectionsUI.platforms.gitlabTimer=setTimeout(()=>{void pollGitLabAuth();},3000);}
+      if (current() && connectionsUI.platforms.gitlabAuth===auth && version===connectionsUI.platforms.formVersion) {connectionsUI.connectionFeedback("授权状态读取失败，正在核对原操作。", "error"); onFailure(error);}
     }
   }
 
-  function clearGitLabAuthView() {clearTimeout(connectionsUI.platforms.gitlabTimer);connectionsUI.platforms.gitlabTimer=null;$("gitlab-login-link").hidden=true;$("gitlab-login-link").href="";}
+  function clearGitLabAuthView() {$("gitlab-login-link").hidden=true;$("gitlab-login-link").href="";}
 
   async function cancelGitLabAuth(keepalive = false) {
     clearSavedAuthorization();
@@ -412,6 +408,7 @@ export function createGitLabConnection({ env, connectionsUI, runtime, settingsUI
   }
 
   return {
+    readAuthorization,
     mount,
     restoreAuthorization,
     resetApplicationEditor,

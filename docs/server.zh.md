@@ -67,6 +67,18 @@ DSH Session 使用绑定 Room、成员和服务代际的独立执行凭据，不
 
 飞书授权由 Server 持有官方 Device Flow，浏览器只展示验证入口并查询原操作。GitLab 使用原浏览器 Cookie、state 和 PKCE 绑定回调；其他已登录设备可以查看共享结果，不能接管原授权绑定。页面关闭与显式取消分别处理，外部授权不转移到 Room 的私有模型上下文中。
 
+## 页面更新与连接
+
+活跃会话页面通过同源 `GET /v1/updates` 保持一条 SSE 连接，只接收资源变化通知，再通过原有 HTTP 接口读取权威数据。没有变化时不进行周期显示读取。业务模型设置、成员详情和授权卡片共用该连接；切换 Room 或 runtime 后重新订阅。页面隐藏或离线时关闭连接，恢复后核对身份、目录和当前会话，保留草稿、消息位置和原操作 ID。
+
+聊天补读、成员状态和配置分别调度；慢 Activity 或平台读取不会挡住消息。历史分页与完整 Activity 仍走独立 HTTP，并有各自的读取限频。断流和重复通知只触发核对，不重新发送消息、应用模型或启动授权。平台采集、Agent 执行与已受理操作由 Server 持有，不依赖浏览器是否打开。
+
+反向代理须允许 `/v1/updates` 的长连接和逐帧刷新，关闭该路由的响应缓冲。服务发送 `X-Accel-Buffering: no`；每次写入有有限期限，等待下一帧时不受普通请求的 15 秒写超时限制。部署验收应确认 hello 与约 15 秒一次的 heartbeat 能及时到达，以及登出后旧流结束；本机直连浏览器的结果不替代实际代理链路验收。连接上限为总计 64 条、每浏览器会话 8 条，超限后页面退避恢复。
+
+首次模型初始化的 `/access` 受限入口尚无 Room 业务服务，待核对操作仍通过 `/v1/setup` 查询；该入口不包含在会话页的空闲零读取结论中。
+
+通知分类、读取限频与多端隔离的实现约束见 [Web 更新说明](implementation/web-updates.zh.md)。
+
 ## 生命周期与恢复
 
 Server 生命周期接受 context 取消，前台入口适配终端信号，常驻入口由系统服务管理器监管。正常停止先停止受理和调度，再结清 Room、工具及数据写入；浏览器生命周期不参与该过程。系统服务的有界故障重试不替代业务恢复，平台或模型降级不作为反复重启的理由。
@@ -93,6 +105,7 @@ Server 生命周期接受 context 取消，前台入口适配终端信号，常�
 | [server_access.go](../internal/room/server_access.go)／[access_settings.go](../internal/room/access_settings.go) | 所有者认证、浏览器会话、执行凭据与访问模式 |
 | [server_setup.go](../internal/room/server_setup.go) | 受限模型设置与进入业务服务 |
 | [service_cli.go](../internal/room/service_cli.go)／[service_manager.go](../internal/room/service_manager.go) | 部署命令、系统服务、最小账号环境与状态核对 |
+| [ui_updates.go](../internal/room/ui_updates.go)／[ui_updates_http.go](../internal/room/ui_updates_http.go)／[updates.mjs](../internal/web/assets/updates.mjs) | 有界 SSE 通知、认证与生命周期、资源读取合并和恢复 |
 | [service_archive.go](../internal/room/service_archive.go)／[service_backup.go](../internal/room/service_backup.go) | 归档校验、版本发布和一致备份恢复 |
 | [package.mjs](../scripts/package.mjs) | 固定依赖、随包白名单与归档构建 |
 | [install.sh](../packaging/install.sh)／[package-publish.mjs](../scripts/package-publish.mjs) | 单次安装引导、稳定命令入口与固定版本的正式安装器发布 |

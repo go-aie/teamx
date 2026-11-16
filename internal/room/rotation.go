@@ -108,6 +108,9 @@ func (b dshBackend) switchSession(opts SessionOptions, from, to string) (Backend
 		err = b.store.save(path, ref, maxPrivateFileBytes)
 	}
 	b.store.mu.Unlock()
+	if b.model != nil {
+		b.store.changed("models", opts.MemberIdentity)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -446,6 +449,7 @@ func (m *MemberAgent) rotate() {
 		r.backend = next
 		return r, err
 	}, func(r result, err error) bool {
+		defer m.observeStatus()
 		m.rotationWork = nil
 		// Identity checks also protect future asynchronous automatic callbacks.
 		if m.rotationRecord == nil || m.rotationRecord.OperationID != record.OperationID || m.rotationRecord.To != record.To {

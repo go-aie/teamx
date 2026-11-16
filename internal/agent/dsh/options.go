@@ -64,7 +64,9 @@ type Artifact struct {
 }
 
 type Options struct {
-	BinaryPath string
+	// ObserveActivity is an optional bounded signal; it must not query the Session.
+	ObserveActivity func() `json:"-"`
+	BinaryPath      string
 	// BinaryArgs precede --profile acp, e.g. the absolute CLI JS path for Node.
 	// Arguments are passed directly to exec, never through a shell.
 	BinaryArgs   []string

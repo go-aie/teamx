@@ -20,8 +20,8 @@ test("installation changes isolate drafts, including late receipts from the prev
 
 test("hidden, offline and bfcache pages retain drafts, suspend reads and reconcile before sending", async () => {
   const api = fixture();
-  let poll;
-  const ui = await launch(api, new Map(), { setInterval: fn => { poll = fn; } });
+  const ui = await launch(api);
+  const poll = () => ui.invalidate("messages");
   await ui.draft("手机上的未发送草稿");
   ui.document.hidden = true;
   await ui.document.emit("visibilitychange");

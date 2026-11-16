@@ -183,7 +183,11 @@ func (s *Store) readPolicy(id MemberIdentity) (PolicyView, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p, _, err := s.loadPolicyLocked(id, false)
-	return policyView(p), err
+	view := policyView(p)
+	if err == nil {
+		s.policyRead(view)
+	}
+	return view, err
 }
 
 func (s *Store) readAgentPolicy(id MemberIdentity) (agentPolicyView, error) {
@@ -274,5 +278,6 @@ func (s *Store) changePolicy(id MemberIdentity, caller Caller, c PolicyChange) (
 	if err := s.save(path, p, maxPrivateFileBytes); err != nil {
 		return PolicyView{}, err
 	}
+	s.changed("policy", id)
 	return policyView(p), nil
 }

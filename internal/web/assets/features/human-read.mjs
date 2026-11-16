@@ -129,7 +129,7 @@ export function createHumanRead({ env, runtime, changed, canConfirm = () => true
         ctx.writeError = false; ctx.writeFailures = 0; ctx.nextConfirm = 0;
         status(ctx);
         // Refresh the existing catalog/message path after a durable receipt.
-        void refresh();
+        runtime.changed("catalog");
       } else {
         // Recheck an overtaken response on the next batch, without a tight loop.
         ctx.nextConfirm = performance.now() + 1000;
@@ -141,17 +141,19 @@ export function createHumanRead({ env, runtime, changed, canConfirm = () => true
     }
   }
 
-  function poll() {
+  function poll({ current: valid = () => true, onFailure = () => {} } = {}) {
     reset();
     const ctx = context;
     if (!ctx || !active()) return;
     prune(ctx); schedule(ctx);
-    if (ctx.stateTask || performance.now() < ctx.nextState) return;
+    if (ctx.stateTask) return ctx.stateTask;
+    if (performance.now() < ctx.nextState) return;
     ctx.stateTask = request(ctx, "/v1/human-read/state").then(result => {
-      if (!current(ctx)) return;
+      if (!current(ctx) || !valid()) return;
       if (accept(ctx, result)) { ctx.readError = false; ctx.readFailures = 0; ctx.nextState = 0; }
       status(ctx);
-    }).catch(error => failed(ctx, error, false)).finally(() => { ctx.stateTask = null; });
+    }).catch(error => { if (valid()) { failed(ctx, error, false); onFailure(error); } }).finally(() => { ctx.stateTask = null; });
+    return ctx.stateTask;
   }
 
   // Entry metadata keeps its own fixed K even when messages have reached K+1.

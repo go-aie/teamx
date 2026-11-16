@@ -9,7 +9,7 @@ const {join} = require('node:path');
   const output = process.env.TEAMX_CONNECT_BROWSER_ARTIFACTS;
   if (output) await mkdir(output, {recursive:true});
   const browser = await chromium.launch({headless:true});
-  const errors = [], writes = [], unexpected = [];
+  const errors = [], writes = [], unexpected = [], observationReads = [];
   try {
     const page = await browser.newPage({viewport:viewport === 'mobile' ? {width:390,height:844} : {width:1440,height:1000}});
     page.setDefaultTimeout(15000);
@@ -17,6 +17,7 @@ const {join} = require('node:path');
     page.on('request', r => {
       const url = new URL(r.url());
       if (url.origin !== endpoint) unexpected.push(url.origin);
+      if(url.pathname.startsWith("/v1/") && url.pathname!=="/v1/updates")observationReads.push(url.pathname);
       if (r.method() === 'POST' && ['/v1/tools/bind','/v1/platforms/connect/cancel','/v1/platforms/lark/cancel'].includes(url.pathname)) writes.push({path:url.pathname,body:r.postDataJSON()});
     });
     const catalog = await (await fetch(endpoint+'/v1/rooms')).json();
@@ -51,6 +52,11 @@ const {join} = require('node:path');
     assert.match(await card.textContent(), /补全授权.*2 个共享连接/s);
     assert.equal((await bindings()).bindings[0].action_authorization, undefined);
     await capture('authorization');
+    // Pending authorization is owned by the server even while no status is read.
+    await page.waitForTimeout(3000);
+    const idleStart=observationReads.length;
+    await page.waitForTimeout(5000);
+    assert.deepEqual(observationReads.slice(idleStart),[],'unchanged authorization card does not poll');
     // Global settings only observes a conversation-owned authorization.
     await openPlatformSettings();
     await page.locator('#settings-tab-platforms').click();
@@ -60,7 +66,10 @@ const {join} = require('node:path');
     await page.reload();
     if(viewport==='mobile')await page.locator('#room-list .room-choice').filter({hasText:current.name}).first().click();
     await card.getByRole('link', {name:'补全授权 ↗',exact:true}).waitFor();
+    await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});
     await writeFile(join(fixture,'auth-release'),'yes');
+    await page.waitForTimeout(300);
+    await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:false});document.dispatchEvent(new Event('visibilitychange'));});
     await card.getByText('已连接',{exact:true}).waitFor();
     assert.equal(await card.locator('img').isVisible(),false);
     assert.equal((await bindings()).bindings[0].action_authorization,undefined,'OAuth or page reads expanded the member grants');
@@ -97,7 +106,7 @@ const {join} = require('node:path');
       const q=new URLSearchParams({service_epoch:catalog.service_epoch,caller_id:catalog.operator});
       const platforms=await (await fetch(endpoint+'/v1/platforms?'+q)).json();
       const account=platforms.platforms.find(p=>p.id===platformID);
-      const response=await fetch(endpoint+'/v1/tools/bind',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...original,enabled:true,platform_version:account.version})});
+      const response=await fetch(endpoint+'/v1/tools/bind',{method:'POST',headers:{'Content-Type':'application/json',Origin:endpoint},body:JSON.stringify({...original,enabled:true,platform_version:account.version})});
       assert.equal(response.status,200,await response.text());
       await route.continue();
     },{times:1});

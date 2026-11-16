@@ -43,6 +43,7 @@ type executionBinding struct {
 }
 type accessContextKey struct{}
 type serverAccess struct {
+	updateLeases               map[*uiUpdateAccessLease]struct{} // guarded by mu
 	mcp                        *mcpHTTP
 	mcpOnce                    sync.Once
 	mcpExecutions              map[[32]byte]*mcpExecution

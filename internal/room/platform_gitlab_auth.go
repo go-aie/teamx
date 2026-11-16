@@ -108,6 +108,7 @@ func (m *roomManager) canonicalGitLabRequestLocked(r *http.Request) bool {
 }
 func (m *roomManager) finishGitLabAuthLocked(s *gitlabAuthSession, status, code string) {
 	s.Status, s.ErrorCode, s.URL, s.state, s.verifier = status, code, "", "", ""
+	m.authorizationChanged(s.owner)
 	if code == "invalid_scope" && len(s.RequestedScopes) == 0 {
 		s.RequestedScopes = slices.Clone(s.app.Scopes)
 	}
@@ -532,6 +533,7 @@ func (m *roomManager) newGitLabAuthLocked(req gitlabAuthRequest, action string) 
 		m.gitlabAuthSessions = map[string]*gitlabAuthSession{}
 	}
 	m.gitlabAuthSessions[id] = s
+	m.authorizationChanged(s.owner)
 	go func() {
 		<-ctx.Done()
 		m.mu.Lock()
@@ -599,6 +601,7 @@ func (m *roomManager) serveGitLabCallback(w http.ResponseWriter, r *http.Request
 		return
 	}
 	s.Status = "exchanging"
+	m.authorizationChanged(s.owner)
 	verifier := s.verifier
 	s.verifier = ""
 	transport := m.platformHTTP
@@ -644,6 +647,7 @@ func (m *roomManager) serveGitLabCallback(w http.ResponseWriter, r *http.Request
 	}
 	if exchangeErr == nil {
 		s.Status = "settling"
+		m.authorizationChanged(s.owner)
 		for _, c := range s.records {
 			if exchangeErr = m.invalidatePlatformQueriesLocked(c.ID); exchangeErr != nil {
 				break
@@ -658,6 +662,7 @@ func (m *roomManager) serveGitLabCallback(w http.ResponseWriter, r *http.Request
 		code = "switch_unconfirmed"
 		if exchangeErr == nil {
 			s.Status = "committing"
+			m.authorizationChanged(s.owner)
 			app := s.app
 			if s.importID != "" {
 				app.OwnerID = identity.UserID
@@ -705,6 +710,7 @@ func (m *roomManager) serveGitLabCallback(w http.ResponseWriter, r *http.Request
 			code, s.AccountUsername = "account_already_connected", identity.Username
 		}
 		s.Status = "cleaning"
+		m.authorizationChanged(s.owner)
 		m.mu.Unlock()
 		if e == nil && cleanupID != "" {
 			m.cleanupGitLabCandidate(s, cleanupID)

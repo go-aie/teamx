@@ -363,7 +363,7 @@ func (m *roomManager) launchWorkspace(op workspaceOperation) {
 	// Establish the execution boundary before returning the receipt. close drains
 	// requests already admitted and joins all member/Session/tool ownership.
 	if rt.service != nil {
-		rt.service.closing.Store(true)
+		rt.service.beginClosing()
 	}
 	go m.runWorkspace(op, rt)
 }
@@ -635,7 +635,7 @@ func (m *roomManager) runWorkspace(op workspaceOperation, rt *roomRuntime) {
 		if err := svc.resumeMembers(context.Background()); err != nil {
 			executionErr = err
 			ctx, cancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
-			svc.closing.Store(true)
+			svc.beginClosing()
 			executionErr = errors.Join(executionErr, m.waitPlatformCalls(ctx, &op.RoomIdentity), svc.close(ctx))
 			cancel()
 			m.mu.Lock()
@@ -653,7 +653,7 @@ func (m *roomManager) runWorkspace(op workspaceOperation, rt *roomRuntime) {
 	// receipt permitting partial member execution. Persist before releasing owner.
 	if runErr != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
-		svc.closing.Store(true)
+		svc.beginClosing()
 		runErr = errors.Join(runErr, m.waitPlatformCalls(ctx, &op.RoomIdentity), svc.close(ctx))
 		cancel()
 	}

@@ -30,6 +30,9 @@ func TestModelRotationWaitsForTurnBeforePlatformAndBackend(t *testing.T) {
 			state := historyRoom(1, "body")
 			h := newRoomHarness(t, state, nil)
 			id := h.memberID("A", "generation-A")
+			updates := newUIUpdateHub()
+			observeStoreSources(h.store, &service{info: ServiceInfo{RoomIdentity: h.id, ServiceEpoch: "model-reference"}, updates: updates})
+			sub := updateSub(t, updates, 1, humanCaller.ID, ServiceInfo{})
 			opts := adapterOptions(h.store, id)
 			credentials, err := newModelCredentials(t.TempDir())
 			if err != nil {
@@ -62,6 +65,7 @@ func TestModelRotationWaitsForTurnBeforePlatformAndBackend(t *testing.T) {
 			controlMember(t, h, addr, id, "run", input, false, false)
 			<-entered
 			<-observed
+			assertSourceQuiet(t, sub) // An ordinary unmanaged turn changes no model projection.
 			target := testModelTarget(t, id, credentials)
 			lease := &rotationLease{gateDone: make(chan struct{}), begin: func(context.Context) error { platform.Add(1); return nil }, release: func() {}}
 			status, err := addr.Call[MemberStatus](h.ctx, ControlMember{MemberIdentity: id, Action: "rotate", modelTarget: &target, lease: lease, Reason: "model_change"})
@@ -76,6 +80,7 @@ func TestModelRotationWaitsForTurnBeforePlatformAndBackend(t *testing.T) {
 			}
 			close(finish)
 			status = waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool { return s.Rotation.Status == "completed" })
+			sourceTopics(t, sub, "models") // New effective generation, still pending launch.
 			if platform.Load() != 1 || closed.Load() != 1 || opens.Load() != 1 || status.TurnBudget.Used != 1 || status.Paused != pause {
 				t.Fatal("model rotation changed intent or started a turn", status)
 			}
@@ -89,6 +94,7 @@ func TestModelRotationWaitsForTurnBeforePlatformAndBackend(t *testing.T) {
 				t.Fatal("new session did not open")
 			}
 			waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool { return !s.Active && s.Agent.TurnNumber == 2 })
+			sourceTopics(t, sub, "models") // Launch consumed pending-generation authority.
 			record, err := h.store.loadRotation(id)
 			if err != nil || record.ModelTarget == nil || record.ModelTarget.Generation != record.To {
 				t.Fatal("target not durable", err)

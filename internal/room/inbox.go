@@ -15,6 +15,7 @@ import (
 //
 //actorx:actor
 type AgentInbox struct {
+	observedInbox  *InboxStatus
 	id             MemberIdentity
 	dir            string
 	store          *Store
@@ -72,6 +73,8 @@ func (a *AgentInbox) Started(_ actorx.Context, _ actorx.Started) error {
 		return ErrRequest
 	}
 	a.started = true
+	status := a.inboxStatus()
+	a.observedInbox = &status
 	return nil
 }
 
@@ -138,6 +141,7 @@ func (a *AgentInbox) Receive(ctx actorx.Context, msg ReceiveInbox, reply actorx.
 		}
 		return struct{}{}, a.save(entry)
 	}, func(_ struct{}, err error) bool {
+		defer a.observeInstalled()
 		a.committing = false
 		if err != nil {
 			if errors.Is(err, ErrCommitUnknown) {

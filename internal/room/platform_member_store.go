@@ -218,7 +218,9 @@ func (m *roomManager) savePlatformMemberLocked(op platformMemberOperation) error
 	if err := m.store.check(true); err != nil {
 		return err
 	}
-	return m.store.save(m.platformMemberPath(op.ID), op, 128<<10)
+	err := m.store.save(m.platformMemberPath(op.ID), op, 128<<10)
+	m.invalidateRoomLocked("interactions", op.MemberIdentity)
+	return err
 }
 
 func (m *roomManager) platformMemberOperationsLocked() ([]platformMemberOperation, error) {

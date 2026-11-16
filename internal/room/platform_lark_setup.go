@@ -67,6 +67,7 @@ func (m *roomManager) prepareLarkSetupLocked(req larkAuthRequest) (*larkAuthSess
 		m.larkAuthSessions = map[string]*larkAuthSession{}
 	}
 	m.larkAuthSessions[id] = s
+	m.authorizationChanged(s.owner)
 	return s, ctx, nil
 }
 
@@ -113,6 +114,7 @@ func (m *roomManager) runLarkSetup(ctx context.Context, s *larkAuthSession, exec
 		} else if lark.ErrorCode(err) == "timeout" {
 			s.Status = "expired"
 		}
+		m.authorizationChanged(s.owner)
 		close(s.done)
 		m.finishPlatformConnectLocked(s)
 		m.mu.Unlock()

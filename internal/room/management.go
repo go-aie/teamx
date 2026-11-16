@@ -159,6 +159,7 @@ type roomsIndex struct {
 // The root lock owns the catalog and its live services. Durable
 // operations retain an owner independently of an HTTP caller.
 type roomManager struct {
+	updates                  *uiUpdateHub
 	agentNames               *agentNameRegistry
 	modelControl             *modelController
 	onboardingRunning        map[string]bool
@@ -244,7 +245,8 @@ func newRoomManager(dir string, maxTurns uint64) (_ *roomManager, err error) {
 	if maxTurns == 0 {
 		maxTurns = defaultMaxTurns
 	}
-	m := &roomManager{settings: defaultSystemSettings(), store: store, epoch: epoch, maxTurns: maxTurns, factory: newService, runtimes: make(map[RoomIdentity]*roomRuntime)}
+	m := &roomManager{updates: newUIUpdateHub(), settings: defaultSystemSettings(), store: store, epoch: epoch, maxTurns: maxTurns, factory: newService, runtimes: make(map[RoomIdentity]*roomRuntime)}
+	m.settings.observe = func() { m.updates.mark(uiUpdate{Topic: "settings"}) }
 	m.initPlatform()
 	err = readSnapshot(m.indexPath(), &m.index, maxRoomsFileBytes)
 	if errors.Is(err, os.ErrNotExist) {
@@ -306,6 +308,7 @@ func newRoomManager(dir string, maxTurns uint64) (_ *roomManager, err error) {
 func (m *roomManager) indexPath() string        { return filepath.Join(m.store.dir, "rooms.json") }
 func (m *roomManager) roomDir(id string) string { return filepath.Join(m.store.dir, "rooms", id) }
 func (m *roomManager) close() error {
+	m.updates.close()
 	if m.modelControl != nil {
 		m.modelControl.stop()
 	}
@@ -322,6 +325,7 @@ func (m *roomManager) saveIndex(next roomsIndex) error {
 		return err
 	}
 	m.index = next
+	m.updates.mark(uiUpdate{Topic: "catalog"})
 	m.publishAgentNames()
 	return nil
 }
@@ -658,6 +662,10 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if !sameOrigin(r) {
 		writeAPIError(w, ErrIdentity)
+		return
+	}
+	if r.URL.Path == "/v1/updates" {
+		m.serveUIUpdates(w, r)
 		return
 	}
 	if r.URL.Path == "/v1/ui" && r.Method == http.MethodGet {

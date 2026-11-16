@@ -18,6 +18,7 @@ type runtimeCleanup struct {
 // resources, then stop services concurrently with tools, queries and lifecycle
 // workers. A failed owner never prevents another owner from receiving stop.
 func (m *roomManager) shutdown(ctx context.Context) error {
+	m.updates.close()
 	for !m.shutdownGate.TryLock() {
 		select {
 		case <-ctx.Done():

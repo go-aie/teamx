@@ -84,7 +84,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
   }
 
   // CLI bindings have a separate revision and never inherit legacy grants.
-  async function loadCLITools(v, { background = false } = {}) {
+  async function loadCLITools(v, { background = false, current = () => true, onFailure = () => {} } = {}) {
     // A poll cannot observe an intermediate local write or erase its feedback.
     if (background && (workspaceUI.workspaceView?.memberToolBusy || onboardingUI.onboarding.busy)) return;
     const read = v.cliRead = (v.cliRead || 0) + 1;
@@ -94,12 +94,12 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       const q = new URLSearchParams({ service_epoch: v.identity.service_epoch, caller_id: v.identity.caller.id,
         room_id: v.identity.room_id, room_instance: v.identity.room_instance });
       const data = await request(`/v1/tools/bindings?${q}`);
-      if (!toolsCurrent(v) || read !== v.cliRead) return;
+      if (!current() || !toolsCurrent(v) || read !== v.cliRead) return;
       v.cli = data;v.cliConnected=true;
       if (!background) v.cliResult = null;
-    } catch {
-      if (!toolsCurrent(v) || read !== v.cliRead) return;
-      failed = true; v.cliConnected=false;
+    } catch (error) {
+      if (!current() || !toolsCurrent(v) || read !== v.cliRead) return;
+      failed = true; v.cliConnected=false; onFailure(error);
     } finally { finish(failed); }
   }
 
@@ -329,7 +329,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
 
   const activity = createActivityReader((member) => rpc("/v1/member/activity", {
     agent_id: member.agent_id, membership_id: member.membership_id,
-  }, member.info), renderActivity);
+  }, member.info), renderActivity, () => runtime.observe("activity"));
 
   const statusNames = { inbox_waiting: "等待读取恢复", inbox_stalled: "收件箱读取已停止", paused: "已暂停", idle: "等待消息", waiting: "等待执行", running: "运行中", completed: "已完成",
     failed: "执行失败", interrupted: "已中断", unavailable: "暂不可用", detached: "未连接",

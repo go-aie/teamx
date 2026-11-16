@@ -129,6 +129,7 @@ func (m *roomManager) serveScionAuth(w http.ResponseWriter, r *http.Request) {
 			}
 			m.mu.Lock()
 		}
+		m.updates.atEarliest(uiUpdate{Topic: "authorization", Operator: session.owner}, session.expires)
 		view := session.scionAuthView
 		m.mu.Unlock()
 		_ = json.NewEncoder(w).Encode(view)
@@ -185,12 +186,14 @@ func (m *roomManager) serveScionAuth(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(parent, 65*time.Second)
 	session := &scionAuthSession{scionAuthView: scionAuthView{SessionID: id, Status: "starting"}, owner: req.Caller.ID, cancel: cancel, done: make(chan struct{}), expires: time.Now().Add(10 * time.Minute)}
 	m.scionAuthSessions[id] = session
+	m.authorizationChanged(session.owner)
 	root := m.store.dir
 	if action == "discover" {
 		m.mu.Unlock()
 		result, err := scion.Discover(ctx, root, origin, req.Executable)
 		cancel()
 		m.mu.Lock()
+		m.authorizationChanged(session.owner)
 		close(session.done)
 		delete(m.scionAuthSessions, id)
 		m.mu.Unlock()
@@ -204,6 +207,7 @@ func (m *roomManager) serveScionAuth(w http.ResponseWriter, r *http.Request) {
 	profileID, err := newOpaqueID()
 	if err != nil {
 		cancel()
+		m.authorizationChanged(session.owner)
 		close(session.done)
 		delete(m.scionAuthSessions, id)
 		m.mu.Unlock()
@@ -228,8 +232,10 @@ func (m *roomManager) serveScionAuth(w http.ResponseWriter, r *http.Request) {
 				session.ErrorCode = "timeout"
 			}
 		}
+		m.authorizationChanged(session.owner)
 		close(session.done)
 	}()
+	m.updates.atEarliest(uiUpdate{Topic: "authorization", Operator: session.owner}, session.expires)
 	view := session.scionAuthView
 	m.mu.Unlock()
 	_ = json.NewEncoder(w).Encode(view)

@@ -90,6 +90,9 @@ func (m *roomManager) publicPlatformLocked(c platform.Platform) (managedPlatform
 			break
 		}
 	}
+	if c.TokenExpiresAt.After(time.Now()) {
+		m.updates.atEarliest(uiUpdate{Topic: "platforms"}, c.TokenExpiresAt)
+	}
 	refs, err := m.managedPlatformReferencesLocked(c.ID)
 	return managedPlatform{Platform: c, References: refs, Capabilities: capabilities}, err
 }
@@ -129,6 +132,7 @@ func (m *roomManager) settlePlatformCallsLocked(pending []<-chan struct{}) error
 		return nil
 	}
 	m.busy = true
+	m.updates.mark(uiUpdate{Topic: "catalog"})
 	done := make(chan struct{})
 	m.operationDone = done
 	m.mu.Unlock()
@@ -140,6 +144,7 @@ func (m *roomManager) settlePlatformCallsLocked(pending []<-chan struct{}) error
 	}
 	m.mu.Lock()
 	m.busy = false
+	m.updates.mark(uiUpdate{Topic: "catalog"})
 	close(done)
 	return err
 }

@@ -159,7 +159,7 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
     }
     connectionsUI.showPlatformList(); settingsTab = availableSettingsTabs().includes(tab) ? tab : "general";
     if (settingsTab === "security") void access.load();
-    timezonePicker.open = false; renderTimeZone(); $("settings-dialog").showModal(); void models.load(); runtime.navigationChanged(); if(state.managed) {await connectionsUI.loadPlatforms();await onboardingUI.restoreOnboarding();}
+    timezonePicker.open = false; renderTimeZone(); $("settings-dialog").showModal(); if (settingsTab === "models") void models.load(); runtime.navigationChanged(); if(state.managed) {await connectionsUI.loadPlatforms();await onboardingUI.restoreOnboarding();}
   }
 
   async function closeSettings() {
@@ -283,6 +283,8 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
   return {
     mount,
     openMemberModel: models.openMember,
+    readModels: models.readModels,
+    modelsNeedRead: () => settingsTab === "models" && $("settings-dialog").open || models.needsRead(),
     showMemberModelDetails: models.showMemberDetails,
     showPlatforms,
     systemTime,

@@ -28,6 +28,39 @@ func TestSessionUpdateContentVariants(t *testing.T) {
 	}
 }
 
+func TestActivityObserverSignalsSameSegmentAppendOutsideSessionLock(t *testing.T) {
+	s := &Session{id: "test", opts: Options{Limits: Limits{TextBytes: 1024}}, active: &turn{}}
+	calls := 0
+	s.opts.ObserveActivity = func() {
+		// A consumer can safely read after the signal; the production adapter
+		// only marks a key. This also proves callbacks do not retain Session.mu.
+		calls++
+		result, active := s.Activity()
+		if !active || result.Text == "" {
+			t.Fatal("observer preceded installation")
+		}
+	}
+	for _, text := range []string{"hello", " world"} {
+		params := json.RawMessage(`{"sessionId":"test","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"` + text + `"}}}`)
+		if err := s.notification("session/update", params); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if calls != 2 || len(s.active.result.Events) != 1 || s.active.result.Events[0].Text != "hello world" {
+		t.Fatal("same segment append was not observed", calls, s.active.result)
+	}
+	// Irrelevant and rejected updates are silent and preserve business errors.
+	if err := s.notification("session/update", json.RawMessage(`{"sessionId":"other","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"bad"}}}`)); !errors.Is(err, ErrProtocol) {
+		t.Fatal(err)
+	}
+	if err := s.notification("session/update", json.RawMessage(`{"sessionId":"test","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"image"}}}`)); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 {
+		t.Fatal("non-diagnostic updates notified", calls)
+	}
+}
+
 func TestActivitySnapshotsBoundedRedactedAndIndependent(t *testing.T) {
 	s := &Session{id: "test", secret: "secret-key", opts: Options{Limits: Limits{TextBytes: 64}}, active: &turn{}}
 	emit := func(update string) {

@@ -23,7 +23,7 @@ function fixture(options = {}) {
       return value;
     }};
   let changes=0,refreshes=0;
-  const read=createHumanRead({env,...options,runtime:{state,notice:(_,text)=>notices.push(text),refresh:()=>{refreshes++;}},changed:()=>{changes++;}});
+  const read=createHumanRead({env,...options,runtime:{state,notice:(_,text)=>notices.push(text),changed:topic=>{assert.equal(topic,"catalog");refreshes++;}},changed:()=>{changes++;}});
   read.reset();
   return {read,state,env,api,saved,calls,notices,response,get changes(){return changes;},get refreshes(){return refreshes;},
     async advance(ms){const end=now+ms;for(;;){const next=[...timers].filter(([,t])=>t.at<=end).sort((a,b)=>a[1].at-b[1].at)[0];if(!next)break;now=next[1].at;timers.delete(next[0]);next[1].fn();await settle();}now=end;await settle();}};

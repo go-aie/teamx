@@ -77,5 +77,6 @@ func (a *serverAccess) replaceSessions(next map[[32]byte]accessSession) error {
 		return fmt.Errorf("save browser sessions: %w", err)
 	}
 	a.sessions = next
+	a.revokeUIUpdatesLocked(false)
 	return nil
 }

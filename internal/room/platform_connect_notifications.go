@@ -67,7 +67,9 @@ func (m *roomManager) saveConnectNotificationLocked(n platformOperationNotificat
 	if err := m.store.check(true); err != nil {
 		return err
 	}
-	return m.store.save(m.connectNotificationPath(n.OperationID), n, maxPrivateFileBytes)
+	err := m.store.save(m.connectNotificationPath(n.OperationID), n, maxPrivateFileBytes)
+	m.invalidateRoomLocked("interactions", n.MemberIdentity)
+	return err
 }
 
 func (m *roomManager) setConnectNotificationLocked(op platformConnectOperation, mode string) error {

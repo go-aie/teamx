@@ -123,18 +123,18 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
       invalid: targetInvalid || config.enabled && count === 0 };
   }
 
-  async function loadNotificationSubscriptions(catalog, ws) {
+  async function loadNotificationSubscriptions(catalog, ws, { current: valid = () => true, onFailure = () => {} } = {}) {
     if (ws !== workspaceUI.workspaceView) return;
     const revisions = {messages:ws.messagesRevision,gitlab:ws.gitlabRevision};
     const read = ws.notificationsRead = (ws.notificationsRead || 0) + 1;
     const scope = ws.notificationScope, context = ws.notificationEpoch;
-    const current = () => ws === workspaceUI.workspaceView && state.catalog?.service_epoch === catalog.service_epoch && read === ws.notificationsRead && context === ws.notificationEpoch;
+    const current = () => valid() && ws === workspaceUI.workspaceView && state.catalog?.service_epoch === catalog.service_epoch && read === ws.notificationsRead && context === ws.notificationEpoch;
     const finish = beginRead(env, ws, "notificationsReadState", () => { if (current()) renderNotificationPlatforms(); });
     let failed = false;
     try {
       const params = new URLSearchParams({service_epoch:catalog.service_epoch,caller_id:ws.operator,...ws.room});
       const data = await request(`/v1/platform/notifications?${params}`);
-      if (ws !== workspaceUI.workspaceView || state.catalog?.service_epoch !== catalog.service_epoch || read !== ws.notificationsRead || context !== ws.notificationEpoch) return;
+      if (!valid() || ws !== workspaceUI.workspaceView || state.catalog?.service_epoch !== catalog.service_epoch || read !== ws.notificationsRead || context !== ws.notificationEpoch) return;
       ws.notificationsConnected = true;
       ws.allSubscriptions = data.subscriptions || [];
       ws.retiredSources = data.retired_subscriptions || [];
@@ -151,10 +151,11 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
         const next=ws.gitlabPlatforms.find(v=>v.platform_id===id && sameNotificationTarget(v.config.target,target));
         if(next)acceptGitLabView(ws,next);
       }
-    } catch {
-      if (ws !== workspaceUI.workspaceView || state.catalog?.service_epoch !== catalog.service_epoch || read !== ws.notificationsRead || context !== ws.notificationEpoch) return;
+    } catch (error) {
+      if (!valid() || ws !== workspaceUI.workspaceView || state.catalog?.service_epoch !== catalog.service_epoch || read !== ws.notificationsRead || context !== ws.notificationEpoch) return;
       failed = true; ws.notificationsConnected=false;
       if(scope===ws.notificationScope){ws.gitlabConnected=false;ws.messagesConnected=false;}
+      onFailure(error);
     } finally { finish(failed); }
   }
 
@@ -972,6 +973,11 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
       await workspaceUI.loadWorkspacePlatforms();
       if(!notificationContextCurrent(ws,key,epoch) || opening!==ws.notificationOpen || navigation!==notificationNavigation)return;
       if(channel==="tools"){renderNotificationSource();return;}
+      // Lark entry and a reused GitLab view observe current subscriptions,
+      // including switches within an already open dialog. A new GitLab view
+      // obtains its authoritative detail below, preserving the loading gate.
+      if(channel==="messages" || same && ws.gitlabConnected)await runtime.observe("notifications");
+      if(!notificationContextCurrent(ws,key,epoch) || opening!==ws.notificationOpen || navigation!==notificationNavigation)return;
       if(channel==="messages"){
         if(!same){
           selectLarkPlatform(ws,platformID);

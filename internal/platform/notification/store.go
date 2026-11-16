@@ -191,6 +191,9 @@ func (m *Manager) SaveLocked(state State) error {
 	}
 	previous := m.states[meta.Key]
 	m.states[meta.Key] = subscription{state: state.CloneState(), source: source, revision: previous.revision + 1}
+	if m.host.Changed != nil {
+		m.host.Changed(previous.state, m.states[meta.Key].state)
+	}
 	return nil
 }
 
@@ -225,7 +228,11 @@ func (m *Manager) StatesLocked(owner platform.RoomIdentity) []State {
 func (m *Manager) ForgetRoomLocked(owner platform.RoomIdentity) {
 	for key := range m.states {
 		if key.Owner == owner {
+			previous := m.states[key].state
 			delete(m.states, key)
+			if m.host.Changed != nil {
+				m.host.Changed(previous, nil)
+			}
 		}
 	}
 }

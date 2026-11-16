@@ -40,6 +40,7 @@ func (m *MemberAgent) requestSessionChange(request func(context.Context, MemberI
 	_, err := actorx.StartTask(m.owner, func(ctx context.Context) (struct{}, error) {
 		return struct{}{}, request(ctx, id, from)
 	}, func(_ struct{}, err error) bool {
+		defer m.observeStatus()
 		m.rotationRequest = false
 		if errors.Is(err, ErrBusy) {
 			m.rotationNext = m.now().Add(100 * time.Millisecond)

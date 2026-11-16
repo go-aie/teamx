@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -119,7 +118,7 @@ func TestInboxPageBrowser(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"ok":true}`))
 	})
-	server := httptest.NewServer(handler)
+	server := browserTestServer(t, m, handler)
 	defer server.Close()
 	ready := struct {
 		Endpoint string   `json:"endpoint"`

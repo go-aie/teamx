@@ -131,17 +131,17 @@ export async function readPages(read, params, signal) {
 
 // Late responses for a closed drawer or a different membership must never
 // replace the selected member's private output. Polls share one in-flight read.
-export function createActivityReader(read, render) {
+export function createActivityReader(read, render, observe) {
   let selected = null;
   let generation = 0;
   let pending = null;
-  function refresh() {
+  function refresh({ current: valid = () => true, onFailure = () => {} } = {}) {
     if (!selected) return Promise.resolve();
     if (pending) return pending;
     const current = generation, member = selected;
     const task = Promise.resolve().then(() => read(member)).then(
-      (data) => { if (current === generation) render({ data }, member); },
-      (error) => { if (current === generation) render({ error }, member); },
+      (data) => { if (current === generation && valid()) render({ data }, member); },
+      (error) => { if (current === generation && valid()) { render({ error }, member); onFailure(error); } },
     ).finally(() => { if (current === generation) pending = null; });
     pending = task;
     return task;
@@ -150,10 +150,11 @@ export function createActivityReader(read, render) {
     select(member) {
       generation++; selected = member; pending = null;
       render({ loading: true }, member);
-      return refresh();
+      return observe ? observe() : refresh();
     },
     close() { generation++; selected = null; pending = null; },
-    refresh,
+    read: refresh,
+    refresh: observe || refresh,
   };
 }
 

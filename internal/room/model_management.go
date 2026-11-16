@@ -75,6 +75,7 @@ func newModelController(ctx context.Context, m *roomManager, c startupConfig, pr
 	if err != nil {
 		return nil, err
 	}
+	service.observe = func() { m.updates.mark(uiUpdate{Topic: "models"}) }
 	if probe != nil {
 		service.probe = probe
 	}
@@ -160,7 +161,12 @@ func (c *modelController) stop() {
 	c.workers.Wait()
 }
 func (c *modelController) persist(op *modelChangeOperation) error {
-	return (&Store{ops: defaultSnapshotOps()}).save(filepath.Join(c.dir, op.ID+".json"), op, maxRoomsFileBytes)
+	err := (&Store{ops: defaultSnapshotOps()}).save(filepath.Join(c.dir, op.ID+".json"), op, maxRoomsFileBytes)
+	c.manager.updates.mark(uiUpdate{Topic: "models"})
+	for _, member := range op.Members {
+		c.manager.invalidateRoomLocked("members", member.MemberIdentity)
+	}
+	return err
 }
 func (c *modelController) selectionCommitted(op *modelChangeOperation) bool {
 	if len(op.Members) != 1 {

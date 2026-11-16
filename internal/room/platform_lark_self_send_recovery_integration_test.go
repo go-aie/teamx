@@ -270,8 +270,9 @@ func TestLarkSelfSendConcurrentRoomsAndMembers(t *testing.T) {
 	if err := os.WriteFile(path, script, 0700); err != nil {
 		t.Fatal(err)
 	}
-	id1, bindings := enableSelfSend(t, h, h.members[0], 0)
-	id2, _ := enableSelfSend(t, h, h.members[1], bindings.Revision)
+	id1, _ := enableSelfSend(t, h, h.members[0], 0)
+	// Each new member binding starts at revision zero, independently of the file revision.
+	id2, _ := enableSelfSend(t, h, h.members[1], 0)
 	r2 := managerCreate(t, h.m, "self-send-concurrent-room")
 	_, state := readManagedRoom(t, h.m, r2)
 	svc2 := eventLiveService(t, &eventHarness{m: h.m, room: r2})

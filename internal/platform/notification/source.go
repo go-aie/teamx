@@ -118,6 +118,9 @@ func DefaultLimits() Limits {
 // private mutex to hold while calling it. Gate -> Room service read lock -> actor
 // is the only lock order; no callback reacquires Gate.
 type Host struct {
+	// Changed receives immutable installed states, nil for creation/removal.
+	// Observers must not mutate them or query the producer while Gate is held.
+	Changed         func(before, after State)
 	Gate            sync.Locker
 	Check           func(writing bool) error
 	Directory       func(platform.RoomIdentity) (string, error)

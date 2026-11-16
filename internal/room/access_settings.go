@@ -405,6 +405,7 @@ func (a *serverAccess) serveSettings(w http.ResponseWriter, r *http.Request) {
 				clear(a.sessions)
 			}
 			a.version++
+			a.revokeUIUpdatesLocked(true)
 		}, nil
 	})
 	doc.mu.Unlock()

@@ -4,7 +4,6 @@ package room
 
 import (
 	"context"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -45,7 +44,7 @@ mode=open(base+'/mode').read()`, 1)
 			if _, err := m.verifyPlatform(t.Context(), managedPlatformRequest{ID: shared.ID, Version: shared.Version}); err != nil {
 				t.Fatal(err)
 			}
-			server := httptest.NewServer(m)
+			server := browserTestServer(t, m)
 			defer server.Close()
 			m.config.endpoint = server.URL
 			connectHTTP(t, m, "authorize", req)

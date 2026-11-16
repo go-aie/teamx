@@ -2,7 +2,6 @@ package room
 
 import (
 	"context"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"testing"
@@ -39,7 +38,7 @@ func directConversationBrowser(t *testing.T, restore bool) {
 		openRoomOK(t, m, assistant, "browser-open-assistant")
 		openRoomOK(t, m, team, "browser-open-team")
 	}
-	server := httptest.NewServer(m)
+	server := browserTestServer(t, m)
 	defer server.Close()
 	m.config.endpoint = server.URL
 	if restore {

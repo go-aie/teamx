@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -579,5 +580,38 @@ func TestDeliveryIdentityIncludesFullSubscriptionKey(t *testing.T) {
 	}
 	if DeliveryID(key, "other-item") == original || DeliveryID(key, "opaque|item") != original {
 		t.Fatal("unstable item identity")
+	}
+}
+
+func TestInstalledStateObservationPreservesCommitResults(t *testing.T) {
+	for _, observed := range []bool{false, true} {
+		t.Run(fmt.Sprint(observed), func(t *testing.T) {
+			id := SourceID{Provider: "fixture", Channel: "offset"}
+			f := newNotificationFixture(t, fixtureSource{id: id})
+			var pairs [][2]State
+			if observed {
+				f.m.host.Changed = func(before, after State) { pairs = append(pairs, [2]State{before, after}) }
+			}
+			state := fixtureSubscription("observe", id)
+			f.save(t, state)
+			state.Offset++
+			f.save(t, state)
+			if observed && (len(pairs) != 2 || pairs[0][0] != nil || pairs[1][0].(fixtureState).Offset != 0 || pairs[1][1].(fixtureState).Offset != 1) {
+				t.Fatal("before/after installation", pairs)
+			}
+			failure := errors.New("write failed")
+			f.saveErr = failure
+			state.Offset++
+			if err := f.m.SaveLocked(state); !errors.Is(err, failure) {
+				t.Fatal(err)
+			}
+			if f.state(t, state.K).Offset != 1 || observed && len(pairs) != 2 {
+				t.Fatal("failed write published")
+			}
+			f.m.ForgetRoomLocked(state.K.Owner)
+			if observed && (len(pairs) != 3 || pairs[2][0] == nil || pairs[2][1] != nil) {
+				t.Fatal("removal observation")
+			}
+		})
 	}
 }

@@ -135,20 +135,20 @@ export function createInbox({ env, settingsUI, notificationsUI, runtime, members
     $("inbox-entries").setAttribute("aria-busy", String(view.loading));
   }
 
-  async function refreshMemberInbox() {
+  async function refreshMemberInbox({ current = () => true, onFailure = () => {} } = {}) {
     const view = inboxView;
     if (!inboxCurrent(view) || view.loading || view.refreshing || document.hidden || !document.hasFocus() || $("notification-detail").open) return;
     view.refreshing = true;
     try {
       const status = await rpc("/v1/member/inbox/status", view.member, view.info);
-      if (!inboxCurrent(view) || view.loading) return;
+      if (!current() || !inboxCurrent(view) || view.loading) return;
       view.status = status; view.syncError = "";
       // A page touching reclaimed records cannot remain a readable old snapshot.
       if (!view.page) await loadMemberInbox("refresh", status);
       else if (view.after < status.expired_through) await loadMemberInbox("relocate", status);
       else { renderInboxStatus(view); renderInboxPagination(view); }
     } catch (error) {
-      if (inboxCurrent(view) && !view.loading) { view.syncError = `同步失败：${error.message}。当前页已保留，可点击刷新重试。`; renderInboxStatus(view); }
+      if (current() && inboxCurrent(view) && !view.loading) { view.syncError = `同步失败：${error.message}。当前页已保留，可点击刷新重试。`; renderInboxStatus(view); onFailure(error); }
     } finally { view.refreshing = false; }
   }
 
@@ -306,7 +306,7 @@ export function createInbox({ env, settingsUI, notificationsUI, runtime, members
     } catch(error) {
       if (inboxCurrent(view)) view.error = `读取失败：${error.message}` + (prior?.page ? "。当前页已保留，可点击刷新或重试翻页。" : "。请点击刷新重试。");
     } finally {
-      if (inboxCurrent(view)) { view.loading = false; renderInboxStatus(view); renderInboxPagination(view); notificationsUI.renderNotificationPlatforms(); }
+      if (inboxCurrent(view)) { view.loading = false; renderInboxStatus(view); renderInboxPagination(view); notificationsUI.renderNotificationPlatforms(); runtime.wake("inbox"); }
     }
   }
 

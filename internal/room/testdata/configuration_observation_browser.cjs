@@ -21,7 +21,7 @@ const {join} = require('node:path');
       if (r.method() === 'POST' && ['/v1/tools/bind','/v1/platform/notifications/configure','/v1/policy/update'].includes(url.pathname)) writes.push({path:url.pathname, body:r.postDataJSON()});
     });
     const call = async (path, body) => {
-      const response = await fetch(endpoint+path, body && {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      const response = await fetch(endpoint+path, body && {method:'POST',headers:{'Content-Type':'application/json',Origin:endpoint},body:JSON.stringify(body)});
       const data = await response.json();
       assert.equal(response.status,200,JSON.stringify(data));
       return data;

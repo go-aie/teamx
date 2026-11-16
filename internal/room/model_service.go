@@ -13,6 +13,7 @@ import (
 
 // Catalog validation and config publication are shared by first use and online management.
 type modelService struct {
+	observe               func()
 	removeLegacyModel     bool
 	launcherConfigMissing bool
 	legacyKeyEnv          string // Only fresh prefilled homes; removed in the same catalog commit.
@@ -266,6 +267,9 @@ func (s *modelService) save(ctx context.Context, input modelSave) (modelCatalog,
 		patched, err := patchModelCatalog(source, next)
 		return patched, func() {
 			s.current = next.clone()
+			if s.observe != nil {
+				s.observe()
+			}
 			if input.afterCommit != nil {
 				input.afterCommit(next)
 			}

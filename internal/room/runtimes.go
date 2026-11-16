@@ -41,6 +41,7 @@ func (m *roomManager) reserveRuntimeLocked(id RoomIdentity) *roomRuntime {
 		m.runtimes[id] = rt
 	}
 	rt.busy, rt.operationDone = true, make(chan struct{})
+	m.updates.mark(uiUpdate{Topic: "catalog"})
 	rt.operationContext, rt.operationCancel = context.WithCancel(context.Background())
 	return rt
 }
@@ -52,6 +53,7 @@ func (m *roomManager) setRuntimeServiceLocked(id RoomIdentity, svc *service) {
 		m.runtimes[id] = rt
 	}
 	rt.service = svc
+	m.updates.mark(uiUpdate{Topic: "catalog"})
 }
 
 // The caller owns this Room's slot. Stop new grants before joining canceled
@@ -83,6 +85,7 @@ func (m *roomManager) finishRuntimeLocked(rt *roomRuntime, err error) {
 	} else {
 		rt.status = "closed"
 	}
+	m.updates.mark(uiUpdate{Topic: "catalog"})
 	close(rt.operationDone)
 }
 
@@ -329,7 +332,7 @@ func (m *roomManager) runOpen(op roomOpen, rt *roomRuntime) {
 	}
 	rt.resuming = false
 	if svc != nil {
-		svc.closing.Store(true)
+		svc.beginClosing()
 	}
 	m.cancelPlatformCallsLocked(func(c *platformCall) bool { return c.owner == op.RoomIdentity })
 	m.mu.Unlock()

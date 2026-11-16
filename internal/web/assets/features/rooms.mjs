@@ -226,7 +226,7 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
     if (state.info?.room_instance === room.room_instance) conversationUI.showDraft();
   }
 
-  async function reconcileManagement(catalog) {
+  async function reconcileManagement(catalog, { current = () => true } = {}) {
     // Other tabs may delete a Room too. Clear this tab's saved drafts only after
     // the catalog confirms removal, and invalidate any old private-output read.
     for (const room of state.knownRooms || []) {
@@ -253,9 +253,9 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
       const query = new URLSearchParams({ service_epoch: catalog.service_epoch, caller_id: op.operator, open_id: op.payload.open_id });
       try {
         const receipt = await request(`/v1/rooms/open?${query}`);
-        finishOpen(op, receipt);
+        if (current()) finishOpen(op, receipt);
       } catch (error) {
-        if (state.management === op) state.managementError = `打开结果尚未确认，可查询或用原请求重试。${error.message}`;
+        if (current() && state.management === op) state.managementError = `打开结果尚未确认，可查询或用原请求重试。${error.message}`;
       }
     }
   }

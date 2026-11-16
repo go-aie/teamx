@@ -21,9 +21,10 @@ const maxPlatformsBytes int64 = 2 << 20
 // Save must preserve that latch after an uncertain replacement. The module
 // never creates a second writer or takes a Room lock from its own lock.
 type Store struct {
-	Path  string
-	Check func(writing bool) error
-	Save  func(path string, value any, limit int64) error
+	Changed func() // Optional save observation (including failure); no query or error result.
+	Path    string
+	Check   func(writing bool) error
+	Save    func(path string, value any, limit int64) error
 }
 
 // Load validates private disk data without reflecting malformed credentials.
@@ -135,5 +136,9 @@ func (m *Manager) save(file Snapshot) error {
 	if err := m.store.Check(true); err != nil {
 		return err
 	}
-	return m.store.Save(m.store.Path, file, maxPlatformsBytes)
+	err := m.store.Save(m.store.Path, file, maxPlatformsBytes)
+	if m.store.Changed != nil {
+		m.store.Changed()
+	}
+	return err
 }

@@ -239,6 +239,7 @@ func (a *AgentInbox) ReadBatch(ctx actorx.Context, msg ReadInboxBatch, reply act
 		}
 		return InboxBatchPage{InboxPage: page, Batch: *c.Batch}, nil
 	}, func(page InboxBatchPage, err error) bool {
+		defer a.observeInstalled()
 		a.committing, a.previewing = false, false
 		if err == nil {
 			a.consumption = c
@@ -281,6 +282,7 @@ func (a *AgentInbox) ConfirmBatch(ctx actorx.Context, msg ConfirmInboxBatch, rep
 		}
 		return struct{}{}, a.store.saveInboxConsumption(c, true)
 	}, func(_ struct{}, err error) bool {
+		defer a.observeInstalled()
 		a.committing = false
 		if err == nil {
 			a.consumption = c

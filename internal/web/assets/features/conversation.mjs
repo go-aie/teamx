@@ -75,11 +75,11 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     scheduleMessageViewing();
   }
 
-  function pollHumanRead() {
+  function pollHumanRead(options) {
     conversationVisibilityChanged();
     if (!visit) return;
-    if (visit.entrySnapshot === null) void initializeVisit(visit);
-    else humanRead.poll();
+    if (visit.entrySnapshot === null) return initializeVisit(visit);
+    return humanRead.poll(options);
   }
 
   async function initializeVisit(current) {

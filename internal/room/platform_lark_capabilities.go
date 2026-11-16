@@ -35,6 +35,8 @@ func (m *roomManager) applyLarkAccountCheckLocked(profile platform.CLIProfile, a
 		}
 		if check != nil {
 			m.larkPermissionChecks[c.ID] = larkPlatformCapabilityResult{PlatformID: c.ID, PlatformVersion: c.Version, Generation: c.Generation, CredentialVersion: c.CredentialVersion, PermissionCheck: *check}
+			m.updates.mark(uiUpdate{Topic: "platforms"})
+			m.updates.markSubscribedRooms("tools")
 		}
 		if err := m.resumeLarkSubscriptionsLocked(c.ID); err != nil {
 			return err
@@ -48,6 +50,7 @@ func (m *roomManager) applyLarkAccountCheckLocked(profile platform.CLIProfile, a
 func (m *roomManager) larkPlatformCapabilitiesLocked(c registry.Record) larkPlatformCapabilityResult {
 	p, ok := m.larkPermissionChecks[c.ID]
 	if ok && p.PlatformVersion == c.Version && p.Generation == c.Generation && p.CredentialVersion == c.CredentialVersion && p.Account == c.Validation.Account && !time.Now().Before(p.CheckedAt) && time.Since(p.CheckedAt) < larkCapabilityMaxAge {
+		m.updates.atEarliest(uiUpdate{Topic: "platforms"}, p.CheckedAt.Add(larkCapabilityMaxAge))
 		return p
 	}
 	p = larkPlatformCapabilityResult{PlatformID: c.ID, PlatformVersion: c.Version, Generation: c.Generation, CredentialVersion: c.CredentialVersion, PermissionCheck: lark.PermissionCheck{Account: c.Validation.Account, Application: lark.ScopeCheck{State: "unchecked"}, User: lark.ScopeCheck{State: "unchecked"}, Renewal: lark.ScopeCheck{State: "unchecked"}}}
@@ -75,6 +78,11 @@ func (m *roomManager) larkMemberCapabilitiesLocked(owner MemberIdentity, operato
 		}
 	}
 	caps, _ := m.referenceCapabilities("lark")
+	if svc, _ := m.runtimeServiceLocked(owner.RoomIdentity); svc != nil && !p.CheckedAt.IsZero() {
+		u := roomUIUpdate("tools", svc.info)
+		u.AgentID, u.MembershipID = owner.AgentID, owner.MembershipID
+		m.updates.atEarliest(u, p.CheckedAt.Add(larkCapabilityMaxAge))
+	}
 	return projectLarkMemberCapabilities(larkReferenceAccess(owner, a, platform.SourceRef{}), operator, b, f.Revision, p, caps, time.Now())
 }
 

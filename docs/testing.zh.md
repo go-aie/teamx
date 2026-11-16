@@ -123,7 +123,7 @@ TEAMX_HUMAN_READ_PERF=1 go test -tags=e2e ./internal/room \
   -run '^TestHumanReadCatalogPerformance$' -count=1 -v -timeout=3m
 ```
 
-浏览器的 `combined-1440`／`combined-390`／`combined-320` 子场景从第 1～100 条、默认最近 50 条开始，提及位于第 10、70、95 条，另含 3 条自己的消息及重复 @。检查普通打开后仅剩提及未读、一次点击自动补载最早提及、自然滚动确认、独立页面刷新保留未查看提及、精确剩余数和固定分隔线，以及退出丢弃普通回看提示；还注入保存成功但响应丢失，检查轮询恢复后计数不复活。可单独复跑：
+浏览器的 `combined-1440`／`combined-390`／`combined-320` 子场景从第 1～100 条、默认最近 50 条开始，提及位于第 10、70、95 条，另含 3 条自己的消息及重复 @。检查普通打开后仅剩提及未读、一次点击自动补载最早提及、自然滚动确认、独立页面刷新保留未查看提及、精确剩余数和固定分隔线，以及退出丢弃普通回看提示；还注入保存成功但响应丢失，检查自动同步恢复后计数不复活。可单独复跑：
 
 ```sh
 TEAMX_HUMAN_READ_BROWSER=1 go test -tags=e2e ./internal/room \
@@ -216,3 +216,78 @@ go test -tags=e2e ./internal/room -run '^TestScionRealDSHCollaboration$' -count=
 ```
 
 失败后先检查原 Room、分支、pending、Review 和评论，不直接重跑新建流程。`TestScionRealDSHReviewContinuation` 只用于已经核实的既有 Review，`TEAMX_SCION_S4_SOURCE` 指向原证据根；从修正阶段续验时设置 `TEAMX_SCION_S4_START=correction` 及 `TEAMX_SCION_S4_PRIOR_EVIDENCE`。保留工作副本和原回执，通过正式恢复门禁继续，不重建 Review 或重放未知写入。
+
+## Web 更新通知与自动读取
+
+生产会话页面使用统一 SSE；无变化时不进行周期显示读取。普通调度回归使用注入时钟和 EventSource，不依赖浏览器、真实模型或外部平台：
+
+```sh
+node --test internal/web/tests/web*_test.mjs
+go test -race -tags=integration ./internal/room -run '^TestUIUpdate' -count=1 -timeout=4m
+```
+
+安装 Playwright／Chromium 后，可选真实页面验收覆盖两种服务的 60 秒空闲零读取、原生订阅、消息补读及模型回执丢失。模型验证使用受控 probe，无外部模型调用：
+
+```sh
+NODE_PATH="$PWD/packaging/verifier/node_modules" TEAMX_WEB_UPDATES_BROWSER=1 \
+go test -tags=e2e ./internal/room \
+  -run '^TestWebUpdates(ApplicationBrowser|ModelOutcomeBrowser|AuthenticationBrowser|BrowserSubscription)$' -count=1 -v -timeout=5m
+```
+
+通知来源、分类、调度和多端隔离见 [Web 更新说明](implementation/web-updates.zh.md)。阅读、Inbox、Policy 与授权组合可通过以下入口复跑；实际手机与部署代理需独立验收。
+
+```sh
+NODE_PATH="$PWD/packaging/verifier/node_modules" \
+TEAMX_HUMAN_READ_BROWSER=1 TEAMX_CONFIGURATION_BROWSER=1 TEAMX_CONNECT_BROWSER=1 \
+go test -tags=e2e ./internal/room \
+  -run '^(TestConfigurationObservationBrowser|TestLarkAuthorizationAndMemberRepairBrowser|TestHumanReadBrowser)$/(desktop|mobile|reading|combined-1440|locating)$' \
+  -count=1 -v -timeout=4m
+
+NODE_PATH="$PWD/packaging/verifier/node_modules" TEAMX_HUMAN_READ_BROWSER=1 \
+go test -tags=e2e ./internal/room -run '^TestHumanReadCatalogBrowser$' -count=1 -v -timeout=2m
+
+# OUTPUT 必须是尚不存在的绝对目录。
+NODE_PATH="$PWD/packaging/verifier/node_modules" TEAMX_INBOX_BROWSER=1 \
+TEAMX_INBOX_BROWSER_OUTPUT=/tmp/teamx-inbox-browser-new-run \
+go test -tags=e2e ./internal/room -run '^TestInboxPageBrowser$' -count=1 -v -timeout=3m
+```
+
+活动采集回归使用隔离服务、GitLab 空查询和原生 Lark CLI fixture，持续实际采集至少 60 秒；两个独立登录上下文核对摘要/诊断读取、同会话及不同会话、后台恢复与单端退出。无真实模型或外部平台写入。设置输出文件可保留每页和合计请求/正文字节、通知类别及 DOM 延迟：
+
+```sh
+NODE_PATH="$PWD/packaging/verifier/node_modules" TEAMX_WEB_UPDATES_SCOPE_BROWSER=1 \
+TEAMX_WEB_UPDATES_SCOPE_OUTPUT=/tmp/teamx-web-updates-scope.json \
+go test -tags=e2e ./internal/room -run '^TestWebUpdatesNotificationScopeBrowser$' -count=1 -v -timeout=5m
+```
+
+分类、安装结果不变、summary 合并优先、成员收据与目录隔离的普通/race 回归：
+
+```sh
+go test -race -tags=integration ./internal/room ./internal/platform/notification \
+  -run '^(TestNotificationUpdate|TestMemberObservation|TestInstalledStateObservation|TestUIUpdate)' -count=1 -timeout=4m
+```
+
+诊断详情可见时仍会按限频读取，实际错误或业务变化也会触发补读；有 SSE 不等于没有 HTTP。验收应分别统计普通页面、诊断详情和业务变化窗口，确认采集指标没有连带刷新 Inbox、成员或完整目录。
+
+配对性能测试只在显式开启时运行，需要本机安装 Playwright／Chromium。它通过 `git archive` 只读加载指定提交的旧轮询静态资产，运行在当前后端及各自新建的相同数据上，不切换工作区；基线引用必须仍包含旧显示轮询。测试同时记录实际 HTTP、独立历史分页、字节、CPU、物理块计数、进程 mutex 等待、内存抽样、长任务和安装至 DOM 延迟；完整配对运行检查总 HTTP／字节及负载窗口的单位时间 CPU 下降，同时披露按实际提交数归一化的 CPU 成本；不要求每个小场景的每条消息 CPU 都下降。
+
+```sh
+NODE_PATH="$PWD/packaging/verifier/node_modules" TEAMX_WEB_UPDATES_PERF=1 \
+TEAMX_WEB_UPDATES_POLLING_REF=7be23946f31d7502959a4cbe26abf23afa3d7acd \
+TEAMX_WEB_UPDATES_PERF_OUTPUT=/tmp/teamx-web-updates-new-measurement \
+go test -tags=e2e ./internal/room -run '^TestWebUpdatesPerformance$' -count=1 -v -timeout=8m
+
+NODE_PATH="$PWD/packaging/verifier/node_modules" TEAMX_WEB_UPDATES_BROWSER=1 \
+go test -tags=e2e ./internal/room -run '^TestWebUpdatesRestartBrowser$' -count=1 -v -timeout=2m
+```
+
+性能测量应在其他回归结束后单独执行，输出目录使用新路径。正式比较保留每个实际测量窗口与注入数；热缓存物理读取为零不等于没有文件读取，进程 mutex 等待也不能归因于某一把锁。
+
+全仓 fixture 数量较多时可通过 `TEST_TIMEOUT` 指定单包总时限；默认 core 仍为 3 分钟、integration／race 为 8 分钟，不改变单项用例的超时或断言：
+
+```sh
+make test TEST_TIMEOUT=20m
+make test-integration TEST_TIMEOUT=20m
+make test-race TEST_TIMEOUT=30m TEST_PACKAGES='./internal/room ./internal/platform/notification ./internal/agent/dsh'
+make test-e2e-check
+```

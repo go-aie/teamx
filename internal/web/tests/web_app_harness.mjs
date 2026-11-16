@@ -117,10 +117,25 @@ export async function launch(api, saved = new Map(), environment = {}) {
     }
     now = end; await settle();
   } };
+  const sources = [];
+  class EventSource {
+    constructor(url) {
+      this.url = url; this.listeners = {}; this.readyState = 1; sources.push(this);
+      const query = new URL(url, "http://fixture").searchParams;
+      queueMicrotask(() => this.emit("hello", {protocol:1, connection_id:`connection-${sources.indexOf(this)}`, service_epoch:query.get("service_epoch")}));
+    }
+    addEventListener(type, handler) { (this.listeners[type] ||= []).push(handler); }
+    emit(type, data = {}) {
+      const body = {connection_id:`connection-${sources.indexOf(this)}`, ...data};
+      for (const listener of this.listeners[type] || []) listener({data:JSON.stringify(body)});
+    }
+    close() { this.readyState = 2; this.closed = true; }
+  }
   const appEnvironment = {
     document, window, sessionStorage: storage,
     confirmAction: ({title,message}) => window.confirm(`${title}\n${message}`),
     Option: function(text, value) { const el = new Element("option"); el.textContent = text; el.value = value; return el; },
+    EventSource,
     setInterval: () => {}, requestAnimationFrame: fn => fn(),
     renderMessageBody: (el, text, operator, options) => { el.textContent = text; el.markdownOptions = options; },
     performance: { now: () => now },
@@ -136,6 +151,7 @@ export async function launch(api, saved = new Map(), environment = {}) {
   };
   Object.defineProperties(appEnvironment, Object.getOwnPropertyDescriptors(environment));
   const entrypoint = await createApp(appEnvironment);
+  await settle();
   const notificationToggle = () => {
     const {target, platformID, memberAvailable} = entrypoint.notificationSource();
     const list = target.mode !== "inbox" ? elements.get("notification-platforms") : memberAvailable ? elements.get("member-notification-platforms") : elements.get("notification-orphan-items");
@@ -143,7 +159,9 @@ export async function launch(api, saved = new Map(), environment = {}) {
     return row?.className.includes("member-platform-row") ? row.children[1].children[1] : row?.children[1];
   };
   assert.ok(!elements.get("sync-error").textContent, elements.get("sync-error").textContent);
-  return { el: id => elements.get(id), saved, document, window, clock, refresh: entrypoint.refresh, openNotificationSource:entrypoint.openNotificationSource, selectedAgent:entrypoint.selectedAgent, notificationToggle,
+  return { el: id => elements.get(id), saved, document, window, clock, sources, invalidate: topic => sources.at(-1)?.emit("invalidate", {topic}), refresh: entrypoint.refresh, reads: entrypoint.reads,
+    readEnvironment: { performance: appEnvironment.performance, setTimeout: appEnvironment.setTimeout, clearTimeout: appEnvironment.clearTimeout },
+    openNotificationSource:entrypoint.openNotificationSource, selectedAgent:entrypoint.selectedAgent, notificationToggle,
     async draft(text) { elements.get("message-input").value = text; await elements.get("message-input").emit("input"); },
     async select(name) {
       const choice = elements.get("room-list").children.map(row => row.children[0]).find(button => button.children[0].textContent === name);

@@ -63,7 +63,11 @@ for (const record of view.history) {
 }
 await ui.el("members").children[0].querySelector(".member-summary").emit("click");
 await settle();
+// HTTP can be waiting on configuration while the member panel is opening.
+await waitFor(() => ui.el("activity-dialog").open);
 await ui.el("agent-tab-policy").emit("click");
+await ui.clock.advance(1500);
+await ui.reads.policy();
 await waitFor(() => ui.el("policy-entries").children.length === 2);
 assert.equal(ui.el("policy-entries").children.length, 2);
 await ui.el("policy-new").emit("click");

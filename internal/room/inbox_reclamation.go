@@ -88,6 +88,7 @@ func (a *AgentInbox) Reclaim(ctx actorx.Context, msg ReclaimInbox, reply actorx.
 		}
 		return a.store.reclaimInbox(a, msg.Through)
 	}, func(remaining int64, err error) bool {
+		defer a.observeInstalled()
 		a.committing, a.previewing = false, false
 		if err == nil {
 			a.expiredThrough = max(a.expiredThrough, msg.Through)

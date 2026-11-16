@@ -196,7 +196,7 @@ test("auth completion reports each part, and reload retries only the saved P5 op
   const api=fixture(),ui=await add(api);await ui.el("gitlab-login").emit("click");
   const op=api.ops.get(api.login.onboarding_id);op.connection={status:"connected",version:2};op.notifications={status:"failed",error_code:"settings_changed"};op.tool={status:"applied",version:3,error_code:"executable_unavailable"};
   api.platforms=[{id:op.platform_id,name:"Company GitLab",provider:"gitlab",url:"https://gitlab.invalid",version:2,credential_kind:"oauth",authorization_status:"active",validation:{status:"valid",username:"Bob"},references:[]}];api.auth={status:"succeeded",platforms:api.platforms};
-  await ui.clock.advance(1500);
+  ui.invalidate("authorization"); await ui.clock.advance(1500);
   assert.match(ui.el("onboarding-steps").children[1].children[1].textContent,/设置已被修改/);assert.match(ui.el("onboarding-steps").children[2].children[1].textContent,/程序缺失.*已保存/);assert.match(ui.el("onboarding-result-account").textContent,/@Bob/);
   api.epoch="restarted";const next=await launch(api,ui.saved);await next.el("open-settings").emit("click");assert.equal(next.el("onboarding-apply").hidden,false);
   const logins=calls(api,"/v1/platforms/gitlab/login").length;await next.el("onboarding-apply").emit("click");

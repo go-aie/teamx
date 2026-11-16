@@ -253,7 +253,7 @@ test("login shows the link and QR, polls read-only status, and does not persist 
  assert.match(ui.el("connection-login-qr").src,/^\/v1\/platforms\/lark\/qrcode\?/);
  assert.equal(ui.el("connection-save").disabled,true);assert.equal(ui.el("connection-login-cancel").hidden,false);
  assert.equal(api.calls.filter(x=>x.path==="/v1/platforms/lark/login").length,1);
- api.authView={session_id:"auth-session",status:"succeeded",username:"测试用户"};await ui.clock.advance(1500);
+ api.authView={session_id:"auth-session",status:"succeeded",username:"测试用户"};await (ui.invalidate("authorization"), ui.clock.advance(1500));
  assert.equal(ui.el("connection-login-panel").hidden,true);assert.equal(ui.el("connection-login-link").href,"");assert.equal(ui.el("connection-save").disabled,false);
  assert.match(ui.el("platforms-feedback").textContent,/账号已验证/);
  assert.equal(JSON.stringify([...ui.saved]).includes("auth-session"),false);assert.equal(JSON.stringify([...ui.saved]).includes("accounts.feishu.cn"),false);
@@ -353,7 +353,7 @@ test("a removed saved profile never silently changes to another account",async()
 test("an in-flight auth status cannot restore the QR after the settings close",async()=>{
  const api=fixture(),original=api.request;let finish,reads=0;
  api.request=(path,body)=>path==="/v1/platforms/lark/status" && ++reads>1 ? new Promise(resolve=>{finish=resolve;}) : original(path,body);
- const ui=await connectionDraft(api);await ui.el("connection-login").emit("click");await ui.clock.advance(1500);
+ const ui=await connectionDraft(api);await ui.el("connection-login").emit("click");await (ui.invalidate("authorization"), ui.clock.advance(1500));
  await ui.el("close-settings").emit("click");finish({session_id:"auth-session",status:"succeeded",username:"晚到账号"});await settle();
  assert.equal(ui.el("settings-dialog").open,false);assert.equal(ui.el("connection-login-panel").hidden,true);assert.equal(ui.el("connection-login-qr").src,"");
  assert.doesNotMatch(ui.el("platforms-feedback").textContent,/晚到账号/);
@@ -718,12 +718,12 @@ test("guided setup changes stages, clears old QR, pins the returned profile and 
  assert.equal(ui.el("connection-capabilities").hidden,true);await ui.el("connection-setup-start").emit("click");
  assert.equal(api.calls.filter(c=>c.path.endsWith("/lark/setup")).length,1);
  api.profiles=[{name:"other",brand:"feishu",user:"其他账号"},{name:setupProfile.profile,brand:"feishu"}];
- api.authView=configuredView("starting");await ui.clock.advance(1500);
+ api.authView=configuredView("starting");await (ui.invalidate("authorization"), ui.clock.advance(1500));
  assert.equal(ui.el("connection-login-panel").hidden,true);assert.equal(ui.el("connection-login-qr").src,"");assert.equal(ui.el("connection-login-link").href,"");
  assert.equal(ui.el("connection-application-name").textContent,"测试应用");
  api.authView=configuredView("waiting","authorization",{verification_url:"https://accounts.feishu.cn/oauth?code=fixture",qrcode_url:"/v1/platforms/lark/qrcode?session_id=setup-session"});
- await ui.clock.advance(1500);assert.equal(ui.el("connection-login-panel").hidden,false);assert.equal(ui.el("connection-login-link").textContent,"打开授权页面 ↗");
- api.profiles[1].user="本次用户";api.authView=configuredView("succeeded","complete",{username:"本次用户"});await ui.clock.advance(1500);
+ await (ui.invalidate("authorization"), ui.clock.advance(1500));assert.equal(ui.el("connection-login-panel").hidden,false);assert.equal(ui.el("connection-login-link").textContent,"打开授权页面 ↗");
+ api.profiles[1].user="本次用户";api.authView=configuredView("succeeded","complete",{username:"本次用户"});await (ui.invalidate("authorization"), ui.clock.advance(1500));
  assert.equal(ui.el("connection-profile").value,setupProfile.profile);assert.equal(ui.el("connection-profile-choice").hidden,false);
  assert.equal(ui.el("connection-name").value,"我的飞书草稿");assert.equal(ui.el("connection-save").hidden,false);assert.equal(ui.el("connection-save").disabled,false);
  assert.equal(ui.el("connection-guided").hidden,true);assert.equal(ui.el("connection-advanced").open,false);
@@ -737,21 +737,21 @@ test("guided setup changes stages, clears old QR, pins the returned profile and 
 test("OAuth failure keeps the configured app and resumes login without another registration",async()=>{
  const api=guidedFixture(),ui=await connectionDraft(api);await ui.el("connection-setup-start").emit("click");
  api.profiles=[{name:setupProfile.profile,brand:"feishu"}];api.authView=configuredView("failed","authorization",{error_code:"permission_denied"});
- await ui.clock.advance(1500);
+ await (ui.invalidate("authorization"), ui.clock.advance(1500));
  assert.match(ui.el("platforms-feedback").textContent,/应用已配置.*读取权限不足.*继续授权/);
  assert.equal(ui.el("connection-login").textContent,"继续账号授权");assert.equal(ui.el("connection-login").hidden,false);assert.equal(ui.el("connection-save").hidden,true);
  await ui.el("connection-form").emit("submit");assert.equal(api.calls.some(c=>c.path.endsWith("/platforms/save")),false);
  api.authView={session_id:"auth-session",status:"waiting",verification_url:"https://accounts.feishu.cn/oauth",qrcode_url:"/v1/platforms/lark/qrcode?session_id=auth-session"};
  await ui.el("connection-login").emit("click");
  assert.equal(api.calls.find(c=>c.path.endsWith("/lark/login")).body.cli_profile.profile,setupProfile.profile);
- api.profiles[0].user="恢复用户";api.authView={session_id:"auth-session",status:"succeeded",username:"恢复用户"};await ui.clock.advance(1500);
+ api.profiles[0].user="恢复用户";api.authView={session_id:"auth-session",status:"succeeded",username:"恢复用户"};await (ui.invalidate("authorization"), ui.clock.advance(1500));
  assert.equal(api.calls.filter(c=>c.path.endsWith("/lark/setup")).length,1);
  assert.equal(ui.el("connection-save").hidden,false);assert.match(ui.el("connection-account").textContent,/恢复用户/);
 });
 test("failed application results and missing returned profiles never select another account",async()=>{
  for(const view of [configuredView("failed","application",{error_code:"identity_mismatch"}),configuredView("succeeded","complete",{username:"本次用户"})]){
   const api=guidedFixture(),ui=await connectionDraft(api);await ui.el("connection-setup-start").emit("click");
-  api.profiles=[{name:"unrelated",brand:"feishu",user:"其他用户"}];api.authView=view;await ui.clock.advance(1500);
+  api.profiles=[{name:"unrelated",brand:"feishu",user:"其他用户"}];api.authView=view;await (ui.invalidate("authorization"), ui.clock.advance(1500));
   assert.equal(ui.el("connection-profile").value,"");assert.equal(ui.el("connection-profile-choice").hidden,false);assert.equal(ui.el("connection-save").hidden,true);
   assert.equal(ui.el("platforms-feedback").dataset.kind,"error");assert.equal(api.calls.some(c=>c.path.endsWith("/lark/login")),false);
   await ui.el("connection-recheck").emit("click");assert.equal(ui.el("connection-profile").value,"");
@@ -759,7 +759,7 @@ test("failed application results and missing returned profiles never select anot
 });
 test("mismatched application remains blocked until explicit detection or selection",async()=>{
  const api=guidedFixture(),ui=await connectionDraft(api);await ui.el("connection-setup-start").emit("click");
- api.profiles=[{name:setupProfile.profile,brand:"feishu",user:"已有用户"}];api.authView=configuredView("failed","application",{error_code:"configuration_unconfirmed"});await ui.clock.advance(1500);
+ api.profiles=[{name:setupProfile.profile,brand:"feishu",user:"已有用户"}];api.authView=configuredView("failed","application",{error_code:"configuration_unconfirmed"});await (ui.invalidate("authorization"), ui.clock.advance(1500));
  assert.equal(ui.el("connection-login").hidden,true);assert.equal(ui.el("connection-save").hidden,true);assert.equal(ui.el("connection-capabilities").hidden,true);
  assert.match(ui.el("platforms-feedback").textContent,/已发现本机配置.*结果未确认.*重新检测/);
  await ui.el("connection-recheck").emit("click");assert.equal(ui.el("connection-account-manage").hidden,false);
@@ -768,7 +768,7 @@ test("mismatched application remains blocked until explicit detection or selecti
 test("expired and cancelled setup explicitly report found configuration and preserve the name",async()=>{
  for(const status of ["expired","cancelled"]){
   const api=guidedFixture(),ui=await connectionDraft(api);ui.el("connection-name").value="保留草稿";await ui.el("connection-setup-start").emit("click");
-  api.authView={session_id:"setup-session",stage:"application",status,error_code:status==="expired"?"timeout":"cancelled"};await ui.clock.advance(1500);
+  api.authView={session_id:"setup-session",stage:"application",status,error_code:status==="expired"?"timeout":"cancelled"};await (ui.invalidate("authorization"), ui.clock.advance(1500));
   assert.match(ui.el("platforms-feedback").textContent,status==="expired"?/应用配置已过期.*尚未确认/:/应用配置已取消.*尚未确认/);
   assert.equal(ui.el("connection-name").value,"保留草稿");assert.equal(ui.el("connection-login-qr").src,"");
   assert.equal(ui.el("connection-recheck").hidden,false);assert.equal(api.calls.filter(c=>c.path.endsWith("/lark/setup")).length,1);
@@ -799,7 +799,7 @@ test("setup rejects duplicate starts while the initial response is pending",asyn
 test("closing setup cancels waiting, ignores an outstanding status and rediscovers when reopened",async()=>{
  const api=guidedFixture(),original=api.request,ui=await connectionDraft(api);await ui.el("connection-setup-start").emit("click");let release;
  api.request=async(path,body,...args)=>path.endsWith("/lark/status")?await new Promise(r=>release=r):original(path,body,...args);
- const reading=ui.clock.advance(1500);await settle();await ui.el("close-settings").emit("click");
+ const reading=(ui.invalidate("authorization"), ui.clock.advance(1500));await settle();await ui.el("close-settings").emit("click");
  release(configuredView("succeeded","complete",{username:"晚到用户"}));await reading;
  assert.equal(ui.el("connection-login-panel").hidden,true);assert.equal(ui.el("connection-login-link").href,"");
  assert.equal(api.calls.filter(c=>c.path.endsWith("/lark/cancel")).length,1);
@@ -812,7 +812,7 @@ test("pagehide preserves server authorization, and a late start is queried after
  const api=guidedFixture(),ui=await connectionDraft(api);await ui.el("connection-setup-start").emit("click");
  const before=api.calls.length;await ui.window.emit("pagehide");await ui.clock.advance(5000);
  assert.equal(api.calls.length,before);assert.equal(api.calls.filter(c=>c.path.endsWith("/lark/cancel")).length,0);
- await ui.window.emit("pageshow");await ui.clock.advance(1500);
+ await ui.window.emit("pageshow");await (ui.invalidate("authorization"), ui.clock.advance(1500));
  assert.equal(api.calls.filter(c=>c.path.endsWith("/lark/setup")).length,1);
  const late=guidedFixture(),original=late.request;let release;
  late.request=async(path,body,...args)=>{if(path.endsWith("/lark/setup")){const result=await original(path,body,...args);await new Promise(r=>release=r);return result;}return original(path,body,...args);};
@@ -825,7 +825,7 @@ test("pagehide preserves server authorization, and a late start is queried after
 
 test("a changed user after guided verification cannot be saved as the verified account",async()=>{
  const api=guidedFixture(),ui=await connectionDraft(api);await ui.el("connection-setup-start").emit("click");
- api.profiles=[{name:setupProfile.profile,brand:"feishu",user:"其他用户"}];api.authView=configuredView("succeeded","complete",{username:"本次用户"});await ui.clock.advance(1500);
+ api.profiles=[{name:setupProfile.profile,brand:"feishu",user:"其他用户"}];api.authView=configuredView("succeeded","complete",{username:"本次用户"});await (ui.invalidate("authorization"), ui.clock.advance(1500));
  assert.equal(ui.el("connection-save").hidden,true);assert.equal(ui.el("connection-login").hidden,true);
  assert.match(ui.el("platforms-feedback").textContent,/账号与核验结果不符.*连接未保存/);
  await ui.el("connection-form").emit("submit");assert.equal(api.calls.some(c=>c.path.endsWith("/platforms/save")),false);
@@ -833,7 +833,7 @@ test("a changed user after guided verification cannot be saved as the verified a
 test("status read failure retains the original setup and never retries creation",async()=>{
  const api=guidedFixture(),ui=await connectionDraft(api),original=api.request;await ui.el("connection-setup-start").emit("click");
  api.request=async(path,body,...args)=>{if(path.endsWith("/lark/status"))throw Error("network");return original(path,body,...args);};
- await ui.clock.advance(1500);
+ await (ui.invalidate("authorization"), ui.clock.advance(1500));
  assert.equal(api.calls.filter(c=>c.path.endsWith("/lark/cancel")).length,0);
  assert.match(ui.el("platforms-feedback").textContent,/正在核对原操作/);
  api.request=original;await ui.clock.advance(3000);
@@ -901,7 +901,7 @@ test("saved-profile authorization only mentions other platforms when they exist"
 });
 test("renewal failure stays visible while its instructions are expandable and cleared by the next operation",async()=>{
  const api=fixture(),ui=await connectionDraft(api);await ui.el("connection-reauthorize").emit("click");
- api.authView={session_id:"auth-session",status:"succeeded",username:"测试用户",renewal_unavailable:true,expires_at:"2027-01-01T00:00:00Z"};await ui.clock.advance(1500);
+ api.authView={session_id:"auth-session",status:"succeeded",username:"测试用户",renewal_unavailable:true,expires_at:"2027-01-01T00:00:00Z"};await (ui.invalidate("authorization"), ui.clock.advance(1500));
  assert.match(ui.el("platforms-feedback").textContent,/账号已验证.*请保存连接.*无法自动续期.*管理员/);
  assert.doesNotMatch(ui.el("platforms-feedback").textContent,/user_access_token|发布新版本/);
  assert.equal(ui.el("platforms-feedback-details").hidden,false);assert.equal(ui.el("platforms-feedback-details").open,false);

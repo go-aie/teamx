@@ -56,7 +56,7 @@ func (m *roomManager) startDeletion(target RoomIdentity) (roomSummary, error) {
 	}
 	rt := m.reserveRuntimeLocked(target)
 	if rt.service != nil {
-		rt.service.closing.Store(true)
+		rt.service.beginClosing()
 	}
 	m.notifications.CancelRoomLocked(target)
 	m.cancelPlatformCallsLocked(func(c *platformCall) bool { return c.owner == target })

@@ -6,7 +6,7 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
   const { state, $, setSelectOptions, confirmAction } = runtime;
 
   // Application secrets live only in memory and are never retried automatically.
-  const platforms = { items: [], selected: null, sending: false, generation: 0, formVersion: 0, discovery: null, detecting: false, auth: null, authTimer: null, larkPending:null, larkStarting:null, gitlabAuth: null, gitlabTimer: null, gitlabPending: null, gitlabSetup:null, gitlabSetupVersion:0, gitlabEditingImportID:null, scionDiscovery:null, scionAuth:null, scionTimer:null, scionPending:null, scionLogout:null };
+  const platforms = { items: [], selected: null, sending: false, generation: 0, formVersion: 0, discovery: null, detecting: false, auth: null, larkPending:null, larkStarting:null, gitlabAuth: null, gitlabPending: null, gitlabSetup:null, gitlabSetupVersion:0, gitlabEditingImportID:null, scionDiscovery:null, scionAuth:null, scionPending:null, scionLogout:null };
 
   const connectionValidationErrors = { login_failed:"PAT 登录失败，请核对实例、令牌及权限。", timeout:"操作超时，请刷新账号核对结果；不会自动重新登录。", cancelled:"操作已取消，请刷新账号核对状态。", credential_unavailable: "登录凭据不可用，请核对账号授权或服务凭据配置。", credential_rejected: "认证失败，请核对当前账号登录和权限。", identity_mismatch: "profile 账号或应用已变化，请核对后重新验证。", permission_denied: "当前用户权限不足，请检查授权。", application_scopes_unchecked:"应用权限暂未确认，请检查网络后重新检测。", identity_or_version_changed:"账号或连接版本已变化，请核对原账号后重试。", cli_version_mismatch: "CLI 版本不匹配，请使用对应工具已验收的固定版本。", cli_unavailable: "CLI 无法执行，请核对路径与后台运行权限。", query_failed: "连接失败，请检查地址或网络后重试验证。", invalid_response: "实例返回了无效的身份信息。" };
 
@@ -110,24 +110,21 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
   async function cancelPlatformAuth() {await scionUI.cancelScionAuth();await gitlabUI.cancelGitLabAuth();await larkUI.cancelLarkAuth();}
 
   function updatePlatformItem(item) {
+    runtime.platformRead.invalidate();
     platforms.generation++; // A confirmed mutation supersedes earlier list reads.
     const index = platforms.items.findIndex(c => c.id === item.id);
     if (index < 0) platforms.items.push(item); else platforms.items[index] = item;
     if (platforms.selected?.id === item.id) platforms.selected = item;
   }
 
-  // Polls, settings entry and confirmed changes share the same readers.
-  // The readers retain their Room, member and revision guards; a late result
-  // cannot clear an error in another inspector or overwrite a settings draft.
-  async function refreshPlatformState({ background = false } = {}) {
+  async function refreshPlatformState({ background = false, ...options } = {}) {
     const ws = workspaceUI.workspaceView, catalog = state.catalog, member = membersUI.memberToolsView;
     if (!ws || !catalog) return;
-    const platforms = workspaceUI.loadWorkspacePlatforms({ background });
     await Promise.all([
-      platforms,
-      notificationsUI.loadNotificationSubscriptions(catalog, ws),
+      workspaceUI.loadWorkspacePlatforms({ background, ...options }),
+      notificationsUI.loadNotificationSubscriptions(catalog, ws, options),
       member && membersUI.toolsCurrent(member) && (!background || !$("activity-dialog").hidden || $("notification-detail").open)
-        ? membersUI.loadCLITools(member, { background }) : undefined,
+        ? membersUI.loadCLITools(member, { background, ...options }) : undefined,
     ]);
     if (ws === workspaceUI.workspaceView && catalog.service_epoch === state.catalog?.service_epoch &&
         (!member || membersUI.toolsCurrent(member))) notificationsUI.renderNotificationPlatforms();
@@ -151,26 +148,25 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
     }));
   }
 
-  async function loadPlatforms() {
+  async function loadPlatforms({ current = () => true, onFailure = () => {} } = {}) {
     const generation = ++platforms.generation;
     // Keep the current content while reading; only a failed read needs an action.
     $("platforms-list-view").setAttribute("aria-busy", "true");
     $("platforms-retry").disabled = true;
     $("platforms-retry").textContent = "重试中…";
     try {
-      const query = new URLSearchParams({ service_epoch: state.catalog.service_epoch, caller_id: state.operator });
-      const data = await request(`/v1/platforms?${query}`);
-      if (generation !== platforms.generation) return;
+      const data = await runtime.platformRead.read();
+      if (!current() || generation !== platforms.generation) return;
       platforms.items = data.platforms; renderPlatforms();
       $("platforms-load-error").hidden = true;
       if (!$("platforms-list-view").hidden) connectionFeedback();
-    } catch {
-      if (generation === platforms.generation) {
+    } catch (error) {
+      if (current() && generation === platforms.generation) {
         $("platforms-empty").hidden = true;
-        $("platforms-load-error").hidden = false;
+        $("platforms-load-error").hidden = false; onFailure(error);
       }
     } finally {
-      if (generation === platforms.generation) {
+      if (current() && generation === platforms.generation) {
         $("platforms-list-view").setAttribute("aria-busy", "false");
         $("platforms-retry").disabled = false;
         $("platforms-retry").textContent = "重试";
@@ -194,7 +190,7 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
     connectionFeedback();onboardingUI.renderOnboarding();
   }
 
-  function editPlatform(item = null, { fromSource = false } = {}) {
+  function editPlatform(item = null, { fromSource = false, discover = true } = {}) {
     if ($("connection-form").hidden || fromSource) platforms.returnToSource = fromSource;
     platforms.connectOperation=null;$("connection-name").readOnly=false;
     if(!$("platforms-list-view").hidden){platforms.listReturn={scroll:$("settings-panels").scrollTop,id:item?.id};$("settings-panels").scrollTop=0;}
@@ -244,6 +240,7 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
     $("connection-fields").disabled = false; $("connection-name").focus();
     for (const id of ["connection-save", "connection-verify"]) $(id).disabled = false;
     onboardingUI.renderOnboarding();
+    if (!discover) { gitlabUI.renderGitLabAccount(); return; }
     if (connectionIsLark()) return larkUI.detectLarkPlatform();
     if (connectionIsScion()) return scionUI.detectScionPlatform();
     gitlabUI.renderGitLabAccount();
@@ -329,7 +326,7 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
       if (op) payload={...payload,id:op.platform_id,url:op.input.origin,onboarding_id:op.operation_id};
       let result = await request(`/v1/platforms/${action}`, connectionPayload(payload), undefined, 40000);
       if (result.onboarding) onboardingUI.acceptOnboarding(result.onboarding);
-      if (action === "delete") { showPlatformList(); await loadPlatforms(); connectionFeedback("连接已删除。", "success"); }
+      if (action === "delete") { runtime.platformRead.invalidate(); showPlatformList(); await loadPlatforms(); connectionFeedback("连接已删除。", "success"); }
       else if (action === "save") {
         savedResult = result;
         updatePlatformItem(result);

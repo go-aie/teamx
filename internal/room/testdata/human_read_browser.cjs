@@ -11,8 +11,8 @@ if(artifacts)mkdirSync(artifacts,{recursive:true});
   page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(15000);
   const readState=async()=>{
    const info=await(await fetch(endpoint+'/v1/ui')).json();
-   const response=await fetch(endpoint+'/v1/human-read/state',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({room_id:info.room_id,room_instance:info.room_instance,service_epoch:info.service_epoch,caller:{kind:'human',id:info.operator}})});
-   assert.equal(response.status,200);return response.json();
+   const response=await fetch(endpoint+'/v1/human-read/state',{method:'POST',headers:{'Content-Type':'application/json',Origin:endpoint},body:JSON.stringify({room_id:info.room_id,room_instance:info.room_instance,service_epoch:info.service_epoch,caller:{kind:'human',id:info.operator}})});
+   assert.equal(response.status,200,await response.clone().text());return response.json();
   };
   const waitFor=async(check)=>{const deadline=Date.now()+10000;while(!await check()){if(Date.now()>deadline)throw Error('condition timed out');await new Promise(r=>setTimeout(r,100));}};
   if(history){
@@ -168,10 +168,10 @@ if(artifacts)mkdirSync(artifacts,{recursive:true});
    // The real backend retains at most 10,000 messages. Free one slot only
    // after measuring the complete automatic load, then measure a real append.
    const identity={room_id:info.room_id,room_instance:info.room_instance,service_epoch:info.service_epoch,caller:{kind:'human',id:info.operator}};
-   const cleared=await fetch(endpoint+'/v1/messages/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...identity,snapshot_seq:1})});
+   const cleared=await fetch(endpoint+'/v1/messages/clear',{method:'POST',headers:{'Content-Type':'application/json',Origin:endpoint},body:JSON.stringify({...identity,snapshot_seq:1})});
    assert.equal(cleared.status,200,await cleared.text());await page.locator('#message-1').waitFor({state:'detached'});
    const refreshStart=Date.now();
-   const sent=await fetch(endpoint+'/v1/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({room_id:info.room_id,room_instance:info.room_instance,service_epoch:info.service_epoch,caller:{kind:'human',id:info.operator},client_message_id:'history-live-append',text:'补载完成后正常刷新。'})});assert.equal(sent.status,200,await sent.text());
+   const sent=await fetch(endpoint+'/v1/send',{method:'POST',headers:{'Content-Type':'application/json',Origin:endpoint},body:JSON.stringify({room_id:info.room_id,room_instance:info.room_instance,service_epoch:info.service_epoch,caller:{kind:'human',id:info.operator},client_message_id:'history-live-append',text:'补载完成后正常刷新。'})});assert.equal(sent.status,200,await sent.text());
    await page.locator('#message-10001').waitFor();const refreshMs=Date.now()-refreshStart;
    assert.equal(await anchor.evaluate(el=>el===document.querySelector('#message-9970')),true);
    const refreshPosition=await page.locator('#timeline').evaluate(el=>el.scrollTop);
@@ -221,7 +221,7 @@ if(artifacts)mkdirSync(artifacts,{recursive:true});
    await page.reload();await page.locator('#message-120').waitFor();hold=true;
    await page.locator('#view-mention').click();await page.locator('#history-progress').waitFor({state:'visible'});
    const info=await(await fetch(endpoint+'/v1/ui')).json();
-   const cleared=await fetch(endpoint+'/v1/messages/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({room_id:info.room_id,room_instance:info.room_instance,service_epoch:info.service_epoch,caller:{kind:'human',id:info.operator},snapshot_seq:70})});assert.equal(cleared.status,200);
+   const cleared=await fetch(endpoint+'/v1/messages/clear',{method:'POST',headers:{'Content-Type':'application/json',Origin:endpoint},body:JSON.stringify({room_id:info.room_id,room_instance:info.room_instance,service_epoch:info.service_epoch,caller:{kind:'human',id:info.operator},snapshot_seq:70})});assert.equal(cleared.status,200);
    await page.locator('#history-progress').waitFor({state:'hidden'});hold=false;release();await page.waitForTimeout(200);
    assert.equal(await page.locator('#message-21').count(),0,'clear discards a previously valid late history response');
    assert.ok(!(await readState()).mention_seen_seqs.includes(21));
@@ -262,7 +262,7 @@ if(artifacts)mkdirSync(artifacts,{recursive:true});
    assert.equal(await phone.locator('#message-100').evaluate(el=>el.classList.contains('mentioned')),false);
    await phone.locator('#message-90').scrollIntoViewIfNeeded();
    const info=await(await fetch(endpoint+'/v1/ui')).json();
-   const sent=await fetch(endpoint+'/v1/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({room_id:info.room_id,room_instance:info.room_instance,service_epoch:info.service_epoch,caller:{kind:'human',id:info.operator},client_message_id:'browser-jump-layout',text:'检查回看与回到最新消息入口。'})});
+   const sent=await fetch(endpoint+'/v1/send',{method:'POST',headers:{'Content-Type':'application/json',Origin:endpoint},body:JSON.stringify({room_id:info.room_id,room_instance:info.room_instance,service_epoch:info.service_epoch,caller:{kind:'human',id:info.operator},client_message_id:'browser-jump-layout',text:'检查回看与回到最新消息入口。'})});
    assert.equal(sent.status,200);
    await phone.locator('#jump-latest').waitFor({state:'visible'});
    for(const width of [390,320]){

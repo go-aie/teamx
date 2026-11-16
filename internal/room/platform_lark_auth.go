@@ -247,10 +247,12 @@ func (m *roomManager) serveLarkAuth(w http.ResponseWriter, r *http.Request) {
 		m.larkAuthSessions = map[string]*larkAuthSession{}
 	}
 	m.larkAuthSessions[id] = s
+	m.authorizationChanged(s.owner)
 	affected, targets, err := m.invalidateLarkAuthLocked(req)
 	s.targets = targets
 	if err != nil || m.closing {
 		cancel()
+		m.authorizationChanged(s.owner)
 		close(s.done)
 		delete(m.larkAuthSessions, id)
 		m.mu.Unlock()
@@ -280,6 +282,7 @@ func (m *roomManager) pruneLarkAuthSessionsLocked() {
 }
 
 func (m *roomManager) publicLarkAuthView(s *larkAuthSession) larkAuthView {
+	m.updates.atEarliest(uiUpdate{Topic: "authorization", Operator: s.owner}, s.expires)
 	view := s.larkAuthView
 	if s.Status == "waiting" && s.QRCode != "" {
 		q := url.Values{"service_epoch": {m.epoch}, "caller_id": {s.owner}, "session_id": {s.SessionID}}
@@ -492,6 +495,7 @@ func (m *roomManager) runLarkAuth(ctx context.Context, s *larkAuthSession, actio
 			}
 		}
 	}
+	m.authorizationChanged(s.owner)
 	close(s.done)
 	m.finishPlatformConnectLocked(s)
 }

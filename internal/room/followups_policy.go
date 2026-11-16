@@ -178,6 +178,7 @@ func (s *Store) changeConversationPolicyLocked(id MemberIdentity, caller Caller,
 		}
 		match := e.DigestVersion == 2 && e.RequestDigest == digest || e.DigestVersion == 0 && e.RequestDigest == legacyPolicyConversationDigest(q, uint64(i))
 		if match {
+			s.changed("policy", id)
 			return conversationPolicyResult{PolicyView: policyView(p), Record: r}, nil
 		}
 		if r.ID == c.ID && r.Source.Seq == c.SourceSeq {
@@ -254,6 +255,7 @@ func (s *Store) changeConversationPolicyLocked(id MemberIdentity, caller Caller,
 	if err := s.save(path, p, maxPrivateFileBytes); err != nil {
 		return conversationPolicyResult{}, err
 	}
+	s.changed("policy", id)
 	return conversationPolicyResult{PolicyView: policyView(p), Record: r}, nil
 }
 

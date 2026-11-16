@@ -72,11 +72,14 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     } catch { /* Never replay requests from storage. */ }
   }
 
-  async function syncWorkspace(catalog) {
+  async function syncWorkspace(catalog, { current = () => true, onFailure = () => {} } = {}) {
     const room = roomsUI.selectedEntry(catalog);
     selectWorkspace(room, catalog.operator);
     const ws = workspaceView;
     if (!ws) { renderWorkspace(); return; }
+    const context = ws.notificationEpoch;
+    const valid = () => current() && ws === workspaceView && context === ws.notificationEpoch &&
+      catalog.service_epoch === state.catalog?.service_epoch;
     let completed = false;
     const query = (operationID = "") => {
       const params = new URLSearchParams({ service_epoch: catalog.service_epoch, caller_id: ws.operator, ...ws.room });
@@ -85,7 +88,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     };
     try {
       let data = await query();
-      if (ws !== workspaceView) return;
+      if (!valid()) return;
       if (ws.pending && data.operation?.operation_id !== ws.pending.operation_id) {
         try { data = await query(ws.pending.operation_id); }
         catch (error) {
@@ -94,7 +97,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
           ws.error = "未查到原操作收据，无法确认凭据是否曾保存。不会自动重发；可重新选择连接并显式申请新操作。";
         }
       }
-      if (ws !== workspaceView) return;
+      if (!valid()) return;
       const operation = data.operation, previous = ws.data?.operation;
       completed = operation?.status === "completed" && (ws.closeOnComplete === operation.operation_id ||
         previous?.operation_id === operation.operation_id && previous.status === "running");
@@ -103,12 +106,12 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
       if (ws.pending && ws.pending.operation_id === data.operation?.operation_id) {
         ws.pending = null; ws.missing = false; ws.error = ""; saveWorkspacePending(ws);
       }
-    } catch {
-      if (ws !== workspaceView) return;
+    } catch (error) {
+      if (!valid()) return;
       ws.queryFailed = true; ws.connected = false; ws.error = "暂时无法查询工作目录，正在重连；不会自动重发操作。";
+      renderWorkspace(); onFailure(error);
     }
-    await connectionsUI.refreshPlatformState({ background: true });
-    if (ws !== workspaceView) return;
+    if (!valid()) return;
     renderWorkspace();
     if (completed) {
       ws.closeOnComplete = null;
@@ -130,17 +133,16 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     $("workspace-connection").value = ws.selectedPlatform || "";
   }
 
-  async function loadWorkspacePlatforms({ background = false } = {}) {
+  async function loadWorkspacePlatforms({ background = false, current: valid = () => true, onFailure = () => {} } = {}) {
     const ws = workspaceView, epoch = state.catalog?.service_epoch, context = ws?.notificationEpoch;
     if (!ws || !epoch) return;
     const read = ws.platformsRead = (ws.platformsRead || 0) + 1;
-    const current = () => ws === workspaceView && state.catalog?.service_epoch === epoch && context === ws.notificationEpoch && read === ws.platformsRead;
+    const current = () => valid() && ws === workspaceView && state.catalog?.service_epoch === epoch && context === ws.notificationEpoch && read === ws.platformsRead;
     ws.platformsLoading = true;
     const finish = beginRead(env, ws, "platformsReadState", () => { if (current()) renderWorkspace(); });
     let failed = false;
     try {
-      const query = new URLSearchParams({ service_epoch: epoch, caller_id: ws.operator });
-      const data = await request(`/v1/platforms?${query}`);
+      const data = await runtime.platformRead.read();
       if (!current()) return;
       const changed = JSON.stringify(ws.allPlatforms) !== JSON.stringify(data.platforms);
       ws.platformsConnected = true;
@@ -151,7 +153,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
       ws.larkPlatforms = data.platforms.filter(item => item.provider === "lark");
       ws.platformsError = ws.platforms.length ? "" : "尚无平台，请先管理平台。";
       if (!background || changed) renderWorkspacePlatforms();
-    } catch { if (current()) { failed = true; ws.platformsConnected = false; ws.platformsError = "平台加载失败，请重新打开通知源重试。"; ws.repositoryPlatformsError = "平台加载失败，请重新打开工作目录设置重试。"; } }
+    } catch (error) { if (current()) { failed = true; ws.platformsConnected = false; ws.platformsError = "平台加载失败，请重新打开通知源重试。"; ws.repositoryPlatformsError = "平台加载失败，请重新打开工作目录设置重试。"; onFailure(error); } }
     finally { if (current()) ws.platformsLoading = false; finish(failed); }
   }
 
@@ -303,6 +305,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
         if (payload.target.binding?.platform_id) payload.platform_version = (ws.repositoryPlatforms || ws.platforms).find(item => item.id === payload.target.binding.platform_id).version;
       }
     } catch (error) { ws.error = error.message; renderWorkspace(); return; }
+    runtime.supersede("workspace");
     ws.pending = { operation_id: payload.operation_id }; ws.missing = false; saveWorkspacePending(ws);
     ws.closeOnComplete = payload.operation_id;
     ws.sending = true; ws.error = "";

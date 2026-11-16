@@ -5,7 +5,6 @@ package room
 import (
 	"context"
 	"encoding/json"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -74,7 +73,7 @@ func TestHumanReadBrowser(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer closeService(t, svc)
-			server := httptest.NewServer(svc)
+			server := browserTestServer(t, svc)
 			defer server.Close()
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 			defer cancel()
@@ -133,7 +132,7 @@ func TestHumanReadCatalogBrowser(t *testing.T) {
 		svc := openRoomOK(t, m, target, "browser-open-"+target.RoomID)
 		svc.grantsFrozen.Store(true)
 	}
-	server := httptest.NewServer(m)
+	server := browserTestServer(t, m)
 	defer server.Close()
 	m.config.endpoint = server.URL
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)

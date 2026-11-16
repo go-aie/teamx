@@ -2152,6 +2152,7 @@ test("Workspace switch clears form fields; delayed old-room queries never popula
   api.workspaceHook = path => path.startsWith("/v1/workspace?") ? new Promise(resolve => { release = resolve; }) : undefined;
   const refresh = ui.refresh(); await settle();
   const switchTask = ui.select("A"); await settle();
+  api.workspaceHook = null;
   release({ ...api.workspaces.get("B"), workspace: { root: "stale-B" } });
   await refresh; await switchTask; api.workspaceHook = null; await ui.refresh();
   await ui.el("open-workspace").emit("click");

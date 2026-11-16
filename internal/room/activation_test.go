@@ -3,6 +3,7 @@ package room
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 	"testing"
@@ -65,6 +66,14 @@ func openRoomOK(t *testing.T, m *roomManager, target roomSummary, id string) *se
 func controlledActivationFactory(run func(MemberIdentity, context.Context) error, closeSession func(MemberIdentity)) func(string, string, serviceConfig) (*service, error) {
 	return func(dir, id string, config serviceConfig) (*service, error) {
 		return startService(dir, id, config, func(s *service, state RoomSnapshot) error {
+			// This factory owns a synthetic component, not a real ACP executable.
+			// Retain normal-close evidence, but leave executable configuration checks
+			// to the real-ACP recovery fixtures instead of inventing a matching digest.
+			s.dshProfiles = maps.Clone(s.dshProfiles)
+			for key, profile := range s.dshProfiles {
+				profile.BinaryPath = ""
+				s.dshProfiles[key] = profile
+			}
 			if err := s.loadMembers(state); err != nil {
 				return err
 			}

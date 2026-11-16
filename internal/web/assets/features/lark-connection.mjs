@@ -1,6 +1,6 @@
 // Lark application setup, account discovery and authorization lifecycle.
 export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, onboardingUI }) {
-  const { document, window, Option, setTimeout, clearTimeout, request } = env;
+  const { document, window, Option, setTimeout, request } = env;
   const { $, setSelectOptions } = runtime;
 
   function connectionBrand() { return $("connection-provider").value === "lark" ? "lark" : "feishu"; }
@@ -8,7 +8,6 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
   function connectionOrigin() { return connectionBrand() === "lark" ? "https://open.larksuite.com" : "https://open.feishu.cn"; }
 
   function clearLarkAuthView() {
-    clearTimeout(connectionsUI.platforms.authTimer); connectionsUI.platforms.authTimer = null;
     $("connection-login-panel").hidden = true;
     $("connection-login-link").href = ""; $("connection-login-qr").src = "";
     $("connection-login-cancel").hidden = true;
@@ -187,7 +186,7 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
       if (capabilityView !== view || key !== capabilityKey()) return;
       view.check = check;
       setTimeout(()=>{if(capabilityView === view && key === capabilityKey()){view.check=null;renderLarkAccount();}},60000);
-      void connectionsUI.refreshPlatformState();
+      void runtime.observe("configuration");
     } catch (error) { if (capabilityView !== view || key !== capabilityKey()) return; view.check = null; view.errorCode = error.code || "query_failed"; }
     finally { if (capabilityView === view && key === capabilityKey()) { view.loading=false;renderLarkAccount(); } }
   }
@@ -227,7 +226,7 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
     clearLarkAuthView(); connectionsUI.platforms.formVersion++;
     const version = connectionsUI.platforms.formVersion;
     if (!auth) return;
-    // Stop local polling immediately. Cancellation is never a logout/revocation.
+    // Detach the original local flow. Cancellation is never a logout/revocation.
     connectionsUI.platforms.auth = null;
     if (auth.action === "setup") connectionsUI.platforms.larkSetupUncertain = true;
     let result;
@@ -297,7 +296,7 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
       connectionsUI.platforms.auth = {session_id:result.session_id,action,profile,affected,owner,stage:result.stage};
       connectionsUI.platforms.larkStarting = null;
       $("connection-account").textContent = action === "logout" ? "正在退出登录…" : "正在准备授权页面…";
-      await pollLarkAuth();
+      await refreshAuthorization();
     } catch (error) {
       if (version !== connectionsUI.platforms.formVersion) return;
       if (action === "setup") {
@@ -313,18 +312,14 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
     }
   }
 
-  async function pollLarkAuth() {
-    if (!runtime.canPoll()) {
-      clearTimeout(connectionsUI.platforms.authTimer);
-      connectionsUI.platforms.authTimer = setTimeout(() => { void pollLarkAuth(); }, 1500);
-      return;
-    }
+  const refreshAuthorization = () => runtime.observe("authorization:lark");
+  async function readAuthorization({ current = () => true, onFailure = () => {} } = {}) {
     const auth = connectionsUI.platforms.auth;
     if (!auth) return;
     let finished = false, version = connectionsUI.platforms.formVersion;
     try {
       const result = await request("/v1/platforms/lark/status", {...auth.owner,session_id:auth.session_id});
-      if (connectionsUI.platforms.auth !== auth || version !== connectionsUI.platforms.formVersion) return;
+      if (!current() || connectionsUI.platforms.auth !== auth || version !== connectionsUI.platforms.formVersion) return;
       if (auth.action === "setup" && (result.configuration_found || !["starting", "waiting"].includes(result.status))) rememberLarkSetup(result);
       if (result.status === "starting" || result.status === "waiting") {
         const application = result.stage === "application";
@@ -341,12 +336,12 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
         }
         renderLarkAccount();
         connectionsUI.connectionFeedback();
-        connectionsUI.platforms.authTimer = setTimeout(() => { void pollLarkAuth(); }, 1500);
+
         return;
       }
       clearLarkAuthView(); connectionsUI.platforms.auth = null; finished = true;
       for (const item of result.platforms || []) connectionsUI.updatePlatformItem(item);
-      void connectionsUI.refreshPlatformState();
+      void runtime.observe("configuration");
       const setup = auth.action === "setup";
       const detecting = detectLarkPlatform(setup ? {profile:result.cli_profile?.profile || "",exact:true,preserveSetup:true} : {preserveSetup:!!connectionsUI.platforms.larkSetupResult}); version = connectionsUI.platforms.formVersion;
       await detecting;
@@ -375,9 +370,9 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
       } else connectionsUI.connectionFeedback(setup ? larkSetupFailure(result) : result.status === "cancelled" ? "登录已取消，请重新检测。" : connectionsUI.connectionValidationErrors[result.error_code] || "认证失败或已过期，请重新发起。", "error");
     } catch (error) {
       if (finished) { if (version === connectionsUI.platforms.formVersion) connectionsUI.connectionFeedback("授权已完成，验证结果未确认。请重新验证。", "error"); return; }
-      if (connectionsUI.platforms.auth !== auth) return;
-      connectionsUI.connectionFeedback("授权状态暂不可读，正在核对原操作；不会重新发起或取消授权。", "error");
-      connectionsUI.platforms.authTimer = setTimeout(() => { void pollLarkAuth(); }, 3000);
+      if (!current() || connectionsUI.platforms.auth !== auth) return;
+      connectionsUI.connectionFeedback("授权状态暂不可读，正在核对原操作；不会重新发起或取消授权。", "error"); onFailure(error);
+
     }
   }
 
@@ -464,6 +459,7 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
   }
 
   return {
+    readAuthorization,
     mount,
     connectionOrigin,
     renderLarkAccount,

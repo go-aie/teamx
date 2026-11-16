@@ -300,19 +300,19 @@ export function createPolicy({ env, membersUI, runtime, settingsUI, conversation
       view.data=data;renderPolicy(view);
       if($("policy-followups").open && !view.followupsLoaded && !view.followupsLoading)await loadPolicyFollowups(view);
     } catch(error) { if(policyCurrent(view)){view.readFailed=true;$("policy-retry").hidden=false;$("policy-status").textContent=`读取失败：${error.message}`;} }
-    finally {view.loading=false;if(policyCurrent(view)){$("policy-retry").disabled=false;$("policy-new").disabled=!view.data;}}
+    finally {view.loading=false;runtime.wake("policy");if(policyCurrent(view)){$("policy-retry").disabled=false;$("policy-new").disabled=!view.data;}}
   }
 
   function canRefreshPolicy(view) {
     return view && policyCurrent(view) && !view.loading && !view.saving && !view.needsRefresh && !policyEditor && !document.hidden && document.hasFocus() && !$("notification-detail").open && !document.querySelector("dialog:modal");
   }
 
-  async function refreshMemberPolicy() {
+  async function refreshMemberPolicy({ current = () => true, onFailure = () => {} } = {}) {
     const view=policyView;if(!canRefreshPolicy(view) || view.refreshing)return;
     view.refreshing=true;const editVersion=view.editVersion || 0;
     try {
       const data=await rpc("/v1/policy/read",view.member,view.info);
-      if(!canRefreshPolicy(view) || editVersion!==(view.editVersion || 0))return;
+      if(!current() || !canRefreshPolicy(view) || editVersion!==(view.editVersion || 0))return;
       const changed=JSON.stringify(view.data)!==JSON.stringify(data);
       const scrollTop=$("policy-member-view").scrollTop;
       const openHistory=new Set([...$("policy-entries").children].filter(row=>row.children[3]?.open).map(row=>row.dataset.policyId));
@@ -320,7 +320,7 @@ export function createPolicy({ env, membersUI, runtime, settingsUI, conversation
       if(changed){renderPolicy(view);for(const row of $("policy-entries").children)if(openHistory.has(row.dataset.policyId))row.children[3].open=true;$("policy-member-view").scrollTop=scrollTop;}
       else $("policy-status").textContent=`${data.effective.length} 条有效`;
     } catch(error) {
-      if(canRefreshPolicy(view) && editVersion===(view.editVersion || 0)){view.readFailed=true;$("policy-retry").hidden=false;$("policy-status").textContent=`读取失败：${error.message}`;}
+      if(current() && canRefreshPolicy(view) && editVersion===(view.editVersion || 0)){view.readFailed=true;$("policy-retry").hidden=false;$("policy-status").textContent=`读取失败：${error.message}`;onFailure(error);}
     } finally {view.refreshing=false;}
   }
 
@@ -353,7 +353,7 @@ export function createPolicy({ env, membersUI, runtime, settingsUI, conversation
   function mount() {
     $("policy-new").addEventListener("click",()=>editPolicy());
 
-    $("policy-cancel").addEventListener("click",()=>{const view=policyView;$("policy-form").hidden=true;policyEditor=null;renderPolicyEmptyHint();if(view?.needsRefresh)void loadMemberPolicy();else void refreshMemberPolicy();});
+    $("policy-cancel").addEventListener("click",()=>{const view=policyView;$("policy-form").hidden=true;policyEditor=null;renderPolicyEmptyHint();if(view?.needsRefresh)void loadMemberPolicy();else void runtime.observe("policy");});
 
     $("policy-retry").addEventListener("click",()=>loadMemberPolicy());
 

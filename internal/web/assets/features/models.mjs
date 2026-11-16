@@ -5,11 +5,11 @@ import { captureReturnView } from "../view-return.mjs";
 import { fillModelParameters, readModelParameters, syncModelProtocol, modelDraftFields, snapshotModelFields, restoreModelFields, setModelKeyVisible } from "../model-form.mjs";
 
 export function createModels({env, runtime, openSettings, onMemberStatus}) {
-  const {document, window, request, Option, setTimeout, clearTimeout} = env;
+  const {document, window, request, Option} = env;
   const crypto = window.crypto || globalThis.crypto;
   const {state, $, setSelectOptions} = runtime;
   const field = id => $(`catalog-${id}`);
-  let data, editor, saving = false, read = 0, timer, memberView, memberSaving = false, defaultReview;
+  let data, editor, saving = false, read = 0, memberView, memberSaving = false, defaultReview;
   let lastOperation, operationRenderKey, listRenderKey, restoredKey;
   let editorReturn;
   const operationRows = new Map();
@@ -90,24 +90,32 @@ export function createModels({env, runtime, openSettings, onMemberStatus}) {
     $("model-entry-name").placeholder=field("model-id").value || "留空使用模型 ID";
     $("model-list-view").hidden = true; $("model-edit-form").hidden = false; keyState(); renderEditorActions(); persist(); $("model-entry-name").focus({preventScroll:true}); $("settings-panels").scrollTop=0;
   }
-  async function load() {
+  const load = () => runtime.observe("models");
+  function needsRead() {
+    let savedOperation = false;
+    if (restoredKey !== draftKey()) {
+      try { savedOperation = typeof JSON.parse(runtime.storage?.getItem(draftKey()))?.operation === "string"; } catch { /* Optional storage. */ }
+    }
+    return active() && (!!lastOperation || savedOperation || $("settings-dialog").open && !$("model-settings").hidden || memberView && currentMemberView(memberView));
+  }
+  async function readModels({ current = () => true, onFailure = () => {} } = {}) {
     if (!active()) return;
-    if (!runtime.canPoll()) { schedule(2000); return; }
+
     const generation = ++read, epoch = state.catalog.service_epoch;
     try {
       const next = await request("/v1/models");
-      if (generation !== read || state.catalog?.service_epoch !== epoch || next.service_epoch && next.service_epoch !== epoch) return;
+      if (!current() || generation !== read || state.catalog?.service_epoch !== epoch || next.service_epoch && next.service_epoch !== epoch) return;
       data = next; restore();
       if (lastOperation?.id && !data.operations.some(op=>op.id===lastOperation.id)) {
         const originalID=lastOperation.id;
         try {
           const original = await request(`/v1/models/operation?id=${encodeURIComponent(originalID)}`);
-          if (generation !== read || state.catalog?.service_epoch !== epoch || lastOperation?.id !== originalID) return;
+          if (!current() || generation !== read || state.catalog?.service_epoch !== epoch || lastOperation?.id !== originalID) return;
           data.operations.unshift(original); lastOperation.unconfirmed=false;
         } catch(error) {
-          if (generation !== read || state.catalog?.service_epoch !== epoch || lastOperation?.id !== originalID) return;
+          if (!current() || generation !== read || state.catalog?.service_epoch !== epoch || lastOperation?.id !== originalID) return;
           if (error.code === "request") {lastOperation=undefined;persist();feedback("原操作未受理，请核对草稿后明确保存。");}
-          else {lastOperation.unconfirmed=true;feedback("原模型操作暂未确认，请读取原操作进度；不会自动重新提交。");}
+          else {lastOperation.unconfirmed=true;feedback("原模型操作暂未确认，请读取原操作进度；不会自动重新提交。"); throw error;}
         }
       }
       if (lastOperation && data.operations.some(op=>op.id===lastOperation.id)) {
@@ -121,11 +129,9 @@ export function createModels({env, runtime, openSettings, onMemberStatus}) {
           feedback(op.status === "completed" ? "模型已保存" : op.status === "cancelled" ? "操作已取消" : ""); lastOperation = undefined; persist();
         }
       }
-      if (data.operations.some(op => ["validating","prepared","applying"].includes(op.status))) schedule();
-      else if ($("settings-dialog").open || memberView && currentMemberView(memberView)) schedule(2000);
-    } catch (error) { if (generation === read) {feedback(error.message); if (memberView && currentMemberView(memberView)) {memberView.error=error.message;renderMember();}} }
+
+    } catch (error) { if (current() && generation === read) {feedback(error.message); if (memberView && currentMemberView(memberView)) {memberView.error=error.message;renderMember();} onFailure(error);} }
   }
-  function schedule(delay = 800) { if (timer) clearTimeout(timer); timer = setTimeout(() => {timer = undefined; void load();}, delay); }
   function render() {
     renderEditorActions();
     if (defaultReview?.parentElement) return;
@@ -234,6 +240,7 @@ export function createModels({env, runtime, openSettings, onMemberStatus}) {
   async function submit(input) {
     if (saving) return;
     if (lastOperation?.unconfirmed) { feedback("请先读取原操作进度，再决定是否保存。"); return; }
+    runtime.supersede("models");
     saving = true;
     lastOperation = undefined;
     const epoch = state.catalog.service_epoch, requestID = randomUUID(crypto);
@@ -299,7 +306,6 @@ export function createModels({env, runtime, openSettings, onMemberStatus}) {
     $("member-model-actual").textContent = actual ? `当前 Session：${actual.model_id}${actual.pending ? "（待启动）" : ""}` : "当前 Session：尚未启动";
     $("member-model-retry").hidden = !(operation?.status === "failed" && operation.committed);
     v.operation = operation;
-    if (pending) schedule();
   }
   function showMemberDetails() {
     $("member-model-details").hidden = false;
@@ -355,5 +361,5 @@ export function createModels({env, runtime, openSettings, onMemberStatus}) {
     });
     window.addEventListener("pagehide",() => {persist();field("api-key").value="";setModelKeyVisible(field,false);});
   }
-  return {mount,load,openMember,showMemberDetails,returnFromEditor,clearKey:() => {field("api-key").value="";setModelKeyVisible(field,false);clearReview();}};
+  return {mount,load,readModels,needsRead,openMember,showMemberDetails,returnFromEditor,clearKey:() => {field("api-key").value="";setModelKeyVisible(field,false);clearReview();}};
 }

@@ -42,7 +42,12 @@ func issueInboxCredential(t *testing.T, a *serverAccess, svc *service, id Member
 
 func mcpInboxFixture(t *testing.T) (*inboxHarness, *service, *serverAccess, string) {
 	t.Helper()
-	h := newInboxHarness(t, InboxLimits{})
+	return mcpInboxFixtureWithTimeout(t, 10*time.Second)
+}
+
+func mcpInboxFixtureWithTimeout(t *testing.T, timeout time.Duration) (*inboxHarness, *service, *serverAccess, string) {
+	t.Helper()
+	h := newInboxHarnessWithTimeout(t, InboxLimits{}, timeout)
 	initReferenceTest(t, h)
 	svc := referenceTestService(h)
 	svc.info.ServiceEpoch = "isolated-epoch"

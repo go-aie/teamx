@@ -98,7 +98,8 @@ func TestInboxLifecycleKeepOldUntilConsumedAndAcknowledged(t *testing.T) {
 	}
 }
 func TestInboxLifecycleActiveTurnBatchAndSweepBound(t *testing.T) {
-	h := newInboxHarness(t, InboxLimits{})
+	// This scenario persists 130 entries with fsync before exercising the sweep.
+	h := newInboxHarnessWithTimeout(t, InboxLimits{}, 30*time.Second)
 	initReferenceTest(t, h)
 	now := time.Now().UTC()
 	lifecycleReceive(t, h, "old", now.Add(-4*24*time.Hour))

@@ -260,7 +260,12 @@ func (m *roomManager) saveWorkspaceOperation(op workspaceOperation) error {
 	return m.saveWorkspaceOperationLocked(op)
 }
 
-func (m *roomManager) saveWorkspaceOperationLocked(op workspaceOperation) error {
+func (m *roomManager) saveWorkspaceOperationLocked(op workspaceOperation) (resultErr error) {
+	defer func() {
+		if resultErr == nil {
+			m.invalidateRoomLocked("workspace", MemberIdentity{RoomIdentity: op.RoomIdentity})
+		}
+	}()
 	if m.closing {
 		return ErrClosing
 	}

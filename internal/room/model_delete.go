@@ -80,7 +80,13 @@ func (c *modelController) commitCatalogLocked(before, next modelCatalog) error {
 			return nil, nil, ErrConflict
 		}
 		patched, err := patchModelCatalog(source, next)
-		return patched, func() { s.current = next.clone(); publish() }, err
+		return patched, func() {
+			s.current = next.clone()
+			publish()
+			if s.observe != nil {
+				s.observe()
+			}
+		}, err
 	})
 }
 

@@ -258,12 +258,18 @@ func (s *Session) RunPrompt(ctx context.Context, prompt []ContentBlock) (TurnRes
 	t := &turn{ctx: turnCtx, cancel: cancel, done: make(chan struct{}), result: TurnResult{Events: []ActivityEvent{}}}
 	s.active = t
 	s.mu.Unlock()
+	if s.opts.ObserveActivity != nil {
+		s.opts.ObserveActivity()
+	}
 	defer func() {
 		cancel()
 		s.mu.Lock()
 		s.active = nil
 		close(t.done)
 		s.mu.Unlock()
+		if s.opts.ObserveActivity != nil {
+			s.opts.ObserveActivity()
+		}
 	}()
 	pending, err := s.conn.begin(turnCtx, "session/prompt", map[string]any{"sessionId": s.id, "prompt": prompt})
 	if err != nil {

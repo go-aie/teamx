@@ -175,7 +175,9 @@ func (m *roomManager) savePlatformConnectLocked(op *platformConnectOperation) er
 	if !validPlatformConnect(*op) {
 		return ErrInvalid
 	}
-	return m.store.save(m.connectPath(op.ID), op, 128<<10)
+	err := m.store.save(m.connectPath(op.ID), op, 128<<10)
+	m.invalidateRoomLocked("interactions", op.MemberIdentity)
+	return err
 }
 func (m *roomManager) platformConnectOperationsLocked() ([]platformConnectOperation, error) {
 	dir := filepath.Dir(m.connectPath("unused"))

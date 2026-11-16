@@ -251,6 +251,9 @@ func (b dshBackend) OpenSession(ctx context.Context, opts SessionOptions) (Sessi
 			err = b.store.save(path, ref, maxPrivateFileBytes)
 		}
 		b.store.mu.Unlock()
+		if b.model != nil {
+			b.store.changed("models", opts.MemberIdentity)
+		}
 	}
 	if err != nil {
 		return nil, errors.Join(errDSHPaused, err)
@@ -368,6 +371,9 @@ func (b dshBackend) componentOptions(opts SessionOptions, ref dshReference) (dsh
 
 	component := dsh.Options{BinaryPath: p.BinaryPath, BinaryArgs: p.BinaryArgs, Artifact: p.Artifact, Workspace: p.Workspace,
 		StateDir: filepath.Join(filepath.Dir(opts.StatePath), ref.Directory), Instructions: instructions, Model: p.Model.Clone(), ToolEnv: toolEnv, Limits: dsh.Limits{TextBytes: 64 << 10, TurnTimeout: b.turnTimeout}}
+	if b.store.observe != nil {
+		component.ObserveActivity = func() { b.store.changed("activity", opts.MemberIdentity) }
+	}
 	if b.inboxMCP != nil {
 		component.MCPServers = []dsh.MCPHTTPServer{mcpHTTPConfiguration(toolEnv["TEAMX_ENDPOINT"], "")}
 	}
@@ -496,7 +502,11 @@ func (s *dshSession) Run(ctx context.Context, input UnreadChanged) (err error) {
 		return dshFailure(err)
 	}
 	s.backend.store.activeDSH.Store(s.opts.MemberIdentity, s)
-	defer s.backend.store.activeDSH.CompareAndDelete(s.opts.MemberIdentity, s)
+	s.backend.store.changed("activity", s.opts.MemberIdentity)
+	defer func() {
+		s.backend.store.activeDSH.CompareAndDelete(s.opts.MemberIdentity, s)
+		s.backend.store.changed("activity", s.opts.MemberIdentity)
+	}()
 	prompt := []dsh.ContentBlock{{Type: "text", Text: "Member policy context (JSON):\n" + string(body) + "\n\n" + dshTimeContext(settings, started, s.timeZone) + "\n" + dshNotification(input)}}
 	var materials *dshMaterials
 	if s.backend.prepare != nil {
@@ -559,6 +569,7 @@ func (s *dshSession) Run(ctx context.Context, input UnreadChanged) (err error) {
 		saveErr = saveDSHDiagnostic(path, private)
 	}
 	s.backend.store.mu.Unlock()
+	s.backend.store.changed("activity", s.opts.MemberIdentity)
 	if saveErr != nil {
 		// Optional output must neither change the prompt's terminal outcome
 		// nor freeze Room's authoritative snapshot commits.

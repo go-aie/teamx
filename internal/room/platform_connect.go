@@ -62,6 +62,7 @@ func (m *roomManager) publicPlatformConnectLocked(op platformConnectOperation) (
 	return op, nil
 }
 func (m *roomManager) checkpointPlatformConnectLocked(s *larkAuthSession) {
+	m.authorizationChanged(s.owner)
 	if s.operationID == "" {
 		return
 	}
@@ -95,6 +96,7 @@ func (m *roomManager) checkpointPlatformConnectLocked(s *larkAuthSession) {
 // Called under mu after the native process has settled. The session reservation
 // and the operation's cancellation fence cover the entire connection commit.
 func (m *roomManager) finishPlatformConnectLocked(s *larkAuthSession) {
+	m.authorizationChanged(s.owner)
 	if s.operationID == "" {
 		return
 	}

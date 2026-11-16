@@ -206,22 +206,23 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
     for(const [id,card] of s.views) if(!visible.has(id)){card.el.remove();s.views.delete(id);}
   }
 
-  async function refreshPlatformInteractions() {
+  async function refreshPlatformInteractions({ current = () => true, onFailure = () => {} } = {}) {
     const s=platformInteractionState;if(!state.managed || !state.info || s.loading)return;
     const generation=s.generation,info=state.info,operator=state.operator;
     s.loading=true;
     try{
       const data=await request("/v1/platforms/interactions/list",{...info,caller:{kind:"human",id:operator}},undefined,5000);
-      if(generation!==s.generation)return;
+      if(generation!==s.generation || !current())return;
       // Do not let a list read begun before cancellation replace its newer receipt.
       s.operations=[...data.interactions,...(data.selections || [])].map(op=>{const old=s.operations.find(old=>old.operation_id===op.operation_id);return old && old.version>op.version ? old : op;});
       notice("platform-interaction-error","");renderPlatformInteractions();
       await revealAuthorizationReturn(generation);
-    }catch{
-      if(generation!==s.generation)return;
+    }catch(error){
+      if(generation!==s.generation || !current())return;
       // Invalidate live links on a failed observation; retain the last receipt.
       for(const op of s.operations)op.interaction={id:op.interaction.id,kind:op.interaction.kind};
       renderPlatformInteractions();notice("platform-interaction-error","连接进度暂时无法读取，正在重试。可发消息请 Agent 查询原操作。");
+      onFailure(error);
     }finally{if(generation===s.generation)s.loading=false;}
   }
 

@@ -19,13 +19,14 @@ import { createLarkConnection } from "./features/lark-connection.mjs";
 import { createScionConnection } from "./features/scion-connection.mjs";
 import { createConfirmation } from "./confirmation.mjs";
 import { createUserMenu } from "./features/user-menu.mjs";
+import { createSharedRead, createUpdateScheduler, createUpdateConnection } from "./updates.mjs";
 
 // Browser services can be replaced per instance; feature state never lives in
 // module globals. Tests import this same module graph and supply a bounded DOM.
 function browserEnvironment(overrides) {
   const env = { request, renderMessageBody };
   Object.defineProperties(env, Object.getOwnPropertyDescriptors(overrides));
-  for (const key of ["document", "window", "sessionStorage", "localStorage", "fetch", "Option", "setInterval", "requestAnimationFrame", "performance", "setTimeout", "clearTimeout", "ResizeObserver", "MutationObserver"]) {
+  for (const key of ["document", "window", "sessionStorage", "localStorage", "fetch", "Option", "requestAnimationFrame", "performance", "setTimeout", "clearTimeout", "EventSource", "ResizeObserver", "MutationObserver"]) {
     if (!(key in env)) Object.defineProperty(env, key, { get: () => globalThis[key] });
   }
   return env;
@@ -40,7 +41,7 @@ function install(target, feature) {
 
 export async function createApp(overrides = {}) {
   const env = browserEnvironment(overrides);
-  const { document, window, setInterval } = env;
+  const { document, window } = env;
   const request = env.request;
   const settingsUI = {};
   const roomsUI = {};
@@ -67,7 +68,8 @@ export async function createApp(overrides = {}) {
     members: [], profiles: [], teams: [], connected: false, managed: false, catalog: null, catalogConnected: false,
     isDirect: false, management: null, managementSending: false, managementError: "", draft: {}, restart: null };
 
-  let refreshTask = null, recoveryTask = null, syncFailureSince = null;
+  let refreshTask = null, refreshResult = null, recoveryTask = null, syncFailureSince = null, updateConnection;
+  const scheduler = createUpdateScheduler(env), resources = {};
   state.suspended = document.hidden || window.navigator?.onLine === false;
   state.recovering = false;
   let serverIdentity = null;
@@ -94,6 +96,7 @@ export async function createApp(overrides = {}) {
     return layers;
   }});
   function suspend() {
+    updateConnection?.stop(); scheduler.pause();
     if (!state.suspended) viewVersion++;
     state.suspended = true; state.connected = false; state.catalogConnected = false;
     $("connection").textContent = window.navigator?.onLine === false ? "网络已断开 · 草稿已保留" : "页面已暂停刷新";
@@ -101,17 +104,15 @@ export async function createApp(overrides = {}) {
     if (window.navigator?.onLine === false) notice("sync-error", "网络已断开，草稿已保留。");
     conversationUI.composerState();
   }
-  function resume(recover = true) {
-    if (!recover) return refresh();
+  function resume() {
     if (recoveryTask) return recoveryTask;
     state.suspended = false; state.recovering = true;
+    scheduler.resume();
     state.connected = false; state.catalogConnected = false;
     $("connection").textContent = "正在核对连接与会话…";
     conversationUI.composerState();
-    // An old read may still finish after a mobile page freeze. Settle it before
-    // reading the authenticated service identity and current operations again.
-    recoveryTask = Promise.resolve(refreshTask).then(() => refresh()).finally(() => {
-      state.recovering = false; recoveryTask = null;
+    recoveryTask = Promise.resolve(refreshTask).then(() => refresh({ background: true })).finally(() => {
+      state.recovering = false; recoveryTask = null; updateConnection?.start();
     });
     return recoveryTask;
   }
@@ -144,6 +145,14 @@ export async function createApp(overrides = {}) {
   }
 
   let viewVersion = 0;
+
+  const platformRead = createSharedRead({
+    scope: () => [state.installationID, state.catalog?.service_epoch, state.operator, state.info, viewVersion],
+    read: () => {
+      const query = new URLSearchParams({ service_epoch: state.catalog.service_epoch, caller_id: state.operator });
+      return request(`/v1/platforms?${query}`);
+    },
+  });
 
   const currentView = (version) => version === viewVersion && !state.suspended;
 
@@ -187,63 +196,139 @@ export async function createApp(overrides = {}) {
     return true;
   }
 
-  async function sync() {
+  // HTTP readers keep their original view and business guards. The scheduler
+  // supplies an additional stream/write fence before any state is installed.
+  async function readSettings({ current = () => true } = {}) {
+    const version = viewVersion;
+    const config = await request("/v1/ui");
+    if (!currentView(version) || !current()) return;
+    const identity = [config.installation_id || "", config.service_epoch];
+    if (serverIdentity && identity.some((part, i) => part !== serverIdentity[i])) {
+      conversationUI.saveDraft();
+      notice("service-change", "服务已重新启动或切换，已重新读取状态；草稿保留，未确认请求不会自动重发。");
+    }
+    if (serverIdentity && serverIdentity[0] !== identity[0]) selectView(null, state.operator);
+    state.installationID = config.installation_id || "";
+    const mentionIdentityChanged = state.operatorDisplayName !== (config.operator_display_name || "");
+    state.operatorDisplayName = config.operator_display_name || "";
+    serverIdentity = identity;
+    state.managed = !!config.managed;
+    state.isDirect = config.is_direct === true;
+    settingsUI.applyTimeZone(config);
+    if (mentionIdentityChanged) { conversationUI.renderMessages(); membersUI.renderMembers(); }
+    return config;
+  }
+
+  async function readCatalog({ current = () => true } = {}) {
+    const version = viewVersion;
+    if (!state.managed) return;
+    const catalog = await request("/v1/rooms");
+    if (!currentView(version) || !current()) return;
+    roomsUI.acceptCatalog(catalog);
+    state.catalog = catalog; state.catalogConnected = true;
+    settingsUI.applyTimeZone(catalog);
+    await roomsUI.reconcileManagement(catalog, { current });
+    if (!current()) return;
+    interactionsUI.restoreAuthorizationSelection(catalog);
+    roomsUI.initializeSelection(catalog);
+    const room = roomsUI.selectedEntry(catalog);
+    if (room?.service) selectView(room.service, catalog.operator);
+    roomsUI.renderTeams(catalog.teams || []); roomsUI.renderRooms();
+    if (!state.info) state.operator = catalog.operator;
+    return catalog;
+  }
+
+  async function readWorkspace(options) {
+    if (state.managed && state.catalog) await workspaceUI.syncWorkspace(state.catalog, options);
+  }
+
+  function readConfiguration(options) {
+    return connectionsUI.refreshPlatformState({ background: true, ...options });
+  }
+
+  async function readMembers({ current = () => true } = {}) {
+    const version = viewVersion, info = state.info;
+    if (!chatReadable()) return;
+    const members = await rpc("/v1/member/list", {}, info);
+    if (!currentView(version) || !current()) return;
+    state.restart = members.discussion_restart || null;
+    if (state.draft.restartRequest && state.draft.restartRequest.id === state.restart?.id) {
+      state.draft.restartRequest = null; state.draft.restartError = ""; conversationUI.saveDraft();
+    }
+    const nextMembers = members.members.map(member=>({...member,agent_name:member.agent_name || (roomsUI.isDirect() ? roomsUI.roomName() : roomsUI.selectedEntry()?.members?.find(m=>m.id===member.agent_id)?.agent_name) || member.agent_id}));
+    const names = list=>JSON.stringify(list.map(m=>[m.agent_id,m.membership_id,m.agent_name]));
+    const changed = names(state.members) !== names(nextMembers);
+    state.members = nextMembers;
+    if (changed) conversationUI.renderMessages();
+    membersUI.renderMembers();
+    notice("sync-error", members.write_error ? `${roomsUI.conversationType()}写入暂停：${members.write_error}` : "");
+    return members;
+  }
+
+  function chatReadable() {
+    if (!state.info || state.suspended) return false;
+    if (!state.managed) return true;
+    const room = roomsUI.selectedEntry();
+    return state.catalogConnected && !state.catalog?.busy && !room?.busy && !!room?.service &&
+      !!workspaceUI.workspaceView?.connected && !workspaceUI.workspaceBusy();
+  }
+
+  async function readMessages({ current = () => true, observation = false } = {}) {
+    const version = viewVersion, info = state.info;
+    if (!observation && !chatReadable()) return;
+    const initial = state.messages.size === 0;
+    const stick = initial || conversationUI.nearBottom(), scrollTop = $("timeline").scrollTop;
+    const after = state.lastSeq;
+    const read = await conversationUI.readPages(initial ? { mode: "latest", latest: 50 } : { mode: "range", after }, info);
+    if (!currentView(version) || !current() || read.clearedThrough < state.clearedThrough || read.snapshot < state.lastSeq) return;
+    const cleared = conversationUI.applyClear(read.clearedThrough);
+    if (read.messages.length || cleared) {
+      for (const message of read.messages) state.messages.set(message.seq, message);
+      conversationUI.renderMessages();
+      if (stick) conversationUI.bottom();
+      else { $("timeline").scrollTop = scrollTop; if (read.messages.length) $("jump-latest").hidden = false; }
+    }
+    state.lastSeq = read.snapshot;
+    conversationUI.renderMentionNotice();
+    if (!observation) conversationUI.messagesRead(read, { after, stick });
+    return read;
+  }
+
+  function readChat(options) {
+    return Promise.all([readMembers(options), readMessages(options)]);
+  }
+
+  function readDetails(options) {
+    return Promise.all([interactionsUI.refreshPlatformInteractions(options), membersUI.activity.refresh(options),
+      policyUI.refreshMemberPolicy(options), inboxUI.refreshMemberInbox(options)]);
+  }
+
+  async function sync(round) {
     let version = viewVersion;
     try {
-      let config = await request("/v1/ui");
-      if (!currentView(version)) return;
-      const identity = [config.installation_id || "", config.service_epoch];
-      if (serverIdentity && identity.some((part, i) => part !== serverIdentity[i])) {
-        conversationUI.saveDraft();
-        notice("service-change", "服务已重新启动或切换，已重新读取状态；草稿保留，未确认请求不会自动重发。");
-      }
-      if (serverIdentity && serverIdentity[0] !== identity[0]) { selectView(null, state.operator); version = viewVersion; }
-      state.installationID = config.installation_id || "";
-      const mentionIdentityChanged = state.operatorDisplayName !== (config.operator_display_name || "");
-      state.operatorDisplayName = config.operator_display_name || "";
-      serverIdentity = identity;
-      state.managed = !!config.managed;
-      state.isDirect = config.is_direct === true;
-      settingsUI.applyTimeZone(config);
+      let config = await resources.settings.refresh();
+      if (!config) return;
+      version = viewVersion;
       if (state.managed) {
-        const catalog = await request("/v1/rooms");
-        if (!currentView(version)) return;
-        roomsUI.acceptCatalog(catalog);
-        state.catalog = catalog; state.catalogConnected = true;
-        settingsUI.applyTimeZone(catalog);
-        await roomsUI.reconcileManagement(catalog);
-        interactionsUI.restoreAuthorizationSelection(catalog);
-        roomsUI.initializeSelection(catalog);
+        const catalog = await resources.catalog.refresh();
+        if (!catalog) return;
         version = viewVersion;
         const room = roomsUI.selectedEntry(catalog);
         config = { ...room?.service, operator: catalog.operator };
-        if (room?.service) selectView(room.service, catalog.operator);
-        version = viewVersion;
-        roomsUI.renderTeams(catalog.teams || []); roomsUI.renderRooms();
-        if (!state.info) state.operator = catalog.operator;
-        await workspaceUI.syncWorkspace(catalog);
+        await resources.workspace.refresh();
         if (!currentView(version)) return;
+        round.configuration = refreshConfiguration();
         if (workspaceUI.workspaceView?.data?.observation && workspaceUI.workspaceBusy()) {
-          const observation = workspaceUI.workspaceView.data.observation;
-          selectView(observation, catalog.operator); version = viewVersion;
+          selectView(workspaceUI.workspaceView.data.observation, catalog.operator); version = viewVersion;
           $("room-name").textContent = roomsUI.roomName();
-          const initial = state.messages.size === 0, stick = initial || conversationUI.nearBottom(), scrollTop = $("timeline").scrollTop;
-          const read = await conversationUI.readPages(initial ? { mode: "latest", latest: 50 } : { mode: "range", after: state.lastSeq }, observation);
+          await resources.messages.refresh();
           if (!currentView(version)) return;
-          const cleared = conversationUI.applyClear(read.clearedThrough);
-          if (read.messages.length || cleared) {
-            for (const message of read.messages) state.messages.set(message.seq, message);
-            conversationUI.renderMessages();
-            if (stick) conversationUI.bottom(); else $("timeline").scrollTop = scrollTop;
-          }
-          state.lastSeq = read.snapshot;
-          syncFailureSince = null;
-          state.connected = false;
+          syncFailureSince = null; state.connected = false;
           $("connection").textContent = "Workspace 设置待完成 · 可查看历史";
-          membersUI.activity.close(); $("activity-dialog").close(); membersUI.renderMembers(); return;
+          membersUI.activity.close(); $("activity-dialog").close(); membersUI.renderMembers();
+          return;
         }
         if (catalog.busy || room?.busy) {
-          // Keep the old discussion visible but invalidate every in-flight view.
           state.connected = false; viewVersion++;
           membersUI.activity.close(); $("activity-dialog").close();
           $("connection").textContent = "会话操作进行中";
@@ -257,54 +342,19 @@ export async function createApp(overrides = {}) {
           $("connection").textContent = room ? (room.runtime_error ? `运行受阻 · ${room.runtime_error}` : `点击${roomsUI.conversationType(room)}打开`) : "已连接 · 尚未选择会话";
           notice("sync-error", ""); return;
         }
+        await syncChat(config);
+      } else {
+        selectView({ room_id: config.room_id, room_instance: config.room_instance, service_epoch: config.service_epoch }, config.operator);
+        version = viewVersion;
+        await syncChat(config);
       }
-      const info = { room_id: config.room_id, room_instance: config.room_instance, service_epoch: config.service_epoch };
-      const changedRoom = selectView(info, config.operator);
-      version = viewVersion;
-      conversationUI.resetReadingContext();
-      conversationUI.pollHumanRead();
-      if (!state.managed) { membersUI.renderProfiles(config.profiles || []); roomsUI.renderRooms(); }
-      $("room-name").textContent = roomsUI.roomName();
-      const members = await rpc("/v1/member/list", {}, info);
-      if (!currentView(version)) return;
-      state.restart = members.discussion_restart || null;
-      if (state.draft.restartRequest && state.draft.restartRequest.id === state.restart?.id) {
-        state.draft.restartRequest = null; state.draft.restartError = ""; conversationUI.saveDraft();
-      }
-      const initial = state.messages.size === 0;
-      const stick = initial || conversationUI.nearBottom();
-      const scrollTop = $("timeline").scrollTop;
-      const after = state.lastSeq;
-      const read = await conversationUI.readPages(initial ? { mode: "latest", latest: 50 } : { mode: "range", after }, info);
-      if (!currentView(version) || read.clearedThrough < state.clearedThrough) return;
-      const cleared = conversationUI.applyClear(read.clearedThrough);
-      const nextMembers = members.members.map(member=>({...member,agent_name:member.agent_name || (roomsUI.isDirect() ? roomsUI.roomName() : roomsUI.selectedEntry()?.members?.find(m=>m.id===member.agent_id)?.agent_name) || member.agent_id}));
-      const memberNames = list=>list.map(m=>[m.agent_id,m.membership_id,m.agent_name]);
-      const membersChanged = JSON.stringify(memberNames(state.members)) !== JSON.stringify(memberNames(nextMembers));
-      state.members = nextMembers;
-      if (read.messages.length || changedRoom || cleared || membersChanged || mentionIdentityChanged) {
-        for (const message of read.messages) state.messages.set(message.seq, message);
-        conversationUI.renderMessages();
-        if (stick) conversationUI.bottom();
-        else { $("timeline").scrollTop = scrollTop; if (read.messages.length) $("jump-latest").hidden = false; }
-      }
-      state.lastSeq = read.snapshot;
-      conversationUI.renderMentionNotice();
-      state.connected = true;
-      conversationUI.messagesRead(read, { after, stick });
-      void interactionsUI.refreshPlatformInteractions();
-      membersUI.renderMembers(); void membersUI.activity.refresh();void policyUI.refreshMemberPolicy();void inboxUI.refreshMemberInbox();
-      syncFailureSince = null;
-      $("connection").textContent = "服务已连接";
-      $("connection").classList.remove("offline");
-      notice("sync-error", members.write_error ? `${roomsUI.conversationType()}写入暂停：${members.write_error}` : "");
     } catch (error) {
       if (!currentView(version)) return;
       syncFailureSince ??= env.performance.now();
-      // A normal poll will read again. Busy reads do not invalidate the last
-      // successful view or replay mutations; surface only sustained contention.
+      // Failed observations stay dirty in their resource scheduler. Busy reads
+      // retain the last view and never replay mutations.
       if (error.code === "busy" && env.performance.now() - syncFailureSince < 4500) return;
-      state.connected = false; state.catalogConnected = false;
+      state.connected = false;
       const message = error.code === "busy" ? "服务繁忙，正在重试同步；已有消息和草稿已保留。"
         : window.navigator?.onLine === false ? "网络已断开，草稿已保留。"
         : error.code === "identity" ? "会话身份已变化，正在重新核对；已有消息和草稿已保留。"
@@ -316,10 +366,36 @@ export async function createApp(overrides = {}) {
     } finally { userMenuUI.render(); conversationUI.composerState(); roomsUI.renderCreateSelection(); roomsUI.renderRooms(); }
   }
 
-  function refresh() {
+  async function syncChat(config) {
+    const version = viewVersion;
+    conversationUI.resetReadingContext();
+    void resources.human_read.refresh().catch(() => {});
+    if (!state.managed) { membersUI.renderProfiles(config.profiles || []); roomsUI.renderRooms(); }
+    $("room-name").textContent = roomsUI.roomName();
+    if (!chatReadable()) {
+      state.connected = false;
+      $("connection").textContent = "工作目录状态暂时无法核对";
+      return;
+    }
+    const [members] = await Promise.all([resources.members.refresh(), resources.messages.refresh()]);
+    if (!currentView(version) || !members) return;
+    state.connected = !updateConnection || updateConnection.connected;
+    membersUI.renderMembers();
+    refreshDetails();
+    syncFailureSince = null;
+    $("connection").textContent = "服务已连接";
+    $("connection").classList.remove("offline");
+    conversationUI.composerState();
+  }
+
+  function refresh({ background = false } = {}) {
     if (state.suspended || document.hidden || window.navigator?.onLine === false) return Promise.resolve();
-    if (!refreshTask) refreshTask = sync().finally(() => { refreshTask = null; });
-    return refreshTask;
+    if (!refreshTask) {
+      const round = {};
+      refreshTask = sync(round).finally(() => { refreshTask = null; updateConnection?.ensure(); });
+      refreshResult = refreshTask.then(() => round.configuration);
+    }
+    return background ? refreshTask : refreshResult;
   }
 
   function dismissOnBackdrop(dialog, close) {
@@ -351,10 +427,14 @@ export async function createApp(overrides = {}) {
     conversationVisibilityChanged: () => {
       conversationUI.conversationVisibilityChanged();
     },
-    canPoll: () => lifecycle.active() && !state.recovering && (state.managed ? state.catalogConnected : state.connected),
     discussionBusy,
     setSelectOptions,
     refresh,
+    platformRead,
+    observe: topic => topic === "configuration" ? refreshConfiguration() : resources[topic]?.refresh().catch(() => {}),
+    changed: topic => resources[topic]?.invalidate(),
+    wake: topic => resources[topic]?.wake(),
+    supersede: topic => resources[topic]?.supersede(),
     rpc,
     reconcileChildren,
     get viewVersion() { return viewVersion; },
@@ -410,6 +490,145 @@ export async function createApp(overrides = {}) {
     env, runtime, connectionsUI, settingsUI, onboardingUI
   }));
 
+  const globalScope = () => []; // Service changes fence all readers in the stream owner.
+  const roomScope = () => [...globalScope(), viewVersion, state.info];
+  const memberScope = () => [...roomScope(), membersUI.selectedAgent()?.agent_id, membersUI.selectedAgent()?.membership_id, membersUI.agentTab];
+  const active = () => !state.suspended && !document.hidden && window.navigator?.onLine !== false;
+  const detail = tab => active() && $("activity-dialog").open && membersUI.agentTab === tab && !!membersUI.selectedAgent();
+  const notificationVisible = () => active() && !!state.catalog && !!workspaceUI.workspaceView &&
+    (layoutUI.membersPanelOpen() || layoutUI.directNotificationsOpen || detail("platforms") || $("notification-detail").open);
+  // Both categories share one reader and one throttle. A summary remains
+  // pending until a read starts; diagnostics cannot make a hidden inspector
+  // read the full subscription merely because the summary sidebar is open.
+  let notificationSummaryPending = true;
+  const notificationDiagnosticsVisible = () => active() && $("notification-detail").open &&
+    !!workspaceUI.workspaceView && ["gitlab", "messages"].includes(workspaceUI.workspaceView.notificationChannel) &&
+    !workspaceUI.workspaceView.notificationHistory;
+  function readError(topic, error) {
+    if (error.code === "identity" && ["settings", "catalog", "workspace", "members", "messages"].includes(topic)) updateConnection?.reconnect();
+    if (["settings", "catalog", "workspace", "members", "messages"].includes(topic)) {
+      syncFailureSince ??= env.performance.now();
+      if (error.code === "busy" && env.performance.now() - syncFailureSince < 4500) return;
+      if (["settings", "catalog"].includes(topic)) state.catalogConnected = false;
+      state.connected = false;
+      $("connection").textContent = "暂时无法同步，正在核对；已有消息和草稿已保留。";
+      $("connection").classList.add("offline"); conversationUI.composerState();
+    }
+  }
+  function register(topic, read, enabled = active, scope = roomScope, interval) {
+    resources[topic] = scheduler.resource(topic.split(":")[0], { scope, enabled, read, interval,
+      onError: error => readError(topic, error) });
+  }
+  const observeChat = () => {
+    if (chatReadable()) {
+      for (const topic of ["members", "messages", "human_read", "interactions"]) resources[topic].invalidate();
+    }
+    conversationUI.composerState();
+  };
+  register("settings", async options => {
+    const before = JSON.stringify(serverIdentity), result = await readSettings(options);
+    if (updateConnection && !refreshTask && before !== JSON.stringify(serverIdentity)) updateConnection.ensure();
+    return result;
+  }, active, globalScope);
+  register("catalog", async options => {
+    const before = viewVersion, result = await readCatalog(options);
+    if (result && updateConnection && !refreshTask) {
+      updateConnection.ensure();
+      if (before !== viewVersion || !workspaceUI.workspaceView?.connected || !state.connected) {
+        resources.workspace.invalidate(); observeChat();
+      }
+    }
+    return result;
+  }, () => active() && state.managed, globalScope);
+  register("workspace", async options => {
+    await readWorkspace(options);
+    if (options.current()) {
+      if (!chatReadable()) { state.connected = false; conversationUI.composerState(); }
+      else if (!state.connected) observeChat();
+    }
+  }, () => active() && !!state.catalog, roomScope);
+  register("messages", async options => {
+    const result = await readMessages({ ...options, observation: !!workspaceUI.workspaceView?.data?.observation && workspaceUI.workspaceBusy() });
+    if (result && options.current() && !state.connected && !state.recovering && chatReadable()) resources.members.invalidate();
+    return result;
+  },
+    () => active() && (!!state.info && (!!workspaceUI.workspaceView?.data?.observation || chatReadable())));
+  register("members", async options => {
+    const result = await readMembers(options);
+    if (result && options.current() && !state.recovering && chatReadable() && (!updateConnection || updateConnection.connected)) {
+      state.connected = true; $("connection").textContent = "服务已连接"; $("connection").classList.remove("offline");
+      conversationUI.composerState();
+    }
+    return result;
+  }, () => active() && chatReadable());
+  register("human_read", conversationUI.pollHumanRead, () => active() && chatReadable());
+  register("interactions", interactionsUI.refreshPlatformInteractions, () => active() && chatReadable());
+  register("activity", membersUI.activity.read, () => detail("activity"), memberScope);
+  register("inbox", inboxUI.refreshMemberInbox, () => detail("inbox") && !inboxUI.inboxView?.loading, memberScope);
+  register("policy", policyUI.refreshMemberPolicy, () => detail("policy") && !policyUI.policyView?.loading && !policyUI.policyView?.saving && !policyUI.policyView?.needsRefresh && !policyUI.policyEditor, memberScope);
+  resources.notifications = scheduler.resource("notifications", {
+    scope: roomScope, enabled: notificationVisible,
+    needed: () => notificationSummaryPending || notificationDiagnosticsVisible(),
+    read: async options => {
+      const summary = notificationSummaryPending;
+      notificationSummaryPending = false;
+      try { return await notificationsUI.loadNotificationSubscriptions(state.catalog, workspaceUI.workspaceView, options); }
+      catch (error) { if (options.current()) notificationSummaryPending ||= summary; throw error; }
+    },
+    onError: error => readError("notifications", error),
+  });
+  register("tools", options => membersUI.loadCLITools(membersUI.memberToolsView, { background: true, ...options }),
+    () => active() && !!membersUI.memberToolsView && membersUI.toolsCurrent(membersUI.memberToolsView) &&
+      ($("activity-dialog").open || $("notification-detail").open), memberScope);
+  register("platforms", async options => {
+    platformRead.invalidate();
+    await Promise.all([workspaceUI.loadWorkspacePlatforms({ background: true, ...options }),
+      $("settings-dialog").open && settingsUI.settingsTab === "platforms" ? connectionsUI.loadPlatforms(options) : undefined]);
+    if (options.current()) notificationsUI.renderNotificationPlatforms();
+  }, () => active() && !!state.catalog, globalScope);
+  register("models", settingsUI.readModels, () => active() && settingsUI.modelsNeedRead(), globalScope);
+  for (const [provider, feature, field] of [["gitlab", gitlabUI, "gitlabAuth"], ["lark", larkUI, "auth"], ["scion", scionUI, "scionAuth"]]) {
+    register(`authorization:${provider}`, feature.readAuthorization, () => active() && !!connectionsUI.platforms[field],
+      () => [...globalScope(), connectionsUI.platforms[field]?.session_id, connectionsUI.platforms.formVersion]);
+  }
+  function refreshDetails() {
+    for (const topic of ["activity", "inbox", "policy"])
+      if (resources[topic]) void resources[topic].refresh().catch(() => {});
+    void resources.interactions.refresh().catch(() => {});
+  }
+  function refreshConfiguration() {
+    return Promise.allSettled([resources.platforms.refresh(), resources.notifications.refresh(), resources.tools.refresh(),
+      resources.models.refresh(), ...["gitlab", "lark", "scion"].map(provider => resources[`authorization:${provider}`].refresh())]);
+  }
+  const streamIdentity = () => ({ installation_id: state.installationID,
+    service_epoch: state.managed ? state.catalog?.service_epoch : serverIdentity?.[1],
+    ...(state.info ? {room_id:state.info.room_id, room_instance:state.info.room_instance, room_service_epoch:state.info.service_epoch} : {}) });
+  function streamStatus(connected) {
+    state.recovering = !connected;
+    if (!connected) {
+      state.connected = false; $("connection").textContent = "实时同步已断开，正在重新核对…"; $("connection").classList.add("offline");
+    } else if (state.connected && chatReadable()) {
+      state.connected = true; $("connection").textContent = "服务已连接"; $("connection").classList.remove("offline");
+    }
+    conversationUI.composerState();
+  }
+  function invalidate(data) {
+    const info = state.info;
+    if (data.room_id && (!info || data.room_id !== info.room_id || data.room_instance !== info.room_instance || data.room_service_epoch !== info.service_epoch)) return;
+    if (data.agent_id && (data.agent_id !== membersUI.selectedAgent()?.agent_id || data.membership_id !== membersUI.selectedAgent()?.membership_id)) {
+      // Member status and subscription summaries cover the whole Room; private
+      // inspectors only observe the selected membership.
+      if (!["members", "notifications"].includes(data.topic)) return;
+    }
+    if (data.topic === "notifications" && data.kind !== "diagnostics") notificationSummaryPending = true;
+    if (data.topic === "authorization") for (const provider of ["gitlab", "lark", "scion"]) resources[`authorization:${provider}`].invalidate();
+    else resources[data.topic]?.invalidate();
+  }
+  function wakeDetails() { for (const resource of Object.values(resources)) resource.wake(); }
+  document.addEventListener("toggle", wakeDetails, true);
+  document.addEventListener("close", wakeDetails, true);
+  window.addEventListener("focus", wakeDetails);
+
   settingsUI.mount();
   roomsUI.mount();
   layoutUI.mount();
@@ -430,6 +649,9 @@ export async function createApp(overrides = {}) {
   roomsUI.restoreManagement();
 
   await refresh();
+  updateConnection = createUpdateConnection({ env, identity: streamIdentity, reconcile: async () => { await refreshTask; return refresh({ background: true }); }, invalidate,
+    status: streamStatus, fence: () => scheduler.reset(), authenticate: () => request("/v1/access/session") });
+  if (!state.suspended) updateConnection.start();
 
   if (window.location?.hash === "#platform-settings" && state.catalogConnected) {
     window.history?.replaceState(null,"",window.location.pathname+window.location.search);
@@ -453,6 +675,20 @@ export async function createApp(overrides = {}) {
 
   return {
     refresh,
+    reads: {
+      settings: readSettings, catalog: readCatalog, workspace: readWorkspace,
+      chat: readChat, messages: readMessages, members: readMembers,
+      configuration: readConfiguration, details: readDetails,
+      human_read: conversationUI.pollHumanRead,
+      platforms: workspaceUI.loadWorkspacePlatforms,
+      notifications: options => state.catalog && workspaceUI.workspaceView
+        ? notificationsUI.loadNotificationSubscriptions(state.catalog, workspaceUI.workspaceView, options) : Promise.resolve(),
+      tools: options => membersUI.memberToolsView && membersUI.toolsCurrent(membersUI.memberToolsView)
+        ? membersUI.loadCLITools(membersUI.memberToolsView, { background: true, ...options }) : Promise.resolve(),
+      interactions: interactionsUI.refreshPlatformInteractions,
+      activity: membersUI.activity.read,
+      inbox: inboxUI.refreshMemberInbox, policy: policyUI.refreshMemberPolicy,
+    },
     openNotificationSource: notificationsUI.openNotificationSource,
     selectedAgent: membersUI.selectedAgent,
     notificationSource: notificationsUI.currentSource

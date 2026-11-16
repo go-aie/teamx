@@ -14,6 +14,7 @@ import (
 )
 
 type serviceConfig struct {
+	updates              *uiUpdateHub
 	agentNames           *agentNameRegistry
 	scheduling           schedulingMode
 	modelStartup         *startupConfig
@@ -166,7 +167,7 @@ func (s *service) newMember(id MemberIdentity, runner RunnerConfig, restored *Ag
 	if s.models != nil {
 		gate = s.models.gate(id)
 	}
-	return &MemberAgent{ModelGate: gate, Options: opts, Store: s.store, Room: s.room, Restored: restored,
+	return &MemberAgent{ObserveEnabled: func() bool { return s.updates.observesRoom(s.info) }, Observe: func() { s.invalidate("members", id); s.invalidate("activity", id) }, ModelGate: gate, Options: opts, Store: s.store, Room: s.room, Restored: restored,
 		Inbox:   func(ctx context.Context) (InboxStatus, error) { return s.memberInboxStatus(ctx, id) },
 		Backend: backend, MergeWindow: s.mergeWindow, MaxTurns: s.maxTurns, SessionMaxTurns: s.maxTurns, RequestRotation: s.requestMemberRotation, RequestRecovery: s.requestMemberRecovery, RecoveryPending: recovery, BackendBlocked: blocked, PersistentScheduling: true, RestoredTurnsUsed: used, RestoredTurnLimit: limit, ExecutionFrozen: s.grantsFrozen}
 }

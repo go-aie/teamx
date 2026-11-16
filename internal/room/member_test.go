@@ -411,7 +411,11 @@ func TestMemberAgentFailedTaskAdmissionDoesNotConsumeBudget(t *testing.T) {
 	h := newRoomHarness(t, historyRoom(8, "body"), nil, actorx.WithTaskLimit(1))
 	id := h.memberID("A", "generation-A")
 	b := newControlledBackend()
-	addr, err := h.spawn(&MemberAgent{Options: adapterOptions(h.store, id), Store: h.store, Room: h.addr, Backend: rotatingControlledBackend{b}, MaxTurns: 1})
+	addr, err := h.spawn(&MemberAgent{Options: adapterOptions(h.store, id), Store: h.store, Room: h.addr, Backend: rotatingControlledBackend{b}, MaxTurns: 1,
+		// Keep the only worker occupied until shutdown. A 25ms timer could settle
+		// while durable writes are running and turn this into a rearm timing test.
+		waitMaintenance: func(ctx context.Context) error { <-ctx.Done(); return ctx.Err() },
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

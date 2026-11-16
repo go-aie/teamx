@@ -84,6 +84,7 @@ func (a *AgentInbox) Maintain(ctx actorx.Context, msg MaintainInbox, reply actor
 		}
 		return result, nil
 	}, func(result inboxMaintenanceResult, err error) bool {
+		defer a.observeInstalled()
 		a.committing, a.previewing = false, false
 		// A skipped checkpoint can commit even if physical cleanup later fails.
 		// Unknown writes always fence the actor until a Store reopen.

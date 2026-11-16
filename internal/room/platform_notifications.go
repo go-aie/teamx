@@ -31,6 +31,7 @@ func (m *roomManager) initPlatformNotifications() {
 	}
 	m.notifications = notification.New(notification.Host{
 		Gate: &m.mu,
+		Changed: m.observeNotificationChange,
 		Check: func(writing bool) error {
 			if writing && m.closing {
 				return notification.ErrClosing

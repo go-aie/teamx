@@ -1,7 +1,7 @@
 import { randomUUID } from "../random-id.mjs";
 // Scion account discovery, PAT login and logout lifecycle.
 export function createScionConnection({ env, runtime, connectionsUI, settingsUI, onboardingUI }) {
-  const { Option, setTimeout, clearTimeout, request } = env;
+  const { Option, request } = env;
   const { $, setSelectOptions } = runtime;
 
   function renderScionPATLink() {
@@ -113,23 +113,18 @@ export function createScionConnection({ env, runtime, connectionsUI, settingsUI,
       // A lost start response is recovered by ID through status, never by sending
       // the PAT or login again. The operator still owns cancellation on close.
     }
-    if (connectionsUI.platforms.scionAuth === auth) await pollScionAuth();
+    if (connectionsUI.platforms.scionAuth === auth) await refreshAuthorization();
   }
 
-  async function pollScionAuth() {
-    if (!runtime.canPoll()) {
-      clearTimeout(connectionsUI.platforms.scionTimer);
-      connectionsUI.platforms.scionTimer = setTimeout(() => { void pollScionAuth(); }, 1000);
-      return;
-    }
+  const refreshAuthorization = () => runtime.observe("authorization:scion");
+  async function readAuthorization({ current = () => true, onFailure = () => {} } = {}) {
     const auth = connectionsUI.platforms.scionAuth;
     if (!auth) return;
     try {
       const result = await request("/v1/platforms/scion/status", connectionsUI.connectionPayload({session_id:auth.session_id}));
-      if (connectionsUI.platforms.scionAuth !== auth || connectionsUI.platforms.formVersion !== auth.version) return;
-      if (result.status === "starting") { connectionsUI.platforms.scionTimer = setTimeout(() => { void pollScionAuth(); }, 1000); return; }
-      connectionsUI.platforms.scionAuth = null; clearTimeout(connectionsUI.platforms.scionTimer);
-      if (result.status === "succeeded" && result.cli_profile) {
+      if (!current() || connectionsUI.platforms.scionAuth !== auth || connectionsUI.platforms.formVersion !== auth.version) return;
+      if (result.status === "starting") {  return; }
+      connectionsUI.platforms.scionAuth = null; if (result.status === "succeeded" && result.cli_profile) {
         const profile = result.cli_profile;
         const data = {origin:auth.origin, executable:profile.executable, profiles:(connectionsUI.platforms.scionDiscovery?.profiles || []).filter(p => p.profile !== profile.profile), unavailable:0};
         data.profiles.push({profile:profile.profile,username:result.username});
@@ -141,10 +136,10 @@ export function createScionConnection({ env, runtime, connectionsUI, settingsUI,
       } else {
         renderScionAccount(); connectionsUI.connectionFeedback(result.status === "cancelled" ? "本次登录已取消。" : connectionsUI.connectionValidationErrors[result.error_code] || "PAT 登录失败，请检查实例、令牌及权限。", "error");
       }
-    } catch {
-      if (connectionsUI.platforms.scionAuth !== auth) return;
-      connectionsUI.connectionFeedback("登录结果暂不可读，正在核对原操作。", "error");
-      connectionsUI.platforms.scionTimer = setTimeout(() => { void pollScionAuth(); }, 3000);
+    } catch (error) {
+      if (!current() || connectionsUI.platforms.scionAuth !== auth) return;
+      connectionsUI.connectionFeedback("登录结果暂不可读，正在核对原操作。", "error"); onFailure(error);
+
     }
   }
 
@@ -152,7 +147,6 @@ export function createScionConnection({ env, runtime, connectionsUI, settingsUI,
     const auth = connectionsUI.platforms.scionAuth;
     clearScionConfirmation();
     $("connection-scion-pat").value = "";
-    clearTimeout(connectionsUI.platforms.scionTimer);
     if (!auth) return;
     connectionsUI.platforms.scionAuth = null;
     try { await request("/v1/platforms/scion/cancel", connectionsUI.connectionPayload({session_id:auth.session_id}), undefined, 12000); }
@@ -244,6 +238,7 @@ export function createScionConnection({ env, runtime, connectionsUI, settingsUI,
   }
 
   return {
+    readAuthorization,
     mount,
     detectScionPlatform,
     renderScionPATLink,

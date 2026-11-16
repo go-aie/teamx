@@ -19,6 +19,9 @@ const defaultMaxTurns uint64 = 16
 //
 //actorx:actor
 type MemberAgent struct {
+	Observe              func()
+	ObserveEnabled       func() bool
+	observedStatus       *MemberStatus
 	ModelGate            string
 	Options              SessionOptions
 	Backend              Backend
@@ -64,6 +67,7 @@ type MemberAgent struct {
 	due               time.Time
 	cancel            context.CancelFunc
 	now               func() time.Time
+	waitMaintenance   func(context.Context) error
 	turnsUsed         uint64
 	turnLimit         uint64
 	rotation          *SessionRotation
@@ -88,6 +92,7 @@ type MemberAgent struct {
 }
 
 func (m *MemberAgent) Started(ctx actorx.Context, _ actorx.Started) error {
+	defer m.observeStatus()
 	m.owner = ctx.WithContext(context.WithoutCancel(ctx))
 	m.paused = true // New members start only after an explicit run request.
 	m.turnsUsed = m.RestoredTurnsUsed
@@ -136,6 +141,7 @@ func (m *MemberAgent) Started(ctx actorx.Context, _ actorx.Started) error {
 }
 
 func (m *MemberAgent) Notify(_ actorx.Context, msg UnreadChanged) error {
+	defer m.observeStatus()
 	if msg.MemberIdentity != m.Options.MemberIdentity {
 		return ErrIdentity
 	}
@@ -228,6 +234,7 @@ func (m *MemberAgent) status() MemberStatus {
 }
 
 func (m *MemberAgent) Control(ctx actorx.Context, msg ControlMember) (MemberStatus, error) {
+	defer m.observeStatus()
 	if msg.MemberIdentity != m.Options.MemberIdentity {
 		return MemberStatus{}, ErrIdentity
 	}
@@ -364,16 +371,14 @@ func (m *MemberAgent) Control(ctx actorx.Context, msg ControlMember) (MemberStat
 // This small owned timer also retries task admission without requiring a new
 // notification. One timer plus one turn bounds the member's work allocation.
 func (m *MemberAgent) maintain() error {
+	wait := m.waitMaintenance
+	if wait == nil {
+		wait = waitMemberMaintenance
+	}
 	_, err := actorx.StartTask(m.owner, func(ctx context.Context) (struct{}, error) {
-		timer := time.NewTimer(25 * time.Millisecond)
-		defer timer.Stop()
-		select {
-		case <-ctx.Done():
-			return struct{}{}, ctx.Err()
-		case <-timer.C:
-			return struct{}{}, nil
-		}
+		return struct{}{}, wait(ctx)
 	}, func(_ struct{}, err error) bool {
+		defer m.observeStatus()
 		if err == nil {
 			if err := m.maintain(); err != nil {
 				m.owner.Stop(fmt.Errorf("member maintenance unavailable: %w", err))
@@ -385,6 +390,17 @@ func (m *MemberAgent) maintain() error {
 		return true
 	}, nil)
 	return err
+}
+
+func waitMemberMaintenance(ctx context.Context) error {
+	timer := time.NewTimer(25 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 type memberTurn struct {
@@ -438,6 +454,7 @@ func (m *MemberAgent) pollInbox() {
 	m.inboxPolling = true
 	m.inboxNext = m.now().Add(250 * time.Millisecond)
 	_, err := actorx.StartTask(m.owner, m.Inbox, func(status InboxStatus, err error) bool {
+		defer m.observeStatus()
 		m.inboxPolling = false
 		if err == nil {
 			changed := m.inbox == nil || m.inbox.LatestSeq != status.LatestSeq || m.inbox.ConsumedThrough != status.ConsumedThrough || m.inbox.ExpiredThrough != status.ExpiredThrough || m.inbox.SkippedThrough != status.SkippedThrough || m.inbox.AutomaticReady != status.AutomaticReady || m.inbox.AutomaticBlocked != status.AutomaticBlocked
@@ -500,6 +517,7 @@ func (m *MemberAgent) withdrawTurn() {
 }
 
 func (m *MemberAgent) schedule() {
+	defer m.observeStatus()
 	if !m.flushRelease() {
 		return
 	}
@@ -551,6 +569,7 @@ func (m *MemberAgent) schedule() {
 }
 
 func (m *MemberAgent) Granted(_ actorx.Context, msg turnGranted) error {
+	defer m.observeStatus()
 	if msg.MemberIdentity != m.Options.MemberIdentity {
 		return ErrIdentity
 	}
@@ -571,6 +590,7 @@ func (m *MemberAgent) Granted(_ actorx.Context, msg turnGranted) error {
 	_, err := actorx.StartTask(m.owner, func(ctx context.Context) (MemberList, error) {
 		return room.Call[MemberList](ctx, ListMembers{id.RoomIdentity})
 	}, func(list MemberList, err error) bool {
+		defer m.observeStatus()
 		m.checking = false
 		if m.request != request {
 			m.schedule()
@@ -598,6 +618,7 @@ type checkedTurn struct {
 }
 
 func (m *MemberAgent) StartGranted(_ actorx.Context, msg startGrantedTurn) error {
+	defer m.observeStatus()
 	checked := m.checked
 	if checked == nil || checked.request.ID != msg.ID {
 		return nil
@@ -755,6 +776,7 @@ func (m *MemberAgent) startTurn(input UnreadChanged, snapshotSeq, readThrough ui
 		}
 		return struct{}{}, work.session.Run(ctx, input)
 	}, func(_ struct{}, err error) bool {
+		defer m.observeStatus()
 		m.active, m.cancel = false, nil
 		m.work = nil
 		m.session = work.session

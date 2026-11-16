@@ -28,7 +28,13 @@ func (s *Session) notification(method string, params json.RawMessage) error {
 		return fmt.Errorf("%w: invalid session update", ErrProtocol)
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	changed := false
+	defer func() {
+		s.mu.Unlock()
+		if changed && s.opts.ObserveActivity != nil {
+			s.opts.ObserveActivity()
+		}
+	}()
 	if s.id != "" && s.id != event.SessionID {
 		return fmt.Errorf("%w: wrong update session", ErrProtocol)
 	}
@@ -57,6 +63,7 @@ func (s *Session) notification(method string, params json.RawMessage) error {
 		}
 		appendDiagnostic(text, content.Text, s.opts.Limits.TextBytes, truncated)
 		if content.Text != "" {
+			changed = true
 			kind := "text"
 			if event.Update.Kind == "agent_thought_chunk" {
 				kind = "thought"
@@ -64,6 +71,7 @@ func (s *Session) notification(method string, params json.RawMessage) error {
 			t.appendActivity(ActivityEvent{Kind: kind, Text: content.Text}, s.opts.Limits.TextBytes)
 		}
 	case "tool_call", "tool_call_update":
+		changed = true
 		id, status := event.Update.ToolCallID, event.Update.Status
 		if len(id) > 256 {
 			id = id[:256]

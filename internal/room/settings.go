@@ -31,6 +31,7 @@ type settingsSnapshot struct {
 }
 
 type systemSettings struct {
+	observe func()
 	*configDocument
 	current settingsSnapshot
 }
@@ -106,7 +107,12 @@ func (s *systemSettings) save(name string, expected uint64) (settingsView, error
 		}
 		next, err := patchTimeZone(source, name)
 		target := settingsSnapshot{settingsView{name, s.current.SettingsVersion + 1}, location}
-		return next, func() { s.current = target }, err
+		return next, func() {
+			s.current = target
+			if s.observe != nil {
+				s.observe()
+			}
+		}, err
 	})
 	return s.current.settingsView, err
 }

@@ -32,6 +32,10 @@ type pendingRead struct {
 //
 //actorx:actor
 type Room struct {
+	observeCatalog  func() // membership shape changes; receipts and attachment do not affect directory
+	observeMembers  func()
+	observeMessages func() // optional signal after installation; no query or error result
+
 	state      RoomSnapshot
 	save       func(RoomSnapshot) error
 	targets    map[string]actorx.Addr
@@ -113,7 +117,12 @@ func (r *Room) Add(ctx actorx.Context, msg AddMember, reply actorx.Reply[MemberI
 		return fmt.Errorf("%w: %w", ErrRequest, err)
 	}
 	result := MemberInfo{MemberState: m, Attached: true}
-	return commitRoom(r, ctx, next, reply, result, func() { r.targets[m.MembershipID] = msg.Target })
+	return commitRoom(r, ctx, next, reply, result, func() {
+		r.targets[m.MembershipID] = msg.Target
+		if r.observeCatalog != nil {
+			r.observeCatalog()
+		}
+	})
 }
 
 func (r *Room) Remove(ctx actorx.Context, msg RemoveMember, reply actorx.Reply[MemberInfo]) error {
@@ -137,6 +146,9 @@ func (r *Room) Remove(ctx actorx.Context, msg RemoveMember, reply actorx.Reply[M
 		delete(r.pending, m.MembershipID)
 		delete(r.pages, m.MembershipID)
 		delete(r.confirmed, m.MembershipID)
+		if r.observeCatalog != nil {
+			r.observeCatalog()
+		}
 	})
 }
 
@@ -154,7 +166,11 @@ func (r *Room) Attach(_ actorx.Context, msg AttachMember) (MemberInfo, error) {
 	if old := r.targets[msg.MembershipID]; !old.IsZero() && old != msg.Target {
 		return MemberInfo{}, ErrConflict
 	}
+	changed := r.targets[msg.MembershipID] != msg.Target
 	r.targets[msg.MembershipID] = msg.Target
+	if changed && r.observeMembers != nil {
+		r.observeMembers()
+	}
 	r.pending[msg.MembershipID] = r.notification(r.state.Members[i])
 	r.dispatchNotifications()
 	return r.memberInfo(r.state.Members[i]), nil
@@ -509,13 +525,25 @@ func commitRoom[R any](r *Room, ctx actorx.Context, next RoomSnapshot, reply act
 				if errors.Is(err, ErrCommitUnknown) {
 					r.writeErr = err
 				}
+				if r.observeMembers != nil {
+					r.observeMembers()
+				}
 				var zero R
 				reply.Complete(zero, err)
 				return true
 			}
+			messagesChanged := r.state.LatestSeq != next.LatestSeq || r.state.ClearedThrough != next.ClearedThrough
 			r.state = next
 			if install != nil {
 				install()
+			}
+			// List exposes the installed revision and the end of committing even
+			// when only a receipt changed. Message notices still require real data.
+			if r.observeMembers != nil {
+				r.observeMembers()
+			}
+			if messagesChanged && r.observeMessages != nil {
+				r.observeMessages()
 			}
 			r.queueNotifications()
 			r.dispatchNotifications()

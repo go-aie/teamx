@@ -142,9 +142,9 @@ test("source summaries and empty Inbox wait for fresh reads after a service epoc
   assert.equal(ui.el("inbox-backlog").textContent, "");
   quiet(ui, "inbox-add-platform");
   await ui.clock.advance(350);
-  assert.match(ui.el("notification-list-error").textContent, /正在读取/);
+  assert.equal(ui.el("notification-platforms").getAttribute("aria-busy"), "true");
   assert.equal(ui.el("notification-list-error").classList.contains("form-error"), false);
-  assert.match(ui.el("inbox-empty-hint").textContent, /正在读取/);
+  assert.equal(ui.el("inbox-empty-hint").textContent, "");
   quiet(ui, "notification-list-reload");
   platforms.resolve({platforms:structuredClone(api.platforms)});
   sources.resolve({subscriptions:[],gitlab_platforms:[]});
@@ -179,7 +179,7 @@ test("a platform read from the prior Room runtime cannot settle a new loading st
   quiet(ui,"notification-empty");
   assert.equal(ui.el("notification-platforms").getAttribute("aria-busy"),"true");
   await ui.clock.advance(350);
-  assert.match(ui.el("notification-list-error").textContent,/正在读取/);
+  assert.equal(ui.el("notification-platforms").getAttribute("aria-busy"),"true");
   fresh.resolve({platforms:structuredClone(api.platforms)});await refreshing;await settle();
   assert.equal(ui.el("notification-platforms").children.length,1);
   quiet(ui,"notification-list-error");

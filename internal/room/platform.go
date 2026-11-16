@@ -46,6 +46,10 @@ func (m *roomManager) initPlatform() {
 			return m.store.check(writing)
 		},
 		Save: m.store.save,
+		Changed: func() {
+			m.updates.mark(uiUpdate{Topic: "platforms"})
+			m.updates.markSubscribedRooms("tools", "notifications", "interactions", "workspace")
+		},
 	}, func(name, provider, origin string) (string, string, error) {
 		adapter, ok := m.connectionProviders[provider]
 		if !ok || adapter.Normalize == nil {
