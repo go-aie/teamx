@@ -20,6 +20,7 @@ import { createScionConnection } from "./features/scion-connection.mjs";
 import { createConfirmation } from "./confirmation.mjs";
 import { createUserMenu } from "./features/user-menu.mjs";
 import { createSharedRead, createUpdateScheduler, createUpdateConnection } from "./updates.mjs";
+import { createRoomViewCache, roomViewCacheLimits } from "./room-view-cache.mjs";
 
 // Browser services can be replaced per instance; feature state never lives in
 // module globals. Tests import this same module graph and supply a bounded DOM.
@@ -65,6 +66,7 @@ export async function createApp(overrides = {}) {
 
   const state = { info: null, operator: "operator", messages: new Map(), lastSeq: 0, oldest: 0,
     clearedThrough: 0,
+    messagePreview: false, messagesReady: false, membersReady: false,
     members: [], profiles: [], teams: [], connected: false, managed: false, catalog: null, catalogConnected: false,
     isDirect: false, management: null, managementSending: false, managementError: "", draft: {}, restart: null };
 
@@ -74,6 +76,7 @@ export async function createApp(overrides = {}) {
   state.recovering = false;
   let serverIdentity = null;
   const confirmedGlobalVersions = {};
+  const roomViews = createRoomViewCache();
   const navigation = createBrowserNavigation({ env, layers: () => {
     const layers = [];
     if (compactViewport(window)) {
@@ -178,6 +181,18 @@ export async function createApp(overrides = {}) {
 
   function selectView(info, operator) {
     if (sameService(state.info, info) && state.operator === operator) return false;
+    roomViews.scope([state.installationID, state.catalog?.service_epoch || serverIdentity?.[1], state.operator]);
+    const previous = state.catalog?.rooms.find(room => sameService(room.service, state.info));
+    if (state.info && state.messagesReady && state.membersReady && !state.messagePreview &&
+      (!state.managed || previous?.status === "ready" && state.catalog.operator === state.operator)) {
+      const messages = [...state.messages.values()].sort((a, b) => a.seq - b.seq).slice(-roomViewCacheLimits.messages);
+      const position = conversationUI.capturePosition(new Set(messages.map(message => message.seq)));
+      if (position) roomViews.put(state.info, { messages, members: state.members, lastSeq: state.lastSeq, clearedThrough: state.clearedThrough, position });
+      else roomViews.forget(state.info);
+    }
+    roomViews.scope([state.installationID, state.catalog?.service_epoch || serverIdentity?.[1], operator]);
+    const entry = state.catalog?.rooms.find(room => room.room_id === info?.room_id && room.room_instance === info?.room_instance);
+    const cached = info && (!state.managed || entry?.status === "ready") ? roomViews.get(info, entry?.human_read?.cleared_through || 0) : null;
     conversationUI.saveDraft();
     roomsUI.closeRename(false);
     $("notification-detail").close();
@@ -185,14 +200,23 @@ export async function createApp(overrides = {}) {
     interactionsUI.resetPlatformInteractions();
     membersUI.resetActivity(); layoutUI.hideConversationNotifications();
     state.info = info; state.operator = operator; state.connected = false;
+    state.messagesReady = state.membersReady = false; state.messagePreview = !!cached;
+    $("connection").textContent = cached ? "正在同步…" : "正在加载会话…";
+    $("connection").classList.add("offline");
     syncFailureSince = null; notice("sync-error", "");
     notice("notification-next-step", "");
-    conversationUI.resetReadingContext();
     state.draft = info ? conversationUI.drafts.get(info, operator) : {};
     state.messages.clear(); state.lastSeq = 0; state.clearedThrough = 0; state.restart = null; state.members = [];
+    if (cached) {
+      for (const message of cached.messages) state.messages.set(message.seq, message);
+      state.lastSeq = cached.lastSeq; state.clearedThrough = cached.clearedThrough; state.members = cached.members;
+    }
+    conversationUI.resetMessageNodes();
+    conversationUI.resetReadingContext();
     conversationUI.resetRestartNotice();
     conversationUI.showDraft(); conversationUI.renderMessages(); membersUI.renderMembers();
     $("jump-latest").hidden = true;
+    if (cached) conversationUI.restorePosition(cached.position);
     notice("restart-notice", "");
     return true;
   }
@@ -210,6 +234,7 @@ export async function createApp(overrides = {}) {
     }
     if (serverIdentity && serverIdentity[0] !== identity[0]) selectView(null, state.operator);
     state.installationID = config.installation_id || "";
+    roomViews.scope([state.installationID, config.service_epoch, state.operator]);
     const mentionIdentityChanged = state.operatorDisplayName !== (config.operator_display_name || "");
     state.operatorDisplayName = config.operator_display_name || "";
     serverIdentity = identity;
@@ -227,6 +252,11 @@ export async function createApp(overrides = {}) {
     if (!currentView(version) || !current()) return;
     roomsUI.acceptCatalog(catalog);
     state.catalog = catalog; state.catalogConnected = true;
+    roomViews.scope([state.installationID, catalog.service_epoch, catalog.operator]);
+    roomViews.reconcile(catalog.rooms);
+    const currentRoom = catalog.rooms.find(room => room.room_id === state.info?.room_id && room.room_instance === state.info?.room_instance);
+    if (state.messagePreview && currentRoom?.human_read?.cleared_through > state.clearedThrough &&
+      conversationUI.applyClear(currentRoom.human_read.cleared_through)) conversationUI.renderMessages();
     settingsUI.applyTimeZone(catalog);
     await roomsUI.reconcileManagement(catalog, { current });
     if (!current()) return;
@@ -260,6 +290,7 @@ export async function createApp(overrides = {}) {
     const names = list=>JSON.stringify(list.map(m=>[m.agent_id,m.membership_id,m.agent_name]));
     const changed = names(state.members) !== names(nextMembers);
     state.members = nextMembers;
+    state.membersReady = true;
     if (changed) conversationUI.renderMessages();
     membersUI.renderMembers();
     notice("sync-error", members.write_error ? `${roomsUI.conversationType()}写入暂停：${members.write_error}` : "");
@@ -277,16 +308,20 @@ export async function createApp(overrides = {}) {
   async function readMessages({ current = () => true, observation = false } = {}) {
     const version = viewVersion, info = state.info;
     if (!observation && !chatReadable()) return;
-    const initial = state.messages.size === 0;
-    const stick = initial || conversationUI.nearBottom(), scrollTop = $("timeline").scrollTop;
+    const preview = state.messagePreview, initial = preview || state.messages.size === 0;
+    const stick = !preview && initial || conversationUI.nearBottom(), scrollTop = $("timeline").scrollTop;
     const after = state.lastSeq;
     const read = await conversationUI.readPages(initial ? { mode: "latest", latest: 50 } : { mode: "range", after }, info);
     if (!currentView(version) || !current() || read.clearedThrough < state.clearedThrough || read.snapshot < state.lastSeq) return;
+    const position = preview ? conversationUI.capturePosition() : null;
+    if (preview) { state.messages.clear(); conversationUI.resetMessageNodes(); }
     const cleared = conversationUI.applyClear(read.clearedThrough);
-    if (read.messages.length || cleared) {
+    state.messagePreview = false; state.messagesReady = !observation;
+    if (read.messages.length || cleared || preview) {
       for (const message of read.messages) state.messages.set(message.seq, message);
       conversationUI.renderMessages();
-      if (stick) conversationUI.bottom();
+      if (preview && position) conversationUI.restorePosition(position);
+      else if (stick) conversationUI.bottom();
       else { $("timeline").scrollTop = scrollTop; if (read.messages.length) $("jump-latest").hidden = false; }
     }
     state.lastSeq = read.snapshot;
@@ -380,8 +415,8 @@ export async function createApp(overrides = {}) {
       $("connection").textContent = "工作目录状态暂时无法核对";
       return;
     }
-    const [members] = await Promise.all([resources.members.refresh(), resources.messages.refresh()]);
-    if (!currentView(version) || !members) return;
+    const [members, messages] = await Promise.all([resources.members.refresh(), resources.messages.refresh()]);
+    if (!currentView(version) || !members || !messages || !state.membersReady || !state.messagesReady) return;
     state.connected = !updateConnection || updateConnection.connected;
     membersUI.renderMembers();
     refreshDetails();
@@ -462,6 +497,7 @@ export async function createApp(overrides = {}) {
     state,
     storage,
     selectView,
+    forgetRoomView: room => roomViews.forget(room),
     enterRoom,
     navigationChanged: navigation.sync,
     conversationVisibilityChanged: () => {
@@ -547,6 +583,8 @@ export async function createApp(overrides = {}) {
     !!workspaceUI.workspaceView && ["gitlab", "messages"].includes(workspaceUI.workspaceView.notificationChannel) &&
     !workspaceUI.workspaceView.notificationHistory;
   function readError(topic, error) {
+    if (topic === "messages") state.messagesReady = false;
+    if (topic === "members") state.membersReady = false;
     if (error.code === "identity" && ["settings", "catalog", "workspace", "members", "messages"].includes(topic)) updateConnection?.reconnect();
     if (["settings", "catalog", "workspace", "members", "messages"].includes(topic)) {
       syncFailureSince ??= env.performance.now();
@@ -597,7 +635,7 @@ export async function createApp(overrides = {}) {
     () => active() && (!!state.info && (!!workspaceUI.workspaceView?.data?.observation || chatReadable())));
   register("members", async options => {
     const result = await readMembers(options);
-    if (result && options.current() && !state.recovering && chatReadable() && (!updateConnection || updateConnection.connected)) {
+    if (result && options.current() && state.messagesReady && state.membersReady && !state.recovering && chatReadable() && (!updateConnection || updateConnection.connected)) {
       state.connected = true; $("connection").textContent = "服务已连接"; $("connection").classList.remove("offline");
       conversationUI.composerState();
     }
@@ -649,6 +687,7 @@ export async function createApp(overrides = {}) {
   function streamStatus(connected) {
     state.recovering = !connected;
     if (!connected) {
+      state.messagesReady = state.membersReady = false;
       state.connected = false; $("connection").textContent = "实时同步已断开，正在重新核对…"; $("connection").classList.add("offline");
     } else if (state.connected && chatReadable()) {
       state.connected = true; $("connection").textContent = "服务已连接"; $("connection").classList.remove("offline");

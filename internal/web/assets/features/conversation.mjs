@@ -88,6 +88,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     const result = await current.task;
     current.task = null;
     if (visit !== current || !result || result.cleared_through < state.clearedThrough) return;
+    if (state.messagePreview && applyClear(result.cleared_through)) renderMessages();
     const { new_message_seqs, ...metadata } = result;
     current.metadata = metadata;
     current.entrySnapshot = result.snapshot_seq;
@@ -107,7 +108,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
   }
 
   function readingActive() {
-    if (!visit || state.suspended || document.hidden || !document.hasFocus() ||
+    if (!visit || state.messagePreview || state.suspended || document.hidden || !document.hasFocus() ||
       !layoutUI.conversationVisible() || document.querySelector("dialog:modal")) return false;
     const root = $("timeline").getBoundingClientRect(), viewport = window.visualViewport;
     const top = viewport?.offsetTop || 0, left = viewport?.offsetLeft || 0;
@@ -189,6 +190,23 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
       if (id === positioningID) { positioning = false; scheduleMessageViewing(); }
     }));
     $("jump-latest").hidden = true;
+  }
+
+  function capturePosition(retained) {
+    if (nearBottom() || !messageOrder.length) return { bottom: true };
+    const root = $("timeline"), top = root.getBoundingClientRect().top;
+    const seq = messageOrder[firstVisible(top)];
+    // A bounded recent window cannot reproduce a position in older history.
+    if (!seq || retained && !retained.has(seq)) return null;
+    return { seq, offset: messageNodes.get(seq).element.getBoundingClientRect().top - top, scrollTop: root.scrollTop };
+  }
+
+  function restorePosition(position) {
+    if (!position || position.bottom || !messageNodes.has(position.seq)) { bottom(); return; }
+    const root = $("timeline");
+    root.scrollTop = position.scrollTop;
+    root.scrollTop += messageNodes.get(position.seq).element.getBoundingClientRect().top - root.getBoundingClientRect().top - position.offset;
+    $("jump-latest").hidden = false;
   }
 
   function unreadMentions() {
@@ -632,6 +650,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
   function applyClear(through) {
     if (through <= state.clearedThrough) return false;
     state.clearedThrough = through;
+    runtime.forgetRoomView(state.info);
     if (historyTask) cancelHistory("历史已清空，请重新选择回看目标。");
     if (visit) {
       for (const seq of visit.remainingSeqs) if (seq <= through) visit.remainingSeqs.delete(seq);
@@ -817,7 +836,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
 
   function resetRestartNotice() { restartNoticeID = ""; restartNoticeExpires = 0; }
 
-  function resetMessageNodes() { cancelHistory(); renderedKey = null; messageOrder = []; messageNodes.clear(); dayNodes.clear(); references.clear(); }
+  function resetMessageNodes() { cancelHistory(); renderedKey = null; messageOrder = []; messageNodes.clear(); dayNodes.clear(); references.clear(); unreadCandidates.clear(); mentionMessages = []; }
 
   function interactionHost(seq) {
     return messageNodes.get(seq)?.element.querySelector(".message-interactions");
@@ -979,6 +998,8 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     composerState,
     beginReply,
     nearBottom,
+    capturePosition,
+    restorePosition,
     saveDraft,
     resetReadingContext,
     pollHumanRead,

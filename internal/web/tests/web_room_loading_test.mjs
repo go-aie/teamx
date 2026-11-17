@@ -135,3 +135,92 @@ test("late reads from a superseded Room never install messages or release the ne
   assert.equal(ui.sources.filter(source => !source.closed).length, 1);
   assert.equal(count(api, "/v1/send"), 0);
 });
+
+const messageText = (ui, seq) => ui.el("messages").children.find(node => node.id === `message-${seq}`)?.querySelector(".message-text").textContent;
+
+test("returning to a Room displays cached messages and members before HTTP and gates sending until both reads succeed", async () => {
+  const api = roomFixture(), ui = await launch(api), workspace = deferred(), members = deferred();
+  await ui.draft("Draft R"); await ui.select("S");
+  assert.equal(messageText(ui, 1), "Message S");
+  api.calls.length = 0;
+  api.roomHook = (path, body) => path.startsWith("/v1/workspace?") ? workspace.promise
+    : path === "/v1/member/list" ? members.promise : path === "/v1/read" ? page(body.room_id, 2) : undefined;
+  await ui.select("R");
+  assert.equal(messageText(ui, 1), "Message R");
+  assert.equal(ui.el("members").children.length, 3, "cached Agent entries and the human remain visible");
+  assert.equal(ui.el("message-input").value, "Draft R");
+  assert.equal(count(api, "/v1/read"), 0); assert.equal(ui.el("send").disabled, true);
+  await ui.clock.advance(300);
+  assert.equal(count(api, "/v1/human-read/confirm"), 0, "a preview does not confirm reading");
+  workspace.resolve({ workspace: { root: "workspaces" }, workspace_version: 1, members: [] }); await settle();
+  assert.equal(messageText(ui, 1), undefined); assert.equal(messageText(ui, 2), "Message R");
+  assert.equal(api.calls.find(call => call.path === "/v1/read").body.mode, "latest");
+  assert.equal(ui.el("send").disabled, true, "cached members cannot satisfy verification");
+  members.resolve({ members: structuredClone(api.members) }); await settle();
+  assert.equal(ui.el("send").disabled, false);
+});
+
+test("a cached Room restores its message position and preserves it through revalidation", async () => {
+  const api = roomFixture(), ui = await launch(api), workspace = deferred();
+  ui.el("timeline").scrollHeight = 1200; ui.el("timeline").scrollTop = 200;
+  await ui.select("S");
+  api.roomHook = path => path.startsWith("/v1/workspace?") ? workspace.promise : undefined;
+  await ui.select("R");
+  assert.equal(messageText(ui, 1), "Message R"); assert.equal(ui.el("timeline").scrollTop, 200);
+  workspace.resolve({ workspace: { root: "workspaces" }, workspace_version: 1, members: [] }); await settle();
+  assert.equal(ui.el("timeline").scrollTop, 200);
+});
+
+test("a known clear or replacement runtime prevents displaying the cached Room", async () => {
+  for (const kind of ["clear", "runtime"]) {
+    const api = roomFixture(), ui = await launch(api), workspace = deferred();
+    await ui.select("S");
+    if (kind === "clear") api.rooms[0].human_read = { status: "ready", revision: 1, snapshot_seq: 1, cleared_through: 1, unread_count: 0, mention_count: 0 };
+    else api.rooms[0].service.service_epoch = "replacement";
+    await ui.reads.catalog();
+    api.roomHook = path => path.startsWith("/v1/workspace?") ? workspace.promise : undefined;
+    await ui.select("R");
+    assert.equal(messageText(ui, 1), undefined, kind);
+    workspace.resolve({ workspace: { root: "workspaces" }, workspace_version: 1, members: [] }); await settle();
+  }
+});
+
+test("an entry reading snapshot can clear a stale preview before Workspace finishes", async () => {
+  const api = roomFixture(), ui = await launch(api), workspace = deferred();
+  await ui.select("S");
+  api.roomHook = (path, body) => path.startsWith("/v1/workspace?") ? workspace.promise
+    : path === "/v1/human-read/state" ? { version: 2, room_id: body.room_id, room_instance: body.room_instance, operator_id: body.caller.id,
+      revision: 1, snapshot_seq: 1, cleared_through: 1, opened_through: 1, mention_seen_seqs: [], unseen_mention_seqs: [], unread_count: 0, mention_count: 0,
+      ...(body.include_new_messages ? { new_message_seqs: [] } : {}) } : undefined;
+  await ui.select("R"); assert.equal(messageText(ui, 1), undefined);
+  assert.equal(count(api, "/v1/human-read/confirm"), 0);
+  workspace.resolve({ workspace: { root: "workspaces" }, workspace_version: 1, members: [] }); await settle();
+});
+
+test("viewing cached content does not consume the new visit's unread boundary", async () => {
+  const api = roomFixture(), workspace = deferred(); let snapshot = 1;
+  api.roomHook = (path, body) => path === "/v1/human-read/state" ? { version: 2, room_id: body.room_id, room_instance: body.room_instance, operator_id: body.caller.id,
+    revision: 0, snapshot_seq: snapshot, cleared_through: 0, opened_through: 0, mention_seen_seqs: [], unseen_mention_seqs: [], unread_count: snapshot, mention_count: 0,
+    ...(body.include_new_messages ? { new_message_seqs: Array.from({ length: snapshot }, (_, i) => i + 1) } : {}) } : undefined;
+  const ui = await launch(api); await ui.select("S");
+  const previous = api.roomHook; snapshot = 2;
+  api.roomHook = (path, body) => path.startsWith("/v1/workspace?") ? workspace.promise : previous(path, body);
+  await ui.select("R");
+  ui.el("messages").children.find(node => node.id === "message-1").rect = { top: 0, bottom: 80, left: 0, right: 300, width: 300, height: 80 };
+  await ui.window.emit("focus"); await ui.clock.advance(300);
+  assert.match(ui.el("view-mention").textContent, /2 条新消息/);
+  assert.equal(count(api, "/v1/human-read/confirm"), 0);
+  workspace.resolve({ workspace: { root: "workspaces" }, workspace_version: 1, members: [] }); await settle();
+});
+
+test("cached Room content stays isolated while a superseded message request settles", async () => {
+  const api = roomFixture(), ui = await launch(api), old = deferred(), current = deferred();
+  await ui.select("S"); await ui.select("R");
+  api.roomHook = (path, body) => path === "/v1/read" ? body.room_id === "S" ? old.promise : current.promise : undefined;
+  await ui.select("S"); assert.equal(messageText(ui, 1), "Message S");
+  await ui.select("R"); assert.equal(messageText(ui, 1), "Message R");
+  old.resolve(page("S", 99)); await settle();
+  assert.equal(messageText(ui, 99), undefined); assert.equal(messageText(ui, 1), "Message R");
+  current.resolve(page("R", 2)); await settle();
+  assert.equal(messageText(ui, 2), "Message R"); assert.equal(ui.sources.filter(source => !source.closed).length, 1);
+});

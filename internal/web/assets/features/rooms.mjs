@@ -272,6 +272,7 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
   function forgetRoom(room) {
     if (selectedRoom?.room_instance === room.room_instance) selectRoom(null);
     if (state.info?.room_instance === room.room_instance) runtime.selectView(null, state.operator);
+    runtime.forgetRoomView(room);
     conversationUI.drafts.remove(room, state.operator);
     try { storage?.removeItem(workspaceUI.workspaceKey(room, state.operator)); } catch { /* Storage is optional. */ }
     try { storage?.removeItem(JSON.stringify(["teamx.mentions", room.room_instance, state.operator])); } catch { /* Storage is optional. */ }

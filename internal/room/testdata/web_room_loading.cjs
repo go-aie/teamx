@@ -37,15 +37,34 @@ const assert=require('node:assert/strict');
   await page.locator(selector(rooms[0])).click();await ready(rooms[0]);await page.waitForTimeout(1500);
   // Real Chromium, native EventSource and isolated Go services. Delay only the
   // authoritative HTTP requests; this is controlled latency, not a WAN claim.
+  let releaseWorkspace;
+  const workspaceGate=new Promise(resolve=>{releaseWorkspace=resolve;});
   await page.route('**/v1/**',async route=>{
+   if(new URL(route.request().url()).pathname==='/v1/workspace')await workspaceGate;
    if(new URL(route.request().url()).pathname!=='/v1/updates')await new Promise(resolve=>setTimeout(resolve,100));
    await route.continue();
   });
+  await page.evaluate(text=>{
+   window.cachedVisibleMs=null;let started;
+   document.addEventListener('click',()=>{started=performance.now();},{capture:true,once:true});
+   const observer=new MutationObserver(()=>{
+    if(started!==undefined&&document.querySelector('#messages').textContent.includes(text)){
+     observer.disconnect();requestAnimationFrame(()=>{window.cachedVisibleMs=performance.now()-started;});
+    }
+   });
+   observer.observe(document.querySelector('#messages'),{childList:true,subtree:true});
+  },'History '+rooms[1].room_id);
   requests.length=0;
   const started=performance.now();
-  await page.locator(selector(rooms[1])).click();await ready(rooms[1]);
-  const readyMs=Math.round(performance.now()-started);
+  await page.locator(selector(rooms[1])).click();
+  await page.locator('#messages').getByText('History '+rooms[1].room_id,{exact:true}).waitFor();
+  await page.waitForFunction(()=>Number.isFinite(window.cachedVisibleMs));
+  const cachedMs=Math.round(await page.evaluate(()=>window.cachedVisibleMs));
+  assert.equal(await page.locator('#send').isDisabled(),true,'display cache cannot establish sending authority');
+  assert.equal(requests.filter(path=>path==='/v1/read').length,0,'history is displayed before the Workspace response and message read');
+  releaseWorkspace();
   await page.waitForFunction(()=>!document.querySelector('#send').disabled);
+  const readyMs=Math.round(performance.now()-started);
   assert.equal(await page.locator('#message-input').inputValue(),'Draft target');
   await page.waitForTimeout(150);
   const switchRequests=[...requests];
@@ -64,6 +83,6 @@ const assert=require('node:assert/strict');
   assert.equal(await page.evaluate(()=>window.updateSources.length),streams);
   assert.equal(await page.locator('#message-input').inputValue(),'Draft target');
   assert.deepEqual(errors,[]);
-  console.log(JSON.stringify({simulated_http_latency_ms:100,switch_to_history_and_composer_ms:readyMs,HTTP_requests:switchRequests,global_reads:0,chat_reads:switchRequests.filter(path=>path==='/v1/read').length,active_streams:1,mobile_return:true,drafts_preserved:true}));
+  console.log(JSON.stringify({simulated_http_latency_ms:100,cached_history_visible_ms:cachedMs,verified_send_ready_ms:readyMs,display_before_HTTP:true,HTTP_requests:switchRequests,global_reads:0,chat_reads:switchRequests.filter(path=>path==='/v1/read').length,active_streams:1,mobile_return:true,drafts_preserved:true}));
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});
