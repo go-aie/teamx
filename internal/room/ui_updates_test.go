@@ -31,6 +31,53 @@ func updateSub(t *testing.T, h *uiUpdateHub, session int, operator string, info 
 	return s
 }
 
+func TestUIUpdatesGlobalVersionsBridgeSubscriptionGap(t *testing.T) {
+	hub := newUIUpdateHub()
+	first := updateSub(t, hub, 1, "alice", ServiceInfo{})
+	if len(first.globalVersions) != 3 || first.globalVersions["catalog"] != "0" {
+		t.Fatal(first.globalVersions)
+	}
+	first.close()
+	// Global installations advance even while no stream is registered.
+	hub.mark(uiUpdate{Topic: "catalog", Operator: "alice"})
+	hub.mark(uiUpdate{Topic: "platforms"})
+	info := ServiceInfo{RoomIdentity: RoomIdentity{"room", "instance"}, ServiceEpoch: "runtime"}
+	hub.mark(roomUIUpdate("messages", info))
+	second := updateSub(t, hub, 1, "alice", info)
+	if second.globalVersions["catalog"] != "1" || second.globalVersions["platforms"] != "1" || second.globalVersions["settings"] != "0" || len(second.globalVersions) != 3 {
+		t.Fatal(second.globalVersions)
+	}
+	// A change after registration remains queued; it does not rewrite hello's
+	// baseline while the network writer marshals or flushes that snapshot.
+	hub.mark(uiUpdate{Topic: "settings"})
+	if second.globalVersions["settings"] != "0" || first.globalVersions["catalog"] != "0" {
+		t.Fatal("registration snapshot mutated")
+	}
+	updates, resync := second.take()
+	if resync || len(updates) != 1 || updates[0].Topic != "settings" {
+		t.Fatal(updates, resync)
+	}
+}
+
+func TestUIUpdatesExpiredGlobalObservationsCannotBeReused(t *testing.T) {
+	hub := newUIUpdateHub()
+	// Retain only a fixed-topic deadline, without retaining a subscriber timer.
+	hub.atEarliest(uiUpdate{Topic: "platforms"}, time.Now().Add(-time.Second))
+	sub := updateSub(t, hub, 1, "alice", ServiceInfo{})
+	if _, reusable := sub.globalVersions["platforms"]; reusable || len(sub.deadlines) != 0 {
+		t.Fatal("expired observation advertised as reusable", sub.globalVersions)
+	}
+	if len(sub.globalVersions) != 2 {
+		t.Fatal(sub.globalVersions)
+	}
+	hub.mark(uiUpdate{Topic: "platforms"})
+	hub.atEarliest(uiUpdate{Topic: "platforms"}, time.Now().Add(time.Hour))
+	next := updateSub(t, hub, 2, "alice", ServiceInfo{})
+	if next.globalVersions["platforms"] != "1" {
+		t.Fatal(next.globalVersions)
+	}
+}
+
 func TestUIUpdatesDeadlinesScopedBoundedAndCancelled(t *testing.T) {
 	hub := newUIUpdateHub()
 	info := ServiceInfo{RoomIdentity: RoomIdentity{"room", "instance"}, ServiceEpoch: "runtime"}

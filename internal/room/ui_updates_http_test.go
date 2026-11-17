@@ -179,6 +179,15 @@ func TestUIUpdatesHTTPMessageReadAndReconnect(t *testing.T) {
 			if hello.event != "hello" || hello.data["protocol"] != float64(1) || hello.data["service_epoch"] != epoch || hello.data["installation_id"] != a.installationID {
 				t.Fatal(hello)
 			}
+			versions, ok := hello.data["global_versions"].(map[string]any)
+			if !ok || len(versions) != 3 {
+				t.Fatal("missing global reuse versions", hello)
+			}
+			for _, topic := range []string{"settings", "catalog", "platforms"} {
+				if _, ok := versions[topic].(string); !ok {
+					t.Fatal("reuse version must be an opaque string", topic, versions)
+				}
+			}
 			body := apiRequest{ServiceInfo: svc.info, Caller: Caller{Author: Author{Kind: "human", ID: a.operator}}, ClientMessageID: "once", Text: "never in the SSE frame"}
 			sent := updateRequest(t, server.URL, "POST", "/v1/send", cookie, body)
 			if sent.StatusCode != 200 {

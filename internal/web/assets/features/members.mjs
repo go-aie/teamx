@@ -75,12 +75,13 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       room_instance: state.info.room_instance, caller: { kind: "human", id: state.operator } };
   }
 
-  async function openMemberTools(member) {
+  async function openMemberTools(member, { automatic = false } = {}) {
     if (!state.managed || !state.info || !state.catalogConnected) {
       notificationsUI.renderNotificationPlatforms();return;
     }
     memberToolsView = { identity: toolsIdentity(), runtimeEpoch:state.info.service_epoch, member, cli: null, cliConnected:false };
-    await connectionsUI.refreshPlatformState();
+    if (automatic) await runtime.observe("configuration", { cached: true });
+    else await connectionsUI.refreshPlatformState();
   }
 
   // CLI bindings have a separate revision and never inherit legacy grants.
@@ -340,7 +341,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     return roomsUI.selectedEntry()?.members?.find(role => role.id === member.agent_id);
   }
 
-  function openMemberActivity(member, opener, tab = state.managed ? "platforms" : "activity", { readingView = null, fromConversation = false } = {}) {
+  function openMemberActivity(member, opener, tab = state.managed ? "platforms" : "activity", { readingView = null, fromConversation = false, automatic = false } = {}) {
     notice("notification-next-step", "");
     notificationsUI.invalidateNavigation();
     if (!state.connected || !state.info) return;
@@ -365,9 +366,10 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     memberToolsView = null;
     renderActivityControls();
     notificationsUI.renderNotificationPlatforms();
-    if(state.managed){void settingsUI.openMemberModel?.(current);void openMemberTools(current);void onboardingUI.restoreOnboarding()?.then(()=>renderMemberPlatforms());}
+    if(state.managed){void settingsUI.openMemberModel?.(current);void onboardingUI.restoreOnboarding()?.then(()=>renderMemberPlatforms());}
     readingView?.();
     const selected = selectAgentTab(tab);
+    if(state.managed)void openMemberTools(current, { automatic });
     if (compactViewport(window)) {
       $("activity-dialog").scrollIntoView({ block: "start" });
       $("close-activity").focus({preventScroll:true});
@@ -578,7 +580,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     renderActivityNavigation();
     if (!roomsUI.isDirect() || !state.connected || !layoutUI.membersPanelOpen() || layoutUI.directNotificationsOpen || $("notification-detail").open || state.members.length !== 1) return;
     if ($("activity-dialog").open && selectedAgent()?.membership_id === state.members[0].membership_id) return;
-    openMemberActivity(state.members[0], $("room-menu-label"));
+    openMemberActivity(state.members[0], $("room-menu-label"), undefined, { automatic: true });
   }
 
   const showHumanMember = () => !!state.info && !roomsUI.isDirect();

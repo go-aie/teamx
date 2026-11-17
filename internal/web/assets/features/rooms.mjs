@@ -477,7 +477,7 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
       if (state.management && state.management.kind !== "delete") {
         state.management.selectOnComplete = false; saveManagement();
       }
-      selectRoom(room); void refresh(); return;
+      selectRoom(room); runtime.enterRoom(); return;
     }
     if (state.management || state.managementSending || room.busy) return;
     selectionVersion++; awaitDefaultSelection = false;

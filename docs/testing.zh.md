@@ -236,6 +236,13 @@ go test -tags=e2e ./internal/room \
 
 通知来源、分类、调度和多端隔离见 [Web 更新说明](implementation/web-updates.zh.md)。阅读、Inbox、Policy 与授权组合可通过以下入口复跑；实际手机与部署代理需独立验收。
 
+Room 切换的独立浏览器检查使用隔离服务和受控 runtime，为普通 HTTP 读取增加 100ms 延迟，检查单轮聊天读取、全局配置复用、草稿和手机返回导航；不调用真实模型或外部平台：
+
+```sh
+NODE_PATH="$PWD/packaging/verifier/node_modules" TEAMX_WEB_UPDATES_BROWSER=1 \
+go test -tags=e2e ./internal/room -run '^TestWebRoomLoadingBrowser$' -count=1 -v -timeout=2m
+```
+
 ```sh
 NODE_PATH="$PWD/packaging/verifier/node_modules" \
 TEAMX_HUMAN_READ_BROWSER=1 TEAMX_CONFIGURATION_BROWSER=1 TEAMX_CONNECT_BROWSER=1 \

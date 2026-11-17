@@ -122,7 +122,8 @@ export async function launch(api, saved = new Map(), environment = {}) {
     constructor(url) {
       this.url = url; this.listeners = {}; this.readyState = 1; sources.push(this);
       const query = new URL(url, "http://fixture").searchParams;
-      queueMicrotask(() => this.emit("hello", {protocol:1, connection_id:`connection-${sources.indexOf(this)}`, service_epoch:query.get("service_epoch")}));
+      const hello = {protocol:1, connection_id:`connection-${sources.indexOf(this)}`, service_epoch:query.get("service_epoch"), global_versions:structuredClone(api.globalVersions)};
+      if (!api.deferUpdateHello) queueMicrotask(() => this.emit("hello", hello));
     }
     addEventListener(type, handler) { (this.listeners[type] ||= []).push(handler); }
     emit(type, data = {}) {

@@ -133,7 +133,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     $("workspace-connection").value = ws.selectedPlatform || "";
   }
 
-  async function loadWorkspacePlatforms({ background = false, current: valid = () => true, onFailure = () => {} } = {}) {
+  async function loadWorkspacePlatforms({ background = false, cached = false, current: valid = () => true, onFailure = () => {} } = {}) {
     const ws = workspaceView, epoch = state.catalog?.service_epoch, context = ws?.notificationEpoch;
     if (!ws || !epoch) return;
     const read = ws.platformsRead = (ws.platformsRead || 0) + 1;
@@ -142,7 +142,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     const finish = beginRead(env, ws, "platformsReadState", () => { if (current()) renderWorkspace(); });
     let failed = false;
     try {
-      const data = await runtime.platformRead.read();
+      const data = await runtime.platformRead.read({ cached });
       if (!current()) return;
       const changed = JSON.stringify(ws.allPlatforms) !== JSON.stringify(data.platforms);
       ws.platformsConnected = true;

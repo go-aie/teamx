@@ -1,6 +1,7 @@
 package room
 
 import (
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -71,23 +72,28 @@ type uiUpdateHub struct {
 	listeners atomic.Int32
 	closed    bool
 	subs      map[*uiUpdateSubscription]struct{}
+	// Fixed global topics only: no Room/operator keys or retained timers.
+	versions   map[string]uint64
+	reuseUntil map[string]time.Time
 }
 
 type uiUpdateSubscription struct {
-	hub       *uiUpdateHub
-	session   uiUpdateSession
-	operator  string
-	room      ServiceInfo
-	wake      chan struct{}
-	done      chan struct{}
-	pending   map[uiUpdate]struct{}
-	bytes     int
-	resync    bool
-	deadlines map[uiUpdate]*uiUpdateDeadline
+	hub            *uiUpdateHub
+	session        uiUpdateSession
+	operator       string
+	room           ServiceInfo
+	wake           chan struct{}
+	done           chan struct{}
+	pending        map[uiUpdate]struct{}
+	bytes          int
+	resync         bool
+	deadlines      map[uiUpdate]*uiUpdateDeadline
+	globalVersions map[string]string
 }
 
 func newUIUpdateHub() *uiUpdateHub {
-	return &uiUpdateHub{subs: make(map[*uiUpdateSubscription]struct{})}
+	return &uiUpdateHub{subs: make(map[*uiUpdateSubscription]struct{}),
+		versions: map[string]uint64{"settings": 0, "catalog": 0, "platforms": 0}, reuseUntil: make(map[string]time.Time)}
 }
 
 func (h *uiUpdateHub) subscribe(session uiUpdateSession, operator string, room ServiceInfo) (*uiUpdateSubscription, error) {
@@ -107,6 +113,14 @@ func (h *uiUpdateHub) subscribe(session uiUpdateSession, operator string, room S
 	}
 	s := &uiUpdateSubscription{hub: h, session: session, operator: operator, room: room,
 		wake: make(chan struct{}, 1), done: make(chan struct{}), pending: make(map[uiUpdate]struct{}), deadlines: make(map[uiUpdate]*uiUpdateDeadline)}
+	s.globalVersions = make(map[string]string, len(h.versions))
+	for topic, version := range h.versions {
+		// An expiry can pass while the previous connection is closing. Omit
+		// its token until a later installation instead of reusing timed data.
+		if deadline := h.reuseUntil[topic]; deadline.IsZero() || time.Now().Before(deadline) {
+			s.globalVersions[topic] = strconv.FormatUint(version, 10)
+		}
+	}
 	h.subs[s] = struct{}{}
 	h.listeners.Add(1)
 	return s, nil
@@ -132,6 +146,10 @@ func (h *uiUpdateHub) mark(u uiUpdate) {
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if _, tracked := h.versions[u.Topic]; tracked {
+		h.versions[u.Topic]++
+		delete(h.reuseUntil, u.Topic)
+	}
 	for s := range h.subs {
 		if u.Operator != "" && u.Operator != s.operator {
 			continue
@@ -289,6 +307,11 @@ func (h *uiUpdateHub) scheduleDeadline(u uiUpdate, deadline time.Time, earliest 
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if _, tracked := h.versions[u.Topic]; tracked && !deadline.IsZero() {
+		if previous := h.reuseUntil[u.Topic]; previous.IsZero() || deadline.Before(previous) {
+			h.reuseUntil[u.Topic] = deadline
+		}
+	}
 	for s := range h.subs {
 		if u.Operator != "" && u.Operator != s.operator || u.RoomID != "" && (u.RoomID != s.room.RoomID || u.RoomInstance != s.room.RoomInstance || u.RoomServiceEpoch != s.room.ServiceEpoch) {
 			continue

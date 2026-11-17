@@ -12,7 +12,17 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict');
   await peer.waitForFunction(()=>!document.querySelector('#message-input').disabled);
   await peer.locator('#message-input').fill('另一端独立草稿');
   await page.goto(endpoint);await page.waitForFunction(()=>!document.querySelector('#message-input').disabled);
-  async function identity(){const response=await fetch(endpoint+'/v1/rooms');assert.equal(response.status,200);const data=await response.json();return{...data.rooms.find(r=>r.service).service,caller:{kind:'human',id:data.operator},manager_epoch:data.service_epoch};}
+  async function identity(){
+   const deadline=Date.now()+3000;
+   for(;;){
+    const response=await fetch(endpoint+'/v1/rooms'),data=await response.json();
+    // The directory deliberately returns busy rather than waiting behind a
+    // concurrent Workspace/platform read. Retry this read-only observation.
+    if(response.status===409&&data.code==='busy'&&Date.now()<deadline){await new Promise(resolve=>setTimeout(resolve,25));continue;}
+    assert.equal(response.status,200,JSON.stringify(data));
+    return{...data.rooms.find(r=>r.service).service,caller:{kind:'human',id:data.operator},manager_epoch:data.service_epoch};
+   }
+  }
   const before=await identity();
   async function send(info,id){const {manager_epoch,...base}=info;const response=await fetch(endpoint+'/v1/send',{method:'POST',headers:{'Content-Type':'application/json',Origin:endpoint},body:JSON.stringify({...base,client_message_id:id,text:id})});assert.equal(response.status,200);return response.json();}
   const first=await send(before,'restart-first');await page.locator('#message-'+first.seq).waitFor();

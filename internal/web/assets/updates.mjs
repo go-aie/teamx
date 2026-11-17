@@ -182,7 +182,7 @@ export function createUpdateConnection({ env, identity, reconcile, invalidate, s
   }
   async function recover() {
     const token = generation;
-    try { await reconcile(); } catch { /* Scheduler retains failed resources. */ }
+    try { await reconcile({ current: () => !stopped && token === generation }); } catch { /* Scheduler retains failed resources. */ }
     if (stopped || token !== generation) return;
     open();
   }
@@ -191,7 +191,7 @@ export function createUpdateConnection({ env, identity, reconcile, invalidate, s
     clearTimeout(watchdog);
     watchdog = setTimeout(() => { if (token === generation) replace(); }, 45000);
   }
-  function open() {
+  function open({ roomOnly = false } = {}) {
     if (stopped) return;
     const info = identity();
     if (!info?.service_epoch) { retry(); return; }
@@ -215,7 +215,9 @@ export function createUpdateConnection({ env, identity, reconcile, invalidate, s
         // Register-before-hello closes the bootstrap race. Notifications received
         // during reconciliation dirty the very same serialized HTTP readers.
         fence();
-        void Promise.resolve(reconcile()).then(() => {
+        const entering = roomOnly;
+        roomOnly = false; // Native reconnects always perform full recovery.
+        void Promise.resolve(reconcile({ roomOnly: entering, globalVersions: data.global_versions, current: valid })).then(() => {
           if (!valid()) return;
           if (key !== snapshot()) { open(); return; }
           status(true);
@@ -226,7 +228,7 @@ export function createUpdateConnection({ env, identity, reconcile, invalidate, s
       heartbeat(token);
       if (event === "resync") {
         fence(); status(false);
-        void Promise.resolve(reconcile()).then(() => {
+        void Promise.resolve(reconcile({ current: valid })).then(() => {
           if (!valid()) return;
           if (key !== snapshot()) open(); else status(true);
         }).catch(() => { if (valid()) replace(); });
@@ -243,7 +245,10 @@ export function createUpdateConnection({ env, identity, reconcile, invalidate, s
   }
   return {
     start() { if (!stopped && source && key === snapshot()) return; stopped = false; open(); },
-    ensure() { if (!stopped && key !== snapshot()) open(); },
+    ensure(options) {
+      if (!stopped && key !== snapshot()) { open(options); return true; }
+      return false;
+    },
     reconnect() { if (!stopped) replace(); },
     stop() { stopped = true; close(); },
     get connected() { return !!connectionID; },

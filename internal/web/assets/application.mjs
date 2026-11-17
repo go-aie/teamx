@@ -73,6 +73,7 @@ export async function createApp(overrides = {}) {
   state.suspended = document.hidden || window.navigator?.onLine === false;
   state.recovering = false;
   let serverIdentity = null;
+  const confirmedGlobalVersions = {};
   const navigation = createBrowserNavigation({ env, layers: () => {
     const layers = [];
     if (compactViewport(window)) {
@@ -147,7 +148,7 @@ export async function createApp(overrides = {}) {
   let viewVersion = 0;
 
   const platformRead = createSharedRead({
-    scope: () => [state.installationID, state.catalog?.service_epoch, state.operator, state.info, viewVersion],
+    scope: () => [state.installationID, state.catalog?.service_epoch, state.operator],
     read: () => {
       const query = new URLSearchParams({ service_epoch: state.catalog.service_epoch, caller_id: state.operator });
       return request(`/v1/platforms?${query}`);
@@ -303,21 +304,23 @@ export async function createApp(overrides = {}) {
       policyUI.refreshMemberPolicy(options), inboxUI.refreshMemberInbox(options)]);
   }
 
-  async function sync(round) {
+  async function sync(round, reuse = {}) {
     let version = viewVersion;
     try {
-      let config = await resources.settings.refresh();
+      let config = reuse.settings ? { managed: state.managed } : await resources.settings.refresh();
       if (!config) return;
+      round.settings = true;
       version = viewVersion;
       if (state.managed) {
-        const catalog = await resources.catalog.refresh();
+        const catalog = reuse.catalog ? state.catalog : await resources.catalog.refresh();
         if (!catalog) return;
+        round.catalog = true;
         version = viewVersion;
         const room = roomsUI.selectedEntry(catalog);
         config = { ...room?.service, operator: catalog.operator };
         await resources.workspace.refresh();
         if (!currentView(version)) return;
-        round.configuration = refreshConfiguration();
+        round.configuration = refreshConfiguration({ reusePlatforms: reuse.platforms });
         if (workspaceUI.workspaceView?.data?.observation && workspaceUI.workspaceBusy()) {
           selectView(workspaceUI.workspaceView.data.observation, catalog.operator); version = viewVersion;
           $("room-name").textContent = roomsUI.roomName();
@@ -388,14 +391,50 @@ export async function createApp(overrides = {}) {
     conversationUI.composerState();
   }
 
-  function refresh({ background = false } = {}) {
+  function refresh({ background = false, reuse } = {}) {
     if (state.suspended || document.hidden || window.navigator?.onLine === false) return Promise.resolve();
     if (!refreshTask) {
       const round = {};
-      refreshTask = sync(round).finally(() => { refreshTask = null; updateConnection?.ensure(); });
+      refreshTask = sync(round, reuse).then(() => round).finally(() => { refreshTask = null; updateConnection?.ensure(); });
       refreshResult = refreshTask.then(() => round.configuration);
     }
     return background ? refreshTask : refreshResult;
+  }
+
+  function enterRoom() {
+    if (state.suspended) return;
+    roomsUI.renderRooms(); conversationUI.composerState();
+    if (!updateConnection) { void refresh(); return; }
+    // hello owns the entry read. Opening the subscription first closes the
+    // message race without reading the entire page twice.
+    if (!updateConnection.ensure({ roomOnly: true }) && chatReadable()) {
+      // Returning from the phone's Room list keeps the same live subscription,
+      // but starts a new reading visit and catches up its visible messages.
+      void resources.messages.refresh().catch(() => {});
+    }
+  }
+
+  async function reconcileStream({ roomOnly = false, globalVersions, current = () => true } = {}) {
+    await refreshTask;
+    if (!current()) return;
+    const reusable = topic => roomOnly && state.managed && state.catalogConnected &&
+      state.catalog?.service_epoch === serverIdentity?.[1] && state.operator === state.catalog.operator &&
+      typeof globalVersions?.[topic] === "string" && globalVersions[topic] === confirmedGlobalVersions[topic];
+    const reuse = Object.fromEntries(["settings", "catalog", "platforms"].map(topic => [topic, reusable(topic)]));
+    // The platform projection also contains Room references and display names.
+    reuse.platforms &&= reuse.catalog;
+    const round = await refresh({ background: true, reuse });
+    if (!current() || !round) return;
+    for (const topic of ["settings", "catalog"]) {
+      if (round[topic]) confirmedGlobalVersions[topic] = globalVersions?.[topic];
+    }
+    // Configuration is independent of chat readiness. Confirm its reuse token
+    // only after the authoritative shared read has actually succeeded.
+    void Promise.resolve(round.configuration).then(results => {
+      if (current() && results?.[0]?.status === "fulfilled" && platformRead.value) {
+        confirmedGlobalVersions.platforms = globalVersions?.platforms;
+      }
+    });
   }
 
   function dismissOnBackdrop(dialog, close) {
@@ -423,6 +462,7 @@ export async function createApp(overrides = {}) {
     state,
     storage,
     selectView,
+    enterRoom,
     navigationChanged: navigation.sync,
     conversationVisibilityChanged: () => {
       conversationUI.conversationVisibilityChanged();
@@ -431,7 +471,9 @@ export async function createApp(overrides = {}) {
     setSelectOptions,
     refresh,
     platformRead,
-    observe: topic => topic === "configuration" ? refreshConfiguration() : resources[topic]?.refresh().catch(() => {}),
+    observe: (topic, { cached = false } = {}) => topic === "configuration"
+      ? refreshConfiguration({ reusePlatforms: cached, reuseNotifications: cached && !!workspaceUI.workspaceView?.notificationsConnected })
+      : resources[topic]?.refresh().catch(() => {}),
     changed: topic => resources[topic]?.invalidate(),
     wake: topic => resources[topic]?.wake(),
     supersede: topic => resources[topic]?.supersede(),
@@ -544,12 +586,12 @@ export async function createApp(overrides = {}) {
     await readWorkspace(options);
     if (options.current()) {
       if (!chatReadable()) { state.connected = false; conversationUI.composerState(); }
-      else if (!state.connected) observeChat();
+      else if (!state.connected && !refreshTask) observeChat();
     }
   }, () => active() && !!state.catalog, roomScope);
   register("messages", async options => {
     const result = await readMessages({ ...options, observation: !!workspaceUI.workspaceView?.data?.observation && workspaceUI.workspaceBusy() });
-    if (result && options.current() && !state.connected && !state.recovering && chatReadable()) resources.members.invalidate();
+    if (result && options.current() && !refreshTask && !state.connected && !state.recovering && chatReadable()) resources.members.invalidate();
     return result;
   },
     () => active() && (!!state.info && (!!workspaceUI.workspaceView?.data?.observation || chatReadable())));
@@ -596,8 +638,9 @@ export async function createApp(overrides = {}) {
       if (resources[topic]) void resources[topic].refresh().catch(() => {});
     void resources.interactions.refresh().catch(() => {});
   }
-  function refreshConfiguration() {
-    return Promise.allSettled([resources.platforms.refresh(), resources.notifications.refresh(), resources.tools.refresh(),
+  function refreshConfiguration({ reusePlatforms = false, reuseNotifications = false } = {}) {
+    return Promise.allSettled([reusePlatforms ? workspaceUI.loadWorkspacePlatforms({ background: true, cached: true }) : resources.platforms.refresh(),
+      reuseNotifications ? undefined : resources.notifications.refresh(), resources.tools.refresh(),
       resources.models.refresh(), ...["gitlab", "lark", "scion"].map(provider => resources[`authorization:${provider}`].refresh())]);
   }
   const streamIdentity = () => ({ installation_id: state.installationID,
@@ -620,6 +663,7 @@ export async function createApp(overrides = {}) {
       // inspectors only observe the selected membership.
       if (!["members", "notifications"].includes(data.topic)) return;
     }
+    delete confirmedGlobalVersions[data.topic];
     if (data.topic === "notifications" && data.kind !== "diagnostics") notificationSummaryPending = true;
     if (data.topic === "authorization") for (const provider of ["gitlab", "lark", "scion"]) resources[`authorization:${provider}`].invalidate();
     else resources[data.topic]?.invalidate();
@@ -649,7 +693,7 @@ export async function createApp(overrides = {}) {
   roomsUI.restoreManagement();
 
   await refresh();
-  updateConnection = createUpdateConnection({ env, identity: streamIdentity, reconcile: async () => { await refreshTask; return refresh({ background: true }); }, invalidate,
+  updateConnection = createUpdateConnection({ env, identity: streamIdentity, reconcile: reconcileStream, invalidate,
     status: streamStatus, fence: () => scheduler.reset(), authenticate: () => request("/v1/access/session") });
   if (!state.suspended) updateConnection.start();
 

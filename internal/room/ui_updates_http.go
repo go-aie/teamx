@@ -245,11 +245,12 @@ func serveUIUpdateStream(w http.ResponseWriter, r *http.Request, sub *uiUpdateSu
 	// subscribe already ran. Changes concurrent with hello remain pending and
 	// cannot overtake it, including while hello itself is blocked in Flush.
 	if send("hello", struct {
-		Protocol       int    `json:"protocol"`
-		ConnectionID   string `json:"connection_id"`
-		InstallationID string `json:"installation_id"`
-		ServiceEpoch   string `json:"service_epoch"`
-	}{1, connection, requestInstallationID(r), epoch}) != nil {
+		Protocol       int               `json:"protocol"`
+		ConnectionID   string            `json:"connection_id"`
+		InstallationID string            `json:"installation_id"`
+		ServiceEpoch   string            `json:"service_epoch"`
+		GlobalVersions map[string]string `json:"global_versions"`
+	}{1, connection, requestInstallationID(r), epoch, sub.globalVersions}) != nil {
 		return
 	}
 	heartbeat := time.NewTicker(uiUpdateHeartbeat)
