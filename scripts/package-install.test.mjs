@@ -81,7 +81,7 @@ test('one command with no directory flags installs macOS defaults under the curr
   assert.equal(result.status, 0, result.stderr);
   const [args] = f.calls(), root = p.join(f.home, 'Library/Application Support/TeamX/server');
   assert.equal(args[args.indexOf('--server-root') + 1], root);
-  assert.equal(args[args.indexOf('--home') + 1], p.join(f.home, 'Library/Application Support/TeamX/home'));
+  assert.equal(args.includes('--home'), false, 'TeamX must resolve new defaults and existing registrations');
   assert.equal(fs.readlinkSync(p.join(f.home, '.local/bin/teamx')), p.join(root, 'current/bin/teamx'));
 });
 

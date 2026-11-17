@@ -17,7 +17,7 @@ import (
 func TestSystemSettingsServePersistsToStartupPath(t *testing.T) {
 	parallelFixtureTest(t)
 	binary := productionFixtureCLI(t)
-	for _, mode := range []string{"managed-relative", "single-relative", "managed-default", "single-default"} {
+	for _, mode := range []string{"managed-relative", "single-relative", "managed-default", "single-default", "managed-external", "single-external"} {
 		t.Run(mode, func(t *testing.T) {
 			root := t.TempDir()
 			configPath := filepath.Join(root, "custom", "config.toml")
@@ -28,7 +28,11 @@ func TestSystemSettingsServePersistsToStartupPath(t *testing.T) {
 				if err := os.Mkdir(filepath.Dir(configPath), 0700); err != nil {
 					t.Fatal(err)
 				}
-				writeStartupConfig(t, filepath.Dir(configPath), "# preserve this comment\n[server]\nsession_max_turns = 2 # allowance\n")
+				source := "# preserve this comment\n[server]\nsession_max_turns = 2 # allowance\n"
+				if strings.HasSuffix(mode, "external") {
+					source += "data_dir = '../external data'\nteams_dir = '../external teams'\n"
+				}
+				writeStartupConfig(t, filepath.Dir(configPath), source)
 				args = append(args, "--config", "custom/config.toml")
 			}
 			if err := runAccessInit([]string{"--config", configPath}, io.Discard, io.Discard); err != nil {
@@ -49,6 +53,9 @@ func TestSystemSettingsServePersistsToStartupPath(t *testing.T) {
 			}
 			if strings.HasPrefix(mode, "single") {
 				args = append(args, "--room", "settings")
+				if strings.HasSuffix(mode, "external") {
+					args = append(args, "--state-dir", filepath.Join(root, "single room state"))
+				}
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -98,9 +105,29 @@ func TestSystemSettingsServePersistsToStartupPath(t *testing.T) {
 			var live struct {
 				ServiceInfo
 				settingsView
+				Storage *storagePaths `json:"storage"`
 			}
 			if err := other.request(ctx, "/v1/ui", nil, &live); err != nil || live.settingsView != saved || live.ServiceEpoch != initial.ServiceEpoch {
 				t.Fatal(live, err)
+			}
+			wantHome, err := filepath.EvalSymlinks(filepath.Dir(configPath))
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantData := filepath.Join(wantHome, "data")
+			wantTeams := filepath.Join(wantHome, "teams")
+			if strings.HasSuffix(mode, "external") {
+				wantData = filepath.Join(filepath.Dir(wantHome), "external data")
+				wantTeams = filepath.Join(filepath.Dir(wantHome), "external teams")
+			}
+			if strings.HasPrefix(mode, "single") {
+				wantData = filepath.Join(wantData, "design-review")
+				if strings.HasSuffix(mode, "external") {
+					wantData = filepath.Join(filepath.Dir(wantHome), "single room state")
+				}
+			}
+			if live.Storage == nil || *live.Storage != (storagePaths{wantHome, wantData, wantTeams}) {
+				t.Fatal("UI did not expose actual storage paths", live.Storage)
 			}
 			p.stop(t)
 			data, err := os.ReadFile(configPath)

@@ -6,7 +6,7 @@ import { captureReturnView } from "../view-return.mjs";
 
 // Service time zone, settings navigation and dialog lifecycle.
 export function createSettings({ env, runtime, connectionsUI, conversationUI, roomsUI, workspaceUI, policyUI, notificationsUI, onboardingUI, membersUI }) {
-  const { document, window, request } = env;
+  const { document, window, request, setTimeout } = env;
   const { state, $, notice, dismissOnBackdrop } = runtime;
 
   const models = createModels({env, runtime, openSettings:() => openSettings("models"), onMemberStatus:status => membersUI.renderMemberModelStatus(status)});
@@ -132,6 +132,20 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
 
   function applyTimeZone(data) {
     if (!systemTime.update(data)) return;
+    if (Object.hasOwn(data, "storage")) {
+      const paths = data.storage;
+      const home = paths?.home || "", prefix = home.replace(/\/+$/, "") + "/";
+      $("storage-settings").hidden = !home;
+      $("storage-home").textContent = home;
+      let external = false;
+      for (const [id, key] of [["storage-data", "data_dir"], ["storage-teams", "teams_dir"]]) {
+        const path = paths?.[key] || "", outside = !!home && !!path && path !== home && !path.startsWith(prefix);
+        $(id).textContent = outside ? path : "";
+        $(`${id}-row`).hidden = !outside;
+        external ||= outside;
+      }
+      $("storage-external").hidden = !external;
+    }
     for (const [id, input] of timeInputs) {
       if ($(id).validity?.badInput) { input.edit("", true); input.rebase(); }
       else $(id).value = input.rebase();
@@ -182,6 +196,17 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
   function mount() {
     models.mount();
     access.mount();
+    $("storage-copy").addEventListener("click", async () => {
+      notice("storage-feedback", "");
+      try {
+        await window.navigator.clipboard.writeText($("storage-home").textContent);
+        const button = $("storage-copy");
+        button.dataset.copied = "true";
+        setTimeout(() => { button.dataset.copied = "false"; }, 1500);
+      } catch {
+        notice("storage-feedback", "请选中路径手动复制。");
+      }
+    });
     try { browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch { /* Detection is optional. */ }
 
     for (const [id, input] of timeInputs) {

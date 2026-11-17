@@ -51,7 +51,6 @@ case $platform in
     [[ $service_user == teamx ]] || fail '--user 仅用于 Linux'
     target="darwin-$architecture"
     server_root=${server_root:-"$HOME/Library/Application Support/TeamX/server"}
-    data_home=${data_home:-"$HOME/Library/Application Support/TeamX/home"}
     bin_dir=${bin_dir:-"$HOME/.local/bin"}
     ;;
   Linux)
@@ -59,7 +58,6 @@ case $platform in
     [[ $service_user =~ ^[a-z_][a-z0-9_-]*$ ]] || fail '无效的 Linux 服务账号名'
     target="linux-$architecture"
     server_root=${server_root:-/opt/teamx}
-    data_home=${data_home:-/var/lib/teamx}
     bin_dir=${bin_dir:-/usr/local/bin}
     if [[ $(id -u) != 0 ]]; then
       command -v sudo >/dev/null || fail 'Linux 安装需要 root 权限，请准备 sudo 或由管理员运行'
@@ -69,6 +67,7 @@ case $platform in
   *) fail '仅支持 macOS 和使用 systemd 的 Linux' ;;
 esac
 for directory in "$server_root" "$data_home" "$bin_dir"; do
+  [[ -n $directory ]] || continue
   [[ $directory == /* && $directory != *$'\n'* && $directory != *$'\r'* && $directory != *'\'* ]] || fail '安装目录必须为不含换行或反斜杠的绝对路径'
 done
 command_target="$server_root/current/bin/teamx"
@@ -130,7 +129,9 @@ fi
 (umask 022; run_privileged mkdir -p "$bin_dir")
 [[ -d $bin_dir ]] || fail '无法创建命令目录'
 printf '正在安装并启动 TeamX 常驻服务…\n'
-install_args=(service install --archive "$archive" --sha256 "$expected_sha" --server-root "$server_root" --home "$data_home")
+install_args=(service install --archive "$archive" --sha256 "$expected_sha" --server-root "$server_root")
+# Let TeamX resolve defaults and an existing installation's registered home.
+if [[ -n $data_home ]]; then install_args+=(--home "$data_home"); fi
 if [[ $platform == Linux ]]; then install_args+=(--user "$service_user"); fi
 # The private download directory stays 0700, while the managed executable tree
 # must be traversable by Linux's ordinary service account. Go creates home and

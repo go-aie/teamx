@@ -41,23 +41,32 @@ func defaultServerDirectories(goos, userHome string) (root, home string, err err
 		return "/opt/teamx", "/var/lib/teamx", nil
 	case "darwin":
 		base := filepath.Join(userHome, "Library", "Application Support", "TeamX")
-		return filepath.Join(base, "server"), filepath.Join(base, "home"), nil
+		return filepath.Join(base, "server"), filepath.Join(userHome, ".teamx"), nil
 	default:
 		return "", "", fmt.Errorf("server deployment is not supported on %s", goos)
 	}
 }
 
-func resolveServerLayout(root, home string) (layout serverLayout, err error) {
-	if home == "" {
-		userHome, e := os.UserHomeDir()
-		if e != nil {
-			return layout, e
+// Registration takes precedence over new defaults, including after uninstall.
+func selectedServerHome(root, goos, userHome string) (string, error) {
+	if root != "" {
+		var saved serverInstallation
+		err := readSnapshot(filepath.Join(root, "installation.json"), &saved, 16<<10)
+		if err == nil {
+			if saved.Version != 1 || saved.InstanceID == "" || saved.ServerRoot != root || !filepath.IsAbs(saved.Home) {
+				return "", errors.New("invalid installation registration; cannot select home")
+			}
+			return saved.Home, nil
 		}
-		_, home, err = defaultServerDirectories(runtime.GOOS, userHome)
-		if err != nil {
-			return layout, err
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", err
 		}
 	}
+	_, home, err := defaultServerDirectories(goos, userHome)
+	return home, err
+}
+
+func resolveServerLayout(root, home string) (layout serverLayout, err error) {
 	// Resolve the selected release before creating any user data. A broken
 	// current link must not silently become a fresh portable installation.
 	if root != "" {
@@ -84,6 +93,16 @@ func resolveServerLayout(root, home string) (layout serverLayout, err error) {
 		b, e := os.ReadFile(filepath.Join(layout.Release, "manifest.json"))
 		if e != nil || json.Unmarshal(b, &manifest) != nil || manifest.Schema != 1 || manifest.Version == "" || manifest.Profile != "standard" || manifest.Target != runtime.GOOS+"-"+runtime.GOARCH {
 			return layout, errors.New("current requires a standard manifest for this server platform")
+		}
+	}
+	if home == "" {
+		userHome, e := os.UserHomeDir()
+		if e != nil {
+			return layout, e
+		}
+		home, err = selectedServerHome(layout.Root, runtime.GOOS, userHome)
+		if err != nil {
+			return layout, err
 		}
 	}
 	home, err = resolveFutureDirectory(home)

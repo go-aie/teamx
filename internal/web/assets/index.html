@@ -607,7 +607,19 @@
         </div>
         <p id="timezone-feedback" class="quiet" role="status" aria-live="polite"></p>
       </form>
-
+      <section id="storage-settings" class="storage-settings" aria-labelledby="storage-title" hidden>
+        <h4 id="storage-title">存储位置</h4>
+        <div class="storage-home-row">
+          <p id="storage-home" class="storage-path"></p>
+          <button id="storage-copy" class="icon-button storage-copy" type="button" title="复制存储目录" aria-label="复制存储目录"><svg viewBox="0 0 24 24" aria-hidden="true"><g class="copy-symbol"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M5 16H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h11a1 1 0 0 1 1 1v1"/></g><path class="copy-check" d="m5 12 4 4L19 6"/></svg></button>
+        </div>
+        <p class="quiet storage-hint">保存在 TeamX 服务所在设备上。</p>
+        <p id="storage-feedback" class="quiet" role="status" aria-live="polite" hidden></p>
+        <dl id="storage-external" class="storage-paths" hidden>
+          <div id="storage-data-row" hidden><dt>业务数据</dt><dd id="storage-data"></dd></div>
+          <div id="storage-teams-row" hidden><dt>团队模板</dt><dd id="storage-teams"></dd></div>
+        </dl>
+      </section>
     </section>
     <section id="access-settings" class="platforms-content access-settings" role="tabpanel" aria-labelledby="settings-tab-security" hidden>
       <h3 id="access-settings-title">访问与安全</h3>
@@ -625,7 +637,7 @@
           <div id="access-token-summary" class="access-token-summary access-fields" hidden><span class="quiet">令牌已设置</span><button id="access-token-change" class="text-button" type="button">更换令牌</button></div>
           <div id="access-token-fields" class="access-fields" hidden>
             <div class="access-field-heading"><label for="access-new-token">新令牌</label><div class="access-token-actions"><button id="access-token-edit-cancel" class="text-button" type="button" hidden>取消更换</button><button id="access-token-generate" class="text-button" type="button">重新生成</button></div></div>
-            <div class="access-token-input"><input id="access-new-token" name="new-password" class="field-control" type="password" autocomplete="new-password" autocapitalize="none" spellcheck="false" minlength="12" maxlength="256" placeholder="填写至少 12 个字符" aria-describedby="access-token-hint"><button id="access-token-toggle" class="text-button access-token-icon" type="button" title="显示令牌" aria-label="显示令牌" aria-pressed="false" aria-controls="access-new-token"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path class="access-eye-slash" d="m3 3 18 18"/></svg></button><button id="access-token-copy" class="text-button access-token-icon" type="button" title="复制令牌" aria-label="复制令牌"><svg viewBox="0 0 24 24" aria-hidden="true"><g class="access-copy-symbol"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M5 16H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h11a1 1 0 0 1 1 1v1"/></g><path class="access-copy-check" d="m5 12 4 4L19 6"/></svg></button></div>
+            <div class="access-token-input"><input id="access-new-token" name="new-password" class="field-control" type="password" autocomplete="new-password" autocapitalize="none" spellcheck="false" minlength="12" maxlength="256" placeholder="填写至少 12 个字符" aria-describedby="access-token-hint"><button id="access-token-toggle" class="text-button access-token-icon" type="button" title="显示令牌" aria-label="显示令牌" aria-pressed="false" aria-controls="access-new-token"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path class="access-eye-slash" d="m3 3 18 18"/></svg></button><button id="access-token-copy" class="text-button access-token-icon" type="button" title="复制令牌" aria-label="复制令牌"><svg viewBox="0 0 24 24" aria-hidden="true"><g class="copy-symbol"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M5 16H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h11a1 1 0 0 1 1 1v1"/></g><path class="copy-check" d="m5 12 4 4L19 6"/></svg></button></div>
             <p id="access-token-hint" class="quiet" aria-live="polite">至少 12 个字符，修改后需重新登录。</p>
           </div>
         </div>

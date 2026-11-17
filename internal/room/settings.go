@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -33,7 +34,31 @@ type settingsSnapshot struct {
 type systemSettings struct {
 	observe func()
 	*configDocument
-	current settingsSnapshot
+	current  settingsSnapshot
+	teamsDir string
+}
+
+type storagePaths struct {
+	Home     string `json:"home"`
+	DataDir  string `json:"data_dir"`
+	TeamsDir string `json:"teams_dir"`
+}
+
+// UI-only paths describe this running instance, including explicit overrides.
+func (s *systemSettings) storagePaths(dataDir string) *storagePaths {
+	if s == nil || s.path == "" {
+		return nil
+	}
+	canonical := func(path string) string {
+		if path == "" {
+			return ""
+		}
+		if real, err := resolveFutureDirectory(path); err == nil {
+			return real
+		}
+		return path
+	}
+	return &storagePaths{canonical(filepath.Dir(s.path)), canonical(dataDir), canonical(s.teamsDir)}
 }
 
 func loadTimeZone(name string) (*time.Location, error) {
@@ -56,6 +81,9 @@ func defaultSystemSettings() *systemSettings {
 func newSystemSettings(config startupConfig) *systemSettings {
 	s := defaultSystemSettings()
 	s.path, s.source, s.file = config.path, config.source, config.file
+	if config.Server.TeamsDir != nil {
+		s.teamsDir = *config.Server.TeamsDir
+	}
 	// loadStartupConfig already validated this value.
 	if config.Server.TimeZone != nil {
 		s.current.TimeZone = *config.Server.TimeZone

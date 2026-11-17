@@ -109,6 +109,17 @@
 .settings-dialog .general-settings { padding-top:24px; }
 .general-settings h3 { margin:0 0 18px; font-size:14px; font-weight:var(--weight-medium); color:var(--text); }
 .general-settings form { padding-bottom:4px; }
+.storage-settings { margin-top:24px; padding-top:24px; border-top:1px solid var(--line); }
+.storage-settings h4 { margin:0; font-size:var(--font-small); font-weight:var(--weight-medium); }
+.storage-settings > p { margin:6px 0 0; }
+.storage-home-row { display:flex; align-items:flex-start; gap:6px; margin-top:8px; }
+.storage-settings .storage-path { min-width:0; margin:0; font-size:var(--font-small); line-height:1.7; overflow-wrap:anywhere; user-select:text; }
+.storage-home-row .storage-copy { flex:none; width:28px; min-width:28px; height:28px; min-height:28px; margin:-3px 0; padding:5px; }
+.storage-copy svg { width:16px; height:16px; }
+.storage-paths { margin:12px 0 0; }
+.storage-paths > div + div { margin-top:12px; }
+.storage-paths dt { color:var(--muted); font-size:var(--font-small); }
+.storage-paths dd { margin:6px 0 0; font-size:var(--font-small); line-height:1.7; overflow-wrap:anywhere; user-select:text; }
 .settings-dialog .access-settings { display:flex; flex-direction:column; min-height:100%; padding-top:24px; padding-bottom:0; }
 .access-settings h3 { margin:0 0 24px; font-size:14px; font-weight:var(--weight-medium); }
 .access-settings form { display:grid; gap:22px; margin:0; }
@@ -136,11 +147,11 @@
 .access-token-input .field-control { flex:1; width:0; margin:0; border:0; background:transparent; box-shadow:none; }
 .access-token-input .access-token-icon { flex:none; display:grid; place-items:center; width:var(--control-height); height:var(--control-height); padding:0; border:0; border-left:1px solid var(--line); border-radius:0; }
 .access-token-input .access-token-icon:last-child { border-radius:0 var(--radius-control) var(--radius-control) 0; }
-.access-eye-slash,.access-copy-check { display:none; }
+.access-eye-slash,.copy-check { display:none; }
 #access-token-toggle[aria-pressed="true"] .access-eye-slash { display:block; }
-#access-token-copy[data-copied="true"] { color:var(--accent); }
-#access-token-copy[data-copied="true"] .access-copy-symbol { display:none; }
-#access-token-copy[data-copied="true"] .access-copy-check { display:block; }
+:is(#access-token-copy,#storage-copy)[data-copied="true"] { color:var(--accent); }
+:is(#access-token-copy,#storage-copy)[data-copied="true"] .copy-symbol { display:none; }
+:is(#access-token-copy,#storage-copy)[data-copied="true"] .copy-check { display:block; }
 .access-settings details { margin-top:10px; font-size:var(--font-small); color:var(--muted); }
 .access-settings summary { width:fit-content; cursor:pointer; }
 .access-settings-footer { position:sticky; bottom:0; display:flex; align-items:center; justify-content:space-between; gap:16px; margin-top:auto; padding:16px 0; border-top:1px solid var(--line); background:var(--surface); }

@@ -68,7 +68,7 @@ func runService(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	defaultRoot, defaultHome, err := defaultServerDirectories(runtime.GOOS, userHome)
+	defaultRoot, _, err := defaultServerDirectories(runtime.GOOS, userHome)
 	if err != nil {
 		return err
 	}
@@ -111,7 +111,10 @@ func runService(args []string, stdout, stderr io.Writer) error {
 	}
 	if action == "install" {
 		if *home == "" {
-			*home = defaultHome
+			*home, err = selectedServerHome(*root, runtime.GOOS, userHome)
+			if err != nil {
+				return err
+			}
 		}
 		*home, err = resolveFutureDirectory(*home)
 		if err != nil {

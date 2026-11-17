@@ -92,6 +92,49 @@ function fixture(managed=true) {
   return api;
 }
 const textOf = element => [element.textContent,...element.children.map(textOf)].join("\n");
+
+for (const managed of [true, false]) test(`general settings show the server's actual storage paths (managed=${managed})`, async () => {
+  const api=fixture(managed);
+  const storage={home:"/srv/TeamX <private>",data_dir:"/mnt/business data",teams_dir:"/mnt/team templates"};
+  api.settings.storage=storage;
+  const ui=await launch(api);
+  await ui.el("open-settings").emit("click");
+  assert.equal(ui.el("storage-settings").hidden,false);
+  for (const [id,key] of [["storage-home","home"],["storage-data","data_dir"],["storage-teams","teams_dir"]]) assert.equal(ui.el(id).textContent,storage[key]);
+  assert.equal(ui.el("storage-external").hidden,false);
+  assert.equal(ui.el("storage-data-row").hidden,false);
+  assert.equal(ui.el("storage-teams-row").hidden,false);
+  await saveZone(ui,"UTC");
+  assert.equal(ui.el("storage-data").textContent,storage.data_dir);
+});
+
+test("storage shows one home and only lists directories outside it", async () => {
+  const api=fixture();
+  api.settings.storage={home:"/srv/teamx",data_dir:"/srv/teamx/data",teams_dir:"/srv/teamx/teams"};
+  const ui=await launch(api);
+  assert.equal(ui.el("storage-home").textContent,"/srv/teamx");
+  assert.equal(ui.el("storage-external").hidden,true);
+  assert.equal(ui.el("storage-data-row").hidden,true);
+  assert.equal(ui.el("storage-teams-row").hidden,true);
+  const copied=[];
+  ui.window.navigator={clipboard:{writeText:async path=>copied.push(path)}};
+  await ui.el("storage-copy").emit("click");
+  assert.deepEqual(copied,["/srv/teamx"]);
+  assert.equal(ui.el("storage-copy").dataset.copied,"true");
+  await ui.clock.advance(1500);
+  assert.equal(ui.el("storage-copy").dataset.copied,"false");
+  ui.window.navigator.clipboard.writeText=async()=>{throw new Error("unavailable");};
+  await ui.el("storage-copy").emit("click");
+  assert.equal(ui.el("storage-feedback").hidden,false);
+  assert.match(ui.el("storage-feedback").textContent,/手动复制/);
+  api.settings={...api.settings,settings_version:2,storage:{...api.settings.storage,data_dir:"/srv/teamx-other/data"}};
+  await ui.refresh();
+  assert.equal(ui.el("storage-external").hidden,false);
+  assert.equal(ui.el("storage-data-row").hidden,false);
+  assert.equal(ui.el("storage-data").textContent,"/srv/teamx-other/data");
+  assert.equal(ui.el("storage-teams-row").hidden,true);
+});
+
 const times = ui => ui.el("messages").children.filter(el=>el.tag!=="div" || !el.className?.includes("day-divider")).map(el=>el.querySelector("time"));
 async function saveZone(ui,zone) {ui.el("system-timezone").value=zone;await ui.el("system-timezone").emit("input");await ui.el("timezone-form").emit("submit");}
 async function openAgent(ui,tab) {await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();await ui.el(`agent-tab-${tab}`).emit("click");await settle();}

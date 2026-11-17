@@ -186,7 +186,7 @@ try {
     'bundled runtime versions and CLI help without host Go/Node/platform CLIs'
   );
   const start = p.join(bundle, 'start');
-  const portable = p.join(bundle, '.teamx'), config = p.join(portable, 'config.toml');
+  const portable = p.join(home, '.teamx'), config = p.join(portable, 'config.toml');
   async function launch(homeArg = []) {
     const child = spawn(start, [...homeArg, '--listen', '127.0.0.1:0'], {
       cwd,

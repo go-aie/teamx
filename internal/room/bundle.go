@@ -17,7 +17,7 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
-// Bundle commands never read the developer's default configuration.
+// Existing portable homes retain their paths; fresh bundles share the personal home.
 func runBundle(command string, args []string, stdout, stderr io.Writer) error {
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -58,8 +58,14 @@ func runBundle(command string, args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if *home == "" && command == "doctor" && *config != "" {
+		*home = filepath.Dir(*config)
+	}
 	if *home == "" {
-		*home = filepath.Join(*root, ".teamx")
+		*home, err = defaultBundleHome(*root)
+		if err != nil {
+			return err
+		}
 	}
 	*home, err = filepath.Abs(*home)
 	if err != nil {
@@ -131,6 +137,22 @@ func runBundle(command string, args []string, stdout, stderr io.Writer) error {
 		args = append(args, "--listen", *listen)
 	}
 	return serve(args, stdout, stderr)
+}
+
+func defaultBundleHome(root string) (string, error) {
+	legacy := filepath.Join(root, ".teamx")
+	// Any existing home, including incomplete initialization, must remain visible.
+	// Lstat also prevents silently switching away from a broken symlink.
+	if _, err := os.Lstat(legacy); err == nil {
+		return legacy, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	config, err := defaultStartupConfigPath()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Dir(config), nil
 }
 
 func initializeBundle(root, home string) error {

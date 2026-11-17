@@ -29,6 +29,75 @@ func bundleTestRoot(t *testing.T) string {
 	return real
 }
 
+func TestBundleDefaultHomePreservesExistingPortableData(t *testing.T) {
+	for _, mode := range []string{"fresh", "portable", "explicit", "broken-portable-link"} {
+		t.Run(mode, func(t *testing.T) {
+			userHome := t.TempDir()
+			t.Setenv("HOME", userHome)
+			root := bundleTestRoot(t)
+			personal := filepath.Join(userHome, ".teamx")
+			legacy := filepath.Join(root, ".teamx")
+			want := personal
+			args := []string{"--bundle-root", root}
+			if mode != "fresh" {
+				// An unrelated personal config must not affect an old or explicit home.
+				if err := os.Mkdir(personal, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(personal, "config.toml"), []byte("unrelated personal config"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if mode == "portable" || mode == "explicit" {
+				if err := os.Mkdir(legacy, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := initializeBundle(root, legacy); err != nil {
+					t.Fatal(err)
+				}
+				want = legacy
+			}
+			if mode == "explicit" {
+				want = filepath.Join(t.TempDir(), "custom home")
+				args = append(args, "--home", want)
+			}
+			if mode == "broken-portable-link" {
+				if err := os.Symlink(filepath.Join(root, "missing"), legacy); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var output bytes.Buffer
+			err := runBundle("init", args, &output, &output)
+			if mode == "broken-portable-link" {
+				if err == nil {
+					t.Fatal("broken old home silently replaced")
+				}
+			} else {
+				if err != nil {
+					t.Fatal(err)
+				}
+				c, err := readStartupConfig(filepath.Join(want, "config.toml"), true, false)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if *c.Server.DataDir != filepath.Join(want, "data") || *c.Server.TeamsDir != filepath.Join(want, "teams") {
+					t.Fatal("data escaped selected home")
+				}
+			}
+			if mode == "fresh" {
+				if _, err := os.Lstat(legacy); !os.IsNotExist(err) {
+					t.Fatal("fresh bundle created local data", err)
+				}
+			} else {
+				data, err := os.ReadFile(filepath.Join(personal, "config.toml"))
+				if err != nil || string(data) != "unrelated personal config" {
+					t.Fatal("unrelated personal home changed", err)
+				}
+			}
+		})
+	}
+}
+
 func TestBundleInitPreservesUserFilesAndSerializesPaths(t *testing.T) {
 	root := bundleTestRoot(t)
 	for _, home := range []string{filepath.Join(root, ".teamx"), filepath.Join(t.TempDir(), "home ' quoted")} {
@@ -106,8 +175,9 @@ func TestBundleDoctorListsExactMissingFieldsWithoutSecrets(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("OPENAI_API_KEY", "private-key-do-not-print")
+	t.Setenv("HOME", "") // An explicit doctor config does not need a default home.
 	var output bytes.Buffer
-	if err := bundleDoctor(root, filepath.Join(home, "config.toml"), &output); err == nil {
+	if err := runBundle("doctor", []string{"--bundle-root", root, "--config", filepath.Join(home, "config.toml")}, &output, &output); err == nil {
 		t.Fatal("unconfigured model was accepted")
 	}
 	for _, field := range []string{"网页完成验证", "node", "dsh", "git", "scion"} {

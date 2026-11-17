@@ -375,6 +375,13 @@ func TestServerDirectoryDefaultsAndInvalidSelection(t *testing.T) {
 		if err != nil || !filepath.IsAbs(root) || !filepath.IsAbs(home) || pathWithin(root, home) {
 			t.Fatal(goos, root, home, err)
 		}
+		want := "/var/lib/teamx"
+		if goos == "darwin" {
+			want = "/Users/部署者/.teamx"
+		}
+		if home != want {
+			t.Fatal("unexpected default home", goos, home)
+		}
 	}
 	if _, _, err := defaultServerDirectories("windows", "unused"); err == nil {
 		t.Fatal("unsupported deployment accepted")
@@ -402,6 +409,41 @@ func TestServerDirectoryDefaultsAndInvalidSelection(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(release, "uncreated-home")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("invalid home wrote into release", err)
+	}
+}
+
+func TestServerLayoutPreservesRegisteredHome(t *testing.T) {
+	userHome := t.TempDir()
+	t.Setenv("HOME", userHome)
+	root := filepath.Join(t.TempDir(), "server")
+	release := testServerRelease(t, root, "registered")
+	selectTestRelease(t, root, release)
+	legacy := filepath.Join(userHome, "Library", "Application Support", "TeamX", "home")
+	layout, err := resolveServerLayout(root, legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := registerServerInstallation(layout); err != nil {
+		t.Fatal(err)
+	}
+	for _, goos := range []string{"darwin", "linux"} {
+		home, err := selectedServerHome(layout.Root, goos, userHome)
+		if err != nil || home != layout.Home {
+			t.Fatal("registered home lost", goos, home, err)
+		}
+	}
+	again, err := resolveServerLayout(root, "")
+	if err != nil || again.Home != layout.Home {
+		t.Fatal("server-root lost registered home", again.Home, err)
+	}
+	if _, err := os.Stat(filepath.Join(userHome, ".teamx")); !os.IsNotExist(err) {
+		t.Fatal("created replacement home", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "installation.json"), []byte(`{"version":1,"home":"relative"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := resolveServerLayout(root, ""); err == nil {
+		t.Fatal("invalid registration silently selected new home")
 	}
 }
 

@@ -32,8 +32,10 @@ macOS 使用已登录的普通用户，不在命令前加 sudo；Linux 需要 sy
 
 | 系统 | 程序安装根 | 私有配置和数据 | 命令入口 |
 | --- | --- | --- | --- |
-| macOS | `~/Library/Application Support/TeamX/server` | `~/Library/Application Support/TeamX/home` | `~/.local/bin/teamx` |
+| macOS | `~/Library/Application Support/TeamX/server` | `~/.teamx` | `~/.local/bin/teamx` |
 | Linux | `/opt/teamx` | `/var/lib/teamx` | `/usr/local/bin/teamx` |
+
+个人运行统一默认使用 `~/.teamx`，包括直接运行 `teamx serve`、新解压便携包和新 macOS 常驻安装。已有常驻安装继续使用登记的数据目录，已有便携包继续使用包内 `.teamx`，不自动搬迁；显式 `--home` 优先。独立调试或运行多个实例时，请为每个实例指定不同 home。
 
 macOS 若命令目录不在 PATH，脚本会配置当前用户的 shell 启动文件，并提示新开终端或在当前终端执行的 PATH 设置。服务已经运行，不需要因此重新安装。Linux 后续管理命令前加 sudo。
 
@@ -137,7 +139,7 @@ token 不放 URL 或浏览器持久存储；浏览器只保留 HttpOnly 会话 C
 
 默认时区为 `Asia/Shanghai`，所有会话共用。「使用浏览器时区」仅填入草稿，仍需保存。时区改变不改写原始时间；手工修改 `server.time_zone` 需重启，详细行为见[配置参考](https://github.com/go-aie/teamx/blob/main/internal/room/README.zh.md#服务配置)。
 
-默认常驻安装的配置分别位于 macOS `~/Library/Application Support/TeamX/home/config.toml`、Linux `/var/lib/teamx/config.toml`；自定义安装以实际 home 为准。仓库内的 `.teamx/config.toml` 仅适用于显式使用该目录的源码运行，不是常驻安装的默认位置。数据目录由 `server.data_dir` 指定；修改路径不会搬迁原数据，已有数据迁移应先一致备份。
+新常驻安装的配置分别位于 macOS `~/.teamx/config.toml`、Linux `/var/lib/teamx/config.toml`；已有安装和自定义安装以实际 home 为准。「设置 → 通用 → 存储位置」显示当前实例的主目录；业务数据或团队模板放在主目录之外时，会额外显示对应路径。路径属于 Server 所在设备。仓库内的 `.teamx/config.toml` 仅适用于显式使用该目录的源码运行。数据目录由 `server.data_dir` 指定；修改路径不会搬迁原数据，已有数据迁移应先一致备份。
 
 「设置 → 模型」维护条目和默认引用，成员可跟随默认或固定模型。执行配置或 Key 变化会等待当前回合结束后分别切换，**私有上下文会重置**；成员身份、Workspace 和暂停意图保留。配置保存与全部成员实际生效分别查看，等待或部分失败按原操作显式重试；删除被引用模型须选择替代条目，模板固定引用须先修正。Key 历史版本需随备份保留，以便旧 Session 恢复。
 
