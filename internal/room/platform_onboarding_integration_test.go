@@ -64,7 +64,7 @@ func TestOnboardingGitLabDefaultsAndRetryPreserveProgress(t *testing.T) {
 	before, err := m.gitlabNotificationViewLocked(room.RoomIdentity, c.ID)
 	f, fe := m.readToolBindingsLocked(room.RoomIdentity)
 	m.mu.Unlock()
-	if err != nil || fe != nil || !before.Config.Enabled || !before.Config.Todos.Enabled || before.Config.Events.Enabled || !before.Config.Target.Inbox() || before.Config.Target.AgentID != members[0].AgentID || before.Config.BackfillStart.IsZero() || len(f.Bindings) != 1 {
+	if err != nil || fe != nil || !before.Config.Enabled || !before.Config.Todos.Enabled || before.Config.Events.Enabled || !before.Config.Target.Valid() || before.Config.Target.AgentID != members[0].AgentID || before.Config.BackfillStart.IsZero() || len(f.Bindings) != 1 {
 		t.Fatal("wrong defaults", err, fe)
 	}
 	again := onboardingApply(t, m, req)

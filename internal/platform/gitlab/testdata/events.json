@@ -20,7 +20,12 @@
         "push"
       ]
     },
-    "etag_verified": true
+    "etag_verified": true,
+    "target": {
+      "mode": "inbox",
+      "agent_id": "assistant",
+      "membership_id": "member"
+    }
   },
   "baseline": "2026-11-01T23:50:00Z",
   "watermark": "2026-11-02T00:00:00Z",
@@ -85,7 +90,15 @@
         "branch": "main",
         "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
       },
-      "received_at": "2026-11-02T00:02:00Z"
+      "received_at": "2026-11-02T00:02:00Z",
+      "route": {
+        "target": {
+          "mode": "inbox",
+          "agent_id": "assistant",
+          "membership_id": "member"
+        },
+        "version": 4
+      }
     },
     "https://gitlab.invalid|7|43": {
       "delivery_id": "notification-8ea53055c76d313cdcf29ca829e689a3b6492f2086548e9407c178c7f9e3894e",
@@ -111,7 +124,15 @@
         "branch": "main",
         "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
       },
-      "received_at": "2026-11-02T00:02:00Z"
+      "received_at": "2026-11-02T00:02:00Z",
+      "route": {
+        "target": {
+          "mode": "inbox",
+          "agent_id": "assistant",
+          "membership_id": "member"
+        },
+        "version": 4
+      }
     }
   },
   "scan": {

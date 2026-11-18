@@ -8,6 +8,7 @@ import (
 
 func TestNotificationMasterSwitchRetainsCategoryPreferences(t *testing.T) {
 	cfg := DefaultNotificationConfig(strings.Repeat("a", 32))
+	cfg.Target = testInboxTarget
 	cfg.Events = EventSettings{Enabled: true, Project: "group/project", Filter: EventsFilter{Types: []string{"note"}}}
 	cfg.Todos.Filter = TodosFilter{Reasons: []string{"mentioned"}, Types: []string{"merge_request"}}
 	enabled, err := NormalizeNotificationConfig(cfg)

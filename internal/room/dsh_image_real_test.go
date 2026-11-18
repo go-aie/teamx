@@ -24,7 +24,7 @@ import (
 	"github.com/go-aie/teamx/internal/testutil"
 )
 
-// Existing saved notification -> isolated Room/Inbox -> production preparation
+// Existing saved notification -> isolated member Inbox -> production preparation
 // and adapter -> installed DSH. Only GET requests reach GitLab. Delivery and the
 // fixed running turn are explicitly seeded; this is not a scheduler/poller test.
 func TestRealGitLabImageMaterials(t *testing.T) {
@@ -60,14 +60,14 @@ func TestRealGitLabImageMaterials(t *testing.T) {
 		}
 		imageRealCredential(t, keyEnv)
 		profile = dshProfile{BinaryPath: installation.BinaryPath, BinaryArgs: installation.BinaryArgs, Workspace: t.TempDir(),
-			Instructions: `This is a read-only image acceptance turn. Do not use tools, read files, delegate, post messages or perform business actions. Using only the supplied third-party material, return JSON with fields channel, visible_error, error_region, marked_region, coverage. Keep every value under 60 words. channel must be exactly Room or Inbox according to the Third-party material label, not the GitLab source channel. Transcribe the actual visible error in the screenshot and describe where it appears and where any colored annotation appears. List any unread images or truncated text. If no error is visible, say so; never guess missing material. Ordinary output is the requested private result.`,
+			Instructions: `This is a read-only image acceptance turn. Do not use tools, read files, delegate, post messages or perform business actions. Using only the supplied third-party material, return JSON with fields channel, visible_error, error_region, marked_region, coverage. Keep every value under 60 words. channel must be exactly Inbox according to the Third-party material label, not the GitLab source channel. Transcribe the actual visible error in the screenshot and describe where it appears and where any colored annotation appears. List any unread images or truncated text. If no error is visible, say so; never guess missing material. Ordinary output is the requested private result.`,
 			Model:        dsh.ModelConfig{Protocol: "openai-completions", BaseURL: os.Getenv("MODEL_BASE_URL"), ModelID: os.Getenv("MODEL_ID"), APIKeyEnv: keyEnv, MaxTokens: 8192, InputModalities: []string{"text", "image"}}}
 		if profile.Model.BaseURL == "" || profile.Model.ModelID == "" {
 			t.Fatal("MODEL_BASE_URL and MODEL_ID required")
 		}
 		report["installation"], report["model"] = installation, profile.Model
 	}
-	for _, channel := range []string{"Room", "Inbox"} {
+	for _, channel := range []string{"Inbox"} {
 		t.Run(channel, func(t *testing.T) {
 			row := map[string]any{"status": "failed", "model_requested": model}
 			rows[channel] = row
@@ -125,21 +125,11 @@ func TestRealGitLabImageMaterials(t *testing.T) {
 					row["status"] = "failed"
 				}
 			}()
-			var roomEnd, inboxEnd uint64
-			if channel == "Room" {
-				receipt, err := svc.room.Call[PostReceipt](context.Background(), postIntegrationMessage{RoomIdentity: id.RoomIdentity, DeliveryID: item.DeliveryID, Text: item.Text, Source: item.Source})
-				if err != nil {
-					t.Fatal(err)
-				}
-				roomEnd = receipt.Seq
-			} else {
-				if err := svc.receiveInbox(context.Background(), inboxTarget(id), item); err != nil {
-					t.Fatal(err)
-				}
-				inboxEnd = 1
+			if err := svc.receiveInbox(context.Background(), inboxTarget(id), item); err != nil {
+				t.Fatal(err)
 			}
-			saveMaterialTurn(t, svc, id, roomEnd, inboxEnd)
-			input := materialInput(id, roomEnd, inboxEnd)
+			saveMaterialTurn(t, svc, id, 0, 1)
+			input := materialInput(id, 0, 1)
 			beforeRoom, _ := svc.store.LoadRoom()
 			beforeAgent, _ := svc.store.LoadAgent(id)
 			beforeInbox, _ := svc.memberInboxStatus(context.Background(), id)
@@ -394,7 +384,7 @@ func imageRealFixture(t *testing.T) (*roomManager, *service, MemberIdentity, not
 	if project == "" {
 		project, _, _ = strings.Cut(strings.TrimPrefix(source.URL, source.Instance+"/"), "/-/")
 	}
-	state, err := m.configureEventsSubscription(context.Background(), notification.Key{Owner: room.RoomIdentity, Source: gitlab.EventsSourceID}, 0, gitlab.EventsConfig{Enabled: true, PlatformID: c.ID, Project: source.Instance + "/" + project})
+	state, err := m.configureEventsSubscription(context.Background(), notification.Key{Owner: room.RoomIdentity, Source: gitlab.EventsSourceID}, 0, gitlab.EventsConfig{Target: fixtureInboxTarget(t, m, room.RoomIdentity), Enabled: true, PlatformID: c.ID, Project: source.Instance + "/" + project})
 	if err != nil || state.Binding.ProjectID != source.ProjectID {
 		t.Fatal("real project verification failed")
 	}
@@ -409,7 +399,7 @@ func imageRealFixture(t *testing.T) (*roomManager, *service, MemberIdentity, not
 	item := entry.Item
 	item.Source.SubscriptionID = state.SubscriptionID
 	item.Source.Project = state.Binding.Project
-	item.Route = notification.Route{}
+	item.Route = notification.Route{Target: inboxTarget(id), Version: state.SubscriptionVersion}
 	return m, svc, id, item
 }
 
@@ -429,10 +419,6 @@ func TestRealGitLabImagePreview(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	receipt, err := svc.room.Call[PostReceipt](context.Background(), postIntegrationMessage{RoomIdentity: id.RoomIdentity, DeliveryID: item.DeliveryID, Text: item.Text, Source: item.Source})
-	if err != nil {
-		t.Fatal(err)
-	}
 	if err := svc.receiveInbox(context.Background(), inboxTarget(id), item); err != nil {
 		t.Fatal(err)
 	}
@@ -450,7 +436,7 @@ func TestRealGitLabImagePreview(t *testing.T) {
 		t.Fatal("supported upload required")
 	}
 	// Use the public handler with the same saved-source query as the UI.
-	query := fmt.Sprintf("room_id=%s&room_instance=%s&service_epoch=%s&caller_id=operator&seq=%d", id.RoomID, id.RoomInstance, svc.info.ServiceEpoch, receipt.Seq)
+	query := fmt.Sprintf("room_id=%s&room_instance=%s&service_epoch=%s&caller_id=operator&seq=%d", id.RoomID, id.RoomInstance, svc.info.ServiceEpoch, 1)
 	req, err := http.NewRequest(http.MethodGet, server.URL+"/v1/platform/attachments?"+query, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -458,11 +444,10 @@ func TestRealGitLabImagePreview(t *testing.T) {
 	q := req.URL.Query()
 	q.Set("path", path)
 	req.URL.RawQuery = q.Encode()
-	ready := map[string]any{"page": server.URL, "room_image": req.URL.String(), "member": id, "output": output}
 	q.Set("agent_id", id.AgentID)
 	q.Set("membership_id", id.MembershipID)
 	req.URL.RawQuery = q.Encode()
-	ready["inbox_image"] = req.URL.String()
+	ready := map[string]any{"page": server.URL, "inbox_image": req.URL.String(), "member": id, "output": output}
 	data, _ := json.MarshalIndent(ready, "", "  ")
 	if err := os.WriteFile(filepath.Join(output, "browser-ready.json"), data, 0600); err != nil {
 		t.Fatal(err)
@@ -509,12 +494,11 @@ func TestRealGitLabImageCoverage(t *testing.T) {
 	// truncation marker, while both original image references remain untouched.
 	item.Text += "\n\n" + notification.QuoteExcerpt(strings.Repeat("local coverage variant ", 200), 2048, false)
 	item.Text += "\n\n" + notification.QuoteExcerpt("![local absent image](/uploads/"+images.Images[0].Upload.Secret+"/teamx-i4-absent-image.png)", 2048, false)
-	receipt, err := svc.room.Call[PostReceipt](context.Background(), postIntegrationMessage{RoomIdentity: id.RoomIdentity, DeliveryID: item.DeliveryID, Text: item.Text, Source: item.Source})
-	if err != nil {
+	if err := svc.receiveInbox(t.Context(), inboxTarget(id), item); err != nil {
 		t.Fatal(err)
 	}
-	saveMaterialTurn(t, svc, id, receipt.Seq, 0)
-	input := materialInput(id, receipt.Seq, 0)
+	saveMaterialTurn(t, svc, id, 0, 1)
+	input := materialInput(id, 0, 1)
 	beforeRoom, _ := svc.store.LoadRoom()
 	beforeAgent, _ := svc.store.LoadAgent(id)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)

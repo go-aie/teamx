@@ -6,25 +6,13 @@ import { notificationOptions } from "../markdown.mjs";
 import { createAssistantIcon } from "../icons.mjs";
 import { renderAvatar } from "../avatars.mjs";
 import { createMentionPicker } from "../mention-picker.mjs";
-import { captureReturnView } from "../view-return.mjs";
 
 // Messages, drafts, mentions and the send/restart lifecycle.
-export function createConversation({ env, runtime, roomsUI, notificationsUI, membersUI, settingsUI, interactionsUI, workspaceUI, layoutUI, userMenuUI }) {
+export function createConversation({ env, runtime, roomsUI, membersUI, settingsUI, interactionsUI, workspaceUI, layoutUI, userMenuUI }) {
   const { document, window, requestAnimationFrame, performance, setTimeout, ResizeObserver, renderMessageBody } = env;
   const { state, $, notice, rpc, currentView, refresh, discussionBusy, reconcileChildren, storage, confirmAction } = runtime;
 
   let historyTask = null, composing = false, compositionEnded = -Infinity;
-  let notificationsReturn = null;
-
-  function returnConversationNotifications() {
-    const back = notificationsReturn; notificationsReturn = null;
-    layoutUI.hideConversationNotifications();
-    if (back?.view.current()) back.panel();
-    else { layoutUI.collapseMembers(); layoutUI.renderPanels(); }
-    $("activity-dialog").hidden = false;
-    back?.view.restore($("room-menu-label"));
-  }
-
   const drafts = createRoomDrafts(storage, () => state.installationID);
   const sendIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   sendIcon.setAttribute("viewBox", "0 0 24 24");
@@ -372,20 +360,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
       provider:message.source?.provider || message.author.id, direct:roomsUI.isDirect(), defaultAssistant:roomsUI.isDefaultAssistant(), name:authorName(message.author,message)});
     const channel = message.source?.provider === "gitlab" && ["events", "todos"].includes(message.source?.channel) ? message.source.channel : null;
     el.querySelector(".author").textContent = integration ? channel ? `GitLab · ${channel === "todos" ? "我的待办" : "项目活动"}` : `${message.author.id} · 通知` : authorName(message.author,message);
-    if (integration && channel) {
-      const author = el.querySelector(".author");
-      author.disabled = false;
-      author.setAttribute("aria-label", "查看 GitLab 通知源");
-      author.setAttribute("aria-controls", "notification-detail");
-      author.addEventListener("click", () => notificationsUI.openNotificationMessage(author, message.source));
-      avatar.setAttribute("role", "button"); avatar.setAttribute("tabindex", "0");
-      avatar.setAttribute("aria-label", "查看 GitLab 通知源");
-      avatar.setAttribute("aria-controls", "notification-detail");
-      avatar.addEventListener("click", () => notificationsUI.openNotificationMessage(avatar, message.source));
-      avatar.addEventListener("keydown", event => {
-        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); return notificationsUI.openNotificationMessage(avatar, message.source); }
-      });
-    } else if (agent) {
+    if (agent) {
       const author = el.querySelector(".author");
       const open = opener => {
         const member = state.members.find(item => item.agent_id === message.author.id && (!message.author_membership_id || item.membership_id === message.author_membership_id));
@@ -766,8 +741,8 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     const direct = roomsUI.isDirect(), type = roomsUI.conversationType(), name = roomsUI.roomName();
     renderEmptyConversation(direct, name);
     $("conversation").setAttribute("aria-label", `${type}消息`);
-    $("member-rail").setAttribute("aria-label", direct ? "助理详情与会话通知" : "房间详情");
-    $("member-sidebar").setAttribute("aria-label", direct ? "会话通知" : "成员与房间通知");
+    $("member-rail").setAttribute("aria-label", direct ? "助理详情" : "房间详情");
+    $("member-sidebar").setAttribute("aria-label", direct ? "助理详情" : "房间成员");
     $("policy-empty").textContent = `可以在${direct ? "私信" : "房间"}中告诉 Agent 今后应如何处理。`;
     const recipient = `发送给 ${name || (direct ? "个人助理" : "会话")}`;
     $("message-input").placeholder = recipient;
@@ -782,15 +757,8 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
     $("room-details").hidden = direct;
     $("room-members-heading").hidden = direct;
     $("restart-discussion").title = direct ? "重新开始私信，清空消息并重置助理会话" : "重新开始房间讨论";
-    $("direct-notifications").hidden = !direct || !state.managed;
-    $("direct-notifications").disabled = !state.connected || !workspaceUI.workspaceView;
     $("toggle-add").hidden = state.managed || direct;
     if (direct) $("add-form").hidden = true;
-    $("notification-sources-label").textContent = direct ? "会话通知" : "房间通知";
-    $("notification-empty").textContent = `将平台通知发送到当前${direct ? "会话" : "房间"}。`;
-    $("notification-platforms").setAttribute("aria-label", `发送到当前${direct ? "会话" : "房间"}的通知`);
-    $("notification-add-toggle").setAttribute("aria-label", `添加${direct ? "会话" : "房间"}通知`);
-    $("notification-add-toggle").title = `添加${direct ? "会话" : "房间"}通知`;
   }
 
   function composerState() {
@@ -857,22 +825,6 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
       const suggestion = event.target.closest?.("[data-suggestion]");
       if (!suggestion || !roomsUI.isDirect() || !state.info || $("message-input").readOnly || state.draft.pending) return;
       $("message-input").value = suggestion.dataset.suggestion; saveDraft(); composerState(); $("message-input").focus();
-    });
-
-    $("direct-notifications").addEventListener("click", () => {
-      if ($("direct-notifications").disabled) return;
-      notificationsReturn = { view: captureReturnView(env, runtime, { opener: $("direct-notifications") }), panel: layoutUI.captureMemberPanel() };
-      layoutUI.showConversationNotifications();
-      $("activity-dialog").hidden = true;
-      layoutUI.expandMembers();
-      layoutUI.renderPanels(); notificationsUI.renderNotificationPlatforms(); $("close-conversation-notifications").focus();
-    });
-
-    $("close-conversation-notifications").addEventListener("click", returnConversationNotifications);
-    $("member-list-view").addEventListener("keydown", event => {
-      if (event.key !== "Escape" || event.defaultPrevented || !layoutUI.directNotificationsOpen ||
-        $("notification-detail").open || document.querySelector("dialog:modal")) return;
-      event.preventDefault(); returnConversationNotifications();
     });
 
     $("view-mention").addEventListener("click", () => locateReview());
@@ -1000,7 +952,6 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
 
   return {
     mount,
-    returnConversationNotifications,
     resetRestartNotice,
     resetMessageNodes,
     interactionHost,

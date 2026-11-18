@@ -17,6 +17,7 @@ import (
 var fixtureNotificationSourceID = notification.SourceID{Provider: "fixture", Channel: "updates"}
 
 type fixtureNotificationState struct {
+	Target  notification.Target
 	Format  int
 	Key     notification.Key
 	Version uint64
@@ -28,7 +29,7 @@ type fixtureNotificationState struct {
 }
 
 func (s fixtureNotificationState) Metadata() notification.Metadata {
-	return notification.Metadata{Key: s.Key, Version: s.Version, Enabled: s.Enabled, Observed: len(s.Seen), Pending: len(s.Inbox), DeliveryError: s.DeliveryErrorCode}
+	return notification.Metadata{Target: s.Target, Key: s.Key, Version: s.Version, Enabled: s.Enabled, Observed: len(s.Seen), Pending: len(s.Inbox), DeliveryError: s.DeliveryErrorCode}
 }
 func (s fixtureNotificationState) Validate(owner platform.RoomIdentity) error {
 	if s.Format != 53 || s.Key.Owner != owner || s.Key.Source != fixtureNotificationSourceID || !validRestartID(s.Key.SubscriptionID) || s.Version == 0 || s.Offset < 0 || s.Seen == nil || s.Inbox == nil {
@@ -107,7 +108,7 @@ func (r fixtureNotificationRunner) Step(ctx context.Context) (time.Duration, boo
 	next.Offset++
 	if !next.Seen[key] {
 		next.Seen[key] = true
-		next.Inbox[key] = notification.Item{Key: key, DeliveryID: notification.DeliveryID(next.Key, key), Text: "Fixture update: " + key,
+		next.Inbox[key] = notification.Item{Route: notification.Route{Target: next.Target, Version: next.Version}, CreatedAt: r.host.Now(), Order: key, Key: key, DeliveryID: notification.DeliveryID(next.Key, key), Text: "Fixture update: " + key,
 			Source: platform.SourceRef{Provider: fixtureNotificationSourceID.Provider, Channel: fixtureNotificationSourceID.Channel, Instance: "https://fixture.invalid", SubscriptionID: next.Key.SubscriptionID, ItemKey: key}}
 	}
 	err = r.host.Commit(next)

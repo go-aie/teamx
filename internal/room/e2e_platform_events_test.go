@@ -17,65 +17,6 @@ import (
 	"github.com/go-aie/teamx/internal/platform/gitlab"
 )
 
-func ge04PublicEvidence() (RoomSnapshot, ge04Event) {
-	at := time.Date(2026, 11, 2, 10, 0, 0, 0, time.UTC)
-	source := IntegrationSource{Provider: "gitlab", Channel: "events", Instance: "https://gitlab.example.com", ProjectID: 7, ItemKey: "https://gitlab.example.com|7|42", SubscriptionID: strings.Repeat("a", 32)}
-	post := RoomMessage{Seq: 2, Author: Author{Kind: "integration", ID: "gitlab"}, ClientMessageID: "delivery", Source: &source, CreatedAt: at.Add(time.Second)}
-	reply := RoomMessage{Seq: 3, Author: Author{Kind: "agent", ID: "reviewer"}, ReplyTo: 2, Text: "GE04-test event=42 seq=2 iid=9 head=" + strings.Repeat("b", 40) + " state=opened"}
-	return RoomSnapshot{Messages: []RoomMessage{post, reply}, IntegrationReceipts: map[string]IntegrationReceipt{"delivery": {Seq: 2, Source: source}}}, ge04Event{ID: 42, IID: 9, CreatedAt: at}
-}
-
-func TestGitLabGE04RejectsIncompletePublicEvidence(t *testing.T) {
-	s, e := ge04PublicEvidence()
-	if post, reply, err := ge04Messages(s, e, "GE04-test"); err != nil || post.Seq != 2 || reply.Seq != 3 {
-		t.Fatal(post, reply, err)
-	}
-	for _, tc := range []struct {
-		name   string
-		change func(*RoomSnapshot)
-	}{
-		{"duplicate-event", func(s *RoomSnapshot) { s.Messages = append(s.Messages, s.Messages[0]) }},
-		{"duplicate-reply", func(s *RoomSnapshot) { s.Messages = append(s.Messages, s.Messages[1]) }},
-		{"human-spoof", func(s *RoomSnapshot) { s.Messages[0].Author.Kind = "human" }},
-		{"missing-receipt", func(s *RoomSnapshot) { s.IntegrationReceipts = nil }},
-		{"wrong-receipt-seq", func(s *RoomSnapshot) {
-			r := s.IntegrationReceipts["delivery"]
-			r.Seq++
-			s.IntegrationReceipts["delivery"] = r
-		}},
-		{"wrong-receipt-source", func(s *RoomSnapshot) {
-			r := s.IntegrationReceipts["delivery"]
-			r.Source.ProjectID++
-			s.IntegrationReceipts["delivery"] = r
-		}},
-		{"wrong-id", func(s *RoomSnapshot) {
-			s.Messages[1].Text = strings.Replace(s.Messages[1].Text, "event=42", "event=41", 1)
-		}},
-		{"wrong-source-seq", func(s *RoomSnapshot) { s.Messages[1].Text = strings.Replace(s.Messages[1].Text, "seq=2", "seq=1", 1) }},
-		{"wrong-iid", func(s *RoomSnapshot) { s.Messages[1].Text = strings.Replace(s.Messages[1].Text, "iid=9", "iid=8", 1) }},
-		{"missing-sha", func(s *RoomSnapshot) {
-			s.Messages[1].Text = strings.Replace(s.Messages[1].Text, strings.Repeat("b", 40), "short", 1)
-		}},
-		{"clock-skew", func(s *RoomSnapshot) { s.Messages[0].CreatedAt = e.CreatedAt.Add(-time.Second) }},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			s, e := ge04PublicEvidence()
-			tc.change(&s)
-			if _, _, err := ge04Messages(s, e, "GE04-test"); err == nil {
-				t.Fatal("accepted invalid evidence")
-			}
-		})
-	}
-	for _, index := range []int{0, 1} {
-		s, e := ge04PublicEvidence()
-		s.Messages = s.Messages[:index]
-		post, reply, err := ge04Messages(s, e, "GE04-test")
-		if err != nil || reply.Seq != 0 || index == 0 && post.Seq != 0 {
-			t.Fatal("incomplete evidence should remain pending", post, reply, err)
-		}
-	}
-}
-
 func TestGitLabGE04TracePreservesTransportAndScopes(t *testing.T) {
 	s := &ge04Trace{path: filepath.Join(t.TempDir(), "queries.jsonl")}
 	batch := gitlab.EventBatch{Version: 1, Events: []gitlab.Event{{ID: 42, TargetIID: 9, Kind: "merge_request", Action: "opened", Title: "private-title", NoteBody: "private-body"}, {ID: 43, Kind: "push"}}, ResponseBytes: 123, ETag: "private-etag", NextPage: 2}

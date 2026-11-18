@@ -17,7 +17,7 @@ import (
 	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
-func TestGitLabDeliveryInactiveCrashWindowAndClear(t *testing.T) {
+func TestGitLabDeliveryInactiveThenAcknowledgesMemberInbox(t *testing.T) {
 	parallelFixtureTest(t)
 	h := newEventHarness(t, gitlab.EventsConfig{})
 	seedEventInbox(t, h, 1)
@@ -29,27 +29,15 @@ func TestGitLabDeliveryInactiveCrashWindowAndClear(t *testing.T) {
 		t.Fatal("inactive room lost pending event")
 	}
 	svc := eventLiveService(t, h)
-	// Simulate the crash window exactly: Room commits, inbox is not acknowledged.
-	var entry gitlab.EventsInboxEntry
-	for _, v := range before.Inbox {
-		entry = v
-	}
-	post := gitlabEventMessage(before, entry)
-	receipt, err := svc.room.Call[PostReceipt](context.Background(), post)
-	if err != nil {
+	if err := h.m.notifications.Deliver(context.Background(), before.Metadata().Key, before.SubscriptionVersion); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.room.Call[ClearReceipt](context.Background(), ClearMessages{RoomIdentity: h.room.RoomIdentity, Caller: humanCaller, ThroughSeq: receipt.Seq}); err != nil {
-		t.Fatal(err)
+	page := inboxRoutingPreview(t, svc, subscriptionMember(before.Metadata()))
+	room, err := svc.store.LoadRoom()
+	if err != nil || room.LatestSeq != 0 || page.SnapshotSeq != 1 || len(h.state().Inbox) != 0 {
+		t.Fatal(page, room, err)
 	}
-	// The inbox still exists after clearing. Recovery must find the durable receipt.
-	if err := h.m.notifications.Deliver(context.Background(), h.m.testEventsKey(h.room.RoomIdentity), before.SubscriptionVersion); err != nil {
-		t.Fatal(err)
-	}
-	page, err := svc.room.Call[ReadPage](context.Background(), ReadMessages{RoomIdentity: h.room.RoomIdentity, Caller: humanCaller, Mode: ReadAll})
-	if err != nil || page.SnapshotSeq != 1 || len(page.Messages) != 0 || len(h.state().Inbox) != 0 {
-		t.Fatal(page, err, h.state())
-	}
+
 }
 
 func TestGitLabDeliveryChecksScopeAndStableActivation(t *testing.T) {
@@ -125,7 +113,7 @@ func TestGitLabEventsManagementAuthorizationAndStatus(t *testing.T) {
 	cfg := unifiedGitLabConfig(t, h)
 	cfg.IntervalSeconds = 3
 	cfg.Events.Filter.Types = []string{"push"}
-	req := map[string]any{"service_epoch": h.m.epoch, "room_id": h.room.RoomID, "room_instance": h.room.RoomInstance, "caller": humanCaller, "version": 0, "config": explicitRoomNotificationConfig(cfg)}
+	req := map[string]any{"service_epoch": h.m.epoch, "room_id": h.room.RoomID, "room_instance": h.room.RoomInstance, "caller": humanCaller, "version": 0, "config": cfg}
 	if r := managerHTTP(h.m, "/v1/platform/gitlab/notifications/configure", req); r.Code != 200 {
 		t.Fatal(r.Code, r.Body.String())
 	}
@@ -146,7 +134,7 @@ func TestGitLabEventsManagementAuthorizationAndStatus(t *testing.T) {
 	}
 	req["service_epoch"] = h.m.epoch
 	delete(req, "config")
-	req["target"] = notification.Target{Mode: "room"}
+	req["target"] = cfg.Target
 	req["platform_id"] = cfg.PlatformID
 	if r := managerHTTP(h.m, "/v1/platform/gitlab/notifications/sync", req); r.Code != 200 {
 		t.Fatal(r.Code, r.Body.String())
@@ -172,7 +160,7 @@ func TestGitLabDeliveryInboxAckFailureReopensWithoutDuplicate(t *testing.T) {
 	}
 	h.m.store.ops.createTemp = original
 	saved, err := svc.store.LoadRoom()
-	if err != nil || saved.LatestSeq != 1 || len(saved.IntegrationReceipts) != 1 || len(h.state().Inbox) != 1 {
+	if err != nil || saved.LatestSeq != 0 || inboxRoutingPreview(t, svc, subscriptionMember(before.Metadata())).SnapshotSeq != 1 || len(h.state().Inbox) != 1 {
 		t.Fatal(saved, err)
 	}
 	// Close and reopen both authorities from disk before redelivering.
@@ -181,12 +169,13 @@ func TestGitLabDeliveryInboxAckFailureReopensWithoutDuplicate(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.m = testManager(t, root, managerTestProfiles(t))
+	h.m.notifications.Clock = h.clock.get
 	svc = eventLiveService(t, h)
 	if err := h.m.notifications.Deliver(context.Background(), h.m.testEventsKey(h.room.RoomIdentity), before.SubscriptionVersion); err != nil {
 		t.Fatal(err)
 	}
 	saved, err = svc.store.LoadRoom()
-	if err != nil || saved.LatestSeq != 1 || len(saved.Messages) != 1 || len(h.state().Inbox) != 0 {
+	if err != nil || saved.LatestSeq != 0 || inboxRoutingPreview(t, svc, subscriptionMember(before.Metadata())).SnapshotSeq != 1 || len(h.state().Inbox) != 0 {
 		t.Fatal(saved, err)
 	}
 }
@@ -216,7 +205,7 @@ func TestGitLabEventsWorkerDeliversCurrentRoomAndDrainsInactiveBacklog(t *testin
 		time.Sleep(time.Millisecond)
 	}
 	saved, err := svc.store.LoadRoom()
-	if err != nil || len(h.state().Inbox) != 0 || saved.LatestSeq != 1 || saved.Messages[0].Author.Kind != "integration" {
+	if err != nil || len(h.state().Inbox) != 0 || saved.LatestSeq != 0 || inboxRoutingPreview(t, svc, subscriptionMember(h.state().Metadata())).SnapshotSeq != 1 {
 		t.Fatal(saved, err)
 	}
 }

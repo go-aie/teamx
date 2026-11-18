@@ -172,7 +172,7 @@ func (s RoomSnapshot) validate() error {
 	if bytes > maxHistoryBytes {
 		return fmt.Errorf("history byte capacity exceeded")
 	}
-	if len(s.EventReceipts) > maxIntegrationReceipts {
+	if len(s.EventReceipts) > maxRoomReceipts {
 		return ErrCapacity
 	}
 	for key, receipt := range s.EventReceipts {
@@ -186,10 +186,10 @@ func (s RoomSnapshot) validate() error {
 			}
 		}
 	}
-	if len(s.IntegrationReceipts) > maxIntegrationReceipts {
+	if len(s.IntegrationReceipts) > maxRoomReceipts {
 		return ErrCapacity
 	}
-	if len(s.FollowupNoticeReceipts) > maxIntegrationReceipts {
+	if len(s.FollowupNoticeReceipts) > maxRoomReceipts {
 		return ErrCapacity
 	}
 	for key, receipt := range s.FollowupNoticeReceipts {

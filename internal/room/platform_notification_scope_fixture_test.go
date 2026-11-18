@@ -1,6 +1,7 @@
 package room
 
 import (
+	"context"
 	"sort"
 
 	"github.com/go-aie/teamx/internal/platform/gitlab"
@@ -21,6 +22,13 @@ func (m *roomManager) notificationTargetLocked(owner RoomIdentity, source notifi
 			return target, ErrConflict
 		}
 		target, found = meta.Target, true
+	}
+	if !found {
+		members, err := m.toolRosterLocked(context.Background(), owner)
+		if err != nil || len(members) == 0 {
+			return target, ErrIdentity
+		}
+		target = notification.Target{Mode: "inbox", AgentID: members[0].AgentID, MembershipID: members[0].MembershipID}
 	}
 	return target, nil
 }
@@ -48,6 +56,13 @@ func (m *roomManager) gitlabTargetLocked(owner RoomIdentity, id string) (notific
 				return target, err
 			}
 		}
+	}
+	if !found {
+		members, err := m.toolRosterLocked(context.Background(), owner)
+		if err != nil || len(members) == 0 {
+			return target, ErrIdentity
+		}
+		target = notification.Target{Mode: "inbox", AgentID: members[0].AgentID, MembershipID: members[0].MembershipID}
 	}
 	return target, nil
 }
@@ -158,11 +173,4 @@ func (m *roomManager) currentTodosLocked(owner RoomIdentity, platformIDs ...stri
 		return nil, err
 	}
 	return m.currentTodosForTargetLocked(owner, id, target)
-}
-
-func explicitRoomNotificationConfig(cfg gitlab.NotificationConfig) gitlab.NotificationConfig {
-	if !cfg.Target.Inbox() {
-		cfg.Target.Mode = "room"
-	}
-	return cfg
 }

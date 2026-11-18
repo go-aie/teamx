@@ -12,8 +12,6 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
-
-	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
 // Real management HTTP and Store, synthetic notifications, no model/platform.
@@ -64,8 +62,8 @@ func TestInboxPageBrowser(t *testing.T) {
 		latest := raw.(InboxStatus).LatestSeq
 		for i := 1; i <= count; i++ {
 			seq := latest + uint64(i)
-			post := integrationPost(id.RoomIdentity, int64(seq))
-			item := notification.Item{Key: post.Source.ItemKey, DeliveryID: post.DeliveryID, Text: fmt.Sprintf("浏览器验收通知 #%d\n\n这是隔离 Store 的合成通知，用于检查浏览位置和来源展开状态。", seq), Source: post.Source, CreatedAt: time.Now().UTC(), Route: notification.Route{Target: inboxTarget(id), Version: 1}}
+			item := inboxFixtureItem(id, int64(seq))
+			item.Text = fmt.Sprintf("浏览器验收通知 #%d\n\n这是隔离 Store 的合成通知，用于检查浏览位置和来源展开状态。", seq)
 			if err := svc.receiveInbox(ctx, inboxTarget(id), item); err != nil {
 				return err
 			}

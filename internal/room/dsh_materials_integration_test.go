@@ -83,7 +83,7 @@ func TestDSHMaterialsProductionAdapterFixedRangesAndNoConsumption(t *testing.T) 
 	}
 	// New notifications arriving during download cannot enter this prompt.
 	h.m.platformHTTP = workspaceHTTPFunc(func(*http.Request) (*http.Response, error) {
-		addMaterialNotice(t, h, svc, id, 2, "later-material ![new]("+req.Path+")", true)
+		addMaterialNotice(t, h, svc, id, 2, "later-material ![new]("+req.Path+")")
 		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(data))}, nil
 	})
 	if err := session.Run(context.Background(), input); err != nil {
@@ -100,21 +100,21 @@ func TestDSHMaterialsScanImageBudgetsAndPartialFailures(t *testing.T) {
 	h.m.bindPlatformReferences(svc)
 	id := reader.MemberIdentity
 	body := "正文已截断，内容可能不完整\n![same](" + req.Path + ") ![same again](" + req.Path + ") ![bad](/uploads/524bb5cf042cd0bb3ef9a7a117a744b7/bad.png) ![other](/uploads/524bb5cf042cd0bb3ef9a7a117a744b7/other.png) ![external](https://example.invalid/x.png)"
-	addMaterialNotice(t, h, svc, id, 2, body, true)
-	saveMaterialTurn(t, svc, id, 2, 2)
+	addMaterialNotice(t, h, svc, id, 2, body)
+	saveMaterialTurn(t, svc, id, 1, 2)
 	svc.imageMaterials = imageMaterialConfig{MaxImages: 1, ScanEntries: 3}
 	var paths []string
 	h.m.platformHTTP = workspaceHTTPFunc(func(r *http.Request) (*http.Response, error) {
 		paths = append(paths, r.URL.Path)
 		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(data))}, nil
 	})
-	materials, err := svc.prepareDSHMaterials(context.Background(), materialInput(id, 2, 2), 1, true)
+	materials, err := svc.prepareDSHMaterials(context.Background(), materialInput(id, 1, 2), 1, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	blocks := materials.blocks("base")
 	text := materialText(blocks)
-	for _, want := range []string{"Room #2 image positions [1 2]", "count budget exceeded", "unsupported or incomplete", "正文已截断，内容可能不完整", "Inbox #2..#2 not scanned", "1 entries remain"} {
+	for _, want := range []string{"Inbox #2 image positions [1 2]", "count budget exceeded", "unsupported or incomplete", "正文已截断，内容可能不完整"} {
 		if !strings.Contains(text, want) {
 			t.Fatal("missing budget evidence", want, text)
 		}
@@ -123,7 +123,7 @@ func TestDSHMaterialsScanImageBudgetsAndPartialFailures(t *testing.T) {
 		t.Fatal("image budget exceeded", paths)
 	}
 	// Failed first image does not prevent an independent second one.
-	svc.imageMaterials = imageMaterialConfig{ScanEntries: 2}
+	svc.imageMaterials = imageMaterialConfig{ScanEntries: 3}
 	paths = nil
 	h.m.platformHTTP = workspaceHTTPFunc(func(r *http.Request) (*http.Response, error) {
 		paths = append(paths, r.URL.Path)
@@ -137,7 +137,7 @@ func TestDSHMaterialsScanImageBudgetsAndPartialFailures(t *testing.T) {
 		}
 		return &http.Response{StatusCode: code, Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(payload))}, nil
 	})
-	materials, err = svc.prepareDSHMaterials(context.Background(), materialInput(id, 2, 2), 1, true)
+	materials, err = svc.prepareDSHMaterials(context.Background(), materialInput(id, 1, 2), 1, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,8 +153,8 @@ func TestDSHMaterialsTextOnlyAndBytePixelBudgets(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			h, svc, req, reader, data := modelAttachmentFixture(t)
 			h.m.bindPlatformReferences(svc)
-			addMaterialNotice(t, h, svc, reader.MemberIdentity, 2, "![two](/uploads/524bb5cf042cd0bb3ef9a7a117a744b7/two.png)", false)
-			saveMaterialTurn(t, svc, reader.MemberIdentity, 2, 1)
+			addMaterialNotice(t, h, svc, reader.MemberIdentity, 2, "![two](/uploads/524bb5cf042cd0bb3ef9a7a117a744b7/two.png)")
+			saveMaterialTurn(t, svc, reader.MemberIdentity, 1, 2)
 			switch mode {
 			case "single":
 				svc.imageMaterials.ImageBytes = int64(len(data) - 1)
@@ -168,7 +168,7 @@ func TestDSHMaterialsTextOnlyAndBytePixelBudgets(t *testing.T) {
 				calls++
 				return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(data))}, nil
 			})
-			materials, err := svc.prepareDSHMaterials(context.Background(), materialInput(reader.MemberIdentity, 2, 1), 1, mode != "text")
+			materials, err := svc.prepareDSHMaterials(context.Background(), materialInput(reader.MemberIdentity, 1, 2), 1, mode != "text")
 			if err != nil {
 				t.Fatal(err)
 			}

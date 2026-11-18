@@ -32,7 +32,7 @@ func newIndependentEventHarness(t *testing.T) (*eventHarness, managedPlatform) {
 	m.notifications.Source(gitlab.EventsSourceID).(*gitlab.EventsSource).Prepare = func(_ context.Context, _ string, b gitlab.Binding) (gitlab.EventFetcher, int64, error) {
 		return pages, b.ProjectID, nil
 	}
-	cfg := gitlab.EventsConfig{Enabled: true, PlatformID: c.ID, Project: c.URL + "/remote/project.git"}
+	cfg := gitlab.EventsConfig{Target: fixtureInboxTarget(t, m, room.RoomIdentity), Enabled: true, PlatformID: c.ID, Project: c.URL + "/remote/project.git"}
 	s, err := m.configureEventsSubscription(context.Background(), notification.Key{Owner: room.RoomIdentity, Source: gitlab.EventsSourceID}, 0, cfg)
 	if err != nil {
 		t.Fatal(err)

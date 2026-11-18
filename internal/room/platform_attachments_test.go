@@ -3,22 +3,37 @@ package room
 import (
 	"bytes"
 	"context"
+	"errors"
 	"image"
 	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/go-aie/teamx/internal/platform/gitlab"
+	"github.com/go-aie/teamx/internal/platform/notification"
 )
+
+// Seed a persisted legacy message to exercise reading historical attachments.
+func addHistoricalNotification(room *RoomSnapshot, item notification.Item) {
+	room.LatestSeq++
+	room.Revision++
+	source := item.Source
+	room.Messages = append(room.Messages, RoomMessage{Seq: room.LatestSeq, ClientMessageID: item.DeliveryID,
+		Author: Author{Kind: "integration", ID: source.Provider}, Text: item.Text, Source: &source, CreatedAt: time.Now().UTC()})
+	if room.IntegrationReceipts == nil {
+		room.IntegrationReceipts = make(map[string]IntegrationReceipt)
+	}
+	room.IntegrationReceipts[item.DeliveryID] = IntegrationReceipt{Seq: room.LatestSeq, Source: source}
+}
 
 func attachmentFixture(t *testing.T) (*eventHarness, *service, MemberIdentity, url.Values, []byte) {
 	t.Helper()
 	h, _ := newIndependentEventHarness(t)
 	h.prepare()
-	svc := eventLiveService(t, h)
-	room, err := svc.store.LoadRoom()
+	room, err := readPublishedRoom(h.m.roomDir(h.room.RoomID), h.room.RoomIdentity)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,11 +42,18 @@ func attachmentFixture(t *testing.T) (*eventHarness, *service, MemberIdentity, u
 	event := h.event(1, 0)
 	event.Kind, event.NoteID, event.NoteableType, event.NoteableIID = "note", 15, "Issue", 2
 	event.NoteBody = "**图片说明**\n![image](/uploads/524bb5cf042cd0bb3ef9a7a117a744b7/image.png){width=900 height=536}"
-	item := gitlab.EventsMessage(h.state(), gitlab.EventsInboxEntry{DeliveryID: "upload-notice", Event: event})
-	if err := svc.receiveInbox(context.Background(), inboxTarget(id), item); err != nil {
+	item := gitlab.EventsMessage(h.state(), gitlab.EventsInboxEntry{Route: notification.Route{Target: inboxTarget(id), Version: 1}, DeliveryID: "upload-notice", Event: event})
+	addHistoricalNotification(&room, item)
+	store, err := OpenStore(h.m.roomDir(h.room.RoomID), h.room.RoomID)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.room.Call[PostReceipt](context.Background(), postIntegrationMessage{RoomIdentity: room.RoomIdentity, DeliveryID: item.DeliveryID, Text: item.Text, Source: item.Source}); err != nil {
+	saveErr := store.SaveRoom(room)
+	if err := errors.Join(saveErr, store.Close()); err != nil {
+		t.Fatal(err)
+	}
+	svc := eventLiveService(t, h)
+	if err := svc.receiveInbox(context.Background(), inboxTarget(id), item); err != nil {
 		t.Fatal(err)
 	}
 	var imageBytes bytes.Buffer

@@ -298,7 +298,7 @@ export function createOnboarding({ env, runtime, connectionsUI, larkUI, settings
       if(onboarding.pending)$("notification-detail").close();
       else {a.error=onboarding.error;notificationsUI.renderGitLabEvents();}
     }
-    if(onboardingDone() && membersUI.toolsCurrent(v))notificationsUI.setNotificationPicker("member-notification-",false);
+    if(onboardingDone() && membersUI.toolsCurrent(v))notificationsUI.setNotificationPicker(false);
   }
 
   async function captureMemberPlatformDraft(config) {
@@ -309,7 +309,7 @@ export function createOnboarding({ env, runtime, connectionsUI, larkUI, settings
   }
 
   function mount() {
-    $("notification-add-platform").addEventListener("click",()=> { notificationsUI.setNotificationPicker("member-notification-",false); const member=membersUI.selectedAgent();if(!member || !workspaceUI.workspaceView)return; return addPlatformForMember({...workspaceUI.workspaceView.room,agent_id:member.agent_id,membership_id:member.membership_id}); });
+    $("notification-add-platform").addEventListener("click",()=> { notificationsUI.setNotificationPicker(false); const member=membersUI.selectedAgent();if(!member || !workspaceUI.workspaceView)return; return addPlatformForMember({...workspaceUI.workspaceView.room,agent_id:member.agent_id,membership_id:member.membership_id}); });
 
     $("onboarding-room").addEventListener("change",()=>loadOnboardingMembers());
 
@@ -382,7 +382,7 @@ export function createOnboarding({ env, runtime, connectionsUI, larkUI, settings
       const ws=workspaceUI.workspaceView,target=notificationsUI.memberNotificationTarget();if(!ws || !target)return;
       await membersUI.selectAgentTab("platforms");
       if(ws!==workspaceUI.workspaceView || !notificationsUI.sameNotificationTarget(target,notificationsUI.memberNotificationTarget()))return;
-      membersUI.renderMemberPlatforms();notificationsUI.setNotificationPicker("member-notification-",true);
+      membersUI.renderMemberPlatforms();notificationsUI.setNotificationPicker(true);
     });
   }
 

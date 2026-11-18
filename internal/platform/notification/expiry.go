@@ -70,7 +70,7 @@ func (m *Manager) PendingDeliveriesLocked(owner platform.RoomIdentity, target Ta
 			continue
 		}
 		for _, i := range outstandingItems(saved.state) {
-			if i.Route.Target.Canonical() == target.Canonical() {
+			if i.Route.Target == target {
 				out[i.DeliveryID] = true
 			}
 		}
@@ -87,7 +87,7 @@ func (m *Manager) ExpireTargetLocked(owner platform.RoomIdentity, target Target)
 		matches := saved.state.Metadata().Target == target
 		if !matches {
 			for _, i := range outstandingItems(saved.state) {
-				if i.Route.Target.Canonical() == target.Canonical() {
+				if i.Route.Target == target {
 					matches = true
 					break
 				}
@@ -118,7 +118,7 @@ func (m *Manager) PendingInputDeliveriesLocked(owner platform.RoomIdentity, targ
 			out[key.Source] = map[string]bool{}
 		}
 		for _, item := range outstandingItems(saved.state) {
-			if item.Route.Target.Canonical() == target.Canonical() {
+			if item.Route.Target == target {
 				out[key.Source][item.DeliveryID] = true
 			}
 		}

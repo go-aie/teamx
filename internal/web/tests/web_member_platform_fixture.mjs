@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 export const target = (id="a") => ({mode:"inbox",agent_id:id,membership_id:`member-${id}`});
-export const key = (id,t) => JSON.stringify([id,t.membership_id || "room"]);
+export const key = (id,t) => JSON.stringify([id,t.membership_id]);
 const copy = structuredClone;
 export function fixture({empty=false}={}) {
   const members=["a","b"].map(id=>({agent_id:id,membership_id:`member-${id}`,status:"paused",runner:{profile:"p"}}));
@@ -8,9 +8,9 @@ export function fixture({empty=false}={}) {
   const platforms=[{id:"gl",name:"公司 GitLab",provider:"gitlab",supports_notifications:true,url:"https://gitlab.invalid",validation:{status:"valid",user_id:101,username:"alice"}},{id:"gl2",name:"个人 GitLab",provider:"gitlab",supports_notifications:true,url:"https://gitlab.invalid",validation:{status:"valid",user_id:202,username:"bob"}},{id:"lark",name:"公司飞书",provider:"lark",supports_notifications:true,url:"https://open.feishu.cn",validation:{status:"valid",username:"Alice",account:{id:{value:"ou_a"}}}}].map(p=>({...p,version:1}));
   const records=new Map(),operations=new Map();
   const tools={revision:0,bindings:[],disabled:[],catalog:[{name:"gitlab",provider:"gitlab"},{name:"lark",provider:"lark"},{name:"scion",provider:"scion"},{name:"local"}]};
-  const gitlab=(id,t,interval=30)=>({platform_id:id,version:2,config:{enabled:true,platform_id:id,target:copy(t),interval_seconds:interval,backfill_seconds:0,events:{enabled:false,project:"",filter:{types:[]}},todos:{enabled:true,filter:{reasons:["assigned"],types:["work_item"]}}},events:{available:true,status:"disabled",config:{enabled:false}},todos:{available:true,status:"running",config:{enabled:true},recipient_id:id==="gl2" ? 202 : 101,instance:"https://gitlab.invalid",subscription_id:`sub-${id}-${t.membership_id || "room"}`},errors:{},pending:{}});
+  const gitlab=(id,t,interval=30)=>({platform_id:id,version:2,config:{enabled:true,platform_id:id,target:copy(t),interval_seconds:interval,backfill_seconds:0,events:{enabled:false,project:"",filter:{types:[]}},todos:{enabled:true,filter:{reasons:["assigned"],types:["work_item"]}}},events:{available:true,status:"disabled",config:{enabled:false}},todos:{available:true,status:"running",config:{enabled:true},recipient_id:id==="gl2" ? 202 : 101,instance:"https://gitlab.invalid",subscription_id:`sub-${id}-${t.membership_id}`},errors:{},pending:{}});
   if(!empty){
-    for(const t of [target("a"),target("b"),{}])records.set(key("gl",t),gitlab("gl",t,t.membership_id==="member-b" ? 45 : 30));
+    for(const t of [target("a"),target("b")])records.set(key("gl",t),gitlab("gl",t,t.membership_id==="member-b" ? 45 : 30));
     records.set(key("lark",target("a")),{platform_id:"lark",provider:"lark",channel:"messages",subscription_id:"sub-lark-a",subscription_version:3,status:"running",config:{enabled:true,platform_id:"lark",target:target("a"),private:{enabled:true,scope:"all",chat_ids:[]},groups:{enabled:false,chat_ids:[],message_mode:"mentions",at_me:true,at_all:false},interval_seconds:60,backfill_seconds:0},lark:{chats:[]}});
   }
   const source=(v)=>({provider:"gitlab",channel:"todos",platform_id:v.platform_id,target:copy(v.config.target),subscription_id:v.todos.subscription_id,instance:"https://gitlab.invalid",config:copy(v.config)});
@@ -53,18 +53,18 @@ export function fixture({empty=false}={}) {
       const q=new URL(path,"http://fixture").searchParams;
       const all=[...records.values()],subscriptions=all.flatMap(v=>v.provider==="lark" ? [copy(v)] : v.todos.subscription_id ? [source(v)] : []);
       if(q.has("subscription_id"))return {subscriptions:subscriptions.filter(v=>v.subscription_id===q.get("subscription_id") && v.provider===q.get("provider") && v.channel===q.get("channel")),retired_subscriptions:[]};
-      assert.equal(q.has("platform_id"),false,"summary reads every member and room");
+      assert.equal(q.has("platform_id"),false,"summary reads every member");
       return {subscriptions,gitlab_platforms:copy(all.filter(v=>!v.provider))};
     }
     if(path.startsWith("/v1/platform/gitlab/notifications?")){
       const q=new URL(path,"http://fixture").searchParams;
-      assert.ok(q.has("target_mode"));
-      const t=q.get("target_mode")==="inbox" ? {mode:"inbox",agent_id:q.get("agent_id"),membership_id:q.get("membership_id")} : {};
+      assert.equal(q.get("target_mode"),"inbox");
+      const t={mode:"inbox",agent_id:q.get("agent_id"),membership_id:q.get("membership_id")};
       const saved=records.get(key(q.get("platform_id"),t));
       return copy(saved || {...gitlab(q.get("platform_id"),t),version:0,todos:{available:true,status:"disabled",config:{enabled:false}},config:{...gitlab(q.get("platform_id"),t).config,todos:{enabled:false,filter:{reasons:["assigned"],types:["work_item"]}}}});
     }
     if(path==="/v1/platform/gitlab/notifications/configure"){
-      assert.ok(body.config.target.mode,"HTTP configuration requires explicit target mode");
+      assert.equal(body.config.target.mode,"inbox");
       const k=key(body.platform_id,body.config.target),previous=records.get(k);
       assert.equal(body.version,previous?.version || 0);
       const next={...(previous || gitlab(body.platform_id,body.config.target)),version:body.version+1,config:copy(body.config)};records.set(k,next);return copy(next);
@@ -75,7 +75,7 @@ export function fixture({empty=false}={}) {
       assert.equal(body.subscription_id,previous?.subscription_id || "");assert.equal(body.subscription_version,previous?.subscription_version || 0);
       const next={...previous,platform_id:body.config.platform_id,provider:"lark",channel:"messages",subscription_id:previous?.subscription_id || "new-lark",subscription_version:body.subscription_version+1,status:body.config.enabled ? "running" : "disabled",config:copy(body.config),lark:{chats:[]}};records.set(k,next);return copy(next);
     }
-    if(path.endsWith("notifications/sync")){assert.ok(body.target?.mode,"sync requires explicit target mode");return copy(records.get(key(body.platform_id || "lark",body.target)));}
+    if(path.endsWith("notifications/sync")){assert.equal(body.target?.mode,"inbox");return copy(records.get(key(body.platform_id || "lark",body.target)));}
     if(path==="/v1/member/list")return {members:copy(members),latest_seq:0};
     if(path==="/v1/member/activity")return {member:copy(members.find(m=>m.membership_id===body.membership_id))};
     if(path==="/v1/member/inbox/status")return {latest_seq:50,expired_through:0,retained_entries:50,bytes:100,limits:{bytes:1000}};

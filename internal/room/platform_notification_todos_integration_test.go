@@ -283,7 +283,7 @@ func TestTodosPublicHTTPWorksWithoutWorkspaceAndGuardsIdentity(t *testing.T) {
 	if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &list) != nil || len(list.Subscriptions) != 1 || list.Subscriptions[0].RecipientID != 101 || !list.Subscriptions[0].Available || strings.Contains(response.Body.String(), "fingerprint") {
 		t.Fatal(response.Code, response.Body.String())
 	}
-	cfg := gitlab.NotificationConfig{Target: notification.Target{Mode: "room"}, Enabled: true, PlatformID: h.connection.ID, Todos: gitlab.TodoSettings{Enabled: true}}
+	cfg := gitlab.NotificationConfig{Target: h.state().Config.Target, Enabled: true, PlatformID: h.connection.ID, Todos: gitlab.TodoSettings{Enabled: true}}
 	request := func() map[string]any {
 		return map[string]any{"service_epoch": h.m.epoch, "room_id": h.room.RoomID, "room_instance": h.room.RoomInstance, "version": 0, "caller": humanCaller, "config": cfg}
 	}
@@ -300,7 +300,7 @@ func TestTodosPublicHTTPWorksWithoutWorkspaceAndGuardsIdentity(t *testing.T) {
 	r := request()
 	r["version"] = 1
 	delete(r, "config")
-	r["target"] = notification.Target{Mode: "room"}
+	r["target"] = cfg.Target
 	r["platform_id"] = cfg.PlatformID
 	if got := managerHTTP(h.m, "/v1/platform/gitlab/notifications/sync", r); got.Code != 200 {
 		t.Fatal(got.Code, got.Body.String())
@@ -412,9 +412,10 @@ func TestTodosAdditionalAccountKeepsIndependentProgress(t *testing.T) {
 	}
 	h.m = testManager(t, root, managerTestProfiles(t))
 	h.m.notifications.Clock = h.clock.get
+	target := h.state().Config.Target
 	h.m.mu.Lock()
-	current, err := h.m.currentTodosForTargetLocked(h.room.RoomIdentity, other.ID, notification.Target{})
-	original, originalErr := h.m.currentTodosForTargetLocked(h.room.RoomIdentity, h.connection.ID, notification.Target{})
+	current, err := h.m.currentTodosForTargetLocked(h.room.RoomIdentity, other.ID, target)
+	original, originalErr := h.m.currentTodosForTargetLocked(h.room.RoomIdentity, h.connection.ID, target)
 	views, viewErr := h.m.notificationViewsLocked(h.room.RoomIdentity)
 	history, histErr := h.m.retiredNotificationViewsLocked(h.room.RoomIdentity)
 	h.m.mu.Unlock()
@@ -542,7 +543,7 @@ func TestTodosWorkspaceChangesDoNotChangeAccountScope(t *testing.T) {
 	}
 }
 
-func TestTodosReceiptsSurviveClearAndRestart(t *testing.T) {
+func TestTodosReceiptsDeduplicateAfterRestart(t *testing.T) {
 	parallelFixtureTest(t)
 	h := newTodoHarness(t)
 	h.pages.pending = []gitlab.Todo{h.todo(1, 0, "pending"), h.todo(2, 0, "pending")}
@@ -550,28 +551,23 @@ func TestTodosReceiptsSurviveClearAndRestart(t *testing.T) {
 	saved := h.state()
 	svc := eventLiveService(t, &eventHarness{m: h.m, room: h.room})
 	item, _ := saved.Notification(gitlab.TodosKey(saved.Binding, 1))
-	receipt, err := svc.room.Call[PostReceipt](context.Background(), postIntegrationMessage{RoomIdentity: h.room.RoomIdentity, DeliveryID: item.DeliveryID, Text: item.Text, Source: item.Source})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = svc.room.Call[ClearReceipt](context.Background(), ClearMessages{RoomIdentity: h.room.RoomIdentity, Caller: humanCaller, ThroughSeq: receipt.Seq}); err != nil {
+	id := subscriptionMember(saved.Metadata())
+	if err := svc.receiveInbox(t.Context(), saved.Config.Target, item); err != nil {
 		t.Fatal(err)
 	}
 	h.reopen()
-	eventLiveService(t, &eventHarness{m: h.m, room: h.room})
-	if err = h.m.notifications.Deliver(context.Background(), h.key, saved.SubscriptionVersion); err != nil {
-		t.Fatal(err)
+	svc = eventLiveService(t, &eventHarness{m: h.m, room: h.room})
+	for _, want := range []uint64{1, 2} {
+		if err := h.m.notifications.Deliver(t.Context(), h.key, saved.SubscriptionVersion); err != nil {
+			t.Fatal(err)
+		}
+		if page := inboxRoutingPreview(t, svc, id); page.SnapshotSeq != want {
+			t.Fatal("Inbox receipt lost or duplicated", page)
+		}
 	}
-	_, room := readManagedRoom(t, h.m, h.room)
-	if len(room.Messages) != 0 || room.LatestSeq != receipt.Seq || len(h.state().Inbox) != 1 {
-		t.Fatal("cleared receipt did not deduplicate", room)
-	}
-	if err = h.m.notifications.Deliver(context.Background(), h.key, saved.SubscriptionVersion); err != nil {
-		t.Fatal(err)
-	}
-	_, room = readManagedRoom(t, h.m, h.room)
-	if len(room.Messages) != 1 || room.Messages[0].Source.Channel != "todos" || room.Messages[0].Author.Kind != "integration" || len(room.IntegrationReceipts) != 2 || len(h.state().Inbox) != 0 {
-		t.Fatal(room)
+	room, err := svc.store.LoadRoom()
+	if err != nil || room.LatestSeq != 0 || len(h.state().Inbox) != 0 {
+		t.Fatal(room, err)
 	}
 	// Reappearing as pending does not create another notification after ack.
 	h.clock.add(130 * time.Second)
@@ -671,17 +667,17 @@ func TestTodosAllProjectsDoesNotDependOnWorkspaceRecovery(t *testing.T) {
 	}
 }
 
-func TestTodosTCPHTTPConfigureSyncDisableAndRoomDelivery(t *testing.T) {
+func TestTodosTCPHTTPConfigureSyncDisableAndInboxDelivery(t *testing.T) {
 	parallelFixtureTest(t)
 	m := testManager(t, t.TempDir(), managerTestProfiles(t))
 	room := managerCreate(t, m, "http-todos")
 	c := verifyTodoAccount(t, m, platformTestSave(t, m, platformTestRequest(m)), 101)
-	eventLiveService(t, &eventHarness{m: m, room: room})
+	svc := eventLiveService(t, &eventHarness{m: m, room: room})
 	m.notifications.Source(gitlab.TodosSourceID).(*gitlab.TodosSource).Prepare = func(_ context.Context, _ string, _ RoomIdentity, b gitlab.TodosQueryScope) (gitlab.TodoFetcher, error) {
 		return todoFetchFunc(func(_ context.Context, q gitlab.TodoQuery) (gitlab.TodoBatch, error) {
 			items := []gitlab.Todo{}
 			if q.State == "pending" {
-				items = append(items, gitlab.Todo{ID: 9, RecipientID: b.Binding.UserID, ProjectID: 7, Project: "group/project", Action: "assigned", Reason: "assigned", Kind: "work_item", TargetType: "WorkItem", TargetID: 70, TargetIID: 42, Title: "HTTP to room", URL: b.Binding.URL + "/group/project/-/work_items/42", CreatedAt: time.Now().UTC(), State: "pending"})
+				items = append(items, gitlab.Todo{ID: 9, RecipientID: b.Binding.UserID, ProjectID: 7, Project: "group/project", Action: "assigned", Reason: "assigned", Kind: "work_item", TargetType: "WorkItem", TargetID: 70, TargetIID: 42, Title: "HTTP to Inbox", URL: b.Binding.URL + "/group/project/-/work_items/42", CreatedAt: time.Now().UTC(), State: "pending"})
 			}
 			return gitlab.TodoBatch{Version: 1, Todos: items, Complete: true, ResponseBytes: 200}, nil
 		}), nil
@@ -691,7 +687,7 @@ func TestTodosTCPHTTPConfigureSyncDisableAndRoomDelivery(t *testing.T) {
 	}
 	server := httptest.NewServer(m)
 	defer server.Close()
-	cfg := gitlab.NotificationConfig{Target: notification.Target{Mode: "room"}, Enabled: true, PlatformID: c.ID, Todos: gitlab.TodoSettings{Enabled: true}}
+	cfg := gitlab.NotificationConfig{Target: fixtureInboxTarget(t, m, room.RoomIdentity), Enabled: true, PlatformID: c.ID, Todos: gitlab.TodoSettings{Enabled: true}}
 	payload := map[string]any{"service_epoch": m.epoch, "room_id": room.RoomID, "room_instance": room.RoomInstance, "version": 0, "caller": humanCaller, "config": cfg}
 	call := func(path string) notificationView {
 		t.Helper()
@@ -718,14 +714,14 @@ func TestTodosTCPHTTPConfigureSyncDisableAndRoomDelivery(t *testing.T) {
 		t.Fatal(view)
 	}
 	delete(payload, "config")
-	payload["target"] = notification.Target{Mode: "room"}
+	payload["target"] = cfg.Target
 	payload["platform_id"] = cfg.PlatformID
+	id := subscriptionMember(notification.Metadata{Key: notification.Key{Owner: room.RoomIdentity}, Target: cfg.Target})
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		_, snapshot := readManagedRoom(t, m, room)
-		if len(snapshot.Messages) == 1 {
-			if snapshot.Messages[0].Source.Channel != "todos" || snapshot.Messages[0].Author.Kind != "integration" {
-				t.Fatal(snapshot)
+		if page := inboxRoutingPreview(t, svc, id); page.SnapshotSeq == 1 {
+			if len(page.Entries) != 1 || page.Entries[0].Item.Channel != "todos" {
+				t.Fatal(page)
 			}
 			break
 		}
@@ -743,7 +739,7 @@ func TestTodosTCPHTTPConfigureSyncDisableAndRoomDelivery(t *testing.T) {
 		t.Fatal(view)
 	}
 	_, snapshot := readManagedRoom(t, m, room)
-	if len(snapshot.Messages) != 1 || len(snapshot.IntegrationReceipts) != 1 {
+	if snapshot.LatestSeq != 0 || inboxRoutingPreview(t, svc, id).SnapshotSeq != 1 {
 		t.Fatal("sync repeated todo delivery", snapshot)
 	}
 }
@@ -766,12 +762,12 @@ func TestTodosInactiveBacklogDeliversOnlyAfterItsRoomIsActive(t *testing.T) {
 	if err := svc.close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	eventLiveService(t, &eventHarness{m: h.m, room: h.room})
+	svc = eventLiveService(t, &eventHarness{m: h.m, room: h.room})
 	if err := h.m.notifications.Deliver(context.Background(), h.key, s.SubscriptionVersion); err != nil {
 		t.Fatal(err)
 	}
 	_, current := readManagedRoom(t, h.m, h.room)
-	if len(current.Messages) != 1 || current.Messages[0].Source.Channel != "todos" || len(h.state().Inbox) != 0 {
+	if current.LatestSeq != 0 || inboxRoutingPreview(t, svc, subscriptionMember(s.Metadata())).SnapshotSeq != 1 || len(h.state().Inbox) != 0 {
 		t.Fatal(current)
 	}
 }

@@ -131,19 +131,23 @@ func NormalizeEventsConfig(c EventsConfig) (EventsConfig, error) {
 		return c, err
 	}
 	c.BackfillStart = start
-	f := &c.Filter
+	c.Filter, err = NormalizeEventsFilter(c.Filter)
+	return c, err
+}
+
+func NormalizeEventsFilter(f EventsFilter) (EventsFilter, error) {
 	f.Types = append([]string(nil), f.Types...)
 	for _, typ := range f.Types {
 		if !slices.Contains([]string{"merge_request.opened", "merge_request.merged", "merge_request.closed", "note", "push"}, typ) {
-			return c, notification.ErrRequest
+			return f, notification.ErrRequest
 		}
 	}
 	if len(f.Types) > 64 {
-		return c, notification.ErrRequest
+		return f, notification.ErrRequest
 	}
 	slices.Sort(f.Types)
 	f.Types = slices.Compact(f.Types)
-	return c, nil
+	return f, nil
 }
 
 func EventsKey(b platform.ProjectBinding, project, id int64) string {
@@ -213,8 +217,8 @@ func (s EventsState) Validate(owner platform.RoomIdentity) error {
 		return notification.ErrInvalid
 	}
 	for i, r := range s.Filters {
-		c, err := NormalizeEventsConfig(EventsConfig{Filter: r.Filter})
-		if err != nil || !reflect.DeepEqual(c.Filter, r.Filter) || i > 0 && r.Since.Before(s.Filters[i-1].Since) {
+		c, err := NormalizeEventsFilter(r.Filter)
+		if err != nil || !reflect.DeepEqual(c, r.Filter) || i > 0 && r.Since.Before(s.Filters[i-1].Since) {
 			return notification.ErrInvalid
 		}
 	}
@@ -319,7 +323,7 @@ func (s *EventsState) Accept(events []Event, now time.Time) (unknown, known int,
 		if e.ID <= 0 || e.ProjectID != s.ProjectID || e.CreatedAt.IsZero() {
 			return 0, 0, notification.ErrInvalid
 		}
-		if s.Config.Target.Inbox() && notification.Expired(e.CreatedAt, s.ExpiredBefore) {
+		if notification.Expired(e.CreatedAt, s.ExpiredBefore) {
 			continue
 		}
 		key := EventsKey(s.Binding, s.ProjectID, e.ID)

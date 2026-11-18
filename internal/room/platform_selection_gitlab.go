@@ -48,7 +48,7 @@ func validGitLabSelectionDraft(in platformSelectionInput, d platformSelectionDra
 		return false
 	}
 	if d.EventsFilter != nil {
-		_, err := gitlab.NormalizeEventsConfig(gitlab.EventsConfig{Filter: *d.EventsFilter})
+		_, err := gitlab.NormalizeEventsFilter(*d.EventsFilter)
 		return err == nil
 	}
 	return true

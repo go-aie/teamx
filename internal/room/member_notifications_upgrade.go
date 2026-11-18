@@ -77,17 +77,22 @@ func (m *roomManager) convertNotificationSource(owner RoomIdentity, path string,
 		}
 	}
 	state, err := adapter.Source.Decode(raw, owner)
-	if err != nil || state == nil || state.Validate(owner) != nil {
+	retiredTarget := errors.Is(err, notification.ErrRetiredRoomTarget)
+	if err != nil && !retiredTarget || state == nil {
 		return nil, nil, ErrInvalid
 	}
 	meta := state.Metadata()
-	target, err := meta.Target.Normalize()
-	if err != nil || target != meta.Target || meta.Key.Source != wire.SourceID || filepath.Base(path) != wire.Provider+"."+wire.Channel+"."+meta.Key.SubscriptionID+".json" {
+	if meta.Key.Source != wire.SourceID || filepath.Base(path) != wire.Provider+"."+wire.Channel+"."+meta.Key.SubscriptionID+".json" {
 		return nil, nil, ErrInvalid
 	}
 	limits := notification.DefaultLimits()
 	if int64(len(before)) > limits.Bytes || meta.Observed > limits.Observed || meta.Pending > limits.Inbox {
 		return nil, nil, ErrCapacity
+	}
+	if retiredTarget {
+		state = nil
+	} else if !meta.Target.Valid() || state.Validate(owner) != nil {
+		return nil, nil, ErrInvalid
 	}
 	if wire.Schema == adapter.Source.Schema() {
 		return before, state, nil
@@ -165,6 +170,9 @@ func convertGitLabSettings(owner RoomIdentity, before json.RawMessage, states []
 			if record.Schema != 3 || record.Config.PlatformID != id {
 				return nil, ErrInvalid
 			}
+			if record.Config.Target.RetiredRoom() {
+				continue
+			}
 			record.Schema = gitlabNotificationSchema
 			next.Platforms[id] = []gitlabNotificationRecord{record}
 		}
@@ -175,7 +183,9 @@ func convertGitLabSettings(owner RoomIdentity, before json.RawMessage, states []
 		}
 		record.Config.Enabled = true // Schema 2 had category switches only.
 		record.Schema = gitlabNotificationSchema
-		next.Platforms[record.Config.PlatformID] = []gitlabNotificationRecord{record}
+		if !record.Config.Target.RetiredRoom() {
+			next.Platforms[record.Config.PlatformID] = []gitlabNotificationRecord{record}
+		}
 	case 0:
 		if !absent {
 			return nil, ErrVersion
@@ -338,13 +348,17 @@ func (m *roomManager) planMemberNotificationsUpgrade(overrides map[string]json.R
 			if err != nil {
 				return j, fmt.Errorf("Room %s %s: %w", owner.RoomID, entry.Name(), err)
 			}
-			meta := state.Metadata()
-			if meta.Target.Inbox() {
-				if agent, ok := agents[meta.Target.MembershipID]; ok && agent != meta.Target.AgentID {
-					return j, ErrIdentity
+			if state == nil {
+				if err := add(path, before, after); err != nil {
+					return j, err
 				}
-				agents[meta.Target.MembershipID] = meta.Target.AgentID
+				continue
 			}
+			meta := state.Metadata()
+			if agent, ok := agents[meta.Target.MembershipID]; ok && agent != meta.Target.AgentID {
+				return j, ErrIdentity
+			}
+			agents[meta.Target.MembershipID] = meta.Target.AgentID
 			if !meta.Retired {
 				var envelope notificationEnvelope
 				if decodeNotificationJSON(before, &envelope) != nil {
@@ -395,12 +409,13 @@ func (m *roomManager) planMemberNotificationsUpgrade(overrides map[string]json.R
 			for _, records := range settings.Platforms {
 				for _, record := range records {
 					t := record.Config.Target
-					if t.Inbox() {
-						if agent, ok := agents[t.MembershipID]; ok && agent != t.AgentID {
-							return j, ErrIdentity
-						}
-						agents[t.MembershipID] = t.AgentID
+					if t.RetiredRoom() {
+						continue
 					}
+					if agent, ok := agents[t.MembershipID]; ok && agent != t.AgentID {
+						return j, ErrIdentity
+					}
+					agents[t.MembershipID] = t.AgentID
 				}
 			}
 		}

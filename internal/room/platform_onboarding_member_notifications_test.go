@@ -28,7 +28,7 @@ func larkOnboardingSubscriptionForTest(t *testing.T, m *roomManager, req platfor
 	return *s
 }
 
-func TestMemberNotificationGitLabOnboardingMembersAndRoomRemainIndependent(t *testing.T) {
+func TestMemberNotificationGitLabOnboardingMembersRemainIndependent(t *testing.T) {
 	parallelFixtureTest(t)
 	m, room, _, c, members := cliToolFixture(t, "exit 0")
 	clock := &eventTestClock{now: time.Unix(1000, 0).UTC()}
@@ -37,13 +37,10 @@ func TestMemberNotificationGitLabOnboardingMembersAndRoomRemainIndependent(t *te
 	onboardingHTTP(t, m, "prepare", aReq)
 	onboardingApply(t, m, aReq)
 	a := getGitLabNotificationConfigHTTP(t, m, room.RoomIdentity, c.ID, inboxTarget(aReq.MemberIdentity))
-	rCfg := gitlab.DefaultNotificationConfig(c.ID)
-	rCfg.Enabled = false
-	r := saveGitLabNotificationConfigHTTP(t, m, room.RoomIdentity, 0, rCfg)
 	bReq := onboardingRequest(t, m, room, members[1], c)
 	p := onboardingHTTP(t, m, "prepare", bReq)
 	if p.Schema != platformOnboardingSchema || p.BeforeNotificationVersion != 0 || p.Notifications.Status != "pending" || p.GitLab.Target != inboxTarget(bReq.MemberIdentity) {
-		t.Fatal("A or Room settings mistaken for B", p)
+		t.Fatal("A settings mistaken for B", p)
 	}
 	// A's intervening edit changes only A's version, not B's admission.
 	a.Config.IntervalSeconds = 60
@@ -63,9 +60,6 @@ func TestMemberNotificationGitLabOnboardingMembersAndRoomRemainIndependent(t *te
 	}
 	if got := getGitLabNotificationConfigHTTP(t, m, room.RoomIdentity, c.ID, a.Config.Target); !reflect.DeepEqual(a, got) {
 		t.Fatal("B changed A")
-	}
-	if got := getGitLabNotificationConfigHTTP(t, m, room.RoomIdentity, c.ID, r.Config.Target); !reflect.DeepEqual(r, got) {
-		t.Fatal("B changed Room")
 	}
 	b.Config.Enabled = false
 	b = saveGitLabNotificationConfigHTTP(t, m, room.RoomIdentity, b.Version, b.Config)
@@ -253,7 +247,7 @@ func TestMemberNotificationOnboardingJournalTargetValidationAndHistoricalResults
 	minimal := req
 	minimal.platformOnboardingSpec = platformOnboardingSpec{}
 	history := onboardingHTTP(t, m, "status", minimal)
-	if history.Schema != 1 || history.GitLab.Target.Inbox() {
+	if history.Schema != 1 || history.GitLab.Target.Valid() {
 		t.Fatal("historical result retargeted")
 	}
 	onboardingApply(t, m, req)

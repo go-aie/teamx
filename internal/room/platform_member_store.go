@@ -92,12 +92,12 @@ func validPlatformMemberInput(kind string, in platformMemberInput) bool {
 			return false
 		}
 		if in.EventsFilter != nil {
-			if _, err := gitlab.NormalizeEventsConfig(gitlab.EventsConfig{Filter: *in.EventsFilter}); err != nil {
+			if _, err := gitlab.NormalizeEventsFilter(*in.EventsFilter); err != nil {
 				return false
 			}
 		}
 		if in.TodosFilter != nil {
-			if _, err := gitlab.NormalizeTodosConfig(gitlab.TodosConfig{PlatformID: in.PlatformID, Filter: *in.TodosFilter}); err != nil {
+			if _, err := gitlab.NormalizeTodosFilter(*in.TodosFilter); err != nil {
 				return false
 			}
 		}

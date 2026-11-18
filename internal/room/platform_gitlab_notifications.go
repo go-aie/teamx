@@ -123,16 +123,20 @@ func indexGitLabNotifications(owner RoomIdentity, saved gitlabNotificationFile) 
 			return nil, ErrInvalid
 		}
 		for _, record := range entries {
-			cfg, err := gitlab.NormalizeNotificationConfig(record.Config)
-			if err != nil || cfg.PlatformID != id || record.Schema != gitlabNotificationSchema || record.Version == 0 || record.RoomIdentity != owner || !reflect.DeepEqual(cfg, record.Config) {
+			if record.Config.PlatformID != id || record.Schema != gitlabNotificationSchema || record.Version == 0 || record.RoomIdentity != owner {
 				return nil, ErrInvalid
 			}
-			if cfg.Target.Inbox() {
-				if agent, ok := agents[cfg.Target.MembershipID]; ok && agent != cfg.Target.AgentID {
-					return nil, ErrIdentity
-				}
-				agents[cfg.Target.MembershipID] = cfg.Target.AgentID
+			if record.Config.Target.RetiredRoom() {
+				continue
 			}
+			cfg, err := gitlab.NormalizeNotificationConfig(record.Config)
+			if err != nil || !reflect.DeepEqual(cfg, record.Config) {
+				return nil, ErrInvalid
+			}
+			if agent, ok := agents[cfg.Target.MembershipID]; ok && agent != cfg.Target.AgentID {
+				return nil, ErrIdentity
+			}
+			agents[cfg.Target.MembershipID] = cfg.Target.AgentID
 			key := notificationScopeFor(id, cfg.Target)
 			if prior, exists := records[key]; exists {
 				if prior.Config.Target != cfg.Target {
@@ -188,9 +192,6 @@ func (m *roomManager) saveGitLabNotificationLocked(owner RoomIdentity, record gi
 func (m *roomManager) checkNotificationMembershipsLocked(owner RoomIdentity, records map[notificationScope]gitlabNotificationRecord) error {
 	agents := map[string]string{}
 	check := func(target notification.Target) error {
-		if !target.Inbox() {
-			return nil
-		}
 		if agent, exists := agents[target.MembershipID]; exists && agent != target.AgentID {
 			return ErrIdentity
 		}
@@ -240,6 +241,12 @@ func (m *roomManager) gitlabNotificationViewForTargetLocked(owner RoomIdentity, 
 	ev.PlatformID, tv.PlatformID = id, id
 	m.setNotificationTargetViewLocked(&ev, target)
 	m.setNotificationTargetViewLocked(&tv, target)
+	if events == nil {
+		ev.Config = gitlab.EventsConfig{Target: target, IntervalSeconds: gitlab.DefaultIntervalSeconds}
+	}
+	if todos == nil {
+		tv.Config = gitlab.TodosConfig{Target: target, IntervalSeconds: gitlab.DefaultIntervalSeconds}
+	}
 	v := gitlabNotificationView{PlatformID: id, Events: ev, Todos: tv, Pending: map[string]bool{}, Errors: map[string]string{}, Applying: m.gitlabConfiguring[notificationApplyKey(owner, id, target)]}
 	if saved, ok := m.gitlabNotifications[owner][notificationScopeFor(id, target)]; ok {
 		if saved.Config.Target != target {
@@ -334,9 +341,7 @@ func gitlabConfigApplied(cfg gitlab.NotificationConfig, state notification.State
 		if cfg.BackfillStart.IsZero() {
 			expected.BackfillSeconds, expected.BackfillStart = s.Config.BackfillSeconds, s.Config.BackfillStart
 		}
-		actual := s.Config
-		actual.Target = actual.Target.Canonical()
-		return reflect.DeepEqual(actual, expected)
+		return reflect.DeepEqual(s.Config, expected)
 	case gitlab.TodosState:
 		if !cfg.TodoConfig().Enabled {
 			return !s.Config.Enabled
@@ -345,9 +350,7 @@ func gitlabConfigApplied(cfg gitlab.NotificationConfig, state notification.State
 		if cfg.BackfillStart.IsZero() {
 			expected.BackfillSeconds, expected.BackfillStart = s.Config.BackfillSeconds, s.Config.BackfillStart
 		}
-		actual := s.Config
-		actual.Target = actual.Target.Canonical()
-		return reflect.DeepEqual(actual, expected)
+		return reflect.DeepEqual(s.Config, expected)
 	}
 	return false
 }

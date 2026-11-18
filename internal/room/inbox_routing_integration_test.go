@@ -24,7 +24,7 @@ func TestInboxRoutingHistoricalSwitchPreservesPendingAndPreviewDoesNotConsume(t 
 	svc := eventLiveService(t, h)
 	a := inboxRoutingMember(t, svc, "assistant", strings.Repeat("1", 32))
 	b := inboxRoutingMember(t, svc, "reviewer", "generation-reviewer")
-	seedEventInbox(t, h, 1) // Already accepted for Room; retain this destination.
+	seedEventInbox(t, h, 1) // Already accepted for the initial member.
 	inboxRoutingConfigure(t, h, inboxTarget(a))
 	seedEventInbox(t, h, 2)
 	inboxRoutingConfigure(t, h, inboxTarget(b))
@@ -33,7 +33,7 @@ func TestInboxRoutingHistoricalSwitchPreservesPendingAndPreviewDoesNotConsume(t 
 		inboxRoutingDeliver(t, h)
 	}
 	saved, err := svc.store.LoadRoom()
-	if err != nil || len(saved.Messages) != 1 || saved.Messages[0].Source.ItemKey != h.state().Binding.URL+"|7|1" {
+	if err != nil || len(saved.Messages) != 0 || inboxRoutingPreview(t, svc, subscriptionMember(notification.Metadata{Key: h.state().Metadata().Key, Target: fixtureInboxTarget(t, h.m, h.room.RoomIdentity)})).SnapshotSeq != 1 {
 		t.Fatal("raw inbox notification reached Room", err)
 	}
 	for _, id := range []MemberIdentity{a, b} {
@@ -49,8 +49,8 @@ func TestInboxRoutingHistoricalSwitchPreservesPendingAndPreviewDoesNotConsume(t 
 			t.Fatal("stored routing changed", err)
 		}
 	}
-	// Existing observations are not replayed when returning to public delivery.
-	inboxRoutingConfigure(t, h, notification.Target{})
+	// Existing observations are not replayed when returning to the initial member.
+	inboxRoutingConfigure(t, h, fixtureInboxTarget(t, h.m, h.room.RoomIdentity))
 	seedEventInbox(t, h, 2)
 	if len(h.state().Inbox) != 0 {
 		t.Fatal("switch replayed an observed item")

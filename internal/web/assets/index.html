@@ -140,16 +140,15 @@
         <div id="send-success" class="sr-only" role="status"></div>
       </form>
     </section>
-    <aside id="member-rail" class="member-rail" aria-label="团队成员、通知源与详情">
+    <aside id="member-rail" class="member-rail" aria-label="团队成员与详情">
       <div id="member-resizer" class="sidebar-resizer member-resizer" role="separator" tabindex="0" aria-label="调整右侧栏宽度" aria-orientation="vertical" aria-controls="member-rail" title="左右拖动调整宽度"></div>
       <div id="member-list-view" class="member-list-view">
         <header class="rail-header member-rail-header">
-          <button id="close-conversation-notifications" class="text-button back-button" type="button" hidden aria-label="返回对话" title="返回对话"><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m15 6-6 6 6 6"/></svg></button>
           <button id="close-mobile-members" class="text-button mobile-panel-back back-button" type="button" aria-label="返回对话" title="返回对话"><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m15 6-6 6 6 6"/></svg></button>
           <h2 id="member-list-title" tabindex="-1">房间详情</h2>
           <button id="close-room-details" class="icon-button desktop-panel-close" type="button" aria-label="关闭详情" title="关闭详情"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button>
         </header>
-        <div id="member-sidebar" class="sidebar" aria-label="成员与房间通知">
+        <div id="member-sidebar" class="sidebar" aria-label="房间成员">
           <section id="room-details" class="room-details" aria-label="房间设置">
             <div id="room-name-row" class="room-name-row"><span class="quiet">房间名称</span><button id="rename-room" class="text-button" type="button" aria-label="修改房间名称" title="修改房间名称" aria-controls="rename-form" disabled><span id="room-detail-name"></span><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div>
             <form id="rename-form" class="room-rename" aria-label="修改房间名称" hidden>
@@ -169,23 +168,10 @@
           <div id="member-empty" class="member-empty"><span class="member-empty-icon">◎</span><p>还没有 Agent 加入</p><span>添加成员后，启用它的自动协作。</span></div>
           <div id="members" class="members-compact"></div>
           <p id="notification-next-step" class="quiet" role="status" tabindex="-1" hidden></p>
-          <section id="notification-sources" class="notification-sources" aria-labelledby="notification-sources-title" hidden>
-            <div class="sources-heading"><h2 id="notification-sources-title"><span id="notification-sources-label">房间通知</span> <span id="notification-source-count">0</span></h2><button id="notification-add-toggle" class="add-button" type="button" aria-label="添加房间通知" title="添加房间通知" aria-expanded="false" aria-controls="notification-add-picker"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
-            <div id="notification-platforms" aria-label="发送到当前房间的通知"></div>
-            <p id="notification-empty" class="quiet">将平台通知发送到当前房间。</p>
-            <p id="notification-list-error" class="form-error" role="status" hidden></p>
-            <button id="notification-list-reload" class="text-button" type="button" hidden>重新读取</button>
-            <div id="notification-add-picker" class="notification-add-picker" hidden>
-              <label for="notification-add-search" class="sr-only">搜索平台</label><input id="notification-add-search" type="search" placeholder="搜索 GitLab 平台" autocomplete="off" class="field-control">
-              <div id="notification-add-options" aria-label="选择已有平台"></div>
-
-            </div>
-          </section>
           <details id="notification-orphans" hidden><summary>通知接收异常</summary><div id="notification-orphan-items"></div></details>
           <section id="conversation-settings" class="conversation-settings" aria-label="会话设置">
             <p id="connection" class="connection quiet" role="status">正在连接</p>
             <button id="open-general-settings" class="text-button" type="button" aria-haspopup="dialog" aria-controls="settings-dialog" hidden>设置</button>
-            <button id="direct-notifications" class="text-button" type="button" hidden>会话通知<svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
             <button id="restart-discussion" class="text-button" type="button" disabled>重新开始</button>
           </section>
         </div>

@@ -7,13 +7,7 @@ import (
 )
 
 func TestTargetNormalizationAndMembershipScope(t *testing.T) {
-	for _, input := range []Target{{}, {Mode: "room"}} {
-		got, err := input.Normalize()
-		if err != nil || got != (Target{}) {
-			t.Fatal(got, err)
-		}
-	}
-	for _, input := range []Target{{Mode: "room", AgentID: "a"}, {Mode: "room", MembershipID: "m"}, {Mode: "inbox", AgentID: "a"}, {AgentID: "a", MembershipID: "m"}, {Mode: "inbox", MembershipID: "m"}, {Mode: "inbox", AgentID: "a", MembershipID: "../m"}} {
+	for _, input := range []Target{{}, {Mode: "room"}, {Mode: "room", AgentID: "a"}, {Mode: "room", MembershipID: "m"}, {Mode: "inbox", AgentID: "a"}, {AgentID: "a", MembershipID: "m"}, {Mode: "inbox", MembershipID: "m"}, {Mode: "inbox", AgentID: "a", MembershipID: "../m"}} {
 		if _, err := input.Normalize(); err == nil {
 			t.Fatal("accepted incomplete target", input)
 		}
@@ -29,7 +23,6 @@ func TestTargetNormalizationAndMembershipScope(t *testing.T) {
 func TestDestinationUniquenessPersistenceAndImmutableIdentity(t *testing.T) {
 	source := fixtureSource{id: SourceID{Provider: "fixture", Channel: "updates"}}
 	f := newNotificationFixture(t, source)
-	room := fixtureSubscription("room", source.id)
 	a, b := fixtureSubscription("a", source.id), fixtureSubscription("b", source.id)
 	a.Target = Target{Mode: "inbox", AgentID: "assistant", MembershipID: "membership-a"}
 	b.Target = Target{Mode: "inbox", AgentID: "reviewer", MembershipID: "membership-b"}
@@ -37,7 +30,7 @@ func TestDestinationUniquenessPersistenceAndImmutableIdentity(t *testing.T) {
 	// A historic pending item may target a different receiver. Its route and ID
 	// remain immutable even though the current subscription target has changed.
 	a.Inbox["historic"] = Item{Key: "historic", DeliveryID: "old-delivery-id", Route: Route{Target: b.Target, Version: 1}}
-	for _, state := range []fixtureState{room, a, b} {
+	for _, state := range []fixtureState{a, b} {
 		f.save(t, state)
 	}
 	duplicate := fixtureSubscription("duplicate", source.id)
@@ -69,7 +62,7 @@ func TestDestinationUniquenessPersistenceAndImmutableIdentity(t *testing.T) {
 	if err := f.m.LoadLocked(a.K.Owner); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []fixtureState{room, a, b} {
+	for _, want := range []fixtureState{a, b} {
 		got, err := f.m.CurrentLocked(want.K.Owner, source.id, want.Platform, want.Target)
 		if err != nil || !reflect.DeepEqual(got, want) {
 			t.Fatal("reopen changed identity/progress", got, err)

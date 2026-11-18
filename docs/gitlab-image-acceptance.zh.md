@@ -16,7 +16,7 @@ input_modalities = ["text", "image"]
 max_tokens = 8192
 ```
 
-上例是本次实测路由，不承诺其他部署或网关持续可用。`max_tokens` 是验收使用的输出预算：1536 的首次真实截图测试已能读出错误，但两次以 `max_tokens` 截断；8192 下相同截图的 Room／Inbox 场景正常结束。它不是图片预算，不保证所有任务都够用。配置按实际团队／Room 的生效来源设置；已有 Room 保留冻结配置，新建隔离 Room 验收，不修改旧 `backend.json` 或恢复指纹。
+上例是本次实测路由，不承诺其他部署或网关持续可用。`max_tokens` 是验收使用的输出预算：1536 的首次真实截图测试已能读出错误，但两次以 `max_tokens` 截断；8192 下相同截图的历史验收正常结束。它不是图片预算，不保证所有任务都够用。配置按实际团队／Room 的生效来源设置；已有 Room 保留冻结配置，新建隔离 Room 验收，不修改旧 `backend.json` 或恢复指纹。
 
 缺省模态保持纯文本，发现图片时告知未读并且不下载；显式图片配置在 ACP 握手能力缺失时停止开启 Session。启用模态不能替代真实网关请求。服务级 `[server.image_materials]` 的默认值和可调项见[配置示例](../.teamx/config.example.toml)，不进入 Room 模型指纹。
 
@@ -50,7 +50,7 @@ export MODEL_ID=qwen3.8-flash
 
    随机八位数字和红／蓝图形仅在 PNG 像素中，工作区和 prompt 不包含答案。须准确读出数字和布局、无工具调用、正常关闭；恢复检查另要求相同 Session ID 和原图上下文。误读或 429 均如实失败，不重放业务动作。
 
-2. 真实 GitLab 下载与 Room／Inbox 材料准备：
+2. 真实 GitLab 下载与成员 Inbox 材料准备：
 
    ```sh
    TEAMX_GITLAB_IMAGE_REAL=1 \
@@ -58,11 +58,11 @@ export MODEL_ID=qwen3.8-flash
    go test -tags e2e ./internal/room -run '^TestRealGitLabImageMaterials$' -count=1 -v -timeout 10m
    ```
 
-   两个通道分别在隔离 Room 中接收同一条原通知。下载不使用浏览器 Cookie；报告同时记录无凭据状态、PAT 请求的状态／耗时、图片字节数和摘要。无凭据对照须返回 401／403／404；公开附件或未知服务器故障不计为私有图片验收。纯文本准备不发起下载。检查前后 Room／Agent／Inbox 状态一致，且没有创建 matters。
+   从隔离成员的 Inbox 准备图片材料。下载不使用浏览器 Cookie；报告同时记录无凭据状态、PAT 请求的状态／耗时、图片字节数和摘要。无凭据对照须返回 401／403／404；公开附件或未知服务器故障不计为私有图片验收。纯文本准备不发起下载。检查前后 Room／Agent／Inbox 状态一致，且没有创建 matters。
 
 3. 真实模型识别：在上条命令增加 `TEAMX_GITLAB_IMAGE_MODEL=1`，并设置 `TEAMX_GITLAB_IMAGE_EXPECT` 为 JSON 字符串数组，例如 `'["只出现在选中截图像素中的完整错误句"]'`。期待值仅供测试核对，绝不放入模型 prompt；应先人工看图，选择正文与来源标题没有泄露的内容。
 
-   实际调用生产 `dshSession.Run`、材料准备及安装的 DSH，不模拟下载响应或模型输出。模型须正常结束、无工具调用，并给出 `channel`（Room／Inbox）、`visible_error`、`error_region`、`marked_region`、`coverage`。程序核对来源与错误文字；空间描述还须人工对照像素，不能仅凭非空字段判为正确。
+   实际调用生产 `dshSession.Run`、材料准备及安装的 DSH，不模拟下载响应或模型输出。模型须正常结束、无工具调用，并给出 `channel`（Inbox）、`visible_error`、`error_region`、`marked_region`、`coverage`。程序核对来源与错误文字；空间描述还须人工对照像素，不能仅凭非空字段判为正确。
 
    增加 `TEAMX_GITLAB_IMAGE_VARIANT=partial` 可对只有一张真实图片的通知构造本地截断／缺图变体：原图片与正文仍在，新增带真实截断提示的测试文字，以及原附件目录下不存在的测试文件名。远端评论不变。模型必须同时承认正文截断和图片未读。
 
@@ -88,10 +88,10 @@ export MODEL_ID=qwen3.8-flash
    go test -tags e2e ./internal/room -run '^TestRealGitLabImagePreview$' -count=1 -v -timeout 5m
    ```
 
-   测试将真实页面和附件 handler 暴露在临时 loopback 服务，写出 `browser-ready.json`，其中有页面、Room／Inbox 图片地址。浏览器驱动打开页面和两个图片地址，确认真实图片显示并保留截图后，才在证据目录写入 `browser-done`。三分钟内没有确认即失败；该文件只是驱动确认，仍须检查截图，不能把程序退出成功当成视觉验收。不要在浏览器不可用时创建确认文件。
+   测试将真实页面和附件 handler 暴露在临时 loopback 服务，写出 `browser-ready.json`，其中有页面和 Inbox 图片地址。浏览器驱动打开页面和图片地址，确认真实图片显示并保留截图后，才在证据目录写入 `browser-done`。三分钟内没有确认即失败；该文件只是驱动确认，仍须检查截图，不能把程序退出成功当成视觉验收。不要在浏览器不可用时创建确认文件。
 
 ## 报告判读与待补项
 
 每个目录的 `report.json` 独立判读，保留失败目录，不覆盖、不修改恢复证据。模型报告包括安装版本／摘要、精确路由、ACP 图片能力、提交块的字节／MIME／SHA-256、实际回答、终态及关闭状态；原 `backend.json` 记录 ACP 身份。DSH 附件对象摘要可能因其缩放处理而与 TeamX 提交字节不同，不混用两者。
 
-完整一期通过还需要独立短码、真实 GitLab、Room／Inbox 模型识别、缺失覆盖理解、正常恢复、轮换后重新准备和浏览器预览的证据。组件测试与真实测试分别记录；一位 OCR 误读、`max_tokens`、429、工具阻断和未执行项都不能写成通过。
+完整一期通过还需要独立短码、真实 GitLab、Inbox 模型识别、缺失覆盖理解、正常恢复、轮换后重新准备和浏览器预览的证据。组件测试与真实测试分别记录；一位 OCR 误读、`max_tokens`、429、工具阻断和未执行项都不能写成通过。

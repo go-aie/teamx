@@ -121,7 +121,7 @@ func TestTodosAndEventsOperationsCancelOnlyTheirOwnChannel(t *testing.T) {
 				h := newTodoHarness(t)
 				setTestEffectiveWorkspace(t, h.m, h.room, testGitLabWorkspace(), 1)
 
-				e, err := seedTestEvents(h.m, h.room.RoomIdentity, gitlab.EventsConfig{Enabled: true})
+				e, err := seedTestEvents(h.m, h.room.RoomIdentity, gitlab.EventsConfig{Target: h.state().Config.Target, Enabled: true})
 				if err != nil {
 					t.Fatal(err)
 				}

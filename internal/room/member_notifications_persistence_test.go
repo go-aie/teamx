@@ -25,7 +25,7 @@ func TestMemberNotificationGitLabReceiverStorageVersionsAndApplyLocks(t *testing
 	room := managerCreate(t, m, "receiver-storage")
 	a, _ := sharedGitLabPlatforms(t, m)
 	_, snapshot := readManagedRoom(t, m, room)
-	targets := []notification.Target{{}, {Mode: "inbox", AgentID: snapshot.Members[0].AgentID, MembershipID: snapshot.Members[0].MembershipID}, {Mode: "inbox", AgentID: snapshot.Members[1].AgentID, MembershipID: snapshot.Members[1].MembershipID}}
+	targets := []notification.Target{{Mode: "inbox", AgentID: snapshot.Members[0].AgentID, MembershipID: snapshot.Members[0].MembershipID}, {Mode: "inbox", AgentID: snapshot.Members[1].AgentID, MembershipID: snapshot.Members[1].MembershipID}}
 	configs := make([]gitlab.NotificationConfig, len(targets))
 	for i, target := range targets {
 		cfg := gitlab.DefaultNotificationConfig(a)
@@ -41,19 +41,19 @@ func TestMemberNotificationGitLabReceiverStorageVersionsAndApplyLocks(t *testing
 	if _, err := m.gitlabNotificationViewLocked(room.RoomIdentity, a); !errors.Is(err, ErrConflict) {
 		t.Fatal("ambiguous legacy read selected a receiver", err)
 	}
-	m.gitlabConfiguring[notificationApplyKey(room.RoomIdentity, a, targets[1])] = true
+	m.gitlabConfiguring[notificationApplyKey(room.RoomIdentity, a, targets[0])] = true
 	m.mu.Unlock()
-	cfg := configs[2]
+	cfg := configs[1]
 	cfg.IntervalSeconds = 60
 	vb, err := m.configureGitLabNotifications(context.Background(), room.RoomIdentity, 1, cfg)
 	if err != nil || vb.Version != 2 {
 		t.Fatal("A's apply lock blocked B", vb, err)
 	}
-	if _, err := m.configureGitLabNotifications(context.Background(), room.RoomIdentity, 1, configs[1]); !errors.Is(err, ErrBusy) {
+	if _, err := m.configureGitLabNotifications(context.Background(), room.RoomIdentity, 1, configs[0]); !errors.Is(err, ErrBusy) {
 		t.Fatal("A did not hold its apply lock", err)
 	}
 	m.mu.Lock()
-	delete(m.gitlabConfiguring, notificationApplyKey(room.RoomIdentity, a, targets[1]))
+	delete(m.gitlabConfiguring, notificationApplyKey(room.RoomIdentity, a, targets[0]))
 	m.mu.Unlock()
 	// Two concurrent writes with the same receiver version admit exactly one.
 	var wg sync.WaitGroup
@@ -62,7 +62,7 @@ func TestMemberNotificationGitLabReceiverStorageVersionsAndApplyLocks(t *testing
 		wg.Add(1)
 		go func(interval int) {
 			defer wg.Done()
-			cfg := configs[1]
+			cfg := configs[0]
 			cfg.IntervalSeconds = interval
 			_, err := m.configureGitLabNotifications(context.Background(), room.RoomIdentity, 1, cfg)
 			results <- err
@@ -83,7 +83,7 @@ func TestMemberNotificationGitLabReceiverStorageVersionsAndApplyLocks(t *testing
 	if success != 1 || conflicts != 1 {
 		t.Fatal(success, conflicts)
 	}
-	bad := configs[1]
+	bad := configs[0]
 	bad.Target.AgentID = "impostor"
 	if _, err := m.configureGitLabNotifications(context.Background(), room.RoomIdentity, 0, bad); !errors.Is(err, ErrIdentity) {
 		t.Fatal("same membership acquired another agent", err)
@@ -108,14 +108,14 @@ func TestMemberNotificationGitLabReceiverStorageVersionsAndApplyLocks(t *testing
 	if err := readSnapshot(restored.gitlabNotificationPath(room.RoomIdentity), &saved, maxGitLabConfigBytes); err != nil {
 		t.Fatal(err)
 	}
-	if len(saved.Platforms[a]) != 3 {
+	if len(saved.Platforms[a]) != 2 {
 		t.Fatal("persisted target collection", saved)
 	}
 	saved.Platforms[a] = append(saved.Platforms[a], saved.Platforms[a][0])
 	if err := validateGitLabNotificationFile(room.RoomIdentity, saved); !errors.Is(err, ErrConflict) {
 		t.Fatal("duplicate silently overwritten", err)
 	}
-	saved.Platforms[a][3].Config.Target.AgentID = "impostor"
+	saved.Platforms[a][2].Config.Target.AgentID = "impostor"
 	if err := validateGitLabNotificationFile(room.RoomIdentity, saved); !errors.Is(err, ErrIdentity) {
 		t.Fatal("membership impostor silently loaded", err)
 	}
@@ -317,7 +317,7 @@ func TestMemberNotificationUpgradeRejectsUnassignableOldDataBeforeWriting(t *tes
 			offline.initPlatform()
 			switch mode {
 			case "target-mismatch":
-				state.Config.Target = notification.Target{}
+				state.Config.Target = notification.Target{Mode: "inbox", AgentID: "another", MembershipID: "another"}
 			case "account-mismatch":
 				state.Binding.PlatformGeneration = strings.Repeat("f", 32)
 			case "duplicate":
@@ -432,15 +432,16 @@ func TestMemberNotificationGitLabSourceScopesReopenWithoutSharingProgress(t *tes
 	h, _ := newIndependentEventHarness(t)
 	seedEventInbox(t, h, 1)
 	original := h.state()
-	targets := []notification.Target{{}, {Mode: "inbox", AgentID: "assistant", MembershipID: "member-a"}, {Mode: "inbox", AgentID: "reviewer", MembershipID: "member-b"}}
+	targets := []notification.Target{{Mode: "inbox", AgentID: "assistant", MembershipID: "member-a"}, {Mode: "inbox", AgentID: "reviewer", MembershipID: "member-b"}}
 	want := []gitlab.EventsState{original}
-	for i, target := range targets[1:] {
+	for i, target := range targets {
 		state := original.Clone()
 		state.SubscriptionID = strings.Repeat(string(rune('a'+i)), 32)
 		state.Config.Target = target
 		for key, entry := range state.Inbox {
 			entry.SubscriptionID = state.SubscriptionID
 			entry.DeliveryID = state.DeliveryID(key)
+			entry.Route.Target = target
 			state.Inbox[key] = entry
 		}
 		if i == 0 {
@@ -536,16 +537,85 @@ func TestMemberNotificationTodosUpgradePreservesActiveAndRetiredProgress(t *test
 	}
 }
 
-func TestMemberNotificationGitLabAppliedConfigUsesCanonicalRoomTarget(t *testing.T) {
+func TestLegacyRoomNotificationsStayInactiveAfterRestart(t *testing.T) {
 	parallelFixtureTest(t)
-	h, _ := newIndependentEventHarness(t)
-	state := h.state()
-	state.Config.Target = notification.Target{Mode: "room"}
-	if err := state.Validate(state.RoomIdentity); err != nil {
-		t.Fatal("invalid legacy room target fixture", err)
-	}
+	h, account := newIndependentEventHarness(t)
+	seedEventInbox(t, h, 1)
 	cfg := unifiedGitLabConfig(t, h)
-	if !gitlabConfigApplied(cfg, state) {
-		t.Fatal("room alias unnecessarily blocked restored subscription")
+	view := saveGitLabNotificationConfigHTTP(t, h.m, h.room.RoomIdentity, 0, cfg)
+	seedEventInbox(t, h, 2)
+	member := h.state()
+	mixed := member.Clone()
+	oldItemKey := gitlab.EventsKey(mixed.Binding, 7, 2)
+	oldItem := mixed.Inbox[oldItemKey]
+	oldItem.Route = notification.Route{}
+	mixed.Inbox[oldItemKey] = oldItem
+
+	legacy := mixed.Clone()
+	legacy.Config.Target = notification.Target{}
+	legacy.SubscriptionID = strings.Repeat("b", 32)
+	for key, entry := range legacy.Inbox {
+		entry.Route = notification.Route{}
+		entry.SubscriptionID = legacy.SubscriptionID
+		entry.DeliveryID = legacy.DeliveryID(key)
+		legacy.Inbox[key] = entry
+	}
+	for _, snapshot := range []gitlab.EventsState{mixed, legacy} {
+		path, err := h.m.notifications.StatePathLocked(snapshot.Metadata().Key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		state, err := json.Marshal(snapshot)
+		if err != nil {
+			t.Fatal(err)
+		}
+		envelope := notificationEnvelope{SourceID: gitlab.EventsSourceID, Schema: 3, State: state}
+		if err := h.m.store.save(path, envelope, notification.DefaultLimits().Bytes); err != nil {
+			t.Fatal(err)
+		}
+	}
+	settingsPath := h.m.gitlabNotificationPath(h.room.RoomIdentity)
+	var settings gitlabNotificationFile
+	if err := readSnapshot(settingsPath, &settings, maxGitLabConfigBytes); err != nil {
+		t.Fatal(err)
+	}
+	old := settings.Platforms[account.ID][0]
+	old.Config.Target = notification.Target{Mode: "room"}
+	settings.Platforms[account.ID] = append(settings.Platforms[account.ID], old)
+	if err := h.m.store.save(settingsPath, settings, maxGitLabConfigBytes); err != nil {
+		t.Fatal(err)
+	}
+
+	root := h.m.store.dir
+	if err := h.m.close(); err != nil {
+		t.Fatal(err)
+	}
+	h.m = testManager(t, root, managerTestProfiles(t))
+	h.m.notifications.Clock = h.clock.get
+	if _, ok := h.m.notifications.StateLocked(legacy.Metadata().Key); ok {
+		t.Fatal("loaded retired room subscription")
+	}
+	if pending := h.state().Inbox; len(pending) != 1 || pending[oldItemKey].DeliveryID != "" {
+		t.Fatal("restored a historical Room route", pending)
+	}
+	restored := getGitLabNotificationConfigHTTP(t, h.m, h.room.RoomIdentity, account.ID, cfg.Target)
+	if restored.Version != view.Version || !reflect.DeepEqual(restored.Config, view.Config) {
+		t.Fatal("member subscription changed", restored)
+	}
+	for key := range h.m.gitlabNotifications[h.room.RoomIdentity] {
+		if key != notificationScopeFor(account.ID, cfg.Target) {
+			t.Fatalf("loaded retired room settings: %+v", key)
+		}
+	}
+	svc := eventLiveService(t, h)
+	if err := h.m.notifications.Deliver(t.Context(), member.Metadata().Key, member.SubscriptionVersion); err != nil {
+		t.Fatal(err)
+	}
+	if page := inboxRoutingPreview(t, svc, subscriptionMember(member.Metadata())); page.SnapshotSeq != 1 {
+		t.Fatal(page)
+	}
+	_, room := readManagedRoom(t, h.m, h.room)
+	if room.LatestSeq != 0 {
+		t.Fatal("legacy room route delivered", room.Messages)
 	}
 }

@@ -272,7 +272,7 @@ func TestMemberNotificationsReal(t *testing.T) {
 		}
 	}
 	if gl.ID != "" {
-		for _, target := range []notification.Target{inboxTarget(ids[0]), inboxTarget(ids[1]), {Mode: "room"}} {
+		for _, target := range []notification.Target{inboxTarget(ids[0]), inboxTarget(ids[1])} {
 			cfg := gitlab.DefaultNotificationConfig(gl.ID)
 			cfg.Target, cfg.BackfillStart = target, input.Start
 			cfg.Events = gitlab.EventSettings{Enabled: true, Project: input.GitLabProject}
@@ -388,8 +388,8 @@ func TestMemberNotificationsReal(t *testing.T) {
 	report["facts_per_member"] = counts
 	if gl.ID != "" {
 		saved, err := svc.store.LoadRoom()
-		if err != nil || len(saved.IntegrationReceipts) == 0 {
-			t.Fatal("missing real GitLab Room receipt")
+		if err != nil || len(saved.IntegrationReceipts) != 0 {
+			t.Fatal("platform notification appeared in Room history")
 		}
 		for _, page := range facts {
 			hasGL := false
@@ -400,7 +400,7 @@ func TestMemberNotificationsReal(t *testing.T) {
 				t.Fatal("missing real GitLab member receipt")
 			}
 		}
-		report["gitlab"] = map[string]any{"status": "passed", "members": 2, "room_receipts": len(saved.IntegrationReceipts)}
+		report["gitlab"] = map[string]any{"status": "passed", "members": 2}
 	}
 	// Workers are settled before UI changes, so toggles cannot widen remote reads.
 	if os.Getenv("TEAMX_M5_BROWSER") == "1" {

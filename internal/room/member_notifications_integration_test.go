@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"net/url"
 	"reflect"
 	"strings"
@@ -21,23 +22,15 @@ import (
 func notificationSettingsQuery(m *roomManager, owner RoomIdentity, target *notification.Target) url.Values {
 	q := url.Values{"service_epoch": {m.epoch}, "caller_id": {"operator"}, "room_id": {owner.RoomID}, "room_instance": {owner.RoomInstance}}
 	if target != nil {
-		mode := target.Mode
-		if mode == "" {
-			mode = "room"
-		}
-		q.Set("target_mode", mode)
-		if target.Inbox() {
-			q.Set("agent_id", target.AgentID)
-			q.Set("membership_id", target.MembershipID)
-		}
+		q.Set("target_mode", target.Mode)
+		q.Set("agent_id", target.AgentID)
+		q.Set("membership_id", target.MembershipID)
+
 	}
 	return q
 }
 func saveGitLabNotificationConfigHTTP(t *testing.T, m *roomManager, owner RoomIdentity, version uint64, cfg gitlab.NotificationConfig) gitlabNotificationView {
 	t.Helper()
-	if cfg.Target.Mode == "" {
-		cfg.Target.Mode = "room"
-	}
 	r := managerHTTP(m, "/v1/platform/gitlab/notifications/configure", map[string]any{"service_epoch": m.epoch, "room_id": owner.RoomID, "room_instance": owner.RoomInstance, "caller": humanCaller, "version": version, "config": cfg})
 	var v gitlabNotificationView
 	if r.Code != 200 || json.Unmarshal(r.Body.Bytes(), &v) != nil {
@@ -84,14 +77,14 @@ func gitLabNotificationKeyFromView(owner RoomIdentity, v notificationView) notif
 	return notification.Key{Owner: owner, Source: v.SourceID, SubscriptionID: v.SubscriptionID}
 }
 
-func TestMemberNotificationGitLabMembersAndRoomHTTPIndependentDeliveryAndRestart(t *testing.T) {
+func TestMemberNotificationGitLabMembersHTTPIndependentDeliveryAndRestart(t *testing.T) {
 	parallelFixtureTest(t)
 	h, c := newIndependentEventHarness(t)
 	svc := eventLiveService(t, h)
 	h.m.bindPlatformReferences(svc)
 	_, snapshot := readManagedRoom(t, h.m, h.room)
-	targets := []notification.Target{inboxTarget(notificationMemberIdentity(h.room.RoomIdentity, snapshot.Members[0])), inboxTarget(notificationMemberIdentity(h.room.RoomIdentity, snapshot.Members[1])), {Mode: "room"}}
-	views := make([]gitlabNotificationView, 3)
+	targets := []notification.Target{inboxTarget(notificationMemberIdentity(h.room.RoomIdentity, snapshot.Members[0])), inboxTarget(notificationMemberIdentity(h.room.RoomIdentity, snapshot.Members[1]))}
+	views := make([]gitlabNotificationView, len(targets))
 	for i, target := range targets {
 		cfg := gitlab.DefaultNotificationConfig(c.ID)
 		cfg.Target = target
@@ -134,10 +127,10 @@ func TestMemberNotificationGitLabMembersAndRoomHTTPIndependentDeliveryAndRestart
 		}
 	}
 	savedRoom, err := svc.store.LoadRoom()
-	if err != nil || len(savedRoom.Messages) != 2 || len(savedRoom.IntegrationReceipts) != 2 {
-		t.Fatal("room delivery mixed with members", savedRoom, err)
+	if err != nil || len(savedRoom.Messages) != 0 || len(savedRoom.IntegrationReceipts) != 0 {
+		t.Fatal("platform delivery entered Room history", savedRoom, err)
 	}
-	// A's pause preserves all B and Room source evidence and versions.
+	// A's pause preserves B's source evidence and versions.
 	before := map[notification.Key]notification.State{}
 	for _, v := range views[1:] {
 		for _, source := range []notificationView{v.Events, v.Todos} {
@@ -153,14 +146,14 @@ func TestMemberNotificationGitLabMembersAndRoomHTTPIndependentDeliveryAndRestart
 			t.Fatal("A changed another scope", key)
 		}
 	}
-	// All three records remain separately addressable; no ambiguous convenience record.
+	// Both records remain separately addressable; no ambiguous convenience record.
 	q := notificationSettingsQuery(h.m, h.room.RoomIdentity, nil)
 	r := managerHTTP(h.m, "/v1/platform/notifications?"+q.Encode(), nil)
 	var all struct {
 		GitLab    *gitlabNotificationView  `json:"gitlab"`
 		Platforms []gitlabNotificationView `json:"gitlab_platforms"`
 	}
-	if r.Code != 200 || json.Unmarshal(r.Body.Bytes(), &all) != nil || len(all.Platforms) != 3 || all.GitLab != nil {
+	if r.Code != 200 || json.Unmarshal(r.Body.Bytes(), &all) != nil || len(all.Platforms) != 2 || all.GitLab != nil {
 		t.Fatal(r.Code, r.Body.String())
 	}
 	target := targets[1]
@@ -232,6 +225,10 @@ func TestMemberNotificationGitLabHTTPRequiresExactTargetAndVersions(t *testing.T
 	if r := managerHTTP(h.m, "/v1/platform/gitlab/notifications?"+q.Encode(), nil); r.Code == 200 {
 		t.Fatal("target guessed")
 	}
+	q.Set("target_mode", "room")
+	if r := managerHTTP(h.m, "/v1/platform/gitlab/notifications?"+q.Encode(), nil); r.Code != http.StatusBadRequest {
+		t.Fatal("accepted retired destination", r.Code)
+	}
 	missing := notification.Target{Mode: "inbox", AgentID: "missing", MembershipID: "missing-membership"}
 	q = notificationSettingsQuery(h.m, h.room.RoomIdentity, &missing)
 	q.Set("platform_id", c.ID)
@@ -247,6 +244,10 @@ func TestMemberNotificationGitLabHTTPRequiresExactTargetAndVersions(t *testing.T
 	if r := managerHTTP(h.m, "/v1/platform/gitlab/notifications/sync", request); r.Code == 200 {
 		t.Fatal("sync guessed target")
 	}
+	request["target"] = notification.Target{Mode: "room"}
+	if r := managerHTTP(h.m, "/v1/platform/gitlab/notifications/sync", request); r.Code != http.StatusBadRequest {
+		t.Fatal("sync accepted retired destination", r.Code)
+	}
 	request["target"] = a
 	if r := managerHTTP(h.m, "/v1/platform/gitlab/notifications/sync", request); r.Code != 200 {
 		t.Fatal(r.Code, r.Body.String())
@@ -261,7 +262,13 @@ func TestMemberNotificationGitLabHTTPRequiresExactTargetAndVersions(t *testing.T
 	}
 	request["config"] = map[string]any{"platform_id": c.ID, "enabled": false}
 	if r := managerHTTP(h.m, "/v1/platform/gitlab/notifications/configure", request); r.Code != 400 {
-		t.Fatal("save guessed room", r.Code)
+		t.Fatal("save guessed a target", r.Code)
+	}
+	cfg = vb.Config
+	cfg.Target = notification.Target{Mode: "room"}
+	request["config"] = cfg
+	if r := managerHTTP(h.m, "/v1/platform/gitlab/notifications/configure", request); r.Code != http.StatusBadRequest {
+		t.Fatal("save accepted retired destination", r.Code)
 	}
 	cfg = vb.Config
 	cfg.IntervalSeconds = 60

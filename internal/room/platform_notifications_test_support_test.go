@@ -14,11 +14,6 @@ import (
 	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
-func gitlabEventMessage(s gitlab.EventsState, entry gitlab.EventsInboxEntry) postIntegrationMessage {
-	item := gitlab.EventsMessage(s, entry)
-	return postIntegrationMessage{RoomIdentity: s.RoomIdentity, DeliveryID: item.DeliveryID, Text: item.Text, Source: item.Source}
-}
-
 func (m *roomManager) testEventsKeyLocked(owner RoomIdentity) notification.Key {
 	for _, s := range m.notifications.StatesLocked(owner) {
 		if e, ok := s.(gitlab.EventsState); ok && !e.Retired {
@@ -130,6 +125,7 @@ func newEventHarness(t *testing.T, cfg gitlab.EventsConfig) *eventHarness {
 		return pages, 7, nil
 	}
 	cfg.Enabled = true
+	cfg.Target = fixtureInboxTarget(t, m, room.RoomIdentity)
 	s, err := seedTestEvents(m, room.RoomIdentity, cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -184,10 +180,21 @@ func (h *eventHarness) prepare() {
 
 func makeEventHarnessActive(t *testing.T, h *eventHarness) {
 	t.Helper()
-	h.m.mu.Lock()
-	h.m.runtimes[h.room.RoomIdentity] = &roomRuntime{service: &service{info: ServiceInfo{RoomIdentity: h.room.RoomIdentity}}, status: "ready"}
-	h.m.mu.Unlock()
-	t.Cleanup(func() { h.m.mu.Lock(); delete(h.m.runtimes, h.room.RoomIdentity); h.m.mu.Unlock() })
+	eventLiveService(t, h)
+}
+
+func fixtureInboxTarget(t *testing.T, m *roomManager, owner RoomIdentity) notification.Target {
+	t.Helper()
+	snapshot, err := readPublishedRoom(m.roomDir(owner.RoomID), owner)
+	if err != nil || len(snapshot.Members) == 0 {
+		t.Fatalf("load receiver for %v: %v", owner, err)
+	}
+	member := snapshot.Members[0]
+	return inboxTarget(MemberIdentity{RoomIdentity: owner, AgentID: member.AgentID, MembershipID: member.MembershipID})
+}
+
+func subscriptionMember(meta notification.Metadata) MemberIdentity {
+	return MemberIdentity{RoomIdentity: meta.Key.Owner, AgentID: meta.Target.AgentID, MembershipID: meta.Target.MembershipID}
 }
 
 // Existing persistence/poller fixtures exercise snapshots created before the

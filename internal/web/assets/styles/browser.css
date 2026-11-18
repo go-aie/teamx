@@ -52,7 +52,6 @@
     background:var(--surface-muted); overflow:hidden; padding-bottom:env(safe-area-inset-bottom);
   }
   .mobile-panel-back { display:inline-flex; }
-  .member-rail-header:has(#close-conversation-notifications:not([hidden])) .mobile-panel-back { display:none; }
   .workspace .member-rail .activity-dialog,.workspace .member-rail .notification-detail {
     height:auto; max-height:none; flex:1; min-height:0;
   }

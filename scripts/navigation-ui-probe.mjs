@@ -14,10 +14,18 @@ const reading=new Map();
 let directMode=false;
 const messages=Array.from({length:30},(_,i)=>({seq:i+1,author:{kind:"agent",id:"a"},text:`消息 ${i+1}：检查返回后继续阅读的位置。`,created_at:new Date().toISOString()}));
 messages.push(...[31,32].map(seq=>({seq,author:{kind:"integration",id:"gitlab"},text:"平台通知来源",created_at:new Date().toISOString(),
-  source:{provider:"gitlab",channel:"todos",...(seq===32 ? {platform_id:"gl",subscription_id:"sub-gl-room",instance:"https://gitlab.invalid"} : {})}})));
+  source:{provider:"gitlab",channel:"todos"}})));
 const server=http.createServer(async(req,res)=>{
   try {
     const url=new URL(req.url,"http://fixture");
+    if(url.pathname==="/v1/updates") {
+      res.writeHead(200,{"content-type":"text/event-stream","cache-control":"no-store"});
+      const connection_id="navigation-probe";
+      res.write(`event: hello\ndata: ${JSON.stringify({protocol:1,connection_id,service_epoch:"manager",installation_id:"navigation-probe"})}\n\n`);
+      const interval=setInterval(()=>res.write(`event: heartbeat\ndata: ${JSON.stringify({connection_id})}\n\n`),10000);
+      res.on("close",()=>clearInterval(interval));
+      return;
+    }
     if(url.pathname.startsWith("/v1/")) {
       let raw="";for await(const chunk of req)raw+=chunk;
       const body=raw ? JSON.parse(raw) : undefined;
@@ -42,6 +50,7 @@ const server=http.createServer(async(req,res)=>{
         data={version:2,room_id:body.room_id,room_instance:body.room_instance,operator_id:body.caller.id,revision:saved.revision,snapshot_seq:32,cleared_through:0,opened_through:saved.opened,mention_seen_seqs:[],unseen_mention_seqs:[],unread_count:32-saved.opened,mention_count:0};
         if(body.include_new_messages)data.new_message_seqs=Array.from({length:32-saved.opened},(_,i)=>saved.opened+i+1);
       }
+      else if(url.pathname==="/v1/member/input-attention")data={version:0,platforms:[]};
       else if(url.pathname==="/v1/platforms/interactions/list")data={interactions:[],selections:[]};
       else if(url.pathname==="/v1/models")data={service_epoch:"manager",catalog:{version:1,default:"daily",entries:[{id:"daily",name:"日常",model_id:"model-a",revision:1}]},members:[],operations:[]};
       else if(url.pathname==="/v1/platforms/gitlab/setup")data={applications:[]};
@@ -142,10 +151,13 @@ try {
     await page.locator("#close-activity").click();await page.waitForFunction(()=>!document.querySelector("#activity-dialog").open && !document.querySelector("#member-list-view").hidden);
     check(`${name}: list entry returns to the list`,!(await page.locator("#member-rail").evaluate(el=>el.inert)));
     if(mobile)await page.locator("#close-mobile-members").click();else await page.locator("#room-menu-label").click();
-    await page.locator("#message-31 .avatar").click();await page.locator("#notification-title").filter({hasText:"通知来源诊断"}).waitFor();
-    await page.locator("#close-notification").click();await page.waitForFunction(()=>document.querySelector("#member-rail").inert);
-    check(`${name}: history diagnostic returns to conversation`,true);
-    await page.locator("#message-32 .avatar").click();await page.locator("#gitlab-sync-status > summary").click();
+    await page.locator("#message-31 .avatar").click();
+    check(`${name}: historical platform message is read-only`,!(await page.locator("#notification-detail").evaluate(el=>el.open)));
+    await page.locator("#message-30 .avatar").click();
+    await page.locator("#agent-tab-inbox").click();
+    await page.locator("#inbox-entries summary").filter({hasText:"来源详情"}).first().click();
+    await page.getByRole("button",{name:"查看通知来源设置"}).first().click();
+    await page.locator("#gitlab-sync-status > summary").click();
     await page.locator("#gitlab-manage-platforms").click();await page.locator("#connection-new").click();
     await page.locator("#connection-name").fill("未保存的平台");
     await page.evaluate(()=>history.back());await page.waitForFunction(()=>document.querySelector("#connection-form").hidden);
@@ -157,6 +169,7 @@ try {
     await page.waitForFunction(()=>document.querySelector("#model-edit-form").hidden);
     check(`${name}: Escape returns model editor and clears key`,await page.locator("#catalog-api-key").inputValue()==="" && await page.locator("#settings-dialog").evaluate(el=>el.open));
     await page.locator("#close-settings").click();await page.locator("#close-notification").click();
+    await page.locator("#close-activity").click();
     await page.waitForFunction(()=>document.querySelector("#member-rail").inert);
     await page.screenshot({path:path.join(out,`${name}-conversation.png`),animations:"disabled"});
     check(`${name}: conversation retains its draft after nested returns`,await page.locator("#message-input").inputValue()==="返回后继续编辑");
@@ -169,16 +182,10 @@ try {
     await page.goto(origin);await page.locator("#message-32").waitFor();
     if(width<500)await page.locator("#room-list .room-choice").first().click();
     if(!(await page.locator("#member-rail").evaluate(el=>el.inert))){await page.locator("#room-menu-label").click();}
-    for(const method of ["button","browser","escape"]) {
-      await page.locator("#room-menu-label").click();await page.locator("#toggle-agent-controls").click();await page.locator("#direct-notifications").click();
-      await page.locator("#close-conversation-notifications").waitFor();
-      if(method==="button")await page.locator("#close-conversation-notifications").click();
-      else if(method==="escape")await page.keyboard.press("Escape");
-      else await page.evaluate(()=>history.back());
-      await page.locator("#direct-notifications").waitFor({state:"visible"});
-      check(`direct ${width}px: notifications ${method} returns to assistant settings`,await page.locator("#activity-dialog").evaluate(el=>el.open));
-      await page.locator("#close-activity").click();await page.waitForFunction(()=>document.querySelector("#member-rail").inert);
-    }
+    await page.locator("#room-menu-label").click();
+    check(`direct ${width}px: assistant platform settings are visible`,await page.locator("#platforms-member-view").isVisible());
+    await page.locator("#close-activity").click();
+    await page.waitForFunction(()=>document.querySelector("#member-rail").inert);
     await context.close();
   }
   check("returning never submits a write",!api.calls.some(c=>/\/send|\/save$|\/configure$|\/change$|\/login$/.test(c.path)));

@@ -171,7 +171,7 @@ func (m *roomManager) beginPlatformMemberChange(ctx context.Context, svc *servic
 	var keys []notification.Key
 	for _, state := range m.notifications.StatesLocked(id.RoomIdentity) {
 		meta := state.Metadata()
-		if meta.Target.Inbox() && meta.Target.AgentID == id.AgentID && meta.Target.MembershipID == id.MembershipID {
+		if meta.Target.AgentID == id.AgentID && meta.Target.MembershipID == id.MembershipID {
 			keys = append(keys, meta.Key)
 			if settled := m.notifications.CancelLocked(meta.Key); settled != nil {
 				done = append(done, settled)

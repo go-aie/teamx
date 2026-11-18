@@ -160,7 +160,7 @@ func (p *platformInputStorage) Receive(item notification.Item, receivedAt time.T
 	if !validInboxItem(item) {
 		return inputstream.Receipt{}, ErrInvalid
 	}
-	if !item.Route.Target.Inbox() || item.Route.Target.MembershipID != p.id.MembershipID || item.Route.Target.AgentID != p.id.AgentID || item.Route.Version == 0 {
+	if !item.Route.Target.Valid() || item.Route.Target.MembershipID != p.id.MembershipID || item.Route.Target.AgentID != p.id.AgentID || item.Route.Version == 0 {
 		return inputstream.Receipt{}, ErrIdentity
 	}
 	cap := s.notificationCapabilities(item.Source.Provider).Input

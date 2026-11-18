@@ -665,6 +665,7 @@ func TestGitLabAuthReferenceRecheckAndNotificationProgress(t *testing.T) {
 				// away. It was not in the operator's frozen impact acknowledgement.
 				other := managerCreate(t, m, "new-reference")
 				cfg := before.Config
+				cfg.Target = fixtureInboxTarget(t, m, other.RoomIdentity)
 				if _, err := m.configureEventsSubscription(context.Background(), notification.Key{Owner: other.RoomIdentity, Source: gitlab.EventsSourceID}, 0, cfg); err != nil {
 					t.Fatal(err)
 				}

@@ -388,7 +388,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     activityMember = { agent_id: current.agent_id, membership_id: current.membership_id };
     memberModelStatus = {}; setControlsExpanded(false);
     layoutUI.expandMembers();
-    layoutUI.hideConversationNotifications(); layoutUI.savePanels(); layoutUI.renderPanels();
+    layoutUI.savePanels(); layoutUI.renderPanels();
     if (!$("activity-dialog").open) $("activity-dialog").show();
     memberToolsView = null;
     renderActivityControls();
@@ -605,7 +605,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
 
   function syncDirectDetail() {
     renderActivityNavigation();
-    if (!roomsUI.isDirect() || !state.connected || !layoutUI.membersPanelOpen() || layoutUI.directNotificationsOpen || $("notification-detail").open || state.members.length !== 1) return;
+    if (!roomsUI.isDirect() || !state.connected || !layoutUI.membersPanelOpen() || $("notification-detail").open || state.members.length !== 1) return;
     if ($("activity-dialog").open && selectedAgent()?.membership_id === state.members[0].membership_id) return;
     openMemberActivity(state.members[0], $("room-menu-label"), undefined, { automatic: true });
   }

@@ -154,9 +154,6 @@ func (m *roomManager) checkNotificationTargetLocked(ctx context.Context, owner R
 	if !target.Valid() {
 		return ErrRequest
 	}
-	if !target.Inbox() {
-		return nil
-	}
 	id := MemberIdentity{RoomIdentity: owner, AgentID: target.AgentID, MembershipID: target.MembershipID}
 	if m.platformMemberChanges[id] {
 		return ErrBusy
@@ -197,9 +194,6 @@ func (m *roomManager) notificationTargetErrorLocked(owner RoomIdentity, items []
 		return "target_unavailable"
 	}
 	for _, item := range items {
-		if !item.Route.Target.Inbox() {
-			continue
-		}
 		found := false
 		for _, member := range list.Members {
 			if member.AgentID == item.Route.Target.AgentID && member.MembershipID == item.Route.Target.MembershipID {

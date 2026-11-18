@@ -17,76 +17,9 @@ import (
 	"github.com/go-aie/teamx/internal/platform/gitlab"
 )
 
-func gt04Evidence() (RoomSnapshot, gitlab.Todo) {
-	todo := gitlab.Todo{ID: 42, RecipientID: 13, ProjectID: 7, TargetIID: 9, Kind: "work_item", TargetType: "Issue", Reason: "mentioned", State: "pending", Project: "group/project", URL: "https://gitlab.example.com/group/project/-/issues/9", Title: "GT04-test-offline", CreatedAt: time.Now().UTC().Add(-time.Minute)}
-	source := IntegrationSource{Provider: "gitlab", Channel: "todos", Instance: "https://gitlab.example.com", ProjectID: 7, ItemKey: "https://gitlab.example.com|13|42", SubscriptionID: strings.Repeat("a", 32)}
-	post := RoomMessage{Seq: 2, Author: Author{Kind: "integration", ID: "gitlab"}, ClientMessageID: "delivery", Source: &source, Text: "GitLab · 我的待办\n标题：GT04-test-offline"}
-	reply := RoomMessage{Seq: 3, Author: Author{Kind: "agent", ID: "reviewer"}, ReplyTo: 2, Text: "GT04-test todo=42 seq=2 kind=work_item iid=9"}
-	return RoomSnapshot{Messages: []RoomMessage{post, reply}, IntegrationReceipts: map[string]IntegrationReceipt{"delivery": {Seq: 2, Source: source}}}, todo
-}
-func TestGitLabGT04RejectsIncompletePublicEvidence(t *testing.T) {
-	s, todo := gt04Evidence()
-	if post, reply, err := gt04Messages(s, todo, "GT04-test"); err != nil || post.Seq != 2 || reply.Seq != 3 {
-		t.Fatal(post, reply, err)
-	}
-	for _, tc := range []struct {
-		name   string
-		change func(*RoomSnapshot)
-	}{
-		{"duplicate-todo", func(s *RoomSnapshot) { s.Messages = append(s.Messages, s.Messages[0]) }},
-		{"duplicate-reply", func(s *RoomSnapshot) { s.Messages = append(s.Messages, s.Messages[1]) }},
-		{"wrong-author", func(s *RoomSnapshot) { s.Messages[0].Author.Kind = "human" }},
-		{"wrong-project", func(s *RoomSnapshot) { s.Messages[0].Source.ProjectID++ }},
-		{"wrong-title", func(s *RoomSnapshot) { s.Messages[0].Text = "other title" }},
-		{"no-receipt", func(s *RoomSnapshot) { s.IntegrationReceipts = nil }},
-		{"receipt-seq", func(s *RoomSnapshot) {
-			v := s.IntegrationReceipts["delivery"]
-			v.Seq++
-			s.IntegrationReceipts["delivery"] = v
-		}},
-		{"receipt-source", func(s *RoomSnapshot) {
-			v := s.IntegrationReceipts["delivery"]
-			v.Source.Channel = "events"
-			s.IntegrationReceipts["delivery"] = v
-		}},
-		{"wrong-id", func(s *RoomSnapshot) {
-			s.Messages[1].Text = strings.Replace(s.Messages[1].Text, "todo=42", "todo=41", 1)
-		}},
-		{"wrong-seq", func(s *RoomSnapshot) { s.Messages[1].Text = strings.Replace(s.Messages[1].Text, "seq=2", "seq=1", 1) }},
-		{"wrong-kind", func(s *RoomSnapshot) {
-			s.Messages[1].Text = strings.Replace(s.Messages[1].Text, "work_item", "merge_request", 1)
-		}},
-		{"wrong-iid", func(s *RoomSnapshot) { s.Messages[1].Text = strings.Replace(s.Messages[1].Text, "iid=9", "iid=8", 1) }},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			s, todo := gt04Evidence()
-			tc.change(&s)
-			if _, _, err := gt04Messages(s, todo, "GT04-test"); err == nil {
-				t.Fatal("accepted invalid evidence")
-			}
-		})
-	}
-	for _, field := range []string{"channel", "recipient", "todo"} {
-		t.Run(field, func(t *testing.T) {
-			s, todo := gt04Evidence()
-			switch field {
-			case "channel":
-				s.Messages[0].Source.Channel = "events"
-			case "recipient":
-				todo.RecipientID++
-			case "todo":
-				todo.ID++
-			}
-			post, reply, err := gt04Messages(s, todo, "GT04-test")
-			if err != nil || post.Seq != 0 || reply.Seq != 0 {
-				t.Fatal("crossed identity/channel scope", post, reply, err)
-			}
-		})
-	}
-}
 func TestGitLabGT04TracePreservesRealTransportAndPrivateFields(t *testing.T) {
 	s := &gt04Trace{path: filepath.Join(t.TempDir(), "queries.jsonl")}
-	_, todo := gt04Evidence()
+	todo := gitlab.Todo{ID: 42, RecipientID: 13, ProjectID: 7, TargetIID: 9, Kind: "work_item", TargetType: "Issue", Reason: "mentioned", State: "pending", Project: "group/project", URL: "https://gitlab.example.com/group/project/-/issues/9", CreatedAt: time.Now().UTC().Add(-time.Minute)}
 	todo.Title = "private-title"
 	todo.Actor = &gitlab.TodoActor{ID: 1, Username: "private-actor"}
 	batch := gitlab.TodoBatch{Version: 1, Todos: []gitlab.Todo{todo}, ResponseBytes: 100, NextPage: 2}
@@ -182,13 +115,12 @@ func TestGitLabGT04RequiresMeasuredPendingAndDone(t *testing.T) {
 	}
 }
 func TestGitLabGT04RequiresActualCompletedAgentRead(t *testing.T) {
-	s, _ := gt04Evidence()
-	post := s.Messages[0]
-	good := dsh.TurnResult{StopReason: "end_turn", Tools: []dsh.ToolUpdate{{ID: "read-tool", Status: "completed", Input: "teamx read --json", Output: post.Source.ItemKey + " " + post.Text}}}
-	if id, err := gt04ReadTool(good, post); err != nil || id != "read-tool" {
+	title := "GT04-test-offline"
+	good := dsh.TurnResult{StopReason: "end_turn", Tools: []dsh.ToolUpdate{{ID: "read-tool", Status: "completed", Input: "teamx inbox read", Output: title}}}
+	if id, err := gt04ReadTool(good, title); err != nil || id != "read-tool" {
 		t.Fatal(id, err)
 	}
-	for _, mode := range []string{"budget", "truncated", "tool-truncated", "failed", "missing-key", "no-read"} {
+	for _, mode := range []string{"budget", "truncated", "tool-truncated", "failed", "missing-title", "no-read"} {
 		t.Run(mode, func(t *testing.T) {
 			r := good
 			r.Tools = append([]dsh.ToolUpdate(nil), good.Tools...)
@@ -201,12 +133,12 @@ func TestGitLabGT04RequiresActualCompletedAgentRead(t *testing.T) {
 				r.Tools[0].DetailsTruncated = true
 			case "failed":
 				r.Tools[0].Status = "failed"
-			case "missing-key":
-				r.Tools[0].Output = post.Text
+			case "missing-title":
+				r.Tools[0].Output = "another notification"
 			case "no-read":
 				r.Tools[0].Input = "echo"
 			}
-			if _, err := gt04ReadTool(r, post); err == nil {
+			if _, err := gt04ReadTool(r, title); err == nil {
 				t.Fatal("accepted incomplete tool evidence")
 			}
 		})
@@ -215,7 +147,7 @@ func TestGitLabGT04RequiresActualCompletedAgentRead(t *testing.T) {
 
 func TestGitLabGT04SelectsReviewInsteadOfEarlierMention(t *testing.T) {
 	trace := &gt04Trace{}
-	_, todo := gt04Evidence()
+	todo := gitlab.Todo{ID: 42, RecipientID: 13, ProjectID: 7, TargetIID: 9, Kind: "work_item", TargetType: "Issue", Reason: "mentioned", State: "pending", Project: "group/project", URL: "https://gitlab.example.com/group/project/-/issues/9", CreatedAt: time.Now().UTC().Add(-time.Minute)}
 	todo.Title = "same-MR"
 	todo.Kind = "merge_request"
 	mention := todo

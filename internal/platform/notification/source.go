@@ -14,13 +14,14 @@ import (
 )
 
 var (
-	ErrRequest  = errors.New("invalid notification request")
-	ErrInvalid  = errors.New("invalid notification snapshot")
-	ErrIdentity = errors.New("notification identity mismatch")
-	ErrConflict = errors.New("notification scope changed")
-	ErrBusy     = errors.New("notification scope busy")
-	ErrClosing  = errors.New("notification service closing")
-	ErrCapacity = errors.New("notification capacity exceeded")
+	ErrRetiredRoomTarget = errors.New("retired Room notification destination")
+	ErrRequest           = errors.New("invalid notification request")
+	ErrInvalid           = errors.New("invalid notification snapshot")
+	ErrIdentity          = errors.New("notification identity mismatch")
+	ErrConflict          = errors.New("notification scope changed")
+	ErrBusy              = errors.New("notification scope busy")
+	ErrClosing           = errors.New("notification service closing")
+	ErrCapacity          = errors.New("notification capacity exceeded")
 )
 
 type SourceID struct {

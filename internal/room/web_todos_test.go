@@ -55,12 +55,8 @@ func checkTodosAppResult(t *testing.T, m *roomManager, room roomSummary) {
 		t.Fatal(current, history, err, histErr)
 	}
 	_, snapshot := readManagedRoom(t, m, room)
-	if len(snapshot.Messages) != 2 || len(snapshot.IntegrationReceipts) != 2 {
-		t.Fatal(snapshot)
-	}
-	for _, message := range snapshot.Messages {
-		if message.Author.Kind != "integration" || message.Source.Channel != "todos" {
-			t.Fatal(message)
-		}
+	svc, _ := m.runtimeServiceLocked(room.RoomIdentity)
+	if snapshot.LatestSeq != 0 || inboxRoutingPreview(t, svc, subscriptionMember(current.Metadata())).SnapshotSeq != 2 {
+		t.Fatal("expected two Inbox deliveries and no conversation messages", snapshot.LatestSeq)
 	}
 }

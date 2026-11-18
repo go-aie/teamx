@@ -71,32 +71,37 @@ func normalizeTodosConfig(c TodosConfig, requirePlatform bool) (TodosConfig, err
 		return c, err
 	}
 	c.BackfillStart = start
-	c.Filter.Reasons = slices.Clone(c.Filter.Reasons)
-	c.Filter.Types = slices.Clone(c.Filter.Types)
-	if c.Filter.Reasons == nil {
-		c.Filter.Reasons = []string{"mentioned", "assigned", "review_requested", "other"}
+	c.Filter, err = NormalizeTodosFilter(c.Filter)
+	return c, err
+}
+
+func NormalizeTodosFilter(f TodosFilter) (TodosFilter, error) {
+	f.Reasons = slices.Clone(f.Reasons)
+	f.Types = slices.Clone(f.Types)
+	if f.Reasons == nil {
+		f.Reasons = []string{"mentioned", "assigned", "review_requested", "other"}
 	}
-	if c.Filter.Types == nil {
-		c.Filter.Types = []string{"merge_request", "work_item"}
+	if f.Types == nil {
+		f.Types = []string{"merge_request", "work_item"}
 	}
-	if len(c.Filter.Reasons) > 4 || len(c.Filter.Types) > 2 {
-		return c, notification.ErrRequest
+	if len(f.Reasons) > 4 || len(f.Types) > 2 {
+		return f, notification.ErrRequest
 	}
-	for _, v := range c.Filter.Reasons {
+	for _, v := range f.Reasons {
 		if !slices.Contains([]string{"mentioned", "assigned", "review_requested", "other"}, v) {
-			return c, notification.ErrRequest
+			return f, notification.ErrRequest
 		}
 	}
-	for _, v := range c.Filter.Types {
+	for _, v := range f.Types {
 		if !slices.Contains([]string{"merge_request", "work_item"}, v) {
-			return c, notification.ErrRequest
+			return f, notification.ErrRequest
 		}
 	}
-	slices.Sort(c.Filter.Reasons)
-	c.Filter.Reasons = slices.Compact(c.Filter.Reasons)
-	slices.Sort(c.Filter.Types)
-	c.Filter.Types = slices.Compact(c.Filter.Types)
-	return c, nil
+	slices.Sort(f.Reasons)
+	f.Reasons = slices.Compact(f.Reasons)
+	slices.Sort(f.Types)
+	f.Types = slices.Compact(f.Types)
+	return f, nil
 }
 
 type TodosFilterRevision struct {
@@ -198,8 +203,8 @@ func (s TodosState) Validate(owner platform.RoomIdentity) error {
 		return notification.ErrInvalid
 	}
 	for i, f := range s.Filters {
-		c, e := NormalizeTodosConfig(TodosConfig{PlatformID: cfg.PlatformID, Filter: f.Filter})
-		if e != nil || !reflect.DeepEqual(c.Filter, f.Filter) || i > 0 && f.Since.Before(s.Filters[i-1].Since) {
+		c, e := NormalizeTodosFilter(f.Filter)
+		if e != nil || !reflect.DeepEqual(c, f.Filter) || i > 0 && f.Since.Before(s.Filters[i-1].Since) {
 			return notification.ErrInvalid
 		}
 	}
@@ -259,7 +264,7 @@ func (s TodosState) Reason(t Todo) string {
 }
 func (s *TodosState) Accept(todos []Todo, now time.Time) {
 	for _, todo := range todos {
-		if s.Config.Target.Inbox() && notification.Expired(todo.CreatedAt, s.ExpiredBefore) {
+		if notification.Expired(todo.CreatedAt, s.ExpiredBefore) {
 			continue
 		}
 		key := TodosKey(s.Binding, todo.ID)
@@ -275,7 +280,7 @@ func (s *TodosState) Accept(todos []Todo, now time.Time) {
 	}
 }
 func (s TodosState) Metadata() notification.Metadata {
-	return notification.Metadata{Target: s.Config.Target.Canonical(), Key: notification.Key{Owner: s.RoomIdentity, Source: TodosSourceID, SubscriptionID: s.SubscriptionID}, Version: s.SubscriptionVersion, Enabled: s.Config.Enabled, Retired: s.Retired, PlatformID: s.Binding.PlatformID, Observed: len(s.Observed), Pending: len(s.Inbox), DeliveryError: s.DeliveryErrorCode}
+	return notification.Metadata{Target: s.Config.Target, Key: notification.Key{Owner: s.RoomIdentity, Source: TodosSourceID, SubscriptionID: s.SubscriptionID}, Version: s.SubscriptionVersion, Enabled: s.Config.Enabled, Retired: s.Retired, PlatformID: s.Binding.PlatformID, Observed: len(s.Observed), Pending: len(s.Inbox), DeliveryError: s.DeliveryErrorCode}
 }
 func (s TodosState) CloneState() notification.State { return s.Clone() }
 func (s TodosState) PendingItems() []notification.Item {

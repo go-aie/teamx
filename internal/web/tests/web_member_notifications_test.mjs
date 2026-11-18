@@ -9,18 +9,17 @@ const writes=api=>api.calls.filter(c=>c.path.endsWith("notifications/configure")
 const reads=api=>api.calls.filter(c=>c.path==="/v1/member/inbox");
 async function switchMember(ui,id){await ui.el("close-notification").emit("click");await openMemberInbox(ui,`member-${id}`);}
 
-test("M4 member sources are scoped; the room list offers only GitLab and allows shared platforms",async()=>{
+test("Members can share an account and configure independent sources",async()=>{
   const api=fixture(),ui=await launch(api);await openMemberInbox(ui,"member-a");
-  assert.equal(list(ui).children.length,2);assert.equal(ui.el("notification-platforms").children.length,1);
+  assert.equal(list(ui).children.length,2);
   assert.equal(ui.el("member-notification-source-count").textContent,"2");
-  assert.equal(ui.el("notification-add-options").children.some(b=>b.dataset.provider==="lark"),false);
   await switchMember(ui,"b");
   assert.equal(list(ui).children.length,1);
   assert.ok(ui.el("member-notification-add-options").children.some(b=>b.dataset.platformId==="lark"));
   await openNotification(ui,"gitlab","gl","member-b");
   assert.equal(ui.el("notification-title").textContent,"b · 公司 GitLab 设置");
   assert.equal(ui.el("gitlab-interval").value,45);
-  assert.match(ui.el("notification-destination").textContent,/发送到 b 的收件箱.*同时看到/);
+  assert.match(ui.el("notification-destination").textContent,/发送到 b 的收件箱/);
   assert.equal(writes(api).length,0);
 });
 
@@ -51,7 +50,6 @@ test("M4 each member keeps its own platform draft and quick switches use confirm
   assert.equal(ui.el("gitlab-interval").value,45);
   ui.notificationToggle().checked=false;await ui.notificationToggle().emit("change");
   assert.equal(recordsValue(api,"gl","b").config.enabled,false);assert.equal(recordsValue(api,"gl","a").config.enabled,true);
-  assert.equal(api.records.get(key("gl",{})).config.enabled,true);
   await switchMember(ui,"a");await openNotification(ui,"gitlab","gl",true);
   assert.equal(ui.el("gitlab-interval").value,72);assert.equal(ui.notificationToggle().checked,true);
 });
@@ -197,16 +195,6 @@ test("M4 legacy and retired source locations show diagnostics without opening a 
 });
 
 
-test("M4 room notification toggle, save and sync explicitly select mode=room",async()=>{
-  const api=fixture(),ui=await launch(api);await openNotification(ui,"gitlab","gl");
-  ui.notificationToggle().checked=false;await ui.notificationToggle().emit("change");
-  assert.deepEqual(writes(api).at(-1).body.config.target,{mode:"room"});
-  ui.el("gitlab-interval").value="70";await ui.el("gitlab-interval").emit("input");await ui.el("gitlab-save").emit("click");
-  assert.deepEqual(writes(api).at(-1).body.config.target,{mode:"room"});
-  ui.notificationToggle().checked=true;await ui.notificationToggle().emit("change");await ui.el("gitlab-sync").emit("click");
-  assert.deepEqual(api.calls.find(c=>c.path.endsWith("notifications/sync")).body.target,{mode:"room"});
-  assert.equal(recordsValue(api,"gl","a").config.enabled,true);assert.equal(recordsValue(api,"gl","b").config.interval_seconds,45);
-});
 
 
 test("a completed global-only connection has no permanent receipt or member writes",async()=>{

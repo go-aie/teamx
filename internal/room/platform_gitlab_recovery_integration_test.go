@@ -155,12 +155,12 @@ func TestGitLabAuthorizationRecoversOnlyOriginalSubscriptions(t *testing.T) {
 			c := platformTestList(t, m)[0]
 			m.platformProject = func(context.Context, string, string, workspaceSecret) (int64, error) { return 7, nil }
 			events, err := m.configureEventsSubscription(context.Background(), notification.Key{Owner: room.RoomIdentity, Source: gitlab.EventsSourceID}, 0,
-				gitlab.EventsConfig{Enabled: true, PlatformID: c.ID, Project: "group/project"})
+				gitlab.EventsConfig{Target: fixtureInboxTarget(t, m, room.RoomIdentity), Enabled: true, PlatformID: c.ID, Project: "group/project"})
 			if err != nil {
 				t.Fatal(err)
 			}
 			todos, err := m.configureTodosSubscription(context.Background(), notification.Key{Owner: room.RoomIdentity, Source: gitlab.TodosSourceID}, 0,
-				gitlab.TodosConfig{Enabled: true, PlatformID: c.ID})
+				gitlab.TodosConfig{Target: fixtureInboxTarget(t, m, room.RoomIdentity), Enabled: true, PlatformID: c.ID})
 			if err != nil {
 				t.Fatal(err)
 			}

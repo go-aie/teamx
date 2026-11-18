@@ -134,14 +134,9 @@ export async function verifyMemberNotificationsBrowser({browser,tab,output,drive
     await screenshot('browser-platforms-390.png');
     checks.push('narrow');
   } finally {await viewport.reset();}
-  // Separate Room target; the member selector is absent and only GitLab is offered.
   await locator('close-activity').click();
-  await p.locator('#notification-platforms .notification-source').first().click();
-  await locator('notification-panel-gitlab').waitFor({state:'visible',timeoutMs:15000});
-  assert.match(await locator('notification-title').innerText(),/房间/);
-  assert.equal(await locator('gitlab-target').isVisible(),false);
-  await locator('close-notification').click();
-  checks.push('room_target');
+  assert.equal(await p.locator('#notification-sources').count(),0);
+  checks.push('member_only_delivery_settings');
   assert.equal(errors.length,0,'browser JavaScript errors invalidate acceptance');
   const report={status:'passed',driver,room:ready.room,members:ready.members,checks,draft:{agent:'reviewer',platform:ready.gitlab_platform,saved_interval:Number(interval),unsaved_interval:90},unexecuted:['new account OAuth/CLI login','two accounts of the same provider','live partial failure recovery','non-platform/no-notification tool catalog'],screenshots:['browser-inbox-page2.png','browser-platforms-desktop.png','browser-detail-390.png','browser-platforms-390.png']};
   await writeFile(join(output,'browser-done.json'),JSON.stringify(report,null,2),{mode:0o600});

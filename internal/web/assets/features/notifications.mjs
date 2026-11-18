@@ -4,9 +4,9 @@ import { sameService } from "../client.mjs";
 import { captureReturnView } from "../view-return.mjs";
 import { renderAvatar } from "../avatars.mjs";
 import { createNavigationIcon } from "../icons.mjs";
-import { beginRead, readState } from "../read-state.mjs";
+import { beginRead } from "../read-state.mjs";
 
-// Room/member notification subscriptions, targets and configuration views.
+// Member notification subscriptions, targets and configuration views.
 export function createNotifications({ env, membersUI, workspaceUI, runtime, roomsUI, settingsUI, connectionsUI, onboardingUI, layoutUI }) {
   const { document, window, Option, setTimeout, clearTimeout, request } = env;
   const { state, $, notice, setSelectOptions } = runtime;
@@ -25,7 +25,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
 
   const gitlabEventStatuses = { disabled: "已关闭", initializing: "初始化中", running: "运行中", backoff: "退避中", credentials_invalid: "凭据失效", capacity: "接收容量已满", binding_changed: "绑定已变化" };
 
-  const gitlabEventErrors = { credential_unavailable: "凭据不可用，请验证所选平台。", credential_rejected: "GitLab 拒绝访问，请检查权限和凭据。", binding_changed: "绑定已变化，请核对后保存设置。", project_identity_changed: "项目身份已变化，需要核查绑定。", capacity: "接收容量已满，进度未推进。", query_failed: "查询失败，将按退避计划重试。", room_capacity: "房间消息或投递回执容量已满，事件保留在积压中。" };
+  const gitlabEventErrors = { credential_unavailable: "凭据不可用，请验证所选平台。", credential_rejected: "GitLab 拒绝访问，请检查权限和凭据。", binding_changed: "绑定已变化，请核对后保存设置。", project_identity_changed: "项目身份已变化，需要核查绑定。", capacity: "接收容量已满，进度未推进。", query_failed: "查询失败，将按退避计划重试。" };
 
   const notificationTargetErrors = { target_unavailable: "投递目标暂不可用，通知保留在来源积压中。", target_removed: "接收成员已移除，旧积压保留原目标；同名新成员不会继承。", inbox_capacity: "成员收件箱容量已满，新通知保留在来源积压中。" };
 
@@ -39,9 +39,9 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
 
   function notificationScopeKey(target, id = "") { return JSON.stringify([state.catalog?.service_epoch,state.info?.service_epoch,notificationTarget({target}), id]); }
 
-  function notificationRequestTarget(target) { return target?.mode === "inbox" ? notificationTarget({target}) : {mode:"room"}; }
+  function notificationRequestTarget(target) { return target?.mode === "inbox" ? notificationTarget({target}) : {}; }
 
-  function notificationTargetQuery(target) { return target?.mode === "inbox" ? {target_mode:"inbox",agent_id:target.agent_id,membership_id:target.membership_id} : {target_mode:"room"}; }
+  function notificationTargetQuery(target) { return target?.mode === "inbox" ? {target_mode:"inbox",agent_id:target.agent_id,membership_id:target.membership_id} : {}; }
 
   function notificationWritePending(ws, key = ws?.notificationScope) { return !!ws?.notificationWrites?.has(key); }
 
@@ -564,7 +564,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     renderAvatar(document,avatar,{kind:"integration",id:item.id,provider:item.provider});avatar.setAttribute("aria-hidden","true");
     label.className="notification-source-name";title.textContent=item.name;summary.textContent=notificationDescription(view.config);label.append(title,summary);detail.append(avatar,label);
     if(arrow){arrow.type="button";arrow.className="notification-source-arrow";arrow.append(createNavigationIcon(document));arrow.setAttribute("aria-label",`${item.name} 通知详情`);arrow.title=`${item.name} 通知详情`;}
-    const open=opener=>target.mode==="inbox" ? membersUI.openMemberPlatform(opener,item,target) : openNotificationSource(opener,"gitlab",item.id,target);
+    const open=opener=>membersUI.openMemberPlatform(opener,item,target);
     detail.addEventListener("click",()=>open(detail));if(arrow)arrow.addEventListener("click",()=>open(arrow));
     const toggle=document.createElement("input");toggle.type="checkbox";toggle.className="notification-switch";
     toggle.checked=ws.notificationToggle===item.id && sameNotificationTarget(ws.notificationToggleTarget,target) ? ws.notificationToggleEnabled : !!view.config.enabled;
@@ -575,36 +575,8 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     row.append(detail,toggle,...(arrow ? [arrow] : []),issue);return row;
   }
 
-  function renderNotificationList(prefix, target) {
-    const ws=workspaceUI.workspaceView,items=notificationPlatforms(ws).filter(item=>target.mode==="inbox" || item.provider==="gitlab");
-    const reading=readState(ws?.platformsReadState,ws?.notificationsReadState);
-    const loaded=!!ws?.allPlatforms && !!ws?.allSubscriptions;
-    const configured=items.filter(item=>notificationConfigured(item,notificationView(ws,item,target)));
-    $(`${prefix}platforms`).replaceChildren(...configured.map(item=>notificationRow(ws,item,target)));
-    $(`${prefix}source-count`).textContent=String(configured.length);
-    $(`${prefix}source-count`).hidden=!loaded;
-    $(`${prefix}platforms`).setAttribute("aria-busy",String(reading.pending));
-    $(`${prefix}empty`).hidden=!!configured.length || !loaded && reading.pending || reading.failed;
-    $(`${prefix}empty`).textContent=target.mode==="inbox" ? "尚未配置来源，添加通知来源后开始接收。" : roomsUI.isDirect() ? "将平台通知发送到当前会话。" : "将平台通知发送到当前房间。";
-    const unavailable=!!ws && reading.failed;
-    $(`${prefix}list-error`).classList.toggle("form-error",!!unavailable);
-    $(`${prefix}list-error`).classList.toggle("quiet",!unavailable);
-    notice(`${prefix}list-error`,unavailable ? ws.platformsReadState?.failed && ws.repositoryPlatformsError || "通知状态暂不可读，请刷新。" : reading.slow ? "正在读取通知设置…" : "");
-    $(`${prefix}list-reload`).hidden=!unavailable;
-    $(`${prefix}list-reload`).disabled=reading.pending;
-    const query=$(`${prefix}add-search`).value.trim().toLowerCase();
-    $(`${prefix}add-options`).replaceChildren(...items.filter(item=>!configured.includes(item) && [item.name,item.validation?.username,item.url].join(" ").toLowerCase().includes(query)).map(item=>{
-      const button=document.createElement("button");button.type="button";button.className="notification-add-option";button.dataset.provider=item.provider;button.dataset.platformId=item.id;
-      const name=document.createElement("strong"),account=document.createElement("small");name.textContent=item.name;account.textContent=`${item.validation?.username ? `@${item.validation.username} · ` : ""}设置接收`;button.append(name,account,createNavigationIcon(document));
-      button.disabled=!ws.notificationsConnected || roomsUI.managementBusy();
-      button.addEventListener("click",()=>{ setNotificationPicker(prefix,false);return openNotificationSource(button,item.provider==="lark" ? "messages" : "gitlab",item.id,target); });return button;
-    }));
-    return configured;
-  }
-
   function renderNotificationPlatforms() {
     const ws=workspaceUI.workspaceView;
-    renderNotificationList("notification-",{});
     membersUI.renderMemberPlatforms();
     const orphanViews=[...(ws?.gitlabPlatforms || []),...(ws?.larkSources || [])].filter(v=>v.config.target?.mode==="inbox" && !state.members.some(m=>sameNotificationTarget(memberNotificationTarget(m),v.config.target)));
     $("notification-orphans").hidden=!orphanViews.length;
@@ -618,11 +590,11 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     }));
   }
 
-  function setNotificationPicker(prefix, open) {
-    $(`${prefix}add-picker`).hidden=!open;
-    $(`${prefix}add-toggle`).setAttribute("aria-expanded",String(open));
-    if(prefix==="member-notification-")membersUI.renderMemberPlatforms();
-    if(open)$(`${prefix}add-search`).focus({preventScroll:true});
+  function setNotificationPicker(open) {
+    $("member-notification-add-picker").hidden=!open;
+    $("member-notification-add-toggle").setAttribute("aria-expanded",String(open));
+    membersUI.renderMemberPlatforms();
+    if(open)$("member-notification-add-search").focus({preventScroll:true});
   }
 
   async function togglePlatformNotification(ws, item, enabled, target=activeNotificationTarget(ws)) {
@@ -903,12 +875,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
   let notificationFocus = null;
 
   function renderContextViews() {
-    const detail = $("activity-dialog").open || $("notification-detail").open || roomsUI.isDirect() && !layoutUI.directNotificationsOpen;
-    const notifications = roomsUI.isDirect() && layoutUI.directNotificationsOpen;
-    $("member-list-title").textContent = notifications ? "会话通知" : "房间详情";
-    $("member-count").hidden = notifications;
-    $("close-conversation-notifications").hidden = !roomsUI.isDirect() || !layoutUI.directNotificationsOpen;
-    $("member-list-view").hidden = roomsUI.isDirect() && layoutUI.directNotificationsOpen ? $("notification-detail").open : detail;
+    $("member-list-view").hidden = roomsUI.isDirect() || $("activity-dialog").open || $("notification-detail").open;
     $("member-list-view").inert = $("member-list-view").hidden || !layoutUI.membersPanelOpen();
     $("member-list-view").setAttribute("aria-hidden", String($("member-list-view").inert));
   }
@@ -918,15 +885,13 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     const id = ws?.notificationPlatformID || (messages ? ws?.messages?.config.platform_id : ws?.gitlabDraft?.platform_id);
     const item = membersUI.memberPlatformItems(ws).find(p => p.id === id), view = item && notificationView(ws, item);
     const target=activeNotificationTarget(ws),member=state.members.find(m=>sameNotificationTarget(memberNotificationTarget(m),target));
-    const name=target.mode==="inbox" ? member ? agentName(member) : target.agent_id : roomsUI.isDirect() ? "会话" : "房间";
-    $("notification-title").textContent=`${name} · ${item?.name || membersUI.memberPlatformItems(ws).find(p=>p.id===id)?.name || (messages ? "飞书" : "GitLab")} ${target.mode==="inbox" ? "设置" : "通知"}`;
+    const name=member ? agentName(member) : target.agent_id || "";
+    $("notification-title").textContent=`${name} · ${item?.name || membersUI.memberPlatformItems(ws).find(p=>p.id===id)?.name || (messages ? "飞书" : "GitLab")} 设置`;
     let instance="";try{instance=item?.provider==="gitlab" ? new URL(item.url).host : "";}catch{instance=item?.url || "";}
     $("notification-account").textContent=item ? [item.validation?.username ? `@${item.validation.username}` : "账号待核验",instance].filter(Boolean).join(" · ") : "";
     $("notification-account").title=item?.url || "";
     membersUI.renderInputAttention(item,target,$("notification-attention"));
-    const coexist=target.mode==="inbox" && notificationView(ws,item || {},{})?.config.enabled || target.mode!=="inbox" && ws?.gitlabPlatforms?.some(v=>v.platform_id===id && v.config.target?.mode==="inbox" && v.config.enabled);
-    $("notification-destination").textContent=(target.mode==="inbox" ? `发送到 ${name} 的收件箱${member ? "" : "（原成员已移除）"}` : roomsUI.isDirect() ? "发送到当前会话消息流" : "发送到当前房间，成员可见") + (coexist ? "。成员和房间分别订阅时，可能同时看到同一通知。" : "");
-    $("notification-sources").hidden=!ws;
+    $("notification-destination").textContent=target.agent_id ? `发送到 ${name} 的收件箱${member ? "" : "（原成员已移除）"}` : "";
     const matches=!!id && (messages ? ws?.messages?.config.platform_id : ws?.gitlabDraft?.platform_id)===id && sameNotificationTarget(messages ? ws?.messages?.config.target : ws?.gitlabDraft?.target,target);
     const connected=matches && (messages ? ws?.messagesConnected : ws?.gitlabConnected) && !ws?.notificationHistory;
     const reading=ws?.notificationDetailReadState;
@@ -938,7 +903,6 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     const configured=item && notificationConfigured(item,view),enabled=configured ? !!view.config.enabled : messages ? !!ws?.messages?.config.enabled : !!ws?.gitlabDraft?.enabled;
     const toolsOnly=ws?.notificationChannel==="tools",history=!!ws?.notificationHistory;
     $("notification-destination").hidden=toolsOnly || history;
-    $("notification-destination").classList.toggle("sr-only",!coexist && (target.mode!=="inbox" || !!member));
     const status=!connected || toolsOnly || history ? "" : configured && !enabled ? "通知已暂停" : !configured ? "尚未开启通知" : "";
     notice("notification-enabled-state",status);
     notice("notification-toggle-error",ws?.notificationToggleError?.key===notificationScopeKey(target,id) ? ws.notificationToggleError.message : "");
@@ -949,8 +913,8 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     onboardingUI.renderMemberPlatformAddition();renderContextViews();
   }
 
-  async function openNotificationSource(opener, channel, platformID, target = {}) {
-    const ws=workspaceUI.workspaceView;if(!ws || !platformID || channel==="messages" && target.mode!=="inbox")return;
+  async function openNotificationSource(opener, channel, platformID, target) {
+    const ws=workspaceUI.workspaceView;if(!ws || !platformID || target?.mode!=="inbox")return;
     rememberNotificationOrigin(opener);
     const navigation=++notificationNavigation;
     const epoch=state.catalog?.service_epoch,opening=ws.notificationOpen=(ws.notificationOpen || 0)+1;
@@ -1112,14 +1076,12 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
 
     $("gitlab-project-refresh").addEventListener("click",()=>loadGitLabProjects(true));
 
-    for(const prefix of ["notification-","member-notification-"]) {
-      $(`${prefix}add-toggle`).addEventListener("click",()=>setNotificationPicker(prefix,$(`${prefix}add-picker`).hidden));
-      $(`${prefix}add-search`).addEventListener("input",renderNotificationPlatforms);
-      $(`${prefix}add-picker`).addEventListener("keydown",event=>{
-        if(event.key!=="Escape")return;
-        event.preventDefault();event.stopPropagation?.();setNotificationPicker(prefix,false);$(`${prefix}add-toggle`).focus();
-      });
-    }
+    $("member-notification-add-toggle").addEventListener("click",()=>setNotificationPicker($("member-notification-add-picker").hidden));
+    $("member-notification-add-search").addEventListener("input",membersUI.renderMemberPlatforms);
+    $("member-notification-add-picker").addEventListener("keydown",event=>{
+      if(event.key!=="Escape")return;
+      event.preventDefault();event.stopPropagation?.();setNotificationPicker(false);$("member-notification-add-toggle").focus();
+    });
 
     for (const id of ["gitlab-events-enabled", ...gitlabEventTypeIDs.map(id => `gitlab-events-type-${id}`)]) {
       for (const event of ["input", "change"]) $(id).addEventListener(event, editGitLabEvents);
@@ -1171,7 +1133,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
         ws.larkFilled=null;ws.larkRestore=null;
       }else rememberNotificationDraft(ws);
       stopLarkChatSearch();
-      $("activity-dialog").hidden=roomsUI.isDirect() && layoutUI.directNotificationsOpen;
+      $("activity-dialog").hidden=false;
       if(ws){ws.notificationReturn=null;ws.notificationAddition=null;}
       if(back && sameService(state.info,back.info) && membersUI.selectedAgent()?.membership_id===back.member.membership_id && $("activity-dialog").open){
         (notificationFocus?.isConnected ? notificationFocus : $(`agent-tab-${membersUI.agentTab}`)).focus({preventScroll:true});
@@ -1180,7 +1142,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
         $("activity-dialog").scrollTop=back.activityScroll;$("activity-body").scrollTop=back.bodyScroll;$("policy-member-view").scrollTop=back.policyScroll;
         $("inbox-member-view").scrollTop=back.scroll;
         window.scrollTo?.(back.windowScroll);
-      }else if(!$("activity-dialog").open && !$("workspace-dialog").open)(notificationFocus?.isConnected ? notificationFocus : $("notification-add-toggle")).focus();
+      }else if(!$("activity-dialog").open && !$("workspace-dialog").open)(notificationFocus?.isConnected ? notificationFocus : $("room-menu-label")).focus();
       notificationFocus=null;onboardingUI.renderMemberPlatformAddition();renderContextViews();
       if(origin?.view.current()) {
         $("activity-dialog").hidden=origin.activityHidden;
@@ -1197,7 +1159,6 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
 
     $("notification-reload").addEventListener("click",reloadNotifications);
 
-    $("notification-list-reload").addEventListener("click",reloadNotifications);
 
     $("member-notification-list-reload").addEventListener("click",reloadNotifications);
 

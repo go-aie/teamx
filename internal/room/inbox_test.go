@@ -571,18 +571,3 @@ func TestAgentInboxMissingRoomIsNotReinitialized(t *testing.T) {
 		t.Fatal("orphaned inbox allowed a new Room", err)
 	}
 }
-
-func TestIntegrationRedeliveryRequiresExactSourceEvidence(t *testing.T) {
-	h := newRoomHarness(t, emptyRoom(), nil)
-	source := platform.SourceRef{Provider: "gitlab", Channel: "events", Instance: "https://gitlab.example.com", SubscriptionID: strings.Repeat("a", 32), ItemKey: "event-1"}
-	request := postIntegrationMessage{RoomIdentity: h.id, DeliveryID: "existing-delivery", Text: "original body", Source: source}
-	_ = roomCall[PostReceipt](t, h, request)
-	request.Source.Reference = platform.NotificationReference{Version: 1, Object: platform.ObjectReference{Type: "MergeRequest", ID: platform.ExternalID{Namespace: "gitlab:rest:id", Value: "9001"}}}
-	roomError[PostReceipt](t, h, request, ErrConflict)
-	request.Source.ItemKey = "another-event"
-	roomError[PostReceipt](t, h, request, ErrConflict)
-	request.DeliveryID = "new-delivery"
-	roomCall[PostReceipt](t, h, request)
-	request.Source.Reference.Object.ID.Value = "different-object"
-	roomError[PostReceipt](t, h, request, ErrConflict)
-}

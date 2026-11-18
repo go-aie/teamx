@@ -1,5 +1,4 @@
 
-/* Room notification navigation: one row per account, direct settings and pause. */
 .notification-source-row { display:grid; grid-template-columns:minmax(0,1fr) auto 20px; column-gap:6px; align-items:center; }
 .notification-source-row .notification-source { min-width:0; padding:10px 2px; }
 .notification-source-name strong { display:block; overflow:hidden; text-overflow:ellipsis; font-size:var(--font-body); font-weight:600; }
@@ -35,7 +34,7 @@
 .member-notification-sources .notification-source { min-height:48px; }
 .member-notification-sources .notification-add-picker { margin-top:6px; }
 .notification-add-picker input[type="search"] { width:100%; margin:6px 0; }
-#member-notification-add-options, #notification-add-options { max-height:180px; overflow-y:auto; }
+#member-notification-add-options { max-height:180px; overflow-y:auto; }
 #inbox-empty-hint { line-height:1.7; }
 #notification-destination { margin:0 0 16px; line-height:1.7; }
 #notification-orphans { margin-top:12px; font-size:var(--font-small); color:var(--danger); }

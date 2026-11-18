@@ -4,7 +4,7 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
   const { document, window } = env;
   const { state, $, storage } = runtime;
 
-  let directMobileDetails = false, directMobileRooms = false, directNotificationsOpen = false;
+  let directMobileDetails = false, directMobileRooms = false;
   let mobileTab = "messages";
   const mobileScroll = { messages:0, profile:0 };
 
@@ -84,7 +84,6 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
     const profileOpen = mobileHome && mobileTab === "profile";
     workspace.classList.toggle("mobile-profile-open", profileOpen);
     workspace.classList.toggle("direct-conversation", roomsUI.isDirect());
-    workspace.classList.toggle("direct-notifications-open", roomsUI.isDirect() && directNotificationsOpen);
     workspace.classList.toggle("rooms-collapsed", !roomsOpen);
     workspace.classList.toggle("members-collapsed", !membersOpen);
     $("room-rail").hidden = !state.managed;
@@ -146,7 +145,7 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
   }
 
   function resetDirectNavigation() {
-    directMobileDetails = false; directMobileRooms = false; directNotificationsOpen = false;
+    directMobileDetails = false; directMobileRooms = false;
     mobileTab = "messages";
   }
 
@@ -160,14 +159,12 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
     else panels.members = false;
   }
 
-  function showConversationNotifications() { directNotificationsOpen = true; }
-  function hideConversationNotifications() { directNotificationsOpen = false; }
 
   function captureMemberPanel() {
-    const saved = { members: panels.members, mobile: directMobileDetails, rooms: directMobileRooms, notifications: directNotificationsOpen };
+    const saved = { members: panels.members, mobile: directMobileDetails, rooms: directMobileRooms };
     return () => {
       panels.members = saved.members; directMobileDetails = saved.mobile;
-      directMobileRooms = saved.rooms; directNotificationsOpen = saved.notifications;
+      directMobileRooms = saved.rooms;
       savePanels(); renderPanels();
     };
   }
@@ -188,7 +185,7 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
     if (fromProfile) mobileScroll.profile = $("mobile-profile").scrollTop;
     mobileTab = "messages";
     roomsUI.closeFilterMenu();
-    directMobileRooms = true; directMobileDetails = false; directNotificationsOpen = false;
+    directMobileRooms = true; directMobileDetails = false;
     renderPanels();
     if (fromProfile) $("room-nav").scrollTop = mobileScroll.messages;
     $("room-nav").focus({preventScroll:true});
@@ -199,7 +196,7 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
     if (mobileTab !== "profile") mobileScroll.messages = $("room-nav").scrollTop;
     roomsUI.closeFilterMenu(); userMenuUI.close();
     mobileTab = "profile";
-    directMobileRooms = true; directMobileDetails = false; directNotificationsOpen = false;
+    directMobileRooms = true; directMobileDetails = false;
     renderPanels();
     $("mobile-profile").scrollTop = mobileScroll.profile;
     $("mobile-profile").focus({preventScroll:true});
@@ -238,7 +235,7 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
         toggle();
         if (side !== "members") return;
         if (!membersPanelOpen()) $("room-menu-label").focus();
-        else $(roomsUI.isDirect() ? directNotificationsOpen ? "close-conversation-notifications" : "close-activity" : "member-list-title").focus();
+        else $(roomsUI.isDirect() ? "close-activity" : "member-list-title").focus();
       });
     }
 
@@ -296,7 +293,7 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
   }
 
   function contextDetailOpen() {
-    return directNotificationsOpen || $("activity-dialog").open || $("notification-detail").open || document.querySelector("dialog:modal");
+    return $("activity-dialog").open || $("notification-detail").open || document.querySelector("dialog:modal");
   }
 
   return {
@@ -308,12 +305,9 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
     resetDirectNavigation,
     expandMembers,
     collapseMembers,
-    showConversationNotifications,
-    hideConversationNotifications,
     captureMemberPanel,
     showNotificationDetail,
     get membersExpanded() { return panels.members; },
-    get directNotificationsOpen() { return directNotificationsOpen; },
     membersPanelOpen,
     conversationVisible: () => !$("conversation").inert && !$("conversation").hidden,
     savePanels,

@@ -123,13 +123,20 @@ func (m *Manager) loadPathLocked(owner platform.RoomIdentity, path string) error
 		return fmt.Errorf("%w: notification %s/%s schema %d requires explicit offline upgrade", ErrInvalid, saved.Provider, saved.Channel, saved.Schema)
 	}
 	state, err := source.Decode(saved.State, owner)
-	if err != nil || state == nil || state.Validate(owner) != nil || state.Metadata().Key.Source != source.ID() {
+	retiredTarget := errors.Is(err, ErrRetiredRoomTarget)
+	if err != nil && !retiredTarget || state == nil || state.Metadata().Key.Source != source.ID() {
 		return fmt.Errorf("%w: notification source schema", ErrInvalid)
 	}
 	key := state.Metadata().Key
 	expected, err := m.StatePathLocked(key)
 	if err != nil || path != expected || state.Metadata().Observed > m.Limits.Observed || state.Metadata().Pending > m.Limits.Inbox {
 		return ErrInvalid
+	}
+	if retiredTarget {
+		return nil
+	}
+	if state.Validate(owner) != nil {
+		return fmt.Errorf("%w: notification source schema", ErrInvalid)
 	}
 	if _, exists := m.states[key]; exists {
 		return ErrInvalid
@@ -290,7 +297,7 @@ func (m *Manager) uniqueLocked(state State) error {
 	}
 	for key, saved := range m.states {
 		other := saved.state.Metadata()
-		if key.Owner == meta.Key.Owner && meta.Target.Inbox() && other.Target.Inbox() && other.Target.MembershipID == meta.Target.MembershipID && other.Target.AgentID != meta.Target.AgentID {
+		if key.Owner == meta.Key.Owner && other.Target.MembershipID == meta.Target.MembershipID && other.Target.AgentID != meta.Target.AgentID {
 			return ErrIdentity
 		}
 		if key != meta.Key && key.Owner == meta.Key.Owner && key.Source == meta.Key.Source && other.PlatformID == meta.PlatformID && other.Target.ScopeKey() == meta.Target.ScopeKey() {

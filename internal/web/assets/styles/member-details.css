@@ -5,9 +5,6 @@
 .message .author:not(:disabled),.message .avatar[role="button"] { cursor:pointer; }
 .message .author:not(:disabled):hover { color:var(--accent); text-decoration:underline; text-underline-offset:3px; }
 .message .avatar[role="button"]:hover { box-shadow:0 0 0 2px var(--field-border); }
-.notification-sources { margin-top:12px; padding-top:12px; border-top:1px solid var(--line); }
-.notification-sources h2 { display:flex; align-items:baseline; gap:8px; margin:0 0 12px; font-size:var(--font-body); font-weight:600; }
-.notification-sources h2 #notification-source-count { color:var(--muted); font-size:var(--font-small); font-weight:400; }
 .notification-source { display:flex; align-items:center; gap:10px; width:100%; min-height:56px; padding:8px 0; background:transparent; color:inherit; text-align:left; border-radius:var(--radius-control); cursor:pointer; }
 .notification-source:hover { background:var(--surface-hover); }
 .notification-source-name { flex:1; min-width:0; font-size:var(--font-body); font-weight:var(--weight-medium); }

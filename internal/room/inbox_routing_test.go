@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -64,6 +65,13 @@ func inboxTarget(id MemberIdentity) notification.Target {
 	return notification.Target{Mode: "inbox", AgentID: id.AgentID, MembershipID: id.MembershipID}
 }
 
+func inboxFixtureItem(id MemberIdentity, num int64) notification.Item {
+	key := fmt.Sprintf("event-%d", num)
+	return notification.Item{Key: key, DeliveryID: key, Text: fmt.Sprintf("GitLab · event %d", num), CreatedAt: time.Now().UTC(),
+		Source: IntegrationSource{Provider: "gitlab", Channel: "events", Instance: "https://gitlab.example.com", ProjectID: 7, ItemKey: key, SubscriptionID: strings.Repeat("a", 32)},
+		Route:  notification.Route{Target: inboxTarget(id), Version: 1}}
+}
+
 func TestInboxRoutingPausedMemberStaysPaused(t *testing.T) {
 	svc, err := newFixtureService(t.TempDir(), "inbox-paused", serviceConfig{})
 	if err != nil {
@@ -79,8 +87,7 @@ func TestInboxRoutingPausedMemberStaysPaused(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := MemberIdentity{RoomIdentity: svc.info.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
-	post := integrationPost(svc.info.RoomIdentity, 1)
-	item := notification.Item{Key: post.Source.ItemKey, DeliveryID: post.DeliveryID, Text: post.Text, Source: post.Source, CreatedAt: time.Now().UTC(), Route: notification.Route{Target: inboxTarget(id), Version: 1}}
+	item := inboxFixtureItem(id, 1)
 	if err := svc.receiveInbox(context.Background(), inboxTarget(id), item); err != nil {
 		t.Fatal(err)
 	}

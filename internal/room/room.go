@@ -226,7 +226,7 @@ func (r *Room) Post(ctx actorx.Context, msg PostMessage, reply actorx.Reply[Post
 	if msg.FollowupNotice && (msg.Caller.Kind != "agent" || msg.ReplyTo != 0) {
 		return ErrIdentity
 	}
-	if msg.FollowupNotice && len(r.state.FollowupNoticeReceipts) >= maxIntegrationReceipts {
+	if msg.FollowupNotice && len(r.state.FollowupNoticeReceipts) >= maxRoomReceipts {
 		return ErrCapacity
 	}
 	bytes := 0
@@ -546,7 +546,6 @@ func (r *Room) memberInfo(m MemberState) MemberInfo {
 func (r *Room) candidate() RoomSnapshot {
 	next := r.state
 	next.Messages, next.Members = slices.Clone(next.Messages), slices.Clone(next.Members)
-	next.IntegrationReceipts = maps.Clone(next.IntegrationReceipts)
 	next.FollowupNoticeReceipts = maps.Clone(next.FollowupNoticeReceipts)
 	next.ReadProofs = maps.Clone(next.ReadProofs)
 	return next

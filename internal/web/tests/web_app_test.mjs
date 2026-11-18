@@ -2328,10 +2328,12 @@ test("Workspace connection manager preserves selection, draft and project withou
 });
 
 
+const notificationFixtureTarget = {mode:"inbox", agent_id:"reviewer", membership_id:"reviewer-generation"};
+
 function notificationServer() {
   const api = workspaceServer();
   const events = new Map(["A", "B"].map(id => [id, { available: true, subscription_version: 1,
-    config: { platform_id: "a".repeat(32), project: `group/project-${id}`, enabled: true, interval_seconds: id === "A" ? 5 : 17, filter: {} }, status: "running", pending: 0, metrics: { calls: 1, response_bytes: 100 } }]));
+    config: { target:notificationFixtureTarget, platform_id: "a".repeat(32), project: `group/project-${id}`, enabled: true, interval_seconds: id === "A" ? 5 : 17, filter: {} }, status: "running", pending: 0, metrics: { calls: 1, response_bytes: 100 } }]));
   for (const [id, ws] of api.workspaces) {
     ws.workspace.repository = { url: `https://gitlab.invalid/group/project-${id}.git` };
     ws.workspace.binding = { provider: "gitlab", url: "https://gitlab.invalid", project: `group/project-${id}`, project_id: id === "A" ? 7 : 8, platform_id: "a".repeat(32) };
@@ -2339,6 +2341,7 @@ function notificationServer() {
   api.platforms[0].validation = { status: "valid", user_id: 101, username: "alice" };
   for (const [id, value] of events) value.project = structuredClone(api.workspaces.get(id).workspace.binding);
   api.hook = (path, data) => {
+    if (path === "/v1/member/list") return {members:[{...notificationFixtureTarget,runner:{profile:"runtime"}}]};
     if(path.startsWith("/v1/platform/gitlab/notifications?")) {
       const q=new URL(path,"http://fixture").searchParams,view=notificationList(structuredClone(events.get(q.get("room_id")))).gitlab;
       view.config.platform_id=q.get("platform_id");view.platform_id=q.get("platform_id");return view;
@@ -2354,34 +2357,6 @@ function notificationServer() {
 }
 
 
-test("GitLab message author and keyboard avatar open notification details and close member activity reads", async () => {
-  const { api } = notificationServer(), baseHook = api.hook;
-  const member = { agent_id: "reviewer", membership_id: "reviewer-generation", status: "idle", runner: { profile: "runtime" } };
-  api.hook = (path, data) => {
-    if (path === "/v1/member/list") return { members: [member] };
-    if (path === "/v1/member/activity") return { member };
-    return baseHook(path, data);
-  };
-  api.history.set("A", [{ ...message(1, "MR opened"), author: { kind: "integration", id: "gitlab" }, source: { provider: "gitlab", channel: "events", instance: "https://gitlab.invalid", subscription_id: "a".repeat(32), item_key: "https://gitlab.invalid|7|9", project_id: 7 } }]);
-  const ui = await launch(api), msg = ui.document.getElementById("message-1");
-  await ui.el("members").children[0].querySelector(".member-summary").emit("click"); await settle();
-  assert.equal(ui.el("activity-dialog").open, true);
-  await msg.querySelector(".author").emit("click"); await settle();
-  assert.equal(ui.el("activity-dialog").hidden, true); assert.equal(ui.el("notification-detail").open, true);
-  const reads = api.calls.filter(c => c.path === "/v1/member/activity").length;
-  await ui.refresh(); assert.equal(api.calls.filter(c => c.path === "/v1/member/activity").length, reads);
-  await ui.el("close-notification").emit("click");
-  await ui.el("room-menu-label").emit("click");
-  await msg.querySelector(".avatar").emit("keydown", { key: "Enter" });
-  assert.equal(ui.el("notification-detail").open, true); assert.equal(ui.el("member-rail").inert, false);
-  await ui.el("close-notification").emit("click");
-  await msg.querySelector(".avatar").emit("keydown", { key: " " });
-  assert.equal(ui.el("notification-detail").open, true);
-  await ui.el("close-notification").emit("click");
-  await ui.el("members").children[0].querySelector(".member-summary").emit("click"); await settle();
-  assert.equal(ui.el("notification-detail").open, false); assert.equal(ui.el("activity-dialog").open, true);
-  assert.equal(String(ui.el("member-count").textContent), "2");
-});
 
 
 
@@ -2391,7 +2366,7 @@ function todosServer({ bound = true, enabled = false } = {}) {
   api.platforms.push({ ...structuredClone(api.platforms[0]), id: "b".repeat(32), name: "Personal", validation: { status: "valid", user_id: 202, username: "bob" } });
   const todos = new Map(["A", "B"].map(id => [id, todoView({ subscription_id: enabled ? (id === "A" ? "c" : "d").repeat(32) : "", subscription_version: enabled ? 3 : 0,
     recipient_id: enabled ? 101 : undefined, username: enabled ? "alice" : undefined, instance: enabled ? "https://gitlab.invalid" : undefined,
-    config: { enabled, platform_id: enabled ? api.platforms[0].id : "", interval_seconds: id === "A" ? 30 : 45, filter: {} }, status: enabled ? "running" : "disabled" })]));
+    config: { enabled, target:notificationFixtureTarget, platform_id: enabled ? api.platforms[0].id : "", interval_seconds: id === "A" ? 30 : 45, filter: {} }, status: enabled ? "running" : "disabled" })]));
   if (!bound) for (const ws of api.workspaces.values()) { delete ws.workspace.binding; delete ws.workspace.repository; }
   const sourceHook = api.hook, records = new Map();
   api.gitlabApplyFailure = new Set();
@@ -2400,6 +2375,7 @@ function todosServer({ bound = true, enabled = false } = {}) {
     return fixtureGitLabView(sources, records.get(id));
   };
   api.hook = (path, data) => {
+    if (path === "/v1/member/list") return {members:[{...notificationFixtureTarget,runner:{profile:"runtime"}}]};
     if (path === "/v1/platform/gitlab/projects") return api.projectPage ? api.projectPage(data) : {projects:["group/project-A","group/changed","other/project"].map((path,index)=>({id:index+1,name:path.split("/").at(-1),path_with_namespace:path})),next_page:0};
     if (path.startsWith("/v1/platform/notifications?")) {
       const id = new URL(path, "http://fixture").searchParams.get("room_id");
@@ -2446,19 +2422,6 @@ function todosServer({ bound = true, enabled = false } = {}) {
   return { api, events, todos };
 }
 
-test("GT-03 message navigation opens direct platform details and the requested channel", async () => {
-  const { api } = todosServer({enabled:true}); api.history.set("A", ["events", "todos"].map((channel, index) => ({ ...message(index + 1, "integration fact"), author: { kind: "integration", id: "gitlab" }, source: { provider: "gitlab", channel, subscription_id:(channel==="todos" ? "c" : "a").repeat(32), platform_id:"a".repeat(32) } })));
-  const ui = await launch(api);
-  for (let i = 1; i <= 2; i++) {
-    const article = ui.document.getElementById(`message-${i}`), channel = i === 2 ? "todos" : "events";
-    assert.equal(article.querySelector(".author").textContent, `GitLab · ${i === 2 ? "我的待办" : "项目活动"}`);
-    await article.querySelector(".author").emit("click"); assert.equal(ui.el("notification-panel-gitlab").hidden, false); assert.equal(ui.el(`gitlab-${channel}-settings`).open, true);
-    await ui.el("close-notification").emit("click"); await article.querySelector(".avatar").emit("keydown", { key: "Enter" });
-    assert.equal(ui.el("notification-panel-gitlab").hidden, false); assert.equal(ui.el(`gitlab-${channel}-settings`).open, true);
-  }
-  assert.equal(ui.el("notification-tab-gitlab"),undefined);
-  assert.equal(ui.el("notification-settings-details"),undefined);
-});
 
 
 
@@ -3437,11 +3400,11 @@ test("GitLab can save common settings while both message types are disabled", as
   await ui.refresh();assert.equal(ui.el("gitlab-connection").value,"b".repeat(32));assert.equal(ui.el("gitlab-events-enabled").checked,false);
 });
 
-test("GitLab room target is fixed and ignores a forged recipient selector",async()=>{
+test("GitLab member target is fixed and ignores a forged recipient selector",async()=>{
   const {api}=todosServer({enabled:true}),ui=await launch(api);await openGitLab(ui);
   await editGitLab(ui,"gitlab-target",JSON.stringify({mode:"inbox",agent_id:"other",membership_id:"other"}));
   await editGitLab(ui,"gitlab-interval","60","input");await ui.el("gitlab-save").emit("click");
-  assert.deepEqual(gitlabWrites(api)[0].data.config.target,{mode:"room"});
+  assert.deepEqual(gitlabWrites(api)[0].data.config.target,notificationFixtureTarget);
   assert.equal(ui.el("gitlab-target").disabled,true);
 });
 
@@ -3922,8 +3885,6 @@ test("direct conversations prefer the exact default, keep the inspector stable, 
   assert.equal(ui.el("conversation-settings").parentElement,ui.el("member-sidebar"));
   assert.equal(ui.el("member-list-view").hidden,false);await ui.draft("Room draft");
   await ui.select("个人助理");assert.equal(ui.el("message-input").value,"DM draft");
-  await ui.el("direct-notifications").emit("click");assert.equal(ui.el("member-list-view").hidden,false);
-  assert.equal(ui.el("activity-dialog").hidden,true);await ui.el("close-conversation-notifications").emit("click");
   assert.equal(ui.el("activity-dialog").hidden,false);assert.equal(ui.el("member-list-view").hidden,true);
   ui.window.innerWidth=390;await ui.window.emit("resize");assert.equal(ui.el("member-rail").inert,true);
   await ui.el("room-menu-label").emit("click");assert.equal(ui.el("activity-dialog").open,true);

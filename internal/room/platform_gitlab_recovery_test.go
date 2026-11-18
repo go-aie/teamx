@@ -13,7 +13,7 @@ import (
 func gitlabRecoveryFixture(t *testing.T) (*eventHarness, managedPlatform, *todoHarness) {
 	t.Helper()
 	h, c := newIndependentEventHarness(t)
-	s, err := h.m.configureTodosSubscription(context.Background(), notification.Key{Owner: h.room.RoomIdentity, Source: gitlab.TodosSourceID}, 0, gitlab.TodosConfig{Enabled: true, PlatformID: c.ID})
+	s, err := h.m.configureTodosSubscription(context.Background(), notification.Key{Owner: h.room.RoomIdentity, Source: gitlab.TodosSourceID}, 0, gitlab.TodosConfig{Target: h.state().Config.Target, Enabled: true, PlatformID: c.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestGitLabCredentialRecoveryKeepsUnrelatedPausesAndIdentities(t *testing.T)
 			}
 			if scenario == "unapplied_settings" {
 				h.m.gitlabNotifications[h.room.RoomIdentity] = map[notificationScope]gitlabNotificationRecord{
-					notificationScopeFor(c.ID, notification.Target{}): {Config: gitlab.NotificationConfig{PlatformID: c.ID}},
+					notificationScopeFor(c.ID, before[0].Metadata().Target): {Config: gitlab.NotificationConfig{PlatformID: c.ID}},
 				}
 			}
 			if scenario == "unavailable_account" {

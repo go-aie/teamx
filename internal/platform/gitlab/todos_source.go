@@ -25,7 +25,24 @@ func (*TodosSource) Decode(data []byte, owner platform.RoomIdentity) (notificati
 	var s TodosState
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
-	if dec.Decode(&s) != nil || dec.Decode(new(any)) != io.EOF || s.Validate(owner) != nil {
+	if dec.Decode(&s) != nil || dec.Decode(new(any)) != io.EOF {
+		return nil, notification.ErrInvalid
+	}
+	if s.Config.Target.RetiredRoom() {
+		if s.RoomIdentity != owner || !validRestartID(s.SubscriptionID) || s.SubscriptionVersion == 0 || s.Observed == nil || s.Inbox == nil {
+			return nil, notification.ErrInvalid
+		}
+		return s, notification.ErrRetiredRoomTarget
+	}
+	for key, entry := range s.Inbox {
+		if entry.Route.Target.RetiredRoom() {
+			delete(s.Inbox, key)
+		}
+	}
+	if s.DeliveryErrorCode == "room_capacity" {
+		s.DeliveryErrorCode = ""
+	}
+	if s.Validate(owner) != nil {
 		return nil, notification.ErrInvalid
 	}
 	return s, nil

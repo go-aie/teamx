@@ -70,7 +70,7 @@ export async function launch(api, saved = new Map(), environment = {}) {
   for (const [, id, value] of html.matchAll(/<input id="(gitlab-(?:events-type|todos-reason|todos-type)-[^"]+)" type="checkbox" value="([^"]+)"/g)) {
     elements.get(id).tag = "input"; elements.get(id).value = value; elements.get(id).checked = false;
   }
-  for(const id of ["notification-add-picker","member-notification-add-picker"]) elements.get(id).hidden=true;
+  elements.get("member-notification-add-picker").hidden=true;
   // Messages start outside the measured viewport. Tests explicitly choose visible
   // nodes; no-dwell reading must not observe every synthetic node at (0, 0).
   elements.get("message-template").content.firstElementChild.cloneNode = () => {
@@ -155,7 +155,7 @@ export async function launch(api, saved = new Map(), environment = {}) {
   await settle();
   const notificationToggle = () => {
     const {target, platformID, memberAvailable} = entrypoint.notificationSource();
-    const list = target.mode !== "inbox" ? elements.get("notification-platforms") : memberAvailable ? elements.get("member-notification-platforms") : elements.get("notification-orphan-items");
+    const list = memberAvailable ? elements.get("member-notification-platforms") : elements.get("notification-orphan-items");
     const row = [...list.children].find(row => row.dataset.platformId === platformID);
     return row?.className.includes("member-platform-row") ? row.children[1].children[1] : row?.children[1];
   };
@@ -218,14 +218,14 @@ export async function openMemberInbox(ui, membershipID = "") {
   }
   if(ui.el("agent-tab-inbox").attributes["aria-selected"]!=="true"){await ui.el("agent-tab-inbox").emit("click");await settle();}
 }
-export async function openNotification(ui, provider, platformID = "", member = provider === "lark") {
-  if(member)await openMemberInbox(ui,typeof member==="string" ? member : "");
-  const prefix=member ? "member-notification-" : "notification-";
+export async function openNotification(ui, provider, platformID = "", membership = "") {
+  await openMemberInbox(ui,typeof membership==="string" ? membership : "");
+  const prefix = "member-notification-";
   const rows=ui.el(prefix+"platforms").children;
   const button=rows.filter(row=>!platformID || row.dataset.platformId===platformID).map(row=>row.children[0]).find(b=>b.dataset.provider===provider)
     || ui.el(prefix+"add-options").children.find(b=>b.dataset.provider===provider && (!platformID || b.dataset.platformId===platformID));
-  assert.ok(button,`${provider} platform is available from ${member ? "member inbox" : "room notifications"}`);
-  if(member && !rows.some(row=>row.children[0]===button)){
+  assert.ok(button,`${provider} platform is available from member platforms`);
+  if(!rows.some(row=>row.children[0]===button)){
     const m=ui.selectedAgent();
     await ui.openNotificationSource(button,provider==="lark" ? "messages" : "gitlab",platformID || button.dataset.platformId,{mode:"inbox",agent_id:m.agent_id,membership_id:m.membership_id});
   }else await button.emit("click");await settle();

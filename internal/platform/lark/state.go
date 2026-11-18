@@ -82,7 +82,7 @@ func NormalizeConfig(c Config) (Config, error) {
 		return c, err
 	}
 	c.BackfillStart = start
-	if !component(c.PlatformID) || !c.Target.Valid() || !c.Target.Inbox() ||
+	if !component(c.PlatformID) || !c.Target.Valid() ||
 		(c.Private.Scope != "all" && c.Private.Scope != "specified") ||
 		(c.Groups.Scope != "" && c.Groups.Scope != "specified" && c.Groups.Scope != "all") ||
 		(c.Groups.MessageMode != "mentions" && c.Groups.MessageMode != "all") ||
@@ -184,7 +184,7 @@ type State struct {
 }
 
 func (s State) Metadata() notification.Metadata {
-	return notification.Metadata{Target: s.Config.Target.Canonical(), Key: notification.Key{Owner: s.RoomIdentity, Source: MessagesSourceID, SubscriptionID: s.SubscriptionID}, Version: s.SubscriptionVersion, Enabled: s.Config.Enabled, Retired: s.Retired, PlatformID: s.Binding.PlatformID, Observed: len(s.Observed), Pending: len(s.Inbox) - s.ExcludedItems(), DeliveryError: s.DeliveryErrorCode}
+	return notification.Metadata{Target: s.Config.Target, Key: notification.Key{Owner: s.RoomIdentity, Source: MessagesSourceID, SubscriptionID: s.SubscriptionID}, Version: s.SubscriptionVersion, Enabled: s.Config.Enabled, Retired: s.Retired, PlatformID: s.Binding.PlatformID, Observed: len(s.Observed), Pending: len(s.Inbox) - s.ExcludedItems(), DeliveryError: s.DeliveryErrorCode}
 }
 
 func (s State) ExcludedItems() int {
@@ -233,7 +233,7 @@ func (s State) Validate(owner platform.RoomIdentity) error {
 		}
 	}
 	for key, o := range s.Observed {
-		if key != RevisionKey(s.Binding, o.Message) || !o.Message.valid() || !o.Route.Valid(s.SubscriptionVersion) || !o.Route.Target.Inbox() {
+		if key != RevisionKey(s.Binding, o.Message) || !o.Message.valid() || !o.Route.Valid(s.SubscriptionVersion) {
 			return notification.ErrInvalid
 		}
 	}

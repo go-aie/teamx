@@ -13,7 +13,7 @@
 .platform-selection-candidates label { display: flex; align-items: start; gap: 8px; font-size:var(--font-body); line-height: 1.6; overflow-wrap: anywhere; cursor: pointer; }
 .platform-selection-candidates input { flex: none; margin-top: 4px; }
 
-/* Direct conversations share the inspector and notification settings. */
+/* Direct conversations share the member inspector. */
 .room-nav-heading { position:relative; }
 
 .create-menu {
@@ -55,10 +55,7 @@
 .direct-suggestions { display:flex; flex-wrap:wrap; justify-content:center; gap:8px; margin:0 20px 24px; }
 .direct-conversation #member-list-view > .member-rail-header,
 .direct-conversation #member-empty, .direct-conversation #members { display:none; }
-.direct-conversation:not(.direct-notifications-open) #member-list-view { display:none; }
-.direct-notifications-open #activity-dialog { display:none; }
-.direct-conversation.direct-notifications-open #member-list-view > .member-rail-header { display:flex; }
-.direct-notifications-open .member-rail-actions { display:none; }
+.direct-conversation #member-list-view { display:none; }
 @media(max-width:640px) {
   .direct-conversation .member-rail { position:fixed; z-index:20; inset:0; width:100%; background:var(--surface-muted); overflow:auto; }
   .direct-conversation .member-rail .activity-dialog,

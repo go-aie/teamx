@@ -4,13 +4,13 @@
 
 ## 通知配置接口
 
-GitLab 配置保存在房间的 `gitlab-notifications.json`，以平台＋目标区分记录，各自版本独立于采集器进度。`GET /v1/platform/gitlab/notifications` 携带 `platform_id` 和 `target_mode=room`，或 `target_mode=inbox&agent_id=...&membership_id=...`，返回该范围的统一配置及两类运行状态；`POST /v1/platform/gitlab/notifications/configure` 提交 `{platform_id, version, config}`，由 `config.target` 固定范围；`POST /v1/platform/gitlab/notifications/sync` 提交 `{platform_id, version, target}`，均携带房间身份、服务 epoch 和 human caller。汇总 GET 返回记录集合，不按平台 ID 任取一条。公共 `interval_seconds` 是两类采集器唯一的可接收时周期配置，`backfill_seconds`／`backfill_start` 是互斥的相对／绝对接收起点；首次开启任一类型前解析为固定 `backfill_start` 并持久保存，响应的 `backfill_locked` 表示不可再修改起点，后续请求需沿用返回配置；`events`／`todos` 不重复公共字段，不提供分支、忽略操作者、待办项目范围或后台周期字段。采集器快照仅保留已应用配置、独立身份、进度和冻结投递路径；GitLab 的分渠道写配置和同步接口始终拒绝请求，统一使用上述公共入口。
+GitLab 配置保存在房间的 `gitlab-notifications.json`，以平台＋目标区分记录，各自版本独立于采集器进度。`GET /v1/platform/gitlab/notifications` 携带 `platform_id` 和 `target_mode=inbox&agent_id=...&membership_id=...`，返回该范围的统一配置及两类运行状态；`POST /v1/platform/gitlab/notifications/configure` 提交 `{platform_id, version, config}`，由 `config.target` 固定范围；`POST /v1/platform/gitlab/notifications/sync` 提交 `{platform_id, version, target}`，均携带房间身份、服务 epoch 和 human caller。汇总 GET 返回记录集合，不按平台 ID 任取一条。公共 `interval_seconds` 是两类采集器唯一的可接收时周期配置，`backfill_seconds`／`backfill_start` 是互斥的相对／绝对接收起点；首次开启任一类型前解析为固定 `backfill_start` 并持久保存，响应的 `backfill_locked` 表示不可再修改起点，后续请求需沿用返回配置；`events`／`todos` 不重复公共字段，不提供分支、忽略操作者、待办项目范围或后台周期字段。采集器快照仅保留已应用配置、独立身份、进度和冻结投递路径；GitLab 的分渠道写配置和同步接口始终拒绝请求，统一使用上述公共入口。
 
 ## 图片材料
 
-GitLab 通知中的评论在房间消息和收件箱预览中按 Markdown 展示，已有通知也适用；原始存储及 Agent 输入继续保留转义和提及隔离。项目图片附件支持 `/uploads/<secret>/<filename>`、同实例的项目附件地址，以及 `{width=900 height=536}` 尺寸语法。图片接近可视区域时，浏览器请求 TeamX 的 `/v1/platform/attachments`；后端核对房间、已保存的消息／收件箱条目、订阅和当前连接账号，再使用该平台的 OAuth 授权调用 GitLab 附件 API。令牌不发送到浏览器；TeamX 页面下载仅暂存在内存，不新增落盘或持久缓存；每张最多 20 MiB，支持 PNG、JPEG、GIF、WebP。HTML、SVG 和外部站点图片不内嵌。附件 API 需要 GitLab 17.4 或以上；权限不足、附件删除或连接失效时显示加载失败入口。
+GitLab 收件箱通知中的评论按 Markdown 展示；原始存储及 Agent 输入继续保留转义和提及隔离。项目图片附件支持 `/uploads/<secret>/<filename>`、同实例的项目附件地址，以及 `{width=900 height=536}` 尺寸语法。图片接近可视区域时，浏览器请求 TeamX 的 `/v1/platform/attachments`；后端核对房间、成员、已保存的收件箱条目、订阅和当前连接账号，再使用该平台的 OAuth 授权调用 GitLab 附件 API。令牌不发送到浏览器；TeamX 页面下载仅暂存在内存，不新增落盘或持久缓存；每张最多 20 MiB，支持 PNG、JPEG、GIF、WebP。HTML、SVG 和外部站点图片不内嵌。附件 API 需要 GitLab 17.4 或以上；权限不足、附件删除或连接失效时显示加载失败入口。
 
-Agent 的图片输入在固定当前回合的 Room／AgentInbox 范围内另行准备，并不依赖浏览器加载图片。只有显式声明图片模态且 ACP 握手支持图片的 Session 才接收图片字节；纯文本模式不下载，并提示图片未读。正文沿用原有限制，实际截断时显示“正文已截断，内容可能不完整”；只识别已保存文字中的完整图片引用，不补读完整评论或截断之外的图片。每轮扫描／图片数量／字节／像素／时间均有预算，缺失与超限会明确告知模型，不保证下一轮自动补齐。
+Agent 在有效回合正式读取对应通知时获取图片材料。只有显式声明图片模态且 ACP 握手支持图片的 Session 才接收图片字节；纯文本模式不下载，并提示图片未读。正文沿用原有限制，实际截断时显示“正文已截断，内容可能不完整”；只识别已保存文字中的完整图片引用，不补读完整评论或截断之外的图片。每轮扫描／图片数量／字节／像素／时间均有预算，缺失与超限会明确告知模型，不保证下一轮自动补齐。
 
 材料准备不推进 Room 已读、Inbox 消费或 matters 状态，不授予工具操作权限。TeamX 只在有界内存中准备；提交后的图片由 DSH 按私有 Session 附件机制持久保存，因此不能将页面不缓存理解为整条模型链路不落盘。模型配置、可重复验收命令及当前边界见[图片验收手册](../gitlab-image-acceptance.zh.md)。
 
@@ -143,16 +143,13 @@ Agent `policy update` 在原 effective、revision、current_turn、policy_token 
 ```mermaid
 flowchart LR
   Q[单页平台查询] --> S[观察记录 + 收件箱 + 分页检查点原子保存]
-  S --> D{已冻结单目标}
-  D --> R[Room 消息 + 独立投递回执原子提交]
-  D --> I[目标 Membership 的 Inbox 条目与回执持久提交]
-  R --> A[确认并移出来源待投递缓冲]
-  I --> A
+  S --> I[指定 Membership 的 Inbox 条目与回执持久提交]
+  I --> A[确认并移出来源待投递缓冲]
 ```
 
-远端页处理成功必须先保存，再推进下一页或缓存。消息提交后、inbox ack 前崩溃时，稳定投递 ID 与对应目标的持久回执阻止重复接收；清空公共历史不清除同步进度或回执。向订阅所属且可接收的运行实例投递，与页面是否查看无关；未打开或正在进行生命周期操作的房间继续采集并暂存，待目标可接收时投递。
+远端页处理成功必须先保存，再推进下一页或缓存。成员 Inbox 提交后、来源确认前崩溃时，稳定投递 ID 与成员回执用于重试去重。接收目标由房间实例、Agent 和 Membership 固定。运行实例暂不可接收时，来源保留积压，待目标可用后重试。
 
-公共来源键是 provider + channel + subscription ID；来源 item key 按不透明字符串处理。集成作者只陈述对象、操作者、变化、原因和链接，不生成建议、指派或 @ 提及；公开发送接口不能伪造 integration。点击明确来源的消息作者打开对应页签；缺少/未知 channel 不推断为活动消息。
+公共来源键是 provider + channel + subscription ID；来源 item key 按不透明字符串处理。通知保存对象、操作者、变化、原因和来源链接。人类可从 Inbox 条目的「来源详情」打开准确的订阅设置；同一外部账号的其他成员订阅有独立身份。旧会话直投配置和积压不参与恢复，也不自动分配给成员。
 
 ## Events：快查与完整窗口
 
@@ -162,7 +159,7 @@ flowchart LR
 
 ETag 仅用于已验证支持条件请求的快速页，缓存与页面同次落盘，首次任务检查使用无条件请求；`304` 不推进完整水位，也不取消补查。没有 ETag 时继续普通查询。
 
-算法见 [events_poll.go](../../internal/platform/gitlab/events_poll.go)、[events.go](../../internal/platform/gitlab/events.go)。重叠窗口只能覆盖有限延迟，不保证任意迟到活动或固定入房时延。水位落后超过 24 小时标记 `retention_unverified`，并非推断平台的真实保留期限。
+算法见 [events_poll.go](../../internal/platform/gitlab/events_poll.go)、[events.go](../../internal/platform/gitlab/events.go)。重叠窗口只能覆盖有限延迟，不保证任意迟到活动或固定投递时延。水位落后超过 24 小时标记 `retention_unverified`，并非推断平台的真实保留期限。
 
 ## Todos：个人身份与双状态扫描
 

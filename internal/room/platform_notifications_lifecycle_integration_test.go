@@ -142,7 +142,7 @@ func TestGitLabEventsSlowSubscriptionDoesNotBlockOtherRoom(t *testing.T) {
 			return gitlab.EventBatch{Version: 1, Events: []gitlab.Event{}, Complete: true}, nil
 		}), 7, nil
 	}
-	if _, err := seedTestEvents(h.m, other.RoomIdentity, gitlab.EventsConfig{Enabled: true}); err != nil {
+	if _, err := seedTestEvents(h.m, other.RoomIdentity, gitlab.EventsConfig{Target: fixtureInboxTarget(t, h.m, other.RoomIdentity), Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	h.clock.add(time.Second)

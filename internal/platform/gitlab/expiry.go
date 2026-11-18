@@ -13,7 +13,7 @@ func (s EventsState) Expire(cutoff time.Time) notification.State {
 	}
 	found := false
 	for _, e := range s.Inbox {
-		if e.Route.Target.Inbox() && notification.Expired(e.Event.CreatedAt, effective) {
+		if notification.Expired(e.Event.CreatedAt, effective) {
 			found = true
 			break
 		}
@@ -27,7 +27,7 @@ func (s EventsState) Expire(cutoff time.Time) notification.State {
 	}
 	removed := false
 	for k, e := range n.Inbox {
-		if e.Route.Target.Inbox() && notification.Expired(e.Event.CreatedAt, n.ExpiredBefore) {
+		if notification.Expired(e.Event.CreatedAt, n.ExpiredBefore) {
 			delete(n.Inbox, k)
 			delete(n.Observed, k)
 			n.Metrics.ExpiredSkipped++
@@ -49,7 +49,7 @@ func (s TodosState) Expire(cutoff time.Time) notification.State {
 	}
 	found := false
 	for _, e := range s.Inbox {
-		if e.Route.Target.Inbox() && notification.Expired(e.Todo.CreatedAt, effective) {
+		if notification.Expired(e.Todo.CreatedAt, effective) {
 			found = true
 			break
 		}
@@ -63,7 +63,7 @@ func (s TodosState) Expire(cutoff time.Time) notification.State {
 	}
 	removed := false
 	for k, e := range n.Inbox {
-		if e.Route.Target.Inbox() && notification.Expired(e.Todo.CreatedAt, n.ExpiredBefore) {
+		if notification.Expired(e.Todo.CreatedAt, n.ExpiredBefore) {
 			delete(n.Inbox, k)
 			delete(n.Observed, k)
 			n.Metrics.ExpiredSkipped++

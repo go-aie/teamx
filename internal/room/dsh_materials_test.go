@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-aie/teamx/internal/agent/dsh"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
+	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
 func materialInput(id MemberIdentity, roomEnd, inboxEnd uint64) UnreadChanged {
@@ -44,17 +45,15 @@ func saveMaterialTurn(t *testing.T, svc *service, id MemberIdentity, roomEnd, in
 		t.Fatal(err)
 	}
 }
-func addMaterialNotice(t *testing.T, h *eventHarness, svc *service, id MemberIdentity, n int, body string, inbox bool) {
+func addMaterialNotice(t *testing.T, h *eventHarness, svc *service, id MemberIdentity, n int, body string) {
 	t.Helper()
 	event := h.event(int64(n), 0)
 	event.Kind, event.NoteBody = "note", body
-	item := gitlab.EventsMessage(h.state(), gitlab.EventsInboxEntry{DeliveryID: fmt.Sprintf("material-%d", n), Event: event})
-	if inbox {
-		if err := svc.receiveInbox(context.Background(), inboxTarget(id), item); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if _, err := svc.room.Call[PostReceipt](context.Background(), postIntegrationMessage{RoomIdentity: id.RoomIdentity, DeliveryID: item.DeliveryID, Text: item.Text, Source: item.Source}); err != nil {
+	item := gitlab.EventsMessage(h.state(), gitlab.EventsInboxEntry{
+		Route:      notification.Route{Target: inboxTarget(id), Version: 1},
+		DeliveryID: fmt.Sprintf("material-%d", n), Event: event,
+	})
+	if err := svc.receiveInbox(context.Background(), inboxTarget(id), item); err != nil {
 		t.Fatal(err)
 	}
 }

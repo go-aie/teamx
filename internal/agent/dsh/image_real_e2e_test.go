@@ -31,7 +31,7 @@ func TestRealDSHImage(t *testing.T) {
 	if err := os.Mkdir(output, 0700); err != nil {
 		t.Fatal(err)
 	}
-	report := map[string]any{"status": "failed", "recordedAt": time.Now().UTC().Format(time.RFC3339), "component": "Go internal/agent/dsh", "scope": "I1 independent image; no GitLab or Room notification input", "recoveryStatus": "not requested; set TEAMX_DSH_IMAGE_RESUME=1 for additional recovery check"}
+	report := map[string]any{"status": "failed", "recordedAt": time.Now().UTC().Format(time.RFC3339), "component": "Go internal/agent/dsh", "scope": "I1 independent image; no platform notifications", "recoveryStatus": "not requested; set TEAMX_DSH_IMAGE_RESUME=1 for additional recovery check"}
 	defer func() {
 		if err := atomicJSON(output, "report.json", report); err != nil {
 			t.Error(err)

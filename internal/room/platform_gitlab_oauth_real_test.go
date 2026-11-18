@@ -397,7 +397,7 @@ func TestRealGitLabOAuthG5(t *testing.T) {
 			}
 			source := fixture.Source
 			source.SubscriptionID = state.SubscriptionID
-			item := notification.Item{Key: source.ItemKey, DeliveryID: notification.DeliveryID(state.Metadata().Key, source.ItemKey), Text: fixture.Text, Source: source, CreatedAt: time.Now().UTC(), Order: "00000000000000000001"}
+			item := notification.Item{Route: notification.Route{Target: inboxTarget(id), Version: state.SubscriptionVersion}, Key: source.ItemKey, DeliveryID: notification.DeliveryID(state.Metadata().Key, source.ItemKey), Text: fixture.Text, Source: source, CreatedAt: time.Now().UTC(), Order: "00000000000000000001"}
 			var saved InboxEntry
 			path := filepath.Join(svc.store.dir, "inboxes", id.MembershipID, "00000000000000000001.json")
 			if _, err := os.Stat(path); err == nil {
@@ -409,26 +409,13 @@ func TestRealGitLabOAuthG5(t *testing.T) {
 			if err := svc.receiveInbox(ctx, inboxTarget(id), item); err != nil {
 				t.Fatal("cannot seed saved real notice in isolated Inbox")
 			}
-			receipt, err := svc.room.Call[PostReceipt](ctx, postIntegrationMessage{RoomIdentity: room.RoomIdentity, DeliveryID: item.DeliveryID, Text: item.Text, Source: item.Source})
+			req := attachmentRequest{ServiceInfo: svc.info, Seq: 1, AgentID: id.AgentID, MembershipID: id.MembershipID, Path: images.Images[0].Path}
+			data, mime, _, err := m.downloadAttachment(ctx, req, nil, gitlab.UploadLimits{MaxBytes: 8 << 20, MaxPixels: 24000000})
 			if err != nil {
-				t.Fatal("cannot deliver saved notice to isolated Room")
+				t.Fatal("real saved-source attachment path failed")
 			}
-			for _, inbox := range []bool{false, true} {
-				req := attachmentRequest{ServiceInfo: svc.info, Seq: receipt.Seq, Path: images.Images[0].Path}
-				if inbox {
-					req.AgentID, req.MembershipID, req.Seq = id.AgentID, id.MembershipID, 1
-				}
-				data, mime, _, err := m.downloadAttachment(ctx, req, nil, gitlab.UploadLimits{MaxBytes: 8 << 20, MaxPixels: 24000000})
-				if err != nil {
-					t.Fatal("real saved-source attachment path failed")
-				}
-				kind := "Room"
-				if inbox {
-					kind = "Inbox"
-				}
-				report["image_"+kind] = map[string]any{"bytes": len(data), "mime": mime, "browser_visual_and_model": "not exercised"}
-			}
-			report["notice_delivery"] = "saved real notice seeded locally; not a fresh remote poll"
+			report["image_Inbox"] = map[string]any{"bytes": len(data), "mime": mime, "browser_visual_and_model": "not exercised"}
+
 		}
 	}
 	report["status"] = "read_checks_passed_remaining_gates_pending"

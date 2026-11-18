@@ -72,7 +72,7 @@ data/                                # 配置文件旁的数据目录
   credentials/                       # Workspace 的房间归属凭据
   rooms/<room-id>/
     room-config.json                 # 冻结配置和生效 Workspace
-    room.json                        # 公共历史、成员、游标与投递回执
+    room.json                        # 对话历史、成员和游标
     tool-bindings.json               # 成员工具与连接引用
     discussion-restart.json          # 重新开始批次
     agents/<membership-id>/          # agent/session 状态、代际引用及 collaboration.json

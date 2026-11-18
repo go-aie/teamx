@@ -59,6 +59,7 @@ func standaloneEvents(t *testing.T) (*EventsSource, *sourceStepHost, *EventsRunn
 func standaloneEventsConfig(t *testing.T, cfg EventsConfig) (*EventsSource, *sourceStepHost, *EventsRunner) {
 	t.Helper()
 	cfg.Enabled = true
+	cfg.Target = testInboxTarget
 	now := time.Date(2026, 11, 1, 23, 59, 50, 0, time.UTC)
 	owner := platform.RoomIdentity{RoomID: "source-room", RoomInstance: "source-instance"}
 	binding := platform.ProjectBinding{Provider: "gitlab", URL: "https://gitlab.invalid", Project: "group/project", PlatformID: strings.Repeat("a", 32), PlatformGeneration: strings.Repeat("b", 32), ProjectID: 7}
@@ -169,7 +170,7 @@ func TestEventsPopulatedSnapshot(t *testing.T) {
 	for id := range map[int64]bool{42: true, 43: true} {
 		key := EventsKey(s.Binding, 7, id)
 		item, ok := s.Notification(key)
-		if !ok || item.DeliveryID != s.DeliveryID(key) || item.Source.ItemKey != key || item.Source.Channel != "events" {
+		if !ok || item.DeliveryID != (notification.Route{Target: s.Config.Target, Version: s.SubscriptionVersion}).DeliveryID(s.DeliveryID(key)) || item.Source.ItemKey != key || item.Source.Channel != "events" {
 			t.Fatal("delivery identity changed", item)
 		}
 	}

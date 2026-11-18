@@ -175,28 +175,36 @@ func TestGitLabPlatformsIndependentDefaultsPauseRecoveryAndDelivery(t *testing.T
 	if restored.Todos.SubscriptionID != paused.SubscriptionID || !reflect.DeepEqual(state(a).Inbox, paused.Inbox) || !state(a).Baseline.Equal(paused.Baseline) {
 		t.Fatal("resume replaced pending progress")
 	}
-	// Actual Room delivery keeps separate receipts and the exact recipients.
+	// Inbox delivery keeps separate receipts and the exact platform accounts.
 	h := &eventHarness{t: t, m: m, room: room}
-	eventLiveService(t, h)
+	svc := eventLiveService(t, h)
 	for _, id := range []string{a, b} {
 		s := state(id)
 		if err := m.notifications.Deliver(context.Background(), s.Metadata().Key, s.SubscriptionVersion); err != nil {
 			t.Fatal(err)
 		}
 	}
-	_, snapshot := readManagedRoom(t, m, room)
-	if len(snapshot.Messages) != 2 || len(snapshot.IntegrationReceipts) != 2 {
-		t.Fatal("accounts merged their notifications", snapshot)
+	id := subscriptionMember(state(a).Metadata())
+	page := inboxRoutingPreview(t, svc, id)
+	if page.SnapshotSeq != 2 {
+		t.Fatal("accounts merged their notifications", page)
 	}
-	if snapshot.Messages[0].Source.SubscriptionID == snapshot.Messages[1].Source.SubscriptionID || snapshot.Messages[0].Source.Reference.RecipientID == snapshot.Messages[1].Source.Reference.RecipientID {
-		t.Fatal("delivery lost account identity")
+	svc.store.mu.Lock()
+	first, firstErr := svc.store.inboxEntryLocked(id, 1)
+	second, secondErr := svc.store.inboxEntryLocked(id, 2)
+	svc.store.mu.Unlock()
+	if firstErr != nil || secondErr != nil || first.Item.Source.SubscriptionID == second.Item.Source.SubscriptionID ||
+		first.Item.Source.Reference.RecipientID == second.Item.Source.Reference.RecipientID {
+		t.Fatal("delivery lost account identity", firstErr, secondErr)
 	}
 	q := url.Values{"service_epoch": {m.epoch}, "caller_id": {"operator"}, "room_id": {room.RoomID}, "room_instance": {room.RoomInstance}}
 	if r := managerHTTP(m, "/v1/platform/gitlab/notifications?"+q.Encode(), nil); r.Code != http.StatusBadRequest {
 		t.Fatal("ambiguous platform selected", r.Code)
 	}
 	q.Set("platform_id", b)
-	q.Set("target_mode", "room")
+	q.Set("target_mode", "inbox")
+	q.Set("agent_id", id.AgentID)
+	q.Set("membership_id", id.MembershipID)
 	if r := managerHTTP(m, "/v1/platform/gitlab/notifications?"+q.Encode(), nil); r.Code != http.StatusOK {
 		t.Fatal(r.Body.String())
 	}
@@ -234,7 +242,9 @@ func TestGitLabPlatformsApplyLockAndFailuresAreIndependent(t *testing.T) {
 	}()
 	awaitEventSignal(t, blocked.canceled, "A was not canceled")
 	// B can configure while A is still joining an uncooperative old query.
-	vb := applyPlatformGitLab(t, h.m, h.room.RoomIdentity, 0, gitlab.DefaultNotificationConfig(b))
+	other := gitlab.DefaultNotificationConfig(b)
+	other.Target = cfg.Target
+	vb := applyPlatformGitLab(t, h.m, h.room.RoomIdentity, 0, other)
 	h.m.mu.Lock()
 	s, _ := h.m.currentTodosLocked(h.room.RoomIdentity, b)
 	_, admitErr := h.m.admitPlatformNotificationLocked(context.Background(), *s)

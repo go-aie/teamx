@@ -31,7 +31,7 @@ test("quick member and notification reads finish before any loading notice appea
   await ui.openNotificationSource(row(ui,"gl").children[0],"gitlab","gl",target());
   quiet(ui,"notification-notice");
   await ui.clock.advance(1000);
-  quiet(ui,"member-notification-list-error"); quiet(ui,"notification-list-error"); quiet(ui,"notification-notice");
+  quiet(ui,"member-notification-list-error"); quiet(ui,"notification-notice");
 });
 
 test("member settings wait quietly, show delayed neutral progress and retain confirmed tools on refresh", async () => {
@@ -94,18 +94,15 @@ test("notification detail waits quietly and exposes retry only after a failed re
   api.hook = path => path.startsWith("/v1/platform/gitlab/notifications?") ? read.promise : undefined;
   const opening = ui.openNotificationSource(row(ui,"gl").children[0], "gitlab", "gl", target());
   await settle();
-  quiet(ui, "notification-notice"); quiet(ui, "notification-reload");
   assert.equal(ui.el("notification-panel-gitlab").hidden, true);
   await ui.clock.advance(350);
   assert.match(ui.el("notification-notice").textContent, /正在读取/);
-  quiet(ui, "notification-reload");
   read.reject(Error("offline")); await opening; await settle();
   assert.match(ui.el("notification-notice").textContent, /暂不可读/);
   assert.equal(ui.el("notification-reload").hidden, false);
   assert.equal(ui.el("notification-panel-gitlab").hidden, true);
   api.hook = null;
   await ui.el("notification-reload").emit("click"); await settle();
-  quiet(ui, "notification-notice"); quiet(ui, "notification-reload");
   assert.equal(ui.el("notification-panel-gitlab").hidden, false);
 });
 
@@ -123,7 +120,6 @@ test("a slow notification detail cannot publish loading or failures over a diffe
   read.reject(Error("old request failed")); await opening; await settle();
   assert.match(ui.el("notification-title").textContent, /^b ·/);
   assert.equal(ui.el("gitlab-interval").value, 45);
-  quiet(ui, "notification-notice"); quiet(ui, "notification-reload");
 });
 
 test("source summaries and empty Inbox wait for fresh reads after a service epoch change", async () => {
@@ -136,20 +132,15 @@ test("source summaries and empty Inbox wait for fresh reads after a service epoc
   api.hook = path => path.startsWith("/v1/platforms?") ? platforms.promise : path.startsWith("/v1/platform/notifications?") ? sources.promise : emptyInbox(path);
   api.epoch = "next-manager";
   const refreshing = ui.refresh(); await settle();
-  quiet(ui, "notification-list-error"); quiet(ui, "notification-empty");
   quiet(ui, "member-notification-list-error"); quiet(ui, "member-notification-empty");
   assert.equal(ui.el("inbox-empty-hint").textContent, "");
   assert.equal(ui.el("inbox-backlog").textContent, "");
   quiet(ui, "inbox-add-platform");
   await ui.clock.advance(350);
-  assert.equal(ui.el("notification-platforms").getAttribute("aria-busy"), "true");
-  assert.equal(ui.el("notification-list-error").classList.contains("form-error"), false);
   assert.equal(ui.el("inbox-empty-hint").textContent, "");
-  quiet(ui, "notification-list-reload");
   platforms.resolve({platforms:structuredClone(api.platforms)});
   sources.resolve({subscriptions:[],gitlab_platforms:[]});
   await refreshing; await settle();
-  quiet(ui, "notification-list-error"); quiet(ui, "member-notification-list-error");
   assert.match(ui.el("inbox-empty-hint").textContent, /添加平台/);
   assert.equal(ui.el("inbox-add-platform").hidden, false);
 });
@@ -157,11 +148,9 @@ test("source summaries and empty Inbox wait for fresh reads after a service epoc
 test("refresh retains confirmed empty source lists while waiting for new data", async () => {
   const api=fixture({empty:true}),ui=await launch(api),read=deferred();
   await openMemberInbox(ui,"member-a");
-  assert.equal(ui.el("notification-empty").hidden,false);
   assert.equal(ui.el("member-notification-empty").hidden,false);
   api.hook=path=>path.startsWith("/v1/platform/notifications?") ? read.promise : undefined;
   const refreshing=ui.refresh();await settle();
-  assert.equal(ui.el("notification-empty").hidden,false);
   assert.equal(ui.el("member-notification-empty").hidden,false);
   quiet(ui,"member-notification-list-error");
   read.resolve({subscriptions:[],gitlab_platforms:[]});await refreshing;await settle();
@@ -176,11 +165,7 @@ test("a platform read from the prior Room runtime cannot settle a new loading st
   api.hook=path=>path.startsWith("/v1/platforms?") ? fresh.promise : undefined;
   const refreshing=ui.refresh();await settle();
   old.resolve({platforms:[]});await opening;await settle();
-  quiet(ui,"notification-empty");
-  assert.equal(ui.el("notification-platforms").getAttribute("aria-busy"),"true");
+  quiet(ui,"member-notification-empty");
   await ui.clock.advance(350);
-  assert.equal(ui.el("notification-platforms").getAttribute("aria-busy"),"true");
   fresh.resolve({platforms:structuredClone(api.platforms)});await refreshing;await settle();
-  assert.equal(ui.el("notification-platforms").children.length,1);
-  quiet(ui,"notification-list-error");
 });

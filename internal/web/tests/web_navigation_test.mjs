@@ -114,14 +114,11 @@ for (const width of [390,1440]) {
     assert.equal(ui.el("member-sidebar").scrollTop,92);
   });
 
-  test(`notification message diagnostics return directly to the conversation at ${width}px`, async () => {
+  test(`historical platform messages have no settings action at ${width}px`, async () => {
     const api=fixture();messages(api,{kind:"integration",id:"gitlab"},{provider:"gitlab",channel:"events"});
     const ui=await launch(api);ui.window.innerWidth=width;await ui.window.emit("resize");
-    if(!ui.el("member-rail").inert)await ui.el("room-menu-label").emit("click");
-    await avatar(ui).emit("click");await settle();assert.equal(ui.el("notification-detail").open,true);
-    assert.equal(ui.el("member-rail").inert,false);
-    await ui.el("close-notification").emit("click");await settle();
-    assert.equal(ui.el("member-rail").inert,true);assert.equal(ui.el("conversation").inert,false);
+    await avatar(ui).emit("click");
+    assert.equal(ui.el("notification-detail").open,false);
   });
 }
 
@@ -138,21 +135,6 @@ test("notification source and global settings return through the actual parent w
   assert.equal(ui.el("agent-tab-inbox").getAttribute("aria-selected"),"true");assert.equal(ui.el("inbox-member-view").scrollTop,88);
 });
 
-for (const width of [390,1440]) test(`conversation notifications return to the conversation when details were closed at ${width}px`, async () => {
-  const api=fixture(),request=api.request.bind(api);
-  api.request=async(path,...args)=>{
-    const data=await request(path,...args);
-    if(path==="/v1/rooms")for(const room of data.rooms){room.is_direct=true;room.runtime_status="ready";}
-    if(path==="/v1/member/list")data.members=data.members.slice(0,1);
-    return data;
-  };
-  const ui=await launch(api);ui.window.innerWidth=width;await ui.window.emit("resize");
-  if(!ui.el("member-rail").inert)await ui.el("room-menu-label").emit("click");
-  await ui.el("direct-notifications").emit("click");assert.equal(ui.el("member-rail").inert,false);
-  await ui.el("close-conversation-notifications").emit("click");await settle();
-  assert.equal(ui.el("member-rail").inert,true);assert.equal(ui.el("conversation").inert,false);
-  assert.equal(ui.el("activity-dialog").open,false);
-});
 
 test("an avatar opened over another member detail restores that member and its tab", async () => {
   const api=fixture();messages(api);const ui=await launch(api);
@@ -168,15 +150,6 @@ test("an avatar opened over another member detail restores that member and its t
   await ui.el("close-activity").emit("click");await settle();assert.equal(ui.el("member-list-view").hidden,false);
 });
 
-test("returning from historical notification diagnostics resumes the original activity reader", async () => {
-  const api=fixture();messages(api,{kind:"integration",id:"gitlab"},{provider:"gitlab",channel:"events"});
-  const ui=await launch(api);await openMember(ui);await ui.el("agent-tab-activity").emit("click");await settle();
-  const reads=()=>api.calls.filter(call=>call.path==="/v1/member/activity").length;
-  const before=reads();await avatar(ui).emit("click");await settle();
-  await ui.el("close-notification").emit("click");await settle();
-  assert.equal(ui.el("activity-dialog").open,true);assert.equal(ui.el("activity-dialog").hidden,false);
-  assert.equal(ui.el("agent-tab-activity").getAttribute("aria-selected"),"true");assert.ok(reads()>before);
-});
 
 test("opening the same member from a conversation restores its previous tab on return", async () => {
   const api=fixture();messages(api);const ui=await launch(api);await openMember(ui);

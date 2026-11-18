@@ -73,7 +73,7 @@ func newTodoHarness(t *testing.T) *todoHarness {
 	clock := &eventTestClock{now: time.Date(2026, 11, 3, 0, 0, 0, 0, time.UTC)}
 	m.notifications.Clock = clock.get
 	h := &todoHarness{t: t, m: m, room: room, clock: clock, connection: c, pages: &todoTestPages{}}
-	s, err := m.configureTodosSubscription(context.Background(), notification.Key{Owner: room.RoomIdentity, Source: gitlab.TodosSourceID}, 0, gitlab.TodosConfig{Enabled: true, PlatformID: c.ID})
+	s, err := m.configureTodosSubscription(context.Background(), notification.Key{Owner: room.RoomIdentity, Source: gitlab.TodosSourceID}, 0, gitlab.TodosConfig{Target: fixtureInboxTarget(t, m, room.RoomIdentity), Enabled: true, PlatformID: c.ID})
 	if err != nil {
 		t.Fatal(err)
 	}

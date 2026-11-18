@@ -124,7 +124,7 @@ DM 的启用／暂停在顶栏或现有详情内可发现，默认启用不等�
 
 DM 默认突出助理的平台和 Inbox。会话消息流通知与 Agent Inbox 仍为不同目标，不合并、不双投、不改写旧订阅。
 
-隐藏成员列表后，将原「房间通知」管理入口保留在 DM 的会话菜单，文案为「会话通知」，复用原组件与目标校验；关闭详情返回 DM 主详情，不跳到隐藏的成员列表。Room 保留原位置。平台来源跳转、异常订阅及高级设置都需能在对应布局定位，不因隐藏列表丢失入口。
+在助理详情的「平台」页管理通知订阅，在「收件箱」查看已投递通知和来源。关闭来源设置时返回打开它的助理标签页。
 
 全局「设置 → 平台」继续完整管理连接。对话授权与候选组件占用聊天内区域，右侧保持 Agent 详情，不将详情栏改造成常驻审批中心。
 
@@ -180,7 +180,7 @@ D1 → D2 → D3 构成可独立交付的 DM 与默认助理基础，不以平�
 | `internal/room/{serve,runtimes,deletion,recovery}.go` 及现有启用状态持久化 | 默认创建、删除保护、历史删除记录及显式恢复，打开恢复和首次启用，保留现有结清与 Session 语义 |
 | 内置角色资源、`prompts/agent-guide.md`、`dsh.go` | 角色定义及 Skill 发现；公共指南只保留共性规则，不注入所有 Agent 的 Chief 职责 |
 | `internal/platform/tool/skills/platforms/SKILL.md`、`platform_connect*.go` 及原 C2–C6 落点 | 复用接入能力；按实际阶段更新 Skill 和引导，不复制服务 |
-| `internal/web/assets/{app.js,index.html,style.css}` | 分组导航、DM 默认详情、选择恢复、动态文案及会话通知入口 |
+| `internal/web/assets/{app.js,index.html,style.css}` | 分组导航、DM 默认详情、选择恢复、动态文案及助理平台入口 |
 | `bundle.go`、`bundle_init.go` 与打包校验脚本 | 确保内置角色／Skill 随独立二进制和发行包可用，模型初始化仍走既有入口 |
 
 验证聚焦行为：

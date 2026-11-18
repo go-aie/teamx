@@ -136,11 +136,11 @@ func TestNotificationsUpgradeSplitsDifferentLegacyChannelsByPlatform(t *testing.
 	room := managerCreate(t, m, "split-legacy")
 	a, b := sharedGitLabPlatforms(t, m)
 	m.platformProject = func(context.Context, string, string, workspaceSecret) (int64, error) { return 7, nil }
-	events, err := m.configureEventsSubscription(context.Background(), notification.Key{Owner: room.RoomIdentity, Source: gitlab.EventsSourceID}, 0, gitlab.EventsConfig{Enabled: true, PlatformID: a, Project: "group/project", IntervalSeconds: 15, BackfillSeconds: 3600})
+	events, err := m.configureEventsSubscription(context.Background(), notification.Key{Owner: room.RoomIdentity, Source: gitlab.EventsSourceID}, 0, gitlab.EventsConfig{Target: fixtureInboxTarget(t, m, room.RoomIdentity), Enabled: true, PlatformID: a, Project: "group/project", IntervalSeconds: 15, BackfillSeconds: 3600})
 	if err != nil {
 		t.Fatal(err)
 	}
-	todos, err := m.configureTodosSubscription(context.Background(), notification.Key{Owner: room.RoomIdentity, Source: gitlab.TodosSourceID}, 0, gitlab.TodosConfig{Enabled: true, PlatformID: b, IntervalSeconds: 60})
+	todos, err := m.configureTodosSubscription(context.Background(), notification.Key{Owner: room.RoomIdentity, Source: gitlab.TodosSourceID}, 0, gitlab.TodosConfig{Target: fixtureInboxTarget(t, m, room.RoomIdentity), Enabled: true, PlatformID: b, IntervalSeconds: 60})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,7 +242,7 @@ func TestNotificationsUpgradeFailureBoundaries(t *testing.T) {
 func TestNotificationsUpgradeRefusesIncompatibleLegacyScope(t *testing.T) {
 	parallelFixtureTest(t)
 	h, c := newIndependentEventHarness(t)
-	_, err := h.m.configureTodosSubscription(context.Background(), notification.Key{Owner: h.room.RoomIdentity, Source: gitlab.TodosSourceID}, 0, gitlab.TodosConfig{Enabled: true, PlatformID: c.ID, IntervalSeconds: 60})
+	_, err := h.m.configureTodosSubscription(context.Background(), notification.Key{Owner: h.room.RoomIdentity, Source: gitlab.TodosSourceID}, 0, gitlab.TodosConfig{Target: h.state().Config.Target, Enabled: true, PlatformID: c.ID, IntervalSeconds: 60})
 	if err != nil {
 		t.Fatal(err)
 	}

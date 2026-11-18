@@ -427,7 +427,7 @@ func appendUpgradedEvents(room *RoomSnapshot, queues [][]legacyInputEvent, notic
 			if old.event.SourceSeq > baseSeq {
 				return nil, fmt.Errorf("%w: legacy event %s has an unknown Room source", ErrInvalid, old.event.EventID)
 			}
-			if room.Revision == math.MaxUint64 || len(room.Messages) >= maxMessages || len(room.EventReceipts) >= maxIntegrationReceipts {
+			if room.Revision == math.MaxUint64 || len(room.Messages) >= maxMessages || len(room.EventReceipts) >= maxRoomReceipts {
 				return nil, fmt.Errorf("%w: legacy event %s exceeds Room bounds", ErrCapacity, old.event.EventID)
 			}
 			room.LatestSeq++

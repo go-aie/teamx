@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/go-aie/teamx/internal/inputstream"
 	"github.com/go-aie/teamx/internal/platform/attachment"
@@ -13,13 +14,14 @@ import (
 )
 
 func TestUnifiedRoomFormalImagesShareBudgetAndRecheckCachedAuthority(t *testing.T) {
-	h, s := unifiedReaderFixture(t, 1)
-	s.images = true
-	s.service.imageMaterials = imageMaterialConfig{MaxImages: 1}
-	item := storedGitLab(s.storage.id, "room-image", "events", "7", "42", "保存的图片 ![first](/uploads/524bb5cf042cd0bb3ef9a7a117a744b7/one.png)")
+	state := historyRoom(1, "查看历史消息")
+	item := storedGitLab(MemberIdentity{}, "room-image", "events", "7", "42", "保存的图片 ![first](/uploads/524bb5cf042cd0bb3ef9a7a117a744b7/one.png)")
 	item.Source.ProjectID = 7
 	item.Source.URL = "https://gitlab.example.com/group/repo/-/merge_requests/42"
-	roomCall[PostReceipt](t, h, postIntegrationMessage{RoomIdentity: h.id, DeliveryID: item.DeliveryID, Text: item.Text, Source: item.Source})
+	addHistoricalNotification(&state, item)
+	h, s := newUnifiedReaderFixture(t, state, 10*time.Second)
+	s.images = true
+	s.service.imageMaterials = imageMaterialConfig{MaxImages: 1}
 	downloads, checks := 0, 0
 	allowed := true
 	s.service.materialAttachments = &materialAttachments{download: func(_ context.Context, req attachmentRequest, reader *attachmentReader, _ attachment.ImageLimits) ([]byte, string, *attachmentAccess, error) {
@@ -77,14 +79,6 @@ func TestUnifiedRoomFormalImagesShareBudgetAndRecheckCachedAuthority(t *testing.
 	v := deliverRoom(t, s, inputstream.ReadRequest{Turn: 1, Stream: roomStreamRef(s.storage.id), ID: "room-images"})
 	if downloads != 1 || checks < 3 || len(v.Images) != 1 || v.Images[0].RoomSeq != 2 || v.Images[0].Source != "" {
 		t.Fatal(v.Images, downloads, checks)
-	}
-	// A later explicit Room read sees new arrivals, without renewing image quota.
-	item.DeliveryID = "room-shared"
-	item.Source.ItemKey = "shared"
-	roomCall[PostReceipt](t, h, postIntegrationMessage{RoomIdentity: h.id, DeliveryID: item.DeliveryID, Text: item.Text, Source: item.Source})
-	v = deliverRoom(t, s, inputstream.ReadRequest{Turn: 1, Stream: roomStreamRef(s.storage.id), ID: "room-shared"})
-	if len(v.Images) != 1 || v.Images[0].SharedRoom != 2 || v.Images[0].RoomSeq != 3 || downloads != 1 {
-		t.Fatal(v.Images)
 	}
 	b, _ := json.Marshal(v)
 	for _, field := range []string{`"reference"`, `"subscription_id"`, `"recipient_id"`, `"partition"`} {

@@ -77,7 +77,7 @@ func (m *Manager) Deliver(ctx context.Context, key Key, version uint64) error {
 	}
 	if m.host.Maintain != nil {
 		meta := current.state.Metadata()
-		meta.Target = item.Route.Target.Canonical()
+		meta.Target = item.Route.Target
 		if err := m.host.Maintain(ctx, meta); err != nil && !errors.Is(err, ErrBusy) {
 			return err
 		}
@@ -87,11 +87,7 @@ func (m *Manager) Deliver(ctx context.Context, key Key, version uint64) error {
 	if err := m.host.Deliver(context.WithoutCancel(ctx), current.state.Metadata(), item); err != nil {
 		code := "target_unavailable"
 		if errors.Is(err, ErrCapacity) {
-			if item.Route.Target.Inbox() {
-				code = "inbox_capacity"
-			} else {
-				code = "room_capacity"
-			}
+			code = "inbox_capacity"
 		}
 		if errors.Is(err, ErrIdentity) {
 			code = "target_removed"

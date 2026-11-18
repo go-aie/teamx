@@ -213,14 +213,14 @@ func (m *roomManager) servePlatformNotifications(w http.ResponseWriter, r *http.
 		id := q.Get("platform_id")
 		if target != nil {
 			for _, v := range append(append([]notificationView{}, views...), retired...) {
-				if (id == "" || v.PlatformID == id) && v.Target.ScopeKey() == target.ScopeKey() && v.Target.Canonical() != *target {
+				if (id == "" || v.PlatformID == id) && v.Target.ScopeKey() == target.ScopeKey() && v.Target != *target {
 					writeAPIError(w, ErrIdentity)
 					return
 				}
 			}
 		}
 		matches := func(v notificationView) bool {
-			return (id == "" || v.PlatformID == id) && (target == nil || v.Target.Canonical() == *target) &&
+			return (id == "" || v.PlatformID == id) && (target == nil || v.Target == *target) &&
 				(!sourceSelected || v.SubscriptionID == q.Get("subscription_id") && v.Provider == q.Get("provider") && v.Channel == q.Get("channel"))
 		}
 		views = filterNotificationViews(views, matches)
@@ -388,10 +388,7 @@ func filterNotificationViews(views []notificationView, matches func(notification
 	return out
 }
 func (m *roomManager) setNotificationTargetViewLocked(v *notificationView, target notification.Target) {
-	v.Target = target.Canonical()
-	if v.Target.Mode == "" {
-		v.Target.Mode = "room"
-	}
+	v.Target = target
 	if err := m.checkNotificationTargetLocked(context.Background(), v.RoomIdentity, target); err != nil {
 		v.TargetErrorCode = "target_unavailable"
 		if errors.Is(err, ErrIdentity) {
@@ -399,28 +396,4 @@ func (m *roomManager) setNotificationTargetViewLocked(v *notificationView, targe
 		}
 		v.RuntimePaused = true
 	}
-}
-
-func (v notificationView) MarshalJSON() ([]byte, error) {
-	type wire notificationView
-	switch c := v.Config.(type) {
-	case gitlab.EventsConfig:
-		if !c.Target.Inbox() {
-			c.Target.Mode = "room"
-		}
-		v.Config = c
-	case gitlab.TodosConfig:
-		if !c.Target.Inbox() {
-			c.Target.Mode = "room"
-		}
-		v.Config = c
-	}
-	return json.Marshal(wire(v))
-}
-func (v gitlabNotificationView) MarshalJSON() ([]byte, error) {
-	type wire gitlabNotificationView
-	if !v.Config.Target.Inbox() {
-		v.Config.Target.Mode = "room"
-	}
-	return json.Marshal(wire(v))
 }

@@ -24,11 +24,15 @@ func unifiedReaderFixture(t *testing.T, n int) (*roomHarness, *inputSession) {
 func unifiedReaderFixtureWithTimeout(t *testing.T, n int, timeout time.Duration) (*roomHarness, *inputSession) {
 	t.Helper()
 	state := historyRoom(n, "只读检查，不要评论或合并")
+	return newUnifiedReaderFixture(t, state, timeout)
+}
+func newUnifiedReaderFixture(t *testing.T, state RoomSnapshot, timeout time.Duration) (*roomHarness, *inputSession) {
+	t.Helper()
 	state.InputLog = &roomLogRoot{Version: 1}
 	state.Members = append(state.Members, MemberState{AgentID: "B", MembershipID: "generation-B", Runner: state.Members[0].Runner})
 	h := newRoomHarnessWithTimeout(t, state, nil, timeout)
 	id := h.memberID("A", "generation-A")
-	a := AgentSnapshot{Version: formatVersion, MemberIdentity: id, InputStateRef: "input-state.json", TurnNumber: 1, Turn: &TurnRecord{Number: 1, Status: "running", SnapshotSeq: uint64(n)}}
+	a := AgentSnapshot{Version: formatVersion, MemberIdentity: id, InputStateRef: "input-state.json", TurnNumber: 1, Turn: &TurnRecord{Number: 1, Status: "running", SnapshotSeq: state.LatestSeq}}
 	if err := h.store.SaveAgent(a); err != nil {
 		t.Fatal(err)
 	}

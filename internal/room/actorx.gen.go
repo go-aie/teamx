@@ -41,7 +41,6 @@ func (a *Room) Bindings() []actorx.Binding {
 		actorx.HandleDeferred(a.ConfirmInput),
 		actorx.Handle(a.List),
 		actorx.HandleDeferred(a.Post),
-		actorx.HandleDeferred(a.PostIntegration),
 		actorx.Handle(a.Read),
 		actorx.HandleDeferred(a.Remove),
 		actorx.HandleMessage(a.Started),

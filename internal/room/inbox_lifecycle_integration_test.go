@@ -227,14 +227,13 @@ func TestInboxLifecycleExpiringBlockedSourceDoesNotStrandQuery(t *testing.T) {
 	}
 }
 
-func TestInboxLifecycleFrozenRoutesProtectReceiptsAndRoomHistory(t *testing.T) {
+func TestInboxLifecycleFrozenRoutesRemainDiscoverableAcrossMemberChanges(t *testing.T) {
 	h := newEventHarness(t, gitlab.EventsConfig{})
 	svc := eventLiveService(t, h)
 	id := inboxRoutingMember(t, svc, "assistant", strings.Repeat("1", 32))
 	inboxRoutingConfigure(t, h, inboxTarget(id))
 	seedEventInbox(t, h, 1)
-	inboxRoutingConfigure(t, h, notification.Target{})
-	seedEventInbox(t, h, 2)
+	inboxRoutingConfigure(t, h, fixtureInboxTarget(t, h.m, h.room.RoomIdentity))
 	h.m.mu.Lock()
 	pending := h.m.notifications.PendingDeliveriesLocked(h.room.RoomIdentity, inboxTarget(id))
 	h.m.mu.Unlock()
@@ -242,19 +241,29 @@ func TestInboxLifecycleFrozenRoutesProtectReceiptsAndRoomHistory(t *testing.T) {
 		t.Fatal("current subscription metadata hid a frozen unconfirmed Inbox route", pending)
 	}
 	h.clock.add(4 * 24 * time.Hour)
+	state := h.state()
+	recent := h.event(2, 0)
+	recent.CreatedAt = h.clock.get()
+	if _, _, err := state.Accept([]gitlab.Event{recent}, h.clock.get()); err != nil {
+		t.Fatal(err)
+	}
 	h.m.mu.Lock()
+	if err := h.m.notifications.SaveLocked(state); err != nil {
+		h.m.mu.Unlock()
+		t.Fatal(err)
+	}
 	err := h.m.notifications.ExpireTargetLocked(h.room.RoomIdentity, inboxTarget(id))
 	h.m.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)
 	}
-	state := h.state()
+	state = h.state()
 	if len(state.Inbox) != 1 {
 		t.Fatal("frozen Inbox route did not expire independently")
 	}
 	for _, entry := range state.Inbox {
-		if entry.Route.Target.Inbox() || entry.Event.ID != 2 {
-			t.Fatal("Room history was expired by Inbox policy", entry)
+		if entry.Route.Target == inboxTarget(id) || entry.Event.ID != 2 {
+			t.Fatal("recent notification expired", entry)
 		}
 	}
 }

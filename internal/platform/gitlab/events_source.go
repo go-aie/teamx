@@ -29,7 +29,24 @@ func (*EventsSource) Decode(data []byte, owner platform.RoomIdentity) (notificat
 	var state EventsState
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
-	if dec.Decode(&state) != nil || dec.Decode(new(any)) != io.EOF || state.Validate(owner) != nil {
+	if dec.Decode(&state) != nil || dec.Decode(new(any)) != io.EOF {
+		return nil, notification.ErrInvalid
+	}
+	if state.Config.Target.RetiredRoom() {
+		if state.RoomIdentity != owner || !validRestartID(state.SubscriptionID) || state.SubscriptionVersion == 0 || state.Observed == nil || state.Inbox == nil {
+			return nil, notification.ErrInvalid
+		}
+		return state, notification.ErrRetiredRoomTarget
+	}
+	for key, entry := range state.Inbox {
+		if entry.Route.Target.RetiredRoom() {
+			delete(state.Inbox, key)
+		}
+	}
+	if state.DeliveryErrorCode == "room_capacity" {
+		state.DeliveryErrorCode = ""
+	}
+	if state.Validate(owner) != nil {
 		return nil, notification.ErrInvalid
 	}
 	return state, nil
@@ -135,7 +152,7 @@ func SyncEvents(s EventsState, binding platform.ProjectBinding) (EventsState, bo
 }
 
 func (s EventsState) Metadata() notification.Metadata {
-	return notification.Metadata{Target: s.Config.Target.Canonical(), Key: notification.Key{Owner: s.RoomIdentity, Source: EventsSourceID, SubscriptionID: s.SubscriptionID}, Version: s.SubscriptionVersion, Enabled: s.Config.Enabled, Retired: s.Retired, PlatformID: s.Binding.PlatformID, Observed: len(s.Observed), Pending: len(s.Inbox), DeliveryError: s.DeliveryErrorCode}
+	return notification.Metadata{Target: s.Config.Target, Key: notification.Key{Owner: s.RoomIdentity, Source: EventsSourceID, SubscriptionID: s.SubscriptionID}, Version: s.SubscriptionVersion, Enabled: s.Config.Enabled, Retired: s.Retired, PlatformID: s.Binding.PlatformID, Observed: len(s.Observed), Pending: len(s.Inbox), DeliveryError: s.DeliveryErrorCode}
 }
 func (s EventsState) CloneState() notification.State { return s.Clone() }
 func (s EventsState) PendingItems() []notification.Item {

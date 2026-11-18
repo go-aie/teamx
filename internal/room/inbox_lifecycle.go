@@ -198,9 +198,6 @@ func (s *service) maintainInboxLocal(ctx context.Context, id MemberIdentity, pen
 	return err
 }
 func (m *roomManager) maintainNotificationInboxLocked(ctx context.Context, meta notification.Metadata) error {
-	if !meta.Target.Inbox() {
-		return nil
-	}
 	svc, _ := m.runtimeServiceLocked(meta.Key.Owner)
 	if svc == nil || m.roomBusyLocked(meta.Key.Owner) || svc.closing.Load() || svc.restarting.Load() {
 		return notification.ErrBusy

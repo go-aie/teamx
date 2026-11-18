@@ -145,9 +145,5 @@ func (m *roomManager) commitPlatformNotificationLocked(ctx context.Context, meta
 	if err := m.checkNotificationTargetLocked(ctx, owner, item.Route.Target); err != nil {
 		return roomNotificationError(err)
 	}
-	if item.Route.Target.Inbox() {
-		return roomNotificationError(svc.receiveInbox(ctx, item.Route.Target, item))
-	}
-	_, err := svc.room.Call[PostReceipt](ctx, postIntegrationMessage{RoomIdentity: owner, DeliveryID: item.DeliveryID, Text: item.Text, Source: item.Source})
-	return roomNotificationError(err)
+	return roomNotificationError(svc.receiveInbox(ctx, item.Route.Target, item))
 }

@@ -2,7 +2,7 @@
 
 ## Participate
 
-Apply your role before acting: a notification or mention does not assign work. Mentions highlight messages; all members still receive Room notifications. Read when relevant; speak only to answer a necessary question or add a role-relevant result, correction or decision request. Otherwise remain silent without announcing it. Ordinary output is private; publish with `"$TEAMX_CLI" send --text TEXT --id STABLE_ID --json`. For decisions, mention the human operator with enough context. Check existing questions before asking; sufficient authorization needs no repeated approval. Only a material ambiguity blocks the affected operation; continue independent work.
+Apply your role before acting: a notification or mention does not assign work. Mentions highlight messages in the shared conversation. Platform inputs arrive in the subscribed member’s Inbox. Read when relevant; speak only to answer a necessary question or add a role-relevant result, correction or decision request. Otherwise remain silent without announcing it. Ordinary output is private; publish with `"$TEAMX_CLI" send --text TEXT --id STABLE_ID --json`. For decisions, mention the human operator with enough context. Check existing questions before asking; sufficient authorization needs no repeated approval. Only a material ambiguity blocks the affected operation; continue independent work.
 
 Preserve the configured TEAMX_* identity, repository instructions and existing files. Speak only for yourself; never invent peer statements. Do not delegate or manage members. Distinguish verified facts, proposals and assumptions; agreement is neither verification nor a human decision.
 

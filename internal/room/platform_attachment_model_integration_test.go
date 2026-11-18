@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform/gitlab"
+	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
 func TestModelAttachmentRoomAndInboxShareDownloadWithoutConsumption(t *testing.T) {
@@ -121,11 +122,8 @@ func TestModelAttachmentRejectsIdentityAndTurnScopeBeforeNetwork(t *testing.T) {
 	// cannot be silently added to the model's material range.
 	event := h.event(2, 0)
 	event.Kind, event.NoteBody = "note", "![new]("+req.Path+")"
-	item := gitlab.EventsMessage(h.state(), gitlab.EventsInboxEntry{DeliveryID: "later-image", Event: event})
+	item := gitlab.EventsMessage(h.state(), gitlab.EventsInboxEntry{Route: notification.Route{Target: inboxTarget(reader.MemberIdentity), Version: 1}, DeliveryID: "later-image", Event: event})
 	if err := svc.receiveInbox(context.Background(), inboxTarget(reader.MemberIdentity), item); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.room.Call[PostReceipt](context.Background(), postIntegrationMessage{RoomIdentity: req.RoomIdentity, DeliveryID: item.DeliveryID, Text: item.Text, Source: item.Source}); err != nil {
 		t.Fatal(err)
 	}
 	for _, inbox := range []bool{false, true} {
@@ -148,16 +146,17 @@ func TestModelAttachmentDoesNotPromotePlainOrCodeReferences(t *testing.T) {
 	h, svc, req, reader, data := modelAttachmentFixture(t)
 	event := h.event(2, 0)
 	event.Kind, event.NoteBody = "note", "`![code]("+req.Path+")`\n\n[ordinary]("+req.Path+")\n\n"+req.Path
-	item := gitlab.EventsMessage(h.state(), gitlab.EventsInboxEntry{DeliveryID: "code-image", Event: event})
-	if _, err := svc.room.Call[PostReceipt](context.Background(), postIntegrationMessage{RoomIdentity: req.RoomIdentity, DeliveryID: item.DeliveryID, Text: item.Text, Source: item.Source}); err != nil {
+	item := gitlab.EventsMessage(h.state(), gitlab.EventsInboxEntry{Route: notification.Route{Target: inboxTarget(reader.MemberIdentity), Version: 1}, DeliveryID: "code-image", Event: event})
+	if err := svc.receiveInbox(context.Background(), inboxTarget(reader.MemberIdentity), item); err != nil {
 		t.Fatal(err)
 	}
 	agent, _ := svc.store.LoadAgent(reader.MemberIdentity)
-	agent.LastOfferedUnreadSeq, agent.Turn.SnapshotSeq, agent.Turn.OfferedUnreadSeq = 2, 2, 2
+	agent.LastOfferedInboxSeq, agent.Turn.InboxSnapshotSeq = 2, 2
 	if err := svc.store.SaveAgent(agent); err != nil {
 		t.Fatal(err)
 	}
 	req.Seq = 2
+	req.AgentID, req.MembershipID = reader.AgentID, reader.MembershipID
 	var calls atomic.Int32
 	h.m.platformHTTP = workspaceHTTPFunc(func(*http.Request) (*http.Response, error) {
 		calls.Add(1)

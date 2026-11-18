@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { launch, settle, openNotification } from "./web_app_harness.mjs";
+import { launch, settle, openMemberInbox, openNotification } from "./web_app_harness.mjs";
 import { request } from "../assets/client.mjs";
 let call = (path, body) => request(process.env.TEAMX_WEB_ENDPOINT + path, body);
 if (process.env.TEAMX_WEB_TRANSPORT === "stdio") {
@@ -22,10 +22,21 @@ const ui = await launch({ request: (path, body) => {
   const task = call(path, body); inflight.add(task);
   return task.finally(() => inflight.delete(task));
 } });
+for (let attempt=0; attempt<100 && ui.el("connection").textContent!=="服务已连接"; attempt++) {
+  await Promise.all([...inflight]);
+  await new Promise(resolve => setTimeout(resolve,20));
+}
+assert.equal(ui.el("connection").textContent,"服务已连接");
+await openMemberInbox(ui);
+await ui.el("agent-tab-platforms").emit("click");
+await ui.refresh();
 await Promise.all([...inflight]); await settle();
-const platforms = ui.el("notification-add-options").children.map(button=>({value:button.dataset.platformId}));
+assert.equal(ui.el("member-notification-add-options").children.length,2,JSON.stringify({
+  member:ui.selectedAgent(), status:ui.el("member-notification-list-error").textContent, sync:ui.el("sync-error").textContent
+}));
+const platforms = ui.el("member-notification-add-options").children.map(button=>({value:button.dataset.platformId}));
 await openNotification(ui,"gitlab",platforms[0].value,false); ui.el("gitlab-todos-settings").open = true;
-assert.equal(ui.el("notification-sources").hidden, false);
+assert.equal(ui.el("member-notification-sources").hidden, false);
 assert.equal(ui.el("gitlab-events").hidden, false, "Events can be configured without a Workspace project binding");
 assert.equal(platforms.length, 2, ui.el("gitlab-notification-account").textContent + " / " + ui.el("gitlab-todos-error").textContent);
 async function edit(id, value) { ui.el(id).value = value; await ui.el(id).emit("change"); }
@@ -37,15 +48,15 @@ await toggle("gitlab-todos-enabled", true); await ui.el("gitlab-save").emit("cli
 assert.equal(mutations[0].body.version, 0); assert.equal(mutations[0].body.config.todos.enabled, true);
 assert.match(ui.el("gitlab-feedback").textContent, /设置已保存/);
 // Saving category settings preserves the independent reception switch. Enable
-// the newly configured Room source through its actual platform-list control.
-async function enableRoomSource(id) {
+// the newly configured member source through its actual platform-list control.
+async function enableMemberSource(id) {
   await ui.el("close-notification").emit("click");
-  const row=ui.el("notification-platforms").children.find(row=>row.dataset.platformId===id);
-  assert.ok(row,"saved Room notification source is listed");
-  const input=row.children[1];input.checked=true;await input.emit("change");
+  const row=ui.el("member-notification-platforms").children.find(row=>row.dataset.platformId===id);
+  assert.ok(row,"saved member notification source is listed");
+  const input=row.children[1].children[1];input.checked=true;await input.emit("change");
   await openNotification(ui,"gitlab",id,false);
 }
-await enableRoomSource(platforms[0].value);
+await enableMemberSource(platforms[0].value);
 const savedTodo = async () => {
   const {service_epoch,room_id,room_instance,caller} = mutations.at(-1).body;
   const view = await call(`/v1/platform/notifications?${new URLSearchParams({service_epoch,room_id,room_instance,caller_id:caller.id})}`);
@@ -56,18 +67,27 @@ const savedTodo = async () => {
 const initialID = (await savedTodo()).subscription_id;
 assert.match(initialID, /^[a-f0-9]{32}$/);
 const messages = () => ui.el("messages").children.filter(child => /^message-\d+$/.test(child.id));
-async function untilMessageCount(count) {
-  for (let i = 0; i < 100; i++) {
-    await ui.refresh();
-    if (messages().length === count) return;
-    await new Promise(resolve => setTimeout(resolve, 20));
+async function untilInboxCount(count) {
+  const {room_id,room_instance,caller} = mutations.at(-1).body;
+  const {agent_id,membership_id} = ui.selectedAgent();
+  const catalog = await call("/v1/rooms");
+  const room = catalog.rooms.find(item=>item.room_id===room_id);
+  for (let i=0;i<100;i++) {
+    const view = await call("/v1/member/inbox",{...room.service,room_id,room_instance,agent_id,membership_id,caller,limit:25,after:0});
+    if(view.snapshot_seq===count){assert.ok(view.entries.every(e=>e.item.channel==="todos"));return;}
+    await new Promise(resolve=>setTimeout(resolve,20));
   }
-  assert.fail(`expected ${count} integration messages; got ${messages().length}; ${ui.el("gitlab-todos-status").textContent}; ${ui.el("gitlab-todos-error").textContent}; ${ui.el("sync-error").textContent}`);
+  assert.fail(`expected ${count} Inbox notifications`);
 }
-await untilMessageCount(1);
-const message = messages()[0];
-assert.equal(message.querySelector(".author").textContent, "GitLab · 我的待办");
-await message.querySelector(".author").emit("click"); assert.equal(ui.el("notification-panel-gitlab").hidden, false); assert.match(ui.el("notification-title").textContent,/房间/); assert.equal(ui.el("gitlab-todos-settings").open, true);
+await untilInboxCount(1);
+await ui.el("close-notification").emit("click");
+await openMemberInbox(ui);
+await ui.el("inbox-reload").emit("click"); await settle();
+const entry = ui.el("inbox-entries").children[0];
+assert.ok(entry,"Inbox displays the received Todo");
+await entry.children.at(-1).children.find(child=>child.tag==="button").emit("click");
+assert.equal(ui.el("notification-panel-gitlab").hidden,false);
+assert.equal(ui.el("gitlab-todos-settings").open,true);
 await ui.el("gitlab-sync").emit("click"); assert.equal(mutations.at(-1).body.version, 2);
 assert.equal(mutations.at(-1).body.config, undefined);
 for (const reason of ["mentioned", "assigned", "review_requested", "other"]) await toggle(`gitlab-todos-reason-${reason}`, false);
@@ -77,12 +97,12 @@ assert.equal(ui.el("gitlab-todos-enabled").checked, false);
 await ui.el("close-notification").emit("click"); await openNotification(ui,"gitlab",platforms[1].value,false); await toggle("gitlab-todos-enabled", true);
 for (const reason of ["mentioned", "assigned", "review_requested", "other"]) await toggle(`gitlab-todos-reason-${reason}`, true);
 assert.equal(ui.el("gitlab-save").disabled, false);
-await ui.el("gitlab-save").emit("click"); await enableRoomSource(platforms[1].value); await untilMessageCount(2);
+await ui.el("gitlab-save").emit("click"); await enableMemberSource(platforms[1].value); await untilInboxCount(2);
 assert.match(ui.el("gitlab-notification-account").textContent, /ID 202，已验证/);
 const nextID = (await savedTodo()).subscription_id; assert.notEqual(nextID, initialID);
 await toggle("gitlab-todos-enabled", false); await ui.el("gitlab-save").emit("click");
-await ui.refresh(); assert.equal(messages().length, 2);
+await ui.refresh(); assert.equal(messages().length, 0);
 assert.equal(mutations.every(call => call.body.channel === undefined && call.body.subscription_id === undefined), true);
-console.error("GT-03 app/handler: unbound room, personal identity, configure, sync, empty filter, independent platforms, channel navigation and disable passed");
+console.error("GT-03 app/handler: unbound room, personal identity, configure, sync, empty filter, independent platforms, Inbox source navigation and disable passed");
 await Promise.all([...inflight]); await settle();
 if (process.env.TEAMX_WEB_TRANSPORT === "stdio") process.stdin.destroy();

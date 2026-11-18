@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/go-aie/teamx/internal/inputstream"
-	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
 func TestInboxPreviewStatusIdentityAndReadOnly(t *testing.T) {
@@ -24,8 +23,7 @@ func TestInboxPreviewStatusIdentityAndReadOnly(t *testing.T) {
 	}
 	defer svc.close(context.Background())
 	id := inboxRoutingMember(t, svc, "assistant", strings.Repeat("1", 32))
-	post := integrationPost(id.RoomIdentity, 1)
-	item := notification.Item{Key: post.Source.ItemKey, DeliveryID: post.DeliveryID, Text: post.Text, Source: post.Source, CreatedAt: time.Now().UTC(), Route: notification.Route{Target: inboxTarget(id), Version: 1}}
+	item := inboxFixtureItem(id, 1)
 	if err := svc.receiveInbox(context.Background(), inboxTarget(id), item); err != nil {
 		t.Fatal(err)
 	}

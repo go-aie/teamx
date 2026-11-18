@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"net/url"
 	"os"
 	"reflect"
 	"testing"
@@ -114,7 +113,7 @@ func TestGitLabUnifiedSettingsValidateBeforePersistence(t *testing.T) {
 func TestGitLabUnifiedHTTPIdentityAndNoSecondConfigurationAuthority(t *testing.T) {
 	parallelFixtureTest(t)
 	h, _ := newIndependentEventHarness(t)
-	base := map[string]any{"service_epoch": h.m.epoch, "room_id": h.room.RoomID, "room_instance": h.room.RoomInstance, "caller": humanCaller, "version": uint64(0), "config": explicitRoomNotificationConfig(unifiedGitLabConfig(t, h))}
+	base := map[string]any{"service_epoch": h.m.epoch, "room_id": h.room.RoomID, "room_instance": h.room.RoomInstance, "caller": humanCaller, "version": uint64(0), "config": unifiedGitLabConfig(t, h)}
 	for _, change := range []func(map[string]any){
 		func(r map[string]any) { r["caller"] = Caller{Author: Author{Kind: "agent", ID: "worker"}} },
 		func(r map[string]any) { r["service_epoch"] = "old" },
@@ -143,7 +142,8 @@ func TestGitLabUnifiedHTTPIdentityAndNoSecondConfigurationAuthority(t *testing.T
 	if response := managerHTTP(h.m, "/v1/platform/notifications/configure", legacy); response.Code == http.StatusOK {
 		t.Fatal("source endpoint changed canonical settings")
 	}
-	q := url.Values{"service_epoch": {h.m.epoch}, "caller_id": {"operator"}, "platform_id": {v.PlatformID}, "target_mode": {"room"}, "room_id": {h.room.RoomID}, "room_instance": {h.room.RoomInstance}}
+	q := notificationSettingsQuery(h.m, h.room.RoomIdentity, &v.Config.Target)
+	q.Set("platform_id", v.PlatformID)
 	response = managerHTTP(h.m, "/v1/platform/gitlab/notifications?"+q.Encode(), nil)
 	if response.Code != http.StatusOK {
 		t.Fatal(response.Body.String())
@@ -214,7 +214,7 @@ func TestGitLabUnifiedDisabledConfigReferencesItsPlatform(t *testing.T) {
 	m := testManager(t, t.TempDir(), managerTestProfiles(t))
 	room := managerCreate(t, m, "disabled-notifications")
 	c := verifyTodoAccount(t, m, platformTestSave(t, m, platformTestRequest(m)), 101)
-	cfg, _ := gitlab.NormalizeNotificationConfig(gitlab.NotificationConfig{Enabled: true, PlatformID: c.ID})
+	cfg, _ := gitlab.NormalizeNotificationConfig(gitlab.NotificationConfig{Target: fixtureInboxTarget(t, m, room.RoomIdentity), Enabled: true, PlatformID: c.ID})
 	v, err := m.configureGitLabNotifications(context.Background(), room.RoomIdentity, 0, cfg)
 	if err != nil || v.Version != 1 {
 		t.Fatal(v, err)
@@ -370,7 +370,7 @@ func TestGitLabUnifiedBackfillFreezesBeforeCollectorsAndAcrossLaterEnable(t *tes
 	parallelFixtureTest(t)
 	h, c := newIndependentEventHarness(t)
 	room := managerCreate(t, h.m, "historical-gitlab")
-	cfg := gitlab.NotificationConfig{Enabled: true, PlatformID: c.ID, BackfillSeconds: 3600, Events: gitlab.EventSettings{Enabled: true, Project: "remote/project"}}
+	cfg := gitlab.NotificationConfig{Target: fixtureInboxTarget(t, h.m, room.RoomIdentity), Enabled: true, PlatformID: c.ID, BackfillSeconds: 3600, Events: gitlab.EventSettings{Enabled: true, Project: "remote/project"}}
 	expected := h.clock.get().Add(-time.Hour)
 	v, err := h.m.configureGitLabNotifications(context.Background(), room.RoomIdentity, 0, cfg)
 	if err != nil || len(v.Errors) != 0 || !v.BackfillLocked || !v.Config.BackfillStart.Equal(expected) || v.Config.BackfillSeconds != 0 || !v.Events.Baseline.Equal(expected) {
@@ -409,7 +409,7 @@ func TestGitLabUnifiedBackfillFailureKeepsStartAndInvalidTimesNeverPersist(t *te
 	parallelFixtureTest(t)
 	h, c := newIndependentEventHarness(t)
 	room := managerCreate(t, h.m, "retry-historical-gitlab")
-	cfg := gitlab.NotificationConfig{Enabled: true, PlatformID: c.ID, BackfillStart: h.clock.get().Add(time.Second), Events: gitlab.EventSettings{Enabled: true, Project: "remote/project"}}
+	cfg := gitlab.NotificationConfig{Target: fixtureInboxTarget(t, h.m, room.RoomIdentity), Enabled: true, PlatformID: c.ID, BackfillStart: h.clock.get().Add(time.Second), Events: gitlab.EventSettings{Enabled: true, Project: "remote/project"}}
 	if _, err := h.m.configureGitLabNotifications(context.Background(), room.RoomIdentity, 0, cfg); err == nil {
 		t.Fatal("future start accepted")
 	}
@@ -437,7 +437,7 @@ func TestGitLabUnifiedExistingHistoricalSubscriptionKeepsChoice(t *testing.T) {
 	parallelFixtureTest(t)
 	h, c := newIndependentEventHarness(t)
 	room := managerCreate(t, h.m, "existing-historical")
-	cfg := gitlab.EventsConfig{Enabled: true, PlatformID: c.ID, Project: "remote/project", BackfillSeconds: 3600}
+	cfg := gitlab.EventsConfig{Target: fixtureInboxTarget(t, h.m, room.RoomIdentity), Enabled: true, PlatformID: c.ID, Project: "remote/project", BackfillSeconds: 3600}
 	source, err := h.m.configureEventsSubscription(context.Background(), notification.Key{Owner: room.RoomIdentity, Source: gitlab.EventsSourceID}, 0, cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -460,7 +460,7 @@ func TestGitLabLegacyRelativeStartIsNotReinterpretedForLaterChannel(t *testing.T
 	parallelFixtureTest(t)
 	h, c := newIndependentEventHarness(t)
 	room := managerCreate(t, h.m, "legacy-relative-start")
-	source, err := h.m.configureEventsSubscription(context.Background(), notification.Key{Owner: room.RoomIdentity, Source: gitlab.EventsSourceID}, 0, gitlab.EventsConfig{Enabled: true, PlatformID: c.ID, Project: "remote/project", BackfillSeconds: 3600})
+	source, err := h.m.configureEventsSubscription(context.Background(), notification.Key{Owner: room.RoomIdentity, Source: gitlab.EventsSourceID}, 0, gitlab.EventsConfig{Target: fixtureInboxTarget(t, h.m, room.RoomIdentity), Enabled: true, PlatformID: c.ID, Project: "remote/project", BackfillSeconds: 3600})
 	if err != nil {
 		t.Fatal(err)
 	}

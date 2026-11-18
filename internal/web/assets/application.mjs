@@ -84,7 +84,6 @@ export async function createApp(overrides = {}) {
       if (state.managed && !layoutUI.roomsPanelOpen?.()) layers.push({ id:"mobile-conversation", close:layoutUI.showMobileRooms });
       if (layoutUI.membersPanelOpen?.()) layers.push({ id:"members", close:layoutUI.closeMobilePanels });
     }
-    if (layoutUI.directNotificationsOpen && layoutUI.membersPanelOpen()) layers.push({ id:"conversation-notifications", close:conversationUI.returnConversationNotifications });
     if ($("workspace-picker").open) layers.push({ id:"workspace-picker", close:workspaceUI.closeWorkspacePicker });
     if (!$("conversation-filter-menu").hidden) layers.push({ id:"conversation-filter", close:roomsUI.closeFilterMenu });
     for (const [id, button] of [["activity-dialog","close-activity"], ["notification-detail","close-notification"],
@@ -198,7 +197,7 @@ export async function createApp(overrides = {}) {
     $("notification-detail").close();
     viewVersion++;
     interactionsUI.resetPlatformInteractions();
-    membersUI.resetActivity(); layoutUI.hideConversationNotifications();
+    membersUI.resetActivity();
     state.info = info; state.operator = operator; state.connected = false;
     state.messagesReady = state.membersReady = false; state.messagePreview = !!cached;
     $("connection").textContent = cached ? "正在同步…" : "正在加载会话…";
@@ -547,7 +546,7 @@ export async function createApp(overrides = {}) {
     env, settingsUI, notificationsUI, runtime, membersUI, policyUI
   }));
   install(conversationUI, createConversation({
-    env, runtime, roomsUI, notificationsUI, membersUI, settingsUI, interactionsUI, workspaceUI, layoutUI, userMenuUI
+    env, runtime, roomsUI, membersUI, settingsUI, interactionsUI, workspaceUI, layoutUI, userMenuUI
   }));
   install(interactionsUI, createPlatformInteractions({
     env, runtime, conversationUI, settingsUI, connectionsUI, gitlabUI, roomsUI
@@ -574,7 +573,7 @@ export async function createApp(overrides = {}) {
   const active = () => !state.suspended && !document.hidden && window.navigator?.onLine !== false;
   const detail = tab => active() && $("activity-dialog").open && membersUI.agentTab === tab && !!membersUI.selectedAgent();
   const notificationVisible = () => active() && !!state.catalog && !!workspaceUI.workspaceView &&
-    (layoutUI.membersPanelOpen() || layoutUI.directNotificationsOpen || detail("platforms") || $("notification-detail").open);
+    (layoutUI.membersPanelOpen() || detail("platforms") || $("notification-detail").open);
   // Both categories share one reader and one throttle. A summary remains
   // pending until a read starts; diagnostics cannot make a hidden inspector
   // read the full subscription merely because the summary sidebar is open.

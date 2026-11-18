@@ -199,7 +199,7 @@ func TestSecondNotificationProviderReloadAndDedup(t *testing.T) {
 		t.Fatal(err)
 	}
 	key := notification.Key{Owner: h.room.RoomIdentity, Source: fixtureNotificationSourceID, SubscriptionID: gitlabBefore.SubscriptionID}
-	initial := fixtureNotificationState{Format: 53, Key: key, Version: 1, Enabled: true, Seen: map[string]bool{}, Inbox: map[string]notification.Item{}, RuntimeState: notification.RuntimeState{Status: "running"}}
+	initial := fixtureNotificationState{Target: gitlabBefore.Config.Target, Format: 53, Key: key, Version: 1, Enabled: true, Seen: map[string]bool{}, Inbox: map[string]notification.Item{}, RuntimeState: notification.RuntimeState{Status: "running"}}
 	h.m.mu.Lock()
 	err := h.m.notifications.SaveLocked(initial)
 	runner := h.m.notifications.NewRunnerLocked(key)
@@ -210,8 +210,8 @@ func TestSecondNotificationProviderReloadAndDedup(t *testing.T) {
 	if _, stop := runner.Step(context.Background()); stop {
 		t.Fatal("second provider could not query through common admission")
 	}
-	// Commit to Room, then lose the inbox ack. Reload both source codecs from
-	// disk and replay the stable delivery ID through the production Room path.
+	// Commit to the member Inbox, then lose the inbox ack. Reload both source codecs from
+	// disk and replay the stable delivery ID through the production Inbox path.
 	original := h.m.store.ops.createTemp
 	h.m.store.ops.createTemp = func(string, string) (snapshotFile, error) { return nil, errors.New("injected ack failure") }
 	err = h.m.notifications.Deliver(context.Background(), key, 1)
@@ -249,15 +249,12 @@ func TestSecondNotificationProviderReloadAndDedup(t *testing.T) {
 	if !reflect.DeepEqual(h.state(), gitlabBefore) {
 		t.Fatal("second provider changed GitLab state with the same subscription ID")
 	}
-	saved, err := svc.store.LoadRoom()
-	if err != nil || len(saved.Messages) != 2 || len(saved.IntegrationReceipts) != 2 {
-		t.Fatal("delivery lost or duplicated messages", err)
+	id := subscriptionMember(initial.Metadata())
+	room, err := svc.store.LoadRoom()
+	if err != nil || room.LatestSeq != 0 || inboxRoutingPreview(t, svc, id).SnapshotSeq != 2 {
+		t.Fatal("delivery lost or duplicated Inbox items", err)
 	}
-	for _, message := range saved.Messages {
-		if message.Source == nil || message.Source.Provider != "fixture" || message.Source.ProjectID != 0 {
-			t.Fatal("delivery required a GitLab project or rewrote the source")
-		}
-	}
+
 }
 
 func TestToolDisablePreservesNotificationsWorkspaceAndSession(t *testing.T) {
@@ -328,7 +325,7 @@ func TestToolDisablePreservesNotificationsWorkspaceAndSession(t *testing.T) {
 				t.Fatal("disabled tool blocked notification delivery", err)
 			}
 			afterRoom, err = svc.store.LoadRoom()
-			if err != nil || len(afterRoom.Messages) != len(beforeRoom.Messages)+1 {
+			if err != nil || !reflect.DeepEqual(beforeRoom, afterRoom) || inboxRoutingPreview(t, svc, subscriptionMember(meta)).SnapshotSeq != 1 {
 				t.Fatal("disabled tool lost pending notification", err)
 			}
 		})

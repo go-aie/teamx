@@ -191,7 +191,7 @@ func (f *notificationFixture) path(key Key) string {
 	return filepath.Join(f.dir, key.Owner.RoomID, key.Source.Provider+"."+key.Source.Channel+"."+key.SubscriptionID+".json")
 }
 func fixtureSubscription(id string, source SourceID) fixtureState {
-	return fixtureState{Format: 7, K: Key{Owner: platform.RoomIdentity{RoomID: "room", RoomInstance: "instance"}, Source: source, SubscriptionID: id}, Version: 1, Enabled: true, Platform: "connection", Seen: map[string]bool{}, Inbox: map[string]Item{}, RuntimeState: RuntimeState{Status: "running"}}
+	return fixtureState{Target: Target{Mode: "inbox", AgentID: "assistant", MembershipID: "member"}, Format: 7, K: Key{Owner: platform.RoomIdentity{RoomID: "room", RoomInstance: "instance"}, Source: source, SubscriptionID: id}, Version: 1, Enabled: true, Platform: "connection", Seen: map[string]bool{}, Inbox: map[string]Item{}, RuntimeState: RuntimeState{Status: "running"}}
 }
 func (f *notificationFixture) save(t *testing.T, state State) {
 	t.Helper()

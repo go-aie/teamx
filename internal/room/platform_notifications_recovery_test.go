@@ -14,7 +14,7 @@ import (
 	"github.com/go-aie/teamx/internal/platform/gitlab"
 )
 
-func TestPlatformNotificationInboxReloadClearAndContinuation(t *testing.T) {
+func TestPlatformNotificationInboxReloadDeduplicationAndContinuation(t *testing.T) {
 	parallelFixtureTest(t)
 	h := newEventHarness(t, gitlab.EventsConfig{})
 	data, err := os.ReadFile("../platform/gitlab/testdata/events.json")
@@ -28,6 +28,7 @@ func TestPlatformNotificationInboxReloadClearAndContinuation(t *testing.T) {
 	saved.Binding = h.state().Binding
 	saved.Config.PlatformID = h.state().Config.PlatformID
 	saved.Config.Project = h.state().Config.Project
+	saved.Config.Target = h.state().Config.Target
 	saved.UserID = h.state().UserID
 	saved.Username = h.state().Username
 	saved.RoomIdentity = h.room.RoomIdentity
@@ -36,6 +37,7 @@ func TestPlatformNotificationInboxReloadClearAndContinuation(t *testing.T) {
 		entry.RoomIdentity = h.room.RoomIdentity
 		entry.SubscriptionID = saved.SubscriptionID
 		entry.DeliveryID = saved.DeliveryID(key)
+		entry.Route.Target = saved.Config.Target
 		saved.Inbox[key] = entry
 	}
 	if saved.Validate(h.room.RoomIdentity) != nil {
@@ -66,6 +68,7 @@ func TestPlatformNotificationInboxReloadClearAndContinuation(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.m = testManager(t, root, profiles)
+	h.m.notifications.Clock = h.clock.get
 	if got := h.state(); !reflect.DeepEqual(got, saved) {
 		t.Fatal("reopen reset saved progress", got)
 	}
@@ -78,35 +81,33 @@ func TestPlatformNotificationInboxReloadClearAndContinuation(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := eventLiveService(t, h)
-	key42 := gitlab.EventsKey(saved.Binding, 7, 42)
-	post := gitlabEventMessage(saved, saved.Inbox[key42])
-	first, err := svc.room.Call[PostReceipt](context.Background(), post)
-	if err != nil {
+	id := subscriptionMember(saved.Metadata())
+	item, ok := saved.Notification(gitlab.EventsKey(saved.Binding, 7, 42))
+	if !ok {
+		t.Fatal("missing saved item")
+	}
+	// Crash after the member receipt commits and before the source acknowledges it.
+	if err := svc.receiveInbox(t.Context(), saved.Config.Target, item); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.room.Call[ClearReceipt](context.Background(), ClearMessages{RoomIdentity: h.room.RoomIdentity, Caller: humanCaller, ThroughSeq: first.Seq}); err != nil {
-		t.Fatal(err)
-	}
-	// Persist the real crash boundary: Room receipt exists, old inbox unacked.
 	if err := h.m.close(); err != nil {
 		t.Fatal(err)
 	}
 	h.m = testManager(t, root, profiles)
+	h.m.notifications.Clock = h.clock.get
 	svc = eventLiveService(t, h)
 	if err := h.m.notifications.Deliver(context.Background(), h.m.testEventsKey(h.room.RoomIdentity), saved.SubscriptionVersion); err != nil {
 		t.Fatal(err)
 	}
-	_, room := readManagedRoom(t, h.m, h.room)
-	if room.LatestSeq != first.Seq || len(room.Messages) != 0 || len(h.state().Inbox) != 1 || room.IntegrationReceipts[post.DeliveryID].Source != post.Source {
-		t.Fatal("cleared saved receipt did not deduplicate old pending item", room)
+	if page := inboxRoutingPreview(t, svc, id); page.SnapshotSeq != 1 || len(h.state().Inbox) != 1 {
+		t.Fatal("recovered receipt did not deduplicate", page)
 	}
-	key43 := gitlab.EventsKey(saved.Binding, 7, 43)
-	if err := h.m.notifications.Deliver(context.Background(), h.m.testEventsKey(h.room.RoomIdentity), saved.SubscriptionVersion); err != nil {
+	if err := h.m.notifications.Deliver(t.Context(), saved.Metadata().Key, saved.SubscriptionVersion); err != nil {
 		t.Fatal(err)
 	}
-	_, room = readManagedRoom(t, h.m, h.room)
-	if len(room.Messages) != 1 || room.Messages[0].Source.ItemKey != key43 || room.Messages[0].ClientMessageID != saved.Inbox[key43].DeliveryID || len(room.IntegrationReceipts) != 2 || len(h.state().Inbox) != 0 {
-		t.Fatal("old pending item lost its identity", room)
+	room, err := svc.store.LoadRoom()
+	if page := inboxRoutingPreview(t, svc, id); err != nil || room.LatestSeq != 0 || page.SnapshotSeq != 2 || len(h.state().Inbox) != 0 {
+		t.Fatal("old pending item failed Inbox delivery", page, err)
 	}
 	// Delivery acknowledgements may remove inbox items only; scan, cache,
 	// observations, filters, retry bounds and baseline remain untouched.
@@ -119,6 +120,7 @@ func TestPlatformNotificationInboxReloadClearAndContinuation(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.m = testManager(t, root, profiles)
+	h.m.notifications.Clock = h.clock.get
 	eventLiveService(t, h)
 	h.clock.now = time.Date(2026, 11, 2, 0, 2, 31, 0, time.UTC)
 	h.m.notifications.Clock = h.clock.get

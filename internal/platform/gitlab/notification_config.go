@@ -71,12 +71,6 @@ func NormalizeNotificationConfig(c NotificationConfig) (NotificationConfig, erro
 		return c, err
 	}
 	c.BackfillStart = start
-	if !c.Target.Inbox() {
-		if !c.Target.Valid() {
-			return c, notification.ErrRequest
-		}
-		c.Target = notification.Target{}
-	}
 	if !validRestartID(c.PlatformID) {
 		return c, notification.ErrRequest
 	}

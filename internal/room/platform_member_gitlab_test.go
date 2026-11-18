@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform/gitlab"
-	"github.com/go-aie/teamx/internal/platform/notification"
 	"github.com/go-aie/teamx/internal/platform/tool"
 )
 
@@ -295,7 +294,7 @@ func TestGitLabMemberPartialNotificationsAndIndependentTool(t *testing.T) {
 }
 
 func TestGitLabMemberExistingSubscriptionsPreserveProgressAndSibling(t *testing.T) {
-	m, _, _, req := gitlabMemberFixture(t)
+	m, svc, _, req := gitlabMemberFixtureFor(t, connectFixture)
 	m.platformProject = func(context.Context, string, string, workspaceSecret) (int64, error) { return 7, nil }
 	cfg := gitlab.NotificationConfig{Enabled: true, PlatformID: req.Input.PlatformID, Target: platformMemberTarget(req.member()), IntervalSeconds: 61,
 		BackfillStart: time.Now().Add(-time.Hour).UTC().Truncate(time.Second),
@@ -305,8 +304,9 @@ func TestGitLabMemberExistingSubscriptionsPreserveProgressAndSibling(t *testing.
 	if err != nil || len(before.Errors) != 0 {
 		t.Fatal(before, err)
 	}
+	siblingID := inboxRoutingMember(t, svc, "second-receiver", strings.Repeat("9", 32))
 	siblingCfg := cfg
-	siblingCfg.Target, siblingCfg.Events.Enabled, siblingCfg.Todos.Enabled = notification.Target{}, false, true
+	siblingCfg.Target, siblingCfg.Events.Enabled, siblingCfg.Todos.Enabled = inboxTarget(siblingID), false, true
 	sibling, err := m.configureGitLabNotifications(context.Background(), req.RoomIdentity, 0, siblingCfg)
 	if err != nil || len(sibling.Errors) != 0 {
 		t.Fatal(sibling, err)
@@ -318,7 +318,7 @@ func TestGitLabMemberExistingSubscriptionsPreserveProgressAndSibling(t *testing.
 		t.Fatal("lost project progress/filter/baseline", after)
 	}
 	m.mu.Lock()
-	other, err := m.gitlabNotificationViewForTargetLocked(req.RoomIdentity, req.Input.PlatformID, notification.Target{})
+	other, err := m.gitlabNotificationViewForTargetLocked(req.RoomIdentity, req.Input.PlatformID, siblingCfg.Target)
 	m.mu.Unlock()
 	if err != nil || other.Version != sibling.Version || !reflect.DeepEqual(other.Config, sibling.Config) || other.Todos.SubscriptionID != sibling.Todos.SubscriptionID || other.Todos.Version != sibling.Todos.Version {
 		t.Fatal("changed sibling subscription", other, err)

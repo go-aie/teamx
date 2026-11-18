@@ -14,7 +14,7 @@ import (
 	"github.com/go-aie/teamx/internal/platform/gitlab"
 )
 
-// Real notification worker, durable store and Room delivery; remote events
+// Real notification worker, durable source and Inbox delivery; remote events
 // are a fixture. The browser connection never owns the collector context.
 func TestNotificationWorkerSurvivesWebClientDisconnect(t *testing.T) {
 	parallelFixtureTest(t)
@@ -68,10 +68,8 @@ func TestNotificationWorkerSurvivesWebClientDisconnect(t *testing.T) {
 		}
 		saved, err := svc.store.LoadRoom()
 		state := h.state()
-		if err == nil && len(saved.Messages) == 1 && len(state.Inbox) == 0 && len(state.Observed) == 1 {
-			if saved.Messages[0].Author.Kind != "integration" {
-				t.Fatal("wrong delivery author")
-			}
+		if err == nil && saved.LatestSeq == 0 && len(state.Inbox) == 0 && len(state.Observed) == 1 &&
+			inboxRoutingPreview(t, svc, subscriptionMember(state.Metadata())).SnapshotSeq == 1 {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)

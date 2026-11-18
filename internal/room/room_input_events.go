@@ -110,7 +110,7 @@ func (r *Room) AppendEvent(ctx actorx.Context, msg AppendRoomEvent, reply actorx
 			return ErrIdentity
 		}
 	}
-	if len(r.state.Messages) >= maxMessages || len(r.state.EventReceipts) >= maxIntegrationReceipts {
+	if len(r.state.Messages) >= maxMessages || len(r.state.EventReceipts) >= maxRoomReceipts {
 		return ErrCapacity
 	}
 	next := r.candidate()
