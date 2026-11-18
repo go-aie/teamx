@@ -5,12 +5,44 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/go-aie/teamx/internal/inputstream"
 	"github.com/go-aie/teamx/internal/platform/attachment"
 	"github.com/mark3labs/mcp-go/mcp"
 )
+
+func TestInputReceiptFailureDiagnosticClearsAfterVerifiedRetry(t *testing.T) {
+	h, s := unifiedReaderFixture(t, 1)
+	args, _ := json.Marshal(map[string]any{"stream_ref": roomStreamRef(s.storage.id)})
+	body, _, release, err := s.readStream(h.ctx, "receipt-call", args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	release()
+	digest, err := inputBodyDigest([]byte(body.Content[0].(mcp.TextContent).Text))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.receiveGroupBodies(h.ctx, "receipt-call", []string{strings.Repeat("0", 64)}); !errors.Is(err, ErrRequest) {
+		t.Fatal("incorrect body proof accepted", err)
+	}
+	inbox := &mcpInboxSession{input: s}
+	err = inbox.confirmationError()
+	if !errors.Is(err, ErrRequest) || !errors.Is(err, inputstream.ErrBusy) || !strings.Contains(err.Error(), "input result receipt confirmation failed") {
+		t.Fatal("receipt cause missing from terminal diagnostic", err)
+	}
+	if h.list(t).Members[0].ReadThrough != 0 {
+		t.Fatal("failed proof consumed input")
+	}
+	if err = s.receiveGroupBodies(h.ctx, "receipt-call", []string{digest}); err != nil {
+		t.Fatal(err)
+	}
+	if err = inbox.confirmationError(); err != nil || h.list(t).Members[0].ReadThrough != 1 {
+		t.Fatal("verified retry did not clear the diagnostic", err)
+	}
+}
 
 func TestInputReceiptReopensExactImagePageBeforeConsumption(t *testing.T) {
 	h, p, svc, id := platformReaderFixture(t)

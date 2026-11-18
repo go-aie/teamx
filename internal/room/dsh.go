@@ -629,9 +629,8 @@ func (s *dshSession) Run(ctx context.Context, input UnreadChanged) (err error) {
 	}
 	result, runErr := s.component.RunPrompt(ctx, prompt)
 	if s.input != nil {
-		runErr = errors.Join(runErr, s.input.storage.repository.Barrier(s.input.execution))
-	}
-	if s.inbox != nil {
+		runErr = errors.Join(runErr, s.input.confirmationError())
+	} else if s.inbox != nil {
 		runErr = errors.Join(runErr, s.inbox.confirmationError())
 	}
 	if runErr == nil {

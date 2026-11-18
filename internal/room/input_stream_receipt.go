@@ -6,6 +6,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -29,7 +31,29 @@ func inputBodyDigest(data []byte) (string, error) {
 	sum := sha256.Sum256(bytes.TrimSuffix(buffer.Bytes(), []byte("\n")))
 	return hex.EncodeToString(sum[:]), nil
 }
-func (s *inputSession) receiveGroupBodies(ctx context.Context, group string, digests []string) error {
+
+// Preserve the receipt failure alongside the durable pending-page barrier so
+// terminal diagnostics explain why the page could not settle.
+func (s *inputSession) confirmationError() error {
+	barrier := s.storage.repository.Barrier(s.execution)
+	if barrier == nil {
+		return nil
+	}
+	s.receiptMu.Lock()
+	receiptErr := s.receiptErr
+	s.receiptMu.Unlock()
+	if receiptErr != nil {
+		return errors.Join(fmt.Errorf("input result receipt confirmation failed: %w", receiptErr), barrier)
+	}
+	return barrier
+}
+
+func (s *inputSession) receiveGroupBodies(ctx context.Context, group string, digests []string) (err error) {
+	defer func() {
+		s.receiptMu.Lock()
+		s.receiptErr = err
+		s.receiptMu.Unlock()
+	}()
 	if len(digests) > 256 {
 		return ErrRequest
 	}

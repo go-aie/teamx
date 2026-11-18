@@ -11,15 +11,17 @@ import (
 // Rooms keep their prior entry until the separately authorized upgrade.
 // CLI and MCP share this member service and the same durable coordinator.
 type inputSession struct {
-	knownMu   sync.Mutex
-	known     map[string]bool
-	owner     *mcpInboxSession
-	unified   bool
-	service   *service
-	storage   *platformInputStorage
-	execution inputstream.Execution
-	images    bool
-	validate  func(context.Context) error // Original lifecycle/access/Session gate.
+	receiptMu  sync.Mutex
+	receiptErr error // Latest receipt result; diagnostics only, never consumption authority.
+	knownMu    sync.Mutex
+	known      map[string]bool
+	owner      *mcpInboxSession
+	unified    bool
+	service    *service
+	storage    *platformInputStorage
+	execution  inputstream.Execution
+	images     bool
+	validate   func(context.Context) error // Original lifecycle/access/Session gate.
 }
 
 func (p *platformInputStorage) executionLocked(turn uint64) (inputstream.Execution, error) {

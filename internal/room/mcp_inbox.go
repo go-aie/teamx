@@ -57,7 +57,7 @@ func (s *mcpInboxSession) confirmationError() error {
 	input := s.input
 	s.inputMu.Unlock()
 	if input != nil {
-		return input.storage.repository.Barrier(input.execution)
+		return input.confirmationError()
 	}
 	s.work.Lock()
 	defer s.work.Unlock()

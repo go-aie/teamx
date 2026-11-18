@@ -2,14 +2,63 @@ package room
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/go-aie/teamx/internal/agent/dsh"
 	"github.com/go-aie/teamx/internal/inputstream"
 	"github.com/go-aie/teamx/internal/platform/notification"
+	"github.com/mark3labs/mcp-go/mcp"
 )
+
+func TestUnifiedDSHPreservesReceiptFailureDiagnostic(t *testing.T) {
+	state := historyRoom(1, "只读检查")
+	state.InputLog = &roomLogRoot{Version: 1}
+	h := newRoomHarness(t, state, nil)
+	id := h.memberID("A", "generation-A")
+	if err := h.store.SaveAgent(AgentSnapshot{Version: formatVersion, MemberIdentity: id, InputStateRef: "input-state.json", TurnNumber: 1, Turn: &TurnRecord{Number: 1, Status: "running", SnapshotSeq: 1}}); err != nil {
+		t.Fatal(err)
+	}
+	svc := &service{unifiedInputs: true, inputAdapters: storageAdapters(), store: h.store, room: h.addr, info: ServiceInfo{RoomIdentity: h.id, ServiceEpoch: "fixture"}}
+	var session *dshSession
+	backend := dshBackend{store: h.store, inputService: svc, open: func(context.Context, dsh.Options) (dshComponent, error) {
+		return &adapterComponent{runPrompt: func(ctx context.Context, _ []dsh.ContentBlock) (dsh.TurnResult, error) {
+			args, _ := json.Marshal(map[string]any{"stream_ref": roomStreamRef(id)})
+			body, _, release, err := session.input.readStream(ctx, "receipt-call", args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			release()
+			if _, ok := body.Content[0].(mcp.TextContent); !ok {
+				t.Fatal("missing input body")
+			}
+			if err = session.input.receiveGroupBodies(ctx, "receipt-call", []string{strings.Repeat("0", 64)}); !errors.Is(err, ErrRequest) {
+				t.Fatal("wrong proof accepted", err)
+			}
+			return dsh.TurnResult{}, errors.New("Input result could not be verified")
+		}}, nil
+	}}
+	opened, err := backend.OpenSession(h.ctx, adapterOptions(h.store, id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	session = opened.(*dshSession)
+	defer session.Close(context.Background())
+	err = session.Run(h.ctx, UnreadChanged{MemberIdentity: id, LatestSeq: 1})
+	if !errors.Is(err, ErrRequest) || !errors.Is(err, inputstream.ErrBusy) || !strings.Contains(err.Error(), "input result receipt confirmation failed") || strings.Count(err.Error(), inputstream.ErrBusy.Error()) != 1 {
+		t.Fatal("receipt cause lost or duplicated", err)
+	}
+	var diagnostic dshDiagnostic
+	if err = readSnapshot(filepath.Join(h.store.dir, "agents", id.MembershipID, "dsh-turn.json"), &diagnostic, maxPrivateFileBytes); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(diagnostic.Error, "input result receipt confirmation failed") {
+		t.Fatal("saved diagnostic lost receipt cause", diagnostic.Error)
+	}
+}
 
 func TestUnifiedDSHDirectoryRecoverySupplyAndContract(t *testing.T) {
 	state := historyRoom(1, "只读检查，不要评论或合并")

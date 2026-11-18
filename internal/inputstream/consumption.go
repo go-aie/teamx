@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -190,17 +191,11 @@ func (r *Repository) loadConsumption(provider string) (consumptionState, error) 
 			return s, ErrCorrupt
 		}
 	}
-	// The published retention boundary already excludes these positions.
-	// Keep the active stream's exact base until its page settles.
+	// Reclaimed checkpoints carry no retained progress. Compact them without
+	// depending on the current delivery phase.
 	if reclaimed := p.state.Reclaimed; reclaimed > 0 {
-		var activeStream string
-		if r.coordinator != nil {
-			if a := activeAttempt(*r.coordinator); a != nil && a.Snapshot.Partition == s.Partition {
-				activeStream = a.Stream
-			}
-		}
 		for stream, through := range s.Through {
-			if through <= reclaimed && stream != activeStream {
+			if through <= reclaimed {
 				delete(s.Through, stream)
 			}
 		}
@@ -475,7 +470,7 @@ func (r *Repository) Reserve(e Execution, q ReadRequest) (ReadAttempt, error) {
 	if _, known := c.Through[stream]; !known && len(c.Through) >= MaxRecords {
 		return ReadAttempt{}, &CapacityError{Scope: "checkpoints"}
 	}
-	a := ReadAttempt{ID: Ref("page_", r.member, e, key), Request: q, Execution: e, Stream: stream, Snapshot: bound, From: c.Through[stream], Phase: "reserved", Entries: []Location{}, Limit: limit}
+	a := ReadAttempt{ID: Ref("page_", r.member, e, key), Request: q, Execution: e, Stream: stream, Snapshot: bound, From: max(c.Through[stream], bound.Reclaimed), Phase: "reserved", Entries: []Location{}, Limit: limit}
 	a.Through = a.From
 	limit = min(limit, PlatformReadLimit-s.Used)
 	pageBytes := 0
@@ -711,8 +706,12 @@ func (r *Repository) Confirm(e Execution, id string) error {
 		return err
 	}
 	if c.Proof != a.Proof() {
-		if c.Through[a.Stream] != a.From {
-			return ErrConflict
+		// Missing and compacted checkpoints denote the same retired prefix.
+		// Also accept old pending pages whose raw base predates compaction,
+		// while preserving exact comparison above the published floor.
+		floor := r.parts[provider].state.Reclaimed
+		if max(c.Through[a.Stream], floor) != max(a.From, floor) {
+			return fmt.Errorf("%w: input consumption position changed (checkpoint=%d, page_start=%d, reclaimed=%d)", ErrConflict, c.Through[a.Stream], a.From, floor)
 		}
 		if len(a.Entries) > 0 {
 			c.Through[a.Stream] = a.Through
