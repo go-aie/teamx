@@ -20,7 +20,7 @@
 .secondary-button { color:var(--text-secondary); border-color:var(--field-border); background:var(--surface); }
 .secondary-button:hover:not(:disabled) { color:var(--text); background:var(--surface-hover); border-color:var(--line-strong); }
 .text-button,.back-button { color:var(--muted); background:transparent; font-weight:400; }
-.text-button:hover:not(:disabled),.back-button:hover:not(:disabled) { color:var(--accent); background:var(--soft); text-decoration:none; }
+.text-button:hover:not(:disabled),.back-button:hover:not(:disabled) { background:var(--surface-hover); text-decoration:none; }
 .button-compact { min-height:var(--control-compact); padding:5px 10px; font-size:var(--font-small); }
 .danger-button { color:var(--danger); }
 .danger-button:hover:not(:disabled) { color:var(--danger); background:var(--danger-soft); }
@@ -38,6 +38,7 @@
   transform:rotate(45deg); transition:transform var(--motion-fast);
 }
 :where(details[open]:not(.workspace-picker,.choice-picker,.notification-channel,.activity-group)) > summary::before { transform:rotate(225deg); }
+:where(details:not(.workspace-picker,.choice-picker)) > summary:hover { background:var(--surface-hover); }
 .icon-button,.add-button {
   display:inline-flex;
   align-items:center;
@@ -51,9 +52,10 @@
   background:transparent;
   color:var(--muted);
 }
-.icon-button:hover:not(:disabled) { color:var(--accent); background:var(--soft); }
+.icon-button:hover:not(:disabled) { color:var(--text); background:var(--surface-hover); }
 .add-button { border-color:var(--line); border-radius:50%; }
-.add-button:hover:not(:disabled),.add-button[aria-expanded="true"]:not(:disabled) { color:var(--accent); background:var(--soft); border-color:var(--line-strong); }
+.add-button:hover:not(:disabled) { color:var(--text); background:var(--surface-hover); border-color:var(--line-strong); }
+.add-button[aria-expanded="true"]:not(:disabled) { color:var(--accent); background:var(--soft); border-color:var(--line-strong); }
 .icon-button svg,.add-button svg {
   width:18px;
   height:18px;

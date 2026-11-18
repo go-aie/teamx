@@ -217,23 +217,71 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
   function inputAttentionControl(item,target) {
     const v=memberToolsView;
     if(!v || !toolsCurrent(v) || target?.membership_id!==v.member.membership_id || item?.supports_notifications!==true)return null;
-      const preference=v?.attention?.available && v.attention.sources.find(p=>p.platform_id===item.id);
-      if(preference) {
-        const field=document.createElement("label"),select=document.createElement("select");field.className="member-input-attention";field.textContent="关注级别";
-        for(const [value,text] of [["high","重点"],["normal","普通"],["low","较少关注"]])select.append(new Option(text,value));
-        select.className="field-control";select.value=preference.attention;select.disabled=!!v.attentionBusy;select.setAttribute("aria-label",`${item.name} 关注级别`);
-        select.addEventListener("change",async()=>{const next=select.value;v.attentionBusy=true;select.disabled=true;try {
-          const updated=await request("/v1/member/input-attention",{...v.identity,agent_id:target.agent_id,membership_id:target.membership_id,platform_id:item.id,source_version:preference.source_version,attention:next,expected_version:preference.version});
-          if(toolsCurrent(v)){v.attention=updated;v.attentionError="";}
-        }catch(error){if(toolsCurrent(v)){select.value=preference.attention;v.attentionError=error.message || "保存失败，请刷新后重试。";
-          try{const latest=await request("/v1/member/input-attention",{...v.identity,agent_id:target.agent_id,membership_id:target.membership_id,expected_version:0});if(toolsCurrent(v))v.attention=latest;}catch{}}}finally{v.attentionBusy=false;if(toolsCurrent(v)){renderMemberPlatforms();notificationsUI.renderNotificationSource();}}});
-        field.append(select);return field;
+    const preference=v.attention?.available && v.attention.sources.find(p=>p.platform_id===item.id);
+    if(!preference)return null;
+    const levels=[["low","较少","较少关注"],["normal","普通","普通关注"],["high","重点","重点关注"]];
+    const field=document.createElement("div"),label=document.createElement("span"),value=document.createElement("div"),stars=document.createElement("div"),text=document.createElement("span");
+    field.className="member-input-attention";label.textContent="关注级别";value.className="member-attention-value";
+    stars.className="member-attention-stars";stars.setAttribute("role","radiogroup");stars.setAttribute("aria-label",`${item.name} 关注级别`);stars.setAttribute("aria-describedby","notification-attention-help");
+    text.className="member-attention-label";
+    const choices=levels.map(([level,,description],index)=>{
+      const choice=document.createElement("label"),input=document.createElement("input"),icon=document.createElementNS("http://www.w3.org/2000/svg","svg"),path=document.createElementNS("http://www.w3.org/2000/svg","path");
+      choice.className="member-attention-star";choice.title=`${description}（${index+1} 颗星）`;
+      input.type="radio";input.name=`member-attention-${target.membership_id}-${item.id}`;input.value=level;input.disabled=!!v.attentionBusy;
+      input.setAttribute("aria-label",choice.title);
+      icon.setAttribute("viewBox","0 0 24 24");icon.setAttribute("aria-hidden","true");icon.setAttribute("focusable","false");
+      path.setAttribute("d","m12 3 2.8 5.7 6.3.9-4.6 4.5 1.1 6.3-5.6-3-5.6 3 1.1-6.3L2.9 9.6l6.3-.9Z");icon.append(path);
+      choice.append(input,icon);stars.append(choice);
+      input.addEventListener("change",()=>input.checked && saveAttention(level,input));
+      return {choice,input};
+    });
+    function showLevel(level){
+      const rank=levels.findIndex(([key])=>key===level);
+      text.textContent=levels[rank][1];
+      choices.forEach(({choice,input},index)=>{choice.dataset.filled=String(index<=rank);input.checked=input.value===level;});
+    }
+    async function saveAttention(next,input){
+      if(v.attentionBusy || !toolsCurrent(v) || next===preference.attention)return;
+      const hadFocus=document.activeElement===input;
+      v.attentionBusy=true;v.attentionPlatformID=item.id;v.attentionError="";v.attentionFeedback="正在保存…";
+      showLevel(next);choices.forEach(({input})=>{input.disabled=true;});stars.setAttribute("aria-busy","true");
+      for(const child of [...$("notification-attention").children])if(child.className==="form-error")child.remove();
+      $("notification-attention-status").textContent=v.attentionFeedback;$("notification-attention-status").hidden=false;
+      try {
+        const updated=await request("/v1/member/input-attention",{...v.identity,agent_id:target.agent_id,membership_id:target.membership_id,platform_id:item.id,source_version:preference.source_version,attention:next,expected_version:preference.version});
+        if(toolsCurrent(v)){v.attention=updated;v.attentionFeedback="";}
+      }catch(error){
+        if(toolsCurrent(v)){
+          v.attentionFeedback="";v.attentionError=error.message || "保存失败，请刷新后重试。";
+          try {
+            const latest=await request("/v1/member/input-attention",{...v.identity,agent_id:target.agent_id,membership_id:target.membership_id,expected_version:0});
+            if(toolsCurrent(v))v.attention=latest;
+          }catch{ /* Keep the last observed value when readback is unavailable. */ }
+        }
+      }finally{
+        v.attentionBusy=false;
+        if(toolsCurrent(v)){
+          const focused=hadFocus && (document.activeElement===input || document.activeElement===document.body) && workspaceUI.workspaceView?.notificationPlatformID===item.id && $("notification-detail").open;
+          renderMemberPlatforms();notificationsUI.renderNotificationSource();
+          if(focused && !$("notification-attention").hidden)$("notification-attention").querySelector("input:checked")?.focus();
+        }
       }
-    return null;
+    }
+    showLevel(preference.attention);value.append(stars,text);field.append(label,value);return field;
   }
+
   function renderInputAttention(item,target,container) {
-    const control=inputAttentionControl(item,target);container.replaceChildren(...(control ? [control] : []));container.hidden=!control;
-    if(control && memberToolsView?.attentionError){const error=document.createElement("p");error.className="form-error";error.textContent=memberToolsView.attentionError;container.append(error);}
+    const control=inputAttentionControl(item,target),v=memberToolsView;
+    container.replaceChildren(...(control ? [control] : []));container.hidden=!control;
+    if(!control)return;
+    const help=document.createElement("p"),feedback=document.createElement("p");
+    help.id="notification-attention-help";help.className="quiet";help.textContent="影响助理浏览此来源的偏好，不改变接收范围。修改后自动保存。";
+    feedback.id="notification-attention-status";feedback.className="quiet";feedback.setAttribute("role","status");
+    feedback.textContent=v.attentionPlatformID===item.id ? v.attentionFeedback || "" : "";feedback.hidden=!feedback.textContent;
+    container.append(help,feedback);
+    if(v.attentionPlatformID===item.id && v.attentionError){
+      const error=document.createElement("p");error.className="form-error";error.setAttribute("role","alert");error.textContent=v.attentionError;container.append(error);
+    }
   }
 
   function renderMemberPlatforms() {
@@ -255,15 +303,16 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       name.className="member-platform-name";name.textContent=item.name;
       edit.setAttribute("class","platform-edit-icon");edit.setAttribute("viewBox","0 0 24 24");edit.setAttribute("aria-hidden","true");edit.setAttribute("focusable","false");
       path.setAttribute("d","m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15Z");edit.append(path);heading.replaceChildren(name,edit);
+      const attention=v?.attention?.available && v.attention.sources.find(p=>p.platform_id===item.id);
+      const attentionLabel={high:"重点",low:"较少"}[attention?.attention];
+      if(attentionLabel){const hint=document.createElement("span");hint.className="member-platform-attention";hint.textContent=attentionLabel;heading.append(hint);}
       row.children[0].children[1].children[1].textContent=[hasNotifications ? notificationsUI.notificationConfigured(item,view) ? notificationsUI.notificationDescription(view.config) : "尚未开启通知" : "无通知能力",item.validation?.username ? `@${item.validation.username}` : "账号待核验"].join(" · ");
       row.children[0].title=`${item.name} · ${row.children[0].children[1].children[1].textContent}`;
       const input=row.children[1],label=document.createElement("label");input.id=`member-platform-notify-${item.id}`;label.htmlFor=input.id;label.className="member-platform-notify-label";label.textContent=hasNotifications ? "通知" : "无通知能力";
       input.hidden=!hasNotifications;if(!notificationsUI.notificationConfigured(item,view) && onboardingUI.onboarding.busy)input.disabled=true;label.hidden=!hasNotifications;
       row.children[2].textContent=[notificationsUI.notificationConfigured(item,view) ? notificationsUI.notificationIssue(ws,item,view) : "",toolIssue(v,item)].filter(Boolean).join(" ");row.children[2].hidden=!row.children[2].textContent;row.children[2].dataset.kind=v?.cliResult?.tool===item.id && !v.cliResult.error ? "success" : "error";
-      if(v?.attentionError){row.children[2].textContent=v.attentionError;row.children[2].hidden=false;}
       const info=row.children[0],issue=row.children[2],controls=document.createElement("div");controls.className="member-platform-controls";
       controls.append(label,input,toolSwitch(v,item));
-      const attention=inputAttentionControl(item,target);if(attention)controls.append(attention);
       const accountActions=document.createElement("div");accountActions.className="member-platform-account-actions";
       const selection=v?.cli?.selections?.find(s=>s.agent_id===target.agent_id && s.membership_id===target.membership_id && s.platform_id===item.id), gaps=selection?.availability?.capabilities?.filter(c=>c.configured!==false && c.state!=="ready") || [];
       const recovery = accountRecovery(item,view,selection,gaps,v?.cliResult);

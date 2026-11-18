@@ -26,7 +26,7 @@ button.member-summary:hover:not(:disabled) { background:var(--surface-hover); }
 .member-list-toggle { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; min-height:44px; padding:0; background:transparent; color:inherit; font:inherit; text-align:left; }
 .member-list-toggle svg { color:var(--muted); transition:transform var(--motion-fast); }
 .member-list-toggle[aria-expanded="true"] svg { transform:rotate(180deg); }
-.member-list-toggle:hover { color:var(--accent); }
+.member-list-toggle:hover { background:var(--surface-hover); }
 #members.members-compact { display:flex; flex-wrap:wrap; gap:8px; padding:8px 0 16px; }
 .members-compact > .member { flex:none; padding:0; border:0; }
 #members.members-compact > .member:last-child { padding:0; }
@@ -282,7 +282,7 @@ button.member-summary:hover:not(:disabled) { background:var(--surface-hover); }
   transform:rotate(225deg);
 }
 .activity-group>summary:hover {
-  color:var(--accent);
+  background:var(--surface-hover);
 }
 .activity-group>summary:focus-visible {
   outline: 2px solid var(--focus);

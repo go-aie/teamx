@@ -19,7 +19,7 @@ test("Members can share an account and configure independent sources",async()=>{
   await openNotification(ui,"gitlab","gl","member-b");
   assert.equal(ui.el("notification-title").textContent,"b · 公司 GitLab 设置");
   assert.equal(ui.el("gitlab-interval").value,45);
-  assert.match(ui.el("notification-destination").textContent,/发送到 b 的收件箱/);
+  assert.match(ui.el("notification-destination").textContent,/接收助理：b/);
   assert.equal(writes(api).length,0);
 });
 

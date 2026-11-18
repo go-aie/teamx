@@ -267,7 +267,8 @@ h1 {
   stroke-linecap:round;
   stroke-linejoin:round;
 }
-.room-panel-toggle:hover,.room-panel-toggle[aria-expanded="true"] {
+.room-panel-toggle:hover { background:var(--surface-hover); color:var(--text); }
+.room-panel-toggle[aria-expanded="true"] {
   background:var(--soft);
   border-color:var(--line);
   color:var(--accent);

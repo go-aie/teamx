@@ -892,8 +892,9 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     let instance="";try{instance=item?.provider==="gitlab" ? new URL(item.url).host : "";}catch{instance=item?.url || "";}
     $("notification-account").textContent=item ? [item.validation?.username ? `@${item.validation.username}` : "账号待核验",instance].filter(Boolean).join(" · ") : "";
     $("notification-account").title=item?.url || "";
+    $(messages ? "lark-attention-slot" : "gitlab-attention-slot").append($("notification-attention"));
     if(target.mode==="shared_inbox")$("notification-attention").hidden=true; else membersUI.renderInputAttention(item,target,$("notification-attention"));
-    $("notification-destination").textContent=target.agent_id ? `发送到 ${name} 的收件箱${member ? "" : "（原成员已移除）"}` : "";
+    $("notification-destination").textContent=target.agent_id ? `接收助理：${name}${member ? "" : "（原成员已移除）"}` : "";
     const matches=!!id && (messages ? ws?.messages?.config.platform_id : ws?.gitlabDraft?.platform_id)===id && sameNotificationTarget(messages ? ws?.messages?.config.target : ws?.gitlabDraft?.target,target);
     const connected=matches && (messages ? ws?.messagesConnected : ws?.gitlabConnected) && !ws?.notificationHistory;
     const reading=ws?.notificationDetailReadState;
@@ -904,6 +905,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     $("notification-reload").hidden=!unavailable || !!ws?.notificationHistory;
     const configured=item && notificationConfigured(item,view),enabled=configured ? !!view.config.enabled : messages ? !!ws?.messages?.config.enabled : !!ws?.gitlabDraft?.enabled;
     const toolsOnly=ws?.notificationChannel==="tools",history=!!ws?.notificationHistory;
+    if(toolsOnly || history || !connected)$("notification-attention").hidden=true;
     $("notification-destination").hidden=toolsOnly || history;
     const status=!connected || toolsOnly || history ? "" : configured && !enabled ? "通知已暂停" : !configured ? "尚未开启通知" : "";
     notice("notification-enabled-state",status);

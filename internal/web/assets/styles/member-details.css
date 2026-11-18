@@ -86,7 +86,7 @@
 .activity-section .execution-diagnostics { margin:10px 0; }
 .agent-tabs { flex-shrink:0; min-width:0; gap:20px; margin:0; padding:0 var(--panel-space); background:var(--surface); }
 .agent-tabs button { min-height:var(--control-height); padding:8px 0 10px; }
-.agent-tabs button:hover { color:var(--accent); }
+.agent-tabs button:hover:not([aria-selected="true"]) { color:var(--text); }
 .member-platform-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px; }
 .member-platform-toolbar > .quiet { margin:0; font-size:var(--font-small); font-weight:400; }
 #activity-dialog > #inbox-member-view { padding-top:0; }
@@ -196,7 +196,7 @@
 .policy-summary { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
 #policy-status { margin: 0; color: var(--muted); font-size:var(--font-small); overflow-wrap: anywhere; }
 #policy-retry { flex-shrink:0; min-height:32px; padding:5px 8px; border-radius:var(--radius-control); background:transparent; color:var(--accent); font-size:var(--font-small); }
-#policy-retry:hover:not(:disabled) { background:var(--soft); }
+#policy-retry:hover:not(:disabled) { background:var(--surface-hover); }
 #policy-member-view .policy-toolbar > .member-actions, #policy-member-view .policy-followups-toolbar > .member-actions { margin-left: auto; }
 .policy-empty { margin: 16px 0 0; line-height: 1.7; }
 #activity-dialog .policy-entry { padding-top: 18px; }
@@ -214,7 +214,7 @@
 #policy-member-view details p { color: var(--text); }
 .policy-history { margin-top: 10px; font-size:var(--font-small); }
 .policy-history > summary, .policy-source > summary { width: fit-content; max-width: 100%; cursor: pointer; color: #68736b; overflow-wrap: anywhere; }
-.policy-history > summary:hover, .policy-source > summary:hover { color: var(--accent); }
+.policy-history > summary:hover, .policy-source > summary:hover { background:var(--surface-hover); }
 .policy-revision { margin: 12px 0 0 5px; padding: 2px 0 2px 12px; border-left: 2px solid var(--line); }
 .policy-revision h5 { margin: 0; color: var(--text); font-size:var(--font-small); font-weight: 600; }
 #policy-member-view .policy-revision-meta { margin: 4px 0 10px; color: var(--muted); font-size:var(--font-small); line-height: 1.7; white-space: pre-line; }

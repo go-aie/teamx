@@ -4,7 +4,7 @@
 .notification-source-name strong { display:block; overflow:hidden; text-overflow:ellipsis; font-size:var(--font-body); font-weight:600; }
 .notification-source-name small { line-height:1.55; overflow-wrap:anywhere; font-size:var(--font-small); }
 .notification-source-arrow { display:inline-flex; align-items:center; justify-content:center; padding:0; min-height:var(--control-height); width:20px; background:transparent; color:var(--muted); border-radius:4px; cursor:pointer; }
-.notification-source-arrow:hover { background:var(--surface-hover); color:var(--accent); }
+.notification-source-arrow:hover { background:var(--surface-hover); color:var(--text); }
 .notification-source-issue { grid-column:1 / -1; margin:0 0 8px 36px; color:var(--danger); font-size:var(--font-small); line-height:1.6; }
 .notification-switch { appearance:none; flex:none; position:relative; width:28px; height:16px; margin:0; border:1px solid var(--line-strong); border-radius:var(--radius-menu); background:var(--line-strong); cursor:pointer; transition:background .15s,border-color .15s; }
 .notification-switch::before { content:""; position:absolute; top:2px; left:2px; width:10px; height:10px; border-radius:50%; background:white; transition:transform .15s; }
@@ -64,6 +64,7 @@
 .member-platform-tool input { flex-shrink:0; order:2; }
 .member-platform-row .notification-source-name strong { display:flex; align-items:center; gap:5px; min-width:0; }
 .member-platform-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.member-platform-attention { flex:none; color:var(--muted); font-size:var(--font-small); font-weight:400; white-space:nowrap; }
 .platform-edit-icon { flex:none; width:12px; height:12px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; color:var(--muted); opacity:0; transition:opacity .12s; }
 .member-platform-row .notification-source:hover .platform-edit-icon,.member-platform-row:focus-within .platform-edit-icon { opacity:1; }
 @media (hover:none),(pointer:coarse) { .member-platform-row .platform-edit-icon { opacity:1; } }
@@ -110,18 +111,41 @@
 #platforms-member-view { container:member-platforms / inline-size; }
 .agent-tabs { overflow-x:auto; scrollbar-width:thin; gap:16px; }
 .agent-tabs button { flex-shrink:0; white-space:nowrap; }
-.notification-body { padding:16px var(--panel-space); }
+.notification-body { padding:16px var(--panel-space); container:notification-detail / inline-size; }
 .notification-body .notification-account { margin:0 0 14px; font-size:var(--font-small); line-height:1.6; color:var(--muted); }
 #notification-destination,#notification-enabled-state { margin:0 0 12px; font-size:var(--font-small); line-height:1.6; color:var(--muted); }
 .notification-body .notification-settings { margin:0; padding:0; border:0; font-size:var(--font-body); }
 .notification-body .notification-settings .quiet { font-size:var(--font-small); font-weight:400; line-height:1.6; color:var(--muted); }
+#notification-attention { margin-top:16px; padding-top:16px; border-top:1px solid var(--line); }
+.notification-body .member-input-attention { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0; color:var(--text); font-size:var(--font-body); font-weight:500; }
+.member-attention-value { display:flex; flex:none; align-items:center; gap:8px; }
+.member-attention-stars { display:flex; align-items:center; }
+.notification-body .member-attention-star { position:relative; display:grid; place-items:center; flex:none; width:32px; height:36px; margin:0; border-radius:var(--radius-control); color:var(--faint); cursor:pointer; }
+.member-attention-star input { position:absolute; inset:0; width:100%; height:100%; margin:0; opacity:0; cursor:pointer; }
+.member-attention-star svg { width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linejoin:round; pointer-events:none; }
+.member-attention-star[data-filled="true"] { color:var(--accent); }
+.member-attention-star[data-filled="true"] svg { fill:currentColor; }
+.member-attention-star:hover { background:var(--surface-hover); }
+.member-attention-star:has(input:focus-visible) { outline:2px solid var(--focus); outline-offset:1px; }
+.member-attention-star:has(input:disabled) { opacity:.55; cursor:wait; }
+.member-attention-star input:disabled { cursor:wait; }
+.member-attention-label { min-width:2em; color:var(--muted); font-size:var(--font-small); font-weight:400; }
+@media (pointer:coarse) {
+  .notification-body .member-attention-star { width:44px; height:44px; }
+}
+#notification-attention > p { margin:8px 0 0; font-size:var(--font-small); line-height:1.6; }
+#notification-attention-status { color:var(--accent); }
+@container notification-detail (max-width:240px) {
+  .notification-body .member-input-attention { align-items:flex-start; flex-direction:column; gap:8px; }
+}
 .notification-body .notification-settings label { font-size:var(--font-body); font-weight:500; }
 .notification-body .notification-settings .workspace-check { font-size:var(--font-body); font-weight:400; }
 .notification-body .notification-settings .notification-channel { border:0; margin:0; }
 .notification-body .notification-channel > summary { min-height:44px; padding:0; font-size:var(--font-body); gap:4px; }
 .notification-body .notification-channel > summary > .workspace-check { display:flex; align-items:center; justify-content:center; flex:0 0 44px; min-height:44px; margin:0 0 0 -14px; border-radius:4px; }
 .notification-body .notification-channel-disclosure { min-height:44px; padding:0 4px; gap:8px; border-radius:4px; }
-.notification-body .notification-channel > summary > .workspace-check:hover,.notification-body .notification-channel-disclosure:hover { background:rgba(49,94,73,.06); }
+.notification-body .notification-channel > summary:hover { background:transparent; }
+.notification-body .notification-channel > summary > .workspace-check:hover,.notification-body .notification-channel-disclosure:hover { background:var(--surface-hover); }
 .notification-body .notification-channel-title { font-weight:500; }
 .notification-body .notification-channel-disclosure > .quiet { font-size:var(--font-small); }
 .notification-body .notification-channel-body { margin:0 0 12px; padding:0 0 4px 23px; }

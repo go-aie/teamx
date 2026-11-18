@@ -29,6 +29,3 @@
 @keyframes model-progress-spin { to { transform:rotate(360deg); } }
 @media(prefers-reduced-motion:reduce) { #member-model-busy { animation:none; } }
 @media(max-width:480px) { .member-model { padding-inline:16px; flex-wrap:nowrap; } }
-
-.member-input-attention { display: inline-flex; align-items: center; gap: .4rem; font-size: .75rem; color: var(--muted); }
-.member-input-attention select { width: auto; min-width: 5.5rem; min-height: 28px; padding: .25rem 1.6rem .25rem .4rem; }

@@ -37,7 +37,7 @@
     border-radius:0; text-align:left; font-size:15px; font-weight:500;
   }
   .mobile-profile-links svg { width:18px; height:18px; fill:none; stroke:var(--muted); stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
-  .mobile-profile-links button:hover { color:var(--accent); }
+  .mobile-profile-links button:hover { background:var(--surface-hover); }
   .mobile-profile-links button:last-child { border-bottom:0; }
   .mobile-profile-logout {
     display:block; margin-top:12px; width:100%; min-height:56px; padding:16px 20px;

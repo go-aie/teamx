@@ -262,6 +262,7 @@
                       <details class="notification-help"><summary>接收说明</summary><p id="lark-group-mode-help" class="quiet">筛选用于他人消息；本人消息和回复作为上下文接收。两个 @ 选项均关闭时，仅接收本人上下文。“我”指当前平台账号。</p></details>
                     </div>
                   </details>
+                  <div id="lark-attention-slot"></div>
                   <details id="lark-advanced-settings" class="notification-advanced"><summary>高级设置</summary>
                   <div class="notification-settings-row">
                     <div><label for="lark-backfill">开始接收时间</label><select id="lark-backfill" aria-describedby="lark-backfill-help" class="field-control"><option value="0">从开启时刻</option><option value="3600">最近 1 小时</option><option value="86400">最近 24 小时</option><option value="custom">指定时间</option></select><div id="lark-backfill-locked" class="notification-backfill-locked" aria-describedby="lark-backfill-help" hidden><span id="lark-backfill-value"></span><small>已锁定</small></div></div>
@@ -342,6 +343,7 @@
                   <p id="gitlab-events-error" class="form-error" role="alert" hidden></p>
                 </section>
               </details>
+              <div id="gitlab-attention-slot"></div>
               <details id="gitlab-advanced-settings" class="notification-advanced"><summary>高级设置</summary>
               <div class="notification-settings-row">
                 <div><label for="gitlab-backfill">开始接收时间</label><select id="gitlab-backfill" aria-describedby="gitlab-backfill-help" class="field-control"><option value="0">从开启时刻</option><option value="3600">最近 1 小时</option><option value="86400">最近 24 小时</option><option value="custom">指定时间</option></select><div id="gitlab-backfill-locked" class="notification-backfill-locked" aria-describedby="gitlab-backfill-help" hidden><span id="gitlab-backfill-value"></span><small>已锁定</small></div></div>
@@ -407,7 +409,7 @@
         <div id="agent-tabs" class="notification-tabs agent-tabs" role="tablist" aria-label="Agent 详情">
           <button id="agent-tab-platforms" type="button" role="tab" aria-selected="true" aria-controls="platforms-member-view">平台</button>
           <button id="agent-tab-policy" type="button" role="tab" aria-selected="false" aria-controls="policy-member-view" tabindex="-1">规则</button>
-          <button id="agent-tab-inbox" type="button" role="tab" aria-selected="false" aria-controls="inbox-member-view" tabindex="-1">收件箱</button>
+          <button id="agent-tab-inbox" type="button" role="tab" aria-selected="false" aria-controls="inbox-member-view" tabindex="-1">通知</button>
           <button id="agent-tab-activity" type="button" role="tab" aria-selected="false" aria-controls="activity-body" tabindex="-1">活动记录</button>
         </div>
         <div id="platforms-member-view" class="activity-body" role="tabpanel" aria-labelledby="agent-tab-platforms">
@@ -455,10 +457,10 @@
           <div class="inbox-toolbar">
             <div class="inbox-summary">
               <p id="inbox-status" class="quiet" role="status" aria-live="polite" title="只读预览，不会推进成员读取进度，也不会启动自动处理。"></p>
-              <button id="inbox-reload" class="icon-button" type="button" aria-label="刷新收件箱，保留当前位置" title="刷新，保留当前位置"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 6.7M20 4v7h-7"/></svg></button>
+              <button id="inbox-reload" class="icon-button" type="button" aria-label="刷新通知，保留当前位置" title="刷新，保留当前位置"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 6.7M20 4v7h-7"/></svg></button>
               <button id="inbox-latest" class="secondary-button button-compact" type="button" aria-label="跳到最新记录" title="跳到最新记录">最新</button>
             </div>
-            <nav class="inbox-pagination" aria-label="收件箱分页">
+            <nav class="inbox-pagination" aria-label="通知分页">
               <button id="inbox-prev" class="secondary-button button-compact" type="button" aria-label="查看较新记录" title="查看较新记录" disabled>较新</button>
               <span id="inbox-page" class="inbox-page" role="status" aria-live="polite" tabindex="-1">—</span>
               <button id="inbox-next" class="secondary-button button-compact" type="button" aria-label="查看较早记录" title="查看较早记录" disabled>较早</button>
@@ -471,7 +473,7 @@
             <button id="inbox-followups" class="text-button" type="button">查看跟进与待你答复</button>
           </div>
           <div id="inbox-entries" aria-busy="false"></div>
-          <nav id="inbox-pagination-bottom" class="inbox-pagination inbox-pagination-bottom" aria-label="收件箱底部分页" hidden>
+          <nav id="inbox-pagination-bottom" class="inbox-pagination inbox-pagination-bottom" aria-label="通知底部分页" hidden>
             <button id="inbox-prev-bottom" class="secondary-button button-compact" type="button" aria-label="查看较新记录" title="查看较新记录" disabled>较新</button>
             <span id="inbox-page-bottom" class="inbox-page">—</span>
             <button id="inbox-next-bottom" class="secondary-button button-compact" type="button" aria-label="查看较早记录" title="查看较早记录" disabled>较早</button>

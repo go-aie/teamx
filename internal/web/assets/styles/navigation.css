@@ -322,7 +322,7 @@
   color:var(--muted);
   background:transparent;
 }
-.panel-toggle:hover { color:var(--accent); background:var(--soft); }
+.panel-toggle:hover { color:var(--text); background:var(--surface-hover); }
 .panel-toggle svg {
   width:20px;
   height:20px;

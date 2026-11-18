@@ -155,7 +155,7 @@
   padding:4px 8px;
 }
 .reply-button svg { width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
-.reply-button:hover,.reply-button:focus-visible { background:var(--soft); color:var(--accent); }
+.reply-button:hover,.reply-button:focus-visible { background:var(--surface-hover); color:var(--text); }
 @media(hover:hover) and (pointer:fine) {
   .message-meta time,.reply-button { opacity:0; }
   .message:hover .message-meta time,.message:focus-within .message-meta time,
@@ -500,7 +500,7 @@
   pointer-events:auto;
 }
 .timeline-jump svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
-.timeline-jump:hover { background:var(--soft); border-color:var(--focus); }
+.timeline-jump:hover { background:var(--surface-hover); border-color:var(--line-strong); }
 .execution-hint {
   position:absolute;
   left:46px;
@@ -702,7 +702,8 @@ textarea::placeholder {
   background:transparent;
   color:var(--text);
 }
-.mention-option:hover, .mention-option[aria-selected="true"] { background:var(--soft); }
+.mention-option:hover { background:var(--surface-hover); }
+.mention-option[aria-selected="true"] { background:var(--soft); color:var(--accent); }
 .compose-footer { display:contents; }
 .compose-hint { display:none; }
 .compose .reply-context { grid-column:1 / -1; grid-row:1; margin:0 0 4px; }
@@ -751,7 +752,7 @@ textarea::placeholder {
   text-overflow:ellipsis;
 }
 .reply-cancel { display:flex; align-items:center; justify-content:center; flex-shrink:0; width:var(--icon-size); height:var(--icon-size); padding:7px; border-radius:var(--radius-control); background:transparent; color:var(--muted); }
-.reply-cancel:hover:not(:disabled) { background:var(--surface-hover); color:var(--accent); }
+.reply-cancel:hover:not(:disabled) { background:var(--surface-hover); color:var(--text); }
 .reply-cancel svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; }
 .form-error,.member-error {
   font-size:var(--font-small);

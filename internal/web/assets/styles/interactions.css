@@ -36,7 +36,7 @@
   color:var(--text);
   background:transparent;
 }
-.create-menu button:hover,.create-menu button:focus-visible { background:var(--soft); }
+.create-menu button:hover,.create-menu button:focus-visible { background:var(--surface-hover); }
 .create-menu button:focus-visible { outline-offset:-2px; }
 .create-menu-label { display:block; font-size:var(--font-body); font-weight:500; line-height:1.5; }
 .create-menu-hint { display:block; margin-top:2px; color:var(--muted); font-size:var(--font-small); line-height:1.5; }
