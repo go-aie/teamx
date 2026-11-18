@@ -18,6 +18,7 @@ type notificationSourceLocation struct {
 
 // Both endpoints share this entry. Preview never resolves or consumes sources.
 type inboxEntryView struct {
+	Partition          string                      `json:"partition,omitempty"`
 	Type               InboxEntryType              `json:"type"`
 	TaskEvent          *InboxTaskEvent             `json:"task_event,omitempty"`
 	NotificationSource *notificationSourceLocation `json:"notification_source,omitempty"`
@@ -29,8 +30,34 @@ type inboxEntryView struct {
 	AutomaticAdmission *notification.Admission     `json:"automatic_admission,omitempty"`
 }
 
+// Stream reads retain the existing native/business projection and omit the
+// physical Inbox position. Formal stream readers share this business DTO.
+type inputStreamNotificationEntry struct {
+	Type               string                  `json:"type"`
+	Item               notification.View       `json:"item"`
+	Source             inputStreamSource       `json:"source,omitzero"`
+	Origin             *inboxMessageOrigin     `json:"origin,omitempty"`
+	AutomaticAdmission *notification.Admission `json:"automatic_admission,omitempty"`
+}
+
+func projectStreamNotification(v inboxEntryView) inputStreamNotificationEntry {
+	s := v.Source
+	return inputStreamNotificationEntry{Type: "notification", Item: v.Item, Source: inputStreamSource{s.SourceRef, s.SourceVersion, s.ObjectRef, s.TargetRef, s.EvidenceSource, string(s.Status), s.ReasonCode, s.Reason}, Origin: v.Origin, AutomaticAdmission: v.AutomaticAdmission}
+}
+
+type inputStreamSource struct {
+	Ref            string `json:"source_ref"`
+	Version        uint64 `json:"source_version,omitempty"`
+	ObjectRef      string `json:"object_ref,omitempty"`
+	TargetRef      string `json:"target_ref,omitempty"`
+	EvidenceSource string `json:"evidence_source,omitempty"`
+	Status         string `json:"status"`
+	ReasonCode     string `json:"reason_code,omitempty"`
+	Reason         string `json:"reason,omitempty"`
+}
+
 func projectInboxEntry(e InboxEntry, source followupSourceSummary) inboxEntryView {
-	v := inboxEntryView{Type: e.payloadType(), Seq: e.Seq, ReceivedAt: e.ReceivedAt}
+	v := inboxEntryView{Type: e.payloadType(), Seq: e.Seq, ReceivedAt: e.ReceivedAt, Partition: inboxEntryPosition(e).Partition}
 	switch e.payloadType() {
 	case InboxPlatformNotification:
 		v.Item, v.Source = projectNotification(e.Item), source
@@ -45,6 +72,7 @@ func inboxContextOnly(e InboxEntry) bool {
 }
 
 type inboxPreviewPage struct {
+	History *inputHistoryNavigation `json:"history,omitempty"`
 	MemberIdentity
 	ExpiredThrough uint64           `json:"expired_through"`
 	SnapshotSeq    uint64           `json:"snapshot_seq"`
@@ -57,6 +85,10 @@ type inboxPreviewPage struct {
 func (s *Store) projectInboxPreview(page InboxPage, status InboxStatus) (inboxPreviewPage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.projectInboxPreviewLocked(page, status)
+}
+
+func (s *Store) projectInboxPreviewLocked(page InboxPage, status InboxStatus) (inboxPreviewPage, error) {
 	v := inboxPreviewPage{MemberIdentity: page.MemberIdentity, ExpiredThrough: page.ExpiredThrough, SnapshotSeq: page.SnapshotSeq,
 		NextAfter: page.NextAfter, HasMore: page.HasMore, Entries: []inboxEntryView{}, Status: status}
 	v.Status.Batch = nil
@@ -75,8 +107,8 @@ func (s *Store) projectInboxPreview(page InboxPage, status InboxStatus) (inboxPr
 			v.Entries = append(v.Entries, projectInboxEntry(e, followupSourceSummary{}))
 			continue
 		}
-		source := followupSourceSummary{Seq: e.Seq, SourceRef: referenceDigest("src_", e.MemberIdentity, e.Seq, e.Item.DeliveryID), Status: "not_checked"}
-		if _, err := os.Stat(s.eventPath(e.MemberIdentity, e.Seq)); err == nil {
+		source := followupSourceSummary{Seq: e.Seq, SourceRef: inputSourceRef(e), Status: "not_checked"}
+		if _, err := os.Stat(s.inputEventPath(e)); err == nil {
 			link, err := s.loadFollowupEventLocked(e)
 			if err != nil {
 				return v, err
@@ -95,7 +127,7 @@ func (s *Store) projectInboxPreview(page InboxPage, status InboxStatus) (inboxPr
 		if !admission.Verified || admission.Decision == notification.AdmissionExcluded {
 			entry.AutomaticAdmission = &admission
 		}
-		if origin, ok := origins[e.Seq]; ok {
+		if origin, ok := origins[inboxEntryPosition(e)]; ok {
 			entry.Origin = &origin
 		}
 		v.Entries = append(v.Entries, entry)

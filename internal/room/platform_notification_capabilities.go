@@ -1,6 +1,7 @@
 package room
 
 import (
+	"github.com/go-aie/teamx/internal/platform/gitlab"
 	"github.com/go-aie/teamx/internal/platform/lark"
 	"github.com/go-aie/teamx/internal/platform/notification"
 )
@@ -10,6 +11,8 @@ import (
 // message/action matching to participate in the common Inbox protocol.
 func notificationCapabilities(provider string) notification.Capabilities {
 	switch provider {
+	case "gitlab":
+		return notification.Capabilities{Input: gitlab.InputCapability()}
 	case "lark":
 		return lark.NotificationCapabilities()
 	default:

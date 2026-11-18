@@ -4,8 +4,10 @@ package room
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/go-aie/teamx/internal/inputstream"
 	"maps"
 	"math"
 	"slices"
@@ -21,10 +23,12 @@ const (
 )
 
 type pendingRead struct {
-	id      string
-	from    uint64
-	through uint64
-	expires time.Time
+	id       string
+	from     uint64
+	through  uint64
+	expires  time.Time
+	snapshot uint64
+	entries  []uint64
 }
 
 // Room owns committed business state. Disk writes see immutable candidates;
@@ -65,10 +69,14 @@ func NewRoom(store *Store) (*Room, error) {
 	if err != nil {
 		return nil, err
 	}
+	confirmed := make(map[string]ReadConfirmation)
+	for id, proof := range state.ReadProofs {
+		confirmed[id] = proof.Confirmation
+	}
 	return &Room{
 		state: state, save: store.SaveRoom, now: time.Now,
 		targets: make(map[string]actorx.Addr), pages: make(map[string]pendingRead),
-		confirmed: make(map[string]ReadConfirmation),
+		confirmed: confirmed,
 	}, nil
 }
 
@@ -141,6 +149,7 @@ func (r *Room) Remove(ctx actorx.Context, msg RemoveMember, reply actorx.Reply[M
 	result.Attached = false
 	next := r.candidate()
 	next.Members = slices.Delete(next.Members, i, i+1)
+	delete(next.ReadProofs, m.MembershipID)
 	return commitRoom(r, ctx, next, reply, result, func() {
 		delete(r.targets, m.MembershipID)
 		delete(r.pending, m.MembershipID)
@@ -275,6 +284,36 @@ func (r *Room) Clear(ctx actorx.Context, msg ClearMessages, reply actorx.Reply[C
 		reply.Complete(result, nil)
 		return nil
 	}
+	for _, p := range r.pages {
+		if r.state.InputLog != nil && r.now().Before(p.expires) && p.from < msg.ThroughSeq {
+			return ErrBusy
+		}
+	}
+	if r.state.InputLog != nil {
+		records := []inputstream.StoredRecord{}
+		sizes := map[uint64]int{}
+		facts := inputstream.ReleaseSet{Revision: inputstream.Ref("clear_", r.state.Revision, msg.ThroughSeq), Records: map[uint64]inputstream.ReleaseFacts{}}
+		partition := roomPartitionRef(r.state.RoomIdentity)
+		for _, m := range r.state.Messages {
+			if m.Seq > msg.ThroughSeq {
+				break
+			}
+			b, _ := json.Marshal(m)
+			sizes[m.Seq] = len(b) + 1
+			records = append(records, inputstream.StoredRecord{Location: inputstream.Location{Partition: partition, Seq: m.Seq}, CreatedAt: m.CreatedAt, ReceivedAt: m.CreatedAt})
+			pendingEvent := m.Event != nil && slices.ContainsFunc(r.state.Members, func(member MemberState) bool {
+				return member.ReadThrough < m.Seq && slices.Contains(m.Event.Targets, member.MembershipID)
+			})
+			facts.Records[m.Seq] = inputstream.ReleaseFacts{Revision: facts.Revision, SourceConfirmed: true, BusinessReleased: true, Skipped: true, InFlight: pendingEvent}
+		}
+		plan, err := inputstream.PlanReclaim(inputstream.Snapshot{Partition: partition, Revision: r.state.Revision, Through: r.state.LatestSeq, Reclaimed: r.state.ClearedThrough}, inputstream.RoomPolicy(), records, sizes, facts, r.now())
+		if err != nil {
+			return err
+		}
+		if plan.Through != msg.ThroughSeq {
+			return ErrBusy
+		}
+	}
 	next := r.candidate()
 	// Clone the retained suffix so deleted text is no longer held by the slice.
 	next.Messages = append([]RoomMessage{}, next.Messages[msg.ThroughSeq-next.ClearedThrough:]...)
@@ -368,7 +407,7 @@ func (r *Room) Read(_ actorx.Context, msg ReadMessages) (ReadPage, error) {
 	}
 	bytes := 0
 	for _, m := range r.state.Messages[from-r.state.ClearedThrough : snapshot-r.state.ClearedThrough] {
-		self := msg.Mode == ReadUnread && m.Author == msg.Caller.Author
+		self := !roomVisible(m, msg.Caller, msg.Mode != ReadUnread) || msg.Mode == ReadUnread && !roomDeliverable(m, MemberIdentity{RoomIdentity: r.state.RoomIdentity, AgentID: msg.Caller.ID, MembershipID: msg.Caller.MembershipID})
 		if !self {
 			if len(page.Messages) == maxPageMessages || bytes+len(m.Text) > maxPageBytes {
 				break
@@ -394,7 +433,11 @@ func (r *Room) Read(_ actorx.Context, msg ReadMessages) (ReadPage, error) {
 		}
 		page.ReadReceipt = id
 		page.ExpiresAt = r.now().Add(readReceiptTTL)
-		r.pages[msg.Caller.MembershipID] = pendingRead{id: id, from: from, through: page.ScannedThrough, expires: page.ExpiresAt}
+		seqs := make([]uint64, 0, len(page.Messages))
+		for _, message := range page.Messages {
+			seqs = append(seqs, message.Seq)
+		}
+		r.pages[msg.Caller.MembershipID] = pendingRead{id: id, from: from, through: page.ScannedThrough, expires: page.ExpiresAt, snapshot: snapshot, entries: seqs}
 		delete(r.confirmed, msg.Caller.MembershipID)
 	}
 	return page, nil
@@ -426,6 +469,12 @@ func (r *Room) Confirm(ctx actorx.Context, msg ConfirmRead, reply actorx.Reply[R
 	m := next.Members[i]
 	count, _ := r.unread(m)
 	result := ReadConfirmation{MemberIdentity: msg.MemberIdentity, ReadReceipt: p.id, ReadThrough: p.through, UnreadCount: count, Revision: next.Revision + 1}
+	proof := roomReadProof{Confirmation: result, From: p.from, Snapshot: p.snapshot, Entries: p.entries}
+	proof.Digest = proof.digest()
+	if next.ReadProofs == nil {
+		next.ReadProofs = make(map[string]roomReadProof)
+	}
+	next.ReadProofs[msg.MembershipID] = proof
 	err = commitRoom(r, ctx, next, reply, result, func() {
 		delete(r.pages, msg.MembershipID)
 		r.confirmed[msg.MembershipID] = result
@@ -481,7 +530,7 @@ func (r *Room) caller(c Caller) (int, error) {
 func (r *Room) unread(m MemberState) (int, uint64) {
 	count, newest := 0, uint64(0)
 	for _, message := range r.state.Messages[m.ReadThrough-r.state.ClearedThrough:] {
-		if message.Author != (Author{Kind: "agent", ID: m.AgentID}) {
+		if roomDeliverable(message, MemberIdentity{RoomIdentity: r.state.RoomIdentity, AgentID: m.AgentID, MembershipID: m.MembershipID}) {
 			count++
 			newest = message.Seq
 		}
@@ -499,6 +548,7 @@ func (r *Room) candidate() RoomSnapshot {
 	next.Messages, next.Members = slices.Clone(next.Messages), slices.Clone(next.Members)
 	next.IntegrationReceipts = maps.Clone(next.IntegrationReceipts)
 	next.FollowupNoticeReceipts = maps.Clone(next.FollowupNoticeReceipts)
+	next.ReadProofs = maps.Clone(next.ReadProofs)
 	return next
 }
 

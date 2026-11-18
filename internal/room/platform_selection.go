@@ -42,7 +42,8 @@ type platformSelectionDraft struct {
 	EventsFilter     *gitlab.EventsFilter `json:"events_filter,omitempty"`
 }
 type platformSelection struct {
-	Schema int `json:"schema"`
+	ResultActor Author `json:"result_actor,omitzero"`
+	Schema      int    `json:"schema"`
 	MemberIdentity
 	ID               string                   `json:"operation_id"`
 	Source           RoomMessage              `json:"source"`
@@ -131,6 +132,9 @@ func (m *roomManager) readPlatformSelectionLocked(id string) (platformSelection,
 		return s, err
 	}
 	if s.Schema != 1 || s.ID != id || !tool.OpaqueID(s.RoomInstance) || !safeMembershipID(s.MembershipID) || !validText(s.RoomID) || !validText(s.AgentID) || !validHumanEvidence(s.Source) || s.Version == 0 || s.CreatedAt.IsZero() || !s.ExpiresAt.After(s.CreatedAt) || !validSelectionInput(s.Input) || !validSelectionDraft(s.Input, s.Draft) || !validSelectionDraft(s.Input, s.InitialDraft) {
+		return s, ErrInvalid
+	}
+	if s.ResultActor != (Author{}) && (s.ResultActor.Kind != "human" || !validText(s.ResultActor.ID)) {
 		return s, ErrInvalid
 	}
 	if s.Status == "waiting" {
@@ -449,6 +453,7 @@ func (m *roomManager) submitPlatformSelection(ctx context.Context, req platformS
 	}
 	s.Status = "completed"
 	s.ResultVersion = 1
+	s.ResultActor = req.Caller.Author
 	s.SubmittedVersion = s.Version
 	s.Version++
 	s.ResultAt = time.Now().UTC()
@@ -568,6 +573,7 @@ func (m *roomManager) servePlatformSelection(w http.ResponseWriter, r *http.Requ
 					}
 					s.Draft = *req.Draft
 				} else {
+					s.ResultActor = req.Caller.Author
 					s.Status = "cancelled"
 					s.ResultVersion = 1
 					s.SubmittedVersion = s.Version
@@ -649,6 +655,13 @@ func (m *roomManager) servePlatformSelection(w http.ResponseWriter, r *http.Requ
 				err = ErrRequest
 			}
 			if err == nil && result == nil {
+				if human && (action == "submit" || action == "cancel") {
+					if svc, _ := m.runtimeServiceLocked(s.RoomIdentity); svc != nil && svc.unifiedInputs {
+						// Try to publish the saved result before replying. The worker
+						// still retries the same event if the Room is temporarily busy.
+						m.deliverPlatformSelectionLocked(r.Context(), s.ID)
+					}
+				}
 				if req.Notify != nil && *req.Notify == "inbox" {
 					m.startConnectNotificationsLocked()
 				}
@@ -716,7 +729,7 @@ func (m *roomManager) readSelectionNotificationLocked(s platformSelection) (plat
 	if err != nil {
 		return n, err
 	}
-	if n.Schema != 1 || n.MemberIdentity != s.MemberIdentity || n.OperationID != s.ID || n.Mode != "inbox" && n.Mode != "none" || n.HandledVersion > s.ResultVersion || n.Event != nil && (s.ResultVersion == 0 || !reflect.DeepEqual(*n.Event, selectionResultEvent(s))) || n.Receipt != nil && (n.Event == nil || n.Receipt.MemberIdentity != s.MemberIdentity || n.Receipt.Seq == 0 || n.Receipt.DeliveryID != (InboxEntry{MemberIdentity: s.MemberIdentity, Type: InboxTaskEventType, TaskEvent: n.Event}).metadata().deliveryID) {
+	if !validRoomOperationIntent(n) || n.Schema != 1 || n.MemberIdentity != s.MemberIdentity || n.OperationID != s.ID || n.Mode != "inbox" && n.Mode != "none" || n.HandledVersion > s.ResultVersion || n.Event != nil && (s.ResultVersion == 0 || !reflect.DeepEqual(*n.Event, selectionResultEvent(s))) || n.Receipt != nil && (n.Event == nil || n.Receipt.MemberIdentity != s.MemberIdentity || n.Receipt.Seq == 0 || n.Receipt.DeliveryID != (InboxEntry{MemberIdentity: s.MemberIdentity, Type: InboxTaskEventType, TaskEvent: n.Event}).metadata().deliveryID) {
 		return n, ErrInvalid
 	}
 	return n, nil
@@ -748,7 +761,12 @@ func (m *roomManager) deliverPlatformSelectionLocked(ctx context.Context, id str
 		return
 	}
 	n, err := m.readSelectionNotificationLocked(s)
-	if err != nil || n.Mode != "inbox" || n.Receipt != nil || n.HandledVersion == s.ResultVersion {
+	svc, _ := m.runtimeServiceLocked(s.RoomIdentity)
+	if err != nil || n.Receipt != nil || n.RoomReceipt != nil {
+		return
+	}
+	handled := n.HandledVersion == s.ResultVersion
+	if (svc == nil || !svc.unifiedInputs) && (n.Mode != "inbox" || handled) {
 		return
 	}
 	if n.Event == nil {
@@ -758,5 +776,12 @@ func (m *roomManager) deliverPlatformSelectionLocked(ctx context.Context, id str
 			return
 		}
 	}
-	m.deliverOperationResultLocked(ctx, s.MemberIdentity, n, m.saveSelectionNotificationLocked)
+	actor := s.ResultActor
+	if actor.Kind == "" {
+		actor = Author{Kind: "system", ID: "system"}
+	}
+	m.deliverOperationResultLocked(ctx, s.MemberIdentity, n, m.saveSelectionNotificationLocked, roomOperationDelivery{
+		Actor: actor, Summary: "选择结果已更新",
+		Notify: n.Mode == "inbox" && !handled && s.Status != "cancelled" && s.Status != "expired",
+	})
 }

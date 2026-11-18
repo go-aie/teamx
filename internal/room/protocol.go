@@ -161,25 +161,26 @@ type InboxInput struct {
 
 type InspectMember struct{ MemberIdentity }
 type MemberStatus struct {
-	ExecutionID          uint64           `json:"execution_id,omitempty"` // Cumulative admitted attempt; never reused by Session rotation.
-	Stopping             bool             `json:"stopping,omitempty"`
-	CurrentGeneration    string           `json:"current_generation,omitempty"`
-	PauseRevision        uint64           `json:"-"`
-	SessionGeneration    string           `json:"session_generation,omitempty"`
-	SessionStartUsed     uint64           `json:"session_start_used"`
-	SessionResetRequired bool             `json:"session_reset_required,omitempty"`
-	Inbox                *InboxStatus     `json:"inbox,omitempty"`
-	InboxRecovery        *inboxRecovery   `json:"inbox_recovery,omitempty"`
-	Rotation             *SessionRotation `json:"rotation,omitempty"`
-	Notification         *UnreadChanged   `json:"notification"`
-	Status               string           `json:"status,omitempty"`
-	Paused               bool             `json:"paused"`
-	Active               bool             `json:"active"`
-	Agent                *AgentSnapshot   `json:"agent,omitempty"`
-	Error                string           `json:"error,omitempty"`
-	Notice               *ExecutionNotice `json:"notice,omitempty"` // User-facing message; Error retains operator diagnostics.
-	SessionTurns         *SessionTurns    `json:"session_turns,omitempty"`
-	TurnBudget           *TurnBudget      `json:"turn_budget,omitempty"`
+	ExecutionID          uint64             `json:"execution_id,omitempty"` // Cumulative admitted attempt; never reused by Session rotation.
+	Stopping             bool               `json:"stopping,omitempty"`
+	CurrentGeneration    string             `json:"current_generation,omitempty"`
+	PauseRevision        uint64             `json:"-"`
+	SessionGeneration    string             `json:"session_generation,omitempty"`
+	SessionStartUsed     uint64             `json:"session_start_used"`
+	SessionResetRequired bool               `json:"session_reset_required,omitempty"`
+	Inbox                *InboxStatus       `json:"inbox,omitempty"`
+	InboxRecovery        *inboxRecovery     `json:"inbox_recovery,omitempty"`
+	InputRecovery        *inputRecoveryView `json:"input_recovery,omitempty"`
+	Rotation             *SessionRotation   `json:"rotation,omitempty"`
+	Notification         *UnreadChanged     `json:"notification"`
+	Status               string             `json:"status,omitempty"`
+	Paused               bool               `json:"paused"`
+	Active               bool               `json:"active"`
+	Agent                *AgentSnapshot     `json:"agent,omitempty"`
+	Error                string             `json:"error,omitempty"`
+	Notice               *ExecutionNotice   `json:"notice,omitempty"` // User-facing message; Error retains operator diagnostics.
+	SessionTurns         *SessionTurns      `json:"session_turns,omitempty"`
+	TurnBudget           *TurnBudget        `json:"turn_budget,omitempty"`
 }
 
 type ExecutionNotice struct {

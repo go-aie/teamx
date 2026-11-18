@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/go-aie/teamx/internal/agent/dsh"
+	"github.com/go-aie/teamx/internal/inputstream"
 )
 
 var errDSHPaused = errors.New("DSH member paused; inspect backend failure before continuing")
@@ -92,10 +93,11 @@ type dshComponent interface {
 }
 
 type dshBackend struct {
-	models      *modelExecution
-	model       *modelSessionSnapshot
-	credentials *modelCredentials
-	access      *serverAccess
+	inputService *service
+	models       *modelExecution
+	model        *modelSessionSnapshot
+	credentials  *modelCredentials
+	access       *serverAccess
 	// Nil only for explicit CLI compatibility or isolated adapter tests.
 	inboxMCP        *service
 	store           *Store
@@ -350,17 +352,31 @@ func (b dshBackend) componentOptions(opts SessionOptions, ref dshReference) (dsh
 		return dsh.Options{}, errors.Join(errDSHPaused, ErrIdentity)
 	}
 	toolEnv["TEAMX_CLI"] = opts.CLIPath
+	if b.inputService != nil {
+		toolEnv["TEAMX_INPUT_CONTRACT"] = inputstream.Contract
+	}
 	operator := humanOperator()
 	if b.access != nil {
 		operator = b.access.operator
 	}
+	guide := dshAgentGuide
+	if b.inputService != nil {
+		guide = unifiedAgentGuide()
+	}
 	instructions := strings.Join([]string{
-		strings.TrimSpace(dshAgentGuide),
+		strings.TrimSpace(guide),
 		fmt.Sprintf("## Session identity\n\nYou are member %q in Room %q (instance %q, membership %q).\nThe human operator is %q (mention %q).",
 			opts.AgentID, opts.RoomID, opts.RoomInstance, opts.MembershipID, operator, "@"+operator),
 		"## Member role\n\n" + strings.TrimSpace(p.Instructions),
 	}, "\n\n")
-	if b.inboxMCP != nil {
+	if b.inputService != nil {
+		if b.inboxMCP != nil {
+			instructions += "\nInput transport: HTTP MCP. Use discovered inbox_list/read; formal input CLI is disabled. Room history and business CLI remain available."
+		} else {
+			instructions += "\nInput transport: CLI. Use \"$TEAMX_CLI\" inbox list [--limit N | --cursor REF], or inbox read --stream REF [--limit N]. Execute one inbox read per shell tool call and wait for its result before continuing. Room history and business CLI remain available."
+		}
+	}
+	if b.inboxMCP != nil && b.inputService == nil {
 		instructions = strings.ReplaceAll(instructions, `"$TEAMX_CLI" inbox read`, "the discovered inbox_read MCP tool")
 		instructions = strings.ReplaceAll(instructions, "Complete output is confirmed by the CLI", "Complete Room output is confirmed by the CLI; complete Inbox output is confirmed by the MCP service")
 		instructions += "\n\nInbox entry mode: " + mcpInboxContract + ". Use the discovered inbox_read MCP tool with turn_number=current_turn. Omit cursor to retry the first page; pass next_cursor to continue until has_more=false. Consumption confirms complete server output, independently of business success. Missing images remain unverified. The consumption CLI is disabled for this turn. On an Inbox recovery wake, read first and check existing matters/action receipts before continuing; never repeat confirmed actions or resend unknown outcomes."
@@ -371,6 +387,7 @@ func (b dshBackend) componentOptions(opts SessionOptions, ref dshReference) (dsh
 
 	component := dsh.Options{BinaryPath: p.BinaryPath, BinaryArgs: p.BinaryArgs, Artifact: p.Artifact, Workspace: p.Workspace,
 		StateDir: filepath.Join(filepath.Dir(opts.StatePath), ref.Directory), Instructions: instructions, Model: p.Model.Clone(), ToolEnv: toolEnv, Limits: dsh.Limits{TextBytes: 64 << 10, TurnTimeout: b.turnTimeout}}
+	component.InputBridge = b.inputService != nil
 	if b.store.observe != nil {
 		component.ObserveActivity = func() { b.store.changed("activity", opts.MemberIdentity) }
 	}
@@ -448,6 +465,7 @@ func dshNotification(input UnreadChanged) string {
 }
 
 type dshSession struct {
+	input     *inputSession
 	revoke    func()
 	inbox     *mcpInboxSession
 	component dshComponent
@@ -507,7 +525,52 @@ func (s *dshSession) Run(ctx context.Context, input UnreadChanged) (err error) {
 		s.backend.store.activeDSH.CompareAndDelete(s.opts.MemberIdentity, s)
 		s.backend.store.changed("activity", s.opts.MemberIdentity)
 	}()
-	prompt := []dsh.ContentBlock{{Type: "text", Text: "Member policy context (JSON):\n" + string(body) + "\n\n" + dshTimeContext(settings, started, s.timeZone) + "\n" + dshNotification(input)}}
+	notification := dshNotification(input)
+	if s.backend.inputService != nil {
+		svc := s.backend.inputService
+		ref, _, e := s.backend.reference(s.opts)
+		if e != nil {
+			return dshFailure(e)
+		}
+		if s.inbox != nil {
+			s.input, err = s.inbox.inputFor(ctx, policy.CurrentTurn, ref.Directory)
+		} else {
+			p, e := svc.inputStorage(s.opts.MemberIdentity)
+			if e != nil {
+				return dshFailure(e)
+			}
+			s.input, err = newInputSession(ctx, svc, p, ref.Directory, policy.CurrentTurn, s.component.SupportsImages(), func(ctx context.Context) error { return ctx.Err() })
+		}
+		if err != nil {
+			return dshFailure(err)
+		}
+		c, e := s.input.catalog(ctx)
+		if e != nil {
+			return dshFailure(e)
+		}
+		s.input.storage.discovery.Lock()
+		s.input.storage.keepInputCatalog(c)
+		s.input.storage.discovery.Unlock()
+		directory, exposure, e := c.Directory()
+		if e != nil {
+			return dshFailure(e)
+		}
+		directoryValue, e := s.input.chargeDiscovery(directory)
+		if e != nil {
+			return dshFailure(e)
+		}
+		if _, supplied := directoryValue.(inputstream.Directory); supplied {
+			if e = s.input.storage.saveInputExposure(s.input.execution, exposure); e != nil {
+				return dshFailure(e)
+			}
+		}
+		b, e := json.Marshal(directoryValue)
+		if e != nil {
+			return dshFailure(e)
+		}
+		notification = "Input directory (JSON):\n" + string(b)
+	}
+	prompt := []dsh.ContentBlock{{Type: "text", Text: "Member policy context (JSON):\n" + string(body) + "\n\n" + dshTimeContext(settings, started, s.timeZone) + "\n" + notification}}
 	var materials *dshMaterials
 	if s.backend.prepare != nil {
 		materials, err = s.backend.prepare(ctx, input, policy.CurrentTurn, s.component.SupportsImages())
@@ -542,7 +605,32 @@ func (s *dshSession) Run(ctx context.Context, input UnreadChanged) (err error) {
 	if err := ctx.Err(); err != nil {
 		return dshFailure(err)
 	}
+	if s.input != nil && s.backend.access != nil {
+		token, revoke, e := s.backend.access.issueInputBinding(s.input)
+		if e != nil {
+			return dshFailure(e)
+		}
+		defer revoke()
+		if private, ok := s.component.(interface{ AddRedactionSecret(string) }); ok {
+			private.AddRedactionSecret(token)
+		}
+		ref, _, e := s.backend.reference(s.opts)
+		if e != nil {
+			return dshFailure(e)
+		}
+		path := filepath.Join(filepath.Dir(s.opts.StatePath), ref.Directory, "input-execution.json")
+		if e = os.MkdirAll(filepath.Dir(path), 0700); e != nil {
+			return dshFailure(e)
+		}
+		if e = saveDSHDiagnostic(path, map[string]string{"token": token, "endpoint": s.backend.inputService.endpoint}); e != nil {
+			return dshFailure(e)
+		}
+		defer os.Remove(path)
+	}
 	result, runErr := s.component.RunPrompt(ctx, prompt)
+	if s.input != nil {
+		runErr = errors.Join(runErr, s.input.storage.repository.Barrier(s.input.execution))
+	}
 	if s.inbox != nil {
 		runErr = errors.Join(runErr, s.inbox.confirmationError())
 	}

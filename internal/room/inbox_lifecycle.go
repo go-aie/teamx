@@ -174,6 +174,9 @@ func (s *Store) planInboxMaintenance(a *AgentInbox, msg MaintainInbox) (inboxCon
 }
 
 func (s *service) maintainInboxLocal(ctx context.Context, id MemberIdentity, pending map[string]bool, now time.Time) error {
+	if s.unifiedInputs {
+		return nil
+	} // Manager supplies namespaced authoritative inventory through maintainUnifiedInputs.
 	s.inboxMu.Lock()
 	defer s.inboxMu.Unlock()
 	// Avoid creating an empty Inbox for every member on every poll.
@@ -207,5 +210,8 @@ func (m *roomManager) maintainNotificationInboxLocked(ctx context.Context, meta 
 	}
 	defer svc.changes.RUnlock()
 	id := MemberIdentity{RoomIdentity: meta.Key.Owner, AgentID: meta.Target.AgentID, MembershipID: meta.Target.MembershipID}
+	if svc.unifiedInputs {
+		return roomNotificationError(svc.maintainUnifiedInputs(ctx, id, m.inputInventoryLocked(id), m.notifications.Now()))
+	}
 	return roomNotificationError(svc.maintainInboxLocal(ctx, id, m.notifications.PendingDeliveriesLocked(meta.Key.Owner, meta.Target), m.notifications.Now()))
 }

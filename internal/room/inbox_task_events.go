@@ -58,6 +58,9 @@ func (s *Store) loadTaskEventLocked(id MemberIdentity, event InboxTaskEvent) err
 // There is no public CLI or HTTP endpoint for publishing arbitrary events.
 // Persist the immutable result reference before handing it to the Inbox actor.
 func (s *service) receiveTaskEvent(ctx context.Context, id MemberIdentity, event InboxTaskEvent) (InboxReceipt, error) {
+	if s.unifiedInputs {
+		return InboxReceipt{}, ErrVersion
+	}
 	s.inboxMu.Lock()
 	defer s.inboxMu.Unlock()
 	addr, err := s.inboxLocked(ctx, id)
@@ -165,7 +168,7 @@ func (s *Store) linkTaskEvent(id MemberIdentity, e InboxEntry, turn uint64) erro
 
 // Validate associations independently after body reclamation. A missing cursor,
 // event, delivery receipt or association must never silently hide consumed work.
-func (s *Store) validateTaskEventsLocked(id MemberIdentity, expired, latest, consumed uint64, receipts map[string]inboxIndex) error {
+func (s *Store) validateTaskEventsLocked(id MemberIdentity, expired, latest, consumed uint64, receipts map[string]inboxIndex, entryAt func(uint64) (InboxEntry, error)) error {
 	for _, group := range []string{"events", "deliveries", "links"} {
 		files, err := os.ReadDir(filepath.Join(s.dir, "agents", id.MembershipID, "task-events", group))
 		if errors.Is(err, os.ErrNotExist) {
@@ -213,7 +216,7 @@ func (s *Store) validateTaskEventsLocked(id MemberIdentity, expired, latest, con
 						return err
 					}
 				} else {
-					body, err := s.inboxEntryLocked(id, d.Seq)
+					body, err := entryAt(d.Seq)
 					if err != nil {
 						return err
 					}

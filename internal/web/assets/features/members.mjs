@@ -48,7 +48,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     $("agent-model-alert").textContent = modelError ? "模型异常" : runtimeError ? "运行异常" : pending ? "切换中" : "";
     $("agent-model-alert").hidden = !$("agent-model-alert").textContent;
     const quickActions = $("agent-quick-actions");
-    quickActions.hidden = expanded || !member?.execution || !(member.execution.active || member.status === "running" || member.execution.inbox_recovery) || !!member.execution.paused;
+    quickActions.hidden = expanded || !member?.execution || !(member.execution.active || member.status === "running" || (member.execution.inbox_recovery || member.execution.input_recovery)) || !!member.execution.paused;
     if (!quickActions.hidden) renderMemberActions(member, quickActions, true);
   }
 
@@ -97,6 +97,9 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       const data = await request(`/v1/tools/bindings?${q}`);
       if (!current() || !toolsCurrent(v) || read !== v.cliRead) return;
       v.cli = data;v.cliConnected=true;
+      if (!v.attentionBusy) {
+        try { const attention=await request("/v1/member/input-attention",{...v.identity,agent_id:v.member.agent_id,membership_id:v.member.membership_id,expected_version:0});if(current()&&toolsCurrent(v)&&read===v.cliRead)v.attention=attention; } catch { /* Older runtimes do not expose input preferences. */ }
+      }
       if (!background) v.cliResult = null;
     } catch (error) {
       if (!current() || !toolsCurrent(v) || read !== v.cliRead) return;
@@ -211,6 +214,28 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     list.dataset.stacked=String(required>width);
   }
 
+  function inputAttentionControl(item,target) {
+    const v=memberToolsView;
+    if(!v || !toolsCurrent(v) || target?.membership_id!==v.member.membership_id || item?.supports_notifications!==true)return null;
+      const preference=v?.attention?.available && v.attention.sources.find(p=>p.platform_id===item.id);
+      if(preference) {
+        const field=document.createElement("label"),select=document.createElement("select");field.className="member-input-attention";field.textContent="关注级别";
+        for(const [value,text] of [["high","重点"],["normal","普通"],["low","较少关注"]])select.append(new Option(text,value));
+        select.className="field-control";select.value=preference.attention;select.disabled=!!v.attentionBusy;select.setAttribute("aria-label",`${item.name} 关注级别`);
+        select.addEventListener("change",async()=>{const next=select.value;v.attentionBusy=true;select.disabled=true;try {
+          const updated=await request("/v1/member/input-attention",{...v.identity,agent_id:target.agent_id,membership_id:target.membership_id,platform_id:item.id,source_version:preference.source_version,attention:next,expected_version:preference.version});
+          if(toolsCurrent(v)){v.attention=updated;v.attentionError="";}
+        }catch(error){if(toolsCurrent(v)){select.value=preference.attention;v.attentionError=error.message || "保存失败，请刷新后重试。";
+          try{const latest=await request("/v1/member/input-attention",{...v.identity,agent_id:target.agent_id,membership_id:target.membership_id,expected_version:0});if(toolsCurrent(v))v.attention=latest;}catch{}}}finally{v.attentionBusy=false;if(toolsCurrent(v)){renderMemberPlatforms();notificationsUI.renderNotificationSource();}}});
+        field.append(select);return field;
+      }
+    return null;
+  }
+  function renderInputAttention(item,target,container) {
+    const control=inputAttentionControl(item,target);container.replaceChildren(...(control ? [control] : []));container.hidden=!control;
+    if(control && memberToolsView?.attentionError){const error=document.createElement("p");error.className="form-error";error.textContent=memberToolsView.attentionError;container.append(error);}
+  }
+
   function renderMemberPlatforms() {
     const ws=workspaceUI.workspaceView,target=notificationsUI.memberNotificationTarget(),v=memberToolsView;
     $("member-notification-sources").hidden=!state.managed || !ws || !target;
@@ -222,7 +247,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     $("member-platform-count").hidden=!loaded;
     const inlineAccountIssues = new Set();
     $("member-notification-platforms").replaceChildren(...configured.map(item=>{
-      const view=notificationsUI.notificationView(ws,item,target),hasNotifications=["gitlab","lark"].includes(item.provider);
+      const view=notificationsUI.notificationView(ws,item,target),hasNotifications=item.supports_notifications===true;
       const row=notificationsUI.notificationRow(ws,item,target,true);
       row.className+=" member-platform-row";
       row.children[0].setAttribute("aria-label",hasNotifications ? `编辑 ${item.name} 的通知设置` : `${item.name} 平台详情`);
@@ -235,8 +260,10 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       const input=row.children[1],label=document.createElement("label");input.id=`member-platform-notify-${item.id}`;label.htmlFor=input.id;label.className="member-platform-notify-label";label.textContent=hasNotifications ? "通知" : "无通知能力";
       input.hidden=!hasNotifications;if(!notificationsUI.notificationConfigured(item,view) && onboardingUI.onboarding.busy)input.disabled=true;label.hidden=!hasNotifications;
       row.children[2].textContent=[notificationsUI.notificationConfigured(item,view) ? notificationsUI.notificationIssue(ws,item,view) : "",toolIssue(v,item)].filter(Boolean).join(" ");row.children[2].hidden=!row.children[2].textContent;row.children[2].dataset.kind=v?.cliResult?.tool===item.id && !v.cliResult.error ? "success" : "error";
+      if(v?.attentionError){row.children[2].textContent=v.attentionError;row.children[2].hidden=false;}
       const info=row.children[0],issue=row.children[2],controls=document.createElement("div");controls.className="member-platform-controls";
       controls.append(label,input,toolSwitch(v,item));
+      const attention=inputAttentionControl(item,target);if(attention)controls.append(attention);
       const accountActions=document.createElement("div");accountActions.className="member-platform-account-actions";
       const selection=v?.cli?.selections?.find(s=>s.agent_id===target.agent_id && s.membership_id===target.membership_id && s.platform_id===item.id), gaps=selection?.availability?.capabilities?.filter(c=>c.configured!==false && c.state!=="ready") || [];
       const recovery = accountRecovery(item,view,selection,gaps,v?.cliResult);
@@ -431,7 +458,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     if (exhausted) effects.push(`追加 ${budget.grant || 16} 回合`);
     notice("agent-enable-hint", effects.length ? `启用协作将${effects.join("，并")}。` : "");
     notice("agent-error", executionMessage(member));
-    $("agent-error").classList.toggle("form-error", !recovering(member) && !execution?.inbox_recovery);
+    $("agent-error").classList.toggle("form-error", !recovering(member) && !(execution?.inbox_recovery || execution?.input_recovery));
     renderDiagnostics("agent", recovering(member) ? "" : execution?.error);
     if (memberToolsView?.cli) {
       const signature = JSON.stringify([state.connected, state.catalogConnected, discussionBusy()]);
@@ -473,7 +500,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
   function renderMemberActions(member, actions, pauseOnly = false) {
     const execution = member.execution;
     const signature = JSON.stringify([member.agent_id, agentName(member), member.membership_id, member.status, execution?.paused, execution?.active,
-      execution?.session_reset_required, execution?.inbox_recovery, execution?.inbox?.recovery_blocked, state.connected, discussionBusy(), memberBusy.has(member.membership_id), member.unread_count, execution?.agent?.turn?.status, pauseOnly]);
+      execution?.session_reset_required, execution?.inbox_recovery, execution?.input_recovery, execution?.inbox?.recovery_blocked, state.connected, discussionBusy(), memberBusy.has(member.membership_id), member.unread_count, execution?.agent?.turn?.status, pauseOnly]);
     if (actions.dataset.signature === signature) return;
     actions.dataset.signature = signature;
     actions.replaceChildren();
@@ -486,7 +513,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       button.addEventListener("click", () => controlMember(member, action)); actions.append(button);
     };
     add(enable ? "启用协作" : "暂停", enable ? "run" : "pause");
-    if (execution.inbox_recovery && !execution.active && !execution.paused && !execution.inbox?.recovery_blocked && ["completed", "failed", "interrupted"].includes(execution.agent?.turn?.status) && ["inbox_waiting", "inbox_stalled"].includes(member.status)) add("继续读取收件箱", "inbox/continue");
+    if ((execution.inbox_recovery || execution.input_recovery) && !execution.active && !execution.paused && !execution.inbox?.recovery_blocked && !execution.input_recovery?.blocked && ["completed", "failed", "interrupted"].includes(execution.agent?.turn?.status) && ["inbox_waiting", "inbox_stalled"].includes(member.status)) add("继续读取收件箱", "inbox/continue");
   }
 
   function renderExecutionHint() {
@@ -689,7 +716,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     $("activity-turn").textContent = execution?.agent ? `${execution.agent.turn_number}` +
       (turn ? ` · ${statusNames[turn.status] || turn.status}` : " · 尚未运行") : "暂不可用";
     notice("activity-execution-error", executionMessage(member));
-    $("activity-execution-error").classList.toggle("form-error", !recovering(member) && !execution?.inbox_recovery);
+    $("activity-execution-error").classList.toggle("form-error", !recovering(member) && !(execution?.inbox_recovery || execution?.input_recovery));
     const live = !!data.current_output, output = data.current_output || data.last_output;
     renderDiagnostics("activity", recovering(member) ? "" : [...new Set([execution?.error, output?.error, rotation?.error].filter(Boolean))].join("\n"));
     if (!output) {
@@ -965,6 +992,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     openMemberTools,
     openMemberPlatform,
     renderMemberPlatforms,
+    renderInputAttention,
     renderMemberModelStatus,
     memberPlatformItems,
     memberRole,

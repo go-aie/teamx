@@ -57,8 +57,12 @@ type larkHarness struct {
 }
 
 func newLarkHarness(t *testing.T) *larkHarness {
+	return newLarkHarnessWithInputLog(t, false)
+}
+
+func newLarkHarnessWithInputLog(t *testing.T, unified bool) *larkHarness {
 	t.Helper()
-	m, r, svc, _, members := cliToolFixture(t, "exit 0")
+	m, r, svc, _, members := cliToolFixtureWithInputLog(t, "exit 0", unified)
 	m.toolCatalog = append(m.toolCatalog, tool.Definition{Name: "lark", Provider: "lark", InternalOnly: true})
 	m.bindPlatformReferences(svc)
 	dir := t.TempDir()

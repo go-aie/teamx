@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-aie/teamx/internal/inputstream"
 	"github.com/go-aie/teamx/internal/platform"
 )
 
@@ -34,6 +35,10 @@ type storedTarget struct {
 // The original Inbox entry is the authority for source text and delivery.
 // This separate record owns resolution evidence, never a rewritten source.
 type followupEvent struct {
+	// Independent location proof for source evidence that outlived a body
+	// and its original delivery receipt.
+	ReclaimedSourceProof string                `json:"reclaimed_source_proof,omitempty"`
+	Location             *inputstream.Location `json:"input_location,omitempty"`
 	followupHeader
 	Seq         uint64                     `json:"seq"`
 	DeliveryID  string                     `json:"delivery_id"`
@@ -283,7 +288,7 @@ func (s *Store) loadFollowupEventLocked(e InboxEntry) (followupEvent, error) {
 	if e.payloadType() != InboxPlatformNotification {
 		return r, ErrRequest
 	}
-	if err := readSnapshot(s.eventPath(e.MemberIdentity, e.Seq), &r, followupBytes); err != nil {
+	if err := readSnapshot(s.inputEventPath(e), &r, followupBytes); err != nil {
 		return r, err
 	}
 	contextOnly := inboxContextOnly(e)
@@ -304,11 +309,15 @@ func (s *Store) followupEventAtLocked(id MemberIdentity, seq uint64) (followupEv
 	if !errors.Is(err, ErrInboxExpired) {
 		return followupEvent{}, err
 	}
+	return s.expiredFollowupEventLocked(id, seq)
+}
+
+func (s *Store) expiredFollowupEventLocked(id MemberIdentity, seq uint64) (followupEvent, error) {
 	var r followupEvent
 	if err := readSnapshot(s.eventPath(id, seq), &r, followupBytes); err != nil {
 		return r, err
 	}
-	e = InboxEntry{MemberIdentity: id, Seq: seq}
+	e := InboxEntry{MemberIdentity: id, Seq: seq}
 	e.Item.DeliveryID, e.Item.Source = r.DeliveryID, r.Source
 	if !validText(r.DeliveryID) || !validIntegrationSource(r.Source) {
 		return r, ErrInvalid
@@ -318,7 +327,7 @@ func (s *Store) followupEventAtLocked(id MemberIdentity, seq uint64) (followupEv
 
 func (s *Store) validateFollowupEventLocked(e InboxEntry, r followupEvent, contextOnly bool) (followupEvent, error) {
 	if r.Version != followupSchema || r.MemberIdentity != e.MemberIdentity || r.Seq != e.Seq || r.DeliveryID != e.Item.DeliveryID ||
-		r.Source != e.Item.Source || r.SourceRef != referenceDigest("src_", e.MemberIdentity, e.Seq, e.Item.DeliveryID) || r.Revision == 0 {
+		r.Source != e.Item.Source || r.SourceRef != inputSourceRef(e) || !reflect.DeepEqual(r.Location, e.Location) || r.Revision == 0 {
 		return r, ErrInvalid
 	}
 	if err := validateFollowupResolution(e, r.Resolution, r.Access); err != nil {
@@ -404,6 +413,9 @@ func validateFollowupResolution(e InboxEntry, r platform.TargetResolution, a pla
 // All identity/unit files are deterministic and commit before the event link.
 // Repeating after any partial failure repairs linkage without replacing state.
 func (s *Store) recordFollowupResolution(id MemberIdentity, seq, turn, expected uint64, r platform.TargetResolution, access platform.AccessContext) (followupEvent, error) {
+	return s.recordInputResolution(id, seq, nil, turn, expected, r, access)
+}
+func (s *Store) recordInputResolution(id MemberIdentity, seq uint64, location *inputstream.Location, turn, expected uint64, r platform.TargetResolution, access platform.AccessContext) (followupEvent, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.checkFollowupsLocked(id, true); err != nil {
@@ -415,12 +427,17 @@ func (s *Store) recordFollowupResolution(id MemberIdentity, seq, turn, expected 
 	if _, err := s.runningTurnLocked(id, turn); err != nil {
 		return followupEvent{}, err
 	}
-	e, err := s.inboxEntryLocked(id, seq)
+	e, err := s.businessInputLocked(id, seq, location)
 	if err != nil {
 		return followupEvent{}, err
 	}
 	if e.payloadType() != InboxPlatformNotification {
 		return followupEvent{}, ErrRequest
+	}
+	if location != nil && expected == 0 {
+		if err := s.authorizeInputLocationLocked(id, turn, *location); err != nil {
+			return followupEvent{}, err
+		}
 	}
 	if err := validateFollowupResolution(e, r, access); err != nil {
 		return followupEvent{}, err
@@ -430,14 +447,14 @@ func (s *Store) recordFollowupResolution(id MemberIdentity, seq, turn, expected 
 		return old, err
 	}
 	if errors.Is(err, os.ErrNotExist) {
-		if _, statErr := os.Stat(s.eventPath(id, seq)); statErr == nil {
+		if _, statErr := os.Stat(s.inputEventPath(e)); statErr == nil {
 			return old, ErrInvalid
 		}
 	}
 	if old.Revision != expected {
 		return old, ErrConflict
 	}
-	if expected == 0 {
+	if expected == 0 && location == nil {
 		var c inboxConsumption
 		if err := readSnapshot(filepath.Join(s.dir, "inboxes", id.MembershipID, "consumption.json"), &c, maxPrivateFileBytes); err != nil {
 			return old, err
@@ -451,7 +468,7 @@ func (s *Store) recordFollowupResolution(id MemberIdentity, seq, turn, expected 
 		if !r.ObjectVerified {
 			old.LastAttempt = &followupResolutionAttempt{Resolution: r, Access: access}
 			old.Revision++
-			return old, s.save(s.eventPath(id, seq), old, followupBytes)
+			return old, s.save(s.inputEventPath(e), old, followupBytes)
 		}
 		if targetReference(id, objectIdentity(*r.Target)) != old.ObjectRef {
 			return old, ErrConflict
@@ -482,11 +499,11 @@ func (s *Store) recordFollowupResolution(id MemberIdentity, seq, turn, expected 
 			// failed attempt separately, just like a wholly unavailable refresh.
 			old.LastAttempt = &followupResolutionAttempt{Resolution: r, Access: access}
 			old.Revision++
-			return old, s.save(s.eventPath(id, seq), old, followupBytes)
+			return old, s.save(s.inputEventPath(e), old, followupBytes)
 		}
 	}
 	link := followupEvent{followupHeader: followupHeader{followupSchema, id}, Seq: seq, DeliveryID: e.Item.DeliveryID,
-		SourceRef: referenceDigest("src_", id, seq, e.Item.DeliveryID), Source: e.Item.Source, Resolution: r, Access: access, Revision: expected + 1, ContextOnly: inboxContextOnly(e)}
+		Location: e.Location, SourceRef: inputSourceRef(e), Source: e.Item.Source, Resolution: r, Access: access, Revision: expected + 1, ContextOnly: inboxContextOnly(e)}
 	if r.ObjectVerified {
 		object, err := s.saveTargetLocked(id, objectIdentity(*r.Target))
 		if err != nil {
@@ -503,7 +520,7 @@ func (s *Store) recordFollowupResolution(id MemberIdentity, seq, turn, expected 
 		}
 		link.ObjectRef, link.TargetRef = object.Ref, target.Ref
 	}
-	return link, s.save(s.eventPath(id, seq), link, followupBytes)
+	return link, s.save(s.inputEventPath(e), link, followupBytes)
 }
 
 // Opening a native discussion is explicit and idempotent; discovering twenty
@@ -514,6 +531,9 @@ func (s *Store) ensureDiscussionFollowup(id MemberIdentity, seq, turn uint64, ta
 }
 
 func (s *Store) ensureDiscussionFollowupResult(id MemberIdentity, seq, turn uint64, targetRef string) (followupUnit, bool, error) {
+	return s.ensureInputDiscussion(id, seq, "", turn, targetRef)
+}
+func (s *Store) ensureInputDiscussion(id MemberIdentity, seq uint64, sourceRef string, turn uint64, targetRef string) (followupUnit, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.checkFollowupsLocked(id, true); err != nil {
@@ -525,7 +545,15 @@ func (s *Store) ensureDiscussionFollowupResult(id MemberIdentity, seq, turn uint
 	if _, err := s.runningTurnLocked(id, turn); err != nil {
 		return followupUnit{}, false, err
 	}
-	e, err := s.inboxEntryLocked(id, seq)
+	var location *inputstream.Location
+	if sourceRef != "" && seq == 0 {
+		link, _, err := s.inputSourceContentLocked(id, sourceRef)
+		if err != nil {
+			return followupUnit{}, false, err
+		}
+		location = link.Location
+	}
+	e, err := s.businessInputLocked(id, seq, location)
 	if err != nil {
 		return followupUnit{}, false, err
 	}

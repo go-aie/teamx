@@ -3,7 +3,6 @@ package room
 import (
 	"context"
 	"errors"
-	"path/filepath"
 
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/notification"
@@ -35,12 +34,9 @@ func (m *roomManager) toolRosterLocked(ctx context.Context, owner RoomIdentity) 
 		}
 		return members, nil
 	}
-	var snapshot RoomSnapshot
-	if err := readSnapshot(filepath.Join(m.roomDir(owner.RoomID), "room.json"), &snapshot, maxRoomFileBytes); err != nil {
+	snapshot, err := readPublishedRoom(m.roomDir(owner.RoomID), owner)
+	if err != nil {
 		return nil, err
-	}
-	if snapshot.RoomIdentity != owner || snapshot.validate() != nil {
-		return nil, ErrInvalid
 	}
 	return snapshot.Members, nil
 }

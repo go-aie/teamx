@@ -8,6 +8,7 @@ import (
 	"os"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -22,27 +23,28 @@ type turn struct {
 }
 
 type Session struct {
-	opts          Options
-	lock          *os.File
-	process       *process
-	conn          *connection
-	id            string
-	supportsClose bool
-	supportsImage bool
-	mu            sync.Mutex
-	active        *turn
-	closing       bool
-	disabled      error
-	cleanupOnce   sync.Once
-	cleanupDone   chan struct{}
-	openDone      chan struct{}
-	cleanupErr    error
-	secret        string
-	reverseSlots  chan struct{}
-	reverseIDs    map[string]bool
-	workers       sync.WaitGroup
-	reference     reference
-	opened        bool
+	privateSecrets atomic.Pointer[[]string]
+	opts           Options
+	lock           *os.File
+	process        *process
+	conn           *connection
+	id             string
+	supportsClose  bool
+	supportsImage  bool
+	mu             sync.Mutex
+	active         *turn
+	closing        bool
+	disabled       error
+	cleanupOnce    sync.Once
+	cleanupDone    chan struct{}
+	openDone       chan struct{}
+	cleanupErr     error
+	secret         string
+	reverseSlots   chan struct{}
+	reverseIDs     map[string]bool
+	workers        sync.WaitGroup
+	reference      reference
+	opened         bool
 }
 
 // Open creates a fresh session; it never overwrites existing state.

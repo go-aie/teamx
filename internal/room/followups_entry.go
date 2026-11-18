@@ -135,6 +135,12 @@ func (s *service) memberFollowups(ctx context.Context, req apiRequest, path stri
 		}
 		return page, err
 	case "/v1/matters/sources":
+		if p := s.store.platformInputHandle(id); p != nil {
+			if sourceAfter != 0 {
+				return nil, ErrRequest
+			}
+			return s.store.listInputSources(id, q.ObjectRef, q.Cursor, limit)
+		}
 		return s.store.listFollowupSources(id, q.ObjectRef, sourceAfter, limit)
 	case "/v1/matters/source":
 		event, entry, err := s.store.readFollowupSourceContent(id, q.Seq, q.SourceRef)
@@ -142,6 +148,9 @@ func (s *service) memberFollowups(ctx context.Context, req apiRequest, path stri
 			return nil, err
 		}
 		if req.Caller.Kind == "agent" {
+			if event.Location != nil {
+				return projectInputSource(event, entry), nil
+			}
 			if entry == nil {
 				return projectSource(event, InboxEntry{}), nil
 			}
@@ -196,11 +205,19 @@ func (s *service) memberFollowups(ctx context.Context, req apiRequest, path stri
 			}
 			// Locators expose all source pages; native aliases and object/discussion/
 			// message mapping are available through matters source without remote I/O.
-			sources, err := s.store.listFollowupSources(id, unit.ObjectRef, 0, 25)
-			if err != nil {
-				return nil, err
+			if s.store.platformInputHandle(id) != nil {
+				sources, err := s.store.listInputSources(id, unit.ObjectRef, "", 25)
+				if err != nil {
+					return nil, err
+				}
+				view.InputSources = &sources
+			} else {
+				sources, err := s.store.listFollowupSources(id, unit.ObjectRef, 0, 25)
+				if err != nil {
+					return nil, err
+				}
+				view.SourcePage = &sources
 			}
-			view.SourcePage = &sources
 			s.store.mu.Lock()
 			seen := map[string]bool{}
 			display := platform.TargetResolution{ObjectVerified: true, Target: &target.Target}
@@ -245,19 +262,23 @@ func (s *service) memberFollowups(ctx context.Context, req apiRequest, path stri
 	}
 	switch path {
 	case "/v1/matters/resolve":
-		if _, err := s.store.readFollowupSource(id, q.Seq, q.SourceRef); err != nil {
+		link, err := s.store.readFollowupSource(id, q.Seq, q.SourceRef)
+		if err != nil {
 			return nil, err
 		}
-		event, err := s.resolveFollowupEvent(ctx, id, q.Seq, q.TurnNumber, true, s.referenceResolver)
+		event, err := s.resolveInputSource(ctx, id, link.Seq, link.Location, q.TurnNumber, true, s.referenceResolver)
 		if err != nil {
 			return nil, err
 		}
 		s.store.mu.Lock()
-		entry, err := s.store.inboxEntryLocked(id, q.Seq)
+		entry, err := s.store.businessInputLocked(id, link.Seq, link.Location)
 		s.store.mu.Unlock()
+		if link.Location != nil {
+			return projectInputSource(event, &entry), err
+		}
 		return projectSource(event, entry), err
 	case "/v1/matters/ensure":
-		unit, reused, err := s.store.ensureDiscussionFollowupResult(id, q.Seq, q.TurnNumber, q.TargetRef)
+		unit, reused, err := s.store.ensureInputDiscussion(id, q.Seq, q.SourceRef, q.TurnNumber, q.TargetRef)
 		if err != nil {
 			return nil, err
 		}

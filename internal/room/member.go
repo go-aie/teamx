@@ -19,6 +19,9 @@ const defaultMaxTurns uint64 = 16
 //
 //actorx:actor
 type MemberAgent struct {
+	Inputs               func(context.Context) (unifiedInputStatus, error)
+	ClaimInputRecovery   func(context.Context) error
+	inputStatus          *unifiedInputStatus
 	Observe              func()
 	ObserveEnabled       func() bool
 	observedStatus       *MemberStatus
@@ -180,6 +183,11 @@ func (m *MemberAgent) status() MemberStatus {
 		status = "backend_blocked"
 	case m.paused:
 		status = "paused"
+	case m.inputStatus != nil && m.inputStatus.Recovery != nil:
+		status = "inbox_waiting"
+		if m.inputStatus.Recovery.Attempts >= 3 || m.inputStatus.Blocked != "" {
+			status = "inbox_stalled"
+		}
 	case m.inboxRecovery != nil:
 		status = "inbox_waiting"
 		if m.inboxRecovery.Attempts >= 3 || m.inboxRecoveryBlock != "" || m.state.Turn == nil || m.state.Turn.Status != "completed" {
@@ -213,6 +221,9 @@ func (m *MemberAgent) status() MemberStatus {
 	if m.inboxRecovery != nil {
 		copy := *m.inboxRecovery
 		result.InboxRecovery = &copy
+	}
+	if v := m.inputStatus; v != nil && v.Recovery != nil {
+		result.InputRecovery = &inputRecoveryView{Pending: v.Pending, Attempts: v.Recovery.Attempts, Since: v.Recovery.Since, NextAt: v.Recovery.Next, Blocked: v.Blocked}
 	}
 	if m.work != nil {
 		result.ExecutionID = m.turnsUsed
@@ -262,6 +273,13 @@ func (m *MemberAgent) Control(ctx actorx.Context, msg ControlMember) (MemberStat
 	}
 	switch msg.Action {
 	case "inbox_continue":
+		if m.Inputs != nil {
+			if err := m.continueInput(); err != nil {
+				return m.status(), err
+			}
+			m.schedule()
+			return m.status(), nil
+		}
 		if err := m.continueInbox(); err != nil {
 			return m.status(), err
 		}
@@ -434,6 +452,9 @@ func (m *MemberAgent) roomReady() bool {
 }
 
 func (m *MemberAgent) inboxReady() bool {
+	if m.Inputs != nil {
+		return !m.inboxPolling && m.inputStatus != nil && (m.inputStatus.Ready || m.retry && m.inputStatus.Pending > 0 && m.inputStatus.Blocked == "")
+	}
 	if m.inboxPolling {
 		return false
 	}
@@ -448,6 +469,34 @@ func (m *MemberAgent) inboxReady() bool {
 }
 
 func (m *MemberAgent) pollInbox() {
+	if m.Inputs != nil {
+		if m.inboxPolling || m.now().Before(m.inboxNext) {
+			return
+		}
+		m.inboxPolling = true
+		m.inboxNext = m.now().Add(250 * time.Millisecond)
+		_, err := actorx.StartTask(m.owner, m.Inputs, func(v unifiedInputStatus, err error) bool {
+			m.inboxPolling = false
+			if err != nil {
+				m.inputStatus = nil
+				m.lastError = err.Error()
+			} else {
+				changed := m.inputStatus == nil || m.inputStatus.Progress != v.Progress
+				m.inputStatus = &v
+				if changed && m.due.IsZero() {
+					m.due = m.now().Add(m.MergeWindow)
+				}
+			}
+			m.schedule()
+			return true
+		}, nil)
+		if err != nil {
+			m.inboxPolling = false
+			m.lastError = err.Error()
+		}
+		return
+	}
+
 	if m.Inbox == nil || m.inboxPolling || m.now().Before(m.inboxNext) {
 		return
 	}
@@ -666,7 +715,7 @@ func (m *MemberAgent) StartGranted(_ actorx.Context, msg startGrantedTurn) error
 		m.schedule()
 		return nil
 	}
-	if m.inboxReady() {
+	if m.inboxReady() && m.Inputs == nil {
 		i := m.inbox
 		through := i.inputThrough()
 		end := min(i.LatestSeq, through+inboxBatchSize)
@@ -713,6 +762,9 @@ func (m *MemberAgent) startTurn(input UnreadChanged, snapshotSeq, readThrough ui
 		return
 	}
 	opts, backend, store := m.Options, m.Backend, m.Store
+	unified := m.Inputs != nil
+	claimRecovery := m.ClaimInputRecovery
+	recoverInput := m.inputStatus != nil && m.inputStatus.Recovery != nil
 	work := &memberTurn{session: m.session, state: m.state}
 	// Capture immutable inputs before transferring the Session to the task.
 	cancel, err := actorx.StartTask(m.owner, func(ctx context.Context) (_ struct{}, runErr error) {
@@ -723,6 +775,16 @@ func (m *MemberAgent) startTurn(input UnreadChanged, snapshotSeq, readThrough ui
 		if input.Inbox != nil {
 			work.state.LastOfferedInboxSeq, work.state.LastOfferedInboxThrough = input.Inbox.SnapshotSeq, input.Inbox.Through
 			work.state.Turn.InboxStart, work.state.Turn.InboxSnapshotSeq = input.Inbox.Through, input.Inbox.SnapshotSeq
+		}
+		if unified {
+			work.state.InputStateRef = "input-state.json"
+			work.state.LastOfferedInboxSeq = 0
+			work.state.LastOfferedInboxThrough = 0
+		}
+		if unified && recoverInput && claimRecovery != nil {
+			if err := claimRecovery(ctx); err != nil {
+				return struct{}{}, err
+			}
 		}
 		if err := store.SaveAgent(work.state); err != nil {
 			return struct{}{}, err

@@ -131,6 +131,15 @@ func (s *Store) followupUnitsLocked(id MemberIdentity, object string) ([]followu
 }
 
 func (s *Store) visitFollowupEventsLocked(id MemberIdentity, visit func(followupEvent) error) error {
+	if err := s.visitLegacyFollowupEvents(id, func(seq uint64) (followupEvent, error) {
+		return s.followupEventAtLocked(id, seq)
+	}, visit); err != nil {
+		return err
+	}
+	return s.visitInputSourcesLocked(id, visit)
+}
+
+func (s *Store) visitLegacyFollowupEvents(id MemberIdentity, eventAt func(uint64) (followupEvent, error), visit func(followupEvent) error) error {
 	files, err := followupFiles(filepath.Join(s.followupRoot(id), "events"), "events")
 	if err != nil {
 		return err
@@ -141,7 +150,7 @@ func (s *Store) visitFollowupEventsLocked(id MemberIdentity, visit func(followup
 		if _, err := fmt.Sscanf(name, "%020d.json", &seq); err != nil || seq == 0 || name != inboxEntryName(seq) {
 			return ErrInvalid
 		}
-		link, err := s.followupEventAtLocked(id, seq)
+		link, err := eventAt(seq)
 		if err != nil {
 			return err
 		}
@@ -376,6 +385,10 @@ func (s *Store) readFollowupSource(id MemberIdentity, seq uint64, sourceRef stri
 	if err := s.checkFollowupsLocked(id, false); err != nil {
 		return followupEvent{}, err
 	}
+	if seq == 0 {
+		link, _, err := s.inputSourceContentLocked(id, sourceRef)
+		return link, err
+	}
 	link, err := s.followupEventAtLocked(id, seq)
 	if err == nil && link.SourceRef != sourceRef {
 		return followupEvent{}, ErrIdentity
@@ -390,6 +403,9 @@ func (s *Store) readFollowupSourceContent(id MemberIdentity, seq uint64, sourceR
 	defer s.mu.Unlock()
 	if err := s.checkFollowupsLocked(id, false); err != nil {
 		return followupEvent{}, nil, err
+	}
+	if seq == 0 {
+		return s.inputSourceContentLocked(id, sourceRef)
 	}
 	link, err := s.followupEventAtLocked(id, seq)
 	if err != nil {

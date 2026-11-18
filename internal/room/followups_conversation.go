@@ -111,7 +111,7 @@ func (s *Store) validateQuestionTargetLocked(id MemberIdentity, u followupUnit, 
 }
 
 func validHumanEvidence(m RoomMessage) bool {
-	return m.Seq != 0 && m.Author.Kind == "human" && validText(m.Author.ID) && m.Source == nil && validText(m.Text) && len(m.Text) <= maxTextBytes && !m.CreatedAt.IsZero()
+	return m.Event == nil && m.Seq != 0 && m.Author.Kind == "human" && validText(m.Author.ID) && m.Source == nil && validText(m.Text) && len(m.Text) <= maxTextBytes && !m.CreatedAt.IsZero()
 }
 
 func (s *Store) validateFollowupConversationLocked(id MemberIdentity, u followupUnit) error {

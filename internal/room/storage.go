@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-aie/teamx/internal/inputstream"
 	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
@@ -34,6 +35,8 @@ const (
 // these blocking methods from controlled tasks, never from their state loop.
 // Agent and Session files have separate owners; they are not a transaction.
 type Store struct {
+	roomInputCache       *roomLogCache
+	platformInputs       map[string]*platformInputStorage // Membership-owned new-format handles; lazy, no routing switch.
 	observe              func(string, MemberIdentity)
 	observeExpiry        func(string, MemberIdentity, time.Time)
 	mcpOperations        mcpTurnOperations
@@ -84,6 +87,10 @@ func defaultSnapshotOps() snapshotOps {
 // Existing room data is checked before the store is returned. Only a missing
 // room.json represents an uninitialized directory; bad data is never reset.
 func OpenStore(dir, roomID string) (*Store, error) {
+	return openStore(dir, roomID, nil)
+}
+
+func lockStore(dir, roomID string) (*Store, error) {
 	if !validText(roomID) {
 		return nil, fmt.Errorf("%w: empty room ID", ErrIdentity)
 	}
@@ -98,16 +105,32 @@ func OpenStore(dir, roomID string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Store{dir: abs, roomID: roomID, lock: lock, ops: defaultSnapshotOps()}
+	return &Store{dir: abs, roomID: roomID, lock: lock, ops: defaultSnapshotOps()}, nil
+}
+
+func openStore(dir, roomID string, upgrade *inputUpgradeOptions) (*Store, error) {
+	s, err := lockStore(dir, roomID)
+	if err != nil {
+		return nil, err
+	}
+	if upgrade != nil {
+		if err := s.EnsureInputFormat(*upgrade); err != nil {
+			_ = s.Close()
+			return nil, err
+		}
+	}
 	room, err := s.loadRoom()
 	if err == nil {
 		s.instance = room.RoomInstance
+		if room.InputLog != nil {
+			err = s.cleanRoomLog(*room.InputLog)
+		}
 	} else if errors.Is(err, os.ErrNotExist) {
 		// Orphaned private state is evidence of an existing Room, not a new
 		// directory that may silently be initialized with an empty history.
 		err = nil
-		for _, name := range []string{"agents", "inboxes", "human-read.json"} {
-			if _, statErr := os.Stat(filepath.Join(abs, name)); !errors.Is(statErr, os.ErrNotExist) {
+		for _, name := range []string{"agents", "inboxes", "human-read.json", "room-input", inputUpgradeDirectory, inputUpgradeJournal} {
+			if _, statErr := os.Stat(filepath.Join(s.dir, name)); !errors.Is(statErr, os.ErrNotExist) {
 				err = fmt.Errorf("%w: missing room.json with existing or inaccessible %s", ErrInvalid, name)
 				break
 			}
@@ -147,6 +170,9 @@ func (s *Store) loadRoom() (RoomSnapshot, error) {
 	if err := readSnapshot(filepath.Join(s.dir, "room.json"), &v, maxRoomFileBytes); err != nil {
 		return v, err
 	}
+	if err := s.materializeRoomInput(&v); err != nil {
+		return RoomSnapshot{}, err
+	}
 	if err := v.validate(); err != nil {
 		return RoomSnapshot{}, fmt.Errorf("%w: room.json: %w", ErrInvalid, err)
 	}
@@ -154,6 +180,27 @@ func (s *Store) loadRoom() (RoomSnapshot, error) {
 		return RoomSnapshot{}, fmt.Errorf("%w: room.json", ErrIdentity)
 	}
 	return v, nil
+}
+
+func (s *Store) materializeRoomInput(v *RoomSnapshot) error {
+	if v.InputLog == nil {
+		return nil
+	}
+	if len(v.Messages) != 0 {
+		return ErrInvalid
+	}
+	return s.loadRoomLog(v)
+}
+
+// Catalog readers may observe a previous Room header immediately before the
+// owning Store reclaims its segments. Retry that read once with the new header.
+func readPublishedRoom(dir string, id RoomIdentity) (RoomSnapshot, error) {
+	s := &Store{dir: dir, roomID: id.RoomID, instance: id.RoomInstance}
+	v, err := s.loadRoom()
+	if errors.Is(err, os.ErrNotExist) {
+		return s.loadRoom()
+	}
+	return v, err
 }
 
 func (s *Store) SaveRoom(v RoomSnapshot) error {
@@ -168,10 +215,24 @@ func (s *Store) SaveRoom(v RoomSnapshot) error {
 	if v.RoomID != s.roomID || (s.instance != "" && v.RoomInstance != s.instance) {
 		return ErrIdentity
 	}
-	if err := s.save(filepath.Join(s.dir, "room.json"), v, maxRoomFileBytes); err != nil {
+	disk := v
+	if v.InputLog != nil {
+		if err := s.roomInputProtected(v.ClearedThrough); err != nil {
+			return err
+		}
+		root, err := s.prepareRoomLog(v)
+		if err != nil {
+			return err
+		}
+		disk.InputLog, disk.Messages = root, []RoomMessage{}
+	}
+	if err := s.save(filepath.Join(s.dir, "room.json"), disk, maxRoomFileBytes); err != nil {
 		return err
 	}
 	s.instance = v.RoomInstance
+	if disk.InputLog != nil {
+		_ = s.cleanRoomLog(*disk.InputLog)
+	}
 	return nil
 }
 
@@ -226,6 +287,15 @@ func (s *Store) SaveAgent(v AgentSnapshot) error {
 	}
 	if err := s.checkAgentInboxTurnLocked(v); err != nil {
 		return err
+	}
+
+	if p := s.platformInputs[v.MembershipID]; p != nil && p.generation != "" {
+		v.InputStateRef = "input-state.json"
+		if v.Turn != nil && v.Turn.Status == "completed" {
+			if err := p.repository.Seal(inputstream.Execution{Generation: p.generation, Turn: v.Turn.Number}); err != nil {
+				return p.result(err)
+			}
+		}
 	}
 	return s.save(path, v, maxPrivateFileBytes)
 }

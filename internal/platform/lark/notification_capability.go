@@ -14,6 +14,7 @@ import (
 // presentation inside this adapter, including historical saved envelopes.
 func NotificationCapabilities() notification.Capabilities {
 	return notification.Capabilities{
+		Input: inputCapability(),
 		Admission: &notification.AdmissionCapability{
 			EvidencePath: conversationEvidencePath,
 			Inspect:      inspectNotificationAdmission,

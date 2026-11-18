@@ -923,6 +923,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     let instance="";try{instance=item?.provider==="gitlab" ? new URL(item.url).host : "";}catch{instance=item?.url || "";}
     $("notification-account").textContent=item ? [item.validation?.username ? `@${item.validation.username}` : "账号待核验",instance].filter(Boolean).join(" · ") : "";
     $("notification-account").title=item?.url || "";
+    membersUI.renderInputAttention(item,target,$("notification-attention"));
     const coexist=target.mode==="inbox" && notificationView(ws,item || {},{})?.config.enabled || target.mode!=="inbox" && ws?.gitlabPlatforms?.some(v=>v.platform_id===id && v.config.target?.mode==="inbox" && v.config.enabled);
     $("notification-destination").textContent=(target.mode==="inbox" ? `发送到 ${name} 的收件箱${member ? "" : "（原成员已移除）"}` : roomsUI.isDirect() ? "发送到当前会话消息流" : "发送到当前房间，成员可见") + (coexist ? "。成员和房间分别订阅时，可能同时看到同一通知。" : "");
     $("notification-sources").hidden=!ws;
@@ -1210,6 +1211,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     stopLarkChatSearch,
     loadNotificationSubscriptions,
     renderNotificationPlatforms,
+    renderNotificationSource,
     notificationPlatforms,
     notificationConfigured,
     notificationView,

@@ -23,7 +23,7 @@ import (
 const serviceShutdownTimeout = 30 * time.Second
 
 func serve(args []string, stdout, stderr io.Writer) error {
-	return serveWithFactory(args, stdout, stderr, newService)
+	return serveWithFactory(args, stdout, stderr, nil)
 }
 
 func serveWithFactory(args []string, stdout, stderr io.Writer, create func(string, string, serviceConfig) (*service, error)) (runErr error) {
@@ -320,7 +320,13 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 		startup.Runtime = &runtime
 	}
 	if !singleRoom {
-		return serveRoomManager(ctx, listener, *dataDir, *teamsDir, serviceConfig{modelStartup: &startup, modelProbe: options.probe, models: models, access: access, settings: settings, endpoint: internalAccessEndpoint(listener.Addr().String()), mergeWindow: *mergeWindow, maxTurns: *maxTurns, dshTurnTimeout: *dshTurnTimeout, inboxExpiry: inboxExpiry, inboxMode: startup.Server.InboxMode, imageMaterials: startup.Server.ImageMaterials}, startup.Runtime, create, ready, stderr)
+		config := serviceConfig{
+			unifiedInputs: options.create == nil, inputUpgradeLog: stderr,
+			modelStartup: &startup, modelProbe: options.probe, models: models, access: access, settings: settings,
+			endpoint: internalAccessEndpoint(listener.Addr().String()), mergeWindow: *mergeWindow, maxTurns: *maxTurns,
+			dshTurnTimeout: *dshTurnTimeout, inboxExpiry: inboxExpiry, inboxMode: startup.Server.InboxMode, imageMaterials: startup.Server.ImageMaterials,
+		}
+		return serveRoomManager(ctx, listener, *dataDir, *teamsDir, config, startup.Runtime, create, ready, stderr)
 	}
 	uiProfiles := profileNames(profiles)
 	cliPath, err := os.Executable()
@@ -332,7 +338,7 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 		return err
 	}
 	svc, err := create(*dir, *roomID, serviceConfig{
-		access: access, settings: settings,
+		access: access, settings: settings, unifiedInputs: options.create == nil, inputUpgradeLog: stderr,
 		endpoint: internalAccessEndpoint(listener.Addr().String()), cliPath: cliPath, mergeWindow: *mergeWindow, maxTurns: *maxTurns,
 		dshProfiles: profiles, uiProfiles: uiProfiles, dshTurnTimeout: *dshTurnTimeout, inboxExpiry: inboxExpiry, inboxMode: startup.Server.InboxMode, imageMaterials: startup.Server.ImageMaterials,
 	})
@@ -402,7 +408,11 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 
 // The manager owns all opened services and every admitted lifecycle operation.
 func serveRoomManager(ctx context.Context, listener net.Listener, dir, teamsDir string, config serviceConfig, defaults *teamRuntime, create func(string, string, serviceConfig) (*service, error), ready func(any) error, stderr io.Writer) (runErr error) {
-	manager, err := newTeamRoomManager(dir, teamsDir, config.maxTurns, defaults)
+	var upgrade *inputUpgradeOptions
+	if config.unifiedInputs {
+		upgrade = &inputUpgradeOptions{log: config.inputUpgradeLog}
+	}
+	manager, err := openTeamRoomManager(dir, teamsDir, config.maxTurns, defaults, upgrade)
 	if err != nil {
 		return err
 	}

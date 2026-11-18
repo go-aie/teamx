@@ -2,6 +2,7 @@ package room
 
 import (
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
@@ -42,13 +43,14 @@ type followupReadResult struct {
 
 type agentFollowupRead struct {
 	MemberIdentity
-	Unit       agentFollowupUnit     `json:"unit"`
-	Target     agentStoredTarget     `json:"target"`
-	Actions    []platform.ActionSpec `json:"registered_actions"`
-	Complete   bool                  `json:"complete"`
-	Detail     *agentFollowupDetails `json:"detail,omitempty"`
-	Details    agentDetailLocator    `json:"details"`
-	SourcePage *followupSourcePage   `json:"source_page,omitempty"`
+	Unit         agentFollowupUnit     `json:"unit"`
+	Target       agentStoredTarget     `json:"target"`
+	Actions      []platform.ActionSpec `json:"registered_actions"`
+	Complete     bool                  `json:"complete"`
+	Detail       *agentFollowupDetails `json:"detail,omitempty"`
+	Details      agentDetailLocator    `json:"details"`
+	InputSources *inputSourcePage      `json:"sources,omitempty"`
+	SourcePage   *followupSourcePage   `json:"source_page,omitempty"`
 }
 
 func projectAgentFollowupRead(id MemberIdentity, result followupReadResult) (agentFollowupRead, error) {
@@ -127,7 +129,7 @@ func projectAgentInboxRead(id MemberIdentity, page referenceInboxPage) (agentRef
 			return agentReferenceInboxPage{}, ErrInvalid
 		}
 		entry := projectInboxEntry(e, *source)
-		if origin, ok := page.Origins[e.Seq]; ok {
+		if origin, ok := page.Origins[inboxEntryPosition(e)]; ok {
 			entry.Origin = &origin
 		}
 		entries = append(entries, entry)
@@ -376,24 +378,29 @@ func projectFollowupPage(p followupPage) agentFollowupPage {
 // Keep the fixed snapshot and all coverage/clearing markers and message bodies.
 // Mention bindings stay internal; Agent text uses the current display names.
 type agentRoomMessage struct {
-	Seq             uint64             `json:"seq"`
-	ClientMessageID string             `json:"client_message_id"`
-	Author          Author             `json:"author"`
-	AgentName       string             `json:"agent_name,omitempty"`
-	Text            string             `json:"text"`
-	Source          *IntegrationSource `json:"source,omitempty"`
-	ReplyTo         uint64             `json:"reply_to,omitempty"`
-	CreatedAt       time.Time          `json:"created_at"`
+	Type            string           `json:"type,omitempty"`
+	Event           *agentRoomEvent  `json:"event,omitempty"`
+	Seq             uint64           `json:"seq"`
+	ClientMessageID string           `json:"client_message_id,omitempty"`
+	Author          Author           `json:"author"`
+	AgentName       string           `json:"agent_name,omitempty"`
+	Text            string           `json:"text"`
+	Source          *agentRoomSource `json:"source,omitempty"`
+	ReplyTo         uint64           `json:"reply_to,omitempty"`
+	CreatedAt       time.Time        `json:"created_at"`
 }
 
 func projectRoomMessage(m RoomMessage) agentRoomMessage {
-	return agentRoomMessage{Seq: m.Seq, ClientMessageID: m.ClientMessageID, Author: m.Author, AgentName: m.AgentName,
+	if m.Event != nil {
+		m.ClientMessageID = ""
+	}
+	return agentRoomMessage{Type: m.Type, Event: projectRoomEvent(m.Event), Seq: m.Seq, ClientMessageID: m.ClientMessageID, Author: m.Author, AgentName: m.AgentName,
 		Text: renderMentionText(m, func(at MessageMention) string {
 			if at.AgentName != "" {
 				return at.AgentName
 			}
 			return at.ID
-		}), Source: m.Source, ReplyTo: m.ReplyTo, CreatedAt: m.CreatedAt}
+		}), Source: projectRoomSource(m.Source), ReplyTo: m.ReplyTo, CreatedAt: m.CreatedAt}
 }
 
 type agentRoomReadPage struct {
@@ -416,4 +423,43 @@ func projectRoomRead(p ReadPage) agentRoomReadPage {
 		messages = append(messages, projectRoomMessage(message))
 	}
 	return agentRoomReadPage{p.RoomIdentity, p.MembershipID, p.SnapshotSeq, p.ClearedThrough, messages, p.FromExclusive, p.ScannedThrough, p.NextAfter, p.HasMore, p.Remaining, p.UnreadCount}
+}
+
+type agentRoomEvent struct {
+	Kind   string `json:"event_type"`
+	Source uint64 `json:"source_seq,omitempty"`
+	Result string `json:"result_ref"`
+}
+
+func projectRoomEvent(e *RoomEvent) *agentRoomEvent {
+	if e == nil {
+		return nil
+	}
+	return &agentRoomEvent{e.Kind, e.SourceSeq, e.ResultRef}
+}
+
+type agentRoomSource struct {
+	Provider string `json:"provider"`
+	Channel  string `json:"channel"`
+	Instance string `json:"instance"`
+	Label    string `json:"label,omitempty"`
+	URL      string `json:"url,omitempty"`
+}
+
+func projectRoomSource(s *IntegrationSource) *agentRoomSource {
+	if s == nil {
+		return nil
+	}
+	label := s.Object
+	if s.Project != "" && !strings.Contains(label, s.Project) {
+		if label != "" {
+			label = s.Project + " / " + label
+		} else {
+			label = s.Project
+		}
+	}
+	if len(label) > 200 {
+		label = strings.ToValidUTF8(label[:197], "") + "…"
+	}
+	return &agentRoomSource{Provider: s.Provider, Channel: s.Channel, Instance: s.Instance, Label: label, URL: s.URL}
 }

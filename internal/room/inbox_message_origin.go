@@ -1,6 +1,7 @@
 package room
 
 import (
+	"github.com/go-aie/teamx/internal/inputstream"
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/notification"
 )
@@ -16,17 +17,24 @@ type inboxMessageOrigin struct {
 	UncertainSend bool   `json:"uncertain_send,omitempty"`
 }
 
+func inboxEntryPosition(e InboxEntry) inputstream.Location {
+	if e.Location != nil {
+		return *e.Location
+	}
+	return inputstream.Location{Seq: e.Seq}
+}
+
 // Store lock held. Check all current members: several Agents can send through
 // the same account. Their exact receipts are shared evidence in this Room.
 // No receipt means only "account", never proof that a human wrote the message.
-func (s *Store) inboxMessageOriginsLocked(entries []InboxEntry) (map[uint64]inboxMessageOrigin, error) {
-	origins := map[uint64]inboxMessageOrigin{}
-	views := map[uint64]notification.View{}
+func (s *Store) inboxMessageOriginsLocked(entries []InboxEntry) (map[inputstream.Location]inboxMessageOrigin, error) {
+	origins := map[inputstream.Location]inboxMessageOrigin{}
+	views := map[inputstream.Location]notification.View{}
 	for _, e := range entries {
 		v := projectInboxEntry(e, followupSourceSummary{}).Item
 		if v.ContextOnly {
-			origins[e.Seq] = inboxMessageOrigin{Kind: "account"}
-			views[e.Seq] = v
+			origins[inboxEntryPosition(e)] = inboxMessageOrigin{Kind: "account"}
+			views[inboxEntryPosition(e)] = v
 		}
 	}
 	if len(origins) == 0 {

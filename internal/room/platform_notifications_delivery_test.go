@@ -90,7 +90,7 @@ func TestGitLabIntegrationCommitFailureDoesNotPublishReceipt(t *testing.T) {
 // assembled here. Scheduler behavior is covered independently below.
 func eventLiveService(t *testing.T, h *eventHarness) *service {
 	t.Helper()
-	svc, err := startService(h.m.roomDir(h.room.RoomID), h.room.RoomID, serviceConfig{updates: h.m.updates}, func(*service, RoomSnapshot) error { return nil })
+	svc, err := startService(h.m.roomDir(h.room.RoomID), h.room.RoomID, serviceConfig{updates: h.m.updates, unifiedInputs: h.m.config.unifiedInputs}, func(*service, RoomSnapshot) error { return nil })
 	if err != nil {
 		t.Fatal(err)
 	}

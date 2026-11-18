@@ -354,6 +354,14 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
   }
 
   function messageElement(message) {
+    if (message.type === "event") {
+      const event = document.createElement("div");
+      event.id = `message-${message.seq}`;
+      event.className = "room-event";
+      event.textContent = message.text;
+      event.title = settingsUI.formatDate(message.created_at);
+      return event;
+    }
     const el = $("message-template").content.firstElementChild.cloneNode(true);
     el.id = `message-${message.seq}`;
     el.classList.toggle("own", ownMessage(message));
@@ -455,7 +463,16 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
       let cached=messageNodes.get(message.seq);
       if(!cached){cached={element:messageElement(message),memberNames:memberNamesKey};rememberMessage(message,cached);}
       const el=cached.element;
-      el.classList.toggle("own", message.author.kind === "human" && message.author.id === state.operator);
+      cached.mentioned = mentionRanges(message.text,operatorNames()).length > 0;
+      cached.day = day;
+      trackMessage(message, cached);
+      if (message.type === "event") {
+        el.title = settingsUI.formatDate(message.created_at);
+        nodes.push(el);
+        continue;
+      }
+      const own = ownMessage(message);
+      el.classList.toggle("own", own);
       if (message.author.kind !== "integration") el.querySelector(".author").textContent = authorName(message.author,message);
       if(message.author.kind==="agent")for(const selector of [".avatar",".author"])el.querySelector(selector).setAttribute("aria-label",`查看 ${authorName(message.author,message)} 的详情`);
       if(message.author.kind==="agent" && cached.memberNames!==memberNamesKey)renderAvatar(document,el.querySelector(".avatar"),{kind:"agent",id:message.author.id,name:authorName(message.author,message),direct:roomsUI.isDirect(),defaultAssistant:roomsUI.isDefaultAssistant()});
@@ -463,14 +480,7 @@ export function createConversation({ env, runtime, roomsUI, notificationsUI, mem
         renderMessageBody(el.querySelector(".message-text"), message.text, state.operator, messageOptions(message));
         cached.memberNames = memberNamesKey;
       }
-      const mentioned=mentionRanges(message.text,operatorNames()).length>0;
-      cached.mentioned = mentioned; cached.day = day;
-      const own = message.author.kind === "human" && message.author.id === state.operator;
-      el.classList.toggle("mentioned", !humanRead.seen(message.seq) && mentioned && !own);
-      if (!own) {
-        if (mentioned) mentionMessages.push(message);
-        if (visit?.entrySnapshot === null || visit?.remainingSeqs.has(message.seq) || mentioned && !humanRead.seen(message.seq)) unreadCandidates.set(message.seq, el);
-      }
+      el.classList.toggle("mentioned", !humanRead.seen(message.seq) && cached.mentioned && !own);
       el.querySelector("time").textContent=settingsUI.formatDate(message.created_at,{hour:"2-digit",minute:"2-digit"});
       el.querySelector("time").title=settingsUI.formatDate(message.created_at);
       if (message.reply_to) renderReference(message,el);

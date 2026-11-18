@@ -102,9 +102,10 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
     card.account.hidden=!op.account_id;card.account.textContent=op.account_id ? `已核验账号：${op.account_id}` : "";
     card.hint.textContent=!op.target_available ? "原 Agent 已移除或替换。可取消剩余操作，或通过完整设置查看连接。" : success ? "连接已保存。可发消息请 Agent 继续。" : terminal ? (op.error_code==="service_restarted" ? "服务已重启，请在完整设置中核对已发生的配置和授权。" : "已完成的应用配置和授权会保留，可请 Agent 核对进度，或进入完整设置处理。") : "请完成应用配置和账号授权；可能需要分两次操作。完成后可发消息请 Agent 继续。";
     const continuation=op.continuation;
-    if(op.target_available && continuation && (continuation.mode==="inbox" || continuation.state==="handled")) {
+    if(op.target_available && continuation && (continuation.mode==="inbox" || continuation.state==="handled" || continuation.state==="page_only")) {
       const reasons={member_paused:"Agent 已暂停",member_failed:"上次回合失败，需恢复处理",inbox_admission_blocked:"前方通知的来源核验受阻",budget_exhausted:"Agent 执行预算已用完",backend_blocked:"Agent Session 需要恢复",checkpoint_failed:"Agent 检查点需要恢复",session_rotating:"助理正在切换会话",session_recovering:"助理正在恢复",target_unavailable:"Agent 暂不可用",target_changed:"原 Agent 已移除或替换",inbox_capacity:"Inbox 容量不足",inbox_busy:"Inbox 正忙",inbox_delivery_unconfirmed:"交付结果待核实"};
-      if(continuation.state==="handled") card.hint.textContent="Agent 已核对此操作结果；后续需求以对话中的处理结果为准。";
+      if(continuation.state==="page_only") card.hint.textContent="操作结果已保存，仅在页面提示，不会自动接续。";
+      else if(continuation.state==="handled") card.hint.textContent="Agent 已核对此操作结果；后续需求以对话中的处理结果为准。";
       else if(terminal) card.hint.textContent=`${success ? "连接已保存" : "操作结果已保存"}，${continuation.state==="consumed" ? "Agent 已读取，等待接续处理" : "等待 Agent 接续"}。${continuation.blocked_reason ? `${reasons[continuation.blocked_reason] || "接续暂受阻"}。` : ""}${continuation.blocked_reason === "session_recovering" ? "恢复后将自动接续。" : "可发消息请 Agent 继续。"}`;
       else card.hint.textContent="请完成应用配置和账号授权；可能需要分两次操作。结果已订阅，完成后将经 Inbox 自动接续。";
     }
@@ -295,6 +296,7 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
     card.submit.hidden=!waiting;card.cancel.hidden=!waiting;card.reload.hidden=!active || !(card.dirty && card.editVersion!==op.version);
     const continuation=op.continuation,reasons={member_paused:"Agent 已暂停",member_failed:"上次回合失败，需恢复处理",inbox_admission_blocked:"前方通知来源核验受阻",budget_exhausted:"执行预算已用完",backend_blocked:"Session 需要恢复",checkpoint_failed:"检查点需要恢复",session_rotating:"助理正在切换会话",session_recovering:"助理正在恢复",target_unavailable:"Agent 暂不可用",target_changed:"原 Agent 已替换",inbox_capacity:"Inbox 容量不足",inbox_busy:"Inbox 正忙",inbox_delivery_unconfirmed:"交付结果待核实"};
     card.hint.textContent=!op.target_available ? "原 Agent 已移除或替换，选择不会转交新成员。" : waiting ? "提交后由 Agent 核验并继续处理。可打开完整设置；关闭设置不会取消此选择。" : continuation?.state==="handled" ? "Agent 已核对选择；实际连接和关注结果以对话反馈为准。" : `选择结果已保存，${continuation?.mode==="inbox" ? "等待 Agent 接续" : "可发消息请 Agent 继续"}。${continuation?.blocked_reason ? `${reasons[continuation.blocked_reason] || "接续暂受阻"}。${continuation.blocked_reason === "session_recovering" ? "恢复后将自动接续。" : "可发消息主动继续。"}` : ""}`;
+    if(op.target_available && continuation?.state==="page_only") card.hint.textContent="选择结果已保存，仅在页面提示，不会自动接续。";
     card.feedback.textContent=platformInteractionState.errors.get(op.operation_id) || (card.dirty && card.editVersion!==op.version ? "草稿已在其他位置更新。你的输入仍保留，请核对后载入最新草稿。" : card.candidateFeedback || "");
     if(!card.loaded && active && !busy){card.loaded=true;void loadSelectionCandidates(card,false);}
   }
@@ -338,6 +340,10 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
       const receipt=await request(`/v1/platforms/selection-interactions/${cancel ? "cancel" : "submit"}`,{...identity,version},undefined,40000);
       if(generation!==s.generation)return;
       card.dirty=false;s.operations=s.operations.map(op=>op.operation_id===id && op.version<=receipt.version ? receipt : op);
+      if(receipt.continuation?.room_seq > state.lastSeq) {
+        runtime.changed("messages");
+        void runtime.observe("messages");
+      }
     }catch(error){if(generation===s.generation)s.errors.set(id,error.code==="conflict" ? "草稿、账号或成员已变化；请核对最新草稿或请 Agent 查询原选择。" : "提交结果未确认，正在查询原选择。请核对结果后继续。");}
     finally{if(generation===s.generation){s.busy.delete(id);renderPlatformInteractions();void refreshPlatformInteractions();}}
   }

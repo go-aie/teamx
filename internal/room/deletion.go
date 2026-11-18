@@ -199,8 +199,8 @@ func (m *roomManager) checkDeletionSettled(target RoomIdentity) error {
 	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return ErrInvalid
 	}
-	// Deletion must not instantiate a Room or require readable chat history.
-	// Hold the same OS lock as OpenStore while checking all execution evidence.
+	// Hold the original Store lock while validating the saved roster and
+	// checking execution evidence for each membership.
 	lock, err := lockDirectory(dir)
 	if err != nil {
 		return err
@@ -302,15 +302,9 @@ type deletionMember struct {
 
 // Deletion accepts only the current validated snapshot, like normal loading.
 func deletionMembers(dir string, expected RoomIdentity) ([]deletionMember, error) {
-	var state RoomSnapshot
-	if err := readSnapshot(filepath.Join(dir, "room.json"), &state, maxRoomFileBytes); err != nil {
+	state, err := readPublishedRoom(dir, expected)
+	if err != nil {
 		return nil, err
-	}
-	if err := state.validate(); err != nil {
-		return nil, err
-	}
-	if state.RoomIdentity != expected {
-		return nil, ErrIdentity
 	}
 	if state.Members == nil || len(state.Members) > maxMembers {
 		return nil, ErrInvalid

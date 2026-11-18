@@ -61,6 +61,7 @@ type apiRequest struct {
 	ReplyTo            uint64                        `json:"reply_to,omitempty"`
 	Mode               ReadMode                      `json:"mode,omitempty"`
 	Latest             int                           `json:"latest,omitempty"`
+	InboxHistoryCursor string                        `json:"history_cursor,omitempty"`
 	After              *uint64                       `json:"after,omitempty"`
 	SnapshotSeq        *uint64                       `json:"snapshot_seq,omitempty"`
 	Limit              int                           `json:"limit,omitempty"`
@@ -106,6 +107,8 @@ type apiError struct {
 }
 
 type service struct {
+	inputAdapters             map[notification.SourceID]notificationAdapter
+	unifiedInputs             bool
 	updates                   *uiUpdateHub
 	updatesDone               chan struct{}
 	updatesStop               sync.Once
@@ -195,7 +198,14 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 	if config.maxTurns == 0 {
 		config.maxTurns = defaultMaxTurns
 	}
-	store, err := OpenStore(dir, roomID)
+	var upgrade *inputUpgradeOptions
+	if config.unifiedInputs {
+		upgrade = &inputUpgradeOptions{log: config.inputUpgradeLog}
+		if config.inputAdapters == nil {
+			config.inputAdapters = defaultNotificationAdapters(nil)
+		}
+	}
+	store, err := openStore(dir, roomID, upgrade)
 	if err != nil {
 		return nil, err
 	}
@@ -211,6 +221,9 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 			return nil, idErr
 		}
 		state = RoomSnapshot{Version: formatVersion, RoomIdentity: RoomIdentity{RoomID: roomID, RoomInstance: instance}, Messages: []RoomMessage{}, Members: []MemberState{}}
+		if config.unifiedInputs {
+			state.InputLog = &roomLogRoot{Version: 1, Segments: []roomLogSegment{}}
+		}
 		err = store.SaveRoom(state)
 	}
 	if err != nil {
@@ -261,7 +274,7 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 	if err != nil {
 		return nil, err
 	}
-	s := &service{
+	s := &service{unifiedInputs: state.InputLog != nil, inputAdapters: config.inputAdapters,
 		updates: updates, updatesDone: make(chan struct{}), ownUpdates: config.updates == nil,
 		agentNames:           config.agentNames,
 		access:               config.access,
@@ -308,6 +321,14 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 	}
 	if err := s.loadDiscussionRestart(); err != nil {
 		return nil, err
+	}
+	if s.unifiedInputs {
+		for _, member := range state.Members {
+			id := MemberIdentity{RoomIdentity: state.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
+			if _, err := s.inputStorage(id); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if err := assemble(s, state); err != nil {
 		return nil, err
@@ -755,6 +776,10 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, ErrBusy)
 		return
 	}
+	if r.URL.Path == "/v1/inputs" {
+		s.serveInputCLI(w, r)
+		return
+	}
 	if s.serveUI(w, r) || web.Serve(w, r) {
 		return
 	}
@@ -901,12 +926,20 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		result, err = callRoomWrite[PostReceipt](r.Context(), s.room, PostMessage{RoomIdentity: req.RoomIdentity, Caller: req.Caller,
 			ClientMessageID: req.ClientMessageID, Text: req.Text, ReplyTo: req.ReplyTo, Mentions: req.Mentions, inferMentions: inferred})
 	case "/v1/read":
+		if s.unifiedInputs && req.Caller.Kind == "agent" && req.Mode == ReadUnread {
+			err = ErrVersion
+			break
+		}
 		result, err = s.room.Call[ReadPage](r.Context(), ReadMessages{RoomIdentity: req.RoomIdentity, Caller: req.Caller,
 			Mode: req.Mode, Latest: req.Latest, After: req.After, SnapshotSeq: req.SnapshotSeq, Limit: req.Limit, Peek: req.Peek})
 		if err == nil {
 			result = s.labelMessage(result.(ReadPage))
 		}
 	case "/v1/read/confirm":
+		if s.unifiedInputs {
+			err = ErrVersion
+			break
+		}
 		if req.Caller.Kind != "agent" {
 			err = ErrIdentity
 			break

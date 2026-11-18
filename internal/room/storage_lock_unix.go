@@ -39,3 +39,11 @@ func unlockDirectory(f *os.File) error {
 	// Release ownership explicitly before closing the owning descriptor.
 	return errors.Join(syscall.Flock(int(f.Fd()), syscall.LOCK_UN), f.Close())
 }
+
+func inputUpgradeAvailableSpace(path string) (uint64, error) {
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(path, &stat); err != nil {
+		return 0, err
+	}
+	return uint64(stat.Bavail) * uint64(stat.Bsize), nil
+}

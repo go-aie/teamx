@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-aie/teamx/internal/agent/dsh"
+	"github.com/go-aie/teamx/internal/inputstream"
 )
 
 const (
@@ -23,6 +25,8 @@ Queries: "$TEAMX_CLI" read --latest 20 --json (or read --all --json); matters li
 `
 
 type dshRecoveryContext struct {
+	unified         bool
+	inputMode       string
 	room            *agentRoomReadPage
 	roomUnavailable bool
 	roomSnapshotSeq uint64
@@ -50,9 +54,31 @@ func (s *Store) recoveryBusinessContext(id MemberIdentity, turn TurnRecord) (*ds
 		}
 		return r, nil
 	}
+
 	preferred := map[string]bool{}
-	if err := s.visitFollowupEventsLocked(id, func(e followupEvent) error {
-		if e.Seq > turn.InboxStart && e.Seq <= turn.InboxSnapshotSeq && e.ObjectRef != "" {
+	if p := s.platformInputs[id.MembershipID]; p != nil && p.generation != "" {
+		// Prefer only the actual pending/last platform page. Room-only turns preserve
+		// this reference, including when its original body was legally reclaimed.
+		page, err := p.repository.RecoveryPage()
+		if err != nil {
+			return nil, err
+		}
+		locations := map[inputstream.Location]bool{}
+		if page != nil {
+			for _, l := range page.Entries {
+				locations[l] = true
+			}
+		}
+		if err := s.visitInputSourcesLocked(id, func(link followupEvent) error {
+			if link.Location != nil && locations[*link.Location] && link.ObjectRef != "" {
+				preferred[link.ObjectRef] = true
+			}
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+	} else if err := s.visitFollowupEventsLocked(id, func(e followupEvent) error {
+		if e.Location == nil && e.Seq > turn.InboxStart && e.Seq <= turn.InboxSnapshotSeq && e.ObjectRef != "" {
 			preferred[e.ObjectRef] = true
 		}
 		return nil
@@ -99,6 +125,8 @@ func (s *service) prepareDSHRecoveryContext(ctx context.Context, input UnreadCha
 	if err != nil {
 		return nil, fmt.Errorf("prepare Session recovery records: %w", err)
 	}
+	r.unified = s.unifiedInputs
+	r.inputMode = s.inboxMode
 	r.roomSnapshotSeq = turn.SnapshotSeq
 	preview, cancel := context.WithTimeout(ctx, dshRecoveryPreviewTimeout)
 	defer cancel()
@@ -154,7 +182,18 @@ func (r *dshRecoveryContext) appendTo(prompt []dsh.ContentBlock) ([]dsh.ContentB
 		if err != nil {
 			return nil, err
 		}
-		text := dshRecoveryGuide + string(body)
+		guide := dshRecoveryGuide
+		if r.unified {
+			guide = strings.ReplaceAll(guide, "Read normal Room/Inbox input before acting.", "Read the relevant saved input through the unified stream tools before acting.")
+			guide = strings.ReplaceAll(guide, "matters source --seq SEQ --source SRC", "matters source --source SRC")
+			guide = strings.ReplaceAll(guide, "by saved source/sequence", "by saved source_ref")
+			entry := "inbox_read"
+			if r.inputMode == "cli" {
+				entry = `"$TEAMX_CLI" inbox read`
+			}
+			guide = strings.ReplaceAll(guide, "inbox read (normal association of offered unmapped input)", entry+" (select a relevant stream for normal formal delivery)")
+		}
+		text := guide + string(body)
 		result := append(append([]dsh.ContentBlock(nil), prompt...), dsh.ContentBlock{Type: "text", Text: text})
 		if len(text) <= dshRecoveryBytes && materialPromptFits(result) {
 			return result, nil

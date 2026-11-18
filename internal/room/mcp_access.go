@@ -3,6 +3,8 @@ package room
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 
@@ -90,8 +92,57 @@ func (a *serverAccess) serveMCP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.mu.Lock()
+	input := a.inputBindings[sha256.Sum256([]byte(token))]
 	e := a.mcpExecutions[sha256.Sum256([]byte(token))]
 	a.mu.Unlock()
+	if input != nil {
+		if err := input.check(r.Context()); err != nil {
+			accessError(w, 403, "identity_mismatch")
+			return
+		}
+		call := r.Header.Get("X-Teamx-Call")
+		if call == "" || len(call) > 128 {
+			accessError(w, 400, "missing_call_binding")
+			return
+		}
+		data, err := io.ReadAll(io.LimitReader(r.Body, 128<<10+1))
+		if err != nil || len(data) > 128<<10 {
+			accessError(w, 400, "invalid_request")
+			return
+		}
+		var msg struct {
+			Method  string   `json:"method"`
+			Digests []string `json:"received_digests"`
+		}
+		if json.Unmarshal(data, &msg) != nil {
+			accessError(w, 400, "invalid_request")
+			return
+		}
+		if msg.Method == "teamx/received" {
+			if err := input.receiveGroupBodies(r.Context(), call, msg.Digests); err != nil {
+				writeAPIError(w, err)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte("{}"))
+			return
+		}
+		if input.service.inboxMode == "cli" {
+			accessError(w, 403, "input_entry_mode")
+			return
+		}
+		r.Body = io.NopCloser(strings.NewReader(string(data)))
+		ctx := context.WithValue(r.Context(), inputSessionKey{}, input)
+		ctx = context.WithValue(ctx, inputCallKey{}, call)
+		a.mu.Lock()
+		if a.inputMCP == nil {
+			a.inputMCP = newInputMCPHTTP(true)
+		}
+		h := a.inputMCP
+		a.mu.Unlock()
+		h.ServeHTTP(w, r.WithContext(ctx))
+		return
+	}
 	if e == nil {
 		accessError(w, 401, "unauthorized")
 		return
@@ -110,7 +161,35 @@ func (a *serverAccess) serveMCP(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx = context.WithValue(ctx, mcpIdentityKey{}, e.identity)
 	ctx = context.WithValue(ctx, mcpExecutionKey{}, e)
+	if e.inbox != nil && e.inbox.service.unifiedInputs {
+		a.mu.Lock()
+		if a.inputMCP == nil {
+			a.inputMCP = newInputMCPHTTP(true)
+		}
+		h := a.inputMCP
+		a.mu.Unlock()
+		h.ServeHTTP(w, r.WithContext(ctx))
+		return
+	}
 	a.mcp.ServeHTTP(w, r.WithContext(ctx))
+}
+
+func (a *serverAccess) issueInputBinding(s *inputSession) (string, func(), error) {
+	if err := s.check(context.Background()); err != nil {
+		return "", nil, err
+	}
+	token, err := randomAccessToken()
+	if err != nil {
+		return "", nil, err
+	}
+	key := sha256.Sum256([]byte(token))
+	a.mu.Lock()
+	if a.inputBindings == nil {
+		a.inputBindings = map[[32]byte]*inputSession{}
+	}
+	a.inputBindings[key] = s
+	a.mu.Unlock()
+	return token, func() { a.mu.Lock(); delete(a.inputBindings, key); a.mu.Unlock() }, nil
 }
 
 // Shared ACP declaration; temporary credentials never become model arguments.

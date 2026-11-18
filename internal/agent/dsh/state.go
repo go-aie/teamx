@@ -106,16 +106,22 @@ func recoveryReference(dir string) (reference, error) {
 }
 
 func configDigest(opts Options) string {
+	bridge := ""
+	if opts.InputBridge {
+		sum := sha256.Sum256(inputBridgePlugin)
+		bridge = hex.EncodeToString(sum[:])
+	}
 	ref := ""
 	if opts.Credential != nil {
 		ref = opts.Credential.Ref
 	}
 	data, _ := json.Marshal(struct {
+		InputBridge   string `json:",omitempty"`
 		Instructions  string
 		Model         ModelConfig
 		CredentialRef string          `json:",omitempty"`
 		MCPServers    []MCPHTTPServer `json:",omitempty"`
-	}{opts.Instructions, opts.Model, ref, mcpIdentity(opts.MCPServers)})
+	}{bridge, opts.Instructions, opts.Model, ref, mcpIdentity(opts.MCPServers)})
 	hash := sha256.Sum256(data)
 	return hex.EncodeToString(hash[:])
 }
@@ -251,6 +257,11 @@ func prepare(opts *Options, resume bool) (*os.File, reference, error) {
 			return nil, ref, err
 		}
 	}
+	if opts.InputBridge {
+		if err := os.WriteFile(filepath.Join(dir, "input_bridge.mjs"), inputBridgePlugin, 0600); err != nil {
+			return nil, ref, err
+		}
+	}
 	if err := atomicJSON(filepath.Join(dir, "home"), "cordis.patch.yml", profile(*opts)); err != nil {
 		return nil, ref, err
 	}
@@ -263,6 +274,12 @@ func profile(opts Options) []map[string]any {
 		{"id": "acp", "config": map[string]any{"provider": provider(opts.Model), "model": opts.Model.ModelID}},
 		{"id": "approval", "config": map[string]any{"policy": "ask"}},
 		{"id": "sandbox-policy", "config": map[string]any{"mode": "workspace-write"}},
+	}
+	if opts.InputBridge {
+		patches = append(patches,
+			map[string]any{"id": "acp", "inject": []string{"acpAppStartup", "teamxInputBridgeReady"}, "config": map[string]any{"provider": provider(opts.Model), "model": opts.Model.ModelID}},
+			map[string]any{"insert": []map[string]any{{"id": "teamx-input-bridge", "name": filepath.Join(opts.StateDir, "input_bridge.mjs"), "config": map[string]any{"bindingPath": filepath.Join(opts.StateDir, "input-execution.json")}}}},
+		)
 	}
 	if opts.probe != nil {
 		patches = append(patches,

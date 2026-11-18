@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -14,6 +15,9 @@ import (
 )
 
 type serviceConfig struct {
+	inputAdapters        map[notification.SourceID]notificationAdapter
+	unifiedInputs        bool // Normal server composition. Legacy fixture services use the old format.
+	inputUpgradeLog      io.Writer
 	updates              *uiUpdateHub
 	agentNames           *agentNameRegistry
 	scheduling           schedulingMode
@@ -167,13 +171,33 @@ func (s *service) newMember(id MemberIdentity, runner RunnerConfig, restored *Ag
 	if s.models != nil {
 		gate = s.models.gate(id)
 	}
-	return &MemberAgent{ObserveEnabled: func() bool { return s.updates.observesRoom(s.info) }, Observe: func() { s.invalidate("members", id); s.invalidate("activity", id) }, ModelGate: gate, Options: opts, Store: s.store, Room: s.room, Restored: restored,
+	member := &MemberAgent{ObserveEnabled: func() bool { return s.updates.observesRoom(s.info) }, Observe: func() { s.invalidate("members", id); s.invalidate("activity", id) }, ModelGate: gate, Options: opts, Store: s.store, Room: s.room, Restored: restored,
 		Inbox:   func(ctx context.Context) (InboxStatus, error) { return s.memberInboxStatus(ctx, id) },
 		Backend: backend, MergeWindow: s.mergeWindow, MaxTurns: s.maxTurns, SessionMaxTurns: s.maxTurns, RequestRotation: s.requestMemberRotation, RequestRecovery: s.requestMemberRecovery, RecoveryPending: recovery, BackendBlocked: blocked, PersistentScheduling: true, RestoredTurnsUsed: used, RestoredTurnLimit: limit, ExecutionFrozen: s.grantsFrozen}
+	if s.unifiedInputs {
+		member.Inbox = nil
+		member.Inputs = func(ctx context.Context) (unifiedInputStatus, error) {
+			v, err := s.inputStatus(ctx, id)
+			if err == nil && v.Recovery != nil {
+				if e := s.checkSessionRecovery(id); e != nil {
+					v.Ready = false
+					v.Blocked = e.Error()
+				}
+			}
+			return v, err
+		}
+		member.ClaimInputRecovery = func(ctx context.Context) error { return s.claimInputRecovery(ctx, id) }
+		member.state.InputStateRef = "input-state.json"
+	}
+	return member
 }
 
 func (s *service) memberBackend(runner RunnerConfig) dshBackend {
 	backend := dshBackend{access: s.access, store: s.store, settings: s.settings, profile: s.dshProfiles[runner.Profile], turnTimeout: s.dshTurnTimeout, prepare: s.prepareRoomMaterials, recoveryContext: s.prepareDSHRecoveryContext}
+	if s.unifiedInputs {
+		backend.prepare = nil
+		backend.inputService = s
+	}
 	if s.inboxMode != "cli" && s.access != nil {
 		backend.inboxMCP = s
 	}

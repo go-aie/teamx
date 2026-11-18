@@ -46,7 +46,7 @@ func normalizeWorkspace(input workspaceConfig, suggestion bool) (workspaceConfig
 	}
 	// Root-level management files and directories must not become workspaces.
 	switch strings.ToLower(strings.Split(w.Root, "/")[0]) {
-	case "agents", "resources", "notifications", "notification-queries", "room.json", "room-config.json", "collaboration.json", "discussion-restart.json", "human-read.json", ".lock":
+	case "agents", "resources", "notifications", "notification-queries", "room.json", "room-config.json", "collaboration.json", "discussion-restart.json", "human-read.json", "room-input", inputUpgradeDirectory, inputUpgradeJournal, ".lock":
 		return workspaceConfig{}, fmt.Errorf("%w: workspace root overlaps room management data", ErrRequest)
 	}
 	return normalizeWorkspaceBackend(w, suggestion)

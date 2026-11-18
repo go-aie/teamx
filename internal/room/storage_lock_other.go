@@ -16,3 +16,7 @@ func lockBundleHome(dir string) (*os.File, error) { return lockDirectory(dir) }
 func lockDirectoryFile(dir, _ string) (*os.File, error) { return lockDirectory(dir) }
 
 func unlockDirectory(f *os.File) error { return f.Close() }
+
+func inputUpgradeAvailableSpace(string) (uint64, error) {
+	return 0, fmt.Errorf("Room snapshot directory locking requires macOS or Linux")
+}

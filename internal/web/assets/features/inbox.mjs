@@ -106,17 +106,20 @@ export function createInbox({ env, settingsUI, notificationsUI, runtime, members
     const status = view.status;
     if (status) {
       $("inbox-status").textContent = `保留 ${status.retained_entries} 条` + (status.write_error ? ` · 写入受阻：${status.write_error}` : "");
-      $("inbox-status").title = `只读预览，不推进 Agent 消费进度。\n占用 ${status.bytes} / ${status.limits.bytes} 字节 · 最新序号 #${status.latest_seq} · 已清理至 #${status.expired_through}`;
+      $("inbox-status").title = `只读预览，不推进 Agent 消费进度。\n占用 ${status.bytes} / ${status.limits.bytes} 字节` +
+        (status.history ? "" : ` · 最新序号 #${status.latest_seq} · 已清理至 #${status.expired_through}`);
     }
-    const newer = view.page && status?.latest_seq > view.page.snapshot_seq;
+    const newer = view.page && (status?.history
+      ? status.history.latest !== view.page.history?.latest
+      : status?.latest_seq > view.page.snapshot_seq);
     $("inbox-latest").textContent = newer ? "有更新" : "最新";
     $("inbox-latest").title = newer ? "有新记录，点击跳到最新" : "跳到最新记录";
     $("inbox-latest").setAttribute("aria-label", $("inbox-latest").title);
-    $("inbox-notice").textContent = view.error || view.syncError || view.notice || (status?.expired_through ? "旧通知正文已过期清理，跟进和动作记录继续保留。" : "");
+    $("inbox-notice").textContent = view.error || view.syncError || view.notice || ((status?.expired_through || status?.history?.reclaimed) ? "旧通知正文已过期清理，跟进和动作记录继续保留。" : "");
     const member = membersUI.selectedAgent(), execution = member?.execution;
     const paused = isSessionRecovering(member) ? "" : execution?.paused ? "自动处理已暂停" : execution?.active ? "Agent 正在处理" : `Agent ${membersUI.statusNames[member?.status] || member?.status || ""}`;
     const through = Math.max(status?.consumed_through || 0, status?.expired_through || 0, status?.skipped_through || 0);
-    const pending = status && status.latest_seq > through;
+    const pending = status && (status.history ? status.history.pending > 0 : status.latest_seq > through);
     const capacity = status && (status.retained_entries >= status.limits.entries || status.bytes >= status.limits.bytes);
     $("inbox-runtime").textContent = [paused, memberExecutionMessage(member, settingsUI.formatDate), pending && "有输入等待处理或来源核验", capacity && "容量已满，来源积压等待空间释放后自动重试"].filter(Boolean).join(" · ");
   }
@@ -124,11 +127,12 @@ export function createInbox({ env, settingsUI, notificationsUI, runtime, members
   function renderInboxPagination(view) {
     const entries = view.page?.entries || [];
     const label = view.page ? entries.length ? `第 ${view.pageNumber} 页` : "暂无通知" : "—";
+    const history = view.page?.history;
     for (const suffix of ["", "-bottom"]) {
-      $("inbox-prev" + suffix).disabled = view.loading || !entries.length || view.end >= view.page.snapshot_seq;
-      $("inbox-next" + suffix).disabled = view.loading || !entries.length || view.after <= view.status.expired_through;
+      $("inbox-prev" + suffix).disabled = view.loading || !entries.length || (history ? !history.newer : view.end >= view.page.snapshot_seq);
+      $("inbox-next" + suffix).disabled = view.loading || !entries.length || (history ? !history.older : view.after <= view.status.expired_through);
       $("inbox-page" + suffix).textContent = label;
-      $("inbox-page" + suffix).title = entries.length ? `消息 #${entries[0].seq}–#${entries.at(-1).seq}` : "";
+      $("inbox-page" + suffix).title = !entries.length ? "" : history ? `本页 ${entries.length} 条通知` : `消息 #${entries[0].seq}–#${entries.at(-1).seq}`;
     }
     $("inbox-reload").disabled = $("inbox-latest").disabled = view.loading;
     $("inbox-pagination-bottom").hidden = !entries.length;
@@ -145,7 +149,9 @@ export function createInbox({ env, settingsUI, notificationsUI, runtime, members
       view.status = status; view.syncError = "";
       // A page touching reclaimed records cannot remain a readable old snapshot.
       if (!view.page) await loadMemberInbox("refresh", status);
-      else if (view.after < status.expired_through) await loadMemberInbox("relocate", status);
+      else if (status.history
+        ? view.page.status.history?.retention !== status.history.retention
+        : view.after < status.expired_through) await loadMemberInbox("relocate", status);
       else { renderInboxStatus(view); renderInboxPagination(view); }
     } catch (error) {
       if (current() && inboxCurrent(view) && !view.loading) { view.syncError = `同步失败：${error.message}。当前页已保留，可点击刷新重试。`; renderInboxStatus(view); onFailure(error); }
@@ -166,57 +172,80 @@ export function createInbox({ env, settingsUI, notificationsUI, runtime, members
     try {
       let status = knownStatus || await rpc("/v1/member/inbox/status", view.member, view.info);
       if (!inboxCurrent(view)) return;
-      let snapshot = action === "latest" || !prior?.page ? status.latest_seq : prior.page.snapshot_seq;
       let pageNumber = action === "latest" || !prior?.page ? 1 : prior.pageNumber;
-      if (action === "next") pageNumber++;
-      if (action === "prev") pageNumber--;
-      let end = snapshot;
-      if (action === "next") end = prior.after;
-      if (action === "prev") end = Math.min(snapshot, prior.end + 25);
-      if (keepPosition && prior?.page) end = prior.end;
-      let after = Math.max(status.expired_through, end - 25);
-      if (keepPosition && prior?.page) after = prior.after;
-      let data;
-      // Cleanup may race either the inspection or any short byte-limited page.
-      // Retry once with a fresh boundary; repeated races remain a visible retry.
-      for (let attempt = 0; attempt < 2; attempt++) {
-        if (after < status.expired_through || end <= status.expired_through && status.latest_seq > status.expired_through || snapshot < status.expired_through) {
-          view.notice = "当前记录已过期，已重新定位到保留记录。";
-          snapshot = status.latest_seq;
-          // A new browsing session starts at the latest retained page. Page
-          // numbers are local navigation state, never a count of stored pages.
+      let data, after, end;
+      if (status.history) {
+        const nav = prior?.page?.history;
+        const cursor = {prev:nav?.newer, next:nav?.older, refresh:nav?.self}[action];
+        const read = (cursor) => rpc("/v1/member/inbox", {...view.member, ...(cursor && {history_cursor:cursor})}, view.info);
+        if (action === "next") pageNumber++;
+        if (action === "prev") pageNumber--;
+        if (action === "relocate") {
           pageNumber = 1;
-          end = snapshot;
-          after = Math.max(status.expired_through, end - 25);
-        }
-        if (action === "relocate") view.notice = "当前记录已过期，已重新定位到保留记录。";
-        try {
-          const entries = [];
-          let cursor = after;
-          do {
-            const page = await rpc("/v1/member/inbox", {...view.member, after:cursor, snapshot_seq:snapshot, limit:Math.max(1, end - cursor)}, view.info);
-            if (!inboxCurrent(view)) return;
-            entries.push(...page.entries);
-            data = {...page, entries};
-            if (cursor < end && page.next_after <= cursor) throw new Error("分页未推进，请重试");
-            cursor = page.next_after;
-          } while (cursor < end);
-          // The status in the preview may be newer than the initial inspection.
-          status = data.status;
-          if (after < status.expired_through) throw Object.assign(new Error("通知已过期"), {code:"inbox_expired"});
-          break;
-        } catch (error) {
-          if (error.code !== "inbox_expired" || attempt) throw error;
-          status = await rpc("/v1/member/inbox/status", view.member, view.info);
-          if (!inboxCurrent(view)) return;
           view.notice = "当前记录已过期，已重新定位到保留记录。";
+        }
+        try {
+          data = await read(cursor);
+        } catch (error) {
+          if (error.code !== "inbox_expired") throw error;
+          data = await read();
+          pageNumber = 1;
+          view.notice = "当前记录已过期，已重新定位到保留记录。";
+        }
+        if (!inboxCurrent(view)) return;
+        status = data.status;
+      } else {
+        let snapshot = action === "latest" || !prior?.page ? status.latest_seq : prior.page.snapshot_seq;
+        if (action === "next") pageNumber++;
+        if (action === "prev") pageNumber--;
+        end = snapshot;
+        if (action === "next") end = prior.after;
+        if (action === "prev") end = Math.min(snapshot, prior.end + 25);
+        if (keepPosition && prior?.page) end = prior.end;
+        after = Math.max(status.expired_through, end - 25);
+        if (keepPosition && prior?.page) after = prior.after;
+        // Cleanup may race either the inspection or any short byte-limited page.
+        // Retry once with a fresh boundary; repeated races remain a visible retry.
+        for (let attempt = 0; attempt < 2; attempt++) {
+          if (after < status.expired_through || end <= status.expired_through && status.latest_seq > status.expired_through || snapshot < status.expired_through) {
+            view.notice = "当前记录已过期，已重新定位到保留记录。";
+            snapshot = status.latest_seq;
+            // A new browsing session starts at the latest retained page. Page
+            // numbers are local navigation state, never a count of stored pages.
+            pageNumber = 1;
+            end = snapshot;
+            after = Math.max(status.expired_through, end - 25);
+          }
+          if (action === "relocate") view.notice = "当前记录已过期，已重新定位到保留记录。";
+          try {
+            const entries = [];
+            let cursor = after;
+            do {
+              const page = await rpc("/v1/member/inbox", {...view.member, after:cursor, snapshot_seq:snapshot, limit:Math.max(1, end - cursor)}, view.info);
+              if (!inboxCurrent(view)) return;
+              entries.push(...page.entries);
+              data = {...page, entries};
+              if (cursor < end && page.next_after <= cursor) throw new Error("分页未推进，请重试");
+              cursor = page.next_after;
+            } while (cursor < end);
+            // The status in the preview may be newer than the initial inspection.
+            status = data.status;
+            if (after < status.expired_through) throw Object.assign(new Error("通知已过期"), {code:"inbox_expired"});
+            break;
+          } catch (error) {
+            if (error.code !== "inbox_expired" || attempt) throw error;
+            status = await rpc("/v1/member/inbox/status", view.member, view.info);
+            if (!inboxCurrent(view)) return;
+            view.notice = "当前记录已过期，已重新定位到保留记录。";
+          }
         }
       }
       view.page = data; view.pageNumber = pageNumber; view.status = status; view.after = after; view.end = end; view.error = "";
       const scrollTop = $("inbox-member-view").scrollTop;
-      const previous = new Map([...(prior?.page?.entries || [])].map((entry, i) => [entry.seq, {entry, node:$("inbox-entries").children[i]}]));
+      const entryKey = entry => entry.partition ? `${entry.partition}/${entry.seq}` : entry.seq;
+      const previous = new Map((prior?.page?.entries || []).map((entry, i) => [entryKey(entry), {entry, node:$("inbox-entries").children[i]}]));
       const nodes = data.entries.map(entry => {
-        const old = previous.get(entry.seq);
+        const old = previous.get(entryKey(entry));
         if (old?.node && JSON.stringify(old.entry) === JSON.stringify(entry)) return old.node;
         if (entry.type === "task_event") {
           const section = renderInboxTaskEvent(entry);
@@ -270,7 +299,7 @@ export function createInbox({ env, settingsUI, notificationsUI, runtime, members
           change.textContent = "消息已变更 · 关联原消息，不自动重做已完成动作"; section.append(change);
         }
         const body = document.createElement("div"); body.className = "message-text";
-        const options = notificationOptions(view.info, state.operator, source, { seq: entry.seq, agent_id: member.agent_id, membership_id: member.membership_id });
+        const options = notificationOptions(view.info, state.operator, source, { seq: entry.seq, ...(entry.partition && {partition:entry.partition}), agent_id: member.agent_id, membership_id: member.membership_id });
         renderMessageBody(body, item.text, state.operator, {...options, operatorNames:[state.operator,state.operatorDisplayName].filter(Boolean), ...(lark ? {compactLarkMentions:true} : {})});
         section.append(body);
         if(!lark && chat)section.append(chat);

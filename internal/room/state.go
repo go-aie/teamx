@@ -53,6 +53,8 @@ type Author struct {
 }
 
 type RoomMessage struct {
+	Type               string             `json:"type,omitempty"`
+	Event              *RoomEvent         `json:"event,omitempty"`
 	AuthorMembershipID string             `json:"author_membership_id,omitempty"`
 	AgentName          string             `json:"agent_name,omitempty"`
 	Mentions           []MessageMention   `json:"mentions,omitempty"`
@@ -94,7 +96,9 @@ type MemberState struct {
 }
 
 type RoomSnapshot struct {
-	Version int `json:"version"`
+	InputLog      *roomLogRoot                `json:"input_log,omitempty"`
+	EventReceipts map[string]roomEventReceipt `json:"event_receipts,omitempty"`
+	Version       int                         `json:"version"`
 	RoomIdentity
 	IsDirect               bool                             `json:"is_direct"`
 	LatestSeq              uint64                           `json:"latest_seq"`
@@ -102,6 +106,7 @@ type RoomSnapshot struct {
 	Revision               uint64                           `json:"revision"`
 	Messages               []RoomMessage                    `json:"messages"`
 	Members                []MemberState                    `json:"members"`
+	ReadProofs             map[string]roomReadProof         `json:"read_proofs,omitempty"`
 	IntegrationReceipts    map[string]IntegrationReceipt    `json:"integration_receipts,omitempty"`
 	FollowupNoticeReceipts map[string]followupNoticeReceipt `json:"followup_notice_receipts,omitempty"`
 }
@@ -134,7 +139,7 @@ func (s RoomSnapshot) validate() error {
 		if m.Seq != s.ClearedThrough+uint64(i+1) || m.ReplyTo >= m.Seq || m.CreatedAt.IsZero() {
 			return fmt.Errorf("message %d: invalid sequence, reference or timestamp", i+1)
 		}
-		if (m.Author.Kind != "human" && m.Author.Kind != "agent" && m.Author.Kind != "integration") || !validText(m.Author.ID) || !validText(m.ClientMessageID) {
+		if (m.Author.Kind != "human" && m.Author.Kind != "agent" && m.Author.Kind != "integration" && !(m.Author.Kind == "system" && m.Event != nil)) || !validText(m.Author.ID) || !validText(m.ClientMessageID) {
 			return fmt.Errorf("message %d: invalid author or client ID", i+1)
 		}
 		if m.Author.Kind == "integration" {
@@ -154,6 +159,9 @@ func (s RoomSnapshot) validate() error {
 		if !validText(m.Text) || len(m.Text) > maxTextBytes {
 			return fmt.Errorf("message %d: invalid text", i+1)
 		}
+		if err := validateRoomEvent(m); err != nil {
+			return err
+		}
 		key := messageKey{m.Author, m.ClientMessageID}
 		if keys[key] {
 			return fmt.Errorf("message %d: duplicate client ID for author", i+1)
@@ -163,6 +171,20 @@ func (s RoomSnapshot) validate() error {
 	}
 	if bytes > maxHistoryBytes {
 		return fmt.Errorf("history byte capacity exceeded")
+	}
+	if len(s.EventReceipts) > maxIntegrationReceipts {
+		return ErrCapacity
+	}
+	for key, receipt := range s.EventReceipts {
+		if key == "" || receipt.Seq == 0 || receipt.Seq > s.LatestSeq || len(receipt.Digest) != 64 {
+			return ErrInvalid
+		}
+		if receipt.Seq > s.ClearedThrough {
+			m := s.Messages[receipt.Seq-s.ClearedThrough-1]
+			if m.Event == nil || roomEventKey(*m.Event) != key || roomEventDigest(m) != receipt.Digest {
+				return ErrInvalid
+			}
+		}
 	}
 	if len(s.IntegrationReceipts) > maxIntegrationReceipts {
 		return ErrCapacity
@@ -201,7 +223,7 @@ func (s RoomSnapshot) validate() error {
 		}
 		agents[m.AgentID], memberships[m.MembershipID] = true, true
 	}
-	return nil
+	return s.validateReadProofs()
 }
 
 type TurnRecord struct {
@@ -216,7 +238,8 @@ type TurnRecord struct {
 }
 
 type AgentSnapshot struct {
-	Version int `json:"version"`
+	InputStateRef string `json:"input_state_ref,omitempty"`
+	Version       int    `json:"version"`
 	MemberIdentity
 	LastOfferedInboxSeq     uint64      `json:"last_offered_inbox_seq,omitempty"`
 	LastOfferedInboxThrough uint64      `json:"last_offered_inbox_through,omitempty"`
@@ -236,6 +259,18 @@ func (s AgentSnapshot) validate() error {
 		return nil
 	}
 	t := s.Turn
+
+	if s.InputStateRef != "" {
+		if s.InputStateRef != "input-state.json" || t.Number == 0 || t.Number != s.TurnNumber || t.StartReadThrough > t.SnapshotSeq || t.OfferedUnreadSeq > t.SnapshotSeq || t.OfferedUnreadSeq != s.LastOfferedUnreadSeq || t.InboxStart != 0 || t.InboxSnapshotSeq != 0 || s.LastOfferedInboxSeq != 0 || s.LastOfferedInboxThrough != 0 {
+			return fmt.Errorf("inconsistent input-stream turn")
+		}
+		switch t.Status {
+		case "running", "completed", "failed", "interrupted":
+			return nil
+		default:
+			return fmt.Errorf("invalid turn status %q", t.Status)
+		}
+	}
 	if t.Number == 0 || t.Number != s.TurnNumber || t.StartReadThrough > t.SnapshotSeq ||
 		(t.OfferedUnreadSeq == 0 && t.InboxSnapshotSeq == 0) || t.OfferedUnreadSeq > t.SnapshotSeq || t.OfferedUnreadSeq != s.LastOfferedUnreadSeq ||
 		t.InboxStart > t.InboxSnapshotSeq || (t.InboxSnapshotSeq != 0 && (t.InboxStart == t.InboxSnapshotSeq || t.InboxSnapshotSeq-t.InboxStart > inboxBatchSize || t.InboxSnapshotSeq != s.LastOfferedInboxSeq || t.InboxStart != s.LastOfferedInboxThrough)) ||

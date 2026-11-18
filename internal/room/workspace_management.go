@@ -771,13 +771,9 @@ func (m *roomManager) workspaceHistory(w http.ResponseWriter, r *http.Request) b
 		writeAPIError(w, ErrIdentity)
 		return true
 	}
-	var state RoomSnapshot
-	if err := readSnapshot(filepath.Join(m.roomDir(req.RoomID), "room.json"), &state, maxRoomFileBytes); err != nil {
+	state, err := readPublishedRoom(m.roomDir(req.RoomID), req.RoomIdentity)
+	if err != nil {
 		writeAPIError(w, err)
-		return true
-	}
-	if state.RoomIdentity != req.RoomIdentity || state.validate() != nil {
-		writeAPIError(w, ErrIdentity)
 		return true
 	}
 	page, err := (&Room{state: state}).Read(nil, ReadMessages{RoomIdentity: req.RoomIdentity, Caller: req.Caller, Mode: req.Mode, Latest: req.Latest, After: req.After, SnapshotSeq: req.SnapshotSeq, Limit: req.Limit, Peek: req.Peek})

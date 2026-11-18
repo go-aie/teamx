@@ -353,6 +353,10 @@ func managedRunner(c managedRoomConfig, agent string) RunnerConfig {
 	return RunnerConfig{Kind: "dsh", Profile: "team/" + c.TeamID + "/" + agent}
 }
 func newTeamRoomManager(dir, teamsDir string, maxTurns uint64, defaults *teamRuntime) (*roomManager, error) {
+	return openTeamRoomManager(dir, teamsDir, maxTurns, defaults, nil)
+}
+
+func openTeamRoomManager(dir, teamsDir string, maxTurns uint64, defaults *teamRuntime, upgrade *inputUpgradeOptions) (*roomManager, error) {
 	abs, err := filepath.Abs(teamsDir)
 	if err != nil {
 		return nil, err
@@ -361,7 +365,7 @@ func newTeamRoomManager(dir, teamsDir string, maxTurns uint64, defaults *teamRun
 	if err != nil {
 		return nil, err
 	}
-	m, err := newRoomManager(dir, maxTurns)
+	m, err := openRoomManager(dir, maxTurns, upgrade)
 	if err != nil {
 		return nil, err
 	}

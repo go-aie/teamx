@@ -211,7 +211,11 @@ type roomManager struct {
 	connectNotifyWake        chan struct{}
 }
 
-func newRoomManager(dir string, maxTurns uint64) (_ *roomManager, err error) {
+func newRoomManager(dir string, maxTurns uint64) (*roomManager, error) {
+	return openRoomManager(dir, maxTurns, nil)
+}
+
+func openRoomManager(dir string, maxTurns uint64, upgrade *inputUpgradeOptions) (_ *roomManager, err error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return nil, err
@@ -260,7 +264,7 @@ func newRoomManager(dir string, maxTurns uint64) (_ *roomManager, err error) {
 		return nil, err
 	}
 	m.publishAgentNames()
-	if err := m.validateIndex(); err != nil {
+	if err := m.validateIndexState(upgrade == nil); err != nil {
 		return nil, fmt.Errorf("%w: rooms.json: %w", ErrInvalid, err)
 	}
 	for i, op := range m.index.Opens {
@@ -299,6 +303,15 @@ func newRoomManager(dir string, maxTurns uint64) (_ *roomManager, err error) {
 	if err := m.recoverPlatformConnectLocked(); err != nil {
 		return nil, err
 	}
+	if upgrade != nil {
+		upgrade.catalog = store.dir
+		if err := m.upgradeRoomInputs(*upgrade); err != nil {
+			return nil, err
+		}
+		if err := m.validateIndex(); err != nil {
+			return nil, fmt.Errorf("%w: rooms.json: %w", ErrInvalid, err)
+		}
+	}
 	if err := m.loadPlatformNotificationsLocked(); err != nil {
 		return nil, err
 	}
@@ -331,6 +344,10 @@ func (m *roomManager) saveIndex(next roomsIndex) error {
 }
 
 func (m *roomManager) validateIndex() error {
+	return m.validateIndexState(true)
+}
+
+func (m *roomManager) validateIndexState(checkRoomSnapshots bool) error {
 	if m.index.Version != roomsIndexVersion {
 		return ErrVersion
 	}
@@ -370,8 +387,10 @@ func (m *roomManager) validateIndex() error {
 			if err := validateInitialization(e, roomInitialization{Config: c}); err != nil {
 				return err
 			}
-			if err := m.validateRoomSnapshot(c); err != nil {
-				return err
+			if checkRoomSnapshots {
+				if err := m.validateRoomSnapshot(c); err != nil {
+					return err
+				}
 			}
 		case "deleting":
 			// Removal can be partial. Never read the Room config or replay a
@@ -612,6 +631,9 @@ func (m *roomManager) initialize(e roomIndexEntry) error {
 		for _, member := range init.Config.Members {
 			state.Members = append(state.Members, member.MemberState)
 		}
+		if m.config.unifiedInputs {
+			state.InputLog = &roomLogRoot{Version: 1, Segments: []roomLogSegment{}}
+		}
 		return store.SaveRoom(state)
 	}
 	return nil
@@ -704,6 +726,10 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/v1/skills/usage" {
 		m.serveUsageSkill(w, r)
+		return
+	}
+	if r.URL.Path == "/v1/member/input-attention" {
+		m.serveInputAttention(w, r)
 		return
 	}
 	if strings.HasPrefix(r.URL.Path, "/v1/platforms") {

@@ -34,7 +34,8 @@ type mcpHTTP struct {
 	http   *server.StreamableHTTPServer
 }
 
-func newMCPHTTP() *mcpHTTP {
+func newMCPHTTP() *mcpHTTP { return newInputMCPHTTP(false) }
+func newInputMCPHTTP(unified bool) *mcpHTTP {
 	hooks := &server.Hooks{}
 	hooks.AddOnSuccess(func(ctx context.Context, id any, method mcp.MCPMethod, _ any, result any) {
 		d, _ := ctx.Value(mcpDeliveryKey{}).(*mcpDelivery)
@@ -65,7 +66,11 @@ func newMCPHTTP() *mcpHTTP {
 		// protocol eras decorate responses after OnSuccess; fail negotiation
 		// rather than silently acknowledging a different output contract.
 		server.WithStreamableHTTPProtocolVersions(mcpProtocolVersion))}
-	h.addInboxTool()
+	if unified {
+		h.addInputTools()
+	} else {
+		h.addInboxTool()
+	}
 	return h
 }
 

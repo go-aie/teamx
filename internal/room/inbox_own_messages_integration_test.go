@@ -49,7 +49,7 @@ func TestOwnLarkOriginUsesExactDurableReceipt(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return origins[e.Seq]
+		return origins[inboxEntryPosition(e)]
 	}
 	if o := lookup(); o.Kind != "account" || !inboxContextOnly(e) {
 		t.Fatal("message before receipt must remain safe context", o)

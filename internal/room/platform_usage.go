@@ -94,7 +94,7 @@ func (m *roomManager) publicPlatformLocked(c platform.Platform) (managedPlatform
 		m.updates.atEarliest(uiUpdate{Topic: "platforms"}, c.TokenExpiresAt)
 	}
 	refs, err := m.managedPlatformReferencesLocked(c.ID)
-	return managedPlatform{Platform: c, References: refs, Capabilities: capabilities}, err
+	return managedPlatform{SupportsNotifications: m.supportsNotifications(c.Provider), Platform: c, References: refs, Capabilities: capabilities}, err
 }
 func samePlatformReferences(refs []managedPlatformReference, acknowledged []RoomIdentity) bool {
 	want := make([]RoomIdentity, 0, len(refs))

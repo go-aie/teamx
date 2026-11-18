@@ -342,6 +342,9 @@ func (s *Session) redactBounded(text string, truncated bool) string {
 
 func (s *Session) diagnosticSecrets() []string {
 	secrets := []string{s.secret, s.opts.ExecutionToken}
+	if extra := s.privateSecrets.Load(); extra != nil {
+		secrets = append(secrets, (*extra)...)
+	}
 	for _, server := range s.opts.MCPServers {
 		for _, header := range server.Headers {
 			// Redact the token even when a diagnostic omits its Bearer prefix.
@@ -349,6 +352,25 @@ func (s *Session) diagnosticSecrets() []string {
 		}
 	}
 	return secrets
+}
+
+// AddRedactionSecret registers an ephemeral runtime credential without placing
+// it in instructions, persisted configuration or the Session fingerprint.
+func (s *Session) AddRedactionSecret(value string) {
+	if value == "" {
+		return
+	}
+	for {
+		old := s.privateSecrets.Load()
+		next := []string{}
+		if old != nil {
+			next = append(next, (*old)...)
+		}
+		next = append(next, value)
+		if s.privateSecrets.CompareAndSwap(old, &next) {
+			return
+		}
+	}
 }
 
 func (s *Session) redactDiagnostic(text string, truncated bool) string {

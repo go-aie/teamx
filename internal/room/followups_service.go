@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/go-aie/teamx/internal/inputstream"
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/notification"
 )
@@ -17,10 +18,10 @@ type followupResolver func(context.Context, MemberIdentity, platform.SourceRef) 
 
 type referenceInboxPage struct {
 	InboxPage
-	Batch     InboxBatch                    `json:"batch"`
-	Sources   []followupSourceSummary       `json:"sources"`
-	Followups []followupSummary             `json:"followups"`
-	Origins   map[uint64]inboxMessageOrigin `json:"-"`
+	Batch     InboxBatch                                  `json:"batch"`
+	Sources   []followupSourceSummary                     `json:"sources"`
+	Followups []followupSummary                           `json:"followups"`
+	Origins   map[inputstream.Location]inboxMessageOrigin `json:"-"`
 }
 
 // AgentInbox owns the original batches and receipts. Business linkage is saved
@@ -114,6 +115,9 @@ func (s *service) readReferenceInbox(ctx context.Context, id MemberIdentity, tur
 }
 
 func (s *service) resolveFollowupEvent(ctx context.Context, id MemberIdentity, seq, turn uint64, retry bool, resolve followupResolver) (followupEvent, error) {
+	return s.resolveInputSource(ctx, id, seq, nil, turn, retry, resolve)
+}
+func (s *service) resolveInputSource(ctx context.Context, id MemberIdentity, seq uint64, location *inputstream.Location, turn uint64, retry bool, resolve followupResolver) (followupEvent, error) {
 	s.store.mu.Lock()
 	err := s.store.checkFollowupsLocked(id, false)
 	var entry InboxEntry
@@ -122,7 +126,7 @@ func (s *service) resolveFollowupEvent(ctx context.Context, id MemberIdentity, s
 		_, err = s.store.runningTurnLocked(id, turn)
 	}
 	if err == nil {
-		entry, err = s.store.inboxEntryLocked(id, seq)
+		entry, err = s.store.businessInputLocked(id, seq, location)
 	}
 	if err == nil && entry.payloadType() != InboxPlatformNotification {
 		err = ErrRequest
@@ -140,7 +144,7 @@ func (s *service) resolveFollowupEvent(ctx context.Context, id MemberIdentity, s
 		if errors.Is(err, os.ErrNotExist) {
 			// A missing dependency of an existing event is corruption, not an
 			// invitation to overwrite the event or silently rebuild progress.
-			if _, statErr := os.Stat(s.store.eventPath(id, seq)); statErr == nil {
+			if _, statErr := os.Stat(s.store.inputEventPath(entry)); statErr == nil {
 				err = ErrInvalid
 			}
 		}
@@ -193,7 +197,7 @@ func (s *service) resolveFollowupEvent(ctx context.Context, id MemberIdentity, s
 		result = platform.TargetResolution{Status: platform.ResolutionMismatch, ReasonCode: "invalid_report", Reason: "resolution evidence did not match source or access; source retained", CheckedAt: time.Now().UTC()}
 	}
 	commit := func() (followupEvent, error) {
-		return s.store.recordFollowupResolution(id, seq, turn, old.Revision, result, access)
+		return s.store.recordInputResolution(id, seq, location, turn, old.Revision, result, access)
 	}
 	if s.referenceCommit != nil && result.ObjectVerified {
 		return s.referenceCommit(ctx, id, access, commit)

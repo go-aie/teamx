@@ -18,19 +18,24 @@ type notificationAdapter struct {
 	CheckLoaded func(RoomIdentity) error
 }
 
+func defaultNotificationAdapters(m *roomManager) map[notification.SourceID]notificationAdapter {
+	adapters := m.gitlabNotificationAdapters()
+	adapters[lark.MessagesSourceID] = m.larkNotificationAdapter()
+	return adapters
+}
+
 func (m *roomManager) initPlatformNotifications() {
 	m.gitlabNotifications = make(map[RoomIdentity]map[notificationScope]gitlabNotificationRecord)
 	m.gitlabConfiguring = make(map[platformNotificationKey]bool)
 	if m.notificationAdapters == nil {
-		m.notificationAdapters = m.gitlabNotificationAdapters()
-		m.notificationAdapters[lark.MessagesSourceID] = m.larkNotificationAdapter()
+		m.notificationAdapters = defaultNotificationAdapters(m)
 	}
 	sources := make([]notification.Source, 0, len(m.notificationAdapters))
 	for _, adapter := range m.notificationAdapters {
 		sources = append(sources, adapter.Source)
 	}
 	m.notifications = notification.New(notification.Host{
-		Gate: &m.mu,
+		Gate:    &m.mu,
 		Changed: m.observeNotificationChange,
 		Check: func(writing bool) error {
 			if writing && m.closing {

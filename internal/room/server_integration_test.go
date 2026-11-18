@@ -172,13 +172,29 @@ func TestServerCancellationReapsACPAndRestartsSameHome(t *testing.T) {
 	if restarted.ServiceEpoch == info.ServiceEpoch {
 		t.Fatal("restart did not advance the server epoch")
 	}
+	var catalog roomsResponse
+	if err := serverTestRequest(t.Context(), serverTestCLI(t, home, restarted.Endpoint), "/v1/rooms", nil, &catalog); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, room := range catalog.Rooms {
+		if room.RoomIdentity == target.RoomIdentity {
+			found = true
+			if room.LastMessagePreview == nil || room.LastMessagePreview.Text != "offline lifecycle fixture" || room.HumanRead.Status != "ready" {
+				t.Fatal("catalog did not project the published Room log", room)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("catalog omitted the upgraded Room")
+	}
 	stopAgain()
 	var index roomsIndex
 	if err := readSnapshot(filepath.Join(home, "data/rooms.json"), &index, maxRoomsFileBytes); err != nil || index.DefaultAssistant == nil || index.DefaultAssistant.RoomIdentity != target.RoomIdentity {
 		t.Fatal("restart replaced the assistant", err)
 	}
-	var snapshot RoomSnapshot
-	if err := readSnapshot(filepath.Join(home, "data/rooms", target.RoomID, "room.json"), &snapshot, maxRoomFileBytes); err != nil || len(snapshot.Messages) == 0 || snapshot.Messages[0].Seq != receipt.Seq {
+	snapshot, err := readPublishedRoom(filepath.Join(home, "data/rooms", target.RoomID), target.RoomIdentity)
+	if err != nil || snapshot.InputLog == nil || len(snapshot.Messages) == 0 || snapshot.Messages[0].Seq != receipt.Seq {
 		t.Fatal("restart lost the accepted message", err)
 	}
 }

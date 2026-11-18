@@ -35,6 +35,8 @@ type mcpInboxPage struct {
 // Only this generation's current turn is retained. Results and image bytes are
 // never persisted; the Inbox actor remains the sole owner of durable receipts.
 type mcpInboxSession struct {
+	inputMu sync.Mutex
+	input   *inputSession
 	service *service
 	id      MemberIdentity
 	images  bool
@@ -51,6 +53,12 @@ type mcpInboxSession struct {
 }
 
 func (s *mcpInboxSession) confirmationError() error {
+	s.inputMu.Lock()
+	input := s.input
+	s.inputMu.Unlock()
+	if input != nil {
+		return input.storage.repository.Barrier(input.execution)
+	}
 	s.work.Lock()
 	defer s.work.Unlock()
 	if s.readErr != nil {
@@ -142,6 +150,9 @@ func (s *Store) claimInboxMode(id MemberIdentity, turn uint64, requested string)
 	s.mu.Unlock()
 	if err != nil {
 		return err
+	}
+	if agent.InputStateRef != "" {
+		return fmt.Errorf("%w: this member uses stream_ref/read_id input reads", ErrConflict)
 	}
 	turn = agent.TurnNumber
 	if ops.turns == nil {

@@ -18,8 +18,12 @@ import (
 // Real configuration/selection services and OAuth credential leases, simulated
 // remote project metadata. No tool binding or Workspace repository is needed.
 func gitlabProjectSelectionFixture(t *testing.T) (*roomManager, *service, MemberState, platformMemberRequest, platformSelectionRequest) {
+	return gitlabProjectSelectionFixtureFor(t, connectFixture)
+}
+
+func gitlabProjectSelectionFixtureFor(t *testing.T, fixture platformConnectionFixture) (*roomManager, *service, MemberState, platformMemberRequest, platformSelectionRequest) {
 	t.Helper()
-	m, svc, member, req := gitlabMemberFixtureFor(t, connectFixture)
+	m, svc, member, req := gitlabMemberFixtureFor(t, fixture)
 	original := m.platformHTTP
 	m.platformHTTP = workspaceHTTPFunc(func(r *http.Request) (*http.Response, error) {
 		if strings.HasPrefix(r.URL.Path, "/api/v4/projects") {

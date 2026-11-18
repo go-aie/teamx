@@ -34,9 +34,11 @@ func (a *MemberAgent) Bindings() []actorx.Binding {
 func (a *Room) Bindings() []actorx.Binding {
 	return []actorx.Binding{
 		actorx.HandleDeferred(a.Add),
+		actorx.HandleDeferred(a.AppendEvent),
 		actorx.Handle(a.Attach),
 		actorx.HandleDeferred(a.Clear),
 		actorx.HandleDeferred(a.Confirm),
+		actorx.HandleDeferred(a.ConfirmInput),
 		actorx.Handle(a.List),
 		actorx.HandleDeferred(a.Post),
 		actorx.HandleDeferred(a.PostIntegration),

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {launch,settle,withOnboarding,openNotification} from "./web_app_harness.mjs";
 function fixture(){
  const members=[{agent_id:"assistant",membership_id:"member-a",runner:{profile:"p"}}];
- const connection={id:"lark-connection",name:"飞书",provider:"lark",url:"https://open.feishu.cn",version:1,validation:{status:"valid",username:"测试用户",account:{id:{value:"ou_fixture"}}}};
+ const connection={id:"lark-connection",name:"飞书",provider:"lark",supports_notifications:true,url:"https://open.feishu.cn",version:1,validation:{status:"valid",username:"测试用户",account:{id:{value:"ou_fixture"}}}};
  const api={calls:[],fail:false,chats:[{chat_id:"oc_fixture",name:"产品讨论群",chat_mode:"group"},{chat_id:"oc_private",name:"张同学",chat_mode:"p2p"}],data:{provider:"lark",channel:"messages",available:true,subscription_id:"",subscription_version:0,status:"disabled",pending:0,config:{enabled:false,platform_id:"lark-connection",target:{mode:"inbox",agent_id:"assistant",membership_id:"member-a"},private:{enabled:true,scope:"all",chat_ids:[]},groups:{enabled:false,chat_ids:[],message_mode:"mentions",at_me:true,at_all:false},interval_seconds:60,backfill_seconds:0},lark:{cli_version:"1.0.99",chats:[]}},async request(path,body){
   api.calls.push({path,body:structuredClone(body)});
   if(path==="/v1/platform/lark/chats")return {chats:structuredClone(api.chats.filter(c=>body.chat_id ? c.chat_id===body.chat_id : !body.query || c.name.includes(body.query))),has_more:false,page_token:""};

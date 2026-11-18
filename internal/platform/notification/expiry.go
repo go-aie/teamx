@@ -105,3 +105,23 @@ func (m *Manager) ExpireTargetLocked(owner platform.RoomIdentity, target Target)
 	}
 	return nil
 }
+
+// PendingInputDeliveriesLocked retains source/channel namespaces for partition
+// reclamation. Frozen historical routes are checked just like ordinary delivery.
+func (m *Manager) PendingInputDeliveriesLocked(owner platform.RoomIdentity, target Target) map[SourceID]map[string]bool {
+	out := map[SourceID]map[string]bool{}
+	for key, saved := range m.states {
+		if key.Owner != owner {
+			continue
+		}
+		if out[key.Source] == nil {
+			out[key.Source] = map[string]bool{}
+		}
+		for _, item := range outstandingItems(saved.state) {
+			if item.Route.Target.Canonical() == target.Canonical() {
+				out[key.Source][item.DeliveryID] = true
+			}
+		}
+	}
+	return out
+}

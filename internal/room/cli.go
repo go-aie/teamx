@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/go-aie/teamx/internal/inputstream"
 	"io"
 	"net/http"
 	"os"
@@ -164,6 +165,9 @@ func runCLIWithInput(ctx context.Context, args []string, stdin io.Reader, stdout
 	}
 	if command == "platforms" {
 		return runPlatformsCLI(ctx, args, stdout, stderr, env)
+	}
+	if command == "inbox" && env("TEAMX_INPUT_CONTRACT") == inputstream.Contract {
+		return runInputHTTPCLI(ctx, args, stdout, env)
 	}
 	if command == "inbox" || command == "matters" || command == "actions" || command == "policy" {
 		return runReferenceCLI(ctx, command, args, stdin, stdout, stderr, env)

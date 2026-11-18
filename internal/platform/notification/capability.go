@@ -3,6 +3,8 @@ package notification
 import (
 	"encoding/json"
 
+	"github.com/go-aie/teamx/internal/inputstream"
+
 	"github.com/go-aie/teamx/internal/platform"
 )
 
@@ -38,7 +40,17 @@ type AdmissionCapability struct {
 // saved-envelope decoding; MatchAction verifies native message/action scope.
 // Common projection, scheduling and receipt handling contain no provider rules.
 type Capabilities struct {
+	// Input is optional, pure saved-record grouping; it does not grant access.
+	Input       *InputCapability
 	Admission   *AdmissionCapability
 	Project     func(Item) View
 	MatchAction func(View, platform.TargetActionRequest, platform.AccessContext) bool
+}
+
+// InputCapability extends the existing static source assembly. EncodeStoredInput
+// is local ingress conversion; the codec owns its versioned native payload.
+type InputCapability struct {
+	DecodeStoredInput func(inputstream.StoredRecord) (Item, error)
+	Codec             inputstream.Codec
+	EncodeStoredInput func(Item) (inputstream.AppendRequest, error)
 }

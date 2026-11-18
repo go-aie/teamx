@@ -394,7 +394,11 @@ func TestRoomReceiptExpiryAndRecovery(t *testing.T) {
 		t.Fatalf("persisted cursor: %+v", after)
 	}
 	roomError[ReadConfirmation](t, h, h.confirm(a, pending.ReadReceipt), ErrReadExpired)
-	roomError[ReadConfirmation](t, h, h.confirm(a, p3.ReadReceipt), ErrReadExpired)
+	// The last committed page now has a native durable proof; the unconfirmed
+	// pending page above still expires on restart and never advances progress.
+	if replay := roomCall[ReadConfirmation](t, h, h.confirm(a, p3.ReadReceipt)); replay.ReadThrough != 2 {
+		t.Fatal("lost committed confirmation proof", replay)
+	}
 	newPage := roomCall[ReadPage](t, h, request)
 	if newPage.Messages[0].Seq != 3 {
 		t.Fatal("pending page was persisted or skipped")

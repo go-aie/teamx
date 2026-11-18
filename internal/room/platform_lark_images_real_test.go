@@ -43,7 +43,8 @@ func TestRealLarkImageMaterials(t *testing.T) {
 	output := imageRealOutput(t)
 	report := map[string]any{"status": "failed", "remote_writes": 0, "live_room_modified": false, "model_requested": os.Getenv("TEAMX_LARK_IMAGE_MODEL") == "1", "browser": "not exercised", "scheduler": "seeded fixed turn only"}
 	defer imageRealReport(t, output, report)
-	h := newLarkHarness(t)
+	unified := os.Getenv("TEAMX_LARK_IMAGE_INPUT_LOG") == "1"
+	h := newLarkHarnessWithInputLog(t, unified)
 	h.m.larkClients = nil // Real acceptance retains process-wide production pacing.
 	c := platformTestSave(t, h.m, managedPlatformRequest{ServiceEpoch: h.m.epoch, Caller: humanCaller, ID: strings.Repeat("e", 32), Name: "isolated image acceptance", Provider: "lark", URL: lark.Origin(input.Profile.Brand), CLIProfile: &input.Profile})
 	c, err = h.m.verifyPlatform(context.Background(), managedPlatformRequest{ID: c.ID, Version: c.Version})
@@ -60,10 +61,31 @@ func TestRealLarkImageMaterials(t *testing.T) {
 	if err := h.svc.receiveInbox(context.Background(), inboxTarget(id), item); err != nil {
 		t.Fatal(err)
 	}
-	beforeInbox, _ := h.svc.memberInboxStatus(context.Background(), id)
-	beforeRoom, _ := h.svc.store.LoadRoom()
+	beforeRoom, err := h.svc.store.LoadRoom()
+	if err != nil {
+		t.Fatal(err)
+	}
+	inspectInbox := func() (InboxStatus, error) { return h.svc.memberInboxStatus(t.Context(), id) }
 	imagePath := findNotificationImages(item.Text, item.Source).Images[0].Path
 	query := url.Values{"room_id": {id.RoomID}, "room_instance": {id.RoomInstance}, "service_epoch": {h.svc.info.ServiceEpoch}, "caller_id": {"operator"}, "agent_id": {id.AgentID}, "membership_id": {id.MembershipID}, "seq": {"1"}, "path": {imagePath}}
+	if unified {
+		storage, err := h.svc.inputStorage(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		snapshot, err := storage.repository.Snapshot("lark")
+		if err != nil || snapshot.Partition == "" {
+			t.Fatal("missing saved Lark input partition", err)
+		}
+		query.Set("partition", snapshot.Partition)
+		inspectInbox = storage.inspectHistory
+		report["storage"] = "segmented Lark input log"
+		report["scheduler"] = "read-only operator preview"
+	}
+	beforeInbox, err := inspectInbox()
+	if err != nil {
+		t.Fatal(err)
+	}
 	w := attachmentHTTP(h.m, query)
 	report["preview_http_status"], report["mime"], report["bytes"] = w.Code, w.Header().Get("Content-Type"), w.Body.Len()
 	if w.Code != 200 {
@@ -73,6 +95,19 @@ func TestRealLarkImageMaterials(t *testing.T) {
 	report["sha256"] = fmt.Sprintf("%x", sha256.Sum256(data))
 	if err := os.WriteFile(filepath.Join(output, "image.bin"), data, 0600); err != nil {
 		t.Fatal(err)
+	}
+	if unified {
+		afterInbox, err := inspectInbox()
+		if err != nil || !reflect.DeepEqual(beforeInbox, afterInbox) {
+			t.Fatal("read-only preview changed input state", err)
+		}
+		afterRoom, err := h.svc.store.LoadRoom()
+		if err != nil || !reflect.DeepEqual(beforeRoom, afterRoom) {
+			t.Fatal("read-only preview changed Room state", err)
+		}
+		report["protocol_state_unchanged"] = true
+		report["status"] = "passed"
+		return
 	}
 	saveMaterialTurn(t, h.svc, id, 0, 1)
 	turnInput := materialInput(id, 0, 1)

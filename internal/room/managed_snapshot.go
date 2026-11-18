@@ -1,9 +1,6 @@
 package room
 
-import (
-	"fmt"
-	"path/filepath"
-)
+import "fmt"
 
 // Frozen creation sources must agree even after their templates disappear.
 func validRoomSource(e roomIndexEntry) bool {
@@ -12,17 +9,21 @@ func validRoomSource(e roomIndexEntry) bool {
 }
 
 func (m *roomManager) validateRoomSnapshot(c managedRoomConfig) error {
-	var snapshot RoomSnapshot
-	if err := readSnapshot(filepath.Join(m.roomDir(c.RoomID), "room.json"), &snapshot, maxRoomFileBytes); err != nil {
+	snapshot, err := readPublishedRoom(m.roomDir(c.RoomID), c.RoomIdentity)
+	if err != nil {
 		return err
 	}
-	return validateManagedSnapshot(c, snapshot)
+	return checkManagedSnapshotIdentity(c, snapshot)
 }
 
 func validateManagedSnapshot(c managedRoomConfig, snapshot RoomSnapshot) error {
 	if err := snapshot.validate(); err != nil {
 		return fmt.Errorf("%w: room.json: %w", ErrInvalid, err)
 	}
+	return checkManagedSnapshotIdentity(c, snapshot)
+}
+
+func checkManagedSnapshotIdentity(c managedRoomConfig, snapshot RoomSnapshot) error {
 	if snapshot.RoomIdentity != c.RoomIdentity || snapshot.IsDirect != c.IsDirect {
 		return fmt.Errorf("%w: room snapshot and configuration disagree", ErrIdentity)
 	}

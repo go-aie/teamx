@@ -24,6 +24,14 @@ const link=card=>card.children[5].children[0];
 const cancel=card=>card.children[5].children[1];
 const writes=api=>api.calls.filter(c=>c.path==='/v1/platforms/interactions/cancel');
 
+test('a page-only connection result does not promise automatic continuation',async()=>{
+ const api=fixture();api.op.status='cancelled';api.op.result_version=1;api.op.continuation={mode:'inbox',state:'page_only'};
+ const ui=await launch(api);await settle();
+ assert.match(card(ui).children[6].textContent,/仅在页面提示.*不会自动接续/);
+ assert.doesNotMatch(card(ui).children[6].textContent,/等待 Agent/);
+ assert.equal(writes(api).length,0);
+});
+
 test('sidebar settings list and add shared platforms without a Room',async()=>{
  const api=baseFixture();api.hook=path=>path==='/v1/rooms' ? {service_epoch:api.epoch,operator:'tester',rooms:[],teams:[]} : undefined;
  const ui=await launch(api);await settle();

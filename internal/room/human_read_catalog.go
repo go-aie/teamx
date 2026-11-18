@@ -40,6 +40,12 @@ func readHumanReadCatalogFiles(dir string, identity RoomIdentity, operator, disp
 		if err := read(filepath.Join(dir, "room.json"), &room, maxRoomFileBytes); err != nil {
 			return room, err, unavailable
 		}
+		if err := (&Store{dir: dir}).materializeRoomInput(&room); err != nil {
+			if attempt == 0 && errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return room, err, unavailable
+		}
 		if room.RoomIdentity != identity || room.Version != formatVersion || room.LatestSeq < room.ClearedThrough ||
 			len(room.Messages) > maxMessages || uint64(len(room.Messages)) != room.LatestSeq-room.ClearedThrough {
 			return room, ErrInvalid, unavailable

@@ -4313,3 +4313,56 @@ test("Inbox stalled range shows its reason and continues through the existing co
   member.execution.paused=true;member.status="paused";await ui.refresh();await settle();
   assert.equal(ui.el("agent-actions").children.some(el=>el.textContent==="继续读取收件箱"),false);
 });
+
+test("Unified input recovery reuses continuation controls and honors a blocked recovery", async () => {
+  const api=server([makeRoom("A")]);
+  const member={agent_id:"reviewer",membership_id:"generation-reviewer",status:"inbox_stalled",unread_count:0,runner:{profile:"runtime"},
+    execution:{active:false,paused:false,input_recovery:{pending:2,attempts:3},agent:{turn:{status:"completed"}},
+      notice:{code:"inbox_recovery_exhausted",message:"收件箱还有 2 条待交付输入。已停止自动恢复（3/3）；可继续读取收件箱。"}}};
+  api.hook=(path)=>path==="/v1/member/list" ? {members:[structuredClone(member)]}
+    : path==="/v1/member/activity" ? {member:structuredClone(member),last_output:{result:{events:[]}}}
+    : path==="/v1/member/inbox/continue" ? {} : undefined;
+  const ui=await launch(api);
+  await ui.el("members").children[0].querySelector(".member-summary").emit("click");
+  const resume=ui.el("agent-actions").children.find(el=>el.textContent==="继续读取收件箱");
+  assert.ok(resume);await resume.emit("click");await settle();
+  assert.equal(api.calls.filter(c=>c.path==="/v1/member/inbox/continue").length,1);
+  member.execution.input_recovery.blocked="unknown action outcome";await ui.refresh();await settle();
+  assert.equal(ui.el("agent-actions").children.some(el=>el.textContent==="继续读取收件箱"),false);
+});
+
+test("Unified Inbox uses fixed history cursors and distinguishes matching positions in different partitions", async () => {
+  const api = inboxFixture(27);
+  const base = api.inboxStatus;
+  let latest = "latest-1", retention = "retention-1";
+  api.inboxStatus = () => ({...base(), latest_seq:0, history:{latest,retention,pending:2}});
+  const entry = (partition, seq, text) => ({partition,seq,item:{provider:"gitlab",channel:"events",text}});
+  const first = [entry("first",1,"GitLab evidence"),entry("second",1,"Another partition's evidence")];
+  api.inboxPage = data => ({
+    status:api.inboxStatus(),
+    history:data.history_cursor === "older"
+      ? {latest:"latest-1",self:"older",newer:"first"}
+      : {latest:data.history_cursor ? "latest-1" : latest,self:"first",older:"older"},
+    entries:data.history_cursor === "older" ? [entry("first",4,"older evidence")] : first,
+  });
+  const ui = await openInboxFixture(api);
+  const rows = [...ui.el("inbox-entries").children];
+  assert.deepEqual(inboxSequences(ui),[1,1]);
+  assert.match(ui.el("inbox-runtime").textContent,/有输入等待处理/);
+  await ui.el("inbox-reload").emit("click");
+  assert.equal(ui.el("inbox-entries").children[0],rows[0]);
+  assert.equal(ui.el("inbox-entries").children[1],rows[1]);
+  await ui.el("inbox-next").emit("click");
+  assert.deepEqual(inboxSequences(ui),[4]);
+  latest = "latest-2";
+  await ui.refresh();await settle();
+  assert.match(ui.el("inbox-latest").textContent,/有更新/);
+  await ui.el("inbox-prev").emit("click");
+  assert.deepEqual(inboxSequences(ui),[1,1]);
+  assert.equal(ui.el("inbox-page").textContent,"第 1 页");
+  assert.deepEqual(api.calls.filter(call=>call.path==="/v1/member/inbox").map(call=>call.data.history_cursor),[undefined,"first","older","first"]);
+  retention = "retention-2";
+  await ui.refresh();await settle();
+  assert.match(ui.el("inbox-notice").textContent,/已过期.*重新定位/);
+  assert.equal(api.calls.filter(call=>call.path==="/v1/member/inbox").at(-1).data.history_cursor,undefined);
+});

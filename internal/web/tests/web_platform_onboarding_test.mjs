@@ -127,7 +127,7 @@ test("duplicate GitLab accounts keep the result panel hidden and reuse the opera
   assert.equal(ui.el("platforms-feedback-details").open,false);
   await ui.refresh();assert.equal(ui.el("onboarding-result").hidden,true);
   const op=api.ops.get(operationID);op.connection={status:"connected",version:1};
-  const account={id:op.platform_id,name:"Company GitLab",provider:"gitlab",url:"https://gitlab.invalid",version:1,credential_kind:"oauth",authorization_status:"active",validation:{status:"valid",username:"Bob"},references:[]};
+  const account={id:op.platform_id,name:"Company GitLab",provider:"gitlab",supports_notifications:true,url:"https://gitlab.invalid",version:1,credential_kind:"oauth",authorization_status:"active",validation:{status:"valid",username:"Bob"},references:[]};
   api.platforms=[account];api.auth={status:"succeeded",platforms:[account]};
   await ui.el("gitlab-login").emit("click");
   assert.equal(api.login.onboarding_id,operationID);
@@ -195,7 +195,7 @@ for (const failure of ["status","cancel"]) {
 test("auth completion reports each part, and reload retries only the saved P5 operation with a fresh epoch",async()=>{
   const api=fixture(),ui=await add(api);await ui.el("gitlab-login").emit("click");
   const op=api.ops.get(api.login.onboarding_id);op.connection={status:"connected",version:2};op.notifications={status:"failed",error_code:"settings_changed"};op.tool={status:"applied",version:3,error_code:"executable_unavailable"};
-  api.platforms=[{id:op.platform_id,name:"Company GitLab",provider:"gitlab",url:"https://gitlab.invalid",version:2,credential_kind:"oauth",authorization_status:"active",validation:{status:"valid",username:"Bob"},references:[]}];api.auth={status:"succeeded",platforms:api.platforms};
+  api.platforms=[{id:op.platform_id,name:"Company GitLab",provider:"gitlab",supports_notifications:true,url:"https://gitlab.invalid",version:2,credential_kind:"oauth",authorization_status:"active",validation:{status:"valid",username:"Bob"},references:[]}];api.auth={status:"succeeded",platforms:api.platforms};
   ui.invalidate("authorization"); await ui.clock.advance(1500);
   assert.match(ui.el("onboarding-steps").children[1].children[1].textContent,/设置已被修改/);assert.match(ui.el("onboarding-steps").children[2].children[1].textContent,/程序缺失.*已保存/);assert.match(ui.el("onboarding-result-account").textContent,/@Bob/);
   api.epoch="restarted";const next=await launch(api,ui.saved);await next.el("open-settings").emit("click");assert.equal(next.el("onboarding-apply").hidden,false);
@@ -236,7 +236,7 @@ test("an unconfirmed prepare retries its exact saved request and cancellation hi
 
 test("platform notification summaries toggle only the chosen platform and preserve its full saved configuration",async()=>{
  const api=fixture();
- api.platforms=["one","two"].map(id=>({id,provider:"gitlab",name:id,url:"https://gitlab.invalid",version:1,validation:{status:"valid",username:id}}));
+ api.platforms=["one","two"].map(id=>({id,provider:"gitlab",supports_notifications:true,name:id,url:"https://gitlab.invalid",version:1,validation:{status:"valid",username:id}}));
  const views=api.platforms.map(p=>({platform_id:p.id,version:2,config:{platform_id:p.id,enabled:true,target:{mode:"inbox",agent_id:"agent-0",membership_id:"member-0"},interval_seconds:30,backfill_start:"2026-11-01T00:00:00Z",events:{enabled:false,project:"",filter:{types:[]}},todos:{enabled:true,filter:{reasons:["assigned"]}}},events:{config:{enabled:false},status:"disabled"},todos:{config:{enabled:true},status:"running"},pending:{},errors:{}}));
  api.hook=(path,body)=>{
   if(path.startsWith("/v1/platform/notifications?"))return {subscriptions:[],gitlab_platforms:structuredClone(views),gitlab:structuredClone(views[0])};
@@ -262,7 +262,7 @@ test("invalid account-bearing origins are rejected before persisting a prepare r
 
 function notificationFixture() {
  const api=fixture();
- api.platforms=["one","two"].map((id,i)=>({id,provider:"gitlab",name:`GitLab ${id}`,url:"https://gitlab.invalid",version:1,validation:{status:"valid",username:id,user_id:101+i}}));
+ api.platforms=["one","two"].map((id,i)=>({id,provider:"gitlab",supports_notifications:true,name:`GitLab ${id}`,url:"https://gitlab.invalid",version:1,validation:{status:"valid",username:id,user_id:101+i}}));
  const views=api.platforms.map(p=>({platform_id:p.id,version:2,config:{platform_id:p.id,enabled:true,target:{mode:"inbox",agent_id:"agent-0",membership_id:"member-0"},interval_seconds:30,events:{enabled:false,project:"",filter:{types:[]}},todos:{enabled:true,filter:{reasons:["assigned"],types:["work_item"]}}},events:{available:true,config:{enabled:false},status:"disabled"},todos:{available:true,config:{enabled:true},status:"running"},pending:{},errors:{}}));
  api.hook=(path,body)=>{
   if(path.startsWith("/v1/platform/notifications?")){const id=new URL(path,"http://fixture").searchParams.get("platform_id");return {subscriptions:[],gitlab_platforms:structuredClone(views),gitlab:structuredClone(views.find(v=>v.platform_id===id)||views[0])};}
@@ -320,7 +320,7 @@ test("switching same-type details retains each platform's own draft",async()=>{
 });
 
 test("Lark quick pause preserves selected chats, target, history and an unsaved detail draft",async()=>{
- const api=fixture();api.platforms=[{id:"lark",name:"公司飞书",provider:"lark",url:"https://open.feishu.cn",validation:{status:"valid",username:"Alice"}}];
+ const api=fixture();api.platforms=[{id:"lark",name:"公司飞书",provider:"lark",supports_notifications:true,url:"https://open.feishu.cn",validation:{status:"valid",username:"Alice"}}];
  let source={provider:"lark",channel:"messages",available:true,subscription_id:"lark-sub",subscription_version:3,status:"running",config:{enabled:true,platform_id:"lark",target:{mode:"inbox",agent_id:"agent-0",membership_id:"member-0"},private:{enabled:true,scope:"all",chat_ids:[]},groups:{enabled:true,chat_ids:["group"],message_mode:"mentions",at_me:true,at_all:false},interval_seconds:60,backfill_start:"2026-11-01T00:00:00Z"},lark:{baseline:"2026-11-01T00:00:00Z",chats:[{chat_id:"group",name:"产品群",chat_mode:"group"}]}};
  api.hook=(path,body)=>{
   if(path.startsWith("/v1/platform/notifications?"))return {subscriptions:[structuredClone(source)],gitlab_platforms:[]};
@@ -334,7 +334,7 @@ test("Lark quick pause preserves selected chats, target, history and an unsaved 
 });
 
 test("saving first Lark settings creates a paused subscription without granting tools",async()=>{
- const api=fixture();api.platforms=[{id:"lark",name:"公司飞书",provider:"lark",url:"https://open.feishu.cn",validation:{status:"valid",username:"Alice"}}];
+ const api=fixture();api.platforms=[{id:"lark",name:"公司飞书",provider:"lark",supports_notifications:true,url:"https://open.feishu.cn",validation:{status:"valid",username:"Alice"}}];
  api.hook=(path,body)=>path==="/v1/platform/notifications/configure" ? {provider:"lark",channel:"messages",subscription_id:"new-sub",subscription_version:1,status:"running",config:structuredClone(body.config),lark:{}} : undefined;
  const ui=await launch(api);assert.equal(ui.el("member-notification-platforms").children.length,0);
  await openNotification(ui,"lark");assert.equal(ui.el("lark-save").disabled,false);
@@ -366,7 +366,7 @@ for(const provider of ["gitlab","lark","scion"])test(`completed ${provider} onbo
 
 test("unfinished onboarding uses a compact summary and disappears from another platform form",async()=>{
  const api=fixture(),id="b".repeat(32),op={schema:2,operation_id:id,platform_id:"a".repeat(32),input:{provider:"gitlab",room_id:"R",room_instance:"instance-R",agent_id:"agent-0",membership_id:"member-0"},connection:{status:"connected"},notifications:{status:"failed",error_code:"settings_changed"},tool:{status:"applied"}};
- api.ops.set(id,op);api.platforms=[op.platform_id,"d".repeat(32)].map((id,i)=>({id,provider:"gitlab",name:i ? "Other GitLab" : "Company GitLab",url:"https://gitlab.invalid",version:1,validation:{status:"valid",username:i ? "Bob" : "Alice"}}));
+ api.ops.set(id,op);api.platforms=[op.platform_id,"d".repeat(32)].map((id,i)=>({id,provider:"gitlab",supports_notifications:true,name:i ? "Other GitLab" : "Company GitLab",url:"https://gitlab.invalid",version:1,validation:{status:"valid",username:i ? "Bob" : "Alice"}}));
  const ui=await launch(api,new Map([["teamx.platform-onboarding:tester",JSON.stringify({operation_id:id})]]));await ui.el("open-settings").emit("click");
  assert.equal(ui.el("onboarding-result").hidden,false);assert.equal(ui.el("onboarding-result-details").open,false);
  assert.equal(ui.el("onboarding-result-summary").textContent,"Company GitLab 已连接，通知设置尚未完成。");assert.equal(ui.el("onboarding-apply").hidden,false);assert.equal(ui.el("onboarding-resume").hidden,true);

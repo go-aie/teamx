@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-aie/teamx/internal/inputstream"
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/attachment"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
@@ -23,6 +24,7 @@ import (
 type attachmentRequest struct {
 	ServiceInfo
 	AgentID, MembershipID string
+	SourceRef, Partition  string
 	Seq                   uint64
 	Path                  string
 }
@@ -62,6 +64,39 @@ func (m *roomManager) checkAttachmentReaderLocked(ctx context.Context, req attac
 	agent, err := svc.store.runningTurnLocked(reader.MemberIdentity, reader.TurnNumber)
 	if err != nil {
 		return err
+	}
+	if req.Partition != "" {
+		return ErrIdentity
+	}
+	if req.SourceRef != "" {
+		link, _, err := svc.store.inputSourceContentLocked(reader.MemberIdentity, req.SourceRef)
+		if err != nil {
+			return err
+		}
+		if link.Location == nil {
+			return ErrIdentity
+		}
+		return svc.store.authorizeInputLocationLocked(reader.MemberIdentity, reader.TurnNumber, *link.Location)
+	}
+	if svc.unifiedInputs && req.AgentID == "" {
+		p := svc.store.platformInputs[reader.MembershipID]
+		if p == nil {
+			return ErrIdentity
+		}
+		state, err := p.repository.State(inputstream.Execution{Generation: p.generation, Turn: reader.TurnNumber})
+		if err != nil {
+			return err
+		}
+		for _, a := range state.Attempts {
+			if a.Kind == "room" && a.Phase != "failed_before_output" {
+				for _, l := range a.Entries {
+					if l.Seq == req.Seq && l.Partition == roomPartitionRef(req.RoomIdentity) {
+						return nil
+					}
+				}
+			}
+		}
+		return ErrIdentity
 	}
 	start, end := agent.Turn.StartReadThrough, agent.Turn.SnapshotSeq
 	if req.AgentID != "" {
@@ -204,6 +239,30 @@ func (m *roomManager) attachmentSourceLocked(req attachmentRequest) (platform.So
 		id := MemberIdentity{RoomIdentity: req.RoomIdentity, AgentID: req.AgentID, MembershipID: req.MembershipID}
 		svc.store.mu.Lock()
 		defer svc.store.mu.Unlock()
+		if req.Partition != "" {
+			if !svc.unifiedInputs || req.SourceRef != "" {
+				return platform.SourceRef{}, "", ErrIdentity
+			}
+			location := inputstream.Location{Partition: req.Partition, Seq: req.Seq}
+			entry, err := svc.store.businessInputLocked(id, 0, &location)
+			if errors.Is(err, inputstream.ErrExpired) {
+				return platform.SourceRef{}, "", ErrInboxExpired
+			}
+			if err != nil {
+				return platform.SourceRef{}, "", err
+			}
+			return entry.Item.Source, entry.Item.Text, nil
+		}
+		if req.SourceRef != "" {
+			_, entry, err := svc.store.inputSourceContentLocked(id, req.SourceRef)
+			if err != nil {
+				return platform.SourceRef{}, "", err
+			}
+			if entry == nil {
+				return platform.SourceRef{}, "", ErrInboxExpired
+			}
+			return entry.Item.Source, entry.Item.Text, nil
+		}
 		entry, err := svc.store.inboxEntryLocked(id, req.Seq)
 		if err != nil {
 			return platform.SourceRef{}, "", ErrIdentity
@@ -213,7 +272,7 @@ func (m *roomManager) attachmentSourceLocked(req attachmentRequest) (platform.So
 		}
 		return entry.Item.Source, entry.Item.Text, nil
 	}
-	if req.AgentID != "" || req.MembershipID != "" {
+	if req.AgentID != "" || req.MembershipID != "" || req.Partition != "" {
 		return platform.SourceRef{}, "", ErrRequest
 	}
 	room, err := svc.store.LoadRoom()
@@ -284,7 +343,7 @@ func (m *roomManager) servePlatformAttachment(w http.ResponseWriter, r *http.Req
 		writeAPIError(w, ErrRequest)
 		return
 	}
-	req := attachmentRequest{ServiceInfo: ServiceInfo{RoomIdentity: RoomIdentity{RoomID: q.Get("room_id"), RoomInstance: q.Get("room_instance")}, ServiceEpoch: q.Get("service_epoch")}, AgentID: q.Get("agent_id"), MembershipID: q.Get("membership_id"), Seq: seq, Path: q.Get("path")}
+	req := attachmentRequest{ServiceInfo: ServiceInfo{RoomIdentity: RoomIdentity{RoomID: q.Get("room_id"), RoomInstance: q.Get("room_instance")}, ServiceEpoch: q.Get("service_epoch")}, AgentID: q.Get("agent_id"), MembershipID: q.Get("membership_id"), Partition: q.Get("partition"), Seq: seq, Path: q.Get("path")}
 	data, mime, _, err := m.downloadAttachment(r.Context(), req, nil, attachment.ImageLimits{})
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {

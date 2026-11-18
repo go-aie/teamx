@@ -75,6 +75,9 @@ func (m *roomManager) bindPlatformReferences(svc *service) {
 		if err := m.notifications.ExpireTargetLocked(id.RoomIdentity, target); err != nil {
 			return notificationRoomError(err)
 		}
+		if svc.unifiedInputs {
+			return svc.maintainUnifiedInputs(ctx, id, m.inputInventoryLocked(id), m.notifications.Now())
+		}
 		return svc.maintainInboxLocal(ctx, id, m.notifications.PendingDeliveriesLocked(id.RoomIdentity, target), m.notifications.Now())
 	}})
 

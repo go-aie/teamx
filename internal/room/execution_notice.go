@@ -1,7 +1,9 @@
 package room
 
 import (
+	"fmt"
 	"strings"
+	"time"
 
 	"github.com/go-aie/teamx/internal/agent/dsh"
 )
@@ -22,6 +24,22 @@ func (m *MemberAgent) recoveringSession() bool {
 func executionNotice(s MemberStatus) *ExecutionNotice {
 	if s.Status == "recovering" {
 		return &ExecutionNotice{Code: "session_recovering", Message: "正在恢复助理，恢复后将自动继续。"}
+	}
+	if r := s.InputRecovery; r != nil && !s.Active && s.Error == "" {
+		code, message := "inbox_recovery_waiting", fmt.Sprintf("收件箱还有 %d 条待交付输入。", r.Pending)
+		switch {
+		case s.Paused:
+			message += "协作已暂停。"
+		case s.Status == "budget_exhausted":
+			code, message = "inbox_recovery_blocked", message+"回合预算已用尽。"
+		case r.Blocked != "":
+			code, message = "inbox_recovery_blocked", message+"恢复检查尚未通过，请先查看诊断。"
+		case r.Attempts >= 3:
+			code, message = "inbox_recovery_exhausted", message+"已停止自动恢复（3/3）；可继续读取收件箱。"
+		default:
+			message += fmt.Sprintf("等待恢复 %d/3，下次 %s。", min(r.Attempts+1, 3), r.NextAt.Format(time.RFC3339))
+		}
+		return &ExecutionNotice{Code: code, Message: message}
 	}
 	if notice := inboxRecoveryNotice(s); notice != nil {
 		return notice

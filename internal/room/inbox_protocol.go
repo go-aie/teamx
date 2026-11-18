@@ -3,6 +3,7 @@ package room
 import (
 	"time"
 
+	"github.com/go-aie/teamx/internal/inputstream"
 	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
@@ -28,7 +29,9 @@ func (l InboxLimits) valid() bool {
 }
 
 type InboxEntry struct {
-	Version int `json:"version"`
+	sourceRef string                // From the durable platform delivery receipt, when present.
+	Location  *inputstream.Location `json:"input_location,omitempty"`
+	Version   int                   `json:"version"`
 	MemberIdentity
 	Type       InboxEntryType    `json:"type,omitempty"`
 	Seq        uint64            `json:"seq"`
@@ -83,7 +86,8 @@ type ReclaimInbox struct {
 }
 
 type InboxStatus struct {
-	RecoveryBlocked string `json:"recovery_blocked,omitempty"`
+	History         *inputHistoryStatus `json:"history,omitempty"`
+	RecoveryBlocked string              `json:"recovery_blocked,omitempty"`
 	MemberIdentity
 	AutomaticChecked bool        `json:"automatic_checked,omitempty"`
 	AutomaticReady   bool        `json:"automatic_ready,omitempty"`

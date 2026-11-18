@@ -95,7 +95,7 @@ func TestCapabilityBasisSupportsIndependentProviderOperationAndTarget(t *testing
 	h.store.mu.Lock()
 	origins, originErr := h.store.inboxMessageOriginsLocked([]InboxEntry{entry})
 	h.store.mu.Unlock()
-	if originErr != nil || origins[1].Kind != "agent" || origins[1].ActionID != q.ID {
+	if originErr != nil || origins[inboxEntryPosition(entry)].Kind != "agent" || origins[inboxEntryPosition(entry)].ActionID != q.ID {
 		t.Fatal("native message matching required IM chat or operation assumptions", origins, originErr)
 	}
 	// Business-authority actions cannot obtain the capability path merely by

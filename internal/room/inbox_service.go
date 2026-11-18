@@ -3,6 +3,7 @@ package room
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/go-aie/actorx"
 	"github.com/go-aie/teamx/internal/platform/notification"
@@ -42,6 +43,18 @@ func (s *service) inboxLocked(ctx context.Context, id MemberIdentity) (actorx.Ad
 }
 
 func (s *service) receiveInbox(ctx context.Context, target notification.Target, item notification.Item) error {
+	if s.unifiedInputs {
+		id := MemberIdentity{RoomIdentity: s.info.RoomIdentity, AgentID: target.AgentID, MembershipID: target.MembershipID}
+		p, err := s.inputStorage(id)
+		if err != nil {
+			return err
+		}
+		_, err = p.Receive(item, time.Now())
+		if err == nil {
+			s.store.changed("inbox", id)
+		}
+		return err
+	}
 	s.inboxMu.Lock()
 	defer s.inboxMu.Unlock()
 	id := MemberIdentity{RoomIdentity: s.info.RoomIdentity, AgentID: target.AgentID, MembershipID: target.MembershipID}
@@ -56,6 +69,14 @@ func (s *service) receiveInbox(ctx context.Context, target notification.Target, 
 func (s *service) previewInbox(ctx context.Context, req apiRequest) (any, error) {
 	if req.Caller.Kind != "human" || req.Caller.MembershipID != "" {
 		return nil, ErrIdentity
+	}
+	if s.unifiedInputs {
+		id := MemberIdentity{RoomIdentity: s.info.RoomIdentity, AgentID: req.AgentID, MembershipID: req.MembershipID}
+		p, err := s.inputStorage(id)
+		if err != nil {
+			return nil, err
+		}
+		return p.previewHistory(req.InboxHistoryCursor)
 	}
 	s.inboxMu.Lock()
 	defer s.inboxMu.Unlock()
@@ -83,6 +104,14 @@ func (s *service) previewInbox(ctx context.Context, req apiRequest) (any, error)
 func (s *service) inspectInbox(ctx context.Context, req apiRequest) (any, error) {
 	if req.Caller.Kind != "human" || req.Caller.MembershipID != "" {
 		return nil, ErrIdentity
+	}
+	if s.unifiedInputs {
+		id := MemberIdentity{RoomIdentity: s.info.RoomIdentity, AgentID: req.AgentID, MembershipID: req.MembershipID}
+		p, err := s.inputStorage(id)
+		if err != nil {
+			return nil, err
+		}
+		return p.inspectHistory()
 	}
 	s.inboxMu.Lock()
 	defer s.inboxMu.Unlock()

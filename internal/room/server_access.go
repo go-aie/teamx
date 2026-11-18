@@ -43,6 +43,8 @@ type executionBinding struct {
 }
 type accessContextKey struct{}
 type serverAccess struct {
+	inputBindings              map[[32]byte]*inputSession
+	inputMCP                   *mcpHTTP
 	updateLeases               map[*uiUpdateAccessLease]struct{} // guarded by mu
 	mcp                        *mcpHTTP
 	mcpOnce                    sync.Once
@@ -526,7 +528,7 @@ func executionPath(path string) bool {
 		return true
 	}
 	switch path {
-	case "/v1/tools/list", "/v1/tools/run", "/v1/tools/skill", "/v1/skills/usage",
+	case "/v1/inputs", "/v1/tools/list", "/v1/tools/run", "/v1/tools/skill", "/v1/skills/usage",
 		"/v1/actions/execute", "/v1/actions/resolve", "/v1/actions/read", "/v1/actions/list",
 		"/v1/platform/lark/messages", "/v1/platform/lark/message", "/v1/platform/lark/target",
 		"/v1/platforms/list", "/v1/platforms/skill", "/v1/platforms/chats", "/v1/platforms/projects",

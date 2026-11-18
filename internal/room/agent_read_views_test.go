@@ -352,6 +352,11 @@ func TestAgentRoomReadUsesNamesWithoutInternalMentionBindings(t *testing.T) {
 				delete(want, "read_receipt")
 				delete(want, "expires_at")
 				messages := want["messages"].([]any)
+				for _, message := range messages {
+					if row, ok := message.(map[string]any); ok && row["client_message_id"] == "" {
+						delete(row, "client_message_id")
+					}
+				}
 				delete(messages[0].(map[string]any), "author_membership_id")
 				delete(messages[1].(map[string]any), "mentions")
 				messages[1].(map[string]any)["text"] = "🙂 @研发 助手 / @产品助手"

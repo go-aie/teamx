@@ -70,6 +70,14 @@
   padding:12px 32px;
   animation:arrive .2s ease-out;
 }
+.room-event {
+  padding:8px clamp(16px,4vw,32px);
+  color:var(--muted);
+  font-size:var(--font-small);
+  line-height:1.5;
+  text-align:center;
+  overflow-wrap:anywhere;
+}
 .message > .avatar {
   margin-top:2px;
 }

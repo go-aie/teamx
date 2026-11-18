@@ -15,8 +15,13 @@ import (
 )
 
 func cliToolFixture(t *testing.T, body string) (*roomManager, roomSummary, *service, managedPlatform, []MemberState) {
+	return cliToolFixtureWithInputLog(t, body, false)
+}
+
+func cliToolFixtureWithInputLog(t *testing.T, body string, unified bool) (*roomManager, roomSummary, *service, managedPlatform, []MemberState) {
 	t.Helper()
 	m := testManager(t, t.TempDir(), managerTestProfiles(t))
+	m.config.unifiedInputs = unified
 	// Native CLI fixtures retain account queues and cancellation without remote pacing.
 	m.larkClients = lark.NewClientFactory(0, 0, 0)
 	room := managerCreate(t, m, "tools")

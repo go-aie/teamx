@@ -19,12 +19,17 @@ import (
 )
 
 func connectFixture(t *testing.T) (*roomManager, *service, MemberState, platformConnectRequest) {
+	return connectFixtureWithSource(t, false, "连接飞书，名称为工作飞书")
+}
+
+func connectFixtureWithSource(t *testing.T, unified bool, text string) (*roomManager, *service, MemberState, platformConnectRequest) {
 	t.Helper()
 	m := testManager(t, t.TempDir(), managerTestProfiles(t))
+	m.config.unifiedInputs = unified
 	r := managerCreate(t, m, "connect")
 	_, snap := readManagedRoom(t, m, r)
 	svc := eventLiveService(t, &eventHarness{m: m, room: r})
-	source, err := svc.room.Call[PostReceipt](context.Background(), PostMessage{RoomIdentity: r.RoomIdentity, Caller: humanCaller, ClientMessageID: "connect-source", Text: "连接飞书，名称为工作飞书"})
+	source, err := svc.room.Call[PostReceipt](context.Background(), PostMessage{RoomIdentity: r.RoomIdentity, Caller: humanCaller, ClientMessageID: "connect-source", Text: text})
 	if err != nil {
 		t.Fatal(err)
 	}

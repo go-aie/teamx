@@ -46,6 +46,20 @@ type InboxBatchPage struct {
 func (s *Store) loadInboxConsumption(a *AgentInbox) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.readInboxConsumption(a, func(seq uint64) (InboxEntry, error) {
+		return s.inboxEntryLocked(a.id, seq)
+	}); err != nil {
+		return err
+	}
+	if a.expiredThrough != 0 {
+		// Existing business evidence remains independently valid after its
+		// original Inbox body has legitimately been reclaimed.
+		return s.visitFollowupEventsLocked(a.id, func(followupEvent) error { return nil })
+	}
+	return nil
+}
+
+func (s *Store) readInboxConsumption(a *AgentInbox, entryAt func(uint64) (InboxEntry, error)) error {
 	if a.taskReceipts == nil {
 		a.taskReceipts = make(map[string]inboxIndex)
 	}
@@ -76,7 +90,7 @@ func (s *Store) loadInboxConsumption(a *AgentInbox) error {
 			return ErrInvalid
 		}
 		if seq > a.expiredThrough {
-			e, err := s.inboxEntryLocked(a.id, seq)
+			e, err := entryAt(seq)
 			if err != nil {
 				return err
 			}
@@ -98,7 +112,7 @@ func (s *Store) loadInboxConsumption(a *AgentInbox) error {
 		if c.skipped(seq) {
 			continue
 		}
-		e, err := s.inboxEntryLocked(a.id, seq)
+		e, err := entryAt(seq)
 		if err != nil {
 			return err
 		}
@@ -106,14 +120,7 @@ func (s *Store) loadInboxConsumption(a *AgentInbox) error {
 			return err
 		}
 	}
-	if a.expiredThrough != 0 {
-		// Existing business evidence remains independently valid after its
-		// original Inbox body has legitimately been reclaimed.
-		if err := s.visitFollowupEventsLocked(a.id, func(followupEvent) error { return nil }); err != nil {
-			return err
-		}
-	}
-	if err := s.validateTaskEventsLocked(a.id, a.expiredThrough, a.latest, c.Through, a.taskReceipts); err != nil {
+	if err := s.validateTaskEventsLocked(a.id, a.expiredThrough, a.latest, c.Through, a.taskReceipts, entryAt); err != nil {
 		return err
 	}
 	a.consumption = c
@@ -129,6 +136,9 @@ func (s *Store) saveInboxConsumption(c inboxConsumption, confirm bool) error {
 	agent, err := s.runningTurnLocked(c.MemberIdentity, c.Batch.TurnNumber)
 	if err != nil {
 		return err
+	}
+	if agent.InputStateRef != "" {
+		return ErrConflict
 	}
 	if c.Batch.SnapshotSeq > agent.Turn.InboxSnapshotSeq {
 		return ErrConflict
@@ -192,6 +202,9 @@ func (a *AgentInbox) ReadBatch(ctx actorx.Context, msg ReadInboxBatch, reply act
 		a.store.mu.Unlock()
 		if err != nil {
 			return InboxBatchPage{}, err
+		}
+		if agent.InputStateRef != "" {
+			return InboxBatchPage{}, ErrConflict
 		}
 		end := min(latest, agent.Turn.InboxSnapshotSeq)
 		if end <= through {

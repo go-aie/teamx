@@ -25,6 +25,29 @@ const card=ui=>ui.document.getElementById('message-1').querySelector('.message-i
 const candidates=el=>el.children[4];
 const controls=el=>el.children[7].children;
 const writes=api=>api.calls.filter(c=>/\/(update|submit|cancel)$/.test(c.path));
+
+test('a page-only selection result does not promise automatic continuation',async()=>{
+ const api=fixture();api.op.status='expired';api.op.result_version=1;api.op.continuation={mode:'inbox',state:'page_only'};
+ const ui=await launch(api);await settle();
+ assert.match(card(ui).children[8].textContent,/仅在页面提示.*不会自动接续/);
+ assert.equal(writes(api).length,0);
+});
+test('a selection receipt immediately refreshes its Room event without an Agent update',async()=>{
+ const api=fixture('account'),original=api.request.bind(api);
+ api.request=async(path,body,...rest)=>{
+  const result=await original(path,body,...rest);
+  if(path.endsWith('/selection-interactions/submit')) {
+   api.messages.push({seq:2,type:'event',author:{kind:'human',id:'tester'},text:'选择结果已更新',created_at:'2026-11-11T01:01:00Z'});
+   result.continuation={mode:'inbox',state:'delivered',room_seq:2};
+  }
+  return result;
+ };
+ const ui=await launch(api);await settle();
+ await controls(card(ui))[0].emit('click');await settle();
+ const event=ui.document.getElementById('message-2');
+ assert.equal(event?.className,'room-event');assert.equal(event.textContent,'选择结果已更新');
+ assert.equal(event.children.length,0);
+});
 test('groups use exact choices, pagination and fixed fields; repeated click applies once',async()=>{
  const api=fixture(),ui=await launch(api);await settle();const el=card(ui);
  assert.equal(candidates(el).children.length,2);assert.match(el.children[9].textContent,/权限不足/);

@@ -218,6 +218,7 @@ func (m *roomManager) workspaceActivationConfig(id RoomIdentity, applying string
 		profiles[member.Runner.Profile] = p
 	}
 	config := m.config
+	config.inputAdapters = m.notificationAdapters
 	config.updates = m.updates
 	config.agentNames = m.agentNames
 	config.scheduling, _ = saved.Scheduling.effective() // validated before assembling profiles
