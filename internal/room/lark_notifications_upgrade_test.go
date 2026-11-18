@@ -151,7 +151,7 @@ func TestLarkNotificationsUpgradeInterruptedCommitRecoveryAndConflict(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := &Store{dir: root, lock: lock, ops: defaultSnapshotOps()}
+	store := &Store{dir: root, lock: lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}
 	defer store.Close()
 	m := &roomManager{store: store, index: index}
 	rename := store.ops.rename
@@ -264,7 +264,7 @@ func TestLarkNotificationsUpgradeCommitUnknownRequiresReload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := &Store{dir: root, lock: lock, ops: defaultSnapshotOps()}
+	store := &Store{dir: root, lock: lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}
 	defer store.Close()
 	rename, syncDir := store.ops.rename, store.ops.syncDir
 	sourceReplaced := false

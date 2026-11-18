@@ -109,7 +109,10 @@ func samePlatformReferences(refs []managedPlatformReference, acknowledged []Room
 // recovery or explicit sync. Revisions reject all late results.
 func (m *roomManager) invalidatePlatformQueriesLocked(id string) error {
 	m.cancelPlatformCallsLocked(func(c *platformCall) bool { return c.platformID == id })
-	return notificationRoomError(m.notifications.InvalidatePlatformLocked(id))
+	m.mu.Unlock()
+	err := m.notifications.InvalidatePlatformLocked(id)
+	m.mu.Lock()
+	return notificationRoomError(err)
 }
 
 var errPlatformReferenced = fmt.Errorf("%w: connection is referenced; explicitly replace or unbind it first", ErrConflict)
@@ -132,7 +135,7 @@ func (m *roomManager) settlePlatformCallsLocked(pending []<-chan struct{}) error
 		return nil
 	}
 	m.busy = true
-	m.updates.mark(uiUpdate{Topic: "catalog"})
+	m.catalogChangedLocked()
 	done := make(chan struct{})
 	m.operationDone = done
 	m.mu.Unlock()
@@ -144,7 +147,7 @@ func (m *roomManager) settlePlatformCallsLocked(pending []<-chan struct{}) error
 	}
 	m.mu.Lock()
 	m.busy = false
-	m.updates.mark(uiUpdate{Topic: "catalog"})
+	m.catalogChangedLocked()
 	close(done)
 	return err
 }

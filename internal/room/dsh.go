@@ -548,9 +548,9 @@ func (s *dshSession) Run(ctx context.Context, input UnreadChanged) (err error) {
 		if e != nil {
 			return dshFailure(e)
 		}
-		s.input.storage.discovery.Lock()
-		s.input.storage.keepInputCatalog(c)
-		s.input.storage.discovery.Unlock()
+		if e := s.input.storage.run(ctx, "cache_catalog", func(context.Context) error { s.input.storage.keepInputCatalog(c); return nil }); e != nil {
+			return dshFailure(e)
+		}
 		directory, exposure, e := c.Directory()
 		if e != nil {
 			return dshFailure(e)

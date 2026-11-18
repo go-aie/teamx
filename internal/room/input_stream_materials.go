@@ -102,7 +102,7 @@ func (s *inputSession) prepareInputMaterials(ctx context.Context, a inputstream.
 	allowance := max(int64(0), limits.totalBytes-state.MaterialBytes)
 	duration := max(int64(0), int64(limits.timeout)-state.MaterialNanos)
 	claimed := false
-	if err := s.mutate(func(r *inputstream.Repository) error {
+	if err := s.coordinate(ctx, func(r inputstream.ExecutionStorage) error {
 		var e error
 		claimed, e = r.ClaimMaterials(s.execution, a.ID, scan, images, allowance, duration)
 		return e
@@ -191,7 +191,7 @@ func (s *inputSession) prepareInputMaterials(ctx context.Context, a inputstream.
 	if err != nil {
 		return err
 	}
-	return s.mutate(func(r *inputstream.Repository) error {
+	return s.coordinate(ctx, func(r inputstream.ExecutionStorage) error {
 		var usage *inputstream.MaterialUsage
 		if claimed {
 			usage = &inputstream.MaterialUsage{Scans: min(budget.scanned, scan), Images: budget.attempted, Bytes: budget.used, Nanos: min(int64(budget.spent), duration)}

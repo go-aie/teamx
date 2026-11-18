@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/go-aie/teamx/internal/inputstream"
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
 	"github.com/go-aie/teamx/internal/platform/notification"
@@ -166,7 +167,7 @@ func (m *roomManager) configureEventsSubscription(ctx context.Context, key notif
 		if retireErr != nil {
 			return retired, notificationRoomError(retireErr)
 		}
-		if err = m.notifications.SaveLocked(retired); err != nil {
+		if err = m.saveNotificationLocked(retired, current); err != nil {
 			return retired, err
 		}
 		done := m.notifications.ChangedLocked(retired.Metadata().Key)
@@ -204,7 +205,7 @@ func (m *roomManager) configureEventsSubscription(ctx context.Context, key notif
 	if cfg.Enabled && account.UserID > 0 {
 		next.UserID, next.Username = account.UserID, account.Username
 	}
-	if err = m.notifications.SaveLocked(next); err != nil {
+	if err = m.saveNotificationLocked(next, current); err != nil {
 		return next, err
 	}
 	done := m.notifications.ChangedLocked(next.Metadata().Key)
@@ -243,7 +244,7 @@ func (m *roomManager) syncEventsSubscription(key notification.Key, version uint6
 	if err != nil {
 		return notificationRoomError(err)
 	}
-	if err = m.notifications.SaveLocked(next); err != nil {
+	if err = m.saveNotificationLocked(next, s); err != nil {
 		return notificationRoomError(err)
 	}
 	if changed {
@@ -292,7 +293,7 @@ func notificationRoomError(err error) error {
 	return err
 }
 func roomNotificationError(err error) error {
-	for _, pair := range [][2]error{{ErrRequest, notification.ErrRequest}, {ErrInvalid, notification.ErrInvalid}, {ErrIdentity, notification.ErrIdentity}, {ErrConflict, notification.ErrConflict}, {ErrBusy, notification.ErrBusy}, {ErrClosing, notification.ErrClosing}, {ErrCapacity, notification.ErrCapacity}} {
+	for _, pair := range [][2]error{{inputstream.ErrCapacity, notification.ErrCapacity}, {inputstream.ErrIdentity, notification.ErrIdentity}, {inputstream.ErrConflict, notification.ErrConflict}, {inputstream.ErrBlocked, notification.ErrBusy}, {inputstream.ErrBusy, notification.ErrBusy}, {inputstream.ErrInvalid, notification.ErrInvalid}, {ErrRequest, notification.ErrRequest}, {ErrInvalid, notification.ErrInvalid}, {ErrIdentity, notification.ErrIdentity}, {ErrConflict, notification.ErrConflict}, {ErrBusy, notification.ErrBusy}, {ErrClosing, notification.ErrClosing}, {ErrCapacity, notification.ErrCapacity}} {
 		if errors.Is(err, pair[0]) {
 			return pair[1]
 		}

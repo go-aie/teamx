@@ -34,18 +34,28 @@ func (p *platformInputStorage) executionLocked(turn uint64) (inputstream.Executi
 	return inputstream.Execution{Generation: p.generation, Turn: turn}, nil
 }
 func newInputSession(ctx context.Context, svc *service, p *platformInputStorage, generation string, turn uint64, images bool, validate func(context.Context) error) (*inputSession, error) {
+	if p != nil && !p.owns(ctx) {
+		return inputOwnerValue(ctx, p, "begin_execution", func(ctx context.Context) (*inputSession, error) {
+			return newInputSession(ctx, svc, p, generation, turn, images, validate)
+		})
+	}
+
 	if svc == nil || p == nil || svc.store != p.store || svc.info.RoomIdentity != p.id.RoomIdentity || generation == "" || validate == nil {
 		return nil, ErrIdentity
 	}
 	s := &inputSession{service: svc, storage: p, execution: inputstream.Execution{Generation: generation, Turn: turn}, images: images, validate: validate, unified: svc.unifiedInputs}
+	if _, err := svc.store.sharedInputs(false); err != nil {
+		return nil, err
+	}
 	if err := validate(ctx); err != nil {
 		return nil, err
 	}
 	if err := svc.store.initReferenceFollowups(p.id); err != nil {
 		return nil, err
 	}
-	p.discovery.Lock()
-	defer p.discovery.Unlock()
+	if _, err := p.owner.Call[struct{}](ctx, beginInputExecution{p.id}); err != nil {
+		return nil, err
+	}
 	p.catalogs = nil
 	p.store.mu.Lock()
 	defer p.store.mu.Unlock()
@@ -57,15 +67,15 @@ func newInputSession(ctx context.Context, svc *service, p *platformInputStorage,
 		return nil, err
 	}
 	if p.generation != "" && p.generation != generation {
-		old, err := p.repository.State(inputstream.Execution{Generation: p.generation, Turn: turn})
+		old, err := p.engine().Execution.State(inputstream.Execution{Generation: p.generation, Turn: turn})
 		if err == nil && old.Execution.Turn == turn {
 			return nil, ErrIdentity
 		}
 	}
-	if err := p.result(p.repository.Begin(s.execution)); err != nil {
+	if err := p.result(p.engine().Execution.Begin(s.execution)); err != nil {
 		return nil, err
 	}
-	state, e := p.repository.State(s.execution)
+	state, e := p.engine().Execution.State(s.execution)
 	if e != nil {
 		return nil, e
 	}
@@ -79,7 +89,7 @@ func newInputSession(ctx context.Context, svc *service, p *platformInputStorage,
 		}
 		proof, ok := room.ReadProofs[p.id.MembershipID]
 		if ok && proof.Confirmation.ReadReceipt == a.Proof() {
-			if e := p.repository.SettleOwned(s.execution, a.ID, a.Proof()); e != nil {
+			if e := p.engine().Execution.SettleOwned(s.execution, a.ID, a.Proof()); e != nil {
 				return nil, p.result(e)
 			}
 		}
@@ -98,6 +108,10 @@ func newInputSession(ctx context.Context, svc *service, p *platformInputStorage,
 	return s, nil
 }
 func (s *inputSession) check(ctx context.Context) error {
+	if !s.storage.owns(ctx) {
+		return s.storage.run(ctx, "check_execution", s.check)
+	}
+
 	if s.service.closing.Load() || s.service.restarting.Load() {
 		return ErrClosing
 	}
@@ -120,20 +134,21 @@ func (s *inputSession) check(ctx context.Context) error {
 	if e != s.execution {
 		return ErrIdentity
 	}
-	_, err = p.repository.State(e)
+	_, err = p.engine().Execution.State(e)
 	return p.result(err)
 }
 func (s *inputSession) acquire(ctx context.Context) (func(), error) {
 	p := s.storage
-	if !p.work.TryLock() {
-		return nil, ErrBusy
+	readRelease, err := p.acquireRead(ctx)
+	if err != nil {
+		return nil, err
 	}
 	ownerRelease := func() {}
 	if s.owner != nil {
 		s.owner.gate.Lock()
 		if s.owner.closed {
 			s.owner.gate.Unlock()
-			p.work.Unlock()
+			readRelease()
 			return nil, ErrClosing
 		}
 		s.owner.active.Add(1)
@@ -149,12 +164,18 @@ func (s *inputSession) acquire(ctx context.Context) (func(), error) {
 			release()
 		}
 		ownerRelease()
-		p.work.Unlock()
+		readRelease()
 		return nil, err
 	}
-	return sync.OnceFunc(func() { release(); ownerRelease(); p.work.Unlock() }), nil
+	return sync.OnceFunc(func() { release(); ownerRelease(); readRelease() }), nil
 }
 func (s *inputSession) mutate(fn func(*inputstream.Repository) error) error {
+	return s.mutateInput(context.Background(), fn)
+}
+func (s *inputSession) mutateInput(ctx context.Context, fn func(*inputstream.Repository) error) error {
+	if !s.storage.owns(ctx) {
+		return s.storage.run(ctx, "coordinate_read", func(ctx context.Context) error { return s.mutateInput(ctx, fn) })
+	}
 	p := s.storage
 	p.store.mu.Lock()
 	defer p.store.mu.Unlock()

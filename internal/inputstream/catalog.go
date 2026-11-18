@@ -153,9 +153,25 @@ func (r *Repository) Catalog(turn uint64, o Observation) (*Catalog, error) {
 	return c, nil
 }
 func (c *Catalog) AddRoom(snap Snapshot, summary StreamSummary, records []StoredRecord) error {
+	return c.AddExternal(snap, summary, records)
+}
+func (c *Catalog) AddExternal(snap Snapshot, summary StreamSummary, records []StoredRecord) error {
+	return c.addExternal(snap, summary, records, summary.Ref)
+}
+func (c *Catalog) AddShared(snap Snapshot, summary StreamSummary, records []StoredRecord, provider string) error {
+	if summary.Kind != "shared" || provider == "" {
+		return ErrInvalid
+	}
+	if len(records) == 0 {
+		return nil
+	}
+	source := attentionSourceRef(c.member, provider, records[0].Group.SourceKey(provider, records[0].Channel))
+	return c.addExternal(snap, summary, records, source)
+}
+func (c *Catalog) addExternal(snap Snapshot, summary StreamSummary, records []StoredRecord, source string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if summary.Kind != "room" || summary.Ref == "" || len(records) > MaxRecords {
+	if (summary.Kind != "room" && summary.Kind != "shared") || summary.Ref == "" || len(records) > MaxRecords {
 		return ErrInvalid
 	}
 	if len(records) == 0 {
@@ -163,13 +179,27 @@ func (c *Catalog) AddRoom(snap Snapshot, summary StreamSummary, records []Stored
 	}
 	summary.Pending = len(records)
 	summary.Attention = "normal"
+	if summary.Kind == "shared" && c.preferences.Attention[source] != "" {
+		summary.Attention = c.preferences.Attention[source]
+	}
+	if summary.Attention != "normal" && summary.Attention != "high" && summary.Attention != "low" {
+		return ErrInvalid
+	}
+	label, cut := boundedText(summary.Label, 200)
+	sourceLabel, sourceCut := boundedText(summary.SourceLabel, 200)
+	summary.Label = label
+	summary.SourceLabel = sourceLabel
 	c.streams[summary.Ref] = summary
 	for _, rec := range records {
 		if rec.Location.Partition != snap.Partition || rec.Location.Seq > snap.Through {
 			return ErrIdentity
 		}
 		c.streamEntries[summary.Ref] = append(c.streamEntries[summary.Ref], len(c.entries))
-		c.entries = append(c.entries, catalogEntry{location: rec.Location, source: summary.Ref, at: rec.ReceivedAt})
+		c.entries = append(c.entries, catalogEntry{location: rec.Location, source: source, at: rec.ReceivedAt, labelTruncated: cut || sourceCut, fallback: rec.Group.Precision == "source"})
+	}
+	if summary.Kind == "shared" {
+		summary.Hint = c.hint(c.streamEntries[summary.Ref])
+		c.streams[summary.Ref] = summary
 	}
 	return nil
 }

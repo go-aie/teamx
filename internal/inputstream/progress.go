@@ -62,6 +62,18 @@ func (r *Repository) progressLocked(bounds map[string]Snapshot) (string, bool, e
 	done := []Location{}
 	pending := false
 	for provider, bound := range bounds {
+		if observation, ok := r.coordinator.External[provider]; ok {
+			if observation.Snapshot.Partition != bound.Partition {
+				return "", false, ErrCorrupt
+			}
+			for _, l := range observation.Done {
+				if l.Seq <= bound.Through {
+					done = append(done, l)
+				}
+			}
+			pending = pending || observation.Pending
+			continue
+		}
 		p := r.parts[provider]
 		if p == nil {
 			return "", false, ErrCorrupt

@@ -219,14 +219,14 @@ func (s *Store) saveInboxEntry(a *AgentInbox, entry InboxEntry) error {
 	}
 	if entry.payloadType() == InboxTaskEventType {
 		if err := s.saveTaskDeliveryLocked(entry); err != nil {
-			s.uncertain = true
+			s.markUncertain()
 			return fmt.Errorf("%w: task event delivery receipt: %w", ErrCommitUnknown, err)
 		}
 	}
 	header := inboxHeader{Version: 1, MemberIdentity: a.id, Limits: a.limits, LatestSeq: entry.Seq, ExpiredThrough: a.expiredThrough}
 	if err := s.save(filepath.Join(a.dir, "inbox.json"), header, maxPrivateFileBytes); err != nil {
 		// The entry is already durable even if the second file did not commit.
-		s.uncertain = true
+		s.markUncertain()
 		return fmt.Errorf("%w: inbox sequence checkpoint: %w", ErrCommitUnknown, err)
 	}
 	return nil

@@ -34,6 +34,9 @@ func (s *Store) businessInputLocked(id MemberIdentity, seq uint64, l *inputstrea
 	if p == nil || p.id != id {
 		return InboxEntry{}, ErrIdentity
 	}
+	if shared := s.sharedHandle.Load(); shared != nil && l.Partition == shared.view.Load().snapshot.Partition {
+		return shared.view.Load().entry(id, *l)
+	}
 	provider, snap, err := p.repository.Locate(*l)
 	if err != nil {
 		return InboxEntry{}, err

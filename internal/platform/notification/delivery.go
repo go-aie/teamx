@@ -24,39 +24,53 @@ func Backoff(failures int, jitter func(time.Duration) time.Duration, retryAfter 
 	delay := min(jitter(min(5*time.Minute, time.Second<<min(max(failures-1, 0), 9))), 5*time.Minute)
 	return max(delay, time.Duration(max(0, min(86400, retryAfter)))*time.Second)
 }
-func (m *Manager) Deliver(ctx context.Context, key Key, version uint64) error {
-	m.host.Gate.Lock()
-	defer m.host.Gate.Unlock()
-	current, ok := m.states[key]
-	if !ok || current.state.Metadata().Version != version || !current.state.Metadata().Enabled {
-		return ErrIdentity
-	}
-	next := ApplyExpiry(current.state, m.expiryCutoff())
-	if !reflect.DeepEqual(next, current.state) {
-		if err := m.SaveLocked(next); err != nil {
-			return err
-		}
-		current = m.states[key]
-	}
 
-	scope, err := m.host.Admit(ctx, current.state)
+// Deliver reserves a single attempt for the exact subscription. Target receipt
+// and source acknowledgement are independent durable commits. Queries may run
+// during receipt; acknowledgement transforms the latest committed source state.
+func (m *Manager) Deliver(ctx context.Context, key Key, version uint64) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	if m.stopping || m.retired[key.Owner] {
+		m.mu.Unlock()
+		return ErrClosing
+	}
+	if m.deliveries[key] != nil {
+		m.mu.Unlock()
+		return ErrBusy
+	}
+	flight := &deliveryFlight{done: make(chan struct{})}
+	m.deliveries[key] = flight
+	m.mu.Unlock()
+	defer func() { m.mu.Lock(); delete(m.deliveries, key); close(flight.done); m.mu.Unlock() }()
+	ctx = context.WithoutCancel(ctx)
+	if err := m.mutate(key.Owner, func(s *sourceStore) error {
+		current, ok := s.states[key]
+		if !ok || current.state.Metadata().Version != version || !current.state.Metadata().Enabled {
+			return ErrIdentity
+		}
+		return s.expireKey(key)
+	}); err != nil {
+		return err
+	}
+	current := m.projection(key.Owner)[key]
+	scope, err := m.host.Admit(context.WithValue(ctx, deliveryAdmissionKey{}, true), current.state)
 	if err != nil {
-		if errors.Is(err, ErrIdentity) && current.state.Metadata().Pending > 0 && current.state.Metadata().DeliveryError != "target_removed" {
-			if saveErr := m.SaveLocked(current.state.WithDeliveryError("target_removed")); saveErr != nil {
-				return saveErr
-			}
+		if errors.Is(err, ErrIdentity) && current.state.Metadata().Pending > 0 {
+			_ = m.deliveryError(key, "target_removed")
 		}
 		return err
 	}
 	if !scope.Current {
-		if current.state.Metadata().Pending > 0 && current.state.Metadata().DeliveryError != "target_unavailable" {
-			if err := m.SaveLocked(current.state.WithDeliveryError("target_unavailable")); err != nil {
+		if current.state.Metadata().Pending > 0 {
+			if err := m.deliveryError(key, "target_unavailable"); err != nil {
 				return err
 			}
 		}
 		return ErrBusy
 	}
-
 	items := current.state.PendingItems()
 	if len(items) == 0 {
 		if m.host.Maintain != nil {
@@ -82,9 +96,7 @@ func (m *Manager) Deliver(ctx context.Context, key Key, version uint64) error {
 			return err
 		}
 	}
-	// The owner holds this same gate through its target commit. Clear/restart keeps
-	// receipts, so an ambiguous ack repeats this stable ID rather than a new post.
-	if err := m.host.Deliver(context.WithoutCancel(ctx), current.state.Metadata(), item); err != nil {
+	if err := m.host.Deliver(ctx, current.state.Metadata(), item); err != nil {
 		code := "target_unavailable"
 		if errors.Is(err, ErrCapacity) {
 			code = "inbox_capacity"
@@ -92,12 +104,50 @@ func (m *Manager) Deliver(ctx context.Context, key Key, version uint64) error {
 		if errors.Is(err, ErrIdentity) {
 			code = "target_removed"
 		}
-		if current.state.Metadata().DeliveryError != code {
-			if saveErr := m.SaveLocked(current.state.WithDeliveryError(code)); saveErr != nil {
-				return saveErr
-			}
+		if saveErr := m.deliveryError(key, code); saveErr != nil {
+			return saveErr
 		}
 		return err
 	}
-	return m.SaveLocked(current.state.Acknowledge(item.Key))
+	err = m.mutate(key.Owner, func(s *sourceStore) error {
+		latest, ok := s.states[key]
+		if !ok {
+			return ErrIdentity
+		}
+		pending, ok := latest.state.Notification(item.Key)
+		if !ok {
+			return nil
+		} // A committed expiration already settled this identity.
+		if !reflect.DeepEqual(pending, item) {
+			return ErrConflict
+		}
+		return s.SaveLocked(latest.state.Acknowledge(item.Key))
+	})
+	if err == nil && m.host.Maintain != nil {
+		meta := current.state.Metadata()
+		meta.Target = item.Route.Target
+		_ = m.host.Maintain(ctx, meta)
+	}
+	return err
+}
+func (m *Manager) deliveryError(key Key, code string) error {
+	return m.mutate(key.Owner, func(s *sourceStore) error {
+		current, ok := s.states[key]
+		if !ok {
+			return ErrIdentity
+		}
+		if current.state.Metadata().DeliveryError == code {
+			return nil
+		}
+		return s.SaveLocked(current.state.WithDeliveryError(code))
+	})
+}
+
+// DeliveryAdmission distinguishes receipt recovery from admitting a new source
+// query. A target with no current receivers can still replay a published ID.
+type deliveryAdmissionKey struct{}
+
+func DeliveryAdmission(ctx context.Context) bool {
+	v, _ := ctx.Value(deliveryAdmissionKey{}).(bool)
+	return v
 }

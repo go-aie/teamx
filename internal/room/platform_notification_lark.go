@@ -55,9 +55,17 @@ func (m *roomManager) resumeLarkSubscriptionsLocked(platformID string) error {
 			if err != nil {
 				return notificationRoomError(err)
 			}
-			if err := m.notifications.SaveLocked(next); err != nil {
+			binding := larkBinding(a)
+			m.mu.Unlock()
+			installed, err := m.notifications.Configure(s.Metadata().Key, s.SubscriptionVersion, func(current notification.State) (notification.State, error) {
+				latest := current.(lark.State)
+				return m.configureLarkState(latest.RoomIdentity, &latest, binding, latest.Config)
+			})
+			m.mu.Lock()
+			if err != nil {
 				return notificationRoomError(err)
 			}
+			next = installed.(lark.State)
 			if m.notifications.ChangedLocked(next.Metadata().Key) == nil {
 				m.notifications.WakeLocked(next.Metadata().Key)
 			}
@@ -184,7 +192,7 @@ func (m *roomManager) configureLarkSubscription(ctx context.Context, key notific
 		if e != nil {
 			return retired, notificationRoomError(e)
 		}
-		if e = m.notifications.SaveLocked(retired); e != nil {
+		if e = m.saveNotificationLocked(retired, current); e != nil {
 			return retired, notificationRoomError(e)
 		}
 		done := m.notifications.ChangedLocked(retired.Metadata().Key)
@@ -218,7 +226,7 @@ func (m *roomManager) configureLarkSubscription(ctx context.Context, key notific
 	if err := m.checkPlatformMemberContextLocked(ctx); err != nil {
 		return lark.State{}, err
 	}
-	if err = m.notifications.SaveLocked(next); err != nil {
+	if err = m.saveNotificationLocked(next, current); err != nil {
 		return next, notificationRoomError(err)
 	}
 	done := m.notifications.ChangedLocked(next.Metadata().Key)
@@ -268,7 +276,7 @@ func (m *roomManager) syncLarkSubscription(ctx context.Context, key notification
 	if err != nil {
 		return notificationRoomError(err)
 	}
-	if err = m.notifications.SaveLocked(next); err != nil {
+	if err = m.saveNotificationLocked(next, s); err != nil {
 		return notificationRoomError(err)
 	}
 	done := m.notifications.ChangedLocked(key)

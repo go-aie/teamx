@@ -97,7 +97,7 @@ func TestLarkSearchUpgradeWholeStoreRollback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := &Store{dir: root, lock: lock, ops: defaultSnapshotOps()}
+	store := &Store{dir: root, lock: lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}
 	defer store.Close()
 	if other, err := lockDirectory(root); err == nil {
 		_ = unlockDirectory(other)
@@ -203,7 +203,7 @@ func TestLarkSearchUpgradeTransactionRecovery(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			store := &Store{dir: root, lock: lock, ops: defaultSnapshotOps()}
+			store := &Store{dir: root, lock: lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}
 			defer store.Close()
 			offline := &roomManager{store: store, index: index}
 			offline.initPlatform()
@@ -246,7 +246,7 @@ func TestLarkSearchUpgradeTransactionRecovery(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			store = &Store{dir: root, lock: lock, ops: defaultSnapshotOps()}
+			store = &Store{dir: root, lock: lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}
 			defer store.Close()
 			offline.store = store
 			if _, err := offline.upgradeMemberNotificationsLocked(); err != nil {

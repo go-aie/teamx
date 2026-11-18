@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-aie/teamx/internal/agent/dsh"
@@ -65,6 +66,8 @@ type roomRuntimeSummary struct {
 	RuntimeStatus      string              `json:"runtime_status"`
 	Service            *ServiceInfo        `json:"service,omitempty"`
 	RuntimeError       string              `json:"runtime_error,omitempty"`
+	SummaryStatus      string              `json:"summary_status"`
+	SummaryError       string              `json:"summary_error,omitempty"`
 	HumanRead          humanReadSummary    `json:"human_read"`
 }
 
@@ -156,9 +159,10 @@ type roomsIndex struct {
 	WorkspaceOperations []workspaceOperation    `json:"workspace_operations,omitempty"`
 }
 
-// The root lock owns the catalog and its live services. Durable
-// operations retain an owner independently of an HTTP caller.
+// The root lock owns catalog mutations and live services. Catalog reads use
+// the published immutable view. Durable operations outlive their HTTP caller.
 type roomManager struct {
+	catalog                  atomic.Pointer[roomsCatalogSnapshot]
 	updates                  *uiUpdateHub
 	agentNames               *agentNameRegistry
 	modelControl             *modelController
@@ -227,7 +231,7 @@ func openRoomManager(dir string, maxTurns uint64, upgrade *inputUpgradeOptions) 
 	if err != nil {
 		return nil, err
 	}
-	store := &Store{dir: abs, lock: lock, ops: defaultSnapshotOps()}
+	store := &Store{dir: abs, lock: lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}
 	defer func() {
 		if err != nil {
 			_ = store.Close()
@@ -315,6 +319,7 @@ func openRoomManager(dir string, maxTurns uint64, upgrade *inputUpgradeOptions) 
 	if err := m.loadPlatformNotificationsLocked(); err != nil {
 		return nil, err
 	}
+	m.publishRoomsCatalogLocked()
 	return m, nil
 }
 
@@ -338,8 +343,8 @@ func (m *roomManager) saveIndex(next roomsIndex) error {
 		return err
 	}
 	m.index = next
-	m.updates.mark(uiUpdate{Topic: "catalog"})
 	m.publishAgentNames()
+	m.catalogChangedLocked()
 	return nil
 }
 
@@ -744,6 +749,10 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m.serveLarkChats(w, r)
 		return
 	}
+	if r.URL.Path == "/v1/rooms/shared-inbox" {
+		m.serveSharedInbox(w, r)
+		return
+	}
 	if r.URL.Path == "/v1/platform/gitlab/projects" {
 		m.serveGitLabProjects(w, r)
 		return
@@ -802,6 +811,10 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
+	if r.Method == http.MethodGet {
+		m.serveRoomsCatalog(w, r)
+		return
+	}
 	if !m.mu.TryLock() {
 		writeAPIError(w, ErrBusy)
 		return
@@ -809,55 +822,6 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer m.mu.Unlock()
 	if err := m.store.check(false); err != nil {
 		writeAPIError(w, err)
-		return
-	}
-	if r.Method == http.MethodGet {
-		rooms := make([]roomRuntimeSummary, 0, len(m.index.Rooms))
-		for _, e := range m.index.Rooms {
-			summary := roomRuntimeSummary{roomSummary: e.roomSummary, RuntimeStatus: "closed", Busy: m.roomBusyLocked(e.RoomIdentity)}
-			if svc, rt := m.runtimeServiceLocked(e.RoomIdentity); rt != nil {
-				summary.RuntimeStatus, summary.RuntimeError = rt.status, rt.err
-				if rt.status == "ready" && svc != nil && !svc.closing.Load() {
-					info := svc.info
-					summary.Service = &info
-				}
-			}
-			// Preserve snapshot activity time separately from public message time,
-			// without writing the catalog on every message or scheduler update.
-			if info, err := os.Stat(filepath.Join(m.roomDir(e.RoomID), "room.json")); err == nil && info.ModTime().After(summary.UpdatedAt) {
-				summary.UpdatedAt = info.ModTime().UTC()
-			}
-			// Public message time is separate from snapshot writes such as read
-			// cursor updates. Derive it for inactive rooms and existing data too.
-			snapshot, snapshotErr, reading := readHumanReadCatalog(m.roomDir(e.RoomID), e.RoomIdentity, requestOperator(r), humanOperator())
-			summary.HumanRead = reading
-			if snapshotErr == nil &&
-				snapshot.RoomIdentity == e.RoomIdentity && len(snapshot.Messages) > 0 {
-				last := snapshot.Messages[len(snapshot.Messages)-1]
-				summary.LastMessageAt = &last.CreatedAt
-				summary.LastMessagePreview = summarizeRoomMessage(last)
-				if last.Author.Kind == "agent" {
-					summary.LastMessagePreview.AgentName = m.agentNames.name(MemberIdentity{RoomIdentity: e.RoomIdentity, AgentID: last.Author.ID, MembershipID: last.AuthorMembershipID})
-				}
-				if len(last.Mentions) > 0 {
-					last.Text = m.displayMentionText(e.RoomIdentity, last)
-					summary.LastMessagePreview.Text = summarizeRoomMessage(last).Text
-				}
-			}
-			var saved managedRoomConfig
-			if err := readSnapshot(filepath.Join(m.roomDir(e.RoomID), "room-config.json"), &saved, maxPrivateFileBytes); err == nil && saved.RoomIdentity == e.RoomIdentity {
-				for _, member := range saved.Members {
-					summary.Members = append(summary.Members, teamMemberSummary{ID: member.AgentID, Name: member.Name, AgentName: m.agentNames.name(MemberIdentity{RoomIdentity: e.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID})})
-				}
-			}
-			rooms = append(rooms, summary)
-		}
-		response := roomsResponse{settingsView: m.settings.snapshot().settingsView, ServiceEpoch: m.epoch, Rooms: rooms,
-			Operator: requestOperator(r), Busy: m.busy, Teams: m.teamSummaries(), AgentRoles: builtinAgentRoleSummaries(), DefaultAssistant: m.index.DefaultAssistant}
-		if m.store.uncertain {
-			response.WriteError = ErrCommitUnknown.Error()
-		}
-		_ = json.NewEncoder(w).Encode(response)
 		return
 	}
 	if m.closing {

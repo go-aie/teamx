@@ -18,6 +18,14 @@ func (a *AgentInbox) Bindings() []actorx.Binding {
 	}
 }
 
+func (a *InboxActor) Bindings() []actorx.Binding {
+	return []actorx.Binding{
+		actorx.HandleDeferred(a.Operate),
+		actorx.HandleDeferred(a.Quiesce),
+		actorx.HandleMessage(a.Started),
+	}
+}
+
 func (a *MemberAgent) Bindings() []actorx.Binding {
 	return []actorx.Binding{
 		actorx.Handle(a.BindScheduler),
@@ -28,6 +36,18 @@ func (a *MemberAgent) Bindings() []actorx.Binding {
 		actorx.HandleMessage(a.StartGranted),
 		actorx.HandleMessage(a.Started),
 		actorx.HandleMessage(a.Stopped),
+	}
+}
+
+func (a *MemberInputActor) Bindings() []actorx.Binding {
+	return []actorx.Binding{
+		actorx.Handle(a.CheckExecution),
+		actorx.Handle(a.Inspect),
+		actorx.Handle(a.InspectOwner),
+		actorx.Handle(a.Lease),
+		actorx.HandleDeferred(a.Operate),
+		actorx.HandleDeferred(a.Quiesce),
+		actorx.HandleMessage(a.Started),
 	}
 }
 

@@ -107,6 +107,7 @@ type apiError struct {
 }
 
 type service struct {
+	maintainShared            atomic.Pointer[sharedInboxMaintenance]
 	inputAdapters             map[notification.SourceID]notificationAdapter
 	unifiedInputs             bool
 	updates                   *uiUpdateHub
@@ -323,6 +324,11 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 		return nil, err
 	}
 	if s.unifiedInputs {
+		if shared, err := s.store.sharedInputs(false); err != nil {
+			return nil, err
+		} else if shared != nil {
+			shared.service.Store(s)
+		}
 		for _, member := range state.Members {
 			id := MemberIdentity{RoomIdentity: state.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
 			if _, err := s.inputStorage(id); err != nil {
@@ -463,6 +469,9 @@ func (s *service) close(ctx context.Context) error {
 	cleanupErr = errors.Join(cleanupErr, exit.Reason)
 	if err := s.rt.Close(ctx); err != nil {
 		return fmt.Errorf("cleanup incomplete (store still owned): %w", err)
+	}
+	if err := s.store.closeInputOwners(ctx); err != nil {
+		return fmt.Errorf("input cleanup incomplete (store still owned): %w", err)
 	}
 	s.cancel()
 	s.closed = true
@@ -716,6 +725,9 @@ func (s *service) removeLocked(req apiRequest) (MemberInfo, error) {
 		}
 		defer release()
 	}
+	if err := s.closeSharedMember(s.ctx, id); err != nil {
+		return MemberInfo{}, err
+	}
 	s.inboxMu.Lock()
 	removed, err := s.room.Call[MemberInfo](s.ctx, RemoveMember{id})
 	if err != nil {
@@ -746,7 +758,7 @@ func (s *service) settleMemberRemoval(membershipID string) error {
 		}
 		s.setTarget(membershipID, actorx.Addr{})
 	}
-	return nil
+	return s.store.retireMemberInputs(s.ctx, membershipID)
 }
 
 func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {

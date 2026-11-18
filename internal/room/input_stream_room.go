@@ -2,7 +2,9 @@ package room
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -59,7 +61,7 @@ func (s *inputSession) reserveRoom(ctx context.Context, q inputstream.ReadReques
 	limit := q.Limit
 	var snapshot *uint64
 	if parent == nil {
-		state, err := s.storage.repository.State(s.execution)
+		state, err := s.inputState(ctx)
 		if err != nil {
 			return inputstream.ReadAttempt{}, err
 		}
@@ -87,12 +89,37 @@ func (s *inputSession) reserveRoom(ctx context.Context, q inputstream.ReadReques
 	if err != nil {
 		return inputstream.ReadAttempt{}, err
 	}
+	return s.reserveRoomPage(ctx, q, page)
+}
+
+// The Room scan precedes the member commit. Recheck the native publication
+// under the same Store lock used by SaveRoom's protection check: either clear
+// commits first and no page is reserved, or the durable page blocks clear.
+func (s *inputSession) reserveRoomPage(ctx context.Context, q inputstream.ReadRequest, page ReadPage) (inputstream.ReadAttempt, error) {
+	id := s.storage.id
 	entries := []inputstream.Location{}
 	for _, m := range page.Messages {
 		entries = append(entries, inputstream.Location{Partition: roomPartitionRef(id.RoomIdentity), Seq: m.Seq})
 	}
 	var a inputstream.ReadAttempt
-	err = s.mutate(func(r *inputstream.Repository) error {
+	err := s.coordinate(ctx, func(r inputstream.ExecutionStorage) error {
+		var native RoomSnapshot
+		if err := readSnapshot(filepath.Join(s.storage.store.dir, "room.json"), &native, maxRoomFileBytes); err != nil {
+			return err
+		}
+		if native.RoomIdentity != id.RoomIdentity || page.RoomIdentity != id.RoomIdentity {
+			return ErrIdentity
+		}
+		if page.FromExclusive < native.ClearedThrough || page.SnapshotSeq > native.LatestSeq {
+			return ErrReadExpired
+		}
+		member := slices.IndexFunc(native.Members, func(m MemberState) bool { return m.AgentID == id.AgentID && m.MembershipID == id.MembershipID })
+		if member < 0 {
+			return ErrIdentity
+		}
+		if inputstream.ValidateCheckpoint(native.Members[member].ReadThrough, page.FromExclusive, native.ClearedThrough) != nil {
+			return ErrReadExpired
+		}
 		var err error
 		a, err = r.ReserveOwned(s.execution, q, roomStreamRef(id), inputstream.OwnedPage{Snapshot: inputstream.Snapshot{Partition: roomPartitionRef(id.RoomIdentity), Revision: page.Revision, Through: page.SnapshotSeq, Reclaimed: page.ClearedThrough}, From: page.FromExclusive, Through: page.ScannedThrough, Entries: entries, Remaining: page.Remaining, HasMore: page.ScannedThrough < page.SnapshotSeq})
 		return err
@@ -145,7 +172,7 @@ func (s *inputSession) prepareRoomPage(ctx context.Context, a inputstream.ReadAt
 	if len(entries) == 0 {
 		page.stop = "stream_empty"
 	}
-	state, err := s.storage.repository.State(s.execution)
+	state, err := s.inputState(ctx)
 	if err != nil {
 		return err
 	}
@@ -177,7 +204,10 @@ func (r *Room) ConfirmInput(ctx actorx.Context, msg ConfirmInputRead, reply acto
 		reply.Complete(p.Confirmation, nil)
 		return nil
 	}
-	if a.From < r.state.ClearedThrough || a.From != r.state.Members[i].ReadThrough || a.Through > r.state.LatestSeq || a.Through > a.Snapshot.Through {
+	if err := inputstream.ValidateReadRange(a.Snapshot.Partition, a.From, a.Through, a.Snapshot.Through, a.Entries); err != nil {
+		return errors.Join(ErrConflict, err)
+	}
+	if a.From < r.state.ClearedThrough || inputstream.ValidateCheckpoint(r.state.Members[i].ReadThrough, a.From, r.state.ClearedThrough) != nil || a.Through > r.state.LatestSeq || a.Through > a.Snapshot.Through {
 		return ErrReadExpired
 	}
 	expected := []uint64{}

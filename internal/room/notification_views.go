@@ -18,6 +18,8 @@ type notificationSourceLocation struct {
 
 // Both endpoints share this entry. Preview never resolves or consumes sources.
 type inboxEntryView struct {
+	Shared             bool                        `json:"shared,omitempty"`
+	Consumption        string                      `json:"consumption,omitempty"`
 	Partition          string                      `json:"partition,omitempty"`
 	Type               InboxEntryType              `json:"type"`
 	TaskEvent          *InboxTaskEvent             `json:"task_event,omitempty"`

@@ -7,9 +7,11 @@ import (
 	"unicode/utf8"
 )
 
-// Target identifies a single member Inbox.
-// MembershipID, never an agent name alone, fixes the receiving generation.
+// Target identifies a private member Inbox or a shared body owner. Private
+// routing freezes MembershipID; shared routing freezes InboxID and the body
+// publication freezes the actual receiving Grants.
 type Target struct {
+	InboxID      string `json:"inbox_id,omitempty"`
 	Mode         string `json:"mode,omitempty"`
 	AgentID      string `json:"agent_id,omitempty"`
 	MembershipID string `json:"membership_id,omitempty"`
@@ -17,11 +19,14 @@ type Target struct {
 
 // RetiredRoom reports the destination used by older on-disk GitLab snapshots.
 func (t Target) RetiredRoom() bool {
-	return (t.Mode == "" || t.Mode == "room") && t.AgentID == "" && t.MembershipID == ""
+	return t.InboxID == "" && (t.Mode == "" || t.Mode == "room") && t.AgentID == "" && t.MembershipID == ""
 }
 
 func (t Target) Valid() bool {
-	return t.Mode == "inbox" && strings.TrimSpace(t.AgentID) != "" && len(t.AgentID) <= 4096 && utf8.ValidString(t.AgentID) && !strings.ContainsRune(t.AgentID, 0) && validComponent(t.MembershipID)
+	if t.Mode == "shared_inbox" {
+		return validComponent(t.InboxID) && t.AgentID == "" && t.MembershipID == ""
+	}
+	return t.InboxID == "" && t.Mode == "inbox" && strings.TrimSpace(t.AgentID) != "" && len(t.AgentID) <= 4096 && utf8.ValidString(t.AgentID) && !strings.ContainsRune(t.AgentID, 0) && validComponent(t.MembershipID)
 }
 
 // Normalize returns the canonical target without discarding invalid fields.
@@ -35,6 +40,9 @@ func (t Target) Normalize() (Target, error) {
 // ScopeKey identifies a destination. AgentID is checked separately, so changing
 // an agent cannot allocate another subscription for the same membership.
 func (t Target) ScopeKey() string {
+	if t.Mode == "shared_inbox" {
+		return "shared_inbox:" + t.InboxID
+	}
 	return "inbox:" + t.MembershipID
 }
 
@@ -49,6 +57,17 @@ func (r Route) Valid(version uint64) bool {
 	return r.Target.Valid() && r.Version <= version && r.Version > 0
 }
 func (r Route) DeliveryID(sourceID string) string {
-	hash := sha256.Sum256([]byte(sourceID + "|" + r.Target.MembershipID))
+	target := r.Target.MembershipID
+	if r.Target.Mode == "shared_inbox" {
+		target = "shared_inbox:" + r.Target.InboxID
+	}
+	hash := sha256.Sum256([]byte(sourceID + "|" + target))
 	return fmt.Sprintf("notification-%x", hash)
+}
+
+func (t Target) InboxKey() string {
+	if t.Mode == "shared_inbox" {
+		return t.InboxID
+	}
+	return t.MembershipID
 }

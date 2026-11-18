@@ -54,6 +54,10 @@ func (h *mcpHTTP) addInputTools() {
 	})
 }
 func (s *inputSession) listInputStreams(ctx context.Context, data []byte) (any, error) {
+	if !s.storage.owns(ctx) {
+		return inputOwnerValue(ctx, s.storage, "list_streams", func(ctx context.Context) (any, error) { return s.listInputStreams(ctx, data) })
+	}
+
 	if err := s.check(ctx); err != nil {
 		return nil, err
 	}
@@ -61,13 +65,11 @@ func (s *inputSession) listInputStreams(ctx context.Context, data []byte) (any, 
 	if err != nil {
 		return nil, err
 	}
-	s.storage.discovery.Lock()
-	defer s.storage.discovery.Unlock()
 	if q.Cursor != "" {
 		for i := len(s.storage.catalogs) - 1; i >= 0; i-- {
 			v, err := s.storage.catalogs[i].ReadableList(q)
 			if err == nil {
-				return s.chargeDiscovery(v)
+				return s.chargeDiscoveryOwned(ctx, v)
 			}
 			if !errors.Is(err, inputstream.ErrExpired) {
 				return nil, err
@@ -84,14 +86,17 @@ func (s *inputSession) listInputStreams(ctx context.Context, data []byte) (any, 
 	if err != nil {
 		return nil, err
 	}
-	return s.chargeDiscovery(v)
+	return s.chargeDiscoveryOwned(ctx, v)
 }
 func (s *inputSession) chargeDiscovery(v any) (any, error) {
+	return inputOwnerValue(context.Background(), s.storage, "charge_discovery", func(ctx context.Context) (any, error) { return s.chargeDiscoveryOwned(ctx, v) })
+}
+func (s *inputSession) chargeDiscoveryOwned(ctx context.Context, v any) (any, error) {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.mutate(func(r *inputstream.Repository) error { return r.ChargeDiscovery(s.execution, len(b)) }); err != nil {
+	if err := s.coordinate(ctx, func(r inputstream.ExecutionStorage) error { return r.ChargeDiscovery(s.execution, len(b)) }); err != nil {
 		if errors.Is(err, inputstream.ErrCapacity) {
 			reason := "discovery_budget_exhausted"
 			return map[string]string{"stop_reason": reason}, nil

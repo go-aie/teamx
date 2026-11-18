@@ -119,13 +119,6 @@ func (s *service) labelMessage(page ReadPage) ReadPage {
 	return page
 }
 
-// A list preview uses current labels without rewriting the saved source text.
-func (m *roomManager) displayMentionText(room RoomIdentity, message RoomMessage) string {
-	return renderMentionText(message, func(at MessageMention) string {
-		return m.agentNames.name(MemberIdentity{RoomIdentity: room, AgentID: at.ID, MembershipID: at.MembershipID})
-	})
-}
-
 func renderMentionText(message RoomMessage, agentName func(MessageMention) string) string {
 	if len(message.Mentions) == 0 {
 		return message.Text

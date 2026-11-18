@@ -1,13 +1,11 @@
 // Package notification owns subscription execution, persistence and delivery.
-// It does not import providers or Room. All catalog operations use the owner's
-// single Gate; callbacks below run with that gate held. Source queries run free
-// of it and can only publish candidates through a checked StepHost.
+// It does not import providers or Room. Each Room has one source state owner.
+// Queries and target delivery run outside its persistence task slot.
 package notification
 
 import (
 	"context"
 	"errors"
-	"sync"
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
@@ -92,7 +90,7 @@ type Runner interface {
 // A Step performs at most one remote query. A source may emit a local checkpoint
 // before that query and a result candidate after it. Commit acknowledges each
 // candidate synchronously; a failure must not advance the source's runtime cache.
-// Read and Commit acquire the owner's Gate internally, never a second mutex.
+// Read captures committed state; Commit checks its data and connection revisions.
 type StepHost interface {
 	Read(context.Context) (State, Scope, error)
 	Commit(State) error
@@ -115,14 +113,12 @@ func DefaultLimits() Limits {
 	return Limits{Observed: 100000, Inbox: 10000, Bytes: 64 << 20, SlicePages: 20, SliceBytes: 16 << 20, SliceTime: 30 * time.Second}
 }
 
-// Host is the Room-owned admission and final-commit boundary. The service has no
-// private mutex to hold while calling it. Gate -> Room service read lock -> actor
-// is the only lock order; no callback reacquires Gate.
+// Host supplies independently synchronized admission and durable file operations.
+// Callbacks never run under a manager or notification catalog lock.
 type Host struct {
 	// Changed receives immutable installed states, nil for creation/removal.
-	// Observers must not mutate them or query the producer while Gate is held.
+	// Observers receive a signal only after the committed projection is installed.
 	Changed         func(before, after State)
-	Gate            sync.Locker
 	Check           func(writing bool) error
 	Directory       func(platform.RoomIdentity) (string, error)
 	EnsureDirectory func(string) error

@@ -634,6 +634,7 @@ test("conversation timestamps remain separate from exceptional runtime and manag
     [{runtime_status:"opening"},"正在打开…"],
     [{runtime_status:"failed",runtime_error:"backend unavailable"},"运行受阻 · backend unavailable"],
     [{runtime_status:"ready",runtime_error:"",busy:true},"会话操作进行中…"],
+    [{busy:false,summary_status:"unavailable"},"会话摘要暂不可用"],
     [{busy:false,status:"creating"},"创建待完成 · 可重试原创建请求"],
     [{status:"deleting",busy:true},"正在删除…"],
   ]) {

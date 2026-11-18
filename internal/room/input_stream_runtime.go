@@ -3,13 +3,13 @@ package room
 import (
 	"context"
 	"errors"
-	"github.com/go-aie/teamx/internal/platform/notification"
 	"os"
 	"path/filepath"
 	"sort"
 	"time"
 
 	"github.com/go-aie/teamx/internal/inputstream"
+	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
 // Session generation and membership are already authenticated by mcpExecution.
@@ -64,7 +64,27 @@ func inputSessionFrom(ctx context.Context) (*inputSession, error) {
 }
 
 func (s *service) inputStorage(id MemberIdentity) (*platformInputStorage, error) {
-	return s.store.openPlatformInputStorage(id, s.inputAdapters)
+	if v, ok := s.store.inputHandles.Load(id.MembershipID); ok {
+		p := v.(*platformInputStorage)
+		if p.id != id || p.retired.Load() {
+			return nil, ErrIdentity
+		}
+		p.service.Store(s)
+		if p.projection.Load() == nil {
+			if err := p.run(context.Background(), "load_projection", func(context.Context) error { return nil }); err != nil {
+				return nil, err
+			}
+		}
+		return p, nil
+	}
+	p, err := s.store.openPlatformInputStorage(id, s.inputAdapters)
+	if err == nil {
+		p.service.Store(s)
+	}
+	if err == nil && p.projection.Load() == nil {
+		err = p.run(context.Background(), "load_projection", func(context.Context) error { return nil })
+	}
+	return p, err
 }
 
 func (r *Store) roomInputProtected(through uint64) error {
@@ -119,16 +139,14 @@ type inputRecoveryView struct {
 }
 
 func (s *service) inputStatus(ctx context.Context, id MemberIdentity) (unifiedInputStatus, error) {
-	out := unifiedInputStatus{}
 	p, err := s.inputStorage(id)
 	if err != nil {
-		return out, err
+		return unifiedInputStatus{}, err
 	}
-	if hook := s.maintainInbox.Load(); hook != nil {
-		if err := hook.run(ctx, id); err != nil {
-			return out, err
-		}
-	}
+	return p.owner.Call[unifiedInputStatus](ctx, inspectMemberInputs{id})
+}
+func (p *platformInputStorage) computeInputStatus(ctx context.Context) (unifiedInputStatus, error) {
+	out := unifiedInputStatus{}
 	p.store.mu.Lock()
 	locations, err := p.repository.PendingLocations(nil)
 	p.store.mu.Unlock()
@@ -138,12 +156,12 @@ func (s *service) inputStatus(ctx context.Context, id MemberIdentity) (unifiedIn
 	admissions := map[inputstream.Location]notification.Admission{}
 	for _, l := range locations {
 		p.store.mu.Lock()
-		e, err := p.store.businessInputLocked(id, 0, &l)
+		e, err := p.store.businessInputLocked(p.id, 0, &l)
 		p.store.mu.Unlock()
 		if err != nil {
 			return out, err
 		}
-		ad, err := s.resolveStoredInputAdmission(ctx, e)
+		ad, err := p.store.inboxAdmission(e)
 		if err != nil {
 			return out, err
 		}
@@ -151,14 +169,22 @@ func (s *service) inputStatus(ctx context.Context, id MemberIdentity) (unifiedIn
 	}
 	p.store.mu.Lock()
 	defer p.store.mu.Unlock()
+	sharedPending, sharedErr := p.sharedPending()
+	if sharedErr != nil {
+		return out, sharedErr
+	}
+	out.Pending += sharedPending
 	readable := 0
+	if sharedPending > 0 {
+		readable++
+	}
 	counts := map[string]int{}
 	blockedStreams := map[string]bool{}
 	readyStreams := map[string]bool{}
 	for _, l := range locations {
 		ad := admissions[l]
 		if ad.Verified && ad.Decision == notification.AdmissionExcluded {
-			err := p.repository.ExcludeLocal(l, "admission_excluded:"+ad.ReasonCode)
+			err := p.engine().Consumption.ExcludeLocal(l, "admission_excluded:"+ad.ReasonCode)
 			if err != nil && !errors.Is(err, inputstream.ErrBusy) {
 				return out, p.result(err)
 			}
@@ -178,7 +204,21 @@ func (s *service) inputStatus(ctx context.Context, id MemberIdentity) (unifiedIn
 			out.Pending += counts[stream]
 		}
 	}
-	out.Progress = inputstream.Ref("pending_", locations, admissionsFingerprint(admissions))
+	if out.Pending == 0 && len(blockedStreams) > 0 {
+		for _, blocked := range blockedStreams {
+			if blocked {
+				out.Blocked = "source_admission_unverified"
+				break
+			}
+		}
+	}
+	p.admissions = admissions
+	var sharedBound inputstream.Snapshot
+	if shared := p.store.sharedHandle.Load(); shared != nil {
+		sharedBound = shared.view.Load().snapshot
+		sharedBound.Revision = 0
+	}
+	out.Progress = inputstream.Ref("pending_", locations, admissionsFingerprint(admissions), sharedPending, sharedBound)
 	state, exists, err := p.repository.CurrentState()
 	if err != nil {
 		return out, err
@@ -187,7 +227,7 @@ func (s *service) inputStatus(ctx context.Context, id MemberIdentity) (unifiedIn
 		out.Ready = readable > 0
 		return out, nil
 	}
-	agent, err := p.store.loadInputAgentLocked(id)
+	agent, err := p.store.loadInputAgentLocked(p.id)
 	if errors.Is(err, os.ErrNotExist) {
 		return out, nil
 	}
@@ -210,6 +250,26 @@ func (s *service) inputStatus(ctx context.Context, id MemberIdentity) (unifiedIn
 	}
 	return out, nil
 }
+
+func (p *platformInputStorage) refreshInputProjection(ctx context.Context) error {
+	if err := p.reconcileSharedPages(); err != nil {
+		return err
+	}
+	status, err := p.computeInputStatus(ctx)
+	if err != nil {
+		return p.result(err)
+	}
+	p.store.mu.Lock()
+	history, err := p.historyStatusLocked(p.repository.ExistingSnapshots())
+	state, _, stateErr := p.repository.CurrentState()
+	p.store.mu.Unlock()
+	if err != nil || stateErr != nil {
+		return errors.Join(err, stateErr)
+	}
+	p.projection.Store(&inputProjection{status: status, history: history, state: state})
+	p.projectionDirty.Store(false)
+	return nil
+}
 func (s *Store) loadInputAgentLocked(id MemberIdentity) (AgentSnapshot, error) {
 	var a AgentSnapshot
 	path, _, err := s.memberPath(id, "agent.json", false)
@@ -227,16 +287,18 @@ func (s *service) claimInputRecovery(ctx context.Context, id MemberIdentity) err
 	if err != nil {
 		return err
 	}
-	p.store.mu.Lock()
-	defer p.store.mu.Unlock()
-	state, ok, err := p.repository.CurrentState()
-	if err != nil {
-		return err
-	}
-	if !ok || state.Stall == nil {
-		return nil
-	}
-	return p.repository.ClaimStall(state.Execution, time.Now(), inboxRecoveryBackoff[:])
+	return p.run(ctx, "claim_recovery", func(ctx context.Context) error {
+		p.store.mu.Lock()
+		defer p.store.mu.Unlock()
+		state, ok, err := p.repository.CurrentState()
+		if err != nil {
+			return err
+		}
+		if !ok || state.Stall == nil {
+			return nil
+		}
+		return p.repository.ClaimStall(state.Execution, time.Now(), inboxRecoveryBackoff[:])
+	})
 }
 
 func (m *MemberAgent) continueInput() error {
@@ -253,16 +315,18 @@ func (m *MemberAgent) continueInput() error {
 	if p == nil {
 		return ErrIdentity
 	}
-	p.store.mu.Lock()
-	defer p.store.mu.Unlock()
-	state, ok, err := p.repository.CurrentState()
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return ErrConflict
-	}
-	if err := p.repository.ContinueStall(state.Execution, m.now()); err != nil {
+	if err := p.run(context.Background(), "continue_recovery", func(ctx context.Context) error {
+		p.store.mu.Lock()
+		defer p.store.mu.Unlock()
+		state, ok, err := p.repository.CurrentState()
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return ErrConflict
+		}
+		return p.repository.ContinueStall(state.Execution, m.now())
+	}); err != nil {
 		return err
 	}
 	m.inputStatus.Ready = true
@@ -277,4 +341,21 @@ func admissionsFingerprint(a map[inputstream.Location]notification.Admission) []
 	}
 	sort.Strings(out)
 	return out
+}
+
+func (p *platformInputStorage) refreshHistoryProjection() error {
+	previous := p.projection.Load()
+	if previous == nil {
+		return nil
+	}
+	p.store.mu.Lock()
+	history, err := p.historyStatusLocked(p.repository.ExistingSnapshots())
+	p.store.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	next := *previous
+	next.history = history
+	p.projection.Store(&next)
+	return nil
 }

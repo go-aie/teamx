@@ -20,7 +20,7 @@ type subscription struct {
 	revision uint64
 }
 
-func (m *Manager) directory(path string, create bool) error {
+func (m *sourceStore) directory(path string, create bool) error {
 	dir := filepath.Dir(path)
 	info, err := os.Lstat(dir)
 	if errors.Is(err, os.ErrNotExist) && create {
@@ -58,7 +58,7 @@ func validComponent(value string) bool {
 	return true
 }
 
-func (m *Manager) StatePathLocked(key Key) (string, error) {
+func (m *sourceStore) StatePathLocked(key Key) (string, error) {
 	if !validComponent(key.Source.Provider) || !validComponent(key.Source.Channel) || !validComponent(key.SubscriptionID) || m.sources[key.Source] == nil {
 		return "", ErrInvalid
 	}
@@ -70,7 +70,8 @@ func (m *Manager) StatePathLocked(key Key) (string, error) {
 }
 
 // LoadLocked loads all explicit opt-ins. A missing directory never enables one.
-func (m *Manager) LoadLocked(owner platform.RoomIdentity) error {
+func (m *sourceStore) LoadLocked(owner platform.RoomIdentity) error {
+	m.expiry = nil
 	if err := m.host.Check(false); err != nil {
 		return err
 	}
@@ -98,7 +99,7 @@ func (m *Manager) LoadLocked(owner platform.RoomIdentity) error {
 	return nil
 }
 
-func (m *Manager) loadPathLocked(owner platform.RoomIdentity, path string) error {
+func (m *sourceStore) loadPathLocked(owner platform.RoomIdentity, path string) error {
 	info, err := os.Lstat(path)
 	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0600 || info.Size() > m.Limits.Bytes {
 		return ErrInvalid
@@ -150,7 +151,7 @@ func (m *Manager) loadPathLocked(owner platform.RoomIdentity, path string) error
 
 // SaveLocked uses only the injected atomic writer, including its service-wide
 // commit-unknown latch. Runtime state becomes visible strictly after success.
-func (m *Manager) SaveLocked(state State) error {
+func (m *sourceStore) SaveLocked(state State) error {
 	if err := m.host.Check(true); err != nil {
 		return err
 	}
@@ -198,13 +199,14 @@ func (m *Manager) SaveLocked(state State) error {
 	}
 	previous := m.states[meta.Key]
 	m.states[meta.Key] = subscription{state: state.CloneState(), source: source, revision: previous.revision + 1}
+	m.publish()
 	if m.host.Changed != nil {
 		m.host.Changed(previous.state, m.states[meta.Key].state)
 	}
 	return nil
 }
 
-func (m *Manager) StateLocked(key Key) (State, bool) {
+func (m *sourceStore) StateLocked(key Key) (State, bool) {
 	s, ok := m.states[key]
 	if !ok {
 		return nil, false
@@ -213,7 +215,7 @@ func (m *Manager) StateLocked(key Key) (State, bool) {
 }
 
 // StatesLocked returns explicit subscription identities in a stable order.
-func (m *Manager) StatesLocked(owner platform.RoomIdentity) []State {
+func (m *sourceStore) StatesLocked(owner platform.RoomIdentity) []State {
 	states := []State{}
 	for key, saved := range m.states {
 		if key.Owner == owner {
@@ -232,18 +234,20 @@ func (m *Manager) StatesLocked(owner platform.RoomIdentity) []State {
 	})
 	return states
 }
-func (m *Manager) ForgetRoomLocked(owner platform.RoomIdentity) {
+func (m *sourceStore) ForgetRoomLocked(owner platform.RoomIdentity) {
+	m.expiry = nil
 	for key := range m.states {
 		if key.Owner == owner {
 			previous := m.states[key].state
 			delete(m.states, key)
+			m.publish()
 			if m.host.Changed != nil {
 				m.host.Changed(previous, nil)
 			}
 		}
 	}
 }
-func (m *Manager) ReferencesLocked(id string) []platform.RoomIdentity {
+func (m *sourceStore) ReferencesLocked(id string) []platform.RoomIdentity {
 	out := []platform.RoomIdentity{}
 	seen := map[platform.RoomIdentity]bool{}
 	for key, s := range m.states {
@@ -257,7 +261,7 @@ func (m *Manager) ReferencesLocked(id string) []platform.RoomIdentity {
 
 // CurrentLocked selects the one live subscription for an exact platform and
 // channel and destination. Disabled subscriptions still own their identity and progress.
-func (m *Manager) CurrentLocked(owner platform.RoomIdentity, source SourceID, platformID string, target Target) (State, error) {
+func (m *sourceStore) CurrentLocked(owner platform.RoomIdentity, source SourceID, platformID string, target Target) (State, error) {
 	target, err := target.Normalize()
 	if err != nil {
 		return nil, err
@@ -285,7 +289,7 @@ func (m *Manager) CurrentLocked(owner platform.RoomIdentity, source SourceID, pl
 	return current, nil
 }
 
-func (m *Manager) uniqueLocked(state State) error {
+func (m *sourceStore) uniqueLocked(state State) error {
 	meta := state.Metadata()
 	target, err := meta.Target.Normalize()
 	if err != nil || target != meta.Target {

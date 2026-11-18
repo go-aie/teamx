@@ -16,6 +16,7 @@ func eventLiveService(t *testing.T, h *eventHarness) *service {
 	}
 	h.m.mu.Lock()
 	h.m.runtimes[h.room.RoomIdentity] = &roomRuntime{service: svc, status: "ready"}
+	h.m.catalogChangedLocked()
 	h.m.mu.Unlock()
 	return svc
 }

@@ -170,7 +170,7 @@ func (s *Store) reclaimInbox(a *AgentInbox, through uint64) (int64, error) {
 	if err := s.removeExpiredInboxFilesLocked(a.dir, max(through, a.expiredThrough)); err != nil {
 		// The boundary is committed but the actor's accounting has not advanced.
 		// Reopen before any more writes, then resume the idempotent sweep.
-		s.uncertain = true
+		s.markUncertain()
 		return 0, fmt.Errorf("%w: reclaim inbox files: %w", ErrCommitUnknown, err)
 	}
 	return remaining, nil

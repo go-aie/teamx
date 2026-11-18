@@ -17,6 +17,9 @@ type inputSourceUnavailable struct{ Reason string }
 func (e *inputSourceUnavailable) Error() string { return e.Reason }
 
 func (s *inputSession) entries(a inputstream.ReadAttempt) ([]InboxEntry, error) {
+	return inputOwnerValue(context.Background(), s.storage, "read_entries", func(ctx context.Context) ([]InboxEntry, error) { return s.entriesOwned(a) })
+}
+func (s *inputSession) entriesOwned(a inputstream.ReadAttempt) ([]InboxEntry, error) {
 	p := s.storage
 	p.store.mu.Lock()
 	defer p.store.mu.Unlock()
@@ -56,7 +59,7 @@ func (s *inputSession) preparePlatformPage(ctx context.Context, a inputstream.Re
 		return err
 	}
 	page := inputPageContent{remaining: a.Remaining, notifications: []inputStreamNotificationEntry{}}
-	state, err := s.storage.repository.State(s.execution)
+	state, err := s.inputState(ctx)
 	if err != nil {
 		return err
 	}
@@ -104,13 +107,14 @@ func (s *inputSession) readPage(ctx context.Context, q inputstream.ReadRequest, 
 	fail := func(err error) (*mcp.CallToolResult, func(context.Context) error, error) {
 		var local *inputSourceUnavailable
 		if errors.As(err, &local) && (a.Phase == "reserved" || a.Phase == "prepared") {
-			if abortErr := s.mutate(func(r *inputstream.Repository) error { return r.Abort(s.execution, a.ID, local.Reason) }); abortErr != nil {
+			if abortErr := s.coordinate(ctx, func(r inputstream.ExecutionStorage) error { return r.Abort(s.execution, a.ID, local.Reason) }); abortErr != nil {
 				return nil, nil, abortErr
 			}
 		}
 		return nil, nil, err
 	}
-	previous, parent, lookupErr := s.storage.repository.LookupRead(s.execution, q)
+	lookup, lookupErr := s.lookupInputRead(ctx, q)
+	previous, parent := lookup.previous, lookup.parent
 	if lookupErr != nil {
 		return fail(lookupErr)
 	}
@@ -119,8 +123,14 @@ func (s *inputSession) readPage(ctx context.Context, q inputstream.ReadRequest, 
 		a = *previous
 	} else if roomRead {
 		a, err = s.reserveRoom(ctx, q, parent)
+	} else if _, _, _, sharedErr := s.sharedStream(q.Stream); sharedErr == nil {
+		a, err = s.reserveShared(ctx, q)
 	} else {
-		err = s.mutate(func(r *inputstream.Repository) error { var err error; a, err = r.Reserve(s.execution, q); return err })
+		err = s.coordinate(ctx, func(r inputstream.ExecutionStorage) error {
+			var err error
+			a, err = r.Reserve(s.execution, q)
+			return err
+		})
 	}
 
 	if err != nil {
@@ -155,7 +165,7 @@ func (s *inputSession) readPage(ctx context.Context, q inputstream.ReadRequest, 
 	if err := s.checkMaterials(ctx, notices, nil); err != nil {
 		return fail(err)
 	}
-	data, err := s.storage.repository.Result(s.execution, a.ID)
+	data, err := s.inputResult(ctx, a.ID)
 	if err != nil {
 		return fail(err)
 	}
@@ -167,15 +177,24 @@ func (s *inputSession) readPage(ctx context.Context, q inputstream.ReadRequest, 
 	if err != nil {
 		return fail(err)
 	}
-	if err := s.mutate(func(r *inputstream.Repository) error { return r.Handoff(s.execution, a.ID) }); err != nil {
+	if a.Kind == "shared" {
+		p := s.storage.store.sharedHandle.Load()
+		if p == nil || a.Shared == nil {
+			return fail(ErrIdentity)
+		}
+		if _, err := sharedOwnerValue(ctx, p, func() (struct{}, error) { return struct{}{}, p.repository.AuthorizeSharedHandoff(*a.Shared) }); err != nil {
+			return fail(err)
+		}
+	}
+	if err := s.coordinate(ctx, func(r inputstream.ExecutionStorage) error { return r.Handoff(s.execution, a.ID) }); err != nil {
 		return fail(err)
 	}
-	confirm := func(ctx context.Context) error {
+	confirmOwned := func(ctx context.Context) error {
 		if err := s.checkMaterials(ctx, notices, nil); err != nil {
 			return err
 		}
 		if roomRead {
-			state, e := s.storage.repository.State(s.execution)
+			state, e := s.inputState(ctx)
 			if e != nil {
 				return e
 			}
@@ -190,9 +209,12 @@ func (s *inputSession) readPage(ctx context.Context, q inputstream.ReadRequest, 
 			if _, err := s.service.room.Call[ReadConfirmation](ctx, ConfirmInputRead{MemberIdentity: s.storage.id, Attempt: a}); err != nil {
 				return err
 			}
-			return s.mutate(func(r *inputstream.Repository) error { return r.SettleOwned(s.execution, a.ID, a.Proof()) })
+			return s.coordinate(ctx, func(r inputstream.ExecutionStorage) error { return r.SettleOwned(s.execution, a.ID, a.Proof()) })
 		}
-		return s.mutate(func(r *inputstream.Repository) error { return r.Confirm(s.execution, a.ID) })
+		if a.Kind == "shared" {
+			return s.confirmShared(ctx, a)
+		}
+		return s.consume(ctx, func(r inputstream.MemberConsumption) error { return r.Confirm(s.execution, a.ID) })
 	}
-	return out, confirm, nil
+	return out, func(ctx context.Context) error { return confirmOwned(ctx) }, nil
 }

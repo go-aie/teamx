@@ -316,6 +316,6 @@ func sameLegacyModel(a, b dsh.ModelConfig, keyA, keyB string) bool {
 }
 
 func writeModelValidation(dir string, record modelValidation) error {
-	storage := &Store{ops: defaultSnapshotOps()}
+	storage := &snapshotWriter{ops: defaultSnapshotOps()}
 	return storage.save(filepath.Join(dir, record.ExecutionDigest+".json"), record, maxPrivateFileBytes)
 }

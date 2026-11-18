@@ -50,3 +50,44 @@ func TestInboxExpiryLarkUsesOriginalTimeBeforePageCapacity(t *testing.T) {
 		t.Fatal("requery after mode switch resurrected old body", err)
 	}
 }
+
+func TestSourceTerminalLarkSurvivesPruningAndCredentialConfiguration(t *testing.T) {
+	h, _, _ := newStepHarness(t)
+	chat := Chat{ID: "oc_chat", Mode: "p2p", TenantKey: h.s.Binding.Account.Tenant.Value}
+	chat.Relation = ConversationRelation{Account: h.s.Binding.Account, ChatID: chat.ID, Kind: "peer", Peer: platform.ExternalID{Namespace: h.s.Binding.Account.ID.Namespace, Value: "ou_sender"}}
+	h.s.Chats[chat.ID] = ChatProgress{Chat: chat, Completed: 1020}
+	msg := sampleMessage("om_terminal", chat.ID, "saved body")
+	h.s.acceptMessage(msg, h.s.Chats[chat.ID])
+	item, ok := h.s.Notification(RevisionKey(h.s.Binding, msg))
+	if !ok {
+		t.Fatal("message not accepted")
+	}
+	terminal := h.s.Acknowledge(item.Key).(State)
+	if _, ok := terminal.SourceTerminal(item); !ok {
+		t.Fatal("retained observation lost")
+	}
+	p := terminal.Chats[chat.ID]
+	p.Completed = 2000
+	terminal.Chats[chat.ID] = p
+	terminal.pruneObserved()
+	if len(terminal.Observed) != 0 {
+		t.Fatal("fixture did not prune")
+	}
+	terminal.Config.Enabled = false
+	terminal.Retired = true
+	terminal.SubscriptionVersion++
+	terminal.RuntimeState.Reset(false, false)
+	raw, _ := json.Marshal(terminal)
+	restored, err := (&Source{}).Decode(raw, terminal.RoomIdentity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := restored.(State).SourceTerminal(item); !ok {
+		t.Fatal("committed conversation floor lost after restart")
+	}
+	unknown := item
+	unknown.CreatedAt = time.Unix(3000, 0)
+	if _, ok := restored.(State).SourceTerminal(unknown); ok {
+		t.Fatal("absence alone proved release")
+	}
+}

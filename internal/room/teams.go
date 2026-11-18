@@ -376,6 +376,7 @@ func openTeamRoomManager(dir, teamsDir string, maxTurns uint64, defaults *teamRu
 		runtime.Model = defaults.Model.Clone()
 		m.defaultRuntime = &runtime
 	}
+	m.publishRoomsCatalogLocked()
 	return m, nil
 }
 func (m *roomManager) teamSummaries() []teamSummary {

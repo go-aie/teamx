@@ -57,6 +57,7 @@ func (m *roomManager) startDeletion(target RoomIdentity) (roomSummary, error) {
 	rt := m.reserveRuntimeLocked(target)
 	if rt.service != nil {
 		rt.service.beginClosing()
+		m.catalogChangedLocked()
 	}
 	m.notifications.CancelRoomLocked(target)
 	m.cancelPlatformCallsLocked(func(c *platformCall) bool { return c.owner == target })
@@ -92,7 +93,7 @@ func (m *roomManager) runDeletion(target roomSummary, rt *roomRuntime) {
 		runErr = m.waitPlatformCalls(ctx, &target.RoomIdentity)
 	}
 	if runErr == nil {
-		runErr = m.notifications.WaitRoom(ctx, target.RoomIdentity)
+		runErr = m.notifications.QuiesceRoom(ctx, target.RoomIdentity)
 	}
 	cancel()
 	if runErr != nil {
@@ -106,9 +107,7 @@ func (m *roomManager) runDeletion(target roomSummary, rt *roomRuntime) {
 		ctx, cancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
 		err := active.close(ctx)
 		cancel()
-		active.store.mu.Lock()
-		released := active.store.lock == nil
-		active.store.mu.Unlock()
+		released := active.store.directoryReleased()
 		if released && err == nil {
 			m.mu.Lock()
 			m.setRuntimeServiceLocked(target.RoomIdentity, nil)

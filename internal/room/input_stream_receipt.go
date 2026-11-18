@@ -35,7 +35,7 @@ func inputBodyDigest(data []byte) (string, error) {
 // Preserve the receipt failure alongside the durable pending-page barrier so
 // terminal diagnostics explain why the page could not settle.
 func (s *inputSession) confirmationError() error {
-	barrier := s.storage.repository.Barrier(s.execution)
+	barrier := s.storage.barrier(s.execution)
 	if barrier == nil {
 		return nil
 	}
@@ -64,7 +64,7 @@ func (s *inputSession) receiveGroupBodies(ctx context.Context, group string, dig
 		}
 		proof[digest] = true
 	}
-	state, err := s.storage.repository.State(s.execution)
+	state, err := s.inputState(ctx)
 	if err != nil {
 		return err
 	}
@@ -84,7 +84,7 @@ func (s *inputSession) receiveGroupBodies(ctx context.Context, group string, dig
 			// Binding can precede a safe failure before any result exists.
 			continue
 		}
-		data, err := s.storage.repository.Result(s.execution, page)
+		data, err := s.inputResult(ctx, page)
 		if err != nil {
 			return err
 		}

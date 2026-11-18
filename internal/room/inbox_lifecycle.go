@@ -197,18 +197,41 @@ func (s *service) maintainInboxLocal(ctx context.Context, id MemberIdentity, pen
 	}
 	return err
 }
-func (m *roomManager) maintainNotificationInboxLocked(ctx context.Context, meta notification.Metadata) error {
+
+// Source changes request the same member maintenance operation used by its
+// periodic recovery task. Waiting owns neither a source slot nor manager.mu.
+func (m *roomManager) requestNotificationMaintenance(_ context.Context, meta notification.Metadata) error {
+	m.mu.Lock()
 	svc, _ := m.runtimeServiceLocked(meta.Key.Owner)
-	if svc == nil || m.roomBusyLocked(meta.Key.Owner) || svc.closing.Load() || svc.restarting.Load() {
+	available := !m.closing && !m.roomBusyLocked(meta.Key.Owner) && svc != nil
+	m.mu.Unlock()
+	if !available {
 		return notification.ErrBusy
 	}
-	if !svc.changes.TryRLock() {
-		return notification.ErrBusy
+	if meta.Target.Mode == "shared_inbox" {
+		return roomNotificationError(m.maintainSharedInbox(context.Background(), svc))
 	}
-	defer svc.changes.RUnlock()
 	id := MemberIdentity{RoomIdentity: meta.Key.Owner, AgentID: meta.Target.AgentID, MembershipID: meta.Target.MembershipID}
-	if svc.unifiedInputs {
-		return roomNotificationError(svc.maintainUnifiedInputs(ctx, id, m.inputInventoryLocked(id), m.notifications.Now()))
+	return roomNotificationError(m.maintainMemberInbox(context.Background(), svc, id))
+}
+func (m *roomManager) maintainMemberInbox(ctx context.Context, svc *service, id MemberIdentity) error {
+	m.mu.Lock()
+	current, _ := m.runtimeServiceLocked(id.RoomIdentity)
+	available := !m.closing && current == svc && !m.roomBusyLocked(id.RoomIdentity)
+	m.mu.Unlock()
+	if !available || svc.closing.Load() || svc.restarting.Load() {
+		return ErrBusy
 	}
-	return roomNotificationError(svc.maintainInboxLocal(ctx, id, m.notifications.PendingDeliveriesLocked(meta.Key.Owner, meta.Target), m.notifications.Now()))
+	target := platformMemberTarget(id)
+	if err := m.notifications.ExpireTargetLocked(id.RoomIdentity, target); err != nil {
+		return notificationRoomError(err)
+	}
+	if svc.unifiedInputs {
+		inventory, err := m.inputInventory(ctx, svc, id)
+		if err != nil {
+			return err
+		}
+		return svc.maintainUnifiedInputs(ctx, id, inventory, m.notifications.Now())
+	}
+	return svc.maintainInboxLocal(ctx, id, m.notifications.PendingDeliveriesLocked(id.RoomIdentity, target), m.notifications.Now())
 }

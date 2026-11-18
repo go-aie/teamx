@@ -168,6 +168,16 @@
           <div id="member-empty" class="member-empty"><span class="member-empty-icon">◎</span><p>还没有 Agent 加入</p><span>添加成员后，启用它的自动协作。</span></div>
           <div id="members" class="members-compact"></div>
           <p id="notification-next-step" class="quiet" role="status" tabindex="-1" hidden></p>
+          <details id="shared-inbox-settings" class="notification-channel"><summary>共享项目收件箱</summary>
+            <p class="quiet">共享一份 GitLab 项目活动，各成员独立阅读。加入后接收新记录。</p>
+            <div id="shared-inbox-members" aria-label="接收成员"></div>
+            <button id="shared-inbox-save" class="text-button" type="button">保存接收成员</button>
+            <button id="shared-inbox-refresh" class="text-button" type="button">刷新</button>
+            <p id="shared-inbox-feedback" class="quiet" role="status"></p>
+            <div id="shared-inbox-platforms" aria-label="共享项目连接"></div>
+            <p id="shared-inbox-status" class="quiet" role="status"></p>
+            <div id="shared-inbox-preview" aria-label="共享通知预览"></div>
+          </details>
           <details id="notification-orphans" hidden><summary>通知接收异常</summary><div id="notification-orphan-items"></div></details>
           <section id="conversation-settings" class="conversation-settings" aria-label="会话设置">
             <p id="connection" class="connection quiet" role="status">正在连接</p>

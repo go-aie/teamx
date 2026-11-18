@@ -50,6 +50,11 @@ func readHumanReadCatalogFiles(dir string, identity RoomIdentity, operator, disp
 			len(room.Messages) > maxMessages || uint64(len(room.Messages)) != room.LatestSeq-room.ClearedThrough {
 			return room, ErrInvalid, unavailable
 		}
+		for i, message := range room.Messages {
+			if message.Seq != room.ClearedThrough+uint64(i)+1 || len(message.Mentions) > 0 && !validMentions(message.Text, message.Mentions) {
+				return room, ErrInvalid, unavailable
+			}
+		}
 		if errors.Is(fileErr, os.ErrNotExist) {
 			file = humanReadFile{RoomIdentity: identity, OperatorID: operator}
 		} else if fileErr != nil {
@@ -59,11 +64,6 @@ func readHumanReadCatalogFiles(dir string, identity RoomIdentity, operator, disp
 				continue
 			}
 			return room, nil, unavailable
-		}
-		for i, message := range room.Messages {
-			if message.Seq != room.ClearedThrough+uint64(i)+1 {
-				return room, ErrInvalid, unavailable
-			}
 		}
 		state := projectHumanRead(room, file, displayName, false)
 		counts := &HumanReadCounts{Revision: state.Revision, SnapshotSeq: state.SnapshotSeq, ClearedThrough: state.ClearedThrough,

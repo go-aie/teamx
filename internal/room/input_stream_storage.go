@@ -1,30 +1,41 @@
 package room
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"sort"
-	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/go-aie/actorx"
 	"github.com/go-aie/teamx/internal/inputstream"
 	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
-// platformInputStorage is owned by a Membership lifecycle under Store.mu.
-// Production routing is deliberately not switched until the later stages.
+// platformInputStorage is the private body and consumer engine of one owner.
+// Store.mu protects only the finite local persistence/association boundary.
 type platformInputStorage struct {
-	discovery  sync.Mutex
-	catalogs   []*inputstream.Catalog
-	work       sync.Mutex
-	generation string
-	store      *Store
-	id         MemberIdentity
-	repository *inputstream.Repository
-	specs      []inputstream.PartitionSpec
+	admissions        map[inputstream.Location]notification.Admission
+	retired           atomic.Bool
+	projectionDirty   atomic.Bool
+	service           atomic.Pointer[service]
+	admissionProvider string
+	admissionAfter    uint64
+	maintenanceNext   int
+	owner             actorx.Addr
+	operations        atomic.Uint64
+	projection        atomic.Pointer[inputProjection]
+	catalogs          []*inputstream.Catalog
+	generation        string
+	store             *Store
+	id                MemberIdentity
+	repository        *inputstream.Repository
+	specs             []inputstream.PartitionSpec
 }
 
-// Caller holds discovery. Cap retained immutable cursor views per execution.
+// Called by the member owner. Cap retained immutable cursor views per execution.
 func (p *platformInputStorage) keepInputCatalog(c *inputstream.Catalog) {
 	p.catalogs = append(p.catalogs, c)
 	if len(p.catalogs) > 4 {
@@ -99,6 +110,11 @@ func (c assembledInputCodec) ValidateStoredRecord(rec inputstream.StoredRecord) 
 	return nil
 }
 func (s *Store) openPlatformInputStorage(id MemberIdentity, adapters map[notification.SourceID]notificationAdapter) (*platformInputStorage, error) {
+	s.inputOwners.mu.Lock()
+	defer s.inputOwners.mu.Unlock()
+	if s.inputOwners.closed {
+		return nil, ErrClosing
+	}
 	// Composition happens before acquiring the original Store lock.
 	codecs, err := inputStorageCodecs(adapters, s.notificationCapabilities)
 	if err != nil {
@@ -118,6 +134,9 @@ func (s *Store) openPlatformInputStorage(id MemberIdentity, adapters map[notific
 		specs = append(specs, codec.Descriptor().Spec(owner))
 	}
 	if old := s.platformInputs[id.MembershipID]; old != nil {
+		if old.retired.Load() {
+			return nil, ErrIdentity
+		}
 		if old.id != id || !reflect.DeepEqual(old.specs, specs) {
 			return nil, ErrConflict
 		}
@@ -128,10 +147,26 @@ func (s *Store) openPlatformInputStorage(id MemberIdentity, adapters map[notific
 		return nil, err
 	}
 	handle := &platformInputStorage{store: s, id: id, repository: repo, specs: specs}
+	if state, exists, err := repo.CurrentState(); err != nil {
+		return nil, err
+	} else if exists {
+		handle.generation = state.Execution.Generation
+	}
+	if s.inputOwners.runtime == nil {
+		s.inputOwners.runtime, err = actorx.NewRuntime(context.Background(), actorx.WithInstanceLimit(maxMembers+1))
+		if err != nil {
+			return nil, err
+		}
+	}
+	handle.owner, err = s.inputOwners.runtime.Spawn(&MemberInputActor{p: handle})
+	if err != nil {
+		return nil, err
+	}
 	if s.platformInputs == nil {
 		s.platformInputs = map[string]*platformInputStorage{}
 	}
 	s.platformInputs[id.MembershipID] = handle
+	s.inputHandles.Store(id.MembershipID, handle)
 	return handle, nil
 }
 func (p *platformInputStorage) checkLocked() error {
@@ -143,7 +178,7 @@ func (p *platformInputStorage) checkLocked() error {
 }
 func (p *platformInputStorage) result(err error) error {
 	if errors.Is(err, inputstream.ErrCommitUnknown) {
-		p.store.uncertain = true
+		p.store.markUncertain()
 	}
 	return err
 }
@@ -151,6 +186,23 @@ func (p *platformInputStorage) result(err error) error {
 // Receive is local delivery to an already frozen target. It never acknowledges
 // the source; the caller acknowledges only after this durable receipt returns.
 func (p *platformInputStorage) Receive(item notification.Item, receivedAt time.Time) (inputstream.Receipt, error) {
+	// Freeze nested native/content fields before the request can wait in a mailbox.
+	encoded, err := json.Marshal(item)
+	if err != nil {
+		return inputstream.Receipt{}, ErrInvalid
+	}
+	if len(encoded) > inputstream.MaxRecordBytes {
+		return inputstream.Receipt{}, inputstream.ErrCapacity
+	}
+	var frozen notification.Item
+	if err := json.Unmarshal(encoded, &frozen); err != nil {
+		return inputstream.Receipt{}, err
+	}
+	return inputOwnerValue(context.Background(), p, "receive", func(ctx context.Context) (inputstream.Receipt, error) {
+		return p.receiveInput(frozen, receivedAt)
+	})
+}
+func (p *platformInputStorage) receiveInput(item notification.Item, receivedAt time.Time) (inputstream.Receipt, error) {
 	s := p.store
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -172,7 +224,7 @@ func (p *platformInputStorage) Receive(item notification.Item, receivedAt time.T
 		return inputstream.Receipt{}, err
 	}
 	request.ReceivedAt = receivedAt
-	receipt, err := p.repository.AppendOnce(item.Source.Provider, request)
+	receipt, err := p.engine().Body.AppendOnce(item.Source.Provider, request)
 	return receipt, p.result(err)
 }
 func (s *Store) platformInputHandle(id MemberIdentity) *platformInputStorage {

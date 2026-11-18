@@ -11,8 +11,15 @@ import (
 // linking sources. An excluded record is skipped only by formal readiness, not
 // by catalog/preview calls.
 func (s *inputSession) catalog(ctx context.Context) (*inputstream.Catalog, error) {
+	if !s.storage.owns(ctx) {
+		return inputOwnerValue(ctx, s.storage, "catalog", s.catalog)
+	}
+
 	c, err := s.platformCatalog(ctx)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.addSharedCatalog(c); err != nil {
 		return nil, err
 	}
 	if err := s.addRoomCatalog(c); err != nil {

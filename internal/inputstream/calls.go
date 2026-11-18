@@ -35,6 +35,12 @@ func (r *Repository) BindCall(e Execution, id, stream string, limit int) (ReadRe
 		return ReadRequest{}, ErrCapacity
 	}
 	q := ReadRequest{Turn: e.Turn, Stream: stream, ID: id, Limit: limit}
+	if s.SharedIntent != nil {
+		if s.SharedIntent.Read.Stream != stream {
+			return ReadRequest{}, ErrBusy
+		}
+		q = s.SharedIntent.Read
+	}
 	for _, a := range s.Attempts {
 		if a.Phase == "failed_before_output" {
 			continue

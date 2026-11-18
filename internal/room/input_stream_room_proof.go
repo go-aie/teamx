@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+
+	"github.com/go-aie/teamx/internal/inputstream"
 )
 
 // A bounded, native same-page proof, committed WITH ReadThrough in room.json.
@@ -41,12 +43,12 @@ func (s RoomSnapshot) validateReadProofs() error {
 			c.ReadThrough > member.ReadThrough || c.ReadThrough <= p.From || c.ReadThrough > p.Snapshot || p.Snapshot > s.LatestSeq || c.Revision > s.Revision || c.Revision == 0 || p.Digest != p.digest() || len(p.Entries) > maxPageMessages {
 			return fmt.Errorf("invalid Room confirmation proof")
 		}
-		prev := p.From
-		for _, seq := range p.Entries {
-			if seq <= prev || seq > c.ReadThrough {
-				return fmt.Errorf("invalid Room proof entries")
-			}
-			prev = seq
+		entries := make([]inputstream.Location, len(p.Entries))
+		for i, seq := range p.Entries {
+			entries[i] = inputstream.Location{Partition: roomPartitionRef(s.RoomIdentity), Seq: seq}
+		}
+		if err := inputstream.ValidateReadRange(roomPartitionRef(s.RoomIdentity), p.From, c.ReadThrough, p.Snapshot, entries); err != nil {
+			return fmt.Errorf("invalid Room proof entries: %w", err)
 		}
 	}
 	return nil

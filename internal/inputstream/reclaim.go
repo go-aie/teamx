@@ -14,6 +14,13 @@ func PlanReclaim(s Snapshot, policy Policy, records []StoredRecord, sizes map[ui
 	if !policy.valid() || facts.Revision == "" || now.IsZero() {
 		return ReclaimPlan{}, ErrInvalid
 	}
+	if facts.Retention < 0 {
+		return ReclaimPlan{}, ErrInvalid
+	}
+	retention := policy.Retention
+	if facts.Retention > 0 {
+		retention = facts.Retention
+	}
 	plan := ReclaimPlan{Snapshot: s, Policy: policy.Version, FactsRevision: facts.Revision, Through: s.Reclaimed, Now: now}
 	for _, rec := range records {
 		if rec.Location.Partition != s.Partition || rec.Location.Seq <= plan.Through || rec.Location.Seq > s.Through || sizes[rec.Location.Seq] <= 0 {
@@ -27,7 +34,7 @@ func PlanReclaim(s Snapshot, policy Policy, records []StoredRecord, sizes map[ui
 		if policy.TimeBasis == "received" {
 			at = rec.ReceivedAt
 		}
-		if policy.TimeBasis != "explicit" && now.Before(at.Add(policy.Retention)) {
+		if policy.TimeBasis != "explicit" && now.Before(at.Add(retention)) {
 			break
 		}
 		plan.Through = rec.Location.Seq
@@ -38,29 +45,65 @@ func PlanReclaim(s Snapshot, policy Policy, records []StoredRecord, sizes map[ui
 	return plan, nil
 }
 func (r *Repository) planLocked(p *partition, f ReleaseSet, now time.Time) (ReclaimPlan, error) {
-	records := make([]StoredRecord, 0, len(p.records))
+	records := make([]StoredRecord, 0, min(len(f.Records), 128))
 	sizes := map[uint64]int{}
-	for n, rec := range p.records {
-		records = append(records, rec)
+	// A batch is always a contiguous retained prefix, never a caller-selected
+	// collection that could jump an unverified record.
+	for _, n := range p.sequence {
+		if _, ok := f.Records[n]; !ok {
+			break
+		}
+		if len(records) == 128 {
+			break
+		}
+		records = append(records, p.records[n])
 		sizes[n] = p.offsets[n].Length
 	}
-	sort.Slice(records, func(i, j int) bool { return records[i].Location.Seq < records[j].Location.Seq })
-	// A retained in-flight page can still reference its segment. Conservatively
-	// protect the entire boundary segment until the domain releases that page.
-	// This also applies when suffix protection facts are missing.
 	f.Records = cloneMap(f.Records)
 	protected := map[string]bool{}
-	for seq, off := range p.offsets {
-		fact, ok := f.Records[seq]
-		if !ok || fact.Revision == "" || fact.InFlight {
-			protected[off.Segment] = true
+	for n, fact := range f.Records {
+		if fact.InFlight {
+			protected[p.offsets[n].Segment] = true
+		}
+	}
+	if p.state.Shared != nil {
+		for _, page := range p.state.Shared.Pages {
+			if page.State != "protected" {
+				continue
+			}
+			for _, l := range page.Entries {
+				if off, ok := p.offsets[l.Seq]; ok {
+					protected[off.Segment] = true
+				}
+				if fact, ok := f.Records[l.Seq]; ok {
+					fact.InFlight = true
+					f.Records[l.Seq] = fact
+				}
+			}
+		}
+	}
+	if r.coordinator != nil && !r.coordinator.Closed {
+		for _, a := range r.coordinator.Attempts {
+			if a.Phase == "failed_before_output" {
+				continue
+			}
+			for _, l := range a.Entries {
+				if l.Partition == p.state.Spec.Ref {
+					protected[p.offsets[l.Seq].Segment] = true
+				}
+			}
 		}
 	}
 	for _, seg := range p.state.Segments {
-		if protected[seg.Name] {
-			fact := f.Records[seg.First]
-			fact.InFlight = true
-			f.Records[seg.First] = fact
+		if len(records) == 0 || seg.First > records[len(records)-1].Location.Seq {
+			break
+		}
+		if protected[seg.Name] || r.pins[p.state.Spec.Provider+"/"+seg.Name] > 0 {
+			if _, ok := f.Records[seg.First]; ok {
+				fact := f.Records[seg.First]
+				fact.InFlight = true
+				f.Records[seg.First] = fact
+			}
 		}
 	}
 	return PlanReclaim(snapshot(p), p.state.Spec.Policy, records, sizes, f, now)
@@ -138,6 +181,15 @@ func (r *Repository) CommitReclaim(provider string, plan ReclaimPlan, f ReleaseS
 	next.LastReclaim = plan.ID
 	next.Reclaimed = plan.Through
 	next.Revision++
+	for _, n := range p.sequence {
+		if n > plan.Through {
+			break
+		}
+		if f.Records[n].ReceiptReleased {
+			rec := p.records[n]
+			delete(next.Receipts, deliveryKey(rec.Channel, rec.DeliveryID))
+		}
+	}
 	next.Segments = nil
 	dir := filepath.Join(r.partDir(provider), "records")
 	for _, seg := range p.state.Segments {
@@ -151,8 +203,11 @@ func (r *Repository) CommitReclaim(provider string, plan ReclaimPlan, f ReleaseS
 		// Rewrite only the retained suffix, preserving sequence and business IDs.
 		var body []byte
 		first := uint64(0)
-		for _, n := range sortedSeqs(p) {
-			if n > plan.Through && p.offsets[n].Segment == seg.Name {
+		for _, n := range p.sequence[sort.Search(len(p.sequence), func(i int) bool { return p.sequence[i] > plan.Through }):] {
+			if n > seg.Last {
+				break
+			}
+			if p.offsets[n].Segment == seg.Name {
 				if first == 0 {
 					first = n
 				}
@@ -165,15 +220,7 @@ func (r *Repository) CommitReclaim(provider string, plan ReclaimPlan, f ReleaseS
 		if err != nil {
 			return "", err
 		}
-		n, err := file.Write(body)
-		if err == nil && n != len(body) {
-			err = ErrCorrupt
-		}
-		if err == nil {
-			err = file.Sync()
-		}
-		err = errors.Join(err, file.Close())
-		if err != nil {
+		if err := WriteSegment(file, body); err != nil {
 			return "", err
 		}
 		if err = syncDir(dir); err != nil {
@@ -192,7 +239,7 @@ func (r *Repository) CommitReclaim(provider string, plan ReclaimPlan, f ReleaseS
 	}
 	// Freeze on every failure after logical publication. Usage cannot become
 	// available while old physical bytes or an uncertain intent remain.
-	if err := r.cleanSegments(provider, next.Segments); err != nil {
+	if err := r.cleanReclaimedSegments(provider, p.state.Segments, plan.Through); err != nil {
 		r.uncertain = true
 		return "", errors.Join(ErrCommitUnknown, err)
 	}
@@ -204,12 +251,41 @@ func (r *Repository) CommitReclaim(provider string, plan ReclaimPlan, f ReleaseS
 		r.uncertain = true
 		return "", errors.Join(ErrCommitUnknown, err)
 	}
-	loaded, err := r.load(provider)
-	if err != nil {
-		r.uncertain = true
-		return "", errors.Join(ErrCommitUnknown, err)
+	cut := sort.Search(len(p.sequence), func(i int) bool { return p.sequence[i] > plan.Through })
+	for _, n := range p.sequence[:cut] {
+		stream := p.streamRefs[n]
+		seqs := p.streamSeqs[stream]
+		start := sort.Search(len(seqs), func(i int) bool { return seqs[i] > plan.Through })
+		if start == len(seqs) {
+			delete(p.streamSeqs, stream)
+		} else {
+			p.streamSeqs[stream] = seqs[start:]
+		}
+		delete(p.records, n)
+		delete(p.offsets, n)
+		delete(p.projections, n)
+		delete(p.streamRefs, n)
 	}
-	r.parts[provider] = loaded
+	p.sequence = p.sequence[cut:]
+	p.bytes -= plan.Usage.Bytes
+	for _, seg := range next.Segments {
+		if seg.Name != "reclaim-"+plan.ID[len("reclaim_"):]+".jsonl" {
+			continue
+		}
+		var at int64
+		for _, n := range p.sequence {
+			if n > seg.Last {
+				break
+			}
+			if n >= seg.First {
+				o := p.offsets[n]
+				o.Segment, o.Offset = seg.Name, at
+				p.offsets[n] = o
+				at += int64(o.Length)
+			}
+		}
+	}
+	p.state = next
 	if err := r.stop("reclaim_settled"); err != nil {
 		return "", err
 	}
@@ -222,4 +298,19 @@ func sortedSeqs(p *partition) []uint64 {
 	}
 	sort.Slice(ns, func(i, j int) bool { return ns[i] < ns[j] })
 	return ns
+}
+
+// Normal maintenance deletes only this batch's original segments. Full orphan
+// enumeration belongs to exclusive reopen/recovery, not each running batch.
+func (r *Repository) cleanReclaimedSegments(provider string, old []segment, through uint64) error {
+	dir := filepath.Join(r.partDir(provider), "records")
+	for _, seg := range old {
+		if seg.First > through {
+			break
+		}
+		if err := os.Remove(filepath.Join(dir, seg.Name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return syncDir(dir)
 }

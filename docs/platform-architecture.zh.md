@@ -8,7 +8,7 @@
 | --- | --- |
 | [platform/reference.go](../internal/platform/reference.go)、[reference_capability.go](../internal/platform/reference_capability.go) | 通用原生目标／账号身份、访问上下文，以及可选的解析、分页读取、单次动作合同 |
 | [platform/registry](../internal/platform/registry/) | 全局平台、账号核验、凭据解析与版本证据 |
-| [platform/notification](../internal/platform/notification/) | 来源装配、任务生命周期、原子状态保存、收件箱与投递协调 |
+| [platform/notification](../internal/platform/notification/) | 每 Room 的通知 owner、来源候选、可靠投递、原子确认与释放证据 |
 | [platform/gitlab](../internal/platform/gitlab/) | 内置账号/项目核验、Events/Todos Go 查询、来源算法及 Workspace 必需的 GitLab 请求 |
 | [platform/tool](../internal/platform/tool/) | 静态工具目录、程序定位、版本和环境、子进程及标准流、skill 读取 |
 | [tools/gitlab](../tools/gitlab/README.zh.md) | 独立 GitLab Go 工具；原生命令调用固定 glab，缺口由自身 Go 扩展处理 |
@@ -19,7 +19,8 @@
 flowchart LR
   C[连接与凭据] --> P[内置 Go 平台适配]
   P --> N[公共通知服务]
-  N --> R[Room 消息]
+  N --> R[成员私有 Inbox]
+  N --> S[共享项目 Inbox / 独立成员消费]
   P --> W[Workspace / Git 与 Scion]
   C --> T[通用工具启动]
   A[Agent CLI] --> T
@@ -28,6 +29,26 @@ flowchart LR
 ```
 
 公共连接、通知和工具模块不依赖具体平台或 Agent 工具；内置 GitLab 不依赖工具运行模块；独立 GitLab 工具不 import TeamX 内部包，也不回调平台业务 RPC。[依赖检查](../internal/platform/boundaries_test.go)覆盖传递依赖。
+
+## 通知来源所有权与可靠投递
+
+每个完整 RoomIdentity 有一个 `NotificationActor`，独立保存该 Room 的来源订阅 State。状态变更由有界队列及一个持久任务串行处理；读取从已安装的不可变投影取得。共用 writer 允许不同 Room 的文件 I/O 并行，通知模块不再注入 `Host.Gate`。manager 仅在准入时短时核验目录、连接、配置及 runtime，网络、来源保存、Actor 收件和维护等待都在锁外。
+
+`StepHost` 向 provider 提供固定的来源快照及连接证据。查询完成后核对来源配置版本、数据修订、连接 revision 和 credential stamp，持久提交成功才推进查询缓存。投递先固定原 DeliveryID、摘要和路由，再取得目标收件回执，最后由来源 owner 从最新 State 保存原项确认。目标成功而确认失败时继续保留原 ID；重开重投返回原回执。首次投递建立容量背压，后续查询和投递可并行，同一订阅各最多一个。
+
+成员对最多 128 条已存正文请求 `CheckSourceRelease`。仍 outstanding 为 `held`；有已提交观察或单调准入下界为 `released`；缺失历史、身份不符、证据不足或 writer 不健康为 `unknown`。停用与 retired 的订阅仍保留其精确命名空间。来源释放仅解除来源保护，成员消费、业务关联、保留期及页保护仍独立核实。来源确认和周期任务请求同一成员维护操作；状态 Inspect 不触发扫描。
+
+配置恢复以核验过的配置版本对最新进度构造候选，保留并发确认。删除和停机先停止新准入，再结清已受理投递、确认和保存；超时保留所有权。Room runtime 关闭不会自行删除来源 State，目标未就绪时保留 pending。持久权威、布局和故障窗口见[存储架构](storage-architecture.zh.md#来源提交与生命周期)。
+
+## 共享 GitLab 项目事件
+
+操作者在房间详情建立一个共享项目 Inbox，选择实际连接、项目和接收成员。普通 GitLab 配置、项目搜索、账号核验及来源诊断继续复用已有入口；共享目标为 `{"mode":"shared_inbox","inbox_id":"project"}`，个人 Todo 和飞书来源保持私有。一个房间只允许一条启用的共享项目事件订阅；切换连接前暂停原共享订阅，项目或账号变更按既有规则生成新的来源订阅。
+
+共享路由随来源项冻结。DeliveryID 继续由精确来源订阅、原项及冻结目标派生，私有旧算法不变。InboxActor 首次可靠发布时冻结接收 Grant 集合并返回一个持久回执，NotificationActor 只确认一次来源；成员随后各自通过 MemberInputActor 正式读取。新加入者不继承已经发布的记录，旧 ID 重投也不增加接收者。
+
+来源释放核验使用完整的目标投递 ID，包括冻结路由派生的一层。共享回收还要核对每个接收 Grant 的消费、跳过、关联及页保护；无证据时保留正文。没有有效接收者时暂停新增查询，容量满时保留原 pending，空间释放后重投原 ID。页面分别呈现无接收者、来源容量和成员未读／页待确认等原因。
+
+保存快照的共享权限与成员的远端执行权限分别核验。采集账号留在原 payload 中，不转换为成员账号；成员自己的原生目标解析、图片下载和动作仍使用其绑定、账号及精确目标证据。配置、Grant 行为见 [Agent 收件箱](inbox.zh.md#配置共享项目收件箱)，持久交接见 [存储架构](storage-architecture.zh.md#共享正文成员交付与释放)。
 
 ## 通知准入与成员能力依据
 

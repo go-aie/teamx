@@ -66,6 +66,7 @@ func (m *roomManager) shutdown(ctx context.Context) error {
 			rt.operationCancel()
 		}
 	}
+	m.publishRoomsCatalogLocked()
 	// These only signal under the gate. Waiting happens outside it.
 	authDone = append(authDone, m.cancelPlatformCallsLocked(func(*platformCall) bool { return true })...)
 	for owner := range owners {
@@ -113,6 +114,7 @@ func (m *roomManager) shutdown(ctx context.Context) error {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	defer m.publishRoomsCatalogLocked()
 	// Keep prior failure evidence for unopened Rooms. A fresh attempt clears
 	// that receipt before acquiring resources; a clean stop replaces it here.
 	next := m.copyIndex()

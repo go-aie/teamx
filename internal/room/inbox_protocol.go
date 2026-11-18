@@ -86,8 +86,9 @@ type ReclaimInbox struct {
 }
 
 type InboxStatus struct {
-	History         *inputHistoryStatus `json:"history,omitempty"`
-	RecoveryBlocked string              `json:"recovery_blocked,omitempty"`
+	Shared          *sharedHistoryStatus `json:"shared,omitempty"`
+	History         *inputHistoryStatus  `json:"history,omitempty"`
+	RecoveryBlocked string               `json:"recovery_blocked,omitempty"`
 	MemberIdentity
 	AutomaticChecked bool        `json:"automatic_checked,omitempty"`
 	AutomaticReady   bool        `json:"automatic_ready,omitempty"`

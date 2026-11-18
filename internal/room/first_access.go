@@ -46,7 +46,7 @@ func prepareFirstAccess(c startupConfig) error {
 		}
 		enabled := c.Access.LoginEnabled != nil && *c.Access.LoginEnabled || remoteAccessEnabled(c)
 		record = firstAccessRecord{Version: 1, Operator: "owner_" + id, TokenPath: adminTokenPath(c), LoginEnabled: &enabled}
-		if err := (&Store{ops: defaultSnapshotOps()}).save(path, record, 16<<10); err != nil {
+		if err := (&snapshotWriter{ops: defaultSnapshotOps()}).save(path, record, 16<<10); err != nil {
 			return err
 		}
 	} else if err != nil {
@@ -87,7 +87,7 @@ func prepareFirstAccess(c startupConfig) error {
 		return err
 	}
 	record.Completed = true
-	return (&Store{ops: defaultSnapshotOps()}).save(path, record, 16<<10)
+	return (&snapshotWriter{ops: defaultSnapshotOps()}).save(path, record, 16<<10)
 }
 
 func requireFreshModelHome(c startupConfig) error {

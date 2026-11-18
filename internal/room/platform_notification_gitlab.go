@@ -73,7 +73,20 @@ func (m *roomManager) resumeGitLabSubscriptionsLocked(platformID string, verifie
 				}
 				return notificationRoomError(err)
 			}
-			if err := m.notifications.SaveLocked(next); err != nil {
+			now := m.notifications.Now()
+			m.mu.Unlock()
+			_, err = m.notifications.Configure(meta.Key, meta.Version, func(current notification.State) (notification.State, error) {
+				switch latest := current.(type) {
+				case gitlab.EventsState:
+					return gitlab.ConfigureEvents(room.RoomIdentity, &latest, &latest.Binding, latest.Config, now)
+				case gitlab.TodosState:
+					b := gitlab.TodosBinding{PlatformID: a.PlatformID, PlatformGeneration: a.Generation, URL: a.URL, UserID: a.UserID, Username: a.Username, CredentialVersion: a.CredentialVersion, CredentialFingerprint: a.CredentialFingerprint}
+					return gitlab.ConfigureTodos(room.RoomIdentity, &latest, b, latest.Config, now)
+				}
+				return nil, notification.ErrInvalid
+			})
+			m.mu.Lock()
+			if err != nil {
 				return notificationRoomError(err)
 			}
 			if m.notifications.ChangedLocked(meta.Key) == nil {

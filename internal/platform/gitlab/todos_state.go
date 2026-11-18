@@ -58,7 +58,7 @@ func NormalizeTodosConfig(c TodosConfig) (TodosConfig, error) {
 	return normalizeTodosConfig(c, true)
 }
 func normalizeTodosConfig(c TodosConfig, requirePlatform bool) (TodosConfig, error) {
-	if !c.Target.Valid() {
+	if !c.Target.Valid() || c.Target.Mode == "shared_inbox" && c.Enabled {
 		return c, notification.ErrRequest
 	}
 	interval, err := normalizeInterval(c.IntervalSeconds)

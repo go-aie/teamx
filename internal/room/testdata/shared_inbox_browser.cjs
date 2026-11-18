@@ -1,0 +1,47 @@
+const {chromium}=require('playwright');
+const assert=require('node:assert/strict');
+(async()=>{
+ const endpoint=process.argv[2],room=JSON.parse(process.argv[3]);
+ const browser=await chromium.launch({headless:true});
+ try{
+  const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
+  page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(15000);
+  await page.goto(endpoint);
+  const selector=`#room-list > [data-room-key=${JSON.stringify(JSON.stringify([room.room_id,room.room_instance]))}] > button:first-child`;
+  await page.locator(selector).click();
+  await page.waitForFunction(()=>!document.querySelector('#message-input').disabled);
+  if(!await page.locator('#shared-inbox-settings').isVisible())await page.locator('#room-menu-label').click();
+  const loaded=page.waitForResponse(r=>new URL(r.url()).pathname==='/v1/rooms/shared-inbox'&&r.request().method()==='GET');
+  await page.locator('#shared-inbox-settings > summary').click();const before=await(await loaded).json();
+  await page.waitForFunction(()=>document.querySelectorAll('#shared-inbox-preview p').length===1);
+  assert.equal(before.records,1);assert.equal(before.grants.filter(g=>g.status==='active').length,2);
+  const checkboxes=page.locator('#shared-inbox-members input');assert((await checkboxes.count())>=2);assert.equal(await page.locator('#shared-inbox-members input:checked').count(),2);
+  const selected=await page.locator('#shared-inbox-members input:checked').first().inputValue(), first=page.locator(`#shared-inbox-members input[value="${selected}"]`);
+  await first.uncheck();
+  let saved=page.waitForResponse(r=>new URL(r.url()).pathname==='/v1/rooms/shared-inbox'&&r.request().method()==='POST');
+  await page.locator('#shared-inbox-save').click();const revoked=await(await saved).json();assert.equal(revoked.grants.filter(g=>g.status==='active').length,1);
+  await page.waitForFunction(()=>!document.querySelector('#shared-inbox-save').disabled);
+  await first.check();
+  saved=page.waitForResponse(r=>new URL(r.url()).pathname==='/v1/rooms/shared-inbox'&&r.request().method()==='POST');
+  await page.locator('#shared-inbox-save').click();const joined=await(await saved).json();assert.equal(joined.grants.filter(g=>g.status==='active').length,2);
+  assert(joined.grants.some(g=>g.status==='active'&&!before.grants.some(old=>old.grant_id===g.grant_id)));
+  await page.waitForFunction(()=>!document.querySelector('#shared-inbox-save').disabled);
+  const opened=page.waitForResponse(r=>new URL(r.url()).pathname==='/v1/platform/gitlab/notifications'&&new URL(r.url()).searchParams.get('target_mode')==='shared_inbox');
+  await page.locator('#shared-inbox-platforms button').first().click();assert.equal((await opened).status(),200);
+  await page.waitForFunction(()=>document.querySelector('#notification-title').textContent.includes('共享项目'));
+  assert.equal(await page.locator('#gitlab-todos-settings').isHidden(),true);
+  if(!await page.locator("#gitlab-events-settings").evaluate(e=>e.open))await page.locator("#gitlab-events-settings > summary").click();
+  await page.screenshot({path:process.env.TEAMX_SHARED_BROWSER_DESKTOP||'/tmp/teamx-shared-inbox-desktop.png',fullPage:true});
+  await page.locator('#close-notification').click();
+  await page.setViewportSize({width:390,height:844});
+  if(!await page.locator('#shared-inbox-settings').isVisible())await page.locator('#room-menu-label').click();
+  await page.locator('#shared-inbox-platforms button').first().click();
+  await page.locator('#notification-detail').waitFor({state:'visible'});
+  if(!await page.locator("#gitlab-events-settings").evaluate(e=>e.open))await page.locator("#gitlab-events-settings > summary").click();
+  await page.locator('#gitlab-project-picker').waitFor({state:'visible'});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth),false);
+  await page.screenshot({path:process.env.TEAMX_SHARED_BROWSER_MOBILE||'/tmp/teamx-shared-inbox-mobile.png',fullPage:true});
+  assert.deepEqual(errors,[]);
+  console.log(JSON.stringify({browser:'Chromium',backend:'real local HTTP, Room, Inbox and Member owners',shared_records:1,members:2,preview:true,revoke_and_rejoin:true,fresh_grant:true,existing_gitlab_editor:true,desktop:true,mobile:true,page_errors:errors}));
+ }finally{await browser.close()}
+})().catch(e=>{console.error(e);process.exitCode=1});

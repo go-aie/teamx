@@ -1,6 +1,7 @@
 package room
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -88,8 +89,23 @@ func (s *inputSession) renderInputPage(a inputstream.ReadAttempt, page inputPage
 	if !known && len(body.Entries) > 0 {
 		if page.room {
 			body.Context = "当前 Room"
+		} else if a.Kind == "shared" && a.Shared != nil {
+			p := s.storage.store.sharedHandle.Load()
+			if p == nil {
+				return nil, ErrIdentity
+			}
+			v := p.view.Load()
+			rec, ok := v.records[a.Entries[0].Seq]
+			if !ok {
+				return nil, inputstream.ErrExpired
+			}
+			projection, err := p.store.notificationCapabilities("gitlab").Input.Codec.Decode(rec.Schema, rec.Payload)
+			if err != nil {
+				return nil, err
+			}
+			body.Context = "共享 GitLab 项目 / " + projection.Label
 		} else {
-			label, err := s.storage.repository.InputContext(s.execution, a.Stream)
+			label, err := inputOwnerValue(context.Background(), s.storage, "input_context", func(context.Context) (string, error) { return s.storage.repository.InputContext(s.execution, a.Stream) })
 			if err != nil {
 				return nil, err
 			}

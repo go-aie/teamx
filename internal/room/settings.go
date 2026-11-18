@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 	_ "time/tzdata" // Standalone binaries must not depend on host zoneinfo files.
 
@@ -24,7 +25,7 @@ type settingsView struct {
 	SettingsVersion uint64 `json:"settings_version"`
 }
 
-// A snapshot is copied under one lock; consumers keep the location and version
+// A committed snapshot is published atomically; consumers keep location and version
 // together for the duration of their operation. Nothing here enters Room state.
 type settingsSnapshot struct {
 	settingsView
@@ -32,7 +33,8 @@ type settingsSnapshot struct {
 }
 
 type systemSettings struct {
-	observe func()
+	committed atomic.Pointer[settingsSnapshot]
+	observe   func()
 	*configDocument
 	current  settingsSnapshot
 	teamsDir string
@@ -75,7 +77,9 @@ func loadTimeZone(name string) (*time.Location, error) {
 
 func defaultSystemSettings() *systemSettings {
 	location, _ := loadTimeZone(defaultTimeZone)
-	return &systemSettings{current: settingsSnapshot{settingsView{defaultTimeZone, 1}, location}, configDocument: &configDocument{ops: defaultSnapshotOps()}}
+	s := &systemSettings{current: settingsSnapshot{settingsView{defaultTimeZone, 1}, location}, configDocument: &configDocument{ops: defaultSnapshotOps()}}
+	s.publishSnapshot()
+	return s
 }
 
 func newSystemSettings(config startupConfig) *systemSettings {
@@ -89,16 +93,21 @@ func newSystemSettings(config startupConfig) *systemSettings {
 		s.current.TimeZone = *config.Server.TimeZone
 		s.current.location, _ = loadTimeZone(s.current.TimeZone)
 	}
+	s.publishSnapshot()
 	return s
+}
+
+// Called under the config document lock, or during exclusive startup.
+func (s *systemSettings) publishSnapshot() {
+	view := s.current
+	s.committed.Store(&view)
 }
 
 func (s *systemSettings) snapshot() settingsSnapshot {
 	if s == nil {
 		return defaultSystemSettings().current
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.current
+	return *s.committed.Load()
 }
 
 func (s *systemSettings) save(name string, expected uint64) (settingsView, error) {
@@ -137,6 +146,7 @@ func (s *systemSettings) save(name string, expected uint64) (settingsView, error
 		target := settingsSnapshot{settingsView{name, s.current.SettingsVersion + 1}, location}
 		return next, func() {
 			s.current = target
+			s.publishSnapshot()
 			if s.observe != nil {
 				s.observe()
 			}

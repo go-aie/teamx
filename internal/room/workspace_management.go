@@ -602,6 +602,7 @@ func (m *roomManager) runWorkspace(op workspaceOperation, rt *roomRuntime) {
 		return
 	}
 	svc.settleTools = func(ctx context.Context) error { return m.waitPlatformCalls(ctx, &op.RoomIdentity) }
+	m.bindPlatformReferences(svc)
 	m.mu.Lock()
 	m.setRuntimeServiceLocked(op.RoomIdentity, svc)
 	if m.closing {

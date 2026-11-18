@@ -95,9 +95,7 @@ func contractDeliver(t *testing.T, m *roomManager, svc *service, id MemberIdenti
 	t.Helper()
 	item := notification.Item{Key: source.ItemKey, DeliveryID: "contract-" + source.ItemKey, CreatedAt: time.Now().UTC(), Order: source.ItemKey, Source: source, Text: text,
 		Route: notification.Route{Version: 1, Target: inboxTarget(id)}}
-	m.mu.Lock()
-	err := m.commitPlatformNotificationLocked(context.Background(), notification.Metadata{Key: notification.Key{Owner: id.RoomIdentity, Source: notification.SourceID{Provider: source.Provider, Channel: source.Channel}, SubscriptionID: source.SubscriptionID}}, item)
-	m.mu.Unlock()
+	err := m.commitPlatformNotification(context.Background(), notification.Metadata{Key: notification.Key{Owner: id.RoomIdentity, Source: notification.SourceID{Provider: source.Provider, Channel: source.Channel}, SubscriptionID: source.SubscriptionID}}, item)
 	if err != nil {
 		t.Fatal(err)
 	}

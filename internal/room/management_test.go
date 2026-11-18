@@ -60,6 +60,7 @@ func testManager(t *testing.T, dir string, profiles map[string]dshProfile) *room
 			m.teams[id] = team
 		}
 	}
+	m.publishRoomsCatalogLocked()
 	t.Cleanup(func() {
 		if err := m.close(); err != nil {
 			t.Error(err)

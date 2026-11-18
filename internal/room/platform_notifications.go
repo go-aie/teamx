@@ -35,27 +35,17 @@ func (m *roomManager) initPlatformNotifications() {
 		sources = append(sources, adapter.Source)
 	}
 	m.notifications = notification.New(notification.Host{
-		Gate:    &m.mu,
 		Changed: m.observeNotificationChange,
-		Check: func(writing bool) error {
-			if writing && m.closing {
-				return notification.ErrClosing
-			}
-			return m.store.check(writing)
-		},
+		Check:   m.store.check,
 		Directory: func(owner RoomIdentity) (string, error) {
-			entry, err := m.workspaceRoom(owner)
-			if err != nil || entry.Status != "ready" {
-				return "", notification.ErrIdentity
-			}
 			return filepath.Join(m.roomDir(owner.RoomID), "notifications"), nil
 		},
 		EnsureDirectory: makeDurableDir,
 		Save:            m.store.save,
-		Admit:           m.admitPlatformNotificationLocked,
-		Deliver:         m.commitPlatformNotificationLocked,
+		Admit:           m.admitPlatformNotification,
+		Deliver:         m.commitPlatformNotification,
 		Expiry:          func() notification.ExpiryPolicy { return m.config.inboxExpiry.Resolved() },
-		Maintain:        m.maintainNotificationInboxLocked,
+		Maintain:        m.requestNotificationMaintenance,
 	}, sources...)
 }
 func (m *roomManager) loadPlatformNotificationsLocked() error {
@@ -80,9 +70,47 @@ func (m *roomManager) loadPlatformNotificationsLocked() error {
 	return nil
 }
 
-// This is the sole query admission boundary. The service holds manager.mu while
-// invoking it and while committing any accepted candidate. Network work happens
-// after the immutable scope has been returned and the gate released.
+type notificationRosterKey struct{}
+type notificationRoster struct {
+	owner   RoomIdentity
+	members []MemberState
+}
+
+// Obtain the Room-native roster outside the directory lock. Admission then
+// rechecks runtime identity and member-change fences against this fixed view.
+func (m *roomManager) admitPlatformNotification(ctx context.Context, state notification.State) (notification.Scope, error) {
+	owner := state.Metadata().Key.Owner
+	m.mu.Lock()
+	svc, _ := m.runtimeServiceLocked(owner)
+	m.mu.Unlock()
+	var members []MemberState
+	if svc != nil && !svc.closing.Load() {
+		list, err := svc.room.Call[MemberList](ctx, ListMembers{owner})
+		if err != nil {
+			return notification.Scope{}, roomNotificationError(err)
+		}
+		for _, member := range list.Members {
+			members = append(members, member.MemberState)
+		}
+	} else {
+		snapshot, err := readPublishedRoom(m.roomDir(owner.RoomID), owner)
+		if err != nil {
+			return notification.Scope{}, roomNotificationError(err)
+		}
+		members = snapshot.Members
+	}
+	ctx = context.WithValue(ctx, notificationRosterKey{}, notificationRoster{owner, members})
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	current, _ := m.runtimeServiceLocked(owner)
+	if current != svc {
+		return notification.Scope{}, notification.ErrBusy
+	}
+	return m.admitPlatformNotificationLocked(ctx, state)
+}
+
+// Query admission captures the connection and configuration under the short
+// manager lock. Source publication independently checks the captured data revision.
 func (m *roomManager) admitPlatformNotificationLocked(ctx context.Context, state notification.State) (notification.Scope, error) {
 	var scope notification.Scope
 	if err := ctx.Err(); err != nil {
@@ -110,6 +138,24 @@ func (m *roomManager) admitPlatformNotificationLocked(ctx context.Context, state
 	if err := m.checkNotificationTargetLocked(ctx, meta.Key.Owner, meta.Target); err != nil {
 		return scope, roomNotificationError(err)
 	}
+	if meta.Target.Mode == "shared_inbox" {
+		svc, _ := m.runtimeServiceLocked(meta.Key.Owner)
+		if svc == nil {
+			return scope, notification.ErrBusy
+		}
+		p := svc.store.sharedHandle.Load()
+		active := false
+		if p != nil {
+			for _, g := range p.view.Load().root.Grants {
+				if g.Status == "active" {
+					active = true
+				}
+			}
+		}
+		if !active && !notification.DeliveryAdmission(ctx) {
+			return scope, notification.ErrBusy
+		}
+	}
 	adapter, ok := m.notificationAdapters[meta.Key.Source]
 	if !ok || adapter.Admit == nil {
 		return scope, notification.ErrRequest
@@ -127,23 +173,31 @@ func (m *roomManager) admitPlatformNotificationLocked(ctx context.Context, state
 	return scope, nil
 }
 
-// Gate -> service changes read lock -> target actor. Holding the catalog gate
-// through the reply prevents activation/deletion from crossing this commit.
-func (m *roomManager) commitPlatformNotificationLocked(ctx context.Context, meta notification.Metadata, item notification.Item) error {
+// Reserve the exact runtime under the directory lock, then let the target own
+// the accepted write. The runtime change lease survives through its receipt.
+func (m *roomManager) commitPlatformNotification(ctx context.Context, meta notification.Metadata, item notification.Item) error {
 	owner := meta.Key.Owner
+	m.mu.Lock()
 	svc, _ := m.runtimeServiceLocked(owner)
-	if m.closing || m.roomBusyLocked(owner) || svc == nil {
+	if m.closing || m.roomBusyLocked(owner) || svc == nil || !svc.changes.TryRLock() {
+		m.mu.Unlock()
 		return notification.ErrBusy
 	}
-	if !svc.changes.TryRLock() {
-		return notification.ErrBusy
-	}
-	defer svc.changes.RUnlock()
 	if svc.closing.Load() || svc.restarting.Load() {
+		svc.changes.RUnlock()
+		m.mu.Unlock()
 		return notification.ErrBusy
 	}
-	if err := m.checkNotificationTargetLocked(ctx, owner, item.Route.Target); err != nil {
-		return roomNotificationError(err)
-	}
+	m.mu.Unlock()
+	defer svc.changes.RUnlock()
 	return roomNotificationError(svc.receiveInbox(ctx, item.Route.Target, item))
+}
+
+// Callers hold manager.mu for domain checks only. Persistence and actor waits
+// occur outside it; the source owner rejects a changed data revision.
+func (m *roomManager) saveNotificationLocked(state, previous notification.State) error {
+	m.mu.Unlock()
+	err := m.notifications.SaveFrom(state, previous)
+	m.mu.Lock()
+	return err
 }

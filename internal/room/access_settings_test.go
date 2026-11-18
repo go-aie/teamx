@@ -144,6 +144,7 @@ func TestAccessSettingsEnableRotateDisableAndSharedConfig(t *testing.T) {
 	}
 	// Settings/model writers share the same durable config document.
 	settings := &systemSettings{configDocument: a.document, current: defaultSystemSettings().current}
+	settings.publishSnapshot()
 	if _, err := settings.save("UTC", 1); err != nil {
 		t.Fatal("access write broke settings writer", err)
 	}

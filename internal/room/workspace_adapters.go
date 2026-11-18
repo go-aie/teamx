@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -145,15 +144,7 @@ func (m *roomManager) ensureWorkspaces(ctx context.Context, saved managedRoomCon
 			if err := m.store.check(true); err != nil {
 				return err
 			}
-			if err := os.Remove(name); err != nil {
-				m.store.uncertain = true
-				return ErrCommitUnknown
-			}
-			if err := m.store.ops.syncDir(filepath.Dir(name)); err != nil {
-				m.store.uncertain = true
-				return ErrCommitUnknown
-			}
-			return nil
+			return m.store.removeSnapshot(name)
 		}}
 	if saved.Workspace != nil && saved.Workspace.Binding != nil && saved.Workspace.Binding.Provider == "scion" {
 		p.run = runScionPreparation

@@ -82,7 +82,7 @@ func NormalizeConfig(c Config) (Config, error) {
 		return c, err
 	}
 	c.BackfillStart = start
-	if !component(c.PlatformID) || !c.Target.Valid() ||
+	if !component(c.PlatformID) || !c.Target.Valid() || c.Target.Mode != "inbox" ||
 		(c.Private.Scope != "all" && c.Private.Scope != "specified") ||
 		(c.Groups.Scope != "" && c.Groups.Scope != "specified" && c.Groups.Scope != "all") ||
 		(c.Groups.MessageMode != "mentions" && c.Groups.MessageMode != "all") ||

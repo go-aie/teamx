@@ -1,6 +1,7 @@
 package room
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-aie/teamx/internal/inputstream"
@@ -30,13 +32,18 @@ const (
 	maxPrivateFileBytes int64 = 1 << 20
 )
 
-// Store owns the directory lock and serializes file access. Snapshot values
+// Store owns the directory lock. Domain owners serialize changes to their
+// state; the snapshot writer permits concurrent I/O on different paths. Values
 // passed to Save must be immutable until it returns. Actor handlers call
 // these blocking methods from controlled tasks, never from their state loop.
 // Agent and Session files have separate owners; they are not a transaction.
 type Store struct {
+	sharedInput          *sharedInputStorage // guarded by inputOwners.mu
+	sharedHandle         atomic.Pointer[sharedInputStorage]
+	inputHandles         sync.Map
+	inputOwners          inputOwners
 	roomInputCache       *roomLogCache
-	platformInputs       map[string]*platformInputStorage // Membership-owned new-format handles; lazy, no routing switch.
+	platformInputs       map[string]*platformInputStorage // Member-owned engines; all normal mutations use their input Actor.
 	observe              func(string, MemberIdentity)
 	observeExpiry        func(string, MemberIdentity, time.Time)
 	mcpOperations        mcpTurnOperations
@@ -49,10 +56,8 @@ type Store struct {
 	roomID               string
 	instance             string
 	lock                 *os.File
-	uncertain            bool
-	ops                  snapshotOps
-	directoryMu          sync.Mutex
-	durableDirectories   map[string]directoryIdentity
+	closeMu              sync.Mutex // serializes shutdown, never acquired by a writer
+	snapshotWriter                  // healthMu also protects this Store's directory lock
 }
 
 type directoryIdentity struct{ directory, parent os.FileInfo }
@@ -105,7 +110,7 @@ func lockStore(dir, roomID string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Store{dir: abs, roomID: roomID, lock: lock, ops: defaultSnapshotOps()}, nil
+	return &Store{dir: abs, roomID: roomID, lock: lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}, nil
 }
 
 func openStore(dir, roomID string, upgrade *inputUpgradeOptions) (*Store, error) {
@@ -144,8 +149,25 @@ func openStore(dir, roomID string, upgrade *inputUpgradeOptions) (*Store, error)
 }
 
 func (s *Store) Close() error {
+	s.closeMu.Lock()
+	defer s.closeMu.Unlock()
+	// Settle the higher-level accepted operations first: they can contain
+	// multiple snapshot writes. Service shutdown has already done this join.
+	if err := s.closeInputOwners(context.Background()); err != nil {
+		return err
+	}
+	s.healthMu.Lock()
+	s.writerClosing = true
+	done := s.writesDone
+	s.healthMu.Unlock()
+	// Do not hold Store.mu or the health lock while admitted writes finish.
+	if done != nil {
+		<-done
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.healthMu.Lock()
+	defer s.healthMu.Unlock()
 	if s.lock == nil {
 		return nil
 	}
@@ -269,6 +291,16 @@ func (s *Store) LoadAgent(id MemberIdentity) (AgentSnapshot, error) {
 
 func (s *Store) SaveAgent(v AgentSnapshot) error {
 	s.mu.Lock()
+	p := s.platformInputs[v.MembershipID]
+	s.mu.Unlock()
+	if p != nil && !p.owner.IsZero() {
+		return p.run(context.Background(), "save_turn", func(context.Context) error { return s.saveAgentSnapshot(v) })
+	}
+	return s.saveAgentSnapshot(v)
+}
+
+func (s *Store) saveAgentSnapshot(v AgentSnapshot) error {
+	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := v.validate(); err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalid, err)
@@ -336,7 +368,12 @@ func (s *Store) memberPath(id MemberIdentity, name string, writing bool) (string
 }
 
 func (s *Store) check(writing bool) error {
+	s.healthMu.Lock()
+	defer s.healthMu.Unlock()
 	if s.lock == nil {
+		return ErrStoreClosed
+	}
+	if writing && s.writerClosing {
 		return ErrStoreClosed
 	}
 	if writing && s.uncertain {
@@ -345,10 +382,30 @@ func (s *Store) check(writing bool) error {
 	return nil
 }
 
+func (s *snapshotWriter) markUncertain() {
+	s.healthMu.Lock()
+	s.uncertain = true
+	s.healthMu.Unlock()
+}
+
 // save has a single commit boundary. Before replacement, failure leaves the
 // old file intact. Once replacement is attempted, any ambiguous outcome freezes
 // all writes in this Store, including writes to other snapshot files.
 func (s *Store) save(path string, v any, limit int64) error {
+	if err := s.check(true); err != nil {
+		return err
+	}
+	return s.snapshotWriter.save(path, v, limit)
+}
+
+// The file writer is also used by domains with their own lock and lifecycle.
+// Its health admission is independent of Room directory ownership.
+func (s *snapshotWriter) save(path string, v any, limit int64) error {
+	finish, err := s.admitSnapshotWrite(path)
+	if err != nil {
+		return err
+	}
+	defer finish()
 	dir := filepath.Dir(path)
 	if err := s.ensureSnapshotDirectory(dir); err != nil {
 		return err
@@ -379,11 +436,11 @@ func (s *Store) save(path string, v any, limit int64) error {
 	if err := s.ops.rename(f.Name(), path); err != nil {
 		// An error from replacement is treated conservatively as uncertain;
 		// a filesystem can report an error after performing the operation.
-		s.uncertain = true
+		s.markUncertain()
 		return fmt.Errorf("%w: replace snapshot: %w", ErrCommitUnknown, err)
 	}
 	if err := s.ops.syncDir(dir); err != nil {
-		s.uncertain = true
+		s.markUncertain()
 		return fmt.Errorf("%w: sync directory: %w", ErrCommitUnknown, err)
 	}
 	return nil
@@ -393,17 +450,27 @@ func (s *Store) save(path string, v any, limit int64) error {
 // directory need not be synced again before every write. Keep the file Sync
 // and the post-rename directory Sync on every commit. Recheck both inodes so
 // replacing a directory or its parent requires initialization again.
-func (s *Store) ensureSnapshotDirectory(dir string) error {
+func (s *snapshotWriter) ensureSnapshotDirectory(dir string) error {
 	s.directoryMu.Lock()
-	defer s.directoryMu.Unlock()
+	if s.durableDirectories == nil {
+		s.durableDirectories = map[string]*snapshotDirectory{}
+	}
+	directory := s.durableDirectories[dir]
+	if directory == nil {
+		directory = &snapshotDirectory{}
+		s.durableDirectories[dir] = directory
+	}
+	s.directoryMu.Unlock()
+	directory.mu.Lock()
+	defer directory.mu.Unlock()
 	info, statErr := os.Stat(dir)
 	parent, parentErr := os.Stat(filepath.Dir(dir))
-	previous, found := s.durableDirectories[dir]
-	if found && statErr == nil && parentErr == nil &&
+	previous := directory.identity
+	if previous.directory != nil && statErr == nil && parentErr == nil &&
 		os.SameFile(previous.directory, info) && os.SameFile(previous.parent, parent) {
 		return nil
 	}
-	delete(s.durableDirectories, dir)
+	directory.identity = directoryIdentity{}
 	if err := s.ops.makeDir(dir); err != nil {
 		return err
 	}
@@ -415,10 +482,7 @@ func (s *Store) ensureSnapshotDirectory(dir string) error {
 	if err != nil {
 		return err
 	}
-	if s.durableDirectories == nil {
-		s.durableDirectories = map[string]directoryIdentity{}
-	}
-	s.durableDirectories[dir] = directoryIdentity{info, parent}
+	directory.identity = directoryIdentity{info, parent}
 	return nil
 }
 

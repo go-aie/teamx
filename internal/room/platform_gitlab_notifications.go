@@ -266,6 +266,9 @@ func (m *roomManager) gitlabNotificationViewForTargetLocked(owner RoomIdentity, 
 	if events == nil && todos == nil {
 		v.Config = gitlab.DefaultNotificationConfig(id)
 		v.Config.Target = target
+		if target.Mode == "shared_inbox" {
+			v.Config.Todos.Enabled = false
+		}
 		return v, nil
 	}
 	v.BackfillLocked = true
@@ -370,6 +373,14 @@ func (m *roomManager) configureGitLabNotifications(ctx context.Context, owner Ro
 		return gitlabNotificationView{}, notificationRoomError(normalizeErr)
 	}
 	m.mu.Lock()
+	if cfg.Target.Mode == "shared_inbox" && cfg.Enabled && cfg.Events.Enabled {
+		for _, saved := range m.gitlabNotifications[owner] {
+			if saved.Config.Target.Mode == "shared_inbox" && saved.Config.PlatformID != cfg.PlatformID && saved.Config.Enabled && saved.Config.Events.Enabled {
+				m.mu.Unlock()
+				return gitlabNotificationView{}, ErrConflict
+			}
+		}
+	}
 	prior, exists := m.gitlabNotifications[owner][notificationScopeFor(cfg.PlatformID, cfg.Target)]
 	if !exists {
 		if err := m.checkNotificationTargetLocked(ctx, owner, cfg.Target); err != nil {

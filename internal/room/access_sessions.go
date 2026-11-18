@@ -66,9 +66,6 @@ func (a *serverAccess) restoreSessions() error {
 // Caller holds a.mu (or is initializing). Publish only after the atomic private
 // snapshot and its directory have been synced; failed writes cannot grant login.
 func (a *serverAccess) replaceSessions(next map[[32]byte]accessSession) error {
-	if a.sessionStore.uncertain {
-		return ErrCommitUnknown
-	}
 	saved := accessSessionSnapshot{Version: 1, Binding: a.sessionBinding(), Sessions: map[string]time.Time{}}
 	for hash, session := range next {
 		saved.Sessions[hex.EncodeToString(hash[:])] = session.expires

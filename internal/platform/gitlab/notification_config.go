@@ -61,6 +61,9 @@ func TodoSettingsFrom(c TodosConfig) TodoSettings {
 }
 
 func NormalizeNotificationConfig(c NotificationConfig) (NotificationConfig, error) {
+	if c.Target.Mode == "shared_inbox" && c.Todos.Enabled {
+		return c, notification.ErrRequest
+	}
 	interval, err := normalizeInterval(c.IntervalSeconds)
 	if err != nil {
 		return c, err

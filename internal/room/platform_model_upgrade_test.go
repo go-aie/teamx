@@ -39,7 +39,7 @@ func TestPlatformUpgradeJournalRecoveryAndConflict(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &Store{dir: root, lock: lock, ops: defaultSnapshotOps()}
+	s := &Store{dir: root, lock: lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}
 	defer s.Close()
 	j := platformUpgrade{Version: 1, Files: []platformFileChange{{Path: "one.json", Before: json.RawMessage(`{"connection_id":"a"}`), After: json.RawMessage(`{"platform_id":"a"}`)}, {Path: "two.json", Before: json.RawMessage(`{"connection_id":"b"}`), After: json.RawMessage(`{"platform_id":"b"}`)}}}
 	for _, c := range j.Files {

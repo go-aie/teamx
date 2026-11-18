@@ -65,7 +65,7 @@ type serverAccess struct {
 	proxies                    map[netip.Addr]bool
 	mu                         sync.Mutex
 	sessions                   map[[32]byte]accessSession
-	sessionStore               Store
+	sessionStore               snapshotWriter
 	executions                 map[[32]byte]executionBinding
 	attempts                   int
 	retryAfter                 time.Time

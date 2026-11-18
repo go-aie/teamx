@@ -240,7 +240,7 @@ func TestMemberNotificationUpgradeInterruptedGroupBlocksStartupAndResumes(t *tes
 			if err != nil {
 				t.Fatal(err)
 			}
-			store := &Store{dir: h.m.store.dir, lock: lock, ops: defaultSnapshotOps()}
+			store := &Store{dir: h.m.store.dir, lock: lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}
 			defer store.Close()
 			offline := &roomManager{store: store, index: h.m.index}
 			offline.initPlatform()
@@ -312,7 +312,7 @@ func TestMemberNotificationUpgradeRejectsUnassignableOldDataBeforeWriting(t *tes
 			if err != nil {
 				t.Fatal(err)
 			}
-			offline := &roomManager{store: &Store{dir: h.m.store.dir, lock: lock, ops: defaultSnapshotOps()}, index: h.m.index}
+			offline := &roomManager{store: &Store{dir: h.m.store.dir, lock: lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}, index: h.m.index}
 			defer offline.store.Close()
 			offline.initPlatform()
 			switch mode {

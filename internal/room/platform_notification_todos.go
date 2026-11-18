@@ -236,7 +236,7 @@ func (m *roomManager) configureTodosLocked(key notification.Key, version uint64,
 		if e != nil {
 			return retired, nil, e
 		}
-		if e = m.notifications.SaveLocked(retired); e != nil {
+		if e = m.saveNotificationLocked(retired, current); e != nil {
 			return retired, nil, e
 		}
 		return retired, m.notifications.ChangedLocked(retired.Metadata().Key), nil
@@ -245,7 +245,7 @@ func (m *roomManager) configureTodosLocked(key notification.Key, version uint64,
 	if err != nil {
 		return next, nil, err
 	}
-	if err = m.notifications.SaveLocked(next); err != nil {
+	if err = m.saveNotificationLocked(next, current); err != nil {
 		return next, nil, err
 	}
 	return next, m.notifications.ChangedLocked(next.Metadata().Key), nil
@@ -271,7 +271,7 @@ func (m *roomManager) syncTodosSubscription(ctx context.Context, key notificatio
 	}
 	if err != nil {
 		if errors.Is(err, notification.ErrConflict) || errors.Is(err, platform.ErrCredential) {
-			if saveErr := m.notifications.SaveLocked(s.ScopeFailed(err)); saveErr != nil {
+			if saveErr := m.saveNotificationLocked(s.ScopeFailed(err), s); saveErr != nil {
 				m.mu.Unlock()
 				return notificationRoomError(saveErr)
 			}
@@ -281,7 +281,7 @@ func (m *roomManager) syncTodosSubscription(ctx context.Context, key notificatio
 	}
 	next, err := gitlab.ConfigureTodos(key.Owner, &s, scope.Binding, s.Config, m.notifications.Now())
 	if err == nil {
-		err = m.notifications.SaveLocked(next)
+		err = m.saveNotificationLocked(next, s)
 	}
 	var done <-chan struct{}
 	if err == nil {

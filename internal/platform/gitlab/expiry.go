@@ -78,3 +78,30 @@ func (s TodosState) Expire(cutoff time.Time) notification.State {
 	}
 	return n
 }
+
+// SourceTerminal proves an excluded or acknowledged identity from a retained
+// observation or an admission floor that permanently prevents re-entry.
+func (s EventsState) SourceTerminal(item notification.Item) (string, bool) {
+	if item.Source.Instance != s.Binding.URL || item.Source.ProjectID != s.ProjectID || item.Source.Project != s.Binding.Project {
+		return "", false
+	}
+	if o, ok := s.Observed[item.Key]; ok && o.CreatedAt.Equal(item.CreatedAt) {
+		return "committed_observation", true
+	}
+	if notification.Expired(item.CreatedAt, s.ExpiredBefore) || !item.CreatedAt.IsZero() && item.CreatedAt.Before(s.IgnoreBefore) {
+		return "committed_admission_floor", true
+	}
+	return "", false
+}
+func (s TodosState) SourceTerminal(item notification.Item) (string, bool) {
+	if item.Source.Instance != s.Binding.URL {
+		return "", false
+	}
+	if o, ok := s.Observed[item.Key]; ok && o.CreatedAt.Equal(item.CreatedAt) {
+		return "committed_observation", true
+	}
+	if notification.Expired(item.CreatedAt, s.ExpiredBefore) || !item.CreatedAt.IsZero() && item.CreatedAt.Before(s.Baseline) {
+		return "committed_admission_floor", true
+	}
+	return "", false
+}

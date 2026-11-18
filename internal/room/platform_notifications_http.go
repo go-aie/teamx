@@ -355,15 +355,15 @@ func (m *roomManager) servePlatformNotifications(w http.ResponseWriter, r *http.
 func notificationQueryTarget(q url.Values, required bool) (*notification.Target, error) {
 	mode, present := q["target_mode"]
 	if !present {
-		if required || q.Has("agent_id") || q.Has("membership_id") {
+		if required || q.Has("agent_id") || q.Has("membership_id") || q.Has("inbox_id") {
 			return nil, ErrRequest
 		}
 		return nil, nil
 	}
-	if len(mode) != 1 || mode[0] == "" || len(q["agent_id"]) > 1 || len(q["membership_id"]) > 1 {
+	if len(mode) != 1 || mode[0] == "" || len(q["agent_id"]) > 1 || len(q["membership_id"]) > 1 || len(q["inbox_id"]) > 1 {
 		return nil, ErrRequest
 	}
-	target, err := (notification.Target{Mode: mode[0], AgentID: q.Get("agent_id"), MembershipID: q.Get("membership_id")}).Normalize()
+	target, err := (notification.Target{Mode: mode[0], InboxID: q.Get("inbox_id"), AgentID: q.Get("agent_id"), MembershipID: q.Get("membership_id")}).Normalize()
 	if err != nil {
 		return nil, notificationRoomError(err)
 	}
@@ -389,6 +389,29 @@ func filterNotificationViews(views []notificationView, matches func(notification
 }
 func (m *roomManager) setNotificationTargetViewLocked(v *notificationView, target notification.Target) {
 	v.Target = target
+	if target.Mode == "shared_inbox" {
+		svc, _ := m.runtimeServiceLocked(v.RoomIdentity)
+		active := false
+		if svc == nil || svc.closing.Load() || svc.restarting.Load() {
+			v.TargetErrorCode = "target_unavailable"
+			v.RuntimePaused = true
+			return
+		}
+		if svc != nil {
+			if p := svc.store.sharedHandle.Load(); p != nil {
+				for _, g := range p.view.Load().root.Grants {
+					if g.Status == "active" {
+						active = true
+					}
+				}
+			}
+		}
+		if !active {
+			v.TargetErrorCode = "no_recipients"
+			v.RuntimePaused = true
+			return
+		}
+	}
 	if err := m.checkNotificationTargetLocked(context.Background(), v.RoomIdentity, target); err != nil {
 		v.TargetErrorCode = "target_unavailable"
 		if errors.Is(err, ErrIdentity) {

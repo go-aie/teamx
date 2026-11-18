@@ -128,7 +128,6 @@ func newNotificationFixture(t *testing.T, sources ...Source) *notificationFixtur
 	t.Helper()
 	f := &notificationFixture{dir: t.TempDir(), scopeRevision: "revision-1", credential: "credential-1", ready: true, deliveries: map[string]int{}}
 	f.m = New(Host{
-		Gate: &f.mu,
 		Check: func(writing bool) error {
 			if writing {
 				return f.gate
@@ -436,8 +435,7 @@ func TestSourceSchemaReloadAndPlatformInvalidationAreIsolated(t *testing.T) {
 		t.Fatal("rotation crossed subscription scope")
 	}
 	f.mu.Lock()
-	delete(f.m.states, one.K)
-	delete(f.m.states, two.K)
+	f.m.ForgetRoomLocked(one.K.Owner)
 	err = f.m.LoadLocked(one.K.Owner)
 	f.mu.Unlock()
 	if err != nil || f.state(t, one.K).Version != 2 {
@@ -512,7 +510,7 @@ func TestSnapshotEnvelopeSeparatesChannelsAndRejectsInvalidRecords(t *testing.T)
 	reload := func() error {
 		f.mu.Lock()
 		defer f.mu.Unlock()
-		f.m.states = map[Key]subscription{}
+		f.m.ForgetRoomLocked(one.K.Owner)
 		return f.m.LoadLocked(one.K.Owner)
 	}
 	if err := reload(); err != nil || len(f.m.StatesLocked(one.K.Owner)) != 2 || f.state(t, one.K).Offset != 11 || f.state(t, two.K).Offset != 22 {
@@ -614,4 +612,8 @@ func TestInstalledStateObservationPreservesCommitResults(t *testing.T) {
 			}
 		})
 	}
+}
+
+func (s fixtureState) SourceTerminal(item Item) (string, bool) {
+	return "committed_fixture_observation", s.Seen[item.Key]
 }

@@ -63,7 +63,7 @@ func migrateModelConfiguration(c startupConfig, checkpoint func(int) error) (sta
 		return c, err
 	}
 	defer unlockDirectory(lock)
-	store := &Store{ops: defaultSnapshotOps()}
+	store := &snapshotWriter{ops: defaultSnapshotOps()}
 	if migration.Version == 0 {
 		migration, err = planModelMigration(c)
 		if err != nil {
@@ -213,7 +213,7 @@ func planModelMigration(c startupConfig) (modelMigration, error) {
 			return err
 		} else {
 			old.Path, old.Data = path, original
-			if err := (&Store{ops: defaultSnapshotOps()}).save(saved, old, maxRoomsFileBytes); err != nil {
+			if err := (&snapshotWriter{ops: defaultSnapshotOps()}).save(saved, old, maxRoomsFileBytes); err != nil {
 				return err
 			}
 		}

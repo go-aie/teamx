@@ -348,7 +348,8 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
         const statusText = hasDeletion(room) ? (room.busy || state.managementSending ? "正在删除…" : room.status === "deleting" ? "删除未完成" : "删除结果待确认")
           : room.status === "creating" ? `创建待完成${room.error ? ` · ${room.error}` : " · 可重试原创建请求"}` : room.runtime_status === "opening" ? "正在打开…"
           : room.runtime_error ? `运行受阻 · ${room.runtime_error}`
-          : room.busy ? "会话操作进行中…" : "";
+          : room.busy ? "会话操作进行中…"
+          : room.summary_status === "unavailable" ? "会话摘要暂不可用" : "";
         updated.className = "room-time";
         updated.textContent = settingsUI.systemTime.recent(roomListTime(room), now);
         updated.dateTime = roomListTime(room);

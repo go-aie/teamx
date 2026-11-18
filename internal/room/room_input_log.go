@@ -1,12 +1,10 @@
 package room
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -30,6 +28,10 @@ type roomLogSegment struct {
 	Last   uint64 `json:"last"`
 	Bytes  int    `json:"bytes"`
 	Digest string `json:"digest"`
+}
+
+func (s roomLogSegment) bounds() inputstream.SegmentRange {
+	return inputstream.SegmentRange{First: s.First, Last: s.Last, Bytes: int64(s.Bytes), Digest: s.Digest}
 }
 
 type roomLogCache struct {
@@ -66,26 +68,11 @@ func (s *Store) readRoomSegment(seg roomLogSegment) ([]byte, error) {
 	if !safeMembershipID(seg.Name) || seg.First == 0 || seg.Last < seg.First || seg.Bytes <= 0 || seg.Bytes > roomSegmentBytes+inputstream.MaxRecordBytes {
 		return nil, ErrInvalid
 	}
-	f, err := os.Open(filepath.Join(s.roomLogDir(), seg.Name+".jsonl"))
-	if err != nil {
-		return nil, err
+	b, err := inputstream.ReadSegment(filepath.Join(s.roomLogDir(), seg.Name+".jsonl"), seg.bounds(), roomSegmentBytes+inputstream.MaxRecordBytes)
+	if errors.Is(err, inputstream.ErrCorrupt) {
+		return nil, errors.Join(ErrInvalid, err)
 	}
-	defer f.Close()
-	info, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
-	if !info.Mode().IsRegular() || info.Size() < int64(seg.Bytes) {
-		return nil, ErrInvalid
-	}
-	b := make([]byte, seg.Bytes)
-	if _, err := io.ReadFull(f, b); err != nil {
-		return nil, err
-	}
-	if inputstream.Digest(b) != seg.Digest || b[len(b)-1] != '\n' {
-		return nil, ErrInvalid
-	}
-	return b, nil
+	return b, err
 }
 func (s *Store) loadRoomLog(v *RoomSnapshot) error {
 	if err := s.readRoomLog(v); err != nil {
@@ -99,7 +86,14 @@ func (s *Store) loadRoomLog(v *RoomSnapshot) error {
 // LoadRoom callers receive a separate, owned copy.
 func (s *Store) readRoomLog(v *RoomSnapshot) error {
 	root := v.InputLog
-	if root.Version != 1 || root.Records != int(v.LatestSeq-v.ClearedThrough) || root.Bytes < 0 || root.Bytes > inputstream.MaxBytes || root.Records > inputstream.MaxRecords {
+	if root == nil || v.ClearedThrough > v.LatestSeq || root.Version != 1 || root.Records != int(v.LatestSeq-v.ClearedThrough) || root.Bytes < 0 || root.Bytes > inputstream.MaxBytes || root.Records > inputstream.MaxRecords {
+		return ErrInvalid
+	}
+	ranges := make([]inputstream.SegmentRange, len(root.Segments))
+	for i, seg := range root.Segments {
+		ranges[i] = seg.bounds()
+	}
+	if total, err := inputstream.ValidatePublication(v.ClearedThrough, v.LatestSeq, ranges, true); err != nil || total != int64(root.Bytes) {
 		return ErrInvalid
 	}
 	key := inputstream.Ref("room_log_", v.RoomIdentity, v.ClearedThrough, v.LatestSeq, root)
@@ -130,11 +124,9 @@ func (s *Store) readRoomLog(v *RoomSnapshot) error {
 			return fmt.Errorf("Room log: %w", err)
 		}
 		total += len(b)
-		scan := bufio.NewScanner(bytes.NewReader(b))
-		scan.Buffer(make([]byte, 4096), inputstream.MaxRecordBytes)
-		for scan.Scan() {
+		err = inputstream.WalkSegment(b, inputstream.MaxRecordBytes, func(line []byte, _ int) error {
 			var m RoomMessage
-			if err := inputstream.StrictDecode(scan.Bytes(), &m); err != nil {
+			if err := inputstream.StrictDecode(line, &m); err != nil {
 				return err
 			}
 			prev++
@@ -142,8 +134,9 @@ func (s *Store) readRoomLog(v *RoomSnapshot) error {
 				return ErrInvalid
 			}
 			v.Messages = append(v.Messages, m)
-		}
-		if err := scan.Err(); err != nil {
+			return nil
+		})
+		if err != nil {
 			return err
 		}
 		if prev != seg.Last {
@@ -180,15 +173,7 @@ func (s *Store) writeRoomSegment(data []byte, first, last uint64) (roomLogSegmen
 		return roomLogSegment{}, err
 	}
 	defer os.Remove(f.Name())
-	n, err := f.Write(data)
-	if err == nil && n != len(data) {
-		err = io.ErrShortWrite
-	}
-	if err == nil {
-		err = f.Sync()
-	}
-	err = errors.Join(err, f.Close())
-	if err != nil {
+	if err := inputstream.WriteSegment(f, data); err != nil {
 		return roomLogSegment{}, err
 	}
 	path := filepath.Join(dir, name+".jsonl")
@@ -297,8 +282,12 @@ func (s *Store) prepareRoomLog(v RoomSnapshot) (*roomLogRoot, error) {
 	if err := appendRange(start, v.LatestSeq); err != nil {
 		return nil, err
 	}
-	if root.Bytes > inputstream.MaxBytes {
-		return nil, ErrCapacity
+	ranges := make([]inputstream.SegmentRange, len(root.Segments))
+	for i, seg := range root.Segments {
+		ranges[i] = seg.bounds()
+	}
+	if total, err := inputstream.ValidatePublication(v.ClearedThrough, v.LatestSeq, ranges, true); err != nil || total != int64(root.Bytes) {
+		return nil, errors.Join(ErrInvalid, err)
 	}
 	return root, nil
 }
@@ -322,16 +311,7 @@ func (s *Store) cleanRoomLog(root roomLogRoot) error {
 				return err
 			}
 			if info.Size() > int64(size) {
-				file, err := os.OpenFile(path, os.O_WRONLY, 0)
-				if err != nil {
-					return err
-				}
-				err = file.Truncate(int64(size))
-				if err == nil {
-					err = file.Sync()
-				}
-				err = errors.Join(err, file.Close())
-				if err != nil {
+				if err := inputstream.TruncateSegment(path, int64(size)); err != nil {
 					return err
 				}
 			}

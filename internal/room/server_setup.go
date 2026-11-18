@@ -149,7 +149,7 @@ func newFirstModelSetup(ctx context.Context, config startupConfig, settings *sys
 }
 
 func (f *firstModelSetup) persist(op *savedSetupOperation) error {
-	return (&Store{ops: defaultSnapshotOps()}).save(f.path, op, maxPrivateFileBytes)
+	return (&snapshotWriter{ops: defaultSnapshotOps()}).save(f.path, op, maxPrivateFileBytes)
 }
 func (f *firstModelSetup) state() any {
 	f.mu.Lock()

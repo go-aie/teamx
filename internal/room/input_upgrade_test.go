@@ -239,7 +239,7 @@ func TestInputUpgradeAdmissionFailures(t *testing.T) {
 		t.Fatal(err)
 	}
 	legacy.Version = 99
-	if err := (&Store{ops: defaultSnapshotOps()}).save(roomPath, legacy, maxRoomFileBytes); err != nil {
+	if err := (&snapshotWriter{ops: defaultSnapshotOps()}).save(roomPath, legacy, maxRoomFileBytes); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := openStore(dir, id.RoomID, &inputUpgradeOptions{}); !errors.Is(err, ErrVersion) {

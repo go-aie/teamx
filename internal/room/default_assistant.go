@@ -162,6 +162,7 @@ func (m *roomManager) ensureDefaultAssistantLocked() (*defaultAssistantRecord, e
 				if e.RoomIdentity == owner {
 					rt := m.reserveRuntimeLocked(owner)
 					rt.status = "opening"
+					m.catalogChangedLocked()
 					go m.restoreRuntime(e, rt)
 				}
 			}

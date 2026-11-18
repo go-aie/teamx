@@ -39,7 +39,7 @@ func runNotificationsUpgrade(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	store := &Store{dir: abs, lock: lock, ops: defaultSnapshotOps()}
+	store := &Store{dir: abs, lock: lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}
 	defer store.Close()
 	m := &roomManager{store: store}
 	m.initPlatform()

@@ -49,7 +49,7 @@ func TestFirstAccessResumesAndNeverReissuesLostToken(t *testing.T) {
 	// A crash after token publication, before config publication, resumes the
 	// reserved operator and token rather than allocating another identity.
 	record := firstAccessRecord{Version: 1, Operator: identity, TokenPath: adminTokenPath(c)}
-	if err := (&Store{ops: defaultSnapshotOps()}).save(filepath.Join(home, "first-access.json"), record, 16<<10); err != nil {
+	if err := (&snapshotWriter{ops: defaultSnapshotOps()}).save(filepath.Join(home, "first-access.json"), record, 16<<10); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(c.path, []byte("# untouched\n"), 0600); err != nil {

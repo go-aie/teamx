@@ -209,6 +209,14 @@ teamx service restore \
 
 已有旧模型配置在业务恢复前一次迁移，保留私有 `model-migration-backup/` 和进度；不联网验证，导入条目标为待验证，缺 Key 在设置中补填。中断按原目标续接，冲突时保留受保护的查询与重试入口；旧 Session 保留原执行快照。此有限迁移不等于从其他安装自动导入全部数据。
 
+### Room 输入自动升级
+
+新版本启动会在取得数据目录独占锁后、开放会话和通知采集前校验输入格式。已使用 `room.json` 分段发布根的 Room 直接重开；旧内联历史及旧输入通过既有框架自动转换，保留消息和事件序号、成员身份、清空边界及消费进度。共同存储内核沿用分段磁盘格式，不要求清空会话或手工搬文件。
+
+发生转换的 Room 保留 `input-upgrade.json` 和 `input-upgrade/<id>/backup/`，对应清单在 `input-upgrade/<id>/backup-manifest.json`；未完成时另有 staging。日志显示 Room、备份路径和失败原因。若启动中断，排除磁盘空间或权限问题后，用同一配置重新启动新版本继续；不要删除进度或围栏来绕过校验。当前根中缺失或损坏的正文不会被当作空会话。
+
+这些备份只保存转换前输入，不能代替上面的整实例一致备份。转换后已有新消息、消费或 Session 结果时，先停止服务并保存当前增量，核对权威文件再决定修复或恢复；不要混用不同时间的 Room 根、正文段及成员状态，也不要只切回旧 binary。持久协议见[存储架构](storage-architecture.zh.md#自动升级与备份)。
+
 ## 发行材料与许可
 
 归档保留 `manifest.json`、`checksums.txt`、`LICENSE`、`THIRD_PARTY_NOTICES/` 与运行时许可。`checksums.txt` 是包内不可变文件的 JSON 清单，包含权限和链接目标。full 的 Git 对应源码与构建材料在 `THIRD_PARTY_NOTICES/git-source/dugite/`。

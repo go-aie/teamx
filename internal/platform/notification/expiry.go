@@ -63,7 +63,7 @@ func outstandingItems(s State) []Item {
 
 // PendingDeliveriesLocked checks frozen item routes, including historical
 // subscriptions whose current destination differs from an outstanding route.
-func (m *Manager) PendingDeliveriesLocked(owner platform.RoomIdentity, target Target) map[string]bool {
+func (m *sourceStore) PendingDeliveriesLocked(owner platform.RoomIdentity, target Target) map[string]bool {
 	out := map[string]bool{}
 	for key, saved := range m.states {
 		if key.Owner != owner {
@@ -79,26 +79,68 @@ func (m *Manager) PendingDeliveriesLocked(owner platform.RoomIdentity, target Ta
 }
 
 // ExpireTargetLocked includes disabled/retired subscriptions and frozen routes.
-func (m *Manager) ExpireTargetLocked(owner platform.RoomIdentity, target Target) error {
+type expirySchedule struct {
+	revision uint64
+	policy   ExpiryPolicy
+	due      time.Time
+}
+
+// Repeated idle checks do not rescan a subscription's pending inventory. Any
+// source installation or policy change invalidates this bounded schedule.
+func (m *sourceStore) expireKey(key Key) error {
+	saved, ok := m.states[key]
+	if !ok {
+		return ErrIdentity
+	}
+	policy := ExpiryPolicy{}
+	if m.host.Expiry != nil {
+		policy = m.host.Expiry().Resolved()
+	}
+	if !policy.SkipExpired {
+		return nil
+	}
+	if m.expiry == nil {
+		m.expiry = map[Key]expirySchedule{}
+	}
+	cached, exists := m.expiry[key]
+	if !exists || cached.revision != saved.revision || cached.policy != policy {
+		cached = expirySchedule{revision: saved.revision, policy: policy}
+		for _, item := range outstandingItems(saved.state) {
+			if item.CreatedAt.IsZero() {
+				continue
+			}
+			due := item.CreatedAt.Add(time.Duration(policy.AfterDays) * 24 * time.Hour)
+			if cached.due.IsZero() || due.Before(cached.due) {
+				cached.due = due
+			}
+		}
+		m.expiry[key] = cached
+	}
+	if cached.due.IsZero() || m.Now().Before(cached.due) {
+		return nil
+	}
+	next := ApplyExpiry(saved.state, m.expiryCutoff())
+	if reflect.DeepEqual(next, saved.state) {
+		return nil
+	}
+	return m.SaveLocked(next)
+}
+func (m *sourceStore) ExpireTargetLocked(owner platform.RoomIdentity, target Target) error {
 	for key, saved := range m.states {
 		if key.Owner != owner {
 			continue
 		}
 		matches := saved.state.Metadata().Target == target
 		if !matches {
-			for _, i := range outstandingItems(saved.state) {
-				if i.Route.Target == target {
+			for _, item := range outstandingItems(saved.state) {
+				if item.Route.Target == target {
 					matches = true
 					break
 				}
 			}
 		}
-		if !matches {
-			continue
-		}
-		next := ApplyExpiry(saved.state, m.expiryCutoff())
-		if !reflect.DeepEqual(next, saved.state) {
-			if err := m.SaveLocked(next); err != nil {
+		if matches {
+			if err := m.expireKey(key); err != nil {
 				return err
 			}
 		}
@@ -108,7 +150,7 @@ func (m *Manager) ExpireTargetLocked(owner platform.RoomIdentity, target Target)
 
 // PendingInputDeliveriesLocked retains source/channel namespaces for partition
 // reclamation. Frozen historical routes are checked just like ordinary delivery.
-func (m *Manager) PendingInputDeliveriesLocked(owner platform.RoomIdentity, target Target) map[SourceID]map[string]bool {
+func (m *sourceStore) PendingInputDeliveriesLocked(owner platform.RoomIdentity, target Target) map[SourceID]map[string]bool {
 	out := map[SourceID]map[string]bool{}
 	for key, saved := range m.states {
 		if key.Owner != owner {

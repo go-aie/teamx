@@ -11,7 +11,11 @@ import (
 
 func newIndependentEventHarness(t *testing.T) (*eventHarness, managedPlatform) {
 	t.Helper()
-	m := testManager(t, t.TempDir(), managerTestProfiles(t))
+	return independentEventHarnessAt(t, t.TempDir())
+}
+func independentEventHarnessAt(t *testing.T, root string) (*eventHarness, managedPlatform) {
+	t.Helper()
+	m := testManager(t, root, managerTestProfiles(t))
 	room := managerCreate(t, m, "remote-project")
 	c := verifyTodoAccount(t, m, platformTestSave(t, m, platformTestRequest(m)), 101)
 	clock := &eventTestClock{now: time.Date(2026, 11, 3, 1, 0, 0, 0, time.UTC)}

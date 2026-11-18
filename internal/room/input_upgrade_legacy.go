@@ -113,7 +113,7 @@ func (u *inputUpgrade) convert() error {
 	original := state
 	state.Messages = slices.Clone(original.Messages)
 	state.ReadProofs = nil
-	next := &Store{dir: filepath.Join(u.stage(), "room"), roomID: u.store.roomID, lock: u.store.lock, ops: defaultSnapshotOps()}
+	next := &Store{dir: filepath.Join(u.stage(), "room"), roomID: u.store.roomID, lock: u.store.lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}
 	// These files are copied only to validate the staged graph. Unchanged
 	// business snapshots remain byte-identical when the new format is published.
 	for name, want := range u.progress.Source {

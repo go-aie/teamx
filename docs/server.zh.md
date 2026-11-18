@@ -69,7 +69,13 @@ DSH Session 使用绑定 Room、成员和服务代际的独立执行凭据，不
 
 ## 页面更新与连接
 
+`GET /v1/rooms` 从原子发布的不可变目录取得 Room 身份、名称、默认助理、团队及 runtime 操作状态，再在 manager 锁外读取各 Room 的已提交文件并编码响应。目录在服务启动完成前发布，创建、改名、打开、失败、busy 和删除安装新状态后更新；普通管理锁竞争不会让列表返回 409，操作中的 Room 以 `busy` 字段表达。时区及其版本从 settings 的已提交投影读取，配置写入期间仍可读上次已安装值。
+
+消息预览、成员显示名、活动时间及按操作者隔离的人类未读统计仍来自原有已提交数据。单 Room 的正文或配置不可读时，该条目以 `summary_status: unavailable` 和 `summary_error` 表达，其他条目继续返回；人类读取回执单独以 `human_read.status` 表达可用性。Store 健康检查使用独立短锁，提交不确定时目录仍可读并带 `write_error`，已关闭的 Store 拒绝读取。通知来源保存、目标收件及成员输入维护在 manager 锁外等待，由各自 owner 结清；其他管理和 Room API 继续遵守各自的准入规则。
+
 活跃会话页面通过同源 `GET /v1/updates` 保持一条 SSE 连接，只接收资源变化通知，再通过原有 HTTP 接口读取权威数据。没有变化时不进行周期显示读取。业务模型设置、成员详情和授权卡片共用该连接；切换 Room 或 runtime 后重新订阅。页面隐藏或离线时关闭连接，恢复后核对身份、目录和当前会话，保留草稿、消息位置和原操作 ID。
+
+目录及 settings 的新投影先安装，再发送 SSE 失效信号。Room 正文和人类读取回执继续在提交后发信号，由下一次目录请求投影；observer 只负责通知，不执行目录扫描或回调持锁的业务所有者。
 
 聊天补读、成员状态和配置分别调度；慢 Activity 或平台读取不会挡住消息。历史分页与完整 Activity 仍走独立 HTTP，并有各自的读取限频。断流和重复通知只触发核对，不重新发送消息、应用模型或启动授权。平台采集、Agent 执行与已受理操作由 Server 持有，不依赖浏览器是否打开。
 
@@ -106,8 +112,11 @@ Server 生命周期接受 context 取消，前台入口适配终端信号，常�
 | [server_setup.go](../internal/room/server_setup.go) | 受限模型设置与进入业务服务 |
 | [service_cli.go](../internal/room/service_cli.go)／[service_manager.go](../internal/room/service_manager.go) | 部署命令、系统服务、最小账号环境与状态核对 |
 | [ui_updates.go](../internal/room/ui_updates.go)／[ui_updates_http.go](../internal/room/ui_updates_http.go)／[updates.mjs](../internal/web/assets/updates.mjs) | 有界 SSE 通知、认证与生命周期、资源读取合并和恢复 |
+| [rooms_catalog.go](../internal/room/rooms_catalog.go)／[human_read_catalog.go](../internal/room/human_read_catalog.go) | 不可变目录、锁外摘要、局部不可用及操作者读取统计 |
 | [service_archive.go](../internal/room/service_archive.go)／[service_backup.go](../internal/room/service_backup.go) | 归档校验、版本发布和一致备份恢复 |
 | [package.mjs](../scripts/package.mjs) | 固定依赖、随包白名单与归档构建 |
 | [install.sh](../packaging/install.sh)／[package-publish.mjs](../scripts/package-publish.mjs) | 单次安装引导、稳定命令入口与固定版本的正式安装器发布 |
 
 设计演进见[原方案](DESKTOP-APPLICATION-ANALYSIS-AND-PLAN.zh.md)，最终验证与待验项见[发行验收记录](implementation/server-release-acceptance.zh.md)；日常操作统一使用[安装与运行](installation.zh.md)。
+
+私有输入的成员 owner、日志布局、检查点和 Session 证明关系见[存储架构](storage-architecture.zh.md)。

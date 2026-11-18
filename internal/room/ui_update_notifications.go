@@ -65,7 +65,7 @@ func summarizeNotification(state notification.State, now time.Time) notification
 	return v
 }
 
-// Called with manager.mu held. Never query the state owner or construct an HTTP
+// Called after publication. Never query the state owner or construct an HTTP
 // projection, and skip classification entirely without a matching Room stream.
 func (m *roomManager) observeNotificationChange(before, after notification.State) {
 	if m.updates == nil || m.updates.listeners.Load() == 0 {
@@ -89,8 +89,16 @@ func (m *roomManager) observeNotificationChange(before, after notification.State
 	default:
 		return
 	}
-	svc, _ := m.runtimeServiceLocked(owner)
-	if svc == nil || !m.updates.observesRoom(svc.info) {
+	var info *ServiceInfo
+	if catalog := m.catalog.Load(); catalog != nil {
+		for _, r := range catalog.rooms {
+			if r.RoomIdentity == owner {
+				info = r.Service
+				break
+			}
+		}
+	}
+	if info == nil || !m.updates.observesRoom(*info) {
 		return
 	}
 	now := m.notifications.Now()
@@ -99,7 +107,7 @@ func (m *roomManager) observeNotificationChange(before, after notification.State
 	if before != nil && after != nil && summarizeNotification(before, now) == current {
 		kind = "diagnostics"
 	}
-	u := roomUIUpdate("notifications", svc.info)
+	u := roomUIUpdate("notifications", *info)
 	u.Kind = kind
 	u.AgentID, u.MembershipID = current.Target.AgentID, current.Target.MembershipID
 	m.updates.mark(u)

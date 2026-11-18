@@ -161,7 +161,7 @@ func (c *modelController) stop() {
 	c.workers.Wait()
 }
 func (c *modelController) persist(op *modelChangeOperation) error {
-	err := (&Store{ops: defaultSnapshotOps()}).save(filepath.Join(c.dir, op.ID+".json"), op, maxRoomsFileBytes)
+	err := (&snapshotWriter{ops: defaultSnapshotOps()}).save(filepath.Join(c.dir, op.ID+".json"), op, maxRoomsFileBytes)
 	c.manager.updates.mark(uiUpdate{Topic: "models"})
 	for _, member := range op.Members {
 		c.manager.invalidateRoomLocked("members", member.MemberIdentity)

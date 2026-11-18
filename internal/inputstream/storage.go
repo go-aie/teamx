@@ -25,11 +25,17 @@ type segment struct {
 	First, Last uint64
 	Hash        string `json:"hash"`
 }
+
+func (s segment) bounds() SegmentRange {
+	return SegmentRange{First: s.First, Last: s.Last, Bytes: s.Bytes, Digest: s.Hash}
+}
+
 type scopeMetadata struct {
 	Key, Source, Label string
 	First              uint64 `json:"first,omitempty"`
 }
 type rootState struct {
+	Shared                      *SharedRoot     `json:"shared,omitempty"`
 	LocalOnly                   bool            `json:"local_consumption_only,omitempty"`
 	Consumption                 bool            `json:"consumption_initialized,omitempty"`
 	LastReclaim                 string          `json:"last_reclaim,omitempty"`
@@ -68,9 +74,11 @@ type offset struct {
 	Length  int
 }
 type partition struct {
-	state   rootState
-	records map[uint64]StoredRecord
-	offsets map[uint64]offset
+	bytes    uint64
+	sequence []uint64
+	state    rootState
+	records  map[uint64]StoredRecord
+	offsets  map[uint64]offset
 
 	projections map[uint64]Projection
 	streamRefs  map[uint64]string
@@ -80,6 +88,9 @@ type partition struct {
 // Repository is one member's platform storage. Provider/channel never select
 // storage algorithms. Empty partitions are virtual until their first append.
 type Repository struct {
+	sharedInbox  Inbox
+	sharedDir    string
+	pins         map[string]int
 	coordinator  *CoordinatorState
 	mu           sync.Mutex
 	dir          string
@@ -255,8 +266,13 @@ func validComponent(s string) bool {
 	}
 	return true
 }
-func (r *Repository) inboxDir() string        { return filepath.Join(r.dir, "inboxes", r.member.MembershipID) }
-func (r *Repository) partDir(p string) string { return filepath.Join(r.inboxDir(), p) }
+func (r *Repository) inboxDir() string { return filepath.Join(r.dir, "inboxes", r.member.MembershipID) }
+func (r *Repository) partDir(p string) string {
+	if r.sharedDir != "" {
+		return r.sharedDir
+	}
+	return filepath.Join(r.inboxDir(), p)
+}
 func (r *Repository) capacityPath() string {
 	return filepath.Join(r.dir, "agents", r.member.MembershipID, "capacity.json")
 }
@@ -284,11 +300,21 @@ func capacityChecksum(s capacityState) string {
 }
 func rootChecksum(s rootState) string { s.Checksum = ""; b, _ := json.Marshal(s); return Digest(b) }
 func (r *Repository) saveCapacity() error {
+	if r.sharedDir != "" {
+		return nil
+	}
 	s := r.capacity
 	s.Checksum = capacityChecksum(s)
 	return r.save(r.capacityPath(), s)
 }
 func (r *Repository) saveRoot(p string, s rootState) error {
+	ranges := make([]SegmentRange, len(s.Segments))
+	for i, seg := range s.Segments {
+		ranges[i] = seg.bounds()
+	}
+	if _, err := ValidatePublication(s.Reclaimed, s.Latest, ranges, false); err != nil {
+		return err
+	}
 	s.Checksum = rootChecksum(s)
 	return r.save(filepath.Join(r.partDir(p), "partition.json"), s)
 }
@@ -374,7 +400,7 @@ func (r *Repository) load(provider string) (*partition, error) {
 	if s.Version != FormatVersion {
 		return nil, ErrVersion
 	}
-	expected := c.Descriptor().Spec(r.member)
+	expected := r.partitionSpec(c.Descriptor())
 	oldSpec := s.Spec
 	oldSpec.Channels = expected.Channels
 	if !reflect.DeepEqual(oldSpec, expected) || !allChannelsAllowed(s.Spec.Channels, expected.Channels) {
@@ -386,6 +412,13 @@ func (r *Repository) load(provider string) (*partition, error) {
 	if s.Revision == 0 || s.Latest < s.Reclaimed || s.Receipts == nil || len(s.Receipts) > s.Spec.Policy.MaxReceipts {
 		return nil, ErrCorrupt
 	}
+	ranges := make([]SegmentRange, len(s.Segments))
+	for i, seg := range s.Segments {
+		ranges[i] = seg.bounds()
+	}
+	if _, err := ValidatePublication(s.Reclaimed, s.Latest, ranges, false); err != nil {
+		return nil, err
+	}
 	p := &partition{state: s, records: map[uint64]StoredRecord{}, offsets: map[uint64]offset{}, projections: map[uint64]Projection{}, streamRefs: map[uint64]string{}, streamSeqs: map[string][]uint64{}}
 	var previous uint64 = s.Reclaimed
 	names := map[string]bool{}
@@ -395,47 +428,26 @@ func (r *Repository) load(provider string) (*partition, error) {
 		}
 		names[seg.Name] = true
 		path := filepath.Join(dir, "records", seg.Name)
-		f, err := os.OpenFile(path, os.O_RDWR, 0600)
+		b, err := ReadSegment(path, seg.bounds(), int64(s.Spec.Policy.MaxBytes))
 		if err != nil {
 			return nil, fmt.Errorf("%w: retained segment: %v", ErrCorrupt, err)
 		}
-		b, err := io.ReadAll(io.LimitReader(f, seg.Bytes))
-		if err != nil {
-			f.Close()
+		// Every complete unpublished record is discarded as well.
+		if err := TruncateSegment(path, seg.Bytes); err != nil {
 			return nil, err
 		}
-		if int64(len(b)) != seg.Bytes || Digest(b) != seg.Hash || b[len(b)-1] != '\n' {
-			f.Close()
-			return nil, ErrCorrupt
-		}
-		// Discard every uncommitted tail, including valid complete records.
-		if err := f.Truncate(seg.Bytes); err != nil {
-			f.Close()
-			return nil, err
-		}
-		if err := f.Sync(); err != nil {
-			f.Close()
-			return nil, err
-		}
-		f.Close()
-		at := 0
 		first := uint64(0)
-		for at < len(b) {
-			end := bytes.IndexByte(b[at:], '\n')
-			if end < 0 || end+1 > s.Spec.Policy.MaxRecordBytes {
-				return nil, ErrCorrupt
-			}
-			line := b[at : at+end+1]
+		err = WalkSegment(b, s.Spec.Policy.MaxRecordBytes, func(line []byte, at int) error {
 			var rec StoredRecord
 			if StrictDecode(line, &rec) != nil {
-				return nil, ErrCorrupt
+				return ErrCorrupt
 			}
 			projection, err := r.validateRecord(provider, rec)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			if rec.Location.Seq <= previous {
-				return nil, ErrCorrupt
+				return ErrCorrupt
 			}
 			if first == 0 {
 				first = rec.Location.Seq
@@ -443,12 +455,15 @@ func (r *Repository) load(provider string) (*partition, error) {
 			previous = rec.Location.Seq
 			receipt, ok := s.Receipts[deliveryKey(rec.Channel, rec.DeliveryID)]
 			if !ok || receipt.Seq != rec.Location.Seq || receipt.Digest != rec.DeliveryDigest {
-				return nil, ErrCorrupt
+				return ErrCorrupt
 			}
 			p.records[previous] = rec
-			p.offsets[previous] = offset{seg.Name, int64(at), len(line)}
+			p.offsets[previous] = offset{seg.Name, int64(at), len(line) + 1}
 			p.index(r.member, rec, projection)
-			at += len(line)
+			return nil
+		})
+		if err != nil {
+			return nil, err
 		}
 		if first != seg.First || previous != seg.Last {
 			return nil, ErrCorrupt
@@ -514,7 +529,7 @@ func (r *Repository) cleanSegments(provider string, keep []segment) error {
 }
 func (r *Repository) validateRecord(provider string, rec StoredRecord) (Projection, error) {
 	d := r.codecs[provider].Descriptor()
-	spec := d.Spec(r.member)
+	spec := r.partitionSpec(d)
 	if rec.Codec != d.Codec || rec.Schema != d.Schema || rec.Group.Version != d.GroupingVersion {
 		return Projection{}, ErrVersion
 	}
@@ -537,6 +552,8 @@ func (r *Repository) validateRecord(provider string, rec StoredRecord) (Projecti
 }
 func (p *partition) index(owner Member, rec StoredRecord, projection Projection) {
 	seq := rec.Location.Seq
+	p.sequence = append(p.sequence, seq)
+	p.bytes += uint64(p.offsets[seq].Length)
 	p.projections[seq] = projection
 	stream := rec.Group.StreamRef(owner, p.state.Spec.Provider, rec.Channel)
 	p.streamRefs[seq] = stream
@@ -546,6 +563,11 @@ func cloneRoot(s rootState) rootState {
 	s.Segments = slices.Clone(s.Segments)
 	s.ArchivedScopes = slices.Clone(s.ArchivedScopes)
 	s.Receipts = cloneMap(s.Receipts)
+	if s.Shared != nil {
+		b, _ := json.Marshal(s.Shared)
+		s.Shared = new(SharedRoot)
+		_ = json.Unmarshal(b, s.Shared)
+	}
 	return s
 }
 func cloneMap[K comparable, V any](m map[K]V) map[K]V {
@@ -559,9 +581,7 @@ func (r *Repository) usageLocked() Usage {
 	var u Usage
 	for _, p := range r.parts {
 		u.Records += uint64(len(p.records))
-		for _, o := range p.offsets {
-			u.Bytes += uint64(o.Length)
-		}
+		u.Bytes += p.bytes
 	}
 	return u
 }
@@ -586,6 +606,9 @@ func (*CapacityError) Unwrap() error { return ErrCapacity }
 func (r *Repository) AppendOnce(provider string, q AppendRequest) (Receipt, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.sharedDir != "" {
+		defer delete(r.capacity.Pending, provider)
+	}
 	if r.uncertain {
 		return Receipt{}, ErrCommitUnknown
 	}
@@ -594,7 +617,7 @@ func (r *Repository) AppendOnce(provider string, q AppendRequest) (Receipt, erro
 		return Receipt{}, ErrUnsupported
 	}
 	d := c.Descriptor()
-	spec := d.Spec(r.member)
+	spec := r.partitionSpec(d)
 	if len(q.Payload) > spec.Policy.MaxRecordBytes {
 		return Receipt{}, &CapacityError{Scope: "record", Partition: spec.Ref}
 	}
@@ -633,6 +656,20 @@ func (r *Repository) AppendOnce(provider string, q AppendRequest) (Receipt, erro
 		}
 	}
 	rec := StoredRecord{Location: Location{spec.Ref, seq}, DeliveryID: q.DeliveryID, Channel: q.Channel, Codec: d.Codec, Schema: d.Schema, Group: projection.Group, CreatedAt: q.CreatedAt.UTC(), ReceivedAt: q.ReceivedAt.UTC(), Payload: bytes.Clone(q.Payload), DeliveryDigest: q.DeliveryDigest}
+	if r.sharedDir != "" {
+		if p == nil || p.state.Shared == nil {
+			return Receipt{}, ErrIdentity
+		}
+		for _, g := range p.state.Shared.Grants {
+			if g.Status == "active" {
+				rec.Recipients = append(rec.Recipients, g.ID)
+			}
+		}
+		sort.Strings(rec.Recipients)
+		if len(rec.Recipients) == 0 {
+			return Receipt{}, ErrBlocked
+		}
+	}
 	rec.Digest = rec.checksum()
 	if validator, ok := c.(StoredRecordValidator); ok {
 		if err := validator.ValidateStoredRecord(rec); err != nil {
@@ -683,11 +720,9 @@ func (r *Repository) AppendOnce(provider string, q AppendRequest) (Receipt, erro
 		first := seq
 		if p != nil {
 			partUsage.Records = uint64(len(p.records))
-			for n, o := range p.offsets {
-				partUsage.Bytes += uint64(o.Length)
-				if n < first {
-					first = n
-				}
+			partUsage.Bytes = p.bytes
+			if len(p.sequence) > 0 {
+				first = p.sequence[0]
 			}
 			if len(p.state.Receipts) >= spec.Policy.MaxReceipts {
 				return Receipt{}, &CapacityError{Scope: "receipts", Partition: spec.Ref, FirstProtected: first}
@@ -745,18 +780,10 @@ func (r *Repository) AppendOnce(provider string, q AppendRequest) (Receipt, erro
 	if err = f.Truncate(seg.Bytes); err == nil {
 		_, err = f.Seek(seg.Bytes, io.SeekStart)
 	}
-	if err == nil {
-		var n int
-		n, err = f.Write(line)
-		if n != len(line) && err == nil {
-			err = io.ErrShortWrite
-		}
-	}
-	if err == nil {
-		err = f.Sync()
-	}
-	err = errors.Join(err, f.Close())
 	if err != nil {
+		return Receipt{}, errors.Join(err, f.Close())
+	}
+	if err := WriteSegment(f, line); err != nil {
 		return Receipt{}, err
 	}
 	if err = syncDir(dir); err != nil {
@@ -815,7 +842,7 @@ func (r *Repository) Snapshot(provider string) (Snapshot, error) {
 	if p := r.parts[provider]; p != nil {
 		return snapshot(p), nil
 	}
-	return Snapshot{Partition: c.Descriptor().Spec(r.member).Ref}, nil
+	return Snapshot{Partition: r.partitionSpec(c.Descriptor()).Ref}, nil
 }
 func snapshot(p *partition) Snapshot {
 	return Snapshot{p.state.Spec.Ref, p.state.Revision, p.state.Latest, p.state.Reclaimed}
@@ -840,7 +867,7 @@ func (r *Repository) Scan(s Snapshot) ([]Location, error) {
 	p, err := r.partFor(s)
 	if err != nil && s.Revision == 0 && s.Through == 0 && s.Reclaimed == 0 {
 		for _, c := range r.codecs {
-			if c.Descriptor().Spec(r.member).Ref == s.Partition {
+			if r.partitionSpec(c.Descriptor()).Ref == s.Partition {
 				return []Location{}, nil
 			}
 		}
@@ -920,4 +947,15 @@ func decodeProjection(c Codec, schema int, b json.RawMessage) (Projection, error
 	p.Incomplete = p.Incomplete || cut
 
 	return p, nil
+}
+
+// Shared body namespaces are independent of member names, including a private
+// Membership whose text happens to equal the shared Inbox ID.
+func (r *Repository) partitionSpec(d Descriptor) PartitionSpec {
+	spec := d.Spec(r.member)
+	if r.sharedDir != "" {
+		spec.Ref = Ref("partition_", "inbox", r.sharedInbox, d.Provider)
+		spec.QuotaScope = Ref("quota_", "inbox", r.sharedInbox)
+	}
+	return spec
 }

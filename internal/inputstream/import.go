@@ -53,17 +53,10 @@ func (r *Repository) ImportPartition(provider string, reclaimed, latest uint64, 
 		if err != nil {
 			return err
 		}
-		_, err = buffer.WriteTo(f)
-		if err == nil {
-			err = f.Sync()
-		}
-		closeErr := f.Close()
-		if err != nil {
+		if err := WriteSegment(f, buffer.Bytes()); err != nil {
 			return err
 		}
-		if closeErr != nil {
-			return closeErr
-		}
+		buffer.Reset()
 		if err := syncDir(dir); err != nil {
 			return err
 		}

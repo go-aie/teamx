@@ -21,7 +21,7 @@
 | 定义团队、角色、模型选择和串并行协作 | [团队配置](../.teamx/teams/README.md) |
 | 为成员准备工作目录、Git 或 Scion 仓库 | [Workspace](workspace.zh.md) |
 | 调整模型、时区或服务配置 | [安装与运行：后续设置](installation.zh.md#模型与平台的后续设置)、[配置示例](../.teamx/config.example.toml) |
-| 调整收件箱保留、容量和故障恢复 | [Agent 收件箱](inbox.zh.md) |
+| 配置共享项目收件箱、调整保留、容量和故障恢复 | [Agent 收件箱](inbox.zh.md) |
 
 ## 架构与开发
 
@@ -31,6 +31,7 @@ Agent 由 DSH 执行模型回合和工具；TeamX 管理会话、消息、调度
 | --- | --- |
 | 浏览器与服务职责、存储及生命周期 | [Server 架构](server.zh.md) |
 | 成员身份、消息读取、调度与恢复 | [Room 架构](room-architecture.zh.md) |
+| 正文、消费、输入 owner、发布根和故障恢复 | [存储架构](storage-architecture.zh.md) |
 | DSH 配置、Session、取消与轮换 | [Agent 运行时](agent-runtime.zh.md) |
 | 公共指引、角色指令及每轮上下文 | [Agent Instructions 组装](agent-instructions.zh.md) |
 | 平台连接、工具适配与引用能力 | [平台架构](platform-architecture.zh.md) |

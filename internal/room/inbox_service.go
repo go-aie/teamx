@@ -10,7 +10,7 @@ import (
 )
 
 // inboxMu serializes creation and calls with membership removal. No Inbox
-// handler calls back into service or manager; manager Gate remains outermost.
+// handler calls back into service or manager. Target calls run outside manager.mu.
 func (s *service) inboxLocked(ctx context.Context, id MemberIdentity) (actorx.Addr, error) {
 	if s.closing.Load() {
 		return actorx.Addr{}, ErrClosing
@@ -43,6 +43,9 @@ func (s *service) inboxLocked(ctx context.Context, id MemberIdentity) (actorx.Ad
 }
 
 func (s *service) receiveInbox(ctx context.Context, target notification.Target, item notification.Item) error {
+	if target.Mode == "shared_inbox" {
+		return s.receiveSharedInbox(ctx, item)
+	}
 	if s.unifiedInputs {
 		id := MemberIdentity{RoomIdentity: s.info.RoomIdentity, AgentID: target.AgentID, MembershipID: target.MembershipID}
 		p, err := s.inputStorage(id)
@@ -154,13 +157,25 @@ func (m *roomManager) checkNotificationTargetLocked(ctx context.Context, owner R
 	if !target.Valid() {
 		return ErrRequest
 	}
+	if target.Mode == "shared_inbox" {
+		if target.InboxID != sharedProjectInbox || !m.config.unifiedInputs {
+			return ErrRequest
+		}
+		return nil
+	}
 	id := MemberIdentity{RoomIdentity: owner, AgentID: target.AgentID, MembershipID: target.MembershipID}
 	if m.platformMemberChanges[id] {
 		return ErrBusy
 	}
-	roster, err := m.toolRosterLocked(ctx, owner)
-	if err != nil {
-		return err
+	var roster []MemberState
+	if fixed, ok := ctx.Value(notificationRosterKey{}).(notificationRoster); ok && fixed.owner == owner {
+		roster = fixed.members
+	} else {
+		var err error
+		roster, err = m.toolRosterLocked(ctx, owner)
+		if err != nil {
+			return err
+		}
 	}
 	if !memberExists(roster, target.AgentID, target.MembershipID) {
 		return ErrIdentity
@@ -194,6 +209,9 @@ func (m *roomManager) notificationTargetErrorLocked(owner RoomIdentity, items []
 		return "target_unavailable"
 	}
 	for _, item := range items {
+		if item.Route.Target.Mode == "shared_inbox" {
+			continue
+		}
 		found := false
 		for _, member := range list.Members {
 			if member.AgentID == item.Route.Target.AgentID && member.MembershipID == item.Route.Target.MembershipID {

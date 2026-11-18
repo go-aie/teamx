@@ -29,7 +29,7 @@ func (s *inputSession) readStream(ctx context.Context, call string, data []byte)
 		return nil, nil, release, err
 	}
 	var request inputstream.ReadRequest
-	if err = s.mutate(func(r *inputstream.Repository) error {
+	if err = s.coordinate(ctx, func(r inputstream.ExecutionStorage) error {
 		var err error
 		request, err = r.BindCall(s.execution, call, q.Stream, q.Limit)
 		return err
@@ -48,6 +48,10 @@ func (s *inputSession) readStream(ctx context.Context, call string, data []byte)
 // Admission is a local prerequisite. Saved readable bodies never require a
 // live token, remote request or enabled platform tool to enter formal delivery.
 func (s *inputSession) checkStreamAdmission(ctx context.Context, stream string) error {
+	if !s.storage.owns(ctx) {
+		return s.storage.run(ctx, "check_stream_admission", func(ctx context.Context) error { return s.checkStreamAdmission(ctx, stream) })
+	}
+
 	if s.unified && stream == roomStreamRef(s.storage.id) {
 		return nil
 	}
@@ -74,7 +78,7 @@ func (s *inputSession) checkStreamAdmission(ctx context.Context, stream string) 
 			return errors.New("Saved input is temporarily unavailable; retry this stream later")
 		}
 		if ad.Decision == notification.AdmissionExcluded {
-			if err = p.result(p.repository.Skip(s.execution, l, "admission_excluded:"+ad.ReasonCode)); err != nil {
+			if err = p.result(p.engine().Consumption.Skip(s.execution, l, "admission_excluded:"+ad.ReasonCode)); err != nil {
 				return err
 			}
 		}
@@ -85,7 +89,7 @@ func (s *inputSession) checkStreamAdmission(ctx context.Context, stream string) 
 // receiveCall replays and settles the exact page before recording the separate
 // framework receipt. A lost native/coordinator acknowledgment is retried here.
 func (s *inputSession) receiveCall(ctx context.Context, call string) error {
-	state, err := s.storage.repository.State(s.execution)
+	state, err := s.inputState(ctx)
 	if err != nil {
 		return err
 	}
@@ -94,6 +98,18 @@ func (s *inputSession) receiveCall(ctx context.Context, call string) error {
 		return inputstream.ErrExpired
 	}
 	for _, attempt := range state.Attempts {
+		if attempt.Request == binding.Request && attempt.Received {
+			shared := s.storage.store.sharedHandle.Load()
+			if attempt.Shared == nil || shared == nil || shared.view.Load().root.Pages[attempt.ID].State != "protected" {
+				return nil
+			}
+		}
+		if attempt.Request == binding.Request && attempt.Kind == "shared" && (attempt.Phase == "awaiting_confirmation" || attempt.Phase == "settled") {
+			if err := s.confirmShared(ctx, attempt); err != nil {
+				return err
+			}
+			return s.coordinate(ctx, func(r inputstream.ExecutionStorage) error { return r.Receive(s.execution, call) })
+		}
 		if attempt.Request == binding.Request && attempt.Received {
 			return nil
 		}
@@ -112,7 +128,7 @@ func (s *inputSession) receiveCall(ctx context.Context, call string) error {
 	if err = confirm(ctx); err != nil {
 		return err
 	}
-	return s.mutate(func(r *inputstream.Repository) error { return r.Receive(s.execution, call) })
+	return s.coordinate(ctx, func(r inputstream.ExecutionStorage) error { return r.Receive(s.execution, call) })
 }
 
 func (s *inputSession) rememberDirectory(v any) {

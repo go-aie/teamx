@@ -47,6 +47,7 @@ func (m *roomManager) restoreRuntimes() error {
 		}
 		rt := m.reserveRuntimeLocked(entry.RoomIdentity)
 		rt.status = "opening"
+		m.catalogChangedLocked()
 		go m.restoreRuntime(entry, rt)
 	}
 	return nil

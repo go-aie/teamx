@@ -72,6 +72,7 @@ type MaterialUsage struct {
 	Bytes, Nanos  int64
 }
 type ReadAttempt struct {
+	Shared           *SharedPage   `json:"shared,omitempty"`
 	ReceiptRequired  bool          `json:"receipt_required,omitempty"`
 	Received         bool          `json:"received,omitempty"`
 	ResultBytes      int           `json:"result_bytes,omitempty"`
@@ -112,9 +113,11 @@ type LastPage struct {
 	Confirmed bool       `json:"confirmed"`
 }
 type CoordinatorState struct {
-	Calls          map[string]CallBinding  `json:"calls,omitempty"`
-	MaterialSeen   map[string]MaterialMemo `json:"material_seen,omitempty"`
-	Closed         bool                    `json:"closed,omitempty"`
+	External       map[string]ExternalObservation `json:"external,omitempty"`
+	SharedIntent   *SharedReadIntent              `json:"shared_intent,omitempty"`
+	Calls          map[string]CallBinding         `json:"calls,omitempty"`
+	MaterialSeen   map[string]MaterialMemo        `json:"material_seen,omitempty"`
+	Closed         bool                           `json:"closed,omitempty"`
 	DiscoveryBytes int
 	// Decoded only for existing coordinator checksums; v3 has no preview budget.
 	ArchivedPreviewBytes int                 `json:"PreviewBytes"`
@@ -227,10 +230,17 @@ func (r *Repository) loadCoordinator() error {
 		return ErrCorrupt
 	}
 	active := 0
+	if s.SharedIntent != nil {
+		q := s.SharedIntent
+		if q.Page.Member != s.Owner || q.Page.Execution != s.Execution || q.Read.Turn != s.Execution.Turn || q.Page.Page != Ref("page_", s.Owner, s.Execution, q.Read.ID) || q.Page.Limit < 0 || q.Page.Limit > PlatformReadLimit-s.Used || q.Page.Grant == "" || q.Page.Stream == "" || q.Page.Partition == "" {
+			return ErrCorrupt
+		}
+		active++
+	}
 	used := 0
 	keys := map[string]bool{}
 	for _, a := range s.Attempts {
-		if a.Kind != "" && a.Kind != "room" {
+		if a.Kind != "" && a.Kind != "room" && a.Kind != "shared" {
 			return ErrCorrupt
 		}
 		if a.ID == "" || a.Execution != s.Execution || a.Request.Turn != s.Execution.Turn || keys[a.Key()] {
@@ -251,12 +261,8 @@ func (r *Repository) loadCoordinator() error {
 		if (a.Kind != "room" && len(a.Entries) > PlatformReadLimit || a.Kind == "room" && len(a.Entries) > 100) || a.From > a.Through || a.Through > a.Snapshot.Through {
 			return ErrCorrupt
 		}
-		prev := a.From
-		for _, l := range a.Entries {
-			if l.Partition != a.Snapshot.Partition || l.Seq <= prev || l.Seq > a.Through {
-				return ErrCorrupt
-			}
-			prev = l.Seq
+		if err := ValidateReadRange(a.Snapshot.Partition, a.From, a.Through, a.Snapshot.Through, a.Entries); err != nil {
+			return ErrCorrupt
 		}
 	}
 	if active > 1 || used != s.Used || (s.Closed && active > 0) || s.DiscoveryBytes < 0 || s.DiscoveryBytes > 128<<10 {
@@ -305,6 +311,9 @@ func (r *Repository) Begin(e Execution) error {
 	if r.coordinator != nil && r.coordinator.Execution == e {
 		return r.initializeConsumption()
 	}
+	if r.coordinator != nil && (r.coordinator.SharedIntent != nil || activeAttempt(*r.coordinator) != nil && activeAttempt(*r.coordinator).Kind == "shared") {
+		return ErrBusy
+	}
 	if r.coordinator != nil && e.Turn <= r.coordinator.Execution.Turn {
 		return ErrIdentity
 	}
@@ -312,7 +321,7 @@ func (r *Repository) Begin(e Execution) error {
 	if r.coordinator != nil {
 		s.Stall = r.coordinator.Stall
 		s.Last = r.coordinator.Last
-		if a := activeAttempt(*r.coordinator); a != nil && a.Kind != "room" && len(a.Entries) > 0 {
+		if a := activeAttempt(*r.coordinator); a != nil && a.Kind == "" && len(a.Entries) > 0 {
 			s.Last = &LastPage{a.Stream, append([]Location(nil), a.Entries...), a.ID, false}
 		}
 	}
@@ -419,7 +428,7 @@ func (r *Repository) Reserve(e Execution, q ReadRequest) (ReadAttempt, error) {
 	if s.Closed {
 		return ReadAttempt{}, ErrIdentity
 	}
-	if activeAttempt(s) != nil {
+	if activeAttempt(s) != nil || s.SharedIntent != nil {
 		return ReadAttempt{}, ErrBusy
 	}
 	if len(s.Attempts) >= MaxReadSessions {
@@ -692,7 +701,7 @@ func (r *Repository) Confirm(e Execution, id string) error {
 	if a.Phase != "awaiting_confirmation" {
 		return ErrBusy
 	}
-	if a.Kind == "room" {
+	if a.Kind != "" {
 		return ErrIdentity
 	}
 	provider := ""
@@ -710,7 +719,7 @@ func (r *Repository) Confirm(e Execution, id string) error {
 		// Also accept old pending pages whose raw base predates compaction,
 		// while preserving exact comparison above the published floor.
 		floor := r.parts[provider].state.Reclaimed
-		if max(c.Through[a.Stream], floor) != max(a.From, floor) {
+		if ValidateCheckpoint(c.Through[a.Stream], a.From, floor) != nil {
 			return fmt.Errorf("%w: input consumption position changed (checkpoint=%d, page_start=%d, reclaimed=%d)", ErrConflict, c.Through[a.Stream], a.From, floor)
 		}
 		if len(a.Entries) > 0 {
@@ -747,7 +756,7 @@ func (r *Repository) Barrier(e Execution) error {
 	if err := r.execution(e); err != nil {
 		return err
 	}
-	if activeAttempt(*r.coordinator) != nil {
+	if activeAttempt(*r.coordinator) != nil || r.coordinator.SharedIntent != nil {
 		return ErrBusy
 	}
 	for _, a := range r.coordinator.Attempts {
@@ -763,7 +772,7 @@ func (r *Repository) PendingPage(e Execution) (*LastPage, error) {
 	if err := r.execution(e); err != nil {
 		return nil, err
 	}
-	if a := activeAttempt(*r.coordinator); a != nil && a.Kind != "room" && len(a.Entries) > 0 {
+	if a := activeAttempt(*r.coordinator); a != nil && a.Kind == "" && len(a.Entries) > 0 {
 		return &LastPage{a.Stream, append([]Location(nil), a.Entries...), a.ID, false}, nil
 	}
 	s := r.stateCopy()
@@ -797,6 +806,10 @@ func (r *Repository) ConsumptionObservation(e Execution) (Observation, error) {
 // ReleaseFacts overlays consumption and protected pages on domain-owned source
 // acknowledgement and business-release facts. Callers cannot fabricate progress.
 func (r *Repository) ConsumptionRelease(provider string, domain ReleaseSet) (ReleaseSet, error) {
+	if domain.Revision == "" || len(domain.Records) > 128 {
+		return ReleaseSet{}, ErrInvalid
+	}
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.uncertain {
@@ -807,7 +820,7 @@ func (r *Repository) ConsumptionRelease(provider string, domain ReleaseSet) (Rel
 		return ReleaseSet{}, err
 	}
 	p := r.parts[provider]
-	out := ReleaseSet{Records: map[uint64]ReleaseFacts{}}
+	out := ReleaseSet{Records: map[uint64]ReleaseFacts{}, Retention: domain.Retention}
 	protected := map[Location]bool{}
 	if r.coordinator != nil && !r.coordinator.Closed {
 		for _, a := range r.coordinator.Attempts {
@@ -818,8 +831,14 @@ func (r *Repository) ConsumptionRelease(provider string, domain ReleaseSet) (Rel
 			}
 		}
 	}
-	for n, rec := range p.records {
-		f := domain.Records[n]
+	if p == nil {
+		return out, ErrIdentity
+	}
+	for n, f := range domain.Records {
+		rec, ok := p.records[n]
+		if !ok {
+			return out, ErrConflict
+		}
 		f.Consumed = n <= c.Through[p.streamRefs[n]]
 		f.Skipped = c.Skipped[n] != ""
 		f.InFlight = f.InFlight || protected[rec.Location]
@@ -993,7 +1012,7 @@ func (r *Repository) Seal(e Execution) error {
 		return err
 	}
 	s := r.stateCopy()
-	if activeAttempt(s) != nil {
+	if activeAttempt(s) != nil || s.SharedIntent != nil {
 		return ErrBusy
 	}
 	for _, a := range s.Attempts {
@@ -1089,7 +1108,7 @@ func (r *Repository) RecoveryPage() (*LastPage, error) {
 	if r.coordinator == nil {
 		return nil, nil
 	}
-	if a := activeAttempt(*r.coordinator); a != nil && a.Kind != "room" && len(a.Entries) > 0 {
+	if a := activeAttempt(*r.coordinator); a != nil && a.Kind == "" && len(a.Entries) > 0 {
 		return &LastPage{a.Stream, append([]Location(nil), a.Entries...), a.ID, false}, nil
 	}
 	s := r.stateCopy()
@@ -1104,7 +1123,7 @@ func (r *Repository) recoverConfirmation() error {
 	}
 	s := r.stateCopy()
 	a := activeAttempt(s)
-	if a == nil || a.Kind == "room" || a.Phase != "awaiting_confirmation" {
+	if a == nil || a.Kind != "" || a.Phase != "awaiting_confirmation" {
 		return nil
 	}
 	for provider, p := range r.parts {

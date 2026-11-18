@@ -104,6 +104,7 @@ type Projection struct {
 
 // StoredRecord is immutable; payload interpretation is exclusively codec-owned.
 type StoredRecord struct {
+	Recipients     []string        `json:"recipients,omitempty"`
 	Location       Location        `json:"location"`
 	DeliveryID     string          `json:"delivery_id"`
 	Channel        string          `json:"channel"`
@@ -203,10 +204,12 @@ type AppendRequest struct {
 type ReleaseFacts struct {
 	Revision                                                       string
 	SourceConfirmed, BusinessReleased, Consumed, Skipped, InFlight bool
+	ReceiptReleased                                                bool
 }
 type ReleaseSet struct {
-	Revision string
-	Records  map[uint64]ReleaseFacts
+	Revision  string
+	Records   map[uint64]ReleaseFacts
+	Retention time.Duration
 }
 type ReclaimPlan struct {
 	ID            string

@@ -165,7 +165,7 @@ func TestHumanReadCatalogClosedRoomsAndFaultIsolation(t *testing.T) {
 	m.mu.Lock()
 	w = managerHTTP(m, "/v1/rooms", nil)
 	m.mu.Unlock()
-	if w.Code != 409 {
-		t.Fatal("management contention did not return busy", w.Code, w.Body.String())
+	if w.Code != 200 {
+		t.Fatal("management contention blocked the catalog", w.Code, w.Body.String())
 	}
 }

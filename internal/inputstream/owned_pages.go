@@ -32,13 +32,13 @@ func (r *Repository) ReserveOwned(e Execution, q ReadRequest, stream string, p O
 			return a, nil
 		}
 	}
-	if activeAttempt(s) != nil {
+	if activeAttempt(s) != nil || s.SharedIntent != nil {
 		return ReadAttempt{}, ErrBusy
 	}
 	if len(s.Attempts) >= MaxReadSessions {
 		return ReadAttempt{}, ErrCapacity
 	}
-	if stream == "" || p.Snapshot.Partition == "" || p.From > p.Through || p.Through > p.Snapshot.Through || len(p.Entries) > 100 || p.Remaining < 0 {
+	if stream == "" || p.Snapshot.Partition == "" || ValidateReadRange(p.Snapshot.Partition, p.From, p.Through, p.Snapshot.Through, p.Entries) != nil || len(p.Entries) > 100 || p.Remaining < 0 {
 		return ReadAttempt{}, ErrInvalid
 	}
 	a := ReadAttempt{Kind: "room", ID: Ref("page_", r.member, e, key), Execution: e, Request: q, Stream: stream, Snapshot: p.Snapshot, From: p.From, Through: p.Through, Entries: p.Entries, Remaining: p.Remaining, HasMore: p.HasMore, Phase: "reserved", Limit: q.Limit}
@@ -62,7 +62,7 @@ func (r *Repository) SettleOwned(e Execution, id, proof string) error {
 		return err
 	}
 	a := &s.Attempts[i]
-	if a.Kind != "room" || proof != a.Proof() {
+	if (a.Kind != "room" && a.Kind != "shared") || proof != a.Proof() {
 		return ErrIdentity
 	}
 	if a.Phase == "settled" {

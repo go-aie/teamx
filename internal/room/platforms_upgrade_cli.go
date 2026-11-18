@@ -40,7 +40,7 @@ func runPlatformsUpgrade(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	store := &Store{dir: abs, lock: lock, ops: defaultSnapshotOps()}
+	store := &Store{dir: abs, lock: lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}
 	defer store.Close()
 	if resumed, err := resumePlatformUpgrade(store); resumed || err != nil {
 		return err

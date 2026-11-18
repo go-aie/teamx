@@ -105,7 +105,7 @@ export function createInbox({ env, settingsUI, notificationsUI, runtime, members
     if (!inboxCurrent(view)) return;
     const status = view.status;
     if (status) {
-      $("inbox-status").textContent = `保留 ${status.retained_entries} 条` + (status.write_error ? ` · 写入受阻：${status.write_error}` : "");
+      $("inbox-status").textContent = (status.shared ? `私有 ${status.retained_entries} 条 · 共享 ${status.shared.records} 条（待阅读 ${status.shared.pending} 条）` : `保留 ${status.retained_entries} 条`) + (status.write_error ? ` · 写入受阻：${status.write_error}` : "");
       $("inbox-status").title = `只读预览，不推进 Agent 消费进度。\n占用 ${status.bytes} / ${status.limits.bytes} 字节` +
         (status.history ? "" : ` · 最新序号 #${status.latest_seq} · 已清理至 #${status.expired_through}`);
     }
@@ -262,7 +262,7 @@ export function createInbox({ env, settingsUI, notificationsUI, runtime, members
         const provider = source.provider === "lark" ? "飞书消息" : source.provider === "gitlab" ? `GitLab · ${{events:"项目活动",todos:"我的待办"}[source.channel] || source.channel}` : `${source.provider} / ${source.channel}`;
         const heading = document.createElement("header"); heading.className = "inbox-entry-header";
         const seq = document.createElement("span"); seq.className = "inbox-entry-seq"; seq.textContent = `#${entry.seq}`;
-        const channel = document.createElement("span"); channel.className = "inbox-channel"; channel.textContent = provider;
+        const channel = document.createElement("span"); channel.className = "inbox-channel"; channel.textContent = entry.shared ? `共享 · ${provider} · ${{pending:"待阅读",confirmed:"已确认",skipped:"已跳过"}[entry.consumption] || ""}` : provider;
         const time = document.createElement("time");
         const created = new Date(entry.item.created_at), received = new Date(entry.received_at);
         const date = created.getTime() > 0 ? created : received;
