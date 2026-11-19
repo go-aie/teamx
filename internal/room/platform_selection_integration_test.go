@@ -18,6 +18,7 @@ import (
 
 // Real TeamX CLI/HTTP and optional Chromium; official Feishu CLI is synthetic.
 func TestPlatformSelectionConversationAndMemberConfiguration(t *testing.T) {
+	t.Setenv("USER", humanCaller.ID)
 	h, member := platformMemberHarness(t)
 	platformSelectionConversation(t, h, member, "inbox")
 }
@@ -30,6 +31,7 @@ func TestDefaultAssistantPlatformOnboarding(t *testing.T) {
 
 func defaultAssistantPlatformOnboarding(t *testing.T, mode string) {
 	t.Helper()
+	t.Setenv("USER", humanCaller.ID)
 	h, member := platformMemberHarness(t)
 	// Reuse the verified global account, but start the default DM with no
 	// member settings or inherited authority from the fixture's ordinary Room.
@@ -70,12 +72,18 @@ func defaultAssistantPlatformOnboarding(t *testing.T, mode string) {
 func platformSelectionConversation(t *testing.T, h *larkHarness, member platformMemberRequest, mode string) {
 	t.Helper()
 	t.Setenv("USER", humanCaller.ID)
-	server := httptest.NewServer(h.m)
+	server := browserTestServer(t, h.m)
 	defer server.Close()
 	h.m.config.endpoint = server.URL
 	binary := productionFixtureCLI(t)
 	env := cliToolEnv(server.URL, h.svc, h.members[0])
+	token, revoke, err := h.m.config.access.issueExecution(executionBinding{ServiceInfo: h.svc.info, Caller: member.Caller})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer revoke()
 	cliEnv := os.Environ()
+	cliEnv = append(cliEnv, "TEAMX_EXECUTION_TOKEN="+token)
 	for _, key := range []string{"TEAMX_ENDPOINT", "TEAMX_ROOM_ID", "TEAMX_ROOM_INSTANCE", "TEAMX_SERVICE_EPOCH", "TEAMX_AGENT_ID", "TEAMX_MEMBERSHIP_ID"} {
 		cliEnv = append(cliEnv, key+"="+env(key))
 	}

@@ -358,7 +358,17 @@ func gitlabConfigApplied(cfg gitlab.NotificationConfig, state notification.State
 	return false
 }
 
+func checkGitLabNotificationSources(cfg gitlab.NotificationConfig) error {
+	if cfg.Enabled && !cfg.Events.Enabled && !cfg.Todos.Enabled {
+		return conflictReason("notifications.enabled", "no reception source is enabled", "Explicitly enable personal todos or valid project activity, or leave notifications disabled.")
+	}
+	return nil
+}
+
 func (m *roomManager) configureGitLabNotifications(ctx context.Context, owner RoomIdentity, version uint64, cfg gitlab.NotificationConfig) (result gitlabNotificationView, returnedErr error) {
+	if err := checkGitLabNotificationSources(cfg); err != nil {
+		return gitlabNotificationView{}, err
+	}
 	// Once desired settings are confirmed saved, retain that exact effect even
 	// if admission is subsequently revoked or collector settlement is interrupted.
 	var accepted gitlabNotificationView

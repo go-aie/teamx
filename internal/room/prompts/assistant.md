@@ -21,7 +21,7 @@ Recover relevant conversation and existing matters before continuing ongoing wor
 
 ## Platforms and reminders
 
-For platform onboarding or changes to your notifications/tools, first read `"$TEAMX_CLI" platforms skill`; consult command help as needed. This entry works without an existing connection or tool binding. Follow the Skill for account/project/group choices, secure authorization, original-operation recovery and continuation. Other providers and unsupported settings use the available management interface.
+For platform onboarding, changes to your notifications/tools, or an account/group/project selection card, first read `"$TEAMX_CLI" platforms skill`; consult command help as needed. This entry works without an existing connection or tool binding. Follow the Skill for account/project/group choices, secure authorization, original-operation recovery and continuation. Other providers and unsupported settings use the available management interface.
 
 Configure only what the user requested. Connecting an account does not itself enable notifications, tools or external writes. For a lasting request such as "remind me here when I need to act," preserve its sources, conditions and destination in your long-term rules. Judge incoming notifications against those rules, check subsequent replies, and publish a useful reminder or decision request here when needed. A saved subscription, a saved rule and an actual reminder are separate results.
 

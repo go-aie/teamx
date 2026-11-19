@@ -149,6 +149,9 @@ func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, 
 			returnedErr = configurationNotApplied(returnedErr)
 		}
 	}()
+	if req.ObserveCurrent {
+		return m.configureCurrentPlatformMemberNotifications(ctx, kind, req)
+	}
 	var op platformMemberOperation
 	if req.Input != nil {
 		copy := *req.Input
@@ -219,6 +222,15 @@ func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, 
 	if err = m.checkPlatformMemberContextLocked(ctx); err != nil {
 		m.mu.Unlock()
 		return op, err
+	}
+	if kind == "notifications" && req.Input.pureNotificationToggle() {
+		op = platformMemberOperation{Schema: 1, MemberIdentity: req.member(), ID: req.OperationID, Kind: kind, Source: source, Input: *req.Input, Account: v.Account, Status: "unknown", Result: onboardingStep{Status: "unknown", ErrorCode: "submission_unconfirmed"}, CreatedAt: time.Now().UTC()}
+		op, err = m.reservePlatformMemberNotificationsLocked(v, req, op)
+		m.mu.Unlock()
+		if err != nil || op.Status == "completed" {
+			return op, err
+		}
+		return m.applyPlatformMemberNotifications(ctx, req, op)
 	}
 	m.mu.Unlock()
 	var preparedChange *toolBindingChange
@@ -292,26 +304,12 @@ func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, 
 		op.Capabilities = &p.Capabilities
 	}
 	if kind == "notifications" {
-		if v.Account.Provider == "gitlab" {
-			var cfg gitlab.NotificationConfig
-			cfg, err = m.gitlabMemberNotificationConfigLocked(v, req)
-			op.GitLabConfig = &cfg
-		} else {
-			var cfg lark.Config
-			cfg, err = memberNotificationConfig(m, v, *req.Input)
-			op.Config = &cfg
-		}
-		if err != nil {
-			m.mu.Unlock()
-			return platformMemberOperation{}, err
-		}
-	}
-	if op.Config != nil && memberLarkNotificationUnchanged(v, *req.Input, *op.Config) {
-		op.Status, op.ResultVersion = "completed", 1
-		op.Result = onboardingStep{Status: "preserved", Version: v.NotificationVersion}
-		err = m.savePlatformMemberLocked(op)
+		op, err = m.reservePlatformMemberNotificationsLocked(v, req, op)
 		m.mu.Unlock()
-		return op, err
+		if err != nil || op.Status == "completed" {
+			return op, err
+		}
+		return m.applyPlatformMemberNotifications(ctx, req, op)
 	}
 	if preparedChange != nil {
 		if err = m.recheckLarkToolChangeLocked(ctx, *preparedChange); err != nil {
@@ -341,39 +339,16 @@ func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, 
 			op.Result, err = m.applyPlatformMemberToolLocked(ctx, op)
 		}
 		m.mu.Unlock()
-	} else if op.GitLabConfig != nil {
-		m.mu.Unlock()
-		var next gitlabNotificationView
-		next, err = m.configureGitLabNotifications(ctx, req.RoomIdentity, req.Input.NotificationVersion, *op.GitLabConfig)
-		op.Result = onboardingStep{Status: "applied", Version: next.Version}
-		if next.Version != 0 {
-			op.GitLabConfig = &next.Config
-		}
-
-		if err == nil && (next.Applying || len(next.Errors) != 0 || next.Pending["events"] || next.Pending["todos"]) {
-			op.Result.ErrorCode = "source_apply_pending"
-			err = ErrConflict
-		}
-	} else {
-		key := notification.Key{Owner: req.RoomIdentity, Source: lark.MessagesSourceID}
-		current, e := m.currentLarkForTargetLocked(req.RoomIdentity, req.Input.PlatformID, platformMemberTarget(req.member()))
-		if current != nil {
-			key = current.Metadata().Key
-		}
-		m.mu.Unlock()
-		if e != nil {
-			err = e
-		} else {
-			var next lark.State
-			next, err = m.configureLarkSubscription(ctx, key, req.Input.NotificationVersion, *op.Config)
-			op.Result = onboardingStep{Status: "applied", Version: next.SubscriptionVersion}
-		}
 	}
+	return m.finishPlatformMemberOperation(op, err)
+}
+
+func (m *roomManager) finishPlatformMemberOperation(op platformMemberOperation, err error) (platformMemberOperation, error) {
 	if err != nil {
 		// A failure after admission may follow a durable write or failed join.
 		// Keep it unknown and inspect the authoritative settings before recovery.
 		var notApplied *toolChangeNotApplied
-		if kind == "tool" && errors.As(err, &notApplied) {
+		if op.Kind == "tool" && errors.As(err, &notApplied) {
 			op.Status, op.ResultVersion = "failed", 1
 			op.Result = onboardingStep{Status: "failed", ErrorCode: onboardingFailure(err)}
 		} else {
@@ -389,6 +364,35 @@ func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, 
 	err = m.savePlatformMemberLocked(op)
 	m.mu.Unlock()
 	return op, err
+}
+
+// Apply only the frozen request and target. Both entry modes share the existing
+// configuration services, whose write guards recheck the original admission.
+func (m *roomManager) applyPlatformMemberNotifications(ctx context.Context, req platformMemberRequest, op platformMemberOperation) (platformMemberOperation, error) {
+	if err := ctx.Err(); err != nil {
+		return m.finishPlatformMemberOperation(op, err)
+	}
+	var err error
+	if op.GitLabConfig != nil {
+		var next gitlabNotificationView
+		next, err = m.configureGitLabNotifications(ctx, req.RoomIdentity, req.Input.NotificationVersion, *op.GitLabConfig)
+		op.Result = onboardingStep{Status: "applied", Version: next.Version}
+		if next.Version != 0 {
+			op.GitLabConfig = &next.Config
+		}
+		if err == nil && (next.Applying || len(next.Errors) != 0 || next.Pending["events"] || next.Pending["todos"]) {
+			op.Result.ErrorCode = "source_apply_pending"
+			err = ErrConflict
+		}
+	} else {
+		key := notification.Key{Owner: req.RoomIdentity, Source: lark.MessagesSourceID}
+		admission := ctx.Value(platformMemberContextKey{}).(platformMemberAdmission)
+		key.SubscriptionID = admission.SubscriptionID
+		var next lark.State
+		next, err = m.configureLarkSubscription(ctx, key, req.Input.NotificationVersion, *op.Config)
+		op.Result = onboardingStep{Status: "applied", Version: next.SubscriptionVersion}
+	}
+	return m.finishPlatformMemberOperation(op, err)
 }
 
 func (m *roomManager) applyPlatformMemberToolLocked(ctx context.Context, op platformMemberOperation) (onboardingStep, error) {
@@ -486,7 +490,7 @@ func (m *roomManager) servePlatformMember(w http.ResponseWriter, r *http.Request
 		if err == nil {
 			switch action {
 			case "status":
-				if req.Input != nil || (req.OperationID == "") == (req.SourceSeq == 0) || req.Query != "" || req.PageToken != "" || req.Type != "" {
+				if req.ObserveCurrent || req.Input != nil || (req.OperationID == "") == (req.SourceSeq == 0) || req.Query != "" || req.PageToken != "" || req.Type != "" {
 					err = ErrRequest
 				} else {
 					var ops []platformMemberOperation
@@ -500,10 +504,18 @@ func (m *roomManager) servePlatformMember(w http.ResponseWriter, r *http.Request
 					err = ErrRequest
 				} else {
 					minimal := platformMemberInput{PlatformID: req.Input.PlatformID, PlatformVersion: req.Input.PlatformVersion}
-					if !reflect.DeepEqual(minimal, *req.Input) || !tool.OpaqueID(minimal.PlatformID) || minimal.PlatformVersion == 0 || action == "get" && (req.Query != "" || req.PageToken != "") || action != "chats" && req.Type != "" || action == "chats" && req.Type != "" && req.Type != "group" && req.Type != "p2p" {
+					validVersion := minimal.PlatformVersion != 0
+					if req.ObserveCurrent {
+						validVersion = action == "get" && minimal.PlatformVersion == 0
+					}
+					if !reflect.DeepEqual(minimal, *req.Input) || !tool.OpaqueID(minimal.PlatformID) || !validVersion || action == "get" && (req.Query != "" || req.PageToken != "") || action != "chats" && req.Type != "" || action == "chats" && req.Type != "" && req.Type != "group" && req.Type != "p2p" {
 						err = ErrRequest
 					} else if action == "get" {
-						result, err = m.platformMemberViewLocked(r.Context(), req)
+						if req.ObserveCurrent {
+							_, result, err = m.observePlatformMemberLocked(r.Context(), req)
+						} else {
+							result, err = m.platformMemberViewLocked(r.Context(), req)
+						}
 					}
 				}
 			default:

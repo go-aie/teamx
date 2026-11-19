@@ -5,31 +5,84 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/go-aie/teamx/internal/platform/gitlab"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/go-aie/teamx/internal/platform/gitlab"
 )
+
+const platformMemberHelp = `Usage:
+  teamx platforms member notifications --platform-id ID --source-seq SEQ --enabled true|false
+  teamx platforms member get --platform-id ID [--platform-version V]
+  teamx platforms member notifications --help
+  teamx platforms member tool --help
+  teamx platforms member status --operation-id ID | --source-seq SEQ
+
+Pure switches need no preliminary get/status, versions or client operation ID.
+First enable uses manual setup defaults; existing settings restore saved sources.
+For source/range/filter edits, see notifications --help. Selection cards use
+platforms selection --help. Read platforms skill for the workflow and recovery.
+`
+
+func platformMemberActionHelp(action string) string {
+	switch action {
+	case "notifications":
+		return `Usage:
+  teamx platforms member notifications --platform-id ID --source-seq SEQ --enabled true|false
+  teamx platforms member notifications --platform-id ID --source-seq SEQ --platform-version V --notification-version N --operation-id ID [source/range/filter flags]
+
+Pure switches observe current state and recover the original receipt in one call.
+Use the original human seq; do not generate an operation ID or first get/status.
+First enable uses manual defaults; existing settings retain sources, filters and
+reception start. No source in saved settings requires an explicit source choice.
+Historical receipts describe that operation, not necessarily current settings.
+Customization requires all three observed fields (notification-version 0 means
+absent). Any supplied version/operation-id selects complete mode. Preserve stale
+observations on conflict; inspect unknown/partial receipts, never replay them.
+Omitted source fields are preserved; first customization enables only requested
+sources. Explicit enabled false overrides source enables. Collect all fields for
+the same account/source in one operation. A pure switch may restore both sources;
+single-source enable must not silently awaken another dormant source.
+Feishu all→specified requires explicit scope and a complete replacement list;
+empty lists close that branch. Personnel IDs must be verified p2p chat_ids.
+GitLab personal todos cover accessible projects without project selection or a
+Workspace; project activity needs a verified native ID/path. Pending/errors use
+existing settings retry-apply recovery. Tools and external writes are separate.
+For a card use platforms selection; for detailed semantics read platforms skill.
+
+Flags:
+`
+	case "get":
+		return "Usage: teamx platforms member get --platform-id ID [--platform-version V]\n\nOmit version to read current verified account/configuration; explicit V must be nonzero and current. This read creates no subscription, receipt or reception start.\n\nFlags:\n"
+	case "tool":
+		return "Usage: teamx platforms member tool --platform-id ID --platform-version V --operation-id ID --source-seq SEQ --enabled true|false [--binding-revision N] [--action OP ...]\n\nUse observed account/binding state and a stable operation ID. Tool grants do not authorize external writes. Unknown submissions require original-receipt inspection, never replay. Read platforms skill for capability and authorization recovery.\n\nFlags:\n"
+	case "status":
+		return "Usage: teamx platforms member status --operation-id ID | --source-seq SEQ\n\nRead original member configuration receipts; this command never reapplies them.\n\nFlags:\n"
+	default:
+		return platformConnectHelp // chats/projects retain their existing contracts.
+	}
+}
 
 func runPlatformMemberCLI(ctx context.Context, args []string, stdout, stderr io.Writer, env func(string) string, h *http.Client) error {
 	action := args[0]
 	args = args[1:]
 	if action == "member" {
 		if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
-			return writeOutput(stdout, []byte(platformConnectHelp))
+			return writeOutput(stdout, []byte(platformMemberHelp))
 		}
 		action, args = args[0], args[1:]
 		if action != "get" && action != "notifications" && action != "tool" && action != "status" {
 			return ErrRequest
 		}
 	}
-	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
-		return writeOutput(stdout, []byte(platformConnectHelp))
-	}
 	f := flag.NewFlagSet("platforms "+action, flag.ContinueOnError)
 	f.SetOutput(stderr)
-	f.Usage = func() { _ = writeOutput(stdout, []byte(platformConnectHelp)) }
+	f.Usage = func() {
+		_ = writeOutput(stdout, []byte(platformMemberActionHelp(action)))
+		f.PrintDefaults()
+	}
 	req := platformMemberRequest{}
 	in := platformMemberInput{}
 	if action != "status" {
@@ -200,21 +253,41 @@ func runPlatformMemberCLI(ctx context.Context, args []string, stdout, stderr io.
 	}
 	_ = f.Bool("json", true, "JSON output")
 	if err := f.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return nil
+		}
 		return err
 	}
 	if f.NArg() != 0 {
 		return ErrRequest
 	}
+	present := map[string]bool{}
+	f.Visit(func(f *flag.Flag) { present[f.Name] = true })
 	if action == "notifications" {
-		observed := false
-		f.Visit(func(flag *flag.Flag) {
-			if flag.Name == "notification-version" {
-				observed = true
+		full := present["platform-version"] || present["notification-version"] || present["operation-id"]
+		if full {
+			for _, name := range []string{"platform-version", "notification-version", "operation-id"} {
+				if !present[name] {
+					return invalidField(name, "complete mode requires --platform-version, --notification-version (explicit 0 if absent), and --operation-id")
+				}
 			}
-		})
-		if !observed {
-			return invalidField("notification_version", "required --notification-version; explicit 0 means no subscription was observed")
+		} else {
+			for name := range present {
+				if name != "platform-id" && name != "source-seq" && name != "enabled" && name != "json" {
+					return invalidField(name, "source/range/filter edits require complete observed versions and operation ID")
+				}
+			}
+			if in.Enabled == nil {
+				return invalidField("enabled", "short notification command requires explicit --enabled true|false")
+			}
+			req.ObserveCurrent = true
 		}
+	}
+	if action == "get" {
+		if present["platform-version"] && in.PlatformVersion == 0 {
+			return invalidField("platform-version", "explicit platform version must be nonzero; omit to read current state")
+		}
+		req.ObserveCurrent = !present["platform-version"]
 	}
 	endpoint := strings.TrimRight(env("TEAMX_ENDPOINT"), "/")
 	if endpoint == "" {
@@ -234,7 +307,28 @@ func runPlatformMemberCLI(ctx context.Context, args []string, stdout, stderr io.
 		path = "/v1/platforms/" + action
 	}
 	var result json.RawMessage // Preserve uint64 source sequences and revisions exactly.
-	if err := client.request(ctx, path, req, &result); err != nil {
+	var wire any = req
+	if req.ObserveCurrent {
+		// Only the short form crosses HTTP: zero observed versions must be absent,
+		// while complete requests keep explicit notification_version=0.
+		wire = struct {
+			platformMemberRequest
+			Input struct {
+				PlatformID string `json:"platform_id"`
+				Enabled    *bool  `json:"enabled,omitempty"`
+			} `json:"input"`
+		}{platformMemberRequest: req, Input: struct {
+			PlatformID string `json:"platform_id"`
+			Enabled    *bool  `json:"enabled,omitempty"`
+		}{in.PlatformID, in.Enabled}}
+	}
+	if err := client.request(ctx, path, wire, &result); err != nil {
+		if action == "get" {
+			return fmt.Errorf("platform_id=%s; inspect the exact platform connection: %w", in.PlatformID, err)
+		}
+		if req.ObserveCurrent && action == "notifications" {
+			return fmt.Errorf("platform_id=%s source_seq=%d; inspect member status by the original source-seq; never automatically retry conflicts or unknown submissions: %w", in.PlatformID, req.SourceSeq, err)
+		}
 		return fmt.Errorf("operation_id=%s source_seq=%d; query member status and get before retry: %w", req.OperationID, req.SourceSeq, err)
 	}
 	return writeJSON(stdout, result)

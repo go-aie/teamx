@@ -50,16 +50,7 @@ func TestConversationSettingsRealDSH(t *testing.T) {
 			t.Fatal("explicit runtime/profile, one or two different groups, and paired optional personnel query/chat required")
 		}
 	}
-	cfg, err := loadStartupConfig(input.Config, true)
-	if err != nil || cfg.Runtime == nil {
-		t.Fatal("current runtime required", err)
-	}
-	runtime := cfg.Runtime
-	if key := runtime.Model.APIKeyEnv; os.Getenv(key) == "" && cfg.Env[key] != "" {
-		t.Setenv(key, cfg.Env[key])
-	}
-	imageRealCredential(t, runtime.Model.APIKeyEnv)
-	report["model"] = runtime.Model.ModelID
+	var err error
 	h, _ := platformMemberHarness(t)
 	installSettingsPersonnelFixture(t, h)
 	c := h.c
@@ -86,7 +77,8 @@ func TestConversationSettingsRealDSH(t *testing.T) {
 	if err = os.Mkdir(workspace, 0700); err != nil {
 		t.Fatal(err)
 	}
-	p := dshProfile{BinaryPath: runtime.DSH.BinaryPath, BinaryArgs: runtime.DSH.BinaryArgs, Artifact: runtime.DSH.Artifact, Workspace: workspace, Model: runtime.Model.Clone(), Instructions: `You are a TeamX acceptance assistant. Read the platforms skill and CLI help, then handle actual human Room requests using the production member configuration protocol. Reply and ask clarification through Room send; normal output is private. Use only the configured TeamX CLI. Do not read files, environment or credentials, use native tools/network, perform external actions, change tools/policies/members, delegate, or create conversations. Do not infer a target from an ambiguous name. Configuration saves need the actual human source_seq, current versions and a stable operation ID; inspect the original receipt after a save. Stop on unknown submission, never change its ID. Finish each request without polling for a future human message.`}
+	p := settingsRealProfile(t, input.Config, workspace)
+	report["model"] = p.Model.ModelID
 	r := managerCreate(t, h.m, "conversation-settings-acceptance")
 	audit := &policyRealAudit{Calls: map[string]int{}}
 	server := httptest.NewServer(audit.serve(h.m))

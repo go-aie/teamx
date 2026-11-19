@@ -41,6 +41,7 @@ func TestGitLabUnifiedConfigurationPersistenceAndVersion(t *testing.T) {
 	}
 	// Configuration without any active collection still retains common settings.
 	cfg = v.Config
+	cfg.Enabled = false
 	cfg.Events.Enabled = false
 	cfg.Todos.Enabled = false
 	v, err = h.m.configureGitLabNotifications(context.Background(), h.room.RoomIdentity, 1, cfg)
@@ -154,6 +155,7 @@ func TestGitLabUnifiedRestartKeepsOneConfiguration(t *testing.T) {
 	parallelFixtureTest(t)
 	h, _ := newIndependentEventHarness(t)
 	cfg := unifiedGitLabConfig(t, h)
+	cfg.Enabled = false
 	cfg.Events.Enabled = false
 	v, err := h.m.configureGitLabNotifications(context.Background(), h.room.RoomIdentity, 0, cfg)
 	if err != nil {
@@ -214,7 +216,7 @@ func TestGitLabUnifiedDisabledConfigReferencesItsPlatform(t *testing.T) {
 	m := testManager(t, t.TempDir(), managerTestProfiles(t))
 	room := managerCreate(t, m, "disabled-notifications")
 	c := verifyTodoAccount(t, m, platformTestSave(t, m, platformTestRequest(m)), 101)
-	cfg, _ := gitlab.NormalizeNotificationConfig(gitlab.NotificationConfig{Target: fixtureInboxTarget(t, m, room.RoomIdentity), Enabled: true, PlatformID: c.ID})
+	cfg, _ := gitlab.NormalizeNotificationConfig(gitlab.NotificationConfig{Target: fixtureInboxTarget(t, m, room.RoomIdentity), Enabled: false, PlatformID: c.ID})
 	v, err := m.configureGitLabNotifications(context.Background(), room.RoomIdentity, 0, cfg)
 	if err != nil || v.Version != 1 {
 		t.Fatal(v, err)
@@ -397,6 +399,7 @@ func TestGitLabUnifiedBackfillFreezesBeforeCollectorsAndAcrossLaterEnable(t *tes
 		t.Fatal("locked start changed", err)
 	}
 	cfg = v.Config
+	cfg.Enabled = false
 	cfg.Events.Enabled = false
 	cfg.Todos.Enabled = false
 	v, err = h.m.configureGitLabNotifications(context.Background(), room.RoomIdentity, v.Version, cfg)

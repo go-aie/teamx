@@ -290,7 +290,7 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
     card.selected.title=account || project ? "" : (card.draft.chat_ids || []).join("、");
     card.selected.textContent=account ? (card.draft.platform_id ? `已选连接：${card.draft.name || card.draft.platform_id}` : gitlab ? `请选择 ${op.input.origin} 的已核验账号` : "使用新连接，请填写名称") : project ? (card.draft.project_id ? `已选项目：${card.draft.project_path} · #${card.draft.project_id}${card.draft.events_filter ? `；筛选：${card.draft.events_filter.types?.join("、") || "全部活动"}` : ""}` : "请选择一个项目") : `已选 ${card.draft.chat_ids?.length || 0} 个群：${(card.draft.chat_ids || []).map(id=>card.chatNames.get(id) || `群聊 · ${id}`).join("、")}`;
     const active=waiting && op.target_available;
-    for(const field of [card.name,card.query,card.mode,card.search,card.more,card.submit,card.cancel])if(field)field.disabled=!active || busy;
+    for(const field of [card.name,card.query,card.mode,card.search,card.more,card.submit,card.cancel])if(field)field.disabled=!active || busy || card.searchBusy && (field===card.search || field===card.more);
     for(const [id,row] of card.rows){row.control.disabled=!active || busy;row.control.checked=account ? card.draft.platform_id===id : project ? card.draft.project_id===id : (card.draft.chat_ids || []).includes(id);}
     card.fields.hidden=!waiting;card.candidates.hidden=!waiting;card.search.hidden=account || !waiting;card.more.hidden=!waiting || !card.pageToken;
     card.submit.hidden=!waiting;card.cancel.hidden=!waiting;card.reload.hidden=!active || !(card.dirty && card.editVersion!==op.version);

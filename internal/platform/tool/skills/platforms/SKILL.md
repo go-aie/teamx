@@ -1,11 +1,13 @@
 # Connect Feishu or GitLab to TeamX
 
 Use `"$TEAMX_CLI" platforms skill` for a real human conversation request to connect
-Feishu/GitLab or configure your own notifications/tools. It works before any
-connection or tool binding. Read the common lifecycle, then the matching provider
-section. Use current `platforms --help` and subcommand help for field contracts.
+Feishu/GitLab, configure your own notifications/tools, or show an account, group
+or project selection card. It works before any
+connection or tool binding. Read the common entry, then only the requested workflow: total switch, selection
+card, or provider connection/customization. Use current `platforms --help` and subcommand help for field contracts.
 Every `teamx` example stands for `"$TEAMX_CLI"`; replace uppercase placeholders with
-verified values. Other providers and unsupported settings use Settings → Platforms. For interface
+verified values. Connect/selection commands already return JSON; omit `--json`.
+Other providers and unsupported settings use Settings → Platforms. For interface
 or execution questions, read `"$TEAMX_CLI" skill usage`.
 
 Connections are shared; notifications, tools and rules belong to the exact current
@@ -23,33 +25,38 @@ Confirm applied changes with your member name, exact platform and changed settin
 
 ## Common lifecycle
 
-1. Read the real human message and retain its `seq`. Recover `platforms connect
-   status --source-seq SEQ`, `platforms selection status --source-seq SEQ` and
-   `platforms member status --source-seq SEQ` as relevant. Only
-   `operation_not_found` establishes absence. A failed or partial read does not.
-   For an existing account and a settings-only request, go directly to member
-   configuration; no new connect operation is needed.
-2. Read `platforms list` and match the exact provider, instance, account and
-   connection version. Resolve real ambiguity through the fixed forms below.
+1. Read the real human message and retain its `seq`. Choose the requested path:
+   pure notification switch → submit directly (the server recovers its receipt);
+   source/tool customization → recover member status and get observed versions;
+   connection or selection → recover only that workflow by original source-seq.
+   Only `operation_not_found` establishes absence. Failed/partial reads do not.
+   An existing account needs no new connection. Do not insert get/status before
+   a pure switch merely to fill parameters.
+2. Use a verified exact account already in context, or read `platforms list` to
+   match the provider, instance, account and connection version. Resolve real ambiguity through the fixed forms below.
    Do not switch accounts after failure or guess from a matching display name.
-3. Give each connection, selection and member configuration step its own stable
-   32-character hexadecimal operation ID. Repeated ID/input recovers a receipt;
+3. Give each connection, selection and complex member configuration step its own
+   stable 32-character hexadecimal operation ID. Pure notification total switches
+   use the server-derived ID; do not generate one. Repeated ID/input recovers a receipt;
    changed input conflicts. Keep the original human source across events and
    continuation. Never replace an ID or invent a source to retry unknown work.
 4. Start long human interactions with `--notify inbox`. Tell the human to use the
    original message's fixed component; authorization links and QR codes stay in
    that component, not chat history or private files. Full settings shares its
    receipt; closing settings does not cancel the conversation operation.
-5. Confirm the subscription, then end the turn. For a short interaction, try
-   `connect wait --operation-id ID --timeout 20s` or the equivalent `selection
-   wait` at most once per turn. Pending or CLI interruption does not cancel work.
+5. Confirm the receipt and result subscription, then end the turn. A requested
+   selection card ends here: do not wait or poll for clicks. For short connection
+   interactions, try `connect wait --operation-id ID --timeout 20s` at most once
+   per turn. Pending or CLI interruption does not cancel work.
    Do not loop to keep a turn alive. The human may speak again to continue.
 6. Wait, user continuation and Inbox events use the same original receipt. Read
    latest status, newer user intent and existing member steps; apply only missing
    requested work. `completed` plus `connection.status=connected` establishes a
-   saved connection; app setup and authorization have separate outcomes. Current
-   access/configuration must still be checked through list/member get.
-7. After reconciling a result and its follow-on step, use `connect acknowledge
+   saved connection; app setup and authorization have separate outcomes. Before dependent follow-on changes, check current access/configuration through
+   list/member get; a completed pure-switch receipt needs no extra get.
+7. Connection and selection results require acknowledgment; member saves have
+   their own completed receipt and no acknowledge step. After reconciling a
+   connection/selection result and its follow-on step, use `connect acknowledge
    --operation-id ID --result-version V` or `selection acknowledge` for the exact
    result version. Check the receipt before one completion report. If
    `continuation.handled_version` already covers it, skip handled work and
@@ -70,6 +77,110 @@ late callbacks cannot revive cancelled operations. Unknown submissions require
 receipt/current-state verification and explicit recovery through settings. After
 restart, temporary OAuth sessions are not restored; first inspect saved effects.
 A terminal failed/expired selection needs a new human request before a new one.
+
+## Notification total switch
+
+For a plain request to enable or disable Feishu or GitLab notifications with an
+exact verified platform ID, directly submit the original human message seq and switch:
+
+```sh
+teamx platforms member notifications --platform-id ID --source-seq SEQ --enabled true
+```
+
+Submit this command immediately after verifying the account. Do not prepend
+get/status or generate an operation ID. Use get for a requested state query,
+complex edits, conflicts or historical-receipt reconciliation, not as a switch
+preflight. The server
+observes current state, freezes the target and recovers the original receipt on
+repeat submission. Keep the original seq across turns; never choose the latest
+message automatically. A different switch for the same source conflicts. For an
+optional current read, use `platforms member get --platform-id ID`; an explicit
+`--platform-version V` remains an exact version read and must be nonzero.
+
+Use false to disable. First enable uses the same platform defaults as manual
+setup; an existing configuration restores its saved sources, ranges, filters,
+interval and reception start. Do not expand this plain request into source flags
+or add a group/project choice. If saved settings have no enabled reception source,
+ask which source to enable instead of replacing them with first-use defaults.
+Closing an absent configuration creates no subscription or reception start.
+Already applied unchanged settings return preserved without a new version.
+Verify the returned receipt before reporting its saved result. Historical receipts
+do not establish current settings; read get when current state is needed. Conflicts
+and unknown/partial results require inspection through original status/get and
+settings recovery; do not automatically retry or create a new source.
+
+For source customization, follow the provider section. New customization enables
+only explicitly requested sources; omitted sources in saved settings are preserved.
+An explicit total false overrides source enables in the same operation. A source
+enable that would also awaken another saved dormant source still needs explicit
+choices for both; the pure total switch intentionally restores all saved sources.
+
+## Selection cards and editable drafts
+
+For “飞书选择群的卡片” or “GitLab 项目选择卡片”, recover selection status by the
+original human seq, verify the exact account, then create the existing component:
+
+```sh
+teamx platforms selection start --kind groups --platform-id ID --platform-version V --operation-id PICK_ID --source-seq SEQ --notify inbox
+teamx platforms selection start --provider gitlab --kind projects --platform-id ID --platform-version V --operation-id PICK_ID --source-seq SEQ --notify inbox
+```
+
+Search, pagination, retained choices and retry belong to the component. Do not
+first enumerate chats/projects, check business sending grants, search source code,
+or present a text list/chat_id paste instructions as a card. Verify the creation
+receipt and result subscription, briefly point to the card and end this turn.
+For a card-only request, after submission verify the selected values, acknowledge
+the exact result_version and report the choice. That finishes the original request;
+do not wait for another configuration instruction before acknowledging, or apply
+notifications. Showing a card alone authorizes no notification change. If the original request
+also asked to subscribe, reconcile that intent and newer messages after submit,
+then apply only the requested complex change with observed versions. Switching
+all groups to specified requires explicit complete replacement intent; unchecking
+a card does not remove saved subscriptions.
+
+Publish forms only for a real choice or missing field; an unambiguous explicit ID
+needs no redundant confirmation. Recover original selection steps before starting.
+
+| Choice | Start fields after `platforms selection start` |
+| --- | --- |
+| Feishu account/new connection name | `--provider lark --kind account --name NAME` (name may be empty) |
+| Feishu groups | `--provider lark --kind groups --platform-id ID --platform-version V --query NAME` |
+| GitLab verified accounts on one instance | `--provider gitlab --kind account --origin URL` |
+| GitLab projects on one account | `--provider gitlab --kind projects --platform-id ID --platform-version V --query NAME` |
+
+Every start also needs its own `--operation-id PICK_ID --source-seq SEQ --notify inbox`.
+GitLab account candidates are verified accounts with username/native ID and exact
+connection ID/version. An empty result requires the connection flow, not guessed
+accounts. The GitLab account form cannot create an account or application.
+
+Only the original human submits through the message component or full settings.
+Agent `selection update --operation-id PICK_ID --version V` replaces the complete
+draft, never submits it. Feishu account fields are `--name` and optional
+`--selected-platform-id/--selected-platform-version`; groups use repeated `--chat-id`
+and optional `--group-message-mode`. GitLab projects use exact `--project-id`,
+`--project-path` and repeated `--event-type`. Retain unchanged fields. Stale versions,
+renamed projects or account changes conflict; read and reconcile instead of dropping
+manual edits. Submitted targets are immutable. Forms expire after 24 hours.
+
+On completion, verify the account's `draft.platform_id/platform_version/name` and
+account, the group's `draft.chat_ids` and verified chats, or the project's
+`draft.project_id/project_path`, verified project and optional events_filter.
+Then branch on the original human request, not your own earlier offer or promise:
+
+- A request only to display a selection card authorizes choosing a value. Verify
+  the submitted values, acknowledge the exact result_version and report them.
+  Do not read member configuration or call member notifications for this path.
+  An earlier plain notification-enable request does not authorize enabling a new
+  source or replacing its scope after a later card-only request.
+- Only an explicit configuration request (for example, choose a project **and
+  subscribe to its activity**) continues into member configuration. Inspect the
+  current account/configuration and retained observed version. If that version
+  changed, reconcile the changed scope before constructing a new request. Apply
+  only the requested change under its own stable ID, then acknowledge the result.
+  Full settings may already satisfy the step: verify exact member/account/scope
+  before skipping it. Selection itself never applies configuration.
+When a handled connection opens a group/project form, acknowledge that connection
+before ending the turn; the form has its own independent continuation and receipt.
 
 ## Feishu connection and selected groups
 
@@ -119,7 +230,8 @@ progress/backlog. Other members' grants are untouched; old self evidence becomes
 stale and requires their own explicit repair. Completed partial configurations
 need a new human repair request, not automatic replay of the old operation.
 
-For explicitly selected groups:
+For a requested selection card, use the selection section directly. The following
+search path is for resolving a named group in a configuration request:
 
 1. Recover prior member steps, then read `platforms member get --platform-id ID
    --platform-version V`. Retain the independent `notification_version` and
@@ -150,18 +262,22 @@ settings and the reception baseline intact.
 
 ## Feishu notification changes
 
-For an unambiguous real human settings request, recover original member steps and
+For source/range/filter changes in an unambiguous real human settings request, recover original member steps and
 read member get, then directly submit one notification operation with all requested
 fields. Do not reconnect, enable tools, create an editing draft or ask for redundant
 confirmation. Preserve exact member/account, notification version, original source
 and stable operation ID. Unspecified fields, tool grants and reception start stay
-unchanged. An existing selection card does not turn a request about saved settings
+unchanged. An exclusive reception request such as “只接收这个群” includes disabling
+other reception branches explicitly; a request confined to the group range and
+preserving other settings does not. The server does not infer that exclusion from
+a group ID. An existing selection card does not turn a request about saved settings
 into a draft edit; reconcile newer human intent before applying a late old selection.
 
 | Requested change | Flags on `platforms member notifications` |
 | --- | --- |
 | Add / remove followed groups | Repeat `--add-chat-id ID` / `--remove-chat-id ID` |
 | Replace the group range | `--group-scope specified` and repeat `--group-chat-id ID` |
+| Receive only this group, excluding private reception | Complete `--group-scope specified --group-chat-id ID` plus `--private-enabled false` |
 | Clear the specified group list | A single `--group-chat-id ''` |
 | All groups | `--group-scope all` |
 | Group reception switch | `--group-enabled true\|false` |
@@ -173,15 +289,15 @@ into a draft edit; reconcile newer human intent before applying a late old selec
 | Replace specified personnel chats | `--private-scope specified` and repeat `--private-chat-id CHAT_ID` |
 | Clear the specified private list | A single `--private-chat-id ''` |
 
-All notification changes require the explicit observed `--notification-version N`: 0 means absent; omission is rejected. Never refresh it automatically after a conflict, including complete range replacements.
+These customized notification changes require the explicit observed `--notification-version N`: 0 means absent; omission is rejected. Never refresh it automatically after a conflict, including complete range replacements.
 All changes also need the usual exact platform ID/version, notification version,
 operation ID and real human source sequence. Add/remove and complete replacement
 are mutually exclusive; never add and remove the same ID. A replacement list must
 include every intended group, including choices not on the current candidate page.
 Scope and condition flags alone do not enable reception. Explicit branch enable
 resumes the total switch unless the human explicitly keeps `--enabled false`.
-To replace and enable a group range, also use `--group-enabled true`. When resuming
-would activate another dormant branch, obtain the human's source choice and include
+To replace and enable a group range, also use `--group-enabled true`. When a branch
+enable would activate another dormant branch, obtain the human's source choice and include
 both branch switches; do not silently disable or enable the other source.
 
 For removal, match against saved group IDs first; use available names/search only
@@ -268,8 +384,8 @@ alone does not enable notifications, tools, external replies or to-do completion
 
 ## GitLab personal to-dos, project activity and filters
 
-Read member status for original steps, then `platforms member get --platform-id ID
---platform-version V`. Check account/member, notification/tool versions and
+For source/filter changes, read member status for original steps, then
+`platforms member get --platform-id ID`. Check account/member, notification/tool versions and
 `gitlab_notifications`: desired config, pending sources, errors and applying state.
 Version 0 with no collector subscription IDs is an unsaved draft, even if its
 default switches are true. A saved desired version with pending/errors is a partial application; retain its original receipt and inspect per-source state through member get. Use the existing explicit settings retry-apply entry to apply pending sources; never resubmit the original intent to repair them.
@@ -289,7 +405,8 @@ Activity supports one project per member/account; a new project replaces that
 activity project. Explain this if multiple projects are requested. Disable it
 with `--events-enabled false`; preserve personal to-dos.
 
-Search projects through `platforms projects --platform-id ID --platform-version V
+For a requested project card, use selection directly. For resolving a named project
+in a configuration request, search through `platforms projects --platform-id ID --platform-version V
 --query NAME [--page-token PAGE]`. Follow numeric `next_page` until 0, including empty
 pages. Compare native `id` and full `path_with_namespace`. Visibility does not grant
 business write permission. Use the project form below for an actual choice.
@@ -298,7 +415,8 @@ Collect all requested source/filter changes into one notification step for the s
 request/account. Omitted dimensions are preserved. If enabling one source would
 also enable another dormant source under the shared switch, ask for the explicit
 source choice and submit both switches together; do not rewrite unrelated intent.
-GitLab rejects Feishu group flags and notification `--enabled`.
+GitLab rejects Feishu private/group flags. For a plain total switch, use the
+common notification toggle above rather than changing individual source switches.
 
 Filter flags repeat: `--todo-reason mentioned|assigned|review_requested|other`,
 `--todo-type merge_request|work_item`, and
@@ -355,38 +473,3 @@ creates no standing rule. Verify the saved rule separately from reception. Futur
 Inbox input follows normal scheduling; a necessary local reminder uses send and
 requires no extra external sending grant. A saved subscription/rule proves neither
 an event arrived nor a reminder was delivered. Report runtime blocks accurately.
-
-## Fixed choices and editable drafts
-
-Publish forms only for a real choice or missing field; an unambiguous explicit ID
-needs no redundant confirmation. Recover original selection steps before starting.
-
-| Choice | Start fields after `platforms selection start` |
-| --- | --- |
-| Feishu account/new connection name | `--provider lark --kind account --name NAME` (name may be empty) |
-| Feishu groups | `--provider lark --kind groups --platform-id ID --platform-version V --query NAME` |
-| GitLab verified accounts on one instance | `--provider gitlab --kind account --origin URL` |
-| GitLab projects on one account | `--provider gitlab --kind projects --platform-id ID --platform-version V --query NAME` |
-
-Every start also needs its own `--operation-id PICK_ID --source-seq SEQ --notify inbox`.
-GitLab account candidates are verified accounts with username/native ID and exact
-connection ID/version. An empty result requires the connection flow, not guessed
-accounts. The GitLab account form cannot create an account or application.
-
-Only the original human submits through the message component or full settings.
-Agent `selection update --operation-id PICK_ID --version V` replaces the complete
-draft, never submits it. Feishu account fields are `--name` and optional
-`--selected-platform-id/--selected-platform-version`; groups use repeated `--chat-id`
-and optional `--group-message-mode`. GitLab projects use exact `--project-id`,
-`--project-path` and repeated `--event-type`. Retain unchanged fields. Stale versions,
-renamed projects or account changes conflict; read and reconcile instead of dropping
-manual edits. Submitted targets are immutable. Forms expire after 24 hours.
-
-On completion, verify the account's `draft.platform_id/platform_version/name` and
-account, the group's `draft.chat_ids` and verified chats, or the project's
-`draft.project_id/project_path`, verified project and optional events_filter.
-Check latest human intent and inspect current account/configuration. Preserve any notification version observed for the original edit; if it changed, reconcile the changed scope before constructing a new request. Apply the requested member change under its own stable ID. Selection alone applies no configuration.
-Full settings may already satisfy a step: verify exact account/member/scope before
-skipping it. Then acknowledge the selection result as in the common lifecycle.
-When a handled connection opens a group/project form, acknowledge that connection
-before ending the turn; the form has its own independent continuation and receipt.

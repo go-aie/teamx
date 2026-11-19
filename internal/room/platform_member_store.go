@@ -37,15 +37,20 @@ type platformMemberInput struct {
 	Private                 *platformMemberPrivatePatch `json:"private,omitempty"`
 }
 
+func (in platformMemberInput) pureNotificationToggle() bool {
+	return in.Enabled != nil && !in.hasLarkNotificationFields() && in.TodosEnabled == nil && in.EventsEnabled == nil && in.ProjectID == 0 && in.ProjectPath == "" && in.EventsFilter == nil && in.TodosFilter == nil && len(in.Actions) == 0 && in.ExpectedBindingRevision == nil && in.ToolRevision == 0
+}
+
 type platformMemberRequest struct {
 	ServiceInfo
-	Caller      Caller               `json:"caller"`
-	OperationID string               `json:"operation_id,omitempty"`
-	SourceSeq   uint64               `json:"source_seq,omitempty"`
-	Input       *platformMemberInput `json:"input,omitempty"`
-	Query       string               `json:"query,omitempty"`
-	PageToken   string               `json:"page_token,omitempty"`
-	Type        string               `json:"type,omitempty"` // chats only: group (default) or p2p personnel
+	ObserveCurrent bool                 `json:"observe_current,omitempty"` // request only; never persisted in input or receipts
+	Caller         Caller               `json:"caller"`
+	OperationID    string               `json:"operation_id,omitempty"`
+	SourceSeq      uint64               `json:"source_seq,omitempty"`
+	Input          *platformMemberInput `json:"input,omitempty"`
+	Query          string               `json:"query,omitempty"`
+	PageToken      string               `json:"page_token,omitempty"`
+	Type           string               `json:"type,omitempty"` // chats only: group (default) or p2p personnel
 }
 
 type platformMemberOperation struct {
@@ -101,7 +106,7 @@ func validPlatformMemberInput(kind string, in platformMemberInput) bool {
 				return false
 			}
 		}
-		return in.Enabled == nil && in.ExpectedBindingRevision == nil && in.ToolRevision == 0 && !in.hasLarkNotificationFields()
+		return in.ExpectedBindingRevision == nil && in.ToolRevision == 0 && !in.hasLarkNotificationFields()
 	}
 	return kind == "notifications" && in.ExpectedBindingRevision == nil && in.ToolRevision == 0 && (in.Enabled != nil || in.hasLarkNotificationFields()) && validMemberLarkPatch(in)
 }
@@ -182,7 +187,7 @@ func validPlatformMemberProviderInput(provider, kind string, in platformMemberIn
 		}
 		return in.TodosEnabled == nil && in.EventsEnabled == nil && in.ProjectID == 0 && in.ProjectPath == "" && in.EventsFilter == nil && in.TodosFilter == nil
 	case "gitlab":
-		return len(in.Actions) == 0 && !in.hasLarkNotificationFields() && (kind == "tool" || (in.TodosEnabled != nil || in.EventsEnabled != nil || in.ProjectID != 0 || in.EventsFilter != nil || in.TodosFilter != nil) && in.Enabled == nil)
+		return len(in.Actions) == 0 && !in.hasLarkNotificationFields() && (kind == "tool" || in.Enabled != nil || in.TodosEnabled != nil || in.EventsEnabled != nil || in.ProjectID != 0 || in.EventsFilter != nil || in.TodosFilter != nil)
 	}
 	return false
 }

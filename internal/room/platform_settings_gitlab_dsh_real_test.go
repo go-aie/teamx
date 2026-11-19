@@ -43,16 +43,7 @@ func TestConversationGitLabSettingsRealDSH(t *testing.T) {
 			t.Fatal("explicit config, private OAuth snapshot, connection and native project ID/path required")
 		}
 	}
-	cfg, err := loadStartupConfig(input.Config, true)
-	if err != nil || cfg.Runtime == nil {
-		t.Fatal("current runtime required", err)
-	}
-	runtime := cfg.Runtime
-	if key := runtime.Model.APIKeyEnv; os.Getenv(key) == "" && cfg.Env[key] != "" {
-		t.Setenv(key, cfg.Env[key])
-	}
-	imageRealCredential(t, runtime.Model.APIKeyEnv)
-	report["model"] = runtime.Model.ModelID
+	var err error
 	var m *roomManager
 	var target platformMemberInput
 	if mode == "fixture" {
@@ -85,7 +76,8 @@ func TestConversationGitLabSettingsRealDSH(t *testing.T) {
 	if err := os.Mkdir(workspace, 0700); err != nil {
 		t.Fatal(err)
 	}
-	p := dshProfile{BinaryPath: runtime.DSH.BinaryPath, BinaryArgs: runtime.DSH.BinaryArgs, Artifact: runtime.DSH.Artifact, Workspace: workspace, Model: runtime.Model.Clone(), Instructions: `You are a TeamX acceptance assistant. Read the platforms skill and CLI help, then act on actual human Room requests using member configuration commands. Read current versions, use actual human source_seq, one stable operation per request, inspect the original receipt and authoritative configuration. Reply through Room send; normal output is private. Only use the configured TeamX CLI. Never access files, environment, credentials, native tools/network, external actions, policy/tool/member management or delegation. Finish the current request without polling for another human message. Stop on unknown submission, never replace its ID.`}
+	p := settingsRealProfile(t, input.Config, workspace)
+	report["model"] = p.Model.ModelID
 	audit := &policyRealAudit{Calls: map[string]int{}}
 	server := httptest.NewServer(audit.serve(m))
 	defer server.Close()

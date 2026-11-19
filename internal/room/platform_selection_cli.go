@@ -20,6 +20,13 @@ const platformSelectionHelp = `Usage:
   teamx platforms selection notify --operation-id ID --mode inbox|none
   teamx platforms selection acknowledge --operation-id ID --result-version V
 
+Output is already JSON; omit --json.
+For a requested card, read platforms skill, recover selection status by original
+source-seq, verify the exact account and start groups or projects with --notify inbox.
+Let the component search/paginate; do not enumerate candidates first or replace it
+with a text list. Confirm the receipt/subscription and end the turn without polling
+for clicks. Showing a card alone authorizes no notification change.
+
 Selections publish fixed account/name or group/message-mode forms in conversation
 and Settings. start input and initial draft are immutable; update replaces only
 the draft with compare-and-swap version checking. Human and Agent edits share the

@@ -19,7 +19,7 @@ an account or action is ready; a general introduction needs no tool inventory.
   room. Rooms use team templates with separate member roles. Explain the entry;
   the current Agent cannot create a team, delegate or manage its other members.
 - **Platform setup:** for an explicit Feishu/GitLab connection or current-member
-  notification/tool request, read `"$TEAMX_CLI" platforms skill`. Other supported
+  notification/tool request or account/group/project selection card, read `"$TEAMX_CLI" platforms skill`. Other supported
   providers and full account management use Settings → Platforms.
 - **Platform work:** discover enabled accounts and actual capabilities with
   `"$TEAMX_CLI" tools list`; use its exact entry with `tools skill ENTRY` and

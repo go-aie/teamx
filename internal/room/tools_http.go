@@ -2,7 +2,6 @@ package room
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -286,30 +285,15 @@ func decodeToolRequest(w http.ResponseWriter, r *http.Request, out any) bool {
 			return false
 		}
 	}
-	// Notification patches are edits of an observed subscription, including 0.
-	// Keep this boundary check out of persisted operation decoding so old receipts
-	// retain their original evidence.
-	if r.URL.Path == "/v1/platforms/member/notifications" {
-		var input map[string]json.RawMessage
-		for name, value := range object {
-			if strings.EqualFold(name, "input") {
-				_ = json.Unmarshal(value, &input)
-			}
-		}
-		present := false
-		for name, value := range input {
-			if strings.EqualFold(name, "notification_version") && string(bytes.TrimSpace(value)) != "null" {
-				present = true
-			}
-		}
-		if !present {
-			writeAPIError(w, configurationNotApplied(invalidField("input.notification_version", "required observed subscription version; explicit 0 means absent")))
-			return false
-		}
-	}
 	if err := decodeRequestJSON(string(data), out); err != nil {
 		writeAPIError(w, err)
 		return false
+	}
+	if req, ok := out.(*platformMemberRequest); ok {
+		if err := validatePlatformMemberRequestFields(r.URL.Path, *req, object); err != nil {
+			writeAPIError(w, configurationNotApplied(err))
+			return false
+		}
 	}
 	return true
 }

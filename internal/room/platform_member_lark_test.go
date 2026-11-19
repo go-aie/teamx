@@ -56,6 +56,8 @@ func TestPlatformMemberLarkRangeAndConditionChanges(t *testing.T) {
 		{"clear dormant selection under all preserves reception", func(c *lark.Config) { c.Private.Scope = "all" }, platformMemberInput{Private: &platformMemberPrivatePatch{ChatIDs: memberPatchIDs()}}, func(c *lark.Config) { c.Private.ChatIDs = []string{} }},
 		{"resume one source with other explicitly off", func(c *lark.Config) { c.Enabled = false }, platformMemberInput{Private: &platformMemberPrivatePatch{Enabled: memberPatchBool(true)}, Groups: &platformMemberGroupPatch{Enabled: memberPatchBool(false)}}, func(c *lark.Config) { c.Enabled, c.Groups.Enabled = true, false }},
 		{"resume both sources explicitly", func(c *lark.Config) { c.Enabled = false }, platformMemberInput{Private: &platformMemberPrivatePatch{Enabled: memberPatchBool(true)}, Groups: &platformMemberGroupPatch{Enabled: memberPatchBool(true)}}, func(c *lark.Config) { c.Enabled = true }},
+		{"total switch resumes both saved sources", func(c *lark.Config) { c.Enabled = false }, platformMemberInput{Enabled: memberPatchBool(true)}, func(c *lark.Config) { c.Enabled = true }},
+		{"total switch pauses both saved sources", nil, platformMemberInput{Enabled: memberPatchBool(false)}, func(c *lark.Config) { c.Enabled = false }},
 		{"explicit total off overrides branch enable", func(c *lark.Config) { c.Enabled = false }, platformMemberInput{Enabled: memberPatchBool(false), Groups: &platformMemberGroupPatch{Enabled: memberPatchBool(true)}}, func(c *lark.Config) {}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -89,7 +91,6 @@ func TestPlatformMemberLarkConflictingIntent(t *testing.T) {
 		{GroupMessageMode: "mentions", Groups: &platformMemberGroupPatch{AtMe: memberPatchBool(false), AtAll: memberPatchBool(false)}},
 		{Groups: &platformMemberGroupPatch{Enabled: memberPatchBool(true)}},
 		{Private: &platformMemberPrivatePatch{Enabled: memberPatchBool(true)}},
-		{Enabled: memberPatchBool(true)},
 		{Groups: &platformMemberGroupPatch{Scope: "specified", Enabled: memberPatchBool(true), ChatIDs: memberPatchIDs()}},
 		{Private: &platformMemberPrivatePatch{Enabled: memberPatchBool(true), ChatIDs: memberPatchIDs()}},
 	} {

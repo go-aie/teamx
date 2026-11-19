@@ -291,6 +291,11 @@ func (m *roomManager) prepareOnboardingLocked(ctx context.Context, req platformO
 			if e != nil {
 				return op, notificationRoomError(e)
 			}
+			if op.Notifications.Status == "pending" {
+				if e = checkGitLabNotificationSources(cfg); e != nil {
+					return op, e
+				}
+			}
 			if cfg.Enabled {
 				if _, e := notification.BackfillBaseline(cfg.BackfillSeconds, cfg.BackfillStart, m.notifications.Now()); e != nil {
 					return op, notificationRoomError(e)

@@ -2,11 +2,27 @@ package room
 
 import (
 	"context"
+	"reflect"
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform/gitlab"
 	"github.com/go-aie/teamx/internal/platform/registry"
 )
+
+func gitlabMemberHasNotificationConfig(n gitlabNotificationView) bool {
+	return n.Version != 0 || n.Events.SubscriptionID != "" || n.Todos.SubscriptionID != "" || n.BackfillLocked
+}
+
+func memberGitLabNotificationUnchanged(v platformMemberView, in platformMemberInput, cfg gitlab.NotificationConfig) bool {
+	n := *v.GitLab
+	if n.Applying || len(n.Errors) != 0 || n.Pending["events"] || n.Pending["todos"] {
+		return false
+	}
+	if !gitlabMemberHasNotificationConfig(n) {
+		return in.pureNotificationToggle() && !*in.Enabled
+	}
+	return reflect.DeepEqual(cfg, n.Config)
+}
 
 // Provider selection comes from the verified connection, never from a tool
 // binding or an Agent-supplied account identity. Human management stays separate.
@@ -68,10 +84,15 @@ func (m *roomManager) gitlabMemberBaselineLocked(req platformMemberRequest) time
 func (m *roomManager) gitlabMemberNotificationConfigLocked(v platformMemberView, req platformMemberRequest) (gitlab.NotificationConfig, error) {
 	n := v.GitLab
 	cfg := n.Config
-	// A read-only first-use draft has defaults; only an actual saved config or
-	// collector establishes existing intent. New subscriptions opt into todos only.
-	if n.Version == 0 && n.Events.SubscriptionID == "" && n.Todos.SubscriptionID == "" {
-		cfg = gitlab.NotificationConfig{PlatformID: v.PlatformID, Target: platformMemberTarget(v.MemberIdentity), IntervalSeconds: gitlab.DefaultIntervalSeconds}
+	// Draft defaults do not establish saved intent. Only a pure toggle adopts
+	// the manual first-use defaults; customization opts into explicit sources.
+	if !gitlabMemberHasNotificationConfig(*n) {
+		if req.Input.pureNotificationToggle() {
+			cfg = gitlab.DefaultNotificationConfig(v.PlatformID)
+			cfg.Target = platformMemberTarget(v.MemberIdentity)
+		} else {
+			cfg = gitlab.NotificationConfig{PlatformID: v.PlatformID, Target: platformMemberTarget(v.MemberIdentity), IntervalSeconds: gitlab.DefaultIntervalSeconds}
+		}
 	}
 	if n.Applying || len(n.Errors) != 0 || n.Pending["events"] || n.Pending["todos"] {
 		return cfg, conflictReason("notifications", "existing notification configuration has unresolved changes", "Inspect member get and recover through Settings → Platforms before another change.")
@@ -98,11 +119,17 @@ func (m *roomManager) gitlabMemberNotificationConfigLocked(v platformMemberView,
 		}
 	}
 	enabling := in.TodosEnabled != nil && *in.TodosEnabled || in.EventsEnabled != nil && *in.EventsEnabled
-	if enabling && !cfg.Enabled && (cfg.Events.Enabled && in.EventsEnabled == nil || cfg.Todos.Enabled && in.TodosEnabled == nil) {
-		return cfg, conflictReason("notifications.enabled", "enabling a source would also enable another dormant source", "Explicitly choose both sources; omitted source settings are preserved.")
-	}
+	wasEnabled := cfg.Enabled
 	if enabling {
 		cfg.Enabled = true
+	}
+	if in.Enabled != nil {
+		cfg.Enabled = *in.Enabled
+	} else if !cfg.Events.Enabled && !cfg.Todos.Enabled {
+		cfg.Enabled = false
+	}
+	if enabling && !wasEnabled && cfg.Enabled && (cfg.Events.Enabled && in.EventsEnabled == nil || cfg.Todos.Enabled && in.TodosEnabled == nil) {
+		return cfg, conflictReason("notifications.enabled", "enabling a source would also enable another dormant source", "Explicitly choose both sources; omitted source settings are preserved.")
 	}
 	if cfg.Events.Enabled && cfg.Events.Project == "" {
 		return cfg, conflictReason("events.project", "project activity needs an exact project", "Search projects and supply the native project ID and path.")
@@ -113,6 +140,9 @@ func (m *roomManager) gitlabMemberNotificationConfigLocked(v platformMemberView,
 		return cfg, conflictReason("events.project", "enabling project activity requires project verification", "Supply the native project ID and path from projects or a selection receipt.")
 	}
 
+	if err := checkGitLabNotificationSources(cfg); err != nil {
+		return cfg, err
+	}
 	return gitlab.NormalizeNotificationConfig(cfg)
 }
 

@@ -24,7 +24,8 @@ const platformConnectHelp = `Usage:
   teamx platforms connect acknowledge --operation-id ID --result-version V
   teamx platforms chats --platform-id ID --platform-version V [--type group|p2p] [--query NAME --page-token TOKEN]
   teamx platforms projects --platform-id ID --platform-version V [--query NAME --page-token PAGE]
-  teamx platforms member get --platform-id ID --platform-version V
+  teamx platforms member get --platform-id ID [--platform-version V]
+  teamx platforms member notifications --platform-id ID --source-seq SEQ --enabled true|false
   teamx platforms member notifications --platform-id ID --platform-version V --notification-version N --operation-id ID --source-seq SEQ [--add-chat-id CHAT_ID] [--enabled true|false] [--group-message-mode all|mentions]
   teamx platforms member notifications --platform-id ID --platform-version V --notification-version N --operation-id ID --source-seq SEQ [--remove-chat-id CHAT_ID] [--group-enabled true|false --group-scope all|specified --group-chat-id CHAT_ID] [--group-at-me true|false --group-at-all true|false] [--private-enabled true|false --private-scope all|specified --private-chat-id CHAT_ID]
   teamx platforms member notifications --platform-id ID --platform-version V --notification-version N --operation-id ID --source-seq SEQ --todos-enabled true|false
@@ -80,12 +81,19 @@ Keep search_warnings; permission_denied or conversation_unverified and partial/e
 pages do not prove absence. No message is sent to create a conversation.
 get reads current notification configuration, baseline, tool revision and availability.
 GitLab get includes gitlab_notifications with desired config, per-source pending/errors
-and application state. GitLab notifications changes explicit --todos-enabled,
+and application state. Both providers support a pure notification --enabled toggle:
+first enable uses the same defaults as manual setup; an existing configuration
+changes only its total switch, preserving sources, scope, filters and start.
+Closing an absent configuration preserves version 0 and creates no subscription.
+Enabling an existing configuration with no reception source conflicts; choose a
+valid source explicitly. Already applied unchanged settings return preserved.
+GitLab source customization changes explicit --todos-enabled,
 --events-enabled, project ID/path and filters; omitted fields are preserved;
-new subscriptions cover all projects accessible to that personal account from save
-time, with project activity disabled. Existing source settings, filters and reception
+personal to-dos cover all projects accessible to that account, without a Workspace
+or project selection. New customization enables only explicitly requested sources.
+Existing source settings, filters and reception
 start remain intact. Enabling todos conflicts if it would also enable dormant project
-activity; explicitly choose both sources to resolve that conflict. --enabled, private and group
+activity; explicitly choose both sources to resolve that conflict. Private and group
 flags apply only to Feishu notifications. Tool enable/disable supports both providers.
 Feishu notifications adds or replaces exact groups, rechecking their metadata and
 account. --remove-chat-id repeats followed IDs and needs no remote read; removing
@@ -97,8 +105,10 @@ Switching all groups to specified requires explicit --group-scope specified and 
 complete --group-chat-id list. All groups has no exclusion list. --group-enabled
 and --private-enabled independently enable/disable reception branches, preserving
 their ranges; enabling resumes total reception unless --enabled false is explicit.
-Resuming both dormant branches requires explicit choices for both, not an incidental
-activation of the other source. Range/condition edits alone do not enable reception.
+A pure total toggle can resume both saved branches. Source customization requires
+explicit choices for both when it would also activate another dormant source.
+An explicit --enabled false overrides source enables for either provider.
+Range/condition edits alone do not enable reception.
 --private-scope all is explicit all-person reception; enabling an existing specified
 private range retains it. --private-scope specified with repeated --private-chat-id
 replaces the complete personnel list, verifying native chat_id and same-account
@@ -131,8 +141,13 @@ repeat personal filters (empty selects none). Omitted filter dimensions are pres
 Personal todos retain all-accessible-project semantics; no Workspace is changed.
 Collect all requested notification fields into one operation for the same source-seq
 and account. Separate later requests use their own source; do not invent a new source
-or operation ID to bypass unknown work. Each configuration step uses its own stable ID and observed config version.
-All notification edits require explicit --notification-version N (0 means absent); omission is rejected. Never refresh a stale observation automatically. A saved desired version with pending/errors must be inspected through member get and repaired through the existing settings retry-apply entry, not by resubmitting the member intent. status
+or operation ID to bypass unknown work. Pure notification switches use only platform-id,
+source-seq and explicit enabled: the server freezes current state, derives the stable
+operation ID and recovers the original receipt without a preliminary get/status.
+Do not supply versions or operation-id in this short form. get may omit platform-version
+to read current state; explicit 0 is invalid. Any supplied version/operation-id selects
+complete mode and requires all three. Source/range/filter edits require complete mode
+with explicit --notification-version N (0 means absent). Never refresh a stale observation automatically. A saved desired version with pending/errors must be inspected through member get and repaired through the existing settings retry-apply entry, not by resubmitting the member intent. status
 is pure read; source-seq returns all member configuration steps for that request.
 Completed receipts describe historical results; use get to verify current settings.
 Unknown submissions never replay, even with the same ID: inspect status/get and

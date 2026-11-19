@@ -152,3 +152,17 @@ test('GitLab project local input survives natural-language conflict and explicit
  await controls(el)[2].emit('click');await settle();assert.match(el.children[6].textContent,/other\/project/);assert.match(el.children[6].textContent,/push.*note/);
  await controls(el)[0].emit('click');await settle();assert.deepEqual(api.op.draft.events_filter,{types:['push','note']});
 });
+
+test('selection refresh keeps search and pagination disabled until candidate reads settle',async()=>{
+ const api=fixture(),ui=await launch(api);await settle();const el=card(ui);
+ let release;
+ api.hook=path=>path.endsWith('/candidates') ? new Promise(resolve=>{release=resolve;}) : undefined;
+ const loading=el.children[3].emit('click');await settle();
+ assert.equal(el.children[3].disabled,true);assert.equal(el.children[5].disabled,true);
+ await ui.refresh();await settle();
+ try {
+  assert.equal(el.children[3].disabled,true);
+  assert.equal(el.children[5].disabled,true);
+ } finally {release({chats:[{chat_id:'oc_one',name:'产品讨论群',chat_mode:'group'}],has_more:true,page_token:'page2'});await loading;await settle();}
+ assert.equal(el.children[3].disabled,false);assert.equal(el.children[5].disabled,false);
+});

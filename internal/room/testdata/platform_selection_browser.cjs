@@ -17,11 +17,14 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),{mkd
    await page.locator('#agent-tab-platforms').waitFor();
   }
   const account=page.locator(`#messages [data-interaction-id="${accountID}"]`),group=page.locator(`#messages [data-interaction-id="${groupID}"]`);
-  await account.waitFor();await account.locator('.platform-selection-candidates label').first().waitFor();
+  try {await account.waitFor();} catch(error) {console.error(JSON.stringify({operator:catalog.operator,current,body:await page.locator('body').innerText(),errors}));throw error;}await account.locator('.platform-selection-candidates label').first().waitFor();
   if(artifacts)await page.screenshot({path:join(artifacts,'forms.png'),fullPage:true,animations:'disabled'});
   assert.equal(await account.locator('.platform-selection-candidates label').count(),2);
   await account.locator('.platform-selection-candidates input').first().check();await account.getByRole('button',{name:'提交选择',exact:true}).click();
   await account.getByText('选择已保存',{exact:true}).waitFor();
+  await group.locator('.platform-selection-fields input').fill('产品');
+  const searched=page.waitForResponse(r=>r.url().endsWith('/v1/platforms/selection-interactions/candidates') && r.request().postDataJSON().operation_id===groupID && r.request().postDataJSON().query==='产品');
+  await group.getByRole('button',{name:'搜索',exact:true}).click();await searched;
   await group.locator('.platform-selection-candidates input[value="oc_group_two"]').waitFor();
   await group.getByRole('button',{name:'加载更多',exact:true}).click();await group.locator('.platform-selection-candidates input[value="oc_group_three"]').waitFor();
   // Dirty input/focus/node identity survives a new real Room message and polling.

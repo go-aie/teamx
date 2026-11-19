@@ -4,6 +4,22 @@
 
 ## 通知配置接口
 
+对话中，当前成员已核实准确平台 ID 后，可一步切换飞书或 GitLab 通知：
+
+```sh
+"$TEAMX_CLI" platforms member notifications --platform-id ID --source-seq SEQ --enabled true
+```
+
+关闭使用 `false`。首次纯开启与手动设置采用同一默认；已有配置仅改变总开关，保留来源、范围、筛选、间隔、已锁定起点和采集进度。无配置关闭和已正确应用的同状态请求返回 `completed/preserved`，不创建订阅或增加配置版本。已有配置未选择来源时，开启会提示先选择来源；GitLab applying、pending/errors 或 unknown 沿原回执和设置恢复，不借开关重放。
+
+显式来源修改仍只启用请求的来源；总开关与来源组合时，显式 `--enabled false` 决定最终暂停。单来源启用若会唤醒另一休眠来源，仍需明确两个来源的选择。这类定制继续要求完整的 `--platform-version V --notification-version N --operation-id OP_ID`（N 显式为 0 表示未配置），不能与短入口混用。
+
+纯开关无需先 get/status 或生成操作 ID。服务端以本次受理状态冻结完整输入与目标配置，并按准确成员、平台和原 human seq 派生稳定 ID；重复提交恢复原回执，同来源反向开关冲突，unknown 不再执行。冻结后账号、成员、配置或订阅变化会停止应用，不刷新版本重试。历史回执不表示当前仍开启。可选查询 `platforms member get --platform-id ID` 返回当前版本；显式 `--platform-version V` 仍严格检查版本，显式 0 拒绝。
+
+群／项目选择界面沿用 `platforms selection`：Agent 先读取平台 Skill、按原消息恢复已有选择并核对账号，直接创建 `--kind groups` 或 GitLab `--kind projects` 的组件。搜索、分页和选择由组件处理；创建后核对回执和结果订阅即结束本轮。仅请求展示卡片不授权更改订阅；提交后仍按原意图、最新消息、配置版本和原回执判断是否执行复杂修改，再确认准确结果版本，迟到事件不重复保存。
+
+这段导航来自公共 Session 指导，保存的旧助理角色和自定义角色同样能收到，不覆盖角色文件。指导文本参与 DSH 配置指纹；新 Session 直接使用，存量 Session 沿既有配置检查及受控轮换生效。提示需轮换时，等待当前回合结清后使用 Session 轮换入口，再恢复运行；不要手改旧指纹／历史或重建整个对话。Room 历史、通知配置及原操作回执保留。
+
 GitLab 配置保存在房间的 `gitlab-notifications.json`，以平台＋目标区分记录，各自版本独立于采集器进度。`GET /v1/platform/gitlab/notifications` 携带 `platform_id` 和 `target_mode=inbox&agent_id=...&membership_id=...`，返回该范围的统一配置及两类运行状态；`POST /v1/platform/gitlab/notifications/configure` 提交 `{platform_id, version, config}`，由 `config.target` 固定范围；`POST /v1/platform/gitlab/notifications/sync` 提交 `{platform_id, version, target}`，均携带房间身份、服务 epoch 和 human caller。汇总 GET 返回记录集合，不按平台 ID 任取一条。公共 `interval_seconds` 是两类采集器唯一的可接收时周期配置，`backfill_seconds`／`backfill_start` 是互斥的相对／绝对接收起点；首次开启任一类型前解析为固定 `backfill_start` 并持久保存，响应的 `backfill_locked` 表示不可再修改起点，后续请求需沿用返回配置；`events`／`todos` 不重复公共字段，不提供分支、忽略操作者、待办项目范围或后台周期字段。采集器快照仅保留已应用配置、独立身份、进度和冻结投递路径；GitLab 的分渠道写配置和同步接口始终拒绝请求，统一使用上述公共入口。
 
 ## 图片材料

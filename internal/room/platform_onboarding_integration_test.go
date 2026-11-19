@@ -44,6 +44,53 @@ func onboardingApply(t *testing.T, m *roomManager, req platformOnboardingRequest
 	req.platformOnboardingSpec = platformOnboardingSpec{}
 	return onboardingHTTP(t, m, "apply", req)
 }
+
+func TestOnboardingAndMemberNotificationDefaultsAgree(t *testing.T) {
+	for _, provider := range []string{"lark", "gitlab"} {
+		t.Run(provider, func(t *testing.T) {
+			m, svc, req := memberNotificationToggleFixture(t, provider)
+			now := time.Now().UTC().Truncate(time.Second)
+			m.notifications.Clock = func() time.Time { return now }
+			member := gitlabMemberApply(t, m, "notifications", req)
+			membership, _ := newOpaqueID()
+			id := inboxRoutingMember(t, svc, "manual-notification-receiver", membership)
+			m.mu.Lock()
+			file, err := m.platforms.Load()
+			m.mu.Unlock()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var origin string
+			for _, p := range file.Platforms {
+				if p.ID == req.Input.PlatformID {
+					origin = p.URL
+				}
+			}
+			opID, _ := newOpaqueID()
+			manualReq := platformOnboardingRequest{ServiceEpoch: m.epoch, Caller: humanCaller, OperationID: opID,
+				platformOnboardingSpec: platformOnboardingSpec{MemberIdentity: id, PlatformID: req.Input.PlatformID, Provider: provider, Origin: origin, SkipTool: true, Notifications: boolPointer(true)}}
+			onboardingHTTP(t, m, "prepare", manualReq)
+			manual := onboardingApply(t, m, manualReq)
+			if manual.Notifications.Status != "applied" || manual.Tool.Status != "skipped" {
+				t.Fatal(manual)
+			}
+			if provider == "lark" {
+				want := *manual.Lark
+				want.Target = platformMemberTarget(req.member())
+				if !reflect.DeepEqual(*member.Config, want) {
+					t.Fatal("manual and member defaults differ", member.Config, want)
+				}
+			} else {
+				want := *manual.GitLab
+				want.Target = platformMemberTarget(req.member())
+				if !reflect.DeepEqual(*member.GitLabConfig, want) {
+					t.Fatal("manual and member defaults differ", member.GitLabConfig, want)
+				}
+			}
+		})
+	}
+}
+
 func TestOnboardingGitLabDefaultsAndRetryPreserveProgress(t *testing.T) {
 	parallelFixtureTest(t)
 	m, room, _, c, members := cliToolFixture(t, "exit 0")

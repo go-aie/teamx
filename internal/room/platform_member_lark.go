@@ -94,16 +94,19 @@ func validMemberLarkPatch(in platformMemberInput) bool {
 }
 
 func memberNotificationConfig(m *roomManager, v platformMemberView, in platformMemberInput) (lark.Config, error) {
+	pureToggle := in.pureNotificationToggle()
 	var cfg lark.Config
 	if v.Config != nil {
 		cfg = *v.Config
 		cfg.Private.ChatIDs = slices.Clone(cfg.Private.ChatIDs)
 		cfg.Groups.ChatIDs = slices.Clone(cfg.Groups.ChatIDs)
 	} else {
-		// New requests opt into only the explicitly enabled branches.
 		cfg = m.defaultLarkConfig(in.PlatformID)
-		cfg.Enabled, cfg.Private.Enabled = false, false
-		cfg.Groups = lark.GroupConfig{Scope: "specified", MessageMode: "all"}
+		if !pureToggle {
+			// Customization opts into only the explicitly enabled branches.
+			cfg.Enabled, cfg.Private.Enabled = false, false
+			cfg.Groups = lark.GroupConfig{Scope: "specified", MessageMode: "all"}
+		}
 		cfg.Target = platformMemberTarget(v.MemberIdentity)
 	}
 	wasEnabled := cfg.Enabled
@@ -189,7 +192,7 @@ func memberNotificationConfig(m *roomManager, v platformMemberView, in platformM
 	}
 	privateChosen := in.Private != nil && in.Private.Enabled != nil
 	groupChosen := len(in.AddChatIDs) > 0 || in.Groups != nil && in.Groups.Enabled != nil
-	if !wasEnabled && cfg.Enabled && cfg.Private.Enabled && cfg.Groups.Enabled && (!privateChosen || !groupChosen) {
+	if !pureToggle && !wasEnabled && cfg.Enabled && cfg.Private.Enabled && cfg.Groups.Enabled && (!privateChosen || !groupChosen) {
 		return cfg, conflictReason("notifications.enabled", "enabling reception would also activate an unrequested dormant source", "Explicitly choose both private-enabled and group-enabled when resuming both sources; disable the unrequested source otherwise.")
 	}
 	if !cfg.Private.Enabled && !cfg.Groups.Enabled {
