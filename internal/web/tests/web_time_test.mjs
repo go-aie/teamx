@@ -197,7 +197,7 @@ test("open Inbox headers and source details repaint without rereading or changin
 test("policy time inputs submit system-zone instants, preserve resolved drafts on switches and block DST ambiguity", async () => {
   const api=fixture(),ui=await launch(api);await openAgent(ui,"policy");await ui.el("policy-new").emit("click");
   ui.el("policy-text").value="保留文本";ui.el("policy-expires").value="2026-11-09T01:04:13";await ui.el("policy-expires").emit("input");
-  api.settings=snapshot("UTC",2);await ui.refresh();assert.equal(ui.el("policy-expires").value,"2026-11-08T17:04:13");
+  api.settings=snapshot("UTC",2);await ui.refresh();assert.equal(ui.el("policy-expires").value,"2026-11-08 17:04:13");
   assert.equal(ui.el("policy-text").value,"保留文本");await ui.el("policy-form").emit("submit");
   assert.equal(api.calls.find(c=>c.path==="/v1/policy/update").body.policy.expires_at,"2026-11-08T17:04:13.000Z");
   api.settings=snapshot("America/New_York",3);await ui.refresh();await ui.el("policy-new").emit("click");
@@ -206,6 +206,45 @@ test("policy time inputs submit system-zone instants, preserve resolved drafts o
   api.settings=snapshot("UTC",4);await ui.refresh();await ui.el("policy-form").emit("submit");
   assert.match(ui.el("policy-form-status").textContent,/重新确认/);
   assert.equal(api.calls.filter(c=>c.path==="/v1/policy/update").length,1);
+  await ui.el("policy-expires-toggle").emit("click");await ui.el("date-time-apply").emit("click");
+  await ui.el("policy-form").emit("submit");
+  assert.equal(api.calls.filter(c=>c.path==="/v1/policy/update").length,2);
+  assert.equal(api.calls.filter(c=>c.path==="/v1/policy/update").at(-1).body.policy.expires_at,"2026-11-01T01:30:00.000Z");
+});
+
+test("confirming an unchanged expiry keeps its saved milliseconds and DST offset", async () => {
+  const api=fixture();api.settings=snapshot("America/New_York");
+  const record={id:"precise",version:1,status:"active",text:"保留有效期",expires_at:"2026-11-01T06:30:00.123Z",source:{user:"tester",text:"保留有效期"},changed_by:{kind:"human",id:"tester"},updated_at:"2026-10-01T00:00:00Z"};
+  api.hook=path=>path==="/v1/policy/read"?{revision:1,current:[record],effective:[record],history:[record]}:undefined;
+  const ui=await launch(api);await openAgent(ui,"policy");
+  await ui.el("policy-entries").children[0].children[0].children[1].children[0].emit("click");
+  assert.equal(ui.el("policy-expires").value,"2026-11-01 01:30:00");
+  await ui.el("policy-expires-toggle").emit("click");await ui.el("date-time-apply").emit("click");
+  await ui.el("policy-form").emit("submit");
+  assert.equal(api.calls.find(call=>call.path==="/v1/policy/update").body.policy.expires_at,record.expires_at);
+});
+
+test("task forms and pickers show only a differing zone and follow global changes without rewriting the task zone", async () => {
+  const api=fixture(),ui=await launch(api);
+  await ui.el("calendar-new").emit("click");
+  assert.doesNotMatch(ui.el("calendar-form-summary").textContent,/Asia\/Shanghai|时区|按 .*执行/);
+  await ui.el("calendar-local-time-toggle").emit("click");
+  assert.equal(ui.el("date-time-zone").hidden,true);
+  await ui.el("date-time-cancel").emit("click");
+  ui.el("calendar-time-zone").value="UTC";await ui.el("calendar-time-zone").emit("input");
+  assert.match(ui.el("calendar-form-summary").textContent,/按 UTC 执行/);
+  await ui.el("calendar-local-time-toggle").emit("click");
+  assert.equal(ui.el("date-time-zone").textContent,"时区：UTC");
+  assert.equal(ui.el("date-time-zone").hidden,false);
+  api.settings=snapshot("UTC",2);await ui.refresh();
+  assert.equal(ui.el("date-time-picker").hidden,true);
+  assert.equal(ui.el("calendar-time-zone").value,"UTC");
+  assert.doesNotMatch(ui.el("calendar-form-summary").textContent,/UTC|按 .*执行/);
+  await ui.el("calendar-local-time-toggle").emit("click");assert.equal(ui.el("date-time-zone").hidden,true);
+  api.settings=snapshot("Asia/Shanghai",3);await ui.refresh();
+  assert.equal(ui.el("calendar-time-zone").value,"UTC");
+  assert.match(ui.el("calendar-form-summary").textContent,/按 UTC 执行/);
+  assert.equal(api.calls.some(call=>call.path==="/v1/calendar/update"),false);
 });
 
 test("single-Room settings carry full identity and unavailable zones show an explicit error", async () => {

@@ -201,7 +201,6 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     $(`${prefix}-backfill-value`).textContent=Number.isFinite(time) ? settingsUI.formatDate(time) : "首次接收时已确定";
     let conversionError=""; try { settingsUI.readTimeInput(`${prefix}-backfill-start`); } catch(error) { conversionError=error.message; }
     const error=settingsUI.systemTime.error || (mode==="custom" && conversionError) || (mode==="custom" && !Number.isFinite(start) ? "请选择要开始接收消息的日期和时间。" : mode==="custom" && start<=0 ? "请选择 1970 年之后的有效时间。" : mode==="custom" && start>Date.now() ? "起始时间不能晚于当前时间。" : "");
-    $(`${prefix}-backfill-start-label`).textContent=`起始时间（${settingsUI.systemTime.zone || "系统时区异常"}）`;
     $(`${prefix}-backfill-help`).textContent=locked ? `更早消息需新建${roomsUI.conversationType()}。` : "首次开启后固定接收起点。";
     notice(`${prefix}-backfill-error`,error);$(`${prefix}-backfill-start`).setAttribute("aria-invalid",String(!!error));
     return error;

@@ -57,8 +57,8 @@ export function createTimeInput(clock) {
   let raw = "", instant = "", error = "", confirm = false;
   function sameWallTime(value) {
     if (value === raw) return true;
-    // datetime-local normalizes :00 seconds away. That must not discard a
-    // saved instant's offset/precision, especially during a repeated DST hour.
+    // Equivalent spellings (space/T separators or omitted :00 seconds) must
+    // preserve a saved instant's offset and precision in a repeated DST hour.
     try { return Temporal.PlainDateTime.from(value).equals(Temporal.PlainDateTime.from(raw)); }
     catch { return false; }
   }

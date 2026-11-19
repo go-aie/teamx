@@ -1,0 +1,58 @@
+.date-time-field { position:relative; display:block; width:100%; min-width:0; }
+.date-time-field > .field-control { padding-right:38px; font-variant-numeric:tabular-nums; }
+.date-time-toggle { position:absolute; right:2px; top:2px; bottom:2px; display:flex; align-items:center; justify-content:center; width:32px; border:0; border-radius:4px; background:transparent; color:var(--muted); }
+.date-time-toggle svg { width:17px; height:17px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+.date-time-toggle:hover,.date-time-toggle[aria-expanded="true"] { background:var(--soft); color:var(--accent); }
+.date-time-field:has(> input:disabled) > .date-time-toggle { pointer-events:none; color:var(--faint); }
+.date-time-toggle:focus-visible,.date-time-picker button:focus-visible { outline:2px solid var(--focus); outline-offset:-2px; }
+.date-time-picker { position:fixed; inset:auto; margin:0; width:304px; max-width:calc(100vw - 16px); max-height:calc(100dvh - 16px); overflow:auto; padding:12px; z-index:100; font-size:var(--font-body); font-weight:400; }
+.date-time-picker[hidden],.date-time-picker [hidden] { display:none!important; }
+.date-time-header { display:flex; align-items:center; justify-content:space-between; min-height:36px; margin-bottom:8px; gap:8px; }
+.date-time-heading,.date-time-navigation { display:flex; align-items:center; gap:2px; }
+.date-time-navigation .date-time-double { display:none; }
+.date-time-navigation[data-level="months"] .date-time-single,.date-time-navigation[data-level="years"] .date-time-single { display:none; }
+.date-time-navigation[data-level="months"] .date-time-double,.date-time-navigation[data-level="years"] .date-time-double { display:inline; }
+.date-time-heading button { min-height:32px; border:0; border-radius:4px; padding:4px 6px; background:transparent; color:var(--text); font-weight:var(--weight-strong); }
+.date-time-heading button::after { content:""; display:inline-block; width:5px; height:5px; margin:0 2px 3px 7px; border-bottom:1.5px solid var(--muted); border-right:1.5px solid var(--muted); transform:rotate(45deg); transition:transform var(--motion-fast); }
+.date-time-heading button[aria-expanded="true"]::after { transform:rotate(225deg); }
+.date-time-heading button:hover { background:var(--surface-hover); }
+.date-time-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); grid-template-rows:24px repeat(6,36px); text-align:center; font-variant-numeric:tabular-nums; }
+.date-time-weekday { color:var(--muted); font-size:var(--font-small); line-height:24px; }
+.date-time-day { display:flex; align-items:center; justify-content:center; min-width:0; padding:0; border:0; background:transparent; color:var(--text); }
+.date-time-day > span { display:flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:50%; }
+.date-time-day[data-current-month="false"] { color:var(--faint); }
+.date-time-day[data-in-range="true"] { background:var(--surface-muted); }
+.date-time-day[data-in-range="true"]:nth-child(7n+1) { border-radius:6px 0 0 6px; }
+.date-time-day[data-in-range="true"]:nth-child(7n) { border-radius:0 6px 6px 0; }
+.date-time-day:hover:not(:disabled) > span { background:var(--surface-hover); }
+.date-time-day[aria-current="date"] > span { box-shadow:inset 0 0 0 1px var(--accent); color:var(--accent); }
+.date-time-day[aria-pressed="true"] > span,.date-time-day[aria-pressed="true"]:hover > span { background:var(--accent); color:white; font-weight:var(--weight-strong); }
+.date-time-grid[data-level="months"],.date-time-grid[data-level="years"] { grid-template-columns:repeat(3,minmax(0,1fr)); grid-template-rows:repeat(4,60px); }
+.date-time-choice { border:0; border-radius:6px; background:transparent; color:var(--text); padding:6px; }
+.date-time-choice:hover:not(:disabled) { background:var(--surface-hover); }
+.date-time-choice[aria-pressed="true"] { background:var(--soft); color:var(--accent); font-weight:var(--weight-strong); }
+.date-time-clock { display:flex; justify-content:space-between; align-items:center; padding-top:10px; gap:10px; }
+#date-time-calendar:not([hidden]) ~ .date-time-clock { border-top:1px solid var(--line); margin-top:8px; }
+.date-time-clock > span { color:var(--muted); font-size:var(--font-small); }
+.date-time-clock-fields,.date-time-second-field { display:flex; align-items:center; gap:4px; }
+.date-time-clock label { position:relative; display:block; margin:0; }
+.date-time-clock label > span { position:absolute; right:7px; top:9px; color:var(--muted); font-size:11px; pointer-events:none; }
+.date-time-clock input { width:58px; min-height:36px; padding:6px 22px 6px 6px; text-align:center; font-variant-numeric:tabular-nums; appearance:textfield; }
+.date-time-clock input::-webkit-inner-spin-button,.date-time-clock input::-webkit-outer-spin-button { appearance:none; margin:0; }
+.date-time-zone { margin:8px 0 0; color:var(--muted); font-size:var(--font-small); overflow-wrap:anywhere; }
+.date-time-picker > .form-error { margin:8px 0 0; font-size:var(--font-small); }
+.date-time-footer { display:flex; align-items:center; gap:2px; border-top:1px solid var(--line); margin-top:12px; padding-top:8px; }
+.date-time-footer > .text-button { color:var(--accent); padding-inline:6px; }
+.date-time-picker[data-navigation="true"] .date-time-footer { justify-content:center; }
+.date-time-confirm { display:flex; justify-content:flex-end; align-items:center; gap:4px; margin-left:auto; }
+.date-time-confirm button { min-height:32px; }
+@media(max-width:640px) {
+  .date-time-picker { width:320px; padding:12px; }
+  .date-time-grid { grid-template-rows:24px repeat(6,40px); }
+  .date-time-grid[data-level="months"],.date-time-grid[data-level="years"] { grid-template-rows:repeat(4,66px); }
+  .date-time-header button,.date-time-footer button { min-height:40px; }
+  .date-time-toggle::after { content:""; position:absolute; width:44px; height:44px; }
+  .date-time-clock input { min-height:40px; font-size:16px; }
+  .date-time-clock label > span { top:11px; }
+}
+@media(prefers-reduced-motion:reduce) { .date-time-picker { animation:none; }.date-time-picker button,.date-time-heading button::after { transition:none; } }

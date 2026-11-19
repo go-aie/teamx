@@ -25,15 +25,15 @@ export function createPolicy({ env, membersUI, runtime, settingsUI, conversation
     $("policy-text").focus();
   }
 
-  function policyDateText(value) {
+  function policyDateText(value, seconds = false) {
     const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? value : settingsUI.formatDate(date, {year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"});
+    return Number.isNaN(date.getTime()) ? value : settingsUI.formatDate(date, {year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",...(seconds ? {second:"2-digit"} : {})});
   }
 
   function policyMetadata(record) {
     const meta = document.createElement("div"); meta.className = "policy-entry-meta";
     if (record.expires_at) {
-      const expires = document.createElement("p"); settingsUI.bindSystemTime(expires, () => { expires.textContent = `有效期至：${policyDateText(record.expires_at)}`; }); meta.append(expires);
+      const expires = document.createElement("p"); settingsUI.bindSystemTime(expires, () => { expires.textContent = `有效期至：${policyDateText(record.expires_at, true)}`; }); meta.append(expires);
     }
     return meta;
   }

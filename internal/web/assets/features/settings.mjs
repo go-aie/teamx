@@ -5,7 +5,7 @@ import { createSystemTime, createTimeInput } from "../time.mjs";
 import { captureReturnView } from "../view-return.mjs";
 
 // Service time zone, settings navigation and dialog lifecycle.
-export function createSettings({ env, runtime, connectionsUI, conversationUI, roomsUI, workspaceUI, policyUI, notificationsUI, onboardingUI, membersUI }) {
+export function createSettings({ env, runtime, connectionsUI, conversationUI, roomsUI, workspaceUI, policyUI, notificationsUI, onboardingUI, membersUI, dateTimeUI }) {
   const { document, window, request, setTimeout } = env;
   const { state, $, notice, dismissOnBackdrop } = runtime;
 
@@ -32,9 +32,11 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
     element.dataset.systemTime = ""; element.refreshSystemTime = render; render();
   }
 
-  function fillTimeInput(id, value) { $(id).value = timeInputs.get(id).fill(value); }
+  function fillTimeInput(id, value) { $(id).value = timeInputs.get(id).fill(value).replace("T", " "); dateTimeUI.validate($(id)); }
 
   function readTimeInput(id) {
+    const inputError = dateTimeUI.validate($(id));
+    if (inputError) throw new Error(inputError);
     if ($(id).validity?.badInput) throw new Error("请输入完整有效的时间；若系统时区已变更，请重新确认或修改。");
     return timeInputs.get(id).read($(id).value);
   }
@@ -132,6 +134,7 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
 
   function applyTimeZone(data) {
     if (!systemTime.update(data)) return;
+    dateTimeUI.close();
     if (Object.hasOwn(data, "storage")) {
       const paths = data.storage;
       const home = paths?.home || "", prefix = home.replace(/\/+$/, "") + "/";
@@ -148,10 +151,9 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
     }
     for (const [id, input] of timeInputs) {
       if ($(id).validity?.badInput) { input.edit("", true); input.rebase(); }
-      else $(id).value = input.rebase();
+      else $(id).value = input.rebase().replace("T", " ");
     }
     for (const prefix of ["lark", "gitlab"]) $(`${prefix}-backfill-start`).max = systemTime.local(Date.now());
-    $("policy-expires-hint").textContent = `按系统时区 ${systemTime.zone || "（异常）"} 输入；留空则不设到期时间。`;
     renderTimeZone();
     const top = $("timeline").scrollTop;
     conversationUI.renderMessages(); $("timeline").scrollTop = top;
@@ -194,6 +196,11 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
   function showPlatforms() { settingsTab = "platforms"; renderSettingsNavigation(); }
 
   function mount() {
+    for (const id of timeInputs.keys()) dateTimeUI.register($(id), {kind:"datetime", seconds:true, trigger:$(id+"-toggle"), zone:()=>systemTime.zone, label:id==="policy-expires"?"选择规则有效期":"选择接收起始时间",
+      max:id==="policy-expires"?undefined:()=>systemTime.local(Date.now()),
+      confirmUnchanged:()=>{try{readTimeInput(id);return false;}catch{return true;}}
+    });
+
     models.mount();
     access.mount();
     $("storage-copy").addEventListener("click", async () => {

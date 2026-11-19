@@ -94,9 +94,7 @@
           <div id="calendar-navigation" class="calendar-navigation">
             <button id="calendar-today" class="secondary-button button-compact" type="button">今天</button>
             <button id="calendar-prev" class="icon-button" type="button" aria-label="上一个日期范围"><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></button><button id="calendar-next" class="icon-button" type="button" aria-label="下一个日期范围"><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
-            <details id="calendar-date-picker" class="calendar-date-picker"><summary id="calendar-range" aria-label="选择日期"><span id="calendar-range-label"></span><svg class="navigation-icon calendar-range-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
-              <div class="calendar-date-popover menu-surface"><div class="calendar-month-navigation"><button id="calendar-month-prev" type="button" class="icon-button" aria-label="上个月">‹</button><span id="calendar-month-label"></span><button id="calendar-month-next" type="button" class="icon-button" aria-label="下个月">›</button></div><label class="sr-only" for="calendar-date">跳转日期</label><input id="calendar-date" class="field-control" type="date"><div id="calendar-month-days" class="calendar-month-days"></div><button id="calendar-picker-today" type="button" class="text-button">今天</button></div>
-            </details>
+            <div id="calendar-date-picker" class="calendar-date-picker"><button id="calendar-range" class="calendar-range" type="button" aria-label="选择日期"><span id="calendar-range-label"></span><svg class="navigation-icon calendar-range-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><input id="calendar-date" type="hidden"></div>
           </div>
           <div id="calendar-list-controls" class="calendar-list-controls" hidden><h2>任务 <span id="calendar-task-count"></span></h2><label class="sr-only" for="calendar-task-filter">任务状态</label><select id="calendar-task-filter" class="field-control" aria-label="任务状态"><option value="open">未结束</option><option value="all">全部</option><option value="needs_info">待完善</option><option value="paused">已暂停</option><option value="completed">已结束</option><option value="cancelled">已取消</option></select></div>
           <div class="calendar-view-actions">
@@ -115,14 +113,14 @@
           <form id="calendar-form">
             <label class="calendar-form-wide">任务标题<input id="calendar-title" class="field-control" required maxlength="256" autocomplete="off" placeholder="例如：实习生面试提醒"></label>
             <label class="calendar-form-wide">任务说明<textarea id="calendar-instruction" class="field-control" required maxlength="16384" rows="3" placeholder="到时要做什么？结果将发回本私信。"></textarea></label>
-            <label><span id="calendar-start-label">执行日期</span><input id="calendar-start-date" class="field-control" type="date" required><small id="calendar-start-hint" hidden>留空从下一个有效时刻开始。</small></label>
-            <label>执行时刻<input id="calendar-local-time" class="field-control" type="time" step="60" required></label>
+            <label><span id="calendar-start-label">执行日期</span><span class="date-time-field"><input id="calendar-start-date" class="field-control" type="text" required autocomplete="off" spellcheck="false" placeholder="YYYY-MM-DD"><button id="calendar-start-date-toggle" class="date-time-toggle" type="button" aria-label="选择执行日期"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4m8-4v4M4 10h16"/></svg></button></span><small id="calendar-start-hint" hidden>留空从下一个有效时刻开始。</small></label>
+            <label>执行时刻<span class="date-time-field"><input id="calendar-local-time" class="field-control" type="text" required autocomplete="off" spellcheck="false" placeholder="HH:mm"><button id="calendar-local-time-toggle" class="date-time-toggle" type="button" aria-label="选择执行时刻"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/></svg></button></span></label>
             <label>重复<select id="calendar-frequency" class="field-control"><option value="once">一次性</option><option value="daily">每天</option><option value="weekly">每周指定星期</option></select></label>
             <label id="calendar-filter-field" hidden>日期筛选<select id="calendar-day-filter" class="field-control"><option value="all_days">不排除周末和节假日</option><option value="weekdays">周一至周五</option><option value="business_days">中国大陆法定工作日（含补班）</option></select><small id="calendar-filter-hint"></small></label>
             <fieldset id="calendar-weekdays" class="calendar-form-wide" hidden><legend>每周执行日</legend><label><input type="checkbox" value="1">周一</label><label><input type="checkbox" value="2">周二</label><label><input type="checkbox" value="3">周三</label><label><input type="checkbox" value="4">周四</label><label><input type="checkbox" value="5">周五</label><label><input type="checkbox" value="6">周六</label><label><input type="checkbox" value="7">周日</label></fieldset>
             <details id="calendar-advanced" class="calendar-form-wide calendar-disclosure"><summary>高级设置</summary><div class="calendar-form-grid">
-              <label>执行时区<input id="calendar-time-zone" class="field-control" placeholder="使用当前显示时区" autocomplete="off"></label>
-              <label id="calendar-end-field" hidden>结束日期（可选，含当天）<input id="calendar-end-date" class="field-control" type="date"></label>
+              <label>执行时区<input id="calendar-time-zone" class="field-control" placeholder="使用系统时区" autocomplete="off"></label>
+              <label id="calendar-end-field" hidden>结束日期（可选，含当天）<span class="date-time-field"><input id="calendar-end-date" class="field-control" type="text" autocomplete="off" spellcheck="false" placeholder="YYYY-MM-DD"><button id="calendar-end-date-toggle" class="date-time-toggle" type="button" aria-label="选择结束日期"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4m8-4v4M4 10h16"/></svg></button></span></label>
               <label>错过后如何处理<select id="calendar-misfire" class="field-control"><option value="latest_within_one_hour">一小时内补最近一次</option><option value="skip">错过即跳过</option></select></label>
               <label id="calendar-once-filter-field" hidden>单次日期筛选<select id="calendar-once-filter" class="field-control"><option value="all_days">按指定日期执行</option><option value="weekdays">仅周一至周五</option><option value="business_days">仅中国大陆法定工作日</option></select><small id="calendar-once-filter-hint"></small></label>
               <label class="calendar-form-wide">任务范围（可选）<textarea id="calendar-scope" class="field-control" rows="2" maxlength="8192" placeholder="需要时填写已确认的项目、数据来源或工作目录。"></textarea></label>
@@ -326,7 +324,7 @@
                     <div><label for="lark-backfill">开始接收时间</label><select id="lark-backfill" aria-describedby="lark-backfill-help" class="field-control"><option value="0">从开启时刻</option><option value="3600">最近 1 小时</option><option value="86400">最近 24 小时</option><option value="custom">指定时间</option></select><div id="lark-backfill-locked" class="notification-backfill-locked" aria-describedby="lark-backfill-help" hidden><span id="lark-backfill-value"></span><small>已锁定</small></div></div>
                     <div><label for="lark-interval">检查间隔（秒）</label><input id="lark-interval" type="number" min="3" max="3600" value="10" title="3～3600 秒" class="field-control"></div>
                   </div>
-                  <div id="lark-backfill-custom" hidden><label id="lark-backfill-start-label" for="lark-backfill-start">起始时间（系统时区）</label><input id="lark-backfill-start" type="datetime-local" step="1" aria-describedby="lark-backfill-help lark-backfill-error" class="field-control"></div>
+                  <div id="lark-backfill-custom" hidden><label id="lark-backfill-start-label" for="lark-backfill-start">起始时间</label><span class="date-time-field"><input id="lark-backfill-start" type="text" aria-describedby="lark-backfill-help lark-backfill-error" class="field-control" autocomplete="off" spellcheck="false" placeholder="YYYY-MM-DD HH:mm:ss"><button id="lark-backfill-start-toggle" class="date-time-toggle" type="button" aria-label="选择飞书接收起始时间"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4m8-4v4M4 10h16"/></svg></button></span></div>
                   <p id="lark-backfill-help" class="quiet">首次开启后固定接收起点。</p>
                   <p id="lark-backfill-error" class="form-error" role="alert" hidden></p>
                   </details>
@@ -407,7 +405,7 @@
                 <div><label for="gitlab-backfill">开始接收时间</label><select id="gitlab-backfill" aria-describedby="gitlab-backfill-help" class="field-control"><option value="0">从开启时刻</option><option value="3600">最近 1 小时</option><option value="86400">最近 24 小时</option><option value="custom">指定时间</option></select><div id="gitlab-backfill-locked" class="notification-backfill-locked" aria-describedby="gitlab-backfill-help" hidden><span id="gitlab-backfill-value"></span><small>已锁定</small></div></div>
                 <div><label for="gitlab-interval">检查间隔（秒）</label><input id="gitlab-interval" type="number" min="3" max="120" step="1" value="10" title="3～120 秒" aria-describedby="gitlab-interval-hint" class="field-control"></div>
               </div>
-              <div id="gitlab-backfill-custom" hidden><label id="gitlab-backfill-start-label" for="gitlab-backfill-start">起始时间（系统时区）</label><input id="gitlab-backfill-start" type="datetime-local" step="1" aria-describedby="gitlab-backfill-help gitlab-backfill-error" class="field-control"></div>
+              <div id="gitlab-backfill-custom" hidden><label id="gitlab-backfill-start-label" for="gitlab-backfill-start">起始时间</label><span class="date-time-field"><input id="gitlab-backfill-start" type="text" aria-describedby="gitlab-backfill-help gitlab-backfill-error" class="field-control" autocomplete="off" spellcheck="false" placeholder="YYYY-MM-DD HH:mm:ss"><button id="gitlab-backfill-start-toggle" class="date-time-toggle" type="button" aria-label="选择 GitLab 接收起始时间"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4m8-4v4M4 10h16"/></svg></button></span></div>
               <p id="gitlab-backfill-help" class="quiet">首次开启后固定接收起点。</p>
               <p id="gitlab-backfill-error" class="form-error" role="alert" hidden></p>
               <p id="gitlab-interval-hint" class="quiet sr-only">房间未打开或操作中时，每 120 秒检查，恢复后投递。</p>
@@ -560,7 +558,7 @@
           <form id="policy-form" class="policy-form" hidden>
             <h3 id="policy-editor-title">新增规则</h3>
             <label>内容<textarea id="policy-text" rows="4" maxlength="32768" placeholder="例如：涉及交付时间，先向我确认。" aria-describedby="policy-save-hint" required class="field-control"></textarea></label>
-            <label>有效期（可选）<input id="policy-expires" type="datetime-local" step="1" aria-describedby="policy-expires-hint" / class="field-control"><span id="policy-expires-hint" class="policy-field-hint">留空则不设到期时间。</span></label>
+            <label>有效期（可选）<span class="date-time-field"><input id="policy-expires" type="text" aria-describedby="policy-expires-hint" class="field-control" autocomplete="off" spellcheck="false" placeholder="YYYY-MM-DD HH:mm:ss"><button id="policy-expires-toggle" class="date-time-toggle" type="button" aria-label="选择规则有效期"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4m8-4v4M4 10h16"/></svg></button></span><span id="policy-expires-hint" class="policy-field-hint">留空则不设到期时间。</span></label>
             <p id="policy-save-hint" class="policy-form-note">写清适用情况、处理要求和例外；涉及授权时注明范围。</p>
             <div id="policy-form-feedback" class="policy-form-feedback" hidden>
               <p id="policy-form-status" role="status" aria-live="polite" tabindex="-1"></p>
@@ -821,7 +819,7 @@
               <details id="onboarding-details" class="connection-advanced"><summary>调整首次接收时间</summary>
               <div id="onboarding-notification-details">
                 <label for="onboarding-backfill">开始接收时间</label><select id="onboarding-backfill" class="field-control"><option value="0">从开启时刻</option><option value="3600">最近 1 小时</option><option value="86400">最近 24 小时</option><option value="custom">指定时间</option></select>
-                <div id="onboarding-backfill-custom" hidden><label id="onboarding-backfill-start-label" for="onboarding-backfill-start">起始时间</label><input id="onboarding-backfill-start" type="datetime-local" step="1" class="field-control"></div>
+                <div id="onboarding-backfill-custom" hidden><label id="onboarding-backfill-start-label" for="onboarding-backfill-start">起始时间</label><span class="date-time-field"><input id="onboarding-backfill-start" type="text" class="field-control" autocomplete="off" spellcheck="false" placeholder="YYYY-MM-DD HH:mm:ss"><button id="onboarding-backfill-start-toggle" class="date-time-toggle" type="button" aria-label="选择接收起始时间"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4m8-4v4M4 10h16"/></svg></button></span></div>
                 <p class="quiet">首次成功开启后锁定起点。已有接收进度保持原起点。</p>
               </div>
               </details>
@@ -1021,5 +1019,24 @@
   <template id="message-template"><article class="message"><div class="avatar"></div><div class="message-main"><div class="message-meta"><button class="author" type="button" disabled></button><time></time><button class="reply-button" type="button" title="引用此消息" aria-label="引用此消息"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5-6 6 6 6M3 11h11a6 6 0 0 1 6 6v2"/></svg><span>引用</span></button></div><div class="message-content"><button class="message-reference text-button" type="button" hidden></button><div class="message-text"></div><div class="message-interactions"></div></div></div></article></template>
   <template id="member-template"><section class="member"><button class="member-summary" type="button" aria-controls="activity-dialog"><span class="member-top"><span class="avatar agent-avatar" aria-hidden="true"></span><span class="member-title"><span class="member-name"></span><span class="member-profile quiet"></span></span><span class="member-status"></span><svg class="navigation-icon member-chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m9 6 6 6-6 6"/></svg></span><span class="member-details"></span><span class="member-error" hidden></span></button></section></template>
   <template id="human-member-template"><section class="member member-human"><div class="member-summary"><span class="member-top"><span class="avatar user-avatar" aria-hidden="true"></span><span class="member-title"><span class="member-name"></span><span class="member-profile quiet">你</span></span></span></div></section></template>
+  <div id="date-time-picker" class="date-time-picker menu-surface" role="dialog" popover="manual" hidden>
+    <div id="date-time-calendar">
+      <header class="date-time-header">
+        <div class="date-time-heading"><button id="date-time-year" type="button"></button><button id="date-time-month" type="button"></button></div>
+        <div id="date-time-navigation" class="date-time-navigation"><button id="date-time-prev" type="button" class="icon-button" aria-label="上个月"><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><path class="date-time-single" d="m15 6-6 6 6 6"/><path class="date-time-double" d="m11 6-6 6 6 6m7-12-6 6 6 6"/></svg></button><button id="date-time-next" type="button" class="icon-button" aria-label="下个月"><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><path class="date-time-single" d="m9 6 6 6-6 6"/><path class="date-time-double" d="m6 6 6 6-6 6m7-12 6 6-6 6"/></svg></button></div>
+      </header>
+      <div id="date-time-grid" class="date-time-grid" role="group"></div>
+    </div>
+    <div id="date-time-clock" class="date-time-clock">
+      <span>时刻</span><div class="date-time-clock-fields">
+        <label><span>时</span><input id="date-time-hour" class="field-control" type="number" min="0" max="23" step="1" inputmode="numeric" aria-label="小时"></label><span aria-hidden="true">:</span>
+        <label><span>分</span><input id="date-time-minute" class="field-control" type="number" min="0" max="59" step="1" inputmode="numeric" aria-label="分钟"></label>
+        <span id="date-time-second-field" class="date-time-second-field"><span aria-hidden="true">:</span><label><span>秒</span><input id="date-time-second" class="field-control" type="number" min="0" max="59" step="1" inputmode="numeric" aria-label="秒钟"></label></span>
+      </div>
+    </div>
+    <p id="date-time-zone" class="date-time-zone" hidden></p>
+    <p id="date-time-error" class="form-error" role="status" aria-live="polite" hidden></p>
+    <footer class="date-time-footer"><button id="date-time-today" type="button" class="text-button">今天</button><button id="date-time-clear" type="button" class="text-button">清空</button><div id="date-time-confirm" class="date-time-confirm"><button id="date-time-cancel" type="button" class="text-button">取消</button><button id="date-time-apply" type="button" class="primary button-compact">确定</button></div></footer>
+  </div>
 </body>
 </html>

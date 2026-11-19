@@ -11,6 +11,7 @@ import { createMembers } from "./features/members.mjs";
 import { createPolicy } from "./features/policy.mjs";
 import { createInbox } from "./features/inbox.mjs";
 import { createCalendar } from "./features/calendar.mjs";
+import { createDateTimePicker } from "./date-time-picker.mjs";
 import { createConversation } from "./features/conversation.mjs";
 import { createPlatformInteractions } from "./features/platform-interactions.mjs";
 import { createConnections } from "./features/connections.mjs";
@@ -64,6 +65,7 @@ export async function createApp(overrides = {}) {
   const userMenuUI = {};
 
   const $ = (id) => document.getElementById(id);
+  const dateTimeUI = createDateTimePicker({env});
   const confirmAction = env.confirmAction || createConfirmation(document);
 
   const state = { info: null, operator: "operator", messages: new Map(), lastSeq: 0, oldest: 0,
@@ -99,6 +101,7 @@ export async function createApp(overrides = {}) {
     }
     if ($("directory-dialog").open) layers.push({id:"directory-dialog",close:() => $("directory-cancel").click()});
     if ($("confirmation-dialog").open) layers.push({id:"confirmation",close:() => $("confirmation-dialog").close()});
+    if (dateTimeUI.isOpen) layers.push({id:"date-time-picker",close:() => dateTimeUI.close(true)});
     return layers;
   }});
   function suspend() {
@@ -527,10 +530,10 @@ export async function createApp(overrides = {}) {
     confirmAction
   };
 
-  install(calendarUI,createCalendar({env,runtime,roomsUI,conversationUI,settingsUI}));
+  install(calendarUI,createCalendar({env,runtime,roomsUI,conversationUI,settingsUI,dateTimeUI}));
   install(userMenuUI, createUserMenu({ env, runtime, conversationUI, roomsUI, membersUI }));
   install(settingsUI, createSettings({
-    env, runtime, connectionsUI, conversationUI, roomsUI, workspaceUI, policyUI, notificationsUI, onboardingUI, membersUI
+    env, runtime, connectionsUI, conversationUI, roomsUI, workspaceUI, policyUI, notificationsUI, onboardingUI, membersUI, dateTimeUI
   }));
   install(roomsUI, createRooms({
     env, runtime, layoutUI, workspaceUI, conversationUI, settingsUI, membersUI, userMenuUI
@@ -721,6 +724,7 @@ export async function createApp(overrides = {}) {
   document.addEventListener("close", wakeDetails, true);
   window.addEventListener("focus", wakeDetails);
 
+  dateTimeUI.mount();
   calendarUI.mount();
   settingsUI.mount();
   roomsUI.mount();

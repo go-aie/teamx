@@ -3701,7 +3701,7 @@ test("GitLab custom reception start survives drafts and reload and is shared by 
  assert.equal(ui.el("gitlab-backfill").disabled,true);assert.equal(ui.el("gitlab-backfill").hidden,true);
  assert.equal(ui.el("gitlab-backfill-locked").hidden,false);assert.equal(ui.el("gitlab-save").disabled,true);
  const reloaded=await launch(api);await openGitLab(reloaded);
- assert.equal(reloaded.el("gitlab-backfill-start").value,local);assert.equal(reloaded.el("gitlab-backfill").disabled,true);
+ assert.equal(reloaded.el("gitlab-backfill-start").value,local.replace("T"," "));assert.equal(reloaded.el("gitlab-backfill").disabled,true);
  await editGitLab(reloaded,"gitlab-interval","10","input");await reloaded.el("gitlab-save").emit("click");
  assert.equal(gitlabWrites(api)[1].data.config.backfill_start,start.toISOString());
 });

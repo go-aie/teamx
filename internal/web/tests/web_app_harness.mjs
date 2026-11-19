@@ -42,9 +42,10 @@ class Element {
     ]);
   }
   addEventListener(event, handler) { (this.listeners[event] ||= []).push(handler); }
+  dispatchEvent(event) { void this.emit(event.type); return true; }
   async emit(event, data = {}) {
     if (event === "click" && this.disabled) return;
-    await Promise.all((this.listeners[event] || []).map(handler => handler({ preventDefault() {}, target: this, ...data })));
+    await Promise.all((this.listeners[event] || []).map(handler => handler({ preventDefault() {}, stopPropagation() {}, target: this, ...data })));
   }
   focus() {}
   reset() {
@@ -89,6 +90,7 @@ export async function launch(api, saved = new Map(), environment = {}) {
     elements.get(rail).getBoundingClientRect = () => ({ width: Number.parseFloat(workspace.style.getPropertyValue(`--${side}-open-width`)) || fallback });
   }
   const window = new Element("window"); window.innerWidth = 1440; window.innerHeight = 900;
+  window.Event = Event;
   window.getComputedStyle = () => ({ getPropertyValue: name => name === "--rooms-default-width" ? "240px" : "340px" });
   window.confirm = text => api.confirm ? api.confirm(text) : true;
   window.open = () => null; // Default to a blocked popup; UI retains its explicit link.

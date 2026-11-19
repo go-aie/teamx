@@ -529,10 +529,10 @@ test("Lark custom historical start uses local time and survives refresh and save
  await ui.el("lark-save").emit("click");
  const saved=api.calls.find(x=>x.path==="/v1/platform/notifications/configure").body.config;
  assert.equal(saved.backfill_seconds,0);assert.equal(saved.backfill_start,start.toISOString());
- assert.equal(ui.el("lark-backfill").value,"custom");assert.equal(ui.el("lark-backfill-start").value,local);
+ assert.equal(ui.el("lark-backfill").value,"custom");assert.equal(ui.el("lark-backfill-start").value,local.replace("T"," "));
  assert.equal(ui.el("lark-backfill").disabled,true);assert.equal(ui.el("lark-backfill-start").disabled,true);assert.equal(ui.el("lark-save").disabled,true);
  const reloaded=await launch(api);await openNotification(reloaded,"lark");await settle();
- assert.equal(reloaded.el("lark-backfill").value,"custom");assert.equal(reloaded.el("lark-backfill-start").value,local);
+ assert.equal(reloaded.el("lark-backfill").value,"custom");assert.equal(reloaded.el("lark-backfill-start").value,local.replace("T"," "));
  assert.equal(reloaded.el("lark-backfill").disabled,true);assert.equal(reloaded.el("lark-backfill-start").disabled,true);
  assert.match(reloaded.el("lark-backfill-help").textContent,/更早消息.*新建房间/);
 });

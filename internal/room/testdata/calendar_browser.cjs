@@ -5,6 +5,12 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
  const artifacts=process.env.TEAMX_CALENDAR_ARTIFACTS;
  if(artifacts)fs.mkdirSync(artifacts,{recursive:true});
  const shot=async name=>{if(artifacts)await page.screenshot({path:`${artifacts}/${name}.png`,fullPage:true,animations:"disabled"});};
+ const chooseDate=async value=>{
+   const [year,month]=value.split('-');
+   await page.locator('#calendar-range').click();await page.locator('#date-time-year').click();
+   await page.locator(`.date-time-choice[data-date-value="${Number(year)}"]`).click();await page.locator('#date-time-month').click();
+   await page.locator(`.date-time-choice[data-date-value="${Number(month)}"]`).click();await page.locator(`.date-time-day[data-date-value="${value}"]`).click();
+ };
  const task=title=>page.locator('.calendar-task-row').filter({has:page.getByRole('button',{name:title,exact:true,includeHidden:true})});
  const showView=async view=>{
    const b=page.locator(`#calendar-view [data-view="${view}"]`);
@@ -124,10 +130,34 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
   await page.locator('#calendar-options-toggle').click();await page.locator('.calendar-work-calendar > summary').click();
   assert.match(await page.locator('#calendar-work-coverage').innerText(),/中国大陆工作日历覆盖范围/);
   await shot('desktop-work-calendar');await page.keyboard.press('Escape');
-  await page.locator('#calendar-range').click();await page.locator('.calendar-picker-day').first().waitFor();
-  assert.equal(await page.locator('.calendar-picker-day').count(),42);
-  assert.equal(await page.locator('#calendar-picker-today').innerText(),'今天');await shot('desktop-date-picker');
-  await page.locator('.calendar-picker-day[aria-pressed="true"]').click();
+  await page.locator('#calendar-range').click();await page.locator('.date-time-day').first().waitFor();
+  assert.equal(await page.locator('.date-time-day').count(),42);
+  assert.equal(await page.locator('#date-time-today').innerText(),'今天');await shot('desktop-date-picker');
+  assert.equal(await page.locator('#date-time-today').evaluate(el=>{const button=el.getBoundingClientRect(),footer=el.parentElement.getBoundingClientRect();return Math.abs(button.left+button.right-footer.left-footer.right)<2;}),true);
+  assert.equal(await page.locator('#date-time-picker input:visible').count(),0);
+  assert.equal(await page.locator('#date-time-cancel').isVisible(),false);assert.equal(await page.locator('#date-time-apply').isVisible(),false);
+  assert.equal(await page.locator('#date-time-year').getAttribute('aria-expanded'),'false');assert.equal(await page.locator('#date-time-month').getAttribute('aria-expanded'),'false');
+  const pickerSize=await page.locator('#date-time-picker').boundingBox();
+  await page.locator('#date-time-month').click();assert.equal(await page.locator('.date-time-choice').count(),12);await shot('desktop-month-picker');
+  assert.equal(await page.locator('#date-time-month').getAttribute('aria-expanded'),'true');
+  assert.equal(await page.locator('#date-time-next .date-time-double').isVisible(),true);
+  assert.equal(await page.locator('#date-time-next .date-time-single').isVisible(),false);
+  const browsingDay=await page.locator('#calendar-date').inputValue();
+  await page.locator('#date-time-next').click();assert.equal(await page.locator('#date-time-year').innerText(),'2027年');assert.equal(await page.locator('#date-time-month').innerText(),'11月');
+  assert.equal(await page.locator('#date-time-grid').getAttribute('data-level'),'months');assert.equal(await page.locator('#calendar-date').inputValue(),browsingDay);
+  await page.locator('#date-time-prev').click();assert.equal(await page.locator('#date-time-year').innerText(),'2026年');
+  assert.equal(await page.locator('#date-time-month').evaluate(el=>new DOMMatrixReadOnly(getComputedStyle(el,'::after').transform).a<0),true);
+  await page.locator('.date-time-choice[data-date-value="5"]').click();
+  await page.locator('#date-time-year').click();await shot('desktop-year-picker');
+  assert.equal(await page.locator('#date-time-year').getAttribute('aria-expanded'),'true');
+  assert.equal(await page.locator('#date-time-year').evaluate(el=>new DOMMatrixReadOnly(getComputedStyle(el,'::after').transform).a<0),true);
+  const yearSize=await page.locator('#date-time-picker').boundingBox();assert.equal(yearSize.height,pickerSize.height);assert.equal(yearSize.width,pickerSize.width);
+  await page.locator('.date-time-choice[data-date-value="2027"]').click();assert.equal(await page.locator('#date-time-month').innerText(),'5月');
+  await page.locator('#date-time-year').click();await page.locator('.date-time-choice[data-date-value="2026"]').click();
+  await page.locator('#date-time-month').click();await page.locator('.date-time-choice[data-date-value="11"]').click();
+  assert.equal(await page.locator('.date-time-day[data-in-range="true"]').count(),7);
+
+  await page.locator('.date-time-day[aria-pressed="true"]').click();
   const nowOffset=await page.locator('.calendar-now-line').evaluate(e=>parseFloat(e.style.getPropertyValue('--now-top')));
   assert.ok(nowOffset>=0&&nowOffset<24*56);
   const nowColors=await page.locator('.calendar-now-line').evaluate(el=>({line:getComputedStyle(el).color,gradient:getComputedStyle(el).backgroundImage,dot:getComputedStyle(el.querySelector('i')).backgroundColor,label:getComputedStyle(el.querySelector('span')).color}));
@@ -212,11 +242,11 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
   const savedMonth=await page.locator('.calendar-month-grid').getAttribute('data-month');await showView('list');await showView('calendar');assert.equal(await page.locator('.calendar-month-grid').getAttribute('data-month'),savedMonth);
   await page.locator('#calendar-next').click();await page.waitForFunction(month=>document.querySelector('.calendar-month-grid')?.dataset.month!==month,savedMonth);
   await page.locator('#calendar-prev').click();await page.waitForFunction(month=>document.querySelector('.calendar-month-grid')?.dataset.month===month,savedMonth);
-  await page.locator('#calendar-range').click();await page.locator('#calendar-date').fill('2026-12-31');await page.locator('#calendar-date').press('Tab');await page.waitForFunction(()=>document.querySelector('.calendar-month-grid')?.dataset.month==='2026-12');
+  await chooseDate('2026-12-31');await page.waitForFunction(()=>document.querySelector('.calendar-month-grid')?.dataset.month==='2026-12');
   await page.locator('#calendar-next').click();await page.waitForFunction(()=>document.querySelector('.calendar-month-grid')?.dataset.month==='2027-01');assert.equal(await page.locator('#calendar-date').inputValue(),'2027-01-31');
   await page.locator('#calendar-prev').click();await page.waitForFunction(()=>document.querySelector('.calendar-month-grid')?.dataset.month==='2026-12');
   await range('week').click();await page.locator('.calendar-time-grid').waitFor();
-  await page.locator('#calendar-range').click();await page.locator('#calendar-date').fill('2026-01-01');await page.locator('#calendar-date').press('Tab');
+  await chooseDate('2026-01-01');
   await page.waitForFunction(()=>document.querySelector('#calendar-date').value==='2026-01-01'&&document.querySelector('.calendar-day-heading[data-kind="makeup"]'));
   assert.equal(await page.locator('.calendar-day-heading[data-kind="holiday"]').first().getAttribute('title'),'节假日');
   assert.equal(await page.locator('.calendar-day-heading[data-kind="holiday"] small').first().innerText(),'休');
@@ -240,6 +270,8 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
   const reminderButton=task('实习生面试提醒').locator('button');await reminderButton.scrollIntoViewIfNeeded();
   const reminderPosition=await page.evaluate(()=>({panel:document.querySelector('#calendar-panel').scrollTop,grid:document.querySelector('#calendar-items').scrollTop,date:document.querySelector('#calendar-date').value}));
   await openTask('实习生面试提醒');
+  assert.equal(await page.locator('.calendar-zone-difference').count(),0);
+  assert.doesNotMatch(await page.locator('#calendar-detail-content').innerText(),/Asia\/Shanghai/);
   assert.equal(await page.locator('#calendar-detail-close').getAttribute('aria-label'),'关闭任务详情');
   assert.equal(await page.locator('.calendar-detail-close-icon').isVisible(),true);assert.equal(await page.locator('.calendar-detail-back-icon').isVisible(),false);
   assert.equal(await page.locator('.calendar-execution-settings').evaluate(e=>e.open),false);
@@ -256,10 +288,18 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
   const workspaceGridScroll=await page.locator('#calendar-items').evaluate(e=>e.scrollTop);
   await page.locator('#calendar-new').click();await page.locator('#calendar-title').fill('实习生面试提醒');await page.locator('#calendar-instruction').fill('提醒我参加实习生面试，结果回复本私信。');await page.locator('#calendar-local-time').fill('14:30');
   assert.equal(await page.locator('#calendar-advanced').evaluate(e=>e.open),false);assert.equal(await page.locator('#calendar-day-filter').isVisible(),false);
+  assert.doesNotMatch(await page.locator('#calendar-form-summary').innerText(),/Asia\/Shanghai|按 .*执行/);
   assert.ok(await page.locator('#calendar-form').evaluate(e=>e.clientWidth)<=720);
   await shot('desktop-simple-form');await page.locator('#calendar-form-cancel').click();await page.waitForFunction(()=>!document.querySelector('#calendar-panel').classList.contains('calendar-form-open'));assert.ok(Math.abs(await page.locator('#calendar-items').evaluate(e=>e.scrollTop)-workspaceGridScroll)<2);
   await page.locator('#calendar-new').click();await page.locator('#calendar-title').fill('实习生面试提醒');await page.locator('#calendar-instruction').fill('提醒我参加实习生面试，结果回复本私信。');await page.locator('#calendar-local-time').fill('14:30');await page.setViewportSize({width:390,height:844});await shot('mobile-simple-form');
   assert.equal(await page.locator('#calendar-panel').evaluate(e=>e.scrollWidth<=e.clientWidth),true);
+  await page.locator('#calendar-start-date-toggle').click();await shot('mobile-task-date-picker');
+  const mobilePicker=await page.locator('#date-time-picker').boundingBox();assert.ok(mobilePicker.x>=0&&mobilePicker.x+mobilePicker.width<=390&&mobilePicker.y>=0&&mobilePicker.y+mobilePicker.height<=844);
+  await page.keyboard.press('Escape');assert.equal(await page.locator('#calendar-create').evaluate(e=>e.open),true);
+  await page.locator('#calendar-start-date-toggle').click();await page.waitForFunction(()=>history.state?.teamxOverlay==='date-time-picker');await page.evaluate(()=>history.back());await page.locator('#date-time-picker').waitFor({state:'hidden'});assert.equal(await page.locator('#calendar-create').evaluate(e=>e.open),true);
+  await page.locator('#calendar-local-time-toggle').click();assert.equal(await page.locator('#date-time-second-field').isVisible(),false);assert.equal(await page.locator('#date-time-zone').isVisible(),false);await shot('mobile-task-time-picker');
+  await page.locator('#date-time-hour').fill('15');await page.locator('#date-time-minute').fill('45');
+  assert.equal(await page.locator('#calendar-local-time').inputValue(),'14:30');await page.locator('#date-time-apply').click();assert.equal(await page.locator('#calendar-local-time').inputValue(),'15:45');
   await page.locator('#calendar-form-cancel').click();await page.setViewportSize({width:1440,height:1000});
   await page.locator('#calendar-today').click();
   // Fetch all pages of a real 210+ occurrence next week, without truncation.
@@ -303,6 +343,8 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
   // Editing only title must preserve the verified scope and fixed rule exactly.
   await action('编辑后续安排').click();
   assert.equal(await page.locator('#calendar-time-zone').inputValue(),'UTC');
+  assert.match(await page.locator('#calendar-form-summary').innerText(),/按 UTC 执行/);
+  await page.locator('#calendar-local-time-toggle').click();assert.equal(await page.locator('#date-time-zone').innerText(),'时区：UTC');await page.locator('#date-time-cancel').click();
   await page.locator('#calendar-title').fill('编辑后的检查');await page.locator('#calendar-submit').click();
   await task('编辑后的检查').waitFor();await openTask('编辑后的检查');
   await page.locator('.calendar-execution-settings > summary').click();assert.match(await page.locator('#calendar-detail-content').innerText(),/verified/);
@@ -317,7 +359,11 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
   },zone);
   await showView('calendar');await changeZone('America/New_York');await refreshCalendar();
   await page.waitForFunction(()=>document.querySelector('.calendar-grid-corner')?.title==='America/New_York');
-  await openTask('编辑后的检查');assert.match(await page.locator('#calendar-detail-content').innerText(),/UTC/);await close();
+  await openTask('编辑后的检查');assert.match(await page.locator('.calendar-zone-difference').innerText(),/执行时区 UTC · 显示时区 America\/New_York/);
+  await changeZone('UTC');await page.waitForFunction(()=>!document.querySelector('.calendar-zone-difference'));
+  assert.doesNotMatch(await page.locator('#calendar-detail-content').innerText(),/UTC/);
+  await action('编辑后续安排').click();assert.equal(await page.locator('#calendar-time-zone').inputValue(),'UTC');assert.doesNotMatch(await page.locator('#calendar-form-summary').innerText(),/UTC/);
+  await page.locator('#calendar-form-cancel').click();
   await showView('calendar');await changeZone('Asia/Shanghai');await refreshCalendar();
   await page.waitForFunction(()=>document.querySelector('.calendar-grid-corner')?.title==='Asia/Shanghai');
   // Another real tab observes committed changes through the existing SSE path.
@@ -465,7 +511,7 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
   if(artifacts)await timePage.screenshot({path:`${artifacts}/mobile-current-time-hour-overlap.png`,fullPage:true,animations:'disabled'});
   await timeContext.close();
   assert.deepEqual(errors,[]);
-  const evidence={status:'passed',desktop:'1440x1000 Chromium',mobile:'390x844 and 320x844 Chromium viewport simulation; no real device',header_calendar_entry:true,chat_without_tab_row:true,centered_mobile_title:true,chat_scroll_return:true,week:true,month:true,red_current_time_line:true,current_time_hour_overlap:true,hour_labels_recover_with_clock:true,execution_state_rendering:'controlled read responses in day/week/month',finished_occurrences_dimmed:true,pending_and_exception_occurrences_emphasized:true,month_all_pages:true,month_overflow_to_day:true,month_task_detail:true,month_cross_year:true,month_holiday_markers:true,mobile_month:true,compact_toolbar:true,calendar_and_task_views:true,day_time_axis:true,deduplicated_task_list:true,task_list_without_date_range:true,calendar_and_list_scroll_return:true,holiday_makeup_markers:true,month_picker:true,minute_time_axis:true,layered_form:true,form_return_position:true,draft_secondary_action:true,compact_reminder_detail:true,work_calendar_in_menu:true,contextual_coverage_hint:true,whole_task_row_clickable:true,task_row_keyboard:true,single_create_entry:true,compact_task_time:true,range_pagination:true,snapshot_restart:true,saved_then_read_failure:true,coincident_tasks:true,history_pagination:55,frozen_result:true,mutual_links:true,older_report_history_loading:true,empty_view_no_state_file:true,edit_scope_preserved:true,display_zone_change_rule_fixed:true,version_conflict_draft:true,sse_other_tab:true,pause_resume:true,chat_draft:true,date_scroll_return:true,mobile_browser_back:true,receipt_markdown_link:true,weekly_form:true,skip_once:true,draft_completion:true,unknown_receipt_replay:true,coverage_unknown:true,cancellation:true,console_errors:errors};
+  const evidence={status:'passed',desktop:'1440x1000 Chromium',mobile:'390x844 and 320x844 Chromium viewport simulation; no real device',header_calendar_entry:true,chat_without_tab_row:true,centered_mobile_title:true,chat_scroll_return:true,week:true,month:true,red_current_time_line:true,current_time_hour_overlap:true,hour_labels_recover_with_clock:true,execution_state_rendering:'controlled read responses in day/week/month',finished_occurrences_dimmed:true,pending_and_exception_occurrences_emphasized:true,month_all_pages:true,month_overflow_to_day:true,month_task_detail:true,month_cross_year:true,month_holiday_markers:true,mobile_month:true,compact_toolbar:true,calendar_and_task_views:true,day_time_axis:true,deduplicated_task_list:true,task_list_without_date_range:true,calendar_and_list_scroll_return:true,holiday_makeup_markers:true,month_picker:true,year_picker:true,month_preserved_across_years:true,picker_stable_height:true,picker_paging_units:true,shared_task_pickers:true,minute_time_axis:true,layered_form:true,form_return_position:true,draft_secondary_action:true,compact_reminder_detail:true,work_calendar_in_menu:true,contextual_coverage_hint:true,whole_task_row_clickable:true,task_row_keyboard:true,single_create_entry:true,compact_task_time:true,range_pagination:true,snapshot_restart:true,saved_then_read_failure:true,coincident_tasks:true,history_pagination:55,frozen_result:true,mutual_links:true,older_report_history_loading:true,empty_view_no_state_file:true,edit_scope_preserved:true,display_zone_change_rule_fixed:true,default_timezone_implicit:true,timezone_difference_only:true,live_timezone_hint_refresh:true,version_conflict_draft:true,sse_other_tab:true,pause_resume:true,chat_draft:true,date_scroll_return:true,mobile_browser_back:true,receipt_markdown_link:true,weekly_form:true,skip_once:true,draft_completion:true,unknown_receipt_replay:true,coverage_unknown:true,cancellation:true,console_errors:errors};
   if(artifacts)fs.writeFileSync(`${artifacts}/browser-evidence.json`,JSON.stringify(evidence,null,2)+'\n');console.log(JSON.stringify(evidence));
  }catch(error){await shot('failure');console.log('FAILURE_STATE',await page.locator('#calendar-error').textContent(),await page.locator('#calendar-detail-content').innerText());throw error;}finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exit(1);});
