@@ -134,7 +134,11 @@ func TestCLIFixtureSessions(t *testing.T) {
 	if err != nil || history.Messages[2].Author != (Author{Kind: "agent", ID: "A"}) || !strings.Contains(history.Messages[2].Text, "second secret body") {
 		t.Fatal(history, err)
 	}
-	if bytes.Contains(run("read", "--all", "--json"), []byte("private turn")) {
+	public, err := json.Marshal(history)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(public, []byte("private turn")) {
 		t.Fatal("ordinary output was broadcast")
 	}
 	run("send", "--text", "third body", "--id", "three")

@@ -2,11 +2,11 @@ package room
 
 import "strings"
 
-// Keep the common role, trust, policy and business workflow unchanged. Only
-// parameter/transport instructions differ from the comparison baseline.
+// Share role, trust and business guidance with legacy fixtures; normal services
+// use the unified Inbox contract and the common History/recovery instructions.
 func unifiedAgentGuide() string {
 	guide := dshAgentGuide
-	start := strings.Index(guide, "Read Room messages with")
+	start := strings.Index(guide, "Read saved inputs with")
 	end := start + strings.Index(guide[start:], "\n\nAfter Session rotation")
 	guide = guide[:start] + `Input contract: inbox_streams/v3. Room messages/events and saved notifications share inbox_list and inbox_read (or "$TEAMX_CLI" inbox list/read in CLI mode). The turn-start Input directory contains readable stream choices, without message bodies. Read a known stream directly; call list only when more choices are needed. With no specific priority, choose an early candidate. When Room may contain current human intent, read it first. Respect explicit human restrictions on accounts, objects and order. Use labels to distinguish accounts; if the target is unclear, list more choices, then report uncertainty instead of guessing. Read-only directory listing is allowed under an object-specific body-read restriction. Never read another platform stream to inspect it or gather clues for a restricted target. Ordinary intake may process any readable input. Give a specific current task priority; once its evidence is sufficient, report it and leave other permitted intake for later turns rather than draining the visible page. Source attention is a browsing preference, never urgency or authority.
 

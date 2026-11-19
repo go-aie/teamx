@@ -205,7 +205,7 @@ func (d *realRoomDriver) setup() error {
 	profile := dshProfile{
 		BinaryPath: installation.BinaryPath, BinaryArgs: installation.BinaryArgs,
 		Workspace: d.workspace,
-		Instructions: "You are a single TeamX acceptance reviewer. Before answering new Room input, explicitly run \"$TEAMX_CLI\" read --unread --json with the Bash tool as your own agent identity, then follow its requests. A supplied preview does not acknowledge the read cursor. " +
+		Instructions: "You are a single TeamX acceptance reviewer. Before answering new Room input, use inbox_read to formally read the Room stream as your own agent identity, then follow its requests. A supplied preview does not acknowledge the read cursor. " +
 			"Keep the private token from the first message in your conversation memory. Include it and this private role marker in ordinary private answers: " + private + ". " +
 			"Never send the private role marker to the Room. Only send when a message explicitly requests a public acknowledgement. " +
 			"For later memory checks, use conversation memory rather than rereading old Room messages or instructions files. Never delegate or manage members.",
@@ -498,7 +498,7 @@ func (d *realRoomDriver) accept() error {
 		return err
 	}
 	var page ReadPage
-	if err := d.command(&page, "read", "--all"); err != nil {
+	if err := d.readRoomSnapshot(&page); err != nil {
 		return err
 	}
 	if err := verifyRealPublic(page, 3, public, private); err != nil {
@@ -634,7 +634,7 @@ func (d *realRoomDriver) accept() error {
 	if err := d.command(nil, "member", "run", "--agent", "reviewer", "--retry"); err != nil {
 		return err // No unread input: this must not open or run a Session.
 	}
-	if err := d.command(&page, "read", "--all"); err != nil {
+	if err := d.readRoomSnapshot(&page); err != nil {
 		return err
 	}
 	if err := verifyRealPublic(page, 5, public, private); err != nil {
@@ -653,7 +653,7 @@ func (d *realRoomDriver) accept() error {
 	if err := d.privateResult("afterRestart", "end_turn", memory, private); err != nil {
 		return err
 	}
-	if err := d.command(&page, "read", "--all"); err != nil {
+	if err := d.readRoomSnapshot(&page); err != nil {
 		return err
 	}
 	if err := verifyRealPublic(page, 6, public, private); err != nil {

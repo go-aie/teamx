@@ -43,6 +43,8 @@ type Store struct {
 	inputHandles         sync.Map
 	inputOwners          inputOwners
 	roomInputCache       *roomLogCache
+	roomHistoryIndex     *roomHistoryIndex
+	roomHistoryPins      map[uint64]int                   // transient native retention boundaries; guarded by mu
 	platformInputs       map[string]*platformInputStorage // Member-owned engines; all normal mutations use their input Actor.
 	observe              func(string, MemberIdentity)
 	observeExpiry        func(string, MemberIdentity, time.Time)
@@ -201,6 +203,7 @@ func (s *Store) loadRoom() (RoomSnapshot, error) {
 	if v.RoomID != s.roomID || (s.instance != "" && v.RoomInstance != s.instance) {
 		return RoomSnapshot{}, fmt.Errorf("%w: room.json", ErrIdentity)
 	}
+	s.indexRoomHistory(v)
 	return v, nil
 }
 
@@ -252,6 +255,9 @@ func (s *Store) SaveRoom(v RoomSnapshot) error {
 		return err
 	}
 	s.instance = v.RoomInstance
+	indexed := v
+	indexed.InputLog = disk.InputLog
+	s.indexRoomHistory(indexed)
 	if disk.InputLog != nil {
 		_ = s.cleanRoomLog(*disk.InputLog)
 	}

@@ -54,7 +54,7 @@ func (w failedOutput) Write(b []byte) (int, error) {
 	return 0, errors.New("broken pipe")
 }
 
-func TestCLIOutputFailureDoesNotConfirm(t *testing.T) {
+func TestRoomReadOutputFailureDoesNotConfirm(t *testing.T) {
 	for _, short := range []bool{false, true} {
 		t.Run(fmt.Sprint(short), func(t *testing.T) {
 			svc, client := testService(t)
@@ -65,7 +65,7 @@ func TestCLIOutputFailureDoesNotConfirm(t *testing.T) {
 				t.Fatal(err)
 			}
 			a.Mode, a.Limit = ReadUnread, 20
-			if err := readCLI(context.Background(), client, a, failedOutput{short}, true); err == nil || !strings.Contains(err.Error(), "not confirmed") {
+			if err := readRoomPagesForTest(context.Background(), client, a, failedOutput{short}, true); err == nil || !strings.Contains(err.Error(), "not confirmed") {
 				t.Fatal(err)
 			}
 			members, err := svc.members(context.Background())
@@ -80,7 +80,7 @@ func TestCLIOutputFailureDoesNotConfirm(t *testing.T) {
 	}
 }
 
-func TestCLIConfirmationFailureAndLostReply(t *testing.T) {
+func TestRoomReadConfirmationFailureAndLostReply(t *testing.T) {
 	for _, commit := range []bool{false, true} {
 		t.Run(fmt.Sprint(commit), func(t *testing.T) {
 			svc, client := testService(t)
@@ -118,7 +118,7 @@ func TestCLIConfirmationFailureAndLostReply(t *testing.T) {
 			broken.endpoint = proxy.URL
 			a.Mode, a.Limit = ReadUnread, 20
 			var output bytes.Buffer
-			err := readCLI(context.Background(), broken, a, &output, true)
+			err := readRoomPagesForTest(context.Background(), broken, a, &output, true)
 			if err == nil || !strings.Contains(err.Error(), "confirmation failed or uncertain") || !strings.Contains(output.String(), "body") || confirmCalls.Load() != 1 {
 				t.Fatal(output.String(), err, confirmCalls.Load())
 			}
@@ -134,7 +134,7 @@ func TestCLIConfirmationFailureAndLostReply(t *testing.T) {
 	}
 }
 
-func TestCLIUnreadPeekPaginatesWithoutConsumption(t *testing.T) {
+func TestRoomUnreadPeekPaginatesWithoutConsumption(t *testing.T) {
 	svc, client := testService(t)
 	a := addFixtureMemberCLI(t, svc, client, "A")
 	for i := range 105 {
@@ -146,7 +146,7 @@ func TestCLIUnreadPeekPaginatesWithoutConsumption(t *testing.T) {
 	}
 	a.Mode, a.Limit, a.Peek = ReadUnread, 105, true
 	var output bytes.Buffer
-	if err := readCLI(context.Background(), client, a, &output, true); err != nil {
+	if err := readRoomPagesForTest(context.Background(), client, a, &output, true); err != nil {
 		t.Fatal(err)
 	}
 	pages := decodePages(t, output.Bytes())
@@ -159,7 +159,7 @@ func TestCLIUnreadPeekPaginatesWithoutConsumption(t *testing.T) {
 	}
 	a.Peek = false
 	output.Reset()
-	if err := readCLI(context.Background(), client, a, &output, true); err != nil {
+	if err := readRoomPagesForTest(context.Background(), client, a, &output, true); err != nil {
 		t.Fatal(err)
 	}
 	status, err = svc.members(context.Background())
@@ -306,5 +306,25 @@ func TestServeRejectsUnboundedTurnBudget(t *testing.T) {
 		if err := serve([]string{"--config", writeStartupConfig(t, t.TempDir(), ""), "--session-max-turns", limit}, &stdout, &stderr); err == nil || stdout.Len() != 0 {
 			t.Fatal("invalid turn limit accepted", limit, err)
 		}
+	}
+}
+
+func TestRemovedRoomReadCommand(t *testing.T) {
+	for _, args := range [][]string{{"read"}, {"read", "--all"}, {"read", "--latest", "1"}, {"read", "--unread"}, {"read", "--unread", "--peek"}, {"read", "--help"}} {
+		var out bytes.Buffer
+		// Only global credential-flag parsing precedes command dispatch; no Room
+		// identity lookup or HTTP request is allowed for a retired command.
+		err := runCLI(t.Context(), args, &out, io.Discard, func(key string) string {
+			if key != "TEAMX_ADMIN_TOKEN_FILE" && key != "TEAMX_AGENT_ID" && key != "TEAMX_GITLAB_TOOLS" {
+				t.Fatal("retired command attempted identity lookup", key)
+			}
+			return ""
+		})
+		if err == nil || !strings.Contains(err.Error(), `unknown command "read"`) || out.Len() != 0 {
+			t.Fatal(args, err, out.String())
+		}
+	}
+	if strings.Contains(rootCLIHelp, "send | read") || strings.Contains(rootCLIHelp, "teamx read") {
+		t.Fatal("retired command in root help")
 	}
 }

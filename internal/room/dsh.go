@@ -113,6 +113,13 @@ type dshBackend struct {
 	open func(context.Context, dsh.Options) (dshComponent, error)
 }
 
+func (b dshBackend) mcpService() *service {
+	if b.inputService != nil {
+		return b.inputService
+	}
+	return b.inboxMCP
+}
+
 // Reject missing credentials before admitting a turn or publishing a Session
 // reference. A validation failure must not become ambiguous execution state.
 func (b dshBackend) CheckRun() error {
@@ -301,8 +308,8 @@ func (b dshBackend) OpenSession(ctx context.Context, opts SessionOptions) (Sessi
 		}
 		revoke = release
 		componentOpts.ExecutionToken = token
-		if b.inboxMCP != nil {
-			token, releaseMCP, issueErr := b.access.issueMCPInbox(binding, b.inboxMCP, ref.Directory, slices.Contains(componentOpts.Model.InputModalities, "image"))
+		if svc := b.mcpService(); svc != nil {
+			token, releaseMCP, issueErr := b.access.issueMCPInbox(binding, svc, ref.Directory, slices.Contains(componentOpts.Model.InputModalities, "image"))
 			if issueErr != nil {
 				revoke()
 				return nil, issueErr
@@ -313,7 +320,7 @@ func (b dshBackend) OpenSession(ctx context.Context, opts SessionOptions) (Sessi
 			inbox = b.store.mcpOperations.inboxes[opts.MemberIdentity]
 			b.store.mcpOperations.mu.Unlock()
 		}
-	} else if b.inboxMCP != nil {
+	} else if b.mcpService() != nil {
 		return nil, ErrIdentity
 	}
 	component, err := open(ctx, componentOpts)
@@ -387,9 +394,9 @@ func (b dshBackend) componentOptions(opts SessionOptions, ref dshReference) (dsh
 	}, "\n\n")
 	if b.inputService != nil {
 		if b.inboxMCP != nil {
-			instructions += "\nInput transport: HTTP MCP. Use discovered inbox_list/read; formal input CLI is disabled. Room history and business CLI remain available."
+			instructions += "\nInput transport: HTTP MCP. Use discovered inbox_list/read; formal input CLI is disabled. Use discovered history_list/history_read MCP for retained context. Business CLI remains available."
 		} else {
-			instructions += "\nInput transport: CLI. Use \"$TEAMX_CLI\" inbox list [--limit N | --cursor REF], or inbox read --stream REF [--limit N]. Execute one inbox read per shell tool call and wait for its result before continuing. Room history and business CLI remain available."
+			instructions += "\nInput transport: CLI. Use \"$TEAMX_CLI\" inbox list [--limit N | --cursor REF], or inbox read --stream REF [--limit N]. Execute one inbox read per shell tool call and wait for its result before continuing. Use discovered history_list/history_read MCP for retained context. Business CLI remains available."
 		}
 	}
 	if b.inboxMCP != nil && b.inputService == nil {
@@ -407,7 +414,7 @@ func (b dshBackend) componentOptions(opts SessionOptions, ref dshReference) (dsh
 	if b.store.observe != nil {
 		component.ObserveActivity = func() { b.store.changed("activity", opts.MemberIdentity) }
 	}
-	if b.inboxMCP != nil {
+	if b.mcpService() != nil {
 		component.MCPServers = []dsh.MCPHTTPServer{mcpHTTPConfiguration(toolEnv["TEAMX_ENDPOINT"], "")}
 	}
 	if b.model != nil {
@@ -628,7 +635,7 @@ func (s *dshSession) Run(ctx context.Context, input UnreadChanged) (err error) {
 			return dshFailure(err)
 		}
 	}
-	if s.inbox != nil {
+	if s.inbox != nil && (s.backend.inputService == nil || s.backend.inputService.inboxMode != "cli") {
 		for i := range prompt {
 			prompt[i].Text = strings.ReplaceAll(prompt[i].Text, "inbox read", "the discovered inbox_read MCP tool")
 		}

@@ -59,7 +59,7 @@ func TestAutomaticRotationReal(t *testing.T) {
 	var profiles map[string]dshProfile
 	must(jsonFile(d.profilePath, &profiles))
 	p := profiles["reviewer"]
-	p.Instructions = `You are a bounded TeamX acceptance assistant. On EVERY normal turn first run exactly: "$TEAMX_CLI" read --unread --json. Recovery previews do not consume input. Then return only the requested S3_TURN marker privately. Never send to the Room, delegate, manage members, inspect files or environment, or use network/platform tools.`
+	p.Instructions = `You are a bounded TeamX acceptance assistant. On EVERY normal turn first formally read the Room stream through inbox_read. Recovery previews do not consume input. Then return only the requested S3_TURN marker privately. Never send to the Room, delegate, manage members, inspect files or environment, or use network/platform tools.`
 	profiles["reviewer"] = p
 	encoded, _ := json.Marshal(profiles)
 	must(os.WriteFile(d.profilePath, encoded, 0600))
@@ -95,7 +95,7 @@ func TestAutomaticRotationReal(t *testing.T) {
 	}
 	for n := uint64(1); n <= 5; n++ {
 		d.phase(fmt.Sprintf("automatic-turn-%d", n))
-		text := fmt.Sprintf("First run exactly \"$TEAMX_CLI\" read --unread --json in bash to consume this Room message. Answer privately with S3_TURN_%d only. Do not send to the Room, use network tools, or do any other work.", n)
+		text := fmt.Sprintf("First use inbox_read to consume this Room message. Answer privately with S3_TURN_%d only. Do not send to the Room, use network tools, or do any other work.", n)
 		must(d.command(nil, "send", "--text", text, "--id", fmt.Sprint(n)))
 		check(n)
 		if n == 2 || n == 4 {
@@ -116,7 +116,7 @@ func TestAutomaticRotationReal(t *testing.T) {
 	must(d.stopReal())
 	must(d.startReal(2))
 	d.phase("normal-restart-turn-6")
-	must(d.command(nil, "send", "--text", "First run exactly \"$TEAMX_CLI\" read --unread --json in bash to consume this Room message. Answer privately S3_TURN_6. Do not send to the Room or use any other tools.", "--id", "6"))
+	must(d.command(nil, "send", "--text", "First use inbox_read to consume this Room message. Answer privately S3_TURN_6. Do not send to the Room or use any other tools.", "--id", "6"))
 	check(6)
 	if lastGeneration != generationBefore || lastID != idBefore {
 		t.Fatal("normal restart did not resume original Session")

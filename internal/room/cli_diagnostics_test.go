@@ -41,11 +41,11 @@ func TestAgentCommandHelpIsScopedAndOffline(t *testing.T) {
 			})
 		}
 	}
-	for _, args := range [][]string{{"--help"}, {"matters", "--help"}, {"policy", "--help"}, {"actions", "--help"}, {"inbox", "--help"}, {"read", "--help"}, {"send", "--help"}, {"skill", "--help"}, {"skill", "usage", "--help"}} {
+	for _, args := range [][]string{{"--help"}, {"matters", "--help"}, {"policy", "--help"}, {"actions", "--help"}, {"inbox", "--help"}, {"send", "--help"}, {"skill", "--help"}, {"skill", "usage", "--help"}} {
 		var stdout bytes.Buffer
 		err := runCLI(context.Background(), args, &stdout, io.Discard, func(string) string { return "" })
-		// read/send retain their pre-existing flag.ErrHelp exit contract.
-		wantHelpError := args[0] == "read" || args[0] == "send"
+		// send retains their pre-existing flag.ErrHelp exit contract.
+		wantHelpError := args[0] == "send"
 		if (err != nil && !(wantHelpError && errors.Is(err, flag.ErrHelp))) || !strings.Contains(stdout.String(), "Usage:") {
 			t.Fatal(args, err, stdout.String())
 		}

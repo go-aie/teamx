@@ -205,7 +205,7 @@ func TestDSHAdapterIsolationMetadataAndPrivateOutput(t *testing.T) {
 	}
 	for i, options := range opened {
 		id := []MemberIdentity{a, b}[i]
-		if !strings.Contains(options.Instructions, "role-"+id.AgentID) || !strings.Contains(options.Instructions, `"$TEAMX_CLI" read --unread`) ||
+		if !strings.Contains(options.Instructions, "role-"+id.AgentID) || !strings.Contains(options.Instructions, `history_read`) ||
 			!strings.Contains(options.Instructions, `"$TEAMX_CLI" tools list`) || !strings.Contains(options.Instructions, "Do not delegate or manage members") ||
 			!strings.Contains(options.Instructions, "Tools run on the TeamX server") || !strings.Contains(options.Instructions, "Do not bypass bindings") ||
 			options.ToolEnv["TEAMX_MEMBERSHIP_ID"] != id.MembershipID || options.ToolEnv["TEAMX_SERVICE_EPOCH"] != "current-service" ||

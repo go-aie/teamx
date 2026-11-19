@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -19,7 +20,7 @@ import (
 )
 
 // The demo is a CLI client and process owner. All collaboration goes through
-// the same compiled serve/member/send/read entry points used by an operator.
+// the same compiled serve/member/send entry points and native Room reads used by an operator.
 type cliDriver struct {
 	ctx      context.Context
 	binary   string
@@ -453,8 +454,8 @@ func (d *cliDriver) scenario() error {
 	if _, err := d.capture("B_continues_original_session"); err != nil {
 		return err
 	}
-	var page ReadPage // Six messages fit in one CLI page.
-	if err := d.command(&page, "read", "--all"); err != nil {
+	var page ReadPage // Native Room history remains available to test assertions.
+	if err := d.readRoomSnapshot(&page); err != nil {
 		return err
 	}
 	d.report.History = page.Messages
@@ -485,4 +486,38 @@ func (d *cliDriver) scenario() error {
 	}
 	d.report.Sessions = []virtualSnapshot{bRestored}
 	return nil
+}
+
+// Operator assertions use the native Room API, never the retired CLI command.
+func (d *cliDriver) readRoomSnapshot(out *ReadPage) error {
+	values := map[string]string{}
+	for _, e := range d.operatorEnv(d.endpoint) {
+		k, v, _ := strings.Cut(e, "=")
+		values[k] = v
+	}
+	client := cliClient{endpoint: d.endpoint, http: &http.Client{Timeout: 10 * time.Second}}
+	req, err := client.identity(d.ctx, d.info.RoomID, func(k string) string { return values[k] })
+	if err != nil {
+		return err
+	}
+	req.Mode = ReadAll
+	var data bytes.Buffer
+	if err := readRoomPagesForTest(d.ctx, client, req, &data, true); err != nil {
+		return err
+	}
+	dec := json.NewDecoder(&data)
+	*out = ReadPage{}
+	for {
+		var page ReadPage
+		err := dec.Decode(&page)
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		messages := append(out.Messages, page.Messages...)
+		*out = page
+		out.Messages = messages
+	}
 }

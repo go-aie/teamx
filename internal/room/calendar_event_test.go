@@ -43,7 +43,7 @@ func TestCalendarEventAgentReadKeepsActionableIdentityWithoutRepeatedInstruction
 			}))
 			defer server.Close()
 			var output bytes.Buffer
-			if err := readCLI(t.Context(), cliClient{endpoint: server.URL, http: server.Client()}, apiRequest{Caller: agentCaller("A", "generation-A")}, &output, asJSON); err != nil {
+			if err := readRoomPagesForTest(t.Context(), cliClient{endpoint: server.URL, http: server.Client()}, apiRequest{Caller: agentCaller("A", "generation-A")}, &output, asJSON); err != nil {
 				t.Fatal(err)
 			}
 			text := output.String()

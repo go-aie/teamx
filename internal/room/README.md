@@ -68,8 +68,6 @@ export TEAMX_ENDPOINT=http://127.0.0.1:8088
 /tmp/teamx member run --agent reviewer
 /tmp/teamx member run --agent observer
 /tmp/teamx member list --json
-/tmp/teamx read --latest 10 --json
-/tmp/teamx read --all --json
 ```
 
 Member addition defaults to `--runner dsh` and requires a configured profile. New members start paused at the history tail; joining does not create old unread messages or open a Session. Each member has independent roles, workspace, process, private state and turn budget. Human operators can post and preview without joining as a simulated member.
@@ -99,7 +97,7 @@ Existing room configuration and collaboration snapshots upgrade once by version,
 
 Rotation pauses new turns while notifications keep merging, joins the current turn (optionally requesting `--cancel`), then closes and joins the old Session, processes and workers before committing a new directory reference. The new Session opens lazily. Membership, history, cursor and cumulative count stay intact. The default leaves the member paused; `--run` explicitly resumes scheduling without retrying previously offered input. A pause command clears a pending rotation's resume request.
 
-**Private context resets; there is no automatic summary or memory migration.** The new Session receives its configured role/model, current CLI identity, reset notice and history-preview instructions (`read --all` / `--latest`). Preview does not change unread state. Existing posts and external effects remain and must not be replayed automatically. Retired private directories remain on disk. `dsh-turn.json` is the most recent turn diagnostic, not a handoff summary.
+**Private context resets; there is no automatic summary or memory migration.** The new Session receives its configured role/model, current CLI identity, reset notice and a bounded recent Room preview and History MCP guidance. Preview does not change unread state. Existing posts and external effects remain and must not be replayed automatically. Retired private directories remain on disk. `dsh-turn.json` is the most recent turn diagnostic, not a handoff summary.
 
 The rotation command waits about five seconds, then reports incomplete / outcome unknown if work remains owned. `member session status --agent ID --json` returns the operation ID, fixed from/to directories and last confirmed phase (`prepared → old_closed → completed`). Repeating the same ID and parameters observes the original operation; `--continue` resumes it after a known failure. Conflicting parameters and stale generations are rejected. An unhealthy Session may be explicitly discarded once every owned process, tool, reader and worker has stopped, even if original-session recovery is unavailable. Unconfirmed settlement or uncertain persistence still forbids replacement execution.
 
@@ -111,7 +109,7 @@ The DSH turn timeout defaults to 15 minutes, with 64 KiB retained output. Output
 
 The adapter binds `TEAMX_ENDPOINT`, `TEAMX_ROOM_ID`, `TEAMX_ROOM_INSTANCE`, `TEAMX_SERVICE_EPOCH`, `TEAMX_AGENT_ID` and `TEAMX_MEMBERSHIP_ID`, plus the absolute `TEAMX_CLI` path. Agent tools must preserve these bindings and cannot manage members. Operators only need the endpoint. This is a trusted local protocol, not multi-user authentication.
 
-Agents consume with `read --unread --limit 20 --json`. The CLI delivers each page, confirms the cursor, then continues. Pages contain at most 100 messages and 1 MiB of body text. Each member has one pending unread receipt, expiring after 30 seconds. Competing consumption returns busy; previews remain available. Failed stdout or confirmation cannot advance beyond an undelivered page. Committed progress never rolls back; restart expires old receipts.
+Agents formally receive Room messages, events and saved notifications through the unified Inbox. HTTP mode uses `inbox_list`/`inbox_read`; CLI mode uses `inbox list/read`. Both modes provide read-only History MCP: read a known `stream_ref` directly with `history_read`, or discover it with `history_list`, then use the returned read cursor for older pages. History and recovery previews never advance consumption. See the [Inbox guide](../../docs/inbox.zh.md).
 
 `--latest N`, `--all` and `--unread --peek` preview without moving cursors. Snapshot reads exclude later arrivals. Self-posts do not count as the author's unread and do not clear older unread input. Send deduplicates by author and client ID; identical retries return the same sequence, while conflicting content is rejected. Retry uncertain sends with the original ID and content.
 

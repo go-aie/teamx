@@ -151,7 +151,7 @@ func runCLIWithInput(ctx context.Context, args []string, stdin io.Reader, stdout
 	}
 
 	if len(args) == 0 {
-		return fmt.Errorf("usage: teamx init | doctor | serve | member add/list/remove/run/pause/session rotate | send | read | inbox read | matters list/update | policy read/update/publish | actions execute | tools list/run")
+		return fmt.Errorf("usage: teamx init | doctor | serve | member add/list/remove/run/pause/session rotate | send | inbox read | matters list/update | policy read/update/publish | actions execute | tools list/run")
 	}
 	if args[0] == "--help" || args[0] == "-h" {
 		return writeOutput(stdout, []byte(rootCLIHelp))
@@ -199,7 +199,7 @@ func runCLIWithInput(ctx context.Context, args []string, stdin io.Reader, stdout
 		if operation != "add" && operation != "list" && operation != "remove" && operation != "run" && operation != "pause" && operation != "session/rotate" && operation != "session/status" {
 			return ErrRequest
 		}
-	} else if command != "send" && command != "read" {
+	} else if command != "send" {
 		return fmt.Errorf("unknown command %q", command)
 	}
 	roomID := env("TEAMX_ROOM_ID")
@@ -208,12 +208,8 @@ func runCLIWithInput(ctx context.Context, args []string, stdin io.Reader, stdout
 	}
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	if command == "read" || command == "send" {
-		help := readCLIHelp
-		if command == "send" {
-			help = sendCLIHelp
-		}
-		flags.Usage = func() { _ = writeOutput(stdout, []byte(help)) }
+	if command == "send" {
+		flags.Usage = func() { _ = writeOutput(stdout, []byte(sendCLIHelp)) }
 	}
 	endpoint := env("TEAMX_ENDPOINT")
 	if endpoint == "" {
@@ -221,13 +217,11 @@ func runCLIWithInput(ctx context.Context, args []string, stdin io.Reader, stdout
 	}
 	flags.StringVar(&endpoint, "endpoint", endpoint, "local Room HTTP endpoint")
 	flags.StringVar(&roomID, "room", roomID, "explicit Room to address (required in management mode)")
-	asJSON := flags.Bool("json", false, "write JSON (one object per read page)")
+	asJSON := flags.Bool("json", false, "write JSON")
 	var agent, runner, profile, text, messageID string
 	var retry, cancelTurn, resume, continueRotation bool
 	var operationID, fromGeneration, rotationReason string
 	var replyTo uint64
-	var all, unread, peek bool
-	var latest, limit int
 	switch command {
 	case "member":
 		if operation != "list" {
@@ -255,12 +249,6 @@ func runCLIWithInput(ctx context.Context, args []string, stdin io.Reader, stdout
 		flags.StringVar(&text, "text", "", "message text")
 		flags.StringVar(&messageID, "id", "", "stable retry ID")
 		flags.Uint64Var(&replyTo, "reply-to", 0, "referenced message sequence")
-	case "read":
-		flags.BoolVar(&all, "all", false, "preview entire fixed snapshot")
-		flags.BoolVar(&unread, "unread", false, "consume unread messages")
-		flags.BoolVar(&peek, "peek", false, "preview unread without confirming")
-		flags.IntVar(&latest, "latest", 0, "preview latest N messages")
-		flags.IntVar(&limit, "limit", 20, "maximum other-author unread messages")
 	}
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -369,7 +357,7 @@ func runCLIWithInput(ctx context.Context, args []string, stdin io.Reader, stdout
 				return writeJSON(stdout, result)
 			}
 			if operation == "session/rotate" {
-				return writeOutput(stdout, []byte(fmt.Sprintf("rotated %s; private context reset; Room history and cursor preserved; paused=%t (use read --all/--latest for shared context)\n", agent, result.Paused)))
+				return writeOutput(stdout, []byte(fmt.Sprintf("rotated %s; private context reset; Room history and cursor preserved; paused=%t (use History MCP for retained context)\n", agent, result.Paused)))
 			}
 			return writeOutput(stdout, []byte(fmt.Sprintf("%s %s status=%s paused=%t active=%t\n", operation, agent, result.Status, result.Paused, result.Active)))
 		}
@@ -404,100 +392,7 @@ func runCLIWithInput(ctx context.Context, args []string, stdin io.Reader, stdout
 		}
 		return nil
 	}
-	modeCount := 0
-	if all {
-		modeCount++
-	}
-	if unread {
-		modeCount++
-	}
-	if latest != 0 {
-		modeCount++
-	}
-	if modeCount > 1 {
-		return invalidField("read mode", "--all, --unread and --latest are mutually exclusive")
-	}
-	if latest < 0 {
-		return invalidField("latest", "must not be negative")
-	}
-	if limit < 1 || limit > maxMessages {
-		return invalidField("limit", fmt.Sprintf("must be between 1 and %d", maxMessages))
-	}
-	if peek && !unread {
-		return invalidField("peek", "requires --unread")
-	}
-	req.Mode, req.Latest = ReadLatest, latest
-	if req.Latest == 0 {
-		req.Latest = 20
-	}
-	if all {
-		req.Mode, req.Latest = ReadAll, 0
-	}
-	if unread {
-		req.Mode, req.Latest, req.Limit, req.Peek = ReadUnread, 0, limit, peek
-	}
-	return readCLI(ctx, client, req, stdout, *asJSON)
-}
-
-func readCLI(ctx context.Context, client cliClient, req apiRequest, stdout io.Writer, asJSON bool) error {
-	for {
-		var page ReadPage
-		if err := client.request(ctx, "/v1/read", &req, &page); err != nil {
-			return fmt.Errorf("read incomplete: %w", err)
-		}
-		var output bytes.Buffer
-		if asJSON {
-			var view any = page
-			if req.Caller.Kind == "agent" {
-				view = projectRoomRead(page)
-			}
-			if err := json.NewEncoder(&output).Encode(view); err != nil {
-				return err
-			}
-		} else {
-			fmt.Fprintf(&output, "Room %s instance=%s snapshot=%d from=%d through=%d has_more=%t unread=%d\n", page.RoomID, page.RoomInstance, page.SnapshotSeq, page.FromExclusive, page.ScannedThrough, page.HasMore, page.UnreadCount)
-			for _, m := range page.Messages {
-				text := m.Text
-				var event *agentRoomEvent
-				if req.Caller.Kind == "agent" {
-					view := projectRoomMessage(m)
-					text, event = view.Text, view.Event
-				}
-				fmt.Fprintf(&output, "[%d] %s/%s: %s\n", m.Seq, m.Author.Kind, m.Author.ID, text)
-				if event != nil {
-					data, err := json.Marshal(event)
-					if err != nil {
-						return err
-					}
-					fmt.Fprintf(&output, "  event: %s\n", data)
-				}
-			}
-		}
-		if err := writeOutput(stdout, output.Bytes()); err != nil {
-			return fmt.Errorf("page output incomplete; this page was not confirmed: %w", err)
-		}
-		if page.ReadReceipt != "" {
-			confirm := req
-			confirm.ReadReceipt = page.ReadReceipt
-			var result ReadConfirmation
-			if err := client.request(ctx, "/v1/read/confirm", &confirm, &result); err != nil {
-				return fmt.Errorf("page output complete; confirmation failed or uncertain (receipt=%s through=%d); read incomplete: %w", page.ReadReceipt, page.ScannedThrough, err)
-			}
-		}
-		if !page.HasMore {
-			return nil
-		}
-		if page.NextAfter <= page.FromExclusive {
-			return fmt.Errorf("read incomplete: non-advancing page")
-		}
-		next, snapshot := page.NextAfter, page.SnapshotSeq
-		req.After, req.SnapshotSeq = &next, &snapshot
-		if req.Mode == ReadUnread {
-			req.Limit = page.Remaining
-		} else {
-			req.Mode, req.Latest = ReadRange, 0
-		}
-	}
+	return ErrRequest
 }
 
 func writeJSON(w io.Writer, value any) error {

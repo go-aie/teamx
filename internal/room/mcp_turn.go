@@ -58,4 +58,10 @@ func (s *Store) finishMCPTurn(id MemberIdentity, turn uint64) {
 	op.closing = true
 	s.mcpOperations.mu.Unlock()
 	op.active.Wait()
+	if value, ok := s.inputHandles.Load(id.MembershipID); ok {
+		p := value.(*platformInputStorage)
+		if p.id == id {
+			p.clearHistory(turn)
+		}
+	}
 }

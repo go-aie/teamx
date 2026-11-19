@@ -18,7 +18,7 @@ const fs=require('fs');const assert=require('node:assert/strict');
   assert.equal(await page.locator('#agent-enable-hint').isVisible(),false);
   assert.equal(await page.locator('#agent-actions button').first().innerText(),'暂停');
   await page.screenshot({path:output+'/browser-threshold.png',fullPage:true});
-  await page.locator('#message-input').fill('First run exactly "$TEAMX_CLI" read --unread --json in bash to consume this message. Answer privately S3_TURN_7. Do not send to the Room or use any other tools.');
+  await page.locator('#message-input').fill('First use inbox_read to consume this Room message. Answer privately S3_TURN_7. Do not send to the Room or use any other tools.');
   await page.locator('#message-input').press('Enter');
   await page.locator('#activity-budget').filter({hasText:'1 / 2 · 累计 7'}).waitFor({timeout:180000});
   await page.locator('#agent-status').filter({hasText:'等待消息'}).waitFor({timeout:180000});

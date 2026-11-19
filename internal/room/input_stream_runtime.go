@@ -88,6 +88,11 @@ func (s *service) inputStorage(id MemberIdentity) (*platformInputStorage, error)
 }
 
 func (r *Store) roomInputProtected(through uint64) error {
+	for retained, count := range r.roomHistoryPins {
+		if count > 0 && through > retained {
+			return ErrBusy
+		}
+	}
 	if through > 0 {
 		var disk RoomSnapshot
 		if err := readSnapshot(filepath.Join(r.dir, "room.json"), &disk, maxRoomFileBytes); err == nil && through > disk.ClearedThrough {

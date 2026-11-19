@@ -1,0 +1,544 @@
+{
+  "status": "passed",
+  "date": "2026-11-19",
+  "scope": "H3 isolated integration; production tools and existing Sessions unchanged; H4 pending",
+  "model": "deepseek-v4.1-flash-1017",
+  "real_model_samples": 24,
+  "external_business_writes": 0,
+  "source_reports": {
+    "scenarios": ".local/history-integration-model-20261119-03/report.json",
+    "recovery": ".local/history-recovery-model-20261119-09/report.json",
+    "gitlab": ".local/history-platform-gitlab-20261119-02/report.json",
+    "lark": ".local/history-platform-lark-20261119-01/report.json",
+    "capacity": ".local/history-capacity-20261119-07/report.json"
+  },
+  "fixture_model_scenarios": [
+    {
+      "scenario": "recent_room",
+      "samples": 3,
+      "passed": true,
+      "history_calls": [
+        1,
+        1,
+        1
+      ],
+      "actual_calls": [
+        [
+          {
+            "tool": "history_read",
+            "argument_fields": [
+              "stream_ref"
+            ]
+          }
+        ],
+        [
+          {
+            "tool": "history_read",
+            "argument_fields": [
+              "stream_ref"
+            ]
+          }
+        ],
+        [
+          {
+            "tool": "history_read",
+            "argument_fields": [
+              "stream_ref"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "scenario": "mr_recall",
+      "samples": 3,
+      "passed": true,
+      "history_calls": [
+        1,
+        1,
+        1
+      ],
+      "actual_calls": [
+        [
+          {
+            "tool": "history_read",
+            "argument_fields": [
+              "stream_ref"
+            ]
+          }
+        ],
+        [
+          {
+            "tool": "history_read",
+            "argument_fields": [
+              "stream_ref"
+            ]
+          }
+        ],
+        [
+          {
+            "tool": "history_read",
+            "argument_fields": [
+              "stream_ref"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "scenario": "directory_consumed",
+      "samples": 3,
+      "passed": true,
+      "history_calls": [
+        2,
+        2,
+        2
+      ],
+      "actual_calls": [
+        [
+          {
+            "tool": "history_list",
+            "argument_fields": [
+              "limit"
+            ]
+          },
+          {
+            "tool": "history_read",
+            "argument_fields": [
+              "stream_ref"
+            ]
+          }
+        ],
+        [
+          {
+            "tool": "history_list",
+            "argument_fields": [
+              "limit"
+            ]
+          },
+          {
+            "tool": "history_read",
+            "argument_fields": [
+              "stream_ref"
+            ]
+          }
+        ],
+        [
+          {
+            "tool": "history_list",
+            "argument_fields": []
+          },
+          {
+            "tool": "history_read",
+            "argument_fields": [
+              "stream_ref"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "scenario": "lark_image",
+      "samples": 3,
+      "passed": true,
+      "history_calls": [
+        1,
+        1,
+        1
+      ],
+      "actual_calls": [
+        [
+          {
+            "tool": "history_read",
+            "argument_fields": [
+              "stream_ref"
+            ]
+          }
+        ],
+        [
+          {
+            "tool": "history_read",
+            "argument_fields": [
+              "stream_ref"
+            ]
+          }
+        ],
+        [
+          {
+            "tool": "history_read",
+            "argument_fields": [
+              "stream_ref"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "scenario": "older_cursor",
+      "samples": 3,
+      "passed": true,
+      "history_calls": [
+        3,
+        3,
+        3
+      ],
+      "actual_calls": [
+        [
+          {
+            "tool": "history_read",
+            "argument_fields": [
+              "limit",
+              "stream_ref"
+            ]
+          },
+          {
+            "tool": "history_read",
+            "argument_fields": [
+              "cursor"
+            ]
+          },
+          {
+            "tool": "history_read",
+            "argument_fields": [
+              "cursor"
+            ]
+          }
+        ],
+        [
+          {
+            "tool": "history_read",
+            "argument_fields": [
+              "limit",
+              "stream_ref"
+            ]
+          },
+          {
+            "tool": "history_read",
+            "argument_fields": [
+              "cursor"
+            ]
+          },
+          {
+            "tool": "history_read",
+            "argument_fields": [
+              "cursor"
+            ]
+          }
+        ],
+        [
+          {
+            "tool": "history_read",
+            "argument_fields": [
+              "limit",
+              "stream_ref"
+            ]
+          },
+          {
+            "tool": "history_read",
+            "argument_fields": [
+              "cursor"
+            ]
+          },
+          {
+            "tool": "history_read",
+            "argument_fields": [
+              "cursor"
+            ]
+          }
+        ]
+      ]
+    }
+  ],
+  "recovery": [
+    {
+      "inbox_mode": "http",
+      "old_session_sha256": "bdc671d22646f6fd5aaa657c0759dfa0d69fc573a977a1c2a2934de6cf9e6dbe",
+      "new_session_sha256": "54961b144c07ce703041e77e25538b5d50fa53f8ff9d7b80078b20e58ec77b39",
+      "changed_resume_rejected": true,
+      "before_refresh_tools": [
+        "inbox_list",
+        "inbox_read"
+      ],
+      "discovered_tools": [
+        "history_list",
+        "history_read",
+        "inbox_list",
+        "inbox_read"
+      ],
+      "history_calls": 1,
+      "formal_room_pages": 1,
+      "business_query_paths": [
+        "/v1/actions/list",
+        "/v1/matters/read"
+      ],
+      "action_records_unchanged": true,
+      "platform_consumption_unchanged": true,
+      "saved_question_count": 1,
+      "local_sink_calls": 2,
+      "rejected_write_attempts": 0
+    },
+    {
+      "inbox_mode": "cli",
+      "old_session_sha256": "724e97892947adf545c3c6354faedb4d4bf10de3acb6f1f88ab01e12f7eac752",
+      "new_session_sha256": "e62c874cf2e03d53fcb6534e547789c60e12151d8d54c499842aae11c0b416f6",
+      "changed_resume_rejected": true,
+      "before_refresh_tools": [],
+      "discovered_tools": [
+        "history_list",
+        "history_read"
+      ],
+      "history_calls": 1,
+      "formal_room_pages": 1,
+      "business_query_paths": [
+        "/v1/inputs",
+        "/v1/inputs",
+        "/v1/actions/list",
+        "/v1/matters/read"
+      ],
+      "action_records_unchanged": true,
+      "platform_consumption_unchanged": true,
+      "saved_question_count": 1,
+      "local_sink_calls": 2,
+      "rejected_write_attempts": 0
+    },
+    {
+      "inbox_mode": "http",
+      "old_session_sha256": "2021440153f5647b4b95ad4d933bebd63313e7ab77a604962f7f657265f82214",
+      "new_session_sha256": "57fed8345563ac751ed463b7002d778a005f3682be7b071f63f8e67489d62faf",
+      "changed_resume_rejected": true,
+      "before_refresh_tools": [
+        "inbox_list",
+        "inbox_read"
+      ],
+      "discovered_tools": [
+        "history_list",
+        "history_read",
+        "inbox_list",
+        "inbox_read"
+      ],
+      "history_calls": 1,
+      "formal_room_pages": 1,
+      "business_query_paths": [
+        "/v1/actions/list",
+        "/v1/matters/read"
+      ],
+      "action_records_unchanged": true,
+      "platform_consumption_unchanged": true,
+      "saved_question_count": 1,
+      "local_sink_calls": 2,
+      "rejected_write_attempts": 0
+    }
+  ],
+  "live_platforms": {
+    "gitlab": {
+      "samples": 3,
+      "material_path": "existing GitLab upload parser/downloader, explicit same-recipient GET-only credential; managed OAuth lifecycle not exercised",
+      "authority_unchanged": true,
+      "history_calls": [
+        1,
+        1,
+        1
+      ],
+      "actual_mcp_images": [
+        {
+          "mime": "image/png",
+          "bytes": 10513,
+          "sha256": "849930d62e3e2882533a4c3b908fe2f47055b85b64d56d6ee2dd4e92527dca10"
+        },
+        {
+          "mime": "image/png",
+          "bytes": 10513,
+          "sha256": "849930d62e3e2882533a4c3b908fe2f47055b85b64d56d6ee2dd4e92527dca10"
+        },
+        {
+          "mime": "image/png",
+          "bytes": 10513,
+          "sha256": "849930d62e3e2882533a4c3b908fe2f47055b85b64d56d6ee2dd4e92527dca10"
+        }
+      ],
+      "model_pixel_answers_verified": true
+    },
+    "lark": {
+      "samples": 3,
+      "material_path": "managed Lark member binding/profile and production image resource downloader",
+      "authority_unchanged": true,
+      "history_calls": [
+        1,
+        1,
+        1
+      ],
+      "actual_mcp_images": [
+        {
+          "mime": "image/jpeg",
+          "bytes": 566397,
+          "sha256": "ed02b5f763cbb50fc0ebcee408647f2c1f46c70d62431759950980cc869ae565"
+        },
+        {
+          "mime": "image/jpeg",
+          "bytes": 566397,
+          "sha256": "ed02b5f763cbb50fc0ebcee408647f2c1f46c70d62431759950980cc869ae565"
+        },
+        {
+          "mime": "image/jpeg",
+          "bytes": 566397,
+          "sha256": "ed02b5f763cbb50fc0ebcee408647f2c1f46c70d62431759950980cc869ae565"
+        }
+      ],
+      "model_pixel_answers_verified": true
+    }
+  },
+  "capacity": {
+    "body_entries": 10,
+    "body_pages": 4,
+    "cold_storage_open_ms": 1593.418,
+    "concurrent_authority": {
+      "appended": 1,
+      "other_member_formally_consumed": 20,
+      "reclaimed": 32
+    },
+    "directory_locate_calls": {
+      "all_directory_pages": 101,
+      "first_screen": 2,
+      "known_stream": 1,
+      "last_screen_with_limit_20": 102
+    },
+    "fixture": "verified preserved full-capacity fixture, copied into a fresh disposable Store; no model or provider",
+    "heap_bytes": 122469096,
+    "heap_delta_bytes": 121186456,
+    "large_limit_supplied": {
+      "entries": 429,
+      "has_older": true,
+      "text_bytes": 261388
+    },
+    "latency": {
+      "cold_directory": {
+        "max_ms": 718.425,
+        "min_ms": 718.425,
+        "p95_ms": 718.425,
+        "samples": 1
+      },
+      "concurrent_directory": {
+        "max_ms": 1468.658,
+        "min_ms": 1468.658,
+        "p95_ms": 1468.658,
+        "samples": 1
+      },
+      "concurrent_formal_consumption": {
+        "max_ms": 14882.039,
+        "min_ms": 14882.039,
+        "p95_ms": 14882.039,
+        "samples": 1
+      },
+      "concurrent_other_room_read": {
+        "max_ms": 0.039,
+        "min_ms": 0.039,
+        "p95_ms": 0.039,
+        "samples": 1
+      },
+      "concurrent_reclaim_then_append": {
+        "max_ms": 2679.083,
+        "min_ms": 2679.083,
+        "p95_ms": 2679.083,
+        "samples": 1
+      },
+      "continuous_body_pages": {
+        "max_ms": 1160.522,
+        "min_ms": 1160.522,
+        "p95_ms": 1160.522,
+        "samples": 1
+      },
+      "deep_directory_all_pages": {
+        "max_ms": 18521.587,
+        "min_ms": 18521.587,
+        "p95_ms": 18521.587,
+        "samples": 1
+      },
+      "formal_consumption_without_history_output": {
+        "max_ms": 13041.573,
+        "min_ms": 13041.573,
+        "p95_ms": 13041.573,
+        "samples": 1
+      },
+      "known_stream_recent": {
+        "max_ms": 105.646,
+        "min_ms": 93.405,
+        "p95_ms": 104.159,
+        "samples": 20
+      },
+      "other_room_read": {
+        "max_ms": 2.387,
+        "min_ms": 0.548,
+        "p95_ms": 0.755,
+        "samples": 20
+      },
+      "room_large_limit": {
+        "max_ms": 856.544,
+        "min_ms": 856.544,
+        "p95_ms": 856.544,
+        "samples": 1
+      },
+      "shared_recent": {
+        "max_ms": 852.348,
+        "min_ms": 852.348,
+        "p95_ms": 852.348,
+        "samples": 1
+      },
+      "store_lock_while_history_output_held": {
+        "max_ms": 1.103,
+        "min_ms": 1.103,
+        "p95_ms": 1.103,
+        "samples": 1
+      },
+      "warm_directory": {
+        "max_ms": 1075.085,
+        "min_ms": 806.848,
+        "p95_ms": 975.299,
+        "samples": 20
+      }
+    },
+    "logical_streams": 2001,
+    "private_records": 10000,
+    "room_records": 10000,
+    "shared_records": 10000,
+    "status": "passed",
+    "system_bytes": 329685320,
+    "latency_note": "p95 over 20 samples only for warm directory, known stream and other Room; single-sample rows are timings, not percentile estimates. Metadata/process warm, no OS cache flush. Local concurrent workload, not deployment SLA.",
+    "metadata_warm_baseline_report": ".local/history-capacity-20261119-01/report.json",
+    "metadata_warm_baseline_p95_ms": {
+      "known_stream_recent": 127.267,
+      "other_room_read": 1.054,
+      "warm_directory": 148.003
+    }
+  },
+  "checks": {
+    "integration_race": {
+      "status": "passed",
+      "log": ".local/history-integration-race.log"
+    },
+    "final_history_recovery_race": {
+      "status": "passed",
+      "log": ".local/history-final-race.log"
+    },
+    "full_dsh_and_inputstream": {
+      "status": "passed",
+      "log": ".local/history-storage-dsh-regression.log"
+    },
+    "all_packages_e2e_compile": {
+      "status": "passed",
+      "log": ".local/history-final-build-all.log"
+    },
+    "vet_e2e_composites_disabled": {
+      "status": "passed",
+      "log": ".local/history-final-vet-all.log"
+    },
+    "full_room_suite": "not claimed; earlier H1/H2 timeout boundary retained"
+  },
+  "boundaries": [
+    "Fixture pixel tasks are separate from live provider downloads.",
+    "Recovery remote actions are preseeded local contract-sink results; real ledger queries, no remote action execution.",
+    "Same-member reads retain the existing serial lease.",
+    "Last-screen directory discovery costs 102 calls for 2001 streams with list limit 20.",
+    "Full-capacity formal Room consumption remains slow; the no-History-output control is recorded.",
+    "Production enablement, old command removal and authorized live Session refresh belong to H4."
+  ]
+}

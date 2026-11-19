@@ -339,7 +339,7 @@ func TestAgentRoomReadUsesNamesWithoutInternalMentionBindings(t *testing.T) {
 				req.Caller = agentCaller("A", "membership")
 			}
 			var stdout bytes.Buffer
-			if err := readCLI(context.Background(), cliClient{endpoint: server.URL, http: server.Client()}, req, &stdout, true); err != nil {
+			if err := readRoomPagesForTest(context.Background(), cliClient{endpoint: server.URL, http: server.Client()}, req, &stdout, true); err != nil {
 				t.Fatal(err)
 			}
 			var got map[string]any
@@ -385,7 +385,7 @@ func TestAgentRoomPlainReadUsesCurrentMentionNames(t *testing.T) {
 			req.Caller, want = agentCaller("A", "member-A"), "@新名称 请处理"
 		}
 		var output bytes.Buffer
-		if err := readCLI(context.Background(), cliClient{endpoint: server.URL, http: server.Client()}, req, &output, false); err != nil {
+		if err := readRoomPagesForTest(context.Background(), cliClient{endpoint: server.URL, http: server.Client()}, req, &output, false); err != nil {
 			t.Fatal(err)
 		}
 		if !strings.Contains(output.String(), want) {

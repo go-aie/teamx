@@ -7,3 +7,7 @@
 | [日历界面与任务信息分层](calendar/refinement.zh.md) | 紧凑工具栏、月历导航、分钟时间轴、分层表单与详情；桌面及手机视口验证 |
 | [私信日历首版交付与组合验收](calendar/release.zh.md) | C4 重复任务、会话隔离、暂停恢复、离线周期、受管服务重建与页面组合；汇总 C1–C3 证据，区分真实模型、受控执行和模拟视口 |
 | [会话日历体验与管理](calendar/experience.zh.md) | C3 周视图、手机日程、任务编辑、历史与聊天跳转；浏览器视口模拟，首版组合与交付见上条 |
+| [Agent 历史入口收敛与生产路径验收](agent-history-h4.zh.md) | 默认 History MCP、旧 CLI 退出及生产路径验证；现有运行服务的切换独立记录 |
+| [Agent 历史恢复与集成验收](agent-history-h3.zh.md) | H3 隔离 Agent／恢复指引、真实 DSH 代表任务、真实 GitLab／飞书图文、工具集安全刷新及容量并发；旧命令和正式服务切换留 H4 |
+| [Agent 历史 MCP 与图文交付](agent-history-h2.zh.md) | H2 隔离两工具、HTTP／CLI 模式、材料与账号复用、输出生命周期和真实 DSH／ACP 图文小样本；生产尚未启用 |
+| [Agent 历史读取视图与续页](agent-history-h1.zh.md) | H1 保留流目录、固定快照、正文续页、预算与只读边界 |

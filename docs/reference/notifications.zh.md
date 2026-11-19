@@ -93,6 +93,14 @@ Agent 单元与摘要统一返回 unit_ref／unit_version（未解析摘要返�
 
 ## Room 问答与规则
 
+### 已保存通知的历史回查
+
+History MCP 复用通知的原生归组、保存正文、来源证据和材料适配。`history_list` 包含仍有可见保留记录的私有／共享流，`history_read` 可直接复用 Inbox 或恢复材料里的 `stream_ref`，即使通知已消费、已合法跳过或没有事项关联。目录不查询正文或事项，历史读取也不补采远端讨论、不新建来源关联。首次请求和 cursor 续页示例见 [Inbox 手册](../inbox.zh.md#回看保留历史与-session-恢复)。
+
+本地正文阅读无需启用平台工具或 Workspace；需要远端下载图片时，仍核验当前成员自己的账号和绑定，不能借用采集账号。共享正文继续核验当前有效 Grant 与冻结接收集合，撤权后缓存及旧 cursor 都不再供给。图片成功返回实际 MCP image 块；预算、权限或远端失败逐张给出原因。History 不替代 `matters read` 的已有问答、进度及动作回执，也不把旧通知升级为当前授权。
+
+### 问答与规则写入
+
 规则覆盖且事实充分时直接办理，缺少关键决定时先完成独立工作，再用 `matters notify --change JSON` 保存准确单元、原生 message_refs、问题 text 和 proposed `{operation,body 或 constraints}`。问题保存后才公开发送，正文 @ 当前 Room 操作者；回执 question 表示已保存，publication=published 与 send_receipt 表示公开发送已确认；unconfirmed 表示未确认发送，published_link_pending 表示发送确认但本地关联待恢复，均沿用原问题与 ID 核对同一问题和 Room 回执，不重复提问。
 
 用户正常回复即可。`matters read` 自动关联真实 human 的显式 reply_to；无引用但上下文明确时用 `matters reply --change JSON` 提交准确 question_ref、source_seq 和 basis，服务端复制真实原文。歧义只澄清关联，不默认使用最后一个问题。即时动作可直接引用答复，跨回合才用 `matters instruct` 保存准确单次指令，`instruction-status` 使用 instruction_ref／instruction_version 记录落实或真实用户撤销。一次答复不成为长期许可，也无需到 UI 再填写决定。

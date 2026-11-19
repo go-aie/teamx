@@ -80,7 +80,7 @@ func TestRealCLIRestartRestoresMembersSessionsAndToolIdentity(t *testing.T) {
 		t.Fatal("lazy recovery changed Session", privateBefore, privateAfter, err)
 	}
 	// Old CLI tools must fail even when redirected to the new listening port.
-	stale := exec.CommandContext(ctx, binary, "read", "--unread", "--json")
+	stale := exec.CommandContext(ctx, binary, "send", "--text", "stale", "--id", "stale")
 	stale.Env = append(cleanRoomEnv(), "TEAMX_ENDPOINT="+second.Endpoint, "TEAMX_ROOM_ID="+first.RoomID,
 		"TEAMX_ROOM_INSTANCE="+first.RoomInstance, "TEAMX_SERVICE_EPOCH="+first.ServiceEpoch,
 		"TEAMX_AGENT_ID="+a.AgentID, "TEAMX_MEMBERSHIP_ID="+a.MembershipID)
@@ -107,9 +107,14 @@ func TestRealCLIRestartRestoresMembersSessionsAndToolIdentity(t *testing.T) {
 		privateAfter.Turns != 2 || privateAfter.ScriptPosition != 2 || len(privateAfter.LastRead) != 1 || privateAfter.LastRead[0].Text != "after restart" {
 		t.Fatal("private state or CLI environment was not restored", privateAfter, err)
 	}
-	if output := second.run(t, "read", "--all", "--json"); bytes.Contains(output, []byte("private turn")) || !bytes.Contains(output, []byte("A read 1 message(s); last: after restart")) {
-		t.Fatal(string(output))
+	var public bytes.Buffer
+	if err := readRoomPagesForTest(ctx, client, apiRequest{ServiceInfo: second.ServiceInfo, Caller: humanCaller, Mode: ReadAll}, &public, true); err != nil {
+		t.Fatal(err)
 	}
+	if bytes.Contains(public.Bytes(), []byte("private turn")) || !bytes.Contains(public.Bytes(), []byte("A read 1 message(s); last: after restart")) {
+		t.Fatal(public.String())
+	}
+
 	second.run(t, "member", "remove", "--agent", "A")
 	second.stop(t)
 	if _, err := os.Stat(filepath.Join(dir, "agents", removed.MembershipID, "session.json")); err != nil {

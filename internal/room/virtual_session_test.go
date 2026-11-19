@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -118,12 +119,23 @@ func (s *virtualSession) Run(ctx context.Context, input UnreadChanged) (runErr e
 	if action == "ignore" {
 		return nil
 	}
-	// Body access is only through a real CLI subprocess. Five messages keep
-	// both the tool output and the persisted private snapshot bounded.
-	output, err := s.cli(ctx, "read", "--unread", "--limit", "5", "--json")
+	// Exercise native Room reads; the production read CLI has retired.
+	values := map[string]string{}
+	for _, entry := range s.opts.CLIEnv {
+		k, v, _ := strings.Cut(entry, "=")
+		values[k] = v
+	}
+	client := cliClient{endpoint: values["TEAMX_ENDPOINT"], http: &http.Client{Timeout: 15 * time.Second}}
+	req, err := client.identity(ctx, s.opts.RoomID, func(k string) string { return values[k] })
 	if err != nil {
 		return err
 	}
+	req.Mode, req.Limit = ReadUnread, 5
+	var body bytes.Buffer
+	if err := readRoomPagesForTest(ctx, client, req, &body, true); err != nil {
+		return err
+	}
+	output := body.Bytes()
 	dec := json.NewDecoder(bytes.NewReader(output))
 	for {
 		var page ReadPage

@@ -7,9 +7,16 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/go-aie/teamx/internal/agent/dsh"
 )
+
+type inputMCPBinding struct {
+	*inputSession
+	ctx    context.Context
+	active sync.WaitGroup // Admission and deletion serialize under serverAccess.mu.
+}
 
 type mcpIdentityKey struct{}
 type mcpIdentity struct {
@@ -94,8 +101,21 @@ func (a *serverAccess) serveMCP(w http.ResponseWriter, r *http.Request) {
 	a.mu.Lock()
 	input := a.inputBindings[sha256.Sum256([]byte(token))]
 	e := a.mcpExecutions[sha256.Sum256([]byte(token))]
+	if input != nil {
+		input.active.Add(1)
+	}
 	a.mu.Unlock()
 	if input != nil {
+		defer input.active.Done()
+		ctx, cancel := context.WithCancel(r.Context())
+		stop := context.AfterFunc(input.ctx, cancel)
+		defer stop()
+		defer cancel()
+		if input.ctx.Err() != nil {
+			accessError(w, 403, "identity_mismatch")
+			return
+		}
+		r = r.WithContext(ctx)
 		if err := input.check(r.Context()); err != nil {
 			accessError(w, 403, "identity_mismatch")
 			return
@@ -127,19 +147,10 @@ func (a *serverAccess) serveMCP(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write([]byte("{}"))
 			return
 		}
-		if input.service.inboxMode == "cli" {
-			accessError(w, 403, "input_entry_mode")
-			return
-		}
 		r.Body = io.NopCloser(strings.NewReader(string(data)))
-		ctx := context.WithValue(r.Context(), inputSessionKey{}, input)
+		ctx = context.WithValue(r.Context(), inputSessionKey{}, input.inputSession)
 		ctx = context.WithValue(ctx, inputCallKey{}, call)
-		a.mu.Lock()
-		if a.inputMCP == nil {
-			a.inputMCP = newInputMCPHTTP(true)
-		}
-		h := a.inputMCP
-		a.mu.Unlock()
+		h := a.inputMCPFor(input.service.inboxMode == "cli")
 		h.ServeHTTP(w, r.WithContext(ctx))
 		return
 	}
@@ -162,12 +173,7 @@ func (a *serverAccess) serveMCP(w http.ResponseWriter, r *http.Request) {
 	ctx = context.WithValue(ctx, mcpIdentityKey{}, e.identity)
 	ctx = context.WithValue(ctx, mcpExecutionKey{}, e)
 	if e.inbox != nil && e.inbox.service.unifiedInputs {
-		a.mu.Lock()
-		if a.inputMCP == nil {
-			a.inputMCP = newInputMCPHTTP(true)
-		}
-		h := a.inputMCP
-		a.mu.Unlock()
+		h := a.inputMCPFor(e.inbox.service.inboxMode == "cli")
 		h.ServeHTTP(w, r.WithContext(ctx))
 		return
 	}
@@ -185,15 +191,37 @@ func (a *serverAccess) issueInputBinding(s *inputSession) (string, func(), error
 	key := sha256.Sum256([]byte(token))
 	a.mu.Lock()
 	if a.inputBindings == nil {
-		a.inputBindings = map[[32]byte]*inputSession{}
+		a.inputBindings = map[[32]byte]*inputMCPBinding{}
 	}
-	a.inputBindings[key] = s
+	ctx, cancel := context.WithCancel(context.Background())
+	binding := &inputMCPBinding{inputSession: s, ctx: ctx}
+	a.inputBindings[key] = binding
 	a.mu.Unlock()
-	return token, func() { a.mu.Lock(); delete(a.inputBindings, key); a.mu.Unlock() }, nil
+	return token, sync.OnceFunc(func() {
+		a.mu.Lock()
+		delete(a.inputBindings, key)
+		cancel()
+		a.mu.Unlock()
+		binding.active.Wait()
+		s.storage.discardHistoryResults(s.execution.Turn)
+	}), nil
 }
 
 // Shared ACP declaration; temporary credentials never become model arguments.
 func mcpHTTPConfiguration(endpoint, token string) dsh.MCPHTTPServer {
 	return dsh.MCPHTTPServer{Type: "http", Name: "teamx", URL: strings.TrimSuffix(endpoint, "/") + "/mcp",
 		Headers: []dsh.MCPHeader{{Name: "Authorization", Value: "Bearer " + token}}}
+}
+
+// Both credential paths use the same production tool set and transport policy.
+func (a *serverAccess) inputMCPFor(cliInbox bool) *mcpHTTP {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.inputMCP == nil {
+		a.inputMCP = make(map[bool]*mcpHTTP)
+	}
+	if a.inputMCP[cliInbox] == nil {
+		a.inputMCP[cliInbox] = newHistoryMCPHTTP(cliInbox)
+	}
+	return a.inputMCP[cliInbox]
 }

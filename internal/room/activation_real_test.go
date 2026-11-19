@@ -418,7 +418,7 @@ func (d *realRoomDriver) acceptManagedRooms(t *testing.T) error {
 			return err
 		}
 		var page ReadPage
-		if err := d.command(&page, "read", "--all"); err != nil {
+		if err := d.readRoomSnapshot(&page); err != nil {
 			return err
 		}
 		found := false

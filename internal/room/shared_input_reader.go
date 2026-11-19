@@ -193,6 +193,12 @@ func (s *service) closeSharedMember(ctx context.Context, id MemberIdentity) erro
 	if p == nil {
 		return nil
 	}
+	member, err := s.inputStorage(id)
+	if err != nil {
+		return err
+	}
+	member.historyHandoff.Lock()
+	defer member.historyHandoff.Unlock()
 	for _, g := range p.view.Load().root.Grants {
 		if g.Member != inputMember(id) || g.Status == "closed" {
 			continue

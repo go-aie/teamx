@@ -362,6 +362,7 @@ func (s *Store) closeInputOwners(ctx context.Context) error {
 		if _, err := p.owner.Call[struct{}](ctx, quiesceMemberInputs{p.id}); err != nil && !errors.Is(err, actorx.ErrStopped) {
 			return err
 		}
+		p.clearHistory(0)
 	}
 	if shared := s.sharedHandle.Load(); shared != nil {
 		if _, err := shared.owner.Call[struct{}](ctx, quiesceSharedInputs{}); err != nil && !errors.Is(err, actorx.ErrStopped) {
@@ -390,6 +391,7 @@ func (s *Store) retireMemberInputs(ctx context.Context, membership string) error
 	if _, err := p.owner.Call[struct{}](ctx, quiesceMemberInputs{p.id}); err != nil && !errors.Is(err, actorx.ErrStopped) {
 		return err
 	}
+	p.clearHistory(0)
 	_ = p.owner.Stop(nil)
 	exit, err := p.owner.Wait(ctx)
 	if err != nil {

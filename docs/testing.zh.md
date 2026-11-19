@@ -308,3 +308,8 @@ make test-integration TEST_TIMEOUT=20m
 make test-race TEST_TIMEOUT=30m TEST_PACKAGES='./internal/room ./internal/platform/notification ./internal/agent/dsh'
 make test-e2e-check
 ```
+
+
+### Agent History 生产入口
+
+History 默认工具集与旧 Room 读取 CLI 退出的证据见 [H4 实施记录](implementation/agent-history-h4.zh.md)。`TestHistoryProductionServiceRealDSH` 在显式启用时通过正常服务构造、成员调度、真实 DSH／ACP 和模型核验两种 Inbox 模式的工具发现、图文、cursor 续页与消费边界；通知和图片下载使用 fixture。它与真实平台材料验收、日常运行服务的正式切换分别记录，不进入普通 CI。复跑需要现有模型目录和新绝对输出目录，命令见该记录。

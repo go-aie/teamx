@@ -127,7 +127,7 @@ func (d *realRoomDriver) rotationAcceptance() error {
 	d.report["businessRecordPreserved"], d.report["duplicateOperationIdempotent"] = true, true
 	d.report["rotation"], d.report["preservedRoom"], d.report["newDirectory"] = rotated, after, ref.Directory
 	d.phase("history-context-after-rotation")
-	text := "Read this new message, then use the TeamX CLI read --all --json to recover the shared history token from the first Room message. Include that token in your ordinary private answer. Do not send to the Room."
+	text := "Read this new message formally, then recover the shared history token from the bounded Room recovery preview. If more saved context is needed and History MCP is available, use history_read with the Room stream_ref. Include that token in your ordinary private answer. Do not send to the Room."
 	if err := d.command(nil, "send", "--text", text, "--id", "recover-history"); err != nil {
 		return err
 	}
@@ -251,7 +251,7 @@ func (d *realRoomDriver) rotationAcceptance() error {
 		return err
 	}
 	var page ReadPage
-	if err := d.command(&page, "read", "--all"); err != nil {
+	if err := d.readRoomSnapshot(&page); err != nil {
 		return err
 	}
 	if page.HasMore || len(page.Messages) != 4 {

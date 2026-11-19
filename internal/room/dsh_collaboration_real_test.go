@@ -274,7 +274,7 @@ func (d *realRoomDriver) collaborate() error {
 		return err
 	}
 	var page ReadPage
-	if err := d.command(&page, "read", "--all"); err != nil {
+	if err := d.readRoomSnapshot(&page); err != nil {
 		return err
 	}
 	if err := verifyCollaborationPublic(page, 7, ack, markerA, markerB); err != nil {
@@ -315,7 +315,7 @@ func (d *realRoomDriver) collaborate() error {
 		}
 	}
 	// Old tools remain bound to the previous service even at the new endpoint.
-	stale := exec.CommandContext(d.ctx, d.binary, "read", "--unread", "--json")
+	stale := exec.CommandContext(d.ctx, d.binary, "send", "--text", "stale", "--id", "stale")
 	stale.Env = append(operatorEnv(d.endpoint), "TEAMX_ROOM_ID="+previous.RoomID, "TEAMX_ROOM_INSTANCE="+previous.RoomInstance, "TEAMX_SERVICE_EPOCH="+previous.ServiceEpoch, "TEAMX_AGENT_ID=reviewer", "TEAMX_MEMBERSHIP_ID="+secondA.MembershipID)
 	if err := stale.Run(); err == nil {
 		return errors.New("old tool identity accepted after restart")
@@ -399,7 +399,7 @@ func (d *realRoomDriver) collaborate() error {
 	if _, err := d.privateFor("observer", "observerAfterPeerFailure", idB, memory, markerB, markerA); err != nil {
 		return err
 	}
-	if err := d.command(&page, "read", "--all"); err != nil {
+	if err := d.readRoomSnapshot(&page); err != nil {
 		return err
 	}
 	if err := verifyCollaborationPublic(page, 9, ack, markerA, markerB); err != nil {

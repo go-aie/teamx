@@ -12,8 +12,8 @@ const rootCLIHelp = `Usage: teamx COMMAND [--help]
   platforms upgrade           Upgrade platform model and references offline (--rooms-dir ROOT)
   member add/list/remove/run/pause/session rotate/status
   calendar list/get/update/claim/finish  Direct-conversation scheduled tasks (--help)
-  send | read                   Room messages
-  inbox read                    Platform notifications and internal events
+  send                          Publish Room messages
+  inbox read                    Room messages/events and saved notifications
   matters list/read/sources/source/resolve/ensure/update/notify/reply/instruct/instruction-status
   actions resolve/execute/read/list Managed platform actions
   policy read/update/publish     Member long-term rules
@@ -212,14 +212,6 @@ func referenceHelpText(command, op string) string {
 	}
 	return "Usage: teamx " + h.usage + "\n" + h.purpose + "\nParameters: " + h.parameters + "\nCommon: --endpoint URL (bound TEAMX_ENDPOINT); --json (JSON output, default true). Requires the six bound TEAMX_* identity values.\nReturns: " + h.result + "\nExample: " + h.example + "\nConstraints: " + h.constraints + "\n"
 }
-
-const readCLIHelp = `Usage: teamx read [ROOM] [--room ROOM] [--all | --unread | --latest N] [--peek] [--limit N] [--json] [--endpoint URL]
-Read Room messages in a fixed snapshot (default: latest 20).
---all: preview all; --latest N: preview latest N; --unread: consume unread; --peek: preview unread without confirming; --limit: maximum other-author unread messages in this fixed read, 1-10000 (default 20).
-Returns: messages with seq/author/text/source/reply_to/time and page coverage; --json writes one object per page. Agent JSON omits Room storage revision and the CLI's read_receipt/expires_at; confirmation failure includes receipt recovery details in the error.
-Example: teamx read --unread --json
-Constraints: modes are mutually exclusive; --peek requires --unread. Preview does not consume. Only full output is confirmed; short output is not confirmed. Confirmation failure means consumption is uncertain. Complete every page; Room reads do not consume Inbox or complete business work.
-`
 
 const sendCLIHelp = `Usage: teamx send [ROOM] [--room ROOM] --text TEXT [--id ID] [--reply-to SEQ] [--json] [--endpoint URL]
 Publish a Room message; ordinary Agent output stays private.

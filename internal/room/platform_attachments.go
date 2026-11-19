@@ -27,6 +27,7 @@ type attachmentRequest struct {
 	SourceRef, Partition  string
 	Seq                   uint64
 	Path                  string
+	Range                 *attachmentRange `json:"-"` // Internal immutable selection; never decoded from HTTP.
 }
 
 // A model read must carry the actual running member even for a Room message.
@@ -64,6 +65,9 @@ func (m *roomManager) checkAttachmentReaderLocked(ctx context.Context, req attac
 	agent, err := svc.store.runningTurnLocked(reader.MemberIdentity, reader.TurnNumber)
 	if err != nil {
 		return err
+	}
+	if req.Range != nil {
+		return req.Range.checkLocked(req, reader)
 	}
 	if req.Partition != "" {
 		return ErrIdentity
@@ -122,7 +126,7 @@ func (m *roomManager) checkAttachmentAccessLocked(ctx context.Context, access *a
 	if err := m.checkAttachmentReaderLocked(ctx, access.request, access.reader); err != nil {
 		return err
 	}
-	account, secret, err := m.attachmentAccountLocked(access.request.RoomIdentity, source)
+	account, secret, err := m.attachmentReadAccountLocked(access.request, access.reader, source)
 	if err != nil || !reflect.DeepEqual(account, access.account) || secret.Reveal() != access.secret.Reveal() {
 		return ErrConflict
 	}
@@ -179,7 +183,7 @@ func (m *roomManager) downloadAttachment(ctx context.Context, req attachmentRequ
 		m.mu.Unlock()
 		return nil, "", nil, err
 	}
-	account, secret, err := m.attachmentAccountLocked(req.RoomIdentity, source)
+	account, secret, err := m.attachmentReadAccountLocked(req, reader, source)
 	if err != nil {
 		m.mu.Unlock()
 		return nil, "", nil, err
@@ -235,6 +239,12 @@ func (m *roomManager) attachmentSourceLocked(req attachmentRequest) (platform.So
 	if svc == nil || svc.info != req.ServiceInfo || svc.closing.Load() || svc.restarting.Load() {
 		return platform.SourceRef{}, "", ErrIdentity
 	}
+	if req.Range != nil {
+		if req.Range.session == nil || req.Range.session.service != svc {
+			return platform.SourceRef{}, "", ErrIdentity
+		}
+		return req.Range.source(context.Background())
+	}
 	if req.AgentID != "" && req.MembershipID != "" {
 		id := MemberIdentity{RoomIdentity: req.RoomIdentity, AgentID: req.AgentID, MembershipID: req.MembershipID}
 		svc.store.mu.Lock()
@@ -285,6 +295,43 @@ func (m *roomManager) attachmentSourceLocked(req attachmentRequest) (platform.So
 		}
 	}
 	return platform.SourceRef{}, "", ErrIdentity
+}
+
+// History image reads use the executing member's selected connection. Shared
+// collection grants local text visibility, never the collector's credentials.
+func (m *roomManager) attachmentReadAccountLocked(req attachmentRequest, reader *attachmentReader, source platform.SourceRef) (registry.Account, platform.Secret, error) {
+	if req.Range == nil {
+		return m.attachmentAccountLocked(req.RoomIdentity, source)
+	}
+	if reader == nil {
+		return registry.Account{}, platform.Secret{}, ErrIdentity
+	}
+	f, err := m.readToolBindingsLocked(req.RoomIdentity)
+	if err != nil {
+		return registry.Account{}, platform.Secret{}, err
+	}
+	toolReq := toolsRequest{ServiceInfo: req.ServiceInfo, Caller: agentCallerIdentity(reader.MemberIdentity), Tool: source.Provider}
+	if req.Range.stream.grant == "" {
+		toolReq.platformID, err = m.sourcePlatformLocked(req.RoomIdentity, source)
+		if err != nil {
+			return registry.Account{}, platform.Secret{}, err
+		}
+	}
+	binding, definition, err := m.resolveToolBindingLocked(f, toolReq)
+	if err != nil || definition.Provider != source.Provider {
+		return registry.Account{}, platform.Secret{}, ErrIdentity
+	}
+	account, secret, err := m.resolvePlatformAccountLocked(req.RoomIdentity, binding.PlatformID, source.Provider)
+	if err != nil || account.Generation != binding.PlatformGeneration || account.Identity.Instance != source.Instance {
+		return registry.Account{}, platform.Secret{}, ErrIdentity
+	}
+	if req.Range.stream.grant == "" {
+		original, _, err := m.attachmentAccountLocked(req.RoomIdentity, source)
+		if err != nil || original.Identity != account.Identity {
+			return registry.Account{}, platform.Secret{}, ErrIdentity
+		}
+	}
+	return account, secret, nil
 }
 
 func (m *roomManager) attachmentAccountLocked(owner RoomIdentity, source platform.SourceRef) (registry.Account, platform.Secret, error) {

@@ -43,8 +43,8 @@ type executionBinding struct {
 }
 type accessContextKey struct{}
 type serverAccess struct {
-	inputBindings              map[[32]byte]*inputSession
-	inputMCP                   *mcpHTTP
+	inputBindings              map[[32]byte]*inputMCPBinding
+	inputMCP                   map[bool]*mcpHTTP                 // HTTP Inbox: four tools; CLI Inbox: History only.
 	updateLeases               map[*uiUpdateAccessLease]struct{} // guarded by mu
 	mcp                        *mcpHTTP
 	mcpOnce                    sync.Once

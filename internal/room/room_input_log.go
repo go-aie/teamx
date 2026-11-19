@@ -85,19 +85,29 @@ func (s *Store) loadRoomLog(v *RoomSnapshot) error {
 // readRoomLog can share immutable cached history with the commit validator.
 // LoadRoom callers receive a separate, owned copy.
 func (s *Store) readRoomLog(v *RoomSnapshot) error {
+	cache, err := s.readRoomLogView(v, s.roomInputCache)
+	if err == nil {
+		s.roomInputCache = cache
+	}
+	return err
+}
+
+// The supplied cache is immutable. History captures the root and cache under
+// Store.mu, then validates/reads published segments outside that common lock.
+func (s *Store) readRoomLogView(v *RoomSnapshot, cache *roomLogCache) (*roomLogCache, error) {
 	root := v.InputLog
 	if root == nil || v.ClearedThrough > v.LatestSeq || root.Version != 1 || root.Records != int(v.LatestSeq-v.ClearedThrough) || root.Bytes < 0 || root.Bytes > inputstream.MaxBytes || root.Records > inputstream.MaxRecords {
-		return ErrInvalid
+		return nil, ErrInvalid
 	}
 	ranges := make([]inputstream.SegmentRange, len(root.Segments))
 	for i, seg := range root.Segments {
 		ranges[i] = seg.bounds()
 	}
 	if total, err := inputstream.ValidatePublication(v.ClearedThrough, v.LatestSeq, ranges, true); err != nil || total != int64(root.Bytes) {
-		return ErrInvalid
+		return nil, ErrInvalid
 	}
 	key := inputstream.Ref("room_log_", v.RoomIdentity, v.ClearedThrough, v.LatestSeq, root)
-	if cache := s.roomInputCache; cache != nil && cache.Key == key && len(cache.Files) == len(root.Segments) {
+	if cache != nil && cache.Key == key && len(cache.Files) == len(root.Segments) {
 		valid := true
 		for i, seg := range root.Segments {
 			info, err := os.Stat(filepath.Join(s.roomLogDir(), seg.Name+".jsonl"))
@@ -108,7 +118,7 @@ func (s *Store) readRoomLog(v *RoomSnapshot) error {
 		}
 		if valid {
 			v.Messages = cache.Messages
-			return nil
+			return cache, nil
 		}
 	}
 	v.Messages = []RoomMessage{}
@@ -116,12 +126,12 @@ func (s *Store) readRoomLog(v *RoomSnapshot) error {
 	seen := map[string]bool{}
 	for _, seg := range root.Segments {
 		if seg.First != prev+1 || seen[seg.Name] {
-			return ErrInvalid
+			return nil, ErrInvalid
 		}
 		seen[seg.Name] = true
 		b, err := s.readRoomSegment(seg)
 		if err != nil {
-			return fmt.Errorf("Room log: %w", err)
+			return nil, fmt.Errorf("Room log: %w", err)
 		}
 		total += len(b)
 		err = inputstream.WalkSegment(b, inputstream.MaxRecordBytes, func(line []byte, _ int) error {
@@ -137,25 +147,25 @@ func (s *Store) readRoomLog(v *RoomSnapshot) error {
 			return nil
 		})
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if prev != seg.Last {
-			return ErrInvalid
+			return nil, ErrInvalid
 		}
 	}
 	if prev != v.LatestSeq || total != root.Bytes || len(v.Messages) != root.Records {
-		return ErrInvalid
+		return nil, ErrInvalid
 	}
 	files := []os.FileInfo{}
 	for _, seg := range root.Segments {
 		info, err := os.Stat(filepath.Join(s.roomLogDir(), seg.Name+".jsonl"))
 		if err != nil {
-			return err
+			return nil, err
 		}
 		files = append(files, info)
 	}
-	s.roomInputCache = &roomLogCache{Key: key, Messages: v.Messages, Files: files}
-	return nil
+	cache = &roomLogCache{Key: key, Messages: v.Messages, Files: files}
+	return cache, nil
 }
 func (s *Store) writeRoomSegment(data []byte, first, last uint64) (roomLogSegment, error) {
 	name, err := newOpaqueID()

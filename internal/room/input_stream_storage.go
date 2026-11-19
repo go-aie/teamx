@@ -6,6 +6,7 @@ import (
 	"errors"
 	"reflect"
 	"sort"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -17,6 +18,9 @@ import (
 // platformInputStorage is the private body and consumer engine of one owner.
 // Store.mu protects only the finite local persistence/association boundary.
 type platformInputStorage struct {
+	historyMu         sync.Mutex
+	historyHandoff    sync.RWMutex
+	history           *historyQueries
 	admissions        map[inputstream.Location]notification.Admission
 	retired           atomic.Bool
 	projectionDirty   atomic.Bool

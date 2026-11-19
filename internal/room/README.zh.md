@@ -153,11 +153,9 @@ export TEAMX_ADMIN_TOKEN_FILE="$PWD/.teamx/auth/admin-token"
 /tmp/teamx member run --agent reviewer
 /tmp/teamx member run --agent observer
 /tmp/teamx member list --json
-/tmp/teamx read --latest 10 --json
-/tmp/teamx read --all --json
 ```
 
-`member add` 默认 `--runner dsh`，必须指定服务已配置的 `--profile`。新成员从加入时的历史末尾开始，不把旧消息变成未读；首次实际回合才打开 Session。成员之间角色、工作区、进程、私有状态和预算独立。操作者可直接发消息和预览历史，无需建立模拟成员。
+`member add` 默认 `--runner dsh`，必须指定服务已配置的 `--profile`。新成员从加入时的历史末尾开始，不把旧消息变成未读；首次实际回合才打开 Session。成员之间角色、工作区、进程、私有状态和预算独立。操作者可直接发消息，在网页查看历史，无需建立模拟成员。
 
 `member list` 中的 `unread_count` 来自 Room；`notification` 是成员已处理的最新元数据，短暂延迟正常。通知不含正文；`execution` 给出 paused / active、回合、错误、预算与轮换状态。服务 stdout 输出一行就绪 JSON，日志写 stderr；`--listen 127.0.0.1:0` 自动分配端口。
 
@@ -189,7 +187,7 @@ export TEAMX_ADMIN_TOKEN_FILE="$PWD/.teamx/auth/admin-token"
 
 轮换先暂停新回合，继续合并通知，等待当前回合结束（或用 `--cancel` 取消并等待），关闭并等待旧 Session、进程和 worker，成功后才持久切换目录。新 Session 按需创建，成员身份、历史、游标和累计次数保持。默认完成后暂停；`--run` 明确恢复调度，不自动重试已提示的输入。pause 可以撤销待完成轮换的 `--run`。
 
-**轮换重置私有上下文，无自动摘要或私有记忆迁移。** 新建或正常恢复 Session 的首个业务回合获得角色、当前工具身份与规则，并额外提供最近最多 20 条 Room 消息、最多 25 项未完成事项摘要、已保存未知动作的数量及查询入口。恢复材料最多 32 KiB，预算不足会明确省略；预览不改变已读、Inbox 消费、回答关联或业务进度。成员按需用 `read --all/--latest`、`matters sources/source/read`、`actions read/list` 查回详情，已回答问题不重问、已确认动作不重发、未知结果先核实。重要进度及时写入现有事项或 Workspace 文件。旧发言与外部副作用保留，不能自动重放；旧私有目录保留。`dsh-turn.json` 是最近回合的诊断，不是交接摘要。
+**轮换重置私有上下文，无自动摘要或私有记忆迁移。** 新建或正常恢复 Session 的首个业务回合获得角色、当前工具身份与规则，并额外提供最近最多 20 条 Room 消息、最多 25 项未完成事项摘要、已保存未知动作的数量及查询入口。恢复材料最多 32 KiB，预算不足会明确省略；预览不改变已读、Inbox 消费、回答关联或业务进度。成员按需用 History MCP 的 `history_list`／`history_read` 回看保留正文，用 `matters read/list`、`actions read/list` 核验业务状态，已回答问题不重问、已确认动作不重发、未知结果先核实。重要进度及时写入现有事项或 Workspace 文件。旧发言与外部副作用保留，不能自动重放；旧私有目录保留。`dsh-turn.json` 是最近回合的诊断，不是交接摘要。
 
 轮换命令最多等待约 5 秒，超时报告 incomplete / outcome unknown；服务继续持有操作与旧资源的清理责任。`member session status --agent ID --json` 或 `execution.rotation` 返回操作 ID、固定 from/to、累计起始值、最后确认阶段及错误。阶段为 `prepared → old_closed → completed`；waiting / closing 表示本进程正在处理，failed 保留最后确认阶段。完成只表示引用与基线已提交，新后端仍按需打开。
 
@@ -205,7 +203,7 @@ CLI 自动生成操作 ID 并读取来源目录，也可显式传入 `--operatio
 
 适配器向真实 Session 绑定六项环境：`TEAMX_ENDPOINT`、`TEAMX_ROOM_ID`、`TEAMX_ROOM_INSTANCE`、`TEAMX_SERVICE_EPOCH`、`TEAMX_AGENT_ID`、`TEAMX_MEMBERSHIP_ID`；另提供绝对路径 `TEAMX_CLI`。工具不得自行切换身份，也无成员管理权限。受管模式下操作者须指定端点及已打开的 `--room ROOM_ID`（或命令的 ROOM 位置参数），CLI 从目录取得完整实例身份，查询不会隐式打开；认证后的固定 human 与正文／查询身份须一致。Agent 另带随 DSH 会话签发／撤销的临时执行凭据，不能冒充 human；DSH 子工具通过临时 `TEAMX_EXECUTION_AUTH` 传递同一凭据，避免 DSH 对 `TOKEN` 名称的默认过滤。凭据不进入冻结 ToolEnv 或恢复材料。
 
-Agent 用 `read --unread --limit 20 --json` 按序消费，成功交付一页后 CLI 确认游标，再继续下一页。每页最多 100 条消息及 1 MiB 正文。一个成员同时只有一张有效未确认页，30 秒过期；并发消费返回 busy，历史预览不受影响。stdout 失败、确认失败或结果不确定不会越过未交付页；已提交游标不回退。重启使旧收据失效。
+Agent 通过统一 Inbox 正式读取 Room 消息、事件和保存通知。HTTP 模式使用 `inbox_list`／`inbox_read`，CLI 模式使用 `inbox list/read`；交付与证明结清后推进消费。两种模式都提供只读 History MCP：已知 `stream_ref` 直接 `history_read`，否则先 `history_list`；用返回的正文 cursor 向更早记录续读。预览和 History 不推进消费，失败输出不确认。参数、图片与预算见 [Inbox 手册](../../docs/inbox.zh.md)。
 
 `--latest N`、`--all`、`--unread --peek` 都是预览，不推进游标。固定快照读取期间新增消息留待下一次读取。自己的发言不计为自己的未读，也不清空先前未读。`send --id ID` 按发送身份与 ID 去重；相同请求重试返回原序号，不同内容冲突。结果不确定时使用原 ID 与原内容。
 
