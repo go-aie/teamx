@@ -142,3 +142,38 @@ func TestCalendarManagementRangeMatchesEvaluatedCandidates(t *testing.T) {
 		}
 	}
 }
+
+func TestCalendarManagementSixWeekRangeAcrossDST(t *testing.T) {
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, start := range []string{"2026-02-23", "2026-10-26"} {
+		t.Run(start, func(t *testing.T) {
+			from, err := time.ParseInLocation("2006-01-02", start, loc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			to := from.AddDate(0, 0, 42)
+			state := calendar.New("dm", "instance")
+			// A UTC task still expands when the display zone crosses DST.
+			d := calendar.Definition{Title: "daily", Instruction: "remind", Schedule: calendar.Schedule{Frequency: "daily", StartDate: start, LocalTime: "12:00", TimeZone: "UTC", DayFilter: "all_days"}}
+			_, err = state.Update(calendar.Request{Action: "create", OperationID: "dst", Definition: &d}, calendar.Source{}, "A", "member", "UTC", from.Add(-time.Hour))
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := calendarManagementList(state, calendarQuery{From: from, To: to}, loc.String())
+			if err != nil || len(result.Days) != 42 || len(result.Occurrences) != 42 {
+				t.Fatalf("incomplete six-week range: days=%d occurrences=%d error=%v", len(result.Days), len(result.Occurrences), err)
+			}
+			for _, o := range result.Occurrences {
+				if o.DueAt.Before(from) || !o.DueAt.Before(to) {
+					t.Fatal("occurrence outside display range", o)
+				}
+			}
+			if _, err := calendarManagementList(state, calendarQuery{From: from, To: to.Add(time.Minute)}, loc.String()); err == nil {
+				t.Fatal("range beyond six display weeks accepted")
+			}
+		})
+	}
+}

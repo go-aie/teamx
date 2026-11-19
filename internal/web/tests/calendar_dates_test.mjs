@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { calendarRange, calendarOffsetLabels, localDay, shiftDay, weekDates, monthDates, minuteOfDay, pointGroups } from "../assets/features/calendar-dates.mjs";
+import { calendarRange, calendarOffsetLabels, localDay, shiftDay, shiftMonth, weekDates, monthDates, minuteOfDay, pointGroups } from "../assets/features/calendar-dates.mjs";
 
 test("calendar navigation uses display-zone days across years and opposite UTC dates",()=>{
   assert.equal(localDay("2026-12-31T17:00:00Z","Asia/Shanghai"),"2027-01-01");
@@ -33,6 +33,18 @@ test("month picker crosses years and retains a complete Monday-first grid",()=>{
  assert.equal(month.month,"2027-01-01");assert.equal(month.dates.length,42);
  assert.equal(month.dates[0],"2026-12-28");assert.equal(month.dates.at(-1),"2027-02-07");
  assert.equal(monthDates("2027-01-31",-1).month,"2026-12-01");
+});
+test("month views cover complete Monday-first weeks and shift safely across month ends",()=>{
+  const range=calendarRange("2026-11-19","month","America/New_York");
+  assert.equal(range.dates.length,42);
+  assert.equal(range.dates[0],"2026-10-26");assert.equal(range.dates.at(-1),"2026-12-06");
+  assert.equal((Date.parse(range.to)-Date.parse(range.from))/3600000,42*24+1);
+  assert.equal(localDay(range.from,"America/New_York"),range.dates[0]);
+  assert.equal(localDay(range.to,"America/New_York"),"2026-12-07");
+  assert.equal(shiftMonth("2026-12-31",1),"2027-01-31");
+  assert.equal(shiftMonth("2027-01-31",1),"2027-02-28");
+  assert.equal(shiftMonth("2028-03-31",-1),"2028-02-29");
+  assert.deepEqual(calendarRange("2027-01-01","month","Asia/Shanghai").dates,monthDates("2027-01-01").dates);
 });
 test("minute positions follow the display zone and labels cluster without stretching the axis",()=>{
  const point=at=>({due_at:at});

@@ -27,8 +27,8 @@ func calendarManagementList(state calendar.State, q calendarQuery, zone string) 
 		return calendarList{}, ErrRequest
 	}
 	ranged := !q.From.IsZero() || !q.To.IsZero()
-	if ranged && (q.From.IsZero() || !q.To.After(q.From) || q.To.Sub(q.From) > 42*24*time.Hour) {
-		return calendarList{}, calendar.Fail("invalid_request", "range", "use from/to with a positive range of at most 42 days")
+	if ranged && !calendar.ValidDisplayRange(q.From, q.To, zone) {
+		return calendarList{}, calendar.Fail("invalid_request", "range", "use from/to with a positive range of at most 42 days in the display time zone")
 	}
 	switch q.State {
 	case "", "active", "paused", "needs_info", "completed", "cancelled":

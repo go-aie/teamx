@@ -83,6 +83,7 @@
             <button id="calendar-options-toggle" class="icon-button" type="button" aria-label="日历更多" title="更多" aria-expanded="false" aria-controls="calendar-options-menu"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg></button>
             <div id="calendar-options-menu" class="calendar-options-menu menu-surface" hidden>
               <label class="calendar-menu-action calendar-skip-toggle"><input id="calendar-show-skipped" type="checkbox" checked><span>显示已跳过与已取消</span></label>
+              <details class="calendar-work-calendar"><summary class="calendar-menu-action"><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 11h18"/></svg><span>工作日历</span></summary><p id="calendar-work-coverage" class="calendar-hint"></p></details>
               <button id="calendar-refresh" type="button" class="calendar-menu-action"><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M20 12a8 8 0 1 0-2.3 5.7"/></svg><span>刷新</span></button>
             </div>
           </div>
@@ -99,7 +100,7 @@
           </div>
           <div id="calendar-list-controls" class="calendar-list-controls" hidden><h2>任务 <span id="calendar-task-count"></span></h2><label class="sr-only" for="calendar-task-filter">任务状态</label><select id="calendar-task-filter" class="field-control" aria-label="任务状态"><option value="open">未结束</option><option value="all">全部</option><option value="needs_info">待完善</option><option value="paused">已暂停</option><option value="completed">已结束</option><option value="cancelled">已取消</option></select></div>
           <div class="calendar-view-actions">
-            <div id="calendar-mode" class="calendar-modes" role="group" aria-label="日期范围"><button type="button" data-mode="day" aria-pressed="false">日</button><button type="button" data-mode="week" aria-pressed="true">周</button></div>
+            <div id="calendar-mode" class="calendar-modes" role="group" aria-label="日期范围"><button type="button" data-mode="day" aria-pressed="false">日</button><button type="button" data-mode="week" aria-pressed="true">周</button><button type="button" data-mode="month" aria-pressed="false">月</button></div>
             <div id="calendar-view" class="calendar-modes calendar-view-toggle" role="group" aria-label="呈现方式">
               <button type="button" data-view="calendar" aria-label="日历视图" title="日历视图" aria-pressed="true"><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button>
               <button type="button" data-view="list" aria-label="任务列表" title="任务列表" aria-pressed="false"><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5h12M9 12h12M9 19h12M3 5h.01M3 12h.01M3 19h.01"/></svg></button>
@@ -107,10 +108,10 @@
           </div>
         </div>
         <div class="calendar-feedback"><p id="calendar-error" class="notice" role="status" hidden></p><button id="calendar-retry" class="text-button button-compact" type="button" hidden>重试</button></div>
+        <p id="calendar-coverage" class="calendar-hint calendar-coverage" role="status" hidden></p>
         <div id="calendar-items" class="calendar-grid-scroll"></div>
         <section id="calendar-tasks" class="calendar-tasks" aria-label="任务列表" hidden><div id="calendar-task-items"></div></section>
-        <p id="calendar-coverage" class="calendar-hint calendar-coverage" role="status" hidden></p>
-        <details id="calendar-create" class="calendar-create"><summary id="calendar-form-heading">新建定时任务</summary>
+        <details id="calendar-create" class="calendar-create" hidden><summary id="calendar-form-heading">新建任务</summary>
           <form id="calendar-form">
             <label class="calendar-form-wide">任务标题<input id="calendar-title" class="field-control" required maxlength="256" autocomplete="off" placeholder="例如：实习生面试提醒"></label>
             <label class="calendar-form-wide">任务说明<textarea id="calendar-instruction" class="field-control" required maxlength="16384" rows="3" placeholder="到时要做什么？结果将发回本私信。"></textarea></label>
@@ -123,7 +124,7 @@
               <label>执行时区<input id="calendar-time-zone" class="field-control" placeholder="使用当前显示时区" autocomplete="off"></label>
               <label id="calendar-end-field" hidden>结束日期（可选，含当天）<input id="calendar-end-date" class="field-control" type="date"></label>
               <label>错过后如何处理<select id="calendar-misfire" class="field-control"><option value="latest_within_one_hour">一小时内补最近一次</option><option value="skip">错过即跳过</option></select></label>
-              <label id="calendar-once-filter-field" hidden>单次日期筛选<select id="calendar-once-filter" class="field-control"><option value="all_days">按指定日期执行</option><option value="weekdays">仅周一至周五</option><option value="business_days">仅中国大陆法定工作日</option></select></label>
+              <label id="calendar-once-filter-field" hidden>单次日期筛选<select id="calendar-once-filter" class="field-control"><option value="all_days">按指定日期执行</option><option value="weekdays">仅周一至周五</option><option value="business_days">仅中国大陆法定工作日</option></select><small id="calendar-once-filter-hint"></small></label>
               <label class="calendar-form-wide">任务范围（可选）<textarea id="calendar-scope" class="field-control" rows="2" maxlength="8192" placeholder="需要时填写已确认的项目、数据来源或工作目录。"></textarea></label>
             </div></details>
             <p id="calendar-form-summary" class="calendar-form-wide calendar-hint" aria-live="polite"></p>

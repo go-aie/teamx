@@ -1,6 +1,7 @@
 import { Temporal } from "../vendor/temporal.mjs";
 
 export const shiftDay = (date, days) => Temporal.PlainDate.from(date).add({days}).toString();
+export const shiftMonth = (date, months) => Temporal.PlainDate.from(date).add({months}).toString();
 export function localDay(value, zone) {
   return Temporal.Instant.from(new Date(value).toISOString()).toZonedDateTimeISO(zone).toPlainDate().toString();
 }
@@ -10,7 +11,7 @@ export function weekDates(date) {
 }
 // Navigate dates in the display zone. A calendar week can be 167 or 169 hours.
 export function calendarRange(date, mode, zone) {
-  const dates = mode === "day" ? [date] : weekDates(date);
+  const dates = mode === "day" ? [date] : mode === "month" ? monthDates(date).dates : weekDates(date);
   const midnight = value => Temporal.PlainDate.from(value).toZonedDateTime(zone).toInstant().toString();
   return {dates, from:midnight(dates[0]), to:midnight(shiftDay(dates.at(-1), 1))};
 }

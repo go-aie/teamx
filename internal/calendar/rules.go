@@ -257,11 +257,20 @@ func RuleSummary(d Definition) string {
 	return fmt.Sprintf("%s %s %s (%s); %s; misfire=%s%s%s", repeat, r.StartDate, r.LocalTime, r.TimeZone, filter, misfire, end, excluded)
 }
 
+// ValidDisplayRange bounds a calendar read to six weeks of local dates. A
+// daylight-saving transition can make those weeks longer than 42 * 24 hours.
+func ValidDisplayRange(from, to time.Time, zone string) bool {
+	loc, err := time.LoadLocation(zone)
+	return err == nil && !from.IsZero() && to.After(from) && !to.After(from.In(loc).AddDate(0, 0, 42))
+}
+
 // Preview only expands this committed definition in the requested bounded
 // range. The adapter merges materialized runs by this same occurrence identity.
 func Preview(t *Task, from, to time.Time, book *WorkCalendars) []Candidate {
 	out := []Candidate{}
-	if t.State != "active" || !to.After(from) || to.Sub(from) > 42*24*time.Hour {
+	// The display zone can differ from the task zone. Allow the extra hours of
+	// a six-week display range; adapters enforce the exact local-date boundary.
+	if t.State != "active" || !to.After(from) || to.Sub(from) >= 43*24*time.Hour {
 		return out
 	}
 	r := t.Definition.Schedule
@@ -303,7 +312,7 @@ func PreviewBundled(t *Task, from, to time.Time) []Candidate {
 func DayAnnotations(from, to time.Time, zone string) []WorkDay {
 	out := []WorkDay{}
 	loc, err := time.LoadLocation(zone)
-	if err != nil || !to.After(from) || to.Sub(from) > 42*24*time.Hour {
+	if err != nil || !ValidDisplayRange(from, to, zone) {
 		return out
 	}
 	d, _ := dateValue(from.In(loc).Format("2006-01-02"))
