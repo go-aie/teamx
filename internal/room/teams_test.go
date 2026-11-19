@@ -186,7 +186,7 @@ func TestTeamCatalogValidation(t *testing.T) {
 		})
 	}
 	teams, err := loadTeams("../../.teamx/teams", testTeamDefinition(t).Runtime)
-	if err != nil || len(teams) != 5 {
+	if err != nil || len(teams) != 4 {
 		t.Fatal(len(teams), err)
 	}
 	software := teams["software-development"]

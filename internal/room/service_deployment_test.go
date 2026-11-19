@@ -109,7 +109,7 @@ func serviceTestRelease(t *testing.T, version string) string {
 	serviceTestFile(t, filepath.Join(root, "runtime/example/child.js"), "child", 0644)
 	serviceTestFile(t, filepath.Join(root, "runtime/example.js"), "sibling", 0644)
 	serviceTestFile(t, filepath.Join(root, "THIRD_PARTY_NOTICES/notice"), "notice", 0644)
-	serviceTestFile(t, filepath.Join(root, "share/teamx/teams/personal-assistant/team.json"), `{}`, 0644)
+	serviceTestFile(t, filepath.Join(root, "share/teamx/teams/takeout-dinner/team.json"), `{}`, 0644)
 	if err := os.Symlink("node", filepath.Join(root, "runtime/node/bin/node-link")); err != nil {
 		t.Fatal(err)
 	}
@@ -288,16 +288,16 @@ func serviceTestRegistration(t *testing.T) serviceRegistration {
 func TestServiceConsistentBackupRestorePreservesPrivateStateAndVersions(t *testing.T) {
 	r := serviceTestRegistration(t)
 	files := map[string]string{
-		"auth/admin-token":                              "synthetic-admin-token",
-		"model-credentials/historical-key":              "synthetic-key",
-		"model-operations/committed.json":               `{"status":"interrupted","committed":true,"completed":["member-a"]}`,
-		"model-migration.json":                          `{"status":"completed"}`,
-		"model-migration-backup/config.toml":            "legacy",
-		"model-validations/receipt.json":                `{"validated":true}`,
-		"first-access.json":                             `{"status":"completed"}`,
-		"data/room/session/rotation.json":               `{"completed":true,"id":"rotation-original"}`,
-		"data/room/workspace/file":                      "workspace",
-		"teams/personal-assistant/prompts/assistant.md": "user template edit",
+		"auth/admin-token":                        "synthetic-admin-token",
+		"model-credentials/historical-key":        "synthetic-key",
+		"model-operations/committed.json":         `{"status":"interrupted","committed":true,"completed":["member-a"]}`,
+		"model-migration.json":                    `{"status":"completed"}`,
+		"model-migration-backup/config.toml":      "legacy",
+		"model-validations/receipt.json":          `{"validated":true}`,
+		"first-access.json":                       `{"status":"completed"}`,
+		"data/room/session/rotation.json":         `{"completed":true,"id":"rotation-original"}`,
+		"data/room/workspace/file":                "workspace",
+		"teams/takeout-dinner/prompts/xiaolin.md": "user template edit",
 	}
 	for name, value := range files {
 		serviceTestFile(t, filepath.Join(r.Home, name), value, 0600)

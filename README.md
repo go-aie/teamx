@@ -50,7 +50,6 @@ curl -fsSL https://github.com/go-aie/teamx/releases/latest/download/install.sh |
 | [朋友聚餐](.teamx/teams/takeout-dinner/README.md) | 协调选菜、预算份量和口味，推荐首次体验 |
 | [书店夜场筹备](.teamx/teams/bookstore-night/README.md) | 共同策划活动，平衡预算、运营和来宾体验 |
 | [软件开发](.teamx/teams/software-development/README.md) | 方案设计、代码开发与独立评审 |
-| [个人助手](.teamx/teams/personal-assistant/README.md) | 接收个人待办，核实上下文，需要决定时 @ 用户 |
 
 可以[自定义团队和角色](.teamx/teams/README.md)。默认成员依次执行，也可为新建房间配置并发协作；不同房间可同时运行。
 

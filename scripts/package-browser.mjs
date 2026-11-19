@@ -102,7 +102,7 @@ export async function acceptBrowser({ bundle, output, env }) {
     await page.locator('#new-room').waitFor({ state: 'visible' });
     await page.locator('#new-room').click();
     await page.locator('#new-team-room').click();
-    await page.locator('#team').selectOption('personal-assistant');
+    await page.locator('#team').selectOption('takeout-dinner');
     await page.locator('#new-room-name').fill('P3 归档浏览器验收');
     await page.locator('#create-room').click();
     await page.locator('#room-name').filter({ hasText: 'P3 归档浏览器验收' }).waitFor();

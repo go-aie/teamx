@@ -57,18 +57,6 @@
       "destination": "share/teamx/teams/bookstore-night/team.json"
     },
     {
-      "source": ".teamx/teams/personal-assistant/README.md",
-      "destination": "share/teamx/teams/personal-assistant/README.md"
-    },
-    {
-      "source": ".teamx/teams/personal-assistant/prompts/assistant.md",
-      "destination": "share/teamx/teams/personal-assistant/prompts/assistant.md"
-    },
-    {
-      "source": ".teamx/teams/personal-assistant/team.json",
-      "destination": "share/teamx/teams/personal-assistant/team.json"
-    },
-    {
       "source": ".teamx/teams/scion-parallel-development/README.md",
       "destination": "share/teamx/teams/scion-parallel-development/README.md"
     },
@@ -235,7 +223,6 @@
   ],
   "teams": [
     "bookstore-night",
-    "personal-assistant",
     "scion-parallel-development",
     "software-development",
     "takeout-dinner"

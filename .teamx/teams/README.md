@@ -4,7 +4,7 @@
 
 一个团队包含 `id`、`name`、`description`、`opening_message`、`members`。通常省略 `runtime`，使用全局 DSH 安装；模型由成员的 `model_selection` 引用集中列表。旧模板内嵌的模型会在一次迁移中转为引用，原 DSH 安装保留。完整示例见各子目录。团队 ID 和成员 ID 使用 1—64 位英文字母、数字、`-`、`_`；团队 ID 在整个目录内唯一，成员 ID 在团队内唯一。目录名可以与 ID 不同。
 
-[个人助手](personal-assistant/README.md)提供单个 `assistant` 成员，用于识别 GitLab 个人待办、在实际工具能力内代办常规事务，以及在需要本人介入时向用户提出问题。个人待办可独立配置，无需 Workspace；跨项目回复等能力边界见该团队说明。
+个人事务可直接在默认「个人助理」私信中处理，按需通过对话设置关注范围、代办条件和长期规则；需要独立上下文时可新建私信，见[会话使用指南](../../docs/conversations.zh.md)。
 
 - `runtime.dsh`：普通安装只需 `binary_path`，填写完整安装的 `dsh` 可执行程序绝对路径（可用 `command -v dsh` 查找）。TeamX 通过 `--version` 读取安装版本，自动追加 `--profile acp` 启动会话，并将实际身份记录在私有 Session 中；恢复前核对版本及 ACP 运行时身份。开发时也可用 Node 加 `binary_args` 中的 JS 参数启动，JS 路径必须为绝对路径，且需保留完整依赖。`artifact` 为可选的构建来源标注，显式提供时必须同时包含 `source`、`version`，并参与恢复核对；普通用户无需填写。
 - `scheduling`：可选，省略或空字符串为 `serial`，整个 Room 最多一个成员执行；`parallel` 允许不同成员同时执行，每个成员仍最多一个回合。创建时保存有效模式，已有 Room 沿用快照，运行中不能切换。[Scion 并行开发](scion-parallel-development/README.md)提供四成员并发编码示例；原软件开发团队保持串行。
