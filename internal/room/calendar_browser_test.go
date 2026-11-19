@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -58,6 +59,9 @@ func TestCalendarBrowser(t *testing.T) {
 		for i := 0; i < 55; i++ {
 			due := time.Now().UTC().Add(-time.Duration(i+1) * 24 * time.Hour).Truncate(time.Minute)
 			r := &calendar.Run{ID: fmt.Sprintf("browser-history-%02d", i), Version: 1, Task: task, DueAt: due, LocalDate: due.Format("2006-01-02"), Status: "succeeded", Settled: true, Report: "C3_HISTORY_REPORT：本地受控执行结果"}
+			if i == 1 {
+				r.Report = "完整报告验证：" + strings.Repeat("逐项核对历史任务资料并保存执行结论。", 25)
+			}
 			if i == 0 {
 				r.Publication = calendar.Publication{Status: "published", Seq: receipt.Seq, ClientMessageID: calendar.ID("calendar-generation-A-", "browser-history-report")}
 			}

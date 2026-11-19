@@ -15,6 +15,14 @@ export function calendarRange(date, mode, zone) {
   return {dates, from:midnight(dates[0]), to:midnight(shiftDay(dates.at(-1), 1))};
 }
 
+// A range crossing a daylight-saving transition has two UTC offsets.
+export function calendarOffsetLabels(date, mode, zone) {
+  const range=calendarRange(date,mode,zone);
+  const formatter=new Intl.DateTimeFormat("en-US",{timeZone:zone,timeZoneName:"shortOffset"});
+  return [...new Set([Date.parse(range.from),Date.parse(range.to)-1].map(at=>
+    formatter.formatToParts(at).find(part=>part.type==="timeZoneName").value))];
+}
+
 export function monthDates(date, offset=0) {
   const month=Temporal.PlainDate.from(date).with({day:1}).add({months:offset});
   const start=weekDates(month.toString())[0];

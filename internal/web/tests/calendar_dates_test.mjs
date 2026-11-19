@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { calendarRange, localDay, shiftDay, weekDates, monthDates, minuteOfDay, pointGroups } from "../assets/features/calendar-dates.mjs";
+import { calendarRange, calendarOffsetLabels, localDay, shiftDay, weekDates, monthDates, minuteOfDay, pointGroups } from "../assets/features/calendar-dates.mjs";
 
 test("calendar navigation uses display-zone days across years and opposite UTC dates",()=>{
   assert.equal(localDay("2026-12-31T17:00:00Z","Asia/Shanghai"),"2027-01-01");
@@ -16,6 +16,15 @@ test("calendar range respects short and long DST days and weeks",()=>{
     assert.equal((Date.parse(r.to)-Date.parse(r.from))/3600000,hours);
     assert.equal(localDay(r.from,"America/New_York"),r.dates[0]);
   }
+});
+
+test("compact time-zone labels follow the viewed range including DST and fractional offsets",()=>{
+  assert.deepEqual(calendarOffsetLabels("2026-11-19","week","Asia/Shanghai"),["GMT+8"]);
+  assert.deepEqual(calendarOffsetLabels("2026-01-15","day","America/New_York"),["GMT-5"]);
+  assert.deepEqual(calendarOffsetLabels("2026-07-15","day","America/New_York"),["GMT-4"]);
+  assert.deepEqual(calendarOffsetLabels("2026-03-08","week","America/New_York"),["GMT-5","GMT-4"]);
+  assert.deepEqual(calendarOffsetLabels("2026-11-01","day","America/New_York"),["GMT-4","GMT-5"]);
+  assert.deepEqual(calendarOffsetLabels("2026-11-19","day","Asia/Kathmandu"),["GMT+5:45"]);
 });
 
 
