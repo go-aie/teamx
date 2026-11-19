@@ -90,22 +90,25 @@
       </header>
       <section id="calendar-panel" class="calendar-panel" aria-label="会话日历" hidden>
         <div class="calendar-toolbar">
-          <div class="calendar-navigation">
+          <div id="calendar-navigation" class="calendar-navigation">
             <button id="calendar-today" class="secondary-button button-compact" type="button">今天</button>
             <button id="calendar-prev" class="icon-button" type="button" aria-label="上一个日期范围"><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></button><button id="calendar-next" class="icon-button" type="button" aria-label="下一个日期范围"><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
             <details id="calendar-date-picker" class="calendar-date-picker"><summary id="calendar-range" aria-label="选择日期"><span id="calendar-range-label"></span><svg class="navigation-icon calendar-range-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
-              <div class="calendar-date-popover menu-surface"><div class="calendar-month-navigation"><button id="calendar-month-prev" type="button" class="icon-button" aria-label="上个月">‹</button><span id="calendar-month-label"></span><button id="calendar-month-next" type="button" class="icon-button" aria-label="下个月">›</button></div><label class="sr-only" for="calendar-date">跳转日期</label><input id="calendar-date" class="field-control" type="date"><div id="calendar-month-days" class="calendar-month-days"></div><button id="calendar-picker-today" type="button" class="text-button">回到今天</button></div>
+              <div class="calendar-date-popover menu-surface"><div class="calendar-month-navigation"><button id="calendar-month-prev" type="button" class="icon-button" aria-label="上个月">‹</button><span id="calendar-month-label"></span><button id="calendar-month-next" type="button" class="icon-button" aria-label="下个月">›</button></div><label class="sr-only" for="calendar-date">跳转日期</label><input id="calendar-date" class="field-control" type="date"><div id="calendar-month-days" class="calendar-month-days"></div><button id="calendar-picker-today" type="button" class="text-button">今天</button></div>
             </details>
-            <span id="calendar-display-zone" class="calendar-display-zone" hidden></span>
           </div>
+          <div id="calendar-list-controls" class="calendar-list-controls" hidden><h2>任务 <span id="calendar-task-count"></span></h2><label class="sr-only" for="calendar-task-filter">任务状态</label><select id="calendar-task-filter" class="field-control" aria-label="任务状态"><option value="open">未结束</option><option value="all">全部</option><option value="needs_info">待完善</option><option value="paused">已暂停</option><option value="completed">已结束</option><option value="cancelled">已取消</option></select></div>
           <div class="calendar-view-actions">
-            <div id="calendar-mode" class="calendar-modes" role="group" aria-label="日历视图"><button type="button" data-mode="day" aria-pressed="false">按日</button><button type="button" data-mode="week" aria-pressed="true">周</button><button type="button" data-mode="agenda" aria-pressed="false">日程</button></div>
+            <div id="calendar-mode" class="calendar-modes" role="group" aria-label="日期范围"><button type="button" data-mode="day" aria-pressed="false">日</button><button type="button" data-mode="week" aria-pressed="true">周</button></div>
+            <div id="calendar-view" class="calendar-modes calendar-view-toggle" role="group" aria-label="呈现方式">
+              <button type="button" data-view="calendar" aria-label="日历视图" title="日历视图" aria-pressed="true"><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button>
+              <button type="button" data-view="list" aria-label="任务列表" title="任务列表" aria-pressed="false"><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5h12M9 12h12M9 19h12M3 5h.01M3 12h.01M3 19h.01"/></svg></button>
+            </div>
           </div>
         </div>
         <div class="calendar-feedback"><p id="calendar-error" class="notice" role="status" hidden></p><button id="calendar-retry" class="text-button button-compact" type="button" hidden>重试</button></div>
-        <div id="calendar-date-strip" class="calendar-date-strip" aria-label="本周日期"></div>
-        <div id="calendar-items" class="calendar-week-scroll"></div>
-        <details id="calendar-tasks" class="calendar-tasks"><summary>任务管理 <span id="calendar-task-count"></span></summary><label>任务状态 <select id="calendar-task-filter" class="field-control"><option value="open">未结束</option><option value="all">全部</option><option value="needs_info">待完善</option><option value="paused">已暂停</option><option value="completed">已结束</option><option value="cancelled">已取消</option></select></label><div id="calendar-task-items"></div></details>
+        <div id="calendar-items" class="calendar-grid-scroll"></div>
+        <section id="calendar-tasks" class="calendar-tasks" aria-label="任务列表" hidden><div id="calendar-task-items"></div></section>
         <p id="calendar-coverage" class="calendar-hint calendar-coverage" role="status" hidden></p>
         <details id="calendar-create" class="calendar-create"><summary id="calendar-form-heading">新建定时任务</summary>
           <form id="calendar-form">

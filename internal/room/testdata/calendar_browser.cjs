@@ -6,7 +6,14 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
  if(artifacts)fs.mkdirSync(artifacts,{recursive:true});
  const shot=async name=>{if(artifacts)await page.screenshot({path:`${artifacts}/${name}.png`,fullPage:true,animations:"disabled"});};
  const task=title=>page.locator('.calendar-task-row').filter({has:page.locator('button',{hasText:title,exact:true})});
- const openTask=async title=>{await task(title).locator('button').click();await page.locator('#calendar-detail-content h2').filter({hasText:title,exact:true}).waitFor();};
+ const showView=async view=>{
+   const b=page.locator(`#calendar-view [data-view="${view}"]`);
+   if(await b.getAttribute('aria-pressed')!=='true'){
+     const response=page.waitForResponse(r=>r.url().endsWith('/v1/calendar/list')&&!!r.request().postDataJSON()?.calendar?.from===(view==='calendar'));
+     await b.click();await (await response).finished();await page.evaluate(()=>new Promise(requestAnimationFrame));
+   }
+ };
+ const openTask=async title=>{await showView('list');await task(title).locator('button').click();await page.locator('#calendar-detail-content h2').filter({hasText:title,exact:true}).waitFor();};
  const close=async()=>page.locator('#calendar-detail-close').click();
  const refreshCalendar=async()=>{await page.locator('#calendar-options-toggle').click();await page.locator('#calendar-refresh').click();};
  const checkCalendarToolbar=async()=>{
@@ -14,15 +21,19 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
    await page.locator('#calendar-new').evaluate(el=>Promise.all(el.getAnimations().map(animation=>animation.finished.catch(()=>{}))));
    const geometry=await page.evaluate(()=>{
      const rect=selector=>{const r=document.querySelector(selector).getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,height:r.height};};
-     return {header:rect('#room-header'),title:rect('#calendar-heading'),back:rect('#conversation-chat'),navigation:rect('.calendar-navigation'),mode:rect('#calendar-mode'),create:rect('#calendar-new'),more:rect('#calendar-options-toggle'),menu:rect('#calendar-options-menu'),filter:rect('.calendar-skip-toggle'),refresh:rect('#calendar-refresh')};
+     return {header:rect('#room-header'),title:rect('#calendar-heading'),back:rect('#conversation-chat'),navigation:rect('.calendar-navigation'),mode:rect('#calendar-mode'),view:rect('#calendar-view'),create:rect('#calendar-new'),more:rect('#calendar-options-toggle'),menu:rect('#calendar-options-menu'),filter:rect('.calendar-skip-toggle'),refresh:rect('#calendar-refresh')};
    });
    const center=r=>(r.top+r.bottom)/2;
    assert.ok(Math.abs(center(geometry.create)-center(geometry.more))<2,JSON.stringify(geometry));
    assert.ok(geometry.create.top>=geometry.header.top&&geometry.create.bottom<=geometry.header.bottom);
    assert.ok(geometry.back.right<=geometry.title.left&&geometry.title.right<=geometry.create.left);
-   assert.ok(geometry.navigation.top>=geometry.header.bottom);
-   assert.ok(geometry.mode.top>=geometry.header.bottom);
-   if(page.viewportSize().width>640)assert.ok(Math.abs(center(geometry.mode)-center(geometry.navigation))<2);
+   if(await page.locator('#calendar-mode').isVisible()){
+     assert.ok(geometry.navigation.top>=geometry.header.bottom);
+     assert.ok(geometry.mode.top>=geometry.header.bottom);
+     assert.ok(geometry.mode.right<=geometry.view.left);
+     if(page.viewportSize().width>640)assert.ok(Math.abs(center(geometry.mode)-center(geometry.navigation))<2);
+   }else assert.equal(await page.locator('#calendar-navigation').isVisible(),false);
+   assert.ok(geometry.view.right<=page.viewportSize().width);
    assert.ok(geometry.create.right<=geometry.more.left);
    assert.equal(await page.locator('#room-heading').isVisible(),false);
    assert.equal(await page.locator('#conversation-actions').isVisible(),false);
@@ -41,8 +52,7 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
    if(await page.locator('#calendar-options-menu').isVisible()){
      assert.ok(geometry.menu.top>=geometry.more.bottom);
      assert.ok(Math.abs(geometry.menu.right-geometry.more.right)<2);
-     assert.ok(Math.abs(geometry.filter.height-geometry.refresh.height)<2);
-     assert.ok(Math.abs(geometry.filter.left-geometry.refresh.left)<2);
+     if(await page.locator('.calendar-skip-toggle').isVisible()){assert.ok(Math.abs(geometry.filter.height-geometry.refresh.height)<2);assert.ok(Math.abs(geometry.filter.left-geometry.refresh.left)<2);}
    }
  };
  const action=label=>({click:async()=>{const b=label==='编辑后续安排'?page.locator('#calendar-detail-content .calendar-actions').getByRole('button',{name:/^编辑/}):page.locator('#calendar-detail-content .calendar-actions button',{hasText:label,exact:true});if(!await b.isVisible())await page.locator('.calendar-more > summary').click();await b.click();}});
@@ -82,13 +92,12 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
   assert.ok(Math.abs(returnedPosition.offset-chatPosition.offset)<3,JSON.stringify({chatPosition,returnedPosition}));
   assert.equal(await page.locator('#message-input').inputValue(),'保留聊天草稿');
   assert.equal(await page.locator('#conversation-calendar').evaluate(el=>document.activeElement===el),true);
-  await page.locator('#conversation-calendar').click();await page.locator('#calendar-tasks > summary').click();await task('一次性检查').waitFor();
+  await page.locator('#conversation-calendar').click();await task('一次性检查').waitFor({state:'attached'});
   assert.equal(await page.locator('#conversation-calendar').getAttribute('aria-expanded'),'true');
   assert.equal(await page.locator('#conversation-calendar').evaluate(el=>getComputedStyle(el).backgroundColor),'rgba(0, 0, 0, 0)');
   assert.equal(await page.locator('#calendar-mode').getAttribute('data-mode'),'week');
   assert.equal(await page.locator('.calendar-grid-corner').innerText(),'GMT+8');
   assert.equal(await page.locator('.calendar-grid-corner').getAttribute('title'),'Asia/Shanghai');
-  assert.equal(await page.locator('#calendar-display-zone').isVisible(),false);
   const layout=await page.evaluate(()=>{
     const rect=el=>el.getBoundingClientRect();
     const back=rect(document.querySelector('#conversation-chat')),header=rect(document.querySelector('#room-header')),body=rect(document.querySelector('.calendar-time-body'));
@@ -99,7 +108,8 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
   assert.ok(layout.back.top>=layout.header.top&&layout.back.bottom<=layout.header.bottom);
   for(const head of layout.headings){assert.ok(head.weekday.bottom<=head.date.top);assert.ok(Math.abs(head.weekday.left+head.weekday.width/2-head.date.left-head.date.width/2)<1);}
   for(const tick of layout.ticks)assert.ok(Math.abs(tick.center-tick.hour*56)<1);
-  assert.equal(await page.locator('.calendar-day-heading[data-today="true"] strong').evaluate(el=>getComputedStyle(el).backgroundColor),'rgba(0, 0, 0, 0)');
+  assert.notEqual(await page.locator('.calendar-day-heading[data-today="true"] strong').evaluate(el=>getComputedStyle(el).backgroundColor),'rgba(0, 0, 0, 0)');
+  assert.equal(await page.locator('.calendar-day-heading[data-kind="weekend"] small').count(),0);
   await checkCalendarToolbar();await page.locator('#calendar-options-toggle').click();await page.locator('#calendar-show-skipped').uncheck();await checkCalendarToolbar();await shot('desktop-calendar-menu');
   await page.keyboard.press('Escape');assert.equal(await page.locator('#calendar-options-toggle').getAttribute('aria-expanded'),'false');
   await page.locator('#calendar-options-toggle').click();assert.equal(await page.locator('#calendar-show-skipped').isChecked(),false);await page.locator('#calendar-show-skipped').check();await page.keyboard.press('Escape');
@@ -108,14 +118,77 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
   assert.ok(await page.locator('.calendar-cluster').count()>0);
   await shot('desktop-week');
   const timeScroll=await page.locator('#calendar-items').evaluate(el=>el.scrollTop);await page.locator('#calendar-items').evaluate(el=>{el.scrollTop=0;});await shot('desktop-week-start');await page.locator('#calendar-items').evaluate((el,top)=>{el.scrollTop=top;},timeScroll);
-  assert.equal(await page.locator('.calendar-day-heading').first().evaluate(e=>e.offsetHeight),72);
+  assert.equal(await page.locator('.calendar-day-heading').first().evaluate(e=>e.offsetHeight),64);
   assert.equal(await page.locator('#calendar-coverage').evaluate(e=>e.classList.contains('calendar-coverage-warning')),false);
   await page.locator('#calendar-range').click();await page.locator('.calendar-picker-day').first().waitFor();
-  assert.equal(await page.locator('.calendar-picker-day').count(),42);await shot('desktop-date-picker');
+  assert.equal(await page.locator('.calendar-picker-day').count(),42);
+  assert.equal(await page.locator('#calendar-picker-today').innerText(),'今天');await shot('desktop-date-picker');
   await page.locator('.calendar-picker-day[aria-pressed="true"]').click();
   const nowOffset=await page.locator('.calendar-now-line').evaluate(e=>parseFloat(e.style.getPropertyValue('--now-top')));
   assert.ok(nowOffset>=0&&nowOffset<24*56);
 
+  // Calendar shows occurrences; the task list has one row per definition.
+  const range=mode=>page.locator(`#calendar-mode [data-mode="${mode}"]`);
+  const presentation=view=>page.locator(`#calendar-view [data-view="${view}"]`);
+  const occurrenceIDs=()=>page.locator('#calendar-items .calendar-occurrence').evaluateAll(items=>items.map(item=>item.dataset.occurrenceId).sort());
+  const taskIDs=()=>page.locator('.calendar-task-row').evaluateAll(items=>items.map(item=>item.dataset.taskId).sort());
+  const selectedDay=await page.locator('#calendar-date').inputValue(),weekLabel=await page.locator('#calendar-range-label').innerText(),weekIDs=await occurrenceIDs();
+  const savedGridScroll=await page.locator('#calendar-items').evaluate(el=>el.scrollTop);
+  const taskQueries=[];const recordQuery=req=>{if(req.url().endsWith('/v1/calendar/list'))taskQueries.push(req.postDataJSON().calendar);};
+  page.on('request',recordQuery);await showView('list');page.off('request',recordQuery);
+  assert.ok(taskQueries.length>0);assert.ok(taskQueries.every(q=>!q.from&&!q.to&&!q.cursor));
+  assert.equal(await page.locator('#calendar-mode').isVisible(),false);
+  assert.equal(await page.locator('#calendar-navigation').isVisible(),false);
+  assert.equal(await page.locator('#calendar-items').isVisible(),false);
+  assert.equal(await page.locator('#calendar-tasks > summary').count(),0);
+  assert.equal(await page.locator('.calendar-task-row').count(),32);
+  assert.equal(await page.locator('.calendar-task-row').evaluateAll(items=>new Set(items.map(item=>item.dataset.taskId)).size),32);
+  assert.match(await task('日常检查 01').innerText(),/每天/);
+  assert.match(await task('日常检查 01').innerText(),/下次/);
+  const allTasks=await taskIDs();await checkCalendarToolbar();await shot('desktop-task-list');
+  await page.locator('#calendar-panel').evaluate(el=>{el.scrollTop=250;});
+  const savedListScroll=await page.locator('#calendar-panel').evaluate(el=>el.scrollTop);
+  await showView('calendar');
+  assert.equal(await page.locator('#calendar-date').inputValue(),selectedDay);
+  assert.equal(await page.locator('#calendar-range-label').innerText(),weekLabel);
+  assert.ok(Math.abs(await page.locator('#calendar-items').evaluate(el=>el.scrollTop)-savedGridScroll)<2);
+  assert.deepEqual(await occurrenceIDs(),weekIDs);
+  await range('day').click();await page.waitForFunction(()=>document.querySelector('#calendar-mode').dataset.mode==='day');
+  assert.equal(await page.locator('.calendar-day-column').count(),1);
+  assert.equal(await page.locator('.calendar-day-column').getAttribute('data-day'),selectedDay);
+  const weekday=await page.evaluate(day=>new Intl.DateTimeFormat('zh-CN',{weekday:'short',timeZone:'Asia/Shanghai'}).format(new Date(`${day}T12:00:00+08:00`)),selectedDay);
+  assert.equal(await page.locator('.calendar-day-heading > span').innerText(),weekday);
+  assert.equal(await page.locator('#calendar-items').evaluate(el=>el.scrollWidth<=el.clientWidth),true);
+  const dotPosition=await page.evaluate(()=>({dot:document.querySelector('.calendar-now-line > i').getBoundingClientRect().left+3,column:document.querySelector('.calendar-day-column').getBoundingClientRect().left}));
+  assert.ok(Math.abs(dotPosition.dot-dotPosition.column)<2);await shot('desktop-day');
+  await page.locator('#calendar-next').click();await page.waitForFunction(day=>document.querySelector('#calendar-date').value!==day,selectedDay);
+  assert.equal(Date.parse(await page.locator('#calendar-date').inputValue())-Date.parse(selectedDay),86400000);
+  await showView('list');assert.deepEqual(await taskIDs(),allTasks);
+  assert.ok(Math.abs(await page.locator('#calendar-panel').evaluate(el=>el.scrollTop)-savedListScroll)<2);
+  await showView('calendar');
+  await page.locator('#calendar-prev').click();await page.waitForFunction(day=>document.querySelector('#calendar-date').value===day,selectedDay);
+  await range('week').click();await page.waitForFunction(()=>document.querySelector('#calendar-mode').dataset.mode==='week');
+  await page.locator('#calendar-next').click();await page.waitForFunction(day=>document.querySelector('#calendar-date').value!==day,selectedDay);
+  assert.equal(Date.parse(await page.locator('#calendar-date').inputValue())-Date.parse(selectedDay),7*86400000);
+  await page.locator('#calendar-prev').click();await page.waitForFunction(day=>document.querySelector('#calendar-date').value===day,selectedDay);
+  assert.deepEqual(await occurrenceIDs(),weekIDs);
+  await page.locator('#calendar-range').click();await page.locator('#calendar-date').fill('2026-01-01');await page.locator('#calendar-date').press('Tab');
+  await page.waitForFunction(()=>document.querySelector('#calendar-date').value==='2026-01-01'&&document.querySelector('.calendar-day-heading[data-kind="makeup"]'));
+  assert.equal(await page.locator('.calendar-day-heading[data-kind="holiday"]').first().getAttribute('title'),'节假日');
+  assert.equal(await page.locator('.calendar-day-heading[data-kind="holiday"] small').first().innerText(),'休');
+  assert.equal(await page.locator('.calendar-day-heading[data-kind="makeup"] small').innerText(),'补');
+  assert.equal(await page.locator('.calendar-day-heading[data-kind="makeup"]').getAttribute('title'),'补班');await shot('desktop-holiday-markers');
+  const holidayScroll=await page.locator('#calendar-items').evaluate(el=>el.scrollTop);
+  await showView('list');assert.deepEqual(await taskIDs(),allTasks);
+  await page.locator('#calendar-new').click();
+  assert.equal(await page.locator('#calendar-start-date').inputValue(),selectedDay);
+  await page.locator('#calendar-form-cancel').click();await page.waitForFunction(()=>!document.querySelector('#calendar-create').open);
+  await showView('calendar');
+  assert.equal(await page.locator('#calendar-date').inputValue(),'2026-01-01');
+  assert.ok(Math.abs(await page.locator('#calendar-items').evaluate(el=>el.scrollTop)-holidayScroll)<2);
+  await page.locator('#calendar-today').click();await page.waitForFunction(day=>document.querySelector('#calendar-date').value===day,selectedDay);
+
+  await showView('list');
   const reminderButton=task('实习生面试提醒').locator('button');await reminderButton.scrollIntoViewIfNeeded();
   const reminderPosition=await page.evaluate(()=>({panel:document.querySelector('#calendar-panel').scrollTop,grid:document.querySelector('#calendar-items').scrollTop,date:document.querySelector('#calendar-date').value}));
   await openTask('实习生面试提醒');
@@ -131,6 +204,7 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
   assert.equal(await reminderButton.evaluate(el=>document.activeElement===el),true);
   const reminderReturn=await page.evaluate(()=>({panel:document.querySelector('#calendar-panel').scrollTop,grid:document.querySelector('#calendar-items').scrollTop,date:document.querySelector('#calendar-date').value}));assert.deepEqual(reminderReturn,reminderPosition);
   await openTask('实习生面试提醒');await page.keyboard.press('Escape');await page.locator('#calendar-detail').waitFor({state:'hidden'});
+  await showView('calendar');
   const workspaceGridScroll=await page.locator('#calendar-items').evaluate(e=>e.scrollTop);
   await page.locator('#calendar-new').click();await page.locator('#calendar-title').fill('实习生面试提醒');await page.locator('#calendar-instruction').fill('提醒我参加实习生面试，结果回复本私信。');await page.locator('#calendar-local-time').fill('14:30');
   assert.equal(await page.locator('#calendar-advanced').evaluate(e=>e.open),false);assert.equal(await page.locator('#calendar-day-filter').isVisible(),false);
@@ -193,13 +267,13 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
     const response=await fetch('/v1/settings/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...identity,caller:{kind:'human',id:operator},expected_version:settings_version,time_zone:zone})});
     if(!response.ok)throw new Error(await response.text());
   },zone);
-  await changeZone('America/New_York');await refreshCalendar();
+  await showView('calendar');await changeZone('America/New_York');await refreshCalendar();
   await page.waitForFunction(()=>document.querySelector('.calendar-grid-corner')?.title==='America/New_York');
   await openTask('编辑后的检查');assert.match(await page.locator('#calendar-detail-content').innerText(),/UTC/);await close();
-  await changeZone('Asia/Shanghai');await refreshCalendar();
+  await showView('calendar');await changeZone('Asia/Shanghai');await refreshCalendar();
   await page.waitForFunction(()=>document.querySelector('.calendar-grid-corner')?.title==='Asia/Shanghai');
   // Another real tab observes committed changes through the existing SSE path.
-  const other=await context.newPage();await other.goto(process.argv[2]);await other.locator('#conversation-calendar').click();await other.locator('#calendar-tasks > summary').click();
+  const other=await context.newPage();await other.goto(process.argv[2]);await other.locator('#conversation-calendar').click();await other.locator('#calendar-view [data-view="list"]').click();
   await other.locator('.calendar-task-link',{hasText:'编辑后的检查',exact:true}).waitFor();
   await page.bringToFront();await openTask('编辑后的检查');
   await page.route('**/v1/calendar/update',async route=>{await other.bringToFront();await route.continue();});
@@ -208,17 +282,22 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
   await page.unroute('**/v1/calendar/update');await other.close();await page.bringToFront();await waitState('已暂停');await close();
   // Phone is a real Chromium rendering with a simulated viewport, not a device.
   await page.setViewportSize({width:390,height:844});
-  await page.waitForFunction(()=>document.querySelector('#calendar-mode').dataset.mode==='day');
-  assert.equal(await page.locator('.calendar-date-button').count(),7);
+  await showView('list');
+  assert.equal(await page.locator('#calendar-navigation').isVisible(),false);
   assert.equal(await page.locator('#calendar-panel').evaluate(el=>el.scrollWidth<=el.clientWidth),true);
-  assert.equal(await page.locator('#calendar-display-zone').innerText(),'GMT+8');
   await page.locator('#calendar-options-toggle').click();await checkCalendarToolbar();await shot('mobile-calendar-menu');await page.keyboard.press('Escape');
   await page.setViewportSize({width:320,height:844});assert.equal(await page.locator('#calendar-panel').evaluate(el=>el.scrollWidth<=el.clientWidth),true);await checkCalendarToolbar();await shot('mobile-calendar-320');await page.setViewportSize({width:390,height:844});
+  assert.equal(await presentation('list').getAttribute('aria-pressed'),'true');
+  const mobileDay=await page.locator('#calendar-date').inputValue();
+  await showView('calendar');await range('day').click();await page.waitForFunction(()=>document.querySelector('#calendar-mode').dataset.mode==='day');
+  assert.equal(await page.locator('.calendar-day-column').count(),1);
+  assert.equal(await page.locator('#calendar-items').evaluate(el=>el.scrollWidth<=el.clientWidth),true);
+  assert.equal(await page.locator('#calendar-date').inputValue(),mobileDay);await shot('mobile-day-calendar');
   const beforeDate=await page.locator('#calendar-date').inputValue();
-  await page.locator('.calendar-date-button').last().click();
+  await page.locator('#calendar-next').click();
   await page.waitForFunction(before=>document.querySelector('#calendar-date').value!==before,beforeDate);
   const selectedDate=await page.locator('#calendar-date').inputValue();
-  await task('编辑后的检查').scrollIntoViewIfNeeded();
+  await showView('list');await task('编辑后的检查').scrollIntoViewIfNeeded();
   const scroll=await page.locator('#calendar-panel').evaluate(el=>el.scrollTop);
   await openTask('编辑后的检查');
   assert.equal(await page.locator('#calendar-detail-close').getAttribute('aria-label'),'返回日历');
@@ -235,7 +314,7 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
   await page.locator('#conversation-chat').click();assert.equal(await page.locator('#message-input').inputValue(),'保留聊天草稿');
   await checkChatHeader();
   await page.locator('#conversation-calendar').click();assert.equal(await page.locator('#calendar-date').inputValue(),selectedDate);
-  await page.locator('#calendar-today').click();await page.waitForFunction(()=>document.querySelector('.calendar-date-button[data-today="true"]')?.getAttribute('aria-pressed')==='true');await shot('mobile-day');
+  await showView('calendar');await page.locator('#calendar-today').click();await page.locator('.calendar-day-heading[data-today="true"]').waitFor();await shot('mobile-day');await showView('list');await shot('mobile-task-list');
   await page.locator('#calendar-new').click();
   await page.locator('#calendar-title').fill('每周工作日提醒');await page.locator('#calendar-instruction').fill('核对本地已确认范围并报告');
   await advanced();await page.locator('#calendar-scope').fill('本私信已确认的本地资料');await page.locator('#calendar-frequency').selectOption('weekly');
@@ -265,8 +344,8 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
   // Coverage unknown and cancelled tasks remain discoverable in management.
   await page.locator('#calendar-create > summary').click();await page.locator('#calendar-title').fill('工作日历覆盖外');await page.locator('#calendar-instruction').fill('覆盖外不执行');await page.locator('#calendar-frequency').selectOption('daily');await page.locator('#calendar-day-filter').selectOption('business_days');await page.locator('#calendar-start-date').fill('2028-01-01');await page.locator('#calendar-local-time').fill('09:00');await page.locator('#calendar-submit').click();await openTask('工作日历覆盖外');assert.match(await page.locator('#calendar-detail-content').innerText(),/工作日历尚未覆盖/);await action('取消任务').click();await waitState('已取消');await close();await page.locator('#calendar-task-filter').selectOption('cancelled');await task('工作日历覆盖外').waitFor();
   assert.equal(await page.locator('#calendar-panel').evaluate(el=>el.scrollWidth<=el.clientWidth),true);
-  const empty=await context.newPage();await empty.clock.install({time:new Date('2026-11-19T15:59:00Z')});await empty.goto(process.argv[3]);await empty.locator('#conversation-calendar').click();await empty.locator('#calendar-tasks > summary').click();await empty.getByText('暂无此类任务。',{exact:true}).waitFor();
-  await empty.setViewportSize({width:390,height:844});await empty.getByText('当天没有安排。',{exact:true}).waitFor();
+  const empty=await context.newPage();await empty.clock.install({time:new Date('2026-11-19T15:59:00Z')});await empty.goto(process.argv[3]);await empty.locator('#conversation-calendar').click();await empty.locator('#calendar-view [data-view="list"]').click();await empty.getByText('暂无此类任务。',{exact:true}).waitFor();
+  await empty.setViewportSize({width:390,height:844});await empty.getByText('暂无此类任务。',{exact:true}).waitFor();
   if(artifacts)await empty.screenshot({path:`${artifacts}/mobile-empty.png`,fullPage:true,animations:"disabled"});
   await empty.locator('#conversation-chat').click();await empty.clock.pauseAt(new Date('2026-11-19T15:59:59Z'));
   assert.equal(await empty.locator('#calendar-icon-day').textContent(),'19');
@@ -275,7 +354,7 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
   await empty.locator('#conversation-calendar').click();assert.equal(await empty.locator('#calendar-date').inputValue(),'2026-11-19');
   await empty.close();await page.bringToFront();
   assert.deepEqual(errors,[]);
-  const evidence={status:'passed',desktop:'1440x1000 Chromium',mobile:'390x844 and 320x844 Chromium viewport simulation; no real device',header_calendar_entry:true,chat_without_tab_row:true,centered_mobile_title:true,chat_scroll_return:true,week:true,compact_toolbar:true,segmented_views:true,month_picker:true,minute_time_axis:true,layered_form:true,form_return_position:true,draft_secondary_action:true,compact_reminder_detail:true,neutral_calendar_coverage:true,range_pagination:true,snapshot_restart:true,saved_then_read_failure:true,coincident_tasks:true,history_pagination:55,frozen_result:true,mutual_links:true,older_report_history_loading:true,empty_view_no_state_file:true,edit_scope_preserved:true,display_zone_change_rule_fixed:true,version_conflict_draft:true,sse_other_tab:true,pause_resume:true,chat_draft:true,date_scroll_return:true,mobile_browser_back:true,receipt_markdown_link:true,weekly_form:true,skip_once:true,draft_completion:true,unknown_receipt_replay:true,coverage_unknown:true,cancellation:true,console_errors:errors};
+  const evidence={status:'passed',desktop:'1440x1000 Chromium',mobile:'390x844 and 320x844 Chromium viewport simulation; no real device',header_calendar_entry:true,chat_without_tab_row:true,centered_mobile_title:true,chat_scroll_return:true,week:true,compact_toolbar:true,calendar_and_task_views:true,day_time_axis:true,deduplicated_task_list:true,task_list_without_date_range:true,calendar_and_list_scroll_return:true,holiday_makeup_markers:true,month_picker:true,minute_time_axis:true,layered_form:true,form_return_position:true,draft_secondary_action:true,compact_reminder_detail:true,neutral_calendar_coverage:true,range_pagination:true,snapshot_restart:true,saved_then_read_failure:true,coincident_tasks:true,history_pagination:55,frozen_result:true,mutual_links:true,older_report_history_loading:true,empty_view_no_state_file:true,edit_scope_preserved:true,display_zone_change_rule_fixed:true,version_conflict_draft:true,sse_other_tab:true,pause_resume:true,chat_draft:true,date_scroll_return:true,mobile_browser_back:true,receipt_markdown_link:true,weekly_form:true,skip_once:true,draft_completion:true,unknown_receipt_replay:true,coverage_unknown:true,cancellation:true,console_errors:errors};
   if(artifacts)fs.writeFileSync(`${artifacts}/browser-evidence.json`,JSON.stringify(evidence,null,2)+'\n');console.log(JSON.stringify(evidence));
  }catch(error){await shot('failure');console.log('FAILURE_STATE',await page.locator('#calendar-error').textContent(),await page.locator('#calendar-detail-content').innerText());throw error;}finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exit(1);});

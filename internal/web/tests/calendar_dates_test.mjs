@@ -11,7 +11,7 @@ test("calendar navigation uses display-zone days across years and opposite UTC d
   assert.equal(Date.parse(r.to),Date.parse("2027-01-01T16:00:00Z"));
 });
 test("calendar range respects short and long DST days and weeks",()=>{
-  for(const [date,mode,hours] of [["2026-03-08","day",23],["2026-11-01","day",25],["2026-03-08","week",167],["2026-11-01","agenda",169]]){
+  for(const [date,mode,hours] of [["2026-03-08","day",23],["2026-11-01","day",25],["2026-03-08","week",167],["2026-11-01","week",169]]){
     const r=calendarRange(date,mode,"America/New_York");
     assert.equal((Date.parse(r.to)-Date.parse(r.from))/3600000,hours);
     assert.equal(localDay(r.from,"America/New_York"),r.dates[0]);

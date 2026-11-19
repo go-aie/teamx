@@ -17,7 +17,7 @@ const fs = require('node:fs');
   const selector = i => `#room-list > [data-room-key=${JSON.stringify(JSON.stringify([rooms[i].room_id,rooms[i].room_instance]))}] > button:first-child`;
   const showCalendar = async i => {
     await page.locator('#conversation-calendar').click();
-    if(!await page.locator('#calendar-tasks').evaluate(el=>el.open))await page.locator('#calendar-tasks > summary').click();
+    if(await page.locator('#calendar-view [data-view="list"]').getAttribute('aria-pressed')!=='true')await page.locator('#calendar-view [data-view="list"]').click();
     await row(i).waitFor();
     assert.equal(await row(1-i).count(),0);
   };
