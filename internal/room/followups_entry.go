@@ -366,7 +366,7 @@ func (s *service) memberFollowups(ctx context.Context, req apiRequest, path stri
 // Keep the service caller gate and managed-runtime busy gate on one contract.
 func agentRuntimePath(path string) bool {
 	switch path {
-	case "/v1/send", "/v1/read", "/v1/read/confirm", "/v1/inbox/read", "/v1/inbox/confirm",
+	case "/v1/calendar/list", "/v1/calendar/get", "/v1/calendar/update", "/v1/calendar/claim", "/v1/calendar/finish", "/v1/send", "/v1/read", "/v1/read/confirm", "/v1/inbox/read", "/v1/inbox/confirm",
 		"/v1/matters/list", "/v1/matters/read", "/v1/matters/update", "/v1/matters/sources", "/v1/matters/source", "/v1/matters/resolve", "/v1/matters/ensure", "/v1/matters/notify", "/v1/matters/reply", "/v1/matters/instruct", "/v1/matters/instruction-status", "/v1/policy/read", "/v1/policy/update", "/v1/policy/publish":
 		return true
 	}

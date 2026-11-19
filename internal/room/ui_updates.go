@@ -38,7 +38,7 @@ func (u uiUpdate) valid() bool {
 		if u.RoomID != "" || u.RoomInstance != "" || u.RoomServiceEpoch != "" || u.AgentID != "" || u.MembershipID != "" {
 			return false
 		}
-	case "messages", "members", "workspace", "notifications", "tools", "human_read", "interactions", "activity", "inbox", "policy":
+	case "calendar", "messages", "members", "workspace", "notifications", "tools", "human_read", "interactions", "activity", "inbox", "policy":
 		if u.RoomID == "" || u.RoomInstance == "" || u.RoomServiceEpoch == "" {
 			return false
 		}

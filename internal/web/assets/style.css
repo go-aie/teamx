@@ -12,6 +12,7 @@
 @import url("./styles/interactions.css");
 @import url("./styles/browser.css");
 @import url("./styles/mobile-home.css");
+@import url("./styles/calendar.css");
 
 .member-model { display:flex; align-items:center; gap:8px; flex:none; min-width:0; padding:10px 20px; border-bottom:1px solid var(--line); }
 .member-model > label { flex:none; color:var(--muted); font-size:var(--font-small); }

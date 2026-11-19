@@ -586,6 +586,16 @@ func (s *dshSession) Run(ctx context.Context, input UnreadChanged) (err error) {
 		}
 		notification = "Input directory (JSON):\n" + string(b)
 	}
+	if svc := s.backend.inputService; svc != nil {
+		work, e := svc.supplyCalendar(ctx, s.opts.MemberIdentity, policy.CurrentTurn)
+		if e != nil {
+			return dshFailure(e)
+		}
+		if len(work) > 0 {
+			b, _ := json.Marshal(work)
+			notification += "\nPending Calendar work (JSON):\n" + string(b) + "\nRead latest human intent, claim at most one, then calendar_finish the report. Never also send the report."
+		}
+	}
 	prompt := []dsh.ContentBlock{{Type: "text", Text: "Member policy context (JSON):\n" + string(body) + "\n\n" + dshTimeContext(settings, started, s.timeZone) + "\n" + notification}}
 	var materials *dshMaterials
 	if s.backend.prepare != nil {
@@ -622,6 +632,7 @@ func (s *dshSession) Run(ctx context.Context, input UnreadChanged) (err error) {
 		return dshFailure(err)
 	}
 	if s.input != nil && s.backend.access != nil {
+		s.input.executionContext = ctx
 		token, revoke, e := s.backend.access.issueInputBinding(s.input)
 		if e != nil {
 			return dshFailure(e)

@@ -223,17 +223,17 @@ func (r *Room) Post(ctx actorx.Context, msg PostMessage, reply actorx.Reply[Post
 		reply.Complete(PostReceipt{RoomIdentity: r.state.RoomIdentity, Seq: receipt.Seq, ClientMessageID: msg.ClientMessageID}, nil)
 		return nil
 	}
-	if msg.FollowupNotice && (msg.Caller.Kind != "agent" || msg.ReplyTo != 0) {
+	if (msg.FollowupNotice || msg.DurablePublication) && (msg.Caller.Kind != "agent" || msg.ReplyTo != 0) {
 		return ErrIdentity
 	}
-	if msg.FollowupNotice && len(r.state.FollowupNoticeReceipts) >= maxRoomReceipts {
+	if (msg.FollowupNotice || msg.DurablePublication) && len(r.state.FollowupNoticeReceipts) >= maxRoomReceipts {
 		return ErrCapacity
 	}
 	bytes := 0
 	for _, m := range r.state.Messages {
 		bytes += len(m.Text)
 		if m.Author == msg.Caller.Author && m.ClientMessageID == msg.ClientMessageID {
-			if m.Text != msg.Text || m.ReplyTo != msg.ReplyTo || msg.FollowupNotice || !msg.inferMentions && !slices.Equal(m.Mentions, msg.Mentions) {
+			if m.Text != msg.Text || m.ReplyTo != msg.ReplyTo || (msg.FollowupNotice || msg.DurablePublication) || !msg.inferMentions && !slices.Equal(m.Mentions, msg.Mentions) {
 				return ErrConflict
 			}
 			reply.Complete(PostReceipt{RoomIdentity: r.state.RoomIdentity, Seq: m.Seq, ClientMessageID: m.ClientMessageID}, nil)
@@ -259,7 +259,7 @@ func (r *Room) Post(ctx actorx.Context, msg PostMessage, reply actorx.Reply[Post
 		Seq: next.LatestSeq, ClientMessageID: msg.ClientMessageID, Author: msg.Caller.Author,
 		Text: msg.Text, ReplyTo: msg.ReplyTo, CreatedAt: r.now().UTC(), AuthorMembershipID: msg.Caller.MembershipID, Mentions: slices.Clone(msg.Mentions),
 	})
-	if msg.FollowupNotice {
+	if msg.FollowupNotice || msg.DurablePublication {
 		if next.FollowupNoticeReceipts == nil {
 			next.FollowupNoticeReceipts = map[string]followupNoticeReceipt{}
 		}

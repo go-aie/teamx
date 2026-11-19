@@ -162,6 +162,8 @@ type roomsIndex struct {
 // The root lock owns catalog mutations and live services. Catalog reads use
 // the published immutable view. Durable operations outlive their HTTP caller.
 type roomManager struct {
+	calendars *CalendarService
+
 	catalog                  atomic.Pointer[roomsCatalogSnapshot]
 	updates                  *uiUpdateHub
 	agentNames               *agentNameRegistry
@@ -256,6 +258,15 @@ func openRoomManager(dir string, maxTurns uint64, upgrade *inputUpgradeOptions) 
 		maxTurns = defaultMaxTurns
 	}
 	m := &roomManager{updates: newUIUpdateHub(), settings: defaultSystemSettings(), store: store, epoch: epoch, maxTurns: maxTurns, factory: newService, runtimes: make(map[RoomIdentity]*roomRuntime)}
+	m.calendars, err = newCalendarService()
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err != nil {
+			_ = m.calendars.close(context.Background())
+		}
+	}()
 	m.settings.observe = func() { m.updates.mark(uiUpdate{Topic: "settings"}) }
 	m.initPlatform()
 	err = readSnapshot(m.indexPath(), &m.index, maxRoomsFileBytes)

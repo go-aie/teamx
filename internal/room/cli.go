@@ -157,6 +157,9 @@ func runCLIWithInput(ctx context.Context, args []string, stdin io.Reader, stdout
 		return writeOutput(stdout, []byte(rootCLIHelp))
 	}
 	command, args := args[0], args[1:]
+	if command == "calendar" {
+		return runCalendarCLI(ctx, args, stdin, stdout, stderr, env)
+	}
 	if command == "skill" {
 		return runUsageSkillCLI(ctx, args, stdout, env)
 	}

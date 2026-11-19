@@ -11,6 +11,7 @@ const rootCLIHelp = `Usage: teamx COMMAND [--help]
   platforms skill/list/connect/selection/chats/projects/member  Connect/configure Feishu/GitLab for current member
   platforms upgrade           Upgrade platform model and references offline (--rooms-dir ROOT)
   member add/list/remove/run/pause/session rotate/status
+  calendar list/get/update/claim/finish  Direct-conversation scheduled tasks (--help)
   send | read                   Room messages
   inbox read                    Platform notifications and internal events
   matters list/read/sources/source/resolve/ensure/update/notify/reply/instruct/instruction-status

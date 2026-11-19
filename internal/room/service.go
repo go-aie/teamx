@@ -8,12 +8,15 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/go-aie/actorx"
 	"github.com/go-aie/teamx/internal/agent/dsh"
+	"github.com/go-aie/teamx/internal/calendar"
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/notification"
 	"github.com/go-aie/teamx/internal/web"
@@ -26,6 +29,10 @@ type ServiceInfo struct {
 
 // Only these explicit DTOs cross HTTP. Actor addresses remain in the service.
 type apiRequest struct {
+	Calendar             json.RawMessage `json:"calendar,omitempty"`
+	CalendarExecution    string          `json:"calendar_execution,omitempty"`
+	CalendarBusinessView bool            `json:"calendar_business_view,omitempty"`
+
 	Mentions         []MessageMention `json:"mentions,omitempty"`
 	automatic        bool
 	recovering       bool
@@ -94,6 +101,8 @@ type serviceMembers struct {
 }
 
 type apiError struct {
+	TaskID          string             `json:"task_id,omitempty"`
+	RunID           string             `json:"run_id,omitempty"`
 	Record          *agentPolicyRecord `json:"record,omitempty"`
 	Outcome         string             `json:"outcome,omitempty"`
 	OperationID     string             `json:"operation_id,omitempty"`
@@ -107,6 +116,12 @@ type apiError struct {
 }
 
 type service struct {
+	calendars       *CalendarService
+	ownCalendars    bool
+	calendarMu      sync.Mutex
+	calendar        *calendarHandle
+	calendarRunning atomic.Bool
+
 	maintainShared            atomic.Pointer[sharedInboxMaintenance]
 	checkWorkspace            func(string) error
 	inputAdapters             map[notification.SourceID]notificationAdapter
@@ -337,6 +352,31 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 			}
 		}
 	}
+	s.calendars = config.calendars
+	if s.calendars == nil {
+		s.calendars, err = newCalendarService()
+		if err != nil {
+			return nil, err
+		}
+		s.ownCalendars = true
+	}
+	defer func() {
+		if err != nil && s.calendarCurrent() != nil {
+			_ = s.calendars.retire(context.Background(), s.calendarCurrent())
+		}
+		if err != nil && s.ownCalendars {
+			_ = s.calendars.close(context.Background())
+		}
+	}()
+	if s.isDirect && s.unifiedInputs {
+		if _, statErr := os.Stat(filepath.Join(s.store.dir, "calendar", "state.json")); statErr == nil {
+			if _, err = s.calendarOwner(true); err != nil {
+				return nil, err
+			}
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return nil, statErr
+		}
+	}
 	if err := assemble(s, state); err != nil {
 		return nil, err
 	}
@@ -367,6 +407,9 @@ func (s *service) freeze() {
 }
 
 func (s *service) close(ctx context.Context) error {
+	if s.ownCalendars && s.calendars != nil {
+		s.calendars.cancel()
+	}
 	s.freeze()
 	for !s.cleanup.TryLock() {
 		select {
@@ -388,6 +431,12 @@ func (s *service) close(ctx context.Context) error {
 		}
 	}
 	s.changes.Unlock()
+	if h := s.calendarCurrent(); h != nil {
+		h.retired.Store(true)
+		if _, err := h.addr.Call[struct{}](ctx, calendarQuiesce{}); err != nil {
+			return err
+		}
+	}
 	if !s.grantsStopped.Load() {
 		if _, err := s.scheduler.Call[struct{}](ctx, stopTurnGrants{}); err != nil {
 			return fmt.Errorf("scheduler shutdown incomplete (store still owned): %w", err)
@@ -444,6 +493,16 @@ func (s *service) close(ctx context.Context) error {
 			return fmt.Errorf("member cleanup incomplete (store still owned): %w", err)
 		}
 		cleanupErr = errors.Join(cleanupErr, exit.Reason)
+	}
+	if h := s.calendarCurrent(); h != nil {
+		if err := s.calendars.retire(ctx, h); err != nil {
+			return err
+		}
+	}
+	if s.ownCalendars {
+		if err := s.calendars.close(ctx); err != nil {
+			return err
+		}
 	}
 	s.inboxMu.Lock()
 	for membership := range s.inboxes {
@@ -879,6 +938,8 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	switch r.URL.Path {
+	case "/v1/calendar/list", "/v1/calendar/get", "/v1/calendar/update", "/v1/calendar/claim", "/v1/calendar/finish":
+		result, err = s.calendarHTTPCall(r.Context(), strings.TrimPrefix(r.URL.Path, "/v1/calendar/"), req)
 	case "/v1/matters/list", "/v1/matters/read", "/v1/matters/update", "/v1/matters/sources", "/v1/matters/source", "/v1/matters/resolve", "/v1/matters/ensure", "/v1/matters/notify", "/v1/matters/reply", "/v1/matters/instruct", "/v1/matters/instruction-status":
 		result, err = s.memberFollowups(r.Context(), req, r.URL.Path)
 	case "/v1/policy/read", "/v1/policy/update", "/v1/policy/publish":
@@ -971,6 +1032,24 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeAPIError(w http.ResponseWriter, err error) {
+	var calendarErr *calendar.Error
+	if errors.As(err, &calendarErr) {
+		status := http.StatusBadRequest
+		if calendarErr.Code == "not_authorized" {
+			status = http.StatusForbidden
+		}
+		if calendarErr.Code == "version_conflict" || calendarErr.Code == "operation_conflict" || calendarErr.Code == "run_busy" {
+			status = http.StatusConflict
+		}
+		w.WriteHeader(status)
+		failure := apiError{Error: calendarErr.Message, Code: calendarErr.Code, Message: calendarErr.Message, Field: calendarErr.Field, TaskID: calendarErr.TaskID, RunID: calendarErr.RunID}
+		if calendarErr.ActualVersion != 0 {
+			failure.ActualVersion = &calendarErr.ActualVersion
+		}
+		_ = json.NewEncoder(w).Encode(failure)
+		return
+	}
+
 	var required *userAuthorizationRequired
 	if errors.As(err, &required) {
 		w.WriteHeader(http.StatusConflict)

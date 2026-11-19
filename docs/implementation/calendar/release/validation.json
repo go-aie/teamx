@@ -1,0 +1,118 @@
+{
+  "verified_at": "2026-11-19T04:40:34.614713+00:00",
+  "status": "passed",
+  "scope": "Calendar private-conversation first release: combination regression, reader documentation and delivery evidence; no version published or production deployment",
+  "checks": [
+    {
+      "name": "go",
+      "command": "go test ./...",
+      "status": "passed",
+      "results": [
+        "ok  \tgithub.com/go-aie/teamx/internal/agent/dsh\t(cached)",
+        "ok  \tgithub.com/go-aie/teamx/internal/calendar\t(cached)",
+        "ok  \tgithub.com/go-aie/teamx/internal/inputstream\t(cached)",
+        "ok  \tgithub.com/go-aie/teamx/internal/inputstreamtest\t(cached)",
+        "ok  \tgithub.com/go-aie/teamx/internal/platform\t(cached)",
+        "ok  \tgithub.com/go-aie/teamx/internal/platform/gitlab\t(cached)",
+        "ok  \tgithub.com/go-aie/teamx/internal/platform/lark\t(cached)",
+        "ok  \tgithub.com/go-aie/teamx/internal/platform/notification\t(cached)",
+        "ok  \tgithub.com/go-aie/teamx/internal/platform/registry\t(cached)",
+        "ok  \tgithub.com/go-aie/teamx/internal/platform/scion\t(cached)",
+        "ok  \tgithub.com/go-aie/teamx/internal/platform/tool\t(cached)",
+        "ok  \tgithub.com/go-aie/teamx/internal/room\t507.660s",
+        "ok  \tgithub.com/go-aie/teamx/internal/testutil\t(cached)",
+        "ok  \tgithub.com/go-aie/teamx/internal/web\t0.988s",
+        "ok  \tgithub.com/go-aie/teamx/internal/workspace\t(cached)",
+        "ok  \tgithub.com/go-aie/teamx/internal/workspace/scion\t(cached)",
+        "ok  \tgithub.com/go-aie/teamx/tools/gitlab\t(cached)",
+        "ok  \tgithub.com/go-aie/teamx/tools/scion\t(cached)"
+      ]
+    },
+    {
+      "name": "race",
+      "command": "go test -race ./internal/calendar ./internal/room -run 'Test(Calendar|Recurring|OfficialWork|WorkCalendar|ExplicitExcluded|Once|TaskIdempotency|PauseCancel|LateOnce|Unknown|ExplicitRetry|IncompleteTask|CreateDefaults|EditReplaces|UnifiedDSH|InputToolsMinimal|UnifiedUnusedProvider|UnifiedMCPAuthentication|MCPStandardHTTPClient|Followup.*(Notice|Clear))' -count=1",
+      "status": "passed",
+      "results": [
+        "ok  \tgithub.com/go-aie/teamx/internal/calendar\t2.068s",
+        "ok  \tgithub.com/go-aie/teamx/internal/room\t19.108s"
+      ]
+    },
+    {
+      "name": "managed-race",
+      "command": "go test -race ./internal/room -run '^TestCalendarManaged' -count=1",
+      "status": "passed",
+      "results": [
+        "ok  \tgithub.com/go-aie/teamx/internal/room\t6.802s"
+      ]
+    },
+    {
+      "name": "integration",
+      "command": "go test -tags=integration ./internal/room -run 'Test(Calendar|RuntimeRecoveryRestoresEnabledRoomsWithoutSelection|RuntimeRecoveryFailureAndSlowFactoryAreLocal|DirectConversationCreationIsolationAndFrozenRecovery|Followup.*(Notice|Clear))' -count=1",
+      "status": "passed",
+      "results": [
+        "ok  \tgithub.com/go-aie/teamx/internal/room\t21.846s"
+      ]
+    },
+    {
+      "name": "browser",
+      "command": "TEAMX_CALENDAR_BROWSER=1 NODE_PATH=$PWD/packaging/verifier/node_modules go test ./internal/room -run '^TestCalendar(Browser|ConversationRecoveryBrowser)$' -count=1 -v",
+      "status": "passed",
+      "results": [
+        "ok  \tgithub.com/go-aie/teamx/internal/room\t28.579s"
+      ]
+    },
+    {
+      "name": "combination-final",
+      "command": "TEAMX_CALENDAR_BROWSER=1 NODE_PATH=$PWD/packaging/verifier/node_modules go test ./internal/room -run '^TestCalendarConversationRecoveryBrowser$' -count=1 -v",
+      "status": "passed",
+      "results": [
+        "ok  \tgithub.com/go-aie/teamx/internal/room\t13.836s"
+      ]
+    },
+    {
+      "name": "browser-race",
+      "command": "TEAMX_CALENDAR_BROWSER=1 NODE_PATH=$PWD/packaging/verifier/node_modules go test -race ./internal/room -run '^TestCalendarConversationRecoveryBrowser$' -count=1 -v",
+      "status": "passed",
+      "results": [
+        "ok  \tgithub.com/go-aie/teamx/internal/room\t14.856s"
+      ]
+    },
+    {
+      "name": "web",
+      "command": "node --test internal/web/tests/*_test.mjs",
+      "status": "passed",
+      "results": [
+        "tests: 757",
+        "passed: 757",
+        "failed: 0"
+      ]
+    }
+  ],
+  "final_source_sha256": {
+    "internal/room/calendar_lifecycle_test.go": "40fd0d938716a8147f288f508519c7d3dc288bfe65ee27721ade3a0c9fed0b31",
+    "internal/room/calendar_lifecycle_browser_test.go": "2c30b4b7d483540bf95c55ac38808cc6daa6ac617e7a32a89d2fa74d5200057e",
+    "internal/room/testdata/calendar_lifecycle_browser.cjs": "3874b05d1c9f189092a5690c3b2326916e4dcaf23652a56da26171edb1deba4e"
+  },
+  "controlled_time": "Offline definition committed with a historical time; production boot scheduler evaluates current time. Future due candidates use the Actor evaluation input. No overnight real-time claim.",
+  "real_model": {
+    "executed_in_this_stage": false,
+    "reused_evidence": [
+      "../once-evidence.json",
+      "../agent-contract-evidence.json",
+      "../recurrence-evidence.json"
+    ]
+  },
+  "external_platform": {
+    "read": false,
+    "write": false,
+    "real_project_iteration_acceptance": false
+  },
+  "browser": {
+    "management": "browser-evidence.json",
+    "combination": "combination-evidence.json",
+    "real_device": false,
+    "mobile": "Chromium 390x844 simulated viewport"
+  },
+  "restart_scope": "Graceful manager/runtime shutdown, lock release and reconstruction from the same isolated directory in one test process; no crash or forced-kill acceptance.",
+  "final_check_scope": "Full Go suite compiled before the additional offline-recovery case and final fixture refinements; final managed race and integration checks cover both new service cases, and the final Chromium race run covers the completed browser fixture and script."
+}

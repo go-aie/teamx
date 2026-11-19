@@ -176,7 +176,7 @@ func TestUnifiedUnusedProviderDoesNotExpandBaseInformation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	schema := marshalMCPToolDefinitions(t, newInputMCPHTTP(true))
+	schema := marshalMCPToolsWithPrefix(t, newInputMCPHTTP(true), "inbox_")
 	// A registered unused native adapter and its longer field vocabulary remain
 	// outside Session instructions and static tool schemas.
 	s.service.inputAdapters = storageAdapters()
@@ -196,7 +196,7 @@ func TestUnifiedUnusedProviderDoesNotExpandBaseInformation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	otherSchema := marshalMCPToolDefinitions(t, newInputMCPHTTP(true))
+	otherSchema := marshalMCPToolsWithPrefix(t, newInputMCPHTTP(true), "inbox_")
 	if before.Instructions != after.Instructions || string(schema) != string(otherSchema) {
 		t.Fatal("unused platform expanded base information")
 	}

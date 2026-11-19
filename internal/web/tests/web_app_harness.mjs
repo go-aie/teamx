@@ -47,6 +47,10 @@ class Element {
     await Promise.all((this.listeners[event] || []).map(handler => handler({ preventDefault() {}, target: this, ...data })));
   }
   focus() {}
+  reset() {
+    const clear = el => { el.value = el.defaultValue || ""; el.checked = !!el.defaultChecked; for (const child of el.children) clear(child); };
+    for (const child of this.children) clear(child);
+  }
   requestSubmit() { return this.emit("submit"); }
   setRangeText(text, start, end) {
     this.value = this.value.slice(0, start) + text + this.value.slice(end);

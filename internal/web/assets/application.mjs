@@ -10,6 +10,7 @@ import { createNotifications } from "./features/notifications.mjs";
 import { createMembers } from "./features/members.mjs";
 import { createPolicy } from "./features/policy.mjs";
 import { createInbox } from "./features/inbox.mjs";
+import { createCalendar } from "./features/calendar.mjs";
 import { createConversation } from "./features/conversation.mjs";
 import { createPlatformInteractions } from "./features/platform-interactions.mjs";
 import { createConnections } from "./features/connections.mjs";
@@ -53,6 +54,7 @@ export async function createApp(overrides = {}) {
   const policyUI = {};
   const inboxUI = {};
   const conversationUI = {};
+ const calendarUI = {};
   const interactionsUI = {};
   const connectionsUI = {};
   const onboardingUI = {};
@@ -86,7 +88,7 @@ export async function createApp(overrides = {}) {
     }
     if ($("workspace-picker").open) layers.push({ id:"workspace-picker", close:workspaceUI.closeWorkspacePicker });
     if (!$("conversation-filter-menu").hidden) layers.push({ id:"conversation-filter", close:roomsUI.closeFilterMenu });
-    for (const [id, button] of [["activity-dialog","close-activity"], ["notification-detail","close-notification"],
+    for (const [id, button] of [["calendar-detail","calendar-detail-close"], ["activity-dialog","close-activity"], ["notification-detail","close-notification"],
       ["workspace-dialog","close-workspace"], ["create-dialog","close-create"], ["settings-dialog","close-settings"], ["access-confirm-dialog","access-confirm-cancel"]]) {
       if ($(id)?.open && !$(id).hidden) layers.push({id, close:() => id === "settings-dialog" ? settingsUI.backSettings() : $(button)?.click?.()});
       if (id === "settings-dialog" && $(id).open) {
@@ -211,7 +213,8 @@ export async function createApp(overrides = {}) {
       for (const message of cached.messages) state.messages.set(message.seq, message);
       state.lastSeq = cached.lastSeq; state.clearedThrough = cached.clearedThrough; state.members = cached.members;
     }
-    conversationUI.resetMessageNodes();
+    calendarUI.reset?.();
+ conversationUI.resetMessageNodes();
     conversationUI.resetReadingContext();
     conversationUI.resetRestartNotice();
     conversationUI.showDraft(); conversationUI.renderMessages(); membersUI.renderMembers();
@@ -286,7 +289,8 @@ export async function createApp(overrides = {}) {
     if (state.draft.restartRequest && state.draft.restartRequest.id === state.restart?.id) {
       state.draft.restartRequest = null; state.draft.restartError = ""; conversationUI.saveDraft();
     }
-    const nextMembers = members.members.map(member=>({...member,agent_name:member.agent_name || (roomsUI.isDirect() ? roomsUI.roomName() : roomsUI.selectedEntry()?.members?.find(m=>m.id===member.agent_id)?.agent_name) || member.agent_id}));
+    calendarUI.sync?.();
+ const nextMembers = members.members.map(member=>({...member,agent_name:member.agent_name || (roomsUI.isDirect() ? roomsUI.roomName() : roomsUI.selectedEntry()?.members?.find(m=>m.id===member.agent_id)?.agent_name) || member.agent_id}));
     const names = list=>JSON.stringify(list.map(m=>[m.agent_id,m.membership_id,m.agent_name]));
     const changed = names(state.members) !== names(nextMembers);
     state.members = nextMembers;
@@ -523,6 +527,7 @@ export async function createApp(overrides = {}) {
     confirmAction
   };
 
+  install(calendarUI,createCalendar({env,runtime,roomsUI,conversationUI,settingsUI}));
   install(userMenuUI, createUserMenu({ env, runtime, conversationUI, roomsUI, membersUI }));
   install(settingsUI, createSettings({
     env, runtime, connectionsUI, conversationUI, roomsUI, workspaceUI, policyUI, notificationsUI, onboardingUI, membersUI
@@ -549,6 +554,7 @@ export async function createApp(overrides = {}) {
     env, settingsUI, notificationsUI, runtime, membersUI, policyUI
   }));
   install(conversationUI, createConversation({
+    calendarUI,
     env, runtime, roomsUI, membersUI, settingsUI, interactionsUI, workspaceUI, layoutUI, userMenuUI
   }));
   install(interactionsUI, createPlatformInteractions({
@@ -643,6 +649,7 @@ export async function createApp(overrides = {}) {
     }
     return result;
   }, () => active() && chatReadable());
+  register("calendar",calendarUI.refresh,()=>active() && chatReadable());
   register("human_read", conversationUI.pollHumanRead, () => active() && chatReadable());
   register("interactions", interactionsUI.refreshPlatformInteractions, () => active() && chatReadable());
   register("activity", membersUI.activity.read, () => detail("activity"), memberScope);
@@ -714,6 +721,7 @@ export async function createApp(overrides = {}) {
   document.addEventListener("close", wakeDetails, true);
   window.addEventListener("focus", wakeDetails);
 
+  calendarUI.mount();
   settingsUI.mount();
   roomsUI.mount();
   layoutUI.mount();

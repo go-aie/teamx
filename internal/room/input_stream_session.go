@@ -11,6 +11,8 @@ import (
 // Rooms keep their prior entry until the separately authorized upgrade.
 // CLI and MCP share this member service and the same durable coordinator.
 type inputSession struct {
+	executionContext context.Context // Original turn cancellation, independent of HTTP request lifetime.
+
 	receiptMu  sync.Mutex
 	receiptErr error // Latest receipt result; diagnostics only, never consumption authority.
 	knownMu    sync.Mutex
@@ -108,6 +110,10 @@ func newInputSession(ctx context.Context, svc *service, p *platformInputStorage,
 	return s, nil
 }
 func (s *inputSession) check(ctx context.Context) error {
+	if s.executionContext != nil && s.executionContext.Err() != nil {
+		return ErrClosing
+	}
+
 	if !s.storage.owns(ctx) {
 		return s.storage.run(ctx, "check_execution", s.check)
 	}

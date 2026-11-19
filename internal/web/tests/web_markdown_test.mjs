@@ -311,3 +311,17 @@ test("compact Lark mentions show names and keep identity in tooltips without rew
   assert.ok(!escaped.includes('<img'));
   assert.ok(!/"\s+onmouseover=/.test(escaped));
 });
+
+test("calendar receipt links require an explicit local handler and an exact task reference", () => {
+  const id="task_"+"a".repeat(32), source=`[查看日历](#calendar/task/${id})`;
+  assert.match(markdownHTML(source,{openCalendar:()=>{}}),/class="calendar-receipt-link"/);
+  assert.doesNotMatch(markdownHTML(source),/<a/);
+  for(const href of ["#calendar/task/task_other",`#calendar/task/${id}?room=other`,`#calendar/task/${id}/extra`,"javascript:alert(1)"]){
+    assert.doesNotMatch(markdownHTML(`[安排](${href})`,{openCalendar:()=>{}}),/calendar-receipt-link|<a/);
+  }
+  let click,opened,prevented=false;
+  const link={getAttribute:()=>`#calendar/task/${id}`,addEventListener:(event,handler)=>{assert.equal(event,"click");click=handler;}};
+  const container={ownerDocument:{createTreeWalker:()=>({nextNode:()=>false})},querySelectorAll:selector=>selector==="a.calendar-receipt-link"?[link]:[]};
+  renderMessageBody(container,source,"owner",{openCalendar:taskID=>opened=taskID});
+  click({preventDefault(){prevented=true;}});assert.equal(opened,id);assert.equal(prevented,true);
+});

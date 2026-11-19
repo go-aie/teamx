@@ -195,13 +195,13 @@ func (s RoomSnapshot) validate() error {
 	for key, receipt := range s.FollowupNoticeReceipts {
 		digest, err := hex.DecodeString(receipt.Digest)
 		if !validText(key) || receipt.Seq == 0 || receipt.Seq > s.LatestSeq || receipt.Author.Kind != "agent" ||
-			!validText(receipt.Author.ID) || !safeMembershipID(receipt.MembershipID) || !strings.HasPrefix(key, "followup-"+receipt.MembershipID+"-") || err != nil || len(digest) != 32 {
-			return fmt.Errorf("invalid followup notice receipt")
+			!validText(receipt.Author.ID) || !safeMembershipID(receipt.MembershipID) || !validPublicationID(key, receipt.MembershipID) || err != nil || len(digest) != 32 {
+			return fmt.Errorf("invalid durable publication receipt")
 		}
 		if receipt.Seq > s.ClearedThrough {
 			m := s.Messages[receipt.Seq-s.ClearedThrough-1]
 			if m.ClientMessageID != key || m.Author != receipt.Author || m.ReplyTo != 0 || noticeDigest(m.Text) != receipt.Digest {
-				return fmt.Errorf("followup notice receipt differs from message")
+				return fmt.Errorf("durable publication receipt differs from message")
 			}
 		}
 	}

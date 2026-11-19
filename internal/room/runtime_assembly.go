@@ -227,6 +227,7 @@ func (m *roomManager) workspaceActivationConfig(id RoomIdentity, applying string
 		profiles[member.Runner.Profile] = p
 	}
 	config := m.config
+	config.calendars = m.calendars
 	config.checkWorkspace = func(profile string) error {
 		for _, member := range saved.Members {
 			if member.Runner.Profile == profile {

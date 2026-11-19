@@ -1,7 +1,7 @@
 // HTTP observation scheduling only. Transport/lifecycle ownership is installed
 // separately; creating a scheduler does not open a stream or start a poll.
 export const updateIntervals = Object.freeze({
-  messages: 500, members: 1000, human_read: 1000, catalog: 1500,
+  calendar: 1000, messages: 500, members: 1000, human_read: 1000, catalog: 1500,
   activity: 1500, inbox: 1500, notifications: 2000, models: 1000,
   workspace: 1000, interactions: 1000, authorization: 1000,
   settings: 1000, platforms: 1000, tools: 1000, policy: 1000,

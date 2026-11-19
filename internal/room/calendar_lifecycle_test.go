@@ -1,0 +1,287 @@
+package room
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"testing"
+	"time"
+
+	"github.com/go-aie/teamx/internal/calendar"
+)
+
+// Real manager, runtime lifecycle, Actor commits and Room publication. Only the
+// model component and the evaluation clock are controlled. Neither UI selection
+// nor a test-only reload of a calendar is used to restore background work.
+type calendarManagedFixture struct {
+	t       *testing.T
+	root    string
+	manager *roomManager
+	rooms   []roomSummary
+	entered chan MemberIdentity
+}
+
+func newCalendarManagedFixture(t *testing.T) *calendarManagedFixture {
+	t.Helper()
+	t.Setenv("USER", humanCaller.ID)
+	f := &calendarManagedFixture{t: t, root: t.TempDir(), entered: make(chan MemberIdentity, 8)}
+	f.manager = f.newManager(nil)
+	ensureAssistant(t, f.manager)
+	f.rooms = []roomSummary{assistantSummary(t, f.manager), createDirectConversation(t, f.manager, directSelection("calendar-other"))}
+	for _, room := range f.rooms {
+		s := openRoomOK(t, f.manager, room, "calendar-open-"+room.RoomID)
+		f.agentControl(s, "pause")
+	}
+	return f
+}
+
+func (f *calendarManagedFixture) newManager(access *serverAccess) *roomManager {
+	m := directTestManager(f.t, f.root, testTeamDefinition(f.t).Runtime)
+	m.config.unifiedInputs = true
+	m.config.access = access
+	m.factory = controlledActivationFactory(func(id MemberIdentity, ctx context.Context) error {
+		f.entered <- id
+		<-ctx.Done()
+		return ctx.Err()
+	}, nil)
+	return m
+}
+
+func (f *calendarManagedFixture) service(index int) *service {
+	f.t.Helper()
+	f.manager.mu.Lock()
+	defer f.manager.mu.Unlock()
+	rt := f.manager.runtimes[f.rooms[index].RoomIdentity]
+	if rt == nil || rt.service == nil || rt.status != "ready" {
+		f.t.Fatal("background calendar runtime not restored", f.rooms[index], rt)
+	}
+	return rt.service
+}
+
+func (f *calendarManagedFixture) restart() {
+	f.t.Helper()
+	old := f.manager
+	if err := old.close(); err != nil {
+		f.t.Fatal(err)
+	}
+	f.manager = f.newManager(old.config.access)
+	f.manager.config.endpoint = old.config.endpoint
+	if err := f.manager.restoreRuntimes(); err != nil {
+		f.t.Fatal(err)
+	}
+	awaitRecovery(f.t, f.manager)
+	for i := range f.rooms {
+		if f.service(i).calendars != f.manager.calendars {
+			f.t.Fatal("recovery installed a separate calendar scheduler")
+		}
+	}
+}
+
+func (f *calendarManagedFixture) agentControl(s *service, action string) {
+	f.t.Helper()
+	members, err := s.members(f.t.Context())
+	if err != nil || len(members.Members) != 1 {
+		f.t.Fatal(members, err)
+	}
+	m := members.Members[0]
+	if _, err := s.control(f.t.Context(), apiRequest{AgentID: m.AgentID, MembershipID: m.MembershipID}, action); err != nil {
+		f.t.Fatal(err)
+	}
+}
+
+func (f *calendarManagedFixture) update(index int, request calendar.Request) *calendar.Task {
+	f.t.Helper()
+	raw, _ := json.Marshal(request)
+	w := managerHTTP(f.manager, "/v1/calendar/update", apiRequest{ServiceInfo: f.service(index).info, Caller: humanCaller, Calendar: raw})
+	var result calendar.Result
+	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &result) != nil || result.Task == nil {
+		f.t.Fatal(w.Code, w.Body.String())
+	}
+	return result.Task
+}
+
+func (f *calendarManagedFixture) create(index int, title string) *calendar.Task {
+	f.t.Helper()
+	d := calendarDefinition(time.Now().Add(10 * time.Minute))
+	d.Title, d.Schedule.Frequency = title, "daily"
+	return f.update(index, calendar.Request{Action: "create", OperationID: "same-operation-in-two-conversations", Definition: &d})
+}
+
+func (f *calendarManagedFixture) due(index int, task *calendar.Task) *calendar.Run {
+	f.t.Helper()
+	s := f.service(index)
+	_, err := s.calendarCurrent().call(f.t.Context(), true, func(_ context.Context, state *calendar.State) (any, error) {
+		state.Evaluate(task.NextAt.Add(time.Second))
+		return nil, nil
+	})
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	state := calendarAwait(f.t, s, func(state calendar.State) bool {
+		for _, r := range state.Runs {
+			if r.Task.ID == task.ID && r.DueAt.Equal(task.NextAt) && r.EventDelivered {
+				return true
+			}
+		}
+		return false
+	})
+	for _, r := range state.Runs {
+		if r.Task.ID == task.ID && r.DueAt.Equal(task.NextAt) {
+			return r
+		}
+	}
+	f.t.Fatal("candidate missing")
+	return nil
+}
+
+func (f *calendarManagedFixture) finish(index int, run *calendar.Run) *calendar.Run {
+	f.t.Helper()
+	s := f.service(index)
+	f.agentControl(s, "enable")
+	id := MemberIdentity{s.info.RoomIdentity, run.Task.AgentID, run.Task.MembershipID}
+	select {
+	case actual := <-f.entered:
+		if actual != id {
+			f.t.Fatal("another conversation started", actual, id)
+		}
+	case <-time.After(5 * time.Second):
+		f.t.Fatal("controlled model turn did not start")
+	}
+	var binding calendar.Binding
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		agent, err := s.store.LoadAgent(id)
+		if err == nil && agent.Turn != nil && agent.Turn.Status == "running" {
+			binding, err = s.calendarBinding(id, agent.TurnNumber)
+			if err == nil {
+				break
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if binding.Turn == 0 {
+		f.t.Fatal("actual scheduled member turn did not start")
+	}
+	// Exercise the same authenticated execution adapter as the Agent tools;
+	// the controlled component supplies the report, never private model output.
+	claim, _ := json.Marshal(calendarQuery{RunID: run.ID})
+	if _, err := s.calendarCall(f.t.Context(), "claim", claim, agentCallerIdentity(id), binding.Turn, &binding); err != nil {
+		f.t.Fatal(err)
+	}
+	finish, _ := json.Marshal(calendarFinish{RunID: run.ID, Outcome: "succeeded", Report: "组合验收报告：" + run.Task.Definition.Title})
+	if _, err := s.calendarCall(f.t.Context(), "finish", finish, agentCallerIdentity(id), binding.Turn, &binding); err != nil {
+		f.t.Fatal(err)
+	}
+	state := calendarAwait(f.t, s, func(state calendar.State) bool { return state.Runs[run.ID].Publication.Status == "published" })
+	f.agentControl(s, "pause")
+	return state.Runs[run.ID]
+}
+
+func TestCalendarManagedRecurringPauseRecoveryAndPublication(t *testing.T) {
+	f := newCalendarManagedFixture(t)
+	a, b := f.create(0, "私信甲重复提醒"), f.create(1, "私信乙重复提醒")
+	if a.ID == b.ID || a.AgentID != b.AgentID {
+		t.Fatal("same Agent role must have distinct conversation tasks", a, b)
+	}
+	run := f.due(0, a)
+	oldInfo := f.service(0).info
+	f.restart() // No /rooms/open or calendar read precedes this recovery.
+	s := f.service(0)
+	if s.info.ServiceEpoch == oldInfo.ServiceEpoch || s.calendarCurrent().projection.Load().state.Runs[run.ID].Status != "queued" {
+		t.Fatal("queued work or service epoch lost on restart")
+	}
+	members, err := s.members(t.Context())
+	if err != nil || !members.Members[0].Execution.Paused || members.Members[0].Execution.SessionTurns.Total != 0 {
+		t.Fatal("calendar recovery enabled a paused Agent", members, err)
+	}
+	stale := managerHTTP(f.manager, "/v1/calendar/update", apiRequest{ServiceInfo: oldInfo, Caller: humanCaller, Calendar: json.RawMessage(`{"action":"cancel","operation_id":"stale","task_id":"` + a.ID + `","expected_version":1}`)})
+	if stale.Code == http.StatusOK {
+		t.Fatal("old service epoch mutated recovered calendar")
+	}
+	finished := f.finish(0, run)
+	paused := f.update(1, calendar.Request{Action: "pause", OperationID: "pause", TaskID: b.ID, ExpectedVersion: b.Version})
+	f.restart()
+	if f.service(1).calendarCurrent().projection.Load().state.Tasks[b.ID].State != "paused" {
+		t.Fatal("task pause lost on restart")
+	}
+	resumed := f.update(1, calendar.Request{Action: "resume", OperationID: "resume", TaskID: b.ID, ExpectedVersion: paused.Version})
+	second := f.finish(1, f.due(1, resumed))
+	f.restart()
+	for i, expected := range []*calendar.Run{finished, second} {
+		s := f.service(i)
+		state := s.calendarCurrent().projection.Load().state
+		if len(state.Runs) != 1 || state.Runs[expected.ID].Publication.Seq != expected.Publication.Seq || state.Tasks[expected.Task.ID].State != "active" || !state.Tasks[expected.Task.ID].NextAt.After(expected.DueAt) {
+			t.Fatal("recovery duplicated or ended a recurring task", state)
+		}
+		room, err := s.store.LoadRoom()
+		if err != nil {
+			t.Fatal(err)
+		}
+		count := 0
+		for _, message := range room.Messages {
+			if message.Text == expected.Report && message.Seq == expected.Publication.Seq && message.Author.ID == expected.Task.AgentID {
+				count++
+			}
+			if message.Text == []*calendar.Run{second, finished}[i].Report {
+				t.Fatal("report crossed conversations")
+			}
+		}
+		if count != 1 {
+			t.Fatal("public report missing or duplicated", count)
+		}
+	}
+}
+
+func TestCalendarManagedOfflineRecoveryOnlyLatestWhileAgentsPaused(t *testing.T) {
+	f := newCalendarManagedFixture(t)
+	due := time.Now().UTC().Add(-10 * time.Minute).Truncate(time.Minute)
+	tasks := make([]*calendar.Task, len(f.rooms))
+	for i := range f.rooms {
+		s := f.service(i)
+		s.calendarRunning.Store(false)
+		h, err := s.calendarOwner(true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Persist a valid historical definition through its sole writer while
+		// the controlled clock is three days earlier. Production boot then
+		// evaluates the elapsed periods with the real current clock.
+		created := due.Add(-73 * time.Hour)
+		d := calendarDefinition(due.Add(-72 * time.Hour))
+		d.Schedule.Frequency = "daily"
+		v, err := h.call(t.Context(), true, func(_ context.Context, state *calendar.State) (any, error) {
+			id := s.recovered[0].id
+			return state.Update(calendar.Request{Action: "create", OperationID: "offline", Definition: &d}, calendar.Source{Operator: humanCaller.ID, Text: "每天提醒"}, id.AgentID, id.MembershipID, "UTC", created)
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tasks[i] = v.(calendar.Result).Task
+	}
+	for range 2 {
+		f.restart()
+		for i, task := range tasks {
+			s := f.service(i)
+			state := calendarAwait(t, s, func(state calendar.State) bool {
+				for _, r := range state.Runs {
+					if r.DueAt.Equal(due) && r.EventDelivered {
+						return true
+					}
+				}
+				return false
+			})
+			if len(state.Runs) != 1 || len(state.MissedRanges) != 1 || state.MissedRanges[0].Count != 3 || state.MissedRanges[0].Reason != "skipped_late" || !state.Tasks[task.ID].NextAt.After(due) {
+				t.Fatal("offline recovery lost or duplicated elapsed periods", state)
+			}
+			members, err := s.members(t.Context())
+			if err != nil || !members.Members[0].Execution.Paused || members.Members[0].Execution.SessionTurns.Total != 0 {
+				t.Fatal("offline recovery enabled the Agent", members, err)
+			}
+		}
+	}
+	select {
+	case id := <-f.entered:
+		t.Fatal("offline recovery started a model while paused", id)
+	default:
+	}
+}

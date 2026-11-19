@@ -8,7 +8,7 @@ import { renderAvatar } from "../avatars.mjs";
 import { createMentionPicker } from "../mention-picker.mjs";
 
 // Messages, drafts, mentions and the send/restart lifecycle.
-export function createConversation({ env, runtime, roomsUI, membersUI, settingsUI, interactionsUI, workspaceUI, layoutUI, userMenuUI }) {
+export function createConversation({ env, runtime, roomsUI, membersUI, settingsUI, interactionsUI, workspaceUI, layoutUI, userMenuUI, calendarUI }) {
   const { document, window, requestAnimationFrame, performance, setTimeout, ResizeObserver, renderMessageBody } = env;
   const { state, $, notice, rpc, currentView, refresh, discussionBusy, reconcileChildren, storage, confirmAction } = runtime;
 
@@ -96,7 +96,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
   }
 
   function readingActive() {
-    if (!visit || state.messagePreview || state.suspended || document.hidden || !document.hasFocus() ||
+    if ($("timeline-wrap").hidden || !visit || state.messagePreview || state.suspended || document.hidden || !document.hasFocus() ||
       !layoutUI.conversationVisible() || document.querySelector("dialog:modal")) return false;
     const root = $("timeline").getBoundingClientRect(), viewport = window.visualViewport;
     const top = viewport?.offsetTop || 0, left = viewport?.offsetLeft || 0;
@@ -142,7 +142,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
   const displayText = message => messageDisplayText(message, mentionLabel);
   const messageOptions = message => ({ mentions:message.mentions, mentionLabel, ...(message.author.kind === "integration"
     ? notificationOptions(state.info, state.operator, message.source, { seq: message.seq })
-    : { memberNames: state.members.map(m => m.agent_id) }), operatorNames: operatorNames() });
+    : { memberNames: state.members.map(m => m.agent_id), ...(roomsUI.isDirect() ? {openCalendar:taskID=>calendarUI?.openTask(taskID)} : {}) }), operatorNames: operatorNames() });
 
   function renderRestart() {
     const restart = state.restart;
@@ -335,6 +335,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
   }
 
   function finishMessages() {
+    calendarUI?.renderLinks?.();
     $("empty").hidden = state.messages.size !== 0;
     $("load-history").hidden = state.oldest <= state.clearedThrough + 1;
     renderDivider(); renderReply(); renderMentionNotice();
@@ -584,7 +585,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
     return true;
   }
 
-  async function loadHistory(target = null) {
+  async function loadHistory(target = null, fixedTarget = false) {
     if (historyTask || !state.info || state.oldest <= state.clearedThrough + 1) return;
     const task = {controller:new AbortController(), version:runtime.viewVersion, key:readingKey(), visit,
       cleared:state.clearedThrough, info:{...state.info}, loaded:0, target};
@@ -615,7 +616,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
         // can run while the retained timeline remains continuous.
         await yieldHistory(task);
         if (!validHistory(task)) return;
-        if (target && reviewTarget() !== target) {
+        if (target && !fixedTarget && reviewTarget() !== target) {
           target = reviewTarget();
           if (!target) return;
         }
@@ -674,6 +675,16 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
     $("reply-label").textContent=seq ? (message ? displayText(message) : state.draft.replyLabel || "原消息未载入").replace(/\s+/g," ").trim() : "";
     $("reply-preview").title=message ? "定位原消息" : "加载更早消息后可定位原文";
     $("reply-preview").setAttribute("aria-label",`定位引用的消息 #${seq}`);
+  }
+
+  async function locateMessage(seq) {
+    if (!Number.isSafeInteger(seq) || seq <= state.clearedThrough) {
+      notice("review-notice", "对应消息已清理；任务详情中仍保留执行报告。"); return;
+    }
+    if (historyTask) cancelHistory();
+    if (messageNodes.has(seq)) { revealMessage(seq); return; }
+    await loadHistory(seq, true);
+    if (!messageNodes.has(seq)) notice("review-notice", "对应消息已不可用，可返回日历查看保存的报告。");
   }
 
   function revealMessage(seq) {
@@ -955,6 +966,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
     resetRestartNotice,
     resetMessageNodes,
     interactionHost,
+    locateMessage,
     renderMessages,
     composerState,
     beginReply,

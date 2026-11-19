@@ -19,6 +19,10 @@ const defaultMaxTurns uint64 = 16
 //
 //actorx:actor
 type MemberAgent struct {
+	AdditionalWorkReady func() bool
+	ExecutionBinding    func(uint64) (turnExecution, error)
+	ObserveTurnFinished func(MemberIdentity, turnExecution, TurnRecord, bool)
+
 	Inputs               func(context.Context) (unifiedInputStatus, error)
 	ClaimInputRecovery   func(context.Context) error
 	inputStatus          *unifiedInputStatus
@@ -295,6 +299,18 @@ func (m *MemberAgent) Control(ctx actorx.Context, msg ControlMember) (MemberStat
 			return m.status(), err
 		}
 
+	case "cancel_bound":
+		if msg.expectedBinding == nil || m.ExecutionBinding == nil || !m.active || m.work == nil {
+			return m.status(), ErrConflict
+		}
+		binding, err := m.ExecutionBinding(msg.expectedBinding.Turn)
+		if err != nil || binding != *msg.expectedBinding {
+			return m.status(), ErrConflict
+		}
+		m.work.stopRequested = true
+		if m.cancel != nil {
+			m.cancel()
+		}
 	case "cancel":
 		// Bind the request to one admitted attempt. A delayed click must never
 		// cancel a later turn, including one in a replacement Session.
@@ -444,7 +460,7 @@ func (m *MemberAgent) BindScheduler(_ actorx.Context, msg bindTurnScheduler) (st
 func (m *MemberAgent) ready() bool {
 	return m.ModelGate == "" && (m.ExecutionFrozen == nil || !m.ExecutionFrozen.Load()) && !m.active && !m.paused && !m.fault && m.BackendBlocked == "" &&
 		m.rotationWork == nil && (m.rotation == nil || (m.rotation.Status != "waiting" && m.rotation.Status != "closing")) &&
-		(m.rotationRecord == nil || m.rotationRecord.Phase == "completed") && (m.automaticRotation() || m.turnsUsed < m.turnLimit) && (m.roomReady() || m.inboxReady()) && !m.now().Before(m.due)
+		(m.rotationRecord == nil || m.rotationRecord.Phase == "completed") && (m.automaticRotation() || m.turnsUsed < m.turnLimit) && (m.roomReady() || m.inboxReady() || m.AdditionalWorkReady != nil && m.AdditionalWorkReady()) && !m.now().Before(m.due)
 }
 
 func (m *MemberAgent) roomReady() bool {
@@ -790,6 +806,10 @@ func (m *MemberAgent) startTurn(input UnreadChanged, snapshotSeq, readThrough ui
 			return struct{}{}, err
 		}
 		work.started = true
+		var binding turnExecution
+		if m.ExecutionBinding != nil {
+			binding, _ = m.ExecutionBinding(work.state.TurnNumber)
+		}
 		// Terminal checkpoint runs on failure and cancellation too. It does not
 		// make external tool effects transactional or safe to replay.
 		defer func() {
@@ -818,6 +838,9 @@ func (m *MemberAgent) startTurn(input UnreadChanged, snapshotSeq, readThrough ui
 			err := store.SaveAgent(work.state)
 			work.ended = err == nil
 			runErr = errors.Join(runErr, err)
+			if err == nil && m.ObserveTurnFinished != nil {
+				m.ObserveTurnFinished(opts.MemberIdentity, binding, *work.state.Turn, !errors.Is(runErr, errDSHDisabled))
+			}
 		}()
 		if work.session == nil {
 			session, err := backend.OpenSession(ctx, opts)
@@ -835,6 +858,9 @@ func (m *MemberAgent) startTurn(input UnreadChanged, snapshotSeq, readThrough ui
 			if work.session == nil {
 				return struct{}{}, fmt.Errorf("backend returned no Session")
 			}
+		}
+		if m.ExecutionBinding != nil {
+			binding, _ = m.ExecutionBinding(work.state.TurnNumber)
 		}
 		return struct{}{}, work.session.Run(ctx, input)
 	}, func(_ struct{}, err error) bool {

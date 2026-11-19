@@ -1,0 +1,155 @@
+const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=require('node:fs');
+(async()=>{
+ const browser=await chromium.launch({headless:true});const context=await browser.newContext({viewport:{width:1440,height:1000}}),page=await context.newPage();
+ const errors=[];page.on('pageerror',error=>errors.push(error.message));
+ const artifacts=process.env.TEAMX_CALENDAR_ARTIFACTS;
+ if(artifacts)fs.mkdirSync(artifacts,{recursive:true});
+ const shot=async name=>{if(artifacts)await page.screenshot({path:`${artifacts}/${name}.png`,fullPage:true,animations:"disabled"});};
+ const task=title=>page.locator('.calendar-task-row').filter({has:page.locator('button',{hasText:title,exact:true})});
+ const openTask=async title=>{await task(title).locator('button').click();await page.locator('#calendar-detail-content h2').filter({hasText:title,exact:true}).waitFor();};
+ const close=async()=>page.locator('#calendar-detail-close').click();
+ const action=label=>({click:async()=>{const b=label==='编辑后续安排'?page.locator('#calendar-detail-content .calendar-actions').getByRole('button',{name:/^编辑/}):page.locator('#calendar-detail-content .calendar-actions button',{hasText:label,exact:true});if(!await b.isVisible())await page.locator('.calendar-more > summary').click();await b.click();}});
+ const advanced=async()=>{if(!await page.locator('#calendar-advanced').evaluate(el=>el.open))await page.locator('#calendar-advanced > summary').click();};
+ const waitState=label=>page.waitForFunction(label=>document.querySelector('#calendar-detail-content > .calendar-status')?.textContent===label,label);
+ try {
+  await page.goto(process.argv[2]);await page.locator('#conversation-calendar').waitFor({state:'visible'});
+  await page.locator('#message-input').fill('保留聊天草稿');
+  await page.locator('#conversation-calendar').click();await page.locator('#calendar-tasks > summary').click();await task('一次性检查').waitFor();
+  assert.equal(await page.locator('#calendar-mode').getAttribute('data-mode'),'week');
+  assert.equal(await page.locator('.calendar-day-heading').count(),7);
+  assert.ok(await page.locator('#calendar-items').evaluate(el=>el.scrollTop)>0);
+  assert.ok(await page.locator('.calendar-cluster').count()>0);
+  await shot('desktop-week');
+  assert.equal(await page.locator('.calendar-day-heading').first().evaluate(e=>e.offsetHeight),54);
+  assert.equal(await page.locator('#calendar-coverage').evaluate(e=>e.classList.contains('calendar-coverage-warning')),false);
+  await page.locator('#calendar-range').click();await page.locator('.calendar-picker-day').first().waitFor();
+  assert.equal(await page.locator('.calendar-picker-day').count(),42);await shot('desktop-date-picker');
+  await page.locator('.calendar-picker-day[aria-pressed="true"]').click();
+  const nowOffset=await page.locator('.calendar-now-line').evaluate(e=>parseFloat(e.style.getPropertyValue('--now-top')));
+  assert.ok(nowOffset>=0&&nowOffset<24*56);
+
+  await openTask('实习生面试提醒');
+  assert.equal(await page.locator('.calendar-execution-settings').evaluate(e=>e.open),false);
+  assert.equal(await page.locator('.calendar-history-section').evaluate(e=>e.open),false);
+  assert.match(await page.locator('.calendar-detail-when').innerText(),/14:30/);
+  assert.equal(await page.locator('.calendar-facts').isVisible(),false);
+  await shot('desktop-reminder-detail');await close();
+  const workspaceGridScroll=await page.locator('#calendar-items').evaluate(e=>e.scrollTop);
+  await page.locator('#calendar-new').click();await page.locator('#calendar-title').fill('实习生面试提醒');await page.locator('#calendar-instruction').fill('提醒我参加实习生面试，结果回复本私信。');await page.locator('#calendar-local-time').fill('14:30');
+  assert.equal(await page.locator('#calendar-advanced').evaluate(e=>e.open),false);assert.equal(await page.locator('#calendar-day-filter').isVisible(),false);
+  assert.ok(await page.locator('#calendar-form').evaluate(e=>e.clientWidth)<=720);
+  await shot('desktop-simple-form');await page.locator('#calendar-form-cancel').click();await page.waitForFunction(()=>!document.querySelector('#calendar-panel').classList.contains('calendar-form-open'));assert.ok(Math.abs(await page.locator('#calendar-items').evaluate(e=>e.scrollTop)-workspaceGridScroll)<2);
+  await page.locator('#calendar-new').click();await page.locator('#calendar-title').fill('实习生面试提醒');await page.locator('#calendar-instruction').fill('提醒我参加实习生面试，结果回复本私信。');await page.locator('#calendar-local-time').fill('14:30');await page.setViewportSize({width:390,height:844});await shot('mobile-simple-form');
+  assert.equal(await page.locator('#calendar-panel').evaluate(e=>e.scrollWidth<=e.clientWidth),true);
+  await page.locator('#calendar-form-cancel').click();await page.setViewportSize({width:1440,height:1000});
+  await page.locator('#calendar-today').click();
+  // Fetch all pages of a real 210+ occurrence next week, without truncation.
+  let cursors=0;page.on('request',req=>{if(req.url().endsWith('/v1/calendar/list')&&req.postDataJSON()?.calendar?.cursor)cursors++;});
+  let rejectCursor=true;
+  await page.route('**/v1/calendar/list',route=>{if(route.request().postDataJSON().calendar.cursor&&rejectCursor){rejectCursor=false;return route.fulfill({status:409,contentType:'application/json',body:JSON.stringify({code:'version_conflict',field:'cursor',error:'snapshot changed'})});}return route.continue();});
+  await page.locator('#calendar-next').click();
+  await page.waitForFunction(()=>document.querySelectorAll('.calendar-occurrence').length>=210);
+  assert.ok(cursors>=2);assert.equal(rejectCursor,false);
+  assert.equal(await page.locator('.calendar-occurrence').evaluateAll(els=>new Set(els.map(e=>e.dataset.occurrenceId)).size),await page.locator('.calendar-occurrence').count());
+  await page.unroute('**/v1/calendar/list');await page.locator('#calendar-today').click();
+  await openTask('一次性检查');
+  assert.match(await page.locator('#calendar-detail-content').innerText(),/UTC/);
+  await shot('desktop-simple-detail');await page.locator('.calendar-history-section > summary').click();assert.equal(await page.locator('.calendar-history-row').count(),50);
+  await page.locator('#calendar-detail-content button',{hasText:'加载更早执行'}).click();
+  await page.waitForFunction(()=>document.querySelectorAll('.calendar-history-row').length===55);
+  await page.locator('.calendar-history-row').first().getByRole('button',{name:'查看本次详情'}).click();
+  await page.locator('.calendar-run-detail').getByText('C3_HISTORY_REPORT：本地受控执行结果',{exact:true}).waitFor();
+  await shot('desktop-detail');
+  await page.locator('.calendar-run-detail').getByRole('button',{name:'查看私信报告'}).click();
+  await page.locator('#timeline-wrap').waitFor({state:'visible'});
+  assert.equal(await page.locator('#message-input').inputValue(),'保留聊天草稿');
+  await page.locator('.calendar-receipt-link').click();
+  await page.locator('#calendar-detail-content h2').waitFor();await close();await page.locator('#conversation-chat').click();
+  await page.locator('.calendar-message-links button',{hasText:'查看执行安排'}).click();
+  await page.locator('#calendar-detail-content h2').waitFor();
+  await action('暂停').click();await waitState('已暂停');
+  await close();await openTask('一次性检查');await action('恢复').click();await waitState('已安排');
+  // Editing only title must preserve the verified scope and fixed rule exactly.
+  await action('编辑后续安排').click();
+  assert.equal(await page.locator('#calendar-time-zone').inputValue(),'UTC');
+  await page.locator('#calendar-title').fill('编辑后的检查');await page.locator('#calendar-submit').click();
+  await task('编辑后的检查').waitFor();await openTask('编辑后的检查');
+  await page.locator('.calendar-execution-settings > summary').click();assert.match(await page.locator('#calendar-detail-content').innerText(),/verified/);
+  await close();
+  // A real settings save changes the display range, preserving the task zone.
+  const changeZone=async zone=>page.evaluate(async zone=>{
+    const {settings_version,...identity}=await (await fetch('/v1/settings')).json();
+    const {operator}=await (await fetch('/v1/access/session')).json();
+    const response=await fetch('/v1/settings/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...identity,caller:{kind:'human',id:operator},expected_version:settings_version,time_zone:zone})});
+    if(!response.ok)throw new Error(await response.text());
+  },zone);
+  await changeZone('America/New_York');await page.locator('#calendar-refresh').click();
+  await page.waitForFunction(()=>document.querySelector('#calendar-display-zone').textContent.includes('America/New_York'));
+  await openTask('编辑后的检查');assert.match(await page.locator('#calendar-detail-content').innerText(),/UTC/);await close();
+  await changeZone('Asia/Shanghai');await page.locator('#calendar-refresh').click();
+  await page.waitForFunction(()=>document.querySelector('#calendar-display-zone').textContent.includes('Asia/Shanghai'));
+  // Another real tab observes committed changes through the existing SSE path.
+  const other=await context.newPage();await other.goto(process.argv[2]);await other.locator('#conversation-calendar').click();await other.locator('#calendar-tasks > summary').click();
+  await other.locator('.calendar-task-link',{hasText:'编辑后的检查',exact:true}).waitFor();
+  await page.bringToFront();await openTask('编辑后的检查');
+  await page.route('**/v1/calendar/update',async route=>{await other.bringToFront();await route.continue();});
+  await action('暂停').click();
+  await other.waitForFunction(()=>[...document.querySelectorAll('.calendar-task-row')].find(e=>e.textContent.includes('编辑后的检查'))?.textContent.includes('已暂停'));
+  await page.unroute('**/v1/calendar/update');await other.close();await page.bringToFront();await waitState('已暂停');await close();
+  // Phone is a real Chromium rendering with a simulated viewport, not a device.
+  await page.setViewportSize({width:390,height:844});
+  await page.waitForFunction(()=>document.querySelector('#calendar-mode').dataset.mode==='day');
+  assert.equal(await page.locator('.calendar-date-button').count(),7);
+  assert.equal(await page.locator('#calendar-panel').evaluate(el=>el.scrollWidth<=el.clientWidth),true);
+  const beforeDate=await page.locator('#calendar-date').inputValue();
+  await page.locator('.calendar-date-button').last().click();
+  await page.waitForFunction(before=>document.querySelector('#calendar-date').value!==before,beforeDate);
+  const selectedDate=await page.locator('#calendar-date').inputValue();
+  await task('编辑后的检查').scrollIntoViewIfNeeded();
+  const scroll=await page.locator('#calendar-panel').evaluate(el=>el.scrollTop);
+  await openTask('编辑后的检查');await shot('mobile-detail');
+  await page.waitForFunction(()=>history.state?.teamxOverlay==='calendar-detail');await page.goBack();await page.locator('#calendar-detail').waitFor({state:'hidden'});
+  assert.equal(await page.locator('#calendar-date').inputValue(),selectedDate);
+  await openTask('编辑后的检查');await action('恢复').click();await waitState('已安排');await close();
+  assert.equal(await page.locator('#calendar-date').inputValue(),selectedDate);
+  assert.ok(Math.abs(await page.locator('#calendar-panel').evaluate(el=>el.scrollTop)-scroll)<3);
+  await page.locator('#conversation-chat').click();assert.equal(await page.locator('#message-input').inputValue(),'保留聊天草稿');
+  await page.locator('#conversation-calendar').click();assert.equal(await page.locator('#calendar-date').inputValue(),selectedDate);
+  await page.locator('#calendar-today').click();await page.waitForFunction(()=>document.querySelector('.calendar-date-button[data-today="true"]')?.getAttribute('aria-pressed')==='true');await shot('mobile-day');
+  await page.locator('#calendar-new').click();
+  await page.locator('#calendar-title').fill('每周工作日提醒');await page.locator('#calendar-instruction').fill('核对本地已确认范围并报告');
+  await advanced();await page.locator('#calendar-scope').fill('本私信已确认的本地资料');await page.locator('#calendar-frequency').selectOption('weekly');
+  await page.locator('#calendar-weekdays input[value="1"]').check();await page.locator('#calendar-weekdays input[value="3"]').check();
+  await page.locator('#calendar-day-filter').selectOption('business_days');await page.locator('#calendar-local-time').fill('09:00');await page.locator('#calendar-time-zone').fill('Asia/Shanghai');
+  await page.locator('#calendar-submit').click();await openTask('每周工作日提醒');
+  await page.locator('.calendar-execution-settings > summary').click();assert.match(await page.locator('#calendar-detail-content').innerText(),/每周 一、三/);assert.match(await page.locator('#calendar-detail-content').innerText(),/含调休补班/);
+  await action('跳过下一次').click();await page.getByText('已跳过',{exact:true}).waitFor();await close();
+  // Draft completion uses edit + activation, retaining the same task identity.
+  await page.locator('#calendar-create > summary').click();await page.locator('#calendar-title').fill('待完善提醒');await page.locator('#calendar-instruction').fill('等待时间信息');await page.locator('#calendar-save-draft').click();
+  await openTask('待完善提醒');await waitState('待完善');await action('编辑后续安排').click();
+  await page.locator('#calendar-frequency').selectOption('daily');await page.locator('#calendar-local-time').fill('09:00');await page.locator('#calendar-submit').click();await page.waitForFunction(()=>document.querySelector('#calendar-create').open===false);await openTask('待完善提醒');await waitState('已安排');await close();
+  // Unknown mutation receipt reuses the original operation ID.
+  await page.locator('#calendar-create > summary').click();await page.locator('#calendar-title').fill('保存回执恢复');await page.locator('#calendar-instruction').fill('本地提醒');await page.locator('#calendar-frequency').selectOption('daily');await page.locator('#calendar-local-time').fill('09:00');
+  const operations=[];let lose=true;
+  await page.route('**/v1/calendar/update',async route=>{operations.push(route.request().postDataJSON().calendar.operation_id);if(lose){lose=false;await route.fetch();await route.abort();}else await route.continue();});
+  await page.locator('#calendar-submit').click();await page.waitForFunction(()=>document.querySelector('#calendar-submit').disabled===false);
+  assert.equal(await page.locator('#calendar-create').getAttribute('open')!==null,true);await page.locator('#calendar-submit').click();await page.waitForFunction(()=>document.querySelector('#calendar-create').open===false);
+  await page.unroute('**/v1/calendar/update');assert.equal(operations.length,2);assert.equal(operations[0],operations[1]);assert.equal(await task('保存回执恢复').count(),1);
+  await page.locator('#calendar-create > summary').click();await page.locator('#calendar-title').fill('保存后刷新失败');await page.locator('#calendar-instruction').fill('本地提醒');await page.locator('#calendar-frequency').selectOption('daily');await page.locator('#calendar-local-time').fill('09:00');
+  await page.route('**/v1/calendar/list',route=>route.abort());await page.locator('#calendar-submit').click();await page.waitForFunction(()=>document.querySelector('#calendar-create').open===false);
+  await page.unroute('**/v1/calendar/list');await page.locator('#calendar-refresh').click();await task('保存后刷新失败').waitFor();
+  // Stale edits keep the user's form; they cannot silently refresh and overwrite.
+  await openTask('保存回执恢复');await action('编辑后续安排').click();await page.locator('#calendar-title').fill('冲突草稿保留');
+  await page.route('**/v1/calendar/update',route=>route.fulfill({status:409,contentType:'application/json',body:JSON.stringify({code:'version_conflict',message:'stale version',error:'stale version',actual_version:2})}));
+  await page.locator('#calendar-submit').click();await page.locator('#calendar-error').filter({hasText:'安排已被修改'}).waitFor();assert.equal(await page.locator('#calendar-title').inputValue(),'冲突草稿保留');await page.unroute('**/v1/calendar/update');await page.locator('#calendar-form-cancel').click();
+  // Coverage unknown and cancelled tasks remain discoverable in management.
+  await page.locator('#calendar-create > summary').click();await page.locator('#calendar-title').fill('工作日历覆盖外');await page.locator('#calendar-instruction').fill('覆盖外不执行');await page.locator('#calendar-frequency').selectOption('daily');await page.locator('#calendar-day-filter').selectOption('business_days');await page.locator('#calendar-start-date').fill('2028-01-01');await page.locator('#calendar-local-time').fill('09:00');await page.locator('#calendar-submit').click();await openTask('工作日历覆盖外');assert.match(await page.locator('#calendar-detail-content').innerText(),/工作日历尚未覆盖/);await action('取消任务').click();await waitState('已取消');await close();await page.locator('#calendar-task-filter').selectOption('cancelled');await task('工作日历覆盖外').waitFor();
+  assert.equal(await page.locator('#calendar-panel').evaluate(el=>el.scrollWidth<=el.clientWidth),true);
+  const empty=await context.newPage();await empty.goto(process.argv[3]);await empty.locator('#conversation-calendar').click();await empty.locator('#calendar-tasks > summary').click();await empty.getByText('暂无此类任务。',{exact:true}).waitFor();
+  await empty.setViewportSize({width:390,height:844});await empty.getByText('当天没有安排。',{exact:true}).waitFor();
+  if(artifacts)await empty.screenshot({path:`${artifacts}/mobile-empty.png`,fullPage:true,animations:"disabled"});await empty.close();await page.bringToFront();
+  assert.deepEqual(errors,[]);
+  const evidence={status:'passed',desktop:'1440x1000 Chromium',mobile:'390x844 Chromium viewport simulation; no real device',week:true,compact_toolbar:true,segmented_views:true,month_picker:true,minute_time_axis:true,layered_form:true,form_return_position:true,draft_secondary_action:true,compact_reminder_detail:true,neutral_calendar_coverage:true,range_pagination:true,snapshot_restart:true,saved_then_read_failure:true,coincident_tasks:true,history_pagination:55,frozen_result:true,mutual_links:true,older_report_history_loading:true,empty_view_no_state_file:true,edit_scope_preserved:true,display_zone_change_rule_fixed:true,version_conflict_draft:true,sse_other_tab:true,pause_resume:true,chat_draft:true,date_scroll_return:true,mobile_browser_back:true,receipt_markdown_link:true,weekly_form:true,skip_once:true,draft_completion:true,unknown_receipt_replay:true,coverage_unknown:true,cancellation:true,console_errors:errors};
+  if(artifacts)fs.writeFileSync(`${artifacts}/browser-evidence.json`,JSON.stringify(evidence,null,2)+'\n');console.log(JSON.stringify(evidence));
+ }catch(error){await shot('failure');console.log('FAILURE_STATE',await page.locator('#calendar-error').textContent(),await page.locator('#calendar-detail-content').innerText());throw error;}finally{await browser.close();}
+})().catch(error=>{console.error(error);process.exit(1);});

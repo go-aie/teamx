@@ -1,0 +1,127 @@
+{
+  "verified_at": "2026-11-19",
+  "scope": "real installed DSH/model, isolated Room; no external platform reads or writes",
+  "model": "deepseek-v4.1-flash-1017",
+  "rule_due": "2026-11-19T02:38:00Z",
+  "tasks": [
+    {
+      "task_id": "task_1e68e68fdf8c522c7bdac130041ffc19",
+      "version": 1,
+      "definition_version": 1,
+      "definition": {
+        "title": "提醒：CALENDAR_REAL_DSH_OK",
+        "instruction": "执行一次提醒，内容为 CALENDAR_REAL_DSH_OK，直接回复本私信（该 Room 对话）。",
+        "scope": {
+          "room_id": "design-review",
+          "delivery": "reply to this direct conversation"
+        },
+        "schedule": {
+          "frequency": "once",
+          "start_date": "2026-11-19",
+          "local_time": "10:38",
+          "time_zone": "Asia/Shanghai",
+          "day_filter": "all_days"
+        },
+        "misfire": "latest_within_one_hour"
+      },
+      "agent_id": "A",
+      "membership_id": "generation-A",
+      "state": "completed",
+      "source": {
+        "message_seq": 1,
+        "operator": "user",
+        "text": "请在 2026-11-19 02:38（UTC）执行一次提醒，内容为 CALENDAR_REAL_DSH_OK，直接回复本私信；现在请创建并返回保存回执。不要访问平台或执行外部动作。"
+      },
+      "created_at": "2026-11-19T02:36:14.506351Z",
+      "updated_at": "2026-11-19T02:36:14.506351Z",
+      "evaluated": true
+    }
+  ],
+  "runs": [
+    {
+      "run_id": "run_d54bd93b8b8b3351fd9aa89f9fce68e3",
+      "version": 5,
+      "task": {
+        "task_id": "task_1e68e68fdf8c522c7bdac130041ffc19",
+        "version": 1,
+        "definition_version": 1,
+        "definition": {
+          "title": "提醒：CALENDAR_REAL_DSH_OK",
+          "instruction": "执行一次提醒，内容为 CALENDAR_REAL_DSH_OK，直接回复本私信（该 Room 对话）。",
+          "scope": {
+            "room_id": "design-review",
+            "delivery": "reply to this direct conversation"
+          },
+          "schedule": {
+            "frequency": "once",
+            "start_date": "2026-11-19",
+            "local_time": "10:38",
+            "time_zone": "Asia/Shanghai",
+            "day_filter": "all_days"
+          },
+          "misfire": "latest_within_one_hour"
+        },
+        "agent_id": "A",
+        "membership_id": "generation-A",
+        "state": "active",
+        "source": {
+          "message_seq": 1,
+          "operator": "user",
+          "text": "请在 2026-11-19 02:38（UTC）执行一次提醒，内容为 CALENDAR_REAL_DSH_OK，直接回复本私信；现在请创建并返回保存回执。不要访问平台或执行外部动作。"
+        },
+        "created_at": "2026-11-19T02:36:14.506351Z",
+        "updated_at": "2026-11-19T02:36:14.506351Z",
+        "next_at": "2026-11-19T02:38:00Z",
+        "evaluated": false
+      },
+      "due_at": "2026-11-19T02:38:00Z",
+      "deadline": "2026-11-19T03:38:00Z",
+      "local_date": "2026-11-19",
+      "status": "succeeded",
+      "attempt": 1,
+      "binding": {
+        "generation": "session.json.dsh",
+        "turn": 2
+      },
+      "started_at": "2026-11-19T02:38:04.554661Z",
+      "settled": true,
+      "continue_count": 0,
+      "next_check_at": "2026-11-19T02:38:11.805928Z",
+      "event_delivered": true,
+      "event_seq": 3,
+      "outcome": "succeeded",
+      "report": "定时提醒已执行。\n\nCALENDAR_REAL_DSH_OK\n\n（任务 task_1e68e68fdf8c522c7bdac130041ffc19，计划时间 2026-11-19 02:38 UTC / 10:38 Asia/Shanghai，run_id=run_d54bd93b8b8b3351fd9aa89f9fce68e3。本次仅按原请求在本私信回复，未访问外部平台或执行外部动作。）",
+      "publication": {
+        "status": "published",
+        "client_message_id": "calendar-generation-A-a84ef43721445aabb908242f73cfba20",
+        "seq": 4
+      }
+    }
+  ],
+  "public_reports": [
+    {
+      "seq": 4,
+      "author": {
+        "kind": "agent",
+        "id": "A"
+      },
+      "author_membership_id": "generation-A",
+      "client_message_id": "calendar-generation-A-a84ef43721445aabb908242f73cfba20",
+      "text": "定时提醒已执行。\n\nCALENDAR_REAL_DSH_OK\n\n（任务 task_1e68e68fdf8c522c7bdac130041ffc19，计划时间 2026-11-19 02:38 UTC / 10:38 Asia/Shanghai，run_id=run_d54bd93b8b8b3351fd9aa89f9fce68e3。本次仅按原请求在本私信回复，未访问外部平台或执行外部动作。）",
+      "created_at": "2026-11-19T02:38:06.752206Z"
+    }
+  ],
+  "browser": {
+    "engine": "Chromium via Playwright",
+    "desktop_viewport": "1280x900",
+    "mobile_viewport": "390x844",
+    "mobile_evidence": "viewport simulation, not a physical device",
+    "verified": [
+      "list",
+      "pause",
+      "resume",
+      "draft preservation"
+    ],
+    "console_errors": []
+  }
+}

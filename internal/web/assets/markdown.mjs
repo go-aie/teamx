@@ -222,7 +222,9 @@ function makeMarkdown(options = {}) {
           if (suffix) return webLink(href.slice(0, -suffix.length), escapeHTML(raw.slice(0, -suffix.length), true), title) + escapeHTML(suffix);
         }
         const literal = list => list.map(token=>token.type==="roomMention" ? {type:"text",raw:token.raw,text:options.roomMentionTokens[token.index].raw} : token.tokens ? {...token,tokens:literal(token.tokens)} : token);
-        return webLink(href, this.parser.parseInline(options.roomMentionTokens ? literal(tokens) : tokens), title);
+        const label = this.parser.parseInline(options.roomMentionTokens ? literal(tokens) : tokens);
+        if (options.openCalendar && /^#calendar\/task\/task_[a-f0-9]{32}$/.test(href)) return `<a href="${href}" class="calendar-receipt-link">${label}</a>`;
+        return webLink(href, label, title);
       },
       image({ href, text, title }) {
         return imageHTML({ href, text, title }, options);
@@ -307,6 +309,9 @@ export function renderMessageBody(container, text, operator, options) {
   options={...options,operatorID:operator};
   container.innerHTML = markdownHTML(text, options);
   const doc = container.ownerDocument;
+  if (options?.openCalendar) for (const link of container.querySelectorAll("a.calendar-receipt-link")) link.addEventListener("click", event => {
+    event.preventDefault(); options.openCalendar(link.getAttribute("href").slice("#calendar/task/".length));
+  });
   if (options) {
     for (const img of container.querySelectorAll("img.message-image")) {
       const preview = img.closest("button.attachment-preview");

@@ -18,6 +18,9 @@ type runtimeCleanup struct {
 // resources, then stop services concurrently with tools, queries and lifecycle
 // workers. A failed owner never prevents another owner from receiving stop.
 func (m *roomManager) shutdown(ctx context.Context) error {
+	if m.calendars != nil {
+		m.calendars.cancel()
+	}
 	m.updates.close()
 	for !m.shutdownGate.TryLock() {
 		select {
@@ -153,6 +156,11 @@ func (m *roomManager) shutdown(ctx context.Context) error {
 	}
 	if cleanupErr != nil {
 		return cleanupErr // unresolved resources retain root ownership
+	}
+	if m.calendars != nil {
+		if err := m.calendars.close(ctx); err != nil {
+			return err
+		}
 	}
 	return m.store.Close()
 }

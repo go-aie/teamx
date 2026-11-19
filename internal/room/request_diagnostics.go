@@ -200,6 +200,12 @@ func prefixDiagnostic(err error, prefix string) error {
 // responses containing only code/error. No retries are performed here.
 func (e apiError) cliError() error {
 	message := e.Message
+	if e.TaskID != "" {
+		message += "; task_id=" + e.TaskID
+	}
+	if e.RunID != "" {
+		message += "; run_id=" + e.RunID
+	}
 	if e.Record != nil {
 		message += fmt.Sprintf("; original_rule_id=%s original_rule_version=%d", e.Record.ID, e.Record.Version)
 	}
@@ -217,6 +223,8 @@ func (e apiError) cliError() error {
 	}
 	if e.ExpectedVersion != nil && e.ActualVersion != nil {
 		message += fmt.Sprintf(" (expected=%d actual=%d)", *e.ExpectedVersion, *e.ActualVersion)
+	} else if e.ActualVersion != nil {
+		message += fmt.Sprintf(" (actual_version=%d)", *e.ActualVersion)
 	}
 	if e.Hint != "" {
 		message += "; " + e.Hint

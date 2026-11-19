@@ -15,6 +15,8 @@ import (
 )
 
 type serviceConfig struct {
+	calendars *CalendarService
+
 	workspaceProtected   []string
 	checkWorkspace       func(string) error
 	inputAdapters        map[notification.SourceID]notificationAdapter
@@ -173,7 +175,7 @@ func (s *service) newMember(id MemberIdentity, runner RunnerConfig, restored *Ag
 	if s.models != nil {
 		gate = s.models.gate(id)
 	}
-	member := &MemberAgent{ObserveEnabled: func() bool { return s.updates.observesRoom(s.info) }, Observe: func() { s.invalidate("members", id); s.invalidate("activity", id) }, ModelGate: gate, Options: opts, Store: s.store, Room: s.room, Restored: restored,
+	member := &MemberAgent{AdditionalWorkReady: func() bool { return s.additionalWorkReady(id) }, ObserveTurnFinished: s.calendarTurnFinished, ExecutionBinding: func(turn uint64) (turnExecution, error) { return s.executionBindingForTurn(id, turn) }, ObserveEnabled: func() bool { return s.updates.observesRoom(s.info) }, Observe: func() { s.invalidate("members", id); s.invalidate("activity", id) }, ModelGate: gate, Options: opts, Store: s.store, Room: s.room, Restored: restored,
 		Inbox:   func(ctx context.Context) (InboxStatus, error) { return s.memberInboxStatus(ctx, id) },
 		Backend: backend, MergeWindow: s.mergeWindow, MaxTurns: s.maxTurns, SessionMaxTurns: s.maxTurns, RequestRotation: s.requestMemberRotation, RequestRecovery: s.requestMemberRecovery, RecoveryPending: recovery, BackendBlocked: blocked, PersistentScheduling: true, RestoredTurnsUsed: used, RestoredTurnLimit: limit, ExecutionFrozen: s.grantsFrozen}
 	if s.unifiedInputs {
@@ -241,6 +243,7 @@ func (s *service) attachMembers(state RoomSnapshot) error {
 // paused throughout reattachment; their tools now have a live endpoint and the
 // new ServiceEpoch. Only settled turns resume automatic notification handling.
 func (s *service) resumeMembers(ctx context.Context) error {
+	s.calendarRunning.Store(true)
 	// A batch interrupted by shutdown may have rotated only some members.
 	// Keep the whole team paused until the operator resolves or retries it.
 	if restart := s.discussionRestartStatus(); restart != nil && restart.Status != "completed" {

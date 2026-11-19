@@ -63,11 +63,12 @@ type PostMessage struct {
 	Mentions      []MessageMention
 	inferMentions bool
 	RoomIdentity
-	Caller          Caller
-	ClientMessageID string
-	Text            string
-	ReplyTo         uint64
-	FollowupNotice  bool // internal durable outbox delivery; never accepted by /v1/send
+	Caller             Caller
+	ClientMessageID    string
+	Text               string
+	ReplyTo            uint64
+	DurablePublication bool // internal accepted publication intent; never decoded from HTTP
+	FollowupNotice     bool // internal durable outbox delivery; never accepted by /v1/send
 }
 
 type PostReceipt struct {
@@ -218,16 +219,22 @@ type TurnBudget struct {
 	Grant uint64 `json:"grant"` // Additional turns granted by an explicit enable after exhaustion.
 }
 
+type turnExecution struct {
+	Generation string `json:"generation"`
+	Turn       uint64 `json:"turn"`
+}
+
 type ControlMember struct {
 	// Internal lifecycle controls; never decoded from Agent requests.
-	modelGate      *string
-	modelTarget    *modelSessionSnapshot
-	ExecutionID    uint64
-	automatic      bool
-	recovering     bool
-	automaticInbox *InboxStatus
-	internalPause  bool
-	expectedPause  *uint64
+	expectedBinding *turnExecution
+	modelGate       *string
+	modelTarget     *modelSessionSnapshot
+	ExecutionID     uint64
+	automatic       bool
+	recovering      bool
+	automaticInbox  *InboxStatus
+	internalPause   bool
+	expectedPause   *uint64
 	MemberIdentity
 	Action           string
 	ContinueRotation bool

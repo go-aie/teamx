@@ -52,7 +52,7 @@ func TestUnifiedMCPAuthenticationOutputAndTerminalBarrier(t *testing.T) {
 	if out.Code == 200 && !strings.Contains(out.Body.String(), "error") {
 		t.Fatal("late old execution accepted")
 	}
-	if a.inputMCP == nil || len(a.inputMCP.server.ListTools()) != 2 {
+	if a.inputMCP == nil || len(a.inputMCP.server.ListTools()) != 7 {
 		t.Fatal("tools not composed")
 	}
 }

@@ -18,6 +18,15 @@ func (a *AgentInbox) Bindings() []actorx.Binding {
 	}
 }
 
+func (a *CalendarActor) Bindings() []actorx.Binding {
+	return []actorx.Binding{
+		actorx.Handle(a.Inspect),
+		actorx.HandleDeferred(a.Operate),
+		actorx.HandleDeferred(a.Quiesce),
+		actorx.HandleMessage(a.Wake),
+	}
+}
+
 func (a *InboxActor) Bindings() []actorx.Binding {
 	return []actorx.Binding{
 		actorx.HandleDeferred(a.Operate),

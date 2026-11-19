@@ -75,6 +75,45 @@
           <button id="room-menu-label" class="icon-button conversation-details-toggle" type="button" aria-label="房间详情" title="房间详情" aria-controls="member-rail" aria-expanded="true"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg></button>
         </div>
       </header>
+      <nav id="conversation-views" class="conversation-views" role="tablist" aria-label="会话视图" hidden><button id="conversation-chat" role="tab" aria-selected="true" aria-controls="timeline-wrap" type="button">聊天</button><button id="conversation-calendar" role="tab" aria-selected="false" aria-controls="calendar-panel" type="button">日历</button></nav>
+      <section id="calendar-panel" class="calendar-panel" role="tabpanel" aria-label="会话日历" hidden>
+        <div class="calendar-toolbar">
+          <div class="calendar-navigation">
+            <button id="calendar-today" class="secondary-button button-compact" type="button">今天</button>
+            <button id="calendar-prev" class="icon-button" type="button" aria-label="上一个日期范围">‹</button><button id="calendar-next" class="icon-button" type="button" aria-label="下一个日期范围">›</button>
+            <details id="calendar-date-picker" class="calendar-date-picker"><summary id="calendar-range" aria-label="选择日期"></summary>
+              <div class="calendar-date-popover menu-surface"><div class="calendar-month-navigation"><button id="calendar-month-prev" type="button" class="icon-button" aria-label="上个月">‹</button><span id="calendar-month-label"></span><button id="calendar-month-next" type="button" class="icon-button" aria-label="下个月">›</button></div><label class="sr-only" for="calendar-date">跳转日期</label><input id="calendar-date" class="field-control" type="date"><div id="calendar-month-days" class="calendar-month-days"></div><button id="calendar-picker-today" type="button" class="text-button">回到今天</button></div>
+            </details>
+          </div>
+          <div class="calendar-view-actions"><div id="calendar-mode" class="calendar-modes" role="group" aria-label="日历视图"><button type="button" data-mode="day" aria-pressed="false">按日</button><button type="button" data-mode="week" aria-pressed="true">周</button><button type="button" data-mode="agenda" aria-pressed="false">日程</button></div><button id="calendar-new" type="button" class="primary button-compact">新建任务</button></div>
+        </div>
+        <div class="calendar-subtoolbar"><span id="calendar-display-zone"></span><div class="calendar-secondary-actions"><label class="calendar-skip-toggle"><input id="calendar-show-skipped" type="checkbox" checked>显示已跳过与已取消</label><button id="calendar-refresh" type="button" class="text-button button-compact">刷新</button></div></div>
+        <div id="calendar-date-strip" class="calendar-date-strip" aria-label="本周日期"></div>
+        <div id="calendar-items" class="calendar-week-scroll"></div>
+        <details id="calendar-tasks" class="calendar-tasks"><summary>任务管理 <span id="calendar-task-count"></span></summary><label>任务状态 <select id="calendar-task-filter" class="field-control"><option value="open">未结束</option><option value="all">全部</option><option value="needs_info">待完善</option><option value="paused">已暂停</option><option value="completed">已结束</option><option value="cancelled">已取消</option></select></label><div id="calendar-task-items"></div></details>
+        <p id="calendar-error" class="notice" role="status" hidden></p><p id="calendar-coverage" class="calendar-hint calendar-coverage" role="status" hidden></p>
+        <details id="calendar-create" class="calendar-create"><summary id="calendar-form-heading">新建定时任务</summary>
+          <form id="calendar-form">
+            <label class="calendar-form-wide">任务标题<input id="calendar-title" class="field-control" required maxlength="256" autocomplete="off" placeholder="例如：实习生面试提醒"></label>
+            <label class="calendar-form-wide">任务说明<textarea id="calendar-instruction" class="field-control" required maxlength="16384" rows="3" placeholder="到时要做什么？结果将发回本私信。"></textarea></label>
+            <label><span id="calendar-start-label">执行日期</span><input id="calendar-start-date" class="field-control" type="date" required><small id="calendar-start-hint" hidden>留空从下一个有效时刻开始。</small></label>
+            <label>执行时刻<input id="calendar-local-time" class="field-control" type="time" step="60" required></label>
+            <label>重复<select id="calendar-frequency" class="field-control"><option value="once">一次性</option><option value="daily">每天</option><option value="weekly">每周指定星期</option></select></label>
+            <label id="calendar-filter-field" hidden>日期筛选<select id="calendar-day-filter" class="field-control"><option value="all_days">不排除周末和节假日</option><option value="weekdays">周一至周五</option><option value="business_days">中国大陆法定工作日（含补班）</option></select><small id="calendar-filter-hint"></small></label>
+            <fieldset id="calendar-weekdays" class="calendar-form-wide" hidden><legend>每周执行日</legend><label><input type="checkbox" value="1">周一</label><label><input type="checkbox" value="2">周二</label><label><input type="checkbox" value="3">周三</label><label><input type="checkbox" value="4">周四</label><label><input type="checkbox" value="5">周五</label><label><input type="checkbox" value="6">周六</label><label><input type="checkbox" value="7">周日</label></fieldset>
+            <details id="calendar-advanced" class="calendar-form-wide calendar-disclosure"><summary>高级设置</summary><div class="calendar-form-grid">
+              <label>执行时区<input id="calendar-time-zone" class="field-control" placeholder="使用当前显示时区" autocomplete="off"></label>
+              <label id="calendar-end-field" hidden>结束日期（可选，含当天）<input id="calendar-end-date" class="field-control" type="date"></label>
+              <label>错过后如何处理<select id="calendar-misfire" class="field-control"><option value="latest_within_one_hour">一小时内补最近一次</option><option value="skip">错过即跳过</option></select></label>
+              <label id="calendar-once-filter-field" hidden>单次日期筛选<select id="calendar-once-filter" class="field-control"><option value="all_days">按指定日期执行</option><option value="weekdays">仅周一至周五</option><option value="business_days">仅中国大陆法定工作日</option></select></label>
+              <label class="calendar-form-wide">任务范围（可选）<textarea id="calendar-scope" class="field-control" rows="2" maxlength="8192" placeholder="需要时填写已确认的项目、数据来源或工作目录。"></textarea></label>
+            </div></details>
+            <p id="calendar-form-summary" class="calendar-form-wide calendar-hint" aria-live="polite"></p>
+            <div class="calendar-form-wide calendar-form-actions"><button id="calendar-submit" class="primary" type="submit">保存任务</button><button id="calendar-save-draft" type="button" class="text-button">保存为待完善</button><button id="calendar-form-cancel" type="button" class="text-button">收起</button></div>
+          </form>
+        </details>
+        <dialog id="calendar-detail" class="calendar-detail" aria-label="任务详情" hidden><div class="calendar-detail-top"><span>任务详情</span><button id="calendar-detail-close" type="button" class="text-button">返回日历</button></div><p id="calendar-detail-error" class="notice" role="status" hidden></p><div id="calendar-detail-content"></div></dialog>
+      </section>
       <div id="timezone-error" class="notice" role="alert" hidden></div>
       <div id="platform-interaction-error" class="notice" role="status" hidden></div>
       <div id="service-change" class="notice" role="status" hidden></div>

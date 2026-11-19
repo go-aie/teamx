@@ -122,6 +122,9 @@ func (s *service) startDiscussionRestart(req apiRequest) (*discussionRestart, er
 			return nil, fmt.Errorf("%w: member %s is unavailable for session rotation", ErrRequest, member.AgentID)
 		}
 	}
+	if err := s.pauseCalendar(s.ctx); err != nil {
+		return nil, err
+	}
 	record := discussionRestart{Version: formatVersion, RoomIdentity: s.info.RoomIdentity,
 		ID: req.RestartID, Status: "running", Phase: "pausing"}
 	if err := s.saveDiscussionRestart(record); err != nil {

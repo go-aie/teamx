@@ -1,0 +1,45 @@
+{
+  "verified_at": "2026-11-19T05:34:58.246466+00:00",
+  "status": "passed",
+  "checks": [
+    {
+      "name": "frontend",
+      "command": "node --test internal/web/tests/*_test.mjs",
+      "status": "passed",
+      "results": [
+        "759 passed; 0 failed"
+      ]
+    },
+    {
+      "name": "go",
+      "command": "go test ./internal/calendar ./internal/room -run '^Test(Calendar|Recurring|Once)' -count=1",
+      "status": "passed",
+      "results": [
+        "ok  \tgithub.com/go-aie/teamx/internal/calendar\t1.947s",
+        "ok  \tgithub.com/go-aie/teamx/internal/room\t8.170s"
+      ]
+    },
+    {
+      "name": "browser",
+      "command": "TEAMX_CALENDAR_BROWSER=1 NODE_PATH=$PWD/packaging/verifier/node_modules go test ./internal/room -run '^TestCalendar(Browser|ConversationRecoveryBrowser)$' -count=1 -v",
+      "status": "passed",
+      "results": [
+        "ok  \tgithub.com/go-aie/teamx/internal/room\t24.029s"
+      ]
+    },
+    {
+      "name": "build",
+      "command": "go build -o /tmp/teamx-calendar-ui ./cmd/teamx",
+      "status": "passed"
+    }
+  ],
+  "source_sha256": {
+    "internal/web/assets/features/calendar.mjs": "932f9ef9e742d97c3731fb977b9940d2788b397a20c09fe6a8778afe3fcc6349",
+    "internal/web/assets/features/calendar-dates.mjs": "06c2b9180541dd8b87de34693813df46de0040d49828f25bd3079802dda4a52a",
+    "internal/web/assets/styles/calendar.css": "207c026fbf6eac94ed7f5869ab59d985ccd08e8cf5a2b5ebd304115cf4f646a8",
+    "internal/web/assets/index.html": "8d3373bcc6a0cd1588bf3cf0498c1d27ad0a3ccba604f3cdb6e72d4c86af79b1",
+    "internal/room/testdata/calendar_browser.cjs": "e0d72a574492cb2e54fe592bd2ea7c97f1a611564a8bfeae45d90b7f39f754e0",
+    "internal/room/testdata/calendar_lifecycle_browser.cjs": "59e3c9bb4f7bc4d19d02dc6124bce75ce4151caafc87790fcd24cd318f55088b"
+  },
+  "scope": "Isolated controlled services and actual Chromium; phone viewport simulation; no real model or external platform invoked in this UI refinement."
+}

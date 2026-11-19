@@ -17,10 +17,17 @@ import (
 )
 
 func marshalMCPToolDefinitions(t *testing.T, h *mcpHTTP) []byte {
+	return marshalMCPToolsWithPrefix(t, h, "")
+}
+
+func marshalMCPToolsWithPrefix(t *testing.T, h *mcpHTTP, prefix string) []byte {
 	t.Helper()
 	registered := h.server.ListTools()
 	definitions := make([]mcp.Tool, 0, len(registered))
-	for _, tool := range registered {
+	for name, tool := range registered {
+		if !strings.HasPrefix(name, prefix) {
+			continue
+		}
 		definitions = append(definitions, tool.Tool)
 	}
 	sort.Slice(definitions, func(i, j int) bool { return definitions[i].Name < definitions[j].Name })
@@ -65,7 +72,7 @@ func readInputStream(t *testing.T, s *inputSession, call, stream string, limit i
 }
 func TestInputToolsMinimalContract(t *testing.T) {
 	h := newInputMCPHTTP(true)
-	if len(h.server.ListTools()) != 2 {
+	if len(h.server.ListTools()) != 7 {
 		t.Fatal("input tool count")
 	}
 	if hint := h.server.ListTools()["inbox_list"].Tool.Annotations.ReadOnlyHint; hint == nil || !*hint {
@@ -76,7 +83,7 @@ func TestInputToolsMinimalContract(t *testing.T) {
 			t.Fatal(name)
 		}
 	}
-	schema := marshalMCPToolDefinitions(t, h)
+	schema := marshalMCPToolsWithPrefix(t, h, "inbox_")
 	for _, word := range []string{"turn_number", "read_id", "within", "filter", "query", "blocked_reason", "scope_ref"} {
 		if bytes.Contains(schema, []byte(word)) {
 			t.Fatal("schema leak", word)
@@ -98,6 +105,8 @@ func TestInputToolsMinimalContract(t *testing.T) {
 		}
 	}
 	guide := unifiedAgentGuide()
+	// Calendar's day_filter describes its rule, independently of Inbox reads.
+	guide = strings.ReplaceAll(guide, "day_filter", "")
 	for _, word := range []string{"read_id", "turn_number", "inbox_stats", "inbox_preview", "scope_ref", "filter", "blocked_streams"} {
 		if strings.Contains(guide, word) {
 			t.Fatal("guide leak", word)

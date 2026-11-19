@@ -1,0 +1,445 @@
+{
+  "calendar": {
+    "format_version": 1,
+    "room_id": "design-review",
+    "room_instance": "room-1",
+    "revision": 8,
+    "tasks": {
+      "task_7b408fdeec747559a745a60ca3680076": {
+        "creation_source": {
+          "message_seq": 1,
+          "operator": "user",
+          "text": "请安排一个重复提醒：从现在开始，每天 03:48（UTC），只在中国大陆法定工作日执行，含调休补班。内容为 CALENDAR_REAL_DSH_OK，直接回复本私信。现在创建任务（重复规则的开始日期交给服务默认），向我解释实际保存的重复规则、固定时区、含补班口径、下次时间和漏跑规则。不要访问平台或执行外部动作。"
+        },
+        "task_id": "task_7b408fdeec747559a745a60ca3680076",
+        "version": 1,
+        "definition_version": 1,
+        "definition": {
+          "title": "每日 03:48 UTC 中国大陆法定工作日提醒",
+          "instruction": "CALENDAR_REAL_DSH_OK",
+          "schedule": {
+            "frequency": "daily",
+            "start_date": "2026-11-19",
+            "local_time": "03:48",
+            "time_zone": "UTC",
+            "day_filter": "business_days",
+            "work_calendar": "CN"
+          },
+          "misfire": "latest_within_one_hour"
+        },
+        "agent_id": "A",
+        "membership_id": "generation-A",
+        "state": "active",
+        "source": {
+          "message_seq": 1,
+          "operator": "user",
+          "text": "请安排一个重复提醒：从现在开始，每天 03:48（UTC），只在中国大陆法定工作日执行，含调休补班。内容为 CALENDAR_REAL_DSH_OK，直接回复本私信。现在创建任务（重复规则的开始日期交给服务默认），向我解释实际保存的重复规则、固定时区、含补班口径、下次时间和漏跑规则。不要访问平台或执行外部动作。"
+        },
+        "created_at": "2026-11-19T03:47:05.481349Z",
+        "updated_at": "2026-11-19T03:47:05.481349Z",
+        "next_at": "2026-11-20T03:48:00Z",
+        "effective_after": "2026-11-19T03:47:05.481349Z",
+        "evaluated_through": "2026-11-19T03:48:00Z",
+        "evaluated": false
+      }
+    },
+    "runs": {
+      "run_f939c196719b5a4133525359c7313891": {
+        "work_calendar_version": "CN-2026-2025-11-04",
+        "authorization": {
+          "message_seq": 1,
+          "operator": "user",
+          "text": "请安排一个重复提醒：从现在开始，每天 03:48（UTC），只在中国大陆法定工作日执行，含调休补班。内容为 CALENDAR_REAL_DSH_OK，直接回复本私信。现在创建任务（重复规则的开始日期交给服务默认），向我解释实际保存的重复规则、固定时区、含补班口径、下次时间和漏跑规则。不要访问平台或执行外部动作。"
+        },
+        "run_id": "run_f939c196719b5a4133525359c7313891",
+        "version": 6,
+        "task": {
+          "creation_source": {
+            "message_seq": 1,
+            "operator": "user",
+            "text": "请安排一个重复提醒：从现在开始，每天 03:48（UTC），只在中国大陆法定工作日执行，含调休补班。内容为 CALENDAR_REAL_DSH_OK，直接回复本私信。现在创建任务（重复规则的开始日期交给服务默认），向我解释实际保存的重复规则、固定时区、含补班口径、下次时间和漏跑规则。不要访问平台或执行外部动作。"
+          },
+          "task_id": "task_7b408fdeec747559a745a60ca3680076",
+          "version": 1,
+          "definition_version": 1,
+          "definition": {
+            "title": "每日 03:48 UTC 中国大陆法定工作日提醒",
+            "instruction": "CALENDAR_REAL_DSH_OK",
+            "schedule": {
+              "frequency": "daily",
+              "start_date": "2026-11-19",
+              "local_time": "03:48",
+              "time_zone": "UTC",
+              "day_filter": "business_days",
+              "work_calendar": "CN"
+            },
+            "misfire": "latest_within_one_hour"
+          },
+          "agent_id": "A",
+          "membership_id": "generation-A",
+          "state": "active",
+          "source": {
+            "message_seq": 1,
+            "operator": "user",
+            "text": "请安排一个重复提醒：从现在开始，每天 03:48（UTC），只在中国大陆法定工作日执行，含调休补班。内容为 CALENDAR_REAL_DSH_OK，直接回复本私信。现在创建任务（重复规则的开始日期交给服务默认），向我解释实际保存的重复规则、固定时区、含补班口径、下次时间和漏跑规则。不要访问平台或执行外部动作。"
+          },
+          "created_at": "2026-11-19T03:47:05.481349Z",
+          "updated_at": "2026-11-19T03:47:05.481349Z",
+          "next_at": "2026-11-19T03:48:00Z",
+          "effective_after": "2026-11-19T03:47:05.481349Z",
+          "evaluated": false
+        },
+        "due_at": "2026-11-19T03:48:00Z",
+        "deadline": "2026-11-19T04:48:00Z",
+        "local_date": "2026-11-19",
+        "status": "succeeded",
+        "attempt": 1,
+        "binding": {
+          "generation": "session.json.dsh",
+          "turn": 2
+        },
+        "started_at": "2026-11-19T03:48:04.219263Z",
+        "settled": true,
+        "supplies": [
+          {
+            "generation": "session.json.dsh",
+            "turn": 2,
+            "checked": false
+          }
+        ],
+        "continue_count": 0,
+        "next_check_at": "2026-11-19T03:48:11.972028Z",
+        "event_delivered": true,
+        "event_seq": 3,
+        "outcome": "succeeded",
+        "report": "CALENDAR_REAL_DSH_OK\n\n定时提醒已按时执行。\n- 任务：每日 03:48 UTC 中国大陆法定工作日提醒（task_7b408fdeec747559a745a60ca3680076）\n- 本次到期时间：2026-11-19 03:48 UTC（北京时间 2026-11-19 11:48），准时触发，未发生漏跑补发\n- 规则：daily，固定时区 UTC；business_days + work_calendar=CN（中国大陆法定工作日，含调休补班日）\n- 执行内容：CALENDAR_REAL_DSH_OK（未访问任何外部平台，未执行外部动作）",
+        "publication": {
+          "status": "published",
+          "client_message_id": "calendar-generation-A-09af5833ff2f5fbd296066cf5972c87b",
+          "seq": 4
+        }
+      }
+    },
+    "operations": {
+      "calendar-create-daily-0348-utc-cn-business-20261031": {
+        "source": {
+          "message_seq": 1,
+          "operator": "user",
+          "text": "请安排一个重复提醒：从现在开始，每天 03:48（UTC），只在中国大陆法定工作日执行，含调休补班。内容为 CALENDAR_REAL_DSH_OK，直接回复本私信。现在创建任务（重复规则的开始日期交给服务默认），向我解释实际保存的重复规则、固定时区、含补班口径、下次时间和漏跑规则。不要访问平台或执行外部动作。"
+        },
+        "digest": "89c682d2569237ba08feb821310805cb90bc78edde74e32caeae3eb8a4a9a51d",
+        "result": {
+          "task": {
+            "creation_source": {
+              "message_seq": 1,
+              "operator": "user",
+              "text": "请安排一个重复提醒：从现在开始，每天 03:48（UTC），只在中国大陆法定工作日执行，含调休补班。内容为 CALENDAR_REAL_DSH_OK，直接回复本私信。现在创建任务（重复规则的开始日期交给服务默认），向我解释实际保存的重复规则、固定时区、含补班口径、下次时间和漏跑规则。不要访问平台或执行外部动作。"
+            },
+            "task_id": "task_7b408fdeec747559a745a60ca3680076",
+            "version": 1,
+            "definition_version": 1,
+            "definition": {
+              "title": "每日 03:48 UTC 中国大陆法定工作日提醒",
+              "instruction": "CALENDAR_REAL_DSH_OK",
+              "schedule": {
+                "frequency": "daily",
+                "start_date": "2026-11-19",
+                "local_time": "03:48",
+                "time_zone": "UTC",
+                "day_filter": "business_days",
+                "work_calendar": "CN"
+              },
+              "misfire": "latest_within_one_hour"
+            },
+            "agent_id": "A",
+            "membership_id": "generation-A",
+            "state": "active",
+            "source": {
+              "message_seq": 1,
+              "operator": "user",
+              "text": "请安排一个重复提醒：从现在开始，每天 03:48（UTC），只在中国大陆法定工作日执行，含调休补班。内容为 CALENDAR_REAL_DSH_OK，直接回复本私信。现在创建任务（重复规则的开始日期交给服务默认），向我解释实际保存的重复规则、固定时区、含补班口径、下次时间和漏跑规则。不要访问平台或执行外部动作。"
+            },
+            "created_at": "2026-11-19T03:47:05.481349Z",
+            "updated_at": "2026-11-19T03:47:05.481349Z",
+            "next_at": "2026-11-19T03:48:00Z",
+            "effective_after": "2026-11-19T03:47:05.481349Z",
+            "evaluated": false
+          },
+          "changed": true,
+          "operation_reused": false
+        }
+      }
+    }
+  },
+  "calendar_calls": [
+    {
+      "tool": "calendar_update",
+      "arguments": {
+        "action": "create",
+        "operation_id": "calendar-create-daily-0348-utc-cn-business-20261031",
+        "human_source": {
+          "message_seq": 1
+        },
+        "definition": {
+          "title": "每日 03:48 UTC 中国大陆法定工作日提醒",
+          "instruction": "CALENDAR_REAL_DSH_OK",
+          "schedule": {
+            "frequency": "daily",
+            "local_time": "03:48",
+            "time_zone": "UTC",
+            "day_filter": "business_days",
+            "work_calendar": "CN"
+          }
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"task_id\":\"task_7b408fdeec747559a745a60ca3680076\",\"version\":1,\"state\":\"active\",\"rule_summary\":\"daily 2026-11-19 03:48 (UTC); business_days CN (含调休补班); misfire=latest_within_one_hour\",\"next_at\":\"2026-11-19T03:48:00Z\"}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "tool": "calendar_get",
+      "arguments": {
+        "task_id": "task_7b408fdeec747559a745a60ca3680076"
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 4,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"task_id\":\"task_7b408fdeec747559a745a60ca3680076\",\"version\":1,\"state\":\"active\",\"next_at\":\"2026-11-19T03:48:00Z\",\"definition\":{\"title\":\"每日 03:48 UTC 中国大陆法定工作日提醒\",\"instruction\":\"CALENDAR_REAL_DSH_OK\",\"schedule\":{\"frequency\":\"daily\",\"start_date\":\"2026-11-19\",\"local_time\":\"03:48\",\"time_zone\":\"UTC\",\"day_filter\":\"business_days\",\"work_calendar\":\"CN\"},\"misfire\":\"latest_within_one_hour\"},\"work_calendars\":[{\"region\":\"CN\",\"from\":\"2026-01-01\",\"to\":\"2026-12-31\",\"version\":\"CN-2026-2025-11-04\",\"source\":\"https://www.beijing.gov.cn/fuwu/bmfw/sy/jrts/202511/t20251104_4258838.html\",\"published\":\"2025-11-04\"},{\"region\":\"CN\",\"from\":\"2027-01-01\",\"to\":\"2027-12-31\",\"version\":\"CN-2027-2026-11-05\",\"source\":\"https://www.gov.cn/zhengce/content/202611/content_7085101.htm\",\"published\":\"2026-11-05\"}]}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "tool": "calendar_claim",
+      "arguments": {
+        "run_id": "run_f939c196719b5a4133525359c7313891"
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 6,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"run_id\":\"run_f939c196719b5a4133525359c7313891\",\"status\":\"running\",\"title\":\"每日 03:48 UTC 中国大陆法定工作日提醒\",\"instruction\":\"CALENDAR_REAL_DSH_OK\",\"due_at\":\"2026-11-19T03:48:00Z\",\"time_zone\":\"UTC\",\"misfire\":\"latest_within_one_hour\"}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "tool": "calendar_finish",
+      "arguments": {
+        "run_id": "run_f939c196719b5a4133525359c7313891",
+        "outcome": "succeeded",
+        "report": "CALENDAR_REAL_DSH_OK\n\n定时提醒已按时执行。\n- 任务：每日 03:48 UTC 中国大陆法定工作日提醒（task_7b408fdeec747559a745a60ca3680076）\n- 本次到期时间：2026-11-19 03:48 UTC（北京时间 2026-11-19 11:48），准时触发，未发生漏跑补发\n- 规则：daily，固定时区 UTC；business_days + work_calendar=CN（中国大陆法定工作日，含调休补班日）\n- 执行内容：CALENDAR_REAL_DSH_OK（未访问任何外部平台，未执行外部动作）"
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 7,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"run_id\":\"run_f939c196719b5a4133525359c7313891\",\"status\":\"publishing\"}"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "call_counts": {
+    "calendar_claim": 1,
+    "calendar_finish": 1,
+    "calendar_get": 1,
+    "calendar_update": 1
+  },
+  "contract": "compact business views",
+  "model": "deepseek-v4.1-flash-1017",
+  "public_report_count": 1,
+  "recurring": true,
+  "room": {
+    "input_log": {
+      "version": 1,
+      "segments": [
+        {
+          "name": "c9354ea2ff4d40a4d370ee0ab5126951",
+          "first": 1,
+          "last": 4,
+          "bytes": 3646,
+          "digest": "7cf6d64d36d7d07ffabf9642c202a89e4ec884aa4c5d5415bf7b3f46e00eec74"
+        }
+      ],
+      "records": 4,
+      "bytes": 3646
+    },
+    "event_receipts": {
+      "event_05c77577c1c1b6a956178d8e9c12677670fd5d756058da52a294b1da3052a438": {
+        "seq": 3,
+        "digest": "86150f0d89412ee24f099fa75229f3684b8e82832b1cd4b619f6a701f7e85234"
+      }
+    },
+    "version": 1,
+    "room_id": "design-review",
+    "room_instance": "room-1",
+    "is_direct": true,
+    "latest_seq": 4,
+    "revision": 6,
+    "messages": [
+      {
+        "seq": 1,
+        "client_message_id": "seed-0",
+        "author": {
+          "kind": "human",
+          "id": "user"
+        },
+        "text": "请安排一个重复提醒：从现在开始，每天 03:48（UTC），只在中国大陆法定工作日执行，含调休补班。内容为 CALENDAR_REAL_DSH_OK，直接回复本私信。现在创建任务（重复规则的开始日期交给服务默认），向我解释实际保存的重复规则、固定时区、含补班口径、下次时间和漏跑规则。不要访问平台或执行外部动作。",
+        "created_at": "2026-10-31T01:00:00Z"
+      },
+      {
+        "author_membership_id": "generation-A",
+        "seq": 2,
+        "client_message_id": "msg-A-calendar-created-1",
+        "author": {
+          "kind": "agent",
+          "id": "A"
+        },
+        "text": "✅ 重复提醒已创建（任务 task_7b408fdeec747559a745a60ca3680076，版本 1，状态 active）\n\n实际保存的规则：\n- 频率：每天（daily），本地时间 03:48，精确到分钟；开始日期未指定，由服务默认为提交当日 2026-11-19（在固定时区内计算）\n- 固定时区：UTC（你指定的 03:48 按 UTC 保存，不随系统显示时区变化；对应北京时间 11:48）\n- 日期口径：business_days + work_calendar=CN，即中国大陆法定工作日——含国务院安排调休补班日（补班周末也执行），法定节假日及正常周末跳过；覆盖使用 2026 年（CN-2026-2025-11-04）与 2027 年（CN-2027-2026-11-05）官方版本，更晚年份需按发布更新\n- 漏跑（misfire）：latest_within_one_hour——服务中断后只补跑最近一次、且该次在 1 小时内；更早的周期记为错过，不补发\n- 结束日期：未设置（长期有效）\n\n下次执行：2026-11-19 03:48 UTC = 北京时间 2026-11-19 11:48（今天）。提交时刻为 11:47，下一次有效时点严格晚于提交，因此今天这一次正常执行。\n\n需要说明两点：\n1. 执行内容为 CALENDAR_REAL_DSH_OK，完成报告会发布在本会话；前提是服务保持运行。\n2. 今天（2026-11-19，周四）为普通工作日，提醒将在 1 分钟后触发。如需改时间、加结束日期或跳过某天，随时告诉我。\n\n未访问任何外部平台，也未执行其他外部动作。",
+        "created_at": "2026-11-19T03:47:11.511232Z"
+      },
+      {
+        "type": "event",
+        "event": {
+          "event_id": "calendar_due_db8371b4b60b5b3e7cc562209083ed4a",
+          "event_type": "calendar_due",
+          "source_seq": 1,
+          "operation_id": "run_f939c196719b5a4133525359c7313891",
+          "result_version": 1,
+          "result_ref": "calendar/run/run_f939c196719b5a4133525359c7313891",
+          "target_memberships": [
+            "generation-A"
+          ],
+          "actor": {
+            "kind": "system",
+            "id": "calendar"
+          }
+        },
+        "seq": 3,
+        "client_message_id": "event_05c77577c1c1b6a956178d8e9c12677670fd5d756058da52a294b1da3052a438",
+        "author": {
+          "kind": "system",
+          "id": "calendar"
+        },
+        "text": "定时任务到期：每日 03:48 UTC 中国大陆法定工作日提醒。run_id=run_f939c196719b5a4133525359c7313891；请先 calendar_claim，再办理并以 calendar_finish 发布报告。",
+        "created_at": "2026-11-19T03:48:00Z"
+      },
+      {
+        "author_membership_id": "generation-A",
+        "seq": 4,
+        "client_message_id": "calendar-generation-A-09af5833ff2f5fbd296066cf5972c87b",
+        "author": {
+          "kind": "agent",
+          "id": "A"
+        },
+        "text": "CALENDAR_REAL_DSH_OK\n\n定时提醒已按时执行。\n- 任务：每日 03:48 UTC 中国大陆法定工作日提醒（task_7b408fdeec747559a745a60ca3680076）\n- 本次到期时间：2026-11-19 03:48 UTC（北京时间 2026-11-19 11:48），准时触发，未发生漏跑补发\n- 规则：daily，固定时区 UTC；business_days + work_calendar=CN（中国大陆法定工作日，含调休补班日）\n- 执行内容：CALENDAR_REAL_DSH_OK（未访问任何外部平台，未执行外部动作）",
+        "created_at": "2026-11-19T03:48:06.890393Z"
+      }
+    ],
+    "members": [
+      {
+        "agent_id": "A",
+        "membership_id": "generation-A",
+        "read_through": 3,
+        "runner": {
+          "kind": "dsh",
+          "profile": "fixture-ignore"
+        }
+      }
+    ],
+    "read_proofs": {
+      "generation-A": {
+        "confirmation": {
+          "room_id": "design-review",
+          "room_instance": "room-1",
+          "agent_id": "A",
+          "membership_id": "generation-A",
+          "read_receipt": "confirmation_6f15dfc276b19b1683840985b7758f552d9fbe1e68674041690d2ae29374a166",
+          "read_through": 3,
+          "unread_count": 0,
+          "revision": 5
+        },
+        "from": 1,
+        "snapshot": 3,
+        "entries": [
+          3
+        ],
+        "digest": "a00acdedfb8ea500866d035aa67ec1ef919133664af4aea92c27428047f41a48"
+      }
+    },
+    "followup_notice_receipts": {
+      "calendar-generation-A-09af5833ff2f5fbd296066cf5972c87b": {
+        "seq": 4,
+        "author": {
+          "kind": "agent",
+          "id": "A"
+        },
+        "membership_id": "generation-A",
+        "digest": "7f9d14a8d222453359f11abee7dd161c12becd0ecd8c121988952c1d48bd1700"
+      }
+    }
+  },
+  "rule_due": "2026-11-19T03:48:00Z",
+  "scope": "real installed DSH/model, isolated Room; no external platform reads or writes",
+  "status": "passed",
+  "browser": {
+    "status": "passed",
+    "engine": "Chromium headless",
+    "desktop": "1280x900",
+    "mobile": "390x844 viewport simulation; no physical-device acceptance",
+    "pause_resume": true,
+    "draft_preserved": true,
+    "weekly_form": true,
+    "skip_once": true,
+    "unknown_coverage": true,
+    "lost_create_replay": true,
+    "saved_then_refresh_failure": true,
+    "console_errors": [],
+    "screenshot": "recurrence-browser.png"
+  },
+  "controlled_clock_scope": "Explicit UTC evaluation times cover DST, cross-year, makeup weekends, coverage refresh, pause/resume, multi-period outage, compaction, wall-clock rollback and persisted reopen. Not a multi-day real-model run.",
+  "limitations": [
+    "No real platform data reads or remote writes.",
+    "No physical mobile device.",
+    "Week view and full editor/history navigation remain C3."
+  ],
+  "checks": {
+    "go_test_all": {
+      "status": "passed",
+      "room_seconds": 467.915
+    },
+    "calendar_and_room_race": "passed, including final recurrence boundaries",
+    "web_tests": {
+      "passed": 754,
+      "failed": 0
+    },
+    "real_dsh": {
+      "status": "passed",
+      "seconds": 75.85
+    },
+    "browser": "passed"
+  }
+}

@@ -125,7 +125,11 @@ func (m *roomManager) runtimeRecoveryNeeded(owner RoomIdentity) (bool, error) {
 	if state.RoomIdentity != owner {
 		return false, ErrIdentity
 	}
-	needed := false
+	_, calendarErr := os.Stat(filepath.Join(store.dir, "calendar", "state.json"))
+	if calendarErr != nil && !errors.Is(calendarErr, os.ErrNotExist) {
+		return false, calendarErr
+	}
+	needed := calendarErr == nil
 	for _, member := range state.Members {
 		id := MemberIdentity{RoomIdentity: owner, AgentID: member.AgentID, MembershipID: member.MembershipID}
 		intent, err := store.loadScheduling(id)
