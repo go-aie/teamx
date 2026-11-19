@@ -402,6 +402,16 @@
           <p id="member-model-feedback" role="status" aria-live="polite"></p>
           <div class="form-actions"><button id="member-model-retry" class="text-button" type="button" hidden>重试未完成成员</button><button id="member-model-settings" class="text-button" type="button">模型设置</button></div>
         </section>
+
+        <section id="member-directory" class="member-directory" aria-labelledby="member-directory-title" hidden>
+          <div class="member-directory-heading"><h3 id="member-directory-title">工作目录</h3><button id="member-directory-choose" class="secondary-button button-compact" type="button">选择目录</button></div>
+          <details id="member-directory-details" class="member-directory-details"><summary id="member-directory-summary" title="展开完整路径"></summary><p id="member-directory-path" class="directory-path"></p></details>
+          <p id="member-directory-sharing" class="quiet" hidden></p>
+          <div id="member-directory-actions" class="directory-actions"><button id="member-directory-default" class="text-button button-compact" type="button">恢复默认</button><button id="member-directory-apply" class="primary button-compact" type="button">应用</button></div>
+          <p id="member-directory-feedback" class="quiet" role="status" aria-live="polite"></p>
+          <button id="member-directory-refresh" class="text-button" type="button" hidden>刷新设置并重新选择</button>
+          <button id="member-directory-overview" class="text-button" type="button" hidden>查看房间目录与修复</button>
+        </section>
         <div class="agent-overview"><span class="quiet">协作状态</span><div id="agent-actions" class="member-actions"></div></div>
         <p id="agent-enable-hint" class="agent-enable-hint quiet" role="status" hidden></p>
         <details id="agent-diagnostics" class="execution-diagnostics" hidden><summary>诊断详情</summary><pre id="agent-diagnostic-error"></pre></details>
@@ -539,11 +549,17 @@
   <dialog id="workspace-dialog" class="workspace-dialog dialog-surface" aria-labelledby="workspace-title">
     <header class="dialog-header"><h2 id="workspace-title">工作目录</h2><button id="close-workspace" class="icon-button" type="button" aria-label="关闭工作目录设置" title="关闭工作目录设置"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></header>
     <form id="workspace-form" class="workspace-form" autocomplete="off">
-      <p class="quiet">每个 Agent 使用独立目录，可按需关联仓库。</p>
+      <p class="quiet">成员可使用默认或指定目录。选择的是 TeamX 服务所在机器的目录。</p>
+      <section aria-label="成员工作目录">
+        <div id="workspace-directories"></div>
+        <p id="workspace-directories-feedback" class="quiet" role="status" aria-live="polite"></p>
+        <div class="directory-actions"><button id="workspace-directories-default" class="text-button" type="button">全部恢复默认目录</button><button id="workspace-directories-refresh" class="text-button" type="button" hidden>刷新设置并重新选择</button><button id="workspace-directories-apply" class="primary" type="button">应用成员目录</button></div>
+      </section>
+      <h3>默认受管目录与仓库</h3><p class="quiet">仓库设置仅用于各成员默认目录。请分别应用成员目录与仓库设置。</p>
       <p id="workspace-current" class="workspace-current"></p>
       <details><summary>成员实际目录</summary><ul id="workspace-paths" class="workspace-paths"></ul></details>
       <fieldset id="workspace-fields">
-        <label for="workspace-root">工作目录</label><input id="workspace-root" placeholder="workspaces" autocomplete="off" class="field-control">
+        <label for="workspace-root">默认目录根路径</label><input id="workspace-root" placeholder="workspaces" autocomplete="off" class="field-control">
         <p id="workspace-root-hint" class="quiet">切换目录不搬迁文件，原目录保留。</p>
         <label class="workspace-check"><input id="workspace-repository" type="checkbox">关联仓库 <span class="quiet">可选</span></label>
         <div id="workspace-git-fields" hidden>
@@ -568,6 +584,20 @@
       <footer class="form-actions"><button id="workspace-refresh" class="text-button" type="button">查看状态</button><button id="workspace-new" class="text-button" type="button" hidden>修改设置</button><button id="workspace-retry" class="text-button" type="button" hidden>重试原操作</button><button id="workspace-apply" class="primary" type="submit">应用</button></footer>
     </form>
 
+  </dialog>
+  <dialog id="directory-dialog" class="directory-dialog dialog-surface" aria-labelledby="directory-title">
+    <header class="dialog-header"><h2 id="directory-title">选择工作目录</h2><button id="directory-cancel" class="text-button" type="button">取消</button></header>
+    <div class="directory-browser">
+      <p class="quiet directory-help">浏览 TeamX 服务所在机器上的目录。</p>
+      <p id="directory-configured" class="quiet directory-configured"></p>
+      <p id="directory-initial-warning" class="directory-initial-warning quiet" role="status" hidden></p>
+      <div id="directory-roots-field" class="directory-roots-field" hidden><label for="directory-roots">位置</label><select id="directory-roots" class="field-control"></select></div>
+      <div class="directory-toolbar"><button id="directory-root" class="icon-button" type="button" aria-label="返回可选根目录" title="返回可选根目录"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7M5 9v11h14V9M9 20v-7h6v7"/></svg></button><button id="directory-parent" class="icon-button" type="button" aria-label="返回上级" title="返回上级"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 10 7-7 7 7M12 3v17"/></svg></button><form id="directory-locate" class="directory-locate" autocomplete="off"><label for="directory-path" class="sr-only">浏览路径</label><input id="directory-path" required spellcheck="false" autocapitalize="none" placeholder="输入服务端绝对路径"><button class="icon-button" type="submit" aria-label="定位" title="定位"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h16m-6-6 6 6-6 6"/></svg></button></form></div>
+      <div class="directory-list-heading"><span id="directory-count" class="quiet"></span><label><input id="directory-show-hidden" type="checkbox">显示隐藏目录</label></div>
+      <div id="directory-entries" class="directory-entries" aria-label="子目录"></div>
+      <p id="directory-status" class="quiet" role="status" aria-live="polite"></p><p id="directory-error" class="form-error" role="alert" hidden></p>
+    </div>
+    <footer class="form-actions"><div class="directory-selection"><span class="quiet">当前目录</span><strong id="directory-current"></strong></div><button id="directory-select" class="primary" type="button" disabled>使用此目录</button></footer>
   </dialog>
   <dialog id="settings-dialog" class="workspace-dialog settings-dialog dialog-surface" aria-labelledby="settings-title">
     <header class="dialog-header settings-header">

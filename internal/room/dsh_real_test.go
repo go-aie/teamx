@@ -30,9 +30,17 @@ type realRoomDriver struct {
 	dshProcess                                                   realProcessIdentity
 	// Bundle acceptance supplies the archived CLI and the operator's complete
 	// model settings, including gateway compatibility. Other drivers still build.
-	serveArgs       []string
-	sessionMaxTurns uint64
-	modelOverride   *dsh.ModelConfig
+	serveArgs        []string
+	sessionMaxTurns  uint64
+	modelOverride    *dsh.ModelConfig
+	managementCaller *Caller // Optional persisted owner for authenticated process tests.
+}
+
+func (d *realRoomDriver) managedCaller() Caller {
+	if d.managementCaller != nil {
+		return *d.managementCaller
+	}
+	return humanCaller
 }
 
 type realProcessIdentity struct {

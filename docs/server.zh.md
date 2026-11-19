@@ -31,6 +31,8 @@ flowchart TB
 
 ## 安装根、home 与账号 HOME
 
+Workspace 默认位于 Room 数据目录内，也可按成员引用服务端已有目录。`server.workspace_roots` 控制可选择范围，目录浏览只允许 human 身份；实际 cwd 统一供 DSH、模型执行配置和普通平台工具使用。串行 Room 可共用完全相同的外部目录，同部署跨 Room 绑定拒绝重叠。目录引用不改变外部文件的所有权与备份生命周期。配置及容器挂载见[可选择的工作目录](installation.zh.md#可选择的工作目录)，恢复与并发边界见 [Workspace 技术参考](reference/workspace.zh.md)。
+
 常驻安装将程序版本与私有数据分开：
 
 ```text

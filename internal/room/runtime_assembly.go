@@ -42,8 +42,23 @@ func (m *roomManager) checkWorkspacePreparationSettled(id string) error {
 }
 
 func (m *roomManager) checkRoomSettled(id string) error {
-	if err := m.checkWorkspacePreparationSettled(id); err != nil {
-		return err
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, entry := range m.index.Rooms {
+		if entry.RoomID == id {
+			return m.checkClosedWorkspaceSettledLocked(entry)
+		}
+	}
+	return ErrIdentity
+}
+
+// Requires catalog ownership. A missing service is never settlement evidence.
+func (m *roomManager) checkClosedWorkspaceSettledLocked(entry roomIndexEntry) error {
+	id, expected := entry.RoomID, entry.RoomIdentity
+	for _, op := range m.index.WorkspaceOperations {
+		if op.RoomIdentity == expected && op.Preparation != nil && !preparationGroupSettled(op.Preparation.PID) {
+			return ErrBusy
+		}
 	}
 	store, err := OpenStore(m.roomDir(id), id)
 	if err != nil {
@@ -54,15 +69,6 @@ func (m *roomManager) checkRoomSettled(id string) error {
 	if err != nil {
 		return err
 	}
-	m.mu.Lock()
-	var expected RoomIdentity
-	for _, entry := range m.index.Rooms {
-		if entry.RoomID == id {
-			expected = entry.RoomIdentity
-			break
-		}
-	}
-	m.mu.Unlock()
 	if state.RoomIdentity != expected {
 		return ErrIdentity
 	}
@@ -159,6 +165,9 @@ func (m *roomManager) workspaceActivationConfig(id RoomIdentity, applying string
 	if saved.Workspace != nil && (saved.WorkspaceVersion > 1 || saved.Workspace.Repository != nil || saved.Workspace.Binding != nil) && !authorized {
 		return serviceConfig{}, fmt.Errorf("%w: workspace configuration has no completed management operation", ErrRequest)
 	}
+	if err := m.validateEffectiveWorkspace(saved); err != nil {
+		return serviceConfig{}, err
+	}
 	base := saved.Runtime.profile()
 	if err := checkManagedRuntimeAvailability(base); err != nil {
 		return serviceConfig{}, err
@@ -170,8 +179,8 @@ func (m *roomManager) workspaceActivationConfig(id RoomIdentity, applying string
 	targets := make(map[string]modelSessionSnapshot)
 	for _, member := range saved.Members {
 		p := base
-		p.Instructions = member.Instructions
-		p.Workspace = filepath.Join(dir, filepath.FromSlash(member.Workspace))
+		p.Instructions = memberWorkspaceInstructions(*saved.Workspace, member)
+		p.Workspace = resolveMemberWorkspace(dir, *saved.Workspace, member).Directory
 		if err := checkWorkspaceDirectory(dir, member.Workspace); err != nil {
 			return serviceConfig{}, err
 		}
@@ -186,7 +195,7 @@ func (m *roomManager) workspaceActivationConfig(id RoomIdentity, applying string
 		for k, v := range base.ToolEnv {
 			p.ToolEnv[k] = v
 		}
-		for k, v := range member.ToolEnv {
+		for k, v := range memberWorkspaceToolEnv(*saved.Workspace, member) {
 			p.ToolEnv[k] = resolveTeamResource(dir, v)
 		}
 		if saved.Runtime.ManagedModels {
@@ -218,6 +227,17 @@ func (m *roomManager) workspaceActivationConfig(id RoomIdentity, applying string
 		profiles[member.Runner.Profile] = p
 	}
 	config := m.config
+	config.checkWorkspace = func(profile string) error {
+		for _, member := range saved.Members {
+			if member.Runner.Profile == profile {
+				if saved.Workspace.MemberDirectories[member.MembershipID] == "" {
+					return checkWorkspaceDirectory(dir, member.Workspace)
+				}
+				return m.validateEffectiveWorkspace(saved)
+			}
+		}
+		return ErrIdentity
+	}
 	config.inputAdapters = m.notificationAdapters
 	config.updates = m.updates
 	config.agentNames = m.agentNames

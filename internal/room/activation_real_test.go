@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,11 +29,22 @@ func (d *realRoomDriver) startManaged(number int, teamsDir string) (string, erro
 	if err != nil {
 		return "", err
 	}
+	return d.startManagedConfig(number, configPath)
+}
+
+// Reuse process readiness and cleanup with a complete isolated startup config.
+func (d *realRoomDriver) startManagedConfig(number int, configPath string) (string, error) {
 	log, err := os.OpenFile(filepath.Join(d.output, fmt.Sprintf("serve-%d.log", number)), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		return "", err
 	}
-	cmd := exec.Command(d.binary, "serve", "--config", configPath, "--listen", "127.0.0.1:0", "--merge-window", "0s", "--session-max-turns", "8")
+	listen := "127.0.0.1:0"
+	if d.endpoint != "" {
+		// MCP endpoint is part of the frozen Session fingerprint. Normal
+		// restart acceptance must retain the service address, as deployments do.
+		listen = strings.TrimPrefix(d.endpoint, "http://")
+	}
+	cmd := exec.Command(d.binary, "serve", "--config", configPath, "--listen", listen, "--merge-window", "0s", "--session-max-turns", "8")
 	cmd.Dir = os.TempDir() // Activation must use frozen Room data, independent of cwd.
 	cmd.Env = append(operatorEnv(""), d.report["apiKeyEnv"].(string)+"="+d.secret)
 	cmd.Stderr = log
@@ -82,6 +94,7 @@ func (d *realRoomDriver) managementRequest(path string, in, out any) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", d.endpoint)
 	res, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
 	if err != nil {
 		return err
@@ -144,7 +157,7 @@ func (d *realRoomDriver) selectManaged(epoch string, room roomSummary, id string
 		return err
 	}
 	var op roomOpen
-	if err := d.managementRequest("/v1/rooms/open", roomOpenRequest{ServiceEpoch: epoch, Caller: humanCaller, RoomIdentity: room.RoomIdentity, OpenID: id}, &op); err != nil {
+	if err := d.managementRequest("/v1/rooms/open", roomOpenRequest{ServiceEpoch: epoch, Caller: d.managedCaller(), RoomIdentity: room.RoomIdentity, OpenID: id}, &op); err != nil {
 		return err
 	}
 	return d.until(func() (bool, error) {

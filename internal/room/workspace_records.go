@@ -3,6 +3,7 @@ package room
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math"
 	"path/filepath"
 	"reflect"
@@ -25,8 +26,10 @@ type workspacePreparationProcess struct {
 }
 
 type workspaceOperation struct {
-	Timings     map[string]int64             `json:"timings_ms,omitempty"`
-	Preparation *workspacePreparationProcess `json:"preparation,omitempty"`
+	RetainedSessions map[string]dshReference      `json:"retained_sessions,omitempty"`
+	Unchanged        bool                         `json:"unchanged,omitempty"` // response only; never persisted
+	Timings          map[string]int64             `json:"timings_ms,omitempty"`
+	Preparation      *workspacePreparationProcess `json:"preparation,omitempty"`
 	RoomIdentity
 	OperationID         string                      `json:"operation_id"`
 	ReplacesOperationID string                      `json:"replaces_operation_id,omitempty"`
@@ -58,6 +61,9 @@ func (op workspaceOperation) revisable() bool {
 }
 
 func (op workspaceOperation) validate() error {
+	if op.Unchanged {
+		return ErrInvalid
+	}
 	if op.ReplacesOperationID != "" && (!validRestartID(op.ReplacesOperationID) || op.ReplacesOperationID == op.OperationID) {
 		return ErrInvalid
 	}
@@ -73,7 +79,7 @@ func (op workspaceOperation) validate() error {
 	}
 	if op.RequestTarget != nil {
 		normalized, err := normalizeWorkspace(*op.RequestTarget, true)
-		if err != nil || !equalWorkspace(normalized, *op.RequestTarget) || op.PreviousConfig == nil || op.PreviousConfig.RoomIdentity != op.RoomIdentity || op.PreviousConfig.WorkspaceVersion != op.PreviousVersion || !validText(op.SourceEpoch) {
+		if err != nil || !equalWorkspace(normalized, *op.RequestTarget) || op.PreviousConfig == nil || op.PreviousConfig.RoomIdentity != op.RoomIdentity || op.PreviousConfig.WorkspaceVersion != op.PreviousVersion || (!validText(op.SourceEpoch) && !directoryOnlyOperation(op)) {
 			return ErrInvalid
 		}
 	}
@@ -144,12 +150,22 @@ func (op workspaceOperation) validate() error {
 		}
 		ids[member.MembershipID], agents[member.AgentID] = true, true
 	}
+	for id := range op.Target.MemberDirectories {
+		if !ids[id] {
+			return ErrIdentity
+		}
+	}
 	rotating := map[string]bool{}
 	for _, id := range op.RotateMembers {
 		if !ids[id] || rotating[id] {
 			return ErrInvalid
 		}
 		rotating[id] = true
+	}
+	for id, ref := range op.RetainedSessions {
+		if !ids[id] || rotating[id] || !directoryOnlyOperation(op) || op.PreparedConfig == nil || ref.MembershipID != id || ref.RoomIdentity != op.RoomIdentity || ref.Version != formatVersion || !validSessionGeneration(ref.Directory) {
+			return ErrInvalid
+		}
 	}
 	updated := map[string]bool{}
 	for _, id := range op.SessionsUpdated {
@@ -303,7 +319,7 @@ func (m *roomManager) saveWorkspaceOperationLocked(op workspaceOperation) (resul
 			continue
 		}
 		if previous.RoomIdentity != op.RoomIdentity || previous.ReplacesOperationID != op.ReplacesOperationID || previous.PreviousVersion != op.PreviousVersion || previous.TargetVersion != op.TargetVersion ||
-			!equalWorkspace(previous.Target, op.Target) || !reflect.DeepEqual(previous.RequestTarget, op.RequestTarget) || previous.SourceEpoch != op.SourceEpoch || !reflect.DeepEqual(previous.PreviousConfig, op.PreviousConfig) || (previous.PreparedConfig != nil && (!reflect.DeepEqual(previous.PreparedConfig, op.PreparedConfig) || !reflect.DeepEqual(previous.RotateMembers, op.RotateMembers))) || !reflect.DeepEqual(previous.Members, op.Members) || !previous.CreatedAt.Equal(op.CreatedAt) ||
+			!equalWorkspace(previous.Target, op.Target) || !reflect.DeepEqual(previous.RequestTarget, op.RequestTarget) || previous.SourceEpoch != op.SourceEpoch || !reflect.DeepEqual(previous.PreviousConfig, op.PreviousConfig) || (previous.PreparedConfig != nil && (!reflect.DeepEqual(previous.PreparedConfig, op.PreparedConfig) || !reflect.DeepEqual(previous.RotateMembers, op.RotateMembers) || !reflect.DeepEqual(previous.RetainedSessions, op.RetainedSessions))) || !reflect.DeepEqual(previous.Members, op.Members) || !previous.CreatedAt.Equal(op.CreatedAt) ||
 			op.UpdatedAt.Before(previous.UpdatedAt) || workspaceOperationPhase(op.Phase) < workspaceOperationPhase(previous.Phase) ||
 			(previous.ConfigCommitted && !op.ConfigCommitted) || (previous.finished() && !reflect.DeepEqual(previous, op)) {
 			return ErrConflict
@@ -382,6 +398,8 @@ func cloneWorkspaceOperation(op workspaceOperation) workspaceOperation {
 		w, _ := normalizeWorkspace(*op.RequestTarget, true)
 		op.RequestTarget = &w
 	}
+	op.RetainedSessions = maps.Clone(op.RetainedSessions)
+	op.Target.MemberDirectories = maps.Clone(op.Target.MemberDirectories)
 	op.RotateMembers = append([]string(nil), op.RotateMembers...)
 	op.Members = append([]workspaceMemberPathRecord(nil), op.Members...)
 	op.SessionsUpdated = append([]string(nil), op.SessionsUpdated...)

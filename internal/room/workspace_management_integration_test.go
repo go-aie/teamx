@@ -148,6 +148,15 @@ func TestWorkspaceApplyRevisesSettledPreparationFailure(t *testing.T) {
 			// Later configuration versions must not invalidate superseded history.
 			next := workspaceRequest(t, m, room, completed.Target)
 			next.ExpectedVersion = completed.TargetVersion
+			directory, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			m.workspaceRoots = &[]string{directory}
+			// A repeat target is now unchanged. Use a genuine later version to
+			// verify that historical superseded receipts remain reloadable.
+			next.Target = completed.Target
+			next.Target.MemberDirectories = map[string]string{completed.Members[0].MembershipID: directory}
 			applyWorkspace(t, m, next)
 			if op := awaitWorkspace(t, m); op.Status != "completed" {
 				t.Fatal(op)

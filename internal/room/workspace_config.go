@@ -3,6 +3,7 @@ package room
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"os"
 	"path"
@@ -15,9 +16,10 @@ import (
 
 // Workspace is effective room configuration, never a set of runtime overrides.
 type workspaceConfig struct {
-	Root       string               `json:"root"`
-	Repository *workspaceRepository `json:"repository,omitempty"`
-	Binding    *workspaceBinding    `json:"binding,omitempty"`
+	MemberDirectories map[string]string    `json:"member_directories,omitempty"`
+	Root              string               `json:"root"`
+	Repository        *workspaceRepository `json:"repository,omitempty"`
+	Binding           *workspaceBinding    `json:"binding,omitempty"`
 }
 
 type workspaceRepository struct {
@@ -32,6 +34,22 @@ type workspaceBinding = platform.ProjectBinding
 // exactly one source. Normalization always copies nested values.
 func normalizeWorkspace(input workspaceConfig, suggestion bool) (workspaceConfig, error) {
 	w := input
+	w.MemberDirectories = nil
+	for id, directory := range input.MemberDirectories {
+		if !safeMembershipID(id) {
+			return workspaceConfig{}, ErrIdentity
+		}
+		if directory == "" {
+			continue
+		}
+		if !validDirectoryPath(directory) {
+			return workspaceConfig{}, directoryError("directory_not_allowed")
+		}
+		if w.MemberDirectories == nil {
+			w.MemberDirectories = map[string]string{}
+		}
+		w.MemberDirectories[id] = filepath.Clean(directory)
+	}
 	if w.Root == "" {
 		w.Root = "workspaces"
 	}
@@ -127,6 +145,9 @@ func validateWorkspaceSnapshot(c managedRoomConfig) error {
 	if err != nil || !equalWorkspace(w, *c.Workspace) {
 		return fmt.Errorf("%w: invalid or noncanonical workspace snapshot", ErrInvalid)
 	}
+	if err := validateMemberDirectories(w, c.Members); err != nil {
+		return err
+	}
 	for _, member := range c.Members {
 		if member.Workspace != workspaceMemberPath(w, member.MembershipID) {
 			return fmt.Errorf("%w: member workspace differs from room configuration", ErrInvalid)
@@ -136,7 +157,7 @@ func validateWorkspaceSnapshot(c managedRoomConfig) error {
 }
 
 func equalWorkspace(a, b workspaceConfig) bool {
-	if a.Root != b.Root || (a.Repository == nil) != (b.Repository == nil) || (a.Binding == nil) != (b.Binding == nil) {
+	if !maps.Equal(a.MemberDirectories, b.MemberDirectories) || a.Root != b.Root || (a.Repository == nil) != (b.Repository == nil) || (a.Binding == nil) != (b.Binding == nil) {
 		return false
 	}
 	return (a.Repository == nil || *a.Repository == *b.Repository) && (a.Binding == nil || *a.Binding == *b.Binding)

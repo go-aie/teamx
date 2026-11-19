@@ -1,3 +1,5 @@
+import { createMemberDirectories } from "./member-directories.mjs";
+import { directoryErrors } from "./directory-picker.mjs";
 import { resolveAgentName } from "../agent-names.mjs";
 import { randomUUID } from "../random-id.mjs";
 import { captureReturnView } from "../view-return.mjs";
@@ -11,6 +13,8 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
   // service epochs; notification drafts are invalidated when the epoch changes.
   let workspaceView = null;
   let workspaceReturn = null;
+
+  const directories = createMemberDirectories({ env, runtime, membersUI, workspaceView: () => workspaceView, busy: () => workspaceFormBusy() || roomsUI.managementBusy() || !!state.catalog?.busy, submit: change => submitWorkspace(false, change) });
 
   const workspaceKey = (room, operator) => JSON.stringify(["teamx.workspace", room.room_instance, operator]);
 
@@ -56,6 +60,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
       return;
     }
 
+    directories.picker.close();
     closeWorkspacePicker();
     membersUI.resetTools();
     $("notification-detail").close();
@@ -70,6 +75,15 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
         workspaceView.closeOnComplete = pending.operation_id;
       }
     } catch { /* Never replay requests from storage. */ }
+  }
+
+  function workspaceObservation() {
+    const ws = workspaceView;
+    if (ws?.data?.observation && workspaceBusy()) return ws.data.observation;
+    if (ws?.data?.directory_error && !roomsUI.selectedEntry()?.service) {
+      return { ...ws.room, service_epoch: state.catalog.service_epoch };
+    }
+    return null;
   }
 
   async function syncWorkspace(catalog, { current = () => true, onFailure = () => {} } = {}) {
@@ -114,6 +128,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     if (!valid()) return;
     renderWorkspace();
     if (completed) {
+      clearSubmittedDirectoryDraft(ws); directories.render();
       ws.closeOnComplete = null;
       $("workspace-dialog").close();
     }
@@ -190,7 +205,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     $("workspace-label").textContent = label;
     $("workspace-trigger").title = `工作目录：${label}`;
     $("workspace-selected-label").textContent = label;
-    $("workspace-selected-description").textContent = current?.repository ? "各成员使用独立的仓库目录"
+    $("workspace-selected-description").textContent = Object.keys(current?.member_directories || {}).length ? "成员使用默认或指定目录，可在成员设置中更改" : current?.repository ? "各成员使用默认的独立仓库目录"
       : current && current.root !== "workspaces" ? `房间内目录 · ${current.root}` : "沿用各成员自己的工作目录";
     const status = ws?.pending ? "提交结果待确认" : op?.status === "running" ? workspaceStages[op.phase] || "正在应用"
       : op?.status === "failed" ? workspaceCanRevise() ? "初始化失败 · 可修改后重新应用" : "设置未完成 · 请核查后重试"
@@ -198,11 +213,12 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     const summary = !ws?.pending && op?.status === "completed" ? "" : status;
     $("workspace-summary").textContent = summary;
     $("workspace-summary").hidden = !summary || !state.managed || !ws;
+    directories.render();
     if (!$("workspace-dialog").open) return;
     fillWorkspaceForm();
     $("workspace-current").textContent = current ? `当前目录：${current.root} · 配置版本 ${data.workspace_version}` : "沿用原成员目录";
     $("workspace-paths").replaceChildren(...(data?.members || []).map(member => {
-      const item = document.createElement("li"); item.textContent = `${resolveAgentName(state.members, member.agent_id, member.membership_id)} · ${member.workspace}`; return item;
+      const item = document.createElement("li"); item.textContent = `${resolveAgentName(state.members, member.agent_id, member.membership_id)} · ${member.directory_source === "external" ? "指定目录" : "默认目录"}：${member.effective_directory || member.workspace}（默认：${member.default_directory || member.workspace}）`; return item;
     }));
     const repo = !!current?.repository, binding = !!current?.binding;
     const scion = $("workspace-kind").value === "scion";
@@ -212,7 +228,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     $("workspace-binding-label").textContent = scion ? "绑定 Scion 连接（必需）" : "绑定 GitLab";
     $("workspace-fields").disabled = !data || !ws.connected || workspaceFormBusy() || roomsUI.managementBusy();
     $("workspace-root").readOnly = repo || git;
-    $("workspace-root-hint").textContent = repo ? "仓库目录已固定；各成员使用独立 clone。" : git
+    $("workspace-root-hint").textContent = repo ? "默认仓库目录已固定；指定目录不会被仓库初始化修改。" : git
       ? "首次关联会在新的受管仓库目录中分别 clone；旧目录文件保留。" : "切换目录不搬迁文件，原目录保留。";
     $("workspace-repository").disabled = repo;
     $("workspace-repo-url").readOnly = repo;
@@ -260,6 +276,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     const old = workspaceView.data.workspace;
     const git = $("workspace-repository").checked;
     const target = { root: old?.repository || !git ? $("workspace-root").value.trim() : old?.root || "" };
+    if (old?.member_directories) target.member_directories = { ...old.member_directories };
     if (git) {
       const kind = $("workspace-kind").value || "git";
       target.repository = old?.repository ? { ...old.repository } : { url: $("workspace-repo-url").value.trim() };
@@ -292,19 +309,26 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     return target;
   }
 
-  async function submitWorkspace(retry = false) {
+  function clearSubmittedDirectoryDraft(ws) {
+    const submitted = ws.directorySubmitted;
+    if (submitted && ws.directoryDrafts?.get(submitted.key) === submitted.draft) ws.directoryDrafts.delete(submitted.key);
+    ws.directorySubmitted = null;
+  }
+
+  async function submitWorkspace(retry = false, directoryChange = null) {
     const ws = workspaceView;
-    if (!ws || ws.sending || !ws.connected || (retry ? $("workspace-retry").disabled : $("workspace-apply").disabled)) return;
+    if (!ws || ws.sending || !ws.connected || (retry ? $("workspace-retry").disabled : directoryChange ? workspaceFormBusy() || roomsUI.managementBusy() : $("workspace-apply").disabled)) return;
     let payload;
     try {
       payload = { ...ws.room, service_epoch: state.catalog.service_epoch, caller: { kind: "human", id: ws.operator },
         operation_id: retry ? ws.data.operation.operation_id : randomUUID().replaceAll("-", "") };
       if (!retry) {
-        payload.expected_version = ws.data.workspace_version; payload.target = workspaceTarget();
+        payload.expected_version = directoryChange?.version ?? ws.data.workspace_version; payload.target = directoryChange?.target || workspaceTarget();
         if (workspaceCanRevise()) payload.replaces_operation_id = ws.data.operation.operation_id;
-        if (payload.target.binding?.platform_id) payload.platform_version = (ws.repositoryPlatforms || ws.platforms).find(item => item.id === payload.target.binding.platform_id).version;
+        if (!directoryChange && payload.target.binding?.platform_id) payload.platform_version = (ws.repositoryPlatforms || ws.platforms).find(item => item.id === payload.target.binding.platform_id).version;
       }
     } catch (error) { ws.error = error.message; renderWorkspace(); return; }
+    if (directoryChange) ws.directorySubmitted = { key:directoryChange.draftKey, draft:ws.directoryDrafts.get(directoryChange.draftKey) };
     runtime.supersede("workspace");
     ws.pending = { operation_id: payload.operation_id }; ws.missing = false; saveWorkspacePending(ws);
     ws.closeOnComplete = payload.operation_id;
@@ -313,12 +337,14 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     renderWorkspace(); conversationUI.composerState(); membersUI.renderMembers(); roomsUI.renderRooms();
     try {
       const op = await request(retry ? "/v1/workspace/retry" : "/v1/workspace/apply", payload);
-      ws.data.operation = op; ws.pending = null; saveWorkspacePending(ws);
+      if (op.unchanged) { ws.closeOnComplete = null; clearSubmittedDirectoryDraft(ws); }
+      else ws.data.operation = op;
+      ws.pending = null; saveWorkspacePending(ws);
     } catch (error) {
-      if (["request", "identity", "conflict", "capacity", "busy"].includes(error.code)) {
+      if (["request", "identity", "conflict", "capacity", "busy", ...Object.keys(directoryErrors)].includes(error.code)) {
         ws.closeOnComplete = null;
         ws.pending = null; saveWorkspacePending(ws);
-        ws.error = error.code === "conflict" ? "配置已变化，请查看最新状态后重新应用。" : "请求被拒绝，请核对配置、当前房间和服务状态；共享连接变化后请重新打开设置加载连接。";
+        ws.error = directoryErrors[error.code] || (error.code === "conflict" ? "配置已变化，请查看最新状态后重新应用。" : "请求被拒绝，请核对配置、当前房间和服务状态；共享连接变化后请重新打开设置加载连接。");
       } else ws.error = "提交结果尚未确认，正在查询原操作；不会自动重发。";
     } finally {
    ws.sending = false;
@@ -351,6 +377,8 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
   }
 
   function mount() {
+    directories.mount();
+    $("member-directory-overview").addEventListener("click", openWorkspace);
     $("compose-more").addEventListener("click", () => {
       const atBottom = conversationUI.nearBottom();
       $("workspace-picker").open = !$("workspace-picker").open;
@@ -416,10 +444,12 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     mount,
     closeWorkspacePicker,
     renderWorkspace,
+    renderMemberDirectory: directories.render,
     selectWorkspace,
     get workspaceView() { return workspaceView; },
     loadWorkspacePlatforms,
     workspaceBusy,
+    workspaceObservation,
     workspaceKey,
     workspaceStages,
     syncWorkspace

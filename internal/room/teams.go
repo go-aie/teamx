@@ -146,6 +146,9 @@ func validateTeam(team *teamDefinition, source fs.FS) error {
 		return fmt.Errorf("runtime: %w", err)
 	}
 	if team.Workspace != nil {
+		if len(team.Workspace.MemberDirectories) != 0 {
+			return fmt.Errorf("%w: team templates cannot specify member_directories", ErrRequest)
+		}
 		w, err := normalizeWorkspace(*team.Workspace, true)
 		if err != nil {
 			return err

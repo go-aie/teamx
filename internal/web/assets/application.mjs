@@ -95,6 +95,7 @@ export async function createApp(overrides = {}) {
         if (settingsUI.settingsTab === "general" && !$("timezone-options").hidden) layers.push({id:"timezone-picker",close:settingsUI.backSettings});
       }
     }
+    if ($("directory-dialog").open) layers.push({id:"directory-dialog",close:() => $("directory-cancel").click()});
     if ($("confirmation-dialog").open) layers.push({id:"confirmation",close:() => $("confirmation-dialog").close()});
     return layers;
   }});
@@ -355,13 +356,15 @@ export async function createApp(overrides = {}) {
         await resources.workspace.refresh();
         if (!currentView(version)) return;
         round.configuration = refreshConfiguration({ reusePlatforms: reuse.platforms });
-        if (workspaceUI.workspaceView?.data?.observation && workspaceUI.workspaceBusy()) {
-          selectView(workspaceUI.workspaceView.data.observation, catalog.operator); version = viewVersion;
+        const workspaceObservation = workspaceUI.workspaceObservation();
+        if (workspaceObservation) {
+          selectView(workspaceObservation, catalog.operator); version = viewVersion;
           $("room-name").textContent = roomsUI.roomName();
           await resources.messages.refresh();
           if (!currentView(version)) return;
           syncFailureSince = null; state.connected = false;
-          $("connection").textContent = "Workspace 设置待完成 · 可查看历史";
+          $("connection").textContent = workspaceUI.workspaceView?.data?.directory_error
+            ? "工作目录不可用 · 可查看历史并修复目录" : "Workspace 设置待完成 · 可查看历史";
           membersUI.activity.close(); $("activity-dialog").close(); membersUI.renderMembers();
           return;
         }
@@ -627,11 +630,11 @@ export async function createApp(overrides = {}) {
     }
   }, () => active() && !!state.catalog, roomScope);
   register("messages", async options => {
-    const result = await readMessages({ ...options, observation: !!workspaceUI.workspaceView?.data?.observation && workspaceUI.workspaceBusy() });
+    const result = await readMessages({ ...options, observation: !!workspaceUI.workspaceObservation() });
     if (result && options.current() && !refreshTask && !state.connected && !state.recovering && chatReadable()) resources.members.invalidate();
     return result;
   },
-    () => active() && (!!state.info && (!!workspaceUI.workspaceView?.data?.observation || chatReadable())));
+    () => active() && (!!state.info && (!!workspaceUI.workspaceObservation() || chatReadable())));
   register("members", async options => {
     const result = await readMembers(options);
     if (result && options.current() && state.messagesReady && state.membersReady && !state.recovering && chatReadable() && (!updateConnection || updateConnection.connected)) {

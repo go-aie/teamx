@@ -523,6 +523,9 @@ type replayedAccessBody struct {
 }
 
 func (r *replayedAccessBody) Close() error { return r.closer.Close() }
+
+// Workspace directory browsing is human-only, including on loopback. Never
+// add /v1/workspace/directories to these execution credential capabilities.
 func executionPath(path string) bool {
 	if agentRuntimePath(path) {
 		return true

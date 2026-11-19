@@ -321,7 +321,8 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 	}
 	if !singleRoom {
 		config := serviceConfig{
-			unifiedInputs: options.create == nil, inputUpgradeLog: stderr,
+			workspaceProtected: []string{layout.Root, layout.Home},
+			unifiedInputs:      options.create == nil, inputUpgradeLog: stderr,
 			modelStartup: &startup, modelProbe: options.probe, models: models, access: access, settings: settings,
 			endpoint: internalAccessEndpoint(listener.Addr().String()), mergeWindow: *mergeWindow, maxTurns: *maxTurns,
 			dshTurnTimeout: *dshTurnTimeout, inboxExpiry: inboxExpiry, inboxMode: startup.Server.InboxMode, imageMaterials: startup.Server.ImageMaterials,
@@ -426,6 +427,16 @@ func serveRoomManager(ctx context.Context, listener net.Listener, dir, teamsDir 
 		return err
 	}
 	manager.config, manager.factory = config, create
+	manager.workspaceProtected = append(manager.workspaceProtected, config.workspaceProtected...)
+	if config.modelStartup != nil {
+		startup := config.modelStartup
+		if startup.Server.WorkspaceRoots != nil {
+			roots := append([]string{}, (*startup.Server.WorkspaceRoots)...)
+			manager.workspaceRoots = &roots
+		}
+		home := filepath.Dir(startup.path)
+		manager.workspaceProtected = append(manager.workspaceProtected, home)
+	}
 	if config.settings != nil {
 		manager.settings = config.settings
 		manager.settings.observe = func() { manager.updates.mark(uiUpdate{Topic: "settings"}) }

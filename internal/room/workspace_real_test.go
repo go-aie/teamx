@@ -18,7 +18,7 @@ var workspacePreview = flag.Duration("teamx-workspace-preview", 0, "keep success
 
 func (d *realRoomDriver) realWorkspaceStatus(epoch string, room roomSummary) (workspaceResponse, error) {
 	var result workspaceResponse
-	q := url.Values{"service_epoch": {epoch}, "caller_id": {humanCaller.ID}, "room_id": {room.RoomID}, "room_instance": {room.RoomInstance}}
+	q := url.Values{"service_epoch": {epoch}, "caller_id": {d.managedCaller().ID}, "room_id": {room.RoomID}, "room_instance": {room.RoomInstance}}
 	req, err := http.NewRequestWithContext(d.ctx, http.MethodGet, d.endpoint+"/v1/workspace?"+q.Encode(), nil)
 	if err != nil {
 		return result, err

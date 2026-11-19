@@ -3,6 +3,7 @@ package room
 import (
 	"context"
 	"fmt"
+	"maps"
 	"path/filepath"
 
 	"github.com/go-aie/teamx/internal/platform"
@@ -22,9 +23,6 @@ func (m *roomManager) resolveWorkspacePlatformLocked(owner RoomIdentity, w works
 }
 
 func (m *roomManager) prepareWorkspacePlatform(ctx context.Context, req *workspaceApplyRequest) error {
-	if req.Target.Binding == nil || req.Target.Binding.PlatformID == "" {
-		return nil
-	}
 	m.mu.Lock()
 	if req.ServiceEpoch != m.epoch || req.Caller.Kind != "human" || !validText(req.Caller.ID) || req.Caller.MembershipID != "" {
 		m.mu.Unlock()
@@ -46,11 +44,6 @@ func (m *roomManager) prepareWorkspacePlatform(ctx context.Context, req *workspa
 			replacement = true
 		}
 	}
-	svc, _ := m.runtimeServiceLocked(req.RoomIdentity)
-	if !replacement && (svc == nil || svc.closing.Load()) {
-		m.mu.Unlock()
-		return ErrIdentity
-	}
 	entry, err := m.workspaceRoom(req.RoomIdentity)
 	var saved managedRoomConfig
 	if err == nil {
@@ -59,6 +52,28 @@ func (m *roomManager) prepareWorkspacePlatform(ctx context.Context, req *workspa
 	if err != nil {
 		m.mu.Unlock()
 		return err
+	}
+	normalized, err := normalizeWorkspace(req.Target, true)
+	if err != nil {
+		m.mu.Unlock()
+		return err
+	}
+	if saved.Workspace != nil && sameManagedWorkspace(*saved.Workspace, normalized) {
+		m.mu.Unlock()
+		return nil
+	}
+	if saved.Workspace != nil && !maps.Equal(saved.Workspace.MemberDirectories, normalized.MemberDirectories) {
+		m.mu.Unlock()
+		return ErrRequest
+	}
+	if req.Target.Binding == nil || req.Target.Binding.PlatformID == "" {
+		m.mu.Unlock()
+		return nil
+	}
+	svc, _ := m.runtimeServiceLocked(req.RoomIdentity)
+	if !replacement && (svc == nil || svc.closing.Load()) {
+		m.mu.Unlock()
+		return ErrIdentity
 	}
 	if saved.WorkspaceVersion != req.ExpectedVersion {
 		m.mu.Unlock()

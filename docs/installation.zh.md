@@ -147,6 +147,21 @@ token 不放 URL 或浏览器持久存储；浏览器只保留 HttpOnly 会话 C
 
 Linux `lark-cli 1.0.99` 使用官方加密文件后端和部署账号私有主密钥；macOS 使用官方 Keychain。Linux 固定账号发送仍受 `account_pinning_unavailable` 阻断；凭据保存不代表自动续期或全部平台动作可用。macOS 重启后的 Keychain 解锁和真实账号续期仍需实测。
 
+### 可选择的工作目录
+
+成员可以通过网页选择服务端已有目录，操作见 [Workspace 使用指南](workspace.zh.md#选择已有目录)。在私有 home 的 `config.toml` 中设置允许范围，修改后重启服务：
+
+```toml
+[server]
+workspace_roots = ["/srv/projects", "/mnt/shared"]
+```
+
+未配置时使用服务账号的用户主目录；`workspace_roots = []` 明确关闭外部目录浏览与绑定，默认受管目录仍可用。根必须为服务机器的绝对路径，最多 16 个。根暂时缺失或不可读时，页面显示不可用原因，其他根仍可使用；不会回退到文件系统根。已绑定目录失效时，需要恢复挂载／权限，或在房间 Workspace 总览修复设置。
+
+远端部署需先准备目录并授予服务账号访问权限。容器部署需先把宿主项目挂载进去，例如宿主 `/data/projects` 挂到容器 `/workspace`，配置 `workspace_roots = ["/workspace"]`；页面和 Agent 使用 `/workspace/...`，不能填写容器未挂载的宿主路径。容器内运行 TeamX／DSH 仍需满足系统与沙箱依赖；目录选择功能不会安装依赖或自动挂载。
+
+外部目录不会纳入 TeamX Room 备份或随 Room 删除，需单独备份。允许选择只证明目录当前可进入、可列举，实际文件写权限仍由服务账号和沙箱决定。
+
 ## 日常维护
 
 安装后在部署机直接使用 `teamx`。Linux 命令前加 sudo，macOS 不使用 sudo；`teamx service --help` 可查看参数：

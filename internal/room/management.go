@@ -193,7 +193,9 @@ type roomManager struct {
 	gitlabNotifications      map[RoomIdentity]map[notificationScope]gitlabNotificationRecord
 	gitlabConfiguring        map[platformNotificationKey]bool
 	platformHTTP             http.RoundTripper // offline built-in HTTP seam; never used by agent tools
-	workspaceRun             platform.Execute  // offline subprocess seam; no public configuration hook
+	workspaceRoots           *[]string         // nil defaults to service account home; empty disables external binding
+	workspaceProtected       []string
+	workspaceRun             platform.Execute // offline subprocess seam; no public configuration hook
 	teams                    map[string]teamDefinition
 	defaultRuntime           *teamRuntime // Used only to create new direct conversations.
 	teamsDir                 string
@@ -767,6 +769,10 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/v1/platform/notifications" || r.URL.Path == "/v1/platform/notifications/configure" || r.URL.Path == "/v1/platform/notifications/sync" {
 		m.servePlatformNotifications(w, r)
+		return
+	}
+	if r.URL.Path == "/v1/workspace/directories" {
+		m.serveWorkspaceDirectories(w, r)
 		return
 	}
 	if r.URL.Path == "/v1/workspace" || r.URL.Path == "/v1/workspace/apply" || r.URL.Path == "/v1/workspace/retry" {

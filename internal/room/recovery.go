@@ -15,6 +15,8 @@ import (
 )
 
 type serviceConfig struct {
+	workspaceProtected   []string
+	checkWorkspace       func(string) error
 	inputAdapters        map[notification.SourceID]notificationAdapter
 	unifiedInputs        bool // Normal server composition. Legacy fixture services use the old format.
 	inputUpgradeLog      io.Writer
@@ -193,7 +195,12 @@ func (s *service) newMember(id MemberIdentity, runner RunnerConfig, restored *Ag
 }
 
 func (s *service) memberBackend(runner RunnerConfig) dshBackend {
-	backend := dshBackend{access: s.access, store: s.store, settings: s.settings, profile: s.dshProfiles[runner.Profile], turnTimeout: s.dshTurnTimeout, prepare: s.prepareRoomMaterials, recoveryContext: s.prepareDSHRecoveryContext}
+	backend := dshBackend{checkWorkspace: func() error {
+		if s.checkWorkspace != nil {
+			return s.checkWorkspace(runner.Profile)
+		}
+		return nil
+	}, access: s.access, store: s.store, settings: s.settings, profile: s.dshProfiles[runner.Profile], turnTimeout: s.dshTurnTimeout, prepare: s.prepareRoomMaterials, recoveryContext: s.prepareDSHRecoveryContext}
 	if s.unifiedInputs {
 		backend.prepare = nil
 		backend.inputService = s

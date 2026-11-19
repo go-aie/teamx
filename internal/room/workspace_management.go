@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -31,15 +32,16 @@ type workspaceApplyRequest struct {
 
 type workspaceResponse struct {
 	RoomIdentity
-	Workspace        *workspaceConfig            `json:"workspace"`
-	Suggestions      *workspaceConfig            `json:"suggestions,omitempty"`
-	Version          uint64                      `json:"workspace_version"`
-	Members          []workspaceMemberPathRecord `json:"members"`
-	CredentialStatus string                      `json:"credential_status"`
-	CanRevise        bool                        `json:"can_revise"`
-	Operation        *workspaceOperation         `json:"operation,omitempty"`
-	Observation      *ServiceInfo                `json:"observation,omitempty"`
-	Active           *ServiceInfo                `json:"active,omitempty"`
+	Workspace        *workspaceConfig                 `json:"workspace"`
+	Suggestions      *workspaceConfig                 `json:"suggestions,omitempty"`
+	Version          uint64                           `json:"workspace_version"`
+	Members          []workspaceMemberDirectoryStatus `json:"members"`
+	DirectoryError   string                           `json:"directory_error,omitempty"`
+	CredentialStatus string                           `json:"credential_status"`
+	CanRevise        bool                             `json:"can_revise"`
+	Operation        *workspaceOperation              `json:"operation,omitempty"`
+	Observation      *ServiceInfo                     `json:"observation,omitempty"`
+	Active           *ServiceInfo                     `json:"active,omitempty"`
 }
 
 func (m *roomManager) workspaceStatus(id RoomIdentity, operationID string) (workspaceResponse, error) {
@@ -52,6 +54,14 @@ func (m *roomManager) workspaceStatus(id RoomIdentity, operationID string) (work
 		return workspaceResponse{}, err
 	}
 	result := workspaceResponse{RoomIdentity: id, Workspace: saved.Workspace, Version: saved.WorkspaceVersion, CredentialStatus: "missing"}
+	if _, err := m.normalizeWorkspaceDirectories(saved, *saved.Workspace, true); err != nil {
+		var directory workspaceDirectoryError
+		if errors.As(err, &directory) {
+			result.DirectoryError = string(directory)
+		} else {
+			result.DirectoryError = "directory_unavailable"
+		}
+	}
 	// Suggestions are display-only; they never alter this Room's saved config.
 	if team, ok := m.teams[saved.TeamID]; ok && team.Workspace != nil {
 		suggestion, err := normalizeWorkspace(*team.Workspace, true)
@@ -60,7 +70,8 @@ func (m *roomManager) workspaceStatus(id RoomIdentity, operationID string) (work
 		}
 	}
 	for _, member := range saved.Members {
-		result.Members = append(result.Members, workspaceMemberPathRecord{member.AgentID, member.MembershipID, member.Workspace})
+		resolved := resolveMemberWorkspace(m.roomDir(id.RoomID), *saved.Workspace, member)
+		result.Members = append(result.Members, workspaceMemberDirectoryStatus{workspaceMemberPathRecord: workspaceMemberPathRecord{member.AgentID, member.MembershipID, member.Workspace}, DefaultDirectory: resolved.DefaultDirectory, EffectiveDirectory: resolved.Directory, DirectorySource: resolved.Source})
 	}
 	if saved.Workspace != nil && saved.Workspace.Binding != nil {
 		b := saved.Workspace.Binding
@@ -75,7 +86,7 @@ func (m *roomManager) workspaceStatus(id RoomIdentity, operationID string) (work
 		if op.RoomIdentity == id && (operationID == "" || op.OperationID == operationID) {
 			copy := cloneWorkspaceOperation(op)
 			// Internal recovery material is not a public runtime/configuration export.
-			copy.PreparedConfig, copy.PreviousConfig, copy.RequestTarget = nil, nil, nil
+			copy.PreparedConfig, copy.PreviousConfig, copy.RequestTarget, copy.RetainedSessions = nil, nil, nil, nil
 			result.Operation = &copy
 			result.CanRevise = op.revisable() && !m.roomBusyLocked(id) && equalWorkspaceRoomConfig(saved, *op.PreviousConfig)
 			if !copy.finished() && copy.SourceEpoch != "" {
@@ -167,7 +178,7 @@ func (m *roomManager) serveWorkspace(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, err)
 		return
 	}
-	op.PreparedConfig, op.PreviousConfig, op.RequestTarget = nil, nil, nil
+	op.PreparedConfig, op.PreviousConfig, op.RequestTarget, op.RetainedSessions = nil, nil, nil, nil
 	_ = json.NewEncoder(w).Encode(op)
 }
 
@@ -221,11 +232,7 @@ func (m *roomManager) startWorkspaceApply(req workspaceApplyRequest) (workspaceO
 		return workspaceOperation{}, ErrConflict
 	}
 	svc, _ := m.runtimeServiceLocked(req.RoomIdentity)
-	if replacement == nil {
-		if svc == nil || svc.closing.Load() {
-			return workspaceOperation{}, ErrIdentity
-		}
-	}
+
 	for _, pending := range m.index.WorkspaceOperations {
 		if pending.RoomIdentity == req.RoomIdentity && !pending.finished() && pending.OperationID != req.ReplacesOperationID {
 			return workspaceOperation{}, ErrBusy
@@ -239,15 +246,46 @@ func (m *roomManager) startWorkspaceApply(req workspaceApplyRequest) (workspaceO
 	if err != nil {
 		return workspaceOperation{}, err
 	}
+	if err := validateMemberDirectories(input, saved.Members); err != nil {
+		return workspaceOperation{}, err
+	}
 	if saved.WorkspaceVersion != req.ExpectedVersion || req.ExpectedVersion == ^uint64(0) {
 		return workspaceOperation{}, ErrConflict
 	}
 	if replacement != nil && (replacement.PreviousVersion != saved.WorkspaceVersion || !equalWorkspaceRoomConfig(saved, *replacement.PreviousConfig)) {
 		return workspaceOperation{}, ErrConflict
 	}
-	target, err := m.workspacePlatformTargetLocked(canonical, req.connection)
+	directoryOnly := saved.Workspace != nil && sameManagedWorkspace(*saved.Workspace, canonical)
+	if !directoryOnly && saved.Workspace != nil && !maps.Equal(saved.Workspace.MemberDirectories, canonical.MemberDirectories) {
+		return workspaceOperation{}, ErrRequest
+	}
+	if svc != nil && svc.closing.Load() {
+		if !directoryOnly || !svc.store.directoryReleased() {
+			return workspaceOperation{}, ErrBusy
+		}
+		svc = nil
+	}
+	if svc == nil && replacement == nil && !directoryOnly {
+		return workspaceOperation{}, ErrIdentity
+	}
+	if svc == nil && directoryOnly {
+		if err := m.checkClosedWorkspaceSettledLocked(entry); err != nil {
+			return workspaceOperation{}, err
+		}
+	}
+	target := canonical
+	if !directoryOnly {
+		target, err = m.workspacePlatformTargetLocked(canonical, req.connection)
+		if err != nil {
+			return workspaceOperation{}, err
+		}
+	}
+	target, err = m.normalizeWorkspaceDirectories(saved, target, false)
 	if err != nil {
 		return workspaceOperation{}, err
+	}
+	if directoryOnly && equalWorkspace(*saved.Workspace, target) && replacement == nil {
+		return workspaceOperation{RoomIdentity: req.RoomIdentity, OperationID: req.OperationID, Target: target, PreviousVersion: saved.WorkspaceVersion, TargetVersion: saved.WorkspaceVersion, Unchanged: true}, nil
 	}
 	// First repository binding always gets a stable, fresh managed root. The
 	// submitted root may be omitted or equal the currently displayed plain root.
@@ -283,6 +321,9 @@ func (m *roomManager) startWorkspaceApply(req workspaceApplyRequest) (workspaceO
 	if err != nil {
 		return workspaceOperation{}, err
 	}
+	if saved.Workspace != nil && equalWorkspace(*saved.Workspace, target) && replacement == nil {
+		return workspaceOperation{RoomIdentity: req.RoomIdentity, OperationID: req.OperationID, Target: target, PreviousVersion: saved.WorkspaceVersion, TargetVersion: saved.WorkspaceVersion, Unchanged: true}, nil
+	}
 	now := time.Now().UTC()
 	previousData, _ := json.Marshal(saved)
 	var previous managedRoomConfig
@@ -290,7 +331,7 @@ func (m *roomManager) startWorkspaceApply(req workspaceApplyRequest) (workspaceO
 	sourceEpoch := ""
 	if replacement != nil {
 		sourceEpoch = replacement.SourceEpoch
-	} else {
+	} else if svc != nil {
 		sourceEpoch = svc.info.ServiceEpoch
 	}
 	op := workspaceOperation{Timings: map[string]int64{"local_checks": time.Since(checkedAt).Milliseconds()}, PreviousConfig: &previous, SourceEpoch: sourceEpoch, RoomIdentity: req.RoomIdentity, OperationID: req.OperationID, ReplacesOperationID: req.ReplacesOperationID, PreviousVersion: req.ExpectedVersion, TargetVersion: req.ExpectedVersion + 1, Target: target, RequestTarget: &canonical, Status: "running", Phase: "waiting", CreatedAt: now, UpdatedAt: now}
@@ -478,7 +519,13 @@ func (m *roomManager) runWorkspace(op workspaceOperation, rt *roomRuntime) {
 		for i := range saved.Members {
 			saved.Members[i].Workspace = op.Members[i].Workspace
 		}
-		prepared, err := m.ensureWorkspaces(tracked, saved, true)
+		prepared := preparedWorkspaces{}
+		var err error
+		if directoryOnlyOperation(op) {
+			err = m.validateEffectiveWorkspace(saved)
+		} else {
+			prepared, err = m.ensureWorkspaces(tracked, saved, true)
+		}
 		if err != nil {
 			runErr = err
 			return
@@ -501,7 +548,8 @@ func (m *roomManager) runWorkspace(op workspaceOperation, rt *roomRuntime) {
 			return
 		}
 		op.RotateMembers = nil
-		for _, member := range op.Members {
+		op.RetainedSessions = nil
+		for i, member := range op.Members {
 			id := MemberIdentity{RoomIdentity: op.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
 			opts := SessionOptions{MemberIdentity: id, StatePath: filepath.Join(sessionStore.dir, "agents", id.MembershipID, "session.json")}
 			ref, exists, err := (dshBackend{store: sessionStore}).reference(opts)
@@ -509,8 +557,13 @@ func (m *roomManager) runWorkspace(op workspaceOperation, rt *roomRuntime) {
 				runErr = err
 				break
 			}
-			if exists || ref.Pending {
+			if (exists || ref.Pending) && (!directoryOnlyOperation(op) || memberWorkspaceExecutionChanged(m.roomDir(op.RoomID), *op.PreviousConfig, saved, i)) {
 				op.RotateMembers = append(op.RotateMembers, member.MembershipID)
+			} else if exists || ref.Pending {
+				if op.RetainedSessions == nil {
+					op.RetainedSessions = map[string]dshReference{}
+				}
+				op.RetainedSessions[member.MembershipID] = ref
 			}
 		}
 		runErr = errors.Join(runErr, sessionStore.Close())
@@ -535,8 +588,12 @@ func (m *roomManager) runWorkspace(op workspaceOperation, rt *roomRuntime) {
 	// Recovery of an already prepared target uses only local checks, with no
 	// second clone or platform query. Any changed/missing target remains blocked.
 	verifiedAt := time.Now()
-	if _, err := m.ensureWorkspaces(tracked, *op.PreparedConfig, false); err != nil {
-		runErr = err
+	if directoryOnlyOperation(op) {
+		runErr = m.validateEffectiveWorkspace(*op.PreparedConfig)
+	} else {
+		_, runErr = m.ensureWorkspaces(tracked, *op.PreparedConfig, false)
+	}
+	if runErr != nil {
 		return
 	}
 	op.Timings["target_check"] += time.Since(verifiedAt).Milliseconds()
@@ -561,7 +618,7 @@ func (m *roomManager) runWorkspace(op workspaceOperation, rt *roomRuntime) {
 		runErr = err
 		return
 	}
-	for _, member := range op.Members {
+	for memberPosition, member := range op.Members {
 		updated := false
 		for _, id := range op.SessionsUpdated {
 			updated = updated || id == member.MembershipID
@@ -572,8 +629,14 @@ func (m *roomManager) runWorkspace(op workspaceOperation, rt *roomRuntime) {
 		for _, membership := range op.RotateMembers {
 			requiresRotation = requiresRotation || membership == member.MembershipID
 		}
-		if err := reconcileWorkspaceSession(store, id, op.OperationID, requiresRotation, updated); err != nil {
-			runErr = err
+		var sessionErr error
+		if directoryOnlyOperation(op) && !requiresRotation && !memberWorkspaceExecutionChanged(m.roomDir(op.RoomID), *op.PreviousConfig, *op.PreparedConfig, memberPosition) {
+			sessionErr = verifyUnchangedWorkspaceSession(store, id, op)
+		} else {
+			sessionErr = m.reconcileWorkspaceSession(store, id, op.OperationID, requiresRotation, updated)
+		}
+		if sessionErr != nil {
+			runErr = sessionErr
 			break
 		}
 		if updated {
@@ -670,7 +733,7 @@ func cloneToolEnv(input map[string]string) map[string]string {
 
 // Stable generation names make interrupted reference writes reconcilable. A
 // member that has never opened a Session receives no synthetic rotation.
-func updateWorkspaceSession(store *Store, id MemberIdentity, operationID string) error {
+func (m *roomManager) updateWorkspaceSession(store *Store, id MemberIdentity, operationID string) error {
 	opts := SessionOptions{MemberIdentity: id, StatePath: filepath.Join(store.dir, "agents", id.MembershipID, "session.json")}
 	b := dshBackend{store: store}
 	ref, exists, err := b.reference(opts)
@@ -704,6 +767,12 @@ func updateWorkspaceSession(store *Store, id MemberIdentity, operationID string)
 			return ErrConflict
 		}
 		r = &rotationRecord{Version: rotationVersion, MemberIdentity: id, OperationID: operationID, Reason: "workspace_apply", From: ref.Directory, To: "session.json.dsh-" + operationID, BaseUsed: state.Used, Phase: "prepared"}
+		// Freeze the new cwd and model together before publishing a pending
+		// generation. Retrying this rotation reuses its durable ModelTarget.
+		r.ModelTarget, err = m.workspaceSessionModelTarget(store, id, r.To)
+		if err != nil {
+			return err
+		}
 		if err := store.saveRotation(*r); err != nil {
 			return err
 		}
@@ -715,7 +784,7 @@ func updateWorkspaceSession(store *Store, id MemberIdentity, operationID string)
 }
 
 // A recorded progress bit never substitutes for checking the actual reference.
-func reconcileWorkspaceSession(store *Store, id MemberIdentity, operationID string, rotate, updated bool) error {
+func (m *roomManager) reconcileWorkspaceSession(store *Store, id MemberIdentity, operationID string, rotate, updated bool) error {
 	opts := SessionOptions{MemberIdentity: id, StatePath: filepath.Join(store.dir, "agents", id.MembershipID, "session.json")}
 	ref, exists, err := (dshBackend{store: store}).reference(opts)
 	if err != nil {
@@ -729,12 +798,50 @@ func reconcileWorkspaceSession(store *Store, id MemberIdentity, operationID stri
 		return nil
 	}
 	if ref.Directory == desired && ref.Pending {
-		return updateWorkspaceSession(store, id, operationID)
+		return m.updateWorkspaceSession(store, id, operationID)
 	}
 	if updated || !exists && !ref.Pending {
 		return ErrConflict
 	}
-	return updateWorkspaceSession(store, id, operationID)
+	return m.updateWorkspaceSession(store, id, operationID)
+}
+
+func (m *roomManager) workspaceSessionModelTarget(store *Store, id MemberIdentity, generation string) (*modelSessionSnapshot, error) {
+	var saved managedRoomConfig
+	if err := readSnapshot(filepath.Join(store.dir, "room-config.json"), &saved, maxPrivateFileBytes); err != nil {
+		return nil, err
+	}
+	if saved.RoomIdentity != id.RoomIdentity || saved.Runtime == nil {
+		return nil, ErrIdentity
+	}
+	if !saved.Runtime.ManagedModels {
+		return nil, nil
+	}
+	if m.config.models == nil {
+		return nil, ErrInvalid
+	}
+	for _, member := range saved.Members {
+		if member.AgentID != id.AgentID || member.MembershipID != id.MembershipID {
+			continue
+		}
+		if member.ModelSelection == nil {
+			return nil, ErrInvalid
+		}
+		profile := saved.Runtime.profile()
+		profile.Workspace = resolveMemberWorkspace(store.dir, *saved.Workspace, member).Directory
+		profile.Instructions = memberWorkspaceInstructions(*saved.Workspace, member)
+		profile.ToolEnv = cloneToolEnv(profile.ToolEnv)
+		for key, value := range memberWorkspaceToolEnv(*saved.Workspace, member) {
+			profile.ToolEnv[key] = resolveTeamResource(store.dir, value)
+		}
+		target, err := m.config.models.target(id, *member.ModelSelection, member.ModelSelectionVersion, profile)
+		if err != nil {
+			return nil, err
+		}
+		target.Generation = generation
+		return &target, target.validate(id)
+	}
+	return nil, ErrIdentity
 }
 
 // Public history stays observable while member execution and the old service
@@ -758,6 +865,11 @@ func (m *roomManager) workspaceHistory(w http.ResponseWriter, r *http.Request) b
 	}
 	m.mu.Lock()
 	pending := false
+	if req.ServiceEpoch == m.epoch {
+		if _, err := m.workspaceRoom(req.RoomIdentity); err == nil {
+			pending = true
+		}
+	}
 	for _, op := range m.index.WorkspaceOperations {
 		if op.RoomIdentity == req.RoomIdentity && !op.finished() && op.SourceEpoch == req.ServiceEpoch {
 			pending = true

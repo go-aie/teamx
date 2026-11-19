@@ -258,9 +258,9 @@ func planModelMigration(c startupConfig) (modelMigration, error) {
 			}
 			if ref.Directory != "" && !ref.Pending {
 				p := legacy
-				p.Instructions = member.Instructions
-				p.Workspace = filepath.Join(root, filepath.FromSlash(member.Workspace))
-				p.ToolEnv = cloneStringMap(member.ToolEnv)
+				p.Instructions = memberWorkspaceInstructions(*saved.Workspace, member)
+				p.Workspace = resolveMemberWorkspace(root, *saved.Workspace, member).Directory
+				p.ToolEnv = cloneStringMap(memberWorkspaceToolEnv(*saved.Workspace, member))
 				for k, v := range p.ToolEnv {
 					p.ToolEnv[k] = resolveTeamResource(root, v)
 				}

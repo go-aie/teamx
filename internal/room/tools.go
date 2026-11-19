@@ -485,7 +485,13 @@ func (m *roomManager) prepareToolLocked(ctx context.Context, req toolsRequest) (
 	}
 	for _, member := range saved.Members {
 		if member.AgentID == req.Caller.ID && member.MembershipID == req.Caller.MembershipID && member.Workspace != "" {
-			dir := filepath.Join(m.roomDir(req.RoomID), filepath.FromSlash(member.Workspace))
+			resolved := resolveMemberWorkspace(m.roomDir(req.RoomID), *saved.Workspace, member)
+			dir := resolved.Directory
+			if resolved.Source == "external" {
+				if _, err := m.normalizeWorkspaceDirectories(saved, *saved.Workspace, true); err != nil {
+					return p, nil, nil, err
+				}
+			}
 			if err := checkWorkspaceDirectory(m.roomDir(req.RoomID), member.Workspace); err != nil {
 				return p, nil, nil, err
 			}

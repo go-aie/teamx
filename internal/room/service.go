@@ -108,6 +108,7 @@ type apiError struct {
 
 type service struct {
 	maintainShared            atomic.Pointer[sharedInboxMaintenance]
+	checkWorkspace            func(string) error
 	inputAdapters             map[notification.SourceID]notificationAdapter
 	unifiedInputs             bool
 	updates                   *uiUpdateHub
@@ -275,7 +276,7 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 	if err != nil {
 		return nil, err
 	}
-	s := &service{unifiedInputs: state.InputLog != nil, inputAdapters: config.inputAdapters,
+	s := &service{checkWorkspace: config.checkWorkspace, unifiedInputs: state.InputLog != nil, inputAdapters: config.inputAdapters,
 		updates: updates, updatesDone: make(chan struct{}), ownUpdates: config.updates == nil,
 		agentNames:           config.agentNames,
 		access:               config.access,
@@ -1029,6 +1030,10 @@ func writeAPIError(w http.ResponseWriter, err error) {
 		failure.Outcome, failure.OperationID, failure.Record = diagnostic.Outcome, diagnostic.OperationID, diagnostic.Record
 		failure.Error, failure.Message = diagnostic.Error(), diagnostic.Message
 		failure.Field, failure.ExpectedVersion, failure.ActualVersion, failure.Hint = diagnostic.Field, diagnostic.ExpectedVersion, diagnostic.ActualVersion, diagnostic.Hint
+	}
+	var directory workspaceDirectoryError
+	if errors.As(err, &directory) {
+		failure.Code, failure.Error, failure.Message, failure.Hint = string(directory), string(directory), string(directory), "Inspect the saved directory and server.workspace_roots; restore the directory or apply a new target."
 	}
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(failure)

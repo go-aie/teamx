@@ -470,6 +470,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
   }
 
   function renderActivityControls() {
+    workspaceUI.renderMemberDirectory?.();
     const panel = $("activity-dialog");
     if (panel.open && !state.members.some(member => member.membership_id === activityMember?.membership_id)) panel.close();
     notificationsUI.renderContextViews();

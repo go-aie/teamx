@@ -1,0 +1,119 @@
+{
+  "status": "automated_acceptance_passed",
+  "date": "2026-11-18",
+  "real_dsh": {
+    "status": "passed",
+    "cli_version": "0.2.2-rc.1",
+    "launcher_sha256": "6085bdc3c9b65b8d56be0259c15828e58757c135e5fbc55595a9c0e7a1ae99ac",
+    "model": "deepseek-v4.1-flash-1017",
+    "probe": {
+      "text": true,
+      "tool_round_trip": true,
+      "cleanup": true
+    },
+    "private_report": ".local/workspace-directories-real-20261118-15/report.json",
+    "private_report_sha256": "a1185b92a935c420f8142067daa0b615ad6e042775377afee3873456be65ad27",
+    "phases": {
+      "seed": {
+        "developer": {
+          "session_id": "c6626374-94d1-4493-b263-4563961c4c3c",
+          "cwd_relative_to_evidence": "projects/共享 项目"
+        },
+        "reviewer": {
+          "session_id": "a02e3edb-32f9-4428-966b-1ec4e9918a66",
+          "cwd_relative_to_evidence": "projects/共享 项目"
+        }
+      },
+      "read-shared": {
+        "developer": {
+          "session_id": "c6626374-94d1-4493-b263-4563961c4c3c",
+          "cwd_relative_to_evidence": "projects/共享 项目"
+        },
+        "reviewer": {
+          "session_id": "a02e3edb-32f9-4428-966b-1ec4e9918a66",
+          "cwd_relative_to_evidence": "projects/共享 项目"
+        }
+      },
+      "switch": {
+        "developer": {
+          "session_id": "bc588408-e401-4c57-b586-f70a00885d25",
+          "cwd_relative_to_evidence": "projects/另一个 项目"
+        },
+        "reviewer": {
+          "session_id": "a02e3edb-32f9-4428-966b-1ec4e9918a66",
+          "cwd_relative_to_evidence": "projects/共享 项目"
+        }
+      },
+      "restart": {
+        "developer": {
+          "session_id": "bc588408-e401-4c57-b586-f70a00885d25",
+          "cwd_relative_to_evidence": "projects/另一个 项目"
+        },
+        "reviewer": {
+          "session_id": "a02e3edb-32f9-4428-966b-1ec4e9918a66",
+          "cwd_relative_to_evidence": "projects/共享 项目"
+        }
+      },
+      "default": {
+        "developer": {
+          "session_id": "1356d79c-5e7c-472f-a026-610d81915b83",
+          "cwd_relative_to_evidence": "home/data/rooms/36aef09f0cc1f5774c984d2b6674c84f/workspaces/9d5b9e2af56da4cbf8038844f89fa8c8"
+        },
+        "reviewer": {
+          "session_id": "a02e3edb-32f9-4428-966b-1ec4e9918a66",
+          "cwd_relative_to_evidence": "projects/共享 项目"
+        }
+      },
+      "repair": {
+        "developer": {
+          "session_id": "1356d79c-5e7c-472f-a026-610d81915b83",
+          "cwd_relative_to_evidence": "home/data/rooms/36aef09f0cc1f5774c984d2b6674c84f/workspaces/9d5b9e2af56da4cbf8038844f89fa8c8"
+        },
+        "reviewer": {
+          "session_id": "9ab1929b-ec25-49ee-bd00-c2c149f2966d",
+          "cwd_relative_to_evidence": "home/data/rooms/36aef09f0cc1f5774c984d2b6674c84f/workspaces/f2a9a0a729f2cb64f9c115333ebb9ec3"
+        }
+      }
+    },
+    "unavailable_directory": "directory_not_found",
+    "external_files_and_git_preserved": true,
+    "external_business_writes": 0
+  },
+  "browser": {
+    "engine": "Chromium",
+    "status": "passed",
+    "device": "desktop",
+    "directory_applications": 5,
+    "failed_room_history_visible": true,
+    "failed_room_sending_disabled": true,
+    "physical_phone": "not_run"
+  },
+  "container_mount": {
+    "browser": "separate desktop acceptance",
+    "container_path": "/workspace/project",
+    "dsh": "not invoked",
+    "host_marker_read": true,
+    "restored_default_kept_files": true,
+    "scope": "real container bind mount; production directory browsing/apply; real shell cwd; controlled model",
+    "status": "passed"
+  },
+  "regression": {
+    "web": {
+      "passed": 748,
+      "failed": 0
+    },
+    "room": {
+      "passed_test_items": 1721,
+      "skipped": 5,
+      "elapsed_seconds": 447.472
+    },
+    "workspace_directory_tool_model_integration_seconds": 394.13,
+    "workspace_model_fix_regression_seconds": 91.196,
+    "workspace_directory_race_seconds": 103.576
+  },
+  "pending": [
+    "physical_phone_or_second_device",
+    "real_dsh_inside_container",
+    "existing_GitLab_and_Scion_remote_acceptance_gates_unchanged"
+  ]
+}

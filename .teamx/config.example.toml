@@ -16,6 +16,9 @@ listen = "127.0.0.1:8088"
 time_zone = "Asia/Shanghai"
 data_dir = "./data"
 teams_dir = "./teams"
+# 成员指定目录的服务端允许根目录；省略时使用服务账号 home。
+# [] 关闭外部目录绑定；最多 16 个绝对路径，修改后重启生效。
+# workspace_roots = ["/srv/projects", "/mnt/shared"]
 # DSH 每会话最多受理的回合数；下次有输入时自动轮换。正数，默认 16。
 # 受管房间保存创建时阈值；修改默认值只影响新房间。旧 max_turns 已移除。
 session_max_turns = 16

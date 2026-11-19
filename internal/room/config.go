@@ -22,6 +22,7 @@ type startupConfig struct {
 	source         []byte
 	file           os.FileInfo
 	Server         struct {
+		WorkspaceRoots       *[]string           `toml:"workspace_roots"`
 		TimeZone             *string             `toml:"time_zone"`
 		PublicBaseURL        string              `toml:"public_base_url"`
 		TrustedProxies       []string            `toml:"trusted_proxies"`
@@ -94,6 +95,9 @@ func readStartupConfig(name string, required, validateRuntime bool) (startupConf
 		return startupConfig{}, fmt.Errorf("%w: server.max_turns was removed; use server.session_max_turns: cumulative hard stop is now per-session rotation", ErrRequest)
 	}
 	config.path = path
+	if err := validateWorkspaceRoots(config.Server.WorkspaceRoots); err != nil {
+		return startupConfig{}, err
+	}
 	if config.Server.InboxMode != "" && config.Server.InboxMode != "http" && config.Server.InboxMode != "cli" {
 		return startupConfig{}, fmt.Errorf("%w: server.inbox_mode must be http or cli", ErrRequest)
 	}

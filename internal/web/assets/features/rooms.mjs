@@ -265,6 +265,10 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
     state.managementError = receipt.status === "failed" ? `打开失败，历史已保留。${receipt.error}` : "";
     if (receipt.status === "completed" && receipt.service && op.selectOnComplete !== false && op.selectionVersion === selectionVersion) {
       selectRoom({ ...op.room, ...receipt, service: receipt.service });
+    } else if (receipt.status === "failed" && /^directory_/.test(receipt.error || "") && op.selectOnComplete !== false && op.selectionVersion === selectionVersion) {
+      // Directory repair uses catalog identity even when no member service can
+      // open. Keep the failed Room selected so its Workspace controls target it.
+      selectRoom({ ...receipt, service: null });
     }
     state.management = null; saveManagement();
   }
@@ -482,6 +486,9 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
       selectRoom(room); runtime.enterRoom(); return;
     }
     if (state.management || state.managementSending || room.busy) return;
+    if (!room.service && /^directory_/.test(room.runtime_error || "")) {
+      selectRoom(room); runtime.enterRoom(); void refresh(); return;
+    }
     selectionVersion++; awaitDefaultSelection = false;
     state.management = { kind: "open", selectOnComplete: true, selectionVersion, operator: state.operator, payload: {
       open_id: randomUUID(), room_id: room.room_id, room_instance: room.room_instance } };

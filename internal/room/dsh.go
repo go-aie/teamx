@@ -93,11 +93,12 @@ type dshComponent interface {
 }
 
 type dshBackend struct {
-	inputService *service
-	models       *modelExecution
-	model        *modelSessionSnapshot
-	credentials  *modelCredentials
-	access       *serverAccess
+	checkWorkspace func() error
+	inputService   *service
+	models         *modelExecution
+	model          *modelSessionSnapshot
+	credentials    *modelCredentials
+	access         *serverAccess
 	// Nil only for explicit CLI compatibility or isolated adapter tests.
 	inboxMCP        *service
 	store           *Store
@@ -114,6 +115,11 @@ type dshBackend struct {
 // Reject missing credentials before admitting a turn or publishing a Session
 // reference. A validation failure must not become ambiguous execution state.
 func (b dshBackend) CheckRun() error {
+	if b.checkWorkspace != nil {
+		if err := b.checkWorkspace(); err != nil {
+			return err
+		}
+	}
 	if b.model != nil {
 		_, err := b.credentials.get(b.model.CredentialRef)
 		return err
@@ -194,6 +200,11 @@ func readDSHReference(path string, identity MemberIdentity) (dshReference, bool,
 }
 
 func (b dshBackend) OpenSession(ctx context.Context, opts SessionOptions) (Session, error) {
+	if b.checkWorkspace != nil {
+		if err := b.checkWorkspace(); err != nil {
+			return nil, err
+		}
+	}
 	if b.inboxMCP != nil {
 		b.prepare = func(ctx context.Context, input UnreadChanged, turn uint64, images bool) (*dshMaterials, error) {
 			return b.inboxMCP.prepareRoomMaterials(ctx, input, turn, images)
@@ -497,6 +508,11 @@ type dshDiagnostic struct {
 }
 
 func (s *dshSession) Run(ctx context.Context, input UnreadChanged) (err error) {
+	if s.backend.checkWorkspace != nil {
+		if err := s.backend.checkWorkspace(); err != nil {
+			return err
+		}
+	}
 	defer func() {
 		if err != nil {
 			s.timeZone = "" // A failed turn is not evidence of retained context.

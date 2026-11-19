@@ -127,6 +127,9 @@ func (m *roomManager) ensureWorkspaces(ctx context.Context, saved managedRoomCon
 	if closing {
 		return preparedWorkspaces{}, ErrClosing
 	}
+	if err := m.validateEffectiveWorkspace(saved); err != nil {
+		return preparedWorkspaces{}, err
+	}
 	p := workspacePreparer{run: runPreparation, repository: workspaceRepositoryAdapter,
 		write: func(name string, v any) error {
 			m.mu.Lock()

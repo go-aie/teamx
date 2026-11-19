@@ -42,7 +42,15 @@ func (m *roomManager) prepareWorkspaceGitLocked(ctx context.Context, req toolsRe
 		return p, nil, nil, err
 	}
 	saved, err := m.readWorkspaceRoomConfig(entry)
-	if err != nil || saved.Workspace == nil || saved.Workspace.Binding == nil || saved.Workspace.Repository == nil || saved.Workspace.Binding.PlatformID == "" {
+	if err != nil || saved.Workspace == nil {
+		return p, nil, nil, ErrRequest
+	}
+	for _, member := range saved.Members {
+		if member.AgentID == req.Caller.ID && member.MembershipID == req.Caller.MembershipID && saved.Workspace.MemberDirectories[member.MembershipID] != "" {
+			return p, nil, nil, directoryError("managed_repository_required")
+		}
+	}
+	if saved.Workspace.Binding == nil || saved.Workspace.Repository == nil || saved.Workspace.Binding.PlatformID == "" {
 		return p, nil, nil, ErrRequest
 	}
 	resolved, err := m.resolveWorkspacePlatformLocked(req.RoomIdentity, *saved.Workspace)

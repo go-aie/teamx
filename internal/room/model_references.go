@@ -203,13 +203,13 @@ func (c *modelController) memberProfileLocked(id MemberIdentity) (dshProfile, er
 	for _, member := range saved.Members {
 		if member.AgentID == id.AgentID && member.MembershipID == id.MembershipID {
 			p := saved.Runtime.profile()
-			p.Instructions = member.Instructions
-			p.Workspace = filepath.Join(c.manager.roomDir(id.RoomID), filepath.FromSlash(member.Workspace))
+			p.Instructions = memberWorkspaceInstructions(*saved.Workspace, member)
+			p.Workspace = resolveMemberWorkspace(c.manager.roomDir(id.RoomID), *saved.Workspace, member).Directory
 			p.ToolEnv = cloneStringMap(p.ToolEnv)
 			if p.ToolEnv == nil {
 				p.ToolEnv = map[string]string{}
 			}
-			for k, v := range member.ToolEnv {
+			for k, v := range memberWorkspaceToolEnv(*saved.Workspace, member) {
 				p.ToolEnv[k] = resolveTeamResource(c.manager.roomDir(id.RoomID), v)
 			}
 			return p, nil
@@ -351,6 +351,11 @@ func equalWorkspaceRoomConfig(a, b managedRoomConfig) bool {
 		a.ModelMigrationRuntimeDigest = b.ModelMigrationRuntimeDigest
 	}
 	scrub := func(v managedRoomConfig) managedRoomConfig {
+		if v.Workspace != nil {
+			if normalized, err := normalizeWorkspace(*v.Workspace, false); err == nil {
+				v.Workspace = &normalized
+			}
+		}
 		if mode, err := v.Scheduling.effective(); err == nil {
 			v.Scheduling = mode
 		}
