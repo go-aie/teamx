@@ -202,7 +202,7 @@ func (s *service) memberBackend(runner RunnerConfig) dshBackend {
 			return s.checkWorkspace(runner.Profile)
 		}
 		return nil
-	}, access: s.access, store: s.store, settings: s.settings, profile: s.dshProfiles[runner.Profile], turnTimeout: s.dshTurnTimeout, prepare: s.prepareRoomMaterials, recoveryContext: s.prepareDSHRecoveryContext}
+	}, isDirect: s.isDirect, access: s.access, store: s.store, settings: s.settings, profile: s.dshProfiles[runner.Profile], turnTimeout: s.dshTurnTimeout, prepare: s.prepareRoomMaterials, recoveryContext: s.prepareDSHRecoveryContext}
 	if s.unifiedInputs {
 		backend.prepare = nil
 		backend.inputService = s

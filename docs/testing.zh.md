@@ -75,6 +75,16 @@ go test -race -tags=integration ./internal/room \
   -count=1 -timeout=4m
 ```
 
+真实私信提及验收复用配置中的默认模型，在独立私信中检查普通回复、决策提问、即时提醒通过生产 `send` 保存的正文，并等待每轮结束后再判断。用户测试消息不提示是否使用提及；不读取或写入外部平台。输出目录必须尚不存在：
+
+```sh
+TEAMX_CONVERSATION_DSH_REAL=1 \
+TEAMX_INPUT_COMPARISON_CONFIG=/absolute/path/to/config.toml \
+TEAMX_DSH_OUTPUT=/absolute/path/to/fresh-output \
+go test -tags=e2e ./internal/room \
+  -run '^TestDirectConversationRealAgentMentions$' -count=1 -timeout=7m -v
+```
+
 可选 Chromium 场景需要本机 Playwright 和 Chromium，使用实际 HTTP／CLI 及临时数据，飞书 CLI／成员 backend 为本地夹具：
 
 ```sh

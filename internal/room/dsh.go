@@ -94,6 +94,7 @@ type dshComponent interface {
 
 type dshBackend struct {
 	checkWorkspace func() error
+	isDirect       bool // Immutable type of the owning TeamX conversation.
 	inputService   *service
 	models         *modelExecution
 	model          *modelSessionSnapshot
@@ -374,10 +375,14 @@ func (b dshBackend) componentOptions(opts SessionOptions, ref dshReference) (dsh
 	if b.inputService != nil {
 		guide = unifiedAgentGuide()
 	}
+	conversation := "group (shared with Room members)"
+	if b.isDirect {
+		conversation = "direct (one-to-one with the human operator)"
+	}
 	instructions := strings.Join([]string{
 		strings.TrimSpace(guide),
-		fmt.Sprintf("## Session identity\n\nYou are member %q in Room %q (instance %q, membership %q).\nThe human operator is %q (mention %q).",
-			opts.AgentID, opts.RoomID, opts.RoomInstance, opts.MembershipID, operator, "@"+operator),
+		fmt.Sprintf("## Session identity\n\nYou are member %q in Room %q (instance %q, membership %q).\nCurrent conversation: %s.\nThe human operator is %q; their mention syntax is %q.",
+			opts.AgentID, opts.RoomID, opts.RoomInstance, opts.MembershipID, conversation, operator, "@"+operator),
 		"## Member role\n\n" + strings.TrimSpace(p.Instructions),
 	}, "\n\n")
 	if b.inputService != nil {

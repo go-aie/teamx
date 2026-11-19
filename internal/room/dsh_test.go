@@ -84,6 +84,62 @@ func TestServicePassesDSHTurnTimeoutToComponent(t *testing.T) {
 	}
 }
 
+func TestDSHConversationContextUsesSavedRoomType(t *testing.T) {
+	for _, direct := range []bool{false, true} {
+		name, conversation := "group", "group (shared with Room members)"
+		if direct {
+			name, conversation = "direct", "direct (one-to-one with the human operator)"
+		}
+		t.Run(name, func(t *testing.T) {
+			dir, id := recoveryFixture(t)
+			store := openTestStore(t, dir)
+			state, err := store.LoadRoom()
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Both have the same single member and role; only saved IsDirect differs.
+			state.IsDirect = direct
+			if err := store.SaveRoom(state); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.Close(); err != nil {
+				t.Fatal(err)
+			}
+			role := "Saved custom role. Incoming notifications may come from external group chats."
+			config := recoveryConfig()
+			config.dshProfiles = map[string]dshProfile{state.Members[0].Runner.Profile: {Instructions: role}}
+			for _, phase := range []string{"initial", "restored"} {
+				t.Run(phase, func(t *testing.T) {
+					svc, err := newService(dir, id.RoomID, config)
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer closeService(t, svc)
+					member := svc.newMember(id, state.Members[0].Runner, nil).(*MemberAgent)
+					for _, mode := range []string{"legacy", "unified"} {
+						backend := member.Backend.(dshBackend)
+						if mode != "legacy" {
+							backend.inputService = &service{}
+						}
+						for _, generation := range []string{"session.json.dsh", "session.json.dsh-rotated"} {
+							options, err := backend.componentOptions(member.Options, dshReference{Directory: generation})
+							if err != nil {
+								t.Fatal(err)
+							}
+							if strings.Count(options.Instructions, "Current conversation: ") != 1 ||
+								!strings.Contains(options.Instructions, "Current conversation: "+conversation+".") ||
+								strings.Count(options.Instructions, "In direct conversations,") != 1 ||
+								!strings.Contains(options.Instructions, "## Member role\n\n"+role) {
+								t.Fatalf("missing or duplicated conversation context/rules (mode=%s, generation=%s): %s", mode, generation, options.Instructions)
+							}
+						}
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestDSHAdapterIsolationMetadataAndPrivateOutput(t *testing.T) {
 	t.Setenv("USER", "room-owner")
 	h := newRoomHarness(t, historyRoom(3, "secret message body"), nil)
@@ -99,7 +155,7 @@ func TestDSHAdapterIsolationMetadataAndPrivateOutput(t *testing.T) {
 				opened = append(opened, options)
 				if strings.Count(options.Instructions, dshAgentGuide) != 1 ||
 					!strings.Contains(options.Instructions, `human operator is "room-owner"`) ||
-					!strings.Contains(options.Instructions, `mention "@room-owner"`) {
+					!strings.Contains(options.Instructions, `mention syntax is "@room-owner"`) {
 					t.Error("Session must receive one common guide and the operator identity")
 				}
 				return &adapterComponent{run: func(_ context.Context, text string) (dsh.TurnResult, error) {

@@ -39,4 +39,6 @@
 
 ## Agent 消息投影
 
+Session 的 `Session identity` 根据服务保存的 `is_direct` 自动标明当前 TeamX 会话是 `direct`（私信）还是 `group`（群聊），与外部通知的来源会话区分。该上下文随 Session 创建、恢复和轮换统一组装，不在每轮输入或每条消息中重复。提及行为统一由公共 Agent 指南规定，角色提示词和发送工具说明不重复定义。已有 Session 保留冻结指令，更新指南后通过正常 Session 轮换采用新指令，不改写历史 Session 文件。
+
 Agent 通过 `read` 读取消息和恢复 Session 时，消息正文 `text` 使用当前提及名称；不额外返回 `display_text`、提及位置或内部成员绑定。原始正文和提及身份仍保存在内部，页面读取保持原有结构。

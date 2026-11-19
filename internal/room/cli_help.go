@@ -104,9 +104,9 @@ var referenceCommandHelps = map[string]referenceCommandHelp{
 	},
 	"matters/notify": {
 		"matters notify --change JSON", "Save a stable question, then publish it in Room.",
-		"--change: JSON with " + unitChangeHelp + "text (mention the human operator), optional message_refs (verified native message refs), proposed {operation,body or constraints}.",
+		"--change: JSON with " + unitChangeHelp + "text, optional message_refs (verified native message refs), proposed {operation,body or constraints}.",
 		"Receipt with exact saved question, publication and send_receipt only when confirmed. publication=unconfirmed means saved, not published; published_link_pending means send confirmed but local linkage needs recovery. reused identifies question reuse; requires_read=true requires a fresh read.",
-		`teamx matters notify --change '{"object_ref":"ref_...","unit_ref":"unit_...","unit_version":1,"turn_number":1,"text":"@operator May I send this?","proposed":{"operation":"object.comment","body":"Received"}}'`,
+		`teamx matters notify --change '{"object_ref":"ref_...","unit_ref":"unit_...","unit_version":1,"turn_number":1,"text":"May I send this?","proposed":{"operation":"object.comment","body":"Received"}}'`,
 		"Question is saved BEFORE public send. Identical requests reuse the question/receipt; reconcile uncertain sends with the same request. Read before asking again. Keep routine results private; important results use send with a stable ID and update evidence.",
 	},
 	"matters/reply": {
@@ -226,5 +226,5 @@ Publish a Room message; ordinary Agent output stays private.
 --id: stable retry ID (generated if omitted); --reply-to: exact Room message sequence.
 Returns: committed sequence and client_message_id; --json writes the complete receipt.
 Example: teamx send --id result-1 --text 'Verified result' --json
-Constraints: retain the receipt ID. After failure/uncertain output, retry the same ID and content; changed content conflicts. Mention the human operator when asking for a decision, with enough context to answer.
+Constraints: retain the receipt ID. After failure/uncertain output, retry the same ID and content; changed content conflicts.
 `
