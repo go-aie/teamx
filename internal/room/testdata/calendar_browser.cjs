@@ -449,9 +449,16 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
   assert.equal(await hourVisibility(17),'hidden');assert.equal(await hourVisibility(16),'visible');assert.equal(await hourVisibility(18),'visible');
   await timePage.locator('#calendar-items').evaluate(el=>{el.scrollTop=16*56;});
   if(artifacts)await timePage.screenshot({path:`${artifacts}/current-time-hour-overlap.png`,fullPage:true,animations:'disabled'});
-  await timePage.clock.fastForward(19*60*1000);
+  await timePage.clock.fastForward(7*60*1000);
+  assert.equal(await timePage.locator('.calendar-now-line > span').innerText(),'17:18');assert.equal(await hourVisibility(17),'visible');
+  const labelGap=await timePage.evaluate(()=>document.querySelector('.calendar-now-line > span').getBoundingClientRect().top-document.querySelectorAll('.calendar-hour > span')[17].getBoundingClientRect().bottom);
+  assert.ok(labelGap>=1);
+  if(artifacts)await timePage.screenshot({path:`${artifacts}/current-time-hour-restored.png`,fullPage:true,animations:'disabled'});
+  await timePage.clock.fastForward(12*60*1000);
   assert.equal(await timePage.locator('.calendar-now-line > span').innerText(),'17:30');assert.equal(await hourVisibility(17),'visible');assert.equal(await hourVisibility(18),'visible');
-  await timePage.clock.fastForward(19*60*1000);
+  await timePage.clock.fastForward(12*60*1000);
+  assert.equal(await timePage.locator('.calendar-now-line > span').innerText(),'17:42');assert.equal(await hourVisibility(18),'visible');
+  await timePage.clock.fastForward(7*60*1000);
   assert.equal(await timePage.locator('.calendar-now-line > span').innerText(),'17:49');assert.equal(await hourVisibility(18),'hidden');assert.equal(await hourVisibility(17),'visible');
   await timePage.clock.resume();await timePage.setViewportSize({width:390,height:844});await timePage.locator('#calendar-mode [data-mode="day"]').click();await timePage.locator('.calendar-time-grid[data-mode="day"]').waitFor();
   assert.equal(await hourVisibility(18),'hidden');assert.equal(await hourVisibility(17),'visible');

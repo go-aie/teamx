@@ -300,7 +300,7 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
     const bounds=label.getBoundingClientRect();
     for(const tick of ticks){
       const rect=tick.getBoundingClientRect();
-      if(rect.bottom>bounds.top-2&&rect.top<bounds.bottom+2)tick.dataset.nowOverlap="true";
+      if(rect.bottom>bounds.top-1&&rect.top<bounds.bottom+1)tick.dataset.nowOverlap="true";
     }
   }
   function renderPicker(offset=0){
