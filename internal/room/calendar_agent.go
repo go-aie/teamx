@@ -38,11 +38,10 @@ type calendarRunView struct {
 	Count               int                 `json:"count,omitempty"`
 	UntilAt             time.Time           `json:"until_at,omitzero"`
 	WorkCalendarVersion string              `json:"work_calendar_version,omitempty"`
-	RunID               string              `json:"run_id"`
-	Version             uint64              `json:"version"`
+	RunID               string              `json:"run_id,omitempty"`
+	Version             uint64              `json:"version,omitempty"`
 	Definition          calendar.Definition `json:"definition"`
 	DueAt               time.Time           `json:"due_at"`
-	TimeZone            string              `json:"time_zone"`
 	Status              string              `json:"status"`
 	Reason              string              `json:"reason,omitempty"`
 	ReportSeq           uint64              `json:"report_seq,omitempty"`
@@ -116,7 +115,7 @@ func calendarTaskBusinessView(t *calendar.Task, state calendar.State, full bool)
 	return v
 }
 func calendarRunBusinessView(r *calendar.Run, result bool) calendarRunView {
-	v := calendarRunView{WorkCalendarVersion: r.WorkCalendarVersion, RunID: r.ID, Version: r.Version, Definition: r.Task.Definition, DueAt: r.DueAt, TimeZone: r.Task.Definition.Schedule.TimeZone, Status: calendarBusinessStatus(r), Reason: r.Reason, ReportSeq: r.Publication.Seq}
+	v := calendarRunView{WorkCalendarVersion: r.WorkCalendarVersion, RunID: r.ID, Version: r.Version, Definition: r.Task.Definition, DueAt: r.DueAt, Status: calendarBusinessStatus(r), Reason: r.Reason, ReportSeq: r.Publication.Seq}
 	if result {
 		v.Report = r.Report
 		v.Evidence = r.Evidence
@@ -277,7 +276,7 @@ func calendarAgentRead(state calendar.State, op string, q calendarQuery) (any, e
 		}
 		for _, m := range state.MissedRanges {
 			if m.Task.ID == t.ID {
-				runs = append(runs, calendarRunView{Kind: "missed_range", Count: m.Count, DueAt: m.FromAt, UntilAt: m.UntilAt, Definition: m.Task.Definition, TimeZone: m.Task.Definition.Schedule.TimeZone, Status: "skipped", Reason: m.Reason, WorkCalendarVersion: m.WorkCalendarVersion})
+				runs = append(runs, calendarRunView{Kind: "missed_range", Count: m.Count, DueAt: m.FromAt, UntilAt: m.UntilAt, Definition: m.Task.Definition, Status: "skipped", Reason: m.Reason, WorkCalendarVersion: m.WorkCalendarVersion})
 			}
 		}
 		sort.Slice(runs, func(i, j int) bool {

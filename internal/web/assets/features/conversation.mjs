@@ -6,6 +6,7 @@ import { notificationOptions } from "../markdown.mjs";
 import { createAssistantIcon } from "../icons.mjs";
 import { renderAvatar } from "../avatars.mjs";
 import { createMentionPicker } from "../mention-picker.mjs";
+import { roomEventDisplayText } from "../room-events.mjs";
 
 // Messages, drafts, mentions and the send/restart lifecycle.
 export function createConversation({ env, runtime, roomsUI, membersUI, settingsUI, interactionsUI, workspaceUI, layoutUI, userMenuUI, calendarUI }) {
@@ -139,7 +140,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
   const authorName = (author, message) => author.kind === "human" && author.id === state.operator ? userMenuUI.displayName()
     : author.kind === "agent" ? resolveAgentName(state.members,author.id,message?.author_membership_id,message?.agent_name || author.id) : author.id;
   const mentionLabel = at=>at.kind==="agent" ? resolveAgentName(state.members,at.id,at.membership_id,at.agent_name || at.id) : at.id===state.operator ? userMenuUI.displayName() : at.id;
-  const displayText = message => messageDisplayText(message, mentionLabel);
+  const displayText = message => message.type === "event" ? roomEventDisplayText(message) : messageDisplayText(message, mentionLabel);
   const messageOptions = message => ({ mentions:message.mentions, mentionLabel, ...(message.author.kind === "integration"
     ? notificationOptions(state.info, state.operator, message.source, { seq: message.seq })
     : { memberNames: state.members.map(m => m.agent_id), ...(roomsUI.isDirect() ? {openCalendar:taskID=>calendarUI?.openTask(taskID)} : {}) }), operatorNames: operatorNames() });
@@ -347,7 +348,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
       const event = document.createElement("div");
       event.id = `message-${message.seq}`;
       event.className = "room-event";
-      event.textContent = message.text;
+      event.textContent = roomEventDisplayText(message);
       event.title = settingsUI.formatDate(message.created_at);
       return event;
     }

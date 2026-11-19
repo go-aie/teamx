@@ -394,6 +394,7 @@ func projectRoomMessage(m RoomMessage) agentRoomMessage {
 	if m.Event != nil {
 		m.ClientMessageID = ""
 	}
+	m.Text = calendarEventText(m.Text, m.Event)
 	return agentRoomMessage{Type: m.Type, Event: projectRoomEvent(m.Event), Seq: m.Seq, ClientMessageID: m.ClientMessageID, Author: m.Author, AgentName: m.AgentName,
 		Text: renderMentionText(m, func(at MessageMention) string {
 			if at.AgentName != "" {
@@ -428,14 +429,21 @@ func projectRoomRead(p ReadPage) agentRoomReadPage {
 type agentRoomEvent struct {
 	Kind   string `json:"event_type"`
 	Source uint64 `json:"source_seq,omitempty"`
-	Result string `json:"result_ref"`
+	Result string `json:"result_ref,omitempty"`
+	RunID  string `json:"run_id,omitempty"`
 }
 
 func projectRoomEvent(e *RoomEvent) *agentRoomEvent {
 	if e == nil {
 		return nil
 	}
-	return &agentRoomEvent{e.Kind, e.SourceSeq, e.ResultRef}
+	v := &agentRoomEvent{Kind: e.Kind, Source: e.SourceSeq}
+	if e.Kind == "calendar_due" {
+		v.RunID = e.OperationID
+	} else {
+		v.Result = e.ResultRef
+	}
+	return v
 }
 
 type agentRoomSource struct {

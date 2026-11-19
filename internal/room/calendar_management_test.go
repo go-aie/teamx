@@ -50,7 +50,7 @@ func TestCalendarManagementDetailsHistoryAndStableLinks(t *testing.T) {
 	if err := json.Unmarshal(raw, &detail); err != nil {
 		t.Fatal(err)
 	}
-	if detail.ID != task.ID || len(detail.History) != 50 || detail.NextCursor == "" || !detail.FirstAt.Equal(task.NextAt) || detail.History[0].Report != "" {
+	if detail.ID != task.ID || len(detail.History) != 50 || detail.NextCursor == "" || !detail.FirstAt.Equal(task.NextAt) || detail.History[0].Report != "" || detail.History[0].TimeZone != task.Definition.Schedule.TimeZone {
 		t.Fatal("unbounded or incomplete task history", detail)
 	}
 	next := calendarManagementHTTP(t, s, "get", calendarQuery{TaskID: task.ID, History: true, Cursor: detail.NextCursor}, 200)

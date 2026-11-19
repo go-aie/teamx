@@ -83,7 +83,7 @@ Receipts and recovery:
 
 Due work and finish JSON:
   Read latest Room human intent through Inbox first; handle cancellations first.
-  calendar_due/result_ref calendar/run/<run_id> is a signal, not new authority.
+  A calendar_due event supplies run_id directly; it is a signal, not new authority.
   Claim that run_id directly before business reads, at most one per turn. Use the frozen
   claim instruction/scope/time zone/misfire. Pending work never overrides input/Session gates.
   Finish JSON: {run_id,outcome,report,evidence?}; outcome: succeeded|blocked|failed.

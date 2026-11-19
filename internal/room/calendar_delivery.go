@@ -4,11 +4,27 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-aie/actorx"
 	"github.com/go-aie/teamx/internal/calendar"
 )
+
+const calendarDueInstructions = "请先阅读 teamx calendar --help，核对最新人类意图后用 calendar claim 领取，再办理并以 calendar finish 发布报告。"
+
+// Persist the original delivery body so retries also match pre-upgrade receipts.
+// Agent projections omit the repeated instructions and expose run_id separately.
+func calendarDueEventSummary(title, runID string) string {
+	return fmt.Sprintf("定时任务到期：%s。run_id=%s；%s", title, runID, calendarDueInstructions)
+}
+
+func calendarEventText(text string, event *RoomEvent) string {
+	if event == nil || event.Kind != "calendar_due" || event.OperationID == "" || !strings.HasPrefix(text, "定时任务到期：") {
+		return text
+	}
+	return strings.TrimSuffix(text, fmt.Sprintf("。run_id=%s；%s", event.OperationID, calendarDueInstructions))
+}
 
 func (a *CalendarActor) deliver(owner actorx.Context) {
 	if a.frozen != nil || a.closing || a.h.retired.Load() || a.h.service.closing.Load() {
@@ -47,7 +63,7 @@ func (a *CalendarActor) deliver(owner actorx.Context) {
 			defer cancel()
 			switch kind {
 			case "event":
-				return h.service.room.Call[PostReceipt](ctx, AppendRoomEvent{RoomIdentity: h.service.info.RoomIdentity, Event: RoomEvent{ID: calendar.ID("calendar_due_", r.ID), Kind: "calendar_due", SourceSeq: r.Task.Source.MessageSeq, OperationID: r.ID, ResultVersion: 1, ResultRef: "calendar/run/" + r.ID, Targets: []string{r.Task.MembershipID}, Actor: Author{Kind: "system", ID: "calendar"}}, Summary: fmt.Sprintf("定时任务到期：%s。run_id=%s；请先阅读 teamx calendar --help，核对最新人类意图后用 calendar claim 领取，再办理并以 calendar finish 发布报告。", r.Task.Definition.Title, r.ID), CreatedAt: r.DueAt})
+				return h.service.room.Call[PostReceipt](ctx, AppendRoomEvent{RoomIdentity: h.service.info.RoomIdentity, Event: RoomEvent{ID: calendar.ID("calendar_due_", r.ID), Kind: "calendar_due", SourceSeq: r.Task.Source.MessageSeq, OperationID: r.ID, ResultVersion: 1, ResultRef: "calendar/run/" + r.ID, Targets: []string{r.Task.MembershipID}, Actor: Author{Kind: "system", ID: "calendar"}}, Summary: calendarDueEventSummary(r.Task.Definition.Title, r.ID), CreatedAt: r.DueAt})
 			case "report":
 				return h.service.room.Call[PostReceipt](ctx, PostMessage{RoomIdentity: h.service.info.RoomIdentity, Caller: Caller{Author: Author{Kind: "agent", ID: r.Task.AgentID}, MembershipID: r.Task.MembershipID}, ClientMessageID: r.Publication.ClientMessageID, Text: r.Report, DurablePublication: true})
 			case "cancel":

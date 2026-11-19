@@ -458,10 +458,19 @@ func readCLI(ctx context.Context, client cliClient, req apiRequest, stdout io.Wr
 			fmt.Fprintf(&output, "Room %s instance=%s snapshot=%d from=%d through=%d has_more=%t unread=%d\n", page.RoomID, page.RoomInstance, page.SnapshotSeq, page.FromExclusive, page.ScannedThrough, page.HasMore, page.UnreadCount)
 			for _, m := range page.Messages {
 				text := m.Text
+				var event *agentRoomEvent
 				if req.Caller.Kind == "agent" {
-					text = projectRoomMessage(m).Text
+					view := projectRoomMessage(m)
+					text, event = view.Text, view.Event
 				}
 				fmt.Fprintf(&output, "[%d] %s/%s: %s\n", m.Seq, m.Author.Kind, m.Author.ID, text)
+				if event != nil {
+					data, err := json.Marshal(event)
+					if err != nil {
+						return err
+					}
+					fmt.Fprintf(&output, "  event: %s\n", data)
+				}
 			}
 		}
 		if err := writeOutput(stdout, output.Bytes()); err != nil {

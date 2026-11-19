@@ -113,6 +113,10 @@ func TestCalendarAgentCLICreateClaimFinishAndRecovery(t *testing.T) {
 	}
 	calendarAgentCLI(t, env, "finish", finish)
 	details := calendarAgentCLI(t, env, "get", map[string]any{"run_id": run.ID})
+	definition := details["definition"].(map[string]any)
+	if details["time_zone"] != nil || definition["schedule"].(map[string]any)["time_zone"] != original.Schedule.TimeZone {
+		t.Fatal("run view lost or repeated the frozen time zone", details)
+	}
 	if (details["status"] != "publishing" && details["status"] != "succeeded") || details["report"] != nil {
 		t.Fatal(details)
 	}

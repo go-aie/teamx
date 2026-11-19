@@ -76,6 +76,7 @@ func TestDSHRecoveryFixedRecentSnapshot(t *testing.T) {
 
 func TestDSHRecoveryPreviewUsesCurrentNamesAndSimplifiedMessages(t *testing.T) {
 	state := historyRoom(0, "")
+	state.InputLog = &roomLogRoot{Version: 1}
 	h := newRoomHarness(t, state, nil)
 	id := h.memberID("A", "generation-A")
 	registry := &agentNameRegistry{}
@@ -88,9 +89,11 @@ func TestDSHRecoveryPreviewUsesCurrentNamesAndSimplifiedMessages(t *testing.T) {
 	roomCall[PostReceipt](t, h, PostMessage{RoomIdentity: h.id, Caller: humanCaller, ClientMessageID: "mention-name", Text: "🙂 @旧名 请处理", Mentions: []MessageMention{
 		{Start: 3, End: 6, Kind: "agent", ID: "A", MembershipID: "generation-A"},
 	}})
-	saveMaterialTurn(t, svc, id, 2, 0)
+	due := calendarEventFixture()
+	roomCall[PostReceipt](t, h, AppendRoomEvent{RoomIdentity: h.id, Event: *due.Event, Summary: due.Text, CreatedAt: due.CreatedAt})
+	saveMaterialTurn(t, svc, id, 3, 0)
 	before := recoveryFiles(t, h.store.dir)
-	recovery, err := svc.prepareDSHRecoveryContext(h.ctx, materialInput(id, 2, 0), 1)
+	recovery, err := svc.prepareDSHRecoveryContext(h.ctx, materialInput(id, 3, 0), 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,6 +101,9 @@ func TestDSHRecoveryPreviewUsesCurrentNamesAndSimplifiedMessages(t *testing.T) {
 	expected := projectRoomRead(svc.labelMessage(page))
 	if recovery.room == nil || !reflect.DeepEqual(*recovery.room, expected) || recovery.room.Messages[0].AgentName != "当前 助手" || recovery.room.Messages[1].Text != "🙂 @当前 助手 请处理" {
 		t.Fatal("recovery and normal reads disagree", recovery.room, expected)
+	}
+	if got := recovery.room.Messages[2]; got.Text != "定时任务到期：检查资料。保留完整标题" || got.Event.RunID != due.Event.OperationID || got.Event.Result != "" || got.Event.Source != 1 {
+		t.Fatal("recovery preview lost compact calendar context", got)
 	}
 	encoded := string(mustContractJSON(recovery.room))
 	for _, field := range []string{`"mentions"`, `"author_membership_id"`, `"display_text"`} {

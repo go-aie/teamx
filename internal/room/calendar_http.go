@@ -32,10 +32,14 @@ type calendarMessageLink struct {
 }
 type calendarManagementTask struct {
 	*calendar.Task
-	FirstAt              time.Time         `json:"first_at,omitzero"`
-	History              []calendarRunView `json:"history"`
-	NextCursor           string            `json:"next_cursor,omitempty"`
-	HistoryRetentionDays int               `json:"history_retention_days"`
+	FirstAt              time.Time               `json:"first_at,omitzero"`
+	History              []calendarManagementRun `json:"history"`
+	NextCursor           string                  `json:"next_cursor,omitempty"`
+	HistoryRetentionDays int                     `json:"history_retention_days"`
+}
+type calendarManagementRun struct {
+	calendarRunView
+	TimeZone string `json:"time_zone"`
 }
 type calendarList struct {
 	MessageLinks         []calendarMessageLink   `json:"message_links"`
@@ -111,7 +115,11 @@ func (s *service) calendarCallView(ctx context.Context, op string, data json.Raw
 						return nil, err
 					}
 					v := history.(calendarTaskView)
-					return calendarManagementTask{t, calendar.FirstScheduledAt(t), v.History, v.NextCursor, v.HistoryRetentionDays}, nil
+					rows := make([]calendarManagementRun, 0, len(v.History))
+					for _, run := range v.History {
+						rows = append(rows, calendarManagementRun{run, run.Definition.Schedule.TimeZone})
+					}
+					return calendarManagementTask{t, calendar.FirstScheduledAt(t), rows, v.NextCursor, v.HistoryRetentionDays}, nil
 				}
 				if q.Cursor != "" || q.Result || !q.From.IsZero() || !q.To.IsZero() || q.State != "" {
 					return nil, ErrRequest

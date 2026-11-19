@@ -99,6 +99,10 @@ func TestCalendarRecurringCLIAndDurableRecovery(t *testing.T) {
 	for _, entry := range history["history"].([]any) {
 		if entry.(map[string]any)["kind"] == "missed_range" {
 			found = true
+			v := entry.(map[string]any)
+			if v["run_id"] != nil || v["version"] != nil || v["time_zone"] != nil || v["count"].(float64) < 1 || v["definition"] == nil || v["until_at"] == nil {
+				t.Fatal("missed range must retain coverage without empty run metadata", v)
+			}
 		}
 	}
 	if !found {
