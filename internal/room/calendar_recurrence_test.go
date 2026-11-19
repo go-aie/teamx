@@ -12,12 +12,12 @@ import (
 	"github.com/go-aie/teamx/internal/calendar"
 )
 
-func TestCalendarRecurringMCPCLIAndDurableRecovery(t *testing.T) {
-	s, _, env, token := calendarAgentFixture(t)
+func TestCalendarRecurringCLIAndDurableRecovery(t *testing.T) {
+	s, _, env, _ := calendarAgentFixture(t)
 	now := time.Now().UTC()
 	due := now.Add(15 * time.Minute).Truncate(time.Minute)
 	q := map[string]any{"action": "create", "operation_id": "daily", "human_source": map[string]any{"message_seq": 1}, "definition": map[string]any{"title": "工作日提醒", "instruction": "RECURRING_SERVICE_REPORT", "schedule": map[string]any{"frequency": "daily", "local_time": due.Format("15:04"), "time_zone": "UTC", "day_filter": "business_days", "work_calendar": "CN"}}}
-	got := calendarMCP(t, s, token, "update", q)
+	got := calendarAgentCLI(t, env, "update", q)
 	id := got["task_id"].(string)
 	if !strings.Contains(got["rule_summary"].(string), "含调休补班") {
 		t.Fatal(got)
@@ -26,11 +26,11 @@ func TestCalendarRecurringMCPCLIAndDurableRecovery(t *testing.T) {
 	if task.Definition.Schedule.StartDate != now.Format("2006-01-02") {
 		t.Fatal("missing recurring start_date default", task)
 	}
-	full := calendarMCP(t, s, token, "get", map[string]any{"task_id": id})
+	full := calendarAgentCLI(t, env, "get", map[string]any{"task_id": id})
 	if full["work_calendars"] == nil {
 		t.Fatal("coverage not visible", full)
 	}
-	// The CLI uses the same schema and operation semantics, with a single skip.
+	// Skip a single occurrence through the CLI.
 	skip := calendar.Request{Action: "skip_once", TaskID: id, ExpectedVersion: 1, OperationID: "skip", LocalDate: task.NextAt.Format("2006-01-02"), HumanSource: calendar.Source{MessageSeq: 1}}
 	raw, _ := json.Marshal(skip)
 	var output bytes.Buffer
@@ -94,7 +94,7 @@ func TestCalendarRecurringMCPCLIAndDurableRecovery(t *testing.T) {
 	if loaded.Revision != before {
 		t.Fatal("read mutated calendar")
 	}
-	history := calendarMCP(t, s, token, "get", map[string]any{"task_id": id, "history": true})
+	history := calendarAgentCLI(t, env, "get", map[string]any{"task_id": id, "history": true})
 	found := false
 	for _, entry := range history["history"].([]any) {
 		if entry.(map[string]any)["kind"] == "missed_range" {

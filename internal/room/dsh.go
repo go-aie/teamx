@@ -593,7 +593,7 @@ func (s *dshSession) Run(ctx context.Context, input UnreadChanged) (err error) {
 		}
 		if len(work) > 0 {
 			b, _ := json.Marshal(work)
-			notification += "\nPending Calendar work (JSON):\n" + string(b) + "\nRead latest human intent, claim at most one, then calendar_finish the report. Never also send the report."
+			notification += "\nPending Calendar work (JSON):\n" + string(b) + "\nRead latest human intent, then read \"$TEAMX_CLI\" calendar --help and use calendar claim/finish with --turn current_turn. Claim at most one; never also send the report."
 		}
 	}
 	prompt := []dsh.ContentBlock{{Type: "text", Text: "Member policy context (JSON):\n" + string(body) + "\n\n" + dshTimeContext(settings, started, s.timeZone) + "\n" + notification}}

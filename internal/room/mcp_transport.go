@@ -71,9 +71,6 @@ func newInputMCPHTTP(unified bool) *mcpHTTP {
 	} else {
 		h.addInboxTool()
 	}
-	if unified {
-		h.addCalendarTools()
-	}
 	return h
 }
 

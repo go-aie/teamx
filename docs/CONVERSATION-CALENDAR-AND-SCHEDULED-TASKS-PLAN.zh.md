@@ -2,6 +2,8 @@
 
 状态：**C1 一次性任务闭环、C1.5 Agent 工具合同、C2 重复与工作日、C3 日历体验与管理、C4 组合验收与发布收尾均已实施**。C1 范围及真实 DSH／浏览器证据见[交付记录](implementation/calendar/once.zh.md)。C1.5 合同与真实 DSH 复验见[交付记录](implementation/calendar/agent-contract.zh.md)。C2 规则、离线年度数据及恢复证据见[交付记录](implementation/calendar/recurrence.zh.md)。C3 周视图、管理、历史与桌面／手机视口证据见[交付记录](implementation/calendar/experience.zh.md)。C4 会话隔离、暂停恢复、离线周期、受管服务重建和页面组合证据见[首版交付记录](implementation/calendar/release.zh.md)。以下保留完整首版设计；仓库交付完成不表示已发布版本或部署，后续能力边界保持不变。
 
+后续入口优化：Calendar 已移除 MCP 注册，Agent 通过现有 `teamx calendar` 和按需 `--help` 调用，见[交付记录](implementation/calendar/cli.zh.md)。下文 `calendar_list/get/update/claim/finish` 的业务含义沿用，调用入口以 CLI 为准；初始 MCP 列表仅保留两个 Inbox 工具。
+
 首个交付范围是私信 Agent：用户通过聊天安排任务，在当前私信的日历中查看和管理，时间到达后由该 Agent 自动处理，结果回到同一私信。后续将同一能力扩展到团队房间。
 
 ## 1. 产品定位与首版边界

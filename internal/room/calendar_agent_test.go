@@ -6,14 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-aie/teamx/internal/calendar"
-	"github.com/google/jsonschema-go/jsonschema"
-	"github.com/mark3labs/mcp-go/mcp"
 )
 
 func calendarAgentFixture(t *testing.T) (*service, *inputSession, func(string) string, string) {
@@ -44,20 +41,31 @@ func calendarAgentFixture(t *testing.T) (*service, *inputSession, func(string) s
 	values := map[string]string{"TEAMX_EXECUTION_TOKEN": execution, "TEAMX_ENDPOINT": server.URL, "TEAMX_ROOM_ID": id.RoomID, "TEAMX_ROOM_INSTANCE": id.RoomInstance, "TEAMX_SERVICE_EPOCH": svc.info.ServiceEpoch, "TEAMX_AGENT_ID": id.AgentID, "TEAMX_MEMBERSHIP_ID": id.MembershipID, "DSH_TEAMX_INPUT_BINDING": string(hidden)}
 	return svc, input, func(k string) string { return values[k] }, token
 }
-func calendarMCP(t *testing.T, s *service, token, op string, q any) map[string]any {
+func calendarAgentCLICall(t *testing.T, env func(string) string, op string, q any) (map[string]any, error) {
 	t.Helper()
-	response := httptest.NewRecorder()
-	result := simpleMCPRequest(t, s.access, token, "calendar-"+op, "calendar_"+op, q, response)
-	if result == nil || result.IsError {
-		t.Fatal(response.Code, response.Body.String())
+	data, err := json.Marshal(q)
+	if err != nil {
+		t.Fatal(err)
 	}
-	data := result.Content[0].(mcp.TextContent).Text
-	var out map[string]any
-	if err := json.Unmarshal([]byte(data), &out); err != nil {
-		t.Fatal(data, err)
+	var out bytes.Buffer
+	err = runCLIWithInput(t.Context(), []string{"calendar", op, "--turn", "1", "--request-file", "-"}, bytes.NewReader(data), &out, io.Discard, env)
+	if err != nil {
+		return nil, err
 	}
-	assertCalendarBusinessOnly(t, data)
-	return out
+	assertCalendarBusinessOnly(t, out.String())
+	var v map[string]any
+	if err := json.Unmarshal(out.Bytes(), &v); err != nil {
+		t.Fatal(out.String(), err)
+	}
+	return v, nil
+}
+func calendarAgentCLI(t *testing.T, env func(string) string, op string, q any) map[string]any {
+	t.Helper()
+	v, err := calendarAgentCLICall(t, env, op, q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v
 }
 func assertCalendarBusinessOnly(t *testing.T, data string) {
 	t.Helper()
@@ -67,12 +75,12 @@ func assertCalendarBusinessOnly(t *testing.T, data string) {
 		}
 	}
 }
-func TestCalendarAgentMCPCreateClaimFinishAndCLIRead(t *testing.T) {
-	s, _, env, token := calendarAgentFixture(t)
+func TestCalendarAgentCLICreateClaimFinishAndRecovery(t *testing.T) {
+	s, _, env, _ := calendarAgentFixture(t)
 	due := time.Now().In(s.settings.snapshot().location).Add(15 * time.Minute).Truncate(time.Minute)
 	// No pre-read, expected_version or explicit product defaults.
 	q := map[string]any{"action": "create", "operation_id": "compact-create", "human_source": map[string]any{"message_seq": 1}, "definition": map[string]any{"title": "提醒", "instruction": "CALENDAR_CONTRACT_REPORT", "scope": map[string]string{"workspace": "verified"}, "schedule": map[string]string{"frequency": "once", "start_date": due.Format("2006-01-02"), "local_time": due.Format("15:04")}}}
-	created := calendarMCP(t, s, token, "update", q)
+	created := calendarAgentCLI(t, env, "update", q)
 	taskID := created["task_id"].(string)
 	if created["version"] != float64(1) || created["changed"] != nil || created["operation_reused"] != nil || !strings.Contains(created["rule_summary"].(string), s.settings.snapshot().TimeZone) || !strings.Contains(created["rule_summary"].(string), "latest_within_one_hour") {
 		t.Fatal(created)
@@ -86,44 +94,42 @@ func TestCalendarAgentMCPCreateClaimFinishAndCLIRead(t *testing.T) {
 	changedSettings.TimeZone = "America/New_York"
 	changedSettings.location, _ = time.LoadLocation(changedSettings.TimeZone)
 	s.settings.committed.Store(&changedSettings)
-	replay := calendarMCP(t, s, token, "update", q)
+	replay := calendarAgentCLI(t, env, "update", q)
 	s.settings.committed.Store(oldSettings)
 	if replay["task_id"] != taskID || replay["operation_reused"] != true || replay["rule_summary"] != created["rule_summary"] || len(s.calendarCurrent().projection.Load().state.Tasks) != 1 {
 		t.Fatal(replay)
 	}
 	taskCopy := *task
 	run := calendarRunNow(t, s, taskCopy)
-	claimed := calendarMCP(t, s, token, "claim", map[string]any{"run_id": run.ID})
+	claimed := calendarAgentCLI(t, env, "claim", map[string]any{"run_id": run.ID})
 	if claimed["instruction"] != original.Instruction || claimed["scope"].(map[string]any)["workspace"] != "verified" || claimed["time_zone"] != original.Schedule.TimeZone || claimed["version"] != nil {
 		t.Fatal(claimed)
 	}
 	// The initial finish response is formed from its committed publication intent.
 	finish := map[string]any{"run_id": run.ID, "outcome": "succeeded", "report": "CALENDAR_CONTRACT_REPORT"}
-	accepted := calendarMCP(t, s, token, "finish", finish)
+	accepted := calendarAgentCLI(t, env, "finish", finish)
 	if accepted["status"] != "publishing" || accepted["report_seq"] != nil || len(accepted) != 2 {
 		t.Fatal(accepted)
 	}
-	calendarMCP(t, s, token, "finish", finish)
-	details := calendarMCP(t, s, token, "get", map[string]any{"run_id": run.ID})
+	calendarAgentCLI(t, env, "finish", finish)
+	details := calendarAgentCLI(t, env, "get", map[string]any{"run_id": run.ID})
 	if (details["status"] != "publishing" && details["status"] != "succeeded") || details["report"] != nil {
 		t.Fatal(details)
 	}
-	report := calendarMCP(t, s, token, "get", map[string]any{"run_id": run.ID, "result": true})
+	report := calendarAgentCLI(t, env, "get", map[string]any{"run_id": run.ID, "result": true})
 	if report["report"] != "CALENDAR_CONTRACT_REPORT" {
 		t.Fatal(report)
 	}
 	finish["report"] = "different"
-	response := httptest.NewRecorder()
-	result := simpleMCPRequest(t, s.access, token, "conflicting-finish", "calendar_finish", finish, response)
-	if result == nil || !result.IsError || !strings.Contains(response.Body.String(), "operation_conflict") {
-		t.Fatal(response.Body.String())
+	if _, err := calendarAgentCLICall(t, env, "finish", finish); err == nil || !strings.Contains(err.Error(), "operation_conflict") {
+		t.Fatal("conflicting report accepted", err)
 	}
 	_, err := s.calendarCurrent().call(t.Context(), true, func(context.Context, *calendar.State) (any, error) { return nil, nil })
 	if err != nil {
 		t.Fatal(err)
 	}
 	saved := calendarAwait(t, s, func(state calendar.State) bool { return state.Runs[run.ID].Publication.Status == "published" })
-	// CLI uses the same business projection as MCP, including explicit result read.
+	// Read the published result through the dedicated CLI flags.
 	var out bytes.Buffer
 	if err := runCalendarCLI(t.Context(), []string{"get", "--run-id", run.ID, "--result"}, nil, &out, io.Discard, env); err != nil {
 		t.Fatal(err)
@@ -134,7 +140,7 @@ func TestCalendarAgentMCPCreateClaimFinishAndCLIRead(t *testing.T) {
 		t.Fatal(out.String())
 	}
 	finish["report"] = "CALENDAR_CONTRACT_REPORT"
-	published := calendarMCP(t, s, token, "finish", finish)
+	published := calendarAgentCLI(t, env, "finish", finish)
 	if published["status"] != "succeeded" || published["report_seq"] == nil || len(published) != 3 {
 		t.Fatal(published)
 	}
@@ -230,7 +236,7 @@ func TestCalendarAgentListsTasksAndBoundsHistory(t *testing.T) {
 }
 
 func TestCalendarAgentCLIMutationsAndVersionConflict(t *testing.T) {
-	s, _, env, token := calendarAgentFixture(t)
+	s, _, env, _ := calendarAgentFixture(t)
 	due := time.Now().UTC().Add(25 * time.Minute).Truncate(time.Minute)
 	q := map[string]any{"action": "create", "operation_id": "cli-create", "human_source": map[string]any{"message_seq": 1}, "definition": calendarDefinition(due)}
 	call := func(q any) (map[string]any, error) {
@@ -268,7 +274,7 @@ func TestCalendarAgentCLIMutationsAndVersionConflict(t *testing.T) {
 	}
 	// Direct claim is revoked after cancellation, including same execution replay.
 	run := calendarRunNow(t, s, *task)
-	calendarMCP(t, s, token, "claim", map[string]any{"run_id": run.ID})
+	calendarAgentCLI(t, env, "claim", map[string]any{"run_id": run.ID})
 	// Cancel the claimed snapshot; an old repeated claim must lose eligibility.
 	_, err = s.calendarCurrent().call(t.Context(), true, func(_ context.Context, state *calendar.State) (any, error) {
 		return state.Update(calendar.Request{Action: "cancel", OperationID: "cancel", TaskID: id, ExpectedVersion: 2}, calendar.Source{}, "A", "generation-A", "UTC", time.Now())
@@ -276,47 +282,12 @@ func TestCalendarAgentCLIMutationsAndVersionConflict(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	response := httptest.NewRecorder()
-	result := simpleMCPRequest(t, s.access, token, "old-claim", "calendar_claim", map[string]any{"run_id": run.ID}, response)
-	if result == nil || !result.IsError || !strings.Contains(response.Body.String(), "task_inactive") {
-		t.Fatal(response.Body.String())
+	if _, err := calendarAgentCLICall(t, env, "claim", map[string]any{"run_id": run.ID}); err == nil || !strings.Contains(err.Error(), "task_inactive") {
+		t.Fatal("cancelled claim accepted", err)
 	}
 }
 
-func TestCalendarAgentSchemasAndEvidenceBounds(t *testing.T) {
-	schemas := calendarToolSchemas()
-	for name, raw := range schemas {
-		var schema jsonschema.Schema
-		if err := json.Unmarshal([]byte(raw), &schema); err != nil {
-			t.Fatal(name, err)
-		}
-		resolved, err := schema.Resolve(nil)
-		if err != nil {
-			t.Fatal(name, err)
-		}
-		if name != "update" {
-			continue
-		}
-		for _, tc := range []struct {
-			data  string
-			valid bool
-		}{
-			{`{"action":"create","operation_id":"op","human_source":{"message_seq":1},"definition":{"title":"test","instruction":"remind","schedule":{"frequency":"once","start_date":"2026-12-20","local_time":"09:00"}}}`, true},
-			{`{"action":"edit","operation_id":"op","human_source":{"message_seq":1},"task_id":"task","expected_version":1,"changes":{"scope":null}}`, true},
-			{`{"action":"create","operation_id":"op","human_source":{"message_seq":1},"definition":{"title":"daily","instruction":"remind","schedule":{"frequency":"daily","local_time":"09:00","day_filter":"business_days","work_calendar":"CN"}}}`, true},
-			{`{"action":"skip_once","operation_id":"op","human_source":{"message_seq":1},"task_id":"task","expected_version":1,"local_date":"2026-12-20"}`, true},
-			{`{"action":"skip_once","operation_id":"op","human_source":{"message_seq":1},"task_id":"task","expected_version":1}`, false},
-			{`{"action":"pause","operation_id":"op","human_source":{"message_seq":1},"task_id":"task","expected_version":1,"local_date":"2026-12-20"}`, false},
-			{`{"action":"edit","operation_id":"op","human_source":{"message_seq":1},"task_id":"task","changes":{"title":"test"}}`, false},
-			{`{"action":"edit","operation_id":"op","human_source":{"message_seq":1},"task_id":"task","expected_version":1,"definition":{"title":"test","instruction":"test"}}`, false},
-		} {
-			var q any
-			_ = json.Unmarshal([]byte(tc.data), &q)
-			if (resolved.Validate(q) == nil) != tc.valid {
-				t.Fatal(tc.data)
-			}
-		}
-	}
+func TestCalendarAgentEvidenceBounds(t *testing.T) {
 	for _, raw := range []string{`{}`, `null`, `{"text":"duplicate report"}`, `{"source_refs":["guessed"]}`, `{"source_refs":[]}`} {
 		if validateCalendarEvidence(json.RawMessage(raw)) == nil {
 			t.Fatal("accepted evidence", raw)
@@ -334,6 +305,91 @@ func TestCalendarAgentSchemasAndEvidenceBounds(t *testing.T) {
 	big, _ := json.Marshal(map[string]any{"source_refs": refs})
 	if validateCalendarEvidence(big) == nil {
 		t.Fatal("unbounded evidence")
+	}
+}
+
+func TestCalendarCLIHelpWithoutConnection(t *testing.T) {
+	for _, op := range []string{"", "list", "get", "update", "claim", "finish"} {
+		t.Run(op, func(t *testing.T) {
+			args := []string{"calendar"}
+			if op != "" {
+				args = append(args, op)
+			}
+			args = append(args, "--help")
+			var out bytes.Buffer
+			if err := runCLIWithInput(t.Context(), args, nil, &out, io.Discard, func(string) string { return "" }); err != nil {
+				t.Fatal(err)
+			}
+			for _, required := range []string{"--turn", "--request-file", "human_source", "expected_version", "changes", "business_days", "operation_id", "publishing", "report_seq"} {
+				if !strings.Contains(out.String(), required) {
+					t.Fatal("missing Calendar usage", required)
+				}
+			}
+		})
+	}
+}
+
+func TestCalendarAgentCLIRejectsInvalidRequestsAndStaleExecution(t *testing.T) {
+	s, _, env, _ := calendarAgentFixture(t)
+	d := calendarDefinition(time.Now().Add(20 * time.Minute))
+	created := calendarAgentCLI(t, env, "update", map[string]any{"action": "create", "operation_id": "cli-validation", "human_source": map[string]int{"message_seq": 1}, "definition": d})
+	taskID := created["task_id"].(string)
+	original := s.calendarCurrent().projection.Load().state.Tasks[taskID].Definition
+	for _, fields := range []map[string]any{
+		{"action": "edit", "changes": map[string]any{"title": "missing version"}},
+		{"action": "edit", "expected_version": 1, "definition": d},
+		{"action": "pause", "expected_version": 1, "local_date": "2099-12-20"},
+		{"action": "skip_once", "expected_version": 1},
+		{"action": "pause", "expected_version": 1, "unexpected": true},
+	} {
+		fields["operation_id"] = "invalid"
+		fields["task_id"] = taskID
+		fields["human_source"] = map[string]int{"message_seq": 1}
+		if _, err := calendarAgentCLICall(t, env, "update", fields); err == nil {
+			t.Fatal("invalid CLI update accepted", fields)
+		}
+	}
+	task := s.calendarCurrent().projection.Load().state.Tasks[taskID]
+	before, _ := json.Marshal(original)
+	after, _ := json.Marshal(task.Definition)
+	if task.Version != 1 || task.State != "active" || !bytes.Equal(before, after) {
+		t.Fatal("invalid requests changed task", task)
+	}
+	run := calendarRunNow(t, s, *task)
+	for _, tc := range []struct {
+		name, turn string
+		binding    bool
+	}{
+		{"missing turn", "0", true},
+		{"wrong turn", "2", true},
+		{"missing binding", "1", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			boundEnv := func(k string) string {
+				if k == "DSH_TEAMX_INPUT_BINDING" && !tc.binding {
+					return ""
+				}
+				return env(k)
+			}
+			if err := runCLIWithInput(t.Context(), []string{"calendar", "claim", "--turn", tc.turn, "--run-id", run.ID}, nil, io.Discard, io.Discard, boundEnv); err == nil {
+				t.Fatal("unbound claim accepted")
+			}
+		})
+	}
+	if state := s.calendarCurrent().projection.Load().state; state.Runs[run.ID].Status != "queued" {
+		t.Fatal("invalid claim changed run", state.Runs[run.ID])
+	}
+	id := MemberIdentity{s.info.RoomIdentity, "A", "generation-A"}
+	agent, err := s.store.LoadAgent(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent.Turn.Status = "completed"
+	if err := s.store.SaveAgent(agent); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := calendarAgentCLICall(t, env, "claim", map[string]any{"run_id": run.ID}); err == nil {
+		t.Fatal("terminal execution claimed work")
 	}
 }
 

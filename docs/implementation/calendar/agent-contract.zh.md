@@ -1,5 +1,7 @@
 # 日历 Agent 工具合同交付记录
 
+当前 Calendar 入口已改为按需 CLI，见[Calendar 按需 CLI 入口](cli.zh.md)。以下保留当时 MCP 合同和真实验收的历史记录，不代表当前仍注册 Calendar MCP 工具。
+
 2026-11-19，对应会话日历方案 C1.5。最终字段和恢复合同见[方案第 7.1 节](../../CONVERSATION-CALENDAR-AND-SCHEDULED-TASKS-PLAN.zh.md#71-agent-工具)，真实模型调用及内部执行证据见 [agent-contract-evidence.json](agent-contract-evidence.json)。C1 原交付及浏览器记录保留在 [once.zh.md](once.zh.md)。
 
 ## 已交付行为

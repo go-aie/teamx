@@ -11,9 +11,8 @@ import (
 )
 
 func runCalendarCLI(ctx context.Context, args []string, stdin io.Reader, out, stderr io.Writer, env func(string) string) error {
-	help := "Usage: teamx calendar list/get/update/claim/finish [--room ID] [--turn current_turn] [--request-file FILE|-]\nlist: --from/--to RFC3339 --state STATE --cursor CURSOR\nget: --task-id ID [--history --cursor CURSOR] or --run-id ID [--result]; claim: --run-id ID\nupdate/finish: --request-file FILE|- (or --request JSON). --turn is the explicit authenticated execution number, separate from business JSON.\n" + calendarGuide + "\n"
-	if len(args) == 0 || args[0] == "--help" {
-		return writeOutput(out, []byte(help))
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		return writeOutput(out, []byte(calendarCLIHelp))
 	}
 	op := args[0]
 	if !strings.Contains(" list get update claim finish ", " "+op+" ") {
@@ -21,7 +20,7 @@ func runCalendarCLI(ctx context.Context, args []string, stdin io.Reader, out, st
 	}
 	f := flag.NewFlagSet("calendar "+op, flag.ContinueOnError)
 	f.SetOutput(stderr)
-	f.Usage = func() { _ = writeOutput(out, []byte(help)) }
+	f.Usage = func() { _ = writeOutput(out, []byte(calendarCLIHelp)) }
 	endpoint := f.String("endpoint", env("TEAMX_ENDPOINT"), "Room endpoint")
 	room := f.String("room", env("TEAMX_ROOM_ID"), "Room identity")
 	turn := f.Uint64("turn", 0, "authenticated current_turn")

@@ -72,8 +72,13 @@ func readInputStream(t *testing.T, s *inputSession, call, stream string, limit i
 }
 func TestInputToolsMinimalContract(t *testing.T) {
 	h := newInputMCPHTTP(true)
-	if len(h.server.ListTools()) != 7 {
+	if len(h.server.ListTools()) != 2 {
 		t.Fatal("input tool count")
+	}
+	for _, name := range []string{"inbox_list", "inbox_read"} {
+		if h.server.ListTools()[name] == nil {
+			t.Fatal("missing input tool", name)
+		}
 	}
 	if hint := h.server.ListTools()["inbox_list"].Tool.Annotations.ReadOnlyHint; hint == nil || !*hint {
 		t.Fatal("list must be read-only")
@@ -105,8 +110,6 @@ func TestInputToolsMinimalContract(t *testing.T) {
 		}
 	}
 	guide := unifiedAgentGuide()
-	// Calendar's day_filter describes its rule, independently of Inbox reads.
-	guide = strings.ReplaceAll(guide, "day_filter", "")
 	for _, word := range []string{"read_id", "turn_number", "inbox_stats", "inbox_preview", "scope_ref", "filter", "blocked_streams"} {
 		if strings.Contains(guide, word) {
 			t.Fatal("guide leak", word)

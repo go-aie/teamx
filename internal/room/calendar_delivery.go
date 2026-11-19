@@ -47,7 +47,7 @@ func (a *CalendarActor) deliver(owner actorx.Context) {
 			defer cancel()
 			switch kind {
 			case "event":
-				return h.service.room.Call[PostReceipt](ctx, AppendRoomEvent{RoomIdentity: h.service.info.RoomIdentity, Event: RoomEvent{ID: calendar.ID("calendar_due_", r.ID), Kind: "calendar_due", SourceSeq: r.Task.Source.MessageSeq, OperationID: r.ID, ResultVersion: 1, ResultRef: "calendar/run/" + r.ID, Targets: []string{r.Task.MembershipID}, Actor: Author{Kind: "system", ID: "calendar"}}, Summary: fmt.Sprintf("定时任务到期：%s。run_id=%s；请先 calendar_claim，再办理并以 calendar_finish 发布报告。", r.Task.Definition.Title, r.ID), CreatedAt: r.DueAt})
+				return h.service.room.Call[PostReceipt](ctx, AppendRoomEvent{RoomIdentity: h.service.info.RoomIdentity, Event: RoomEvent{ID: calendar.ID("calendar_due_", r.ID), Kind: "calendar_due", SourceSeq: r.Task.Source.MessageSeq, OperationID: r.ID, ResultVersion: 1, ResultRef: "calendar/run/" + r.ID, Targets: []string{r.Task.MembershipID}, Actor: Author{Kind: "system", ID: "calendar"}}, Summary: fmt.Sprintf("定时任务到期：%s。run_id=%s；请先阅读 teamx calendar --help，核对最新人类意图后用 calendar claim 领取，再办理并以 calendar finish 发布报告。", r.Task.Definition.Title, r.ID), CreatedAt: r.DueAt})
 			case "report":
 				return h.service.room.Call[PostReceipt](ctx, PostMessage{RoomIdentity: h.service.info.RoomIdentity, Caller: Caller{Author: Author{Kind: "agent", ID: r.Task.AgentID}, MembershipID: r.Task.MembershipID}, ClientMessageID: r.Publication.ClientMessageID, Text: r.Report, DurablePublication: true})
 			case "cancel":

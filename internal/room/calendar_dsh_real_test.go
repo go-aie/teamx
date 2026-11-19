@@ -22,7 +22,7 @@ import (
 	"github.com/go-aie/teamx/internal/calendar"
 )
 
-// Isolated real DSH/model + production Room, scheduler, MCP and publication.
+// Isolated real DSH/model + production Room, scheduler, Calendar CLI and publication.
 // Only local conversation writes are allowed; there is no platform dependency.
 func TestCalendarRealDSH(t *testing.T)          { testCalendarRealDSH(t, false) }
 func TestCalendarRecurringRealDSH(t *testing.T) { testCalendarRealDSH(t, true) }
@@ -78,19 +78,13 @@ func testCalendarRealDSH(t *testing.T, recurring bool) {
 	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Capture only calendar business arguments/results, never headers or tokens.
 		var call calendarAcceptanceCall
-		if r.URL.Path == "/mcp" {
+		if strings.HasPrefix(r.URL.Path, "/v1/calendar/") {
 			data, _ := io.ReadAll(r.Body)
 			r.Body = io.NopCloser(bytes.NewReader(data))
-			var req struct {
-				Method string `json:"method"`
-				Params struct {
-					Name      string          `json:"name"`
-					Arguments json.RawMessage `json:"arguments"`
-				} `json:"params"`
-			}
-			if json.Unmarshal(data, &req) == nil && req.Method == "tools/call" && strings.HasPrefix(req.Params.Name, "calendar_") {
-				call.Tool = req.Params.Name
-				call.Arguments = req.Params.Arguments
+			var req apiRequest
+			if json.Unmarshal(data, &req) == nil {
+				call.Tool = "calendar " + strings.TrimPrefix(r.URL.Path, "/v1/calendar/")
+				call.Arguments = req.Calendar
 			}
 		}
 		if call.Tool == "" {
@@ -109,7 +103,7 @@ func testCalendarRealDSH(t *testing.T, recurring bool) {
 	access.public = endpoint
 	server.Start()
 	defer server.Close()
-	profile := dshProfile{BinaryPath: cfg.Runtime.DSH.BinaryPath, BinaryArgs: cfg.Runtime.DSH.BinaryArgs, Artifact: cfg.Runtime.DSH.Artifact, Workspace: workspace, Model: entry.materialize(), Instructions: assistantInstructions + "\n" + calendarGuide}
+	profile := dshProfile{BinaryPath: cfg.Runtime.DSH.BinaryPath, BinaryArgs: cfg.Runtime.DSH.BinaryArgs, Artifact: cfg.Runtime.DSH.Artifact, Workspace: workspace, Model: entry.materialize(), Instructions: assistantInstructions}
 	svc, err = startService(dir, state.RoomID, serviceConfig{unifiedInputs: true, access: access, endpoint: endpoint, cliPath: cli, maxTurns: 20, dshTurnTimeout: 90 * time.Second, dshProfiles: map[string]dshProfile{"fixture-ignore": profile}}, func(s *service, state RoomSnapshot) error {
 		if err := s.loadMembers(state); err != nil {
 			return err
@@ -146,6 +140,18 @@ func testCalendarRealDSH(t *testing.T, recurring bool) {
 			saved = h.projection.Load().state.Clone()
 			for _, r := range saved.Runs {
 				if r.Status == "succeeded" && r.Publication.Status == "published" {
+					// Let the Agent finish the turn before checking duplicate reports;
+					// stopping the service at publication would hide a later extra send.
+					members, err := svc.members(t.Context())
+					if err != nil || len(members.Members) != 1 {
+						t.Fatal("cannot verify scheduled turn settlement", members, err)
+					}
+					if members.Members[0].Execution.Active {
+						continue
+					}
+					if members.Members[0].Execution.Error != "" {
+						t.Fatal("scheduled turn failed", members.Members[0].Execution.Error)
+					}
 					if !r.DueAt.Equal(due) || !strings.Contains(r.Report, "CALENDAR_REAL_DSH_OK") || r.Binding.Generation == "" || r.Binding.Turn < 2 || r.Task.Source.MessageSeq != 1 {
 						t.Fatal("scheduled time, report, execution or human provenance did not match", r)
 					}
@@ -192,11 +198,11 @@ func testCalendarRealDSH(t *testing.T, recurring bool) {
 						counts[call.Tool]++
 						var args map[string]json.RawMessage
 						_ = json.Unmarshal(call.Arguments, &args)
-						if call.Tool == "calendar_update" && args["expected_version"] != nil {
+						if call.Tool == "calendar update" && args["expected_version"] != nil {
 							t.Fatal("real create unnecessarily required expected_version")
 						}
 					}
-					if counts["calendar_finish"] == 0 {
+					if counts["calendar finish"] == 0 {
 						continue
 					} // HTTP response may still be returning.
 					// A recurring task may read its saved definition/coverage once after
@@ -207,7 +213,7 @@ func testCalendarRealDSH(t *testing.T, recurring bool) {
 						allowedGet = 1
 					}
 					for _, call := range trace {
-						if call.Tool == "calendar_get" {
+						if call.Tool == "calendar get" {
 							var q calendarQuery
 							_ = json.Unmarshal(call.Arguments, &q)
 							if !recurring || q.TaskID != r.Task.ID || q.RunID != "" || q.Result || q.History {
@@ -215,10 +221,10 @@ func testCalendarRealDSH(t *testing.T, recurring bool) {
 							}
 						}
 					}
-					if counts["calendar_update"] != 1 || counts["calendar_claim"] != 1 || counts["calendar_finish"] != 1 || counts["calendar_get"] > allowedGet {
+					if counts["calendar update"] != 1 || counts["calendar claim"] != 1 || counts["calendar finish"] != 1 || counts["calendar get"] > allowedGet {
 						t.Fatal("unexpected calendar normal-path calls", counts)
 					}
-					evidence := map[string]any{"status": "passed", "contract": "compact business views", "model": entry.materialize().ModelID, "room": room, "calendar": saved, "rule_due": due, "calendar_calls": trace, "call_counts": counts, "public_report_count": reportCount, "recurring": recurring, "scope": "real installed DSH/model, isolated Room; no external platform reads or writes"}
+					evidence := map[string]any{"status": "passed", "contract": "Calendar CLI with on-demand help and compact business views", "model": entry.materialize().ModelID, "room": room, "calendar": saved, "rule_due": due, "calendar_calls": trace, "call_counts": counts, "public_report_count": reportCount, "recurring": recurring, "scope": "real installed DSH/model, isolated Room; no external platform reads or writes"}
 					data, _ := json.MarshalIndent(evidence, "", "  ")
 					if err := os.WriteFile(filepath.Join(output, "evidence.json"), data, 0600); err != nil {
 						t.Fatal(err)
@@ -236,7 +242,7 @@ func testCalendarRealDSH(t *testing.T, recurring bool) {
 	t.Fatalf("real scheduled loop incomplete; member status: %+v", members)
 }
 
-// This test-only tee preserves the SDK framing/flushing contract.
+// This test-only tee captures Calendar HTTP responses without credentials.
 type calendarAcceptanceCall struct {
 	Tool      string          `json:"tool"`
 	Arguments json.RawMessage `json:"arguments"`
