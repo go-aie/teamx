@@ -1,19 +1,13 @@
 import { createAttachmentDraft, attachmentURL, clipboardImages, uploadImage, formatBytes, imageSummary } from "../attachment-drafts.mjs";
 import { openImagePreview } from "../markdown.mjs";
 
-export function createAttachments({ env, runtime, changed, persist }) {
+export function createAttachments({ env, runtime, changed, persist, closeMenu }) {
   const { document, window } = env, { state, $, rpc } = runtime;
   const models = new WeakMap(), capabilities = new Map();
   let active = null, pickerOwner = null, rendered = "";
   const identityKey = info => JSON.stringify([state.installationID, info, state.operator]);
   const editable = () => !!state.info && state.connected && !state.draft.pending && !runtime.discussionBusy();
   const capability = () => active && capabilities.get(active.key);
-  function closeMenu(focus = false) {
-    const wasOpen = !$("attachment-menu").hidden;
-    $("attachment-menu").hidden = true; $("compose-more").setAttribute("aria-expanded", "false");
-    if (focus) $("compose-more").focus();
-    if (wasOpen) runtime.navigationChanged();
-  }
   function model(draft, info, operator) {
     if (!models.has(draft)) models.set(draft, createAttachmentDraft({draft, info, operator,
       upload:(...args) => uploadImage(env.fetch, ...args),
@@ -45,8 +39,6 @@ export function createAttachments({ env, runtime, changed, persist }) {
   }
   const blockReason = () => active?.model.blockReason(capability()?.limits) || "";
   function render() {
-    $("compose-more").disabled = !editable();
-    if (!editable()) closeMenu();
     const cap = capability();
     $("add-images").disabled = !editable() || !!cap?.loading;
     $("attachment-hint").textContent = cap?.limits
@@ -101,27 +93,6 @@ export function createAttachments({ env, runtime, changed, persist }) {
     if (state.draft === context.draft) { runtime.notice("attachment-error", errors.join(" ")); render(); changed(); }
   }
   function mount() {
-    $("compose-more").addEventListener("click", () => {
-      const open = $("attachment-menu").hidden;
-      $("attachment-menu").hidden = !open; $("compose-more").setAttribute("aria-expanded", String(open));
-      if (open) $("add-images").focus();
-      runtime.navigationChanged();
-    });
-    $("compose-more").addEventListener("keydown", event => {
-      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-        event.preventDefault(); $("attachment-menu").hidden = false; $("compose-more").setAttribute("aria-expanded", "true"); $("add-images").focus(); runtime.navigationChanged();
-      } else if (event.key === "Escape") { event.preventDefault(); closeMenu(true); }
-    });
-    $("attachment-menu").addEventListener("keydown", event => {
-      if (event.key === "Escape") { event.preventDefault(); closeMenu(true); }
-      else if (["ArrowDown","ArrowUp","Home","End"].includes(event.key)) { event.preventDefault(); $("add-images").focus(); }
-    });
-    document.addEventListener("click", event => {
-      if (!$("compose-more").contains(event.target) && !$("attachment-menu").contains(event.target)) closeMenu();
-    });
-    $("attachment-menu").addEventListener("focusout", event => {
-      if (event.relatedTarget && !$("attachment-menu").contains(event.relatedTarget) && event.relatedTarget !== $("compose-more")) closeMenu();
-    });
     $("add-images").addEventListener("click", () => choose());
     $("attachment-input").addEventListener("change", () => {
       const picked = pickerOwner; pickerOwner = null;
@@ -163,6 +134,6 @@ export function createAttachments({ env, runtime, changed, persist }) {
       img.addEventListener("error", () => { button.replaceChildren(); button.className = "attachment-error"; button.textContent = "图片加载失败，点击重试"; }, {once:true});
     }
   }
-  return {mount, activate, render, renderMessage, blockReason, closeMenu,
+  return {mount, activate, render, renderMessage, blockReason,
     clear:draft => models.get(draft)?.clear(), release:draft => models.get(draft)?.dispose()};
 }

@@ -172,35 +172,19 @@
         </div>
         <div id="attachment-drafts" class="attachment-drafts" role="group" aria-label="待发送图片" hidden></div>
         <label id="message-input-label" class="sr-only" for="message-input">发送给 会话</label>
+        <button id="compose-more" class="compose-more" type="button" aria-label="添加内容与设置" title="添加内容与设置" aria-haspopup="menu" aria-expanded="false" aria-controls="compose-menu" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
         <div class="compose-input">
           <div id="message-mirror" class="compose-mirror" aria-hidden="true" hidden></div>
           <div id="mention-options" class="mention-options menu-surface" role="listbox" aria-label="提及成员" hidden></div>
           <textarea id="message-input" rows="1" placeholder="发送给 会话" title="Enter 发送；Shift + Enter、Ctrl + Enter 或 ⌘ + Enter 换行" aria-describedby="message-shortcuts" aria-autocomplete="list" aria-controls="mention-options" aria-expanded="false" disabled></textarea>
         </div>
-        <button id="compose-more" class="compose-more" type="button" aria-label="添加附件" aria-haspopup="menu" aria-expanded="false" aria-controls="attachment-menu" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M7 12h10"/></svg></button>
-        <div id="attachment-menu" class="attachment-menu menu-surface" role="menu" aria-label="添加附件" hidden>
-          <button id="add-images" role="menuitem" type="button">添加图片</button>
-          <p id="attachment-hint" class="quiet"></p>
-        </div>
         <input id="attachment-input" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden>
         <div class="compose-footer">
           <div class="workspace-control" id="workspace-control" hidden>
-            <details id="workspace-picker" class="workspace-picker">
-              <summary id="workspace-trigger" class="workspace-button" aria-expanded="false" aria-controls="workspace-popover">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
-                <span id="workspace-label">默认目录</span>
-                <svg class="workspace-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>
-              </summary>
-              <div id="workspace-popover" class="workspace-popover menu-surface" role="region" aria-label="工作目录">
-                <p class="workspace-popover-heading">工作目录</p>
-                <div class="workspace-selected">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-8H9v8H4a1 1 0 0 1-1-1Z"/></svg>
-                  <div><strong id="workspace-selected-label">默认目录</strong><p id="workspace-selected-description">沿用各成员自己的工作目录</p></div>
-                  <svg class="workspace-checkmark" viewBox="0 0 24 24" aria-label="当前目录" role="img"><path d="m5 12 4 4L19 6"/></svg>
-                </div>
-                <div class="workspace-popover-actions"><button id="open-workspace" type="button" aria-haspopup="dialog" aria-controls="workspace-dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M12 11v6m-3-3h6"/></svg><span>设置工作目录</span><span aria-hidden="true">↗</span></button></div>
-              </div>
-            </details>
+            <button id="workspace-trigger" class="workspace-button" type="button" aria-haspopup="dialog" aria-controls="workspace-dialog">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
+              <span id="workspace-label">默认目录</span>
+            </button>
           </div>
           <span class="compose-hint"><span id="message-shortcuts" class="shortcut" title="Enter 发送；Shift + Enter、Ctrl + Enter 或 ⌘ + Enter 换行">Enter 发送 · Shift + Enter 换行</span></span>
           <button id="send" class="primary" type="submit" disabled>发送 <span aria-hidden="true">↑</span></button>
@@ -212,6 +196,17 @@
         <button id="discard-send" class="text-button" type="button" hidden>放弃重试，保留草稿</button>
         <div id="send-success" class="sr-only" role="status"></div>
       </form>
+      <dialog id="compose-menu" class="compose-menu menu-surface" aria-label="添加内容与设置">
+        <div id="compose-menu-grip" class="compose-menu-grip" aria-hidden="true"><span></span></div>
+        <button id="add-images" class="compose-menu-item" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1"/><path d="m3 17 5-5 4 4 4-6 5 7"/></svg>
+          <span><span>添加图片</span><small id="attachment-hint"></small></span>
+        </button>
+        <button id="open-workspace" class="compose-menu-item" type="button" aria-haspopup="dialog" aria-controls="workspace-dialog" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
+          <span><span>工作目录</span><small id="workspace-menu-description">默认目录</small></span>
+        </button>
+      </dialog>
     </section>
     <aside id="member-rail" class="member-rail" aria-label="团队成员与详情">
       <div id="member-resizer" class="sidebar-resizer member-resizer" role="separator" tabindex="0" aria-label="调整右侧栏宽度" aria-orientation="vertical" aria-controls="member-rail" title="左右拖动调整宽度"></div>

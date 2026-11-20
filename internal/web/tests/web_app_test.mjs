@@ -1918,20 +1918,22 @@ async function editWorkspace(ui, gitlab = false) {
   }
 }
 
-test("workspace picker previews the directory and closes on Escape, settings and Room switch without applying changes", async () => {
+test("composer menu previews the directory and closes on Escape, settings and Room switch without applying changes", async () => {
   const api = workspaceServer(), ui = await launch(api);
-  const picker = ui.el("workspace-picker");
-  const open = async () => { picker.open = true; await picker.emit("toggle"); };
+  const menu = ui.el("compose-menu"), trigger = ui.el("compose-more");
+  const open = () => trigger.emit("click");
   assert.equal(ui.el("workspace-label").textContent, "默认目录");
-  assert.equal(ui.el("workspace-selected-description").textContent, "沿用各成员自己的工作目录");
-  await open(); assert.equal(ui.el("workspace-trigger").attributes["aria-expanded"], "true");
-  await picker.emit("keydown", { key: "Escape" });
-  assert.equal(picker.open, false); assert.equal(ui.el("workspace-trigger").attributes["aria-expanded"], "false");
+  assert.equal(ui.el("workspace-control").hidden, true);
+  assert.equal(ui.el("workspace-menu-description").textContent, "默认目录");
+  await open(); assert.equal(trigger.getAttribute("aria-expanded"), "true");
+  await menu.emit("keydown", { key: "Escape" });
+  assert.equal(menu.open, false); assert.equal(trigger.getAttribute("aria-expanded"), "false");
   await open(); await ui.el("open-workspace").emit("click");
-  assert.equal(picker.open, false); assert.equal(ui.el("workspace-dialog").open, true);
+  assert.equal(menu.open, false); assert.equal(ui.el("workspace-dialog").open, true);
   await ui.el("close-workspace").emit("click");
+  assert.equal(ui.document.activeElement, trigger);
   await open(); await ui.select("B");
-  assert.equal(picker.open, false);
+  assert.equal(menu.open, false);
   assert.equal(api.calls.filter(c => c.path === "/v1/workspace/apply" || c.path === "/v1/send").length, 0);
 });
 
@@ -1953,7 +1955,8 @@ test("Workspace allows discussion before explicit Git-only binding; keeps draft/
   assert.equal(ui.el("workspace-dialog").open, false);
   assert.match(ui.el("workspace-current").textContent, /workspaces\/repos/);
   assert.equal(ui.el("workspace-label").textContent, "project");
-  assert.equal(ui.el("workspace-selected-label").textContent, "project");
+  assert.equal(ui.el("workspace-menu-description").textContent, "project");
+  assert.equal(ui.el("workspace-control").hidden, false);
   await ui.el("open-workspace").emit("click"); await ui.refresh();
   assert.equal(ui.el("workspace-dialog").open, true); // Completed settings remain available for inspection.
   assert.equal(api.calls.filter(c => c.path === "/v1/send").length, 1);

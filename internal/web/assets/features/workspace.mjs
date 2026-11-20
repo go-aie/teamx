@@ -61,7 +61,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     }
 
     directories.picker.close();
-    closeWorkspacePicker();
+    conversationUI.closeComposerMenu(false);
     membersUI.resetTools();
     $("notification-detail").close();
     $("workspace-dialog").close();
@@ -196,16 +196,16 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
   function renderWorkspace() {
     notificationsUI.renderGitLabEvents();
     const ws = workspaceView, data = ws?.data, current = data?.workspace, op = data?.operation;
-    $("workspace-control").hidden = !state.managed || !ws;
-    if (!state.managed || !ws) closeWorkspacePicker();
+    const memberDirectories = Object.keys(current?.member_directories || {}).length > 0;
+    const configured = current && (current.repository || current.root && current.root !== "workspaces" || memberDirectories);
+    $("workspace-control").hidden = !state.managed || !ws || !configured;
+    $("open-workspace").hidden = !state.managed || !ws;
     $("open-workspace").disabled = !ws;
     const label = current?.repository ? current.repository.url.split("/").pop().replace(/\.git$/, "")
-      : !current || current.root === "workspaces" ? "默认目录" : current.root;
+      : !current?.root || current.root === "workspaces" ? memberDirectories ? "成员指定目录" : "默认目录" : current.root;
     $("workspace-label").textContent = label;
     $("workspace-trigger").title = `工作目录：${label}`;
-    $("workspace-selected-label").textContent = label;
-    $("workspace-selected-description").textContent = Object.keys(current?.member_directories || {}).length ? "成员使用默认或指定目录，可在成员设置中更改" : current?.repository ? "各成员使用默认的独立仓库目录"
-      : current && current.root !== "workspaces" ? `房间内目录 · ${current.root}` : "沿用各成员自己的工作目录";
+    $("workspace-menu-description").textContent = memberDirectories && label !== "成员指定目录" ? `${label} · 含成员指定目录` : label;
     const status = ws?.pending ? "提交结果待确认" : op?.status === "running" ? workspaceStages[op.phase] || "正在应用"
       : op?.status === "failed" ? workspaceCanRevise() ? "初始化失败 · 可修改后重新应用" : "设置未完成 · 请核查后重试"
       : op?.status === "completed" ? "设置已生效" : "";
@@ -351,60 +351,30 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     }
   }
 
-  function closeWorkspacePicker() {
-    $("workspace-picker").open = false;
-    syncWorkspacePicker();
-  }
-
-  function syncWorkspacePicker() {
-    const open = $("workspace-picker").open;
-    $("workspace-trigger").setAttribute("aria-expanded", String(open));
-    runtime.navigationChanged();
-  }
-
-  function focusWorkspaceTrigger() {
-    $("workspace-trigger").focus();
+  function workspaceOpener() {
+    return $("workspace-control").hidden ? $("compose-more") : $("workspace-trigger");
   }
 
   async function openWorkspace() {
     if (!workspaceView) return;
-    closeWorkspacePicker();
-    workspaceReturn = captureReturnView(env, runtime, { opener: $("workspace-trigger") });
+    conversationUI.closeComposerMenu(false);
+    workspaceReturn = captureReturnView(env, runtime, { opener: document.activeElement === $("workspace-trigger") ? $("workspace-trigger") : $("compose-more") });
     $("workspace-dialog").showModal(); renderWorkspace(); $("close-workspace").focus(); await loadWorkspacePlatforms();
   }
 
   function mount() {
     directories.mount();
     $("member-directory-overview").addEventListener("click", openWorkspace);
-    $("workspace-picker").addEventListener("toggle", () => {
-      syncWorkspacePicker();
-    });
-
-    const dismissPicker = event => {
-      if (event.key === "Escape" && $("workspace-picker").open) {
-        event.preventDefault(); closeWorkspacePicker(); focusWorkspaceTrigger();
-      }
-    };
-    $("workspace-picker").addEventListener("keydown", dismissPicker);
-    $("workspace-trigger").addEventListener("keydown", dismissPicker);
-
-    document.addEventListener("click", event => {
-      if ($("workspace-picker").open && !$("workspace-picker").contains(event.target)) closeWorkspacePicker();
-    });
-
-    $("workspace-picker").addEventListener("focusout", event => {
-      if (event.relatedTarget && !$("workspace-picker").contains(event.relatedTarget)) closeWorkspacePicker();
-    });
-
     $("open-workspace").addEventListener("click", openWorkspace);
+    $("workspace-trigger").addEventListener("click", openWorkspace);
 
     $("close-workspace").addEventListener("click", () => $("workspace-dialog").close());
 
     $("workspace-dialog").addEventListener("close", () => {
       if ($("notification-detail").open) $("gitlab-project-summary").focus();
-      else focusWorkspaceTrigger();
+      else workspaceOpener().focus();
       const back = workspaceReturn; workspaceReturn = null;
-      back?.restore();
+      back?.restore(workspaceOpener());
     });
 
     $("workspace-kind").addEventListener("change", () => { if (workspaceView) workspaceView.selectedPlatform = ""; renderWorkspacePlatforms(); renderWorkspace(); });
@@ -433,7 +403,6 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
 
   return {
     mount,
-    closeWorkspacePicker,
     renderWorkspace,
     renderMemberDirectory: directories.render,
     selectWorkspace,

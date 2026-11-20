@@ -30,15 +30,15 @@
 .navigation-icon { display:block; flex:none; width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
 .member-chevron { color:var(--muted); }
 /* Native disclosures keep their labels and use the same open chevron shape. */
-:where(details:not(.workspace-picker,.choice-picker,.notification-channel,.activity-group)) > summary { list-style:none; }
-:where(details:not(.workspace-picker,.choice-picker,.notification-channel,.activity-group)) > summary::-webkit-details-marker { display:none; }
-:where(details:not(.workspace-picker,.choice-picker,.notification-channel,.activity-group)) > summary::before {
+:where(details:not(.choice-picker,.notification-channel,.activity-group)) > summary { list-style:none; }
+:where(details:not(.choice-picker,.notification-channel,.activity-group)) > summary::-webkit-details-marker { display:none; }
+:where(details:not(.choice-picker,.notification-channel,.activity-group)) > summary::before {
   content:""; display:inline-block; width:6px; height:6px; margin:0 10px 3px 2px;
   border-right:1.6px solid currentColor; border-bottom:1.6px solid currentColor;
   transform:rotate(45deg); transition:transform var(--motion-fast);
 }
-:where(details[open]:not(.workspace-picker,.choice-picker,.notification-channel,.activity-group)) > summary::before { transform:rotate(225deg); }
-:where(details:not(.workspace-picker,.choice-picker)) > summary:hover { background:var(--surface-hover); }
+:where(details[open]:not(.choice-picker,.notification-channel,.activity-group)) > summary::before { transform:rotate(225deg); }
+:where(details:not(.choice-picker)) > summary:hover { background:var(--surface-hover); }
 .icon-button,.add-button {
   display:inline-flex;
   align-items:center;

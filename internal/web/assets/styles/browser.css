@@ -104,12 +104,6 @@
   }
   .compose textarea,.compose-mirror { font-size:16px; }
   .compose textarea { max-height:min(144px,24dvh); }
-  .compose .workspace-control { position:static; grid-column:1 / -1; grid-row:4; width:auto; max-width:none; }
-  .compose .workspace-popover {
-    max-height:min(220px,calc(var(--app-height,100dvh) * .3));
-    margin-top:6px; padding:12px 4px 4px; border:0; border-top:1px solid var(--line);
-    border-radius:0; box-shadow:none;
-  }
   .message { padding:14px 12px; gap:8px; }
   .message > .avatar { margin-top:2px; }
   .message-meta { align-items:center; flex-wrap:nowrap; gap:8px; min-height:36px; margin-bottom:4px; }

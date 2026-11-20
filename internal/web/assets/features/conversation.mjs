@@ -1,3 +1,4 @@
+import { createComposerActions } from "./composer-actions.mjs";
 import { createAttachments } from "./attachments.mjs";
 import { agentName, resolveAgentName, messageDisplayText } from "../agent-names.mjs";
 import { randomUUID } from "../random-id.mjs";
@@ -16,7 +17,8 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
 
   let historyTask = null, composing = false, compositionEnded = -Infinity;
   const drafts = createRoomDrafts(storage, () => state.installationID, draft => attachmentsUI.release(draft));
-  const attachmentsUI = createAttachments({env, runtime, changed:composerState, persist:(info, operator, draft) => drafts.save(info, operator, draft)});
+  const composerActions = createComposerActions({env, runtime, nearBottom, scrollToBottom:bottom});
+  const attachmentsUI = createAttachments({env, runtime, closeMenu:composerActions.close, changed:composerState, persist:(info, operator, draft) => drafts.save(info, operator, draft)});
   const sendIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   sendIcon.setAttribute("viewBox", "0 0 24 24");
   sendIcon.setAttribute("aria-hidden", "true");
@@ -799,7 +801,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
     $("restart-discussion").textContent = state.draft.restartStarting || state.restart?.status === "running" ? "重新开始中…" : state.draft.restartRequest ? "核对并重试" : "重新开始";
     $("toggle-add").disabled = !state.connected || discussionBusy();
     $("add-member").disabled = !state.connected || !state.profiles.length || discussionBusy();
-    renderRestart(); workspaceUI.renderWorkspace(); attachmentsUI.render(); syncComposerLayout();
+    renderRestart(); workspaceUI.renderWorkspace(); composerActions.render(); attachmentsUI.render(); syncComposerLayout();
   }
 
   function syncComposerLayout() {
@@ -908,6 +910,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
       notice("send-error", "已放弃重试。原消息可能已提交，请先查看消息记录，再决定是否重新发送。");
     });
 
+    composerActions.mount();
     attachmentsUI.mount();
     mentionPicker.mount();
     if (typeof ResizeObserver !== "undefined") new ResizeObserver(mentionPicker.renderText).observe($("message-input"));
@@ -987,7 +990,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
     leaveConversation,
     messagesRead,
     humanReadSummary: humanRead.summary,
-    closeAttachmentMenu:() => attachmentsUI.closeMenu(true),
+    closeComposerMenu:(focus = true) => composerActions.close(focus),
     drafts,
     showDraft,
     readPages,

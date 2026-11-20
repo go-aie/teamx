@@ -87,6 +87,61 @@ try {
       await page.locator("#message-input:not([disabled])").waitFor();
     };
     await page.goto(origin);await page.locator("#compose-more:enabled").waitFor();await enter();
+    check(`${width}: plus, input and send follow the same left-to-right order`,await page.evaluate(()=>{
+      const plus=document.querySelector("#compose-more").getBoundingClientRect(), input=document.querySelector("#message-input").getBoundingClientRect(), send=document.querySelector("#send").getBoundingClientRect();
+      return plus.right<=input.left && input.right<=send.left && Math.abs(plus.bottom-send.bottom)<2 && plus.width>=44 && send.width>=44;
+    }));
+    check(`${width}: default directory does not add a composer row`,!await page.locator("#workspace-trigger").isVisible());
+    await page.locator("#message-input").fill("第一行\n第二行\n第三行");
+    check(`${width}: multiline input grows while controls stay at its bottom`,await page.evaluate(()=>{
+      const input=document.querySelector("#message-input").getBoundingClientRect(), plus=document.querySelector("#compose-more").getBoundingClientRect();
+      return input.height>plus.height && Math.abs(input.bottom-plus.bottom)<2;
+    }));
+    await page.locator("#message-input").fill("整理本周项目进展");
+    await page.screenshot({animations:"disabled",path:path.join(out,`${width}-composer.png`)});
+    await page.locator("#compose-more").click(); await page.locator("#add-images:enabled").waitFor();
+    const surface=page.locator("#compose-menu");
+    await surface.evaluate(el=>Promise.all(el.getAnimations().map(animation=>animation.finished)));
+    check(`${width}: expanded action surface stays inside viewport`,await surface.evaluate(el=>{
+      const r=el.getBoundingClientRect();return r.left>=0 && r.right<=innerWidth && r.top>=0 && r.bottom<=innerHeight;
+    }));
+    await page.screenshot({animations:"disabled",path:path.join(out,`${width}-menu.png`)});
+    if(width<600){
+      check(`${width}: expanded panel raises the input and keeps its controls accessible`,await surface.evaluate(el=>{
+        const input=document.querySelector("#message-input"), trigger=document.querySelector("#compose-more"), send=document.querySelector("#send"), box=el.getBoundingClientRect();
+        return !el.matches(":modal") && !input.closest("[inert]") && input.getBoundingClientRect().top>=0 && input.getBoundingClientRect().bottom<=box.top && trigger.getBoundingClientRect().bottom<=box.top && send.getBoundingClientRect().bottom<=box.top;
+      }));
+      check(`${width}: expanded panel has no extra cancel action`,await page.locator("#compose-menu-close").count()===0);
+      await page.locator("#compose-more").click();await surface.waitFor({state:"hidden"});
+      check(`${width}: plus toggles the expanded panel closed`,true);
+      await page.locator("#compose-more").click();await page.locator("#message-input").click();await surface.waitFor({state:"hidden"});
+      check(`${width}: returning to editing closes the panel and retains the draft`,await page.locator("#message-input").inputValue()==="整理本周项目进展" && await page.locator("#message-input").evaluate(el=>el===document.activeElement));
+      await page.locator("#compose-more").click();await page.mouse.click(10,80);await surface.waitFor({state:"hidden"});
+      check(`${width}: tapping the message area closes the panel`,true);
+      await page.locator("#compose-more").click();
+      const grip=await page.locator("#compose-menu-grip").boundingBox();
+      await page.mouse.move(grip.x+grip.width/2,grip.y+8);await page.mouse.down();
+      await page.mouse.move(grip.x+grip.width/2,grip.y+68,{steps:5});await page.mouse.up();
+      await surface.waitFor({state:"hidden"});check(`${width}: dragging the sheet handle down dismisses it`,true);
+      await page.locator("#compose-more").click();
+      await page.waitForFunction(()=>history.state?.teamxOverlay==="compose-menu");
+      await page.goBack();await surface.waitFor({state:"hidden"});check(`${width}: browser Back closes the sheet within the conversation`,await page.locator("#message-input").isVisible());
+      if(width===390){
+        await page.setViewportSize({width:844,height:390});await page.locator("#compose-more").click();
+        await surface.evaluate(el=>Promise.all(el.getAnimations().map(animation=>animation.finished)));
+        await page.screenshot({animations:"disabled",path:path.join(out,"844-landscape-menu.png")});
+        check("touch landscape keeps input above the expanded panel",await surface.evaluate(el=>!el.matches(":modal") && el.classList.contains("compose-sheet") && document.querySelector("#message-input").getBoundingClientRect().top>=0 && document.querySelector("#message-input").getBoundingClientRect().bottom<=el.getBoundingClientRect().top && el.getBoundingClientRect().bottom<=innerHeight));
+        await page.locator("#compose-more").click();await page.setViewportSize({width,height:900});
+      }
+    }else{
+      check("desktop menu opens above the bottom composer",await surface.evaluate(el=>el.getBoundingClientRect().bottom<=document.querySelector("#compose-more").getBoundingClientRect().top));
+      await page.keyboard.press("Escape");
+      await page.locator("#compose-more").evaluate(el=>{el.style.position="fixed";el.style.top="80px";});
+      await page.locator("#compose-more").click();
+      check("desktop menu opens downward when there is room",await surface.evaluate(el=>el.getBoundingClientRect().top>=document.querySelector("#compose-more").getBoundingClientRect().bottom));
+      await page.keyboard.press("Escape");await page.locator("#compose-more").evaluate(el=>{el.style.removeProperty("position");el.style.removeProperty("top");});
+    }
+    await page.locator("#message-input").fill("");
     const add=async(names)=>{
       await page.locator("#compose-more").click();await page.locator("#add-images:enabled").waitFor();
       const chooser=page.waitForEvent("filechooser");await page.locator("#add-images").click();
@@ -153,10 +208,13 @@ try {
     assert.equal(await page.locator("#add-images").evaluate(el=>el===document.activeElement),true);
     await page.keyboard.press("Escape");await page.waitForFunction(()=>document.querySelector("#compose-more")===document.activeElement);assert.equal(await page.locator("#compose-more").evaluate(el=>el===document.activeElement),true);
     check(`${width}: menu keyboard navigation and Escape return focus`,true);
-    await page.locator("#workspace-trigger").click();await page.locator("#open-workspace").click();await page.locator("#close-workspace").click();
-    await page.waitForFunction(()=>document.querySelector("#workspace-trigger")===document.activeElement);
-    check(`${width}: workspace returns focus to its own trigger`,await page.locator("#workspace-trigger").evaluate(el=>el===document.activeElement));
+    await page.locator("#compose-more").click();await page.locator("#open-workspace").click();await page.locator("#close-workspace").click();
+    await page.waitForFunction(()=>document.querySelector("#compose-more")===document.activeElement);
+    check(`${width}: workspace returns focus to the shared trigger`,await page.locator("#compose-more").evaluate(el=>el===document.activeElement));
     check(`${width}: no horizontal overflow`,await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+    await page.locator("#message-input").fill("展开面板时直接发送");await page.locator("#compose-more").click();
+    await page.locator("#send").click();await page.locator("#message-3 .attachment-preview").first().waitFor();
+    check(`${width}: send stays usable while the action panel is open`,sends.at(-1).text==="展开面板时直接发送" && await page.locator("#message-input").inputValue()==="" && !await page.locator("#compose-menu").isVisible());
     await page.screenshot({animations:"disabled",path:path.join(out,`${width}-messages.png`)});
     await context.close();
   }
