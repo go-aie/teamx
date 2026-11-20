@@ -8,8 +8,14 @@ import { calendarRange, calendarOffsetLabels, localDay, shiftDay, shiftMonth, we
 export function createCalendar({ env, runtime, roomsUI, conversationUI, settingsUI, dateTimeUI }) {
   const { document, window, setTimeout, clearTimeout } = env, { $, state, rpc, currentView, notice } = runtime;
   let visible=false, value=null, pending=null, retryRequest=null, readID=0, detailID=0;
-  let date="", mode=window.innerWidth<=640?"day":"week", compact=window.innerWidth<=640;
-  let view=compact?"list":"calendar";
+  let compact=window.innerWidth<=640, date="", mode=compact?"day":"week", view="calendar";
+  let preferenceLayout="", storage;
+  try { storage=env.localStorage; } catch { /* Preferences also work in memory. */ }
+  const preferences=new Map();
+  const multiDays=()=>window.innerWidth>=480?4:3;
+  const rangeAt=(displayZone=zone(),padding=0)=>calendarRange(date,mode,displayZone,{days:multiDays(),padding});
+  let multiStart="", multiWidth=0, multiTimer=null, multiScrolling=false, multiRenderPending=false, multiTouch=false;
+  let swipe=null, suppressClickUntil=0;
   let calendarScroll=0,calendarGridScroll=0,listScroll=0;
   let selected=null, detail=null, history=[], historyCursor="", editing=null, initialForm=null, formScope="", initialScroll=true;
   let lastOpener=null, detailReturn=null, renderedRange="", formFrequency=null;
@@ -32,6 +38,28 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
   const localHour=at=>Number(new Intl.DateTimeFormat("en-GB",{timeZone:zone(),hour:"2-digit",hourCycle:"h23"}).format(new Date(at)));
   const dayLabel=d=>`${Number(d.slice(5,7))}月${Number(d.slice(8))}日`;
   const reason=r=>reasons[r]||r;
+  function restorePreference(){
+    const layout=compact?"mobile":"desktop";
+    if(layout===preferenceLayout)return;
+    preferenceLayout=layout;
+    let saved=preferences.get(layout);
+    try { saved??=JSON.parse(storage?.getItem(`teamx.calendar-view.${layout}`)||"null"); } catch { /* Ignore unavailable or malformed storage. */ }
+    const modes=compact?["day","multi","month"]:["day","week","month"];
+    mode=modes.includes(saved?.mode)?saved.mode:compact?"day":"week";
+    view=saved?.view==="list"?"list":"calendar";
+  }
+  function savePreference(){
+    const saved={mode,view};preferences.set(preferenceLayout,saved);
+    try { storage?.setItem(`teamx.calendar-view.${preferenceLayout}`,JSON.stringify(saved)); } catch { /* Storage is optional. */ }
+  }
+  function syncRange(){
+    const dates=rangeAt().dates;
+    const end=dates.at(-1),shortRange=dates[0].slice(0,7)===end.slice(0,7)?`${Number(date.slice(5,7))}月${Number(date.slice(8))}–${Number(end.slice(8))}日`:`${dayLabel(date)}–${dayLabel(end)}`;
+    $("calendar-range-label").textContent=mode==="month"?`${date.slice(0,4)}年 ${Number(date.slice(5,7))}月`:mode==="day"?`${compact?"":`${date.slice(0,4)}年 `}${dayLabel(date)}`:compact?shortRange:`${dates[0].slice(0,4)}年 ${dayLabel(dates[0])} — ${dayLabel(end)}`;
+    $("calendar-range").title=`${date.slice(0,4)}年 ${dayLabel(date)}`;
+    $("calendar-date").value=date;
+    $("calendar-today").dataset.away=String(!dates.includes(today()));
+  }
   function ruleLabel(rule,includeZone=true) {
     const repeat=rule.frequency==="daily"?"每天":rule.frequency==="weekly"?`每周 ${(rule.weekdays||[]).map(d=>["","一","二","三","四","五","六","日"][d]).join("、")}`:"一次性";
     const filter={all_days:"含周末和节假日",weekdays:"周一至周五，含工作周内的法定假日",business_days:"中国大陆法定工作日，含调休补班"}[rule.day_filter||"all_days"];
@@ -66,12 +94,29 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
     $("calendar-items").hidden=!calendar;$("calendar-tasks").hidden=calendar;$("calendar-list-controls").hidden=calendar;
     $("calendar-show-skipped").closest("label").hidden=!calendar;
     $("calendar-view").dataset.view=view;
-    for(const b of $("calendar-view").querySelectorAll("button"))b.setAttribute("aria-pressed",String(b.dataset.view===view));
+    const modeLabel={day:"日",week:"周",multi:"多日",month:"月"}[mode];
+    $("calendar-mode-label").textContent=modeLabel;$("calendar-mode-open").dataset.mode=mode;
+    $("calendar-mode-open").setAttribute("aria-label",`选择日历视图，当前${modeLabel}`);
+    for(const b of $("calendar-view").querySelectorAll("[data-view]"))b.setAttribute("aria-pressed",String(b.dataset.view===view));
+    for(const b of $("calendar-mode-sheet").querySelectorAll("[data-calendar-mode]"))b.setAttribute("aria-pressed",String(b.dataset.calendarMode===mode));
+  }
+  function closeModeSheet(focus=true){
+    $("calendar-mode-sheet").close();$("calendar-mode-sheet").style.removeProperty("transform");
+    $("calendar-mode-open").setAttribute("aria-expanded","false");
+    if(focus)(compact?$("calendar-mode-open"):$("calendar-view").querySelector('[data-view="calendar"]')).focus({preventScroll:true});
+    runtime.navigationChanged();
+  }
+  function openModeSheet(){
+    if(!compact)return;
+    setOptionsOpen(false);dateTimeUI.close();syncView();
+    $("calendar-mode-sheet").showModal();$("calendar-mode-open").setAttribute("aria-expanded","true");
+    $("calendar-mode-sheet").querySelector(`[data-calendar-mode="${mode}"]`)?.focus({preventScroll:true});
+    runtime.navigationChanged();
   }
   function switchView(next){
     if(next===view)return;
     if(view==="calendar"){calendarScroll=$("calendar-panel").scrollTop;calendarGridScroll=$("calendar-items").scrollTop;}else listScroll=$("calendar-panel").scrollTop;
-    view=next;dateTimeUI.close();syncView();
+    view=next;savePreference();dateTimeUI.close();syncView();
     if(view==="calendar")$("calendar-items").scrollTop=calendarGridScroll;
     $("calendar-panel").scrollTop=view==="calendar"?calendarScroll:listScroll;
     void refresh().catch(()=>{});
@@ -83,13 +128,14 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
     $("conversation-chat").hidden=!visible;$("conversation").classList.toggle("calendar-open",visible);
     $("room-heading").hidden=visible;$("calendar-heading").hidden=!visible;
     $("conversation-actions").hidden=visible;$("calendar-header-actions").hidden=!visible;
-    if(!visible)setOptionsOpen(false);
+    if(!visible){setOptionsOpen(false);if($("calendar-mode-sheet").open)closeModeSheet(false);}
     $("conversation-calendar").setAttribute("aria-expanded",String(visible));
-    if(visible){conversationUI.saveDraft();if(!date)date=today();syncView();if(value)render();runtime.wake("calendar");void runtime.observe("calendar");}
+    if(visible){restorePreference();conversationUI.saveDraft();if(!date)date=today();syncView();if(value)render();runtime.wake("calendar");void runtime.observe("calendar");}
     else {if(was){closeDetail(false);if(chatPosition)conversationUI.restorePosition(chatPosition);chatPosition=null;}conversationUI.scheduleMessageViewing();}
     scheduleClock();
   }
   function reset(){
+    clearTimeout(multiTimer);multiScrolling=false;multiRenderPending=false;multiTouch=false;swipe=null;multiStart="";
     chatPosition=null;
     workspaceScroll=0;workspaceGridScroll=0;calendarScroll=0;calendarGridScroll=0;listScroll=0;renderedRange="";messageLinks.clear();readID++;detailID++;pending=null;retryRequest=null;value=null;date="";selected=null;detail=null;editing=null;history=[];initialScroll=true;
     dateTimeUI.close();closeDetail(false);resetForm();sync();setVisible(false);$("calendar-items").replaceChildren();$("calendar-task-items").replaceChildren();$("calendar-task-count").textContent="0";showError("");
@@ -98,7 +144,7 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
     sync();if(!available())return;
     const version=runtime.viewVersion,id=++readID;
     if(!date)date=today();
-    const range=calendarRange(date,mode,displayZone),query=view==="calendar"?{from:range.from,to:range.to}:{};
+    const range=rangeAt(displayZone,mode==="multi"?7:0),query=view==="calendar"?{from:range.from,to:range.to}:{};
     try {
       let data,occurrences=[],cursor="",attempt=0;
       // Retry a complete read after a changed snapshot; never combine pages from
@@ -119,8 +165,9 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
       // A system-zone change can race the range read. Rebase the local dates
       // before presenting the new zone, so boundary occurrences are not lost.
       if(data.time_zone&&data.time_zone!==displayZone)return refresh({current,displayZone:data.time_zone});
+      if(mode==="multi"&&(date<range.dates[0]||shiftDay(date,multiDays()-1)>range.dates.at(-1)))return refresh({current,displayZone});
       const changed=value?.revision!==data.revision,rangeKey=JSON.stringify([view,view==="calendar"?date:"",view==="calendar"?mode:"",data.time_zone]);
-      value={...data,occurrences};renderLinks();if(visible&&(changed||renderedRange!==rangeKey)){render();renderedRange=rangeKey;}showError("");
+      value={...data,occurrences,range};renderLinks();if(visible&&(changed||renderedRange!==rangeKey)){render();renderedRange=rangeKey;}showError("");
       if(visible&&selected&&!editing&&changed)await loadDetail(selected, false);
     }catch(error){if(currentView(version)&&id===readID)showError(error.message,true);throw error;}
   }
@@ -173,22 +220,30 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
   function entries(){return (value?.occurrences||[]).filter(o=>$("calendar-show-skipped").checked||!["skipped","cancelled"].includes(o.status));}
   function render(){
     if(!value)return;
+    if(multiScrolling||multiTouch){multiRenderPending=true;return;}
     if($("calendar-create").open){syncForm();$("calendar-submit").disabled=!!pending;$("calendar-save-draft").disabled=!!pending;return;}
     $("calendar-work-coverage").textContent=coverageLabel();
     const uncovered=value.tasks.filter(task=>["active","paused","needs_info"].includes(task.state)&&(task.blocked_reason==="work_calendar_uncovered"||(view==="calendar"&&value.occurrences.some(o=>o.task_id===task.task_id&&o.reason==="work_calendar_uncovered"))));
     $("calendar-coverage").classList.toggle("calendar-coverage-warning",uncovered.length>0);
     notice("calendar-coverage",uncovered.length?`工作日历未覆盖部分执行日期，受影响的安排暂不执行：${uncovered.slice(0,3).map(task=>task.definition.title).join("、")}${uncovered.length>3?`等 ${uncovered.length} 项任务`:""}。`:"");
-    syncView();const range=calendarRange(date,mode,zone());
-    $("calendar-range-label").textContent=mode==="month"?`${date.slice(0,4)}年 ${Number(date.slice(5,7))}月`:mode==="day"?`${compact?"":`${date.slice(0,4)}年 `}${dayLabel(date)}`:`${range.dates[0].slice(0,4)}年 ${dayLabel(range.dates[0])} — ${dayLabel(range.dates.at(-1))}`;
-    $("calendar-range").title=`${date.slice(0,4)}年 ${dayLabel(date)}`;
-    $("calendar-date").value=date;
+    syncView();const range=mode==="multi"?value.range:rangeAt();syncRange();
     $("calendar-mode").dataset.mode=mode;
     for(const b of $("calendar-mode").querySelectorAll("button"))b.setAttribute("aria-pressed",String(b.dataset.mode===mode));
     $("calendar-submit").disabled=!!pending;$("calendar-save-draft").disabled=!!pending;
     const root=$("calendar-items"),scroll=root.scrollTop;
     root.dataset.mode=mode;
     const occurrences=entries();
-    if(view==="calendar"){root.replaceChildren();if(mode==="month")renderMonth(root,range.dates,occurrences);else renderGrid(root,range.dates,occurrences);root.scrollTop=scroll;}
+    if(view==="calendar"){
+      clearTimeout(multiTimer);root.replaceChildren();root.scrollLeft=0;
+      if(mode==="month")renderMonth(root,range.dates,occurrences);else renderGrid(root,range.dates,occurrences);
+      root.scrollTop=scroll;
+      if(mode==="multi"){
+        multiStart=range.dates[0];multiWidth=(root.clientWidth-48)/multiDays();
+        root.firstElementChild.style.setProperty("--day-width",`${multiWidth}px`);
+        multiWidth=root.querySelector(".calendar-day-column").getBoundingClientRect().width;
+        const index=range.dates.indexOf(date);root.scrollLeft=Math.max(0,index)*multiWidth;
+      }
+    }
     const shelf=$("calendar-task-items");shelf.replaceChildren();
     const filter=$("calendar-task-filter").value||"open";
     const tasks=value.tasks.filter(t=>filter==="all"||filter==="open"&&["active","paused","needs_info"].includes(t.state)||t.state===filter);
@@ -245,8 +300,9 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
   function renderGrid(root,dates,occurrences){
     const grid=node("div",undefined,"calendar-time-grid"),headers=node("div",undefined,"calendar-grid-headers");
     grid.style.setProperty("--day-count",String(dates.length));grid.dataset.mode=mode;
+    if(mode==="multi")grid.style.setProperty("--day-width",`${(root.clientWidth-48)/multiDays()}px`);
     const corner=node("div",undefined,"calendar-grid-corner");corner.title=zone();corner.setAttribute("aria-label",`显示时区 ${zone()}`);
-    for(const offset of calendarOffsetLabels(date,mode,zone()))corner.append(node("span",offset));
+    for(const offset of calendarOffsetLabels(date,mode,zone(),{days:multiDays()}))corner.append(node("span",offset));
     headers.append(corner);
     for(const d of dates){
       const head=button("",()=>navigate(d,"day"),"calendar-day-heading");head.dataset.today=String(d===today());head.dataset.kind=dayKind(d);
@@ -294,7 +350,7 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
     body.querySelector(".calendar-now-line")?.remove();
     const ticks=body.querySelectorAll(".calendar-hour > span");
     for(const tick of ticks)tick.removeAttribute("data-now-overlap");
-    const dates=calendarRange(date,mode,zone()).dates,index=dates.indexOf(today());if(index<0)return;
+    const dates=[...$("calendar-items").querySelectorAll(".calendar-day-column")].map(column=>column.dataset.day),index=dates.indexOf(today());if(index<0)return;
     const line=node("div",undefined,"calendar-now-line"),label=node("span",fmt(Date.now(),{hour:"2-digit",minute:"2-digit"}));
     line.style.setProperty("--now-top",`${minuteOfDay(Date.now(),zone())*hourHeight/60}px`);
     const dot=node("i");dot.style.setProperty("--today-column",String(index));line.append(label,dot);line.setAttribute("aria-hidden","true");body.append(line);
@@ -304,7 +360,63 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
       if(rect.bottom>bounds.top-1&&rect.top<bounds.bottom+1)tick.dataset.nowOverlap="true";
     }
   }
-  function navigate(next,nextMode=mode){dateTimeUI.close();date=next;mode=nextMode;initialScroll=true;void refresh().catch(()=>{});}
+  function navigate(next,nextMode=mode,{preserveTime=false}={}){
+    clearTimeout(multiTimer);multiScrolling=false;multiRenderPending=false;
+    dateTimeUI.close();date=next;mode=nextMode;savePreference();initialScroll=!preserveTime;void refresh().catch(()=>{});
+  }
+  function settleMulti(){
+    clearTimeout(multiTimer);if(multiTouch)return;multiScrolling=false;
+    if(!visible||view!=="calendar"||mode!=="multi"||!multiStart||!multiWidth)return;
+    const root=$("calendar-items"),count=root.querySelectorAll(".calendar-day-column").length;
+    const index=Math.max(0,Math.min(count-multiDays(),Math.round(root.scrollLeft/multiWidth)));
+    if(Math.abs(root.scrollLeft-index*multiWidth)>1){
+      multiScrolling=true;root.scrollTo({left:index*multiWidth,behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"});return;
+    }
+    date=shiftDay(multiStart,index);syncRange();
+    root.querySelector(".calendar-grid-corner")?.replaceChildren(...calendarOffsetLabels(date,mode,zone(),{days:multiDays()}).map(offset=>node("span",offset)));
+    // Refill either edge without moving the visible dates or time position.
+    if(index<3||index+multiDays()>count-3){multiRenderPending=false;void refresh().catch(()=>{});}
+    else if(multiRenderPending){multiRenderPending=false;render();}
+  }
+  function mountGestures(){
+    const root=$("calendar-items");
+    root.tabIndex=0;root.setAttribute("aria-label","日历安排，左右方向键浏览日期");
+    root.addEventListener("keydown",event=>{
+      if(event.target!==root||!["ArrowLeft","ArrowRight"].includes(event.key))return;
+      event.preventDefault();const direction=event.key==="ArrowLeft"?-1:1;
+      navigate(mode==="month"?shiftMonth(date,direction):shiftDay(date,direction*(mode==="week"?7:1)),mode,{preserveTime:true});
+    });
+    root.addEventListener("scroll",()=>{
+      if(!compact||mode!=="multi"||!visible)return;
+      multiScrolling=true;clearTimeout(multiTimer);multiTimer=setTimeout(settleMulti,180);
+    },{passive:true});
+    root.addEventListener("scrollend",settleMulti);
+    root.addEventListener("touchstart",event=>{
+      cancelSwipe();multiTouch=compact&&mode==="multi"&&event.touches.length===1;
+      if(!compact||view!=="calendar"||mode==="multi"||event.touches.length!==1||event.target.closest("input,select,textarea,a,details[open]"))return;
+      const point=event.touches[0];swipe={x:point.clientX,y:point.clientY,dx:0,axis:null};
+    },{passive:true});
+    root.addEventListener("touchmove",event=>{
+      if(!swipe)return;
+      if(event.touches.length!==1){cancelSwipe();return;}
+      const point=event.touches[0],dx=point.clientX-swipe.x,dy=point.clientY-swipe.y;
+      if(!swipe.axis&&Math.max(Math.abs(dx),Math.abs(dy))>10)swipe.axis=Math.abs(dx)>Math.abs(dy)*1.35?"x":"y";
+      if(swipe.axis!=="x")return;
+      event.preventDefault();swipe.dx=dx;
+      root.firstElementChild?.style.setProperty("transform",`translateX(${Math.max(-80,Math.min(80,dx*.3))}px)`);
+    },{passive:false});
+    function cancelSwipe(){root.firstElementChild?.style.removeProperty("transform");swipe=null;}
+    root.addEventListener("touchcancel",()=>{multiTouch=false;cancelSwipe();if(mode==="multi")multiTimer=setTimeout(settleMulti,180);},{passive:true});
+    root.addEventListener("touchend",()=>{
+      if(multiTouch){multiTouch=false;multiTimer=setTimeout(settleMulti,180);}
+      const gesture=swipe;cancelSwipe();if(gesture?.axis!=="x")return;
+      suppressClickUntil=Date.now()+400;
+      if(Math.abs(gesture.dx)<48)return;
+      const direction=gesture.dx<0?1:-1;
+      navigate(mode==="month"?shiftMonth(date,direction):shiftDay(date,direction),mode,{preserveTime:true});
+    },{passive:true});
+    root.addEventListener("click",event=>{if(Date.now()<suppressClickUntil){event.preventDefault();event.stopImmediatePropagation();}},true);
+  }
   function closeDetail(focus=true){
     const taskID=selected,occurrenceID=lastOpener?.dataset?.occurrenceId,back=detailReturn;detailReturn=null;
     detailID++;runReadID++;$("calendar-detail").close();$("calendar-detail").hidden=true;selected=null;detail=null;detailOccurrence=null;selectedRun=null;history=[];
@@ -492,6 +604,27 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
     if(await submit(request))resetForm();
   }
   function mount(){
+    restorePreference();mountGestures();
+    const sheet=$("calendar-mode-sheet"),sheetHeader=sheet.querySelector(".calendar-sheet-header");let sheetTouch=null;
+    runtime.dismissOnBackdrop(sheet,()=>closeModeSheet());
+    $("calendar-mode-open").addEventListener("click",openModeSheet);
+    $("calendar-mode-close").addEventListener("click",()=>closeModeSheet());
+    sheet.addEventListener("cancel",event=>{event.preventDefault();closeModeSheet();});
+    sheet.addEventListener("click",event=>{
+      const next=event.target.closest("[data-calendar-mode]")?.dataset.calendarMode;if(!next)return;
+      closeModeSheet();const preserveTime=next===mode;mode=next;
+      if(view==="list"){initialScroll=!preserveTime;switchView("calendar");}
+      else navigate(date||today(),next,{preserveTime});
+      syncView();
+    });
+    sheetHeader.addEventListener("touchstart",event=>{const point=event.touches[0];sheetTouch=event.touches.length===1?{x:point.clientX,y:point.clientY,dy:0}:null;},{passive:true});
+    sheetHeader.addEventListener("touchmove",event=>{
+      if(!sheetTouch)return;if(event.touches.length!==1){sheetTouch=null;sheet.style.removeProperty("transform");return;}
+      const point=event.touches[0],dy=point.clientY-sheetTouch.y;
+      if(dy>10&&dy>Math.abs(point.clientX-sheetTouch.x)*1.35){event.preventDefault();sheetTouch.dy=dy;sheet.style.transform=`translateY(${Math.min(dy,160)}px)`;}
+    },{passive:false});
+    sheetHeader.addEventListener("touchend",()=>{const dy=sheetTouch?.dy||0;sheetTouch=null;sheet.style.removeProperty("transform");if(dy>60)closeModeSheet();},{passive:true});
+    sheetHeader.addEventListener("touchcancel",()=>{sheetTouch=null;sheet.style.removeProperty("transform");},{passive:true});
     syncCreateButton();
     syncDetailNavigation();runtime.dismissOnBackdrop($("calendar-detail"),()=>closeDetail());
     settingsUI.bindSystemTime($("calendar-panel"),()=>{
@@ -522,10 +655,10 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
     $("calendar-options-toggle").addEventListener("click",()=>setOptionsOpen($("calendar-options-menu").hidden));
     $("calendar-refresh").addEventListener("click",()=>{setOptionsOpen(false,true);void refresh().catch(()=>{});});
     $("calendar-retry").addEventListener("click",()=>void refresh().catch(()=>{}));
-    $("calendar-prev").addEventListener("click",()=>navigate(mode==="month"?shiftMonth(date,-1):shiftDay(date,mode==="day"?-1:-7)));
-    $("calendar-next").addEventListener("click",()=>navigate(mode==="month"?shiftMonth(date,1):shiftDay(date,mode==="day"?1:7)));
+    $("calendar-prev").addEventListener("click",()=>navigate(mode==="month"?shiftMonth(date,-1):shiftDay(date,mode==="week"?-7:-1)));
+    $("calendar-next").addEventListener("click",()=>navigate(mode==="month"?shiftMonth(date,1):shiftDay(date,mode==="week"?7:1)));
     $("calendar-today").addEventListener("click",()=>navigate(today()));
-    dateTimeUI.register($("calendar-date"), {kind:"date", trigger:$("calendar-range"), zone, label:"选择日期", navigation:true, range:day=>mode==="week"?weekDates(day):[]});
+    dateTimeUI.register($("calendar-date"), {kind:"date", trigger:$("calendar-range"), zone, label:"选择日期", navigation:true, range:day=>mode==="week"?weekDates(day):mode==="multi"?calendarRange(day,mode,zone(),{days:multiDays()}).dates:[]});
     $("calendar-date").addEventListener("change",()=>{if($("calendar-date").value&&!dateTimeUI.validate($("calendar-date")))navigate($("calendar-date").value);});
     for(const [id,kind,label] of [["calendar-start-date","date","选择执行日期"],["calendar-end-date","date","选择结束日期"],["calendar-local-time","time","选择执行时刻"]]) {
       dateTimeUI.register($(id), {kind, trigger:$(id+"-toggle"), zone:()=>$("calendar-time-zone").value||zone(), label, showZone:()=>kind==="time"&&hasDifferentZone($("calendar-time-zone").value)});
@@ -539,7 +672,12 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
     $("calendar-new").addEventListener("click",()=>{if(!editing&&!$("calendar-start-date").value)$("calendar-start-date").value=view==="calendar"?date||today():today();syncForm();showForm();});
     $("calendar-form-cancel").addEventListener("click",resetForm);
     $("calendar-detail").addEventListener("cancel",event=>{event.preventDefault();closeDetail();});
-    window.addEventListener("resize",()=>{syncCreateButton();syncDetailNavigation();const next=window.innerWidth<=640;if(next!==compact){compact=next;if(visible)render();}});
+    window.addEventListener("resize",()=>{
+      syncCreateButton();syncDetailNavigation();const next=window.innerWidth<=640;
+      if(!next&&sheet.open)closeModeSheet(false);
+      if(next!==compact){compact=next;restorePreference();renderedRange="";if(visible){syncView();void refresh().catch(()=>{});}}
+      else if(visible&&mode==="multi")render();
+    });
   }
   return {mount,refresh,sync,reset,renderLinks,openTask:taskID=>{setVisible(true);return openDetail(taskID);},visible:()=>visible};
 }

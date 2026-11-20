@@ -10,15 +10,15 @@ export function weekDates(date) {
   return Array.from({length:7}, (_, i) => shiftDay(start, i));
 }
 // Navigate dates in the display zone. A calendar week can be 167 or 169 hours.
-export function calendarRange(date, mode, zone) {
-  const dates = mode === "day" ? [date] : mode === "month" ? monthDates(date).dates : weekDates(date);
+export function calendarRange(date, mode, zone, {days=3,padding=0}={}) {
+  const dates = mode === "day" ? [date] : mode === "month" ? monthDates(date).dates : mode === "multi" ? Array.from({length:days+2*padding},(_,i)=>shiftDay(date,i-padding)) : weekDates(date);
   const midnight = value => Temporal.PlainDate.from(value).toZonedDateTime(zone).toInstant().toString();
   return {dates, from:midnight(dates[0]), to:midnight(shiftDay(dates.at(-1), 1))};
 }
 
 // A range crossing a daylight-saving transition has two UTC offsets.
-export function calendarOffsetLabels(date, mode, zone) {
-  const range=calendarRange(date,mode,zone);
+export function calendarOffsetLabels(date, mode, zone, options) {
+  const range=calendarRange(date,mode,zone,options);
   const formatter=new Intl.DateTimeFormat("en-US",{timeZone:zone,timeZoneName:"shortOffset"});
   return [...new Set([Date.parse(range.from),Date.parse(range.to)-1].map(at=>
     formatter.formatToParts(at).find(part=>part.type==="timeZoneName").value))];

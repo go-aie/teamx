@@ -90,7 +90,7 @@ export async function createApp(overrides = {}) {
     }
     if ($("workspace-picker").open) layers.push({ id:"workspace-picker", close:workspaceUI.closeWorkspacePicker });
     if (!$("conversation-filter-menu").hidden) layers.push({ id:"conversation-filter", close:roomsUI.closeFilterMenu });
-    for (const [id, button] of [["calendar-detail","calendar-detail-close"], ["activity-dialog","close-activity"], ["notification-detail","close-notification"],
+    for (const [id, button] of [["calendar-detail","calendar-detail-close"], ["calendar-mode-sheet","calendar-mode-close"], ["activity-dialog","close-activity"], ["notification-detail","close-notification"],
       ["workspace-dialog","close-workspace"], ["create-dialog","close-create"], ["settings-dialog","close-settings"], ["access-confirm-dialog","access-confirm-cancel"]]) {
       if ($(id)?.open && !$(id).hidden) layers.push({id, close:() => id === "settings-dialog" ? settingsUI.backSettings() : $(button)?.click?.()});
       if (id === "settings-dialog" && $(id).open) {

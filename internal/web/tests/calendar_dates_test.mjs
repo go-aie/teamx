@@ -17,6 +17,17 @@ test("calendar range respects short and long DST days and weeks",()=>{
     assert.equal(localDay(r.from,"America/New_York"),r.dates[0]);
   }
 });
+test("rolling multi-day windows cross weeks, months and DST without losing boundary dates",()=>{
+  const range=calendarRange("2026-12-30","multi","Asia/Shanghai",{days:4});
+  assert.deepEqual(range.dates,["2026-12-30","2026-12-31","2027-01-01","2027-01-02"]);
+  assert.equal(localDay(range.to,"Asia/Shanghai"),"2027-01-03");
+  const buffered=calendarRange("2026-12-30","multi","Asia/Shanghai",{days:4,padding:7});
+  assert.equal(buffered.dates.length,18);assert.equal(buffered.dates[7],range.dates[0]);
+  assert.equal(buffered.dates.at(-1),"2027-01-09");
+  const dst=calendarRange("2026-03-07","multi","America/New_York");
+  assert.equal((Date.parse(dst.to)-Date.parse(dst.from))/3600000,71);
+  assert.deepEqual(calendarOffsetLabels("2026-03-07","multi","America/New_York"),["GMT-5","GMT-4"]);
+});
 
 test("compact time-zone labels follow the viewed range including DST and fractional offsets",()=>{
   assert.deepEqual(calendarOffsetLabels("2026-11-19","week","Asia/Shanghai"),["GMT+8"]);
