@@ -100,41 +100,12 @@ func (c *Client) SearchMessages(ctx context.Context, account platform.AccountIde
 		}
 		p, _ := json.Marshal(params)
 		body, _ := json.Marshal(map[string]any{"query": "", "filter": filter})
-		var wire struct {
-			Items     *[]MessageSearchItem `json:"items"`
-			HasMore   *bool                `json:"has_more"`
-			PageToken string               `json:"page_token"`
-			Notice    string               `json:"notice"`
-		}
+		var wire messageSearchWire
 		if err := c.apiJSON(ctx, []string{"api", "POST", "/open-apis/im/v1/messages/search", "--params", string(p), "--data", string(body)}, &wire); err != nil {
 			return messageReadError(err)
 		}
-		if wire.Notice != "" {
-			return &SearchNoticeError{Notice: wire.Notice}
-		}
-		if wire.Items == nil || wire.HasMore == nil || len(*wire.Items) > r.PageSize || !validPageToken(wire.PageToken) ||
-			*wire.HasMore && (wire.PageToken == "" || wire.PageToken == r.PageToken) {
-			return failure("invalid_response")
-		}
-		seen := map[string]bool{}
-		for _, item := range *wire.Items {
-			m := item.MetaData
-			created, err := time.Parse(time.RFC3339Nano, m.Created)
-			if !nativeID(item.ID, "om_") || item.ID != m.MessageID || !nativeID(m.ChatID, "oc_") ||
-				!nativeID(m.FromID, "ou_") || m.IsP2PChat == nil || *m.IsP2PChat != (r.ChatType == "p2p") ||
-				err != nil || created.Before(r.Start) || created.After(r.End) || seen[item.ID] || r.FromID != "" && m.FromID != r.FromID {
-				return failure("invalid_response")
-			}
-			if len(r.ChatIDs) > 0 {
-				found := false
-				for _, id := range r.ChatIDs {
-					found = found || id == m.ChatID
-				}
-				if !found {
-					return failure("invalid_response")
-				}
-			}
-			seen[item.ID] = true
+		if err := validateMessageSearchPage(wire, r); err != nil {
+			return err
 		}
 		page = MessageSearchPage{Items: *wire.Items, HasMore: *wire.HasMore, PageToken: wire.PageToken}
 		return nil
@@ -161,42 +132,14 @@ func (c *Client) BatchMessages(ctx context.Context, account platform.AccountIden
 		return batch, failure("invalid_request")
 	}
 	err := c.guarded(ctx, account, func(ctx context.Context) error {
-		var wire struct {
-			Items *[]json.RawMessage `json:"items"`
-		}
+		var wire messageBatchWire
 		if err := c.api(ctx, "/open-apis/im/v1/messages/mget", map[string]any{"message_ids": ids}, &wire); err != nil {
 			return messageReadError(err)
 		}
-		if wire.Items == nil || len(*wire.Items) > len(ids) {
-			return failure("invalid_response")
-		}
-		requested := map[string]bool{}
-		for _, id := range ids {
-			requested[id] = true
-		}
-		messages := map[string]Message{}
-		for _, raw := range *wire.Items {
-			var m Message
-			// Do not let absent native detail fields become zero-value content.
-			// System records may have an empty sender, but must carry the object.
-			var required struct {
-				Body *struct {
-					Content *string `json:"content"`
-				} `json:"body"`
-				Sender *Sender `json:"sender"`
-			}
-			if decode(raw, &m) != nil || decode(raw, &required) != nil || required.Body == nil ||
-				required.Body.Content == nil || required.Sender == nil || !m.valid() || !requested[m.ID] || messages[m.ID].ID != "" {
-				return failure("invalid_response")
-			}
-			messages[m.ID] = m
-		}
-		for _, id := range ids {
-			if m, ok := messages[id]; ok {
-				batch.Items = append(batch.Items, m)
-			} else {
-				batch.MissingIDs = append(batch.MissingIDs, id)
-			}
+		var err error
+		batch, err = validateMessageBatch(wire, ids)
+		if err != nil {
+			return err
 		}
 		c.senderNames(ctx, batch.Items)
 		return nil
@@ -220,4 +163,82 @@ func messageReadError(err error) error {
 		}
 	}
 	return err
+}
+
+type messageSearchWire struct {
+	Items     *[]MessageSearchItem `json:"items"`
+	HasMore   *bool                `json:"has_more"`
+	PageToken string               `json:"page_token"`
+	Notice    string               `json:"notice"`
+}
+
+func validateMessageSearchPage(wire messageSearchWire, r MessageSearchRequest) error {
+	if wire.Notice != "" {
+		return &SearchNoticeError{Notice: wire.Notice}
+	}
+	if wire.Items == nil || wire.HasMore == nil || len(*wire.Items) > r.PageSize || !validPageToken(wire.PageToken) ||
+		*wire.HasMore && (wire.PageToken == "" || wire.PageToken == r.PageToken) {
+		return failure("invalid_response")
+	}
+	seen := map[string]bool{}
+	for _, item := range *wire.Items {
+		m := item.MetaData
+		created, err := time.Parse(time.RFC3339Nano, m.Created)
+		if !nativeID(item.ID, "om_") || item.ID != m.MessageID || !nativeID(m.ChatID, "oc_") ||
+			!nativeID(m.FromID, "ou_") || m.IsP2PChat == nil || *m.IsP2PChat != (r.ChatType == "p2p") ||
+			err != nil || created.Before(r.Start) || created.After(r.End) || seen[item.ID] || r.FromID != "" && m.FromID != r.FromID {
+			return failure("invalid_response")
+		}
+		if len(r.ChatIDs) > 0 {
+			found := false
+			for _, id := range r.ChatIDs {
+				found = found || id == m.ChatID
+			}
+			if !found {
+				return failure("invalid_response")
+			}
+		}
+		seen[item.ID] = true
+	}
+	return nil
+}
+
+type messageBatchWire struct {
+	Items *[]json.RawMessage `json:"items"`
+}
+
+func validateMessageBatch(wire messageBatchWire, ids []string) (MessageBatch, error) {
+	var batch MessageBatch
+	if wire.Items == nil || len(*wire.Items) > len(ids) {
+		return MessageBatch{}, failure("invalid_response")
+	}
+	requested := map[string]bool{}
+	for _, id := range ids {
+		requested[id] = true
+	}
+	messages := map[string]Message{}
+	for _, raw := range *wire.Items {
+		var m Message
+		// Do not let absent native detail fields become zero-value content.
+		// System records may have an empty sender, but must carry the object.
+		var required struct {
+			Body *struct {
+				Content *string `json:"content"`
+			} `json:"body"`
+			Sender *Sender `json:"sender"`
+		}
+		if decode(raw, &m) != nil || decode(raw, &required) != nil || required.Body == nil ||
+			required.Body.Content == nil || required.Sender == nil || !m.valid() || !requested[m.ID] || messages[m.ID].ID != "" {
+			return MessageBatch{}, failure("invalid_response")
+		}
+		messages[m.ID] = m
+	}
+	for _, id := range ids {
+		if m, ok := messages[id]; ok {
+			batch.Items = append(batch.Items, m)
+		} else {
+			batch.MissingIDs = append(batch.MissingIDs, id)
+		}
+	}
+	return batch, nil
 }

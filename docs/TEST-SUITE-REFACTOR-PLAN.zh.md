@@ -1,6 +1,6 @@
 # 测试分层与执行效率改造方案
 
-状态：**T1 修复及 T2–T4 实施与各自定向验证完成；最终全仓核心 7 分 33 秒通过、三分钟预算未达；完整集成按用户要求中止，最终全仓 race 未运行**。T2 使用标准库受控时间及现有四槽夹具提速；T3 完成 Todos／工具配置规则下沉、CLI/UI 组合收缩及日历集成分层；T4 完成浏览器功能／长窗口／满容量入口拆分、e2e 标签统一和执行文档，真实 Chromium 功能及专项均定向通过。覆盖映射、验证和同条件计时见[实施与耗时记录](implementation/test-suite-health.zh.md)。最终核心墙钟较 T1 缩短约 18.7%；完整集成及全仓 race 尚未验收，不将定向结果或中止记录视为完整通过。下文的原始测量和分阶段要求作为后续对照保留。
+状态：**T1 修复及 T2–T4 实施与各自定向验证完成；§9.2 前四批已实施，第四批同范围切片墙钟中位数约缩短 24.2%；最新完整核心＋本地集成 15 分 49 秒（命令墙钟）通过、八分钟预算未达；最近一次独立全仓核心 7 分 33 秒通过、三分钟预算未达；全仓 race 未运行**。T2 使用标准库受控时间及现有四槽夹具提速；T3 完成 Todos／工具配置规则下沉、CLI/UI 组合收缩及日历集成分层；T4 完成浏览器功能／长窗口／满容量入口拆分、e2e 标签统一和执行文档，真实 Chromium 功能及专项均定向通过。T1–T4 覆盖映射、验证和同条件计时见[实施与耗时记录](implementation/test-suite-health.zh.md)，后续第一批见[并行记录](implementation/room-fixture-parallel.zh.md)，第二批见[授权与工具矩阵记录](implementation/authorization-tool-matrix.zh.md)，第三批见[Lark 协议矩阵记录](implementation/lark-protocol-matrix.zh.md)，第四批见[定时等待与装配记录](implementation/timer-assembly.zh.md)。T4 最终核心墙钟较 T1 缩短约 18.7%；本轮未重测独立全仓核心，不外推局部提速；完整集成健康门槛已补齐，性能预算仍未达。后续优化顺序与慢项全表见 §9 和附录 B，前四批已实施，其余仍待实施。下文的原始测量和分阶段要求作为后续对照保留。
 
 ## 1. 目标与范围
 
@@ -248,6 +248,68 @@ make test-e2e-check
 4. 浏览器普通功能与专项测量能独立运行，真实依赖验收边界未被削弱。
 5. 执行入口与文档一致，记录实际耗时、达成／未达预算及仍需单独完成的真实验收；不把编译、组件或模拟证据升级为真实平台证明。
 
+## 9. T1–T4 之后的慢项复盘与后续优化（前四批已实施，其余待实施）
+
+本节在提交 `6bf554b` 后补充，最初只整理已有证据和后续方案。用例明细见附录 B；T1–T4 实施与机器可读证据见 [test-suite-health.zh.md](implementation/test-suite-health.zh.md) 和 [test-suite-health-evidence.json](implementation/test-suite-health-evidence.json)。§9.2 第一批现已实施，四文件共 35 项夹具复用四槽并行；同范围 38 项顶层测试、单并发和定向 race 均通过，切片墙钟 42.870 → 24.367 秒（约缩短 43.2%）。一次完整集成墙钟 831.331 秒，1,914 项顶层通过、1 项既有 CSP 断言失败、9 项跳过；第一批 38 项均通过，但当时完整集成尚未验收通过。结果及隔离审核见[第一批实施记录](implementation/room-fixture-parallel.zh.md)。第二批现已实施：动作规则及工具矩阵下沉、夹具初始化收缩，同范围墙钟 22.108 → 19.192 秒（约缩短 13.2%），15 项顶层及其承接检查、单并发和扩大调用方的 94 项定向 race 通过。校准上述过期 CSP 断言后，一次完整集成 768.749 秒通过，1,924 项顶层通过、9 项跳过，八分钟预算未达；见[第二批实施记录](implementation/authorization-tool-matrix.zh.md)。第三批现已实施：Lark 原生协议矩阵下沉，同范围整个包墙钟 74.142 → 59.599 秒（约缩短 19.6%），新增八项轻量检查；单并发、Lark 全包及 Room 调用方定向 race 通过。本次完整集成约 12 分 48 秒（Go JSON 事件跨度）通过，1,932 项顶层通过、9 项跳过，22 包通过、八分钟预算未达；见[第三批实施记录](implementation/lark-protocol-matrix.zh.md)。第四批现已实施：Inbox／连接通知剩余负向窗口使用受控时间及调度结清屏障，纯规则去掉 50 次无关种子写入，日历发布改用真实 CalendarActor／Room／Store 组件闭环。同范围含新增规则的三样本墙钟中位数 12.439 → 9.427 秒（约缩短 24.2%），单并发及 37 项定向 race 通过；本次完整集成 1,933 项顶层通过、9 项跳过，22 包通过；墙钟 948.975 秒（15 分 49 秒），八分钟预算未达。见[第四批实施记录](implementation/timer-assembly.zh.md)。第五批及以后仍待实施；本节不改变前述安全和验收要求。
+
+### 9.1 最新结论与优先级依据
+
+| 已观察事实 | 对下一轮的含义 |
+| --- | --- |
+| 第四批完整集成 1,933 项顶层通过、9 项跳过，22 包通过；墙钟 948.975 秒（15 分 49 秒），八分钟预算未达 | 本批只改测试；局部中位数约缩短 24.2%，没有独立重测全仓核心或全仓 race。保留完整健康门槛，后续只推进已授权批次 |
+| 第三批后的完整集成 22 包全部通过，1,932 项顶层通过、9 项跳过；Go JSON 事件跨度 768.477 秒，八分钟预算未达 | Lark 包同条件墙钟约缩短 19.6%，但 Room 仍是全量主要成本；完整集成事件跨度与此前 Python 墙钟口径不同，不据此宣称全仓提速 |
+| 第二批后的完整集成健康通过，墙钟 768.749 秒、Room 737.881 秒；1,924 项顶层通过、9 项跳过，所选 15 项全部通过 | 健康门槛已补齐，但八分钟预算仍未达。下表核心数字仍是此前独立测量，不用失败的上次全量或本批切片推算全仓收益 |
+| 最终完整核心墙钟 453.328 秒，Room 包 440.540 秒；T1 核心墙钟 557.748 秒 | 当前全仓观察缩短约 18.7%，三分钟目标未达。Room 是首要执行路径；不能把 T2 的局部 57% 改善当作全仓收益 |
+| 最终核心 Room 串行顶层报告耗时合计约 **404.40 秒**；31 项并行夹具从首次 cont 到最后完成约 **34.12 秒** | 最推荐先处理仍串行的独立 Room 夹具及其重复装配。上述两个区间不是精确剖析分账，不机械相加；其他包与 Room 同时运行 |
+| 工具／动作并行用例顶层可达 10–19 秒，但部分大多在等槽位 | 先看 `wait` 与 `held`，再决定优化哪项；保持四槽，不直接按 `Elapsed` 排名，也不靠无限并行或重排测试名获取收益 |
+| `TestToolIndependentTargetsMergeAndProjectActualCommit`：18.90 秒，其中 wait 6.41／held 12.50；`TestReferenceActionRefusals`：15.71 秒，其中 wait 3.60／held 12.11 | 两项确有较高执行／清理成本，是第二批矩阵下沉和夹具收缩中优先处理的对象 |
+| `TestReferenceActionIntentPersistenceAndProcessing`：10.46 秒，其中 wait 9.80／held 0.66；`TestReferenceActionKeepsOtherUnansweredQuestion`：8.78 秒，其中 wait 7.99／held 0.79 | 暂不为这类个体新增抽象；先减少前面长持槽任务，避免优化错对象 |
+| 其他包最终执行：`internal/inputstream` 44.054 秒、`internal/agent/dsh` 36.856 秒、`internal/platform/lark` 核心 12.692 秒 | 这些包当前被 Room 的长执行遮蔽。输入持久化与 DSH 的优化放在后批，不能把其节省秒数直接累加成全仓收益 |
+| T3 完整集成在 630.662 秒中止；收口集成在 80.223 秒按用户要求中止 | 附录中的集成单项都是“已结束项的观察”，不是完整集成排名或健康基线；未结束项不补猜耗时 |
+| 同一日历组合在 T3 定向约 3.54 秒、负载较高的完整集成中 19.50 秒；旧 deadline 用例失败后在最终核心 2.30 秒通过 | 先区分重复装配、实际 I/O、排队、环境负载与失败等待。既有服务升级／独立编译重叠是负载观察，不是已证明的根因 |
+
+当前代码已具备四槽隔离夹具、测试二进制／生产 CLI 一次构建、Lark 独立零间隔队列和 Python `-S`。后续应在这些能力上减少重复工作，不重复建设或将已有收益重新计入。
+
+### 9.2 最推荐的实施顺序
+
+| 顺序 | 改造范围与具体做法 | 保留边界／本批验收 | 投入与预期作用 |
+| --- | --- | --- | --- |
+| **第一批：Room 串行夹具有界并行** | 首先审核 `platform_member_current_test.go`（串行合计 16.68 秒）、`platform_connect_notifications_test.go`（13.55 秒），再审 `platform_lark_authorization_test.go`（9.22 秒）和 `model_management_test.go`（9.14 秒）。逐顶层核对私有 Store、manager、账号队列、端口、hook 及传递调用的环境修改；每次只选 5–10 个符合条件的顶层复用 `parallelFixtureTest` | 仍共用现有四槽。`t.Setenv`／`t.Chdir`、固定环境键、共享父夹具及共享进程状态的调用保持串行，不能只检查顶层函数。随机独立凭据键仍需审核清理和进程继承。候选组在单并发、正常并发及必要 race 下验证；比较整组墙钟和持槽时间，若磁盘竞争抵消收益则停止扩展 | **最高推荐，投入较低**；针对约 404 秒串行主成本。首批四文件约 48.59 秒是观察范围，绝不是可直接节省的承诺 |
+| **第二批：Room 授权／工具矩阵与大组合收缩** | 先拆 `TestReferenceActionRefusals` 的 14 个拒绝分支：请求形状／版本冲突等优先直接覆盖现有 `referenceActionRequestError`、`referenceActionUnitConflict` 等生产规则；依赖 Store 的指令／规则判断使用最小合法状态。再处理 `TestReferenceActionThreeAuthorities`、工具入口一致性及独立目标合并。最后收缩 `TestPlatformAuthorizationSurvivesModelRotationAndPause` 的 provider × 状态 × 完成时机组合 | 规则测试直接调用实际生产决策；必要提取由原路径调用，不建立第二套授权模型。真实 owner 继续覆盖账号／成员／目标／版本复核、准备后撤权与 ABA、并发合并、保存／未知提交、重启防重。跨模型轮换仍保留原 operation、Inbox 投递及暂停；provider 差异、轮内结果与轮换后结果不能在无证据时合并 | **高推荐，投入中等**；先减少真实长持槽任务和重复 manager／会话装配，连带降低短任务排队。不能把一次成功流程替代全部提交或并发边界 |
+| **第三批：Lark 原生协议矩阵下沉** | 优先 `TestReadFailuresDiscardCandidate`、`TestMessageSearchRejectsIncompleteAndUnverifiedPages`、`TestMessageBatchFailuresDiscardCandidates`，再处理 sender、membership、image、reply/send。将 `classify`／`decode` 和各业务实际候选校验中的纯错误分类、格式、重复／范围判断放到轻量单元层；原生 CLI 保留 argv、stdout／退出码、前后身份核验及流程独有拒绝 | 先给 `parallelClientTest` 增加与 Room 同等的 wait／held 诊断，保持四槽；不将 15–44 秒顶层时间全归于子进程。每类 wire DTO、单页不隐式扩展、bot／账号切换、取消、单次 POST 和失败不泄露候选仍有实际进程证明；不能缓存或跳过生产身份核验 | **高推荐，投入中等**；主要改善本地集成和编入 e2e 的本地部分。Lark 核心已较短，不宣称这批直接显著缩短当前核心主路径 |
+| **第四批：剩余定时等待与非必要装配** | 查 `inbox_recovery_test.go` 的退避／80–100ms 负向等待、`platform_connect_notifications_test.go` 的两处 150ms 窗口及日历发布组合。只对确属时间规则的分支复用受控时间；成功路径等待明确处理／结清屏障。`TestCalendarRecurringPublicationKeepsTaskActive` 的递归状态规则由 `internal/calendar` 穷举，实际发布和不终止任务保留组件闭环 | T2 已改造的心跳／阻塞 writer／恢复 bubble 不再机械重写。时间推进后证明相关调度确已处理，负向断言覆盖完整窗口；保留少量真实 timer／HTTP／取消接线。若主要成本是落盘而非 Sleep，回到夹具分析，不加无效时钟抽象 | **中等推荐，投入较低至中等**；优先处理仍串行的项，已有小等待的收益不夸大 |
+| **第五批：持久边界与 DSH 进程夹具** | 输入升级先复用不可变输入材料、减少与目标发布点无关的初始化；所有文件发布／未知提交／恢复中断点继续真实执行。`TestConsumptionAbortHandoffRaceAndBusy` 目前循环 12 次，评估以明确 Abort／Handoff 两种提交次序的屏障承接分支，重复竞争另保留专项。DSH `TestResumeFailsClosedWithoutReplacement` 等将能在加载／身份校验层拒绝的模式与真正需要 Open／Resume 子进程的模式分开 | 不关闭 `fsync`，不共享可变 Store，不合并多种未知提交。输入升级的并行试验曾未证明稳定收益，不能整文件并行。DSH 的 `fixtureOptions` 目前 `t.Setenv("TEAMX_TEST_KEY", ...)`，未经改造不能并行；即使改为私有注入，也保留真实信号、回收、未结清禁止替换及失败恢复合同 | **后批，投入较高**；这些覆盖价值高、当前对核心墙钟的直接收益有限，优先减少夹具启动成本，正式存储算法优化需另有证据 |
+| **第六批：执行入口与专项边界收口** | 核对仍仅靠环境变量跳过的 `TestSharedInboxFullCapacityMeasurements`、pinned glab／PTY 与生产 askpass 验证，按实际依赖分到 e2e 或本地集成，helper 留在调用方可编译的位置。保留普通浏览器、长窗口、满容量及真实平台的独立选择 | 这些默认跳过项本轮未测容量或安装环境耗时；标签修正只算分层完善，不算提速。浏览器 60 秒窗口、10,000 条／近 64 MiB、真实手机和代理边界继续独立保留；不增加真实平台写入授权或发布门槛 | **低成本收尾**；优先减少误运行和重复全跑。T4 普通浏览器目前最长单组约 35 秒，没有必要再优先压缩已很短的页面流程 |
+
+第一批完成后先判断串行主成本是否下降，再决定第二批的扩展范围。不要为了“一次做完全部批次”跨入 Room 全面拆包、通用 mock 框架、测试选择平台或并发上限扩容。新增正式函数与长期测试按职责命名，不按本表批次命名。
+
+### 9.3 每批应交付的最小方案与验证
+
+1. **先写本切片承接映射。** 对每项拟删除或收缩的分支，列出原断言、实际生产规则所在位置、下层直接测试、保留的真实组件／进程证明；无法给出承接的分支不删除。纯规则可用最小内存状态，存储与结清边界继续使用私有真实目录。
+2. **先拆成本，再改代码。** 直接利用已有 JSON、wait／held 记录定位。确需新诊断，只在本次已有 helper 记录 fixture 初始化、原生 CLI 次数、Actor／提交／结清等待和清理的阶段耗时；不为此建设全仓永久登记系统。装配成本高的组合先缩小不相关初始化，再考虑并行。
+3. **仅做一次同条件切片对照。** 开发中只跑受影响层；准备评估收益时，对同一业务范围顺序测量改前／改后，包含新增下层检查和保留集成，使用相同标签、并发和 `-count=1`。已有 before 可复用，三次采样只用于解释波动。并行调整另验证单并发与必要 race，包含清理；不能相加各 `Elapsed` 或把纯标签移动算作收益。
+4. **按代码影响补齐边界。** 规则下沉若修改生产函数，补其调用方接线及相关并发／授权 race；仅改文档不跑测试，标签／helper 修改做对应编译。不得因阶段命名或正则变化漏掉新增检查。原本已通过且源码未变的验证不机械重跑。
+5. **最后安排一次阶段性全量。** 各切片完成、源码稳定且无明显独立编译／升级负载时，才运行一次完整 `test-integration`；它已包含核心，前面不串跑完整核心。只有用户单独评价核心预算时再做一次核心计时；最终全仓 race 按交付范围安排。中途失败先看首个失败与清理栈，保留部分结果，不将每次 timeout 增大后重跑作为推进方式。
+
+后续仍以核心三分钟、健康本地集成八分钟为目标，但当前没有证据保证上述批次足以达到。每批报告同范围实际变化及剩余主成本；必要时依据稳定健康数据另行校准默认诊断上限，不能把放宽上限写成优化成果。
+
+### 9.4 已明显改善或应保留成本的项
+
+| 入口／范围 | 已有证据及后续处理 |
+| --- | --- |
+| `TestUIUpdatesHTTPHeartbeat` | T2 同条件约 15.10 → 0.11 秒；当前真实 HTTP 帧／撤权／超时覆盖保留，无需重复优化已消除的 15 秒等待 |
+| `TestUIUpdatesBlockedWriterCancellation` | T2 约 5.86 → 0.74 秒；保留 ResponseController 与取消原因矩阵 |
+| `TestDSHRecoveryPreviewTimeoutAndIdentity` | T2 约 2.55 → 0.43 秒。T3 负载较高时仍观察到 6.13 秒，包含实际夹具／落盘，不能再把它全部归因于预览 timeout |
+| `automatic_recovery_test.go` | T1 串行合计 19.60 秒；T2 对照 18.67 → 5.92 秒；最终核心合计 10.42 秒。`TestAutomaticRecoveryPermanentErrorsStayPaused` 的旧 4.98 秒真实等待已处理，剩余以当前具体成本判断 |
+| `TestReferenceActionUsesLaterVerifiedAlias` | T1 旧观察 6.37 秒，最终核心顶层约 0.91 秒、持槽约 0.91 秒。并行排队条件不同，不将差值当作独立提速证明；目前不优先改动 |
+| 两组工具配置夹具 | T1 串行合计 76.90 秒；T2 同条件执行区间 79.475 → 26.234 秒。当前全核心与动作组共用四槽，不能拿个别顶层变长当作同条件回退 |
+| `TestLarkToolConfigurationUserScopeGapsRespectPlatformSupport` | 旧观察 6.30 秒；T3 的规则由 provider 测试与 `TestLarkToolConfigurationUserAndApplicationScopeAdmission` 代表接线承接，旧名已退出，不能按旧名继续漏选或重复建矩阵 |
+| Todos／CLI／UI／日历 T3 切片 | 含新增下层检查的合并墙钟 47.492 → 40.117 秒。`TestTodosAppHandler` 完整业务由 TCP `TestTodosAppHTTP` 承接，stdio 只保留桥接合同；日历 manager 组合归入集成，不能把移层时间算成总体节省。CLI 单独观察有 1.659 → 2.692 秒，未证明单切片提速 |
+| 输入升级并行试验 | 包执行 19.268 → 15.470／16.845 秒，但发布中断单项受 I/O 竞争影响，未采用；优先复用不可变材料，不恢复整组并行试验作为既定方案 |
+| 原失败后的 30／60 秒等待及 Todos 清理死锁 | T1 已处理，具体旧用例保留附录 A。只有复现新的清理故障时才回到 T1；不能把旧 timeout 和最终通过样本混算平均性能 |
+| `TestDSHRecoveryPrioritizesOnlySavedMappingsBeforePageLimit` | T3 12.65 秒后失败，尚未到分页优先级断言；独立 3.54 秒、最终核心 2.30 秒通过，原十秒上下文保留。若重现，先分段观察来源写入、关联与读取、剩余 deadline，不仅提高上限 |
+| 编译／命令墙钟异常 | T3 最后 CLI 断言补验墙钟 236.591 秒，Room 执行约 4.04 秒；主要是当时重新编译成本，不是该 CLI 用例执行变成四分钟。复用匹配源码／标签／race 的现有二进制，源码变更后仍重建 |
+
 ## 附录 A：T1 需要核对的失败清单
 
 以下 11 项均在低并发复跑中仍失败。除已明确的 tools/list 断言过期外，表中只记录观测症状，不预判都是测试缺陷或产品缺陷。
@@ -267,3 +329,262 @@ make test-e2e-check
 | `TestSecondNotificationProviderReloadAndDedup` | `capability_independence_integration_test.go`：多 provider 重载／去重检查失败，独立保留日志定位 |
 
 另外两个未结束项为 `TestTodosAppHandler`、`TestTodosAppHTTP`，共享 §4.1 所述清理死锁；其业务断言失败仍须在解锁修复后继续处理。
+
+
+## 附录 B：本轮已观察慢项清单（后续处理用）
+
+本表来自已保存结果，**没有为填表重跑任何测试**。收录四份现有日志中：最终完整核心顶层 ≥3 秒，T3／收口两次中止集成中已结束顶层 ≥5 秒，或 T3 改造后定向顶层 ≥5 秒的并集，共 **123 个不同包／测试名**；另列前文已处理项和浏览器专项。阈值仅用于本轮清单，低于阈值但累计偏重的文件见 B.1；不是新增性能 gate 或全仓永久登记系统。
+
+时间均为秒，父项包含其子场景；同名不同包分别记录。`并` 表示至少一次观察为并行顶层，报告时间可包含四槽等待；Room 最终 `wait/held` 另列，held 包含清理，不包含此前 Go `-parallel` 调度暂停。`串` 表示所列观察未出现顶层 pause。`—` 表示该份记录没有已结束结果／不在该层，**不等于零秒**。T3 集成失败或中止记录与收口的短暂集成观察不具备同条件对照关系，数值不可平均或相加。表内按已知最大观测排序便于查找，不代表优化优先级，实施顺序以 §9.2 为准。逐项数字从 `/tmp/teamx-t2/`、`/tmp/teamx-t3/`、`/tmp/teamx-final/` 的既有 JSON 提取并固化于本文，后续不依赖临时目录继续存在。
+
+### B.1 核心串行聚合成本
+
+下列为最终核心各文件的串行顶层耗时之和（只加顶层，不重复加子项），是定位范围而非独立运行墙钟。不同包可并行执行；不能跨包相加推算全仓时间。
+
+| 包／源码 | 串行合计 | 后续处理 |
+| --- | ---: | --- |
+| [internal/inputstream/consumption_test.go](../internal/inputstream/consumption_test.go) | 20.28 | 第五批：持久边界与重复竞争；当前非最长路径 |
+| [internal/room/input_upgrade_test.go](../internal/room/input_upgrade_test.go) | 18.36 | 第五批：保留发布点，优化无关准备 |
+| [internal/room/platform_member_current_test.go](../internal/room/platform_member_current_test.go) | 16.68 | 第一批：隔离审核与四槽并行 |
+| [internal/room/platform_connect_model_test.go](../internal/room/platform_connect_model_test.go) | 13.85 | 第二批：跨轮换组合收缩 |
+| [internal/room/platform_connect_notifications_test.go](../internal/room/platform_connect_notifications_test.go) | 13.55 | 第一批：隔离审核与四槽并行 |
+| [internal/agent/dsh/session_test.go](../internal/agent/dsh/session_test.go) | 10.95 | 第五批：进程／配置校验拆分；固定环境键保持串行 |
+| [internal/room/automatic_recovery_test.go](../internal/room/automatic_recovery_test.go) | 10.42 | 第四批：先拆装配／调度成本 |
+| [internal/agent/dsh/recovery_test.go](../internal/agent/dsh/recovery_test.go) | 10.38 | 第五批：进程／配置校验拆分；固定环境键保持串行 |
+| [internal/room/inbox_recovery_test.go](../internal/room/inbox_recovery_test.go) | 10.30 | 第四批：先拆装配／调度成本 |
+| [internal/inputstream/storage_test.go](../internal/inputstream/storage_test.go) | 10.16 | 第五批：持久边界与重复竞争；当前非最长路径 |
+| [internal/room/platform_lark_authorization_test.go](../internal/room/platform_lark_authorization_test.go) | 9.22 | 第一批：隔离审核与四槽并行 |
+| [internal/room/model_management_test.go](../internal/room/model_management_test.go) | 9.14 | 第一批：隔离审核与四槽并行 |
+| [internal/room/inbox_task_events_test.go](../internal/room/inbox_task_events_test.go) | 7.93 | 第一批后扩展候选；先审核传递环境与共享状态 |
+| [internal/room/platform_connect_gitlab_test.go](../internal/room/platform_connect_gitlab_test.go) | 7.76 | 第一批后扩展候选；先审核传递环境与共享状态 |
+| [internal/room/default_assistant_test.go](../internal/room/default_assistant_test.go) | 6.86 | 第一批后扩展候选；先审核传递环境与共享状态 |
+| [internal/room/input_stream_tools_test.go](../internal/room/input_stream_tools_test.go) | 6.82 | 第一批后扩展候选；先审核传递环境与共享状态 |
+| [internal/room/calendar_recurrence_test.go](../internal/room/calendar_recurrence_test.go) | 6.65 | 第四批：先拆装配／调度成本 |
+| [internal/room/history_test.go](../internal/room/history_test.go) | 6.49 | 第一批后扩展候选；先审核传递环境与共享状态 |
+| [internal/room/platform_member_test.go](../internal/room/platform_member_test.go) | 6.35 | 第一批后扩展候选；先审核传递环境与共享状态 |
+| [internal/room/ui_update_sources_test.go](../internal/room/ui_update_sources_test.go) | 6.13 | 第一批后扩展候选；先审核传递环境与共享状态 |
+| [internal/room/input_stream_reader_test.go](../internal/room/input_stream_reader_test.go) | 6.06 | 第一批后扩展候选；先审核传递环境与共享状态 |
+| [internal/room/inbox_consumption_test.go](../internal/room/inbox_consumption_test.go) | 5.93 | 第一批后扩展候选；先审核传递环境与共享状态 |
+| [internal/room/agent_read_views_test.go](../internal/room/agent_read_views_test.go) | 5.92 | 第一批后扩展候选；先审核传递环境与共享状态 |
+| [internal/room/model_delete_test.go](../internal/room/model_delete_test.go) | 5.87 | 第一批后扩展候选；先审核传递环境与共享状态 |
+| [internal/room/platform_member_gitlab_test.go](../internal/room/platform_member_gitlab_test.go) | 5.86 | 第一批后扩展候选；先审核传递环境与共享状态 |
+| [internal/agent/dsh/lifecycle_test.go](../internal/agent/dsh/lifecycle_test.go) | 5.85 | 第五批：进程／配置校验拆分；固定环境键保持串行 |
+| [internal/room/platform_connect_gitlab_setup_test.go](../internal/room/platform_connect_gitlab_setup_test.go) | 5.81 | 第一批后扩展候选；先审核传递环境与共享状态 |
+| [internal/room/mcp_transport_test.go](../internal/room/mcp_transport_test.go) | 5.59 | 第一批后扩展候选；先审核传递环境与共享状态 |
+| [internal/room/inbox_reclamation_test.go](../internal/room/inbox_reclamation_test.go) | 5.45 | 第一批后扩展候选；先审核传递环境与共享状态 |
+| [internal/room/agent_contract_test.go](../internal/room/agent_contract_test.go) | 5.32 | 第一批后扩展候选；先审核传递环境与共享状态 |
+| [internal/room/platform_selection_gitlab_test.go](../internal/room/platform_selection_gitlab_test.go) | 5.16 | 第一批后扩展候选；先审核传递环境与共享状态 |
+| [internal/room/platform_connect_test.go](../internal/room/platform_connect_test.go) | 5.12 | 第一批后扩展候选；先审核传递环境与共享状态 |
+| [internal/room/mcp_inbox_test.go](../internal/room/mcp_inbox_test.go) | 5.11 | 第一批后扩展候选；先审核传递环境与共享状态 |
+| [internal/room/inbox_lifecycle_test.go](../internal/room/inbox_lifecycle_test.go) | 5.08 | 第一批后扩展候选；先审核传递环境与共享状态 |
+
+### B.2 `internal/room`：80 项
+
+工具／动作长持槽项按第二批处理，只有等待长的项随上游成本下降观察；其他串行项目按 B.1 的组优先级处理。
+
+| 测试（源码） | 最终核心 | T3 集成 | 收口集成 | 补充证据／并发属性 |
+| --- | ---: | ---: | ---: | --- |
+| [`TestLocalGitFetchPushAndExactSHA`](../internal/room/capability_independence_integration_test.go) | — | 35.45 | 1.48 | 串 |
+| [`TestCalendarManagedRecurringPauseRecoveryAndPublication`](../internal/room/calendar_lifecycle_integration_test.go) | — | 19.50 | 1.48 | 串 |
+| [`TestRoomUnreadPeekPaginatesWithoutConsumption`](../internal/room/cli_test.go) | 1.62 | 19.21 | 1.32 | 串 |
+| [`TestToolIndependentTargetsMergeAndProjectActualCommit`](../internal/room/tools_target_concurrency_test.go) | 18.90 | — | — | 并；最终 wait/held 6.41/12.50；T1 9.79；T3 定向 11.06 |
+| [`TestReferenceActionRefusals`](../internal/room/followups_actions_test.go) | 15.71 | — | — | 并；最终 wait/held 3.60/12.11；T1 13.29 |
+| [`TestToolBindingsLegacyUpgradeCapacityAndOverflow`](../internal/room/tools_target_concurrency_test.go) | 14.69 | — | — | 并；最终 wait/held 10.22/4.48；T3 定向 5.92 |
+| [`TestCalendarManagedOfflineRecoveryOnlyLatestWhileAgentsPaused`](../internal/room/calendar_lifecycle_integration_test.go) | — | 14.41 | 1.71 | 串 |
+| [`TestPlatformAuthorizationSurvivesModelRotationAndPause`](../internal/room/platform_connect_model_test.go) | 13.85 | — | — | 串；T1 21.73 |
+| [`TestLarkToolConfigurationUserAndApplicationScopeAdmission`](../internal/room/tools_lark_configuration_test.go) | 13.77 | — | — | 并；最终 wait/held 9.30/4.47；T3 定向 9.10 |
+| [`TestToolLegacyUnknownReceiptsRemainReadOnlyAfterRestart`](../internal/room/tools_target_concurrency_test.go) | 13.70 | — | — | 并；最终 wait/held 9.90/3.80；T3 定向 6.33 |
+| [`TestReferenceActionThreeAuthorities`](../internal/room/followups_actions_test.go) | 13.39 | — | — | 并；最终 wait/held 8.24/5.15；T1 10.24 |
+| [`TestDSHRecoveryPrioritizesOnlySavedMappingsBeforePageLimit`](../internal/room/dsh_recovery_context_test.go) | 2.30 | 12.65 失败 | — | 串 |
+| [`TestConfigurationReceiptsAndObservationsSurviveRestart`](../internal/room/configuration_recovery_integration_test.go) | — | 12.45 | 5.69 | 串 |
+| [`TestOnboardingToolInterruptedSettlementKeepsCommittedProjection`](../internal/room/tools_target_concurrency_test.go) | 12.43 | — | — | 并；最终 wait/held 9.46/2.97；T3 定向 7.07 |
+| [`TestDiscussionRestartSettlesWholeTeamBeforeClearing`](../internal/room/discussion_test.go) | 0.52 | 12.32 | — | 串 |
+| [`TestDirectConversationRejectsInconsistentPersistence`](../internal/room/direct_conversation_test.go) | 0.76 | 12.05 | — | 串 |
+| [`TestLarkToolConfigurationExplicitActionsAndPreservedIntent`](../internal/room/tools_lark_configuration_test.go) | 12.02 | — | — | 并；最终 wait/held 8.54/3.48；T1 5.40；T3 定向 7.27 |
+| [`TestToolPreparedBindingRejectsABAAndAllowsOtherMembers`](../internal/room/tools_target_concurrency_test.go) | 11.98 | — | — | 并；最终 wait/held 6.43/5.55；T3 定向 9.81 |
+| [`TestOnboardingToolExactObservationAndLegacyPending`](../internal/room/tools_target_concurrency_test.go) | 11.72 | — | — | 并；最终 wait/held 7.65/4.07；T3 定向 7.31 |
+| [`TestReferenceActionRuleLifecycleAdmission`](../internal/room/followups_actions_test.go) | 11.20 | — | — | 并；最终 wait/held 6.33/4.87；T1 11.92 |
+| [`TestAgentInboxCLIOutputAndConfirmation`](../internal/room/agent_read_views_test.go) | 4.48 | 10.62 | 1.54 | 串 |
+| [`TestDiscussionRestartRecoversSettledRateLimitFailures`](../internal/room/discussion_test.go) | 0.67 | 10.61 | — | 串 |
+| [`TestReferenceActionIntentPersistenceAndProcessing`](../internal/room/followups_actions_test.go) | 10.46 | — | — | 并；最终 wait/held 9.80/0.66 |
+| [`TestLarkToolConfigurationEntrypointsAgreeAndSelfProofIsRequired`](../internal/room/tools_lark_configuration_test.go) | 10.34 | — | — | 并；最终 wait/held 0.91/9.42；T1 6.73；T3 定向 7.94 |
+| [`TestToolSaveAttemptBoundaryAndOriginalOperationFence`](../internal/room/tools_target_concurrency_test.go) | 10.21 | — | — | 并；最终 wait/held 2.63/7.58；T1 5.86；T3 定向 8.88 |
+| [`TestLarkToolConfigurationCLIAddsOnlyRequestedActions`](../internal/room/tools_lark_configuration_test.go) | 9.52 | — | — | 并；最终 wait/held 7.92/1.60；T3 定向 10.11 |
+| [`TestReferenceActionRechecksAuthorityBeforeRetry`](../internal/room/followups_actions_test.go) | 10.04 | — | — | 并；最终 wait/held 4.24/5.80；T1 9.69 |
+| [`TestLarkToolConfigurationRechecksAfterRemotePreparation`](../internal/room/tools_lark_configuration_test.go) | 9.90 | — | — | 并；最终 wait/held 1.80/8.10；T1 6.23；T3 定向 8.53 |
+| [`TestDefaultAssistantLegacyDeletionTombstoneAndManualReplacement`](../internal/room/default_assistant_test.go) | 0.58 | 9.82 | 0.67 | 串 |
+| [`TestReferenceActionPersistenceFailures`](../internal/room/followups_actions_test.go) | 9.69 | — | — | 并；最终 wait/held 4.35/5.35；T1 6.49 |
+| [`TestToolPreparationRejectsExpiredCapabilityObservation`](../internal/room/tools_target_concurrency_test.go) | 9.46 | — | — | 并；最终 wait/held 6.45/3.01；T3 定向 6.54 |
+| [`TestReferenceActionUnknownRetryAndRecovery`](../internal/room/followups_actions_test.go) | 9.43 | — | — | 并；最终 wait/held 3.89/5.53；T1 4.97 |
+| [`TestLarkToolConfigurationOnboardingPreservesChoicesAndUnknownSubmission`](../internal/room/tools_lark_configuration_test.go) | 8.93 | — | — | 并；最终 wait/held 6.08/2.85；T3 定向 5.67 |
+| [`TestLarkToolConfigurationCanonicalizesExistingGrants`](../internal/room/tools_lark_configuration_test.go) | 8.59 | — | — | 并；最终 wait/held 5.95/2.64；T3 定向 8.86 |
+| [`TestReferenceActionKeepsOtherUnansweredQuestion`](../internal/room/followups_actions_test.go) | 8.78 | — | — | 并；最终 wait/held 7.99/0.79 |
+| [`TestLarkPermissionGapRechecksExactTargetAfterRemoteRead`](../internal/room/tools_target_concurrency_test.go) | 8.69 | — | — | 并；最终 wait/held 6.21/2.48；T3 定向 6.70 |
+| [`TestDiscussionRestartClearFailureCanBeRetried`](../internal/room/discussion_test.go) | 0.55 | 8.42 | — | 串 |
+| [`TestDSHRestorePausesWithoutReplacingBackend`](../internal/room/dsh_test.go) | 0.40 | 8.24 | — | 串 |
+| [`TestAgentPolicyAndActionDiagnosticRecovery`](../internal/room/cli_diagnostics_test.go) | 0.66 | 8.18 | 0.56 | 串 |
+| [`TestInputUpgradeResumesEveryPublicationBoundary`](../internal/room/input_upgrade_test.go) | 8.15 | — | — | 串；T1 8.56 |
+| [`TestReferenceActionRuleUnknownSnapshotRecovery`](../internal/room/followups_actions_test.go) | 8.14 | — | — | 并；最终 wait/held 6.90/1.24；T1 6.24 |
+| [`TestActionsLedgerFailureNeverReplays`](../internal/room/actions_test.go) | 2.89 | 8.11 | 1.03 | 串 |
+| [`TestAutomaticRecoveryAfterFailedSessionOpen`](../internal/room/automatic_recovery_test.go) | 2.06 | 8.05 | 0.96 | 串 |
+| [`TestAutomaticRecoveryRestoresOnlyEnabledSettledSessions`](../internal/room/automatic_recovery_test.go) | 2.30 | 7.85 | 1.01 | 串 |
+| [`TestToolContractsRejectRetiredVersionsAndRequireHumanObservation`](../internal/room/tools_target_concurrency_test.go) | 7.67 | — | — | 并；最终 wait/held 6.77/0.90 |
+| [`TestManagedActivationFailureReceiptsAndInterruptedRecovery`](../internal/room/activation_integration_test.go) | — | 7.58 | 0.70 | 串 |
+| [`TestDefaultAssistantCreationCommitRecovery`](../internal/room/default_assistant_test.go) | 0.44 | 7.53 | 0.47 | 串 |
+| [`TestTodosAppHTTP`](../internal/room/web_todos_integration_test.go) | — | — | — | 并；T3 定向 7.46 |
+| [`TestDefaultAssistantOnceForNewAndExistingCatalogs`](../internal/room/default_assistant_test.go) | 0.59 | 7.37 | 0.68 | 串 |
+| [`TestReferenceActionUnknownSurvivesLaterStop`](../internal/room/followups_actions_test.go) | 7.34 | — | — | 并；最终 wait/held 6.64/0.70 |
+| [`TestDefaultAssistantInitialEnableAndPauseSurviveRestart`](../internal/room/default_assistant_test.go) | 0.47 | 7.30 | 0.43 | 串 |
+| [`TestDSHRecoveryAdmitsOnlyStoppedOriginalSession`](../internal/room/dsh_collaboration_test.go) | 0.61 | 7.18 | — | 串 |
+| [`TestToolIntentIdentityIncludesObservationAndNormalizesActions`](../internal/room/tools_target_concurrency_test.go) | 2.63 | — | — | 并；最终 wait/held 0.00/2.63；T3 定向 7.16 |
+| [`TestDSHMembersQueueMergeAndIsolateFailure`](../internal/room/dsh_collaboration_test.go) | 0.43 | 6.94 | — | 串 |
+| [`TestEnableResetsFailedSessionAndReplenishesTogether`](../internal/room/enable_test.go) | 0.53 | 6.93 | — | 串 |
+| [`TestLarkToolConfigurationNativeSelfEvidenceRefreshAndForgery`](../internal/room/tools_lark_configuration_test.go) | 6.45 | — | — | 并；最终 wait/held 0.00/6.45；T3 定向 6.03 |
+| [`TestDefaultAssistantBlockedConfigurationAndRetry`](../internal/room/default_assistant_test.go) | 0.40 | 6.25 | 0.38 | 串 |
+| [`TestDSHRecoveryPreviewTimeoutAndIdentity`](../internal/room/dsh_recovery_context_test.go) | 0.43 | 6.13 | — | 串 |
+| [`TestCalendarRecurringPublicationKeepsTaskActive`](../internal/room/calendar_recurrence_test.go) | 6.13 | 3.50 | 0.24 | 串 |
+| [`TestTodosReplacementFailureNeverEnablesBothAccounts`](../internal/room/platform_notification_todos_integration_test.go) | — | — | — | 并；T3 定向 6.06 |
+| [`TestDSHRecoveryReadOnlyAnsweredQuestionAndConsumedSource`](../internal/room/dsh_recovery_context_test.go) | 0.40 | 5.71 | — | 串 |
+| [`TestDiscussionRestartUpdatesSessionBaselineAndPreservesTotal`](../internal/room/discussion_test.go) | 0.36 | 5.58 | — | 串 |
+| [`TestTodosWorkspaceChangesDoNotChangeAccountScope`](../internal/room/platform_notification_todos_integration_test.go) | — | — | — | 并；T3 定向 5.54 |
+| [`TestTodosAllProjectsDoesNotDependOnWorkspaceRecovery`](../internal/room/platform_notification_todos_integration_test.go) | — | — | — | 并；T3 定向 5.44 |
+| [`TestCalendarAgentCLIDirectClaimAndFinish`](../internal/room/calendar_agent_test.go) | 0.38 | 5.32 | 0.33 | 串 |
+| [`TestTodosReceiptsDeduplicateAfterRestart`](../internal/room/platform_notification_todos_integration_test.go) | — | — | — | 并；T3 定向 5.30 |
+| [`TestTodosCapacityRejectsWholePage`](../internal/room/platform_notification_todos_integration_test.go) | — | — | — | 并；T3 定向 5.25 |
+| [`TestPlatformMemberCurrentConcurrentReservationAndFrozenAdmission`](../internal/room/platform_member_current_test.go) | 5.24 | — | — | 串；T1 5.18 |
+| [`TestDiscussionRestartFailureKeepsHistoryAndTeamPaused`](../internal/room/discussion_test.go) | 0.35 | 5.11 | — | 串 |
+| [`TestCalendarPersistenceDeliveryAndReportReceiptAfterClear`](../internal/room/calendar_test.go) | 1.36 | 5.06 | 1.31 | 串 |
+| [`TestTodosCredentialRotationPausesUntilSameAccountExplicitSync`](../internal/room/platform_notification_todos_integration_test.go) | — | — | — | 并；T3 定向 5.02 |
+| [`TestPlatformMemberCurrentStorageFailuresAndRestart`](../internal/room/platform_member_current_test.go) | 4.05 | — | — | 串；T1 5.07 |
+| [`TestGitLabCredentialRecoveryKeepsUnrelatedPausesAndIdentities`](../internal/room/platform_gitlab_recovery_test.go) | 3.95 | — | — | 串 |
+| [`TestInboxLifecycleActiveTurnBatchAndSweepBound`](../internal/room/inbox_lifecycle_test.go) | 3.90 | — | — | 串 |
+| [`TestInboxRecoveryHistoricalStallDrainsPagesWithoutChat`](../internal/room/inbox_recovery_test.go) | 3.82 | — | — | 串 |
+| [`TestPlatformMemberToolReceiptsIdentityAndIndependentVersions`](../internal/room/platform_member_test.go) | 3.64 | — | — | 串 |
+| [`TestInboxSchedulingIndependentPauseBudgetAndFairness`](../internal/room/inbox_consumption_test.go) | 3.58 | — | — | 串 |
+| [`TestGitLabConnectBrowserAndAccountBoundaries`](../internal/room/platform_connect_gitlab_test.go) | 3.29 | — | — | 串；T1 5.44 |
+| [`TestLarkAuthorizationRejectsAccountSwitchAndCancellation`](../internal/room/platform_lark_authorization_test.go) | 3.04 | — | — | 串 |
+| [`TestInputUpgradeFailsClosedOnInvalidAuthority`](../internal/room/input_upgrade_test.go) | 3.00 | — | — | 串 |
+
+### B.3 `internal/platform/lark`：26 项
+
+第三批已实施；下表保留改造前观察。helper 现有四槽 wait／held 输出，新对照及覆盖承接见 [Lark 协议矩阵记录](implementation/lark-protocol-matrix.zh.md)，不能将历史并行顶层的全部耗时归于 CLI 执行。
+
+| 测试（源码） | 最终核心 | T3 集成 | 收口集成 | 补充证据／并发属性 |
+| --- | ---: | ---: | ---: | --- |
+| [`TestReadFailuresDiscardCandidate`](../internal/platform/lark/client_integration_test.go) | — | 44.24 | 15.10 | 并 |
+| [`TestMessageSearchRejectsIncompleteAndUnverifiedPages`](../internal/platform/lark/message_search_integration_test.go) | — | 42.57 | — | 并 |
+| [`TestMessageBatchFailuresDiscardCandidates`](../internal/platform/lark/message_search_integration_test.go) | — | 37.51 | 23.95 | 并 |
+| [`TestPinnedReplyTransportSinglePOSTAndCancellation`](../internal/platform/lark/reply_test.go) | — | 28.08 | 10.61 | 并 |
+| [`TestSenderNameLookupBoundedAndOptional`](../internal/platform/lark/client_integration_test.go) | — | 28.02 | 13.88 | 并 |
+| [`TestMessageBatchNativeDetailsAndOmissions`](../internal/platform/lark/message_search_integration_test.go) | — | 27.05 | 13.56 | 并 |
+| [`TestPinnedSendTransportSinglePOSTAndCancellation`](../internal/platform/lark/send_transport_test.go) | — | 26.89 | 10.10 | 并 |
+| [`TestImageDownloadIdentityFormatLimitsAndCleanup`](../internal/platform/lark/images_integration_test.go) | — | 23.85 | 14.73 | 并 |
+| [`TestPinnedSendTargetNativeEvidence`](../internal/platform/lark/send_targets_test.go) | — | 22.99 | 7.53 | 并 |
+| [`TestSearchJoinedGroupMembershipPages`](../internal/platform/lark/search_membership_integration_test.go) | — | 21.03 | 12.67 | 并 |
+| [`TestNativeConversationRelationship`](../internal/platform/lark/conversation_integration_test.go) | — | 19.64 | 15.57 | 并 |
+| [`TestSelfSendPinnedQueueCancellationAndFinalGuard`](../internal/platform/lark/pinned_integration_test.go) | — | 19.04 | 9.87 | 并 |
+| [`TestSenderLookupCannotEscapeAccountGuard`](../internal/platform/lark/client_integration_test.go) | — | 16.38 | 1.44 | 并 |
+| [`TestMessageSearchReadsCancelAndShareProfileGate`](../internal/platform/lark/message_search_integration_test.go) | — | 16.18 | 11.09 | 并 |
+| [`TestMessageSearchSinglePageContract`](../internal/platform/lark/message_search_integration_test.go) | — | 15.74 | 6.34 | 并 |
+| [`TestApplicationSetupRejectsUnconfirmedAndChangedResults`](../internal/platform/lark/setup_integration_test.go) | — | 14.62 | 5.48 | 串 |
+| [`TestPermissionCheckReadOnlyAndIndependentDependencies`](../internal/platform/lark/permissions_integration_test.go) | — | 13.40 | 7.57 | 串 |
+| [`TestChatSearchNativeContracts`](../internal/platform/lark/chat_search_integration_test.go) | — | 11.60 | 5.18 | 并 |
+| [`TestDirectoryCLIPageContractAndIdentityChange`](../internal/platform/lark/directory_integration_test.go) | — | 10.06 | 10.84 | 并 |
+| [`TestMessageBatchUsesSingleBoundedBatch`](../internal/platform/lark/message_search_integration_test.go) | — | 9.20 | 2.05 | 并 |
+| [`TestImageDownloadCancellationRemovesFiles`](../internal/platform/lark/images_integration_test.go) | — | 7.02 | 8.44 | 并 |
+| [`TestChatSearchRejectsInvalidInputBeforeCLI`](../internal/platform/lark/chat_search_integration_test.go) | — | 8.09 | 5.18 | 并 |
+| [`TestLoginRequestsSupportedCompleteScopeSet`](../internal/platform/lark/auth_integration_test.go) | — | 6.55 | 3.23 | 串 |
+| [`TestCancellationAndProfileGate`](../internal/platform/lark/client_integration_test.go) | — | 6.03 | 0.68 | 并 |
+| [`TestSearchBacklogRestartAndDelayedIndex`](../internal/platform/lark/search_backlog_test.go) | 4.84 | 5.86 | 4.79 | 串 |
+| [`TestSenderLookupSplitsAtNativeBatchLimit`](../internal/platform/lark/client_integration_test.go) | — | 4.86 | 5.29 | 并 |
+
+### B.4 `internal/inputstream`：8 项
+
+第五批处理；当前包运行被 Room 长执行遮蔽，优先保留持久／进程真实边界。
+
+| 测试（源码） | 最终核心 | T3 集成 | 收口集成 | 补充证据／并发属性 |
+| --- | ---: | ---: | ---: | --- |
+| [`TestConsumptionAbortHandoffRaceAndBusy`](../internal/inputstream/consumption_test.go) | 5.34 | 19.01 | 4.32 | 串 |
+| [`TestConsumptionStreamsBoundsQuotaAndReopen`](../internal/inputstream/consumption_test.go) | 3.67 | 17.30 | 1.96 | 串 |
+| [`TestConsumptionReceiptAfterReclaimedCheckpoint`](../internal/inputstream/consumption_reclaim_test.go) | 2.11 | 16.60 | 2.87 | 串 |
+| [`TestReclaimIndependentPrefixesAndCrashRecovery`](../internal/inputstream/storage_test.go) | 3.62 | 13.10 | 2.41 | 串 |
+| [`TestReadableDirectoryAdmissionSnapshotAndFairExposure`](../internal/inputstream/directory_test.go) | 3.80 | 11.24 | 2.54 | 串 |
+| [`TestConsumptionFailureBoundaries`](../internal/inputstream/consumption_test.go) | 2.49 | 10.12 | 1.79 | 串 |
+| [`TestFrameworkCallReplayReopenAndReceiptLoss`](../internal/inputstream/calls_test.go) | 0.54 | 6.23 | 0.37 | 串 |
+| [`TestLogAppendCrashRecovery`](../internal/inputstream/storage_test.go) | 1.55 | 5.00 | 0.81 | 串 |
+
+### B.5 `internal/agent/dsh`：6 项
+
+第五批处理；当前包运行被 Room 长执行遮蔽，优先保留持久／进程真实边界。
+
+| 测试（源码） | 最终核心 | T3 集成 | 收口集成 | 补充证据／并发属性 |
+| --- | ---: | ---: | ---: | --- |
+| [`TestResumeFailsClosedWithoutReplacement`](../internal/agent/dsh/recovery_test.go) | 5.42 | 12.59 | 2.29 | 串 |
+| [`TestPromptValidationDoesNotDispatchOrDisableSession`](../internal/agent/dsh/prompt_test.go) | 2.71 | 10.51 | 2.53 | 串 |
+| [`TestStopReasonsAndFaults`](../internal/agent/dsh/session_test.go) | 2.45 | 7.38 | 1.61 | 串 |
+| [`TestBoundCredentialOverridesAmbientAndRetainsRecoveryVersion`](../internal/agent/dsh/credential_test.go) | 0.92 | 7.18 | 0.77 | 串 |
+| [`TestConfiguredReasoningEffortMaterializedAndRecoveryBound`](../internal/agent/dsh/reasoning_test.go) | 2.12 | 5.66 | 1.30 | 串 |
+| [`TestPermissionPolicyAndUnknownRequests`](../internal/agent/dsh/session_test.go) | 1.45 | 5.51 | 1.25 | 串 |
+
+### B.6 `internal/platform/gitlab`：1 项
+
+主要来自 T3 高负载完整集成的局部观察，先诊断再定优化；不因单项历史慢而修改正式 Git／认证合同。
+
+| 测试（源码） | 最终核心 | T3 集成 | 收口集成 | 补充证据／并发属性 |
+| --- | ---: | ---: | ---: | --- |
+| [`TestGetProjectUsesNativeIDAndRejectsChangedIdentity`](../internal/platform/gitlab/projects_test.go) | 0.00 | 7.62 | 0.00 | 串 |
+
+### B.7 `internal/platform/scion`：1 项
+
+主要来自 T3 高负载完整集成的局部观察，先诊断再定优化；不因单项历史慢而修改正式 Git／认证合同。
+
+| 测试（源码） | 最终核心 | T3 集成 | 收口集成 | 补充证据／并发属性 |
+| --- | ---: | ---: | ---: | --- |
+| [`TestScionPATFailuresAndCancelledUnpublishedProfile`](../internal/platform/scion/auth_integration_test.go) | — | 5.87 | 2.25 | 串 |
+
+### B.8 `tools/scion`：1 项
+
+主要来自 T3 高负载完整集成的局部观察，先诊断再定优化；不因单项历史慢而修改正式 Git／认证合同。
+
+| 测试（源码） | 最终核心 | T3 集成 | 收口集成 | 补充证据／并发属性 |
+| --- | ---: | ---: | ---: | --- |
+| [`TestNativeArgumentsStreamsAndExitCodes`](../tools/scion/main_integration_test.go) | — | 8.62 | 4.10 | 串 |
+
+### B.9 浏览器功能、长窗口与满容量
+
+以下为 T4 独立场景的真实 Chromium 结果，不是全量 e2e 的耗时；普通功能最终证据来自首次选择与必要的定向复验，没有一次干净组合墙钟。整体 e2e 还编入核心／本地集成，真实模型／平台未全跑，不能把下面数值累加成“全仓 e2e”。
+
+| 场景 | 观测秒数 | 推荐处理 |
+| --- | ---: | --- |
+| `TestHumanReadBrowser` | 16.27；其中 `history-functional` 4.21 | 保持 600 条跨页功能样本；两个 combined 尺寸保留，320px 布局与触摸由目录／reading 承接 |
+| `TestHumanReadCatalogBrowser` | 13.65 | 保留独立上下文、迟到响应、目录故障、滚动与原生触摸；已用目标 Room 实际读取屏障修正等待 |
+| `TestWebUpdatesBrowserSubscription` | 1.25 | 保留原生连接／认证／HTTP 补读，不优先压缩 |
+| `TestWebUpdatesApplicationBrowser` | 15.12 | 保留两种服务、草稿／焦点／后台恢复；60 秒静置已独立 |
+| `TestWebUpdatesModelOutcomeBrowser` | 1.54 | 保留模型回执丢失与单次写入证明；受控 probe 不等于真实模型 |
+| `TestWebUpdatesAuthenticationBrowser` | 0.64 | 保留会话撤销、草稿保存与无重放 |
+| `TestWebUpdatesRestartBrowser` | 6.33 | 保留真实临时 manager 重建、身份更新、双端补读和焦点；不缩成模拟状态变更 |
+| `TestWebUpdatesNotificationScopeBrowser` | 34.64 | 当前最慢普通浏览器组；仍含两端各 6.5 秒诊断限频观察等真实页面行为，优先复用已有受控调度证据，需新增实际失败时才进一步收缩 |
+| `TestPlatformSelectionConversationBrowser` | 10.34 | 含一次生产 CLI 构建的影响，与下一项共享构建；不当作独立稳定执行预算 |
+| `TestDefaultAssistantPlatformOnboardingBrowser` | 5.97 | 两项合并命令 16.465 秒；保留原始账号／群选择、后置 CLI 保存和独立 DM 身份 |
+| `TestWebUpdatesIdleBrowser` | 127.62；两服务各 63.68／63.94 | 原 60 秒窗口和生产心跳不可缩短；只在专项显式选择，普通功能不重复观察 |
+| `TestWebUpdatesNotificationScopeLongWindowBrowser` | 66.62 | 其中实际观察 60.010 秒、60 轮采集、两端各 70 个诊断帧；保留请求／字节／DOM 延迟口径 |
+| `TestHumanReadCapacityBrowser/history` | 31.11 | 实际 10,000 条；保留全部节点、批次／输入／取消／帧／内存判定 |
+| `TestHumanReadCapacityBrowser/history-large` | 51.28 | 接近 64 MiB；CDP embedder heap 峰值约 1.97GB，不是 RSS 或低内存承诺。性能或渲染算法修改需另做同条件专项，不能缩容量过门槛 |
+
+三项专项顶层合并墙钟 276.709 秒，包含 82.39 秒容量父项和约三分钟真实观察。尚未在这轮计时的共享满容量、History 容量、旧轮询／frozen／FIFO／工具数量配对、安装环境及真实 DSH／平台重复采样只保留按需入口，不捏造耗时或新性能结论。
+
+
+### B.10 改造前及 race 的补充观察
+
+下列八个名字未重复列入 B.2–B.8 的四份日志并集，但也曾在这几轮报告较长耗时。race、串行对照与普通并发不能混作同条件样本；并行顶层均可能包含排队。两个已收缩旧名应按覆盖承接检查，不能为了按旧名复跑而恢复重复测试。
+
+| 测试 | 已有观测秒数 | 推荐处理 |
+| --- | --- | --- |
+| `TestToolDefaultActionIntentSurvivesOmittedJSONFields` | T3 改造前 7.68；T2 race 10.51 | T3 已并入 member 正常接线的空数组／省略字段幂等回执，规范化由轻量测试承接；不恢复独立完整夹具 |
+| `TestLarkToolConfigurationReplyDoesNotRequireTargetScopes` | T3 改造前 8.32；T2 race 8.46 | T3 已由 provider 的 intent／scope 规则与代表入口承接；旧名退出，不再重复完整远端 CLI 矩阵 |
+| `TestTodosPageSaveFailureIsAtomicAndCommitUnknownLatches` | T3 改造前 5.40 | 第五批：整页原子性／未知提交不能改成内存模型，只减少无关初始化 |
+| `TestTodosInactiveBacklogDeliversOnlyAfterItsRoomIsActive` | T3 改造前 5.05；T3 race 5.31 | 第一批后审核私有夹具；活跃状态接线及不提前投递保留 |
+| `TestTodosDeletionAndShutdownWaitForQueryOwnership` | T3 race 5.29 | 保留查询持有权、取消与关闭结清；优先看屏障和清理，不减短合法等待换结果 |
+| `TestTodosCredentialRotationWaitsBeforeSavingReplacement` | T3 race 7.91 | 保留旧查询先结清、再替换凭据及精确账号复核，按第二／五批边界分析 |
+| `TestTodosFailureRestartAndMovingPagesRescanBothStates` | T3 race 5.52 | 分页算法已下沉，真实失败重启及 pending／done 接线继续保留，核对有无剩余重复装配 |
+| `TestTodosInitializationFailurePreservesBaselineAndFilterHistory` | T3 race 7.58 | 保留真实初始化失败、基线／过滤历史不变，减少与本故障点无关的准备 |

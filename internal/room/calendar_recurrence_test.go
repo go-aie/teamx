@@ -143,7 +143,21 @@ func TestCalendarRecurringProjectionPaginationAndSnapshotIdentity(t *testing.T) 
 	}
 }
 func TestCalendarRecurringPublicationKeepsTaskActive(t *testing.T) {
-	s := calendarFixture(t, t.TempDir(), newControlledBackend())
+	// Publication needs the real CalendarActor, Room and Store, but no running
+	// member, input preparation, manager or background calendar scheduler.
+	room := historyRoom(1, "请安排每日提醒")
+	room.IsDirect = true
+	h := newRoomHarness(t, room, nil)
+	s := &service{ctx: h.ctx, store: h.store, room: h.addr, info: ServiceInfo{RoomIdentity: h.id}, isDirect: true, unifiedInputs: true}
+	handle := &calendarHandle{service: s, boot: "publication-fixture"}
+	a := &CalendarActor{h: handle, state: calendar.New(h.id.RoomID, h.id.RoomInstance), inFlight: map[string]bool{}}
+	addr, err := h.rt.Spawn(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handle.addr = addr
+	a.publish()
+	s.calendar = handle
 	due := time.Now().UTC().Add(15 * time.Minute).Truncate(time.Minute)
 	d := calendarDefinition(due)
 	d.Schedule.Frequency = "daily"
@@ -154,7 +168,7 @@ func TestCalendarRecurringPublicationKeepsTaskActive(t *testing.T) {
 	}
 	task := v.(calendar.Result).Task
 	run := calendarRunNow(t, s, *task)
-	bound := calendarRunning(t, s, 1)
+	bound := calendar.Binding{Generation: "publication-fixture", Turn: 1}
 	_, err = s.calendarCurrent().call(t.Context(), true, func(_ context.Context, state *calendar.State) (any, error) {
 		if _, err := state.Claim(run.ID, bound, "generation-A", due.Add(time.Second)); err != nil {
 			return nil, err
@@ -165,6 +179,27 @@ func TestCalendarRecurringPublicationKeepsTaskActive(t *testing.T) {
 		t.Fatal(err)
 	}
 	saved := calendarAwait(t, s, func(state calendar.State) bool { return state.Runs[run.ID].Publication.Status == "published" })
+	published := saved.Runs[run.ID]
+	if !published.Settled || published.Status != "succeeded" || published.Publication.Seq == 0 {
+		t.Fatal("report not settled", published)
+	}
+	stored, err := loadCalendar(s)
+	if err != nil || stored.Runs[run.ID].Publication != published.Publication || stored.Tasks[task.ID].State != "active" {
+		t.Fatal("publication receipt not durable", stored, err)
+	}
+	history, err := s.store.LoadRoom()
+	if err != nil {
+		t.Fatal(err)
+	}
+	matches := 0
+	for _, message := range history.Messages {
+		if message.Seq == published.Publication.Seq && message.Text == "RECURRING_PUBLICATION_OK" && message.Author.Kind == "agent" && message.Author.ID == task.AgentID {
+			matches++
+		}
+	}
+	if matches != 1 {
+		t.Fatal("report missing from Room", published.Publication, history.Messages)
+	}
 	if saved.Tasks[task.ID].State != "active" || !saved.Tasks[task.ID].NextAt.After(due) {
 		t.Fatal("publication terminated recurring task", saved.Tasks[task.ID])
 	}

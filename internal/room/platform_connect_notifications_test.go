@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/go-aie/teamx/internal/agent/dsh"
@@ -62,10 +63,12 @@ func waitConnectDelivery(t *testing.T, m *roomManager, id string) platformOperat
 type platformConnectionFixture func(*testing.T) (*roomManager, *service, MemberState, platformConnectRequest)
 
 func TestPlatformConnectNotificationSubscriptionHandoffAndLateCompletion(t *testing.T) {
+	parallelFixtureTest(t)
 	platformConnectSubscriptionHandoff(t, connectFixture)
 }
 
 func TestDefaultAssistantConnectionPauseAndLateCompletion(t *testing.T) {
+	parallelFixtureTest(t)
 	platformConnectSubscriptionHandoff(t, assistantConnectFixture)
 }
 
@@ -130,6 +133,7 @@ func platformConnectSubscriptionHandoff(t *testing.T, fixture platformConnection
 }
 
 func TestPlatformConnectNotificationStartPolicyIsIndependentOfBusinessInput(t *testing.T) {
+	parallelFixtureTest(t)
 	m, svc, member, req := connectFixture(t)
 	original, _ := connectPending(t, m, svc, req)
 	client, endpoint := toolPipeServer(t, m)
@@ -166,6 +170,7 @@ func TestPlatformConnectNotificationStartPolicyIsIndependentOfBusinessInput(t *t
 }
 
 func TestPlatformConnectNotificationReusedConnectionPublishesSavedResult(t *testing.T) {
+	parallelFixtureTest(t)
 	m, svc, _, req := connectFixture(t)
 	_, session := connectPending(t, m, svc, req)
 	connectSucceedWithNativeProfile(t, m, session)
@@ -189,6 +194,7 @@ func TestPlatformConnectNotificationReusedConnectionPublishesSavedResult(t *test
 }
 
 func TestPlatformConnectNotificationUnsubscribeAcknowledgmentAndIdentity(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, delivered := range []bool{false, true} {
 		t.Run(map[bool]string{false: "before_delivery", true: "after_delivery"}[delivered], func(t *testing.T) {
 			m, svc, member, req := connectFixture(t)
@@ -241,6 +247,7 @@ func TestPlatformConnectNotificationUnsubscribeAcknowledgmentAndIdentity(t *test
 }
 
 func TestPlatformConnectNotificationCrashRecoveryUsesOriginalDelivery(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, boundary := range []string{"outbox", "inbox_body", "handoff_receipt", "consumed"} {
 		t.Run(boundary, func(t *testing.T) {
 			m, svc, _, req := connectFixture(t)
@@ -332,23 +339,27 @@ func TestPlatformConnectNotificationCrashRecoveryUsesOriginalDelivery(t *testing
 }
 
 func TestPlatformConnectNotificationTerminalFailuresAndRestartResult(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, outcome := range []string{"failed", "expired", "cancelled", "service_restart"} {
 		t.Run(outcome, func(t *testing.T) {
 			m, svc, _, req := connectFixture(t)
 			op, session := connectPending(t, m, svc, req)
 			subscribeConnect(t, m, op, "inbox")
-			m.mu.Lock()
-			close(session.done)
-			if outcome == "service_restart" {
-				delete(m.larkAuthSessions, session.SessionID)
-				if err := m.recoverPlatformConnectLocked(); err != nil {
-					t.Fatal(err)
+			err := func() error {
+				m.mu.Lock()
+				defer m.mu.Unlock()
+				close(session.done)
+				if outcome == "service_restart" {
+					delete(m.larkAuthSessions, session.SessionID)
+					return m.recoverPlatformConnectLocked()
 				}
-			} else {
 				session.Status, session.ErrorCode = outcome, "fixture_failure"
 				m.finishPlatformConnectLocked(session)
+				return nil
+			}()
+			if err != nil {
+				t.Fatal(err)
 			}
-			m.mu.Unlock()
 			m.deliverConnectNotifications(context.Background())
 			n := connectNotification(t, m, op.ID)
 			if n.Event == nil || n.Event.EventType != "operation_failed" || n.Receipt == nil {
@@ -363,74 +374,75 @@ func TestPlatformConnectNotificationTerminalFailuresAndRestartResult(t *testing.
 }
 
 func TestPlatformConnectNotificationAutomaticallyContinuesWithoutChatAndDoesNotRetryFailure(t *testing.T) {
+	parallelFixtureTest(t)
 	platformConnectAutomaticContinuation(t, connectFixture)
 }
 
 func TestDefaultAssistantConnectionAutomaticContinuationAndFailure(t *testing.T) {
+	parallelFixtureTest(t)
 	platformConnectAutomaticContinuation(t, assistantConnectFixture)
 }
 
 func platformConnectAutomaticContinuation(t *testing.T, fixture platformConnectionFixture) {
-	t.Helper()
-	m, svc, _, req := fixture(t)
-	op, session := connectPending(t, m, svc, req)
-	b := newControlledBackend()
-	id := op.MemberIdentity
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	member, err := spawnScheduledMember(svc.rt, &MemberAgent{Options: SessionOptions{MemberIdentity: id}, Backend: b, Store: svc.store, Room: svc.room,
-		Inbox: func(ctx context.Context) (InboxStatus, error) { return svc.memberInboxStatus(ctx, id) }}, svc.scheduler)
-	if err != nil {
-		t.Fatal(err)
-	}
-	svc.setTarget(id.MembershipID, member)
-	if _, err := member.Call[MemberStatus](ctx, ControlMember{MemberIdentity: id, Action: "run", State: UnreadChanged{MemberIdentity: id}}); err != nil {
-		t.Fatal(err)
-	}
-	query := connectObservation(req)
-	mode := "inbox"
-	query.Notify = &mode
-	connectHTTP(t, m, "notify", query)
-	connectSucceed(t, m, session)
-	select {
-	case input := <-b.entered:
-		if input.Inbox == nil || input.Inbox.SnapshotSeq != 1 || input.LatestSeq != req.SourceSeq {
-			t.Fatal("result did not arrive as ordinary Inbox input", input)
+	synctest.Test(t, func(t *testing.T) {
+		t.Helper()
+		m, svc, _, req := fixture(t)
+		op, session := connectPending(t, m, svc, req)
+		b := newControlledBackend()
+		id := op.MemberIdentity
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		member, err := spawnScheduledMember(svc.rt, &MemberAgent{Options: SessionOptions{MemberIdentity: id}, Backend: b, Store: svc.store, Room: svc.room,
+			Inbox: func(ctx context.Context) (InboxStatus, error) { return svc.memberInboxStatus(ctx, id) }}, svc.scheduler)
+		if err != nil {
+			t.Fatal(err)
 		}
-	case <-ctx.Done():
-		t.Fatal("no automatic continuation", ctx.Err())
-	}
-	if err := svc.store.initReferenceFollowups(id); err != nil {
-		t.Fatal(err)
-	}
-	page, err := svc.readReferenceInbox(ctx, id, 1, 25, nil)
-	if err != nil || len(page.Entries) != 1 || page.Entries[0].TaskEvent.OperationID != op.ID {
-		t.Fatal(err, page)
-	}
-	// Consume normally, then fail the Agent turn. Delivery and failure recovery
-	// remain distinct: no replacement event or automatic retry is permitted.
-	addr := svc.inboxes[id.MembershipID]
-	if _, err := addr.Call[InboxStatus](ctx, ConfirmInboxBatch{MemberIdentity: id, TurnNumber: 1, Receipt: page.Batch.Receipt}); err != nil {
-		t.Fatal(err)
-	}
-	b.finish <- errors.New("fixture continuation failure")
-	waitMember(t, ctx, member, id, func(s MemberStatus) bool {
-		return !s.Active && s.Error != "" && s.Inbox != nil && s.Inbox.ConsumedThrough == 1
+		svc.setTarget(id.MembershipID, member)
+		if _, err := member.Call[MemberStatus](ctx, ControlMember{MemberIdentity: id, Action: "run", State: UnreadChanged{MemberIdentity: id}}); err != nil {
+			t.Fatal(err)
+		}
+		query := connectObservation(req)
+		mode := "inbox"
+		query.Notify = &mode
+		connectHTTP(t, m, "notify", query)
+		connectSucceed(t, m, session)
+		select {
+		case input := <-b.entered:
+			if input.Inbox == nil || input.Inbox.SnapshotSeq != 1 || input.LatestSeq != req.SourceSeq {
+				t.Fatal("result did not arrive as ordinary Inbox input", input)
+			}
+		case <-ctx.Done():
+			t.Fatal("no automatic continuation", ctx.Err())
+		}
+		// Consume normally, then fail the Agent turn. Delivery and failure recovery
+		// remain distinct: no replacement event or automatic retry is permitted.
+		// Reuse the warmup helper's checkpoint admission handling: a busy rejection
+		// can overlap maintenance even after the backend has entered its turn.
+		page := consumeConnectTestInbox(t, svc, id, 1)
+		if len(page.Entries) != 1 || page.Entries[0].TaskEvent.OperationID != op.ID {
+			t.Fatal(page)
+		}
+		b.finish <- errors.New("fixture continuation failure")
+		waitMember(t, ctx, member, id, func(s MemberStatus) bool {
+			return !s.Active && s.Error != "" && s.Inbox != nil && s.Inbox.ConsumedThrough == 1
+		})
+		m.deliverConnectNotifications(ctx)
+		query.Notify = nil
+		observed := connectHTTP(t, m, "status", query)
+		if observed.Status != "completed" || observed.Continuation.BlockedReason != "member_failed" || observed.Continuation.State != "consumed" {
+			t.Fatal(observed)
+		}
+		time.Sleep(time.Second) // Covers the old 150ms window and multiple 250ms Inbox polls.
+		synctest.Wait()         // Process maintenance, delivery and turn admission before asserting absence.
+		select {
+		case <-b.entered:
+			t.Fatal("consumed event retried failed turn")
+		default:
+		}
+		if state, err := svc.store.LoadRoom(); err != nil || state.LatestSeq != req.SourceSeq {
+			t.Fatal("result created a chat message", err, state.LatestSeq)
+		}
 	})
-	m.deliverConnectNotifications(ctx)
-	query.Notify = nil
-	observed := connectHTTP(t, m, "status", query)
-	if observed.Status != "completed" || observed.Continuation.BlockedReason != "member_failed" || observed.Continuation.State != "consumed" {
-		t.Fatal(observed)
-	}
-	select {
-	case <-b.entered:
-		t.Fatal("consumed event retried failed turn")
-	case <-time.After(150 * time.Millisecond):
-	}
-	if state, err := svc.store.LoadRoom(); err != nil || state.LatestSeq != req.SourceSeq {
-		t.Fatal("result created a chat message", err, state.LatestSeq)
-	}
 }
 
 func consumeConnectTestInbox(t *testing.T, svc *service, id MemberIdentity, turn uint64) referenceInboxPage {
@@ -477,6 +489,7 @@ func consumeConnectTestInbox(t *testing.T, svc *service, id MemberIdentity, turn
 }
 
 func TestPlatformConnectNotificationCapacityRetainsPendingAndRetriesAfterReclamation(t *testing.T) {
+	parallelFixtureTest(t)
 	m, svc, _, req := connectFixture(t)
 	op, session := connectPending(t, m, svc, req)
 	id := op.MemberIdentity
@@ -522,10 +535,12 @@ func TestPlatformConnectNotificationCapacityRetainsPendingAndRetriesAfterReclama
 }
 
 func TestPlatformConnectNotificationCannotBypassAdmissionOrMemberRemoval(t *testing.T) {
+	parallelFixtureTest(t)
 	platformConnectAdmission(t, connectFixture, true)
 }
 
 func TestDefaultAssistantConnectionCannotBypassAdmission(t *testing.T) {
+	parallelFixtureTest(t)
 	platformConnectAdmission(t, assistantConnectFixture, false)
 }
 
@@ -586,72 +601,77 @@ func platformConnectAdmission(t *testing.T, fixture platformConnectionFixture, r
 }
 
 func TestPlatformConnectNotificationContinuesAcrossSessionRotation(t *testing.T) {
-	m, svc, roster, req := connectFixture(t)
-	op, session := connectPending(t, m, svc, req)
-	id := op.MemberIdentity
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	entered, finish := make(chan struct{}, 2), make(chan struct{}, 2)
-	backend := dshBackend{store: svc.store, open: func(context.Context, dsh.Options) (dshComponent, error) {
-		return &adapterComponent{run: func(ctx context.Context, _ string) (dsh.TurnResult, error) {
-			entered <- struct{}{}
-			select {
-			case <-finish:
-				return dsh.TurnResult{StopReason: "end_turn"}, nil
-			case <-ctx.Done():
-				return dsh.TurnResult{}, ctx.Err()
-			}
-		}}, nil
-	}}
-	svc.dshProfiles = map[string]dshProfile{roster.Runner.Profile: {}}
-	member, err := spawnScheduledMember(svc.rt, &MemberAgent{Options: adapterOptions(svc.store, id), Backend: backend, Store: svc.store, Room: svc.room,
-		SessionMaxTurns: 1, RequestRotation: svc.requestMemberRotation,
-		Inbox: func(ctx context.Context) (InboxStatus, error) { return svc.memberInboxStatus(ctx, id) }}, svc.scheduler)
-	if err != nil {
-		t.Fatal(err)
-	}
-	svc.setTarget(id.MembershipID, member)
-	if _, err := svc.receiveTaskEvent(ctx, id, taskEventFixture("warmup")); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := member.Call[MemberStatus](ctx, ControlMember{MemberIdentity: id, Action: "run", State: UnreadChanged{MemberIdentity: id}}); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case <-entered:
-	case <-ctx.Done():
-		t.Fatal("warmup turn did not start", ctx.Err())
-	}
-	consumeConnectTestInbox(t, svc, id, 1)
-	finish <- struct{}{}
-	first := waitMember(t, ctx, member, id, func(s MemberStatus) bool { return !s.Active && s.Agent.TurnNumber == 1 })
-	subscribeConnect(t, m, op, "inbox")
-	m.mu.Lock()
-	m.startConnectNotificationsLocked()
-	m.mu.Unlock()
-	connectSucceed(t, m, session)
-	select {
-	case <-entered:
-	case <-ctx.Done():
-		t.Fatal("operation result did not continue after rotation", ctx.Err())
-	}
-	page := consumeConnectTestInbox(t, svc, id, 2)
-	if len(page.Entries) != 1 || page.Entries[0].TaskEvent.OperationID != op.ID {
-		t.Fatal("rotation replayed old input", page)
-	}
-	query := connectObservation(req)
-	query.ResultVersion = 1
-	if handled := connectHTTP(t, m, "acknowledge", query); handled.Continuation.State != "handled" {
-		t.Fatal(handled)
-	}
-	finish <- struct{}{}
-	second := waitMember(t, ctx, member, id, func(s MemberStatus) bool { return !s.Active && s.Agent.TurnNumber == 2 })
-	if second.SessionGeneration == first.SessionGeneration || second.SessionStartUsed != 1 {
-		t.Fatalf("result did not cross a Session boundary: first=%s second=%s baseline=%d turn=%d", first.SessionGeneration, second.SessionGeneration, second.SessionStartUsed, second.Agent.TurnNumber)
-	}
-	select {
-	case <-entered:
-		t.Fatal("handled result was offered again after rotation")
-	case <-time.After(150 * time.Millisecond):
-	}
+	parallelFixtureTest(t)
+	synctest.Test(t, func(t *testing.T) {
+		m, svc, roster, req := connectFixture(t)
+		op, session := connectPending(t, m, svc, req)
+		id := op.MemberIdentity
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		entered, finish := make(chan struct{}, 2), make(chan struct{}, 2)
+		backend := dshBackend{store: svc.store, open: func(context.Context, dsh.Options) (dshComponent, error) {
+			return &adapterComponent{run: func(ctx context.Context, _ string) (dsh.TurnResult, error) {
+				entered <- struct{}{}
+				select {
+				case <-finish:
+					return dsh.TurnResult{StopReason: "end_turn"}, nil
+				case <-ctx.Done():
+					return dsh.TurnResult{}, ctx.Err()
+				}
+			}}, nil
+		}}
+		svc.dshProfiles = map[string]dshProfile{roster.Runner.Profile: {}}
+		member, err := spawnScheduledMember(svc.rt, &MemberAgent{Options: adapterOptions(svc.store, id), Backend: backend, Store: svc.store, Room: svc.room,
+			SessionMaxTurns: 1, RequestRotation: svc.requestMemberRotation,
+			Inbox: func(ctx context.Context) (InboxStatus, error) { return svc.memberInboxStatus(ctx, id) }}, svc.scheduler)
+		if err != nil {
+			t.Fatal(err)
+		}
+		svc.setTarget(id.MembershipID, member)
+		if _, err := svc.receiveTaskEvent(ctx, id, taskEventFixture("warmup")); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := member.Call[MemberStatus](ctx, ControlMember{MemberIdentity: id, Action: "run", State: UnreadChanged{MemberIdentity: id}}); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-entered:
+		case <-ctx.Done():
+			t.Fatal("warmup turn did not start", ctx.Err())
+		}
+		consumeConnectTestInbox(t, svc, id, 1)
+		finish <- struct{}{}
+		first := waitMember(t, ctx, member, id, func(s MemberStatus) bool { return !s.Active && s.Agent.TurnNumber == 1 })
+		subscribeConnect(t, m, op, "inbox")
+		m.mu.Lock()
+		m.startConnectNotificationsLocked()
+		m.mu.Unlock()
+		connectSucceed(t, m, session)
+		select {
+		case <-entered:
+		case <-ctx.Done():
+			t.Fatal("operation result did not continue after rotation", ctx.Err())
+		}
+		page := consumeConnectTestInbox(t, svc, id, 2)
+		if len(page.Entries) != 1 || page.Entries[0].TaskEvent.OperationID != op.ID {
+			t.Fatal("rotation replayed old input", page)
+		}
+		query := connectObservation(req)
+		query.ResultVersion = 1
+		if handled := connectHTTP(t, m, "acknowledge", query); handled.Continuation.State != "handled" {
+			t.Fatal(handled)
+		}
+		finish <- struct{}{}
+		second := waitMember(t, ctx, member, id, func(s MemberStatus) bool { return !s.Active && s.Agent.TurnNumber == 2 })
+		if second.SessionGeneration == first.SessionGeneration || second.SessionStartUsed != 1 {
+			t.Fatalf("result did not cross a Session boundary: first=%s second=%s baseline=%d turn=%d", first.SessionGeneration, second.SessionGeneration, second.SessionStartUsed, second.Agent.TurnNumber)
+		}
+		time.Sleep(time.Second) // Covers the old 150ms window and multiple 250ms Inbox polls.
+		synctest.Wait()         // Drain all runnable work after the handled turn has settled.
+		select {
+		case <-entered:
+			t.Fatal("handled result was offered again after rotation")
+		default:
+		}
+	})
 }

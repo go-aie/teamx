@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -19,9 +20,14 @@ import (
 
 func onlineModelManager(t *testing.T) (*roomManager, *modelController, startupConfig) {
 	t.Helper()
+	return onlineModelManagerWithEntries(t, "A", "B", "C")
+}
+
+func onlineModelManagerWithEntries(t *testing.T, entries ...string) (*roomManager, *modelController, startupConfig) {
+	t.Helper()
 	service, settings, initial := modelTestService(t)
 	service.launcher.BinaryPath = os.Args[0]
-	for _, id := range []string{"A", "B", "C"} {
+	for _, id := range entries {
 		entry := modelTestEntry(id)
 		entry.CredentialRef = ""
 		if _, err := service.save(context.Background(), modelSave{Entry: entry, APIKey: "key-" + id, ExpectedVersion: service.snapshot().Version}); err != nil {
@@ -106,6 +112,7 @@ func modelMember(t *testing.T, m *roomManager, room roomSummary) MemberIdentity 
 }
 
 func TestModelOperationOrderSurvivesPollingAndRestart(t *testing.T) {
+	parallelFixtureTest(t)
 	m, c, config := onlineModelManager(t)
 	base := time.Now().UTC().Truncate(time.Second)
 	for _, op := range []modelChangeOperation{
@@ -150,6 +157,7 @@ func TestModelOperationOrderSurvivesPollingAndRestart(t *testing.T) {
 }
 
 func TestOnlineModelsDefaultExplicitClosedAndRestart(t *testing.T) {
+	parallelFixtureTest(t)
 	m, c, config := onlineModelManager(t)
 	a := createDirectConversation(t, m, directSelection("follower"))
 	b := createDirectConversation(t, m, directSelection("fixed"))
@@ -211,10 +219,13 @@ func TestOnlineModelsDefaultExplicitClosedAndRestart(t *testing.T) {
 	}
 }
 func TestOnlineModelsWaitGatePauseAndIndependentPublication(t *testing.T) {
+	parallelFixtureTest(t)
 	m, c, _ := onlineModelManager(t)
 	room := createDirectConversation(t, m, directSelection("active"))
 	id := modelMember(t, m, room)
 	entered, finish := make(chan struct{}), make(chan struct{})
+	finishTurn := sync.OnceFunc(func() { close(finish) })
+	defer finishTurn()
 	var closed, platform atomic.Int32
 	m.factory = controlledActivationFactory(func(_ MemberIdentity, ctx context.Context) error {
 		select {
@@ -256,7 +267,7 @@ func TestOnlineModelsWaitGatePauseAndIndependentPublication(t *testing.T) {
 	entry, _ := c.service.snapshot().resolve(modelSelection{Mode: "explicit", EntryID: "C"})
 	entry.Name = "renamed-C"
 	requireModelComplete(t, modelChange(t, c, modelChangeInput{Kind: "save", Entry: entry}))
-	close(finish)
+	finishTurn()
 	deadline = time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		m.mu.Lock()
@@ -281,6 +292,7 @@ func TestOnlineModelsWaitGatePauseAndIndependentPublication(t *testing.T) {
 	}
 }
 func TestOnlineModelsValidationConflictCancellationAndPrivacy(t *testing.T) {
+	parallelFixtureTest(t)
 	m, c, config := onlineModelManager(t)
 	_ = createDirectConversation(t, m, directSelection("still-working"))
 	var probes atomic.Int32
@@ -310,16 +322,21 @@ func TestOnlineModelsValidationConflictCancellationAndPrivacy(t *testing.T) {
 		t.Fatal("external config overwritten")
 	}
 	m.mu.Lock()
+	var gates []string
 	for _, op := range c.operations {
 		for _, member := range op.Members {
-			if m.config.models.gate(member.MemberIdentity) != "" {
-				t.Fatal("definite failed commit left gate")
-			}
+			gates = append(gates, m.config.models.gate(member.MemberIdentity))
 		}
 	}
 	m.mu.Unlock()
+	for _, gate := range gates {
+		if gate != "" {
+			t.Fatal("definite failed commit left gate")
+		}
+	}
 }
 func TestOnlineModelsFailureIsolationRetryAndNoDuplicateRotation(t *testing.T) {
+	parallelFixtureTest(t)
 	m, c, _ := onlineModelManager(t)
 	a := createDirectConversation(t, m, directSelection("good"))
 	b := createDirectConversation(t, m, directSelection("bad"))
@@ -402,6 +419,7 @@ func TestWorkspaceSnapshotComparisonExcludesOnlyModelReference(t *testing.T) {
 }
 
 func TestOnlineModelsRestartPendingTargetAndCommitUnknown(t *testing.T) {
+	parallelFixtureTest(t)
 	m, c, config := onlineModelManager(t)
 	room := createDirectConversation(t, m, directSelection("pending"))
 	id := modelMember(t, m, room)
@@ -463,6 +481,7 @@ func TestOnlineModelsRestartPendingTargetAndCommitUnknown(t *testing.T) {
 }
 
 func TestOnlineModelsUnknownConfigKeepsOldSessionUntilReconciled(t *testing.T) {
+	parallelFixtureTest(t)
 	m, c, _ := onlineModelManager(t)
 	room := createDirectConversation(t, m, directSelection("unknown"))
 	id := modelMember(t, m, room)
@@ -511,8 +530,11 @@ func TestOnlineModelsUnknownConfigKeepsOldSessionUntilReconciled(t *testing.T) {
 }
 
 func TestOnlineModelsCreationDuringValidationUsesPublishedDefault(t *testing.T) {
+	parallelFixtureTest(t)
 	m, c, _ := onlineModelManager(t)
 	entered, release := make(chan struct{}), make(chan struct{})
+	finishProbe := sync.OnceFunc(func() { close(release) })
+	defer finishProbe()
 	c.service.probe = func(ctx context.Context, o dsh.Options) (dsh.ProbeResult, error) {
 		close(entered)
 		select {
@@ -526,10 +548,14 @@ func TestOnlineModelsCreationDuringValidationUsesPublishedDefault(t *testing.T) 
 	if _, err := c.submit(input, humanOperator()); err != nil {
 		t.Fatal(err)
 	}
-	<-entered
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("validation probe did not start")
+	}
 	room := createDirectConversation(t, m, directSelection("created-during-probe"))
 	id := modelMember(t, m, room)
-	close(release)
+	finishProbe()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		m.mu.Lock()
@@ -566,6 +592,7 @@ func (m *roomManager) activationConfigUnlockedForModelTest(id RoomIdentity, save
 }
 
 func TestOnlineModelsSameRoomPreservesIndependentExecutionTargets(t *testing.T) {
+	parallelFixtureTest(t)
 	m, c, _ := onlineModelManager(t)
 	team := testTeamDefinition(t)
 	team.Runtime = m.defaultRuntime
@@ -601,8 +628,11 @@ func TestOnlineModelsSameRoomPreservesIndependentExecutionTargets(t *testing.T) 
 }
 
 func TestOnlineModelsCancelBeforePublicationKeepsOriginalConfig(t *testing.T) {
+	parallelFixtureTest(t)
 	m, c, _ := onlineModelManager(t)
 	entered, release := make(chan struct{}), make(chan struct{})
+	finishProbe := sync.OnceFunc(func() { close(release) })
+	defer finishProbe()
 	var probes atomic.Int32
 	c.service.probe = func(ctx context.Context, o dsh.Options) (dsh.ProbeResult, error) {
 		probes.Add(1)
@@ -619,12 +649,16 @@ func TestOnlineModelsCancelBeforePublicationKeepsOriginalConfig(t *testing.T) {
 	if _, err := c.submit(input, humanOperator()); err != nil {
 		t.Fatal(err)
 	}
-	<-entered
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("validation probe did not start")
+	}
 	w := managerHTTP(m, "/v1/models/operation", map[string]any{"id": input.RequestID, "action": "cancel", "service_epoch": m.epoch, "caller": humanCaller})
 	if w.Code != http.StatusOK {
 		t.Fatal(w.Body.String())
 	}
-	close(release)
+	finishProbe()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		m.mu.Lock()

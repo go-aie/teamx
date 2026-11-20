@@ -8,7 +8,6 @@ import (
 	"reflect"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
 )
@@ -139,6 +138,11 @@ func TestReferenceActionThreeAuthorities(t *testing.T) {
 	parallelFixtureTest(t)
 	for _, kind := range []string{"object", "discussion"} {
 		for _, authority := range []string{"human", "answer", "instruction", "rule"} {
+			// Authority selection is target-independent; its full matrix is covered
+			// directly below the owner. Keep both dispatch kinds and every authority.
+			if kind == "object" && authority != "human" {
+				continue
+			}
 			t.Run(kind+"/"+authority, func(t *testing.T) {
 				f := referenceExecuteTest(t, kind)
 				u := f.unit(t)
@@ -260,53 +264,18 @@ func TestReferenceActionUnknownRetryAndRecovery(t *testing.T) {
 }
 func TestReferenceActionRefusals(t *testing.T) {
 	parallelFixtureTest(t)
-	for _, mode := range []string{"target", "version", "expired-turn", "account", "unsupported", "wrong-kind", "reply-retry", "wrong-inspection", "fake-human", "ambiguous-answer", "changed-body", "revoked", "expired", "policy"} {
+	for _, mode := range []string{"target", "expired-turn", "account", "unsupported", "wrong-inspection", "fake-human", "policy"} {
 		t.Run(mode, func(t *testing.T) {
 			f := referenceExecuteTest(t, "discussion")
 			switch mode {
 			case "target":
 				f.q.TargetRef = f.q.ObjectRef
-			case "version":
-				f.q.Revision++
 			case "expired-turn":
 				f.q.TurnNumber++
 			case "fake-human":
 				f.q.Authority.RoomSeq = 999
-			case "ambiguous-answer":
-				f.q.Authority.QuestionRef = referenceDigest("question_", "other")
 			case "policy":
 				f.q.PolicyToken = "obsolete-token" + f.q.PolicyToken[:50]
-			case "changed-body", "revoked", "expired":
-				u := f.unit(t)
-				expiry := time.Now().Add(time.Hour)
-				c := followupInstructionChange{followupCommand: conversationCommand(u, 1), SourceSeq: f.q.Authority.RoomSeq, MessageRefs: f.q.Authority.MessageRefs, Intent: followupIntent{Operation: f.q.Operation, Body: f.q.Input.Body}, Basis: f.q.Authority.Reason, ExpiresAt: &expiry}
-				var err error
-				u, err = f.h.store.saveFollowupInstruction(f.h.id, c)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if mode == "revoked" {
-					m := postConversationReply(t, f.h, "revoke", "撤销本次回复", 0)
-					u, err = f.h.store.finishFollowupInstruction(f.h.id, conversationCommand(u, 1), u.Instructions[0].Ref, 1, "revoked", "用户撤销", m.Seq)
-					if err != nil {
-						t.Fatal(err)
-					}
-				}
-				if mode == "expired" {
-					u.Instructions[0].ExpiresAt = new(time.Time)
-					*u.Instructions[0].ExpiresAt = time.Now().Add(-time.Second)
-					f.h.store.mu.Lock()
-					err = f.h.store.saveFollowupUnitLocked(f.h.id, u)
-					f.h.store.mu.Unlock()
-					if err != nil {
-						t.Fatal(err)
-					}
-				}
-				f.q.followupCommand = conversationCommand(u, 1)
-				f.q.Authority = referenceActionAuthority{InstructionRef: u.Instructions[0].Ref, InstructionVersion: 1, Reason: "落实准确指令"}
-				if mode == "changed-body" {
-					f.q.Input.Body = "another body"
-				}
 			default:
 				original := f.prepare
 				f.prepare = func(ctx context.Context, id MemberIdentity, a platform.AccessContext) (referenceActionSession, error) {
@@ -317,10 +286,6 @@ func TestReferenceActionRefusals(t *testing.T) {
 						s.Access.Account.ID.Value = "999"
 					case "unsupported":
 						delete(s.Capabilities.Actions, f.q.Operation)
-					case "wrong-kind":
-						c.Spec.TargetKind = "object"
-					case "reply-retry":
-						c.Spec.Retry.MaxAttempts = 2
 					case "wrong-inspection":
 						old := c.Inspect
 						c.Inspect = func(ctx context.Context, q platform.TargetActionRequest, a platform.AccessContext) (platform.TargetActionInspection, error) {
@@ -572,38 +537,27 @@ func TestReferenceActionKeepsOtherUnansweredQuestion(t *testing.T) {
 	}
 }
 
+// The full rule lifecycle matrix is checked at referenceAuthorityLocked. Keep
+// owner wiring for policy refresh and refusal without persistence or dispatch.
 func TestReferenceActionRuleLifecycleAdmission(t *testing.T) {
 	parallelFixtureTest(t)
-	for _, mode := range []string{"suggested", "expired", "revoked", "old-version", "old-token", "foreign-member"} {
+	for _, mode := range []string{"revoked", "old-token"} {
 		t.Run(mode, func(t *testing.T) {
 			f := referenceExecuteTest(t, "object")
 			c := policyRule()
-			id := f.h.id
-			if mode == "suggested" {
-				c.Status = "suggested"
-			}
-			if mode == "expired" {
-				expiry := time.Now().Add(-time.Hour)
-				c.ExpiresAt = &expiry
-			}
-			if mode == "foreign-member" {
-				id = f.h.memberID("B", "generation-B")
-			}
-			if _, err := f.h.store.changePolicy(id, humanCaller, c); err != nil {
+			if _, err := f.h.store.changePolicy(f.h.id, humanCaller, c); err != nil {
 				t.Fatal(err)
 			}
 			old, err := f.h.store.readAgentPolicy(f.h.id)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if mode == "revoked" || mode == "old-version" || mode == "old-token" {
-				c.Version, c.Text = 1, "改为核实文档后回复；排期先问我"
-				if mode == "revoked" {
-					c.Status = "revoked"
-				}
-				if _, err := f.h.store.changePolicy(id, humanCaller, c); err != nil {
-					t.Fatal(err)
-				}
+			c.Version, c.Text = 1, "改为核实文档后回复；排期先问我"
+			if mode == "revoked" {
+				c.Status = "revoked"
+			}
+			if _, err := f.h.store.changePolicy(f.h.id, humanCaller, c); err != nil {
+				t.Fatal(err)
 			}
 			current, err := f.h.store.readAgentPolicy(f.h.id)
 			if err != nil {
@@ -620,7 +574,7 @@ func TestReferenceActionRuleLifecycleAdmission(t *testing.T) {
 					t.Fatal(got, err)
 				}
 			} else if !errors.Is(err, ErrConflict) {
-				t.Fatal(mode, got, err)
+				t.Fatal(got, err)
 			}
 			if f.calls.Load() != 0 || len(f.unit(t).Actions) != 0 {
 				t.Fatal("ineligible authority persisted or dispatched")

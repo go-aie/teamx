@@ -41,6 +41,9 @@ func larkAuthorizationFixture(t *testing.T) (*roomManager, platformConnectReques
 func larkAuthorizationWithFixture(t *testing.T, fixture platformConnectionFixture) (*roomManager, platformConnectRequest, managedPlatform, string) {
 	t.Helper()
 	m, _, _, req := fixture(t)
+	// The executable is private, while its native profile name is intentionally
+	// shared inside this manager. Keep its account queues private to the fixture.
+	m.larkClients = lark.NewClientFactory(0, 0, 0)
 	p, dir := roomAuthProfile(t)
 	c := platformTestSave(t, m, managedPlatformRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("d", 32), Name: "工作飞书", Provider: "lark", URL: "https://open.feishu.cn", CLIProfile: &p})
 	c, err := m.verifyPlatform(context.Background(), managedPlatformRequest{ID: c.ID, Version: c.Version})
@@ -52,6 +55,7 @@ func larkAuthorizationWithFixture(t *testing.T, fixture platformConnectionFixtur
 }
 
 func TestLarkAuthorizationKeepsExactSharedConnectionsAndReceipts(t *testing.T) {
+	parallelFixtureTest(t)
 	m, req, c, dir := larkAuthorizationFixture(t)
 	second := platformTestSave(t, m, managedPlatformRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("e", 32), Name: "共享飞书", Provider: "lark", URL: c.URL, CLIProfile: c.CLIProfile})
 	second, err := m.verifyPlatform(context.Background(), managedPlatformRequest{ID: second.ID, Version: second.Version})
@@ -124,6 +128,7 @@ func TestLarkAuthorizationKeepsExactSharedConnectionsAndReceipts(t *testing.T) {
 }
 
 func TestLarkAuthorizationCLIUsesOriginalMemberWithoutToolBinding(t *testing.T) {
+	parallelFixtureTest(t)
 	m, req, c, dir := larkAuthorizationWithFixture(t, assistantConnectFixture)
 	svc, _ := m.runtimeServiceLocked(req.RoomIdentity)
 	server := httptest.NewServer(m)
@@ -153,6 +158,7 @@ func TestLarkAuthorizationCLIUsesOriginalMemberWithoutToolBinding(t *testing.T) 
 }
 
 func TestLarkAuthorizationRejectsAccountSwitchAndCancellation(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, mode := range []string{"switch", "cancel"} {
 		t.Run(mode, func(t *testing.T) {
 			m, req, c, dir := larkAuthorizationFixture(t)
@@ -190,6 +196,7 @@ func TestLarkAuthorizationRejectsAccountSwitchAndCancellation(t *testing.T) {
 }
 
 func TestLarkAuthorizationRejectsRevisionChangeDuringOAuth(t *testing.T) {
+	parallelFixtureTest(t)
 	m, req, c, dir := larkAuthorizationFixture(t)
 	connectHTTP(t, m, "authorize", req)
 	waitConnectionObservation(t, m, req, func(op platformConnectOperation) bool { return op.Interaction.URL != "" })
@@ -223,6 +230,7 @@ func TestLarkAuthorizationRejectsRevisionChangeDuringOAuth(t *testing.T) {
 }
 
 func TestLarkAuthorizationInterruptedBeforeInvalidationIsNeverInferredComplete(t *testing.T) {
+	parallelFixtureTest(t)
 	m, req, c, _ := larkAuthorizationFixture(t)
 	file, _ := m.platforms.Load()
 	svc, _ := m.runtimeServiceLocked(req.RoomIdentity)
@@ -252,7 +260,14 @@ func TestLarkAuthorizationInterruptedBeforeInvalidationIsNeverInferredComplete(t
 func connectSucceedWithNativeProfile(t *testing.T, m *roomManager, s *larkAuthSession) {
 	t.Helper()
 	p, _ := roomAuthProfile(t)
-	client, err := lark.New(p)
+	m.mu.Lock()
+	if m.larkClients == nil {
+		// Synthetic profiles can share a name, but fixtures must not share queues.
+		m.larkClients = lark.NewClientFactory(0, 0, 0)
+	}
+	clients := m.larkClients
+	m.mu.Unlock()
+	client, err := clients.New(p)
 	if err != nil {
 		t.Fatal(err)
 	}

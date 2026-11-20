@@ -142,14 +142,7 @@ func (c *Client) Image(ctx context.Context, account platform.AccountIdentity, so
 		if err := c.api(ctx, "/open-apis/im/v1/messages/"+id, struct{}{}, &wire); err != nil {
 			return err
 		}
-		if len(wire.Items) != 1 || !wire.Items[0].valid() || wire.Items[0].ID != id || wire.Items[0].ChatID != source.Reference.ChatID.Value {
-			return attachment.ErrUnavailable
-		}
-		found := false
-		for _, imageKey := range wire.Items[0].ImageKeys() {
-			found = found || imageKey == key
-		}
-		if !found {
+		if !validImageMessage(wire.Items, id, source.Reference.ChatID.Value, key) {
 			return attachment.ErrUnavailable
 		}
 		dir, err := os.MkdirTemp("", "teamx-lark-image-")
@@ -240,4 +233,17 @@ func (c *Client) Image(ctx context.Context, account platform.AccountIdentity, so
 		return nil, "", errors.Join(attachment.ErrUnavailable, err)
 	}
 	return data, mime, nil
+}
+
+// A saved reference alone does not prove the resource still belongs to a message.
+func validImageMessage(items []Message, id, chatID, key string) bool {
+	if len(items) != 1 || !items[0].valid() || items[0].ID != id || items[0].ChatID != chatID {
+		return false
+	}
+	for _, imageKey := range items[0].ImageKeys() {
+		if imageKey == key {
+			return true
+		}
+	}
+	return false
 }

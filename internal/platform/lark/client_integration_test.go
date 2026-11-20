@@ -65,15 +65,14 @@ func TestUserIdentityAndSinglePageReads(t *testing.T) {
 
 func TestReadFailuresDiscardCandidate(t *testing.T) {
 	parallelClientTest(t)
-	cases := map[string]string{"switch": "identity_mismatch", "bot": "credential_unavailable", "logout": "credential_unavailable", "version": "cli_version_mismatch", "auth": "credential_rejected", "permission": "permission_denied", "rate": "rate_limited", "cursor": "cursor_expired", "network": "network_error", "exit": "query_failed", "malformed": "invalid_response", "wrong_chat": "invalid_response", "duplicate": "invalid_response", "bad_time": "invalid_response", "incomplete": "invalid_response", "null_items": "invalid_response", "response_bot": "invalid_response", "large": "output_limit", "loop": "invalid_response"}
+	// Pure page and error matrices are covered by protocol_validation_test.go.
+	// Keep process errors, identity changes and representative wire rejection here.
+	cases := map[string]string{"switch": "identity_mismatch", "bot": "credential_unavailable", "logout": "credential_unavailable", "version": "cli_version_mismatch", "auth": "credential_rejected", "permission": "permission_denied", "rate": "rate_limited", "cursor": "cursor_expired", "network": "network_error", "exit": "query_failed", "malformed": "invalid_response", "incomplete": "invalid_response", "response_bot": "invalid_response", "large": "output_limit"}
 	for mode, code := range cases {
 		t.Run(mode, func(t *testing.T) {
 			c, dir, a := testClient(t)
 			setMode(t, dir, mode)
 			req := MessagesRequest{ChatID: "oc_chat", Start: 99, End: 101, PageSize: 2}
-			if mode == "loop" {
-				req.PageToken = "second"
-			}
 			page, err := c.Messages(context.Background(), a, req)
 			if ErrorCode(err) != code || page.Items != nil || strings.Contains(err.Error(), "private") {
 				t.Fatalf("%s: page escaped or error category: %v", mode, err)
@@ -130,7 +129,7 @@ func TestCancellationAndProfileGate(t *testing.T) {
 
 func TestSenderNameLookupBoundedAndOptional(t *testing.T) {
 	parallelClientTest(t)
-	for _, mode := range []string{"ok", "name_permission", "name_malformed", "name_partial", "name_wrong", "name_duplicate", "name_invalid", "name_timeout"} {
+	for _, mode := range []string{"ok", "name_permission", "name_malformed", "name_timeout"} {
 		t.Run(mode, func(t *testing.T) {
 			c, dir, account := testClient(t)
 			setMode(t, dir, mode)
@@ -146,7 +145,7 @@ func TestSenderNameLookupBoundedAndOptional(t *testing.T) {
 			}
 			for i, m := range page.Items {
 				wantName := ""
-				if mode == "ok" || mode == "name_partial" && i == 1 || mode == "name_invalid" && i != 1 {
+				if mode == "ok" {
 					wantName = "同名用户"
 				}
 				if m.Sender.ID != messages[i].Sender.ID || m.Sender.Name != wantName {

@@ -54,6 +54,7 @@ func applyCurrentMember(t *testing.T, m *roomManager, req platformMemberRequest)
 }
 
 func TestPlatformMemberCurrentCLIUsesOneBusinessRequest(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, provider := range []string{"lark", "gitlab"} {
 		t.Run(provider, func(t *testing.T) {
 			m, svc, req := memberNotificationToggleFixture(t, provider)
@@ -154,6 +155,7 @@ func TestPlatformMemberCurrentCLIRejectsMixedModes(t *testing.T) {
 }
 
 func TestPlatformMemberCurrentHTTPRejectsExpandedShapes(t *testing.T) {
+	parallelFixtureTest(t)
 	m, svc, req := memberNotificationToggleFixture(t, "lark")
 	req = currentMemberRequest(req)
 	read := req
@@ -222,6 +224,7 @@ func TestPlatformMemberCurrentHTTPRejectsExpandedShapes(t *testing.T) {
 }
 
 func TestPlatformMemberCurrentReadAndHistoricalReceipt(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, provider := range []string{"lark", "gitlab"} {
 		t.Run(provider, func(t *testing.T) {
 			m, svc, full := memberNotificationToggleFixture(t, provider)
@@ -290,6 +293,7 @@ func TestPlatformMemberCurrentReadAndHistoricalReceipt(t *testing.T) {
 }
 
 func TestPlatformMemberCurrentSourceFences(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, complex := range []bool{false, true} {
 		m, svc, full := memberNotificationToggleFixture(t, "lark")
 		if complex {
@@ -318,6 +322,7 @@ func TestPlatformMemberCurrentSourceFences(t *testing.T) {
 }
 
 func TestPlatformMemberCurrentAdoptsSavedScopeBeforeAdmission(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, provider := range []string{"lark", "gitlab"} {
 		t.Run(provider, func(t *testing.T) {
 			m, _, full := memberNotificationToggleFixture(t, provider)
@@ -385,6 +390,7 @@ func (c *reservedMemberContext) Err() error {
 }
 
 func TestPlatformMemberCurrentConcurrentReservationAndFrozenAdmission(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, provider := range []string{"lark", "gitlab"} {
 		for _, change := range []string{"none", "config", "account", "member", "subscription"} {
 			t.Run(provider+"/"+change, func(t *testing.T) {
@@ -542,6 +548,7 @@ func TestPlatformMemberCurrentConcurrentReservationAndFrozenAdmission(t *testing
 }
 
 func TestPlatformMemberCurrentStorageFailuresAndRestart(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, provider := range []string{"lark", "gitlab"} {
 		for _, fail := range []string{"reserve", "reserve_ambiguous", "complete", "corrupt"} {
 			t.Run(provider+"/"+fail, func(t *testing.T) {

@@ -63,6 +63,11 @@ func newLarkHarness(t *testing.T) *larkHarness {
 func newLarkHarnessWithInputLog(t *testing.T, unified bool) *larkHarness {
 	t.Helper()
 	m, r, svc, _, members := cliToolFixtureWithInputLog(t, "exit 0", unified)
+	return newLarkHarnessForRoom(t, m, r, svc, members)
+}
+
+func newLarkHarnessForRoom(t *testing.T, m *roomManager, r roomSummary, svc *service, members []MemberState) *larkHarness {
+	t.Helper()
 	m.toolCatalog = append(m.toolCatalog, tool.Definition{Name: "lark", Provider: "lark", InternalOnly: true})
 	m.bindPlatformReferences(svc)
 	dir := t.TempDir()

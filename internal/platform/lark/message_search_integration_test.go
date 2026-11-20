@@ -59,14 +59,11 @@ func TestMessageSearchSinglePageContract(t *testing.T) {
 
 func TestMessageSearchRejectsIncompleteAndUnverifiedPages(t *testing.T) {
 	parallelClientTest(t)
+	// Retain one malformed candidate for this DTO, native search errors and
+	// final identity rejection. Pure field/range combinations run without CLI.
 	for mode, code := range map[string]string{
-		"loop": "invalid_response", "bad_token": "invalid_response", "missing_token": "invalid_response", "missing_more": "invalid_response",
-		"missing_items": "invalid_response", "null_items": "invalid_response", "duplicate": "invalid_response", "oversize": "invalid_response",
-		"bad_id": "invalid_response", "wrong_chat": "invalid_response", "wrong_type": "invalid_response", "missing_type": "invalid_response",
-		"wrong_sender": "invalid_response", "bad_time": "invalid_response", "outside_window": "invalid_response", "response_bot": "invalid_response",
-		"notice": "search_incomplete", "switch": "identity_mismatch", "permission": "permission_denied", "rate": "rate_limited",
-		"cursor": "cursor_expired", "network": "network_error", "parameter_error": "invalid_request", "unknown_error": "query_failed",
-		"malformed": "invalid_response", "large": "output_limit",
+		"missing_more": "invalid_response", "response_bot": "invalid_response",
+		"notice": "search_incomplete", "switch": "identity_mismatch", "parameter_error": "invalid_request",
 	} {
 		t.Run(mode, func(t *testing.T) {
 			c, dir, a := messageSearchClient(t)
@@ -132,11 +129,8 @@ func TestMessageBatchNativeDetailsAndOmissions(t *testing.T) {
 func TestMessageBatchFailuresDiscardCandidates(t *testing.T) {
 	parallelClientTest(t)
 	for mode, code := range map[string]string{
-		"missing_items": "invalid_response", "null_items": "invalid_response", "duplicate": "invalid_response", "unrequested": "invalid_response",
-		"missing_body": "invalid_response", "missing_content": "invalid_response", "missing_sender": "invalid_response",
-		"bad_time": "invalid_response", "bad_reply": "invalid_response", "response_bot": "invalid_response", "switch": "identity_mismatch",
-		"detail_error": "details_unavailable", "parameter_error": "invalid_request", "permission": "permission_denied", "rate": "rate_limited",
-		"network": "network_error", "malformed": "invalid_response", "unknown_error": "query_failed", "large": "output_limit",
+		"missing_content": "invalid_response", "response_bot": "invalid_response",
+		"switch": "identity_mismatch", "detail_error": "details_unavailable",
 	} {
 		t.Run(mode, func(t *testing.T) {
 			c, dir, a := messageSearchClient(t)

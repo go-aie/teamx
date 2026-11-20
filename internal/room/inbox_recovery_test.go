@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/go-aie/actorx"
@@ -87,100 +88,100 @@ func TestInboxRecoveryHistoricalStallDrainsPagesWithoutChat(t *testing.T) {
 }
 
 func TestInboxRecoveryBackoffExhaustionAndExplicitContinue(t *testing.T) {
-	h := newInboxHarness(t, InboxLimits{})
-	for n := 1; n <= 26; n++ {
-		inboxCall[InboxReceipt](t, h, h.receive(fmt.Sprint(n)))
-	}
-	var clock atomic.Int64
-	clock.Store(time.Now().UnixNano())
-	b := newControlledBackend()
-	m := stalledInboxAgent(t, h, b, &clock)
-	addr, err := h.spawn(m)
-	if err != nil {
-		t.Fatal(err)
-	}
-	controlMember(t, h.roomHarness, addr, h.id, "run", UnreadChanged{MemberIdentity: h.id}, false, false)
-	for n, delay := range inboxRecoveryBackoff {
-		waiting := waitMember(t, h.ctx, addr, h.id, func(s MemberStatus) bool {
-			return !s.Active && s.InboxRecovery != nil && s.InboxRecovery.Attempts == n && !s.InboxRecovery.NextAt.IsZero()
-		})
-		if waiting.InboxRecovery.NextAt.Sub(time.Unix(0, clock.Load())) != delay || waiting.Status != "inbox_waiting" {
-			t.Fatal(waiting)
+	synctest.Test(t, func(t *testing.T) {
+		h := newInboxHarness(t, InboxLimits{})
+		for n := 1; n <= 26; n++ {
+			inboxCall[InboxReceipt](t, h, h.receive(fmt.Sprint(n)))
 		}
-		clock.Add(int64(delay - time.Second))
-		// A later arrival must not renew the range or shorten the backoff.
-		inboxCall[InboxReceipt](t, h, h.receive(fmt.Sprint(27+n)))
-		time.Sleep(80 * time.Millisecond)
-		if s := inspectMember(t, h.ctx, addr, h.id); s.Active || s.Agent.TurnNumber != uint64(n+1) {
-			t.Fatal("early recovery", s)
+		var clock atomic.Int64
+		clock.Store(time.Now().UnixNano())
+		b := newControlledBackend()
+		m := stalledInboxAgent(t, h, b, &clock)
+		addr, err := h.spawn(m)
+		if err != nil {
+			t.Fatal(err)
 		}
-		clock.Add(int64(time.Second))
+		controlMember(t, h.roomHarness, addr, h.id, "run", UnreadChanged{MemberIdentity: h.id}, false, false)
+		for n, delay := range inboxRecoveryBackoff {
+			waiting := waitMember(t, h.ctx, addr, h.id, func(s MemberStatus) bool {
+				return !s.Active && s.InboxRecovery != nil && s.InboxRecovery.Attempts == n && !s.InboxRecovery.NextAt.IsZero()
+			})
+			if waiting.InboxRecovery.NextAt.Sub(time.Unix(0, clock.Load())) != delay || waiting.Status != "inbox_waiting" {
+				t.Fatal(waiting)
+			}
+			clock.Add(int64(delay - time.Nanosecond))
+			// A later arrival must not renew the range or shorten the backoff.
+			inboxCall[InboxReceipt](t, h, h.receive(fmt.Sprint(27+n)))
+			time.Sleep(80 * time.Millisecond)
+			synctest.Wait() // Drain maintenance and Inbox reconciliation before checking the entire early window.
+			if s := inspectMember(t, h.ctx, addr, h.id); s.Active || s.Agent.TurnNumber != uint64(n+1) ||
+				s.Inbox == nil || s.Inbox.LatestSeq != uint64(27+n) || s.InboxRecovery == nil || *s.InboxRecovery != *waiting.InboxRecovery {
+				t.Fatal("early recovery", s)
+			}
+			clock.Add(int64(time.Nanosecond))
+			input := awaitTurn(t, h.roomHarness, b)
+			if input.Inbox == nil || !input.Inbox.Recovery || input.Inbox.SnapshotSeq != 25 {
+				t.Fatal(input)
+			}
+			b.finish <- nil
+		}
+		exhausted := waitMember(t, h.ctx, addr, h.id, func(s MemberStatus) bool { return !s.Active && s.Status == "inbox_stalled" })
+		if exhausted.InboxRecovery.Attempts != 3 || exhausted.Notice.Code != "inbox_recovery_exhausted" {
+			t.Fatal(exhausted)
+		}
+		clock.Add(int64(time.Hour))
+		inboxCall[InboxReceipt](t, h, h.receive("new-after-exhaustion"))
+		time.Sleep(100 * time.Millisecond)
+		synctest.Wait() // Exhaustion must survive every scheduled check in this window.
+		if s := inspectMember(t, h.ctx, addr, h.id); s.Active || s.Agent.TurnNumber != 4 ||
+			s.Inbox == nil || s.Inbox.LatestSeq != 30 || s.InboxRecovery == nil || s.InboxRecovery.Attempts != 3 {
+			t.Fatal("exhaustion bypassed", s)
+		}
+		saved, err := h.store.loadScheduling(h.id)
+		if err != nil || saved.InboxRecovery.Attempts != 3 || saved.Used != 4 {
+			t.Fatal(saved, err)
+		}
+		// Startup loads the same scheduling file, independently of Session memory.
+		restored := &MemberAgent{Options: adapterOptions(h.store, h.id), Backend: dshBackend{store: h.store}, Store: h.store, turnLimit: 16}
+		if err := restored.initializeScheduling(); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(restored.inboxRecovery, saved.InboxRecovery) {
+			t.Fatal("startup renewed recovery allowance")
+		}
+		// A generation switch updates only the baseline, preserving recovery fields.
+		restored.sessionGeneration = "session.json.dsh-" + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		if err := restored.persistScheduling(saved.Enabled, saved.Used); err != nil {
+			t.Fatal(err)
+		}
+		persisted, err := h.store.loadScheduling(h.id)
+		if err != nil || !reflect.DeepEqual(persisted.InboxRecovery, saved.InboxRecovery) {
+			t.Fatal(persisted, err)
+		}
+		if _, err = addr.Call[MemberStatus](h.ctx, ControlMember{MemberIdentity: h.id, Action: "inbox_continue"}); err != nil {
+			t.Fatal(err)
+		}
 		input := awaitTurn(t, h.roomHarness, b)
-		if input.Inbox == nil || !input.Inbox.Recovery || input.Inbox.SnapshotSeq != 25 {
+		if !input.Inbox.Recovery {
 			t.Fatal(input)
 		}
+		after, err := h.store.loadScheduling(h.id)
+		if err != nil || after.InboxContinueCount != 1 || after.InboxContinuedAt.IsZero() || after.Limit != saved.Limit || after.Used != 5 {
+			t.Fatal(after, err)
+		}
 		b.finish <- nil
-	}
-	exhausted := waitMember(t, h.ctx, addr, h.id, func(s MemberStatus) bool { return !s.Active && s.Status == "inbox_stalled" })
-	if exhausted.InboxRecovery.Attempts != 3 || exhausted.Notice.Code != "inbox_recovery_exhausted" {
-		t.Fatal(exhausted)
-	}
-	clock.Add(int64(time.Hour))
-	inboxCall[InboxReceipt](t, h, h.receive("new-after-exhaustion"))
-	time.Sleep(100 * time.Millisecond)
-	if s := inspectMember(t, h.ctx, addr, h.id); s.Active || s.Agent.TurnNumber != 4 {
-		t.Fatal("exhaustion bypassed", s)
-	}
-	saved, err := h.store.loadScheduling(h.id)
-	if err != nil || saved.InboxRecovery.Attempts != 3 || saved.Used != 4 {
-		t.Fatal(saved, err)
-	}
-	// Startup loads the same scheduling file, independently of Session memory.
-	restored := &MemberAgent{Options: adapterOptions(h.store, h.id), Backend: dshBackend{store: h.store}, Store: h.store, turnLimit: 16}
-	if err := restored.initializeScheduling(); err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(restored.inboxRecovery, saved.InboxRecovery) {
-		t.Fatal("startup renewed recovery allowance")
-	}
-	// A generation switch updates only the baseline, preserving recovery fields.
-	restored.sessionGeneration = "session.json.dsh-" + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	if err := restored.persistScheduling(saved.Enabled, saved.Used); err != nil {
-		t.Fatal(err)
-	}
-	persisted, err := h.store.loadScheduling(h.id)
-	if err != nil || !reflect.DeepEqual(persisted.InboxRecovery, saved.InboxRecovery) {
-		t.Fatal(persisted, err)
-	}
-	if _, err = addr.Call[MemberStatus](h.ctx, ControlMember{MemberIdentity: h.id, Action: "inbox_continue"}); err != nil {
-		t.Fatal(err)
-	}
-	input := awaitTurn(t, h.roomHarness, b)
-	if !input.Inbox.Recovery {
-		t.Fatal(input)
-	}
-	after, err := h.store.loadScheduling(h.id)
-	if err != nil || after.InboxContinueCount != 1 || after.InboxContinuedAt.IsZero() || after.Limit != saved.Limit || after.Used != 5 {
-		t.Fatal(after, err)
-	}
-	b.finish <- nil
+	})
 }
 
 func TestInboxRecoveryPauseCancelFaultAndBudgetGates(t *testing.T) {
-	h := newInboxHarness(t, InboxLimits{})
-	for n := 1; n <= 25; n++ {
-		inboxCall[InboxReceipt](t, h, h.receive(fmt.Sprint(n)))
-	}
-	var clock atomic.Int64
-	clock.Store(time.Now().UnixNano())
-	m := stalledInboxAgent(t, h, newControlledBackend(), &clock)
-	m.state = *m.Restored
-	m.now = func() time.Time { return time.Unix(0, clock.Load()) }
+	now := time.Date(2026, 11, 20, 0, 0, 0, 0, time.UTC)
+	m := &MemberAgent{state: AgentSnapshot{TurnNumber: 1, LastOfferedInboxSeq: 25,
+		Turn: &TurnRecord{Number: 1, Status: "completed", InboxSnapshotSeq: 25}}, now: func() time.Time { return now }}
 	m.turnLimit = 16
 	status := InboxStatus{LatestSeq: 26}
 	m.inbox = &status
 	m.reconcileInboxRecovery(status)
-	clock.Add(int64(time.Hour))
+	now = now.Add(time.Hour)
 	if !m.inboxReady() {
 		t.Fatal("not armed")
 	}
@@ -233,14 +234,9 @@ func TestInboxRecoveryPauseCancelFaultAndBudgetGates(t *testing.T) {
 }
 
 func TestInboxRecoveryConfirmedReadThenBusinessFailureDoesNotStall(t *testing.T) {
-	h := newInboxHarness(t, InboxLimits{})
-	for n := 1; n <= 25; n++ {
-		inboxCall[InboxReceipt](t, h, h.receive(fmt.Sprint(n)))
-	}
-	var clock atomic.Int64
-	clock.Store(time.Now().UnixNano())
-	m := stalledInboxAgent(t, h, newControlledBackend(), &clock)
-	m.state = *m.Restored
+	now := time.Date(2026, 11, 20, 0, 0, 0, 0, time.UTC)
+	m := &MemberAgent{state: AgentSnapshot{TurnNumber: 1, LastOfferedInboxSeq: 25,
+		Turn: &TurnRecord{Number: 1, Status: "completed", InboxSnapshotSeq: 25}}, now: func() time.Time { return now }}
 	m.turnLimit = 16
 	m.reconcileInboxRecovery(InboxStatus{LatestSeq: 25})
 	m.state.Turn.Status = "failed"
@@ -338,39 +334,42 @@ func TestInboxRecoveryUnknownActionBlocksAutomaticAndManualReading(t *testing.T)
 }
 
 func TestInboxRecoveryCancellationNeedsExplicitContinue(t *testing.T) {
-	h := newInboxHarness(t, InboxLimits{})
-	for n := 1; n <= 25; n++ {
-		inboxCall[InboxReceipt](t, h, h.receive(fmt.Sprint(n)))
-	}
-	var clock atomic.Int64
-	clock.Store(time.Now().UnixNano())
-	backend := newControlledBackend()
-	m := stalledInboxAgent(t, h, backend, &clock)
-	addr, err := h.spawn(m)
-	if err != nil {
-		t.Fatal(err)
-	}
-	controlMember(t, h.roomHarness, addr, h.id, "run", UnreadChanged{MemberIdentity: h.id}, false, false)
-	waitMember(t, h.ctx, addr, h.id, func(s MemberStatus) bool { return s.InboxRecovery != nil })
-	clock.Add(int64(15 * time.Second))
-	awaitTurn(t, h.roomHarness, backend)
-	running := inspectMember(t, h.ctx, addr, h.id)
-	if _, err = addr.Call[MemberStatus](h.ctx, ControlMember{MemberIdentity: h.id, Action: "cancel", ExecutionID: running.ExecutionID}); err != nil {
-		t.Fatal(err)
-	}
-	<-backend.canceled
-	stopped := waitMember(t, h.ctx, addr, h.id, func(s MemberStatus) bool { return !s.Active && s.Agent.Turn.Status == "interrupted" })
-	clock.Add(int64(time.Hour))
-	time.Sleep(60 * time.Millisecond)
-	if current := inspectMember(t, h.ctx, addr, h.id); current.Active || current.Agent.TurnNumber != stopped.Agent.TurnNumber {
-		t.Fatal("cancellation auto retried", current)
-	}
-	if _, err = addr.Call[MemberStatus](h.ctx, ControlMember{MemberIdentity: h.id, Action: "inbox_continue"}); err != nil {
-		t.Fatal(err)
-	}
-	input := awaitTurn(t, h.roomHarness, backend)
-	if input.Inbox == nil || !input.Inbox.Recovery {
-		t.Fatal(input)
-	}
-	backend.finish <- nil
+	synctest.Test(t, func(t *testing.T) {
+		h := newInboxHarness(t, InboxLimits{})
+		for n := 1; n <= 25; n++ {
+			inboxCall[InboxReceipt](t, h, h.receive(fmt.Sprint(n)))
+		}
+		var clock atomic.Int64
+		clock.Store(time.Now().UnixNano())
+		backend := newControlledBackend()
+		m := stalledInboxAgent(t, h, backend, &clock)
+		addr, err := h.spawn(m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		controlMember(t, h.roomHarness, addr, h.id, "run", UnreadChanged{MemberIdentity: h.id}, false, false)
+		waitMember(t, h.ctx, addr, h.id, func(s MemberStatus) bool { return s.InboxRecovery != nil })
+		clock.Add(int64(15 * time.Second))
+		awaitTurn(t, h.roomHarness, backend)
+		running := inspectMember(t, h.ctx, addr, h.id)
+		if _, err = addr.Call[MemberStatus](h.ctx, ControlMember{MemberIdentity: h.id, Action: "cancel", ExecutionID: running.ExecutionID}); err != nil {
+			t.Fatal(err)
+		}
+		<-backend.canceled
+		stopped := waitMember(t, h.ctx, addr, h.id, func(s MemberStatus) bool { return !s.Active && s.Agent.Turn.Status == "interrupted" })
+		clock.Add(int64(time.Hour))
+		time.Sleep(60 * time.Millisecond)
+		synctest.Wait() // Drain maintenance after advancing the recovery clock past its due time.
+		if current := inspectMember(t, h.ctx, addr, h.id); current.Active || current.Agent.TurnNumber != stopped.Agent.TurnNumber {
+			t.Fatal("cancellation auto retried", current)
+		}
+		if _, err = addr.Call[MemberStatus](h.ctx, ControlMember{MemberIdentity: h.id, Action: "inbox_continue"}); err != nil {
+			t.Fatal(err)
+		}
+		input := awaitTurn(t, h.roomHarness, backend)
+		if input.Inbox == nil || !input.Inbox.Recovery {
+			t.Fatal(input)
+		}
+		backend.finish <- nil
+	})
 }

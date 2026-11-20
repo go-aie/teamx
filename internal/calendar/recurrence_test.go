@@ -283,6 +283,41 @@ func TestRecurringOverlapUnknownAndSettledFailure(t *testing.T) {
 		}
 	}
 }
+
+func TestRecurringFinishPreservesSchedule(t *testing.T) {
+	for _, frequency := range []string{"daily", "weekly"} {
+		for _, outcome := range []string{"succeeded", "blocked", "failed"} {
+			t.Run(frequency+"/"+outcome, func(t *testing.T) {
+				rule := daily()
+				rule.Frequency = frequency
+				if frequency == "weekly" {
+					rule.Weekdays = []int{4} // Thursday, the first due date below.
+				}
+				s, task := recurring(t, rule, at("2026-11-19T00:00:00Z"))
+				due := task.NextAt
+				s.Evaluate(due)
+				run := onlyRun(t, s)
+				next := task.NextAt
+				watermark := task.EvaluatedThrough
+				binding := Binding{"generation", 1}
+				if _, err := s.Claim(run.ID, binding, "member", due.Add(time.Second)); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := s.Finish(run.ID, binding, "member", outcome, "accepted recurring report", nil); err != nil {
+					t.Fatal(err)
+				}
+				s.TurnFinished("member", binding, "completed", true, due.Add(2*time.Second))
+				if task.State != "active" || task.NextAt != next || !next.After(due) || task.EvaluatedThrough != watermark || task.Version != 1 || task.DefinitionVersion != 1 {
+					t.Fatal("finishing a run changed its recurring task", task)
+				}
+				if run.Phase != "publishing" || run.Publication.Status != "pending" || run.Outcome != outcome || run.Report != "accepted recurring report" {
+					t.Fatal("accepted report did not survive turn settlement", run)
+				}
+			})
+		}
+	}
+}
+
 func TestRecurringValidationAndOnceFilters(t *testing.T) {
 	for _, rule := range []Schedule{{Frequency: "weekly", StartDate: "2026-11-20", LocalTime: "09:00", TimeZone: "UTC"}, {Frequency: "weekly", StartDate: "2026-11-20", LocalTime: "09:00", TimeZone: "UTC", Weekdays: []int{1, 1}}, {Frequency: "daily", StartDate: "2026-11-20", LocalTime: "09:00", TimeZone: "UTC", DayFilter: "business_days"}, {Frequency: "daily", StartDate: "2026-11-20", LocalTime: "09:00", TimeZone: "UTC", EndDate: "2026-11-19"}} {
 		if validateSchedule(rule) == nil {

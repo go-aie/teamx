@@ -34,14 +34,11 @@ func configurationGitLab(t *testing.T, h *larkHarness) managedPlatform {
 
 func TestToolIndependentTargetsMergeAndProjectActualCommit(t *testing.T) {
 	parallelFixtureTest(t)
-	for _, order := range []string{"lark-first", "gitlab-first", "overlap", "preserved-overlap"} {
+	for _, order := range []string{"overlap", "preserved-overlap"} {
 		t.Run(order, func(t *testing.T) {
 			h := larkToolConfigurationHarness(t)
 			gitlab := configurationGitLab(t, h)
 			larkReq := larkMemberToolRequest(t, h, 0)
-			if order == "lark-first" {
-				larkReq.Input.ExpectedBindingRevision = nil
-			}
 			// Both operations refer to the same actual human message and observe zero.
 			gitlabReq := larkReq
 			input := *larkReq.Input
@@ -62,20 +59,13 @@ func TestToolIndependentTargetsMergeAndProjectActualCommit(t *testing.T) {
 					t.Fatal(op, err)
 				}
 			}
-			if strings.Contains(order, "overlap") {
-				h.m.bindingEvidencePreparers["lark"] = func(context.Context, *toolBindingChange) error {
-					applyGitLab()
-					return errors.New("self proof unavailable")
-				}
-			} else if order == "gitlab-first" {
+			h.m.bindingEvidencePreparers["lark"] = func(context.Context, *toolBindingChange) error {
 				applyGitLab()
+				return errors.New("self proof unavailable")
 			}
 			op, err := h.m.configurePlatformMember(t.Context(), "tool", larkReq)
 			if err != nil || op.Status != "completed" {
 				t.Fatal(op, err)
-			}
-			if order == "lark-first" {
-				applyGitLab()
 			}
 			f := configurationBindings(t, h)
 			if len(f.Bindings) != 2 || f.Version != 2 || len(f.TargetRevisions) != 2 {

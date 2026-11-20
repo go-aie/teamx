@@ -28,6 +28,13 @@ func newGitlabLoginHarness(t *testing.T) *gitlabLoginHarness {
 	h := newGitlabSetupHarness(t)
 	init := gitlabSetupHTTP(t, h, "prepare", h.req)
 	g := &gitlabLoginHarness{h: h, req: gitlabAuthRequest{ServiceEpoch: h.m.epoch, Caller: humanCaller, ID: h.req.ID, Version: h.req.Version, ApplicationID: init.ApplicationID, Affected: []gitlabAuthPlatform{{ID: h.req.ID, Version: h.req.Version}}}}
+	configureGitlabLoginTransport(t, g)
+	return g
+}
+
+func configureGitlabLoginTransport(t *testing.T, g *gitlabLoginHarness) {
+	t.Helper()
+	h := g.h
 	g.user.Store(101)
 	g.revokeStatus.Store(200)
 	h.m.platformHTTP = workspaceHTTPFunc(func(r *http.Request) (*http.Response, error) {
@@ -57,7 +64,6 @@ func newGitlabLoginHarness(t *testing.T) *gitlabLoginHarness {
 		}
 		return &http.Response{StatusCode: status, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
 	})
-	return g
 }
 func gitlabAuthHTTP(m *roomManager, action string, req gitlabAuthRequest, cookie *http.Cookie) *httptest.ResponseRecorder {
 	data, _ := json.Marshal(req)
@@ -94,7 +100,7 @@ func (g *gitlabLoginHarness) callback(v gitlabAuthView, c *http.Cookie, change f
 		change(q)
 	}
 	r := httptest.NewRequest("GET", g.h.m.config.endpoint+gitlabCallbackPath+"?"+q.Encode(), nil)
-	r.Header.Set("Origin", g.h.server.URL)
+	r.Header.Set("Origin", u.Scheme+"://"+u.Host)
 	if c != nil {
 		r.AddCookie(c)
 	}

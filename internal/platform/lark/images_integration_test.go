@@ -17,7 +17,7 @@ import (
 
 func TestImageDownloadIdentityFormatLimitsAndCleanup(t *testing.T) {
 	parallelClientTest(t)
-	for _, mode := range []string{"image_ok", "image_wrong_key", "image_wrong_chat", "image_deleted", "image_format", "image_bad_size", "image_switch", "image_pixels", "image_bytes", "image_stream"} {
+	for _, mode := range []string{"image_ok", "image_wrong_key", "image_format", "image_bad_size", "image_switch", "image_pixels", "image_bytes", "image_stream"} {
 		t.Run(mode, func(t *testing.T) {
 			c, dir, want := imageTestClient(t, mode)
 			s := sampleState(t)

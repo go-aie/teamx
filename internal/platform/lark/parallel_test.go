@@ -1,6 +1,9 @@
 package lark
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 var clientTestSlots = make(chan struct{}, 4)
 
@@ -9,6 +12,12 @@ var clientTestSlots = make(chan struct{}, 4)
 func parallelClientTest(t *testing.T) {
 	t.Helper()
 	t.Parallel()
+	waiting := time.Now()
 	clientTestSlots <- struct{}{}
-	t.Cleanup(func() { <-clientTestSlots })
+	acquired := time.Now()
+	t.Cleanup(func() {
+		<-clientTestSlots
+		// Includes fixture cleanup, but not the Go parallel scheduler pause.
+		t.Logf("client slot: wait=%s held=%s", acquired.Sub(waiting), time.Since(acquired))
+	})
 }

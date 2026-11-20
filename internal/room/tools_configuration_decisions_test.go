@@ -123,3 +123,98 @@ func TestToolBindingRevisionMatchesExactTarget(t *testing.T) {
 		})
 	}
 }
+
+// Both serial commit orders use the real binding owner and durable file. Remote
+// permission acquisition is irrelevant here; overlap and preparation rechecks
+// remain in TestToolIndependentTargetsMergeAndProjectActualCommit.
+func TestToolIndependentBindingSaveOrders(t *testing.T) {
+	parallelFixtureTest(t)
+	for _, order := range []string{"lark-first", "gitlab-first"} {
+		t.Run(order, func(t *testing.T) {
+			m, svc, member, req := connectFixture(t)
+			_, session := connectPending(t, m, svc, req)
+			connectSucceed(t, m, session)
+			connected := connectHTTP(t, m, "status", connectObservation(req))
+			if connected.Status != "completed" {
+				t.Fatal(connected)
+			}
+			m.toolCatalog = []tool.Definition{{Name: "lark", Provider: "lark", InternalOnly: true}, {Name: "gitlab", Provider: "gitlab", InternalOnly: true}}
+			gitlab := platformTestSave(t, m, platformTestRequest(m))
+			var larkAccount managedPlatform
+			for _, account := range platformTestList(t, m) {
+				if account.ID == connected.PlatformID {
+					larkAccount = account
+				}
+			}
+			if larkAccount.ID == "" {
+				t.Fatal("missing Lark account")
+			}
+			larkChange := toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: req.RoomIdentity, Caller: humanCaller, ExpectedBindingRevision: new(uint64(0)), PlatformVersion: larkAccount.Version, Enabled: true, Binding: tool.Binding{AgentID: member.AgentID, MembershipID: member.MembershipID, Tool: "lark", PlatformID: larkAccount.ID}}
+			larkChange.Binding.ActionAuthorization = &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: defaultLarkActionGrants(lark.AcceptedActionCapabilities(nil, nil, nil))}
+			if order == "lark-first" {
+				larkChange.ExpectedBindingRevision = nil
+			}
+			gitlabChange := larkChange
+			gitlabChange.ExpectedBindingRevision = new(uint64(0))
+			gitlabChange.Binding.ActionAuthorization = nil
+			gitlabChange.Binding.Tool = "gitlab"
+			gitlabChange.Binding.PlatformID = gitlab.ID
+			gitlabChange.PlatformVersion = gitlab.Version
+
+			changes := []toolBindingChange{larkChange, gitlabChange}
+			if order == "gitlab-first" {
+				changes[0], changes[1] = changes[1], changes[0]
+			}
+			for _, change := range changes {
+				m.mu.Lock()
+				_, _, err := m.changeToolBindingLocked(t.Context(), change)
+				m.mu.Unlock()
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			m.mu.Lock()
+			file, err := m.readToolBindingsLocked(req.RoomIdentity)
+			m.mu.Unlock()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(file.Bindings) != 2 || file.Version != 2 || file.Revision != 2 || len(file.TargetRevisions) != 2 {
+				t.Fatal(file)
+			}
+			for _, change := range changes {
+				if file.TargetRevisions[toolBindingKey(change.Binding)] == 0 {
+					t.Fatal("lost target", file)
+				}
+			}
+		})
+	}
+}
+
+func TestToolCommittedCapabilityProjection(t *testing.T) {
+	binding := tool.Binding{AgentID: "agent", MembershipID: "member", Tool: "lark", PlatformID: "account", ActionAuthorization: &tool.ActionAuthorization{Version: 1, Revision: 1}}
+	for _, mode := range []string{"same-target", "other-member", "other-platform"} {
+		t.Run(mode, func(t *testing.T) {
+			committed := binding
+			committed.ActionAuthorization = &tool.ActionAuthorization{Version: 1, Revision: 3}
+			switch mode {
+			case "other-member":
+				committed.MembershipID = "other"
+			case "other-platform":
+				committed.PlatformID = "other"
+			}
+			p := preparedLarkToolChange{Binding: binding, Capabilities: larkMemberCapabilityResult{ToolRevision: 1, ActionRevision: 1}}
+			file := toolBindingsFile{Revision: 7, Bindings: []tool.Binding{committed}}
+			projectCommittedLarkToolChange(&p, file)
+			want := uint64(1)
+			expected := binding
+			if mode == "same-target" {
+				want = 3
+				expected = committed
+			}
+			if p.Capabilities.ToolRevision != 7 || p.Capabilities.ActionRevision != want || !reflect.DeepEqual(p.Binding, expected) {
+				t.Fatal(p)
+			}
+		})
+	}
+}

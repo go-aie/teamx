@@ -37,7 +37,7 @@ assert a[1]=='GET'`, 1)
 	if err != nil || !second.Joined || second.HasMore {
 		t.Fatal(second, err)
 	}
-	for _, mode := range []string{"missing", "wrong_tenant", "loop", "duplicate", "switch"} {
+	for _, mode := range []string{"missing", "wrong_tenant", "switch"} {
 		setMode(t, dir, mode)
 		page, err := c.GroupMembership(t.Context(), a, "oc_group", "next")
 		if err == nil || page.Joined {
@@ -45,7 +45,7 @@ assert a[1]=='GET'`, 1)
 		}
 	}
 	calls, _ := os.ReadFile(filepath.Join(dir, "calls"))
-	if strings.Count(string(calls), "/oc_group/members") != 7 || strings.Contains(string(calls), "--page-all") {
+	if strings.Count(string(calls), "/oc_group/members") != 5 || strings.Contains(string(calls), "--page-all") {
 		t.Fatal("membership expanded beyond one page")
 	}
 }

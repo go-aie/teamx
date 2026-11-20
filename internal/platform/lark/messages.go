@@ -78,27 +78,12 @@ func (c *Client) Messages(ctx context.Context, account platform.AccountIdentity,
 			params["page_token"] = r.PageToken
 		}
 		// Require the completeness flag and items even for an empty page.
-		var wire struct {
-			Items     *[]Message `json:"items"`
-			HasMore   *bool      `json:"has_more"`
-			PageToken string     `json:"page_token"`
-		}
+		var wire messagePageWire
 		if err := c.api(ctx, "/open-apis/im/v1/messages", params, &wire); err != nil {
 			return err
 		}
-		if wire.Items == nil || wire.HasMore == nil || len(*wire.Items) > r.PageSize || *wire.HasMore && (wire.PageToken == "" || wire.PageToken == r.PageToken) || len(wire.PageToken) > 8192 {
-			return failure("invalid_response")
-		}
-		seen := map[string]bool{}
-		last := int64(0)
-		for _, m := range *wire.Items {
-			n, _ := strconv.ParseInt(m.Created, 10, 64)
-			// API request precision is seconds; retain all messages in boundary seconds.
-			if !m.valid() || m.ChatID != r.ChatID || n/1000 < r.Start || n/1000 > r.End || n < last || seen[m.ID] {
-				return failure("invalid_response")
-			}
-			seen[m.ID] = true
-			last = n
+		if err := validateMessagePage(wire, r); err != nil {
+			return err
 		}
 		c.senderNames(ctx, *wire.Items)
 		page = MessagePage{Items: *wire.Items, HasMore: *wire.HasMore, PageToken: wire.PageToken}
@@ -192,15 +177,45 @@ func (c *Client) senderNameBatch(ctx context.Context, ids []string) (map[string]
 	body, _ := json.Marshal(struct {
 		IDs []string `json:"user_ids"`
 	}{ids})
-	var wire struct {
-		Users []struct {
-			ID   string `json:"user_id"`
-			Name string `json:"name"`
-		} `json:"users"`
-	}
+	var wire senderNamesWire
 	if err := c.apiJSON(ctx, []string{"api", "POST", "/open-apis/contact/v3/users/basic_batch", "--params", `{"user_id_type":"open_id"}`, "--data", string(body)}, &wire); err != nil {
 		return nil, err
 	}
+	return validateSenderNames(wire, ids)
+}
+
+type messagePageWire struct {
+	Items     *[]Message `json:"items"`
+	HasMore   *bool      `json:"has_more"`
+	PageToken string     `json:"page_token"`
+}
+
+func validateMessagePage(wire messagePageWire, r MessagesRequest) error {
+	if wire.Items == nil || wire.HasMore == nil || len(*wire.Items) > r.PageSize || *wire.HasMore && (wire.PageToken == "" || wire.PageToken == r.PageToken) || len(wire.PageToken) > 8192 {
+		return failure("invalid_response")
+	}
+	seen := map[string]bool{}
+	last := int64(0)
+	for _, m := range *wire.Items {
+		n, _ := strconv.ParseInt(m.Created, 10, 64)
+		// API request precision is seconds; retain all messages in boundary seconds.
+		if !m.valid() || m.ChatID != r.ChatID || n/1000 < r.Start || n/1000 > r.End || n < last || seen[m.ID] {
+			return failure("invalid_response")
+		}
+		seen[m.ID] = true
+		last = n
+	}
+	return nil
+}
+
+type senderNamesWire struct {
+	Users []struct {
+		ID   string `json:"user_id"`
+		Name string `json:"name"`
+	} `json:"users"`
+}
+
+func validateSenderNames(wire senderNamesWire, ids []string) (map[string]string, error) {
 	if len(wire.Users) > len(ids) {
 		return nil, failure("invalid_response")
 	}

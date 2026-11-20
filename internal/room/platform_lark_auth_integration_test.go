@@ -89,7 +89,7 @@ func TestLarkAuthHTTPGuardsCancellationAndShutdown(t *testing.T) {
 		t.Fatal("same-origin QR image not served")
 	}
 	page := managerHTTP(m, "/", nil)
-	if !strings.Contains(page.Header().Get("Content-Security-Policy"), "img-src 'self';") {
+	if !strings.Contains(page.Header().Get("Content-Security-Policy"), "img-src 'self' blob:;") {
 		t.Fatal("image fix changed the existing content security policy")
 	}
 	save := managedPlatformRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("e", 32), Name: "auth in progress", Provider: "lark", URL: lark.Origin("feishu"), CLIProfile: &p}

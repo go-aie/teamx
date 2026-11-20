@@ -2,8 +2,11 @@ package room
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/go-aie/teamx/internal/platform/registry"
 )
 
 // Real model controller, rotation, original connection store and Inbox; model
@@ -26,19 +29,26 @@ func TestPlatformAuthorizationSurvivesModelRotationAndPause(t *testing.T) {
 					name += "/result-after-rotation"
 				}
 				t.Run(name, func(t *testing.T) {
-					m, c, config := onlineModelManager(t)
-					g := newGitlabLoginHarness(t)
-					m.config.endpoint = g.h.m.config.endpoint
-					file, err := g.h.m.platforms.Load()
-					if err != nil {
-						t.Fatal(err)
+					m, c, config := onlineModelManagerWithEntries(t, "A", "B")
+					var g *gitlabLoginHarness
+					const gitlabOrigin = "https://gitlab.example.com"
+					if provider == "gitlab" {
+						// Install only the OAuth application in the actual model manager. The
+						// setup/import flow has separate tests; no throwaway manager is needed.
+						m.config.endpoint = "http://127.0.0.1:8088"
+						application := registry.OAuthApplication{ID: strings.Repeat("b", 32), Origin: gitlabOrigin, OwnerID: 101, ClientID: "private-client-id", ClientSecret: "private-client-secret", RedirectURI: m.config.endpoint + gitlabCallbackPath, Scopes: []string{"api"}}
+						file, err := m.platforms.Load()
+						if err != nil {
+							t.Fatal(err)
+						}
+						file.OAuthApplications = []registry.OAuthApplication{application}
+						if err = m.store.save(m.platformsPathForTest(), file, 2<<20); err != nil {
+							t.Fatal(err)
+						}
+						g = &gitlabLoginHarness{h: &gitlabSetupHarness{m: m}, req: gitlabAuthRequest{ApplicationID: application.ID}}
+						configureGitlabLoginTransport(t, g)
 					}
-					file.Platforms = nil
-					if err = m.store.save(m.platformsPathForTest(), file, 2<<20); err != nil {
-						t.Fatal(err)
-					}
-					m.platformHTTP = g.h.m.platformHTTP
-					g.h.m = m
+
 					entered, finish := make(chan MemberIdentity, 4), make(chan struct{}, 4)
 					m.factory = controlledActivationFactory(func(id MemberIdentity, ctx context.Context) error {
 						entered <- id
@@ -71,7 +81,7 @@ func TestPlatformAuthorizationSurvivesModelRotationAndPause(t *testing.T) {
 					req := platformConnectRequest{ServiceInfo: svc.info, Caller: agentCaller(id.AgentID, id.MembershipID), OperationID: operationID, SourceSeq: 1, Input: &platformConnectInput{Provider: provider, Name: "Work"}}
 					var settle func()
 					if provider == "gitlab" {
-						req.Input.Origin = g.h.server.URL
+						req.Input.Origin = gitlabOrigin
 						req.Input.ApplicationID = g.req.ApplicationID
 						req.Input.AccountUsername = "tester"
 						op := connectHTTP(t, m, "start", req)
@@ -90,7 +100,7 @@ func TestPlatformAuthorizationSurvivesModelRotationAndPause(t *testing.T) {
 					observe.Notify = &mode
 					connectHTTP(t, m, "notify", observe)
 					change := modelChangeInput{RequestID: "model-during-authorization", Kind: "default", EntryID: "B", ExpectedVersion: c.service.snapshot().Version}
-					if _, err = c.submit(change, humanOperator()); err != nil {
+					if _, err := c.submit(change, humanOperator()); err != nil {
 						t.Fatal(err)
 					}
 					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -102,7 +112,7 @@ func TestPlatformAuthorizationSurvivesModelRotationAndPause(t *testing.T) {
 						t.Fatal("model target changed authorization", pending)
 					}
 					if pause {
-						if _, err = svc.control(ctx, apiRequest{AgentID: id.AgentID, MembershipID: id.MembershipID}, "pause"); err != nil {
+						if _, err := svc.control(ctx, apiRequest{AgentID: id.AgentID, MembershipID: id.MembershipID}, "pause"); err != nil {
 							t.Fatal(err)
 						}
 					}
@@ -178,7 +188,7 @@ func TestPlatformAuthorizationSurvivesModelRotationAndPause(t *testing.T) {
 							t.Fatal("paused member resumed")
 						default:
 						}
-						if _, err = svc.control(ctx, apiRequest{AgentID: id.AgentID, MembershipID: id.MembershipID}, "run"); err != nil {
+						if _, err := svc.control(ctx, apiRequest{AgentID: id.AgentID, MembershipID: id.MembershipID}, "run"); err != nil {
 							t.Fatal(err)
 						}
 					}

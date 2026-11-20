@@ -1,0 +1,684 @@
+{
+  "scope": "TEST-SUITE-REFACTOR-PLAN.zh.md section 9.2 first batch",
+  "date": "2026-11-20",
+  "source_head": "77e6fee303277d24d7f08f678c2e37e8bd7b91ff",
+  "source_note": "HEAD plus existing user worktree and the four test files in sources; production code unchanged by this batch",
+  "go_version": "go version go1.27.1 darwin/arm64",
+  "platform": "macOS ARM64",
+  "fixture_slots": 4,
+  "parallelized_top_level": 35,
+  "selection_regex": "^(TestPlatformMemberCurrentCLIUsesOneBusinessRequest|TestPlatformMemberCurrentCLIRejectsMixedModes|TestPlatformMemberCurrentHTTPRejectsExpandedShapes|TestPlatformMemberCurrentReadAndHistoricalReceipt|TestPlatformMemberCurrentSourceFences|TestPlatformMemberCurrentAdoptsSavedScopeBeforeAdmission|TestPlatformMemberCurrentConcurrentReservationAndFrozenAdmission|TestPlatformMemberCurrentStorageFailuresAndRestart|TestPlatformMemberToggleIdentityScope|TestPlatformConnectNotificationSubscriptionHandoffAndLateCompletion|TestDefaultAssistantConnectionPauseAndLateCompletion|TestPlatformConnectNotificationStartPolicyIsIndependentOfBusinessInput|TestPlatformConnectNotificationReusedConnectionPublishesSavedResult|TestPlatformConnectNotificationUnsubscribeAcknowledgmentAndIdentity|TestPlatformConnectNotificationCrashRecoveryUsesOriginalDelivery|TestPlatformConnectNotificationTerminalFailuresAndRestartResult|TestPlatformConnectNotificationAutomaticallyContinuesWithoutChatAndDoesNotRetryFailure|TestDefaultAssistantConnectionAutomaticContinuationAndFailure|TestPlatformConnectNotificationCapacityRetainsPendingAndRetriesAfterReclamation|TestPlatformConnectNotificationCannotBypassAdmissionOrMemberRemoval|TestDefaultAssistantConnectionCannotBypassAdmission|TestPlatformConnectNotificationContinuesAcrossSessionRotation|TestLarkAuthorizationKeepsExactSharedConnectionsAndReceipts|TestLarkAuthorizationCLIUsesOriginalMemberWithoutToolBinding|TestLarkAuthorizationRejectsAccountSwitchAndCancellation|TestLarkAuthorizationRejectsRevisionChangeDuringOAuth|TestLarkAuthorizationInterruptedBeforeInvalidationIsNeverInferredComplete|TestModelOperationOrderSurvivesPollingAndRestart|TestOnlineModelsDefaultExplicitClosedAndRestart|TestOnlineModelsWaitGatePauseAndIndependentPublication|TestOnlineModelsValidationConflictCancellationAndPrivacy|TestOnlineModelsFailureIsolationRetryAndNoDuplicateRotation|TestWorkspaceSnapshotComparisonExcludesOnlyModelReference|TestOnlineModelsRestartPendingTargetAndCommitUnknown|TestOnlineModelsUnknownConfigKeepsOldSessionUntilReconciled|TestOnlineModelsCreationDuringValidationUsesPublishedDefault|TestOnlineModelsSameRoomPreservesIndependentExecutionTargets|TestOnlineModelsCancelBeforePublicationKeepsOriginalConfig)$",
+  "sources": [
+    {
+      "path": "internal/room/platform_member_current_test.go",
+      "before_sha256": "905cd86aea248239f5cd8cdbbd2db242bf683f360ab708df203cbd2133e2524a",
+      "after_sha256": "950212e36c0d6403c04f6fbdf48d5b7bdc6c4ef0b824468ab34d18eb0d459386"
+    },
+    {
+      "path": "internal/room/platform_connect_notifications_test.go",
+      "before_sha256": "acbc9cc92ad3067deedd3473c06e55534d9f7090a7f5a5f70a308cff0df1df44",
+      "after_sha256": "ea612fc213c640bcac1b88362dbb30ff9c2710bda7ef69897557edc553af7dad"
+    },
+    {
+      "path": "internal/room/platform_lark_authorization_test.go",
+      "before_sha256": "5452009d47e95188aab76c9fc2ced242279af04394474dcb8f8657af678812e0",
+      "after_sha256": "bd2af5ef77388f21df6e0a23cf4cb2a4242c40497a5660c0d7a0906ade234975"
+    },
+    {
+      "path": "internal/room/model_management_test.go",
+      "before_sha256": "357bd883bf3c24d94f5c4151b9b3db2e7224b5a5328e9d096222c2c9f756b17d",
+      "after_sha256": "37e45a64c8670335e2cc451481b1d96d33d5fc2d29b63f483143e26fe2d5b3d1"
+    }
+  ],
+  "execution": "Build core before/after with go test -c; race with go test -c -race -tags=integration. Run each binary from internal/room through go tool test2json -t -p github.com/go-aie/teamx/internal/room BINARY -test.v=test2json -test.count=1 -test.timeout=3m -test.run=SELECTION. Single additionally uses -test.parallel=1. Compilation is excluded from slice wall times; runs are sequential.",
+  "checks": {
+    "before": {
+      "status": "passed",
+      "wall_seconds": 42.87,
+      "package_seconds": 42.483,
+      "top_level_passed": 38,
+      "all_passed_including_subtests": 80,
+      "skipped": 0,
+      "build_tags": [],
+      "race": false,
+      "count": 1,
+      "parallel": "default",
+      "timeout": "3m",
+      "log": "/tmp/teamx-room-fixture-parallel/before.jsonl"
+    },
+    "after": {
+      "status": "passed",
+      "wall_seconds": 24.367,
+      "package_seconds": 24.282,
+      "top_level_passed": 38,
+      "all_passed_including_subtests": 80,
+      "skipped": 0,
+      "build_tags": [],
+      "race": false,
+      "count": 1,
+      "parallel": "default",
+      "timeout": "3m",
+      "log": "/tmp/teamx-room-fixture-parallel/after.jsonl"
+    },
+    "single": {
+      "status": "passed",
+      "wall_seconds": 45.417,
+      "package_seconds": 45.216,
+      "top_level_passed": 38,
+      "all_passed_including_subtests": 80,
+      "skipped": 0,
+      "build_tags": [],
+      "race": false,
+      "count": 1,
+      "parallel": 1,
+      "timeout": "3m",
+      "log": "/tmp/teamx-room-fixture-parallel/single.jsonl"
+    },
+    "race": {
+      "status": "passed",
+      "wall_seconds": 29.404,
+      "package_seconds": 29.253,
+      "top_level_passed": 38,
+      "all_passed_including_subtests": 80,
+      "skipped": 0,
+      "build_tags": [
+        "integration"
+      ],
+      "race": true,
+      "count": 1,
+      "parallel": "default",
+      "timeout": "3m",
+      "log": "/tmp/teamx-room-fixture-parallel/race.jsonl"
+    }
+  },
+  "comparison": {
+    "saved_wall_seconds": 18.503,
+    "wall_reduction_percent": 43.161,
+    "held_includes_cleanup": true,
+    "slot_wait_excludes_go_parallel_pause": true,
+    "wait_max_seconds": 6.857248,
+    "held_median_seconds": 2.12562,
+    "held_sum_seconds": 92.044423,
+    "warning": "Held sum is resource occupancy across overlapping fixtures, not suite wall time. This is one local sample, not a full core speedup claim."
+  },
+  "development_failure": {
+    "test": "TestDefaultAssistantConnectionAutomaticContinuationAndFailure",
+    "result": "one busy rejection during the six-test continuation slice",
+    "resolution": "reuse existing consumeConnectTestInbox, which bounds explicit busy admission handling and retains the same turn and batch receipt; no replay of the failed agent turn"
+  },
+  "tests": [
+    {
+      "name": "TestPlatformMemberCurrentCLIUsesOneBusinessRequest",
+      "file": "platform_member_current_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 1.33,
+      "after_elapsed_seconds": 6.04,
+      "wait_seconds": 4.18622,
+      "held_seconds": 1.857833
+    },
+    {
+      "name": "TestPlatformMemberCurrentCLIRejectsMixedModes",
+      "file": "platform_member_current_test.go",
+      "parallelized": false,
+      "before_elapsed_seconds": 0,
+      "after_elapsed_seconds": 0
+    },
+    {
+      "name": "TestPlatformMemberCurrentHTTPRejectsExpandedShapes",
+      "file": "platform_member_current_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 0.55,
+      "after_elapsed_seconds": 5.46,
+      "wait_seconds": 4.604634,
+      "held_seconds": 0.859086
+    },
+    {
+      "name": "TestPlatformMemberCurrentReadAndHistoricalReceipt",
+      "file": "platform_member_current_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 1.15,
+      "after_elapsed_seconds": 4.83,
+      "wait_seconds": 2.110538,
+      "held_seconds": 2.721853
+    },
+    {
+      "name": "TestPlatformMemberCurrentSourceFences",
+      "file": "platform_member_current_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 1.8,
+      "after_elapsed_seconds": 8.93,
+      "wait_seconds": 5.095819,
+      "held_seconds": 3.838144
+    },
+    {
+      "name": "TestPlatformMemberCurrentAdoptsSavedScopeBeforeAdmission",
+      "file": "platform_member_current_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 1.05,
+      "after_elapsed_seconds": 7.94,
+      "wait_seconds": 5.657481,
+      "held_seconds": 2.281915
+    },
+    {
+      "name": "TestPlatformMemberCurrentConcurrentReservationAndFrozenAdmission",
+      "file": "platform_member_current_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 4.43,
+      "after_elapsed_seconds": 13.88,
+      "wait_seconds": 5.385967,
+      "held_seconds": 8.49397
+    },
+    {
+      "name": "TestPlatformMemberCurrentStorageFailuresAndRestart",
+      "file": "platform_member_current_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 3.65,
+      "after_elapsed_seconds": 8.97,
+      "wait_seconds": 0.0,
+      "held_seconds": 8.967801
+    },
+    {
+      "name": "TestPlatformMemberToggleIdentityScope",
+      "file": "platform_member_current_test.go",
+      "parallelized": false,
+      "before_elapsed_seconds": 0,
+      "after_elapsed_seconds": 0
+    },
+    {
+      "name": "TestPlatformConnectNotificationSubscriptionHandoffAndLateCompletion",
+      "file": "platform_connect_notifications_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 1.14,
+      "after_elapsed_seconds": 7.35,
+      "wait_seconds": 3.090709,
+      "held_seconds": 4.260519
+    },
+    {
+      "name": "TestDefaultAssistantConnectionPauseAndLateCompletion",
+      "file": "platform_connect_notifications_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 1.21,
+      "after_elapsed_seconds": 6.87,
+      "wait_seconds": 4.566086,
+      "held_seconds": 2.305183
+    },
+    {
+      "name": "TestPlatformConnectNotificationStartPolicyIsIndependentOfBusinessInput",
+      "file": "platform_connect_notifications_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 0.24,
+      "after_elapsed_seconds": 7.34,
+      "wait_seconds": 6.756671,
+      "held_seconds": 0.582573
+    },
+    {
+      "name": "TestPlatformConnectNotificationReusedConnectionPublishesSavedResult",
+      "file": "platform_connect_notifications_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 1.63,
+      "after_elapsed_seconds": 8.55,
+      "wait_seconds": 6.857248,
+      "held_seconds": 1.696165
+    },
+    {
+      "name": "TestPlatformConnectNotificationUnsubscribeAcknowledgmentAndIdentity",
+      "file": "platform_connect_notifications_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 0.78,
+      "after_elapsed_seconds": 2.11,
+      "wait_seconds": 0.870005,
+      "held_seconds": 1.240527
+    },
+    {
+      "name": "TestPlatformConnectNotificationCrashRecoveryUsesOriginalDelivery",
+      "file": "platform_connect_notifications_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 1.7,
+      "after_elapsed_seconds": 7.14,
+      "wait_seconds": 2.059206,
+      "held_seconds": 5.07982
+    },
+    {
+      "name": "TestPlatformConnectNotificationTerminalFailuresAndRestartResult",
+      "file": "platform_connect_notifications_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 1.5,
+      "after_elapsed_seconds": 6.26,
+      "wait_seconds": 2.043294,
+      "held_seconds": 4.212789
+    },
+    {
+      "name": "TestPlatformConnectNotificationAutomaticallyContinuesWithoutChatAndDoesNotRetryFailure",
+      "file": "platform_connect_notifications_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 0.75,
+      "after_elapsed_seconds": 2.04,
+      "wait_seconds": 0.876501,
+      "held_seconds": 1.166767
+    },
+    {
+      "name": "TestDefaultAssistantConnectionAutomaticContinuationAndFailure",
+      "file": "platform_connect_notifications_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 0.74,
+      "after_elapsed_seconds": 6.53,
+      "wait_seconds": 4.832422,
+      "held_seconds": 1.701525
+    },
+    {
+      "name": "TestPlatformConnectNotificationCapacityRetainsPendingAndRetriesAfterReclamation",
+      "file": "platform_connect_notifications_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 0.54,
+      "after_elapsed_seconds": 5.44,
+      "wait_seconds": 3.772778,
+      "held_seconds": 1.662919
+    },
+    {
+      "name": "TestPlatformConnectNotificationCannotBypassAdmissionOrMemberRemoval",
+      "file": "platform_connect_notifications_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 0.54,
+      "after_elapsed_seconds": 6.23,
+      "wait_seconds": 5.032938,
+      "held_seconds": 1.19567
+    },
+    {
+      "name": "TestDefaultAssistantConnectionCannotBypassAdmission",
+      "file": "platform_connect_notifications_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 0.5,
+      "after_elapsed_seconds": 5.27,
+      "wait_seconds": 4.067781,
+      "held_seconds": 1.204581
+    },
+    {
+      "name": "TestPlatformConnectNotificationContinuesAcrossSessionRotation",
+      "file": "platform_connect_notifications_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 1.07,
+      "after_elapsed_seconds": 6.24,
+      "wait_seconds": 4.407752,
+      "held_seconds": 1.836627
+    },
+    {
+      "name": "TestLarkAuthorizationKeepsExactSharedConnectionsAndReceipts",
+      "file": "platform_lark_authorization_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 2.21,
+      "after_elapsed_seconds": 6.44,
+      "wait_seconds": 3.684693,
+      "held_seconds": 2.753302
+    },
+    {
+      "name": "TestLarkAuthorizationCLIUsesOriginalMemberWithoutToolBinding",
+      "file": "platform_lark_authorization_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 1.51,
+      "after_elapsed_seconds": 6.43,
+      "wait_seconds": 4.564587,
+      "held_seconds": 1.868639
+    },
+    {
+      "name": "TestLarkAuthorizationRejectsAccountSwitchAndCancellation",
+      "file": "platform_lark_authorization_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 2.68,
+      "after_elapsed_seconds": 8.2,
+      "wait_seconds": 4.443251,
+      "held_seconds": 3.754514
+    },
+    {
+      "name": "TestLarkAuthorizationRejectsRevisionChangeDuringOAuth",
+      "file": "platform_lark_authorization_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 1.33,
+      "after_elapsed_seconds": 2.06,
+      "wait_seconds": 0.0,
+      "held_seconds": 2.059214
+    },
+    {
+      "name": "TestLarkAuthorizationInterruptedBeforeInvalidationIsNeverInferredComplete",
+      "file": "platform_lark_authorization_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 0.95,
+      "after_elapsed_seconds": 4.17,
+      "wait_seconds": 3.021148,
+      "held_seconds": 1.147148
+    },
+    {
+      "name": "TestModelOperationOrderSurvivesPollingAndRestart",
+      "file": "model_management_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 0.29,
+      "after_elapsed_seconds": 0.88,
+      "wait_seconds": 0.0,
+      "held_seconds": 0.876462
+    },
+    {
+      "name": "TestOnlineModelsDefaultExplicitClosedAndRestart",
+      "file": "model_management_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 0.97,
+      "after_elapsed_seconds": 6.62,
+      "wait_seconds": 3.13468,
+      "held_seconds": 3.48517
+    },
+    {
+      "name": "TestOnlineModelsWaitGatePauseAndIndependentPublication",
+      "file": "model_management_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 0.86,
+      "after_elapsed_seconds": 6,
+      "wait_seconds": 2.963638,
+      "held_seconds": 3.039009
+    },
+    {
+      "name": "TestOnlineModelsValidationConflictCancellationAndPrivacy",
+      "file": "model_management_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 0.5,
+      "after_elapsed_seconds": 4.8,
+      "wait_seconds": 3.252901,
+      "held_seconds": 1.544734
+    },
+    {
+      "name": "TestOnlineModelsFailureIsolationRetryAndNoDuplicateRotation",
+      "file": "model_management_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 1.16,
+      "after_elapsed_seconds": 6.98,
+      "wait_seconds": 3.031488,
+      "held_seconds": 3.951683
+    },
+    {
+      "name": "TestWorkspaceSnapshotComparisonExcludesOnlyModelReference",
+      "file": "model_management_test.go",
+      "parallelized": false,
+      "before_elapsed_seconds": 0,
+      "after_elapsed_seconds": 0
+    },
+    {
+      "name": "TestOnlineModelsRestartPendingTargetAndCommitUnknown",
+      "file": "model_management_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 0.83,
+      "after_elapsed_seconds": 6.3,
+      "wait_seconds": 3.550258,
+      "held_seconds": 2.748952
+    },
+    {
+      "name": "TestOnlineModelsUnknownConfigKeepsOldSessionUntilReconciled",
+      "file": "model_management_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 0.82,
+      "after_elapsed_seconds": 4.29,
+      "wait_seconds": 1.981526,
+      "held_seconds": 2.304767
+    },
+    {
+      "name": "TestOnlineModelsCreationDuringValidationUsesPublishedDefault",
+      "file": "model_management_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 0.57,
+      "after_elapsed_seconds": 4.71,
+      "wait_seconds": 2.364122,
+      "held_seconds": 2.348947
+    },
+    {
+      "name": "TestOnlineModelsSameRoomPreservesIndependentExecutionTargets",
+      "file": "model_management_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 0.51,
+      "after_elapsed_seconds": 5.25,
+      "wait_seconds": 3.126533,
+      "held_seconds": 2.12562
+    },
+    {
+      "name": "TestOnlineModelsCancelBeforePublicationKeepsOriginalConfig",
+      "file": "model_management_test.go",
+      "parallelized": true,
+      "before_elapsed_seconds": 0.29,
+      "after_elapsed_seconds": 0.87,
+      "wait_seconds": 0.0,
+      "held_seconds": 0.869995
+    }
+  ],
+  "integration": {
+    "status": "failed",
+    "command": "go test -json -tags=integration -count=1 -timeout=15m ./...",
+    "wall_seconds": 831.331,
+    "returncode": 1,
+    "top_level": {
+      "pass": 1914,
+      "fail": 1,
+      "skip": 9
+    },
+    "room_top_level": {
+      "pass": 1406,
+      "fail": 1,
+      "skip": 7
+    },
+    "all_test_events_including_subtests": {
+      "pass": 4480,
+      "fail": 1,
+      "skip": 10
+    },
+    "selected_top_level": {
+      "TestWorkspaceSnapshotComparisonExcludesOnlyModelReference": "pass",
+      "TestPlatformMemberCurrentCLIRejectsMixedModes": "pass",
+      "TestPlatformMemberToggleIdentityScope": "pass",
+      "TestLarkAuthorizationRejectsAccountSwitchAndCancellation": "pass",
+      "TestPlatformMemberCurrentStorageFailuresAndRestart": "pass",
+      "TestPlatformMemberCurrentAdoptsSavedScopeBeforeAdmission": "pass",
+      "TestPlatformMemberCurrentConcurrentReservationAndFrozenAdmission": "pass",
+      "TestPlatformMemberCurrentSourceFences": "pass",
+      "TestPlatformMemberCurrentReadAndHistoricalReceipt": "pass",
+      "TestPlatformMemberCurrentHTTPRejectsExpandedShapes": "pass",
+      "TestPlatformMemberCurrentCLIUsesOneBusinessRequest": "pass",
+      "TestLarkAuthorizationInterruptedBeforeInvalidationIsNeverInferredComplete": "pass",
+      "TestLarkAuthorizationRejectsRevisionChangeDuringOAuth": "pass",
+      "TestOnlineModelsWaitGatePauseAndIndependentPublication": "pass",
+      "TestLarkAuthorizationCLIUsesOriginalMemberWithoutToolBinding": "pass",
+      "TestLarkAuthorizationKeepsExactSharedConnectionsAndReceipts": "pass",
+      "TestModelOperationOrderSurvivesPollingAndRestart": "pass",
+      "TestOnlineModelsDefaultExplicitClosedAndRestart": "pass",
+      "TestPlatformConnectNotificationUnsubscribeAcknowledgmentAndIdentity": "pass",
+      "TestPlatformConnectNotificationCrashRecoveryUsesOriginalDelivery": "pass",
+      "TestPlatformConnectNotificationReusedConnectionPublishesSavedResult": "pass",
+      "TestOnlineModelsCancelBeforePublicationKeepsOriginalConfig": "pass",
+      "TestDefaultAssistantConnectionPauseAndLateCompletion": "pass",
+      "TestPlatformConnectNotificationSubscriptionHandoffAndLateCompletion": "pass",
+      "TestPlatformConnectNotificationTerminalFailuresAndRestartResult": "pass",
+      "TestDefaultAssistantConnectionCannotBypassAdmission": "pass",
+      "TestPlatformConnectNotificationContinuesAcrossSessionRotation": "pass",
+      "TestPlatformConnectNotificationCannotBypassAdmissionOrMemberRemoval": "pass",
+      "TestPlatformConnectNotificationCapacityRetainsPendingAndRetriesAfterReclamation": "pass",
+      "TestDefaultAssistantConnectionAutomaticContinuationAndFailure": "pass",
+      "TestPlatformConnectNotificationAutomaticallyContinuesWithoutChatAndDoesNotRetryFailure": "pass",
+      "TestOnlineModelsCreationDuringValidationUsesPublishedDefault": "pass",
+      "TestOnlineModelsUnknownConfigKeepsOldSessionUntilReconciled": "pass",
+      "TestOnlineModelsSameRoomPreservesIndependentExecutionTargets": "pass",
+      "TestOnlineModelsFailureIsolationRetryAndNoDuplicateRotation": "pass",
+      "TestOnlineModelsValidationConflictCancellationAndPrivacy": "pass",
+      "TestOnlineModelsRestartPendingTargetAndCommitUnknown": "pass",
+      "TestPlatformConnectNotificationStartPolicyIsIndependentOfBusinessInput": "pass"
+    },
+    "packages": [
+      {
+        "Package": "github.com/go-aie/teamx/cmd/teamx",
+        "Action": "skip",
+        "Elapsed": 0
+      },
+      {
+        "Package": "github.com/go-aie/teamx/internal/identity",
+        "Action": "skip",
+        "Elapsed": 0
+      },
+      {
+        "Package": "github.com/go-aie/teamx/internal/inputstreamtest/frozen",
+        "Action": "skip",
+        "Elapsed": 0
+      },
+      {
+        "Package": "github.com/go-aie/teamx/internal/app/agents",
+        "Action": "pass",
+        "Elapsed": 1.077
+      },
+      {
+        "Package": "github.com/go-aie/teamx/internal/platform/attachment",
+        "Action": "skip",
+        "Elapsed": 0
+      },
+      {
+        "Package": "github.com/go-aie/teamx/internal/app/platforms",
+        "Action": "pass",
+        "Elapsed": 1.194
+      },
+      {
+        "Package": "github.com/go-aie/teamx/internal/architecture",
+        "Action": "pass",
+        "Elapsed": 2.176
+      },
+      {
+        "Package": "github.com/go-aie/teamx/internal/calendar",
+        "Action": "pass",
+        "Elapsed": 2.27
+      },
+      {
+        "Package": "github.com/go-aie/teamx/internal/inputstreamtest",
+        "Action": "pass",
+        "Elapsed": 2.743
+      },
+      {
+        "Package": "github.com/go-aie/teamx/internal/platform",
+        "Action": "pass",
+        "Elapsed": 2.933
+      },
+      {
+        "Package": "github.com/go-aie/teamx/internal/persistence",
+        "Action": "pass",
+        "Elapsed": 3.588
+      },
+      {
+        "Package": "github.com/go-aie/teamx/internal/platform/notification",
+        "Action": "pass",
+        "Elapsed": 2.123
+      },
+      {
+        "Package": "github.com/go-aie/teamx/internal/platform/registry",
+        "Action": "pass",
+        "Elapsed": 2.527
+      },
+      {
+        "Package": "github.com/go-aie/teamx/internal/platform/gitlab",
+        "Action": "pass",
+        "Elapsed": 3.928
+      },
+      {
+        "Package": "github.com/go-aie/teamx/internal/platform/tool",
+        "Action": "pass",
+        "Elapsed": 3.137
+      },
+      {
+        "Package": "github.com/go-aie/teamx/internal/platform/scion",
+        "Action": "pass",
+        "Elapsed": 8.947
+      },
+      {
+        "Package": "github.com/go-aie/teamx/internal/agent/dsh",
+        "Action": "pass",
+        "Elapsed": 25.568
+      },
+      {
+        "Package": "github.com/go-aie/teamx/internal/workspace/git",
+        "Action": "skip",
+        "Elapsed": 0.001
+      },
+      {
+        "Package": "github.com/go-aie/teamx/internal/web",
+        "Action": "pass",
+        "Elapsed": 0.775
+      },
+      {
+        "Package": "github.com/go-aie/teamx/internal/testutil",
+        "Action": "pass",
+        "Elapsed": 1.3
+      },
+      {
+        "Package": "github.com/go-aie/teamx/internal/workspace/scion",
+        "Action": "pass",
+        "Elapsed": 1.298
+      },
+      {
+        "Package": "github.com/go-aie/teamx/internal/workspace",
+        "Action": "pass",
+        "Elapsed": 1.7229999999999999
+      },
+      {
+        "Package": "github.com/go-aie/teamx/tools/gitlab",
+        "Action": "pass",
+        "Elapsed": 6.227
+      },
+      {
+        "Package": "github.com/go-aie/teamx/internal/inputstream",
+        "Action": "pass",
+        "Elapsed": 33.162
+      },
+      {
+        "Package": "github.com/go-aie/teamx/tools/scion",
+        "Action": "pass",
+        "Elapsed": 9.468
+      },
+      {
+        "Package": "github.com/go-aie/teamx/internal/platform/lark",
+        "Action": "pass",
+        "Elapsed": 82.591
+      },
+      {
+        "Package": "github.com/go-aie/teamx/internal/room",
+        "Action": "fail",
+        "Elapsed": 803.035
+      }
+    ],
+    "log": "/tmp/teamx-room-fixture-parallel/integration.jsonl",
+    "note": "Includes core. Fifteen-minute package timeout is diagnostic and does not change Makefile defaults. No separate full core or full-repository race run.",
+    "failure_analysis": {
+      "test": "TestLarkAuthHTTPGuardsCancellationAndShutdown",
+      "assertion": "img-src 'self';",
+      "actual_policy": "img-src 'self' blob:;",
+      "existing_in_head": true,
+      "assertion_file": "internal/room/platform_lark_auth_integration_test.go:92",
+      "policy_file": "internal/web/handler.go:53",
+      "web_contract_file": "internal/web/handler_test.go:39",
+      "changed_by_this_batch": false,
+      "resolution": "Recorded outside first-batch scope; neither CSP nor the old assertion was modified. Full integration did not pass."
+    },
+    "largest_completed_serial_room_tests": [
+      {
+        "name": "TestPlatformAuthorizationSurvivesModelRotationAndPause",
+        "elapsed_seconds": 14.35
+      },
+      {
+        "name": "TestDefaultAssistantPlatformOnboarding",
+        "elapsed_seconds": 7.67
+      },
+      {
+        "name": "TestInputUpgradeResumesEveryPublicationBoundary",
+        "elapsed_seconds": 7.18
+      },
+      {
+        "name": "TestWorkspaceRetryRequiresPreparationProcessSettlement",
+        "elapsed_seconds": 6.95
+      },
+      {
+        "name": "TestWorkspaceSharedPlatformReuseFailureAndLateProjectCheck",
+        "elapsed_seconds": 6.65
+      },
+      {
+        "name": "TestConfigurationReceiptsAndObservationsSurviveRestart",
+        "elapsed_seconds": 6.44
+      }
+    ]
+  }
+}

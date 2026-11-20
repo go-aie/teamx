@@ -28,7 +28,22 @@ func sameJSON(a, b any) bool {
 }
 func larkToolConfigurationHarness(t *testing.T) *larkHarness {
 	t.Helper()
-	h := newLarkHarness(t)
+	return configureLarkToolFixture(t, newLarkHarness(t))
+}
+
+// Entrypoint checks need only a Lark account, not a second provider or executable.
+func larkOnlyToolConfigurationHarness(t *testing.T) *larkHarness {
+	t.Helper()
+	m := testManager(t, t.TempDir(), managerTestProfiles(t))
+	m.larkClients = lark.NewClientFactory(0, 0, 0)
+	room := managerCreate(t, m, "lark-tools")
+	_, snapshot := readManagedRoom(t, m, room)
+	svc := eventLiveService(t, &eventHarness{m: m, room: room})
+	return configureLarkToolFixture(t, newLarkHarnessForRoom(t, m, room, svc, snapshot.Members))
+}
+
+func configureLarkToolFixture(t *testing.T, h *larkHarness) *larkHarness {
+	t.Helper()
 	script := strings.Replace(larkFixtureScript(), "path=a[2]", `if a==['config','show']:
  print(json.dumps({'profile':'fixture','appId':'cli_fixture','brand':'feishu','dpopMode':'required'}));sys.exit()
 if a==['auth','scopes','--json']:
@@ -91,7 +106,7 @@ func TestLarkToolConfigurationEntrypointsAgreeAndSelfProofIsRequired(t *testing.
 	parallelFixtureTest(t)
 	for _, entry := range []string{"http", "member", "onboarding"} {
 		t.Run(entry, func(t *testing.T) {
-			h := larkToolConfigurationHarness(t)
+			h := larkOnlyToolConfigurationHarness(t)
 			var result *larkMemberCapabilityResult
 			switch entry {
 			case "http":
