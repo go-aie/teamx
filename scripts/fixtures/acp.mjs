@@ -26,7 +26,7 @@ for await (const line of createInterface({ input: process.stdin })) {
         protocolVersion: 1,
         authMethods: [],
         agentInfo: { name: 'packaging-fixture', version: '1' },
-        agentCapabilities: { sessionCapabilities: { close: {}, resume: {} } }
+        agentCapabilities: { mcpCapabilities: { http: true }, sessionCapabilities: { close: {}, resume: {} } }
       };
       break;
     case 'session/new':
