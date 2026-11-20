@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"os/user"
@@ -358,55 +357,15 @@ func checkServiceUnit(r serviceRegistration) error {
 // Inspect proves owner authentication and persistent installation identity. A
 // listening port or public health response alone never counts as ready.
 func authenticatedServiceStatus(ctx context.Context, r serviceRegistration) (map[string]any, error) {
-	c, err := readStartupConfig(filepath.Join(r.Home, "config.toml"), true, false)
+	endpoint, err := newServiceEndpoint(r)
 	if err != nil {
 		return nil, err
 	}
-	if c.Access.LoginEnabled != nil && !*c.Access.LoginEnabled {
-		return nil, errors.New("managed deployment requires login enabled")
-	}
-	listen := "127.0.0.1:8088"
-	if c.Server.Listen != nil {
-		listen = *c.Server.Listen
-	}
-	if err := validateManagedAccess(c, listen); err != nil {
+	defer endpoint.close()
+	if err := endpoint.authenticate(ctx); err != nil {
 		return nil, err
 	}
-	if strings.HasSuffix(listen, ":0") {
-		return nil, errors.New("service manager requires a fixed loopback port")
-	}
-	token, err := readAdminTokenForUID(adminTokenPath(c), uint32(r.UID))
-	if err != nil {
-		return nil, err
-	}
-	client := &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{Proxy: nil}, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	defer client.CloseIdleConnections()
-	get := func(route string, result any) error {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, internalAccessEndpoint(listen)+route, nil)
-		if err != nil {
-			return err
-		}
-		req.Header.Set("Authorization", "Bearer "+token)
-		res, err := client.Do(req)
-		if err != nil {
-			return err
-		}
-		defer res.Body.Close()
-		if res.StatusCode != 200 {
-			return fmt.Errorf("service check %s: HTTP %d", route, res.StatusCode)
-		}
-		return decodeServiceJSON(res.Body, result)
-	}
-	var session struct {
-		Operator       string `json:"operator"`
-		InstallationID string `json:"installation_id"`
-	}
-	if err := get("/v1/access/session", &session); err != nil {
-		return nil, err
-	}
-	if session.InstallationID != r.InstallationID || session.Operator != c.Access.OperatorID {
-		return nil, errors.New("endpoint belongs to a different installation or operator")
-	}
+	get := func(route string, result any) error { return endpoint.get(ctx, route, result) }
 	status := map[string]any{}
 	if err := get("/healthz", &status); err != nil {
 		return nil, err
@@ -449,6 +408,10 @@ func waitServiceStatus(ctx context.Context, r serviceRegistration) (map[string]a
 		status, err := authenticatedServiceStatus(ctx, r)
 		if err == nil {
 			return status, nil
+		}
+		var permanent *serviceStartupError
+		if errors.As(err, &permanent) {
+			return nil, fmt.Errorf("服务启动检查失败：%w", err)
 		}
 		last = err
 		select {

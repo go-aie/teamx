@@ -5,6 +5,7 @@ release_version='@TEAMX_VERSION@'
 release_repository='@TEAMX_REPOSITORY@'
 [[ $release_version != @* ]] || release_version=''
 [[ $release_repository != @* ]] || release_repository='go-aie/teamx'
+installer_version=$release_version
 
 fail() { printf 'TeamX: %s\n' "$*" >&2; exit 1; }
 usage() {
@@ -113,16 +114,50 @@ if [[ -e $server_root/service.json || -L $server_root/service.json ]]; then
       shell_quote "$server_root"
       printf '\n'
     else
-      printf '\n当前 CLI 尚不支持联网升级，请使用此过渡命令：\n  curl -fsSL '
-      if [[ -n $release_version ]]; then
-        printf 'https://github.com/%s/releases/download/%s/install.sh' "$release_repository" "$release_version"
+      if [[ -n $installer_version && -z $archive ]]; then
+        printf '\n请通过安装脚本升级：\n  curl -fsSL '
+        printf 'https://github.com/%s/releases/download/%s/install.sh' "$release_repository" "$installer_version"
+        printf ' | bash -s -- --upgrade'
+        if [[ $release_version != "$installer_version" ]]; then
+          printf ' --version '
+          shell_quote "$release_version"
+        fi
       else
-        printf 'https://github.com/%s/releases/latest/download/install.sh' "$release_repository"
+        # Legacy CLIs require --backup-dir. Read the validated registration with
+        # the standard bundle's Node so users need no extra JSON tools or paths.
+        backup_parent=$(run_privileged "$server_root/current/runtime/node/bin/node" -e '
+          const fs = require("node:fs"), path = require("node:path");
+          const { home } = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+          if (typeof home !== "string" || !path.isAbsolute(home) || /[\r\n\\]/.test(home)) process.exit(1);
+          process.stdout.write(home + "-backups");
+        ' "$server_root/service.json") || fail '无法确定自动备份位置，请检查安装登记和内置 Node'
+        [[ $backup_parent != "$server_root" && $backup_parent != "$server_root/"* && $server_root != "$backup_parent/"* ]] || fail '自动备份位置与安装目录重叠，请使用 --upgrade 并指定其他 --backup-dir'
+        printf '\n请使用安装包升级。\n'
+        if [[ -z $archive ]]; then
+          printf '下载本机平台（%s）的 standard.tar.gz 和同名 .sha256，放在同一目录：\n  https://github.com/%s/releases\n' "$target" "$release_repository"
+          printf '\n下载后执行（替换安装包路径）：\n'
+        else
+          printf '使用所选安装包升级：\n'
+        fi
+        printf '备份会自动创建，完成后显示位置。\n  (umask 077; '
+        [[ $platform != Linux ]] || printf 'sudo '
+        printf 'mkdir -p -- '
+        shell_quote "$backup_parent"
+        printf ') &&\n  '
+        [[ $platform != Linux ]] || printf 'sudo '
+        shell_quote "$command_target"
+        printf ' service upgrade --archive '
+        shell_quote "${archive:-/absolute/path/to/package.tar.gz}"
+        printf ' --backup-dir '
+        shell_quote "$backup_parent/before-upgrade-"
+        printf '"$(date -u +%%Y%%m%%dT%%H%%M%%S)-$$-$RANDOM"'
       fi
-      printf ' | bash -s -- --upgrade --server-root '
+      printf ' --server-root '
       shell_quote "$server_root"
-      printf ' --bin-dir '
-      shell_quote "$bin_dir"
+      if [[ -n $installer_version && -z $archive ]]; then
+        printf ' --bin-dir '
+        shell_quote "$bin_dir"
+      fi
       printf '\n'
     fi
     printf '\n查看状态：\n  '
@@ -147,7 +182,10 @@ trap 'rm -rf -- "$work"' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 download() {
-  curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL --retry 2 --connect-timeout 15 "$1" -o "$2" || fail "下载失败：$1；尚未停止服务或切换版本，可重新执行原命令"
+  local output_flags=(-sS)
+  # stdin is a pipe for curl | bash; curl writes its progress meter to stderr.
+  if [[ ${3:-} == progress && -t 2 ]]; then output_flags=(-S --progress-bar); fi
+  curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fL "${output_flags[@]}" --retry 2 --connect-timeout 15 "$1" -o "$2" || fail "下载失败：$1；尚未停止服务或切换版本，可重新执行原命令"
 }
 if [[ -z $archive ]]; then
   [[ $release_version =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail '源码脚本联网安装需指定 --version vX.Y.Z；也可使用 --archive'
@@ -160,7 +198,7 @@ if [[ -z $archive ]]; then
   [[ -z $expected_sha || $expected_sha == "$recorded_sha" ]] || fail '指定摘要与发行摘要不一致'
   expected_sha=$recorded_sha
   archive="$work/$archive_name"
-  download "$release_url/$archive_name" "$archive"
+  download "$release_url/$archive_name" "$archive" progress
 else
   [[ -f $archive ]] || fail "找不到归档：$archive"
   if [[ -z $expected_sha ]]; then

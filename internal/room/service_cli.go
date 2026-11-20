@@ -19,7 +19,11 @@ import (
 	"time"
 )
 
-func runService(args []string, stdout, stderr io.Writer) (resultErr error) {
+func runService(args []string, stdout, stderr io.Writer) error {
+	return runServiceWithManager(args, stdout, stderr, nil)
+}
+
+func runServiceWithManager(args []string, stdout, stderr io.Writer, runner serviceRunner) (resultErr error) {
 	if len(args) == 0 {
 		_, err := io.WriteString(stdout, serviceCLIHelp)
 		return err
@@ -245,18 +249,21 @@ func runService(args []string, stdout, stderr io.Writer) (resultErr error) {
 		if err := writeServiceFile(r.Unit, unit, 0644); err != nil {
 			return err
 		}
-		if err := serviceManager(ctx, nil, r, "register"); err != nil {
+		if err := checkServicePort(ctx, r, false); err != nil {
 			return err
 		}
-		if err := serviceManager(ctx, nil, r, "enable"); err != nil {
+		if err := serviceManager(ctx, runner, r, "register"); err != nil {
 			return err
 		}
-		if err := serviceManager(ctx, nil, r, "start"); err != nil {
+		if err := serviceManager(ctx, runner, r, "enable"); err != nil {
+			return err
+		}
+		if err := serviceManager(ctx, runner, r, "start"); err != nil {
 			return err
 		}
 		status, err := waitServiceStatus(ctx, r)
 		if err != nil {
-			_ = serviceManager(context.Background(), nil, r, "stop")
+			_ = serviceManager(context.Background(), runner, r, "stop")
 			return err
 		}
 		return writeServiceInstallResult(r, status, stdout, stderr)
@@ -274,7 +281,7 @@ func runService(args []string, stdout, stderr io.Writer) (resultErr error) {
 	if err := checkServiceUnit(r); err != nil {
 		return err
 	}
-	manager := func(action string) error { return serviceManager(ctx, nil, r, action) }
+	manager := func(action string) error { return serviceManager(ctx, runner, r, action) }
 	switch action {
 	case "status":
 		managerState, managerErr := serviceManagerState(ctx, r)
@@ -290,6 +297,9 @@ func runService(args []string, stdout, stderr io.Writer) (resultErr error) {
 	case "enable", "disable":
 		return manager(action)
 	case "start", "restart":
+		if err := checkServicePort(ctx, r, true); err != nil {
+			return err
+		}
 		if action == "restart" {
 			if err := manager("stop"); err != nil {
 				return err
@@ -299,6 +309,9 @@ func runService(args []string, stdout, stderr io.Writer) (resultErr error) {
 				return err
 			}
 			release()
+			if err := checkServicePort(ctx, r, false); err != nil {
+				return err
+			}
 		}
 		if err := manager("start"); err != nil {
 			return err
@@ -322,7 +335,7 @@ func runService(args []string, stdout, stderr io.Writer) (resultErr error) {
 				state = "服务已请求停止，尚未切换版本"
 			}
 			if selected {
-				state = "版本/数据已切换；请先检查日志，再恢复一致备份"
+				state = "版本/数据已切换；请先检查日志和服务状态，保留一致备份"
 			}
 			fmt.Fprintln(stderr, state+"。")
 			if backedUp {
@@ -333,6 +346,11 @@ func runService(args []string, stdout, stderr io.Writer) (resultErr error) {
 				fmt.Fprintf(stderr, "核对原因后启动原版本：%s\n", serviceDisplayCommand(r, "start"))
 			}
 		}()
+		if action == "upgrade" || action == "restore" {
+			if err := checkServicePort(ctx, r, true); err != nil {
+				return err
+			}
+		}
 		if *backup != "" {
 			*backup, err = resolveFutureDirectory(*backup)
 			if err != nil {
@@ -390,6 +408,12 @@ func runService(args []string, stdout, stderr io.Writer) (resultErr error) {
 			}
 			fmt.Fprintf(stderr, "升级包已就绪。即将停服并备份至：%s\n", *backup)
 		}
+		if action == "upgrade" || action == "restore" {
+			// Downloads and validation may take time; check again before stop.
+			if err := checkServicePort(ctx, r, true); err != nil {
+				return err
+			}
+		}
 		stopped = true
 		if err := manager("stop"); err != nil {
 			return err
@@ -413,6 +437,11 @@ func runService(args []string, stdout, stderr io.Writer) (resultErr error) {
 		if action == "stop" {
 			return nil
 		}
+		if action == "upgrade" || action == "restore" {
+			if err := checkServicePort(ctx, r, false); err != nil {
+				return err
+			}
+		}
 		if err := createServiceBackup(r, *backup); err != nil {
 			return fmt.Errorf("service remains stopped; backup: %w", err)
 		}
@@ -425,19 +454,27 @@ func runService(args []string, stdout, stderr io.Writer) (resultErr error) {
 			if err := restoreServiceBackup(ctx, r, *source); err != nil {
 				return fmt.Errorf("service remains stopped; restore: %w", err)
 			}
-		} else if err := selectServiceRelease(r.Root, next); err != nil {
-			return err
+		} else {
+			if err := checkServicePort(ctx, r, false); err != nil {
+				return err
+			}
+			if err := selectServiceRelease(r.Root, next); err != nil {
+				return err
+			}
 		}
 		selected = true
 		release()
 		release = nil
+		if err := checkServicePort(ctx, r, false); err != nil {
+			return err
+		}
 		if err := manager("start"); err != nil {
 			return fmt.Errorf("backup preserved at %s; startup: %w", *backup, err)
 		}
 		status, err := waitServiceStatus(ctx, r)
 		if err != nil {
 			_ = manager("stop")
-			return fmt.Errorf("new selection retained and service stopped; restore the consistent backup at %s: %w", *backup, err)
+			return fmt.Errorf("新版已选用，服务启动失败并已停止；备份保留在 %s: %w", *backup, err)
 		}
 		status["backup"] = *backup
 		status["recovery_review"] = "Re-login and inspect model operations and member sessions; retry interrupted targets explicitly. No validation or platform action was replayed by the deployment command."

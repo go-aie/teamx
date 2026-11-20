@@ -27,6 +27,7 @@ function fixture(t, platform = 'Darwin', architecture = 'arm64') {
   shell('useradd', 'printf "useradd\\n" >> "$INSTALL_TEST_TOOLS"\ntouch "$INSTALL_TEST_ACCOUNT"\n');
   shell('sudo', 'printf "sudo %s\\n" "$*" >> "$INSTALL_TEST_TOOLS"\nif [ "$1" != -v ]; then exec "$@"; fi\n');
   shell('curl', `url='' output=''
+printf '%s\\n' "$*" >> "$INSTALL_TEST_CURL_ARGS"
 while [ "$#" -gt 0 ]; do
   case "$1" in
     https://*) url=$1; shift ;;
@@ -45,8 +46,8 @@ const args = process.argv.slice(2), env = process.env;
 if (args[0] === '--version') { console.log('teamx v1.0.0 commit=fixture'); process.exit(0); }
 if (args[0] === 'service' && args[1] === 'inspect') {
   if (env.INSTALL_TEST_BAD_REGISTRATION === 'true') process.exit(13);
-  JSON.parse(fs.readFileSync(p.join(args[args.indexOf('--server-root') + 1], 'service.json'), 'utf8'));
-  console.log('{}'); process.exit(0);
+  const registration = JSON.parse(fs.readFileSync(p.join(args[args.indexOf('--server-root') + 1], 'service.json'), 'utf8'));
+  console.log(JSON.stringify(registration)); process.exit(0);
 }
 if (args[0] === 'service' && args[1] === 'upgrade' && args[2] === '--help') {
   console.log(env.INSTALL_TEST_LEGACY === 'true' ? '--archive FILE --backup-dir DIR' : '--version vX.Y.Z');
@@ -62,7 +63,16 @@ const root = get('--server-root'), bin = p.join(root, 'releases', 'fixture', 'bi
 fs.mkdirSync(bin, {recursive:true});
 fs.copyFileSync(process.argv[1].replace('bootstrap.mjs', 'teamx-fixture'), p.join(bin, 'teamx'));
 try { fs.symlinkSync('releases/fixture', p.join(root, 'current')); } catch (e) { if (e.code !== 'EEXIST') throw e; }
-fs.writeFileSync(p.join(root, 'service.json'), '{}');
+fs.writeFileSync(p.join(root, 'service.json'), JSON.stringify({home: env.INSTALL_TEST_DATA}));
+const node = p.join(root, 'releases', 'fixture', 'runtime/node/bin/node');
+fs.mkdirSync(p.dirname(node), {recursive:true});
+if (!fs.existsSync(node)) fs.symlinkSync(process.execPath, node);
+if (args[1] === 'upgrade' && args.includes('--backup-dir')) {
+  const backup = get('--backup-dir');
+  if (!fs.existsSync(p.dirname(backup)) || fs.existsSync(backup)) process.exit(14);
+  fs.mkdirSync(backup);
+  console.error('备份：' + backup);
+}
 console.error(args[1] === 'upgrade' ? 'TeamX 已完成升级并启动。' : 'TeamX 已安装并启动。\\n1. 打开：http://127.0.0.1:8088');
 `);
   const executable = p.join(temp, 'teamx-fixture');
@@ -77,9 +87,9 @@ console.error(args[1] === 'upgrade' ? 'TeamX 已完成升级并启动。' : 'Tea
   fs.writeFileSync(p.join(assets, 'SHA256SUMS'), fs.readFileSync(archive + '.sha256'));
   fs.writeFileSync(p.join(assets, 'install.sh'), source.replace('@TEAMX_VERSION@', 'v1.2.3').replace('@TEAMX_REPOSITORY@', 'go-aie/teamx'));
   const env = { ...process.env, HOME: home, SHELL: '/bin/zsh', PATH: `${mocks}:${process.env.PATH}`,
-    INSTALL_TEST_RECORD: record, INSTALL_TEST_PROGRAM: program, INSTALL_TEST_ASSETS: assets,
+    INSTALL_TEST_RECORD: record, INSTALL_TEST_PROGRAM: program, INSTALL_TEST_ASSETS: assets, INSTALL_TEST_DATA: data,
     INSTALL_TEST_ACCOUNT: p.join(temp, 'account'), INSTALL_TEST_TOOLS: p.join(temp, 'tools'),
-    INSTALL_TEST_DOWNLOADS: p.join(temp, 'downloads') };
+    INSTALL_TEST_DOWNLOADS: p.join(temp, 'downloads'), INSTALL_TEST_CURL_ARGS: p.join(temp, 'curl-args') };
   const runDefault = (args = [], overrides = {}, script = source) => spawnSync('/bin/bash', ['-s', '--', ...args],
     { input: script, env: { ...env, ...overrides }, encoding: 'utf8' });
   const run = (args = [], overrides = {}, script = source) => runDefault(['--server-root', root,
@@ -117,12 +127,35 @@ test('a piped release installer selects the native standard, pins downloads and 
     assert.equal(fs.realpathSync(p.join(f.bin, 'teamx')), fs.realpathSync(p.join(f.root, 'releases/fixture/bin/teamx')));
     assert.equal(fs.existsSync(p.join(f.temp, '.teamx')), false);
     assert.match(fs.readFileSync(f.env.INSTALL_TEST_DOWNLOADS, 'utf8'), new RegExp(`/v1.2.3/teamx-v1.2.3-${f.target}-standard.tar.gz`));
+    const downloads = fs.readFileSync(f.env.INSTALL_TEST_CURL_ARGS, 'utf8').trim().split('\n');
+    assert.equal(downloads.length, 2);
+    for (const args of downloads) assert.match(args, / -sS /, 'redirected output keeps downloads quiet');
     if (platform === 'Linux') {
       assert.equal(args[args.indexOf('--user') + 1], 'teamx');
       const tools = fs.readFileSync(f.env.INSTALL_TEST_TOOLS, 'utf8');
       assert.match(tools, /sudo -v/); assert.match(tools, /useradd/);
       assert.equal(fs.existsSync(p.join(f.home, '.zshrc')), false);
     }
+  }
+});
+
+test('piped installation with terminal stderr shows archive progress on macOS and Linux', t => {
+  for (const platform of ['Darwin', 'Linux']) {
+    const f = fixture(t, platform);
+    const command = `cat ${quote(p.join(f.assets, 'install.sh'))} | /bin/bash -s -- --server-root ${quote(f.root)} --home ${quote(f.data)} --bin-dir ${quote(f.bin)}`;
+    const args = process.platform === 'darwin'
+      ? ['-q', '/dev/null', '/bin/bash', '-c', command]
+      : ['-q', '-e', '-c', command, '/dev/null'];
+    // macOS script needs a regular pipe rather than Node's socket for stdin.
+    const result = spawnSync('/bin/sh', ['-c', 'cat | script "$@"', 'terminal-test', ...args],
+      { input: '', env: f.env, encoding: 'utf8', timeout: 15000 });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.equal(f.calls().length, 1);
+    const [metadata, archive] = fs.readFileSync(f.env.INSTALL_TEST_CURL_ARGS, 'utf8').trim().split('\n');
+    assert.match(metadata, / -sS /, 'small checksum metadata stays quiet');
+    assert.match(archive, / -S /, 'archive download enables curl progress with error messages');
+    assert.match(archive, / --progress-bar /, 'terminal progress uses a compact bar');
+    assert.doesNotMatch(archive, / -s/, 'terminal progress must not be silenced');
   }
 });
 
@@ -173,9 +206,10 @@ test('legacy CLI gets an explicit upgrade bootstrap, which preserves root and ba
   for (const platform of ['Darwin', 'Linux']) {
     const f = fixture(t, platform, 'x86_64');
     assert.equal(f.run(['--archive', f.archive]).status, 0);
-    const guidance = f.run(['--version', 'v1.2.3'], { INSTALL_TEST_LEGACY: 'true' });
+    const script = source.replace('@TEAMX_VERSION@', 'v1.2.3').replace('@TEAMX_REPOSITORY@', 'go-aie/teamx');
+    const guidance = f.run([], { INSTALL_TEST_LEGACY: 'true' }, script);
     assert.equal(guidance.status, 0, guidance.stderr);
-    assert.match(guidance.stdout, /当前 CLI 尚不支持联网升级/);
+    assert.match(guidance.stdout, /请通过安装脚本升级/);
     assert.ok(guidance.stdout.includes('releases/download/v1.2.3/install.sh | bash -s -- --upgrade'));
     assert.equal(fs.existsSync(f.env.INSTALL_TEST_DOWNLOADS), false);
     const backup = p.join(f.temp, 'private backup');
@@ -189,6 +223,52 @@ test('legacy CLI gets an explicit upgrade bootstrap, which preserves root and ba
     assert.equal(args[args.indexOf('--backup-dir') + 1], backup);
     assert.equal(args.includes('--user'), false);
     assert.equal(args.includes('--home'), false);
+  }
+});
+
+test('legacy offline upgrade guidance creates unique backups without user-selected backup paths', t => {
+  for (const platform of ['Darwin', 'Linux']) {
+    const f = fixture(t, platform);
+    assert.equal(f.run(['--archive', f.archive]).status, 0);
+    const recipient = p.join(f.temp, 'recipient directory');
+    fs.mkdirSync(recipient);
+    for (const args of [[], ['--version', 'v1.2.3'], ['--archive', f.archive]]) {
+      const result = f.run(args, { INSTALL_TEST_LEGACY: 'true' });
+      assert.equal(result.status, 0, result.stderr);
+      assert.doesNotMatch(result.stdout, /curl -fsSL|packaging\/install.sh|\/path\/to\/new\/install.sh|开发包|开发者|未发布|构建/);
+      const command = result.stdout.split('\n').find(line => line.includes(' service upgrade --archive '));
+      assert.ok(command.includes(quote(p.join(f.root, 'current/bin/teamx'))));
+      assert.ok(command.trim().startsWith(platform === 'Linux' ? 'sudo ' : "'"));
+      assert.ok(command.includes('--backup-dir '));
+      assert.equal(command.includes('--bin-dir'), false);
+      assert.match(result.stdout, /备份会自动创建，完成后显示位置/);
+      assert.doesNotMatch(result.stdout, /替换安装包和备份|\/absolute\/path\/to\/new-backup/);
+      assert.equal(fs.existsSync(f.data + '-backups'), args.length > 0, 'showing guidance does not create backups');
+      if (!args.includes('--archive')) {
+        assert.ok(result.stdout.includes(`下载本机平台（${f.target}）的 standard.tar.gz 和同名 .sha256`));
+        assert.match(result.stdout, /https:\/\/github.com\/go-aie\/teamx\/releases\n/);
+        assert.match(command, /\/absolute\/path\/to\/package.tar.gz/);
+      }
+      const prepare = result.stdout.split('\n').find(line => line.trim().startsWith('(umask '));
+      assert.ok(prepare);
+      const executableCommand = (prepare + '\n' + command)
+        .replace(quote('/absolute/path/to/package.tar.gz'), quote(f.archive));
+      const upgraded = spawnSync('/bin/bash', ['-c', executableCommand],
+        { cwd: recipient, env: f.env, encoding: 'utf8' });
+      assert.equal(upgraded.status, 0, upgraded.stderr);
+      const upgrade = f.calls().at(-1);
+      assert.deepEqual(upgrade.slice(0, 2), ['service', 'upgrade']);
+      assert.equal(upgrade[upgrade.indexOf('--archive') + 1], f.archive);
+      const backup = upgrade[upgrade.indexOf('--backup-dir') + 1];
+      assert.equal(p.dirname(backup), f.data + '-backups');
+      assert.equal(fs.existsSync(backup), true);
+      assert.match(upgraded.stderr, /备份：/);
+      assert.equal(upgrade[upgrade.indexOf('--server-root') + 1], f.root);
+      assert.equal(fs.existsSync(f.env.INSTALL_TEST_DOWNLOADS), false);
+    }
+    assert.equal(f.calls().length, 4);
+    const backups = f.calls().slice(1).map(args => args[args.indexOf('--backup-dir') + 1]);
+    assert.equal(new Set(backups).size, 3);
   }
 });
 
