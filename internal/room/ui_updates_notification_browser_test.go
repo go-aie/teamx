@@ -27,6 +27,18 @@ func TestWebUpdatesNotificationScopeBrowser(t *testing.T) {
 	if os.Getenv("TEAMX_WEB_UPDATES_SCOPE_BROWSER") != "1" {
 		t.Skip("optional active-collector and independent-session browser acceptance")
 	}
+	runWebUpdatesNotificationScopeBrowser(t, false)
+}
+
+func TestWebUpdatesNotificationScopeLongWindowBrowser(t *testing.T) {
+	if os.Getenv("TEAMX_WEB_UPDATES_SCOPE_LONG") != "1" {
+		t.Skip("set TEAMX_WEB_UPDATES_SCOPE_LONG=1 for real sixty-second collector measurement")
+	}
+	runWebUpdatesNotificationScopeBrowser(t, true)
+}
+
+func runWebUpdatesNotificationScopeBrowser(t *testing.T, longWindow bool) {
+	t.Helper()
 	t.Setenv("USER", humanCaller.ID)
 	h := newLarkHarness(t)
 	h.messages(0)
@@ -172,14 +184,18 @@ func TestWebUpdatesNotificationScopeBrowser(t *testing.T) {
 	defer server.Close()
 	ctx, cancel := context.WithTimeout(t.Context(), 4*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "node", "testdata/web_updates_notification_scope.cjs", server.URL)
+	mode := "functional"
+	if longWindow {
+		mode = "long"
+	}
+	cmd := exec.CommandContext(ctx, "node", "testdata/web_updates_notification_scope.cjs", server.URL, mode)
 	cmd.Env = append(os.Environ(), "TEAMX_WEB_UPDATES_TEST_TOKEN="+token)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("active collectors: %v\n%s", err, output)
 	}
 	t.Log(string(output))
-	if steps.Load() < 60 {
+	if longWindow && steps.Load() < 60 {
 		t.Fatal("active collection did not span sixty seconds", steps.Load())
 	}
 }

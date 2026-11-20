@@ -490,3 +490,30 @@ func TestMigratedSourceReferenceSurvivesConsumptionAndReopen(t *testing.T) {
 		t.Fatal("reclaim lost the reference", link, entry, err)
 	}
 }
+
+func TestPlatformInputExpiryMaintenanceRequiresSourceRelease(t *testing.T) {
+	for _, released := range []bool{false, true} {
+		t.Run(map[bool]string{false: "source-pending", true: "source-released"}[released], func(t *testing.T) {
+			_, p, svc, id := platformReaderFixture(t)
+			svc.unifiedInputs = true
+			svc.inboxExpiry = notification.ExpiryPolicy{AfterDays: 3, SkipExpired: true}
+			p.service.Store(svc)
+			item := storedGitLab(id, "expired", "events", "7", "42", "expired input")
+			receivePlatform(t, p, item)
+			inventory := inputSourceInventory{Revision: "source-state", Pending: map[notification.SourceID]map[string]bool{
+				{Provider: "gitlab", Channel: "events"}: {item.DeliveryID: !released},
+			}}
+			plan, err := p.maintain("gitlab", inventory, item.CreatedAt.Add(4*24*time.Hour))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if released {
+				if plan.Through != 1 || plan.Usage.Records != 1 {
+					t.Fatal("expired released input was not reclaimed", plan)
+				}
+			} else if plan.Through != 0 || plan.Usage.Records != 0 {
+				t.Fatal("source-pending input was reclaimed", plan)
+			}
+		})
+	}
+}

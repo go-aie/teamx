@@ -3,29 +3,29 @@ import { launch, settle } from "./web_app_harness.mjs";
 import { request } from "../assets/client.mjs";
 
 const endpoint = process.env.TEAMX_WEB_ENDPOINT;
-const call = (path, payload) => request(endpoint + path, payload);
+const inflight = new Set();
+const call = (path, payload) => {
+  const task = request(endpoint + path, payload); inflight.add(task);
+  return task.finally(() => inflight.delete(task));
+};
 const waitFor = async predicate => {
   for (let i = 0; i < 500; i++) {
-    if (predicate()) return;
+    if (await predicate()) return;
     await new Promise(resolve => setTimeout(resolve, 10));
   }
   assert.fail("policy page did not finish refreshing");
 };
 // Actual page handlers call the real manager/service and policy store.
 const ui = await launch({ request: call });
+await Promise.all([...inflight]); await settle();
 await ui.create("Policy HTTP");
-for (let i = 0; i < 100; i++) {
-  await ui.refresh();
-  if (ui.el("members").children.length) break;
-  await new Promise(resolve => setTimeout(resolve, 10));
-}
 let catalog;
-for (let i = 0; i < 300; i++) {
-  try { catalog = await call("/v1/rooms"); break; }
-  catch (error) { if (error.code !== "busy") throw error; }
-  await new Promise(resolve => setTimeout(resolve, 10));
-}
-assert.ok(catalog, "Room catalog did not settle");
+await waitFor(async () => {
+  await Promise.all([...inflight]); await ui.refresh();
+  catalog = await call("/v1/rooms");
+  return catalog.rooms.some(room => room.service) && ui.el("members").children.length > 0;
+});
+console.error("Policy HTTP: Room and members ready");
 const room = catalog.rooms[0];
 const caller = { kind: "human", id: catalog.operator };
 assert.ok(room.service);
@@ -34,6 +34,7 @@ const member = members.members[0];
 const context = { ...room.service, caller, agent_id: member.agent_id, membership_id: member.membership_id };
 const update = policy => call("/v1/policy/update", { ...context, policy });
 const read = () => call("/v1/policy/read", context);
+console.error("Policy HTTP: reading initial rules");
 let view = await read();
 assert.equal(view.version, 1);
 assert.deepEqual(view.effective, []);
@@ -139,3 +140,6 @@ await waitFor(() => card()?.children[1].textContent.includes("尚未保存的本
 view = await read();
 assert.equal(view.current.find(r => r.id === saved.id).version, 6);
 console.log("Policy conflict recovery HTTP: inline failure, refreshed current rule, retained draft, explicit save with the latest version.");
+
+await ui.el("close-activity").emit("click");
+await Promise.all([...inflight]);

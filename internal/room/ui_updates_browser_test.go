@@ -69,6 +69,19 @@ func TestWebUpdatesApplicationBrowser(t *testing.T) {
 	if os.Getenv("TEAMX_WEB_UPDATES_BROWSER") != "1" {
 		t.Skip("optional Chromium application update acceptance")
 	}
+	runWebUpdatesApplicationBrowser(t, "functional")
+}
+
+// Real time and production heartbeats: selected independently of functional checks.
+func TestWebUpdatesIdleBrowser(t *testing.T) {
+	if os.Getenv("TEAMX_WEB_UPDATES_IDLE") != "1" {
+		t.Skip("set TEAMX_WEB_UPDATES_IDLE=1 for two real sixty-second idle windows")
+	}
+	runWebUpdatesApplicationBrowser(t, "idle")
+}
+
+func runWebUpdatesApplicationBrowser(t *testing.T, mode string) {
+	t.Helper()
 	t.Setenv("USER", humanCaller.ID)
 	for _, managed := range []bool{false, true} {
 		t.Run(fmt.Sprint("managed=", managed), func(t *testing.T) {
@@ -91,7 +104,7 @@ func TestWebUpdatesApplicationBrowser(t *testing.T) {
 			defer server.Close()
 			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 			defer cancel()
-			cmd := exec.CommandContext(ctx, "node", "testdata/web_updates_application.cjs", server.URL)
+			cmd := exec.CommandContext(ctx, "node", "testdata/web_updates_application.cjs", server.URL, mode)
 			output, err := cmd.CombinedOutput()
 			if err != nil {
 				t.Fatalf("application: %v\n%s", err, output)

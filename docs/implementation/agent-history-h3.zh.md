@@ -82,7 +82,7 @@ TEAMX_DSH_OUTPUT=/absolute/fresh-recovery \
 go test -tags=e2e ./internal/room -run '^TestHistoryRealDSHRecoveryAndToolRefresh$' -v -count=1 -timeout=15m
 
 TEAMX_HISTORY_PERFORMANCE_OUTPUT=/absolute/fresh-performance \
-go test ./internal/room -run '^TestHistoryCapacityPerformance$' -v -count=1 -timeout=20m
+go test -tags=e2e ./internal/room -run '^TestHistoryCapacityPerformance$' -v -count=1 -timeout=20m
 ```
 
 性能默认重新构建满容量数据；可用 `TEAMX_HISTORY_CAPACITY_FIXTURE` 指定完整的隔离样本目录重开，须包含正文发布根、记录段、共享 Grant 及成员容量账本。真实平台入口为 `TestHistoryRealSavedPlatform`，选择 `TEAMX_HISTORY_PLATFORM_REAL=gitlab|lark`，分别提供 `TEAMX_GITLAB_IMAGE_NOTICE`／`TEAMX_LARK_IMAGE_INPUT`；`TEAMX_HISTORY_PLATFORM_EXPECT` 仅由测试端检查像素答案，不进入提示或保存正文。GitLab 凭据沿原安全环境文件入口 `TEAMX_DSH_ENV_FILE` 加载；模型配置沿上述 `TEAMX_INPUT_COMPARISON_CONFIG`，不向 Agent 提供凭据。

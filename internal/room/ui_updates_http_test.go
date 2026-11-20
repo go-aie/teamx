@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -360,18 +361,59 @@ func TestUIUpdatesHTTPRuntimeAndServiceLifetime(t *testing.T) {
 }
 
 func TestUIUpdatesHTTPHeartbeat(t *testing.T) {
-	svc, _, _, server, cookie, _ := updateHTTPService(t, false)
-	resp := updateRequest(t, server.URL, "GET", updatesURL(svc.info.ServiceEpoch, svc.info), cookie, nil)
-	frames := updateFrames(resp.Body)
-	hello := nextUpdateFrame(t, frames)
-	select {
-	case f := <-frames:
-		if f.event != "heartbeat" || f.data["connection_id"] != hello.data["connection_id"] {
-			t.Fatal(f)
+	synctest.Test(t, func(t *testing.T) {
+		a, token, _ := accessFixture(t)
+		svc, err := newService(t.TempDir(), "updates", serviceConfig{access: a})
+		if err != nil {
+			t.Fatal(err)
 		}
-	case <-time.After(uiUpdateHeartbeat + time.Second):
-		t.Fatal("no heartbeat")
-	}
+		t.Cleanup(func() { closeService(t, svc) })
+		handler := a.wrap(svc)
+		cookie := accessLogin(t, handler, token)
+		// Real net/http framing over net.Pipe keeps all I/O inside the time bubble.
+		// TCP and reconnect remain covered above; cross the ordinary server write
+		// timeout here using the production heartbeat interval in virtual time.
+		client, endpoint := toolPipeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r.RemoteAddr = "127.0.0.1:45000"
+			handler.ServeHTTP(w, r)
+		}), func(server *http.Server) { server.WriteTimeout = time.Second })
+		a.internal, a.public = endpoint, endpoint
+		req, err := http.NewRequest("GET", endpoint+updatesURL(svc.info.ServiceEpoch, svc.info), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.AddCookie(cookie)
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "text/event-stream" {
+			t.Fatal(resp.Status, resp.Header)
+		}
+		frames := updateFrames(resp.Body)
+		hello := nextUpdateFrame(t, frames)
+		synctest.Wait()
+		time.Sleep(uiUpdateHeartbeat - time.Nanosecond)
+		synctest.Wait()
+		select {
+		case f := <-frames:
+			t.Fatal("heartbeat before its production interval", f)
+		default:
+		}
+		time.Sleep(time.Nanosecond)
+		f := nextUpdateFrame(t, frames)
+		if hello.event != "hello" || f.event != "heartbeat" || f.data["connection_id"] != hello.data["connection_id"] {
+			t.Fatal(hello, f)
+		}
+		// Heartbeat must recheck authorization even without an explicit revocation event.
+		a.mu.Lock()
+		delete(a.sessions, sha256.Sum256([]byte(cookie.Value)))
+		a.mu.Unlock()
+		time.Sleep(uiUpdateHeartbeat)
+		synctest.Wait()
+		awaitUpdateClose(t, frames)
+	})
 }
 
 // A transport whose Flush can block, while still honoring concurrent write
@@ -487,60 +529,78 @@ func TestUIUpdatesRegistrationBeforeHelloAndShortRequestSlots(t *testing.T) {
 func TestUIUpdatesBlockedWriterCancellation(t *testing.T) {
 	for _, reason := range []string{"request", "logout", "settings", "shutdown", "expiry", "deadline"} {
 		t.Run(reason, func(t *testing.T) {
-			a, token, _ := accessFixture(t)
-			a.document = newSystemSettings(a.config).configDocument
-			svc, err := newService(t.TempDir(), "updates", serviceConfig{access: a})
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer closeService(t, svc)
-			handler := a.wrap(svc)
-			cookie := accessLogin(t, handler, token)
-			if reason == "expiry" {
-				a.mu.Lock()
-				s := a.sessions[sha256.Sum256([]byte(cookie.Value))]
-				s.expires = time.Now().Add(250 * time.Millisecond)
-				a.sessions[sha256.Sum256([]byte(cookie.Value))] = s
-				a.mu.Unlock()
-			}
-			writer := newBlockingUpdateWriter()
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			r := httptest.NewRequest("GET", a.internal+updatesURL(svc.info.ServiceEpoch, svc.info), nil).WithContext(ctx)
-			r.RemoteAddr = "127.0.0.1:45000"
-			r.AddCookie(cookie)
-			done := make(chan struct{})
-			go func() { handler.ServeHTTP(writer, r); close(done) }()
-			select {
-			case <-writer.flushed:
-			case <-time.After(time.Second):
-				t.Fatal("hello not reached")
-			}
-			switch reason {
-			case "request":
-				cancel()
-			case "logout":
-				if w := accessRequest(handler, "POST", "/v1/access/logout", "", a.internal, "{}", cookie); w.Code != 200 {
-					t.Fatal(w.Code, w.Body.String())
+			synctest.Test(t, func(t *testing.T) {
+				a, token, _ := accessFixture(t)
+				a.document = newSystemSettings(a.config).configDocument
+				svc, err := newService(t.TempDir(), "updates", serviceConfig{access: a})
+				if err != nil {
+					t.Fatal(err)
 				}
-			case "settings":
-				if w := accessRequest(handler, "POST", "/v1/access/settings", token, "", settingsBody(a, true, false, "Newpassword-987654321!", token, ""), nil); w.Code != 200 {
-					t.Fatal(w.Code, w.Body.String())
+				defer closeService(t, svc)
+				handler := a.wrap(svc)
+				cookie := accessLogin(t, handler, token)
+				if reason == "expiry" {
+					a.mu.Lock()
+					s := a.sessions[sha256.Sum256([]byte(cookie.Value))]
+					s.expires = time.Now().Add(250 * time.Millisecond)
+					a.sessions[sha256.Sum256([]byte(cookie.Value))] = s
+					a.mu.Unlock()
 				}
-			case "shutdown":
-				svc.freeze()
-			case "expiry":
-			case "deadline":
-			}
-			wait := time.Second
-			if reason == "deadline" {
-				wait = uiUpdateWriteTimeout + time.Second
-			}
-			select {
-			case <-done:
-			case <-time.After(wait):
-				t.Fatal("blocked Flush was not interrupted", reason)
-			}
+				writer := newBlockingUpdateWriter()
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				r := httptest.NewRequest("GET", a.internal+updatesURL(svc.info.ServiceEpoch, svc.info), nil).WithContext(ctx)
+				r.RemoteAddr = "127.0.0.1:45000"
+				r.AddCookie(cookie)
+				done := make(chan struct{})
+				go func() { handler.ServeHTTP(writer, r); close(done) }()
+				select {
+				case <-writer.flushed:
+				case <-time.After(time.Second):
+					t.Fatal("hello not reached")
+				}
+				synctest.Wait() // The writer and cancellation watcher have both reached their waits.
+				switch reason {
+				case "request":
+					cancel()
+				case "logout":
+					if w := accessRequest(handler, "POST", "/v1/access/logout", "", a.internal, "{}", cookie); w.Code != 200 {
+						t.Fatal(w.Code, w.Body.String())
+					}
+				case "settings":
+					if w := accessRequest(handler, "POST", "/v1/access/settings", token, "", settingsBody(a, true, false, "Newpassword-987654321!", token, ""), nil); w.Code != 200 {
+						t.Fatal(w.Code, w.Body.String())
+					}
+				case "shutdown":
+					svc.freeze()
+				case "expiry":
+				case "deadline":
+				}
+				// Let the entire window elapse; neither timer may interrupt early.
+				timeout := time.Duration(0)
+				if reason == "expiry" {
+					timeout = 250 * time.Millisecond
+				}
+				if reason == "deadline" {
+					timeout = uiUpdateWriteTimeout
+				}
+				if timeout != 0 {
+					time.Sleep(timeout - time.Nanosecond)
+					synctest.Wait()
+					select {
+					case <-done:
+						t.Fatal("blocked writer interrupted before deadline", reason)
+					default:
+					}
+					time.Sleep(time.Nanosecond)
+				}
+				wait := time.Second
+				select {
+				case <-done:
+				case <-time.After(wait):
+					t.Fatal("blocked Flush was not interrupted", reason)
+				}
+			})
 		})
 	}
 }

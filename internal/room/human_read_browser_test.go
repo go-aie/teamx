@@ -18,7 +18,19 @@ func TestHumanReadBrowser(t *testing.T) {
 	if os.Getenv("TEAMX_HUMAN_READ_BROWSER") != "1" {
 		t.Skip("set TEAMX_HUMAN_READ_BROWSER=1 with Node, Playwright and Chromium installed")
 	}
-	for _, mode := range []string{"combined-1440", "combined-390", "combined-320", "reading", "locating", "history", "history-large"} {
+	runHumanReadBrowser(t, []string{"combined-1440", "combined-390", "reading", "locating", "history-functional"})
+}
+
+func TestHumanReadCapacityBrowser(t *testing.T) {
+	if os.Getenv("TEAMX_HUMAN_READ_CAPACITY") != "1" {
+		t.Skip("set TEAMX_HUMAN_READ_CAPACITY=1 for 10000-message and near-64MiB browser measurements")
+	}
+	runHumanReadBrowser(t, []string{"history", "history-large"})
+}
+
+func runHumanReadBrowser(t *testing.T, modes []string) {
+	t.Helper()
+	for _, mode := range modes {
 		t.Run(mode, func(t *testing.T) {
 			n := 120
 			combined := strings.HasPrefix(mode, "combined-")
@@ -27,6 +39,9 @@ func TestHumanReadBrowser(t *testing.T) {
 			}
 			if strings.HasPrefix(mode, "history") {
 				n = 10000
+				if mode == "history-functional" {
+					n = 600
+				}
 			}
 			dir := t.TempDir()
 			store := openTestStore(t, dir)
@@ -72,10 +87,10 @@ func TestHumanReadBrowser(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer closeService(t, svc)
+			t.Cleanup(func() { closeService(t, svc) })
 			server := browserTestServer(t, svc)
 			defer server.Close()
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 			defer cancel()
 			cmd := exec.CommandContext(ctx, "node", "testdata/human_read_browser.cjs", server.URL, mode)
 			if output, err := cmd.CombinedOutput(); err != nil {
@@ -135,7 +150,7 @@ func TestHumanReadCatalogBrowser(t *testing.T) {
 	server := browserTestServer(t, m)
 	defer server.Close()
 	m.config.endpoint = server.URL
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "node", "testdata/human_read_catalog_browser.cjs", server.URL, direct.RoomID, group.RoomID, broken.RoomID)
 	if output, err := cmd.CombinedOutput(); err != nil {

@@ -297,3 +297,28 @@ func TestReferenceActionWriteBoundary(t *testing.T) {
 		})
 	}
 }
+
+func TestReferenceActionInputSizeBoundaries(t *testing.T) {
+	for _, discussion := range []bool{false, true} {
+		for _, tc := range []struct {
+			name, body string
+			valid      bool
+		}{
+			{"4096", strings.Repeat("x", 4096), true},
+			{"4097", strings.Repeat("x", 4097), false},
+			{"UTF8 below", strings.Repeat("中", 1365), true},
+			{"UTF8 above", strings.Repeat("中", 1366), false},
+			{"escaped body", strings.Repeat(`"`, 4096), true},
+			{"large", strings.Repeat("x", 65<<10), false},
+		} {
+			t.Run(map[bool]string{false: "object", true: "discussion"}[discussion]+"/"+tc.name, func(t *testing.T) {
+				q, a := actionFixture("https://gitlab.example.com", discussion)
+				q.Input, _ = json.Marshal(map[string]string{"body": tc.body})
+				got, err := actionInput(q, a)
+				if (err == nil) != tc.valid || tc.valid && got.body != tc.body {
+					t.Fatal(err)
+				}
+			})
+		}
+	}
+}

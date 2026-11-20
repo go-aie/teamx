@@ -21,6 +21,13 @@ if(artifacts)mkdirSync(artifacts,{recursive:true});
   const room=id=>data.rooms.find(r=>r.room_id===id);
   const names={direct:room(directID).name,group:room(groupID).name,broken:room(brokenID).name};
   const choice=(page,id)=>page.locator('.room-choice').filter({has:page.locator('strong').filter({hasText:id===directID?names.direct:id===groupID?names.group:names.broken})});
+  // Message sequence numbers repeat across rooms. Wait for the selected room's
+  // actual read before interacting with a node that may still belong to the old room.
+  const choose=async(page,id)=>{
+   const loaded=page.waitForResponse(response=>response.url().endsWith('/v1/read')&&response.request().postDataJSON()?.room_id===id&&response.status()===200);
+   await choice(page,id).click();await (await loaded).finished();
+   await page.waitForFunction(()=>!document.querySelector('#message-input').disabled);
+  };
   const read=async id=>{const data=await catalog();return data.rooms.find(r=>r.room_id===id).human_read;};
   const waitFor=async check=>{const end=Date.now()+12000;while(!await check()){assert.ok(Date.now()<end,'condition timed out');await new Promise(r=>setTimeout(r,100));}};
   // Stop local viewing on the desktop, then let an independent phone context
@@ -116,7 +123,7 @@ if(artifacts)mkdirSync(artifacts,{recursive:true});
    await page.setViewportSize({width,height:width===1440?1000:544});
    for(const id of [directID,groupID]){
     if(width!==1440)await page.locator('#mobile-back-to-rooms').click();
-    await choice(page,id).click();await page.locator('#message-100').waitFor();
+    await choose(page,id);await page.locator('#message-100').waitFor();
     await page.locator('#message-90').scrollIntoViewIfNeeded();
     const data=await catalog(),target=data.rooms.find(r=>r.room_id===id);
     const sent=await fetch(endpoint+'/v1/send',{method:'POST',headers:{'Content-Type':'application/json',Origin:endpoint},body:JSON.stringify({...target.service,caller:{kind:'human',id:data.operator},client_message_id:`catalog-layout-${id}-${width}`,text:'检查双按钮与执行提示避让。'})});

@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -47,7 +49,7 @@ func platformTestList(t *testing.T, m *roomManager) []managedPlatform {
 	return list.Platforms
 }
 
-func runAppHandler(t *testing.T, m *roomManager, script string) {
+func runAppHandler(t *testing.T, handler http.Handler, script string) {
 	t.Helper()
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -56,6 +58,7 @@ func runAppHandler(t *testing.T, m *roomManager, script string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, node, script)
+	cmd.WaitDelay = time.Second
 	cmd.Env = append(os.Environ(), "TEAMX_WEB_TRANSPORT=stdio")
 	input, err := cmd.StdinPipe()
 	if err != nil {
@@ -70,7 +73,12 @@ func runAppHandler(t *testing.T, m *roomManager, script string) {
 	if err = cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	defer input.Close()
+	wait := sync.OnceValue(cmd.Wait)
+	defer func() {
+		cancel()
+		_ = input.Close()
+		_ = wait()
+	}()
 	decoder, encoder := json.NewDecoder(output), json.NewEncoder(input)
 	for {
 		var call struct {
@@ -87,20 +95,20 @@ func runAppHandler(t *testing.T, m *roomManager, script string) {
 		if len(call.Body) > 0 && string(call.Body) != "null" {
 			method = "POST"
 		}
-		r := httptest.NewRequest(method, call.Path, bytes.NewReader(call.Body))
+		r := httptest.NewRequest(method, call.Path, bytes.NewReader(call.Body)).WithContext(ctx)
 		w := httptest.NewRecorder()
-		m.ServeHTTP(w, r)
+		handler.ServeHTTP(w, r)
 		if err = encoder.Encode(struct {
 			ID     uint64          `json:"id"`
 			Status int             `json:"status"`
 			Body   json.RawMessage `json:"body"`
 		}{call.ID, w.Code, w.Body.Bytes()}); err != nil {
 			input.Close()
-			_ = cmd.Wait()
+			_ = wait()
 			t.Fatalf("app/handler response: %v\n%s", err, diagnostics.String())
 		}
 	}
-	if err = cmd.Wait(); err != nil {
+	if err = wait(); err != nil {
 		t.Fatalf("app/handler: %v\n%s", err, diagnostics.String())
 	}
 }

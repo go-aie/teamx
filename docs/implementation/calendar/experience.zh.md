@@ -37,7 +37,7 @@ go test -race ./internal/calendar ./internal/room \
 node --test internal/web/tests/*_test.mjs
 TEAMX_CALENDAR_BROWSER=1 NODE_PATH="$PWD/packaging/verifier/node_modules" \
   TEAMX_CALENDAR_ARTIFACTS="$PWD/docs/implementation/calendar/experience" \
-  go test ./internal/room -run '^TestCalendarBrowser$' -count=1 -v
+  go test -tags=e2e ./internal/room -run '^TestCalendarBrowser$' -count=1 -v
 ```
 
 浏览器验收为显式启用，未加入日常 CI。C4 继续验证重复任务、会话切换、服务重启及页面状态的组合，并完成首版发布记录；月视图、拖拽、外部同步、团队房间和真机测试仍不在本阶段交付声明中。

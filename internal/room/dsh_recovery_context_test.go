@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/go-aie/actorx"
@@ -27,35 +28,43 @@ func (a recoveryPreviewActor) Bindings() []actorx.Binding {
 func TestDSHRecoveryPreviewTimeoutAndIdentity(t *testing.T) {
 	for _, mode := range []string{"timeout", "identity", "corrupt", "cleared"} {
 		t.Run(mode, func(t *testing.T) {
-			h := newInboxHarness(t, InboxLimits{})
-			svc := referenceTestService(h)
-			inboxCall[InboxReceipt](t, h, h.receive("one"))
-			inboxRunning(t, h, 1, 1)
-			var err error
-			svc.room, err = h.rt.Spawn(recoveryPreviewActor{read: func(req ReadMessages) (ReadPage, error) {
-				switch mode {
-				case "timeout":
-					time.Sleep(dshRecoveryPreviewTimeout + 50*time.Millisecond)
-					return ReadPage{}, nil
-				case "identity":
-					return ReadPage{SnapshotSeq: 123}, nil
-				case "corrupt":
-					return ReadPage{}, ErrInvalid
-				default:
-					return ReadPage{}, ErrReadExpired
+			synctest.Test(t, func(t *testing.T) {
+				h := newInboxHarness(t, InboxLimits{})
+				svc := referenceTestService(h)
+				inboxCall[InboxReceipt](t, h, h.receive("one"))
+				inboxRunning(t, h, 1, 1)
+				var err error
+				svc.room, err = h.rt.Spawn(recoveryPreviewActor{read: func(req ReadMessages) (ReadPage, error) {
+					switch mode {
+					case "timeout":
+						time.Sleep(dshRecoveryPreviewTimeout + 50*time.Millisecond)
+						return ReadPage{}, nil
+					case "identity":
+						return ReadPage{SnapshotSeq: 123}, nil
+					case "corrupt":
+						return ReadPage{}, ErrInvalid
+					default:
+						return ReadPage{}, ErrReadExpired
+					}
+				}})
+				if err != nil {
+					t.Fatal(err)
 				}
-			}})
-			if err != nil {
-				t.Fatal(err)
-			}
-			r, err := svc.prepareDSHRecoveryContext(h.ctx, materialInput(h.id, 0, 1), 1)
-			if mode == "timeout" || mode == "cleared" {
-				if err != nil || !r.roomUnavailable {
-					t.Fatal("optional preview did not degrade", r, err)
+				r, err := svc.prepareDSHRecoveryContext(h.ctx, materialInput(h.id, 0, 1), 1)
+				if mode == "timeout" || mode == "cleared" {
+					if err != nil || !r.roomUnavailable {
+						t.Fatal("optional preview did not degrade", r, err)
+					}
+				} else {
+					want := ErrIdentity
+					if mode == "corrupt" {
+						want = ErrInvalid
+					}
+					if !errors.Is(err, want) {
+						t.Fatalf("preview error = %v, want %v", err, want)
+					}
 				}
-			} else if err == nil {
-				t.Fatal("invalid preview treated as optional")
-			}
+			})
 		})
 	}
 }

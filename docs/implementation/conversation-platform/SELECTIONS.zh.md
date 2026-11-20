@@ -33,8 +33,8 @@ go test -race -tags=integration ./internal/room \
   -run '^TestPlatform(Selection|Connect|Member)|^TestLark(Setup|Auth|Login|Logout)' \
   -count=1 -timeout=180s
 node --test --test-reporter=spec internal/web/tests/web_*test.mjs
-TEAMX_SELECTION_BROWSER=1 go test -tags=integration ./internal/room \
-  -run '^TestPlatformSelectionConversationAndMemberConfiguration$' \
+TEAMX_SELECTION_BROWSER=1 go test -tags=e2e ./internal/room \
+  -run '^TestPlatformSelectionConversationBrowser$' \
   -count=1 -v -timeout=100s
 git diff --check
 ```

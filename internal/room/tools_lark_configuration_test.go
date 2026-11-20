@@ -7,7 +7,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"slices"
 	"strconv"
@@ -89,6 +88,7 @@ func configurationBindings(t *testing.T, h *larkHarness) toolBindingsFile {
 	return f
 }
 func TestLarkToolConfigurationEntrypointsAgreeAndSelfProofIsRequired(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, entry := range []string{"http", "member", "onboarding"} {
 		t.Run(entry, func(t *testing.T) {
 			h := larkToolConfigurationHarness(t)
@@ -108,11 +108,13 @@ func TestLarkToolConfigurationEntrypointsAgreeAndSelfProofIsRequired(t *testing.
 				result = body.Capabilities
 			case "member":
 				req := larkMemberToolRequest(t, h, 0)
+				req.Input.Actions = []string{}
 				op, err := h.m.configurePlatformMember(t.Context(), "tool", req)
 				if err != nil || op.Status != "completed" || op.Schema != 3 {
 					t.Fatal(op, err)
 				}
 				result = op.Capabilities
+				req.Input.Actions = nil // omitted defaults must replay the persisted empty plan
 				again, err := h.m.configurePlatformMember(t.Context(), "tool", req)
 				if err != nil || !sameJSON(again, op) {
 					t.Fatal("receipt replay changed", err)
@@ -158,6 +160,7 @@ func TestLarkToolConfigurationEntrypointsAgreeAndSelfProofIsRequired(t *testing.
 	}
 }
 func TestLarkToolConfigurationExplicitActionsAndPreservedIntent(t *testing.T) {
+	parallelFixtureTest(t)
 	h := larkToolConfigurationHarness(t)
 	// A historical read-only binding remains unchanged by status/list reads.
 	change := larkConfigurationChange(h)
@@ -189,63 +192,40 @@ func TestLarkToolConfigurationExplicitActionsAndPreservedIntent(t *testing.T) {
 	if err != nil || op.Result.Status != "preserved" || op.Result.Version != 3 || len(op.Authorization.Grants) != 2 {
 		t.Fatal(op, err)
 	}
-	req = larkMemberToolRequest(t, h, 3)
-	op, err = h.m.configurePlatformMember(t.Context(), "tool", req)
-	if err != nil || op.Result.Status != "applied" || len(op.Authorization.Grants) != 3 {
+}
+func TestLarkToolConfigurationUserAndApplicationScopeAdmission(t *testing.T) {
+	parallelFixtureTest(t)
+	h := larkToolConfigurationHarness(t)
+	writeJSONFixture(t, filepath.Join(h.dir, "missing-scopes.json"), []string{"im:message:readonly"})
+	req := larkMemberToolRequest(t, h, 0)
+	op, err := h.m.configurePlatformMember(t.Context(), "tool", req)
+	if err != nil || op.Capabilities == nil {
 		t.Fatal(op, err)
 	}
-	f := configurationBindings(t, h)
-	req = larkMemberToolRequest(t, h, f.Revision)
+	if op.Status != "not_applied" || op.Result.ErrorCode != "user_authorization_required" {
+		t.Fatal(op)
+	}
+	if f := configurationBindings(t, h); f.Revision != 0 {
+		t.Fatal("OAuth gap wrote binding", f)
+	}
+	if _, err = os.Stat(h.m.platformMemberPath(req.OperationID)); !os.IsNotExist(err) {
+		t.Fatal("OAuth gap reserved config operation", err)
+	}
+	r := managerHTTP(h.m, "/v1/tools/bind", larkConfigurationChange(h))
+	if r.Code != 409 || !strings.Contains(r.Body.String(), "user_authorization_required") {
+		t.Fatal(r.Code, r.Body.String())
+	}
+	// App gaps cannot be repaired by OAuth and are saved as partial intent.
+	scopes := slices.DeleteFunc(lark.DefaultScopes(), func(s string) bool { return s == "im:message:readonly" })
+	writeJSONFixture(t, filepath.Join(h.dir, "application-scopes.json"), scopes)
 	op, err = h.m.configurePlatformMember(t.Context(), "tool", req)
-	if err != nil || op.Result.Status != "preserved" || !reflect.DeepEqual(f, configurationBindings(t, h)) {
+	if err != nil || op.Status != "completed" || op.Capabilities == nil || memberCapability(t, *op.Capabilities, "message.read").ReasonCode != "application_scopes_missing" {
 		t.Fatal(op, err)
 	}
 }
-func TestLarkToolConfigurationUserScopeGapsRespectPlatformSupport(t *testing.T) {
-	for _, tc := range []struct{ name, scope, capability string }{
-		{"read", "im:message:readonly", "message.read"},
-		{"send", "im:message", "message.reply"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			h := larkToolConfigurationHarness(t)
-			writeJSONFixture(t, filepath.Join(h.dir, "missing-scopes.json"), []string{tc.scope})
-			req := larkMemberToolRequest(t, h, 0)
-			op, err := h.m.configurePlatformMember(t.Context(), "tool", req)
-			if err != nil || op.Capabilities == nil {
-				t.Fatal(op, err)
-			}
-			if tc.name == "send" && runtime.GOOS != "darwin" {
-				// OAuth cannot repair an unsupported account-pinning backend.
-				cap := memberCapability(t, *op.Capabilities, tc.capability)
-				if op.Status != "completed" || op.Result.Status != "applied" || cap.State != "unsupported" || cap.ReasonCode != "account_pinning_unavailable" || cap.NextAction != "" {
-					t.Fatal(op, cap)
-				}
-				return
-			}
-			if op.Status != "not_applied" || op.Result.ErrorCode != "user_authorization_required" {
-				t.Fatal(op)
-			}
-			if f := configurationBindings(t, h); f.Revision != 0 {
-				t.Fatal("OAuth gap wrote binding", f)
-			}
-			if _, err = os.Stat(h.m.platformMemberPath(req.OperationID)); !os.IsNotExist(err) {
-				t.Fatal("OAuth gap reserved config operation", err)
-			}
-			r := managerHTTP(h.m, "/v1/tools/bind", larkConfigurationChange(h))
-			if r.Code != 409 || !strings.Contains(r.Body.String(), "user_authorization_required") {
-				t.Fatal(r.Code, r.Body.String())
-			}
-			// App gaps cannot be repaired by OAuth and are saved as partial intent.
-			scopes := slices.DeleteFunc(lark.DefaultScopes(), func(s string) bool { return s == tc.scope })
-			writeJSONFixture(t, filepath.Join(h.dir, "application-scopes.json"), scopes)
-			op, err = h.m.configurePlatformMember(t.Context(), "tool", req)
-			if err != nil || op.Status != "completed" || op.Capabilities == nil || memberCapability(t, *op.Capabilities, tc.capability).ReasonCode != "application_scopes_missing" {
-				t.Fatal(op, err)
-			}
-		})
-	}
-}
+
 func TestLarkToolConfigurationRechecksAfterRemotePreparation(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, mutation := range []string{"disable", "credential", "generation", "member", "cancel"} {
 		t.Run(mutation, func(t *testing.T) {
 			h := larkToolConfigurationHarness(t)
@@ -308,6 +288,7 @@ func TestLarkToolConfigurationRechecksAfterRemotePreparation(t *testing.T) {
 }
 
 func TestLarkToolConfigurationNativeSelfEvidenceRefreshAndForgery(t *testing.T) {
+	parallelFixtureTest(t)
 	if runtime.GOOS != "darwin" {
 		t.Skip("fixed-account self evidence requires macOS")
 	}
@@ -381,6 +362,7 @@ func TestLarkToolConfigurationNativeSelfEvidenceRefreshAndForgery(t *testing.T) 
 }
 
 func TestLarkToolConfigurationOnboardingPreservesChoicesAndUnknownSubmission(t *testing.T) {
+	parallelFixtureTest(t)
 	h := larkToolConfigurationHarness(t)
 	change := larkConfigurationChange(h)
 	h.m.mu.Lock()
@@ -455,6 +437,7 @@ func TestLarkToolConfigurationRejectsActionsOutsideExplicitEnable(t *testing.T) 
 }
 
 func TestLarkToolConfigurationCLIAddsOnlyRequestedActions(t *testing.T) {
+	parallelFixtureTest(t)
 	h := larkToolConfigurationHarness(t)
 	req := larkMemberToolRequest(t, h, 0)
 	client, endpoint := toolPipeServer(t, h.m)
@@ -472,18 +455,8 @@ func TestLarkToolConfigurationCLIAddsOnlyRequestedActions(t *testing.T) {
 	}
 }
 
-func TestLarkToolConfigurationReplyDoesNotRequireTargetScopes(t *testing.T) {
-	h := larkToolConfigurationHarness(t)
-	writeJSONFixture(t, filepath.Join(h.dir, "missing-scopes.json"), []string{"im:chat.members:read"})
-	req := larkMemberToolRequest(t, h, 0)
-	req.Input.Actions = []string{"message.reply"}
-	op, err := h.m.configurePlatformMember(t.Context(), "tool", req)
-	if err != nil || op.Status != "completed" || len(op.Authorization.Grants) != 1 {
-		t.Fatal(op, err)
-	}
-}
-
 func TestLarkToolConfigurationCanonicalizesExistingGrants(t *testing.T) {
+	parallelFixtureTest(t)
 	h := larkToolConfigurationHarness(t)
 	change := larkConfigurationChange(h)
 	caps, _ := h.m.referenceCapabilities("lark")

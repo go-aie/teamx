@@ -178,9 +178,9 @@ go test -race -tags=integration ./internal/room \
   -run '^Test(PlatformMember|PlatformSelection|GitLabMember|GitLabProject|GitLabAccountSelection)' \
   -count=1 -timeout=4m
 node --test --test-reporter=dot internal/web/tests/web_*test.mjs
-TEAMX_SELECTION_BROWSER=1 go test -tags=integration ./internal/room \
-  -run '^TestPlatformSelectionConversationAndMemberConfiguration$' -count=1 -timeout=2m
-TEAMX_CONNECT_BROWSER=1 go test -tags=integration ./internal/room \
+TEAMX_SELECTION_BROWSER=1 go test -tags=e2e ./internal/room \
+  -run '^TestPlatformSelectionConversationBrowser$' -count=1 -timeout=2m
+TEAMX_CONNECT_BROWSER=1 go test -tags=e2e ./internal/room \
   -run '^TestGitLabProjectSelectionConversationBrowser$' -count=1 -timeout=2m
 git diff --check
 ```

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/go-aie/actorx"
@@ -62,94 +63,108 @@ func TestAutomaticRecoveryRestoresEnabledMember(t *testing.T) {
 }
 
 func TestAutomaticRecoveryIsBoundedAndSurvivesRestart(t *testing.T) {
-	h, _, addr, id, opens := recoveryHarness(t, dsh.ErrUnavailable, true, nil)
-	controlMember(t, h, addr, id, "run", UnreadChanged{MemberIdentity: id}, false, false)
-	automaticPost(t, h, addr, id, 1)
-	waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool { return !s.Active && s.Agent.TurnNumber == 2 })
-	time.Sleep(1200 * time.Millisecond)
-	s := inspectMember(t, h.ctx, addr, id)
-	saved, err := h.store.loadScheduling(id)
-	if err != nil || !s.Paused || opens.Load() != 2 || !saved.Enabled || !saved.RecoveryAttempted {
-		t.Fatal("persistent fault retried indefinitely or lost user intent", s, saved, err)
-	}
-	r := recoveredMember{id: id, automatic: true, recovery: true, blocked: "backend unavailable"}
-	if err := (&service{store: h.store, maxTurns: 16}).restoreScheduling(&r, *s.Agent); err != nil || r.recovery || r.resume {
-		t.Fatal("restart renewed automatic recovery", r, err)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		h, _, addr, id, opens := recoveryHarness(t, dsh.ErrUnavailable, true, nil)
+		controlMember(t, h, addr, id, "run", UnreadChanged{MemberIdentity: id}, false, false)
+		automaticPost(t, h, addr, id, 1)
+		waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool { return !s.Active && s.Agent.TurnNumber == 2 })
+		time.Sleep(1200 * time.Millisecond)
+		synctest.Wait() // Process every due maintenance/rotation task before asserting absence.
+		s := inspectMember(t, h.ctx, addr, id)
+		saved, err := h.store.loadScheduling(id)
+		if err != nil || !s.Paused || opens.Load() != 2 || !saved.Enabled || !saved.RecoveryAttempted {
+			t.Fatal("persistent fault retried indefinitely or lost user intent", s, saved, err)
+		}
+		r := recoveredMember{id: id, automatic: true, recovery: true, blocked: "backend unavailable"}
+		if err := (&service{store: h.store, maxTurns: 16}).restoreScheduling(&r, *s.Agent); err != nil || r.recovery || r.resume {
+			t.Fatal("restart renewed automatic recovery", r, err)
+		}
+
+	})
 }
 
 func TestAutomaticRecoveryHonorsPauseBeforeAdmission(t *testing.T) {
-	h, svc, addr, id, opens := recoveryHarness(t, dsh.ErrUnavailable, false, nil)
-	controlMember(t, h, addr, id, "run", UnreadChanged{MemberIdentity: id}, false, false)
-	automaticPost(t, h, addr, id, 1)
-	waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool { return !s.Active && s.Agent.TurnNumber == 1 })
-	if _, err := svc.control(h.ctx, apiRequest{AgentID: id.AgentID, MembershipID: id.MembershipID}, "pause"); err != nil {
-		t.Fatal(err)
-	}
-	time.Sleep(1100 * time.Millisecond)
-	s := inspectMember(t, h.ctx, addr, id)
-	saved, err := h.store.loadScheduling(id)
-	if err != nil || !s.Paused || saved.Enabled || s.Rotation != nil || opens.Load() != 1 {
-		t.Fatal("fault recovery ignored explicit pause", s, saved, err)
-	}
-	// A later explicit enable must use one rotation, without an extra stale
-	// automatic recovery request racing the manual operation.
-	if _, err := svc.control(h.ctx, apiRequest{AgentID: id.AgentID, MembershipID: id.MembershipID}, "enable"); err != nil {
-		t.Fatal(err)
-	}
-	s = waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool { return !s.Active && s.Agent.TurnNumber == 2 })
-	if s.Paused || opens.Load() != 2 || s.Rotation.Reason != "manual" {
-		t.Fatal("explicit enable duplicated recovery", s, opens.Load())
-	}
+	synctest.Test(t, func(t *testing.T) {
+		h, svc, addr, id, opens := recoveryHarness(t, dsh.ErrUnavailable, false, nil)
+		controlMember(t, h, addr, id, "run", UnreadChanged{MemberIdentity: id}, false, false)
+		automaticPost(t, h, addr, id, 1)
+		waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool { return !s.Active && s.Agent.TurnNumber == 1 })
+		if _, err := svc.control(h.ctx, apiRequest{AgentID: id.AgentID, MembershipID: id.MembershipID}, "pause"); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(1100 * time.Millisecond)
+		synctest.Wait() // Process every due maintenance/rotation task before asserting absence.
+		s := inspectMember(t, h.ctx, addr, id)
+		saved, err := h.store.loadScheduling(id)
+		if err != nil || !s.Paused || saved.Enabled || s.Rotation != nil || opens.Load() != 1 {
+			t.Fatal("fault recovery ignored explicit pause", s, saved, err)
+		}
+		// A later explicit enable must use one rotation, without an extra stale
+		// automatic recovery request racing the manual operation.
+		if _, err := svc.control(h.ctx, apiRequest{AgentID: id.AgentID, MembershipID: id.MembershipID}, "enable"); err != nil {
+			t.Fatal(err)
+		}
+		s = waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool { return !s.Active && s.Agent.TurnNumber == 2 })
+		if s.Paused || opens.Load() != 2 || s.Rotation.Reason != "manual" {
+			t.Fatal("explicit enable duplicated recovery", s, opens.Load())
+		}
+
+	})
 }
 
 func TestAutomaticRecoveryPauseWinsDuringCleanup(t *testing.T) {
-	closing, release := make(chan struct{}, 1), make(chan struct{})
-	var closed atomic.Int32
-	h, svc, addr, id, opens := recoveryHarness(t, dsh.ErrModelUnavailable, false, func(context.Context) error {
-		if closed.Add(1) == 1 {
-			closing <- struct{}{}
-			<-release
-		}
-		return nil
-	})
-	defer func() {
+	synctest.Test(t, func(t *testing.T) {
+		closing, release := make(chan struct{}, 1), make(chan struct{})
+		var closed atomic.Int32
+		h, svc, addr, id, opens := recoveryHarness(t, dsh.ErrModelUnavailable, false, func(context.Context) error {
+			if closed.Add(1) == 1 {
+				closing <- struct{}{}
+				<-release
+			}
+			return nil
+		})
+		defer func() {
+			select {
+			case <-release:
+			default:
+				close(release)
+			}
+		}()
+		controlMember(t, h, addr, id, "run", UnreadChanged{MemberIdentity: id}, false, false)
+		automaticPost(t, h, addr, id, 1)
 		select {
-		case <-release:
-		default:
-			close(release)
+		case <-closing:
+		case <-time.After(5 * time.Second):
+			t.Fatal("automatic recovery did not close old Session")
 		}
-	}()
-	controlMember(t, h, addr, id, "run", UnreadChanged{MemberIdentity: id}, false, false)
-	automaticPost(t, h, addr, id, 1)
-	select {
-	case <-closing:
-	case <-time.After(5 * time.Second):
-		t.Fatal("automatic recovery did not close old Session")
-	}
-	if _, err := svc.control(h.ctx, apiRequest{AgentID: id.AgentID, MembershipID: id.MembershipID}, "pause"); err != nil {
-		t.Fatal(err)
-	}
-	close(release)
-	s := waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool { return s.Rotation != nil && s.Rotation.Status == "completed" })
-	saved, err := h.store.loadScheduling(id)
-	if err != nil || !s.Paused || saved.Enabled || opens.Load() != 1 || s.Agent.TurnNumber != 1 {
-		t.Fatal("recovery callback overwrote manual pause", s, saved, err)
-	}
+		if _, err := svc.control(h.ctx, apiRequest{AgentID: id.AgentID, MembershipID: id.MembershipID}, "pause"); err != nil {
+			t.Fatal(err)
+		}
+		close(release)
+		s := waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool { return s.Rotation != nil && s.Rotation.Status == "completed" })
+		saved, err := h.store.loadScheduling(id)
+		if err != nil || !s.Paused || saved.Enabled || opens.Load() != 1 || s.Agent.TurnNumber != 1 {
+			t.Fatal("recovery callback overwrote manual pause", s, saved, err)
+		}
+
+	})
 }
 
 func TestAutomaticRecoveryPermanentErrorsStayPaused(t *testing.T) {
 	for _, fail := range []error{dsh.ErrAuthentication, dsh.ErrModelNotFound, dsh.ErrRateLimited, &dsh.HTTPStatusError{StatusCode: 403}} {
 		t.Run(fail.Error(), func(t *testing.T) {
-			h, _, addr, id, opens := recoveryHarness(t, errors.Join(dsh.ErrUncertain, fail), true, nil)
-			controlMember(t, h, addr, id, "run", UnreadChanged{MemberIdentity: id}, false, false)
-			automaticPost(t, h, addr, id, 1)
-			waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool { return !s.Active && s.Agent.TurnNumber == 1 })
-			time.Sleep(1100 * time.Millisecond)
-			s := inspectMember(t, h.ctx, addr, id)
-			if !s.Paused || opens.Load() != 1 || s.Rotation != nil {
-				t.Fatal("permanent provider failure automatically retried", s)
-			}
+			synctest.Test(t, func(t *testing.T) {
+				h, _, addr, id, opens := recoveryHarness(t, errors.Join(dsh.ErrUncertain, fail), true, nil)
+				controlMember(t, h, addr, id, "run", UnreadChanged{MemberIdentity: id}, false, false)
+				automaticPost(t, h, addr, id, 1)
+				waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool { return !s.Active && s.Agent.TurnNumber == 1 })
+				time.Sleep(1100 * time.Millisecond)
+				synctest.Wait() // Process every due maintenance/rotation task before asserting absence.
+				s := inspectMember(t, h.ctx, addr, id)
+				if !s.Paused || opens.Load() != 1 || s.Rotation != nil {
+					t.Fatal("permanent provider failure automatically retried", s)
+				}
+			})
 		})
 	}
 }
@@ -166,98 +181,103 @@ func TestAutomaticRecoveryRejectsUnknownActions(t *testing.T) {
 }
 
 func TestAutomaticRecoveryRejectsUnsettledOwnedSession(t *testing.T) {
-	h, _, addr, id, opens := recoveryHarness(t, dsh.ErrModelUnavailable, false, func(context.Context) error {
-		return errors.New("old Session settlement could not be verified")
+	synctest.Test(t, func(t *testing.T) {
+		h, _, addr, id, opens := recoveryHarness(t, dsh.ErrModelUnavailable, false, func(context.Context) error {
+			return errors.New("old Session settlement could not be verified")
+		})
+		controlMember(t, h, addr, id, "run", UnreadChanged{MemberIdentity: id}, false, false)
+		automaticPost(t, h, addr, id, 1)
+		s := waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool { return s.Rotation != nil && s.Rotation.Status == "failed" })
+		if opens.Load() != 1 || !s.SessionResetRequired || s.SessionGeneration != "session.json.dsh" || s.Agent.TurnNumber != 1 {
+			t.Fatal("unsettled owned Session was replaced", s)
+		}
+
 	})
-	controlMember(t, h, addr, id, "run", UnreadChanged{MemberIdentity: id}, false, false)
-	automaticPost(t, h, addr, id, 1)
-	s := waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool { return s.Rotation != nil && s.Rotation.Status == "failed" })
-	if opens.Load() != 1 || !s.SessionResetRequired || s.SessionGeneration != "session.json.dsh" || s.Agent.TurnNumber != 1 {
-		t.Fatal("unsettled owned Session was replaced", s)
-	}
 }
 
 func TestAutomaticRecoveryRestoresOnlyEnabledSettledSessions(t *testing.T) {
 	for _, mode := range []string{"enabled", "paused", "unsettled", "already-attempted", "authentication", "incompatible", "corrupt-backend", "corrupt-unsettled"} {
 		t.Run(mode, func(t *testing.T) {
-			h := newRoomHarness(t, historyRoom(1, "pending"), nil)
-			id := h.memberID("A", "generation-A")
-			opts := adapterOptions(h.store, id)
-			h.store.mu.Lock()
-			err := h.store.save(opts.StatePath, sessionReference{Version: formatVersion, MemberIdentity: id, Directory: "session.json.dsh"}, maxPrivateFileBytes)
-			h.store.mu.Unlock()
-			if err != nil {
-				t.Fatal(err)
-			}
-			dir := dshStateDir(opts.StatePath)
-			if err := os.MkdirAll(dir, 0700); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(filepath.Join(dir, "backend.json"), []byte(`{"version":1,"sessionId":"old","configSHA256":"test"}`), 0600); err != nil {
-				t.Fatal(err)
-			}
-			if mode == "corrupt-backend" || mode == "corrupt-unsettled" {
-				if err := os.WriteFile(filepath.Join(dir, "backend.json"), []byte(`{"version":`), 0600); err != nil {
+			synctest.Test(t, func(t *testing.T) {
+				h := newRoomHarness(t, historyRoom(1, "pending"), nil)
+				id := h.memberID("A", "generation-A")
+				opts := adapterOptions(h.store, id)
+				h.store.mu.Lock()
+				err := h.store.save(opts.StatePath, sessionReference{Version: formatVersion, MemberIdentity: id, Directory: "session.json.dsh"}, maxPrivateFileBytes)
+				h.store.mu.Unlock()
+				if err != nil {
 					t.Fatal(err)
 				}
-			}
-			if mode != "unsettled" && mode != "corrupt-unsettled" {
-				if err := os.WriteFile(filepath.Join(dir, "settled.json"), []byte(`{"version":1}`), 0600); err != nil {
+				dir := dshStateDir(opts.StatePath)
+				if err := os.MkdirAll(dir, 0700); err != nil {
 					t.Fatal(err)
 				}
-			}
-			failure := dsh.ErrUnavailable.Error()
-			if mode == "incompatible" {
-				failure = dsh.ErrRecoveryUnsupported.Error() + ": backend configuration changed"
-			}
-			if mode == "authentication" {
-				failure += "\n" + dsh.ErrAuthentication.Error()
-			}
-			agent := AgentSnapshot{Version: formatVersion, MemberIdentity: id, TurnNumber: 1, LastOfferedUnreadSeq: 1, Turn: &TurnRecord{Number: 1, Status: "failed", SnapshotSeq: 1, OfferedUnreadSeq: 1, Error: failure}}
-			if err := h.store.SaveAgent(agent); err != nil {
-				t.Fatal(err)
-			}
-			if err := h.store.saveScheduling(memberScheduling{Version: schedulingVersion, MemberIdentity: id, Enabled: mode != "paused", Used: 1, SessionGeneration: "session.json.dsh", RecoveryAttempted: mode == "already-attempted"}); err != nil {
-				t.Fatal(err)
-			}
-			room, _ := h.store.LoadRoom()
-			svc := &service{ctx: h.ctx, store: h.store, info: ServiceInfo{RoomIdentity: h.id, ServiceEpoch: "test-service"}, room: h.addr, endpoint: "http://127.0.0.1:1", cliPath: os.Args[0], maxTurns: 16,
-				targets: map[string]actorx.Addr{}, dshProfiles: map[string]dshProfile{room.Members[0].Runner.Profile: {}}}
-			if err := svc.loadMembers(room); err != nil {
-				t.Fatal(err)
-			}
-			member := svc.newMember(id, room.Members[0].Runner, svc.recovered[0].state).(*MemberAgent)
-			var opens atomic.Int32
-			member.Backend = dshBackend{store: h.store, open: func(context.Context, dsh.Options) (dshComponent, error) {
-				opens.Add(1)
-				return &adapterComponent{run: func(context.Context, string) (dsh.TurnResult, error) {
-					return dsh.TurnResult{StopReason: "end_turn"}, nil
-				}}, nil
-			}}
-			addr, err := h.spawn(member)
-			if err != nil {
-				t.Fatal(err)
-			}
-			svc.setTarget(id.MembershipID, addr)
-			if opens.Load() != 0 {
-				t.Fatal("execution before readiness")
-			}
-			if err := svc.resumeMembers(h.ctx); err != nil {
-				t.Fatal(err)
-			}
-			if mode == "enabled" || mode == "incompatible" || mode == "corrupt-backend" {
-				s := waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool {
-					return !s.Active && s.Agent.TurnNumber == 2
-				})
-				if s.Paused || s.SessionResetRequired || s.Rotation.Status != "completed" || opens.Load() != 1 {
-					t.Fatal(s)
+				if err := os.WriteFile(filepath.Join(dir, "backend.json"), []byte(`{"version":1,"sessionId":"old","configSHA256":"test"}`), 0600); err != nil {
+					t.Fatal(err)
 				}
-			} else {
-				s := inspectMember(t, h.ctx, addr, id)
-				if !s.Paused || s.Rotation != nil {
-					t.Fatal("paused or permanent fault recovered", s)
+				if mode == "corrupt-backend" || mode == "corrupt-unsettled" {
+					if err := os.WriteFile(filepath.Join(dir, "backend.json"), []byte(`{"version":`), 0600); err != nil {
+						t.Fatal(err)
+					}
 				}
-			}
+				if mode != "unsettled" && mode != "corrupt-unsettled" {
+					if err := os.WriteFile(filepath.Join(dir, "settled.json"), []byte(`{"version":1}`), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				failure := dsh.ErrUnavailable.Error()
+				if mode == "incompatible" {
+					failure = dsh.ErrRecoveryUnsupported.Error() + ": backend configuration changed"
+				}
+				if mode == "authentication" {
+					failure += "\n" + dsh.ErrAuthentication.Error()
+				}
+				agent := AgentSnapshot{Version: formatVersion, MemberIdentity: id, TurnNumber: 1, LastOfferedUnreadSeq: 1, Turn: &TurnRecord{Number: 1, Status: "failed", SnapshotSeq: 1, OfferedUnreadSeq: 1, Error: failure}}
+				if err := h.store.SaveAgent(agent); err != nil {
+					t.Fatal(err)
+				}
+				if err := h.store.saveScheduling(memberScheduling{Version: schedulingVersion, MemberIdentity: id, Enabled: mode != "paused", Used: 1, SessionGeneration: "session.json.dsh", RecoveryAttempted: mode == "already-attempted"}); err != nil {
+					t.Fatal(err)
+				}
+				room, _ := h.store.LoadRoom()
+				svc := &service{ctx: h.ctx, store: h.store, info: ServiceInfo{RoomIdentity: h.id, ServiceEpoch: "test-service"}, room: h.addr, endpoint: "http://127.0.0.1:1", cliPath: os.Args[0], maxTurns: 16,
+					targets: map[string]actorx.Addr{}, dshProfiles: map[string]dshProfile{room.Members[0].Runner.Profile: {}}}
+				if err := svc.loadMembers(room); err != nil {
+					t.Fatal(err)
+				}
+				member := svc.newMember(id, room.Members[0].Runner, svc.recovered[0].state).(*MemberAgent)
+				var opens atomic.Int32
+				member.Backend = dshBackend{store: h.store, open: func(context.Context, dsh.Options) (dshComponent, error) {
+					opens.Add(1)
+					return &adapterComponent{run: func(context.Context, string) (dsh.TurnResult, error) {
+						return dsh.TurnResult{StopReason: "end_turn"}, nil
+					}}, nil
+				}}
+				addr, err := h.spawn(member)
+				if err != nil {
+					t.Fatal(err)
+				}
+				svc.setTarget(id.MembershipID, addr)
+				if opens.Load() != 0 {
+					t.Fatal("execution before readiness")
+				}
+				if err := svc.resumeMembers(h.ctx); err != nil {
+					t.Fatal(err)
+				}
+				if mode == "enabled" || mode == "incompatible" || mode == "corrupt-backend" {
+					s := waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool {
+						return !s.Active && s.Agent.TurnNumber == 2
+					})
+					if s.Paused || s.SessionResetRequired || s.Rotation.Status != "completed" || opens.Load() != 1 {
+						t.Fatal(s)
+					}
+				} else {
+					s := inspectMember(t, h.ctx, addr, id)
+					if !s.Paused || s.Rotation != nil {
+						t.Fatal("paused or permanent fault recovered", s)
+					}
+				}
+			})
 		})
 	}
 }
@@ -265,98 +285,101 @@ func TestAutomaticRecoveryRestoresOnlyEnabledSettledSessions(t *testing.T) {
 func TestAutomaticRecoveryAfterFailedSessionOpen(t *testing.T) {
 	for _, mode := range []string{"incompatible", "unsettled", "authentication", "cleanup-pending", "persistent", "pause"} {
 		t.Run(mode, func(t *testing.T) {
-			h := newRoomHarness(t, historyRoom(0, ""), nil)
-			id := h.memberID("A", "generation-A")
-			opts := adapterOptions(h.store, id)
-			ref := sessionReference{Version: formatVersion, MemberIdentity: id, Directory: "session.json.dsh"}
-			if err := h.store.save(opts.StatePath, ref, maxPrivateFileBytes); err != nil {
-				t.Fatal(err)
-			}
-			dir := dshStateDir(opts.StatePath)
-			if err := os.MkdirAll(dir, 0700); err != nil {
-				t.Fatal(err)
-			}
-			if mode != "unsettled" {
-				if err := os.WriteFile(filepath.Join(dir, "settled.json"), []byte(`{"version":1}`), 0600); err != nil {
+			synctest.Test(t, func(t *testing.T) {
+				h := newRoomHarness(t, historyRoom(0, ""), nil)
+				id := h.memberID("A", "generation-A")
+				opts := adapterOptions(h.store, id)
+				ref := sessionReference{Version: formatVersion, MemberIdentity: id, Directory: "session.json.dsh"}
+				if err := h.store.save(opts.StatePath, ref, maxPrivateFileBytes); err != nil {
 					t.Fatal(err)
 				}
-			}
-			oldHistory := filepath.Join(dir, "retained-private-history")
-			if err := os.WriteFile(oldHistory, []byte("original"), 0600); err != nil {
-				t.Fatal(err)
-			}
-			if err := h.store.saveScheduling(memberScheduling{Version: schedulingVersion, MemberIdentity: id, SessionGeneration: ref.Directory}); err != nil {
-				t.Fatal(err)
-			}
-			room, _ := h.store.LoadRoom()
-			svc := &service{ctx: h.ctx, store: h.store, info: ServiceInfo{RoomIdentity: h.id}, room: h.addr, targets: map[string]actorx.Addr{}, dshProfiles: map[string]dshProfile{room.Members[0].Runner.Profile: {}}}
-			var opens, runs atomic.Int32
-			backend := dshBackend{store: h.store, recover: true, open: func(_ context.Context, options dsh.Options) (dshComponent, error) {
-				attempt := opens.Add(1)
-				if attempt == 1 || mode == "persistent" {
-					failure := fmt.Errorf("%w: backend configuration changed", dsh.ErrRecoveryUnsupported)
-					if mode == "authentication" {
-						failure = errors.Join(failure, dsh.ErrAuthentication)
-					}
-					if mode == "cleanup-pending" {
-						failure = errors.Join(failure, dsh.ErrCleanupPending)
-					}
-					return nil, failure
+				dir := dshStateDir(opts.StatePath)
+				if err := os.MkdirAll(dir, 0700); err != nil {
+					t.Fatal(err)
 				}
-				if options.StateDir == dir || !strings.Contains(options.Instructions, "private context has been reset") {
-					t.Error("replacement did not receive a new generation and reset context")
-				}
-				return &adapterComponent{run: func(context.Context, string) (dsh.TurnResult, error) {
-					runs.Add(1)
-					return dsh.TurnResult{StopReason: "end_turn"}, nil
-				}}, nil
-			}}
-			addr, err := h.spawn(&MemberAgent{Options: opts, Store: h.store, Room: h.addr, Backend: hiddenLifecycleBackend{backend}, SessionMaxTurns: 16, RequestRecovery: svc.requestMemberRecovery})
-			if err != nil {
-				t.Fatal(err)
-			}
-			svc.setTarget(id.MembershipID, addr)
-			controlMember(t, h, addr, id, "run", UnreadChanged{MemberIdentity: id}, false, false)
-			automaticPost(t, h, addr, id, 1)
-			first := waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool { return !s.Active && s.Agent.TurnNumber == 1 })
-			if mode == "pause" {
-				controlMember(t, h, addr, id, "pause", UnreadChanged{MemberIdentity: id}, false, false)
-				time.Sleep(1200 * time.Millisecond)
-				paused := inspectMember(t, h.ctx, addr, id)
-				if opens.Load() != 1 || !paused.Paused || paused.Status == "recovering" || paused.Rotation != nil {
-					t.Fatal("failed-open recovery ignored explicit pause", paused)
-				}
-			} else if mode == "incompatible" || mode == "persistent" {
-				if first.Status != "recovering" || first.Notice == nil || first.Notice.Code != "session_recovering" {
-					t.Fatal("recoverable open failure was exposed as a terminal error", first)
-				}
-				last := waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool { return !s.Active && s.Agent.TurnNumber == 2 })
-				if opens.Load() != 2 || last.SessionGeneration == ref.Directory {
-					t.Fatal("failed resume did not rotate exactly once", last, opens.Load())
-				}
-				if mode == "incompatible" {
-					if last.Paused || last.Error != "" || last.Notice != nil || runs.Load() != 1 || last.Agent.Turn.Status != "completed" {
-						t.Fatal("replacement did not continue normal input", last, runs.Load())
-					}
-				} else {
-					if !last.Paused || last.Status == "recovering" || last.Notice == nil || runs.Load() != 0 {
-						t.Fatal("persistent failure was not bounded", last)
-					}
-					saved, err := h.store.loadScheduling(id)
-					if err != nil || !saved.RecoveryAttempted {
-						t.Fatal("recovery allowance would reset across restart", saved, err)
+				if mode != "unsettled" {
+					if err := os.WriteFile(filepath.Join(dir, "settled.json"), []byte(`{"version":1}`), 0600); err != nil {
+						t.Fatal(err)
 					}
 				}
-			} else if first.Status == "recovering" || !first.Paused || opens.Load() != 1 || runs.Load() != 0 {
-				t.Fatal("unsafe open failure was automatically replaced", first)
-			}
-			if data, err := os.ReadFile(oldHistory); err != nil || string(data) != "original" {
-				t.Fatal("recovery overwrote original evidence", string(data), err)
-			}
-			room, _ = h.store.LoadRoom()
-			if room.LatestSeq != 1 || room.Members[0].ReadThrough != 0 {
-				t.Fatal("recovery changed Room input or cursor", room)
-			}
+				oldHistory := filepath.Join(dir, "retained-private-history")
+				if err := os.WriteFile(oldHistory, []byte("original"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if err := h.store.saveScheduling(memberScheduling{Version: schedulingVersion, MemberIdentity: id, SessionGeneration: ref.Directory}); err != nil {
+					t.Fatal(err)
+				}
+				room, _ := h.store.LoadRoom()
+				svc := &service{ctx: h.ctx, store: h.store, info: ServiceInfo{RoomIdentity: h.id}, room: h.addr, targets: map[string]actorx.Addr{}, dshProfiles: map[string]dshProfile{room.Members[0].Runner.Profile: {}}}
+				var opens, runs atomic.Int32
+				backend := dshBackend{store: h.store, recover: true, open: func(_ context.Context, options dsh.Options) (dshComponent, error) {
+					attempt := opens.Add(1)
+					if attempt == 1 || mode == "persistent" {
+						failure := fmt.Errorf("%w: backend configuration changed", dsh.ErrRecoveryUnsupported)
+						if mode == "authentication" {
+							failure = errors.Join(failure, dsh.ErrAuthentication)
+						}
+						if mode == "cleanup-pending" {
+							failure = errors.Join(failure, dsh.ErrCleanupPending)
+						}
+						return nil, failure
+					}
+					if options.StateDir == dir || !strings.Contains(options.Instructions, "private context has been reset") {
+						t.Error("replacement did not receive a new generation and reset context")
+					}
+					return &adapterComponent{run: func(context.Context, string) (dsh.TurnResult, error) {
+						runs.Add(1)
+						return dsh.TurnResult{StopReason: "end_turn"}, nil
+					}}, nil
+				}}
+				addr, err := h.spawn(&MemberAgent{Options: opts, Store: h.store, Room: h.addr, Backend: hiddenLifecycleBackend{backend}, SessionMaxTurns: 16, RequestRecovery: svc.requestMemberRecovery})
+				if err != nil {
+					t.Fatal(err)
+				}
+				svc.setTarget(id.MembershipID, addr)
+				controlMember(t, h, addr, id, "run", UnreadChanged{MemberIdentity: id}, false, false)
+				automaticPost(t, h, addr, id, 1)
+				first := waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool { return !s.Active && s.Agent.TurnNumber == 1 })
+				if mode == "pause" {
+					controlMember(t, h, addr, id, "pause", UnreadChanged{MemberIdentity: id}, false, false)
+					time.Sleep(1200 * time.Millisecond)
+					synctest.Wait() // Process every due maintenance/rotation task before asserting absence.
+					paused := inspectMember(t, h.ctx, addr, id)
+					if opens.Load() != 1 || !paused.Paused || paused.Status == "recovering" || paused.Rotation != nil {
+						t.Fatal("failed-open recovery ignored explicit pause", paused)
+					}
+				} else if mode == "incompatible" || mode == "persistent" {
+					if first.Status != "recovering" || first.Notice == nil || first.Notice.Code != "session_recovering" {
+						t.Fatal("recoverable open failure was exposed as a terminal error", first)
+					}
+					last := waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool { return !s.Active && s.Agent.TurnNumber == 2 })
+					if opens.Load() != 2 || last.SessionGeneration == ref.Directory {
+						t.Fatal("failed resume did not rotate exactly once", last, opens.Load())
+					}
+					if mode == "incompatible" {
+						if last.Paused || last.Error != "" || last.Notice != nil || runs.Load() != 1 || last.Agent.Turn.Status != "completed" {
+							t.Fatal("replacement did not continue normal input", last, runs.Load())
+						}
+					} else {
+						if !last.Paused || last.Status == "recovering" || last.Notice == nil || runs.Load() != 0 {
+							t.Fatal("persistent failure was not bounded", last)
+						}
+						saved, err := h.store.loadScheduling(id)
+						if err != nil || !saved.RecoveryAttempted {
+							t.Fatal("recovery allowance would reset across restart", saved, err)
+						}
+					}
+				} else if first.Status == "recovering" || !first.Paused || opens.Load() != 1 || runs.Load() != 0 {
+					t.Fatal("unsafe open failure was automatically replaced", first)
+				}
+				if data, err := os.ReadFile(oldHistory); err != nil || string(data) != "original" {
+					t.Fatal("recovery overwrote original evidence", string(data), err)
+				}
+				room, _ = h.store.LoadRoom()
+				if room.LatestSeq != 1 || room.Members[0].ReadThrough != 0 {
+					t.Fatal("recovery changed Room input or cursor", room)
+				}
+			})
 		})
 	}
 }

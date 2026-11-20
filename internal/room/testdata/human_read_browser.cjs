@@ -1,6 +1,7 @@
 const {chromium}=require('playwright'),assert=require('node:assert/strict');
 const {mkdirSync}=require('node:fs'),{join}=require('node:path');
 const endpoint=process.argv[2],mode=process.argv[3],history=mode.startsWith('history'),large=mode==='history-large';
+const capacity=history&&mode!=='history-functional',total=capacity?10000:history?600:120,anchorSeq=total-30;
 const combined=mode.startsWith('combined-'),width=combined?Number(mode.split('-')[1]):1440;
 const artifacts=process.env.TEAMX_HUMAN_READ_ARTIFACTS;
 if(artifacts)mkdirSync(artifacts,{recursive:true});
@@ -15,7 +16,7 @@ if(artifacts)mkdirSync(artifacts,{recursive:true});
    assert.equal(response.status,200,await response.clone().text());return response.json();
   };
   const waitFor=async(check)=>{const deadline=Date.now()+10000;while(!await check()){if(Date.now()>deadline)throw Error('condition timed out');await new Promise(r=>setTimeout(r,100));}};
-  if(history){
+  if(capacity){
    await page.addInitScript(()=>{
     const frame=window.requestAnimationFrame.bind(window);window.readingFrames=[];window.batchBuilds=[];window.longTasks=[];window.anchorErrors=[];
     window.requestAnimationFrame=fn=>frame(time=>{const start=performance.now();fn(time);if(window.measureReading)window.readingFrames.push(performance.now()-start);});
@@ -32,7 +33,7 @@ if(artifacts)mkdirSync(artifacts,{recursive:true});
    });
   }
   if(!history && mode!=='locating')await page.addInitScript(()=>{document.hasFocus=()=>false;});
-  await page.goto(endpoint);await page.locator('#message-'+(history?10000:combined?100:120)).waitFor();
+  await page.goto(endpoint);await page.locator('#message-'+(history?total:combined?100:120)).waitFor();
   if(combined){
    const before=await readState();
    assert.equal(await page.locator('#messages .message').count(),50);
@@ -112,27 +113,31 @@ if(artifacts)mkdirSync(artifacts,{recursive:true});
    console.log(JSON.stringify({mode,viewport:width,defaultWindow:50,mentions:[10,70,95],ownMessages:3,ordinaryRemaining:remaining,
     automaticHistory:true,naturalScroll:true,independentReloadPreservesMention:true,lostReceiptRecovered:true,exactLocalCount:true,fixedDivider:true,exitDropsBookmark:true}));
   }else if(history){
-   assert.equal(await page.locator('#messages .message').count(),50,'performance starts at the normal latest window');
+   assert.equal(await page.locator('#messages .message').count(),50,'history starts at the normal latest window');
    await page.bringToFront();
-   const cdp=await context.newCDPSession(page);await cdp.send('Performance.enable');
-   let peakHeap=0,peakNodes=0,peakBacking=0,peakEmbedder=0;
-   const sample=async()=>{const h=await cdp.send('Runtime.getHeapUsage'),d=await cdp.send('Memory.getDOMCounters');peakHeap=Math.max(peakHeap,h.usedSize);peakBacking=Math.max(peakBacking,h.backingStorageSize||0);peakEmbedder=Math.max(peakEmbedder,h.embedderHeapUsedSize||0);peakNodes=Math.max(peakNodes,d.nodes);};
-   await sample();const initialHeap=peakHeap;
-   let monitor=setInterval(()=>sample().catch(()=>{}),100);
+   let cdp,peakHeap=0,peakNodes=0,peakBacking=0,peakEmbedder=0,initialHeap,monitor,inputMonitor,sample;
    const inputTimes=[];let probing=false;
-   const inputMonitor=setInterval(async()=>{
+   if(capacity){
+   cdp=await context.newCDPSession(page);await cdp.send('Performance.enable');
+   sample=async()=>{const h=await cdp.send('Runtime.getHeapUsage'),d=await cdp.send('Memory.getDOMCounters');peakHeap=Math.max(peakHeap,h.usedSize);peakBacking=Math.max(peakBacking,h.backingStorageSize||0);peakEmbedder=Math.max(peakEmbedder,h.embedderHeapUsedSize||0);peakNodes=Math.max(peakNodes,d.nodes);};
+   await sample();initialHeap=peakHeap;
+   monitor=setInterval(()=>sample().catch(()=>{}),100);
+   inputMonitor=setInterval(async()=>{
     if(probing)return;probing=true;const start=Date.now();
     try{await page.locator('#message-input').fill('补载时仍可编辑 '+start);inputTimes.push(Date.now()-start);}catch(error){if(!page.isClosed())errors.push(error.message);}finally{probing=false;}
    },150);
    monitors.push(monitor,inputMonitor);
    await page.evaluate(()=>{window.measureReading=true;});
+   }
    // A failed batch retains the committed prefix. Retry never duplicates nodes.
-   let failAt=3,historyRequests=0,failed=false;const ranges=[];
+   let failAt=3,historyRequests=0,failed=false,releaseBatch;const ranges=[];
+   let batchHeld;const heldBatch=new Promise(resolve=>{batchHeld=resolve;});
    await page.route('**/v1/read',async route=>{
     const body=route.request().postDataJSON();
     if(body.snapshot_seq!==undefined){
      historyRequests++;ranges.push([body.after,body.snapshot_seq]);
      if(historyRequests===failAt){failed=true;await route.abort('failed');return;}
+     if(!capacity&&historyRequests===7){const response=await route.fetch();await new Promise(resolve=>{releaseBatch=resolve;batchHeld();});await route.fulfill({response});return;}
     }
     await route.continue();
    });
@@ -142,11 +147,13 @@ if(artifacts)mkdirSync(artifacts,{recursive:true});
    assert.ok(!(await readState()).mention_seen_seqs.includes(1));
    failAt=-1;
    // Keep an existing visible node and its viewport offset through prepends.
-   await page.locator('#message-9970').scrollIntoViewIfNeeded();
-   const anchor=await page.locator('#message-9970').elementHandle(),anchorTop=await anchor.evaluate(el=>el.getBoundingClientRect().top);
+   await page.locator('#message-'+anchorSeq).scrollIntoViewIfNeeded();
+   const anchor=await page.locator('#message-'+anchorSeq).elementHandle(),anchorTop=await anchor.evaluate(el=>el.getBoundingClientRect().top);
    await page.locator('#view-mention').click();
    await page.waitForFunction(()=>document.querySelectorAll('#messages .message').length>=300);
+   if(!capacity)await heldBatch;
    const cancelStart=Date.now();await page.locator('#cancel-history').click();const cancelMs=Date.now()-cancelStart;
+   if(!capacity)releaseBatch();
    await page.locator('#history-progress').waitFor({state:'hidden'});
    const cancelledCount=await page.locator('#messages .message').count();await page.waitForTimeout(200);
    assert.equal(await page.locator('#messages .message').count(),cancelledCount);
@@ -157,11 +164,11 @@ if(artifacts)mkdirSync(artifacts,{recursive:true});
    await page.locator('#history-progress').waitFor({state:'hidden',timeout:90000});
    await waitFor(async()=> (await readState()).mention_seen_seqs.includes(1));
    const elapsedMs=Date.now()-start;
-   assert.equal(await page.locator('#messages .message').count(),10000);
-   assert.equal(await anchor.evaluate(el=>el===document.querySelector('#message-9970')),true);
+   assert.equal(await page.locator('#messages .message').count(),total);
+   assert.equal(await anchor.evaluate((el,seq)=>el===document.getElementById('message-'+seq),anchorSeq),true);
    assert.equal(await page.locator('#messages .day-divider').count(),1);
    assert.equal(await page.locator('#messages .new-message-divider').count(),1);
-   assert.equal(await page.evaluate(()=>new Set([...document.querySelectorAll('#messages .message')].map(n=>n.id)).size),10000);
+   assert.equal(await page.evaluate(()=>new Set([...document.querySelectorAll('#messages .message')].map(n=>n.id)).size),total);
    assert.ok(ranges.every(([a,b])=>b-a<=50),'every snapshot covers at most 50 messages');
    // Main polling after loading must append without rebuilding retained nodes.
    const info=await(await fetch(endpoint+'/v1/ui')).json();
@@ -172,10 +179,11 @@ if(artifacts)mkdirSync(artifacts,{recursive:true});
    assert.equal(cleared.status,200,await cleared.text());await page.locator('#message-1').waitFor({state:'detached'});
    const refreshStart=Date.now();
    const sent=await fetch(endpoint+'/v1/send',{method:'POST',headers:{'Content-Type':'application/json',Origin:endpoint},body:JSON.stringify({room_id:info.room_id,room_instance:info.room_instance,service_epoch:info.service_epoch,caller:{kind:'human',id:info.operator},client_message_id:'history-live-append',text:'补载完成后正常刷新。'})});assert.equal(sent.status,200,await sent.text());
-   await page.locator('#message-10001').waitFor();const refreshMs=Date.now()-refreshStart;
-   assert.equal(await anchor.evaluate(el=>el===document.querySelector('#message-9970')),true);
+   await page.locator('#message-'+(total+1)).waitFor();const refreshMs=Date.now()-refreshStart;
+   assert.equal(await anchor.evaluate((el,seq)=>el===document.getElementById('message-'+seq),anchorSeq),true);
    const refreshPosition=await page.locator('#timeline').evaluate(el=>el.scrollTop);
    await page.waitForTimeout(1700);assert.equal(await page.locator('#timeline').evaluate(el=>el.scrollTop),refreshPosition);
+   if(capacity){
    await page.evaluate(()=>{window.readingFrames=[];});
    for(let i=0;i<80;i++){
     await page.locator('#timeline').evaluate((el,i)=>{el.scrollTop=el.scrollHeight*(i/80);el.dispatchEvent(new Event('scroll'));},i);
@@ -193,9 +201,10 @@ if(artifacts)mkdirSync(artifacts,{recursive:true});
    assert.ok(Math.max(...inputTimes)<500,`input took ${Math.max(...inputTimes)}ms`);
    const reading=await readState();const metadataBytes=Buffer.byteLength(JSON.stringify(reading));
    inputTimes.sort((a,b)=>a-b);
-   console.log(JSON.stringify({mode,messages:10000,loadedMessages:10000,textBytes:large?6600:42,viewport:[1440,1000],elapsedMs,historyRequests,
+   console.log(JSON.stringify({mode,capacity:true,messages:10000,loadedMessages:10000,textBytes:large?6600:42,viewport:[1440,1000],elapsedMs,historyRequests,
     failedCount,cancelledCount,cancelMs,inputMs:{samples:inputTimes.length,p95:inputTimes[Math.floor(inputTimes.length*.95)],max:Math.max(...inputTimes)},refreshMs,metadataBytes,
     initialHeap,peakHeap,peakBacking,peakEmbedder,peakNodes,clearOneForCapacity:true,...stats}));
+   }else console.log(JSON.stringify({mode,capacity:false,messages:total,historyRequests,failedCount,cancelledCount,failedBatchRetainsPrefix:true,cancelPreservesAnchor:true,continuousLoad:true,refreshKeepsNodes:true,uniqueMessages:true}));
   }else if(mode==='locating'){
    await page.bringToFront();
    let release,hold=true,fail=false;

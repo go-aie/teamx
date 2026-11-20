@@ -2,7 +2,7 @@
 
 ## 日常入口
 
-从仓库根目录执行。日常先跑 `make test`；integration 按改动模块运行，全仓 integration 与 race 用作阶段性检查，无需每次修改都串行全跑：
+从仓库根目录执行。局部修改先跑所属包核心及受影响的集成／前端检查；阶段性完整本地回归使用 `make test-integration`，它已包含核心，无需先完整跑一次 `make test`。并发或生命周期修改先做定向 race，最终交付再做全仓 race：
 
 ```sh
 make test                     # 核心回归，等价于 go test ./... 并附带超时
@@ -32,7 +32,10 @@ make test-integration TEST_PACKAGES='./internal/room ./internal/platform/gitlab'
 | --- | --- | --- |
 | 核心 | 状态转换、数据校验、权限、存储提交边界、Actor 生命周期和快速组件回归 | 无额外构建标签 |
 | integration | 本地 CLI 协议、HTTP/前端组合、独立进程重启、Git 仓库操作、完整业务链路与组合矩阵 | `integration` |
-| e2e | 已安装的外部工具专项验收、真实平台/模型、Chromium 与人工浏览器验收 | `e2e`，另加场景要求的显式启用参数 |
+| 浏览器功能 | 原生 EventSource、实际 DOM、焦点／滚动／触摸、页面恢复与跨会话隔离 | `e2e`，另加各功能场景的显式开关 |
+| 专项验收／测量 | 长时间静置、满容量性能、已安装工具、真实平台／模型与实体手机 | `e2e`，长窗口、容量和真实依赖分别显式选择 |
+
+`e2e` 会同时编入核心和本地集成；带标签全跑不等于“仅跑 e2e”。浏览器功能开关不会开启长窗口或满容量专项。
 
 integration 文件使用 `//go:build integration || e2e`，使 e2e 同时具备本地测试的辅助代码。真实验收函数必须受 `e2e` 标签保护，不能仅靠环境变量在默认测试中跳过。复用的辅助函数留在普通 `*_test.go`；不得将模拟器或测试开关加入正式 CLI。
 
@@ -88,12 +91,12 @@ go test -tags=e2e ./internal/room \
 可选 Chromium 场景需要本机 Playwright 和 Chromium，使用实际 HTTP／CLI 及临时数据，飞书 CLI／成员 backend 为本地夹具：
 
 ```sh
-TEAMX_DM_BROWSER=1 go test ./internal/room \
+TEAMX_DM_BROWSER=1 go test -tags=e2e ./internal/room \
   -run '^(TestDirectConversationBrowser|TestDefaultAssistantRestorationBrowser)$' -count=1 -timeout=3m
-TEAMX_CONNECT_BROWSER=1 go test -tags=integration ./internal/room \
+TEAMX_CONNECT_BROWSER=1 go test -tags=e2e ./internal/room \
   -run '^(TestDefaultAssistantPlatformConnectionBrowser|TestPlatformConnectConversationBrowser)$' -count=1 -timeout=3m
-TEAMX_SELECTION_BROWSER=1 go test -tags=integration ./internal/room \
-  -run '^(TestDefaultAssistantPlatformOnboarding|TestPlatformSelectionConversationAndMemberConfiguration)$' -count=1 -timeout=3m
+TEAMX_SELECTION_BROWSER=1 go test -tags=e2e ./internal/room \
+  -run '^(TestDefaultAssistantPlatformOnboardingBrowser|TestPlatformSelectionConversationBrowser)$' -count=1 -timeout=3m
 ```
 
 浏览器覆盖分组和选择恢复、默认删除保护、旧实例显式恢复、普通私信删除、独立草稿、详情 Tab／焦点、窄屏，以及账号／群选择和完整设置返回。接续测试核对原请求、完整成员身份、Inbox 结果与单次配置；受控 backend 的自动回合与 CLI 驱动的等待／主动继续分别验证，不称为真实模型。
@@ -102,16 +105,9 @@ TEAMX_SELECTION_BROWSER=1 go test -tags=integration ./internal/room \
 
 ## 本机验证记录
 
-2026-11-08，macOS ARM64、Go 1.27.1，构建缓存可用，以下执行均使用 `-count=1`：
+2026-11-20 最终全仓核心通过，墙钟 **453.328 秒（7 分 33 秒）**，较 T1 修复后的 557.748 秒缩短约 **18.7%**，仍超过 Makefile 的三分钟默认上限。完整本地集成按用户要求中止，最终全仓 race 未运行，没有最终健康集成耗时；T2–T4 的定向回归及浏览器专项已有通过证据。不要沿用 11 月 8 日约 70 秒核心／4 分 45 秒集成的数据估算当前运行。
 
-| 范围 | 耗时 |
-| --- | --- |
-| 全仓核心回归 | 约 70 秒 |
-| Lark 模块 integration | 约 37 秒 |
-| 全仓核心 + integration | 4 分 45 秒 |
-| 全仓核心 + integration，race | 5 分 03 秒 |
-
-以上均已通过。日常入口保留测试结果缓存；首次依赖下载、机器负载和修改范围会影响实际耗时。
+实际测量、覆盖承接和剩余门槛统一见[测试实施与耗时记录](implementation/test-suite-health.zh.md)。Makefile 的三分钟／八分钟上限未因诊断放宽；局部反馈使用 `TEST_PACKAGES`／`TEST_RUN`，长跑前说明范围和预计成本。结果缓存继续保留，计时才加 `-count=1`。
 
 ## 少量按需 e2e
 
@@ -133,7 +129,7 @@ TEAMX_HUMAN_READ_PERF=1 go test -tags=e2e ./internal/room \
   -run '^TestHumanReadCatalogPerformance$' -count=1 -v -timeout=3m
 ```
 
-浏览器的 `combined-1440`／`combined-390`／`combined-320` 子场景从第 1～100 条、默认最近 50 条开始，提及位于第 10、70、95 条，另含 3 条自己的消息及重复 @。检查普通打开后仅剩提及未读、一次点击自动补载最早提及、自然滚动确认、独立页面刷新保留未查看提及、精确剩余数和固定分隔线，以及退出丢弃普通回看提示；还注入保存成功但响应丢失，检查自动同步恢复后计数不复活。可单独复跑：
+浏览器的 `combined-1440`／`combined-390` 子场景从第 1～100 条、默认最近 50 条开始，提及位于第 10、70、95 条，另含 3 条自己的消息及重复 @。检查普通打开后仅剩提及未读、一次点击自动补载最早提及、自然滚动确认、独立页面刷新保留未查看提及、精确剩余数和固定分隔线，以及退出丢弃普通回看提示；还注入保存成功但响应丢失，检查自动同步恢复后计数不复活。可单独复跑：
 
 ```sh
 TEAMX_HUMAN_READ_BROWSER=1 go test -tags=e2e ./internal/room \
@@ -142,7 +138,16 @@ TEAMX_HUMAN_READ_BROWSER=1 go test -tags=e2e ./internal/room \
 
 其余浏览器场景覆盖未打开会话计数、两个独立上下文的阅读／列表同步、手机列表往返、手动单批与自动连续补载、取消／失败后的接续、清空／切换会话时迟到历史响应失效、单项目录故障、阅读故障期间发送、长名称与 `99+`、1440／390／320px 及短视口布局和触摸长按。仅阅读变化须保持消息节点与滚动位置，不产生「回到最新消息」。
 
-`history` 和 `history-large` 均从默认 50 条出发，实际构建全部 10,000 条 DOM；后者单条普通正文 6,600 字节，总正文约 62.9 MiB。两者包含网络失败、取消、接续定位、连续输入、可见锚点稳定、日期／新消息分隔线去重、全量历史后的真实消息刷新与滚动，输出批次耗时、Long Tasks、输入响应、阅读帧、序号元数据和 CDP 内存采样。批次墙钟包含主动让出主线程的等待；embedder heap 是估计值，不能当作进程 RSS，几项内存峰值不能相加。大正文保留全部节点仍有较高内存成本，不能据此宣称低内存。
+普通 `TestHumanReadBrowser/history-functional` 使用 600 条消息，从最近 50 条出发，保留跨页失败后的已提交前缀、取消后的迟到响应失效、接续、可见锚点、分隔线／节点去重与实时追加。桌面和 390px 各保留完整提及流程；320px 的布局、可见裁剪与真实 Chromium 触摸由阅读及目录场景承接，无需重复完整业务流程。
+
+满容量浏览器测量单独选择，普通阅读开关不会启用它：
+
+```sh
+NODE_PATH="$PWD/packaging/verifier/node_modules" TEAMX_HUMAN_READ_CAPACITY=1 \
+go test -tags=e2e ./internal/room -run '^TestHumanReadCapacityBrowser$' -count=1 -v -timeout=5m
+```
+
+专项的 `history` 和 `history-large` 均从默认 50 条出发，实际构建全部 10,000 条 DOM；后者单条普通正文 6,600 字节，总正文约 62.9 MiB。两者包含网络失败、取消、接续定位、连续输入、可见锚点稳定、日期／新消息分隔线去重、全量历史后的真实消息刷新与滚动，输出批次耗时、Long Tasks、输入响应、阅读帧、序号元数据和 CDP 内存采样。批次墙钟包含主动让出主线程的等待；embedder heap 是估计值，不能当作进程 RSS，几项内存峰值不能相加。大正文保留全部节点仍有较高内存成本，不能据此宣称低内存。
 
 目录性能场景交替运行旧目录文件投影与新目录接口，报告单 Room 10,000 条、10 个 Room 各 1,000 条、接近 64 MiB 样本的 p50／p95、busy 延迟、state 大小与正常读取次数。这些是本机有界测量，不覆盖 1,000 Room 上限，也不是 CI 的性能门槛。
 
@@ -236,7 +241,7 @@ node --test internal/web/tests/web*_test.mjs
 go test -race -tags=integration ./internal/room -run '^TestUIUpdate' -count=1 -timeout=4m
 ```
 
-安装 Playwright／Chromium 后，可选真实页面验收覆盖两种服务的 60 秒空闲零读取、原生订阅、消息补读及模型回执丢失。模型验证使用受控 probe，无外部模型调用：
+安装 Playwright／Chromium 后，普通功能集覆盖两种服务的原生订阅、消息补读、后台恢复、草稿／焦点及模型回执丢失，不进入 60 秒空闲窗口。模型验证使用受控 probe，无外部模型调用：
 
 ```sh
 NODE_PATH="$PWD/packaging/verifier/node_modules" TEAMX_WEB_UPDATES_BROWSER=1 \
@@ -269,13 +274,26 @@ TEAMX_INBOX_BROWSER_OUTPUT=/tmp/teamx-inbox-browser-new-run \
 go test -tags=e2e ./internal/room -run '^TestInboxPageBrowser$' -count=1 -v -timeout=3m
 ```
 
-活动采集回归使用隔离服务、GitLab 空查询和原生 Lark CLI fixture，持续实际采集至少 60 秒；两个独立登录上下文核对摘要/诊断读取、同会话及不同会话、后台恢复与单端退出。无真实模型或外部平台写入。设置输出文件可保留每页和合计请求/正文字节、通知类别及 DOM 延迟：
+活动采集的普通功能回归使用隔离服务、GitLab 空查询和原生 Lark CLI fixture，等待实际诊断帧与采集轮次；两个独立登录上下文核对摘要/诊断读取、同会话及不同会话、后台恢复与单端退出。无真实模型或外部平台写入。设置输出文件可保留每页和合计请求/正文字节、通知类别及 DOM 延迟：
 
 ```sh
 NODE_PATH="$PWD/packaging/verifier/node_modules" TEAMX_WEB_UPDATES_SCOPE_BROWSER=1 \
 TEAMX_WEB_UPDATES_SCOPE_OUTPUT=/tmp/teamx-web-updates-scope.json \
 go test -tags=e2e ./internal/room -run '^TestWebUpdatesNotificationScopeBrowser$' -count=1 -v -timeout=5m
 ```
+
+真实长窗口单独启用：空闲专项分别观察单 Room／manager 60 秒零额外读取及至少三次生产心跳；采集专项保留原 60 秒窗口、至少 55 轮实际采集、各 provider 至少五次查询及每端至少 20 个诊断帧，记录请求／字节与消息 DOM 延迟。受控前端时钟检查不作为这些真实时间证据：
+
+```sh
+NODE_PATH="$PWD/packaging/verifier/node_modules" TEAMX_WEB_UPDATES_IDLE=1 \
+go test -tags=e2e ./internal/room -run '^TestWebUpdatesIdleBrowser$' -count=1 -v -timeout=3m
+
+NODE_PATH="$PWD/packaging/verifier/node_modules" TEAMX_WEB_UPDATES_SCOPE_LONG=1 \
+TEAMX_WEB_UPDATES_SCOPE_OUTPUT=/tmp/teamx-web-updates-scope-long.json \
+go test -tags=e2e ./internal/room -run '^TestWebUpdatesNotificationScopeLongWindowBrowser$' -count=1 -v -timeout=3m
+```
+
+旧轮询的 scope 对照继续保留，但 `TEAMX_WEB_UPDATES_SCOPE_BASELINE=1` 必须搭配长窗口入口，不能进入普通功能集。历史 frozen／FIFO／四工具／两工具及配对模型记录和未完成验收继续按各能力文档维护，本次没有删除其证据或加入日常门槛。package／release CI 保留核心、标准 vet、Web 和打包检查，浏览器、平台与模型验收仍显式按需运行。
 
 分类、安装结果不变、summary 合并优先、成员收据与目录隔离的普通/race 回归：
 

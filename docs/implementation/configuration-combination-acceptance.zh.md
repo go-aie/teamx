@@ -39,12 +39,12 @@ git diff --check
 TEAMX_CONFIGURATION_BROWSER=1 \
 TEAMX_CONFIGURATION_ARTIFACTS="$PWD/.local/acceptance/configuration-combination/browser" \
 NODE_PATH="$PWD/packaging/verifier/node_modules" \
-  go test -tags integration ./internal/room -run '^TestConfigurationObservationBrowser$' -count=1 -v
+  go test -tags=e2e ./internal/room -run '^TestConfigurationObservationBrowser$' -count=1 -v
 
 TEAMX_CONNECT_BROWSER=1 \
 TEAMX_CONNECT_BROWSER_ARTIFACTS="$PWD/.local/acceptance/configuration-combination/binding-browser" \
 NODE_PATH="$PWD/packaging/verifier/node_modules" \
-  go test -tags integration ./internal/room -run '^TestLarkAuthorizationAndMemberRepairBrowser$' -count=1 -v
+  go test -tags=e2e ./internal/room -run '^TestLarkAuthorizationAndMemberRepairBrowser$' -count=1 -v
 ```
 
 真实 DSH 用例只在 `TEAMX_CONFIGURATION_DSH=fixture` 时执行；其他值跳过，不隐式进入真实平台。读取指定配置中的默认模型及已有凭据，兼容旧 runtime.model；不会修改该配置或凭据存储。输出必须是尚不存在的绝对目录，父目录需存在，每次使用新名字：

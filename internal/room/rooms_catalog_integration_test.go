@@ -77,8 +77,18 @@ func TestRoomsCatalogDuringBlockedNotificationWork(t *testing.T) {
 				svc.store.mu.Lock()
 			}
 			original := store.ops.syncDir
+			defer func() {
+				unblock()
+				select {
+				case <-done:
+					store.ops.syncDir = original
+				case <-time.After(5 * time.Second):
+					t.Error("blocked notification work did not settle during cleanup")
+				}
+			}()
 			store.ops.syncDir = func(dir string) error { once.Do(func() { close(entered); <-release }); return original(dir) }
 			go func() {
+				defer close(done)
 				if boundary == "source-save" {
 					next := state.Clone()
 					next.LastCheck = h.clock.get()
@@ -106,7 +116,6 @@ func TestRoomsCatalogDuringBlockedNotificationWork(t *testing.T) {
 			if err := <-done; err != nil {
 				t.Fatal(err)
 			}
-			store.ops.syncDir = original
 		})
 	}
 }

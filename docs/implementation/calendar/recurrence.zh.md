@@ -41,7 +41,7 @@ go test -race ./internal/calendar ./internal/room \
   -run 'Test(Calendar|Recurring|OfficialWork|WorkCalendar|ExplicitExcluded|Once|TaskIdempotency|PauseCancel|LateOnce|Unknown|ExplicitRetry|IncompleteTask|CreateDefaults|EditReplaces|UnifiedDSH|InputToolsMinimal|UnifiedUnusedProvider|UnifiedMCPAuthentication|MCPStandardHTTPClient|Followup.*(Notice|Clear))' -count=1
 node --test internal/web/tests/*_test.mjs
 TEAMX_CALENDAR_BROWSER=1 NODE_PATH="$PWD/packaging/verifier/node_modules" \
-  go test ./internal/room -run '^TestCalendarBrowser$' -count=1 -v
+  go test -tags=e2e ./internal/room -run '^TestCalendarBrowser$' -count=1 -v
 TEAMX_CALENDAR_RECURRING_DSH_REAL=1 TEAMX_INPUT_COMPARISON_CONFIG="$PWD/.teamx/config.toml" \
   TEAMX_CALENDAR_OUTPUT=/absolute/fresh-calendar-recurring-output \
   go test -tags=e2e ./internal/room -run '^TestCalendarRecurringRealDSH$' -count=1 -v

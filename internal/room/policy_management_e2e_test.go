@@ -19,6 +19,7 @@ func TestPolicyManagementHTTP(t *testing.T) {
 	}
 	m := activationTestManager(t)
 	m.teams = map[string]teamDefinition{"sample": testTeamDefinition(t)}
+	m.publishRoomsCatalogLocked()
 	m.factory = controlledActivationFactory(nil, nil)
 	server := httptest.NewUnstartedServer(m)
 	m.config.endpoint = "http://" + server.Listener.Addr().String()
@@ -29,6 +30,6 @@ func TestPolicyManagementHTTP(t *testing.T) {
 	cmd := exec.CommandContext(ctx, node, "../web/tests/web_policy_http.mjs")
 	cmd.Env = append(os.Environ(), "TEAMX_WEB_ENDPOINT="+server.URL)
 	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("policy management HTTP: %v\n%s", err, output)
+		t.Fatalf("policy management HTTP (context=%v): %v\n%s", ctx.Err(), err, output)
 	}
 }

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { launch, settle, openNotification } from "./web_app_harness.mjs";
+import { launch, settle, openMemberInbox, openNotification } from "./web_app_harness.mjs";
 import { request } from "../assets/client.mjs";
 const endpoint = process.env.TEAMX_WEB_ENDPOINT;
 let call = (path, body) => request(endpoint + path, body);
@@ -23,7 +23,11 @@ const ui = await launch({ request: (path, body) => {
   const task = call(path, body); inflight.add(task);
   return task.finally(() => inflight.delete(task));
 } });
-await Promise.all([...inflight]); await settle(); await openNotification(ui,"gitlab","",false); await Promise.all([...inflight]); await settle();
+await Promise.all([...inflight]); await settle();
+await openMemberInbox(ui);
+await ui.el("agent-tab-platforms").emit("click");
+await ui.refresh(); await Promise.all([...inflight]); await settle();
+await openNotification(ui,"gitlab","",false); await Promise.all([...inflight]); await settle();
 assert.equal(ui.el("notification-manage-binding"), undefined);
 assert.equal(ui.el("gitlab-project-summary").textContent, "remote/project");
 const catalog = await call("/v1/rooms");
@@ -41,6 +45,13 @@ const list = await call(`/v1/platform/notifications?${params}`), current = list.
 assert.notEqual(current.subscription_id, previous.subscription_id);
 assert.equal(current.project.project_id, 8); assert.equal(current.config.project, "remote/other");
 assert.equal(list.retired_subscriptions.length, 1); assert.equal(list.retired_subscriptions[0].retired, true);
+// Reception and category selection are independent. Disable reception before
+// removing the final configured source.
+await ui.el("close-notification").emit("click");
+const row = ui.el("member-notification-platforms").children.find(row => row.dataset.platformId === previous.platform_id);
+assert.ok(row);
+const reception = row.children[1].children[1]; reception.checked = false; await reception.emit("change");
+await openNotification(ui, "gitlab", previous.platform_id);
 ui.el("gitlab-events-enabled").checked = false; await ui.el("gitlab-events-enabled").emit("change");
 await ui.el("gitlab-save").emit("click");
 assert.equal((await call(`/v1/platform/notifications?${params}`)).subscriptions.find(s => s.channel === "events").config.enabled, false);

@@ -141,6 +141,20 @@ func (m *roomManager) checkPlatformMemberContextLocked(ctx context.Context) erro
 	return nil
 }
 
+func normalizePlatformMemberInput(input *platformMemberInput) *platformMemberInput {
+	if input != nil {
+		copy := *input
+		copy.Actions = slices.Clone(copy.Actions)
+		slices.Sort(copy.Actions)
+		copy.Actions = slices.Compact(copy.Actions)
+		if len(copy.Actions) == 0 {
+			copy.Actions = nil
+		}
+		return &copy
+	}
+	return nil
+}
+
 // A persisted unknown record is an at-most-once submission fence. Neither status
 // nor repeated configure calls execute it again, even after a service restart.
 func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, req platformMemberRequest) (returned platformMemberOperation, returnedErr error) {
@@ -153,16 +167,7 @@ func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, 
 		return m.configureCurrentPlatformMemberNotifications(ctx, kind, req)
 	}
 	var op platformMemberOperation
-	if req.Input != nil {
-		copy := *req.Input
-		copy.Actions = slices.Clone(copy.Actions)
-		slices.Sort(copy.Actions)
-		copy.Actions = slices.Compact(copy.Actions)
-		if len(copy.Actions) == 0 {
-			copy.Actions = nil
-		}
-		req.Input = &copy
-	}
+	req.Input = normalizePlatformMemberInput(req.Input)
 	if req.Input != nil && req.Input.ToolRevision != 0 {
 		return op, invalidField("tool_revision", "Room tool revisions are retired; use optional expected_binding_revision")
 	}

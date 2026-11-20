@@ -152,7 +152,7 @@ func TestLarkNotificationsUpgradeInterruptedCommitRecoveryAndConflict(t *testing
 		t.Fatal(err)
 	}
 	store := &Store{dir: root, lock: lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	m := &roomManager{store: store, index: index}
 	rename := store.ops.rename
 	store.ops.rename = func(from, to string) error {
@@ -161,8 +161,8 @@ func TestLarkNotificationsUpgradeInterruptedCommitRecoveryAndConflict(t *testing
 		}
 		return rename(from, to)
 	}
-	if _, err := m.upgradeLarkNotificationsLocked(); err == nil {
-		t.Fatal("failure hidden")
+	if _, err := m.upgradeLarkNotificationsLocked(); !errors.Is(err, ErrCommitUnknown) {
+		t.Fatal("replacement failure must freeze the writer", err)
 	}
 	if err := checkLarkNotificationUpgrade(root); !errors.Is(err, ErrVersion) {
 		t.Fatal("mixed startup allowed", err)
@@ -171,7 +171,20 @@ func TestLarkNotificationsUpgradeInterruptedCommitRecoveryAndConflict(t *testing
 	if !bytes.Equal(got, before) {
 		t.Fatal("uncommitted source changed")
 	}
-	store.ops.rename = rename
+	// Replacement errors freeze the writer even if this fixture failed before
+	// rename. Recovery must release ownership and reopen, as the CLI does.
+	if err := store.check(true); !errors.Is(err, ErrCommitUnknown) {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	lock, err = lockDirectory(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store = &Store{dir: root, lock: lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}
+	m.store = store
 	// An external third value cannot be overwritten by a recovery retry.
 	if err := os.WriteFile(path, []byte(`{"external":true}`), 0600); err != nil {
 		t.Fatal(err)

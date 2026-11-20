@@ -26,7 +26,10 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict');
   const before=await identity();
   async function send(info,id){const {manager_epoch,...base}=info;const response=await fetch(endpoint+'/v1/send',{method:'POST',headers:{'Content-Type':'application/json',Origin:endpoint},body:JSON.stringify({...base,client_message_id:id,text:id})});assert.equal(response.status,200);return response.json();}
   const first=await send(before,'restart-first');await page.locator('#message-'+first.seq).waitFor();
-  if(await page.locator('#activity-dialog').evaluate(el=>el.open))await page.locator('#close-activity').click();
+  if(await page.locator('#activity-dialog').evaluate(el=>el.open)){
+   await page.locator('#close-activity').click();
+   await page.waitForFunction(()=>document.querySelector('#member-rail').getAttribute('aria-hidden')==='true');
+  }
   await page.locator('#message-input').fill('重启后仍待发送的草稿');
   assert.equal(await page.evaluate(()=>document.activeElement.id),'message-input');
   const response=await fetch(endpoint+'/__test/restart',{method:'POST',headers:{Origin:endpoint}});assert.equal(response.status,200,await response.text());

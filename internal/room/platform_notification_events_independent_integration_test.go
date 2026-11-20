@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -209,10 +210,10 @@ func TestIndependentEventsReplacementWaitsForOldWorker(t *testing.T) {
 	if len(old.Inbox) != 0 || len(old.Observed) != 0 {
 		t.Fatal("late query wrote retired subscription")
 	}
-	// Stop workers before creating the replacement so the fixture cannot reuse
-	// the deliberately blocked fetch function for an unrelated project.
-	if err := h.m.notifications.Stop(context.Background()); err != nil {
-		t.Fatal(err)
+	// The old worker has settled. Restore the fetcher before creating the
+	// replacement; Stop permanently closes notification admission.
+	h.m.notifications.Source(gitlab.EventsSourceID).(*gitlab.EventsSource).Prepare = func(_ context.Context, _ string, binding gitlab.Binding) (gitlab.EventFetcher, int64, error) {
+		return h.pages, binding.ProjectID, nil
 	}
 	next, err := h.m.configureEventsSubscription(context.Background(), key, 0, cfg)
 	if err != nil || next.SubscriptionID == old.SubscriptionID || next.Binding.ProjectID != 8 {
@@ -226,18 +227,20 @@ func TestIndependentEventsPublicConfigureAndStaleVerification(t *testing.T) {
 	other := managerCreate(t, h.m, "api-only")
 	req := map[string]any{"service_epoch": h.m.epoch, "caller": humanCaller, "room_id": other.RoomID, "room_instance": other.RoomInstance,
 		"version": 0,
-		"config":  gitlab.NotificationConfig{Target: h.state().Config.Target, Enabled: true, PlatformID: c.ID, Events: gitlab.EventSettings{Enabled: true, Project: c.URL + "/remote/project"}}}
+		"config":  gitlab.NotificationConfig{Target: fixtureInboxTarget(t, h.m, other.RoomIdentity), Enabled: true, PlatformID: c.ID, Events: gitlab.EventSettings{Enabled: true, Project: c.URL + "/remote/project"}}}
 	response := managerHTTP(h.m, "/v1/platform/gitlab/notifications/configure", req)
 	if response.Code != 200 || !strings.Contains(response.Body.String(), `"project":"remote/project"`) || !strings.Contains(response.Body.String(), `"recipient_id":101`) || strings.Contains(response.Body.String(), "test-platform-secret") {
 		t.Fatal("independent HTTP configuration failed", response.Code)
 	}
-	req["config"] = gitlab.NotificationConfig{Target: h.state().Config.Target, Enabled: true, PlatformID: c.ID, Events: gitlab.EventSettings{Enabled: true, Project: "remote/project"}}
+	req["config"] = gitlab.NotificationConfig{Target: fixtureInboxTarget(t, h.m, other.RoomIdentity), Enabled: true, PlatformID: c.ID, Events: gitlab.EventSettings{Enabled: true, Project: "remote/project"}}
 	if response := managerHTTP(h.m, "/v1/platform/gitlab/notifications/configure", req); response.Code != 409 {
 		t.Fatal("duplicate HTTP creation did not conflict", response.Code)
 	}
 	// Verification runs outside the Room gate. A concurrent edit must invalidate
 	// its response before retirement or creation can change durable state.
 	entered, release := make(chan struct{}), make(chan struct{})
+	unblock := sync.OnceFunc(func() { close(release) })
+	defer unblock()
 	h.m.platformProject = func(context.Context, string, string, workspaceSecret) (int64, error) {
 		close(entered)
 		<-release
@@ -255,7 +258,7 @@ func TestIndependentEventsPublicConfigureAndStaleVerification(t *testing.T) {
 	edit := before.Config
 	edit.Enabled = false
 	_, editErr := h.m.configureEventsSubscription(context.Background(), before.Metadata().Key, before.SubscriptionVersion, edit)
-	close(release)
+	unblock()
 	if editErr != nil {
 		t.Fatal(editErr)
 	}

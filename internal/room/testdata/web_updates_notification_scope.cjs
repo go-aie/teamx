@@ -1,7 +1,10 @@
 const {chromium}=require('playwright'),assert=require('node:assert/strict');
 const {writeFileSync}=require('node:fs');
 (async()=>{
+ const mode=process.argv[3],longWindow=mode==='long';
+ assert.ok(['functional','long'].includes(mode),'explicit browser scenario required');
  const endpoint=process.argv[2],baseline=process.env.TEAMX_WEB_UPDATES_SCOPE_BASELINE==='1';
+ assert.ok(!baseline||longWindow,'polling baseline requires the long-window scenario');
  const browser=await chromium.launch({headless:true}),errors=[];
  try{
   const contexts=await Promise.all([browser.newContext({viewport:{width:1440,height:1000}}),browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true})]);
@@ -38,22 +41,28 @@ const {writeFileSync}=require('node:fs');
   // and persisted metric/watermark updates continue throughout this window.
   await pages[0].waitForTimeout(3000);
   const from=reads.map(a=>a.length),framesFrom=await Promise.all(pages.map(p=>p.evaluate(()=>window.scopeFrames.length))),started=Date.now(),before=await rpc(pages[0],'/__scope/info');
-  await pages[0].waitForTimeout(60000);
-  const after=await rpc(pages[0],'/__scope/info'),duration=Date.now()-started;
-  assert.ok(after.steps-before.steps>=55,'actual source rounds continued');
-  for(const provider of ['gitlab','lark'])assert.ok(after.calls[provider]-before.calls[provider]>=5,'actual '+provider+' queries continued');
+  if(longWindow)await pages[0].waitForTimeout(60000);
+  else for(const [i,p]of pages.entries())await p.waitForFunction(from=>window.scopeFrames.slice(from).some(f=>f.type==='invalidate'&&f.data.topic==='notifications'&&f.data.kind==='diagnostics'),framesFrom[i]);
+  let after=await rpc(pages[0],'/__scope/info');
+  const stepDeadline=Date.now()+5000;
+  while(!longWindow&&after.steps<=before.steps&&Date.now()<stepDeadline){await pages[0].waitForTimeout(25);after=await rpc(pages[0],'/__scope/info');}
+  const duration=Date.now()-started;
+  assert.ok(after.steps>before.steps,'actual source rounds continued');
+  if(longWindow){
+   assert.ok(after.steps-before.steps>=55,'actual source rounds continued for sixty seconds');
+   for(const provider of ['gitlab','lark'])assert.ok(after.calls[provider]-before.calls[provider]>=5,'actual '+provider+' queries continued');
+  }
   const idle=reads.map((a,i)=>a.slice(from[i]));
   const unrelated=new Set(['/v1/rooms','/v1/member/list','/v1/member/inbox/status','/v1/member/inbox','/v1/platform/notifications']);
   if(!baseline)for(const rows of idle)assert.deepEqual(rows.filter(r=>unrelated.has(r.path)),[]);
   const idleFrames=await Promise.all(pages.map((p,i)=>p.evaluate(from=>window.scopeFrames.slice(from).filter(f=>f.type==='invalidate').map(f=>f.data),framesFrom[i])));
-  if(!baseline)for(const fs of idleFrames)assert.ok(fs.filter(f=>f.topic==='notifications'&&f.kind==='diagnostics').length>=20);
-  if(baseline){
-   // The reconstructed old path is a measurement baseline, not a candidate
-   // for the new functional gates. Keep the identical sixty-second window
-   // and probe the same ordinary chat without adding panel transitions.
+  if(longWindow&&!baseline)for(const fs of idleFrames)assert.ok(fs.filter(f=>f.topic==='notifications'&&f.kind==='diagnostics').length>=20);
+  if(longWindow){
+   // Keep the original sixty-second measurement and message probe. Functional
+   // transitions run separately; reconstructed polling remains measurement-only.
    const msg=await rpc(pages[0],'/__scope/message?id=baseline-probe&text=baseline%20probe',{yes:true});
    await pages[0].locator('#message-'+msg.seq).waitFor();
-   const report={baseline:true,duration_ms:duration,collector_rounds:after.steps-before.steps,queries:Object.fromEntries(['gitlab','lark'].map(p=>[p,after.calls[p]-before.calls[p]])),idle:idle.map(rows=>({http:rows.length,bytes:rows.reduce((a,r)=>a+r.bytes,0),catalog_requests:rows.filter(r=>r.path==='/v1/rooms').length,catalog_computations:rows.filter(r=>r.path==='/v1/rooms'&&r.status===200).length,paths:Object.fromEntries([...new Set(rows.map(r=>r.path))].map(path=>[path,rows.filter(r=>r.path===path).length]))})),idle_frames:idleFrames.map(fs=>Object.fromEntries([...new Set(fs.map(f=>f.topic+':'+(f.kind||'summary')))].map(k=>[k,fs.filter(f=>f.topic+':'+(f.kind||'summary')===k).length]))),message_to_dom_ms:Date.now()-msg.installed};
+   const report={mode,baseline,duration_ms:duration,collector_rounds:after.steps-before.steps,queries:Object.fromEntries(['gitlab','lark'].map(p=>[p,after.calls[p]-before.calls[p]])),idle:idle.map(rows=>({http:rows.length,bytes:rows.reduce((a,r)=>a+r.bytes,0),catalog_requests:rows.filter(r=>r.path==='/v1/rooms').length,catalog_computations:rows.filter(r=>r.path==='/v1/rooms'&&r.status===200).length,paths:Object.fromEntries([...new Set(rows.map(r=>r.path))].map(path=>[path,rows.filter(r=>r.path===path).length]))})),idle_frames:idleFrames.map(fs=>Object.fromEntries([...new Set(fs.map(f=>f.topic+':'+(f.kind||'summary')))].map(k=>[k,fs.filter(f=>f.topic+':'+(f.kind||'summary')===k).length]))),message_to_dom_ms:Date.now()-msg.installed};
    if(process.env.TEAMX_WEB_UPDATES_SCOPE_OUTPUT)writeFileSync(process.env.TEAMX_WEB_UPDATES_SCOPE_OUTPUT,JSON.stringify(report,null,2)+'\n');
    console.log(JSON.stringify(report));return;
   }
@@ -127,7 +136,7 @@ const {writeFileSync}=require('node:fs');
   assert.equal(reads.flat().filter(r=>['/v1/send','/v1/models/change','/v1/platform/lark/login','/v1/platform/gitlab/login'].includes(r.path)).length,0);
   for(let i=0;i<pages.length;i++)frames[i]=await pages[i].evaluate(()=>window.scopeFrames).catch(()=>[]);
   assert.deepEqual(errors,[]);
-  const report={baseline,duration_ms:duration,collector_rounds:after.steps-before.steps,queries:Object.fromEntries(['gitlab','lark'].map(p=>[p,after.calls[p]-before.calls[p]])),idle:idle.map(rows=>({http:rows.length,bytes:rows.reduce((a,r)=>a+r.bytes,0),catalog_requests:rows.filter(r=>r.path==='/v1/rooms').length,catalog_computations:rows.filter(r=>r.path==='/v1/rooms'&&r.status===200).length,paths:Object.fromEntries([...new Set(rows.map(r=>r.path))].map(path=>[path,rows.filter(r=>r.path===path).length]))})),idle_frames:idleFrames.map(fs=>Object.fromEntries([...new Set(fs.map(f=>f.topic+':'+(f.kind||'summary')))].map(k=>[k,fs.filter(f=>f.topic+':'+(f.kind||'summary')===k).length]))),details:details.map(pair=>pair.map(rows=>({http:rows.length,notifications:rows.filter(r=>r.path==='/v1/platform/notifications').length,bytes:rows.reduce((a,r)=>a+r.bytes,0)}))),error_to_both_dom_ms:errorLatency,message_probe_to_dom_ms:probeLatency,message_to_dom_ms:messageLatency,independent_sessions:true,different_rooms:true,concurrent_shared_read:true,local_reading_view:true,hidden_recovery:true,logout_isolation:true,no_command_replay:true};
+  const report={mode,baseline,duration_ms:duration,collector_rounds:after.steps-before.steps,queries:Object.fromEntries(['gitlab','lark'].map(p=>[p,after.calls[p]-before.calls[p]])),idle:idle.map(rows=>({http:rows.length,bytes:rows.reduce((a,r)=>a+r.bytes,0),catalog_requests:rows.filter(r=>r.path==='/v1/rooms').length,catalog_computations:rows.filter(r=>r.path==='/v1/rooms'&&r.status===200).length,paths:Object.fromEntries([...new Set(rows.map(r=>r.path))].map(path=>[path,rows.filter(r=>r.path===path).length]))})),idle_frames:idleFrames.map(fs=>Object.fromEntries([...new Set(fs.map(f=>f.topic+':'+(f.kind||'summary')))].map(k=>[k,fs.filter(f=>f.topic+':'+(f.kind||'summary')===k).length]))),details:details.map(pair=>pair.map(rows=>({http:rows.length,notifications:rows.filter(r=>r.path==='/v1/platform/notifications').length,bytes:rows.reduce((a,r)=>a+r.bytes,0)}))),error_to_both_dom_ms:errorLatency,message_probe_to_dom_ms:probeLatency,message_to_dom_ms:messageLatency,independent_sessions:true,different_rooms:true,concurrent_shared_read:true,local_reading_view:true,hidden_recovery:true,logout_isolation:true,no_command_replay:true};
   if(process.env.TEAMX_WEB_UPDATES_SCOPE_OUTPUT)writeFileSync(process.env.TEAMX_WEB_UPDATES_SCOPE_OUTPUT,JSON.stringify(report,null,2)+'\n');
   console.log(JSON.stringify(report));
  }finally{await browser.close();}

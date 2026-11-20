@@ -33,6 +33,7 @@ func configurationGitLab(t *testing.T, h *larkHarness) managedPlatform {
 }
 
 func TestToolIndependentTargetsMergeAndProjectActualCommit(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, order := range []string{"lark-first", "gitlab-first", "overlap", "preserved-overlap"} {
 		t.Run(order, func(t *testing.T) {
 			h := larkToolConfigurationHarness(t)
@@ -98,6 +99,7 @@ func TestToolIndependentTargetsMergeAndProjectActualCommit(t *testing.T) {
 }
 
 func TestToolPreparedBindingRejectsABAAndAllowsOtherMembers(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, mutation := range []string{"other-member", "aba"} {
 		t.Run(mutation, func(t *testing.T) {
 			h := larkToolConfigurationHarness(t)
@@ -141,6 +143,7 @@ func TestToolPreparedBindingRejectsABAAndAllowsOtherMembers(t *testing.T) {
 }
 
 func TestToolBindingsLegacyUpgradeCapacityAndOverflow(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, mode := range []string{"legacy", "capacity", "overflow", "invalid-marker", "file-size"} {
 		t.Run(mode, func(t *testing.T) {
 			h := larkToolConfigurationHarness(t)
@@ -227,6 +230,7 @@ func TestToolBindingsLegacyUpgradeCapacityAndOverflow(t *testing.T) {
 }
 
 func TestToolContractsRejectRetiredVersionsAndRequireHumanObservation(t *testing.T) {
+	parallelFixtureTest(t)
 	h := larkToolConfigurationHarness(t)
 	change := larkConfigurationChange(h)
 	change.ExpectedBindingRevision = nil
@@ -253,6 +257,7 @@ func TestToolContractsRejectRetiredVersionsAndRequireHumanObservation(t *testing
 }
 
 func TestToolSaveAttemptBoundaryAndOriginalOperationFence(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, mode := range []string{"before-save", "save-attempt", "receipt-loss"} {
 		t.Run(mode, func(t *testing.T) {
 			h := larkToolConfigurationHarness(t)
@@ -318,6 +323,7 @@ func TestToolSaveAttemptBoundaryAndOriginalOperationFence(t *testing.T) {
 }
 
 func TestLarkPermissionGapRechecksExactTargetAfterRemoteRead(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, mutation := range []string{"sibling", "same-target"} {
 		t.Run(mutation, func(t *testing.T) {
 			h := larkToolConfigurationHarness(t)
@@ -389,6 +395,7 @@ func TestLarkPermissionGapRechecksExactTargetAfterRemoteRead(t *testing.T) {
 }
 
 func TestOnboardingToolExactObservationAndLegacyPending(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, mode := range []string{"independent", "legacy-pending", "receipt-loss"} {
 		t.Run(mode, func(t *testing.T) {
 			h := larkToolConfigurationHarness(t)
@@ -471,6 +478,7 @@ func TestOnboardingToolExactObservationAndLegacyPending(t *testing.T) {
 }
 
 func TestToolIntentIdentityIncludesObservationAndNormalizesActions(t *testing.T) {
+	parallelFixtureTest(t)
 	h := larkToolConfigurationHarness(t)
 	req := larkMemberToolRequest(t, h, 0)
 	req.Input.Actions = []string{"message.send", "message.reply"}
@@ -502,26 +510,8 @@ func TestToolIntentIdentityIncludesObservationAndNormalizesActions(t *testing.T)
 	}
 }
 
-func TestToolDefaultActionIntentSurvivesOmittedJSONFields(t *testing.T) {
-	h := larkToolConfigurationHarness(t)
-	req := larkMemberToolRequest(t, h, 0)
-	req.Input.Actions = []string{}
-	op, err := h.m.configurePlatformMember(t.Context(), "tool", req)
-	if err != nil || op.Status != "completed" {
-		t.Fatal(op, err)
-	}
-	replay, err := h.m.configurePlatformMember(t.Context(), "tool", req)
-	if err != nil || !sameJSON(replay, op) {
-		t.Fatal("empty default plan could not recover its receipt", replay, err)
-	}
-	req.Input.Actions = nil
-	replay, err = h.m.configurePlatformMember(t.Context(), "tool", req)
-	if err != nil || !sameJSON(replay, op) {
-		t.Fatal("omission changed the default plan", replay, err)
-	}
-}
-
 func TestOnboardingToolInterruptedSettlementKeepsCommittedProjection(t *testing.T) {
+	parallelFixtureTest(t)
 	h := larkToolConfigurationHarness(t)
 	bindCLITool(t, h.m, h.room.RoomIdentity, h.members[0], h.c, "lark", 0)
 	req := larkOnboardingToolRequest(t, h)
@@ -556,6 +546,7 @@ func TestOnboardingToolInterruptedSettlementKeepsCommittedProjection(t *testing.
 }
 
 func TestToolPreparationRejectsExpiredCapabilityObservation(t *testing.T) {
+	parallelFixtureTest(t)
 	h := larkToolConfigurationHarness(t)
 	change := larkConfigurationChange(h)
 	if err := h.m.prepareBindingEvidence(t.Context(), &change); err != nil {
@@ -575,6 +566,7 @@ func TestToolPreparationRejectsExpiredCapabilityObservation(t *testing.T) {
 }
 
 func TestToolLegacyUnknownReceiptsRemainReadOnlyAfterRestart(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, provider := range []string{"lark", "gitlab"} {
 		t.Run(provider, func(t *testing.T) {
 			h := larkToolConfigurationHarness(t)

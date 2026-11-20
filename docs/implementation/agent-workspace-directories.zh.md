@@ -70,7 +70,7 @@ go test -timeout=3m ./internal/web ./internal/agent/dsh
 go test -tags=integration -timeout=8m ./internal/room -run 'Workspace|Directory|Tool|Model'
 go test -race -tags=integration -timeout=8m ./internal/room -run 'Workspace|Directory'
 NODE_PATH="$PWD/packaging/verifier/node_modules" TEAMX_WORKSPACE_BROWSER=1 \
-  go test -tags=integration -timeout=3m ./internal/room -run '^TestWorkspaceDirectoriesBrowser$' -count=1 -v
+  go test -tags=e2e -timeout=3m ./internal/room -run '^TestWorkspaceDirectoriesBrowser$' -count=1 -v
 ```
 
 - 网页组件回归通过 745 项，新增覆盖成员应用／恢复默认、保留其他覆盖与仓库字段、版本冲突、批量修复、目录错误、连续定位、切成员／切房／关闭重开迟到响应，以及另一成员未提交草稿的保留。

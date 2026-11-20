@@ -1,19 +1,7 @@
 import assert from "node:assert/strict";
 import { launch, settle, openMemberInbox, openNotification } from "./web_app_harness.mjs";
 import { request } from "../assets/client.mjs";
-let call = (path, body) => request(process.env.TEAMX_WEB_ENDPOINT + path, body);
-if (process.env.TEAMX_WEB_TRANSPORT === "stdio") {
-  const { createInterface } = await import("node:readline");
-  const pending = new Map(); let seq = 0;
-  createInterface({ input: process.stdin }).on("line", line => {
-    const response = JSON.parse(line), receipt = pending.get(response.id); pending.delete(response.id);
-    if (response.status === 200) receipt.resolve(response.body);
-    else receipt.reject(Object.assign(new Error(response.body.error), { code: response.body.code }));
-  });
-  call = (path, body) => new Promise((resolve, reject) => {
-    const id = ++seq; pending.set(id, { resolve, reject }); process.stdout.write(JSON.stringify({ id, path, body }) + "\n");
-  });
-}
+const call = (path, body) => request(process.env.TEAMX_WEB_ENDPOINT + path, body);
 const mutations = [];
 const inflight = new Set();
 const ui = await launch({ request: (path, body) => {
@@ -49,14 +37,14 @@ assert.equal(mutations[0].body.version, 0); assert.equal(mutations[0].body.confi
 assert.match(ui.el("gitlab-feedback").textContent, /设置已保存/);
 // Saving category settings preserves the independent reception switch. Enable
 // the newly configured member source through its actual platform-list control.
-async function enableMemberSource(id) {
+async function setMemberSourceEnabled(id, enabled) {
   await ui.el("close-notification").emit("click");
   const row=ui.el("member-notification-platforms").children.find(row=>row.dataset.platformId===id);
   assert.ok(row,"saved member notification source is listed");
-  const input=row.children[1].children[1];input.checked=true;await input.emit("change");
+  const input=row.children[1].children[1];input.checked=enabled;await input.emit("change");
   await openNotification(ui,"gitlab",id,false);
 }
-await enableMemberSource(platforms[0].value);
+await setMemberSourceEnabled(platforms[0].value, true);
 const savedTodo = async () => {
   const {service_epoch,room_id,room_instance,caller} = mutations.at(-1).body;
   const view = await call(`/v1/platform/notifications?${new URLSearchParams({service_epoch,room_id,room_instance,caller_id:caller.id})}`);
@@ -92,17 +80,20 @@ await ui.el("gitlab-sync").emit("click"); assert.equal(mutations.at(-1).body.ver
 assert.equal(mutations.at(-1).body.config, undefined);
 for (const reason of ["mentioned", "assigned", "review_requested", "other"]) await toggle(`gitlab-todos-reason-${reason}`, false);
 await ui.el("gitlab-save").emit("click"); assert.deepEqual(mutations.at(-1).body.config.todos.filter.reasons, []);
+await setMemberSourceEnabled(platforms[0].value, false);
 await toggle("gitlab-todos-enabled", false); await ui.el("gitlab-save").emit("click");
+assert.match(ui.el("gitlab-feedback").textContent, /设置已保存/);
 assert.equal(ui.el("gitlab-todos-enabled").checked, false);
 await ui.el("close-notification").emit("click"); await openNotification(ui,"gitlab",platforms[1].value,false); await toggle("gitlab-todos-enabled", true);
 for (const reason of ["mentioned", "assigned", "review_requested", "other"]) await toggle(`gitlab-todos-reason-${reason}`, true);
 assert.equal(ui.el("gitlab-save").disabled, false);
-await ui.el("gitlab-save").emit("click"); await enableMemberSource(platforms[1].value); await untilInboxCount(2);
+await ui.el("gitlab-save").emit("click"); await setMemberSourceEnabled(platforms[1].value, true); await untilInboxCount(2);
 assert.match(ui.el("gitlab-notification-account").textContent, /ID 202，已验证/);
 const nextID = (await savedTodo()).subscription_id; assert.notEqual(nextID, initialID);
+await setMemberSourceEnabled(platforms[1].value, false);
 await toggle("gitlab-todos-enabled", false); await ui.el("gitlab-save").emit("click");
+assert.match(ui.el("gitlab-feedback").textContent, /设置已保存/);
 await ui.refresh(); assert.equal(messages().length, 0);
 assert.equal(mutations.every(call => call.body.channel === undefined && call.body.subscription_id === undefined), true);
 console.error("GT-03 app/handler: unbound room, personal identity, configure, sync, empty filter, independent platforms, Inbox source navigation and disable passed");
 await Promise.all([...inflight]); await settle();
-if (process.env.TEAMX_WEB_TRANSPORT === "stdio") process.stdin.destroy();

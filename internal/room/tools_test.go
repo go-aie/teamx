@@ -92,10 +92,13 @@ func (l *toolPipeListener) Accept() (net.Conn, error) {
 }
 func (l *toolPipeListener) Close() error   { l.once.Do(func() { close(l.done) }); return nil }
 func (l *toolPipeListener) Addr() net.Addr { return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 80} }
-func toolPipeServer(t *testing.T, h http.Handler) (*http.Client, string) {
+func toolPipeServer(t *testing.T, h http.Handler, configure ...func(*http.Server)) (*http.Client, string) {
 	t.Helper()
 	listener := &toolPipeListener{conns: make(chan net.Conn), done: make(chan struct{})}
 	server := &http.Server{Handler: h}
+	for _, apply := range configure {
+		apply(server)
+	}
 	go func() { _ = server.Serve(listener) }()
 	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 		client, peer := net.Pipe()

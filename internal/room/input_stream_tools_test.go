@@ -94,6 +94,20 @@ func TestInputToolsMinimalContract(t *testing.T) {
 			t.Fatal("schema leak", word)
 		}
 	}
+	var definitions []mcp.Tool
+	if err := json.Unmarshal(schema, &definitions); err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range definitions {
+		if tool.Name != "inbox_read" {
+			continue
+		}
+		read := tool.InputSchema
+		if len(read.Properties) != 2 || read.Properties["stream_ref"] == nil || read.Properties["limit"] == nil ||
+			len(read.Required) != 1 || read.Required[0] != "stream_ref" {
+			t.Fatal("unexpected inbox_read schema", read)
+		}
+	}
 	for _, bad := range []string{`null`, `{"limit":null}`, `{"limit":0}`, `{"limit":21}`, `{"cursor":""}`, `{"cursor":"abc","limit":1}`, `{"turn_number":1}`, `{"query":"x"}`, `{"limit":1,"limit":2}`} {
 		if _, err := inputstream.DecodeList([]byte(bad)); err == nil {
 			t.Fatal("accepted", bad)

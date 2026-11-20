@@ -54,7 +54,7 @@ DOM 测试直接导入 `application.mjs` 及真实模块依赖，通过实例参
 可使用现有 Chromium 用例验证真实浏览器中的资源加载、桌面和窄屏交互：
 
 ```sh
-TEAMX_DM_BROWSER=1 go test ./internal/room \
+TEAMX_DM_BROWSER=1 go test -tags=e2e ./internal/room \
   -run '^(TestDirectConversationBrowser|TestDefaultAssistantRestorationBrowser)$' -count=1
 ```
 

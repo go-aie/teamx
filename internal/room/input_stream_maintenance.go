@@ -97,6 +97,7 @@ func (p *platformInputStorage) maintenanceFactsLocked(provider string, inventory
 		}
 		f.Records[l.Seq] = fact
 	}
+	f.Revision = inputstream.Ref("domain_release_", revisions)
 	if len(expired) > 0 {
 		skipped, err := p.engine().Consumption.ExcludeCandidates(provider, expired, "expired_input")
 		if err != nil && !errors.Is(err, inputstream.ErrBusy) {
@@ -123,7 +124,6 @@ func (p *platformInputStorage) maintenanceFactsLocked(provider string, inventory
 			}
 		}
 	}
-	f.Revision = inputstream.Ref("domain_release_", revisions)
 	return p.engine().Consumption.ConsumptionRelease(provider, f)
 }
 func (p *platformInputStorage) maintain(provider string, inventory inputSourceInventory, now time.Time) (inputstream.ReclaimPlan, error) {

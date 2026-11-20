@@ -189,14 +189,19 @@ func verifyMigratedSessionTools(t *testing.T, svc *service, id MemberIdentity, o
 	var listed struct {
 		Result struct{ Tools []mcp.Tool }
 	}
-	if err := json.Unmarshal(body, &listed); err != nil || resp.StatusCode != http.StatusOK || len(listed.Result.Tools) != 2 ||
-		listed.Result.Tools[0].Name != "inbox_list" || listed.Result.Tools[1].Name != "inbox_read" {
+	if err := json.Unmarshal(body, &listed); err != nil || resp.StatusCode != http.StatusOK {
 		t.Fatal("unexpected MCP tools/list for rotated Session", resp.StatusCode, string(body), err)
 	}
-	read := listed.Result.Tools[1].InputSchema
-	if len(read.Properties) != 2 || read.Properties["stream_ref"] == nil || read.Properties["limit"] == nil ||
-		len(read.Required) != 1 || read.Required[0] != "stream_ref" {
-		t.Fatal("unexpected inbox_read schema", read)
+	// Detailed tool sets and schemas belong to the MCP contract tests. This
+	// integration proves the rotated Session adopted the current input contract.
+	names := map[string]bool{}
+	for _, tool := range listed.Result.Tools {
+		names[tool.Name] = true
+	}
+	for _, name := range []string{"inbox_list", "inbox_read", "history_list", "history_read"} {
+		if !names[name] {
+			t.Fatalf("rotated Session is missing %s: %s", name, body)
+		}
 	}
 	ref := roomStreamRef(id)
 	var execution struct {

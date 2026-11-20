@@ -7,7 +7,6 @@ import (
 	"reflect"
 	"runtime"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
@@ -43,6 +42,52 @@ func normalizeActionGrants(grants []tool.ActionGrant) []tool.ActionGrant {
 		return cmp.Compare(a.ObjectType, b.ObjectType)
 	})
 	return slices.Compact(grants)
+}
+
+// larkToolGrantPlan resolves the existing enablement intent without I/O.
+// Caller admission, account pinning and commit rechecks remain with the owner.
+func larkToolGrantPlan(caps platform.ReferenceCapabilities, binding tool.Binding, actions []string, old *tool.Binding) ([]tool.ActionGrant, []tool.ActionGrant, error) {
+	defaults := defaultLarkActionGrants(caps)
+	requested := defaults
+	if len(actions) > 0 {
+		requested = nil
+		for _, op := range actions {
+			found := false
+			for _, g := range defaults {
+				if g.Operation == op {
+					requested = append(requested, g)
+					found = true
+					break
+				}
+			}
+			if !found {
+				return nil, nil, ErrRequest
+			}
+		}
+	}
+	if binding.ActionAuthorization != nil {
+		requested = binding.ActionAuthorization.Grants
+	}
+	requested = normalizeActionGrants(requested)
+	grants := slices.Clone(requested)
+	if binding.ActionAuthorization == nil && old != nil && old.ActionAuthorization != nil {
+		grants = append(grants, old.ActionAuthorization.Grants...)
+	}
+	grants = normalizeActionGrants(grants)
+	for _, g := range grants {
+		cap, ok := caps.Actions[platform.Operation(g.Operation)]
+		if !ok || cap.Spec.DisabledReason != "" || g.TargetKind != cap.Spec.TargetKind || !slices.Contains(cap.Spec.ObjectTypes, g.ObjectType) {
+			return nil, nil, ErrRequest
+		}
+	}
+	if !(&tool.ActionAuthorization{Version: 1, Revision: 1, Grants: grants}).Valid() {
+		return nil, nil, ErrRequest
+	}
+	return requested, grants, nil
+}
+
+func strictLarkGrantReduction(explicit bool, old *tool.Binding, grants []tool.ActionGrant) bool {
+	return explicit && old != nil && old.ActionAuthorization != nil && len(grants) < len(old.ActionAuthorization.Grants) && !slices.ContainsFunc(grants, func(g tool.ActionGrant) bool { return !slices.Contains(old.ActionAuthorization.Grants, g) })
 }
 
 func (m *roomManager) admitLarkToolChangeLocked(ctx context.Context, req toolBindingChange) (toolBindingsFile, registry.Account, error) {
@@ -129,7 +174,6 @@ func (m *roomManager) prepareLarkToolChange(ctx context.Context, req *toolBindin
 		m.mu.Unlock()
 		return err
 	}
-	defaults := defaultLarkActionGrants(caps)
 	var old *tool.Binding
 	for _, b := range f.Bindings {
 		if b.AgentID == req.Binding.AgentID && b.MembershipID == req.Binding.MembershipID && b.Tool == "lark" && b.PlatformID == req.Binding.PlatformID && b.PlatformGeneration == a.Generation {
@@ -138,50 +182,17 @@ func (m *roomManager) prepareLarkToolChange(ctx context.Context, req *toolBindin
 			break
 		}
 	}
-	explicitAuthorization := req.Binding.ActionAuthorization != nil
-	requested := defaults
-	if len(req.requestedActions) > 0 {
-		requested = nil
-		for _, op := range req.requestedActions {
-			found := false
-			for _, g := range defaults {
-				if g.Operation == op {
-					requested = append(requested, g)
-					found = true
-					break
-				}
-			}
-			if !found {
-				m.mu.Unlock()
-				return ErrRequest
-			}
-		}
-	}
-	if req.Binding.ActionAuthorization != nil {
-		requested = req.Binding.ActionAuthorization.Grants
-	}
-	requested = normalizeActionGrants(requested)
-	grants := slices.Clone(requested)
-	if req.Binding.ActionAuthorization == nil && old != nil && old.ActionAuthorization != nil {
-		grants = append(grants, old.ActionAuthorization.Grants...)
-	}
-	grants = normalizeActionGrants(grants)
-	for _, g := range grants {
-		cap, ok := caps.Actions[platform.Operation(g.Operation)]
-		if !ok || cap.Spec.DisabledReason != "" || g.TargetKind != cap.Spec.TargetKind || !slices.Contains(cap.Spec.ObjectTypes, g.ObjectType) {
-			m.mu.Unlock()
-			return ErrRequest
-		}
-	}
-	req.Binding.ActionAuthorization = &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: grants}
-	if !req.Binding.ActionAuthorization.Valid() {
+	requested, grants, err := larkToolGrantPlan(caps, req.Binding, req.requestedActions, old)
+	if err != nil {
 		m.mu.Unlock()
-		return ErrRequest
+		return err
 	}
+	strictReduction := strictLarkGrantReduction(req.Binding.ActionAuthorization != nil, old, grants)
+	req.Binding.ActionAuthorization = &tool.ActionAuthorization{Version: 1, Revision: 1, Grants: grants}
 	p := &preparedLarkToolChange{BindingRevision: f.TargetRevisions[toolBindingKey(req.Binding)], Account: a, RequestedActions: requested}
 	// A strict reduction cannot acquire new capability and must promptly cancel
 	// active calls. It needs no CLI queue/remote read that could wait on those calls.
-	if explicitAuthorization && old != nil && old.ActionAuthorization != nil && len(grants) < len(old.ActionAuthorization.Grants) && !slices.ContainsFunc(grants, func(g tool.ActionGrant) bool { return !slices.Contains(old.ActionAuthorization.Grants, g) }) {
+	if strictReduction {
 		access := larkReferenceAccess(MemberIdentity{RoomIdentity: req.RoomIdentity, AgentID: req.Binding.AgentID, MembershipID: req.Binding.MembershipID}, a, platform.SourceRef{})
 		for _, g := range grants {
 			cap := caps.Actions[platform.Operation(g.Operation)]
@@ -217,22 +228,11 @@ func (m *roomManager) prepareLarkToolChange(ctx context.Context, req *toolBindin
 	}
 	// Only app-enabled permissions can be repaired by user OAuth. An app gap
 	// remains a partial capability, avoiding an authorization loop.
-	authRequired := false
-	for _, cap := range check.Capabilities {
-		if cap.State == "unsupported" {
-			continue
-		}
-		if strings.HasPrefix(cap.Name, "message.") && cap.Name != "message.read" {
-			if !slices.ContainsFunc(grants, func(g tool.ActionGrant) bool { return g.Operation == cap.Name }) {
-				continue
-			}
-		}
-		for _, scope := range cap.MissingUserScopes {
-			if scope == "offline_access" || slices.Contains(check.Application.Granted, scope) {
-				authRequired = true
-			}
-		}
+	operations := make([]string, 0, len(grants))
+	for _, grant := range grants {
+		operations = append(operations, grant.Operation)
 	}
+	authRequired := lark.ToolAuthorizationRequired(check, operations)
 	access := larkReferenceAccess(MemberIdentity{RoomIdentity: req.RoomIdentity, AgentID: req.Binding.AgentID, MembershipID: req.Binding.MembershipID}, a, platform.SourceRef{})
 	snap := larkPlatformCapabilityResult{PlatformID: a.PlatformID, PlatformVersion: a.PlatformVersion, Generation: a.Generation, CredentialVersion: a.CredentialVersion, PermissionCheck: check}
 	if !authRequired && bindingNeedsEvidence(req.Binding, caps) && prepare != nil {

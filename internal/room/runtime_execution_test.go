@@ -27,6 +27,13 @@ func TestRuntimeBackgroundNotificationsIgnoreAnotherRoomsOperation(t *testing.T)
 	h.m.mu.Lock()
 	rb := h.m.reserveRuntimeLocked(b.RoomIdentity)
 	h.m.mu.Unlock()
+	defer func() {
+		h.m.mu.Lock()
+		defer h.m.mu.Unlock()
+		if rb.busy {
+			h.m.finishRuntimeLocked(rb, nil)
+		}
+	}()
 	s := h.state()
 	h.m.mu.Lock()
 	scope, err := h.m.admitPlatformNotificationLocked(context.Background(), s)
@@ -39,13 +46,24 @@ func TestRuntimeBackgroundNotificationsIgnoreAnotherRoomsOperation(t *testing.T)
 	}
 	astate, _ := sa.store.LoadRoom()
 	bstate, _ := sb.store.LoadRoom()
-	if astate.LatestSeq != 1 || bstate.LatestSeq != 0 || len(h.state().Inbox) != 0 {
+	bTarget := fixtureInboxTarget(t, h.m, b.RoomIdentity)
+	bMember := MemberIdentity{RoomIdentity: b.RoomIdentity, AgentID: bTarget.AgentID, MembershipID: bTarget.MembershipID}
+	if astate.LatestSeq != 0 || bstate.LatestSeq != 0 ||
+		inboxRoutingPreview(t, sa, subscriptionMember(s.Metadata())).SnapshotSeq != 1 ||
+		inboxRoutingPreview(t, sb, bMember).SnapshotSeq != 0 || len(h.state().Inbox) != 0 {
 		t.Fatal("delivery did not follow subscription owner")
 	}
 	h.m.mu.Lock()
 	h.m.finishRuntimeLocked(rb, nil)
 	ra := h.m.reserveRuntimeLocked(h.room.RoomIdentity)
 	h.m.mu.Unlock()
+	defer func() {
+		h.m.mu.Lock()
+		defer h.m.mu.Unlock()
+		if ra.busy {
+			h.m.finishRuntimeLocked(ra, nil)
+		}
+	}()
 	seedEventInbox(t, h, 2)
 	s = h.state()
 	if err := h.m.notifications.Deliver(context.Background(), h.m.testEventsKey(h.room.RoomIdentity), s.SubscriptionVersion); !errors.Is(err, notification.ErrBusy) {

@@ -30,7 +30,7 @@ go test -race ./internal/calendar ./internal/room \
   -run 'Test(Calendar|Once|TaskIdempotency|PauseCancel|LateOnce|Unknown|ExplicitRetry|IncompleteTask|UnifiedDSH|InputToolsMinimal|UnifiedUnusedProvider|UnifiedMCPAuthentication|MCPStandardHTTPClient|Followup.*(Notice|Clear))' -count=1
 node --test internal/web/tests/*_test.mjs
 TEAMX_CALENDAR_BROWSER=1 NODE_PATH="$PWD/packaging/verifier/node_modules" \
-  go test ./internal/room -run '^TestCalendarBrowser$' -count=1 -v
+  go test -tags=e2e ./internal/room -run '^TestCalendarBrowser$' -count=1 -v
 TEAMX_CALENDAR_DSH_REAL=1 TEAMX_INPUT_COMPARISON_CONFIG="$PWD/.teamx/config.toml" \
   TEAMX_CALENDAR_OUTPUT=/absolute/new-calendar-evidence \
   go test -tags=e2e ./internal/room -run '^TestCalendarRealDSH$' -count=1 -v

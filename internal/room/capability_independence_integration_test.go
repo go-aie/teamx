@@ -195,6 +195,7 @@ func TestSecondNotificationProviderReloadAndDedup(t *testing.T) {
 	source := fixtureNotificationSource{records: []string{"opaque-z", "opaque-z", "opaque-a"}}
 	h.m.notificationAdapters[fixtureNotificationSourceID] = fixtureNotificationAdapter(source)
 	h.m.initPlatformNotifications()
+	h.m.notifications.Clock = h.clock.get
 	if err := h.m.loadPlatformNotificationsLocked(); err != nil {
 		t.Fatal(err)
 	}
@@ -220,6 +221,7 @@ func TestSecondNotificationProviderReloadAndDedup(t *testing.T) {
 		t.Fatal("lost acknowledgement was hidden")
 	}
 	h.m.initPlatformNotifications()
+	h.m.notifications.Clock = h.clock.get
 	if err := h.m.loadPlatformNotificationsLocked(); err != nil {
 		t.Fatal("second provider codec could not reload", err)
 	}

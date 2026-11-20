@@ -1,7 +1,8 @@
 const {chromium}=require('playwright');
 const assert=require('node:assert/strict');
 (async()=>{
- const endpoint=process.argv[2], browser=await chromium.launch({headless:true});
+ assert.ok(['functional','idle'].includes(process.argv[3]),'explicit browser scenario required');
+ const endpoint=process.argv[2], mode=process.argv[3], browser=await chromium.launch({headless:true});
  try {
   const page=await browser.newPage({viewport:{width:1440,height:1000}}), errors=[], reads=[];
   page.on('pageerror',e=>errors.push(e.message));
@@ -26,11 +27,16 @@ const assert=require('node:assert/strict');
   await page.waitForTimeout(3000);
   await page.locator('#message-input').fill('草稿与焦点保留');
   const baseline=reads.length, sources=await page.evaluate(()=>window.updateSources.length);
+  if(mode==='idle'){
   await page.waitForTimeout(60000);
   assert.deepEqual(reads.slice(baseline),[],'sixty idle seconds have no display or command HTTP reads');
   assert.equal(await page.evaluate(()=>window.updateSources.filter(s=>!s.closed).length),1);
   assert.equal(await page.evaluate(()=>window.updateSources.length),sources);
   assert.ok(await page.evaluate(()=>window.updateSources.at(-1).frames.filter(f=>f.event==='heartbeat').length>=3));
+  assert.deepEqual(errors,[]);
+  console.log(JSON.stringify({mode,managed:!!config.managed,idle_seconds:60,idle_http_reads:0,active_streams:1,heartbeats:'>=3'}));
+  return;
+  }
   const sent=await rpc('/v1/send',{client_message_id:'sse-page-once',text:'实时消息通过 HTTP 补读'});
   await page.locator('#message-'+sent.seq).waitFor();
   assert.equal(await page.locator('#message-input').inputValue(),'草稿与焦点保留');
@@ -58,7 +64,7 @@ const assert=require('node:assert/strict');
   assert.equal(await page.locator('#message-input').inputValue(),'草稿与焦点保留');
   assert.equal(reads.filter(p=>p==='/v1/send').length,0,'recovery never submits the retained draft');
   assert.deepEqual(errors,[]);
-  console.log(JSON.stringify({managed:!!config.managed,idle_seconds:60,idle_http_reads:0,active_streams:1,heartbeats:'>=3',http_message_catchup:true,lifecycle_catchup:true,draft_and_focus:true}));
+  console.log(JSON.stringify({mode,managed:!!config.managed,active_streams:1,http_message_catchup:true,lifecycle_catchup:true,draft_and_focus:true}));
   await page.close();
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

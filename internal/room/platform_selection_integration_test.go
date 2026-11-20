@@ -3,7 +3,6 @@
 package room
 
 import (
-	"context"
 	"encoding/json"
 	"net/http/httptest"
 	"os"
@@ -16,7 +15,7 @@ import (
 	"time"
 )
 
-// Real TeamX CLI/HTTP and optional Chromium; official Feishu CLI is synthetic.
+// Real TeamX CLI/HTTP; official Feishu CLI is synthetic.
 func TestPlatformSelectionConversationAndMemberConfiguration(t *testing.T) {
 	t.Setenv("USER", humanCaller.ID)
 	h, member := platformMemberHarness(t)
@@ -29,7 +28,7 @@ func TestDefaultAssistantPlatformOnboarding(t *testing.T) {
 	}
 }
 
-func defaultAssistantPlatformOnboarding(t *testing.T, mode string) {
+func defaultAssistantPlatformOnboarding(t *testing.T, mode string, choose ...platformSelectionBrowserDriver) {
 	t.Helper()
 	t.Setenv("USER", humanCaller.ID)
 	h, member := platformMemberHarness(t)
@@ -49,7 +48,7 @@ func defaultAssistantPlatformOnboarding(t *testing.T, mode string) {
 		t.Fatal(err)
 	}
 	member.ServiceInfo, member.Caller, member.SourceSeq = h.svc.info, agentCaller(h.members[0].AgentID, h.members[0].MembershipID), source.Seq
-	platformSelectionConversation(t, h, member, mode)
+	platformSelectionConversation(t, h, member, mode, choose...)
 	// Another DM can reuse the global account without inheriting settings,
 	// receipts or the source message of the default assistant.
 	other := createDirectConversation(t, h.m, directSelection("other-onboarding-assistant"))
@@ -69,7 +68,11 @@ func defaultAssistantPlatformOnboarding(t *testing.T, mode string) {
 	}
 }
 
-func platformSelectionConversation(t *testing.T, h *larkHarness, member platformMemberRequest, mode string) {
+// Browser callers supply a driver from an e2e-only file. Integration never
+// consults browser environment variables or starts Chromium.
+type platformSelectionBrowserDriver func(*testing.T, string, string, string, *larkHarness)
+
+func platformSelectionConversation(t *testing.T, h *larkHarness, member platformMemberRequest, mode string, choose ...platformSelectionBrowserDriver) {
 	t.Helper()
 	t.Setenv("USER", humanCaller.ID)
 	server := browserTestServer(t, h.m)
@@ -110,15 +113,8 @@ func platformSelectionConversation(t *testing.T, h *larkHarness, member platform
 	if !pending.Pending {
 		t.Fatal("wait cancelled selection")
 	}
-	if os.Getenv("TEAMX_SELECTION_BROWSER") == "1" && mode == "inbox" {
-		ctx, cancel := context.WithTimeout(context.Background(), 70*time.Second)
-		defer cancel()
-		browser := exec.CommandContext(ctx, "node", "testdata/platform_selection_browser.cjs", server.URL, accountID, groupID, h.c.ID, h.room.RoomInstance)
-		out, err := browser.CombinedOutput()
-		if err != nil {
-			t.Fatal(err, string(out))
-		}
-		t.Log(string(out))
+	if len(choose) != 0 {
+		choose[0](t, server.URL, accountID, groupID, h)
 	} else {
 		run([]string{"selection", "update", "--operation-id", accountID, "--version", "1", "--selected-platform-id", h.c.ID, "--selected-platform-version", strconv.FormatUint(h.c.Version, 10), "--name", h.c.Name}, &account)
 		human := platformSelectionRequest{ServiceInfo: member.ServiceInfo, Caller: humanCaller, OperationID: accountID, Version: account.Version}
