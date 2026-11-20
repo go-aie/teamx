@@ -151,7 +151,7 @@ func runCLIWithInput(ctx context.Context, args []string, stdin io.Reader, stdout
 	}
 
 	if len(args) == 0 {
-		return fmt.Errorf("usage: teamx init | doctor | serve | member add/list/remove/run/pause/session rotate | send | inbox read | matters list/update | policy read/update/publish | actions execute | tools list/run")
+		return writeOutput(stdout, []byte(rootCLIHelp))
 	}
 	if args[0] == "--help" || args[0] == "-h" {
 		return writeOutput(stdout, []byte(rootCLIHelp))
@@ -421,6 +421,8 @@ func Run(args []string, stdout, stderr io.Writer) error {
 		switch args[0] {
 		case "service":
 			return runService(args[1:], stdout, stderr)
+		case "upgrade":
+			return fmt.Errorf("请使用 teamx service upgrade；参数和示例见 teamx service upgrade --help")
 		case "access":
 			if len(args) > 1 && args[1] == "init" {
 				return runAccessInit(args[2:], stdout, stderr)

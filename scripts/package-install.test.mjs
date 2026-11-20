@@ -38,21 +38,32 @@ done
 printf '%s\\n' "$url" >> "$INSTALL_TEST_DOWNLOADS"
 if [ "\${INSTALL_TEST_DOWNLOAD_FAIL:-}" = true ]; then printf partial > "$output"; exit 22; fi
 case "$url" in https://github.com/go-aie/teamx/releases/download/v1.2.3/*) ;; *) exit 9 ;; esac
-cp "$INSTALL_TEST_ASSETS/\${url##*/}" "$output"
+if [ -n "$output" ]; then cp "$INSTALL_TEST_ASSETS/\${url##*/}" "$output"; else cat "$INSTALL_TEST_ASSETS/\${url##*/}"; fi
 `);
   fs.writeFileSync(program, `import fs from 'node:fs'; import p from 'node:path';
 const args = process.argv.slice(2), env = process.env;
+if (args[0] === '--version') { console.log('teamx v1.0.0 commit=fixture'); process.exit(0); }
+if (args[0] === 'service' && args[1] === 'inspect') {
+  if (env.INSTALL_TEST_BAD_REGISTRATION === 'true') process.exit(13);
+  JSON.parse(fs.readFileSync(p.join(args[args.indexOf('--server-root') + 1], 'service.json'), 'utf8'));
+  console.log('{}'); process.exit(0);
+}
+if (args[0] === 'service' && args[1] === 'upgrade' && args[2] === '--help') {
+  console.log(env.INSTALL_TEST_LEGACY === 'true' ? '--archive FILE --backup-dir DIR' : '--version vX.Y.Z');
+  process.exit(0);
+}
 fs.appendFileSync(env.INSTALL_TEST_RECORD, JSON.stringify(args) + '\\n');
 if (process.umask() !== 0o022) process.exit(11);
-if (env.INSTALL_TEST_DEPLOY_FAIL === 'true') process.exit(7);
-if (args[0] !== 'service' || args[1] !== 'install') process.exit(8);
+if (env.INSTALL_TEST_DEPLOY_FAIL === 'true') { console.error('fixture deployment failed'); process.exit(7); }
+if (args[0] !== 'service' || !['install', 'upgrade'].includes(args[1])) process.exit(8);
 const get = name => args[args.indexOf(name) + 1];
 if (!fs.existsSync(get('--archive'))) process.exit(9);
 const root = get('--server-root'), bin = p.join(root, 'releases', 'fixture', 'bin');
 fs.mkdirSync(bin, {recursive:true});
 fs.copyFileSync(process.argv[1].replace('bootstrap.mjs', 'teamx-fixture'), p.join(bin, 'teamx'));
 try { fs.symlinkSync('releases/fixture', p.join(root, 'current')); } catch (e) { if (e.code !== 'EEXIST') throw e; }
-console.error('TeamX 已安装并启动。\\n1. 打开：http://127.0.0.1:8088');
+fs.writeFileSync(p.join(root, 'service.json'), '{}');
+console.error(args[1] === 'upgrade' ? 'TeamX 已完成升级并启动。' : 'TeamX 已安装并启动。\\n1. 打开：http://127.0.0.1:8088');
 `);
   const executable = p.join(temp, 'teamx-fixture');
   fs.writeFileSync(executable, `#!/bin/sh\nexec ${quote(process.execPath)} "$INSTALL_TEST_PROGRAM" "$@"\n`, { mode: 0o755 });
@@ -64,6 +75,7 @@ console.error('TeamX 已安装并启动。\\n1. 打开：http://127.0.0.1:8088')
   execFileSync('tar', ['-czf', archive, '-C', temp, name], { env: { ...process.env, COPYFILE_DISABLE: '1' } });
   fs.writeFileSync(archive + '.sha256', `${sha256(archive)}  ${p.basename(archive)}\n`);
   fs.writeFileSync(p.join(assets, 'SHA256SUMS'), fs.readFileSync(archive + '.sha256'));
+  fs.writeFileSync(p.join(assets, 'install.sh'), source.replace('@TEAMX_VERSION@', 'v1.2.3').replace('@TEAMX_REPOSITORY@', 'go-aie/teamx'));
   const env = { ...process.env, HOME: home, SHELL: '/bin/zsh', PATH: `${mocks}:${process.env.PATH}`,
     INSTALL_TEST_RECORD: record, INSTALL_TEST_PROGRAM: program, INSTALL_TEST_ASSETS: assets,
     INSTALL_TEST_ACCOUNT: p.join(temp, 'account'), INSTALL_TEST_TOOLS: p.join(temp, 'tools'),
@@ -94,7 +106,7 @@ test('a piped release installer selects the native standard, pins downloads and 
     assert.equal((result.stdout + result.stderr).match(/TeamX 已安装并启动/g)?.length, 1);
     assert.ok(result.stdout.includes(`查看服务状态：${platform === 'Linux' ? 'sudo ' : ''}teamx service status`));
     assert.ok(result.stdout.includes(`命令位置：${p.join(f.bin, 'teamx')}`));
-    assert.match(result.stderr, /http:\/\/127.0.0.1:8088/);
+    assert.match(result.stdout + result.stderr, /http:\/\/127.0.0.1:8088/);
     assert.equal(fs.statSync(f.bin).mode & 0o777, 0o755);
     const [args] = f.calls();
     assert.equal(f.calls().length, 1);
@@ -121,13 +133,77 @@ test('offline installation needs no network or init and safely reuses its comman
     const result = f.run(args);
     assert.equal(result.status, 0, result.stderr);
   }
-  assert.equal(f.calls().length, 2);
+  assert.equal(f.calls().length, 1);
   assert.equal(fs.existsSync(f.env.INSTALL_TEST_DOWNLOADS), false);
   const rc = fs.readFileSync(p.join(f.home, '.zshrc'), 'utf8');
   assert.equal(rc.match(/# TeamX command/g).length, 1);
   const path = spawnSync('/bin/sh', ['-c', '. "$HOME/.zshrc"; command -v teamx'], { env: f.env, encoding: 'utf8' });
   assert.equal(path.status, 0, path.stderr);
   assert.equal(path.stdout.trim(), p.join(f.bin, 'teamx'));
+});
+
+test('existing registration stops before download, including without the command link', t => {
+  const f = fixture(t);
+  assert.equal(f.run(['--archive', f.archive]).status, 0);
+  fs.unlinkSync(p.join(f.bin, 'teamx'));
+  const result = f.run(['--version', 'v1.2.3']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /teamx v1.0.0/);
+  assert.match(result.stdout, /service upgrade --server-root/);
+  assert.match(result.stdout, /本次未下载应用包或更改服务/);
+  assert.equal(fs.existsSync(f.env.INSTALL_TEST_DOWNLOADS), false);
+  assert.equal(f.calls().length, 1);
+});
+
+test('stable command link discovers a custom root before downloading, explicit roots still win', t => {
+  const f = fixture(t);
+  assert.equal(f.run(['--archive', f.archive]).status, 0);
+  const result = f.runDefault(['--bin-dir', f.bin, '--version', 'v1.2.3']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(result.stdout.includes(f.root));
+  assert.equal(fs.existsSync(f.env.INSTALL_TEST_DOWNLOADS), false);
+  const other = p.join(f.temp, 'other installation');
+  const conflict = f.runDefault(['--server-root', other, '--bin-dir', f.bin, '--version', 'v1.2.3']);
+  assert.notEqual(conflict.status, 0);
+  assert.match(conflict.stderr, /已存在且不属于此次安装/);
+  assert.equal(fs.existsSync(other), false);
+});
+
+test('legacy CLI gets an explicit upgrade bootstrap, which preserves root and backup options', t => {
+  for (const platform of ['Darwin', 'Linux']) {
+    const f = fixture(t, platform, 'x86_64');
+    assert.equal(f.run(['--archive', f.archive]).status, 0);
+    const guidance = f.run(['--version', 'v1.2.3'], { INSTALL_TEST_LEGACY: 'true' });
+    assert.equal(guidance.status, 0, guidance.stderr);
+    assert.match(guidance.stdout, /当前 CLI 尚不支持联网升级/);
+    assert.ok(guidance.stdout.includes('releases/download/v1.2.3/install.sh | bash -s -- --upgrade'));
+    assert.equal(fs.existsSync(f.env.INSTALL_TEST_DOWNLOADS), false);
+    const backup = p.join(f.temp, 'private backup');
+    const command = guidance.stdout.split('\n').find(line => line.trim().startsWith('curl -fsSL '));
+    const upgraded = spawnSync('/bin/bash', ['-c', command + ' --backup-dir ' + quote(backup)], { env: f.env, encoding: 'utf8' });
+    assert.equal(upgraded.status, 0, upgraded.stderr);
+    assert.equal(f.calls().length, 2);
+    const args = f.calls()[1];
+    assert.deepEqual(args.slice(0, 2), ['service', 'upgrade']);
+    assert.equal(args[args.indexOf('--server-root') + 1], f.root);
+    assert.equal(args[args.indexOf('--backup-dir') + 1], backup);
+    assert.equal(args.includes('--user'), false);
+    assert.equal(args.includes('--home'), false);
+  }
+});
+
+test('damaged and incomplete registrations fail before downloads, repair is explicit', t => {
+  const f = fixture(t);
+  assert.equal(f.run(['--archive', f.archive]).status, 0);
+  const damaged = f.run(['--version', 'v1.2.3'], { INSTALL_TEST_BAD_REGISTRATION: 'true' });
+  assert.notEqual(damaged.status, 0);
+  assert.match(damaged.stderr, /安装登记验证失败/);
+  assert.equal(fs.existsSync(f.env.INSTALL_TEST_DOWNLOADS), false);
+  fs.unlinkSync(p.join(f.root, 'service.json'));
+  assert.match(f.run(['--version', 'v1.2.3']).stderr, /未完成的安装登记/);
+  const repaired = f.run(['--repair', '--archive', f.archive]);
+  assert.equal(repaired.status, 0, repaired.stderr);
+  assert.equal(f.calls().length, 2);
 });
 
 test('macOS quarantined input remains unchanged and the deployed executable inherits no download attributes',
@@ -185,6 +261,11 @@ test('an unrelated command is preserved, and deployment failure publishes no CLI
   assert.doesNotMatch(failed.stdout, /已安装并启动/);
   assert.equal(fs.existsSync(p.join(f.bin, 'teamx')), false);
   assert.equal(fs.existsSync(p.join(f.home, '.zshrc')), false);
+  const savedLog = failed.stderr.match(/日志已保留：([^\n]+)/)?.[1];
+  assert.ok(savedLog);
+  t.after(() => fs.rmSync(savedLog, { force: true }));
+  assert.match(fs.readFileSync(savedLog, 'utf8'), /fixture deployment failed/);
+  assert.equal(fs.statSync(savedLog).mode & 0o777, 0o600);
 });
 
 test('Linux reuses an existing service account and root never invokes sudo', t => {

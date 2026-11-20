@@ -82,7 +82,7 @@ macOS 使用已登录普通用户，不加 sudo；Linux 需要 systemd，安装�
 
 后续使用 \x60teamx service status/stop/start/restart/uninstall\x60；Linux 管理命令前加 sudo。自定义目录等参数可直接追加，例如 \x60bash ./install-offline.sh --bin-dir /absolute/bin\x60；完整选项用 \x60bash ./install-offline.sh --help\x60 查看。
 
-本包保留原始应用归档及其 SHA-256，不重新构建或修改归档。已有实例升级须使用备份与升级流程，不用安装脚本替代升级。
+本包保留原始应用归档及其 SHA-256，不重新构建或修改归档。已有实例升级可执行 \x60bash ./install-offline.sh --upgrade\x60（要求原归档内的安装器支持 --upgrade），或使用 \x60teamx service upgrade --archive /absolute/${name}\x60；旧版 CLI 还需显式传 --backup-dir 指定安装根和 home 外的新备份目录。macOS 不加 sudo，Linux 管理命令前加 sudo。升级前备份，具体参数见 --help。
 `);
     fs.chmodSync(directory, 0o755);
     for (const file of names) fs.chmodSync(p.join(directory, file), file.endsWith('.sh') ? 0o755 : 0o644);

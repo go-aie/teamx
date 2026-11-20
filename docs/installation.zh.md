@@ -49,7 +49,9 @@ curl -fsSL https://github.com/go-aie/teamx/releases/download/vX.Y.Z/install.sh |
 
 版本替换为实际发布值，目录须为绝对路径且安装根与 home 互不重叠。自定义命令目录后应确保当前终端和 Linux sudo 的 PATH 可找到它，也可使用输出中的完整命令路径。Linux 可加 `--user NAME` 选择专用普通账号。`bash install.sh --help` 查看完整选项。
 
-安装脚本用于首次安装和同版本重新登记，不替代已有实例的升级与备份；已有实例更换版本见[备份与升级](#备份与升级)。它不会自动导入其他 bundle 或开发目录的数据，不覆盖已有身份、模型或用户模板，也不覆盖命令目录中无关的同名文件。
+安装器在下载应用包前检查安装登记和当前程序；已有有效安装时显示当前版本、位置及升级命令后退出，不停服、不下载应用包。仅有 PATH 中的同名命令不算有效安装；登记损坏或不完整时显示检查提示。已有实例更换版本见[备份与升级](#备份与升级)。它不会自动导入其他 bundle 或开发目录的数据，不覆盖已有身份、模型或用户模板，也不覆盖命令目录中无关的同名文件。
+
+注销服务后重新登记原版本，可使用 `bash ./install.sh --repair --archive /absolute/original-standard.tar.gz`，保留同名 `.sha256`；这不用于更换版本。部署失败会显示失败信息和保留的日志路径，排查后再按提示重试。
 
 ## 下载与校验
 
@@ -168,6 +170,8 @@ workspace_roots = ["/srv/projects", "/mnt/shared"]
 
 ```sh
 teamx service status
+teamx service logs
+teamx service logs --lines 200 --follow
 teamx service stop
 teamx service start
 teamx service restart
@@ -179,11 +183,11 @@ teamx service uninstall
 
 `inspect` 核对登记；`status` 区分管理器、所有者认证、实例、设置／业务状态和模型操作。端口可连接或公开 health 不能证明业务 ready。平台连接、采集状态、积压、错误和限流恢复在网页查看；不要因单个平台或模型失败反复重启服务。
 
-`stop` 等待数据结清并保持停止，网页随后无法连接，用 `teamx service start` 恢复；它保留下次开机／登录启用状态。`disable` 只禁用后续自动启动，长期停用先 stop 再 disable。`uninstall` 先停止再注销服务，保留 home、全部 releases、登记与 `teamx` 命令入口，同一归档重新运行安装脚本可恢复服务。不要按进程名称或猜测的 PID 清理服务。
+`stop` 等待数据结清并保持停止，网页随后无法连接，用 `teamx service start` 恢复；它保留下次开机／登录启用状态。`disable` 只禁用后续自动启动，长期停用先 stop 再 disable。`uninstall` 先停止再注销服务，保留 home、全部 releases、登记与 `teamx` 命令入口；使用原归档运行 `bash ./install.sh --repair --archive FILE` 可重新登记服务。不要按进程名称或猜测的 PID 清理服务。
 
 若提示找不到 `teamx`，先新开终端或按安装输出设置 PATH，无需重新安装；也可使用安装输出的命令完整路径。通过其他独立二进制管理时，可显式传 `--server-root /absolute/server-root`。
 
-Linux 日志使用 `sudo journalctl -u teamx.service -n 100`，保留策略沿用主机 journald；包内 `share/teamx/service/journald.conf.example` 是主机级容量参考，安装不会修改日志策略。macOS 日志在 `~/Library/Logs/TeamX/server.log`，10 MiB 轮换，保留 5 份历史。故障重试有界，耗尽后排查并显式 start；模型／平台降级不是重启理由。留意磁盘余量。
+统一使用 `teamx service logs` 查看最近 100 行，`--lines 200` 调整行数，`--follow` 持续查看，Ctrl-C 退出日志查看。Linux 加 sudo，底层使用 journald，保留策略沿用主机设置；包内 `share/teamx/service/journald.conf.example` 是主机级容量参考，安装不会修改日志策略。macOS 日志在 `~/Library/Logs/TeamX/server.log`，10 MiB 轮换，保留 5 份历史。故障重试有界，耗尽后排查并显式 start；模型／平台降级不是重启理由。留意磁盘余量。
 
 关闭浏览器不会停止 Agent 或后台采集；平台授权成功、通知入 Inbox、助理处理和外部提醒送达分别确认。断线或响应未知时，先查询原操作，不用新 ID 重发。当前没有离线发送队列、Web Push 或原生 App；浏览器与手机的实际测试范围见对应版本说明，手机视口模拟不等于真机验收。
 
@@ -191,7 +195,34 @@ Linux 日志使用 `sudo journalctl -u teamx.service -n 100`，保留策略沿�
 
 ### 常驻服务
 
-准备足够空间存放 home、全部 releases 和新归档。单版 standard 展开可能超过 1 GiB，首版保留全部旧版本，不自动回收。备份目标须是安装根与 home 外的**新目录**，父目录已存在。下面继续使用日常维护中的部署账号和 `teamx` 路径约定：
+升级到最新稳定版，无需事先查询版本号：
+
+```sh
+teamx service upgrade
+```
+
+Linux 命令前加 sudo，macOS 不加 sudo。升级先查询 GitHub 最新正式稳定 Release，固定目标 tag，再下载对应本机 standard 包和同一 tag 的摘要。显示当前与目标版本，校验完成后停服、创建一致备份、切换版本并检查启动。已是目标稳定版本时不下载应用包、不停服；目标比当前稳定版本更旧时拒绝联网降级。下载、校验和备份路径检查失败时尚未停服。
+
+升级默认在登记 home 旁的 `<home>-backups` 创建备份父目录，再生成带时间戳的新备份目录。例如 macOS 默认是 `~/.teamx-backups/before-upgrade-<时间戳>`，Linux 默认是 `/var/lib/teamx-backups/before-upgrade-<时间戳>`；自定义 home 以实际输出为准。也可通过 `--backup-dir` 指定新目录，父目录须事先存在且可写。备份位置在停服前和完成后都会显示。
+
+指定版本或使用离线包：
+
+```sh
+teamx service upgrade --version vX.Y.Z
+teamx service upgrade --archive /absolute/new-standard.tar.gz
+```
+
+将 `vX.Y.Z` 替换为实际正式版本。`--version latest` 等同于省略版本；`--archive` 与 `--version` 互斥。离线包须有同名 `.sha256`，或显式提供 `--sha256 HEX`，无需联网；备份默认同上。`teamx service upgrade --help` 查看完整参数与示例。
+
+**旧版 CLI 的过渡升级**：如果帮助中还没有 `--version`，不能直接使用无参数联网升级。在包含新版安装器的 Release 发布后执行：
+
+```sh
+curl -fsSL https://github.com/go-aie/teamx/releases/latest/download/install.sh | bash -s -- --upgrade
+```
+
+这会使用校验后的新版引导程序显式升级已有安装，并自动备份。自定义安装根时追加原来的 `--server-root`，自定义命令目录时追加 `--bin-dir`，均使用绝对路径；home 和账号从原登记复用。重复运行普通安装命令时，会提前识别旧 CLI 并输出带原路径的过渡命令。离线转交包可执行 `bash ./install-offline.sh --upgrade`，需由包含新版安装器的归档生成。
+
+准备足够空间存放 home、全部 releases 和新归档。单版 standard 展开可能超过 1 GiB，首版保留全部旧版本，不自动回收。单独备份和恢复仍须显式提供安装根与 home 外的**新目录**，父目录已存在。下面继续使用日常维护中的部署账号和 `teamx` 路径约定：
 
 ```sh
 # 一致备份会停服，完成后保持停止。
@@ -215,6 +246,8 @@ teamx service restore \
 此入口只覆盖受管目录，外部 data／teams／token／Runtime 或越界链接会明确拒绝。Workspace 外部依赖、挂载和 Git worktree 外部仓库需单独一致保存。**平台官方凭据位于账号 HOME／Keychain，TeamX home 备份不覆盖它们**，按官方后端另行保存或恢复后重新授权。
 
 恢复要求仍有原登记的同一实例、同一账号与同一绝对路径；保留被替换的 `home.before-restore-*` 和程序版本。灾难后重建机器的账号／路径／登记须另行规划；安装根丢失时，先从备份的 `registration` 恢复匹配登记和全部版本。启动检查失败会保留新选择与备份、停止服务，**不自动切回旧 binary**；数据格式变化时需恢复整份一致备份。
+
+失败输出会说明是否已经请求停服、是否已切换版本/数据，以及状态和日志命令；已有完整备份时提供原路径和可复制的恢复命令。停服后备份失败且尚未切换版本时，排除原因后可用 `teamx service start` 启动原版本；切换后应先检查日志，并按输出恢复一致备份。
 
 升级不强制联网重验已有模型。重新登录后核对模型操作与实际 Session，显式重试中断目标；已完成成员不重复轮换，不自动重放模型验证或未知平台动作。核对实际后续调用后，才确认该实例升级成功。
 

@@ -191,7 +191,9 @@ func copyServiceFile(source, dest string, mode fs.FileMode) error {
 	return errors.Join(copyErr, out.Chmod(mode), out.Sync(), out.Close())
 }
 
-func createServiceBackup(r serviceRegistration, dest string) error {
+// Run this before stopping the service, then repeat it while publishing the
+// backup. A typo or unwritable parent must not take a working service down.
+func validateServiceBackupDestination(r serviceRegistration, dest string) error {
 	dest, err := resolveFutureDirectory(dest)
 	if err != nil {
 		return err
@@ -201,6 +203,29 @@ func createServiceBackup(r serviceRegistration, dest string) error {
 	}
 	if _, err := os.Lstat(dest); !errors.Is(err, os.ErrNotExist) {
 		return errors.New("backup destination must be new")
+	}
+	probe, err := os.MkdirTemp(filepath.Dir(dest), ".teamx-backup-check-*")
+	if err != nil {
+		return fmt.Errorf("备份父目录必须已存在且可写: %w", err)
+	}
+	return os.Remove(probe)
+}
+
+func defaultServiceUpgradeBackup(r serviceRegistration) (string, error) {
+	parent := r.Home + "-backups"
+	if err := os.MkdirAll(parent, 0700); err != nil {
+		return "", err
+	}
+	return filepath.Join(parent, "before-upgrade-"+time.Now().UTC().Format("20060102T150405.000000000Z")), nil
+}
+
+func createServiceBackup(r serviceRegistration, dest string) error {
+	dest, err := resolveFutureDirectory(dest)
+	if err != nil {
+		return err
+	}
+	if err := validateServiceBackupDestination(r, dest); err != nil {
+		return err
 	}
 	stage, err := os.MkdirTemp(filepath.Dir(dest), ".teamx-backup-*")
 	if err != nil {

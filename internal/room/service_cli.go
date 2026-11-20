@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-func runService(args []string, stdout, stderr io.Writer) error {
+func runService(args []string, stdout, stderr io.Writer) (resultErr error) {
 	if len(args) == 0 {
 		_, err := io.WriteString(stdout, serviceCLIHelp)
 		return err
@@ -33,36 +33,65 @@ func runService(args []string, stdout, stderr io.Writer) error {
 		return superviseService(args[1:], stdout, stderr)
 	}
 	switch action {
-	case "install", "inspect", "start", "status", "stop", "restart", "enable", "disable", "backup", "restore", "upgrade", "uninstall":
+	case "install", "inspect", "start", "status", "stop", "restart", "enable", "disable", "backup", "restore", "upgrade", "uninstall", "logs":
 	default:
-		return ErrRequest
+		return fmt.Errorf("未知服务命令 %q；使用 teamx service --help 查看可用命令", action)
 	}
 	flags := flag.NewFlagSet("service "+action, flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	root := flags.String("server-root", "", "managed installation root")
-	home := flags.String("home", "", "independent private home (install only)")
-	account := flags.String("user", "", "existing dedicated ordinary service account (Linux install only)")
-	archive := flags.String("archive", "", "verified native standard .tar.gz (install/upgrade)")
-	digest := flags.String("sha256", "", "expected archive SHA-256; defaults to ARCHIVE.sha256")
-	backup := flags.String("backup-dir", "", "new private backup directory (backup/upgrade/restore)")
-	source := flags.String("from", "", "consistent backup directory (restore only)")
+	flags.Usage = func() { writeServiceCommandHelp(stdout, action, flags) }
+	root := flags.String("server-root", "", "安装根目录；默认从当前 teamx 命令发现")
+	home, account, archive, digest, backup, source, version := new(string), new(string), new(string), new(string), new(string), new(string), new(string)
+	lines, follow := new(int), new(bool)
+	if action == "install" {
+		flags.StringVar(home, "home", "", "独立的私有配置与数据目录")
+		if runtime.GOOS == "linux" {
+			flags.StringVar(account, "user", "", "已存在的专用普通服务账号")
+		}
+	}
+	if action == "install" || action == "upgrade" {
+		flags.StringVar(archive, "archive", "", "本机 standard .tar.gz；升级时可省略以联网下载")
+		flags.StringVar(digest, "sha256", "", "归档 SHA-256；默认读取 FILE.sha256")
+	}
+	if action == "upgrade" {
+		flags.StringVar(version, "version", "", "正式版本 vX.Y.Z；省略或 latest 使用最新稳定版")
+	}
+	if action == "backup" || action == "upgrade" || action == "restore" {
+		flags.StringVar(backup, "backup-dir", "", "安装根和 home 外的新目录；升级默认自动生成")
+	}
+	if action == "restore" {
+		flags.StringVar(source, "from", "", "同一实例、原路径的一致备份目录")
+	}
+	if action == "logs" {
+		flags.IntVar(lines, "lines", 100, "显示最近多少行日志（1–10000）")
+		flags.BoolVar(follow, "follow", false, "持续查看新日志，Ctrl-C 退出")
+	}
 	if err := flags.Parse(args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
 		}
 		return err
 	}
-	if flags.NArg() != 0 || (*archive != "" || *digest != "") && action != "install" && action != "upgrade" || (*home != "" || *account != "") && action != "install" || *source != "" && action != "restore" || *backup != "" && action != "backup" && action != "upgrade" && action != "restore" {
-		return ErrRequest
+	if flags.NArg() != 0 {
+		return fmt.Errorf("多余的位置参数；使用 teamx service %s --help 查看示例", action)
 	}
-	if (action == "install" || action == "upgrade") && *archive == "" {
-		return errors.New("--archive is required")
+	if action == "install" && *archive == "" {
+		return errors.New("安装需要 --archive FILE；首次安装请运行官方 install.sh，已有安装请使用 teamx service upgrade")
 	}
-	if (action == "backup" || action == "upgrade" || action == "restore") && *backup == "" {
-		return errors.New("--backup-dir is required and must be a new directory outside server-root and home")
+	if (action == "backup" || action == "restore") && *backup == "" {
+		return errors.New("需要 --backup-dir DIR，使用安装根和 home 外尚不存在的目录；父目录须已存在")
 	}
 	if action == "restore" && *source == "" {
-		return errors.New("restore requires --from and --backup-dir for the pre-restore backup")
+		return errors.New("恢复需要 --from DIR 和 --backup-dir DIR；使用 teamx service restore --help 查看示例")
+	}
+	if *archive != "" && *version != "" || *digest != "" && *archive == "" {
+		return errors.New("--version 与 --archive 不能同时使用；--sha256 需要 --archive")
+	}
+	if *version != "" && *version != "latest" && !serviceStableVersion.MatchString(*version) {
+		return errors.New("--version 需要 latest 或正式版本号，例如 v0.0.3")
+	}
+	if action == "logs" && (*lines < 1 || *lines > 10000) {
+		return errors.New("--lines 必须为 1–10000")
 	}
 	userHome, err := os.UserHomeDir()
 	if err != nil {
@@ -89,18 +118,21 @@ func runService(args []string, stdout, stderr io.Writer) error {
 			return err
 		}
 	}
-	lock, err := lockDirectoryFile(*root, ".service.lock")
-	if err != nil {
-		return err
+	// A long-running log reader must not block lifecycle/upgrade commands.
+	if action != "logs" {
+		lock, err := lockDirectoryFile(*root, ".service.lock")
+		if err != nil {
+			return fmt.Errorf("无法锁定安装根 %s；请核对 --server-root、部署账号及是否有其他维护命令运行。首次安装请运行官方 install.sh: %w", *root, err)
+		}
+		defer unlockDirectory(lock)
 	}
-	defer unlockDirectory(lock)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	if action == "install" || action == "upgrade" {
+	if (action == "install" || action == "upgrade") && *archive != "" {
 		if *digest == "" {
 			b, err := os.ReadFile(*archive + ".sha256")
 			if err != nil {
-				return fmt.Errorf("supply --sha256 or archive sidecar: %w", err)
+				return fmt.Errorf("请保留归档旁的 .sha256 文件，或传 --sha256 HEX: %w", err)
 			}
 			fields := strings.Fields(string(b))
 			if len(fields) == 0 {
@@ -154,7 +186,7 @@ func runService(args []string, stdout, stderr io.Writer) error {
 			return err
 		}
 		if selected, err := filepath.EvalSymlinks(filepath.Join(*root, "current")); err == nil && selected != release {
-			return errors.New("installation already selects another build; use service upgrade")
+			return errors.New("已安装其他版本；尚未切换版本或停止服务。请使用 teamx service upgrade，或查看 teamx service upgrade --help")
 		}
 		if err := selectServiceRelease(*root, release); err != nil {
 			return err
@@ -231,10 +263,13 @@ func runService(args []string, stdout, stderr io.Writer) error {
 	}
 	r, err := loadServiceRegistration(*root)
 	if err != nil {
-		return err
+		return fmt.Errorf("无法读取安装登记（%s）；首次安装请运行官方 install.sh，已有安装请核对 --server-root 和部署账号: %w", *root, err)
 	}
 	if action == "inspect" {
 		return writeJSON(stdout, r)
+	}
+	if action == "logs" {
+		return writeServiceLogs(ctx, r, *lines, *follow, stdout, stderr)
 	}
 	if err := checkServiceUnit(r); err != nil {
 		return err
@@ -277,8 +312,35 @@ func runService(args []string, stdout, stderr io.Writer) error {
 	case "stop", "uninstall", "backup", "upgrade", "restore":
 		// Validate all input material before taking a working service down.
 		var next string
-		if action == "upgrade" {
-			next, err = publishServiceArchive(*root, *archive, *digest)
+		stopped, backedUp, selected := false, false, false
+		defer func() {
+			if resultErr == nil || action == "stop" || action == "uninstall" {
+				return
+			}
+			state := "尚未停止服务或切换版本"
+			if stopped {
+				state = "服务已请求停止，尚未切换版本"
+			}
+			if selected {
+				state = "版本/数据已切换；请先检查日志，再恢复一致备份"
+			}
+			fmt.Fprintln(stderr, state+"。")
+			if backedUp {
+				fmt.Fprintf(stderr, "一致备份：%s\n恢复命令：%s\n", *backup, serviceRestoreCommand(r, *backup))
+			}
+			fmt.Fprintf(stderr, "查看状态：%s\n查看日志：%s\n", serviceDisplayCommand(r, "status"), serviceDisplayCommand(r, "logs"))
+			if stopped && !selected {
+				fmt.Fprintf(stderr, "核对原因后启动原版本：%s\n", serviceDisplayCommand(r, "start"))
+			}
+		}()
+		if *backup != "" {
+			*backup, err = resolveFutureDirectory(*backup)
+			if err != nil {
+				return err
+			}
+		}
+		if *source != "" {
+			*source, err = resolveFutureDirectory(*source)
 			if err != nil {
 				return err
 			}
@@ -292,7 +354,43 @@ func runService(args []string, stdout, stderr io.Writer) error {
 			if _, err := serviceDataRoot(r); err != nil {
 				return err
 			}
+			if *backup != "" {
+				if err := validateServiceBackupDestination(r, *backup); err != nil {
+					return err
+				}
+			}
 		}
+		if action == "upgrade" {
+			if *archive == "" {
+				next, err = prepareServiceOnlineUpgrade(ctx, r, *version, stderr, officialServiceReleases())
+			} else {
+				fmt.Fprintln(stderr, "正在校验离线升级包…")
+				next, err = publishServiceArchive(*root, *archive, *digest)
+				if err == nil {
+					if current, linkErr := filepath.EvalSymlinks(filepath.Join(r.Root, "current")); linkErr == nil && current == next {
+						fmt.Fprintln(stderr, "已选用同一归档，无需升级；未停止服务。")
+						return nil
+					}
+				}
+			}
+			if err != nil {
+				return err
+			}
+			if next == "" {
+				return nil
+			}
+			if *backup == "" {
+				*backup, err = defaultServiceUpgradeBackup(r)
+				if err != nil {
+					return err
+				}
+			}
+			if err := validateServiceBackupDestination(r, *backup); err != nil {
+				return err
+			}
+			fmt.Fprintf(stderr, "升级包已就绪。即将停服并备份至：%s\n", *backup)
+		}
+		stopped = true
 		if err := manager("stop"); err != nil {
 			return err
 		}
@@ -318,16 +416,19 @@ func runService(args []string, stdout, stderr io.Writer) error {
 		if err := createServiceBackup(r, *backup); err != nil {
 			return fmt.Errorf("service remains stopped; backup: %w", err)
 		}
+		backedUp = true
 		if action == "backup" {
 			return writeJSON(stdout, map[string]string{"backup": *backup, "state": "stopped"})
 		}
 		if action == "restore" {
+			selected = true // Restore may partially replace data before returning an error.
 			if err := restoreServiceBackup(ctx, r, *source); err != nil {
 				return fmt.Errorf("service remains stopped; restore: %w", err)
 			}
 		} else if err := selectServiceRelease(r.Root, next); err != nil {
 			return err
 		}
+		selected = true
 		release()
 		release = nil
 		if err := manager("start"); err != nil {
@@ -340,6 +441,7 @@ func runService(args []string, stdout, stderr io.Writer) error {
 		}
 		status["backup"] = *backup
 		status["recovery_review"] = "Re-login and inspect model operations and member sessions; retry interrupted targets explicitly. No validation or platform action was replayed by the deployment command."
+		fmt.Fprintf(stderr, "TeamX 已完成%s并启动。备份：%s\n请重新登录网页，检查模型与原会话。\n", map[string]string{"upgrade": "升级", "restore": "恢复"}[action], *backup)
 		return writeJSON(stdout, status)
 	}
 	return ErrRequest

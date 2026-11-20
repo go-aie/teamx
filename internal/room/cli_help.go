@@ -3,6 +3,10 @@ package room
 import "strings"
 
 const rootCLIHelp = `Usage: teamx COMMAND [--help]
+常用维护：teamx service status | logs | upgrade
+  teamx service upgrade         升级到最新稳定版，自动备份
+  teamx service upgrade --help  查看指定版本、离线升级与备份选项
+
   service                       Manage the background service (teamx service --help)
   init | doctor                 Prepare files/auth or diagnose a distribution (--bundle-root, --home; model setup is in the browser)
   access init --config FILE     Initialize the fixed operator and private admin-token file
@@ -24,19 +28,21 @@ Use teamx COMMAND SUBCOMMAND --help for parameters and constraints.
 `
 
 const serviceCLIHelp = `Usage: teamx service COMMAND [OPTIONS]
-  status | inspect              Inspect service health or installation registration
-  stop | start | restart        Stop or resume the installed service
-  disable | enable              Disable or enable login/boot startup (disable does not stop it)
-  uninstall                     Stop and unregister; preserve data, releases and the teamx command
-  backup --backup-dir DIR       Stop and make a consistent backup
-  upgrade --archive FILE --backup-dir DIR
-  restore --from DIR --backup-dir DIR
-  install --archive FILE        Deploy a native standard archive (called by install.sh)
-Options: --server-root DIR (automatically found from the installed teamx command).
-Install: --home DIR, --user NAME (Linux); install/upgrade: --sha256 HEX or FILE.sha256.
-Linux service management requires sudo; macOS uses the logged-in user without sudo.
-First installation: run the official install.sh once; it also starts the service.
-Model configuration is completed in the browser. See the release's README.zh.md for installation and maintenance.
+  status | inspect              查看服务状态或安装登记
+  logs [--lines 100] [--follow]  查看日志
+  stop | start | restart        停止、启动或重启已安装服务
+  disable | enable              禁用或启用自启动（disable 不停止当前服务）
+  upgrade                       升级到最新稳定版，自动创建一致备份
+  upgrade --version vX.Y.Z       升级到指定正式版本
+  upgrade --archive FILE        离线升级；摘要读取 FILE.sha256
+  backup --backup-dir DIR       停服并创建一致备份，完成后保持停止
+  restore --from DIR --backup-dir DIR  恢复备份，并保存恢复前状态
+  uninstall                     停止并注销服务，保留数据、版本和命令
+  install --archive FILE        安装/重新登记本机 standard 包（安装器调用）
+通用参数：--server-root DIR；默认从已安装的 teamx 命令发现。
+使用 teamx service COMMAND --help 查看该命令的参数和完整示例。
+macOS 使用已登录普通用户，不加 sudo；Linux 管理命令前加 sudo。
+首次安装使用官方 install.sh，安装完成后在网页配置模型。
 `
 
 type referenceCommandHelp struct {

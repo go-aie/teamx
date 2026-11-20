@@ -12,29 +12,42 @@ usage() {
 TeamX 安装：下载并校验 standard 包，安装和启动常驻服务。
   --version vX.Y.Z     指定正式版本（发行脚本默认安装其所属版本）
   --archive FILE       使用已下载的本机 standard 归档，无需联网
+  --upgrade            显式升级已有安装（旧版 CLI 的过渡入口）
+  --backup-dir DIR     升级备份目标；省略时在登记 home 旁自动生成
+  --repair             使用原版本归档重新登记服务（配合 --archive）
   --sha256 HEX         归档摘要；离线默认读取 FILE.sha256
   --bin-dir DIR        teamx 命令目录（macOS: ~/.local/bin；Linux: /usr/local/bin）
   --server-root DIR    程序安装根；与 --home 不重叠的绝对目录
   --home DIR           私有配置和数据目录
   --user NAME          Linux 专用服务账号（默认 teamx，不存在时创建）
   --help               显示帮助
-安装后使用 teamx service status/stop/start/restart/uninstall，无需再次 install。
+已有安装会在下载应用包前提示退出；升级到最新稳定版：teamx service upgrade。
+指定版本：teamx service upgrade --version vX.Y.Z；离线：teamx service upgrade --archive FILE。
+macOS 不加 sudo；Linux 管理命令前加 sudo。
 EOF
 }
 archive='' expected_sha='' bin_dir='' server_root='' data_home='' service_user='teamx'
+upgrade=false repair=false backup_dir='' explicit_server_root=false
 while [[ $# -gt 0 ]]; do
   case $1 in
     --help|-h) usage; exit 0 ;;
-    --version|--archive|--sha256|--bin-dir|--server-root|--home|--user)
+    --upgrade) upgrade=true; shift ;;
+    --repair) repair=true; shift ;;
+    --version|--archive|--sha256|--bin-dir|--server-root|--home|--user|--backup-dir)
       [[ $# -ge 2 && -n $2 ]] || fail "$1 缺少参数"
       case $1 in
         --version) release_version=$2 ;; --archive) archive=$2 ;; --sha256) expected_sha=$2 ;;
-        --bin-dir) bin_dir=$2 ;; --server-root) server_root=$2 ;; --home) data_home=$2 ;; --user) service_user=$2 ;;
+        --bin-dir) bin_dir=$2 ;; --server-root) server_root=$2; explicit_server_root=true ;; --home) data_home=$2 ;; --user) service_user=$2 ;;
+        --backup-dir) backup_dir=$2 ;;
       esac
       shift 2 ;;
     *) fail "未知参数：$1（使用 --help 查看帮助）" ;;
   esac
 done
+[[ $upgrade == false || $repair == false ]] || fail '--upgrade 与 --repair 不能同时使用'
+[[ $upgrade == true || -z $backup_dir ]] || fail '--backup-dir 仅用于 --upgrade'
+[[ $upgrade == false || ( -z $data_home && $service_user == teamx ) ]] || fail '升级复用登记的 home 和账号，不接受 --home 或 --user'
+[[ $repair == false || -n $archive ]] || fail '--repair 需要 --archive 指向原版本归档'
 
 platform=$(uname -s)
 case $(uname -m) in
@@ -66,12 +79,64 @@ case $platform in
     ;;
   *) fail '仅支持 macOS 和使用 systemd 的 Linux' ;;
 esac
-for directory in "$server_root" "$data_home" "$bin_dir"; do
+# A stable command symlink may belong to a custom installation root. Only
+# infer this managed layout; never execute an arbitrary command found on PATH.
+if [[ $explicit_server_root == false && -L $bin_dir/teamx ]]; then
+  linked_target=$(readlink "$bin_dir/teamx")
+  case $linked_target in
+    /*/current/bin/teamx) server_root=${linked_target%/current/bin/teamx} ;;
+  esac
+fi
+for directory in "$server_root" "$data_home" "$bin_dir" "$backup_dir"; do
   [[ -n $directory ]] || continue
   [[ $directory == /* && $directory != *$'\n'* && $directory != *$'\r'* && $directory != *'\'* ]] || fail '安装目录必须为不含换行或反斜杠的绝对路径'
 done
 command_target="$server_root/current/bin/teamx"
 command_path="$bin_dir/teamx"
+shell_quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+
+# Check the registered installation before creating temp files or downloading
+# an archive. Do not infer an installation from a random teamx on PATH.
+installed=false
+if [[ -e $server_root/service.json || -L $server_root/service.json ]]; then
+  [[ -f $server_root/service.json && ! -L $server_root/service.json && -x $command_target ]] || fail '安装登记或当前程序不完整；请保留安装目录并检查 current 和 service.json'
+  run_privileged "$command_target" service inspect --server-root "$server_root" >/dev/null || fail '安装登记验证失败；请核对安装目录和部署账号，尚未下载应用包或更改服务'
+  installed=true
+  if [[ $upgrade == false && $repair == false ]]; then
+    installed_version=$("$command_target" --version) || fail '无法读取当前版本，请检查已有安装'
+    printf '检测到已有安装：%s\n安装位置：%s\n' "$installed_version" "$server_root"
+    if "$command_target" service upgrade --help 2>&1 | grep -q -- '--version'; then
+      printf '\n升级到最新稳定版：\n  '
+      [[ $platform != Linux ]] || printf 'sudo '
+      shell_quote "$command_target"
+      printf ' service upgrade --server-root '
+      shell_quote "$server_root"
+      printf '\n'
+    else
+      printf '\n当前 CLI 尚不支持联网升级，请使用此过渡命令：\n  curl -fsSL '
+      if [[ -n $release_version ]]; then
+        printf 'https://github.com/%s/releases/download/%s/install.sh' "$release_repository" "$release_version"
+      else
+        printf 'https://github.com/%s/releases/latest/download/install.sh' "$release_repository"
+      fi
+      printf ' | bash -s -- --upgrade --server-root '
+      shell_quote "$server_root"
+      printf ' --bin-dir '
+      shell_quote "$bin_dir"
+      printf '\n'
+    fi
+    printf '\n查看状态：\n  '
+    [[ $platform != Linux ]] || printf 'sudo '
+    shell_quote "$command_target"
+    printf ' service status --server-root '
+    shell_quote "$server_root"
+    printf '\n本次未下载应用包或更改服务。\n'
+    exit 0
+  fi
+elif [[ -e $server_root/current || -L $server_root/current || -e $server_root/installation.json ]]; then
+  [[ $repair == true ]] || fail '发现未完成的安装登记；请保留目录，使用原版本归档和 --repair 检查修复'
+fi
+[[ $upgrade == false || $installed == true ]] || fail '未找到可升级的常驻安装；首次安装无需 --upgrade，其他目录请指定 --server-root'
 if [[ -e $command_path || -L $command_path ]]; then
   [[ -L $command_path && $(readlink "$command_path") == "$command_target" ]] || fail "$command_path 已存在且不属于此次安装，请使用其他 --bin-dir"
 fi
@@ -82,7 +147,7 @@ trap 'rm -rf -- "$work"' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 download() {
-  curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL --retry 2 --connect-timeout 15 "$1" -o "$2"
+  curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL --retry 2 --connect-timeout 15 "$1" -o "$2" || fail "下载失败：$1；尚未停止服务或切换版本，可重新执行原命令"
 }
 if [[ -z $archive ]]; then
   [[ $release_version =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail '源码脚本联网安装需指定 --version vX.Y.Z；也可使用 --archive'
@@ -120,7 +185,7 @@ tar -xOzf "$archive" "$bootstrap_entry" > "$work/teamx"
 [[ -s $work/teamx ]] || fail '归档中的 bin/teamx 不是有效的引导文件'
 chmod 0755 "$work/teamx"
 
-if [[ $platform == Linux ]]; then
+if [[ $platform == Linux && $upgrade == false ]]; then
   if [[ $needs_sudo == true ]]; then sudo -v; fi
   if ! id "$service_user" >/dev/null 2>&1; then
     run_privileged useradd --system --create-home --home-dir "/home/$service_user" --shell /usr/sbin/nologin "$service_user"
@@ -128,15 +193,27 @@ if [[ $platform == Linux ]]; then
 fi
 (umask 022; run_privileged mkdir -p "$bin_dir")
 [[ -d $bin_dir ]] || fail '无法创建命令目录'
-printf '正在安装并启动 TeamX 常驻服务…\n'
-install_args=(service install --archive "$archive" --sha256 "$expected_sha" --server-root "$server_root")
+printf '正在%s TeamX 常驻服务…\n' "$(if [[ $upgrade == true ]]; then printf '升级'; else printf '安装并启动'; fi)"
+service_action=install
+[[ $upgrade == false ]] || service_action=upgrade
+install_args=(service "$service_action" --archive "$archive" --sha256 "$expected_sha" --server-root "$server_root")
 # Let TeamX resolve defaults and an existing installation's registered home.
 if [[ -n $data_home ]]; then install_args+=(--home "$data_home"); fi
-if [[ $platform == Linux ]]; then install_args+=(--user "$service_user"); fi
+if [[ $platform == Linux && $upgrade == false ]]; then install_args+=(--user "$service_user"); fi
+if [[ -n $backup_dir ]]; then install_args+=(--backup-dir "$backup_dir"); fi
 # The private download directory stays 0700, while the managed executable tree
 # must be traversable by Linux's ordinary service account. Go creates home and
 # credential files with their own private modes.
-(umask 022; run_privileged "$work/teamx" "${install_args[@]}" </dev/null > "$work/install-result.json")
+if (umask 022; run_privileged "$work/teamx" "${install_args[@]}" </dev/null > "$work/install-result.json") 2> "$work/deployment.log"; then
+  cat "$work/deployment.log"
+else
+  deployment_status=$?
+  cat "$work/deployment.log" >&2
+  saved_log=$(mktemp "${TMPDIR:-/tmp}/teamx-install-failed.XXXXXXXX")
+  cp "$work/deployment.log" "$saved_log"
+  printf 'TeamX 部署失败（退出码 %s）。日志已保留：%s\n安装位置：%s\n请按上述状态与恢复提示处理；首次安装失败可核对原因后重试。\n' "$deployment_status" "$saved_log" "$server_root" >&2
+  exit "$deployment_status"
+fi
 [[ -x $command_target ]] || fail '部署未产生可执行的 current/bin/teamx，请保留安装报错'
 
 # Publish the stable CLI only after deployment succeeds. Refuse unrelated files,

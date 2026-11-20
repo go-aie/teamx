@@ -29,6 +29,8 @@ curl -fsSL https://github.com/go-aie/teamx/releases/latest/download/install.sh |
 
 脚本下载 standard 包并启动常驻服务。macOS 不加 sudo，Linux 按提示获取权限。离线安装、开发快照或尚无对应 Release 时，见[下载与校验](docs/installation.zh.md#下载与校验)；开发者可选择[从源码运行](internal/room/README.zh.md#从源码运行)。
 
+已有安装升级到最新稳定版，执行 `teamx service upgrade`（Linux 加 sudo）。它会自动下载校验、创建一致备份并重启；已是目标版本时直接退出。旧版 CLI 的过渡方式及离线升级见[备份与升级](docs/installation.zh.md#备份与升级)。重复运行安装脚本会在下载应用包前提示升级入口。
+
 ### 2. 登录并配置模型
 
 打开安装输出的网址，按提示从服务机器读取管理 token 并登录。在网页填写模型协议、Base URL、模型 ID 和 API Key，点击「验证并开始使用」。无需提前 export 密钥；登录和远程访问详见[首次使用与访问](docs/installation.zh.md#首次使用与访问)。

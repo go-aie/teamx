@@ -144,6 +144,9 @@ test('full matrix assembles original bytes, installer, notices and CI reports wi
   assert.ok(!/release_ready|qualified_release/.test(JSON.stringify(index)));
   const notes = fs.readFileSync(p.join(f.output, 'release-notes.md'), 'utf8');
   assert.ok(notes.includes('*-verification.json'));
+  assert.ok(notes.includes('teamx service upgrade\n'));
+  assert.ok(notes.includes('teamx service upgrade --version v0.0.0'));
+  assert.ok(notes.includes('install.sh | bash -s -- --upgrade'));
   assert.ok(!notes.includes('真实 DSH/ACP、浏览器及各自用户环境验收'));
   const notices = run('tar', ['-tf', p.join(f.output, 'LICENSES.tar.gz')]);
   assert.ok(notices.includes('linux-arm64-standard/THIRD_PARTY_NOTICES/NOTICE'));

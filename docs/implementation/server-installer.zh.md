@@ -30,6 +30,12 @@
 
 ## 验收边界
 
+2026-11-20 安装与升级引导调整：安装器先验证登记与当前程序，支持从稳定命令链接发现自定义安装根；已有安装在下载应用包前退出，显示实际版本、路径和升级入口。旧 CLI 显示显式的 `install.sh --upgrade` 过渡命令，使用校验后的新版引导程序升级原实例；`--repair --archive FILE` 保留原版本重新登记入口。
+
+`teamx service upgrade` 默认查询最新正式稳定 Release，固定 tag 下载本机 standard 包及摘要，校验归档和目标版本后沿用既有停服、锁定、一致备份与切换流程。支持 `--version`、`--archive` 和自动生成 `<home>-backups` 下的新备份目录；已是目标版本时不下载应用包、不停服。备份目标与可写父目录在停服前检查，发布备份时再次检查。新增 `service logs`，按子命令收敛帮助参数；失败输出实际阶段、状态/日志命令及已有备份的恢复命令，安装器另保留部署失败日志。README、离线包说明与 Release 输出同步更新。
+
+新增回归覆盖已有安装不下载、无命令链接、自定义安装根、损坏登记、实际执行旧 CLI 过渡提示、原版本修复、失败日志保留；联网升级使用本地 HTTP fixture 覆盖目标固定、版本比较、已是目标版本、查询/归档失败、摘要重复或错误、归档版本不匹配和取消，验证准备阶段不切换 current 或修改 home。这些检查不代替真实 Intel Mac/Linux 的跨版本服务升级与恢复验收，也不代表公开 Release 已发布。
+
 安装器测试使用真实 Bash、tar、摘要、文件和符号链接操作；下载、系统身份、Linux sudo／账号准备和部署动作使用 fixture。Go 回归不等于本次已重新安装真实 LaunchAgent 或 systemd 服务。带 quarantine 的脚本 fixture 也不等于真实 Mach-O／Gatekeeper 验收。
 
 本次未发布 Release、未改动本机常驻服务或真实账号。公开 `latest/download/install.sh` 需在包含本次改动的正式 Release 发布后验证。真实联网下载、原生服务安装、PATH 生效、`teamx service status/stop/start` 以及既有平台／长期观察门槛仍须按[发行指南](../../packaging/releasing.zh.md)验收，不扩大发行支持范围。
