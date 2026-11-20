@@ -287,7 +287,7 @@ func TestMemberAgentResumeClearsHistoricalError(t *testing.T) {
 			if outcome == "interrupted" {
 				controlMember(t, h, addr, id, "pause", n, false, true)
 			} else {
-				b.finish <- errors.Join(errDSHPaused, errors.New("backend failed"))
+				b.finish <- errors.Join(errBackendPaused, errors.New("backend failed"))
 			}
 			ended := waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool { return !s.Active })
 			if !ended.Paused || ended.Error == "" || ended.Agent.Turn.Status != outcome {

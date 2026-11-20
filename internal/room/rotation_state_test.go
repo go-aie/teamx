@@ -24,7 +24,7 @@ func rotationFixture(t *testing.T) (*Store, SessionOptions, rotationRecord, memb
 	r := rotationRecord{Version: rotationVersion, MemberIdentity: id, OperationID: strings.Repeat("a", 32), Reason: "manual", From: from, To: to, BaseUsed: 5, Phase: "prepared"}
 	state := memberScheduling{Version: schedulingVersion, MemberIdentity: id, Enabled: false, Used: 5, Limit: 16, SessionGeneration: from, SessionStartUsed: 2}
 	store.mu.Lock()
-	err := store.save(opts.StatePath, dshReference{Version: formatVersion, MemberIdentity: id, Directory: from}, maxPrivateFileBytes)
+	err := store.save(opts.StatePath, sessionReference{Version: formatVersion, MemberIdentity: id, Directory: from}, maxPrivateFileBytes)
 	store.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)
@@ -98,7 +98,7 @@ func TestRotationRecoveryTable(t *testing.T) {
 				valid = false
 			}
 			store.mu.Lock()
-			err := store.save(opts.StatePath, dshReference{Version: formatVersion, MemberIdentity: opts.MemberIdentity, Directory: generation, Pending: pending}, maxPrivateFileBytes)
+			err := store.save(opts.StatePath, sessionReference{Version: formatVersion, MemberIdentity: opts.MemberIdentity, Directory: generation, Pending: pending}, maxPrivateFileBytes)
 			store.mu.Unlock()
 			if err != nil {
 				t.Fatal(err)

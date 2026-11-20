@@ -4,118 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"reflect"
 	"sync"
 	"time"
 
 	"github.com/go-aie/actorx"
-	"github.com/go-aie/teamx/internal/agent/dsh"
 )
 
 type rotatingBackend interface {
+	reference(SessionOptions) (sessionReference, bool, error)
 	sessionGeneration(SessionOptions) (string, error)
 	checkRotationClosed(SessionOptions, string, bool) error
 	switchSession(SessionOptions, string, string) (Backend, error)
-}
-
-func (b dshBackend) sessionGeneration(opts SessionOptions) (string, error) {
-	ref, _, err := b.reference(opts)
-	if err != nil {
-		return "", err
-	}
-	if ref.Directory != "" {
-		return ref.Directory, nil
-	}
-	return filepath.Base(dshStateDir(opts.StatePath)), nil
-}
-func (b dshBackend) checkRotationClosed(opts SessionOptions, from string, ownedSettled bool) error {
-	_, exists, err := b.reference(opts)
-	if err != nil {
-		return err
-	}
-	current, err := b.sessionGeneration(opts)
-	if err != nil {
-		return err
-	}
-	if current != from {
-		return ErrConflict
-	}
-	if exists && !ownedSettled {
-		if err := dsh.CheckReset(filepath.Join(filepath.Dir(opts.StatePath), from)); err != nil {
-			return fmt.Errorf("old execution has no verified settlement: %w", err)
-		}
-	}
-	return nil
-}
-func (b dshBackend) switchSession(opts SessionOptions, from, to string) (Backend, error) {
-	if !validSessionGeneration(from) || !validSessionGeneration(to) || from == to {
-		return nil, ErrRequest
-	}
-	if b.model != nil && (b.model.Legacy || b.models != nil) {
-		if b.models == nil {
-			return nil, ErrInvalid
-		}
-		var saved managedRoomConfig
-		if err := readSnapshot(filepath.Join(b.store.dir, "room-config.json"), &saved, maxPrivateFileBytes); err != nil {
-			return nil, err
-		}
-		found := false
-		for _, member := range saved.Members {
-			if saved.RoomIdentity == opts.RoomIdentity && member.AgentID == opts.AgentID && member.MembershipID == opts.MembershipID && member.ModelSelection != nil {
-				target, err := b.models.target(opts.MemberIdentity, *member.ModelSelection, member.ModelSelectionVersion, b.profile)
-				if err != nil {
-					return nil, err
-				}
-				b.model, b.profile, found = &target, target.Profile, true
-				break
-			}
-		}
-		if !found {
-			return nil, ErrIdentity
-		}
-	}
-	ref, _, err := b.reference(opts)
-	if err != nil {
-		return nil, err
-	}
-	current, err := b.sessionGeneration(opts)
-	if err != nil {
-		return nil, err
-	}
-	if current == to {
-		if !ref.Pending {
-			return nil, fmt.Errorf("%w: target already started", ErrConflict)
-		}
-		b.recover = false
-		return b, nil
-	}
-	if current != from {
-		return nil, ErrConflict
-	}
-	if b.model != nil {
-		snapshot := b.model.clone()
-		snapshot.Generation = to
-		b.model = &snapshot
-		if err := b.saveModelSnapshot(opts, dshReference{Directory: to}); err != nil {
-			return nil, err
-		}
-	}
-	ref = dshReference{Version: formatVersion, MemberIdentity: opts.MemberIdentity, Directory: to, Pending: true, ManagedModel: b.model != nil}
-	b.store.mu.Lock()
-	path, err := b.store.dshPath(opts.MemberIdentity, "session.json", true)
-	if err == nil {
-		err = b.store.save(path, ref, maxPrivateFileBytes)
-	}
-	b.store.mu.Unlock()
-	if b.model != nil {
-		b.store.changed("models", opts.MemberIdentity)
-	}
-	if err != nil {
-		return nil, err
-	}
-	b.recover = false
-	return b, nil
 }
 
 // Service admission remains owned across a timed-out HTTP call. Actor callbacks
@@ -209,7 +109,7 @@ func (m *MemberAgent) prepareRotation(msg ControlMember) error {
 		return fmt.Errorf("%w: session rotation requires a capable backend", ErrRequest)
 	}
 	if msg.modelTarget != nil {
-		if _, ok := m.Backend.(dshBackend); !ok || msg.Cancel || msg.Resume || msg.Replenish || msg.automatic {
+		if _, ok := m.Backend.(modelChangingBackend); !ok || msg.Cancel || msg.Resume || msg.Replenish || msg.automatic {
 			return ErrRequest
 		}
 		if err := msg.modelTarget.validate(m.Options.MemberIdentity); err != nil {
@@ -305,7 +205,7 @@ func (m *MemberAgent) prepareRotation(msg ControlMember) error {
 	if msg.ContinueRotation {
 		return fmt.Errorf("%w: no matching rotation to continue", ErrConflict)
 	}
-	if checker, ok := m.Backend.(interface{ CheckRun() error }); ok && msg.Resume {
+	if checker, ok := m.Backend.(backendRunCheck); ok && msg.Resume {
 		if err := checker.CheckRun(); err != nil {
 			return err
 		}
@@ -326,7 +226,7 @@ func (m *MemberAgent) prepareRotation(msg ControlMember) error {
 	if err != nil {
 		return err
 	}
-	r := &rotationRecord{Version: rotationVersion, MemberIdentity: m.Options.MemberIdentity, OperationID: operationID, Reason: reason, From: from, To: "session.json.dsh-" + target, BaseUsed: m.turnsUsed, Phase: "prepared", Cancel: msg.Cancel, Resume: msg.Resume, Replenish: msg.Replenish}
+	r := &rotationRecord{Version: rotationVersion, MemberIdentity: m.Options.MemberIdentity, OperationID: operationID, Reason: reason, From: from, To: sessionGenerationForOperation(target), BaseUsed: m.turnsUsed, Phase: "prepared", Cancel: msg.Cancel, Resume: msg.Resume, Replenish: msg.Replenish}
 	if msg.modelTarget != nil {
 		snapshot := msg.modelTarget.clone()
 		snapshot.Generation = r.To
@@ -421,7 +321,7 @@ func (m *MemberAgent) rotate() {
 		}
 		if r.record.Phase == "prepared" {
 			r.step = "old_cleanup"
-			if err := work.session.close(); !dsh.CleanupSettled(err) {
+			if err := work.session.close(); !backendCleanupSettled(err) {
 				return r, fmt.Errorf("old Session cleanup failed: %w", err)
 			}
 			if err := ctx.Err(); err != nil {
@@ -442,7 +342,7 @@ func (m *MemberAgent) rotate() {
 		var next Backend
 		var err error
 		if record.ModelTarget != nil {
-			next, err = backend.(dshBackend).switchModel(opts, record.From, record.To, *record.ModelTarget)
+			next, err = backend.(modelChangingBackend).switchModel(opts, record.From, record.To, *record.ModelTarget)
 		} else {
 			next, err = backend.switchSession(opts, record.From, record.To)
 		}

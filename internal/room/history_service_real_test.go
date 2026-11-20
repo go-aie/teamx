@@ -147,7 +147,7 @@ func TestHistoryProductionServiceRealDSH(t *testing.T) {
 			if _, err := svc.control(ctx, apiRequest{AgentID: id.AgentID, MembershipID: id.MembershipID}, "pause"); err != nil {
 				t.Fatal(err)
 			}
-			var diagnostic dshDiagnostic
+			var diagnostic backendDiagnostic
 			if err := readSnapshot(filepath.Join(svc.store.dir, "agents", id.MembershipID, "dsh-turn.json"), &diagnostic, maxPrivateFileBytes); err != nil {
 				t.Fatal(err)
 			}

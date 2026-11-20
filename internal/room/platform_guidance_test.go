@@ -21,7 +21,7 @@ func TestPlatformNavigationInEffectiveSessionInstructions(t *testing.T) {
 			if unified {
 				b.inputService = &service{}
 			}
-			options, err := b.componentOptions(adapterOptions(store, id), dshReference{})
+			options, err := b.componentOptions(adapterOptions(store, id), sessionReference{})
 			if err != nil {
 				t.Fatal(err)
 			}

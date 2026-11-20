@@ -173,7 +173,7 @@ func TestScionRealDSHReviewContinuation(t *testing.T) {
 				if e != nil {
 					t.Fatal(e)
 				}
-				var diagnostic dshDiagnostic
+				var diagnostic backendDiagnostic
 				if json.Unmarshal(raw, &diagnostic) != nil {
 					t.Fatal("invalid model evidence")
 				}
@@ -199,7 +199,7 @@ func TestScionRealDSHReviewContinuation(t *testing.T) {
 		run("reviewer", "first_review")
 	} else {
 		raw, e := os.ReadFile(filepath.Join(os.Getenv("TEAMX_SCION_S4_PRIOR_EVIDENCE"), "first_review.json"))
-		var diagnostic dshDiagnostic
+		var diagnostic backendDiagnostic
 		if e != nil || json.Unmarshal(raw, &diagnostic) != nil {
 			t.Fatal("verified prior first-review model evidence required")
 		}
@@ -301,7 +301,7 @@ func TestScionRealDSHReviewContinuation(t *testing.T) {
 	}
 	// Both reviewer turns must contain actual successful independent test output.
 	for _, phase := range []string{"first_review", "second_review"} {
-		diagnostic := report[phase].(dshDiagnostic)
+		diagnostic := report[phase].(backendDiagnostic)
 		tested := false
 		for _, update := range diagnostic.Result.Tools {
 			if update.Status == "completed" && strings.Contains(update.Input, "unittest") && strings.Contains(update.Output, "OK") && !strings.Contains(update.Output, "FAILED") {

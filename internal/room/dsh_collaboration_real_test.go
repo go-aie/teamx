@@ -82,7 +82,7 @@ func (d *realRoomDriver) newRoot(exclude realProcessIdentity) (realProcessIdenti
 		}
 	}
 	if len(found) != 1 {
-		return realProcessIdentity{}, fmt.Errorf("expected one distinct DSH root, got %d", len(found))
+		return realProcessIdentity{}, fmt.Errorf("expected one distinct DSH root, got %d: %+v", len(found), found)
 	}
 	return found[0], nil
 }

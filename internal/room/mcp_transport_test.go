@@ -230,7 +230,7 @@ func issueMCPProbeCredential(t *testing.T, a *serverAccess, inbox *inboxHarness)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ref := dshReference{Version: formatVersion, MemberIdentity: inbox.id, Directory: filepath.Base(dshStateDir(path))}
+	ref := sessionReference{Version: formatVersion, MemberIdentity: inbox.id, Directory: filepath.Base(dshStateDir(path))}
 	if err := inbox.store.save(path, ref, maxPrivateFileBytes); err != nil {
 		t.Fatal(err)
 	}
@@ -515,7 +515,7 @@ func TestMCPAuthenticationRejectsRetiredIdentity(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				ref := dshReference{Version: formatVersion, MemberIdentity: inbox.id, Directory: filepath.Base(dshStateDir(path)) + "-" + strings.Repeat("b", 32)}
+				ref := sessionReference{Version: formatVersion, MemberIdentity: inbox.id, Directory: filepath.Base(dshStateDir(path)) + "-" + strings.Repeat("b", 32)}
 				if err := inbox.store.save(path, ref, maxPrivateFileBytes); err != nil {
 					t.Fatal(err)
 				}

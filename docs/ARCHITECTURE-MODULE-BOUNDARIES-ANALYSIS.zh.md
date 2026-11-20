@@ -4,11 +4,11 @@
 
 最初分析仅记录现有实现，不修改运行代码；后续已实施单元以各自记录和下述状态为准，其余建议不视为已实施。最初分析时 History 尚在开发中；现已根据完成后的源码和 H1–H4 记录刷新第 5 节与后续重构范围，删除“正常入口尚未注册”等过时判断。目录规模和首次测试结果保留为最初采样，不代表当前固定提交快照，也不宣称重新完成全部架构审计。
 
-补充说明：第 10、11 节是基于上述分析新增的目标结构与分阶段实施建议。R0 的基线与边界清单已完成，见[基线记录](implementation/architecture/baseline.zh.md)；R3a 精确入口解析也已完成，见[实施记录](implementation/architecture/platform-entries.zh.md)。R1a 快照 writer 与健康围栏已完成，见[实施记录](implementation/architecture/persistence-writer.zh.md)。R5a 调度器也已完成，见[实施记录](implementation/architecture/turn-scheduler.zh.md)。R3b 静态能力装配已完成，见[实施记录](implementation/architecture/platform-assembly.zh.md)。R6a.1 在途调用登记与结清已完成，见[实施记录](implementation/architecture/platform-calls.zh.md)。R1b、R2、R4、R5b、R6a.2、R6b、R7–R8 尚未实施。History 功能与正常代码入口已完成；R2 是尚未实施的结构重构，不能将两者混淆。后续实施使用 R0 的当前基线，不按早期中间状态覆盖或退回现有能力。
+补充说明：第 10、11 节是基于上述分析新增的目标结构与分阶段实施建议。R0 的基线与边界清单已完成，见[基线记录](implementation/architecture/baseline.zh.md)；R3a 精确入口解析也已完成，见[实施记录](implementation/architecture/platform-entries.zh.md)。R1a 快照 writer 与健康围栏已完成，见[实施记录](implementation/architecture/persistence-writer.zh.md)。R5a 调度器也已完成，见[实施记录](implementation/architecture/turn-scheduler.zh.md)。R3b 静态能力装配已完成，见[实施记录](implementation/architecture/platform-assembly.zh.md)。R6a.1 在途调用登记与结清已完成，见[实施记录](implementation/architecture/platform-calls.zh.md)。R5b.1 后端依赖收敛已完成，见[实施记录](implementation/architecture/backend-lifecycle.zh.md)。R1b、R2、R4、R5b.2、R6a.2、R6b、R7–R8 尚未实施。History 功能与正常代码入口已完成；R2 是尚未实施的结构重构，不能将两者混淆。后续实施使用 R0 的当前基线，不按早期中间状态覆盖或退回现有能力。
 
 ## 实施定位：第一阶段与后续方案
 
-推荐采用两个独立方案、顺序实施。本文保留现状分析和 R0–R8，作为优先实施的**第一阶段：模块边界与职责重构**；[第二阶段：Gordis 进程内扩展与按需编译](GORDIS-PLUGIN-AND-SELECTIVE-BUILD-PLAN.zh.md)承接必要的公开扩展合同、静态选择的进程内装配与构建交付。第二阶段沿用现有本地文件存储，仅准备多 Agent／ACP 边界；Codex 接入另行实施。当前完成第一阶段 R0 的基线采集与依赖约束、R3a 的无 I/O 精确入口解析，以及 R1a 的快照 writer／健康围栏；R5a 已将非持久调度 owner 迁入 `app/agents`，共享持久身份归入 `identity`。R3b 已将已有平台描述和工厂汇入 `app/platforms`，普通消费者使用同一已校验目录。R6a.1 已将所有已有调用族的登记表、取消信号、完成回执与等待接入同一 `app/platforms.Calls` 实例，准入和绑定变更仍在原 manager 门槛内。推荐首批的两个模块之后，调度器和平台静态装配也已实际接入；成员状态机及持久业务 owner 尚未迁移，第二阶段仍为方案。
+推荐采用两个独立方案、顺序实施。本文保留现状分析和 R0–R8，作为优先实施的**第一阶段：模块边界与职责重构**；[第二阶段：Gordis 进程内扩展与按需编译](GORDIS-PLUGIN-AND-SELECTIVE-BUILD-PLAN.zh.md)承接必要的公开扩展合同、静态选择的进程内装配与构建交付。第二阶段沿用现有本地文件存储，仅准备多 Agent／ACP 边界；Codex 接入另行实施。当前完成第一阶段 R0 的基线采集与依赖约束、R3a 的无 I/O 精确入口解析，以及 R1a 的快照 writer／健康围栏；R5a 已将非持久调度 owner 迁入 `app/agents`，共享持久身份归入 `identity`。R3b 已将已有平台描述和工厂汇入 `app/platforms`，普通消费者使用同一已校验目录。R6a.1 已将所有已有调用族的登记表、取消信号、完成回执与等待接入同一 `app/platforms.Calls` 实例，准入和绑定变更仍在原 manager 门槛内。推荐首批的两个模块之后，调度器和平台静态装配也已实际接入；R5b.1 已在原包接通后端执行、关闭结清、轮换、恢复和模型应用合同；成员状态机及持久业务 owner 尚未迁移，第二阶段仍为方案。
 
 两阶段的变化性质不同：第一阶段在现有功能、协议和数据上形成可靠包边界；第二阶段增加实现选择、插件生命周期和扩展交付能力。合在一次实施中会同时改变代码归属、资源所有权、运行配置与编译依赖，使问题定位和回退变复杂。分开交付可以先获得模块化收益，再以稳定合同验证扩展能力。
 
@@ -364,11 +364,11 @@ R5a 已将回合调度迁入 `app/agents`；成员状态机和后端业务适配
 
 [session.go](../internal/room/session.go) 的 `Backend.OpenSession` 和 `Session.Run/Close` 是窄接口，DSH 组件不反向依赖 Room，这有助于局部测试和进程生命周期隔离。
 
-同时仍有明确的 DSH 特化：
+R5b.1 已在原包接通实际生命周期合同：`ownedSession.close()` 使用关闭能力，成员与轮换／恢复／模型应用不再识别具体 DSH 类型，结清与故障语义由适配解释；检查点、输入代际和活动投影继续使用原 owner，见[实施记录](implementation/architecture/backend-lifecycle.zh.md)。仍有明确的 DSH 特化：
 
 - `RunnerConfig.valid()` 当前只接受 `dsh`。
-- `ownedSession.close()` 识别具体 `*dshSession`，使用其特殊结清协议。
-- `MemberAgent` 和模型／恢复编排中使用 DSH 类型与错误语义。
+- `dsh.go/dsh_lifecycle.go` 解释 DSH 私有文件、进程、恢复和结清事实。
+- 模型配置、验证与快照仍描述当前 DSH provider；服务配置／装配仍供应具体 launcher 和 profile。
 - DSH 包嵌入 `teamx-input-bridge` JavaScript；桥接代码理解 `inbox_read`、正文摘要、TeamX 请求头及回执方法。
 
 因此更准确的评价是：**DSH 进程／协议组件与 Room 业务没有 Go 反向依赖；应用运行时有意支持 DSH，并包含专门的集成协议。** 不能把“imports 干净”扩大为“换一个后端无需修改应用层”。第一阶段收敛这些依赖，第二阶段只准备后端／ACP 边界；实际第二后端及其能力验收由后续 Codex 接入任务完成，不在当前重构中引入通用多后端框架。
@@ -727,7 +727,7 @@ R3b 可使用应用装配侧的一个普通静态汇集包或装配文件，不�
 | R3b 静态能力装配 | 可选能力描述、工厂与注册完整性检查 | R3a | 中；不与入口解析捆绑交付 |
 | R4 输入工作线 | 私有／共享 owner 及正式协调逐项归位 | R1a；具体单元见 11.7 | 高；含准备与迁移两个层次，不是一轮搬迁 |
 | R5a 调度器 | 授予、释放、排队、退出结清及所需身份 | R0；不强制等待 R4 | 中；不包含后端、恢复或轮换抽象 |
-| R5b 成员生命周期工作包 | 先收敛现有后端／存储依赖，再迁 MemberAgent | R5a；具体单元见 11.8 | 高；状态机完整性优先于再切碎 |
+| R5b 成员生命周期工作包 | 先收敛现有后端／存储依赖，再迁 MemberAgent；R5b.1 已完成 | R5a；具体单元见 11.8 | 高；状态机完整性优先于再切碎 |
 | R6 平台流程工作线 | 在途调用、操作调用族及连接／订阅流程 | R3a；具体单元见 11.9 | 高；注册整合 R3b 不是全部流程的硬前置 |
 | R7 周边业务工作线 | Followup、Models、Workspace、Calendar、Access 按操作迁出 | R1a 或可复用的现有窄持久适配 | 不能把一个整业务域默认算成一次实施 |
 | R8 领域与入口工作线 | `conversation`、根装配、HTTP／MCP／CLI 分批归位 | 当前切片依赖已稳定即可 | 不必等待整个 R7，最后才移除旧包 |
@@ -910,7 +910,7 @@ R4a／R4b 原先虽然按私有与共享拆开，仍然包含 Store、业务回�
 
 **R5b——MemberAgent 与 Session 生命周期。** 迁移 `MemberAgent`、回合检查点、轮换和恢复；先使用旧输入服务适配器也能实施，不强制依赖 R4 完成。DSH 业务适配放在 Agent 服务一侧，继续使用已有 `agent/dsh` 组件；把特殊 close／settlement 能力放进明确的后端生命周期合同，保留 cleanup pending 的真实含义，不以固定超时假定成功。
 
-R5b 细分为两个独立交付：**R5b.1** 在原包收敛后端、检查点、输入和模型的实际依赖，消除 `ownedSession`、轮换与恢复逻辑对具体 DSH 类型的分散识别，保留原行为和结清结果；**R5b.2** 在这些合同稳定后迁移完整成员状态机及适配，旧装配改用新服务。前者通过实际运行／轮换／恢复入口验收，不只增加一组未来接口。
+R5b 细分为两个独立交付：**R5b.1** 在原包收敛后端、检查点、输入和模型的实际依赖，消除 `ownedSession`、轮换与恢复逻辑对具体 DSH 类型的分散识别，保留原行为和结清结果；**R5b.2** 在这些合同稳定后迁移完整成员状态机及适配，旧装配改用新服务。前者通过实际运行／轮换／恢复入口验收，不只增加一组未来接口。 **状态：R5b.1 已完成；R5b.2 尚未实施。** 合同、全部入口接入、持久兼容、真实 DSH 手动／自动轮换与恢复，以及全仓验证限制见[实施记录](implementation/architecture/backend-lifecycle.zh.md)。
 
 这些合同只需明确表达现有 DSH 的执行、关闭和恢复能力，不要求同时泛化为支持第二种后端的框架。
 
@@ -987,7 +987,7 @@ R8c 的进入条件还包括：运行实例目录、忙碌标记与操作进度�
 
 ## 12. 验证记录与结论边界
 
-第 12.1、12.2 节保留首次分析时的验证记录，第 12.3 节记录 History 完成后的状态复核与专项测试。R0 的当前验证和失败证据见[独立实施记录](implementation/architecture/baseline.zh.md)；R3a 的迁移和本轮验证另见[精确入口解析记录](implementation/architecture/platform-entries.zh.md)；R1a 的迁移与健康／关闭验证见[快照 writer 记录](implementation/architecture/persistence-writer.zh.md)；R3b 的装配与验证见[静态装配记录](implementation/architecture/platform-assembly.zh.md)；R6a.1 的登记与结清见[在途调用记录](implementation/architecture/platform-calls.zh.md)。R1b、R2、R4、R5b、R6a.2、R6b、R7–R8 仍未实施。这些验证不表示完整目标目录或全部业务职责迁移已经实现。
+第 12.1、12.2 节保留首次分析时的验证记录，第 12.3 节记录 History 完成后的状态复核与专项测试。R0 的当前验证和失败证据见[独立实施记录](implementation/architecture/baseline.zh.md)；R3a 的迁移和本轮验证另见[精确入口解析记录](implementation/architecture/platform-entries.zh.md)；R1a 的迁移与健康／关闭验证见[快照 writer 记录](implementation/architecture/persistence-writer.zh.md)；R3b 的装配与验证见[静态装配记录](implementation/architecture/platform-assembly.zh.md)；R6a.1 的登记与结清见[在途调用记录](implementation/architecture/platform-calls.zh.md)。R5b.1 的后端依赖收敛见[生命周期记录](implementation/architecture/backend-lifecycle.zh.md)。R1b、R2、R4、R5b.2、R6a.2、R6b、R7–R8 仍未实施。这些验证不表示完整目标目录或全部业务职责迁移已经实现。
 
 ### 12.1 首次分析已执行的验证
 

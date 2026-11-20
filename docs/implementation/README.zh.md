@@ -4,6 +4,7 @@
 
 | 记录 | 范围 |
 | --- | --- |
+| [后端生命周期依赖收敛](architecture/backend-lifecycle.zh.md) | R5b.1：原包接通执行、结清、轮换、恢复、检查点与模型应用合同；真实 DSH 手动／自动轮换与正常恢复已验，成员状态机迁移及 Codex 接入另行实施 |
 | [平台在途调用登记与结清](architecture/platform-calls.zh.md) | R6a.1：全部调用族共用登记、取消、完成回执与等待；准入、绑定变更及配置仍在原 manager 门槛内 |
 | [平台静态能力装配](architecture/platform-assembly.zh.md) | R3b：平台类型、工具、通知来源、输入 codec 和引用能力使用同一已校验描述；registry 注入快照，运行权限与生命周期留在外层 |
 | [回合调度器](architecture/turn-scheduler.zh.md) | R5a：serial／parallel 授予、排队、取消／释放、退出结清和服务冻结门槛；共享身份归位，成员状态机及后端生命周期保留 |

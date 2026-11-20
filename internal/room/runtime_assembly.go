@@ -6,8 +6,6 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-
-	"github.com/go-aie/teamx/internal/agent/dsh"
 )
 
 func (m *roomManager) copyIndex() roomsIndex {
@@ -88,7 +86,7 @@ func (m *roomManager) checkClosedWorkspaceSettledLocked(entry roomIndexEntry) er
 				return fmt.Errorf("previous Room rotation: %w", err)
 			}
 		}
-		ref, exists, err := (dshBackend{store: store}).reference(opts)
+		ref, exists, err := storedSessionBackend(store).reference(opts)
 		if err != nil {
 			return err
 		}
@@ -97,7 +95,7 @@ func (m *roomManager) checkClosedWorkspaceSettledLocked(entry roomIndexEntry) er
 		} // A rotation commits only after old cleanup.
 		if exists {
 			dir := ref.Directory
-			if err := dsh.CheckReset(filepath.Join(filepath.Dir(opts.StatePath), dir)); err != nil {
+			if err := storedSessionBackend(store).checkReset(opts, dir); err != nil {
 				return fmt.Errorf("previous Room %s member %s has no verified settlement: %w", id, member.AgentID, err)
 			}
 		} else {
@@ -207,7 +205,7 @@ func (m *roomManager) workspaceActivationConfig(id RoomIdentity, applying string
 			// including unverified imports and entries pending deletion.
 			memberID := MemberIdentity{RoomIdentity: id, AgentID: member.AgentID, MembershipID: member.MembershipID}
 			opts := SessionOptions{MemberIdentity: memberID, StatePath: filepath.Join(dir, "agents", member.MembershipID, "session.json")}
-			if ref, _, refErr := readDSHReference(opts.StatePath, memberID); refErr == nil && ref.Directory != "" {
+			if ref, _, refErr := readSessionReference(opts.StatePath, memberID); refErr == nil && ref.Directory != "" {
 				if frozen, loadErr := readModelSessionSnapshot(filepath.Join(filepath.Dir(opts.StatePath), ref.Directory+".model.json"), memberID, ref.Directory); loadErr == nil && (!ref.Pending || !frozen.Legacy) {
 					target, err = frozen, nil
 				}

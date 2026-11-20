@@ -120,14 +120,14 @@ func (s *service) restoreScheduling(member *recoveredMember, agent AgentSnapshot
 		// Only an untouched membership may acquire the new-Room enable intent.
 		// Legacy executed members have no durable pause proof and remain paused.
 		opts := SessionOptions{MemberIdentity: member.id, StatePath: filepath.Join(s.store.dir, "agents", member.id.MembershipID, "session.json")}
-		ref, _, refErr := (dshBackend{store: s.store}).reference(opts)
+		ref, _, refErr := storedSessionBackend(s.store).reference(opts)
 		if refErr != nil {
 			return refErr
 		}
 		state = memberScheduling{Version: formatVersion, MemberIdentity: member.id, Enabled: agent.TurnNumber == 0 && ref.Directory == "", Used: agent.TurnNumber}
 		if member.automatic && agent.TurnNumber == 0 && ref.Directory == "" {
 			state.Version = schedulingVersion
-			state.SessionGeneration, err = (dshBackend{store: s.store}).sessionGeneration(opts)
+			state.SessionGeneration, err = storedSessionBackend(s.store).sessionGeneration(opts)
 			if err != nil {
 				return err
 			}
@@ -179,11 +179,11 @@ func (m *MemberAgent) initializeScheduling() error {
 	if errors.Is(err, os.ErrNotExist) {
 		// Only untouched members have a trustworthy first-generation baseline.
 		state = memberScheduling{Version: formatVersion, MemberIdentity: m.Options.MemberIdentity, Used: max(m.turnsUsed, m.state.TurnNumber), Limit: m.turnLimit}
-		var ref dshReference
+		var ref sessionReference
 		var exists bool
 		if m.Options.StatePath != "" {
 			var refErr error
-			ref, exists, refErr = (dshBackend{store: m.Store}).reference(m.Options)
+			ref, exists, refErr = m.Backend.(rotatingBackend).reference(m.Options)
 			if refErr != nil {
 				return refErr
 			}

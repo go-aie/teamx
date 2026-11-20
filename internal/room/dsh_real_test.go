@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -271,8 +272,18 @@ func (d *realRoomDriver) startRealRoom(number int, roomID string) error {
 	if threshold == 0 {
 		threshold = 8
 	}
+	listen := "127.0.0.1:0"
+	if d.endpoint != "" {
+		// MCP endpoint identity participates in normal Session recovery. Reuse
+		// the first listener after stopReal has joined the previous process.
+		endpoint, err := url.Parse(d.endpoint)
+		if err != nil {
+			return err
+		}
+		listen = endpoint.Host
+	}
 	cmd := exec.Command(d.binary, "serve", "--config", configPath, "--room", roomID, "--state-dir", d.dir,
-		"--listen", "127.0.0.1:0", "--merge-window", "0s", "--session-max-turns", strconv.FormatUint(threshold, 10), "--dsh-config", d.profilePath)
+		"--listen", listen, "--merge-window", "0s", "--session-max-turns", strconv.FormatUint(threshold, 10), "--dsh-config", d.profilePath)
 	cmd.Args = append(cmd.Args, d.serveArgs...)
 	cmd.Env = append(d.operatorEnv(""), d.report["apiKeyEnv"].(string)+"="+d.secret)
 	cmd.Stderr = log

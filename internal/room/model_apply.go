@@ -8,8 +8,6 @@ import (
 	"reflect"
 	"sync"
 	"time"
-
-	"github.com/go-aie/teamx/internal/agent/dsh"
 )
 
 func (c *modelController) apply(op *modelChangeOperation) {
@@ -112,15 +110,10 @@ func (c *modelController) applyMember(op *modelChangeOperation, index int) error
 		case <-c.ctx.Done():
 			return c.ctx.Err()
 		}
-		actual, err := c.inspect(c.ctx, dsh.Options{BinaryPath: member.Target.Profile.BinaryPath, BinaryArgs: member.Target.Profile.BinaryArgs, Artifact: member.Target.Profile.Artifact})
+		err := c.checkTargetRuntime(c.ctx, member.Target)
 		<-c.runtimeSlots
 		if err != nil {
 			return err
-		}
-		expected := member.Target.Runtime
-		expected.Agent = dsh.Artifact{}
-		if !reflect.DeepEqual(actual, expected) {
-			return errModelRuntimeIdentity
 		}
 	}
 	m.mu.Lock()
@@ -166,7 +159,7 @@ func (c *modelController) applyMember(op *modelChangeOperation, index int) error
 	if err != nil {
 		return err
 	}
-	from, err := (dshBackend{store: svc.store}).sessionGeneration(opts)
+	from, err := storedSessionBackend(svc.store).sessionGeneration(opts)
 	if err != nil {
 		return err
 	}
@@ -247,7 +240,7 @@ func (c *modelController) applyClosedMember(member modelChangeMember) error {
 		if agent.TurnNumber != 0 || agent.Turn != nil {
 			return ErrConflict
 		}
-		generation, generationErr := (dshBackend{store: store}).sessionGeneration(SessionOptions{MemberIdentity: member.MemberIdentity, StatePath: filepath.Join(store.dir, "agents", member.MembershipID, "session.json")})
+		generation, generationErr := storedSessionBackend(store).sessionGeneration(SessionOptions{MemberIdentity: member.MemberIdentity, StatePath: filepath.Join(store.dir, "agents", member.MembershipID, "session.json")})
 		if generationErr != nil {
 			return generationErr
 		}
@@ -268,13 +261,13 @@ func (c *modelController) applyClosedMember(member modelChangeMember) error {
 	if rotation != nil && rotation.Phase != "completed" {
 		return ErrBusy
 	}
-	b := dshBackend{store: store}
+	b := storedSessionBackend(store)
 	from, err := b.sessionGeneration(opts)
 	if err != nil {
 		return err
 	}
 	target := member.Target.clone()
-	target.Generation = "session.json.dsh-" + member.RotationID
+	target.Generation = sessionGenerationForOperation(member.RotationID)
 	rotation = &rotationRecord{Version: rotationVersion, MemberIdentity: member.MemberIdentity, OperationID: member.RotationID, Reason: "model_change", From: from, To: target.Generation, BaseUsed: scheduling.Used, Phase: "prepared", ModelTarget: &target}
 	if err := store.saveRotation(*rotation); err != nil {
 		return err

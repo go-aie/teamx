@@ -56,6 +56,16 @@ func (d *realRoomDriver) rotationAcceptance() error {
 	// must preserve it byte-for-byte, independently of the model's private state.
 	policyReq := apiRequest{ServiceInfo: d.info, Caller: humanCaller, AgentID: m.AgentID, MembershipID: m.MembershipID, Policy: &PolicyChange{ID: "s1-retained-rule", Status: "active", Text: "Keep acceptance replies concise.", SourceText: "Keep acceptance replies concise."}}
 	client := cliClient{endpoint: d.endpoint, http: &http.Client{Timeout: 10 * time.Second}}
+	identity, err := client.identity(d.ctx, d.info.RoomID, func(name string) string {
+		if name == "TEAMX_ADMIN_TOKEN_FILE" {
+			return filepath.Join(d.output, "auth", "admin-token")
+		}
+		return ""
+	})
+	if err != nil {
+		return err
+	}
+	policyReq.ServiceInfo, policyReq.Caller = identity.ServiceInfo, identity.Caller
 	var policyView PolicyView
 	if err := client.request(d.ctx, "/v1/policy/update", &policyReq, &policyView); err != nil {
 		return err
@@ -98,7 +108,7 @@ func (d *realRoomDriver) rotationAcceptance() error {
 	if err := d.stoppedRoots(root); err != nil {
 		return err
 	}
-	var ref dshReference
+	var ref sessionReference
 	if err := jsonFile(filepath.Join(d.memberDir, "session.json"), &ref); err != nil {
 		return err
 	}

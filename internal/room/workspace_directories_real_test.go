@@ -158,7 +158,7 @@ func TestWorkspaceDirectoriesRealDSH(t *testing.T) {
 		result := map[string]backendProof{}
 		for _, member := range initial.Members {
 			agentDir := filepath.Join(roomDir, "agents", member.MembershipID)
-			var ref dshReference
+			var ref sessionReference
 			must(jsonFile(filepath.Join(agentDir, "session.json"), &ref))
 			var proof backendProof
 			must(jsonFile(filepath.Join(agentDir, ref.Directory, "backend.json"), &proof))

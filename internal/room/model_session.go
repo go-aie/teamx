@@ -70,7 +70,7 @@ func (s modelSessionSnapshot) validate(id MemberIdentity) error {
 	return dsh.CheckConfig(dsh.Options{BinaryPath: s.Profile.BinaryPath, BinaryArgs: s.Profile.BinaryArgs, Artifact: s.Profile.Artifact, Model: s.Profile.Model})
 }
 
-func (b dshBackend) saveModelSnapshot(opts SessionOptions, ref dshReference) error {
+func (b dshBackend) saveModelSnapshot(opts SessionOptions, ref sessionReference) error {
 	if b.model == nil {
 		return nil
 	}
@@ -97,7 +97,7 @@ func (b dshBackend) saveModelSnapshot(opts SessionOptions, ref dshReference) err
 	return b.store.save(path, target, maxPrivateFileBytes)
 }
 
-func (b dshBackend) restoreModelSnapshot(opts SessionOptions, ref dshReference) (dshBackend, error) {
+func (b dshBackend) restoreModelSnapshot(opts SessionOptions, ref sessionReference) (dshBackend, error) {
 	b.store.mu.Lock()
 	defer b.store.mu.Unlock()
 	path, err := b.store.dshPath(opts.MemberIdentity, ref.Directory+".model.json", false)
@@ -164,7 +164,7 @@ func (b dshBackend) switchModel(opts SessionOptions, from, to string, target mod
 	if err != nil {
 		return nil, err
 	}
-	if err := next.saveModelSnapshot(opts, dshReference{Directory: to}); err != nil {
+	if err := next.saveModelSnapshot(opts, sessionReference{Directory: to}); err != nil {
 		return nil, err
 	}
 	// This operation already owns a fixed target. Catalog resolution is for
@@ -204,4 +204,19 @@ func newModelSessionSnapshot(catalog modelCatalog, ref memberModelReference, gen
 		return modelSessionSnapshot{}, err
 	}
 	return snapshot.clone(), nil
+}
+
+// Model snapshots and validation receipts still describe the DSH provider.
+// Keep their runtime identity interpretation out of model application control.
+func (c *modelController) checkTargetRuntime(ctx context.Context, target modelSessionSnapshot) error {
+	actual, err := c.inspect(ctx, dsh.Options{BinaryPath: target.Profile.BinaryPath, BinaryArgs: target.Profile.BinaryArgs, Artifact: target.Profile.Artifact})
+	if err != nil {
+		return err
+	}
+	expected := target.Runtime
+	expected.Agent = dsh.Artifact{}
+	if !reflect.DeepEqual(actual, expected) {
+		return errModelRuntimeIdentity
+	}
+	return nil
 }

@@ -270,7 +270,7 @@ func settingsSelectionRealRun(t *testing.T, root, provider string, run int) {
 		return v
 	}
 	backend := svc.memberBackend(member.Runner)
-	options, err := backend.componentOptions(SessionOptions{MemberIdentity: id, StatePath: filepath.Join(svc.store.dir, "agents", id.MembershipID, "session.json"), CLIPath: svc.cliPath, CLIEnv: svc.toolEnv(id)}, dshReference{})
+	options, err := backend.componentOptions(SessionOptions{MemberIdentity: id, StatePath: filepath.Join(svc.store.dir, "agents", id.MembershipID, "session.json"), CLIPath: svc.cliPath, CLIEnv: svc.toolEnv(id)}, sessionReference{})
 	if err != nil {
 		t.Fatal(err)
 	}

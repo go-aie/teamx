@@ -210,7 +210,7 @@ func (m *roomManager) initializeDefaultAssistantScheduling(e roomIndexEntry) err
 	member := state.Members[0]
 	id := MemberIdentity{RoomIdentity: e.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
 	opts := SessionOptions{MemberIdentity: id, StatePath: filepath.Join(store.dir, "agents", id.MembershipID, "session.json")}
-	generation, err := (dshBackend{store: store}).sessionGeneration(opts)
+	generation, err := storedSessionBackend(store).sessionGeneration(opts)
 	if err != nil {
 		return err
 	}

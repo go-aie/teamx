@@ -65,7 +65,7 @@ func TestHistoryGuidanceAndBackendModes(t *testing.T) {
 				b.inboxMCP = s.service
 			}
 			opts := adapterOptions(h.store, s.storage.id)
-			options, err := b.componentOptions(opts, dshReference{})
+			options, err := b.componentOptions(opts, sessionReference{})
 			if err != nil || b.mcpService() != s.service || len(options.MCPServers) != 1 {
 				t.Fatal("missing production History MCP in Inbox mode", err)
 			}

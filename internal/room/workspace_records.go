@@ -26,7 +26,7 @@ type workspacePreparationProcess struct {
 }
 
 type workspaceOperation struct {
-	RetainedSessions map[string]dshReference      `json:"retained_sessions,omitempty"`
+	RetainedSessions map[string]sessionReference  `json:"retained_sessions,omitempty"`
 	Unchanged        bool                         `json:"unchanged,omitempty"` // response only; never persisted
 	Timings          map[string]int64             `json:"timings_ms,omitempty"`
 	Preparation      *workspacePreparationProcess `json:"preparation,omitempty"`

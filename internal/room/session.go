@@ -35,8 +35,8 @@ func (s *ownedSession) close() error {
 		return nil
 	}
 	s.once.Do(func() {
-		if session, ok := s.Session.(*dshSession); ok {
-			// The actor remains owned until DSH confirms cleanup. Service Wait
+		if session, ok := s.Session.(ownedSessionCloser); ok {
+			// The actor remains owned until the backend confirms cleanup. Service Wait
 			// has its own deadline and retains the Store if this is unfinished.
 			s.err = session.closeOwned()
 			return

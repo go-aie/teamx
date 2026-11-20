@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/go-aie/teamx/internal/agent/dsh"
 )
 
 // Called with mu held. The persisted phase records authorization to remove
@@ -227,7 +225,7 @@ func (m *roomManager) checkDeletionSettled(target RoomIdentity) error {
 	for _, member := range members {
 		identity := MemberIdentity{RoomIdentity: target, AgentID: member.AgentID, MembershipID: member.MembershipID}
 		path := filepath.Join(dir, "agents", member.MembershipID, "session.json")
-		ref, exists, err := readDSHReference(path, identity)
+		ref, exists, err := readSessionReference(path, identity)
 		if err != nil {
 			return err
 		}
@@ -236,7 +234,7 @@ func (m *roomManager) checkDeletionSettled(target RoomIdentity) error {
 		}
 		if exists {
 			backend := ref.Directory
-			if err := dsh.CheckReset(filepath.Join(filepath.Dir(path), backend)); err != nil {
+			if err := checkSessionGenerationSettled(filepath.Join(filepath.Dir(path), backend)); err != nil {
 				return fmt.Errorf("private Session %s has no verified settlement: %w", member.AgentID, err)
 			}
 		} else {
@@ -280,13 +278,13 @@ func (m *roomManager) checkDeletionSettled(target RoomIdentity) error {
 			if entry.Type().IsRegular() && strings.HasSuffix(entry.Name(), ".model.json") && validSessionGeneration(strings.TrimSuffix(entry.Name(), ".model.json")) {
 				continue
 			}
-			if entry.Name() != "session.json.dsh" && !strings.HasPrefix(entry.Name(), "session.json.dsh-") {
+			if !isSessionGenerationEntry(entry.Name()) {
 				continue
 			}
 			if !entry.IsDir() {
 				return fmt.Errorf("%w: invalid backend directory %s", ErrInvalid, entry.Name())
 			}
-			if err := dsh.CheckReset(filepath.Join(path, entry.Name())); err != nil {
+			if err := checkSessionGenerationSettled(filepath.Join(path, entry.Name())); err != nil {
 				return fmt.Errorf("private Session %s/%s has no verified settlement: %w", agent.Name(), entry.Name(), err)
 			}
 		}

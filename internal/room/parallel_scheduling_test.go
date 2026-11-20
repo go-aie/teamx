@@ -349,7 +349,7 @@ func TestRoomSlotParallelRetainsOwnershipDuringUncertainCleanup(t *testing.T) {
 							if mode == "panic" {
 								panic("abandoned work")
 							}
-							return errDSHDisabled
+							return errBackendDisabled
 						case <-ctx.Done():
 							return ctx.Err()
 						}

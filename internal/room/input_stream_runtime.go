@@ -40,7 +40,7 @@ func (s *mcpInboxSession) inputFor(ctx context.Context, turn uint64, generation 
 		if err != nil {
 			return err
 		}
-		ref, exists, err := readDSHReference(path, s.id)
+		ref, exists, err := readSessionReference(path, s.id)
 		if err != nil {
 			return err
 		}
@@ -316,22 +316,7 @@ func (m *MemberAgent) continueInput() error {
 	if m.inputStatus == nil || m.inputStatus.Recovery == nil || m.inputStatus.Blocked != "" || m.state.Turn == nil {
 		return ErrConflict
 	}
-	p := m.Store.platformInputHandle(m.Options.MemberIdentity)
-	if p == nil {
-		return ErrIdentity
-	}
-	if err := p.run(context.Background(), "continue_recovery", func(ctx context.Context) error {
-		p.store.mu.Lock()
-		defer p.store.mu.Unlock()
-		state, ok, err := p.repository.CurrentState()
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return ErrConflict
-		}
-		return p.repository.ContinueStall(state.Execution, m.now())
-	}); err != nil {
+	if err := m.Store.continueInputRecovery(m.Options.MemberIdentity, m.now); err != nil {
 		return err
 	}
 	m.inputStatus.Ready = true
@@ -363,4 +348,25 @@ func (p *platformInputStorage) refreshHistoryProjection() error {
 	next.history = history
 	p.projection.Store(&next)
 	return nil
+}
+
+// The input owner continues the same persisted stall; the member never reads
+// or mutates repository state directly. This does not confirm a formal page.
+func (s *Store) continueInputRecovery(id MemberIdentity, now func() time.Time) error {
+	p := s.platformInputHandle(id)
+	if p == nil {
+		return ErrIdentity
+	}
+	return p.run(context.Background(), "continue_recovery", func(ctx context.Context) error {
+		p.store.mu.Lock()
+		defer p.store.mu.Unlock()
+		state, ok, err := p.repository.CurrentState()
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return ErrConflict
+		}
+		return p.repository.ContinueStall(state.Execution, now())
+	})
 }

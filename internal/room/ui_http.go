@@ -3,22 +3,19 @@ package room
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/url"
 	"os"
 	"time"
-
-	"github.com/go-aie/teamx/internal/agent/dsh"
 )
 
 type memberActivity struct {
 	ServiceInfo
-	Member        serviceMember  `json:"member"`
-	LastOutput    *dshDiagnostic `json:"last_output,omitempty"`
-	CurrentOutput *dshDiagnostic `json:"current_output,omitempty"`
-	UpdatedAt     *time.Time     `json:"updated_at,omitempty"`
-	OutputError   string         `json:"output_error,omitempty"`
+	Member        serviceMember      `json:"member"`
+	LastOutput    *backendDiagnostic `json:"last_output,omitempty"`
+	CurrentOutput *backendDiagnostic `json:"current_output,omitempty"`
+	UpdatedAt     *time.Time         `json:"updated_at,omitempty"`
+	OutputError   string             `json:"output_error,omitempty"`
 }
 
 // Called only after the HTTP operator check. The live membership and Store
@@ -41,41 +38,13 @@ func (s *service) memberActivity(ctx context.Context, req apiRequest) (memberAct
 		return memberActivity{}, ErrIdentity
 	}
 	id := MemberIdentity{RoomIdentity: s.info.RoomIdentity, AgentID: req.AgentID, MembershipID: req.MembershipID}
-	s.store.mu.Lock()
-	defer s.store.mu.Unlock()
-	path, err := s.store.dshPath(id, "dsh-turn.json", false)
+	active := result.Member.Execution != nil && result.Member.Execution.Active
+	output, err := storedSessionBackend(s.store).activity(id, active)
 	if err != nil {
 		return memberActivity{}, err
 	}
-	if live, ok := s.store.activeDSH.Load(id); ok {
-		result.CurrentOutput = &dshDiagnostic{}
-		if reader, ok := live.(*dshSession).component.(interface{ Activity() (dsh.TurnResult, bool) }); ok {
-			if output, active := reader.Activity(); active {
-				result.CurrentOutput = &dshDiagnostic{Result: output}
-			}
-		}
-		return result, nil
-	}
-	if result.Member.Execution != nil && result.Member.Execution.Active {
-		// Opening a backend can take time before a component is available.
-		// Do not mislabel the prior completed turn as the current activity.
-		result.CurrentOutput = &dshDiagnostic{}
-		return result, nil
-	}
-	var output dshDiagnostic
-	if err := readSnapshot(path, &output, maxPrivateFileBytes); err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			result.OutputError = "私有输出暂不可读：" + err.Error()
-		}
-		return result, nil
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		result.OutputError = "私有输出时间不可读：" + err.Error()
-		return result, nil
-	}
-	updated := info.ModTime().UTC()
-	result.LastOutput, result.UpdatedAt = &output, &updated
+	result.LastOutput, result.CurrentOutput = output.last, output.current
+	result.UpdatedAt, result.OutputError = output.updated, output.error
 	return result, nil
 }
 

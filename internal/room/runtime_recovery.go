@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-
-	"github.com/go-aie/teamx/internal/agent/dsh"
 )
 
 // A receipt records settlement, never permission to replay an execution. It is
@@ -158,13 +156,13 @@ func (m *roomManager) runtimeRecoveryNeeded(owner RoomIdentity) (bool, error) {
 		}
 		needed = needed || agent.Turn != nil && agent.Turn.Status != "completed"
 		opts := SessionOptions{MemberIdentity: id, StatePath: filepath.Join(store.dir, "agents", id.MembershipID, "session.json")}
-		ref, exists, err := (dshBackend{store: store}).reference(opts)
+		ref, exists, err := storedSessionBackend(store).reference(opts)
 		if err != nil {
 			return false, err
 		}
 		if exists {
 			dir := ref.Directory
-			needed = needed || dsh.CheckResume(filepath.Join(filepath.Dir(opts.StatePath), dir)) != nil
+			needed = needed || storedSessionBackend(store).checkResume(opts, dir) != nil
 		} else if agent.Turn != nil && !ref.Pending {
 			needed = true // retain a missing-backend diagnostic even while paused
 		}

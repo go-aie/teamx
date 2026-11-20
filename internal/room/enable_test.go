@@ -141,7 +141,7 @@ func TestEnableUnsettledSessionDoesNotGrantTurns(t *testing.T) {
 	h := newRoomHarness(t, historyRoom(1, "pending"), nil)
 	id := h.memberID("A", "generation-A")
 	opts := adapterOptions(h.store, id)
-	ref := dshReference{Version: formatVersion, MemberIdentity: id, Directory: "session.json.dsh"}
+	ref := sessionReference{Version: formatVersion, MemberIdentity: id, Directory: "session.json.dsh"}
 	h.store.mu.Lock()
 	err := h.store.save(opts.StatePath, ref, maxPrivateFileBytes)
 	h.store.mu.Unlock()

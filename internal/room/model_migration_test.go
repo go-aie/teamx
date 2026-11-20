@@ -46,7 +46,7 @@ func TestModelMigrationInterruptedFixedTargetsAndLegacySnapshot(t *testing.T) {
 	root := filepath.Join(*c.Server.DataDir, "rooms", room.RoomID)
 	path := filepath.Join(root, "agents", id.MembershipID, "session.json")
 	storage := &snapshotWriter{ops: defaultSnapshotOps()}
-	original := dshReference{Version: formatVersion, MemberIdentity: id, Directory: "session.json.dsh"}
+	original := sessionReference{Version: formatVersion, MemberIdentity: id, Directory: "session.json.dsh"}
 	if err := storage.save(path, original, maxPrivateFileBytes); err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +252,7 @@ func TestModelMigrationPendingGenerationRequiresVerifiedTarget(t *testing.T) {
 	c, room, id := legacyMigrationHome(t)
 	root := filepath.Join(*c.Server.DataDir, "rooms", room.RoomID)
 	path := filepath.Join(root, "agents", id.MembershipID, "session.json")
-	ref := dshReference{Version: formatVersion, MemberIdentity: id, Directory: "session.json.dsh-" + strings.Repeat("a", 32), Pending: true}
+	ref := sessionReference{Version: formatVersion, MemberIdentity: id, Directory: "session.json.dsh-" + strings.Repeat("a", 32), Pending: true}
 	if err := (&snapshotWriter{ops: defaultSnapshotOps()}).save(path, ref, maxPrivateFileBytes); err != nil {
 		t.Fatal(err)
 	}
@@ -298,7 +298,7 @@ func TestModelMigrationPendingGenerationRequiresVerifiedTarget(t *testing.T) {
 	if len(op.Members) != 1 || !op.Members[0].Rotate {
 		t.Fatal("pending generation not installed from validation")
 	}
-	var newRef dshReference
+	var newRef sessionReference
 	if err := readSnapshot(path, &newRef, maxPrivateFileBytes); err != nil {
 		t.Fatal(err)
 	}

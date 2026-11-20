@@ -215,7 +215,7 @@ func TestRotationRequiresDurableSettlementAfterRestart(t *testing.T) {
 				t.Fatal(err)
 			}
 			opts := adapterOptions(store, id)
-			ref := dshReference{Version: formatVersion, MemberIdentity: id, Directory: "session.json.dsh"}
+			ref := sessionReference{Version: formatVersion, MemberIdentity: id, Directory: "session.json.dsh"}
 			if mode == "pending" || mode == "consumed" {
 				ref.Directory += "-0123456789abcdef0123456789abcdef"
 				ref.Pending = mode == "pending"

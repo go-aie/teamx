@@ -1,0 +1,685 @@
+{
+  "phase": "R5b.1",
+  "status": "implemented_with_recorded_full_suite_limits",
+  "recorded_at": "2026-11-20T05:06:39.662126+00:00",
+  "implementation_start": {
+    "head": "51e2a433c40a24dd8c1fbb384ac80171a83701d9",
+    "status": " M README.md\n M docs/implementation/README.zh.md\n M docs/installation.zh.md\n M internal/room/cli.go\n M internal/room/cli_help.go\n M internal/room/service_backup.go\n M internal/room/service_cli.go\n M packaging/install.sh\n M scripts/package-install.test.mjs\n M scripts/package-offline.mjs\n M scripts/package-publish.mjs\n"
+  },
+  "current_head": "51e2a433c40a24dd8c1fbb384ac80171a83701d9",
+  "go_version": "go version go1.27.1 darwin/arm64",
+  "checks": [
+    {
+      "name": "before-targeted",
+      "command": [
+        "go",
+        "test",
+        "-tags=integration",
+        "-timeout=8m",
+        "./internal/room",
+        "-run",
+        "^Test(Automatic(Recovery|Rotation)|FailedOpenRecovery|Rotation|ModelRotation|ModelSnapshot|ManagedModelReference|MemberAgent|RoomSlot|RoomTurns|ServiceClose|ServiceRemoval|ServiceShutdown|RuntimeShutdown|RuntimeRecovery|CancelCurrent|MemberActivity|UnifiedDSH|HistoryRecovery|Enable)"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 66.863,
+      "log_sha256": "295d30d21f36e179b1868ab0712ee7bf668db14872f2460989dae2acdb278835",
+      "log": ".local/architecture-backend/before-targeted.log"
+    },
+    {
+      "name": "after-targeted",
+      "command": [
+        "go",
+        "test",
+        "-tags=integration",
+        "-timeout=8m",
+        "./internal/room",
+        "-run",
+        "^Test(Automatic(Recovery|Rotation)|FailedOpenRecovery|Rotation|ModelRotation|ModelSnapshot|ManagedModelReference|MemberAgent|RoomSlot|RoomTurns|ServiceClose|ServiceRemoval|ServiceShutdown|RuntimeShutdown|RuntimeRecovery|CancelCurrent|MemberActivity|UnifiedDSH|HistoryRecovery|Enable)"
+      ],
+      "exit_code": 0,
+      "test_package_seconds": 67.277,
+      "log": ".local/architecture-backend/targeted.log",
+      "log_sha256": "b5301007d434a0b0ee6054ac907960d5b80780ce38709d53b05f7d366f62d28c"
+    },
+    {
+      "name": "lifecycle-race",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-tags=integration",
+        "-timeout=8m",
+        "./internal/room",
+        "-run",
+        "^Test(OwnedSession|BackendClose|AutomaticRecovery|FailedOpenRecovery|ModelRotation)"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 47.955,
+      "log_sha256": "784a8dc9aa93f605a8888a4d679568a845ef3183e5c77c35f650d6706bf939c2",
+      "log": ".local/architecture-backend/lifecycle-race.log"
+    },
+    {
+      "name": "final-lifecycle",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-tags=integration",
+        "-timeout=8m",
+        "./internal/room",
+        "-run",
+        "^Test(OwnedSession|BackendClose|Automatic(Recovery|Rotation)|FailedOpenRecovery|Rotation|ModelRotation|ModelSnapshot|ManagedModelReference|MemberAgent|RoomSlot|RoomTurns|ServiceClose|ServiceRemoval|ServiceShutdown|RuntimeShutdown|RuntimeRecovery|CancelCurrent|MemberActivity|UnifiedDSH|HistoryRecovery|Enable|DefaultAssistant)"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 196.954,
+      "log_sha256": "e4cb1d0eb90b2a60039ee4dc4dc6cdca0703fba5891acad95c5c176bbc7c71b9",
+      "log": ".local/architecture-backend/final-lifecycle.log"
+    },
+    {
+      "name": "final-contracts",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-tags=integration",
+        "-timeout=8m",
+        "./internal/room",
+        "./internal/architecture",
+        "-run",
+        "^Test(OwnedSession|BackendClose|AutomaticRecovery|FailedOpenRecovery|ModelRotation|MemberLifecycleBackendBoundary|MemberAgentCheckpoint)"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 59.444,
+      "log_sha256": "4293b413b44d214fcb5742ab4e62a1f9e5ea69cbf4bc5b5f6b163b53e1c6d93d",
+      "log": ".local/architecture-backend/final-contracts.log"
+    },
+    {
+      "name": "input-contracts",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-tags=integration",
+        "-timeout=8m",
+        "./internal/room",
+        "-run",
+        "^Test(UnifiedRecoveryStatusAndContinuationKeepLifecycleGates|UnifiedSchedulerLocalExclusionAndIndependentSourceReadiness|InputMCPWaitsForFrameworkReceipt|InputReceiptRequiresFinalBodyProof|PlatformReadOutputFailureBusyTerminalAndCrossEntry|MemberAgentCheckpointFailureStopsAutomaticWork|OwnedSessionWaitsForLifecycleSettlement)$"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 25.531,
+      "log_sha256": "a82fb1e6029c0e54e14742b7a22b3fbd8ee8c3d1486f735743b6412cc748c553",
+      "log": ".local/architecture-backend/input-contracts.log"
+    },
+    {
+      "name": "component-race",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-timeout=8m",
+        "./internal/agent/dsh",
+        "./internal/architecture",
+        "./internal/app/agents"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 48.424,
+      "log_sha256": "497b4336dcc8bbba2e63a6fb90c1a5f0a3738fab0fa3ad034a90ac6e460270eb",
+      "log": ".local/architecture-backend/component-race.log"
+    },
+    {
+      "name": "boundaries",
+      "command": [
+        "go",
+        "test",
+        "./internal/architecture"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 1.664,
+      "log_sha256": "34a653a52b9b35c59b116da9fda25aac3ba6b663530bd125ba21a5c8c67281f0",
+      "log": ".local/architecture-backend/boundaries.log"
+    },
+    {
+      "name": "build-final",
+      "command": [
+        "go",
+        "build",
+        "-o",
+        ".local/architecture-backend/teamx",
+        "./cmd/teamx"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 4.46,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "log": ".local/architecture-backend/build-final.log"
+    },
+    {
+      "name": "vet-final",
+      "command": [
+        "go",
+        "vet",
+        "./..."
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 1.909,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "log": ".local/architecture-backend/vet-final.log"
+    },
+    {
+      "name": "final-e2e-compile",
+      "command": [
+        "go",
+        "test",
+        "-tags=e2e",
+        "-timeout=3m",
+        "./...",
+        "-run",
+        "^$"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 4.884,
+      "log_sha256": "01735635d6e8eeb87f19bd2fe7c70ee6e24d778f618fe5869953ee08fb8f5b3c",
+      "log": ".local/architecture-backend/final-e2e-compile.log"
+    },
+    {
+      "name": "core",
+      "command": [
+        "go",
+        "test",
+        "-timeout=3m",
+        "-failfast",
+        "./..."
+      ],
+      "exit_code": 1,
+      "elapsed_seconds": 225.607,
+      "log_sha256": "aa0d18b830354f5a05a7965cd4782e4c79f4e4e6a1b0a74bb85bb1a9133fb817",
+      "log": ".local/architecture-backend/core.log"
+    },
+    {
+      "name": "integration",
+      "command": [
+        "go",
+        "test",
+        "-tags=integration",
+        "-timeout=8m",
+        "-failfast",
+        "./..."
+      ],
+      "exit_code": 1,
+      "elapsed_seconds": 467.006,
+      "log_sha256": "ffa38a92a89fde9c2e2511308eeb0c31cb37713c3558130d52057137ec9ce4ca",
+      "log": ".local/architecture-backend/integration.log"
+    },
+    {
+      "name": "integration-race",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-tags=integration",
+        "-timeout=8m",
+        "./internal/room",
+        "./internal/agent/dsh",
+        "./internal/architecture",
+        "./internal/app/agents",
+        "-run",
+        "^Test(OwnedSession|BackendClose|Automatic(Recovery|Rotation)|FailedOpenRecovery|Rotation|Model|ManagedModel|MemberAgent|RoomSlot|RoomTurns|ServiceClose|ServiceRemoval|ServiceShutdown|RuntimeShutdown|RuntimeRecovery|CancelCurrent|MemberActivity|DSH|UnifiedDSH|History|Enable|WorkspaceDirectory|WorkspaceApply|WorkspaceRetry|PlatformRead|InputMCP|InputReceipt|UnifiedMCP|UnifiedCLI|InputUpgrade|Production|Discard)"
+      ],
+      "exit_code": 1,
+      "elapsed_seconds": 430.255,
+      "log_sha256": "036a9d5565760854f7bfbcd5b505b866bc06c1af461ca3e57338982d6e3a46ac",
+      "log": ".local/architecture-backend/integration-race.log"
+    },
+    {
+      "name": "before-regressions",
+      "command": [
+        "env",
+        "GOFLAGS=-overlay=/Users/russellluo/Projects/ai/teamx/.local/architecture-backend/before-overlay.json",
+        "go",
+        "test",
+        "-tags=integration",
+        "-timeout=8m",
+        "./internal/room",
+        "-run",
+        "^Test(InputUpgradeRotatesSettledDSHContract|SecondNotificationProviderReloadAndDedup)$"
+      ],
+      "exit_code": 1,
+      "elapsed_seconds": 10.418,
+      "log_sha256": "6dcc4d37ad8ceef90a5f442af91c6dbe2d2d0813e9acfb688ea60f3a14efd963",
+      "log": ".local/architecture-backend/before-regressions.log"
+    },
+    {
+      "name": "after-regressions",
+      "command": [
+        "go",
+        "test",
+        "-tags=integration",
+        "-timeout=8m",
+        "./internal/room",
+        "-run",
+        "^Test(InputUpgradeRotatesSettledDSHContract|SecondNotificationProviderReloadAndDedup)$"
+      ],
+      "exit_code": 1,
+      "elapsed_seconds": 10.426,
+      "log_sha256": "d3c9b1c1cd7f7ad3edf943e952c6d0ae400d0e2a2dfbd03c1666448a9aaa7e5b",
+      "log": ".local/architecture-backend/after-regressions.log"
+    },
+    {
+      "name": "before-timeout-test",
+      "command": [
+        "env",
+        "GOFLAGS=-overlay=/Users/russellluo/Projects/ai/teamx/.local/architecture-backend/before-overlay.json",
+        "go",
+        "test",
+        "-timeout=3m",
+        "./internal/room",
+        "-run",
+        "^TestHistoryMCPServiceImageLimitAppliesAcrossQueries$"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 15.452,
+      "log_sha256": "30e22e69febd8d5ada46e981f7e0aed206dc71ca3f1c7483e591bba7e69ff884",
+      "log": ".local/architecture-backend/before-timeout-test.log"
+    },
+    {
+      "name": "after-timeout-test",
+      "command": [
+        "go",
+        "test",
+        "-timeout=3m",
+        "./internal/room",
+        "-run",
+        "^TestHistoryMCPServiceImageLimitAppliesAcrossQueries$"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 14.456,
+      "log_sha256": "566d10fb8d8d87af638bee2f585656cf4d151504c33ebc4341961dcbdf8d2ca4",
+      "log": ".local/architecture-backend/after-timeout-test.log"
+    },
+    {
+      "name": "observer",
+      "command": [
+        "go",
+        "test",
+        "./internal/room",
+        "-run",
+        "^TestRealToolProcessRequiresObservedDescendant$"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 11.647,
+      "log_sha256": "ce477349f1b4e8ce9a442be2f811b86c19a36558e63674a9f00ba3663ea05e18",
+      "log": ".local/architecture-backend/observer.log"
+    },
+    {
+      "name": "adapter-and-models",
+      "command": [
+        "go",
+        "test",
+        "-tags=integration",
+        "-timeout=8m",
+        "./internal/room",
+        "-run",
+        "^Test(DSH|UnifiedDSH|HistoryRecovery|ExecutionNotice|MemberActivity|Model)"
+      ],
+      "exit_code": 0,
+      "log": ".local/architecture-backend/adapter.log",
+      "log_sha256": "d79f966b62b3d7c382bb3cc777e608d8e4db69b9e74616d199c2386e655bd879"
+    },
+    {
+      "name": "e2e-final",
+      "command": [
+        "go",
+        "test",
+        "-tags=e2e",
+        "-timeout=3m",
+        "./...",
+        "-run",
+        "^$"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 11.925,
+      "log_sha256": "9a9da6a90342b37684f7a4fc79f3e091a0d526fdf6278354cb1bc069f7591602",
+      "log": ".local/architecture-backend/e2e-final.log"
+    }
+  ],
+  "real_acceptance": [
+    {
+      "name": "automatic",
+      "command": [
+        "go",
+        "test",
+        "-tags=e2e",
+        "-timeout=20m",
+        "./internal/room",
+        "-run",
+        "^TestAutomaticRotationReal$",
+        "-count=1",
+        "-v"
+      ],
+      "exit_code": 1,
+      "elapsed_seconds": 58.967,
+      "output": "/Users/russellluo/Projects/ai/teamx/.local/architecture-backend/real-automatic-01",
+      "model": "deepseek-v4.1-flash-1017",
+      "log_sha256": "e36b4888cd695c77ce644ad2925c7ca6c5119d4df8d43e84737b1f14a02e2895",
+      "report": "/Users/russellluo/Projects/ai/teamx/.local/architecture-backend/real-automatic-01/report.json",
+      "report_sha256": "3bd3389a5adcfe7d9914db8250bcaab98f65a2e3fc463c7c8c1f14fd3dab5da1",
+      "status": "failed",
+      "phase": "normal-restart-turn-6",
+      "facts": {
+        "external_business_writes": 0
+      }
+    },
+    {
+      "name": "before-automatic-recheck",
+      "command": [
+        "go",
+        "test",
+        "-tags=e2e",
+        "-timeout=20m",
+        "./internal/room",
+        "-run",
+        "^TestAutomaticRotationReal$",
+        "-count=1",
+        "-v"
+      ],
+      "exit_code": 1,
+      "elapsed_seconds": 93.686,
+      "output": "/Users/russellluo/Projects/ai/teamx/.local/architecture-backend/real-before-automatic-recheck-01",
+      "model": "deepseek-v4.1-flash-1017",
+      "log_sha256": "4a752ff78e4c4eed30e1b4f0483d33b16755a9e2e58c16404f7a334b24647a0d",
+      "report": "/Users/russellluo/Projects/ai/teamx/.local/architecture-backend/real-before-automatic-recheck-01/report.json",
+      "report_sha256": "43fe55e227a769917b4d3e1cc889e07e15b59f98cde4c4346f75752da24a59d2",
+      "status": "failed",
+      "phase": "normal-restart-turn-6",
+      "facts": {
+        "external_business_writes": 0
+      }
+    },
+    {
+      "name": "fixed-automatic",
+      "command": [
+        "go",
+        "test",
+        "-tags=e2e",
+        "-timeout=20m",
+        "./internal/room",
+        "-run",
+        "^TestAutomaticRotationReal$",
+        "-count=1",
+        "-v"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 55.422,
+      "output": "/Users/russellluo/Projects/ai/teamx/.local/architecture-backend/real-fixed-automatic-01",
+      "model": "deepseek-v4.1-flash-1017",
+      "log_sha256": "431bf32bdf9008f7b47c480e3a8e70746e8eff8b31dd50deb6ebed7813f4f8b8",
+      "report": "/Users/russellluo/Projects/ai/teamx/.local/architecture-backend/real-fixed-automatic-01/report.json",
+      "report_sha256": "174d7d798ad73013c391b04e132ed266886992de96b368dc71901ce94d015a02",
+      "status": "passed",
+      "phase": "complete",
+      "facts": {
+        "external_business_writes": 0,
+        "idle_did_not_rotate": true,
+        "normal_restart_same_session": true,
+        "two_automatic_rotations": true
+      }
+    },
+    {
+      "name": "fixed-manual",
+      "command": [
+        "go",
+        "test",
+        "-tags=e2e",
+        "-timeout=20m",
+        "./internal/room",
+        "-run",
+        "^TestRealDSHRotation$",
+        "-count=1",
+        "-v"
+      ],
+      "exit_code": 1,
+      "elapsed_seconds": 16.275,
+      "output": "/Users/russellluo/Projects/ai/teamx/.local/architecture-backend/real-fixed-manual-01",
+      "model": "deepseek-v4.1-flash-1017",
+      "log_sha256": "82e20f5dc15d9417bf199ebc43c9a5633ffa3cc188ca1d80d20182de9867fc07",
+      "report": "/Users/russellluo/Projects/ai/teamx/.local/architecture-backend/real-fixed-manual-01/report.json",
+      "report_sha256": "f1eda33a070bae4d3310e5c1e081819f708106941d2817b4066c8447c14b7ebf",
+      "status": "failed",
+      "phase": "serve-1-readiness",
+      "facts": {}
+    },
+    {
+      "name": "fixed-manual-authenticated",
+      "command": [
+        "go",
+        "test",
+        "-tags=e2e",
+        "-timeout=20m",
+        "./internal/room",
+        "-run",
+        "^TestRealDSHRotation$",
+        "-count=1",
+        "-v"
+      ],
+      "exit_code": 1,
+      "elapsed_seconds": 19.622,
+      "output": "/Users/russellluo/Projects/ai/teamx/.local/architecture-backend/real-fixed-manual-authenticated-01",
+      "model": "deepseek-v4.1-flash-1017",
+      "log_sha256": "b115f5a73eb67f8f4759aeb2aead7516f6eac289a2878b3fc2c234d5fd16e452",
+      "report": "/Users/russellluo/Projects/ai/teamx/.local/architecture-backend/real-fixed-manual-authenticated-01/report.json",
+      "report_sha256": "cdc66ea496ee4001429bcc997980d7c835ee0e812813e8312fe159721babe6f0",
+      "status": "failed",
+      "phase": "serve-1-readiness",
+      "facts": {}
+    },
+    {
+      "name": "fixed-manual-identity",
+      "command": [
+        "go",
+        "test",
+        "-tags=e2e",
+        "-timeout=20m",
+        "./internal/room",
+        "-run",
+        "^TestRealDSHRotation$",
+        "-count=1",
+        "-v"
+      ],
+      "exit_code": 1,
+      "elapsed_seconds": 21.64,
+      "output": "/Users/russellluo/Projects/ai/teamx/.local/architecture-backend/real-fixed-manual-identity-01",
+      "model": "deepseek-v4.1-flash-1017",
+      "log_sha256": "68525e4887a4af0b322aa3ce983a778b1a69d480f87a26c1a5a460df444dd576",
+      "report": "/Users/russellluo/Projects/ai/teamx/.local/architecture-backend/real-fixed-manual-identity-01/report.json",
+      "report_sha256": "8bfc752e9be03a672b308e962283e96976608cbcb8f3f9332cee24baf98ab67f",
+      "status": "failed",
+      "phase": "serve-1-readiness",
+      "facts": {}
+    },
+    {
+      "name": "fixed-manual-observation",
+      "command": [
+        "go",
+        "test",
+        "-tags=e2e",
+        "-timeout=20m",
+        "./internal/room",
+        "-run",
+        "^TestRealDSHRotation$",
+        "-count=1",
+        "-v"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 69.831,
+      "output": "/Users/russellluo/Projects/ai/teamx/.local/architecture-backend/real-fixed-manual-observation-01",
+      "model": "deepseek-v4.1-flash-1017",
+      "log_sha256": "60a357182dc89b6399db304d574b128fee343d793a375a67bcfde775c9002b30",
+      "report": "/Users/russellluo/Projects/ai/teamx/.local/architecture-backend/real-fixed-manual-observation-01/report.json",
+      "report_sha256": "4c345316fbf9c06dc48fde323b492648a3baf8f23be27f456adf4b003e299105",
+      "status": "passed",
+      "phase": "complete",
+      "facts": {
+        "businessRecordPreserved": true,
+        "duplicateOperationIdempotent": true,
+        "normalRestartPreservesCounts": true,
+        "normalResumeEligible": true,
+        "observed_processes_settled": 3,
+        "normal_restart_session_id": "561897a9-2507-47ee-9e1c-fbf4937d0a55",
+        "cancelled_turn_status": "interrupted"
+      }
+    }
+  ],
+  "function_body_comparison": {
+    "dshBackend.OpenSession -> dshBackend.OpenSession": true,
+    "dshBackend.checkRotationClosed -> dshBackend.checkRotationClosed": true,
+    "dshBackend.componentOptions -> dshBackend.componentOptions": true,
+    "dshBackend.restoreModelSnapshot -> dshBackend.restoreModelSnapshot": true,
+    "dshBackend.saveModelSnapshot -> dshBackend.saveModelSnapshot": true,
+    "dshBackend.sessionGeneration -> dshBackend.sessionGeneration": true,
+    "dshBackend.switchModel -> dshBackend.switchModel": true,
+    "dshBackend.switchSession -> dshBackend.switchSession": true,
+    "readDSHReference -> readSessionReference": true,
+    "recoverableDSHFailure -> dshBackend.recoverableFailure": true,
+    "recoverableDSHHistory -> recoverableDSHHistory": true
+  },
+  "original_snapshot_overlay": {
+    "path": ".local/architecture-backend/before-overlay.json",
+    "sha256": "0b5ec30ec119715d519c834ccb144a492a2af7e7a5571ded18c19837433580cd",
+    "all_room_production_and_test_files": true,
+    "new_files_replaced_with_empty_package": true,
+    "child_builds_inherit_GOFLAGS": true
+  },
+  "source_baseline": {
+    "path": ".local/architecture-backend/final-source.json",
+    "sha256": "2df0898db78b4be0ffe316bd6714b0755777434b88e2c26afa55f4fc70630db5"
+  },
+  "source_sha256": {
+    "docs/ARCHITECTURE-MODULE-BOUNDARIES-ANALYSIS.zh.md": "31d79c191cfc62c8640d11cf0479291d58918d9f4eeda8e7076c2bf5e290e42f",
+    "docs/implementation/architecture/backend-lifecycle.zh.md": "1760f70eb249271b469c84f497164f666db1c81b63d2b875c2b91bf97d6d1d6f",
+    "internal/architecture/member_backend_test.go": "dfc75e6235cdc9688d67c843d126a23153ab8fe6b0ef460c2f3bdbcc40024a91",
+    "internal/room/activation_integration_test.go": "bef793373ee0f2081eba3ccecea85584e2c2b2d8802230478ecd22acba0fd04b",
+    "internal/room/automatic_recovery.go": "d1fbd66df368b25ffda28ec39c916011840d4e31440d9b744c1af9f7f773a5a5",
+    "internal/room/automatic_recovery_test.go": "d83c9787ad03ffdfd12c3928fe49ef448bf6ba0faf22806163582456f80780ad",
+    "internal/room/backend_lifecycle.go": "a212c3adee16c5513bcff6a1ccdb6b9e1a5f389883069093cefbd4035076d67e",
+    "internal/room/backend_lifecycle_test.go": "fd4d0a2644c37bd05dfe540a344a4e744c7e76a81d268552bc01c1f2db861c6a",
+    "internal/room/default_assistant.go": "f242158917f22dfe4f1fdf580d7c9fe000c657f8f2f6274ff9cfb74ba5b0eade",
+    "internal/room/deletion.go": "da97cbd83b497ed3d69dbf0ec71f98db1256d3757ddd02318c013299f11527f6",
+    "internal/room/discussion_test.go": "e6a84a831e93a2b7563121699e7644de5ff5e7b58bfc2bc0e799e8b8f7abedc8",
+    "internal/room/dsh.go": "a8f9f44a8144354e59a3d65cadf38de23feb10e1b1aa2c4c43117d56d5225014",
+    "internal/room/dsh_collaboration_real_test.go": "f3af26af7dfc2a4ea90826427bd835dad2989ecbeaccd6f267c7aee6b84af84f",
+    "internal/room/dsh_collaboration_test.go": "1fea0f3521ad7a3e91fe93b52f1b997186ad0601e82ce2481b63e80d67c7d853",
+    "internal/room/dsh_lifecycle.go": "ac9630c56ca764e369c309143542376c0e9ca38bb958cc4ea5d30849f7207f35",
+    "internal/room/dsh_real_test.go": "798778acaf8d460d570a233b6931eea70ffb5908548f1b5afc729ee0ba1a4e5e",
+    "internal/room/dsh_recovery_context_real_test.go": "df663ae564c8e6c10077f649909e616339a8930b226340a8fd7c7930648be78f",
+    "internal/room/dsh_test.go": "20a42cc1d5b2e87c1acc13d73999a477688fdb419999d41d4e0f50b1ecce1aa1",
+    "internal/room/e2e_platform_events_real_test.go": "686724d32d04fb3fd72432d2fc0325bceb9810758fbd3317706d5de86e5985e0",
+    "internal/room/e2e_platform_todos_real_test.go": "2bf2ef82c9c28273913755a9578aa3567f0c4b04132cf8ab96b6b6cb45b8dedd",
+    "internal/room/enable_test.go": "731ed9a9df6b83e842da164431b00e1a29d0c0f941a07624cb23104ba1169f83",
+    "internal/room/execution_notice.go": "44eabb44f4cc5209b85f970dc7fc0daf19be7be80a2fd0afeaad1a851cac7b1e",
+    "internal/room/history_recovery_test.go": "955c9eb712c6284d5828f4a7986ad7b66f08b698bdff37aea12017de83411202",
+    "internal/room/history_service_real_test.go": "53eacf70e57cec1084710174fc76ea817386c06334cb7d3583f991a758247c7d",
+    "internal/room/input_stream_acceptance_real_test.go": "720aa14f19fe2b278fdcc7714f4b8f4efbc6e1abf2ec81bc4488751b6d4bcd78",
+    "internal/room/input_stream_runtime.go": "0964d583c5cd5954dceef658861fe7079f22d458a6d4d79424f62666a9bdfa63",
+    "internal/room/input_stream_session_test.go": "f33ba62100f8417650f73d80fc1f06de43ae4ad98304e5764fbdfee406b4df46",
+    "internal/room/input_upgrade_legacy.go": "188b9553dc84c38d2d8ac9b173dd2bc396cd20d22d1a06a5047996dc2abfb7ab",
+    "internal/room/mcp_access.go": "3902e91250cae8edef0f9df404c4e31d5b0dcbe47af18a07c2d5a8aaf0e0a18c",
+    "internal/room/mcp_inbox_real_test.go": "0a52c19692d262605f3d8c63836803786884dbfb780b5301ba983d54dc8ba2b6",
+    "internal/room/mcp_inbox_test.go": "c1d65d725367a94a9f876fe7a788a283eda361d71b95c28523fbb63503db0d4b",
+    "internal/room/mcp_transport_test.go": "b7ea83660c4c0146bb3d06107348542a9bb7a549d3a4e74b1e245ea8203bdcbc",
+    "internal/room/member.go": "63189802c3f3986b112f092b6b57ef18db1d4b9dff0d42b83fb05f48e0a987ef",
+    "internal/room/member_notifications_real_test.go": "6683bbc4a798248d070ba9c7ac52f0605dbd88b02eedd2e76d46306458b07dbd",
+    "internal/room/member_test.go": "3e06ac7e979aa25ccc1cc8c2304e91ed19fce1d7f8c613c266c4169240c8155a",
+    "internal/room/model_apply.go": "231733abcd244b5005e3d8ed5fc542ff3543c33ad59191ebd2de35d6adc1022d",
+    "internal/room/model_delete_test.go": "dbd88324293a369e46321464253a7f3f795d198a123026052c9bd5493f941566",
+    "internal/room/model_http.go": "98705d8ee7588795acc7fd4d37cdf0666115fa06f7ec75fc26ae1b26a3acbbd0",
+    "internal/room/model_migration.go": "88dd150395d9821c95baa35fa8a86d2fea225b0c276b723767c260e32c0a00ef",
+    "internal/room/model_migration_test.go": "7441980c11f4545b9de03a11263a77e9f58f766ef261e5d91fb522054e11963b",
+    "internal/room/model_references.go": "78fc58ba4bb76d231c581a735f5993382026e61bc5de436cf29f389cdf3e3ce1",
+    "internal/room/model_rotation_test.go": "f21a1fc4c5232351e6908a3fb2d47ee51dfed079dab7581ee38ac3ad813e3344",
+    "internal/room/model_session.go": "e1add539df6e7566da3993da6736ee6719b39a5cfb15443abad1ce1e268c48f8",
+    "internal/room/parallel_scheduling_test.go": "6c401296ff85bb86a8b8e4861e1382ba27017fe92efdd7c39d466fbaee7a295e",
+    "internal/room/platform_guidance_test.go": "0fdf0875a8f2fa95dec80ed0d66b09eba853d44f75fd0c2dc627974549836636",
+    "internal/room/platform_notification_selection_real_test.go": "e8f124132d1475e02e272e8e86d69d8e3b82a1c5ec786ccbf0e2b2a74fe1ec4b",
+    "internal/room/recovery.go": "1a14c6d0ade4938b806333aa764b959b9d5e6a89f88bc5485b34df510bf07d10",
+    "internal/room/rotation.go": "e8ed6ecc7cda8c45d7f5c666e230efaceb1af06be253a1a87f8fdc5f76a79483",
+    "internal/room/rotation_adapter_test.go": "12949859ab47464c49e8d56b4fcdf2d4fc1f4d7a77c2e6b787812bdcf9ec71ef",
+    "internal/room/rotation_real_test.go": "be3980b6f33d19eae25e9d55a7129205f91527d325510a875e424bf62509ebaa",
+    "internal/room/rotation_state.go": "d90d110b5db0367eacb0339b2543ca561dd5e6fe7e1f9b08794cb83cfd1203a7",
+    "internal/room/rotation_state_test.go": "4889a6dfd83cb683b22eb45c833a4d476b2568a8aa44434c3fa328e8cb7373de",
+    "internal/room/rotation_test.go": "b4fa87a4f834224b8baf69e6da3e69c0938c2013f19467ca44a5b1fe0d72d2b2",
+    "internal/room/runtime_assembly.go": "137b718df08610010a034f9f6632943609103eeef9bc2a4e5fc7d16644200841",
+    "internal/room/runtime_recovery.go": "d94162b5432a9fd9095954eae61eac0392d825c907dc4ad7e308cecc567d73d8",
+    "internal/room/scheduling_state.go": "a84751cf33349044446b35a8fdcba586a831dd88a3db11826e8b9ca4ce10bc91",
+    "internal/room/scion_collaboration_continue_real_test.go": "56112fcbb9398ce24bee811be8ed155c78663ad931146a09d7c645f8c3b438cb",
+    "internal/room/service_config.go": "3667f132724c2954a6eada852e27eeb5ca13476da04cf1812cca0f15581ef147",
+    "internal/room/session.go": "907ee28a89ceb9dad6e03f536eb80665aca0f2758714ab5988cf61c908f47f7d",
+    "internal/room/storage.go": "6fec4e4bb713b5507c7f237eff093add81ab85daa72c896842aff3fa093de11e",
+    "internal/room/turn_execution.go": "1f0be4645a8bca61e4f6e01a67e87c9f6bade920ecd840f1a74d1efcade0dd8a",
+    "internal/room/turn_scheduler_test.go": "786dbb2891319071f56903aa07871b43a6e1c31b86251936b6f4dff501dcb103",
+    "internal/room/ui_http.go": "73539b333dc6f1346063d4cc75eb36ddc73ec78b936e05c5392b85d72f252090",
+    "internal/room/ui_updates_performance_test.go": "ac49804fee2fdc9095dadc980b51e7c20c66a37e539d57d23fb6f5268bb8ca28",
+    "internal/room/web_test.go": "89017e300ee7ce2eea13037aa2002425d3d760a482a23445539a865d230a1f79",
+    "internal/room/workspace_directories.go": "ba210b7e6b952b7f17bb55670fc8f2a9cfa943267f4b88f81a9c82ff68cb005e",
+    "internal/room/workspace_directories_integration_test.go": "efa0a80568a2a29cb1a8930ab24f02214f54ca66399dc870dfcf032e6fada876",
+    "internal/room/workspace_directories_real_test.go": "111a92b979d8897a0ad9df132371b47b2c34e4f6b4fa64e15aaea5bb7df16e33",
+    "internal/room/workspace_management.go": "ffa3f26e1402f1991084a095b21c529549616d186a12e1a72a9c5d12c307b96c",
+    "internal/room/workspace_management_integration_test.go": "92e73f6ac102c3c3a261be48bde8ecc0b3e314b033b1d0c7d0df7b52fc90cadb",
+    "internal/room/workspace_real_e2e_test.go": "723ba3f75ed79eefb9167eec294bfb539247b95554195ee76c63c81f682ec058",
+    "internal/room/workspace_records.go": "2ee5afc95b8698268e8eb100b26a821dc1ee06b26fda3748aa8bad3b5309ddd8",
+    "scripts/architecture-baseline.py": "0f2e2581ed6176cd32a28481220f2692ccb02b1f973bc0d7247f16ab9c7dbd71",
+    "internal/room/service.go": "b4bbbe27e5a3003a36ad8c658f1412270d8e0348ca9e267b58cffe1ff15b363b"
+  },
+  "limitations": [
+    "Full core reached its unchanged 3 minute package deadline; the running History test passes independently before and after.",
+    "Full integration reproduces InputUpgradeRotatesSettledDSHContract tool-list and SecondNotificationProviderReloadAndDedup failures, independently reproduced with the original source overlay.",
+    "Broad integration race reproduces only the pre-existing InputUpgradeRotatesSettledDSHContract assertion; no data race was reported.",
+    "No browser acceptance, real platform business write, live service deployment, R5b.2 or second backend implementation."
+  ],
+  "notes": [
+    "Source hashes describe the final checkout. Broad and initial runs preceded the final narrow input-clock delegation change; the final input-contracts race/build/vet cover that change.",
+    "The initial exploratory before.log contained subprocess builds during editing and is not counted as baseline evidence. The before-targeted overlay is the valid comparison.",
+    "The first before-automatic attempt failed to compile because a newly added test file was not in the overlay; the updated before-automatic-recheck is the recorded behavioral reproduction.",
+    "Only fixture listener reuse and authenticated operator identity were repaired for real acceptance; production compatibility, auth and process-settlement checks were preserved."
+  ],
+  "removed_unused_acceptance_binaries": [
+    {
+      "path": ".local/architecture-backend/teamx",
+      "bytes": 32067730,
+      "sha256": "7275f7b129987e9c5247d066fe62be094880165136cf6d495d7afa2f7b292b03"
+    },
+    {
+      "path": ".local/architecture-backend/real-fixed-manual-observation-01/teamx",
+      "bytes": 32067730,
+      "sha256": "52669f0fc8c0108cae1ea2b9f5f21b69b2750a3ae9ac7e175558e52d582f2806"
+    },
+    {
+      "path": ".local/architecture-backend/real-before-automatic-recheck-01/teamx",
+      "bytes": 32031090,
+      "sha256": "c6465cd959988490ac7cf6bd5e2577309d5f433d1f5161e9aad758ce8a7f200f"
+    },
+    {
+      "path": ".local/architecture-backend/real-fixed-manual-authenticated-01/teamx",
+      "bytes": 32067730,
+      "sha256": "52669f0fc8c0108cae1ea2b9f5f21b69b2750a3ae9ac7e175558e52d582f2806"
+    },
+    {
+      "path": ".local/architecture-backend/real-fixed-automatic-01/teamx",
+      "bytes": 32067730,
+      "sha256": "52669f0fc8c0108cae1ea2b9f5f21b69b2750a3ae9ac7e175558e52d582f2806"
+    },
+    {
+      "path": ".local/architecture-backend/real-automatic-01/teamx",
+      "bytes": 32067810,
+      "sha256": "ed5763ecfe7d8de32295088768be69eac56c9dfd6083986091632a4ac275877e"
+    },
+    {
+      "path": ".local/architecture-backend/real-fixed-manual-identity-01/teamx",
+      "bytes": 32067730,
+      "sha256": "52669f0fc8c0108cae1ea2b9f5f21b69b2750a3ae9ac7e175558e52d582f2806"
+    },
+    {
+      "path": ".local/architecture-backend/real-fixed-manual-01/teamx",
+      "bytes": 32067730,
+      "sha256": "52669f0fc8c0108cae1ea2b9f5f21b69b2750a3ae9ac7e175558e52d582f2806"
+    }
+  ]
+}

@@ -227,7 +227,7 @@ func TestInputUpgradeNormalRestartRealDSH(t *testing.T) {
 	}
 	must(d.startRealRoom(1, id.RoomID))
 	first := check(2, 3)
-	var recovered dshDiagnostic
+	var recovered backendDiagnostic
 	must(readSnapshot(filepath.Join(dir, "agents", id.MembershipID, "dsh-turn.json"), &recovered, maxPrivateFileBytes))
 	if !strings.Contains(recovered.Result.Text, "UPGRADE_ROOM_MARKER") || !strings.Contains(recovered.Result.Text, savedScope) {
 		t.Fatal("the migrated Session did not continue with the saved human answer")

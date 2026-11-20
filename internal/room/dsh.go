@@ -18,9 +18,6 @@ import (
 	"github.com/go-aie/teamx/internal/inputstream"
 )
 
-var errDSHPaused = errors.New("DSH member paused; inspect backend failure before continuing")
-var errDSHDisabled = errors.New("DSH backend disabled; replacement execution is forbidden")
-
 // Profiles are supplied by the operator, never accepted from member HTTP
 // requests. Single-room membership persists a profile name; managed creation
 // freezes the team runtime and roles in its Room configuration.
@@ -138,16 +135,6 @@ func (b dshBackend) CheckRun() error {
 	return b.profile.checkCredentials()
 }
 
-// session.json belongs to the adapter and contains only the stable directory
-// reference. backend.json and the ACP SessionID remain owned by the component.
-type dshReference struct {
-	Version int `json:"version"`
-	MemberIdentity
-	Directory    string `json:"directory"`
-	Pending      bool   `json:"pending,omitempty"` // Authorized fresh generation, not yet opened.
-	ManagedModel bool   `json:"managed_model,omitempty"`
-}
-
 func dshStateDir(path string) string { return path + ".dsh" }
 
 func (s *Store) dshPath(id MemberIdentity, name string, writing bool) (string, error) {
@@ -162,23 +149,23 @@ func (b dshBackend) checkState(opts SessionOptions) (bool, error) {
 	return exists, err
 }
 
-func (b dshBackend) reference(opts SessionOptions) (dshReference, bool, error) {
+func (b dshBackend) reference(opts SessionOptions) (sessionReference, bool, error) {
 	b.store.mu.Lock()
 	defer b.store.mu.Unlock()
 	path, err := b.store.dshPath(opts.MemberIdentity, "session.json", false)
 	if err != nil {
-		return dshReference{}, false, err
+		return sessionReference{}, false, err
 	}
 	if path != opts.StatePath {
-		return dshReference{}, false, ErrIdentity
+		return sessionReference{}, false, ErrIdentity
 	}
-	return readDSHReference(path, opts.MemberIdentity)
+	return readSessionReference(path, opts.MemberIdentity)
 }
 
 // Read the adapter-owned reference without loading Room messages. Callers own
 // the Room directory lock and validate the member identity before choosing path.
-func readDSHReference(path string, identity MemberIdentity) (dshReference, bool, error) {
-	var ref dshReference
+func readSessionReference(path string, identity MemberIdentity) (sessionReference, bool, error) {
+	var ref sessionReference
 	err := readSnapshot(path, &ref, maxPrivateFileBytes)
 	if err == nil {
 		base := filepath.Base(dshStateDir(path))
@@ -219,11 +206,11 @@ func (b dshBackend) OpenSession(ctx context.Context, opts SessionOptions) (Sessi
 		}
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, errors.Join(errDSHPaused, err)
+		return nil, errors.Join(errBackendPaused, err)
 	}
 	ref, exists, err := b.reference(opts)
 	if err != nil {
-		return nil, errors.Join(errDSHPaused, err)
+		return nil, errors.Join(errBackendPaused, err)
 	}
 	if exists && !b.recover {
 		return nil, dshFailure(dsh.ErrRecoveryUnsupported)
@@ -239,13 +226,13 @@ func (b dshBackend) OpenSession(ctx context.Context, opts SessionOptions) (Sessi
 			return nil, dshFailure(loadErr)
 		}
 	} else {
-		ref = dshReference{Version: formatVersion, MemberIdentity: opts.MemberIdentity, Directory: filepath.Base(dshStateDir(opts.StatePath))}
+		ref = sessionReference{Version: formatVersion, MemberIdentity: opts.MemberIdentity, Directory: filepath.Base(dshStateDir(opts.StatePath))}
 	}
 	if b.model != nil && b.model.Legacy && (!b.recover || !exists) {
 		return nil, dshFailure(dsh.ErrRecoveryUnsupported)
 	}
 	if !filepath.IsAbs(opts.CLIPath) {
-		return nil, errors.Join(errDSHPaused, errors.New("absolute TeamX CLI path required"))
+		return nil, errors.Join(errBackendPaused, errors.New("absolute TeamX CLI path required"))
 	}
 	componentOpts, err := b.componentOptions(opts, ref)
 	if err != nil {
@@ -277,7 +264,7 @@ func (b dshBackend) OpenSession(ctx context.Context, opts SessionOptions) (Sessi
 		}
 	}
 	if err != nil {
-		return nil, errors.Join(errDSHPaused, err)
+		return nil, errors.Join(errBackendPaused, err)
 	}
 	open := b.open
 	if open == nil {
@@ -329,7 +316,7 @@ func (b dshBackend) OpenSession(ctx context.Context, opts SessionOptions) (Sessi
 			revoke()
 		}
 		if b.recover {
-			err = errors.Join(errDSHDisabled, err)
+			err = errors.Join(errBackendDisabled, err)
 		}
 		return nil, dshFailure(errors.Join(err, errors.New("DSH did not open a session")))
 	}
@@ -346,7 +333,7 @@ func (b dshBackend) OpenSession(ctx context.Context, opts SessionOptions) (Sessi
 }
 
 // Materialize the effective member instructions for the live backend.
-func (b dshBackend) componentOptions(opts SessionOptions, ref dshReference) (dsh.Options, error) {
+func (b dshBackend) componentOptions(opts SessionOptions, ref sessionReference) (dsh.Options, error) {
 	p := b.profile
 	toolEnv := make(map[string]string, len(p.ToolEnv)+8)
 	for key, value := range p.ToolEnv {
@@ -368,7 +355,7 @@ func (b dshBackend) componentOptions(opts SessionOptions, ref dshReference) (dsh
 	}
 	if bindings != 6 || toolEnv["TEAMX_ROOM_ID"] != opts.RoomID || toolEnv["TEAMX_ROOM_INSTANCE"] != opts.RoomInstance ||
 		toolEnv["TEAMX_AGENT_ID"] != opts.AgentID || toolEnv["TEAMX_MEMBERSHIP_ID"] != opts.MembershipID {
-		return dsh.Options{}, errors.Join(errDSHPaused, ErrIdentity)
+		return dsh.Options{}, errors.Join(errBackendPaused, ErrIdentity)
 	}
 	toolEnv["TEAMX_CLI"] = opts.CLIPath
 	if b.inputService != nil {
@@ -435,37 +422,17 @@ func dshFailure(err error) error {
 		return nil
 	}
 	if errors.Is(err, dsh.ErrUncertain) || errors.Is(err, dsh.ErrUnavailable) || errors.Is(err, dsh.ErrRecoveryUnsupported) {
-		err = errors.Join(errDSHDisabled, err)
+		err = errors.Join(errBackendDisabled, err)
 	}
-	return errors.Join(errDSHPaused, err)
+	return errors.Join(errBackendPaused, err)
 }
 
 // Only a fully settled, expected cancellation may leave scheduling enabled.
 // Joined cleanup/protocol/checkpoint errors must retain their normal handling.
-func settledTurnCancellation(err error) bool {
-	if !errors.Is(err, context.Canceled) {
-		return false
-	}
-	var cancellationOnly func(error) bool
-	cancellationOnly = func(err error) bool {
-		switch err {
-		case context.Canceled, dsh.ErrCancelled, errDSHPaused:
-			return true
-		}
-		switch wrapped := err.(type) {
-		case interface{ Unwrap() []error }:
-			for _, child := range wrapped.Unwrap() {
-				if !cancellationOnly(child) {
-					return false
-				}
-			}
-			return true
-		case interface{ Unwrap() error }:
-			return cancellationOnly(wrapped.Unwrap())
-		}
-		return false
-	}
-	return cancellationOnly(err)
+func (b dshBackend) settledCancellation(err error) bool {
+	return cancellationOnly(err, func(err error) bool {
+		return err == context.Canceled || err == dsh.ErrCancelled || err == errBackendPaused
+	})
 }
 
 // Common instructions are embedded into the Session configuration, never
@@ -514,7 +481,7 @@ func dshTimeContext(settings settingsSnapshot, now time.Time, previous string) s
 	return text + "Current time (turn-start reference): " + now.In(settings.location).Format(time.RFC3339) + "\n"
 }
 
-type dshDiagnostic struct {
+type backendDiagnostic struct {
 	Result dsh.TurnResult `json:"result"`
 	Error  string         `json:"error,omitempty"`
 }
@@ -533,7 +500,7 @@ func (s *dshSession) Run(ctx context.Context, input UnreadChanged) (err error) {
 	// Keep one settings snapshot even if a save occurs during preparation/run.
 	settings, started := s.backend.settings.snapshot(), time.Now()
 	if input.MemberIdentity != s.opts.MemberIdentity {
-		return errors.Join(errDSHPaused, ErrIdentity)
+		return errors.Join(errBackendPaused, ErrIdentity)
 	}
 	policy, err := s.backend.store.readAgentPolicy(s.opts.MemberIdentity)
 	if err != nil {
@@ -547,10 +514,10 @@ func (s *dshSession) Run(ctx context.Context, input UnreadChanged) (err error) {
 	if err != nil {
 		return dshFailure(err)
 	}
-	s.backend.store.activeDSH.Store(s.opts.MemberIdentity, s)
+	s.backend.store.activeSessions.Store(s.opts.MemberIdentity, s)
 	s.backend.store.changed("activity", s.opts.MemberIdentity)
 	defer func() {
-		s.backend.store.activeDSH.CompareAndDelete(s.opts.MemberIdentity, s)
+		s.backend.store.activeSessions.CompareAndDelete(s.opts.MemberIdentity, s)
 		s.backend.store.changed("activity", s.opts.MemberIdentity)
 	}()
 	notification := dshNotification(input)
@@ -685,7 +652,7 @@ func (s *dshSession) Run(ctx context.Context, input UnreadChanged) (err error) {
 	if result.Events == nil {
 		result.Events = []dsh.ActivityEvent{}
 	}
-	private := dshDiagnostic{Result: result}
+	private := backendDiagnostic{Result: result}
 	if runErr != nil {
 		private.Error = runErr.Error()
 	}
@@ -724,7 +691,7 @@ func (s *dshSession) Close(ctx context.Context) error {
 	if s.revoke != nil {
 		s.revoke()
 	}
-	return s.component.Close(ctx)
+	return dshCloseResult(s.component.Close(ctx))
 }
 
 func (s *dshSession) closeOwned() error {

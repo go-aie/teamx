@@ -4,47 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/go-aie/actorx"
-	"github.com/go-aie/teamx/internal/agent/dsh"
-	"github.com/go-aie/teamx/internal/platform/notification"
 )
-
-type serviceConfig struct {
-	calendars *CalendarService
-
-	workspaceProtected   []string
-	checkWorkspace       func(string) error
-	inputAdapters        map[notification.SourceID]notificationAdapter
-	inputCapabilities    func(string) notification.Capabilities
-	unifiedInputs        bool // Normal server composition. Legacy fixture services use the old format.
-	inputUpgradeLog      io.Writer
-	updates              *uiUpdateHub
-	agentNames           *agentNameRegistry
-	scheduling           schedulingMode
-	modelStartup         *startupConfig
-	modelProbe           func(context.Context, dsh.Options) (dsh.ProbeResult, error)
-	models               *modelExecution
-	modelTargets         map[string]modelSessionSnapshot
-	access               *serverAccess
-	settings             *systemSettings
-	imageMaterials       imageMaterialConfig
-	inboxMode            string
-	inboxExpiry          notification.ExpiryPolicy
-	workspaceOperationID string // verified managed configuration only
-	endpoint             string
-	cliPath              string
-	mergeWindow          time.Duration
-	dshTurnTimeout       time.Duration
-	maxTurns             uint64
-	persistentScheduling bool
-	dshProfiles          map[string]dshProfile
-	uiProfiles           []string
-}
 
 type recoveredMember struct {
 	automatic     bool
@@ -81,45 +45,28 @@ func (s *service) loadMembers(state RoomSnapshot) error {
 			recovered.blocked = "rotation recovery blocked: " + rotationErr.Error()
 		}
 		opts := SessionOptions{MemberIdentity: id, StatePath: filepath.Join(s.store.dir, "agents", id.MembershipID, "session.json")}
-		ref, exists, err := (dshBackend{store: s.store}).reference(opts)
+		rotationReady := rotationErr == nil && (rotation == nil || rotation.Phase == "completed")
+		backend, err := s.inspectBackendRecovery(opts, member.Runner, agent, rotationReady)
 		if err != nil {
 			return fmt.Errorf("restore %s DSH reference: %w", member.AgentID, err)
 		}
-		if _, ok := s.dshProfiles[member.Runner.Profile]; !ok {
-			recovered.blocked = "DSH profile unavailable: " + member.Runner.Profile
-		} else if exists {
-			backendDir := filepath.Join(filepath.Dir(opts.StatePath), ref.Directory)
-			if err := dsh.CheckResume(backendDir); err != nil {
-				recovered.blocked = "DSH recovery blocked: " + err.Error()
-				if rotationErr == nil && (rotation == nil || rotation.Phase == "completed") &&
-					errors.Is(err, dsh.ErrRecoveryUnsupported) && recoverableDSHHistory(agent) {
-					recovered.recovery = dsh.CheckReset(backendDir) == nil
-				}
-			} else {
-				recovered.backendResume = true
-				recovered.recovery = rotationErr == nil && agent.Turn != nil && agent.Turn.Status == "failed" && recoverableDSHHistory(agent) && dsh.CheckReset(backendDir) == nil
-				recovered.notice = "DSH original session will resume lazily using current tool identity"
-				// Compare the stable entry contract before lazy resume. Never edit
-				// old backend evidence to make a changed guide look compatible.
-				candidate := s.memberBackend(member.Runner)
-				opts.CLIPath, opts.CLIEnv = s.cliPath, s.toolEnv(id)
-				if config, configErr := candidate.componentOptions(opts, ref); configErr == nil && config.BinaryPath != "" {
-					if configErr = dsh.CheckResumeConfig(config); configErr != nil {
-						recovered.blocked = "DSH configuration requires settled Session rotation: " + configErr.Error()
-						recovered.backendResume = false
-						recovered.recovery = rotationErr == nil && (rotation == nil || rotation.Phase == "completed") && recoverableDSHHistory(agent) && dsh.CheckReset(backendDir) == nil
-					}
-				}
-			}
-		} else if ref.Pending {
-			recovered.contextReset = rotation != nil && rotation.Phase == "completed" || s.workspaceOperationID != "" && ref.Directory == filepath.Base(dshStateDir(opts.StatePath))+"-"+s.workspaceOperationID
+		recovered.backendResume, recovered.recovery = backend.resume, backend.recovery && rotationErr == nil
+		// Rotation reconciliation failures take precedence unless the adapter
+		// has a more specific backend/configuration failure, as before.
+		if backend.blocked != "" {
+			recovered.blocked = backend.blocked
+		}
+		if backend.notice != "" {
+			recovered.notice = backend.notice
+		}
+		if backend.reference.Pending && backend.blocked == "" {
+			recovered.contextReset = rotation != nil && rotation.Phase == "completed" || s.workspaceOperationID != "" && backend.reference.Directory == sessionGenerationForOperation(s.workspaceOperationID)
 			recovered.notice = "explicit rotation committed; private context reset; fresh Session will open on explicit run"
 			if recovered.contextReset {
 				recovered.notice = "rotation completed; private context reset; fresh Session will open lazily for new work"
 			}
-		} else if agent.Turn != nil {
-			recovered.blocked = "DSH recovery blocked: backend reference missing for recorded turn"
 		}
+
 		if agent.Turn != nil {
 			switch agent.Turn.Status {
 			case "running":
@@ -158,7 +105,7 @@ func (s *service) loadMembers(state RoomSnapshot) error {
 
 func (s *service) newMember(id MemberIdentity, runner RunnerConfig, restored *AgentSnapshot) actorx.Actor {
 	opts := SessionOptions{MemberIdentity: id, StatePath: filepath.Join(s.store.dir, "agents", id.MembershipID, "session.json"), CLIPath: s.cliPath, CLIEnv: s.toolEnv(id)}
-	backend := s.memberBackend(runner)
+	resumeBackend := false
 
 	blocked := ""
 	recovery := false
@@ -169,7 +116,7 @@ func (s *service) newMember(id MemberIdentity, runner RunnerConfig, restored *Ag
 			recovery = recovered.recovery
 			used = recovered.used
 			limit = recovered.limit
-			backend.recover = recovered.backendResume
+			resumeBackend = recovered.backendResume
 		}
 	}
 	gate := ""
@@ -178,7 +125,7 @@ func (s *service) newMember(id MemberIdentity, runner RunnerConfig, restored *Ag
 	}
 	member := &MemberAgent{AdditionalWorkReady: func() bool { return s.additionalWorkReady(id) }, ObserveTurnFinished: s.calendarTurnFinished, ExecutionBinding: func(turn uint64) (turnExecution, error) { return s.executionBindingForTurn(id, turn) }, ObserveEnabled: func() bool { return s.updates.observesRoom(s.info) }, Observe: func() { s.invalidate("members", id); s.invalidate("activity", id) }, ModelGate: gate, Options: opts, Store: s.store, Room: s.room, Restored: restored,
 		Inbox:   func(ctx context.Context) (InboxStatus, error) { return s.memberInboxStatus(ctx, id) },
-		Backend: backend, MergeWindow: s.mergeWindow, MaxTurns: s.maxTurns, SessionMaxTurns: s.maxTurns, RequestRotation: s.requestMemberRotation, RequestRecovery: s.requestMemberRecovery, RecoveryPending: recovery, BackendBlocked: blocked, PersistentScheduling: true, RestoredTurnsUsed: used, RestoredTurnLimit: limit, ExecutionFrozen: s.grantsFrozen}
+		Backend: s.executionBackend(runner, resumeBackend), MergeWindow: s.mergeWindow, MaxTurns: s.maxTurns, SessionMaxTurns: s.maxTurns, RequestRotation: s.requestMemberRotation, RequestRecovery: s.requestMemberRecovery, RecoveryPending: recovery, BackendBlocked: blocked, PersistentScheduling: true, RestoredTurnsUsed: used, RestoredTurnLimit: limit, ExecutionFrozen: s.grantsFrozen}
 	if s.unifiedInputs {
 		member.Inbox = nil
 		member.Inputs = func(ctx context.Context) (unifiedInputStatus, error) {
@@ -195,30 +142,6 @@ func (s *service) newMember(id MemberIdentity, runner RunnerConfig, restored *Ag
 		member.state.InputStateRef = "input-state.json"
 	}
 	return member
-}
-
-func (s *service) memberBackend(runner RunnerConfig) dshBackend {
-	backend := dshBackend{checkWorkspace: func() error {
-		if s.checkWorkspace != nil {
-			return s.checkWorkspace(runner.Profile)
-		}
-		return nil
-	}, isDirect: s.isDirect, access: s.access, store: s.store, settings: s.settings, profile: s.dshProfiles[runner.Profile], turnTimeout: s.dshTurnTimeout, prepare: s.prepareRoomMaterials, recoveryContext: s.prepareDSHRecoveryContext}
-	if s.unifiedInputs {
-		backend.prepare = nil
-		backend.inputService = s
-	}
-	if s.inboxMode != "cli" && s.access != nil {
-		backend.inboxMCP = s
-	}
-	if s.models != nil {
-		backend.models = s.models
-		backend.credentials = s.models.Credentials
-		if target, ok := s.modelTargets[runner.Profile]; ok {
-			backend.model = &target
-		}
-	}
-	return backend
 }
 
 func (s *service) spawnMember(id MemberIdentity, runner RunnerConfig, restored *AgentSnapshot) (actorx.Addr, error) {

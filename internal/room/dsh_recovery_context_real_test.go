@@ -192,7 +192,7 @@ When asked to continue/review after rotation or restart, restore the existing ma
 		t.Fatal("original not consumed", err)
 	}
 	memberDir := filepath.Join(svc.store.dir, "agents", id.MembershipID)
-	var old dshReference
+	var old sessionReference
 	if err := jsonFile(filepath.Join(memberDir, "session.json"), &old); err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +228,7 @@ When asked to continue/review after rotation or restart, restore the existing ma
 		}
 	}
 	check()
-	var fresh dshReference
+	var fresh sessionReference
 	if err := jsonFile(filepath.Join(memberDir, "session.json"), &fresh); err != nil || fresh.Directory == old.Directory {
 		t.Fatal("same generation", err)
 	}

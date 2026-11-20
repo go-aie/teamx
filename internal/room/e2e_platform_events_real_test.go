@@ -614,7 +614,7 @@ func ge04CheckEvent(t *testing.T, d *realRoomDriver, m *roomManager, id MemberId
 	var config managedRoomConfig
 	fail(jsonFile(filepath.Join(d.dir, "rooms", room.RoomID, "room-config.json"), &config))
 	d.memberDir = filepath.Join(d.dir, "rooms", room.RoomID, "agents", config.Members[0].MembershipID)
-	var ref dshReference
+	var ref sessionReference
 	fail(jsonFile(filepath.Join(d.memberDir, "session.json"), &ref))
 	var backend struct {
 		ID string `json:"sessionId"`

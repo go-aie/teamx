@@ -151,7 +151,7 @@ func TestWebUpdatesPerformance(t *testing.T) {
 					result := dsh.TurnResult{StopReason: "end_turn", Text: strings.Repeat("x", 240<<10), Thought: strings.Repeat("x", 240<<10), Events: []dsh.ActivityEvent{}}
 					// Ordered flow is capped at 256 KiB; total snapshot approaches 768 KiB.
 					result.Events = append(result.Events, dsh.ActivityEvent{Seq: 1, Kind: "text", Text: marker + strings.Repeat("x", 240<<10)})
-					if err := saveDSHDiagnostic(path, dshDiagnostic{Result: result}); err != nil {
+					if err := saveDSHDiagnostic(path, backendDiagnostic{Result: result}); err != nil {
 						return err
 					}
 					return nil

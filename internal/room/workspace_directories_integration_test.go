@@ -34,13 +34,13 @@ func applyMemberDirectories(t *testing.T, m *roomManager, room roomSummary, dirs
 	return op
 }
 
-func workspaceMemberReferences(t *testing.T, m *roomManager, room roomSummary) map[string]dshReference {
+func workspaceMemberReferences(t *testing.T, m *roomManager, room roomSummary) map[string]sessionReference {
 	t.Helper()
 	saved, _ := readManagedRoom(t, m, room)
-	refs := map[string]dshReference{}
+	refs := map[string]sessionReference{}
 	for _, member := range saved.Members {
 		id := MemberIdentity{RoomIdentity: room.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
-		ref, _, err := readDSHReference(filepath.Join(m.roomDir(room.RoomID), "agents", member.MembershipID, "session.json"), id)
+		ref, _, err := readSessionReference(filepath.Join(m.roomDir(room.RoomID), "agents", member.MembershipID, "session.json"), id)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -476,7 +476,7 @@ func TestWorkspaceDirectoryRotationFreezesManagedModelBeforeNextTurn(t *testing.
 		t.Fatal(err)
 	}
 	backend := dshBackend{store: svc.store, model: &old}
-	ref := dshReference{Version: formatVersion, MemberIdentity: id, Directory: "session.json.dsh", ManagedModel: true}
+	ref := sessionReference{Version: formatVersion, MemberIdentity: id, Directory: "session.json.dsh", ManagedModel: true}
 	if err := backend.saveModelSnapshot(opts, ref); err != nil {
 		t.Fatal(err)
 	}

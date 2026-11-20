@@ -57,7 +57,7 @@ func TestModelRotationWaitsForTurnBeforePlatformAndBackend(t *testing.T) {
 					return dsh.TurnResult{StopReason: "end_turn"}, nil
 				}, close: func(context.Context) error { closed.Add(1); return nil }}, nil
 			}}
-			addr, err := h.spawn(&MemberAgent{Options: opts, Store: h.store, Room: h.addr, Backend: backend, MaxTurns: 10})
+			addr, err := h.spawn(&MemberAgent{Options: opts, Store: h.store, Room: h.addr, Backend: hiddenLifecycleBackend{backend}, MaxTurns: 10})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -132,7 +132,7 @@ func TestModelSnapshotRequiresMatchingIdentityAndImmutableExecution(t *testing.T
 	}
 	target := testModelTarget(t, id, credentials)
 	backend := dshBackend{store: h.store, credentials: credentials, model: &target}
-	ref := dshReference{Directory: "session.json.dsh"}
+	ref := sessionReference{Directory: "session.json.dsh"}
 	if err := backend.saveModelSnapshot(opts, ref); err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +158,7 @@ func TestManagedModelReferenceNeverFallsBackWhenSnapshotMissing(t *testing.T) {
 	id := h.memberID("A", "generation-A")
 	opts := adapterOptions(h.store, id)
 	h.store.mu.Lock()
-	err := h.store.save(opts.StatePath, dshReference{Version: formatVersion, MemberIdentity: id, Directory: "session.json.dsh", ManagedModel: true}, maxPrivateFileBytes)
+	err := h.store.save(opts.StatePath, sessionReference{Version: formatVersion, MemberIdentity: id, Directory: "session.json.dsh", ManagedModel: true}, maxPrivateFileBytes)
 	h.store.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)

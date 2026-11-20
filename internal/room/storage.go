@@ -52,7 +52,7 @@ type Store struct {
 	mcpOperations        mcpTurnOperations
 	notificationAdapters func(string) notification.Capabilities
 	mu                   sync.Mutex
-	activeDSH            sync.Map                    // MemberIdentity -> *dshSession; observations only, never persisted.
+	activeSessions       sync.Map                    // MemberIdentity -> activeSessionOutput; observations only, never persisted.
 	activeInboxes        sync.Map                    // MembershipID -> *AgentInbox; reserved until all owned tasks settle.
 	executingReferences  map[referenceActionKey]bool // protected by mu; never replayed
 	dir                  string

@@ -635,7 +635,7 @@ func TestWorkspaceApplyMemberFailureBlocksTeamAndRetriesSameGeneration(t *testin
 		t.Fatal(op)
 	}
 	for _, member := range saved.Members {
-		var ref dshReference
+		var ref sessionReference
 		if err := readSnapshot(filepath.Join(m.roomDir(room.RoomID), "agents", member.MembershipID, "session.json"), &ref, maxPrivateFileBytes); err != nil || !strings.HasSuffix(ref.Directory, req.OperationID) {
 			t.Fatal("retry changed generation", ref, err)
 		}
@@ -721,7 +721,7 @@ func TestWorkspaceApplyHealthySessionUsesFreshGeneration(t *testing.T) {
 		id := MemberIdentity{RoomIdentity: room.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
 		waitMember(t, ctx, m.runtimes[room.RoomIdentity].service.target(id.MembershipID), id, func(status MemberStatus) bool { return !status.Active && status.Agent.TurnNumber == 2 })
 		path := filepath.Join(m.roomDir(room.RoomID), "agents", id.MembershipID, "session.json")
-		var ref dshReference
+		var ref sessionReference
 		if err := readSnapshot(path, &ref, maxPrivateFileBytes); err != nil || ref.Pending || !strings.HasSuffix(ref.Directory, req.OperationID) {
 			t.Fatal("new turn used wrong Session", ref, err)
 		}

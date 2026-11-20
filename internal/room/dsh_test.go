@@ -78,7 +78,7 @@ func TestServicePassesDSHTurnTimeoutToComponent(t *testing.T) {
 	if backend.settings != svc.settings {
 		t.Fatal("DSH does not share live service settings")
 	}
-	opts, err := backend.componentOptions(agent.Options, dshReference{})
+	opts, err := backend.componentOptions(agent.Options, sessionReference{})
 	if err != nil || opts.Limits.TurnTimeout != 30*time.Minute {
 		t.Fatal("service timeout lost before component Open/Resume", opts.Limits.TurnTimeout, err)
 	}
@@ -122,7 +122,7 @@ func TestDSHConversationContextUsesSavedRoomType(t *testing.T) {
 							backend.inputService = &service{}
 						}
 						for _, generation := range []string{"session.json.dsh", "session.json.dsh-rotated"} {
-							options, err := backend.componentOptions(member.Options, dshReference{Directory: generation})
+							options, err := backend.componentOptions(member.Options, sessionReference{Directory: generation})
 							if err != nil {
 								t.Fatal(err)
 							}
@@ -191,7 +191,7 @@ func TestDSHAdapterIsolationMetadataAndPrivateOutput(t *testing.T) {
 		if err != nil || !strings.Contains(string(data), "private answer") {
 			t.Fatal(string(data), err)
 		}
-		var diagnostic dshDiagnostic
+		var diagnostic backendDiagnostic
 		if err := json.Unmarshal(data, &diagnostic); err != nil || diagnostic.Result.Events == nil || len(diagnostic.Result.Events) != 0 {
 			t.Fatal("empty diagnostics must use an explicit ordered event list", err)
 		}
@@ -284,7 +284,7 @@ func TestDSHRestorePausesWithoutReplacingBackend(t *testing.T) {
 			opts := adapterOptions(store, id)
 			if mode == "reference" {
 				store.mu.Lock()
-				err := store.save(opts.StatePath, dshReference{Version: formatVersion, MemberIdentity: id, Directory: "session.json.dsh"}, maxPrivateFileBytes)
+				err := store.save(opts.StatePath, sessionReference{Version: formatVersion, MemberIdentity: id, Directory: "session.json.dsh"}, maxPrivateFileBytes)
 				store.mu.Unlock()
 				if err != nil {
 					t.Fatal(err)
@@ -424,7 +424,7 @@ func TestDSHReferenceFailurePreventsLaunch(t *testing.T) {
 		t.Error("launched before reference committed")
 		return nil, nil
 	}}
-	if _, err := backend.OpenSession(h.ctx, adapterOptions(h.store, id)); !errors.Is(err, errDSHPaused) {
+	if _, err := backend.OpenSession(h.ctx, adapterOptions(h.store, id)); !errors.Is(err, errBackendPaused) {
 		t.Fatal(err)
 	}
 }

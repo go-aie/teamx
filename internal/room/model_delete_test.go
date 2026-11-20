@@ -211,7 +211,7 @@ func TestModelDeletionEquivalentTargetOnlyReplacesReference(t *testing.T) {
 	defer store.Close()
 	opts := SessionOptions{MemberIdentity: id, StatePath: filepath.Join(store.dir, "agents", id.MembershipID, "session.json")}
 	backend := dshBackend{store: store, profile: target.Profile, model: &target, models: m.config.models, credentials: c.service.credentials}
-	if err = backend.saveModelSnapshot(opts, dshReference{Directory: target.Generation}); err != nil {
+	if err = backend.saveModelSnapshot(opts, sessionReference{Directory: target.Generation}); err != nil {
 		t.Fatal(err)
 	}
 	generation := "session.json.dsh-" + strings.Repeat("a", 32)

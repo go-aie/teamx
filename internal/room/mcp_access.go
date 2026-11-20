@@ -43,7 +43,7 @@ func (e *mcpExecution) validate() error {
 	if err != nil {
 		return err
 	}
-	ref, exists, err := readDSHReference(path, id)
+	ref, exists, err := readSessionReference(path, id)
 	if err != nil {
 		return err
 	}

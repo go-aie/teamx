@@ -203,7 +203,7 @@ func TestRealDSHMCPInboxMultiImage(t *testing.T) {
 		input.Inbox.Through = start
 		runErr := session.Run(ctx, input)
 		closeErr := session.Close(context.Background())
-		var diagnostic dshDiagnostic
+		var diagnostic backendDiagnostic
 		if err := readSnapshot(filepath.Join(filepath.Dir(opts.StatePath), "dsh-turn.json"), &diagnostic, maxPrivateFileBytes); err != nil {
 			t.Fatal(err)
 		}

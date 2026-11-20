@@ -29,11 +29,6 @@ type rotationRecord struct {
 	FailedStep  string `json:"failed_step,omitempty"`
 }
 
-func validSessionGeneration(g string) bool {
-	const base = "session.json.dsh"
-	return g == base || len(g) == len(base)+33 && g[:len(base)+1] == base+"-" && validRestartID(g[len(base)+1:])
-}
-
 func (r rotationRecord) validate(id MemberIdentity) error {
 	if r.ModelTarget != nil {
 		if err := r.ModelTarget.validate(id); err != nil {
@@ -119,14 +114,14 @@ func reconcileRotation(store *Store, opts SessionOptions, r *rotationRecord, sta
 	if state.MemberIdentity != opts.MemberIdentity || (state.Version != formatVersion && state.Version != schedulingVersion) || state.SessionStartUsed > state.Used {
 		return ErrIdentity
 	}
-	b := dshBackend{store: store}
+	b := storedSessionBackend(store)
 	ref, _, err := b.reference(opts)
 	if err != nil {
 		return err
 	}
 	generation := ref.Directory
 	if generation == "" {
-		generation = filepath.Base(dshStateDir(opts.StatePath))
+		generation = initialSessionGeneration(opts)
 	}
 	if r.Phase == "completed" {
 		if generation != r.To || state.Version != schedulingVersion || state.SessionGeneration != r.To || state.SessionStartUsed != r.BaseUsed || state.Used < r.BaseUsed {
@@ -160,12 +155,7 @@ func reconcileRotation(store *Store, opts SessionOptions, r *rotationRecord, sta
 	if state.SessionGeneration == r.To && (state.SessionStartUsed != r.BaseUsed || generation != r.To) {
 		return fmt.Errorf("%w: rotation baseline changed", ErrConflict)
 	}
-	if r.ModelTarget != nil {
-		snapshot := r.ModelTarget.clone()
-		b.model = &snapshot
-		b.profile = snapshot.Profile
-	}
-	if _, err := b.switchSession(opts, r.From, r.To); err != nil {
+	if _, err := b.switchPreparedSession(opts, r.From, r.To, r.ModelTarget); err != nil {
 		return err
 	}
 	state.Version, state.SessionGeneration, state.SessionStartUsed = schedulingVersion, r.To, r.BaseUsed

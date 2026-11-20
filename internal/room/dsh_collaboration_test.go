@@ -128,7 +128,7 @@ func TestDSHRecoveryAdmitsOnlyStoppedOriginalSession(t *testing.T) {
 			}
 			opts := adapterOptions(store, id)
 			store.mu.Lock()
-			err := store.save(opts.StatePath, dshReference{Version: formatVersion, MemberIdentity: id, Directory: "session.json.dsh"}, maxPrivateFileBytes)
+			err := store.save(opts.StatePath, sessionReference{Version: formatVersion, MemberIdentity: id, Directory: "session.json.dsh"}, maxPrivateFileBytes)
 			store.mu.Unlock()
 			if err != nil {
 				t.Fatal(err)

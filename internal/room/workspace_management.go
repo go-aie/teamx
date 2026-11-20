@@ -552,7 +552,7 @@ func (m *roomManager) runWorkspace(op workspaceOperation, rt *roomRuntime) {
 		for i, member := range op.Members {
 			id := MemberIdentity{RoomIdentity: op.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
 			opts := SessionOptions{MemberIdentity: id, StatePath: filepath.Join(sessionStore.dir, "agents", id.MembershipID, "session.json")}
-			ref, exists, err := (dshBackend{store: sessionStore}).reference(opts)
+			ref, exists, err := storedSessionBackend(sessionStore).reference(opts)
 			if err != nil {
 				runErr = err
 				break
@@ -561,7 +561,7 @@ func (m *roomManager) runWorkspace(op workspaceOperation, rt *roomRuntime) {
 				op.RotateMembers = append(op.RotateMembers, member.MembershipID)
 			} else if exists || ref.Pending {
 				if op.RetainedSessions == nil {
-					op.RetainedSessions = map[string]dshReference{}
+					op.RetainedSessions = map[string]sessionReference{}
 				}
 				op.RetainedSessions[member.MembershipID] = ref
 			}
@@ -735,7 +735,7 @@ func cloneToolEnv(input map[string]string) map[string]string {
 // member that has never opened a Session receives no synthetic rotation.
 func (m *roomManager) updateWorkspaceSession(store *Store, id MemberIdentity, operationID string) error {
 	opts := SessionOptions{MemberIdentity: id, StatePath: filepath.Join(store.dir, "agents", id.MembershipID, "session.json")}
-	b := dshBackend{store: store}
+	b := storedSessionBackend(store)
 	ref, exists, err := b.reference(opts)
 	if err != nil {
 		return err
@@ -763,7 +763,7 @@ func (m *roomManager) updateWorkspaceSession(store *Store, id MemberIdentity, op
 		if r != nil && r.Phase != "completed" {
 			return ErrBusy
 		}
-		if ref.Directory == "session.json.dsh-"+operationID {
+		if ref.Directory == sessionGenerationForOperation(operationID) {
 			return ErrConflict
 		}
 		r = &rotationRecord{Version: rotationVersion, MemberIdentity: id, OperationID: operationID, Reason: "workspace_apply", From: ref.Directory, To: "session.json.dsh-" + operationID, BaseUsed: state.Used, Phase: "prepared"}
@@ -777,7 +777,7 @@ func (m *roomManager) updateWorkspaceSession(store *Store, id MemberIdentity, op
 			return err
 		}
 	}
-	if r.Reason != "workspace_apply" || r.To != "session.json.dsh-"+operationID {
+	if r.Reason != "workspace_apply" || r.To != sessionGenerationForOperation(operationID) {
 		return ErrConflict
 	}
 	return reconcileRotation(store, opts, r, &state)
@@ -786,11 +786,11 @@ func (m *roomManager) updateWorkspaceSession(store *Store, id MemberIdentity, op
 // A recorded progress bit never substitutes for checking the actual reference.
 func (m *roomManager) reconcileWorkspaceSession(store *Store, id MemberIdentity, operationID string, rotate, updated bool) error {
 	opts := SessionOptions{MemberIdentity: id, StatePath: filepath.Join(store.dir, "agents", id.MembershipID, "session.json")}
-	ref, exists, err := (dshBackend{store: store}).reference(opts)
+	ref, exists, err := storedSessionBackend(store).reference(opts)
 	if err != nil {
 		return err
 	}
-	desired := filepath.Base(dshStateDir(opts.StatePath)) + "-" + operationID
+	desired := sessionGenerationForOperation(operationID)
 	if !rotate {
 		if exists || ref.Pending {
 			return ErrConflict

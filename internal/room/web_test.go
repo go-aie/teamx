@@ -92,7 +92,7 @@ func TestMemberActivityIsOperatorOnlyAndGenerationBound(t *testing.T) {
 		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 			t.Fatal(err)
 		}
-		if err := saveDSHDiagnostic(path, dshDiagnostic{Result: dsh.TurnResult{StopReason: "end_turn", Text: "private-" + id.AgentID,
+		if err := saveDSHDiagnostic(path, backendDiagnostic{Result: dsh.TurnResult{StopReason: "end_turn", Text: "private-" + id.AgentID,
 			TextTruncated: true, Tools: []dsh.ToolUpdate{{ID: "tool-1", Status: "completed"}}, ToolsTruncated: true}}); err != nil {
 			t.Fatal(err)
 		}
@@ -261,7 +261,7 @@ func TestMemberActivityLiveRunWithoutListener(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("run did not settle")
 	}
-	if _, ok := svc.store.activeDSH.Load(id); ok {
+	if _, ok := svc.store.activeSessions.Load(id); ok {
 		t.Fatal("settled live entry retained")
 	}
 	response = read(req)

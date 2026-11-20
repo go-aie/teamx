@@ -25,3 +25,7 @@ func (b rotatingControlledBackend) checkRotationClosed(SessionOptions, string, b
 func (b rotatingControlledBackend) switchSession(SessionOptions, string, string) (Backend, error) {
 	return b, nil
 }
+
+func (b rotatingControlledBackend) reference(SessionOptions) (sessionReference, bool, error) {
+	return sessionReference{}, false, nil
+}

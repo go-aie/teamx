@@ -29,7 +29,7 @@ func (c *modelController) memberViewLocked(ref memberModelReference) modelMember
 	entry, _ := c.manager.config.models.catalog().resolve(ref.Selection)
 	v := modelMemberView{MemberIdentity: ref.MemberIdentity, Selection: ref.Selection, Version: ref.Version, TargetEntryID: entry.ID, TargetRevision: entry.Revision, OperationID: c.manager.config.models.gate(ref.MemberIdentity)}
 	path := filepath.Join(c.manager.roomDir(ref.RoomID), "agents", ref.MembershipID, "session.json")
-	if reference, _, err := readDSHReference(path, ref.MemberIdentity); err == nil && reference.Directory != "" {
+	if reference, _, err := readSessionReference(path, ref.MemberIdentity); err == nil && reference.Directory != "" {
 		var frozen modelSessionSnapshot
 		if readSnapshot(filepath.Join(filepath.Dir(path), reference.Directory+".model.json"), &frozen, maxPrivateFileBytes) == nil && frozen.validate(ref.MemberIdentity) == nil {
 			v.Actual = &modelActualView{frozen.EntryID, frozen.EntryRevision, frozen.Profile.Model.ModelID, reference.Directory, reference.Pending}

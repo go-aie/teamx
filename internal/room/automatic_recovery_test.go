@@ -34,7 +34,7 @@ func recoveryHarness(t *testing.T, fail error, always bool, closeFn func(context
 			return dsh.TurnResult{StopReason: "end_turn"}, nil
 		}, close: closeFn}, nil
 	}}
-	addr, err := h.spawn(&MemberAgent{Options: adapterOptions(h.store, id), Store: h.store, Room: h.addr, Backend: backend,
+	addr, err := h.spawn(&MemberAgent{Options: adapterOptions(h.store, id), Store: h.store, Room: h.addr, Backend: hiddenLifecycleBackend{backend},
 		SessionMaxTurns: 16, RequestRotation: svc.requestMemberRotation, RequestRecovery: svc.requestMemberRecovery})
 	if err != nil {
 		t.Fatal(err)
@@ -184,7 +184,7 @@ func TestAutomaticRecoveryRestoresOnlyEnabledSettledSessions(t *testing.T) {
 			id := h.memberID("A", "generation-A")
 			opts := adapterOptions(h.store, id)
 			h.store.mu.Lock()
-			err := h.store.save(opts.StatePath, dshReference{Version: formatVersion, MemberIdentity: id, Directory: "session.json.dsh"}, maxPrivateFileBytes)
+			err := h.store.save(opts.StatePath, sessionReference{Version: formatVersion, MemberIdentity: id, Directory: "session.json.dsh"}, maxPrivateFileBytes)
 			h.store.mu.Unlock()
 			if err != nil {
 				t.Fatal(err)
@@ -268,7 +268,7 @@ func TestAutomaticRecoveryAfterFailedSessionOpen(t *testing.T) {
 			h := newRoomHarness(t, historyRoom(0, ""), nil)
 			id := h.memberID("A", "generation-A")
 			opts := adapterOptions(h.store, id)
-			ref := dshReference{Version: formatVersion, MemberIdentity: id, Directory: "session.json.dsh"}
+			ref := sessionReference{Version: formatVersion, MemberIdentity: id, Directory: "session.json.dsh"}
 			if err := h.store.save(opts.StatePath, ref, maxPrivateFileBytes); err != nil {
 				t.Fatal(err)
 			}
@@ -311,7 +311,7 @@ func TestAutomaticRecoveryAfterFailedSessionOpen(t *testing.T) {
 					return dsh.TurnResult{StopReason: "end_turn"}, nil
 				}}, nil
 			}}
-			addr, err := h.spawn(&MemberAgent{Options: opts, Store: h.store, Room: h.addr, Backend: backend, SessionMaxTurns: 16, RequestRecovery: svc.requestMemberRecovery})
+			addr, err := h.spawn(&MemberAgent{Options: opts, Store: h.store, Room: h.addr, Backend: hiddenLifecycleBackend{backend}, SessionMaxTurns: 16, RequestRecovery: svc.requestMemberRecovery})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -380,7 +380,7 @@ func TestFailedOpenRecoveryRejectsUntrustedSessionReference(t *testing.T) {
 			case "identity":
 				other := id
 				other.MembershipID = "another-member"
-				if err := h.store.save(opts.StatePath, dshReference{Version: formatVersion, MemberIdentity: other, Directory: "session.json.dsh"}, maxPrivateFileBytes); err != nil {
+				if err := h.store.save(opts.StatePath, sessionReference{Version: formatVersion, MemberIdentity: other, Directory: "session.json.dsh"}, maxPrivateFileBytes); err != nil {
 					t.Fatal(err)
 				}
 			case "corrupt":

@@ -26,7 +26,7 @@ CONTRACTS = {
     "input_owners": "MemberInputActor InboxActor sharedInputStorage openPlatformInputStorage closeInputOwners inputOwnerValue",
     "input_execution": "inputSession newInputSession receiveGroupBodies finishMCPTurn",
     "scheduler": "TurnScheduler NewTurnScheduler RequestTurn TurnGranted CancelTurnRequest ReleaseTurn StopTurnGrants InspectTurnScheduler TurnSchedulerState bindTurnScheduler",
-    "members": "MemberAgent Backend SessionOptions dshBackend dshSession ownedSession rotationLease",
+    "members": "MemberAgent Backend SessionOptions storedBackend storedSessionBackend ownedSessionCloser memberStateStore backendRecoveryPolicy modelChangingBackend sessionReference backendCleanupSettled inspectBackendRecovery dshBackend dshSession ownedSession rotationLease",
     "platform_calls": "Calls WaitCalls platformCalls platformCall preparePlatformCallLocked finishPlatformCallLocked finishPlatformCall cancelPlatformCallsLocked waitPlatformCalls",
     "platform_configuration": "roomManager oauthFlights oauthLeases gitlabAuthSessions larkAuthSessions scionAuthSessions",
     "followups": "followupEvent followupUnit queryActions executeAction naturalPolicy",

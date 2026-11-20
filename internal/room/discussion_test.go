@@ -171,7 +171,7 @@ func TestDiscussionRestartSettlesWholeTeamBeforeClearing(t *testing.T) {
 			t.Fatal("team not resumed or budget renewed", status)
 		}
 		data, err := os.ReadFile(filepath.Join(svc.store.dir, "agents", m.MembershipID, "session.json"))
-		var ref dshReference
+		var ref sessionReference
 		if err != nil || json.Unmarshal(data, &ref) != nil || !ref.Pending {
 			t.Fatal("new session was not lazy", string(data), err)
 		}

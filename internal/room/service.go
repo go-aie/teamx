@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/go-aie/actorx"
-	"github.com/go-aie/teamx/internal/agent/dsh"
 	"github.com/go-aie/teamx/internal/app/agents"
 	"github.com/go-aie/teamx/internal/calendar"
 	"github.com/go-aie/teamx/internal/platform"
@@ -815,7 +814,7 @@ func (s *service) settleMemberRemoval(membershipID string) error {
 		if err != nil {
 			return fmt.Errorf("member removed; cleanup incomplete: %w", err)
 		}
-		if !dsh.CleanupSettled(exit.Reason) {
+		if !backendCleanupSettled(exit.Reason) {
 			return fmt.Errorf("member removed; cleanup failed: %w", exit.Reason)
 		}
 		s.setTarget(membershipID, actorx.Addr{})

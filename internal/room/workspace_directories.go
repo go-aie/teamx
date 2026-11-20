@@ -304,7 +304,7 @@ type workspaceMemberDirectoryStatus struct {
 }
 
 func verifyUnchangedWorkspaceSession(store *Store, id MemberIdentity, op workspaceOperation) error {
-	ref, _, err := (dshBackend{store: store}).reference(SessionOptions{MemberIdentity: id, StatePath: filepath.Join(store.dir, "agents", id.MembershipID, "session.json")})
+	ref, _, err := storedSessionBackend(store).reference(SessionOptions{MemberIdentity: id, StatePath: filepath.Join(store.dir, "agents", id.MembershipID, "session.json")})
 	if err != nil {
 		return err
 	}

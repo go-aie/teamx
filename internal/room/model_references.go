@@ -62,7 +62,7 @@ func (c *modelController) prepareLocked(ctx context.Context, op *modelChangeOper
 		repairing := op.Input.Kind == "save" && op.Input.Entry.ID == entry.ID || op.Input.Kind == "default" && op.Input.EntryID == entry.ID || op.Input.Kind == "delete" && op.Input.ReplacementID == entry.ID
 		if repairing && !entry.Unverified && !m.config.models.hasValidation(old.ID) {
 			path := filepath.Join(m.roomDir(ref.RoomID), "agents", ref.MembershipID, "session.json")
-			if generation, _, readErr := readDSHReference(path, ref.MemberIdentity); readErr != nil {
+			if generation, _, readErr := readSessionReference(path, ref.MemberIdentity); readErr != nil {
 				return readErr
 			} else if generation.Directory == "" || generation.Pending {
 				changed = true
@@ -97,7 +97,7 @@ func (c *modelController) prepareLocked(ctx context.Context, op *modelChangeOper
 			// A binding-only change can keep a migrated, normally restorable
 			// execution without fabricating a probe receipt or resetting context.
 			path := filepath.Join(m.roomDir(ref.RoomID), "agents", ref.MembershipID, "session.json")
-			if generation, exists, readErr := readDSHReference(path, ref.MemberIdentity); readErr == nil && exists {
+			if generation, exists, readErr := readSessionReference(path, ref.MemberIdentity); readErr == nil && exists {
 				if frozen, loadErr := readModelSessionSnapshot(filepath.Join(filepath.Dir(path), generation.Directory+".model.json"), ref.MemberIdentity, generation.Directory); loadErr == nil && frozen.ExecutionDigest == entry.executionDigest() {
 					frozen.Selection, frozen.SelectionVersion, frozen.CatalogVersion = selection, version, next.Version
 					frozen.EntryID, frozen.EntryRevision = entry.ID, entry.Revision

@@ -28,7 +28,7 @@ func issueInboxCredential(t *testing.T, a *serverAccess, svc *service, id Member
 	if err != nil {
 		t.Fatal(err)
 	}
-	ref := dshReference{Version: formatVersion, MemberIdentity: id, Directory: filepath.Base(dshStateDir(path))}
+	ref := sessionReference{Version: formatVersion, MemberIdentity: id, Directory: filepath.Base(dshStateDir(path))}
 	if err := svc.store.save(path, ref, maxPrivateFileBytes); err != nil {
 		t.Fatal(err)
 	}
@@ -484,7 +484,7 @@ func TestMCPInboxCachedOutputRejectsRetiredAuthority(t *testing.T) {
 				revoke()
 			case "generation":
 				path, _ := h.store.dshPath(h.id, "session.json", true)
-				ref := dshReference{Version: formatVersion, MemberIdentity: h.id, Directory: filepath.Base(dshStateDir(path)) + "-" + strings.Repeat("b", 32)}
+				ref := sessionReference{Version: formatVersion, MemberIdentity: h.id, Directory: filepath.Base(dshStateDir(path)) + "-" + strings.Repeat("b", 32)}
 				if err := h.store.save(path, ref, maxPrivateFileBytes); err != nil {
 					t.Fatal(err)
 				}
@@ -582,7 +582,7 @@ func TestMCPInboxProductionDefaultAndExplicitCLIFallback(t *testing.T) {
 	for _, mode := range []string{"", "http", "cli"} {
 		svc.inboxMode = mode
 		backend := svc.memberBackend(RunnerConfig{})
-		options, err := backend.componentOptions(opts, dshReference{Directory: "session.json.dsh"})
+		options, err := backend.componentOptions(opts, sessionReference{Directory: "session.json.dsh"})
 		if err != nil {
 			t.Fatal(err)
 		}

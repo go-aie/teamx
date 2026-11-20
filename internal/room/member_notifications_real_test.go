@@ -492,7 +492,7 @@ func TestMemberNotificationsReal(t *testing.T) {
 	if !summarized {
 		t.Fatal("model did not persist a local summary")
 	}
-	var diagnostic dshDiagnostic
+	var diagnostic backendDiagnostic
 	memberDir := filepath.Join(m.roomDir(room.RoomID), "agents", ids[0].MembershipID)
 	if jsonFile(filepath.Join(memberDir, "dsh-turn.json"), &diagnostic) != nil || diagnostic.Result.StopReason != "end_turn" {
 		t.Fatal("missing actual completed DSH diagnostic")
@@ -508,7 +508,7 @@ func TestMemberNotificationsReal(t *testing.T) {
 			t.Fatal("missing actual model CLI call", operation)
 		}
 	}
-	var reference dshReference
+	var reference sessionReference
 	var backend struct {
 		SessionID string `json:"sessionId"`
 	}

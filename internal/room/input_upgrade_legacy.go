@@ -188,7 +188,7 @@ func sameUpgradedMessage(a, b RoomMessage) bool {
 
 func (u *inputUpgrade) checkLegacySession(id MemberIdentity) error {
 	path := filepath.Join(u.store.dir, "agents", id.MembershipID, "session.json")
-	ref, exists, err := readDSHReference(path, id)
+	ref, exists, err := readSessionReference(path, id)
 	if err != nil || !exists {
 		return err
 	}

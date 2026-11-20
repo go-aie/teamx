@@ -13,7 +13,7 @@ func (s *service) executionBindingForTurn(id MemberIdentity, turn uint64) (turnE
 	// Backends without Sessions still get a stable per-Room execution namespace;
 	// real DSH always resolves its actual persisted generation.
 	generation := "local_" + id.MembershipID
-	ref, exists, err := readDSHReference(filepath.Join(s.store.dir, "agents", id.MembershipID, "session.json"), id)
+	ref, exists, err := readSessionReference(filepath.Join(s.store.dir, "agents", id.MembershipID, "session.json"), id)
 	if err != nil {
 		return turnExecution{}, err
 	}

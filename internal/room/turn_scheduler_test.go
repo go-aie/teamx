@@ -268,7 +268,7 @@ func TestRoomSlotJoinsPanicAndUncertainBackendCleanup(t *testing.T) {
 						if mode == "panic" {
 							panic("abandoned backend activity")
 						}
-						return errDSHDisabled
+						return errBackendDisabled
 					case <-ctx.Done():
 						return ctx.Err()
 					}

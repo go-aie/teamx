@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/go-aie/actorx"
-	"github.com/go-aie/teamx/internal/agent/dsh"
 	"github.com/go-aie/teamx/internal/app/agents"
 )
 
@@ -33,7 +32,7 @@ type MemberAgent struct {
 	ModelGate            string
 	Options              SessionOptions
 	Backend              Backend
-	Store                *Store
+	Store                memberStateStore
 	Room                 actorx.Addr
 	MergeWindow          time.Duration
 	Restored             *AgentSnapshot // Loaded and validated before Spawn; starts paused.
@@ -378,7 +377,7 @@ func (m *MemberAgent) Control(ctx actorx.Context, msg ControlMember) (MemberStat
 		if !m.automaticRotation() && m.turnsUsed >= m.turnLimit && msg.Action != "enable" {
 			return MemberStatus{}, ErrTurnBudget
 		}
-		if backend, ok := m.Backend.(interface{ CheckRun() error }); ok && m.session == nil && !m.active {
+		if backend, ok := m.Backend.(backendRunCheck); ok && m.session == nil && !m.active {
 			if err := backend.CheckRun(); err != nil {
 				return MemberStatus{}, err
 			}
@@ -819,9 +818,9 @@ func (m *MemberAgent) startTurn(input UnreadChanged, snapshotSeq, readThrough ui
 				runErr = fmt.Errorf("backend panic: %v", v)
 				// A backend panic may abandon activity; join cleanup before
 				// returning the Room slot, and forbid Session reuse.
-				runErr = errors.Join(runErr, errDSHDisabled)
+				runErr = errors.Join(runErr, errBackendDisabled)
 			}
-			if errors.Is(runErr, errDSHDisabled) {
+			if errors.Is(runErr, errBackendDisabled) {
 				reason := "waiting for backend cleanup: " + runErr.Error()
 				work.cleanupReason.Store(&reason)
 				runErr = errors.Join(runErr, work.session.close())
@@ -840,7 +839,7 @@ func (m *MemberAgent) startTurn(input UnreadChanged, snapshotSeq, readThrough ui
 			work.ended = err == nil
 			runErr = errors.Join(runErr, err)
 			if err == nil && m.ObserveTurnFinished != nil {
-				m.ObserveTurnFinished(opts.MemberIdentity, binding, *work.state.Turn, !errors.Is(runErr, errDSHDisabled))
+				m.ObserveTurnFinished(opts.MemberIdentity, binding, *work.state.Turn, !errors.Is(runErr, errBackendDisabled))
 			}
 		}()
 		if work.session == nil {
@@ -853,7 +852,7 @@ func (m *MemberAgent) startTurn(input UnreadChanged, snapshotSeq, readThrough ui
 				work.cleanupReason.Store(&reason)
 				closeErr := work.session.close()
 				work.session = nil
-				work.openSettled = dsh.CleanupSettled(closeErr) && settledSessionOpenFailure(backend, opts, errors.Join(err, closeErr))
+				work.openSettled = backendCleanupSettled(closeErr) && settledSessionOpenFailure(backend, opts, errors.Join(err, closeErr))
 				return struct{}{}, errors.Join(err, closeErr)
 			}
 			if work.session == nil {
@@ -872,15 +871,15 @@ func (m *MemberAgent) startTurn(input UnreadChanged, snapshotSeq, readThrough ui
 		m.state = work.state
 		m.fault = !work.started || !work.ended || errors.Is(err, ErrCommitUnknown)
 		m.lastError = ""
-		if err != nil && !(work.stopRequested && settledTurnCancellation(err)) {
+		if err != nil && !(work.stopRequested && backendTurnCancellation(backend, err)) {
 			m.lastError = err.Error()
-			if errors.Is(err, errDSHPaused) {
+			if errors.Is(err, errBackendPaused) {
 				m.paused, m.retry = true, false
 			}
-			if errors.Is(err, errDSHDisabled) {
+			if errors.Is(err, errBackendDisabled) {
 				m.BackendBlocked = m.lastError
 			}
-			if errors.Is(err, errDSHPaused) && (work.session != nil || work.openSettled) && recoverableDSHFailure(err) {
+			if errors.Is(err, errBackendPaused) && (work.session != nil || work.openSettled) && recoverableBackendFailure(backend, err) {
 				m.RecoveryPending, m.recoveryArmed = true, true
 				m.rotationNext = m.now().Add(time.Second)
 			}

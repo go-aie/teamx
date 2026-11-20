@@ -2,11 +2,7 @@ package room
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"strings"
-
-	"github.com/go-aie/teamx/internal/agent/dsh"
 )
 
 // Recovery changes a Session generation, never the user's scheduling intent.
@@ -16,54 +12,6 @@ func (m *MemberAgent) canRecoverSession() bool {
 	return m.automaticRotation() && m.enabled && m.RecoveryPending && !m.recoveryAttempted && !m.fault && !m.active &&
 		(m.ExecutionFrozen == nil || !m.ExecutionFrozen.Load()) && m.rotationWork == nil &&
 		(m.rotationRecord == nil || m.rotationRecord.Phase == "completed")
-}
-
-func recoverableDSHFailure(err error) bool {
-	if errors.Is(err, context.Canceled) || errors.Is(err, dsh.ErrCleanupPending) || errors.Is(err, dsh.ErrLocked) || errors.Is(err, dsh.ErrAuthentication) || errors.Is(err, dsh.ErrModelNotFound) || errors.Is(err, dsh.ErrRateLimited) {
-		return false
-	}
-	var status *dsh.HTTPStatusError
-	if errors.As(err, &status) {
-		return status.StatusCode >= 500
-	}
-	// Incompatibility authorizes a recovery candidate, never replacement by
-	// itself. The adapter reference, settlement and business receipts must all
-	// pass the existing rotation gates, including after a failed lazy resume.
-	return errors.Is(err, dsh.ErrRecoveryUnsupported) || errors.Is(err, dsh.ErrUnavailable) || errors.Is(err, dsh.ErrUncertain) || errors.Is(err, dsh.ErrModelUnavailable)
-}
-
-// Legacy snapshots retain only safe diagnostics, so recognize only known
-// backend failures. An arbitrary saved error never authorizes replacement.
-func recoverableDSHHistory(agent AgentSnapshot) bool {
-	if agent.Turn == nil || agent.Turn.Status == "completed" || agent.Turn.Status == "interrupted" {
-		return true
-	}
-	err := agent.Turn.Error
-	if strings.Contains(err, "HTTP 4") {
-		return false
-	}
-	for _, permanent := range []error{dsh.ErrAuthentication, dsh.ErrModelNotFound, dsh.ErrRateLimited} {
-		if strings.Contains(err, permanent.Error()) {
-			return false
-		}
-	}
-	return strings.Contains(err, "cannot inspect owned DSH processes") || strings.Contains(err, dsh.ErrUnavailable.Error()) ||
-		strings.Contains(err, dsh.ErrModelUnavailable.Error()) || strings.Contains(err, dsh.ErrRecoveryUnsupported.Error())
-}
-
-// Failed Open/Resume may return no owned Session. Only independently verified
-// durable settlement permits entering rotation in that case. Never infer that
-// no process exists merely because Open returned nil.
-func settledSessionOpenFailure(backend Backend, opts SessionOptions, err error) bool {
-	if !recoverableDSHFailure(err) {
-		return false
-	}
-	b, ok := backend.(dshBackend)
-	if !ok {
-		return false
-	}
-	ref, exists, checkErr := b.reference(opts)
-	return checkErr == nil && exists && b.checkRotationClosed(opts, ref.Directory, false) == nil
 }
 
 func (s *service) requestMemberRecovery(ctx context.Context, id MemberIdentity, from string) error {

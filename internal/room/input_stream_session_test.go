@@ -52,7 +52,7 @@ func TestUnifiedDSHPreservesReceiptFailureDiagnostic(t *testing.T) {
 	if !errors.Is(err, ErrRequest) || !errors.Is(err, inputstream.ErrBusy) || !strings.Contains(err.Error(), "input result receipt confirmation failed") || strings.Count(err.Error(), inputstream.ErrBusy.Error()) != 1 {
 		t.Fatal("receipt cause lost or duplicated", err)
 	}
-	var diagnostic dshDiagnostic
+	var diagnostic backendDiagnostic
 	if err = readSnapshot(filepath.Join(h.store.dir, "agents", id.MembershipID, "dsh-turn.json"), &diagnostic, maxPrivateFileBytes); err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestUnifiedUnusedProviderDoesNotExpandBaseInformation(t *testing.T) {
 	h, s := unifiedReaderFixture(t, 1)
 	opts := adapterOptions(h.store, s.storage.id)
 	backend := dshBackend{store: h.store, inputService: s.service}
-	before, err := backend.componentOptions(opts, dshReference{})
+	before, err := backend.componentOptions(opts, sessionReference{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +194,7 @@ func TestUnifiedUnusedProviderDoesNotExpandBaseInformation(t *testing.T) {
 	if err != nil || len(codecs) != 3 {
 		t.Fatal("third native source was not assembled", len(codecs), err)
 	}
-	after, err := backend.componentOptions(opts, dshReference{})
+	after, err := backend.componentOptions(opts, sessionReference{})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -216,7 +216,7 @@ func TestRealWorkspaceGitLabDSH(t *testing.T) {
 			fail(errors.New("DSH cwd / clone / authenticated Git remote disagree"))
 		}
 		agentDir := filepath.Join(d.dir, "rooms", a.RoomID, "agents", member.MembershipID)
-		var ref dshReference
+		var ref sessionReference
 		fail(jsonFile(filepath.Join(agentDir, "session.json"), &ref))
 		var meta struct {
 			ID        string `json:"sessionId"`
@@ -285,7 +285,7 @@ func TestRealWorkspaceGitLabDSH(t *testing.T) {
 		_, err := d.waitAgent(member.AgentID, 3, "completed")
 		fail(err)
 		agentDir := filepath.Join(d.dir, "rooms", a.RoomID, "agents", member.MembershipID)
-		var ref dshReference
+		var ref sessionReference
 		fail(jsonFile(filepath.Join(agentDir, "session.json"), &ref))
 		var meta struct {
 			ID string `json:"sessionId"`
