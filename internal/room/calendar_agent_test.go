@@ -16,7 +16,7 @@ import (
 func calendarAgentFixture(t *testing.T) (*service, *inputSession, func(string) string, string) {
 	t.Helper()
 	svc := calendarFixture(t, t.TempDir(), newControlledBackend())
-	id := MemberIdentity{svc.info.RoomIdentity, "A", "generation-A"}
+	id := MemberIdentity{RoomIdentity: svc.info.RoomIdentity, AgentID: "A", MembershipID: "generation-A"}
 	b := calendarRunning(t, svc, 1)
 	p, err := svc.store.openPlatformInputStorage(id, storageAdapters())
 	if err != nil {
@@ -383,7 +383,7 @@ func TestCalendarAgentCLIRejectsInvalidRequestsAndStaleExecution(t *testing.T) {
 	if state := s.calendarCurrent().projection.Load().state; state.Runs[run.ID].Status != "queued" {
 		t.Fatal("invalid claim changed run", state.Runs[run.ID])
 	}
-	id := MemberIdentity{s.info.RoomIdentity, "A", "generation-A"}
+	id := MemberIdentity{RoomIdentity: s.info.RoomIdentity, AgentID: "A", MembershipID: "generation-A"}
 	agent, err := s.store.LoadAgent(id)
 	if err != nil {
 		t.Fatal(err)

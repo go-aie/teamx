@@ -19,7 +19,7 @@ func TestRealLarkSearchNotificationDSH(t *testing.T) {
 
 func collectRealLarkSearch(t *testing.T, m *roomManager, svc *service, id MemberIdentity, c managedPlatform, input larkRealInput, _ bool) lark.State {
 	t.Helper()
-	a := m.larkNotificationAdapter()
+	a := defaultNotificationAdapters(m)[lark.MessagesSourceID]
 	// SearchSource is already the production adapter.
 	m.notificationAdapters[lark.MessagesSourceID] = a
 	m.initPlatformNotifications()

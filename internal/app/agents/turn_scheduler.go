@@ -1,4 +1,6 @@
-package room
+//go:generate go run github.com/go-aie/actorx/cmd/actorx-gen
+
+package agents
 
 import (
 	"context"
@@ -8,70 +10,88 @@ import (
 	"time"
 
 	"github.com/go-aie/actorx"
+	"github.com/go-aie/teamx/internal/identity"
 )
 
 // All addresses are local. Send performs bounded mailbox admission; handlers
 // never wait for another actor's reply. Request numbers are monotonic within a
 // member incarnation and are reused on retry.
-type requestTurn struct {
-	MemberIdentity
+type RequestTurn struct {
+	identity.MemberIdentity
 	ID     uint64
 	Target actorx.Addr
 }
 
-type turnGranted struct {
-	MemberIdentity
+type TurnGranted struct {
+	identity.MemberIdentity
 	ID uint64
 }
 
-type cancelTurnRequest struct{ turnGranted }
-type releaseTurn struct{ turnGranted }
-type stopTurnGrants struct{}
-type bindTurnScheduler struct{ Scheduler, Target actorx.Addr }
+type CancelTurnRequest struct{ TurnGranted }
+type ReleaseTurn struct{ TurnGranted }
+type StopTurnGrants struct{}
+
+// InspectTurnScheduler returns a copy at the actor's message boundary. Callers
+// may observe settlement without accessing or mutating the grant owner's state.
+type InspectTurnScheduler struct{}
+
+type TurnSchedulerState struct {
+	Holders map[identity.MemberIdentity]TurnGranted
+	Queue   []TurnGranted
+	Closing bool
+}
 
 type turnApplicant struct {
-	requestTurn
+	RequestTurn
 	pending bool
 }
 
-// turnScheduler owns one Room's FIFO and handoff responsibility. A grant stays
+// TurnScheduler owns one Room's FIFO and handoff responsibility. A grant stays
 // held even if its delivery fails. Retrying the same grant cannot create a
 // second turn, and only its exact identity/number can release it.
 //
 //actorx:actor
-type turnScheduler struct {
-	RoomIdentity
+type TurnScheduler struct {
+	identity.RoomIdentity
 	owner   actorx.Context
-	members map[MemberIdentity]*turnApplicant
+	members map[identity.MemberIdentity]*turnApplicant
 	queue   []*turnApplicant
-	holders map[MemberIdentity]*turnApplicant
-	mode    schedulingMode
+	holders map[identity.MemberIdentity]*turnApplicant
+	mode    SchedulingMode
 	closing bool
 	frozen  *atomic.Bool // service admission boundary; nil in isolated actor tests
 }
 
-func (s *turnScheduler) Started(ctx actorx.Context, _ actorx.Started) error {
-	mode, err := s.mode.effective()
+// NewTurnScheduler creates one Room's grant owner. The service shares frozen
+// with its shutdown admission gate; nil is allowed for isolated runtimes.
+// Spawn validates mode before admitting requests. Configuration is immutable
+// after spawning, and only the actor accesses its queues and holders.
+func NewTurnScheduler(id identity.RoomIdentity, mode SchedulingMode, frozen *atomic.Bool) *TurnScheduler {
+	return &TurnScheduler{RoomIdentity: id, mode: mode, frozen: frozen}
+}
+
+func (s *TurnScheduler) Started(ctx actorx.Context, _ actorx.Started) error {
+	mode, err := s.mode.Effective()
 	if err != nil {
 		return err
 	}
 	s.mode = mode
-	s.holders = make(map[MemberIdentity]*turnApplicant)
+	s.holders = make(map[identity.MemberIdentity]*turnApplicant)
 	s.owner = ctx.WithContext(context.WithoutCancel(ctx))
-	s.members = make(map[MemberIdentity]*turnApplicant)
+	s.members = make(map[identity.MemberIdentity]*turnApplicant)
 	return s.maintain()
 }
 
-func (s *turnScheduler) Request(_ actorx.Context, msg requestTurn) error {
+func (s *TurnScheduler) Request(_ actorx.Context, msg RequestTurn) error {
 	if s.closing || s.frozen != nil && s.frozen.Load() {
 		return nil
 	}
 	if msg.RoomIdentity != s.RoomIdentity || msg.ID == 0 || msg.Target.IsZero() {
-		return ErrIdentity
+		return identity.ErrMismatch
 	}
 	a := s.members[msg.MemberIdentity]
 	if a == nil {
-		if len(s.members) >= maxMembers {
+		if len(s.members) >= MaxMembers {
 			return ErrCapacity
 		}
 		a = &turnApplicant{}
@@ -81,13 +101,13 @@ func (s *turnScheduler) Request(_ actorx.Context, msg requestTurn) error {
 		return nil
 	}
 	s.removeQueued(a)
-	a.requestTurn, a.pending = msg, true
+	a.RequestTurn, a.pending = msg, true
 	s.queue = append(s.queue, a)
 	s.grant()
 	return nil
 }
 
-func (s *turnScheduler) Cancel(_ actorx.Context, msg cancelTurnRequest) error {
+func (s *TurnScheduler) Cancel(_ actorx.Context, msg CancelTurnRequest) error {
 	if a := s.members[msg.MemberIdentity]; a != nil && a.ID == msg.ID {
 		s.removeQueued(a)
 		// Cancellation alone is not evidence that the holder has settled.
@@ -95,7 +115,7 @@ func (s *turnScheduler) Cancel(_ actorx.Context, msg cancelTurnRequest) error {
 	return nil
 }
 
-func (s *turnScheduler) Release(_ actorx.Context, msg releaseTurn) error {
+func (s *TurnScheduler) Release(_ actorx.Context, msg ReleaseTurn) error {
 	if a := s.members[msg.MemberIdentity]; a != nil && a.ID == msg.ID {
 		s.removeQueued(a)
 		delete(s.holders, msg.MemberIdentity)
@@ -104,7 +124,7 @@ func (s *turnScheduler) Release(_ actorx.Context, msg releaseTurn) error {
 	return nil
 }
 
-func (s *turnScheduler) Quiesce(_ actorx.Context, _ stopTurnGrants) (struct{}, error) {
+func (s *TurnScheduler) Quiesce(_ actorx.Context, _ StopTurnGrants) (struct{}, error) {
 	s.closing = true
 	for _, a := range s.queue {
 		a.pending = false
@@ -113,18 +133,29 @@ func (s *turnScheduler) Quiesce(_ actorx.Context, _ stopTurnGrants) (struct{}, e
 	return struct{}{}, nil
 }
 
-func (s *turnScheduler) removeQueued(a *turnApplicant) {
+func (s *TurnScheduler) Inspect(_ actorx.Context, _ InspectTurnScheduler) (TurnSchedulerState, error) {
+	state := TurnSchedulerState{Closing: s.closing, Holders: make(map[identity.MemberIdentity]TurnGranted, len(s.holders))}
+	for id, a := range s.holders {
+		state.Holders[id] = TurnGranted{a.MemberIdentity, a.ID}
+	}
+	for _, a := range s.queue {
+		state.Queue = append(state.Queue, TurnGranted{a.MemberIdentity, a.ID})
+	}
+	return state, nil
+}
+
+func (s *TurnScheduler) removeQueued(a *turnApplicant) {
 	if a.pending {
 		s.queue = slices.DeleteFunc(s.queue, func(item *turnApplicant) bool { return item == a })
 		a.pending = false
 	}
 }
 
-func (s *turnScheduler) grant() {
+func (s *TurnScheduler) grant() {
 	if s.closing || s.frozen != nil && s.frozen.Load() {
 		return
 	}
-	for len(s.queue) > 0 && (s.mode == schedulingParallel || len(s.holders) == 0) {
+	for len(s.queue) > 0 && (s.mode == SchedulingParallel || len(s.holders) == 0) {
 		a := s.queue[0]
 		s.queue = s.queue[1:]
 		a.pending = false
@@ -133,19 +164,19 @@ func (s *turnScheduler) grant() {
 	for _, a := range s.holders {
 		// Admission failure retains this holder. One member's full mailbox
 		// must not prevent other parallel members from receiving their grants.
-		_ = a.Target.Send(s.owner, turnGranted{a.MemberIdentity, a.ID})
+		_ = a.Target.Send(s.owner, TurnGranted{a.MemberIdentity, a.ID})
 	}
 }
 
-func (s *turnScheduler) maintain() error {
+func (s *TurnScheduler) maintain() error {
 	// One timer/scan per Room, independent of queue length. Wait with an
 	// already canceled context only observes completed exits; it never waits
 	// for a live actor or treats a cancellation deadline as settlement.
-	targets := make(map[MemberIdentity]actorx.Addr, len(s.members))
+	targets := make(map[identity.MemberIdentity]actorx.Addr, len(s.members))
 	for id, a := range s.members {
 		targets[id] = a.Target
 	}
-	_, err := actorx.StartTask(s.owner, func(ctx context.Context) ([]MemberIdentity, error) {
+	_, err := actorx.StartTask(s.owner, func(ctx context.Context) ([]identity.MemberIdentity, error) {
 		timer := time.NewTimer(25 * time.Millisecond)
 		defer timer.Stop()
 		select {
@@ -155,14 +186,14 @@ func (s *turnScheduler) maintain() error {
 		}
 		probe, cancel := context.WithCancel(ctx)
 		cancel()
-		var dead []MemberIdentity
+		var dead []identity.MemberIdentity
 		for id, target := range targets {
 			if _, err := target.Wait(probe); err == nil {
 				dead = append(dead, id)
 			}
 		}
 		return dead, nil
-	}, func(dead []MemberIdentity, err error) bool {
+	}, func(dead []identity.MemberIdentity, err error) bool {
 		if err == nil {
 			for _, id := range dead {
 				a := s.members[id]
@@ -178,21 +209,4 @@ func (s *turnScheduler) maintain() error {
 		return true
 	}, nil)
 	return err
-}
-
-// Spawn first, then bind the reply address before attaching/enabling the member.
-// Test observers may use the same assembly without becoming scheduled agents.
-func spawnScheduledMember(rt *actorx.Runtime, member actorx.Actor, scheduler actorx.Addr) (actorx.Addr, error) {
-	addr, err := rt.Spawn(member)
-	if err != nil {
-		return addr, err
-	}
-	if _, ok := member.(*MemberAgent); ok {
-		_, err = addr.Call[struct{}](context.Background(), bindTurnScheduler{Scheduler: scheduler, Target: addr})
-		if err != nil {
-			_ = addr.Stop(err)
-			_, _ = addr.Wait(context.Background())
-		}
-	}
-	return addr, err
 }

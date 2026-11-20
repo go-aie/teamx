@@ -6,10 +6,7 @@ import (
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/gitlab"
-	"github.com/go-aie/teamx/internal/platform/lark"
 	"github.com/go-aie/teamx/internal/platform/registry"
-	"github.com/go-aie/teamx/internal/platform/scion"
 )
 
 // Static composition points are independent: a provider can offer platforms,
@@ -22,19 +19,27 @@ type connectionProvider struct {
 }
 
 func (m *roomManager) initPlatform() {
+	if m.platformCatalog == nil {
+		m.platformCatalog = defaultPlatformCatalog()
+	}
 	if m.connectionProviders == nil {
-		m.connectionProviders = map[string]connectionProvider{
-			"gitlab": {Normalize: registry.Normalize, LegacyIdentity: gitlab.LegacyAccountIdentity},
-			"scion": {Normalize: registry.Normalize, ValidProfile: func(_ string, p platform.CLIProfile) bool {
-				return scion.ValidProfile(p)
-			}, VerifyProfile: func(ctx context.Context, origin string, p platform.CLIProfile) platform.Validation {
-				return scion.VerifyProfile(ctx, m.store.dir, origin, p)
-			}},
-			"lark": {Normalize: registry.Normalize, ValidProfile: func(origin string, p platform.CLIProfile) bool {
-				return lark.ValidProfile(p) && origin == lark.Origin(p.Brand)
-			}, VerifyProfile: func(ctx context.Context, origin string, p platform.CLIProfile) platform.Validation {
-				return m.larkClients.VerifyIdentity(ctx, origin, p)
-			}},
+		m.connectionProviders = make(map[string]connectionProvider)
+		for _, definition := range m.platformCatalog.Definitions() {
+			if definition.Connection == nil {
+				continue
+			}
+			c := definition.Connection
+			adapter := connectionProvider{Normalize: c.Normalize, LegacyIdentity: c.LegacyIdentity, ValidProfile: c.ValidProfile}
+			// Resource-bound verification remains at the outer composition point.
+			switch definition.Type.Provider {
+			case "scion":
+				adapter.VerifyProfile = m.verifyScionProfile
+			case "lark":
+				adapter.VerifyProfile = func(ctx context.Context, origin string, p platform.CLIProfile) platform.Validation {
+					return m.larkClients.VerifyIdentity(ctx, origin, p)
+				}
+			}
+			m.connectionProviders[definition.Type.Provider] = adapter
 		}
 	}
 	m.platforms = registry.New(registry.Store{
@@ -56,7 +61,7 @@ func (m *roomManager) initPlatform() {
 			return "", "", registry.ErrRequest
 		}
 		return adapter.Normalize(name, origin)
-	})
+	}, m.platformCatalog.Types())
 	m.platforms.SetIdentityResolver(func(provider, origin string, v platform.Validation) (platform.AccountIdentity, bool) {
 		a := m.connectionProviders[provider]
 		if a.LegacyIdentity == nil {

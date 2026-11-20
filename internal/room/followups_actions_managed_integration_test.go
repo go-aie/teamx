@@ -279,7 +279,7 @@ func TestReferenceActionInternalRevocationSettles(t *testing.T) {
 					}()
 					awaitEventSignal(t, canceled, "revocation did not cancel transport")
 					m.mu.Lock()
-					pending := len(m.platformCalls)
+					pending := m.platformCalls.Len()
 					m.mu.Unlock()
 					if pending == 0 {
 						t.Fatal("response released ownership early", pending)

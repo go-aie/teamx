@@ -225,7 +225,7 @@ func TestReferenceEntryRegisteredActionsRespectNativeType(t *testing.T) {
 			svc.referenceResolver = referenceTestResolver
 			svc.referenceSpecs = func(string) []platform.ActionSpec {
 				specs := []platform.ActionSpec{}
-				for _, a := range gitlabReferenceCapabilities().Actions {
+				for _, a := range testGitlabReferenceCapabilities().Actions {
 					specs = append(specs, a.Spec)
 				}
 				return specs
@@ -253,7 +253,7 @@ func TestReferenceEntryRegisteredActionsRespectNativeType(t *testing.T) {
 			if len(detail.Actions) != want {
 				t.Fatal("incorrect action advertisement", kind, detail.Actions)
 			}
-			spec := gitlabReferenceCapabilities().Actions[platform.OperationObjectComment].Spec
+			spec := testGitlabReferenceCapabilities().Actions[platform.OperationObjectComment].Spec
 			if validReferenceSpec(spec, referenceActionRequest{Operation: platform.OperationObjectComment}, detail.Target.Target) != (want == 1) {
 				t.Fatal("execution disagrees with advertised native target type")
 			}
@@ -283,4 +283,9 @@ func agentPolicyFixture(q conversationPolicyChange) agentPolicyChange {
 }
 func followupFixture(u agentFollowupUnit) followupUnit {
 	return followupUnit{Ref: u.Ref, ObjectRef: u.ObjectRef, TargetRef: u.TargetRef, Revision: u.Revision, Status: u.Status, Summary: u.Summary, Next: u.Next, Evidence: u.Evidence, TurnNumber: u.TurnNumber, UpdatedAt: u.UpdatedAt, Questions: u.Questions, Instructions: u.Instructions}
+}
+
+func testGitlabReferenceCapabilities() platform.ReferenceCapabilities {
+	caps, _ := defaultPlatformCatalog().ReferenceCapabilities("gitlab")
+	return caps
 }

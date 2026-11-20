@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/go-aie/teamx/internal/app/platforms"
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
 	"github.com/go-aie/teamx/internal/platform/notification"
@@ -141,7 +142,7 @@ func (m *roomManager) configureTodosSubscription(ctx context.Context, key notifi
 	if err != nil {
 		return next, notificationRoomError(err)
 	}
-	if err = notification.Wait(ctx, waits); err != nil {
+	if err = platforms.WaitCalls(ctx, waits); err != nil {
 		return next, err
 	}
 	// An account switch returns its durably retired predecessor. Only after all

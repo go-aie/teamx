@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-aie/teamx/internal/app/platforms"
 	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/notification"
 	"github.com/go-aie/teamx/internal/platform/registry"
 	"github.com/go-aie/teamx/internal/platform/tool"
 )
@@ -222,7 +222,7 @@ func (m *roomManager) serveTools(w http.ResponseWriter, r *http.Request) {
 		if err == nil {
 			ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 			defer cancel()
-			if notification.Wait(ctx, pending) != nil {
+			if platforms.WaitCalls(ctx, pending) != nil {
 				err = ErrBusy
 			}
 		}
@@ -368,7 +368,7 @@ func (m *roomManager) serveToolRun(w http.ResponseWriter, r *http.Request) {
 	defer input.Close()
 	defer feed.Close()
 	go func() { _, _ = io.Copy(feed, reader); _ = feed.Close() }()
-	stream := &toolStream{w: w, cancel: call.cancel}
+	stream := &toolStream{w: w, cancel: call.Cancel}
 	process.Input = input
 	process.Output = toolStreamWriter{stream, "stdout"}
 	process.Error = toolStreamWriter{stream, "stderr"}

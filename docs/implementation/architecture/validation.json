@@ -1,0 +1,260 @@
+{
+  "finished_at": "2026-11-19T15:58:43.019669+00:00",
+  "head": "633a0f2fbcd237c0e9a68f5ba13dc93ff0b68d78",
+  "scope": "R0 source baseline only. Production Go code was not changed; no live-service restart/session refresh or external business writes. Local regression suites used disposable fixtures. Full suites initially overlapped; assertion failures were independently rechecked.",
+  "overall": "baseline_captured_with_unresolved_failures",
+  "checks": [
+    {
+      "command": "make test",
+      "exit_code": 2,
+      "note": "Room calendar assertion failed; package exceeded the default 3m total timeout. Other packages passed; many reused Go test cache. Started before adding the architecture test.",
+      "log": ".local/architecture-baseline/core.log",
+      "log_sha256": "6ef108e683c2e5deedcda62642448d40f486138470e342389a70718d6999de9b",
+      "failures": [
+        {
+          "test": "--- FAIL: TestCalendarManagedRecurringPauseRecoveryAndPublication (6.10s)",
+          "diagnostic": "    calendar_lifecycle_test.go:201: controlled model turn did not start"
+        }
+      ],
+      "excerpts": [
+        "panic: test timed out after 3m0s",
+        "FAIL\tgithub.com/go-aie/teamx/internal/room\t185.801s",
+        "make: *** [test] Error 1",
+        "\trunning tests:",
+        "\t\tTestHumanReadInvalidLegacyFileIsNeverConverted (0s)",
+        "\t\tTestHumanReadInvalidLegacyFileIsNeverConverted/future (0s)",
+        ""
+      ]
+    },
+    {
+      "command": "make test-integration",
+      "exit_code": 2,
+      "note": "Room calendar plus four DSH/upgrade assertions failed; package exceeded 8m total timeout. Other packages passed. Started before adding the architecture test.",
+      "log": ".local/architecture-baseline/integration.log",
+      "log_sha256": "3629f4c4a218ae3a2976fa690058fca96aa4652175cafd0c820675dca3b8df82",
+      "failures": [
+        {
+          "test": "--- FAIL: TestCalendarManagedRecurringPauseRecoveryAndPublication (5.76s)",
+          "diagnostic": "    calendar_lifecycle_test.go:201: controlled model turn did not start"
+        },
+        {
+          "test": "--- FAIL: TestUnifiedDSHPreservesReceiptFailureDiagnostic (0.09s)",
+          "diagnostic": "    input_stream_session_test.go:46: snapshot identity mismatch"
+        },
+        {
+          "test": "--- FAIL: TestUnifiedDSHDirectoryRecoverySupplyAndContract (0.08s)",
+          "diagnostic": "    input_stream_session_test.go:90: snapshot identity mismatch"
+        },
+        {
+          "test": "--- FAIL: TestUnifiedDSHDirectoryCannotBypassDurableDiscoveryBudget (0.14s)",
+          "diagnostic": "    input_stream_session_test.go:226: snapshot identity mismatch"
+        },
+        {
+          "test": "--- FAIL: TestInputUpgradeRotatesSettledDSHContract (1.65s)",
+          "diagnostic": "    input_upgrade_dsh_integration_test.go:152: unexpected MCP tools/list for rotated Session 200 {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[{\"annotations\":{\"readOnlyHint\":true},\"description\":\"List locally retained, visible history streams without consuming. Optional limit (default 10, max 20); continue with only the returned cursor. Includes streams with no pending inputs. No body or image preview"
+        }
+      ],
+      "excerpts": [
+        "panic: test timed out after 8m0s",
+        "FAIL\tgithub.com/go-aie/teamx/internal/room\t484.412s",
+        "make: *** [test-integration] Error 1",
+        "\trunning tests:",
+        "\t\tTestPlatformMemberCurrentConcurrentReservationAndFrozenAdmission (6s)",
+        "\t\tTestPlatformMemberCurrentConcurrentReservationAndFrozenAdmission/gitlab/member (0s)",
+        ""
+      ]
+    },
+    {
+      "command": "go test ./internal/architecture ./internal/platform ./internal/workspace -count=1",
+      "exit_code": 0,
+      "note": "Initial new production boundary test plus existing boundary suites.",
+      "log": ".local/architecture-baseline/boundaries.log",
+      "log_sha256": "d85b106ac8a1396eb35435636c955c7e6234cde3012e8cb7c21777cecc61a01f",
+      "failures": [],
+      "excerpts": []
+    },
+    {
+      "command": "go test -race -tags=integration -timeout=5m ./internal/room ./internal/inputstream ./internal/agent/dsh -run 'TestHistory|TestRetainedMetadata|TestSnapshotWriter|TestSnapshotRemoval|TestSnapshotDirectory|TestNotificationConfirmationRechecksSharedWriterHealth|TestDirectoryClose|TestTurnScheduler|TestRuntimeShutdown|TestInputToolsMinimalContract|TestInputMCPWaitsForFrameworkReceipt|TestUnifiedRoomTimelineNativeLogAndPagination|TestUnifiedEventsAudienceHintsDedupAndNativeProofRecovery|TestSharedInboxHandoffRevocationAndReceiptRecovery|TestHistoryMaterialsUseExistingDownloaderAndMemberAccount|TestHistoryGuidanceAndBackendModes|TestRemovedRoomReadCommand' -count=1",
+      "exit_code": 0,
+      "note": "Room 54.997s; inputstream 1.908s; DSH compiled but had no matching tests. No real DSH/model acceptance implied.",
+      "log": ".local/architecture-baseline/contracts-race.log",
+      "log_sha256": "778ba0c8db263ac9f518cc15ac900018c6eaa547e5f56e3c1c9bcaaab9b7aa48",
+      "failures": [],
+      "excerpts": []
+    },
+    {
+      "command": "go test -race -tags=integration -timeout=3m ./internal/architecture ./internal/platform ./internal/workspace ./internal/room -run 'TestProductionImportBoundaries|TestCapabilityImportBoundaries|TestRepositoryImportBoundaries|TestPlatformEntries|TestPlatformEntry|TestInputStorageUsesStaticSourceAssembly|TestThirdNativeSourceAndAdditionalChannelUseSameStorage|TestPlatformInput|TestPlatformNativeQueryBoundariesAndSameRecord|TestMemberInput|TestRoomTurns|TestRoomSlot|TestDirectoryOwnership|TestCommitFailureBoundaries|TestHumanRead' -count=1",
+      "exit_code": 0,
+      "note": "Includes final GitLab-to-Lark constraint, source assembly, exact account entry, owner cancellation/close, writer uncertainty, Room turn settlement and human-read isolation. Room 58.721s.",
+      "log": ".local/architecture-baseline/owners-entry-race.log",
+      "log_sha256": "1b3ad4fb5a4f67cdcb002e48e75787f931b375ff9c3c481fd2848bd5e49b8e63",
+      "failures": [],
+      "excerpts": []
+    },
+    {
+      "command": "go test ./internal/room -run '^(TestCalendarManagedRecurringPauseRecoveryAndPublication|TestHumanReadInvalidLegacyFileIsNeverConverted)$' -count=1 -timeout=1m",
+      "exit_code": 1,
+      "note": "Calendar controlled-model-turn-start assertion reproduced; this run completed in 7.205s without package timeout.",
+      "log": ".local/architecture-baseline/core-failure-recheck.log",
+      "log_sha256": "12e71eff41db39e00df2c6391c33637bb9c7c2ce3dfd3632c3ae61a6aec084cc",
+      "failures": [
+        {
+          "test": "--- FAIL: TestCalendarManagedRecurringPauseRecoveryAndPublication (6.50s)",
+          "diagnostic": "    calendar_lifecycle_test.go:201: controlled model turn did not start"
+        }
+      ],
+      "excerpts": [
+        "FAIL\tgithub.com/go-aie/teamx/internal/room\t7.205s"
+      ]
+    },
+    {
+      "command": "go test -tags=integration ./internal/room -run '^(TestUnifiedDSHPreservesReceiptFailureDiagnostic|TestUnifiedDSHDirectoryRecoverySupplyAndContract|TestUnifiedDSHDirectoryCannotBypassDurableDiscoveryBudget|TestInputUpgradeRotatesSettledDSHContract)$' -count=1 -timeout=1m",
+      "exit_code": 1,
+      "note": "All four assertions reproduced in 2.437s without package timeout.",
+      "log": ".local/architecture-baseline/integration-failure-recheck.log",
+      "log_sha256": "ccf7bd1f8bd2d66432305b694f56ec7deb67358543a34c428ad7e2639caa149f",
+      "failures": [
+        {
+          "test": "--- FAIL: TestUnifiedDSHPreservesReceiptFailureDiagnostic (0.10s)",
+          "diagnostic": "    input_stream_session_test.go:46: snapshot identity mismatch"
+        },
+        {
+          "test": "--- FAIL: TestUnifiedDSHDirectoryRecoverySupplyAndContract (0.13s)",
+          "diagnostic": "    input_stream_session_test.go:90: snapshot identity mismatch"
+        },
+        {
+          "test": "--- FAIL: TestUnifiedDSHDirectoryCannotBypassDurableDiscoveryBudget (0.12s)",
+          "diagnostic": "    input_stream_session_test.go:226: snapshot identity mismatch"
+        },
+        {
+          "test": "--- FAIL: TestInputUpgradeRotatesSettledDSHContract (1.65s)",
+          "diagnostic": "    input_upgrade_dsh_integration_test.go:152: unexpected MCP tools/list for rotated Session 200 {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[{\"annotations\":{\"readOnlyHint\":true},\"description\":\"List locally retained, visible history streams without consuming. Optional limit (default 10, max 20); continue with only the returned cursor. Includes streams with no pending inputs. No body or image preview"
+        }
+      ],
+      "excerpts": [
+        "FAIL\tgithub.com/go-aie/teamx/internal/room\t2.437s"
+      ]
+    },
+    {
+      "command": "go build -o .local/architecture-baseline/teamx ./cmd/teamx",
+      "exit_code": 0,
+      "note": "Isolated binary; did not overwrite bin/teamx.",
+      "log": ".local/architecture-baseline/build.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "failures": [],
+      "excerpts": []
+    },
+    {
+      "command": "go test -tags=e2e ./... -run '^$'",
+      "exit_code": 0,
+      "note": "Compile only; no real provider/model/browser acceptance.",
+      "log": ".local/architecture-baseline/e2e-compile.log",
+      "log_sha256": "0cd64791ed967d0d687031d7ed45873da95e15ce1f7008117b937493053027c3",
+      "failures": [],
+      "excerpts": []
+    },
+    {
+      "command": "go vet ./...",
+      "exit_code": 1,
+      "note": "12 existing unkeyed external struct literal diagnostics in input-stream fixture and UI update tests. CI gate remains unchanged.",
+      "log": ".local/architecture-baseline/vet-ci.log",
+      "log_sha256": "d38f6b400bb1a612d73d4c44e34a04f53d418b33ad0c15a1b24518bddc351827",
+      "failures": [],
+      "excerpts": [
+        "internal/room/input_stream_fixture_test.go:152:31: github.com/go-aie/teamx/internal/inputstreamtest.Member struct literal uses unkeyed fields",
+        "internal/room/input_stream_fixture_test.go:163:32: github.com/go-aie/teamx/internal/inputstreamtest.Member struct literal uses unkeyed fields",
+        "internal/room/input_stream_fixture_test.go:344:12: github.com/go-aie/teamx/internal/inputstreamtest.Member struct literal uses unkeyed fields",
+        "internal/room/input_stream_identity_test.go:15:12: github.com/go-aie/teamx/internal/inputstreamtest.Member struct literal uses unkeyed fields",
+        "internal/room/input_stream_identity_test.go:109:45: github.com/go-aie/teamx/internal/inputstreamtest.Location struct literal uses unkeyed fields",
+        "internal/room/input_stream_identity_test.go:110:35: github.com/go-aie/teamx/internal/inputstreamtest.Member struct literal uses unkeyed fields",
+        "internal/room/input_stream_snapshot_test.go:33:11: github.com/go-aie/teamx/internal/inputstreamtest.Member struct literal uses unkeyed fields",
+        "internal/room/ui_updates_http_test.go:305:57: github.com/go-aie/teamx/internal/room.RoomIdentity struct literal uses unkeyed fields",
+        "internal/room/ui_updates_test.go:44:36: github.com/go-aie/teamx/internal/room.RoomIdentity struct literal uses unkeyed fields",
+        "internal/room/ui_updates_test.go:83:36: github.com/go-aie/teamx/internal/room.RoomIdentity struct literal uses unkeyed fields",
+        "internal/room/ui_updates_test.go:140:36: github.com/go-aie/teamx/internal/room.RoomIdentity struct literal uses unkeyed fields",
+        "internal/room/ui_updates_test.go:163:36: github.com/go-aie/teamx/internal/room.RoomIdentity struct literal uses unkeyed fields"
+      ]
+    },
+    {
+      "command": "go vet -tags=integration ./...",
+      "exit_code": 1,
+      "note": "Same 12 unkeyed external struct literal diagnostics.",
+      "log": ".local/architecture-baseline/vet-standard.log",
+      "log_sha256": "d38f6b400bb1a612d73d4c44e34a04f53d418b33ad0c15a1b24518bddc351827",
+      "failures": [],
+      "excerpts": [
+        "internal/room/input_stream_fixture_test.go:152:31: github.com/go-aie/teamx/internal/inputstreamtest.Member struct literal uses unkeyed fields",
+        "internal/room/input_stream_fixture_test.go:163:32: github.com/go-aie/teamx/internal/inputstreamtest.Member struct literal uses unkeyed fields",
+        "internal/room/input_stream_fixture_test.go:344:12: github.com/go-aie/teamx/internal/inputstreamtest.Member struct literal uses unkeyed fields",
+        "internal/room/input_stream_identity_test.go:15:12: github.com/go-aie/teamx/internal/inputstreamtest.Member struct literal uses unkeyed fields",
+        "internal/room/input_stream_identity_test.go:109:45: github.com/go-aie/teamx/internal/inputstreamtest.Location struct literal uses unkeyed fields",
+        "internal/room/input_stream_identity_test.go:110:35: github.com/go-aie/teamx/internal/inputstreamtest.Member struct literal uses unkeyed fields",
+        "internal/room/input_stream_snapshot_test.go:33:11: github.com/go-aie/teamx/internal/inputstreamtest.Member struct literal uses unkeyed fields",
+        "internal/room/ui_updates_http_test.go:305:57: github.com/go-aie/teamx/internal/room.RoomIdentity struct literal uses unkeyed fields",
+        "internal/room/ui_updates_test.go:44:36: github.com/go-aie/teamx/internal/room.RoomIdentity struct literal uses unkeyed fields",
+        "internal/room/ui_updates_test.go:83:36: github.com/go-aie/teamx/internal/room.RoomIdentity struct literal uses unkeyed fields",
+        "internal/room/ui_updates_test.go:140:36: github.com/go-aie/teamx/internal/room.RoomIdentity struct literal uses unkeyed fields",
+        "internal/room/ui_updates_test.go:163:36: github.com/go-aie/teamx/internal/room.RoomIdentity struct literal uses unkeyed fields"
+      ]
+    },
+    {
+      "command": "go vet -tags=integration -composites=false ./...",
+      "exit_code": 0,
+      "note": "Supplemental check of other analyzers; does not replace failing standard vet.",
+      "log": ".local/architecture-baseline/vet.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "failures": [],
+      "excerpts": []
+    },
+    {
+      "command": "node --test scripts/*.test.mjs",
+      "exit_code": 1,
+      "note": "88/89 passed. Exported installation guide depends on repository-relative workspace.zh.md#选择已有目录; docs/installation.zh.md and test are unchanged by R0.",
+      "log": ".local/architecture-baseline/scripts.log",
+      "log_sha256": "1b9182ce5b6c1320b22a8e0e48e45df944bf82e110b40c1da8530041d3e8794b",
+      "failures": [],
+      "excerpts": [
+        "ℹ tests 89",
+        "ℹ pass 88",
+        "ℹ fail 1",
+        "  AssertionError [ERR_ASSERTION]: Guide depends on a repository file: workspace.zh.md#选择已有目录"
+      ]
+    },
+    {
+      "command": "node --test internal/web/tests/web*_test.mjs internal/agent/dsh/input_bridge_test.mjs",
+      "exit_code": 0,
+      "note": "772/772 passed; local JS checks, not a browser session.",
+      "log": ".local/architecture-baseline/web-bridge.log",
+      "log_sha256": "9b6dbfe407ec77ef8aca50851171c3c3734c219f40c5b8bad2561642e9ee71a8",
+      "failures": [],
+      "excerpts": [
+        "ℹ tests 772",
+        "ℹ pass 772",
+        "ℹ fail 0"
+      ]
+    },
+    {
+      "command": "node scripts/check-packaging.mjs",
+      "exit_code": 0,
+      "note": "Inventory valid: 4 targets, 4 teams, 724 locked npm packages.",
+      "log": ".local/architecture-baseline/packaging.log",
+      "log_sha256": "af6e6fa664cbb7a9e5fd37f9429f9366f4ea25f7381c008665965ea989f99e53",
+      "failures": [],
+      "excerpts": [
+        "P0 inventory valid: 4 targets, 4 teams, 724 locked npm packages."
+      ]
+    }
+  ],
+  "live_observation": {
+    "pid": 28389,
+    "started_local": "2026-11-19 23:09:50 Asia/Shanghai",
+    "command": "./bin/teamx serve --config .teamx/config.toml",
+    "disk_binary_build_revision": "633a0f2fbcd237c0e9a68f5ba13dc93ff0b68d78",
+    "disk_binary_vcs_modified": true,
+    "limits": "Read-only process command and disk go version -m; neither proves loaded process bytes or any existing Session tool adoption."
+  },
+  "supplemental_checks": [
+    "Python collector parsed successfully; final snapshot is validated against recorded file hashes.",
+    "git diff --check passed."
+  ]
+}

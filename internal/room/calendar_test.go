@@ -39,7 +39,7 @@ func calendarFixture(t *testing.T, dir string, backend Backend, settings ...*sys
 	}
 	svc, err := startService(dir, "design-review", cfg, func(s *service, state RoomSnapshot) error {
 		for _, member := range state.Members {
-			id := MemberIdentity{state.RoomIdentity, member.AgentID, member.MembershipID}
+			id := MemberIdentity{RoomIdentity: state.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
 			var restored *AgentSnapshot
 			if saved, err := s.store.LoadAgent(id); err == nil {
 				restored = &saved
@@ -125,7 +125,7 @@ func calendarAwait(t *testing.T, s *service, predicate func(calendar.State) bool
 }
 func calendarRunning(t *testing.T, s *service, number uint64) calendar.Binding {
 	t.Helper()
-	id := MemberIdentity{s.info.RoomIdentity, "A", "generation-A"}
+	id := MemberIdentity{RoomIdentity: s.info.RoomIdentity, AgentID: "A", MembershipID: "generation-A"}
 	err := s.store.SaveAgent(AgentSnapshot{Version: formatVersion, MemberIdentity: id, InputStateRef: "input-state.json", TurnNumber: number, Turn: &TurnRecord{Number: number, Status: "running"}})
 	if err != nil {
 		t.Fatal(err)
@@ -160,23 +160,23 @@ func TestCalendarPersistenceDeliveryAndReportReceiptAfterClear(t *testing.T) {
 		t.Fatal(err)
 	}
 	pending := h.projection.Load().state.Runs[r.ID]
-	receipt, err := s.room.Call[PostReceipt](t.Context(), PostMessage{RoomIdentity: s.info.RoomIdentity, Caller: agentCallerIdentity(MemberIdentity{s.info.RoomIdentity, "A", "generation-A"}), ClientMessageID: pending.Publication.ClientMessageID, Text: pending.Report, DurablePublication: true})
+	receipt, err := s.room.Call[PostReceipt](t.Context(), PostMessage{RoomIdentity: s.info.RoomIdentity, Caller: agentCallerIdentity(MemberIdentity{RoomIdentity: s.info.RoomIdentity, AgentID: "A", MembershipID: "generation-A"}), ClientMessageID: pending.Publication.ClientMessageID, Text: pending.Report, DurablePublication: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	page, err := s.room.Call[ReadPage](t.Context(), ReadMessages{RoomIdentity: s.info.RoomIdentity, Caller: agentCallerIdentity(MemberIdentity{s.info.RoomIdentity, "A", "generation-A"}), Mode: ReadUnread, Limit: 20})
+	page, err := s.room.Call[ReadPage](t.Context(), ReadMessages{RoomIdentity: s.info.RoomIdentity, Caller: agentCallerIdentity(MemberIdentity{RoomIdentity: s.info.RoomIdentity, AgentID: "A", MembershipID: "generation-A"}), Mode: ReadUnread, Limit: 20})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if page.ReadReceipt != "" {
-		if _, err := s.room.Call[ReadConfirmation](t.Context(), ConfirmRead{MemberIdentity: MemberIdentity{s.info.RoomIdentity, "A", "generation-A"}, ReadReceipt: page.ReadReceipt}); err != nil {
+		if _, err := s.room.Call[ReadConfirmation](t.Context(), ConfirmRead{MemberIdentity: MemberIdentity{RoomIdentity: s.info.RoomIdentity, AgentID: "A", MembershipID: "generation-A"}, ReadReceipt: page.ReadReceipt}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if _, err := s.room.Call[ClearReceipt](t.Context(), ClearMessages{RoomIdentity: s.info.RoomIdentity, Caller: humanCaller, ThroughSeq: receipt.Seq}); err != nil {
 		t.Fatal(err)
 	}
-	agent, _ := s.store.LoadAgent(MemberIdentity{s.info.RoomIdentity, "A", "generation-A"})
+	agent, _ := s.store.LoadAgent(MemberIdentity{RoomIdentity: s.info.RoomIdentity, AgentID: "A", MembershipID: "generation-A"})
 	agent.Turn.Status = "completed"
 	if err := s.store.SaveAgent(agent); err != nil {
 		t.Fatal(err)
@@ -199,14 +199,14 @@ func TestCalendarPersistenceDeliveryAndReportReceiptAfterClear(t *testing.T) {
 	if saved.LatestSeq != receipt.Seq || len(saved.Messages) != 0 {
 		t.Fatal("report duplicated after clear", saved.LatestSeq, receipt.Seq)
 	}
-	_, err = reopened.room.Call[PostReceipt](t.Context(), PostMessage{RoomIdentity: reopened.info.RoomIdentity, Caller: agentCallerIdentity(MemberIdentity{reopened.info.RoomIdentity, "A", "generation-A"}), ClientMessageID: pending.Publication.ClientMessageID, Text: "changed", DurablePublication: true})
+	_, err = reopened.room.Call[PostReceipt](t.Context(), PostMessage{RoomIdentity: reopened.info.RoomIdentity, Caller: agentCallerIdentity(MemberIdentity{RoomIdentity: reopened.info.RoomIdentity, AgentID: "A", MembershipID: "generation-A"}), ClientMessageID: pending.Publication.ClientMessageID, Text: "changed", DurablePublication: true})
 	if !errors.Is(err, ErrConflict) {
 		t.Fatal("same ID accepted different body", err)
 	}
 }
 func TestCalendarOperationIdentityAndVersionHTTP(t *testing.T) {
 	s := calendarFixture(t, t.TempDir(), newControlledBackend())
-	id := MemberIdentity{s.info.RoomIdentity, "A", "generation-A"}
+	id := MemberIdentity{RoomIdentity: s.info.RoomIdentity, AgentID: "A", MembershipID: "generation-A"}
 	binding := calendarRunning(t, s, 1)
 	q := calendar.Request{Action: "create", OperationID: "agent-create", HumanSource: calendar.Source{MessageSeq: 1}}
 	d := calendarDefinition(time.Now().Add(3 * time.Minute))
@@ -249,7 +249,7 @@ func TestCalendarPauseCancelAndAdditionalReadinessGates(t *testing.T) {
 	s := calendarFixture(t, t.TempDir(), newControlledBackend())
 	task := calendarCreate(t, s, time.Now().Add(3*time.Minute))
 	r := calendarRunNow(t, s, task)
-	id := MemberIdentity{s.info.RoomIdentity, "A", "generation-A"}
+	id := MemberIdentity{RoomIdentity: s.info.RoomIdentity, AgentID: "A", MembershipID: "generation-A"}
 	if !s.additionalWorkReady(id) {
 		t.Fatal("queued task did not publish readiness")
 	}
@@ -349,7 +349,7 @@ func TestCalendarCancellationOnlyStopsClaimedTurnAndJoinsSettlement(t *testing.T
 	case <-time.After(3 * time.Second):
 		t.Fatal("member did not start")
 	}
-	id := MemberIdentity{s.info.RoomIdentity, "A", "generation-A"}
+	id := MemberIdentity{RoomIdentity: s.info.RoomIdentity, AgentID: "A", MembershipID: "generation-A"}
 	agent, err := s.store.LoadAgent(id)
 	if err != nil {
 		t.Fatal(err)
@@ -431,7 +431,7 @@ func TestCalendarCLIJSONUsesCommittedServiceAndRejectsSessionOnlyClaim(t *testin
 	if err := json.Unmarshal(output.Bytes(), &task); err != nil || task.TaskID != result.TaskID {
 		t.Fatal(output.String(), err)
 	}
-	req := apiRequest{ServiceInfo: s.info, Caller: agentCallerIdentity(MemberIdentity{s.info.RoomIdentity, "A", "generation-A"}), TurnNumber: 1, Calendar: json.RawMessage(`{"run_id":"run_any"}`)}
+	req := apiRequest{ServiceInfo: s.info, Caller: agentCallerIdentity(MemberIdentity{RoomIdentity: s.info.RoomIdentity, AgentID: "A", MembershipID: "generation-A"}), TurnNumber: 1, Calendar: json.RawMessage(`{"run_id":"run_any"}`)}
 	body, _ := json.Marshal(req)
 	response := httptest.NewRecorder()
 	s.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/calendar/claim", bytes.NewReader(body)))
@@ -522,7 +522,7 @@ func TestCalendarRunsWithNoRoomUnreadWithoutRedeliveringEvent(t *testing.T) {
 	task := calendarCreate(t, s, time.Now().Add(3*time.Minute))
 	run := calendarRunNow(t, s, task)
 	calendarAwait(t, s, func(state calendar.State) bool { return state.Runs[run.ID].EventDelivered })
-	id := MemberIdentity{s.info.RoomIdentity, "A", "generation-A"}
+	id := MemberIdentity{RoomIdentity: s.info.RoomIdentity, AgentID: "A", MembershipID: "generation-A"}
 	page, err := s.room.Call[ReadPage](t.Context(), ReadMessages{RoomIdentity: s.info.RoomIdentity, Caller: agentCallerIdentity(id), Mode: ReadUnread, Limit: 20})
 	if err != nil {
 		t.Fatal(err)

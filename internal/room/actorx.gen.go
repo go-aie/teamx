@@ -75,13 +75,3 @@ func (a *Room) Bindings() []actorx.Binding {
 		actorx.HandleMessage(a.Started),
 	}
 }
-
-func (a *turnScheduler) Bindings() []actorx.Binding {
-	return []actorx.Binding{
-		actorx.HandleMessage(a.Cancel),
-		actorx.Handle(a.Quiesce),
-		actorx.HandleMessage(a.Release),
-		actorx.HandleMessage(a.Request),
-		actorx.HandleMessage(a.Started),
-	}
-}

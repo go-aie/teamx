@@ -8,87 +8,18 @@ import (
 	"time"
 
 	"github.com/go-aie/actorx"
+	"github.com/go-aie/teamx/internal/app/agents"
 )
 
-func TestTurnSchedulerParallelExactOwnershipAndExit(t *testing.T) {
-	h := newRoomHarness(t, emptyRoom(), nil, actorx.WithMailboxCapacity(2))
-	scheduler, err := h.rt.Spawn(schedulerProbe{&turnScheduler{RoomIdentity: h.id, mode: schedulingParallel}})
+// Cross-module checks observe committed scheduler state through its query;
+// the Room harness never inspects the new owner's fields.
+func schedulerState(t *testing.T, h *roomHarness, addr actorx.Addr) agents.TurnSchedulerState {
+	t.Helper()
+	state, err := addr.Call[agents.TurnSchedulerState](h.ctx, agents.InspectTurnScheduler{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	grants := make(chan turnGranted, 128)
-	blocked, unblock := make(chan struct{}), make(chan struct{})
-	defer onceRelease(unblock)()
-	a, err := h.rt.Spawn(grantSink{grants: grants, blocked: blocked, unblock: unblock})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := a.Send(h.ctx, struct{}{}); err != nil {
-		t.Fatal(err)
-	}
-	<-blocked
-	for range 2 {
-		if err := a.Send(h.ctx, turnGranted{}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	b, err := h.rt.Spawn(grantSink{grants: grants})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ra, rb := requestTurn{h.memberID("A", "a"), 1, a}, requestTurn{h.memberID("B", "b"), 1, b}
-	ga, gb := turnGranted{ra.MemberIdentity, 1}, turnGranted{rb.MemberIdentity, 1}
-	schedulerCall(t, h, scheduler, ra)
-	schedulerCall(t, h, scheduler, rb)
-	awaitGrant(t, h, grants, gb) // A's full mailbox does not block B.
-	schedulerCall(t, h, scheduler, ra)
-	newer := ra
-	newer.ID = 2
-	schedulerCall(t, h, scheduler, newer) // cannot overwrite an active grant
-	schedulerCall(t, h, scheduler, cancelTurnRequest{ga})
-	schedulerCall(t, h, scheduler, releaseTurn{turnGranted{ra.MemberIdentity, 2}})
-	state := schedulerState(t, h, scheduler)
-	if len(state.Holders) != 2 || state.Holders[ra.MemberIdentity] != ga {
-		t.Fatal(state)
-	}
-	close(unblock)
-	awaitGrant(t, h, grants, ga) // maintenance retries the failed admission
-	schedulerCall(t, h, scheduler, releaseTurn{ga})
-	schedulerCall(t, h, scheduler, newer)
-	schedulerCall(t, h, scheduler, releaseTurn{ga})
-	if state := schedulerState(t, h, scheduler); len(state.Holders) != 2 || state.Holders[ra.MemberIdentity].ID != 2 {
-		t.Fatal("stale release changed ownership", state)
-	}
-	_ = a.Stop(nil)
-	if _, err := a.Wait(h.ctx); err != nil {
-		t.Fatal(err)
-	}
-	for {
-		state = schedulerState(t, h, scheduler)
-		if len(state.Holders) == 1 {
-			break
-		}
-		select {
-		case <-h.ctx.Done():
-			t.Fatal(h.ctx.Err())
-		case <-time.After(time.Millisecond):
-		}
-	}
-	if state.Holders[rb.MemberIdentity] != gb {
-		t.Fatal("exit reclaimed another member", state)
-	}
-	schedulerCall(t, h, scheduler, stopTurnGrants{})
-	newer = rb
-	newer.ID = 2
-	schedulerCall(t, h, scheduler, newer)
-	if state := schedulerState(t, h, scheduler); !state.Closed || len(state.Holders) != 1 || state.Holders[rb.MemberIdentity] != gb {
-		t.Fatal("quiesce forgot unsettled holder", state)
-	}
-	schedulerCall(t, h, scheduler, releaseTurn{gb})
-	schedulerCall(t, h, scheduler, newer)
-	if state := schedulerState(t, h, scheduler); len(state.Holders) != 0 || len(state.Queue) != 0 {
-		t.Fatal(state)
-	}
+	return state
 }
 
 func TestRoomTurnsParallelOverlapFreshInputAndDynamicMember(t *testing.T) {
@@ -98,10 +29,10 @@ func TestRoomTurnsParallelOverlapFreshInputAndDynamicMember(t *testing.T) {
 	}
 	for i := range targets {
 		awaitTurn(t, h, b[i]) // no backend may finish until all three have entered
-		if _, err := targets[i].Call[any](h.ctx, turnGranted{ids[i], 1}); err != nil {
+		if _, err := targets[i].Call[any](h.ctx, agents.TurnGranted{MemberIdentity: ids[i], ID: 1}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := targets[i].Call[any](h.ctx, turnGranted{ids[i], 99}); err != nil {
+		if _, err := targets[i].Call[any](h.ctx, agents.TurnGranted{MemberIdentity: ids[i], ID: 99}); err != nil {
 			t.Fatal(err)
 		}
 		status := inspectMember(t, h.ctx, targets[i], ids[i])
@@ -212,7 +143,7 @@ func TestServiceShutdownParallelJoinsAllHolders(t *testing.T) {
 		closeService(t, svc)
 	}()
 	for i := range 3 {
-		id := MemberIdentity{svc.info.RoomIdentity, fmt.Sprint("M", i), fmt.Sprint("generation-", i)}
+		id := MemberIdentity{RoomIdentity: svc.info.RoomIdentity, AgentID: fmt.Sprint("M", i), MembershipID: fmt.Sprint("generation-", i)}
 		b := newControlledBackend()
 		b.settle = make(chan struct{})
 		backends = append(backends, b)
@@ -354,7 +285,7 @@ func TestRoomTurnsParallelRoomAndInboxShareMemberExecution(t *testing.T) {
 	_ = h.scheduler.Stop(nil)
 	_, _ = h.scheduler.Wait(h.ctx)
 	var err error
-	h.scheduler, err = h.rt.Spawn(&turnScheduler{RoomIdentity: h.id.RoomIdentity, mode: schedulingParallel})
+	h.scheduler, err = h.rt.Spawn(agents.NewTurnScheduler(h.id.RoomIdentity, agents.SchedulingParallel, nil))
 	if err != nil {
 		t.Fatal(err)
 	}

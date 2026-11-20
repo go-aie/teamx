@@ -1,0 +1,744 @@
+{
+  "unit": "R6a.1 in-flight platform call registration and settlement",
+  "date": "2026-11-20",
+  "head": "633a0f2fbcd237c0e9a68f5ba13dc93ff0b68d78",
+  "go": "go version go1.27.1 darwin/arm64",
+  "worktree_note": "Includes existing uncommitted R0/R3a/R1a/R5a/R3b work. Unrelated work preserved; no commit, runtime migration, deployment or real external writes.",
+  "scope": "One Calls[*platformCall] instance per existing manager owns registration, cancellation, receipts and joins. Admission metadata, account snapshots, final evidence, binding changes and worker/lease owners remain behind the original manager gate.",
+  "lock_order": "manager.mu -> Calls.mu; no predicates or cancellation functions under Calls.mu; waits remain outside manager.mu.",
+  "checks": [
+    {
+      "name": "before",
+      "command": [
+        "go",
+        "test",
+        "-tags=integration",
+        "-timeout=8m",
+        "./internal/app/platforms",
+        "./internal/room",
+        "-run",
+        "Test(Tool|Tools|Platform|ManagedPlatform|GitLab|Gitlab|Lark|Scion|Onboarding|Followup|RuntimeShutdown|RuntimeExecution|Workspace)"
+      ],
+      "exit_code": 1,
+      "log": ".local/architecture-platform-calls/before.log",
+      "log_sha256": "c742e853d1f0a3c32a778b8a142e4b7ebdbd3a619d3386309ebed5e9e69bd6bb"
+    },
+    {
+      "name": "component",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-timeout=2m",
+        "./internal/app/platforms",
+        "./internal/architecture"
+      ],
+      "exit_code": 0,
+      "log": ".local/architecture-platform-calls/component.log",
+      "log_sha256": "ff4de8748a62338b68c48bea27353860e2e7e47206a107eb138cb290ac90dd66"
+    },
+    {
+      "name": "race",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-tags=integration",
+        "-timeout=8m",
+        "-json",
+        "./internal/app/platforms",
+        "./internal/platform/registry",
+        "./internal/platform/tool",
+        "./internal/platform/notification",
+        "./internal/room",
+        "-run",
+        "Test(Calls|WaitCalls|PlatformAttachment|ModelAttachment|LarkImageLifecycle|LarkReply|ReferenceInternal|ProcessLifecycle|CLICancellation|CLIDuplex|HelpSkips|BindingCAS|AdmissionFailure|NoRetry|OAuth|GitLabAuth|ScionLogout|ScionAuthLogout|PlatformMember|Tool|Onboarding|RuntimeShutdown|RuntimeToolSettlement|WorkspaceScion|WorkspaceGit)"
+      ],
+      "exit_code": 0,
+      "log": ".local/architecture-platform-calls/race.jsonl",
+      "log_sha256": "b4076885ecf94fb0084361b0555ac1ae52d6a2823c0c5bce40533c254f6de68c",
+      "passed_top_level_tests": 150,
+      "passed_including_subtests": 364,
+      "packages": [
+        {
+          "Package": "github.com/go-aie/teamx/internal/app/platforms",
+          "Action": "pass",
+          "Elapsed": 1.403
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/platform/tool",
+          "Action": "pass",
+          "Elapsed": 1.897
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/platform/notification",
+          "Action": "pass",
+          "Elapsed": 1.8639999999999999
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/platform/registry",
+          "Action": "pass",
+          "Elapsed": 2.202
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Action": "pass",
+          "Elapsed": 260.583
+        }
+      ],
+      "failures": []
+    },
+    {
+      "name": "settlement-before",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-tags=integration",
+        "-timeout=3m",
+        "-overlay=.local/architecture-platform-calls/before-overlay.json",
+        "-json",
+        "./internal/room",
+        "-run",
+        "Test(PlatformAttachmentLifecycle|ModelAttachmentCredentialRotation|ModelAttachmentMemberChange|LarkImageLifecycle|ReferenceInternalRevocation|ProcessLifecycle|CLICancellation|HelpSkips|OAuthRefreshWaits|OAuthShutdown|OnboardingToolDisable|RuntimeShutdownTool|RuntimeToolSettlement)"
+      ],
+      "exit_code": 0,
+      "log": ".local/architecture-platform-calls/settlement-before.jsonl",
+      "log_sha256": "7494fd4ad478d1e43522a79718b9a920e04291aeb5e0d7c36d176cedc6ffe0c5",
+      "passed_top_level_tests": 13,
+      "passed_including_subtests": 47,
+      "packages": [
+        {
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Action": "pass",
+          "Elapsed": 24.758
+        }
+      ],
+      "failures": []
+    },
+    {
+      "name": "settlement-after",
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-tags=integration",
+        "-timeout=3m",
+        "-json",
+        "./internal/room",
+        "-run",
+        "Test(PlatformAttachmentLifecycle|ModelAttachmentCredentialRotation|ModelAttachmentMemberChange|LarkImageLifecycle|ReferenceInternalRevocation|ProcessLifecycle|CLICancellation|HelpSkips|OAuthRefreshWaits|OAuthShutdown|OnboardingToolDisable|RuntimeShutdownTool|RuntimeToolSettlement)"
+      ],
+      "exit_code": 0,
+      "log": ".local/architecture-platform-calls/settlement-after.jsonl",
+      "log_sha256": "43347f0bd8bd19cbfeda0029b2846a56528dfdc329fe7e27e8bcfec0e844e36d",
+      "passed_top_level_tests": 13,
+      "passed_including_subtests": 47,
+      "packages": [
+        {
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Action": "pass",
+          "Elapsed": 24.511
+        }
+      ],
+      "failures": []
+    },
+    {
+      "name": "calendar-before",
+      "command": [
+        "go",
+        "test",
+        "-timeout=30s",
+        "-overlay=.local/architecture-platform-calls/before-overlay.json",
+        "-json",
+        "./internal/room",
+        "-run",
+        "^TestCalendarManagedRecurringPauseRecoveryAndPublication$"
+      ],
+      "exit_code": 1,
+      "log": ".local/architecture-platform-calls/calendar-before.jsonl",
+      "log_sha256": "ff5f3ea147428ca444572c00cfb35255468ebfa065c7a4d34af10a8c3f6c26cf",
+      "passed_top_level_tests": 0,
+      "passed_including_subtests": 0,
+      "packages": [
+        {
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Action": "fail",
+          "Elapsed": 6.462
+        }
+      ],
+      "failures": [
+        "TestCalendarManagedRecurringPauseRecoveryAndPublication",
+        "github.com/go-aie/teamx/internal/room"
+      ]
+    },
+    {
+      "name": "build",
+      "command": [
+        "go",
+        "build",
+        "-o",
+        ".local/architecture-platform-calls/teamx",
+        "./cmd/teamx"
+      ],
+      "exit_code": 0,
+      "log": ".local/architecture-platform-calls/build.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "e2e-compile",
+      "command": [
+        "go",
+        "test",
+        "-tags=e2e",
+        "-timeout=3m",
+        "./...",
+        "-run",
+        "^$"
+      ],
+      "exit_code": 0,
+      "log": ".local/architecture-platform-calls/e2e-compile.log",
+      "log_sha256": "812ce9aa283e222bf1f0501064a855820bd84db26361666b6f1f0b91629caf4f"
+    },
+    {
+      "name": "core",
+      "command": [
+        "go",
+        "test",
+        "-timeout=3m",
+        "-failfast",
+        "-json",
+        "./..."
+      ],
+      "exit_code": 1,
+      "log": ".local/architecture-platform-calls/core.jsonl",
+      "log_sha256": "e1b2e4bea8a8136774a7c6e484dc84eec793dbcfd1717a06dd04843c8ba9cb6b",
+      "passed_top_level_tests": 532,
+      "passed_including_subtests": 1499,
+      "packages": [
+        {
+          "Package": "github.com/go-aie/teamx/cmd/teamx",
+          "Action": "skip",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/identity",
+          "Action": "skip",
+          "Elapsed": 0.004
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/inputstreamtest/frozen",
+          "Action": "skip",
+          "Elapsed": 0
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/app/agents",
+          "Action": "pass",
+          "Elapsed": 2.452
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/platform/attachment",
+          "Action": "skip",
+          "Elapsed": 0.013
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/architecture",
+          "Action": "pass",
+          "Elapsed": 4.075
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/calendar",
+          "Action": "pass",
+          "Elapsed": 4.425
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/app/platforms",
+          "Action": "pass",
+          "Elapsed": 4.465
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/platform",
+          "Action": "pass",
+          "Elapsed": 5.287
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/persistence",
+          "Action": "pass",
+          "Elapsed": 5.884
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/inputstreamtest",
+          "Action": "pass",
+          "Elapsed": 6.234
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/platform/gitlab",
+          "Action": "pass",
+          "Elapsed": 5.518
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/platform/notification",
+          "Action": "pass",
+          "Elapsed": 4.904
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/platform/tool",
+          "Action": "pass",
+          "Elapsed": 4.224
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/platform/registry",
+          "Action": "pass",
+          "Elapsed": 6.369
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/platform/scion",
+          "Action": "pass",
+          "Elapsed": 6.163
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/platform/lark",
+          "Action": "pass",
+          "Elapsed": 22.479
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/workspace/git",
+          "Action": "skip",
+          "Elapsed": 0.012
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/web",
+          "Action": "pass",
+          "Elapsed": 0.926
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/testutil",
+          "Action": "pass",
+          "Elapsed": 1.311
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/workspace",
+          "Action": "pass",
+          "Elapsed": 1.7029999999999998
+        },
+        {
+          "Package": "github.com/go-aie/teamx/tools/scion",
+          "Action": "pass",
+          "Elapsed": 2.54
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/workspace/scion",
+          "Action": "pass",
+          "Elapsed": 2.848
+        },
+        {
+          "Package": "github.com/go-aie/teamx/tools/gitlab",
+          "Action": "pass",
+          "Elapsed": 5.497
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/agent/dsh",
+          "Action": "pass",
+          "Elapsed": 50.653
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/inputstream",
+          "Action": "pass",
+          "Elapsed": 79.419
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Action": "fail",
+          "Elapsed": 101.501
+        }
+      ],
+      "failures": [
+        "TestCalendarManagedRecurringPauseRecoveryAndPublication",
+        "github.com/go-aie/teamx/internal/room"
+      ]
+    },
+    {
+      "name": "integration",
+      "command": [
+        "go",
+        "test",
+        "-tags=integration",
+        "-timeout=8m",
+        "-failfast",
+        "-json",
+        "./..."
+      ],
+      "exit_code": 1,
+      "log": ".local/architecture-platform-calls/integration.jsonl",
+      "log_sha256": "70e0ef62047197336a1757076f173819ca1d4d1ad5addffc5fec546ea2b7a0e3",
+      "passed_top_level_tests": 592,
+      "passed_including_subtests": 1743,
+      "packages": [
+        {
+          "Package": "github.com/go-aie/teamx/cmd/teamx",
+          "Action": "skip",
+          "Elapsed": 0.001
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/identity",
+          "Action": "skip",
+          "Elapsed": 0.01
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/inputstreamtest/frozen",
+          "Action": "skip",
+          "Elapsed": 0.005
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/app/agents",
+          "Action": "pass",
+          "Elapsed": 1.1179999999999999
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/platform/attachment",
+          "Action": "skip",
+          "Elapsed": 0.005
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/app/platforms",
+          "Action": "pass",
+          "Elapsed": 1.759
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/architecture",
+          "Action": "pass",
+          "Elapsed": 2.094
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/calendar",
+          "Action": "pass",
+          "Elapsed": 2.16
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/inputstreamtest",
+          "Action": "pass",
+          "Elapsed": 2.968
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/platform",
+          "Action": "pass",
+          "Elapsed": 5.062
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/persistence",
+          "Action": "pass",
+          "Elapsed": 5.586
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/platform/gitlab",
+          "Action": "pass",
+          "Elapsed": 5.827
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/platform/notification",
+          "Action": "pass",
+          "Elapsed": 5.265
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/platform/registry",
+          "Action": "pass",
+          "Elapsed": 7.395
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/platform/tool",
+          "Action": "pass",
+          "Elapsed": 4.973
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/platform/scion",
+          "Action": "pass",
+          "Elapsed": 17.153
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/agent/dsh",
+          "Action": "pass",
+          "Elapsed": 51.489
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/workspace/git",
+          "Action": "skip",
+          "Elapsed": 0.016
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/testutil",
+          "Action": "pass",
+          "Elapsed": 1.026
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/web",
+          "Action": "pass",
+          "Elapsed": 1.279
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/workspace",
+          "Action": "pass",
+          "Elapsed": 1.717
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/workspace/scion",
+          "Action": "pass",
+          "Elapsed": 2.583
+        },
+        {
+          "Package": "github.com/go-aie/teamx/tools/gitlab",
+          "Action": "pass",
+          "Elapsed": 6.356
+        },
+        {
+          "Package": "github.com/go-aie/teamx/tools/scion",
+          "Action": "pass",
+          "Elapsed": 12.936
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/inputstream",
+          "Action": "pass",
+          "Elapsed": 78.999
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/platform/lark",
+          "Action": "pass",
+          "Elapsed": 99.886
+        },
+        {
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Action": "fail",
+          "Elapsed": 103.249
+        }
+      ],
+      "failures": [
+        "TestCalendarManagedRecurringPauseRecoveryAndPublication",
+        "github.com/go-aie/teamx/internal/room"
+      ]
+    },
+    {
+      "name": "vet",
+      "command": [
+        "go",
+        "vet",
+        "./..."
+      ],
+      "exit_code": 1,
+      "log": ".local/architecture-platform-calls/vet.log",
+      "log_sha256": "53990be8aa020c0818206cee5de2061c7cec1e091169f154f6d1a5310808e74b"
+    },
+    {
+      "name": "source",
+      "command": [
+        "python3",
+        "scripts/architecture-baseline.py",
+        ".local/architecture-platform-calls/source.json"
+      ],
+      "exit_code": 0
+    }
+  ],
+  "baseline_notes": [
+    "The original broad integration run exhausted its 8-minute total budget; it is not a passing baseline. The final selected cross-module race suite passed without -skip.",
+    "The same 13 top-level / 47 including-subtest settlement checks passed against both pre-change Go overlay and current code.",
+    "The overlay restores 40 changed Go files. Five wait-only adapters were reconstructed by reversing only the wait delegate and import change; other entries use saved pre-change sources. Restored Room uses the original map and completion/cancellation code; the new registry is present but unused by restored Room.",
+    "Core and integration failfast runs reproduce TestCalendarManagedRecurringPauseRecoveryAndPublication at calendar_lifecycle_test.go:201: controlled model turn did not start. The same test fails in the restored pre-change code. Later Room cases are not counted as passing.",
+    "go vet retains the same 12 unkeyed composite-literal diagnostics as .local/architecture-platforms/vet-final.log, after normalizing line/column numbers."
+  ],
+  "overlay_path": ".local/architecture-platform-calls/before-overlay.json",
+  "overlay_sha256": "75476b6ff0a1a078280002e562a730e1644938483852748174fff5f553479526",
+  "source_inventory": ".local/architecture-platform-calls/source.json",
+  "source_inventory_sha256": "519224d74f0b9c669febcd70cd37df8b5df4c3fa22b15d1b5b229dc7bc39f6b6",
+  "source_hashes": [
+    {
+      "path": "docs/ARCHITECTURE-MODULE-BOUNDARIES-ANALYSIS.zh.md",
+      "sha256": "cfe8bf4514997996ad254e1b9e09b43e3db3df3622f8aad8b322e99ab86ca6aa"
+    },
+    {
+      "path": "docs/implementation/README.zh.md",
+      "sha256": "f4401993b2287b08ceb7845a1ae9bd8f1e2b8fe03c4673eb9b2518d01e974162"
+    },
+    {
+      "path": "docs/implementation/architecture/platform-calls.zh.md",
+      "sha256": "7b28930e364cd2335177a0812f4fd5e7dabc55b022b1cbf18c0541b60ef41b37"
+    },
+    {
+      "path": "internal/app/platforms/calls.go",
+      "sha256": "d4bfae0abd55b4db94362fc2c911d96b6d256170f2984fafd1ec056038311943"
+    },
+    {
+      "path": "internal/app/platforms/calls_test.go",
+      "sha256": "7bc8d8adcf58aa75673b1906139e1bb6df7a3729a0a5cb06267ceb1f2973a77b"
+    },
+    {
+      "path": "internal/app/platforms/entries.go",
+      "sha256": "e6eeb54dfe9cc862e081f68c39808d17bbdecb3ef72ea938db390049edd5cb9d"
+    },
+    {
+      "path": "internal/room/dsh_materials_integration_test.go",
+      "sha256": "b50fe49ccf63ce63559b58e02046c5f98c8a0120e07126782f7aab0c8d496088"
+    },
+    {
+      "path": "internal/room/followups_actions_managed_integration_test.go",
+      "sha256": "23246e9af9cf620bc99a769c0712ab2483fa40a6e85b8bf5f0daf4ea19e6e2a2"
+    },
+    {
+      "path": "internal/room/followups_actions_managed_test.go",
+      "sha256": "9a00cfb8af122e61c0b2ae06a1084e47df27e76ab4f17954c847018d93835ec9"
+    },
+    {
+      "path": "internal/room/followups_integration_test.go",
+      "sha256": "cb70cf0fcf27ab77b88cdd52dc288860cee9c76ecc38d0c6ec32570965fd7b68"
+    },
+    {
+      "path": "internal/room/management.go",
+      "sha256": "acfc2fb8754112df836d4e10abb27dd787eb93b3ce7433a46ee7522d0074035c"
+    },
+    {
+      "path": "internal/room/member_notifications_integration_test.go",
+      "sha256": "86746299ac4382ce4e4b0d65aa4b5c80c60eece0526692f637f022f01927db5a"
+    },
+    {
+      "path": "internal/room/platform_attachment_model_integration_test.go",
+      "sha256": "069656fcdfba8dff89fc38373c584b1b35e20f0bbc5982e1dcec8eec59075ae3"
+    },
+    {
+      "path": "internal/room/platform_attachments.go",
+      "sha256": "26511ddc451deb8a3b9b9f9701dc0fb103dc57d7e963116d0b5ee6b2083a55c1"
+    },
+    {
+      "path": "internal/room/platform_call_lifecycle.go",
+      "sha256": "d3eb86f6ac65816184a71ba3de84ee51cc959818c8e65096bfc15ba3ce343f8f"
+    },
+    {
+      "path": "internal/room/platform_connect.go",
+      "sha256": "717335a52969a0530b27e77e39f014afdbd4d8f0d4f7bd53b63999e2e74abfb8"
+    },
+    {
+      "path": "internal/room/platform_gitlab_auth.go",
+      "sha256": "21f79737f51c4665198c50992803a13fe33684904386c848f260218c8294181d"
+    },
+    {
+      "path": "internal/room/platform_gitlab_notifications.go",
+      "sha256": "100fa8a9170a4da6d9bca45e55fe4e4ff1bb8a400e8f6f7bda1d2d2267ec198a"
+    },
+    {
+      "path": "internal/room/platform_gitlab_projects.go",
+      "sha256": "0cc88f6134ac7fb0e652900fadc4e9a49c939b9760d58f160769316276ac641f"
+    },
+    {
+      "path": "internal/room/platform_lark_actions_integration_test.go",
+      "sha256": "870b54c25e0166a43bdca97c26a171b63e49fe807eac3ce3b0aefd45d7e4df13"
+    },
+    {
+      "path": "internal/room/platform_lark_chats.go",
+      "sha256": "6cf8050b3def9dac1eddd746829468045bc7891673e0c777ef5756d30a44cf3f"
+    },
+    {
+      "path": "internal/room/platform_lark_chats_integration_test.go",
+      "sha256": "915499a03cb3f6a4e5b066b2d25ab94ac3606bc293afc728b5f5230a23ae0803"
+    },
+    {
+      "path": "internal/room/platform_lark_self_send.go",
+      "sha256": "4e7ba786bd89281b6c2529f995c371cd496bbda06be7b28ca77b2859d68c9acc"
+    },
+    {
+      "path": "internal/room/platform_lark_self_send_recovery_integration_test.go",
+      "sha256": "b054153990410f6713aa9e1e8c2d248ba7ddce40f63e07b4b69a1c04698026ff"
+    },
+    {
+      "path": "internal/room/platform_notification_config.go",
+      "sha256": "20773e587bef6a352ac53587bc081236ab2a158c8f7ecd656dedfa41023ea18a"
+    },
+    {
+      "path": "internal/room/platform_notification_lark.go",
+      "sha256": "0c25b42283f86b889b4b110c54a3520b5ed21c11e41ff3c9fdf0c32899aef96d"
+    },
+    {
+      "path": "internal/room/platform_notification_todos.go",
+      "sha256": "9bc4d9e3845862f4b9f404a5815590aa46fb776361f0c234a5ac8f7b3c79f561"
+    },
+    {
+      "path": "internal/room/platform_oauth.go",
+      "sha256": "3a60eec74130d9b3040ea853d4cd7160cbd2d0a77d1acee99a0f4be9a4f16af9"
+    },
+    {
+      "path": "internal/room/platform_oauth_integration_test.go",
+      "sha256": "3ee97e6eccd18c7b9952ab6005a1fc0385ced04f9a51b5f2f5879cb7df73ec6f"
+    },
+    {
+      "path": "internal/room/platform_onboarding.go",
+      "sha256": "75c9e5d6667bd40c627288093081e3f256959ed50e4cdadc551167726a4706e1"
+    },
+    {
+      "path": "internal/room/platform_onboarding_integration_test.go",
+      "sha256": "ee3c72f2715512b480c5acba3a9733f36ad468fd1af572badbeee61532ac6b98"
+    },
+    {
+      "path": "internal/room/platform_references_managed_integration_test.go",
+      "sha256": "c9b1be2b6096aa47236fe6b0e601eef38ef15dfdc343f19974f884c8e3bd510a"
+    },
+    {
+      "path": "internal/room/platform_scion_auth.go",
+      "sha256": "7de96fd90950553d89ae928c618fdddbcc8e4f0901615bd46df3342a9ab45c89"
+    },
+    {
+      "path": "internal/room/platform_scion_auth_integration_test.go",
+      "sha256": "190defbb8ad4f5ab0bc28a59ba27901f553d2a7fc093fce0d234955a539bd18d"
+    },
+    {
+      "path": "internal/room/platform_scion_integration_test.go",
+      "sha256": "2ed7b72d89fa72081e25b3f707d43fdecc3575382b7c9c236733b006d7a5e386"
+    },
+    {
+      "path": "internal/room/platform_usage.go",
+      "sha256": "74550840d7f1c46b5f4153164006830b0d3638b14dbb324d715b72d7bfd9fb99"
+    },
+    {
+      "path": "internal/room/runtime_shutdown_test.go",
+      "sha256": "01aeb92004e50c990c1aba0c7e8862e66e349ffe6ca5242e9655842e207ac40b"
+    },
+    {
+      "path": "internal/room/tools_http.go",
+      "sha256": "daf9f54f91dffcb52f2cd847f2aff236a8a703e5f4feb994fbeec342d46b881a"
+    },
+    {
+      "path": "internal/room/tools_integration_test.go",
+      "sha256": "5493d7b0f69d1646355a0463f8ea6e4b85fc1f5b094e409675793aaee8d7d877"
+    },
+    {
+      "path": "internal/room/tools_lark_configuration.go",
+      "sha256": "13615348a1456d0c9041bcd19cc63b46b91a16798c31697d9c4c8c97fc5cd0b7"
+    },
+    {
+      "path": "internal/room/tools_lark_configuration_test.go",
+      "sha256": "869ca61b6e1da7deba310848e49d69ce04302a1b05e2f945b01492675cbbe465"
+    },
+    {
+      "path": "internal/room/tools_target_concurrency_test.go",
+      "sha256": "ed222dd6a6f9e7f8316353b78f3805b01e33eda9bb3962b3622dbf8dddba9c88"
+    },
+    {
+      "path": "internal/room/workspace_git_managed.go",
+      "sha256": "430692823b53ff2a223f4c30dee4984819475e5947b452785148111fbae0751b"
+    },
+    {
+      "path": "internal/room/workspace_scion.go",
+      "sha256": "a7ce30f790068964e92116d5d27b881b04988e9dac4eff74a283b4c6831739fc"
+    },
+    {
+      "path": "internal/room/workspace_scion_integration_test.go",
+      "sha256": "a74dbda721ef5ce6d1d0d4afd1b1c4fafa13710cbadc35bc9bc108f7b06f7a5e"
+    },
+    {
+      "path": "scripts/architecture-baseline.py",
+      "sha256": "b3606b8c75a4906d269f83f205843d13edad0fbb0a0390150edb2210fe9a8fe7"
+    }
+  ],
+  "not_validated": [
+    "real remote writes",
+    "real DSH/model acceptance",
+    "browser acceptance",
+    "daily service/session adoption",
+    "R6a.2 admission orchestration",
+    "R6b connection/subscription configuration migration"
+  ]
+}

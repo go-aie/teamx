@@ -125,7 +125,7 @@ func TestHelpSkipsCredentialAndDisableJoins(t *testing.T) {
 		t.Fatal(frame)
 	}
 	m.mu.Lock()
-	pending := len(m.platformCalls)
+	pending := m.platformCalls.Len()
 	m.mu.Unlock()
 	if pending != 0 {
 		t.Fatal(pending)
@@ -228,7 +228,7 @@ func TestIndependentGitLabHelp(t *testing.T) {
 		t.Skip("set TEAMX_TEST_GITLAB_BIN to the independently built GitLab tool")
 	}
 	m, room, svc, c, members := cliToolFixture(t, "exit 99\n")
-	m.toolCatalog[0] = tool.Catalog()[0]
+	m.toolCatalog[0] = defaultPlatformTools()[0]
 	m.toolCatalog[0].Executable = bin
 	bindCLITool(t, m, room.RoomIdentity, members[0], c, "gitlab", 0)
 	// Help resolves entry metadata without requiring an active authorization.
@@ -318,7 +318,7 @@ func TestProcessLifecycleSettlement(t *testing.T) {
 				t.Fatal("lifecycle did not join process")
 			}
 			m.mu.Lock()
-			pending := len(m.platformCalls)
+			pending := m.platformCalls.Len()
 			m.mu.Unlock()
 			if pending != 0 {
 				t.Fatal(pending)
@@ -353,8 +353,8 @@ func TestCLICancellationJoinsServerProcess(t *testing.T) {
 	}
 	m.mu.Lock()
 	done := []<-chan struct{}{}
-	for c := range m.platformCalls {
-		done = append(done, c.done)
+	for _, c := range m.platformCalls.Snapshot() {
+		done = append(done, c.Done())
 	}
 	m.mu.Unlock()
 	for _, ch := range done {
@@ -381,7 +381,7 @@ func TestAdmissionFailureDoesNotWaitForStdinEOF(t *testing.T) {
 		t.Fatal("admission waited for stdin", err)
 	}
 	m.mu.Lock()
-	pending := len(m.platformCalls)
+	pending := m.platformCalls.Len()
 	m.mu.Unlock()
 	if pending != 0 {
 		t.Fatal(pending)

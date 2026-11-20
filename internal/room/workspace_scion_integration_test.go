@@ -223,7 +223,7 @@ func TestScionWorkspaceCloneCancelSettles(t *testing.T) {
 				t.Fatal("private credentials remain")
 			}
 			m.mu.Lock()
-			calls := len(m.platformCalls)
+			calls := m.platformCalls.Len()
 			m.mu.Unlock()
 			if calls != 0 {
 				t.Fatal("platform call remains")

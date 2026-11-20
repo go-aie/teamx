@@ -305,7 +305,7 @@ func (u *inputUpgrade) prepare(room RoomSnapshot, hasProgress bool) error {
 		return fmt.Errorf("%w: legacy Room already has room-input files", ErrInvalid)
 	}
 	for _, member := range room.Members {
-		if err := u.checkLegacySession(MemberIdentity{room.RoomIdentity, member.AgentID, member.MembershipID}); err != nil {
+		if err := u.checkLegacySession(MemberIdentity{RoomIdentity: room.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}); err != nil {
 			return err
 		}
 	}

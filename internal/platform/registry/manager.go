@@ -26,6 +26,7 @@ var (
 // NormalizeFunc validates the supported provider and canonicalizes configuration.
 type NormalizeFunc func(name, provider, origin string) (string, string, error)
 type Manager struct {
+	catalog          platform.Catalog
 	store            Store
 	normalize        NormalizeFunc
 	identityResolver func(string, string, platform.Validation) (platform.AccountIdentity, bool)
@@ -34,8 +35,8 @@ type Manager struct {
 	validProfile     func(string, string, platform.CLIProfile) bool
 }
 
-func New(store Store, normalize NormalizeFunc) *Manager {
-	return &Manager{store: store, normalize: normalize}
+func New(store Store, normalize NormalizeFunc, catalog platform.Catalog) *Manager {
+	return &Manager{store: store, normalize: normalize, catalog: catalog}
 }
 
 // SetProfileSupport registers reference-only credentials without interpreting
@@ -119,7 +120,7 @@ func (m *Manager) Plan(req Request, remove bool) (Change, error) {
 		if err != nil {
 			return Change{}, err
 		}
-		c.ToolEntryID, err = newToolEntry(req.Provider)
+		c.ToolEntryID, err = m.newToolEntry(req.Provider)
 		if err != nil {
 			return Change{}, err
 		}

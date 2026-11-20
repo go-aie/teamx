@@ -11,14 +11,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/go-aie/teamx/internal/platform/tool"
 )
 
 func TestExplicitToolBindingPreservesRolesAndReadsSkillWithoutCredentials(t *testing.T) {
 	parallelFixtureTest(t)
 	m, room, svc, c, members := cliToolFixture(t, "printf 'native-output'")
-	m.toolCatalog[0].Skill = tool.Catalog()[0].Skill
+	m.toolCatalog[0].Skill = defaultPlatformTools()[0].Skill
 	dir := m.roomDir(room.RoomID)
 	frozen, err := os.ReadFile(filepath.Join(dir, "room-config.json"))
 	if err != nil {

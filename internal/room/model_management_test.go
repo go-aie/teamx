@@ -102,7 +102,7 @@ func requireModelComplete(t *testing.T, op *modelChangeOperation) {
 func modelMember(t *testing.T, m *roomManager, room roomSummary) MemberIdentity {
 	t.Helper()
 	saved, _ := readManagedRoom(t, m, room)
-	return MemberIdentity{room.RoomIdentity, saved.Members[0].AgentID, saved.Members[0].MembershipID}
+	return MemberIdentity{RoomIdentity: room.RoomIdentity, AgentID: saved.Members[0].AgentID, MembershipID: saved.Members[0].MembershipID}
 }
 
 func TestModelOperationOrderSurvivesPollingAndRestart(t *testing.T) {
@@ -562,7 +562,7 @@ func (m *roomManager) activationConfigUnlockedForModelTest(id RoomIdentity, save
 	member := saved.Members[0]
 	profile := saved.Runtime.profile()
 	profile.Workspace = filepath.Join(m.roomDir(id.RoomID), member.Workspace)
-	return m.config.models.target(MemberIdentity{id, member.AgentID, member.MembershipID}, *member.ModelSelection, member.ModelSelectionVersion, profile)
+	return m.config.models.target(MemberIdentity{RoomIdentity: id, AgentID: member.AgentID, MembershipID: member.MembershipID}, *member.ModelSelection, member.ModelSelectionVersion, profile)
 }
 
 func TestOnlineModelsSameRoomPreservesIndependentExecutionTargets(t *testing.T) {

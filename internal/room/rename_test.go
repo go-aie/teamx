@@ -119,7 +119,7 @@ func TestRoomRenameUncertainCommitReopensConsistently(t *testing.T) {
 				return errors.New("lost rename result")
 			}
 			req := roomRenameRequest{m.epoch, humanCaller, room.RoomIdentity, "New name", room.Name}
-			if r := managerHTTP(m, "/v1/rooms/rename", req); r.Code == 200 || !m.store.uncertain {
+			if r := managerHTTP(m, "/v1/rooms/rename", req); r.Code == 200 || !errors.Is(m.store.check(true), ErrCommitUnknown) {
 				t.Fatal(r.Code, r.Body.String())
 			}
 			if err := m.close(); err != nil {

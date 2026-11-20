@@ -375,7 +375,7 @@ func TestHumanReadCommitFailuresAndBoundedRecovery(t *testing.T) {
 			if h.file.Revision != 1 || h.file.OpenedThrough != 0 || !reflect.DeepEqual(h.file.MentionSeenSeqs, []uint64{1}) {
 				t.Fatal("installed unconfirmed candidate", h.file)
 			}
-			if s.uncertain {
+			if errors.Is(s.check(true), ErrCommitUnknown) {
 				t.Fatal("read failure froze business store")
 			}
 			room.Revision++

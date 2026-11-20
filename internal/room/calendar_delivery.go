@@ -67,7 +67,7 @@ func (a *CalendarActor) deliver(owner actorx.Context) {
 			case "report":
 				return h.service.room.Call[PostReceipt](ctx, PostMessage{RoomIdentity: h.service.info.RoomIdentity, Caller: Caller{Author: Author{Kind: "agent", ID: r.Task.AgentID}, MembershipID: r.Task.MembershipID}, ClientMessageID: r.Publication.ClientMessageID, Text: r.Report, DurablePublication: true})
 			case "cancel":
-				id := MemberIdentity{h.service.info.RoomIdentity, r.Task.AgentID, r.Task.MembershipID}
+				id := MemberIdentity{RoomIdentity: h.service.info.RoomIdentity, AgentID: r.Task.AgentID, MembershipID: r.Task.MembershipID}
 				binding := turnExecution(r.Binding)
 				_, err := h.service.target(id.MembershipID).Call[MemberStatus](ctx, ControlMember{MemberIdentity: id, Action: "cancel_bound", expectedBinding: &binding})
 				return PostReceipt{}, err

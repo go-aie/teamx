@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/go-aie/teamx/internal/app/platforms"
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/notification"
 	"github.com/go-aie/teamx/internal/platform/registry"
@@ -11,12 +12,11 @@ import (
 )
 
 type platformCall struct {
+	*platforms.Call
 	operationID           string
 	agentID, membershipID string
 	owner                 RoomIdentity
 	tool, platformID      string
-	cancel                context.CancelFunc
-	done                  chan struct{}
 	account               registry.Account
 	secret                platform.Secret
 	subscription          notification.Key // Set only for saved-notification attachments.
@@ -51,23 +51,11 @@ func memberExists(members []MemberState, agent, membership string) bool {
 
 // Requires manager.mu. Cancellation only signals; callers join outside the gate.
 func (m *roomManager) cancelPlatformCallsLocked(match func(*platformCall) bool) []<-chan struct{} {
-	var done []<-chan struct{}
-	for c := range m.platformCalls {
-		if match(c) {
-			c.cancel()
-			done = append(done, c.done)
-		}
-	}
-	return done
+	return m.platformCalls.Cancel(match)
 }
 
 func (m *roomManager) attachmentCallsBusyLocked(key notification.Key) bool {
-	for call := range m.platformCalls {
-		if call.subscription == key {
-			return true
-		}
-	}
-	return false
+	return len(m.platformCalls.Pending(func(call *platformCall) bool { return call.subscription == key })) != 0
 }
 
 func (m *roomManager) cancelAttachmentCallsLocked(key notification.Key) []<-chan struct{} {
@@ -77,7 +65,7 @@ func (m *roomManager) waitPlatformCalls(ctx context.Context, owner *RoomIdentity
 	m.mu.Lock()
 	done := m.cancelPlatformCallsLocked(func(c *platformCall) bool { return owner == nil || c.owner == *owner })
 	m.mu.Unlock()
-	return notification.Wait(ctx, done)
+	return platforms.WaitCalls(ctx, done)
 }
 
 // Shared admission deliberately does not inspect executables or Workspace files.
@@ -116,8 +104,9 @@ func (m *roomManager) preparePlatformCallLocked(ctx context.Context, req toolsRe
 			return a, nil, nil, err
 		}
 		found := false
+		entry := platforms.ToolEntry{Binding: binding, Definition: definition}
 		for _, c := range file.Platforms {
-			if c.ID == binding.PlatformID && c.Generation == binding.PlatformGeneration && c.Provider == a.definition.Provider {
+			if entry.MatchesConnection(c) {
 				a.account, a.secret, err = registry.ResolveAccessAccount(file, c)
 				if err != nil {
 					if errors.Is(err, platform.ErrCredential) {
@@ -134,17 +123,12 @@ func (m *roomManager) preparePlatformCallLocked(ctx context.Context, req toolsRe
 		}
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	call := &platformCall{owner: req.RoomIdentity, tool: a.definition.Name, platformID: binding.PlatformID, account: a.account, secret: a.secret, agentID: req.Caller.ID, membershipID: req.Caller.MembershipID, cancel: cancel, done: make(chan struct{})}
-	if m.platformCalls == nil {
-		m.platformCalls = map[*platformCall]bool{}
-	}
-	m.platformCalls[call] = true
+	call := &platformCall{owner: req.RoomIdentity, tool: a.definition.Name, platformID: binding.PlatformID, account: a.account, secret: a.secret, agentID: req.Caller.ID, membershipID: req.Caller.MembershipID}
+	call.Call = m.platformCalls.Register(call, cancel)
 	return a, call, ctx, nil
 }
 func (m *roomManager) finishPlatformCallLocked(call *platformCall) {
-	call.cancel()
-	delete(m.platformCalls, call)
-	close(call.done)
+	m.platformCalls.Finish(call.Call)
 }
 func (m *roomManager) finishPlatformCall(call *platformCall) {
 	m.mu.Lock()
@@ -190,7 +174,7 @@ func (m *roomManager) beginPlatformMemberChange(ctx context.Context, svc *servic
 	}
 	wait, cancel := context.WithTimeout(ctx, serviceShutdownTimeout)
 	defer cancel()
-	if err := notification.Wait(wait, done); err != nil {
+	if err := platforms.WaitCalls(wait, done); err != nil {
 		release()
 		return nil, ErrBusy
 	}

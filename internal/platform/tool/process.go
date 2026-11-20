@@ -23,13 +23,6 @@ type Definition struct {
 	Dependencies []ExecutableDependency `json:"-"`
 }
 
-func Catalog() []Definition {
-	bin := ResolveExecutable("teamx-gitlab", os.Getenv("TEAMX_GITLAB_BIN"))
-	return []Definition{{Name: "gitlab", Description: "GitLab CLI and WorkItem extensions; uses account permissions", Version: "glab 1.127.0", Provider: "gitlab", Executable: bin, Skill: "skills/gitlab/SKILL.md",
-		Environment: map[string]string{"GITLAB_HOST": "instance", "GITLAB_TOKEN": "token"}, Dependencies: []ExecutableDependency{{Name: "glab", OverrideEnvironment: "TEAMX_GLAB_BIN"}}}, {Name: "lark", Description: "飞书内置消息读取与已开放的托管动作；使用入口 --help 查看命令", Provider: "lark", Version: "lark-cli 1.0.99", InternalOnly: true, Skill: "skills/lark/SKILL.md"},
-		{Name: "scion", Description: "Scion native repository and Review CLI; uses account permissions", Version: "scn 0.1.13", Provider: "scion", Executable: ResolveExecutable("teamx-scion", os.Getenv("TEAMX_SCION_BIN")), Skill: "skills/scion/SKILL.md", Environment: map[string]string{"SCION_ENDPOINT": "instance", "SCION_HUB": "instance", "SCION_CREDENTIALS_FILE": "credentials_file", "SCION_CREDENTIALS": "credential_mode", "SCION_NO_DAEMON": "no_daemon", "SCION_CONFIG_FILE": "config_file"}}}
-}
-
 // Help requests need no account or credential resolution. No business routing.
 func Help(args []string) bool {
 	if len(args) == 0 || args[0] == "help" || args[0] == "version" || len(args) == 1 && args[0] == "-v" {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/go-aie/teamx/internal/app/platforms"
 	"github.com/go-aie/teamx/internal/platform/lark"
 	"github.com/go-aie/teamx/internal/platform/notification"
 )
@@ -19,8 +20,32 @@ type notificationAdapter struct {
 }
 
 func defaultNotificationAdapters(m *roomManager) map[notification.SourceID]notificationAdapter {
-	adapters := m.gitlabNotificationAdapters()
-	adapters[lark.MessagesSourceID] = m.larkNotificationAdapter()
+	catalog := defaultPlatformCatalog()
+	if m != nil && m.platformCatalog != nil {
+		catalog = m.platformCatalog
+	}
+	bindings := platforms.SourceBindings{GitLabEvents: m.preparePlatformEvents, GitLabTodos: m.preparePlatformTodos, LarkReader: func(q lark.QueryScope) (lark.MessageReader, error) {
+		return m.larkClients.New(q.Profile)
+	}}
+	adapters := make(map[notification.SourceID]notificationAdapter)
+	for _, definition := range catalog.Definitions() {
+		for _, source := range definition.Sources {
+			var adapter notificationAdapter
+			switch source.ID.Provider {
+			case "gitlab":
+				adapter = m.gitlabNotificationLifecycle(source.ID)
+			case "lark":
+				adapter = m.larkNotificationLifecycle()
+			default:
+				panic("notification lifecycle adapter missing: " + source.ID.Provider)
+			}
+			adapter.Source = source.Bind(bindings)
+			if adapter.Source == nil || adapter.Source.ID() != source.ID {
+				panic("notification source binding mismatch")
+			}
+			adapters[source.ID] = adapter
+		}
+	}
 	return adapters
 }
 

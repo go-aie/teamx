@@ -93,7 +93,7 @@ func (m *Manager) validateSnapshot(file Snapshot) (Snapshot, error) {
 		if c.CredentialKind == "cli_profile" && v.Status == "valid" {
 			validationOK = validationOK && v.Account.Valid() && v.Account.Provider == c.Provider && v.Account.Instance == c.URL && v.UserID == 0
 		}
-		if err != nil || n != c.Name || u != c.URL || !validRestartID(c.ID) || !validRestartID(c.Generation) || seen[c.ID] || !validToolEntry(c.Platform) || c.ToolEntryID != "" && entries[c.ToolEntryID] || c.Version == 0 ||
+		if err != nil || n != c.Name || u != c.URL || !validRestartID(c.ID) || !validRestartID(c.Generation) || seen[c.ID] || !m.validToolEntry(c.Platform) || c.ToolEntryID != "" && entries[c.ToolEntryID] || c.Version == 0 ||
 			c.RevocationStatus != "" || c.AuthorizationStatus != "" || !c.TokenExpiresAt.IsZero() ||
 			c.CredentialVersion == 0 || c.CredentialVersion > c.Version || (!c.CredentialConfigured && c.CredentialKind != "oauth") || !sourceOK || !validationOK {
 			return Snapshot{}, fmt.Errorf("%w: invalid platform", ErrInvalid)

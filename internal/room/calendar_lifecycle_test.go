@@ -139,7 +139,7 @@ func (f *calendarManagedFixture) finish(index int, run *calendar.Run) *calendar.
 	f.t.Helper()
 	s := f.service(index)
 	f.agentControl(s, "enable")
-	id := MemberIdentity{s.info.RoomIdentity, run.Task.AgentID, run.Task.MembershipID}
+	id := MemberIdentity{RoomIdentity: s.info.RoomIdentity, AgentID: run.Task.AgentID, MembershipID: run.Task.MembershipID}
 	select {
 	case actual := <-f.entered:
 		if actual != id {

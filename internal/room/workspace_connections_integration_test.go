@@ -135,9 +135,8 @@ func TestWorkspaceSharedPlatformRestartAndUncertainStore(t *testing.T) {
 		restored.mu.Unlock()
 		t.Fatal("restart failed to resolve shared credential", err)
 	}
-	restored.store.uncertain = true
+	restored.store.markUncertain()
 	_, err = restored.resolveWorkspacePlatformLocked(h.room.RoomIdentity, *saved.Workspace)
-	restored.store.uncertain = false
 	restored.mu.Unlock()
 	if !errors.Is(err, ErrCommitUnknown) {
 		t.Fatal("uncertain store released credential", err)

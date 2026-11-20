@@ -179,7 +179,7 @@ func TestScionCallLifecycle(t *testing.T) {
 					t.Fatal("private credentials retained", err)
 				}
 				m.mu.Lock()
-				pending := len(m.platformCalls)
+				pending := m.platformCalls.Len()
 				m.mu.Unlock()
 				if pending != 0 {
 					t.Fatal(pending)

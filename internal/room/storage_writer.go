@@ -1,120 +1,54 @@
 package room
 
 import (
-	"fmt"
-	"path/filepath"
+	"context"
 	"sync"
+
+	"github.com/go-aie/teamx/internal/persistence"
 )
 
-// snapshotWriter owns file health and I/O, not a Room directory. Store adds its
-// OS-lock check; access/configuration domains provide their existing ownership.
+// snapshotWriter is a temporary adapter for existing Store/access/model callers
+// and the room-specific I/O fault seam shared with body logs and reclamation.
+// All health, path serialization and I/O settlement belong to persistence.Writer.
+// Remove this adapter when those domain seams and callers move to their modules.
+// Like Writer, this value must not be copied after first use.
 type snapshotWriter struct {
-	healthMu           sync.Mutex
-	uncertain          bool
-	writerClosing      bool
-	writes             int
-	writesDone         chan struct{}
-	ops                snapshotOps
-	pathMu             sync.Mutex
-	writePaths         map[string]*snapshotWritePath
-	directoryMu        sync.Mutex
-	durableDirectories map[string]*snapshotDirectory
+	ops    snapshotOps
+	init   sync.Once
+	writer *persistence.Writer
 }
 
-type snapshotDirectory struct {
-	mu       sync.Mutex
-	identity directoryIdentity
+func (s *snapshotWriter) persistence() *persistence.Writer {
+	s.init.Do(func() {
+		s.writer = persistence.NewWriter(persistence.Operations{
+			MakeDir:    func(path string) error { return s.ops.makeDir(path) },
+			CreateTemp: func(dir, pattern string) (persistence.File, error) { return s.ops.createTemp(dir, pattern) },
+			Rename:     func(from, to string) error { return s.ops.rename(from, to) },
+			SyncDir:    func(path string) error { return s.ops.syncDir(path) },
+			Remove:     func(path string) error { return s.ops.remove(path) },
+		})
+	})
+	return s.writer
 }
-
-type snapshotWritePath struct {
-	mu   sync.Mutex
-	refs int // protected by snapshotWriter.pathMu; includes waiters
+func (s *snapshotWriter) save(path string, v any, limit int64) error {
+	return s.persistence().Save(path, v, limit)
 }
-
-// Path serialization is a file-level backstop, not a substitute for the domain
-// owner's read/modify/write protocol. Waiters are admitted only after obtaining
-// the path, so a freeze also rejects requests queued behind another save.
-func (s *snapshotWriter) admitSnapshotWrite(path string) (func(), error) {
-	path = filepath.Clean(path)
-	s.pathMu.Lock()
-	if s.writePaths == nil {
-		s.writePaths = map[string]*snapshotWritePath{}
-	}
-	p := s.writePaths[path]
-	if p == nil {
-		p = &snapshotWritePath{}
-		s.writePaths[path] = p
-	}
-	p.refs++
-	s.pathMu.Unlock()
-	p.mu.Lock()
-	releasePath := func() {
-		p.mu.Unlock()
-		s.pathMu.Lock()
-		p.refs--
-		if p.refs == 0 {
-			delete(s.writePaths, path)
-		}
-		s.pathMu.Unlock()
-	}
-	s.healthMu.Lock()
-	var err error
-	switch {
-	case s.writerClosing:
-		err = ErrStoreClosed
-	case s.uncertain:
-		err = ErrCommitUnknown
-	default:
-		if s.writes == 0 {
-			s.writesDone = make(chan struct{})
-		}
-		s.writes++
-	}
-	s.healthMu.Unlock()
-	if err != nil {
-		releasePath()
-		return nil, err
-	}
-	return func() {
-		// No file I/O follows this point, including temporary-file cleanup.
-		releasePath()
-		s.healthMu.Lock()
-		s.writes--
-		if s.writes == 0 {
-			close(s.writesDone)
-		}
-		s.healthMu.Unlock()
-	}, nil
+func (s *snapshotWriter) ensureSnapshotDirectory(dir string) error {
+	return s.persistence().EnsureDirectory(dir)
 }
+func (s *snapshotWriter) markUncertain()                        { s.persistence().MarkUncertain() }
+func (s *snapshotWriter) checkWriter(writing bool) error        { return s.persistence().Check(writing) }
+func (s *snapshotWriter) closeWriter(ctx context.Context) error { return s.persistence().Close(ctx) }
 
-// Deleting a snapshot participates in the same health and close boundary as
-// replacement. An attempted deletion can be ambiguous just like rename.
 func (s *Store) removeSnapshot(path string) error {
 	if err := s.check(true); err != nil {
 		return err
 	}
-	return s.snapshotWriter.removeSnapshot(path)
-}
-
-func (s *snapshotWriter) removeSnapshot(path string) error {
-	finish, err := s.admitSnapshotWrite(path)
-	if err != nil {
-		return err
-	}
-	defer finish()
-	if err := s.ops.remove(path); err != nil {
-		s.markUncertain()
-		return fmt.Errorf("%w: remove snapshot: %w", ErrCommitUnknown, err)
-	}
-	if err := s.ops.syncDir(filepath.Dir(path)); err != nil {
-		s.markUncertain()
-		return fmt.Errorf("%w: sync removal: %w", ErrCommitUnknown, err)
-	}
-	return nil
+	return s.persistence().Remove(path)
 }
 
 func (s *Store) directoryReleased() bool {
-	s.healthMu.Lock()
-	defer s.healthMu.Unlock()
+	s.lockMu.Lock()
+	defer s.lockMu.Unlock()
 	return s.lock == nil
 }

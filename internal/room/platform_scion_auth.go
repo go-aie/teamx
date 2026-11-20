@@ -296,11 +296,7 @@ func (m *roomManager) logoutScionLocked(req scionAuthRequest) ([]managedPlatform
 			return nil, err
 		}
 		pending = append(pending, m.notifications.PlatformDoneLocked(c.ID)...)
-		for call := range m.platformCalls {
-			if call.platformID == c.ID {
-				pending = append(pending, call.done)
-			}
-		}
+		pending = append(pending, m.platformCalls.Pending(func(call *platformCall) bool { return call.platformID == c.ID })...)
 	}
 	result := make([]managedPlatform, 0, len(matching))
 	for _, c := range matching {

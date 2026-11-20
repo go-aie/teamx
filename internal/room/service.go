@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-aie/actorx"
 	"github.com/go-aie/teamx/internal/agent/dsh"
+	"github.com/go-aie/teamx/internal/app/agents"
 	"github.com/go-aie/teamx/internal/calendar"
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/notification"
@@ -231,6 +232,7 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 			_ = store.Close()
 		}
 	}()
+	store.notificationAdapters = config.inputCapabilities
 	state, err := store.LoadRoom()
 	if errors.Is(err, os.ErrNotExist) {
 		instance, idErr := newOpaqueID()
@@ -287,7 +289,7 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 		return nil, err
 	}
 	grantsFrozen := &atomic.Bool{}
-	scheduler, err := rt.Spawn(&turnScheduler{RoomIdentity: state.RoomIdentity, mode: mode, frozen: grantsFrozen})
+	scheduler, err := rt.Spawn(agents.NewTurnScheduler(state.RoomIdentity, agents.SchedulingMode(mode), grantsFrozen))
 	if err != nil {
 		return nil, err
 	}
@@ -438,7 +440,7 @@ func (s *service) close(ctx context.Context) error {
 		}
 	}
 	if !s.grantsStopped.Load() {
-		if _, err := s.scheduler.Call[struct{}](ctx, stopTurnGrants{}); err != nil {
+		if _, err := s.scheduler.Call[struct{}](ctx, agents.StopTurnGrants{}); err != nil {
 			return fmt.Errorf("scheduler shutdown incomplete (store still owned): %w", err)
 		}
 		s.grantsStopped.Store(true)

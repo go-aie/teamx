@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/go-aie/teamx/internal/agent/dsh"
+	"github.com/go-aie/teamx/internal/app/platforms"
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/lark"
 	"github.com/go-aie/teamx/internal/platform/notification"
@@ -171,7 +172,7 @@ type roomManager struct {
 	onboardingRunning        map[string]bool
 	settings                 *systemSettings
 	toolCatalog              []tool.Definition
-	platformCalls            map[*platformCall]bool
+	platformCalls            platforms.Calls[*platformCall]
 	platformMemberChanges    map[MemberIdentity]bool
 	larkClients              *lark.ClientFactory // nil uses the shared production request queues
 	larkPermissionChecks     map[string]larkPlatformCapabilityResult
@@ -181,6 +182,7 @@ type roomManager struct {
 	larkAuthSessions         map[string]*larkAuthSession
 	scionAuthSessions        map[string]*scionAuthSession
 	gitlabAuthSessions       map[string]*gitlabAuthSession
+	platformCatalog          *platforms.Catalog
 	connectionProviders      map[string]connectionProvider
 	referenceAdapters        map[string]referenceAdapterFactory
 	referenceResolvers       map[string]followupResolver

@@ -103,7 +103,7 @@ func TestPlatformVersion4UpgradeBackupAndRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	f, err := m.Load()
-	if err != nil || f.Version != ConfigurationVersion || !validToolEntry(f.Platforms[0].Platform) {
+	if err != nil || f.Version != ConfigurationVersion || !m.validToolEntry(f.Platforms[0].Platform) {
 		t.Fatal("upgrade failed", err)
 	}
 	entry := f.Platforms[0].ToolEntryID

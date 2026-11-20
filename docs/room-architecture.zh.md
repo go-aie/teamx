@@ -11,10 +11,10 @@ Room 保存共享事实，成员保存私有执行状态。生产执行链为 `R
 | 共享 Inbox Actor | 共享项目正文、冻结接收集合、Grant、持久页保护与回收 | [shared_inbox.go](../internal/room/shared_inbox.go) |
 | 成员输入 Actor | 私有 Inbox 正文、按流消费、执行额度、正式页及维护；发布轻量状态 | [member_input.go](../internal/room/member_input.go) |
 | 成员 Actor | 合并通知、申请名额、调用 Session、记录累计次数与会话基线 | [member.go](../internal/room/member.go) |
-| 调度 Actor | 按串行／并发模式授予名额、申请去重、撤销与结清 | [turn_scheduler.go](../internal/room/turn_scheduler.go) |
+| 调度 Actor | 按串行／并发模式授予名额、申请去重、撤销与结清 | [app/agents/turn_scheduler.go](../internal/app/agents/turn_scheduler.go) |
 | HTTP / CLI | 校验调用身份，提供用户与 Agent 的读写入口 | [service.go](../internal/room/service.go)、[cli.go](../internal/room/cli.go) |
 
-持久身份是 RoomID + RoomInstance、AgentID + MembershipID；ServiceEpoch 在重新组装服务时变化。操作者预览不消费成员未读；Agent 工具绑定完整成员身份，不能自行切房或管理成员。这是可信本机协议，不是多租户认证系统。
+持久身份定义在 [identity](../internal/identity/identity.go)，是 RoomID + RoomInstance、AgentID + MembershipID；ServiceEpoch 在重新组装服务时变化。操作者预览不消费成员未读；Agent 工具绑定完整成员身份，不能自行切房或管理成员。这是可信本机协议，不是多租户认证系统。
 
 ## 私信与默认实例
 

@@ -1,0 +1,196 @@
+{
+  "unit": "R5a: turn scheduler",
+  "date": "2026-11-20",
+  "head": "633a0f2fbcd237c0e9a68f5ba13dc93ff0b68d78",
+  "worktree_note": "Existing uncommitted R0/R3a/R1a and unrelated files preserved. Only code ownership changes; no runtime data migration or deployment.",
+  "go": "go version go1.27.1 darwin/arm64",
+  "scope": "Move the sole nonpersistent grant/queue/exit owner into app/agents and shared persistent identities into identity. Keep MemberAgent, readiness, backend/session, checkpoints, recovery/rotation and shutdown resource ownership in the original implementation.",
+  "checks": [
+    {
+      "name": "before",
+      "command": "go test -tags=integration ./internal/room -run '^(TestTurnScheduler.*|TestRoomTurns.*|TestRoomSlot.*|TestServiceShutdown.*|TestTeamScheduling.*|TestManagedTeam.*(Scheduling|Parallel).*|TestRuntimeShutdown.*|TestServiceCloseWaitsForMemberSettlementAndRetainsLock|TestServiceRemovalWaitsForActiveMember|TestUnifiedScheduler.*|TestUnifiedRecoveryStatusAndContinuationKeepLifecycleGates)$' -count=1 -timeout=3m",
+      "exit_code": 0,
+      "elapsed_seconds": 18.475,
+      "log": ".local/architecture-scheduler/before.log",
+      "log_sha256": "1ac12086de6450917a9d5b552330273875a597173f5f896d04259425d65a997d",
+      "summary": "Pre-change scheduling/closure integration passed; Room 16.532s."
+    },
+    {
+      "name": "after-final",
+      "command": "go test -tags=integration ./internal/room -run '^(TestRoomTurns.*|TestRoomSlot.*|TestServiceShutdown.*|TestTeamScheduling.*|TestManagedTeam.*(Scheduling|Parallel).*|TestRuntimeShutdown.*|TestServiceCloseWaitsForMemberSettlementAndRetainsLock|TestServiceRemovalWaitsForActiveMember|TestUnifiedScheduler.*|TestUnifiedRecoveryStatusAndContinuationKeepLifecycleGates)$' -count=1 -timeout=3m",
+      "exit_code": 0,
+      "elapsed_seconds": 25.13,
+      "log": ".local/architecture-scheduler/after-final.log",
+      "log_sha256": "78e703512f6f48a142bec7376c63891eef35a54ad06c8ab3a864285483ddd430",
+      "summary": "Post-change equivalent integration passed; Room 15.317s. Pure scheduler tests moved to the new package."
+    },
+    {
+      "name": "scheduler-final",
+      "command": "go test -race ./internal/app/agents ./internal/identity -count=1 -timeout=2m",
+      "exit_code": 0,
+      "elapsed_seconds": 3.557,
+      "log": ".local/architecture-scheduler/scheduler-final.log",
+      "log_sha256": "08f51720964221c5291f889489d6293c039ed978fc4fe3944c6e9010d54d87d9",
+      "summary": "All scheduler race tests passed; agents 2.317s. Includes frozen admission, capacity retirement, mode/identity validation and incomplete Stopped cleanup."
+    },
+    {
+      "name": "race",
+      "command": "go test -race -tags=integration ./internal/app/agents ./internal/architecture ./internal/platform/... ./internal/room -run '^(TestTurnScheduler.*|TestRoomTurns.*|TestRoomSlot.*|TestServiceShutdown.*|TestTeamScheduling.*|TestManagedTeam.*(Scheduling|Parallel).*|TestRuntimeShutdown.*|TestServiceCloseWaitsForMemberSettlementAndRetainsLock|TestServiceRemovalWaitsForActiveMember|TestUnifiedScheduler.*|TestUnifiedRecoveryStatusAndContinuationKeepLifecycleGates|TestRecovery.*|TestRotation.*|TestProductionImportBoundaries|TestCapabilityImportBoundaries|TestRepositoryImportBoundaries|Test.*Identity.*|Test.*Reference.*)$' -count=1 -timeout=5m",
+      "exit_code": 0,
+      "elapsed_seconds": 235.268,
+      "log": ".local/architecture-scheduler/race.log",
+      "log_sha256": "2d05439827df7420e9ea261d1b41da095508ec33208c223d815ae886f6f85321",
+      "summary": "All selected integration/race and production boundary tests passed; Room 145.308s. Includes cancellation, parallel turns, panic/cleanup, exit, recovery/rotation, ownership, identity and references."
+    },
+    {
+      "name": "build-final",
+      "command": "go build -o .local/architecture-scheduler/teamx ./cmd/teamx",
+      "exit_code": 0,
+      "elapsed_seconds": 1.766,
+      "log": ".local/architecture-scheduler/build-final.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "summary": "Final CLI build passed. Local binary was not deployed and is removed after verification."
+    },
+    {
+      "name": "e2e-compile",
+      "command": "make test-e2e-check",
+      "exit_code": 0,
+      "elapsed_seconds": 87.131,
+      "log": ".local/architecture-scheduler/e2e-compile.log",
+      "log_sha256": "313c593bf5c9e61fcf0ed973ead8cc91c26427efb6ab01ebca9e16d80a60a61e",
+      "summary": "All packages compiled with e2e tags; no real model, provider or browser acceptance executed."
+    },
+    {
+      "name": "core",
+      "command": "make test TEST_RUN=. TEST_TIMEOUT=3m 'TEST_PACKAGES=./... -count=1 -failfast'",
+      "exit_code": 2,
+      "elapsed_seconds": 142.575,
+      "log": ".local/architecture-scheduler/core.log",
+      "log_sha256": "69e0232fbfc57105d22f60d2db60d164a02ee695d052155430cf7b94cbe2cf85",
+      "summary": "Known Calendar baseline failure at calendar_lifecycle_test.go:201: controlled model turn did not start. Room 73.809s; other packages passed. Failfast leaves later Room tests unexecuted."
+    },
+    {
+      "name": "integration",
+      "command": "make test-integration TEST_RUN=. TEST_TIMEOUT=8m 'TEST_PACKAGES=./... -count=1 -failfast'",
+      "exit_code": 2,
+      "elapsed_seconds": 155.215,
+      "log": ".local/architecture-scheduler/integration.log",
+      "log_sha256": "2930be00b2a66f8df59d8e1ae2ac0d817b7b2842d08d3f15d3c01db9e017b708",
+      "summary": "Same Calendar baseline failure, Room 76.031s; other packages passed. Failfast leaves later Room tests unexecuted."
+    },
+    {
+      "name": "vet-final",
+      "command": "go vet ./...",
+      "exit_code": 1,
+      "elapsed_seconds": 22.791,
+      "log": ".local/architecture-scheduler/vet-final.log",
+      "log_sha256": "d38f6b400bb1a612d73d4c44e34a04f53d418b33ad0c15a1b24518bddc351827",
+      "summary": "Same 12 pre-existing unkeyed literal warnings, byte-identical to R1a baseline. No new warnings remain."
+    },
+    {
+      "name": "new-packages-vet",
+      "command": "go vet ./internal/app/agents ./internal/identity ./internal/platform",
+      "exit_code": 0,
+      "elapsed_seconds": 0.156,
+      "log": ".local/architecture-scheduler/new-packages-vet.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "summary": "agents, identity and platform passed standard vet."
+    }
+  ],
+  "review": {
+    "generated_bindings_stable": true,
+    "format_and_diff_checks": true,
+    "unrelated_tracked_changes_preserved": [
+      "internal/platform/boundaries_test.go",
+      "internal/room/default_assistant_test.go",
+      "internal/room/deletion_integration_test.go",
+      "internal/room/human_read_test.go",
+      "internal/room/platform_call_lifecycle.go",
+      "internal/room/rename_test.go",
+      "internal/room/storage_directory_test.go",
+      "internal/room/storage_writer.go",
+      "internal/room/storage_writer_test.go",
+      "internal/room/tool_entries.go",
+      "internal/room/tools.go",
+      "internal/room/workspace_connections_integration_test.go"
+    ],
+    "scheduler_methods_unchanged": {
+      "Started": true,
+      "Request": true,
+      "Cancel": true,
+      "Release": true,
+      "Quiesce": true,
+      "removeQueued": true,
+      "grant": true,
+      "maintain": true
+    },
+    "vet_matches_previous_baseline": true,
+    "source_snapshot_check": {
+      "sha256": "1a369a8247f89e3b5e56856f5545297c3ac3bbdda0a4fb36f62304043dea12b5",
+      "scheduler_owner_found": true,
+      "assembly_found": true
+    },
+    "original_grant_bindings_unchanged": true,
+    "added_read_only_binding": "Inspect"
+  },
+  "known_unresolved_gates": [
+    "Calendar failure in full core and integration runs; later unexecuted Room tests are not counted as passed.",
+    "12 pre-existing standard vet warnings; no vet flags or CI gates weakened."
+  ],
+  "acceptance_boundary": "Local component and controlled-backend integration/race evidence. No real model/provider writes, browser acceptance, service restart or production Session adoption.",
+  "deferred": [
+    "R5b.1 dependency convergence",
+    "R5b.2 MemberAgent and Session lifecycle migration",
+    "Other unimplemented architecture stages and Gordis/plugin readiness"
+  ],
+  "removed_sources": [
+    "internal/room/turn_scheduler.go"
+  ],
+  "source_sha256": {
+    "docs/ARCHITECTURE-MODULE-BOUNDARIES-ANALYSIS.zh.md": "5f11caa002dd18aac572836bdad9a574d817e79638ed6b06e131ad4a30582380",
+    "docs/ROOM-SCHEDULING-AND-SCION-PARALLEL-DEVELOPMENT-PLAN.zh.md": "e8706cae4e9d4cd1130c692720a228445e26b5fe270d7306f90875bcf24d4fff",
+    "docs/implementation/README.zh.md": "5ff13a39854cdf7552b9e57680ff92490a922aba4cfaa41687c07b45b66dd0fd",
+    "docs/implementation/architecture/turn-scheduler.zh.md": "4f08194f76744d3f02e4ca7c9d1a3a7a56c290517288bf7f5934ebdff3ebd141",
+    "docs/implementation/room-scheduling.zh.md": "bc24c4588b33c41eb63093d59f9f5486be40ad39382b52b80eb5d6dcddd91c60",
+    "docs/room-architecture.zh.md": "cf1f040f8cdf7d65d2048397d1659dc1817cbe11df1309dc6366c4050e548900",
+    "internal/app/agents/actorx.gen.go": "ced38f5d1f46b0987b8dcfbe0768566fac0e6222411b68e33242a2be592fd37b",
+    "internal/app/agents/scheduling.go": "a544a898ef1d3395badc8c447591a88e0ca4b671d9fa85e4032353cbdcc8b731",
+    "internal/app/agents/turn_scheduler.go": "f173b0aa30c79853c1753e4fb8d1f7b1b62a787538eebb95f75ee0e1542136d6",
+    "internal/app/agents/turn_scheduler_lifecycle_test.go": "18b4163570a67dca7747abc80d876b2ee4bf85a612e30dae8b289b2fc83988c7",
+    "internal/app/agents/turn_scheduler_test.go": "58f5224907c4817a81666c4539b76d38af2aeb4c71189684ea3ac714104fb260",
+    "internal/architecture/boundaries_test.go": "4f49444ae80fa7c50d0d167b05c25443ef33111db993be8ced5f71c25126bd25",
+    "internal/identity/identity.go": "15d89a031051337922a495e078765a724653e57431b7cae48a6bad742f696471",
+    "internal/platform/reference_test.go": "1241fe2d3ff796221a9a940551c62206029d74e8f256103d04a6af25879de132",
+    "internal/platform/types.go": "9a91c4984de42fbc5f7b4aa247267d9477bc21a5a569715c18794605ff4ebb12",
+    "internal/room/actorx.gen.go": "66b6bae8439da3556cf98201e8e61338892bb108e02ee642688cebf5cdd727e5",
+    "internal/room/calendar_agent_test.go": "ed9a195af8242c6fdeb40d9cce04aff5e3ca3b83e09d001a169c73d310927960",
+    "internal/room/calendar_browser_test.go": "49be4179c0c7f03cb04f756e97b71512dd98bb831a3e7cf8fe0d34a36a09db38",
+    "internal/room/calendar_delivery.go": "2075c3698b373b8d038cbc2b55b2defa90c70850d4fb3a367098de42f07651ff",
+    "internal/room/calendar_http.go": "c6bbdb0849edbc65e75204453e46fad876f6b022d3800fc18265229df352c378",
+    "internal/room/calendar_lifecycle_test.go": "2340a66c5c342540707c745a2c16e26d63d12b806679d9528de7721ce472be26",
+    "internal/room/calendar_test.go": "c19fa50fbcfae471489d5cfac4442e21e91db19520bac3079bf999298948c7ea",
+    "internal/room/input_upgrade.go": "354b73018fa0a8845114eea7f409ab469882c88d3baef45beb6d683f41535e08",
+    "internal/room/input_upgrade_legacy.go": "6299cc247e30d318f33eff5938d2de9efcc671137dc883b0becca8f63e2f02d2",
+    "internal/room/input_upgrade_test.go": "413787bf7120130efd690b6da0807828019b2ed46731a65f9b09811562fc1a1f",
+    "internal/room/member.go": "53e591a370bc6c232be1a4f4986764272fd1229e4b623a843fa827181ac7cb31",
+    "internal/room/member_assembly.go": "be4666da57c98ea943e2f192341c1643b6ef5a76e640d55deb0b37ef742d3cc9",
+    "internal/room/model_management_test.go": "357bd883bf3c24d94f5c4151b9b3db2e7224b5a5328e9d096222c2c9f756b17d",
+    "internal/room/model_migration.go": "0c4e6a38197bbd837e11003ce32492288294ebc4dbe360b545055969ef8da931",
+    "internal/room/model_references.go": "29d0d44cf3ae69ed506eddd78321cd852be1a7e20386582b369ced90d64ed571",
+    "internal/room/models_test.go": "89835a9aaca126fd3dcc4f86d2574da26fe60713c6393328da9e1fa8601d84ab",
+    "internal/room/parallel_scheduling_test.go": "3a47a7a3183bb9962e66dae9e4989662651a821db5093d5d4d202d87e6cf2de3",
+    "internal/room/protocol.go": "b803ae05b4497c99c82e8f658ab0230cc9385f6334c63c9230d9946df2995e15",
+    "internal/room/recovery_test.go": "1b077df4792df92d6c102fcccef86ac34c3d2cfe18ce5b1139dfa1851706e8a5",
+    "internal/room/room_test.go": "dbb8d65ea816b4386274aa36bf76d8d72547abd63861b73a7c46220db89f2a6b",
+    "internal/room/runtime_assembly.go": "d25ba7aecad3b620747649060a83c7457e63c36484ffef0605d0cb6bfd1f1b77",
+    "internal/room/runtimes.go": "1c86d971beb09e4e5c46d65a217d5d2713815bc382c43d1fd5c44e42cbe5260c",
+    "internal/room/scheduling.go": "7d55718085756d8b9c225d07948ae295c78d05314003892448a8a849bcb8de48",
+    "internal/room/scheduling_test.go": "d50e13ec76951287cd3fa1ffb498be9212b17eddd6a252b02bd88dde18697f06",
+    "internal/room/service.go": "d2b314bfbf6749a0f065edbee9e7872b2197317f9b1f37502009faab73f78150",
+    "internal/room/state.go": "972c22d94c369a10853e85dba2da91180e1e3ab2b9de081b62fcdbea527339ae",
+    "internal/room/storage.go": "9508a9dda3c6e01ae8deb34540bb512bb3af032d2cfff843af76320d18cab1b5",
+    "internal/room/turn_scheduler_test.go": "957c8b3398a05a41d7c8c5d1227c4377add9f31731665d121bd8616c71093171",
+    "internal/room/workspace_directories_integration_test.go": "988c84aeca73866848a5e67680c2e1044ee47cbf136c8a5772166a821edb677e",
+    "scripts/architecture-baseline.py": "8ff97ed4896ee65171ba32d203a7d190f52adbea59afcb1f26c1735a3350f6d0"
+  }
+}

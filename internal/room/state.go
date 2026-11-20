@@ -11,12 +11,13 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/go-aie/teamx/internal/platform"
+	"github.com/go-aie/teamx/internal/app/agents"
+	"github.com/go-aie/teamx/internal/identity"
 )
 
 const (
 	formatVersion   = 1
-	maxMembers      = 32
+	maxMembers      = agents.MaxMembers
 	maxMessages     = 10_000
 	maxTextBytes    = 16 << 10
 	maxHistoryBytes = 64 << 20
@@ -24,13 +25,9 @@ const (
 
 // RoomIdentity survives a restart. ServiceEpoch deliberately does not belong
 // to any snapshot: every service start creates a new value.
-type RoomIdentity = platform.RoomIdentity
+type RoomIdentity = identity.RoomIdentity
 
-type MemberIdentity struct {
-	RoomIdentity
-	AgentID      string `json:"agent_id"`
-	MembershipID string `json:"membership_id"`
-}
+type MemberIdentity = identity.MemberIdentity
 
 // ToolIdentity is the JSON boundary for member tool requests. Actor addresses,
 // tasks and contexts stay in process and never enter this or a snapshot.

@@ -23,9 +23,11 @@
 
 ## 2. 当前依据与改动位置
 
+下表保留功能开发时的对照；2026-11-20 R5a 已将调度 owner 与其组件测试迁入 `app/agents`，当前结构与命令见[回合调度器记录](implementation/architecture/turn-scheduler.zh.md)。
+
 | 位置 | 当前行为 | 拟议调整 |
 | --- | --- | --- |
-| [turn_scheduler.go](../internal/room/turn_scheduler.go) | 一个 `holder`，FIFO，按成员身份与申请编号授予／释放，维护退出回收 | 持有者集合及两种授予策略 |
+| [turn_scheduler.go](../internal/app/agents/turn_scheduler.go) | 一个 `holder`，FIFO，按成员身份与申请编号授予／释放，维护退出回收 | 持有者集合及两种授予策略 |
 | [member.go](../internal/room/member.go) | 单成员防重入，取得名额后核对资格和最新输入，回合及清理结束后释放 | 保留协议，验证并发下的行为；有问题再局部调整 |
 | [service.go](../internal/room/service.go) | 装配调度器；退出先冻结授予，再结清成员和工具 | 注入模式，验证多个执行者同时存在时的退出 |
 | [teams.go](../internal/room/teams.go) | 读取团队，创建 Room 配置及资源快照 | 读取、校验并冻结 `scheduling` |

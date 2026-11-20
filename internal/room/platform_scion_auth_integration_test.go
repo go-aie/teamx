@@ -21,9 +21,10 @@ func TestScionLogoutUnsettledCallKeepsCredentialsAndRevokesAdmission(t *testing.
 	parallelFixtureTest(t)
 	m, _, _, c, _, _ := scionRoomFixture(t)
 	c = verifyScion(t, m, c)
-	call := &platformCall{platformID: c.ID, cancel: func() {}, done: make(chan struct{})}
+	call := &platformCall{platformID: c.ID}
+	cancel := func() {}
 	m.mu.Lock()
-	m.platformCalls = map[*platformCall]bool{call: true}
+	call.Call = m.platformCalls.Register(call, cancel)
 	_, err := m.logoutScionLocked(scionAuthRequest{URL: c.URL, Profile: c.CLIProfile, Affected: []scionAuthPlatform{{ID: c.ID, Version: c.Version}}})
 	m.finishPlatformCallLocked(call)
 	file, loadErr := m.readPlatforms()
@@ -307,16 +308,14 @@ func TestScionLogoutWaitsBeforeDeletingCredentialsAndRejectsConcurrentEdits(t *t
 	}
 	c := verifyScion(t, m, platformTestSave(t, m, managedPlatformRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("c", 32), Name: "Scion", Provider: "scion", URL: "https://scion.invalid", CLIProfile: view.Profile}))
 	ctx, cancel := context.WithCancel(context.Background())
-	call := &platformCall{platformID: c.ID, cancel: cancel, done: make(chan struct{})}
+	call := &platformCall{platformID: c.ID}
 	m.mu.Lock()
-	m.platformCalls = map[*platformCall]bool{call: true}
+	call.Call = m.platformCalls.Register(call, cancel)
 	m.mu.Unlock()
 	t.Cleanup(func() {
 		m.mu.Lock()
 		defer m.mu.Unlock()
-		if m.platformCalls[call] {
-			m.finishPlatformCallLocked(call)
-		}
+		m.finishPlatformCallLocked(call)
 	})
 	result := make(chan int, 1)
 	go func() {

@@ -2,6 +2,8 @@
 
 日期：2026-11-13。范围：[Room 调度与 Scion 并行开发方案](../ROOM-SCHEDULING-AND-SCION-PARALLEL-DEVELOPMENT-PLAN.zh.md)中的阶段 1。
 
+2026-11-20 的 R5a 结构迁移已将调度 owner 与组件测试移入 `app/agents`，成员集成测试保留在 Room；当前边界与验证见[回合调度器](architecture/turn-scheduler.zh.md)。以下保留调度功能实施时的行为与验证记录。
+
 团队 `team.json` 顶层支持 `scheduling`：`serial` 保持 Room FIFO、最多一个成员执行；`parallel` 允许不同成员同时执行，每个 membership 最多一个回合。缺省和空字符串为串行，非法字符串、大小写变体、非字符串及 `null` 拒绝。
 
 创建 Room 时保存明确的有效模式，恢复时沿用创建快照。旧快照没有该字段时按串行处理，读取不会重写旧文件或初始化回执，无需存储版本升级。团队模板变化或删除、Workspace 应用、讨论重启、模型选择更新均保留模式；运行中不提供模式切换。README 已补充配置用法，现有团队模板保持原值。
@@ -24,6 +26,8 @@
 验证命令：
 
 ```sh
+go test ./internal/app/agents -count=1
+go test -race ./internal/app/agents -count=1
 go test ./internal/room -run '^(TestTurnScheduler|TestRoomTurns|TestRoomSlot|TestServiceShutdown|TestTeam|TestRotation)' -count=1
 go test -race ./internal/room -run '^(TestTurnScheduler|TestRoomTurns|TestRoomSlot|TestServiceShutdown|TestTeam|TestRotation)' -count=1
 go test -tags=integration ./internal/room -run '^TestManagedTeam' -count=1

@@ -86,11 +86,6 @@ func (m *roomManager) checkGitlabReferenceAccessLocked(ctx context.Context, req 
 	return nil
 }
 
-// Capability descriptions do not resolve credentials or issue HTTP requests.
-func gitlabReferenceCapabilities() platform.ReferenceCapabilities {
-	return platform.ReferenceCapabilities{CredentialKinds: []string{"gitlab:oauth"}, Actions: gitlab.ReferenceActions(nil, nil, "")}
-}
-
 func gitlabAccount(origin string, id platform.ExternalID) platform.AccountIdentity {
 	return platform.AccountIdentity{IdentityScope: platform.IdentityScope{Provider: "gitlab", Instance: origin}, ID: id}
 }

@@ -42,11 +42,11 @@ func TestCalendarBrowser(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	receipt, err := s.room.Call[PostReceipt](t.Context(), PostMessage{RoomIdentity: s.info.RoomIdentity, Caller: agentCallerIdentity(MemberIdentity{s.info.RoomIdentity, "A", "generation-A"}), ClientMessageID: calendar.ID("calendar-generation-A-", "browser-history-report"), Text: "C3_HISTORY_REPORT：本地受控执行结果", DurablePublication: true})
+	receipt, err := s.room.Call[PostReceipt](t.Context(), PostMessage{RoomIdentity: s.info.RoomIdentity, Caller: agentCallerIdentity(MemberIdentity{RoomIdentity: s.info.RoomIdentity, AgentID: "A", MembershipID: "generation-A"}), ClientMessageID: calendar.ID("calendar-generation-A-", "browser-history-report"), Text: "C3_HISTORY_REPORT：本地受控执行结果", DurablePublication: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.room.Call[PostReceipt](t.Context(), PostMessage{RoomIdentity: s.info.RoomIdentity, Caller: agentCallerIdentity(MemberIdentity{s.info.RoomIdentity, "A", "generation-A"}), ClientMessageID: "browser-schedule-receipt", Text: fmt.Sprintf("已安排：[查看日历](#calendar/task/%s)", task.ID)}); err != nil {
+	if _, err := s.room.Call[PostReceipt](t.Context(), PostMessage{RoomIdentity: s.info.RoomIdentity, Caller: agentCallerIdentity(MemberIdentity{RoomIdentity: s.info.RoomIdentity, AgentID: "A", MembershipID: "generation-A"}), ClientMessageID: "browser-schedule-receipt", Text: fmt.Sprintf("已安排：[查看日历](#calendar/task/%s)", task.ID)}); err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 60; i++ {

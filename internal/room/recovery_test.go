@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/go-aie/actorx"
+	"github.com/go-aie/teamx/internal/app/agents"
 )
 
 func TestAttachPreservesCommittedMembership(t *testing.T) {
@@ -210,7 +211,7 @@ func TestRecoveryCrashHelper(t *testing.T) {
 		t.Fatal("commit unexpectedly returned", err)
 	}
 	id := MemberIdentity{RoomIdentity: r.state.RoomIdentity, AgentID: "A", MembershipID: "generation-A"}
-	scheduler, err := rt.Spawn(&turnScheduler{RoomIdentity: r.state.RoomIdentity})
+	scheduler, err := rt.Spawn(agents.NewTurnScheduler(r.state.RoomIdentity, agents.SchedulingSerial, nil))
 	if err != nil {
 		t.Fatal(err)
 	}

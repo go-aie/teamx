@@ -21,11 +21,8 @@ func (m *roomManager) scionWorkspaceExecute(owner RoomIdentity, w workspaceConfi
 			return nil, err
 		}
 		useCtx, cancel := context.WithCancel(ctx)
-		call := &platformCall{owner: owner, tool: "scion", platformID: resolved.record.ID, account: resolved.account, cancel: cancel, done: make(chan struct{})}
-		if m.platformCalls == nil {
-			m.platformCalls = map[*platformCall]bool{}
-		}
-		m.platformCalls[call] = true
+		call := &platformCall{owner: owner, tool: "scion", platformID: resolved.record.ID, account: resolved.account}
+		call.Call = m.platformCalls.Register(call, cancel)
 		root := m.store.dir
 		m.mu.Unlock()
 		defer m.finishPlatformCall(call)

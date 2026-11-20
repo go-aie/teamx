@@ -205,7 +205,7 @@ func (m *roomManager) workspaceActivationConfig(id RoomIdentity, applying string
 			target, err := m.config.models.target(MemberIdentity{RoomIdentity: id, AgentID: member.AgentID, MembershipID: member.MembershipID}, *member.ModelSelection, member.ModelSelectionVersion, p)
 			// Existing generations always resume from their original execution fact,
 			// including unverified imports and entries pending deletion.
-			memberID := MemberIdentity{id, member.AgentID, member.MembershipID}
+			memberID := MemberIdentity{RoomIdentity: id, AgentID: member.AgentID, MembershipID: member.MembershipID}
 			opts := SessionOptions{MemberIdentity: memberID, StatePath: filepath.Join(dir, "agents", member.MembershipID, "session.json")}
 			if ref, _, refErr := readDSHReference(opts.StatePath, memberID); refErr == nil && ref.Directory != "" {
 				if frozen, loadErr := readModelSessionSnapshot(filepath.Join(filepath.Dir(opts.StatePath), ref.Directory+".model.json"), memberID, ref.Directory); loadErr == nil && (!ref.Pending || !frozen.Legacy) {
@@ -240,6 +240,7 @@ func (m *roomManager) workspaceActivationConfig(id RoomIdentity, applying string
 		return ErrIdentity
 	}
 	config.inputAdapters = m.notificationAdapters
+	config.inputCapabilities = m.platformCatalog.NotificationCapabilities
 	config.updates = m.updates
 	config.agentNames = m.agentNames
 	config.scheduling, _ = saved.Scheduling.effective() // validated before assembling profiles

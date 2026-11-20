@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-aie/teamx/internal/app/platforms"
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
 	"github.com/go-aie/teamx/internal/platform/lark"
@@ -170,7 +171,7 @@ func (m *roomManager) prepareOnboardingLocked(ctx context.Context, req platformO
 		return prior, ErrCapacity
 	}
 	spec := req.platformOnboardingSpec
-	def, ok := platform.LookupType(spec.Provider)
+	def, ok := m.platformCatalog.Types().LookupType(spec.Provider)
 	if !ok || spec.OnlyPlatform && (spec.MemberIdentity != (MemberIdentity{}) || spec.GitLab != nil || spec.Lark != nil || spec.Backfill != nil || spec.PreserveExisting || spec.SkipNotifications || spec.SkipTool) {
 		return prior, ErrRequest
 	}
@@ -649,7 +650,7 @@ func (m *roomManager) applyOnboardingToolLocked(ctx context.Context, op platform
 	if err != nil {
 		return failure(err)
 	}
-	def, _ := platform.LookupType(op.Input.Provider)
+	def, _ := m.platformCatalog.Types().LookupType(op.Input.Provider)
 	enabled := onboardingEnabled(op.Input.Tool)
 	binding := tool.Binding{AgentID: op.Input.AgentID, MembershipID: op.Input.MembershipID, Tool: def.ToolType, PlatformID: op.PlatformID, PlatformGeneration: op.Generation}
 	if !enabled {
@@ -855,7 +856,7 @@ func validOnboarding(op platformOnboarding) bool {
 	if (op.Schema != 1 && op.Schema != 2 && op.Schema != 3 && op.Schema != platformOnboardingSchema) || !tool.OpaqueID(op.ID) || !tool.OpaqueID(op.PlatformID) || !validText(op.Owner) || op.Generation != "" && !tool.OpaqueID(op.Generation) || op.Account != (platform.AccountIdentity{}) && !op.Account.Valid() {
 		return false
 	}
-	if _, ok := platform.LookupType(op.Input.Provider); !ok {
+	if _, ok := defaultPlatformCatalog().Types().LookupType(op.Input.Provider); !ok {
 		return false
 	}
 	if op.Input.Backfill != nil {
@@ -950,7 +951,7 @@ func (m *roomManager) waitOnboardingToolLocked(ctx context.Context, waits []<-ch
 	waitCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	m.mu.Unlock()
-	err := notification.Wait(waitCtx, waits)
+	err := platforms.WaitCalls(waitCtx, waits)
 	m.mu.Lock()
 	if err != nil {
 		return ErrBusy

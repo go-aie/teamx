@@ -384,7 +384,7 @@ func TestLarkSelfSendRevocationRaces(t *testing.T) {
 			deadline := time.Now().Add(5 * time.Second)
 			for {
 				h.m.mu.Lock()
-				n := len(h.m.platformCalls)
+				n := h.m.platformCalls.Len()
 				h.m.mu.Unlock()
 				if n >= 2 {
 					break

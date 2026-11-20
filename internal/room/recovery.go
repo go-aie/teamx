@@ -20,6 +20,7 @@ type serviceConfig struct {
 	workspaceProtected   []string
 	checkWorkspace       func(string) error
 	inputAdapters        map[notification.SourceID]notificationAdapter
+	inputCapabilities    func(string) notification.Capabilities
 	unifiedInputs        bool // Normal server composition. Legacy fixture services use the old format.
 	inputUpgradeLog      io.Writer
 	updates              *uiUpdateHub

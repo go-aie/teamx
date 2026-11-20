@@ -592,7 +592,7 @@ func TestDefaultAssistantRestoreIntentCommitRecovery(t *testing.T) {
 				return rename(from, to)
 			}
 			w := managerHTTP(m, "/v1/rooms/default-assistant/restore", deletionRequest{m.epoch, humanCaller, old.RoomIdentity})
-			if w.Code == 200 || !m.store.uncertain {
+			if w.Code == 200 || !errors.Is(m.store.check(true), ErrCommitUnknown) {
 				t.Fatal("restore commit uncertainty was not exercised", w.Code)
 			}
 			root := m.store.dir
@@ -683,7 +683,7 @@ func TestDefaultAssistantLegacyDeletionCommitRecovery(t *testing.T) {
 				return rename(from, to)
 			}
 			beginDeletion(t, m, summary)
-			if failed := awaitDeletion(t, m, summary); failed == nil || !m.store.uncertain {
+			if failed := awaitDeletion(t, m, summary); failed == nil || !errors.Is(m.store.check(true), ErrCommitUnknown) {
 				t.Fatal("expected an uncertain deletion receipt", failed)
 			}
 			if err := m.close(); err != nil {

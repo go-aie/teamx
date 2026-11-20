@@ -4,25 +4,26 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+
+	"github.com/go-aie/teamx/internal/app/agents"
 )
 
 // schedulingMode is frozen with the Room, independently of Session/model identity.
-type schedulingMode string
+// This configuration adapter preserves the existing JSON and ErrRequest contract.
+// Template/configuration callers remain in Room until their R7/R8 migration.
+type schedulingMode agents.SchedulingMode
 
 const (
-	schedulingSerial   schedulingMode = "serial"
-	schedulingParallel schedulingMode = "parallel"
+	schedulingSerial   schedulingMode = schedulingMode(agents.SchedulingSerial)
+	schedulingParallel schedulingMode = schedulingMode(agents.SchedulingParallel)
 )
 
 func (m schedulingMode) effective() (schedulingMode, error) {
-	switch m {
-	case "", schedulingSerial:
-		return schedulingSerial, nil
-	case schedulingParallel:
-		return schedulingParallel, nil
-	default:
-		return "", fmt.Errorf("%w: invalid scheduling mode %q", ErrRequest, m)
+	mode, err := agents.SchedulingMode(m).Effective()
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrRequest, err)
 	}
+	return schedulingMode(mode), nil
 }
 
 func (m *schedulingMode) UnmarshalJSON(data []byte) error {

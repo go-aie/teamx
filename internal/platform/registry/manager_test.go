@@ -38,7 +38,9 @@ func testManager(t *testing.T) (*Manager, *int, *error) {
 			return "", "", ErrRequest
 		}
 		return Normalize(name, origin)
-	})
+	}, platform.NewCatalog([]platform.TypeDefinition{
+		{Provider: "fixture"}, {Provider: "gitlab", ToolType: "gitlab"}, {Provider: "lark", ToolType: "lark"}, {Provider: "scion", ToolType: "scion"},
+	}))
 	m.SetIdentityResolver(func(provider, origin string, v platform.Validation) (platform.AccountIdentity, bool) {
 		if v.Account.Valid() {
 			return v.Account, true

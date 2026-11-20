@@ -324,11 +324,8 @@ func (m *roomManager) startPlatformConnectLocked(ctx context.Context, req platfo
 					return op, err
 				}
 				checkCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-				call := &platformCall{operationID: op.ID, owner: op.RoomIdentity, platformID: c.ID, agentID: op.AgentID, membershipID: op.MembershipID, tool: "lark", cancel: cancel, done: make(chan struct{})}
-				if m.platformCalls == nil {
-					m.platformCalls = map[*platformCall]bool{}
-				}
-				m.platformCalls[call] = true
+				call := &platformCall{operationID: op.ID, owner: op.RoomIdentity, platformID: c.ID, agentID: op.AgentID, membershipID: op.MembershipID, tool: "lark"}
+				call.Call = m.platformCalls.Register(call, cancel)
 				go m.checkReusedLarkConnection(checkCtx, op, c, call)
 				return op, nil
 			}

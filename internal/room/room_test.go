@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-aie/actorx"
+	"github.com/go-aie/teamx/internal/app/agents"
 )
 
 var humanCaller = Caller{Author: Author{Kind: "human", ID: "user"}}
@@ -91,7 +92,7 @@ func newRoomHarnessWithTimeout(t *testing.T, state RoomSnapshot, configure func(
 	if err != nil {
 		t.Fatal(err)
 	}
-	h.scheduler, err = h.rt.Spawn(&turnScheduler{RoomIdentity: h.id})
+	h.scheduler, err = h.rt.Spawn(agents.NewTurnScheduler(h.id, agents.SchedulingSerial, nil))
 	if err != nil {
 		t.Fatal(err)
 	}

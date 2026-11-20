@@ -339,7 +339,7 @@ func TestDSHMaterialsCanceledDownloadNeverSubmitsPrompt(t *testing.T) {
 		t.Fatal("material download did not settle")
 	}
 	h.m.mu.Lock()
-	pending := len(h.m.platformCalls)
+	pending := h.m.platformCalls.Len()
 	h.m.mu.Unlock()
 	if pending != 0 {
 		t.Fatal("canceled material call still registered")

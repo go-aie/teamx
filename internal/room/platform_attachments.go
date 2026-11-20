@@ -190,14 +190,11 @@ func (m *roomManager) downloadAttachment(ctx context.Context, req attachmentRequ
 	}
 	access := &attachmentAccess{request: req, reader: reader, source: source, text: saved, account: account, secret: secret}
 	callCtx, cancel := context.WithCancel(ctx)
-	call := &platformCall{owner: req.RoomIdentity, platformID: account.PlatformID, agentID: req.AgentID, membershipID: req.MembershipID, cancel: cancel, done: make(chan struct{}), subscription: notification.Key{Owner: req.RoomIdentity, Source: notification.SourceID{Provider: source.Provider, Channel: source.Channel}, SubscriptionID: source.SubscriptionID}}
+	call := &platformCall{owner: req.RoomIdentity, platformID: account.PlatformID, agentID: req.AgentID, membershipID: req.MembershipID, subscription: notification.Key{Owner: req.RoomIdentity, Source: notification.SourceID{Provider: source.Provider, Channel: source.Channel}, SubscriptionID: source.SubscriptionID}}
 	if reader != nil {
 		call.agentID, call.membershipID = reader.AgentID, reader.MembershipID
 	}
-	if m.platformCalls == nil {
-		m.platformCalls = map[*platformCall]bool{}
-	}
-	m.platformCalls[call] = true
+	call.Call = m.platformCalls.Register(call, cancel)
 	transport := m.platformHTTP
 	m.mu.Unlock()
 	defer m.finishPlatformCall(call)

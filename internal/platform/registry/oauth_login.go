@@ -256,7 +256,7 @@ func (m *Manager) CommitOAuthLogin(expected []Record, targetID, name string, app
 		if err != nil {
 			return nil, err
 		}
-		entry, err := newToolEntry("gitlab")
+		entry, err := m.newToolEntry("gitlab")
 		if err != nil {
 			return nil, err
 		}

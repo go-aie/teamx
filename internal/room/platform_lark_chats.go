@@ -86,14 +86,11 @@ func (m *roomManager) listLarkChats(ctx context.Context, req larkChatsRequest) (
 		return lark.ChatPage{}, err
 	}
 	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	call := &platformCall{owner: req.RoomIdentity, platformID: a.PlatformID, cancel: cancel, done: make(chan struct{})}
+	call := &platformCall{owner: req.RoomIdentity, platformID: a.PlatformID}
 	if req.member != nil {
 		call.agentID, call.membershipID = req.Caller.ID, req.Caller.MembershipID
 	}
-	if m.platformCalls == nil {
-		m.platformCalls = map[*platformCall]bool{}
-	}
-	m.platformCalls[call] = true
+	call.Call = m.platformCalls.Register(call, cancel)
 	m.mu.Unlock()
 	defer m.finishPlatformCall(call)
 	client, err := m.larkClients.New(*a.CLIProfile)

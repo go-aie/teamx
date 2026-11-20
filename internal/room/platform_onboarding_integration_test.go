@@ -485,13 +485,9 @@ func TestOnboardingToolDisableSettlesWithoutBlockingAnotherPlatform(t *testing.T
 	onboardingHTTP(t, m, "prepare", req)
 	callCtx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	done := make(chan struct{})
 	m.mu.Lock()
-	call := &platformCall{owner: room.RoomIdentity, agentID: members[0].AgentID, membershipID: members[0].MembershipID, tool: "gitlab", platformID: c.ID, cancel: cancel, done: done}
-	if m.platformCalls == nil {
-		m.platformCalls = map[*platformCall]bool{}
-	}
-	m.platformCalls[call] = true
+	call := &platformCall{owner: room.RoomIdentity, agentID: members[0].AgentID, membershipID: members[0].MembershipID, tool: "gitlab", platformID: c.ID}
+	call.Call = m.platformCalls.Register(call, cancel)
 	m.mu.Unlock()
 	finished := make(chan error, 1)
 	go func() { _, err := m.applyOnboarding(t.Context(), req.OperationID, humanCaller.ID); finished <- err }()
@@ -510,8 +506,7 @@ func TestOnboardingToolDisableSettlesWithoutBlockingAnotherPlatform(t *testing.T
 	// B can save/use its own binding while A's canceled call has not returned.
 	bindCLITool(t, m, room.RoomIdentity, members[0], second, "gitlab", f.Revision)
 	m.mu.Lock()
-	delete(m.platformCalls, call)
-	close(done)
+	m.finishPlatformCallLocked(call)
 	m.mu.Unlock()
 	select {
 	case err := <-finished:

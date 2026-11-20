@@ -4,6 +4,12 @@
 
 | 记录 | 范围 |
 | --- | --- |
+| [平台在途调用登记与结清](architecture/platform-calls.zh.md) | R6a.1：全部调用族共用登记、取消、完成回执与等待；准入、绑定变更及配置仍在原 manager 门槛内 |
+| [平台静态能力装配](architecture/platform-assembly.zh.md) | R3b：平台类型、工具、通知来源、输入 codec 和引用能力使用同一已校验描述；registry 注入快照，运行权限与生命周期留在外层 |
+| [回合调度器](architecture/turn-scheduler.zh.md) | R5a：serial／parallel 授予、排队、取消／释放、退出结清和服务冻结门槛；共享身份归位，成员状态机及后端生命周期保留 |
+| [快照 writer 与健康围栏](architecture/persistence-writer.zh.md) | R1a：通用快照读写／删除、同路径串行、共享健康围栏和关闭结清；原目录锁及业务 owner 保留 |
+| [平台精确工具入口解析](architecture/platform-entries.zh.md) | R3a：无 I/O 绑定／入口／连接匹配，正常列表与执行接入；保留按需 registry 读取、错误顺序和原准入／结清 |
+| [模块边界重构基线](architecture/baseline.zh.md) | R0：受管／单 Room 入口、History 合同、状态 owner／持久路径／关闭顺序、后续调用点与测试索引、生产依赖约束及基线失败；后续状态见各单元记录 |
 | [日历界面与任务信息分层](calendar/refinement.zh.md) | 紧凑工具栏、月历导航、分钟时间轴、分层表单与详情；桌面及手机视口验证 |
 | [私信日历首版交付与组合验收](calendar/release.zh.md) | C4 重复任务、会话隔离、暂停恢复、离线周期、受管服务重建与页面组合；汇总 C1–C3 证据，区分真实模型、受控执行和模拟视口 |
 | [会话日历体验与管理](calendar/experience.zh.md) | C3 周视图、手机日程、任务编辑、历史与聊天跳转；浏览器视口模拟，首版组合与交付见上条 |

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/go-aie/teamx/internal/app/platforms"
 	"github.com/go-aie/teamx/internal/inputstream"
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
@@ -176,7 +177,7 @@ func (m *roomManager) configureEventsSubscription(ctx context.Context, key notif
 			waits = append(waits, done)
 		}
 		m.mu.Unlock()
-		err = notification.Wait(ctx, waits)
+		err = platforms.WaitCalls(ctx, waits)
 		m.mu.Lock()
 		if err != nil {
 			return retired, err

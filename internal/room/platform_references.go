@@ -6,7 +6,6 @@ import (
 	"sort"
 
 	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/lark"
 )
 
 // One source resolution owns its admitted call through durable linkage. This
@@ -31,11 +30,15 @@ func (m *roomManager) initPlatformReferences() {
 		m.inboxAdmissionResolvers = map[string]inboxAdmissionResolver{"lark": m.resolveLarkInboxAdmission}
 	}
 	if m.referenceAdapters == nil {
-		m.referenceAdapters = map[string]referenceAdapterFactory{
-			"gitlab": gitlabReferenceCapabilities,
-			"lark": func() platform.ReferenceCapabilities {
-				return lark.AcceptedActionCapabilities(nil, nil, nil)
-			},
+		m.referenceAdapters = make(map[string]referenceAdapterFactory)
+		for _, d := range m.platformCatalog.Definitions() {
+			if d.References != nil {
+				provider := d.Type.Provider
+				m.referenceAdapters[provider] = func() platform.ReferenceCapabilities {
+					caps, _ := m.platformCatalog.ReferenceCapabilities(provider)
+					return caps
+				}
+			}
 		}
 	}
 	if m.referenceExecutors == nil {

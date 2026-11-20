@@ -22,11 +22,8 @@ func (m *roomManager) prepareLarkBindingEvidence(ctx context.Context, req *toolB
 		return err
 	}
 	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	call := &platformCall{owner: req.RoomIdentity, platformID: a.PlatformID, cancel: cancel, done: make(chan struct{})}
-	if m.platformCalls == nil {
-		m.platformCalls = map[*platformCall]bool{}
-	}
-	m.platformCalls[call] = true
+	call := &platformCall{owner: req.RoomIdentity, platformID: a.PlatformID}
+	call.Call = m.platformCalls.Register(call, cancel)
 	m.mu.Unlock()
 	defer m.finishPlatformCall(call)
 	ctx = callCtx

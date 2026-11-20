@@ -47,8 +47,8 @@ func modelTestService(t *testing.T) (*modelService, *systemSettings, startupConf
 func TestModelCatalogReferenceSemantics(t *testing.T) {
 	before := modelTestCatalog()
 	room := RoomIdentity{RoomID: "same", RoomInstance: "instance"}
-	a := MemberIdentity{room, "same-role", "member-A"}
-	b := MemberIdentity{room, "same-role", "member-B"}
+	a := MemberIdentity{RoomIdentity: room, AgentID: "same-role", MembershipID: "member-A"}
+	b := MemberIdentity{RoomIdentity: room, AgentID: "same-role", MembershipID: "member-B"}
 	refs := []memberModelReference{{a, modelSelection{Mode: "default"}, 1}, {b, modelSelection{Mode: "explicit", EntryID: "A"}, 1}}
 	after := before.clone()
 	after.Default = "B"

@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/tool"
 )
 
 type referenceLiveNote struct {
@@ -208,7 +207,7 @@ func TestReferenceFollowupsRealGitLab(t *testing.T) {
 	if conn.Validation.UserID != user.ID {
 		t.Fatal("connection account verification failed")
 	}
-	m.toolCatalog = tool.Catalog()
+	m.toolCatalog = defaultPlatformTools()
 	bindCLITool(t, m, r.RoomIdentity, member, conn, "gitlab", 0)
 	original := m.referenceExecutors["gitlab"]
 	m.referenceExecutors["gitlab"] = func(ctx context.Context, id MemberIdentity, old platform.AccessContext) (referenceActionSession, error) {

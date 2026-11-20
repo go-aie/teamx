@@ -39,7 +39,7 @@ func workspaceMemberReferences(t *testing.T, m *roomManager, room roomSummary) m
 	saved, _ := readManagedRoom(t, m, room)
 	refs := map[string]dshReference{}
 	for _, member := range saved.Members {
-		id := MemberIdentity{room.RoomIdentity, member.AgentID, member.MembershipID}
+		id := MemberIdentity{RoomIdentity: room.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
 		ref, _, err := readDSHReference(filepath.Join(m.roomDir(room.RoomID), "agents", member.MembershipID, "session.json"), id)
 		if err != nil {
 			t.Fatal(err)
@@ -59,7 +59,7 @@ func TestWorkspaceDirectoryLifecycleRetainsOtherSessionsAndFiles(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	for _, member := range saved.Members {
-		id := MemberIdentity{room.RoomIdentity, member.AgentID, member.MembershipID}
+		id := MemberIdentity{RoomIdentity: room.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
 		waitMember(t, ctx, svc.target(id.MembershipID), id, func(s MemberStatus) bool { return !s.Active && s.Agent.TurnNumber == 1 })
 	}
 	refs := workspaceMemberReferences(t, m, room)
@@ -216,7 +216,7 @@ func TestWorkspaceDirectoryRetryFreezesSymlinkTargetAndRetainsSessions(t *testin
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			for _, member := range saved.Members {
-				id := MemberIdentity{room.RoomIdentity, member.AgentID, member.MembershipID}
+				id := MemberIdentity{RoomIdentity: room.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
 				waitMember(t, ctx, svc.target(id.MembershipID), id, func(s MemberStatus) bool { return !s.Active && s.Agent.TurnNumber == 1 })
 			}
 			refs := workspaceMemberReferences(t, m, room)
@@ -392,7 +392,7 @@ func TestWorkspaceDirectoryModelProfileAndDeletionKeepExternalFiles(t *testing.T
 	os.WriteFile(marker, []byte("outside managed lifecycle"), 0600)
 	applyMemberDirectories(t, m, room, map[string]string{member.MembershipID: root})
 	m.mu.Lock()
-	profile, err := (&modelController{manager: m}).memberProfileLocked(MemberIdentity{room.RoomIdentity, member.AgentID, member.MembershipID})
+	profile, err := (&modelController{manager: m}).memberProfileLocked(MemberIdentity{RoomIdentity: room.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID})
 	m.mu.Unlock()
 	if err != nil || profile.Workspace != root {
 		t.Fatal("model profile cwd", profile.Workspace, err)
@@ -439,7 +439,7 @@ func TestWorkspaceDirectoryModelChangeUsesEffectiveProfile(t *testing.T) {
 	saved, _ := readManagedRoom(t, m, room)
 	member := saved.Members[0]
 	applyMemberDirectories(t, m, room, map[string]string{member.MembershipID: root})
-	id := MemberIdentity{room.RoomIdentity, member.AgentID, member.MembershipID}
+	id := MemberIdentity{RoomIdentity: room.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
 	m.mu.Lock()
 	profile, err := controller.memberProfileLocked(id)
 	m.mu.Unlock()
@@ -463,7 +463,7 @@ func TestWorkspaceDirectoryRotationFreezesManagedModelBeforeNextTurn(t *testing.
 	svc := openRoomOK(t, m, room, "initial")
 	saved, _ := readManagedRoom(t, m, room)
 	member := saved.Members[0]
-	id := MemberIdentity{room.RoomIdentity, member.AgentID, member.MembershipID}
+	id := MemberIdentity{RoomIdentity: room.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
 	opts := adapterOptions(svc.store, id)
 	m.mu.Lock()
 	profile, err := controller.memberProfileLocked(id)

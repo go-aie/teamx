@@ -290,8 +290,8 @@ func TestLarkToolConfigurationRechecksAfterRemotePreparation(t *testing.T) {
 						t.Fatal(err)
 					}
 				case "cancel":
-					for call := range h.m.platformCalls {
-						call.cancel()
+					for _, call := range h.m.platformCalls.Snapshot() {
+						call.Cancel()
 					}
 				}
 				return errors.New("native self check unavailable")

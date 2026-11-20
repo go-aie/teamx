@@ -470,8 +470,8 @@ func TestInputUpgradeProcessHelper(t *testing.T) {
 
 func TestInputUpgradeMergesTaskEventQueuesByMembership(t *testing.T) {
 	room := historyRoom(1, "saved operation")
-	a := MemberIdentity{room.RoomIdentity, "A", "generation-A"}
-	b := MemberIdentity{room.RoomIdentity, "B", "generation-B"}
+	a := MemberIdentity{RoomIdentity: room.RoomIdentity, AgentID: "A", MembershipID: "generation-A"}
+	b := MemberIdentity{RoomIdentity: room.RoomIdentity, AgentID: "B", MembershipID: "generation-B"}
 	duplicate := taskEventFixture("shared")
 	first := taskEventFixture("earlier-a")
 	now := time.Now()

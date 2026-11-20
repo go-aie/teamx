@@ -77,7 +77,7 @@ func TestSnapshotDirectoryInitializationFailureIsRetried(t *testing.T) {
 		return initialize(dir)
 	}
 	path := filepath.Join(store.dir, "new", "snapshot.json")
-	if err := store.save(path, "first", 1024); !errors.Is(err, injected) || store.uncertain {
+	if err := store.save(path, "first", 1024); !errors.Is(err, injected) || errors.Is(store.check(true), ErrCommitUnknown) {
 		t.Fatal("pre-commit initialization failure changed commit state", err)
 	}
 	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {

@@ -725,11 +725,7 @@ func (m *roomManager) settleGitLabAuthLocked(s *gitlabAuthSession) error {
 	var pending []<-chan struct{}
 	for _, c := range s.records {
 		pending = append(pending, m.notifications.PlatformDoneLocked(c.ID)...)
-		for call := range m.platformCalls {
-			if call.platformID == c.ID {
-				pending = append(pending, call.done)
-			}
-		}
+		pending = append(pending, m.platformCalls.Pending(func(call *platformCall) bool { return call.platformID == c.ID })...)
 	}
 	// Refresh belongs to the shared credential, not just the selected registry.
 	seen := map[string]bool{}
@@ -779,11 +775,8 @@ func (m *roomManager) cleanupGitLabCandidate(s *gitlabAuthSession, id string) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	call := &platformCall{tool: "gitlab-revoke", cancel: cancel, done: make(chan struct{})}
-	if m.platformCalls == nil {
-		m.platformCalls = map[*platformCall]bool{}
-	}
-	m.platformCalls[call] = true
+	call := &platformCall{tool: "gitlab-revoke"}
+	call.Call = m.platformCalls.Register(call, cancel)
 	m.mu.Unlock()
 	err = gitlab.RevokeOAuth(ctx, item.Origin, item.ClientID, platform.NewSecret(item.ClientSecret), platform.NewSecret(item.Token), transport)
 	m.mu.Lock()

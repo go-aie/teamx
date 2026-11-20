@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+
+	"github.com/go-aie/teamx/internal/app/agents"
 )
 
 const roomsIndexVersion = 3
@@ -65,7 +67,7 @@ func (m *roomManager) stopRoomGrants(ctx context.Context, owner RoomIdentity) er
 	if svc == nil || svc.grantsStopped.Load() {
 		return nil
 	}
-	_, err := svc.scheduler.Call[struct{}](ctx, stopTurnGrants{})
+	_, err := svc.scheduler.Call[struct{}](ctx, agents.StopTurnGrants{})
 	if err == nil {
 		svc.grantsStopped.Store(true)
 	}

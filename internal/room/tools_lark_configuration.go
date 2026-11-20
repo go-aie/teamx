@@ -207,11 +207,8 @@ func (m *roomManager) prepareLarkToolChange(ctx context.Context, req *toolBindin
 	}
 	prepare := m.bindingEvidencePreparers["lark"]
 	callCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	call := &platformCall{owner: req.RoomIdentity, platformID: a.PlatformID, agentID: req.Binding.AgentID, membershipID: req.Binding.MembershipID, tool: "lark", cancel: cancel, done: make(chan struct{})}
-	if m.platformCalls == nil {
-		m.platformCalls = map[*platformCall]bool{}
-	}
-	m.platformCalls[call] = true
+	call := &platformCall{owner: req.RoomIdentity, platformID: a.PlatformID, agentID: req.Binding.AgentID, membershipID: req.Binding.MembershipID, tool: "lark"}
+	call.Call = m.platformCalls.Register(call, cancel)
 	m.mu.Unlock()
 	defer m.finishPlatformCall(call)
 	check, err := m.larkClients.CheckPermissions(callCtx, *a.CLIProfile, a.Identity)

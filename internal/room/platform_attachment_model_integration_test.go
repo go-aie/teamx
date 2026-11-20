@@ -37,7 +37,7 @@ func TestModelAttachmentRoomAndInboxShareDownloadWithoutConsumption(t *testing.T
 		}
 		h.m.mu.Lock()
 		owned := false
-		for call := range h.m.platformCalls {
+		for _, call := range h.m.platformCalls.Snapshot() {
 			if call.owner != reader.RoomIdentity || call.platformID == "" {
 				t.Error("attachment call escaped its Room or connection")
 			}

@@ -535,12 +535,9 @@ func TestOnboardingToolInterruptedSettlementKeepsCommittedProjection(t *testing.
 	bindCLITool(t, h.m, h.room.RoomIdentity, h.members[0], configurationGitLab(t, h), "gitlab", 0)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	call := &platformCall{owner: h.room.RoomIdentity, agentID: h.members[0].AgentID, membershipID: h.members[0].MembershipID, tool: "lark", platformID: h.c.ID, cancel: cancel, done: make(chan struct{})}
+	call := &platformCall{owner: h.room.RoomIdentity, agentID: h.members[0].AgentID, membershipID: h.members[0].MembershipID, tool: "lark", platformID: h.c.ID}
 	h.m.mu.Lock()
-	if h.m.platformCalls == nil {
-		h.m.platformCalls = map[*platformCall]bool{}
-	}
-	h.m.platformCalls[call] = true
+	call.Call = h.m.platformCalls.Register(call, cancel)
 	h.m.mu.Unlock()
 	defer h.m.finishPlatformCall(call)
 	result, err := h.m.applyOnboarding(ctx, req.OperationID, humanCaller.ID)

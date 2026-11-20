@@ -2,68 +2,54 @@ package room
 
 import (
 	"context"
+	"errors"
 	"runtime"
 	"slices"
 	"strings"
 
+	"github.com/go-aie/teamx/internal/app/platforms"
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/registry"
 	"github.com/go-aie/teamx/internal/platform/tool"
 )
 
-// Binding storage keeps the implementation type and platform identity. The
-// stable public entry is owned by the platform registry, never by its name.
+// Snapshot I/O stays inside the existing manager gate. The pure resolver asks
+// for connections only when lookup reaches a binding that needs them.
 func (m *roomManager) resolveToolBindingLocked(f toolBindingsFile, req toolsRequest) (tool.Binding, tool.Definition, error) {
-	var selected tool.Binding
-	var definition tool.Definition
-	var file registry.Snapshot
-	loaded := false
-	found := false
-	for _, b := range f.Bindings {
-		if b.AgentID != req.Caller.ID || b.MembershipID != req.Caller.MembershipID || req.platformID != "" && b.PlatformID != req.platformID {
-			continue
+	query := platforms.ToolQuery{AgentID: req.Caller.ID, MembershipID: req.Caller.MembershipID, Tool: req.Tool, PlatformID: req.platformID}
+	definitions := m.toolDefinitions()
+	entry, err := platforms.ResolveToolEntry(f.Bindings, definitions, query, nil)
+	var resolution *platforms.EntryError
+	if errors.As(err, &resolution) && resolution.Code == platforms.EntryConnectionsRequired {
+		file, loadErr := m.platforms.Load()
+		if loadErr != nil {
+			return entry.Binding, entry.Definition, loadErr
 		}
-		d, err := m.toolDefinition(b.Tool)
-		if err != nil {
-			continue
-		}
-		matches := req.Tool == b.Tool // private adapter calls may supply type + evidence
-		if !matches && b.PlatformID != "" {
-			if !loaded {
-				file, err = m.platforms.Load()
-				if err != nil {
-					return selected, definition, err
-				}
-				loaded = true
-			}
-			for _, p := range file.Platforms {
-				if p.ID == b.PlatformID && p.Provider == d.Provider && p.Generation == b.PlatformGeneration && p.ToolEntryID == req.Tool {
-					matches = true
-				}
-			}
-		}
-		if !matches {
-			continue
-		}
-		if found {
-			return tool.Binding{}, tool.Definition{}, conflictReason("tool", "platform is ambiguous", "Use the exact entry from teamx tools list.")
-		}
-		selected, definition, found = b, d, true
+		entry, err = platforms.ResolveToolEntry(f.Bindings, definitions, query, &file)
 	}
-	if !found {
-		return selected, definition, ErrRequest
-	}
-	return selected, definition, nil
+	return entry.Binding, entry.Definition, toolEntryError(err)
 }
 
-// Public run/skill never accepts a provider alias, even for one platform.
-func (m *roomManager) checkToolEntryLocked(req toolsRequest) error {
-	for _, d := range m.toolDefinitions() {
-		if d.Provider != "" && req.Tool == d.Name {
-			return invalidField("tool", "use an exact entry from teamx tools list")
-		}
+// Keep existing request/conflict details at the admission boundary.
+func toolEntryError(err error) error {
+	var resolution *platforms.EntryError
+	if !errors.As(err, &resolution) {
+		return err
 	}
-	return nil
+	switch resolution.Code {
+	case platforms.EntryNotFound:
+		return ErrRequest
+	case platforms.EntryAmbiguous:
+		return conflictReason("tool", "platform is ambiguous", "Use the exact entry from teamx tools list.")
+	case platforms.EntryProviderAlias:
+		return invalidField("tool", "use an exact entry from teamx tools list")
+	default:
+		return err
+	}
+}
+
+func (m *roomManager) checkToolEntryLocked(req toolsRequest) error {
+	return toolEntryError(platforms.CheckPublicToolEntry(m.toolDefinitions(), req.Tool))
 }
 
 func (m *roomManager) toolAvailability(file registry.Snapshot, p registry.Record, b tool.Binding, d tool.Definition, s *toolSelection) {

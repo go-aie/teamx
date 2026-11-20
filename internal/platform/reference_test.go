@@ -14,7 +14,7 @@ func fixtureTarget() TargetIdentity {
 
 func fixtureAccess() AccessContext {
 	t := fixtureTarget()
-	return AccessContext{RoomIdentity: RoomIdentity{"room", "instance"}, AgentID: "agent", MembershipID: "membership",
+	return AccessContext{RoomIdentity: RoomIdentity{RoomID: "room", RoomInstance: "instance"}, AgentID: "agent", MembershipID: "membership",
 		Account:    AccountIdentity{t.IdentityScope, ExternalID{"account", "user-alpha"}},
 		PlatformID: "connection", Generation: "generation", PlatformVersion: 1, CredentialVersion: 1}
 }

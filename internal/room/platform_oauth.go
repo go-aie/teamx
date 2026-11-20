@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-aie/teamx/internal/app/platforms"
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
-	"github.com/go-aie/teamx/internal/platform/notification"
 	"github.com/go-aie/teamx/internal/platform/registry"
 )
 
@@ -98,11 +98,8 @@ func (m *roomManager) acquireGitLabToken(ctx context.Context, owner RoomIdentity
 		}
 		if cred.ExpiresAt.After(time.Now().Add(use + oauthRefreshWindow)) {
 			leaseCtx, cancel := context.WithTimeout(ctx, use)
-			call := &platformCall{owner: owner, platformID: account.PlatformID, tool: "gitlab-token", cancel: cancel, done: make(chan struct{})}
-			if m.platformCalls == nil {
-				m.platformCalls = map[*platformCall]bool{}
-			}
-			m.platformCalls[call] = true
+			call := &platformCall{owner: owner, platformID: account.PlatformID, tool: "gitlab-token"}
+			call.Call = m.platformCalls.Register(call, cancel)
 			lease := &gitlabTokenLease{credential: platform.AccessCredential{Kind: "oauth", Token: platform.NewSecret(cred.AccessToken)}, account: account, ctx: leaseCtx, call: call}
 			if m.oauthLeases == nil {
 				m.oauthLeases = map[string]map[*gitlabTokenLease]bool{}
@@ -127,7 +124,7 @@ func (m *roomManager) acquireGitLabToken(ctx context.Context, owner RoomIdentity
 		m.oauthFlights[id] = f // close admission before waiting for old token users
 		var pending []<-chan struct{}
 		for lease := range m.oauthLeases[id] {
-			pending = append(pending, lease.call.done)
+			pending = append(pending, lease.call.Done())
 		}
 		m.mu.Unlock()
 
@@ -148,7 +145,7 @@ func (m *roomManager) acquireGitLabToken(ctx context.Context, owner RoomIdentity
 func (m *roomManager) refreshGitLabToken(ctx context.Context, expected registry.Account, pending []<-chan struct{}) error {
 	// A canceled context is not settlement. The lease owner releases only after
 	// its HTTP body/process has actually finished, including cleanup.
-	if err := notification.Wait(ctx, pending); err != nil {
+	if err := platforms.WaitCalls(ctx, pending); err != nil {
 		return err
 	}
 	m.mu.Lock()

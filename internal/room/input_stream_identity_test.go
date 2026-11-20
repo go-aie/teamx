@@ -6,7 +6,6 @@ import (
 
 	inputstream "github.com/go-aie/teamx/internal/inputstreamtest"
 	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/lark"
 	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
@@ -75,9 +74,7 @@ func TestInputGroupingUsesSavedNativeIdentity(t *testing.T) {
 }
 
 func TestInputDescriptorsReuseStaticAssembly(t *testing.T) {
-	m := &roomManager{}
-	adapters := m.gitlabNotificationAdapters()
-	adapters[lark.MessagesSourceID] = m.larkNotificationAdapter()
+	adapters := defaultNotificationAdapters(nil)
 	before, err := inputStreamDescriptors(adapters, frozenInputCapabilities)
 	if err != nil || len(before) != 2 {
 		t.Fatal(before, err)

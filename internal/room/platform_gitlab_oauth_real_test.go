@@ -333,7 +333,7 @@ func TestRealGitLabOAuthG5(t *testing.T) {
 			t.Fatal("cannot acquire external tool lease")
 		}
 		var output, diagnostic bytes.Buffer
-		process := tool.Process{Definition: tool.Catalog()[0], Output: &output, Error: &diagnostic, Values: map[string]string{"instance": origin, "token": lease.credential.Token.Reveal()}}
+		process := tool.Process{Definition: defaultPlatformTools()[0], Output: &output, Error: &diagnostic, Values: map[string]string{"instance": origin, "token": lease.credential.Token.Reveal()}}
 		code := process.Run(lease.ctx, []string{"api", "user"})
 		finishErr := m.finishGitLabToken(lease)
 		report["glab_exit_code"] = code

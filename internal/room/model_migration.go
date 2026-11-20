@@ -250,7 +250,7 @@ func planModelMigration(c startupConfig) (modelMigration, error) {
 			entry, _ = result.Catalog.resolve(selection)
 		}
 		for i, member := range saved.Members {
-			id := MemberIdentity{saved.RoomIdentity, member.AgentID, member.MembershipID}
+			id := MemberIdentity{RoomIdentity: saved.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
 			path := filepath.Join(root, "agents", member.MembershipID, "session.json")
 			ref, _, err := readDSHReference(path, id)
 			if err != nil && !errors.Is(err, os.ErrNotExist) {

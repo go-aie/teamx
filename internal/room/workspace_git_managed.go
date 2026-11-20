@@ -94,10 +94,7 @@ func (m *roomManager) prepareWorkspaceGitLocked(ctx context.Context, req toolsRe
 	// Args are carried privately on the process rather than altering caller intent.
 	p.Args = req.Args
 	callCtx, cancel := context.WithCancel(ctx)
-	call := &platformCall{owner: req.RoomIdentity, agentID: req.Caller.ID, membershipID: req.Caller.MembershipID, tool: "workspace-git", platformID: account.PlatformID, account: account, secret: secret, cancel: cancel, done: make(chan struct{})}
-	if m.platformCalls == nil {
-		m.platformCalls = map[*platformCall]bool{}
-	}
-	m.platformCalls[call] = true
+	call := &platformCall{owner: req.RoomIdentity, agentID: req.Caller.ID, membershipID: req.Caller.MembershipID, tool: "workspace-git", platformID: account.PlatformID, account: account, secret: secret}
+	call.Call = m.platformCalls.Register(call, cancel)
 	return p, call, callCtx, nil
 }

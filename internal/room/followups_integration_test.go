@@ -41,7 +41,7 @@ func TestReferenceFollowupsManagedBindingAssembly(t *testing.T) {
 		t.Fatal(page, err)
 	}
 	m.mu.Lock()
-	pending := len(m.platformCalls)
+	pending := m.platformCalls.Len()
 	m.mu.Unlock()
 	if pending != 0 {
 		t.Fatal("reference process ownership leaked")

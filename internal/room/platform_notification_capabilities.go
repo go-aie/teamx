@@ -1,23 +1,13 @@
 package room
 
 import (
-	"github.com/go-aie/teamx/internal/platform/gitlab"
-	"github.com/go-aie/teamx/internal/platform/lark"
 	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
-// Static assembly is the only place that selects native notification adapters.
-// A provider need not implement admission checks, saved-envelope projection or
-// message/action matching to participate in the common Inbox protocol.
+// Thin default adapter for standalone stores and existing projection callers.
+// Capability selection belongs to the same checked application catalog.
 func notificationCapabilities(provider string) notification.Capabilities {
-	switch provider {
-	case "gitlab":
-		return notification.Capabilities{Input: gitlab.InputCapability()}
-	case "lark":
-		return lark.NotificationCapabilities()
-	default:
-		return notification.Capabilities{}
-	}
+	return defaultPlatformCatalog().NotificationCapabilities(provider)
 }
 
 func projectNotification(item notification.Item) notification.View {

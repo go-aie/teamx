@@ -106,8 +106,8 @@ func assertActionCallsSettled(t *testing.T, m *roomManager) {
 	// deferred lease/call settlement. Wait for that contract, not scheduler luck.
 	m.mu.Lock()
 	var pending []<-chan struct{}
-	for call := range m.platformCalls {
-		pending = append(pending, call.done)
+	for _, call := range m.platformCalls.Snapshot() {
+		pending = append(pending, call.Done())
 	}
 	m.mu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -120,7 +120,7 @@ func assertActionCallsSettled(t *testing.T, m *roomManager) {
 		}
 	}
 	m.mu.Lock()
-	n := len(m.platformCalls)
+	n := m.platformCalls.Len()
 	m.mu.Unlock()
 	if n != 0 {
 		t.Fatal("platform call leak", n)

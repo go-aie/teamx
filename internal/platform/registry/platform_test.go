@@ -16,7 +16,7 @@ func TestPlatformEntryLifecycle(t *testing.T) {
 	m, _ := oauthFixture(t)
 	f, _ := m.Load()
 	c := f.Platforms[0]
-	if !validToolEntry(c.Platform) || c.ToolEntryID == "" {
+	if !m.validToolEntry(c.Platform) || c.ToolEntryID == "" {
 		t.Fatal("missing platform entry")
 	}
 	r := Request{ID: c.ID, Version: c.Version, Name: "Renamed", Provider: c.Provider, URL: c.URL}
@@ -87,7 +87,7 @@ func TestSharedApplicationUsersSurviveRestartAndRefreshIndependently(t *testing.
 	before, _ := m.Load()
 	b := addSecondOAuthUser(t, m)
 	// Reconstruct the manager, not just a cached view of the snapshot.
-	restarted := New(m.store, m.normalize)
+	restarted := New(m.store, m.normalize, m.catalog)
 	restarted.SetIdentityResolver(m.identityResolver)
 	f, err := restarted.Load()
 	if err != nil {
@@ -225,5 +225,32 @@ func TestPlatformSnapshotRejectsAmbiguousEntryAndAuthorization(t *testing.T) {
 				t.Fatal("ambiguous platform snapshot accepted", b.ID, err)
 			}
 		})
+	}
+}
+
+func TestToolEntriesUseOnlyInjectedCatalog(t *testing.T) {
+	m, _ := oauthFixture(t)
+	file, err := m.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := m.catalog
+	m.catalog = platform.NewCatalog([]platform.TypeDefinition{{Provider: "fixture", ToolType: "fixture-cli"}})
+	entry, err := m.newToolEntry("fixture")
+	if err != nil || !strings.HasPrefix(entry, "fixture-cli-") {
+		t.Fatal("registry ignored injected tool type", entry, err)
+	}
+	if entry, err := m.newToolEntry("gitlab"); err != nil || entry != "" {
+		t.Fatal("registry retained a built-in provider list", entry, err)
+	}
+	if m.validToolEntry(file.Platforms[0].Platform) {
+		t.Fatal("missing catalog declaration accepted a saved tool entry")
+	}
+	if _, err := m.Load(); !errors.Is(err, ErrInvalid) {
+		t.Fatal("saved tool entry mismatch was hidden", err)
+	}
+	m.catalog = original
+	if _, err := m.Load(); err != nil {
+		t.Fatal("catalog mismatch changed saved state", err)
 	}
 }

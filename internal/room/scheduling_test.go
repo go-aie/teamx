@@ -170,7 +170,7 @@ func TestTeamSchedulingModelSelectionRewritePreservesMode(t *testing.T) {
 				t.Fatal(err)
 			}
 			member := saved.Members[0]
-			change := modelChangeMember{MemberIdentity: MemberIdentity{room.RoomIdentity, member.AgentID, member.MembershipID}, Before: *member.ModelSelection, BeforeVersion: 1, Selection: modelSelection{Mode: "explicit", EntryID: "next"}, SelectionVersion: 2}
+			change := modelChangeMember{MemberIdentity: MemberIdentity{RoomIdentity: room.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}, Before: *member.ModelSelection, BeforeVersion: 1, Selection: modelSelection{Mode: "explicit", EntryID: "next"}, SelectionVersion: 2}
 			control := modelController{manager: m}
 			if err := control.saveSelectionLocked(change); err != nil {
 				t.Fatal(err)

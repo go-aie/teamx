@@ -9,10 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/gitlab"
-	"github.com/go-aie/teamx/internal/platform/lark"
 	"github.com/go-aie/teamx/internal/platform/registry"
-	"github.com/go-aie/teamx/internal/platform/scion"
 )
 
 func runPlatformsUpgrade(args []string, stdout, stderr io.Writer) error {
@@ -45,6 +42,15 @@ func runPlatformsUpgrade(args []string, stdout, stderr io.Writer) error {
 	if resumed, err := resumePlatformUpgrade(store); resumed || err != nil {
 		return err
 	}
+	assembly := defaultPlatformCatalog()
+	catalog := assembly.Types()
+	connections := make(map[string]connectionProvider)
+	for _, d := range assembly.Definitions() {
+		if d.Connection != nil {
+			c := d.Connection
+			connections[d.Type.Provider] = connectionProvider{Normalize: c.Normalize, LegacyIdentity: c.LegacyIdentity, ValidProfile: c.ValidProfile}
+		}
+	}
 	candidates := map[string]json.RawMessage{}
 	capture := func(path string, value any, limit int64) error {
 		b, err := json.Marshal(value)
@@ -57,19 +63,20 @@ func runPlatformsUpgrade(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	m := registry.New(registry.Store{Path: filepath.Join(abs, "platform-connections.json"), Check: store.check, Save: capture}, func(name, provider, origin string) (string, string, error) {
-		if _, ok := platform.LookupType(provider); !ok {
+		if connections[provider].Normalize == nil {
 			return "", "", registry.ErrRequest
 		}
-		return registry.Normalize(name, origin)
-	})
+		return connections[provider].Normalize(name, origin)
+	}, catalog)
 	m.SetIdentityResolver(func(provider, origin string, v platform.Validation) (platform.AccountIdentity, bool) {
-		if provider == "gitlab" {
-			return gitlab.LegacyAccountIdentity(origin, v)
+		if resolve := connections[provider].LegacyIdentity; resolve != nil {
+			return resolve(origin, v)
 		}
 		return v.Account, v.Account.Valid()
 	})
-	m.SetProfileSupport(func(p string) bool { return p == "lark" || p == "scion" }, func(provider, origin string, p platform.CLIProfile) bool {
-		return provider == "lark" && lark.ValidProfile(p) && origin == lark.Origin(p.Brand) || provider == "scion" && scion.ValidProfile(p)
+	m.SetProfileSupport(func(p string) bool { return connections[p].ValidProfile != nil }, func(provider, origin string, p platform.CLIProfile) bool {
+		valid := connections[provider].ValidProfile
+		return valid != nil && valid(origin, p)
 	}, nil)
 	count, err := m.Upgrade()
 	if err != nil {

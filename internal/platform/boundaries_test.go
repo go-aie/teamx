@@ -51,7 +51,7 @@ func TestCapabilityImportBoundaries(t *testing.T) {
 			case root + "internal/platform/lark":
 				forbidden = forbidden || strings.HasPrefix(dep, root+"internal/platform/gitlab") || strings.HasPrefix(dep, root+"internal/platform/tool") || strings.HasPrefix(dep, root+"tools/")
 			case root + "internal/platform/gitlab":
-				forbidden = forbidden || strings.HasPrefix(dep, root+"internal/platform/tool") || strings.HasPrefix(dep, root+"tools/")
+				forbidden = forbidden || strings.HasPrefix(dep, root+"internal/platform/lark") || strings.HasPrefix(dep, root+"internal/platform/tool") || strings.HasPrefix(dep, root+"tools/")
 			case root + "internal/platform/scion":
 				forbidden = forbidden || strings.HasPrefix(dep, root+"internal/platform/gitlab") || strings.HasPrefix(dep, root+"internal/platform/lark") || strings.HasPrefix(dep, root+"tools/")
 			case root + "tools/gitlab", root + "tools/scion":

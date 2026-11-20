@@ -68,7 +68,7 @@ func (m *Manager) Upgrade() (int, error) {
 			return 0, ErrInvalid
 		}
 		if len(record["tool_entry_id"]) == 0 {
-			entry, err := newToolEntry(provider)
+			entry, err := m.newToolEntry(provider)
 			if err != nil {
 				return 0, err
 			}

@@ -126,10 +126,10 @@ func (m *roomManager) startPlatformNotifications() error {
 
 // Provider scope assembly belongs beside its configuration and queries. The
 // common admission/delivery path does not inspect concrete provider states.
-func (m *roomManager) gitlabNotificationAdapters() map[notification.SourceID]notificationAdapter {
-	return map[notification.SourceID]notificationAdapter{
-		gitlab.EventsSourceID: {
-			Source: &gitlab.EventsSource{Prepare: m.preparePlatformEvents},
+func (m *roomManager) gitlabNotificationLifecycle(id notification.SourceID) notificationAdapter {
+	switch id {
+	case gitlab.EventsSourceID:
+		return notificationAdapter{
 			Admit: func(_ context.Context, state notification.State) (notification.Scope, error) {
 				s, ok := state.(gitlab.EventsState)
 				if !ok {
@@ -137,10 +137,10 @@ func (m *roomManager) gitlabNotificationAdapters() map[notification.SourceID]not
 				}
 				return m.admitEventsLocked(s)
 			},
-			CheckLoaded: func(owner RoomIdentity) error { return m.checkGitLabSubscriptionsLocked(owner, gitlab.EventsSourceID) },
-		},
-		gitlab.TodosSourceID: {
-			Source: &gitlab.TodosSource{Prepare: m.preparePlatformTodos},
+			CheckLoaded: func(owner RoomIdentity) error { return m.checkGitLabSubscriptionsLocked(owner, id) },
+		}
+	case gitlab.TodosSourceID:
+		return notificationAdapter{
 			Admit: func(_ context.Context, state notification.State) (notification.Scope, error) {
 				s, ok := state.(gitlab.TodosState)
 				if !ok {
@@ -148,8 +148,10 @@ func (m *roomManager) gitlabNotificationAdapters() map[notification.SourceID]not
 				}
 				return m.admitTodosLocked(s)
 			},
-			CheckLoaded: func(owner RoomIdentity) error { return m.checkGitLabSubscriptionsLocked(owner, gitlab.TodosSourceID) },
-		},
+			CheckLoaded: func(owner RoomIdentity) error { return m.checkGitLabSubscriptionsLocked(owner, id) },
+		}
+	default:
+		panic("GitLab notification lifecycle adapter missing: " + id.Channel)
 	}
 }
 

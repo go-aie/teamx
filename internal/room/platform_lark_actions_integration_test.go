@@ -221,7 +221,7 @@ path=a[2]`, 1)
 		t.Fatal(v, err)
 	}
 	h.m.mu.Lock()
-	active := len(h.m.platformCalls)
+	active := h.m.platformCalls.Len()
 	h.m.mu.Unlock()
 	if active != 0 {
 		t.Fatal("unsettled managed resolve", active)

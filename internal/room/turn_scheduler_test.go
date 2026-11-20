@@ -9,186 +9,8 @@ import (
 	"time"
 
 	"github.com/go-aie/actorx"
+	"github.com/go-aie/teamx/internal/app/agents"
 )
-
-type schedulerSnapshot struct {
-	Holder  turnGranted
-	Holders map[MemberIdentity]turnGranted
-	Queue   []turnGranted
-	Closed  bool
-}
-
-type inspectScheduler struct{}
-type schedulerProbe struct{ *turnScheduler }
-
-func (p schedulerProbe) Bindings() []actorx.Binding {
-	return append(p.turnScheduler.Bindings(), actorx.Handle(func(actorx.Context, inspectScheduler) (schedulerSnapshot, error) {
-		snapshot := schedulerSnapshot{Closed: p.closing, Holders: make(map[MemberIdentity]turnGranted)}
-		for id, a := range p.holders {
-			snapshot.Holder = turnGranted{a.MemberIdentity, a.ID}
-			snapshot.Holders[id] = snapshot.Holder
-		}
-		for _, a := range p.queue {
-			snapshot.Queue = append(snapshot.Queue, turnGranted{a.MemberIdentity, a.ID})
-		}
-		return snapshot, nil
-	}))
-}
-
-type grantSink struct {
-	grants  chan turnGranted
-	blocked chan struct{}
-	unblock chan struct{}
-}
-
-func (g grantSink) Bindings() []actorx.Binding {
-	return []actorx.Binding{
-		actorx.HandleMessage(func(_ actorx.Context, msg turnGranted) error {
-			select {
-			case g.grants <- msg:
-			default:
-			}
-			return nil
-		}),
-		actorx.HandleMessage(func(ctx actorx.Context, _ struct{}) error {
-			close(g.blocked)
-			select {
-			case <-g.unblock:
-			case <-ctx.Done():
-			}
-			return nil
-		}),
-	}
-}
-
-func schedulerCall(t *testing.T, h *roomHarness, addr actorx.Addr, msg any) {
-	t.Helper()
-	if _, err := addr.Call[any](h.ctx, msg); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func schedulerState(t *testing.T, h *roomHarness, addr actorx.Addr) schedulerSnapshot {
-	t.Helper()
-	snapshot, err := addr.Call[schedulerSnapshot](h.ctx, inspectScheduler{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return snapshot
-}
-
-func awaitGrant(t *testing.T, h *roomHarness, grants <-chan turnGranted, want turnGranted) {
-	t.Helper()
-	for {
-		select {
-		case got := <-grants:
-			if got == want {
-				return
-			}
-		case <-h.ctx.Done():
-			t.Fatal("grant not delivered", want, h.ctx.Err())
-		}
-	}
-}
-
-func TestTurnSchedulerFIFOAndExactRelease(t *testing.T) {
-	h := newRoomHarness(t, emptyRoom(), nil)
-	scheduler, err := h.rt.Spawn(schedulerProbe{&turnScheduler{RoomIdentity: h.id}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	grants := make(chan turnGranted, 32)
-	var requests []requestTurn
-	for i, name := range []string{"A", "B", "C"} {
-		target, err := h.rt.Spawn(grantSink{grants: grants})
-		if err != nil {
-			t.Fatal(err)
-		}
-		requests = append(requests, requestTurn{h.memberID(name, fmt.Sprint(i)), 1, target})
-	}
-	for _, r := range requests {
-		schedulerCall(t, h, scheduler, r)
-		schedulerCall(t, h, scheduler, r) // admission retry, same ID
-	}
-	a, b, c := turnGranted{requests[0].MemberIdentity, 1}, turnGranted{requests[1].MemberIdentity, 1}, turnGranted{requests[2].MemberIdentity, 1}
-	s := schedulerState(t, h, scheduler)
-	if s.Holder != a || len(s.Queue) != 2 || s.Queue[0] != b || s.Queue[1] != c {
-		t.Fatal(s)
-	}
-	schedulerCall(t, h, scheduler, cancelTurnRequest{a})
-	if s := schedulerState(t, h, scheduler); s.Holder != a {
-		t.Fatal("cancel freed an unsettled holder", s)
-	}
-	schedulerCall(t, h, scheduler, releaseTurn{a})
-	schedulerCall(t, h, scheduler, releaseTurn{a})
-	schedulerCall(t, h, scheduler, requests[0]) // retired request cannot reenter
-	if s := schedulerState(t, h, scheduler); s.Holder != b || len(s.Queue) != 1 {
-		t.Fatal("late message changed the next holder", s)
-	}
-	requests[0].ID = 2
-	schedulerCall(t, h, scheduler, requests[0])
-	schedulerCall(t, h, scheduler, cancelTurnRequest{c})
-	schedulerCall(t, h, scheduler, requests[2]) // canceled request stays retired
-	schedulerCall(t, h, scheduler, releaseTurn{b})
-	awaitGrant(t, h, grants, turnGranted{a.MemberIdentity, 2})
-	schedulerCall(t, h, scheduler, releaseTurn{a})
-	if s := schedulerState(t, h, scheduler); s.Holder.ID != 2 || len(s.Queue) != 0 {
-		t.Fatal("old release freed the same member's new grant", s)
-	}
-	if _, err := scheduler.Call[struct{}](h.ctx, stopTurnGrants{}); err != nil {
-		t.Fatal(err)
-	}
-	requests[1].ID = 2
-	schedulerCall(t, h, scheduler, requests[1])
-	schedulerCall(t, h, scheduler, releaseTurn{turnGranted{a.MemberIdentity, 2}})
-	if s := schedulerState(t, h, scheduler); !s.Closed || s.Holder.ID != 0 || len(s.Queue) != 0 {
-		t.Fatal("shutdown issued another grant", s)
-	}
-}
-
-func TestTurnSchedulerRetriesFailedGrantAndJoinsStoppedHolder(t *testing.T) {
-	h := newRoomHarness(t, emptyRoom(), nil, actorx.WithMailboxCapacity(2))
-	scheduler, err := h.rt.Spawn(schedulerProbe{&turnScheduler{RoomIdentity: h.id}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	grants := make(chan turnGranted, 32)
-	blocked, unblock := make(chan struct{}), make(chan struct{})
-	a, err := h.rt.Spawn(grantSink{grants: grants, blocked: blocked, unblock: unblock})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := a.Send(h.ctx, struct{}{}); err != nil {
-		t.Fatal(err)
-	}
-	<-blocked
-	// Fill both queued slots while the first handler is blocked.
-	for range 2 {
-		if err := a.Send(h.ctx, turnGranted{}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	b, err := h.rt.Spawn(grantSink{grants: grants})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ra := requestTurn{h.memberID("A", "a"), 1, a}
-	rb := requestTurn{h.memberID("B", "b"), 1, b}
-	schedulerCall(t, h, scheduler, ra)
-	schedulerCall(t, h, scheduler, rb)
-	if s := schedulerState(t, h, scheduler); s.Holder.MemberIdentity != ra.MemberIdentity || len(s.Queue) != 1 {
-		t.Fatal("failed grant lost its handoff responsibility", s)
-	}
-	close(unblock)
-	awaitGrant(t, h, grants, turnGranted{ra.MemberIdentity, 1})
-	// Simulate loss of the member's release message. Full local exit (including
-	// owned work/discard/Stopped) is a second source of settlement evidence.
-	_ = a.Stop(nil)
-	if _, err := a.Wait(h.ctx); err != nil {
-		t.Fatal(err)
-	}
-	awaitGrant(t, h, grants, turnGranted{rb.MemberIdentity, 1})
-}
 
 func serialMembers(t *testing.T, count int, options ...actorx.Option) (*roomHarness, []actorx.Addr, []MemberIdentity, []*controlledBackend) {
 	t.Helper()
@@ -206,7 +28,7 @@ func scheduledMembers(t *testing.T, mode schedulingMode, count int, options ...a
 	_ = h.scheduler.Stop(nil)
 	_, _ = h.scheduler.Wait(h.ctx)
 	var err error
-	h.scheduler, err = h.rt.Spawn(schedulerProbe{&turnScheduler{RoomIdentity: h.id, mode: mode}})
+	h.scheduler, err = h.rt.Spawn(agents.NewTurnScheduler(h.id, agents.SchedulingMode(mode), nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -351,7 +173,7 @@ func TestRoomTurnsWithdrawWaitingMemberAndRecheckUnread(t *testing.T) {
 			case "pause":
 				controlMember(t, h, targets[1], ids[1], "pause", UnreadChanged{}, false, false)
 				// A canceled request can still receive an already admitted grant.
-				if _, err := targets[1].Call[any](h.ctx, turnGranted{ids[1], 1}); err != nil {
+				if _, err := targets[1].Call[any](h.ctx, agents.TurnGranted{MemberIdentity: ids[1], ID: 1}); err != nil {
 					t.Fatal(err)
 				}
 			case "remove":

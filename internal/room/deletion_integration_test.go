@@ -204,7 +204,7 @@ func TestManagedDeletionIndexFailureAfterDataRemovalCanReopen(t *testing.T) {
 	}
 	beginDeletion(t, m, a)
 	failed := awaitDeletion(t, m, a)
-	if failed == nil || failed.DeletionPhase != "removing" || !m.store.uncertain {
+	if failed == nil || failed.DeletionPhase != "removing" || !errors.Is(m.store.check(true), ErrCommitUnknown) {
 		t.Fatal(failed)
 	}
 	if _, err := os.Stat(m.roomDir(a.RoomID)); !errors.Is(err, os.ErrNotExist) {

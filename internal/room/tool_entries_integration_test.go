@@ -43,7 +43,7 @@ func sharedToolAccount(t *testing.T, m *roomManager) managedPlatform {
 func TestPlatformEntriesSharedGitLabAccountsRoutingAndDependencies(t *testing.T) {
 	parallelFixtureTest(t)
 	m, room, svc, a, members := cliToolFixture(t, `if test "$1" = --help; then printf 'help'; else printf '%s|%s' "$GITLAB_TOKEN" "$1"; fi`)
-	m.toolCatalog[0].Skill = tool.Catalog()[0].Skill
+	m.toolCatalog[0].Skill = defaultPlatformTools()[0].Skill
 	b := sharedToolAccount(t, m)
 	bindCLITool(t, m, room.RoomIdentity, members[0], a, "gitlab", 0)
 	bindCLITool(t, m, room.RoomIdentity, members[0], b, "gitlab", 1)
@@ -177,7 +177,7 @@ func TestPlatformEntriesSharedGitLabAccountsRoutingAndDependencies(t *testing.T)
 func TestPlatformEntriesLarkIndependentProfilesAndBuiltinDispatch(t *testing.T) {
 	parallelFixtureTest(t)
 	h := newLarkHarness(t)
-	h.m.toolCatalog[len(h.m.toolCatalog)-1].Skill = tool.Catalog()[1].Skill
+	h.m.toolCatalog[len(h.m.toolCatalog)-1].Skill = defaultPlatformTools()[1].Skill
 	script := strings.Replace(larkFixtureScript(), "path=a[2]", `if a==['config','show']:
  print(json.dumps({'profile':'fixture','appId':'cli_fixture','brand':'feishu','dpopMode':'required'}));sys.exit()
 path=a[2]`, 1)

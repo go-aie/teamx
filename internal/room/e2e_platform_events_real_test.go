@@ -632,7 +632,7 @@ func ge04CheckEvent(t *testing.T, d *realRoomDriver, m *roomManager, id MemberId
 	// about the SHA/state as proof of a real object read.
 	var output bytes.Buffer
 	binding := config.Workspace.Binding
-	process := tool.Process{Definition: tool.Catalog()[0], Values: map[string]string{"instance": binding.URL, "token": selectedRealAccessToken(t, binding.URL)}, Output: &output, Error: io.Discard}
+	process := tool.Process{Definition: defaultPlatformTools()[0], Values: map[string]string{"instance": binding.URL, "token": selectedRealAccessToken(t, binding.URL)}, Output: &output, Error: io.Discard}
 	if code := process.Run(ctx, []string{"mr", "view", strconv.FormatInt(e.IID, 10), "--repo", binding.URL + "/" + binding.Project, "-F", "json"}); code != 0 {
 		fail(fmt.Errorf("independent MR query exited with status %d", code))
 	}

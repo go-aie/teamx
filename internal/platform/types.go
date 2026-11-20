@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"time"
+
+	"github.com/go-aie/teamx/internal/identity"
 )
 
 // ErrCredential is shared by Workspace resolution and notification admission.
@@ -93,10 +95,7 @@ func ValidCredential(value string) bool {
 }
 
 // RoomIdentity identifies durable ownership; service epochs remain ephemeral.
-type RoomIdentity struct {
-	RoomID       string `json:"room_id"`
-	RoomInstance string `json:"room_instance"`
-}
+type RoomIdentity = identity.RoomIdentity
 type ProjectBinding struct {
 	PlatformID         string `json:"platform_id,omitempty"`
 	PlatformGeneration string `json:"platform_generation,omitempty"`

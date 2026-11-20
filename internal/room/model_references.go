@@ -187,7 +187,7 @@ func (c *modelController) referencesLocked() ([]memberModelReference, error) {
 			if member.ModelSelection == nil {
 				return nil, ErrInvalid
 			}
-			refs = append(refs, memberModelReference{MemberIdentity{room.RoomIdentity, member.AgentID, member.MembershipID}, *member.ModelSelection, member.ModelSelectionVersion})
+			refs = append(refs, memberModelReference{MemberIdentity{RoomIdentity: room.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}, *member.ModelSelection, member.ModelSelectionVersion})
 		}
 	}
 	return refs, nil

@@ -130,7 +130,7 @@ func (u *inputUpgrade) convert() error {
 	}
 	queues := make([][]legacyInputEvent, 0, len(state.Members))
 	for _, m := range state.Members {
-		id := MemberIdentity{state.RoomIdentity, m.AgentID, m.MembershipID}
+		id := MemberIdentity{RoomIdentity: state.RoomIdentity, AgentID: m.AgentID, MembershipID: m.MembershipID}
 		events, err := u.convertMember(old, next, id, original.LatestSeq)
 		if err != nil {
 			return fmt.Errorf("member %s legacy input: %w", id.MembershipID, err)

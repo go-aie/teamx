@@ -12,15 +12,11 @@ import (
 	"github.com/go-aie/teamx/internal/inputstream"
 	frozen "github.com/go-aie/teamx/internal/inputstreamtest/frozen"
 	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/lark"
 	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
 func storageAdapters() map[notification.SourceID]notificationAdapter {
-	m := &roomManager{}
-	a := m.gitlabNotificationAdapters()
-	a[lark.MessagesSourceID] = m.larkNotificationAdapter()
-	return a
+	return defaultNotificationAdapters(nil)
 }
 func storedGitLab(id MemberIdentity, key, channel, project, iid, text string) notification.Item {
 	return notification.Item{Key: key, DeliveryID: key, CreatedAt: time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC), Order: key, Text: text, Route: notification.Route{Version: 1, Target: notification.Target{Mode: "inbox", AgentID: id.AgentID, MembershipID: id.MembershipID}}, Source: platform.SourceRef{Provider: "gitlab", Channel: channel, Instance: "https://gitlab.example.com", SubscriptionID: inputstream.Digest([]byte(channel))[:32], ItemKey: key, Project: "研发项目", Reference: platform.NotificationReference{Version: 1, RecipientID: platform.ExternalID{Namespace: "gitlab:rest:id", Value: "9"}, ProjectID: platform.ExternalID{Namespace: "gitlab:rest:id", Value: project}, Object: platform.ObjectReference{Type: "MergeRequest", IID: platform.ExternalID{Namespace: "gitlab:rest:iid", Value: iid}}}}}

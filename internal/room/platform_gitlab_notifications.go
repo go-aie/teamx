@@ -15,6 +15,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/go-aie/teamx/internal/app/platforms"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
 	"github.com/go-aie/teamx/internal/platform/notification"
 )
@@ -523,7 +524,7 @@ func (m *roomManager) configureGitLabNotifications(ctx context.Context, owner Ro
 	m.mu.Unlock()
 	defer m.finishGitLabConfiguration(owner, cfg.PlatformID, cfg.Target)
 	applyErrors := map[string]string{}
-	if err = notification.Wait(ctx, waits); err != nil {
+	if err = platforms.WaitCalls(ctx, waits); err != nil {
 		applyErrors["config"] = "apply_interrupted"
 	} else {
 		for _, channel := range []string{"events", "todos"} {

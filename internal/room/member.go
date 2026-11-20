@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-aie/actorx"
 	"github.com/go-aie/teamx/internal/agent/dsh"
+	"github.com/go-aie/teamx/internal/app/agents"
 )
 
 const defaultMaxTurns uint64 = 16
@@ -91,11 +92,11 @@ type MemberAgent struct {
 
 	scheduler     actorx.Addr
 	target        actorx.Addr
-	request       *requestTurn
+	request       *agents.RequestTurn
 	requestNumber uint64
 	checking      bool
 	checked       *checkedTurn
-	releasing     map[turnGranted]struct{}
+	releasing     map[agents.TurnGranted]struct{}
 }
 
 func (m *MemberAgent) Started(ctx actorx.Context, _ actorx.Started) error {
@@ -544,7 +545,7 @@ func (m *MemberAgent) pollInbox() {
 // A failed release admission retains responsibility and blocks another request.
 func (m *MemberAgent) flushRelease() bool {
 	for grant := range m.releasing {
-		if err := m.scheduler.Send(m.owner, releaseTurn{grant}); err != nil {
+		if err := m.scheduler.Send(m.owner, agents.ReleaseTurn{TurnGranted: grant}); err != nil {
 			m.lastError = "execution slot release pending: " + err.Error()
 			return false
 		}
@@ -553,9 +554,9 @@ func (m *MemberAgent) flushRelease() bool {
 	return true
 }
 
-func (m *MemberAgent) queueRelease(grant turnGranted) {
+func (m *MemberAgent) queueRelease(grant agents.TurnGranted) {
 	if m.releasing == nil {
-		m.releasing = make(map[turnGranted]struct{})
+		m.releasing = make(map[agents.TurnGranted]struct{})
 	}
 	m.releasing[grant] = struct{}{}
 	m.flushRelease()
@@ -563,7 +564,7 @@ func (m *MemberAgent) queueRelease(grant turnGranted) {
 
 func (m *MemberAgent) releaseTurn() {
 	if m.request != nil {
-		grant := turnGranted{m.request.MemberIdentity, m.request.ID}
+		grant := agents.TurnGranted{MemberIdentity: m.request.MemberIdentity, ID: m.request.ID}
 		if m.checked != nil && m.checked.request == m.request {
 			m.checked = nil
 		}
@@ -574,7 +575,7 @@ func (m *MemberAgent) releaseTurn() {
 
 func (m *MemberAgent) withdrawTurn() {
 	if m.request != nil && !m.active {
-		_ = m.scheduler.Send(m.owner, cancelTurnRequest{turnGranted{m.request.MemberIdentity, m.request.ID}})
+		_ = m.scheduler.Send(m.owner, agents.CancelTurnRequest{TurnGranted: agents.TurnGranted{MemberIdentity: m.request.MemberIdentity, ID: m.request.ID}})
 		// No execution was admitted, so we can also acknowledge a grant that
 		// may already be in transit. Its eventual delivery is harmless.
 		m.releaseTurn()
@@ -626,14 +627,14 @@ func (m *MemberAgent) schedule() {
 	}
 	if m.request == nil {
 		m.requestNumber++
-		m.request = &requestTurn{MemberIdentity: m.Options.MemberIdentity, ID: m.requestNumber, Target: m.target}
+		m.request = &agents.RequestTurn{MemberIdentity: m.Options.MemberIdentity, ID: m.requestNumber, Target: m.target}
 	}
 	if err := m.scheduler.Send(m.owner, *m.request); err != nil {
 		m.lastError = "execution slot request pending: " + err.Error()
 	}
 }
 
-func (m *MemberAgent) Granted(_ actorx.Context, msg turnGranted) error {
+func (m *MemberAgent) Granted(_ actorx.Context, msg agents.TurnGranted) error {
 	defer m.observeStatus()
 	if msg.MemberIdentity != m.Options.MemberIdentity {
 		return ErrIdentity
@@ -677,7 +678,7 @@ func (m *MemberAgent) Granted(_ actorx.Context, msg turnGranted) error {
 type startGrantedTurn struct{ ID uint64 }
 
 type checkedTurn struct {
-	request *requestTurn
+	request *agents.RequestTurn
 	list    MemberList
 	err     error
 }

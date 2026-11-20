@@ -69,14 +69,11 @@ func (m *roomManager) listGitLabProjects(ctx context.Context, req gitlabProjects
 		return gitlab.ProjectPage{}, err
 	}
 	callCtx, cancel := context.WithTimeout(ctx, 40*time.Second)
-	call := &platformCall{owner: req.RoomIdentity, platformID: a.PlatformID, cancel: cancel, done: make(chan struct{})}
+	call := &platformCall{owner: req.RoomIdentity, platformID: a.PlatformID}
 	if req.member != nil {
 		call.agentID, call.membershipID = req.Caller.ID, req.Caller.MembershipID
 	}
-	if m.platformCalls == nil {
-		m.platformCalls = map[*platformCall]bool{}
-	}
-	m.platformCalls[call] = true
+	call.Call = m.platformCalls.Register(call, cancel)
 	m.mu.Unlock()
 	defer m.finishPlatformCall(call)
 	var page gitlab.ProjectPage

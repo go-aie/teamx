@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/go-aie/teamx/internal/app/platforms"
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/lark"
 	"github.com/go-aie/teamx/internal/platform/notification"
@@ -74,10 +75,8 @@ func (m *roomManager) resumeLarkSubscriptionsLocked(platformID string) error {
 	return nil
 }
 
-func (m *roomManager) larkNotificationAdapter() notificationAdapter {
-	return notificationAdapter{Source: &lark.SearchSource{Source: lark.Source{Reader: func(q lark.QueryScope) (lark.MessageReader, error) {
-		return m.larkClients.New(q.Profile)
-	}}}, Admit: func(_ context.Context, state notification.State) (notification.Scope, error) {
+func (m *roomManager) larkNotificationLifecycle() notificationAdapter {
+	return notificationAdapter{Admit: func(_ context.Context, state notification.State) (notification.Scope, error) {
 		s, ok := state.(lark.State)
 		if !ok {
 			return notification.Scope{}, notification.ErrInvalid
@@ -201,7 +200,7 @@ func (m *roomManager) configureLarkSubscription(ctx context.Context, key notific
 			waits = append(waits, done)
 		}
 		m.mu.Unlock()
-		e = notification.Wait(ctx, waits)
+		e = platforms.WaitCalls(ctx, waits)
 		m.mu.Lock()
 		if e != nil {
 			return retired, e

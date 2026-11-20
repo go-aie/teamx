@@ -38,7 +38,7 @@ func TestLarkChatPickerListsMetadataBeforeSubscription(t *testing.T) {
 	}
 	h.m.mu.Lock()
 	states := h.m.notifications.StatesLocked(h.room.RoomIdentity)
-	calls := len(h.m.platformCalls)
+	calls := h.m.platformCalls.Len()
 	h.m.mu.Unlock()
 	if len(states) != 0 || calls != 0 {
 		t.Fatal("metadata browse created a subscription or leaked a call")
@@ -99,7 +99,7 @@ func TestLarkChatPickerSearchesMetadataWithPartialPermissions(t *testing.T) {
 	}
 	h.m.mu.Lock()
 	defer h.m.mu.Unlock()
-	if len(h.m.notifications.StatesLocked(h.room.RoomIdentity)) != 0 || len(h.m.platformCalls) != 0 {
+	if len(h.m.notifications.StatesLocked(h.room.RoomIdentity)) != 0 || h.m.platformCalls.Len() != 0 {
 		t.Fatal("search changed subscription or leaked calls")
 	}
 }
@@ -141,7 +141,7 @@ func TestLarkChatPickerResolvesSelectedMetadataOutsideDirectory(t *testing.T) {
 	}
 	h.m.mu.Lock()
 	defer h.m.mu.Unlock()
-	if len(h.m.notifications.StatesLocked(h.room.RoomIdentity)) != 0 || len(h.m.platformCalls) != 0 {
+	if len(h.m.notifications.StatesLocked(h.room.RoomIdentity)) != 0 || h.m.platformCalls.Len() != 0 {
 		t.Fatal("metadata lookup changed subscription or leaked calls")
 	}
 }

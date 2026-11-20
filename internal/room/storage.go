@@ -2,7 +2,6 @@ package room
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,17 +11,19 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/go-aie/teamx/internal/identity"
 	"github.com/go-aie/teamx/internal/inputstream"
+	"github.com/go-aie/teamx/internal/persistence"
 	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
 var (
 	ErrLocked        = errors.New("state directory already in use")
 	ErrVersion       = errors.New("unsupported snapshot version")
-	ErrInvalid       = errors.New("invalid snapshot")
-	ErrIdentity      = errors.New("snapshot identity mismatch")
-	ErrCommitUnknown = errors.New("snapshot replacement may have committed; reopen and reload before writing")
-	ErrStoreClosed   = errors.New("state store closed")
+	ErrInvalid       = persistence.ErrInvalid
+	ErrIdentity      = identity.ErrMismatch
+	ErrCommitUnknown = persistence.ErrCommitUnknown
+	ErrStoreClosed   = persistence.ErrClosed
 )
 
 // JSON escaping may expand a 64 MiB history. Private snapshots have a much
@@ -59,17 +60,11 @@ type Store struct {
 	instance             string
 	lock                 *os.File
 	closeMu              sync.Mutex // serializes shutdown, never acquired by a writer
-	snapshotWriter                  // healthMu also protects this Store's directory lock
+	lockMu               sync.Mutex // protects only this Store's directory lock
+	snapshotWriter
 }
 
-type directoryIdentity struct{ directory, parent os.FileInfo }
-
-type snapshotFile interface {
-	io.Writer
-	Sync() error
-	Close() error
-	Name() string
-}
+type snapshotFile = persistence.File
 
 // The narrow I/O seam lets tests stop at exact commit boundaries.
 type snapshotOps struct {
@@ -158,18 +153,14 @@ func (s *Store) Close() error {
 	if err := s.closeInputOwners(context.Background()); err != nil {
 		return err
 	}
-	s.healthMu.Lock()
-	s.writerClosing = true
-	done := s.writesDone
-	s.healthMu.Unlock()
-	// Do not hold Store.mu or the health lock while admitted writes finish.
-	if done != nil {
-		<-done
+	if err := s.closeWriter(context.Background()); err != nil {
+		return err
 	}
+	// No Store or directory lock is held while the writer settles.
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.healthMu.Lock()
-	defer s.healthMu.Unlock()
+	s.lockMu.Lock()
+	defer s.lockMu.Unlock()
 	if s.lock == nil {
 		return nil
 	}
@@ -374,24 +365,13 @@ func (s *Store) memberPath(id MemberIdentity, name string, writing bool) (string
 }
 
 func (s *Store) check(writing bool) error {
-	s.healthMu.Lock()
-	defer s.healthMu.Unlock()
-	if s.lock == nil {
+	s.lockMu.Lock()
+	owned := s.lock != nil
+	s.lockMu.Unlock()
+	if !owned {
 		return ErrStoreClosed
 	}
-	if writing && s.writerClosing {
-		return ErrStoreClosed
-	}
-	if writing && s.uncertain {
-		return ErrCommitUnknown
-	}
-	return nil
-}
-
-func (s *snapshotWriter) markUncertain() {
-	s.healthMu.Lock()
-	s.uncertain = true
-	s.healthMu.Unlock()
+	return s.checkWriter(writing)
 }
 
 // save has a single commit boundary. Before replacement, failure leaves the
@@ -404,117 +384,9 @@ func (s *Store) save(path string, v any, limit int64) error {
 	return s.snapshotWriter.save(path, v, limit)
 }
 
-// The file writer is also used by domains with their own lock and lifecycle.
-// Its health admission is independent of Room directory ownership.
-func (s *snapshotWriter) save(path string, v any, limit int64) error {
-	finish, err := s.admitSnapshotWrite(path)
-	if err != nil {
-		return err
-	}
-	defer finish()
-	dir := filepath.Dir(path)
-	if err := s.ensureSnapshotDirectory(dir); err != nil {
-		return err
-	}
-	f, err := s.ops.createTemp(dir, ".snapshot-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(f.Name())
-	closed := false
-	defer func() {
-		if !closed {
-			_ = f.Close()
-		}
-	}()
-	enc := json.NewEncoder(&boundedWriter{w: f, remaining: limit})
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(v); err != nil {
-		return fmt.Errorf("encode snapshot: %w", err)
-	}
-	if err := f.Sync(); err != nil {
-		return fmt.Errorf("sync snapshot: %w", err)
-	}
-	closed = true
-	if err := f.Close(); err != nil {
-		return fmt.Errorf("close snapshot: %w", err)
-	}
-	if err := s.ops.rename(f.Name(), path); err != nil {
-		// An error from replacement is treated conservatively as uncertain;
-		// a filesystem can report an error after performing the operation.
-		s.markUncertain()
-		return fmt.Errorf("%w: replace snapshot: %w", ErrCommitUnknown, err)
-	}
-	if err := s.ops.syncDir(dir); err != nil {
-		s.markUncertain()
-		return fmt.Errorf("%w: sync directory: %w", ErrCommitUnknown, err)
-	}
-	return nil
-}
-
-// Directory creation is a durability boundary, but an already initialized
-// directory need not be synced again before every write. Keep the file Sync
-// and the post-rename directory Sync on every commit. Recheck both inodes so
-// replacing a directory or its parent requires initialization again.
-func (s *snapshotWriter) ensureSnapshotDirectory(dir string) error {
-	s.directoryMu.Lock()
-	if s.durableDirectories == nil {
-		s.durableDirectories = map[string]*snapshotDirectory{}
-	}
-	directory := s.durableDirectories[dir]
-	if directory == nil {
-		directory = &snapshotDirectory{}
-		s.durableDirectories[dir] = directory
-	}
-	s.directoryMu.Unlock()
-	directory.mu.Lock()
-	defer directory.mu.Unlock()
-	info, statErr := os.Stat(dir)
-	parent, parentErr := os.Stat(filepath.Dir(dir))
-	previous := directory.identity
-	if previous.directory != nil && statErr == nil && parentErr == nil &&
-		os.SameFile(previous.directory, info) && os.SameFile(previous.parent, parent) {
-		return nil
-	}
-	directory.identity = directoryIdentity{}
-	if err := s.ops.makeDir(dir); err != nil {
-		return err
-	}
-	info, err := os.Stat(dir)
-	if err != nil {
-		return err
-	}
-	parent, err = os.Stat(filepath.Dir(dir))
-	if err != nil {
-		return err
-	}
-	directory.identity = directoryIdentity{info, parent}
-	return nil
-}
-
+// readSnapshot retains the existing room call sites and error identity.
 func readSnapshot(path string, v any, limit int64) error {
-	f, err := os.Open(path)
-	if err != nil {
-		return fmt.Errorf("open %s: %w", path, err)
-	}
-	defer f.Close()
-	info, err := f.Stat()
-	if err != nil {
-		return err
-	}
-	if !info.Mode().IsRegular() || info.Size() > limit {
-		return fmt.Errorf("%w: %s: not a bounded regular file", ErrInvalid, path)
-	}
-	dec := json.NewDecoder(io.LimitReader(f, limit+1))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(v); err != nil {
-		return fmt.Errorf("%w: %s: %w", ErrInvalid, path, err)
-	}
-	var extra any
-	if err := dec.Decode(&extra); err != io.EOF {
-		return fmt.Errorf("%w: %s: trailing JSON data", ErrInvalid, path)
-	}
-	return nil
+	return persistence.ReadJSON(path, v, limit)
 }
 
 type boundedWriter struct {
@@ -531,39 +403,7 @@ func (w *boundedWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-func syncDirectory(path string) error {
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	return errors.Join(f.Sync(), f.Close())
-}
-
-// Sync each newly created directory and its parent so the first private
-// snapshot's durable rename cannot depend on an uncommitted parent directory.
-func makeDurableDir(path string) error {
-	info, err := os.Stat(path)
-	if err == nil {
-		if !info.IsDir() {
-			return fmt.Errorf("%s is not a directory", path)
-		}
-		if err := syncDirectory(path); err != nil {
-			return err
-		}
-		return syncDirectory(filepath.Dir(path))
-	}
-	if !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	parent := filepath.Dir(path)
-	if err := makeDurableDir(parent); err != nil {
-		return err
-	}
-	if err := os.Mkdir(path, 0700); err != nil && !errors.Is(err, os.ErrExist) {
-		return err
-	}
-	if err := syncDirectory(path); err != nil {
-		return err
-	}
-	return syncDirectory(parent)
-}
+// These adapters also serve body logs, config and human-read protocols, whose
+// commit algorithms and health domains remain with their original owners.
+func syncDirectory(path string) error  { return persistence.SyncDirectory(path) }
+func makeDurableDir(path string) error { return persistence.MakeDurableDir(path) }

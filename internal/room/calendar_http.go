@@ -77,7 +77,7 @@ func (s *service) calendarCallView(ctx context.Context, op string, data json.Raw
 		return nil, ErrIdentity
 	}
 	executor := roster.Members[0]
-	id := MemberIdentity{s.info.RoomIdentity, executor.AgentID, executor.MembershipID}
+	id := MemberIdentity{RoomIdentity: s.info.RoomIdentity, AgentID: executor.AgentID, MembershipID: executor.MembershipID}
 	if caller.Kind == "agent" && (caller.ID != id.AgentID || caller.MembershipID != id.MembershipID) {
 		return nil, ErrIdentity
 	}

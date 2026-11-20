@@ -101,7 +101,7 @@ func TestOAuthConcurrentRefreshSharedPlatforms(t *testing.T) {
 	if err != nil || after != account || file.OAuthCredentials[0].TokenRevision != 2 {
 		t.Fatal("normal renewal changed authorization", err)
 	}
-	if len(m.oauthLeases) != 0 || len(m.oauthFlights) != 0 || len(m.platformCalls) != 0 {
+	if len(m.oauthLeases) != 0 || len(m.oauthFlights) != 0 || m.platformCalls.Len() != 0 {
 		t.Fatal("token ownership leaked")
 	}
 }

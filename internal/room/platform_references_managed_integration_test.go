@@ -258,7 +258,7 @@ func TestReferenceInternalRevocationSettlesHTTPAndRejectsLateResults(t *testing.
 				}()
 				awaitEventSignal(t, canceled, "revocation did not cancel request context")
 				m.mu.Lock()
-				pending := len(m.platformCalls)
+				pending := m.platformCalls.Len()
 				m.mu.Unlock()
 				if pending == 0 {
 					t.Fatal("body/result processing released call early", pending)
@@ -286,7 +286,7 @@ func TestReferenceInternalRevocationSettlesHTTPAndRejectsLateResults(t *testing.
 					t.Fatal("revocation leaked")
 				}
 				m.mu.Lock()
-				pending = len(m.platformCalls)
+				pending = m.platformCalls.Len()
 				m.mu.Unlock()
 				if pending != 0 {
 					t.Fatal("call leaked", pending)
@@ -323,7 +323,7 @@ func TestReferenceInternalResolutionScopeCommitGate(t *testing.T) {
 		t.Fatal("post-resolve cancellation committed", string(b), err)
 	}
 	m.mu.Lock()
-	pending := len(m.platformCalls)
+	pending := m.platformCalls.Len()
 	m.mu.Unlock()
 	if pending != 0 {
 		t.Fatal("call not settled after commit rejection")

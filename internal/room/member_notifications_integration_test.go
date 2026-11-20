@@ -549,13 +549,10 @@ func TestMemberNotificationLarkRetirementWaitsOnlyForItsOwnAttachments(t *testin
 		t.Fatal("old-generation search fixture", err)
 	}
 	callCtx, cancel := context.WithCancel(context.Background())
-	call := &platformCall{owner: h.room.RoomIdentity, platformID: h.c.ID, subscription: a.Metadata().Key, cancel: cancel, done: make(chan struct{})}
+	call := &platformCall{owner: h.room.RoomIdentity, platformID: h.c.ID, subscription: a.Metadata().Key}
 	h.m.mu.Lock()
 	err = h.m.notifications.SaveLocked(a)
-	if h.m.platformCalls == nil {
-		h.m.platformCalls = map[*platformCall]bool{}
-	}
-	h.m.platformCalls[call] = true
+	call.Call = h.m.platformCalls.Register(call, cancel)
 	h.m.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)

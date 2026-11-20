@@ -8,8 +8,8 @@ import (
 
 // Entry identity is allocated once, independent of the display name, account,
 // and caller-supplied platform ID. Recreating a deleted ID gets a fresh entry.
-func newToolEntry(provider string) (string, error) {
-	d, ok := platform.LookupType(provider)
+func (m *Manager) newToolEntry(provider string) (string, error) {
+	d, ok := m.catalog.LookupType(provider)
 	if !ok || d.ToolType == "" {
 		return "", nil
 	}
@@ -20,8 +20,8 @@ func newToolEntry(provider string) (string, error) {
 	return d.ToolType + "-" + id, nil
 }
 
-func validToolEntry(c platform.Platform) bool {
-	d, ok := platform.LookupType(c.Provider)
+func (m *Manager) validToolEntry(c platform.Platform) bool {
+	d, ok := m.catalog.LookupType(c.Provider)
 	if !ok || d.ToolType == "" {
 		return c.ToolEntryID == ""
 	}

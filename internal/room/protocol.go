@@ -5,13 +5,14 @@ import (
 	"time"
 
 	"github.com/go-aie/actorx"
+	"github.com/go-aie/teamx/internal/app/agents"
 )
 
 var (
 	ErrRequest     = errors.New("invalid room request")
 	ErrConflict    = errors.New("room operation conflicts with existing data")
 	ErrBusy        = errors.New("room commit or unread page already pending")
-	ErrCapacity    = errors.New("room capacity exceeded")
+	ErrCapacity    = agents.ErrCapacity
 	ErrReadExpired = errors.New("read receipt expired, replaced or unknown")
 	ErrClosing     = errors.New("room service is shutting down")
 	ErrTurnBudget  = errors.New("member cumulative turn budget exhausted")

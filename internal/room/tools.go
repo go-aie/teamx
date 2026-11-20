@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/go-aie/teamx/internal/app/platforms"
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/registry"
 	"github.com/go-aie/teamx/internal/platform/scion"
@@ -66,7 +67,10 @@ func (m *roomManager) toolDefinitions() []tool.Definition {
 	if m.toolCatalog != nil {
 		return m.toolCatalog
 	}
-	return tool.Catalog()
+	if m.platformCatalog != nil {
+		return m.platformCatalog.Tools(func(name, override string) string { return tool.ResolveExecutable(name, os.Getenv(override)) })
+	}
+	return defaultPlatformTools()
 }
 func (m *roomManager) toolDefinition(name string) (tool.Definition, error) {
 	for _, d := range m.toolDefinitions() {
@@ -175,15 +179,9 @@ func (m *roomManager) checkToolMemberLocked(ctx context.Context, req toolsReques
 }
 func (m *roomManager) selectionsLocked(f toolBindingsFile, caller Caller) ([]toolSelection, error) {
 	selections := []toolSelection{}
-	var platforms *registry.Snapshot
-	for _, b := range f.Bindings {
-		if b.AgentID != caller.ID || b.MembershipID != caller.MembershipID {
-			continue
-		}
-		d, err := m.toolDefinition(b.Tool)
-		if err != nil {
-			continue
-		}
+	var connections *registry.Snapshot
+	for entry := range platforms.BoundTools(f.Bindings, m.toolDefinitions(), caller.ID, caller.MembershipID) {
+		b, d := entry.Binding, entry.Definition
 		s := toolSelection{Definition: d, ToolType: d.Name, PlatformID: b.PlatformID, ActionAuthorization: b.ActionAuthorization, Capabilities: []string{}}
 		s.AgentID, s.MembershipID = b.AgentID, b.MembershipID
 		// Internal action availability describes registered action adapters,
@@ -205,22 +203,22 @@ func (m *roomManager) selectionsLocked(f toolBindingsFile, caller Caller) ([]too
 			}
 		}
 		if b.PlatformID != "" {
-			if platforms == nil {
+			if connections == nil {
 				file, err := m.platforms.Load()
 				if err != nil {
 					return nil, err
 				}
-				platforms = &file
+				connections = &file
 			}
 			s.Status = "unavailable"
-			for _, c := range platforms.Platforms {
-				if c.ID == b.PlatformID && c.Generation == b.PlatformGeneration && c.Provider == d.Provider {
-					public := registry.Public(*platforms, c)
+			for _, c := range connections.Platforms {
+				if entry.MatchesConnection(c) {
+					public := registry.Public(*connections, c)
 					s.Instance, s.Username, s.Status = public.URL, public.Validation.Username, public.Validation.Status
 					s.Name, s.PlatformName = c.ToolEntryID, c.Name
-					m.toolAvailability(*platforms, c, b, d, &s)
+					m.toolAvailability(*connections, c, b, d, &s)
 					if d.Provider == "lark" {
-						if a, _, e := registry.ResolveAccessAccount(*platforms, c); e == nil {
+						if a, _, e := registry.ResolveAccessAccount(*connections, c); e == nil {
 							p := m.larkMemberCapabilitiesLocked(MemberIdentity{RoomIdentity: f.RoomIdentity, AgentID: b.AgentID, MembershipID: b.MembershipID}, "", a, f)
 							s.Availability = &p
 						}

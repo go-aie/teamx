@@ -4,7 +4,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -202,88 +201,6 @@ func TestSnapshotWriterIndependentPreparationAndFileSync(t *testing.T) {
 	}
 }
 
-func TestSnapshotWriterQueuedPathRechecksHealth(t *testing.T) {
-	s := openTestStore(t, t.TempDir())
-	path := filepath.Join(s.dir, "value.json")
-	entered, block, release := snapshotBarrier(t)
-	fault := errors.New("ambiguous replacement")
-	rename := s.ops.rename
-	s.ops.rename = func(from, to string) error {
-		block()
-		if err := rename(from, to); err != nil {
-			return err
-		}
-		return fault
-	}
-	first := startSnapshotSave(s, path, "first")
-	waitSnapshotBoundary(t, entered)
-	second := startSnapshotSave(s, filepath.Join(s.dir, ".", "value.json"), "second")
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		s.pathMu.Lock()
-		queued := s.writePaths[path].refs == 2
-		s.pathMu.Unlock()
-		if queued {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("same-path save did not queue")
-		}
-		time.Sleep(time.Millisecond)
-	}
-	s.healthMu.Lock()
-	admitted := s.writes
-	s.healthMu.Unlock()
-	if admitted != 1 {
-		t.Fatal("same path had more than one admitted writer", admitted)
-	}
-	release()
-	if err := waitSnapshotResult(t, first); !errors.Is(err, fault) || !errors.Is(err, ErrCommitUnknown) {
-		t.Fatal(err)
-	}
-	if err := waitSnapshotResult(t, second); !errors.Is(err, ErrCommitUnknown) || errors.Is(err, fault) {
-		t.Fatal("queued request was not rejected at health admission", err)
-	}
-	var value string
-	if err := readSnapshot(path, &value, 1024); err != nil || value != "first" {
-		t.Fatal("queued write overwrote the ambiguous snapshot", value, err)
-	}
-	s.pathMu.Lock()
-	retained := len(s.writePaths)
-	s.pathMu.Unlock()
-	if retained != 0 {
-		t.Fatal("completed paths retained writer slots", retained)
-	}
-}
-
-func TestSnapshotWriterConcurrentDirectoryInitialization(t *testing.T) {
-	s := openTestStore(t, t.TempDir())
-	var mu sync.Mutex
-	initializations := 0
-	makeDir := s.ops.makeDir
-	s.ops.makeDir = func(dir string) error {
-		mu.Lock()
-		initializations++
-		mu.Unlock()
-		return makeDir(dir)
-	}
-	dir := filepath.Join(s.dir, "same-directory")
-	results := make([]<-chan error, 32)
-	for i := range results {
-		results[i] = startSnapshotSave(s, filepath.Join(dir, strconv.Itoa(i)+".json"), i)
-	}
-	for _, result := range results {
-		if err := waitSnapshotResult(t, result); err != nil {
-			t.Fatal(err)
-		}
-	}
-	mu.Lock()
-	defer mu.Unlock()
-	if initializations != 1 {
-		t.Fatal("concurrent saves did not share directory durability evidence", initializations)
-	}
-}
-
 func TestSnapshotRemovalUsesWriterHealth(t *testing.T) {
 	for _, boundary := range []string{"remove", "directory sync"} {
 		t.Run(boundary, func(t *testing.T) {
@@ -368,9 +285,7 @@ func TestSnapshotWriterCloseDrainsAllAdmittedWrites(t *testing.T) {
 	go func() { closed <- s.Close() }()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		s.healthMu.Lock()
-		closing := s.writerClosing
-		s.healthMu.Unlock()
+		closing := errors.Is(s.check(true), ErrStoreClosed)
 		if closing {
 			break
 		}

@@ -3,11 +3,11 @@ package room
 import (
 	"context"
 	"fmt"
-	"github.com/go-aie/teamx/internal/platform"
 	"reflect"
 	"time"
 
-	"github.com/go-aie/teamx/internal/platform/notification"
+	"github.com/go-aie/teamx/internal/app/platforms"
+	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/registry"
 )
 
@@ -121,11 +121,7 @@ var errPlatformReferenced = fmt.Errorf("%w: connection is referenced; explicitly
 // joining old query processes, but never closes the active model service.
 func (m *roomManager) settlePlatformQueriesLocked(id string) error {
 	pending := m.notifications.PlatformDoneLocked(id)
-	for c := range m.platformCalls {
-		if c.platformID == id {
-			pending = append(pending, c.done)
-		}
-	}
+	pending = append(pending, m.platformCalls.Pending(func(call *platformCall) bool { return call.platformID == id })...)
 	return m.settlePlatformCallsLocked(pending)
 }
 
@@ -140,7 +136,7 @@ func (m *roomManager) settlePlatformCallsLocked(pending []<-chan struct{}) error
 	m.operationDone = done
 	m.mu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-	err := notification.Wait(ctx, pending)
+	err := platforms.WaitCalls(ctx, pending)
 	cancel()
 	if err != nil {
 		err = ErrBusy
