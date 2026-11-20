@@ -30,7 +30,7 @@ func TestInputCatalogAdaptsCommittedSnapshotsWithoutConsumption(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	owner := inputstream.Member{h.id.RoomID, h.id.RoomInstance, h.id.MembershipID}
+	owner := inputstream.Member{RoomID: h.id.RoomID, RoomInstance: h.id.RoomInstance, MembershipID: h.id.MembershipID}
 	catalog, err := inputstream.NewCatalog(owner, 1, []inputstream.Descriptor{inputstream.GitLabCapability().Descriptor}, records, inputstream.Preferences{})
 	if err != nil {
 		t.Fatal(err)

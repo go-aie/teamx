@@ -149,7 +149,7 @@ func (f *streamFixture) Prepare(_ context.Context, q inputstream.ReadRequest) (i
 	records := []inputstream.Record{}
 	var group inputstream.Group
 	for _, r := range f.records {
-		ref, _ := r.Group.StreamRef(inputstream.Member{"fixture-room", "fixture-instance", "fixture-member"})
+		ref, _ := r.Group.StreamRef(inputstream.Member{RoomID: "fixture-room", RoomInstance: "fixture-instance", MembershipID: "fixture-member"})
 		if ref == selection.Ref && r.Pending {
 			if r.Blocked != "" {
 				return inputstream.Delivery{}, errors.New("input_stream_blocked")
@@ -160,7 +160,7 @@ func (f *streamFixture) Prepare(_ context.Context, q inputstream.ReadRequest) (i
 	}
 	if len(records) == 0 {
 		for _, r := range f.records {
-			ref, _ := r.Group.StreamRef(inputstream.Member{"fixture-room", "fixture-instance", "fixture-member"})
+			ref, _ := r.Group.StreamRef(inputstream.Member{RoomID: "fixture-room", RoomInstance: "fixture-instance", MembershipID: "fixture-member"})
 			if ref == selection.Ref {
 				return inputstream.Delivery{}, errors.New("input_stream_empty: no pending entries; use saved history for delivered evidence")
 			}
@@ -341,7 +341,7 @@ func TestInputFixtureFixedReadCursorAndSharedBudget(t *testing.T) {
 		f.records = append(f.records, entry)
 		f.entries[entry.Location] = f.entries[original.Location]
 	}
-	member := inputstream.Member{"fixture-room", "fixture-instance", "fixture-member"}
+	member := inputstream.Member{RoomID: "fixture-room", RoomInstance: "fixture-instance", MembershipID: "fixture-member"}
 	var err error
 	f.catalog, err = inputstream.NewCatalog(member, 131, []inputstream.Descriptor{inputstream.GitLabCapability().Descriptor}, f.records, inputstream.Preferences{})
 	if err != nil {

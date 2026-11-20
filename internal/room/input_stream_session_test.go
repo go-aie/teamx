@@ -22,9 +22,10 @@ func TestUnifiedDSHPreservesReceiptFailureDiagnostic(t *testing.T) {
 	if err := h.store.SaveAgent(AgentSnapshot{Version: formatVersion, MemberIdentity: id, InputStateRef: "input-state.json", TurnNumber: 1, Turn: &TurnRecord{Number: 1, Status: "running", SnapshotSeq: 1}}); err != nil {
 		t.Fatal(err)
 	}
-	svc := &service{unifiedInputs: true, inputAdapters: storageAdapters(), store: h.store, room: h.addr, info: ServiceInfo{RoomIdentity: h.id, ServiceEpoch: "fixture"}}
+	access, _, _ := accessFixture(t)
+	svc := &service{unifiedInputs: true, inputAdapters: storageAdapters(), store: h.store, room: h.addr, info: ServiceInfo{RoomIdentity: h.id, ServiceEpoch: "current-service"}}
 	var session *dshSession
-	backend := dshBackend{store: h.store, inputService: svc, open: func(context.Context, dsh.Options) (dshComponent, error) {
+	backend := dshBackend{store: h.store, access: access, inputService: svc, open: func(context.Context, dsh.Options) (dshComponent, error) {
 		return &adapterComponent{runPrompt: func(ctx context.Context, _ []dsh.ContentBlock) (dsh.TurnResult, error) {
 			args, _ := json.Marshal(map[string]any{"stream_ref": roomStreamRef(id)})
 			body, _, release, err := session.input.readStream(ctx, "receipt-call", args)
@@ -68,13 +69,14 @@ func TestUnifiedDSHDirectoryRecoverySupplyAndContract(t *testing.T) {
 	if err := h.store.SaveAgent(AgentSnapshot{Version: formatVersion, MemberIdentity: id, InputStateRef: "input-state.json", TurnNumber: 1, Turn: &TurnRecord{Number: 1, Status: "running", SnapshotSeq: 1}}); err != nil {
 		t.Fatal(err)
 	}
-	svc := &service{unifiedInputs: true, inputAdapters: storageAdapters(), store: h.store, room: h.addr, info: ServiceInfo{RoomIdentity: h.id, ServiceEpoch: "fixture"}}
+	access, _, _ := accessFixture(t)
+	svc := &service{unifiedInputs: true, inputAdapters: storageAdapters(), store: h.store, room: h.addr, info: ServiceInfo{RoomIdentity: h.id, ServiceEpoch: "current-service"}}
 	// No material pre-injection; the first bounded history remains a read-only
 	// recovery exception, and failed RunPrompt must supply it again.
 	var prompts [][]dsh.ContentBlock
 	failed := true
 	var configured dsh.Options
-	b := dshBackend{store: h.store, inputService: svc, recoveryContext: svc.prepareDSHRecoveryContext, open: func(ctx context.Context, o dsh.Options) (dshComponent, error) {
+	b := dshBackend{store: h.store, access: access, inputService: svc, recoveryContext: svc.prepareDSHRecoveryContext, open: func(ctx context.Context, o dsh.Options) (dshComponent, error) {
 		configured = o
 		return &adapterComponent{runPrompt: func(_ context.Context, p []dsh.ContentBlock) (dsh.TurnResult, error) {
 			prompts = append(prompts, p)
@@ -213,9 +215,10 @@ func TestUnifiedDSHDirectoryCannotBypassDurableDiscoveryBudget(t *testing.T) {
 	if err := h.store.SaveAgent(AgentSnapshot{Version: formatVersion, MemberIdentity: id, InputStateRef: "input-state.json", TurnNumber: 1, Turn: &TurnRecord{Number: 1, Status: "running", SnapshotSeq: 1}}); err != nil {
 		t.Fatal(err)
 	}
-	svc := &service{unifiedInputs: true, inputAdapters: storageAdapters(), store: h.store, room: h.addr, info: ServiceInfo{RoomIdentity: h.id}}
+	access, _, _ := accessFixture(t)
+	svc := &service{unifiedInputs: true, inputAdapters: storageAdapters(), store: h.store, room: h.addr, info: ServiceInfo{RoomIdentity: h.id, ServiceEpoch: "current-service"}}
 	var supplied []dsh.ContentBlock
-	b := dshBackend{store: h.store, inputService: svc, open: func(context.Context, dsh.Options) (dshComponent, error) {
+	b := dshBackend{store: h.store, access: access, inputService: svc, open: func(context.Context, dsh.Options) (dshComponent, error) {
 		return &adapterComponent{runPrompt: func(_ context.Context, p []dsh.ContentBlock) (dsh.TurnResult, error) {
 			supplied = p
 			return dsh.TurnResult{}, nil

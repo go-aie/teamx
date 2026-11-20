@@ -41,7 +41,7 @@ func TestUIUpdatesGlobalVersionsBridgeSubscriptionGap(t *testing.T) {
 	// Global installations advance even while no stream is registered.
 	hub.mark(uiUpdate{Topic: "catalog", Operator: "alice"})
 	hub.mark(uiUpdate{Topic: "platforms"})
-	info := ServiceInfo{RoomIdentity: RoomIdentity{"room", "instance"}, ServiceEpoch: "runtime"}
+	info := ServiceInfo{RoomIdentity: RoomIdentity{RoomID: "room", RoomInstance: "instance"}, ServiceEpoch: "runtime"}
 	hub.mark(roomUIUpdate("messages", info))
 	second := updateSub(t, hub, 1, "alice", info)
 	if second.globalVersions["catalog"] != "1" || second.globalVersions["platforms"] != "1" || second.globalVersions["settings"] != "0" || len(second.globalVersions) != 3 {
@@ -80,7 +80,7 @@ func TestUIUpdatesExpiredGlobalObservationsCannotBeReused(t *testing.T) {
 
 func TestUIUpdatesDeadlinesScopedBoundedAndCancelled(t *testing.T) {
 	hub := newUIUpdateHub()
-	info := ServiceInfo{RoomIdentity: RoomIdentity{"room", "instance"}, ServiceEpoch: "runtime"}
+	info := ServiceInfo{RoomIdentity: RoomIdentity{RoomID: "room", RoomInstance: "instance"}, ServiceEpoch: "runtime"}
 	u := roomUIUpdate("policy", info)
 	u.AgentID, u.MembershipID = "agent", "membership"
 	hub.at(u, time.Now().Add(time.Hour)) // No subscribers: no retained timer.
@@ -137,7 +137,7 @@ func TestUIUpdatesDeadlinesScopedBoundedAndCancelled(t *testing.T) {
 
 func TestUIUpdatesStatusObservationSkipsUnsubscribedRooms(t *testing.T) {
 	hub := newUIUpdateHub()
-	info := ServiceInfo{RoomIdentity: RoomIdentity{"room", "instance"}, ServiceEpoch: "runtime"}
+	info := ServiceInfo{RoomIdentity: RoomIdentity{RoomID: "room", RoomInstance: "instance"}, ServiceEpoch: "runtime"}
 	member := &MemberAgent{Observe: func() { t.Fatal("unsubscribed observer invoked") }, ObserveEnabled: func() bool { return hub.observesRoom(info) }}
 	member.observeStatus()
 	if member.observedStatus != nil {
@@ -160,7 +160,7 @@ func TestUIUpdatesStatusObservationSkipsUnsubscribedRooms(t *testing.T) {
 }
 
 func TestUIUpdatesScopeAndBounds(t *testing.T) {
-	info := ServiceInfo{RoomIdentity: RoomIdentity{"room", "instance"}, ServiceEpoch: "runtime"}
+	info := ServiceInfo{RoomIdentity: RoomIdentity{RoomID: "room", RoomInstance: "instance"}, ServiceEpoch: "runtime"}
 	h := newUIUpdateHub()
 	selected := updateSub(t, h, 1, "alice", info)
 	global := updateSub(t, h, 2, "alice", ServiceInfo{})

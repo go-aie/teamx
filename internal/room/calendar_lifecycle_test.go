@@ -25,7 +25,8 @@ func newCalendarManagedFixture(t *testing.T) *calendarManagedFixture {
 	t.Helper()
 	t.Setenv("USER", humanCaller.ID)
 	f := &calendarManagedFixture{t: t, root: t.TempDir(), entered: make(chan MemberIdentity, 8)}
-	f.manager = f.newManager(nil)
+	access, _, _ := accessFixture(t)
+	f.manager = f.newManager(access)
 	ensureAssistant(t, f.manager)
 	f.rooms = []roomSummary{assistantSummary(t, f.manager), createDirectConversation(t, f.manager, directSelection("calendar-other"))}
 	for _, room := range f.rooms {

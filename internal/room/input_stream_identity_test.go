@@ -12,7 +12,7 @@ import (
 
 func TestInputGroupingUsesSavedNativeIdentity(t *testing.T) {
 	f := newStreamFixture(t, "direct")
-	member := inputstream.Member{"fixture-room", "fixture-instance", "fixture-member"}
+	member := inputstream.Member{RoomID: "fixture-room", RoomInstance: "fixture-instance", MembershipID: "fixture-member"}
 	r := f.records[1]
 	ref, _ := r.Group.StreamRef(member)
 	item := notification.Item{Text: "renamed with same numbers", Source: platform.SourceRef{Provider: "gitlab", Channel: "todos", Instance: "https://GITLAB.example.test/", SubscriptionID: "different-channel", Reference: platform.NotificationReference{Version: 1,
@@ -106,8 +106,8 @@ func TestInputDescriptorsReuseStaticAssembly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	records := []inputstream.Record{{Location: inputstream.Location{"fixture", 1}, Group: g, Pending: true, ReceivedAt: time.Unix(1, 0)}}
-	c, err := inputstream.NewCatalog(inputstream.Member{"r", "i", "m"}, 1, after, records, inputstream.Preferences{})
+	records := []inputstream.Record{{Location: inputstream.Location{Partition: "fixture", Seq: 1}, Group: g, Pending: true, ReceivedAt: time.Unix(1, 0)}}
+	c, err := inputstream.NewCatalog(inputstream.Member{RoomID: "r", RoomInstance: "i", MembershipID: "m"}, 1, after, records, inputstream.Preferences{})
 	if err != nil {
 		t.Fatal(err)
 	}

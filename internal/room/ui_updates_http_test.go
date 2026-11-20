@@ -302,7 +302,7 @@ func TestUIUpdatesHTTPRuntimeAndServiceLifetime(t *testing.T) {
 	svc, m, _, server, cookie, _ := updateHTTPService(t, true)
 	old := svc.info
 	old.ServiceEpoch = "obsolete"
-	for _, info := range []ServiceInfo{old, {RoomIdentity: RoomIdentity{"closed", "instance"}, ServiceEpoch: "runtime"}} {
+	for _, info := range []ServiceInfo{old, {RoomIdentity: RoomIdentity{RoomID: "closed", RoomInstance: "instance"}, ServiceEpoch: "runtime"}} {
 		r := updateRequest(t, server.URL, "GET", updatesURL(m.epoch, info), cookie, nil)
 		if r.StatusCode == 200 {
 			t.Fatal("stale runtime accepted")

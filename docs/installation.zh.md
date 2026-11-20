@@ -149,7 +149,7 @@ Linux `lark-cli 1.0.99` 使用官方加密文件后端和部署账号私有主�
 
 ### 可选择的工作目录
 
-成员可以通过网页选择服务端已有目录，操作见 [Workspace 使用指南](workspace.zh.md#选择已有目录)。在私有 home 的 `config.toml` 中设置允许范围，修改后重启服务：
+成员可以通过网页选择服务端已有目录，操作见 [Workspace 使用指南](https://github.com/go-aie/teamx/blob/main/docs/workspace.zh.md#选择已有目录)。在私有 home 的 `config.toml` 中设置允许范围，修改后重启服务：
 
 ```toml
 [server]
@@ -230,7 +230,7 @@ teamx service restore \
 
 发生转换的 Room 保留 `input-upgrade.json` 和 `input-upgrade/<id>/backup/`，对应清单在 `input-upgrade/<id>/backup-manifest.json`；未完成时另有 staging。日志显示 Room、备份路径和失败原因。若启动中断，排除磁盘空间或权限问题后，用同一配置重新启动新版本继续；不要删除进度或围栏来绕过校验。当前根中缺失或损坏的正文不会被当作空会话。
 
-这些备份只保存转换前输入，不能代替上面的整实例一致备份。转换后已有新消息、消费或 Session 结果时，先停止服务并保存当前增量，核对权威文件再决定修复或恢复；不要混用不同时间的 Room 根、正文段及成员状态，也不要只切回旧 binary。持久协议见[存储架构](storage-architecture.zh.md#自动升级与备份)。
+这些备份只保存转换前输入，不能代替上面的整实例一致备份。转换后已有新消息、消费或 Session 结果时，先停止服务并保存当前增量，核对权威文件再决定修复或恢复；不要混用不同时间的 Room 根、正文段及成员状态，也不要只切回旧 binary。持久协议见[存储架构](https://github.com/go-aie/teamx/blob/main/docs/storage-architecture.zh.md#自动升级与备份)。
 
 ## 发行材料与许可
 
