@@ -1,0 +1,4 @@
+interface:
+  display_name: "GitHub Release Notes"
+  short_description: "Write bilingual versioned release-notes files"
+  default_prompt: "Use $github-release-notes to write bilingual release notes for a version from specific commits in this repo."
