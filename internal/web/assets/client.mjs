@@ -1,3 +1,5 @@
+import { savedAttachments } from "./attachment-drafts.mjs";
+
 export async function request(path, payload, fetcher = globalThis.fetch, timeout = 10000, signal) {
   const controller = new AbortController();
   const abort = () => controller.abort();
@@ -35,7 +37,7 @@ export function sameService(a, b) {
 
 // A draft belongs to a Room instance and operator, across activation epochs.
 // Pending sends retain the exact identity that first submitted the message.
-export function createRoomDrafts(storage, installation = () => "") {
+export function createRoomDrafts(storage, installation = () => "", release = () => {}) {
   const drafts = new Map();
   const owners = new WeakMap();
   const removed = new Set();
@@ -48,6 +50,7 @@ export function createRoomDrafts(storage, installation = () => "") {
       const valid = saved && typeof saved.text === "string" && Number.isSafeInteger(saved.replyTo) && saved.replyTo >= 0;
       const draft = valid ? saved : { text: "", replyTo: 0, replyLabel: "", pending: null, restartRequest: null };
       draft.sending = false; draft.restartStarting = false;
+      draft.attachments = savedAttachments(draft.attachments);
       // Storage is optional, but malformed or foreign requests cannot gain a route.
       if (draft.pending && (draft.pending.info?.room_instance !== info.room_instance || draft.pending.operator !== operator ||
         typeof draft.pending.text !== "string" || !draft.pending.client_message_id || !draft.pending.info?.service_epoch)) draft.pending = null;
@@ -59,7 +62,8 @@ export function createRoomDrafts(storage, installation = () => "") {
     const id = owners.get(draft) || key(info, operator);
     if (removed.has(id)) return;
     const { text, replyTo, replyLabel, replyAuthor, pending, restartRequest, openingSeeded, mentions } = draft;
-    try { storage?.setItem(id, JSON.stringify({ text, replyTo, replyLabel, replyAuthor, pending, restartRequest, openingSeeded, mentions })); }
+    const attachments = savedAttachments(draft.attachments);
+    try { storage?.setItem(id, JSON.stringify({ text, replyTo, replyLabel, replyAuthor, pending, restartRequest, openingSeeded, mentions, attachments })); }
     catch { /* Retain the draft in memory if storage is unavailable or full. */ }
   }
   function seed(info, operator, opening) {
@@ -70,6 +74,8 @@ export function createRoomDrafts(storage, installation = () => "") {
     save(info, operator, draft);
   }
   function remove(info, operator) {
+    const draft = drafts.get(key(info, operator));
+    if (draft) release(draft);
     removed.add(key(info, operator));
     drafts.delete(key(info, operator));
     try { storage?.removeItem(key(info, operator)); } catch { /* Storage is optional. */ }

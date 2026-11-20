@@ -50,6 +50,7 @@ type Author struct {
 }
 
 type RoomMessage struct {
+	Attachments        []RoomAttachment   `json:"attachments,omitempty"`
 	Type               string             `json:"type,omitempty"`
 	Event              *RoomEvent         `json:"event,omitempty"`
 	AuthorMembershipID string             `json:"author_membership_id,omitempty"`
@@ -153,7 +154,7 @@ func (s RoomSnapshot) validate() error {
 		if !validMentions(m.Text, m.Mentions) {
 			return fmt.Errorf("message %d: invalid mentions", i+1)
 		}
-		if !validText(m.Text) || len(m.Text) > maxTextBytes {
+		if !validRoomMessageText(m.Text, len(m.Attachments)) || !validRoomAttachments(m) {
 			return fmt.Errorf("message %d: invalid text", i+1)
 		}
 		if err := validateRoomEvent(m); err != nil {
@@ -164,7 +165,7 @@ func (s RoomSnapshot) validate() error {
 			return fmt.Errorf("message %d: duplicate client ID for author", i+1)
 		}
 		keys[key] = true
-		bytes += len(m.Text)
+		bytes += roomMessageBytes(m)
 	}
 	if bytes > maxHistoryBytes {
 		return fmt.Errorf("history byte capacity exceeded")

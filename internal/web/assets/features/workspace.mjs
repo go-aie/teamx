@@ -197,8 +197,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     notificationsUI.renderGitLabEvents();
     const ws = workspaceView, data = ws?.data, current = data?.workspace, op = data?.operation;
     $("workspace-control").hidden = !state.managed || !ws;
-    $("compose-more").disabled = !state.managed || !ws;
-    if ($("compose-more").disabled) closeWorkspacePicker();
+    if (!state.managed || !ws) closeWorkspacePicker();
     $("open-workspace").disabled = !ws;
     const label = current?.repository ? current.repository.url.split("/").pop().replace(/\.git$/, "")
       : !current || current.root === "workspaces" ? "默认目录" : current.root;
@@ -360,31 +359,23 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
   function syncWorkspacePicker() {
     const open = $("workspace-picker").open;
     $("workspace-trigger").setAttribute("aria-expanded", String(open));
-    $("compose-more").setAttribute("aria-expanded", String(open));
-    $("compose-more").setAttribute("aria-label", open ? "收起工作目录" : "展开工作目录");
     runtime.navigationChanged();
   }
 
   function focusWorkspaceTrigger() {
-    $($("compose").classList.contains("has-message") ? "message-input" : "compose-more").focus();
+    $("workspace-trigger").focus();
   }
 
   async function openWorkspace() {
     if (!workspaceView) return;
     closeWorkspacePicker();
-    workspaceReturn = captureReturnView(env, runtime, { opener: $($("compose").classList.contains("has-message") ? "message-input" : "compose-more") });
+    workspaceReturn = captureReturnView(env, runtime, { opener: $("workspace-trigger") });
     $("workspace-dialog").showModal(); renderWorkspace(); $("close-workspace").focus(); await loadWorkspacePlatforms();
   }
 
   function mount() {
     directories.mount();
     $("member-directory-overview").addEventListener("click", openWorkspace);
-    $("compose-more").addEventListener("click", () => {
-      const atBottom = conversationUI.nearBottom();
-      $("workspace-picker").open = !$("workspace-picker").open;
-      syncWorkspacePicker();
-      if (atBottom) requestAnimationFrame(conversationUI.bottom);
-    });
     $("workspace-picker").addEventListener("toggle", () => {
       syncWorkspacePicker();
     });
@@ -395,14 +386,14 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
       }
     };
     $("workspace-picker").addEventListener("keydown", dismissPicker);
-    $("compose-more").addEventListener("keydown", dismissPicker);
+    $("workspace-trigger").addEventListener("keydown", dismissPicker);
 
     document.addEventListener("click", event => {
-      if ($("workspace-picker").open && event.target !== $("compose-more") && !$("compose-more").contains(event.target) && !$("workspace-picker").contains(event.target)) closeWorkspacePicker();
+      if ($("workspace-picker").open && !$("workspace-picker").contains(event.target)) closeWorkspacePicker();
     });
 
     $("workspace-picker").addEventListener("focusout", event => {
-      if (event.relatedTarget && event.relatedTarget !== $("compose-more") && !$("workspace-picker").contains(event.relatedTarget)) closeWorkspacePicker();
+      if (event.relatedTarget && !$("workspace-picker").contains(event.relatedTarget)) closeWorkspacePicker();
     });
 
     $("open-workspace").addEventListener("click", openWorkspace);

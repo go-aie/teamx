@@ -58,12 +58,13 @@ func (c imageMaterialConfig) limits() (imageMaterialLimits, error) {
 }
 
 type materialNotice struct {
-	request attachmentRequest
-	source  platform.SourceRef
-	author  string
-	created time.Time
-	text    string
-	images  notificationImageReferences
+	request     attachmentRequest
+	source      platform.SourceRef
+	author      string
+	created     time.Time
+	text        string
+	images      notificationImageReferences
+	attachments []RoomAttachment // Immutable local association evidence; never a platform SourceRef.
 }
 
 func (n materialNotice) label() string {
@@ -91,7 +92,11 @@ type notificationImageMaterial struct {
 	access                 *attachmentAccess
 }
 
-type notificationImageKey struct{ provider, instance, subscription, channel, identity string }
+type notificationImageKey struct {
+	kind                                                string
+	room                                                RoomIdentity
+	provider, instance, subscription, channel, identity string
+}
 type notificationImageBudget struct {
 	limits             imageMaterialLimits
 	scanned, attempted int
@@ -139,7 +144,7 @@ func (b *notificationImageBudget) prepare(ctx context.Context, service *material
 		b.scanned++
 		for _, image := range notice.images.Images {
 			item := notificationImageMaterial{seq: notice.request.Seq, positions: image.Positions}
-			key := notificationImageKey{notice.source.Provider, notice.source.Instance, notice.source.SubscriptionID, notice.source.Channel, image.Identity}
+			key := notice.imageKey(image)
 			old, duplicate := b.seen[key]
 			switch {
 			case !image.Supported:
@@ -201,4 +206,12 @@ func (n materialNotice) requestWithPath(path string) attachmentRequest {
 	req := n.request
 	req.Path = path
 	return req
+}
+
+// Both page-local and execution-wide deduplication use the same source scope.
+func (n materialNotice) imageKey(image notificationImage) notificationImageKey {
+	if n.request.Local {
+		return notificationImageKey{kind: "room_attachment", room: n.request.RoomIdentity, identity: image.Identity}
+	}
+	return notificationImageKey{kind: "platform", provider: n.source.Provider, instance: n.source.Instance, subscription: n.source.SubscriptionID, channel: n.source.Channel, identity: image.Identity}
 }

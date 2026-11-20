@@ -1,3 +1,5 @@
+import { imageSummary } from "./attachment-drafts.mjs";
+
 // Display labels never become routing keys.
 export const agentName = member => member?.agent_name || member?.agent_id || member?.id || "";
 export function resolveAgentName(members, id, membership, fallback = id) {
@@ -8,6 +10,7 @@ export function resolveAgentName(members, id, membership, fallback = id) {
 // Plain-text previews use the same bound identities as the message body.
 export function messageDisplayText(message, label) {
   const text = message.text;
+  if (!text.trim() && message.attachments?.length) return imageSummary(message.attachments.length);
   let end = 0, result = "";
   for (const at of message.mentions || []) {
     if (!Number.isSafeInteger(at.start) || !Number.isSafeInteger(at.end) || at.start < end || at.end <= at.start + 1 || at.end > text.length || text[at.start] !== "@") continue;

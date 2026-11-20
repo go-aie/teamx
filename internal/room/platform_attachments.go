@@ -27,7 +27,9 @@ type attachmentRequest struct {
 	SourceRef, Partition  string
 	Seq                   uint64
 	Path                  string
-	Range                 *attachmentRange `json:"-"` // Internal immutable selection; never decoded from HTTP.
+	Local                 bool                `json:"-"` // Room user attachment, never a platform source.
+	Page                  *roomAttachmentPage `json:"-"` // Exact server-selected formal page.
+	Range                 *attachmentRange    `json:"-"` // Internal immutable selection; never decoded from HTTP.
 }
 
 // A model read must carry the actual running member even for a Room message.
@@ -37,9 +39,10 @@ type attachmentReader struct {
 	TurnNumber uint64
 }
 
-// Kept in memory only. Preparation rechecks this evidence under manager.mu before
-// submitting prepared materials; successful download grants no lasting access.
+// Kept in memory only. Preparation rechecks source evidence at the owning
+// manager/Store gate; successful download grants no lasting access.
 type attachmentAccess struct {
+	local   *roomAttachmentMeta
 	request attachmentRequest
 	reader  *attachmentReader
 	source  platform.SourceRef

@@ -163,7 +163,7 @@ func (s *inputSession) prepareRoomPage(ctx context.Context, a inputstream.ReadAt
 		}
 	}
 	entries = s.service.labelMessage(ReadPage{Messages: entries}).Messages
-	notices := roomInputNotices(s.service.info, entries)
+	notices := s.roomPageNotices(entries, a)
 	sources := map[uint64]string{}
 	for _, m := range entries {
 		page.roomEntries = append(page.roomEntries, projectRoomMessage(m))
@@ -246,6 +246,13 @@ func (r *Room) ConfirmInput(ctx actorx.Context, msg ConfirmInputRead, reply acto
 func roomInputNotices(info ServiceInfo, entries []RoomMessage) []materialNotice {
 	out := []materialNotice{}
 	for _, m := range entries {
+		if len(m.Attachments) > 0 {
+			found := notificationImageReferences{References: len(m.Attachments)}
+			for i, a := range m.Attachments {
+				found.Images = append(found.Images, notificationImage{Path: a.ID, Identity: a.ID, Supported: true, Positions: []int{i + 1}})
+			}
+			out = append(out, materialNotice{request: attachmentRequest{ServiceInfo: info, Seq: m.Seq, Local: true}, author: m.Author.ID, created: m.CreatedAt, text: m.Text, images: found, attachments: slices.Clone(m.Attachments)})
+		}
 		if m.Source == nil {
 			continue
 		}
@@ -256,4 +263,16 @@ func roomInputNotices(info ServiceInfo, entries []RoomMessage) []materialNotice 
 		out = append(out, materialNotice{request: attachmentRequest{ServiceInfo: info, Seq: m.Seq}, source: *m.Source, author: m.Author.ID, created: m.CreatedAt, text: m.Text, images: found})
 	}
 	return out
+}
+
+func (s *inputSession) roomPageNotices(entries []RoomMessage, a inputstream.ReadAttempt) []materialNotice {
+	notices := roomInputNotices(s.service.info, entries)
+	for i := range notices {
+		if notices[i].request.Local {
+			page := a
+			page.Entries = slices.Clone(a.Entries)
+			notices[i].request.Page = &roomAttachmentPage{session: s, attempt: page}
+		}
+	}
+	return notices
 }

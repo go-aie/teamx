@@ -160,7 +160,7 @@ func (s *inputSession) readPage(ctx context.Context, q inputstream.ReadRequest, 
 		if e != nil {
 			return fail(e)
 		}
-		notices = roomInputNotices(s.service.info, entries)
+		notices = s.roomPageNotices(entries, a)
 	}
 	if err := s.checkMaterials(ctx, notices, nil); err != nil {
 		return fail(err)

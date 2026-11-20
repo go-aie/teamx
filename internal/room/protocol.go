@@ -61,6 +61,7 @@ type MemberList struct {
 }
 
 type PostMessage struct {
+	Attachments   []RoomAttachmentInput
 	Mentions      []MessageMention
 	inferMentions bool
 	RoomIdentity

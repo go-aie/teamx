@@ -1,3 +1,4 @@
+import { createAttachments } from "./attachments.mjs";
 import { agentName, resolveAgentName, messageDisplayText } from "../agent-names.mjs";
 import { randomUUID } from "../random-id.mjs";
 import { readPages as collectPages, createRoomDrafts, mentionRanges, compactViewport } from "../client.mjs";
@@ -14,7 +15,8 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
   const { state, $, notice, rpc, currentView, refresh, discussionBusy, reconcileChildren, storage, confirmAction } = runtime;
 
   let historyTask = null, composing = false, compositionEnded = -Infinity;
-  const drafts = createRoomDrafts(storage, () => state.installationID);
+  const drafts = createRoomDrafts(storage, () => state.installationID, draft => attachmentsUI.release(draft));
+  const attachmentsUI = createAttachments({env, runtime, changed:composerState, persist:(info, operator, draft) => drafts.save(info, operator, draft)});
   const sendIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   sendIcon.setAttribute("viewBox", "0 0 24 24");
   sendIcon.setAttribute("aria-hidden", "true");
@@ -383,6 +385,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
     const text = el.querySelector(".message-text");
     const ranges = mentionRanges(message.text, operatorNames());
     renderMessageBody(text, message.text, state.operator, messageOptions(message));
+    attachmentsUI.renderMessage(text, message);
     el.classList.toggle("mentioned", !humanRead.seen(message.seq) && ranges.length > 0 && !(message.author.kind === "human" && message.author.id === state.operator));
     const time = el.querySelector("time");
     time.textContent = settingsUI.formatDate(message.created_at, {hour:"2-digit",minute:"2-digit"});
@@ -707,6 +710,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
 
   function showDraft() {
     mentionPicker.close();
+    attachmentsUI.activate();
     $("message-input").value = state.draft.text || "";
     mentionPicker.renderText();
     renderReply();
@@ -786,19 +790,21 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
     $("message-input").disabled = !state.info;
     $("message-input").readOnly = !!state.draft.pending || discussionBusy();
     mentionPicker.refresh();
-    $("send").disabled = !state.connected || state.draft.sending || discussionBusy() || (!state.draft.pending && !$("message-input").value.trim());
+    const emptyDraft = !$("message-input").value.trim() && !state.draft.attachments?.length;
+    $("send").disabled = !state.connected || state.draft.sending || discussionBusy() ||
+      !state.draft.pending && (emptyDraft || !!attachmentsUI.blockReason());
     $("cancel-reply").disabled=!!state.draft.pending;
     $("discard-send").hidden = !state.draft.pending || state.draft.sending;
     $("restart-discussion").disabled = !state.connected || workspaceUI.workspaceBusy() || roomsUI.managementBusy() || state.draft.restartStarting || state.restart?.status === "running" || !!state.draft.pending || state.draft.sending;
     $("restart-discussion").textContent = state.draft.restartStarting || state.restart?.status === "running" ? "重新开始中…" : state.draft.restartRequest ? "核对并重试" : "重新开始";
     $("toggle-add").disabled = !state.connected || discussionBusy();
     $("add-member").disabled = !state.connected || !state.profiles.length || discussionBusy();
-    renderRestart(); workspaceUI.renderWorkspace(); syncComposerLayout();
+    renderRestart(); workspaceUI.renderWorkspace(); attachmentsUI.render(); syncComposerLayout();
   }
 
   function syncComposerLayout() {
     const input = $("message-input");
-    const hasMessage = !!input.value.trim() || !!state.draft.pending || !!state.draft.sending;
+    const hasMessage = !!input.value.trim() || !!state.draft.attachments?.length || !!state.draft.pending || !!state.draft.sending;
     $("compose").classList.toggle("has-message", hasMessage);
     const sendLabel = state.draft.sending ? "发送中…" : state.draft.pending ? "重试发送" : "发送";
     $("send").setAttribute("aria-label", sendLabel);
@@ -807,7 +813,6 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
     sendIconPath.setAttribute("d", state.draft.sending ? "M20 12a8 8 0 1 1-5-7.4"
       : state.draft.pending ? "M20 11a8 8 0 1 0-2.3 6.7M20 4v7h-7" : "M12 19V5M5 12l7-7 7 7");
     $("send").replaceChildren(sendIcon);
-    if (hasMessage) workspaceUI.closeWorkspacePicker();
     const atBottom = nearBottom(), previousHeight = input.getBoundingClientRect().height;
     input.rows = 1;
     input.style.setProperty("height", "auto");
@@ -869,19 +874,19 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
       event.preventDefault();
       if (composing || state.draft.sending || discussionBusy() || !state.connected) return;
       const text = $("message-input").value;
-      if (!state.draft.pending && !text.trim()) return;
+      if (!state.draft.pending && ((!text.trim() && !state.draft.attachments?.length) || attachmentsUI.blockReason())) return;
       if (!state.draft.pending && new TextEncoder().encode(text).length > 16384) {
         notice("send-error", "消息过长，请控制在 16 KiB 内。"); return;
       }
       const info = state.info, operator = state.operator, draft = state.draft, version = runtime.viewVersion;
-      draft.pending ||= { text, mentions:mentionPicker.boundMentions(), client_message_id: randomUUID(), reply_to: draft.replyTo, info, operator };
+      draft.pending ||= { text, attachments:(draft.attachments || []).map(({id}) => ({id})), mentions:mentionPicker.boundMentions(), client_message_id: randomUUID(), reply_to: draft.replyTo, info:{...info}, operator };
       saveDraft(); draft.sending = true;
       composerState(); notice("send-error", "");
       try {
         const pending = draft.pending;
         const receipt = await rpc("/v1/send", { text: pending.text, client_message_id: pending.client_message_id,
-          reply_to: pending.reply_to, mentions:pending.mentions || [], caller: { kind: "human", id: pending.operator } }, pending.info);
-        draft.pending = null; draft.text = ""; draft.mentions=[]; draft.replyTo = 0; draft.replyLabel = ""; draft.replyAuthor = "";
+          reply_to: pending.reply_to, ...(pending.attachments?.length ? {attachments:pending.attachments} : {}), mentions:pending.mentions || [], caller: { kind: "human", id: pending.operator } }, pending.info);
+        draft.pending = null; attachmentsUI.clear(draft); draft.text = ""; draft.mentions=[]; draft.replyTo = 0; draft.replyLabel = ""; draft.replyAuthor = "";
         drafts.save(info, operator, draft);
         if (state.draft === draft) showDraft();
         if (currentView(version)) {
@@ -903,6 +908,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
       notice("send-error", "已放弃重试。原消息可能已提交，请先查看消息记录，再决定是否重新发送。");
     });
 
+    attachmentsUI.mount();
     mentionPicker.mount();
     if (typeof ResizeObserver !== "undefined") new ResizeObserver(mentionPicker.renderText).observe($("message-input"));
     $("message-input").addEventListener("input", () => { saveDraft(); composerState(); });
@@ -981,6 +987,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
     leaveConversation,
     messagesRead,
     humanReadSummary: humanRead.summary,
+    closeAttachmentMenu:() => attachmentsUI.closeMenu(true),
     drafts,
     showDraft,
     readPages,

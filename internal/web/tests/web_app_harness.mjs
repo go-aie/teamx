@@ -19,6 +19,7 @@ class Element {
       toggle: (name, on) => on ? classes.add(name) : classes.delete(name) };
     this.parts = new Map();
   }
+  contains(target) { return target === this || this.children.some(child => child.contains?.(target)); }
   get options() { return this.children; }
   get firstChild() { return this.children[0] || null; }
   append(...children) { for(const child of children.flatMap(child => child.tag === "fragment" ? [...child.children] : [child])) { child.remove();this.children.push(child);child.parentElement=this; } }

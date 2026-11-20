@@ -104,7 +104,7 @@
   }
   .compose textarea,.compose-mirror { font-size:16px; }
   .compose textarea { max-height:min(144px,24dvh); }
-  .compose .workspace-control { position:static; grid-column:1 / -1; grid-row:3; width:auto; max-width:none; }
+  .compose .workspace-control { position:static; grid-column:1 / -1; grid-row:4; width:auto; max-width:none; }
   .compose .workspace-popover {
     max-height:min(220px,calc(var(--app-height,100dvh) * .3));
     margin-top:6px; padding:12px 4px 4px; border:0; border-top:1px solid var(--line);

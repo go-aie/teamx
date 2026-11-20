@@ -234,3 +234,16 @@ func TestRoomsCatalogDuringSettingsCommit(t *testing.T) {
 		t.Fatal(w.Code, w.Body.String())
 	}
 }
+
+func TestRoomImageMessagePreview(t *testing.T) {
+	for _, tc := range []struct {
+		text   string
+		images int
+		want   string
+	}{{"", 1, "[图片]"}, {"  \n", 2, "[图片 ×2]"}, {"说明", 2, "说明"}, {"旧文字", 0, "旧文字"}} {
+		message := RoomMessage{Text: tc.text, Attachments: make([]RoomAttachment, tc.images)}
+		if got := summarizeRoomMessage(message).Text; got != tc.want || message.Text != tc.text {
+			t.Fatalf("summary = %q, message = %q; want %q", got, message.Text, tc.want)
+		}
+	}
+}

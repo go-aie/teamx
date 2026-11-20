@@ -39,7 +39,10 @@ const (
 // these blocking methods from controlled tasks, never from their state loop.
 // Agent and Session files have separate owners; they are not a transaction.
 type Store struct {
-	sharedInput          *sharedInputStorage // guarded by inputOwners.mu
+	roomCommit           sync.Mutex             // serializes native publications while attachment verification releases mu
+	attachmentLife       sync.RWMutex           // joins accepted file operations before Close releases the directory
+	attachments          *roomAttachmentStorage // guarded by mu
+	sharedInput          *sharedInputStorage    // guarded by inputOwners.mu
 	sharedHandle         atomic.Pointer[sharedInputStorage]
 	inputHandles         sync.Map
 	inputOwners          inputOwners
@@ -131,7 +134,7 @@ func openStore(dir, roomID string, upgrade *inputUpgradeOptions) (*Store, error)
 		// Orphaned private state is evidence of an existing Room, not a new
 		// directory that may silently be initialized with an empty history.
 		err = nil
-		for _, name := range []string{"agents", "inboxes", "human-read.json", "room-input", inputUpgradeDirectory, inputUpgradeJournal} {
+		for _, name := range []string{"agents", "inboxes", "human-read.json", "room-input", "attachments", inputUpgradeDirectory, inputUpgradeJournal} {
 			if _, statErr := os.Stat(filepath.Join(s.dir, name)); !errors.Is(statErr, os.ErrNotExist) {
 				err = fmt.Errorf("%w: missing room.json with existing or inaccessible %s", ErrInvalid, name)
 				break
@@ -141,6 +144,17 @@ func openStore(dir, roomID string, upgrade *inputUpgradeOptions) (*Store, error)
 	if err != nil {
 		_ = s.Close()
 		return nil, err
+	}
+	if room.RoomInstance != "" {
+		// A damaged old image must not prevent Room recovery or unrelated writes.
+		// Unsafe or inaccessible attachment storage stays unavailable to new uploads.
+		if _, statErr := os.Lstat(s.attachmentDir()); !errors.Is(statErr, os.ErrNotExist) {
+			if s.checkAttachmentDirs() == nil && s.ops.syncDir(filepath.Join(s.attachmentDir(), "objects")) == nil {
+				_ = s.collectAttachments()
+			} else {
+				s.attachmentStorage().recoveryUncertain = true
+			}
+		}
 	}
 	return s, nil
 }
@@ -153,6 +167,8 @@ func (s *Store) Close() error {
 	if err := s.closeInputOwners(context.Background()); err != nil {
 		return err
 	}
+	s.attachmentLife.Lock()
+	defer s.attachmentLife.Unlock()
 	if err := s.closeWriter(context.Background()); err != nil {
 		return err
 	}
@@ -195,6 +211,7 @@ func (s *Store) loadRoom() (RoomSnapshot, error) {
 		return RoomSnapshot{}, fmt.Errorf("%w: room.json", ErrIdentity)
 	}
 	s.indexRoomHistory(v)
+	s.indexRoomAttachments(v)
 	return v, nil
 }
 
@@ -220,6 +237,10 @@ func readPublishedRoom(dir string, id RoomIdentity) (RoomSnapshot, error) {
 }
 
 func (s *Store) SaveRoom(v RoomSnapshot) error {
+	s.attachmentLife.RLock()
+	defer s.attachmentLife.RUnlock()
+	s.roomCommit.Lock()
+	defer s.roomCommit.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.check(true); err != nil {
@@ -230,6 +251,9 @@ func (s *Store) SaveRoom(v RoomSnapshot) error {
 	}
 	if v.RoomID != s.roomID || (s.instance != "" && v.RoomInstance != s.instance) {
 		return ErrIdentity
+	}
+	if err := s.verifyNewAttachmentsLocked(v); err != nil {
+		return err
 	}
 	disk := v
 	if v.InputLog != nil {
@@ -249,6 +273,12 @@ func (s *Store) SaveRoom(v RoomSnapshot) error {
 	indexed := v
 	indexed.InputLog = disk.InputLog
 	s.indexRoomHistory(indexed)
+	cleared := v.ClearedThrough > s.attachmentStorage().clearedThrough
+	s.indexRoomAttachments(indexed)
+	// Collection only follows a confirmed native publication.
+	if cleared {
+		_ = s.collectAttachments()
+	}
 	if disk.InputLog != nil {
 		_ = s.cleanRoomLog(*disk.InputLog)
 	}

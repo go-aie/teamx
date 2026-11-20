@@ -340,6 +340,7 @@
 .rooms-collapsed .room-resizer { display:none; }
 .workspace.members-collapsed { --members-width:0px; }
 .members-collapsed .member-rail { visibility:hidden; }
+.members-collapsed .member-resizer { display:none; }
 .rooms-collapsed .room-rail .brand {
   max-width:0;
   opacity:0;

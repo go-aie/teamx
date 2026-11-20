@@ -486,7 +486,17 @@ func (a *serverAccess) wrap(next http.Handler) http.Handler {
 			accessError(w, 403, "forbidden")
 			return
 		}
-		if r.Method == "POST" && strings.HasPrefix(r.URL.Path, "/v1/") && r.URL.Path != "/v1/setup/model" {
+		if r.Method == "POST" && r.URL.Path == "/v1/attachments/upload" {
+			// Uploads carry their human identity in the query and stream multipart
+			// bytes directly to the Room handler. Never feed them to the JSON
+			// envelope inspector below. The Room revalidates the full service
+			// identity, operator and attachment ID before accepting file bytes.
+			callers := r.URL.Query()["caller_id"]
+			if binding != nil || len(callers) != 1 || callers[0] != a.operator {
+				accessError(w, 403, "identity_mismatch")
+				return
+			}
+		} else if r.Method == "POST" && strings.HasPrefix(r.URL.Path, "/v1/") && r.URL.Path != "/v1/setup/model" {
 			// Inspect the existing identity envelope, then replay the exact bytes to the
 			// original handler. tools/run continues streaming stdin after its JSON header.
 			if r.URL.Path == "/v1/tools/run" {

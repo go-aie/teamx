@@ -48,14 +48,15 @@ type inputNotificationBody struct {
 	Evidence          string                    `json:"evidence_note,omitempty"`
 }
 type inputRoomBody struct {
-	Seq     uint64           `json:"seq"`
-	Author  Author           `json:"author"`
-	Name    string           `json:"agent_name,omitempty"`
-	Text    string           `json:"text"`
-	Created time.Time        `json:"created_at"`
-	Reply   uint64           `json:"reply_to,omitempty"`
-	Event   *agentRoomEvent  `json:"event,omitempty"`
-	Source  *agentRoomSource `json:"external_source,omitempty"`
+	Attachments []agentRoomAttachment `json:"attachments,omitempty"`
+	Seq         uint64                `json:"seq"`
+	Author      Author                `json:"author"`
+	Name        string                `json:"agent_name,omitempty"`
+	Text        string                `json:"text"`
+	Created     time.Time             `json:"created_at"`
+	Reply       uint64                `json:"reply_to,omitempty"`
+	Event       *agentRoomEvent       `json:"event,omitempty"`
+	Source      *agentRoomSource      `json:"external_source,omitempty"`
 }
 type inputBusinessFollowup struct {
 	Ref          string                       `json:"unit_ref,omitempty"`
@@ -144,7 +145,7 @@ func projectInputBody(v inputPageContent) inputBody {
 	}
 	if v.room {
 		for _, m := range v.roomEntries {
-			out.Entries = append(out.Entries, inputRoomBody{Seq: m.Seq, Author: m.Author, Name: m.AgentName, Text: m.Text, Created: m.CreatedAt, Reply: m.ReplyTo, Event: m.Event, Source: m.Source})
+			out.Entries = append(out.Entries, inputRoomBody{Attachments: m.Attachments, Seq: m.Seq, Author: m.Author, Name: m.AgentName, Text: m.Text, Created: m.CreatedAt, Reply: m.ReplyTo, Event: m.Event, Source: m.Source})
 		}
 	} else {
 		for _, e := range v.notifications {

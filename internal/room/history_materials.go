@@ -39,11 +39,12 @@ func (p *historyPage) result() *mcp.CallToolResult {
 // record selected by History, instead of an Inbox formal page. It is never an
 // Agent argument, a durable authorization or an alternative account authority.
 type attachmentRange struct {
-	session   *inputSession
-	stream    historyStream
-	location  inputstream.Location
-	sourceRef platform.SourceRef
-	text      string
+	session     *inputSession
+	stream      historyStream
+	location    inputstream.Location
+	sourceRef   platform.SourceRef
+	text        string
+	attachments []RoomAttachment
 }
 
 func (a *attachmentRange) checkLocked(req attachmentRequest, reader *attachmentReader) error {
@@ -118,7 +119,7 @@ func (s *inputSession) historyReadMaterials(ctx context.Context, h *historyQueri
 		}
 		for j := range notices {
 			n := &notices[j]
-			n.request.Range = &attachmentRange{session: s, stream: v, location: l, sourceRef: n.source, text: n.text}
+			n.request.Range = &attachmentRange{session: s, stream: v, location: l, sourceRef: n.source, text: n.text, attachments: slices.Clone(n.attachments)}
 			n.request.SourceRef = ""
 			if v.provider != "room" {
 				n.request.Partition = l.Partition

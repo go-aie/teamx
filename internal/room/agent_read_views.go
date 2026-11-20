@@ -374,20 +374,38 @@ func projectFollowupPage(p followupPage) agentFollowupPage {
 	return v
 }
 
+type agentRoomAttachment struct {
+	ID       string `json:"id"`
+	Kind     string `json:"kind"`
+	Name     string `json:"name"`
+	MIMEType string `json:"mime_type"`
+	Size     int64  `json:"size"`
+	Width    int    `json:"width"`
+	Height   int    `json:"height"`
+}
+
+func projectRoomAttachments(attachments []RoomAttachment) []agentRoomAttachment {
+	var out []agentRoomAttachment
+	for _, a := range attachments {
+		out = append(out, agentRoomAttachment{a.ID, a.Kind, a.Name, a.MIMEType, a.Size, a.Width, a.Height})
+	}
+	return out
+}
+
 // Room storage revision and confirmation protocol are not decision inputs.
-// Keep the fixed snapshot and all coverage/clearing markers and message bodies.
 // Mention bindings stay internal; Agent text uses the current display names.
 type agentRoomMessage struct {
-	Type            string           `json:"type,omitempty"`
-	Event           *agentRoomEvent  `json:"event,omitempty"`
-	Seq             uint64           `json:"seq"`
-	ClientMessageID string           `json:"client_message_id,omitempty"`
-	Author          Author           `json:"author"`
-	AgentName       string           `json:"agent_name,omitempty"`
-	Text            string           `json:"text"`
-	Source          *agentRoomSource `json:"source,omitempty"`
-	ReplyTo         uint64           `json:"reply_to,omitempty"`
-	CreatedAt       time.Time        `json:"created_at"`
+	Attachments     []agentRoomAttachment `json:"attachments,omitempty"`
+	Type            string                `json:"type,omitempty"`
+	Event           *agentRoomEvent       `json:"event,omitempty"`
+	Seq             uint64                `json:"seq"`
+	ClientMessageID string                `json:"client_message_id,omitempty"`
+	Author          Author                `json:"author"`
+	AgentName       string                `json:"agent_name,omitempty"`
+	Text            string                `json:"text"`
+	Source          *agentRoomSource      `json:"source,omitempty"`
+	ReplyTo         uint64                `json:"reply_to,omitempty"`
+	CreatedAt       time.Time             `json:"created_at"`
 }
 
 func projectRoomMessage(m RoomMessage) agentRoomMessage {
@@ -395,7 +413,7 @@ func projectRoomMessage(m RoomMessage) agentRoomMessage {
 		m.ClientMessageID = ""
 	}
 	m.Text = calendarEventText(m.Text, m.Event)
-	return agentRoomMessage{Type: m.Type, Event: projectRoomEvent(m.Event), Seq: m.Seq, ClientMessageID: m.ClientMessageID, Author: m.Author, AgentName: m.AgentName,
+	return agentRoomMessage{Attachments: projectRoomAttachments(m.Attachments), Type: m.Type, Event: projectRoomEvent(m.Event), Seq: m.Seq, ClientMessageID: m.ClientMessageID, Author: m.Author, AgentName: m.AgentName,
 		Text: renderMentionText(m, func(at MessageMention) string {
 			if at.AgentName != "" {
 				return at.AgentName

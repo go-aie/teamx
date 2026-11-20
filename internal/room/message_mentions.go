@@ -109,6 +109,7 @@ func (s *service) labelMessage(page ReadPage) ReadPage {
 			message.AgentName = s.agentName(message.Author.ID, message.AuthorMembershipID)
 		}
 		message.Mentions = slices.Clone(message.Mentions)
+		message.Attachments = slices.Clone(message.Attachments)
 		for j := range message.Mentions {
 			mention := &message.Mentions[j]
 			if mention.Kind == "agent" {

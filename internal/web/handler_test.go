@@ -36,7 +36,8 @@ func TestAssets(t *testing.T) {
 		response := httptest.NewRecorder()
 		if !Serve(response, httptest.NewRequest(http.MethodGet, asset, nil)) ||
 			response.Code != http.StatusOK || response.Body.Len() == 0 ||
-			!strings.Contains(response.Header().Get("Content-Type"), contentType) || response.Header().Get("Content-Security-Policy") == "" {
+			!strings.Contains(response.Header().Get("Content-Type"), contentType) || !strings.Contains(response.Header().Get("Content-Security-Policy"), "img-src 'self' blob:;") ||
+			!strings.Contains(response.Header().Get("Content-Security-Policy"), "script-src 'self';") {
 			t.Fatalf("asset %s: %d, %v", asset, response.Code, response.Header())
 		}
 		want, err := files.ReadFile(name)

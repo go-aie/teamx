@@ -4,6 +4,10 @@
 
 | 记录 | 范围 |
 | --- | --- |
+| [Room 图片附件完整链路验收](room-image-attachments-acceptance.zh.md) | 阶段 4 真实 HTTP／存储、Chromium、重启、原请求重试和真实 DSH 读图／History；实体手机待用户验证 |
+| [Room 图片附件客户端](room-image-attachments-client.zh.md) | 阶段 3 选图／粘贴、草稿恢复、消息预览及模拟 HTTP 浏览器验证；后续真实验收见上条 |
+| [Room 图片附件读取](room-image-attachments-reading.zh.md) | 阶段 2 正式读取／History、本地 resolver、来源去重与交付保护；前端见上条，完整真实验收留阶段 4 |
+| [Room 图片附件存储](room-image-attachments-storage.zh.md) | 阶段 1 对象持久化、HTTP、消息合同与回收；Agent 适配见上条 |
 | [测试健康度与核心回归提速](test-suite-health.zh.md) | T1–T4 修复、提速、规则下沉与浏览器分层证据；核心全仓 7 分 33 秒通过、预算未达，完整集成及全仓 race 待验 |
 | [后端生命周期依赖收敛](architecture/backend-lifecycle.zh.md) | R5b.1：原包接通执行、结清、轮换、恢复、检查点与模型应用合同；真实 DSH 手动／自动轮换与正常恢复已验，成员状态机迁移及 Codex 接入另行实施 |
 | [平台在途调用登记与结清](architecture/platform-calls.zh.md) | R6a.1：全部调用族共用登记、取消、完成回执与等待；准入、绑定变更及配置仍在原 manager 门槛内 |

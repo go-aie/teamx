@@ -80,6 +80,13 @@ type roomMessagePreview struct {
 
 func summarizeRoomMessage(message RoomMessage) *roomMessagePreview {
 	text := []rune(strings.Join(strings.Fields(message.Text), " "))
+	if len(text) == 0 && len(message.Attachments) > 0 {
+		if len(message.Attachments) == 1 {
+			text = []rune("[图片]")
+		} else {
+			text = []rune(fmt.Sprintf("[图片 ×%d]", len(message.Attachments)))
+		}
+	}
 	if len(text) > 160 {
 		text = append(text[:160], '…')
 	}
@@ -750,6 +757,10 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/v1/member/input-attention" {
 		m.serveInputAttention(w, r)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/v1/attachments/") {
+		m.serveRuntime(w, r)
 		return
 	}
 	if strings.HasPrefix(r.URL.Path, "/v1/platforms") {

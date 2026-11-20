@@ -141,7 +141,7 @@ test("IME confirmation including compositionend before Enter never sends", async
   assert.equal(api.calls.filter(c => c.path === "/v1/send").length, 1);
 });
 
-for (const width of [1440,390]) test(`compact composer switches between tools and sending and retains drafts at ${width}px`, async () => {
+for (const width of [1440,390]) test(`composer keeps image menu and workspace independent while retaining drafts at ${width}px`, async () => {
   const api = fixture(), ui = await launch(api);
   ui.window.innerWidth = width; await ui.window.emit("resize");
   const input = ui.el("message-input"), picker = ui.el("workspace-picker"), more = ui.el("compose-more");
@@ -149,21 +149,23 @@ for (const width of [1440,390]) test(`compact composer switches between tools an
   assert.equal(more.disabled, false);
   assert.equal(ui.el("compose").classList.contains("has-message"), false);
   await more.emit("click");
-  assert.equal(picker.open, true);
+  assert.equal(ui.el("attachment-menu").hidden, false);
+  assert.equal(picker.open, false);
   assert.equal(more.getAttribute("aria-expanded"), "true");
   await more.emit("click");
-  assert.equal(picker.open, false);
+  assert.equal(ui.el("attachment-menu").hidden, true);
   await more.emit("click"); await more.emit("keydown", {key:"Escape"});
   assert.equal(picker.open, false);
   assert.equal(ui.document.activeElement, more);
-  await more.emit("click"); await ui.el("open-workspace").emit("click");
+  picker.open = true; await picker.emit("toggle");
+  await ui.el("open-workspace").emit("click");
   assert.equal(picker.open, false);
   assert.equal(ui.el("workspace-dialog").open, true);
   await ui.el("close-workspace").emit("click");
-  assert.equal(ui.document.activeElement, more);
+  assert.equal(ui.document.activeElement, ui.el("workspace-trigger"));
   await more.emit("click"); await ui.draft("手机草稿\n第二行");
   assert.equal(picker.open, false);
-  assert.equal(more.getAttribute("aria-expanded"), "false");
+  assert.equal(more.disabled, false);
   assert.equal(ui.el("compose").classList.contains("has-message"), true);
   assert.equal(ui.el("send").getAttribute("aria-label"), "发送");
   assert.equal(ui.el("send").children[0].tag, "svg");

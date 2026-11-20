@@ -33,7 +33,8 @@ type apiRequest struct {
 	CalendarExecution    string          `json:"calendar_execution,omitempty"`
 	CalendarBusinessView bool            `json:"calendar_business_view,omitempty"`
 
-	Mentions         []MessageMention `json:"mentions,omitempty"`
+	Mentions         []MessageMention      `json:"mentions,omitempty"`
+	Attachments      []RoomAttachmentInput `json:"attachments,omitempty"`
 	automatic        bool
 	recovering       bool
 	automaticInbox   *InboxStatus
@@ -232,6 +233,7 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 		}
 	}()
 	store.notificationAdapters = config.inputCapabilities
+	store.attachmentStorage().limits = attachmentLimits(config.imageMaterials)
 	state, err := store.LoadRoom()
 	if errors.Is(err, os.ErrNotExist) {
 		instance, idErr := newOpaqueID()
@@ -313,6 +315,7 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 		models:               config.models, modelTargets: config.modelTargets,
 		uiProfiles: config.uiProfiles,
 	}
+	s.materialAttachments = s.roomMaterialAttachments(nil)
 	if s.uiProfiles == nil {
 		s.uiProfiles = profileNames(s.dshProfiles)
 	}
@@ -849,6 +852,10 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, ErrBusy)
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, "/v1/attachments/") {
+		s.serveRoomAttachments(w, r)
+		return
+	}
 	if r.URL.Path == "/v1/inputs" {
 		s.serveInputCLI(w, r)
 		return
@@ -860,8 +867,9 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(struct {
 			ServiceInfo
 			settingsView
-			IsDirect bool `json:"is_direct"`
-		}{s.info, s.settings.snapshot().settingsView, s.isDirect})
+			IsDirect    bool                 `json:"is_direct"`
+			Attachments roomAttachmentLimits `json:"attachments"`
+		}{s.info, s.settings.snapshot().settingsView, s.isDirect, attachmentLimits(s.imageMaterials)})
 		return
 	}
 	if r.URL.Path == "/v1/settings" || r.URL.Path == "/v1/settings/save" {
@@ -991,6 +999,10 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			result, err = s.rotateSession(r.Context(), req)
 		}
 	case "/v1/send":
+		if len(req.Attachments) > 0 && !s.attachmentHTTPIdentity(r, req.ServiceInfo, req.Caller) {
+			err = ErrIdentity
+			break
+		}
 		inferred := len(req.Mentions) == 0
 		if inferred {
 			req.Mentions, err = s.inferMessageMentions(r.Context(), req.Text)
@@ -999,7 +1011,7 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		result, err = callRoomWrite[PostReceipt](r.Context(), s.room, PostMessage{RoomIdentity: req.RoomIdentity, Caller: req.Caller,
-			ClientMessageID: req.ClientMessageID, Text: req.Text, ReplyTo: req.ReplyTo, Mentions: req.Mentions, inferMentions: inferred})
+			ClientMessageID: req.ClientMessageID, Text: req.Text, ReplyTo: req.ReplyTo, Mentions: req.Mentions, Attachments: req.Attachments, inferMentions: inferred})
 	case "/v1/read":
 		if s.unifiedInputs && req.Caller.Kind == "agent" && req.Mode == ReadUnread {
 			err = ErrVersion

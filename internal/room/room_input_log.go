@@ -48,6 +48,7 @@ func cloneRoomLogMessages(messages []RoomMessage) []RoomMessage {
 	for i := range out {
 		m := &out[i]
 		m.Mentions = slices.Clone(m.Mentions)
+		m.Attachments = slices.Clone(m.Attachments)
 		if m.Source != nil {
 			source := *m.Source
 			m.Source = &source

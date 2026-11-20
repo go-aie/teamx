@@ -40,14 +40,15 @@ type Room struct {
 	observeMembers  func()
 	observeMessages func() // optional signal after installation; no query or error result
 
-	state      RoomSnapshot
-	save       func(RoomSnapshot) error
-	targets    map[string]actorx.Addr
-	pages      map[string]pendingRead
-	confirmed  map[string]ReadConfirmation
-	confirming string // Pins this member's receipt while its cursor is committing.
-	committing bool
-	writeErr   error
+	state              RoomSnapshot
+	save               func(RoomSnapshot) error
+	resolveAttachments func(string, []RoomAttachmentInput) ([]RoomAttachment, func(), error)
+	targets            map[string]actorx.Addr
+	pages              map[string]pendingRead
+	confirmed          map[string]ReadConfirmation
+	confirming         string // Pins this member's receipt while its cursor is committing.
+	committing         bool
+	writeErr           error
 
 	now func() time.Time
 
@@ -74,7 +75,7 @@ func NewRoom(store *Store) (*Room, error) {
 		confirmed[id] = proof.Confirmation
 	}
 	return &Room{
-		state: state, save: store.SaveRoom, now: time.Now,
+		state: state, save: store.SaveRoom, now: time.Now, resolveAttachments: store.prepareRoomAttachments,
 		targets: make(map[string]actorx.Addr), pages: make(map[string]pendingRead),
 		confirmed: confirmed,
 	}, nil
@@ -213,8 +214,11 @@ func (r *Room) Post(ctx actorx.Context, msg PostMessage, reply actorx.Reply[Post
 	if !validMentions(msg.Text, msg.Mentions) {
 		return ErrRequest
 	}
-	if !validText(msg.ClientMessageID) || !validText(msg.Text) || len(msg.Text) > maxTextBytes || msg.ReplyTo > r.state.LatestSeq {
+	if !validText(msg.ClientMessageID) || !validRoomMessageText(msg.Text, len(msg.Attachments)) || !validAttachmentInputs(msg.Attachments) || msg.ReplyTo > r.state.LatestSeq {
 		return ErrRequest
+	}
+	if len(msg.Attachments) > 0 && (msg.Caller.Kind != "human" || msg.FollowupNotice || msg.DurablePublication) {
+		return ErrIdentity
 	}
 	if receipt, ok := r.state.FollowupNoticeReceipts[msg.ClientMessageID]; ok {
 		if receipt.Author != msg.Caller.Author || receipt.MembershipID != msg.Caller.MembershipID || receipt.Digest != noticeDigest(msg.Text) || msg.ReplyTo != 0 {
@@ -231,9 +235,9 @@ func (r *Room) Post(ctx actorx.Context, msg PostMessage, reply actorx.Reply[Post
 	}
 	bytes := 0
 	for _, m := range r.state.Messages {
-		bytes += len(m.Text)
+		bytes += roomMessageBytes(m)
 		if m.Author == msg.Caller.Author && m.ClientMessageID == msg.ClientMessageID {
-			if m.Text != msg.Text || m.ReplyTo != msg.ReplyTo || (msg.FollowupNotice || msg.DurablePublication) || !msg.inferMentions && !slices.Equal(m.Mentions, msg.Mentions) {
+			if m.Text != msg.Text || m.ReplyTo != msg.ReplyTo || !attachmentIDsEqual(m.Attachments, msg.Attachments) || (msg.FollowupNotice || msg.DurablePublication) || !msg.inferMentions && !slices.Equal(m.Mentions, msg.Mentions) {
 				return ErrConflict
 			}
 			reply.Complete(PostReceipt{RoomIdentity: r.state.RoomIdentity, Seq: m.Seq, ClientMessageID: m.ClientMessageID}, nil)
@@ -266,7 +270,25 @@ func (r *Room) Post(ctx actorx.Context, msg PostMessage, reply actorx.Reply[Post
 		next.FollowupNoticeReceipts[msg.ClientMessageID] = followupNoticeReceipt{Seq: next.LatestSeq, Author: msg.Caller.Author, MembershipID: msg.Caller.MembershipID, Digest: noticeDigest(msg.Text)}
 	}
 	result := PostReceipt{RoomIdentity: next.RoomIdentity, Seq: next.LatestSeq, ClientMessageID: msg.ClientMessageID}
-	return commitRoom(r, ctx, next, reply, result, nil)
+	inputs := slices.Clone(msg.Attachments)
+	return commitRoomPrepared(r, ctx, next, reply, result, nil, func(candidate *RoomSnapshot) (func(), error) {
+		if len(inputs) == 0 {
+			return nil, nil
+		}
+		if r.resolveAttachments == nil {
+			return nil, ErrRequest
+		}
+		attachments, release, err := r.resolveAttachments(msg.Caller.ID, inputs)
+		if err != nil {
+			return nil, err
+		}
+		candidate.Messages[len(candidate.Messages)-1].Attachments = attachments
+		if bytes+roomMessageBytes(candidate.Messages[len(candidate.Messages)-1]) > maxHistoryBytes {
+			release()
+			return nil, ErrCapacity
+		}
+		return release, nil
+	})
 }
 
 func (r *Room) Clear(ctx actorx.Context, msg ClearMessages, reply actorx.Reply[ClearReceipt]) error {
@@ -409,11 +431,12 @@ func (r *Room) Read(_ actorx.Context, msg ReadMessages) (ReadPage, error) {
 	for _, m := range r.state.Messages[from-r.state.ClearedThrough : snapshot-r.state.ClearedThrough] {
 		self := !roomVisible(m, msg.Caller, msg.Mode != ReadUnread) || msg.Mode == ReadUnread && !roomDeliverable(m, MemberIdentity{RoomIdentity: r.state.RoomIdentity, AgentID: msg.Caller.ID, MembershipID: msg.Caller.MembershipID})
 		if !self {
-			if len(page.Messages) == maxPageMessages || bytes+len(m.Text) > maxPageBytes {
+			if len(page.Messages) == maxPageMessages || bytes+roomMessageBytes(m) > maxPageBytes {
 				break
 			}
+			m.Attachments = slices.Clone(m.Attachments)
 			page.Messages = append(page.Messages, m)
-			bytes += len(m.Text)
+			bytes += roomMessageBytes(m)
 			if msg.Mode == ReadUnread {
 				remaining--
 			}
@@ -545,13 +568,16 @@ func (r *Room) memberInfo(m MemberState) MemberInfo {
 
 func (r *Room) candidate() RoomSnapshot {
 	next := r.state
-	next.Messages, next.Members = slices.Clone(next.Messages), slices.Clone(next.Members)
+	next.Messages, next.Members = cloneRoomLogMessages(next.Messages), slices.Clone(next.Members)
 	next.FollowupNoticeReceipts = maps.Clone(next.FollowupNoticeReceipts)
 	next.ReadProofs = maps.Clone(next.ReadProofs)
 	return next
 }
 
 func commitRoom[R any](r *Room, ctx actorx.Context, next RoomSnapshot, reply actorx.Reply[R], result R, install func()) error {
+	return commitRoomPrepared(r, ctx, next, reply, result, install, nil)
+}
+func commitRoomPrepared[R any](r *Room, ctx actorx.Context, next RoomSnapshot, reply actorx.Reply[R], result R, install func(), prepare func(*RoomSnapshot) (func(), error)) error {
 	if next.Revision == math.MaxUint64 {
 		return ErrCapacity
 	}
@@ -564,6 +590,15 @@ func commitRoom[R any](r *Room, ctx actorx.Context, next RoomSnapshot, reply act
 		func(ctx context.Context) (struct{}, error) {
 			if err := ctx.Err(); err != nil {
 				return struct{}{}, err
+			}
+			if prepare != nil {
+				release, err := prepare(&next)
+				if err != nil {
+					return struct{}{}, err
+				}
+				if release != nil {
+					defer release()
+				}
 			}
 			return struct{}{}, save(next)
 		},

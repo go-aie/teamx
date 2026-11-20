@@ -611,7 +611,7 @@
 .compose {
   position:relative;
   display:grid;
-  grid-template-columns:minmax(0,1fr) auto;
+  grid-template-columns:minmax(0,1fr) auto auto;
   align-items:end;
   gap:0 8px;
   margin:12px 24px 20px;
@@ -643,9 +643,11 @@ textarea {
 textarea::placeholder {
   color:var(--faint);
 }
-.compose-input { position:relative; grid-column:1; grid-row:2; min-width:0; }
+.compose-input { position:relative; grid-column:1; grid-row:3; min-width:0; }
 .compose textarea { min-height:44px; max-height:min(200px,30dvh); padding:9px 10px; line-height:26px; resize:none; }
-.compose-more,.compose #send { grid-column:2; grid-row:2; min-height:44px; }
+.compose-more,.compose #send { grid-row:3; min-height:44px; }
+.compose-more { grid-column:2; }
+.compose #send { grid-column:3; }
 .compose-more {
   display:flex; align-items:center; justify-content:center; width:44px; padding:6px;
   background:transparent; color:var(--muted); border-radius:var(--radius-control);
@@ -654,12 +656,11 @@ textarea::placeholder {
 .compose-more:hover:not(:disabled) { background:var(--surface-hover); }
 .compose-more[aria-expanded="true"] { color:var(--accent); background:var(--soft); }
 .compose-more[aria-expanded="true"] svg { transform:rotate(45deg); }
-.compose #send { display:none; align-items:center; justify-content:center; width:44px; min-width:44px; height:44px; margin:0; padding:4px; border:0; border-radius:10px; color:#fff; background:var(--accent); background-clip:content-box; }
+.compose #send { display:flex; align-items:center; justify-content:center; width:44px; min-width:44px; height:44px; margin:0; padding:4px; border:0; border-radius:10px; color:#fff; background:var(--accent); background-clip:content-box; }
 .compose #send:hover:not(:disabled) { background-color:var(--accent-hover); }
 .compose #send svg { display:block; width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
 .compose #send[aria-busy="true"] svg { animation:compose-send-spin 1s linear infinite; }
-.compose.has-message .compose-more { display:none; }
-.compose.has-message #send { display:flex; }
+
 @keyframes compose-send-spin { to { transform:rotate(360deg); } }
 @media(prefers-reduced-motion:reduce) { .compose-more svg { transition:none; } .compose #send svg { animation:none; } }
 .compose-mirror {
@@ -773,3 +774,20 @@ textarea::placeholder {
 .notice a {
   text-decoration:underline;
 }
+
+.attachment-drafts { grid-column:1 / -1; grid-row:2; display:flex; flex-wrap:wrap; gap:8px; max-height:min(190px,25dvh); overflow:auto; padding:6px; }
+.attachment-draft { position:relative; width:132px; max-width:100%; padding:6px; border:1px solid var(--line); border-radius:var(--radius-control); background:var(--surface-muted); }
+.attachment-draft img { width:100%; height:66px; object-fit:contain; border-radius:4px; }
+.attachment-draft-label,.attachment-draft-status { display:block; font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
+.attachment-draft-label { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; padding-right:18px; }
+.attachment-draft-status { color:var(--muted); }
+.attachment-draft[data-status="failed"] .attachment-draft-status,.attachment-draft[data-status="reselect"] .attachment-draft-status { color:var(--danger); }
+.attachment-draft button { min-height:32px; padding:4px 8px; color:var(--accent); background:var(--surface); border-radius:4px; font-size:12px; }
+.attachment-draft .attachment-remove { position:absolute; top:2px; right:2px; width:32px; font-size:20px; }
+.attachment-status { grid-column:1 / -1; padding:4px 10px; color:var(--muted); font-size:var(--font-small); }
+.attachment-menu { position:absolute; right:6px; bottom:calc(100% + 8px); z-index:21; width:280px; max-width:calc(100% - 12px); }
+.attachment-menu button { display:block; width:100%; padding:10px; min-height:44px; text-align:left; border-radius:var(--radius-control); color:var(--accent); background:transparent; }
+.attachment-menu button:hover { background:var(--surface-hover); }
+.attachment-menu p { padding:0 10px; margin:4px 0; font-size:12px; line-height:1.6; }
+.room-message-attachments { display:flex; flex-wrap:wrap; gap:8px; }
+.room-message-attachments > .attachment-preview { max-width:260px; }

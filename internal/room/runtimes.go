@@ -370,7 +370,7 @@ func (m *roomManager) runOpen(op roomOpen, rt *roomRuntime) {
 func (m *roomManager) serveRuntime(w http.ResponseWriter, r *http.Request) {
 	var info ServiceInfo
 	var req apiRequest
-	if r.Method == http.MethodGet {
+	if r.Method == http.MethodGet || r.URL.Path == "/v1/attachments/upload" {
 		q := r.URL.Query()
 		if !validText(q.Get("caller_id")) {
 			writeAPIError(w, ErrIdentity)

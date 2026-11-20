@@ -88,6 +88,7 @@ export async function createApp(overrides = {}) {
       if (state.managed && !layoutUI.roomsPanelOpen?.()) layers.push({ id:"mobile-conversation", close:layoutUI.showMobileRooms });
       if (layoutUI.membersPanelOpen?.()) layers.push({ id:"members", close:layoutUI.closeMobilePanels });
     }
+    if (!$("attachment-menu").hidden) layers.push({id:"attachment-menu", close:conversationUI.closeAttachmentMenu});
     if ($("workspace-picker").open) layers.push({ id:"workspace-picker", close:workspaceUI.closeWorkspacePicker });
     if (!$("conversation-filter-menu").hidden) layers.push({ id:"conversation-filter", close:roomsUI.closeFilterMenu });
     for (const [id, button] of [["calendar-detail","calendar-detail-close"], ["calendar-mode-sheet","calendar-mode-close"], ["activity-dialog","close-activity"], ["notification-detail","close-notification"],
