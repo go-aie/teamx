@@ -13,10 +13,13 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
   try { storage=env.localStorage; } catch { /* Preferences also work in memory. */ }
   const preferences=new Map();
   const multiDays=()=>window.innerWidth>=480?4:3;
-  const rangeAt=(displayZone=zone(),padding=0)=>calendarRange(date,mode,displayZone,{days:multiDays(),padding});
-  let multiStart="", multiWidth=0, multiTimer=null, multiScrolling=false, multiRenderPending=false, multiTouch=false;
-  let swipe=null, suppressClickUntil=0;
-  let calendarScroll=0,calendarGridScroll=0,listScroll=0;
+  const timeDays=()=>mode==="day"?1:multiDays();
+  const nativeTime=()=>compact&&(mode==="day"||mode==="multi");
+  const rangeAt=(displayZone=zone(),padding=0)=>calendarRange(date,mode==="day"&&compact?"multi":mode,displayZone,{days:timeDays(),padding});
+  let timeStart="", dayWidth=0, timeTimer=null, timeScrolling=false, renderPending=false, timeTouch=false;
+  let swipe=null, swipeMotion=null, suppressClickUntil=0, navigationPending=false;
+  let calendarScroll=0,calendarGridScroll=0,listScroll=0,restoreScroll=null;
+  const timeScrolls=new Map();
   let selected=null, detail=null, history=[], historyCursor="", editing=null, initialForm=null, formScope="", initialScroll=true;
   let lastOpener=null, detailReturn=null, renderedRange="", formFrequency=null;
   let selectedRun=null, runReadID=0;
@@ -31,6 +34,7 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
   const formatters=new Map();
   function formatAt(at,options,tz){const key=JSON.stringify([options,tz]);if(!formatters.has(key))formatters.set(key,new Intl.DateTimeFormat("zh-CN",{...options,timeZone:tz,hourCycle:"h23"}));return formatters.get(key).format(new Date(at));}
   const zone=()=>value?.time_zone||settingsUI.systemTime?.zone||state.info?.time_zone||"Asia/Shanghai";
+  const viewRangeKey=(displayZone=zone())=>JSON.stringify([view,view==="calendar"?date:"",view==="calendar"?mode:"",displayZone]);
   const hasDifferentZone=timeZone=>!!timeZone&&timeZone!==zone();
   const today=()=>localDay(Date.now(),zone());
   const available=()=>!!state.info&&roomsUI.isDirect();
@@ -47,6 +51,16 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
     const modes=compact?["day","multi","month"]:["day","week","month"];
     mode=modes.includes(saved?.mode)?saved.mode:compact?"day":"week";
     view=saved?.view==="list"?"list":"calendar";
+    restoreTimePosition();
+  }
+  function rememberTimePosition(){
+    const root=$("calendar-items"),displayedMode=root.dataset.mode;
+    if(!visible||view!=="calendar"||!displayedMode||displayedMode==="month")return;
+    timeScrolls.set(`${root.dataset.layout}:${displayedMode}`,root.scrollTop);
+  }
+  function restoreTimePosition(){
+    restoreScroll=mode==="month"?null:timeScrolls.get(`${preferenceLayout}:${mode}`)??null;
+    initialScroll=mode!=="month"&&restoreScroll===null;
   }
   function savePreference(){
     const saved={mode,view};preferences.set(preferenceLayout,saved);
@@ -113,63 +127,81 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
     $("calendar-mode-sheet").querySelector(`[data-calendar-mode="${mode}"]`)?.focus({preventScroll:true});
     runtime.navigationChanged();
   }
-  function switchView(next){
+  function switchView(next,{read=true}={}){
     if(next===view)return;
+    cancelSwipe();rememberTimePosition();
     if(view==="calendar"){calendarScroll=$("calendar-panel").scrollTop;calendarGridScroll=$("calendar-items").scrollTop;}else listScroll=$("calendar-panel").scrollTop;
     view=next;savePreference();dateTimeUI.close();syncView();
     if(view==="calendar")$("calendar-items").scrollTop=calendarGridScroll;
     $("calendar-panel").scrollTop=view==="calendar"?calendarScroll:listScroll;
-    void refresh().catch(()=>{});
+    if(read)void refresh().catch(()=>{});
   }
   function setVisible(next) {
-    const was=visible;visible=next&&available();
+    const was=visible;if(!next)rememberTimePosition();visible=next&&available();
     if(visible&&!was)chatPosition=conversationUI.capturePosition();
     $("calendar-panel").hidden=!visible;$("timeline-wrap").hidden=visible;$("compose").hidden=visible;
     $("conversation-chat").hidden=!visible;$("conversation").classList.toggle("calendar-open",visible);
     $("room-heading").hidden=visible;$("calendar-heading").hidden=!visible;
     $("conversation-actions").hidden=visible;$("calendar-header-actions").hidden=!visible;
-    if(!visible){setOptionsOpen(false);if($("calendar-mode-sheet").open)closeModeSheet(false);}
+    if(!visible){cancelSwipe();setOptionsOpen(false);if($("calendar-mode-sheet").open)closeModeSheet(false);}
     $("conversation-calendar").setAttribute("aria-expanded",String(visible));
     if(visible){restorePreference();conversationUI.saveDraft();if(!date)date=today();syncView();if(value)render();runtime.wake("calendar");void runtime.observe("calendar");}
     else {if(was){closeDetail(false);if(chatPosition)conversationUI.restorePosition(chatPosition);chatPosition=null;}conversationUI.scheduleMessageViewing();}
     scheduleClock();
   }
   function reset(){
-    clearTimeout(multiTimer);multiScrolling=false;multiRenderPending=false;multiTouch=false;swipe=null;multiStart="";
+    cancelSwipe();navigationPending=false;
+    clearTimeout(timeTimer);timeScrolling=false;renderPending=false;timeTouch=false;swipe=null;timeStart="";
     chatPosition=null;
     workspaceScroll=0;workspaceGridScroll=0;calendarScroll=0;calendarGridScroll=0;listScroll=0;renderedRange="";messageLinks.clear();readID++;detailID++;pending=null;retryRequest=null;value=null;date="";selected=null;detail=null;editing=null;history=[];initialScroll=true;
-    dateTimeUI.close();closeDetail(false);resetForm();sync();setVisible(false);$("calendar-items").replaceChildren();$("calendar-task-items").replaceChildren();$("calendar-task-count").textContent="0";showError("");
+    dateTimeUI.close();closeDetail(false);resetForm();sync();setVisible(false);$("calendar-items").replaceChildren();$("calendar-task-items").replaceChildren();$("calendar-task-count").textContent="0";showError("");timeScrolls.clear();restoreScroll=null;
   }
   async function refresh({current=()=>true,displayZone=zone()}={}) {
     sync();if(!available())return;
     const version=runtime.viewVersion,id=++readID;
     if(!date)date=today();
-    const range=rangeAt(displayZone,mode==="multi"?7:0),query=view==="calendar"?{from:range.from,to:range.to}:{};
+    const range={...rangeAt(displayZone,nativeTime()?7:0),mode:view==="calendar"?mode:"",time_zone:displayZone};
+    // Read neighboring pages in the same snapshot so dragging never waits for
+    // the network or previews a date with missing arrangements.
+    let ranges=[{from:range.from,to:range.to}];
+    if(compact&&mode==="month"&&view==="calendar"){
+      const before=calendarRange(pageDate(-1),mode,displayZone),after=calendarRange(pageDate(1),mode,displayZone);
+      range.from=before.from;range.to=after.to;
+      // Each month page stays within the API's 42-day limit.
+      ranges=[{from:before.from,to:ranges[0].from},ranges[0],{from:ranges[0].to,to:after.to}];
+    }
+    if(view!=="calendar")ranges=[{}];
     try {
-      let data,occurrences=[],cursor="",attempt=0;
+      let data,occurrences=[],cursor="",attempt=0,days=new Map(),snapshotRevision;
       // Retry a complete read after a changed snapshot; never combine pages from
       // different revisions or show a silently truncated calendar range.
       for(;;){
         try {
-          do {
-            data=await rpc("/v1/calendar/list",{calendar:{...query,...(cursor?{cursor}: {})}});
-            if(!currentView(version)||!current()||id!==readID)return;
-            // Every management page contains the complete task set and links.
-            // The cursor only paginates occurrences, which the task view omits.
-            if(view==="calendar")occurrences.push(...data.occurrences);
-            cursor=view==="calendar"?data.next_cursor||"":"";
-          }while(cursor);
+          for(const {from,to} of ranges){
+            do {
+              data=await rpc("/v1/calendar/list",{calendar:{...(from?{from,to}:{}),...(cursor?{cursor}: {})}});
+              if(!currentView(version)||!current()||id!==readID)return;
+              if(snapshotRevision!==undefined&&snapshotRevision!==data.revision)throw Object.assign(new Error("日历已更新，请重试。"),{field:"cursor"});
+              snapshotRevision=data.revision;
+              // Every management page contains the complete task set and links.
+              // The cursor only paginates occurrences, which the task view omits.
+              if(view==="calendar")occurrences.push(...data.occurrences);
+              for(const day of data.days||[])days.set(day.date,day);
+              cursor=view==="calendar"?data.next_cursor||"":"";
+            }while(cursor);
+          }
           break;
-        }catch(error){if(error.field!=="cursor"||attempt++>=1)throw error;occurrences=[];cursor="";}
+        }catch(error){if(error.field!=="cursor"||attempt++>=1)throw error;occurrences=[];cursor="";days.clear();snapshotRevision=undefined;}
       }
       // A system-zone change can race the range read. Rebase the local dates
       // before presenting the new zone, so boundary occurrences are not lost.
       if(data.time_zone&&data.time_zone!==displayZone)return refresh({current,displayZone:data.time_zone});
-      if(mode==="multi"&&(date<range.dates[0]||shiftDay(date,multiDays()-1)>range.dates.at(-1)))return refresh({current,displayZone});
-      const changed=value?.revision!==data.revision,rangeKey=JSON.stringify([view,view==="calendar"?date:"",view==="calendar"?mode:"",data.time_zone]);
-      value={...data,occurrences,range};renderLinks();if(visible&&(changed||renderedRange!==rangeKey)){render();renderedRange=rangeKey;}showError("");
+      if(nativeTime()&&(date<range.dates[0]||shiftDay(date,timeDays()-1)>range.dates.at(-1)))return refresh({current,displayZone});
+      const changed=value?.revision!==data.revision,rangeKey=viewRangeKey(data.time_zone);
+      occurrences=[...new Map(occurrences.map(o=>[o.occurrence_id,o])).values()];
+      value={...data,days:[...days.values()],occurrences,range};renderLinks();if(visible&&(changed||renderedRange!==rangeKey||navigationPending)){render();renderedRange=rangeKey;}showError("");
       if(visible&&selected&&!editing&&changed)await loadDetail(selected, false);
-    }catch(error){if(currentView(version)&&id===readID)showError(error.message,true);throw error;}
+    }catch(error){if(currentView(version)&&id===readID){navigationPending=false;showError(error.message,true);}throw error;}
   }
   function renderLinks(){
     // Links are scoped to retained, committed source/report receipts in this DM.
@@ -220,29 +252,28 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
   function entries(){return (value?.occurrences||[]).filter(o=>$("calendar-show-skipped").checked||!["skipped","cancelled"].includes(o.status));}
   function render(){
     if(!value)return;
-    if(multiScrolling||multiTouch){multiRenderPending=true;return;}
+    if(timeScrolling||timeTouch||swipe||swipeMotion){renderPending=true;return;}
+    renderPending=false;
     if($("calendar-create").open){syncForm();$("calendar-submit").disabled=!!pending;$("calendar-save-draft").disabled=!!pending;return;}
     $("calendar-work-coverage").textContent=coverageLabel();
     const uncovered=value.tasks.filter(task=>["active","paused","needs_info"].includes(task.state)&&(task.blocked_reason==="work_calendar_uncovered"||(view==="calendar"&&value.occurrences.some(o=>o.task_id===task.task_id&&o.reason==="work_calendar_uncovered"))));
     $("calendar-coverage").classList.toggle("calendar-coverage-warning",uncovered.length>0);
     notice("calendar-coverage",uncovered.length?`工作日历未覆盖部分执行日期，受影响的安排暂不执行：${uncovered.slice(0,3).map(task=>task.definition.title).join("、")}${uncovered.length>3?`等 ${uncovered.length} 项任务`:""}。`:"");
-    syncView();const range=mode==="multi"?value.range:rangeAt();syncRange();
+    syncView();const range=nativeTime()?value.range:rangeAt();syncRange();
     $("calendar-mode").dataset.mode=mode;
     for(const b of $("calendar-mode").querySelectorAll("button"))b.setAttribute("aria-pressed",String(b.dataset.mode===mode));
     $("calendar-submit").disabled=!!pending;$("calendar-save-draft").disabled=!!pending;
     const root=$("calendar-items"),scroll=root.scrollTop;
-    root.dataset.mode=mode;
     const occurrences=entries();
     if(view==="calendar"){
-      clearTimeout(multiTimer);root.replaceChildren();root.scrollLeft=0;
-      if(mode==="month")renderMonth(root,range.dates,occurrences);else renderGrid(root,range.dates,occurrences);
-      root.scrollTop=scroll;
-      if(mode==="multi"){
-        multiStart=range.dates[0];multiWidth=(root.clientWidth-48)/multiDays();
-        root.firstElementChild.style.setProperty("--day-width",`${multiWidth}px`);
-        multiWidth=root.querySelector(".calendar-day-column").getBoundingClientRect().width;
-        const index=range.dates.indexOf(date);root.scrollLeft=Math.max(0,index)*multiWidth;
+      root.dataset.mode=mode;root.dataset.layout=preferenceLayout;
+      clearTimeout(timeTimer);
+      if(nativeTime())renderTimeGrid(root,range.dates,occurrences);
+      else {
+        root.replaceChildren();root.scrollLeft=0;
+        if(mode==="month")renderMonth(root,range.dates,occurrences);else renderGrid(root,range.dates,occurrences);
       }
+      root.scrollTop=mode==="month"?0:restoreScroll??scroll;updateNow();
     }
     const shelf=$("calendar-task-items");shelf.replaceChildren();
     const filter=$("calendar-task-filter").value||"open";
@@ -269,16 +300,18 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
       }
       initialScroll=false;
     }
+    if(view==="calendar"){restoreScroll=null;rememberTimePosition();}
+    navigationPending=false;
   }
-  function renderMonth(root,dates,occurrences){
+  function renderMonth(root,dates,occurrences,displayDate=date){
     const grid=node("div",undefined,"calendar-month-grid"),headers=node("div",undefined,"calendar-month-headers"),body=node("div",undefined,"calendar-month-body");
-    grid.dataset.month=date.slice(0,7);
-    grid.setAttribute("aria-label",`${date.slice(0,4)}年 ${Number(date.slice(5,7))}月，${zone()}`);
+    grid.dataset.month=displayDate.slice(0,7);
+    grid.setAttribute("aria-label",`${displayDate.slice(0,4)}年 ${Number(displayDate.slice(5,7))}月，${zone()}`);
     for(const label of ["一","二","三","四","五","六","日"])headers.append(node("span",`周${label}`));
     const grouped=new Map();
     for(const o of occurrences){const d=localDay(o.due_at,zone());if(!grouped.has(d))grouped.set(d,[]);grouped.get(d).push(o);}
     for(const d of dates){
-      const cell=node("section",undefined,"calendar-month-day");cell.dataset.day=d;cell.dataset.currentMonth=String(d.slice(0,7)===date.slice(0,7));cell.dataset.today=String(d===today());cell.dataset.kind=dayKind(d);
+      const cell=node("section",undefined,"calendar-month-day");cell.dataset.day=d;cell.dataset.currentMonth=String(d.slice(0,7)===displayDate.slice(0,7));cell.dataset.today=String(d===today());cell.dataset.kind=dayKind(d);
       const heading=button("",()=>navigate(d,"day"),"calendar-month-date");
       heading.setAttribute("aria-label",`${d}${d===today()?"，今天":""}${dayDescription(d)?`，${dayDescription(d)}`:""}，查看当天安排`);heading.title=dayDescription(d)||"查看当天安排";
       if(d===today())heading.setAttribute("aria-current","date");
@@ -297,15 +330,15 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
     }
     grid.append(headers,body);root.append(grid);
   }
-  function renderGrid(root,dates,occurrences){
+  function renderGrid(root,dates,occurrences,displayDate=date){
     const grid=node("div",undefined,"calendar-time-grid"),headers=node("div",undefined,"calendar-grid-headers");
-    grid.style.setProperty("--day-count",String(dates.length));grid.dataset.mode=mode;
-    if(mode==="multi")grid.style.setProperty("--day-width",`${(root.clientWidth-48)/multiDays()}px`);
+    grid.style.setProperty("--day-count",String(dates.length));grid.dataset.mode=mode;grid.dataset.date=displayDate;
+    if(nativeTime())grid.style.setProperty("--day-width",`${(root.clientWidth-48)/timeDays()}px`);
     const corner=node("div",undefined,"calendar-grid-corner");corner.title=zone();corner.setAttribute("aria-label",`显示时区 ${zone()}`);
-    for(const offset of calendarOffsetLabels(date,mode,zone(),{days:multiDays()}))corner.append(node("span",offset));
+    for(const offset of calendarOffsetLabels(displayDate,mode,zone(),{days:multiDays()}))corner.append(node("span",offset));
     headers.append(corner);
     for(const d of dates){
-      const head=button("",()=>navigate(d,"day"),"calendar-day-heading");head.dataset.today=String(d===today());head.dataset.kind=dayKind(d);
+      const head=button("",()=>navigate(d,"day"),"calendar-day-heading");head.dataset.day=d;head.dataset.today=String(d===today());head.dataset.kind=dayKind(d);
       head.setAttribute("aria-label",`${d}${d===today()?"，今天":""}${dayDescription(d)?`，${dayDescription(d)}`:""}`);
       head.title=dayDescription(d);
       const dayNumber=node("div",undefined,"calendar-heading-date");dayNumber.append(node("strong",String(Number(d.slice(8)))));
@@ -336,7 +369,7 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
       }
       body.append(column);
     }
-    grid.append(headers,body);root.append(grid);updateNow();scheduleClock();
+    grid.append(headers,body);root.append(grid);updateNow(grid);scheduleClock();
   }
   function scheduleClock(){
     clearTimeout(nowTimer);
@@ -345,12 +378,17 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
       scheduleClock();
     },Math.min(30000,60000-Date.now()%60000));
   }
-  function updateNow(){
-    const body=$("calendar-items").querySelector(".calendar-time-body");if(!body)return;
+  function updateNow(scope=$("calendar-items")){
+    const track=scope.querySelector(".calendar-swipe-track");
+    if(track){
+      for(const page of track.children)updateNow(page);
+      return;
+    }
+    const body=scope.querySelector(".calendar-time-body");if(!body)return;
     body.querySelector(".calendar-now-line")?.remove();
     const ticks=body.querySelectorAll(".calendar-hour > span");
     for(const tick of ticks)tick.removeAttribute("data-now-overlap");
-    const dates=[...$("calendar-items").querySelectorAll(".calendar-day-column")].map(column=>column.dataset.day),index=dates.indexOf(today());if(index<0)return;
+    const dates=[...scope.querySelectorAll(".calendar-day-column")].map(column=>column.dataset.day),index=dates.indexOf(today());if(index<0)return;
     const line=node("div",undefined,"calendar-now-line"),label=node("span",fmt(Date.now(),{hour:"2-digit",minute:"2-digit"}));
     line.style.setProperty("--now-top",`${minuteOfDay(Date.now(),zone())*hourHeight/60}px`);
     const dot=node("i");dot.style.setProperty("--today-column",String(index));line.append(label,dot);line.setAttribute("aria-hidden","true");body.append(line);
@@ -360,23 +398,107 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
       if(rect.bottom>bounds.top-1&&rect.top<bounds.bottom+1)tick.dataset.nowOverlap="true";
     }
   }
-  function navigate(next,nextMode=mode,{preserveTime=false}={}){
-    clearTimeout(multiTimer);multiScrolling=false;multiRenderPending=false;
-    dateTimeUI.close();date=next;mode=nextMode;savePreference();initialScroll=!preserveTime;void refresh().catch(()=>{});
-  }
-  function settleMulti(){
-    clearTimeout(multiTimer);if(multiTouch)return;multiScrolling=false;
-    if(!visible||view!=="calendar"||mode!=="multi"||!multiStart||!multiWidth)return;
-    const root=$("calendar-items"),count=root.querySelectorAll(".calendar-day-column").length;
-    const index=Math.max(0,Math.min(count-multiDays(),Math.round(root.scrollLeft/multiWidth)));
-    if(Math.abs(root.scrollLeft-index*multiWidth)>1){
-      multiScrolling=true;root.scrollTo({left:index*multiWidth,behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"});return;
+  function navigate(next,nextMode=mode,{preserveTime=true}={}){
+    cancelSwipe();rememberTimePosition();
+    clearTimeout(timeTimer);timeScrolling=false;timeTouch=false;renderPending=false;
+    dateTimeUI.close();date=next;mode=nextMode;savePreference();
+    if(preserveTime)restoreTimePosition();else{restoreScroll=null;initialScroll=true;}
+    // Explicit navigation also restores the viewport when its date and data
+    // have not changed. Cached dates can move immediately, without a read.
+    navigationPending=true;
+    const range=rangeAt();
+    if(value?.range?.mode===mode&&value.range.time_zone===zone()&&Date.parse(value.range.from)<=Date.parse(range.from)&&Date.parse(value.range.to)>=Date.parse(range.to)){
+      render();if(!navigationPending)renderedRange=viewRangeKey();
     }
-    date=shiftDay(multiStart,index);syncRange();
+    void refresh().catch(()=>{});
+  }
+  function settleTimeScroll(){
+    clearTimeout(timeTimer);if(timeTouch||navigationPending)return;timeScrolling=false;
+    if(!visible||view!=="calendar"||!nativeTime()||!timeStart||!dayWidth)return;
+    const root=$("calendar-items"),count=root.querySelectorAll(".calendar-day-column").length;
+    const index=Math.max(0,Math.min(count-timeDays(),Math.round(root.scrollLeft/dayWidth)));
+    if(Math.abs(root.scrollLeft-index*dayWidth)>1){
+      timeScrolling=true;root.scrollTo({left:index*dayWidth,behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"});return;
+    }
+    date=shiftDay(timeStart,index);syncRange();
     root.querySelector(".calendar-grid-corner")?.replaceChildren(...calendarOffsetLabels(date,mode,zone(),{days:multiDays()}).map(offset=>node("span",offset)));
     // Refill either edge without moving the visible dates or time position.
-    if(index<3||index+multiDays()>count-3){multiRenderPending=false;void refresh().catch(()=>{});}
-    else if(multiRenderPending){multiRenderPending=false;render();}
+    if(index<3||index+timeDays()>count-3){renderPending=false;void refresh().catch(()=>{});}
+    else if(renderPending){renderPending=false;render();}
+  }
+  function renderTimeGrid(root,dates,occurrences){
+    const holder=node("div");renderGrid(holder,dates,occurrences);
+    const next=holder.firstElementChild,grid=root.querySelector(`.calendar-time-grid[data-mode="${mode}"]`);
+    // Keep retained date columns (the browser's snap targets) alive on refill.
+    // Disable snapping while rebasing the buffer, then restore it at the same
+    // visible date before the next paint.
+    root.style.scrollSnapType="none";
+    if(grid){
+      const reconcile=(parent,children)=>{
+        const retained=new Map([...parent.children].filter(child=>child.dataset.day).map(child=>[child.dataset.day,child]));
+        const ordered=children.map(child=>{
+          const old=retained.get(child.dataset.day);if(!old)return child;
+          if(!old.isEqualNode(child)){
+            for(const attribute of [...old.attributes])if(!child.hasAttribute(attribute.name))old.removeAttribute(attribute.name);
+            for(const attribute of child.attributes)old.setAttribute(attribute.name,attribute.value);
+            old.replaceChildren(...child.childNodes);
+          }
+          return old;
+        });
+        for(const child of [...parent.children])if(!ordered.includes(child))child.remove();
+        ordered.forEach((child,index)=>{if(parent.children[index]!==child)parent.insertBefore(child,parent.children[index]||null);});
+      };
+      grid.style.cssText=next.style.cssText;grid.dataset.date=date;
+      reconcile(grid.querySelector(".calendar-grid-headers"),[...next.querySelector(".calendar-grid-headers").children]);
+      reconcile(grid.querySelector(".calendar-time-body"),[...next.querySelector(".calendar-time-body").children]);
+    }else root.replaceChildren(next);
+    timeStart=dates[0];dayWidth=(root.clientWidth-48)/timeDays();
+    root.firstElementChild.style.setProperty("--day-width",`${dayWidth}px`);
+    dayWidth=root.querySelector(".calendar-day-column").getBoundingClientRect().width;
+    root.scrollLeft=Math.max(0,dates.indexOf(date))*dayWidth;
+    // Flush the final geometry with snapping off. Restoring snapping is safe:
+    // the retained visible column already occupies its original position.
+    root.getBoundingClientRect();root.style.removeProperty("scroll-snap-type");
+  }
+  const pageDate=direction=>mode==="month"?shiftMonth(date,direction):shiftDay(date,direction*(mode==="week"?7:1));
+  function prepareSwipe(){
+    const root=$("calendar-items"),current=root.firstElementChild,track=node("div",undefined,"calendar-swipe-track"),pages=[];
+    for(const direction of [-1,0,1]){
+      if(!direction){pages.push(current);continue;}
+      const displayDate=pageDate(direction),range=calendarRange(displayDate,mode,zone()),holder=node("div");
+      if(mode==="month")renderMonth(holder,range.dates,entries(),displayDate);else renderGrid(holder,range.dates,entries(),displayDate);
+      const page=holder.firstElementChild;page.inert=true;page.setAttribute("aria-hidden","true");pages.push(page);
+    }
+    track.dataset.mode=mode;
+    swipe.width=root.clientWidth;swipe.track=track;swipe.pages=pages;
+    const scroll=root.scrollTop;
+    track.style.transform=`translate3d(${-swipe.width}px,0,0)`;
+    track.append(...pages);root.replaceChildren(track);root.scrollTop=scroll;updateNow();
+  }
+  function cancelSwipe(){
+    swipeMotion?.cancel();swipeMotion=null;
+    const gesture=swipe;swipe=null;
+    if(!gesture?.track)return;
+    const root=$("calendar-items"),scroll=root.scrollTop;
+    root.replaceChildren(gesture.pages[1]);root.scrollTop=scroll;updateNow();
+  }
+  function settleSwipe(direction){
+    const gesture=swipe;
+    if(!gesture?.track){cancelSwipe();if(renderPending)render();return;}
+    const finish=()=>{
+      if(swipe!==gesture)return;
+      const root=$("calendar-items"),scroll=root.scrollTop,page=gesture.pages[direction+1];
+      swipe=null;swipeMotion?.cancel();swipeMotion=null;
+      page.inert=false;page.removeAttribute("aria-hidden");root.replaceChildren(page);root.scrollTop=scroll;updateNow();
+      if(direction){date=pageDate(direction);savePreference();syncRange();initialScroll=false;void refresh().catch(()=>{});}
+      if(renderPending){renderPending=false;render();}
+    };
+    if(window.matchMedia("(prefers-reduced-motion: reduce)").matches){finish();return;}
+    swipeMotion=gesture.track.animate([
+      {transform:`translate3d(${gesture.dx-gesture.width}px,0,0)`},
+      {transform:`translate3d(${-(direction+1)*gesture.width}px,0,0)`}
+    ],{duration:220,easing:"cubic-bezier(.22,.61,.36,1)",fill:"forwards"});
+    void swipeMotion.finished.then(finish,()=>{});
   }
   function mountGestures(){
     const root=$("calendar-items");
@@ -387,33 +509,40 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
       navigate(mode==="month"?shiftMonth(date,direction):shiftDay(date,direction*(mode==="week"?7:1)),mode,{preserveTime:true});
     });
     root.addEventListener("scroll",()=>{
-      if(!compact||mode!=="multi"||!visible)return;
-      multiScrolling=true;clearTimeout(multiTimer);multiTimer=setTimeout(settleMulti,180);
+      if(!nativeTime()||!visible||navigationPending)return;
+      timeScrolling=true;clearTimeout(timeTimer);timeTimer=setTimeout(settleTimeScroll,180);
     },{passive:true});
-    root.addEventListener("scrollend",settleMulti);
+    root.addEventListener("scrollend",settleTimeScroll);
     root.addEventListener("touchstart",event=>{
-      cancelSwipe();multiTouch=compact&&mode==="multi"&&event.touches.length===1;
-      if(!compact||view!=="calendar"||mode==="multi"||event.touches.length!==1||event.target.closest("input,select,textarea,a,details[open]"))return;
+      if(event.touches.length!==1){timeTouch=false;cancelSwipe();return;}
+      if(swipeMotion)return;
+      timeTouch=nativeTime();
+      if(!compact||view!=="calendar"||nativeTime()||!value||navigationPending||event.target.closest("input,select,textarea,a,details[open]"))return;
+      const displayed=root.firstElementChild;
+      if(mode==="month"?displayed?.dataset.month!==date.slice(0,7):displayed?.dataset.date!==date)return;
       const point=event.touches[0];swipe={x:point.clientX,y:point.clientY,dx:0,axis:null};
     },{passive:true});
     root.addEventListener("touchmove",event=>{
-      if(!swipe)return;
+      if(!swipe||swipeMotion)return;
       if(event.touches.length!==1){cancelSwipe();return;}
       const point=event.touches[0],dx=point.clientX-swipe.x,dy=point.clientY-swipe.y;
       if(!swipe.axis&&Math.max(Math.abs(dx),Math.abs(dy))>10)swipe.axis=Math.abs(dx)>Math.abs(dy)*1.35?"x":"y";
       if(swipe.axis!=="x")return;
-      event.preventDefault();swipe.dx=dx;
-      root.firstElementChild?.style.setProperty("transform",`translateX(${Math.max(-80,Math.min(80,dx*.3))}px)`);
+      event.preventDefault();
+      const target=calendarRange(pageDate(dx<0?1:-1),mode,zone());
+      if(Date.parse(value.range?.from)>Date.parse(target.from)||Date.parse(value.range?.to)<Date.parse(target.to))return;
+      if(!swipe.track)prepareSwipe();
+      swipe.dx=Math.max(-swipe.width,Math.min(swipe.width,dx));
+      swipe.track.style.transform=`translate3d(${swipe.dx-swipe.width}px,0,0)`;
     },{passive:false});
-    function cancelSwipe(){root.firstElementChild?.style.removeProperty("transform");swipe=null;}
-    root.addEventListener("touchcancel",()=>{multiTouch=false;cancelSwipe();if(mode==="multi")multiTimer=setTimeout(settleMulti,180);},{passive:true});
+    root.addEventListener("touchcancel",()=>{timeTouch=false;if(!swipeMotion)settleSwipe(0);if(nativeTime())timeTimer=setTimeout(settleTimeScroll,180);},{passive:true});
     root.addEventListener("touchend",()=>{
-      if(multiTouch){multiTouch=false;multiTimer=setTimeout(settleMulti,180);}
-      const gesture=swipe;cancelSwipe();if(gesture?.axis!=="x")return;
+      if(swipeMotion)return;
+      if(timeTouch){timeTouch=false;timeTimer=setTimeout(settleTimeScroll,180);}
+      if(swipe?.axis!=="x"){cancelSwipe();if(renderPending){renderPending=false;render();}return;}
       suppressClickUntil=Date.now()+400;
-      if(Math.abs(gesture.dx)<48)return;
-      const direction=gesture.dx<0?1:-1;
-      navigate(mode==="month"?shiftMonth(date,direction):shiftDay(date,direction),mode,{preserveTime:true});
+      const direction=Math.abs(swipe.dx)>=48?(swipe.dx<0?1:-1):0;
+      settleSwipe(direction);
     },{passive:true});
     root.addEventListener("click",event=>{if(Date.now()<suppressClickUntil){event.preventDefault();event.stopImmediatePropagation();}},true);
   }
@@ -612,9 +741,9 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
     sheet.addEventListener("cancel",event=>{event.preventDefault();closeModeSheet();});
     sheet.addEventListener("click",event=>{
       const next=event.target.closest("[data-calendar-mode]")?.dataset.calendarMode;if(!next)return;
-      closeModeSheet();const preserveTime=next===mode;mode=next;
-      if(view==="list"){initialScroll=!preserveTime;switchView("calendar");}
-      else navigate(date||today(),next,{preserveTime});
+      closeModeSheet();
+      if(view==="list")switchView("calendar",{read:false});
+      navigate(date||today(),next);
       syncView();
     });
     sheetHeader.addEventListener("touchstart",event=>{const point=event.touches[0];sheetTouch=event.touches.length===1?{x:point.clientX,y:point.clientY,dy:0}:null;},{passive:true});
@@ -632,7 +761,7 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
       updateCalendarIcon();
       if($("calendar-create").open)syncForm();
       if(detail)renderDetail();
-      if(available()){initialScroll=true;runtime.wake("calendar");void runtime.observe("calendar");}
+      if(available()){restoreScroll=null;initialScroll=true;runtime.wake("calendar");void runtime.observe("calendar");}
     });
     document.addEventListener("visibilitychange",()=>{if(!document.hidden)updateCalendarIcon();});
     $("calendar-create").addEventListener("toggle",()=>{
@@ -657,7 +786,7 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
     $("calendar-retry").addEventListener("click",()=>void refresh().catch(()=>{}));
     $("calendar-prev").addEventListener("click",()=>navigate(mode==="month"?shiftMonth(date,-1):shiftDay(date,mode==="week"?-7:-1)));
     $("calendar-next").addEventListener("click",()=>navigate(mode==="month"?shiftMonth(date,1):shiftDay(date,mode==="week"?7:1)));
-    $("calendar-today").addEventListener("click",()=>navigate(today()));
+    $("calendar-today").addEventListener("click",()=>navigate(today(),mode,{preserveTime:false}));
     dateTimeUI.register($("calendar-date"), {kind:"date", trigger:$("calendar-range"), zone, label:"选择日期", navigation:true, range:day=>mode==="week"?weekDates(day):mode==="multi"?calendarRange(day,mode,zone(),{days:multiDays()}).dates:[]});
     $("calendar-date").addEventListener("change",()=>{if($("calendar-date").value&&!dateTimeUI.validate($("calendar-date")))navigate($("calendar-date").value);});
     for(const [id,kind,label] of [["calendar-start-date","date","选择执行日期"],["calendar-end-date","date","选择结束日期"],["calendar-local-time","time","选择执行时刻"]]) {
@@ -675,8 +804,9 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
     window.addEventListener("resize",()=>{
       syncCreateButton();syncDetailNavigation();const next=window.innerWidth<=640;
       if(!next&&sheet.open)closeModeSheet(false);
-      if(next!==compact){compact=next;restorePreference();renderedRange="";if(visible){syncView();void refresh().catch(()=>{});}}
-      else if(visible&&mode==="multi")render();
+      cancelSwipe();
+      if(next!==compact){rememberTimePosition();compact=next;restorePreference();renderedRange="";if(visible){syncView();void refresh().catch(()=>{});}}
+      else if(visible&&nativeTime())render();
     });
   }
   return {mount,refresh,sync,reset,renderLinks,openTask:taskID=>{setVisible(true);return openDetail(taskID);},visible:()=>visible};

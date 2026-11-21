@@ -418,16 +418,18 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
     assert.equal(await page.locator('.calendar-month-day').count(),42);await shot(`mobile-month-${width}`);
   }
   const mobileCount=page.locator('.calendar-month-count').first(),mobileMonthDay=await mobileCount.evaluate(el=>el.parentElement.dataset.day);
-  await mobileCount.click();await page.waitForFunction(day=>document.querySelector('.calendar-day-column')?.dataset.day===day,mobileMonthDay);
+  await mobileCount.click();await page.waitForFunction(day=>document.querySelector('#calendar-date').value===day&&document.querySelector(`.calendar-day-column[data-day="${day}"]`),mobileMonthDay);
   await page.locator('#calendar-today').click();await page.waitForFunction(day=>document.querySelector('#calendar-date').value===day,selectedDay);
   await page.setViewportSize({width:390,height:844});
   const mobileDay=await page.locator('#calendar-date').inputValue();
   await showView('calendar');await range('day').click();await page.waitForFunction(()=>document.querySelector('#calendar-mode').dataset.mode==='day');
-  assert.equal(await page.locator('.calendar-day-column').count(),1);
-  assert.equal(await page.locator('#calendar-items').evaluate(el=>el.scrollWidth<=el.clientWidth),true);
+  const visibleDayColumns=await page.locator('#calendar-items').evaluate(el=>{
+    const bounds=el.getBoundingClientRect();return [...el.querySelectorAll('.calendar-day-column')].filter(column=>{const rect=column.getBoundingClientRect();return rect.left>=bounds.left+47&&rect.right<=bounds.right+1;}).map(column=>column.dataset.day);
+  });
+  assert.deepEqual(visibleDayColumns,[mobileDay]);
   assert.equal(await page.locator('#calendar-date').inputValue(),mobileDay);await shot('mobile-day-calendar');
   const beforeDate=await page.locator('#calendar-date').inputValue();
-  await swipeCalendar(page,-130);
+  await swipeCalendar(page,-220);
   await page.waitForFunction(before=>document.querySelector('#calendar-date').value!==before,beforeDate);
   const selectedDate=await page.locator('#calendar-date').inputValue();
   await showView('list');await task('编辑后的检查').scrollIntoViewIfNeeded();
