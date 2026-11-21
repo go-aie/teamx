@@ -1,7 +1,7 @@
 import { resolveAgentName } from "../agent-names.mjs";
 import { createDirectoryPicker, directoryErrors } from "./directory-picker.mjs";
 
-export function createMemberDirectories({ env, runtime, membersUI, workspaceView, busy, submit }) {
+export function createMemberDirectories({ env, runtime, membersUI, workspaceView, busy, submit, changed = () => {} }) {
   const { document } = env, { $, state } = runtime;
   const picker = createDirectoryPicker({ env, runtime });
   let bulkSignature = "";
@@ -43,14 +43,18 @@ export function createMemberDirectories({ env, runtime, membersUI, workspaceView
     return changed?.length ? error + `待应用：${changed.map(name).join("、")}。应用后会结清当前执行并重置受影响成员的私有上下文，工作文件保留。`
       : error || (op?.status === "completed" ? "设置已生效。" : "选择 TeamX 服务所在机器的目录。");
   }
-  function browse(d, member, opener, key) {
+  function browse(d, member, opener, key, options = {}) {
     const ws = workspaceView(), epoch = state.catalog?.service_epoch;
     const current = () => ws === workspaceView() && epoch === state.catalog?.service_epoch &&
       ws.data?.members.some(m => m.agent_id === member.agent_id && m.membership_id === member.membership_id) &&
-      (key === "room" ? $("workspace-dialog").open : $("activity-dialog").open && membersUI.selectedAgent()?.agent_id === member.agent_id && membersUI.selectedAgent()?.membership_id === member.membership_id);
+      (key === "composer" ? $("workspace-selector").open : key === "room" ? $("workspace-dialog").open : $("activity-dialog").open && membersUI.selectedAgent()?.agent_id === member.agent_id && membersUI.selectedAgent()?.membership_id === member.membership_id);
     return picker.open({ identity:{...ws.room, service_epoch:epoch, caller_id:ws.operator, agent_id:member.agent_id, membership_id:member.membership_id}, current,
       configured:{ source:ws.data.workspace.member_directories?.[member.membership_id] ? "external" : "managed", path:ws.data.workspace.member_directories?.[member.membership_id] || member.default_directory || member.workspace },
-      select:(path, source) => { if (!conflict(d)) set(d, member, source === "managed" ? "" : path); }, opener:key === "room" ? () => document.getElementById(`workspace-directory-choose-${member.membership_id}`) : opener });
+      select:(path, source) => {
+        if (conflict(d) || disabled(d)) return;
+        if (key === "composer") chooseComposer(source === "managed" ? "" : path);
+        else set(d, member, source === "managed" ? "" : path);
+      }, opener:key === "room" ? () => document.getElementById(`workspace-directory-choose-${member.membership_id}`) : opener, ...options });
   }
   const disabled = d => !d || !workspaceView()?.connected || busy() || conflict(d);
   function renderMember() {
@@ -115,6 +119,22 @@ export function createMemberDirectories({ env, runtime, membersUI, workspaceView
     const d = draft(key); if (disabled(d) || !affected(d).length) return;
     await submit({ target:structuredClone(d.target), version:d.version, draftKey:key }); render();
   }
+  function composerState() {
+    const ws = workspaceView(), d = draft("composer"), members = ws?.data?.members || [];
+    return {workspace:ws?.data?.workspace, target:d?.target, members, disabled:disabled(d) || !members.length,
+      changed:!!d && !!affected(d).length, conflict:!!conflict(d), feedback:feedback(d)};
+  }
+  function chooseComposer(path) {
+    const d = draft("composer"); if (disabled(d)) return;
+    const members = workspaceView().data.members;
+    for (const member of members) {
+      d.target.member_directories ||= {};
+      if (path) d.target.member_directories[member.membership_id] = path;
+      else delete d.target.member_directories[member.membership_id];
+    }
+    if (!Object.keys(d.target.member_directories || {}).length) delete d.target.member_directories;
+    d.dirty = true; render(); changed();
+  }
   function mount() {
     picker.mount();
     $("member-directory-choose").addEventListener("click", () => {
@@ -127,7 +147,11 @@ export function createMemberDirectories({ env, runtime, membersUI, workspaceView
     $("workspace-directories-refresh").addEventListener("click", () => refreshDraft("room"));
     $("workspace-directories-default").addEventListener("click", () => { const d = draft("room"); delete d.target.member_directories; d.dirty = true; render(); });
     $("workspace-directories-apply").addEventListener("click", () => apply("room"));
-    for (const id of ["activity-dialog", "workspace-dialog"]) $(id).addEventListener("close", picker.reconcile);
+    for (const id of ["activity-dialog", "workspace-dialog", "workspace-selector"]) $(id).addEventListener("close", picker.reconcile);
   }
-  return { mount, render, picker };
+  return { mount, render, picker, composer:{state:composerState, choose:chooseComposer,
+    browse(options = {}) { const d = draft("composer"), member = workspaceView()?.data?.members[0];
+      if (!member || disabled(d)) return;
+      return browse(d, member, $("workspace-select-browse"), "composer", options);
+    }, apply:() => apply("composer"), refresh:() => { refreshDraft("composer"); changed(); }} };
 }

@@ -21,7 +21,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import * as client from "../assets/client.mjs";
-import { launch, settle, withOnboarding, openNotification } from "./web_app_harness.mjs";
+import { launch, settle, withOnboarding, openNotification, openWorkspaceSettings } from "./web_app_harness.mjs";
 
 test("Session recovery shows progress with pause and keeps internal failures in diagnostic details", async () => {
   const api = server([makeRoom("A")]);
@@ -1909,7 +1909,7 @@ function workspaceServer(rooms = [makeRoom("A"), makeRoom("B")]) {
   return api;
 }
 async function editWorkspace(ui, gitlab = false) {
-  await ui.el("open-workspace").emit("click");
+  await openWorkspaceSettings(ui);
   ui.el("workspace-repository").checked = true; await ui.el("workspace-repository").emit("change");
   ui.el("workspace-repo-url").value = "https://gitlab.invalid/group/project.git";
   if (gitlab) {
@@ -1918,20 +1918,19 @@ async function editWorkspace(ui, gitlab = false) {
   }
 }
 
-test("composer menu previews the directory and closes on Escape, settings and Room switch without applying changes", async () => {
+test("composer menu closes on Escape, independent directory settings and Room switch without applying changes", async () => {
   const api = workspaceServer(), ui = await launch(api);
   const menu = ui.el("compose-menu"), trigger = ui.el("compose-more");
   const open = () => trigger.emit("click");
   assert.equal(ui.el("workspace-label").textContent, "默认目录");
-  assert.equal(ui.el("workspace-control").hidden, true);
-  assert.equal(ui.el("workspace-menu-description").textContent, "默认目录");
+  assert.equal(ui.el("workspace-control").hidden, false);
   await open(); assert.equal(trigger.getAttribute("aria-expanded"), "true");
   await menu.emit("keydown", { key: "Escape" });
   assert.equal(menu.open, false); assert.equal(trigger.getAttribute("aria-expanded"), "false");
-  await open(); await ui.el("open-workspace").emit("click");
+  await open(); await openWorkspaceSettings(ui);
   assert.equal(menu.open, false); assert.equal(ui.el("workspace-dialog").open, true);
   await ui.el("close-workspace").emit("click");
-  assert.equal(ui.document.activeElement, trigger);
+  assert.equal(ui.document.activeElement, ui.el("workspace-trigger"));
   await open(); await ui.select("B");
   assert.equal(menu.open, false);
   assert.equal(api.calls.filter(c => c.path === "/v1/workspace/apply" || c.path === "/v1/send").length, 0);
@@ -1955,9 +1954,8 @@ test("Workspace allows discussion before explicit Git-only binding; keeps draft/
   assert.equal(ui.el("workspace-dialog").open, false);
   assert.match(ui.el("workspace-current").textContent, /workspaces\/repos/);
   assert.equal(ui.el("workspace-label").textContent, "project");
-  assert.equal(ui.el("workspace-menu-description").textContent, "project");
   assert.equal(ui.el("workspace-control").hidden, false);
-  await ui.el("open-workspace").emit("click"); await ui.refresh();
+  await openWorkspaceSettings(ui); await ui.refresh();
   assert.equal(ui.el("workspace-dialog").open, true); // Completed settings remain available for inspection.
   assert.equal(api.calls.filter(c => c.path === "/v1/send").length, 1);
 });
@@ -1981,7 +1979,7 @@ test("Workspace waits for asynchronous completion before closing and can be reop
   assert.equal(ui.el("workspace-dialog").open, false);
   assert.equal(ui.el("workspace-summary").hidden, true);
   assert.equal(ui.el("workspace-summary").textContent, "");
-  await ui.el("open-workspace").emit("click"); await ui.refresh();
+  await openWorkspaceSettings(ui); await ui.refresh();
   assert.equal(ui.el("workspace-dialog").open, true);
   assert.equal(ui.el("workspace-status").textContent, "设置已生效");
   assert.equal(ui.el("workspace-summary").hidden, true);
@@ -2026,7 +2024,7 @@ test("Workspace selects an existing connection for initial and supplemental bind
   for (const supplement of [false, true]) {
     const api = workspaceServer(), ui = await launch(api);
     await editWorkspace(ui);
-    if (supplement) { await ui.el("workspace-form").emit("submit"); await ui.el("open-workspace").emit("click"); }
+    if (supplement) { await ui.el("workspace-form").emit("submit"); await openWorkspaceSettings(ui); }
     ui.el("workspace-gitlab").checked = true; await ui.el("workspace-gitlab").emit("change");
     ui.el("workspace-connection").value = "a".repeat(32); await ui.el("workspace-connection").emit("change");
     await ui.refresh(); assert.equal(ui.el("workspace-connection").value, "a".repeat(32));
@@ -2035,7 +2033,7 @@ test("Workspace selects an existing connection for initial and supplemental bind
     assert.equal(first.pat, undefined); assert.equal(first.target.binding.credential_id, undefined);
     assert.equal(first.target.binding.platform_id, "a".repeat(32)); assert.equal(first.platform_version, 1);
     assert.equal(ui.el("workspace-gitlab").disabled, true);
-    const reload = await launch(api, ui.saved); await reload.el("open-workspace").emit("click");
+    const reload = await launch(api, ui.saved); await openWorkspaceSettings(reload);
     assert.equal(reload.el("workspace-connection").value, "a".repeat(32));
     assert.equal(reload.el("workspace-pat"), undefined);
   }
@@ -2046,7 +2044,7 @@ test("Workspace plain root, connection choice and suggestions require an explici
   const api = workspaceServer();
   api.workspaces.get("A").suggestions = { repository: { url: "https://gitlab.invalid/group/project.git", branch: "main" },
     binding: { provider: "gitlab", url: "https://gitlab.invalid", project: "group/project" } };
-  const ui = await launch(api); await ui.el("open-workspace").emit("click");
+  const ui = await launch(api); await openWorkspaceSettings(ui);
   assert.equal(ui.el("workspace-repository").checked, false); assert.equal(ui.el("workspace-gitlab").checked, false);
   assert.equal(ui.el("workspace-repo-url").value, "https://gitlab.invalid/group/project.git");
   ui.el("workspace-root").value = "outputs"; await ui.el("workspace-form").emit("submit");
@@ -2078,7 +2076,7 @@ test("Workspace lost response observes original ID across reload, blocks duplica
   assert.equal(ui.el("workspace-dialog").open, true);
   assert.equal(ui.el("message-input").readOnly, true); assert.match(ui.el("workspace-summary").textContent, /正在初始化/);
   assert.match(ui.el("management-notice").textContent, /工作目录/);
-  const reload = await launch(api, ui.saved); await reload.el("open-workspace").emit("click");
+  const reload = await launch(api, ui.saved); await openWorkspaceSettings(reload);
 
   assert.equal(api.calls.filter(c => c.path === "/v1/workspace/apply").length, 1);
   ws.operation.status = "failed"; ws.operation.error_code = "preparation_failed"; api.catalog.rooms[0].busy = false;
@@ -2099,7 +2097,7 @@ test("failed initialization restores an editable target, keeps message nodes sta
       binding: { provider: "gitlab", url: "https://gitlab.invalid", project: "group/old" } } };
   ws.can_revise = true; ws.observation = identity(room); delete api.catalog.rooms[0]?.service;
   const ui = await launch(api);
-  await ui.el("open-workspace").emit("click");
+  await openWorkspaceSettings(ui);
   assert.equal(ui.el("workspace-fields").disabled, false);
   assert.equal(ui.el("workspace-repository").disabled, false);
   assert.equal(ui.el("workspace-repository").checked, true);
@@ -2133,7 +2131,7 @@ test("Workspace unrecorded timeout never resends; new application needs explicit
   await ui.el("workspace-form").emit("submit");
   assert.equal(ui.el("workspace-new").hidden, false); assert.equal(ui.el("workspace-apply").disabled, true);
   await ui.refresh(); assert.equal(api.calls.filter(c => c.path === "/v1/workspace/apply").length, 1);
-  const reload = await launch(api, ui.saved); await reload.el("open-workspace").emit("click");
+  const reload = await launch(api, ui.saved); await openWorkspaceSettings(reload);
   assert.equal(reload.el("workspace-new").hidden, false);
   await reload.el("workspace-new").emit("click");
   await editWorkspace(reload, true); reload.el("workspace-connection").value = ""; await reload.el("workspace-connection").emit("change"); await reload.el("workspace-form").emit("submit");
@@ -2148,9 +2146,9 @@ test("Workspace switch clears form fields; delayed old-room queries never popula
   const api = workspaceServer(), ui = await launch(api);
   await editWorkspace(ui, true);
   await ui.select("B"); assert.equal(ui.el("workspace-dialog").open, false);
-  await ui.el("open-workspace").emit("click"); assert.equal(ui.el("workspace-repo-url").value, "");
+  await openWorkspaceSettings(ui); assert.equal(ui.el("workspace-repo-url").value, "");
   assert.equal(ui.el("workspace-repository").checked, false);
-  const reload = await launch(api, ui.saved); await reload.el("open-workspace").emit("click");
+  const reload = await launch(api, ui.saved); await openWorkspaceSettings(reload);
 
   let release;
   api.workspaceHook = path => path.startsWith("/v1/workspace?") ? new Promise(resolve => { release = resolve; }) : undefined;
@@ -2159,7 +2157,7 @@ test("Workspace switch clears form fields; delayed old-room queries never popula
   api.workspaceHook = null;
   release({ ...api.workspaces.get("B"), workspace: { root: "stale-B" } });
   await refresh; await switchTask; api.workspaceHook = null; await ui.refresh();
-  await ui.el("open-workspace").emit("click");
+  await openWorkspaceSettings(ui);
   assert.equal(ui.el("workspace-root").value, "workspaces"); assert.equal(ui.el("workspace-repo-url").value, "");
 });
 
@@ -3586,10 +3584,10 @@ test("Scion Workspace chooses its type and verified connection without Git suffi
   assert.deepEqual(sent.target.repository,{kind:"scion",url:"https://scion.invalid/OpenCSG/teamx-demo",branch:"main"});
   assert.deepEqual(sent.target.binding,{provider:"scion",url:"https://scion.invalid",project:"OpenCSG/teamx-demo",platform_id:"c".repeat(32)});
   assert.equal(sent.platform_version,3);
-  await ui.el("open-workspace").emit("click");
+  await openWorkspaceSettings(ui);
   assert.equal(ui.el("workspace-kind").value,"scion");assert.equal(ui.el("workspace-kind").disabled,true);
   assert.match(ui.el("workspace-credential-status").textContent,/Scion.*OpenCSG\/teamx-demo/);
-  const reload=await launch(api,ui.saved);await reload.el("open-workspace").emit("click");
+  const reload=await launch(api,ui.saved);await openWorkspaceSettings(reload);
   assert.equal(reload.el("workspace-kind").value,"scion");assert.equal(reload.el("workspace-connection").value,"c".repeat(32));
 });
 
@@ -4363,6 +4361,79 @@ async function inspectDirectoryMember(ui, index=0) {
   await ui.el("toggle-agent-controls").emit("click"); await settle();
 }
 
+test("composer directory selector browses directly and applies one shared directory only on explicit apply", async () => {
+  const api=directoryServer(),ws=api.workspaces.get("A");
+  ws.workspace={root:"workspaces",repository:{url:"https://gitlab.invalid/group/project.git",kind:"git"},binding:{provider:"gitlab",platform_id:"a".repeat(32)}};
+  const original=structuredClone(ws.workspace),ui=await launch(api);
+  await ui.draft("保留未发送的内容");
+  await ui.el("workspace-trigger").emit("click");
+  assert.equal(ui.el("workspace-selector").open,true);assert.equal(ui.el("workspace-dialog").open,false);
+  await ui.el("workspace-select-browse").emit("click");
+  await ui.el("directory-entries").children[0].emit("click");await ui.el("directory-select").emit("click");
+  assert.equal(ui.el("workspace-selector").open,true);assert.equal(ui.el("workspace-select-apply").disabled,false);
+  assert.match(ui.el("workspace-select-feedback").textContent,/重置.*私有上下文/);
+  assert.match(ui.el("workspace-select-feedback").textContent,/共用同一目录/);
+  assert.equal(api.calls.some(c=>c.path==="/v1/workspace/apply"),false);
+  assert.equal(ui.el("workspace-label").textContent,"project");
+  await ui.el("workspace-select-apply").emit("click");
+  const sent=api.calls.find(c=>c.path==="/v1/workspace/apply").data;
+  assert.equal(sent.expected_version,1);assert.deepEqual(sent.target,{...original,member_directories:{"member-A":"/srv/projects/中文 项目","review-A":"/srv/projects/中文 项目"}});
+  assert.equal(ui.el("workspace-selector").open,false);assert.equal(ui.el("workspace-label").textContent,"中文 项目");
+  assert.match(ui.el("workspace-trigger").title,/\/srv\/projects\/中文 项目/);
+  assert.equal(ui.el("message-input").value,"保留未发送的内容");
+});
+
+test("composer directory search and default selection preserve settings until apply", async () => {
+  const api=directoryServer(),ws=api.workspaces.get("A");
+  ws.workspace={root:"workspaces",member_directories:{"member-A":"/srv/project","review-A":"/srv/project"}};
+  const ui=await launch(api);assert.equal(ui.el("workspace-label").textContent,"project");
+  await ui.el("workspace-trigger").emit("click");
+  assert.equal(ui.el("workspace-select-options").children.length,2);
+  ui.el("workspace-select-search").value="PROJECT";await ui.el("workspace-select-search").emit("input");
+  assert.equal(ui.el("workspace-select-options").children.length,1);
+  ui.el("workspace-select-search").value="/srv/new";await ui.el("workspace-select-search").emit("input");
+  assert.equal(ui.el("workspace-select-empty").hidden,false);assert.match(ui.el("workspace-select-browse-label").textContent,/定位/);
+  await ui.el("workspace-select-browse").emit("click");assert.equal(ui.el("directory-current").title,"/srv/new");
+  await ui.el("directory-cancel").emit("click");assert.equal(ui.el("workspace-selector").open,true);
+  ui.el("workspace-select-search").value="";await ui.el("workspace-select-search").emit("input");
+  await ui.el("workspace-select-options").children[0].emit("click");
+  assert.equal(ui.el("workspace-label").textContent,"project");assert.equal(ws.workspace.member_directories["member-A"],"/srv/project");
+  await ui.el("workspace-select-apply").emit("click");
+  assert.deepEqual(ws.workspace,{root:"workspaces"});assert.equal(ui.el("workspace-label").textContent,"默认目录");
+});
+
+test("composer directory conflicts keep the draft visible and require refresh before another selection", async () => {
+  const api=directoryServer(),ws=api.workspaces.get("A"),ui=await launch(api);
+  await ui.el("workspace-trigger").emit("click");await ui.el("workspace-select-browse").emit("click");await ui.el("directory-select").emit("click");
+  ws.workspace_version++;await ui.refresh();
+  assert.equal(ui.el("workspace-select-apply").disabled,true);assert.equal(ui.el("workspace-select-refresh").hidden,false);
+  assert.match(ui.el("workspace-select-feedback").textContent,/版本已变化/);
+  await ui.el("workspace-select-apply").emit("click");assert.equal(api.calls.some(c=>c.path==="/v1/workspace/apply"),false);
+  await ui.el("workspace-select-refresh").emit("click");assert.equal(ui.el("workspace-select-apply").hidden,true);
+});
+
+test("composer directory picker late results cannot cross Rooms or publish a directory", async () => {
+  const api=directoryServer(),ui=await launch(api);let finish;
+  api.directoryHook=()=>new Promise(resolve=>finish=resolve);
+  await ui.el("workspace-trigger").emit("click");const browsing=ui.el("workspace-select-browse").emit("click");await settle();
+  await ui.select("B");finish({roots:[],path:"/old-room",entries:[],can_select:true});await browsing;
+  assert.equal(ui.el("workspace-selector").open,false);assert.equal(ui.el("directory-dialog").open,false);
+  assert.equal(ui.el("workspace-label").textContent,"默认目录");assert.equal(api.calls.some(c=>c.path==="/v1/workspace/apply"),false);
+});
+
+test("uncertain composer directory apply stays locked and never automatically replays", async () => {
+  const api=directoryServer(),ui=await launch(api);
+  api.directoryApplyHook=path=>{if(path==="/v1/workspace/apply")throw Error("lost receipt");};
+  await ui.el("workspace-trigger").emit("click");await ui.el("workspace-select-browse").emit("click");await ui.el("directory-select").emit("click");
+  await ui.el("workspace-select-apply").emit("click");
+  assert.equal(ui.el("workspace-select-apply").disabled,true);assert.match(ui.el("workspace-select-feedback").textContent,/未查到原操作收据|尚未确认/);
+  await ui.el("workspace-select-apply").emit("click");await ui.refresh();
+  assert.equal(api.calls.filter(c=>c.path==="/v1/workspace/apply").length,1);
+  await ui.el("workspace-select-close").emit("click");await ui.el("workspace-trigger").emit("click");
+  assert.equal(ui.el("workspace-select-apply").disabled,true);
+  await launch(api,ui.saved);assert.equal(api.calls.filter(c=>c.path==="/v1/workspace/apply").length,1);
+});
+
 test("directory browsing has a directly editable path, filters hidden folders locally and jumps to its root", async () => {
   const api=directoryServer();
   api.directoryHook=q=>({roots:[{path:"/srv/projects"}],path:q.get("path") || "/srv/projects",parent:q.get("path")==="/srv/projects/visible" ? "/srv/projects" : null,entries:[{name:".private",path:"/srv/projects/.private"},{name:"visible",path:"/srv/projects/visible"}],can_select:true});
@@ -4517,7 +4588,7 @@ test("directory browser ignores superseded navigation, closed dialogs, changed m
 
 test("room directory overview fixes multiple unavailable overrides in one operation and keeps repository edits separate", async () => {
   const api=directoryServer(),ws=api.workspaces.get("A");ws.workspace.member_directories={"member-A":"/lost/a","review-A":"/lost/b"};ws.directory_error="directory_not_found";
-  const ui=await launch(api);await ui.el("open-workspace").emit("click");
+  const ui=await launch(api);await openWorkspaceSettings(ui);
   assert.equal(ui.el("workspace-directories").children.length,2);assert.match(ui.el("workspace-directories-feedback").textContent,/不存在/);
   ui.el("workspace-repository").checked=true;await ui.el("workspace-repository").emit("change");ui.el("workspace-repo-url").value="https://gitlab.invalid/group/project.git";
   await ui.el("workspace-directories-default").emit("click");
@@ -4557,7 +4628,7 @@ test("an unavailable external directory can be repaired in the selected Room wit
   assert.match(ui.el("connection").textContent,/可查看历史并修复/);
   assert.ok(ui.el("messages").children.some(el=>el.id==="message-1"));
   assert.equal(api.calls.filter(c=>c.path==="/v1/rooms/open").length,0);
-  await ui.el("open-workspace").emit("click");
+  await openWorkspaceSettings(ui);
   assert.equal(ui.el("workspace-directories-default").disabled,false);
   await ui.el("workspace-directories-default").emit("click");
   await ui.el("workspace-directories-apply").emit("click");
@@ -4572,7 +4643,7 @@ test("a directory failure discovered while opening keeps the failed Room repaira
   api.hook=(path,data)=>path==="/v1/rooms/open" ? {...data,status:"failed",error:"directory_permission_denied"} : undefined;
   const ui=await launch(api);await ui.select("B");
   assert.equal(ui.el("room-name").textContent,"B");
-  await ui.el("open-workspace").emit("click");
+  await openWorkspaceSettings(ui);
   assert.equal(ui.el("workspace-dialog").open,true);
   assert.ok(api.calls.some(c=>c.path.startsWith("/v1/workspace?") && new URL(c.path,"http://fixture").searchParams.get("room_id")==="B"));
 });

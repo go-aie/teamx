@@ -1,5 +1,6 @@
 import { createAttachmentDraft, attachmentURL, clipboardImages, uploadImage, formatBytes, imageSummary } from "../attachment-drafts.mjs";
 import { openImagePreview } from "../markdown.mjs";
+import { createNavigationIcon } from "../icons.mjs";
 
 export function createAttachments({ env, runtime, changed, persist, closeMenu }) {
   const { document, window } = env, { state, $, rpc } = runtime;
@@ -38,6 +39,12 @@ export function createAttachments({ env, runtime, changed, persist, closeMenu })
     render();
   }
   const blockReason = () => active?.model.blockReason(capability()?.limits) || "";
+  function updateScrollControls() {
+    const list = $("attachment-drafts"), left = list.scrollLeft || 0;
+    const overflow = Math.max(0, (list.scrollWidth || 0) - list.clientWidth);
+    $("attachment-scroll-prev").hidden = left <= 1;
+    $("attachment-scroll-next").hidden = overflow <= 1 || left >= overflow - 1;
+  }
   function render() {
     const cap = capability();
     $("add-images").disabled = !editable() || !!cap?.loading;
@@ -49,22 +56,30 @@ export function createAttachments({ env, runtime, changed, persist, closeMenu })
       ? "该次发送的图片不可修改。请先核对历史，使用原请求重试或放弃重试。" : blockReason();
     $("attachment-status").hidden = !$("attachment-status").textContent;
     $("attachment-drafts").hidden = !list.length;
+    $("attachment-strip").hidden = !list.length;
     const key = JSON.stringify([active?.key, !!state.draft.pending, list.map(item => [item.id,item.status,item.url,item.error,item.name])]);
     if (key === rendered) return;
     rendered = key;
     const owner = active;
     $("attachment-drafts").replaceChildren(...list.map(item => {
       const node = document.createElement("div"); node.className = "attachment-draft"; node.dataset.status = item.status;
+      const src = item.url || (item.uploaded && item.status === "ready" ? attachmentURL(owner.info, owner.operator, item.id) : "");
+      const preview = document.createElement("button"); preview.type = "button"; preview.className = "attachment-draft-preview";
+      preview.title = item.name; preview.setAttribute("aria-label", `放大查看图片 ${item.name}`); preview.disabled = !src;
       const image = document.createElement("img"); image.alt = item.name;
-      if (item.url || item.uploaded && item.status === "ready") image.src = item.url || attachmentURL(owner.info, owner.operator, item.id);
+      if (src) image.src = src;
       else image.hidden = true;
-      image.addEventListener("error", () => { image.hidden = true; });
-      const label = document.createElement("span"); label.className = "attachment-draft-label"; label.textContent = item.name;
+      const fallback = document.createElement("span"); fallback.className = "attachment-draft-fallback";
+      fallback.textContent = "预览不可用"; fallback.hidden = !!src;
+      image.addEventListener("error", () => { image.hidden = true; fallback.hidden = false; });
+      preview.append(image, fallback);
+      preview.addEventListener("click", () => { if (active === owner && src) openImagePreview(document, src, item.name); });
       const status = document.createElement("span"); status.className = "attachment-draft-status";
-      status.textContent = item.error || ({uploading:"上传中…", ready:"已就绪", checking:"正在确认…", reselect:"请重新选择图片"}[item.status] || "等待上传");
-      node.append(image, label, status);
+      status.textContent = item.status === "ready" ? "" : item.error || ({uploading:"上传中…", checking:"正在确认…", reselect:"请重新选择图片"}[item.status] || "等待上传");
+      status.hidden = !status.textContent;
+      node.append(preview, status);
       if (["failed", "reselect"].includes(item.status) && !state.draft.pending) {
-        const retry = document.createElement("button"); retry.type = "button"; retry.textContent = item.file || item.uploaded ? "重试" : "重新选择";
+        const retry = document.createElement("button"); retry.type = "button"; retry.className = "attachment-retry"; retry.textContent = item.file || item.uploaded ? "重试" : "重新选择";
         retry.addEventListener("click", () => {
           if (active !== owner || !editable()) return;
           if (item.file || item.uploaded) void owner.model.retry(item.id);
@@ -72,10 +87,11 @@ export function createAttachments({ env, runtime, changed, persist, closeMenu })
         }); node.append(retry);
       }
       const remove = document.createElement("button"); remove.type = "button"; remove.className = "attachment-remove";
-      remove.textContent = "×"; remove.setAttribute("aria-label", `移除图片 ${item.name}`); remove.disabled = !!state.draft.pending;
+      remove.append(createNavigationIcon(document, "close")); remove.setAttribute("aria-label", `移除图片 ${item.name}`); remove.disabled = !!state.draft.pending;
       remove.addEventListener("click", () => { if (active === owner && editable()) { owner.model.remove(item.id); $("message-input").focus(); } });
       node.append(remove); return node;
     }));
+    updateScrollControls();
   }
   function choose(replaceID = null) {
     if (!editable()) return;
@@ -89,10 +105,25 @@ export function createAttachments({ env, runtime, changed, persist, closeMenu })
   function addFiles(files, context = active) {
     const limits = context && capabilities.get(context.key)?.limits;
     if (!files.length || !context || context.draft.pending || !limits) return;
+    const before = context.model.items().length;
     const errors = context.model.addFiles(files, limits);
-    if (state.draft === context.draft) { runtime.notice("attachment-error", errors.join(" ")); render(); changed(); }
+    if (state.draft === context.draft) {
+      runtime.notice("attachment-error", errors.join(" ")); render(); changed();
+      if (context.model.items().length > before) {
+        const list = $("attachment-drafts"); list.scrollLeft = list.scrollWidth;
+        updateScrollControls();
+      }
+    }
   }
   function mount() {
+    const list = $("attachment-drafts");
+    list.addEventListener("scroll", updateScrollControls);
+    window.addEventListener("resize", updateScrollControls);
+    if (window.ResizeObserver) new window.ResizeObserver(updateScrollControls).observe(list);
+    for (const [id, direction] of [["attachment-scroll-prev", -1], ["attachment-scroll-next", 1]]) {
+      $(id).addEventListener("click", () => list.scrollBy({left:direction * Math.max(106, list.clientWidth * .8),
+        behavior:window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"}));
+    }
     $("add-images").addEventListener("click", () => choose());
     $("attachment-input").addEventListener("change", () => {
       const picked = pickerOwner; pickerOwner = null;

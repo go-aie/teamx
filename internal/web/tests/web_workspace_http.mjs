@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { request } from "../assets/client.mjs";
-import { launch } from "./web_app_harness.mjs";
+import { launch, openWorkspaceSettings } from "./web_app_harness.mjs";
 
 // Real HTTP + actual app events, with a DOM substitute. Browser evidence is
 // recorded separately. No credential values are accepted by this driver.
@@ -26,7 +26,7 @@ if (process.env.TEAMX_WORKSPACE_UI_PHASE === "create") {
   const catalogBefore = await ready();
   const origin = process.env.TEAMX_WORKSPACE_GITLAB_URL;
   const connection={id:process.env.TEAMX_WORKSPACE_CONNECTION_ID};
-  await ui.el("open-workspace").emit("click");
+  await openWorkspaceSettings(ui);
   ui.el("workspace-repository").checked=true;
   await ui.el("workspace-repository").emit("change");
   ui.el("workspace-repo-url").value=process.env.TEAMX_WORKSPACE_REPOSITORY;

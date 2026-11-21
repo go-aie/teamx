@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { launch, settle, openNotification } from "./web_app_harness.mjs";
+import { launch, settle, openNotification, openWorkspaceSettings } from "./web_app_harness.mjs";
 import { fixture } from "./web_member_platform_fixture.mjs";
 import { captureReturnView } from "../assets/view-return.mjs";
 import { createBrowserNavigation } from "../assets/features/browser-navigation.mjs";
@@ -171,7 +171,7 @@ test("a platform connection opened from a member returns directly to that member
 });
 
 test("Workspace platform management restores the existing Workspace form", async () => {
-  const ui=await launch(fixture());await ui.el("open-workspace").emit("click");
+  const ui=await launch(fixture());await openWorkspaceSettings(ui);
   ui.el("workspace-repository").value="https://gitlab.invalid/group/project.git";
   await ui.el("workspace-manage-platforms").emit("click");
   assert.equal(ui.el("workspace-dialog").open,true);assert.equal(ui.el("settings-dialog").open,true);

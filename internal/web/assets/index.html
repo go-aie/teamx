@@ -170,9 +170,12 @@
           <button id="reply-preview" class="reply-preview" type="button" aria-describedby="reply-label"><span class="reply-heading"><span id="reply-author"></span><span id="reply-sequence" class="reply-sequence"></span></span><span id="reply-label" class="reply-excerpt"></span></button>
           <button type="button" id="cancel-reply" class="reply-cancel" aria-label="取消引用" title="取消引用"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
         </div>
-        <div id="attachment-drafts" class="attachment-drafts" role="group" aria-label="待发送图片" hidden></div>
+        <div id="attachment-strip" class="attachment-strip" hidden>
+          <div id="attachment-drafts" class="attachment-drafts" role="group" aria-label="待发送图片" hidden></div>
+          <button id="attachment-scroll-prev" class="attachment-scroll attachment-scroll-prev" type="button" aria-label="向左滚动待发送图片" aria-controls="attachment-drafts" hidden><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></button>
+          <button id="attachment-scroll-next" class="attachment-scroll attachment-scroll-next" type="button" aria-label="向右滚动待发送图片" aria-controls="attachment-drafts" hidden><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+        </div>
         <label id="message-input-label" class="sr-only" for="message-input">发送给 会话</label>
-        <button id="compose-more" class="compose-more" type="button" aria-label="添加内容与设置" title="添加内容与设置" aria-haspopup="menu" aria-expanded="false" aria-controls="compose-menu" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
         <div class="compose-input">
           <div id="message-mirror" class="compose-mirror" aria-hidden="true" hidden></div>
           <div id="mention-options" class="mention-options menu-surface" role="listbox" aria-label="提及成员" hidden></div>
@@ -180,10 +183,12 @@
         </div>
         <input id="attachment-input" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden>
         <div class="compose-footer">
+          <button id="compose-more" class="compose-more" type="button" aria-label="添加内容" title="添加内容" aria-haspopup="menu" aria-expanded="false" aria-controls="compose-menu" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
           <div class="workspace-control" id="workspace-control" hidden>
-            <button id="workspace-trigger" class="workspace-button" type="button" aria-haspopup="dialog" aria-controls="workspace-dialog">
+            <button id="workspace-trigger" class="workspace-button" type="button" aria-haspopup="dialog" aria-controls="workspace-selector" aria-expanded="false">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
               <span id="workspace-label">默认目录</span>
+              <svg class="workspace-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
             </button>
           </div>
           <span class="compose-hint"><span id="message-shortcuts" class="shortcut" title="Enter 发送；Shift + Enter、Ctrl + Enter 或 ⌘ + Enter 换行">Enter 发送 · Shift + Enter 换行</span></span>
@@ -196,15 +201,11 @@
         <button id="discard-send" class="text-button" type="button" hidden>放弃重试，保留草稿</button>
         <div id="send-success" class="sr-only" role="status"></div>
       </form>
-      <dialog id="compose-menu" class="compose-menu menu-surface" aria-label="添加内容与设置">
+      <dialog id="compose-menu" class="compose-menu menu-surface" aria-label="添加内容">
         <div id="compose-menu-grip" class="compose-menu-grip" aria-hidden="true"><span></span></div>
         <button id="add-images" class="compose-menu-item" type="button">
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1"/><path d="m3 17 5-5 4 4 4-6 5 7"/></svg>
           <span><span>添加图片</span><small id="attachment-hint"></small></span>
-        </button>
-        <button id="open-workspace" class="compose-menu-item" type="button" aria-haspopup="dialog" aria-controls="workspace-dialog" hidden>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
-          <span><span>工作目录</span><small id="workspace-menu-description">默认目录</small></span>
         </button>
       </dialog>
     </section>
@@ -613,6 +614,14 @@
       <div id="create-error" class="form-error" role="alert" hidden></div>
       <footer class="form-actions"><button id="create-room" class="primary" type="submit">创建并进入</button></footer>
     </form>
+  </dialog>
+  <dialog id="workspace-selector" class="workspace-selector dialog-surface" aria-labelledby="workspace-select-title">
+    <header class="workspace-selector-header"><h2 id="workspace-select-title" class="sr-only">工作目录</h2><input id="workspace-select-search" class="field-control" type="search" placeholder="搜索目录或输入绝对路径" aria-label="搜索工作目录" autocomplete="off" spellcheck="false" autocapitalize="none"><button id="workspace-select-close" class="icon-button" type="button" aria-label="关闭目录选择" title="关闭目录选择"><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></header>
+    <div id="workspace-select-options" class="workspace-select-options" role="group" aria-label="工作目录选项"></div>
+    <p id="workspace-select-empty" class="quiet workspace-selector-empty" hidden>没有匹配目录，可输入绝对路径定位，或浏览其他目录。</p>
+    <button id="workspace-select-browse" class="workspace-selector-browse" type="button"><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V5h6l2 2h10v13H3ZM3 10h18m-9 3v4m-2-2h4"/></svg><span id="workspace-select-browse-label">选择其他目录…</span></button>
+    <p id="workspace-select-feedback" class="workspace-selector-feedback quiet" role="status" aria-live="polite"></p>
+    <footer class="workspace-selector-actions"><button id="workspace-select-settings" class="text-button" type="button">更多设置</button><button id="workspace-select-refresh" class="text-button" type="button" hidden>刷新后重新选择</button><button id="workspace-select-apply" class="primary" type="button" hidden>应用目录</button></footer>
   </dialog>
   <dialog id="workspace-dialog" class="workspace-dialog dialog-surface" aria-labelledby="workspace-title">
     <header class="dialog-header"><h2 id="workspace-title">工作目录</h2><button id="close-workspace" class="icon-button" type="button" aria-label="关闭工作目录设置" title="关闭工作目录设置"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></header>

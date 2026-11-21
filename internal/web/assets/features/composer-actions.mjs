@@ -5,7 +5,7 @@ export function createComposerActions({ env, runtime, nearBottom, scrollToBottom
   const { document, window } = env, { $, state } = runtime;
   const menu = $("compose-menu"), trigger = $("compose-more");
   let mobile = false, drag = null;
-  const items = () => [$("add-images"), $("open-workspace")].filter(item => !item.hidden && !item.disabled);
+  const items = () => [$("add-images")].filter(item => !item.hidden && !item.disabled);
 
   function position() {
     const viewport = window.visualViewport;
@@ -44,7 +44,7 @@ export function createComposerActions({ env, runtime, nearBottom, scrollToBottom
     menu.classList.toggle("compose-sheet", mobile);
     menu.setAttribute("role", mobile ? "region" : "menu");
     if (mobile) trigger.removeAttribute("aria-haspopup"); else trigger.setAttribute("aria-haspopup", "menu");
-    for (const item of [$("add-images"), $("open-workspace")]) item.setAttribute("role", mobile ? "button" : "menuitem");
+    $("add-images").setAttribute("role", mobile ? "button" : "menuitem");
     position();
     menu.show();
     position();

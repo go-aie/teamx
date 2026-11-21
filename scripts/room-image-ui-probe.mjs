@@ -13,7 +13,8 @@ const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAKAAAABkCAIAAACO1KzYAAABGElEQVR
 const limits={max_images:4,image_bytes:2097152,total_bytes:4194304,max_pixels:16777216,mime_types:["image/png","image/jpeg","image/webp"]};
 const rooms=[{room_id:"R",room_instance:"instance-R",service_epoch:"runtime"},{room_id:"B",room_instance:"instance-B",service_epoch:"runtime"}];
 const api=fixture(), objects=new Map(), messages=new Map(), sends=[], uploads=[], states=[], errors=[], checks=[];
-const streams=new Set(); let loseReceipt=false, failUpload=false, holdUploads=false, held=[];
+const streams=new Set(); let loseReceipt=false, failUpload=false, holdUploads=false, held=[], directoryMode="", directorySelection, workspaceVersion=1, workspaceOperation;
+const directoryApplies=[];
 const json=(res,value,status=200)=>{res.writeHead(status,{"content-type":"application/json","cache-control":"no-store"});res.end(JSON.stringify(value));};
 const server=http.createServer(async(req,res)=>{
   try {
@@ -63,7 +64,22 @@ const server=http.createServer(async(req,res)=>{
         if(loseReceipt){req.socket.destroy();return;} data={seq:message.seq};
       } else if(url.pathname==="/v1/read"){
         const list=messages.get(body.room_instance)||[];data={messages:list.filter(message=>message.seq>(body.after||0)),snapshot_seq:list.length,has_more:false};
-      } else data=await api.request(url.pathname+url.search,body);
+      } else if(url.pathname==="/v1/workspace/directories"){
+        const dir=url.searchParams.get("path") || "/srv/projects";
+        data={roots:[{path:"/srv/projects"}],path:dir,parent:dir==="/srv/projects"?null:"/srv/projects",entries:dir==="/srv/projects"?[{name:"project",path:"/srv/projects/project"}]:[],can_select:true,directory_source:"external"};
+      } else if(url.pathname==="/v1/workspace/apply"){
+        directoryApplies.push(body);directorySelection=Object.values(body.target.member_directories || {})[0] || "";workspaceVersion++;
+        data=workspaceOperation={operation_id:body.operation_id,status:"completed",phase:"completed"};
+      } else {
+        data=await api.request(url.pathname+url.search,body);
+        if(url.pathname==="/v1/workspace"){
+          const workspace={...data.workspace};
+          if(directoryMode==="member")workspace.member_directories=Object.fromEntries(api.members.map(m=>[m.membership_id,"/srv/project"]));
+          if(directoryMode==="long")workspace.root="/srv/projects/"+"a-long-project-directory-".repeat(12);
+          if(directorySelection!==undefined){if(directorySelection)workspace.member_directories=Object.fromEntries(api.members.map(m=>[m.membership_id,directorySelection]));else delete workspace.member_directories;}
+          data={...data,workspace,workspace_version:workspaceVersion,operation:workspaceOperation,members:api.members.map(m=>({...m,default_directory:`/service/workspaces/${m.membership_id}`,effective_directory:workspace.member_directories?.[m.membership_id]||`/service/workspaces/${m.membership_id}`}))};
+        }
+      }
       json(res,data);return;
     }
     const file=url.pathname==="/"?"index.html":url.pathname.startsWith("/ui/")?url.pathname.slice(4):"";
@@ -79,6 +95,7 @@ try {
   browser=await chromium.launch({headless:true});
   const origin=`http://127.0.0.1:${server.address().port}`;
   for(const width of [1440,390,320]) {
+    directoryMode="";directorySelection=undefined;workspaceVersion=1;workspaceOperation=undefined;directoryApplies.length=0;
     objects.clear();messages.clear();sends.length=uploads.length=states.length=0;
     const context=await browser.newContext({viewport:{width,height:width===320?640:900},isMobile:width<600,hasTouch:width<600});
     const page=await context.newPage();page.setDefaultTimeout(10000);page.on("pageerror",error=>{errors.push(error.stack);console.error(error.stack);});
@@ -87,21 +104,86 @@ try {
       await page.locator("#message-input:not([disabled])").waitFor();
     };
     await page.goto(origin);await page.locator("#compose-more:enabled").waitFor();await enter();
-    check(`${width}: plus, input and send follow the same left-to-right order`,await page.evaluate(()=>{
+    check(`${width}: full-width input sits above the shared action toolbar`,await page.evaluate(()=>{
       const plus=document.querySelector("#compose-more").getBoundingClientRect(), input=document.querySelector("#message-input").getBoundingClientRect(), send=document.querySelector("#send").getBoundingClientRect();
-      return plus.right<=input.left && input.right<=send.left && Math.abs(plus.bottom-send.bottom)<2 && plus.width>=44 && send.width>=44;
+      return input.bottom<=plus.top && input.left<=plus.right && input.right>=send.left && Math.abs(plus.bottom-send.bottom)<2 && plus.width>=44 && send.width>=44;
     }));
-    check(`${width}: default directory does not add a composer row`,!await page.locator("#workspace-trigger").isVisible());
+    check(`${width}: default directory stays directly selectable`,await page.locator("#workspace-trigger").isVisible()&&await page.locator("#workspace-label").textContent()==="默认目录");
     await page.locator("#message-input").fill("第一行\n第二行\n第三行");
-    check(`${width}: multiline input grows while controls stay at its bottom`,await page.evaluate(()=>{
+    check(`${width}: multiline input grows above the action toolbar`,await page.evaluate(()=>{
       const input=document.querySelector("#message-input").getBoundingClientRect(), plus=document.querySelector("#compose-more").getBoundingClientRect();
-      return input.height>plus.height && Math.abs(input.bottom-plus.bottom)<2;
+      return input.height>plus.height && input.bottom<=plus.top;
     }));
     await page.locator("#message-input").fill("整理本周项目进展");
     await page.screenshot({animations:"disabled",path:path.join(out,`${width}-composer.png`)});
+    if(width===1440){
+      await page.locator("#compose-more").hover();
+      await page.screenshot({animations:"disabled",path:path.join(out,`${width}-composer-hover.png`)});
+      await page.mouse.move(0,0);
+    }
+    const defaultHeight=await page.locator("#compose").evaluate(el=>el.getBoundingClientRect().height);
+    for(const mode of ["member","long"]){
+      directoryMode=mode;await page.reload();await enter();await page.locator("#workspace-trigger").waitFor();
+      check(`${width}: ${mode} directory shares the toolbar without adding height`,await page.locator("#workspace-trigger").evaluate((el,height)=>{
+        const r=el.getBoundingClientRect(),plus=document.querySelector("#compose-more").getBoundingClientRect(),send=document.querySelector("#send").getBoundingClientRect();
+        return plus.right<=r.left && r.right<=send.left && Math.abs(r.top+r.height/2-plus.top-plus.height/2)<1 && document.querySelector("#compose").getBoundingClientRect().height===height && document.documentElement.scrollWidth<=innerWidth;
+      },defaultHeight));
+      if(mode==="long")check(`${width}: long directory label truncates while preserving its full tooltip`,await page.locator("#workspace-label").evaluate(el=>el.scrollWidth>el.clientWidth&&getComputedStyle(el).textOverflow==="ellipsis"&&el.parentElement.title.includes(el.textContent)));
+      await page.locator("#compose-more:enabled").waitFor();await page.locator("#send:enabled").waitFor();
+      await page.locator("#message-input").focus();await page.keyboard.press("Tab");
+      assert.equal(await page.locator("#compose-more").evaluate(el=>el===document.activeElement),true);
+      await page.keyboard.press("Tab");assert.equal(await page.locator("#workspace-trigger").evaluate(el=>el===document.activeElement),true);
+      await page.keyboard.press("Tab");assert.equal(await page.locator("#send").evaluate(el=>el===document.activeElement),true);
+      check(`${width}: ${mode} directory keyboard order follows the visible toolbar`,true);
+      await page.locator("#workspace-trigger").click();await page.locator("#workspace-selector").waitFor();
+      await page.locator("#workspace-selector").evaluate(el=>Promise.all(el.getAnimations().map(animation=>animation.finished)));
+      check(`${width}: ${mode} directory opens a compact selector inside the viewport`,await page.locator("#workspace-selector").evaluate(el=>{
+        const r=el.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight;
+      }));
+      await page.screenshot({animations:"disabled",path:path.join(out,`${width}-directory-selector-${mode}.png`)});
+      await page.locator("#workspace-select-close").click();
+      await page.waitForFunction(()=>document.querySelector("#workspace-trigger")===document.activeElement);
+      await page.screenshot({animations:"disabled",path:path.join(out,`${width}-composer-${mode}-directory.png`)});
+      if(width===1440 && mode==="member"){
+        await page.locator("#workspace-trigger").hover();
+        await page.screenshot({animations:"disabled",path:path.join(out,`${width}-composer-directory-hover.png`)});
+        await page.mouse.move(0,0);
+      }
+    }
+    directoryMode="";await page.reload();await enter();await page.locator("#workspace-trigger:enabled").waitFor();
+    await page.locator("#workspace-trigger").click();
+    check(`${width}: compact directory entry leaves advanced settings closed`,!await page.locator("#workspace-dialog").isVisible());
+    if(width<600){
+      await page.waitForFunction(()=>history.state?.teamxOverlay==="workspace-selector");await page.goBack();await page.locator("#workspace-selector").waitFor({state:"hidden"});
+      check(`${width}: browser Back dismisses the directory sheet`,await page.locator("#message-input").isVisible());
+    }else{
+      await page.mouse.click(5,5);await page.locator("#workspace-selector").waitFor({state:"hidden"});check("desktop outside click dismisses the directory popover",true);
+    }
+    await page.locator("#workspace-trigger").click();await page.locator("#workspace-select-browse").click();await page.locator("#directory-select:enabled").waitFor();
+    await page.locator("#directory-entries").getByRole("button",{name:"project"}).click();await page.locator("#directory-select:enabled").click();
+    await page.locator("#directory-dialog").waitFor({state:"hidden"});
+    check(`${width}: browsing changes only a draft and returns to the selector`,directoryApplies.length===0&&await page.locator("#workspace-selector").isVisible()&&await page.locator("#workspace-select-apply").isEnabled());
+    await page.screenshot({animations:"disabled",path:path.join(out,`${width}-directory-selector-pending.png`)});
+    await page.locator("#workspace-select-apply").click();await page.locator("#workspace-selector").waitFor({state:"hidden"});
+    check(`${width}: explicit apply updates the directory chip and preserves message draft`,directoryApplies.length===1&&await page.locator("#workspace-label").textContent()==="project"&&await page.locator("#message-input").inputValue()==="整理本周项目进展");
+    await page.locator("#workspace-trigger").click();await page.locator("#workspace-select-search").fill("PROJECT");
+    check(`${width}: directory search filters by name without exposing other options`,await page.locator("#workspace-select-options > button").count()===1);
+    await page.locator("#workspace-select-search").fill("/srv/projects/typed");await page.locator("#workspace-select-browse").click();
+    await page.waitForFunction(()=>document.querySelector("#directory-current").title==="/srv/projects/typed");await page.locator("#directory-cancel").click();
+    check(`${width}: typed absolute paths use the existing validated browser`,directoryApplies.length===1&&await page.locator("#workspace-selector").isVisible());
+    if(width<600){
+      await page.waitForFunction(()=>history.state?.teamxOverlay==="workspace-selector");await page.goBack();await page.locator("#workspace-selector").waitFor({state:"hidden"});
+    }else{await page.keyboard.press("Escape");await page.locator("#workspace-selector").waitFor({state:"hidden"});}
+    check(`${width}: dismissing a returned picker never applies another directory`,directoryApplies.length===1);
+    await page.locator("#workspace-trigger").click();
+    await page.locator("#workspace-select-search").fill("");await page.locator("#workspace-select-options").getByRole("button",{name:/^默认目录/}).click();
+    await page.locator("#workspace-select-apply").click();await page.locator("#workspace-selector").waitFor({state:"hidden"});
+    check(`${width}: default directory also requires explicit apply`,directoryApplies.length===2&&await page.locator("#workspace-label").textContent()==="默认目录");
+    directorySelection=undefined;
     await page.locator("#compose-more").click(); await page.locator("#add-images:enabled").waitFor();
     const surface=page.locator("#compose-menu");
     await surface.evaluate(el=>Promise.all(el.getAnimations().map(animation=>animation.finished)));
+    check(`${width}: plus menu contains only image attachment actions`,await surface.locator("button").count()===1&&!(await surface.textContent()).includes("工作目录"));
     check(`${width}: expanded action surface stays inside viewport`,await surface.evaluate(el=>{
       const r=el.getBoundingClientRect();return r.left>=0 && r.right<=innerWidth && r.top>=0 && r.bottom<=innerHeight;
     }));
@@ -149,11 +231,82 @@ try {
     };
     await add(["first.png"]);await page.locator('.attachment-draft[data-status="ready"]').waitFor();
     check(`${width}: blob thumbnail passes actual CSP`,await page.locator(".attachment-draft img").evaluate(img=>img.complete&&img.naturalWidth===160&&img.src.startsWith("blob:")));
+    const draftPreview=page.locator(".attachment-draft-preview").first();
+    check(`${width}: ready draft is a compact uncropped thumbnail with filename tooltip`,await draftPreview.evaluate(el=>{
+      const img=el.querySelector("img"), r=el.getBoundingClientRect();
+      return el.title==="first.png" && r.width===96 && r.height===96 && getComputedStyle(img).objectFit==="contain" && el.parentElement.querySelector(".attachment-draft-status").hidden;
+    }));
+    if(width===1440){
+      await page.locator("#message-input").focus();await page.mouse.move(0,0);
+      await page.waitForFunction(()=>getComputedStyle(document.querySelector(".attachment-remove")).opacity==="0");
+      await draftPreview.hover();await page.waitForFunction(()=>getComputedStyle(document.querySelector(".attachment-remove")).opacity==="1");
+      check("desktop hover reveals remove",true);
+      await page.mouse.move(0,0);await draftPreview.focus();
+      check("keyboard focus reveals remove",await page.locator(".attachment-remove").evaluate(el=>getComputedStyle(el).opacity==="1"));
+    }else{
+      check(`${width}: touch remove stays visible with a 44px target`,await page.locator(".attachment-remove").evaluate(el=>getComputedStyle(el).opacity==="1"&&el.getBoundingClientRect().width===44&&el.getBoundingClientRect().height===44));
+    }
+    await draftPreview.focus();await page.keyboard.press("Enter");
+    await page.waitForFunction(()=>document.querySelector(".message-image-dialog img")?.naturalWidth===160);
+    check(`${width}: keyboard opens local draft preview without sending`,await page.locator(".message-image-dialog img").evaluate(el=>el.src.startsWith("blob:"))&&sends.length===0&&uploads.length===1);
+    await page.screenshot({animations:"disabled",path:path.join(out,`${width}-draft-preview.png`)});
+    await page.keyboard.press("Escape");
+    check(`${width}: closing preview returns keyboard focus to the thumbnail`,await draftPreview.evaluate(el=>el===document.activeElement));
     await page.locator("#message-input").fill("文字与多图");await add(["second.png"]);
     await page.waitForFunction(()=>document.querySelectorAll('.attachment-draft[data-status="ready"]').length===2);
     check(`${width}: plus stays available with text and images`,await page.locator("#compose-more").isVisible());
     await page.screenshot({animations:"disabled",path:path.join(out,`${width}-draft.png`)});
     check(`${width}: composer controls remain in viewport`,await page.locator("#send").evaluate(el=>{const r=el.getBoundingClientRect();return r.bottom<=innerHeight&&r.right<=innerWidth&&r.left>=0;}));
+    const twoImageHeight=await page.locator("#compose").evaluate(el=>el.getBoundingClientRect().height);
+    await add(["third.png","fourth.png"]);
+    await page.waitForFunction(()=>document.querySelectorAll('.attachment-draft[data-status="ready"]').length===4);
+    check(`${width}: four images stay full size in one row without growing the composer`,await page.locator("#attachment-drafts").evaluate((el,height)=>{
+      const boxes=[...el.children].map(item=>item.getBoundingClientRect());
+      return boxes.every(box=>box.width===96&&Math.abs(box.top-boxes[0].top)<1)&&Math.abs(document.querySelector("#compose").getBoundingClientRect().height-height)<=12&&document.documentElement.scrollWidth<=innerWidth;
+    },twoImageHeight));
+    check(`${width}: attachment row hides native scrollbars`,await page.locator("#attachment-drafts").evaluate(el=>getComputedStyle(el).scrollbarWidth==="none"));
+    if(width<600){
+      check(`${width}: adding images reveals the last thumbnail`,await page.locator("#attachment-drafts").evaluate(el=>{
+        const last=el.lastElementChild.getBoundingClientRect(),r=el.getBoundingClientRect();
+        return el.scrollWidth>el.clientWidth&&el.scrollLeft>0&&last.right<=r.right&&last.left>=r.left;
+      }));
+      await page.screenshot({animations:"disabled",path:path.join(out,`${width}-four-images-end.png`)});
+      await page.locator("#attachment-scroll-prev").waitFor();
+      check(`${width}: end of row shows only the left fade and arrow`,!await page.locator("#attachment-scroll-next").isVisible());
+      await page.locator("#attachment-scroll-prev").click();
+      await page.waitForFunction(()=>document.querySelector("#attachment-drafts").scrollLeft<=1);
+      await page.locator("#attachment-scroll-next").waitFor();
+      check(`${width}: left arrow scrolls to the start and reveals the right arrow`,!await page.locator("#attachment-scroll-prev").isVisible());
+      await page.locator("#attachment-scroll-next").click();
+      await page.waitForFunction(()=>{const el=document.querySelector("#attachment-drafts");return el.scrollLeft>=el.scrollWidth-el.clientWidth-1;});
+      check(`${width}: right arrow scrolls to the end`,true);
+      await page.locator("#attachment-drafts").evaluate(el=>el.scrollLeft=(el.scrollWidth-el.clientWidth)/2);
+      await page.locator("#attachment-scroll-prev").waitFor();await page.locator("#attachment-scroll-next").waitFor();
+      await page.screenshot({animations:"disabled",path:path.join(out,`${width}-four-images-middle.png`)});
+      await page.locator("#attachment-drafts").evaluate(el=>el.scrollLeft=0);
+      const box=await page.locator(".attachment-draft-preview").nth(1).boundingBox();
+      const touch=await context.newCDPSession(page),x=box.x+box.width/2,y=box.y+box.height/2;
+      await touch.send("Input.dispatchTouchEvent",{type:"touchStart",touchPoints:[{x,y}]});
+      for(let step=1;step<=6;step++)await touch.send("Input.dispatchTouchEvent",{type:"touchMove",touchPoints:[{x:x-step*22,y}]});
+      await touch.send("Input.dispatchTouchEvent",{type:"touchEnd",touchPoints:[]});
+      await touch.detach();
+      await page.waitForFunction(()=>document.querySelector("#attachment-drafts").scrollLeft>0);
+      check(`${width}: horizontal touch swipe scrolls thumbnails without opening preview`,!await page.locator(".message-image-dialog").isVisible());
+      await page.locator("#attachment-drafts").evaluate(el=>el.scrollLeft=0);
+      await page.locator("#attachment-drafts").hover();await page.mouse.wheel(240,0);
+      await page.waitForFunction(()=>document.querySelector("#attachment-drafts").scrollLeft>0);
+      check(`${width}: horizontal wheel input scrolls the attachment row`,true);
+    }else{
+      check("desktop fitting images show neither scroll arrow",!await page.locator("#attachment-scroll-prev").isVisible()&&!await page.locator("#attachment-scroll-next").isVisible());
+    }
+    await page.getByRole("button",{name:"放大查看图片 fourth.png",exact:true}).click();
+    await page.waitForFunction(()=>document.querySelector(".message-image-dialog img")?.naturalWidth===160);
+    check(`${width}: last image remains previewable after scrolling`,sends.length===0);
+    await page.keyboard.press("Escape");
+    await page.getByRole("button",{name:"移除图片 fourth.png",exact:true}).click();
+    await page.getByRole("button",{name:"移除图片 third.png",exact:true}).click();
+    check(`${width}: deleting scrolled images retains the first two in order`,JSON.stringify(await page.locator(".attachment-draft-preview").evaluateAll(items=>items.map(el=>el.title)))===JSON.stringify(["first.png","second.png"]));
+    check(`${width}: deleting overflow images removes both edge hints`,!await page.locator("#attachment-scroll-prev").isVisible()&&!await page.locator("#attachment-scroll-next").isVisible());
     await page.locator("#send").click();await page.locator("#message-1 .room-message-attachments img").first().waitFor();
     assert.equal(sends.length,1);assert.equal(sends[0].attachments.length,2);assert.equal(sends[0].text,"文字与多图");
     await page.locator("#message-1 .attachment-preview").first().click();await page.locator(".message-image-dialog").waitFor();
@@ -161,6 +314,7 @@ try {
     await page.keyboard.press("Escape");
     await add(["only-image.png"]);await page.locator('.attachment-draft[data-status="ready"]').waitFor();
     loseReceipt=true;await page.locator("#send").click();await page.locator("#discard-send").waitFor();
+    check(`${width}: uncertain send locks removal while keeping preview available`,await page.locator(".attachment-remove").isDisabled()&&await draftPreview.isEnabled());
     const firstRequest=structuredClone(sends.at(-1)), uploadCount=uploads.length;
     await page.reload();await page.locator("#message-input:not([disabled])").waitFor();await enter();await page.locator('#send[aria-label="重试发送"]').waitFor();
     loseReceipt=false;await page.locator("#send").click();await page.locator("#message-2 .attachment-preview").waitFor();
@@ -181,18 +335,28 @@ try {
     check(`${width}: paste uses upload path and retains accompanying text`,await page.locator("#message-input").inputValue()==="粘贴文字");
     await page.reload();await page.locator("#message-input:not([disabled])").waitFor();await enter();await page.locator('.attachment-draft[data-status="ready"]').waitFor();
     check(`${width}: reload restores uploaded draft using state API`,states.length>0&&await page.locator(".attachment-draft img").evaluate(img=>img.complete&&img.naturalWidth===160&&!img.src.startsWith("blob:")));
+    await draftPreview.click();await page.waitForFunction(()=>document.querySelector(".message-image-dialog img")?.naturalWidth===160);
+    check(`${width}: restored draft preview uses authenticated content`,await page.locator(".message-image-dialog img").evaluate(el=>new URL(el.src).pathname==="/v1/attachments/content"));
+    await page.keyboard.press("Escape");
     // A file picker cancellation leaves the draft unchanged.
     const before=await page.locator(".attachment-draft").count();
     await page.locator("#attachment-input").dispatchEvent("cancel");check(`${width}: cancelled selection keeps the draft`,await page.locator(".attachment-draft").count()===before);
     await page.locator(".attachment-remove").click();await page.locator("#message-input").fill("");
+    check(`${width}: removal neither opens preview nor submits`,!await page.locator(".message-image-dialog").isVisible()&&await page.locator(".attachment-draft").count()===0);
     failUpload=true;await add(["failed.png"]);await page.locator('.attachment-draft[data-status="failed"]').waitFor();
     check(`${width}: failed image blocks sending`,await page.locator("#send").isDisabled());
+    check(`${width}: failure retains its cause and a retry action`,(await page.locator(".attachment-draft-status").textContent()).includes("测试网络中断")&&await page.getByRole("button",{name:"重试",exact:true}).isVisible());
+    check(`${width}: failed draft keeps retry inside the visible attachment area`,await page.locator(".attachment-retry").evaluate(el=>el.getBoundingClientRect().bottom<=document.querySelector("#attachment-drafts").getBoundingClientRect().bottom));
+    await page.screenshot({animations:"disabled",path:path.join(out,`${width}-draft-failed.png`)});
     const failedID=uploads.at(-1).id;failUpload=false;await page.getByRole("button",{name:"重试",exact:true}).click();
     await page.locator('.attachment-draft[data-status="ready"]').waitFor();assert.equal(uploads.at(-1).id,failedID);
     await page.locator(".attachment-remove").click();
     // Reverse upload completion and switch away before it arrives.
     holdUploads=true;await add(["slow-first.png","fast-second.png"]);
     await page.waitForFunction(()=>document.querySelectorAll('.attachment-draft[data-status="uploading"]').length===2);
+    await draftPreview.click();await page.waitForFunction(()=>document.querySelector(".message-image-dialog img")?.naturalWidth===160);
+    check(`${width}: uploading image can be inspected before upload completes`,await page.locator("#send").isDisabled()&&(await page.locator(".attachment-draft-status").allTextContents()).every(text=>text==="上传中…"));
+    await page.keyboard.press("Escape");
     if(width<600)await page.locator("#mobile-back-to-rooms").click();
     await page.getByRole("button",{name:/Other/}).first().click();
     held.pop()();held.pop()();held=[];holdUploads=false;
@@ -201,21 +365,29 @@ try {
     if(width<600)await page.locator("#mobile-back-to-rooms").click();
     await page.getByRole("button",{name:/Review/}).first().click();
     await page.waitForFunction(()=>document.querySelectorAll('.attachment-draft[data-status="ready"]').length===2);
-    assert.deepEqual(await page.locator(".attachment-draft-label").allTextContents(),["slow-first.png","fast-second.png"]);
+    assert.deepEqual(await page.locator(".attachment-draft-preview").evaluateAll(items=>items.map(el=>el.title)),["slow-first.png","fast-second.png"]);
     check(`${width}: returning retains upload selection order`,true);
     await page.waitForFunction(()=>!document.querySelector("#add-images").disabled);
     await page.locator("#compose-more").focus();await page.keyboard.press("ArrowDown");
     assert.equal(await page.locator("#add-images").evaluate(el=>el===document.activeElement),true);
     await page.keyboard.press("Escape");await page.waitForFunction(()=>document.querySelector("#compose-more")===document.activeElement);assert.equal(await page.locator("#compose-more").evaluate(el=>el===document.activeElement),true);
     check(`${width}: menu keyboard navigation and Escape return focus`,true);
-    await page.locator("#compose-more").click();await page.locator("#open-workspace").click();await page.locator("#close-workspace").click();
-    await page.waitForFunction(()=>document.querySelector("#compose-more")===document.activeElement);
-    check(`${width}: workspace returns focus to the shared trigger`,await page.locator("#compose-more").evaluate(el=>el===document.activeElement));
+    await page.locator("#workspace-trigger").click();await page.locator("#workspace-select-settings").click();await page.locator("#close-workspace").click();
+    await page.waitForFunction(()=>document.querySelector("#workspace-trigger")===document.activeElement);
+    check(`${width}: advanced workspace settings return focus to the directory trigger`,await page.locator("#workspace-trigger").evaluate(el=>el===document.activeElement));
     check(`${width}: no horizontal overflow`,await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
     await page.locator("#message-input").fill("展开面板时直接发送");await page.locator("#compose-more").click();
     await page.locator("#send").click();await page.locator("#message-3 .attachment-preview").first().waitFor();
     check(`${width}: send stays usable while the action panel is open`,sends.at(-1).text==="展开面板时直接发送" && await page.locator("#message-input").inputValue()==="" && !await page.locator("#compose-menu").isVisible());
     await page.screenshot({animations:"disabled",path:path.join(out,`${width}-messages.png`)});
+    directoryMode="member";await page.reload();await enter();await page.locator("#workspace-trigger").waitFor();
+    await add(["one.png","two.png","three.png","four.png"]);
+    await page.waitForFunction(()=>document.querySelectorAll('.attachment-draft[data-status="ready"]').length===4);
+    check(`${width}: four images and member directory keep one accessible toolbar`,await page.locator("#workspace-trigger").evaluate(el=>{
+      const r=el.getBoundingClientRect(),send=document.querySelector("#send").getBoundingClientRect(),input=document.querySelector("#message-input").getBoundingClientRect();
+      return input.bottom<=r.top && Math.abs(r.top+r.height/2-send.top-send.height/2)<1 && send.bottom<=innerHeight && document.documentElement.scrollWidth<=innerWidth;
+    }));
+    await page.screenshot({animations:"disabled",path:path.join(out,`${width}-four-images-member-directory.png`)});
     await context.close();
   }
   assert.deepEqual(errors,[]);

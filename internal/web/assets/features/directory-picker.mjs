@@ -75,7 +75,7 @@ export function createDirectoryPicker({ env, runtime }) {
       notice("directory-error", directoryErrors[error.code] || "读取失败，请重新定位或稍后重试。");
     } finally { if (current(v) && sequence === read) $("directory-entries").setAttribute("aria-busy", "false"); }
   }
-  function open({ identity, current: valid, select, opener, configured }) {
+  function open({ identity, current: valid, select, opener, configured, initialPath }) {
     close(); view = { identity, current:valid, select, opener };
     $("directory-roots").replaceChildren(); $("directory-path").value = "";
     $("directory-roots-field").hidden = true;
@@ -86,7 +86,7 @@ export function createDirectoryPicker({ env, runtime }) {
     $("directory-configured").title = configured?.path || "";
     notice("directory-initial-warning", "");
     $("directory-dialog").showModal(); runtime.navigationChanged(); $("directory-cancel").focus();
-    return navigate();
+    return navigate(initialPath);
   }
   function reconcile() { if (view && !current(view)) close(); }
   function mount() {

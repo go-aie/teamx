@@ -99,6 +99,7 @@ export async function createApp(overrides = {}) {
         if (settingsUI.settingsTab === "general" && !$("timezone-options").hidden) layers.push({id:"timezone-picker",close:settingsUI.backSettings});
       }
     }
+    if ($("workspace-selector").open) layers.push({id:"workspace-selector",close:() => $("workspace-select-close").click()});
     if ($("directory-dialog").open) layers.push({id:"directory-dialog",close:() => $("directory-cancel").click()});
     if ($("confirmation-dialog").open) layers.push({id:"confirmation",close:() => $("confirmation-dialog").close()});
     if (dateTimeUI.isOpen) layers.push({id:"date-time-picker",close:() => dateTimeUI.close(true)});

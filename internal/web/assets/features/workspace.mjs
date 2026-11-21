@@ -4,6 +4,7 @@ import { resolveAgentName } from "../agent-names.mjs";
 import { randomUUID } from "../random-id.mjs";
 import { captureReturnView } from "../view-return.mjs";
 import { beginRead } from "../read-state.mjs";
+import { createWorkspaceSelector, workspaceDirectoryLabel } from "./workspace-selector.mjs";
 // Workspace configuration, platform choices and durable operation recovery.
 export function createWorkspace({ env, runtime, notificationsUI, membersUI, roomsUI, conversationUI, settingsUI, connectionsUI }) {
   const { document, window, Option, request, requestAnimationFrame } = env;
@@ -14,7 +15,9 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
   let workspaceView = null;
   let workspaceReturn = null;
 
-  const directories = createMemberDirectories({ env, runtime, membersUI, workspaceView: () => workspaceView, busy: () => workspaceFormBusy() || roomsUI.managementBusy() || !!state.catalog?.busy, submit: change => submitWorkspace(false, change) });
+  const directories = createMemberDirectories({ env, runtime, membersUI, workspaceView: () => workspaceView, busy: () => workspaceFormBusy() || roomsUI.managementBusy() || !!state.catalog?.busy, submit: change => submitWorkspace(false, change), changed:renderWorkspace });
+  const selector = createWorkspaceSelector({env,runtime,directories:directories.composer,
+    closeMenu:() => conversationUI.closeComposerMenu(false),openSettings:openWorkspace});
 
   const workspaceKey = (room, operator) => JSON.stringify(["teamx.workspace", room.room_instance, operator]);
 
@@ -61,6 +64,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     }
 
     directories.picker.close();
+    selector.close(false);
     conversationUI.closeComposerMenu(false);
     membersUI.resetTools();
     $("notification-detail").close();
@@ -128,7 +132,9 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     if (!valid()) return;
     renderWorkspace();
     if (completed) {
+      const composer = ws.directorySubmitted?.key === "composer";
       clearSubmittedDirectoryDraft(ws); directories.render();
+      if (composer) selector.close();
       ws.closeOnComplete = null;
       $("workspace-dialog").close();
     }
@@ -196,16 +202,11 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
   function renderWorkspace() {
     notificationsUI.renderGitLabEvents();
     const ws = workspaceView, data = ws?.data, current = data?.workspace, op = data?.operation;
-    const memberDirectories = Object.keys(current?.member_directories || {}).length > 0;
-    const configured = current && (current.repository || current.root && current.root !== "workspaces" || memberDirectories);
-    $("workspace-control").hidden = !state.managed || !ws || !configured;
-    $("open-workspace").hidden = !state.managed || !ws;
-    $("open-workspace").disabled = !ws;
-    const label = current?.repository ? current.repository.url.split("/").pop().replace(/\.git$/, "")
-      : !current?.root || current.root === "workspaces" ? memberDirectories ? "成员指定目录" : "默认目录" : current.root;
+    $("workspace-control").hidden = !state.managed || !ws;
+    $("workspace-trigger").disabled = !ws?.data || !ws.connected;
+    const {label,path} = workspaceDirectoryLabel(current);
     $("workspace-label").textContent = label;
-    $("workspace-trigger").title = `工作目录：${label}`;
-    $("workspace-menu-description").textContent = memberDirectories && label !== "成员指定目录" ? `${label} · 含成员指定目录` : label;
+    $("workspace-trigger").title = `工作目录：${path}`;
     const status = ws?.pending ? "提交结果待确认" : op?.status === "running" ? workspaceStages[op.phase] || "正在应用"
       : op?.status === "failed" ? workspaceCanRevise() ? "初始化失败 · 可修改后重新应用" : "设置未完成 · 请核查后重试"
       : op?.status === "completed" ? "设置已生效" : "";
@@ -213,6 +214,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     $("workspace-summary").textContent = summary;
     $("workspace-summary").hidden = !summary || !state.managed || !ws;
     directories.render();
+    selector.render();
     if (!$("workspace-dialog").open) return;
     fillWorkspaceForm();
     $("workspace-current").textContent = current ? `当前目录：${current.root} · 配置版本 ${data.workspace_version}` : "沿用原成员目录";
@@ -357,16 +359,16 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
 
   async function openWorkspace() {
     if (!workspaceView) return;
+    selector.close(false);
     conversationUI.closeComposerMenu(false);
-    workspaceReturn = captureReturnView(env, runtime, { opener: document.activeElement === $("workspace-trigger") ? $("workspace-trigger") : $("compose-more") });
+    workspaceReturn = captureReturnView(env, runtime, { opener: document.activeElement === $("workspace-select-settings") ? workspaceOpener() : document.activeElement || workspaceOpener() });
     $("workspace-dialog").showModal(); renderWorkspace(); $("close-workspace").focus(); await loadWorkspacePlatforms();
   }
 
   function mount() {
     directories.mount();
+    selector.mount();
     $("member-directory-overview").addEventListener("click", openWorkspace);
-    $("open-workspace").addEventListener("click", openWorkspace);
-    $("workspace-trigger").addEventListener("click", openWorkspace);
 
     $("close-workspace").addEventListener("click", () => $("workspace-dialog").close());
 

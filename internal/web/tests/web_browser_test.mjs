@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { launch, settle } from "./web_app_harness.mjs";
+import { launch, settle, openWorkspaceSettings } from "./web_app_harness.mjs";
 import { fixture } from "./web_member_platform_fixture.mjs";
 import { createBrowserNavigation } from "../assets/features/browser-navigation.mjs";
 import { createRoomDrafts } from "../assets/client.mjs";
@@ -141,7 +141,7 @@ test("IME confirmation including compositionend before Enter never sends", async
   assert.equal(api.calls.filter(c => c.path === "/v1/send").length, 1);
 });
 
-for (const width of [1440,390]) test(`composer unifies image and directory actions while retaining drafts at ${width}px`, async () => {
+for (const width of [1440,390]) test(`composer separates image and directory actions while retaining drafts at ${width}px`, async () => {
   const api = fixture(), ui = await launch(api);
   ui.window.innerWidth = width; await ui.window.emit("resize");
   const input = ui.el("message-input"), menu = ui.el("compose-menu"), more = ui.el("compose-more");
@@ -152,7 +152,7 @@ for (const width of [1440,390]) test(`composer unifies image and directory actio
   assert.equal(menu.open, true);
   assert.equal(menu.modal, false);
   assert.equal(menu.getAttribute("role"), width <= 640 ? "region" : "menu");
-  assert.equal(ui.el("open-workspace").hidden, false);
+  assert.equal(ui.el("workspace-control").hidden, false);
   assert.equal(more.getAttribute("aria-expanded"), "true");
   await more.emit("click");
   assert.equal(menu.open, false);
@@ -160,11 +160,11 @@ for (const width of [1440,390]) test(`composer unifies image and directory actio
   assert.equal(menu.open, false);
   assert.equal(ui.document.activeElement, more);
   await more.emit("click");
-  await ui.el("open-workspace").emit("click");
+  await openWorkspaceSettings(ui);
   assert.equal(menu.open, false);
   assert.equal(ui.el("workspace-dialog").open, true);
   await ui.el("close-workspace").emit("click");
-  assert.equal(ui.document.activeElement, more);
+  assert.equal(ui.document.activeElement, ui.el("workspace-trigger"));
   await more.emit("click"); await more.emit("click");
   await ui.draft("手机草稿\n第二行");
   assert.equal(menu.open, false);
@@ -194,12 +194,14 @@ test("desktop composer menu flips at the viewport edge and navigates available a
   assert.ok(Number.parseFloat(menu.style.getPropertyValue("--compose-menu-top")) + menu.rect.height < trigger.rect.top);
   assert.ok(Number.parseFloat(menu.style.getPropertyValue("--compose-menu-left")) + menu.rect.width < ui.window.innerWidth);
   await menu.emit("keydown", {key:"End"});
-  assert.equal(ui.document.activeElement, ui.el("open-workspace"));
+  assert.equal(ui.document.activeElement, ui.el("add-images"));
   await menu.emit("keydown", {key:"Home"});
   assert.equal(ui.document.activeElement, ui.el("add-images"));
   ui.el("add-images").disabled = true;
+  trigger.focus();
   await menu.emit("keydown", {key:"ArrowDown"});
-  assert.equal(ui.document.activeElement, ui.el("open-workspace"));
+  assert.equal(ui.document.activeElement, trigger);
+  ui.el("add-images").disabled = false;
   await ui.document.emit("click", {target:ui.el("timeline")});
   assert.equal(menu.open, false);
   trigger.rect = {...trigger.rect,top:80,bottom:124,left:30,right:74};

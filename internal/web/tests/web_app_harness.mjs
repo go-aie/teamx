@@ -69,6 +69,11 @@ class Element {
   close() { if (this.open) { this.open = false; void this.emit("close"); } }
 }
 export const settle = async () => { for (let i=0; i<15; i++) await new Promise(resolve => setImmediate(resolve)); };
+export async function openWorkspaceSettings(ui) {
+  if (!ui.el("workspace-selector").open) await ui.el("workspace-trigger").emit("click");
+  ui.el("workspace-select-settings").focus();
+  await ui.el("workspace-select-settings").emit("click");
+}
 export async function launch(api, saved = new Map(), environment = {}) {
   const elements = new Map([...html.matchAll(/id="([^"]+)"/g)].map(match => [match[1], new Element()]));
   for (const id of ["lark-group-mode", "lark-connection", "lark-target", "lark-backfill", "connection-provider", "connection-profile", "connection-scion-profile", "team", "profile", "workspace-connection", "gitlab-connection", "gitlab-target", "onboarding-room", "onboarding-member", "onboarding-backfill", "gitlab-application"]) elements.get(id).tag = "select";
