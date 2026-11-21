@@ -36,13 +36,22 @@ func NewNoteAPI(origin string, secret platform.Secret, transport http.RoundTripp
 }
 
 func NewNoteAPIWithCredential(origin string, credential platform.AccessCredential, transport http.RoundTripper) NoteAPI {
+	return newNoteAPIWithCredential(origin, credential, transport, 4096)
+}
+
+// NewImageNoteAPIWithCredential accepts only the bounded, generated image body.
+func NewImageNoteAPIWithCredential(origin string, credential platform.AccessCredential, transport http.RoundTripper) NoteAPI {
+	return newNoteAPIWithCredential(origin, credential, transport, 8192)
+}
+
+func newNoteAPIWithCredential(origin string, credential platform.AccessCredential, transport http.RoundTripper, bodyLimit int) NoteAPI {
 	secret := credential.Token
 	client := boundedHTTPClient(transport)
 	return func(ctx context.Context, projectID, mrIID, discussionID, body string) (APIResponse, error) {
 		before := func() (APIResponse, error) {
 			return APIResponse{}, &noteError{message: "request stopped before sending", notApplied: true}
 		}
-		if ctx.Err() != nil || !validOrigin(origin) || !validToken(secret.Reveal()) || !positiveREST(platform.ExternalID{Namespace: "gitlab:rest:id", Value: projectID}, "id") || !positiveREST(platform.ExternalID{Namespace: "gitlab:rest:iid", Value: mrIID}, "iid") || !actionText(body) || !validActionDiscussion(discussionID) {
+		if ctx.Err() != nil || !validOrigin(origin) || !validToken(secret.Reveal()) || !positiveREST(platform.ExternalID{Namespace: "gitlab:rest:id", Value: projectID}, "id") || !positiveREST(platform.ExternalID{Namespace: "gitlab:rest:iid", Value: mrIID}, "iid") || !actionTextLimit(body, bodyLimit) || !validActionDiscussion(discussionID) {
 			return before()
 		}
 		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)

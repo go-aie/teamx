@@ -25,7 +25,8 @@ func Builtins() (*Catalog, error) {
 }
 
 func gitlabDefinition() Definition {
-	refs := platform.ReferenceCapabilities{CredentialKinds: []string{"gitlab:oauth"}, Actions: gitlab.ReferenceActions(nil, nil, "")}
+	actions, _ := gitlab.ImageReferenceActions(nil, nil, nil, nil, nil, nil, "", "")
+	refs := platform.ReferenceCapabilities{CredentialKinds: []string{"gitlab:oauth"}, Actions: actions}
 	return Definition{
 		Type:       platform.TypeDefinition{Provider: "gitlab", ToolType: "gitlab", NotificationChannels: []string{"events", "todos"}},
 		Connection: &Connection{Normalize: registry.Normalize, LegacyIdentity: gitlab.LegacyAccountIdentity},
@@ -37,7 +38,7 @@ func gitlabDefinition() Definition {
 			{ID: gitlab.EventsSourceID, Bind: func(b SourceBindings) notification.Source { return &gitlab.EventsSource{Prepare: b.GitLabEvents} }},
 			{ID: gitlab.TodosSourceID, Bind: func(b SourceBindings) notification.Source { return &gitlab.TodosSource{Prepare: b.GitLabTodos} }},
 		},
-		Notifications: notification.Capabilities{Input: gitlab.InputCapability()}, References: &refs,
+		Notifications: gitlab.NotificationCapabilities(), References: &refs,
 	}
 }
 

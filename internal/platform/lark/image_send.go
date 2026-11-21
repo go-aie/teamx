@@ -95,18 +95,11 @@ func imageSendInput(raw json.RawMessage) (ImageSendInput, error) {
 // ContentDigest freezes text and ordered actual image bytes, independently of
 // source references, upload keys and JSON field order.
 func (m PreparedImageMessage) ContentDigest() string {
-	hashes := make([]string, len(m.Images))
+	images := make([][]byte, len(m.Images))
 	for i, img := range m.Images {
-		sum := sha256.Sum256(img.Data)
-		hashes[i] = hex.EncodeToString(sum[:])
+		images[i] = img.Data
 	}
-	data, _ := json.Marshal(struct {
-		Version int      `json:"version"`
-		Body    string   `json:"body"`
-		Images  []string `json:"images"`
-	}{1, m.Body, hashes})
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
+	return platform.ImageContentDigest(m.Body, images)
 }
 
 // VerifyContent checks a native read against the complete original message,

@@ -4,6 +4,10 @@
 
 | 记录 | 范围 |
 | --- | --- |
+| [GitLab 隔离托管图文动作](gitlab-image-send-s1.zh.md) | 阶段 1：项目原图上传、单次评论／准确讨论回复、回读与最小 Agent 合同；后续真实 Agent 与恢复见阶段 2 |
+| [GitLab 图文 Agent 使用与恢复](gitlab-image-send-s2.zh.md) | 阶段 2：指引／字段反馈、普通 Room／默认助理各 16 场景真实 DSH、独立进程恢复／并发与定向 race；正式图文保持关闭，真实 GitLab 验收见阶段 3 |
+| [GitLab 图文真实验收与开放](gitlab-image-send-s3.zh.md) | 阶段 3：真实 Agent 发布、原图下载比对、独立进程回执重查、真实通知回流和浏览器验证；正式注册开放，日常服务／Session 未切换 |
+| [GitLab 完整 URL 托管目标入口](gitlab-image-send-s4.zh.md) | 阶段 4：完整 MR／note／discussion URL 核实及稳定引用，全新成员托管链路、真实只读定位和两条授权发布；保留首次模型审计失败及分层复验边界，日常服务未重启 |
 | [飞书完整托管图文动作](lark-image-send-s2.zh.md) | 隔离 self／群原图上传与单次发送、完整内容冻结和最终授权复核；真实验收与正式开放见阶段 4 记录 |
 | [飞书图文 Agent 使用与恢复](lark-image-send-s3.zh.md) | 指引、可选图片权限修复、独立进程恢复与并发、浏览器及两种入口各 12 回合真实 Agent 隔离验收；阶段 4 真实开放见下条 |
 | [飞书图文发送：真实验收与开放](lark-image-send-s4.zh.md) | 阶段 4 真实 DSH／飞书六样本、同 ID／重启恢复及回流通过，正式 self／指定群图文已注册；含历史 unknown 修复证据与部署采用边界 |

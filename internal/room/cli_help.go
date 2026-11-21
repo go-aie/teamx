@@ -137,18 +137,18 @@ var referenceCommandHelps = map[string]referenceCommandHelp{
 		"Revocation requires the real human correction. This records business evidence, not an action execution receipt. Re-read on version conflict; never silently substitute current versions.",
 	},
 	"actions/resolve": {
-		"actions resolve --request JSON [--tool ENTRY]", "Verify a target on the exact tools-list account; tools run ENTRY actions resolve is the recommended entry.",
-		"--request: {locator,turn_number}; locator is {self:true}, {query:{object_type:chat,text:NAME}}, a returned candidates[i].locator unchanged, or {target_ref:REF}. Root requests without --tool also accept provider; account_owner_seq is optional human account-ownership evidence.",
+		"actions resolve --request JSON [--tool ENTRY]", "Verify a target on the exact tools-list account; Lark tools run ENTRY actions resolve and GitLab root actions resolve --tool ENTRY select their managed entry.",
+		"--request: {locator,turn_number}; GitLab: {url:FULL_HTTPS_MR_URL} (optional #note_ID or #discussion_FULL_ID) or {target_ref:REF}. Lark: {self:true}, {query:{object_type:chat,text:NAME}}, returned candidates[i].locator unchanged, or {target_ref:REF}. Root requests without --tool also accept provider; account_owner_seq is optional human account-ownership evidence.",
 		"resolution: account, target/label or candidates[].{label,locator}, status, complete, candidates_incomplete and reason. target_ref plus actions: input_schema, required request fields, authority contract, executable and repair reason/next_action.",
-		`teamx actions resolve --tool ENTRY --request '{"locator":{"self":true},"turn_number":1}'`,
-		"Candidates are unverified; resolve the selected locator on the same entry with the CURRENT turn. Clarify duplicate names; retain incompleteness. The service verifies identity, account, membership and permission. Reuse an existing valid target_ref. Saved message refs resolve ordinary replies; current production GitLab uses existing followup targets. Target access is not sending authority.",
+		`teamx actions resolve --tool ENTRY --request '{"locator":{"url":"https://gitlab.example/group/project/-/merge_requests/42#note_99"},"turn_number":1}'`,
+		"GitLab URL resolution needs no notification, matter or Workspace; select the exact account entry. An MR URL selects object.comment; a verified replyable discussion anchor selects discussion.reply. Unsupported/missing anchors never fall back to the MR; clarify an unspecified thread first. Candidates are unverified; resolve the selected locator on the same entry with the CURRENT turn. Clarify duplicate names; retain incompleteness. Reuse an existing valid target_ref. Target access is not sending authority.",
 	},
 	"actions/execute": {
 		"actions execute --request JSON [--tool ENTRY]", "Submit one complete action on the exact tools-list entry. Input and required evidence come from its resolved action.",
 		"--request: {target_ref,turn_number,id,operation,input,context?}. Self message.send_self omits policy_token/authority. Group message.send requires current policy_token and authority:{type:human_reply,room_seq:ACTUAL_HUMAN_SEQ,reason:INTERPRETATION}. Other actions use rule/instruction {type,id,version,reason,constraints?} or human_reply {type,room_seq,reason,question_ref?,message_refs?,constraints?} as declared; rule forbids constraints. Optional context:{object_ref,unit_ref,unit_version} associates a matter, never grants authority. Legacy unit requests remain accepted.",
-		"id, status, attempts, target_ref and result. Lark sends include operation, complete input, authority when required, exact account/target and result.verified plus any known result_id/reason. Full frozen evidence is available with actions read --id ID.",
+		"id, status, attempts, target_ref and result. Lark sends and GitLab MR comments/replies include operation, complete input, authority when required, exact account/target and result.verified plus any known result_id/reason. Full frozen evidence is available with actions read --id ID.",
 		`teamx actions execute --tool ENTRY --request '{"target_ref":"ref_...","turn_number":1,"id":"save-1","operation":"message.send_self","input":{"body":"保存这段文字"}}'`,
-		"Follow input_schema: body is exact text; images, only when declared, are ordered {message_seq,attachment_id} from current Room human messages/attachments[].id. No extra attachment lookup or read receipt. One action/ID sends the entire selection; never split captions/images or fall back to a subset. Ordinary replies remain text only. Group sends require the direct Room instruction; self evidence grants no group permission. Reuse stable IDs; changed target/input/evidence conflicts. source/upload failure means nothing sent; unknown may already be sent: query actions read --id ORIGINAL_ID, never resend with a new ID/account/Session. Use error reason/next_action for the same account; platforms skill supplies requested repairs. Success means verified delivery, not read/business completion. Publish outcomes locally with send.",
+		"Follow input_schema: body is exact text; images, only when declared, are ordered {message_seq,attachment_id} from current Room human messages/attachments[].id. No extra attachment lookup or read receipt. One action/ID sends the entire selection; never split captions/images or fall back to a subset. Lark message replies remain text only. GitLab images are available only when input_schema declares them; GitLab image comments/replies require authority:{type:human_reply,room_seq,reason} and current policy_token, one attempt; rule/instruction/question authority is not accepted with images. Group sends require the direct Room instruction; self evidence grants no group permission. Reuse stable IDs; changed target/input/evidence conflicts. source/upload failure means nothing sent; unknown may already be sent: query actions read --id ORIGINAL_ID, never resend with a new ID/account/Session. Use error reason/next_action for the same account; platforms skill supplies requested repairs. Success means verified delivery, not read/business completion. Publish outcomes locally with send.",
 	},
 	"actions/read": {
 		"actions read --id ID [--object REF --unit UNIT]", "Restore one action and its complete frozen execution evidence.",
@@ -216,13 +216,21 @@ func referenceHelpText(command, op string) string {
 		h.parameters += " --" + name + "-file PATH: read the same JSON from a file; - reads stdin. Mutually exclusive with --" + name + ". Existing endpoint/body and business field limits still apply."
 		h.example += "; or teamx " + command + " " + op + " --" + name + "-file payload.json (use - for stdin)"
 	}
-	return "Usage: teamx " + h.usage + "\n" + h.purpose + "\nParameters: " + h.parameters + "\nCommon: --endpoint URL (bound TEAMX_ENDPOINT); --json (JSON output, default true). Requires the six bound TEAMX_* identity values.\nReturns: " + h.result + "\nExample: " + h.example + "\nConstraints: " + h.constraints + "\n"
+	result := "Usage: teamx " + h.usage + "\n" + h.purpose + "\nParameters: " + h.parameters + "\nCommon: --endpoint URL (bound TEAMX_ENDPOINT); --json (JSON output, default true). Requires the six bound TEAMX_* identity values.\nReturns: " + h.result + "\nExample: " + h.example + "\nConstraints: " + h.constraints + "\n"
+	if command == "actions" && op == "execute" {
+		result += gitlabImageActionExamples
+	}
+	return result
 }
 
 // Transport flags differ, while the structured action contract and diagnostics
 // are shared. Do not advertise root routing flags on an already selected entry.
 func builtinActionHelpText(entry, op string) string {
 	h := referenceHelpText("actions", op)
+	h, _, _ = strings.Cut(h, "\nGitLab image examples")
+	if op == "resolve" {
+		h = strings.ReplaceAll(h, `{"locator":{"url":"https://gitlab.example/group/project/-/merge_requests/42#note_99"},"turn_number":1}`, `{"locator":{"self":true},"turn_number":1}`)
+	}
 	h = strings.ReplaceAll(h, "teamx actions", "teamx tools run "+entry+" actions")
 	h = strings.ReplaceAll(h, " [--tool ENTRY]", "")
 	h = strings.ReplaceAll(h, " --tool ENTRY", "")
@@ -236,4 +244,14 @@ Publish a Room message; ordinary Agent output stays private.
 Returns: committed sequence and client_message_id; --json writes the complete receipt.
 Example: teamx send --id result-1 --text 'Verified result' --json
 Constraints: retain the receipt ID. After failure/uncertain output, retry the same ID and content; changed content conflicts.
+`
+
+const gitlabImageActionExamples = `
+GitLab image examples (when declared by input_schema):
+Use root actions execute --tool ENTRY; GitLab tools run ENTRY remains the native CLI proxy.
+Ordinary MR comment:
+teamx actions execute --tool ENTRY --request '{"target_ref":"ref_MR","turn_number":1,"id":"mr-images-1","operation":"object.comment","input":{"body":"问题截图与修复效果","images":[{"message_seq":120,"attachment_id":"img_0123456789abcdef0123456789abcdef"}]},"policy_token":"CURRENT_TOKEN","authority":{"type":"human_reply","room_seq":122,"reason":"用户明确要求向该 MR 发送说明与这张图"}}'
+Exact discussion reply:
+teamx actions execute --tool ENTRY --request '{"target_ref":"ref_EXACT_DISCUSSION","turn_number":1,"id":"thread-images-1","operation":"discussion.reply","input":{"images":[{"message_seq":121,"attachment_id":"img_fedcba9876543210fedcba9876543210"}]},"policy_token":"CURRENT_TOKEN","authority":{"type":"human_reply","room_seq":122,"reason":"用户明确要求把第二张图回复到该准确讨论"}}'
+authority.room_seq is the sending instruction, not the image source. Reuse context:{object_ref,unit_ref,unit_version} for an existing matter without duplicate top-level matter fields. Resolve a full GitLab MR/discussion URL with actions resolve --tool ENTRY --request '{"locator":{"url":"https://gitlab.example/group/project/-/merge_requests/42"},"turn_number":1}' when no usable ref exists. Copy actual refs/current turn/token; do not construct native-ID locators. Submit the whole selection once, then report the receipt. On ambiguity clarify; on unknown read the original ID and never resend.
 `

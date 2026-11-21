@@ -140,6 +140,12 @@ func CheckResumeConfig(opts Options) error {
 	if opts.Model.Protocol == "" {
 		opts.Model.Protocol = "deepseek-messages"
 	}
+	// prepare canonicalizes this path before materializing bridge paths. The
+	// read-only preflight must compare against the same physical directory.
+	opts.StateDir, err = filepath.EvalSymlinks(opts.StateDir)
+	if err != nil {
+		return err
+	}
 	lock, err := lockDirectory(opts.StateDir)
 	if err != nil {
 		return err

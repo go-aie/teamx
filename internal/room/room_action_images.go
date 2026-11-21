@@ -19,8 +19,9 @@ type roomActionContextKey struct{}
 type roomActionContext struct {
 	ServiceInfo
 	MemberIdentity
-	Turn uint64
-	ID   string
+	Turn  uint64
+	ID    string
+	Input string // immutable original JSON, for per-call strategy selection only
 }
 
 type roomActionImageRef struct {

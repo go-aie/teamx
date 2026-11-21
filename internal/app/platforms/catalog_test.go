@@ -62,6 +62,13 @@ func TestBuiltinCatalogAndDeferredRuntimeBinding(t *testing.T) {
 			t.Fatal("formal Lark content schema does not match accepted target modes", op, cap.Spec)
 		}
 	}
+	gitlabRefs, _ := catalog.ReferenceCapabilities("gitlab")
+	for _, op := range []platform.Operation{platform.OperationObjectComment, platform.OperationDiscussionReply} {
+		cap := gitlabRefs.Actions[op]
+		if cap.Spec.DisabledReason != "" || !strings.Contains(string(cap.Spec.InputSchema), `"images"`) || cap.Spec.DirectRoomInstructionOnly {
+			t.Fatal("formal GitLab discovery must advertise images without restricting plain-text authority", op, cap.Spec)
+		}
+	}
 	if n := catalog.NotificationCapabilities("scion"); n.Input != nil {
 		t.Fatal("tool-only provider acquired an input codec")
 	}

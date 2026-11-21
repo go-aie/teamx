@@ -41,7 +41,10 @@ func validActionDiscussion(s string) bool {
 	return s != "." && s != ".." && len(s) <= 4096 && !strings.ContainsAny(s, "/\\?#\r\n\x00")
 }
 func actionText(s string) bool {
-	return strings.TrimSpace(s) != "" && len(s) <= 4096 && utf8.ValidString(s) && !strings.ContainsRune(s, 0)
+	return actionTextLimit(s, 4096)
+}
+func actionTextLimit(s string, limit int) bool {
+	return strings.TrimSpace(s) != "" && len(s) <= limit && utf8.ValidString(s) && !strings.ContainsRune(s, 0)
 }
 func actionInput(q platform.TargetActionRequest, a platform.AccessContext) (referenceAction, error) {
 	var input struct {

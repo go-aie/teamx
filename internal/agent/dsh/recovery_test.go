@@ -417,3 +417,30 @@ func TestResumeConfigPreflightDoesNotConsumeEvidenceOrRequireSecrets(t *testing.
 		})
 	}
 }
+
+// Input bridge configuration embeds StateDir. A caller may keep the original
+// symlink spelling across restart; that does not change backend configuration.
+func TestInputBridgeResumeConfigThroughStateSymlink(t *testing.T) {
+	opts := fixtureOptions(t)
+	physical := t.TempDir()
+	link := filepath.Join(t.TempDir(), "state-link")
+	if err := os.Symlink(physical, link); err != nil {
+		t.Fatal(err)
+	}
+	opts.StateDir = link
+	opts.InputBridge = true
+	session := openFixture(t, opts)
+	if err := session.Close(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckResumeConfig(opts); err != nil {
+		t.Fatal("same physical state rejected", err)
+	}
+	// Canonicalization must not waive real material tampering.
+	if err := os.WriteFile(filepath.Join(physical, "home", "cordis.patch.yml"), []byte("changed"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckResumeConfig(opts); !errors.Is(err, ErrRecoveryUnsupported) {
+		t.Fatal("changed backend accepted", err)
+	}
+}

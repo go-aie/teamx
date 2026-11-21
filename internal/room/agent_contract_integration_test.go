@@ -5,6 +5,7 @@ package room
 import (
 	"context"
 	"fmt"
+	"github.com/go-aie/teamx/internal/platform"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -38,12 +39,13 @@ func TestAgentTypedActionsRestoreExactTarget(t *testing.T) {
 				cli := contractCLI(t, server.URL, f.svc, f.id)
 				args := entryChange(t, "actions", "execute", q)
 				args[2] = "--request"
-				var got referenceActionReceipt
-				if err := cli(args, &got); err != nil || got.Status != "succeeded" || got.Attempts != 1 || got.Result == nil {
+				var got agentGitlabReceipt
+				if err := cli(args, &got); err != nil || got.Status != "succeeded" || got.Attempts != 1 || !got.Result.Verified || got.Result.Target == nil {
 					t.Fatal(got, err)
 				}
 				u, err := f.svc.store.readFollowup(f.id, q.ObjectRef, q.UnitRef)
-				if err != nil || len(u.Actions) != 1 || got.TargetRef != u.TargetRef || !sameNativeTarget(got.Result.Target, u.Actions[0].Target) || got.Result.Target.Discussion.Valid() != discussion {
+				actual := platform.TargetIdentity{IdentityScope: got.Result.Account.IdentityScope, Containers: got.Result.Target.Containers, Object: got.Result.Target.Object, Discussion: got.Result.Target.Discussion, Message: got.Result.Target.Message}
+				if err != nil || len(u.Actions) != 1 || got.TargetRef != u.TargetRef || !sameNativeTarget(actual, u.Actions[0].Target) || got.Result.Target.Discussion.Valid() != discussion {
 					t.Fatal(u, got, err)
 				}
 				if authority == "instruction" && u.Instructions[0].Status != "fulfilled" {

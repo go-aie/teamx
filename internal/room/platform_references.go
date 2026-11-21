@@ -45,7 +45,7 @@ func (m *roomManager) initPlatformReferences() {
 		m.referenceExecutors = map[string]referenceActionPreparer{"gitlab": m.prepareGitlabReferenceAction, "lark": m.prepareLarkReferenceAction}
 	}
 	if m.actionResolvers == nil {
-		m.actionResolvers = map[string]actionTargetResolver{"lark": m.resolveLarkActionTarget}
+		m.actionResolvers = map[string]actionTargetResolver{"lark": m.resolveLarkActionTarget, "gitlab": m.resolveGitlabActionTarget}
 	}
 	if m.referenceResolvers == nil {
 		m.referenceResolvers = map[string]followupResolver{"gitlab": m.resolveGitlabFollowup, "lark": m.resolveLarkFollowup}

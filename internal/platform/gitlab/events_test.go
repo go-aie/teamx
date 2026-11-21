@@ -54,6 +54,9 @@ func TestEventsGoNormalization(t *testing.T) {
 		{map[string]any{"target_type": "Note", "action_name": "commented on", "note": map[string]any{"id": 1312, "body": "comment", "noteable_type": "MergeRequest", "noteable_id": 70, "noteable_iid": 42}}, func(e Event) bool {
 			return e.Kind == "note" && e.NoteID == 1312 && strings.HasSuffix(e.URL, "/merge_requests/42#note_1312")
 		}},
+		{map[string]any{"target_type": "DiscussionNote", "target_id": 1313, "action_name": "commented on", "note": map[string]any{"id": 1313, "body": "![image-1](/uploads/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/image-1.png)", "noteable_type": "MergeRequest", "noteable_id": 70, "noteable_iid": 42}}, func(e Event) bool {
+			return e.Kind == "note" && e.TargetType == "DiscussionNote" && e.NoteID == 1313 && e.NoteableID == 70 && e.SkipReason == "" && strings.HasSuffix(e.URL, "/merge_requests/42#note_1313")
+		}},
 		{map[string]any{"target_type": nil, "push_data": map[string]any{"ref": "main", "ref_type": "branch", "commit_to": strings.Repeat("a", 40)}}, func(e Event) bool { return e.Kind == "push" && e.Branch == "main" && len(e.SHA) == 40 }},
 		{map[string]any{"target_type": nil, "push_data": map[string]any{"ref_count": 3, "ref": nil, "commit_to": nil}}, func(e Event) bool {
 			return e.Kind == "push" && e.DetailsMissing && e.RefCount == 3 && e.SHA == "" && e.Branch == ""

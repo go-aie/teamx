@@ -266,7 +266,7 @@ func normalizeEvent(r rawEvent, b Binding) (Event, error) {
 		if e.TargetIID > 0 {
 			e.URL = fmt.Sprintf("%s/-/merge_requests/%d", base, e.TargetIID)
 		}
-	case e.TargetType == "Note" && e.Action == "commented on":
+	case (e.TargetType == "Note" || e.TargetType == "DiscussionNote") && e.Action == "commented on":
 		var n rawEventNote
 		if decodeJSON(r.Note, &n) != nil || n.ID <= 0 || n.IID < 0 {
 			return Event{}, errors.New("invalid GitLab event note")

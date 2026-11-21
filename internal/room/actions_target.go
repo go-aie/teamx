@@ -28,7 +28,7 @@ func (q *actionResolveRequest) UnmarshalJSON(data []byte) error {
 		var d *requestDiagnostic
 		if errors.As(err, &d) && strings.HasPrefix(d.Field, "locator") {
 			copy := *d
-			copy.Hint = "Use locator:{self:true}, locator:{query:{object_type:chat,text:NAME}}, a returned candidates[i].locator unchanged, or locator:{target_ref:REF}."
+			copy.Hint = "Use locator:{url:FULL_GITLAB_MR_OR_DISCUSSION_URL}, locator:{target_ref:REF}, locator:{self:true}, locator:{query:{object_type:chat,text:NAME}}, or a returned candidates[i].locator unchanged; select the exact tool entry."
 			return &copy
 		}
 		return err
@@ -102,27 +102,37 @@ func (s *Store) loadActionTargetLocked(id MemberIdentity, ref string) (actionTar
 	return t, nil
 }
 func (s *Store) saveActionTarget(id MemberIdentity, r platform.TargetResolution, a platform.AccessContext) (string, error) {
+	return s.saveActionTargetForTurn(id, r, a, 0)
+}
+
+func (s *Store) saveActionTargetForTurn(id MemberIdentity, r platform.TargetResolution, a platform.AccessContext, turn uint64) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.checkFollowupsLocked(id, true); err != nil {
 		return "", err
+	}
+	if turn != 0 {
+		if _, err := s.runningTurnLocked(id, turn); err != nil {
+			return "", err
+		}
 	}
 	if r.Status != platform.ResolutionResolved || !r.Complete || !r.ObjectVerified || r.Target == nil || !r.Target.Valid() || r.Account != a.Account || !a.Valid() || a.RoomIdentity != id.RoomIdentity || a.AgentID != id.AgentID || a.MembershipID != id.MembershipID || r.CheckedAt.IsZero() || (r.Target.Discussion.Valid() && !r.DiscussionVerified) || (r.Target.Message.Valid() && !r.MessageVerified) {
 		return "", platform.ErrReference
 	}
 	ref := targetReference(id, *r.Target)
 	old, err := s.loadActionTargetLocked(id, ref)
-	if err == nil && !sameNativeTarget(old.Target, *r.Target) {
+	if err == nil && (!sameNativeTarget(old.Target, *r.Target) || old.Access.Account != a.Account) {
 		return "", ErrConflict
 	}
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return "", err
 	}
+	newTarget := errors.Is(err, os.ErrNotExist)
 	files, err := followupFiles(filepath.Join(s.actionRoot(id), "targets"), "targets")
 	if err != nil {
 		return "", err
 	}
-	if len(files) >= 4*followupCapacity {
+	if len(files) >= 4*followupCapacity && newTarget {
 		return "", ErrCapacity
 	}
 	return ref, s.save(s.actionTargetPath(id, ref), actionTarget{actionSchema, id, ref, *r.Target, r, a}, followupBytes)
@@ -398,8 +408,12 @@ func (m *roomManager) resolveActionTarget(ctx context.Context, req apiRequest, q
 	if current != svc || m.checkToolMemberLocked(ctx, toolsRequest{ServiceInfo: req.ServiceInfo, Caller: req.Caller}) != nil {
 		return actionTargetView{}, ErrIdentity
 	}
-	// session.Check can acquire manager.mu; invoke it before this commit gate.
-	view.TargetRef, err = svc.store.saveActionTarget(id, r, session.Access)
+	if session.CommitCheck != nil {
+		if err := session.CommitCheck(ctx); err != nil {
+			return actionTargetView{}, err
+		}
+	}
+	view.TargetRef, err = svc.store.saveActionTargetForTurn(id, r, session.Access, q.TurnNumber)
 	if len(view.Actions) == 0 {
 		view.DisabledReason = "No executable actions are registered for this target."
 	}

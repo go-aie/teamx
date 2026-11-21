@@ -2,6 +2,7 @@ package room
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
@@ -46,6 +47,16 @@ type agentLarkToolAvailability struct {
 func projectToolSelections(selections []toolSelection) []any {
 	result := make([]any, 0, len(selections))
 	for _, s := range selections {
+		if s.Provider == "gitlab" {
+			if s.Skill != "" {
+				s.Skill = `"$TEAMX_CLI" tools skill ` + s.Name
+			}
+			result = append(result, struct {
+				toolSelection
+				Workflow string `json:"workflow"`
+			}{s, "Read the exact entry Skill before the first managed GitLab action in each Session. Native CLI: tools run " + s.Name + " ... . Managed MR comments/replies: actions resolve/execute --tool " + s.Name + " --request JSON; root help: actions execute --help. For a direct comment/reply with a full URL, resolve {locator:{url:URL},turn_number:CURRENT_TURN}, then execute the returned target_ref; resolve verifies identity without preliminary native CLI reads or ID lookup. Reuse a valid target and current contract; input_schema declares image availability. For a new task, execute once without a receipt precheck; image-only input omits body entirely. Report the receipt; unknown requires actions read --id ORIGINAL_ID, never CLI resend."})
+			continue
+		}
 		if s.Provider != "lark" {
 			result = append(result, s)
 			continue
@@ -120,6 +131,9 @@ type agentSendTargetView struct {
 
 func projectActionTarget(v actionTargetView) any {
 	r := v.Resolution
+	if r.Account.Provider == "gitlab" {
+		return projectGitlabActionTarget(v)
+	}
 	if r.Account.Provider != "lark" || r.Target != nil && (r.Target.Message.Valid() || r.Target.Discussion.Valid() || r.Target.IdentityScope != r.Account.IdentityScope) {
 		return v
 	}
@@ -160,6 +174,9 @@ type agentSendResult struct {
 }
 
 func projectActionReceipt(r referenceActionReceipt, q referenceActionRequest) any {
+	if r.Result != nil && r.Result.Account.Provider == "gitlab" {
+		return projectGitlabActionReceipt(r, q)
+	}
 	provider := ""
 	if r.Result != nil {
 		provider = r.Result.Account.Provider
@@ -192,4 +209,86 @@ type agentSendReceipt struct {
 	Result            *agentSendResult          `json:"result,omitempty"`
 	UnitVersion       uint64                    `json:"unit_version,omitempty"`
 	PossibleDuplicate bool                      `json:"possible_duplicate,omitempty"`
+}
+
+// GitLab projection is local to verified MR comments/replies. It does not adopt
+// Lark self/group grants, and never projects policy repair feedback away.
+func isGitlabComment(op platform.Operation) bool {
+	return op == platform.OperationObjectComment || op == platform.OperationDiscussionReply
+}
+
+type agentGitlabTarget struct {
+	agentNativeTarget
+	MRIID platform.ExternalID `json:"mr_iid,omitzero"`
+}
+type agentGitlabResolution struct {
+	Status       platform.ResolutionStatus `json:"status"`
+	Account      platform.AccountIdentity  `json:"account"`
+	AccountLabel string                    `json:"account_label,omitempty"`
+	Target       *agentGitlabTarget        `json:"target,omitempty"`
+	URL          string                    `json:"url,omitempty"`
+	Complete     bool                      `json:"complete"`
+	ReasonCode   string                    `json:"reason_code,omitempty"`
+	Reason       string                    `json:"reason,omitempty"`
+}
+type agentGitlabCapability struct {
+	Operation      platform.Operation `json:"operation"`
+	InputSchema    json.RawMessage    `json:"input_schema"`
+	Required       []string           `json:"required"`
+	Authority      string             `json:"authority"`
+	Executable     bool               `json:"executable"`
+	DisabledReason string             `json:"disabled_reason,omitempty"`
+	ReasonCode     string             `json:"reason_code,omitempty"`
+	NextAction     string             `json:"next_action,omitempty"`
+}
+type agentGitlabTargetView struct {
+	TargetRef      string                  `json:"target_ref,omitempty"`
+	Resolution     agentGitlabResolution   `json:"resolution"`
+	Actions        []agentGitlabCapability `json:"actions"`
+	DisabledReason string                  `json:"disabled_reason,omitempty"`
+}
+
+func projectGitlabActionTarget(v actionTargetView) any {
+	r := v.Resolution
+	if r.Target == nil || r.Target.Object.Type != "MergeRequest" || r.Target.IdentityScope != r.Account.IdentityScope || r.Target.Message.Valid() || len(r.Candidates) > 0 {
+		return v
+	}
+	target := &agentGitlabTarget{agentNativeTarget: *projectNativeTarget(r.Target)}
+	for _, alias := range r.Aliases {
+		if alias.Object.ID.Namespace == "gitlab:rest:iid" {
+			target.MRIID = alias.Object.ID
+		}
+	}
+	actions := make([]agentGitlabCapability, 0, len(v.Actions))
+	for _, a := range v.Actions {
+		if !isGitlabComment(a.Operation) || a.BindingEvidence != "" {
+			return v
+		}
+		authority := "Before the first GitLab execute in a Session, read the exact entry Skill from tools list. Text: existing rule, instruction or human_reply authority plus current policy_token. A new turn does not expire this target or schema: reuse them with current turn_number/policy_token, without another resolve. Ask first for an unspecified different discussion; do not guess a locator or fall back to object.comment."
+		if strings.Contains(string(a.InputSchema), `"images"`) {
+			authority += " With images: only human_reply {room_seq,reason} from the direct Room instruction and current policy_token; one attempt, no unknown retry."
+		}
+		actions = append(actions, agentGitlabCapability{a.Operation, a.InputSchema, []string{"target_ref", "turn_number", "id", "operation", "input", "policy_token", "authority"}, authority, a.Executable, a.DisabledReason, a.ReasonCode, a.NextAction})
+	}
+	return agentGitlabTargetView{v.TargetRef, agentGitlabResolution{r.Status, r.Account, r.AccountLabel, target, r.URL, r.Complete, r.ReasonCode, r.Reason}, actions, v.DisabledReason}
+}
+
+type agentGitlabReceipt struct {
+	ID                string             `json:"id"`
+	Status            string             `json:"status"`
+	Attempts          int                `json:"attempts"`
+	TargetRef         string             `json:"target_ref"`
+	Operation         platform.Operation `json:"operation"`
+	Input             ActionInput        `json:"input"`
+	Result            agentSendResult    `json:"result"`
+	UnitVersion       uint64             `json:"unit_version,omitempty"`
+	PossibleDuplicate bool               `json:"possible_duplicate,omitempty"`
+}
+
+func projectGitlabActionReceipt(r referenceActionReceipt, q referenceActionRequest) any {
+	a := r.Result
+	if r.Policy != nil || a == nil || !isGitlabComment(q.Operation) || a.Target.Provider != "gitlab" || a.Target.Object.Type != "MergeRequest" || a.Target.IdentityScope != a.Account.IdentityScope || (r.Status != "succeeded" && r.Status != "unknown" && r.Status != "not_applied") {
+		return r
+	}
+	return agentGitlabReceipt{r.ID, r.Status, r.Attempts, r.TargetRef, q.Operation, q.Input, agentSendResult{projectNativeTarget(&a.Target), a.Account, r.Status == "succeeded" && a.Status == "succeeded", a.ResultID, a.ReasonCode, a.Message, a.URL}, r.UnitVersion, r.PossibleDuplicate}
 }

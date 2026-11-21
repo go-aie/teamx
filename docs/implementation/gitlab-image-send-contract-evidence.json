@@ -1,0 +1,972 @@
+{
+  "execute_help": {
+    "text": "Usage: teamx actions execute (--request JSON | --request-file PATH) [--tool ENTRY]\nSubmit one complete action on the exact tools-list entry. Input and required evidence come from its resolved action.\nParameters: --request: {target_ref,turn_number,id,operation,input,context?}. Self message.send_self omits policy_token/authority. Group message.send requires current policy_token and authority:{type:human_reply,room_seq:ACTUAL_HUMAN_SEQ,reason:INTERPRETATION}. Other actions use rule/instruction {type,id,version,reason,constraints?} or human_reply {type,room_seq,reason,question_ref?,message_refs?,constraints?} as declared; rule forbids constraints. Optional context:{object_ref,unit_ref,unit_version} associates a matter, never grants authority. Legacy unit requests remain accepted. --request-file PATH: read the same JSON from a file; - reads stdin. Mutually exclusive with --request. Existing endpoint/body and business field limits still apply.\nCommon: --endpoint URL (bound TEAMX_ENDPOINT); --json (JSON output, default true). Requires the six bound TEAMX_* identity values.\nReturns: id, status, attempts, target_ref and result. Lark sends and GitLab MR comments/replies include operation, complete input, authority when required, exact account/target and result.verified plus any known result_id/reason. Full frozen evidence is available with actions read --id ID.\nExample: teamx actions execute --tool ENTRY --request '{\"target_ref\":\"ref_...\",\"turn_number\":1,\"id\":\"save-1\",\"operation\":\"message.send_self\",\"input\":{\"body\":\"保存这段文字\"}}'; or teamx actions execute --request-file payload.json (use - for stdin)\nConstraints: Follow input_schema: body is exact text; images, only when declared, are ordered {message_seq,attachment_id} from current Room human messages/attachments[].id. No extra attachment lookup or read receipt. One action/ID sends the entire selection; never split captions/images or fall back to a subset. Lark message replies remain text only. GitLab images are available only when input_schema declares them; production GitLab remains text only pending acceptance. GitLab image comments/replies require authority:{type:human_reply,room_seq,reason} and current policy_token, one attempt; rule/instruction/question authority is not accepted with images. Group sends require the direct Room instruction; self evidence grants no group permission. Reuse stable IDs; changed target/input/evidence conflicts. source/upload failure means nothing sent; unknown may already be sent: query actions read --id ORIGINAL_ID, never resend with a new ID/account/Session. Use error reason/next_action for the same account; platforms skill supplies requested repairs. Success means verified delivery, not read/business completion. Publish outcomes locally with send.\n\nGitLab image examples (isolated acceptance; production is text only until accepted):\nUse root actions execute --tool ENTRY; GitLab tools run ENTRY remains the native CLI proxy.\nOrdinary MR comment:\nteamx actions execute --tool ENTRY --request '{\"target_ref\":\"ref_MR\",\"turn_number\":1,\"id\":\"mr-images-1\",\"operation\":\"object.comment\",\"input\":{\"body\":\"问题截图与修复效果\",\"images\":[{\"message_seq\":120,\"attachment_id\":\"img_0123456789abcdef0123456789abcdef\"}]},\"policy_token\":\"CURRENT_TOKEN\",\"authority\":{\"type\":\"human_reply\",\"room_seq\":122,\"reason\":\"用户明确要求向该 MR 发送说明与这张图\"}}'\nExact discussion reply:\nteamx actions execute --tool ENTRY --request '{\"target_ref\":\"ref_EXACT_DISCUSSION\",\"turn_number\":1,\"id\":\"thread-images-1\",\"operation\":\"discussion.reply\",\"input\":{\"images\":[{\"message_seq\":121,\"attachment_id\":\"img_fedcba9876543210fedcba9876543210\"}]},\"policy_token\":\"CURRENT_TOKEN\",\"authority\":{\"type\":\"human_reply\",\"room_seq\":122,\"reason\":\"用户明确要求把第二张图回复到该准确讨论\"}}'\nauthority.room_seq is the sending instruction, not the image source. Reuse context:{object_ref,unit_ref,unit_version} for an existing matter without duplicate top-level matter fields. Copy actual refs/current turn/token; no arbitrary URL or native-ID target creation. Submit the whole selection once, then report the receipt. On ambiguity clarify; on unknown read the original ID and never resend.\n",
+    "utf8_bytes": 4219
+  },
+  "first_contract_business_calls": [
+    "actions resolve",
+    "actions execute"
+  ],
+  "gitlab_skill": {
+    "utf8_bytes": 11116
+  },
+  "image_action_frozen_detail": {
+    "top_level_fields": 12,
+    "utf8_bytes": 4574,
+    "value": {
+      "idempotency_key": "99c2089ab4a3ff56f02ba58ccfb9a3ee",
+      "member_record": true,
+      "request": {
+        "object_ref": "",
+        "unit_ref": "",
+        "unit_version": 0,
+        "turn_number": 1,
+        "target_ref": "ref_5d4f18a5ad8d2630e12ea8d1b297eaef69e4a44c9bc8d6142de0f289b025b3d4",
+        "id": "image-contract",
+        "policy_token": "aef1a158eb235df2a28984def17501004b3788ec4d2540adfacee2aa5ac34d26",
+        "authority": {
+          "room_seq": 5,
+          "reason": "直接 Room 人类指令要求向准确 MR 或讨论发送选定完整图文"
+        },
+        "operation": "discussion.reply",
+        "input": {
+          "body": "完整说明\n两张原图",
+          "images": [
+            {
+              "attachment_id": "img_00000000000000000000000000000001",
+              "message_seq": 1
+            },
+            {
+              "attachment_id": "img_00000000000000000000000000000002",
+              "message_seq": 2
+            }
+          ]
+        }
+      },
+      "target": {
+        "provider": "gitlab",
+        "instance": "https://gitlab.invalid",
+        "containers": [
+          {
+            "type": "Project",
+            "id": {
+              "namespace": "gitlab:rest:id",
+              "value": "123"
+            }
+          }
+        ],
+        "object": {
+          "type": "MergeRequest",
+          "id": {
+            "namespace": "gitlab:rest:id",
+            "value": "9001"
+          }
+        },
+        "discussion": {
+          "namespace": "gitlab:rest:discussion",
+          "value": "thread"
+        }
+      },
+      "access": {
+        "room_id": "04474808aac0a0f08105475d3f974c78",
+        "room_instance": "f2d590cb42311236b1dbf935117ebfb1",
+        "agent_id": "xiaolin",
+        "membership_id": "7d9d4a855d0d288be61e68bcce887b2d",
+        "receiver": {
+          "provider": "gitlab",
+          "instance": "https://gitlab.invalid",
+          "id": {
+            "namespace": "gitlab:rest:id",
+            "value": "101"
+          }
+        },
+        "account": {
+          "provider": "gitlab",
+          "instance": "https://gitlab.invalid",
+          "id": {
+            "namespace": "gitlab:rest:id",
+            "value": "101"
+          }
+        },
+        "platform_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "generation": "3a05d9c9e77779cb0e913778b9dd81e2",
+        "platform_version": 1,
+        "credential_version": 1
+      },
+      "inspection": {
+        "content_digest": "9106f817e4b3760b2eff8a138778d813d1cb6884b6169ccc6d979ca6603b3551",
+        "target": {
+          "provider": "gitlab",
+          "instance": "https://gitlab.invalid",
+          "containers": [
+            {
+              "type": "Project",
+              "id": {
+                "namespace": "gitlab:rest:id",
+                "value": "123"
+              }
+            }
+          ],
+          "object": {
+            "type": "MergeRequest",
+            "id": {
+              "namespace": "gitlab:rest:id",
+              "value": "9001"
+            }
+          },
+          "discussion": {
+            "namespace": "gitlab:rest:discussion",
+            "value": "thread"
+          }
+        },
+        "account": {
+          "provider": "gitlab",
+          "instance": "https://gitlab.invalid",
+          "id": {
+            "namespace": "gitlab:rest:id",
+            "value": "101"
+          }
+        },
+        "account_label": "user101",
+        "container_label": "g/p",
+        "url": "https://gitlab.invalid/g/p/-/merge_requests/42"
+      },
+      "spec": {
+        "direct_room_instruction_only": true,
+        "operation": "discussion.reply",
+        "target_kind": "discussion",
+        "object_types": [
+          "MergeRequest"
+        ],
+        "input_schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "anyOf": [
+            {
+              "required": [
+                "body"
+              ]
+            },
+            {
+              "required": [
+                "images"
+              ]
+            }
+          ],
+          "properties": {
+            "body": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "准确 GitLab Markdown，最多 4096 UTF-8 字节；含图时拒绝独立 quick action 命令行和吞掉追加图片的未闭合块"
+            },
+            "images": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 4,
+              "description": "当前 Room 已发布且保留的人类 PNG/JPEG/WebP 原图；每张 2 MiB/16 Mi 像素，合计 4 MiB；数组顺序，整条一次提交。含图须当前 policy_token 及 authority:{type:human_reply,room_seq:真实授权指令序号,reason:解释}；最多一次尝试，不接受规则/持久指令/问答授权",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "message_seq",
+                  "attachment_id"
+                ],
+                "properties": {
+                  "message_seq": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "attachment_id": {
+                    "type": "string",
+                    "pattern": "^img_[0-9a-f]{32}$"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "retry": {
+          "max_attempts": 1,
+          "retry_unknown": false
+        }
+      },
+      "basis": {
+        "question_ref": "",
+        "target_ref": "ref_5d4f18a5ad8d2630e12ea8d1b297eaef69e4a44c9bc8d6142de0f289b025b3d4",
+        "intent": {
+          "operation": "discussion.reply",
+          "body": "完整说明\n两张原图"
+        },
+        "source": {
+          "seq": 5,
+          "client_message_id": "image-authority",
+          "author": {
+            "kind": "human",
+            "id": "russellluo"
+          },
+          "text": "把指定原图和说明一起评论到这个 MR；如果目标是讨论，回复该准确讨论",
+          "created_at": "2026-11-21T00:43:05.370255Z"
+        },
+        "basis": "直接 Room 人类指令要求向准确 MR 或讨论发送选定完整图文"
+      },
+      "status": "succeeded",
+      "attempts": 1,
+      "result": {
+        "target": {
+          "provider": "gitlab",
+          "instance": "https://gitlab.invalid",
+          "containers": [
+            {
+              "type": "Project",
+              "id": {
+                "namespace": "gitlab:rest:id",
+                "value": "123"
+              }
+            }
+          ],
+          "object": {
+            "type": "MergeRequest",
+            "id": {
+              "namespace": "gitlab:rest:id",
+              "value": "9001"
+            }
+          },
+          "discussion": {
+            "namespace": "gitlab:rest:discussion",
+            "value": "thread"
+          }
+        },
+        "account": {
+          "provider": "gitlab",
+          "instance": "https://gitlab.invalid",
+          "id": {
+            "namespace": "gitlab:rest:id",
+            "value": "101"
+          }
+        },
+        "status": "succeeded",
+        "message": "GitLab 独立回读已核实完整评论及图片顺序。",
+        "result_id": {
+          "namespace": "gitlab:rest:id",
+          "value": "99"
+        },
+        "url": "https://gitlab.invalid/g/p/-/merge_requests/42#note_99",
+        "retry_class": "never"
+      },
+      "updated_at": "2026-11-21T00:43:05.676309Z"
+    }
+  },
+  "image_execute_request": {
+    "top_level_fields": 7,
+    "utf8_bytes": 575,
+    "value": {
+      "authority": {
+        "type": "human_reply",
+        "room_seq": 5,
+        "reason": "直接 Room 人类指令要求向准确 MR 或讨论发送选定完整图文"
+      },
+      "id": "image-contract",
+      "input": {
+        "body": "完整说明\n两张原图",
+        "images": [
+          {
+            "attachment_id": "img_00000000000000000000000000000001",
+            "message_seq": 1
+          },
+          {
+            "attachment_id": "img_00000000000000000000000000000002",
+            "message_seq": 2
+          }
+        ]
+      },
+      "operation": "discussion.reply",
+      "policy_token": "aef1a158eb235df2a28984def17501004b3788ec4d2540adfacee2aa5ac34d26",
+      "target_ref": "ref_5d4f18a5ad8d2630e12ea8d1b297eaef69e4a44c9bc8d6142de0f289b025b3d4",
+      "turn_number": 1
+    }
+  },
+  "image_receipt_internal_dto": {
+    "top_level_fields": 5,
+    "utf8_bytes": 807,
+    "value": {
+      "id": "image-contract",
+      "status": "succeeded",
+      "attempts": 1,
+      "result": {
+        "target": {
+          "provider": "gitlab",
+          "instance": "https://gitlab.invalid",
+          "containers": [
+            {
+              "type": "Project",
+              "id": {
+                "namespace": "gitlab:rest:id",
+                "value": "123"
+              }
+            }
+          ],
+          "object": {
+            "type": "MergeRequest",
+            "id": {
+              "namespace": "gitlab:rest:id",
+              "value": "9001"
+            }
+          },
+          "discussion": {
+            "namespace": "gitlab:rest:discussion",
+            "value": "thread"
+          }
+        },
+        "account": {
+          "provider": "gitlab",
+          "instance": "https://gitlab.invalid",
+          "id": {
+            "namespace": "gitlab:rest:id",
+            "value": "101"
+          }
+        },
+        "status": "succeeded",
+        "message": "GitLab 独立回读已核实完整评论及图片顺序。",
+        "result_id": {
+          "namespace": "gitlab:rest:id",
+          "value": "99"
+        },
+        "url": "https://gitlab.invalid/g/p/-/merge_requests/42#note_99",
+        "retry_class": "never"
+      },
+      "target_ref": "ref_5d4f18a5ad8d2630e12ea8d1b297eaef69e4a44c9bc8d6142de0f289b025b3d4"
+    }
+  },
+  "image_receipt_projection": {
+    "top_level_fields": 7,
+    "utf8_bytes": 958,
+    "value": {
+      "id": "image-contract",
+      "status": "succeeded",
+      "attempts": 1,
+      "target_ref": "ref_5d4f18a5ad8d2630e12ea8d1b297eaef69e4a44c9bc8d6142de0f289b025b3d4",
+      "operation": "discussion.reply",
+      "input": {
+        "body": "完整说明\n两张原图",
+        "images": [
+          {
+            "attachment_id": "img_00000000000000000000000000000001",
+            "message_seq": 1
+          },
+          {
+            "attachment_id": "img_00000000000000000000000000000002",
+            "message_seq": 2
+          }
+        ]
+      },
+      "result": {
+        "target": {
+          "containers": [
+            {
+              "type": "Project",
+              "id": {
+                "namespace": "gitlab:rest:id",
+                "value": "123"
+              }
+            }
+          ],
+          "object": {
+            "type": "MergeRequest",
+            "id": {
+              "namespace": "gitlab:rest:id",
+              "value": "9001"
+            }
+          },
+          "discussion": {
+            "namespace": "gitlab:rest:discussion",
+            "value": "thread"
+          }
+        },
+        "account": {
+          "provider": "gitlab",
+          "instance": "https://gitlab.invalid",
+          "id": {
+            "namespace": "gitlab:rest:id",
+            "value": "101"
+          }
+        },
+        "verified": true,
+        "result_id": {
+          "namespace": "gitlab:rest:id",
+          "value": "99"
+        },
+        "message": "GitLab 独立回读已核实完整评论及图片顺序。",
+        "url": "https://gitlab.invalid/g/p/-/merge_requests/42#note_99"
+      }
+    }
+  },
+  "image_target_internal_dto": {
+    "top_level_fields": 3,
+    "utf8_bytes": 2154,
+    "value": {
+      "target_ref": "ref_5d4f18a5ad8d2630e12ea8d1b297eaef69e4a44c9bc8d6142de0f289b025b3d4",
+      "resolution": {
+        "status": "resolved",
+        "checked_at": "2026-11-21T00:43:05.586904Z",
+        "target": {
+          "provider": "gitlab",
+          "instance": "https://gitlab.invalid",
+          "containers": [
+            {
+              "type": "Project",
+              "id": {
+                "namespace": "gitlab:rest:id",
+                "value": "123"
+              }
+            }
+          ],
+          "object": {
+            "type": "MergeRequest",
+            "id": {
+              "namespace": "gitlab:rest:id",
+              "value": "9001"
+            }
+          },
+          "discussion": {
+            "namespace": "gitlab:rest:discussion",
+            "value": "thread"
+          }
+        },
+        "aliases": [
+          {
+            "provider": "gitlab",
+            "instance": "https://gitlab.invalid",
+            "containers": [
+              {
+                "type": "Project",
+                "id": {
+                  "namespace": "gitlab:rest:id",
+                  "value": "123"
+                }
+              }
+            ],
+            "object": {
+              "type": "MergeRequest",
+              "id": {
+                "namespace": "gitlab:rest:iid",
+                "value": "42"
+              }
+            },
+            "discussion": {
+              "namespace": "gitlab:rest:discussion",
+              "value": "thread"
+            }
+          }
+        ],
+        "account": {
+          "provider": "gitlab",
+          "instance": "https://gitlab.invalid",
+          "id": {
+            "namespace": "gitlab:rest:id",
+            "value": "101"
+          }
+        },
+        "object_verified": true,
+        "discussion_verified": true,
+        "message_verified": false,
+        "complete": true,
+        "url": "https://gitlab.invalid/g/p/-/merge_requests/42"
+      },
+      "actions": [
+        {
+          "operation": "discussion.reply",
+          "target_kind": "discussion",
+          "object_types": [
+            "MergeRequest"
+          ],
+          "input_schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "anyOf": [
+              {
+                "required": [
+                  "body"
+                ]
+              },
+              {
+                "required": [
+                  "images"
+                ]
+              }
+            ],
+            "properties": {
+              "body": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096,
+                "description": "准确 GitLab Markdown，最多 4096 UTF-8 字节；含图时拒绝独立 quick action 命令行和吞掉追加图片的未闭合块"
+              },
+              "images": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 4,
+                "description": "当前 Room 已发布且保留的人类 PNG/JPEG/WebP 原图；每张 2 MiB/16 Mi 像素，合计 4 MiB；数组顺序，整条一次提交。含图须当前 policy_token 及 authority:{type:human_reply,room_seq:真实授权指令序号,reason:解释}；最多一次尝试，不接受规则/持久指令/问答授权",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "message_seq",
+                    "attachment_id"
+                  ],
+                  "properties": {
+                    "message_seq": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "attachment_id": {
+                      "type": "string",
+                      "pattern": "^img_[0-9a-f]{32}$"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "retry": {
+            "max_attempts": 1,
+            "retry_unknown": false
+          },
+          "executable": true
+        }
+      ]
+    }
+  },
+  "image_target_projection": {
+    "top_level_fields": 3,
+    "utf8_bytes": 1949,
+    "value": {
+      "target_ref": "ref_5d4f18a5ad8d2630e12ea8d1b297eaef69e4a44c9bc8d6142de0f289b025b3d4",
+      "resolution": {
+        "status": "resolved",
+        "account": {
+          "provider": "gitlab",
+          "instance": "https://gitlab.invalid",
+          "id": {
+            "namespace": "gitlab:rest:id",
+            "value": "101"
+          }
+        },
+        "target": {
+          "containers": [
+            {
+              "type": "Project",
+              "id": {
+                "namespace": "gitlab:rest:id",
+                "value": "123"
+              }
+            }
+          ],
+          "object": {
+            "type": "MergeRequest",
+            "id": {
+              "namespace": "gitlab:rest:id",
+              "value": "9001"
+            }
+          },
+          "discussion": {
+            "namespace": "gitlab:rest:discussion",
+            "value": "thread"
+          },
+          "mr_iid": {
+            "namespace": "gitlab:rest:iid",
+            "value": "42"
+          }
+        },
+        "url": "https://gitlab.invalid/g/p/-/merge_requests/42",
+        "complete": true
+      },
+      "actions": [
+        {
+          "operation": "discussion.reply",
+          "input_schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "anyOf": [
+              {
+                "required": [
+                  "body"
+                ]
+              },
+              {
+                "required": [
+                  "images"
+                ]
+              }
+            ],
+            "properties": {
+              "body": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096,
+                "description": "准确 GitLab Markdown，最多 4096 UTF-8 字节；含图时拒绝独立 quick action 命令行和吞掉追加图片的未闭合块"
+              },
+              "images": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 4,
+                "description": "当前 Room 已发布且保留的人类 PNG/JPEG/WebP 原图；每张 2 MiB/16 Mi 像素，合计 4 MiB；数组顺序，整条一次提交。含图须当前 policy_token 及 authority:{type:human_reply,room_seq:真实授权指令序号,reason:解释}；最多一次尝试，不接受规则/持久指令/问答授权",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "message_seq",
+                    "attachment_id"
+                  ],
+                  "properties": {
+                    "message_seq": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "attachment_id": {
+                      "type": "string",
+                      "pattern": "^img_[0-9a-f]{32}$"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": [
+            "target_ref",
+            "turn_number",
+            "id",
+            "operation",
+            "input",
+            "policy_token",
+            "authority"
+          ],
+          "authority": "Text: existing rule, instruction or human_reply authority plus current policy_token. With images: only human_reply {room_seq,reason} from the direct Room instruction and current policy_token; one attempt, no unknown retry.",
+          "executable": true
+        }
+      ]
+    }
+  },
+  "known_target_business_calls": [
+    "actions execute"
+  ],
+  "necessary_preconditions": "current turn/policy_token and real instruction; image publication and existing managed target setup are counted separately from action calls",
+  "old_image_baseline": null,
+  "remote_business_writes": 0,
+  "resolve_help": {
+    "text": "Usage: teamx actions resolve (--request JSON | --request-file PATH) [--tool ENTRY]\nVerify a target on the exact tools-list account; Lark tools run ENTRY actions resolve and GitLab root actions resolve --tool ENTRY select their managed entry.\nParameters: --request: {locator,turn_number}; locator is {self:true}, {query:{object_type:chat,text:NAME}}, a returned candidates[i].locator unchanged, or {target_ref:REF}. Root requests without --tool also accept provider; account_owner_seq is optional human account-ownership evidence. --request-file PATH: read the same JSON from a file; - reads stdin. Mutually exclusive with --request. Existing endpoint/body and business field limits still apply.\nCommon: --endpoint URL (bound TEAMX_ENDPOINT); --json (JSON output, default true). Requires the six bound TEAMX_* identity values.\nReturns: resolution: account, target/label or candidates[].{label,locator}, status, complete, candidates_incomplete and reason. target_ref plus actions: input_schema, required request fields, authority contract, executable and repair reason/next_action.\nExample: teamx actions resolve --tool ENTRY --request '{\"locator\":{\"self\":true},\"turn_number\":1}'; or teamx actions resolve --request-file payload.json (use - for stdin)\nConstraints: Candidates are unverified; resolve the selected locator on the same entry with the CURRENT turn. Clarify duplicate names; retain incompleteness. The service verifies identity, account, membership and permission. Reuse an existing valid target_ref. Saved message refs resolve ordinary replies; current production GitLab uses existing followup targets. Target access is not sending authority.\n",
+    "utf8_bytes": 1654
+  },
+  "runtime": "actual manager/service/CLI with local HTTPS fixture",
+  "text_receipt_original_dto": {
+    "top_level_fields": 5,
+    "utf8_bytes": 778,
+    "value": {
+      "id": "text-baseline",
+      "status": "succeeded",
+      "attempts": 1,
+      "result": {
+        "target": {
+          "provider": "gitlab",
+          "instance": "https://gitlab.invalid",
+          "containers": [
+            {
+              "type": "Project",
+              "id": {
+                "namespace": "gitlab:rest:id",
+                "value": "123"
+              }
+            }
+          ],
+          "object": {
+            "type": "MergeRequest",
+            "id": {
+              "namespace": "gitlab:rest:id",
+              "value": "9001"
+            }
+          },
+          "discussion": {
+            "namespace": "gitlab:rest:discussion",
+            "value": "thread"
+          }
+        },
+        "account": {
+          "provider": "gitlab",
+          "instance": "https://gitlab.invalid",
+          "id": {
+            "namespace": "gitlab:rest:id",
+            "value": "101"
+          }
+        },
+        "status": "succeeded",
+        "message": "GitLab returned the exact note",
+        "result_id": {
+          "namespace": "gitlab:rest:id",
+          "value": "99"
+        },
+        "url": "https://gitlab.invalid/g/p/-/merge_requests/42#note_99",
+        "retry_class": "never"
+      },
+      "target_ref": "ref_5d4f18a5ad8d2630e12ea8d1b297eaef69e4a44c9bc8d6142de0f289b025b3d4"
+    }
+  },
+  "text_receipt_projection": {
+    "top_level_fields": 7,
+    "utf8_bytes": 757,
+    "value": {
+      "id": "text-baseline",
+      "status": "succeeded",
+      "attempts": 1,
+      "target_ref": "ref_5d4f18a5ad8d2630e12ea8d1b297eaef69e4a44c9bc8d6142de0f289b025b3d4",
+      "operation": "discussion.reply",
+      "input": {
+        "body": "exact reply"
+      },
+      "result": {
+        "target": {
+          "containers": [
+            {
+              "type": "Project",
+              "id": {
+                "namespace": "gitlab:rest:id",
+                "value": "123"
+              }
+            }
+          ],
+          "object": {
+            "type": "MergeRequest",
+            "id": {
+              "namespace": "gitlab:rest:id",
+              "value": "9001"
+            }
+          },
+          "discussion": {
+            "namespace": "gitlab:rest:discussion",
+            "value": "thread"
+          }
+        },
+        "account": {
+          "provider": "gitlab",
+          "instance": "https://gitlab.invalid",
+          "id": {
+            "namespace": "gitlab:rest:id",
+            "value": "101"
+          }
+        },
+        "verified": true,
+        "result_id": {
+          "namespace": "gitlab:rest:id",
+          "value": "99"
+        },
+        "message": "GitLab returned the exact note",
+        "url": "https://gitlab.invalid/g/p/-/merge_requests/42#note_99"
+      }
+    }
+  },
+  "text_target_original_dto": {
+    "top_level_fields": 3,
+    "utf8_bytes": 1361,
+    "value": {
+      "target_ref": "ref_5d4f18a5ad8d2630e12ea8d1b297eaef69e4a44c9bc8d6142de0f289b025b3d4",
+      "resolution": {
+        "status": "resolved",
+        "checked_at": "2026-11-21T00:43:05.491003Z",
+        "target": {
+          "provider": "gitlab",
+          "instance": "https://gitlab.invalid",
+          "containers": [
+            {
+              "type": "Project",
+              "id": {
+                "namespace": "gitlab:rest:id",
+                "value": "123"
+              }
+            }
+          ],
+          "object": {
+            "type": "MergeRequest",
+            "id": {
+              "namespace": "gitlab:rest:id",
+              "value": "9001"
+            }
+          },
+          "discussion": {
+            "namespace": "gitlab:rest:discussion",
+            "value": "thread"
+          }
+        },
+        "aliases": [
+          {
+            "provider": "gitlab",
+            "instance": "https://gitlab.invalid",
+            "containers": [
+              {
+                "type": "Project",
+                "id": {
+                  "namespace": "gitlab:rest:id",
+                  "value": "123"
+                }
+              }
+            ],
+            "object": {
+              "type": "MergeRequest",
+              "id": {
+                "namespace": "gitlab:rest:iid",
+                "value": "42"
+              }
+            },
+            "discussion": {
+              "namespace": "gitlab:rest:discussion",
+              "value": "thread"
+            }
+          }
+        ],
+        "account": {
+          "provider": "gitlab",
+          "instance": "https://gitlab.invalid",
+          "id": {
+            "namespace": "gitlab:rest:id",
+            "value": "101"
+          }
+        },
+        "object_verified": true,
+        "discussion_verified": true,
+        "message_verified": false,
+        "complete": true,
+        "url": "https://gitlab.invalid/g/p/-/merge_requests/42"
+      },
+      "actions": [
+        {
+          "operation": "discussion.reply",
+          "target_kind": "discussion",
+          "object_types": [
+            "MergeRequest"
+          ],
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "body"
+            ],
+            "properties": {
+              "body": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              }
+            },
+            "additionalProperties": false
+          },
+          "retry": {
+            "max_attempts": 1,
+            "retry_unknown": false
+          },
+          "executable": true
+        }
+      ]
+    }
+  },
+  "text_target_projection": {
+    "top_level_fields": 3,
+    "utf8_bytes": 1018,
+    "value": {
+      "target_ref": "ref_5d4f18a5ad8d2630e12ea8d1b297eaef69e4a44c9bc8d6142de0f289b025b3d4",
+      "resolution": {
+        "status": "resolved",
+        "account": {
+          "provider": "gitlab",
+          "instance": "https://gitlab.invalid",
+          "id": {
+            "namespace": "gitlab:rest:id",
+            "value": "101"
+          }
+        },
+        "target": {
+          "containers": [
+            {
+              "type": "Project",
+              "id": {
+                "namespace": "gitlab:rest:id",
+                "value": "123"
+              }
+            }
+          ],
+          "object": {
+            "type": "MergeRequest",
+            "id": {
+              "namespace": "gitlab:rest:id",
+              "value": "9001"
+            }
+          },
+          "discussion": {
+            "namespace": "gitlab:rest:discussion",
+            "value": "thread"
+          },
+          "mr_iid": {
+            "namespace": "gitlab:rest:iid",
+            "value": "42"
+          }
+        },
+        "url": "https://gitlab.invalid/g/p/-/merge_requests/42",
+        "complete": true
+      },
+      "actions": [
+        {
+          "operation": "discussion.reply",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "body"
+            ],
+            "properties": {
+              "body": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              }
+            },
+            "additionalProperties": false
+          },
+          "required": [
+            "target_ref",
+            "turn_number",
+            "id",
+            "operation",
+            "input",
+            "policy_token",
+            "authority"
+          ],
+          "authority": "Text: existing rule, instruction or human_reply authority plus current policy_token.",
+          "executable": true
+        }
+      ]
+    }
+  },
+  "tool_discovery_projection": {
+    "top_level_fields": 0,
+    "utf8_bytes": 889,
+    "value": [
+      {
+        "agent_id": "xiaolin",
+        "capabilities": [
+          "discussion.reply",
+          "object.comment",
+          "read",
+          "run"
+        ],
+        "description": "",
+        "instance": "https://gitlab.invalid",
+        "membership_id": "7d9d4a855d0d288be61e68bcce887b2d",
+        "name": "gitlab-5f5b3919f931672853c6d5be49932351",
+        "platform_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "platform_name": "Company GitLab",
+        "provider": "gitlab",
+        "skill": "\"$TEAMX_CLI\" tools skill gitlab-5f5b3919f931672853c6d5be49932351",
+        "status": "valid",
+        "tool_type": "gitlab",
+        "username": "user101",
+        "version": "fixture",
+        "workflow": "Native CLI: tools run gitlab-5f5b3919f931672853c6d5be49932351 ... . Managed MR comments/replies: actions resolve/execute --tool gitlab-5f5b3919f931672853c6d5be49932351; root help: actions execute --help. Reuse a valid target and current contract; input_schema declares image availability. Report the receipt; unknown requires actions read --id ORIGINAL_ID, never CLI resend."
+      }
+    ]
+  }
+}

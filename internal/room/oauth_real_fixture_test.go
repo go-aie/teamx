@@ -9,8 +9,9 @@ import (
 )
 
 // Real acceptance uses an explicitly selected, dedicated test authorization.
-// Its source installation must be stopped: refresh rotates the shared remote
-// grant. The source file is not changed; never use a live service snapshot.
+// Tests permitting refresh require a stopped source installation: refresh rotates
+// the shared remote grant. Access-only tests may copy a current grant when their
+// transport rejects refresh/revoke and the source file remains unchanged.
 func selectedRealOAuthSnapshot(t *testing.T, origin string) (registry.Snapshot, managedPlatform) {
 	t.Helper()
 	path := os.Getenv("TEAMX_REAL_OAUTH_SNAPSHOT")

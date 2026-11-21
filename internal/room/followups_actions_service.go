@@ -17,7 +17,9 @@ type referenceActionSession struct {
 	Access          platform.AccessContext
 	Capabilities    platform.ReferenceCapabilities
 	Check           func(context.Context) error
-	Close           func()
+	// Optional final admission check while manager.mu is held, before saving a target.
+	CommitCheck func(context.Context) error
+	Close       func()
 }
 type referenceActionPreparer func(context.Context, MemberIdentity, platform.AccessContext) (referenceActionSession, error)
 
@@ -163,7 +165,7 @@ func (s *service) executeReferenceAction(ctx context.Context, id MemberIdentity,
 	if err != nil {
 		return referenceActionReceipt{}, err
 	}
-	ctx = context.WithValue(ctx, roomActionContextKey{}, roomActionContext{ServiceInfo: s.info, MemberIdentity: id, Turn: q.TurnNumber, ID: q.ID})
+	ctx = context.WithValue(ctx, roomActionContextKey{}, roomActionContext{ServiceInfo: s.info, MemberIdentity: id, Turn: q.TurnNumber, ID: q.ID, Input: string(actionInputJSON(q.Input))})
 	session, err := prepare(ctx, id, old)
 	if err != nil {
 		return referenceActionReceipt{}, err
