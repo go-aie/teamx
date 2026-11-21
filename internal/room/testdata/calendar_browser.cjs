@@ -5,11 +5,11 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
  const artifacts=process.env.TEAMX_CALENDAR_ARTIFACTS;
  if(artifacts)fs.mkdirSync(artifacts,{recursive:true});
  const shot=async name=>{if(artifacts)await page.screenshot({path:`${artifacts}/${name}.png`,fullPage:true,animations:"disabled"});};
- const swipeCalendar=async(target,dx,dy=0,selector='#calendar-items')=>{
+ const swipeCalendar=async(target,dx,dy=0,selector='#calendar-items',onStep=async()=>{})=>{
    const session=await target.context().newCDPSession(target);await session.send('Emulation.setTouchEmulationEnabled',{enabled:true});
    const box=await target.locator(selector).boundingBox(),x=box.x+box.width*(dx<0?.78:.22),y=box.y+Math.min(180,box.height/2);
    await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});
-   for(let step=1;step<=10;step++){await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:x+dx*step/10,y:y+dy*step/10}]});await target.waitForTimeout(20);}
+   for(let step=1;step<=10;step++){await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:x+dx*step/10,y:y+dy*step/10}]});await target.waitForTimeout(20);await onStep();}
    await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await session.detach();
  };
  const chooseCalendarMode=async(target,mode)=>{
@@ -188,8 +188,8 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
   await page.locator('.date-time-day[aria-pressed="true"]').click();
   const nowOffset=await page.locator('.calendar-now-line').evaluate(e=>parseFloat(e.style.getPropertyValue('--now-top')));
   assert.ok(nowOffset>=0&&nowOffset<24*56);
-  const nowColors=await page.locator('.calendar-now-line').evaluate(el=>({line:getComputedStyle(el).color,gradient:getComputedStyle(el).backgroundImage,dot:getComputedStyle(el.querySelector('i')).backgroundColor,label:getComputedStyle(el.querySelector('span')).color}));
-  assert.equal(nowColors.line,'rgb(214, 62, 69)');assert.equal(nowColors.dot,nowColors.line);assert.equal(nowColors.label,nowColors.line);assert.ok(nowColors.gradient.includes(nowColors.line));
+  const nowColors=await page.locator('.calendar-now-line').evaluate(el=>({line:getComputedStyle(el).color,background:getComputedStyle(el).backgroundColor,dot:getComputedStyle(el.querySelector('i')).backgroundColor,label:getComputedStyle(document.querySelector('.calendar-now-label')).color}));
+  assert.equal(nowColors.line,'rgb(214, 62, 69)');assert.equal(nowColors.dot,nowColors.line);assert.equal(nowColors.label,nowColors.line);assert.equal(nowColors.background,nowColors.line);
 
   // Calendar shows occurrences; the task list has one row per definition.
   const range=mode=>({click:async()=>{if(page.viewportSize().width<=640)await chooseCalendarMode(page,mode==='week'?'multi':mode);else await page.locator(`#calendar-mode [data-mode="${mode}"]`).click();}});
@@ -522,21 +522,21 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
   await timePage.clock.install({time:new Date('2026-11-19T09:11:00Z')});await timePage.goto(process.argv[3]);await timePage.locator('#conversation-calendar').click();
   await timePage.locator('.calendar-now-line').waitFor();await timePage.clock.pauseAt(new Date('2026-11-19T09:11:30Z'));
   const hourVisibility=hour=>timePage.locator('.calendar-hour > span').nth(hour).evaluate(el=>getComputedStyle(el).visibility);
-  assert.equal(await timePage.locator('.calendar-now-line > span').innerText(),'17:11');
+  assert.equal(await timePage.locator('.calendar-now-label').innerText(),'17:11');
   assert.equal(await hourVisibility(17),'hidden');assert.equal(await hourVisibility(16),'visible');assert.equal(await hourVisibility(18),'visible');
   await timePage.locator('#calendar-items').evaluate(el=>{el.scrollTop=16*56;});
   if(artifacts)await timePage.screenshot({path:`${artifacts}/current-time-hour-overlap.png`,fullPage:true,animations:'disabled'});
   await timePage.clock.fastForward(7*60*1000);
-  assert.equal(await timePage.locator('.calendar-now-line > span').innerText(),'17:18');assert.equal(await hourVisibility(17),'visible');
-  const labelGap=await timePage.evaluate(()=>document.querySelector('.calendar-now-line > span').getBoundingClientRect().top-document.querySelectorAll('.calendar-hour > span')[17].getBoundingClientRect().bottom);
+  assert.equal(await timePage.locator('.calendar-now-label').innerText(),'17:18');assert.equal(await hourVisibility(17),'visible');
+  const labelGap=await timePage.evaluate(()=>document.querySelector('.calendar-now-label').getBoundingClientRect().top-document.querySelectorAll('.calendar-hour > span')[17].getBoundingClientRect().bottom);
   assert.ok(labelGap>=1);
   if(artifacts)await timePage.screenshot({path:`${artifacts}/current-time-hour-restored.png`,fullPage:true,animations:'disabled'});
   await timePage.clock.fastForward(12*60*1000);
-  assert.equal(await timePage.locator('.calendar-now-line > span').innerText(),'17:30');assert.equal(await hourVisibility(17),'visible');assert.equal(await hourVisibility(18),'visible');
+  assert.equal(await timePage.locator('.calendar-now-label').innerText(),'17:30');assert.equal(await hourVisibility(17),'visible');assert.equal(await hourVisibility(18),'visible');
   await timePage.clock.fastForward(12*60*1000);
-  assert.equal(await timePage.locator('.calendar-now-line > span').innerText(),'17:42');assert.equal(await hourVisibility(18),'visible');
+  assert.equal(await timePage.locator('.calendar-now-label').innerText(),'17:42');assert.equal(await hourVisibility(18),'visible');
   await timePage.clock.fastForward(7*60*1000);
-  assert.equal(await timePage.locator('.calendar-now-line > span').innerText(),'17:49');assert.equal(await hourVisibility(18),'hidden');assert.equal(await hourVisibility(17),'visible');
+  assert.equal(await timePage.locator('.calendar-now-label').innerText(),'17:49');assert.equal(await hourVisibility(18),'hidden');assert.equal(await hourVisibility(17),'visible');
   await timePage.clock.resume();await timePage.setViewportSize({width:390,height:844});await chooseCalendarMode(timePage,'day');await timePage.locator('.calendar-time-grid[data-mode="day"]').waitFor();
   assert.equal(await hourVisibility(18),'hidden');assert.equal(await hourVisibility(17),'visible');
   if(artifacts)await timePage.screenshot({path:`${artifacts}/mobile-current-time-hour-overlap.png`,fullPage:true,animations:'disabled'});

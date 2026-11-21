@@ -5,6 +5,20 @@ const assert=require('node:assert/strict');
 module.exports=async({browser,endpoint,artifacts,swipeCalendar,chooseDate,chooseCalendarMode})=>{
   const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
   const page=await context.newPage(),errors=[],writes=[],trace=[];
+  await page.addInitScript(()=>{
+    const scrollTo=Element.prototype.scrollTo;
+    const bounds=Element.prototype.getBoundingClientRect;
+    window.__calendarScrollCalls=[];
+    window.__calendarHourMeasurements=0;
+    Element.prototype.getBoundingClientRect=function(){
+      if(this.matches('.calendar-hour > span'))window.__calendarHourMeasurements++;
+      return bounds.call(this);
+    };
+    Element.prototype.scrollTo=function(options,...args){
+      if(this.id==='calendar-items')window.__calendarScrollCalls.push({at:performance.now(),left:this.scrollLeft,options});
+      return scrollTo.call(this,options,...args);
+    };
+  });
   page.setDefaultTimeout(10000);
   page.on('pageerror',error=>errors.push(error.message));
   page.on('request',request=>{if(request.url().endsWith('/v1/calendar/update'))writes.push(request.url());});
@@ -14,6 +28,23 @@ module.exports=async({browser,endpoint,artifacts,swipeCalendar,chooseDate,choose
   const shift=(day,days)=>new Date(Date.parse(day+'T12:00:00Z')+days*86400000).toISOString().slice(0,10);
   const waitDate=day=>page.waitForFunction(day=>document.querySelector('#calendar-date').value===day,day);
   const shot=async name=>{if(artifacts)await page.screenshot({path:`${artifacts}/${name}.png`,fullPage:true,animations:'disabled'});};
+  const checkNowLine=async()=>{
+    await page.evaluate(()=>new Promise(requestAnimationFrame));
+    const state=await root.evaluate(el=>{
+      const bounds=el.getBoundingClientRect(),today=el.querySelector('.calendar-day-heading[data-today="true"]');
+      const column=today&&el.querySelector(`.calendar-day-column[data-day="${today.dataset.day}"]`),rect=column?.getBoundingClientRect();
+      const line=el.querySelector('.calendar-now-line'),lineRect=line?.getBoundingClientRect(),label=el.querySelector('.calendar-now-label');
+      return {todayVisible:!!rect&&rect.right>bounds.left+49&&rect.left<bounds.right-1,
+        bufferedToday:!!column,lines:el.querySelectorAll('.calendar-now-line').length,
+        belongsToToday:!!line&&line.parentElement===column,
+        staysInToday:!!lineRect&&Math.abs(lineRect.left-rect.left)<2&&Math.abs(lineRect.right-rect.right)<2,
+        labelVisible:!!label&&!label.hidden,overlaps:el.querySelectorAll('[data-now-overlap]').length};
+    });
+    assert.equal(state.lines,state.bufferedToday?1:0,JSON.stringify(state));
+    if(state.bufferedToday){assert.equal(state.belongsToToday,true,JSON.stringify(state));assert.equal(state.staysInToday,true,JSON.stringify(state));}
+    assert.equal(state.labelVisible,state.todayVisible,JSON.stringify(state));
+    if(!state.todayVisible)assert.equal(state.overlaps,0,'hour labels recover when today leaves the viewport');
+  };
   const monthFits=async(target,label)=>{
     await target.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
     const geometry=await target.locator('#calendar-items').evaluate(el=>{
@@ -36,6 +67,7 @@ module.exports=async({browser,endpoint,artifacts,swipeCalendar,chooseDate,choose
     const session=await context.newCDPSession(page),box=await root.boundingBox(),x=box.x+box.width*(dx<0?.78:.22),y=box.y+160;
     const distance=!cancel&&Math.abs(dx)>=48?Math.sign(dx)*220:dx;
     try{
+      await page.evaluate(()=>{window.__calendarHourMeasurements=0;});
       await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});
       for(let step=1;step<=10;step++){
         await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:x+distance*step/10,y}]});await page.waitForTimeout(20);
@@ -46,8 +78,10 @@ module.exports=async({browser,endpoint,artifacts,swipeCalendar,chooseDate,choose
         });
         assert.ok(Math.abs(geometry.axis-before.axis)<1&&Math.abs(geometry.corner-before.corner)<1&&Math.abs(geometry.top-scroll)<2,JSON.stringify(geometry));
         assert.equal(geometry.headerCoversBody,true);assert.equal(geometry.transform,'');
+        await checkNowLine();
       }
       if(artifacts&&!capturedDayDrag){await shot('mobile-day-native-drag');capturedDayDrag=true;}
+      const releaseAt=await page.evaluate(()=>performance.now());
       await session.send('Input.dispatchTouchEvent',{type:cancel?'touchCancel':'touchEnd',touchPoints:[]});
       const expected=!cancel&&Math.abs(dx)>=48?shift(original,dx<0?1:-1):null;
       await page.waitForTimeout(250);
@@ -57,6 +91,11 @@ module.exports=async({browser,endpoint,artifacts,swipeCalendar,chooseDate,choose
         return (!expected||day===expected)&&Math.abs(el.scrollLeft/width-Math.round(el.scrollLeft/width))<.02&&Math.abs(column.getBoundingClientRect().left-bounds.left-48)<2;
       },expected);
       assert.deepEqual(await visibleDays(),[await currentDate()]);assert.ok(Math.abs(await root.evaluate(el=>el.scrollTop)-scroll)<2);
+      await checkNowLine();
+      const corrections=await page.evaluate(at=>window.__calendarScrollCalls.filter(call=>call.at>=at&&call.options?.behavior==='smooth'),releaseAt);
+      assert.deepEqual(corrections,[],'native snapping must not start a second JS scroll animation');
+      const measurements=await page.evaluate(()=>window.__calendarHourMeasurements);
+      assert.ok(measurements<=48,`hour labels must not be remeasured on each scroll frame: ${measurements}`);
     }finally{release();await page.unrouteAll({behavior:'wait'});await session.detach();}
   };
   const smoothSwipe=async(dx,{cancel=false}={})=>{
@@ -101,8 +140,12 @@ module.exports=async({browser,endpoint,artifacts,swipeCalendar,chooseDate,choose
     }).map(column=>column.dataset.day);
   });
   const returnToday=async(day,{duringScroll=false}={})=>{
+    if(duringScroll)await root.evaluate(el=>{
+      window.__todayFrames=[];window.__todayRecord=true;
+      const sample=()=>{if(!window.__todayRecord)return;window.__todayFrames.push({at:performance.now(),top:el.scrollTop,max:el.scrollHeight-el.clientHeight,left:el.scrollLeft,first:el.querySelector('.calendar-day-column')?.dataset.day});requestAnimationFrame(sample);};sample();
+    });
     const expected=await root.evaluate((el,duringScroll)=>{
-      const hour=Number(el.querySelector('.calendar-now-line > span').textContent.split(':')[0]);
+      const hour=Number(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Shanghai',hour:'2-digit',hourCycle:'h23'}).format(new Date()));
       const top=Math.min(el.scrollHeight-el.clientHeight,Math.max(0,(hour-1)*56));
       if(!duringScroll)el.scrollTop=top>200?0:600;return top;
     },duringScroll);
@@ -114,11 +157,14 @@ module.exports=async({browser,endpoint,artifacts,swipeCalendar,chooseDate,choose
         const root=document.getElementById('calendar-items'),bounds=root.getBoundingClientRect();
         const first=[...root.querySelectorAll('.calendar-day-column')].find(column=>column.getBoundingClientRect().left>=bounds.left+47);
         return document.getElementById('calendar-date').value===day&&first?.dataset.day===day&&Math.abs(root.scrollTop-expected)<2;
-      },{day,expected});
+      },{day,expected}).catch(async error=>{
+        console.log('TODAY_POSITION',JSON.stringify({day,expected,duringScroll,actual:await root.evaluate(el=>({date:document.getElementById('calendar-date').value,left:el.scrollLeft,top:el.scrollTop,max:el.scrollHeight-el.clientHeight,first:[...el.querySelectorAll('.calendar-day-column')].find(column=>column.getBoundingClientRect().left>=el.getBoundingClientRect().left+47)?.dataset.day})),frames:await page.evaluate(()=>window.__todayFrames?.slice(0,25)),calls:await page.evaluate(()=>window.__calendarScrollCalls.slice(-12))}));throw error;
+      });
       // A pending native scroll must not change the selection back afterward.
       await page.waitForTimeout(250);assert.equal(await currentDate(),day);
       assert.ok(Math.abs(await root.evaluate(el=>el.scrollTop)-expected)<2);
-    }finally{release();await page.unrouteAll({behavior:'wait'});}
+      await checkNowLine();
+    }finally{await page.evaluate(()=>{window.__todayRecord=false;});release();await page.unrouteAll({behavior:'wait'});}
   };
   const align=async days=>{
     const destination=shift(await currentDate(),days);
@@ -186,6 +232,8 @@ module.exports=async({browser,endpoint,artifacts,swipeCalendar,chooseDate,choose
     assert.ok(Math.abs(await root.evaluate(el=>el.scrollTop)-600)<3);
     assert.equal(await page.locator('#calendar-detail').isVisible(),false);
     await smoothSwipe(130);await waitDate(original);
+    await smoothSwipe(130);await waitDate(shift(original,-1));
+    await smoothSwipe(-130);await waitDate(original);
     await smoothSwipe(30);await returnToday(original);
     await root.evaluate(el=>{el.scrollTop=600;});
     await smoothSwipe(-80,{cancel:true});await returnToday(original);
@@ -237,6 +285,24 @@ module.exports=async({browser,endpoint,artifacts,swipeCalendar,chooseDate,choose
     await chooseDate(original,page);
     await page.waitForFunction(day=>document.querySelector('#calendar-date').value===day&&document.querySelector(`.calendar-day-column[data-day="${day}"]`),original);
     await returnToday(original);
+    // Today can leave the viewport while remaining in the preloaded buffer,
+    // or occupy any of the three visible columns when scrolling backward.
+    for(const offset of [1,-1,-2,-3,0]){
+      await root.evaluate((el,day)=>{
+        const columns=[...el.querySelectorAll('.calendar-day-column')],width=columns[0].getBoundingClientRect().width;
+        el.scrollTo({left:columns.findIndex(column=>column.dataset.day===day)*width,behavior:'instant'});
+      },shift(original,offset));
+      await waitDate(shift(original,offset));await checkNowLine();
+    }
+    await shot('mobile-multi-today-column-line');
+    await swipeCalendar(page,-105,0,'#calendar-items',checkNowLine);
+    await page.waitForFunction(day=>document.getElementById('calendar-date').value>day,original);
+    await page.waitForTimeout(400);
+    await page.waitForFunction(()=>{
+      const el=document.getElementById('calendar-items'),width=el.querySelector('.calendar-day-column').getBoundingClientRect().width;
+      return Math.abs(el.scrollLeft/width-Math.round(el.scrollLeft/width))<.02;
+    });
+    await checkNowLine();await returnToday(original);
     await root.evaluate(el=>{const width=el.querySelector('.calendar-day-column').getBoundingClientRect().width;el.scrollTo({left:el.scrollLeft+width,behavior:'instant'});});
     await waitDate(shift(original,1));await returnToday(original);
     const scrollStart=await root.evaluate(el=>{

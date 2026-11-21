@@ -6,7 +6,7 @@ import { calendarRange, calendarOffsetLabels, localDay, shiftDay, shiftMonth, we
 // Reads use the Actor's committed projection. Opening or previewing never starts
 // an Agent; mutations preserve the original operation and resource version.
 export function createCalendar({ env, runtime, roomsUI, conversationUI, settingsUI, dateTimeUI }) {
-  const { document, window, setTimeout, clearTimeout } = env, { $, state, rpc, currentView, notice } = runtime;
+  const { document, window, setTimeout, clearTimeout, requestAnimationFrame } = env, { $, state, rpc, currentView, notice } = runtime;
   let visible=false, value=null, pending=null, retryRequest=null, readID=0, detailID=0;
   let compact=window.innerWidth<=640, date="", mode=compact?"day":"week", view="calendar";
   let preferenceLayout="", storage;
@@ -16,7 +16,7 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
   const timeDays=()=>mode==="day"?1:multiDays();
   const nativeTime=()=>compact&&(mode==="day"||mode==="multi");
   const rangeAt=(displayZone=zone(),padding=0)=>calendarRange(date,mode==="day"&&compact?"multi":mode,displayZone,{days:timeDays(),padding});
-  let timeStart="", dayWidth=0, timeTimer=null, timeScrolling=false, renderPending=false, timeTouch=false;
+  let timeStart="", dayWidth=0, timeTimer=null, timeScrolling=false, renderPending=false, timeTouch=false, timeSnapVersion=0;
   let swipe=null, swipeMotion=null, suppressClickUntil=0, navigationPending=false;
   let calendarScroll=0,calendarGridScroll=0,listScroll=0,restoreScroll=null;
   const timeScrolls=new Map();
@@ -386,17 +386,35 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
     }
     const body=scope.querySelector(".calendar-time-body");if(!body)return;
     body.querySelector(".calendar-now-line")?.remove();
-    const ticks=body.querySelectorAll(".calendar-hour > span");
-    for(const tick of ticks)tick.removeAttribute("data-now-overlap");
-    const dates=[...scope.querySelectorAll(".calendar-day-column")].map(column=>column.dataset.day),index=dates.indexOf(today());if(index<0)return;
-    const line=node("div",undefined,"calendar-now-line"),label=node("span",fmt(Date.now(),{hour:"2-digit",minute:"2-digit"}));
-    line.style.setProperty("--now-top",`${minuteOfDay(Date.now(),zone())*hourHeight/60}px`);
-    const dot=node("i");dot.style.setProperty("--today-column",String(index));line.append(label,dot);line.setAttribute("aria-hidden","true");body.append(line);
-    const bounds=label.getBoundingClientRect();
-    for(const tick of ticks){
-      const rect=tick.getBoundingClientRect();
-      if(rect.bottom>bounds.top-1&&rect.top<bounds.bottom+1)tick.dataset.nowOverlap="true";
+    body.querySelector(".calendar-now-label")?.remove();
+    const columns=[...scope.querySelectorAll(".calendar-day-column")],day=today(),index=columns.findIndex(column=>column.dataset.day===day);if(index<0){updateNowLabel(body);return;}
+    // The line belongs to today's column and moves with native scrolling.
+    // Keep only the clock label on the fixed time axis.
+    const line=node("div",undefined,"calendar-now-line"),label=node("span",fmt(Date.now(),{hour:"2-digit",minute:"2-digit"}),"calendar-now-label");
+    const top=`${minuteOfDay(Date.now(),zone())*hourHeight/60}px`;
+    line.style.setProperty("--now-top",top);label.style.setProperty("--now-top",top);
+    line.append(node("i"));line.setAttribute("aria-hidden","true");label.setAttribute("aria-hidden","true");
+    columns[index].append(line);body.querySelector(".calendar-time-axis").append(label);
+    updateNowLabel(body);
+  }
+  function updateNowLabel(body=$("calendar-items").querySelector(".calendar-time-body"),scrolling=false){
+    if(!body)return;
+    const label=body.querySelector(".calendar-now-label");
+    let hidden=true;
+    if(label){
+      const column=body.querySelector(".calendar-now-line").parentElement.getBoundingClientRect(),bounds=$("calendar-items").getBoundingClientRect();
+      hidden=nativeTime()&&(column.right<=bounds.left+49||column.left>=bounds.right-1);
+      // Relative label positions do not change while scrolling. Only refresh
+      // hour overlap when the clock changes or today's visibility changes.
+      if(scrolling&&label.hidden===hidden)return;
+      label.hidden=hidden;
     }
+    const ticks=[...body.querySelectorAll(".calendar-hour > span")],labelBounds=hidden?null:label.getBoundingClientRect();
+    const overlaps=ticks.map(tick=>{
+      if(!labelBounds)return false;
+      const rect=tick.getBoundingClientRect();return rect.bottom>labelBounds.top-1&&rect.top<labelBounds.bottom+1;
+    });
+    ticks.forEach((tick,index)=>{if(overlaps[index])tick.dataset.nowOverlap="true";else tick.removeAttribute("data-now-overlap");});
   }
   function navigate(next,nextMode=mode,{preserveTime=true}={}){
     cancelSwipe();rememberTimePosition();
@@ -413,26 +431,36 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
     void refresh().catch(()=>{});
   }
   function settleTimeScroll(){
-    clearTimeout(timeTimer);if(timeTouch||navigationPending)return;timeScrolling=false;
-    if(!visible||view!=="calendar"||!nativeTime()||!timeStart||!dayWidth)return;
+    clearTimeout(timeTimer);if(timeTouch||navigationPending||!timeScrolling)return;
+    if(!visible||view!=="calendar"||!nativeTime()||!timeStart||!dayWidth){timeScrolling=false;return;}
     const root=$("calendar-items"),count=root.querySelectorAll(".calendar-day-column").length;
     const index=Math.max(0,Math.min(count-timeDays(),Math.round(root.scrollLeft/dayWidth)));
     if(Math.abs(root.scrollLeft-index*dayWidth)>1){
-      timeScrolling=true;root.scrollTo({left:index*dayWidth,behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"});return;
+      // CSS owns snapping. A fallback timer may run before native momentum
+      // finishes; wait for alignment instead of starting another animation.
+      timeTimer=setTimeout(settleTimeScroll,80);return;
     }
-    date=shiftDay(timeStart,index);syncRange();
-    root.querySelector(".calendar-grid-corner")?.replaceChildren(...calendarOffsetLabels(date,mode,zone(),{days:multiDays()}).map(offset=>node("span",offset)));
+    timeScrolling=false;
+    const next=shiftDay(timeStart,index),changed=next!==date;
+    if(changed){
+      date=next;syncRange();
+      root.querySelector(".calendar-grid-corner")?.replaceChildren(...calendarOffsetLabels(date,mode,zone(),{days:multiDays()}).map(offset=>node("span",offset)));
+    }
     // Refill either edge without moving the visible dates or time position.
-    if(index<3||index+timeDays()>count-3){renderPending=false;void refresh().catch(()=>{});}
+    if(changed&&(index<3||index+timeDays()>count-3)){renderPending=false;void refresh().catch(()=>{});}
     else if(renderPending){renderPending=false;render();}
   }
   function renderTimeGrid(root,dates,occurrences){
     const holder=node("div");renderGrid(holder,dates,occurrences);
     const next=holder.firstElementChild,grid=root.querySelector(`.calendar-time-grid[data-mode="${mode}"]`);
+    const scroll=root.scrollTop;
     // Keep retained date columns (the browser's snap targets) alive on refill.
     // Disable snapping while rebasing the buffer, then restore it at the same
     // visible date before the next paint.
     root.style.scrollSnapType="none";
+    // Stop both axes of an in-flight native/programmatic animation before
+    // rebasing. Assigning scrollLeft alone can leave its old target active.
+    root.scrollTo({left:root.scrollLeft,top:scroll,behavior:"instant"});
     if(grid){
       const reconcile=(parent,children)=>{
         const retained=new Map([...parent.children].filter(child=>child.dataset.day).map(child=>[child.dataset.day,child]));
@@ -455,10 +483,15 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
     timeStart=dates[0];dayWidth=(root.clientWidth-48)/timeDays();
     root.firstElementChild.style.setProperty("--day-width",`${dayWidth}px`);
     dayWidth=root.querySelector(".calendar-day-column").getBoundingClientRect().width;
-    root.scrollLeft=Math.max(0,dates.indexOf(date))*dayWidth;
-    // Flush the final geometry with snapping off. Restoring snapping is safe:
-    // the retained visible column already occupies its original position.
-    root.getBoundingClientRect();root.style.removeProperty("scroll-snap-type");
+    root.scrollTo({left:Math.max(0,dates.indexOf(date))*dayWidth,top:scroll,behavior:"instant"});
+    // Let the compositor commit the cancelled animation and new offset before
+    // restoring snap targets. Restoring them in the same frame can revive the
+    // previous animation's offset, even after an instant scroll.
+    root.getBoundingClientRect();
+    const snapVersion=++timeSnapVersion;
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      if(snapVersion===timeSnapVersion)root.style.removeProperty("scroll-snap-type");
+    }));
   }
   const pageDate=direction=>mode==="month"?shiftMonth(date,direction):shiftDay(date,direction*(mode==="week"?7:1));
   function prepareSwipe(){
@@ -502,6 +535,11 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
   }
   function mountGestures(){
     const root=$("calendar-items");
+    const nativeScrollEnd="onscrollend" in root;
+    const scheduleTimeEnd=()=>{
+      clearTimeout(timeTimer);
+      if(!nativeScrollEnd)timeTimer=setTimeout(settleTimeScroll,180);
+    };
     root.tabIndex=0;root.setAttribute("aria-label","日历安排，左右方向键浏览日期");
     root.addEventListener("keydown",event=>{
       if(event.target!==root||!["ArrowLeft","ArrowRight"].includes(event.key))return;
@@ -510,10 +548,12 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
     });
     root.addEventListener("scroll",()=>{
       if(!nativeTime()||!visible||navigationPending)return;
-      timeScrolling=true;clearTimeout(timeTimer);timeTimer=setTimeout(settleTimeScroll,180);
+      updateNowLabel(undefined,true);
+      timeScrolling=true;scheduleTimeEnd();
     },{passive:true});
     root.addEventListener("scrollend",settleTimeScroll);
     root.addEventListener("touchstart",event=>{
+      if(nativeTime())root.style.removeProperty("scroll-snap-type");
       if(event.touches.length!==1){timeTouch=false;cancelSwipe();return;}
       if(swipeMotion)return;
       timeTouch=nativeTime();
@@ -535,10 +575,10 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
       swipe.dx=Math.max(-swipe.width,Math.min(swipe.width,dx));
       swipe.track.style.transform=`translate3d(${swipe.dx-swipe.width}px,0,0)`;
     },{passive:false});
-    root.addEventListener("touchcancel",()=>{timeTouch=false;if(!swipeMotion)settleSwipe(0);if(nativeTime())timeTimer=setTimeout(settleTimeScroll,180);},{passive:true});
+    root.addEventListener("touchcancel",()=>{timeTouch=false;if(!swipeMotion)settleSwipe(0);if(nativeTime())scheduleTimeEnd();},{passive:true});
     root.addEventListener("touchend",()=>{
       if(swipeMotion)return;
-      if(timeTouch){timeTouch=false;timeTimer=setTimeout(settleTimeScroll,180);}
+      if(timeTouch){timeTouch=false;scheduleTimeEnd();}
       if(swipe?.axis!=="x"){cancelSwipe();if(renderPending){renderPending=false;render();}return;}
       suppressClickUntil=Date.now()+400;
       const direction=Math.abs(swipe.dx)>=48?(swipe.dx<0?1:-1):0;
