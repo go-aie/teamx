@@ -27,7 +27,7 @@ func findCapability(t *testing.T, all []Capability, name string) Capability {
 
 func TestPermissionDependenciesAndRequestScopeBoundary(t *testing.T) {
 	all := DefaultScopes()
-	if len(all) != 10 || !slices.IsSorted(all) {
+	if len(all) != 11 || !slices.IsSorted(all) {
 		t.Fatal(all)
 	}
 	used := map[string]bool{}
@@ -143,7 +143,7 @@ func TestPermissionCapabilitiesDegradeOnlyAffectedBranches(t *testing.T) {
 	for _, goos := range []string{"linux", "windows"} {
 		all = permissionCapabilities(ready(), goos, "")
 		for _, v := range all {
-			if strings.HasPrefix(v.Name, "message.") && v.Name != "message.read" {
+			if v.Name == "image.upload" || strings.HasPrefix(v.Name, "message.") && v.Name != "message.read" {
 				if v.State != "unsupported" || v.NextAction != "" {
 					t.Fatal(v)
 				}

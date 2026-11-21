@@ -16,7 +16,17 @@ var builtinToolDispatchers = map[string]func(*roomManager, http.ResponseWriter, 
 }
 
 func builtinToolHelp(entry string) string {
-	return fmt.Sprintf("Usage:\n  teamx tools run %s read --object REF --target REF [--scope content|context] [--cursor CURSOR]\n  teamx tools run %s actions resolve --request JSON\n  teamx tools run %s actions execute --request JSON\nRead uses saved native message references, bounded context and the selected platform account. Actions use the existing managed action protocol, grants and receipts; use teamx actions resolve --help and teamx actions execute --help for request schemas. Arbitrary CLI commands and authentication are unavailable.\n", entry, entry, entry)
+	return fmt.Sprintf("Usage:\n  teamx tools run %s read --object REF --target REF [--scope content|context] [--cursor CURSOR]\n  teamx tools run %s actions resolve --request JSON\n  teamx tools run %s actions execute --request JSON\nUse the same entry with actions resolve/execute --help for parameters and examples. Query receipts with teamx actions read --id ID (read-only, including during Session recovery). Arbitrary CLI commands and authentication are unavailable.\n", entry, entry, entry)
+}
+
+func builtinActionHelp(args []string) (string, bool) {
+	if len(args) == 2 && args[0] == "actions" && (args[1] == "--help" || args[1] == "-h") {
+		return "", true
+	}
+	if len(args) == 3 && args[0] == "actions" && (args[1] == "resolve" || args[1] == "execute") && (args[2] == "--help" || args[2] == "-h") {
+		return args[1], true
+	}
+	return "", false
 }
 
 // Only registered built-in operations enter here. In particular, this is never
@@ -27,6 +37,8 @@ func (m *roomManager) serveBuiltinTool(w http.ResponseWriter, r *http.Request, r
 		return
 	}
 	help := len(req.Args) == 0 || len(req.Args) == 1 && (req.Args[0] == "help" || req.Args[0] == "--help" || req.Args[0] == "-h")
+	actionHelp, isActionHelp := builtinActionHelp(req.Args)
+	help = help || isActionHelp
 	if len(req.Args) == 2 && req.Args[0] == "read" && (req.Args[1] == "--help" || req.Args[1] == "-h") {
 		help = true
 	}
@@ -43,11 +55,18 @@ func (m *roomManager) serveBuiltinTool(w http.ResponseWriter, r *http.Request, r
 	var data []byte
 	if help {
 		data = []byte(builtinToolHelp(req.Tool))
+		if isActionHelp {
+			data = []byte(builtinActionHelpText(req.Tool, actionHelp))
+		}
 	} else {
 		var result any
 		result, err = m.runBuiltinTool(ctx, req)
 		if err != nil {
-			writeLarkReadError(w, err)
+			if req.Args[0] == "actions" {
+				writeAPIError(w, agentActionDiagnostic(err))
+			} else {
+				writeLarkReadError(w, err)
+			}
 			return
 		}
 		data, err = json.Marshal(result)
@@ -87,21 +106,32 @@ func (m *roomManager) runBuiltinTool(ctx context.Context, req toolsRequest) (any
 		}
 		return m.readLark(ctx, larkReadRequest{ServiceInfo: req.ServiceInfo, Caller: req.Caller, Target: &q})
 	case "actions":
-		if len(req.Args) != 4 || req.Args[2] != "--request" {
-			return nil, ErrRequest
+		if len(req.Args) < 2 || req.Args[1] != "resolve" && req.Args[1] != "execute" {
+			return nil, invalidField("command", "expected actions resolve or actions execute; use actions --help")
+		}
+		f := flag.NewFlagSet("actions "+req.Args[1], flag.ContinueOnError)
+		f.SetOutput(io.Discard)
+		payload := f.String("request", "", "structured request")
+		_ = f.Bool("json", true, "JSON output")
+		if err := f.Parse(req.Args[2:]); err != nil {
+			return nil, invalidField("arguments", err.Error())
+		}
+		if f.NArg() != 0 {
+			return nil, invalidField("arguments", "unexpected positional arguments; use --help")
 		}
 		api := apiRequest{ServiceInfo: req.ServiceInfo, Caller: req.Caller}
 		switch req.Args[1] {
 		case "resolve":
 			var q actionResolveRequest
-			if err := strictToolJSON([]byte(req.Args[3]), &q); err != nil {
-				return nil, ErrRequest
+			if err := decodeRequestJSON(*payload, &q); err != nil {
+				return nil, err
 			}
-			return m.resolveActionTarget(ctx, api, q)
+			v, err := m.resolveActionTarget(ctx, api, q)
+			return projectActionTarget(v), err
 		case "execute":
 			var q agentActionRequest
-			if err := strictToolJSON([]byte(req.Args[3]), &q); err != nil {
-				return nil, ErrRequest
+			if err := decodeRequestJSON(*payload, &q); err != nil {
+				return nil, err
 			}
 			m.mu.Lock()
 			svc, _ := m.runtimeServiceLocked(req.RoomIdentity)
@@ -114,7 +144,8 @@ func (m *roomManager) runBuiltinTool(ctx context.Context, req toolsRequest) (any
 			if err != nil {
 				return nil, err
 			}
-			return m.executeReferenceAction(ctx, api, action)
+			r, err := m.executeReferenceAction(ctx, api, action)
+			return projectActionReceipt(r, action), err
 		}
 	}
 	return nil, ErrRequest

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -35,6 +36,18 @@ func runToolsWithClient(ctx context.Context, args []string, stdin io.Reader, std
 		_, err := fmt.Fprintln(stdout, "Usage: teamx tools list | teamx tools run <tool> [args...] | teamx tools skill <tool>\nThe list contains enabled, currently available platform entries and their accounts/capabilities. Use the exact entry, including for a single platform; never switch accounts after a failure. Run <tool> --help to discover its commands. Read a skill only when its workflow is needed.")
 		return err
 	}
+	if args[0] == "list" {
+		f := flag.NewFlagSet("tools list", flag.ContinueOnError)
+		f.SetOutput(stderr)
+		_ = f.Bool("json", true, "JSON output")
+		if err := f.Parse(args[1:]); err != nil {
+			return err
+		}
+		if f.NArg() != 0 {
+			return invalidField("arguments", "tools list accepts only --json")
+		}
+		args = []string{"list"}
+	}
 	if args[0] != "list" && args[0] != "run" && args[0] != "skill" || args[0] == "list" && len(args) != 1 || args[0] == "run" && len(args) < 2 || args[0] == "skill" && len(args) != 2 {
 		return fmt.Errorf("usage: teamx tools list | teamx tools run <tool> [args...] | teamx tools skill <tool>")
 	}
@@ -59,6 +72,48 @@ func runToolsWithClient(ctx context.Context, args []string, stdin io.Reader, std
 		return writeJSON(stdout, result)
 	}
 	req.Tool, req.Args = args[1], args[2:]
+	// Read request files in the Agent CLI process, never in the server's file
+	// namespace. The bounded dispatcher receives exactly the same JSON contract.
+	if args[0] == "run" && len(req.Args) >= 2 && req.Args[0] == "actions" && (req.Args[1] == "resolve" || req.Args[1] == "execute") {
+		op := req.Args[1]
+		if len(req.Args) != 3 || req.Args[2] != "--help" && req.Args[2] != "-h" {
+			f := flag.NewFlagSet("actions "+op, flag.ContinueOnError)
+			f.SetOutput(stderr)
+			payload := f.String("request", "", "structured request")
+			file := f.String("request-file", "", "JSON path; - reads stdin")
+			_ = f.Bool("json", true, "JSON output")
+			if err := f.Parse(req.Args[2:]); err != nil {
+				return err
+			}
+			if f.NArg() != 0 {
+				return invalidField("arguments", "unexpected positional arguments; use --help")
+			}
+			provided := map[string]bool{}
+			f.Visit(func(f *flag.Flag) { provided[f.Name] = true })
+			if provided["request"] && provided["request-file"] {
+				return invalidField("--request-file", "mutually exclusive with --request")
+			}
+			if provided["request-file"] {
+				*payload, err = readCLIJSONFile(*file, stdin)
+				if err != nil {
+					return fmt.Errorf("--request-file: %w", err)
+				}
+			}
+			var target any = &agentActionRequest{}
+			if op == "resolve" {
+				target = &actionResolveRequest{}
+			}
+			if err := decodeRequestJSON(*payload, target); err != nil {
+				flagName := "--request"
+				if provided["request-file"] {
+					flagName = "--request-file"
+				}
+				return fmt.Errorf("%s: %w", flagName, err)
+			}
+			req.Args = []string{"actions", op, "--request", *payload}
+			stdin = strings.NewReader("")
+		}
+	}
 	if args[0] == "skill" {
 		data, _ := json.Marshal(req)
 		request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"/v1/tools/skill", bytes.NewReader(data))

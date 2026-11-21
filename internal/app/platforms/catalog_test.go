@@ -3,6 +3,7 @@ package platforms
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/go-aie/teamx/internal/platform"
@@ -52,6 +53,13 @@ func TestBuiltinCatalogAndDeferredRuntimeBinding(t *testing.T) {
 		refs, ok := catalog.ReferenceCapabilities(provider)
 		if !ok || len(refs.Actions) == 0 {
 			t.Fatal("references missing", provider)
+		}
+	}
+	refs, _ := catalog.ReferenceCapabilities("lark")
+	for _, op := range []platform.Operation{platform.OperationMessageSendSelf, platform.OperationMessageSend, platform.OperationMessageReply} {
+		cap := refs.Actions[op]
+		if cap.Spec.DisabledReason != "" || strings.Contains(string(cap.Spec.InputSchema), `"images"`) != (op != platform.OperationMessageReply) {
+			t.Fatal("formal Lark content schema does not match accepted target modes", op, cap.Spec)
 		}
 	}
 	if n := catalog.NotificationCapabilities("scion"); n.Input != nil {

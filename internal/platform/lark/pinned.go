@@ -129,7 +129,7 @@ func (p *Pinned) SendPermission(ctx context.Context) (SendPermission, error) {
 		return result, err
 	}
 	defer unlock()
-	required := strings.Fields(SendScopes + " " + SendTargetScopes + " " + PeopleSearchScopes)
+	required := strings.Fields(SendScopes + " " + SendTargetScopes + " " + PeopleSearchScopes + " " + ImageUploadScopes)
 	app, user := c.inspectScopes(ctx, p.Account, required)
 	if app.ReasonCode == "identity_mismatch" {
 		return result, failure("identity_mismatch")
@@ -170,7 +170,7 @@ func (p *Pinned) SendPermission(ctx context.Context) (SendPermission, error) {
 	result.GroupSendEnabled = result.ReplyEnabled && result.TargetVerificationEnabled
 	result.SelfSendEnabled = result.GroupSendEnabled
 	for _, v := range permissionCapabilities(PermissionCheck{Application: app, User: user, AccountFixed: true}, "darwin", "") {
-		if v.Name == "people.search" || strings.HasPrefix(v.Name, "message.") && v.Name != "message.read" {
+		if v.Name == "image.upload" || v.Name == "people.search" || strings.HasPrefix(v.Name, "message.") && v.Name != "message.read" {
 			result.Capabilities = append(result.Capabilities, v)
 		}
 	}

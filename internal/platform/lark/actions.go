@@ -13,7 +13,7 @@ import (
 )
 
 // Explicit closed-readiness reason for isolated negative contract checks.
-// The production registry publishes AcceptedActionCapabilities.
+// The application catalog selects accepted modes and content schemas.
 const ReplyDisabledReason = "lark_reply_acceptance_pending: 用户身份普通回复及真实 Agent 验收尚未完成，生产回复关闭。"
 
 var ErrReplyNotSent = errors.New("lark reply request was not dispatched")

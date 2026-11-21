@@ -11,11 +11,19 @@ import (
 // Native CLI fixture; the manager, pinned account, settings, CLI protocol,
 // Inspect/Execute and authoritative ledger all use the production implementation.
 func selfSendHarness(t *testing.T) *larkHarness {
+	return selfSendHarnessWithInputLog(t, false)
+}
+
+func selfSendHarnessWithInputLog(t *testing.T, unified bool) *larkHarness {
 	t.Helper()
 	if runtime.GOOS != "darwin" {
 		t.Skip("fixed-account user dispatch requires macOS")
 	}
-	h := newLarkHarness(t)
+	return configureSelfSendFixture(t, newLarkHarnessWithInputLog(t, unified))
+}
+
+func configureSelfSendFixture(t *testing.T, h *larkHarness) *larkHarness {
+	t.Helper()
 	script := strings.Replace(larkFixtureScript(), "path=a[2]", `if a==['config','show']:
  print(json.dumps({'profile':'fixture','appId':'cli_fixture','brand':'feishu','dpopMode':'required'}));sys.exit()
 if a==['auth','scopes','--json']:

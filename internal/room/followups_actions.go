@@ -1,6 +1,7 @@
 package room
 
 import (
+	"bytes"
 	"encoding/json"
 	"reflect"
 	"time"
@@ -40,7 +41,13 @@ func (i *ActionInput) UnmarshalJSON(b []byte) error {
 	if len(fields) == 1 && fields["body"] != nil {
 		return nil
 	}
-	canonical, err := json.Marshal(fields)
+	var normalized any
+	decoder := json.NewDecoder(bytes.NewReader(b))
+	decoder.UseNumber()
+	if err := decoder.Decode(&normalized); err != nil {
+		return err
+	}
+	canonical, err := json.Marshal(normalized)
 	if err != nil {
 		return err
 	}
@@ -191,7 +198,7 @@ func validateReferenceActions(u followupUnit, target platform.TargetIdentity) er
 	seen := map[string]bool{}
 	for _, a := range u.Actions {
 		q := a.Request
-		if seen[q.ID] || !validReferenceActionRequest(q) || q.ObjectRef != u.ObjectRef || q.UnitRef != u.Ref || q.TargetRef != u.TargetRef || !sameNativeTarget(a.Target, target) || !sameNativeTarget(a.Inspection.Target, target) || !a.Access.Valid() || a.Access.RoomIdentity != u.RoomIdentity || a.Access.AgentID != u.AgentID || a.Access.MembershipID != u.MembershipID || a.Inspection.Account != a.Access.Account || !validReferenceSpec(a.Spec, q, target) || a.Access.Account != a.Access.Receiver || a.Access.Account.IdentityScope != target.IdentityScope || a.Attempts < 0 || a.Attempts > a.Spec.Retry.MaxAttempts || (a.PossibleDuplicate && a.Attempts != 2) || (a.Rule == nil) == (a.Basis == nil) || a.UpdatedAt.IsZero() || (a.Status != "unknown" && a.Status != "succeeded" && a.Status != "not_applied") {
+		if !validContentDigest(a.Inspection.ContentDigest) || seen[q.ID] || !validReferenceActionRequest(q) || q.ObjectRef != u.ObjectRef || q.UnitRef != u.Ref || q.TargetRef != u.TargetRef || !sameNativeTarget(a.Target, target) || !sameNativeTarget(a.Inspection.Target, target) || !a.Access.Valid() || a.Access.RoomIdentity != u.RoomIdentity || a.Access.AgentID != u.AgentID || a.Access.MembershipID != u.MembershipID || a.Inspection.Account != a.Access.Account || !validReferenceSpec(a.Spec, q, target) || a.Access.Account != a.Access.Receiver || a.Access.Account.IdentityScope != target.IdentityScope || a.Attempts < 0 || a.Attempts > a.Spec.Retry.MaxAttempts || (a.PossibleDuplicate && a.Attempts != 2) || (a.Rule == nil) == (a.Basis == nil) || a.UpdatedAt.IsZero() || (a.Status != "unknown" && a.Status != "succeeded" && a.Status != "not_applied") {
 			return ErrInvalid
 		}
 		if a.Rule != nil && (!validPolicyRevision(*a.Rule) || a.Rule.Status != "active" || a.Rule.ID != q.Authority.RuleID || a.Rule.Version != q.Authority.RuleVersion) {

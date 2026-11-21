@@ -47,7 +47,12 @@ func (m *roomManager) serveActions(w http.ResponseWriter, r *http.Request) {
 	}
 	m.mu.Lock()
 	svc, _ := m.runtimeServiceLocked(req.RoomIdentity)
-	err := m.checkToolMemberLocked(r.Context(), toolsRequest{ServiceInfo: req.ServiceInfo, Caller: req.Caller})
+	memberRequest := toolsRequest{ServiceInfo: req.ServiceInfo, Caller: req.Caller}
+	checkMember := m.checkToolMemberLocked
+	if r.URL.Path == "/v1/actions/read" || r.URL.Path == "/v1/actions/list" {
+		checkMember = m.checkActionLedgerReaderLocked
+	}
+	err := checkMember(r.Context(), memberRequest)
 	m.mu.Unlock()
 	if err != nil {
 		writeAPIError(w, err)
@@ -64,10 +69,10 @@ func (m *roomManager) serveActions(w http.ResponseWriter, r *http.Request) {
 		}
 		view, err := m.resolveActionTarget(r.Context(), req, *req.ActionResolve)
 		if err != nil {
-			writeAPIError(w, err)
+			writeAPIError(w, agentActionDiagnostic(err))
 			return
 		}
-		_ = json.NewEncoder(w).Encode(view)
+		_ = json.NewEncoder(w).Encode(projectActionTarget(view))
 		return
 	}
 	if r.URL.Path != "/v1/actions/read" && r.URL.Path != "/v1/actions/list" {

@@ -236,3 +236,12 @@ test('authorization return restores its Room from another selection and fetches 
  assert.equal(originalReads,1);assert.ok(ui.document.getElementById('message-69'));assert.equal(card(ui).dataset.interactionId,api.op.operation_id);assert.equal(card(ui).scrollIntoViewCount,1);
  assert.equal(JSON.parse(saved.get('teamx.selected-room')).room_instance,'instance-R');assert.equal(writes(api).length,0);
 });
+
+test('an image-only authorization gap reports optional resource repair without claiming text or image sends are enabled',async()=>{
+ const api=fixture();
+ api.op.permissions={account:{id:{namespace:'lark:open_id:cli_fixture'}},capabilities:[{name:'image.upload',state:'blocked',reason_code:'application_scopes_missing',next_action:'configure_application'}]};
+ const ui=await launch(api);await settle();
+ assert.match(card(ui).children[6].textContent,/图片上传需管理员开通 im:resource/);
+ assert.match(card(ui).children[6].textContent,/不代表图文发送已开放.*不影响文字能力/);
+ assert.equal(writes(api).length,0);
+});

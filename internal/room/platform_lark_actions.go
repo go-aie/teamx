@@ -2,13 +2,18 @@ package room
 
 import (
 	"context"
+	"errors"
+	"reflect"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/lark"
 )
 
 func (m *roomManager) prepareLarkReferenceAction(ctx context.Context, id MemberIdentity, old platform.AccessContext) (referenceActionSession, error) {
-	return m.prepareLarkReferenceActions(ctx, id, old, lark.AcceptedActionCapabilities)
+	return m.prepareLarkReferenceContentActions(ctx, id, old, lark.AcceptedActionCapabilities, true)
 }
 
 // Acceptance can register this same managed implementation on an isolated
@@ -20,6 +25,10 @@ func (m *roomManager) prepareLarkReferenceActionWithReadiness(ctx context.Contex
 }
 
 func (m *roomManager) prepareLarkReferenceActions(ctx context.Context, id MemberIdentity, old platform.AccessContext, capabilities func(lark.SendReader, lark.ReplyWriter, lark.SendWriter) platform.ReferenceCapabilities) (referenceActionSession, error) {
+	return m.prepareLarkReferenceContentActions(ctx, id, old, capabilities, false)
+}
+
+func (m *roomManager) prepareLarkReferenceContentActions(ctx context.Context, id MemberIdentity, old platform.AccessContext, capabilities func(lark.SendReader, lark.ReplyWriter, lark.SendWriter) platform.ReferenceCapabilities, images bool) (referenceActionSession, error) {
 	m.mu.Lock()
 	svc, _ := m.runtimeServiceLocked(id.RoomIdentity)
 	if svc == nil {
@@ -32,7 +41,11 @@ func (m *roomManager) prepareLarkReferenceActions(ctx context.Context, id Member
 	if err != nil {
 		return referenceActionSession{}, err
 	}
-	closeCall := func() { m.finishPlatformCall(call) }
+	cancelContent := func() {}
+	if images {
+		callCtx, cancelContent = context.WithTimeout(callCtx, 180*time.Second)
+	}
+	closeCall := func() { cancelContent(); m.finishPlatformCall(call) }
 	account := admission.account
 	if account.CLIProfile == nil || old.Account.Valid() && (old.Account != account.Identity || old.PlatformID != account.PlatformID || old.Generation != account.Generation) {
 		closeCall()
@@ -79,6 +92,9 @@ func (m *roomManager) prepareLarkReferenceActions(ctx context.Context, id Member
 		} else {
 			merged, cancel = context.WithCancel(callCtx)
 		}
+		if final, ok := ctx.Value(actionDispatchCheckKey{}).(actionDispatchCheck); ok {
+			merged = context.WithValue(merged, actionDispatchCheckKey{}, final)
+		}
 		stop := context.AfterFunc(ctx, cancel)
 		if ctx.Err() != nil {
 			cancel()
@@ -106,6 +122,47 @@ func (m *roomManager) prepareLarkReferenceActions(ctx context.Context, id Member
 		}
 		return pin.SendText(ctx, target, body, key, guard)
 	})
+
+	var lease *roomActionImages
+	var leaseMu sync.Mutex
+	var selected lark.ImageSendInput
+	if images {
+		source := func(ctx context.Context, input lark.ImageSendInput) (lark.PreparedImageMessage, error) {
+			leaseMu.Lock()
+			defer leaseMu.Unlock()
+			if lease == nil {
+				refs := make([]roomActionImageRef, len(input.Images))
+				for i, ref := range input.Images {
+					refs[i] = roomActionImageRef{MessageSeq: ref.MessageSeq, AttachmentID: ref.AttachmentID}
+				}
+				var err error
+				lease, err = svc.prepareRoomActionImages(ctx, refs, check)
+				if err != nil {
+					return lark.PreparedImageMessage{}, err
+				}
+				selected = input
+			} else if !reflect.DeepEqual(selected, input) {
+				return lark.PreparedImageMessage{}, ErrConflict
+			}
+			if err := lease.Check(ctx); err != nil {
+				return lark.PreparedImageMessage{}, err
+			}
+			message := lark.PreparedImageMessage{Body: input.Body}
+			for _, img := range lease.images {
+				message.Images = append(message.Images, lark.SendImage{Data: img.Data, MIME: img.Attachment.MIMEType, SHA256: img.SHA256})
+			}
+			return message, nil
+		}
+		caps = lark.WithImageActions(caps, pin.SendReader(), source, func(ctx context.Context, q platform.TargetActionRequest, message lark.PreparedImageMessage) (string, []string, error) {
+			ctx, finish := merge(ctx)
+			defer finish()
+			final, ok := ctx.Value(actionDispatchCheckKey{}).(actionDispatchCheck)
+			if !ok || lease == nil {
+				return "", nil, lark.ErrSendNotSent
+			}
+			return pin.SendImages(ctx, q.Target, message, q.IdempotencyKey, lease.Check, func(ctx context.Context, digest string) error { return final(ctx, q, digest) })
+		}, pin.ImageUploadReady)
+	}
 	resolve := caps.Resolve
 	caps.Resolve = func(ctx context.Context, l platform.TargetLocator, a platform.AccessContext) (platform.TargetResolution, error) {
 		if err := check(ctx); err != nil {
@@ -127,9 +184,30 @@ func (m *roomManager) prepareLarkReferenceActions(ctx context.Context, id Member
 			if err := check(ctx); err != nil {
 				return platform.TargetActionInspection{}, err
 			}
+			if isLarkSend(q.Operation) {
+				var content any = &struct {
+					Body string `json:"body"`
+				}{}
+				if images {
+					content = &lark.ImageSendInput{}
+				}
+				if err := decodeRequestJSON(string(q.Input), content); err != nil {
+					return platform.TargetActionInspection{}, prefixDiagnostic(err, "input.")
+				}
+			}
 			ctx, finish := merge(ctx)
 			defer finish()
-			return inspect(ctx, q, a)
+			inspection, err := inspect(ctx, q, a)
+			var native *lark.Error
+			if images && errors.As(err, &native) {
+				if native.Code == "invalid_send_input" {
+					return inspection, invalidField("input", "provide a nonempty body and/or 1-4 distinct {message_seq,attachment_id} Room images; paths, URLs and resource keys are not accepted")
+				}
+				if strings.HasPrefix(native.Code, "image_upload_") {
+					return inspection, conflictReason("input.images", native.Code, larkImagePermissionHint(native.Code))
+				}
+			}
+			return inspection, err
 		}
 		cap.Execute = func(ctx context.Context, q platform.TargetActionRequest, a platform.AccessContext) (platform.TargetActionResult, error) {
 			ctx, finish := merge(ctx)
@@ -139,7 +217,28 @@ func (m *roomManager) prepareLarkReferenceActions(ctx context.Context, id Member
 		}
 		caps.Actions[op] = cap
 	}
-	return referenceActionSession{Access: access, Capabilities: caps, Check: check, Close: func() { pin.Close(); closeCall() }}, nil
+	return referenceActionSession{Access: access, Capabilities: caps, Check: check, Close: func() {
+		leaseMu.Lock()
+		if lease != nil {
+			lease.Close()
+		}
+		leaseMu.Unlock()
+		pin.Close()
+		closeCall()
+	}}, nil
+}
+
+func larkImagePermissionHint(code string) string {
+	hint := "retry_check: refresh image.upload on the original connection; unchecked or expired observations cannot authorize an upload."
+	switch code {
+	case "image_upload_application_scopes_missing":
+		hint = "configure_application: open this connection's official application permissions page and enable user im:resource; user login alone cannot repair an application gap."
+	case "image_upload_user_scopes_missing", "image_upload_credential_unavailable":
+		hint = "authorize_user: when the user requests repair, read platforms skill and use connect authorize on this exact existing account; preserve member grants and notification settings."
+	case "image_upload_account_pinning_unavailable", "image_upload_identity_mismatch":
+		hint = "revalidate_account: verify the original fixed user account in settings; do not switch identities. An unsupported host cannot be repaired by login."
+	}
+	return hint + " Text sending remains independent. No message was sent; do not fall back to text or a subset of images."
 }
 
 func (m *roomManager) resolveLarkActionTarget(ctx context.Context, id MemberIdentity, l platform.TargetLocator) (platform.TargetResolution, referenceActionSession, error) {

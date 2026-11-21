@@ -63,6 +63,16 @@ func (b policyRealBackend) switchSession(opts SessionOptions, from, to string) (
 	return policyRealBackend{next.(dshBackend), b.audit}, nil
 }
 
+// Automatic backend recovery/model rotation uses the prepared lifecycle path.
+// Keep observing actual ACP prompts and tools after that replacement as well.
+func (b policyRealBackend) switchPreparedSession(opts SessionOptions, from, to string, target *modelSessionSnapshot) (Backend, error) {
+	next, err := b.dshBackend.switchPreparedSession(opts, from, to, target)
+	if err != nil {
+		return nil, err
+	}
+	return policyRealBackend{next.(dshBackend), b.audit}, nil
+}
+
 type policyRealComponent struct {
 	dshComponent
 	audit *policyRealAudit

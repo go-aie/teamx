@@ -9,6 +9,9 @@ import (
 	"github.com/go-aie/teamx/internal/platform"
 )
 
+type actionDispatchCheckKey struct{}
+type actionDispatchCheck func(context.Context, platform.TargetActionRequest, string) error
+
 type referenceActionSession struct {
 	CapabilityBasis *platform.CapabilityEvidence
 	Access          platform.AccessContext
@@ -160,6 +163,7 @@ func (s *service) executeReferenceAction(ctx context.Context, id MemberIdentity,
 	if err != nil {
 		return referenceActionReceipt{}, err
 	}
+	ctx = context.WithValue(ctx, roomActionContextKey{}, roomActionContext{ServiceInfo: s.info, MemberIdentity: id, Turn: q.TurnNumber, ID: q.ID})
 	session, err := prepare(ctx, id, old)
 	if err != nil {
 		return referenceActionReceipt{}, err
@@ -204,7 +208,7 @@ func (s *service) executeReferenceAction(ctx context.Context, id MemberIdentity,
 		if err != nil {
 			return i, err
 		}
-		if !sameNativeTarget(i.Target, request.Target) || i.Account != access.Account || len(i.AccountLabel) > 4096 || len(i.ContainerLabel) > 4096 || len(i.URL) > 4096 {
+		if !sameNativeTarget(i.Target, request.Target) || i.Account != access.Account || len(i.AccountLabel) > 4096 || len(i.ContainerLabel) > 4096 || len(i.URL) > 4096 || !validContentDigest(i.ContentDigest) {
 			return i, ErrConflict
 		}
 		return i, session.Check(ctx)
@@ -238,7 +242,13 @@ func (s *service) executeReferenceAction(ctx context.Context, id MemberIdentity,
 			receipt.Policy = latest
 			break
 		}
-		response, err := cap.Execute(ctx, request, access)
+		dispatchCtx := context.WithValue(ctx, actionDispatchCheckKey{}, actionDispatchCheck(func(ctx context.Context, actual platform.TargetActionRequest, digest string) error {
+			if err := session.Check(ctx); err != nil {
+				return err
+			}
+			return s.store.checkActionDispatch(id, q, actual, access, digest)
+		}))
+		response, err := cap.Execute(dispatchCtx, request, access)
 		if err != nil || !sameNativeTarget(response.Target, request.Target) || response.Account != access.Account || (response.Status != "succeeded" && response.Status != "not_applied" && response.Status != "unknown") || len(response.Message) > 4096 || len(response.URL) > 4096 || (response.Status == "succeeded" && !response.ResultID.Valid()) {
 			response = platform.TargetActionResult{Target: request.Target, Account: access.Account, Status: "unknown", Message: "动作结果无法核实目标、账号或业务结果；不得自动重发。", RetryClass: "never"}
 		}

@@ -101,7 +101,7 @@ func TestLarkSendStandaloneCommonContract(t *testing.T) {
 			}
 			resolveQ := actionResolveRequest{Provider: "lark", TurnNumber: 1, Locator: platform.TargetLocator{Candidate: &target}}
 			v := resolve(resolveQ)
-			if v.TargetRef == "" || len(v.Actions) != 1 || v.Actions[0].Executable || !v.Actions[0].DirectRoomInstructionOnly {
+			if v.TargetRef == "" || len(v.Actions) != 1 || v.Actions[0].Executable {
 				t.Fatal(v)
 			}
 			policy, err := h.svc.store.readAgentPolicy(id)

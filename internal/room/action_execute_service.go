@@ -43,7 +43,7 @@ func (m *roomManager) serveActionExecute(w http.ResponseWriter, r *http.Request)
 		writeAPIError(w, agentActionDiagnostic(err))
 		return
 	}
-	_ = json.NewEncoder(w).Encode(result)
+	_ = json.NewEncoder(w).Encode(projectActionReceipt(result, action))
 }
 
 const actionClientTimeout = 3 * time.Minute

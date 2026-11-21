@@ -1,4 +1,5 @@
 // Lark application setup, account discovery and authorization lifecycle.
+import {imageUploadStatus} from "./lark-capabilities.mjs";
 export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, onboardingUI }) {
   const { document, window, Option, setTimeout, request } = env;
   const { $, setSelectOptions } = runtime;
@@ -142,7 +143,7 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
     }
   }
 
-  const capabilityNames = {"chat.read":"会话读取","message.read":"消息读取","notification.private":"私聊通知","notification.group":"群通知","token.renew":"自动续期","sender.name":"发送者姓名","people.search":"人员搜索","message.reply":"普通回复","message.send":"指定群发送","message.send_self":"本人投递"};
+  const capabilityNames = {"chat.read":"会话读取","message.read":"消息读取","notification.private":"私聊通知","notification.group":"群通知","token.renew":"自动续期","sender.name":"发送者姓名","people.search":"人员搜索","image.upload":"图片上传权限","message.reply":"普通回复","message.send":"指定群发送","message.send_self":"本人投递"};
   const capabilityReasons = {application_scopes_missing:"需管理员补权",user_scopes_missing:"需补全授权",account_pinning_unavailable:"需重新核验账号",refresh_token_missing:"无法自动续期",refresh_token_expired:"续期已过期",check_missing:"待核验",check_expired:"检查已过期"};
   let capabilityView = null;
 
@@ -166,6 +167,7 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
       const row=document.createElement("li"),name=document.createElement("span"),value=document.createElement("span");
       name.textContent=capabilityNames[c.name] || c.name;
       value.textContent=c.state==="ready" ? "已就绪" : c.state==="unsupported" ? "当前服务不支持" : capabilityReasons[c.reason_code] || "待核验";
+      if(c.name==="image.upload")value.textContent=`${imageUploadStatus(c)}；发送图文还需成员工具许可和目标权限`;
       value.dataset.kind=c.state==="ready" ? "success" : c.state==="blocked" ? "error" : "status";
       row.append(name,value);return row;
     }));

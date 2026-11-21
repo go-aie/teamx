@@ -98,10 +98,11 @@ func SendActions(reader SendReader, write SendWriter, disabled string) map[platf
 	}}}
 }
 
-// AcceptedActionCapabilities publishes only modes with real managed Agent
-// acceptance: ordinary replies, single-group sends and exact self delivery.
+// AcceptedActionCapabilities provides accepted text adapters: ordinary replies,
+// single-group sends and exact self delivery, all with real Agent acceptance.
 // Other user sends remain absent from the public schema and are rejected before
 // any adapter read/write.
+// The application catalog composes WithImageActions for self/group content.
 func AcceptedActionCapabilities(reader SendReader, reply ReplyWriter, send SendWriter) platform.ReferenceCapabilities {
 	caps := ActionCapabilities(reader, reply, send, "", "")
 	cap := caps.Actions[platform.OperationMessageSend]

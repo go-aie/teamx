@@ -1,11 +1,13 @@
 package room
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
@@ -37,40 +39,55 @@ func (s *Store) loadActionsLocked(id MemberIdentity) ([]referenceAction, error) 
 		if err := readSnapshot(path, &record, followupBytes); err != nil {
 			return nil, err
 		}
-		if record.Version != actionSchema {
-			return nil, ErrVersion
+		if err := s.validateStoredAction(id, record, path); err != nil {
+			return nil, err
 		}
 		a := record.Action
-		if !actionAuthorityMatchesSpec(a.Request, a.Spec) || (a.Spec.DirectRoomInstructionOnly && a.Basis != nil && a.Basis.Source.ReplyTo != 0) {
-			return nil, ErrInvalid
-		}
-		if a.IdempotencyKey != referenceDigest("", id, a.Request.ID)[:32] {
-			return nil, ErrInvalid
-		}
-		if record.MemberIdentity != id || path != s.actionPath(id, a.Request.ID) || !validReferenceActionRequest(a.Request) || targetReference(id, a.Target) != a.Request.TargetRef || !sameNativeTarget(a.Target, a.Inspection.Target) || a.Access.RoomIdentity != id.RoomIdentity || a.Access.AgentID != id.AgentID || a.Access.MembershipID != id.MembershipID || !a.Access.Valid() || a.Access.Account != a.Inspection.Account || !validReferenceSpec(a.Spec, a.Request, a.Target) || a.Attempts < 0 || a.Attempts > a.Spec.Retry.MaxAttempts || a.UpdatedAt.IsZero() || !validActionBasis(a) {
-			return nil, ErrInvalid
-		}
-		if a.Status != "unknown" && a.Status != "not_applied" && a.Status != "succeeded" {
-			return nil, ErrInvalid
-		}
-		if a.Rule != nil && (!validPolicyRevision(*a.Rule) || a.Rule.ID != a.Request.Authority.RuleID || a.Rule.Version != a.Request.Authority.RuleVersion) {
-			return nil, ErrInvalid
-		}
-		if a.Basis != nil && (!validHumanEvidence(a.Basis.Source) || a.Basis.TargetRef != a.Request.TargetRef) {
-			return nil, ErrInvalid
-		}
-		if a.Result != nil && (!sameNativeTarget(a.Result.Target, a.Target) || a.Result.Account != a.Access.Account || a.Result.Status != a.Status) {
-			return nil, ErrInvalid
-		}
-		if a.Status == "succeeded" && (a.Result == nil || !a.Result.ResultID.Valid() || a.Attempts == 0) {
-			return nil, ErrInvalid
-		}
 		a.Ledger = true
 		actions = append(actions, a)
 	}
 	sort.Slice(actions, func(i, j int) bool { return actions[i].Request.ID < actions[j].Request.ID })
 	return actions, nil
 }
+func (s *Store) validateStoredAction(id MemberIdentity, record storedAction, path string) error {
+	if record.Version != actionSchema {
+		return ErrVersion
+	}
+	a := record.Action
+	if !actionAuthorityMatchesSpec(a.Request, a.Spec) || (a.Spec.DirectRoomInstructionOnly && a.Basis != nil && a.Basis.Source.ReplyTo != 0) {
+		return ErrInvalid
+	}
+	if a.IdempotencyKey != referenceDigest("", id, a.Request.ID)[:32] {
+		return ErrInvalid
+	}
+	if record.MemberIdentity != id || path != s.actionPath(id, a.Request.ID) || !validReferenceActionRequest(a.Request) || targetReference(id, a.Target) != a.Request.TargetRef || !sameNativeTarget(a.Target, a.Inspection.Target) || a.Access.RoomIdentity != id.RoomIdentity || a.Access.AgentID != id.AgentID || a.Access.MembershipID != id.MembershipID || !a.Access.Valid() || a.Access.Account != a.Inspection.Account || !validReferenceSpec(a.Spec, a.Request, a.Target) || a.Attempts < 0 || a.Attempts > a.Spec.Retry.MaxAttempts || a.UpdatedAt.IsZero() || !validActionBasis(a) {
+		return ErrInvalid
+	}
+	if a.Status != "unknown" && a.Status != "not_applied" && a.Status != "succeeded" {
+		return ErrInvalid
+	}
+	if a.Rule != nil && (!validPolicyRevision(*a.Rule) || a.Rule.ID != a.Request.Authority.RuleID || a.Rule.Version != a.Request.Authority.RuleVersion) {
+		return ErrInvalid
+	}
+	if a.Basis != nil && (!validHumanEvidence(a.Basis.Source) || a.Basis.TargetRef != a.Request.TargetRef) {
+		return ErrInvalid
+	}
+	if a.Result != nil && (!sameNativeTarget(a.Result.Target, a.Target) || a.Result.Account != a.Access.Account || a.Result.Status != a.Status) {
+		return ErrInvalid
+	}
+	if a.Status == "succeeded" && (a.Result == nil || !a.Result.ResultID.Valid() || a.Attempts == 0) {
+		return ErrInvalid
+	}
+	if !validContentDigest(a.Inspection.ContentDigest) {
+		return ErrInvalid
+	}
+	return nil
+}
+
+func validContentDigest(d string) bool {
+	return d == "" || len(d) == 64 && strings.Trim(d, "0123456789abcdef") == ""
+}
+
 func (s *Store) saveActionLocked(id MemberIdentity, a referenceAction) error {
 	if _, _, err := s.memberPath(id, "agent.json", true); err != nil {
 		return err
@@ -296,7 +313,7 @@ func (s *Store) beginReferenceActionWithBasis(id MemberIdentity, q referenceActi
 	if q.UnitRef != "" && (q.Revision != u.Revision || !activeFollowup(u.Status)) {
 		return referenceActionReceipt{}, false, ErrConflict
 	}
-	if targetReference(id, request.Target) != q.TargetRef || !sameNativeTarget(request.Target, i.Target) || i.Account != access.Account || !access.Valid() {
+	if !validContentDigest(i.ContentDigest) || !bytes.Equal(request.Input, actionInputJSON(q.Input)) || request.Operation != q.Operation || targetReference(id, request.Target) != q.TargetRef || !sameNativeTarget(request.Target, i.Target) || i.Account != access.Account || !access.Valid() {
 		return referenceActionReceipt{}, false, ErrIdentity
 	}
 	if i.ContextOnly && q.Authority.RuleID != "" {
@@ -325,8 +342,10 @@ func (s *Store) beginReferenceActionWithBasis(id MemberIdentity, q referenceActi
 			}
 			return s.referenceReceiptLocked(id, u, a), false, nil
 		}
-		sameCapabilityContent := (spec.BindingEvidence != "" || a.Spec.BindingEvidence != "") && q.Input.Body != "" && q.Input.Body == a.Request.Input.Body
-		if a.Status == "unknown" && (sameCapabilityContent || q.sameBusiness(a.Request) || (sameActionSource(q.Authority, a.Request.Authority) && (q.Input == a.Request.Input || (q.Input.Body != "" && q.Input.Body == a.Request.Input.Body)))) {
+		sameContent := equivalentActionContent(q.Input, i.ContentDigest, a.Request.Input, a.Inspection.ContentDigest)
+		samePreparedContent := i.ContentDigest != "" && sameContent && access.Account == a.Access.Account && sameNativeTarget(request.Target, a.Target)
+		sameCapabilityContent := (spec.BindingEvidence != "" || a.Spec.BindingEvidence != "") && sameContent
+		if a.Status == "unknown" && (samePreparedContent || sameCapabilityContent || q.sameBusiness(a.Request) || (sameActionSource(q.Authority, a.Request.Authority) && sameContent)) {
 			return referenceActionReceipt{}, false, conflictReason("id", "the authorization already has an uncertain write", "Read actions read; do not change ID, platform or operation to resend.")
 		}
 	}
@@ -394,7 +413,7 @@ func (s *Store) referenceActionAttempt(id MemberIdentity, q referenceActionReque
 			if err != nil || view != nil {
 				return view, err
 			}
-			if a.Status != "unknown" || a.Attempts >= a.Spec.Retry.MaxAttempts {
+			if !q.sameBusiness(a.Request) || q.TurnNumber != a.Request.TurnNumber || q.PolicyToken != a.Request.PolicyToken || a.Status != "unknown" || a.Attempts >= a.Spec.Retry.MaxAttempts {
 				return nil, ErrConflict
 			}
 			a.Attempts++
@@ -511,4 +530,60 @@ func (s *Store) queryActions(id MemberIdentity, key, object, unit string) ([]ref
 		return result[i].Request.ID < result[j].Request.ID
 	})
 	return result, nil
+}
+
+// Complete content equivalence supplements the original source/entry guards.
+// A structured input never degenerates to a Body-only comparison.
+func equivalentActionContent(a ActionInput, ad string, b ActionInput, bd string) bool {
+	if ad != "" || bd != "" {
+		return ad != "" && ad == bd
+	}
+	return a == b
+}
+
+// One exact record, one read-only authority check, and no attempt increment.
+func (s *Store) checkActionDispatch(id MemberIdentity, q referenceActionRequest, request platform.TargetActionRequest, access platform.AccessContext, digest string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.checkFollowupsLocked(id, true); err != nil {
+		return err
+	}
+	if _, err := s.runningTurnLocked(id, q.TurnNumber); err != nil {
+		return err
+	}
+	u := followupUnit{followupHeader: followupHeader{followupSchema, id}, TargetRef: q.TargetRef, ObjectRef: q.TargetRef, Status: "pending"}
+	if q.UnitRef != "" {
+		// This dispatch only needs the exact business context, not its projected
+		// action inventory (loadUnitLocked would scan the entire action ledger).
+		if err := readSnapshot(s.unitPath(id, q.ObjectRef, q.UnitRef), &u, followupBytes); err != nil {
+			return err
+		}
+		if u.Version != followupSchema || u.MemberIdentity != id || u.ObjectRef != q.ObjectRef || u.Ref != q.UnitRef || u.Ref != referenceDigest("unit_", u.TargetRef) || !activeFollowup(u.Status) {
+			return ErrConflict
+		}
+	}
+	path := s.actionPath(id, q.ID)
+	var record storedAction
+	if err := readSnapshot(path, &record, followupBytes); err != nil {
+		return err
+	}
+	if err := s.validateStoredAction(id, record, path); err != nil {
+		return err
+	}
+	a := record.Action
+	if !s.executingReferences[q.key(id)] || a.Status != "unknown" || a.Attempts != 1 || !q.sameBusiness(a.Request) || q.TurnNumber != a.Request.TurnNumber || q.PolicyToken != a.Request.PolicyToken || access != a.Access || !sameNativeTarget(request.Target, a.Target) || request.Operation != a.Request.Operation || !bytes.Equal(request.Input, actionInputJSON(a.Request.Input)) || request.IdempotencyKey != a.IdempotencyKey || digest != a.Inspection.ContentDigest || !validContentDigest(digest) {
+		return ErrConflict
+	}
+	if a.Spec.BindingEvidence == "" {
+		_, _, view, err := s.actionAuthorityLocked(id, u, q, a.Basis)
+		if err != nil {
+			return err
+		}
+		if view != nil {
+			return ErrConflict
+		}
+	} else if !validActionBasis(a) {
+		return ErrIdentity
+	}
+	return nil
 }

@@ -29,6 +29,7 @@ func roomAttachmentHTTP(t *testing.T, server *httptest.Server, method, path, con
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
+	req.Header.Set("Origin", server.URL)
 	response, err := server.Client().Do(req)
 	if err != nil {
 		t.Fatal(err)

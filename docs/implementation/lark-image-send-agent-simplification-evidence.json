@@ -1,0 +1,2018 @@
+{
+  "recorded_on": "2026-11-20",
+  "task": "LARK-IMAGE-SEND-PLAN 8.4 Agent interface and guidance simplification",
+  "status": "passed",
+  "model": "deepseek-v4.1-flash-1017",
+  "transport": "real DSH/model, managed Room/default assistant, local native Lark CLI subprocess fixtures",
+  "real_lark_writes": 0,
+  "production_image_registration": "unchanged; text-only",
+  "daily_configuration_services_sessions": "unchanged",
+  "cost_method": {
+    "tool_calls": "Unique actual ACP tool-call IDs, including errors and stdin formatting calls.",
+    "cli_calls": "Parse raw shell commands into argument vectors with Python shlex; count actual TEAMX_CLI subcommands, excluding quoted report text. Help/discovery/receipt/report counts are CLI invocations, not necessarily separate shell tools.",
+    "business_calls": "Target lookup/selection verification and execute invocations. All read/list queries, including optional normal prechecks and failure recovery, remain in receipt_reads and total tool_calls.",
+    "normal_response_bytes": "UTF-8 compact JSON of the same native fixture snapshot before/after transport projection, with the same dynamic schema.",
+    "comparison": "Compare the original 12 common scenarios per mode. Five newly added matrix scenarios remain in full 17-scenario totals. Same model entry, text-only material mode and native fixture; model choices and prompts can vary.",
+    "baseline_prompt_difference": "The stage 3 first request explicitly named tool/Skill discovery; the new first request uses natural task wording and normal interface discovery. No JSON repair tutorials are injected."
+  },
+  "baseline": [
+    {
+      "mode": "managed",
+      "raw_report": "/tmp/teamx-lark-image-agent-managed-accepted-20261120-225628/report.json",
+      "scenario_count": 12,
+      "costs": [
+        {
+          "scenario": "last-image",
+          "tool_calls": 11,
+          "business_calls": 3,
+          "help_queries": 3,
+          "format_errors": 1,
+          "history_reads": 0,
+          "discovery_calls": 3,
+          "local_reports": 1,
+          "receipt_reads": 1,
+          "business_output_bytes": 3194
+        },
+        {
+          "scenario": "history-two",
+          "tool_calls": 10,
+          "business_calls": 3,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 1,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 5,
+          "business_output_bytes": 3015
+        },
+        {
+          "scenario": "second-only",
+          "tool_calls": 5,
+          "business_calls": 2,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 2,
+          "business_output_bytes": 2709
+        },
+        {
+          "scenario": "ambiguous-group",
+          "tool_calls": 3,
+          "business_calls": 1,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 1,
+          "local_reports": 1,
+          "receipt_reads": 1,
+          "business_output_bytes": 1589
+        },
+        {
+          "scenario": "choose-group",
+          "tool_calls": 5,
+          "business_calls": 2,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 2,
+          "business_output_bytes": 2549
+        },
+        {
+          "scenario": "ambiguous-images",
+          "tool_calls": 3,
+          "business_calls": 0,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 1,
+          "business_output_bytes": 0
+        },
+        {
+          "scenario": "restart-receipts",
+          "tool_calls": 5,
+          "business_calls": 0,
+          "help_queries": 3,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 3,
+          "business_output_bytes": 0
+        },
+        {
+          "scenario": "upload-failure",
+          "tool_calls": 14,
+          "business_calls": 3,
+          "help_queries": 4,
+          "format_errors": 1,
+          "history_reads": 1,
+          "discovery_calls": 4,
+          "local_reports": 1,
+          "receipt_reads": 3,
+          "business_output_bytes": 2785
+        },
+        {
+          "scenario": "cancel-upload",
+          "tool_calls": 8,
+          "business_calls": 2,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 2,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 2,
+          "business_output_bytes": 1222
+        },
+        {
+          "scenario": "unknown",
+          "tool_calls": 6,
+          "business_calls": 2,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 2,
+          "business_output_bytes": 884
+        },
+        {
+          "scenario": "recover-unknown",
+          "tool_calls": 3,
+          "business_calls": 0,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 1,
+          "business_output_bytes": 0
+        },
+        {
+          "scenario": "missing-permission",
+          "tool_calls": 10,
+          "business_calls": 2,
+          "help_queries": 2,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 1,
+          "local_reports": 1,
+          "receipt_reads": 3,
+          "business_output_bytes": 387
+        }
+      ],
+      "totals": {
+        "tool_calls": 83,
+        "business_calls": 20,
+        "help_queries": 12,
+        "format_errors": 2,
+        "history_reads": 4,
+        "discovery_calls": 9,
+        "local_reports": 12,
+        "receipt_reads": 26,
+        "business_output_bytes": 18334
+      }
+    },
+    {
+      "mode": "default-assistant",
+      "raw_report": "/tmp/teamx-lark-image-agent-accepted-20261120-224247/report.json",
+      "scenario_count": 12,
+      "costs": [
+        {
+          "scenario": "last-image",
+          "tool_calls": 12,
+          "business_calls": 2,
+          "help_queries": 6,
+          "format_errors": 1,
+          "history_reads": 0,
+          "discovery_calls": 3,
+          "local_reports": 1,
+          "receipt_reads": 2,
+          "business_output_bytes": 2636
+        },
+        {
+          "scenario": "history-two",
+          "tool_calls": 5,
+          "business_calls": 1,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 1,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 1,
+          "business_output_bytes": 791
+        },
+        {
+          "scenario": "second-only",
+          "tool_calls": 4,
+          "business_calls": 1,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 2,
+          "business_output_bytes": 791
+        },
+        {
+          "scenario": "ambiguous-group",
+          "tool_calls": 3,
+          "business_calls": 1,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 1,
+          "business_output_bytes": 1175
+        },
+        {
+          "scenario": "choose-group",
+          "tool_calls": 6,
+          "business_calls": 5,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 2,
+          "business_output_bytes": 2994
+        },
+        {
+          "scenario": "ambiguous-images",
+          "tool_calls": 2,
+          "business_calls": 0,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 0,
+          "business_output_bytes": 0
+        },
+        {
+          "scenario": "restart-receipts",
+          "tool_calls": 4,
+          "business_calls": 0,
+          "help_queries": 3,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 2,
+          "business_output_bytes": 0
+        },
+        {
+          "scenario": "upload-failure",
+          "tool_calls": 12,
+          "business_calls": 2,
+          "help_queries": 5,
+          "format_errors": 1,
+          "history_reads": 1,
+          "discovery_calls": 3,
+          "local_reports": 1,
+          "receipt_reads": 1,
+          "business_output_bytes": 2696
+        },
+        {
+          "scenario": "cancel-upload",
+          "tool_calls": 5,
+          "business_calls": 2,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 1,
+          "business_output_bytes": 2687
+        },
+        {
+          "scenario": "unknown",
+          "tool_calls": 4,
+          "business_calls": 2,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 1,
+          "business_output_bytes": 1437
+        },
+        {
+          "scenario": "recover-unknown",
+          "tool_calls": 3,
+          "business_calls": 0,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 1,
+          "business_output_bytes": 0
+        },
+        {
+          "scenario": "missing-permission",
+          "tool_calls": 8,
+          "business_calls": 2,
+          "help_queries": 1,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 1,
+          "local_reports": 1,
+          "receipt_reads": 1,
+          "business_output_bytes": 895
+        }
+      ],
+      "totals": {
+        "tool_calls": 68,
+        "business_calls": 18,
+        "help_queries": 15,
+        "format_errors": 2,
+        "history_reads": 2,
+        "discovery_calls": 7,
+        "local_reports": 12,
+        "receipt_reads": 15,
+        "business_output_bytes": 16102
+      }
+    }
+  ],
+  "samples": [
+    {
+      "mode": "managed",
+      "raw_report": "/tmp/teamx-lark-image-agent-simplified-managed-20261120-233443/report.json",
+      "parent_run_status": "passed",
+      "status": "passed",
+      "scenarios": [
+        "last-image",
+        "history-two",
+        "second-only",
+        "ambiguous-group",
+        "choose-group",
+        "self-text",
+        "self-caption",
+        "group-text",
+        "group-single",
+        "group-multiple",
+        "ambiguous-images",
+        "restart-receipts",
+        "upload-failure",
+        "cancel-upload",
+        "unknown",
+        "recover-unknown",
+        "missing-permission"
+      ],
+      "costs": [
+        {
+          "scenario": "last-image",
+          "tool_calls": 8,
+          "business_calls": 2,
+          "help_queries": 2,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 2,
+          "local_reports": 1,
+          "receipt_reads": 2,
+          "business_output_bytes": 2346
+        },
+        {
+          "scenario": "history-two",
+          "tool_calls": 4,
+          "business_calls": 1,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 1,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 0,
+          "business_output_bytes": 843
+        },
+        {
+          "scenario": "second-only",
+          "tool_calls": 3,
+          "business_calls": 1,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 0,
+          "business_output_bytes": 770
+        },
+        {
+          "scenario": "ambiguous-group",
+          "tool_calls": 3,
+          "business_calls": 1,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 0,
+          "business_output_bytes": 984
+        },
+        {
+          "scenario": "choose-group",
+          "tool_calls": 4,
+          "business_calls": 2,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 0,
+          "business_output_bytes": 2515
+        },
+        {
+          "scenario": "self-text",
+          "tool_calls": 3,
+          "business_calls": 1,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 0,
+          "business_output_bytes": 712
+        },
+        {
+          "scenario": "self-caption",
+          "tool_calls": 3,
+          "business_calls": 1,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 0,
+          "business_output_bytes": 799
+        },
+        {
+          "scenario": "group-text",
+          "tool_calls": 3,
+          "business_calls": 1,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 0,
+          "business_output_bytes": 770
+        },
+        {
+          "scenario": "group-single",
+          "tool_calls": 3,
+          "business_calls": 1,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 0,
+          "business_output_bytes": 837
+        },
+        {
+          "scenario": "group-multiple",
+          "tool_calls": 3,
+          "business_calls": 1,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 0,
+          "business_output_bytes": 921
+        },
+        {
+          "scenario": "ambiguous-images",
+          "tool_calls": 2,
+          "business_calls": 0,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 0,
+          "business_output_bytes": 0
+        },
+        {
+          "scenario": "restart-receipts",
+          "tool_calls": 5,
+          "business_calls": 0,
+          "help_queries": 2,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 3,
+          "business_output_bytes": 0
+        },
+        {
+          "scenario": "upload-failure",
+          "tool_calls": 11,
+          "business_calls": 2,
+          "help_queries": 1,
+          "format_errors": 0,
+          "history_reads": 3,
+          "discovery_calls": 2,
+          "local_reports": 1,
+          "receipt_reads": 2,
+          "business_output_bytes": 2491
+        },
+        {
+          "scenario": "cancel-upload",
+          "tool_calls": 5,
+          "business_calls": 2,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 1,
+          "business_output_bytes": 2490
+        },
+        {
+          "scenario": "unknown",
+          "tool_calls": 4,
+          "business_calls": 2,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 1,
+          "business_output_bytes": 2688
+        },
+        {
+          "scenario": "recover-unknown",
+          "tool_calls": 3,
+          "business_calls": 0,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 1,
+          "business_output_bytes": 0
+        },
+        {
+          "scenario": "missing-permission",
+          "tool_calls": 5,
+          "business_calls": 2,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 1,
+          "business_output_bytes": 1925
+        }
+      ],
+      "totals": {
+        "tool_calls": 72,
+        "business_calls": 20,
+        "help_queries": 5,
+        "format_errors": 0,
+        "history_reads": 4,
+        "discovery_calls": 4,
+        "local_reports": 17,
+        "receipt_reads": 11,
+        "business_output_bytes": 21091
+      },
+      "common_12_totals": {
+        "tool_calls": 57,
+        "business_calls": 15,
+        "help_queries": 5,
+        "format_errors": 0,
+        "history_reads": 4,
+        "discovery_calls": 4,
+        "local_reports": 12,
+        "receipt_reads": 11,
+        "business_output_bytes": 17052
+      },
+      "action_counts": {
+        "succeeded": 9,
+        "not_applied": 2,
+        "unknown": 1
+      },
+      "actions": [
+        {
+          "id": "agent-cancel",
+          "operation": "message.send_self",
+          "status": "not_applied",
+          "attempts": 1,
+          "target": {
+            "type": "user",
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "account": {
+            "provider": "lark",
+            "instance": "https://open.feishu.cn",
+            "tenant": {
+              "namespace": "lark:tenant_key",
+              "value": "account_tenant"
+            },
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "input": {
+            "body": "取消样本",
+            "images": [
+              {
+                "attachment_id": "img_00000000000000000000000000000003",
+                "message_seq": 4
+              },
+              {
+                "attachment_id": "img_00000000000000000000000000000004",
+                "message_seq": 5
+              }
+            ]
+          },
+          "authority": null,
+          "remote_id": null
+        },
+        {
+          "id": "agent-group-caption",
+          "operation": "message.send",
+          "status": "succeeded",
+          "attempts": 1,
+          "target": {
+            "type": "chat",
+            "id": {
+              "namespace": "lark:chat_id:cli_fixture",
+              "value": "oc_group"
+            }
+          },
+          "account": {
+            "provider": "lark",
+            "instance": "https://open.feishu.cn",
+            "tenant": {
+              "namespace": "lark:tenant_key",
+              "value": "account_tenant"
+            },
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "input": {
+            "body": "现场说明",
+            "images": [
+              {
+                "attachment_id": "img_00000000000000000000000000000001",
+                "message_seq": 2
+              },
+              {
+                "attachment_id": "img_00000000000000000000000000000002",
+                "message_seq": 3
+              }
+            ]
+          },
+          "authority": {
+            "room_seq": 14,
+            "reason": "按 seq 14 明确选择 oc_group 并要求把最早两张原图和「现场说明」作为一条消息发到该群"
+          },
+          "remote_id": {
+            "namespace": "lark:message_id:cli_fixture",
+            "value": "om_receipt"
+          }
+        },
+        {
+          "id": "agent-group-multiple",
+          "operation": "message.send",
+          "status": "succeeded",
+          "attempts": 1,
+          "target": {
+            "type": "chat",
+            "id": {
+              "namespace": "lark:chat_id:cli_fixture",
+              "value": "oc_group"
+            }
+          },
+          "account": {
+            "provider": "lark",
+            "instance": "https://open.feishu.cn",
+            "tenant": {
+              "namespace": "lark:tenant_key",
+              "value": "account_tenant"
+            },
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "input": {
+            "images": [
+              {
+                "attachment_id": "img_00000000000000000000000000000001",
+                "message_seq": 2
+              },
+              {
+                "attachment_id": "img_00000000000000000000000000000002",
+                "message_seq": 3
+              }
+            ]
+          },
+          "authority": {
+            "room_seq": 24,
+            "reason": "按 seq 24 直接指令向已选定的准确测试群（oc_group）一次性发送最早两张原图，不带说明"
+          },
+          "remote_id": {
+            "namespace": "lark:message_id:cli_fixture",
+            "value": "om_receipt"
+          }
+        },
+        {
+          "id": "agent-group-single",
+          "operation": "message.send",
+          "status": "succeeded",
+          "attempts": 1,
+          "target": {
+            "type": "chat",
+            "id": {
+              "namespace": "lark:chat_id:cli_fixture",
+              "value": "oc_group"
+            }
+          },
+          "account": {
+            "provider": "lark",
+            "instance": "https://open.feishu.cn",
+            "tenant": {
+              "namespace": "lark:tenant_key",
+              "value": "account_tenant"
+            },
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "input": {
+            "images": [
+              {
+                "attachment_id": "img_00000000000000000000000000000004",
+                "message_seq": 5
+              }
+            ]
+          },
+          "authority": {
+            "room_seq": 22,
+            "reason": "按 seq 22 直接指令向已选定的准确测试群（oc_group）发送最后一张原图，不带说明"
+          },
+          "remote_id": {
+            "namespace": "lark:message_id:cli_fixture",
+            "value": "om_receipt"
+          }
+        },
+        {
+          "id": "agent-group-text",
+          "operation": "message.send",
+          "status": "succeeded",
+          "attempts": 1,
+          "target": {
+            "type": "chat",
+            "id": {
+              "namespace": "lark:chat_id:cli_fixture",
+              "value": "oc_group"
+            }
+          },
+          "account": {
+            "provider": "lark",
+            "instance": "https://open.feishu.cn",
+            "tenant": {
+              "namespace": "lark:tenant_key",
+              "value": "account_tenant"
+            },
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "input": {
+            "body": "群文字样本"
+          },
+          "authority": {
+            "room_seq": 20,
+            "reason": "按 seq 20 直接指令向已选定的准确测试群（oc_group）发送文字「群文字样本」"
+          },
+          "remote_id": {
+            "namespace": "lark:message_id:cli_fixture",
+            "value": "om_receipt"
+          }
+        },
+        {
+          "id": "agent-history-two",
+          "operation": "message.send_self",
+          "status": "succeeded",
+          "attempts": 1,
+          "target": {
+            "type": "user",
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "account": {
+            "provider": "lark",
+            "instance": "https://open.feishu.cn",
+            "tenant": {
+              "namespace": "lark:tenant_key",
+              "value": "account_tenant"
+            },
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "input": {
+            "images": [
+              {
+                "attachment_id": "img_00000000000000000000000000000001",
+                "message_seq": 2
+              },
+              {
+                "attachment_id": "img_00000000000000000000000000000002",
+                "message_seq": 3
+              }
+            ]
+          },
+          "authority": null,
+          "remote_id": {
+            "namespace": "lark:message_id:cli_fixture",
+            "value": "om_receipt"
+          }
+        },
+        {
+          "id": "agent-last-image",
+          "operation": "message.send_self",
+          "status": "succeeded",
+          "attempts": 1,
+          "target": {
+            "type": "user",
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "account": {
+            "provider": "lark",
+            "instance": "https://open.feishu.cn",
+            "tenant": {
+              "namespace": "lark:tenant_key",
+              "value": "account_tenant"
+            },
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "input": {
+            "images": [
+              {
+                "attachment_id": "img_00000000000000000000000000000004",
+                "message_seq": 5
+              }
+            ]
+          },
+          "authority": null,
+          "remote_id": {
+            "namespace": "lark:message_id:cli_fixture",
+            "value": "om_receipt"
+          }
+        },
+        {
+          "id": "agent-second-only",
+          "operation": "message.send_self",
+          "status": "succeeded",
+          "attempts": 1,
+          "target": {
+            "type": "user",
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "account": {
+            "provider": "lark",
+            "instance": "https://open.feishu.cn",
+            "tenant": {
+              "namespace": "lark:tenant_key",
+              "value": "account_tenant"
+            },
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "input": {
+            "images": [
+              {
+                "attachment_id": "img_00000000000000000000000000000002",
+                "message_seq": 3
+              }
+            ]
+          },
+          "authority": null,
+          "remote_id": {
+            "namespace": "lark:message_id:cli_fixture",
+            "value": "om_receipt"
+          }
+        },
+        {
+          "id": "agent-self-caption",
+          "operation": "message.send_self",
+          "status": "succeeded",
+          "attempts": 1,
+          "target": {
+            "type": "user",
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "account": {
+            "provider": "lark",
+            "instance": "https://open.feishu.cn",
+            "tenant": {
+              "namespace": "lark:tenant_key",
+              "value": "account_tenant"
+            },
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "input": {
+            "body": "本人图文样本",
+            "images": [
+              {
+                "attachment_id": "img_00000000000000000000000000000004",
+                "message_seq": 5
+              }
+            ]
+          },
+          "authority": null,
+          "remote_id": {
+            "namespace": "lark:message_id:cli_fixture",
+            "value": "om_receipt"
+          }
+        },
+        {
+          "id": "agent-self-text",
+          "operation": "message.send_self",
+          "status": "succeeded",
+          "attempts": 1,
+          "target": {
+            "type": "user",
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "account": {
+            "provider": "lark",
+            "instance": "https://open.feishu.cn",
+            "tenant": {
+              "namespace": "lark:tenant_key",
+              "value": "account_tenant"
+            },
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "input": {
+            "body": "本人文字样本"
+          },
+          "authority": null,
+          "remote_id": {
+            "namespace": "lark:message_id:cli_fixture",
+            "value": "om_receipt"
+          }
+        },
+        {
+          "id": "agent-unknown",
+          "operation": "message.send_self",
+          "status": "unknown",
+          "attempts": 1,
+          "target": {
+            "type": "user",
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "account": {
+            "provider": "lark",
+            "instance": "https://open.feishu.cn",
+            "tenant": {
+              "namespace": "lark:tenant_key",
+              "value": "account_tenant"
+            },
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "input": {
+            "body": "未知样本",
+            "images": [
+              {
+                "attachment_id": "img_00000000000000000000000000000003",
+                "message_seq": 4
+              },
+              {
+                "attachment_id": "img_00000000000000000000000000000004",
+                "message_seq": 5
+              }
+            ]
+          },
+          "authority": null,
+          "remote_id": null
+        },
+        {
+          "id": "agent-upload-failure",
+          "operation": "message.send_self",
+          "status": "not_applied",
+          "attempts": 1,
+          "target": {
+            "type": "user",
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "account": {
+            "provider": "lark",
+            "instance": "https://open.feishu.cn",
+            "tenant": {
+              "namespace": "lark:tenant_key",
+              "value": "account_tenant"
+            },
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "input": {
+            "body": "失败样本",
+            "images": [
+              {
+                "attachment_id": "img_00000000000000000000000000000003",
+                "message_seq": 4
+              },
+              {
+                "attachment_id": "img_00000000000000000000000000000004",
+                "message_seq": 5
+              }
+            ]
+          },
+          "authority": null,
+          "remote_id": null
+        }
+      ],
+      "native_message_posts": 10,
+      "service_restart": true,
+      "unknown_restart_blocked": true,
+      "manual_cli_receipt_query_after_unknown_restart": 1,
+      "no_resend": true
+    },
+    {
+      "mode": "default-assistant",
+      "raw_report": "/tmp/teamx-lark-image-agent-simplified-assistant-20261120-234036/report.json",
+      "parent_run_status": "passed",
+      "status": "passed",
+      "scenarios": [
+        "last-image",
+        "history-two",
+        "second-only",
+        "ambiguous-group",
+        "choose-group",
+        "self-text",
+        "self-caption",
+        "group-text",
+        "group-single",
+        "group-multiple",
+        "ambiguous-images",
+        "restart-receipts",
+        "upload-failure",
+        "cancel-upload",
+        "unknown",
+        "recover-unknown",
+        "missing-permission"
+      ],
+      "costs": [
+        {
+          "scenario": "last-image",
+          "tool_calls": 8,
+          "business_calls": 2,
+          "help_queries": 1,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 2,
+          "local_reports": 1,
+          "receipt_reads": 2,
+          "business_output_bytes": 2346
+        },
+        {
+          "scenario": "history-two",
+          "tool_calls": 6,
+          "business_calls": 1,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 1,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 2,
+          "business_output_bytes": 843
+        },
+        {
+          "scenario": "second-only",
+          "tool_calls": 4,
+          "business_calls": 1,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 1,
+          "business_output_bytes": 770
+        },
+        {
+          "scenario": "ambiguous-group",
+          "tool_calls": 3,
+          "business_calls": 1,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 1,
+          "business_output_bytes": 1096
+        },
+        {
+          "scenario": "choose-group",
+          "tool_calls": 4,
+          "business_calls": 2,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 0,
+          "business_output_bytes": 2512
+        },
+        {
+          "scenario": "self-text",
+          "tool_calls": 4,
+          "business_calls": 1,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 1,
+          "business_output_bytes": 712
+        },
+        {
+          "scenario": "self-caption",
+          "tool_calls": 4,
+          "business_calls": 1,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 1,
+          "business_output_bytes": 799
+        },
+        {
+          "scenario": "group-text",
+          "tool_calls": 4,
+          "business_calls": 1,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 1,
+          "business_output_bytes": 768
+        },
+        {
+          "scenario": "group-single",
+          "tool_calls": 4,
+          "business_calls": 1,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 1,
+          "business_output_bytes": 826
+        },
+        {
+          "scenario": "group-multiple",
+          "tool_calls": 4,
+          "business_calls": 1,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 1,
+          "business_output_bytes": 922
+        },
+        {
+          "scenario": "ambiguous-images",
+          "tool_calls": 2,
+          "business_calls": 0,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 0,
+          "business_output_bytes": 0
+        },
+        {
+          "scenario": "restart-receipts",
+          "tool_calls": 5,
+          "business_calls": 0,
+          "help_queries": 4,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 2,
+          "business_output_bytes": 0
+        },
+        {
+          "scenario": "upload-failure",
+          "tool_calls": 12,
+          "business_calls": 3,
+          "help_queries": 3,
+          "format_errors": 0,
+          "history_reads": 3,
+          "discovery_calls": 2,
+          "local_reports": 1,
+          "receipt_reads": 2,
+          "business_output_bytes": 2991
+        },
+        {
+          "scenario": "cancel-upload",
+          "tool_calls": 4,
+          "business_calls": 1,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 2,
+          "business_output_bytes": 1017
+        },
+        {
+          "scenario": "unknown",
+          "tool_calls": 4,
+          "business_calls": 1,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 1,
+          "business_output_bytes": 916
+        },
+        {
+          "scenario": "recover-unknown",
+          "tool_calls": 3,
+          "business_calls": 0,
+          "help_queries": 0,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 1,
+          "business_output_bytes": 0
+        },
+        {
+          "scenario": "missing-permission",
+          "tool_calls": 9,
+          "business_calls": 1,
+          "help_queries": 2,
+          "format_errors": 0,
+          "history_reads": 0,
+          "discovery_calls": 0,
+          "local_reports": 1,
+          "receipt_reads": 1,
+          "business_output_bytes": 353
+        }
+      ],
+      "totals": {
+        "tool_calls": 84,
+        "business_calls": 18,
+        "help_queries": 10,
+        "format_errors": 0,
+        "history_reads": 4,
+        "discovery_calls": 4,
+        "local_reports": 17,
+        "receipt_reads": 20,
+        "business_output_bytes": 16871
+      },
+      "common_12_totals": {
+        "tool_calls": 64,
+        "business_calls": 13,
+        "help_queries": 10,
+        "format_errors": 0,
+        "history_reads": 4,
+        "discovery_calls": 4,
+        "local_reports": 12,
+        "receipt_reads": 15,
+        "business_output_bytes": 12844
+      },
+      "action_counts": {
+        "succeeded": 9,
+        "not_applied": 2,
+        "unknown": 1
+      },
+      "actions": [
+        {
+          "id": "agent-cancel",
+          "operation": "message.send_self",
+          "status": "not_applied",
+          "attempts": 1,
+          "target": {
+            "type": "user",
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "account": {
+            "provider": "lark",
+            "instance": "https://open.feishu.cn",
+            "tenant": {
+              "namespace": "lark:tenant_key",
+              "value": "account_tenant"
+            },
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "input": {
+            "body": "取消样本",
+            "images": [
+              {
+                "attachment_id": "img_00000000000000000000000000000003",
+                "message_seq": 4
+              },
+              {
+                "attachment_id": "img_00000000000000000000000000000004",
+                "message_seq": 5
+              }
+            ]
+          },
+          "authority": null,
+          "remote_id": null
+        },
+        {
+          "id": "agent-group-caption",
+          "operation": "message.send",
+          "status": "succeeded",
+          "attempts": 1,
+          "target": {
+            "type": "chat",
+            "id": {
+              "namespace": "lark:chat_id:cli_fixture",
+              "value": "oc_group"
+            }
+          },
+          "account": {
+            "provider": "lark",
+            "instance": "https://open.feishu.cn",
+            "tenant": {
+              "namespace": "lark:tenant_key",
+              "value": "account_tenant"
+            },
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "input": {
+            "body": "现场说明",
+            "images": [
+              {
+                "attachment_id": "img_00000000000000000000000000000001",
+                "message_seq": 2
+              },
+              {
+                "attachment_id": "img_00000000000000000000000000000002",
+                "message_seq": 3
+              }
+            ]
+          },
+          "authority": {
+            "room_seq": 14,
+            "reason": "用户确认选 oc_group，指示把最早两张原图与说明「现场说明」作为一条消息发到该群"
+          },
+          "remote_id": {
+            "namespace": "lark:message_id:cli_fixture",
+            "value": "om_receipt"
+          }
+        },
+        {
+          "id": "agent-group-multiple",
+          "operation": "message.send",
+          "status": "succeeded",
+          "attempts": 1,
+          "target": {
+            "type": "chat",
+            "id": {
+              "namespace": "lark:chat_id:cli_fixture",
+              "value": "oc_group"
+            }
+          },
+          "account": {
+            "provider": "lark",
+            "instance": "https://open.feishu.cn",
+            "tenant": {
+              "namespace": "lark:tenant_key",
+              "value": "account_tenant"
+            },
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "input": {
+            "images": [
+              {
+                "attachment_id": "img_00000000000000000000000000000001",
+                "message_seq": 2
+              },
+              {
+                "attachment_id": "img_00000000000000000000000000000002",
+                "message_seq": 3
+              }
+            ]
+          },
+          "authority": {
+            "room_seq": 24,
+            "reason": "用户指示把最早两张原图不带说明、作为一条消息发到刚才选定的准确测试群（oc_group）"
+          },
+          "remote_id": {
+            "namespace": "lark:message_id:cli_fixture",
+            "value": "om_receipt"
+          }
+        },
+        {
+          "id": "agent-group-single",
+          "operation": "message.send",
+          "status": "succeeded",
+          "attempts": 1,
+          "target": {
+            "type": "chat",
+            "id": {
+              "namespace": "lark:chat_id:cli_fixture",
+              "value": "oc_group"
+            }
+          },
+          "account": {
+            "provider": "lark",
+            "instance": "https://open.feishu.cn",
+            "tenant": {
+              "namespace": "lark:tenant_key",
+              "value": "account_tenant"
+            },
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "input": {
+            "images": [
+              {
+                "attachment_id": "img_00000000000000000000000000000004",
+                "message_seq": 5
+              }
+            ]
+          },
+          "authority": {
+            "room_seq": 22,
+            "reason": "用户指示把最后一张原图不带说明发到刚才选定的准确测试群（oc_group）"
+          },
+          "remote_id": {
+            "namespace": "lark:message_id:cli_fixture",
+            "value": "om_receipt"
+          }
+        },
+        {
+          "id": "agent-group-text",
+          "operation": "message.send",
+          "status": "succeeded",
+          "attempts": 1,
+          "target": {
+            "type": "chat",
+            "id": {
+              "namespace": "lark:chat_id:cli_fixture",
+              "value": "oc_group"
+            }
+          },
+          "account": {
+            "provider": "lark",
+            "instance": "https://open.feishu.cn",
+            "tenant": {
+              "namespace": "lark:tenant_key",
+              "value": "account_tenant"
+            },
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "input": {
+            "body": "群文字样本"
+          },
+          "authority": {
+            "room_seq": 20,
+            "reason": "用户指示向刚才选定的准确测试群（oc_group）发送文字「群文字样本」一条"
+          },
+          "remote_id": {
+            "namespace": "lark:message_id:cli_fixture",
+            "value": "om_receipt"
+          }
+        },
+        {
+          "id": "agent-history-two",
+          "operation": "message.send_self",
+          "status": "succeeded",
+          "attempts": 1,
+          "target": {
+            "type": "user",
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "account": {
+            "provider": "lark",
+            "instance": "https://open.feishu.cn",
+            "tenant": {
+              "namespace": "lark:tenant_key",
+              "value": "account_tenant"
+            },
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "input": {
+            "images": [
+              {
+                "attachment_id": "img_00000000000000000000000000000001",
+                "message_seq": 2
+              },
+              {
+                "attachment_id": "img_00000000000000000000000000000002",
+                "message_seq": 3
+              }
+            ]
+          },
+          "authority": null,
+          "remote_id": {
+            "namespace": "lark:message_id:cli_fixture",
+            "value": "om_receipt"
+          }
+        },
+        {
+          "id": "agent-last-image",
+          "operation": "message.send_self",
+          "status": "succeeded",
+          "attempts": 1,
+          "target": {
+            "type": "user",
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "account": {
+            "provider": "lark",
+            "instance": "https://open.feishu.cn",
+            "tenant": {
+              "namespace": "lark:tenant_key",
+              "value": "account_tenant"
+            },
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "input": {
+            "images": [
+              {
+                "attachment_id": "img_00000000000000000000000000000004",
+                "message_seq": 5
+              }
+            ]
+          },
+          "authority": null,
+          "remote_id": {
+            "namespace": "lark:message_id:cli_fixture",
+            "value": "om_receipt"
+          }
+        },
+        {
+          "id": "agent-second-only",
+          "operation": "message.send_self",
+          "status": "succeeded",
+          "attempts": 1,
+          "target": {
+            "type": "user",
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "account": {
+            "provider": "lark",
+            "instance": "https://open.feishu.cn",
+            "tenant": {
+              "namespace": "lark:tenant_key",
+              "value": "account_tenant"
+            },
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "input": {
+            "images": [
+              {
+                "attachment_id": "img_00000000000000000000000000000002",
+                "message_seq": 3
+              }
+            ]
+          },
+          "authority": null,
+          "remote_id": {
+            "namespace": "lark:message_id:cli_fixture",
+            "value": "om_receipt"
+          }
+        },
+        {
+          "id": "agent-self-caption",
+          "operation": "message.send_self",
+          "status": "succeeded",
+          "attempts": 1,
+          "target": {
+            "type": "user",
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "account": {
+            "provider": "lark",
+            "instance": "https://open.feishu.cn",
+            "tenant": {
+              "namespace": "lark:tenant_key",
+              "value": "account_tenant"
+            },
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "input": {
+            "body": "本人图文样本",
+            "images": [
+              {
+                "attachment_id": "img_00000000000000000000000000000004",
+                "message_seq": 5
+              }
+            ]
+          },
+          "authority": null,
+          "remote_id": {
+            "namespace": "lark:message_id:cli_fixture",
+            "value": "om_receipt"
+          }
+        },
+        {
+          "id": "agent-self-text",
+          "operation": "message.send_self",
+          "status": "succeeded",
+          "attempts": 1,
+          "target": {
+            "type": "user",
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "account": {
+            "provider": "lark",
+            "instance": "https://open.feishu.cn",
+            "tenant": {
+              "namespace": "lark:tenant_key",
+              "value": "account_tenant"
+            },
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "input": {
+            "body": "本人文字样本"
+          },
+          "authority": null,
+          "remote_id": {
+            "namespace": "lark:message_id:cli_fixture",
+            "value": "om_receipt"
+          }
+        },
+        {
+          "id": "agent-unknown",
+          "operation": "message.send_self",
+          "status": "unknown",
+          "attempts": 1,
+          "target": {
+            "type": "user",
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "account": {
+            "provider": "lark",
+            "instance": "https://open.feishu.cn",
+            "tenant": {
+              "namespace": "lark:tenant_key",
+              "value": "account_tenant"
+            },
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "input": {
+            "body": "未知样本",
+            "images": [
+              {
+                "attachment_id": "img_00000000000000000000000000000003",
+                "message_seq": 4
+              },
+              {
+                "attachment_id": "img_00000000000000000000000000000004",
+                "message_seq": 5
+              }
+            ]
+          },
+          "authority": null,
+          "remote_id": null
+        },
+        {
+          "id": "agent-upload-failure",
+          "operation": "message.send_self",
+          "status": "not_applied",
+          "attempts": 1,
+          "target": {
+            "type": "user",
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "account": {
+            "provider": "lark",
+            "instance": "https://open.feishu.cn",
+            "tenant": {
+              "namespace": "lark:tenant_key",
+              "value": "account_tenant"
+            },
+            "id": {
+              "namespace": "lark:open_id:cli_fixture",
+              "value": "ou_reader"
+            }
+          },
+          "input": {
+            "body": "失败样本",
+            "images": [
+              {
+                "attachment_id": "img_00000000000000000000000000000003",
+                "message_seq": 4
+              },
+              {
+                "attachment_id": "img_00000000000000000000000000000004",
+                "message_seq": 5
+              }
+            ]
+          },
+          "authority": null,
+          "remote_id": null
+        }
+      ],
+      "native_message_posts": 10,
+      "service_restart": true,
+      "unknown_restart_blocked": true,
+      "manual_cli_receipt_query_after_unknown_restart": 1,
+      "no_resend": true
+    }
+  ],
+  "comparison": [
+    {
+      "mode": "managed",
+      "common_scenarios": 12,
+      "before": {
+        "tool_calls": 83,
+        "business_calls": 20,
+        "help_queries": 12,
+        "format_errors": 2,
+        "history_reads": 4,
+        "discovery_calls": 9,
+        "local_reports": 12,
+        "receipt_reads": 26,
+        "business_output_bytes": 18334
+      },
+      "after": {
+        "tool_calls": 57,
+        "business_calls": 15,
+        "help_queries": 5,
+        "format_errors": 0,
+        "history_reads": 4,
+        "discovery_calls": 4,
+        "local_reports": 12,
+        "receipt_reads": 11,
+        "business_output_bytes": 17052
+      },
+      "all_17_after": {
+        "tool_calls": 72,
+        "business_calls": 20,
+        "help_queries": 5,
+        "format_errors": 0,
+        "history_reads": 4,
+        "discovery_calls": 4,
+        "local_reports": 17,
+        "receipt_reads": 11,
+        "business_output_bytes": 21091
+      }
+    },
+    {
+      "mode": "default-assistant",
+      "common_scenarios": 12,
+      "before": {
+        "tool_calls": 68,
+        "business_calls": 18,
+        "help_queries": 15,
+        "format_errors": 2,
+        "history_reads": 2,
+        "discovery_calls": 7,
+        "local_reports": 12,
+        "receipt_reads": 15,
+        "business_output_bytes": 16102
+      },
+      "after": {
+        "tool_calls": 64,
+        "business_calls": 13,
+        "help_queries": 10,
+        "format_errors": 0,
+        "history_reads": 4,
+        "discovery_calls": 4,
+        "local_reports": 12,
+        "receipt_reads": 15,
+        "business_output_bytes": 12844
+      },
+      "all_17_after": {
+        "tool_calls": 84,
+        "business_calls": 18,
+        "help_queries": 10,
+        "format_errors": 0,
+        "history_reads": 4,
+        "discovery_calls": 4,
+        "local_reports": 17,
+        "receipt_reads": 20,
+        "business_output_bytes": 16871
+      }
+    }
+  ],
+  "size_metrics": {
+    "main_skill": {
+      "before_bytes": 9662,
+      "after_bytes": 5067,
+      "before_lines": 156,
+      "after_lines": 89
+    },
+    "resolve_help": {
+      "before_bytes": 2473,
+      "after_bytes": 1602
+    },
+    "execute_help": {
+      "before_bytes": 5115,
+      "after_bytes": 2440
+    },
+    "tools_list": {
+      "before_bytes": 2904,
+      "after_bytes": 1860
+    },
+    "group_resolve_execute": {
+      "before_bytes": 2512,
+      "after_bytes": 2433
+    }
+  },
+  "required_request_fields": {
+    "self": [
+      "target_ref",
+      "turn_number",
+      "id",
+      "operation",
+      "input"
+    ],
+    "group": [
+      "target_ref",
+      "turn_number",
+      "id",
+      "operation",
+      "input",
+      "policy_token",
+      "authority"
+    ],
+    "group_authority": [
+      "type",
+      "room_seq",
+      "reason"
+    ],
+    "each_image": [
+      "message_seq",
+      "attachment_id"
+    ],
+    "candidate": "Copy resolution.candidates[i].locator unchanged; current turn_number/policy_token are supplied independently. No attachment resolve or receipt preflight is required."
+  },
+  "failed_runs": [
+    {
+      "raw_report": "/tmp/teamx-lark-image-agent-simplified-20261120-232148/report.json",
+      "status": "failed",
+      "modes": [
+        "managed",
+        "default-assistant"
+      ],
+      "cause": "tools list --json was rejected by the earlier CLI; now accepted consistently. No business sends were duplicated."
+    },
+    {
+      "raw_report": "/tmp/teamx-lark-image-agent-simplified-20261120-232340/report.json",
+      "status": "failed",
+      "modes": [
+        "managed",
+        "default-assistant"
+      ],
+      "cause": "After restart one Agent created a local progress file; another guessed root flags and used a local file. Discovery and the shipped Skill now direct each Session to the exact bounded workflow and durable action receipts. These samples are not accepted."
+    }
+  ],
+  "local_gates": {
+    "targeted_integration": {
+      "passed": true,
+      "seconds": 245.267,
+      "log": "/tmp/teamx-lark-actions-simplified-integration.log"
+    },
+    "final_discovery_and_shared_contract_regression": {
+      "passed": true,
+      "seconds": 29.662,
+      "log": "/tmp/teamx-lark-actions-simplified-discovery.log"
+    },
+    "final_race": {
+      "passed": true,
+      "seconds": 51.357,
+      "log": "/tmp/teamx-lark-actions-simplified-final-race.log"
+    },
+    "final_platform": {
+      "passed": true,
+      "lark_seconds": 10.002,
+      "tool_seconds": 1.651,
+      "log": "/tmp/teamx-lark-actions-simplified-final-platform.log"
+    },
+    "diff_check": {
+      "passed": true
+    },
+    "full_repository": "not run",
+    "browser": "unchanged; reuse stage 3 evidence"
+  },
+  "reused_evidence": [
+    "lark-image-send-s1.zh.md: source bytes, native retention and attachment lifecycle unchanged",
+    "lark-image-send-s2.zh.md: upload/message construction/final authorization and content freezing unchanged",
+    "lark-image-send-s3.zh.md: settings/browser and independent process fault evidence; affected action/recovery tests rerun"
+  ],
+  "remaining": [
+    "Real Lark upload/post interface small validation (8.2/8.3)",
+    "Stage 4 real Feishu Agent acceptance and production image registration",
+    "Daily deployment and Session adoption"
+  ]
+}

@@ -42,7 +42,7 @@ func gitlabDefinition() Definition {
 }
 
 func larkDefinition() Definition {
-	refs := lark.AcceptedActionCapabilities(nil, nil, nil)
+	refs := lark.WithImageActions(lark.AcceptedActionCapabilities(nil, nil, nil), nil, nil, nil, nil)
 	return Definition{
 		Type: platform.TypeDefinition{Provider: "lark", ToolType: "lark", NotificationChannels: []string{"messages"}},
 		Connection: &Connection{Normalize: registry.Normalize, ValidProfile: func(origin string, p platform.CLIProfile) bool {

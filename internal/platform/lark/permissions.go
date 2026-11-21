@@ -18,10 +18,11 @@ const (
 	SendScopes         = "im:message.send_as_user im:message"
 	SendTargetScopes   = "im:chat.members:read"
 	PeopleSearchScopes = "contact:user:search"
+	ImageUploadScopes  = "im:resource"
 )
 
 func DefaultScopes() []string {
-	s := strings.Fields(readerScopes + " " + SendScopes + " " + SendTargetScopes + " " + PeopleSearchScopes)
+	s := strings.Fields(readerScopes + " " + SendScopes + " " + SendTargetScopes + " " + PeopleSearchScopes + " " + ImageUploadScopes)
 	slices.Sort(s)
 	return slices.Compact(s)
 }
@@ -44,6 +45,7 @@ func CapabilityDependencies() []CapabilityDependency {
 		{Name: "token.renew", Scopes: []string{"offline_access"}},
 		{Name: "sender.name", Scopes: []string{"contact:user.basic_profile:readonly"}},
 		{Name: "people.search", Scopes: strings.Fields(PeopleSearchScopes)},
+		{Name: "image.upload", Scopes: strings.Fields(ImageUploadScopes), RequiresPin: true},
 		{Name: "message.reply", Scopes: strings.Fields(SendScopes), RequiresPin: true},
 		{Name: "message.send", Scopes: strings.Fields(SendScopes + " " + SendTargetScopes), RequiresPin: true},
 		{Name: "message.send_self", Scopes: strings.Fields(SendScopes + " " + SendTargetScopes), RequiresPin: true, Evidence: "self_delivery"},

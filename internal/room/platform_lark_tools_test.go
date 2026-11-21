@@ -134,3 +134,30 @@ func TestLarkMemberCapabilityProjectionKeepsIntentSeparateFromReadiness(t *testi
 		t.Fatal("projection mutated its inputs")
 	}
 }
+
+func TestLarkImageAvailabilityRequiresDeclaredSendSchema(t *testing.T) {
+	now := time.Now().UTC()
+	caps := lark.AcceptedActionCapabilities(nil, nil, nil)
+	p := larkPlatformCapabilityResult{PermissionCheck: lark.PermissionCheck{Capabilities: []lark.Capability{{Name: "image.upload", State: "ready"}}}}
+	textOnly := projectLarkMemberCapabilities(platform.AccessContext{}, "", nil, 0, p, caps, now)
+	if len(textOnly.ImageActions) != 0 {
+		t.Fatal("upload readiness opened undeclared image sends", textOnly)
+	}
+	m := testManager(t, t.TempDir(), managerTestProfiles(t))
+	declared, err := m.referenceCapabilities("lark")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := projectLarkMemberCapabilities(platform.AccessContext{}, "", nil, 0, p, declared, now)
+	if !reflect.DeepEqual(result.ImageActions, []string{"message.send_self", "message.send"}) {
+		t.Fatal(result.ImageActions)
+	}
+	// A schema without its executable adapter is still unavailable.
+	cap := declared.Actions[platform.OperationMessageSend]
+	cap.Spec.DisabledReason = "unavailable"
+	declared.Actions[platform.OperationMessageSend] = cap
+	result = projectLarkMemberCapabilities(platform.AccessContext{}, "", nil, 0, p, declared, now)
+	if !reflect.DeepEqual(result.ImageActions, []string{"message.send_self"}) {
+		t.Fatal(result.ImageActions)
+	}
+}

@@ -63,9 +63,9 @@ func decodeRequestJSON(payload string, target any) error {
 		case errors.As(err, &authored):
 			return err
 		case errors.As(err, &typeErr):
-			path := typeErr.Field
+			path := jsonErrorPath(json.RawMessage(payload), reflect.TypeOf(target), "", "")
 			if path == "" {
-				path = jsonErrorPath(json.RawMessage(payload), reflect.TypeOf(target), "", "")
+				path = typeErr.Field
 			}
 			return invalidField(path, fmt.Sprintf("expected %s at byte %d", typeErr.Type, typeErr.Offset))
 		case errors.As(err, &syntaxErr):

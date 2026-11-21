@@ -419,3 +419,48 @@ for(const state of ["unchecked","unsupported"])test(`member platform links to ac
  assert.equal(ui.el("settings-dialog").open,true);assert.equal(ui.el("connection-name").value,"公司飞书");
  assert.equal(calls(api,"/v1/tools/bind").length,0);
 });
+
+for(const [state,reason,next] of [
+ ["ready","",null],["blocked","application_scopes_missing","configure_application"],
+ ["blocked","user_scopes_missing","authorize_user"],["unchecked","check_expired","retry_check"],
+ ["unchecked","query_failed","retry_check"],["unchecked","account_pinning_unavailable","revalidate_account"]
+])test(`optional image upload ${state}/${reason} keeps text tools enabled and offers scoped inspection`,async()=>{
+ const api=pendingLarkPermissions();
+ api.tools.selections[0].availability.capabilities=[{name:"message.reply",configured:true,state:"ready"},{name:"image.upload",state,reason_code:reason,next_action:next}];
+ const ui=await launch(api);await openMemberInbox(ui,"member-a");
+ const actions=row(ui,"lark").children[3],hint=actions.children.find(c=>c.textContent.includes("图文发送尚未开放"));
+ assert.ok(hint);assert.equal(hint.dataset.kind,"status");
+ assert.equal(toolToggle(ui,"lark").checked,true);assert.equal(toolToggle(ui,"lark").disabled,false);
+ assert.equal(actions.children.some(c=>c.textContent==="完成授权" || c.textContent==="配置应用" || c.textContent==="修复能力"),false);
+ const inspect=actions.children.find(c=>c.textContent==="查看图片权限");assert.equal(!!inspect,state!=="ready");
+ if(inspect){await inspect.emit("click");await settle();assert.equal(ui.el("connection-name").value,"公司飞书");}
+ assert.equal(calls(api,"/v1/tools/bind").length,0);assert.equal(calls(api,"/v1/platforms/lark/login").length,0);
+});
+
+test("image schema support is distinct from upload permission and target grant",async()=>{
+ const api=pendingLarkPermissions();
+ api.tools.selections[0].availability={image_actions:["message.send"],capabilities:[{name:"image.upload",state:"ready"}]};
+ const ui=await launch(api);await openMemberInbox(ui,"member-a");
+ assert.ok(row(ui,"lark").children[3].children.some(c=>c.textContent.includes("图文范围：指定群")));
+ assert.equal(calls(api,"/v1/tools/bind").length,0);
+});
+
+for(const [state,reason,next] of [
+ ["ready","",null],["blocked","application_scopes_missing","configure_application"],
+ ["blocked","user_scopes_missing","authorize_user"],["unchecked","check_expired","retry_check"]
+])test(`image permission settings show the exact ${reason || state} repair without opening sends`,async()=>{
+ const api=pendingLarkPermissions();
+ api.hook=path=>{
+  if(path==="/v1/platforms/lark/discover")return {executable:"/fixture/lark-cli",profiles:[{name:"explicit",brand:"feishu",user:"Alice",tokenStatus:"valid"}]};
+  if(path==="/v1/platforms/lark/permissions")return {account:{id:{namespace:"lark:open_id:cli_fixture"}},capabilities:[{name:"image.upload",state,reason_code:reason,next_action:next}]};
+ };
+ const ui=await launch(api);await inspectLarkAccount(ui);
+ const upload=ui.el("connection-capability-list").children[0].children[1];
+ assert.match(upload.textContent,/发送图文还需成员工具许可和目标权限/);
+ if(state==="ready")assert.match(upload.textContent,/权限已就绪/);
+ if(reason.includes("scopes_missing"))assert.match(upload.textContent,/im:resource/);
+ assert.equal(ui.el("connection-authorize").hidden,next!=="authorize_user");
+ const app=ui.el("connection-application-permissions");assert.equal(app.hidden,next!=="configure_application");
+ if(!app.hidden)assert.equal(app.href,"https://open.feishu.cn/app/cli_fixture/auth");
+ assert.equal(calls(api,"/v1/platforms/lark/login").length,0);assert.equal(calls(api,"/v1/tools/bind").length,0);
+});

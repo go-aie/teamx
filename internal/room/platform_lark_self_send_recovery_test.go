@@ -128,9 +128,14 @@ type selfSendProcess struct {
 
 func startSelfSendProcess(t *testing.T, root string, room roomSummary, dispatch ...bool) *selfSendProcess {
 	t.Helper()
+	return startActionRecoveryProcess(t, root, room, "TestLarkSelfSendRecoveryProcess", dispatch...)
+}
+
+func startActionRecoveryProcess(t *testing.T, root string, room roomSummary, testName string, dispatch ...bool) *selfSendProcess {
+	t.Helper()
 	dir := t.TempDir()
 	ready := filepath.Join(dir, "ready.json")
-	p := &selfSendProcess{cmd: exec.Command(os.Args[0], "-test.run=^TestLarkSelfSendRecoveryProcess$", "-test.timeout=2m"), log: filepath.Join(dir, "process.log")}
+	p := &selfSendProcess{cmd: exec.Command(os.Args[0], "-test.run=^"+testName+"$", "-test.timeout=2m"), log: filepath.Join(dir, "process.log")}
 	b, _ := json.Marshal(room)
 	recoverMembers := "1"
 	if len(dispatch) > 0 && dispatch[0] {

@@ -1,3 +1,4 @@
+import {imageUploadStatus} from "./lark-capabilities.mjs";
 // Durable connection and selection cards rendered inside conversations.
 export function createPlatformInteractions({ env, runtime, conversationUI, settingsUI, connectionsUI, gitlabUI, roomsUI }) {
   const { document, window, request } = env;
@@ -122,9 +123,11 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
       card.link.textContent="补全授权 ↗";
     }
     if (!gitlab && op.permissions) {
-      const labels={"chat.read":"会话读取","message.read":"消息读取","notification.private":"私聊通知","notification.group":"群通知","token.renew":"自动续期","sender.name":"发送者姓名","people.search":"人员搜索","message.reply":"普通回复","message.send":"指定群发送","message.send_self":"本人投递"};
+      const labels={"chat.read":"会话读取","message.read":"消息读取","notification.private":"私聊通知","notification.group":"群通知","token.renew":"自动续期","sender.name":"发送者姓名","people.search":"人员搜索","image.upload":"图片上传权限","message.reply":"普通回复","message.send":"指定群发送","message.send_self":"本人投递"};
       const gaps=op.permissions.capabilities.filter(c=>c.state!=="ready");
       card.hint.textContent += gaps.length ? ` 本次检查尚未就绪：${gaps.map(c=>`${labels[c.name] || c.name}（${c.state==="unsupported" ? "当前服务不支持" : c.next_action==="configure_application" ? "需管理员补权" : c.next_action==="authorize_user" ? "需补全授权" : "暂未确认"}）`).join("、")}。` : " 本次账号条件已核验；成员动作与本人证据仍按各自设置检查。";
+      const imageUpload=op.permissions.capabilities.find(c=>c.name==="image.upload");
+      if(imageUpload)card.hint.textContent+=` ${imageUploadStatus(imageUpload)}；此权限不代表图文发送已开放，也不影响文字能力的独立检查。`;
       const namespace=op.permissions.account?.id?.namespace || "",appID=namespace.startsWith("lark:open_id:") ? namespace.slice("lark:open_id:".length) : "";
       if(gaps.some(c=>c.next_action==="configure_application") && /^cli_[a-zA-Z0-9_]+$/.test(appID)){card.applicationLink.href=`https://open.feishu.cn/app/${encodeURIComponent(appID)}/auth`;card.applicationLink.hidden=false;}
     }

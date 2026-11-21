@@ -255,6 +255,9 @@ func (s *Store) SaveRoom(v RoomSnapshot) error {
 	if err := s.verifyNewAttachmentsLocked(v); err != nil {
 		return err
 	}
+	if err := s.roomRetentionProtected(v.ClearedThrough); err != nil {
+		return err
+	}
 	disk := v
 	if v.InputLog != nil {
 		if err := s.roomInputProtected(v.ClearedThrough); err != nil {

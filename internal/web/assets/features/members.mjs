@@ -1,3 +1,4 @@
+import {imageUploadStatus} from "./lark-capabilities.mjs";
 import { agentName } from "../agent-names.mjs";
 import { compactViewport } from "../client.mjs";
 import { createActivityReader, sameService } from "../client.mjs";
@@ -315,7 +316,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       controls.append(label,input,toolSwitch(v,item));
       const accountActions=document.createElement("div");accountActions.className="member-platform-account-actions";
       const selection=v?.cli?.selections?.find(s=>s.agent_id===target.agent_id && s.membership_id===target.membership_id && s.platform_id===item.id), gaps=selection?.availability?.capabilities?.filter(c=>c.configured!==false && c.state!=="ready") || [];
-      const recovery = accountRecovery(item,view,selection,gaps,v?.cliResult);
+      const recovery = accountRecovery(item,view,selection,gaps.filter(c=>c.name!=="image.upload"),v?.cliResult);
       if(recovery) {
         inlineAccountIssues.add(item.id);
         const reason=document.createElement("span");reason.className="member-platform-account-reason";reason.textContent=recovery.reason;reason.dataset.kind=recovery.kind || "error";
@@ -333,6 +334,19 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
           const repair=document.createElement("button");repair.type="button";repair.className="text-button button-compact";repair.textContent="修复能力";
           repair.disabled=!!ws.memberToolBusy || !v?.cliConnected;
           repair.addEventListener("click",()=>changeMemberTool(v,item,true,true));accountActions.append(repair);
+        }
+      }
+      const imageUpload=selection?.availability?.capabilities?.find(c=>c.name==="image.upload");
+      if(item.provider==="lark" && imageUpload) {
+        const hint=document.createElement("span");hint.className="member-platform-account-reason";
+        const imageActions=selection.availability.image_actions || [];
+        const imageTargets=[["message.send_self","本人"],["message.send","指定群"]].filter(([operation])=>imageActions.includes(operation)).map(([,label])=>label);
+        hint.textContent=`${imageUploadStatus(imageUpload)}；${imageTargets.length ? `图文范围：${imageTargets.join("、")}` : "图文发送尚未开放"}`;
+        hint.dataset.kind="status";accountActions.append(hint);
+        if(imageUpload.next_action && imageUpload.state!=="ready" && imageUpload.state!=="unsupported") {
+          const repair=document.createElement("button");repair.type="button";repair.className="text-button button-compact";
+          repair.textContent="查看图片权限";repair.addEventListener("click",async()=>{await settingsUI.openSettings("platforms",repair);const current=connectionsUI.platforms.items.find(p=>p.id===item.id);if(current)await connectionsUI.editPlatform(current,{fromSource:true});});
+          accountActions.append(repair);
         }
       }
       accountActions.hidden=!accountActions.children.length;

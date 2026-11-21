@@ -1,0 +1,77 @@
+{
+  "status": "readback_passed",
+  "stage4_complete": true,
+  "registration_open": true,
+  "historical_action": {
+    "id": "real-images-managed-self-multiple",
+    "status": "unknown",
+    "reason_code": "send_verification_failed",
+    "message_id": "om_x100b7f3881be38a0b325f2a9733fb6f",
+    "attempts": 1
+  },
+  "verification": {
+    "test": "TestRealLarkImageSendReadback",
+    "platform_writes": 0,
+    "historical_ledger_modified": false,
+    "exact_user_and_self_chat": true,
+    "upload_keys_match_readback": true,
+    "ordered_original_images": true,
+    "dimensions_match_original_bytes": true,
+    "content_v2_matches_content": true
+  },
+  "source_images": [
+    {
+      "sha256": "ec7d176ca9f1c3d3c805efdb89dc9e23edb2fce8e9112e5b1b51de7b91e4f714",
+      "image_key": "img_v3_0217l_e0765351-b793-49b5-ae1b-7b6d9545312g"
+    },
+    {
+      "sha256": "d46ad3f5718666a348e6a35a85b10389166c6b7cf3defcea7305e0f0275f85f7",
+      "image_key": "img_v3_0217l_a587f2cc-7aba-4deb-a904-125fe0b6732g"
+    }
+  ],
+  "native_content": {
+    "title": "",
+    "content": [
+      [
+        {
+          "tag": "img",
+          "image_key": "img_v3_0217l_e0765351-b793-49b5-ae1b-7b6d9545312g",
+          "width": 320,
+          "height": 200
+        }
+      ],
+      [
+        {
+          "tag": "img",
+          "image_key": "img_v3_0217l_a587f2cc-7aba-4deb-a904-125fe0b6732g",
+          "width": 320,
+          "height": 200
+        }
+      ]
+    ],
+    "content_v2": [
+      [
+        {
+          "tag": "img",
+          "image_key": "img_v3_0217l_e0765351-b793-49b5-ae1b-7b6d9545312g",
+          "width": 320,
+          "height": 200
+        }
+      ],
+      [
+        {
+          "tag": "img",
+          "image_key": "img_v3_0217l_a587f2cc-7aba-4deb-a904-125fe0b6732g",
+          "width": 320,
+          "height": 200
+        }
+      ]
+    ]
+  },
+  "native_write_totals": {
+    "messages": 2,
+    "uploads": 3
+  },
+  "extra_write_approval": "approved",
+  "stage4_summary": "lark-image-send-s4-evidence.json"
+}

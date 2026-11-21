@@ -34,3 +34,15 @@ func TestToolAuthorizationRequiredByIntentAndPlatformSupport(t *testing.T) {
 		})
 	}
 }
+
+func TestImageUploadAuthorizationIsOptionalForText(t *testing.T) {
+	check := PermissionCheck{Application: ScopeCheck{State: "granted", Granted: []string{ImageUploadScopes}}, Capabilities: []Capability{{Name: "image.upload", State: "blocked", MissingUserScopes: []string{ImageUploadScopes}, NextAction: "authorize_user"}}}
+	for _, operations := range [][]string{nil, {"message.send"}, {"message.send_self"}, {"message.reply"}} {
+		if ToolAuthorizationRequired(check, operations) {
+			t.Fatal("image permission blocked text binding", operations)
+		}
+	}
+	if !ToolAuthorizationRequired(check, []string{"image.upload"}) {
+		t.Fatal("explicit image permission repair ignored")
+	}
+}

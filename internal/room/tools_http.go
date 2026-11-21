@@ -136,7 +136,7 @@ func (m *roomManager) serveTools(w http.ResponseWriter, r *http.Request) {
 				available = append(available, s)
 			}
 		}
-		_ = json.NewEncoder(w).Encode(available)
+		_ = json.NewEncoder(w).Encode(projectToolSelections(available))
 		return
 	case "/v1/tools/bindings":
 		if r.Method != http.MethodGet {

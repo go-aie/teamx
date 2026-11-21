@@ -88,10 +88,8 @@ func (s *service) inputStorage(id MemberIdentity) (*platformInputStorage, error)
 }
 
 func (r *Store) roomInputProtected(through uint64) error {
-	for retained, count := range r.roomHistoryPins {
-		if count > 0 && through > retained {
-			return ErrBusy
-		}
+	if err := r.roomRetentionProtected(through); err != nil {
+		return err
 	}
 	if through > 0 {
 		var disk RoomSnapshot

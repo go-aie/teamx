@@ -10,6 +10,9 @@ import (
 // repaired by granting the user more scopes.
 func ToolAuthorizationRequired(check PermissionCheck, operations []string) bool {
 	for _, cap := range check.Capabilities {
+		if cap.Name == "image.upload" && !slices.Contains(operations, cap.Name) {
+			continue // Optional resource readiness must not block a text binding.
+		}
 		if cap.State == "unsupported" {
 			continue
 		}

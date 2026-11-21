@@ -6,7 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-aie/teamx/internal/platform"
 )
@@ -18,6 +20,46 @@ type actionResolveRequest struct {
 	TurnNumber      uint64                 `json:"turn_number"`
 }
 type actionTargetResolver func(context.Context, MemberIdentity, platform.TargetLocator) (platform.TargetResolution, referenceActionSession, error)
+
+func (q *actionResolveRequest) UnmarshalJSON(data []byte) error {
+	type wire actionResolveRequest
+	var v wire
+	if err := decodeRequestJSON(string(data), &v); err != nil {
+		var d *requestDiagnostic
+		if errors.As(err, &d) && strings.HasPrefix(d.Field, "locator") {
+			copy := *d
+			copy.Hint = "Use locator:{self:true}, locator:{query:{object_type:chat,text:NAME}}, a returned candidates[i].locator unchanged, or locator:{target_ref:REF}."
+			return &copy
+		}
+		return err
+	}
+	*q = actionResolveRequest(v)
+	return q.validate()
+}
+
+func (q actionResolveRequest) validate() error {
+	if q.TurnNumber == 0 {
+		return invalidField("turn_number", "required positive current_turn from runtime context")
+	}
+	l := q.Locator
+	variants := 0
+	for _, present := range []bool{l.Self, l.Query != nil, l.TargetRef != "", l.Source != nil, l.Candidate != nil, l.URL != ""} {
+		if present {
+			variants++
+		}
+	}
+	if variants != 1 {
+		return invalidField("locator", "expected exactly one of {self:true}, {query:{object_type,text}}, returned candidate locator, {target_ref}, {source} or {url}")
+	}
+	if l.Candidate != nil && !l.Candidate.Valid() {
+		return invalidField("locator.candidate", "expected complete native target {provider,instance,tenant?,object:{type,id:{namespace,value}}}; copy the returned candidates[i].locator unchanged")
+	}
+	if l.Query != nil && (l.Query.ObjectType == "" || strings.TrimSpace(l.Query.Text) == "") {
+		return invalidField("locator.query", "expected {object_type:chat|user,text:nonempty name}")
+	}
+	return nil
+}
+
 type actionTarget struct {
 	Version int `json:"version"`
 	MemberIdentity
@@ -133,6 +175,9 @@ func applicableActionSpec(spec platform.ActionSpec, t platform.TargetIdentity) b
 	return validReferenceSpec(spec, referenceActionRequest{Operation: spec.Operation}, t)
 }
 func (m *roomManager) resolveActionTarget(ctx context.Context, req apiRequest, q actionResolveRequest) (actionTargetView, error) {
+	if err := q.validate(); err != nil {
+		return actionTargetView{}, err
+	}
 	if req.Tool != "" {
 		var err error
 		ctx, err = m.withToolEntry(ctx, toolsRequest{ServiceInfo: req.ServiceInfo, Caller: req.Caller, Tool: req.Tool})
@@ -145,6 +190,15 @@ func (m *roomManager) resolveActionTarget(ctx context.Context, req apiRequest, q
 			return actionTargetView{}, ErrIdentity
 		}
 		q.Provider = entry.provider
+	}
+	if q.Provider == "lark" && q.Locator.Query != nil {
+		query := q.Locator.Query
+		if query.ObjectType != "chat" && query.ObjectType != "user" {
+			return actionTargetView{}, invalidField("locator.query.object_type", "expected chat or user")
+		}
+		if !utf8.ValidString(query.Text) || len([]rune(query.Text)) > 50 || strings.ContainsAny(query.Text, "\x00\r\n") {
+			return actionTargetView{}, invalidField("locator.query.text", "expected a nonempty name of at most 50 characters, without NUL or line breaks")
+		}
 	}
 	id := MemberIdentity{RoomIdentity: req.RoomIdentity, AgentID: req.Caller.ID, MembershipID: req.Caller.MembershipID}
 	m.mu.Lock()

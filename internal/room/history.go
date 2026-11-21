@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -660,78 +659,26 @@ func (s *inputSession) historyNotification(v historyStream, l inputstream.Locati
 	return e, nil
 }
 
-// Capture the native publication and a short-lived retention pin together.
-// Reading/validation uses the existing log decoder outside Store.mu.
+// History retains its bound checks and error contract over native storage pins.
 func (s *inputSession) historyRoom(bound *inputstream.Snapshot) (RoomSnapshot, func(), error) {
 	room, cache, release, err := s.pinHistoryRoom(bound, false)
 	if err != nil {
 		return room, nil, err
 	}
-	if room.InputLog != nil {
-		if len(room.Messages) != 0 {
-			release()
-			return room, nil, inputstream.ErrCorrupt
-		}
-		_, err = s.storage.store.readRoomLogView(&room, cache)
-		if err != nil {
-			release()
-			return room, nil, errors.Join(inputstream.ErrCorrupt, err)
-		}
-	}
-	if err := room.validate(); err != nil {
+	room, err = s.storage.store.readPinnedRoom(room, cache)
+	if err != nil {
 		release()
-		return room, nil, errors.Join(inputstream.ErrCorrupt, err)
+		return room, nil, err
 	}
 	return room, release, nil
 }
 
 func (s *inputSession) pinHistoryRoom(bound *inputstream.Snapshot, metadata bool) (RoomSnapshot, *roomLogCache, func(), error) {
-	store := s.storage.store
-	store.mu.Lock()
-	var room RoomSnapshot
-	err := store.check(false)
-	if err == nil {
-		err = readSnapshot(filepath.Join(store.dir, "room.json"), &room, maxRoomFileBytes)
-	}
-	if err == nil && room.RoomIdentity != s.storage.id.RoomIdentity {
-		err = ErrIdentity
-	}
-	if err == nil && !slices.ContainsFunc(room.Members, func(m MemberState) bool {
-		return m.AgentID == s.storage.id.AgentID && m.MembershipID == s.storage.id.MembershipID
-	}) {
-		err = ErrIdentity
-	}
-	if err == nil && bound != nil && (bound.Partition != roomPartitionRef(room.RoomIdentity) || bound.Reclaimed != room.ClearedThrough || bound.Through > room.LatestSeq) {
+	room, cache, release, err := s.storage.store.pinRoomPublication(s.storage.id, bound, metadata)
+	if errors.Is(err, ErrReadExpired) {
 		err = errHistorySnapshot
 	}
-	cache := store.roomInputCache
-	if err == nil && metadata {
-		index := store.roomHistoryIndex
-		if index == nil || index.key != roomHistoryKey(room) {
-			err = inputstream.ErrCorrupt
-		} else {
-			room.Messages = index.records
-		}
-	}
-	if err == nil {
-		if store.roomHistoryPins == nil {
-			store.roomHistoryPins = map[uint64]int{}
-		}
-		store.roomHistoryPins[room.ClearedThrough]++
-	}
-	store.mu.Unlock()
-	if err != nil {
-		return room, nil, nil, err
-	}
-	release := sync.OnceFunc(func() {
-		store.mu.Lock()
-		defer store.mu.Unlock()
-		store.roomHistoryPins[room.ClearedThrough]--
-		if store.roomHistoryPins[room.ClearedThrough] == 0 {
-			delete(store.roomHistoryPins, room.ClearedThrough)
-		}
-	})
-	return room, cache, release, nil
+	return room, cache, release, err
 }
 
 func (s *inputSession) validateHistory(ctx context.Context, streams []historyStream) error {

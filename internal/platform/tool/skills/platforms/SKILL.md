@@ -225,6 +225,13 @@ self action (`member tool --enabled true --action message.send_self`);
 `enable_member_tool` uses explicit member enable; `revalidate_account` checks the
 original account in settings; `retry_check` refreshes the original connection.
 An unsupported host cannot send; repeating login or the tool switch cannot fix it.
+`image.upload` is optional resource readiness, not a member action or grant.
+Its absence must not block enabling or using text actions. Repair it only when
+the user requests image permission repair; never pass it as a member --action.
+User image upload requires application and user `im:resource`. A ready upload
+permission does not open image sending: use only a resolved send action whose
+input_schema explicitly declares images. Keep the original account, member grants
+and notification choices during repair.
 Same-account OAuth restores only enabled credential-paused subscriptions and keeps
 progress/backlog. Other members' grants are untouched; old self evidence becomes
 stale and requires their own explicit repair. Completed partial configurations

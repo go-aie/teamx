@@ -2,6 +2,7 @@ package room
 
 import (
 	"cmp"
+	"encoding/json"
 	"slices"
 	"time"
 
@@ -52,9 +53,10 @@ type larkPlatformCapabilityResult struct {
 type larkMemberCapabilityResult struct {
 	MemberIdentity
 	larkPlatformCapabilityResult
-	ToolEnabled    bool   `json:"tool_enabled"`
-	ToolRevision   uint64 `json:"tool_revision"`
-	ActionRevision uint64 `json:"action_revision"`
+	ToolEnabled    bool     `json:"tool_enabled"`
+	ToolRevision   uint64   `json:"tool_revision"`
+	ActionRevision uint64   `json:"action_revision"`
+	ImageActions   []string `json:"image_actions"`
 }
 
 func (p larkPlatformCapabilityResult) current(a platform.AccessContext, now time.Time) bool {
@@ -65,6 +67,16 @@ func (p larkPlatformCapabilityResult) current(a platform.AccessContext, now time
 // and current server-owned evidence. It neither probes nor repairs anything.
 func projectLarkMemberCapabilities(a platform.AccessContext, operator string, binding *tool.Binding, toolRevision uint64, p larkPlatformCapabilityResult, caps platform.ReferenceCapabilities, now time.Time) larkMemberCapabilityResult {
 	r := larkMemberCapabilityResult{MemberIdentity: MemberIdentity{RoomIdentity: a.RoomIdentity, AgentID: a.AgentID, MembershipID: a.MembershipID}, larkPlatformCapabilityResult: p, ToolRevision: toolRevision}
+	r.ImageActions = []string{}
+	for _, op := range []platform.Operation{platform.OperationMessageSendSelf, platform.OperationMessageSend} {
+		cap, ok := caps.Actions[op]
+		var schema struct {
+			Properties map[string]json.RawMessage `json:"properties"`
+		}
+		if ok && cap.Spec.DisabledReason == "" && json.Unmarshal(cap.Spec.InputSchema, &schema) == nil && len(schema.Properties["images"]) > 0 {
+			r.ImageActions = append(r.ImageActions, string(op))
+		}
+	}
 	r.Capabilities = []lark.Capability{}
 	for _, d := range lark.CapabilityDependencies() {
 		v := lark.Capability{Name: d.Name, State: "unchecked", ReasonCode: "check_missing", NextAction: "retry_check", EvidenceState: "not_required"}

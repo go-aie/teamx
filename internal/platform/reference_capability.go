@@ -170,6 +170,7 @@ type ExecuteTargetAction func(context.Context, TargetActionRequest, AccessContex
 // Inspection is read-only and verifies the current account and exact target.
 // Labels only support existing human-readable policy scopes; identity uses IDs.
 type TargetActionInspection struct {
+	ContentDigest  string          `json:"content_digest,omitempty"` // Trusted digest of the complete prepared content; never authorization.
 	Target         TargetIdentity  `json:"target"`
 	Account        AccountIdentity `json:"account"`
 	AccountLabel   string          `json:"account_label,omitempty"`

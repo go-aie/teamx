@@ -138,6 +138,16 @@ func (m *roomManager) readToolBindingsLocked(owner RoomIdentity) (toolBindingsFi
 	return f, nil
 }
 func (m *roomManager) checkToolMemberLocked(ctx context.Context, req toolsRequest) error {
+	return m.checkToolMemberAdmissionLocked(ctx, req, false)
+}
+
+// An owner may inspect its persisted receipts while Session replacement waits
+// for an unknown platform outcome. This admits no execution or target lookup.
+func (m *roomManager) checkActionLedgerReaderLocked(ctx context.Context, req toolsRequest) error {
+	return m.checkToolMemberAdmissionLocked(ctx, req, true)
+}
+
+func (m *roomManager) checkToolMemberAdmissionLocked(ctx context.Context, req toolsRequest, ledgerRead bool) error {
 	if m.closing {
 		return ErrClosing
 	}
@@ -163,7 +173,7 @@ func (m *roomManager) checkToolMemberLocked(ctx context.Context, req toolsReques
 			// That turn still needs its original CLI/platform calls. Once it
 			// stops, the ordinary rotation and platform lifecycle gates apply.
 			currentModelTurn := status.Active && rotation.Status == "waiting" && rotation.Reason == "model_change" && !rotation.Cancel && m.config.models != nil && m.config.models.gate(id) != ""
-			if !currentModelTurn {
+			if !currentModelTurn && !ledgerRead {
 				return ErrBusy
 			}
 		}

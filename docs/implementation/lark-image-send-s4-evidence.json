@@ -1,0 +1,231 @@
+{
+  "status": "passed",
+  "recorded_at": "2026-11-21T00:45:34.707866Z",
+  "stage4_complete": true,
+  "registration_open": true,
+  "daily_service_restarted": false,
+  "daily_sessions_rotated": false,
+  "native_message_posts": 7,
+  "native_image_uploads": 12,
+  "successful_matrix_messages": 6,
+  "successful_matrix_uploads": 10,
+  "historical_unknown_preserved": true,
+  "samples": [
+    {
+      "mode": "managed-self",
+      "status": "passed",
+      "account": {
+        "id": {
+          "namespace": "lark:open_id:cli_a954531d70f99cdb",
+          "value": "ou_7d4bcb9114144c5ae2c92b4fd2c3c627"
+        },
+        "instance": "https://open.feishu.cn",
+        "provider": "lark",
+        "tenant": {
+          "namespace": "lark:tenant_key",
+          "value": "175bd5d32185575e"
+        }
+      },
+      "service_restart": true,
+      "messages": 3,
+      "uploads": 5,
+      "actions": [
+        {
+          "id": "real-images-managed-self-single",
+          "status": "succeeded",
+          "operation": "message.send_self",
+          "input": {
+            "images": [
+              {
+                "attachment_id": "img_00000000000000000000000000000001",
+                "message_seq": 1
+              }
+            ]
+          },
+          "remote_message_id": "om_x100b7f38e3c7cca0b4bfc2963a73142",
+          "attempts": 1
+        },
+        {
+          "id": "real-images-managed-self-multiple",
+          "status": "succeeded",
+          "operation": "message.send_self",
+          "input": {
+            "images": [
+              {
+                "attachment_id": "img_00000000000000000000000000000001",
+                "message_seq": 1
+              },
+              {
+                "attachment_id": "img_00000000000000000000000000000002",
+                "message_seq": 2
+              }
+            ]
+          },
+          "remote_message_id": "om_x100b7f3a6668e0a0ce4887d1e43be6c",
+          "attempts": 1
+        },
+        {
+          "id": "real-images-managed-self-caption",
+          "status": "succeeded",
+          "operation": "message.send_self",
+          "input": {
+            "body": "TeamX 图片发送验收\n\n说明与两张原图合为一条；**这段保留字面文本**。",
+            "images": [
+              {
+                "attachment_id": "img_00000000000000000000000000000001",
+                "message_seq": 1
+              },
+              {
+                "attachment_id": "img_00000000000000000000000000000002",
+                "message_seq": 2
+              }
+            ]
+          },
+          "remote_message_id": "om_x100b7f3a62edf4a4ce5e39840123863",
+          "attempts": 1
+        }
+      ],
+      "native_content_independently_verified": true,
+      "same_id_recovery_without_native_write": true
+    },
+    {
+      "mode": "default-assistant-group",
+      "status": "passed",
+      "account": {
+        "provider": "lark",
+        "instance": "https://open.feishu.cn",
+        "tenant": {
+          "namespace": "lark:tenant_key",
+          "value": "175bd5d32185575e"
+        },
+        "id": {
+          "namespace": "lark:open_id:cli_a954531d70f99cdb",
+          "value": "ou_7d4bcb9114144c5ae2c92b4fd2c3c627"
+        }
+      },
+      "service_restart": true,
+      "messages": 3,
+      "uploads": 5,
+      "actions": [
+        {
+          "id": "real-images-default-assistant-group-single",
+          "status": "succeeded",
+          "operation": "message.send",
+          "input": {
+            "images": [
+              {
+                "attachment_id": "img_00000000000000000000000000000001",
+                "message_seq": 1
+              }
+            ]
+          },
+          "remote_message_id": "om_x100b7f3a1eae14a4ce77a50dde5ff73",
+          "attempts": 1
+        },
+        {
+          "id": "real-images-default-assistant-group-multiple",
+          "status": "succeeded",
+          "operation": "message.send",
+          "input": {
+            "images": [
+              {
+                "attachment_id": "img_00000000000000000000000000000001",
+                "message_seq": 1
+              },
+              {
+                "attachment_id": "img_00000000000000000000000000000002",
+                "message_seq": 2
+              }
+            ]
+          },
+          "remote_message_id": "om_x100b7f3a1cb40d3ccd10a45dd0c94fb",
+          "attempts": 1
+        },
+        {
+          "id": "real-images-default-assistant-group-caption-corrected",
+          "status": "succeeded",
+          "operation": "message.send",
+          "input": {
+            "body": "TeamX 图片发送验收\n\n说明与两张原图合为一条；**这段保留字面文本**。",
+            "images": [
+              {
+                "attachment_id": "img_00000000000000000000000000000001",
+                "message_seq": 1
+              },
+              {
+                "attachment_id": "img_00000000000000000000000000000002",
+                "message_seq": 2
+              }
+            ]
+          },
+          "remote_message_id": "om_x100b7f3a24d678a4b09494bbb3ab73d",
+          "attempts": 1
+        }
+      ],
+      "native_content_independently_verified": true,
+      "same_id_recovery_without_native_write": true
+    }
+  ],
+  "backflow": {
+    "test": "TestRealLarkImageSendBackflow",
+    "passed": true,
+    "platform_writes": 0,
+    "self_excluded": true,
+    "own_group_context_only": true
+  },
+  "private_report": ".local/lark-image-send/real-20261121-07/report.json",
+  "final_checks": {
+    "catalog_lark_tool_web_go": "passed",
+    "room_integration_seconds": 238.118,
+    "room_race_seconds": 133.981,
+    "frontend_tests": 125,
+    "frontend_failed": 0,
+    "browser_seconds": 13.136,
+    "browser_modes": [
+      "ready",
+      "application-missing"
+    ],
+    "browser_widths": [
+      1440,
+      390
+    ],
+    "browser_page_errors": 0,
+    "browser_platform_writes": 0,
+    "git_diff_check": "passed",
+    "whole_repository_regression": "not_run"
+  },
+  "browser_artifacts": [
+    {
+      "path": ".local/lark-image-send/browser-final/application-missing/image-permission-1440.png",
+      "sha256": "cc78a47f012061e83dbf78007902d9e2ab705cfcf114b604d5cd8e69e36279a4"
+    },
+    {
+      "path": ".local/lark-image-send/browser-final/application-missing/image-permission-390.png",
+      "sha256": "ae6f90763b3501c7d7defb30e5c03a116532efa470667616b24a11cbc68367c0"
+    },
+    {
+      "path": ".local/lark-image-send/browser-final/application-missing/room-images-1440.png",
+      "sha256": "a6bac9642a6eb6cd4ca20b36cac9f54b2f810816c6d9c9b97292a244671b2978"
+    },
+    {
+      "path": ".local/lark-image-send/browser-final/application-missing/room-images-390.png",
+      "sha256": "0110630551c189d4a35ad54d0e3bdc6ee4b714eaeb7de45559eaffb48eae8376"
+    },
+    {
+      "path": ".local/lark-image-send/browser-final/ready/image-permission-1440.png",
+      "sha256": "e429d1d93047cf34576ec71427efeb7de3df325b4d4d62138106da032d1cee68"
+    },
+    {
+      "path": ".local/lark-image-send/browser-final/ready/image-permission-390.png",
+      "sha256": "1e7b4b03d440ca03c787d495a70a4f7b29b82531eee0f0e9212e72e24fb89bac"
+    },
+    {
+      "path": ".local/lark-image-send/browser-final/ready/room-images-1440.png",
+      "sha256": "a6bac9642a6eb6cd4ca20b36cac9f54b2f810816c6d9c9b97292a244671b2978"
+    },
+    {
+      "path": ".local/lark-image-send/browser-final/ready/room-images-390.png",
+      "sha256": "5a4ed7823a15487c842697482c1c5f48e775829b84281e8b06a8f907aa391716"
+    }
+  ]
+}
