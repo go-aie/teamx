@@ -70,7 +70,7 @@ func (m *roomManager) toolDefinitions() []tool.Definition {
 	if m.platformCatalog != nil {
 		return m.platformCatalog.Tools(func(name, override string) string { return tool.ResolveExecutable(name, os.Getenv(override)) })
 	}
-	return defaultPlatformTools()
+	return []tool.Definition{}
 }
 func (m *roomManager) toolDefinition(name string) (tool.Definition, error) {
 	for _, d := range m.toolDefinitions() {

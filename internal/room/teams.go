@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/go-aie/teamx/internal/app/platforms"
 	"io"
 	"io/fs"
 	"os"
@@ -355,11 +356,7 @@ func managedRunner(c managedRoomConfig, agent string) RunnerConfig {
 	}
 	return RunnerConfig{Kind: "dsh", Profile: "team/" + c.TeamID + "/" + agent}
 }
-func newTeamRoomManager(dir, teamsDir string, maxTurns uint64, defaults *teamRuntime) (*roomManager, error) {
-	return openTeamRoomManager(dir, teamsDir, maxTurns, defaults, nil)
-}
-
-func openTeamRoomManager(dir, teamsDir string, maxTurns uint64, defaults *teamRuntime, upgrade *inputUpgradeOptions) (*roomManager, error) {
+func openTeamRoomManagerWithCatalog(dir, teamsDir string, maxTurns uint64, defaults *teamRuntime, upgrade *inputUpgradeOptions, catalog *platforms.Catalog) (*roomManager, error) {
 	abs, err := filepath.Abs(teamsDir)
 	if err != nil {
 		return nil, err
@@ -368,7 +365,7 @@ func openTeamRoomManager(dir, teamsDir string, maxTurns uint64, defaults *teamRu
 	if err != nil {
 		return nil, err
 	}
-	m, err := openRoomManager(dir, maxTurns, upgrade)
+	m, err := openRoomManagerWithCatalog(dir, maxTurns, upgrade, catalog)
 	if err != nil {
 		return nil, err
 	}

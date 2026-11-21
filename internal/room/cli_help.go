@@ -11,6 +11,7 @@ const rootCLIHelp = `Usage: teamx COMMAND [--help]
   init | doctor                 Prepare files/auth or diagnose a distribution (--bundle-root, --home; model setup is in the browser)
   access init --config FILE     Initialize the fixed operator and private admin-token file
   serve                         Start the authenticated service
+  extensions check              Check selected declarations without starting services
   skill usage                   Read TeamX interface and execution guidance
   platforms skill/list/connect/selection/chats/projects/member  Connect/configure Feishu/GitLab for current member
   platforms upgrade           Upgrade platform model and references offline (--rooms-dir ROOT)

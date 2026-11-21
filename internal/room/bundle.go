@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/go-aie/teamx/internal/app/platforms"
 	"io"
 	"io/fs"
 	"os"
@@ -18,7 +19,7 @@ import (
 )
 
 // Existing portable homes retain their paths; fresh bundles share the personal home.
-func runBundle(command string, args []string, stdout, stderr io.Writer) error {
+func runBundleWithCatalog(command string, args []string, stdout, stderr io.Writer, catalog *platforms.Catalog) error {
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	root := flags.String("bundle-root", "", "distribution directory")
@@ -136,7 +137,7 @@ func runBundle(command string, args []string, stdout, stderr io.Writer) error {
 	if *listen != "" {
 		args = append(args, "--listen", *listen)
 	}
-	return serve(args, stdout, stderr)
+	return serveWithCatalog(args, stdout, stderr, nil, catalog)
 }
 
 func defaultBundleHome(root string) (string, error) {
@@ -417,7 +418,7 @@ func bundleDoctor(root, config string, out io.Writer) error {
 }
 
 // start delegates argument handling to Go and holds the home lock through shutdown.
-func bundleEntry(args []string, stdout, stderr io.Writer) error {
+func bundleEntryWithCatalog(args []string, stdout, stderr io.Writer, catalog *platforms.Catalog) error {
 	command := "launch"
 	filtered := []string{}
 	for i := 0; i < len(args); i++ {
@@ -439,7 +440,7 @@ func bundleEntry(args []string, stdout, stderr io.Writer) error {
 		}
 	}
 
-	return runBundle(command, filtered, stdout, stderr)
+	return runBundleWithCatalog(command, filtered, stdout, stderr, catalog)
 }
 
 // Populated by the distribution build; ordinary source builds remain identifiable.

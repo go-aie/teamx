@@ -365,6 +365,7 @@ func (q *agentPolicyChange) UnmarshalJSON(data []byte) error {
 }
 
 func agentActionDiagnostic(err error) error {
+	err = toolRuntimeError(err)
 	var unavailable *actionAuthorizationUnavailable
 	if errors.As(err, &unavailable) {
 		return &requestDiagnostic{cause: err, Field: "operation", Message: unavailable.Message, Hint: unavailable.NextAction + ": read platforms skill and inspect this exact member/account; never substitute a recipient or account."}

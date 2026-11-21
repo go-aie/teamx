@@ -2,11 +2,8 @@ package room
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 
 	"github.com/go-aie/teamx/internal/app/platforms"
-	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/lark"
 	"github.com/go-aie/teamx/internal/platform/notification"
 	"github.com/go-aie/teamx/internal/platform/registry"
@@ -73,31 +70,6 @@ func (m *roomManager) resumeLarkSubscriptionsLocked(platformID string) error {
 		}
 	}
 	return nil
-}
-
-func (m *roomManager) larkNotificationLifecycle() notificationAdapter {
-	return notificationAdapter{Admit: func(_ context.Context, state notification.State) (notification.Scope, error) {
-		s, ok := state.(lark.State)
-		if !ok {
-			return notification.Scope{}, notification.ErrInvalid
-		}
-		if s.Retired {
-			return notification.Scope{}, notification.ErrIdentity
-		}
-		a, _, err := m.resolvePlatformAccountLocked(s.RoomIdentity, s.Binding.PlatformID, "lark")
-		if err != nil {
-			return notification.Scope{}, err
-		}
-		if a.Generation != s.Binding.Generation || a.Identity != s.Binding.Account {
-			return notification.Scope{}, notification.ErrConflict
-		}
-		if larkBinding(a) != s.Binding || a.CLIProfile == nil {
-			return notification.Scope{}, platform.ErrCredential
-		}
-		q := lark.QueryScope{Binding: s.Binding, Profile: *a.CLIProfile, PlatformVersion: a.PlatformVersion}
-		data, _ := json.Marshal(q)
-		return notification.Scope{Data: data, Revision: fmt.Sprintf("%d|%s", a.PlatformVersion, data), CredentialStamp: fmt.Sprintf("%d|%s", a.CredentialVersion, a.CredentialFingerprint)}, nil
-	}}
 }
 
 func (m *roomManager) currentLarkForTargetLocked(owner RoomIdentity, id string, target notification.Target) (*lark.State, error) {

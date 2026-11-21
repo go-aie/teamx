@@ -88,7 +88,7 @@ func (s *service) readReferenceInbox(ctx context.Context, id MemberIdentity, tur
 			continue
 		}
 		u, err := s.store.readFollowup(id, link.ObjectRef, referenceDigest("unit_", link.ObjectRef))
-		if inboxContextOnly(entry) && errors.Is(err, os.ErrNotExist) {
+		if s.store.inboxContextOnly(entry) && errors.Is(err, os.ErrNotExist) {
 			continue // Own messages never open new pending work, but can link existing work.
 		}
 		if err != nil {

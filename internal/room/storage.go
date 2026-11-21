@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/go-aie/teamx/internal/app/platforms"
 	"io"
 	"os"
 	"path/filepath"
@@ -39,6 +40,7 @@ const (
 // these blocking methods from controlled tasks, never from their state loop.
 // Agent and Session files have separate owners; they are not a transaction.
 type Store struct {
+	catalog              *platforms.Catalog
 	roomCommit           sync.Mutex             // serializes native publications while attachment verification releases mu
 	attachmentLife       sync.RWMutex           // joins accepted file operations before Close releases the directory
 	attachments          *roomAttachmentStorage // guarded by mu
@@ -88,14 +90,7 @@ func defaultSnapshotOps() snapshotOps {
 	}
 }
 
-// OpenStore acquires a nonblocking OS lock, released even on process death.
-// Existing room data is checked before the store is returned. Only a missing
-// room.json represents an uninitialized directory; bad data is never reset.
-func OpenStore(dir, roomID string) (*Store, error) {
-	return openStore(dir, roomID, nil)
-}
-
-func lockStore(dir, roomID string) (*Store, error) {
+func lockStoreWithCatalog(dir, roomID string, catalog *platforms.Catalog) (*Store, error) {
 	if !validText(roomID) {
 		return nil, fmt.Errorf("%w: empty room ID", ErrIdentity)
 	}
@@ -110,11 +105,11 @@ func lockStore(dir, roomID string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Store{dir: abs, roomID: roomID, lock: lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}, nil
+	return &Store{catalog: catalog, dir: abs, roomID: roomID, lock: lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}, nil
 }
 
-func openStore(dir, roomID string, upgrade *inputUpgradeOptions) (*Store, error) {
-	s, err := lockStore(dir, roomID)
+func openStoreWithCatalog(dir, roomID string, upgrade *inputUpgradeOptions, catalog *platforms.Catalog) (*Store, error) {
+	s, err := lockStoreWithCatalog(dir, roomID, catalog)
 	if err != nil {
 		return nil, err
 	}

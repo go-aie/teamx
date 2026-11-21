@@ -133,7 +133,7 @@ func (s *Store) inputSourceContentLocked(id MemberIdentity, ref string) (followu
 	if err != nil {
 		return link, nil, err
 	}
-	validated, err := s.validateFollowupEventLocked(entry, link, inboxContextOnly(entry))
+	validated, err := s.validateFollowupEventLocked(entry, link, s.inboxContextOnly(entry))
 	return validated, &entry, err
 }
 func (s *Store) visitInputSourcesLocked(id MemberIdentity, visit func(followupEvent) error) error {
@@ -215,11 +215,11 @@ func (s *Store) listInputSources(id MemberIdentity, objectRef, cursor string, li
 	out.Complete = true
 	return out, nil
 }
-func projectInputSource(link followupEvent, entry *InboxEntry) any {
+func (s *Store) projectInputSource(link followupEvent, entry *InboxEntry) any {
 	var v *inputStreamNotificationEntry
 	status := "expired"
 	if entry != nil {
-		p := projectStreamNotification(projectInboxEntry(*entry, sourceSummary(link)))
+		p := projectStreamNotification(s.projectInboxEntry(*entry, sourceSummary(link)))
 		p.Item.Receiver = platform.AccountIdentity{}
 		p.Item.Tenant = platform.ExternalID{}
 		p.Item.ProjectID = 0

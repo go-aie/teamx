@@ -114,7 +114,7 @@ func (s *service) sharedInboxView() (sharedInboxView, error) {
 		if err != nil {
 			return out, err
 		}
-		out.Entries = append(out.Entries, projectInboxEntry(InboxEntry{Version: formatVersion, Seq: seq, Location: &rec.Location, Item: item, ReceivedAt: rec.ReceivedAt}, sourceSummary(followupEvent{})))
+		out.Entries = append(out.Entries, s.store.projectInboxEntry(InboxEntry{Version: formatVersion, Seq: seq, Location: &rec.Location, Item: item, ReceivedAt: rec.ReceivedAt}, sourceSummary(followupEvent{})))
 	}
 	return out, nil
 }

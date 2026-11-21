@@ -94,7 +94,7 @@ type agentReferenceInboxPage struct {
 	Followups      []agentFollowupSummary `json:"followups"`
 }
 
-func projectAgentInboxRead(id MemberIdentity, page referenceInboxPage) (agentReferenceInboxPage, error) {
+func (s *Store) projectAgentInboxRead(id MemberIdentity, page referenceInboxPage) (agentReferenceInboxPage, error) {
 	if page.MemberIdentity != id {
 		return agentReferenceInboxPage{}, ErrIdentity
 	}
@@ -113,7 +113,7 @@ func projectAgentInboxRead(id MemberIdentity, page referenceInboxPage) (agentRef
 			return agentReferenceInboxPage{}, ErrInvalid
 		}
 		if e.payloadType() == InboxTaskEventType {
-			entries = append(entries, projectInboxEntry(e, followupSourceSummary{}))
+			entries = append(entries, s.projectInboxEntry(e, followupSourceSummary{}))
 			continue
 		}
 		var source *followupSourceSummary
@@ -128,7 +128,7 @@ func projectAgentInboxRead(id MemberIdentity, page referenceInboxPage) (agentRef
 		if source == nil {
 			return agentReferenceInboxPage{}, ErrInvalid
 		}
-		entry := projectInboxEntry(e, *source)
+		entry := s.projectInboxEntry(e, *source)
 		if origin, ok := page.Origins[inboxEntryPosition(e)]; ok {
 			entry.Origin = &origin
 		}
@@ -316,11 +316,11 @@ type agentSourceEntry struct {
 	ReceivedAt time.Time         `json:"received_at,omitzero"`
 }
 
-func projectSource(e followupEvent, entry InboxEntry) agentSourceView {
+func (s *Store) projectSource(e followupEvent, entry InboxEntry) agentSourceView {
 	v := agentSourceView{SourceRef: e.SourceRef, SourceVersion: e.Revision, Seq: e.Seq, DeliveryID: e.DeliveryID, Source: e.Source, ObjectRef: e.ObjectRef, TargetRef: e.TargetRef, Resolution: e.Resolution,
 		Entry: agentSourceEntry{Seq: e.Seq, Status: "expired"}}
 	if entry.Seq != 0 {
-		v.Entry = agentSourceEntry{Seq: entry.Seq, Status: "retained", Item: projectInboxEntry(entry, sourceSummary(e)).Item, ReceivedAt: entry.ReceivedAt}
+		v.Entry = agentSourceEntry{Seq: entry.Seq, Status: "retained", Item: s.projectInboxEntry(entry, sourceSummary(e)).Item, ReceivedAt: entry.ReceivedAt}
 	}
 	if e.LastAttempt != nil {
 		v.LastAttempt = &e.LastAttempt.Resolution

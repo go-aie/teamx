@@ -356,7 +356,7 @@ func validatePlatformCandidates(s *Store, j platformUpgrade) error {
 	if err != nil {
 		return err
 	}
-	mirror := &Store{dir: dir, lock: lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}
+	mirror := &Store{catalog: s.catalog, dir: dir, lock: lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}
 	defer mirror.Close()
 	m := &roomManager{store: mirror}
 	m.initPlatform()
@@ -380,7 +380,7 @@ func validatePlatformCandidates(s *Store, j platformUpgrade) error {
 		if _, err = m.readToolBindingsLocked(entry.RoomIdentity); err != nil {
 			return err
 		}
-		rs := &Store{dir: m.roomDir(entry.RoomID), roomID: entry.RoomID, instance: entry.RoomInstance, lock: lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}
+		rs := &Store{catalog: s.catalog, dir: m.roomDir(entry.RoomID), roomID: entry.RoomID, instance: entry.RoomInstance, lock: lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}
 		state, e := rs.loadRoom()
 		if e != nil {
 			return e

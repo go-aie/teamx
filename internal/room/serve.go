@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/go-aie/teamx/internal/agent/dsh"
+	"github.com/go-aie/teamx/internal/app/platforms"
 	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
@@ -22,28 +23,25 @@ import (
 // their separate DSH budgets (five seconds each by default), plus assembly.
 const serviceShutdownTimeout = 30 * time.Second
 
-func serve(args []string, stdout, stderr io.Writer) error {
-	return serveWithFactory(args, stdout, stderr, nil)
-}
-
-func serveWithFactory(args []string, stdout, stderr io.Writer, create func(string, string, serviceConfig) (*service, error)) (runErr error) {
+func serveWithCatalog(args []string, stdout, stderr io.Writer, create func(string, string, serviceConfig) (*service, error), catalog *platforms.Catalog) (runErr error) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	return runServer(ctx, args, stdout, stderr, serverOptions{create: create})
+	return runConfiguredServer(ctx, args, stdout, stderr, serverOptions{create: create, platformCatalog: catalog})
 }
 
 // Process signals belong to the foreground adapter. The core can also be owned
 // by a supervisor or a test without signalling the host process.
 type serverOptions struct {
-	create         func(string, string, serviceConfig) (*service, error)
-	listen         func(string, string) (net.Listener, error)
-	ready          func(any) error
-	setupCompleted bool
-	probe          func(context.Context, dsh.Options) (dsh.ProbeResult, error)
-	access         func(startupConfig, string) (*serverAccess, error) // Internal test seam; production always uses newServerAccess.
+	platformCatalog *platforms.Catalog
+	create          func(string, string, serviceConfig) (*service, error)
+	listen          func(string, string) (net.Listener, error)
+	ready           func(any) error
+	setupCompleted  bool
+	probe           func(context.Context, dsh.Options) (dsh.ProbeResult, error)
+	access          func(startupConfig, string) (*serverAccess, error) // Internal test seam; production always uses newServerAccess.
 }
 
-func runServer(ctx context.Context, args []string, stdout, stderr io.Writer, options serverOptions) error {
+func runConfiguredServer(ctx context.Context, args []string, stdout, stderr io.Writer, options serverOptions) error {
 	originalListen := options.listen
 	if originalListen == nil {
 		originalListen = net.Listen
@@ -88,7 +86,7 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 	}
 	create := options.create
 	if create == nil {
-		create = newService
+		create = newConfiguredService
 	}
 	listenTCP := options.listen
 	if listenTCP == nil {
@@ -320,7 +318,7 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 		startup.Runtime = &runtime
 	}
 	if !singleRoom {
-		config := serviceConfig{
+		config := serviceConfig{platformCatalog: options.platformCatalog,
 			workspaceProtected: []string{layout.Root, layout.Home},
 			unifiedInputs:      options.create == nil, inputUpgradeLog: stderr,
 			modelStartup: &startup, modelProbe: options.probe, models: models, access: access, settings: settings,
@@ -338,7 +336,7 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 	if err != nil {
 		return err
 	}
-	svc, err := create(*dir, *roomID, serviceConfig{
+	svc, err := create(*dir, *roomID, serviceConfig{platformCatalog: options.platformCatalog,
 		access: access, settings: settings, unifiedInputs: options.create == nil, inputUpgradeLog: stderr,
 		endpoint: internalAccessEndpoint(listener.Addr().String()), cliPath: cliPath, mergeWindow: *mergeWindow, maxTurns: *maxTurns,
 		dshProfiles: profiles, uiProfiles: uiProfiles, dshTurnTimeout: *dshTurnTimeout, inboxExpiry: inboxExpiry, inboxMode: startup.Server.InboxMode, imageMaterials: startup.Server.ImageMaterials,
@@ -413,7 +411,7 @@ func serveRoomManager(ctx context.Context, listener net.Listener, dir, teamsDir 
 	if config.unifiedInputs {
 		upgrade = &inputUpgradeOptions{log: config.inputUpgradeLog}
 	}
-	manager, err := openTeamRoomManager(dir, teamsDir, config.maxTurns, defaults, upgrade)
+	manager, err := openTeamRoomManagerWithCatalog(dir, teamsDir, config.maxTurns, defaults, upgrade, config.platformCatalog)
 	if err != nil {
 		return err
 	}

@@ -41,7 +41,7 @@ func TestRoomActionImagesManagedActionContextAndCleanup(t *testing.T) {
 		if err := json.Unmarshal(body, &receipt); err != nil {
 			t.Fatal(err)
 		}
-		refs = append(refs, roomActionImageRef{receipt.Seq, imageID})
+		refs = append(refs, roomActionImageRef{MessageSeq: receipt.Seq, AttachmentID: imageID})
 	}
 	cli := contractCLI(t, server.URL, h.svc, id, h.c.ToolEntryID)
 	q := selfSendRequest(t, cli, "prepare-originals-only")

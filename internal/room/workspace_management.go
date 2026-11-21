@@ -542,7 +542,7 @@ func (m *roomManager) runWorkspace(op workspaceOperation, rt *roomRuntime) {
 				member.Instructions += "\n\n" + prepared.Instructions
 			}
 		}
-		sessionStore, err := OpenStore(m.roomDir(op.RoomID), op.RoomID)
+		sessionStore, err := openStoreWithCatalog(m.roomDir(op.RoomID), op.RoomID, nil, m.platformCatalog)
 		if err != nil {
 			runErr = err
 			return
@@ -613,7 +613,7 @@ func (m *roomManager) runWorkspace(op workspaceOperation, rt *roomRuntime) {
 		}
 	}
 	code = "session_failed"
-	store, err := OpenStore(m.roomDir(op.RoomID), op.RoomID)
+	store, err := openStoreWithCatalog(m.roomDir(op.RoomID), op.RoomID, nil, m.platformCatalog)
 	if err != nil {
 		runErr = err
 		return
@@ -902,7 +902,7 @@ func (m *roomManager) workspaceHistory(w http.ResponseWriter, r *http.Request) b
 // also needs explicit continuation; otherwise an untouched member would replay
 // the old request as soon as the newly assembled service restores enable intent.
 func (m *roomManager) pausePendingWorkspaceTurns(owner RoomIdentity) error {
-	store, err := OpenStore(m.roomDir(owner.RoomID), owner.RoomID)
+	store, err := openStoreWithCatalog(m.roomDir(owner.RoomID), owner.RoomID, nil, m.platformCatalog)
 	if err != nil {
 		return err
 	}

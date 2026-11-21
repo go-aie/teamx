@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/go-aie/teamx/internal/app/platforms"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,7 +13,7 @@ import (
 	"github.com/go-aie/teamx/internal/platform/registry"
 )
 
-func runPlatformsUpgrade(args []string, stdout, stderr io.Writer) error {
+func runPlatformsUpgradeWithCatalog(args []string, stdout, stderr io.Writer, assembly *platforms.Catalog) error {
 	if len(args) == 0 || args[0] != "upgrade" {
 		return fmt.Errorf("usage: teamx platforms upgrade --rooms-dir ROOT (service must be stopped)")
 	}
@@ -37,12 +38,11 @@ func runPlatformsUpgrade(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	store := &Store{dir: abs, lock: lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}
+	store := &Store{catalog: assembly, dir: abs, lock: lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}
 	defer store.Close()
 	if resumed, err := resumePlatformUpgrade(store); resumed || err != nil {
 		return err
 	}
-	assembly := defaultPlatformCatalog()
 	catalog := assembly.Types()
 	connections := make(map[string]connectionProvider)
 	for _, d := range assembly.Definitions() {

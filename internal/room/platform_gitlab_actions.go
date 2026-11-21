@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-aie/teamx/internal/app/platformtools"
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
 	"github.com/go-aie/teamx/internal/platform/registry"
@@ -134,7 +135,7 @@ func (m *roomManager) prepareGitlabActionSession(ctx context.Context, id MemberI
 		}
 		return gitlab.ResolveStoredActionTarget(ctx, l, a, guardedRead, admission.account.Username)
 	}, CredentialKinds: []string{"gitlab:oauth"}}
-	var lease *roomActionImages
+	var lease platformtools.ImageLease
 	var leaseMu sync.Mutex
 	var selected gitlab.ImageActionInput
 	closeSession := func() {
@@ -156,7 +157,7 @@ func (m *roomManager) prepareGitlabActionSession(ctx context.Context, id MemberI
 				refs[i] = roomActionImageRef{MessageSeq: ref.MessageSeq, AttachmentID: ref.AttachmentID}
 			}
 			var err error
-			lease, err = svc.prepareRoomActionImages(ctx, refs, check)
+			lease, err = svc.prepareRoomActionImageLease(ctx, refs, check)
 			if err != nil {
 				return gitlab.PreparedImageComment{}, err
 			}
@@ -168,8 +169,8 @@ func (m *roomManager) prepareGitlabActionSession(ctx context.Context, id MemberI
 			return gitlab.PreparedImageComment{}, err
 		}
 		message := gitlab.PreparedImageComment{Body: input.Body}
-		for _, img := range lease.images {
-			message.Images = append(message.Images, gitlab.ActionImage{Data: img.Data, MIME: img.Attachment.MIMEType, SHA256: img.SHA256})
+		for _, img := range lease.Bytes() {
+			message.Images = append(message.Images, gitlab.ActionImage{Data: img.Data, MIME: img.MIME, SHA256: img.SHA256})
 		}
 		return message, nil
 	}

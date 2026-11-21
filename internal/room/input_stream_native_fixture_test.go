@@ -106,7 +106,7 @@ func (n *nativeComparison) catalog() (*current.Catalog, error) {
 			codec = domainComparisonCodec{approvalQueryCodec{approvalFixtureCodec{}}}
 			p, err = codec.Decode(1, q.Payload)
 		} else {
-			cap := (&Store{}).notificationCapabilities(r.Group.Provider).Input
+			cap := (&Store{catalog: defaultPlatformCatalog()}).notificationCapabilities(r.Group.Provider).Input
 			codec = current.PlatformQueryCodec(cap.Codec)
 			q, err = cap.EncodeStoredInput(item)
 			if err == nil {

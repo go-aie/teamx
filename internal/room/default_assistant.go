@@ -195,7 +195,7 @@ func (m *roomManager) initializeDefaultAssistantScheduling(e roomIndexEntry) err
 	if record == nil || record.Status != "pending" || record.RoomIdentity != e.RoomIdentity || e.Initialization == nil {
 		return ErrIdentity
 	}
-	store, err := OpenStore(m.roomDir(e.RoomID), e.RoomID)
+	store, err := openStoreWithCatalog(m.roomDir(e.RoomID), e.RoomID, nil, m.platformCatalog)
 	if err != nil {
 		return err
 	}

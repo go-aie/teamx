@@ -1,0 +1,686 @@
+{
+  "phase": "P1b",
+  "date": "2026-11-21",
+  "head_at_start": "b1dcb2702493ae9e48b9407296f13edb7e78599d",
+  "head_at_finish": "fc9ae9d0a8ad09599cc9fd851c448fec2e84e431",
+  "baseline": "HEAD plus P1a and existing working tree; unrelated files preserved; no commit or service adoption",
+  "result": "public local Tool declarations, one checked Compose and boot entry, explicit selection through service and offline paths, external module discovery and controlled execution",
+  "checks": [
+    {
+      "name": "components",
+      "args": [
+        "go",
+        "test",
+        "-race",
+        "./platform",
+        "./extension",
+        "./boot",
+        "./internal/app/...",
+        "./builtin/platforms/...",
+        "./internal/architecture",
+        "-count=1",
+        "-timeout=2m"
+      ],
+      "exit_code": 0,
+      "seconds": 24.109,
+      "log": ".local/extension-assembly/components.log",
+      "sha256": "a1a0611cd9c5103a6c1ecc265366b7a81b05a5c0b9d8c2139687189d56e1325e"
+    },
+    {
+      "name": "external",
+      "args": [
+        "go",
+        "test",
+        "-tags=integration",
+        "./boot",
+        "-run",
+        "^TestExternalModuleLocalToolThroughPublicStartup$",
+        "-count=1",
+        "-v",
+        "-timeout=2m"
+      ],
+      "exit_code": 0,
+      "seconds": 10.239,
+      "log": ".local/extension-assembly/external.log",
+      "sha256": "ad922baccb6960b4b15caad9eb9b89e01c983fdaed8e108b11e38990b264aa4b"
+    },
+    {
+      "name": "room-race",
+      "args": [
+        "go",
+        "test",
+        "-tags=integration",
+        "-race",
+        "./internal/room",
+        "-count=1",
+        "-json",
+        "-run",
+        "^(TestSelectedCatalog.*|TestEmptyCatalog.*|TestInputUpgradeUsesSelectedCodec.*|TestStaticAssembly.*|TestOptionalInputCodec.*|TestToolEntryAdapter.*|TestToolListAdapter.*|TestPlatformEntries.*|TestPlatformEntryBuiltin.*|TestAccountlessTool.*|TestSecondNotificationProvider.*|TestLarkImagesManagedCLI|TestLarkImagesOptionalPermission|TestLarkImagesDispatchGuards|TestLarkImageAvailability.*|TestOwn.*Inbox.*|TestSelfConversationInbox.*|TestHistory.*|TestInputUpgrade.*|TestManagedInputUpgrade.*|TestPlatformsUpgrade.*|TestPlatformConfigurationUpgrade.*|TestLarkNotificationsOfflineUpgrade.*|TestLarkNotificationsUpgrade.*|TestCLI.*Request.*|TestCLI.*JSON.*|TestJSON.*|TestProductionCLI.*|TestCLIFixtureWorkflow)$",
+        "-timeout=7m"
+      ],
+      "exit_code": 0,
+      "seconds": 204.608,
+      "log": ".local/extension-assembly/room-race.log",
+      "sha256": "65a5624ded6b17d7ac7bab377f2ceefd2c016e04718907215c5889466c16fe2b",
+      "passed": [
+        "TestHistoryImageWaitAllowsAppendConsumeReclaimAndOtherRoom",
+        "TestHistoryMaterialsUseExistingDownloaderAndMemberAccount",
+        "TestHistoryMCPModesSchemasAndNoConsumption",
+        "TestHistoryMCPImagePositionsDedupAndIndependentBudget",
+        "TestHistoryMCPMissingImagesKeepText",
+        "TestHistoryMCPRevokeAndCloseWaitForOutput",
+        "TestHistoryMCPShortOutputRetryAndTurnClose",
+        "TestHistoryMCPRevocationDuringPreparationRejectsPixels",
+        "TestHistoryMCPCancelDownloadReleasesPinsAndCache",
+        "TestHistoryMCPLarkImagesAndCursorReplayChargeSharedAllowance",
+        "TestHistoryMCPServiceImageLimitAppliesAcrossQueries",
+        "TestHistoryMCPStorageFailureHidesPrivatePaths",
+        "TestHistoryRecoveryPreviewAndFormalDelivery",
+        "TestHistoryGuidanceAndBackendModes",
+        "TestHistoryRecoveryBudgetKeepsReferenceAndMandatoryGuide",
+        "TestHistoryRoomVisibilityFrozenPagesAndNoWrites",
+        "TestHistoryConsumedSkippedPendingAndNoMatters",
+        "TestHistoryDirectorySnapshotIdentityAndPagination",
+        "TestHistorySharedGrantRevocationRejoinAndFrozenRecipients",
+        "TestHistoryBudgetSuffixAndActualContinuationBoundary",
+        "TestHistoryExpiryClearRestartAndStableStreamReference",
+        "TestHistoryArgumentsLifecycleAndSharedExecutionBudget",
+        "TestHistoryCorruptPublishedBodyIsAnError",
+        "TestHistoryReclamationInvalidatesReadAndDirectorySnapshots",
+        "TestHistorySnapshotBoundAndNativePinLifetime",
+        "TestHistorySchemasAndProductionReadOnlyDefinitions",
+        "TestHistoryEmptyDirectoryAndFallbackScope",
+        "TestHistoryNativeDirectoryUsesPublishedMetadata",
+        "TestOwnGitlabInboxPreservesContextWithoutOpeningWork",
+        "TestSelfConversationInboxHistoryDoesNotScheduleOrOpenWork",
+        "TestOwnLarkInboxPreservesContextWithoutOpeningWork",
+        "TestHistoryReadArgumentValidation",
+        "TestInputUpgradeRotatesSettledDSHContract",
+        "TestInputUpgradeResumesEveryPublicationBoundary",
+        "TestInputUpgradeRefreshesLegacySourceBeforeFence",
+        "TestInputUpgradeFailsClosedOnInvalidAuthority",
+        "TestInputUpgradeAdmissionFailures",
+        "TestManagedInputUpgradePreservesSavedOperationState",
+        "TestInputUpgradeKeepsUnknownActionGate",
+        "TestInputUpgradeRecoversAfterProcessDeath",
+        "TestInputUpgradeProcessHelper",
+        "TestInputUpgradeMergesTaskEventQueuesByMembership",
+        "TestInputUpgradeMissingJournalDoesNotReinitialize",
+        "TestInputUpgradeDistinguishesFreshAndOrphanedData",
+        "TestStaticAssemblySourcesAndCapabilitiesAgree",
+        "TestOptionalInputCodecDoesNotHideSavedPartition",
+        "TestSelectedCatalogReachesManagerStandaloneAndOfflineProjection",
+        "TestEmptyCatalogDoesNotAcquireBuiltinCapabilities",
+        "TestInputUpgradeUsesSelectedCodecAndCanResumeAfterMissingCapability",
+        "TestLarkImagesManagedCLI",
+        "TestLarkImagesOptionalPermission",
+        "TestLarkImagesDispatchGuards",
+        "TestLarkImageAvailabilityRequiresDeclaredSendSchema",
+        "TestToolEntryAdapterLazyConnectionsAndErrorOrder",
+        "TestToolListAdapterSkipsConnectionsWithoutKnownPlatformBindings",
+        "TestPlatformsUpgradeRequiresStoppedServiceAndPreservesReferences",
+        "TestLarkNotificationsOfflineUpgradePreservesEvidenceAndIsRepeatable",
+        "TestLarkNotificationsUpgradeInterruptedCommitRecoveryAndConflict",
+        "TestLarkNotificationsUpgradeRejectsBackupConflictsAndSymlinks",
+        "TestProductionCLIOnlyExposesDSHMembers",
+        "TestPlatformEntryBuiltinSlowReaderRevocationSettles",
+        "TestPlatformConfigurationUpgradeRestoresSharedUsersAndProfiles",
+        "TestPlatformEntriesSharedGitLabAccountsRoutingAndDependencies",
+        "TestSecondNotificationProviderReloadAndDedup",
+        "TestCLIFixtureWorkflow",
+        "TestPlatformEntriesLarkIndependentProfilesAndBuiltinDispatch",
+        "TestAccountlessToolWithoutPlatformsOrWorkspace",
+        "TestLarkNotificationsUpgradeRejectsWholeSetBeforeWriting",
+        "TestPlatformEntryBuiltinActionExecutionRetainsReceiptAndAccount",
+        "TestLarkNotificationsUpgradeCommitUnknownRequiresReload"
+      ],
+      "failed": [],
+      "skipped": []
+    },
+    {
+      "name": "compile",
+      "args": [
+        "go",
+        "test",
+        "-tags=e2e",
+        "./...",
+        "-run",
+        "^$",
+        "-timeout=2m"
+      ],
+      "exit_code": 0,
+      "seconds": 26.706,
+      "log": ".local/extension-assembly/compile.log",
+      "sha256": "fc58f002cc9e912af12e9cbd14b5613811aa3d37ae754e656c6061b75eda2fb6"
+    },
+    {
+      "name": "vet-scope",
+      "args": [
+        "go",
+        "vet",
+        "./platform",
+        "./extension",
+        "./boot",
+        "./internal/app/...",
+        "./builtin/platforms/...",
+        "./internal/architecture"
+      ],
+      "exit_code": 0,
+      "seconds": 1.471,
+      "log": ".local/extension-assembly/vet-scope.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "build",
+      "args": [
+        "go",
+        "build",
+        "-o",
+        "/Users/russellluo/Projects/ai/teamx/.local/extension-assembly/teamx",
+        "./cmd/teamx"
+      ],
+      "exit_code": 0,
+      "seconds": 1.284,
+      "log": ".local/extension-assembly/build.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "check",
+      "args": [
+        "/Users/russellluo/Projects/ai/teamx/.local/extension-assembly/teamx",
+        "extensions",
+        "check"
+      ],
+      "exit_code": 0,
+      "seconds": 0.455,
+      "log": ".local/extension-assembly/check.log",
+      "sha256": "4f00acb4fcf687c595ecc03639a2dab9f1497d40c6803d9217fc49c588e6087d"
+    },
+    {
+      "name": "help",
+      "args": [
+        "/Users/russellluo/Projects/ai/teamx/.local/extension-assembly/teamx",
+        "--help"
+      ],
+      "exit_code": 0,
+      "seconds": 0.026,
+      "log": ".local/extension-assembly/help.log",
+      "sha256": "0b2dd712237e55ae7c316a5e56e2773d7fb953a27f0704b70052de7cc534b88f"
+    },
+    {
+      "name": "vet",
+      "args": [
+        "go",
+        "vet",
+        "./..."
+      ],
+      "exit_code": 1,
+      "seconds": 6.668,
+      "log": ".local/extension-assembly/vet.log",
+      "sha256": "f8113d48f201d814830c1d2351a9f6cf4324d6aaf4de4dfaebcdc2f4dd522a49"
+    },
+    {
+      "name": "core",
+      "args": [
+        "go",
+        "test",
+        "./internal/room",
+        "-count=1",
+        "-json",
+        "-timeout=12m"
+      ],
+      "exit_code": 1,
+      "seconds": 448.953,
+      "log": ".local/extension-assembly/core.log",
+      "sha256": "75164c1a170fd235ede245370df0212b9db200bd0dec29b1414203128b72986d",
+      "failed": [
+        "TestInboxAndActionCoreHasNoNativeProviderRules",
+        "github.com/go-aie/teamx/internal/room"
+      ],
+      "skipped": [
+        "TestProductionGitAskpassWithoutPythonOrGlab",
+        "TestLarkSelfSendRecoveryProcess",
+        "TestRoomLogProcessExitHelper"
+      ],
+      "passed_count": 954,
+      "source_scope": "Started before final private factory-package relocation and offline mirror catalog propagation; final components, external acceptance, e2e compilation and 70-case race run cover the final tree."
+    }
+  ],
+  "dependencies": {
+    "packages": {
+      "./platform": {
+        "teamx_dependencies": [
+          "github.com/go-aie/teamx/platform"
+        ],
+        "provider_implementations": [],
+        "imports_complete_selection": false
+      },
+      "./extension": {
+        "teamx_dependencies": [
+          "github.com/go-aie/teamx/internal/identity",
+          "github.com/go-aie/teamx/internal/platform",
+          "github.com/go-aie/teamx/internal/inputstream",
+          "github.com/go-aie/teamx/internal/platform/notification",
+          "github.com/go-aie/teamx/internal/platform/registry",
+          "github.com/go-aie/teamx/internal/platform/tool",
+          "github.com/go-aie/teamx/internal/app/platforms",
+          "github.com/go-aie/teamx/platform",
+          "github.com/go-aie/teamx/internal/app/extensions",
+          "github.com/go-aie/teamx/extension"
+        ],
+        "provider_implementations": [],
+        "imports_complete_selection": false
+      },
+      "./internal/app/extensions": {
+        "teamx_dependencies": [
+          "github.com/go-aie/teamx/internal/identity",
+          "github.com/go-aie/teamx/internal/platform",
+          "github.com/go-aie/teamx/internal/inputstream",
+          "github.com/go-aie/teamx/internal/platform/notification",
+          "github.com/go-aie/teamx/internal/platform/registry",
+          "github.com/go-aie/teamx/internal/platform/tool",
+          "github.com/go-aie/teamx/internal/app/platforms",
+          "github.com/go-aie/teamx/platform",
+          "github.com/go-aie/teamx/internal/app/extensions"
+        ],
+        "provider_implementations": [],
+        "imports_complete_selection": false
+      },
+      "./internal/app/platforms": {
+        "teamx_dependencies": [
+          "github.com/go-aie/teamx/internal/identity",
+          "github.com/go-aie/teamx/internal/platform",
+          "github.com/go-aie/teamx/internal/inputstream",
+          "github.com/go-aie/teamx/internal/platform/notification",
+          "github.com/go-aie/teamx/internal/platform/registry",
+          "github.com/go-aie/teamx/internal/platform/tool",
+          "github.com/go-aie/teamx/internal/app/platforms"
+        ],
+        "provider_implementations": [],
+        "imports_complete_selection": false
+      },
+      "./builtin/platforms/gitlab": {
+        "teamx_dependencies": [
+          "github.com/go-aie/teamx/internal/identity",
+          "github.com/go-aie/teamx/internal/platform",
+          "github.com/go-aie/teamx/internal/inputstream",
+          "github.com/go-aie/teamx/internal/platform/notification",
+          "github.com/go-aie/teamx/internal/platform/registry",
+          "github.com/go-aie/teamx/internal/platform/tool",
+          "github.com/go-aie/teamx/internal/app/platforms",
+          "github.com/go-aie/teamx/platform",
+          "github.com/go-aie/teamx/internal/app/extensions",
+          "github.com/go-aie/teamx/extension",
+          "github.com/go-aie/teamx/internal/platform/attachment",
+          "github.com/go-aie/teamx/internal/platform/gitlab",
+          "github.com/go-aie/teamx/internal/app/builtinplatforms/gitlab",
+          "github.com/go-aie/teamx/builtin/platforms/gitlab"
+        ],
+        "provider_implementations": [
+          "github.com/go-aie/teamx/internal/platform/gitlab"
+        ],
+        "imports_complete_selection": false
+      },
+      "./builtin/platforms/lark": {
+        "teamx_dependencies": [
+          "github.com/go-aie/teamx/internal/identity",
+          "github.com/go-aie/teamx/internal/platform",
+          "github.com/go-aie/teamx/internal/inputstream",
+          "github.com/go-aie/teamx/internal/platform/notification",
+          "github.com/go-aie/teamx/internal/platform/registry",
+          "github.com/go-aie/teamx/internal/platform/tool",
+          "github.com/go-aie/teamx/internal/app/platforms",
+          "github.com/go-aie/teamx/platform",
+          "github.com/go-aie/teamx/internal/app/extensions",
+          "github.com/go-aie/teamx/extension",
+          "github.com/go-aie/teamx/internal/platform/attachment",
+          "github.com/go-aie/teamx/internal/platform/lark",
+          "github.com/go-aie/teamx/internal/app/builtinplatforms/lark",
+          "github.com/go-aie/teamx/builtin/platforms/lark"
+        ],
+        "provider_implementations": [
+          "github.com/go-aie/teamx/internal/platform/lark"
+        ],
+        "imports_complete_selection": false
+      },
+      "./builtin/platforms/scion": {
+        "teamx_dependencies": [
+          "github.com/go-aie/teamx/internal/identity",
+          "github.com/go-aie/teamx/internal/platform",
+          "github.com/go-aie/teamx/internal/inputstream",
+          "github.com/go-aie/teamx/internal/platform/notification",
+          "github.com/go-aie/teamx/internal/platform/registry",
+          "github.com/go-aie/teamx/internal/platform/tool",
+          "github.com/go-aie/teamx/internal/app/platforms",
+          "github.com/go-aie/teamx/platform",
+          "github.com/go-aie/teamx/internal/app/extensions",
+          "github.com/go-aie/teamx/extension",
+          "github.com/go-aie/teamx/internal/platform/scion",
+          "github.com/go-aie/teamx/internal/app/builtinplatforms/scion",
+          "github.com/go-aie/teamx/builtin/platforms/scion"
+        ],
+        "provider_implementations": [
+          "github.com/go-aie/teamx/internal/platform/scion"
+        ],
+        "imports_complete_selection": false
+      },
+      "./boot": {
+        "teamx_dependencies": [
+          "github.com/go-aie/teamx/internal/identity",
+          "github.com/go-aie/teamx/internal/platform",
+          "github.com/go-aie/teamx/internal/inputstream",
+          "github.com/go-aie/teamx/internal/platform/notification",
+          "github.com/go-aie/teamx/internal/platform/registry",
+          "github.com/go-aie/teamx/internal/platform/tool",
+          "github.com/go-aie/teamx/internal/app/platforms",
+          "github.com/go-aie/teamx/platform",
+          "github.com/go-aie/teamx/internal/app/extensions",
+          "github.com/go-aie/teamx/extension",
+          "github.com/go-aie/teamx/internal/agent/dsh",
+          "github.com/go-aie/teamx/internal/app/agents",
+          "github.com/go-aie/teamx/internal/platform/attachment",
+          "github.com/go-aie/teamx/internal/platform/gitlab",
+          "github.com/go-aie/teamx/internal/app/builtinplatforms/gitlab",
+          "github.com/go-aie/teamx/internal/platform/lark",
+          "github.com/go-aie/teamx/internal/app/builtinplatforms/lark",
+          "github.com/go-aie/teamx/internal/calendar",
+          "github.com/go-aie/teamx/internal/persistence",
+          "github.com/go-aie/teamx/internal/platform/scion",
+          "github.com/go-aie/teamx/internal/web",
+          "github.com/go-aie/teamx/internal/workspace",
+          "github.com/go-aie/teamx/internal/workspace/git",
+          "github.com/go-aie/teamx/internal/workspace/scion",
+          "github.com/go-aie/teamx/internal/room",
+          "github.com/go-aie/teamx/boot"
+        ],
+        "provider_implementations": [
+          "github.com/go-aie/teamx/internal/platform/gitlab",
+          "github.com/go-aie/teamx/internal/platform/lark",
+          "github.com/go-aie/teamx/internal/platform/scion"
+        ],
+        "imports_complete_selection": false
+      },
+      "./cmd/teamx": {
+        "teamx_dependencies": [
+          "github.com/go-aie/teamx/internal/identity",
+          "github.com/go-aie/teamx/internal/platform",
+          "github.com/go-aie/teamx/internal/inputstream",
+          "github.com/go-aie/teamx/internal/platform/notification",
+          "github.com/go-aie/teamx/internal/platform/registry",
+          "github.com/go-aie/teamx/internal/platform/tool",
+          "github.com/go-aie/teamx/internal/app/platforms",
+          "github.com/go-aie/teamx/platform",
+          "github.com/go-aie/teamx/internal/app/extensions",
+          "github.com/go-aie/teamx/extension",
+          "github.com/go-aie/teamx/internal/agent/dsh",
+          "github.com/go-aie/teamx/internal/app/agents",
+          "github.com/go-aie/teamx/internal/platform/attachment",
+          "github.com/go-aie/teamx/internal/platform/gitlab",
+          "github.com/go-aie/teamx/internal/app/builtinplatforms/gitlab",
+          "github.com/go-aie/teamx/internal/platform/lark",
+          "github.com/go-aie/teamx/internal/app/builtinplatforms/lark",
+          "github.com/go-aie/teamx/internal/calendar",
+          "github.com/go-aie/teamx/internal/persistence",
+          "github.com/go-aie/teamx/internal/platform/scion",
+          "github.com/go-aie/teamx/internal/web",
+          "github.com/go-aie/teamx/internal/workspace",
+          "github.com/go-aie/teamx/internal/workspace/git",
+          "github.com/go-aie/teamx/internal/workspace/scion",
+          "github.com/go-aie/teamx/internal/room",
+          "github.com/go-aie/teamx/boot",
+          "github.com/go-aie/teamx/builtin/platforms/gitlab",
+          "github.com/go-aie/teamx/builtin/platforms/lark",
+          "github.com/go-aie/teamx/internal/app/builtinplatforms/scion",
+          "github.com/go-aie/teamx/builtin/platforms/scion",
+          "github.com/go-aie/teamx/builtin/platforms",
+          "github.com/go-aie/teamx/cmd/teamx"
+        ],
+        "provider_implementations": [
+          "github.com/go-aie/teamx/internal/platform/gitlab",
+          "github.com/go-aie/teamx/internal/platform/lark",
+          "github.com/go-aie/teamx/internal/platform/scion"
+        ],
+        "imports_complete_selection": true
+      }
+    },
+    "remaining_production_provider_importers": {
+      "gitlab": [
+        "internal/app/builtinplatforms/gitlab/sources.go",
+        "internal/app/builtinplatforms/gitlab/definition.go",
+        "internal/room/member_notifications_upgrade.go",
+        "internal/room/platform_selection_cli.go",
+        "internal/room/platform_notification_config.go",
+        "internal/room/workspace_git_cli.go",
+        "internal/room/platform_notifications_http.go",
+        "internal/room/platform_selection.go",
+        "internal/room/platform_gitlab_projects.go",
+        "internal/room/platform_gitlab_notifications.go",
+        "internal/room/platform_member_gitlab.go",
+        "internal/room/platform_notification_todos.go",
+        "internal/room/shared_input_reader.go",
+        "internal/room/platform_notification_gitlab.go",
+        "internal/room/platform_member.go",
+        "internal/room/platform_member_cli.go",
+        "internal/room/platform_connect_gitlab.go",
+        "internal/room/platform_gitlab_auth.go",
+        "internal/room/notification_images.go",
+        "internal/room/platform_oauth.go",
+        "internal/room/platform_attachments.go",
+        "internal/room/platform_member_store.go",
+        "internal/room/platform_selection_gitlab.go",
+        "internal/room/workspace_platforms.go",
+        "internal/room/shared_inbox.go",
+        "internal/room/platform_gitlab_references.go",
+        "internal/room/workspace_adapters.go",
+        "internal/room/ui_update_notifications.go",
+        "internal/room/platform_onboarding.go",
+        "internal/room/platform_gitlab_actions.go"
+      ],
+      "lark": [
+        "internal/inputstreamtest/lark.go",
+        "internal/app/builtinplatforms/lark/sources.go",
+        "internal/app/builtinplatforms/lark/definition.go",
+        "internal/room/platform_notification_lark.go",
+        "internal/room/platform_lark_conversation.go",
+        "internal/room/platform_member_lark.go",
+        "internal/room/actions_agent_view.go",
+        "internal/room/platform_notifications_http.go",
+        "internal/room/platform_lark_references.go",
+        "internal/room/platform_connect_store.go",
+        "internal/room/platform_lark.go",
+        "internal/room/platform_connect_gitlab.go",
+        "internal/room/platform_selection.go",
+        "internal/room/platform_lark_target.go",
+        "internal/room/platform_notification_lark_view.go",
+        "internal/room/platform_lark_tools.go",
+        "internal/room/platform_connect_interaction.go",
+        "internal/room/platform_connect.go",
+        "internal/room/platform_notifications.go",
+        "internal/room/platform_lark_self_send.go",
+        "internal/room/platform_lark_auth.go",
+        "internal/room/platform_lark_chats.go",
+        "internal/room/lark_notifications_upgrade.go",
+        "internal/room/platform_lark_setup.go",
+        "internal/room/platform_member.go",
+        "internal/room/tools_lark_configuration.go",
+        "internal/room/management.go",
+        "internal/room/platform_lark_capabilities.go",
+        "internal/room/platform_lark_authorization.go",
+        "internal/room/notifications_upgrade_cli.go",
+        "internal/room/agent_contract.go",
+        "internal/room/platform_onboarding.go",
+        "internal/room/platform_attachments.go",
+        "internal/room/notification_images.go",
+        "internal/room/platform_lark_actions.go",
+        "internal/room/ui_update_notifications.go",
+        "internal/room/member_notifications_upgrade.go",
+        "internal/room/platform_member_store.go"
+      ],
+      "scion": [
+        "internal/app/builtinplatforms/scion/definition.go",
+        "internal/room/workspace_scion.go",
+        "internal/room/workspace_adapters.go",
+        "internal/room/tools.go",
+        "internal/room/platform_scion_auth.go",
+        "internal/room/platform_assembly.go",
+        "internal/room/workspace_platforms.go"
+      ]
+    }
+  },
+  "source_sha256": {
+    "boot/external_integration_test.go": "274c5fde743c68270450654398381945a17f011f737a288b4233d98cb0193645",
+    "boot/run.go": "c1e50f28c24ae6a13d39f62293bc4786dbe1e725a44821e2f48446d96827f609",
+    "boot/run_test.go": "c5c2750f4007c27daedccaa292e0bf2a91bbb140514dabc253640abd53a7de74",
+    "builtin/platforms/catalog.go": "414858dcc2833a219bcbdeee1f4c83db6c3a6a3d097ecd02ad73b0f13e66173a",
+    "builtin/platforms/catalog_test.go": "a0a207746f1cedd75e000126a353c8c28bf15bbe6222776e89067a5ccd78f460",
+    "builtin/platforms/gitlab/extension.go": "2a5be2902e47a9b46971523047277c4c6f178a02ff679e2cc36cf85ff4921e3f",
+    "builtin/platforms/lark/extension.go": "9b72db25bba85245b0091a9d463c8440e55790f0415bc5cc6f7dd1d35b0f153e",
+    "builtin/platforms/scion/extension.go": "7639a2db8924e1de136bcb2de94d61df5d74854a6bf1726d8f0a13449bc166e9",
+    "cmd/teamx/main.go": "a684e2ddef7301baa93a981584fd06387c84e9a0d7030e8693c6ac3379e552cc",
+    "extension/extension.go": "e19417c81abd3c03e95716d9b9226cf16994ed1f5df7b186ff4b2430b5918c25",
+    "extension/extension_test.go": "67beeed14cc8403945ff8b3836ee2a1a14d46e3503d1ba8f4450d1bd85a4e380",
+    "internal/app/builtinplatforms/gitlab/definition.go": "35ecb9b8cf8d8d6eac101dd189a65cbedc2f84a720a1eb84d89dee7b01410d0d",
+    "internal/app/builtinplatforms/gitlab/sources.go": "dcdb9ee4996c5dd3843050511df43fdb672d17ed05a11c645e92a3b6e4f6961a",
+    "internal/app/builtinplatforms/gitlab/sources_test.go": "a0ba6d8aaaf0a6ee4d68aebae8f761c89a2713049bf0f4594241e5c955205f0d",
+    "internal/app/builtinplatforms/lark/definition.go": "02e5c6ade285e8e95090d2a725643007960fe2ee97549d0fce6ed6314a3df100",
+    "internal/app/builtinplatforms/lark/sources.go": "8005c57de5fb1e863dc881a1c87004fb31e2df14f9c3edb84e42eb3f7bab2613",
+    "internal/app/builtinplatforms/lark/sources_test.go": "a986cddfa015fbb5175b8fe69d829a9ee60583f86b6f659fbd23cbcc08cd25fd",
+    "internal/app/builtinplatforms/scion/definition.go": "f080869372704c0d80d946989a840d289c8d83ffb67b2ed59c10954d06ef3e40",
+    "internal/app/extensions/compose.go": "9cd4326fed8c4fcd8871f33bbec8d5962a82684f09c862bc19be2d411e596818",
+    "internal/app/platforms/catalog.go": "2b669ec1a2d697bd948ce3ae614e9c7ef9090581e9b6175cb4739e5238054002",
+    "internal/app/platforms/catalog_test.go": "b9a2ee80766cc9da54d20af8552a28570e5c1d0ecf968f4dd8d2f82db9d2e26b",
+    "internal/architecture/boundaries_test.go": "c62730527df7c0382406982a28187fa43e544f04b15c20a01554f7b8aa9d17cd",
+    "internal/room/agent_read_views.go": "534e4a469d5b32dc2f4ab904cbf284af3156a8cda01709326bd8001cd9574a5b",
+    "internal/room/bundle.go": "e0e676bdd6fc3661c8b468d0246efdf9307049cb3e6c30281cd95c1eaee36c96",
+    "internal/room/cli.go": "56a6c57fbaead3e14532a0dfde508c2602c164634a18c2c1b1f53e9a1cb4b435",
+    "internal/room/cli_help.go": "a1b8c1fdde6660d1b21eb0c9e7ded3262ec149923f5bfbc6c222765fe0809ba1",
+    "internal/room/default_assistant.go": "13504aafaea28f74d22a5775d6727aed1e37056365415d2271307625de225ecf",
+    "internal/room/followups.go": "4fe452090eb84bc27b6eae54176184abadbdbb4eb12bc635cadd4bc9cd21e8b9",
+    "internal/room/followups_entry.go": "5ddc74ffb8439daece67a7880f3e20625a1b56db2297bdf89b21c560e5411437",
+    "internal/room/followups_service.go": "9b2b470295b11f8ccd881fa690dcc8ef6c362e36a6e2637180252c7d6e719897",
+    "internal/room/history.go": "4e6d1f2442d9fddd47e3363d5638ae990a2f8a0e87b160ac44ae2d18f1e21119",
+    "internal/room/inbox_admission.go": "ecb94e50b1bbf53b66524e1913105c191e572a63837ccbd862cab17b81710056",
+    "internal/room/inbox_member_service.go": "dd1cfb5ba31826e851281cccb9c12e1a4fd1dbc9f71348c45e72a5c541239591",
+    "internal/room/inbox_message_origin.go": "2d69291dfb80c4686c8cd7f630615fd05f49bc87e44762c6a6db1f8f74e33fbf",
+    "internal/room/inbox_reclamation.go": "e416407c466e13ad2e1f64ff6a12ffce2f3e13defce1da9c42c54692989c478d",
+    "internal/room/input_stream_native_fixture_test.go": "0e36485aa8c3f98f9067b272ea19b8abe232ea2c6794e17297bdbf957af823a4",
+    "internal/room/input_stream_reader.go": "159fee7b53e158e9d7708f6bbd2746db3cb5911c5397bef9e845fe9a2e730e63",
+    "internal/room/input_stream_sources.go": "cc479ac243935e9725174c830f9ed9aa667c26f0b469c6c9a346daf5239b6850",
+    "internal/room/input_upgrade.go": "66165a35ec2f4a7a4c4d45a2f3634118ac1f9192a5d18e4ee61990049274b431",
+    "internal/room/input_upgrade_legacy.go": "351492cc940edb50c2d87969703586910437501183da4ad2c5b2c92e86b14e15",
+    "internal/room/input_upgrade_notices.go": "a3f1a30bc665d2cf7f36945cae31505d695843dd7689be04196e67eca320c8ed",
+    "internal/room/management.go": "2bb58db8eae90cd21b6b4e656dba2d2dfd2d257d7d74aabde94ebaa67d50f979",
+    "internal/room/mcp_inbox.go": "352be22b324aa46f595e102102345654095dcfaa27c22839fdf9d508c96307fb",
+    "internal/room/model_apply.go": "1f77e4d99744f2233ebf154ed1923ed5e4601bdc6829c45805f146c5c5ed341d",
+    "internal/room/notification_views.go": "49c6e20ae9d62330d9c0bab1ff601f2b6553fba563a2e552c1fbee60eae3b5d0",
+    "internal/room/notifications_upgrade_cli.go": "d99aca22c701bee63b054ba15c510c6ac7b1278bafb7a7d3c21024e17b0ba6f3",
+    "internal/room/platform.go": "86ee209655f9b6c46c463771d494fac2cec38a48597edfbd342ca0f4ef70905a",
+    "internal/room/platform_assembly.go": "66a3ba4179a8b952a71f1c07482a1bd5990a204f0650a3eb4a646c03fd615387",
+    "internal/room/platform_composition_test.go": "db7fdad3b866112a9933d0b9e6b1c3e047d5a521cb6a448e2dc54d84d1c80533",
+    "internal/room/platform_connect_cli.go": "3959b1e541402a7f7ca9907661e726fcb63c51712cb1ad2f37ba362f5a73f93c",
+    "internal/room/platform_fixture_test.go": "ab94f6cf80d4770cc347247453621037f21bebbe5716b6d261edfed19ff0bcfc",
+    "internal/room/platform_model_upgrade.go": "992678eb7e7c38af01a410a150792635eb78757355d1ce2d220d61173f1ccf52",
+    "internal/room/platform_notification_capabilities.go": "08f42d4560fa1af5a0ae547df23d0d2f2f700ee27ba7dc2e7f9ad3b236122bc3",
+    "internal/room/platform_notifications.go": "4aedd7b23a3885030b854bedf0c201a23542e75a276aadb454711e777c04d359",
+    "internal/room/platform_onboarding.go": "2430006b6ffd7d5bcbf7aa67af434213543d75ea2e3d287642d9bc100fe6968f",
+    "internal/room/platforms_upgrade_cli.go": "57621048b4587333667bc6bedbadffb43ebe6d63c682ed691a9a9d41d20bd122",
+    "internal/room/runtime_assembly.go": "6e8ff1522bc58141737feab44b155df7a4f0850c71e82f89ee4721522b9cfb41",
+    "internal/room/runtime_recovery.go": "75f2998d7b01998da9457009bf5a5018211a74fa73b3451f9733ca7785258b7d",
+    "internal/room/serve.go": "ae164c8d85c8e6eb89e24ede4a2622d9b0bc7554ceef068304f8cbcb781af7dd",
+    "internal/room/service.go": "2cdf3899887849793a9e4de1f9ed5918ec103525f8339d97bd1e9496ce317c83",
+    "internal/room/service_config.go": "ef09ceddf1a3d3c666a406cdff66041075d8985438f11625d4d09f17348eb456",
+    "internal/room/shared_inbox_http.go": "244fcccb384b7d3e599e050fc8a31247c5ec2a46268dd0a3c89999788b4ce0ab",
+    "internal/room/storage.go": "ea454b3b350769c44863c88f4b3ff39268dfca0c6c52cf01755f82cd7bea741d",
+    "internal/room/teams.go": "8e86ebc9d72a4c0bba951371a6067fcca05fb031882e13c9eca28a65a61169a1",
+    "internal/room/tools.go": "f6a58fc79dbf382f77c19b6035ce46cb0739ac0eab29421f1ee8520092aef344",
+    "internal/room/workspace_management.go": "67a90da32ad0172e56ef387c9f46be8bd0470abdb54782d4371fd7258eb2e7b6",
+    "platform/tool.go": "5c2aa7d90582815a806f7585352e5fa9b937f8dc4b8160fd30f8f8072f3b9dea",
+    "testdata/external-tool/acceptance.py": "a5bbcaac7a0388a4c1c13450ea9abac0110c4199e77de323c2cf38ef8b7cd971",
+    "testdata/external-tool/acp_fixture.py": "4e08d8e50a4117a3e2b76acf2fa5a302dd7a2d613141ecee8732426393555d1a",
+    "testdata/external-tool/cmd/echo/main.go": "bb00ce420be517b05495bef124a8a60e50a125221dd2cbe6e6f3c11035370f46",
+    "testdata/external-tool/cmd/teamx/main.go": "088dcfc60c708e7bd020bbafb7c7d43cc79ff4f9700fa768e4051ce536262b19",
+    "testdata/external-tool/extension.go": "968a8fafdda2c54280d7ac7041c986920999142b3cdc374d9bad49bf3d60e0f0",
+    "testdata/external-tool/go.mod": "cf0e6b7bf3811ecb67653315a686df10e0748d0228ba43f44be46d375c83c271"
+  },
+  "unchanged_from_HEAD": {
+    "go.mod": {
+      "same_as_HEAD": true,
+      "sha256": "6213a071e7593125054cc301e6ded40022374b06fe6c68501608935b4543ff6b"
+    },
+    "go.sum": {
+      "same_as_HEAD": true,
+      "sha256": "043467b94d1a8ae4e513d7385376db76b44f82009ecaa18922e555dfec4643de"
+    },
+    "internal/room/platform_selection_test.go": {
+      "same_as_HEAD": true,
+      "sha256": "65a43f8305e308bd5d72d4db16bc82c5e54b2781edff797ba98b7d4032dc377f"
+    },
+    "internal/room/platform_boundaries_test.go": {
+      "same_as_HEAD": true,
+      "sha256": "3d3ec8c92a13a2ef625528b8cf3ee45698ff0a667bf85c5e3d30038eeff1a2ce"
+    },
+    "internal/room/actions_target.go": {
+      "same_as_HEAD": true,
+      "sha256": "cbb604a59d1eebd36305e15bbcb8d528f7efcd9e6a53b48fa6555cd04947780f"
+    },
+    "internal/room/agent_contract.go": {
+      "same_as_HEAD": true,
+      "sha256": "78fd1243430ea781062d95de42d59d5a0b495c436d8b10fa45409963b2ec7640"
+    },
+    "internal/room/room_action_images.go": {
+      "same_as_HEAD": true,
+      "sha256": "73e2e075dce57a7ca0252446015cb0ac2e695c67fd49a01f8c81debe03741b12"
+    },
+    "internal/identity/identity.go": {
+      "same_as_HEAD": true,
+      "sha256": "15d89a031051337922a495e078765a724653e57431b7cae48a6bad742f696471"
+    }
+  },
+  "external_fixture": {
+    "module": "example.com/teamx-local-tool",
+    "require": "github.com/go-aie/teamx v0.0.0 (development placeholder only)",
+    "replace": "/Users/russellluo/Projects/ai/teamx",
+    "gowork": "off",
+    "public_imports": [
+      "github.com/go-aie/teamx/boot",
+      "github.com/go-aie/teamx/extension",
+      "github.com/go-aie/teamx/platform"
+    ],
+    "retained_manual_acceptance": ".local/external-tool/acceptance-4/result.json",
+    "manual_result_sha256": "58bd186152a2e94678cef7040cba8ed439b7781475a8bbb69761622915a9080f",
+    "generated_go_mod": "module example.com/teamx-local-tool\n\ngo 1.27\n\nrequire github.com/go-aie/teamx v0.0.0\n\nrequire (\n\tgithub.com/go-aie/actorx v0.0.0-20261030042159-66d1a455bafa // indirect\n\tgithub.com/google/jsonschema-go v0.4.2 // indirect\n\tgithub.com/google/uuid v1.6.0 // indirect\n\tgithub.com/mark3labs/mcp-go v1.5.0 // indirect\n\tgithub.com/pelletier/go-toml/v2 v2.3.0 // indirect\n\tgithub.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect\n\tgithub.com/spf13/cast v1.7.1 // indirect\n\tgithub.com/yosida95/uritemplate/v3 v3.0.2 // indirect\n\tgithub.com/yuin/goldmark v1.8.7 // indirect\n\tgolang.org/x/image v0.47.0 // indirect\n\tgolang.org/x/text v0.43.0 // indirect\n)\n\nreplace github.com/go-aie/teamx => /Users/russellluo/Projects/ai/teamx\n",
+    "generated_go_sum_sha256": "f505d9b6fb5bef66670511a256f74171d98776b5ed938911125961f3945830de",
+    "real_model": false,
+    "real_dsh": false,
+    "remote_business_writes": 0,
+    "server_exit": 0,
+    "snapshot_note": "Retained manual acceptance predates the final internal-only package relocation; the final external check above independently rebuilt and passed against the final tree."
+  },
+  "initial_core_attempt": {
+    "args": [
+      "go",
+      "test",
+      "./internal/room",
+      "-timeout=6m",
+      "-json"
+    ],
+    "log": ".local/platform-catalog/p1b-core-initial.log",
+    "sha256": "49cafc3494f7d24c2a7aeaa63215cec30d552823de3fc22ead7e4455767f4af4",
+    "passed_top_level": 937,
+    "failure": "pre-existing TestInboxAndActionCoreHasNoNativeProviderRules; cumulative package timeout at 6m"
+  },
+  "limits": [
+    "core command fails on unchanged native-provider architecture assertion",
+    "repository vet fails on unchanged duplicate JSON tags",
+    "no full integration or whole-repository race gate",
+    "no real model, DSH, platform, browser, package delivery or daily service adoption"
+  ],
+  "deferred": [
+    "P2n public notification/runtime contract",
+    "P2t Lark built-in tool application calls",
+    "P2r product provider dependencies",
+    "P3 Gordis resources/lifecycle",
+    "P4 Agent branch",
+    "P5 generated selective code/resource delivery"
+  ]
+}

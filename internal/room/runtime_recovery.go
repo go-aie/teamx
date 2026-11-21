@@ -111,7 +111,7 @@ func (m *roomManager) restoreRuntime(entry roomIndexEntry, rt *roomRuntime) {
 // authoritative roster, including enable intent even if ownership was absent in
 // an old index. Actual execution eligibility remains loadMembers' responsibility.
 func (m *roomManager) runtimeRecoveryNeeded(owner RoomIdentity) (bool, error) {
-	store, err := OpenStore(m.roomDir(owner.RoomID), owner.RoomID)
+	store, err := openStoreWithCatalog(m.roomDir(owner.RoomID), owner.RoomID, nil, m.platformCatalog)
 	if err != nil {
 		return false, err
 	}

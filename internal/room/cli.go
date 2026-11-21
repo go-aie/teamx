@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/go-aie/teamx/internal/app/platforms"
 	"github.com/go-aie/teamx/internal/inputstream"
 	"io"
 	"net/http"
@@ -132,13 +133,7 @@ func (c *cliClient) identity(ctx context.Context, roomID string, env func(string
 	return apiRequest{ServiceInfo: info, Caller: Caller{Author: Author{Kind: "human", ID: user}}}, nil
 }
 
-// runCLI accepts a writer so the output/confirmation boundary can be tested
-// with a real HTTP peer, including short writes and broken pipes.
-func runCLI(ctx context.Context, args []string, stdout, stderr io.Writer, env func(string) string) error {
-	return runCLIWithInput(ctx, args, os.Stdin, stdout, stderr, env)
-}
-
-func runCLIWithInput(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer, env func(string) string) error {
+func runCLIWithCatalog(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer, env func(string) string, catalog *platforms.Catalog) error {
 	var err error
 	args, env, err = cliTokenFile(args, env)
 	if err != nil {
@@ -164,10 +159,10 @@ func runCLIWithInput(ctx context.Context, args []string, stdin io.Reader, stdout
 		return runUsageSkillCLI(ctx, args, stdout, env)
 	}
 	if command == "notifications" {
-		return runNotificationsUpgrade(args, stdout, stderr)
+		return runNotificationsUpgradeWithCatalog(args, stdout, stderr, catalog)
 	}
 	if command == "platforms" {
-		return runPlatformsCLI(ctx, args, stdout, stderr, env)
+		return runPlatformsCLIWithCatalog(ctx, args, stdout, stderr, env, catalog)
 	}
 	if command == "inbox" && env("TEAMX_INPUT_CONTRACT") == inputstream.Contract {
 		return runInputHTTPCLI(ctx, args, stdout, env)
@@ -411,8 +406,8 @@ func writeOutput(w io.Writer, data []byte) error {
 	return err
 }
 
-// Run dispatches the TeamX Room CLI. The caller owns process exit reporting.
-func Run(args []string, stdout, stderr io.Writer) error {
+// RunWithCatalog dispatches the TeamX Room CLI. The caller owns process exit reporting.
+func RunWithCatalog(args []string, stdout, stderr io.Writer, catalog *platforms.Catalog) error {
 	if len(args) == 1 && (args[0] == "--version" || args[0] == "version") {
 		_, err := fmt.Fprintf(stdout, "teamx %s commit=%s dirty=%s\n", distributionVersion, distributionCommit, distributionDirty)
 		return err
@@ -429,15 +424,15 @@ func Run(args []string, stdout, stderr io.Writer) error {
 			}
 			return ErrRequest
 		case "init", "doctor":
-			return runBundle(args[0], args[1:], stdout, stderr)
+			return runBundleWithCatalog(args[0], args[1:], stdout, stderr, catalog)
 		case "bundle":
-			return bundleEntry(args[1:], stdout, stderr)
+			return bundleEntryWithCatalog(args[1:], stdout, stderr, catalog)
 		}
 	}
 	if len(args) > 0 && args[0] == "serve" {
-		return serve(args[1:], stdout, stderr)
+		return serveWithCatalog(args[1:], stdout, stderr, nil, catalog)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	return runCLI(ctx, args, stdout, stderr, os.Getenv)
+	return runCLIWithCatalog(ctx, args, os.Stdin, stdout, stderr, os.Getenv, catalog)
 }

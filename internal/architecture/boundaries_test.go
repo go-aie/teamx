@@ -43,6 +43,30 @@ func TestProductionImportBoundaries(t *testing.T) {
 		service := strings.HasPrefix(pkg.ImportPath, root+"app/")
 		for _, dep := range pkg.Deps {
 			forbidden := within(dep, root+"inputstreamtest") || within(dep, root+"testutil")
+			if pkg.ImportPath == "github.com/go-aie/teamx/boot" || within(pkg.ImportPath, root+"room") {
+				forbidden = forbidden || dep == "github.com/go-aie/teamx/builtin/platforms"
+			}
+			// Catalog validation, parsing and call tracking cannot pull the
+			// built-in selection or concrete providers into common consumers.
+			if within(pkg.ImportPath, root+"app/platforms") || within(pkg.ImportPath, root+"app/platformtools") {
+				forbidden = forbidden || within(dep, "github.com/go-aie/teamx/builtin")
+				for _, provider := range []string{"gitlab", "lark", "scion"} {
+					forbidden = forbidden || within(dep, root+"platform/"+provider)
+				}
+			}
+			// An individual factory must not import the aggregate selection or
+			// another provider, even through a transitive dependency.
+			for _, provider := range []string{"gitlab", "lark", "scion"} {
+				builtin := "github.com/go-aie/teamx/builtin/platforms"
+				if within(pkg.ImportPath, builtin+"/"+provider) || within(pkg.ImportPath, root+"app/builtinplatforms/"+provider) {
+					forbidden = forbidden || dep == builtin
+					for _, other := range []string{"gitlab", "lark", "scion"} {
+						if other != provider {
+							forbidden = forbidden || within(dep, builtin+"/"+other) || within(dep, root+"platform/"+other)
+						}
+					}
+				}
+			}
 			if within(pkg.ImportPath, root+"identity") {
 				forbidden = forbidden || strings.HasPrefix(dep, root)
 			}
@@ -66,7 +90,7 @@ func TestProductionImportBoundaries(t *testing.T) {
 			}
 		}
 	}
-	for _, name := range []string{"cmd/teamx", "internal/room", "internal/identity", "internal/persistence", "internal/app/agents", "internal/app/platforms", "internal/inputstream", "internal/agent/dsh", "internal/platform", "internal/workspace", "internal/calendar"} {
+	for _, name := range []string{"cmd/teamx", "internal/room", "internal/identity", "internal/persistence", "internal/app/agents", "internal/app/platforms", "internal/app/platformtools", "internal/inputstream", "internal/agent/dsh", "internal/platform", "internal/workspace", "internal/calendar"} {
 		if !checked["github.com/go-aie/teamx/"+name] {
 			t.Errorf("production graph missing %s", name)
 		}

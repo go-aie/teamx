@@ -109,7 +109,7 @@ func (m *roomManager) readOnboardingLocked(id, owner string) (platformOnboarding
 	if err := readSnapshot(m.onboardingPath(id), &op, 128<<10); err != nil {
 		return op, err
 	}
-	if op.ID != id || !validOnboarding(op) {
+	if op.ID != id || !m.validOnboarding(op) {
 		return op, ErrInvalid
 	}
 	if op.Owner != owner {
@@ -118,7 +118,7 @@ func (m *roomManager) readOnboardingLocked(id, owner string) (platformOnboarding
 	return op, nil
 }
 func (m *roomManager) saveOnboardingLocked(op platformOnboarding) error {
-	if !validOnboarding(op) {
+	if !m.validOnboarding(op) {
 		return ErrInvalid
 	}
 	if err := m.store.check(true); err != nil {
@@ -844,7 +844,7 @@ func (m *roomManager) onboardingOperationsLocked() ([]platformOnboarding, error)
 		if err := readSnapshot(m.onboardingPath(id), &op, 128<<10); err != nil {
 			return nil, err
 		}
-		if op.ID != id || !validOnboarding(op) {
+		if op.ID != id || !m.validOnboarding(op) {
 			return nil, ErrInvalid
 		}
 		ops = append(ops, op)
@@ -852,11 +852,11 @@ func (m *roomManager) onboardingOperationsLocked() ([]platformOnboarding, error)
 	return ops, nil
 }
 
-func validOnboarding(op platformOnboarding) bool {
+func (m *roomManager) validOnboarding(op platformOnboarding) bool {
 	if (op.Schema != 1 && op.Schema != 2 && op.Schema != 3 && op.Schema != platformOnboardingSchema) || !tool.OpaqueID(op.ID) || !tool.OpaqueID(op.PlatformID) || !validText(op.Owner) || op.Generation != "" && !tool.OpaqueID(op.Generation) || op.Account != (platform.AccountIdentity{}) && !op.Account.Valid() {
 		return false
 	}
-	if _, ok := defaultPlatformCatalog().Types().LookupType(op.Input.Provider); !ok {
+	if _, ok := m.platformCatalog.Types().LookupType(op.Input.Provider); !ok {
 		return false
 	}
 	if op.Input.Backfill != nil {

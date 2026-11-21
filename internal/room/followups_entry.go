@@ -149,12 +149,12 @@ func (s *service) memberFollowups(ctx context.Context, req apiRequest, path stri
 		}
 		if req.Caller.Kind == "agent" {
 			if event.Location != nil {
-				return projectInputSource(event, entry), nil
+				return s.store.projectInputSource(event, entry), nil
 			}
 			if entry == nil {
-				return projectSource(event, InboxEntry{}), nil
+				return s.store.projectSource(event, InboxEntry{}), nil
 			}
-			return projectSource(event, *entry), nil
+			return s.store.projectSource(event, *entry), nil
 		}
 		status := "retained"
 		if entry == nil {
@@ -274,9 +274,9 @@ func (s *service) memberFollowups(ctx context.Context, req apiRequest, path stri
 		entry, err := s.store.businessInputLocked(id, link.Seq, link.Location)
 		s.store.mu.Unlock()
 		if link.Location != nil {
-			return projectInputSource(event, &entry), err
+			return s.store.projectInputSource(event, &entry), err
 		}
-		return projectSource(event, entry), err
+		return s.store.projectSource(event, entry), err
 	case "/v1/matters/ensure":
 		unit, reused, err := s.store.ensureInputDiscussion(id, q.Seq, q.SourceRef, q.TurnNumber, q.TargetRef)
 		if err != nil {

@@ -78,11 +78,11 @@ func (s *inputSession) preparePlatformPage(ctx context.Context, a inputstream.Re
 		if err != nil {
 			return err
 		}
-		view := projectStreamNotification(projectInboxEntry(entry, sourceSummary(link)))
+		view := projectStreamNotification(s.storage.store.projectInboxEntry(entry, sourceSummary(link)))
 		page.notifications = append(page.notifications, view)
 		if link.ObjectRef != "" && !seen[link.ObjectRef] {
 			u, err := s.storage.store.readFollowup(s.storage.id, link.ObjectRef, referenceDigest("unit_", link.ObjectRef))
-			if inboxContextOnly(entry) && errors.Is(err, os.ErrNotExist) {
+			if s.storage.store.inboxContextOnly(entry) && errors.Is(err, os.ErrNotExist) {
 				continue
 			}
 			if err != nil {

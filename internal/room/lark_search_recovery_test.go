@@ -23,7 +23,7 @@ func offlineSearchManager(t *testing.T, root string) *roomManager {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := &Store{dir: root, lock: lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}
+	store := &Store{catalog: defaultPlatformCatalog(), dir: root, lock: lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}
 	t.Cleanup(func() { _ = store.Close() })
 	m := &roomManager{store: store}
 	m.initPlatform()

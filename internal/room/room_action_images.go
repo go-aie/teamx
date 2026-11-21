@@ -10,6 +10,7 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/go-aie/teamx/internal/app/platformtools"
 	"github.com/go-aie/teamx/internal/platform/attachment"
 )
 
@@ -24,10 +25,7 @@ type roomActionContext struct {
 	Input string // immutable original JSON, for per-call strategy selection only
 }
 
-type roomActionImageRef struct {
-	MessageSeq   uint64 `json:"message_seq"`
-	AttachmentID string `json:"attachment_id"`
-}
+type roomActionImageRef = platformtools.ImageRef
 type roomActionImage struct {
 	Ref        roomActionImageRef
 	Attachment RoomAttachment
@@ -271,4 +269,27 @@ func (l *roomActionImages) Close() {
 	for i := range l.images {
 		l.images[i].Data = nil
 	}
+}
+
+// Bytes projects only the material required by platform adapters. Pin ownership
+// and execution checks remain private to the Room publication owner.
+func (l *roomActionImages) Bytes() []platformtools.Image {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	if l.closed {
+		return nil
+	}
+	result := make([]platformtools.Image, len(l.images))
+	for i, img := range l.images {
+		result[i] = platformtools.Image{Data: img.Data, MIME: img.Attachment.MIMEType, SHA256: img.SHA256}
+	}
+	return result
+}
+
+func (s *service) prepareRoomActionImageLease(ctx context.Context, refs []platformtools.ImageRef, guard func(context.Context) error) (platformtools.ImageLease, error) {
+	lease, err := s.prepareRoomActionImages(ctx, refs, guard)
+	if err != nil {
+		return nil, err
+	}
+	return lease, nil
 }

@@ -94,7 +94,7 @@ type upgradedEvent struct {
 }
 
 func (u *inputUpgrade) convert() error {
-	old := &Store{dir: filepath.Join(u.backup(), "room"), roomID: u.store.roomID, lock: u.store.lock}
+	old := &Store{catalog: u.store.catalog, notificationAdapters: u.store.notificationAdapters, dir: filepath.Join(u.backup(), "room"), roomID: u.store.roomID, lock: u.store.lock}
 	state, err := old.loadRoom()
 	if err != nil {
 		return err
@@ -113,7 +113,7 @@ func (u *inputUpgrade) convert() error {
 	original := state
 	state.Messages = slices.Clone(original.Messages)
 	state.ReadProofs = nil
-	next := &Store{dir: filepath.Join(u.stage(), "room"), roomID: u.store.roomID, lock: u.store.lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}
+	next := &Store{catalog: u.store.catalog, notificationAdapters: u.store.notificationAdapters, dir: filepath.Join(u.stage(), "room"), roomID: u.store.roomID, lock: u.store.lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}
 	// These files are copied only to validate the staged graph. Unchanged
 	// business snapshots remain byte-identical when the new format is published.
 	for name, want := range u.progress.Source {
@@ -449,7 +449,7 @@ func appendUpgradedEvents(room *RoomSnapshot, queues [][]legacyInputEvent, notic
 }
 
 func convertLegacyPlatform(old, next *Store, id MemberIdentity, a *AgentInbox, entries map[uint64]InboxEntry) error {
-	codecs, err := inputStorageCodecs(defaultNotificationAdapters(nil), old.notificationCapabilities)
+	codecs, err := inputStorageCodecs(notificationAdaptersFor(nil, old.catalog), old.notificationCapabilities)
 	if err != nil {
 		return err
 	}

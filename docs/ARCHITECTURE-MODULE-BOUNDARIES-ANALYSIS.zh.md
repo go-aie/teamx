@@ -4,7 +4,7 @@
 
 最初分析仅记录现有实现，不修改运行代码；后续已实施单元以各自记录和下述状态为准，其余建议不视为已实施。最初分析时 History 尚在开发中；现已根据完成后的源码和 H1–H4 记录刷新第 5 节与后续重构范围，删除“正常入口尚未注册”等过时判断。目录规模和首次测试结果保留为最初采样，不代表当前固定提交快照，也不宣称重新完成全部架构审计。
 
-补充说明：第 10、11 节是基于上述分析新增的目标结构与分阶段实施建议。R0 的基线与边界清单已完成，见[基线记录](implementation/architecture/baseline.zh.md)；R3a 精确入口解析也已完成，见[实施记录](implementation/architecture/platform-entries.zh.md)。R1a 快照 writer 与健康围栏已完成，见[实施记录](implementation/architecture/persistence-writer.zh.md)。R5a 调度器也已完成，见[实施记录](implementation/architecture/turn-scheduler.zh.md)。R3b 静态能力装配已完成，见[实施记录](implementation/architecture/platform-assembly.zh.md)。R6a.1 在途调用登记与结清已完成，见[实施记录](implementation/architecture/platform-calls.zh.md)。R5b.1 后端依赖收敛已完成，见[实施记录](implementation/architecture/backend-lifecycle.zh.md)。R1b、R2、R4、R5b.2、R6a.2、R6b、R7–R8 尚未实施。History 功能与正常代码入口已完成；R2 是尚未实施的结构重构，不能将两者混淆。后续实施使用 R0 的当前基线，不按早期中间状态覆盖或退回现有能力。
+补充说明：第 10、11 节是基于上述分析新增的目标结构与分阶段实施建议。R0 的基线与边界清单已完成，见[基线记录](implementation/architecture/baseline.zh.md)；R3a 精确入口解析也已完成，见[实施记录](implementation/architecture/platform-entries.zh.md)。R1a 快照 writer 与健康围栏已完成，见[实施记录](implementation/architecture/persistence-writer.zh.md)。R5a 调度器也已完成，见[实施记录](implementation/architecture/turn-scheduler.zh.md)。R3b 静态能力装配已完成，见[实施记录](implementation/architecture/platform-assembly.zh.md)。R6a.1 在途调用登记与结清已完成，见[实施记录](implementation/architecture/platform-calls.zh.md)。R5b.1 后端依赖收敛已完成，见[实施记录](implementation/architecture/backend-lifecycle.zh.md)。R6a.2 的飞书内置 help／read／actions 调用族已随 [P2t](implementation/architecture/tool-runtime.zh.md)完成，其余调用族仍未实施。R1b、R2、R4、R5b.2、R6b、R7–R8 尚未实施。History 功能与正常代码入口已完成；R2 是尚未实施的结构重构，不能将两者混淆。后续实施使用 R0 的当前基线，不按早期中间状态覆盖或退回现有能力。
 
 ## 实施定位：第一阶段与后续方案
 
@@ -21,6 +21,10 @@
 | 装配与构建 | 显式选择现有默认实现；普通构建与默认行为保持 | Gordis 的受限启动／关闭装配、扩展选择、生成入口及按需编译；不做动态热替换或 RPC |
 
 第一阶段不引入 Gordis 依赖、公共插件 SDK、Profile、RPC、数据库或新 Provider，也不以第二实现完成作为验收条件。后续接口的公开化与可选实现包拆分由第二阶段完成；当前只为真实调用建立必要合同，不预建空目录或模拟完整插件系统。具体交接要求见第 10.5 节。
+
+**2026-11-20 后续实施建议：** R0、R3a、R1a、R5a、R3b、R6a.1、R5b.1 已完成，近期优先目标调整为平台通知／工具的扩展入口与 DSH 工厂边界，不再默认连续实施全部剩余 R 单元。第二阶段 P0 已完成，见[分支交接记录](implementation/architecture/plugin-handoff.zh.md)：平台可进入 P1a，DSH 跨包前须先收敛记录中的宿主操作；其他后续单元仍未实施。后续按[推荐单元与顺序](GORDIS-PLUGIN-AND-SELECTIVE-BUILD-PLAN.zh.md#91-当前最推荐的实施顺序)分别实施。缺少合同的部分先限定为具体 R6a.2／R6b 或其他 R 准备单元，接通并验收后再继续，不能凭 P0 记录宣称已具备全部插件化前置。
+
+**2026-11-21 复核：** P0 保留已完成，下一项仍为 **P1a → P1b → P2n → P2t**，不增加新阶段或要求先补全剩余 R。当前 Room 附件、飞书／GitLab 正式图文、Agent 动作帮助／回执及测试夹具已更新，须作为后续实施的行为基线；P1a 保留新能力，P1b 区分独立工具与平台贡献，P2n 保留来源与回流分类，P2t 覆盖原图保护及完整动作结清。具体增补与本次验证见[第二阶段第 9.0 节](GORDIS-PLUGIN-AND-SELECTIVE-BUILD-PLAN.zh.md#90-2026-11-21-源码复核保留顺序补充当前行为基线)。历史 P0 采样及源码哈希不覆盖，后续各单元在自己的实施单记录开工差异。
 
 ## 1. 总体判断
 
@@ -705,7 +709,7 @@ R3b 可使用应用装配侧的一个普通静态汇集包或装配文件，不�
 
 第一阶段交付记录同时列出：仍固定识别 DSH 的适配、仍依赖具体 Repository 的方法、Provider 专用配置／展示入口，以及缺少 codec 时的现有打开行为。具体 Repository 的保留只是现状记录，不是第二阶段必须消除的缺陷。保持这些已知限制，不以“为插件化准备”为由改变现有数据恢复或隐藏失败。
 
-全量第一阶段完成与第二阶段各分支进入条件分别判定：默认先完成本文计划再开展第二阶段；若第一阶段另有暂缓条目，仅当不在所选扩展分支的调用／关闭／恢复链上时，才可依据明确的已验证合同进入该分支，不能把尚未收敛的 owner 迁移夹带到插件接入中。第一阶段首批完成不等于具备完整插件化前置。
+全量第一阶段完成与第二阶段各分支进入条件分别判定。当前优先推进第二阶段的限定切片，由 P0 逐项核对调用、恢复、撤权和关闭链：未迁移的 owner 可以继续通过已验证的命令／查询合同提供能力，单纯目录未迁不构成阻断；仍需直接修改其内部字段或重新设计证明协议时，则先完成相应 R 准备单元。P0 必须记录每个暂缓项的原 owner、适配及验证证据，不能仅凭“与插件无关”略过。整体目标目录尚未完成，第一阶段首批完成也不等于具备完整插件化前置。
 
 ## 11. 分阶段实施建议
 
@@ -713,7 +717,7 @@ R3b 可使用应用装配侧的一个普通静态汇集包或装配文件，不�
 
 复核结论：按能力逐步迁出的方向合理，但原 R1、R3 混合了可分开交付的职责，R4、R5b、R6、R7、R8 的部分条目仍是工作包，不能视作同样大小的一次实施。下面区分可直接开展的单元与需要进一步限定的工作线。
 
-推荐首批顺序为 **R0 → R3a → R1a**：先确认基线，再抽精确平台入口解析，最后抽快照 writer 与健康围栏。首批即可得到两个实际使用的新包，不要求先做 History 分包或迁完全部持久设施。首批之后默认优先 **R5a 调度器**，其职责较集中；**R2 History 结构抽离** 在材料／执行适配足够窄时开展，也可因当前维护需要提前选择。History 功能完成这一前置现已满足，不再等待 H1–H4 开发；R5a 不是 R2 的硬前置。R 编号用于标识职责，不代表全局串行顺序。
+此前推荐的首批 **R0 → R3a → R1a**、其后的 **R5a 调度器**、**R3b 静态装配**，以及追加的 **R6a.1／R5b.1** 均已完成。当前下一步推荐按第 11.1.1 节交接，不再将已完成顺序作为待办。**R2 History 结构抽离** 继续按实际维护需要选择；H1–H4 功能前置已满足，剩余条件是材料／执行窄适配能成立，R5a 不是 R2 的硬前置。R 编号用于标识职责，不代表全局串行顺序。
 
 “独立开展”是指在列明的前置条件满足后，一个阶段可以单独实现、测试、合入和停止，不依赖尚未合入的后续代码。它不表示所有阶段可以同时修改相同文件。
 
@@ -735,6 +739,22 @@ R3b 可使用应用装配侧的一个普通静态汇集包或装配文件，不�
 R4、R5、R6 是三条有局部前置条件的工作线，不是相互强制等待的长串。它们在旧 `room` 包的装配点容易发生文件冲突，同一时间优先迁移一条；并行开发需先隔离调用点和共同合同。
 
 首批以外的阶段实行进入条件：先列出该单元的所有可变字段、唯一 owner、调用点、锁和关闭责任。涉及其他 owner 时只改变调用适配；若必须同时转移第二个 owner、重做持久证明协议或新建一套材料／授权服务，就应重新拆分该单元，不能靠扩大“窄接口”名义带入整套依赖。
+
+### 11.1.1 当前推荐、条件性补齐与暂缓项
+
+本表用于选择下一项实施；R0–R8 的完整职责清单保留，不将暂缓项删除或标为完成。后续详细范围与验收只维护在第二阶段第 9 节，避免两份文档各有一套顺序。
+
+| 分类 | 单元 | 当前安排 |
+| --- | --- | --- |
+| 下一项 | P0 基线与分支交接 | 核对当前源码及已完成记录，分别判断平台与 Agent 切片的真实进入条件；不修改运行配置 |
+| 优先实施 | P1a → P1b → P2n → P2t | 分离公共合同与内置工厂、打通外部工具装配，再迁飞书通知运行绑定和一个完整内置工具调用族 |
+| Agent 推荐分支 | P4a → P4b | 收敛 DSH 工厂与跨包生命周期合同，再验证能力、恢复、轮换和输入持久证明；不新增第二后端 |
+| 按阻碍补齐 | 选定的 R6a.2／R6b 操作 | P2t 承接飞书内置工具调用族的 R6a.2；P2n／P2r 只承接所选通知／配置操作的必要 R6b 合同。不能据此把整条 R6 标为完成，也不重复实施已完成的合同 |
+| 平台完整闭环 | P2r → P3 → P5a → P5b | 清理所选 Provider 的其余依赖，再接 Gordis 服务生命周期、选择性构建及资源／数据能力校验；每项独立验收 |
+| 条件性补齐 | R5b.2 或具体 R4 单元 | 只有所选工厂仍依赖整个 service／Store，或输入生命周期合同无法成立时，才先收敛对应依赖；不自动展开完整 owner 迁移 |
+| 暂缓 | R1b、R2、完整 R4、其余 R6、全量 R7／R8 | 由实际维护需求或 P0 的具体阻断触发。历史读取、存储和业务 owner 的原行为继续保留 |
+
+完成推荐切片只能报告相应扩展入口、服务生命周期或构建组合已验，不能报告第一阶段目标目录全量完成。第二阶段 P0 还需刷新当前测试结果：以最新源码和实施记录为准，不能继续沿用早期 Calendar／vet 失败作为当前固定结论，也不能用专项通过替代未通过的全仓检查。
 
 ### 11.2 所有阶段共用的约束与验收
 
@@ -924,6 +944,8 @@ R5b 细分为两个独立交付：**R5b.1** 在原包收敛后端、检查点、
 
 **R6a——调用准入与结清。** 在 R3a 基础上迁移绑定核验、账号快照、调用登记、取消和等待。通知附件、工具 run、原生读取和受管动作依次接入同一生命周期设施；每个调用族作为完整小切片迁移，不建立各自独立的授权缓存。
 
+**R6a.2 进展：** 飞书内置 help／read／actions 调用族已随 [P2t](implementation/architecture/tool-runtime.zh.md)接通应用运行边界，继续复用 R6a.1 Calls 与原准入／动作／附件 owner；其余调用族及整个 R6 尚未完成。
+
 **R6a.1 在途调用登记与结清。状态：已完成。** 唯一登记 owner、全部现有调用族接入、锁顺序和验证见[实施记录](implementation/architecture/platform-calls.zh.md)。本单元范围为：只迁登记表、取消信号、完成回执及等待，所有已有调用族复用同一实例；原准入和绑定变更仍在旧 manager 的门槛内运行。新登记组件持锁时不回调 manager。再交付 **R6a.2 某一个调用族的准入编排**，之后逐族迁入；每批保留该族从核验到结果结清的完整生命周期，不用一次搬走工具、附件、原生读取和动作四套入口。
 
 拆分时保留准入、最终证据复核与绑定变更之间的既有同步关系。锁的封装随状态所有权一起迁移，取消只发信号，等待仍在准入锁之外。不能把原来一次受控操作改为“无锁先检查、稍后任意执行”。验证多账号、成员移除、绑定变更、凭据轮换、在途附件／动作、超时和关闭；不顺带优化锁粒度。
@@ -987,7 +1009,7 @@ R8c 的进入条件还包括：运行实例目录、忙碌标记与操作进度�
 
 ## 12. 验证记录与结论边界
 
-第 12.1、12.2 节保留首次分析时的验证记录，第 12.3 节记录 History 完成后的状态复核与专项测试。R0 的当前验证和失败证据见[独立实施记录](implementation/architecture/baseline.zh.md)；R3a 的迁移和本轮验证另见[精确入口解析记录](implementation/architecture/platform-entries.zh.md)；R1a 的迁移与健康／关闭验证见[快照 writer 记录](implementation/architecture/persistence-writer.zh.md)；R3b 的装配与验证见[静态装配记录](implementation/architecture/platform-assembly.zh.md)；R6a.1 的登记与结清见[在途调用记录](implementation/architecture/platform-calls.zh.md)。R5b.1 的后端依赖收敛见[生命周期记录](implementation/architecture/backend-lifecycle.zh.md)。R1b、R2、R4、R5b.2、R6a.2、R6b、R7–R8 仍未实施。这些验证不表示完整目标目录或全部业务职责迁移已经实现。
+第 12.1、12.2 节保留首次分析时的验证记录，第 12.3 节记录 History 完成后的状态复核与专项测试。R0 的当前验证和失败证据见[独立实施记录](implementation/architecture/baseline.zh.md)；R3a 的迁移和本轮验证另见[精确入口解析记录](implementation/architecture/platform-entries.zh.md)；R1a 的迁移与健康／关闭验证见[快照 writer 记录](implementation/architecture/persistence-writer.zh.md)；R3b 的装配与验证见[静态装配记录](implementation/architecture/platform-assembly.zh.md)；R6a.1 的登记与结清见[在途调用记录](implementation/architecture/platform-calls.zh.md)。R5b.1 的后端依赖收敛见[生命周期记录](implementation/architecture/backend-lifecycle.zh.md)。R6a.2 仅飞书内置调用族随 [P2t](implementation/architecture/tool-runtime.zh.md)完成；其他调用族及 R1b、R2、R4、R5b.2、R6b、R7–R8 仍未实施。这些验证不表示完整目标目录或全部业务职责迁移已经实现。
 
 ### 12.1 首次分析已执行的验证
 

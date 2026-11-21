@@ -616,7 +616,7 @@ func (s *inputSession) historyEntry(v historyStream, l inputstream.Location, roo
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	entry := projectStreamNotification(projectInboxEntry(e, source))
+	entry := projectStreamNotification(s.storage.store.projectInboxEntry(e, source))
 	return projectInputBody(inputPageContent{notifications: []inputStreamNotificationEntry{entry}}).Entries[0], nil
 }
 

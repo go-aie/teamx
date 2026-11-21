@@ -25,7 +25,10 @@ func (s *Store) notificationCapabilities(provider string) notification.Capabilit
 	if s.notificationAdapters != nil {
 		return s.notificationAdapters(provider)
 	}
-	return notificationCapabilities(provider)
+	if s.catalog != nil {
+		return s.catalog.NotificationCapabilities(provider)
+	}
+	return notification.Capabilities{}
 }
 
 func admissionPath(s *Store, cap *notification.AdmissionCapability, source platform.SourceRef) (string, error) {

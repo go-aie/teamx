@@ -6,42 +6,42 @@ import (
 	"path/filepath"
 
 	"github.com/go-aie/teamx/internal/app/platforms"
-	"github.com/go-aie/teamx/internal/platform/lark"
 	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
 // Built once at service composition. Each source owns its codec, query scope
 // and optional cross-subscription recovery check; no dynamic plugin loader.
 // Admit and CheckLoaded run with manager.mu held.
-type notificationAdapter struct {
-	Source      notification.Source
-	Admit       func(context.Context, notification.State) (notification.Scope, error)
-	CheckLoaded func(RoomIdentity) error
-}
+type notificationAdapter = notification.Runtime
 
-func defaultNotificationAdapters(m *roomManager) map[notification.SourceID]notificationAdapter {
-	catalog := defaultPlatformCatalog()
-	if m != nil && m.platformCatalog != nil {
-		catalog = m.platformCatalog
+func notificationAdaptersFor(m *roomManager, catalog *platforms.Catalog) map[notification.SourceID]notificationAdapter {
+	if catalog == nil {
+		catalog = emptyPlatformCatalog()
 	}
-	bindings := platforms.SourceBindings{GitLabEvents: m.preparePlatformEvents, GitLabTodos: m.preparePlatformTodos, LarkReader: func(q lark.QueryScope) (lark.MessageReader, error) {
-		return m.larkClients.New(q.Profile)
-	}}
 	adapters := make(map[notification.SourceID]notificationAdapter)
+	bindings := notificationRuntimeBindings(m)
 	for _, definition := range catalog.Definitions() {
 		for _, source := range definition.Sources {
-			var adapter notificationAdapter
-			switch source.ID.Provider {
-			case "gitlab":
-				adapter = m.gitlabNotificationLifecycle(source.ID)
-			case "lark":
-				adapter = m.larkNotificationLifecycle()
-			default:
-				panic("notification lifecycle adapter missing: " + source.ID.Provider)
+			unbound := source.New()
+			// Offline input codec selection needs only the static source. It must
+			// not bind a runtime host or start execution dependencies.
+			if m == nil {
+				adapters[source.ID] = notificationAdapter{Source: unbound}
+				continue
 			}
-			adapter.Source = source.Bind(bindings)
-			if adapter.Source == nil || adapter.Source.ID() != source.ID {
+			bind := source.Bind
+			if override := bindings[source.ID]; override != nil {
+				bind = override(source)
+			}
+			if bind == nil {
+				panic("notification runtime binding missing: " + source.ID.Provider + "/" + source.ID.Channel)
+			}
+			adapter, err := bind(unbound, notificationRuntimeHost{m, source.ID})
+			if err != nil || adapter.Source == nil || adapter.Source.ID() != source.ID || adapter.Source.Schema() != unbound.Schema() {
 				panic("notification source binding mismatch")
+			}
+			if adapter.Admit == nil {
+				panic("notification admission missing: " + source.ID.Provider + "/" + source.ID.Channel)
 			}
 			adapters[source.ID] = adapter
 		}
@@ -53,7 +53,7 @@ func (m *roomManager) initPlatformNotifications() {
 	m.gitlabNotifications = make(map[RoomIdentity]map[notificationScope]gitlabNotificationRecord)
 	m.gitlabConfiguring = make(map[platformNotificationKey]bool)
 	if m.notificationAdapters == nil {
-		m.notificationAdapters = defaultNotificationAdapters(m)
+		m.notificationAdapters = notificationAdaptersFor(m, m.platformCatalog)
 	}
 	sources := make([]notification.Source, 0, len(m.notificationAdapters))
 	for _, adapter := range m.notificationAdapters {

@@ -58,7 +58,7 @@ func (m *roomManager) checkClosedWorkspaceSettledLocked(entry roomIndexEntry) er
 			return ErrBusy
 		}
 	}
-	store, err := OpenStore(m.roomDir(id), id)
+	store, err := openStoreWithCatalog(m.roomDir(id), id, nil, m.platformCatalog)
 	if err != nil {
 		return fmt.Errorf("previous Room settlement: %w", err)
 	}
@@ -225,6 +225,7 @@ func (m *roomManager) workspaceActivationConfig(id RoomIdentity, applying string
 		profiles[member.Runner.Profile] = p
 	}
 	config := m.config
+	config.platformCatalog = m.platformCatalog
 	config.calendars = m.calendars
 	config.checkWorkspace = func(profile string) error {
 		for _, member := range saved.Members {

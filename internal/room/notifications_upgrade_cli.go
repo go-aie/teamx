@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/go-aie/teamx/internal/app/platforms"
 	"io"
 	"os"
 	"path/filepath"
@@ -14,7 +15,7 @@ import (
 
 // These explicit offline commands convert local notification settings/scopes.
 // They never start collectors, query a provider, or change progress and receipts.
-func runNotificationsUpgrade(args []string, stdout, stderr io.Writer) error {
+func runNotificationsUpgradeWithCatalog(args []string, stdout, stderr io.Writer, catalog *platforms.Catalog) error {
 	if len(args) == 0 || (args[0] != "upgrade" && args[0] != "upgrade-lark") {
 		return fmt.Errorf("usage: teamx notifications upgrade|upgrade-lark --rooms-dir ROOT (service must be stopped)")
 	}
@@ -39,9 +40,9 @@ func runNotificationsUpgrade(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	store := &Store{dir: abs, lock: lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}
+	store := &Store{catalog: catalog, dir: abs, lock: lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}
 	defer store.Close()
-	m := &roomManager{store: store}
+	m := &roomManager{store: store, platformCatalog: catalog}
 	m.initPlatform()
 	if err := readSnapshot(m.indexPath(), &m.index, maxRoomsFileBytes); err != nil {
 		return err
@@ -52,11 +53,20 @@ func runNotificationsUpgrade(args []string, stdout, stderr io.Writer) error {
 	if _, err := m.platforms.Load(); err != nil {
 		return err
 	}
+	if args[0] == "upgrade-lark" {
+		if _, ok := m.notificationAdapters[lark.MessagesSourceID]; !ok {
+			return fmt.Errorf("%w: lark notification capability not selected", ErrRequest)
+		}
+	}
 	count, err := m.upgradeMemberNotificationsLocked()
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(stdout, "Notification scope format: GitLab settings schema %d, sources schema 3; Lark sources schema %d; upgraded %d files. Subscription IDs, progress, frozen routes and receipts are preserved. Private .vN.bak backups and %s support recovery. After new deliveries, recover the latest complete state with a compatible binary; do not replace it with a pre-upgrade backup.\n", gitlabNotificationSchema, m.notificationAdapters[lark.MessagesSourceID].Source.Schema(), count, m.notificationUpgradeJournal())
+	larkSchema := 0
+	if adapter, ok := m.notificationAdapters[lark.MessagesSourceID]; ok {
+		larkSchema = adapter.Source.Schema()
+	}
+	_, err = fmt.Fprintf(stdout, "Notification scope format: GitLab settings schema %d, sources schema 3; Lark sources schema %d; upgraded %d files. Subscription IDs, progress, frozen routes and receipts are preserved. Private .vN.bak backups and %s support recovery. After new deliveries, recover the latest complete state with a compatible binary; do not replace it with a pre-upgrade backup.\n", gitlabNotificationSchema, larkSchema, count, m.notificationUpgradeJournal())
 	return err
 }
 

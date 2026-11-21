@@ -291,7 +291,7 @@ func (s *Store) loadFollowupEventLocked(e InboxEntry) (followupEvent, error) {
 	if err := readSnapshot(s.inputEventPath(e), &r, followupBytes); err != nil {
 		return r, err
 	}
-	contextOnly := inboxContextOnly(e)
+	contextOnly := s.inboxContextOnly(e)
 	if r.ContextOnly && !contextOnly {
 		return r, ErrInvalid
 	}
@@ -503,13 +503,13 @@ func (s *Store) recordInputResolution(id MemberIdentity, seq uint64, location *i
 		}
 	}
 	link := followupEvent{followupHeader: followupHeader{followupSchema, id}, Seq: seq, DeliveryID: e.Item.DeliveryID,
-		Location: e.Location, SourceRef: inputSourceRef(e), Source: e.Item.Source, Resolution: r, Access: access, Revision: expected + 1, ContextOnly: inboxContextOnly(e)}
+		Location: e.Location, SourceRef: inputSourceRef(e), Source: e.Item.Source, Resolution: r, Access: access, Revision: expected + 1, ContextOnly: s.inboxContextOnly(e)}
 	if r.ObjectVerified {
 		object, err := s.saveTargetLocked(id, objectIdentity(*r.Target))
 		if err != nil {
 			return link, err
 		}
-		if !inboxContextOnly(e) {
+		if !s.inboxContextOnly(e) {
 			if _, err := s.ensureUnitLocked(id, object, turn); err != nil {
 				return link, err
 			}
@@ -572,7 +572,7 @@ func (s *Store) ensureInputDiscussion(id MemberIdentity, seq uint64, sourceRef s
 	}
 	_, err = s.loadUnitLocked(id, target.ObjectRef, referenceDigest("unit_", target.Ref))
 	reused := err == nil
-	if inboxContextOnly(e) && errors.Is(err, os.ErrNotExist) {
+	if s.inboxContextOnly(e) && errors.Is(err, os.ErrNotExist) {
 		return followupUnit{}, false, conflictReason("seq", "own messages are progress context and cannot open new work", "Use an incoming source to open work; attach this message as progress evidence.")
 	}
 	if err != nil && !errors.Is(err, os.ErrNotExist) {

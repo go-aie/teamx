@@ -31,7 +31,7 @@ func (s *Store) inboxMessageOriginsLocked(entries []InboxEntry) (map[inputstream
 	origins := map[inputstream.Location]inboxMessageOrigin{}
 	views := map[inputstream.Location]notification.View{}
 	for _, e := range entries {
-		v := projectInboxEntry(e, followupSourceSummary{}).Item
+		v := s.projectInboxEntry(e, followupSourceSummary{}).Item
 		if v.ContextOnly {
 			origins[inboxEntryPosition(e)] = inboxMessageOrigin{Kind: "account"}
 			views[inboxEntryPosition(e)] = v

@@ -3,78 +3,110 @@ package room
 import (
 	"context"
 	"encoding/json"
-	"flag"
-	"fmt"
-	"io"
+	"errors"
 	"net/http"
+
+	"github.com/go-aie/teamx/internal/app/platformtools"
 )
 
-// Composition registers bounded dispatchers beside the existing reference
-// adapters. They share platform entries, bindings and call admission.
-var builtinToolDispatchers = map[string]func(*roomManager, http.ResponseWriter, *http.Request, toolsRequest){
-	"lark": (*roomManager).serveBuiltinTool,
+// This adapter captures identity once; all mutable state remains with its
+// original owner. No HTTP writer/request enters the application runtime.
+type builtinToolHost struct {
+	manager *roomManager
+	request toolsRequest
 }
 
-func builtinToolHelp(entry string) string {
-	return fmt.Sprintf("Usage:\n  teamx tools run %s read --object REF --target REF [--scope content|context] [--cursor CURSOR]\n  teamx tools run %s actions resolve --request JSON\n  teamx tools run %s actions execute --request JSON\nUse the same entry with actions resolve/execute --help for parameters and examples. Query receipts with teamx actions read --id ID (read-only, including during Session recovery). Arbitrary CLI commands and authentication are unavailable.\n", entry, entry, entry)
-}
-
-func builtinActionHelp(args []string) (string, bool) {
-	if len(args) == 2 && args[0] == "actions" && (args[1] == "--help" || args[1] == "-h") {
-		return "", true
+func (h builtinToolHost) Admit(ctx context.Context, help bool) (context.Context, func(), error) {
+	m := h.manager
+	m.mu.Lock()
+	_, call, ctx, err := m.preparePlatformCallLocked(ctx, h.request, help)
+	m.mu.Unlock()
+	if err != nil {
+		return nil, nil, err
 	}
-	if len(args) == 3 && args[0] == "actions" && (args[1] == "resolve" || args[1] == "execute") && (args[2] == "--help" || args[2] == "-h") {
-		return args[1], true
+	return ctx, func() { m.finishPlatformCall(call) }, nil
+}
+func (h builtinToolHost) ActionHelp(entry, op string) string { return builtinActionHelpText(entry, op) }
+func (h builtinToolHost) Read(ctx context.Context, q platformtools.ReadRequest) (json.RawMessage, error) {
+	result, err := h.manager.readLark(ctx, larkReadRequest{ServiceInfo: h.request.ServiceInfo, Caller: h.request.Caller, Target: &q})
+	if err != nil {
+		return nil, err
 	}
-	return "", false
+	return json.Marshal(result)
+}
+func (h builtinToolHost) Resolve(ctx context.Context, body json.RawMessage) (json.RawMessage, error) {
+	var q actionResolveRequest
+	if err := decodeRequestJSON(string(body), &q); err != nil {
+		return nil, err
+	}
+	result, err := h.manager.resolveActionTarget(ctx, apiRequest{ServiceInfo: h.request.ServiceInfo, Caller: h.request.Caller}, q)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(projectActionTarget(result))
+}
+func (h builtinToolHost) Execute(ctx context.Context, body json.RawMessage) (json.RawMessage, error) {
+	var q agentActionRequest
+	if err := decodeRequestJSON(string(body), &q); err != nil {
+		return nil, err
+	}
+	m, req := h.manager, h.request
+	m.mu.Lock()
+	svc, _ := m.runtimeServiceLocked(req.RoomIdentity)
+	m.mu.Unlock()
+	if svc == nil {
+		return nil, ErrIdentity
+	}
+	id := MemberIdentity{RoomIdentity: req.RoomIdentity, AgentID: req.Caller.ID, MembershipID: req.Caller.MembershipID}
+	action, err := svc.store.agentAction(id, q)
+	if err != nil {
+		return nil, err
+	}
+	result, err := m.executeReferenceAction(ctx, apiRequest{ServiceInfo: req.ServiceInfo, Caller: req.Caller}, action)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(projectActionReceipt(result, action))
 }
 
-// Only registered built-in operations enter here. In particular, this is never
-// a pass-through to lark-cli and cannot switch a profile or its global login.
-func (m *roomManager) serveBuiltinTool(w http.ResponseWriter, r *http.Request, req toolsRequest) {
+func toolRuntimeError(err error) error {
+	var d *platformtools.Diagnostic
+	if errors.As(err, &d) {
+		if d.Field == "" && d.Message == "invalid request" {
+			return ErrRequest
+		}
+		if d.Conflict {
+			return conflictReason(d.Field, d.Message, d.Hint)
+		}
+		return invalidField(d.Field, d.Message)
+	}
+	return err
+}
+
+// Only framing and I/O cancellation live here. The prepared application call
+// settles after the last frame, so revocation and close still join slow output.
+func (m *roomManager) serveBuiltinTool(w http.ResponseWriter, r *http.Request, req toolsRequest, bind platformtools.Bind) {
 	if len(req.Args) > 4096 {
 		writeAPIError(w, ErrRequest)
 		return
 	}
-	help := len(req.Args) == 0 || len(req.Args) == 1 && (req.Args[0] == "help" || req.Args[0] == "--help" || req.Args[0] == "-h")
-	actionHelp, isActionHelp := builtinActionHelp(req.Args)
-	help = help || isActionHelp
-	if len(req.Args) == 2 && req.Args[0] == "read" && (req.Args[1] == "--help" || req.Args[1] == "-h") {
-		help = true
-	}
-	m.mu.Lock()
-	_, call, ctx, err := m.preparePlatformCallLocked(r.Context(), req, help)
-	m.mu.Unlock()
+	prepared, err := platformtools.Prepare(r.Context(), req.Tool, req.Args, bind, builtinToolHost{m, req})
 	if err != nil {
 		writeAPIError(w, err)
 		return
 	}
-	defer m.finishPlatformCall(call)
-	stopIO := watchToolIO(ctx, http.NewResponseController(w))
+	defer prepared.Close()
+	stopIO := watchToolIO(prepared.Context, http.NewResponseController(w))
 	defer stopIO()
-	var data []byte
-	if help {
-		data = []byte(builtinToolHelp(req.Tool))
-		if isActionHelp {
-			data = []byte(builtinActionHelpText(req.Tool, actionHelp))
+	data, err := prepared.Run()
+	if err != nil {
+		err = toolRuntimeError(err)
+		if len(req.Args) > 0 && req.Args[0] == "actions" {
+			writeAPIError(w, agentActionDiagnostic(err))
+		} else {
+			writeLarkReadError(w, err)
 		}
-	} else {
-		var result any
-		result, err = m.runBuiltinTool(ctx, req)
-		if err != nil {
-			if req.Args[0] == "actions" {
-				writeAPIError(w, agentActionDiagnostic(err))
-			} else {
-				writeLarkReadError(w, err)
-			}
-			return
-		}
-		data, err = json.Marshal(result)
-		if err != nil {
-			writeAPIError(w, err)
-			return
-		}
-		data = append(data, '\n')
+		return
 	}
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.Header().Set("Connection", "close")
@@ -86,67 +118,4 @@ func (m *roomManager) serveBuiltinTool(w http.ResponseWriter, r *http.Request, r
 		data = data[n:]
 	}
 	_ = json.NewEncoder(w).Encode(toolFrame{Stream: "exit", Code: 0})
-}
-
-func (m *roomManager) runBuiltinTool(ctx context.Context, req toolsRequest) (any, error) {
-	if len(req.Args) == 0 {
-		return nil, ErrRequest
-	}
-	switch req.Args[0] {
-	case "read":
-		var q larkTargetRequest
-		f := flag.NewFlagSet("read", flag.ContinueOnError)
-		f.SetOutput(io.Discard)
-		f.StringVar(&q.ObjectRef, "object", "", "object_ref")
-		f.StringVar(&q.TargetRef, "target", "", "target_ref")
-		f.StringVar(&q.Scope, "scope", "content", "content or context")
-		f.StringVar(&q.Cursor, "cursor", "", "continuation")
-		if f.Parse(req.Args[1:]) != nil || f.NArg() != 0 || !validOpaqueRef(q.ObjectRef, "ref_") || !validOpaqueRef(q.TargetRef, "ref_") || q.Scope != "content" && q.Scope != "context" {
-			return nil, ErrRequest
-		}
-		return m.readLark(ctx, larkReadRequest{ServiceInfo: req.ServiceInfo, Caller: req.Caller, Target: &q})
-	case "actions":
-		if len(req.Args) < 2 || req.Args[1] != "resolve" && req.Args[1] != "execute" {
-			return nil, invalidField("command", "expected actions resolve or actions execute; use actions --help")
-		}
-		f := flag.NewFlagSet("actions "+req.Args[1], flag.ContinueOnError)
-		f.SetOutput(io.Discard)
-		payload := f.String("request", "", "structured request")
-		_ = f.Bool("json", true, "JSON output")
-		if err := f.Parse(req.Args[2:]); err != nil {
-			return nil, invalidField("arguments", err.Error())
-		}
-		if f.NArg() != 0 {
-			return nil, invalidField("arguments", "unexpected positional arguments; use --help")
-		}
-		api := apiRequest{ServiceInfo: req.ServiceInfo, Caller: req.Caller}
-		switch req.Args[1] {
-		case "resolve":
-			var q actionResolveRequest
-			if err := decodeRequestJSON(*payload, &q); err != nil {
-				return nil, err
-			}
-			v, err := m.resolveActionTarget(ctx, api, q)
-			return projectActionTarget(v), err
-		case "execute":
-			var q agentActionRequest
-			if err := decodeRequestJSON(*payload, &q); err != nil {
-				return nil, err
-			}
-			m.mu.Lock()
-			svc, _ := m.runtimeServiceLocked(req.RoomIdentity)
-			m.mu.Unlock()
-			if svc == nil {
-				return nil, ErrIdentity
-			}
-			id := MemberIdentity{RoomIdentity: req.RoomIdentity, AgentID: req.Caller.ID, MembershipID: req.Caller.MembershipID}
-			action, err := svc.store.agentAction(id, q)
-			if err != nil {
-				return nil, err
-			}
-			r, err := m.executeReferenceAction(ctx, api, action)
-			return projectActionReceipt(r, action), err
-		}
-	}
-	return nil, ErrRequest
 }

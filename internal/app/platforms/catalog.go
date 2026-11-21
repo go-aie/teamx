@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"slices"
 
+	"github.com/go-aie/teamx/internal/app/platformtools"
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/notification"
 	"github.com/go-aie/teamx/internal/platform/tool"
@@ -20,15 +21,18 @@ type Connection struct {
 }
 
 type Tool struct {
+	Bind                            platformtools.Bind
 	Definition                      tool.Definition
 	Executable, OverrideEnvironment string
 }
 
-// Source describes a registered notification implementation. Bind accepts only
-// source query dependencies; admission and Room lifecycle remain outside.
+// Source describes a registered notification implementation. New constructs an
+// unbound source without I/O. Bind supplies source-specific admission/recovery;
+// the common host retains Room/member gates, persistence and lifecycle drain.
 type Source struct {
 	ID   notification.SourceID
-	Bind func(SourceBindings) notification.Source
+	New  func() notification.Source
+	Bind notification.Bind
 }
 
 // Definition is produced by an explicit, pure factory. The declaration and
@@ -50,9 +54,16 @@ type Factory func() Definition
 type Catalog struct {
 	types       platform.Catalog
 	definitions []Definition
+	tools       []Tool // independent accountless contributions
 }
 
 func NewCatalog(factories ...Factory) (*Catalog, error) {
+	return NewCatalogWithTools(nil, factories...)
+}
+
+// NewCatalogWithTools checks platform and independent tools in one namespace.
+// Standalone tools have no Provider, account environment or built-in dispatcher.
+func NewCatalogWithTools(independent []Tool, factories ...Factory) (*Catalog, error) {
 	c := &Catalog{}
 	providers, tools := map[string]bool{}, map[string]bool{}
 	types := []platform.TypeDefinition{}
@@ -74,7 +85,7 @@ func NewCatalog(factories ...Factory) (*Catalog, error) {
 		}
 		if d.Tool != nil {
 			t := d.Tool
-			if !tool.ValidName(t.Definition.Name) || t.Definition.Name != d.Type.ToolType || t.Definition.Provider != p || tools[t.Definition.Name] || t.Definition.Executable != "" || t.Definition.InternalOnly == (t.Executable != "") {
+			if !tool.ValidName(t.Definition.Name) || t.Definition.Name != d.Type.ToolType || t.Definition.Provider != p || tools[t.Definition.Name] || t.Definition.Executable != "" || t.Definition.InternalOnly == (t.Executable != "") || t.Definition.InternalOnly != (t.Bind != nil) {
 				return nil, fmt.Errorf("%s: invalid or duplicate tool implementation", p)
 			}
 			tools[t.Definition.Name] = true
@@ -88,10 +99,10 @@ func NewCatalog(factories ...Factory) (*Catalog, error) {
 		}
 		registered := map[string]bool{}
 		for _, source := range d.Sources {
-			if source.ID.Provider != p || !channels[source.ID.Channel] || registered[source.ID.Channel] || source.Bind == nil {
+			if source.ID.Provider != p || !channels[source.ID.Channel] || registered[source.ID.Channel] || source.New == nil {
 				return nil, fmt.Errorf("%s: notification declaration mismatch", p)
 			}
-			impl := source.Bind(SourceBindings{})
+			impl := source.New()
 			if missingImplementation(impl) || impl.ID() != source.ID || impl.Schema() <= 0 {
 				return nil, fmt.Errorf("%s: notification implementation missing or mismatched", p)
 			}
@@ -132,6 +143,15 @@ func NewCatalog(factories ...Factory) (*Catalog, error) {
 		checked := cloneDefinition(d)
 		c.definitions = append(c.definitions, checked)
 		types = append(types, checked.Type)
+	}
+	for _, t := range independent {
+		d := t.Definition
+		if !tool.ValidName(d.Name) || tools[d.Name] || t.Executable == "" || d.Executable != "" || d.Provider != "" || d.InternalOnly || t.Bind != nil || len(d.Environment) != 0 {
+			return nil, fmt.Errorf("invalid or duplicate independent tool: %q", d.Name)
+		}
+		tools[d.Name] = true
+		t.Definition.Dependencies = slices.Clone(d.Dependencies)
+		c.tools = append(c.tools, t)
 	}
 	c.types = platform.NewCatalog(types)
 	return c, nil
@@ -204,6 +224,12 @@ func (c *Catalog) Tools(resolve func(name, overrideEnvironment string) string) [
 		}
 		out = append(out, v)
 	}
+	for _, t := range c.tools {
+		v := t.Definition
+		v.Dependencies = slices.Clone(v.Dependencies)
+		v.Executable = resolve(t.Executable, t.OverrideEnvironment)
+		out = append(out, v)
+	}
 	return out
 }
 
@@ -241,4 +267,14 @@ func cloneReferences(v platform.ReferenceCapabilities) platform.ReferenceCapabil
 		v.Actions[op] = action
 	}
 	return v
+}
+
+// ToolRuntime returns only the explicitly selected built-in application adapter.
+func (c *Catalog) ToolRuntime(provider string) platformtools.Bind {
+	for _, d := range c.definitions {
+		if d.Type.Provider == provider && d.Tool != nil {
+			return d.Tool.Bind
+		}
+	}
+	return nil
 }

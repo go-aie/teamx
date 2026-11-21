@@ -58,19 +58,19 @@ type inputStreamSource struct {
 	Reason         string `json:"reason,omitempty"`
 }
 
-func projectInboxEntry(e InboxEntry, source followupSourceSummary) inboxEntryView {
+func (s *Store) projectInboxEntry(e InboxEntry, source followupSourceSummary) inboxEntryView {
 	v := inboxEntryView{Type: e.payloadType(), Seq: e.Seq, ReceivedAt: e.ReceivedAt, Partition: inboxEntryPosition(e).Partition}
 	switch e.payloadType() {
 	case InboxPlatformNotification:
-		v.Item, v.Source = projectNotification(e.Item), source
+		v.Item, v.Source = s.projectNotification(e.Item), source
 	case InboxTaskEventType:
 		v.TaskEvent = e.TaskEvent
 	}
 	return v
 }
 
-func inboxContextOnly(e InboxEntry) bool {
-	return projectInboxEntry(e, followupSourceSummary{}).Item.ContextOnly
+func (s *Store) inboxContextOnly(e InboxEntry) bool {
+	return s.projectInboxEntry(e, followupSourceSummary{}).Item.ContextOnly
 }
 
 type inboxPreviewPage struct {
@@ -106,7 +106,7 @@ func (s *Store) projectInboxPreviewLocked(page InboxPage, status InboxStatus) (i
 			if err := s.loadTaskEventLocked(e.MemberIdentity, *e.TaskEvent); err != nil {
 				return v, err
 			}
-			v.Entries = append(v.Entries, projectInboxEntry(e, followupSourceSummary{}))
+			v.Entries = append(v.Entries, s.projectInboxEntry(e, followupSourceSummary{}))
 			continue
 		}
 		source := followupSourceSummary{Seq: e.Seq, SourceRef: inputSourceRef(e), Status: "not_checked"}
@@ -119,7 +119,7 @@ func (s *Store) projectInboxPreviewLocked(page InboxPage, status InboxStatus) (i
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return v, err
 		}
-		entry := projectInboxEntry(e, source)
+		entry := s.projectInboxEntry(e, source)
 		original := e.Item.Source
 		entry.NotificationSource = &notificationSourceLocation{Provider: original.Provider, Channel: original.Channel, SubscriptionID: original.SubscriptionID, Instance: original.Instance}
 		admission, err := s.inboxAdmissionLocked(e)

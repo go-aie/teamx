@@ -56,7 +56,7 @@ func (s *Store) prepareInboxReclaimLocked(e InboxEntry, c inboxConsumption) erro
 		if err != nil {
 			return err
 		}
-		if inboxContextOnly(e) && !link.ContextOnly {
+		if s.inboxContextOnly(e) && !link.ContextOnly {
 			link.ContextOnly = true
 			return s.save(s.eventPath(e.MemberIdentity, e.Seq), link, followupBytes)
 		}

@@ -87,7 +87,7 @@ func (s *service) memberInbox(ctx context.Context, req apiRequest, operation str
 		if err != nil {
 			return nil, err
 		}
-		return projectAgentInboxRead(id, page)
+		return s.store.projectAgentInboxRead(id, page)
 	case "confirm":
 		if err := s.store.claimInboxMode(id, req.TurnNumber, "cli"); err != nil {
 			return nil, err

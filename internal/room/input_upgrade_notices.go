@@ -81,7 +81,7 @@ func (u *inputUpgrade) readLegacyNotices() (map[string]legacyOperationNotice, er
 		if err := readSnapshot(filepath.Join(u.backup(), path), n, maxPrivateFileBytes); err != nil {
 			return nil, err
 		}
-		catalog := &roomManager{store: &Store{dir: filepath.Join(u.backup(), "catalog"), lock: u.store.lock}}
+		catalog := &roomManager{platformCatalog: u.store.catalog, store: &Store{catalog: u.store.catalog, dir: filepath.Join(u.backup(), "catalog"), lock: u.store.lock}}
 		status := ""
 		if parts[1] == "platform-connect-notifications" {
 			op, err := catalog.readPlatformConnectLocked(n.OperationID)

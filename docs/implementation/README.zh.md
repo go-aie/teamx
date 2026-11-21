@@ -8,6 +8,11 @@
 | [GitLab 图文 Agent 使用与恢复](gitlab-image-send-s2.zh.md) | 阶段 2：指引／字段反馈、普通 Room／默认助理各 16 场景真实 DSH、独立进程恢复／并发与定向 race；正式图文保持关闭，真实 GitLab 验收见阶段 3 |
 | [GitLab 图文真实验收与开放](gitlab-image-send-s3.zh.md) | 阶段 3：真实 Agent 发布、原图下载比对、独立进程回执重查、真实通知回流和浏览器验证；正式注册开放，日常服务／Session 未切换 |
 | [GitLab 完整 URL 托管目标入口](gitlab-image-send-s4.zh.md) | 阶段 4：完整 MR／note／discussion URL 核实及稳定引用，全新成员托管链路、真实只读定位和两条授权发布；保留首次模型审计失败及分层复验边界，日常服务未重启 |
+| [飞书内置工具应用运行边界](architecture/tool-runtime.zh.md) | P2t：所选工厂运行绑定、help／read／actions 应用与 HTTP 分离、共享原图宿主及原 Calls／动作结清；其余 R6 调用族与产品裁剪留后续 |
+| [通知来源运行绑定](architecture/notification-runtime.zh.md) | P2n：飞书 messages 显式 Bind／准入／加载、原 owner 与结清；外部通知 module 的持久投递、重开与缺 codec 保护 |
+| [外部本地工具公开装配](architecture/extension-assembly.zh.md) | P1b：公开 Tool／Compose／boot、正常默认入口、显式选择贯穿离线操作；独立 module 的发现／执行与结清验收，产品裁剪留 P2r／P5 |
+| [公共平台目录与内置工厂解耦](architecture/platform-catalog.zh.md) | P1a：通用目录与三个内置工厂分包、专用来源查询绑定、默认完整入口及依赖／定向验证；外部作者入口与产品裁剪留后续 |
+| [扩展与按需构建的基线及分支交接](architecture/plugin-handoff.zh.md) | P0：当前工作树、owner／锁／关闭链、Gordis／Build 发布 API 与定向验证；平台 P1a 可进入，DSH 跨包前须收敛宿主操作，保留组件超时与未验收范围 |
 | [飞书完整托管图文动作](lark-image-send-s2.zh.md) | 隔离 self／群原图上传与单次发送、完整内容冻结和最终授权复核；真实验收与正式开放见阶段 4 记录 |
 | [飞书图文 Agent 使用与恢复](lark-image-send-s3.zh.md) | 指引、可选图片权限修复、独立进程恢复与并发、浏览器及两种入口各 12 回合真实 Agent 隔离验收；阶段 4 真实开放见下条 |
 | [飞书图文发送：真实验收与开放](lark-image-send-s4.zh.md) | 阶段 4 真实 DSH／飞书六样本、同 ID／重启恢复及回流通过，正式 self／指定群图文已注册；含历史 unknown 修复证据与部署采用边界 |

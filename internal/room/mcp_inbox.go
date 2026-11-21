@@ -338,7 +338,7 @@ func (s *mcpInboxSession) read(ctx context.Context, args mcpInboxArguments) (*mc
 	if err != nil {
 		return nil, err
 	}
-	projection, err := projectAgentInboxRead(s.id, view)
+	projection, err := svc.store.projectAgentInboxRead(s.id, view)
 	if err != nil {
 		return nil, err
 	}

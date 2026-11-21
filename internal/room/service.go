@@ -188,8 +188,8 @@ type service struct {
 	memberFactory        func(MemberIdentity, RunnerConfig, *AgentSnapshot) actorx.Actor
 }
 
-func newService(dir, roomID string, config serviceConfig) (*service, error) {
-	return startService(dir, roomID, config, func(s *service, state RoomSnapshot) error {
+func newConfiguredService(dir, roomID string, config serviceConfig) (*service, error) {
+	return startConfiguredService(dir, roomID, config, func(s *service, state RoomSnapshot) error {
 		if err := s.loadMembers(state); err != nil {
 			return err
 		}
@@ -197,9 +197,15 @@ func newService(dir, roomID string, config serviceConfig) (*service, error) {
 	})
 }
 
-// startService establishes resource ownership before assembling members. The
+// startConfiguredService establishes resource ownership before assembling members. The
 // assembly callback also lets in-package tests inject deterministic Backends.
-func startService(dir, roomID string, config serviceConfig, assemble func(*service, RoomSnapshot) error) (_ *service, err error) {
+func startConfiguredService(dir, roomID string, config serviceConfig, assemble func(*service, RoomSnapshot) error) (_ *service, err error) {
+	if config.platformCatalog == nil {
+		config.platformCatalog = emptyPlatformCatalog()
+	}
+	if config.inputCapabilities == nil {
+		config.inputCapabilities = config.platformCatalog.NotificationCapabilities
+	}
 	mode, err := config.scheduling.effective()
 	if err != nil {
 		return nil, err
@@ -220,10 +226,10 @@ func startService(dir, roomID string, config serviceConfig, assemble func(*servi
 	if config.unifiedInputs {
 		upgrade = &inputUpgradeOptions{log: config.inputUpgradeLog}
 		if config.inputAdapters == nil {
-			config.inputAdapters = defaultNotificationAdapters(nil)
+			config.inputAdapters = notificationAdaptersFor(nil, config.platformCatalog)
 		}
 	}
-	store, err := openStore(dir, roomID, upgrade)
+	store, err := openStoreWithCatalog(dir, roomID, upgrade, config.platformCatalog)
 	if err != nil {
 		return nil, err
 	}

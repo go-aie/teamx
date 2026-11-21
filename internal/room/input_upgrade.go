@@ -664,7 +664,7 @@ func (m *roomManager) upgradeRoomInputs(options inputUpgradeOptions) error {
 			return err
 		}
 		options.managed = &config
-		store, err := lockStore(m.roomDir(entry.RoomID), entry.RoomID)
+		store, err := lockStoreWithCatalog(m.roomDir(entry.RoomID), entry.RoomID, m.platformCatalog)
 		if err != nil {
 			return err
 		}

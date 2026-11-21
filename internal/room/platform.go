@@ -20,7 +20,10 @@ type connectionProvider struct {
 
 func (m *roomManager) initPlatform() {
 	if m.platformCatalog == nil {
-		m.platformCatalog = defaultPlatformCatalog()
+		m.platformCatalog = m.store.catalog
+		if m.platformCatalog == nil {
+			m.platformCatalog = emptyPlatformCatalog()
+		}
 	}
 	if m.connectionProviders == nil {
 		m.connectionProviders = make(map[string]connectionProvider)
@@ -82,6 +85,7 @@ func (m *roomManager) initPlatform() {
 		}
 		return a.VerifyProfile(ctx, origin, p)
 	})
+	m.store.catalog = m.platformCatalog
 	m.initPlatformNotifications()
 	m.initPlatformReferences()
 }

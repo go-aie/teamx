@@ -219,7 +219,7 @@ func (c *modelController) applyMember(op *modelChangeOperation, index int) error
 	}
 }
 func (c *modelController) applyClosedMember(member modelChangeMember) error {
-	store, err := OpenStore(c.manager.roomDir(member.RoomID), member.RoomID)
+	store, err := openStoreWithCatalog(c.manager.roomDir(member.RoomID), member.RoomID, nil, c.manager.platformCatalog)
 	if err != nil {
 		return err
 	}

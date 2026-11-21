@@ -1,0 +1,347 @@
+{
+  "phase": "P2n",
+  "date": "2026-11-21",
+  "head_at_start": "fc9ae9d0a8ad09599cc9fd851c448fec2e84e431",
+  "head_at_finish": "fc9ae9d0a8ad09599cc9fd851c448fec2e84e431",
+  "baseline": "HEAD plus pre-existing P1a/P1b and other worktree changes; only P2n and related recovery fixture adaptations were made; no commit or service adoption",
+  "result": "selected notification runtime Bind and narrow snapshot host; lark SearchSource admission/recovery in implementation; public notification author contracts and real isolated durable Inbox delivery",
+  "checks": [
+    {
+      "name": "components and production boundaries race",
+      "command": "go test -race -count=1 ./platform/... ./extension/... ./boot ./builtin/... ./internal/app/platforms/... ./internal/app/builtinplatforms/... ./internal/architecture/...",
+      "exit_code": 0,
+      "log": ".local/notification-runtime/components.log",
+      "sha256": "e43868577c4f23eafcc52f31f6fbca152a500b715e3acc047536dd40858c2e86"
+    },
+    {
+      "name": "notification core race",
+      "command": "go test -race -count=1 -timeout=180s ./internal/platform/notification",
+      "exit_code": 0,
+      "log": ".local/notification-runtime/notification-core.log",
+      "sha256": "3dccd434fd053787ac95565ad2b4d0b05c48bebe138a149f8d49903e428fd0c2"
+    },
+    {
+      "name": "lark search and source components race",
+      "command": "go test -tags=integration -race -count=1 -timeout=180s ./internal/platform/lark -run 'Test(Search|Own|SelfConversation|Source|InboxExpiry|Notification|CustomBackfill|Backfill|ClientFactories)'",
+      "exit_code": 0,
+      "log": ".local/notification-runtime/lark-core.log",
+      "sha256": "5afd4b60d54e21fd6b5d7991ee4be23c5e90bd00b6ca815e59e15e71f78f16e6"
+    },
+    {
+      "name": "room notification runtime integration race",
+      "command": "go test -json -tags=integration -race -count=1 -timeout=480s ./internal/room -run 'Test(Messages|Lark.*(Notification|Subscription|Search|MultiplePlatforms|PlatformB|Mention|CustomBackfill)|PlatformMemberLark|RoomAttachmentMaterials|PlatformNotification|GitLabEventsDisable|GitLabEventsShutdown|GitLabDeliveryInboxAck|SelectedCatalog|EmptyCatalog|InputUpgradeUsesSelected)'",
+      "exit_code": 0,
+      "log": ".local/notification-runtime/room-verified.jsonl",
+      "sha256": "ae36dd11e7dde44a7c438be03ccce4ad5ee47d293a979fe59c956e61d5ef54cd",
+      "pass": [
+        "TestLarkSearchLatestStateRecoversLostDeliveryAcknowledgement",
+        "TestLarkSearchUpgradeWholeStoreRollback",
+        "TestLarkSearchUpgradeTransactionRecovery",
+        "TestSelectedCatalogReachesManagerStandaloneAndOfflineProjection",
+        "TestEmptyCatalogDoesNotAcquireBuiltinCapabilities",
+        "TestInputUpgradeUsesSelectedCodecAndCanResumeAfterMissingCapability",
+        "TestLarkAuthorizationPreservesNotificationProgressAndClosedChoices",
+        "TestPlatformMemberLarkRangeAndConditionChanges",
+        "TestPlatformMemberLarkConflictingIntent",
+        "TestPlatformMemberLarkInputAndEmptyListPersistence",
+        "TestPlatformMemberLarkCLIRejectsAmbiguousAndUnsupportedFields",
+        "TestPlatformMemberLarkAbsentDisableDoesNotCreateSubscription",
+        "TestRoomAttachmentMaterialsServiceAssembly",
+        "TestRoomAttachmentMaterialsMCPReadHistoryAndReplay",
+        "TestRoomAttachmentMaterialsMissingAndBudgets",
+        "TestRoomAttachmentMaterialsSelectedRangeAndLifecycle",
+        "TestRoomAttachmentMaterialsShortOutputKeepsImagesAndNativeCursor",
+        "TestRoomAttachmentMaterialsScopeAndPlatformDispatch",
+        "TestRoomAttachmentMaterialsReadProtectionAndRetention",
+        "TestRoomAttachmentMaterialsExecutionBudgetAndReuse",
+        "TestGitLabEventsShutdownRetainsLockUntilQuerySettlement",
+        "TestPlatformNotificationPollingDoesNotCreateChatOrSessions",
+        "TestLarkNotificationsOfflineUpgradePreservesEvidenceAndIsRepeatable",
+        "TestLarkVerificationResumesCredentialPausedSubscription",
+        "TestLarkMultiplePlatformsCollectPauseAndRecoverIndependently",
+        "TestLarkMentionIdentityInAgentInboxWithoutReadBinding",
+        "TestLarkPlatformBRemainsConfigurableWhileAQuerySettles",
+        "TestPlatformNotificationInboxReloadDeduplicationAndContinuation",
+        "TestLarkNotificationsAckCrashReusesDeliveryID",
+        "TestPlatformNotificationsRequireExplicitSourceAndSubscription",
+        "TestGitLabDeliveryInboxAckFailureReopensWithoutDuplicate",
+        "TestLarkSearchDiagnosticsRedactPageAndResumeCredentials",
+        "TestLarkSearchDefaultsOnboardingAndLegacyBoundary",
+        "TestLarkSearchHTTPDeliveryAndAgentRead",
+        "TestLarkChatPickerListsMetadataBeforeSubscription",
+        "TestPlatformMemberLarkReplacementRejectsPrivateTarget",
+        "TestLarkNotificationsRestartImmutableTargetAndDeliveryCapacity",
+        "TestLarkAllPrivateSearchPersistsAndProjectsSafeDiagnostics",
+        "TestPlatformMemberLarkReplacementUnknownReceiptSurvivesRestart",
+        "TestLarkSearchHTTPPreservesSelectedFiveGroups",
+        "TestGitLabEventsDisableWaitsAndRejectsLateResult",
+        "TestLarkNotificationResolutionIsBoundToSavedEnvelope",
+        "TestLarkCustomBackfillHTTPReadsHistoryIntoMemberInbox",
+        "TestLarkNotificationsInboxReferencesAndRoomQuestion",
+        "TestPlatformMemberLarkCLIConfiguresRangesAndConditions",
+        "TestLarkNotificationRecoversConsumedBindingFailureLocally",
+        "TestLarkNotificationsUpgradeRejectsBackupConflictsAndSymlinks",
+        "TestLarkChatPickerSearchesMetadataWithPartialPermissions",
+        "TestMessagesShutdownRetainsStoreUntilSearchSettlementAndSupportsRetry",
+        "TestLarkAccountChecksRecoverSharedProfileSubscriptions",
+        "TestLarkNotificationsUpgradeCommitUnknownRequiresReload",
+        "TestLarkNotificationsUpgradeInterruptedCommitRecoveryAndConflict",
+        "TestMessagesDisableTimeoutKeepsDurableVersionAndWaitsForSearchSettlement",
+        "TestLarkLogoutAcknowledgesAllSharedPlatformsAndPreservesNotificationProgress",
+        "TestLarkNotificationsUpgradeRejectsWholeSetBeforeWriting",
+        "TestLarkPermissionChecksPreserveIneligibleSubscriptions"
+      ],
+      "fail": [],
+      "skip": [
+        "TestLarkSearchUpgradeSnapshotCopy"
+      ],
+      "package_results": [
+        {
+          "Time": "2026-11-21T12:59:09.544087+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Elapsed": 59.341
+        }
+      ]
+    },
+    {
+      "name": "room images own context and history integration race",
+      "command": "go test -json -tags=integration -race -count=1 -timeout=240s ./internal/room -run '^Test(OwnLark.*|SelfConversationInbox.*|UnknownInboxConversation.*|LarkSelfConversation.*|LarkHistoricalConversation.*|HistoryMCPLarkImages.*|LarkImageLifecycleCancellation|LarkImagesManagedCLI|LarkImagesOptionalPermission|LarkImagesDispatchGuards)$'",
+      "exit_code": 0,
+      "log": ".local/notification-runtime/content-regression.jsonl",
+      "sha256": "edc886d72ea42804b96102bc6388c93abe7197dc5bef986a4d4a0dde1f38985a",
+      "pass": [
+        "TestHistoryMCPLarkImagesAndCursorReplayChargeSharedAllowance",
+        "TestSelfConversationInboxHistoryDoesNotScheduleOrOpenWork",
+        "TestUnknownInboxConversationWaitsAndCannotAcquireAuthority",
+        "TestOwnLarkInboxPreservesContextWithoutOpeningWork",
+        "TestLarkImagesManagedCLI",
+        "TestLarkImagesOptionalPermission",
+        "TestLarkImagesDispatchGuards",
+        "TestLarkHistoricalConversationUsesCurrentCredentialForSameAccount",
+        "TestLarkImageLifecycleCancellation",
+        "TestOwnLarkRuleReplyBlockedButHumanReplyAllowed",
+        "TestLarkSelfConversationSharedAccountSourceAndInboxRecovery",
+        "TestOwnLarkOriginUsesExactDurableReceipt"
+      ],
+      "fail": [],
+      "skip": [],
+      "package_results": [
+        {
+          "Time": "2026-11-21T13:00:47.508136+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Elapsed": 91.477
+        }
+      ]
+    },
+    {
+      "name": "external tool and notification modules",
+      "command": "go test -tags=integration -race -count=1 -v -timeout=180s ./boot -run '^TestExternalModule'",
+      "exit_code": 0,
+      "log": ".local/notification-runtime/external-modules.log",
+      "sha256": "e2a2a4f1ddfceaf0d61c9b10e770530ab596a3f0a5d8c88991a45249726412dc"
+    },
+    {
+      "name": "e2e configuration compile only",
+      "command": "go test -tags=e2e ./... -run '^$'",
+      "exit_code": 0,
+      "log": ".local/notification-runtime/compile.log",
+      "sha256": "60b5fec21b03104f6413eab69fefb58f1f783914bcb54378e4e41eb426279534"
+    },
+    {
+      "name": "component vet",
+      "command": "go vet ./platform/... ./extension/... ./boot/... ./builtin/... ./internal/app/platforms/... ./internal/app/builtinplatforms/... ./internal/platform/notification/... ./internal/architecture/...",
+      "exit_code": 0,
+      "log": ".local/notification-runtime/vet-components.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "whole repository vet",
+      "command": "go vet ./...",
+      "exit_code": 1,
+      "log": ".local/notification-runtime/vet-all.log",
+      "sha256": "f8113d48f201d814830c1d2351a9f6cf4324d6aaf4de4dfaebcdc2f4dd522a49"
+    },
+    {
+      "name": "default complete selection",
+      "command": "go build -o .local/notification-runtime/teamx ./cmd/teamx && .local/notification-runtime/teamx extensions check",
+      "exit_code": 0,
+      "log": ".local/notification-runtime/default-selection.json",
+      "sha256": "12b1b186a25fcd9dc4fe36d938ed6c2b27f695871d66fa9510ab778b997fbe7c"
+    }
+  ],
+  "external_notification": {
+    "status": "passed",
+    "module": "example.com/teamx-local-notification",
+    "local_replace": "/Users/russellluo/Projects/ai/teamx",
+    "selected": {
+      "extensions": [
+        "local-notification"
+      ],
+      "tools": [],
+      "notifications": [
+        {
+          "provider": "local-feed",
+          "channel": "updates",
+          "schema": 1,
+          "input_codec": "local-feed.notification"
+        }
+      ]
+    },
+    "entries": [
+      {
+        "partition": "partition_8f0b57b2db2025988293919e2a2f598aea003a191f743a14f133a720a4cd9dd7",
+        "type": "platform_notification",
+        "notification_source": {
+          "provider": "local-feed",
+          "channel": "updates",
+          "subscription_id": "11111111111111111111111111111111",
+          "instance": "local://feed"
+        },
+        "seq": 1,
+        "item": {
+          "text": "A notification from the external module",
+          "structured": false,
+          "provider": "local-feed",
+          "channel": "updates",
+          "instance": "local://feed",
+          "created_at": "2026-11-21T04:53:15.463675Z"
+        },
+        "received_at": "2026-11-21T04:53:16.464636Z",
+        "source": {
+          "source_ref": "src_a7e41787d420a07e242e844728487b339935f03c4221ccdd3e8b4c61616ae0a3",
+          "seq": 1,
+          "status": "not_checked"
+        }
+      }
+    ],
+    "source_ack_after_inbox_receipt": true,
+    "restart_without_duplicate": true,
+    "missing_codec_open": {
+      "room_id": "b198655771e36a5ea96e0465a5582bfa",
+      "room_instance": "e0cb5fd496644770f90b992af667c533",
+      "open_id": "open-missing-codec",
+      "status": "failed",
+      "error": "input_version_unsupported"
+    },
+    "body_digests_unchanged": {
+      "inboxes/63dd5edc00427fd705302b56c550e984/local-feed/records/00000000000000000001.jsonl": "ac8b32d72ae6a5390e18ff3942ee586921d055b9ef4e19ff4ecca74d31152abd"
+    },
+    "real_model": false,
+    "platform_accounts": 0,
+    "remote_business_writes": 0,
+    "server_exits": [
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  "dependencies": {
+    "catalog_has_concrete_providers": false,
+    "product_still_has_lark": true,
+    "catalog_log_sha256": "8b35a6ff91e2ca3ac671bdcb509be36b6e907f99be6a5c811e549ea99f056a60",
+    "product_log_sha256": "5e2f319345db67cc511cbea9df09ce405493b93ee93b8171f04ffae0868fdc10",
+    "room_lark_imports": [
+      "internal/room/platform_lark_conversation.go",
+      "internal/room/platform_member_lark.go",
+      "internal/room/actions_agent_view.go",
+      "internal/room/platform_notification_lark.go",
+      "internal/room/platform_member.go",
+      "internal/room/platform_connect_store.go",
+      "internal/room/platform_lark_references.go",
+      "internal/room/platform_notifications_http.go",
+      "internal/room/platform_lark.go",
+      "internal/room/platform_lark_target.go",
+      "internal/room/platform_connect_gitlab.go",
+      "internal/room/platform_lark_tools.go",
+      "internal/room/platform_connect.go",
+      "internal/room/platform_selection.go",
+      "internal/room/platform_lark_auth.go",
+      "internal/room/platform_connect_interaction.go",
+      "internal/room/management.go",
+      "internal/room/platform_lark_setup.go",
+      "internal/room/platform_lark_authorization.go",
+      "internal/room/tools_lark_configuration.go",
+      "internal/room/lark_notifications_upgrade.go",
+      "internal/room/platform_lark_chats.go",
+      "internal/room/platform_lark_capabilities.go",
+      "internal/room/agent_contract.go",
+      "internal/room/platform_onboarding.go",
+      "internal/room/notifications_upgrade_cli.go",
+      "internal/room/notification_images.go",
+      "internal/room/ui_update_notifications.go",
+      "internal/room/platform_notification_lark_view.go",
+      "internal/room/platform_lark_self_send.go",
+      "internal/room/platform_notification_bindings.go",
+      "internal/room/platform_member_store.go",
+      "internal/room/platform_attachments.go",
+      "internal/room/platform_lark_actions.go",
+      "internal/room/member_notifications_upgrade.go"
+    ]
+  },
+  "source_sha256": {
+    "internal/platform/notification/binding.go": "b2f93601079835abcabd0db3296f1e5240bee784b215163da1b85775d44ba839",
+    "internal/app/platforms/catalog.go": "885c263ab974c7338c0c412addf4a66f1b5634abc74163f2c74a9972ca49b71f",
+    "internal/app/builtinplatforms/lark/definition.go": "4a90bebe164f2038456b574ae1726d15dc6a322f8c9da3d27957ed3a609afac8",
+    "internal/app/builtinplatforms/lark/sources.go": "f5b88936a9cee71424beafcb7c504cef26e51c5c35d720af51983d4973d99412",
+    "internal/app/builtinplatforms/lark/runtime_test.go": "d22999ce33ca144a9f2a3f8e1b174a08255e1ae3b6304e362c5c8f1d99d74cd3",
+    "internal/room/platform_notification_lark.go": "9c40fd1944a2acca9f2b00619da4a34fe9e1602036dfc3c2897fc3631b25c57c",
+    "internal/room/platform_notifications.go": "14cfbb64da6e7d989b42630f0e54ec195601e418a45d8843f847e02c4f4d5759",
+    "internal/room/notification_runtime_host.go": "ce86cff5f4b8c18a0a8b9c86b25d11ee80fcb4709749374a6ac7c4eea8eebd06",
+    "internal/room/platform_notification_bindings.go": "6656bf741749c6adabb277870698a681306d803da1ae26048a21cf26acd5d3df",
+    "internal/room/notification_runtime_lifecycle_integration_test.go": "1583957c63ed2f5449b40a22011f4bc4909efc1bf98ad0ca977b1f715c561e88",
+    "internal/room/lark_search_recovery_test.go": "172b509696366c41fd2b1cb44375394a345ac99db1b4a620eecc2a663ef78593",
+    "internal/room/lark_search_upgrade_test.go": "2c4f308d5425a0774ae31757ad47cf7c5f9b3405e5d189832b24126b76800945",
+    "platform/identity.go": "db5cb579494a3f0f10cd9ff6cea210d2bd0442ef3b36bba1f37f5b750a9582f9",
+    "platform/tool.go": "7c68cd03f3647b379beb9f41fee0415f868cc8a6c78e95ddc35b643839401961",
+    "platform/notification/notification.go": "2cdcf2af740cb5bd6723b1af37ffc37cee0c845d2fc222c5a66d6a002b3489c2",
+    "platform/notification/input.go": "950d18e1679f31a7f413e24cad5ed6a813d638cf7af72698070b3e372d8095bb",
+    "internal/app/extensions/compose.go": "04cc968521e9fd5a5a93e3fdf0f3dce659b9774b939d63b80d76266486ee37cd",
+    "extension/extension_test.go": "173727b758d91ff7d64700f86cffcafb0e3c3c0ddb11bff9570bf94017533719",
+    "boot/run.go": "c94d1313cb4b27140a3e6a8c469b50648c4e352f539cd77ebea8d33bbbbd9fe9",
+    "boot/notifications.go": "98ed8bc6487a313cdb317b425693b928e23a64daef5bac47556f4ffef5aa5c3b",
+    "boot/external_integration_test.go": "be9a608dec159fd2a92905a73592e95883088ab1587a8f0381a21a455d330e9f",
+    "testdata/external-notification/go.mod": "185795557b1242c04ef0673ac66e5a921a299796c12174f296cca6bcedb9fe3d",
+    "testdata/external-notification/extension.go": "10174c72e028e93e2fe374723d652c240a89def42195683bfdfdc1cda6425d37",
+    "testdata/external-notification/cmd/teamx/main.go": "4a2175f707ce1838bbe48785c395126d0e19fab530cb077dd2eefec9372322ca",
+    "testdata/external-notification/acceptance.py": "ac88f5ffa4ea3c8b89671048bc16349aa9ed4c3e44979be547c83aa3fc38411b",
+    "testdata/external-notification/README.md": "0efd042e160c0ca05d84b48d099e4f795cfeeed0a8f29da8e48ab891c1faa8e1",
+    "docs/extensions.zh.md": "05249b3bcce8f92cd94a9f8374075bc749e43cb4bbac6e628f8e7c5e7e6a92ac",
+    "docs/implementation/README.zh.md": "48fc251f0d9cdba35b8bf3131589ad3b718dab49f0dbc3db44d4ba80c5e56401",
+    "docs/GORDIS-PLUGIN-AND-SELECTIVE-BUILD-PLAN.zh.md": "bc30a59d0021e23f8178dae7fa7664687cc58a1de495e2aedba7151d228c7c8d",
+    "docs/implementation/architecture/notification-runtime.zh.md": "ebc86ebdd0e5b9e52da4a666269b7350b22b0e32805b7087e2d6d53a071666da"
+  },
+  "unchanged_against_head": [
+    "go.mod",
+    "go.sum",
+    "internal/room/room_action_images.go",
+    "internal/identity/identity.go"
+  ],
+  "earlier_attempts": [
+    {
+      "log": ".local/notification-runtime/room-regression.jsonl",
+      "exit_code": 1,
+      "reason": "offline recovery fixtures omitted explicit selection required since P1b"
+    },
+    {
+      "log": ".local/notification-runtime/room-regression-final.jsonl",
+      "exit_code": 1,
+      "reason": "remaining whole-store rollback and transaction recovery fixture Store constructors still omitted selection"
+    },
+    {
+      "log": ".local/notification-runtime/upgrade-regression.jsonl",
+      "exit_code": 0,
+      "reason": "all affected offline fixture constructors now explicitly select the full catalog; original fault and backup assertions retained"
+    }
+  ],
+  "limits": [
+    "one test requires a stopped-store backup and was skipped: TestLarkSearchUpgradeSnapshotCopy",
+    "whole-repository vet has two existing duplicate JSON tag warnings",
+    "no full repository business tests or full repository race claim",
+    "no real model/platform, browser or daily-service switch",
+    "external fixture provisions opt-in in stopped isolated Store; no generic external subscription configuration API",
+    "remaining tool/configuration/auth/upgrade/provider dependencies deferred to P2t/P2r; no Gordis service or selective product delivery"
+  ]
+}

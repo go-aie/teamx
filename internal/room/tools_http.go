@@ -328,8 +328,8 @@ func (m *roomManager) serveToolRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if entry, ok := entryCtx.Value(toolEntryContextKey{}).(toolEntryContext); ok {
-		if dispatch := builtinToolDispatchers[entry.provider]; dispatch != nil {
-			dispatch(m, w, r.WithContext(entryCtx), req)
+		if bind := m.platformCatalog.ToolRuntime(entry.provider); bind != nil {
+			m.serveBuiltinTool(w, r.WithContext(entryCtx), req, bind)
 			return
 		}
 	}

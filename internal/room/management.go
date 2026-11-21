@@ -228,11 +228,7 @@ type roomManager struct {
 	connectNotifyWake        chan struct{}
 }
 
-func newRoomManager(dir string, maxTurns uint64) (*roomManager, error) {
-	return openRoomManager(dir, maxTurns, nil)
-}
-
-func openRoomManager(dir string, maxTurns uint64, upgrade *inputUpgradeOptions) (_ *roomManager, err error) {
+func openRoomManagerWithCatalog(dir string, maxTurns uint64, upgrade *inputUpgradeOptions, catalog *platforms.Catalog) (_ *roomManager, err error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return nil, err
@@ -244,7 +240,7 @@ func openRoomManager(dir string, maxTurns uint64, upgrade *inputUpgradeOptions) 
 	if err != nil {
 		return nil, err
 	}
-	store := &Store{dir: abs, lock: lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}
+	store := &Store{catalog: catalog, dir: abs, lock: lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}
 	defer func() {
 		if err != nil {
 			_ = store.Close()
@@ -266,7 +262,7 @@ func openRoomManager(dir string, maxTurns uint64, upgrade *inputUpgradeOptions) 
 	if maxTurns == 0 {
 		maxTurns = defaultMaxTurns
 	}
-	m := &roomManager{updates: newUIUpdateHub(), settings: defaultSystemSettings(), store: store, epoch: epoch, maxTurns: maxTurns, factory: newService, runtimes: make(map[RoomIdentity]*roomRuntime)}
+	m := &roomManager{platformCatalog: catalog, updates: newUIUpdateHub(), settings: defaultSystemSettings(), store: store, epoch: epoch, maxTurns: maxTurns, factory: newConfiguredService, runtimes: make(map[RoomIdentity]*roomRuntime)}
 	m.calendars, err = newCalendarService()
 	if err != nil {
 		return nil, err
@@ -596,7 +592,7 @@ func (m *roomManager) initialize(e roomIndexEntry) error {
 			return err
 		}
 	}
-	store, err := OpenStore(dir, e.RoomID)
+	store, err := openStoreWithCatalog(dir, e.RoomID, nil, m.platformCatalog)
 	if err != nil {
 		return err
 	}

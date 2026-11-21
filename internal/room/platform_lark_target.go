@@ -3,25 +3,14 @@ package room
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 
+	larkruntime "github.com/go-aie/teamx/internal/app/builtinplatforms/lark"
+	"github.com/go-aie/teamx/internal/app/platformtools"
 	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/lark"
 )
 
-type larkTargetRequest struct {
-	ObjectRef string `json:"object_ref"`
-	TargetRef string `json:"target_ref"`
-	Scope     string `json:"scope"`
-	Cursor    string `json:"cursor,omitempty"`
-}
-type larkTargetPage struct {
-	Status     platform.ResolutionStatus `json:"status"`
-	ReasonCode string                    `json:"reason_code,omitempty"`
-	Contents   []platform.TargetContent  `json:"contents"`
-	Complete   bool                      `json:"complete"`
-	Next       string                    `json:"next,omitempty"`
-}
+type larkTargetRequest = platformtools.ReadRequest
+type larkTargetPage = larkruntime.TargetPage
 
 func (m *roomManager) readLarkTarget(ctx context.Context, r larkReadRequest) (any, error) {
 	req := toolsRequest{ServiceInfo: r.ServiceInfo, Caller: r.Caller, Tool: "lark"}
@@ -98,7 +87,7 @@ func (m *roomManager) readLarkTarget(ctx context.Context, r larkReadRequest) (an
 		}
 		q.Cursor = &c
 	}
-	page, err := lark.ReadTarget(callCtx, q, access, reader)
+	page, err := larkruntime.ReadTarget(callCtx, q, access, reader)
 	m.mu.Lock()
 	check := m.checkLarkReadLocked(callCtx, req, a.account)
 	m.mu.Unlock()
@@ -108,10 +97,5 @@ func (m *roomManager) readLarkTarget(ctx context.Context, r larkReadRequest) (an
 	if err != nil {
 		return nil, ErrRequest
 	}
-	out := larkTargetPage{Status: page.Status, ReasonCode: page.ReasonCode, Contents: page.Contents, Complete: page.Complete}
-	if page.Next != nil {
-		b, _ := json.Marshal(page.Next)
-		out.Next = base64.RawURLEncoding.EncodeToString(b)
-	}
-	return out, nil
+	return page, nil
 }

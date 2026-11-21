@@ -40,7 +40,7 @@ func actionImagesFixture(t *testing.T, log bool) (*roomHarness, *service, contex
 	}
 	svc := &service{store: h.store, info: ServiceInfo{RoomIdentity: h.id, ServiceEpoch: "action-source"}, room: h.addr}
 	ctx := context.WithValue(h.ctx, roomActionContextKey{}, roomActionContext{ServiceInfo: svc.info, MemberIdentity: id, Turn: 1, ID: "send-originals"})
-	return h, svc, ctx, []roomActionImageRef{{2, two.Attachment.ID}, {1, one.Attachment.ID}}
+	return h, svc, ctx, []roomActionImageRef{{MessageSeq: 2, AttachmentID: two.Attachment.ID}, {MessageSeq: 1, AttachmentID: one.Attachment.ID}}
 }
 func assertActionImagePinsReleased(t *testing.T, s *Store) {
 	t.Helper()
@@ -206,9 +206,11 @@ func TestRoomActionImagesRejectInvalidSourcesAndRelease(t *testing.T) {
 				case "failed_guard":
 					guard = func(context.Context) error { return ErrIdentity }
 				}
-				if lease, err := svc.prepareRoomActionImages(ctx, refs, guard); err == nil {
+				if lease, err := svc.prepareRoomActionImageLease(ctx, refs, guard); err == nil {
 					lease.Close()
 					t.Fatal("accepted invalid source")
+				} else if lease != nil {
+					t.Fatal("failed preparation returned an image lease")
 				}
 				assertActionImagePinsReleased(t, h.store)
 			})
@@ -369,7 +371,7 @@ func TestRoomActionImagesValidateActualFormatDimensionsAndTotal(t *testing.T) {
 					t.Fatal(err)
 				}
 				post := postAttachmentMessage(t, h, "saved reference with consistent metadata", m)
-				refs = append(refs, roomActionImageRef{post.Seq, m.Attachment.ID})
+				refs = append(refs, roomActionImageRef{MessageSeq: post.Seq, AttachmentID: m.Attachment.ID})
 			}
 			lease, err := svc.prepareRoomActionImages(ctx, refs, contextGuard)
 			if err == nil {
@@ -453,7 +455,7 @@ func TestRoomActionImagesReadContractsAndIndependentBudget(t *testing.T) {
 				}
 				refs := []roomActionImageRef{}
 				for _, desc := range body.Entries[0].Attachments {
-					refs = append(refs, roomActionImageRef{body.Entries[0].Seq, desc.ID})
+					refs = append(refs, roomActionImageRef{MessageSeq: body.Entries[0].Seq, AttachmentID: desc.ID})
 				}
 				if err := confirm(); err != nil {
 					t.Fatal(err)

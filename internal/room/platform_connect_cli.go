@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/go-aie/teamx/internal/app/platforms"
 	"io"
 	"net/http"
 	"strings"
@@ -154,9 +155,9 @@ Unknown submissions never replay, even with the same ID: inspect status/get and
 resolve through platform settings. Never change IDs to retry an unknown operation.
 `
 
-func runPlatformsCLI(ctx context.Context, args []string, stdout, stderr io.Writer, env func(string) string) error {
+func runPlatformsCLIWithCatalog(ctx context.Context, args []string, stdout, stderr io.Writer, env func(string) string, catalog *platforms.Catalog) error {
 	if len(args) > 0 && args[0] == "upgrade" {
-		return runPlatformsUpgrade(args, stdout, stderr)
+		return runPlatformsUpgradeWithCatalog(args, stdout, stderr, catalog)
 	}
 	timeout := 5 * time.Second
 	if len(args) > 0 && (args[0] == "chats" || args[0] == "projects" || args[0] == "member") {

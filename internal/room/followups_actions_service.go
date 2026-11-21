@@ -6,21 +6,13 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/go-aie/teamx/internal/app/platformtools"
 	"github.com/go-aie/teamx/internal/platform"
 )
 
-type actionDispatchCheckKey struct{}
-type actionDispatchCheck func(context.Context, platform.TargetActionRequest, string) error
-
-type referenceActionSession struct {
-	CapabilityBasis *platform.CapabilityEvidence
-	Access          platform.AccessContext
-	Capabilities    platform.ReferenceCapabilities
-	Check           func(context.Context) error
-	// Optional final admission check while manager.mu is held, before saving a target.
-	CommitCheck func(context.Context) error
-	Close       func()
-}
+type actionDispatchCheckKey = platformtools.DispatchCheckKey
+type actionDispatchCheck = platformtools.DispatchCheck
+type referenceActionSession = platformtools.ActionSession
 type referenceActionPreparer func(context.Context, MemberIdentity, platform.AccessContext) (referenceActionSession, error)
 
 func actionInputJSON(input ActionInput) json.RawMessage { b, _ := json.Marshal(input); return b }
