@@ -77,6 +77,107 @@ test("bare and Markdown web links open safely without swallowing sentence punctu
   assert.ok(markdownHTML("https://example.com/a_(b).").includes('href="https://example.com/a_(b)"'));
 });
 
+test("bare links stop before Chinese prose and leave the suffix available for Markdown", () => {
+  const url = "https://scion.opencsg.com";
+  const note = "https://gitlab.example.com/group/project/-/merge_requests/12#note_228622";
+  for (const [source, href, suffix] of [
+    [url + "；仓库 OpenCSG/teamx-demo", url + "/", "；仓库 OpenCSG/teamx-demo"],
+    [url + "、实际账号 csgship", url + "/", "、实际账号 csgship"],
+    [note + "（note 228622）", note, "（note 228622）"],
+    [note + "，已完成", note, "，已完成"],
+    [note + "。下一步", note, "。下一步"],
+    [note + "：说明", note, "：说明"],
+    [note + "【说明】", note, "【说明】"],
+    [note + "）后续", note, "）后续"],
+    [note + "》后续", note, "》后续"],
+  ]) {
+    for (const options of [undefined, {}]) {
+      const html = markdownHTML(source, options);
+      assert.ok(html.includes(`href="${href}"`), source);
+      assert.ok(html.includes(`</a>${suffix}`), source);
+      assert.equal((html.match(/<a /g) || []).length, 1, source);
+    }
+  }
+  const html = markdownHTML(note + "，**已完成**；下一条 https://example.com/a_(b).，继续");
+  assert.ok(html.includes("</a>，<strong>已完成</strong>；下一条"));
+  assert.ok(html.includes('href="https://example.com/a_(b)"'));
+  assert.ok(html.includes("</a>.，继续"));
+  assert.equal((html.match(/<a /g) || []).length, 2);
+  const mention = "@reviewer";
+  const source = note + "，" + mention;
+  const bound = markdownHTML(source, {mentions:[{start:note.length + 1,end:source.length,kind:"agent",id:"reviewer"}]});
+  assert.ok(bound.includes('</a>，<mark class="mention-member">@reviewer</mark>'));
+});
+
+test("Chinese URLs and explicit destinations retain their address without guessing word boundaries", () => {
+  const chinese = "https://example.com/中文页面?q=关键词#章节";
+  assert.ok(markdownHTML(chinese).includes(`href="${new URL(chinese).href}"`));
+  const encoded = "https://example.com/a%EF%BC%88b%EF%BC%89?q=a%EF%BC%8Cb";
+  assert.ok(markdownHTML(encoded).includes(`href="${encoded}"`));
+  for (const url of ["https://example.com/目录（说明）?q=甲，乙#段落；一", "https://example.com/a_(b)"]) {
+    for (const source of [`[查看](${url})（说明）`, `<${url}>，正文`]) {
+      const html = markdownHTML(source);
+      assert.ok(html.includes(`href="${new URL(url).href}"`), source);
+      assert.ok(/<\/a>[（，]/u.test(html), source);
+    }
+  }
+  const file = "https://scion.opencsg.com/OpenCSG/teamx-demo/tree/" + "a".repeat(64) + "/design.md";
+  assert.ok(markdownHTML(file).includes(`href="${file}"`));
+});
+
+test("historical simple HTML links are rebuilt with guarded destinations and fixed attributes", () => {
+  const url = "https://gitlab.example.com/group/project/-/merge_requests/57";
+  for (const source of [
+    `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`,
+    `1. 相对链接 <code>api-config.md</code>；<a href="${url}">查看 MR</a>`,
+    `<A REL='opener' TARGET='_self' HREF='${url}'>查看 MR</A>`,
+  ]) {
+    const html = markdownHTML(source);
+    assert.ok(html.includes(`href="${url}" target="_blank" rel="noopener noreferrer"`), source);
+    assert.equal((html.match(/<a /g) || []).length, 1, source);
+    assert.ok(!html.includes("&lt;a "));
+    assert.ok(!html.includes('target="_self"'));
+  }
+  const html = markdownHTML('<a href="https://example.com/目录（说明）?a=1&amp;b=2&#35;section" title="查看 &quot;MR&quot;">MR &amp; 说明</a>');
+  assert.ok(html.includes('href="https://example.com/%E7%9B%AE%E5%BD%95%EF%BC%88%E8%AF%B4%E6%98%8E%EF%BC%89?a=1&amp;b=2#section"'));
+  assert.ok(html.includes('title="查看 &quot;MR&quot;"'));
+  assert.ok(html.includes('>MR &amp; 说明</a>'));
+});
+
+test("HTML link compatibility rejects executable URLs, attributes, nested markup and duplicate attributes", () => {
+  for (const source of [
+    '<a href="javascript:alert(1)">run</a>',
+    '<a href="java&#x73;cript:alert(1)">run</a>',
+    '<a href="data:text/html,test">run</a>',
+    '<a href="//example.com">relative</a>',
+    '<a href="/v1/send">relative</a>',
+    '<a href="https://example.com" onclick="alert(1)">run</a>',
+    '<a href="https://example.com" style="color:red">run</a>',
+    '<a href="https://example.com" HREF="https://evil.invalid">duplicate</a>',
+    '<a href="https://example.com"><img src=x onerror=alert(1)></a>',
+    '<a href="https://example.com"><a href="https://evil.invalid">nested</a></a>',
+  ]) {
+    const html = markdownHTML(source);
+    assert.ok(!/<(?:a|img|script)\b/i.test(html), source);
+    assert.ok(html.includes("&lt;a "), source);
+  }
+  for (const href of ["https://example.com/&#10;bad", "https://example.com/&#x09;bad", "https://"]) {
+    assert.ok(!markdownHTML(`<a href="${href}">invalid</a>`).includes("<a "), href);
+  }
+  const nested = markdownHTML('[outer <a href="https://example.com">inner</a>](https://outer.example.com)');
+  assert.equal((nested.match(/<a /g) || []).length, 1);
+});
+
+test("code and escaped HTML remain literal under link compatibility and boundary handling", () => {
+  const literal = 'https://example.com；仓库 <a href="https://example.com">查看</a>';
+  const html = markdownHTML('`' + literal + '`\n\n```html\n' + literal + '\n```\n\n<code>' + literal + '</code>');
+  assert.ok(!html.includes("<a "));
+  assert.equal((html.match(/https:\/\/example.com；仓库/g) || []).length, 3);
+  assert.equal((html.match(/&lt;a href=/g) || []).length, 3);
+  const escaped = markdownHTML('&lt;a href="https://example.com"&gt;查看&lt;/a&gt;');
+  assert.ok(!escaped.includes('<a href="https://example.com/" target='));
+});
+
 test("code keeps URLs and markup literal; tables scroll within the message", () => {
   const html = markdownHTML("`https://example.com @ann`\n\n```html\n<script>alert(1)</script>\nhttps://example.com\n```\n\n| 名称 | 状态 |\n| :--- | ---: |\n| **任务** | 完成 |");
   assert.ok(!html.includes("<a "));

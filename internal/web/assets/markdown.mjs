@@ -1,4 +1,4 @@
-import { Marked, Renderer } from "./vendor/marked.mjs";
+import { Marked, Renderer, Tokenizer } from "./vendor/marked.mjs";
 import { createImageToolIcon, createNavigationIcon } from "./icons.mjs";
 import { mentionRanges, memberMentionRanges } from "./client.mjs";
 
@@ -18,6 +18,15 @@ function webLink(href, label, title) {
     const tooltip = title ? ` title="${escapeHTML(title)}"` : "";
     return `<a href="${escapeHTML(url.href)}" target="_blank" rel="noopener noreferrer"${tooltip}>${label}</a>`;
   } catch { return label; }
+}
+
+function linkAttribute(text) {
+  const entities = { amp: "&", quot: '"', apos: "'", lt: "<", gt: ">" };
+  return text.replace(/&(amp|quot|apos|lt|gt|#\d{1,7}|#x[\da-f]{1,6});/gi, (raw, entity) => {
+    if (!entity.startsWith("#")) return entities[entity.toLowerCase()];
+    const value = entity[1].toLowerCase() === "x" ? parseInt(entity.slice(2), 16) : Number(entity.slice(1));
+    return value > 0 && value <= 0x10ffff && !(value >= 0xd800 && value <= 0xdfff) ? String.fromCodePoint(value) : "\uFFFD";
+  });
 }
 
 function notificationMarkdown(text) {
@@ -205,6 +214,18 @@ function makeMarkdown(options = {}) {
   return new Marked({
     gfm: true,
     breaks: true,
+    tokenizer: {
+      url(src) {
+        const token = Tokenizer.prototype.url.call(this, src);
+        if (!token || !/^https?:\/\//i.test(token.href)) return token;
+        // Bare links use Chinese prose punctuation as boundaries. Leave the
+        // suffix to the lexer so its formatting, mentions and links still work.
+        // Explicit links and <autolinks> bypass this rule; Chinese letters and
+        // percent-encoded punctuation remain valid parts of a URL.
+        const boundary = token.raw.search(/[。，！？、；：（）《》【】“”‘’]/u);
+        return boundary < 0 ? token : Tokenizer.prototype.url.call(this, token.raw.slice(0, boundary));
+      },
+    },
     renderer: {
       html({ text }) {
         // Only attribute-free formatting tags are accepted from message HTML.
@@ -214,13 +235,7 @@ function makeMarkdown(options = {}) {
       text(token) {
         return token.tokens ? this.parser.parseInline(token.tokens) : escapeHTML(token.text, true);
       },
-      link({ href, tokens, title, raw }) {
-        // GFM's bare URL rule keeps Chinese sentence punctuation in the URL.
-        // Explicit Markdown links and <autolinks> retain their exact destination.
-        if (/^https?:\/\//i.test(raw)) {
-          const suffix = raw.match(/[。，！？、；：）》】”’]+$/u)?.[0] || "";
-          if (suffix) return webLink(href.slice(0, -suffix.length), escapeHTML(raw.slice(0, -suffix.length), true), title) + escapeHTML(suffix);
-        }
+      link({ href, tokens, title }) {
         const literal = list => list.map(token=>token.type==="roomMention" ? {type:"text",raw:token.raw,text:options.roomMentionTokens[token.index].raw} : token.tokens ? {...token,tokens:literal(token.tokens)} : token);
         const label = this.parser.parseInline(options.roomMentionTokens ? literal(tokens) : tokens);
         if (options.openCalendar && /^#calendar\/task\/task_[a-f0-9]{32}$/.test(href)) return `<a href="${href}" class="calendar-receipt-link">${label}</a>`;
@@ -234,6 +249,26 @@ function makeMarkdown(options = {}) {
       },
     },
     extensions: [{
+      name: "inlineHTMLLink", level: "inline",
+      start(src) { return src.search(/<a\s/i); },
+      tokenizer(src) {
+        if (this.lexer.state.inLink) return;
+        // Compatibility for simple historical HTML links only. Never forward
+        // source attributes or interpret nested HTML in the label.
+        const match = /^<a((?:\s+(?:href|title|target|rel)\s*=\s*(?:"[^"]*"|'[^']*'))+)\s*>([^<>\r\n]*)<\/a\s*>/i.exec(src);
+        if (!match) return;
+        const attrs = new Map();
+        for (const attr of match[1].matchAll(/(href|title|target|rel)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)) {
+          const name = attr[1].toLowerCase();
+          if (attrs.has(name)) return;
+          attrs.set(name, linkAttribute(attr[2] ?? attr[3]));
+        }
+        const href = attrs.get("href");
+        if (!/^https?:\/\//i.test(href || "")) return;
+        return { type: "inlineHTMLLink", raw: match[0], href, text: match[2], title: attrs.get("title") };
+      },
+      renderer({ href, text, title }) { return webLink(href, escapeHTML(text, true), title); },
+    }, {
       name: "inlineHTMLCode", level: "inline",
       start(src) { return src.search(/<code>/i); },
       tokenizer(src) {

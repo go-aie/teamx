@@ -7,8 +7,8 @@ import (
 )
 
 // Exercise the assembled backend instructions so saved/custom roles receive the
-// same navigation under both input contracts, without rewriting their role.
-func TestPlatformNavigationInEffectiveSessionInstructions(t *testing.T) {
+// same shared guidance under both input contracts, without rewriting their role.
+func TestSharedGuidanceInEffectiveSessionInstructions(t *testing.T) {
 	dir, id := recoveryFixture(t)
 	store, err := openStore(dir, id.RoomID, nil)
 	if err != nil {
@@ -25,9 +25,17 @@ func TestPlatformNavigationInEffectiveSessionInstructions(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, contract := range []string{`"$TEAMX_CLI" platforms skill`, "selection start directly", "end the turn without waiting for clicks", "source customization uses observed versions", "## Member role\n\n" + strings.TrimSpace(role)} {
+			for _, contract := range []string{
+				`"$TEAMX_CLI" platforms skill`,
+				"selection start directly",
+				"end the turn without waiting for clicks",
+				"source customization uses observed versions",
+				"Write web links as `[label](https://...)`",
+				"Avoid raw HTML `<a>` and `<code>` tags",
+				"## Member role\n\n" + strings.TrimSpace(role),
+			} {
 				if !strings.Contains(options.Instructions, contract) {
-					t.Fatalf("missing navigation %q (unified=%v)", contract, unified)
+					t.Fatalf("missing shared guidance %q (unified=%v)", contract, unified)
 				}
 			}
 			if strings.Count(options.Instructions, "# TeamX agent guide") != 1 {
