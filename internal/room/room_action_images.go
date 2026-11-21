@@ -18,11 +18,11 @@ import (
 // running turn. It is independent of model read pages, receipts and budgets.
 type roomActionContextKey struct{}
 type roomActionContext struct {
-	ServiceInfo
-	MemberIdentity
-	Turn  uint64
-	ID    string
-	Input string // immutable original JSON, for per-call strategy selection only
+	ServiceInfo    `json:"-"`
+	MemberIdentity `json:"-"`
+	Turn           uint64
+	ID             string
+	Input          string // immutable original JSON, for per-call strategy selection only
 }
 
 type roomActionImageRef = platformtools.ImageRef

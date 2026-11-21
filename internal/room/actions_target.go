@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/go-aie/teamx/internal/platform"
 )
@@ -201,15 +200,7 @@ func (m *roomManager) resolveActionTarget(ctx context.Context, req apiRequest, q
 		}
 		q.Provider = entry.provider
 	}
-	if q.Provider == "lark" && q.Locator.Query != nil {
-		query := q.Locator.Query
-		if query.ObjectType != "chat" && query.ObjectType != "user" {
-			return actionTargetView{}, invalidField("locator.query.object_type", "expected chat or user")
-		}
-		if !utf8.ValidString(query.Text) || len([]rune(query.Text)) > 50 || strings.ContainsAny(query.Text, "\x00\r\n") {
-			return actionTargetView{}, invalidField("locator.query.text", "expected a nonempty name of at most 50 characters, without NUL or line breaks")
-		}
-	}
+
 	id := MemberIdentity{RoomIdentity: req.RoomIdentity, AgentID: req.Caller.ID, MembershipID: req.Caller.MembershipID}
 	m.mu.Lock()
 	svc, _ := m.runtimeServiceLocked(req.RoomIdentity)

@@ -3,7 +3,9 @@ package room
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	larkruntime "github.com/go-aie/teamx/internal/app/builtinplatforms/lark"
 	"github.com/go-aie/teamx/internal/app/platformtools"
@@ -105,6 +107,15 @@ func (m *roomManager) prepareLarkReferenceContentActions(ctx context.Context, id
 }
 
 func (m *roomManager) resolveLarkActionTarget(ctx context.Context, id MemberIdentity, l platform.TargetLocator) (platform.TargetResolution, referenceActionSession, error) {
+	if l.Query != nil {
+		query := l.Query
+		if query.ObjectType != "chat" && query.ObjectType != "user" {
+			return platform.TargetResolution{}, referenceActionSession{}, invalidField("locator.query.object_type", "expected chat or user")
+		}
+		if !utf8.ValidString(query.Text) || len([]rune(query.Text)) > 50 || strings.ContainsAny(query.Text, "\x00\r\n") {
+			return platform.TargetResolution{}, referenceActionSession{}, invalidField("locator.query.text", "expected a nonempty name of at most 50 characters, without NUL or line breaks")
+		}
+	}
 	old := platform.AccessContext{}
 	if l.Source == nil {
 		if _, ok := ctx.Value(toolEntryContextKey{}).(toolEntryContext); !ok {

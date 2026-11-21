@@ -14,7 +14,9 @@ import (
 
 func TestStaticAssemblySourcesAndCapabilitiesAgree(t *testing.T) {
 	catalog := defaultPlatformCatalog()
-	adapters := defaultNotificationAdapters(nil)
+	// A nil manager intentionally selects offline sources without runtime hooks.
+	// Bind an inert host to check the production lifecycle declarations.
+	adapters := defaultNotificationAdapters(&roomManager{})
 	declared := 0
 	for _, typ := range catalog.Types().Types() {
 		for _, channel := range typ.NotificationChannels {
