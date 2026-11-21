@@ -1,0 +1,1172 @@
+{
+  "scope": "S2a bounded backend collaboration verification",
+  "date": "2026-11-21",
+  "baseline": "current worktree; concurrent unrelated changes preserved",
+  "head_at_export": "c25cb6f7178220545176d4804a715e4874cef3e9",
+  "private_artifact_root": "/tmp/teamx-collaboration-G2lUPg",
+  "daily_service_changed": false,
+  "existing_user_sessions_rotated": false,
+  "external_platform_writes": 0,
+  "snapshots": {
+    "packaging/dsh/package.json": {
+      "sha256": "21b1e9063bc54a96e7199718278dbca38dc058be463426101580ec5a113ff62d",
+      "bytes": 137
+    },
+    "packaging/dsh/package-lock.json": {
+      "sha256": "32d6292ff1222f9d47d0708e905046f2a2e7828691c1b54271880c1be4028044",
+      "bytes": 434275
+    },
+    "internal/room/dsh_internal_collaboration_real_test.go": {
+      "sha256": "df9f4af8a9f065d4c3fdd934984c01590bde57b8351eb66e00d84f4a0d8197f4",
+      "bytes": 12019
+    },
+    "internal/room/dsh_collaboration_boundary_real_test.go": {
+      "sha256": "b9d6a3a50edf1dcda51ea90193acae7dc315f89768b6780992a062ef702ec719",
+      "bytes": 25691
+    },
+    "internal/room/prompts/agent-guide.md": {
+      "sha256": "d7f36edd93406c5b4b9c9af87de7a64de940c93bb39351a9fb42142544974918",
+      "bytes": 14507
+    },
+    "internal/room/prompts/dsh-guide.md": {
+      "sha256": "7e42304049df510208f5e2065cfa6d9499f016ca68d565a8446408269701cc79",
+      "bytes": 998
+    }
+  },
+  "samples": {
+    "a3": {
+      "closed_cleanly": true,
+      "external_platform_writes": 0,
+      "model": "deepseek-v4.1-flash-1017",
+      "runtime": {
+        "args": [
+          "/tmp/teamx-collaboration-G2lUPg/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js"
+        ],
+        "binary": "/opt/homebrew/bin/node",
+        "executable_version": "v26.7.0",
+        "launcher_sha256": "b6640801a5a65aae9f53ca21bcce3b2ea28bd9e9554c939c1ff7c4448d91fa18",
+        "package_sha256": "3e14837ceb3bbc0ba419ed08e9b5ba164338369b1268b93c3c25d89f7b1c9953",
+        "package_version": "0.2.2-rc.1"
+      },
+      "status": "passed",
+      "private_report": "a3-final/report.json",
+      "report_sha256": "4c2f705686859eed9198be3e8e4e88f14fee6453deef26ce6089ba701b603ee6",
+      "room_publications": [
+        {
+          "author_membership_id": "generation-A",
+          "seq": 2,
+          "client_message_id": "internal-check-observations-total-diff-1",
+          "author": {
+            "kind": "agent",
+            "id": "A"
+          },
+          "text": "已完成内部调查并自行核对（未分派给 Room 其他成员）。\n\n**observations.txt 数据**\n- batch-alpha: 17\n- batch-beta: 25\n\n**结果**\n- 总数（两批之和）：**42**（17 + 25）\n- 差值（两批相差）：**8**（|25 − 17|，beta 比 alpha 多 8）\n\n**核对过程**：我用 read 工具直接读取了原文件，并独立重新计算：17 + 25 = 42，25 − 17 = 8，与内部助手回传的 42 和 8 一致。补充消息「同时算差值」在启动后已发送，助手确认收到。\n\n另外提醒一点：工作区里的 calc.go 中 `Mean` 实现为 `a + b / 2`，由于运算符优先级，它算的是 a + (b/2)。比如 Mean(17, 25) 会得到 29 而不是 21。本次任务没有用到它，但如果后续要用它算平均值，建议改为 `(a + b) / 2`。需要的话我可以帮你修改。"
+        },
+        {
+          "author_membership_id": "generation-A",
+          "seq": 4,
+          "client_message_id": "internal-review-calc-go-1",
+          "author": {
+            "kind": "agent",
+            "id": "A"
+          },
+          "text": "已完成对 calc.go 的内部 review，并自行核对结论（只审查，未修改任何文件）。\n\n**问题**\n`calc.go` 中的 `Mean`：\n```go\nfunc Mean(a, b int) int { return a + b / 2 }\n```\nGo 中 `/` 优先级高于 `+`，所以实际是 `a + (b/2)`，而不是 `(a+b)/2`。\n另外，整数除法在 a、b 都为奇数时还会截断小数，如 Mean(17, 25) = 29（正确应为 21）。\n\n**Mean(2, 4) 演示**（以下结果我实际用 Go 运行验证过，临时文件已删除）\n- 实际值：`Mean(2, 4) = 2 + 4/2 = 4`\n- 期望值：`(2 + 4) / 2 = 3`\n- 偏差 +1\n\n**建议修复**\n```go\nfunc Mean(a, b int) float64 { return float64(a+b) / 2 }\n```\n返回类型改成 float64，以避免奇数和的截断。\n\n**这是否构成 Room 中 reviewer 成员的独立评审？**\n不构成。本次 review 来自我通过运行时启动的 DSH 内部子助手，它只为我这个成员（A）服务，并不是 Room 中的 reviewer 成员本人，也没有经过该成员的确认或授权。因此它只能作为我自己的内部参考，不能算作 reviewer 成员的独立评审结论。如果需要正式评审，应由 reviewer 成员自己查看代码并给出意见。\n\n内部助手与我的核对结果在这一处是一致的。另注明：内部 helper 是手算，没有实际运行 Go；实际运行验证是我自己做的。"
+        }
+      ],
+      "http_status_counts": {},
+      "send_attempts": [],
+      "input_proof": [],
+      "effective_instructions": [
+        {
+          "path": "room/agents/generation-A/session.json.dsh/home/AGENTS.md",
+          "sha256": "eafa3599cf1bfd485ce85f2d31b92babb0adc06c075be97afa6ab0a3ade874e0",
+          "bytes": 22314
+        }
+      ],
+      "native_sessions": [
+        {
+          "id": "376d99ae-e444-471e-be7a-396824f660e8",
+          "parent": "",
+          "tools": [
+            "bash",
+            "create_goal",
+            "edit",
+            "get_goal",
+            "glob",
+            "grep",
+            "interrupt_agent",
+            "job_kill",
+            "job_list",
+            "job_output",
+            "list_agents",
+            "list_mcp_resource_templates",
+            "list_mcp_resources",
+            "mcp__teamx__history_list",
+            "mcp__teamx__history_read",
+            "mcp__teamx__inbox_list",
+            "mcp__teamx__inbox_read",
+            "read",
+            "read_image",
+            "read_mcp_resource",
+            "send_message",
+            "skill",
+            "subagent",
+            "subagent_fork",
+            "todo_write",
+            "update_goal",
+            "web_fetch",
+            "workflow",
+            "working_directory",
+            "write"
+          ],
+          "tool_schema_canonical_sha256": "2f53456cc1ecc5c20f19c7f256d5a34d0b53bceb29ee96df2f8139c1bf4412d4",
+          "shared_guide": true,
+          "backend_guide": true,
+          "member_identity": true,
+          "tool_calls": {
+            "mcp__teamx__inbox_read": 2,
+            "bash": 7,
+            "read": 2,
+            "subagent": 2,
+            "send_message": 2,
+            "subagent_fork": 1,
+            "list_agents": 1,
+            "mcp__teamx__inbox_list": 1
+          },
+          "turn_endings": [
+            {
+              "turn": 1,
+              "reason": {
+                "kind": "completed"
+              }
+            },
+            {
+              "turn": 2,
+              "reason": {
+                "kind": "completed"
+              }
+            },
+            {
+              "turn": 3,
+              "reason": {
+                "kind": "completed"
+              }
+            }
+          ]
+        },
+        {
+          "id": "8ea92302-9ae2-49b6-afd0-ca4050af5f14",
+          "parent": "376d99ae-e444-471e-be7a-396824f660e8",
+          "tools": [
+            "bash",
+            "create_goal",
+            "edit",
+            "get_goal",
+            "glob",
+            "grep",
+            "interrupt_agent",
+            "job_kill",
+            "job_list",
+            "job_output",
+            "list_agents",
+            "read",
+            "read_image",
+            "send_message",
+            "skill",
+            "subagent",
+            "subagent_fork",
+            "todo_write",
+            "update_goal",
+            "web_fetch",
+            "workflow",
+            "working_directory",
+            "write"
+          ],
+          "tool_schema_canonical_sha256": "0db6d8a409bf87f4475380e976eebd070c3ca606ca3aa226360e8c12257c8cd9",
+          "shared_guide": true,
+          "backend_guide": true,
+          "member_identity": true,
+          "tool_calls": {
+            "read": 2,
+            "bash": 1,
+            "send_message": 1
+          },
+          "turn_endings": [
+            {
+              "turn": 1,
+              "reason": {
+                "kind": "completed"
+              }
+            }
+          ]
+        },
+        {
+          "id": "a32e9518-07f8-40c6-a14a-94b66e713fc7",
+          "parent": "376d99ae-e444-471e-be7a-396824f660e8",
+          "tools": [
+            "bash",
+            "create_goal",
+            "edit",
+            "get_goal",
+            "glob",
+            "grep",
+            "interrupt_agent",
+            "job_kill",
+            "job_list",
+            "job_output",
+            "list_agents",
+            "read",
+            "read_image",
+            "send_message",
+            "skill",
+            "subagent",
+            "subagent_fork",
+            "todo_write",
+            "update_goal",
+            "web_fetch",
+            "workflow",
+            "working_directory",
+            "write"
+          ],
+          "tool_schema_canonical_sha256": "0db6d8a409bf87f4475380e976eebd070c3ca606ca3aa226360e8c12257c8cd9",
+          "shared_guide": true,
+          "backend_guide": true,
+          "member_identity": true,
+          "tool_calls": {
+            "read": 1,
+            "send_message": 1
+          },
+          "turn_endings": [
+            {
+              "turn": 1,
+              "reason": {
+                "kind": "completed"
+              }
+            }
+          ]
+        },
+        {
+          "id": "fd00c918-b0d5-43a9-aac5-0b2cd97ceb44",
+          "parent": "376d99ae-e444-471e-be7a-396824f660e8",
+          "tools": [
+            "bash",
+            "create_goal",
+            "edit",
+            "get_goal",
+            "glob",
+            "grep",
+            "interrupt_agent",
+            "job_kill",
+            "job_list",
+            "job_output",
+            "list_agents",
+            "read",
+            "read_image",
+            "send_message",
+            "skill",
+            "subagent",
+            "subagent_fork",
+            "todo_write",
+            "update_goal",
+            "web_fetch",
+            "workflow",
+            "working_directory",
+            "write"
+          ],
+          "tool_schema_canonical_sha256": "0db6d8a409bf87f4475380e976eebd070c3ca606ca3aa226360e8c12257c8cd9",
+          "shared_guide": true,
+          "backend_guide": true,
+          "member_identity": true,
+          "tool_calls": {
+            "read": 1,
+            "send_message": 3
+          },
+          "turn_endings": [
+            {
+              "turn": 1,
+              "reason": {
+                "kind": "completed"
+              }
+            }
+          ]
+        }
+      ],
+      "business_turns": 2,
+      "scenarios": [
+        {
+          "scenario": "investigation",
+          "status": "passed"
+        },
+        {
+          "scenario": "review",
+          "status": "passed"
+        }
+      ]
+    },
+    "child_cli_and_normal_resume": {
+      "acp_agent": {
+        "name": "deepseek-harness-acp",
+        "version": "0.0.1"
+      },
+      "child_cross_member_probe_executed": true,
+      "child_history_read_executed": false,
+      "child_policy_read_executed": true,
+      "child_publication_executed": true,
+      "closed_cleanly": true,
+      "external_platform_writes": 0,
+      "model": "deepseek-v4.1-flash-1017",
+      "normal_resume": "passed",
+      "runtime": {
+        "args": [
+          "/tmp/teamx-collaboration-G2lUPg/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js"
+        ],
+        "binary": "/opt/homebrew/bin/node",
+        "executable_version": "v26.7.0",
+        "launcher_sha256": "b6640801a5a65aae9f53ca21bcce3b2ea28bd9e9554c939c1ff7c4448d91fa18",
+        "package_sha256": "3e14837ceb3bbc0ba419ed08e9b5ba164338369b1268b93c3c25d89f7b1c9953",
+        "package_version": "0.2.2-rc.1"
+      },
+      "status": "passed",
+      "private_report": "boundaries-final/child-teamx/report.json",
+      "report_sha256": "11a2b6db4f23c7035fa1c15fb1b61604fd6e67d31dde3803c6b3f01bfc59e824",
+      "room_publications": [
+        {
+          "author_membership_id": "generation-A",
+          "seq": 2,
+          "client_message_id": "child-boundary-receipt",
+          "author": {
+            "kind": "agent",
+            "id": "A"
+          },
+          "text": "CHILD_BOUNDARY_OK"
+        }
+      ],
+      "http_status_counts": {
+        "/mcp 400": 2,
+        "/mcp 200": 11,
+        "/mcp 202": 2,
+        "/mcp 405": 2,
+        "/v1/policy/read 200": 3,
+        "/v1/send 200": 1,
+        "/v1/send 403": 1
+      },
+      "send_attempts": [
+        {
+          "path": "/v1/send",
+          "caller": {
+            "kind": "agent",
+            "id": "A",
+            "membership_id": "generation-A"
+          },
+          "id": "child-boundary-receipt",
+          "status": 200
+        },
+        {
+          "path": "/v1/send",
+          "caller": {
+            "kind": "agent",
+            "id": "reviewer",
+            "membership_id": "generation-reviewer"
+          },
+          "id": "child-cross-member",
+          "status": 403
+        }
+      ],
+      "input_proof": [
+        {
+          "receipt_required": true,
+          "received": true,
+          "kind": "room",
+          "from": 1,
+          "through": 3,
+          "phase": "settled",
+          "result_digest": "aeb35ea702706622424bf779763a7575e3f23b00328222e41ab589931b938cb8"
+        }
+      ],
+      "effective_instructions": [
+        {
+          "path": "room/agents/generation-A/session.json.dsh/home/AGENTS.md",
+          "sha256": "eafa3599cf1bfd485ce85f2d31b92babb0adc06c075be97afa6ab0a3ade874e0",
+          "bytes": 22314
+        }
+      ],
+      "native_sessions": [
+        {
+          "backend_guide": true,
+          "first_request_header_sha256": "be9d3cbd58f224f1660c454e9dc9f96b075ace5c0916a17f30624f201c453f39",
+          "id": "bdccf9f9-ec7d-425f-92b1-e05b44084ba0",
+          "instructions_sha256": "df5094333495ba2c7635a1f33715a1afbb8602eea66bead6297b03e4f5c6561a",
+          "member_identity": true,
+          "parent": "",
+          "shared_guide": true,
+          "system_message_sha256": "b73b4d32f3e953ca8e02d4d9963049aaf8d54c93492b1d73b46ec8b341ec3d0f",
+          "tool_schemas_sha256": "0200b8e36b60a5c2c75807dfba4cfb67f84778d9c0fa3ac70e521ce40b2d8601",
+          "tools": [
+            "bash",
+            "create_goal",
+            "edit",
+            "get_goal",
+            "glob",
+            "grep",
+            "interrupt_agent",
+            "job_kill",
+            "job_list",
+            "job_output",
+            "list_agents",
+            "list_mcp_resource_templates",
+            "list_mcp_resources",
+            "mcp__teamx__history_list",
+            "mcp__teamx__history_read",
+            "mcp__teamx__inbox_list",
+            "mcp__teamx__inbox_read",
+            "read",
+            "read_image",
+            "read_mcp_resource",
+            "send_message",
+            "skill",
+            "subagent",
+            "subagent_fork",
+            "todo_write",
+            "update_goal",
+            "web_fetch",
+            "workflow",
+            "working_directory",
+            "write"
+          ],
+          "tool_calls": {
+            "mcp__teamx__inbox_read": 2,
+            "bash": 2,
+            "subagent": 1,
+            "mcp__teamx__history_read": 3,
+            "list_agents": 1,
+            "send_message": 1
+          },
+          "turn_endings": [
+            {
+              "turn": 1,
+              "reason": {
+                "kind": "completed"
+              }
+            },
+            {
+              "turn": 2,
+              "reason": {
+                "kind": "completed"
+              }
+            },
+            {
+              "turn": 3,
+              "reason": {
+                "kind": "completed"
+              }
+            }
+          ]
+        },
+        {
+          "backend_guide": true,
+          "first_request_header_sha256": "24ee257bacc1396c693adb2bca30bb1ffe4e3a690fe57eff299cae5c48e024fa",
+          "id": "bed4ac3a-5022-4c2b-9043-3c982d525838",
+          "instructions_sha256": "df5094333495ba2c7635a1f33715a1afbb8602eea66bead6297b03e4f5c6561a",
+          "member_identity": true,
+          "parent": "bdccf9f9-ec7d-425f-92b1-e05b44084ba0",
+          "shared_guide": true,
+          "system_message_sha256": "9269a5e1f75ef2fa64be2e64a5c7b1d1f8c9c59cfef698cfb461e038e70e7e2a",
+          "tool_schemas_sha256": "055812ff5de13072437c2d69f8a5ed15ba5354238ec87332850c87e2a546ffbc",
+          "tools": [
+            "bash",
+            "create_goal",
+            "edit",
+            "get_goal",
+            "glob",
+            "grep",
+            "interrupt_agent",
+            "job_kill",
+            "job_list",
+            "job_output",
+            "list_agents",
+            "read",
+            "read_image",
+            "send_message",
+            "skill",
+            "subagent",
+            "subagent_fork",
+            "todo_write",
+            "update_goal",
+            "web_fetch",
+            "workflow",
+            "working_directory",
+            "write"
+          ],
+          "tool_calls": {
+            "bash": 4,
+            "write": 1,
+            "send_message": 1
+          },
+          "turn_endings": [
+            {
+              "turn": 1,
+              "reason": {
+                "kind": "completed"
+              }
+            }
+          ]
+        }
+      ],
+      "business_turns": 2
+    },
+    "cancel_inflight": {
+      "acp_agent": {
+        "name": "deepseek-harness-acp",
+        "version": "0.0.1"
+      },
+      "child_gate_cancelled": true,
+      "close_error": "DSH original session recovery unavailable; require verified normal shutdown and matching backend state: context canceled\ncancelled DSH tools did not stop within settlement budget",
+      "closed_cleanly": false,
+      "external_platform_writes": 0,
+      "input_delivered_through": 4,
+      "model": "deepseek-v4.1-flash-1017",
+      "normal_resume_eligible": false,
+      "old_execution_settled": true,
+      "original_backend_session": "69b75871-afde-4a0e-9594-500b416f67cb",
+      "resume_error": "DSH original session recovery unavailable; require verified normal shutdown and matching backend state: no verified normal shutdown",
+      "rotation": {
+        "cancel": false,
+        "resume": false,
+        "replenish": false,
+        "operation_id": "6a91ff94063756619df218f4ffc0f085",
+        "reason": "manual",
+        "from_generation": "session.json.dsh",
+        "to_generation": "session.json.dsh-5d2f9632f2b1971fc5f7a8b512799e0d",
+        "base_used": 1,
+        "phase": "completed",
+        "status": "completed",
+        "private_context_reset": true
+      },
+      "rotation_without_replay": "passed",
+      "runtime": {
+        "args": [
+          "/tmp/teamx-collaboration-G2lUPg/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js"
+        ],
+        "binary": "/opt/homebrew/bin/node",
+        "executable_version": "v26.7.0",
+        "launcher_sha256": "b6640801a5a65aae9f53ca21bcce3b2ea28bd9e9554c939c1ff7c4448d91fa18",
+        "package_sha256": "3e14837ceb3bbc0ba419ed08e9b5ba164338369b1268b93c3c25d89f7b1c9953",
+        "package_version": "0.2.2-rc.1"
+      },
+      "status": "failed",
+      "private_report": "boundaries-lifecycle/cancel/report.json",
+      "report_sha256": "da48f600f3b62b2abafb56ed94d46228cc099de407da2d9faef19f0ff6fa941b",
+      "room_publications": [
+        {
+          "author_membership_id": "generation-A",
+          "seq": 2,
+          "client_message_id": "inflight-receipt",
+          "author": {
+            "kind": "agent",
+            "id": "A"
+          },
+          "text": "INFLIGHT_BEFORE_STOP"
+        }
+      ],
+      "http_status_counts": {
+        "/mcp 400": 2,
+        "/mcp 200": 9,
+        "/mcp 202": 2,
+        "/mcp 405": 2,
+        "/v1/send 200": 1
+      },
+      "send_attempts": [
+        {
+          "path": "/v1/send",
+          "caller": {
+            "kind": "agent",
+            "id": "A",
+            "membership_id": "generation-A"
+          },
+          "id": "inflight-receipt",
+          "status": 200
+        }
+      ],
+      "input_proof": [
+        {
+          "receipt_required": true,
+          "received": true,
+          "kind": "room",
+          "from": 1,
+          "through": 4,
+          "phase": "settled",
+          "result_digest": "9569583d337e34f63a13421e4a4e0137f1191a76365e58ecfedd2ce103d965b6"
+        }
+      ],
+      "effective_instructions": [
+        {
+          "path": "room/agents/generation-A/session.json.dsh/home/AGENTS.md",
+          "sha256": "eafa3599cf1bfd485ce85f2d31b92babb0adc06c075be97afa6ab0a3ade874e0",
+          "bytes": 22314
+        },
+        {
+          "path": "room/agents/generation-A/session.json.dsh-5d2f9632f2b1971fc5f7a8b512799e0d/home/AGENTS.md",
+          "sha256": "e6fae9a928072a54f4e4305e50002dea228a2e86730f43b247a05df23c73a921",
+          "bytes": 22384
+        }
+      ],
+      "native_sessions": [
+        {
+          "backend_guide": true,
+          "first_request_header_sha256": "be9d3cbd58f224f1660c454e9dc9f96b075ace5c0916a17f30624f201c453f39",
+          "id": "69b75871-afde-4a0e-9594-500b416f67cb",
+          "instructions_sha256": "df5094333495ba2c7635a1f33715a1afbb8602eea66bead6297b03e4f5c6561a",
+          "member_identity": true,
+          "parent": "",
+          "shared_guide": true,
+          "system_message_sha256": "7a52a49e6b2bd2c670da3fe2dd2290ddf1c8f64cb5177c9890de1ce7beba9f9d",
+          "tool_schemas_sha256": "0200b8e36b60a5c2c75807dfba4cfb67f84778d9c0fa3ac70e521ce40b2d8601",
+          "tools": [
+            "bash",
+            "create_goal",
+            "edit",
+            "get_goal",
+            "glob",
+            "grep",
+            "interrupt_agent",
+            "job_kill",
+            "job_list",
+            "job_output",
+            "list_agents",
+            "list_mcp_resource_templates",
+            "list_mcp_resources",
+            "mcp__teamx__history_list",
+            "mcp__teamx__history_read",
+            "mcp__teamx__inbox_list",
+            "mcp__teamx__inbox_read",
+            "read",
+            "read_image",
+            "read_mcp_resource",
+            "send_message",
+            "skill",
+            "subagent",
+            "subagent_fork",
+            "todo_write",
+            "update_goal",
+            "web_fetch",
+            "workflow",
+            "working_directory",
+            "write"
+          ],
+          "turn_endings": [
+            {
+              "turn": 1,
+              "reason": {
+                "kind": "aborted",
+                "reason": {
+                  "kind": "user"
+                }
+              }
+            }
+          ],
+          "tool_calls": {
+            "mcp__teamx__inbox_read": 1,
+            "bash": 1,
+            "subagent": 1,
+            "list_agents": 1,
+            "todo_write": 1
+          }
+        },
+        {
+          "backend_guide": true,
+          "first_request_header_sha256": "24ee257bacc1396c693adb2bca30bb1ffe4e3a690fe57eff299cae5c48e024fa",
+          "id": "6ce83b68-e79c-4703-9c47-8880f8dbf803",
+          "instructions_sha256": "df5094333495ba2c7635a1f33715a1afbb8602eea66bead6297b03e4f5c6561a",
+          "member_identity": true,
+          "parent": "69b75871-afde-4a0e-9594-500b416f67cb",
+          "shared_guide": true,
+          "system_message_sha256": "ea49566313e147a0c3493561910246b13a28f22d14449a1f5c3892a11a14ff39",
+          "tool_schemas_sha256": "055812ff5de13072437c2d69f8a5ed15ba5354238ec87332850c87e2a546ffbc",
+          "tools": [
+            "bash",
+            "create_goal",
+            "edit",
+            "get_goal",
+            "glob",
+            "grep",
+            "interrupt_agent",
+            "job_kill",
+            "job_list",
+            "job_output",
+            "list_agents",
+            "read",
+            "read_image",
+            "send_message",
+            "skill",
+            "subagent",
+            "subagent_fork",
+            "todo_write",
+            "update_goal",
+            "web_fetch",
+            "workflow",
+            "working_directory",
+            "write"
+          ],
+          "turn_endings": [
+            {
+              "turn": 1,
+              "reason": {
+                "kind": "aborted",
+                "reason": {
+                  "kind": "parent"
+                }
+              }
+            }
+          ],
+          "tool_calls": {
+            "bash": 2
+          }
+        },
+        {
+          "backend_guide": true,
+          "first_request_header_sha256": "be9d3cbd58f224f1660c454e9dc9f96b075ace5c0916a17f30624f201c453f39",
+          "id": "a4229129-914d-43d5-935e-4da14e4c1e79",
+          "instructions_sha256": "19e43727112f001ef0e7bad3ea7dd31f5aa26d40c65cefde6043b59ffdde016d",
+          "member_identity": true,
+          "parent": "",
+          "shared_guide": true,
+          "system_message_sha256": "626ff52d361ab569bf8b17752ec0b758d9ae11174baf04648cc7a09a0d0617fa",
+          "tool_schemas_sha256": "0200b8e36b60a5c2c75807dfba4cfb67f84778d9c0fa3ac70e521ce40b2d8601",
+          "tools": [
+            "bash",
+            "create_goal",
+            "edit",
+            "get_goal",
+            "glob",
+            "grep",
+            "interrupt_agent",
+            "job_kill",
+            "job_list",
+            "job_output",
+            "list_agents",
+            "list_mcp_resource_templates",
+            "list_mcp_resources",
+            "mcp__teamx__history_list",
+            "mcp__teamx__history_read",
+            "mcp__teamx__inbox_list",
+            "mcp__teamx__inbox_read",
+            "read",
+            "read_image",
+            "read_mcp_resource",
+            "send_message",
+            "skill",
+            "subagent",
+            "subagent_fork",
+            "todo_write",
+            "update_goal",
+            "web_fetch",
+            "workflow",
+            "working_directory",
+            "write"
+          ],
+          "turn_endings": [
+            {
+              "turn": 1,
+              "reason": {
+                "kind": "completed"
+              }
+            }
+          ],
+          "tool_calls": {
+            "mcp__teamx__inbox_read": 1,
+            "mcp__teamx__history_read": 1
+          }
+        }
+      ],
+      "business_turns": 2
+    },
+    "close_inflight": {
+      "acp_agent": {
+        "name": "deepseek-harness-acp",
+        "version": "0.0.1"
+      },
+      "child_gate_cancelled": true,
+      "close_error": "DSH original session recovery unavailable; require verified normal shutdown and matching backend state: context canceled\ncancelled DSH tools did not stop within settlement budget",
+      "closed_cleanly": false,
+      "external_platform_writes": 0,
+      "input_delivered_through": 4,
+      "model": "deepseek-v4.1-flash-1017",
+      "normal_resume_eligible": false,
+      "old_execution_settled": true,
+      "original_backend_session": "e59e4ba2-9221-4742-98af-8773324e231a",
+      "resume_error": "DSH original session recovery unavailable; require verified normal shutdown and matching backend state: no verified normal shutdown",
+      "rotation": {
+        "cancel": false,
+        "resume": false,
+        "replenish": false,
+        "operation_id": "c4428bb12280758fff6cd82aec74fe23",
+        "reason": "manual",
+        "from_generation": "session.json.dsh",
+        "to_generation": "session.json.dsh-2805236b2aa888d566f44a304b943c97",
+        "base_used": 1,
+        "phase": "completed",
+        "status": "completed",
+        "private_context_reset": true
+      },
+      "rotation_without_replay": "passed",
+      "runtime": {
+        "args": [
+          "/tmp/teamx-collaboration-G2lUPg/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js"
+        ],
+        "binary": "/opt/homebrew/bin/node",
+        "executable_version": "v26.7.0",
+        "launcher_sha256": "b6640801a5a65aae9f53ca21bcce3b2ea28bd9e9554c939c1ff7c4448d91fa18",
+        "package_sha256": "3e14837ceb3bbc0ba419ed08e9b5ba164338369b1268b93c3c25d89f7b1c9953",
+        "package_version": "0.2.2-rc.1"
+      },
+      "status": "failed",
+      "private_report": "boundaries-close-final/close/report.json",
+      "report_sha256": "f6c8c1756d8d38137fd09a5b96781484bd67406332c2aa5e993e2b9231510bc3",
+      "room_publications": [
+        {
+          "author_membership_id": "generation-A",
+          "seq": 2,
+          "client_message_id": "inflight-receipt",
+          "author": {
+            "kind": "agent",
+            "id": "A"
+          },
+          "text": "INFLIGHT_BEFORE_STOP"
+        }
+      ],
+      "http_status_counts": {
+        "/mcp 400": 2,
+        "/mcp 200": 9,
+        "/mcp 202": 2,
+        "/mcp 405": 2,
+        "/v1/send 200": 1
+      },
+      "send_attempts": [
+        {
+          "path": "/v1/send",
+          "caller": {
+            "kind": "agent",
+            "id": "A",
+            "membership_id": "generation-A"
+          },
+          "id": "inflight-receipt",
+          "status": 200
+        }
+      ],
+      "input_proof": [
+        {
+          "receipt_required": true,
+          "received": true,
+          "kind": "room",
+          "from": 1,
+          "through": 4,
+          "phase": "settled",
+          "result_digest": "ba61bd3d6c31fbdea1bbb5f2e8bc5ad0f1f89afe34a16a616ece4d96d4736ba2"
+        }
+      ],
+      "effective_instructions": [
+        {
+          "path": "room/agents/generation-A/session.json.dsh/home/AGENTS.md",
+          "sha256": "eafa3599cf1bfd485ce85f2d31b92babb0adc06c075be97afa6ab0a3ade874e0",
+          "bytes": 22314
+        },
+        {
+          "path": "room/agents/generation-A/session.json.dsh-2805236b2aa888d566f44a304b943c97/home/AGENTS.md",
+          "sha256": "e6fae9a928072a54f4e4305e50002dea228a2e86730f43b247a05df23c73a921",
+          "bytes": 22384
+        }
+      ],
+      "native_sessions": [
+        {
+          "backend_guide": true,
+          "first_request_header_sha256": "24ee257bacc1396c693adb2bca30bb1ffe4e3a690fe57eff299cae5c48e024fa",
+          "id": "904d390f-f861-4a80-ab65-8436de33965d",
+          "instructions_sha256": "df5094333495ba2c7635a1f33715a1afbb8602eea66bead6297b03e4f5c6561a",
+          "member_identity": true,
+          "parent": "e59e4ba2-9221-4742-98af-8773324e231a",
+          "shared_guide": true,
+          "system_message_sha256": "68a8af56ad49500653e90e83454ef0a0e56fd62a47c968b8229e7cb82a340401",
+          "tool_schemas_sha256": "055812ff5de13072437c2d69f8a5ed15ba5354238ec87332850c87e2a546ffbc",
+          "tools": [
+            "bash",
+            "create_goal",
+            "edit",
+            "get_goal",
+            "glob",
+            "grep",
+            "interrupt_agent",
+            "job_kill",
+            "job_list",
+            "job_output",
+            "list_agents",
+            "read",
+            "read_image",
+            "send_message",
+            "skill",
+            "subagent",
+            "subagent_fork",
+            "todo_write",
+            "update_goal",
+            "web_fetch",
+            "workflow",
+            "working_directory",
+            "write"
+          ],
+          "turn_endings": [
+            {
+              "turn": 1,
+              "reason": {
+                "kind": "aborted",
+                "reason": {
+                  "kind": "parent"
+                }
+              }
+            }
+          ],
+          "tool_calls": {
+            "bash": 2
+          }
+        },
+        {
+          "backend_guide": true,
+          "first_request_header_sha256": "be9d3cbd58f224f1660c454e9dc9f96b075ace5c0916a17f30624f201c453f39",
+          "id": "e59e4ba2-9221-4742-98af-8773324e231a",
+          "instructions_sha256": "df5094333495ba2c7635a1f33715a1afbb8602eea66bead6297b03e4f5c6561a",
+          "member_identity": true,
+          "parent": "",
+          "shared_guide": true,
+          "system_message_sha256": "483514599eb2137ba7d2b12a0da19286d2f83c25b93fc139ded6491c621c3a68",
+          "tool_schemas_sha256": "0200b8e36b60a5c2c75807dfba4cfb67f84778d9c0fa3ac70e521ce40b2d8601",
+          "tools": [
+            "bash",
+            "create_goal",
+            "edit",
+            "get_goal",
+            "glob",
+            "grep",
+            "interrupt_agent",
+            "job_kill",
+            "job_list",
+            "job_output",
+            "list_agents",
+            "list_mcp_resource_templates",
+            "list_mcp_resources",
+            "mcp__teamx__history_list",
+            "mcp__teamx__history_read",
+            "mcp__teamx__inbox_list",
+            "mcp__teamx__inbox_read",
+            "read",
+            "read_image",
+            "read_mcp_resource",
+            "send_message",
+            "skill",
+            "subagent",
+            "subagent_fork",
+            "todo_write",
+            "update_goal",
+            "web_fetch",
+            "workflow",
+            "working_directory",
+            "write"
+          ],
+          "turn_endings": [
+            {
+              "turn": 1,
+              "reason": {
+                "kind": "completed"
+              }
+            }
+          ],
+          "tool_calls": {
+            "mcp__teamx__inbox_read": 1,
+            "subagent": 1
+          }
+        },
+        {
+          "backend_guide": true,
+          "first_request_header_sha256": "be9d3cbd58f224f1660c454e9dc9f96b075ace5c0916a17f30624f201c453f39",
+          "id": "bff9ade6-56c7-4352-96f0-920bdaab229e",
+          "instructions_sha256": "19e43727112f001ef0e7bad3ea7dd31f5aa26d40c65cefde6043b59ffdde016d",
+          "member_identity": true,
+          "parent": "",
+          "shared_guide": true,
+          "system_message_sha256": "4e8f673ae8198de8fa7657e3b5203f52428fb59aa7dc5908584876dd09ee9db0",
+          "tool_schemas_sha256": "0200b8e36b60a5c2c75807dfba4cfb67f84778d9c0fa3ac70e521ce40b2d8601",
+          "tools": [
+            "bash",
+            "create_goal",
+            "edit",
+            "get_goal",
+            "glob",
+            "grep",
+            "interrupt_agent",
+            "job_kill",
+            "job_list",
+            "job_output",
+            "list_agents",
+            "list_mcp_resource_templates",
+            "list_mcp_resources",
+            "mcp__teamx__history_list",
+            "mcp__teamx__history_read",
+            "mcp__teamx__inbox_list",
+            "mcp__teamx__inbox_read",
+            "read",
+            "read_image",
+            "read_mcp_resource",
+            "send_message",
+            "skill",
+            "subagent",
+            "subagent_fork",
+            "todo_write",
+            "update_goal",
+            "web_fetch",
+            "workflow",
+            "working_directory",
+            "write"
+          ],
+          "turn_endings": [
+            {
+              "turn": 1,
+              "reason": {
+                "kind": "completed"
+              }
+            }
+          ],
+          "tool_calls": {
+            "mcp__teamx__inbox_read": 1,
+            "mcp__teamx__history_read": 1
+          }
+        }
+      ],
+      "business_turns": 2
+    }
+  },
+  "earlier_samples": [
+    {
+      "path": "a3/report.json",
+      "status": "failed",
+      "reason": "Incomplete existing runtime: missing native addon. Original test seam returned a typed nil and masked the ACP EOF with a panic; removed acquisition replacement in final fixtures."
+    },
+    {
+      "path": "a3-open-error/report.json",
+      "status": "failed",
+      "reason": "Correctly propagated ACP EOF from incomplete existing runtime. Isolated lockfile installation restored startup; original runtime was not changed."
+    },
+    {
+      "path": "a3-packaged/report.json",
+      "status": "failed_oracle",
+      "reason": "Review explicitly said it cannot represent reviewer, but old phrase matcher did not accept that wording. Added that precise phrase, retained failure, reran both A3 tasks successfully. This sample also published two similar review messages; no statistical reliability claim."
+    },
+    {
+      "path": "boundaries-first/child-teamx/report.json",
+      "status": "failed",
+      "reason": "Child lacked History MCP while CLI Room send and cross-member rejection succeeded. Final case separately validates policy read via CLI and records direct MCP as unavailable; it does not claim child History passed."
+    },
+    {
+      "path": "boundaries-final/cancel/report.json",
+      "status": "failed",
+      "reason": "Cancellation settlement timeout; old execution stopped. Rotation request had invalid test operation ID; replaced it with newOpaqueID and reran lifecycle cases."
+    },
+    {
+      "path": "boundaries-final/close/report.json",
+      "status": "failed",
+      "reason": "Same lifecycle timeout and invalid fixture rotation operation ID; rerun retained timeout assertion."
+    },
+    {
+      "path": "boundaries-lifecycle/close/report.json",
+      "status": "failed_model_scope",
+      "reason": "Model delegated only Room publication and executed the blocking curl in the parent. This is not child-inflight close acceptance, despite graceful close and receipt recovery. Strengthened the task to require the same child to execute both steps; reran close only without weakening the native caller assertion."
+    }
+  ],
+  "validation": [
+    {
+      "command": "go test -race -tags=integration ./internal/room -run '^(TestInputReceiptRequiresFinalBodyProof|TestInputCallsReceiptReplayAndRoomSnapshot|TestInputMCPWaitsForFrameworkReceipt|TestInputConcurrentCallAndOutputProofDoNotCreateOrphanBinding|TestDSHRecoveryAdmitsOnlyStoppedOriginalSession|TestDSHRecoverySupplyOnOpenResumeRotationAndFailedFirstTurn|TestAccessDSHExecutionCredentialRevokedOnCloseAndFailedOpen|TestSharedGuidanceInEffectiveSessionInstructions)$' -count=1",
+      "status": "passed",
+      "private_log": "regression-final.log"
+    },
+    {
+      "command": "go test -race ./agent ./builtin/agents/dsh ./internal/agent/dsh -count=1",
+      "status": "passed",
+      "private_log": "backend-regression.log"
+    },
+    {
+      "command": "go test -tags=e2e ./internal/room -run '^(TestDSHInternalCollaborationReal|TestDSHCollaborationBoundariesReal|TestPolicyRealAuditObservesFactorySession)$' -count=1",
+      "status": "passed without opt-in; real tests skipped",
+      "private_log": "e2e-compile-final.log"
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed"
+    },
+    {
+      "command": "Pinned runtime opt-in TestDSHInternalCollaborationReal",
+      "status": "passed; 2 business turns",
+      "private_log": "a3-final.log"
+    },
+    {
+      "command": "Pinned runtime opt-in TestDSHCollaborationBoundariesReal/child-teamx",
+      "status": "passed; 2 business turns",
+      "private_log": "boundaries-final.log"
+    },
+    {
+      "command": "Pinned runtime opt-in TestDSHCollaborationBoundariesReal/cancel-inflight",
+      "status": "failed normal settlement; safe rotation and no replay passed",
+      "private_log": "boundaries-lifecycle.log"
+    },
+    {
+      "command": "Pinned runtime opt-in TestDSHCollaborationBoundariesReal/close-inflight",
+      "status": "failed normal settlement; safe rotation and no replay passed",
+      "private_log": "boundaries-close-final.log"
+    },
+    {
+      "command": "First targeted race regression",
+      "status": "transient compilation failure in concurrently edited workspace_file_content_test.go; unrelated file not changed here; final retry passed",
+      "private_log": "regression.log"
+    }
+  ],
+  "limits": [
+    "Native spawn tested. fork/workflow schema presence is not execution acceptance.",
+    "No real platform writes, concurrent Workspace/actions, image or automatic-rotation acceptance.",
+    "Direct child History/Inbox MCP is unavailable in the tested native toolset.",
+    "Lifecycle errors remain failures; no default tool-combination change or replay workaround.",
+    "The current runtime and bounded scenarios do not imply P4b completion or statistical reliability."
+  ],
+  "verification_status": "delivered_with_compatibility_failures",
+  "runtime_modules": {
+    "@deepseek-ai/dsh": {
+      "version": "0.2.2-rc.1",
+      "source_sha256": "b6640801a5a65aae9f53ca21bcce3b2ea28bd9e9554c939c1ff7c4448d91fa18"
+    },
+    "@deepseek-ai/dsh-acp": {
+      "version": "0.2.2-rc.1",
+      "source_sha256": "5893cc3ae1972b5b5826d5847b72d67ed71b105af25ab9b2c50549af5ca0f214"
+    },
+    "@deepseek-ai/dsh-subagent": {
+      "version": "0.2.2-rc.1",
+      "source_sha256": "5aad8aadee1879f1e8a878431630f885adbe6f9ee9cb1832838abbc56bc1fbea"
+    },
+    "@deepseek-ai/dsh-mcp-client": {
+      "version": "0.2.2-rc.1",
+      "source_sha256": "64dfc9127a47d9d453d72022b47d3b8d8a5c82cad756ac1114b09faf1a956120"
+    },
+    "@deepseek-ai/dsh-agent-instructions": {
+      "version": "0.2.2-rc.1",
+      "source_sha256": "afbd526d1e3126a368774f24105140adc3ef532ca4aa93cfa0fb1318d5b9b75d"
+    }
+  },
+  "checks": {
+    "a3_investigation": "PASS",
+    "a3_internal_review_and_owner_identity": "PASS",
+    "child_cli_policy_read": "PASS",
+    "child_room_publish": "PASS",
+    "child_cross_member_rejection": "PASS",
+    "child_history_mcp": "FAIL: absent schema",
+    "completed_child_normal_resume_same_generation_and_backend_id": "PASS",
+    "cancel_inflight_graceful_settlement": "FAIL: child tools exceeded settlement budget",
+    "close_inflight_graceful_settlement": "FAIL: child tools exceeded settlement budget",
+    "cancel_and_close_old_execution_settled": "PASS",
+    "cancel_and_close_controlled_rotation_without_replay": "PASS",
+    "durable_final_input_proof": "PASS",
+    "fork_workflow_concurrent_workspace_external_actions_images_automatic_rotation": "NOT_TESTED"
+  }
+}

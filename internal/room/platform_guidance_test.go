@@ -46,9 +46,15 @@ func TestSharedGuidanceInEffectiveSessionInstructions(t *testing.T) {
 				`"$TEAMX_CLI" platforms skill --topic selection`,
 				"platforms/selection/ID",
 				"platforms/connect/ID",
-				"selection start directly",
-				"end the turn without waiting for clicks",
-				"source customization uses observed versions",
+				"Reuse guidance already available",
+				"Connections, notification subscriptions, tool grants and business writes are separate",
+				"reuse a verified exact target_ref and valid action contract across turns",
+				"A saved target/contract with available guidance needs no discovery or guidance reload",
+				"If sending guidance is missing and ENTRY is unknown, discover it once with tools list; never guess an entry",
+				"Submit each new intent once with one stable ID and complete content",
+				"Latest explicit corrections or revocations win",
+				"History do not consume",
+				"Keep lasting constraints, important progress, verified results and next steps",
 				"Write web links as `[label](https://...)`",
 				"Avoid raw HTML `<a>` and `<code>` tags",
 				"do not authorize rewriting it",
@@ -70,6 +76,14 @@ func TestSharedGuidanceInEffectiveSessionInstructions(t *testing.T) {
 					t.Fatalf("missing shared guidance %q (transport=%s)", contract, transport)
 				}
 			}
+			// Workflow mechanics belong to the directly routed resources; check
+			// the final factory delivery, including saved roles and both transports.
+			for _, detail := range []string{"platforms member notifications --platform-id", "selection start directly", "Feishu availability expires after 60 seconds", "Application gaps, user OAuth gaps"} {
+				if strings.Contains(delivered, detail) {
+					t.Fatalf("on-demand platform procedure remained in fixed instructions: %q", detail)
+				}
+			}
+			t.Logf("transport=%s role_bytes=%d final_instructions_bytes=%d", transport, len(role), len(delivered))
 			if strings.Count(delivered, "# TeamX agent guide") != 1 || strings.Count(delivered, "Calendar tasks in direct conversations") != 1 {
 				t.Fatal("duplicated public guide")
 			}
@@ -120,6 +134,44 @@ func TestEntrySkillUsesExactAccountForRootActions(t *testing.T) {
 		}
 		if provider == "lark" && (!strings.Contains(text, "actions resolve --tool "+entry) || !strings.Contains(text, "actions execute --tool "+entry)) {
 			t.Fatal("root action examples lost the exact account", provider)
+		}
+	}
+}
+
+// The fixed guide routes directly here. Each returned resource must retain the
+// relevant safety/recovery contract without a preliminary common-resource read.
+func TestTaskGuidanceKeepsRecoveryAndReuseContracts(t *testing.T) {
+	for _, topic := range []string{"", "notifications", "selection"} {
+		data, err := tool.ReadPlatformSkill(topic)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(data)
+		want := []string{"latest human corrections and revocations", "cancelled intent"}
+		switch topic {
+		case "notifications":
+			want = append(want, "Do not first read member get/status", "completed save needs no acknowledge or extra get", "--source-seq ORIGINAL_SEQ", "never retry unknown work under a new source or ID")
+		case "selection":
+			want = append(want, "--notify inbox", "end the turn without waiting for clicks", "original human request, latest intent", "continuation.handled_version", "--result-version RESULT_VERSION", "Do not read member configuration")
+		default:
+			want = append(want, "source/tool customization", "observed versions", "60 seconds", "Unchecked is not ready", "connect authorize --platform-id ID", "image.upload", "unsupported host cannot send")
+		}
+		for _, contract := range want {
+			if !strings.Contains(text, contract) {
+				t.Fatalf("platform topic %q lost recovery contract %q", topic, contract)
+			}
+		}
+	}
+	for _, topic := range []string{"", "managed-send"} {
+		data, err := entrySkillTopic(tool.Definition{Name: "gitlab", Provider: "gitlab", Skill: "skills/gitlab/SKILL.md"}, "gitlab-selected-account", topic)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := strings.ReplaceAll(string(data), "gitlab-selected-account", "ENTRY")
+		for _, contract := range []string{"do not discover ENTRY or reload the Skill", "omit\n   --tool if the exact entry is unknown", "no preliminary native", "actions read --id ORIGINAL_ID", "Never change ID, account or CLI to resend uncertain work", "never send a subset or fall back to text"} {
+			if !strings.Contains(text, contract) {
+				t.Fatalf("GitLab topic %q lost recovery contract %q", topic, contract)
+			}
 		}
 	}
 }

@@ -71,6 +71,9 @@ requires investigating remote content.
 
 ## Managed MR comments and discussion replies
 
+Reuse sending guidance once read. With a saved target/contract and available
+guidance, do not discover ENTRY or reload the Skill just to repeat the account.
+
 1. Confirm the selected account, exact MR/thread and complete content. Reuse an
    available target_ref and its current contract across turns, including when
    switching back from a discussion to its MR. A new turn alone does not require

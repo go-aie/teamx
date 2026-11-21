@@ -138,13 +138,9 @@ func (m *roomManager) serveTools(w http.ResponseWriter, r *http.Request) {
 			writeAPIError(w, err)
 			return
 		}
-		available := []toolSelection{}
-		for _, s := range selections {
-			if len(s.Capabilities) != 0 {
-				available = append(available, s)
-			}
-		}
-		_ = json.NewEncoder(w).Encode(projectToolSelections(available))
+		// Bound but unavailable entries retain their diagnostics. Disabled
+		// historical bindings are already excluded by selectionsLocked.
+		_ = json.NewEncoder(w).Encode(projectToolSelections(selections))
 		return
 	case "/v1/tools/bindings":
 		if r.Method != http.MethodGet {

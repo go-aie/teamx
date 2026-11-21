@@ -3,10 +3,8 @@ package room
 import (
 	"encoding/json"
 	"strings"
-	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
-	"github.com/go-aie/teamx/internal/platform/lark"
 )
 
 // These are transport projections only. Native resolutions, action specs and
@@ -14,67 +12,6 @@ import (
 type agentTargetCandidate struct {
 	Label   string                 `json:"label"`
 	Locator platform.TargetLocator `json:"locator"`
-}
-
-// Discovery belongs to the same Agent workflow. Keep account and capability
-// reasons, without repeating member IDs, generations or frozen grant snapshots.
-type agentLarkToolEntry struct {
-	Name                 string                     `json:"name"`
-	Provider             string                     `json:"provider"`
-	ToolType             string                     `json:"tool_type"`
-	PlatformID           string                     `json:"platform_id"`
-	PlatformName         string                     `json:"platform_name"`
-	Instance             string                     `json:"instance"`
-	Username             string                     `json:"username"`
-	Account              platform.AccountIdentity   `json:"account"`
-	Skill                string                     `json:"skill"`
-	Workflow             string                     `json:"workflow"`
-	Status               string                     `json:"status"`
-	Capabilities         []string                   `json:"capabilities"`
-	UnavailableReason    string                     `json:"unavailable_reason,omitempty"`
-	ActionDisabledReason string                     `json:"action_disabled_reason,omitempty"`
-	Availability         *agentLarkToolAvailability `json:"availability,omitempty"`
-}
-
-type agentLarkToolAvailability struct {
-	CheckedAt    time.Time         `json:"checked_at"`
-	AccountFixed bool              `json:"account_fixed"`
-	ToolEnabled  bool              `json:"tool_enabled"`
-	ImageActions []string          `json:"image_actions"`
-	Capabilities []lark.Capability `json:"capabilities"`
-}
-
-func projectToolSelections(selections []toolSelection) []any {
-	result := make([]any, 0, len(selections))
-	for _, s := range selections {
-		if s.Provider == "gitlab" {
-			guidance := ""
-			if s.Skill == "skills/gitlab/SKILL.md" {
-				guidance = "For text/image sending guidance, read tools skill " + s.Name + " --topic managed-send directly; no complete-Skill read first. Omit --topic for development/review/merge guidance. "
-			} else if s.Skill != "" {
-				guidance = "Read the declared Skill when workflow guidance is missing. "
-			}
-			if s.Skill != "" {
-				s.Skill = `"$TEAMX_CLI" tools skill ` + s.Name
-			}
-			result = append(result, struct {
-				toolSelection
-				Workflow string `json:"workflow"`
-			}{s, "Managed MR comments/replies: actions resolve/execute --tool " + s.Name + " --request JSON. Reuse a verified target and valid contract; a full MR/thread URL needs no native ID lookup or Workspace. " + guidance + "Execute once, report the receipt; unknown: actions read --id ORIGINAL_ID, never resend. Native CLI: tools run " + s.Name + " ... ."})
-			continue
-		}
-		if s.Provider != "lark" {
-			result = append(result, s)
-			continue
-		}
-		v := agentLarkToolEntry{Name: s.Name, Provider: s.Provider, ToolType: s.ToolType, PlatformID: s.PlatformID, PlatformName: s.PlatformName, Instance: s.Instance, Username: s.Username, Status: s.Status, Capabilities: s.Capabilities, UnavailableReason: s.UnavailableReason, ActionDisabledReason: s.ActionDisabledReason, Skill: `"$TEAMX_CLI" tools skill ` + s.Name, Workflow: "Managed sends/replies: actions resolve/execute --tool " + s.Name + " --request JSON. Reuse a verified target and valid contract; read the Skill when workflow guidance is missing. Current content/context: tools run " + s.Name + " read. Unknown: actions read --id ORIGINAL_ID, never resend."}
-		if a := s.Availability; a != nil {
-			v.Account = a.Account
-			v.Availability = &agentLarkToolAvailability{a.CheckedAt, a.AccountFixed, a.ToolEnabled, a.ImageActions, a.Capabilities}
-		}
-		result = append(result, v)
-	}
-	return result
 }
 
 type agentSendCapability struct {

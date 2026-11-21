@@ -31,11 +31,11 @@ func validatePlatformMemberRequestFields(path string, req platformMemberRequest,
 		}
 	}
 	if req.ObserveCurrent {
-		if path != "/v1/platforms/member/notifications" && path != "/v1/platforms/member/get" {
-			return invalidField("observe_current", "current observation is limited to notification total switches and member get")
+		if path != "/v1/platforms/member/notifications" && path != "/v1/platforms/member/tool" && path != "/v1/platforms/member/get" {
+			return invalidField("observe_current", "current observation is limited to member total switches and member get")
 		}
 		for name := range input {
-			if strings.EqualFold(name, "platform_id") || path == "/v1/platforms/member/notifications" && strings.EqualFold(name, "enabled") {
+			if strings.EqualFold(name, "platform_id") || path != "/v1/platforms/member/get" && strings.EqualFold(name, "enabled") {
 				continue
 			}
 			return invalidField("input."+name, "current observation cannot include versions, bindings, sources, ranges or filters")
@@ -52,17 +52,48 @@ func validatePlatformMemberRequestFields(path string, req platformMemberRequest,
 }
 
 func platformMemberToggleID(req platformMemberRequest) string {
+	return platformMemberSwitchID(req, "notifications")
+}
+
+func platformMemberSwitchID(req platformMemberRequest, kind string) string {
 	// A structured domain-separated identity survives service epochs and turns.
 	// Enabled and observed versions deliberately do not participate.
+	domain := "platform-member-" + kind + "-toggle/v1"
+	if kind == "notifications" {
+		// Preserve all pre-existing notification receipt identities.
+		domain = "platform-member-notification-toggle/v1"
+	}
 	data, _ := json.Marshal(struct {
 		Domain     string
 		Member     MemberIdentity
 		PlatformID string
 		Kind       string
 		SourceSeq  uint64
-	}{"platform-member-notification-toggle/v1", req.member(), req.Input.PlatformID, "notifications", req.SourceSeq})
+	}{domain, req.member(), req.Input.PlatformID, kind, req.SourceSeq})
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:16])
+}
+
+// A short tool switch restores only an exact saved intent, never current
+// defaults. Disabled intents retain their generation so account replacement
+// cannot inherit an earlier grant. Missing legacy intent needs the full flow.
+func (m *roomManager) currentPlatformMemberToolBindingLocked(req platformMemberRequest, v platformMemberView) (*tool.Binding, error) {
+	f, err := m.readToolBindingsLocked(req.RoomIdentity)
+	if err != nil {
+		return nil, err
+	}
+	for _, bindings := range [][]tool.Binding{f.Bindings, f.Disabled} {
+		for _, b := range bindings {
+			if b.AgentID != req.Caller.ID || b.MembershipID != req.Caller.MembershipID || b.PlatformID != v.PlatformID || b.Tool != v.Account.Provider {
+				continue
+			}
+			if b.PlatformGeneration != v.account.Generation || b.Tool == "lark" && b.ActionAuthorization == nil {
+				return nil, conflictReason("binding", "saved tool authorization cannot be restored for this account", "Use member get and the complete tool workflow to reconcile the exact account and grants; never infer default actions.")
+			}
+			return &b, nil
+		}
+	}
+	return nil, invalidField("binding", "no saved tool binding; use the complete tool workflow for initial setup")
 }
 
 // Resolve the exact saved ID under the same lock as the view and reservation.

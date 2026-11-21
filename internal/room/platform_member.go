@@ -106,6 +106,7 @@ func (m *roomManager) platformMemberViewLocked(ctx context.Context, req platform
 
 type platformMemberContextKey struct{}
 type platformMemberAdmission struct {
+	ToolBinding     *tool.Binding // server-observed intent for a short tool switch
 	AccountSnapshot registry.Account
 	SubscriptionID  string
 	Request         platformMemberRequest
@@ -163,15 +164,23 @@ func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, 
 			returnedErr = configurationNotApplied(returnedErr)
 		}
 	}()
-	if req.ObserveCurrent {
+	originalReq := req
+	shortTool := req.ObserveCurrent && kind == "tool"
+	if req.ObserveCurrent && !shortTool {
 		return m.configureCurrentPlatformMemberNotifications(ctx, kind, req)
 	}
 	var op platformMemberOperation
+	if shortTool {
+		if req.Input == nil || req.Input.Enabled == nil || !tool.OpaqueID(req.Input.PlatformID) || !reflect.DeepEqual(*req.Input, platformMemberInput{PlatformID: req.Input.PlatformID, Enabled: req.Input.Enabled}) || req.OperationID != "" {
+			return op, ErrRequest
+		}
+		req.OperationID = platformMemberSwitchID(req, kind)
+	}
 	req.Input = normalizePlatformMemberInput(req.Input)
 	if req.Input != nil && req.Input.ToolRevision != 0 {
 		return op, invalidField("tool_revision", "Room tool revisions are retired; use optional expected_binding_revision")
 	}
-	if req.Input == nil || !validPlatformMemberInput(kind, *req.Input) || !tool.OpaqueID(req.OperationID) || req.SourceSeq == 0 || req.Type != "" || req.Query != "" || req.PageToken != "" {
+	if req.Input == nil || !shortTool && !validPlatformMemberInput(kind, *req.Input) || !tool.OpaqueID(req.OperationID) || req.SourceSeq == 0 || req.Type != "" || req.Query != "" || req.PageToken != "" {
 		return op, ErrRequest
 	}
 	m.mu.Lock()
@@ -185,7 +194,11 @@ func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, 
 		if prior.MemberIdentity != req.member() {
 			return op, ErrIdentity
 		}
-		if prior.Source.Seq != req.SourceSeq || prior.Kind != kind || !reflect.DeepEqual(prior.Input, *req.Input) {
+		sameInput := reflect.DeepEqual(prior.Input, *req.Input)
+		if shortTool {
+			sameInput = prior.Input.PlatformID == req.Input.PlatformID && prior.Input.Enabled != nil && *prior.Input.Enabled == *req.Input.Enabled
+		}
+		if prior.Source.Seq != req.SourceSeq || prior.Kind != kind || !sameInput {
 			return op, operationConflict("operation_id", prior.ID, "operation ID has different business input")
 		}
 		return prior, nil
@@ -209,7 +222,21 @@ func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, 
 		m.mu.Unlock()
 		return op, ErrIdentity
 	}
-	v, err := m.platformMemberViewLocked(ctx, req)
+	var v platformMemberView
+	var savedBinding *tool.Binding
+	if shortTool {
+		req, v, err = m.observePlatformMemberLocked(ctx, req)
+		if err == nil {
+			savedBinding, err = m.currentPlatformMemberToolBindingLocked(req, v)
+		}
+		if err == nil {
+			in := *req.Input
+			in.ExpectedBindingRevision = &v.BindingRevision
+			req.Input = &in
+		}
+	} else {
+		v, err = m.platformMemberViewLocked(ctx, req)
+	}
 	if err != nil {
 		m.mu.Unlock()
 		return op, err
@@ -222,7 +249,7 @@ func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, 
 		m.mu.Unlock()
 		return op, versionConflict("expected_binding_revision", *req.Input.ExpectedBindingRevision, v.BindingRevision, "Read the exact binding and reconcile; no configuration was saved.")
 	}
-	admission := platformMemberAdmission{Request: req, Account: v.Account, AccountSnapshot: v.account, SubscriptionID: v.SubscriptionID, Kind: kind, BindingRevision: v.BindingRevision}
+	admission := platformMemberAdmission{ToolBinding: savedBinding, Request: req, Account: v.Account, AccountSnapshot: v.account, SubscriptionID: v.SubscriptionID, Kind: kind, BindingRevision: v.BindingRevision}
 	ctx = context.WithValue(ctx, platformMemberContextKey{}, admission)
 	if err = m.checkPlatformMemberContextLocked(ctx); err != nil {
 		m.mu.Unlock()
@@ -241,6 +268,9 @@ func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, 
 	var preparedChange *toolBindingChange
 	if kind == "tool" && v.Account.Provider == "lark" && *req.Input.Enabled {
 		change := toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: req.RoomIdentity, Caller: Caller{Kind: "human", ID: source.Author.ID}, ExpectedBindingRevision: &admission.BindingRevision, PlatformVersion: req.Input.PlatformVersion, Enabled: true, Binding: tool.Binding{AgentID: req.Caller.ID, MembershipID: req.Caller.MembershipID, PlatformID: req.Input.PlatformID, Tool: "lark"}, requestedActions: req.Input.Actions}
+		if savedBinding != nil {
+			change.Binding.ActionAuthorization = savedBinding.ActionAuthorization
+		}
 		if e := m.prepareBindingEvidence(ctx, &change); e != nil {
 			var required *userAuthorizationRequired
 			if errors.As(e, &required) {
@@ -285,7 +315,7 @@ func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, 
 	if _, err = m.readPlatformMemberLocked(req.OperationID); !errors.Is(err, os.ErrNotExist) {
 		m.mu.Unlock()
 		if err == nil {
-			return m.configurePlatformMember(ctx, kind, req)
+			return m.configurePlatformMember(ctx, kind, originalReq)
 		}
 		return op, err
 	}
@@ -300,6 +330,9 @@ func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, 
 	op = platformMemberOperation{Schema: 1, MemberIdentity: req.member(), ID: req.OperationID, Kind: kind, Source: source, Input: *req.Input, Account: v.Account, Status: "unknown", Result: onboardingStep{Status: "unknown", ErrorCode: "submission_unconfirmed"}, Chats: chats, Project: project, CreatedAt: time.Now().UTC()}
 	if kind == "tool" {
 		op.Schema = 3
+		if savedBinding != nil {
+			op.Authorization = savedBinding.ActionAuthorization
+		}
 	}
 	if preparedChange != nil {
 		p := preparedChange.prepared
@@ -427,7 +460,7 @@ func (m *roomManager) applyPlatformMemberToolLocked(ctx context.Context, op plat
 	if !enabled {
 		version = 0
 	}
-	next, waits, err := m.changeToolBindingLocked(ctx, toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: op.RoomIdentity, Caller: Caller{Kind: "human", ID: op.Source.Author.ID}, ExpectedBindingRevision: &admission.BindingRevision, PlatformVersion: version, Binding: tool.Binding{AgentID: op.AgentID, MembershipID: op.MembershipID, PlatformID: op.Input.PlatformID, Tool: op.Account.Provider}, Enabled: enabled})
+	next, waits, err := m.changeToolBindingLocked(ctx, toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: op.RoomIdentity, Caller: Caller{Kind: "human", ID: op.Source.Author.ID}, ExpectedBindingRevision: &admission.BindingRevision, PlatformVersion: version, Binding: tool.Binding{AgentID: op.AgentID, MembershipID: op.MembershipID, PlatformID: op.Input.PlatformID, Tool: op.Account.Provider}, Enabled: enabled, disabledIntent: admission.ToolBinding})
 	if err == nil {
 		err = m.waitOnboardingToolLocked(ctx, waits)
 	}

@@ -15,16 +15,18 @@ import (
 
 const platformMemberHelp = `Usage:
   teamx platforms member notifications --platform-id ID --source-seq SEQ --enabled true|false
+  teamx platforms member tool --platform-id ID --source-seq SEQ --enabled true|false
   teamx platforms member get --platform-id ID [--platform-version V]
   teamx platforms member notifications --help
   teamx platforms member tool --help
   teamx platforms member status --operation-id ID | --source-seq SEQ
 
 Pure switches need no preliminary get/status, versions or client operation ID.
-First enable uses manual setup defaults; existing settings restore saved sources.
+Tools restore exact saved grants only; initial setup/expanded grants use tool --help.
+Notification first enable uses manual defaults; existing settings restore sources.
 For source/range/filter edits, see notifications --help. Selection cards use
-platforms skill --topic selection. For pure switch workflow/recovery read
-platforms skill --topic notifications directly; complex edits use platforms skill.
+platforms skill --topic selection. Notification switches use platforms skill
+--topic notifications; tool switches, setup and complex edits use platforms skill.
 `
 
 func platformMemberActionHelp(action string) string {
@@ -59,7 +61,25 @@ Flags:
 	case "get":
 		return "Usage: teamx platforms member get --platform-id ID [--platform-version V]\n\nOmit version to read current verified account/configuration; explicit V must be nonzero and current. This read creates no subscription, receipt or reception start.\n\nFlags:\n"
 	case "tool":
-		return "Usage: teamx platforms member tool --platform-id ID --platform-version V --operation-id ID --source-seq SEQ --enabled true|false [--binding-revision N] [--action OP ...]\n\nUse observed account/binding state and a stable operation ID. Tool grants do not authorize external writes. Unknown submissions require original-receipt inspection, never replay. Read platforms skill for capability and authorization recovery.\n\nFlags:\n"
+		return `Usage:
+  teamx platforms member tool --platform-id ID --source-seq SEQ --enabled true|false
+  teamx platforms member tool --platform-id ID --platform-version V --operation-id ID --source-seq SEQ --enabled true|false [--binding-revision N] [--action OP ...]
+
+The short switch restores only an exact saved binding and grants, with no get/status
+or client operation ID. Retain the original human seq. No saved binding, missing
+authorization or a replaced account requires the complete workflow; never infer
+defaults or expand the original human request. Disable retains dormant grants
+and waits for active calls.
+Any explicit version, binding-revision, operation-id or action selects complete
+mode, requiring platform-version and operation-id. Complete Feishu enable with no
+action adds current defaults; use explicit actions for a limited grant request.
+Preserve stale observations on conflict. Historical receipts describe that step,
+not current settings. Unknown results require original status inspection, never
+automatic replay. Tool grants do not authorize business writes or notifications.
+Read platforms skill for initial setup, capability and authorization recovery.
+
+Flags:
+`
 	case "status":
 		return "Usage: teamx platforms member status --operation-id ID | --source-seq SEQ\n\nRead original member configuration receipts; this command never reapplies them.\n\nFlags:\n"
 	case "chats":
@@ -248,7 +268,7 @@ func runPlatformMemberCLI(ctx context.Context, args []string, stdout, stderr io.
 		})
 	}
 	if action == "tool" {
-		f.Func("action", "Lark action to add; repeat; omitted enables current defaults", func(op string) error { in.Actions = append(in.Actions, op); return nil })
+		f.Func("action", "Lark action to add in complete mode; repeat; omitted in complete mode adds defaults", func(op string) error { in.Actions = append(in.Actions, op); return nil })
 		f.Func("binding-revision", "optional observed exact binding revision; explicit 0 means never configured", func(s string) error {
 			v, err := strconv.ParseUint(s, 10, 64)
 			if err == nil {
@@ -269,6 +289,21 @@ func runPlatformMemberCLI(ctx context.Context, args []string, stdout, stderr io.
 	}
 	present := map[string]bool{}
 	f.Visit(func(f *flag.Flag) { present[f.Name] = true })
+	if action == "tool" {
+		full := present["platform-version"] || present["binding-revision"] || present["operation-id"] || present["action"]
+		if full {
+			for _, name := range []string{"platform-version", "operation-id"} {
+				if !present[name] {
+					return invalidField(name, "complete tool mode requires --platform-version and --operation-id")
+				}
+			}
+		} else {
+			if in.Enabled == nil {
+				return invalidField("enabled", "short tool command requires explicit --enabled true|false")
+			}
+			req.ObserveCurrent = true
+		}
+	}
 	if action == "notifications" {
 		full := present["platform-version"] || present["notification-version"] || present["operation-id"]
 		if full {
@@ -332,7 +367,7 @@ func runPlatformMemberCLI(ctx context.Context, args []string, stdout, stderr io.
 		if action == "get" {
 			return fmt.Errorf("platform_id=%s; inspect the exact platform connection: %w", in.PlatformID, err)
 		}
-		if req.ObserveCurrent && action == "notifications" {
+		if req.ObserveCurrent && (action == "notifications" || action == "tool") {
 			return fmt.Errorf("platform_id=%s source_seq=%d; inspect member status by the original source-seq; never automatically retry conflicts or unknown submissions: %w", in.PlatformID, req.SourceSeq, err)
 		}
 		return fmt.Errorf("operation_id=%s source_seq=%d; query member status and get before retry: %w", req.OperationID, req.SourceSeq, err)

@@ -42,6 +42,11 @@ func larkOnlyToolConfigurationHarness(t *testing.T) *larkHarness {
 	return configureLarkToolFixture(t, newLarkHarnessForRoom(t, m, room, svc, snapshot.Members))
 }
 
+func larkToolConfigurationHarnessWithMembers(t *testing.T, count int) *larkHarness {
+	t.Helper()
+	return configureLarkToolFixture(t, newLarkHarnessWithMembers(t, count))
+}
+
 func configureLarkToolFixture(t *testing.T, h *larkHarness) *larkHarness {
 	t.Helper()
 	script := strings.Replace(larkFixtureScript(), "path=a[2]", `if a==['config','show']:

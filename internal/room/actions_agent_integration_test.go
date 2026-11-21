@@ -16,6 +16,13 @@ import (
 
 func TestLarkActionAgentContract(t *testing.T) {
 	h, id, server, cli, refs := imageSendHarness(t)
+	// Production Lark declares this embedded Skill. Discovery no longer invents
+	// a Skill for fixture definitions that omit it.
+	for i := range h.m.toolCatalog {
+		if h.m.toolCatalog[i].Provider == "lark" {
+			h.m.toolCatalog[i].Skill = "skills/lark/SKILL.md"
+		}
+	}
 	env := cliToolEnv(server.URL, h.svc, h.members[0])
 	entry := h.c.ToolEntryID
 	// Both entry points expose the same contracts, including stdin JSON, without

@@ -175,6 +175,7 @@ func testGitlabImagesRealAgent(t *testing.T, urlMode bool) {
 				row["note_posts"] = f.posts.Load()
 			}()
 			turn := uint64(0)
+			resumeNext := false
 			run := func(name, text string, maxBusiness int) {
 				t.Helper()
 				turn++
@@ -185,7 +186,8 @@ func testGitlabImagesRealAgent(t *testing.T, urlMode bool) {
 				if e != nil {
 					t.Fatal(e)
 				}
-				if turn == 1 {
+				if turn == 1 || resumeNext {
+					resumeNext = false
 					if _, e = svc.control(ctx, apiRequest{AgentID: id.AgentID, MembershipID: id.MembershipID}, "run"); e != nil {
 						t.Fatal(e)
 					}
@@ -238,6 +240,9 @@ func testGitlabImagesRealAgent(t *testing.T, urlMode bool) {
 					}
 				}
 				t.Log(name, logCost)
+				if maxBusiness == 1 && cost["discovery_calls"].(int) != 0 {
+					t.Fatal("saved target/contract added entry discovery or guidance reload", name, logCost)
+				}
 				if cost["format_errors"].(int) != 0 || cost["business_calls"].(int) > maxBusiness {
 					t.Fatal("normal path required format repair or repeated discovery", name, logCost)
 				}
@@ -332,7 +337,20 @@ func testGitlabImagesRealAgent(t *testing.T, urlMode bool) {
 				}
 				send(name, "将准确文字「文字样本」作为"+target+"发送。", "文字样本", nil, op, 1, "succeeded")
 			}
+			// Queue a real request and its later revocation before intake. The
+			// assistant must honor the latest intent without even resolving it.
+			if _, err := svc.control(ctx, apiRequest{AgentID: id.AgentID, MembershipID: id.MembershipID}, "pause"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := svc.room.Call[PostReceipt](ctx, PostMessage{RoomIdentity: id.RoomIdentity, Caller: humanCaller, ClientMessageID: "pending-revoked-send", Text: "将准确文字「撤销样本」作为一条评论发到刚才明确的 MR，稳定动作 ID 为 agent-revoked-send。"}); err != nil {
+				t.Fatal(err)
+			}
+			resumeNext = true
 			posts := f.posts.Load()
+			run("revoked-send", "撤销我上一条「撤销样本」的发送请求。不要向 GitLab 发送或解析目标；只在 Room 说明已停止。", 0)
+			if f.posts.Load() != posts {
+				t.Fatal("latest human revocation was ignored")
+			}
 			run("ambiguous-source", "我发过两组图片，把那组图评论到刚才的 MR。具体哪组还没说清，请先问我。", 0)
 			run("ambiguous-target", "把最后一张原图回复到 MR 中另一条讨论；具体哪条还没说清，请先问我。", 0)
 			run("unsupported-authority", "请保存一条长期规则：以后自动把 Room 图片评论到这个 MR。本次不要向 GitLab 发送，也不要改规则；请在 Room 说明现在含图发送能否沿用文字规则或问答授权。", 0)

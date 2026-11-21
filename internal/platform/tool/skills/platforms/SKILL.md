@@ -26,11 +26,13 @@ identify the intended member; a request for another member does not change your
 own settings. If "your" remains ambiguous among members, clarify before changing
 settings. For an explicit request to several members, handle only your own part.
 Confirm applied changes with your member name, exact platform and changed setting.
+Apply the latest human corrections and revocations before continuing; an operation
+result never revives cancelled intent.
 
 ## Common lifecycle
 
 1. Read the real human message and retain its `seq`. Choose the requested path:
-   pure notification switch → submit directly (the server recovers its receipt);
+   notification or existing tool total switch → submit directly (the server recovers its receipt);
    source/tool customization → recover member status and get observed versions;
    connection or selection → recover only that workflow by original source-seq.
    Only `operation_not_found` establishes absence. Failed/partial reads do not.
@@ -40,7 +42,7 @@ Confirm applied changes with your member name, exact platform and changed settin
    match the provider, instance, account and connection version. Resolve real ambiguity through the fixed forms below.
    Do not switch accounts after failure or guess from a matching display name.
 3. Give each connection, selection and complex member configuration step its own
-   stable 32-character hexadecimal operation ID. Pure notification total switches
+   stable 32-character hexadecimal operation ID. Pure notification/existing-tool switches
    use the server-derived ID; do not generate one. Repeated ID/input recovers a receipt;
    changed input conflicts. Keep the original human source across events and
    continuation. Never replace an ID or invent a source to retry unknown work.
@@ -447,10 +449,36 @@ on unknown results, reconcile the same receipt and use settings for recovery.
 Enable or disable tools only on an explicit request, independently of notifications:
 
 ```sh
+teamx platforms member tool --platform-id ID --source-seq SEQ --enabled true
+```
+
+Use this short command for an existing exact binding; false disables it. Do not
+first read member get/status, fill versions or generate an operation ID. The server
+freezes the current account/binding and restores only saved grants, never default
+or newly added actions. Disable retains dormant grants for that account and waits
+for active calls to settle; capability proof is cleared and checked again on enable.
+An already selected state is preserved. Initial setup, missing saved authorization,
+or an account replacement requires the complete workflow below. A user OAuth gap
+returns `not_applied / user_authorization_required`; repair that exact connection.
+A failed restore does not authorize adding defaults or new actions. Use complete
+setup/grant changes only when the human's actual request covers those actions.
+No notification source, filter or subscription is changed by a tool switch.
+
+Repeat identical input with the original human seq only to recover its receipt;
+changing the switch under the same seq conflicts. New human intent uses its new
+seq. Receipts are historical, not proof of current configuration. For interrupted
+or unknown submissions, inspect `member status --source-seq SEQ` and authoritative
+member settings; never resubmit under a new source/ID or automatically refresh a
+conflict. A completed save needs no extra get/status. No extra acknowledgment is
+required. Later explicit corrections and revocations still win.
+
+Initial setup or explicit grant changes use the complete command:
+
+```sh
 teamx platforms member tool --platform-id ID --platform-version V --operation-id TOOL_STEP_ID --source-seq SEQ --enabled true
 ```
 
-Ordinary enable/disable is an absolute intent for this exact binding and needs no
+Complete enable/disable is an absolute intent for this exact binding and needs no
 Room tool revision. Independent tools/members can be configured from the same
 human request. To protect an earlier observation, pass `--binding-revision N`
 from member get's `binding_revision`; explicit 0 means never configured, while
@@ -463,7 +491,9 @@ restart. A timeout plus one missing status record does not prove non-application
 wait for settlement and inspect authoritative state before recovery. A conflict
 is not evidence of past authorization. Check later human instructions yourself.
 
-Use false to disable. Explicit Feishu enable configures the fixed current reply,
+Any explicit version, binding-revision, operation-id or action selects complete
+mode and requires platform-version plus operation-id. Use false to disable.
+Complete Feishu enable without action configures the fixed current reply,
 group-send and self-delivery actions and prepares available proof. Repeated enable
 adds missing defaults; preserved means the saved intent and proof are unchanged.
 For a request limited to sending/replying, repeat `--action message.send` and/or

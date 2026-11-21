@@ -1,12 +1,12 @@
 # Agent 工具、Skill 与提示词全景梳理及简化建议
 
-日期：2026-11-21。状态：**S0、S1a-A1、S1a-A2、S1a-A3、S1b-B1、S1b-B2、S1c-C1 已实施；S1c-C2 已评估，保留别名；其余单元仍为评估方案**。范围与验证见 [S0 实施记录](implementation/agent-context-cli.zh.md)、[A1 帮助视图记录](implementation/agent-help-views.zh.md)、[A2 业务指导记录](implementation/agent-business-guidance.zh.md)、[A3 后端身份与通信记录](implementation/agent-backend-guidance.zh.md)、[B1 平台设置 topic 记录](implementation/agent-platform-skill-topics.zh.md)、[B2 GitLab 发送 topic 记录](implementation/agent-gitlab-send-skill-topic.zh.md)、[C1 飞书读取入口记录](implementation/agent-lark-read-entry.zh.md)和 [C2 飞书动作别名评估](implementation/agent-lark-action-alias.zh.md)。
+日期：2026-11-21。状态：**S0、S1a-A1、S1a-A2、S1a-A3、S1b-B1、S1b-B2、S1c-C1 已实施；S1c-C2 已评估，保留别名；S1d 候选实现已落地，URL 模型成本验收未闭合；S2a 已实施有界验证，保留兼容限制及修复单；S3a 已实施现有工具绑定总开关短路径；S3b 已实施 Agent 工具目录精简投影；其余单元仍为评估方案**。范围与验证见 [S0 实施记录](implementation/agent-context-cli.zh.md)、[A1 帮助视图记录](implementation/agent-help-views.zh.md)、[A2 业务指导记录](implementation/agent-business-guidance.zh.md)、[A3 后端身份与通信记录](implementation/agent-backend-guidance.zh.md)、[B1 平台设置 topic 记录](implementation/agent-platform-skill-topics.zh.md)、[B2 GitLab 发送 topic 记录](implementation/agent-gitlab-send-skill-topic.zh.md)、[C1 飞书读取入口记录](implementation/agent-lark-read-entry.zh.md)、[C2 飞书动作别名评估](implementation/agent-lark-action-alias.zh.md)、[S1d 常驻流程记录](implementation/agent-resident-guidance.zh.md)、[S2a 后端边界验证](implementation/agent-collaboration-boundaries.zh.md)、[S3a 工具总开关短路径](implementation/agent-tool-toggle.zh.md)和 [S3b 工具目录投影](implementation/agent-tool-discovery.zh.md)。
 
 基线：2026-11-21 再次复核的当前工作区，最终 HEAD 为 `9a7ed3d`，已包含 P4a DSH 工厂/宿主合同；另有测试/文档等未提交调整。初版基线为 `9025d94`。初始分析未修改工具合同、提示词、配置或运行中的 Session；后续 S0 补齐 CLI 参数及对应帮助，A1 调整帮助视图和离线帮助路径，A2 校正业务指导、准确 ENTRY 示例及测试观察器；A3 修正内部协作身份边界并注入短 DSH 指南。实施其他单元前仍应核对工作区及所选组合，不能仅凭 HEAD 还原本次采样。
 
 ## 1. 结论与建议顺序
 
-当前最值得优化的，依次是：
+以下是初始盘点的主要问题，已实施范围以文首及各单元记录为准；完成 S0–S1c 后的新增优先建议见第 9.6 节：
 
 1. **消除彼此冲突、已经过时的指导。** 初始基线的 TeamX 指南笼统禁止委派，而底层 DSH 支持子 Agent；A3 已澄清内部协作与 Room 成员管理的区别，保留后端内部执行能力。生产输入已经使用流式 Inbox，部分 Skill、帮助仍讲旧批次、旧序号；GitLab 托管评论与原生评论的指导存在分叉。这些比单纯文字长更容易造成不稳定。
 2. **缩小常驻上下文，按当前任务直接提供必要流程。** 公共指南承担了参与、输入、历史、规则、平台设置、发送、恢复等大量细节；默认助理又重复其中一部分。平台接入 Skill 目前约 32.7 KB，调用者虽然只需要一个操作，仍一次读取全部流程。
@@ -14,7 +14,7 @@
 4. **公共边界统一，后端衔接有针对性。** 公共指南说明 TeamX 身份、权限和交付；可选后端补充指南解释 DSH/Codex 等运行后端的具体衔接。后端原生工具和内部协作方式默认保留，只有实际不兼容或对照证明收益不足时才考虑调整，不能仅以减少工具数量为依据。
 5. **在测量正常任务链路后，才决定是否把更多业务 CLI 改为 MCP。** CLI 子命令数量不等于模型顶层工具数量；全面 MCP 化可能减少 shell/JSON 错误，也可能扩大常驻 schema。不要把“工具名称最少”当作唯一目标。
 
-**首批推荐 S0，以及 S1a 中的 A1 帮助视图、A2 业务指导校正；A3 后端身份说明作为可独立追加的单元。第二批推荐 S1b 的 B1/B2 高频 Skill 分主题加载；S1c 的别名清理是条件项。** S1a/S1b/S1c 是工作分组，不要求整组合成一次交付。原生后端能力默认保留；S2 为独立验证单元，S3/S4 为待细化路线，都不作为普通优化的统一前置。具体投入产出、依赖和完成标准见第 9 节。
+**原推荐的 S0、S1a-A1/A2/A3、S1b-B1/B2、S1c-C1 已完成；C2 按保留分支完成评估。S1d 已有候选实现和组件／业务验证，但 URL 成本验收尚未闭合；S2a 已交付打包版本的有界后端验证与场景限制；当前建议先闭合 S1d 门槛，并按 S2a 修复单独立处理受影响场景；S3a 现有工具绑定短路径和 S3b 工具目录投影已实施；S3b 的同场景真实模型发现对照及输出量见实施记录。** 不将剩余 S2/S3/S4 整体打包为下一轮必做工程。具体范围、依赖和完成标准见第 9.6 节。
 
 本次完整目标是：**功能与证据仍可取得，正常路径少决策、少参数、少往返，异常路径有准确恢复入口。** 不是要求 Agent 每轮先读一份更短但仍包罗万象的总说明。
 
@@ -377,7 +377,7 @@ C1 已对照根入口与准确 ENTRY 的正文、上下文分页、错误、原�
 
 - `projectToolSelections` 对 GitLab/Scion 及自定义本地工具仍返回较原始的 toolSelection；飞书有专门投影。可去掉不帮助业务决策的重复成员 ID、环境映射和实现元数据；准确 ENTRY、已声明能力、就绪状态与修复原因保留，账号/实例及 Skill 仅按实际合同提供。不能为统一格式给无账号工具补造账号、Skill 或 managed actions。
 - workflow 字段目前夹带长篇发送指令，与 Skill/help/schema 重复。缩为当前入口与本次需要的下一步，长期流程只维护在对应 topic。
-- 有效规则仍携带 `PolicyRevision`，包含来源、修改者、时间和 conversation 证据；可采用独立 Agent 投影，保留完整规则及准确版本/期限/证据引用，原始来源与完整变更通过 `policy read --id --detail` 补读。不能按“相关性”筛掉有效规则，也不能改动权威 policy token 的计算依据。
+- 有效规则的内部结构仍是 `PolicyRevision`，但实际 JSON 已由 `agentPolicyView.MarshalJSON` 转成 `agentPolicyRecord`，裁去部分 conversation 原始证据。剩余 source、修改者和时间是否值得继续收窄，应按实际输出量评估，不重复建设已有投影；保留完整规则、准确版本/期限及必要依据，原始证据通过 `policy read --id --detail` 补读。不能按“相关性”筛掉有效规则，也不能改动权威 policy token 的计算依据。
 - 首轮恢复的固定说明与 Session guide 重复，可只保留本次覆盖/遗漏数据、必要恢复警示和对应入口；未知动作、未解答问题、限制/撤销不能因压缩摘要丢失。
 
 移除每个 JSON 路径前，要说明“为何不影响当前决策、从哪里补读、是否多一次工具调用”。若精简后正常任务反而都要补读 detail，收益不成立。
@@ -564,7 +564,31 @@ S2 专项不构成 S3、小型帮助或投影改进的统一前置。A3 自身�
 | Agent 工厂与 Session 宿主 | `agent` 定义窄合同，`builtin/agents/dsh` 实现工厂，`room/agent_assembly.go` 唯一选择；`dsh_host.go` 保留每轮准备/确认与原资源 owner。A2 只改所需指导，不把业务规则搬入通用 Session 或重写生命周期 |
 | 通知与 Input/History | 所选 Source 的 Bind/Input/Project 与原通知、Inbox/Store owner；保留缺 codec/版本错误和原数据，不恢复旧全局默认投影 |
 
-架构记录已完成的 P1a/P1b/P2n/P2t/P4a 是本方案复用的基础；S0、A1、A2、A3、B1、B2、C1 已完成，C2 已按保留分支完成评估，其余单元仍分别待实施。若实施时这些边界继续迁移，更新定位即可；不为保持旧文件名而把代码移回原包，也不把一个文案工作单元扩成架构重构。
+架构记录已完成的 P1a/P1b/P2n/P2t/P4a 是本方案复用的基础；S0、A1、A2、A3、B1、B2、C1 已完成，C2 已按保留分支完成评估，S1d 候选实现及其未闭合的 URL 成本门槛见[实施记录](implementation/agent-resident-guidance.zh.md)；S2a 的有界验证和未通过场景见[后端边界记录](implementation/agent-collaboration-boundaries.zh.md)，其余单元仍分别待实施。若实施时这些边界继续迁移，更新定位即可；不为保持旧文件名而把代码移回原包，也不把一个文案工作单元扩成架构重构。
+
+### 9.6 完成 S0–S1c 后，还值得继续做什么
+
+本轮复核基线为 `12e8b26` 加当前工作树，包含 B1/B2、C1 和 C2 评估等后续修改。本节是新增建议；**S1d 已有候选实现，但 URL 模型成本验收未闭合；S2a 已实施有界验证，保留兼容失败；S3a 已实施现有工具绑定短路径，S3b 已实施工具目录投影**；不将之前只完成了一部分的后续方向统一标为可直接一次实施的阶段。
+
+**最值得先做的是常驻流程收敛，以及补齐实际后端的少量高风险验证。** S3a 已在原授权和并发边界内交付工具总开关短路径；其 CLI 调用数与参数减少已经隔离验证，不据此推断真实模型成本收益。
+
+| 单元 | 当前依据、收益与成本 | 可独立交付的范围和完成条件 |
+| --- | --- | --- |
+| **S1d 常驻流程收敛，候选已实现** | 通知／卡片和平台修复的操作细节下沉到已有 topic／完整指南；保留固定授权、撤销、准确 ENTRY、目标合同复用、unknown 与恢复边界。同样保留并行 Workspace 指导后，最终 HTTP 助理 Instructions 减少 1,389 B（约 5.8%） | 工厂、组件／定向集成及通知／卡片／既有目标／撤销／轮换等隔离场景已验证；模型失败样本与修复均保留。完整 URL 路径仍有全文前置、猜入口／额外发现等成本偏差，匹配旧指南也未通过同一门槛，因此**尚未满足完整采用条件**。具体范围、测量口径与未完成项见[实施记录](implementation/agent-resident-guidance.zh.md) |
+| **S2a 实际后端与子 Agent 操作边界，已实施有界验证** | 原 A3 样本受测为本地 DSH `0.2.1-alpha.1`，初始静态清单来自打包 `0.2.2-rc.1`。本轮已固定打包版本补验实际工具／指南、子 Agent 直接操作及生命周期，发现具体兼容限制；不以增加工具或改组合为目标 | 已锁定打包 DSH `0.2.2-rc.1`／模型并复验 A3，新增隔离 Room 的子 Agent CLI 只读、发布、跨成员拒绝、正常恢复及在途取消／关闭与轮换检查。子 Agent 缺少 History／Inbox MCP，在途正常结清出现失败；原退出屏障、回执／输入证明与无重放分别记录。逐项结果与修复单见[实施记录](implementation/agent-collaboration-boundaries.zh.md)，不默认禁用全部内部能力；版本／轨迹供 P4b 复用，不代替其完整矩阵 |
+| **S3a 现有工具绑定总开关短路径，已实施** | `tool` 可只提交 platform-id/source-seq/enabled，由服务端冻结准确账号、绑定版本与保存授权，生成稳定操作 ID。隔离 CLI 轨迹为一次业务请求，省去 get 和客户端 ID；不声称真实模型 token 或耗时下降 | 短路径只恢复现有绑定及原 grants，不补默认 action；关闭保留账号代际和休眠授权、清除能力证明，并复用原撤权结清。缺绑定／旧授权、账号替换、OAuth 缺口分别拒绝或返回明确修复结果；初次设置、扩权和显式版本编辑保留完整合同。覆盖重试、反向开关、成员／同平台不同账号、旧来源、重启 unknown、并发编辑及撤权等待，无额外通知订阅。用法、证据与采用边界见[实施记录](implementation/agent-tool-toggle.zh.md) |
+| **S3b tools-list 精简投影，已实施** | 改为明确 Agent 字段，去掉重复成员身份、定义版本／内部标记与配置授权 revision 外壳；环境映射等原本已隐藏，不计收益。GitLab／Scion／本地工具隔离目录分别减少约 10%／15%／47%；三入口目录真实模型输出减少约 13%，A2/B2 workflow 保持原样 | 保留准确 ENTRY、账号／实例、能力、配置授权的目标限制、飞书就绪／过期／缺权限及修复信息；无账号／无 Skill 工具不补造字段。不可用绑定保留诊断，已停用绑定仍不展示，连接失配不冒充准确入口。存储、人工管理和动作执行合同不变；空／默认／外部组合、多账号、修复及定向 race 通过。真实 DSH 两场景各重复两次，旧／新均 4/4 成功，每次一次发现加一次准确入口调用，无 detail 前置。范围、字段映射和证据见[实施记录](implementation/agent-tool-discovery.zh.md) |
+
+S1d 与 S2a 可分别开展；S1d 不等待全部 S2，通过自身相关行为验收即可。S3a、S3b 已分别实施，未与 policy、MCP 或生命周期重构捆绑。S3b 已完成有界发现对照，不据此推断总 token 或可靠性提升。
+
+目前不推荐优先投入以下方向：
+
+- **整套 S4 或全面 CLI→MCP**：B2 报告仍有猜 ENTRY、重复读取及 JSON 修正的失败样本，但最后固定场景已能一次 topic 后复用，尚不能把这些不同原因都归为 shell 缺陷。先统计实际频率；有持续且明确的格式失败证据，再挑一个完整业务入口试点。
+- **为删除 C2 而扩大根动作输出生命周期**：评估已证明差异，当前业务回执没有因此丢失；一般路径也已统一。先保留兼容入口，只有真实生命周期缺陷或独立架构需求时再重评。
+- **有效规则 DTO 与 policy 保存+发布组合**：规则正文已按 token 变化供给，并非每轮重复全文；`agentPolicyView.MarshalJSON` 已去掉部分原始证据，不能按最初结构重新计算收益。其余 source/修改信息仍可评估，但须有规则量/输出量证据；全部有效业务条件、权威 token、真实确认和撤销不得省略。
+- **批量删原生工具、改 persona 或拆完所有短 Skill**：仍无足够对照证明收益；不以工具总数、字节数或内部委派次数作为采用理由。
+
+本节初次复核仅检查源码和已有证据。后续已落地 S1d 候选并运行相关验证，未闭合项见其实施记录；S2a 后续已完成有界真实验证并保存兼容限制；S3a、S3b 后续分别实施并记录证据，日常服务未改动。源文件字节只是定位重复的依据，不等于模型总 token、缓存成本或可靠性改善；S1d 的最终采用仍看实际合成与同场景行为；S3b 的返回量和同场景发现结果已在其实施记录单列。
 
 ### Session 生效与回退
 
@@ -686,7 +710,7 @@ S2 专项不构成 S3、小型帮助或投影改进的统一前置。A3 自身�
 | `selection update` | 高级草稿能力 | 人类组件已有编辑路径；只在用户要求 Agent 改草稿时使用，不让正常“展示卡片”走 start→update→wait |
 | `connect/selection acknowledge` | 当前合同不可直接删 | 它记录准确结果版本已与原意图/后续步骤协调，不能在 status 或 Inbox read 时自动完成；可评估与明确的续办提交组合 |
 | `platforms chats/projects` 与选择卡片 | 条件不同 | 确定名称的直接配置、按用户要求列选项时使用元数据查询；卡片流程由组件搜索分页，不先全量枚举 |
-| `platforms member get/notifications/tool/status` | 各有职责，短路径应扩大使用 | 纯通知开关已无 get/status/客户端 ID 前置；复杂编辑保留观察版本；tool 开关可借鉴短路径设计但尚未实现，不能假定已支持 |
+| `platforms member get/notifications/tool/status` | 各有职责，短路径应扩大使用 | 纯通知开关已无 get/status/客户端 ID 前置；复杂编辑保留观察版本；S3a 已增加现有 tool 绑定短路径，严格恢复保存授权，首次设置和扩权仍走完整流程 |
 | `calendar list/get/update/claim/finish` | 保留独立职责 | 定义、查询、领取冻结执行、可靠报告；due 事件已给 run_id 就直接 claim，不先 list/get；finish 不再外加 send 同一报告 |
 | `workspace-git` 与 `tools run workspace-git` | 同一执行能力的包装 | CLI 已将前者转到后者；只推荐前者，保持已绑定仓库网络凭据入口，不把内部路由当另一种操作 |
 | `skill usage/platforms skill/tools skill` | 不同资源范围，低优先语法统一 | 无绑定的产品解释/接入与有绑定的内置业务指导不同；本地工具未必有 Skill；优先按任务缩小已有长资源，统一拼写收益有限 |
@@ -728,7 +752,7 @@ S2 专项不构成 S3、小型帮助或投影改进的统一前置。A3 自身�
 低风险优先项是已存在短路径的使用指导、纯数据恢复和组合操作，不是扩大隐式授权：
 
 - 使用现有回执和绑定恢复重复的身份字段；当前 `actions execute` 已能从 matter context 恢复目标，不再重复建立一套目标缓存。
-- 纯通知总开关已由服务端确定观察状态和稳定操作 ID；评估纯工具开关能否获得类似短合同。复杂来源编辑仍保留准确观察版本，不能自动刷新后覆盖用户改动。
+- 纯通知总开关已由服务端确定观察状态和稳定操作 ID；S3a 将短合同扩展到现有工具绑定，恢复原授权而非当前默认 action。复杂来源／授权编辑仍保留准确观察版本，不能自动刷新后覆盖用户改动。
 - 对真实“推断建议并请求确认”，评估 policy suggest 的可选保存+发布组合。组合也要保留先保存、准确版本、稳定发送回执及失败恢复，不能将保存 suggested 自动解释为激活。
 - connect/selection 的正常 start 直接携带结果订阅；wait/notify/update 留作高级入口。acknowledge 如果合并，必须在调用者明确提交“该结果已协调”的语义下完成，不能因为读到了终态就自动确认。
 - 减少固定要求填写的当前回合参数可以作为后续方向，但前提是每次调用的可信执行绑定能准确恢复该回合，并在不同后端及并发/取消场景验证；不能直接读取全局“最新回合”来代替。
@@ -737,9 +761,9 @@ S2 专项不构成 S3、小型帮助或投影改进的统一前置。A3 自身�
 
 ### 12.6 推荐实施顺序
 
-1. **S0、S1a-A1/A2，首批**：参数可达性、帮助视图、正常业务指导分别交付；S1a-A3 的 DSH 身份说明可独立追加，不作为其他三项的前置。
-2. **S1b-B1/B2，第二批优先**：平台设置与 GitLab 发送两条完整 topic 链路分别交付，不要求先做通用加载框架或等所有 Skill 完成。
+1. **S0、S1a-A1/A2/A3 已完成**：参数可达性、帮助视图、正常业务指导与 DSH 身份说明分别交付，后续不重复计算这些收益。
+2. **S1b-B1/B2 已完成**：平台设置与 GitLab 发送两条完整 topic 链路已可直接读取；在此基础上已有 S1d 常驻流程候选；其 URL 成本验收仍待闭合，不要求拆完所有 Skill。
 3. **S1c-C1 已实施；C2 已评估并保留**：根读取别名已删除，嵌套 actions 因末帧期间的 Call 所有权差异保留；仅在原生命周期边界补齐并验证后重新评估删除，不重复计算 A2 已完成的路径统一收益。
-4. **S2 专项与 S3/S4 后续路线**：验证有界场景并如实报告；组合操作、DTO 和 MCP 候选须先界定具体合同与验收，再形成新实施单元，不作为所有前述优化的统一前置。
+4. **后续先闭合 S1d 的 URL 成本门槛，并按 S2a 的兼容限制选择单项修复；S3a、S3b 已分别实施**：具体边界与采用条件见第 9.6 节；其余 S2 深层场景、policy 组合、DTO 和 S4 继续保留为有证据再启动的方向，不一次实施整个路线。
 
 验收既要看正常任务是否更短，也要证明恢复入口仍然可达。保留 source/detail、unknown 回执和显式版本不是失败的精简；让普通路径不再承担它们的机械管理才是主要收益。

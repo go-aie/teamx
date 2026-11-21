@@ -62,6 +62,7 @@ type toolBindingChange struct {
 	PlatformVersion         uint64       `json:"platform_version,omitempty"`
 	requestedActions        []string
 	prepared                *preparedLarkToolChange
+	disabledIntent          *tool.Binding // trusted saved intent, retained only for short revocation
 }
 
 func (m *roomManager) toolDefinitions() []tool.Definition {
@@ -377,6 +378,15 @@ func (m *roomManager) changeToolBindingLocked(ctx context.Context, req toolBindi
 		}
 	}
 	// An identical saved choice preserves its revision and active calls.
+	if !req.Enabled && req.disabledIntent != nil {
+		if toolBindingKey(*req.disabledIntent) != toolBindingKey(b) {
+			return f, nil, ErrIdentity
+		}
+		// Keep account generation and grants for an exact later restoration.
+		// Capability proof is revocable/expiring runtime evidence, not intent.
+		b = *req.disabledIntent
+		b.CapabilityEvidence = nil
+	}
 	for i, old := range append(slices.Clone(f.Bindings), f.Disabled...) {
 		candidate := b
 		if old.ActionAuthorization != nil && candidate.ActionAuthorization != nil && slices.Equal(old.ActionAuthorization.Grants, candidate.ActionAuthorization.Grants) {

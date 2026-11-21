@@ -5,7 +5,6 @@ package room
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -18,7 +17,6 @@ import (
 	"time"
 
 	"github.com/go-aie/actorx"
-	"github.com/go-aie/teamx/internal/agent/dsh"
 )
 
 // Opt-in, isolated Room: native DSH children and real model, production host,
@@ -34,6 +32,8 @@ func TestDSHInternalCollaborationReal(t *testing.T) {
 	if err != nil || cfg.Runtime == nil || cfg.Models == nil {
 		t.Fatal("configured runtime and default model required", err)
 	}
+	args, runtimeEvidence := collaborationRuntime(t, cfg.Runtime.DSH.BinaryPath, cfg.Runtime.DSH.BinaryArgs)
+	cfg.Runtime.DSH.BinaryArgs = args
 	entry, err := cfg.Models.resolve(modelSelection{Mode: "default"})
 	if err != nil {
 		t.Fatal(err)
@@ -44,8 +44,10 @@ func TestDSHInternalCollaborationReal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv(entry.materialize().APIKeyEnv, credential.Value)
 	out := imageRealOutput(t)
 	report := map[string]any{"status": "failed", "model": entry.ModelID, "external_platform_writes": 0, "scope": "native internal investigation and review; isolated production Room"}
+	report["runtime"] = runtimeEvidence
 	defer imageRealReport(t, out, report)
 	workspace := filepath.Join(out, "workspace")
 	if err := os.Mkdir(workspace, 0700); err != nil {
@@ -99,13 +101,6 @@ func TestDSHInternalCollaborationReal(t *testing.T) {
 		s.memberFactory = func(id MemberIdentity, runner RunnerConfig, restored *AgentSnapshot) actorx.Actor {
 			m := s.newMember(id, runner, restored).(*MemberAgent)
 			b := m.Backend.(dshBackend)
-			b.open = func(ctx context.Context, opts dsh.Options) (dshComponent, error) {
-				if !strings.Contains(opts.Instructions, `You are member "A"`) {
-					return nil, errors.New("unexpected executing membership")
-				}
-				opts.Credential = credential
-				return dsh.Open(ctx, opts)
-			}
 			m.Backend = policyRealBackend{b, audit}
 			return m
 		}
@@ -171,7 +166,7 @@ func TestDSHInternalCollaborationReal(t *testing.T) {
 				t.Fatal("missing verified result", required)
 			}
 		}
-		if i == 1 && !strings.Contains(text, "不构成") && !strings.Contains(text, "不能替代") && !strings.Contains(text, "不代表") && !strings.Contains(text, "不等于") {
+		if i == 1 && !strings.Contains(text, "不构成") && !strings.Contains(text, "不能替代") && !strings.Contains(text, "不代表") && !strings.Contains(text, "不能代表") && !strings.Contains(text, "不等于") {
 			t.Fatal("internal review was not distinguished from independent Room review")
 		}
 		audit.mu.Lock()

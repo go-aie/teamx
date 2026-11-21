@@ -188,7 +188,7 @@ func TestPlatformMemberCurrentHTTPRejectsExpandedShapes(t *testing.T) {
 			t.Fatal(field, w.Code, w.Body.String())
 		}
 	}
-	for _, action := range []string{"tool", "status", "chats", "projects"} {
+	for _, action := range []string{"status", "chats", "projects"} {
 		path := "/v1/platforms/member/" + action
 		if action == "chats" || action == "projects" {
 			path = "/v1/platforms/" + action
