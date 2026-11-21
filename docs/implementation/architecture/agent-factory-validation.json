@@ -1,0 +1,291 @@
+{
+  "phase": "P4a",
+  "status": "completed_with_validation_limits",
+  "recorded_at": "2026-11-21T06:13:41.612184+00:00",
+  "baseline_head": "bd299103af8379a9cbab17a58cc8b9f4ae462b9d",
+  "baseline_worktree": "Existing unrelated test/document changes and local runtime state preserved; validation includes the current working tree. No commit, push, deployment or daily service switch.",
+  "source_sha256": {
+    "agent/backend.go": "ef75912e92ce193e2103f8ef2720e46885e90d9f9e661b830fb2cb2374ba6fd8",
+    "agent/backend_test.go": "74480fc63ff3f86a5b7d83e673bd511858e0a11281d9b1c50336e981a54e4c8d",
+    "agent/values.go": "ae3fe3932e22abe933f45d62ebc3ae7cb29b6f0b5815c8848e72f23ce2fc2c12",
+    "builtin/agents/dsh/factory.go": "58534d1e8c9aab8418e308f3425a77a5cc6eb3cf1f7d1d1bf9cb287fb305edb4",
+    "builtin/agents/dsh/factory_integration_test.go": "a4af4116a59bf840529418e5fdca4275b5cb167cd1694c48d763afa3f41382ab",
+    "internal/agent/dsh/options.go": "6abd1d206ecdc1be0a4f2c23e5c69efbf528d5c26050c44977fab779ae437002",
+    "internal/agent/dsh/mcp.go": "377dcff3df25a4d0d63780fb327e7a121d01085926d4b5ea51a73cdcbe241d81",
+    "internal/agent/dsh/prompt.go": "159df3b631e55d51d93d108ca77de8cefd390b9b9db03f00a64d4ee3d64960a5",
+    "internal/architecture/agent_factory_test.go": "8a48766616348b857e67d6b03c71b3eda79efd84bfb101a356764219387119e0",
+    "internal/room/agent_assembly.go": "13c9a532af28ccb76dcc6b0947988c2ab342eafac81a32bc249a31ce1041a4e5",
+    "internal/room/dsh.go": "f833279ef0b830def0d134eb0a3fd5a37c7413421fa776c6a188a9a12c772e34",
+    "internal/room/dsh_host.go": "3fbbd5df4bffeb9746a4dc7fba5caf4fb9a69b3bc1af7cbc285b994e62f3933b",
+    "internal/room/dsh_lifecycle.go": "fe5d829259934bf1baf0e06ff991b5af5496052a56177d5336be1ecf63d03c59",
+    "internal/room/backend_lifecycle.go": "8225002cb6e63720cd0bf854d20b2f684ef3652c7f7300762e07b692a948a2cc",
+    "internal/room/protocol.go": "3e8011afacb02379bbb434fedb3e09fa5f61c6f4386fbdeea25bc48bd5160e2f",
+    "internal/room/model_session.go": "889ee6e3b27c78cc5933616a2e4953fe887d3f9f58062f0e96c871e82e48dbfc",
+    "internal/room/model_management.go": "b97025bc468b396873b0cb1bc1cee07770df722eedbff1c1a35e5f3c5509f797",
+    "internal/room/input_upgrade_legacy.go": "cd4857f953a17ea6bb1542bc218b903e6ea6f202832d8a6d158933db9e839954"
+  },
+  "checks": [
+    {
+      "name": "components",
+      "command": [
+        "go",
+        "test",
+        "-json",
+        "-race",
+        "-tags=integration",
+        "./agent",
+        "./builtin/agents/dsh",
+        "./internal/agent/dsh",
+        "./internal/architecture",
+        "-timeout=3m"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 27.971,
+      "log": "/var/folders/kd/j6whw59n4qv4_7_0q7lzbz8h0000gn/T/teamx-agent-factory-mq96840x/components.log",
+      "passed_top_level_tests": 74,
+      "passed_tests_including_subtests": 212,
+      "failed_tests": [],
+      "log_sha256": "9871df46d04e74921fe86a66d6cc8afefdf1aa55084366dc90cf167d678520e2"
+    },
+    {
+      "name": "room",
+      "command": [
+        "go",
+        "test",
+        "-json",
+        "-race",
+        "-tags=integration",
+        "./internal/room",
+        "-run",
+        "Test(DSH|ServicePassesDSH|OwnedSession|BackendClose|Rotation|RotatedSession|Automatic|ModelRotation|ModelSnapshot|ModelOperation|OnlineModels|ManagedModelReference|UnifiedDSH|MCPInbox|AccessDSH|HistoryRecovery|HistoryGuidance|InputUpgradeRotatesSettledDSHContract|RuntimeRecovery|WorkspaceBackend|ServiceShutdownCancelsTurn|FailedOpenRecovery|MissingCredentials)",
+        "-parallel=1",
+        "-timeout=5m"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 99.439,
+      "log": "/var/folders/kd/j6whw59n4qv4_7_0q7lzbz8h0000gn/T/teamx-agent-factory-mq96840x/room.log",
+      "passed_top_level_tests": 125,
+      "passed_tests_including_subtests": 257,
+      "failed_tests": [],
+      "log_sha256": "c72181ec89c4e5ccfa486effb88d74b4b4e0d6abc6a79d69c4428a894ef5dcba"
+    },
+    {
+      "name": "compile",
+      "command": [
+        "go",
+        "test",
+        "-tags=e2e",
+        "./...",
+        "-run",
+        "^$",
+        "-timeout=3m"
+      ],
+      "exit_code": 1,
+      "elapsed_seconds": 15.403,
+      "log": "/var/folders/kd/j6whw59n4qv4_7_0q7lzbz8h0000gn/T/teamx-agent-factory-mq96840x/compile.log",
+      "log_sha256": "78ad656c925e3bba3945a157493db9037a884786c60a4050eef09f7ee6a191be"
+    },
+    {
+      "name": "build",
+      "command": [
+        "go",
+        "build",
+        "-o",
+        "/var/folders/kd/j6whw59n4qv4_7_0q7lzbz8h0000gn/T/teamx-agent-factory-mq96840x/teamx",
+        "./cmd/teamx"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 1.107,
+      "log": "/var/folders/kd/j6whw59n4qv4_7_0q7lzbz8h0000gn/T/teamx-agent-factory-mq96840x/build.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "help",
+      "command": [
+        "/var/folders/kd/j6whw59n4qv4_7_0q7lzbz8h0000gn/T/teamx-agent-factory-mq96840x/teamx",
+        "--help"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.41,
+      "log": "/var/folders/kd/j6whw59n4qv4_7_0q7lzbz8h0000gn/T/teamx-agent-factory-mq96840x/help.log",
+      "log_sha256": "0b2dd712237e55ae7c316a5e56e2773d7fb953a27f0704b70052de7cc534b88f"
+    },
+    {
+      "name": "composition",
+      "command": [
+        "/var/folders/kd/j6whw59n4qv4_7_0q7lzbz8h0000gn/T/teamx-agent-factory-mq96840x/teamx",
+        "extensions",
+        "check"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.012,
+      "log": "/var/folders/kd/j6whw59n4qv4_7_0q7lzbz8h0000gn/T/teamx-agent-factory-mq96840x/composition.log",
+      "log_sha256": "12b1b186a25fcd9dc4fe36d938ed6c2b27f695871d66fa9510ab778b997fbe7c"
+    },
+    {
+      "name": "vet",
+      "command": [
+        "go",
+        "vet",
+        "./agent",
+        "./builtin/agents/dsh",
+        "./internal/agent/dsh",
+        "./internal/architecture",
+        "./internal/room"
+      ],
+      "exit_code": 1,
+      "elapsed_seconds": 1.323,
+      "log": "/var/folders/kd/j6whw59n4qv4_7_0q7lzbz8h0000gn/T/teamx-agent-factory-mq96840x/vet.log",
+      "log_sha256": "be19a7d6df114a7952b5bedad74f9db1b5ccd3acd754f72a63a3ed1784ef6b52"
+    },
+    {
+      "name": "final-compile",
+      "command": [
+        "go",
+        "test",
+        "-tags=e2e",
+        "./...",
+        "-run",
+        "^$",
+        "-timeout=3m"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 16.309,
+      "log": "/var/folders/kd/j6whw59n4qv4_7_0q7lzbz8h0000gn/T/teamx-agent-factory-mq96840x/final-compile.log",
+      "log_sha256": "dd8b3827c6625070733ce654cb5732f2ee47eed26636564f7b6acfad719e477b"
+    },
+    {
+      "name": "final-adapters",
+      "command": [
+        "go",
+        "test",
+        "-json",
+        "-race",
+        "-tags=integration",
+        "./agent",
+        "./builtin/agents/dsh",
+        "./internal/room",
+        "-run",
+        "Test(FactoryPublic|SessionRetains|DSHAdapter|DSHFailedOpen|DSHOwned|MCPInboxDSH|ModelRotation|OnlineModelsDefault|UnifiedDSHDirectoryRecovery|RotatedSessionResume)",
+        "-timeout=3m"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 26.568,
+      "log": "/var/folders/kd/j6whw59n4qv4_7_0q7lzbz8h0000gn/T/teamx-agent-factory-mq96840x/final-adapters.log",
+      "passed_top_level_tests": 11,
+      "passed_tests_including_subtests": 13,
+      "failed_tests": [],
+      "log_sha256": "59cf2fc2caa497bfabad08ca86cbaae952efb529cf6b1bed07704800f9d0504b"
+    },
+    {
+      "name": "final-build",
+      "command": [
+        "go",
+        "build",
+        "-o",
+        "/var/folders/kd/j6whw59n4qv4_7_0q7lzbz8h0000gn/T/teamx-agent-factory-mq96840x/teamx",
+        "./cmd/teamx"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 1.311,
+      "log": "/var/folders/kd/j6whw59n4qv4_7_0q7lzbz8h0000gn/T/teamx-agent-factory-mq96840x/final-build.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "final-help",
+      "command": [
+        "/var/folders/kd/j6whw59n4qv4_7_0q7lzbz8h0000gn/T/teamx-agent-factory-mq96840x/teamx",
+        "--help"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.411,
+      "log": "/var/folders/kd/j6whw59n4qv4_7_0q7lzbz8h0000gn/T/teamx-agent-factory-mq96840x/final-help.log",
+      "log_sha256": "0b2dd712237e55ae7c316a5e56e2773d7fb953a27f0704b70052de7cc534b88f"
+    },
+    {
+      "name": "final-composition",
+      "command": [
+        "/var/folders/kd/j6whw59n4qv4_7_0q7lzbz8h0000gn/T/teamx-agent-factory-mq96840x/teamx",
+        "extensions",
+        "check"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.015,
+      "log": "/var/folders/kd/j6whw59n4qv4_7_0q7lzbz8h0000gn/T/teamx-agent-factory-mq96840x/final-composition.log",
+      "log_sha256": "12b1b186a25fcd9dc4fe36d938ed6c2b27f695871d66fa9510ab778b997fbe7c"
+    },
+    {
+      "name": "component-vet",
+      "command": [
+        "go",
+        "vet",
+        "./agent",
+        "./builtin/agents/dsh",
+        "./internal/agent/dsh",
+        "./internal/architecture"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.424,
+      "log": "/var/folders/kd/j6whw59n4qv4_7_0q7lzbz8h0000gn/T/teamx-agent-factory-mq96840x/component-vet.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "agent-dependencies",
+      "command": [
+        "go",
+        "list",
+        "-deps",
+        "./agent"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.033,
+      "log": "/var/folders/kd/j6whw59n4qv4_7_0q7lzbz8h0000gn/T/teamx-agent-factory-mq96840x/agent-dependencies.log",
+      "log_sha256": "d0f92f9d25566923ed7c55f3f3c78d5edce3f14b4ca2fa4484372bdfb1ec93e5"
+    },
+    {
+      "name": "diff-check",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.053,
+      "log": "/var/folders/kd/j6whw59n4qv4_7_0q7lzbz8h0000gn/T/teamx-agent-factory-mq96840x/diff-check.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "public_contract_project_dependencies": [
+    "github.com/go-aie/teamx/internal/identity",
+    "github.com/go-aie/teamx/agent"
+  ],
+  "earlier_attempts": [
+    {
+      "command": "go test -race -tags=integration ./agent ./builtin/agents/dsh ./internal/agent/dsh ./internal/architecture ./internal/room -run 'Test(OwnedSession|BackendClose|DSH|ServicePassesDSH|MemberLifecycleBackend|SessionRotation|Rotation|Automatic|ModelRotation|ModelChange|ModelApply|InputSession|MCPInbox|HistoryRecovery|ServerAccess)' -timeout=5m",
+      "exit_code": 1,
+      "failure": "TestDSHMaterialsTimeoutDegradesButCancellationAndInvalidTurnAbort: expected timeout-specific missing-material status, observed attachment unavailable. No race report. Single-case retry passed in 1.875s; final Room race passed with -parallel=1. Material implementation and test unchanged."
+    },
+    {
+      "command": "go test -tags=e2e ./... -run ^$ -timeout=3m",
+      "exit_code": 1,
+      "failure": "Legacy audit fixture calls dshComponent.Run; restored this private convenience method while keeping the public Component contract on RunPrompt. Final full e2e compilation passed."
+    }
+  ],
+  "limits": {
+    "room_vet": "Two pre-existing duplicate JSON tags in internal/room/room_action_images.go:22 for room_id and room_instance; component/architecture vet passes.",
+    "real_backend": "Local deterministic ACP subprocess fixture only. No installed DSH + real-model acceptance performed; that comparison belongs to P4b.",
+    "not_run": [
+      "Full business test suite",
+      "Whole repository race suite",
+      "Real platform writes",
+      "Browser acceptance"
+    ],
+    "deferred": [
+      "P4b capability ownership and representative real DSH/model comparison",
+      "R5b.2 full member state machine move",
+      "Codex integration",
+      "Gordis-managed DSH lifecycle",
+      "Product selective build"
+    ]
+  }
+}

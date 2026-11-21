@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"github.com/go-aie/teamx/agent"
 )
 
 // Private capability contracts describe existing operations. A Backend that only
@@ -29,15 +31,7 @@ type storedBackend interface {
 	switchPreparedSession(SessionOptions, string, string, *modelSessionSnapshot) (Backend, error)
 }
 
-// session.json belongs to the adapter and contains only the stable directory
-// reference. backend.json and the ACP SessionID remain owned by the component.
-type sessionReference struct {
-	Version int `json:"version"`
-	MemberIdentity
-	Directory    string `json:"directory"`
-	Pending      bool   `json:"pending,omitempty"` // Authorized fresh generation, not yet opened.
-	ManagedModel bool   `json:"managed_model,omitempty"`
-}
+type sessionReference = agent.Reference
 
 // Keep historical diagnostic text so persisted error recognition remains valid.
 var errBackendPaused = errors.New("DSH member paused; inspect backend failure before continuing")

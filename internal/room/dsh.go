@@ -8,12 +8,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
+	"github.com/go-aie/teamx/agent"
 	"github.com/go-aie/teamx/internal/agent/dsh"
 	"github.com/go-aie/teamx/internal/inputstream"
 )
@@ -82,14 +81,15 @@ func validateDSHProfiles(profiles map[string]dshProfile) error {
 	return nil
 }
 
+// Legacy audit fixtures also expose the text convenience method. The public
+// factory contract uses RunPrompt, including for text-only execution.
 type dshComponent interface {
+	agent.Component
 	Run(context.Context, string) (dsh.TurnResult, error)
-	RunPrompt(context.Context, []dsh.ContentBlock) (dsh.TurnResult, error)
-	SupportsImages() bool
-	Close(context.Context) error
 }
 
 type dshBackend struct {
+	factory        agent.Factory
 	checkWorkspace func() error
 	isDirect       bool // Immutable type of the owning TeamX conversation.
 	inputService   *service
@@ -106,7 +106,7 @@ type dshBackend struct {
 	profile         dshProfile
 	turnTimeout     time.Duration // Service policy; not part of the frozen Room runtime.
 	recover         bool          // Only set by startup after checking normal shutdown evidence.
-	// A narrow seam for offline adapter tests; production always uses dsh.Open.
+	// A narrow seam for offline adapter tests; production uses the selected factory.
 	open func(context.Context, dsh.Options) (dshComponent, error)
 }
 
@@ -159,177 +159,31 @@ func (b dshBackend) reference(opts SessionOptions) (sessionReference, bool, erro
 	if path != opts.StatePath {
 		return sessionReference{}, false, ErrIdentity
 	}
-	return readSessionReference(path, opts.MemberIdentity)
+	return b.selectedFactory().Reference(sessionCheckpoints{path: path}, opts.MemberIdentity, path)
 }
 
 // Read the adapter-owned reference without loading Room messages. Callers own
 // the Room directory lock and validate the member identity before choosing path.
 func readSessionReference(path string, identity MemberIdentity) (sessionReference, bool, error) {
-	var ref sessionReference
-	err := readSnapshot(path, &ref, maxPrivateFileBytes)
-	if err == nil {
-		base := filepath.Base(dshStateDir(path))
-		generation := strings.TrimPrefix(ref.Directory, base+"-")
-		rotated := ref.Directory != generation && len(generation) == 32 && strings.Trim(generation, "0123456789abcdef") == ""
-		if ref.Version != formatVersion || ref.MemberIdentity != identity || (ref.Directory != base && !rotated) || (ref.Pending && !rotated) {
-			return ref, false, fmt.Errorf("%w: DSH directory reference", ErrInvalid)
-		}
-		if ref.Pending {
-			if _, err := os.Lstat(filepath.Join(filepath.Dir(path), ref.Directory)); !errors.Is(err, os.ErrNotExist) {
-				return ref, false, fmt.Errorf("%w: pending DSH generation already exists", ErrInvalid)
-			}
-		}
-		return ref, !ref.Pending, nil
-	}
-	if !errors.Is(err, os.ErrNotExist) {
-		return ref, false, err
-	}
-	_, err = os.Lstat(dshStateDir(path))
-	if errors.Is(err, os.ErrNotExist) {
-		return ref, false, nil
-	}
-	if err != nil {
-		return ref, false, err
-	}
-	return ref, false, fmt.Errorf("%w: DSH state directory has no adapter reference", ErrInvalid)
+	return defaultBackendFactory.Reference(sessionCheckpoints{path: path}, identity, path)
 }
 
 func (b dshBackend) OpenSession(ctx context.Context, opts SessionOptions) (Session, error) {
-	if b.checkWorkspace != nil {
-		if err := b.checkWorkspace(); err != nil {
+	s := &dshSession{backend: b, opts: opts}
+	host := &sessionHost{dshSession: s}
+	runtime, err := b.selectedFactory().OpenSession(ctx, host, b.recover)
+	if runtime == nil {
+		if !host.prepared {
 			return nil, err
-		}
-	}
-	if b.inboxMCP != nil {
-		b.prepare = func(ctx context.Context, input UnreadChanged, turn uint64, images bool) (*dshMaterials, error) {
-			return b.inboxMCP.prepareRoomMaterials(ctx, input, turn, images)
-		}
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, errors.Join(errBackendPaused, err)
-	}
-	ref, exists, err := b.reference(opts)
-	if err != nil {
-		return nil, errors.Join(errBackendPaused, err)
-	}
-	if exists && !b.recover {
-		return nil, dshFailure(dsh.ErrRecoveryUnsupported)
-	}
-	if b.recover && !exists {
-		return nil, dshFailure(dsh.ErrRecoveryUnsupported)
-	}
-	if ref.Directory != "" {
-		frozen, loadErr := b.restoreModelSnapshot(opts, ref)
-		if loadErr == nil {
-			b = frozen
-		} else if b.model != nil || ref.ManagedModel || !errors.Is(loadErr, os.ErrNotExist) {
-			return nil, dshFailure(loadErr)
-		}
-	} else {
-		ref = sessionReference{Version: formatVersion, MemberIdentity: opts.MemberIdentity, Directory: filepath.Base(dshStateDir(opts.StatePath))}
-	}
-	if b.model != nil && b.model.Legacy && (!b.recover || !exists) {
-		return nil, dshFailure(dsh.ErrRecoveryUnsupported)
-	}
-	if !filepath.IsAbs(opts.CLIPath) {
-		return nil, errors.Join(errBackendPaused, errors.New("absolute TeamX CLI path required"))
-	}
-	componentOpts, err := b.componentOptions(opts, ref)
-	if err != nil {
-		return nil, err
-	}
-	if err := b.checkModelRuntime(ctx, componentOpts); err != nil {
-		return nil, dshFailure(err)
-	}
-	if !b.recover {
-		if err := b.saveModelSnapshot(opts, ref); err != nil {
-			return nil, dshFailure(err)
-		}
-	}
-
-	// Publish the adapter reference before new execution. This also guards a crash
-	// before the component can publish opening.json or backend.json.
-	path := opts.StatePath
-	if !b.recover {
-		b.store.mu.Lock()
-		path, err = b.store.dshPath(opts.MemberIdentity, "session.json", true)
-		if err == nil {
-			ref.Pending = false // Consume fresh-generation authority before launch.
-			ref.ManagedModel = b.model != nil
-			err = b.store.save(path, ref, maxPrivateFileBytes)
-		}
-		b.store.mu.Unlock()
-		if b.model != nil {
-			b.store.changed("models", opts.MemberIdentity)
-		}
-	}
-	if err != nil {
-		return nil, errors.Join(errBackendPaused, err)
-	}
-	open := b.open
-	if open == nil {
-		open = func(ctx context.Context, options dsh.Options) (dshComponent, error) {
-			start := dsh.Open
-			if b.recover {
-				start = dsh.Resume
-			}
-			session, err := start(ctx, options)
-			if session == nil {
-				return nil, err
-			}
-			return session, err
-		}
-	}
-	var revoke func()
-	var inbox *mcpInboxSession
-	if b.access != nil {
-		binding := executionBinding{ServiceInfo: ServiceInfo{RoomIdentity: opts.RoomIdentity}, Caller: Caller{Author: Author{Kind: "agent", ID: opts.AgentID}, MembershipID: opts.MembershipID}}
-		for _, entry := range opts.CLIEnv {
-			if strings.HasPrefix(entry, "TEAMX_SERVICE_EPOCH=") {
-				binding.ServiceEpoch = strings.TrimPrefix(entry, "TEAMX_SERVICE_EPOCH=")
-			}
-		}
-		token, release, issueErr := b.access.issueExecution(binding)
-		if issueErr != nil {
-			return nil, issueErr
-		}
-		revoke = release
-		componentOpts.ExecutionToken = token
-		if svc := b.mcpService(); svc != nil {
-			token, releaseMCP, issueErr := b.access.issueMCPInbox(binding, svc, ref.Directory, slices.Contains(componentOpts.Model.InputModalities, "image"))
-			if issueErr != nil {
-				revoke()
-				return nil, issueErr
-			}
-			revoke = sync.OnceFunc(func() { releaseMCP(); release() })
-			componentOpts.MCPServers = []dsh.MCPHTTPServer{mcpHTTPConfiguration(componentOpts.ToolEnv["TEAMX_ENDPOINT"], token)}
-			b.store.mcpOperations.mu.Lock()
-			inbox = b.store.mcpOperations.inboxes[opts.MemberIdentity]
-			b.store.mcpOperations.mu.Unlock()
-		}
-	} else if b.mcpService() != nil {
-		return nil, ErrIdentity
-	}
-	component, err := open(ctx, componentOpts)
-	if component == nil {
-		if revoke != nil {
-			revoke()
 		}
 		if b.recover {
 			err = errors.Join(errBackendDisabled, err)
 		}
 		return nil, dshFailure(errors.Join(err, errors.New("DSH did not open a session")))
 	}
-	// Legacy resumes already verify the recorded ACP identity in dsh.Resume;
-	// imports have no probe receipt and must not be compared with an empty one.
-	if b.model != nil && !b.model.Legacy && err == nil {
-		if actual, ok := component.(interface{ RuntimeAgent() dsh.Artifact }); ok && actual.RuntimeAgent() != b.model.Runtime.Agent {
-			err = errors.New("DSH ACP identity changed after model validation")
-		}
-	}
-	// Deliver ownership even on an error, so Room's failed-open/discard path
-	// closes any resource that was returned by the backend.
-	return &dshSession{component: component, backend: b, opts: opts, revoke: revoke, inbox: inbox}, dshFailure(err)
+
+	s.runtime = runtime
+	return s, dshFailure(err)
 }
 
 // Materialize the effective member instructions for the live backend.
@@ -455,6 +309,7 @@ func dshNotification(input UnreadChanged) string {
 }
 
 type dshSession struct {
+	runtime   *agent.Session
 	input     *inputSession
 	revoke    func()
 	inbox     *mcpInboxSession
@@ -486,189 +341,19 @@ type backendDiagnostic struct {
 	Error  string         `json:"error,omitempty"`
 }
 
-func (s *dshSession) Run(ctx context.Context, input UnreadChanged) (err error) {
-	if s.backend.checkWorkspace != nil {
-		if err := s.backend.checkWorkspace(); err != nil {
-			return err
-		}
+func (s *dshSession) Run(ctx context.Context, input UnreadChanged) error {
+	if s.runtime != nil {
+		return s.runtime.Run(ctx, input)
 	}
-	defer func() {
-		if err != nil {
-			s.timeZone = "" // A failed turn is not evidence of retained context.
-		}
-	}()
-	// Keep one settings snapshot even if a save occurs during preparation/run.
-	settings, started := s.backend.settings.snapshot(), time.Now()
-	if input.MemberIdentity != s.opts.MemberIdentity {
-		return errors.Join(errBackendPaused, ErrIdentity)
-	}
-	policy, err := s.backend.store.readAgentPolicy(s.opts.MemberIdentity)
+	// Isolated fixtures may supply their component directly. Both paths use the
+	// same preparation, confirmation, diagnostic and release operations.
+	turn, err := s.prepareTurn(ctx, input, turnCapabilities(s.component))
 	if err != nil {
-		return dshFailure(err)
+		return err
 	}
-	var supplied any = policy.policyContext
-	if s.policyToken != policy.PolicyToken {
-		supplied = policy
-	}
-	body, err := json.Marshal(supplied)
-	if err != nil {
-		return dshFailure(err)
-	}
-	s.backend.store.activeSessions.Store(s.opts.MemberIdentity, s)
-	s.backend.store.changed("activity", s.opts.MemberIdentity)
-	defer func() {
-		s.backend.store.activeSessions.CompareAndDelete(s.opts.MemberIdentity, s)
-		s.backend.store.changed("activity", s.opts.MemberIdentity)
-	}()
-	notification := dshNotification(input)
-	if s.backend.inputService != nil {
-		svc := s.backend.inputService
-		ref, _, e := s.backend.reference(s.opts)
-		if e != nil {
-			return dshFailure(e)
-		}
-		if s.inbox != nil {
-			s.input, err = s.inbox.inputFor(ctx, policy.CurrentTurn, ref.Directory)
-		} else {
-			p, e := svc.inputStorage(s.opts.MemberIdentity)
-			if e != nil {
-				return dshFailure(e)
-			}
-			s.input, err = newInputSession(ctx, svc, p, ref.Directory, policy.CurrentTurn, s.component.SupportsImages(), func(ctx context.Context) error { return ctx.Err() })
-		}
-		if err != nil {
-			return dshFailure(err)
-		}
-		c, e := s.input.catalog(ctx)
-		if e != nil {
-			return dshFailure(e)
-		}
-		if e := s.input.storage.run(ctx, "cache_catalog", func(context.Context) error { s.input.storage.keepInputCatalog(c); return nil }); e != nil {
-			return dshFailure(e)
-		}
-		directory, exposure, e := c.Directory()
-		if e != nil {
-			return dshFailure(e)
-		}
-		directoryValue, e := s.input.chargeDiscovery(directory)
-		if e != nil {
-			return dshFailure(e)
-		}
-		if _, supplied := directoryValue.(inputstream.Directory); supplied {
-			if e = s.input.storage.saveInputExposure(s.input.execution, exposure); e != nil {
-				return dshFailure(e)
-			}
-		}
-		b, e := json.Marshal(directoryValue)
-		if e != nil {
-			return dshFailure(e)
-		}
-		notification = "Input directory (JSON):\n" + string(b)
-	}
-	if svc := s.backend.inputService; svc != nil {
-		work, e := svc.supplyCalendar(ctx, s.opts.MemberIdentity, policy.CurrentTurn)
-		if e != nil {
-			return dshFailure(e)
-		}
-		if len(work) > 0 {
-			b, _ := json.Marshal(work)
-			notification += "\nPending Calendar work (JSON):\n" + string(b) + "\nRead latest human intent, then read \"$TEAMX_CLI\" calendar --help and use calendar claim/finish with --turn current_turn. Claim at most one; never also send the report."
-		}
-	}
-	prompt := []dsh.ContentBlock{{Type: "text", Text: "Member policy context (JSON):\n" + string(body) + "\n\n" + dshTimeContext(settings, started, s.timeZone) + "\n" + notification}}
-	var materials *dshMaterials
-	if s.backend.prepare != nil {
-		materials, err = s.backend.prepare(ctx, input, policy.CurrentTurn, s.component.SupportsImages())
-		if err != nil {
-			return dshFailure(err)
-		}
-		prompt = materials.blocks(prompt[0].Text)
-	}
-	if !materialPromptFits(prompt) {
-		return dshFailure(errors.New("DSH material prompt exceeds text/frame budget"))
-	}
-	if !s.recoverySupplied && s.backend.recoveryContext != nil {
-		recovery, err := s.backend.recoveryContext(ctx, input, policy.CurrentTurn)
-		if err != nil {
-			return dshFailure(err)
-		}
-		prompt, err = recovery.appendTo(prompt)
-		if err != nil {
-			return dshFailure(err)
-		}
-	}
-	if materials != nil {
-		if err := materials.check(ctx); err != nil {
-			return dshFailure(err)
-		}
-	}
-	if s.inbox != nil && (s.backend.inputService == nil || s.backend.inputService.inboxMode != "cli") {
-		for i := range prompt {
-			prompt[i].Text = strings.ReplaceAll(prompt[i].Text, "inbox read", "the discovered inbox_read MCP tool")
-		}
-	}
-	if err := ctx.Err(); err != nil {
-		return dshFailure(err)
-	}
-	if s.input != nil && s.backend.access != nil {
-		s.input.executionContext = ctx
-		token, revoke, e := s.backend.access.issueInputBinding(s.input)
-		if e != nil {
-			return dshFailure(e)
-		}
-		defer revoke()
-		if private, ok := s.component.(interface{ AddRedactionSecret(string) }); ok {
-			private.AddRedactionSecret(token)
-		}
-		ref, _, e := s.backend.reference(s.opts)
-		if e != nil {
-			return dshFailure(e)
-		}
-		path := filepath.Join(filepath.Dir(s.opts.StatePath), ref.Directory, "input-execution.json")
-		if e = os.MkdirAll(filepath.Dir(path), 0700); e != nil {
-			return dshFailure(e)
-		}
-		if e = saveDSHDiagnostic(path, map[string]string{"token": token, "endpoint": s.backend.inputService.endpoint}); e != nil {
-			return dshFailure(e)
-		}
-		defer os.Remove(path)
-	}
-	result, runErr := s.component.RunPrompt(ctx, prompt)
-	if s.input != nil {
-		runErr = errors.Join(runErr, s.input.confirmationError())
-	} else if s.inbox != nil {
-		runErr = errors.Join(runErr, s.inbox.confirmationError())
-	}
-	if runErr == nil {
-		s.recoverySupplied = true
-		s.policyToken = policy.PolicyToken
-		s.timeZone = settings.TimeZone
-	} else {
-		// A failed prompt is not evidence that its body remains in context.
-		s.policyToken = ""
-	}
-	// Keep only the last bounded private result. It is never a Room message,
-	// and this file has no scheduling or backend recovery authority.
-	if result.Events == nil {
-		result.Events = []dsh.ActivityEvent{}
-	}
-	private := backendDiagnostic{Result: result}
-	if runErr != nil {
-		private.Error = runErr.Error()
-	}
-	s.backend.store.mu.Lock()
-	path, saveErr := s.backend.store.dshPath(s.opts.MemberIdentity, "dsh-turn.json", true)
-	if saveErr == nil {
-		saveErr = saveDSHDiagnostic(path, private)
-	}
-	s.backend.store.mu.Unlock()
-	s.backend.store.changed("activity", s.opts.MemberIdentity)
-	if saveErr != nil {
-		// Optional output must neither change the prompt's terminal outcome
-		// nor freeze Room's authoritative snapshot commits.
-		fmt.Fprintf(os.Stderr, "DSH member %q private output not saved: %v\n", s.opts.AgentID, saveErr)
-	}
-	return dshFailure(runErr)
+	defer turn.Close()
+	result, err := s.component.RunPrompt(ctx, turn.Prompt)
+	return turn.Finish(result, err)
 }
 
 func saveDSHDiagnostic(path string, value any) error {
@@ -688,6 +373,9 @@ func saveDSHDiagnostic(path string, value any) error {
 }
 
 func (s *dshSession) Close(ctx context.Context) error {
+	if s.runtime != nil {
+		return dshCloseResult(s.runtime.Close(ctx))
+	}
 	if s.revoke != nil {
 		s.revoke()
 	}

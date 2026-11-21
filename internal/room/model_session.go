@@ -145,13 +145,13 @@ func (b dshBackend) checkModelRuntime(ctx context.Context, opts dsh.Options) err
 	if b.model == nil || b.model.Legacy || b.open != nil {
 		return nil
 	}
-	actual, err := dsh.InspectRuntime(ctx, opts)
+	actual, err := b.selectedFactory().InspectRuntime(ctx, launchOptions(opts))
 	if err != nil {
 		return err
 	}
 	expected := b.model.Runtime
 	expected.Agent = dsh.Artifact{}
-	if !reflect.DeepEqual(actual, expected) {
+	if !reflect.DeepEqual(dsh.RuntimeIdentity(actual), expected) {
 		return errors.New("DSH installation changed after model validation")
 	}
 	return nil

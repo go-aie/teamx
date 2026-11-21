@@ -1,38 +1,14 @@
 package dsh
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"unicode/utf8"
+
+	"github.com/go-aie/teamx/agent"
 )
 
-// ContentBlock is one ACP text or inline raster image. Data contains raw image
-// bytes; JSON serialization supplies canonical base64. URLs are not accepted.
-// Callers must not mutate a prompt or its data until RunPrompt returns.
-type ContentBlock struct {
-	Type     string `json:"type"`
-	Text     string `json:"text,omitempty"`
-	MIMEType string `json:"mimeType,omitempty"`
-	Data     []byte `json:"data,omitempty"`
-}
-
-func (b ContentBlock) MarshalJSON() ([]byte, error) {
-	if b.Type == "text" {
-		return json.Marshal(struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		}{b.Type, b.Text})
-	}
-	if b.Type == "image" {
-		return json.Marshal(struct {
-			Type     string `json:"type"`
-			MIMEType string `json:"mimeType"`
-			Data     []byte `json:"data"`
-		}{b.Type, b.MIMEType, b.Data})
-	}
-	return nil, errors.New("unsupported DSH prompt block type")
-}
+type ContentBlock = agent.ContentBlock
 
 func (s *Session) validatePrompt(prompt []ContentBlock) error {
 	if len(prompt) == 0 {

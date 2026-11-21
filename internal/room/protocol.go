@@ -6,6 +6,8 @@ import (
 
 	"github.com/go-aie/actorx"
 	"github.com/go-aie/teamx/internal/app/agents"
+
+	"github.com/go-aie/teamx/agent"
 )
 
 var (
@@ -146,21 +148,8 @@ type ReadConfirmation struct {
 	Revision    uint64 `json:"revision"`
 }
 
-// UnreadChanged is a state snapshot, never a message body or a delta.
-type UnreadChanged struct {
-	MemberIdentity
-	Inbox           *InboxInput `json:"inbox,omitempty"`
-	Revision        uint64      `json:"revision"`
-	LatestSeq       uint64      `json:"latest_seq"`
-	NewestUnreadSeq uint64      `json:"newest_unread_seq"`
-	UnreadCount     int         `json:"unread_count"`
-}
-
-type InboxInput struct {
-	Recovery    bool   `json:"recovery,omitempty"`
-	Through     uint64 `json:"through"`
-	SnapshotSeq uint64 `json:"snapshot_seq"`
-}
+type UnreadChanged = agent.Input
+type InboxInput = agent.InboxInput
 
 type InspectMember struct{ MemberIdentity }
 type MemberStatus struct {

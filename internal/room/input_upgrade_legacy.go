@@ -192,7 +192,7 @@ func (u *inputUpgrade) checkLegacySession(id MemberIdentity) error {
 	if err != nil || !exists {
 		return err
 	}
-	err = dsh.CheckReset(filepath.Join(filepath.Dir(path), ref.Directory))
+	err = defaultBackendFactory.CheckReset(filepath.Join(filepath.Dir(path), ref.Directory))
 	if err != nil && !errors.Is(err, dsh.ErrRecoveryUnsupported) && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("member %s previous Session: %w", id.MembershipID, err)
 	}

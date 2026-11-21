@@ -1,8 +1,8 @@
 # TeamX 第二阶段：Gordis 进程内扩展与按需编译方案
 
-状态：P0 基线与分支交接已完成，见[交接记录及验证](implementation/architecture/plugin-handoff.zh.md)；[P1a 公共目录与内置工厂解耦](implementation/architecture/platform-catalog.zh.md)与[P1b 外部工具公开装配](implementation/architecture/extension-assembly.zh.md)已完成；[P2n 通知运行绑定](implementation/architecture/notification-runtime.zh.md)与[P2t 内置工具运行边界](implementation/architecture/tool-runtime.zh.md)已完成；P2r 及后续单元尚未实施。首次日期：2026-11-19；实施优先级调整及 P0：2026-11-20；当前源码复核：2026-11-21。第一阶段 R0、R3a、R1a、R5a、R3b、R6a.1、R5b.1 已完成。P0 仅核对并记录当时源码与进入条件，没有新增生产接口或 Gordis 依赖；本次复核不重做 P0，结论及范围增补见第 9.0 节。P 编号保留，第 9 节拆出可分别实施的子单元。
+状态：P0 基线与分支交接已完成，见[交接记录及验证](implementation/architecture/plugin-handoff.zh.md)；[P1a 公共目录与内置工厂解耦](implementation/architecture/platform-catalog.zh.md)与[P1b 外部工具公开装配](implementation/architecture/extension-assembly.zh.md)已完成；[P2n 通知运行绑定](implementation/architecture/notification-runtime.zh.md)与[P2t 内置工具运行边界](implementation/architecture/tool-runtime.zh.md)已完成；[P4a DSH 工厂与宿主合同](implementation/architecture/agent-factory.zh.md)已完成；P2r／P3／P5 与 P4b 尚未实施。首次日期：2026-11-19；实施优先级调整及 P0：2026-11-20；当前源码复核：2026-11-21。第一阶段 R0、R3a、R1a、R5a、R3b、R6a.1、R5b.1 已完成。P0 仅核对并记录当时源码与进入条件，没有新增生产接口或 Gordis 依赖；本次复核不重做 P0，结论及范围增补见第 9.0 节。P 编号保留，第 9 节拆出可分别实施的子单元。
 
-前置方案：[核心概念、模块边界分析与第一阶段重构](ARCHITECTURE-MODULE-BOUNDARIES-ANALYSIS.zh.md)。P1a／P1b／P2n／P2t 已完成，近期推荐链可停留；平台按需裁剪后续沿 P2r／P3／P5 完成，Agent 分支另选 P4a／P4b。DSH 跨包工厂前须先收敛记录中的宿主操作。后续复用已接入合同，按实际阻碍补齐具体 R 单元，不要求无条件先完成全部目录迁移。新增平台产品功能和 Codex 接入各自另行实施。
+前置方案：[核心概念、模块边界分析与第一阶段重构](ARCHITECTURE-MODULE-BOUNDARIES-ANALYSIS.zh.md)。P1a／P1b／P2n／P2t 已完成，近期推荐链可停留；平台按需裁剪后续沿 P2r／P3／P5 完成，Agent 分支的 P4a 已完成，P4b 后续单独开展。DSH 已通过显式宿主操作接入跨包工厂。后续复用已接入合同，按实际阻碍补齐具体 R 单元，不要求无条件先完成全部目录迁移。新增平台产品功能和 Codex 接入各自另行实施。
 
 ## 1. 当前目标与范围
 
@@ -157,7 +157,7 @@ P4 交付后端扩展边界，不自动表示 DSH 已由 Gordis 管理。若后�
 
 ## 9. 推荐实施单元与依赖
 
-保留 P0–P5 的职责编号，拆出可单独下达、实施和验收的子单元。P0、P1a、P1b、P2n 与 P2t 已完成，其余单元待实施；表中顺序表达当前推荐，不以编号排序。每项沿用第一阶段实施单：记录具体入口、可变状态、唯一 owner、合同、关闭／恢复、清理及停止点。生产文件与类型按长期职责命名。
+保留 P0–P5 的职责编号，拆出可单独下达、实施和验收的子单元。P0、P1a、P1b、P2n、P2t 与 P4a 已完成，其余单元待实施；表中顺序表达当前推荐，不以编号排序。每项沿用第一阶段实施单：记录具体入口、可变状态、唯一 owner、合同、关闭／恢复、清理及停止点。生产文件与类型按长期职责命名。
 
 ### 9.0 2026-11-21 源码复核：保留顺序，补充当前行为基线
 
@@ -185,7 +185,7 @@ P4 交付后端扩展边界，不自动表示 DSH 已由 Gordis 管理。若后�
 | 已完成／第二批 | **P1b 外部工具装配入口** | [实施与验证](implementation/architecture/extension-assembly.zh.md)：外部 Go module 通过公开入口发现并执行本地工具，正常默认入口也使用同一 Compose | P1a |
 | 已完成／第三批 | **P2n 飞书通知运行绑定** | [实施与验证](implementation/architecture/notification-runtime.zh.md)：messages 的准入、加载和执行依赖显式绑定；外部通知 module 已验证持久投递／重开及缺 codec 保护 | P1b；P0 确认原订阅／投递合同可复用 |
 | 已完成／第四批 | **P2t 飞书内置工具调用族** | [实施与验证](implementation/architecture/tool-runtime.zh.md)：help／read／actions 使用所选运行适配；共享原图宿主、授权、回执及 Calls 结清保持 | P1b、R6a.1；默认接 P2n 之后，非技术硬依赖 |
-| Agent 第一批 | **P4a DSH 工厂与宿主合同** | 正常运行与关闭 Room 的检查／恢复统一从注入工厂取得能力 | P0 Agent 切片通过、R5b.1；可在 P1b 后单独开展 |
+| 已完成／Agent 第一批 | **P4a DSH 工厂与宿主合同** | [实施与验证](implementation/architecture/agent-factory.zh.md)：正常运行与关闭 Room 的引用／恢复／结清及模型运行身份检查统一使用同一工厂 | P0 Agent 切片通过、R5b.1；可在 P1b 后单独开展 |
 | Agent 第二批 | **P4b DSH 能力与后端验收** | ACP／DSH 特有能力归属明确，原执行、图文、取消、恢复、轮换和证明通过 | P4a |
 | 平台后续闭环 | **P2r 飞书剩余依赖隔离** | 按操作迁其余配置／展示等引用，产品依赖真正可以排除飞书 | P2n、P2t；本项须按 9.6 节继续分操作实施 |
 | 平台后续闭环 | **P3 一个实现服务的 Gordis 生命周期** | 已有真实资源受启动、Ready、失败清理和关闭排空管理 | P1b 与所选服务已完成的 P2 边界；默认在 P2r 后 |
@@ -250,6 +250,8 @@ P2n 已完成，见[运行绑定实施与验证](implementation/architecture/not
 若迁移需先改共享 Room 图片宿主合同，应作为 P2t 内一个真实接入的准备切片验收，再切换调用族；不因此展开通用材料系统、完整 Followup／账本 owner 或 R4 迁移。组件／本地集成和故障注入覆盖上述边界；仅在改变实际平台协议、进程或后端行为时沿明确授权做相应隔离真实验收，不重复历史全部发送样本。
 
 ### 9.5 P4a／P4b：DSH 工厂与后端边界
+
+P4a 已完成，见[工厂与宿主合同实施及验证](implementation/architecture/agent-factory.zh.md)；P4b 尚未实施。以下保留各自范围与验收要求。
 
 **P4a——一个真实 DSH 工厂，所有相关入口使用。** 从 R5b.1 的实际合同提取跨包所需部分，公开仅实现后端工厂所必需的类型／能力；具体 Session 状态与 DSH 私有字段留在适配。宿主显式提供检查点、执行绑定、输入／材料、模型与观察操作，不能传整个 service／Store。正常成员构造、关闭 Room 的状态读取／恢复核验、轮换和模型应用取得同一工厂的能力，移除对应固定构造旁路。默认只选择 DSH，配置与持久格式不变。
 
@@ -319,6 +321,6 @@ Codex 按 ACP 另定实现与真实验收范围，Gmail 等新平台按具体通
 
 ## 11. 本文状态
 
-P0、P1a、P1b、P2n 与 P2t 已完成，分别见[历史交接记录](implementation/architecture/plugin-handoff.zh.md)、[目录解耦记录](implementation/architecture/platform-catalog.zh.md)、[公开工具装配记录](implementation/architecture/extension-assembly.zh.md)、[通知运行绑定记录](implementation/architecture/notification-runtime.zh.md)与[工具运行边界记录](implementation/architecture/tool-runtime.zh.md)。近期推荐链可停留；P2r／P3／P5 的平台依赖隔离、Gordis 生命周期与发行裁剪仍待实施，P4a／P4b 的 Agent 分支另行开展。第一阶段 R6a.2 只完成飞书 help／read／actions 调用族，其余调用族与 R6b 仍未完成。
+P0、P1a、P1b、P2n 与 P2t 已完成，分别见[历史交接记录](implementation/architecture/plugin-handoff.zh.md)、[目录解耦记录](implementation/architecture/platform-catalog.zh.md)、[公开工具装配记录](implementation/architecture/extension-assembly.zh.md)、[通知运行绑定记录](implementation/architecture/notification-runtime.zh.md)与[工具运行边界记录](implementation/architecture/tool-runtime.zh.md)。近期推荐链可停留；P2r／P3／P5 的平台依赖隔离、Gordis 生命周期与发行裁剪仍待实施，Agent 分支 [P4a 工厂与宿主合同](implementation/architecture/agent-factory.zh.md)已完成，P4b 另行开展。第一阶段 R6a.2 只完成飞书 help／read／actions 调用族，其余调用族与 R6b 仍未完成。
 
-已交付可实际运行的外部本地工具和最小外部通知作者合同，普通入口保持完整组合。尚无 Gordis 服务或产品裁剪，也未接入 Codex／Gmail。未改根模块依赖、存储格式或日常运行服务，保留既有工作树修改。Agent 分支仍先完成记录中的宿主准备操作。第 9.0 节及历史实施记录保留各自采样，不作为 P2t 完成后的当前依赖或全仓验证结论。
+已交付可实际运行的外部本地工具和最小外部通知作者合同，普通入口保持完整组合。尚无 Gordis 服务或产品裁剪，也未接入 Codex／Gmail。未改根模块依赖、存储格式或日常运行服务，保留既有工作树修改。Agent 分支已完成 P4a 所需的宿主准备与工厂接入；能力归属集中和真实后端对照留给 P4b。第 9.0 节及历史实施记录保留各自采样，不作为 P2t 完成后的当前依赖或全仓验证结论。

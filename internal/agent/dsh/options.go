@@ -14,6 +14,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/go-aie/teamx/agent"
 )
 
 var (
@@ -56,12 +58,7 @@ func CleanupSettled(err error) bool {
 	return err == nil || (!errors.Is(err, ErrCleanupPending) && errors.As(err, &closed))
 }
 
-// Artifact optionally labels a build verified by the caller. When omitted,
-// Open detects the runtime name and installed CLI version. Neither installs DSH.
-type Artifact struct {
-	Source  string `json:"source" toml:"source"`
-	Version string `json:"version" toml:"version"`
-}
+type Artifact = agent.Artifact
 
 type Options struct {
 	// InputBridge binds each framework tool invocation to an immutable Room turn.
@@ -106,39 +103,13 @@ func (o Options) credential() string {
 	return os.Getenv(o.Model.APIKeyEnv)
 }
 
-type ModelConfig struct {
-	// Protocol is "deepseek-messages" or "openai-completions".
-	Protocol  string `json:"protocol" toml:"protocol"`
-	BaseURL   string `json:"base_url,omitempty" toml:"base_url"`
-	ModelID   string `json:"model_id" toml:"model_id"`
-	APIKeyEnv string `json:"api_key_env" toml:"api_key_env"`
-	// Zero retains the adapter's existing defaults. ContextWindow currently
-	// configures the OpenAI-compatible model catalog only.
-	ContextWindow int `json:"context_window,omitempty" toml:"context_window"`
-	MaxTokens     int `json:"max_tokens,omitempty" toml:"max_tokens"`
-	// Empty preserves the adapter/endpoint default. DeepSeek supports off, low,
-	// high and max; other Completions models may also use minimal, medium or xhigh.
-	ReasoningEffort string `json:"reasoning_effort,omitempty" toml:"reasoning_effort"`
-	// Empty preserves the existing text-only configuration and recovery digest.
-	// Image input is supported only by the OpenAI Completions adapter.
-	InputModalities []string    `json:"input_modalities,omitempty" toml:"input_modalities"`
-	Compat          ModelCompat `json:"compat,omitzero" toml:"compat"`
-}
+type ModelConfig agent.ModelConfig
 
 // ModelCompat contains explicit wire dialect choices for this exact model.
 // Nil preserves existing adapter defaults; false must survive serialization.
-type ModelCompat struct {
-	SupportsDeveloperRole *bool `json:"supports_developer_role,omitempty" toml:"supports_developer_role"`
-}
+type ModelCompat = agent.ModelCompat
 
-func (m ModelConfig) Clone() ModelConfig {
-	m.InputModalities = slices.Clone(m.InputModalities)
-	if flag := m.Compat.SupportsDeveloperRole; flag != nil {
-		value := *flag
-		m.Compat.SupportsDeveloperRole = &value
-	}
-	return m
-}
+func (m ModelConfig) Clone() ModelConfig { return ModelConfig(agent.ModelConfig(m).Clone()) }
 
 func (m ModelConfig) imageInput() bool { return slices.Contains(m.InputModalities, "image") }
 
@@ -284,39 +255,9 @@ type PermissionRequest struct {
 // A handler that ignores cancellation retains cleanup ownership and the lock.
 type PermissionHandler func(context.Context, PermissionRequest) (string, error)
 
-type TurnResult struct {
-	StopReason       string       `json:"stopReason"`
-	Text             string       `json:"text"`
-	TextTruncated    bool         `json:"textTruncated,omitempty"`
-	Thought          string       `json:"thought,omitempty"`
-	ThoughtTruncated bool         `json:"thoughtTruncated,omitempty"`
-	Tools            []ToolUpdate `json:"tools,omitempty"`
-	ToolsTruncated   bool         `json:"toolsTruncated,omitempty"`
-	// Events records activity in arrival order, including an empty list for no activity.
-	Events          []ActivityEvent `json:"events"`
-	EventsTruncated bool            `json:"eventsTruncated,omitempty"`
-}
-
-// ActivityEvent is one ordered diagnostic span. Consecutive text chunks of the
-// same kind, or consecutive updates of the same tool, share a stable sequence.
-// A tool update after another span remains a separate event at its arrival point.
-type ActivityEvent struct {
-	Seq           uint64      `json:"seq"`
-	Kind          string      `json:"kind"` // thought, text, tool
-	Text          string      `json:"text,omitempty"`
-	TextTruncated bool        `json:"textTruncated,omitempty"`
-	Tool          *ToolUpdate `json:"tool,omitempty"`
-}
-
-// ToolUpdate contains bounded operator diagnostics, never execution authority.
-type ToolUpdate struct {
-	ID               string `json:"id"`
-	Status           string `json:"status"`
-	Title            string `json:"title,omitempty"`
-	Input            string `json:"input,omitempty"`
-	Output           string `json:"output,omitempty"`
-	DetailsTruncated bool   `json:"detailsTruncated,omitempty"`
-}
+type TurnResult = agent.TurnResult
+type ActivityEvent = agent.ActivityEvent
+type ToolUpdate = agent.ToolUpdate
 
 // StopError preserves an ACP budget/refusal stop rather than reporting success.
 type StopError struct{ Reason string }

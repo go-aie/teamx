@@ -80,7 +80,7 @@ func newModelController(ctx context.Context, m *roomManager, c startupConfig, pr
 		service.probe = probe
 	}
 	workerCtx, cancel := context.WithCancel(ctx)
-	control := &modelController{runtimeSlots: make(chan struct{}, 8), inspect: dsh.InspectRuntime, manager: m, service: service, ctx: workerCtx, cancel: cancel, operations: map[string]*modelChangeOperation{}, running: map[string]bool{}, dir: filepath.Join(filepath.Dir(c.path), "model-operations")}
+	control := &modelController{runtimeSlots: make(chan struct{}, 8), inspect: inspectSelectedRuntime, manager: m, service: service, ctx: workerCtx, cancel: cancel, operations: map[string]*modelChangeOperation{}, running: map[string]bool{}, dir: filepath.Join(filepath.Dir(c.path), "model-operations")}
 	if err := makeDurableDir(control.dir); err != nil {
 		cancel()
 		return nil, err

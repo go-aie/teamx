@@ -13,7 +13,9 @@ import (
 
 // This adapter selects the only persisted backend currently accepted by TeamX.
 // It interprets existing files without introducing a registry or changing schema.
-func storedSessionBackend(store *Store) storedBackend { return dshBackend{store: store} }
+func storedSessionBackend(store *Store) storedBackend {
+	return newSessionBackend(store)
+}
 
 func sessionGenerationForOperation(operation string) string { return "session.json.dsh-" + operation }
 
@@ -45,7 +47,7 @@ func (b dshBackend) checkRotationClosed(opts SessionOptions, from string, ownedS
 		return ErrConflict
 	}
 	if exists && !ownedSettled {
-		if err := dsh.CheckReset(filepath.Join(filepath.Dir(opts.StatePath), from)); err != nil {
+		if err := b.selectedFactory().CheckReset(filepath.Join(filepath.Dir(opts.StatePath), from)); err != nil {
 			return fmt.Errorf("old execution has no verified settlement: %w", err)
 		}
 	}
@@ -165,12 +167,17 @@ func (b dshBackend) settledOpenFailure(opts SessionOptions, err error) bool {
 	return checkErr == nil && exists && b.checkRotationClosed(opts, ref.Directory, false) == nil
 }
 func (s *service) memberBackend(runner RunnerConfig) dshBackend {
-	backend := dshBackend{checkWorkspace: func() error {
+	backend := newSessionBackend(s.store)
+	backend.checkWorkspace = func() error {
 		if s.checkWorkspace != nil {
 			return s.checkWorkspace(runner.Profile)
 		}
 		return nil
-	}, isDirect: s.isDirect, access: s.access, store: s.store, settings: s.settings, profile: s.dshProfiles[runner.Profile], turnTimeout: s.dshTurnTimeout, prepare: s.prepareRoomMaterials, recoveryContext: s.prepareDSHRecoveryContext}
+	}
+	backend.isDirect, backend.access, backend.settings = s.isDirect, s.access, s.settings
+	backend.profile, backend.turnTimeout = s.dshProfiles[runner.Profile], s.dshTurnTimeout
+	backend.prepare, backend.recoveryContext = s.prepareRoomMaterials, s.prepareDSHRecoveryContext
+
 	if s.unifiedInputs {
 		backend.prepare = nil
 		backend.inputService = s
@@ -197,10 +204,10 @@ func (b dshBackend) switchPreparedSession(opts SessionOptions, from, to string, 
 }
 
 func (b dshBackend) checkResume(opts SessionOptions, generation string) error {
-	return dsh.CheckResume(filepath.Join(filepath.Dir(opts.StatePath), generation))
+	return b.selectedFactory().CheckResume(filepath.Join(filepath.Dir(opts.StatePath), generation))
 }
 func (b dshBackend) checkReset(opts SessionOptions, generation string) error {
-	return dsh.CheckReset(filepath.Join(filepath.Dir(opts.StatePath), generation))
+	return b.selectedFactory().CheckReset(filepath.Join(filepath.Dir(opts.StatePath), generation))
 }
 
 // Preserve both errors.Is diagnostics and the component's independent cleanup fact.
@@ -250,7 +257,7 @@ func (s *service) inspectBackendRecovery(opts SessionOptions, runner RunnerConfi
 			result.notice = "DSH original session will resume lazily using current tool identity"
 			opts.CLIPath, opts.CLIEnv = s.cliPath, s.toolEnv(opts.MemberIdentity)
 			if config, configErr := b.componentOptions(opts, ref); configErr == nil && config.BinaryPath != "" {
-				if configErr = dsh.CheckResumeConfig(config); configErr != nil {
+				if configErr = b.selectedFactory().CheckResumeConfig(launchOptions(config)); configErr != nil {
 					result.blocked = "DSH configuration requires settled Session rotation: " + configErr.Error()
 					result.resume = false
 					result.recovery = rotationReady && recoverableDSHHistory(agent) && b.checkReset(opts, ref.Directory) == nil
@@ -300,6 +307,12 @@ func (b dshBackend) activity(id MemberIdentity, active bool) (backendActivity, e
 
 func (s *dshSession) currentActivity() *backendDiagnostic {
 	output := &backendDiagnostic{}
+	if s.runtime != nil {
+		if result, active := s.runtime.Activity(); active {
+			output.Result = result
+		}
+		return output
+	}
 	if reader, ok := s.component.(interface{ Activity() (dsh.TurnResult, bool) }); ok {
 		if result, active := reader.Activity(); active {
 			output.Result = result
@@ -308,7 +321,7 @@ func (s *dshSession) currentActivity() *backendDiagnostic {
 	return output
 }
 
-func checkSessionGenerationSettled(path string) error { return dsh.CheckReset(path) }
+func checkSessionGenerationSettled(path string) error { return defaultBackendFactory.CheckReset(path) }
 func isSessionGenerationEntry(name string) bool {
 	return name == "session.json.dsh" || strings.HasPrefix(name, "session.json.dsh-")
 }

@@ -8,20 +8,12 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/go-aie/teamx/agent"
 )
 
-// MCPHTTPServer is the standard ACP HTTP MCP declaration, independent of tools.
-type MCPHTTPServer struct {
-	Type    string      `json:"type"`
-	Name    string      `json:"name"`
-	URL     string      `json:"url"`
-	Headers []MCPHeader `json:"headers"`
-}
-
-type MCPHeader struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
-}
+type MCPHTTPServer = agent.MCPHTTPServer
+type MCPHeader = agent.MCPHeader
 
 var mcpName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,32}$`)
 
